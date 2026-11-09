@@ -27,6 +27,11 @@ public sealed unsafe partial class Arm64Emitter
     static readonly int[] CalleeSaved = [21, 22, 23, 24, 25, 26, 27, 28];
     /// <summary>The callee-saved temps when x26-x28 hold the pinned block counters.</summary>
     static readonly int[] CalleeSavedPinned = [21, 22, 23, 24, 25];
+    /// <summary>The callee-saved temps when only x28 (budget) and x26 (dirty-page table) are pinned (<see cref="Runtime.NoBlockCounts"/>).</summary>
+    static readonly int[] CalleeSavedBudgetOnly = [21, 22, 23, 24, 25, 27];
+    /// <summary>With <see cref="Runtime.NoBlockCounts"/>: the dirty-page table of the state's address space (guest base -
+    /// <see cref="Memory.DirtyPages.TableBytes"/>), set by the trampoline.</summary>
+    const int PinDirty = 26;
     /// <summary>Caller-saved registers available for temps (not across callouts).</summary>
     static readonly int[] CallerSaved = [9, 10, 11, 12, 13, 14, 15];
     /// <summary>Pinned block counters (<see cref="A64Opt.PinnedCounters"/>): blocks, instructions, and CycleAcc - CheckWindow
@@ -99,10 +104,22 @@ public sealed unsafe partial class Arm64Emitter
         /// go after the block's code (a linked exit is accounting, checks and the B), and unreachable abort paths are
         /// left out.</summary>
         ExitStubs = 2048,
-        All = 4095,
+        /// <summary>Static exits skip the stores of registers and flags their (already decoded) target block overwrites
+        /// before reading them (<see cref="StateLiveness"/>): the N Z C V a compare-and-branch leaves are usually dead.</summary>
+        Successors = 4096,
+        /// <summary>With pinned counters, blocks keep only the cycle budget (x28): the executed block and instruction
+        /// counts (statistics: the PERF cycles line) are not kept, which saves two instructions per block and frees
+        /// x26/x27 for temps. VITASHARP_NATIVE_COUNTERS=1 keeps counting (<see cref="Runtime.NoBlockCounts"/>).</summary>
+        NoBlockCounts = 8192,
+        /// <summary>A guest DMB right after another, with no memory access between them, is dropped (<see cref="IrPasses.MergeFences"/>).</summary>
+        MergeFences = 16384,
+        /// <summary>Guest stores through one base register at constant offsets spanning less than a page, in straight-line
+        /// code, share one dirty-page mark after the last of them (<see cref="PlanMarks"/>): pushes, STM and struct stores.</summary>
+        GroupMarks = 32768,
+        All = 65535,
     }
 
-    public static readonly string[] OptNames = ["pin", "backedge", "fuse", "pair", "vcache", "fpcr", "fpcheck", "dirty", "lit", "patch", "cond", "stub"];
+    public static readonly string[] OptNames = ["pin", "backedge", "fuse", "pair", "vcache", "fpcr", "fpcheck", "dirty", "lit", "patch", "cond", "stub", "succ", "count", "fence", "group"];
 
     /// <summary>Enabled optimisations (tests may change it; the trampoline's pinned-counter mode is fixed per runtime).</summary>
     public static A64Opt Opts = ParseOpts(Environment.GetEnvironmentVariable(Util.EnvVars.NativeA64NoOpt));
@@ -152,6 +169,9 @@ public sealed unsafe partial class Arm64Emitter
         /// each exit has a patch site, a B to the next instruction until linked, then a B to the target block; its link
         /// slot is two words, the target and the patch site (<see cref="PatchSites"/>, <see cref="NativeRuntime.Link"/>).</summary>
         public bool PatchLinks;
+        /// <summary>With <see cref="PinnedCounters"/>: the trampoline and the blocks keep only the cycle budget, not the
+        /// block and instruction counts (<see cref="A64Opt.NoBlockCounts"/>).</summary>
+        public bool NoBlockCounts;
     }
 
     /// <summary>Byte offsets in the last prepared block of each static exit's patch site (<see cref="Runtime.PatchLinks"/>),
@@ -169,6 +189,7 @@ public sealed unsafe partial class Arm64Emitter
     /// <summary>An unlinked patch site: B to the next instruction (the link-slot path).</summary>
     public const uint UnlinkedSiteWord = 0x14000001;
 
+    bool _count = true;
     bool _pin, _backEdge, _fuse, _pair, _vcache, _lazyFpcr, _fastFpCheck, _dirtyReg, _storeLit;
 
     /// <summary>
@@ -186,6 +207,7 @@ public sealed unsafe partial class Arm64Emitter
         PatchSites.Clear();
         var opts = Opts;
         _pin = rt.PinnedCounters;
+        _count = !(rt.PinnedCounters && rt.NoBlockCounts);
         _backEdge = (opts & A64Opt.BackEdgeBreak) != 0;
         _fuse = (opts & A64Opt.FuseBranch) != 0;
         _pair = (opts & A64Opt.PairState) != 0;
@@ -197,15 +219,17 @@ public sealed unsafe partial class Arm64Emitter
         _stub = (opts & A64Opt.ExitStubs) != 0;
         _abortUsed = _slotPathUsed = _tailZeroUsed = false;
         _coldExits.Clear();
+        _coldMarks.Clear();
         ForgetHostFlags();
         _fpcrHost = false;
         Array.Fill(_vcOff, -1);
         _vcAny = false;
         long t0 = System.Diagnostics.Stopwatch.GetTimestamp();
-        var loc = LinearScan.Allocate(ir, CallerSaved, _pin ? CalleeSavedPinned : CalleeSaved, SpillSlots, MaxTempRegisters, VerifyAllocation, reuse: true);
+        var loc = LinearScan.Allocate(ir, CallerSaved, _pin ? _count ? CalleeSavedPinned : CalleeSavedBudgetOnly : CalleeSaved, SpillSlots, MaxTempRegisters, VerifyAllocation, reuse: true);
         AllocTicks = System.Diagnostics.Stopwatch.GetTimestamp() - t0;
         if (loc == null) return false;
         _loc = loc;
+        PlanMarks(ir, (opts & A64Opt.GroupMarks) != 0);
         _labels = new int[ir.Labels];
         for (int i = 0; i < ir.Labels; i++) _labels[i] = _a.NewLabel();
         _abort = _a.NewLabel();
@@ -227,6 +251,7 @@ public sealed unsafe partial class Arm64Emitter
         for (int i = 0; i < insts.Length; i++)
         {
             if (_pair && i + 1 < insts.Length && TryPair(insts[i], insts[i + 1])) { i++; continue; }
+            _cur = i;
             Lower(insts[i], slotFor, ref exitIndex);
         }
         if (_abortUsed || !_stub)
@@ -238,10 +263,19 @@ public sealed unsafe partial class Arm64Emitter
         if (tierUpCounter != 0)
         {
             _a.Bind(tierUp);
+            StorePc(ir.StartPc); // linked exits into this block may have left R15 to their cold paths (StateLiveness.ColdPc)
             if (!_stub) _a.StrX(ZR, State, OffLastExitSlot);
             _a.MovImm(X16, 1);
             _a.Str(X16, State, OffTierUp);
             if (_stub) ExitZero(); else JumpTo(rt.Epilogue);
+        }
+        foreach (var (cold, back) in _coldMarks)
+        {
+            // the first store to a clean page: set its byte (x16 = page index, kept from the check)
+            _a.Bind(cold);
+            _a.MovImm(X8, 1);
+            _a.LdStReg(LsKind.Strb, X8, PinDirty, X16, xIndex: true);
+            _a.B(back);
         }
         if (_stub) EmitSharedTails();
         return true;
@@ -253,7 +287,16 @@ public sealed unsafe partial class Arm64Emitter
     /// cold paths of patched exits (window full, link break, unlinked) are laid out after the block's code.</summary>
     bool _stub, _abortUsed, _slotPathUsed, _tailZeroUsed;
     int _tail, _tailZero, _slotPath;
-    readonly List<(int Label, nint Slot)> _coldExits = new();
+    readonly List<(int Label, nint Slot, uint? Pc)> _coldExits = new();
+    /// <summary>Dirty-page marks of clean pages, laid out after the block (<see cref="MarkDirtyReg"/>).</summary>
+    readonly List<(int Cold, int Back)> _coldMarks = new();
+
+    /// <summary>Stores a static exit's target to R15 (<see cref="StateLiveness.ColdPc"/>).</summary>
+    void StorePc(uint pc)
+    {
+        if (_storeLit && MovImmIsLong(pc)) _a.LdrLitW(X0, pc); else _a.MovImm(X0, pc);
+        StState(X0, OffR + 60);
+    }
 
     /// <summary>Returns to the dispatcher with LastExitSlot = x16 (the exit's link slot).</summary>
     void ExitSlot()
@@ -274,9 +317,10 @@ public sealed unsafe partial class Arm64Emitter
     void EmitSharedTails()
     {
         var a = _a;
-        foreach (var (label, slot) in _coldExits)
+        foreach (var (label, slot, pc) in _coldExits)
         {
             a.Bind(label);
+            if (pc is uint p) StorePc(p);
             a.LdrLit(X16, (ulong)slot);
             a.B(_tail);
         }
@@ -404,8 +448,11 @@ public sealed unsafe partial class Arm64Emitter
         var a = _a;
         if (_pin)
         {
-            a.AddImm(PinBlocks, PinBlocks, 1, true);
-            AddConst64(PinInstr, (ulong)_ir.GuestInstructions);
+            if (_count)
+            {
+                a.AddImm(PinBlocks, PinBlocks, 1, true);
+                AddConst64(PinInstr, (ulong)_ir.GuestInstructions);
+            }
             ulong c = (ulong)Math.Min(_ir.Cycles, int.MaxValue);
             if (c < 4096 || (IsAddImm((uint)c) && c < 1u << 24)) a.AddsImm(PinBudget, PinBudget, (uint)c, true);
             else { a.MovImm64(X8, c); a.Adds(PinBudget, PinBudget, X8, x: true); }
@@ -586,7 +633,7 @@ public sealed unsafe partial class Arm64Emitter
                 int v = UseStored(x.B, X17);
                 var k = x.Op == IrOp.Store8 ? LsKind.Strb : x.Op == IrOp.Store16 ? LsKind.Strh : LsKind.StrW;
                 a.LdStReg(k, v, MemBase, ad);
-                MarkDirty(x.A);
+                MarkPlanned(x.A);
                 return;
             }
             case IrOp.Fence: a.DmbIsh(); return;
@@ -605,7 +652,7 @@ public sealed unsafe partial class Arm64Emitter
                 int ad = UseZ(x.A, X16);
                 a.LdrX(X0, State, (int)x.Imm);
                 a.LdStReg(LsKind.StrX, X0, MemBase, ad);
-                MarkDirty(x.A);
+                MarkPlanned(x.A);
                 return;
             }
             case IrOp.LdrEx: LoadExclusive(x); return;
@@ -640,6 +687,9 @@ public sealed unsafe partial class Arm64Emitter
                     while (PatchSites.Count < exitIndex - 1) PatchSites.Add(-1);
                     PatchSites.Add(a.Count * 4);
                     a.Emit(UnlinkedSiteWord);
+                    // StateLiveness.ColdPc: the IR left R15 to this exit, which stores it on the paths to the dispatcher only
+                    bool coldPc = _stub && x.Imm3 == StateLiveness.ColdPc;
+                    if (coldPc) StorePc(x.Imm);
                     a.LdrLit(X16, (ulong)slot);
                     if (_stub)
                     {
@@ -647,7 +697,7 @@ public sealed unsafe partial class Arm64Emitter
                         // path goes after the block's code
                         _slotPathUsed = true;
                         a.B(_slotPath);
-                        _coldExits.Add((ret, slot));
+                        _coldExits.Add((ret, slot, coldPc ? x.Imm : (uint?)null));
                         return;
                     }
                     a.LdrX(X17, X16, 0);
@@ -660,6 +710,7 @@ public sealed unsafe partial class Arm64Emitter
                     JumpTo(_rt.Epilogue);
                     return;
                 }
+                if (x.Imm3 == StateLiveness.ColdPc) StorePc(x.Imm); // no patched exit here: R15 on every path
                 if (_pin)
                 {
                     // the slot address first (it is also the return path's LastExitSlot), the link target load early
@@ -1136,6 +1187,94 @@ public sealed unsafe partial class Arm64Emitter
     // ------------------------------------------------------------------ dirty pages / store log
 
     /// <summary>Marks the page of the guest address in temp t as written (after the store); clobbers x0, x16, x17.</summary>
+    /// <summary>Index of the IR instruction being lowered.</summary>
+    int _cur;
+    /// <summary>Per IR instruction (<see cref="PlanMarks"/>): -1 = a later store of its group marks the page, 0 = marks its
+    /// own address, d &gt; 0 = marks its address minus d (the group's lowest address).</summary>
+    int[] _markPlan = new int[256];
+
+    /// <summary>
+    /// <see cref="A64Opt.GroupMarks"/>: stores whose addresses are one temp plus constants (the frontend's base + offset)
+    /// spanning less than 4 KB, with no control flow, call, barrier or other store between them, are covered by one mark
+    /// of the lowest address after the last store: the sweep treats a marked page's next page as written too
+    /// (<see cref="Memory.DirtyPages"/>), and marking after the stores keeps the mark-after-data order. Anything that may
+    /// let another thread or the HLE look at the data (calls, exits, barriers, exclusives) ends a group.
+    /// </summary>
+    void PlanMarks(IrBlock ir, bool group)
+    {
+        var insts = System.Runtime.InteropServices.CollectionsMarshal.AsSpan(ir.Insts);
+        if (_markPlan.Length < insts.Length) _markPlan = new int[Math.Max(insts.Length, _markPlan.Length * 2)];
+        Array.Clear(_markPlan, 0, insts.Length);
+        if (!group || !Memory.DirtyPages.Enabled) return;
+        int n = ir.TempCount;
+        if (_addrBase.Length < n) { _addrBase = new int[Math.Max(n, _addrBase.Length * 2)]; _addrOff = new uint[_addrBase.Length]; }
+        Array.Fill(_addrBase, -1, 0, n);
+        int gBase = -1, gLast = -1;
+        uint gMin = 0, gEnd = 0, lastOff = 0;
+        void Close()
+        {
+            if (gLast >= 0) _markPlan[gLast] = (int)(lastOff - gMin);
+            gBase = gLast = -1;
+        }
+        for (int i = 0; i < insts.Length; i++)
+        {
+            ref readonly var x = ref insts[i];
+            switch (x.Op)
+            {
+                case IrOp.Add when x.D >= 0 && x.A >= 0 && !IsConst(x.A, out _) && IsConst(x.B, out uint k) && k < 0x8000_0000:
+                {
+                    // base + k, folded through chains of constant adds (both kept small: offsets of one access group)
+                    int b = x.A; uint off = k;
+                    if (_addrBase[b] >= 0 && _addrOff[b] + k < 0x8000_0000) { off = _addrOff[b] + k; b = _addrBase[b]; }
+                    _addrBase[x.D] = b; _addrOff[x.D] = off;
+                    break;
+                }
+                case IrOp.Store8: case IrOp.Store16: case IrOp.Store32: case IrOp.StoreD:
+                {
+                    if (IsConst(x.A, out _)) { Close(); break; }
+                    int b = _addrBase[x.A] >= 0 ? _addrBase[x.A] : x.A;
+                    uint off = _addrBase[x.A] >= 0 ? _addrOff[x.A] : 0;
+                    uint size = x.Op switch { IrOp.Store8 => 1u, IrOp.Store16 => 2u, IrOp.Store32 => 4u, _ => 8u };
+                    uint min = Math.Min(gMin, off), end = Math.Max(gEnd, off + size);
+                    if (gBase == b && end - min <= 4096 && off - min < 4096)
+                    {
+                        _markPlan[gLast] = -1;
+                        gMin = min; gEnd = end;
+                    }
+                    else { Close(); gBase = b; gMin = off; gEnd = off + size; }
+                    gLast = i; lastOff = off;
+                    break;
+                }
+                case IrOp.Load8: case IrOp.Load8S: case IrOp.Load16: case IrOp.Load16S: case IrOp.Load32: case IrOp.LoadD:
+                case IrOp.Nop: case IrOp.GetReg: case IrOp.GetFlag: case IrOp.LoadState: case IrOp.SetReg: case IrOp.SetFlag:
+                case IrOp.StoreState: case IrOp.Sub: case IrOp.And: case IrOp.Or: case IrOp.Xor: case IrOp.AndNot: case IrOp.OrNot:
+                case IrOp.Mul: case IrOp.Not: case IrOp.Neg: case IrOp.Shl: case IrOp.Shr: case IrOp.Sar: case IrOp.Ror: case IrOp.Add:
+                case IrOp.Clz: case IrOp.Bswap: case IrOp.Rev16: case IrOp.RevSh: case IrOp.Rbit: case IrOp.SExt8: case IrOp.SExt16:
+                case IrOp.ZExt8: case IrOp.ZExt16: case IrOp.Bit: case IrOp.CmpEq: case IrOp.Select: case IrOp.AddC: case IrOp.SubC:
+                case IrOp.TestNZ: case IrOp.ShiftReg: case IrOp.UMulL: case IrOp.SMulL: case IrOp.Add64:
+                    break;
+                default:
+                    Close(); // control flow, calls, barriers, exclusives, SIMD (VecLdSt stores, handler paths)
+                    break;
+            }
+        }
+        Close();
+    }
+
+    int[] _addrBase = new int[256];
+    uint[] _addrOff = new uint[256];
+
+    /// <summary>The dirty mark of a guest store as planned by <see cref="PlanMarks"/>.</summary>
+    void MarkPlanned(int t)
+    {
+        int plan = _markPlan[_cur];
+        if (plan < 0 || !Memory.DirtyPages.Enabled) return;
+        if (plan == 0) { MarkDirty(t); return; }
+        int r = Use(t, X0);
+        _a.SubImm(X16, r, (uint)plan);
+        MarkDirtyReg(X16);
+    }
+
     void MarkDirty(int t)
     {
         if (!Memory.DirtyPages.Enabled) return;
@@ -1149,6 +1288,17 @@ public sealed unsafe partial class Arm64Emitter
     {
         var a = _a;
         int done = a.NewLabel();
+        if (!_count)
+        {
+            // table base pinned in x26; the store of the mark (first write to a page since the last sweep) is out of line
+            int cold = a.NewLabel();
+            a.LsrImm(X16, addr, Memory.DirtyPages.PageShift);
+            a.LdStReg(LsKind.Ldrb, X8, PinDirty, X16, xIndex: true);
+            a.Cbz(X8, cold);
+            a.Bind(done);
+            _coldMarks.Add((cold, done));
+            return;
+        }
         a.LsrImm(X16, addr, Memory.DirtyPages.PageShift);
         a.SubImm(X17, MemBase, (uint)Memory.DirtyPages.TableBytes, true);
         a.LdStReg(LsKind.Ldrb, X8, X17, X16, xIndex: true);
@@ -1313,7 +1463,7 @@ public sealed unsafe partial class Arm64Emitter
     /// spill slots), loads x19/x20, switches FPCR to the guest mode and jumps to the block. Blocks leave through the
     /// epilogue (returned in <paramref name="epilogueOffset"/>), which restores the host FPCR.
     /// </summary>
-    public static byte[] EmitTrampoline(out int epilogueOffset, bool pinnedCounters = false)
+    public static byte[] EmitTrampoline(out int epilogueOffset, bool pinnedCounters = false, bool blockCounts = true)
     {
         var a = new Arm64Assembler();
         a.Stp(FP, LR, SP, -SavedRegs, PairMode.Pre);
@@ -1332,8 +1482,12 @@ public sealed unsafe partial class Arm64Emitter
             a.LdrX(PinBudget, State, OffCycleAcc);
             a.LdrX(X17, State, OffCheckWindow);
             a.Sub(PinBudget, PinBudget, X17, x: true);
-            a.LdrX(PinBlocks, State, OffNBlocks);
-            a.LdrX(PinInstr, State, OffNInstr);
+            if (blockCounts)
+            {
+                a.LdrX(PinBlocks, State, OffNBlocks);
+                a.LdrX(PinInstr, State, OffNInstr);
+            }
+            else a.SubImm(PinDirty, MemBase, (uint)Memory.DirtyPages.TableBytes, true);
         }
         a.Mrs(X16, SysReg.Fpcr);
         a.StrX(X16, SP, FrameHostFpcr);
@@ -1349,8 +1503,11 @@ public sealed unsafe partial class Arm64Emitter
             a.LdrX(X17, State, OffCheckWindow);
             a.Add(X16, PinBudget, X17, x: true);
             a.StrX(X16, State, OffCycleAcc);
-            a.StrX(PinBlocks, State, OffNBlocks);
-            a.StrX(PinInstr, State, OffNInstr);
+            if (blockCounts)
+            {
+                a.StrX(PinBlocks, State, OffNBlocks);
+                a.StrX(PinInstr, State, OffNInstr);
+            }
         }
         a.LdrX(X16, SP, FrameHostFpcr);
         a.Msr(SysReg.Fpcr, X16);

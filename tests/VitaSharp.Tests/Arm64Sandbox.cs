@@ -42,7 +42,14 @@ public sealed unsafe partial class Arm64Sandbox : IArm64Runner
     public static string? SkipReason =>
         UnicornAvailability.SkipReason ?? (OperatingSystem.IsWindows() ? null : "the ARM64 sandbox maps host memory with VirtualQuery checks (Windows only)");
 
-    public Arm64Sandbox()
+    public Arm64Sandbox() : this(false, false) { }
+
+    /// <summary>A sandbox whose code hook counts every instruction executed in the code arena (slow).</summary>
+    public Arm64Sandbox(bool countInstructions) : this(countInstructions, false) { }
+
+    /// <param name="countInstructions">Count every instruction executed in the code arena (slow).</param>
+    /// <param name="noBlockCounts">The device's budget-only trampoline (<see cref="Arm64Emitter.Runtime.NoBlockCounts"/>).</param>
+    public Arm64Sandbox(bool countInstructions, bool noBlockCounts)
     {
         Check(uc_open(UC_ARCH_ARM64, UC_MODE_ARM, out _uc), "uc_open");
         // stub page: callout stub (RET after the hook ran the bridge) and the return address of the trampoline
@@ -63,13 +70,15 @@ public sealed unsafe partial class Arm64Sandbox : IArm64Runner
         MapRange((ulong)Dispatch, (ulong)(sizeof(NativeRuntime.DispatchEntry) << NativeRuntime.DispatchBits), UC_PROT_ALL);
         int epi = 0;
         bool pinned = (Arm64Emitter.Opts & Arm64Emitter.A64Opt.PinnedCounters) != 0;
-        _tramp = (ulong)code.Place(_ => Arm64Emitter.EmitTrampoline(out epi, pinned));
-        Stubs = new Arm64Emitter.Runtime { Epilogue = _tramp + (ulong)epi, Callout = CalloutStub, DispatchTable = (ulong)Dispatch, PinnedCounters = pinned,
+        noBlockCounts &= pinned;
+        _tramp = (ulong)code.Place(_ => Arm64Emitter.EmitTrampoline(out epi, pinned, blockCounts: !noBlockCounts));
+        Stubs = new Arm64Emitter.Runtime { Epilogue = _tramp + (ulong)epi, Callout = CalloutStub, DispatchTable = (ulong)Dispatch, PinnedCounters = pinned, NoBlockCounts = noBlockCounts,
             // the device's exit layout (patch sites; tests link through the slots, so the sites stay unlinked)
             PatchLinks = pinned && (Arm64Emitter.Opts & Arm64Emitter.A64Opt.PatchLinks) != 0 };
         Check(uc_hook_add(_uc, out _, UC_HOOK_CODE, (void*)(delegate* unmanaged<nint, ulong, uint, void*, void>)&OnCallout, null, CalloutStub, CalloutStub), "hook callout");
         Check(uc_hook_add(_uc, out _, UC_HOOK_CODE, (void*)(delegate* unmanaged<nint, ulong, uint, void*, void>)&OnFake, null, FakeStub, FakeStub), "hook fake");
         Check(uc_hook_add(_uc, out _, UC_HOOK_MEM_UNMAPPED, (void*)(delegate* unmanaged<nint, int, ulong, int, long, void*, int>)&OnUnmapped, null, 1, 0), "hook unmapped");
+        if (countInstructions) HookCount();
     }
 
     void MapRange(ulong addr, ulong size, int perms)
@@ -139,10 +148,8 @@ public sealed unsafe partial class Arm64Sandbox : IArm64Runner
     public long Executed;
     public bool Counting;
 
-    /// <summary>A sandbox whose code hook counts every instruction executed in the code arena (slow).</summary>
-    public Arm64Sandbox(bool countInstructions) : this()
+    void HookCount()
     {
-        if (!countInstructions) return;
         ulong lo = (ulong)NativeRuntime.Instance.Code.ExecBase;
         Check(uc_hook_add(_uc, out _, UC_HOOK_CODE, (void*)(delegate* unmanaged<nint, ulong, uint, void*, void>)&OnCount, null, lo, lo + ExecutableMemory.ReserveSize - 1), "hook count");
     }

@@ -135,6 +135,7 @@ public sealed class Emulator : IDisposable
             : "PSN: signed out, offline");
         Memory = options.Memory ?? new GuestMemory();
         Space = Memory.Primary;
+        Code.Space = Space;
         Host = new Host.HostServices();
         Gpu = new Gpu.GpuQueue();
         Vita = new VitaSystem();
@@ -155,6 +156,7 @@ public sealed class Emulator : IDisposable
         Vita = parent.Vita;
         Memory = parent.Memory;
         Space = Memory.CreateSpace("process"); // its own user address space (CDRAM and the kernel region are shared)
+        Code.Space = Space;
         Host = parent.Host;
         Gpu = parent.Gpu;
         LocalPsn = parent.LocalPsn;

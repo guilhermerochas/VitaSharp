@@ -69,26 +69,6 @@ sealed class MaliCost(MaliCost.Settings s)
 
     // =========================================================== GLSL variants (what-if)
 
-    /// <summary>mediump on the values the GXP holds in half registers: the temporaries the translator unpacks them into,
-    /// the varyings the GXP loads as F16 (every use a copy into such a temporary) and a half/8-bit colour output.
-    /// The real generator is unchanged.</summary>
-    internal static string RelaxHalf(string glsl)
-    {
-        var s = Regex.Replace(glsl, @"(^|[\s;{(])(vec[234]|float) (\w+) = unpackHalf2x16", "$1mediump $2 $3 = unpackHalf2x16", RegexOptions.Multiline);
-        s = Regex.Replace(s, @"(^|[\s;{(])(vec[234]|float) (\w+) = (vec[234])\(unpackHalf2x16", "$1mediump $2 $3 = $4(unpackHalf2x16", RegexOptions.Multiline);
-        var halfTemps = Regex.Matches(s, @"mediump vec2 (\w+) = unpackHalf2x16").Select(m => m.Groups[1].Value).ToHashSet();
-        foreach (Match m in Regex.Matches(s, @"^(layout\([^)]*\) (?:centroid |flat |noperspective )*)in (vec[234]|float) (\w+);", RegexOptions.Multiline).Cast<Match>().ToList())
-        {
-            string name = m.Groups[3].Value;
-            int uses = Regex.Matches(s, $@"(?<![\w.]){Regex.Escape(name)}\b").Count - 1;
-            int copies = Regex.Matches(s, $@"(\w+)\.[xy] = {Regex.Escape(name)}\.[xyzw];").Count(c => halfTemps.Contains(c.Groups[1].Value));
-            if (uses > 0 && copies == uses) s = s.Replace(m.Value, $"{m.Groups[1].Value}in mediump {m.Groups[2].Value} {name};");
-        }
-        if (Regex.IsMatch(s, @"^// gxp .* out (F16|U8|C10)", RegexOptions.Multiline))
-            s = s.Replace("layout(location = 0) out vec4 out_color;", "layout(location = 0) out mediump vec4 out_color;");
-        return s;
-    }
-
     /// <summary>Upper bound: every float of a fragment shader mediump (would break 32-bit values; cost only).</summary>
     internal static string RelaxAll(string glsl)
     {
@@ -205,7 +185,7 @@ sealed class MaliCost(MaliCost.Settings s)
             string glsl = _glsl.GetValueOrDefault((h, hint, vertex)) ?? "";
             // Mali Bifrost/Valhall has no clip distances (the device path is FarPlaneDiscard) and malioc crashes on them
             if (vertex) glsl = Regex.Replace(glsl, @"^\s*gl_ClipDistance\[\d\] = [^;]*;\r?\n", "", RegexOptions.Multiline);
-            string src = v switch { "half" => RelaxHalf(glsl), "allmp" => RelaxAll(glsl), _ => glsl };
+            string src = v switch { "half" => VitaSharp.Core.Gxm.Shader.ShaderGenerator.RelaxHalf(glsl), "allmp" => RelaxAll(glsl), _ => glsl };
             // a variant identical to the base shader compiles under the base name
             stats[(h, hint, vertex, v)] = Compile(h, hint, vertex, src == glsl ? "" : v, src);
         });

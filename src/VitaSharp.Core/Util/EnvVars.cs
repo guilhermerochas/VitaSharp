@@ -130,7 +130,8 @@ public static class EnvVars
     /// <summary>Tests: the block corpus (recorded with <see cref="NativeCorpus"/>) the compile-cost benchmark compiles.</summary>
     public const string BenchCorpus = "VITASHARP_BENCH_CORPUS";
     /// <summary>=1: x64 native blocks count the VFP/NEON ops and conditional branches they execute (profiling of
-    /// register pinning / compare-branch fusion; reported on the PERF cycles lines).</summary>
+    /// register pinning / compare-branch fusion; reported on the PERF cycles lines). ARM64 native blocks count the
+    /// executed blocks and guest instructions (the PERF cycles line's "K blocks") only with it (Arm64Emitter.A64Opt.NoBlockCounts).</summary>
     public const string NativeCounters = "VITASHARP_NATIVE_COUNTERS";
     public const string NativeDump = "VITASHARP_NATIVE_DUMP";
     /// <summary>=file: the native backends write one line per generated block (host address, size, guest pc, code
@@ -182,6 +183,13 @@ public static class EnvVars
     /// their region clips and viewports) instead of the whole surface, so a tiler loads and stores only those tiles
     /// (post-processing passes into regions of one surface; VulkanRenderer.Tiler.cs).</summary>
     public const string RenderAreaTrim = "VITASHARP_RENDER_AREA_TRIM";
+    /// <summary>1: logs, per render-target format, the framebuffer compression the driver applied (Mali AFBC) through
+    /// VK_EXT_image_compression_control, where the device has it.</summary>
+    public const string AfbcLog = "VITASHARP_AFBC_LOG";
+    /// <summary>A/B, Mali framebuffer compression (AFBC): 1 = render targets carry the list of every format they are
+    /// viewed with (VkImageFormatListCreateInfo); srgb = only their format and its sRGB twin; immutable = no
+    /// MUTABLE_FORMAT at all. Default: mutable without a list.</summary>
+    public const string RtFormatList = "VITASHARP_RT_FORMAT_LIST";
     /// <summary>Password of the RPCN account (--rpcn-user): the launcher passes it here instead of on the command line,
     /// where other processes could read it.</summary>
     public const string RpcnPassword = "VITASHARP_RPCN_PASSWORD";
@@ -285,6 +293,10 @@ public static class EnvVars
     /// <summary>Android: =1 asks for Window.setSustainedPerformanceMode where the device supports it (lower, steadier
     /// clocks for long sessions; off by default because it lowers peak speed).</summary>
     public const string AndroidSustained = "VITASHARP_ANDROID_SUSTAINED";
+    /// <summary>Android (A/B): the game surface's buffer height in pixels ("game" = 544, "half" = half the view's), the
+    /// width following the view's aspect; the display hardware scales the buffers up. Less to blit and compose per frame.
+    /// Default: the view's own size.</summary>
+    public const string AndroidSurfaceSize = "VITASHARP_ANDROID_SURFACE_SIZE";
     /// <summary>Android: seconds between the periodic session statistics in the log file (default 30, 0 = off).</summary>
     public const string SessionReportSeconds = "VITASHARP_SESSION_REPORT_SECONDS";
     /// <summary>Developer builds: the GPU worker spends FACTOR times its real time on each command (busy wait), to
@@ -319,6 +331,20 @@ public static class EnvVars
     /// <summary>1: GXM notifications and display-queue sync points wait for visibility results only, not for render-target
     /// writebacks (published when their frame retires, at the latest by the next flip). Default 0.</summary>
     public const string LazyWritebackSync = "VITASHARP_LAZY_WRITEBACK_SYNC";
+    /// <summary>1 (A/B): GXM notifications and display-queue sync points fire once the GPU worker recorded the work
+    /// before them, not once the GPU finished it; writebacks and visibility results reach memory when their frame
+    /// retires (the guest may read them a frame late). Default 0.</summary>
+    public const string RelaxedGpuSync = "VITASHARP_GPU_RELAXED_SYNC";
+    /// <summary>half (A/B): the generated shaders declare the GXP's half-register values, F16 varyings and F16/U8/C10
+    /// colour outputs mediump (RelaxedPrecision), as Vita3K does. Default off (everything highp).</summary>
+    public const string ShaderFp16 = "VITASHARP_SHADER_FP16";
+    /// <summary>1: a CPU transfer that reads a writeback still in flight runs when that frame retires (in order with the
+    /// later sync points and transfers) instead of the GPU worker waiting for the frame; textures read its destination as
+    /// it is meanwhile (a frame late). Default on Android, off on desktop (0/1 overrides).</summary>
+    public const string TransferDefer = "VITASHARP_TRANSFER_DEFER";
+    /// <summary>0 (A/B): a CPU transfer does not wait for a render-target writeback still in flight over its source (it may
+    /// read the previous content, as before 240a8de). Default on.</summary>
+    public const string TransferWritebackWait = "VITASHARP_TRANSFER_WRITEBACK_WAIT";
     /// <summary>Emulator updates: the releases feed to check instead of the GitHub API of the build's repository (a URL
     /// with the API's JSON, or a folder with releases.json whose assets are file:// URLs; tests).</summary>
     public const string UpdateFeed = "VITASHARP_UPDATE_FEED";

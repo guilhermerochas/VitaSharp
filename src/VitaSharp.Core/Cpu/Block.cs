@@ -30,6 +30,22 @@ public sealed unsafe class Block
     internal List<nint>? LinkedFrom;
     /// <summary>The cache (process) the block belongs to: its indirect-exit table is the process's.</summary>
     public BlockCache? Owner;
+    /// <summary>Guest state slots the block overwrites before reading them (<see cref="Native.StateLiveness"/>: bits 0-14
+    /// R0-R14, 16-19 N Z C V), <see cref="Native.StateLiveness.Unknown"/> until computed.</summary>
+    internal int DeadIn = Native.StateLiveness.Unknown;
+    /// <summary>Guest code ranges [start, end) other than the block's own that its compiled code depends on (the
+    /// successors whose <see cref="DeadIn"/> let it drop state stores): rewriting them drops this block too.</summary>
+    internal uint[]? Deps;
+
+    /// <summary>Whether the block's code or a range it depends on overlaps [addr, addr + size).</summary>
+    internal bool Overlaps(uint addr, uint size)
+    {
+        if (Start < addr + size && End > addr) return true;
+        if (Deps is { } d)
+            for (int i = 0; i + 1 < d.Length; i += 2)
+                if (d[i] < addr + size && d[i + 1] > addr) return true;
+        return false;
+    }
 
     public override string ToString() => $"Block {Start:X8}-{End:X8} {(Thumb ? "T" : "A")} n={Insts.Length}";
 }
@@ -193,6 +209,10 @@ public sealed unsafe class BlockCache
     readonly ConcurrentDictionary<ulong, Block> _blocks = new();
     nint _dispatch;
 
+    /// <summary>The process's address space: where blocks are decoded from by threads outside it (the JIT workers,
+    /// <see cref="GetFromAnyThread"/>). Null: the calling thread's.</summary>
+    public AddressSpace? Space;
+
     static ulong Key(uint pc, bool thumb) => pc | (thumb ? 1ul << 32 : 0);
 
     public Block Get(uint pc, bool thumb)
@@ -224,13 +244,21 @@ public sealed unsafe class BlockCache
 
     public bool TryGet(uint pc, bool thumb, out Block? block) => _blocks.TryGetValue(Key(pc, thumb), out block);
 
+    /// <summary><see cref="Get"/> from a thread that may work in another address space (a JIT worker decoding the
+    /// targets of the block it compiles): decodes in <see cref="Space"/>.</summary>
+    public Block GetFromAnyThread(uint pc, bool thumb)
+    {
+        if (_blocks.TryGetValue(Key(pc, thumb), out var b)) return b;
+        using (AddressSpace.Use(Space ?? AddressSpace.Current)) return Get(pc, thumb);
+    }
+
     /// <summary>Drop every block overlapping [addr, addr+size) (code was rewritten, e.g. module load/unload).</summary>
     public void Invalidate(uint addr, uint size)
     {
         foreach (var kv in _blocks)
         {
             var b = kv.Value;
-            if (b.Start < addr + size && b.End > addr && _blocks.TryRemove(kv.Key, out _))
+            if (b.Overlaps(addr, size) && _blocks.TryRemove(kv.Key, out _))
                 Retire(b);
         }
     }

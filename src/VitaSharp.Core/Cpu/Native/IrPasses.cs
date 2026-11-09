@@ -34,6 +34,36 @@ public static class IrPasses
     }
 
     /// <summary>
+    /// Drops a full barrier that follows another with no memory access, call or control flow between them (guest code
+    /// emits DMB pairs around atomics: "dmb; ldr; dmb" sequences back to back give "dmb; dmb"). Two adjacent full
+    /// barriers order exactly what one does. Returns the number removed.
+    /// </summary>
+    public static int MergeFences(IrBlock b)
+    {
+        var insts = System.Runtime.InteropServices.CollectionsMarshal.AsSpan(b.Insts);
+        bool fenced = false;
+        int removed = 0;
+        for (int i = 0; i < insts.Length; i++)
+        {
+            ref var x = ref insts[i];
+            switch (x.Op)
+            {
+                case IrOp.Fence:
+                    if (fenced) { x = new IrInst(IrOp.Nop); removed++; }
+                    fenced = true;
+                    break;
+                case IrOp.Load8: case IrOp.Load8S: case IrOp.Load16: case IrOp.Load16S: case IrOp.Load32:
+                case IrOp.Store8: case IrOp.Store16: case IrOp.Store32: case IrOp.LoadD: case IrOp.StoreD:
+                case IrOp.LdrEx: case IrOp.StrEx: case IrOp.VecLdSt: case IrOp.Callout: case IrOp.FpOp: case IrOp.VecOp:
+                case IrOp.Label: case IrOp.CondBranch: case IrOp.BranchIf: case IrOp.ExitStatic: case IrOp.ExitDynamic:
+                    fenced = false;
+                    break;
+            }
+        }
+        return removed;
+    }
+
+    /// <summary>
     /// Checks the structural rules emitters rely on: every temp is defined once before use, and no temp defined inside
     /// a conditional region is used after the region's label. Throws on violation (frontend bug).
     /// </summary>
