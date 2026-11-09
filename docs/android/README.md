@@ -42,7 +42,8 @@ builds and libadrenotools: 44,136,042. A Release rebuild of both ABIs takes abou
 full AOT default (30/10/2026, [Runtime and AOT choice](#runtime-and-aot-choice-vitasharpandroidruntime)): 66,860,650
 bytes and about 5 minutes; since the LLVM default (31/10/2026): about 17 minutes for `-r android-arm64` (82 MB APK);
 `-p:VitaSharpAndroidRuntime=mono-aot` builds in 5, `mono-jit` gives the old build.
-`-r android-arm64` (phones) or `-r android-x64` (the emulator) builds one ABI, into `bin/Release/net10.0-android/<rid>/`
+`-r android-arm64` (phones) or `-r android-x64` (the emulator) builds and AOT-compiles one ABI (the csproj narrows
+`RuntimeIdentifiers` to it; before 09/11/2026 the other ABI was still LLVM-compiled, doubling the time), into `bin/Release/net10.0-android/<rid>/`
 (about 2 minutes, for iterating).
 
 | Project | Target | In `VitaSharp.sln` | What |
