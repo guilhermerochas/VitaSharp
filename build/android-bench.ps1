@@ -70,5 +70,10 @@ if (Test-Path $ftsv) {
 adb shell cat "$remote/results/errors.txt" 2>$null | Select-Object -Last 5
 Write-Host ("$Rounds rounds in {0:F0} s; results $tsv" -f $sw.Elapsed.TotalSeconds)
 if ($Perf) { & $Perf bench table $tsv --base $vs[0] --scenes $Scenes }
-else { dotnet run --project (Join-Path $here 'tools/VitaSharp.PerfTools') -c Release -p:VitaSharpDeveloper=true -m:2 -v q -- bench table $tsv --base $vs[0] --scenes $Scenes }
+else {
+    # dotnet run does not take MSBuild's -m (it reached the tool as an argument): build first, then run the build
+    $proj = Join-Path $here 'tools/VitaSharp.PerfTools'
+    dotnet build $proj -c Release -p:VitaSharpDeveloper=true -p:UseSharedCompilation=false -m:2 -v q -nologo | Out-Null
+    dotnet run --no-build --project $proj -c Release -p:VitaSharpDeveloper=true -- bench table $tsv --base $vs[0] --scenes $Scenes
+}
 & "$PSScriptRoot\android-awake.ps1" stop
