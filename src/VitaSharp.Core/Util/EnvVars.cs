@@ -329,8 +329,9 @@ public static class EnvVars
     /// <summary>half (A/B): the generated shaders declare the GXP's half-register values, F16 varyings and F16/U8/C10
     /// colour outputs mediump (RelaxedPrecision), as Vita3K does. Default off (everything highp).</summary>
     public const string ShaderFp16 = "VITASHARP_SHADER_FP16";
-    /// <summary>1 (A/B): a CPU transfer that reads a writeback still in flight runs when that frame retires (in order with
-    /// the later sync points and transfers) instead of the GPU worker waiting for the frame. Default 0.</summary>
+    /// <summary>1: a CPU transfer that reads a writeback still in flight runs when that frame retires (in order with the
+    /// later sync points and transfers) instead of the GPU worker waiting for the frame; textures read its destination as
+    /// it is meanwhile (a frame late). Default on Android, off on desktop (0/1 overrides).</summary>
     public const string TransferDefer = "VITASHARP_TRANSFER_DEFER";
     /// <summary>0 (A/B): a CPU transfer does not wait for a render-target writeback still in flight over its source (it may
     /// read the previous content, as before 240a8de). Default on.</summary>

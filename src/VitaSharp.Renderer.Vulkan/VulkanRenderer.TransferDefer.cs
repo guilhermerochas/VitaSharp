@@ -11,12 +11,14 @@ namespace VitaSharp.Renderer.Vulkan;
 /// writeback and runs when it retires, right after the writebacks and in order with the sync points queued after it
 /// (a notification after the transfer is deferred behind it). Like the transfers of the Vita's GPU, which run after
 /// the scenes before them without stopping the CPU. Once one transfer is deferred, every later transfer and fill is
-/// queued behind it until it ran, so they keep their order. A memory texture over a pending transfer's destination
-/// waits for the frame first when it was submitted already.
+/// queued behind it until it ran, so they keep their order. A memory texture over a pending transfer's destination reads
+/// it as it is (<see cref="WaitPendingTransferInto"/>): the transfer's result can arrive a frame late.
 /// </summary>
 public sealed unsafe partial class VulkanRenderer
 {
-    static readonly bool TransferDefer = Environment.GetEnvironmentVariable(EnvVars.TransferDefer) == "1";
+    /// <summary>On by default on Android (the worker waiting for the GPU there costs a frame), off on desktop;
+    /// VITASHARP_TRANSFER_DEFER=0/1 overrides.</summary>
+    static readonly bool TransferDefer = Environment.GetEnvironmentVariable(EnvVars.TransferDefer)?.Trim() is { Length: > 0 } v ? v == "1" : OperatingSystem.IsAndroid();
 
     /// <summary>Frame the last deferred transfer runs at (later ones queue behind it until it retired).</summary>
     Frame? _xferDeferFrame;
@@ -26,15 +28,10 @@ public sealed unsafe partial class VulkanRenderer
     /// next command boundary (a retirement can happen in the middle of a draw).</summary>
     readonly List<(uint Address, uint Size)> _xferInvalidations = new();
     long _statXferDeferred, _statXferLateReads;
-    /// <summary>Transfer destinations a draw read while their transfer was still queued on the frame being recorded: those
-    /// transfers are not deferred again (the worker waits for the frame as without the switch), so a stale read can happen
-    /// at most once per destination.</summary>
-    readonly HashSet<uint> _xferReadEarly = new();
 
     public bool DeferCallback(CallbackCommand cb)
     {
         if (!TransferDefer) return false;
-        if (cb.WriteSize > 0 && _xferReadEarly.Contains(cb.WriteAddress) && _xferDeferFrame is not { Retired: false }) return false;
         Frame? target = _xferDeferFrame is { Retired: false } d && (d.Recording || d.Submitted) ? d : null;
         if (target == null)
         {
@@ -76,23 +73,24 @@ public sealed unsafe partial class VulkanRenderer
         _xferInvalidations.Clear();
     }
 
-    /// <summary>A texture is about to read [addr, addr + size) from memory: a deferred transfer into it whose frame was
-    /// submitted is waited for (its frame retires, the transfer runs); one queued on the recording frame cannot be
-    /// (the draw is being recorded into it) and is read as it is now.</summary>
+    /// <summary>A texture is about to read [addr, addr + size) from memory while a deferred transfer into it has not run:
+    /// the frames the GPU already finished are published (their transfers run); a transfer whose frame is still on the
+    /// GPU or being recorded is not waited for, the texture reads the destination as it is now (the previous run of that
+    /// transfer: Killzone's mips of its 384x192 reflection target one frame late). Waiting there was a full GPU drain per
+    /// frame (with 8 frames in flight: 7-10 vblank stalls).</summary>
     void WaitPendingTransferInto(uint addr, uint size)
     {
         if (_xferPendingDst.Count == 0) return;
-        foreach (var (a, s, f) in _xferPendingDst.ToArray())
+        bool overlaps = false;
+        foreach (var (a, s, _) in _xferPendingDst)
+            if (a < addr + size && addr < a + s) { overlaps = true; break; }
+        if (!overlaps) return;
+        PollRetire();
+        foreach (var (a, s, f) in _xferPendingDst)
         {
             if (a >= addr + size || addr >= a + s) continue;
-            if (f.Submitted && !f.Retired) RetireFrame(f, RetireCause.Finish);
-            else if (f.Recording)
-            {
-                // read before the transfer could run: this destination's transfers wait for their frame from now on
-                _xferReadEarly.Add(a);
-                if (_statXferLateReads++ < 20 || TraceSync)
-                    Log.Info($"[gpu] texture 0x{addr:X8} reads transfer destination 0x{a:X8} queued on the frame being recorded: read as it is now; its next transfers are not deferred");
-            }
+            if (_statXferLateReads++ < 20 || TraceSync)
+                Log.Info($"[gpu] texture 0x{addr:X8} reads transfer destination 0x{a:X8} before its deferred transfer ran ({(f.Recording ? "frame being recorded" : "frame on the GPU")}): read as it is now (present {_presentCount})");
         }
         // only the texture cache now (a surface reload records commands: left to the command boundary)
         foreach (var (a, s) in _xferInvalidations)
