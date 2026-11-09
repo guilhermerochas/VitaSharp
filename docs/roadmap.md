@@ -339,6 +339,18 @@ Lista de itens futuros do VitaSharp. Marque `[x]` quando um item for concluído.
   GPU a ~34,5 ms e o quadro a ~62 ms; (3) `VITASHARP_RENDER_AREA_TRIM=1` (db2d72d): -2 a -5 ms de GPU na cena de
   pós-processamento no bench, pixel-idêntico em 21 dumps; ligar quando uma série ao vivo mais longa confirmar.
   `VITASHARP_PRESENT_THREAD` piorou (85-86 ms) e `VITASHARP_TEXSET_PERSIST` não mudou o quadro: ficam desligados
+  09/11/2026 (perf/android-gpu): **regressão desde 06/11 corrigida (23811d9)**: a 240a8de (Jak 1) fazia um `Finish` de
+  todos os quadros a cada transferência de CPU sobre um writeback "em voo" e casava quadros que não estavam mais em
+  voo; na main eram ~2.400 esperas por sessão (26-29 s) no Killzone. Agora só o quadro do writeback (gravando ou
+  submetido) é esperado: Killzone 12 -> 15 fps de mediana (66,5 ms) na rota sem save state, esperas 6-8 por sessão;
+  Jak 1 continua esperando no céu (0 quadros pretos em 3 gravações). Na escada do save state o Killzone ainda espera:
+  `sceGxmTransferDownscale` do alvo 384x192 0x66332000 para os mips da textura 0x66362000 no quadro que está sendo
+  gravado (~1.000 esperas por sessão, 12 fps); `VITASHARP_TRANSFER_DEFER=1` (8bf512d) roda a transferência quando o
+  quadro aposenta, sem o worker esperar (mips um quadro atrasados): medir nessa rota. Sem ganho, ficam desligados:
+  `VITASHARP_RT_FORMAT_LIST` (AFBC: os alvos RGBA8 já eram comprimidos; RGBA16F e MSAA o Mali não comprime),
+  `VITASHARP_GPU_RELAXED_SYNC` (12 -> 15 fps mas a parede de vidro atrás da escada fica escura e borrada) e
+  `VITASHARP_SHADER_FP16=half` (281 de 300 shaders relaxados, ainda não medido no Mali). O worker da GPU passou a ser
+  o limite (47-50 ms no build mono-aot, GPU 42 ms, jogo 24 ms)
 
 - [ ] Uncharted (PCSA00029) no Android: plantas piscando no começo do Prologue (Drake parado; APK LLVM perf/uc-cpu, dump
   `and_flicker/PCSA00029_plants075.vsgd`, presents 4000-4150, escala 0,75; pisca em 0,75 e 1,0, nenhuma

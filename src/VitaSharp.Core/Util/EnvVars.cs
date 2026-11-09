@@ -286,6 +286,10 @@ public static class EnvVars
     /// <summary>Android: =1 asks for Window.setSustainedPerformanceMode where the device supports it (lower, steadier
     /// clocks for long sessions; off by default because it lowers peak speed).</summary>
     public const string AndroidSustained = "VITASHARP_ANDROID_SUSTAINED";
+    /// <summary>Android (A/B): the game surface's buffer height in pixels ("game" = 544, "half" = half the view's), the
+    /// width following the view's aspect; the display hardware scales the buffers up. Less to blit and compose per frame.
+    /// Default: the view's own size.</summary>
+    public const string AndroidSurfaceSize = "VITASHARP_ANDROID_SURFACE_SIZE";
     /// <summary>Android: seconds between the periodic session statistics in the log file (default 30, 0 = off).</summary>
     public const string SessionReportSeconds = "VITASHARP_SESSION_REPORT_SECONDS";
     /// <summary>Developer builds: the GPU worker spends FACTOR times its real time on each command (busy wait), to
@@ -327,8 +331,9 @@ public static class EnvVars
     /// <summary>half (A/B): the generated shaders declare the GXP's half-register values, F16 varyings and F16/U8/C10
     /// colour outputs mediump (RelaxedPrecision), as Vita3K does. Default off (everything highp).</summary>
     public const string ShaderFp16 = "VITASHARP_SHADER_FP16";
-    /// <summary>1 (A/B): a CPU transfer that reads a writeback still in flight runs when that frame retires (in order with
-    /// the later sync points and transfers) instead of the GPU worker waiting for the frame. Default 0.</summary>
+    /// <summary>1: a CPU transfer that reads a writeback still in flight runs when that frame retires (in order with the
+    /// later sync points and transfers) instead of the GPU worker waiting for the frame; textures read its destination as
+    /// it is meanwhile (a frame late). Default on Android, off on desktop (0/1 overrides).</summary>
     public const string TransferDefer = "VITASHARP_TRANSFER_DEFER";
     /// <summary>0 (A/B): a CPU transfer does not wait for a render-target writeback still in flight over its source (it may
     /// read the previous content, as before 240a8de). Default on.</summary>
