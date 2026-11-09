@@ -45,6 +45,10 @@ Lista de itens futuros do VitaSharp. Marque `[x]` quando um item for concluído.
 
 ## Save states
 
+- [ ] Save state e runtime do Android (09/11/2026, laboratório): um estado salvo por um APK CoreCLR carrega em APKs
+  Mono LLVM e NativeAOT do mesmo código, mas um APK mono-aot sem LLVM recusa ("salvo por outra versão", StateOtherVersion)
+  embora o hash de SnapshotSchema seja igual na compilação: o hash em tempo de execução depende do runtime/AOT (ordem de
+  reflexão ou trimming?). Deixar o hash estável entre runtimes, ou medir a compatibilidade no lugar do hash.
 - [ ] Uncharted (PCSA00029) no Android congela depois de carregar um estado na tela de título (09/11/2026, main
   9f21653, APK CoreCLR do and_rt; estado do slot 1 salvo no gameplay do Prologue pelo mesmo APK): o log diz "Estado do
   slot 1 carregado" (0,8 s parado), mas o jogo nunca mais apresenta um quadro (frames presented parado em 1964, GPU
