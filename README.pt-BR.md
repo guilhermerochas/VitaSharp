@@ -1,4 +1,4 @@
-<!-- pair: README.md sha256=2eb6d962f6b474deb849d1c21cd369e2b7761aa930156565aa0ed1a7d871bd27 -->
+<!-- pair: README.md sha256=aacab8ac25076a897ef12f25ccc2861e22e1539eea691eb5072c654b83d2854a -->
 <div align="center">
 
 [English](README.md) | **Português**
@@ -229,7 +229,8 @@ O VitaSharp se apoia no trabalho da comunidade do Vita: [Vita3K](https://github.
 comportamento, NIDs, modelo de registradores USSE), [VitaSDK](https://vitasdk.org/) e vita-headers, a
 [wiki de desenvolvimento do PS Vita](https://wiki.henkaku.xyz/), [VGAudio](https://github.com/Thealexbarney/VGAudio)
 (decodificador ATRAC9, MIT), [RPCN](https://github.com/RipleyTom/rpcn), [Silk.NET](https://github.com/dotnet/Silk.NET),
-[Avalonia](https://avaloniaui.net/) e [FFmpeg](https://ffmpeg.org/) (LGPL, baixado no build).
+[Avalonia](https://avaloniaui.net/), [FFmpeg](https://ffmpeg.org/) (LGPL, baixado no build) e
+[SQLite](https://sqlite.org/) (domínio público) pelo [SQLitePCLRaw](https://github.com/ericsink/SQLitePCL.raw) (Apache-2.0).
 
 Licença **GPL v3** ([LICENSE](LICENSE)); componentes de terceiros mantêm as suas. PlayStation e PS Vita são marcas da
 Sony Interactive Entertainment; o VitaSharp não tem ligação com a Sony.

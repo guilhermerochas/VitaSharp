@@ -70,6 +70,7 @@ public sealed partial class NpManager : HleModule
             _npInited = true;
             uint id = config != 0 ? GuestMemory.R32(config) : 0;
             _commId = id != 0 ? $"{GuestMemory.ReadCString(id, 9)}_{GuestMemory.Read<byte>(id + 10):D2}" : null;
+            KeepConfig(config);
         }
         // its signature: a trophy context created without an id uses this one (np_trophy NID_96DF1B76)
         uint sign = config != 0 ? GuestMemory.R32(config + 8) : 0;
