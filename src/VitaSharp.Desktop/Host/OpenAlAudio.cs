@@ -252,6 +252,7 @@ public sealed unsafe class OpenAlAudio : IAudioBackend
 
         public void Submit(ReadOnlySpan<short> interleaved)
         {
+            long waitStart = 0;
             while (true)
             {
                 if (_o._paused)
@@ -264,6 +265,17 @@ public sealed unsafe class OpenAlAudio : IAudioBackend
                 lock (_o._lock)
                 {
                     _o._alc.MakeContextCurrent(_o._context);
+                    // a queue that stays full for 250 ms: the device stopped consuming (lost, or moved by the system).
+                    // A DualShock 4 (a headset output of its own) plugged in and out several times left the output
+                    // stalled: no buffer came back, sceAudioOutOutput blocked for good and Dead Space went silent
+                    long now = Environment.TickCount64;
+                    if (waitStart != 0 && now - waitStart > 1000)
+                    {
+                        // never hold the guest's audio thread: this grain is dropped
+                        Log.WarnOnce("al-stalled", "Audio: the output device stopped playing; grains are dropped until it recovers");
+                        Interlocked.Increment(ref _underruns);
+                        return;
+                    }
                     Reclaim();
                     _o._al.GetSourceProperty(_source, GetSourceInteger.SourceState, out int state);
                     // Stopped (not Initial): the queue ran dry, the guest did not submit in time (audible gap). Counted
@@ -299,6 +311,7 @@ public sealed unsafe class OpenAlAudio : IAudioBackend
                         return;
                     }
                 }
+                if (waitStart == 0) waitStart = Environment.TickCount64;
                 Thread.Sleep(1); // 1 ms system timer while a game runs (Runner: timeBeginPeriod)
             }
         }

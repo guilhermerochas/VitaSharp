@@ -158,6 +158,15 @@ sealed class NavScript : IInputBackend
             {
                 byte x = Axis(F(1)), y = Axis(F(2));
                 bool left = p[0].Equals("lstick", StringComparison.OrdinalIgnoreCase);
+                // lstick x y [frames [rampFrames]]: x/y in -1..1; the optional ramp moves the stick there over that
+                // many frames, as a thumb does, instead of jumping from the centre
+                long ramp = Len(4, 0);
+                for (long i = 1; i < ramp; i++)
+                {
+                    byte rx = Axis(F(1) * i / ramp), ry = Axis(F(2) * i / ramp);
+                    lock (_lock) { if (left) (_lx, _ly) = (rx, ry); else (_rx, _ry) = (rx, ry); }
+                    WaitFrames(Frames + 1);
+                }
                 lock (_lock) { if (left) (_lx, _ly) = (x, y); else (_rx, _ry) = (x, y); }
                 Act(VitaButtons.None, null, Len(3, 30));
                 lock (_lock) { _lx = _ly = _rx = _ry = 128; }
