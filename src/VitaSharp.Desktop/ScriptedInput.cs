@@ -31,7 +31,8 @@ namespace VitaSharp.Desktop;
 /// on F10 takes a diagnostic capture, one on F11 toggles fullscreen, one on F8 / Ctrl+F8 starts or stops "Gravar tudo" /
 /// the GPU dump (window runs), one on F5 / F6 / F7 (Shift+F5 / Shift+F7) is the save state key (window runs: F6 opens the picker) and one on F1 / F2 / F3 (Shift+F1 / Shift+F2 / Shift+F3: back) changes the internal resolution / frame
 /// rate mode / MSAA mode (<see cref="GraphicsHotkeys"/>) (<see cref="TakeHostKeys"/>), e.g. "key@f300:P,key@f300+3:F10,key@f300+5:P"
-/// pauses at frame 300, captures the paused frame and resumes 5 seconds after the pause.
+/// pauses at frame 300, captures the paused frame and resumes 5 seconds after the pause. "key@T:Close" closes the window
+/// as its X button does (window runs: the close waits for a recording being saved).
 /// </summary>
 sealed class ScriptedInput : IInputBackend, IMotionSource
 {
@@ -169,7 +170,7 @@ sealed class ScriptedInput : IInputBackend, IMotionSource
         return keys;
     }
 
-    bool IsHostKey(string? key) => key is "F8" or "Ctrl+F8" or "F10" or "F11" or "F5" or "F6" or "F7" or "Shift+F5" or "Shift+F7" || (key != null && GraphicsHotkeys.IsHotkey(key)) || IsPauseKey(key);
+    bool IsHostKey(string? key) => key is "F8" or "Ctrl+F8" or "Close" or "F10" or "F11" or "F5" or "F6" or "F7" or "Shift+F5" or "Shift+F7" || (key != null && GraphicsHotkeys.IsHotkey(key)) || IsPauseKey(key);
 
     bool IsPauseKey(string? key)
     {

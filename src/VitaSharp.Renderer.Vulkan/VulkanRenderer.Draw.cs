@@ -587,7 +587,7 @@ public sealed unsafe partial class VulkanRenderer
                 LineWidth = 1,
                 CullMode = CullModeFlags.None,
                 FrontFace = FrontFace.CounterClockwise,
-                // no near-plane clipping, depth clamped per fragment (the vertex shader clips the far plane itself)
+                // off: the near plane clips, as GXM does (VkCore.DepthClamp); the vertex shader also clips the far plane
                 DepthClampEnable = _core.DepthClamp,
             };
             var ms = new PipelineMultisampleStateCreateInfo { SType = StructureType.PipelineMultisampleStateCreateInfo, RasterizationSamples = key.Samples };

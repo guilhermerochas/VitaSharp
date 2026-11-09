@@ -19,6 +19,7 @@ sealed class CaptureCommand : IPerfCommand
         Console.WriteLine("vitasharp-perf capture <folder|zip> [--threshold 6] [--frames <dir>] [--rerun]");
         Console.WriteLine("  writes <folder>/report.txt and <folder>/findings/*.png (a zip is extracted next to it first)");
         Console.WriteLine("  --frames <dir>  also write every presented frame as frame_<present>.png");
+        Console.WriteLine("  --from P --to P --every N  only those presents (with --frames); --frames-only skips the analysis (writes nothing into <folder>)");
         Console.WriteLine("  --rerun         print the command that re-runs the session headless from its save state");
         Console.WriteLine("  --compare <original>  <folder> is a re-run (original/reruns/...): pair its frames with the original's by guest time");
     }
@@ -36,13 +37,20 @@ sealed class CaptureCommand : IPerfCommand
         }
         if (!Directory.Exists(path) || !File.Exists(Path.Combine(path, "session.txt")))
             throw new PerfArgsException($"capture: {path} is not a capture folder (no session.txt)");
-        string report = CaptureAnalyzer.Analyze(path, quiet: false, threshold: a.Double("--threshold", 6));
+        // --frames-only: just the pictures, nothing written into the capture folder (a user's capture stays read-only)
+        bool framesOnly = a.Has("--frames-only");
+        string report = framesOnly ? "" : CaptureAnalyzer.Analyze(path, quiet: false, threshold: a.Double("--threshold", 6));
         if (a.Get("--frames") is { } framesDir)
         {
             Directory.CreateDirectory(framesDir);
             int n = 0;
+            long from = (long)a.Double("--from", 0), to = (long)a.Double("--to", long.MaxValue), every = Math.Max(1, (long)a.Double("--every", 1));
             foreach (var (f, pic) in FramesFile.ReadAll(Path.Combine(path, "frames.vsfr")))
-                if (pic is { } p) { CapturePng.Write(Path.Combine(framesDir, $"frame_{f.Info.Present}.png"), p.Rgba, p.W, p.H); n++; }
+            {
+                long pr = f.Info.Present;
+                if (pr > to) break;
+                if (pic is { } p && pr >= from && (pr - from) % every == 0) { CapturePng.Write(Path.Combine(framesDir, $"frame_{pr}.png"), p.Rgba, p.W, p.H); n++; }
+            }
             Console.WriteLine($"{n} frames written to {Path.GetFullPath(framesDir)}");
         }
         if (a.Has("--rerun")) Console.WriteLine($"VitaSharp.Desktop rerun \"{path}\"");

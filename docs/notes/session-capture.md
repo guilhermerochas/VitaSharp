@@ -15,9 +15,11 @@ Tests: `tests/VitaSharp.Tests/SessionCaptureTests.cs`.
 
 > **Gravar tudo** (quando aparecer qualquer problema: imagem piscando, tela preta, travada, câmera parada, som
 > estranho):
-> - **PC:** aperte **F8** durante o jogo. A barra de título mostra *"● REC | Gravando tudo (F8 para
->   parar)"*. Jogue até o problema aparecer e aperte **F8** de novo. A barra mostra *"Salvando a gravação..."* e
->   depois *"Gravação salva: <arquivo>.zip"*.
+> - **PC:** aperte **F8** durante o jogo. No canto superior esquerdo do jogo aparece *"● REC 00:12"* (o tempo
+>   gravado; também na barra de título). Jogue até o problema aparecer e aperte **F8** de novo. O canto mostra
+>   *"Salvando a gravação: 42%"* e depois a barra mostra *"Gravação salva: <arquivo>.zip"*. A gravação para sozinha
+>   depois de **60 s** (ou 1 GB de imagens), com o aviso *"A gravação chegou ao limite (60 s) e parou sozinha"*: grave
+>   só o trecho do problema.
 > - **Android:** no menu de pausa (botão PS), escolha **Gravar tudo**. O contador de FPS mostra *"● REC"*. Para
 >   parar, abra o menu de novo e escolha **Parar gravação**.
 > - **Pré-gravação** (para defeitos rápidos): com ela ligada, a gravação também inclui os segundos *antes* de você
@@ -31,8 +33,31 @@ Tests: `tests/VitaSharp.Tests/SessionCaptureTests.cs`.
 >
 > A gravação termina sempre, mesmo com o jogo travado. Fechar a janela (X, Alt+F4, *Stop* no launcher) ou sair do
 > jogo no Android com uma gravação ligada ou ainda sendo salva não perde nada: a janela fica aberta com *"Salvando a
-> gravação... não feche a janela"* (no Android, um aviso na tela) e fecha sozinha quando o `.zip` está pronto. No
+> gravação: NN%"* (no Android, um aviso na tela) e fecha sozinha quando o `.zip` está pronto (a análise
+> `report.txt` é pulada nesse caso; `vitasharp-perf capture <pasta>` a faz depois). No
 > launcher, um segundo clique em *"Forçar parada"* encerra o jogo na hora (aí a gravação se perde).
+
+## Length limit, progress and F8 (08/11/2026)
+
+A 6-minute recording of The Amazing Spider-Man (14,603 frames: 2 GB of pictures, a 500 MB GPU dump, a 2.9 GB zip)
+took 135 s to save after its "saved" log line: the analysis (102 s: every picture decoded twice and the whole GPU dump
+decompressed) and the zip (32 s, deflating the already Brotli-compressed pictures). The window was closed during it
+and stayed open ~75 s with only "Salvando a gravação..." in its title. Now:
+
+- **Limit:** a recording stops and saves by itself after `SessionCaptureOptions.MaxSeconds` (60 s; `--capture-max=S`
+  or `VITASHARP_CAPTURE_MAX_SECONDS`, 0 = none) or `MaxBytes` of pictures (1 GB), with the `CaptureLimit` notice and
+  a `note:` in `session.txt`. `--capture-at` and re-runs record exactly their range (`Start(limit: false)`).
+- **Progress:** `SavePercent` / `SaveStep` (frames 0-10%, GPU dump, files 15-20%, analysis 20-60%, zip 60-100%); the
+  desktop shows it in the top-left badge (renderer status overlay, never in the captured frames) and the title bar,
+  and the badge shows *"● REC mm:ss"* while recording (fullscreen has no title bar).
+- **Closing while saving** calls `Hurry()`: the analysis is skipped (or stopped where it is) and the close waits only
+  for the files and the zip, printing the progress; the log says how long it waited. `frames.vsfr` is stored in the
+  zip, not deflated.
+- **F8:** every press is logged (`Window: F8 (Gravar tudo) pressed`, then `[capture] F8 pressed: stop accepted` or
+  why it was refused). A stop pressed while the recording is still starting (its save state) is kept and done when the
+  start completes instead of being dropped; keys held when the window loses the focus are released, so the next F8
+  is not taken for key repeat. The window thread logs any stop of 1 s or more (`Window: the window thread did not run
+  for N ms`) and its longest stop at the end of the run.
 
 ## Stopping never waits on the game
 

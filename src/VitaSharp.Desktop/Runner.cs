@@ -200,6 +200,9 @@ public static class Runner
         // short feedback in the title bar (diagnostic captures), shown for a few seconds instead of the FPS line
         string? status = null;
         long statusUntil = 0;
+        // the top-left badge (pause, REC, saving): what it shows now, and until when a short notice keeps it
+        string? shownBadge = null;
+        long noticeUntil = 0;
         SessionCaptureControl? capture = null;
         SaveStateOverlay? statePickerRef = null;
         void ShowTitle()
@@ -208,8 +211,8 @@ public static class Runner
             string rate = EmulationPause.IsUserPaused ? PauseBadge.Text(window.PauseKeyLabel)
                 : EmulationPause.IsPaused ? Loc.Get(statePickerRef?.IsOpen == true ? "SsTitle" : "GameSavingState") : $"{fps:F0} FPS"
                 + (VitaSharp.Core.Hle.Modules.FrameRate.Label is { Length: > 0 } fr ? $" ({fr})" : "");
-            string rec = capture?.Capture.IsRecording == true ? "\u25CF REC | " : "";
-            if (capture?.Capture.Idle.IsSet == false && capture.Capture.IsRecording == false) st = Loc.Get("GameSavingRecording");
+            string rec = capture?.Capture.IsRecording == true ? $"\u25CF REC {RecTime(capture.Capture.RecordingSeconds)} | " : "";
+            if (capture?.Capture.SavePercent is int pct && pct >= 0) st = Loc.Format("GameSavingRecordingPct", pct);
             try { window.Title = st != null ? $"VitaSharp | {rec}{st}" : $"VitaSharp | {rec}{emu.TitleId} {emu.Title} | {rate} | {renderer?.DeviceName}"; } catch { }
         }
         // errors stay longer than the short confirmations (a refused save state was gone before it could be read)
@@ -221,6 +224,7 @@ public static class Runner
             lastFrames = frames;
             if (++titleTicks % 5 == 0) Log.Info($"FPS frame {frames}: {fps:F0} frames/s");
             ShowTitle();
+            ShowPauseBadge(renderer);
         }, null, 1000, 1000);
         var diag = new Diagnostics(emu, () => renderer, options)
         {
@@ -280,7 +284,7 @@ public static class Runner
             });
         // F8: "Gravar tudo", the session capture (docs/notes/session-capture.md); the pre-roll follows debug mode
         capture = new SessionCaptureControl(emu, rendererOptions, () => renderer, options, diag.Status, diag.HostInfo);
-        capture.Capture.Options.RecordingChanged = _ => ShowTitle();
+        capture.Capture.Options.RecordingChanged = _ => { ShowTitle(); ShowPauseBadge(renderer); };
         window.SessionCaptureToggled += () => capture.Capture.Toggle("F8");
         window.DiagnosticRequested += () => { capture.Capture.NoteKey("F10"); diag.Capture("F10"); };
         // Ctrl+F8: GPU dump recording (docs/notes/gpu-dump.md)
@@ -363,10 +367,21 @@ public static class Runner
 
         // pause hotkey (Controles > "Pausar emulacao": P by default, or a controller combination): freezes every guest
         // process, the guest clock and the audio; the window keeps the last frame with a "Pausado" badge
+        // the same corner shows "Gravar tudo": a red dot with the elapsed time while it records, the save's progress while
+        // it is written (the title bar is not visible in fullscreen); the overlay never reaches the captured frames
         void ShowPauseBadge(VulkanRenderer? r)
         {
             if (r == null) return;
-            var badge = EmulationPause.IsUserPaused ? PauseBadge.Render(PauseBadge.Text(window.PauseKeyLabel), window.FramebufferSize.Height) : null;
+            if (Environment.TickCount64 < Interlocked.Read(ref noticeUntil)) return; // a short notice (mouse mode) is shown
+            bool paused = EmulationPause.IsUserPaused;
+            var c = capture?.Capture;
+            string? text = paused ? PauseBadge.Text(window.PauseKeyLabel)
+                : c?.IsRecording == true ? $"REC {RecTime(c.RecordingSeconds)}"
+                : c?.SavePercent is int pct && pct >= 0 ? Loc.Format("GameSavingRecordingPct", pct) : null;
+            string key = $"{System.Runtime.CompilerServices.RuntimeHelpers.GetHashCode(r)}|{paused}|{text}|{window.FramebufferSize.Height}";
+            if (key == Volatile.Read(ref shownBadge)) return; // unchanged: nothing to redraw
+            Volatile.Write(ref shownBadge, key);
+            var badge = text != null ? PauseBadge.Render(text, window.FramebufferSize.Height, pauseSign: paused, recDot: !paused && c?.IsRecording == true) : null;
             if (badge is { } b) r.SetStatusOverlay(b.Bgra, b.Width, b.Height); else r.SetStatusOverlay(null, 0, 0);
         }
         void OnPauseChanged(bool paused)
@@ -384,6 +399,8 @@ public static class Runner
         {
             diag.Status?.Invoke(text);
             if (renderer is { } r && PauseBadge.Render(text, window.FramebufferSize.Height, pauseSign: false) is { } b) r.SetStatusOverlay(b.Bgra, b.Width, b.Height);
+            Volatile.Write(ref shownBadge, null);
+            Interlocked.Exchange(ref noticeUntil, Environment.TickCount64 + 2900);
             int n = Interlocked.Increment(ref mouseNotice);
             _ = Task.Delay(3000).ContinueWith(_ => { if (Volatile.Read(ref mouseNotice) == n) ShowPauseBadge(renderer); });
         }
@@ -433,13 +450,27 @@ public static class Runner
             if (!closeAfterSave)
             {
                 closeAfterSave = true;
-                Log.Info("[capture] window closing with a recording running or being saved: the window closes when it is saved");
+                Log.Info($"[capture] window closing with a recording {(c.IsRecording ? "running" : $"being saved ({c.SaveStep} {c.SavePercent}%)")}: the window closes when it is saved; the analysis (report.txt) is skipped");
                 Console.WriteLine("Saving the recording (Gravar tudo) before closing...");
+                // only the files themselves are waited for: the optional analysis is skipped
+                c.Hurry();
                 new Thread(() =>
                 {
-                    // a recording still starting refuses Stop: retry until it stops, then wait for the save
+                    var sw = Stopwatch.StartNew();
+                    // a recording still starting keeps the stop for when it has started; then wait for the save, with
+                    // its progress in the title bar and the badge
                     while (c.IsRecording && !c.Stop("window closed")) Thread.Sleep(250);
-                    c.Idle.Wait();
+                    int last = -1, lastTen = -1;
+                    while (!c.Idle.Wait(250))
+                    {
+                        int pct = c.SavePercent;
+                        if (pct == last) continue;
+                        last = pct;
+                        ShowTitle();
+                        ShowPauseBadge(renderer);
+                        if (pct >= 0 && pct / 10 != lastTen) { lastTen = pct / 10; Console.WriteLine($"Saving the recording: {pct}% ({c.SaveStep})"); }
+                    }
+                    Log.Info(FormattableString.Invariant($"[capture] closing: the recording was saved {sw.Elapsed.TotalSeconds:F1} s after the window was closed"));
                     Console.WriteLine(c.LastZip is { } z ? $"Recording saved: {z}" : "Recording saved (see the log)");
                     Volatile.Write(ref closeNow, 1);
                 }) { IsBackground = true, Name = "capture close" }.Start();
@@ -450,6 +481,7 @@ public static class Runner
         window.Tick += () => { if (Volatile.Read(ref closeNow) == 1 && closeAfterSave) { closeAfterSave = false; window.Close(); } };
         emu.Fatal += (t, e) => Log.Error($"Fatal error in thread {t.Name}: {e.Message}");
         window.Run();
+        Log.Info($"Window: longest stop of the window thread {window.MaxUpdateGapMs:F0} ms");
         capture.Dispose(); // completes a running recording (its GPU dump first)
         GpuDumpControl.StopAtExit();
         titleTimer.Dispose();
@@ -460,6 +492,9 @@ public static class Runner
         PrintStats(emu);
         return 0;
     }
+
+    /// <summary>"01:23": the REC badge's elapsed time.</summary>
+    internal static string RecTime(double seconds) => $"{(int)seconds / 60:D2}:{(int)seconds % 60:D2}";
 
     /// <summary>The emulator keys of an --input script that came due: the pause key toggles the pause, F10 captures,
     /// F11 toggles fullscreen, F8 / Ctrl+F8 start or stop "Gravar tudo" / the GPU dump (window runs), F5 / F6 / F7 are the save state keys, F1 / F2 / F3 (Shift = back)
@@ -472,6 +507,7 @@ public static class Runner
             if (k == ScriptedInput.PauseKey) EmulationPause.Toggle("--input");
             else if (k == "F10") diag.Capture("--input F10");
             else if (k == "F11") window?.ToggleFullscreen();
+            else if (k == "Close") window?.RequestClose();
             else if (k is "F8" or "Ctrl+F8") window?.PressF8(k == "Ctrl+F8");
             else if (k is "F5" or "F6" or "F7" or "Shift+F5" or "Shift+F7") window?.PressStateKey(k);
             else if (GraphicsHotkeys.IsHotkey(k)) graphics?.Press(k);

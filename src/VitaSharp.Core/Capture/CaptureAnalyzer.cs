@@ -28,7 +28,11 @@ public static class CaptureAnalyzer
     const int TW = VulkanThumbW, TH = VulkanThumbH;
     const int VulkanThumbW = 96, VulkanThumbH = 54;
 
-    public static string Analyze(string dir, bool quiet = false, double threshold = 6)
+    /// <param name="progress">fraction done (0-1) while it runs (the "saving NN%" badge)</param>
+    /// <param name="cancel">stops it (OperationCanceledException): the window closes while a recording is saved</param>
+    /// <param name="expectedFrames">frames in frames.vsfr when known (progress)</param>
+    public static string Analyze(string dir, bool quiet = false, double threshold = 6, Action<double>? progress = null,
+        CancellationToken cancel = default, int expectedFrames = 0)
     {
         dir = Path.GetFullPath(dir);
         string framesPath = Path.Combine(dir, "frames.vsfr");
@@ -44,6 +48,8 @@ public static class CaptureAnalyzer
         {
             foreach (var (f, pic) in FramesFile.ReadAll(framesPath))
             {
+                cancel.ThrowIfCancellationRequested();
+                if (expectedFrames > 0 && (stats.Count & 63) == 0) progress?.Invoke(0.6 * Math.Min(1.0, stats.Count / (double)expectedFrames));
                 var st = new FrameStat { F = f };
                 if (pic is { } pv)
                 {
@@ -65,10 +71,17 @@ public static class CaptureAnalyzer
         {
             try
             {
-                using var r = new GpuDumpReader(dumpPath);
+                var fs = new FileStream(dumpPath, FileMode.Open, FileAccess.Read, FileShare.Read, 1 << 20);
+                using var r = new GpuDumpReader(fs);
+                double len = Math.Max(1, fs.Length);
                 int k = 0;
                 while (r.Next())
-                    if (r.Kind == GpuDumpRecord.Present) dumpPresents[r.PresentInfo.Present] = ++k;
+                    if (r.Kind == GpuDumpRecord.Present)
+                    {
+                        dumpPresents[r.PresentInfo.Present] = ++k;
+                        cancel.ThrowIfCancellationRequested();
+                        if ((k & 15) == 0) progress?.Invoke(0.6 + 0.3 * Math.Min(1.0, fs.Position / len));
+                    }
             }
             catch (Exception e) when (e is IOException or InvalidDataException or EndOfStreamException) { sb.AppendLine($"GPU dump unreadable past frame {dumpPresents.Count}: {e.Message}"); }
         }
@@ -124,7 +137,8 @@ public static class CaptureAnalyzer
         if (strips.Count > 0)
         {
             Directory.CreateDirectory(findDir);
-            WriteStrips(framesPath, strips);
+            progress?.Invoke(0.9);
+            WriteStrips(framesPath, strips, cancel);
         }
 
         // audio
@@ -389,14 +403,17 @@ public static class CaptureAnalyzer
 
     /// <summary>Each finding's frame with two before and two after, side by side (240x136 each), the finding in the
     /// middle with a red border. One pass over the file decodes the pictures needed.</summary>
-    static void WriteStrips(string framesPath, List<(Finding F, string Path)> strips)
+    static void WriteStrips(string framesPath, List<(Finding F, string Path)> strips, CancellationToken cancel)
     {
         const int cw = 240, ch = 136, cols = 5;
         var need = new HashSet<int>(strips.SelectMany(s => Enumerable.Range(s.F.Index - 2, cols)));
         var cells = new Dictionary<int, byte[]>();
         int i = 0;
+        int last = need.Max();
         foreach (var (_, pic) in FramesFile.ReadAll(framesPath))
         {
+            cancel.ThrowIfCancellationRequested();
+            if (i > last) break; // the pictures after the last finding are not needed
             if (need.Contains(i) && pic is { } p) cells[i] = Downscale(p.Rgba, p.W, p.H, cw, ch);
             i++;
         }

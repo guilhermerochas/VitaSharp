@@ -51,4 +51,14 @@ public sealed class DecoderOutputsTests(GuestMemoryFixture fx)
         Assert.Equal(new byte[] { 0, 0, 0, 1, 0x67, 1, 2, 3, 0, 0, 0, 1, 0x68, 4, 5 }, VitaSharp.Core.Hle.Modules.Videodec.ParameterSets(au));
         Assert.Null(VitaSharp.Core.Hle.Modules.Videodec.ParameterSets([0, 0, 0, 1, 0x41, 1, 2]));
     }
+
+    [Fact]
+    public void AvcdecTellsAnIdrUnitByItsFirstSlice()
+    {
+        // AUD, SPS, PPS, IDR slice: an IDR access unit (the replay kept for save states restarts there)
+        Assert.True(VitaSharp.Core.Hle.Modules.Videodec.StartsIdr([0, 0, 0, 1, 0x09, 0xF0, 0, 0, 0, 1, 0x67, 1, 0, 0, 1, 0x68, 4, 0, 0, 1, 0x65, 9]));
+        // a P slice, even with 0x65 bytes in its data
+        Assert.False(VitaSharp.Core.Hle.Modules.Videodec.StartsIdr([0, 0, 0, 1, 0x41, 0x65, 0, 0, 1, 0x65]));
+        Assert.False(VitaSharp.Core.Hle.Modules.Videodec.StartsIdr([1, 2, 3]));
+    }
 }

@@ -486,7 +486,8 @@ public sealed unsafe class VkCore : IDisposable
         OcclusionQueryPrecise = Has(GpuFeature.OcclusionQueryPrecise);
         VertexStores = feats.VertexPipelineStoresAndAtomics;
         FragmentStores = feats.FragmentStoresAndAtomics;
-        DepthClamp = Has(GpuFeature.DepthClamp);
+        // GXM clips at the near plane: depth clamp stays off (see DepthClamp)
+        DepthClamp = false;
         TextureCompressionBC = Has(GpuFeature.TextureCompressionBC);
         FillModeNonSolid = Has(GpuFeature.FillModeNonSolid);
         WideLines = Has(GpuFeature.WideLines);
@@ -544,8 +545,12 @@ public sealed unsafe class VkCore : IDisposable
         var r = Vk.GetPhysicalDeviceImageFormatProperties(Physical, format, ImageType.Type2D, ImageTiling.Optimal, usage, flags, out var props);
         return r == Result.Success ? props.SampleCounts & _sampleCountMask : SampleCountFlags.Count1Bit;
     }
-    /// <summary>depthClamp: GXM does not clip at the near plane, fragments in front of it get depth 0 (clamped per
-    /// fragment). Without the feature the near plane clips instead.</summary>
+    /// <summary>Whether pipelines enable depthClamp. Off: GXM clips at the near plane like the hardware clip does. Until
+    /// 08/11/2026 it was on ("GXM does not clip at the near plane", fragments in front of it at depth 0): in The Amazing
+    /// Spider-Man an invisible depth-writing quad parked at the camera (vertices between the eye and the near plane)
+    /// then wrote depth 0 over the lower half of the screen, and the loading screen's text and hints and the pause
+    /// menu below the middle of the screen failed the depth test; the console shows them (and Vita3K clips too). The
+    /// Killzone fix that introduced it (3dee370) needed affine depth, which the near clip keeps.</summary>
     public bool DepthClamp;
 
     /// <summary>True on a portability-subset implementation (MoltenVK) that reports no triangle fan support. GXM fan

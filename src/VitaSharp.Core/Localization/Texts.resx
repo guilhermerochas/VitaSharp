@@ -87,6 +87,12 @@
   <data name="Cancel" xml:space="preserve">
     <value>Cancel</value>
   </data>
+  <data name="CaptureLimit" xml:space="preserve">
+    <value>The recording reached its limit ({0}) and stopped by itself: saving...</value>
+  </data>
+  <data name="GameSavingRecordingPct" xml:space="preserve">
+    <value>Saving the recording: {0}%</value>
+  </data>
   <data name="CaptureRecording" xml:space="preserve">
     <value>Recording everything ({0})</value>
   </data>
@@ -109,7 +115,7 @@
     <value>Starting the recording failed: {0}</value>
   </data>
   <data name="CaptureStarting" xml:space="preserve">
-    <value>Wait: the recording is still starting</value>
+    <value>The recording is still starting: it stops as soon as it has started</value>
   </data>
   <data name="CaptureStopHint" xml:space="preserve">
     <value>F8 to stop</value>
@@ -803,9 +809,6 @@
   </data>
   <data name="GameRunningShort" xml:space="preserve">
     <value>A game is running</value>
-  </data>
-  <data name="GameSavingRecording" xml:space="preserve">
-    <value>Saving the recording... do not close the window</value>
   </data>
   <data name="GameSavingState" xml:space="preserve">
     <value>saving state...</value>
@@ -2888,5 +2891,20 @@
   </data>
   <data name="FolderStates" xml:space="preserve">
     <value>Save states (savestates/{0})</value>
+  </data>
+  <data name="GoToGame" xml:space="preserve">
+    <value>Go to game</value>
+  </data>
+  <data name="GoToGameTip" xml:space="preserve">
+    <value>Bring the game's window to the front (restores it when minimized)</value>
+  </data>
+  <data name="OpenFileSystem" xml:space="preserve">
+    <value>Open file system</value>
+  </data>
+  <data name="OpenFileSystemTip" xml:space="preserve">
+    <value>Open the emulated Vita's file system (ux0, ur0, os0, vs0...) in the file manager: {0}</value>
+  </data>
+  <data name="OpenGamesFolderTip" xml:space="preserve">
+    <value>Open the games folder (ux0:app): {0}</value>
   </data>
 </root>

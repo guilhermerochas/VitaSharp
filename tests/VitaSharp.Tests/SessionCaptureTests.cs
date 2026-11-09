@@ -227,4 +227,57 @@ public sealed class SessionCaptureTests : IDisposable
         Assert.True(File.Exists(Path.Combine(dir, "findings", "flash_p101.png")));
         Assert.True(File.Exists(Path.Combine(dir, "report.txt")));
     }
+
+    /// <summary>A capture folder of <paramref name="frames"/> moving pictures (the save's progress and zip tests).</summary>
+    string SimpleCapture(string name, int frames)
+    {
+        string dir = Path.Combine(_dir, name);
+        Directory.CreateDirectory(dir);
+        File.WriteAllText(Path.Combine(dir, "session.txt"), "title-id: TEST00000\ntitle: Test\nstart-ns: 0\n");
+        using var fs = File.Create(Path.Combine(dir, "frames.vsfr"));
+        FramesFile.WriteHeader(fs);
+        var enc = new FramesFile.Encoder();
+        for (int i = 0; i < frames; i++)
+        {
+            var (data, flags) = enc.Encode(Picture(i), W, H);
+            FramesFile.WriteRecord(fs, new PresentInfo { Present = i + 1, Flip = i, PresentNs = (i + 1) * 16_666_667L, IntervalMs = 16.7f, Hitch = "" }, flags, data);
+        }
+        return dir;
+    }
+
+    /// <summary>The analysis reports its progress (the "saving NN%" badge) and stops when the window closes while a
+    /// recording is saved (the close waits only for the files).</summary>
+    [Fact]
+    public void Analyzer_reports_progress_and_can_be_cancelled()
+    {
+        string dir = SimpleCapture("progress", 300);
+        var seen = new List<double>();
+        CaptureAnalyzer.Analyze(dir, quiet: true, progress: seen.Add, expectedFrames: 300);
+        Assert.NotEmpty(seen);
+        Assert.All(seen, p => Assert.InRange(p, 0, 1));
+        Assert.True(seen.Max() >= 0.5, $"progress reached only {seen.Max():F2}");
+        using var cts = new CancellationTokenSource();
+        cts.Cancel();
+        Assert.Throws<OperationCanceledException>(() => CaptureAnalyzer.Analyze(SimpleCapture("cancelled", 50), quiet: true, cancel: cts.Token));
+    }
+
+    /// <summary>The zip stores frames.vsfr (its pictures are compressed already: deflating 2 GB of them only cost time)
+    /// and reports the bytes written.</summary>
+    [Fact]
+    public void Zip_stores_the_frames_and_reports_progress()
+    {
+        string dir = SimpleCapture("zipped", 120);
+        File.WriteAllText(Path.Combine(dir, "log.txt"), string.Concat(Enumerable.Repeat("a log line that compresses well\n", 2000)));
+        string zip = dir + ".zip";
+        var seen = new List<double>();
+        SessionCapture.ZipFolder(dir, zip, seen.Add);
+        Assert.Equal(1.0, seen[^1], 3);
+        Assert.True(seen.Zip(seen.Skip(1)).All(p => p.Second >= p.First), "progress goes backwards");
+        using var z = System.IO.Compression.ZipFile.OpenRead(zip);
+        var frames = z.GetEntry("zipped/frames.vsfr")!;
+        Assert.Equal(new FileInfo(Path.Combine(dir, "frames.vsfr")).Length, frames.Length);
+        Assert.Equal(frames.Length, frames.CompressedLength); // stored
+        var log = z.GetEntry("zipped/log.txt")!;
+        Assert.True(log.CompressedLength < log.Length / 4); // deflated
+    }
 }

@@ -981,6 +981,14 @@ Lista de itens futuros do VitaSharp. Marque `[x]` quando um item for concluído.
 
 ## Código
 
+- [ ] Core libretro do VitaSharp (pedido do usuário, 08/11/2026; fazer depois do Android em velocidade nativa, porque
+  depende do mesmo trabalho de runtime): projeto novo `VitaSharp.Libretro` que expõe a API C do libretro (`retro_init`,
+  `retro_load_game`, `retro_run`, `retro_serialize`...) via NativeAOT (`[UnmanagedCallersOnly]`, DLL no Windows e `.so`
+  no Linux/Android). Vídeo pela interface Vulkan de hardware do libretro (RETRO_HW_CONTEXT_VULKAN: o renderizador
+  desenha nas imagens que o frontend dá), entrada pelo RetroPad + ponteiro (toque), áudio pelo `audio_sample_batch`,
+  estados salvos do VitaSharp no `retro_serialize` (rewind), firmware na pasta `system` do frontend. Sincronizar o
+  emulador multi-thread com o `retro_run` por quadro sem perder desempenho. Validar no RetroArch (Windows, Linux e
+  Android)
 - [x] Sugestão de layout novo para o launcher do desktop (pedido do usuário, 07/11/2026), como foi feito para o app
   Android: proposta de um visual moderno e próprio do VitaSharp (o usuário citou o Ryujinx só como exemplo de visual
   moderno, não como modelo a copiar): biblioteca de jogos com capas grandes, busca e filtros, página do jogo com
@@ -1283,7 +1291,14 @@ Lista de itens futuros do VitaSharp. Marque `[x]` quando um item for concluído.
   do filme (antes: 
 on-existing PPS 0 e nenhum quadro). Ainda aberto: depois da carga no meio do filme da abertura
   a imagem fica parada ~3,5 s e o filme pula para o fim (..._142721_tudo); o player do jogo não se recupera do
-  demuxer reaberto no quadro-chave. 99Vidas (PCSE00914, pedido do lead): o travamento depois de Load state: GPU
+  demuxer reaberto no quadro-chave. Agente B (08/11/2026, fix/bugs-b-1, não validado): o sceAvcdec guarda no estado
+  as unidades desde o último IDR e as decodifica de novo no decodificador recriado (descartando por pts as imagens já
+  mostradas), e o SceMp4 volta logo depois da última unidade lida em vez do quadro-chave. Do estado salvo no meio do
+  filme: antes a imagem parava ~3,5 s; com isso o filme segue certo ~1,4 s (casando quadro a quadro com a execução sem
+  carga) e depois o 'avPlayer VideoDec' do jogo para de decodificar (f168) enquanto o demux lê só áudio, imagem parada ~2,4 s
+  e salto. No NFS (filme de abertura, mesmo tipo de player) a imagem fica parada depois da carga com ou sem isso.
+  Falta achar o que o player do jogo espera depois da carga (provável: relógio/estado de áudio do filme)
+  99Vidas (PCSE00914, pedido do lead): o travamento depois de Load state: GPU
   backend replaced não reproduziu em 9 cargas com este build (headless, janela oculta, 6 cargas seguidas); o build
   do agente de produto (desk) recusa o save em f4000 porque um diálogo Msg do sistema está aberto, então o
   estado que travou foi salvo com esse diálogo aberto
@@ -1475,6 +1490,36 @@ on-existing PPS 0 e nenhum quadro). Ainda aberto: depois da carga no meio do fil
   preenchem todas as amostras pedidas e devolvem a contagem, como o ctrl_get do Vita3K; o jogo lê 2 amostras). Falta
   uma gravação com o carro em velocidade sem virar
   Confirmado pelo usuário (08/11/2026)
+  Causa (agente B, 08/11/2026): o jogo lê 2 amostras num buffer de 2 entradas zerado (lr 0x8100AB95), junta os botões
+  das duas e tira os analógicos só da 2ª; com 1 amostra escrita os analógicos ficavam em 0 (cima/esquerda inteiros), o
+  que também prendia o foco do diálogo do Origin (X em CONTINUE não fazia nada). Com o b3c16ca, do boot sem estado: X
+  passa o diálogo do Origin e A/D do teclado viram o carro na corrida (`scratchpad/bugsB1/nfs_b1_sheet.png`,
+  `nfs_steer_proof.png`)
+- [ ] Need for Speed Most Wanted (PCSE00089): depois de "trocar de carro" a tela fica preta (relato do usuário,
+  08/11/2026, `captures\PCSE00089_20261108_183918_tudo`, build 3261a98). Achados (agente B): reproduz no replay-gpu (388
+  quadros pretos). A cena é desenhada (HDR F16 e o tonemap em 0x60A99800 com conteúdo); o último passe (fs
+  3C7FBEE743D02522, LUT 16x2048) recebe da CPU escala 0,0795 / viés -0,0049 contra 0,9708 / 0,0135 numa corrida normal:
+  o próprio jogo segura um fade para o preto. Nesse momento um avPlayer novo (f7380) tem o 'avPlayer Demux' já Dormant
+  e o 'avPlayer VideoDec' esperando a condvar decbuff para sempre: o filme da troca de carro não entrega quadro e o fade
+  não volta. Antes disso o usuário trocou 1x->2x e 30->60 fps por hotkey. Rodando do estado da gravação com o build
+  3261a98: o filme é `UI/MOVIES/1689052.MP4` (prévia do carro, 348 KB, só vídeo, sem trilha de áudio, como todos os
+  1689xxx/1473xxx), o SceMp4 já tinha chegado ao fim (última unidade nula) e em 260 quadros nenhuma chamada
+  SceMp4/sceAvcdec acontece; a tela segue escura. Próximo: chegar à troca de carro sem estado (dirigir até um ponto de
+  troca) com trace do SceMp4/sceAvcdec desde a abertura do filme e ver o que o player do jogo (entry 0x816361B5) espera
+  de um filme sem áudio (fim de stream, sceMp4Reset para repetir, relógio de áudio)
+- [ ] Batman: Arkham Origins Blackgate (PCSE00269): som "estourado" e depois o jogo trava (fps 0) (relato do usuário,
+  08/11/2026, `captures\PCSE00269_20261108_185032_tudo`, build 3261a98). Achados (agente B): reproduz do estado da
+  gravação com o build 3261a98 (~250 quadros depois do estado): 'main' espera a eventflag AkManualEvent, o
+  'AK::EventManager' (Wwise) gira LockLwMutex/UnlockLwMutex2 em 0x81513A2C esperando um buffer de stream ([obj+0x9C] >
+  0) e o 'AK::IOThread' espera a eventflag CAkIOThread.Events (0xD, OR) sem nunca acordar; depois da carga a porta 1
+  só recebe silêncio (`scratchpad/bugsB1/bat1/audio`). O audio/ vazio da gravação combina com isso (o thread do Wwise
+  já não chamava sceAudioOutOutput quando o F8 começou). Protocolo (disassembly do eboot, só estudo): o IO thread do
+  Wwise espera 0xD em OR sem limpar; o bit 0x8 é ligado quando a contagem de pedidos pendentes (+0x40) passa de 0 para
+  1 sem pausa (+0x44) e desligado quando volta a 0 ou ao pausar (sceKernelClearEventFlag com o complemento, que o HLE
+  trata certo: Pattern &= bits); o bit 0x4 segue a contagem de +0x3C; 0x2 os slots livres (+0x48 contra +0x4). No
+  travamento a contagem de pendentes está em 0 (IO dormindo) e o EventManager espera dados de um stream: um pedido
+  sumiu ou nunca foi feito. As semânticas de eventflag/lwmutex do HLE conferem; falta seguir quem chama 0x81517354
+  (enfileira) e 0x815173CC/0x815173AE (pausa/retoma) perto do travamento. Causa ainda aberta
 - [ ] SILH00004 (homebrew, port de Silent Hill 4 com vitaGL): não rodava (relato do usuário, 08/11/2026). Feito
 - [x] SILH00004 (homebrew, port de Silent Hill 4 com vitaGL): não rodava (relato do usuário, 08/11/2026). Feito
   (agente C): módulo ausente devolve o erro do Vita em vez de exceção do host (bf378ec, aviso no log de como extrair o
@@ -2829,3 +2874,12 @@ fs8):
   são o gargalo (AAC 5 ms, H.264 12,8 ms por chamada, MediaExtractor 0,4 ms); falta ver as threads do player do jogo
   (simpleperf). Comparar também os dumps de áudio de F1 (menu e corrida) e God of War com o PC (`vitasharp-perf
   audio-check`): 245 e 157 estalos no celular
+- **Silent Hill 4 port (SILH00004), "a visualização tá zuada" (08/11/2026, capture SILH00004_20261108_211441, not
+  solved):** checked so far: the depth-clamp change (580f464) does not touch it (replay with and without it:
+  pixel-identical); the post pass (scene 640x362 -> 0x60F8CC00 -> back) does not blur or darken it (the scene target
+  before it looks the same); the BC1/BC2 swizzled-arbitrary atlases decode to plausible (dark, rusty) art; the
+  stencil-masked effect target 0x613EF000 stays empty because no draw in that frame writes a non-zero stencil (so
+  the composite is a no-op, which may be right). Real Vita footage (YouTube i1CuZULiQ6w) shows a much brighter,
+  grey-green apartment, but not the same spot. Next: a Vita3K picture at the same save (its Vulkan window comes out
+  white with PrintWindow: capture it another way), and ask the user what exactly looks wrong. The title menu's
+  Continue stays grey with the user's sh4.sav copied (the save is read whole, 694288 bytes); Load is enabled.
