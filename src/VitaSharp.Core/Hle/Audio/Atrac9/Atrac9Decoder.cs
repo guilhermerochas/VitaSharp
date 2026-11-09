@@ -112,13 +112,22 @@ namespace VitaSharp.Core.Hle.Audio.Atrac9
                     short[] pcmDest = pcmOut[channelNum++];
                     for (int d = 0, s = start; s < endSample; d++, s++)
                     {
-                        double sample = pcmSrc[d];
-                        // Not using Math.Round because it's ~20x slower on 64-bit
-                        int roundedSample = (int)Math.Floor(sample + 0.5);
-                        pcmDest[s] = Helpers.Clamp16(roundedSample);
+                        pcmDest[s] = RoundToPcm16(pcmSrc[d]);
                     }
                 }
             }
+        }
+
+        /// <summary>floor(x + 0.5) clamped to 16 bits, without Math.Floor (a libm call per sample under Mono's AOT).</summary>
+        internal static short RoundToPcm16(double sample)
+        {
+            double x = sample + 0.5;
+            if (double.IsNaN(x)) return 0; // (int)Math.Floor(NaN) is 0 (saturating conversion)
+            if (x <= short.MinValue) return short.MinValue;
+            if (x >= short.MaxValue) return short.MaxValue;
+            int r = (int)x; // truncates toward zero
+            if (r > x) r--; // floor for negatives
+            return (short)r;
         }
 
         private static void DecodeFrame(BitReader reader, Frame frame)
