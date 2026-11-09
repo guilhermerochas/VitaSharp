@@ -872,7 +872,49 @@ public sealed unsafe partial class VulkanRenderer
         public long LastUsedFrame;
     }
 
-    readonly Dictionary<(RenderTarget, uint, uint, uint, uint, uint, bool), RtRegion> _rtRegions = new();    static readonly bool RegionCopySkip = Environment.GetEnvironmentVariable(EnvVars.RegionCopySkip) == "1";
+    readonly Dictionary<(RenderTarget, uint, uint, uint, uint, uint, bool), RtRegion> _rtRegions = new();
+
+    /// <summary>VITASHARP_REGION_COPY_REUSE=0 copies a region again after every change of its surface (A/B).</summary>
+    static readonly bool RegionCopyReuse = Environment.GetEnvironmentVariable(EnvVars.RegionCopyReuse)?.Trim() != "0";
+    long _statRegionReused;
+
+    /// <summary>A draw into <paramref name="rt"/> was recorded (its <see cref="RenderTarget.Version"/> already bumped):
+    /// logs the rectangle it can write, its region clip and viewport (<see cref="SetDrawArea"/>) grown by a margin for
+    /// wide points and lines. A draw without such bounds is not logged, so no region copy outlives it.</summary>
+    void LogDraw(RenderTarget rt)
+    {
+        if (_drawMinX <= 0 && _drawMinY <= 0 && _drawMaxX == int.MaxValue && _drawMaxY == int.MaxValue) return;
+        const int margin = 4;
+        rt.DrawLog[rt.DrawLogNext] = (rt.Version, _drawMinX - margin, _drawMinY - margin,
+            _drawMaxX >= int.MaxValue - margin ? int.MaxValue : _drawMaxX + margin, _drawMaxY >= int.MaxValue - margin ? int.MaxValue : _drawMaxY + margin);
+        rt.DrawLogNext = (rt.DrawLogNext + 1) % rt.DrawLog.Length;
+    }
+
+    /// <summary>A version bump that changes no pixel (a rendering begun with the colour loaded): logged with an empty
+    /// rectangle, so a mid-scene break between two draws does not invalidate the region copies.</summary>
+    static void LogUnchanged(RenderTarget rt)
+    {
+        rt.DrawLog[rt.DrawLogNext] = (rt.Version, 0, 0, -1, -1);
+        rt.DrawLogNext = (rt.DrawLogNext + 1) % rt.DrawLog.Length;
+    }
+
+    /// <summary>Every change of <paramref name="rt"/> after version <paramref name="since"/> was a logged draw outside
+    /// the rectangle (guest pixels). Any other change (clear, upload, resolve, programmable-blending pass, a draw
+    /// without bounds) bumps the version without a log entry, so the counts differ and the region is copied again.</summary>
+    static bool RegionUntouchedSince(RenderTarget rt, long since, uint x, uint y, uint w, uint h)
+    {
+        long changes = rt.Version - since;
+        if (changes <= 0 || changes > rt.DrawLog.Length) return false;
+        long x1 = (long)x + w - 1, y1 = (long)y + h - 1;
+        int logged = 0;
+        foreach (var e in rt.DrawLog)
+        {
+            if (e.V <= since || e.V > rt.Version) continue;
+            if (e.X0 <= x1 && e.X1 >= x && e.Y0 <= y1 && e.Y1 >= y) return false;
+            logged++;
+        }
+        return logged == changes;
+    }    static readonly bool RegionCopySkip = Environment.GetEnvironmentVariable(EnvVars.RegionCopySkip) == "1";
 
     /// <summary>True when <paramref name="rt"/> is the only colour target whose memory intersects [addr, addr + bytes).</summary>
     bool OnlyTargetIn(RenderTarget rt, uint addr, uint bytes)
@@ -915,6 +957,9 @@ public sealed unsafe partial class VulkanRenderer
         }
         r.LastUsedFrame = FrameCount;
         if (r.Version == rt.Version) return r.View;
+        // only draws elsewhere in the surface since the copy (an atlas of post-processing passes, each drawing into its
+        // own part and reading another): the copy is still current
+        if (r.Version >= 0 && RegionCopyReuse && RegionUntouchedSince(rt, r.Version, x, y, w, h)) { r.Version = rt.Version; _statRegionReused++; return r.View; }
         // VITASHARP_REGION_COPY_SKIP=1 (measurement only, wrong picture): an existing region is not refreshed, to bound what
         // the copies cost on a tiler
         if (RegionCopySkip && r.Version >= 0) return r.View;

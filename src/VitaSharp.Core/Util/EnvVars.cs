@@ -358,6 +358,8 @@ public static class EnvVars
     /// <summary>1 (measurement only, wrong picture): render-target regions sampled as textures are copied once and never
     /// refreshed, to bound the GPU cost of those copies (bench).</summary>
     public const string RegionCopySkip = "VITASHARP_REGION_COPY_SKIP";
+    /// <summary>0 = a render-target region is copied again after every change of its surface, even when only other parts changed (A/B; VulkanRenderer.Textures.cs).</summary>
+    public const string RegionCopyReuse = "VITASHARP_REGION_COPY_REUSE";
     /// <summary>Emulator updates: the releases feed to check instead of the GitHub API of the build's repository (a URL
     /// with the API's JSON, or a folder with releases.json whose assets are file:// URLs; tests).</summary>
     public const string UpdateFeed = "VITASHARP_UPDATE_FEED";
