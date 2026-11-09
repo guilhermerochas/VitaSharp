@@ -62,8 +62,8 @@ public sealed unsafe partial class VulkanRenderer
 
     void NoteBlockedCaller(RetireCause cause, long ticks)
     {
-        var frames = new StackTrace(2, false).GetFrames();
-        var names = frames.Select(f => f.GetMethod()?.Name ?? "?").Where(n => n is not ("RetireFrame" or "WaitFrameFence")).Take(3);
+        var names = new StackTrace(2, false).GetFrames().Select(f => DiagnosticMethodInfo.Create(f)?.Name ?? "?")
+            .Where(n => n is not ("RetireFrame" or "WaitFrameFence")).Take(3);
         string key = $"{cause}:{string.Join("<", names)}";
         var (n, t) = _blockedCallers.GetValueOrDefault(key);
         _blockedCallers[key] = (n + 1, t + ticks);
