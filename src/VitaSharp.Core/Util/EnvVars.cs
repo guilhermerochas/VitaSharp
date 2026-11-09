@@ -322,6 +322,9 @@ public static class EnvVars
     /// before them, not once the GPU finished it; writebacks and visibility results reach memory when their frame
     /// retires (the guest may read them a frame late). Default 0.</summary>
     public const string RelaxedGpuSync = "VITASHARP_GPU_RELAXED_SYNC";
+    /// <summary>half (A/B): the generated shaders declare the GXP's half-register values, F16 varyings and F16/U8/C10
+    /// colour outputs mediump (RelaxedPrecision), as Vita3K does. Default off (everything highp).</summary>
+    public const string ShaderFp16 = "VITASHARP_SHADER_FP16";
     /// <summary>Emulator updates: the releases feed to check instead of the GitHub API of the build's repository (a URL
     /// with the API's JSON, or a folder with releases.json whose assets are file:// URLs; tests).</summary>
     public const string UpdateFeed = "VITASHARP_UPDATE_FEED";

@@ -205,6 +205,7 @@ public sealed unsafe partial class VulkanRenderer : IGpuBackend
             : Core.Gxm.Shader.ShaderGenerator.FarPlaneClip.Hardware;
         // memory stores of GXM programs write the mirror of guest memory (VulkanRenderer.Mapped.cs) where allowed
         Core.Gxm.Shader.ShaderGenerator.VertexStores = _core.VertexStores;
+        Core.Gxm.Shader.ShaderGenerator.RelaxHalfPrecision = Environment.GetEnvironmentVariable(EnvVars.ShaderFp16)?.Trim() == "half";
         Core.Gxm.Shader.ShaderGenerator.FragmentStores = _core.FragmentStores;
         for (int i = 0; i < FramesInFlight; i++) _frames[i] = CreateFrame();
         CreateLayouts();
