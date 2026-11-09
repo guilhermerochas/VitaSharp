@@ -1119,6 +1119,9 @@ public sealed unsafe partial class VulkanRenderer
         }
 
         bool stencil = !(IsTrivial(front.Stencil) && IsTrivial(back.Stencil));
+        // VITASHARP_DEPTH_OPS_NONE: what the pending tiled renderings do with depth/stencil (a stencil test counts as a write)
+        _chainDepthUse |= depthTest || stencil;
+        _chainDepthWrite |= front.DepthWrite || back.DepthWrite || stencil;
         if (!staticEds && (!valid || stencil != _dyn.Stencil)) { _cmd.CmdSetStencilTestEnable(cmd, stencil); _dyn.Stencil = stencil; }
         if (stencil)
         {

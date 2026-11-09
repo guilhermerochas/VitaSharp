@@ -72,7 +72,8 @@ public sealed unsafe partial class VulkanRenderer
     /// <summary>"load/store: colour L/C/D a/b/c S/D d/e, depth ..." for the PERF gpu line.</summary>
     string LoadStoreReport() =>
         $"load/store ops{(TiledRenderings ? " (tile-based" : " (desktop")}, {_tileDeferred} deferred single-sampled renderings{(RenderAreaTrim ? $", {_statTrimmed} begun over {100 * _statTrimFraction / Math.Max(1, _statTrimmed):F0}% of their surface on average" : "")}): colour load {_colorLoads[0]}/clear {_colorLoads[1]}/dont-care {_colorLoads[2]}, store {_colorStores[0]}/dont-care {_colorStores[1]}; " +
-        $"depth load {_depthLoads[0]}/clear {_depthLoads[1]}/dont-care {_depthLoads[2]}, store {_depthStores[0]}/dont-care {_depthStores[1]}; {SceneBreakReport()}";
+        $"depth load {_depthLoads[0]}/clear {_depthLoads[1]}/dont-care {_depthLoads[2]}, store {_depthStores[0]}/dont-care {_depthStores[1]}" +
+        (DepthOpsNone ? $" (NONE: {_statDepthNone} untouched, {_statDepthReadOnly} read-only)" : "") + $"; {SceneBreakReport()}";
 
     /// <summary>Opens a single-sampled scene rendering in a secondary command buffer.</summary>
     /// <param name="wordView">the scene's tile-word attachment (colour attachment 1), default = none</param>
@@ -86,7 +87,7 @@ public sealed unsafe partial class VulkanRenderer
         // merge: the renderings ended since the primary was last touched continue on the same attachments
         if (_chain.Count > 0 && !(_chainScene == _sceneSerial && SameAttachments(in _chainPass, in _tilePass))) FlushChain(false);
         if (_chain.Count > 0) _statMerged++;
-        else { _chainStartSerial = _renderingSerial; ResetDrawn(); }
+        else { _chainStartSerial = _renderingSerial; ResetDrawn(); _chainDepthUse = _chainDepthWrite = false; }
         var cb = AllocSecondary();
         var fmt = stackalloc Format[2] { colorFormat, TileWord1Format };
         var rii = new CommandBufferInheritanceRenderingInfo
@@ -157,6 +158,15 @@ public sealed unsafe partial class VulkanRenderer
             LoadOp = AttachmentLoadOp.Load, StoreOp = AttachmentStoreOp.Store,
         };
         var depthStore = keepDepth ? AttachmentStoreOp.Store : AttachmentStoreOp.DontCare;
+        // VITASHARP_DEPTH_OPS_NONE: depth/stencil that no draw of these renderings tests or writes is neither loaded nor
+        // stored (NONE keeps the image's memory as it is); one that is only tested is loaded but not stored. Post-processing
+        // passes over a surface (Killzone: ~25 per frame) loaded and stored the whole depth/stencil buffer each time.
+        if (DepthOpsNone && TiledRenderings && _core.LoadStoreOpNone && p.DepthLoad == AttachmentLoadOp.Load)
+        {
+            if (!_chainDepthUse) { p.DepthLoad = LoadOpNone; depthStore = StoreOpNone; _statDepthNone++; }
+            else if (!_chainDepthWrite && keepDepth) { depthStore = StoreOpNone; _statDepthReadOnly++; }
+        }
+        _chainDepthUse = _chainDepthWrite = false;
 #if VITASHARP_DEVELOPER
         DevRenderingOps(ref p.DepthLoad, ref depthStore);
 #endif
@@ -202,6 +212,14 @@ public sealed unsafe partial class VulkanRenderer
 #endif
     }
 
+
+    /// <summary>VITASHARP_DEPTH_OPS_NONE=1 (A/B): see <see cref="FlushChain"/>.</summary>
+    static readonly bool DepthOpsNone = Environment.GetEnvironmentVariable(Core.Util.EnvVars.DepthOpsNone)?.Trim() == "1";
+    const AttachmentLoadOp LoadOpNone = (AttachmentLoadOp)1000400000;
+    const AttachmentStoreOp StoreOpNone = (AttachmentStoreOp)1000301000;
+    /// <summary>A draw of the pending renderings tests (or writes) depth/stencil (set in SetDynamicState).</summary>
+    bool _chainDepthUse, _chainDepthWrite;
+    long _statDepthNone, _statDepthReadOnly;
 
     /// <summary>VITASHARP_RENDER_AREA_TRIM=1: see <see cref="ChainRenderArea"/>.</summary>
     static readonly bool RenderAreaTrim = Environment.GetEnvironmentVariable(Core.Util.EnvVars.RenderAreaTrim)?.Trim() == "1";

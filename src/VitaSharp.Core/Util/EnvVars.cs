@@ -338,6 +338,9 @@ public static class EnvVars
     public const string TransferWritebackWait = "VITASHARP_TRANSFER_WRITEBACK_WAIT";
     /// <summary>1: the PERF sync line attributes every blocking GPU fence wait of the worker to its callers (stack).</summary>
     public const string SyncCallers = "VITASHARP_SYNC_CALLERS";
+    /// <summary>1 (A/B, tile-based GPUs with VK_*_load_store_op_none): depth/stencil that no draw of a rendering tests or
+    /// writes is neither loaded nor stored; only tested, it is not stored. Default off.</summary>
+    public const string DepthOpsNone = "VITASHARP_DEPTH_OPS_NONE";
     /// <summary>Emulator updates: the releases feed to check instead of the GitHub API of the build's repository (a URL
     /// with the API's JSON, or a folder with releases.json whose assets are file:// URLs; tests).</summary>
     public const string UpdateFeed = "VITASHARP_UPDATE_FEED";
