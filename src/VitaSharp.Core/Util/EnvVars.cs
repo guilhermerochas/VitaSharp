@@ -336,6 +336,8 @@ public static class EnvVars
     /// <summary>0 (A/B): a CPU transfer does not wait for a render-target writeback still in flight over its source (it may
     /// read the previous content, as before 240a8de). Default on.</summary>
     public const string TransferWritebackWait = "VITASHARP_TRANSFER_WRITEBACK_WAIT";
+    /// <summary>1: the PERF sync line attributes every blocking GPU fence wait of the worker to its callers (stack).</summary>
+    public const string SyncCallers = "VITASHARP_SYNC_CALLERS";
     /// <summary>Emulator updates: the releases feed to check instead of the GitHub API of the build's repository (a URL
     /// with the API's JSON, or a folder with releases.json whose assets are file:// URLs; tests).</summary>
     public const string UpdateFeed = "VITASHARP_UPDATE_FEED";
