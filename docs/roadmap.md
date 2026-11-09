@@ -136,6 +136,14 @@ Lista de itens futuros do VitaSharp. Marque `[x]` quando um item for concluído.
 
 ## Desempenho (PC)
 
+- [ ] Avaliar a versão nova do .NET para desempenho (pedido do usuário, 09/11/2026), desktop e Android: ler as notas
+  oficiais de desempenho da versão (blog "Performance Improvements in .NET" e release notes: JIT/RyuJIT ARM64 e x64,
+  NativeAOT, GC, SIMD/Vector, interop) e listar o que toca o emulador (JIT do guest em C#, renderer, HLE, áudio).
+  Depois medir de verdade, sem trocar a main: build numa branch com o SDK novo, desktop (Killzone, Uncharted, F1, Sonic
+  Mania: entradas HLE/ms de CPU por quadro) e Android NativeAOT no celular (protocolo do laboratório:
+  `build/android-perf-run.sh`, Killzone na escada, F1 corrida, fps de vazão real). Hoje: .NET 10.0.9, Android em
+  NativeAOT (experimental no 10; ver se fica estável/maduro na versão nova e se as três correções de build do NativeAOT
+  ainda são precisas). Só trocar se ganhar de forma estável nos dois
 - [x] Resolução interna maior, no estilo do PCSX2 (pedido do usuário, 07/11/2026), no desktop: "Resolução interna" por
   jogo no painel do jogo do launcher (1x nativa padrão, 2x, 3x, 4x; `--res-scale=2|3|4`, `VITASHARP_RES_SCALE`),
   estendendo `VulkanRenderer.ResScale.cs` a fatores inteiros acima de 1. Acima do nativo, texturas de stencil e as
