@@ -51,6 +51,10 @@
 
     <!-- phones (arm64-v8a) and the x86_64 Android emulator; 32-bit ABIs are not supported (4 GiB guest reservation) -->
     <RuntimeIdentifiers>android-arm64;android-x64</RuntimeIdentifiers>
+    <!-- `-r <rid>` (a phone: android-arm64, the emulator: android-x64) builds and AOT-compiles only that ABI; without
+         it the APK carries both. .NET for Android otherwise still AOT-compiles every RuntimeIdentifiers entry, which
+         doubles the LLVM AOT time of a local -r android-arm64 build -->
+    <RuntimeIdentifiers Condition="'$(RuntimeIdentifier)' != ''">$(RuntimeIdentifier)</RuntimeIdentifiers>
     <AndroidPackageFormat>apk</AndroidPackageFormat>
 
     <!--
