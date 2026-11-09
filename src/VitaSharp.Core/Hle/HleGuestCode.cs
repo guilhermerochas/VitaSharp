@@ -1,4 +1,4 @@
-﻿using VitaSharp.Core.Loader;
+using VitaSharp.Core.Loader;
 using VitaSharp.Core.Memory;
 using VitaSharp.Core.Util;
 
@@ -6,7 +6,8 @@ namespace VitaSharp.Core.Hle;
 
 /// <summary>
 /// HLE functions implemented as guest ARM code instead of an SVC into C#. On the Vita these are user-mode library code
-/// (libgxm's precomputed-state packing: a few loads and stores on memory whose layout is ours). As guest code they are
+/// (libgxm's precomputed-state packing: a few loads and stores on memory whose layout is ours; SceLibKernel's TLS lookups
+/// and small Clib copies and fills). As guest code they are
 /// compiled with the caller's blocks and linked like any other call, so a call costs a few native instructions instead
 /// of a round trip through the HLE dispatcher (on the phone, a native-to-managed transition per call; F1 2011 makes
 /// thousands per frame). Each routine returns exactly what its C# twin in Gxm.cs returns, checks in the same order.
@@ -141,29 +142,152 @@ public static class HleGuestCode
         BxLr,
     ];
 
-    /// <summary>VITASHARP_HLE_GUEST_CODE=precomputed: only the precomputed-state routines (not the context's cull and
-    /// polygon-mode setters).</summary>
-    static readonly bool ContextModes = Environment.GetEnvironmentVariable(EnvVars.HleGuestCode) != "precomputed";
+    // ------------------------------------------------------------------ SceLibKernel's hot leaf functions
+    //
+    // A game's own code calls these thousands of times per frame (Sonic Mania's loader ~4,700 sceClibMemcpy and ~4,600
+    // sceKernelGetTLSAddr per frame): through an SVC each one left native code for the C# dispatcher and came back,
+    // which cost far more than the work. On the Vita they are user-mode SceLibKernel code too (the TLS lookups read
+    // TPIDRURO, Clib's memcpy is a plain copy loop). Like PPSSPP's replacement table (Replace_memcpy & co. charge
+    // ~10 + bytes / 4 cycles) and the inline TPIDRRO_EL0 read of Ryujinx's ARMeilleure, the common case never leaves
+    // compiled code. Copies and fills longer than SmallCopy (where the host copy wins over the guest loop) and
+    // overlapping copies whose destination is above the source (memmove's backward case) take the C# version.
 
-    static readonly (string Name, uint[] Code)[] ContextModeRoutines =
+    /// <summary>The longest copy or fill the guest loops below do themselves (bytes; above it the C# version runs).</summary>
+    const uint SmallCopy = 256;
+    const uint SmallCopyImm = 0xC01; // the A32 modified immediate of SmallCopy (0x01 ror 24)
+
+    /// <summary>A32 B/BL-style branch from word <paramref name="from"/> to word <paramref name="to"/> of the same routine.</summary>
+    static uint Branch(uint cond, int from, int to) => (cond << 28) | 0x0A000000 | ((uint)(to - from - 2) & 0xFFFFFF);
+
+    const uint HI = 0x8, MI = 0x4, PL = 0x5;
+
+    /// <summary>sceKernelGetThreadId(): the thread UID from the kernel TLS word TlsThreadId (Kernel/GuestThread.InitTls),
+    /// which sits 0x800 - 4 bytes below TPIDRURO (the user TLS: GuestThread.Start).</summary>
+    static readonly uint[] GetThreadId =
     [
-        ("sceGxmSetCullMode", SetContextByte(VitaSharp.Core.Gxm.GxmContext.CullModeOffset)),
-        ("sceGxmSetFrontPolygonMode", SetContextByteShift15(VitaSharp.Core.Gxm.GxmContext.FrontPolygonModeOffset)),
-        ("sceGxmSetBackPolygonMode", SetContextByteShift15(VitaSharp.Core.Gxm.GxmContext.BackPolygonModeOffset)),
+        0xEE1D0F70, // mrc p15, 0, r0, c13, c0, 3   TPIDRURO
+        0xE51007FC, // ldr r0, [r0, #-0x7FC]        kernel TLS word 1
+        BxLr,
     ];
 
-    static readonly (string Name, uint[] Code)[] Routines =
+    /// <summary>sceKernelGetTLSAddr(key) (ThreadMgr.cs): kernel TLS base + key * 4 for key 0..0xFF, else NULL.</summary>
+    static readonly uint[] GetTlsAddr =
     [
-        ("sceGxmPrecomputedVertexStateSetUniformBuffer", SetUniformBuffer),
-        ("sceGxmPrecomputedFragmentStateSetUniformBuffer", SetUniformBuffer),
-        ("sceGxmPrecomputedVertexStateGetDefaultUniformBuffer", GetDefaultUniformBuffer),
-        ("sceGxmPrecomputedFragmentStateGetDefaultUniformBuffer", GetDefaultUniformBuffer),
-        ("sceGxmSetPrecomputedVertexState", SetContextWord(VitaSharp.Core.Gxm.GxmContext.PrecomputedVertexStateOffset)),
-        ("sceGxmSetPrecomputedFragmentState", SetContextWord(VitaSharp.Core.Gxm.GxmContext.PrecomputedFragmentStateOffset)),
-        ("sceGxmTextureSetUAddrModeSafe", SetAddrModeSafe(6)),
-        ("sceGxmTextureSetVAddrModeSafe", SetAddrModeSafe(3)),
-        ("sceGxmSetUniformDataF", SetUniformDataF),
-        .. (ContextModes ? ContextModeRoutines : Array.Empty<(string, uint[])>()),
+        0xE3500C01, // cmp r0, #0x100   (unsigned: a negative key is out of range too)
+        0x23A00000, // movhs r0, #0
+        0x212FFF1E, // bxhs lr
+        0xEE1D1F70, // mrc p15, 0, r1, c13, c0, 3
+        0xE2411B02, // sub r1, r1, #0x800
+        0xE0810100, // add r0, r1, r0, lsl #2
+        BxLr,
+    ];
+
+    /// <summary>sceClibMemcpy / _safe / Memmove(dst, src, len) (ProcessMgr.cs: memmove semantics, returns dst): a forward
+    /// copy, 16 bytes per loop, then words, then bytes (unaligned word accesses are allowed on ARMv7). A copy whose
+    /// destination lies in [src, src + len) needs the backward order: it falls back, like any copy over SmallCopy.</summary>
+    static readonly uint[] Memcpy =
+    [
+        0xE3520000 | SmallCopyImm, //  0 cmp r2, #SmallCopy
+        Branch(HI, 1, 31),         //  1 bhi fallback
+        0xE040C001,                //  2 sub r12, r0, r1
+        0xE15C0002,                //  3 cmp r12, r2         dst - src < len: dst inside the source
+        Branch(LO, 4, 31),         //  4 blo fallback
+        0xE1A0C000,                //  5 mov r12, r0         destination cursor (r0 is returned)
+        0xE2522010,                //  6 subs r2, r2, #16
+        Branch(LO, 7, 18),         //  7 blo words
+        0xE4913004,                //  8 l16: ldr r3, [r1], #4
+        0xE48C3004,                //  9 str r3, [r12], #4
+        0xE4913004, 0xE48C3004,    // 10, 11
+        0xE4913004, 0xE48C3004,    // 12, 13
+        0xE4913004, 0xE48C3004,    // 14, 15
+        0xE2522010,                // 16 subs r2, r2, #16
+        Branch(HS, 17, 8),         // 17 bhs l16
+        0xE292200C,                // 18 words: adds r2, r2, #12   (r2 = left - 4)
+        Branch(MI, 19, 24),        // 19 bmi bytes
+        0xE4913004,                // 20 w4: ldr r3, [r1], #4
+        0xE48C3004,                // 21 str r3, [r12], #4
+        0xE2522004,                // 22 subs r2, r2, #4
+        Branch(PL, 23, 20),        // 23 bpl w4
+        0xE2922004,                // 24 bytes: adds r2, r2, #4   (r2 = left, 0..3)
+        0x012FFF1E,                // 25 bxeq lr
+        0xE4D13001,                // 26 b1: ldrb r3, [r1], #1
+        0xE4CC3001,                // 27 strb r3, [r12], #1
+        0xE2522001,                // 28 subs r2, r2, #1
+        Branch(NE, 29, 26),        // 29 bne b1
+        BxLr,                      // 30
+        FallbackSvc,               // 31 fallback: the C# version (r0-r2 untouched)
+        BxLr,                      // 32
+    ];
+
+    /// <summary>sceClibMemset(dst, ch, len) (ProcessMgr.cs: the low byte of ch, returns dst), in the same shape as
+    /// <see cref="Memcpy"/>.</summary>
+    static readonly uint[] Memset =
+    [
+        0xE3520000 | SmallCopyImm, //  0 cmp r2, #SmallCopy
+        Branch(HI, 1, 25),         //  1 bhi fallback
+        0xE20110FF,                //  2 and r1, r1, #0xFF
+        0xE1811401,                //  3 orr r1, r1, r1, lsl #8
+        0xE1811801,                //  4 orr r1, r1, r1, lsl #16
+        0xE1A0C000,                //  5 mov r12, r0
+        0xE2522010,                //  6 subs r2, r2, #16
+        Branch(LO, 7, 14),         //  7 blo words
+        0xE48C1004,                //  8 l16: str r1, [r12], #4
+        0xE48C1004, 0xE48C1004, 0xE48C1004, //  9-11
+        0xE2522010,                // 12 subs r2, r2, #16
+        Branch(HS, 13, 8),         // 13 bhs l16
+        0xE292200C,                // 14 words: adds r2, r2, #12
+        Branch(MI, 15, 19),        // 15 bmi bytes
+        0xE48C1004,                // 16 w4: str r1, [r12], #4
+        0xE2522004,                // 17 subs r2, r2, #4
+        Branch(PL, 18, 16),        // 18 bpl w4
+        0xE2922004,                // 19 bytes: adds r2, r2, #4
+        0x012FFF1E,                // 20 bxeq lr
+        0xE4CC1001,                // 21 b1: strb r1, [r12], #1
+        0xE2522001,                // 22 subs r2, r2, #1
+        Branch(NE, 23, 21),        // 23 bne b1
+        BxLr,                      // 24
+        FallbackSvc,               // 25 fallback
+        BxLr,                      // 26
+    ];
+
+    /// <summary>VITASHARP_HLE_GUEST_CODE=precomputed: only the precomputed-state routines (not the context's cull and
+    /// polygon-mode setters); =gxm: only libgxm's routines (not SceLibKernel's).</summary>
+    static readonly string? Mode = Environment.GetEnvironmentVariable(EnvVars.HleGuestCode);
+    static readonly bool ContextModes = Mode != "precomputed";
+    static readonly bool KernelRoutines = Mode is not ("precomputed" or "gxm");
+
+    const string Gxm = "SceGxm", LibKernel = "SceLibKernel";
+
+    static readonly (string Name, string Library, uint[] Code)[] ContextModeRoutines =
+    [
+        ("sceGxmSetCullMode", Gxm, SetContextByte(VitaSharp.Core.Gxm.GxmContext.CullModeOffset)),
+        ("sceGxmSetFrontPolygonMode", Gxm, SetContextByteShift15(VitaSharp.Core.Gxm.GxmContext.FrontPolygonModeOffset)),
+        ("sceGxmSetBackPolygonMode", Gxm, SetContextByteShift15(VitaSharp.Core.Gxm.GxmContext.BackPolygonModeOffset)),
+    ];
+
+    static readonly (string Name, string Library, uint[] Code)[] KernelLeafRoutines =
+    [
+        ("sceKernelGetThreadId", LibKernel, GetThreadId),
+        ("sceKernelGetTLSAddr", LibKernel, GetTlsAddr),
+        ("sceClibMemcpy", LibKernel, Memcpy),
+        ("sceClibMemcpy_safe", LibKernel, Memcpy),
+        ("sceClibMemmove", LibKernel, Memcpy),
+        ("sceClibMemset", LibKernel, Memset),
+    ];
+
+    static readonly (string Name, string Library, uint[] Code)[] Routines =
+    [
+        ("sceGxmPrecomputedVertexStateSetUniformBuffer", Gxm, SetUniformBuffer),
+        ("sceGxmPrecomputedFragmentStateSetUniformBuffer", Gxm, SetUniformBuffer),
+        ("sceGxmPrecomputedVertexStateGetDefaultUniformBuffer", Gxm, GetDefaultUniformBuffer),
+        ("sceGxmPrecomputedFragmentStateGetDefaultUniformBuffer", Gxm, GetDefaultUniformBuffer),
+        ("sceGxmSetPrecomputedVertexState", Gxm, SetContextWord(VitaSharp.Core.Gxm.GxmContext.PrecomputedVertexStateOffset)),
+        ("sceGxmSetPrecomputedFragmentState", Gxm, SetContextWord(VitaSharp.Core.Gxm.GxmContext.PrecomputedFragmentStateOffset)),
+        ("sceGxmTextureSetUAddrModeSafe", Gxm, SetAddrModeSafe(6)),
+        ("sceGxmTextureSetVAddrModeSafe", Gxm, SetAddrModeSafe(3)),
+        ("sceGxmSetUniformDataF", Gxm, SetUniformDataF),
+        .. (ContextModes ? ContextModeRoutines : []),
+        .. (KernelRoutines ? KernelLeafRoutines : []),
     ];
 
     static readonly Dictionary<uint, int> RoutineByNid = BuildNidTable();
@@ -173,26 +297,29 @@ public static class HleGuestCode
         var d = new Dictionary<uint, int>();
         for (int i = 0; i < Routines.Length; i++)
             foreach (var n in NidDatabase.LookupName(Routines[i].Name))
-                if (n.Library == "SceGxm") d[n.Nid] = i;
+                if (n.Library == Routines[i].Library) d[n.Nid] = i;
         return d;
     }
 
     /// <summary>True when <paramref name="nid"/> has a guest-code implementation.</summary>
     public static bool Has(uint nid) => Enabled && RoutineByNid.ContainsKey(nid);
 
-    // the routines of each address space use (AddressSpace.Id): written once, on the first import that needs them
-    static readonly Dictionary<(AddressSpace, int), uint[]> Placed = new();
+    // the routines of each address space use (AddressSpace.Id) and HLE registry (the SVC numbers of the fallbacks are the
+    // registry's: processes sharing one space, or tests, each get their own copy): written once, on the first import
+    static readonly Dictionary<(AddressSpace, int, object), uint[]> Placed = new();
 
-    static uint NidOf(string name) => NidDatabase.LookupName(name).First(n => n.Library == "SceGxm").Nid;
+    static uint NidOf(int routine) => NidDatabase.LookupName(Routines[routine].Name).First(n => n.Library == Routines[routine].Library).Nid;
 
     /// <summary>Guest address (ARM) of the routine for <paramref name="nid"/> in the calling thread's address space, or 0.
-    /// <paramref name="svcIndexOf"/> gives the SVC number of a NID's C# version (for <see cref="FallbackSvc"/>).</summary>
-    public static uint AddressOf(uint nid, GuestMemory memory, Func<uint, uint> svcIndexOf)
+    /// <paramref name="svcIndexOf"/> gives the SVC number of a NID's C# version (for <see cref="FallbackSvc"/>) in the registry
+    /// <paramref name="owner"/> (null: the delegate itself names it).</summary>
+    public static uint AddressOf(uint nid, GuestMemory memory, Func<uint, uint> svcIndexOf, object? owner = null)
     {
         if (!Enabled || !RoutineByNid.TryGetValue(nid, out int index) || AddressSpace.Current is not { } space) return 0;
         lock (Placed)
         {
-            if (!Placed.TryGetValue((space, space.Id), out var addrs))
+            var key = (space, space.Id, owner ?? svcIndexOf);
+            if (!Placed.TryGetValue(key, out var addrs))
             {
                 uint bytes = 0;
                 foreach (var r in Routines) bytes += (uint)r.Code.Length * 4;
@@ -203,11 +330,11 @@ public static class HleGuestCode
                     addrs[i] = at;
                     foreach (uint w in Routines[i].Code)
                     {
-                        GuestMemory.W32(at, w == FallbackSvc ? 0xEF000000 | (svcIndexOf(NidOf(Routines[i].Name)) & 0xFFFFFF) : w);
+                        GuestMemory.W32(at, w == FallbackSvc ? 0xEF000000 | (svcIndexOf(NidOf(i)) & 0xFFFFFF) : w);
                         at += 4;
                     }
                 }
-                Placed[(space, space.Id)] = addrs;
+                Placed[key] = addrs;
             }
             return addrs[index];
         }

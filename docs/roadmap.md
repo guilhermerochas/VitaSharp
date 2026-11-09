@@ -268,6 +268,14 @@ Lista de itens futuros do VitaSharp. Marque `[x]` quando um item for concluído.
   (patch guardado fora do repositório). Falta (próximo passo): o custo de host das
   chamadas HLE triviais (`sceClibMemcpy`/`sceKernelGetTLSAddr` como intrínsecos no JIT em vez de sair do código
   nativo, como os "HLE inline" do Ryujinx/dynarmic) e os 1,5 s de ritmo da CPU emulada, que um Vita também gastaria
+  Feito em parte (perf/desktop-16, 08/11/2026): `sceKernelGetTLSAddr`, `sceKernelGetThreadId` e as cópias/preenchimentos
+  de até 256 bytes de `sceClibMemcpy`/`_safe`/`Memmove`/`Memset` viraram código ARM do guest (`Hle/HleGuestCode`, como
+  a tabela de substituição do PPSSPP e a leitura inline do TPIDRRO_EL0 do ARMeilleure), compilado pelos dois backends
+  nativos; cópia com destino dentro da origem (memmove para trás) e as maiores continuam no C#. `mania_boot` (2 rodadas
+  de cada, mesmo binário, `VITASHARP_HLE_GUEST_CODE=gxm` = antes): entradas no código nativo da `main` 6.340 -> 1.830-1.990
+  por quadro, `sceClibMemcpy` em C# 7,37 M -> 0,90 M chamadas, CPU da `main` 2,62-2,79 -> 2,42-2,56 ms/quadro, rodada
+  67,0/66,7 s -> 65,5/65,3 s. Medido e descartado: chamar o HLE de dentro do código nativo também no x64 (callout,
+  como no ARM64): 65,6/65,3 s, igual. O que sobra na travada é o ritmo da CPU emulada (opção "Relógio da CPU", pendente)
 
 ## Android
 
