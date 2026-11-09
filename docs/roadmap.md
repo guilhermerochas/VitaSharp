@@ -376,6 +376,24 @@ Lista de itens futuros do VitaSharp. Marque `[x]` quando um item for concluído.
   GPU a ~34,5 ms e o quadro a ~62 ms; (3) `VITASHARP_RENDER_AREA_TRIM=1` (db2d72d): -2 a -5 ms de GPU na cena de
   pós-processamento no bench, pixel-idêntico em 21 dumps; ligar quando uma série ao vivo mais longa confirmar.
   `VITASHARP_PRESENT_THREAD` piorou (85-86 ms) e `VITASHARP_TEXSET_PERSIST` não mudou o quadro: ficam desligados
+  CPU do jogo no ARM64 (09/11/2026, perf/android-jit): o simpleperf da thread do jogo mostra IPC 0,49 e 60 faltas de
+  L1I por mil instruções (código quente do JIT de 1,7 MB em 1.600 páginas): o tamanho do código é o gargalo. Feito:
+  estado morto nas saídas (flags/registros que o bloco seguinte sobrescreve), R15 só no caminho frio, sem contadores
+  de bloco, marca de página suja em 3 instruções e agrupada, DMB duplicado, FPSCR checado uma vez por bloco com
+  operandos VFP em registros, tabela de despacho compacta (`VITASHARP_NATIVE_A64_NOOPT` desliga cada um;
+  `docs/notes/native-jit.md`, "perf/android-jit"). Medido (50f7ddf, 3 pares): thread do jogo 24,2 contra 26,6 ms por
+  quadro (-9%), fps igual porque o quadro estava preso no worker. Depois vieram superblocos (`chain`), cache SIMD
+  de escrita (`vlazy`) e tabela de despacho de 2 vias (`assoc`).
+  Depois (b760002, NativeAOT sobre ebfe72c, KZ slot 1, A B D D B A): com tudo ligado a thread do jogo cai de ~19,4
+  para ~16,0 ms por quadro (-17%) e o tempo no código do JIT da thread do jogo de 23,3-24,6 para 21,4-21,9 ms; JobSched
+  e Havok dentro do ruído (29-37 ms por quadro cada, A55). fps sem ganho: o quadro está preso na GPU (~43 ms) e nos
+  quadros lentos de 6-8 vblanks (fase da transferência); na série o A teve mais quadros lentos que o D (A1 101 contra
+  D1 34 quadros de 6-7 vblanks), confirmar com uma série D A D A antes de tirar conclusão sobre fps.
+  Onde parei / próximos: (1) perfil de todas as threads com o native map (pedido ao laboratório, não feito) para ver os
+  blocos quentes dos workers JobSched/Havok nos A55, que gastam ~30 ms de JIT por quadro cada para 0,3-0,6 M ciclos de
+  guest; (2) ~800-900 voltas por quadro ao despachante na thread do jogo continuam com a tabela de 2 vias: ver se são
+  saídas indiretas para blocos ainda não compilados ou destinos ausentes (contador por motivo); (3) cache de escrita
+  para S ímpares (hoje só D e S pares vêm do cache); (4) VecLdSt pelo cache SIMD (hoje esvazia o cache)
   09/11/2026 (perf/android-gpu): **regressão desde 06/11 corrigida (23811d9)**: a 240a8de (Jak 1) fazia um `Finish` de
   todos os quadros a cada transferência de CPU sobre um writeback "em voo" e casava quadros que não estavam mais em
   voo; na main eram ~2.400 esperas por sessão (26-29 s) no Killzone. Agora só o quadro do writeback (gravando ou

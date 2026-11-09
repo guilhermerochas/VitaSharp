@@ -19,7 +19,7 @@ public sealed unsafe partial class Arm64Emitter
     // ------------------------------------------------------------------ operand helpers
 
     /// <summary>Loads Vr from the register file at byte offset <paramref name="off"/> from D0 (Q: 16 bytes, else 8).</summary>
-    void LdV(int r, int off, bool q) => VMem(q ? LsKind.LdrQ : LsKind.LdrD, r, OffD + off);
+    void LdV(int r, int off, bool q) { VcFlushOverlap(off, q ? 16 : 8); VMem(q ? LsKind.LdrQ : LsKind.LdrD, r, OffD + off); }
     void StV(int off, int r, bool q) => VMem(q ? LsKind.StrQ : LsKind.StrD, r, OffD + off);
 
     void VMem(LsKind k, int r, int off)
@@ -59,8 +59,36 @@ public sealed unsafe partial class Arm64Emitter
     long _vcClock;
     int _vcBusy;                                // cache registers the current VecOp reads or writes
     bool _vcAny;
+    // A64Opt.LazyVec: results stay only in the cache register (dirty) until something else needs the register file in
+    // memory: a load of overlapping bytes, an op that is not a VecOp/inline FpOp/integer op (Lower flushes before it),
+    // eviction, or a narrower/wider rewrite. Write-through without it.
+    readonly bool[] _vcDirty = new bool[VcCount];
+    bool _vlazy, _vcAnyDirty;
 
-    void VcForget() { if (_vcAny) { Array.Fill(_vcOff, -1); _vcAny = false; } }
+    void VcForget() { if (_vcAny) { VcFlushAll(); Array.Fill(_vcOff, -1); _vcAny = false; } }
+
+    void VcFlushEntry(int i)
+    {
+        if (!_vcDirty[i]) return;
+        _vcDirty[i] = false;
+        VMem(_vcQ[i] ? LsKind.StrQ : LsKind.StrD, VcFirst + i, OffD + _vcOff[i]);
+    }
+
+    /// <summary>Stores every dirty cached register (they stay cached, clean).</summary>
+    void VcFlushAll()
+    {
+        if (!_vcAnyDirty) return;
+        for (int i = 0; i < VcCount; i++) if (_vcOff[i] >= 0) VcFlushEntry(i);
+        _vcAnyDirty = false;
+    }
+
+    /// <summary>Stores the dirty cached registers overlapping bytes [off, off + len) from D0.</summary>
+    void VcFlushOverlap(int off, int len)
+    {
+        if (!_vcAnyDirty) return;
+        for (int i = 0; i < VcCount; i++)
+            if (_vcOff[i] >= 0 && _vcDirty[i] && _vcOff[i] < off + len && off < _vcOff[i] + (_vcQ[i] ? 16 : 8)) VcFlushEntry(i);
+    }
 
     /// <summary>Reloads every cached register from the register file (after a handler call clobbered v16-v31).</summary>
     void VcReload()
@@ -74,8 +102,19 @@ public sealed unsafe partial class Arm64Emitter
     {
         if (!_vcAny) return;
         for (int i = 0; i < VcCount; i++)
-            if (_vcOff[i] >= 0 && _vcOff[i] < off + len && off < _vcOff[i] + (_vcQ[i] ? 16 : 8)) _vcOff[i] = -1;
+            if (_vcOff[i] >= 0 && _vcOff[i] < off + len && off < _vcOff[i] + (_vcQ[i] ? 16 : 8)) { _vcOff[i] = -1; _vcDirty[i] = false; }
     }
+
+    /// <summary>Ops during which dirty cached registers may stay unwritten (<see cref="A64Opt.LazyVec"/>): they never read
+    /// or write the register file in memory except through the cache helpers.</summary>
+    static bool KeepsDirtyVec(in IrInst x) => x.Op switch
+    {
+        IrOp.VecOp => (x.Imm & (uint)VecFlags.SlowPath) == 0,
+        IrOp.FpOp => (x.Imm & (uint)FpFlags.Checked) != 0,
+        IrOp.LoadState or IrOp.StoreState or IrOp.LoadD or IrOp.StoreD or IrOp.VecLdSt or IrOp.Label or IrOp.CondBranch
+            or IrOp.BranchIf or IrOp.Callout or IrOp.ExitStatic or IrOp.ExitDynamic => false,
+        _ => true, // guest state words, integer ALU, guest memory, barriers, exclusives
+    };
 
     int VcFind(int off, bool q)
     {
@@ -93,6 +132,7 @@ public sealed unsafe partial class Arm64Emitter
             if (_vcOff[i] < 0) { best = i; break; }
             if (best < 0 || _vcUse[i] < _vcUse[best]) best = i;
         }
+        if (_vcOff[best] >= 0) VcFlushEntry(best); // evicted: its value must reach the register file
         _vcOff[best] = -1;
         _vcBusy |= 1 << best;
         return best;
@@ -127,6 +167,8 @@ public sealed unsafe partial class Arm64Emitter
         if (i >= 0 && (_vcBusy >> i & 1) == 0)
         {
             _vcBusy |= 1 << i;
+            if (_vcQ[i] != q) VcFlushEntry(i); // a Q register rewritten as D: its other half must reach memory
+            _vcDirty[i] = false;
             _vcOff[i] = -1; // rewritten in place: recorded again by Put
             return VcFirst + i;
         }
@@ -139,12 +181,30 @@ public sealed unsafe partial class Arm64Emitter
     /// cached copy (stale overlapping entries dropped first).</summary>
     void Put(int off, int r, bool q)
     {
-        StV(off, r, q);
-        VcInvalidate(off, q ? 16 : 8);
+        bool lazy = _vlazy && _vcache && r >= VcFirst;
+        if (lazy)
+        {
+            // entries this result overlaps: an exact one is superseded, a partial one must reach memory first
+            for (int k = 0; k < VcCount; k++)
+                if (_vcOff[k] >= 0 && VcFirst + k != r && _vcOff[k] < off + (q ? 16 : 8) && off < _vcOff[k] + (_vcQ[k] ? 16 : 8))
+                {
+                    if (!(_vcOff[k] == off && _vcQ[k] == q)) VcFlushEntry(k);
+                    _vcDirty[k] = false;
+                    _vcOff[k] = -1;
+                }
+        }
+        else
+        {
+            VcFlushOverlap(off, q ? 16 : 8);
+            StV(off, r, q);
+            VcInvalidate(off, q ? 16 : 8);
+        }
         if (_vcache && r >= VcFirst)
         {
             int i = r - VcFirst;
             _vcOff[i] = off; _vcQ[i] = q; _vcUse[i] = ++_vcClock; _vcAny = true;
+            _vcDirty[i] = lazy;
+            if (lazy) _vcAnyDirty = true;
         }
     }
 
@@ -284,6 +344,7 @@ public sealed unsafe partial class Arm64Emitter
             // ---------------------------------------------------------- by scalar (aux = byte offset of the element)
             case VecKind.MulFS: case VecKind.MlaFS: case VecKind.MlsFS:
                 r1 = Src(V1, nOff, q);
+                VcFlushOverlap(aux, 4);
                 VMem(LsKind.LdrS, V2, OffD + aux);
                 a.DupElem(2, q, V2, V2, 0);
                 if (kind == VecKind.MulFS) { r0 = Dst(V0); a.V3(0x1B, true, 0, q, r0, r1, V2); }
@@ -297,6 +358,7 @@ public sealed unsafe partial class Arm64Emitter
                 return;
             case VecKind.MulIS: case VecKind.MlaIS: case VecKind.MlsIS:
                 r1 = Src(V1, nOff, q);
+                VcFlushOverlap(aux, 4);
                 VMem(size == 1 ? LsKind.LdrH : LsKind.LdrS, V2, OffD + aux);
                 a.DupElem(size, q, V2, V2, 0);
                 if (kind == VecKind.MulIS) { r0 = Dst(V0); a.V3(0x13, false, size, q, r0, r1, V2); }

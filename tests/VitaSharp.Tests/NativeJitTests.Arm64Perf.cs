@@ -648,6 +648,154 @@ public sealed unsafe partial class NativeJitTests
         Assert.True(fewer > 0 && more == 0);
     }
 
+    /// <summary>
+    /// <see cref="Arm64Emitter.A64Opt.Superblocks"/>: three random ARM or Thumb blocks in a row, the first two ending in a
+    /// conditional branch (B&lt;c&gt;, B&lt;c&gt;.W in Thumb) to a far "b ." and the last in "b .", compiled as one
+    /// superblock. One native run must leave the state the interpreter leaves after running the same blocks until a
+    /// branch is taken or the last block ends, and charge the cycles of exactly the blocks it ran.
+    /// </summary>
+    [Arm64SandboxTheory]
+    [InlineData(false, 300, 6601)]
+    [InlineData(true, 300, 6602)]
+    public void Arm64SuperblocksMatchInterpreter(bool thumb, int iterations, int seed)
+    {
+        EnsureGuestPages();
+        using var arena = new ArenaScope();
+        using var sb = Arm64Runner.Create();
+        var rng = new Random(seed);
+        var old = Arm64Emitter.Opts;
+        var s = CpuState.Allocate();
+        var failures = new List<string>();
+        int chained = 0;
+        const uint Target = CodeBase + 0x800;
+        try
+        {
+            Arm64Emitter.Opts = old | Arm64Emitter.A64Opt.Superblocks;
+            for (int it = 0; it < iterations && failures.Count < 4; it++)
+            {
+                var code = new List<byte>();
+                void Arm(uint w) => code.AddRange(BitConverter.GetBytes(w));
+                void T16(uint h) => code.AddRange(BitConverter.GetBytes((ushort)h));
+                for (int blk = 0; blk < 3; blk++)
+                {
+                    int n = rng.Next(1, 6);
+                    for (int k = 0; k < n; k++)
+                    {
+                        uint r = (uint)rng.NextInt64();
+                        if (!thumb)
+                        {
+                            uint cond = rng.Next(3) == 0 ? (uint)rng.Next(14) : 14u;
+                            uint ins = rng.Next(3) switch
+                            {
+                                0 => (cond << 28) | 0x05800000u | (r & 0x00106000) | 0x1000 | (r & 0x3FC), // LDR/STR r1/r3/r5/r7, [r0, #imm]
+                                1 => (cond << 28) | 0x00100000u | (r & 0x00E00000) | (r & 0x00077007) & ~0x8000u, // flag setters
+                                _ => (cond << 28) | (r & 0x03F77F67) & ~0x10u,                               // data processing
+                            };
+                            var d = Decoder.DecodeArm(ins, CodeBase);
+                            if (d.EndsBlock || CpuFuzzTests.IsUnpredictable(d, false)) { k--; continue; }
+                            Arm(ins);
+                        }
+                        else T16(rng.Next(4) switch
+                        {
+                            0 => 0x1800u | (r & 0x1FF),        // ADDS r, r, r
+                            1 => 0x2000u | (r & 0x7FF),        // MOVS r, #imm
+                            2 => 0x4280u | (r & 0x3F),         // CMP r, r
+                            _ => 0x3000u | (r & 0x7FF),        // ADDS r, #imm
+                        });
+                    }
+                    uint at = CodeBase + (uint)code.Count;
+                    if (blk == 2) { if (thumb) T16(0xE7FE); else Arm(0xEAFFFFFE); break; }
+                    if (!thumb) Arm(((uint)rng.Next(14) << 28) | 0x0A000000u | (((Target - (at + 8)) >> 2) & 0xFFFFFF));
+                    else
+                    {
+                        // B<c>.W Target
+                        uint imm = Target - (at + 4);
+                        T16(0xF000u | ((uint)rng.Next(14) << 6) | ((imm >> 12) & 0x3F)); T16(0x8000u | ((imm >> 1) & 0x7FF));
+                    }
+                }
+                var mem = GuestMemory.Span(CodeBase, 0x1000);
+                mem.Clear();
+                code.ToArray().CopyTo(mem);
+                (thumb ? BitConverter.GetBytes((ushort)0xE7FE) : BitConverter.GetBytes(0xEAFFFFFEu)).CopyTo(mem[0x800..]);
+                var blocks = new Dictionary<uint, Block>();
+                Block Get(uint pc) => blocks.TryGetValue(pc, out var x) ? x : blocks[pc] = BlockBuilder.Build(pc, thumb);
+                var a = Get(CodeBase);
+                Block? Succ(uint pc, bool t) { if (t != thumb) return null; var x = Get(pc); x.ExecCount = 1; return x; }
+                var st = new RandomState(rng);
+                st.Regs[0] = DataBase + 0x400;
+                st.Apply(s, thumb);
+                long cycles = 0;
+                var interp = Take(s, Guard(() =>
+                {
+                    var b = a;
+                    for (int k = 0; k < 3; k++)
+                    {
+                        CpuCore.Interpret(s, b);
+                        cycles += b.Cycles;
+                        if (s->R[15] == Target || s->R[15] < b.End) break; // taken, or the final "b ."
+                        b = Get(s->R[15]);
+                    }
+                }));
+                var cb = NativeArm64Compiler.Instance.Compile(a, sb.Stubs, successors: Succ)!;
+                if (a.Deps != null) chained++;
+                st.Apply(s, thumb);
+                var native = Take(s, Guard(() => RunArm64(sb, s, cb.NativeEntry)));
+                string diff = Diff(interp, native);
+                if (interp.Error == null && s->CycleAcc != cycles) diff += $" cycles {cycles} vs {s->CycleAcc}";
+                if (diff.Length > 0) failures.Add($"thumb {thumb}:{diff}\n{DescribeArm64(a, cb)}");
+            }
+        }
+        finally { Arm64Emitter.Opts = old; CpuState.Free(s); }
+        output.WriteLine($"{chained} of {iterations} blocks compiled as superblocks");
+        foreach (var f in failures) output.WriteLine(f);
+        Assert.True(failures.Count == 0, failures.FirstOrDefault());
+        Assert.True(chained > iterations / 2);
+    }
+
+    /// <summary>
+    /// <see cref="Arm64Emitter.A64Opt.AssocDispatch"/>: an indirect exit finds its target in either way of its
+    /// dispatch-table set. Two Thumb blocks 2 bytes apart share a set (one in each way); BX to the second must enter it
+    /// directly, with and without the option (single-way: the exact entry).
+    /// </summary>
+    [Arm64SandboxFact]
+    public void Arm64TwoWayDispatchFindsBothWays()
+    {
+        if (Arm64Runner.Native) return; // the sandbox's own table
+        EnsureGuestPages();
+        using var arena = new ArenaScope();
+        var mem = GuestMemory.Span(CodeBase, 0x1000);
+        mem.Clear();
+        BitConverter.GetBytes((ushort)0x4700).CopyTo(mem);          // bx r0
+        BitConverter.GetBytes((ushort)0xE7FE).CopyTo(mem[0x100..]); // T1: b .
+        BitConverter.GetBytes((ushort)0x2107).CopyTo(mem[0x102..]); // T2: movs r1, #7
+        BitConverter.GetBytes((ushort)0xE7FE).CopyTo(mem[0x104..]); //     b .
+        var old = Arm64Emitter.Opts;
+        var s = CpuState.Allocate();
+        try
+        {
+            foreach (bool assoc in new[] { true, false })
+            {
+                Arm64Emitter.Opts = assoc ? old | Arm64Emitter.A64Opt.AssocDispatch : old & ~Arm64Emitter.A64Opt.AssocDispatch;
+                using var sb = new Arm64Sandbox();
+                var a = BlockBuilder.Build(CodeBase, true);
+                var t1 = BlockBuilder.Build(CodeBase + 0x100, true);
+                var t2 = BlockBuilder.Build(CodeBase + 0x102, true);
+                var ca = NativeArm64Compiler.Instance.Compile(a, sb.Stubs)!;
+                var c1 = NativeArm64Compiler.Instance.Compile(t1, sb.Stubs)!;
+                var c2 = NativeArm64Compiler.Instance.Compile(t2, sb.Stubs)!;
+                sb.Publish(t1.Start, true, c1.NativeEntry);
+                sb.Publish(t2.Start, true, c2.NativeEntry);
+                *s = default; s->MemBase = GuestMemory.Base; s->Thumb = 1; s->R[15] = CodeBase;
+                s->R[0] = (CodeBase + 0x102) | 1;
+                s->CycleAcc = 0; s->CheckWindow = 1L << 40; s->LinkBreak = 0;
+                sb.Run(s, ca.NativeEntry);
+                Assert.Equal(7u, s->R[1]);                    // T2 ran inside native code
+                Assert.Equal(CodeBase + 0x104, s->R[15]);
+            }
+        }
+        finally { Arm64Emitter.Opts = old; CpuState.Free(s); }
+    }
+
     [Arm64SandboxFact]
     public void Arm64CodeQualityTable()
     {

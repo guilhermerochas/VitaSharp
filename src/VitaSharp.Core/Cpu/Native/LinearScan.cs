@@ -146,5 +146,6 @@ public static class LinearScan
 
     /// <summary>FpOp / slow-path VecOp may call the interpreter handler, like a callout.</summary>
     public static bool IsCallSite(in IrInst x) =>
-        x.Op is IrOp.Callout or IrOp.FpOp || (x.Op == IrOp.VecOp && (x.Imm & (uint)VecFlags.SlowPath) != 0);
+        x.Op == IrOp.Callout || (x.Op == IrOp.FpOp && (x.Imm & (uint)FpFlags.Checked) == 0)
+        || (x.Op == IrOp.VecOp && (x.Imm & (uint)VecFlags.SlowPath) != 0);
 }

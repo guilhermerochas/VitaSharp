@@ -116,10 +116,28 @@ public sealed unsafe partial class Arm64Emitter
         /// <summary>Guest stores through one base register at constant offsets spanning less than a page, in straight-line
         /// code, share one dirty-page mark after the last of them (<see cref="PlanMarks"/>): pushes, STM and struct stores.</summary>
         GroupMarks = 32768,
-        All = 65535,
+        /// <summary>A block with scalar VFP code checks the FPSCR mode once at its entry instead of at every VFP op:
+        /// in the Vita's mode (VMSR, the only way to change it, ends a block) every op runs inline with no handler path, so
+        /// FpOps stop being call sites for register allocation; in another mode the block returns at once and the
+        /// dispatcher interprets it (<see cref="CpuState.TierUpRequest"/> = 2).</summary>
+        FpEntryCheck = 65536,
+        /// <summary>Indirect exits read a dispatch-table entry's key and arena offset with one plain 64-bit load
+        /// (<see cref="NativeRuntime.DispatchEntry"/>) instead of two acquire loads and a second key check.</summary>
+        PackedDispatch = 131072,
+        /// <summary>A block ending in a conditional branch is translated together with the (already executed) blocks
+        /// that follow its not-taken path, up to 4 blocks / 128 instructions (<see cref="NativeArm64Compiler"/>): the
+        /// guest state stays in temps across them, and each continued branch saves an exit and a block entry.</summary>
+        Superblocks = 262144,
+        /// <summary>The SIMD register cache is write-back: VecOp and inline FpOp results stay in v18-v31 until a branch,
+        /// label, call, exit, eviction or another access to the register file in memory needs them stored.</summary>
+        LazyVec = 524288,
+        /// <summary>With <see cref="PackedDispatch"/>: the indirect-exit table is two-way set associative
+        /// (<see cref="NativeRuntime.TwoWay"/>), so colliding hot targets stop sending each other through the dispatcher.</summary>
+        AssocDispatch = 1048576,
+        All = 2097151,
     }
 
-    public static readonly string[] OptNames = ["pin", "backedge", "fuse", "pair", "vcache", "fpcr", "fpcheck", "dirty", "lit", "patch", "cond", "stub", "succ", "count", "fence", "group"];
+    public static readonly string[] OptNames = ["pin", "backedge", "fuse", "pair", "vcache", "fpcr", "fpcheck", "dirty", "lit", "patch", "cond", "stub", "succ", "count", "fence", "group", "fpentry", "packed", "chain", "vlazy", "assoc"];
 
     /// <summary>Enabled optimisations (tests may change it; the trampoline's pinned-counter mode is fixed per runtime).</summary>
     public static A64Opt Opts = ParseOpts(Environment.GetEnvironmentVariable(Util.EnvVars.NativeA64NoOpt));
@@ -172,6 +190,10 @@ public sealed unsafe partial class Arm64Emitter
         /// <summary>With <see cref="PinnedCounters"/>: the trampoline and the blocks keep only the cycle budget, not the
         /// block and instruction counts (<see cref="A64Opt.NoBlockCounts"/>).</summary>
         public bool NoBlockCounts;
+        /// <summary>Start of the code arena: dispatch-table entries hold code offsets from it (<see cref="A64Opt.PackedDispatch"/>; 0: not packed).</summary>
+        public ulong CodeBase;
+        /// <summary>The dispatch table is two-way set associative (<see cref="A64Opt.AssocDispatch"/>, packed entries only).</summary>
+        public bool TwoWayDispatch;
     }
 
     /// <summary>Byte offsets in the last prepared block of each static exit's patch site (<see cref="Runtime.PatchLinks"/>),
@@ -218,12 +240,25 @@ public sealed unsafe partial class Arm64Emitter
         _storeLit = (opts & A64Opt.StoreLiteral) != 0;
         _stub = (opts & A64Opt.ExitStubs) != 0;
         _abortUsed = _slotPathUsed = _tailZeroUsed = false;
+        bool fpEntry = false, calls = false;
+        {
+            var all = System.Runtime.InteropServices.CollectionsMarshal.AsSpan(ir.Insts);
+            bool checkFp = (opts & A64Opt.FpEntryCheck) != 0 && !NativeVerifier.Enabled;
+            foreach (ref var x in all)
+            {
+                if (x.Op == IrOp.FpOp && checkFp) { x.Imm |= (uint)FpFlags.Checked; fpEntry = true; }
+                if (LinearScan.IsCallSite(x)) calls = true;
+            }
+        }
         _coldExits.Clear();
+        _coldUnlinked.Clear();
         _coldMarks.Clear();
         ForgetHostFlags();
         _fpcrHost = false;
         Array.Fill(_vcOff, -1);
-        _vcAny = false;
+        Array.Clear(_vcDirty);
+        _vcAny = _vcAnyDirty = false;
+        _vlazy = _vcache && (opts & A64Opt.LazyVec) != 0;
         long t0 = System.Diagnostics.Stopwatch.GetTimestamp();
         var loc = LinearScan.Allocate(ir, CallerSaved, _pin ? _count ? CalleeSavedPinned : CalleeSavedBudgetOnly : CalleeSaved, SpillSlots, MaxTempRegisters, VerifyAllocation, reuse: true);
         AllocTicks = System.Diagnostics.Stopwatch.GetTimestamp() - t0;
@@ -236,8 +271,8 @@ public sealed unsafe partial class Arm64Emitter
         _tail = _a.NewLabel();
         _tailZero = _a.NewLabel();
         _slotPath = _a.NewLabel();
-        _checkExit = ir.Callouts > 0;
-        int tierUp = _a.NewLabel();
+        _checkExit = calls;
+        int tierUp = _a.NewLabel(), fpMode = _a.NewLabel();
         if (tierUpCounter != 0)
         {
             _a.LdrLit(X16, (ulong)tierUpCounter);
@@ -245,6 +280,14 @@ public sealed unsafe partial class Arm64Emitter
             _a.SubsImm(X17, X17, 1);
             _a.Str(X17, X16, 0);
             _a.BCond(Cond.EQ, tierUp);
+        }
+        if (fpEntry)
+        {
+            // FPSCR[25:16] == DN FZ, RMode 0, STRIDE 0, LEN 0, bit 19 clear (see FpOp)
+            LdState(X16, OffFpscr);
+            _a.Ubfx(X16, X16, 16, 10);
+            _a.CmpImm(X16, 0x300);
+            _a.BCond(Cond.NE, fpMode);
         }
         int exitIndex = 0;
         var insts = System.Runtime.InteropServices.CollectionsMarshal.AsSpan(ir.Insts);
@@ -254,6 +297,7 @@ public sealed unsafe partial class Arm64Emitter
             _cur = i;
             Lower(insts[i], slotFor, ref exitIndex);
         }
+        _exitCost = 0; // the abort path charges the whole block
         if (_abortUsed || !_stub)
         {
             _a.Bind(_abort);
@@ -266,6 +310,16 @@ public sealed unsafe partial class Arm64Emitter
             StorePc(ir.StartPc); // linked exits into this block may have left R15 to their cold paths (StateLiveness.ColdPc)
             if (!_stub) _a.StrX(ZR, State, OffLastExitSlot);
             _a.MovImm(X16, 1);
+            _a.Str(X16, State, OffTierUp);
+            if (_stub) ExitZero(); else JumpTo(rt.Epilogue);
+        }
+        if (fpEntry)
+        {
+            // another FPSCR mode: nothing ran yet; the dispatcher interprets the block (CpuCore.Run)
+            _a.Bind(fpMode);
+            StorePc(ir.StartPc);
+            if (!_stub) _a.StrX(ZR, State, OffLastExitSlot);
+            _a.MovImm(X16, 2);
             _a.Str(X16, State, OffTierUp);
             if (_stub) ExitZero(); else JumpTo(rt.Epilogue);
         }
@@ -288,6 +342,8 @@ public sealed unsafe partial class Arm64Emitter
     bool _stub, _abortUsed, _slotPathUsed, _tailZeroUsed;
     int _tail, _tailZero, _slotPath;
     readonly List<(int Label, nint Slot, uint? Pc)> _coldExits = new();
+    /// <summary>Unlinked paths of patched exits (the site's B to the next word leads here): the slot path.</summary>
+    readonly List<(int Label, nint Slot, uint? Pc)> _coldUnlinked = new();
     /// <summary>Dirty-page marks of clean pages, laid out after the block (<see cref="MarkDirtyReg"/>).</summary>
     readonly List<(int Cold, int Back)> _coldMarks = new();
 
@@ -317,6 +373,13 @@ public sealed unsafe partial class Arm64Emitter
     void EmitSharedTails()
     {
         var a = _a;
+        foreach (var (label, slot, pc) in _coldUnlinked)
+        {
+            a.Bind(label);
+            if (pc is uint p) StorePc(p);
+            a.LdrLit(X16, (ulong)slot);
+            a.B(_slotPath);
+        }
         foreach (var (label, slot, pc) in _coldExits)
         {
             a.Bind(label);
@@ -413,6 +476,7 @@ public sealed unsafe partial class Arm64Emitter
     bool TryPair(in IrInst x, in IrInst y)
     {
         var a = _a;
+        if (_vcAnyDirty && (x.Op is IrOp.LoadState or IrOp.StoreState || y.Op is IrOp.LoadState or IrOp.StoreState)) VcFlushAll();
         int o1 = StateOffset(x, true), o2 = StateOffset(y, true);
         if (o1 >= 0 && o2 == o1 + 4 && FitsPairW(o1))
         {
@@ -443,6 +507,10 @@ public sealed unsafe partial class Arm64Emitter
     /// Adds the block's cycles and counts to the state; leaves CycleAcc in x16. With pinned counters: x26 += 1,
     /// x27 += instructions, ADDS x28 += cycles, so the flags say GE exactly when CycleAcc reached CheckWindow.
     /// </summary>
+    /// <summary>Cycles the exit being lowered charges: its own (Imm4 - 1, superblocks: the blocks up to it) or the block's.</summary>
+    uint _exitCost;
+    long ExitCycles => _exitCost != 0 ? _exitCost - 1 : _ir.Cycles;
+
     void EmitAccounting()
     {
         var a = _a;
@@ -453,13 +521,13 @@ public sealed unsafe partial class Arm64Emitter
                 a.AddImm(PinBlocks, PinBlocks, 1, true);
                 AddConst64(PinInstr, (ulong)_ir.GuestInstructions);
             }
-            ulong c = (ulong)Math.Min(_ir.Cycles, int.MaxValue);
+            ulong c = (ulong)Math.Min(ExitCycles, int.MaxValue);
             if (c < 4096 || (IsAddImm((uint)c) && c < 1u << 24)) a.AddsImm(PinBudget, PinBudget, (uint)c, true);
             else { a.MovImm64(X8, c); a.Adds(PinBudget, PinBudget, X8, x: true); }
             return;
         }
         a.LdrX(X16, State, OffCycleAcc);
-        AddConst64(X16, (ulong)Math.Min(_ir.Cycles, int.MaxValue));
+        AddConst64(X16, (ulong)Math.Min(ExitCycles, int.MaxValue));
         a.StrX(X16, State, OffCycleAcc);
         a.LdrX(X17, State, OffNBlocks);
         a.AddImm(X17, X17, 1, true);
@@ -512,6 +580,7 @@ public sealed unsafe partial class Arm64Emitter
         if (_hfN >= 0 || _hfZ >= 0 || _hfC >= 0 || _hfV >= 0)
             if (!KeepsHostFlags(x.Op)) ForgetHostFlags();
         // merge points and callouts end the SIMD register cache (FpOp reloads it after its handler path instead)
+        if (_vcAnyDirty && !KeepsDirtyVec(x)) VcFlushAll(); // before branches, labels, calls, exits, register-file accesses
         if (_vcAny && x.Op is IrOp.Label or IrOp.Callout) VcForget();
         if (_fpcrHost && NeedsGuestFpcr(x.Op)) EnsureGuestFpcr(); // MSR FPCR leaves NZCV alone (branch fusion)
         switch (x.Op)
@@ -670,6 +739,7 @@ public sealed unsafe partial class Arm64Emitter
             case IrOp.Callout: CallHandler(x.Imm, x.Imm2, x.Imm3); return;
             case IrOp.ExitStatic:
             {
+                _exitCost = x.Imm4;
                 nint slot = slotFor(exitIndex++);
                 int ret = a.NewLabel();
                 // LinkBreak only on back edges: every cycle of linked blocks has an exit to an address at or below its
@@ -689,17 +759,18 @@ public sealed unsafe partial class Arm64Emitter
                     a.Emit(UnlinkedSiteWord);
                     // StateLiveness.ColdPc: the IR left R15 to this exit, which stores it on the paths to the dispatcher only
                     bool coldPc = _stub && x.Imm3 == StateLiveness.ColdPc;
-                    if (coldPc) StorePc(x.Imm);
-                    a.LdrLit(X16, (ulong)slot);
                     if (_stub)
                     {
-                        // linked, only the accounting, the checks and the patched B are on the hot path; the return
-                        // path goes after the block's code
+                        // linked, only the accounting, the checks and the patched B are on the hot path (plus one B
+                        // word behind the site); the unlinked and return paths go after the block's code
+                        int unlinked = a.NewLabel();
+                        a.B(unlinked);
                         _slotPathUsed = true;
-                        a.B(_slotPath);
+                        _coldUnlinked.Add((unlinked, slot, coldPc ? x.Imm : (uint?)null));
                         _coldExits.Add((ret, slot, coldPc ? x.Imm : (uint?)null));
                         return;
                     }
+                    a.LdrLit(X16, (ulong)slot);
                     a.LdrX(X17, X16, 0);
                     a.Cbz(X17, ret2, true);
                     a.Br(X17);
@@ -742,6 +813,7 @@ public sealed unsafe partial class Arm64Emitter
             }
             case IrOp.ExitDynamic:
             {
+                _exitCost = x.Imm4;
                 int ret = a.NewLabel();
                 EmitAccounting();
                 if (x.Imm == 0 && _rt.DispatchTable != 0 && !NativeRuntime.NoLink)
@@ -750,12 +822,45 @@ public sealed unsafe partial class Arm64Emitter
                     // reorders loads, so the first two are acquire loads: the code pointer is read after the key and
                     // the second key read after the code pointer.
                     WindowChecks(ret);
-                    LdState(X0, OffR + 60);
-                    LdState(X1, OffThumb);
-                    a.Orr(X1, X0, X1);                                   // key = pc | thumb
-                    a.Ubfx(X2, X0, 1, NativeRuntime.DispatchBits);
-                    a.LdrX(X3, State, OffDispatchTable);                 // the thread's process's table
-                    a.Add(X3, X3, X2, Shift.Lsl, 4, x: true);            // 16-byte entries
+                    int pc = X0, th = X1;
+                    if (x.A >= 0) pc = Use(x.A, X0); else LdState(X0, OffR + 60);
+                    if (x.B >= 0) th = UseZ(x.B, X1); else LdState(X1, OffThumb);
+                    a.Orr(X1, pc, th);                                   // key = pc | thumb
+                    if (pc != X0) a.Mov(X0, pc);
+                    bool packed = _rt.CodeBase != 0 && (Opts & A64Opt.PackedDispatch) != 0;
+                    if (packed && _rt.TwoWayDispatch)
+                    {
+                        a.Ubfx(X2, X0, 2, NativeRuntime.DispatchBits - 1);  // set index: two 16-byte entries
+                        a.LdrX(X3, State, OffDispatchTable);
+                        a.Add(X3, X3, X2, Shift.Lsl, 5, x: true);
+                    }
+                    else
+                    {
+                        a.Ubfx(X2, X0, 1, NativeRuntime.DispatchBits);
+                        a.LdrX(X3, State, OffDispatchTable);                 // the thread's process's table
+                        a.Add(X3, X3, X2, Shift.Lsl, 4, x: true);            // 16-byte entries
+                    }
+                    if (packed)
+                    {
+                        // {key, arena offset} in one single-copy-atomic load: a republished entry is read whole
+                        int hit = a.NewLabel();
+                        a.LdrX(X4, X3, 0);
+                        a.Cmp(X4, X1);                                   // 32-bit compare: the key half
+                        if (_rt.TwoWayDispatch)
+                        {
+                            a.BCond(Cond.EQ, hit);
+                            a.LdrX(X4, X3, 16);                          // the set's second way
+                            a.Cmp(X4, X1);
+                        }
+                        a.BCond(Cond.NE, ret);
+                        a.Bind(hit);
+                        a.LdrLit(X5, _rt.CodeBase);
+                        a.Add(X5, X5, X4, Shift.Lsr, 32, x: true);
+                        a.Br(X5);
+                        a.Bind(ret);
+                        ExitZero();
+                        return;
+                    }
                     a.Ldar(X4, X3);
                     a.Cmp(X4, X1);
                     a.BCond(Cond.NE, ret);
@@ -1347,10 +1452,12 @@ public sealed unsafe partial class Arm64Emitter
         int slow = a.NewLabel(), done = a.NewLabel();
         var ld = dbl ? LsKind.LdrD : LsKind.LdrS;
         var st = dbl ? LsKind.StrD : LsKind.StrS;
+        bool checkedAtEntry = (x.Imm & (uint)FpFlags.Checked) != 0;
 
-        LdState(X16, OffFpscr);
-        if (_fastFpCheck)
+        if (checkedAtEntry) { } // A64Opt.FpEntryCheck: the block entry checked the mode
+        else if (_fastFpCheck)
         {
+            LdState(X16, OffFpscr);
             // FPSCR[25:16] == DN FZ, RMode 0, STRIDE 0, LEN 0, and bit 19 (reserved on the Vita) clear; a set bit 19 only
             // takes the handler, which is always exact
             a.Ubfx(X16, X16, 16, 10);
@@ -1358,53 +1465,87 @@ public sealed unsafe partial class Arm64Emitter
         }
         else
         {
+            LdState(X16, OffFpscr);
             a.MovImm(X17, 0x03F70000);
             a.And(X16, X16, X17);
             a.MovImm(X17, 0x03000000);
             a.Cmp(X16, X17);
         }
-        a.BCond(Cond.NE, slow);
+        if (!checkedAtEntry) a.BCond(Cond.NE, slow);
+
+        // operands from the SIMD register cache when the op has no handler path (A64Opt.FpEntryCheck): a D register, or
+        // an S register in the low half of its D register; double results are cached (write-through, like VecOps)
+        bool cache = checkedAtEntry && _vcache, resultCached = false;
+        if (cache) _vcBusy = 0;
+        int Opnd(int scratch, int off)
+        {
+            int rel = off - OffD;
+            if (cache && (dbl || (rel & 7) == 0)) return Src(scratch, rel, false);
+            VcFlushOverlap(rel, dbl ? 8 : 4);
+            a.LdSt(ld, scratch, State, off);
+            return scratch;
+        }
+        int ResultReg() => cache && dbl ? Dst(0) : 0;
+        void Result(int r)
+        {
+            if (cache && dbl) { Put(dOff - OffD, r, false); resultCached = true; }
+            else { VcFlushOverlap(dOff - OffD, dbl ? 8 : 4); a.LdSt(st, r, State, dOff); }
+        }
+        if (_vcAnyDirty && kind is not (FpKind.Add or FpKind.Sub or FpKind.Mul or FpKind.NMul or FpKind.Div or FpKind.Mla
+            or FpKind.Mls or FpKind.Nmla or FpKind.Nmls or FpKind.Sqrt or FpKind.Cmp or FpKind.CmpZero))
+        {
+            // conversions read and write the register file directly
+            VcFlushOverlap((int)(x.Imm4 & 0xFF) & ~7, 16);
+            VcFlushOverlap((int)((x.Imm4 >> 16) & 0xFF) & ~7, 16);
+        }
 
         switch (kind)
         {
             case FpKind.Add: case FpKind.Sub: case FpKind.Mul: case FpKind.NMul: case FpKind.Div:
-                a.LdSt(ld, 1, State, nOff);
-                a.LdSt(ld, 2, State, mOff);
+            {
+                int n = Opnd(1, nOff), m = Opnd(2, mOff), r = ResultReg();
                 switch (kind)
                 {
-                    case FpKind.Add: a.Fadd(0, 1, 2, dbl); break;
-                    case FpKind.Sub: a.Fsub(0, 1, 2, dbl); break;
-                    case FpKind.Mul: a.Fmul(0, 1, 2, dbl); break;
-                    case FpKind.NMul: a.Fnmul(0, 1, 2, dbl); break; // -(n*m): a NaN product negates the default NaN, like VNMUL
-                    default: a.Fdiv(0, 1, 2, dbl); break;
+                    case FpKind.Add: a.Fadd(r, n, m, dbl); break;
+                    case FpKind.Sub: a.Fsub(r, n, m, dbl); break;
+                    case FpKind.Mul: a.Fmul(r, n, m, dbl); break;
+                    case FpKind.NMul: a.Fnmul(r, n, m, dbl); break; // -(n*m): a NaN product negates the default NaN, like VNMUL
+                    default: a.Fdiv(r, n, m, dbl); break;
                 }
-                a.LdSt(st, 0, State, dOff);
+                Result(r);
                 break;
+            }
             case FpKind.Mla: case FpKind.Mls: case FpKind.Nmla: case FpKind.Nmls:
-                // d = (+/-)d (+/-) round(n * m): the product is rounded on its own (not fused)
-                a.LdSt(ld, 1, State, nOff);
-                a.LdSt(ld, 2, State, mOff);
-                a.LdSt(ld, 3, State, dOff);
-                a.Fmul(1, 1, 2, dbl);
-                if (kind is FpKind.Nmla or FpKind.Nmls) a.Fneg(3, 3, dbl);
-                if (kind is FpKind.Mla or FpKind.Nmls) a.Fadd(0, 3, 1, dbl); else a.Fsub(0, 3, 1, dbl);
-                a.LdSt(st, 0, State, dOff);
+            {
+                // d = (+/-)d (+/-) round(n * m): the product is rounded on its own (not fused); cached operands are
+                // never written in place
+                int n = Opnd(1, nOff), m = Opnd(2, mOff), d = Opnd(3, dOff);
+                a.Fmul(1, n, m, dbl);
+                if (kind is FpKind.Nmla or FpKind.Nmls) { a.Fneg(3, d, dbl); d = 3; }
+                int r = ResultReg();
+                if (kind is FpKind.Mla or FpKind.Nmls) a.Fadd(r, d, 1, dbl); else a.Fsub(r, d, 1, dbl);
+                Result(r);
                 break;
+            }
             case FpKind.Sqrt:
-                a.LdSt(ld, 1, State, mOff);
-                a.Fsqrt(0, 1, dbl);
-                a.LdSt(st, 0, State, dOff);
+            {
+                int m = Opnd(1, mOff), r = ResultReg();
+                a.Fsqrt(r, m, dbl);
+                Result(r);
                 break;
+            }
             case FpKind.Cmp: case FpKind.CmpZero:
-                a.LdSt(ld, 0, State, dOff);
-                if (kind == FpKind.CmpZero) a.FcmpZero(0, dbl);
-                else { a.LdSt(ld, 1, State, mOff); a.Fcmp(0, 1, dbl); }
+            {
+                int d = Opnd(0, dOff);
+                if (kind == FpKind.CmpZero) a.FcmpZero(d, dbl);
+                else a.Fcmp(d, Opnd(1, mOff), dbl);
                 a.Mrs(X16, SysReg.Nzcv);              // FCMP's NZCV are VCMP's (unordered 0011, equal 0110, less 1000, greater 0010)
                 LdState(X17, OffFpscr);
                 a.AndImm(X17, X17, 0x0FFFFFFF);
                 a.Orr(X17, X17, X16);
                 StState(X17, OffFpscr);
                 break;
+            }
             case FpKind.CvtToDouble:
                 a.LdSt(LsKind.LdrS, 1, State, mOff);
                 a.FcvtSD(0, 1);
@@ -1443,12 +1584,21 @@ public sealed unsafe partial class Arm64Emitter
                 a.LdSt(LsKind.StrS, 0, State, dOff);
                 break;
             default:
+                if (checkedAtEntry) throw new NotSupportedException($"FpOp {kind} has no inline form"); // FpOp is then not a call site
                 a.B(slow);
                 break;
         }
-        a.B(done);
         // both paths write d (at most 8 bytes at its offset): cached SIMD copies there are stale; the handler path
         // clobbers v16-v31, so it reloads the surviving cached registers from the (current) register file
+        if (checkedAtEntry)
+        {
+            // exactly the bytes written: a dirty cached neighbour of an S result is still the only copy of its value
+            bool arith = kind is FpKind.Add or FpKind.Sub or FpKind.Mul or FpKind.NMul or FpKind.Div or FpKind.Mla or FpKind.Mls
+                or FpKind.Nmla or FpKind.Nmls or FpKind.Sqrt;
+            if (!resultCached && kind is not (FpKind.Cmp or FpKind.CmpZero)) VcInvalidate((int)(x.Imm4 & 0xFF), arith && !dbl ? 4 : 8);
+            return;
+        }
+        a.B(done);
         VcInvalidate((int)(x.Imm4 & 0xFF), 8);
         a.Bind(slow);
         CallHandler((uint)op, x.Imm2, x.Imm3, restore: true); // merges with the fast path, which is in the guest mode
@@ -1527,13 +1677,37 @@ public sealed unsafe partial class Arm64Emitter
     /// the dispatcher enters here after an HLE call instead of looking the return address up in managed code. A miss
     /// returns to the dispatcher with no exit slot, which then looks the block up as usual.
     /// </summary>
-    public static byte[] EmitDispatchEntry(ulong epilogue)
+    /// <param name="twoWayCodeBase">Nonzero: the table is two-way with packed entries (<see cref="A64Opt.AssocDispatch"/>)
+    /// and this is the code arena's start.</param>
+    public static byte[] EmitDispatchEntry(ulong epilogue, ulong twoWayCodeBase = 0)
     {
         var a = new Arm64Assembler();
         int miss = a.NewLabel();
         a.Ldr(X0, State, OffR + 60);
         a.Ldr(X1, State, OffThumb);
         a.Orr(X1, X0, X1);                                   // key = pc | thumb
+        if (twoWayCodeBase != 0)
+        {
+            int hit = a.NewLabel();
+            a.Ubfx(X2, X0, 2, NativeRuntime.DispatchBits - 1);
+            a.LdrX(X3, State, OffDispatchTable);
+            a.Add(X3, X3, X2, Shift.Lsl, 5, x: true);
+            a.LdrX(X4, X3, 0);
+            a.Cmp(X4, X1);
+            a.BCond(Cond.EQ, hit);
+            a.LdrX(X4, X3, 16);
+            a.Cmp(X4, X1);
+            a.BCond(Cond.NE, miss);
+            a.Bind(hit);
+            a.LdrLit(X5, twoWayCodeBase);
+            a.Add(X5, X5, X4, Shift.Lsr, 32, x: true);
+            a.Br(X5);
+            a.Bind(miss);
+            a.StrX(ZR, State, OffLastExitSlot);
+            a.LdrLit(X16, epilogue);
+            a.Br(X16);
+            return a.Finish();
+        }
         a.Ubfx(X2, X0, 1, NativeRuntime.DispatchBits);
         a.LdrX(X3, State, OffDispatchTable);
         a.Add(X3, X3, X2, Shift.Lsl, 4, x: true);            // 16-byte entries

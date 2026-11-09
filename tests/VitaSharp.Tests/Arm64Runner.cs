@@ -37,7 +37,7 @@ public sealed unsafe class Arm64HostRunner : IArm64Runner
         var e = NativeRuntime.Instance.Dispatch + ((pc >> 1) & ((1u << NativeRuntime.DispatchBits) - 1));
         Volatile.Write(ref e->Key, NativeRuntime.NoKey);
         Volatile.Write(ref e->Code, entry);
-        Volatile.Write(ref e->Key, pc | (thumb ? 1u : 0u));
+        Volatile.Write(ref *(ulong*)e, NativeRuntime.Instance.PackedEntry(pc | (thumb ? 1u : 0u), entry));
     }
     public void Call(ulong fn, ulong arg0, ulong arg1) => ((delegate* unmanaged<ulong, ulong, void>)fn)(arg0, arg1);
     public long Callouts => -1;

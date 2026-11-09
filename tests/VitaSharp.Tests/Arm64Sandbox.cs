@@ -72,7 +72,8 @@ public sealed unsafe partial class Arm64Sandbox : IArm64Runner
         bool pinned = (Arm64Emitter.Opts & Arm64Emitter.A64Opt.PinnedCounters) != 0;
         noBlockCounts &= pinned;
         _tramp = (ulong)code.Place(_ => Arm64Emitter.EmitTrampoline(out epi, pinned, blockCounts: !noBlockCounts));
-        Stubs = new Arm64Emitter.Runtime { Epilogue = _tramp + (ulong)epi, Callout = CalloutStub, DispatchTable = (ulong)Dispatch, PinnedCounters = pinned, NoBlockCounts = noBlockCounts,
+        Stubs = new Arm64Emitter.Runtime { Epilogue = _tramp + (ulong)epi, Callout = CalloutStub, DispatchTable = (ulong)Dispatch, CodeBase = (ulong)code.ExecBase, PinnedCounters = pinned,
+            TwoWayDispatch = (Arm64Emitter.Opts & (Arm64Emitter.A64Opt.AssocDispatch | Arm64Emitter.A64Opt.PackedDispatch)) == (Arm64Emitter.A64Opt.AssocDispatch | Arm64Emitter.A64Opt.PackedDispatch), NoBlockCounts = noBlockCounts,
             // the device's exit layout (patch sites; tests link through the slots, so the sites stay unlinked)
             PatchLinks = pinned && (Arm64Emitter.Opts & Arm64Emitter.A64Opt.PatchLinks) != 0 };
         Check(uc_hook_add(_uc, out _, UC_HOOK_CODE, (void*)(delegate* unmanaged<nint, ulong, uint, void*, void>)&OnCallout, null, CalloutStub, CalloutStub), "hook callout");
@@ -102,7 +103,8 @@ public sealed unsafe partial class Arm64Sandbox : IArm64Runner
     public void Publish(uint pc, bool thumb, nint entry)
     {
         var e = Dispatch + ((pc >> 1) & ((1u << NativeRuntime.DispatchBits) - 1));
-        e->Key = NativeRuntime.NoKey; e->Code = entry; e->Key = pc | (thumb ? 1u : 0u);
+        e->Key = NativeRuntime.NoKey; e->Code = entry;
+        *(ulong*)e = NativeRuntime.Instance.PackedEntry(pc | (thumb ? 1u : 0u), entry);
     }
 
     /// <summary>Runs generated code from <paramref name="entry"/> through the trampoline until it returns.</summary>

@@ -28,6 +28,8 @@ public sealed unsafe partial class NativeJitTests
         s->CycleAcc = 0; s->CheckWindow = 0; s->LinkBreak = 1; s->NBlocks = 0; s->NInstr = 0;
         sb.Run(s, entry);
         if (s->CalloutFault != 0) NativeRuntime.ThrowPendingFault(s);
+        // the block found FPSCR outside the Vita mode at its entry (A64Opt.FpEntryCheck): the dispatcher interprets it
+        if (s->TierUpRequest == 2) { s->TierUpRequest = 0; CpuCore.Interpret(s, BlockBuilder.Build(s->R[15], s->Thumb != 0)); }
     }
 
     [Arm64SandboxTheory]

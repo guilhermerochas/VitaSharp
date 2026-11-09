@@ -59,10 +59,16 @@ public sealed unsafe class NativeArm64Compiler : IBlockCompiler
         var fe = _frontend ??= new ArmFrontend(Arm64Emitter.SupportsVec, tinyCheck: false, reuseIr: true);
         fe.HleCallouts = hleCallouts;
         fe.DeferRegions = (Arm64Emitter.Opts & Arm64Emitter.A64Opt.DeferRegions) != 0;
-        var ir = fe.Translate(b);
+        fe.DynamicExitOperands = true;
+        var deps = _deps ??= new();
+        deps.Clear();
+        bool cross = successors != null && !NativeVerifier.Enabled && CpuCore.Probes == null; // analyses beyond the block
+        var chain = cross && (Arm64Emitter.Opts & Arm64Emitter.A64Opt.Superblocks) != 0 ? BuildChain(b, successors!, deps) : null;
+        var ir = fe.Translate(b, chain);
         long t1 = Stopwatch.GetTimestamp();
-        if (successors != null && (Arm64Emitter.Opts & Arm64Emitter.A64Opt.Successors) != 0 && !NativeVerifier.Enabled && CpuCore.Probes == null)
-            DropDeadStores(b, ir, fe, successors, coldPc: stubs.PinnedCounters && stubs.PatchLinks && (Arm64Emitter.Opts & Arm64Emitter.A64Opt.ExitStubs) != 0);
+        if (cross && (Arm64Emitter.Opts & Arm64Emitter.A64Opt.Successors) != 0)
+            DropDeadStores(b, ir, fe, successors!, coldPc: stubs.PinnedCounters && stubs.PatchLinks && (Arm64Emitter.Opts & Arm64Emitter.A64Opt.ExitStubs) != 0, deps);
+        b.Deps = deps.Count > 0 ? deps.ToArray() : null;
         if ((Arm64Emitter.Opts & Arm64Emitter.A64Opt.MergeFences) != 0) IrPasses.MergeFences(ir);
         IrPasses.DeadCode(ir);
         if (NativeX64Compiler.ValidateIr) IrPasses.Validate(ir);
@@ -106,32 +112,65 @@ public sealed unsafe class NativeArm64Compiler : IBlockCompiler
     }
 
     [ThreadStatic] static List<(uint Pc, bool Thumb, int Dead)>? _targets;
+    [ThreadStatic] static List<uint>? _deps;
+
+    /// <summary>Superblock limits (<see cref="Arm64Emitter.A64Opt.Superblocks"/>).</summary>
+    const int MaxChainBlocks = 4, MaxChainInstructions = 128;
+
+    /// <summary>
+    /// <see cref="Arm64Emitter.A64Opt.Superblocks"/>: the blocks that follow <paramref name="b"/> through the not-taken
+    /// path of its final conditional branch (and so on), when they already ran (decoded and executed, or compiled): one
+    /// translation keeps the guest state in temps across them and saves an exit and an entry per conditional branch.
+    /// Their ranges become dependencies. Null when the block does not continue.
+    /// </summary>
+    static List<Block>? BuildChain(Block b, Func<uint, bool, Block?> successors, List<uint> deps)
+    {
+        List<Block>? chain = null;
+        var cur = b;
+        int n = b.Insts.Length;
+        while ((chain?.Count ?? 1) < MaxChainBlocks && cur.Insts.Length > 0 && ArmFrontend.Continues(cur.Insts[^1]))
+        {
+            Block? next;
+            try { next = successors(cur.End, cur.Thumb); } catch (Exception) { break; }
+            if (next == null || next == b || next.Thumb != cur.Thumb || next.Insts.Length == 0 || next.Start != cur.End
+                || (next.ExecCount == 0 && next.NativeEntry == 0) || n + next.Insts.Length > MaxChainInstructions) break;
+            (chain ??= [b]).Add(next);
+            n += next.Insts.Length;
+            deps.Add(next.Start); deps.Add(next.End);
+            cur = next;
+        }
+        return chain;
+    }
 
     /// <summary>
     /// <see cref="StateLiveness.DropDeadStores"/> against the decoded targets of the block's static exits. The targets'
     /// code ranges become dependencies of the block (rewriting them drops it, <see cref="Block.Deps"/>), published
     /// before the code exists, so an invalidation racing with this compile drops the block too.
     /// </summary>
-    static void DropDeadStores(Block b, IrBlock ir, ArmFrontend fe, Func<uint, bool, Block?> successors, bool coldPc)
+    static void DropDeadStores(Block b, IrBlock ir, ArmFrontend fe, Func<uint, bool, Block?> successors, bool coldPc, List<uint> deps)
     {
         var insts = System.Runtime.InteropServices.CollectionsMarshal.AsSpan(ir.Insts);
         foreach (ref readonly var x in insts) if (x.Op == IrOp.Callout) return; // see StateLiveness.DropDeadStores
         var targets = _targets ??= new();
         targets.Clear();
-        List<uint>? deps = null;
         foreach (ref var x in insts)
         {
             if (x.Op != IrOp.ExitStatic) continue;
             if (coldPc) x.Imm3 = StateLiveness.ColdPc; // patched exits store R15 on their dispatcher paths only
             bool thumb = x.Imm2 != 0;
-            var t = successors(x.Imm, thumb);
-            int dead = t == null || t.Insts.Length == 0 ? 0 : StateLiveness.DeadIn(t, fe);
+            Block? t;
+            int dead;
+            try
+            {
+                t = successors(x.Imm, thumb);
+                dead = t == null || t.Insts.Length == 0 ? 0 : StateLiveness.DeadIn(t, fe);
+            }
+            catch (Exception) { continue; } // whatever the target holds, this block still compiles (with the stores)
             if (dead == 0) continue;
             targets.Add((x.Imm, thumb, dead));
-            if (t!.Start < b.Start || t.End > b.End) { deps ??= new(4); deps.Add(t.Start); deps.Add(t.End); }
+            if (t!.Start < b.Start || t.End > b.End) { deps.Add(t.Start); deps.Add(t.End); }
         }
         if (targets.Count == 0 && !coldPc) return;
-        if (deps != null) b.Deps = deps.ToArray();
         int n = StateLiveness.DropDeadStores(ir, (pc, thumb) =>
         {
             foreach (var (p, th, d) in targets) if (p == pc && th == thumb) return d;
