@@ -709,7 +709,12 @@ public sealed partial class Gxm : HleModule
     }
     static readonly bool DisplayQueueStrict = Environment.GetEnvironmentVariable(EnvVars.DisplayQueueStrict) == "1";
 
-    static readonly bool DisplayEarlySignal = Environment.GetEnvironmentVariable(EnvVars.DisplayEarlySignal) == "1";
+    /// <summary><see cref="EnvVars.DisplayEarlySignal"/>: the flip callback runs once the GPU worker recorded and submitted
+    /// the frame. Everything the frame reads from guest memory was read when it was recorded, and presents stay in GPU
+    /// order, so the guest reusing its buffers after the callback is safe; only a CPU read of the frame's own results
+    /// (render-target writebacks, deferred transfers) right after the callback could see older content. On by default on
+    /// Android (Killzone +12%: the game thread no longer waits for the GPU before its next frame), off on desktop.</summary>
+    static readonly bool DisplayEarlySignal = Environment.GetEnvironmentVariable(EnvVars.DisplayEarlySignal)?.Trim() is { Length: > 0 } v ? v == "1" : OperatingSystem.IsAndroid();
 
     [Hle]
     int sceGxmDisplayQueueAddEntry(uint oldBuffer, uint newBuffer, uint callbackData)
