@@ -1501,16 +1501,25 @@ on-existing PPS 0 e nenhum quadro). Ainda aberto: depois da carga no meio do fil
   3C7FBEE743D02522, LUT 16x2048) recebe da CPU escala 0,0795 / viés -0,0049 contra 0,9708 / 0,0135 numa corrida normal:
   o próprio jogo segura um fade para o preto. Nesse momento um avPlayer novo (f7380) tem o 'avPlayer Demux' já Dormant
   e o 'avPlayer VideoDec' esperando a condvar decbuff para sempre: o filme da troca de carro não entrega quadro e o fade
-  não volta. Antes disso o usuário trocou 1x->2x e 30->60 fps por hotkey. Próximo: rodar do estado da gravação com o
-  build 3261a98 e seguir as chamadas SceMp4/sceAvcdec desse player
+  não volta. Antes disso o usuário trocou 1x->2x e 30->60 fps por hotkey. Rodando do estado da gravação com o build
+  3261a98: o filme é `UI/MOVIES/1689052.MP4` (prévia do carro, 348 KB, só vídeo, sem trilha de áudio, como todos os
+  1689xxx/1473xxx), o SceMp4 já tinha chegado ao fim (última unidade nula) e em 260 quadros nenhuma chamada
+  SceMp4/sceAvcdec acontece; a tela segue escura. Próximo: chegar à troca de carro sem estado (dirigir até um ponto de
+  troca) com trace do SceMp4/sceAvcdec desde a abertura do filme e ver o que o player do jogo (entry 0x816361B5) espera
+  de um filme sem áudio (fim de stream, sceMp4Reset para repetir, relógio de áudio)
 - [ ] Batman: Arkham Origins Blackgate (PCSE00269): som "estourado" e depois o jogo trava (fps 0) (relato do usuário,
   08/11/2026, `captures\PCSE00269_20261108_185032_tudo`, build 3261a98). Achados (agente B): reproduz do estado da
   gravação com o build 3261a98 (~250 quadros depois do estado): 'main' espera a eventflag AkManualEvent, o
   'AK::EventManager' (Wwise) gira LockLwMutex/UnlockLwMutex2 em 0x81513A2C esperando um buffer de stream ([obj+0x9C] >
   0) e o 'AK::IOThread' espera a eventflag CAkIOThread.Events (0xD, OR) sem nunca acordar; depois da carga a porta 1
   só recebe silêncio (`scratchpad/bugsB1/bat1/audio`). O audio/ vazio da gravação combina com isso (o thread do Wwise
-  já não chamava sceAudioOutOutput quando o F8 começou). Causa ainda aberta: achar quem deveria ligar o bit da
-  CAkIOThread.Events (Ghidra no eboot) e por que o pedido de stream não completa
+  já não chamava sceAudioOutOutput quando o F8 começou). Protocolo (disassembly do eboot, só estudo): o IO thread do
+  Wwise espera 0xD em OR sem limpar; o bit 0x8 é ligado quando a contagem de pedidos pendentes (+0x40) passa de 0 para
+  1 sem pausa (+0x44) e desligado quando volta a 0 ou ao pausar (sceKernelClearEventFlag com o complemento, que o HLE
+  trata certo: Pattern &= bits); o bit 0x4 segue a contagem de +0x3C; 0x2 os slots livres (+0x48 contra +0x4). No
+  travamento a contagem de pendentes está em 0 (IO dormindo) e o EventManager espera dados de um stream: um pedido
+  sumiu ou nunca foi feito. As semânticas de eventflag/lwmutex do HLE conferem; falta seguir quem chama 0x81517354
+  (enfileira) e 0x815173CC/0x815173AE (pausa/retoma) perto do travamento. Causa ainda aberta
 - [ ] SILH00004 (homebrew, port de Silent Hill 4 com vitaGL): não rodava (relato do usuário, 08/11/2026). Feito
 - [x] SILH00004 (homebrew, port de Silent Hill 4 com vitaGL): não rodava (relato do usuário, 08/11/2026). Feito
   (agente C): módulo ausente devolve o erro do Vita em vez de exceção do host (bf378ec, aviso no log de como extrair o
