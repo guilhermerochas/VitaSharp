@@ -634,12 +634,16 @@ public sealed partial class ThreadMgr : HleModule
 
     [Hle("sceKernelLockLwMutex")]
     [Hle("sceKernelLockLwMutexCB")]
+    [Hle("sceKernelLockLwMutex_0")] // older SDKs' NID of the same call (Vita3K: an alias)
     internal int sceKernelLockLwMutex(uint work, int count, Ptr<uint> timeout) => LwMutexOf(work)?.Lock(Self, count, timeout) ?? SceError.UNKNOWN_LW_MUTEX_ID;
 
-    [Hle] internal int sceKernelTryLockLwMutex(uint work, int count) => LwMutexOf(work)?.TryLock(Self, count) ?? SceError.UNKNOWN_LW_MUTEX_ID;
+    [Hle("sceKernelTryLockLwMutex")]
+    [Hle("sceKernelTryLockLwMutex_16XX")] // the 1.6x SDKs' NID (Vita3K: an alias)
+    internal int sceKernelTryLockLwMutex(uint work, int count) => LwMutexOf(work)?.TryLock(Self, count) ?? SceError.UNKNOWN_LW_MUTEX_ID;
 
     [Hle("sceKernelUnlockLwMutex")]
     [Hle("sceKernelUnlockLwMutex2")]
+    [Hle("sceKernelUnlockLwMutex_0")]
     internal int sceKernelUnlockLwMutex(uint work, int count) => LwMutexOf(work)?.Unlock(Self, count) ?? SceError.LW_MUTEX_NOT_OWNED;
 
     [Hle]

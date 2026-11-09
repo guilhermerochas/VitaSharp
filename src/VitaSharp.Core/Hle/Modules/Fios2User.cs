@@ -237,6 +237,7 @@ public sealed partial class Fios2User : HleModule
     int _sceFiosKernelOverlayGetRecommendedScheduler(int param, string path) => sceFiosOverlayGetRecommendedScheduler02(param, path);
 
     [Hle("_sceFiosKernelOverlayResolveWithRangeSync")]
+    [Hle("sceFiosKernelOverlayResolveWithRangeSync02")] // SceFios2Kernel02: same arguments (Vita3K)
     int _sceFiosKernelOverlayResolveWithRangeSync(int pid, int mode, string inPath, uint opt)
     {
         if (opt == 0) return ERR_FIOS;
