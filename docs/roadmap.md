@@ -319,8 +319,8 @@ Lista de itens futuros do VitaSharp. Marque `[x]` quando um item for concluído.
   de bloco, marca de página suja em 3 instruções e agrupada, DMB duplicado, FPSCR checado uma vez por bloco com
   operandos VFP em registros, tabela de despacho compacta (`VITASHARP_NATIVE_A64_NOOPT` desliga cada um;
   `docs/notes/native-jit.md`, "perf/android-jit"). Medido (50f7ddf, 3 pares): thread do jogo 24,2 contra 26,6 ms por
-  quadro (-9%), fps igual porque o quadro estava preso no worker. Falta medir f6eacd7 (VFP: JobSched/Havok no A55)
-  e então: alocação de registros entre blocos ligados, blocos maiores (seguir B incondicional)
+  quadro (-9%), fps igual porque o quadro estava preso no worker. Depois vieram superblocos (`chain`), cache SIMD
+  de escrita (`vlazy`) e tabela de despacho de 2 vias (`assoc`).
   Depois (b760002, NativeAOT sobre ebfe72c, KZ slot 1, A B D D B A): com tudo ligado a thread do jogo cai de ~19,4
   para ~16,0 ms por quadro (-17%) e o tempo no código do JIT da thread do jogo de 23,3-24,6 para 21,4-21,9 ms; JobSched
   e Havok dentro do ruído (29-37 ms por quadro cada, A55). fps sem ganho: o quadro está preso na GPU (~43 ms) e nos
