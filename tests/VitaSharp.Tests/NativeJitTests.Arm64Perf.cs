@@ -752,6 +752,50 @@ public sealed unsafe partial class NativeJitTests
         Assert.True(chained > iterations / 2);
     }
 
+    /// <summary>
+    /// <see cref="Arm64Emitter.A64Opt.AssocDispatch"/>: an indirect exit finds its target in either way of its
+    /// dispatch-table set. Two Thumb blocks 2 bytes apart share a set (one in each way); BX to the second must enter it
+    /// directly, with and without the option (single-way: the exact entry).
+    /// </summary>
+    [Arm64SandboxFact]
+    public void Arm64TwoWayDispatchFindsBothWays()
+    {
+        if (Arm64Runner.Native) return; // the sandbox's own table
+        EnsureGuestPages();
+        using var arena = new ArenaScope();
+        var mem = GuestMemory.Span(CodeBase, 0x1000);
+        mem.Clear();
+        BitConverter.GetBytes((ushort)0x4700).CopyTo(mem);          // bx r0
+        BitConverter.GetBytes((ushort)0xE7FE).CopyTo(mem[0x100..]); // T1: b .
+        BitConverter.GetBytes((ushort)0x2107).CopyTo(mem[0x102..]); // T2: movs r1, #7
+        BitConverter.GetBytes((ushort)0xE7FE).CopyTo(mem[0x104..]); //     b .
+        var old = Arm64Emitter.Opts;
+        var s = CpuState.Allocate();
+        try
+        {
+            foreach (bool assoc in new[] { true, false })
+            {
+                Arm64Emitter.Opts = assoc ? old | Arm64Emitter.A64Opt.AssocDispatch : old & ~Arm64Emitter.A64Opt.AssocDispatch;
+                using var sb = new Arm64Sandbox();
+                var a = BlockBuilder.Build(CodeBase, true);
+                var t1 = BlockBuilder.Build(CodeBase + 0x100, true);
+                var t2 = BlockBuilder.Build(CodeBase + 0x102, true);
+                var ca = NativeArm64Compiler.Instance.Compile(a, sb.Stubs)!;
+                var c1 = NativeArm64Compiler.Instance.Compile(t1, sb.Stubs)!;
+                var c2 = NativeArm64Compiler.Instance.Compile(t2, sb.Stubs)!;
+                sb.Publish(t1.Start, true, c1.NativeEntry);
+                sb.Publish(t2.Start, true, c2.NativeEntry);
+                *s = default; s->MemBase = GuestMemory.Base; s->Thumb = 1; s->R[15] = CodeBase;
+                s->R[0] = (CodeBase + 0x102) | 1;
+                s->CycleAcc = 0; s->CheckWindow = 1L << 40; s->LinkBreak = 0;
+                sb.Run(s, ca.NativeEntry);
+                Assert.Equal(7u, s->R[1]);                    // T2 ran inside native code
+                Assert.Equal(CodeBase + 0x104, s->R[15]);
+            }
+        }
+        finally { Arm64Emitter.Opts = old; CpuState.Free(s); }
+    }
+
     [Arm64SandboxFact]
     public void Arm64CodeQualityTable()
     {

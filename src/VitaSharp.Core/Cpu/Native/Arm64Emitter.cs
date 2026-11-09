@@ -131,10 +131,13 @@ public sealed unsafe partial class Arm64Emitter
         /// <summary>The SIMD register cache is write-back: VecOp and inline FpOp results stay in v18-v31 until a branch,
         /// label, call, exit, eviction or another access to the register file in memory needs them stored.</summary>
         LazyVec = 524288,
-        All = 1048575,
+        /// <summary>With <see cref="PackedDispatch"/>: the indirect-exit table is two-way set associative
+        /// (<see cref="NativeRuntime.TwoWay"/>), so colliding hot targets stop sending each other through the dispatcher.</summary>
+        AssocDispatch = 1048576,
+        All = 2097151,
     }
 
-    public static readonly string[] OptNames = ["pin", "backedge", "fuse", "pair", "vcache", "fpcr", "fpcheck", "dirty", "lit", "patch", "cond", "stub", "succ", "count", "fence", "group", "fpentry", "packed", "chain", "vlazy"];
+    public static readonly string[] OptNames = ["pin", "backedge", "fuse", "pair", "vcache", "fpcr", "fpcheck", "dirty", "lit", "patch", "cond", "stub", "succ", "count", "fence", "group", "fpentry", "packed", "chain", "vlazy", "assoc"];
 
     /// <summary>Enabled optimisations (tests may change it; the trampoline's pinned-counter mode is fixed per runtime).</summary>
     public static A64Opt Opts = ParseOpts(Environment.GetEnvironmentVariable(Util.EnvVars.NativeA64NoOpt));
@@ -189,6 +192,8 @@ public sealed unsafe partial class Arm64Emitter
         public bool NoBlockCounts;
         /// <summary>Start of the code arena: dispatch-table entries hold code offsets from it (<see cref="A64Opt.PackedDispatch"/>; 0: not packed).</summary>
         public ulong CodeBase;
+        /// <summary>The dispatch table is two-way set associative (<see cref="A64Opt.AssocDispatch"/>, packed entries only).</summary>
+        public bool TwoWayDispatch;
     }
 
     /// <summary>Byte offsets in the last prepared block of each static exit's patch site (<see cref="Runtime.PatchLinks"/>),
@@ -822,15 +827,33 @@ public sealed unsafe partial class Arm64Emitter
                     if (x.B >= 0) th = UseZ(x.B, X1); else LdState(X1, OffThumb);
                     a.Orr(X1, pc, th);                                   // key = pc | thumb
                     if (pc != X0) a.Mov(X0, pc);
-                    a.Ubfx(X2, X0, 1, NativeRuntime.DispatchBits);
-                    a.LdrX(X3, State, OffDispatchTable);                 // the thread's process's table
-                    a.Add(X3, X3, X2, Shift.Lsl, 4, x: true);            // 16-byte entries
-                    if (_rt.CodeBase != 0 && (Opts & A64Opt.PackedDispatch) != 0)
+                    bool packed = _rt.CodeBase != 0 && (Opts & A64Opt.PackedDispatch) != 0;
+                    if (packed && _rt.TwoWayDispatch)
+                    {
+                        a.Ubfx(X2, X0, 2, NativeRuntime.DispatchBits - 1);  // set index: two 16-byte entries
+                        a.LdrX(X3, State, OffDispatchTable);
+                        a.Add(X3, X3, X2, Shift.Lsl, 5, x: true);
+                    }
+                    else
+                    {
+                        a.Ubfx(X2, X0, 1, NativeRuntime.DispatchBits);
+                        a.LdrX(X3, State, OffDispatchTable);                 // the thread's process's table
+                        a.Add(X3, X3, X2, Shift.Lsl, 4, x: true);            // 16-byte entries
+                    }
+                    if (packed)
                     {
                         // {key, arena offset} in one single-copy-atomic load: a republished entry is read whole
+                        int hit = a.NewLabel();
                         a.LdrX(X4, X3, 0);
                         a.Cmp(X4, X1);                                   // 32-bit compare: the key half
+                        if (_rt.TwoWayDispatch)
+                        {
+                            a.BCond(Cond.EQ, hit);
+                            a.LdrX(X4, X3, 16);                          // the set's second way
+                            a.Cmp(X4, X1);
+                        }
                         a.BCond(Cond.NE, ret);
+                        a.Bind(hit);
                         a.LdrLit(X5, _rt.CodeBase);
                         a.Add(X5, X5, X4, Shift.Lsr, 32, x: true);
                         a.Br(X5);
@@ -1654,13 +1677,37 @@ public sealed unsafe partial class Arm64Emitter
     /// the dispatcher enters here after an HLE call instead of looking the return address up in managed code. A miss
     /// returns to the dispatcher with no exit slot, which then looks the block up as usual.
     /// </summary>
-    public static byte[] EmitDispatchEntry(ulong epilogue)
+    /// <param name="twoWayCodeBase">Nonzero: the table is two-way with packed entries (<see cref="A64Opt.AssocDispatch"/>)
+    /// and this is the code arena's start.</param>
+    public static byte[] EmitDispatchEntry(ulong epilogue, ulong twoWayCodeBase = 0)
     {
         var a = new Arm64Assembler();
         int miss = a.NewLabel();
         a.Ldr(X0, State, OffR + 60);
         a.Ldr(X1, State, OffThumb);
         a.Orr(X1, X0, X1);                                   // key = pc | thumb
+        if (twoWayCodeBase != 0)
+        {
+            int hit = a.NewLabel();
+            a.Ubfx(X2, X0, 2, NativeRuntime.DispatchBits - 1);
+            a.LdrX(X3, State, OffDispatchTable);
+            a.Add(X3, X3, X2, Shift.Lsl, 5, x: true);
+            a.LdrX(X4, X3, 0);
+            a.Cmp(X4, X1);
+            a.BCond(Cond.EQ, hit);
+            a.LdrX(X4, X3, 16);
+            a.Cmp(X4, X1);
+            a.BCond(Cond.NE, miss);
+            a.Bind(hit);
+            a.LdrLit(X5, twoWayCodeBase);
+            a.Add(X5, X5, X4, Shift.Lsr, 32, x: true);
+            a.Br(X5);
+            a.Bind(miss);
+            a.StrX(ZR, State, OffLastExitSlot);
+            a.LdrLit(X16, epilogue);
+            a.Br(X16);
+            return a.Finish();
+        }
         a.Ubfx(X2, X0, 1, NativeRuntime.DispatchBits);
         a.LdrX(X3, State, OffDispatchTable);
         a.Add(X3, X3, X2, Shift.Lsl, 4, x: true);            // 16-byte entries

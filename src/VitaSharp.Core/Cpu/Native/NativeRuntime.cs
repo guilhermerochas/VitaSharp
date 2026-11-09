@@ -52,6 +52,8 @@ public sealed unsafe partial class NativeRuntime
         {
             int epi = 0;
             bool pinned = (Arm64Emitter.Opts & Arm64Emitter.A64Opt.PinnedCounters) != 0;
+            TwoWay = (Arm64Emitter.Opts & (Arm64Emitter.A64Opt.AssocDispatch | Arm64Emitter.A64Opt.PackedDispatch))
+                == (Arm64Emitter.A64Opt.AssocDispatch | Arm64Emitter.A64Opt.PackedDispatch);
             bool noCounts = pinned && (Arm64Emitter.Opts & Arm64Emitter.A64Opt.NoBlockCounts) != 0
                 && Environment.GetEnvironmentVariable(Util.EnvVars.NativeCounters) != "1";
             int trampSize = 0;
@@ -59,7 +61,7 @@ public sealed unsafe partial class NativeRuntime
             if (NativeCodeMap.Enabled) NativeCodeMap.Add((nint)entry64, trampSize, 0, false, "trampoline");
             _enter = (delegate* unmanaged<CpuState*, nint, void>)entry64;
             ulong epilogue = (ulong)(entry64 + epi);
-            if (!NoLink) ResumeEntry = (nint)Code.Place(_ => Arm64Emitter.EmitDispatchEntry(epilogue));
+            if (!NoLink) ResumeEntry = (nint)Code.Place(_ => Arm64Emitter.EmitDispatchEntry(epilogue, TwoWay ? (ulong)Code.ExecBase : 0));
             if (SkipGcTransition)
             {
                 _enterFast = (delegate* unmanaged[SuppressGCTransition]<CpuState*, nint, void>)entry64;
@@ -69,6 +71,7 @@ public sealed unsafe partial class NativeRuntime
             {
                 Epilogue = (ulong)(entry64 + epi),
                 CodeBase = (ulong)Code.ExecBase,
+                TwoWayDispatch = TwoWay,
                 Callout = (ulong)(delegate* unmanaged<CpuState*, int, uint, uint, int>)&Callout,
                 DispatchTable = (ulong)Dispatch,
                 PinnedCounters = pinned,
@@ -233,19 +236,33 @@ public sealed unsafe partial class NativeRuntime
     void InitDispatch() { }
 
     static uint KeyOf(Block b) => b.Start | (b.Thumb ? 1u : 0u);
+    /// <summary>The block's entry, or with <see cref="TwoWay"/> the first entry of its two-entry set.</summary>
     DispatchEntry* EntryOf(Block b) =>
-        (b.Owner != null ? (DispatchEntry*)b.Owner.DispatchTable : Dispatch) + ((b.Start >> 1) & ((1u << DispatchBits) - 1));
+        (b.Owner != null ? (DispatchEntry*)b.Owner.DispatchTable : Dispatch) + ((b.Start >> 1) & ((1u << DispatchBits) - 1) & (TwoWay ? ~1u : ~0u));
+
+    /// <summary>ARM64 (<see cref="Arm64Emitter.A64Opt.AssocDispatch"/>): the table is two-way set associative (entries
+    /// 2k and 2k + 1 form a set; the most recently published block is in the first), so two hot targets whose addresses
+    /// map to the same entry stop evicting each other on every jump (each miss is a round trip through the dispatcher).</summary>
+    public bool TwoWay { get; private set; }
+
+    void Write(DispatchEntry* e, uint key, nint code)
+    {
+        Volatile.Write(ref *(ulong*)e, NoKey);
+        Volatile.Write(ref e->Code, code);
+        Volatile.Write(ref *(ulong*)e, key == NoKey ? NoKey : PackedEntry(key, code)); // key and offset in one store
+    }
 
     /// <summary>Makes a native block reachable from indirect exits.</summary>
     public void Publish(Block b)
     {
         if (b.NativeEntry == 0 || b.Invalidated || NoLink) return;
         var e = EntryOf(b);
+        uint key = KeyOf(b);
         lock (_dispatchLock)
         {
-            Volatile.Write(ref *(ulong*)e, NoKey);
-            Volatile.Write(ref e->Code, b.NativeEntry);
-            Volatile.Write(ref *(ulong*)e, PackedEntry(KeyOf(b), b.NativeEntry)); // key and offset in one store
+            if (TwoWay && e[1].Key == key) { Write(e + 1, key, b.NativeEntry); return; }
+            if (TwoWay && e->Key != key && e->Key != NoKey) Write(e + 1, e->Key, e->Code); // the previous one moves to the second way
+            Write(e, key, b.NativeEntry);
         }
     }
 
@@ -258,7 +275,7 @@ public sealed unsafe partial class NativeRuntime
     public void Republish(Block b)
     {
         var e = EntryOf(b);
-        if (Volatile.Read(ref e->Key) != KeyOf(b)) Publish(b);
+        if (Volatile.Read(ref e->Key) != KeyOf(b) && (!TwoWay || Volatile.Read(ref e[1].Key) != KeyOf(b))) Publish(b);
     }
 
     readonly object _dispatchLock = new();
@@ -339,7 +356,8 @@ public sealed unsafe partial class NativeRuntime
         {
             var e = _instance.EntryOf(b);
             lock (_instance._dispatchLock)
-                if (e->Key == KeyOf(b) && e->Code == entry) Volatile.Write(ref e->Key, NoKey);
+                for (int w = 0; w < (_instance.TwoWay ? 2 : 1); w++)
+                    if (e[w].Key == KeyOf(b) && e[w].Code == entry) Volatile.Write(ref e[w].Key, NoKey);
         }
         if (b.LinkedFrom == null) return;
         foreach (var slot in b.LinkedFrom)
