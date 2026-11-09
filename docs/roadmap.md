@@ -284,6 +284,33 @@ Lista de itens futuros do VitaSharp. Marque `[x]` quando um item for concluído.
   CPU por desenho (o jogo fica nos 20 fps dele). Um save state carregado mantém os stubs de SVC de quando foi salvo (o
   código do guest só entra num boot novo). O que ainda sai do código nativo em quantidade: lwmutex (objetos do host),
   `sceKernelGetProcessTimeWide` e os setters de estado do contexto da libgxm (estado em C#)
+- [ ] Rodada 17 de desempenho (perf/desktop-17, 09/11/2026), **em andamento, nada validado em jogo** (parou no fim do
+  dia). Medido na main 6deaa09 (headless, por quadro): Killzone `kzl_walk3` 29 fps, CPU 30,1 ms/quadro, thread
+  `killzone_vita` 2.755 entradas no código nativo/quadro; chamadas HLE ~640 `sceKernelLockLwMutex` + ~640
+  `UnlockLwMutex2`, ~300 `sceGxmDrawPrecomputed`, ~247 `SetVertexProgram`, ~240 `SetFragmentProgram`, ~76
+  `SetRegionClip`, ~51 `SetFrontVisibilityTestIndex`, ~42 cada `Set{Front,Back}DepthWriteEnable` /
+  `Set{Front,Back}DepthFunc`, ~40 `SetViewport`, ~38 `SetFrontStencilFunc`/`StencilRef`, ~29 `GetProcessTimeWide`.
+  Sonic Mania `mania_boot` 65,6 s, `main` 1.921 entradas/quadro, ~400 lock + ~400 unlock de lwmutex e ~180
+  `GetProcessTimeWide` por quadro. FIFA 13 (título) 10,8 ms/quadro, ~66 `GetProcessTimeWide`, ~23 `sceKernelGetMutexInfo`
+  por quadro (mutex comum, não lw). Uncharted, F1 2011 e Jak ainda sem medida de base.
+  Feito no commit WIP (compila? não conferido; testes novos escritos, não rodados): (1) lwmutex com o estado só na área de
+  trabalho do guest (`Kernel/Sync.cs` Mutex: +0 UID do dono com bit 31 = alguém dorme, +8 contagem, +16 UID, 0 depois
+  de apagado), protocolo de futex; lock/trylock/unlock sem disputa em código do guest (LDREX/STREX,
+  `Hle/HleGuestCode` `LwMutexLock`/`LwMutexUnlock`), o resto cai no C#; (2) `sceKernelSignalLwCond(All)` sem ninguém
+  esperando em código do guest (a cond publica em +8 quantos esperam; o que espera se conta antes de soltar o mutex);
+  (3) save state: depois de carregar, `Linker.RebindHleStubs` + `HleGuestCode.Replace` religam os stubs de HLE (SVC ou
+  salto para o código do guest salvo) às rotinas desta build, sem mexer em stubs de exports nem em hooks.
+  `VITASHARP_HLE_GUEST_CODE=nolw` desliga (1) e (2) para A/B. Próximo passo: build, testes `HleGuestCodeKernelTests`
+  e `KernelModuleHleTests` (interp e nativo), depois Killzone/Mania/FIFA/Uncharted/F1/Jak com e sem `=nolw` (entradas/
+  quadro, ms/quadro, fps, prints) e um save/load em jogo (o log diz quantos stubs foram religados).
+  Começado em outra branch (`perf/desktop-17-gxm-wip`, incompleto, NÃO usar): o estado do contexto da libgxm na
+  memória do guest (`GxmObjects.cs`: programas, índices de visibilidade, depth/stencil, two-sided, region clip e
+  viewport num bloco de extensão em +60). Falta: escrever o estado na criação do contexto e no load
+  (`PublishGuestState`), trocar os setters em C# para gravar esses bytes, chamar a sincronização antes de
+  `Reserve*DefaultUniformBuffer`/`DrawPrecomputed`/`ExecuteCommandList`/save, e as rotinas do guest dos setters.
+  `sceKernelGetProcessTimeWide`/`sceRtcGetCurrentTick` como código do guest: descartado com a semântica exata de hoje
+  (o valor depende da posição emulada da thread, `CpuCore.EmulatedPosition`, e do máximo monotônico entre threads; uma
+  página de relógio atualizada pelo emulador andaria em degraus, o que os limitadores de quadro não toleram).
 
 ## Android
 

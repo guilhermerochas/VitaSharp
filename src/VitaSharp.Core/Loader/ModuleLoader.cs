@@ -102,6 +102,32 @@ public sealed class Linker(IImportResolver hle)
         else WriteHleStub(stub, hle.GetHleFunctionIndex(nid, libNid, libName), nid);
     }
 
+    /// <summary>
+    /// After a save state load: binds again every import stub that is still one of ours for an HLE function (an SVC
+    /// stub for its NID, or a jump into <paramref name="isOldGuestCode"/>, the guest-code routines of the saved session),
+    /// so the loaded session runs this build's routines (Hle/HleGuestCode) and its SVCs, not the ones of the build that
+    /// saved it. Stubs bound to a module's export and stubs someone else patched (taiHEN hooks) are left alone.
+    /// Returns the number of stubs rewritten.
+    /// </summary>
+    public int RebindHleStubs(Func<uint, bool> isOldGuestCode)
+    {
+        int n = 0;
+        lock (_lock)
+            foreach (var (nid, libNid, libName, stub) in _funcBindings)
+            {
+                if (_funcExportsByLib.ContainsKey((libNid, nid)) || _funcExports.ContainsKey(nid) || Kept(stub)) continue;
+                uint w0 = GuestMemory.R32(stub), w1 = GuestMemory.R32(stub + 4), w2 = GuestMemory.R32(stub + 8);
+                bool svc = (w0 & 0xFF000000) == 0xEF000000 && w1 == 0xE12FFF1E && w2 == nid;
+                bool jump = (w0 & 0xFFF0F000) == 0xE300C000 && (w1 & 0xFFF0F000) == 0xE340C000 && w2 == 0xE12FFF1C
+                    && isOldGuestCode(((w1 & 0xF0000) << 12) | ((w1 & 0xFFF) << 16) | ((w0 & 0xF0000) >> 4) | (w0 & 0xFFF));
+                if (!svc && !jump) continue;
+                BindHle(stub, nid, libNid, libName);
+                InvalidateCode?.Invoke(stub, 12);
+                n++;
+            }
+        return n;
+    }
+
     public static void WriteJumpStub(uint stub, uint target)
     {
         GuestMemory.W32(stub, 0xE300C000 | ((target & 0xF000) << 4) | (target & 0xFFF));                 // movw r12, #lo

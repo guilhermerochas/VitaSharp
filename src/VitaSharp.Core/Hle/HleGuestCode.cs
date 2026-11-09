@@ -322,6 +322,143 @@ public static class HleGuestCode
         BxLr,                      // 26
     ];
 
+    // ------------------------------------------------------------------ lightweight mutexes
+    //
+    // The uncontended lock and unlock of a lightweight mutex, on its guest work area (Kernel/Sync.cs Mutex: +0 owner UID
+    // with bit 31 = a thread sleeps on it, +8 count, +12 attributes, +16 UID, 0 once deleted), as the real SceLibKernel
+    // does in user mode (and PPSSPP's/Linux's futex protocol): lock = LDREX/STREX 0 -> own UID, unlock = own UID -> 0.
+    // Anything else (taken by another thread, a sleeper to wake, a bad argument, a deleted mutex) is the C# version's,
+    // entered with the caller's registers. Games lock and unlock thousands of times per frame (F1 2011, FIFA 13,
+    // Sonic Mania's loader), almost always uncontended.
+
+    const uint LE = 0xD, GT = 0xC;
+    const uint Dmb = 0xF57FF05B, Clrex = 0xF57FF01F;
+
+    /// <summary>sceKernelLockLwMutex(CB)(work, count, timeout) / sceKernelTryLockLwMutex(work, count)
+    /// (<paramref name="checkCount"/>: the lock's count &lt;= 0 is INVALID_ARGUMENT, the C# version's).</summary>
+    static uint[] LwMutexLock(bool checkCount)
+    {
+        var c = new List<uint>
+        {
+            0xE3500000,                // cmp r0, #0
+            0,                         // beq slow (patched)
+            0xE590C010,                // ldr r12, [r0, #16]   UID
+            0xE35C0000,                // cmp r12, #0
+            0,                         // beq slow
+        };
+        if (checkCount) c.AddRange([0xE3510000, 0]); // cmp r1, #0 ; ble slow
+        int loop = c.Count + 2;
+        c.AddRange(
+        [
+            0xEE1D3F70,                // mrc p15, 0, r3, c13, c0, 3   TPIDRURO
+            0xE51337FC,                // ldr r3, [r3, #-0x7FC]        thread UID (kernel TLS word 1)
+            0xE190CF9F,                // loop: ldrex r12, [r0]
+            0xE35C0000,                // cmp r12, #0
+            0,                         // bne held
+            0xE180CF93,                // strex r12, r3, [r0]
+            0xE35C0000,                // cmp r12, #0
+            Branch(NE, loop + 5, loop),// bne loop
+            Dmb,                       // dmb ish
+            0xE5801008,                // str r1, [r0, #8]      count
+            0xE3A00000,                // mov r0, #0
+            BxLr,
+        ]);
+        int held = c.Count;
+        c.AddRange(
+        [
+            Clrex,                     // held: clrex
+            0xE3CCC102,                // bic r12, r12, #0x80000000
+            0xE15C0003,                // cmp r12, r3           ours: a recursive lock
+            0,                         // bne slow
+            0xE590C00C,                // ldr r12, [r0, #12]    attributes
+            0xE31C0002,                // tst r12, #2           SCE_KERNEL_MUTEX_ATTR_RECURSIVE
+            0,                         // beq slow (RECURSIVE error)
+            0xE590C008,                // ldr r12, [r0, #8]
+            0xE08CC001,                // add r12, r12, r1
+            0xE580C008,                // str r12, [r0, #8]
+            0xE3A00000,                // mov r0, #0
+            BxLr,
+        ]);
+        int slow = c.Count;
+        c.AddRange([FallbackSvc, BxLr]);
+        c[1] = Branch(EQ, 1, slow);
+        c[4] = Branch(EQ, 4, slow);
+        if (checkCount) c[6] = Branch(LE, 6, slow);
+        c[loop + 2] = Branch(NE, loop + 2, held);
+        c[held + 3] = Branch(NE, held + 3, slow);
+        c[held + 6] = Branch(EQ, held + 6, slow);
+        return [.. c];
+    }
+
+    /// <summary>sceKernelUnlockLwMutex(2)(work, count): the owner (no sleeper flagged) drops count; at 0 it swaps its UID
+    /// back to 0, unless a sleeper flagged the word meanwhile (then the C# version wakes it).</summary>
+    static readonly uint[] LwMutexUnlock =
+    [
+        0xE3500000,                // 0  cmp r0, #0
+        Branch(EQ, 1, 29),         // 1  beq slow
+        0xE590C010,                // 2  ldr r12, [r0, #16]
+        0xE35C0000,                // 3  cmp r12, #0
+        Branch(EQ, 4, 29),         // 4  beq slow
+        0xEE1D3F70,                // 5  mrc p15, 0, r3, c13, c0, 3
+        0xE51337FC,                // 6  ldr r3, [r3, #-0x7FC]
+        0xE590C000,                // 7  ldr r12, [r0]
+        0xE15C0003,                // 8  cmp r12, r3          ours and nobody flagged
+        Branch(NE, 9, 29),         // 9  bne slow (NOT_OWNED, or a sleeper to wake)
+        0xE5902008,                // 10 ldr r2, [r0, #8]
+        0xE1510002,                // 11 cmp r1, r2
+        Branch(GT, 12, 29),        // 12 bgt slow (UNLOCK_UDF)
+        0xE0522001,                // 13 subs r2, r2, r1
+        0x15802008,                // 14 strne r2, [r0, #8]   still held
+        0x13A00000,                // 15 movne r0, #0
+        0x112FFF1E,                // 16 bxne lr
+        0xE5802008,                // 17 str r2, [r0, #8]     count 0, before the owner word frees it
+        Dmb,                       // 18 dmb ish
+        0xE190CF9F,                // 19 loop: ldrex r12, [r0]
+        0xE15C0003,                // 20 cmp r12, r3
+        Branch(NE, 21, 27),        // 21 bne contended
+        0xE180CF92,                // 22 strex r12, r2, [r0]  (r2 = 0)
+        0xE35C0000,                // 23 cmp r12, #0
+        Branch(NE, 24, 19),        // 24 bne loop
+        0xE3A00000,                // 25 mov r0, #0
+        BxLr,                      // 26
+        Clrex,                     // 27 contended: clrex
+        0xE5801008,                // 28 str r1, [r0, #8]     the count back (it was exactly r1)
+        FallbackSvc,               // 29 slow: the C# version
+        BxLr,                      // 30
+    ];
+
+    /// <summary>sceKernelSignalLwCond / SignalLwCondAll(work): with no waiter queued (work area +8, Kernel/Sync.cs
+    /// CondVar.LwQueuedOffset) a signal does nothing and returns 0; a waiter to release, a deleted cond (UID word 0)
+    /// or a NULL work area go to the C# version.</summary>
+    static readonly uint[] LwCondSignal =
+    [
+        0xE3500000,                // 0 cmp r0, #0
+        Branch(EQ, 1, 9),          // 1 beq slow
+        0xE590C000,                // 2 ldr r12, [r0]        UID
+        0xE35C0000,                // 3 cmp r12, #0
+        Branch(EQ, 4, 9),          // 4 beq slow
+        0xE590C008,                // 5 ldr r12, [r0, #8]    waiters queued
+        0xE35C0000,                // 6 cmp r12, #0
+        0x03A00000,                // 7 moveq r0, #0
+        0x012FFF1E,                // 8 bxeq lr
+        FallbackSvc,               // 9 slow
+        BxLr,                      // 10
+    ];
+
+    /// <summary>VITASHARP_HLE_GUEST_CODE=nolw: without the lightweight mutex and cond routines (A/B).</summary>
+    static readonly bool LwMutexRoutines = Mode is not ("precomputed" or "gxm" or "nolw");
+
+    static readonly (string Name, string Library, uint[] Code)[] LwMutexRoutineTable =
+    [
+        ("sceKernelLockLwMutex", LibKernel, LwMutexLock(checkCount: true)),
+        ("sceKernelLockLwMutexCB", LibKernel, LwMutexLock(checkCount: true)),
+        ("sceKernelTryLockLwMutex", LibKernel, LwMutexLock(checkCount: false)),
+        ("sceKernelUnlockLwMutex", LibKernel, LwMutexUnlock),
+        ("sceKernelUnlockLwMutex2", LibKernel, LwMutexUnlock),
+        ("sceKernelSignalLwCond", LibKernel, LwCondSignal),
+        ("sceKernelSignalLwCondAll", LibKernel, LwCondSignal),
+    ];
+
     /// <summary>VITASHARP_HLE_GUEST_CODE=precomputed: only the precomputed-state routines (not the context's cull and
     /// polygon-mode setters); =gxm: only libgxm's routines (not SceLibKernel's).</summary>
     static readonly string? Mode = Environment.GetEnvironmentVariable(EnvVars.HleGuestCode);
@@ -376,6 +513,7 @@ public static class HleGuestCode
         .. (TextureRoutines ? TextureAndProgramRoutines : []),
         .. (ContextModes ? ContextModeRoutines : []),
         .. (KernelRoutines ? KernelLeafRoutines : []),
+        .. (LwMutexRoutines ? LwMutexRoutineTable : []),
     ];
 
     static readonly Dictionary<uint, int> RoutineByNid = BuildNidTable();
@@ -407,24 +545,64 @@ public static class HleGuestCode
         lock (Placed)
         {
             var key = (space, space.Id, owner ?? svcIndexOf);
-            if (!Placed.TryGetValue(key, out var addrs))
-            {
-                uint bytes = 0;
-                foreach (var r in Routines) bytes += (uint)r.Code.Length * 4;
-                uint at = memory.Alloc(bytes, "HLE guest code", MemoryRegion.User, 16);
-                addrs = new uint[Routines.Length];
-                for (int i = 0; i < Routines.Length; i++)
-                {
-                    addrs[i] = at;
-                    foreach (uint w in Routines[i].Code)
-                    {
-                        GuestMemory.W32(at, w == FallbackSvc ? 0xEF000000 | (svcIndexOf(NidOf(i)) & 0xFFFFFF) : w);
-                        at += 4;
-                    }
-                }
-                Placed[key] = addrs;
-            }
+            if (!Placed.TryGetValue(key, out var addrs)) Placed[key] = addrs = Place(memory, svcIndexOf, reuse: false);
             return addrs[index];
         }
+    }
+
+    const string BlockName = "HLE guest code";
+
+    /// <summary>Writes every routine into guest memory (fallback SVCs resolved through <paramref name="svcIndexOf"/>) and
+    /// returns their addresses; <paramref name="reuse"/>: a block of the calling space that already holds exactly this
+    /// image (a save state of this build) is used instead of a new one.</summary>
+    static uint[] Place(GuestMemory memory, Func<uint, uint> svcIndexOf, bool reuse)
+    {
+        var image = new List<uint>();
+        var offsets = new uint[Routines.Length];
+        for (int i = 0; i < Routines.Length; i++)
+        {
+            offsets[i] = (uint)image.Count * 4;
+            foreach (uint w in Routines[i].Code) image.Add(w == FallbackSvc ? 0xEF000000 | (svcIndexOf(NidOf(i)) & 0xFFFFFF) : w);
+        }
+        uint bytes = (uint)image.Count * 4, at = 0;
+        if (reuse)
+            foreach (var b in OwnBlocks(memory))
+                if (b.Size >= bytes && GuestMemory.ReadSpan(b.Address, (int)bytes).SequenceEqual(System.Runtime.InteropServices.MemoryMarshal.AsBytes(System.Runtime.InteropServices.CollectionsMarshal.AsSpan(image))))
+                { at = b.Address; break; }
+        if (at == 0)
+        {
+            at = memory.Alloc(bytes, BlockName, MemoryRegion.User, 16);
+            for (int i = 0; i < image.Count; i++) GuestMemory.W32(at + (uint)i * 4, image[i]);
+        }
+        var addrs = new uint[Routines.Length];
+        for (int i = 0; i < addrs.Length; i++) addrs[i] = at + offsets[i];
+        return addrs;
+    }
+
+    /// <summary>The guest-code blocks of the calling thread's address space.</summary>
+    static IEnumerable<GuestMemory.Block> OwnBlocks(GuestMemory memory)
+    {
+        var space = AddressSpace.Current;
+        return memory.Blocks().Where(b => b.Name == BlockName && (b.Space == null || ReferenceEquals(b.Space, space)));
+    }
+
+    /// <summary>
+    /// After a save state load (memory and the HLE function table restored): the routines placed in this session are
+    /// gone with the old memory, and the restored memory holds the saved session's, from the build that saved it (or
+    /// none: a state from before a routine existed keeps SVC stubs). Places this build's routines again, in the calling
+    /// space for registry <paramref name="owner"/> (reusing a restored block that already holds them), and returns a test
+    /// for "an address in a guest-code block of the restored memory", for <see cref="Linker.RebindHleStubs"/>.
+    /// </summary>
+    public static Func<uint, bool> Replace(GuestMemory memory, Func<uint, uint> svcIndexOf, object owner)
+    {
+        var old = OwnBlocks(memory).Select(b => (b.Address, b.Size)).ToArray();
+        bool InOld(uint a) { foreach (var (s, n) in old) if (a - s < n) return true; return false; }
+        if (!Enabled || AddressSpace.Current is not { } space) return InOld;
+        lock (Placed)
+        {
+            foreach (var k in Placed.Keys.Where(k => ReferenceEquals(k.Item3, owner)).ToList()) Placed.Remove(k);
+            Placed[(space, space.Id, owner)] = Place(memory, svcIndexOf, reuse: true);
+        }
+        return InOld;
     }
 }

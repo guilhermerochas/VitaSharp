@@ -35,7 +35,7 @@ public sealed unsafe class HleGuestCodeKernelTests(GuestMemoryFixture fx)
         }
 
         /// <summary>Returns r0, or null when the routine fell back to its C# version (r0-r2 must then be the arguments).</summary>
-        public uint? Call(uint a0, uint a1 = 0, uint a2 = 0, uint tpidruro = 0)
+        public uint? Call(uint a0, uint a1 = 0, uint a2 = 0, uint tpidruro = 0, int argRegs = 3)
         {
             var s = S;
             s->R[0] = a0; s->R[1] = a1; s->R[2] = a2; s->R[3] = 0x33333333; s->R[12] = 0xCCCCCCCC;
@@ -45,7 +45,7 @@ public sealed unsafe class HleGuestCodeKernelTests(GuestMemoryFixture fx)
             if (s->SvcPc != _trap)
             {
                 Assert.Equal(FallbackIndex, s->SvcImm);
-                Assert.Equal([a0, a1, a2], [s->R[0], s->R[1], s->R[2]]);
+                Assert.Equal(new[] { a0, a1, a2 }[..argRegs], new[] { s->R[0], s->R[1], s->R[2] }[..argRegs]);
                 return null;
             }
             Assert.Equal(0u, s->SvcImm);
@@ -164,6 +164,93 @@ public sealed unsafe class HleGuestCodeKernelTests(GuestMemoryFixture fx)
             }
         });
     }
+    /// <summary>The lightweight mutex fast paths on the work area (Kernel/Sync.cs Mutex): an uncontended lock takes the
+    /// owner word and sets the count, a recursive one adds to it, an unlock drops it and frees the word at 0; everything
+    /// the kernel must decide (taken by another thread, a sleeper flagged, a bad count, a deleted mutex) falls back with
+    /// the arguments and the work area untouched.</summary>
+    [Fact]
+    public void LwMutexFastPathsMatchKernel()
+    {
+        if (!HleGuestCode.Enabled) return;
+        const uint Me = 0x40010023, Other = 0x40010045, Uid = 0x40010101;
+        uint tls = fx.Memory.Alloc(0x1000, "gk lw tls");
+        GuestMemory.W32(tls + 4, Me);
+        uint work = fx.Memory.Alloc(32, "gk lw work");
+        void Set(uint owner, uint count, uint attr = 0, uint uid = Uid)
+        {
+            GuestMemory.Span(work, 32).Clear();
+            GuestMemory.W32(work, owner); GuestMemory.W32(work + 8, count); GuestMemory.W32(work + 12, attr); GuestMemory.W32(work + 16, uid);
+        }
+        (uint, uint) State() => (GuestMemory.R32(work), GuestMemory.R32(work + 8));
+        ForEachBackend(backend =>
+        {
+            using var lk = new Runner(fx, "sceKernelLockLwMutex");
+            using var lkcb = new Runner(fx, "sceKernelLockLwMutexCB");
+            using var tl = new Runner(fx, "sceKernelTryLockLwMutex");
+            using var ul = new Runner(fx, "sceKernelUnlockLwMutex");
+            using var ul2 = new Runner(fx, "sceKernelUnlockLwMutex2");
+            uint t = tls + 0x800;
+            for (int pass = 0; pass < 2; pass++)
+            {
+                foreach (var lock_ in new[] { lk, lkcb, tl })
+                {
+                    Set(0, 0); Assert.Equal(0u, lock_.Call(work, 3, 0, t)); Assert.Equal((Me, 3u), State());
+                    // recursive: allowed with the attribute, else the kernel's RECURSIVE error
+                    Assert.Equal(0u, Set2(Me, 3, 2, () => lock_.Call(work, 2, 0, t))); Assert.Equal((Me, 5u), State());
+                    Set(Me, 1); Assert.Null(lock_.Call(work, 1, 0, t)); Assert.Equal((Me, 1u), State());
+                    // held by another thread (flagged or not), deleted, NULL: the kernel
+                    Set(Other, 1); Assert.Null(lock_.Call(work, 1, 0, t)); Assert.Equal((Other, 1u), State());
+                    Set(Other | 0x80000000, 1); Assert.Null(lock_.Call(work, 1, 0, t)); Assert.Equal((Other | 0x80000000, 1u), State());
+                    Set(0, 0, uid: 0); Assert.Null(lock_.Call(work, 1, 0, t)); Assert.Equal((0u, 0u), State());
+                    Assert.Null(lock_.Call(0, 1, 0, t));
+                }
+                // a lock count <= 0 is the kernel's INVALID_ARGUMENT (TryLock takes it as it is)
+                Set(0, 0); Assert.Null(lk.Call(work, 0, 0, t)); Assert.Null(lk.Call(work, 0xFFFFFFFF, 0, t)); Assert.Equal((0u, 0u), State());
+                Set(0, 0); Assert.Equal(0u, tl.Call(work, 0, 0, t)); Assert.Equal((Me, 0u), State());
+                foreach (var unlock in new[] { ul, ul2 })
+                {
+                    Set(Me, 3); Assert.Equal(0u, unlock.Call(work, 1, 0, t, 2)); Assert.Equal((Me, 2u), State());
+                    Assert.Equal(0u, unlock.Call(work, 2, 0, t, 2)); Assert.Equal((0u, 0u), State());
+                    // not ours, freed already, more than held, a sleeper flagged, deleted, NULL: the kernel
+                    Set(Other, 1); Assert.Null(unlock.Call(work, 1, 0, t, 2)); Assert.Equal((Other, 1u), State());
+                    Set(0, 0); Assert.Null(unlock.Call(work, 1, 0, t, 2)); Assert.Equal((0u, 0u), State());
+                    Set(Me, 1); Assert.Null(unlock.Call(work, 2, 0, t, 2)); Assert.Equal((Me, 1u), State());
+                    Set(Me | 0x80000000, 1); Assert.Null(unlock.Call(work, 1, 0, t, 2)); Assert.Equal((Me | 0x80000000, 1u), State());
+                    Set(Me, 1, uid: 0); Assert.Null(unlock.Call(work, 1, 0, t, 2)); Assert.Equal((Me, 1u), State());
+                    Assert.Null(unlock.Call(0, 1, 0, t, 2));
+                }
+            }
+            if (backend == "native") Assert.True(Jit.WaitIdle(TimeSpan.FromSeconds(60)));
+        });
+
+        uint? Set2(uint owner, uint count, uint attr, Func<uint?> call) { Set(owner, count, attr); return call(); }
+    }
+
+    /// <summary>A lightweight cond signal with no waiter queued (work area +8) is 0 in guest code; a waiter to release,
+    /// a deleted cond and a NULL work area go to the kernel.</summary>
+    [Theory]
+    [InlineData("sceKernelSignalLwCond")]
+    [InlineData("sceKernelSignalLwCondAll")]
+    public void LwCondSignalWithoutWaitersStaysInGuestCode(string name)
+    {
+        if (!HleGuestCode.Enabled) return;
+        uint work = fx.Memory.Alloc(16, "gk lwcond");
+        ForEachBackend(_ =>
+        {
+            using var r = new Runner(fx, name);
+            for (int pass = 0; pass < 2; pass++)
+            {
+                GuestMemory.W32(work, 0x40010201); GuestMemory.W32(work + 4, 0x40010101); GuestMemory.W32(work + 8, 0);
+                Assert.Equal(0u, r.Call(work, 0x55, 0x66));
+                GuestMemory.W32(work + 8, 1);
+                Assert.Null(r.Call(work, 0x55, 0x66));
+                GuestMemory.W32(work, 0); GuestMemory.W32(work + 8, 0);
+                Assert.Null(r.Call(work, 0x55, 0x66));
+                Assert.Null(r.Call(0, 0x55, 0x66));
+            }
+        });
+    }
+
     /// <summary>libgxm's texture-control-word setters/getters and the program-header getter as guest code store and return
     /// exactly what Gxm.cs does, for linear strided and other textures, every value bit and a NULL texture.</summary>
     [Theory]

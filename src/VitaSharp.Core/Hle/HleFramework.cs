@@ -291,6 +291,9 @@ public sealed partial class HleRegistry : IImportResolver
     /// thread's address space; 0 when there is none (or VITASHARP_HLE_GUEST_CODE=0).</summary>
     public uint GetHleGuestCode(uint nid) => _impls.ContainsKey(nid) ? HleGuestCode.AddressOf(nid, _emu.Memory, n => GetHleFunctionIndex(n, 0, NidDatabase.Lookup(n)?.Library ?? ""), this) : 0;
 
+    /// <summary>After a save state load: places this build's guest-code routines again (<see cref="HleGuestCode.Replace"/>).</summary>
+    public Func<uint, bool> ReplaceGuestCode() => HleGuestCode.Replace(_emu.Memory, n => GetHleFunctionIndex(n, 0, NidDatabase.Lookup(n)?.Library ?? ""), this);
+
     public HleFunction GetFunction(uint index) => index < _functions.Count ? _functions[(int)index] : _functions[0];
 
 }

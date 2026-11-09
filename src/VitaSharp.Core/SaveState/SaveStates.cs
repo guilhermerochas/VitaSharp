@@ -531,6 +531,12 @@ public static class SaveStates
         emu.Vita.BgmPortOwner = sys.ReadInt32();
 
         emu.Hle.LoadState(new SnapshotReader(Need(FunctionsSection)));
+        // this build's guest-code routines and SVCs, not the saving build's (Hle/HleGuestCode)
+        using (Kernel.ProcessScope.Enter(emu))
+        {
+            int rebound = emu.Linker.RebindHleStubs(emu.Hle.ReplaceGuestCode());
+            Log.Info($"Load state: {rebound} HLE import stubs bound to this build's routines");
+        }
         var restored = KernelSnapshot.Load(emu, new SnapshotReader(Need(ObjectsSection)));
         emu.Kernel.MainThread = emu.Kernel.Objects.Get<GuestThread>(mainUid);
         GuestClock.RestoreMicroseconds(clockUs);
