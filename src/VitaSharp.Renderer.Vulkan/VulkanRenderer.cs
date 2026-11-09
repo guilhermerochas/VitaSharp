@@ -493,6 +493,11 @@ public sealed unsafe partial class VulkanRenderer : IGpuBackend
         public bool CanView(Format f) => f == Format || ViewFormats == null || Array.IndexOf(ViewFormats, f) >= 0;
         public bool Dirty;            // written since the last read barrier
         public long Version;          // bumped whenever the contents change
+        /// <summary>The latest draws into the surface as (<see cref="Version"/> after the draw, guest pixel rectangle it
+        /// can write), a ring: a region copy that none of the draws since it touched is still current
+        /// (<see cref="RegionUntouchedSince"/>).</summary>
+        public readonly (long V, int X0, int Y0, int X1, int Y1)[] DrawLog = new (long, int, int, int, int)[32];
+        public int DrawLogNext;
         public long LastScene;        // serial of the last scene that rendered into it
         public long LastUsedFrame;
         /// <summary>Dirty-page stamp from which on a write into the surface's memory is newer than its last scene
@@ -1087,7 +1092,7 @@ public sealed unsafe partial class VulkanRenderer : IGpuBackend
             _vk.CmdBeginRendering(Cmd, in ri);
         }
         _rendering = true;
-        if (_rt != null) { _rt.Dirty = true; _rt.Version++; _rt.LastTouchedFrame = FrameCount; }
+        if (_rt != null) { _rt.Dirty = true; _rt.Version++; _rt.LastTouchedFrame = FrameCount; LogUnchanged(_rt); }
         if (_depth != null) _depth.Version++;
     }
 

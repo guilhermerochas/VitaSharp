@@ -1102,7 +1102,7 @@ public sealed unsafe partial class VulkanRenderer
         if (ShaderGenerator.NanDraws) NanNoteDraw(d, vs, fs);
         if (CostOn) CostNoteDraw(d, vs, fs);
         _drawsSinceSubmit++;
-        if (_rt != null) { _rt.Dirty = true; _rt.Version++; _rt.LastUsedFrame = FrameCount; NoteWritebackRegion(in st); NoteDrawn(); }
+        if (_rt != null) { _rt.Dirty = true; _rt.Version++; _rt.LastUsedFrame = FrameCount; NoteWritebackRegion(in st); NoteDrawn(); LogDraw(_rt); }
     }
 
     /// <summary>VITASHARP_FETCH_SPLIT=0 disables the piece-by-piece split of programmable-blending draws.</summary>

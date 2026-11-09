@@ -365,6 +365,8 @@ public static class EnvVars
     /// <summary>1 (measurement only, wrong picture): render-target regions sampled as textures are copied once and never
     /// refreshed, to bound the GPU cost of those copies (bench).</summary>
     public const string RegionCopySkip = "VITASHARP_REGION_COPY_SKIP";
+    /// <summary>0 = a render-target region is copied again after every change of its surface, even when only other parts changed (A/B; VulkanRenderer.Textures.cs).</summary>
+    public const string RegionCopyReuse = "VITASHARP_REGION_COPY_REUSE";
     /// <summary>1 (measurement only, wrong picture): MSAA scenes start from undefined samples instead of drawing the
     /// surface's content into them, to bound that load's GPU cost (bench).</summary>
     public const string MsaaLoadSkip = "VITASHARP_MSAA_LOAD_SKIP";

@@ -339,6 +339,14 @@ Lista de itens futuros do VitaSharp. Marque `[x]` quando um item for concluído.
   quadro, tempo de upload 1,44 -> 0,49 ms (`VITASHARP_TEX_CONTENT_CACHE=0`). Perfil do worker (só desenvolvedor):
   `VITASHARP_WORKER_PROF_FROM=N` começa a medir no quadro N; as unidades de textura são divididas em memória/RT/outras e
   o caminho de falta em lookup/checagem/hash/upload; a linha PERF texcache traz ms de upload e conteúdos repetidos.
+  (7) GPU do Mali (rodada 19): sem `shaderClipDistance` todo fragment shader terminava com um `discard` do plano
+  distante, que só repetia o recorte do hardware (depth clamp desligado desde 580f464) e no Mali tirava o early-ZS e o
+  FPK de todo draw; agora o hardware recorta (`VITASHARP_GPU_QUIRKS=+FarPlaneDiscard` volta o discard). Bench do quadro
+  do Killzone no Mali-G57: 48,4 -> 39,0 ms de GPU (-19%), mesma imagem; Killzone ao vivo 16 -> 22-24 fps. Cópias de
+  região de RT: a cópia é reaproveitada enquanto nenhum draw tocou o retângulo dela (log dos últimos 32 bumps de versão
+  por RT; `VITASHARP_REGION_COPY_REUSE=0` desliga): 7 de 32 cópias por quadro no atlas de pós-processo do Killzone
+  (384x512). O resto do atlas (s4, ~12,8 ms no Mali: 17 passes de ~0,37 ms, 28 cópias de ~0,16 ms) são dependências
+  reais, cada draw lê o que o anterior escreveu; só um redesenho (sem cópia e sem quebra de passe) baixaria isso.
 
 ## Android
 
