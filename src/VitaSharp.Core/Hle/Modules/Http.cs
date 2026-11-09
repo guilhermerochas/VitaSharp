@@ -366,7 +366,7 @@ public sealed partial class Http : HleModule
     }
 
     [Hle]
-    int sceHttpSendRequest(int reqId, uint postData, uint size)
+    internal int sceHttpSendRequest(int reqId, uint postData, uint size)
     {
         lock (_lock)
         {
@@ -410,9 +410,9 @@ public sealed partial class Http : HleModule
         }
     }
 
-    [Hle] int sceHttpGetStatusCode(int reqId, uint statusCode) => OnResponse(reqId, o => RealStatusCode(o, statusCode));
+    [Hle] internal int sceHttpGetStatusCode(int reqId, uint statusCode) => OnResponse(reqId, o => RealStatusCode(o, statusCode));
     /// <summary>int (int reqId, SceULong64 *contentLength).</summary>
-    [Hle] int sceHttpGetResponseContentLength(int reqId, uint contentLength) => OnResponse(reqId, o => RealContentLength(o, contentLength));
+    [Hle] internal int sceHttpGetResponseContentLength(int reqId, uint contentLength) => OnResponse(reqId, o => RealContentLength(o, contentLength));
     [Hle] int sceHttpReadData(int reqId, uint data, uint size) => OnResponse(reqId, o => RealReadData(o, data, size));
     [Hle] int sceHttpGetAllResponseHeaders(int reqId, uint header, uint headerSize) => OnResponse(reqId, o => RealResponseHeaders(o, header, headerSize));
 
@@ -453,7 +453,7 @@ public sealed partial class Http : HleModule
     }
 
     [Hle]
-    int sceHttpAddRequestHeader(int id, uint name, uint value, uint mode)
+    internal int sceHttpAddRequestHeader(int id, uint name, uint value, uint mode)
     {
         lock (_lock)
         {
@@ -538,7 +538,7 @@ public sealed partial class Http : HleModule
     [Hle] int sceHttpGetNonblock(int id, uint enable) => GetSetting(id, s => s.Nonblock, enable);
     [Hle] int sceHttpSetAuthEnabled(int id, int enable) => SetSetting(id, s => s.AuthEnabled = enable != 0 ? 1 : 0);
     [Hle] int sceHttpGetAuthEnabled(int id, uint enable) => GetSetting(id, s => s.AuthEnabled, enable);
-    [Hle] int sceHttpSetAutoRedirect(int id, int enable) => SetSetting(id, s => s.AutoRedirect = enable != 0 ? 1 : 0);
+    [Hle] internal int sceHttpSetAutoRedirect(int id, int enable) => SetSetting(id, s => s.AutoRedirect = enable != 0 ? 1 : 0);
     [Hle] int sceHttpGetAutoRedirect(int id, uint enable) => GetSetting(id, s => s.AutoRedirect, enable);
     [Hle] int sceHttpSetCookieEnabled(int id, int enable) => SetSetting(id, s => s.CookieEnabled = enable != 0 ? 1 : 0);
     [Hle] int sceHttpGetCookieEnabled(int id, uint enable) => GetSetting(id, s => s.CookieEnabled, enable);

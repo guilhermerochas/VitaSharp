@@ -194,4 +194,58 @@ public sealed class HleBatch9Tests(GuestMemoryFixture fx) : IDisposable
         Assert.Equal(123, Call(np, "NpCommonStrtol", Str("123abc"), 0u, 10));
         Assert.Equal(-5000000000L, (long)Invoke(np, "NpCommonStrtoll", Str("-5000000000"), 0u, 10)!);
     }
+    [Fact]
+    public void SqliteVshRunsStatementsOnARealDatabase()
+    {
+        var sq = Module<SqliteVsh>();
+        uint ppDb = Alloc(4), ppStmt = Alloc(4), err = Alloc(4);
+        Assert.Equal(0, Call(sq, "SqlInitialize"));
+        Assert.Equal(0, Call(sq, "Open", Str(":memory:"), ppDb));
+        uint db = GuestMemory.R32(ppDb);
+        Assert.NotEqual(0u, db);
+        Assert.Equal(0, Call(sq, "Exec", db, Str("CREATE TABLE t(a INTEGER, b TEXT, c BLOB); INSERT INTO t VALUES(7, 'x''y', x'0102');"), 0u, 0u, err));
+        Assert.Equal(1, Call(sq, "Changes", db));
+        Assert.Equal(1L, (long)Invoke(sq, "LastInsertRowid", db)!);
+        Assert.Equal(0, Call(sq, "Prepare", db, Str("SELECT a, b, c FROM t WHERE a = ?"), -1, ppStmt, 0u));
+        uint st = GuestMemory.R32(ppStmt);
+        Assert.Equal(3, Call(sq, "ColumnCount", st));
+        Assert.Equal(1, Call(sq, "BindParameterCount", st));
+        Assert.Equal(0, Call(sq, "BindInt64", st, 1, 7L));
+        Assert.Equal(100, Call(sq, "Step", st)); // SQLITE_ROW
+        Assert.Equal(7L, (long)Invoke(sq, "ColumnInt64", st, 0)!);
+        Assert.Equal("x'y", GuestMemory.ReadCString(Convert.ToUInt32(Invoke(sq, "ColumnText", st, 1))));
+        Assert.Equal("b", GuestMemory.ReadCString(Convert.ToUInt32(Invoke(sq, "ColumnName", st, 1))));
+        Assert.Equal(2, Call(sq, "ColumnBytes", st, 2));
+        uint blob = Convert.ToUInt32(Invoke(sq, "ColumnBlob", st, 2));
+        Assert.Equal(0x0201, GuestMemory.Read<ushort>(blob));
+        Assert.Equal(101, Call(sq, "Step", st)); // SQLITE_DONE
+        Assert.Equal(0, Call(sq, "StmtFinalize", st));
+        Assert.Equal(1, Call(sq, "Exec", db, Str("SELECT * FROM missing"), 0u, 0u, err));
+        Assert.Contains("no such table", GuestMemory.ReadCString(GuestMemory.R32(err)));
+        Assert.Equal(0, Call(sq, "Close", db));
+    }
+    [Fact]
+    public void PafMembersFollowTheLibrary()
+    {
+        var paf = Module<Paf>();
+        uint surf = Alloc(0x80), style = Alloc(0x20), img = Alloc(0x40), info = Alloc(0x60), rect = Alloc(16);
+        Assert.Equal(0u, Convert.ToUInt32(Invoke(paf, "SurfaceSetWrapS", surf, 4)));
+        Assert.Equal(1u, GuestMemory.R32(surf + 0x54));
+        Assert.Equal(1, GuestMemory.Read<byte>(surf + 0x60));
+        Assert.Equal(0x80AF2202u, Convert.ToUInt32(Invoke(paf, "SurfaceSetWrapT", surf, 3)));
+        Assert.Equal(0u, Convert.ToUInt32(Invoke(paf, "SurfaceSetMinFilter", surf, 5u)));
+        Assert.Equal(1u, GuestMemory.R32(surf + 0x4C));
+        Assert.Equal(0x200u, GuestMemory.R32(surf + 0x50));
+        Assert.Equal(4, Call(paf, "GestureIdFromBitmap", 0u, 0b10110u, 2));
+        Assert.Equal(-1, Call(paf, "GestureIdFromBitmap", 0u, 0b10110u, 3));
+        Invoke(paf, "TextStyleSetBool", style, 9, true);
+        Assert.Equal(4, GuestMemory.Read<ushort>(style + 6));
+        GuestMemory.W32(img + 0x2C, info);
+        GuestMemory.W32(info + 0x1C, 100); GuestMemory.W32(info + 0x20, 50);
+        GuestMemory.W32(rect, unchecked((uint)-10)); GuestMemory.W32(rect + 4, 10); GuestMemory.W32(rect + 8, 60); GuestMemory.W32(rect + 0xC, 100);
+        Assert.True((bool)Invoke(paf, "ImageSetClip", img, rect)!);
+        Assert.Equal(0u, GuestMemory.R32(info + 0x24));
+        Assert.Equal(50u, GuestMemory.R32(info + 0x2C)); // clipped at x = 0 and the 100-pixel width: 50 wide
+        Assert.Equal(40u, GuestMemory.R32(info + 0x30));
+    }
 }
