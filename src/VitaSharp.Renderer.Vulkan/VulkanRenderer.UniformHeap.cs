@@ -30,6 +30,8 @@ public sealed unsafe partial class VulkanRenderer
     }
 
     UniformHeap? _uniformHeap;
+    /// <summary>Statistics (PERF sync): draws whose uniform blocks were bound in the heap / copied into the ring.</summary>
+    long _statUniformInHeap, _statUniformCopied;
 
     void CreateUniformHeap()
     {
@@ -58,11 +60,13 @@ public sealed unsafe partial class VulkanRenderer
                 UniformArena.AddRef(c);
                 F.Deferred.Add(() => UniformArena.Release(c));
             }
+            _statUniformInHeap++;
             ulong chunkOff = (ulong)c.HeapId * UniformArena.ChunkSize;
             infos[0] = d.VertexUniformsLength == 0 ? new DescriptorBufferInfo(_dummyBuffer, 0, 256) : new DescriptorBufferInfo(h.Buffer, chunkOff + (ulong)d.VertexUniformsOffset, (ulong)d.VertexUniformsLength);
             infos[1] = d.FragmentUniformsLength == 0 ? new DescriptorBufferInfo(_dummyBuffer, 0, 256) : new DescriptorBufferInfo(h.Buffer, chunkOff + (ulong)d.FragmentUniformsOffset, (ulong)d.FragmentUniformsLength);
             return;
         }
+        _statUniformCopied++;
         infos[0] = UniformInfo(d.VertexUniformSpan);
         infos[1] = UniformInfo(d.FragmentUniformSpan);
     }

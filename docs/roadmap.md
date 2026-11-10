@@ -366,6 +366,24 @@ Lista de itens futuros do VitaSharp. Marque `[x]` quando um item for concluído.
   por RT; `VITASHARP_REGION_COPY_REUSE=0` desliga): 7 de 32 cópias por quadro no atlas de pós-processo do Killzone
   (384x512). O resto do atlas (s4, ~12,8 ms no Mali: 17 passes de ~0,37 ms, 28 cópias de ~0,16 ms) são dependências
   reais, cada draw lê o que o anterior escreveu; só um redesenho (sem cópia e sem quebra de passe) baixaria isso.
+- [x] Rodada 20 de desempenho (perf/desktop-20, 10/11/2026): **os chunks da arena de uniforms voltam quando o quadro
+  se aposenta**, não quando o slot do quadro é gravado de novo (FramesInFlight submits depois: 3 no PC, 8 no celular).
+  Os chunks ficavam presos esse tempo todo, o heap de uniforms de 48 MB enchia e os uniforms dos draws seguintes eram
+  copiados para o anel de upload (`DrawUniformInfos`/`UniformInfo`, o maior memmove do worker no perfil). Agora as
+  ações adiadas do quadro (destruição e referências dos chunks) rodam em `RetireFrame`, depois da cerca;
+  `VITASHARP_RETIRE_DEFERRED=0` volta ao antigo. Killzone `kzl_walk3` (PC, a partir do quadro 4400): blocos copiados
+  76 -> 0 por quadro (FIF 3) e 159 -> 0 (FIF 8, o do celular), fase Uniform do worker 0,43 -> 0,12 e 0,63 -> 0,12 ms,
+  uploads 4,2 -> 1,2 MB/quadro (6,5 -> 1,2 com FIF 8), Execute do worker 6,7 -> 4,9 e 6,1 -> 5,0 ms/quadro;
+  `replay-gpu --compare` nos 9 dumps (5.782 quadros) pixel-idênticos. Medido e descartado na rodada: o "kernel" alto
+  do PERF cpu no Windows é artefato da contagem por tick (variou de 1,8 a 12,5 ms/quadro entre rodadas iguais); os
+  ~170 `sceKernelDelayThread` curtos (~44 us) por quadro da thread principal do Killzone acordam ~0,76 ms atrasados no
+  Windows (resolução mínima do timer de 0,5 ms; `VITASHARP_DELAY_SPIN=1` acerta o tempo, mas triplica a CPU da thread)
+  e não limitam o fps no PC (28 ms/quadro esperando a fila de display); escalonador de núcleos emulados sem disputa
+  (0 esperas/quadro); orçamento do cache de conteúdo de texturas 48 -> 128 MB sem ganho (uploads 0,81 vs 1,00/quadro,
+  enche de novo). Novas linhas de diagnóstico: `PERF steady cpu`/`PERF steady thread` (CPU por thread a partir de
+  `VITASHARP_WORKER_PROF_FROM`), `PERF delays` (delays por thread, quantos dormem no host e o atraso médio) e
+  `PERF sched`. Próximo no worker: `UniformChunk.ClearWritten` (~5% do worker no perfil do Killzone) e o memmove de
+  `CopyLateUniforms` (~3%)
 
 ## Android
 
