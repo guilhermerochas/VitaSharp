@@ -3410,6 +3410,20 @@ on-existing PPS 0 e nenhum quadro). Ainda aberto: depois da carga no meio do fil
     (0x80028142, 1097 vezes, igual nos dois custos) e o desbloqueio interno solta o externo, então o ritmo mais rápido
     deixa duas threads desenharem no mesmo contexto. Mudança revertida; falta ver se o Vita de verdade aceita esse lock
     (atributo do mutex 0x40010075 na criação) antes de baratear o custo
+    Agente B (10/11/2026, fix/bugs-b-5, `<scratchpad>\bB5\runs\m1`, `m2`, `s1`..`s6`; só achados, nada mudou no
+    código): (1) o mutex 0x40010075 é o lock do heap do jogo (o malloc em 0x81450342), criado com atributo 0 (não
+    recursivo); a função em ~0x8144FF00 trava o lock e chama o malloc, que trava de novo (backtrace `814500C6 8144F2D4`).
+    (2) No firmware a semântica é a nossa: o SceLibKernel 3.74 passa direto para o syscall do threadmgr
+    (NID 0x1D8D7945 -> SceThreadmgr_7FA945AD) e o threadmgr devolve 0x80028142 sem mudar a contagem quando o dono
+    trava de novo um mutex sem o bit 0x2 (attr+0x20), e só soma a contagem com o bit; o desbloqueio de dentro solta o
+    de fora no Vita também. Então os 1097 erros são do próprio jogo e não são a causa do BKPT. (3) A causa do BKPT com
+    o custo 2.000 é uma corrida na troca de quem desenha no início do carregamento: a thread sem nome (0x400101E3, o
+    laço de 30 fps da tela: Begin/EndScene, sceKernelDelayThreadCB(33.333 us), sem nenhum lock) continua desenhando
+    depois que a `main` faz a cena dela (lr 0x8127421F) e a `jobQueueWorker1` assume; com o custo antigo a thread sem
+    nome para na f625 e a `main` faz a cena 87 ms depois (sem corrida, `s4`); com 2.000 a `main` chega na cena dela na
+    f342/f378 com a thread sem nome ainda no laço (`s3`, `s5`), os dois contextos se cruzam (0x805B0006) e o jogo aborta
+    (assert do SceLibc, `s1`). Falta achar como a `main` manda a thread sem nome parar (não é mutex nem semáforo:
+    provavelmente uma variável lida no topo do laço) e por que no Vita ela para antes; até lá o custo de 12.000 fica
   - Crazy Market (PCSE00291) e Soul Sacrifice Delta: o Crazy Market não está mais instalado; o Soul Sacrifice chegou ao
     fogo e à fumaça da primeira área na rodada do agente B de hoje (`<scratchpad>\bB2\runs\soulsac_boot`).
   - NIDs que faltavam (FFBFC540, D5B26179, sceNpSnsFacebookInit, sceCoredumpRegisterCoredumpHandler): todos implementados;
