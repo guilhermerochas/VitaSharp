@@ -1438,7 +1438,7 @@ Lista de itens futuros do VitaSharp. Marque `[x]` quando um item for concluído.
   `config.ini` existente (o jogador do vídeo já tinha jogado) a aplicação da configuração acontece depois do 1º
   Present e cai na estrutura 1. Próximo passo: descobrir o formato do config.ini (o jogo lê com o FIOS) e testar com
   um; se for isso, o defeito também existe num Vita sem config e não é do emulador
-- [ ] Silent Hill 4 (SILH00004), visual (câmera; o relato não era de controles): não iniciado nesta rodada. Preparado: `<scratchpad>\c24\sh4.nav` e
+- [x] Silent Hill 4 (SILH00004), visual (câmera; o relato não era de controles): não iniciado nesta rodada. Preparado: `<scratchpad>\c24\sh4.nav` e
   `ux0:data/sh4/env.txt` com `SH4_AUDIT_PAD=1` (o port loga `[audit-pad]` com os eixos e `[audit-pad-player]` com a
   rotação). Atenção: nos scripts NAV, `lstick x y` usa -1..1 (para frente = `lstick 0 -1`); agora aceita rampa
   (`lstick x y quadros rampa`)
@@ -1489,6 +1489,20 @@ Lista de itens futuros do VitaSharp. Marque `[x]` quando um item for concluído.
   60 fps (interpolação do port, qgl.c) estão coerentes: com a cena parada, quadros seguidos iguais, com e sem
   `SH4_INTERP=0`. Próximo passo: implementar a máscara GXM (Vita3K: imagem por alvo, iniciada pela background mask,
   mask update grava 1 com stencil ALWAYS e 0 com NEVER, desenhos rejeitados onde é 0) e repetir o replay do dump
+  **Resolvido** (agente A, 10/11/2026, fix/bugs-a-3): **não era a máscara nem a névoa do jogo, era o tradutor de
+  shaders**. O programa de vértice com névoa do vitaGL (vs A6BA1847) calcula o w do clip com `VTST.F32` de produto
+  escalar (`fi1.x = dot(fi0, fi1)`, o teste `== 0` antes do 1/w, que também entra no fator da névoa); o tradutor só
+  carregava o canal testado e gerava `fi0.x * fi1.x`. Com o w errado a cena saía fora da tela (introdução: só a cor
+  de limpeza 15/255 com o ruído por cima = o cinza chapado) e, no jogo, a perspectiva saía errada (a "abertura
+  estreita"/câmera colada nas paredes do relato de 08/11: era isso, não o port). Correção genérica: teste com VDP
+  reduz o vetor inteiro (gerador v25). Replay de `sh4intro.vsgd`: ventilador do teto sob o texto; ao vivo (headless,
+  `<scratchpad>\bA3\nav\sh4i`) a sequência igual ao vídeo kHp_start: texto sobre a cena, despertar no teto com a
+  porta e vistas inclinadas, depois a vista de pé na escrivaninha com o abajur, mesmo enquadramento
+  (`<scratchpad>\bA3\cmp_intro_fix.png`, vídeo à esquerda). Brilho nos mesmos pontos: luma média 24,3/20,8/24,5 no
+  vídeo contra 22,1/20,3/23,4 aqui (diferença da compressão do vídeo). A máscara GXM continua ignorada: nos quadros
+  do SH4 o mask update NEVER é seguido de um ALWAYS da tela inteira (o scissor do vitaGL desligado; com ele ligado o
+  vitaGL também põe o region clip no retângulo), então nenhum jogo testado depende dela; fica para quando um jogo
+  precisar. O Salt and Sanctuary não muda com esta correção (replay idêntico; lá é o viewport zerado, item próprio)
 - [ ] Comparação com o Vita3K (pedido do usuário): lista de lacunas em `<scratchpad>\c24\vita3k_gap.tsv` (agente de
   tarefas rápidas). Do lado do usuário só ~20 funções reais faltavam; feitas: aliases sceKernelLock/Unlock/TryLock
   LwMutex_0/_16XX, _sceKernelSuspend/ResumeThreadForVM, _sceKernelGetRandomNumber,

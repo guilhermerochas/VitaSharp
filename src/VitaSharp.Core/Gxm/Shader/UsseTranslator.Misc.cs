@@ -62,7 +62,9 @@ public sealed partial class UsseTranslator
                 VOp.VRsq => new Val($"inversesqrt({Load(src1, loadMask)})", 'f', BitOperations.PopCount((uint)loadMask)),
                 VOp.VLog => new Val($"log2({Load(src1, loadMask)})", 'f', BitOperations.PopCount((uint)loadMask)),
                 VOp.VExp => new Val($"exp2({Load(src1, loadMask)})", 'f', BitOperations.PopCount((uint)loadMask)),
-                _ => DoAluOp(op, src1, src2, loadMask, has4 ? 0b1111 : 0b1),
+                // A dot-product test reduces the whole vector (the compiler's "w = dot(pos, row3); if (w == 0)" guard
+                // before 1/w): loading only the tested channel made it src1.x * src2.x (a wrong clip w and fog).
+                _ => DoAluOp(op, src1, src2, op == VOp.VDp ? 0b1111 : loadMask, has4 ? 0b1111 : 0b1),
             };
             int n = lhs.N;
             rhs = lhs.K switch

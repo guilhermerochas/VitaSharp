@@ -42,7 +42,37 @@ Nenhum outro jogo travou, deu exceção ou chamou função sem implementação n
 | PCSE00056 | Sonic & All-Stars Racing Transformed™ | menu | 5301 | 28.9 / 29.9 / 20.9 | 0 | 0 |  |
 | PCSE00089 | Need For Speed™ Most Wanted | diálogo do Origin | 4277 | 23.7 / 29.8 / 2.1 | 0 | 0 | X de 8 quadros não passa (rodada guiada passa) |
 
-## Não rodados nesta rodada
+## Segunda rodada (os 22 que faltavam)
+
+Agente A3, branch fix/bugs-a-3 (main b80568a + a correção do VTST com produto escalar), mesmo roteiro (180 s, cross a
+cada 150 quadros, START a cada 600, headless Vulkan, 0xF0). Nenhum travou, deu exceção ou chamou função sem
+implementação; 0 linhas `[Error]` em todos.
+
+| ID | Jogo | Chegou a | Quadros (180 s) | fps médio / mediana / mín | Unimpl | Erros | Notas |
+|---|---|---|---|---|---|---|---|
+| PCSE00093 | FIFA 13 | título (Press START) | 7120 | 39.5 / 58.9 / 0.0 | 0 | 0 | 60 fps no título |
+| PCSE00213 | Jetpack Joyride | título (Tap rear touch pad) | 9897 | 54.9 / 59.7 / 7.7 | 0 | 0 | precisa do touch traseiro |
+| PCSE00233 | NINJA GAIDEN Σ2 PLUS | gameplay (primeira fase) | 4660 | 24.2 / 29.6 / 11.1 | 0 | 0 | 30 fps |
+| PCSE00269 | Batman: Arkham Origins Blackgate | cena de abertura | 3807 | 21.1 / 29.2 / 3.1 | 0 | 0 |  |
+| PCSE00271 | Injustice: Gods Among Us | cena de abertura | 5703 | 31.7 / 30.0 / 26.2 | 0 | 0 | 30 fps |
+| PCSE00293 | FINAL FANTASY X HD Remaster | cena de abertura | 5028 | 27.9 / 29.9 / 4.1 | 0 | 0 | 30 fps |
+| PCSE00333 | The Amazing Spider-Man | título | 10379 | 57.6 / 59.9 / 29.1 | 0 | 0 | 60 fps |
+| PCSE00491 | Minecraft | menu principal | 9755 | 54.2 / 55.9 / 48.0 | 0 | 0 | o cross não sai do menu (cursor parado) |
+| PCSE00589 | Severed | gameplay | 10249 | 56.8 / 59.9 / 42.6 | 0 | 0 | 60 fps |
+| PCSE00606 | Skullgirls 2nd Encore | modo história (cenas) | 7522 | 37.1 / 52.5 / 7.8 | 0 | 0 |  |
+| PCSE00781 | Zero Time Dilemma | diálogo "Load save?" | 6986 | 38.8 / 51.3 / 3.9 | 0 | 0 | o cross não confirma (talvez círculo ou toque) |
+| PCSE00914 | 99Vidas | gameplay | 9813 | 54.5 / 59.8 / 22.9 | 0 | 0 | aviso de rede do próprio jogo no boot |
+| PCSE01023 | Salt and Sanctuary | criação de personagem / carregamento | 3133 | 17.4 / 26.3 / 0.3 | 0 | 0 | ~70 s a 0,3-1,5 fps ao sair da criação (quadros 1934-1977, 1 STALL de 5 s) |
+| PCSE01235 | Stardew Valley | título (New/Load) | 10481 | 57.5 / 59.9 / 55.0 | 0 | 0 | menu por toque |
+| PCSF00024 | GRAVITY RUSH | título | 5254 | 29.2 / 30.0 / 29.2 | 0 | 0 | precisa de toque |
+| PCSF00034 | Unit 13 | título | 5330 | 29.6 / 30.0 / 29.6 | 0 | 0 |  |
+| PCSF00476 | Tearaway | menu (PLAY) | 5254 | 29.2 / 30.0 / 18.9 | 0 | 0 | menu por toque |
+| PCSG00198 | Sakatsuku | título (Press START) | 5245 | 29.1 / 30.0 / 25.6 | 0 | 0 | START de 8 quadros não passa |
+| PCSG00537 | Croixleur Sigma | abertura | 5352 | 29.7 / 30.0 / 28.8 | 0 | 0 |  |
+| PCSG00845 | Silverio Vendetta | menu principal | 8567 | 47.6 / 59.2 / 5.4 | 0 | 0 |  |
+| PCSG00952 | Akiba's Beat | filme de abertura | 9966 | 55.3 / 59.9 / 39.4 | 0 | 0 |  |
+| SILH00004 | Silent Hill 4 (port) | Load (sem jogo salvo) | 5338 | 29.5 / 30.0 / 29.5 | 0 | 0 | 30 fps; o roteiro entra no Load |
+## Não rodados na primeira rodada (feitos na segunda, acima)
 
 PCSE00093, PCSE00213, PCSE00233, PCSE00269, PCSE00271, PCSE00293, PCSE00333, PCSE00491, PCSE00589, PCSE00606,
 PCSE00781, PCSE00914, PCSE01023, PCSE01235, PCSF00024, PCSF00034, PCSF00476, PCSG00198, PCSG00537, PCSG00845,
