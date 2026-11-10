@@ -440,6 +440,11 @@ Lista de itens futuros do VitaSharp. Marque `[x]` quando um item for concluído.
   quando o quadro está preso na GPU (o jogo esperou a fila de display enquanto o worker ficou ocioso), e voltar ao
   callback na conclusão quando a CPU (worker + jogo nos dois A76) é o limite, como no F1; (a, alternativa) opção por
   jogo para o usuário no Android (como o MSAA), desligada por padrão
+  Feito (b) em c41f784 (perf/android-early-adaptive): `VITASHARP_DISPLAY_EARLY_SIGNAL=auto` (Gpu/AdaptiveEarlySignal.cs)
+  tenta o EARLY por uma janela de 60 quadros só quando o jogo perde a cadência (menos de 90% dos intervalos perto da
+  mediana) e espera >= 3 ms/quadro na fila de display; mantém só se o quadro médio cair 5%, reconfere a cada 900
+  quadros e recua (300 -> 7200 quadros) quando não ajuda. Só por env; ainda não medido no celular (KZ em medição;
+  F1 sem estado compatível com o build): virar padrão do Android só com KZ melhor e F1 igual
 
 - [ ] Uncharted (PCSA00029) no Android: plantas piscando no começo do Prologue (Drake parado; APK LLVM perf/uc-cpu, dump
   `and_flicker/PCSA00029_plants075.vsgd`, presents 4000-4150, escala 0,75; pisca em 0,75 e 1,0, nenhuma
