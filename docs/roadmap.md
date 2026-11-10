@@ -382,8 +382,13 @@ Lista de itens futuros do VitaSharp. Marque `[x]` quando um item for concluído.
   (0 esperas/quadro); orçamento do cache de conteúdo de texturas 48 -> 128 MB sem ganho (uploads 0,81 vs 1,00/quadro,
   enche de novo). Novas linhas de diagnóstico: `PERF steady cpu`/`PERF steady thread` (CPU por thread a partir de
   `VITASHARP_WORKER_PROF_FROM`), `PERF delays` (delays por thread, quantos dormem no host e o atraso médio) e
-  `PERF sched`. Próximo no worker: `UniformChunk.ClearWritten` (~5% do worker no perfil do Killzone) e o memmove de
-  `CopyLateUniforms` (~3%)
+  `PERF sched`, `PERF uniforms` (bytes que a arena zera ao reciclar e bytes copiados pelo guest). Medido depois:
+  `UniformChunk.ClearWritten` zera exatamente o que o guest copiou (Killzone: 7,0 MB/quadro copiados = 7,0 MB zerados,
+  0,83 ms/quadro no worker do PC; ~5% do worker no perfil); grânulo de 64 bytes em vez de 256 é pior (1,51 ms), não
+  há desperdício de arredondamento. O custo de verdade são os ~7 MB/quadro de uniforms copiados (paletas de ossos do
+  Killzone; inclui o memmove de `CopyLateUniforms`, ~3% do worker): só cai sem copiar, ligando a memória do guest
+  direto (mudança grande, em aberto). Uncharted quase não usa o caminho de cópia (4 blocos/quadro): A/B igual
+  (worker 3,23 vs 3,17 ms/quadro)
 
 ## Android
 

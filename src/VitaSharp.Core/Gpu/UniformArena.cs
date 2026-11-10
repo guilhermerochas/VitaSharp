@@ -59,6 +59,7 @@ public sealed unsafe class UniformChunk
     /// <summary>Clears the granules written since the chunk was handed out (no reader or writer is left).</summary>
     internal void ClearWritten()
     {
+        long t0 = System.Diagnostics.Stopwatch.GetTimestamp();
         var span = Span;
         for (int w = 0; w < _written.Length; w++)
         {
@@ -72,10 +73,11 @@ public sealed unsafe class UniformChunk
                 int e = b;
                 while (e < 64 && ((bits >> e) & 1) != 0) e++; // and the run of written ones from it
                 int start = ((w << 6) + b) << GranuleShift, end = Math.Min(((w << 6) + e) << GranuleShift, Size);
-                if (start < end) span[start..end].Clear();
+                if (start < end) { span[start..end].Clear(); UniformArena.ClearedBytes += end - start; }
                 b = e;
             }
         }
+        UniformArena.ClearTicks += System.Diagnostics.Stopwatch.GetTimestamp() - t0;
     }
 
     public Span<byte> Span => _ptr is var p and not 0 ? new Span<byte>((void*)p, Size) : _data;
@@ -100,6 +102,8 @@ public sealed unsafe class UniformChunk
 public static class UniformArena
 {
     public const int ChunkSize = 1 << 20;
+    /// <summary>Statistics (PERF uniforms, under the arena lock): bytes zeroed when chunks were recycled, and the time.</summary>
+    public static long ClearedBytes, ClearTicks;
     // spare managed chunks kept after a burst of queued work (64 MB). Counted apart from the heap's chunks: with the
     // 48 heap chunks on the same stack the old bound of 16 kept none, so a game past the heap (Jak 1's title screen,
     // ~27 MB of uniforms a frame) allocated a new 1 MB array per chunk, ~20 MB a frame and a gen 2 GC almost every frame
