@@ -1231,6 +1231,85 @@ public sealed partial class ThreadMgr : HleModule
         return SceError.UNKNOWN_EVENT_ID;
     }
 
+    /// <summary>
+    /// sceKernelWaitMultipleEvents(CB)(SceKernelWaitEvent events[count] {uid, waitPattern}, count, mode,
+    /// SceKernelResultEvent results[count] {uid, result, resultPattern, reserved, u64 userData}, timeout*), as the 3.74
+    /// threadmgr does it: events NULL is ILLEGAL_ADDR, more than 64 ILLEGAL_SIZE, mode bits past OR (1) / AND (2)
+    /// ILLEGAL_MODE (without bit 0 the wait is AND). Each event is taken as soon as its pattern matches (an auto-reset
+    /// event is cleared then, even in AND mode while others still wait) and appends a result in the order it fired; an
+    /// unknown uid appends {uid, UNKNOWN_EVENT_ID, 0x10} and counts as done. OR returns once anything is in, AND once
+    /// every event is; the return value is the number of results written (0 without a results array), WAIT_TIMEOUT when
+    /// the time runs out first (the results so far stay). Any event object works: simple events, timers, message pipes
+    /// and asynchronous I/O operations, the objects sceKernelPollEvent takes.
+    /// </summary>
+    [Hle("sceKernelWaitMultipleEvents")]
+    [Hle("sceKernelWaitMultipleEventsCB")]
+    int sceKernelWaitMultipleEvents(uint events, uint count, uint mode, uint results, Ptr<uint> timeout)
+    {
+        if (events == 0) return SceError.ILLEGAL_ADDR;
+        if (count > 64) return SceError.ILLEGAL_SIZE;
+        if ((mode & ~3u) != 0) return SceError.ILLEGAL_MODE;
+        bool or = (mode & 1) != 0;
+        ulong done = 0, all = count == 64 ? ulong.MaxValue : (1UL << (int)count) - 1;
+        int written = 0;
+        long start = GuestClock.Ticks;
+        long? limitUs = timeout.IsNull ? null : timeout.Value;
+        while (true)
+        {
+            for (int i = 0; i < count; i++)
+            {
+                if ((done & (1UL << i)) != 0) continue;
+                int uid = (int)GuestMemory.R32(events + (uint)i * 8);
+                uint pattern = GuestMemory.R32(events + (uint)i * 8 + 4);
+                uint entry = results == 0 ? 0 : results + (uint)written * 0x18;
+                int r = PollAnyEvent(uid, pattern, entry);
+                if (r == SceError.EVENT_COND) continue;
+                done |= 1UL << i;
+                if (entry == 0) continue;
+                GuestMemory.W32(entry, (uint)uid);
+                GuestMemory.W32(entry + 4, (uint)r);
+                GuestMemory.W32(entry + 12, 0);
+                if (r != 0) { GuestMemory.W32(entry + 8, EventBits.Error); new Ptr<ulong>(entry + 16).Value = 0; }
+                written++;
+            }
+            if (done == all || (or && done != 0))
+            {
+                if (limitUs.HasValue) timeout.TrySet((uint)Math.Max(0, limitUs.Value - ElapsedUs(start)));
+                return written;
+            }
+            long leftUs = limitUs.HasValue ? limitUs.Value - ElapsedUs(start) : long.MaxValue;
+            if (leftUs <= 0) { timeout.TrySet(0); return SceError.WAIT_TIMEOUT; }
+            // nothing wakes this thread when one of the objects changes: poll them at about the kernel's wake-up latency
+            // (the CB form runs the callbacks notified meanwhile inside the sleep)
+            Wait.Sleep((ulong)Math.Min(leftUs, 500));
+        }
+
+        static long ElapsedUs(long start) => (long)((GuestClock.Ticks - start) * 1_000_000 / System.Diagnostics.Stopwatch.Frequency * TimeScale.Wait);
+    }
+
+    /// <summary>One event of <see cref="sceKernelWaitMultipleEvents"/>: OK with the result pattern and user data written
+    /// to the SceKernelResultEvent at <paramref name="entry"/> (nothing when 0), EVENT_COND while it does not match,
+    /// UNKNOWN_EVENT_ID for a uid that is no event object. A zero wait pattern never matches.</summary>
+    int PollAnyEvent(int uid, uint pattern, uint entry)
+    {
+        var result = new Ptr<uint>(entry == 0 ? 0 : entry + 8);
+        var userData = new Ptr<ulong>(entry == 0 ? 0 : entry + 16);
+        if (Event(uid) is { } e) return pattern == 0 ? SceError.EVENT_COND : Taken(e.Poll(pattern, result, userData));
+        if (Timer(uid) is { } t) return Taken(t.Poll(result, userData));
+        if (Obj<MsgPipe>(uid) is { } p)
+        {
+            if (pattern == 0) return SceError.EVENT_COND;
+            int r = Taken(p.PollEvent(pattern, result));
+            if (r == 0) userData.TrySet(0);
+            return r;
+        }
+        if (Obj<IoAsyncOp>(uid) is { } op) return pattern == 0 ? SceError.EVENT_COND : Taken(op.PollEvent(pattern, result, userData));
+        return SceError.UNKNOWN_EVENT_ID;
+
+        // a poll that fails otherwise (the object went away) ends that event's wait as a match does
+        static int Taken(int r) => r == SceError.EVENT_COND ? r : 0;
+    }
+
     [Hle]
     int sceKernelCancelEvent(int uid, Ptr<uint> numWait)
     {

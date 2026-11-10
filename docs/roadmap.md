@@ -1339,6 +1339,21 @@ Lista de itens futuros do VitaSharp. Marque `[x]` quando um item for concluído.
   sceFiosKernelOverlayResolveWithRangeSync02. Faltam: sceKernelWaitMultipleEvents(CB), _sceKernelGetTimer5Reg,
   sceShellSvcGetSvcObj, IPMI::Client::create; o resto é do lado do kernel (o Vita3K roda .skprx em LLE; aqui o
   kubridge é HLE). Lista de LLE automático do Vita3K (HTTP, SSL, PGF, FIOS2, MP4, AVPLAYER...) a comparar com jogos
+  Feitas (10/11/2026, agente B, fix/bugs-b-2), pelo threadmgr/processmgr/libkernel do 3.74 desmontados (o Vita3K tem
+  as duas primeiras como UNIMPLEMENTED no kernel): sceKernelWaitMultipleEvents(CB) e _sceKernelWaitMultipleEvents(CB)
+  (eventos {uid, padrão}, até 64, modo OR 1/AND 2; cada evento é tomado quando bate, com o auto-reset limpando na hora,
+  e entra nos resultados {uid, resultado, padrão, 0, userData} na ordem em que disparou; uid desconhecido entra com
+  UNKNOWN_EVENT_ID/0x10; devolve o número de resultados, ou WAIT_TIMEOUT; serve para eventos simples, timers, msgpipes
+  e I/O assíncrono) e _sceKernelGetTimer5Reg (o endereço de uma página com o contador de microssegundos de 64 bits
+  que o libkernel lê direto para o sceKernelGetProcessTime*, mantida por uma thread do host a cada 1 ms). Testes em
+  `KernelGapTests`. Dos 47 jogos instalados, só o Batman: Arkham Origins Blackgate (PCSE00269) importa
+  WaitMultipleEvents (FEvent::WaitForMultiple do motor, OR com resultados e AND sem); no boot até o gameplay
+  (`bat_game.nav`, `<scratchpad>\bB2\runs\bat\g20.png`) ele não chama, então a correção não foi vista num jogo.
+  Nenhum jogo importa o Timer5Reg (só o libkernel do firmware, que aqui é HLE), sceShellSvcGetSvcObj ou as funções
+  SceIpmi: nos programas do sistema elas vêm dos módulos de verdade (libshellsvc, libipmi), e num jogo elas só
+  existiriam se o jogo importasse esses módulos (nenhum importa). Próximo passo sugerido para o lead: os jogos não
+  passam por `LoadFirmwareDependencies` (só os programas do sistema), então uma biblioteca do firmware que o HLE não
+  conhece fica "não implementada" num jogo em vez de vir do módulo real
 - [x] Câmera (Fotos, NPXS10004): um vídeo de 7 s gravado pela câmera mostra 1:09 de duração no player (relato do
   usuário, 08/11/2026, gravação `captures\shell_20261108_170201_tudo`). O MP4 gravado está certo (ffprobe 7,70 s;
   `mvhd` 90000/693120). **Corrigido** (feat/product-4): o player da câmera (avPlayer LLE) pega a duração do arquivo no
@@ -2038,10 +2053,21 @@ fs8):
   `inj_fight/sheet_2.png`, logs `bugsC9_out/inj_m2`, `inj_f1`; 0 HLE-ERR)
   Confirmado no jogo pelo usuário (06/11/2026, main d6c1fb7): roda
   Confirmado pelo usuário (06/11/2026): ok
-- [ ] Implementar todas as funções HLE que aparecem como não implementadas nos logs do usuário (pedido do usuário,
+- [x] Implementar todas as funções HLE que aparecem como não implementadas nos logs do usuário (pedido do usuário,
   06/11/2026; levantadas de 21 logs e gravações em `%APPDATA%\VitaSharp\logs` e `captures`, 90 funções). Cada uma com o
   comportamento do Vita (Vita3K e o firmware como referência), não um stub que devolve 0 sem pensar; as que só fazem
-  sentido com rede/PSN/hardware ausente devolvem o erro que o Vita devolve nesse caso. Jogos:
+  sentido com rede/PSN/hardware ausente devolvem o erro que o Vita devolve nesse caso.
+  Nova varredura (10/11/2026, agente B, fix/bugs-b-2): os 11 logs e as 13 gravações que estão hoje na pasta do usuário
+  (08-09/11) têm só 5 chamadas não implementadas, todas de uma sessão do Dead Space de 08/11 21:23, antes do kubridge
+  em HLE: kubridge kuKernelRegisterExceptionHandler, kuKernelAllocMemBlock (NID_2EF7C290, 3x), kuKernelCpuUnrestrictedMemcpy
+  (NID_91D9CABC, 4x), SceVshBridge _vshSblGetSystemSwVersion e _vshKernelSearchModuleByName (1x cada). As cinco já estão
+  na main (Kubridge.cs, VshBridge.Homebrew.cs) e as sessões seguintes do Dead Space (09/11 00:06 e a gravação 00:21) não
+  têm nenhuma; os `hle_errors.txt` das gravações só têm retornos de erro normais (timeouts de espera, módulo não
+  carregado). O FFBFC540 abaixo está feito (NpManager.Batch9.cs, IPC 0xB0025) e o 16B1028E do PhotoExport vem do
+  módulo do firmware nos programas do sistema (Emulator.FirmwareServiceClients). Falso positivo achado: o
+  `sceGxmTextureGetType` aparece como "erro" 547x no `hle_errors.txt` do SH: BoM porque devolve o tipo
+  SCE_GXM_TEXTURE_TILED (0x80000000), que cai na faixa dos códigos de erro; não mexi (o agente HLE B está mexendo no
+  HleFramework). Jogos:
   - SceNpManager::NID_FFBFC540 (0xFFBFC540) (PCSE00093)
     Achados (06/11/2026): no np_manager.suprx do firmware é um getter igual ao sceNpManagerGetNpId (NULL ->
     0x80550503; senão IPC 0xB0025 ao serviço SceNpManagerIpc do shell com 64 bytes de saída). O FIFA 13 chama logo
@@ -2828,6 +2854,9 @@ fs8):
   escrita da CPU em qualquer página da faixa devolve a faixa inteira à cópia do guest. Ver se algum jogo lê esses
   dados na CPU ou grava fora da CDRAM (aviso `a program stores to memory at ..., outside CDRAM`) (31/10/2026, branch
   fix/croixleur)
+  Conferido (10/11/2026, agente B, fix/bugs-b-2): nenhum dos 11 logs e 13 gravações do usuário nem as execuções dos
+  agentes no `<scratchpad>` têm o aviso `a program stores to memory at ..., outside CDRAM`; o único jogo conhecido com
+  VLDST store é o Croixleur (CDRAM). Sem jogo que precise, não mexi (fica aberto até aparecer o aviso)
 
 - [ ] The Deer God (PCSB01070; no Vita3K trava no boot): engasgos no gameplay (30/10/2026, main 4603a03, logs
   `20261030_230111_PCSB01070` e `20261030_230208_PCSB01070`). Roda a 60 fps, mas cai de repente para 12–16 fps por
@@ -3129,7 +3158,23 @@ fs8):
   Vita do mesmo ângulo (a câmera do Tearaway segue o giroscópio)
   Confirmado pelo usuário (06/11/2026): ok
 - [ ] Anexo da palavra extra do registrador de saída (TileWord1): falta nas cenas supersampled, no caminho tile-based (Android) e com VITASHARP_MSAA_FETCH=copy (lá a palavra continua perdida, com aviso no log; 29/10/2026: `TileWord1Unsupported` ainda recusa esses três casos)
-- [ ] Fibers: `_sceFiberAttachContext*` exige status Init (o firmware aceita qualquer fiber ocioso sem área de contexto; 0/0 é switch simples) e o topo da pilha deveria ser `(addr+size-1)&~7` (conferido em 29/10/2026 no main c12927d: `Fiber.AttachContext` ainda devolve ERR_STATE fora de Init e R13 = `(addr+size)&~7`)
+  Conferido (10/11/2026, agente B): os três casos são caminhos de reserva no desktop (supersample só quando o MSAA
+  nativo não serve o formato; cópia só com VITASHARP_MSAA_FETCH=copy) e o tile-based é do Android. Nenhum log ou
+  gravação do usuário nem execução no `<scratchpad>` tem o aviso `... which the scene cannot keep (...)`; sem jogo
+  que precise, não mexi
+- [x] Fibers: `_sceFiberAttachContext*` exige status Init (o firmware aceita qualquer fiber ocioso sem área de contexto; 0/0 é switch simples) e o topo da pilha deveria ser `(addr+size-1)&~7` (conferido em 29/10/2026 no main c12927d: `Fiber.AttachContext` ainda devolve ERR_STATE fora de Init e R13 = `(addr+size)&~7`)
+  Feito (10/11/2026, agente B, fix/bugs-b-2), pelo libfiber.suprx 3.74 desmontado: as checagens do
+  _sceFiberAttachContextAndRun/AndSwitch seguem a ordem do firmware (NULL; fiber ou contexto desalinhado; Run já dentro
+  de um fiber ou Switch fora de um = PERMISSION; tamanho < 512 = RANGE; endereço NULL, tamanho não múltiplo de 8 ou
+  fiber que já tem área = INVALID; fiber rodando = STATE); qualquer fiber ocioso sem área recebe a área e começa de novo
+  na entrada sobre a pilha nova; 0/0 é um run/switch simples; o topo da pilha é `(addr+size-1)&~7`. Achado no mesmo
+  desmonte e corrigido: quando a função de entrada de um fiber retorna, o firmware volta para a thread logo depois do
+  sceFiberRun, que devolve 0x80590006 com *argOnReturn = o fiber (que fica ocioso e recomeça na entrada); aqui a thread
+  inteira terminava (LR = ThreadExitTrap). Testes em `FiberHleTests` (3). No jogo: Ninja Gaiden Sigma 2 Plus
+  (`ngs2_boot` até o gameplay em Sky City Tokyo, 40273 sceFiberSwitch e 2604 sceFiberRun,
+  `<scratchpad>\bB2\runs\ngs2\frames\sheet.png`) e Soul Sacrifice Delta (`soulsac_boot` até a fogueira da primeira
+  área, 16610 sceFiberSwitch, `<scratchpad>\bB2\runs\soulsac_boot\frames\sheet_3.png`). Nenhum jogo rodado chama o AttachContext (só o libult importa; NGS2,
+  Unit 13 e Soul Sacrifice Delta não criam ulthreads no caminho testado): essa parte só tem os testes
 - [ ] MSAA real: leitura da imagem pelo próprio desenho (input attachment) é indefinida quando triângulos do mesmo desenho se sobrepõem (sem `VK_EXT_rasterization_order_attachment_access` na GTX 1650/Iris Xe); causa diferenças de ±1 entre execuções (29/10/2026: o log da GTX 1650 ainda mostra `GPU missing: ... RasterizationOrderColor`)
 - [ ] Sonic Mania: ~18 estalos por segundo na saída de música (44,1 kHz); pode ser do próprio conteúdo, não investigado (29/10/2026, main c12927d, `mania_boot.txt` com `--audio-dump`: 522 estalos em 34,5 s de som, 15,1/s, sem relação com a fase do grain de 1024; sem underruns)
   Não reproduz (05/11/2026, fix/bugs-audio, os mesmos `mania_boot` e `--audio-dump`): porta BGM 44,1 kHz grain 1024, 62 s (34 s com som), `audrep.py` 0 estalos e um detector de segunda diferença mais sensível 0,1/s; sem underruns. A conversão 44,1→48 kHz da saída é do OpenAL (fora do dump); falta o usuário ouvir no PC.
@@ -3144,6 +3189,11 @@ fs8):
   emenda na fase de 256/512/1024 amostras (`phase.py`, pico 1,16x da mediana, o mesmo do FIFA sem defeito); os 8
   eventos de segunda diferença são transientes da música entre 32 e 38 s. Sem defeito medível no que o jogo gera
 - [ ] ATRAC9: a saída do nosso decodificador tem a polaridade invertida em relação ao FFmpeg (inaudível; confirmar qual está certa; o decodificador não mudou desde então, e só dá para decidir comparando com o Vita real)
+  Conferido (10/11/2026, agente B): o nosso é o LibAtrac9/VGAudio (Alex Barney, engenharia reversa do decodificador da
+  Sony); o do FFmpeg (2018) foi escrito sem comparar com o binário da Sony ("confiança de que está perto do binário",
+  na lista do FFmpeg) e usa o MDCT genérico do FFmpeg com escala positiva (outros codecs do FFmpeg, como o Vorbis,
+  usam escala negativa para acertar o sinal). O Vita3K usa o FFmpeg. Indício a favor do nosso, sem prova: decidir só
+  com uma gravação digital do Vita/PSTV de um som isolado (logo) correlacionada com o nosso decodificado
 - [x] `sceNpManagerGetCachedParam`: layout não confirmado, por isso responde "sem conta" mesmo com a conta PSN emulada conectada (o UnityNpToolkit do 99Vidas chama e segue em frente; 29/10/2026: `Np.cs` ainda devolve ERR_SIGNED_OUT)
   Feito (06/11/2026, fix/bugs-games-11): desmontado do np_manager.suprx 3.74, copia do registro de 0x148 bytes do
   NID_E45E4003 o SceNpId (+0, 0x24) e a URL do avatar (+0x38, 0x80) para um SceNpManagerCacheParam de 0xA4 bytes e
