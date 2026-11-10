@@ -6,7 +6,7 @@
   usando ~7 núcleos (470-727%) e outros VitaSharp/testhost rodando. Sem conclusão; repetir com o PC parado
   Filme do LBP com --video-decoder=hw x software (agente C, 08/11/2026, boot sem entrada, presents 2400-2620): o
   trecho é a tela de título (logo animado), não o filme movie.mp4 (nenhum quadro casa com ele). hw 12 achados
-  (flashes A-B-A e 1 troca, ugsC3_data/captures/PCSA00017_20261108_154402_tudo), software 11 com quedas de fps
+  (flashes A-B-A e 1 troca, bugsC3_data/captures/PCSA00017_20261108_154402_tudo), software 11 com quedas de fps
   (..._154608_tudo). Pista nova: com VITASHARP_DECODER_HISTORY=0 2 de 2 execuções a 30 fps cravados e 1-2
   achados (..._155052_tudo, ..._160414_tudo); com o histórico ligado 2 de 2 com quedas a 4-13 fps e 29-31 achados
   (..._155746_tudo, ..._160123_tudo), mas o jogo chegou em telas diferentes (889 x 507 cenas MSAA) e o PC estava
@@ -1312,7 +1312,7 @@ Lista de itens futuros do VitaSharp. Marque `[x]` quando um item for concluído.
   validada** (não reproduzi a troca de dispositivo): OpenAlAudio verifica ALC_CONNECTED e o padrão do sistema a cada
   1 s e move o dispositivo com alcReopenDeviceSOFT; nunca segura a thread de áudio do jogo mais de 1 s. Próximo passo:
   reproduzir conectando/desconectando o controle com o jogo rodando e conferir o log "Audio: ... now on"
-- [ ] Silent Hill: Book of Memories (PCSE00011): a lanterna e as luzes não iluminavam (relato do usuário, 08/11/2026,
+- [x] Silent Hill: Book of Memories (PCSE00011): a lanterna e as luzes não iluminavam (relato do usuário, 08/11/2026,
   `captures\PCSE00011_20261108_225425_tudo`). Causa: o buffer de luz (superfície 0x41200000, U2F10F10F10 num F16x4 do
   host) guarda no alfa a profundidade de cada pixel e cada luz (stencil volume + programmable blending) reconstrói a
   posição a partir dele; o gerador prendia o alfa em 0..1, então nenhuma luz (lanterna incluída) somava nada. Dentro da
@@ -1321,6 +1321,11 @@ Lista de itens futuros do VitaSharp. Marque `[x]` quando um item for concluído.
   iluminados (`<scratchpad>\c24\rp\bomfull\frame_007538.png`, antes `cmp\base\...\frame_007560.png`);
   `replay-gpu --compare` dos 19 dumps/gravações: só o PCSE00011 muda. Real Vita (YouTube -fQbhws3LyI, zona 1) ainda
   parece mais claro ao redor do jogador: conferir no jogo rodando. Falta validar ao vivo
+  **Validado ao vivo** (agente A, 10/11/2026, main bfae931, headless com o save do usuário copiado): Continuar >
+  Seleção da Área > Área 1 (Fogo) > Sim; na ponte do começo o jogador e o chão à frente dele saem iluminados pela luz
+  dele, como no vídeo do Vita real (`<scratchpad>\bA\proofs\bom_live_flashlight.png`, `..._flashlight2.png`). O save
+  state da gravação do usuário não carrega mais (formato de outra versão), por isso não deu para repetir o ponto exato
+  dela; falta o usuário confirmar no ponto dele
 - [ ] Salt and Sanctuary (PCSE01023): logo da Ska Studios pisca na introdução (relato do usuário, 08/11/2026,
   `captures\PCSE01023_20261108_220030_tudo`). Achados (não resolvido): o replay reproduz (quadros no 0x66600000 claros,
   ~3,3x os do 0x66900000); os dois quadros têm os mesmos 5 desenhos (quad preto em tela cheia, um mask update em tela
@@ -1329,10 +1334,34 @@ Lista de itens futuros do VitaSharp. Marque `[x]` quando um item for concluído.
   alvo, iniciada pela background mask da superfície de profundidade, ALWAYS=1/NEVER=0, desenhos rejeitados onde a
   máscara é 0). Próximo passo: ver no replay qual dos desenhos difere entre os dois buffers (`--draw-limit=N@17/18`) e
   se a máscara GXM explica (implementar como o Vita3K: vulkan/context.cpp, scene.cpp, state_set.cpp)
+  Agente A (10/11/2026, fix/bugs-a-1): **não é a máscara**. O mask update usa stencil ALWAYS, que no Vita3K grava 1 em
+  toda a área (máscara 1 = nada rejeitado), igual a ignorar. O que difere é o viewport: nos quadros escuros os desenhos
+  4 e 5 (brilho do logo e anéis) saem com `sceGxmSetViewport(0, 0, 0, -0, 0.5, 0.5)` (trace do replay:
+  `vp=True(0,0,0,-0,...)`), nos claros com (480, 272, 480, -272). Ao vivo (headless, `--probe`/`--watch`): o motor do
+  jogo guarda o retângulo do viewport em duas estruturas por quadro (0x6880 bytes, índice em +0x5C do device, trocado
+  no Present em 0x81D8DCE2); o setter do jogo (0x81D8E0B2) só grava na estrutura do índice atual, e as duas chamadas
+  dele (início do jogo, 31 ms uma da outra, a segunda por um delegate em 0x8122DBE6) acontecem antes do primeiro
+  Present, as duas com índice 0. A estrutura 1 fica zerada (memset na criação) e o Clear (0x81D8D08A, depois do mask
+  update) reaplica o viewport da estrutura do quadro: nos quadros ímpares, zero. O `sceGxmSetViewport` do libgxm real
+  (0x8100AA2C) só guarda os seis floats e marca o estado (0x100 em ctx+0x1C0), copiados crus para o fluxo do hardware;
+  nada trata escala 0. Vídeo do Vita real (YouTube 5JSM07SCA1s, 2-4 s): logo branco e estável em todos os quadros (o
+  quadro claro do VitaSharp tem a mesma luma do logo: 155 contra 138). Logo no Vita real alguma chamada do setter cai
+  com índice 1 (a 2ª chamada vem de um evento; no Vita real ela deve chegar depois do primeiro Present). Hipótese em
+  aberto: um evento do sistema/janela que o VitaSharp entrega cedo demais (ou uma vez só). Próximo passo: descobrir o
+  que dispara o delegate de 0x8102A788 (pilha 81000104 < 81000A0C < 81487FC8 < 8122DBE6 < 8103D404 < 82021B36 <
+  8102A78C) e comparar com o Vita3K
 - [ ] Silent Hill 4 (SILH00004), controles: não iniciado nesta rodada. Preparado: `<scratchpad>\c24\sh4.nav` e
   `ux0:data/sh4/env.txt` com `SH4_AUDIT_PAD=1` (o port loga `[audit-pad]` com os eixos e `[audit-pad-player]` com a
   rotação). Atenção: nos scripts NAV, `lstick x y` usa -1..1 (para frente = `lstick 0 -1`); agora aceita rampa
   (`lstick x y quadros rampa`)
+  Agente A (10/11/2026, main bfae931, headless com `SH4_AUDIT_PAD=1`): **nada de errado achado no lado do emulador**.
+  Título, Options (cima/baixo/círculo), dificuldade, abertura e o quarto em primeira pessoa respondem; o `[audit-pad]`
+  do port recebe os eixos crus certos dos dois analógicos (esquerdo Y -32767/+32767 para frente/trás, esquerdo X
+  +32767, direito X +32767) e a câmera anda e vira. O mapeamento é do port: o direito X vira `axes[0]` (girar) e o
+  esquerdo X não entra em nenhum eixo em primeira pessoa (`axes=0,0,...`), escolha do port e não do VitaSharp. Achado à
+  parte: com o `sh4.sav` do usuário copiado (694288 bytes, lido inteiro duas vezes no boot) o Load mostra as 10 vagas
+  "No game data" e o Continue fica cinza. Falta o usuário dizer o que nos controles parece errado (botão, eixo, menu
+  ou gameplay)
 - [ ] Comparação com o Vita3K (pedido do usuário): lista de lacunas em `<scratchpad>\c24\vita3k_gap.tsv` (agente de
   tarefas rápidas). Do lado do usuário só ~20 funções reais faltavam; feitas: aliases sceKernelLock/Unlock/TryLock
   LwMutex_0/_16XX, _sceKernelSuspend/ResumeThreadForVM, _sceKernelGetRandomNumber,
@@ -1499,7 +1528,7 @@ Lista de itens futuros do VitaSharp. Marque `[x]` quando um item for concluído.
   quadro decodificado antes de outro do mesmo tamanho que um upload já pegou (em qualquer endereço) foi pulado pelo
   jogo e não é mais mostrado depois. Medido com boot ao vivo sem entrada (--capture-at=250:860), 5 execuções do build
   final: 0 voltas para trás (325/325, 324/324, 304 com o PC carregado), contra 85-105 sem a correção
-  (ugsC3_data/captures/PCSE00233_20261108_1342* a ..._134743_tudo); teste DecoderOutputsTests. A diferença para o
+  (bugsC3_data/captures/PCSE00233_20261108_1342* a ..._134743_tudo); teste DecoderOutputsTests. A diferença para o
   Sigma 1: ele não deixa quadro sem amostrar no anel
   Confirmado pelo usuário (08/11/2026)
 
@@ -1525,7 +1554,7 @@ Lista de itens futuros do VitaSharp. Marque `[x]` quando um item for concluído.
   contexto de fiber restaurado de um save state vinha sem a parte do host do CpuState (MemBase nulo); o sceFiberRun /
   Switch copiava o contexto inteiro por cima do estado do thread e o primeiro acesso à memória caía (AccessViolation em
   T16.LdStSp, MemBase 0x0 no log de diagnóstico). Agora a troca de fiber só troca os registradores do guest. Sem a
-  correção 3/3 reruns caem; com ela 0 em 5 (reruns de ugsC3_data/captures/PCSE00233_20261108_142546_tudo 2x e
+  correção 3/3 reruns caem; com ela 0 em 5 (reruns de bugsC3_data/captures/PCSE00233_20261108_142546_tudo 2x e
   ..._150404_tudo, e --load-state direto). Junto: o decodificador H.264 recriado na carga recebe de novo o SPS/PPS
   do filme (antes: 
 on-existing PPS 0 e nenhum quadro). Ainda aberto: depois da carga no meio do filme da abertura
@@ -1664,6 +1693,7 @@ on-existing PPS 0 e nenhum quadro). Ainda aberto: depois da carga no meio do fil
   - Lote 9 (feat/hle-batch-9, 08/11/2026): o lado NP do software do sistema, o SQLite da vsh e mais membros do libpaf, com os módulos do firmware 3.74 descompilados no Ghidra + VitaLoader (só estudo; o contrato de cada exportação lido no módulo e escrito à mão em C#, nada do código descompilado no repositório). `hle-coverage --vitasdk=...` antes -> depois (com os 155 analisadores do NpCommerce2 do agente auxiliar hle9b, já na main): geral 6.677/19.406 (34,4%) -> 7.389 (38,1%); jogos 1.559/1.559 (100%); sistema 2.130/7.512 (28,4%) -> 2.820 (37,5%; +535 deste ramo, +155 do hle9b); o resto 2.988 -> 3.010; VitaSDK 5.227/7.006 (74,6%). Feito: `ShellSvcIpc` (o pedido que libnetctl/np_manager fazem ao serviço do shell pelo objeto de serviço do libshellsvc: método síncrono, entradas {ptr, tamanho}, saídas {ptr, tamanho, escrito}, palavra de resultado; o HLE repassa o mesmo pedido ao serviço de verdade do shell; sem libshellsvc no processo, "não inicializado"); SceNetCtl (62: os pedidos 0x200xx com as checagens da biblioteca e a tabela de tratadores do shell, mais duas listas de callbacks do sistema, o tick de rede guardado, o nome de autenticação ad hoc e o contexto do cliente de autenticação); SceNpManager (18: os pedidos 0xA00xx/0xB00xx; o NID_FFBFC540 = método 0xB0025, 64 bytes, agora com ponte; a configuração de comunicação que o sceNpInit guarda; o término do lado do sistema); SceNpCommerce2 (206: criação de pedido por tipo, id = contexto << 16 | n, oito por contexto; as checagens de contexto/pedido de toda operação da loja, a troca com o servidor, os pedidos do serviço de loja do shell, ticket, cópia de sessão; a loja continua inalcançável, como nas outras funções da loja do HLE); SceNpCommon (22: escape de URL/XML, o primeiro caractere XML, Base64, a família strtol, comparação de online id, o bloco de configuração e os padrões das opções de depuração num console de varejo); SceNpCommonPs4 (35, só reserva do firmware: rand, atômicos, acessores, tempo, travas lwmutex, heaps e alocadores, o cabeçalho Bearer); SceSqliteVsh (89: o SQLite 3.7.6.3 da vsh, cada exportação casada com a função da API pelo que faz no módulo; roda sobre o SQLite de verdade (e_sqlite3 pelo SQLitePCLRaw, domínio público / Apache-2.0, nos créditos do README) nos arquivos do host para onde os caminhos do guest apontam; bancos/statements/blobs/valores/contextos como handles, texto e blobs no heap do módulo até o próximo step/reset/finalize, callbacks de exec/colação/função/ganchos no guest; só reserva do firmware, `VITASHARP_HLE_MODULES=SceSqliteVsh` liga); libpaf (~120: membros de Widget/TextBox/ScrollView/RichText/BusyIndicator/ListItem, superfícies (filtros, wrap, páginas, refcount), estado de blend/depth/cull do ARL, TextLayout/TextStyle, Image (extensão, recorte), PropertyList, parâmetros de Plugin/Page, Timer, gestos, std::map, http::Transaction sobre o SceHttp). Um importador vs0 que antes pegava uma biblioteca toda do firmware não passa a uma HLE parcial (conferido por módulo; NID_650D111B e NID_CC8E6AC6 ficaram de fora: o NPXS10031 e o activity_db importam só eles, e o activity_db tirava o np_common do firmware, cujas exportações o resto do shell usava). Validação: testes de unidade (HleBatch9Tests, inclusive SQL de verdade num banco :memory:); shell (Amigos, Troféus, Câmera) e 10 apps do sistema sem cabeça: mesmos resultados da base (0 "Unimplemented", as mesmas quedas e o mesmo timeout do NPXS10026). Chamadas ao vivo: com `VITASHARP_HLE_MODULES=SceSqliteVsh,sqlite` o shell roda as consultas do próprio banco no SQLite do HLE (open_v2 13x, prepare_v2 35x, step 68x, column_text/int/count, exec 8x, create_function 4x, ganchos de commit/rollback/update, mprintf) e o NPXS10014 abre o seu banco (open_v2, busy_timeout, ganchos, prepare_v2); mas o livespace_db do shell para numa asserção do libpaf (BKPT, pela pilha SceLsdb -> SceDbutil, um ponteiro de texto NULL num paf::string) logo depois de abrir os bancos, então o HLE do SQLite fica desligado por padrão (o firmware continua com o seu). Próximo passo: achar a resposta que difere (o log agora mostra cada open e cada prepare que falha). Os outros pedidos novos (NetCtl, NpManager, NpCommerce2, NpCommon, libpaf) só têm teste de unidade: nenhum fluxo exercitado sem cabeça os chama (a loja só chama sceNpCommerce2Init sem rede). Não feito: os 27 pedidos do np_manager pela conexão libipmi própria (o HLE não abre essa conexão; o SceIpmi do libshellsvc está descompilado), os dois do cliente de autenticação ad hoc do libnetctl, o callout do np_common, o NpUtility (estado interno de HTTP), o resto do NpCommonPs4 (classes com vtables do módulo), o sqlite3_busy_handler/sqlite3_config (o SQLitePCLRaw não os expõe), o grosso do ui::Widget (motor de widgets/GPU). Meta de 3.000 no sistema não atingida (2.820).
   - Lote 10 (feat/hle-batch-10, 09/11/2026, WIP: o usuário encerrou o dia antes da validação). `hle-coverage --vitasdk=...` antes -> depois: geral 7.391/19.406 (38,1%) -> 7.585 (39,1%); sistema 2.819/7.511 (37,5%) -> 2.993 (39,8%); VitaSDK 5.229/7.006 (74,6%) -> 5.374 (76,7%). Feito: a conexão libipmi própria do np_manager (`NpManager.Ipmi.cs`: aberta no primeiro pedido depois do sceNpInit/NID_C89E0B94 pelas mesmas funções SceIpmi do libshellsvc, com a Config que o módulo monta; os 27 pedidos assíncronos 0xB00xx (pegar o id, enviar M, esperar, receber M+1, devolver o id) e os síncronos 0xB0048/0xB0049, com os mapeamentos de erro do módulo; sem libshellsvc, 0x80550502; o evento 0x33 do shell não é registrado); libnetctl NID_9CB6FEE1 (mapeamento UPnP: sem gateway, 0x80414187) e NID_1172C5FC (servidor de autenticação ad hoc: sem rede ad hoc, 0x80412108); serviços do kernel lidos nos módulos 3.74 (`SystemServicesVsh.Batch10.cs`): SceSblSsUpdateMgr (24: consultas da 3.74 em modo normal, avisos aceitos, operações de pacote de atualização 0x80020004), SceBt (14, pilha ociosa sem aparelho), SceUsbPspcm (12, 0x8024450D sem host USB), SceUsbstorVStor, Wlan/Usbd/Ctrl/Hid, Dipsw, DebugLed, região (CnvRegionStr), tempo de outro processo, RNG do kernel, avisos de instalação do SceNpDrmPackage (12), formas Ext de SceMotion (com porta; NID_D87E2B64 = GetState por porta) e SceMotionDev (registros vazios de calibração), FIOS2 kernel 02, internos do NGS, notificação de progresso, depuração do FIOS2; libpaf: sce_paf_exit (parada fatal), operator new no HeapAllocator, towlower/fflush privados; SceSqliteVsh sqlite3_config/sqlite3_busy_handler; módulo `SystemFallback` (só reserva do firmware): SceTeleportClient (14), SceSulpha (9), ScePromoterUtil (8, pedidos 0x13xxxx ao shell), eventos do SceShellSvc (4). O partial2 só aponta bibliotecas de módulos só-reserva (SceShellSvc/ScePromoterUtil/SceSulpha), que não tiram nada do firmware. Não validado: o build compila com 0 avisos, mas os testes (HleBatch10Tests) e as execuções do shell e dos 10 apps sem cabeça (base x novo; a worktree base fica no commit 5d97301) não rodaram. Próximo: rodar `hle10_seq.sh` (testes + execuções), conferir 0 "Unimplemented" e as mesmas quedas da base; faltam 7 para 3.000 (candidatos: SceNpDrm _sceNpDrmGetRifName e afins (10 importadores, sem semântica confirmada), sceTeleportServerSendInitialInfo, o resto do SceSulpha/ScePromoterUtil, NID_8D4F9F2E/D943CE15 do SceShellSvc). Não feito: o callout do np_common (precisa de uma thread do HLE que chame o guest), o parser de ticket NID_85503FA6, o NpUtility (estado do módulo; NID_31423835 tiraria o activity_db do firmware), o IniFileProcessor (motor C++ inteiro), o ui::Widget (motor de widgets).
 - [ ] LittleBigPlanet (PCSA00017): o filme de abertura sai "zuado" (relato do usuário, 07/11/2026, main 90b55bc, gravação
+- [x] LittleBigPlanet (PCSA00017): o filme de abertura sai "zuado" (relato do usuário, 07/11/2026, main 90b55bc, gravação
   `captures\PCSA00017_20261107_011815_tudo`, 30 fps): o analisador acha 10+ flashes em 6,7 s — quadros do filme com brilho que pula entre
   vizinhos (o logo e as partículas aparecem e somem de um quadro para o outro, ex. presents 2532/2537/2538) e quadros
   pretos isolados (2432, 2460). O filme é tocado pelo AvPlayer com H.264 pelo `ffmpeg-d3d11va` (decodificação na GPU
@@ -1810,7 +1840,7 @@ on-existing PPS 0 e nenhum quadro). Ainda aberto: depois da carga no meio do fil
   filme m_00. Diferença que sobra: o Vita3K informa 232 MB de memória de usuário livre no início e o VitaSharp 341 MB
   (o port pede 188 vs 200 MB para a memória x86); o `SH4_AUTOSHOT` do port (glReadPixels) sai preto nos dois
   emuladores. O código de erro exato do Vita real para apps não está confirmado (o vitaGL só testa != 0)
-- [ ] Need for Speed Most Wanted (PCSE00089): no começo fica muito tempo na tela de aviso de salvamento ("This icon
+- [x] Need for Speed Most Wanted (PCSE00089): no começo fica muito tempo na tela de aviso de salvamento ("This icon
   indicates the game is saving..." + copyright da EA) — 27 s inteiros na gravação, quase preta e a 30 fps — e aparece
   um erro de rede (relato do usuário, 07/11/2026, main 90b55bc, gravação `captures\PCSE00089_20261107_011440_tudo`). No log/HLE da gravação: o jogo
   tenta a rede da EA: `sceNetResolverStartNtoa` falha 3x (0x804101E1, DNS), `sceNetRecvfrom` 419x com EAGAIN, `sceNetSendto`
@@ -1863,9 +1893,7 @@ on-existing PPS 0 e nenhum quadro). Ainda aberto: depois da carga no meio do fil
   tenta mais DNS/UDP (só o NetCheckDialog, cancelado). **Aberto**: o NFS continua parado no diálogo do Origin depois do
   toque, com e sem conta (X, toque em CONTINUE, START não fazem nada; O volta ao título); o jogo lê o controle e não faz
   IO nesse estado, então não é rede: falta achar o que o diálogo espera (o spinner continua)
-  08/11/2026 (agente C, fix/bugs-games-20, só achados, timebox): reproduz com a main (ugsC20_out/nfs1, 
-  Boot (logo EA, vídeo, título) confirmado pelo usuário (08/11/2026); seguem abertos o diálogo do Origin e os controles que não respondem
-fs8):
+  08/11/2026 (agente C, fix/bugs-games-20, só achados, timebox): reproduz com a main (`bugsC20_out/nfs1`, `nfs8`):
   depois do toque o jogo carrega 26 BNDL da UI/mundo (f659-f803, último UI/SCREENS2/669547_TRANSITIONS.BNDL) e para
   de ler; o spinner continua, X (8 e 30 quadros), toque em CONTINUE (0.25, 0.30), START e O não mudam nada em 10 s
   (o O voltava ao título no relato anterior, depois de mais tempo). O X chega ao jogo: ele grava SafeMemory 4 vezes
@@ -1876,7 +1904,16 @@ fs8):
   SignalSema OVF, NgsVoiceGetOutputPatch). No Vita3K o jogo chega ao gameplay (issue de compatibilidade #209), sem
   menção ao Origin. Próximo passo: achar no código do jogo o que o frontend espera depois do último BNDL (backtrace
   do Hawaii_Main_Thread em --bt, ou comparar com um log do Vita3K com --log-imports)
-- [ ] Soccer Tsuku (PCSG00198): o rosto na tela de criação demora muito para aparecer (relato do usuário, 06/11/2026,
+  Boot (logo EA, vídeo, título) confirmado pelo usuário (08/11/2026); seguem abertos o diálogo do Origin e os controles
+  que não respondem
+  Agente A (10/11/2026, main bfae931, headless do boot, sem estado): **resolvido no main**. Aviso de salvamento (tela
+  branca MOST WANTED) por ~4-5 s e logo "TOUCH TO START" (Vita real ~6 s); depois do toque o diálogo do Origin aparece
+  e o X em CONTINUE passa (a leitura de 2 amostras do b3c16ca), vem o filme de abertura e a corrida do prólogo (1,6 mi,
+  Connors Bridge Road) responde a acelerador, ré e direção (`<scratchpad>\bA\proofs\nfs_boot_sheet.png`,
+  `nfs_origin.png`, `nfs_prologue.png`). A troca de carro (item do `sceMp4GetNextUnit`, 64a15c4) segue sem validação ao
+  vivo: guiar a corrida do prólogo às cegas por prints de novo não chegou ao fim (timebox); precisa de uma gravação do
+  usuário depois do prólogo ou de um save com carros liberados
+- [x] Soccer Tsuku (PCSG00198): o rosto na tela de criação demora muito para aparecer (relato do usuário, 06/11/2026,
   build de release 99396f5; log `20261106_221928_PCSG00198`, gravação `captures\PCSG00198_20261106_222037_tudo`). O jogo
   roda a 30 fps cravados e o log não tem erro; a gravação tem 2,5 s com uma parada de 131 ms (fileIo). Medir quanto o
   rosto leva aqui e no Vita real (vídeo), ver se é leitura de arquivo (FIOS/IO assíncrono), decodificação de textura ou
@@ -1885,11 +1922,16 @@ fs8):
   07/11/2026 (agente C): a gravação mostra o FACE VIEWER vazio os 2,5 s inteiros; o estado dela é do 99396f5 e a main não
   carrega ("salvo por outra versão"), e chegar à tela de criação por roteiro não coube no tempo. Precisa de uma gravação
   nova com a main (estado carregável) para medir
+  Agente A (10/11/2026, main bfae931, headless do boot, 28-30 fps): **não reproduz no main**. NEW GAME > secretária >
+  passaporte do técnico (o rosto padrão já aparece no FACE) > ○ no FACE: o FACE VIEWER abre com o rosto montado já no
+  primeiro print, 30 quadros (~1 s) depois do botão, e igual nos prints de 2, 4, 8, 16 e 30 s, com as três vagas do SAVE
+  FACE preenchidas (`<scratchpad>\bA\proofs\soccertsuku_face_viewer.png`, `soccertsuku_passport.png`). O build do
+  relato (release 99396f5) era bem mais antigo; falta o usuário confirmar no main
 - [x] 99Vidas (PCSE00914): gravação do usuário no boot sem nenhum quadro (06/11/2026, release 99396f5,
   `captures\PCSE00914_20261106_221719_tudo`; AsyncReadManager do Unity rodando, quadro 0). A main tem o 1dfb147
   (sceNpManagerGetCachedParam, com o qual o jogo chega à abertura aqui): conferir com o build novo antes de investigar
   Conferido (07/11/2026, agente C, main 176f5d6): 	ests/scenarios/99vidas_boot.txt chega ao tutorial com as lutas a
-  60 fps (quadro 3988, ugsC3_data/tests/99vidas_boot/sheet_3.png): o boot sem quadros era do release antigo
+  60 fps (quadro 3988, bugsC3_data/tests/99vidas_boot/sheet_3.png): o boot sem quadros era do release antigo
   Confirmado pelo usuário (08/11/2026)
 - [x] Mudar o mapeamento de controle não vale com o jogo aberto (relato do usuário, 06/11/2026): o novo mapeamento só
   entra depois de sair e abrir o jogo de novo; o mesmo no Sistema do Vita (shell). Recarregar o perfil (`input.json`) na
@@ -1898,7 +1940,7 @@ fs8):
   Correção feita (07/11/2026, agente C, afdb095): o input.json é relido quando muda (data do arquivo olhada a cada 500 ms) e
   cada Put/Remove muda uma revisão; o HostInput do desktop e o teclado e os controles do Android recompilam os perfis na
   hora (os controles do Android nem pegavam o perfil salvo antes de reconectar). Jogo rodando (Jak 1, janela oculta):
-  "Input: input.json changed, mapping reloaded" logo depois de trocar o arquivo (ugsC17_out/input1/log.txt); o efeito
+  "Input: input.json changed, mapping reloaded" logo depois de trocar o arquivo (bugsC17_out/input1/log.txt); o efeito
   nos botões está no teste ARemappingAppliesWithTheGameRunning. Falta o usuário trocar um botão com o jogo e o shell abertos
   Confirmado pelo usuário (07/11/2026)
 - [x] Troféus antigos não aparecem no app Troféus (relato do usuário, 06/11/2026, main 90b55bc): o troféu só apareceu
@@ -2898,6 +2940,11 @@ fs8):
   segue o relógio emulado de 333 MHz e o tempo de leitura emulado; falta comparar o tempo dessa carga com um vídeo do
   Vita de verdade antes de mexer no ritmo de leitura ou da CPU
   Desligada por padrão até o usuário confirmar na janela.
+  Agente A (10/11/2026, main bfae931, janela oculta `VITASHARP_HIDDEN_WINDOW=1`, cenário `deergod` com `--data=`): sem
+  medida útil. A janela oculta não segura o ritmo (122-650 fps no menu e no gameplay), as entradas por número de quadro
+  caem fora de hora, e a CPU do PC ficou em 87-100% de 66 s a 144 s da rodada (outros agentes); as duas paradas de 5-6 s
+  (quadros 11255 e 23978) são as trocas de cena já conhecidas. Medir de novo só com o PC livre e na janela visível do
+  usuário (pedir ao lead), ou com uma gravação F8 do usuário durante um engasgo
   Medido na janela oculta (agente C dia 11, 06/11/2026, fix/bugs-games-10, `VITASHARP_HIDDEN_WINDOW=1`, 150 s, Cross a
   cada 200 quadros; `bugsC10_out/deer_off`, `deer_on`): sem a chave, amostras de 5 s a 60-63 fps com duas
   quedas (41, 46) e a parada da troca de cena (watchdog `STALL` 5 s, quadro 2752); com a chave, 59-60 fps, uma queda
