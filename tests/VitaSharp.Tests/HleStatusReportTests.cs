@@ -38,7 +38,7 @@ public class HleStatusReportTests
         foreach (var (id, _, impl, total) in HleStatusReport.Badges(status))
         {
             string svg = Read($"{HleStatusReport.AssetDir}/badge-{id}.svg");
-            Assert.Contains($"({impl.ToString("N0", CultureInfo.InvariantCulture)}/{total.ToString("N0", CultureInfo.InvariantCulture)})", svg);
+            Assert.Contains($"({impl.ToString("N0", CultureInfo.InvariantCulture)}/{total.ToString("N0", CultureInfo.InvariantCulture)}", svg);
         }
     }
 
@@ -47,12 +47,14 @@ public class HleStatusReportTests
     {
         var s = HleStatusReport.Build("3.74", 2, 10, 4,
         [
-            ("SceA", "vs0:a.suprx", "games", true), ("SceA", "vs0:a.suprx", "system", false), ("SceB", "os0:b.skprx", "general", true),
-        ]);
+            ("SceA", "vs0:a.suprx", "games", true, false), ("SceA", "vs0:a.suprx", "system", false, false), ("SceB", "os0:b.skprx", "general", true, true),
+            ("SceB", "os0:b.skprx", "system", true, true),
+        ], 3);
         var back = HleStatusReport.Parse(HleStatusReport.ToTsv(s));
         Assert.Equal(s.Firmware, back.Firmware);
-        Assert.Equal((s.VitaSdk, s.VitaSdkImpl, s.GameTitles), (back.VitaSdk, back.VitaSdkImpl, back.GameTitles));
+        Assert.Equal((s.VitaSdk, s.VitaSdkImpl, s.VitaSdkDefault, s.GameTitles), (back.VitaSdk, back.VitaSdkImpl, back.VitaSdkDefault, back.GameTitles));
         Assert.Equal(s.Libraries, back.Libraries);
-        Assert.Equal((3, 2, 1, 1, 1, 0), (back.Total, back.Impl, back.Games, back.GamesImpl, back.System, back.SystemImpl));
+        Assert.Equal((4, 3, 1, 1, 2, 1), (back.Total, back.Impl, back.Games, back.GamesImpl, back.System, back.SystemImpl));
+        Assert.Equal((2, 0, 1), (back.Default, back.GamesDefault, back.SystemDefault));
     }
 }

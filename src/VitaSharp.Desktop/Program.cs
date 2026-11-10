@@ -430,16 +430,20 @@ public static class Program
     /// <summary>Every NID with an HLE implementation -> (name, HLE module). Same resolution as
     /// HleRegistry.RegisterModule: explicit NID, else every NID of the name (optionally per library); a later
     /// registration of a NID replaces an earlier one.</summary>
-    static SortedDictionary<uint, (string Name, string Module)> HleImplementedNids()
+    /// <summary>Every NID with an [Hle] entry point; Default when every entry point of it is a documented firmware
+    /// default (<see cref="HleAttribute.Default"/>), not a real implementation.</summary>
+    static SortedDictionary<uint, (string Name, string Module, bool Default)> HleImplementedNids()
     {
-        var byNid = new SortedDictionary<uint, (string Name, string Module)>();
+        var byNid = new SortedDictionary<uint, (string Name, string Module, bool Default)>();
         foreach (var m in HleBindings.Modules)
             foreach (var b in m.Bindings())
             {
                 string name = b.Name ?? b.Method;
                 var nids = b.Nid != 0 ? [b.Nid]
                     : NidDatabase.LookupName(name).Where(i => b.Library == null || i.Library == b.Library).Select(i => i.Nid).ToArray();
-                foreach (var nid in nids) byNid[nid] = (NidDatabase.Lookup(nid)?.Name ?? name, m.Type.Name);
+                foreach (var nid in nids)
+                    byNid[nid] = byNid.TryGetValue(nid, out var had) ? had with { Default = had.Default && b.Default }
+                        : (NidDatabase.Lookup(nid)?.Name ?? name, m.Type.Name, b.Default);
             }
         return byNid;
     }
@@ -457,33 +461,34 @@ public static class Program
         var c = VitaSharp.Core.Firmware.FunctionCensus.Scan(FsRoot);
         string Importer(uint nid) => c.GameImports.TryGetValue(nid, out var g) ? g : c.SystemImports.GetValueOrDefault(nid, "-");
         string Group(uint nid) => c.GameImports.ContainsKey(nid) ? "games" : c.SystemImports.ContainsKey(nid) ? "system" : "general";
-        var rows = c.Exported.Select(e => (Nid: e.Key, e.Value.Library, e.Value.Module, Group: Group(e.Key), Impl: impl.ContainsKey(e.Key))).ToList();
+        var rows = c.Exported.Select(e => (Nid: e.Key, e.Value.Library, e.Value.Module, Group: Group(e.Key), Impl: impl.ContainsKey(e.Key),
+            Default: impl.TryGetValue(e.Key, out var iv) && iv.Default)).ToList();
         Console.WriteLine($"{c.FirmwareModules} firmware modules read, {c.Games} games; not read: {string.Join(", ", c.Failed)}");
-        void Line(string label, IEnumerable<(uint Nid, string Library, string Module, string Group, bool Impl)> set)
+        void Line(string label, IEnumerable<(uint Nid, string Library, string Module, string Group, bool Impl, bool Default)> set)
         {
             var l = set.ToList();
-            int n = l.Count(r => r.Impl);
-            Console.WriteLine($"{label,-10} {n,6} / {l.Count,6}  {(l.Count == 0 ? 0 : 100.0 * n / l.Count),6:F1}%");
+            int n = l.Count(r => r.Impl), d = l.Count(r => r.Default);
+            Console.WriteLine($"{label,-10} {n,6} / {l.Count,6}  {(l.Count == 0 ? 0 : 100.0 * n / l.Count),6:F1}%  (real {n - d}, default {d})");
         }
         Line("overall", rows);
         foreach (var g in new[] { "games", "system", "general" }) Line(g, rows.Where(r => r.Group == g));
         // the VitaSDK column: every user function of the VitaSDK NID list (docs/hle/data/vitasdk-user-functions.tsv), exported
         // by the installed firmware or not
         vitasdkTsv ??= Path.Combine(AppContext.BaseDirectory, "vitasdk-user-functions.tsv") is var d && File.Exists(d) ? d : null;
-        int sdkTotal = 0, sdkImpl = 0;
+        int sdkTotal = 0, sdkImpl = 0, sdkDefault = 0;
         if (vitasdkTsv != null && File.Exists(vitasdkTsv))
         {
             var sdk = File.ReadLines(vitasdkTsv).Where(l => l.StartsWith("0x"))
                 .Select(l => uint.Parse(l.AsSpan(2, 8), System.Globalization.NumberStyles.HexNumber)).Distinct().ToList();
-            int n = sdk.Count(impl.ContainsKey);
-            (sdkTotal, sdkImpl) = (sdk.Count, n);
-            Console.WriteLine($"{"vitasdk",-10} {n,6} / {sdk.Count,6}  {(sdk.Count == 0 ? 0 : 100.0 * n / sdk.Count),6:F1}%");
+            int n = sdk.Count(impl.ContainsKey), nd = sdk.Count(x => impl.TryGetValue(x, out var v) && v.Default);
+            (sdkTotal, sdkImpl, sdkDefault) = (sdk.Count, n, nd);
+            Console.WriteLine($"{"vitasdk",-10} {n,6} / {sdk.Count,6}  {(sdk.Count == 0 ? 0 : 100.0 * n / sdk.Count),6:F1}%  (real {n - nd}, default {nd})");
         }
         if (statusRoot != null)
         {
             if (sdkTotal == 0) { Console.Error.WriteLine("--status needs --vitasdk=<vitasdk-user-functions.tsv>"); return 1; }
             var status = VitaSharp.Core.Firmware.HleStatusReport.Build(VitaSharp.Core.Firmware.FirmwareInfo.Read(FsRoot)?.Version ?? "?", c.Games, sdkTotal, sdkImpl,
-                rows.Select(r => (r.Library, r.Module, r.Group, r.Impl)));
+                rows.Select(r => (r.Library, r.Module, r.Group, r.Impl, r.Default)), sdkDefault);
             var files = new Dictionary<string, string>(VitaSharp.Core.Firmware.HleStatusReport.Render(status))
             {
                 [VitaSharp.Core.Firmware.HleStatusReport.TsvPath] = VitaSharp.Core.Firmware.HleStatusReport.ToTsv(status),
@@ -501,9 +506,9 @@ public static class Program
         Console.WriteLine($"({extra} imported NIDs are not exported by any installed firmware module; not counted)");
         if (outTsv != null)
             File.WriteAllLines(outTsv, rows.OrderBy(r => r.Library, StringComparer.Ordinal).ThenBy(r => NidDatabase.NameOf(r.Nid), StringComparer.Ordinal)
-                .Select(r => $"0x{r.Nid:X8}	{NidDatabase.NameOf(r.Nid)}	{r.Library}	{r.Module}	{r.Group}	{(r.Impl ? "impl" : "-")}	{Importer(r.Nid)}")
+                .Select(r => $"0x{r.Nid:X8}	{NidDatabase.NameOf(r.Nid)}	{r.Library}	{r.Module}	{r.Group}	{(r.Default ? "default" : r.Impl ? "impl" : "-")}	{Importer(r.Nid)}")
                 .Concat(c.GameImports.Concat(c.SystemImports).Where(e => !c.Exported.ContainsKey(e.Key)).DistinctBy(e => e.Key)
-                    .Select(e => $"0x{e.Key:X8}	{NidDatabase.NameOf(e.Key)}	{NidDatabase.Lookup(e.Key)?.Library ?? "-"}	{e.Value}	not-exported	{(impl.ContainsKey(e.Key) ? "impl" : "-")}	{Importer(e.Key)}")));
+                    .Select(e => $"0x{e.Key:X8}	{NidDatabase.NameOf(e.Key)}	{NidDatabase.Lookup(e.Key)?.Library ?? "-"}	{e.Value}	not-exported	{(impl.TryGetValue(e.Key, out var v) ? v.Default ? "default" : "impl" : "-")}	{Importer(e.Key)}")));
         return 0;
     }
 
@@ -514,9 +519,9 @@ public static class Program
             foreach (var line in File.ReadLines(vitasdkTsv))
                 if (line.StartsWith("0x") && uint.TryParse(line.AsSpan(2, 8), System.Globalization.NumberStyles.HexNumber, null, out var n)) vitasdk.Add(n);
         var byNid = HleImplementedNids();
-        foreach (var (nid, (name, module)) in byNid.OrderBy(e => NidDatabase.Lookup(e.Key)?.Library ?? "~", StringComparer.Ordinal).ThenBy(e => e.Value.Name, StringComparer.Ordinal))
-            Console.WriteLine($"0x{nid:X8}	{name}	{module}	{NidDatabase.Lookup(nid)?.Library ?? "-"}	{(vitasdk.Contains(nid) ? "vh" : "-")}");
-        Console.Error.WriteLine($"{byNid.Count} implemented NIDs ({byNid.Keys.Count(vitasdk.Contains)} in the VitaSDK list)");
+        foreach (var (nid, (name, module, isDefault)) in byNid.OrderBy(e => NidDatabase.Lookup(e.Key)?.Library ?? "~", StringComparer.Ordinal).ThenBy(e => e.Value.Name, StringComparer.Ordinal))
+            Console.WriteLine($"0x{nid:X8}	{name}	{module}	{NidDatabase.Lookup(nid)?.Library ?? "-"}	{(vitasdk.Contains(nid) ? "vh" : "-")}{(isDefault ? "	default" : "")}");
+        Console.Error.WriteLine($"{byNid.Count} implemented NIDs ({byNid.Keys.Count(vitasdk.Contains)} in the VitaSDK list, {byNid.Values.Count(v => v.Default)} default)");
         return 0;
     }
 

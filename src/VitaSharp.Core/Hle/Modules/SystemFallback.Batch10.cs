@@ -9,7 +9,7 @@ namespace VitaSharp.Core.Hle.Modules;
 /// profiling agent), libScePromoterUtil (package promotion, an IPC client of the shell) and libshellsvc's event-flag
 /// helpers. They never take a library over from the firmware (<see cref="FirmwareFallbackOnly"/>).
 /// </summary>
-public sealed class SystemFallback : HleModule
+public sealed partial class SystemFallback : HleModule
 {
     public override bool FirmwareFallbackOnly => true;
 

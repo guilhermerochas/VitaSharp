@@ -1,4 +1,4 @@
-<!-- pair: README.pt-BR.md sha256=574e080e31308262239a10b23442261a4e6b1f3374004a44869e6f83c8d22b70 -->
+<!-- pair: README.pt-BR.md sha256=672ad39f990dca75e6adcba75b8268af2dbabcae7fd76326c74f19fc1e050926 -->
 <div align="center">
 
 **English** | [Português](README.pt-BR.md)
@@ -77,7 +77,9 @@ started from them. It is a research project under active development, all in C#.
 <sub>* Percentages of the functions that firmware 3.74 exports to user code (its user modules and the syscall
 libraries of its kernel modules) with an HLE implementation, not of every PS Vita system function. "Games imports":
 the exported functions the installed test games import; "system imports": those only the system software imports;
-VitaSDK: the user functions of the VitaSDK NID list. Refreshed with `build/hle-status.ps1`.</sub>
+VitaSDK: the user functions of the VitaSDK NID list. "Default": implemented functions that need hardware or a
+service the emulator does not have and return the firmware's own result for that case (counted in the percentage, shown
+apart). Refreshed with `build/hle-status.ps1`.</sub>
 
 ## Games
 
