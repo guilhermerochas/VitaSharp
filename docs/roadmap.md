@@ -1206,6 +1206,17 @@ Lista de itens futuros do VitaSharp. Marque `[x]` quando um item for concluído.
 
 ## Código
 
+- [ ] Cobertura de código mínima de 70% em tudo (pedido do usuário, 10/11/2026). Base de hoje (`build/coverage.ps1` /
+  `.sh`, coverlet + ReportGenerator, `Category!=Slow`): geral 59,4% linhas / 42,5% ramos; VitaSharp.Core 65,8%;
+  Mobile.Core 85,4%; Renderer.Vulkan 1,3%. Meta: cada projeto e cada namespace com pelo menos 70% de linhas, e manter
+  assim. Passos: (1) testes onde falta mais, começando pelo que tem bug ativo: Hle.Modules.ThreadMgr (9,2%), Gxm (14,9%),
+  Ngs (14,2%), Videodec (8,8%), SystemGesture (5,1%), AppMgrShell (3,8%), AvPlayer (0,5%), Paf, NpCommerce2,
+  UsseTranslator/UsseConstants, Core.Emulator, Capture.SessionCapture; (2) renderizador: testes que rodam com um
+  dispositivo Vulkan de software (lavapipe/SwiftShader) e o replay dos dumps da GPU (`replay-gpu --compare`) contando na
+  cobertura; (3) Desktop e Android: tirar a lógica da UI para classes testáveis e incluir os projetos na medição;
+  (4) portão no CI: o build falha se a cobertura de algum projeto cair abaixo de 70% (ou abaixo da última medida,
+  enquanto não chega lá). Os testes têm que checar comportamento do Vita real (firmware, documentação), não só passar
+  pelas linhas.
 - [ ] Core libretro do VitaSharp (pedido do usuário, 08/11/2026; fazer depois do Android em velocidade nativa, porque
   depende do mesmo trabalho de runtime): projeto novo `VitaSharp.Libretro` que expõe a API C do libretro (`retro_init`,
   `retro_load_game`, `retro_run`, `retro_serialize`...) via NativeAOT (`[UnmanagedCallersOnly]`, DLL no Windows e `.so`
