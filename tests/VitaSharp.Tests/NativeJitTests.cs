@@ -327,6 +327,7 @@ public sealed unsafe partial class NativeJitTests(GuestMemoryFixture fx, ITestOu
         var oldChain = Jit.Mode;
         CpuCore.InstructionsPerSecond = 0;
         NativeX64Compiler.Instance.HotInstructions = 1;
+        using var jitOn = JitTestState.Enable(); // other tests' emulators may have switched the JIT off
         try
         {
             (uint[] Regs, byte[] Mem, long Blocks, long Insts, long Cycles) Run(string backend, uint patch)
@@ -569,6 +570,7 @@ public sealed unsafe partial class NativeJitTests(GuestMemoryFixture fx, ITestOu
         var oldMode = Jit.Mode;
         CpuCore.InstructionsPerSecond = 0;
         NativeX64Compiler.Instance.HotInstructions = 1;
+        using var jitOn = JitTestState.Enable(); // other tests' emulators may have switched the JIT off
         const int Threads = 4, Per = 1_000_000;
         try
         {
@@ -617,6 +619,7 @@ public sealed unsafe partial class NativeJitTests(GuestMemoryFixture fx, ITestOu
         var oldMode = Jit.Mode;
         CpuCore.InstructionsPerSecond = 0;
         NativeX64Compiler.Instance.HotInstructions = 1;
+        using var jitOn = JitTestState.Enable(); // other tests' emulators may have switched the JIT off
         try
         {
             Assert.True(Jit.Select("native"));
@@ -666,6 +669,7 @@ public sealed unsafe partial class NativeJitTests(GuestMemoryFixture fx, ITestOu
         var oldMode = Jit.Mode;
         CpuCore.InstructionsPerSecond = 0;
         NativeX64Compiler.Instance.HotInstructions = 1;
+        using var jitOn = JitTestState.Enable(); // other tests' emulators may have switched the JIT off
         IlJitCompiler.Instance.HotInstructions = 200; // budget = max(64, 200 / 7) executions
         try
         {

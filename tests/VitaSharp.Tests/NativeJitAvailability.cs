@@ -29,3 +29,22 @@ public sealed class NativeTheoryAttribute : TheoryAttribute
     /// <param name="unicorn">The test also needs Unicorn's native library (e.g. to filter encodings).</param>
     public NativeTheoryAttribute(bool unicorn = false) { if (NativeJitAvailability.Reason(unicorn) is { } r) Skip = r; }
 }
+
+/// <summary>
+/// Turns the JIT on for a test that needs blocks compiled (<see cref="VitaSharp.Core.Cpu.Jit.Enabled"/> is process-wide;
+/// an emulator built with EnableJit = false switches it off) and gives the previous value back when disposed.
+/// </summary>
+public static class JitTestState
+{
+    public static Scope Enable()
+    {
+        var s = new Scope(VitaSharp.Core.Cpu.Jit.Enabled);
+        VitaSharp.Core.Cpu.Jit.Enabled = true;
+        return s;
+    }
+
+    public readonly struct Scope(bool was) : IDisposable
+    {
+        public void Dispose() => VitaSharp.Core.Cpu.Jit.Enabled = was;
+    }
+}
