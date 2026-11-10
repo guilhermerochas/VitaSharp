@@ -748,6 +748,7 @@ public sealed partial class ThreadMgr : HleModule
         GuestMemory.W32(work, (uint)uid);
         GuestMemory.W32(work + 4, (uint)m.Uid);
         GuestMemory.W32(work + CondVar.LwQueuedOffset, 0); // no waiter queued: signals are guest code (HleGuestCode)
+        GuestMemory.W32(work + CondVar.LwSelfOffset, work); // a copy of the work area signals through the kernel
         return 0;
     }
 

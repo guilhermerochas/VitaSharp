@@ -227,21 +227,28 @@ public sealed unsafe class HleGuestCodeKernelTests(GuestMemoryFixture fx)
     }
 
     /// <summary>A lightweight cond signal with no waiter queued (work area +8) is 0 in guest code; a waiter to release,
-    /// a deleted cond and a NULL work area go to the kernel.</summary>
+    /// a deleted cond, a NULL work area and a copy of the work area (+12 is not its own address: only the original
+    /// carries the waiter count; MotorStorm RC signals through a copy) go to the kernel.</summary>
     [Theory]
     [InlineData("sceKernelSignalLwCond")]
     [InlineData("sceKernelSignalLwCondAll")]
     public void LwCondSignalWithoutWaitersStaysInGuestCode(string name)
     {
         if (!HleGuestCode.Enabled) return;
-        uint work = fx.Memory.Alloc(16, "gk lwcond");
+        uint work = fx.Memory.Alloc(16, "gk lwcond"), copy = fx.Memory.Alloc(16, "gk lwcond copy");
         ForEachBackend(_ =>
         {
             using var r = new Runner(fx, name);
             for (int pass = 0; pass < 2; pass++)
             {
                 GuestMemory.W32(work, 0x40010201); GuestMemory.W32(work + 4, 0x40010101); GuestMemory.W32(work + 8, 0);
+                GuestMemory.W32(work + 12, work);
                 Assert.Equal(0u, r.Call(work, 0x55, 0x66));
+                for (uint o = 0; o < 16; o += 4) GuestMemory.W32(copy + o, GuestMemory.R32(work + o));
+                Assert.Null(r.Call(copy, 0x55, 0x66));
+                GuestMemory.W32(work + 12, 0);
+                Assert.Null(r.Call(work, 0x55, 0x66));
+                GuestMemory.W32(work + 12, work);
                 GuestMemory.W32(work + 8, 1);
                 Assert.Null(r.Call(work, 0x55, 0x66));
                 GuestMemory.W32(work, 0); GuestMemory.W32(work + 8, 0);

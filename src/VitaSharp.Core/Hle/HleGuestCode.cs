@@ -430,21 +430,25 @@ public static class HleGuestCode
     ];
 
     /// <summary>sceKernelSignalLwCond / SignalLwCondAll(work): with no waiter queued (work area +8, Kernel/Sync.cs
-    /// CondVar.LwQueuedOffset) a signal does nothing and returns 0; a waiter to release, a deleted cond (UID word 0)
-    /// or a NULL work area go to the C# version.</summary>
+    /// CondVar.LwQueuedOffset) a signal does nothing and returns 0; a waiter to release, a deleted cond (UID word 0),
+    /// a NULL work area or a copy of the work area (+12 is not its own address: only the original carries the waiter
+    /// count, CondVar.LwSelfOffset) go to the C# version.</summary>
     static readonly uint[] LwCondSignal =
     [
-        0xE3500000,                // 0 cmp r0, #0
-        Branch(EQ, 1, 9),          // 1 beq slow
-        0xE590C000,                // 2 ldr r12, [r0]        UID
-        0xE35C0000,                // 3 cmp r12, #0
-        Branch(EQ, 4, 9),          // 4 beq slow
-        0xE590C008,                // 5 ldr r12, [r0, #8]    waiters queued
-        0xE35C0000,                // 6 cmp r12, #0
-        0x03A00000,                // 7 moveq r0, #0
-        0x012FFF1E,                // 8 bxeq lr
-        FallbackSvc,               // 9 slow
-        BxLr,                      // 10
+        0xE3500000,                // 0  cmp r0, #0
+        Branch(EQ, 1, 12),         // 1  beq slow
+        0xE590C000,                // 2  ldr r12, [r0]        UID
+        0xE35C0000,                // 3  cmp r12, #0
+        Branch(EQ, 4, 12),         // 4  beq slow
+        0xE590C00C,                // 5  ldr r12, [r0, #12]   the work area's own address
+        0xE15C0000,                // 6  cmp r12, r0
+        Branch(NE, 7, 12),         // 7  bne slow (a copy)
+        0xE590C008,                // 8  ldr r12, [r0, #8]    waiters queued
+        0xE35C0000,                // 9  cmp r12, #0
+        0x03A00000,                // 10 moveq r0, #0
+        0x012FFF1E,                // 11 bxeq lr
+        FallbackSvc,               // 12 slow
+        BxLr,                      // 13
     ];
 
     // declared before every flag derived from it: static initializers run in textual order
