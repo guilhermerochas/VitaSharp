@@ -15,6 +15,11 @@ public sealed class HleAttribute(string? name = null) : Attribute
     public uint Nid { get; init; }
     /// <summary>Restrict the NID lookup to a library when the same name exists in several.</summary>
     public string? Library { get; init; }
+    /// <summary>A default, not a real implementation: the function needs hardware or a service the emulator does not
+    /// have (Bluetooth, USB, system update, game card authentication, PSP ad hoc, debug hooks...) and returns the
+    /// firmware's documented result (success or its specific error) without doing anything. Counted apart from the
+    /// real implementations by hle-coverage (docs/hle/progress.md).</summary>
+    public bool Default { get; init; }
 }
 
 /// <summary>Base class for an HLE module (a group of related exported functions).</summary>
@@ -305,7 +310,9 @@ public sealed partial class HleRegistry : IImportResolver
 /// <param name="Library">The attribute's library restriction for the NID lookup.</param>
 /// <param name="Layout">Argument/return marshalling description (compared against a reflection reference in tests).</param>
 /// <param name="Bind">Creates the invoker for a module instance.</param>
-public sealed record HleBinding(string Method, string? Name, uint Nid, string? Library, string Layout, Func<HleModule, Action<HleContext>> Bind);
+/// <param name="Default">The attribute's <see cref="HleAttribute.Default"/>: a default, not a real implementation.</param>
+public sealed record HleBinding(string Method, string? Name, uint Nid, string? Library, string Layout, Func<HleModule, Action<HleContext>> Bind,
+    bool Default = false);
 
 /// <summary>A concrete HLE module type with its factory and bindings.</summary>
 public sealed record HleModuleEntry(Type Type, Func<HleModule> Create, Func<HleBinding[]> Bindings);
