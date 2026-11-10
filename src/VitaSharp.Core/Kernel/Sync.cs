@@ -535,7 +535,10 @@ public sealed partial class Mutex : KernelObject
 /// a signal releases the first one, SignalTo a specific thread, SignalAll every waiter. A lightweight cond publishes the
 /// number of queued waiters in its work area (+0 its UID, +4 its mutex's, +8 <see cref="LwQueuedOffset"/>), so a signal
 /// with nobody to wake, the common case, is guest code that never enters the kernel (Hle/HleGuestCode). A waiter counts
-/// itself there before its mutex is released: a signaller holding the mutex always sees it.</summary>
+/// itself there before its mutex is released: a signaller holding the mutex always sees it. Games may copy a work area
+/// (MotorStorm RC waits through a copy on a thread's stack and signals through another one); only the work area the
+/// cond was created in carries the count, so it also holds its own address (+12 <see cref="LwSelfOffset"/>) and the
+/// guest fast path takes a copy (a different address there) to the kernel.</summary>
 public sealed partial class CondVar : KernelObject
 {
     public override int UidClass => WorkArea != 0 ? 11 : 5;
@@ -544,7 +547,7 @@ public sealed partial class CondVar : KernelObject
     public uint WorkArea;
     public int Waiters;
     bool _deleted;
-    public const uint LwQueuedOffset = 8;
+    public const uint LwQueuedOffset = 8, LwSelfOffset = 12;
 
     void PublishQueued(int n) { if (WorkArea != 0) GuestMemory.W32(WorkArea + LwQueuedOffset, (uint)n); }
 

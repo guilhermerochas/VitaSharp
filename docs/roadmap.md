@@ -3041,6 +3041,17 @@ on-existing PPS 0 e nenhum quadro). Ainda aberto: depois da carga no meio do fil
   `sceKernelWaitSema` com timeout
   Corrigido (05/11/2026: `sceNpCommerce2CreateCtx` com 2 argumentos e o key off do NGS terminando a voz na próxima
   atualização, com os callbacks fora da trava) e confirmado no jogo pelo usuário
+  **Regressão** achada na varredura de compatibilidade (agente A, 10/11/2026, main 5843bbd): o jogo parava no quadro 1
+  (180 s, "Run finished: 1 frames"; a `main` girando num laço de lock/unlock do lwmutex 0x877E50D8 e a `async_2`
+  esperando para sempre na lwcond). Com `VITASHARP_HLE_GUEST_CODE=nolw` rodava. Causa: o caminho rápido do
+  `sceKernelSignalLwCond` em código guest (Hle/HleGuestCode) lê a contagem de espera em +8 da área de trabalho que
+  recebe, mas o jogo usa **cópias** da área da lwcond: criada em 0x877E5978, espera por uma cópia na pilha da thread
+  (0x8A3A5E98) e sinaliza por outra (0x877E5330); só a original recebe a contagem, a cópia tinha 0 e o sinal sumia sem
+  entrar no kernel. Correção genérica: a criação grava em +12 o próprio endereço da área (`CondVar.LwSelfOffset`) e o
+  caminho rápido manda para o kernel qualquer área cujo +12 não seja ela mesma (uma cópia), como o kernel de verdade,
+  que acha a lwcond pelo UID. Depois: 4865 quadros em 180 s, logo da Havok, o aviso de salvamento e o tutorial de
+  condução (`<scratchpad>\bA\proofs\motorstorm_fix_sheet.png`); teste `LwCondSignalWithoutWaitersStaysInGuestCode`
+  com o caso da cópia
 - [x] Unity: as 10 "importações de variável sem resolver" do `Il2CppAssemblies` (NIDs 338B0BD1, 3A451B91, 550DFE23,
   56354517, 5EF67445, 6ACA1D57, 71A78083, 79F9DB75, AA0340C3, F9A1DE92, importadas pelo `UnityPlayer_536/537_Release`;
   Akiba's Beat e God Wars, 04/11/2026, pedido do usuário). O aviso sai no boot (`Emulator.cs` ~522), antes de o jogo
