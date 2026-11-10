@@ -1,4 +1,4 @@
-<!-- pair: README.pt-BR.md sha256=45fab72595e9e850ec89aa07e1fc2c145f7b077fca96e0b91fb22e9bab74f90a -->
+<!-- pair: README.pt-BR.md sha256=574e080e31308262239a10b23442261a4e6b1f3374004a44869e6f83c8d22b70 -->
 <div align="center">
 
 **English** | [Português](README.pt-BR.md)
@@ -216,6 +216,7 @@ dotnet build -c Release
 dotnet run --project src/VitaSharp.Desktop -c Release          # opens the launcher
 dotnet run --project src/VitaSharp.Desktop -c Release -- run <TITLEID>   # opens a game directly
 dotnet test tests/VitaSharp.Tests -c Release --filter "Category!=Slow"  # quick tests (without the CPU fuzz)
+build/coverage.ps1                                              # test coverage report (HTML + summary; also .sh)
 ```
 
 The command line also has `install`, `boot-shell`, `test <scenario>` (automatic scenarios in
