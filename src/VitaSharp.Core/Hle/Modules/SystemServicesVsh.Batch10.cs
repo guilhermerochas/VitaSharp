@@ -25,7 +25,7 @@ public sealed partial class SystemServicesVsh
     byte _updateMode;
 
     /// <summary>(uint8_t *mode): the update mode, 0 (normal) unless set.</summary>
-    [Hle("sceSblUsGetUpdateMode", Library = UpdLib)]
+    [Hle("sceSblUsGetUpdateMode", Library = UpdLib, Default = true)]
     int sceSblUsGetUpdateMode(uint mode)
     {
         if (mode == 0) return KERNEL_ERR_ILLEGAL_ADDR;
@@ -33,14 +33,14 @@ public sealed partial class SystemServicesVsh
         return 0;
     }
 
-    [Hle("sceSblUsSetUpdateMode", Library = UpdLib)] int sceSblUsSetUpdateMode(int mode) { _updateMode = (byte)mode; return 0; }
+    [Hle("sceSblUsSetUpdateMode", Library = UpdLib, Default = true)] int sceSblUsSetUpdateMode(int mode) { _updateMode = (byte)mode; return 0; }
     /// <summary>(void): the system partitions are intact.</summary>
-    [Hle("sceSblUsCheckSystemIntegrity", Library = UpdLib)] int sceSblUsCheckSystemIntegrity() => 0;
+    [Hle("sceSblUsCheckSystemIntegrity", Library = UpdLib, Default = true)] int sceSblUsCheckSystemIntegrity() => 0;
     /// <summary>(int what, int on): power hold during an update (nothing to hold).</summary>
-    [Hle("sceSblUsPowerControl", Library = UpdLib)] int sceSblUsPowerControl(int what, int on) => 0;
+    [Hle("sceSblUsPowerControl", Library = UpdLib, Default = true)] int sceSblUsPowerControl(int what, int on) => 0;
 
     /// <summary>(int kind, uint32_t *version): the version an update must be newer than: the installed 3.74.</summary>
-    [Hle("sceSblUsGetApplicableVersion", Library = UpdLib)]
+    [Hle("sceSblUsGetApplicableVersion", Library = UpdLib, Default = true)]
     int sceSblUsGetApplicableVersion(int kind, uint version)
     {
         if (version == 0) return KERNEL_ERR_ILLEGAL_ADDR;
@@ -49,7 +49,7 @@ public sealed partial class SystemServicesVsh
     }
 
     /// <summary>(int a, int b, void *status, uint size): the update status block (nothing in progress: all zero).</summary>
-    [Hle("sceSblUsGetStatus", Library = UpdLib)]
+    [Hle("sceSblUsGetStatus", Library = UpdLib, Default = true)]
     int sceSblUsGetStatus(uint a, uint b, uint status)
     {
         if (status == 0) return KERNEL_ERR_ILLEGAL_ADDR;
@@ -58,26 +58,26 @@ public sealed partial class SystemServicesVsh
     }
 
     // notifications from the updater about its progress and the software information it records
-    [Hle("sceSblUsInformUpdateStarted", Library = UpdLib)] int sceSblUsInformUpdateStarted(uint a, uint b, uint c, uint d) => 0;
-    [Hle("sceSblUsInformUpdateOngoing", Library = UpdLib)] int sceSblUsInformUpdateOngoing(uint a, uint b) => 0;
-    [Hle("sceSblUsInformUpdateFinished", Library = UpdLib)] int sceSblUsInformUpdateFinished(uint a, uint b, uint c) => 0;
-    [Hle("sceSblUsSetSwInfoInt", Library = UpdLib)] int sceSblUsSetSwInfoInt(uint name, uint len, uint value) => name == 0 ? KERNEL_ERR_ILLEGAL_ADDR : 0;
-    [Hle("sceSblUsSetSwInfoStr", Library = UpdLib)] int sceSblUsSetSwInfoStr(uint name, uint len, uint str, uint size) => name == 0 ? KERNEL_ERR_ILLEGAL_ADDR : 0;
-    [Hle("sceSblUsSetSwInfoBin", Library = UpdLib)] int sceSblUsSetSwInfoBin(uint name, uint len, uint data, uint size) => name == 0 ? KERNEL_ERR_ILLEGAL_ADDR : 0;
+    [Hle("sceSblUsInformUpdateStarted", Library = UpdLib, Default = true)] int sceSblUsInformUpdateStarted(uint a, uint b, uint c, uint d) => 0;
+    [Hle("sceSblUsInformUpdateOngoing", Library = UpdLib, Default = true)] int sceSblUsInformUpdateOngoing(uint a, uint b) => 0;
+    [Hle("sceSblUsInformUpdateFinished", Library = UpdLib, Default = true)] int sceSblUsInformUpdateFinished(uint a, uint b, uint c) => 0;
+    [Hle("sceSblUsSetSwInfoInt", Library = UpdLib, Default = true)] int sceSblUsSetSwInfoInt(uint name, uint len, uint value) => name == 0 ? KERNEL_ERR_ILLEGAL_ADDR : 0;
+    [Hle("sceSblUsSetSwInfoStr", Library = UpdLib, Default = true)] int sceSblUsSetSwInfoStr(uint name, uint len, uint str, uint size) => name == 0 ? KERNEL_ERR_ILLEGAL_ADDR : 0;
+    [Hle("sceSblUsSetSwInfoBin", Library = UpdLib, Default = true)] int sceSblUsSetSwInfoBin(uint name, uint len, uint data, uint size) => name == 0 ? KERNEL_ERR_ILLEGAL_ADDR : 0;
 
     // the update package operations (a PUP path or a package buffer)
-    [Hle("sceSblUsVerifyPup", Library = UpdLib)] int sceSblUsVerifyPup(uint path) => path == 0 ? KERNEL_ERR_ILLEGAL_ADDR : KERNEL_ERR_UNSUP;
-    [Hle("sceSblUsVerifyPupHeader", Library = UpdLib)] int sceSblUsVerifyPupHeader(uint path) => path == 0 ? KERNEL_ERR_ILLEGAL_ADDR : KERNEL_ERR_UNSUP;
-    [Hle("sceSblUsVerifyPupAdditionalSign", Library = UpdLib)] int sceSblUsVerifyPupAdditionalSign(uint path) => path == 0 ? KERNEL_ERR_ILLEGAL_ADDR : KERNEL_ERR_UNSUP;
-    [Hle("sceSblUsVerifyPupWatermark", Library = UpdLib)] int sceSblUsVerifyPupWatermark(uint path) => path == 0 ? KERNEL_ERR_ILLEGAL_ADDR : KERNEL_ERR_UNSUP;
-    [Hle("sceSblUsVerifyPupSegment", Library = UpdLib)] int sceSblUsVerifyPupSegment(uint path, uint a, uint b, uint c) => path == 0 ? KERNEL_ERR_ILLEGAL_ADDR : KERNEL_ERR_UNSUP;
-    [Hle("sceSblUsVerifyPupSegmentById", Library = UpdLib)] int sceSblUsVerifyPupSegmentById(uint path, uint a, uint b, uint c) => path == 0 ? KERNEL_ERR_ILLEGAL_ADDR : KERNEL_ERR_UNSUP;
-    [Hle("sceSblUsInspectSpackage", Library = UpdLib)] int sceSblUsInspectSpackage(uint a, uint buf, uint size) => buf == 0 || size == 0 ? KERNEL_ERR_INVALID_ARGUMENT : KERNEL_ERR_UNSUP;
-    [Hle("sceSblUsUpdateSpackage", Library = UpdLib)] int sceSblUsUpdateSpackage(uint a, uint buf, uint size) => buf == 0 || size == 0 ? KERNEL_ERR_INVALID_ARGUMENT : KERNEL_ERR_UNSUP;
-    [Hle("sceSblUsExtractSpackage", Library = UpdLib)] int sceSblUsExtractSpackage(uint a, uint buf, uint size) => buf == 0 || size == 0 ? KERNEL_ERR_INVALID_ARGUMENT : KERNEL_ERR_UNSUP;
-    [Hle("sceSblUsGetExtractSpackage", Library = UpdLib)] int sceSblUsGetExtractSpackage(uint a, uint b, uint info) => info == 0 ? KERNEL_ERR_ILLEGAL_ADDR : KERNEL_ERR_UNSUP;
-    [Hle("sceSblUsAllocateBuffer", Library = UpdLib)] int sceSblUsAllocateBuffer(uint size, uint outp) => KERNEL_ERR_UNSUP;
-    [Hle("sceSblUsReleaseBuffer", Library = UpdLib)] int sceSblUsReleaseBuffer(uint uid) => KERNEL_ERR_UNSUP;
+    [Hle("sceSblUsVerifyPup", Library = UpdLib, Default = true)] int sceSblUsVerifyPup(uint path) => path == 0 ? KERNEL_ERR_ILLEGAL_ADDR : KERNEL_ERR_UNSUP;
+    [Hle("sceSblUsVerifyPupHeader", Library = UpdLib, Default = true)] int sceSblUsVerifyPupHeader(uint path) => path == 0 ? KERNEL_ERR_ILLEGAL_ADDR : KERNEL_ERR_UNSUP;
+    [Hle("sceSblUsVerifyPupAdditionalSign", Library = UpdLib, Default = true)] int sceSblUsVerifyPupAdditionalSign(uint path) => path == 0 ? KERNEL_ERR_ILLEGAL_ADDR : KERNEL_ERR_UNSUP;
+    [Hle("sceSblUsVerifyPupWatermark", Library = UpdLib, Default = true)] int sceSblUsVerifyPupWatermark(uint path) => path == 0 ? KERNEL_ERR_ILLEGAL_ADDR : KERNEL_ERR_UNSUP;
+    [Hle("sceSblUsVerifyPupSegment", Library = UpdLib, Default = true)] int sceSblUsVerifyPupSegment(uint path, uint a, uint b, uint c) => path == 0 ? KERNEL_ERR_ILLEGAL_ADDR : KERNEL_ERR_UNSUP;
+    [Hle("sceSblUsVerifyPupSegmentById", Library = UpdLib, Default = true)] int sceSblUsVerifyPupSegmentById(uint path, uint a, uint b, uint c) => path == 0 ? KERNEL_ERR_ILLEGAL_ADDR : KERNEL_ERR_UNSUP;
+    [Hle("sceSblUsInspectSpackage", Library = UpdLib, Default = true)] int sceSblUsInspectSpackage(uint a, uint buf, uint size) => buf == 0 || size == 0 ? KERNEL_ERR_INVALID_ARGUMENT : KERNEL_ERR_UNSUP;
+    [Hle("sceSblUsUpdateSpackage", Library = UpdLib, Default = true)] int sceSblUsUpdateSpackage(uint a, uint buf, uint size) => buf == 0 || size == 0 ? KERNEL_ERR_INVALID_ARGUMENT : KERNEL_ERR_UNSUP;
+    [Hle("sceSblUsExtractSpackage", Library = UpdLib, Default = true)] int sceSblUsExtractSpackage(uint a, uint buf, uint size) => buf == 0 || size == 0 ? KERNEL_ERR_INVALID_ARGUMENT : KERNEL_ERR_UNSUP;
+    [Hle("sceSblUsGetExtractSpackage", Library = UpdLib, Default = true)] int sceSblUsGetExtractSpackage(uint a, uint b, uint info) => info == 0 ? KERNEL_ERR_ILLEGAL_ADDR : KERNEL_ERR_UNSUP;
+    [Hle("sceSblUsAllocateBuffer", Library = UpdLib, Default = true)] int sceSblUsAllocateBuffer(uint size, uint outp) => KERNEL_ERR_UNSUP;
+    [Hle("sceSblUsReleaseBuffer", Library = UpdLib, Default = true)] int sceSblUsReleaseBuffer(uint uid) => KERNEL_ERR_UNSUP;
 
     // ------------------------------------------------------------------ SceBt (bootimage SceBt): the stack is up, idle
     // (state 0x1C), no device was ever paired or is connected, nothing is ever found by an inquiry.
@@ -85,26 +85,26 @@ public sealed partial class SystemServicesVsh
         BT_ERR_NOT_FOUND = unchecked((int)0x802F0C01);
 
     /// <summary>(void *events, int max): the events queued for the caller: none.</summary>
-    [Hle] int sceBtReadEvent(uint events, int max) => 0;
-    [Hle] int sceBtUnregisterCallback(int cb) => 0;
+    [Hle(Default = true)] int sceBtReadEvent(uint events, int max) => 0;
+    [Hle(Default = true)] int sceBtUnregisterCallback(int cb) => 0;
     /// <summary>(void): the stack's last error, none.</summary>
-    [Hle] int sceBtGetLastError() => 0;
+    [Hle(Default = true)] int sceBtGetLastError() => 0;
     /// <summary>(int status 0..4): the AVRCP play status sent to a connected remote (none: only checked).</summary>
-    [Hle] int sceBtAvrcpSetPlayStatus(int status) => (uint)status > 4 ? BT_ERR_INVALID_ARG : 0;
+    [Hle(Default = true)] int sceBtAvrcpSetPlayStatus(int status) => (uint)status > 4 ? BT_ERR_INVALID_ARG : 0;
     /// <summary>(const char *title, uint len &lt;= 0x400): the AVRCP title.</summary>
-    [Hle] int sceBtAvrcpSetTitle(uint title, uint len) => len > 0x400 ? BT_ERR_INVALID_ARG : 0;
+    [Hle(Default = true)] int sceBtAvrcpSetTitle(uint title, uint len) => len > 0x400 ? BT_ERR_INVALID_ARG : 0;
     /// <summary>(void): an inquiry starts from the idle state; no device answers.</summary>
-    [Hle] int sceBtStartInquiry() => 0;
-    [Hle] int sceBtStopInquiry() => 0;
+    [Hle(Default = true)] int sceBtStartInquiry() => 0;
+    [Hle(Default = true)] int sceBtStopInquiry() => 0;
     /// <summary>(uint mac0, uint mac1, char *name): the name of a known device: none is known.</summary>
-    [Hle] int sceBtGetDeviceName(uint mac0, uint mac1, uint name) => BT_ERR_NOT_FOUND;
-    [Hle] int sceBtReplyPinCode(uint mac0, uint mac1, uint pin, uint len) => BT_ERR_NOT_FOUND;
-    [Hle] int sceBtReplyUserConfirmation(uint mac0, uint mac1, int accept) => BT_ERR_NOT_FOUND;
+    [Hle(Default = true)] int sceBtGetDeviceName(uint mac0, uint mac1, uint name) => BT_ERR_NOT_FOUND;
+    [Hle(Default = true)] int sceBtReplyPinCode(uint mac0, uint mac1, uint pin, uint len) => BT_ERR_NOT_FOUND;
+    [Hle(Default = true)] int sceBtReplyUserConfirmation(uint mac0, uint mac1, int accept) => BT_ERR_NOT_FOUND;
     /// <summary>(uint mac0, uint mac1): the registered (paired) device: none.</summary>
-    [Hle] int sceBtDeleteRegisteredInfo(uint mac0, uint mac1) => BT_ERR_NO_DEVICE;
-    [Hle] int sceBtGetConnectingInfo(uint mac0, uint mac1) => BT_ERR_NO_DEVICE;
-    [Hle] int sceBtStartConnect(uint mac0, uint mac1) => BT_ERR_NO_DEVICE;
-    [Hle] int sceBtStartDisconnect(uint mac0, uint mac1) => BT_ERR_NO_DEVICE;
+    [Hle(Default = true)] int sceBtDeleteRegisteredInfo(uint mac0, uint mac1) => BT_ERR_NO_DEVICE;
+    [Hle(Default = true)] int sceBtGetConnectingInfo(uint mac0, uint mac1) => BT_ERR_NO_DEVICE;
+    [Hle(Default = true)] int sceBtStartConnect(uint mac0, uint mac1) => BT_ERR_NO_DEVICE;
+    [Hle(Default = true)] int sceBtStartDisconnect(uint mac0, uint mac1) => BT_ERR_NO_DEVICE;
 
     // ------------------------------------------------------------------ SceUsbPspcm (bootimage SceUsbPspcm)
     // The USB PSP-communication function (the PS Vita as a PSP-compatible USB device): every operation needs the device
@@ -112,25 +112,25 @@ public sealed partial class SystemServicesVsh
     // comes up: starting it is accepted, everything else reports it not running.
     const int PSPCM_ERR_NOT_RUNNING = unchecked((int)0x8024450D);
 
-    [Hle] int sceUsbPspcmStartDevice(uint a) => 0;
-    [Hle] int sceUsbPspcmStopDevice() => 0;
-    [Hle] int sceUsbPspcmSetTitle(uint title) => 0;
-    [Hle] int sceUsbPspcmOpen(uint a) => PSPCM_ERR_NOT_RUNNING;
-    [Hle] int sceUsbPspcmClose(uint a) => PSPCM_ERR_NOT_RUNNING;
-    [Hle] int sceUsbPspcmRead(uint a, uint buf, uint size) => PSPCM_ERR_NOT_RUNNING;
-    [Hle] int sceUsbPspcmWrite(uint a, uint buf, uint size) => PSPCM_ERR_NOT_RUNNING;
-    [Hle] int sceUsbPspcmDevctl(uint a, uint cmd, uint arg, uint size) => PSPCM_ERR_NOT_RUNNING;
-    [Hle] int sceUsbPspcmIoctlReset(uint a) => PSPCM_ERR_NOT_RUNNING;
-    [Hle] int sceUsbPspcmIoctlWaitData(uint a) => PSPCM_ERR_NOT_RUNNING;
-    [Hle] int sceUsbPspcmIoctlPollData(uint a) => PSPCM_ERR_NOT_RUNNING;
-    [Hle] int sceUsbPspcmIoctlCancelWaitData(uint a) => PSPCM_ERR_NOT_RUNNING;
+    [Hle(Default = true)] int sceUsbPspcmStartDevice(uint a) => 0;
+    [Hle(Default = true)] int sceUsbPspcmStopDevice() => 0;
+    [Hle(Default = true)] int sceUsbPspcmSetTitle(uint title) => 0;
+    [Hle(Default = true)] int sceUsbPspcmOpen(uint a) => PSPCM_ERR_NOT_RUNNING;
+    [Hle(Default = true)] int sceUsbPspcmClose(uint a) => PSPCM_ERR_NOT_RUNNING;
+    [Hle(Default = true)] int sceUsbPspcmRead(uint a, uint buf, uint size) => PSPCM_ERR_NOT_RUNNING;
+    [Hle(Default = true)] int sceUsbPspcmWrite(uint a, uint buf, uint size) => PSPCM_ERR_NOT_RUNNING;
+    [Hle(Default = true)] int sceUsbPspcmDevctl(uint a, uint cmd, uint arg, uint size) => PSPCM_ERR_NOT_RUNNING;
+    [Hle(Default = true)] int sceUsbPspcmIoctlReset(uint a) => PSPCM_ERR_NOT_RUNNING;
+    [Hle(Default = true)] int sceUsbPspcmIoctlWaitData(uint a) => PSPCM_ERR_NOT_RUNNING;
+    [Hle(Default = true)] int sceUsbPspcmIoctlPollData(uint a) => PSPCM_ERR_NOT_RUNNING;
+    [Hle(Default = true)] int sceUsbPspcmIoctlCancelWaitData(uint a) => PSPCM_ERR_NOT_RUNNING;
 
     // ------------------------------------------------------------------ SceUsbstorVStor (virtual USB mass storage)
     // The image is served to a USB host; none is attached, so the device is configured and "started" without a host.
-    [Hle] int sceUsbstorVStorSetImgFilePath(uint path) => path == 0 ? KERNEL_ERR_ILLEGAL_ADDR : 0;
-    [Hle] int sceUsbstorVStorSetDeviceInfo(uint name, uint version) => 0;
-    [Hle] int sceUsbstorVStorStart(int type) => 0;
-    [Hle] int sceUsbstorVStorStop() => 0;
+    [Hle(Default = true)] int sceUsbstorVStorSetImgFilePath(uint path) => path == 0 ? KERNEL_ERR_ILLEGAL_ADDR : 0;
+    [Hle(Default = true)] int sceUsbstorVStorSetDeviceInfo(uint name, uint version) => 0;
+    [Hle(Default = true)] int sceUsbstorVStorStart(int type) => 0;
+    [Hle(Default = true)] int sceUsbstorVStorStop() => 0;
 
     // ------------------------------------------------------------------ registrations for devices nothing reports
     int _wlanCallbacks;
