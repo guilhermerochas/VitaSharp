@@ -1,5 +1,5 @@
 # HLE status per firmware library, written by VitaSharp.Desktop hle-coverage --status (build/hle-status.ps1)
-# firmware=3.74 games=47 vitasdk=5906/7006 vitasdk_default=359
+# firmware=3.74 games=47 vitasdk=6240/7006 vitasdk_default=395
 library	module	total	impl	games	games_impl	system	system_impl	default	games_default	system_default
 SceAACPromoter	vs0:vsh/common/mms/AACPromoter.suprx	4	1	0	0	0	0	0	0	0
 SceAVConfig	os0:kd/bootimage.skprx/SceAVConfig	34	34	0	0	31	31	0	0	0
@@ -64,14 +64,14 @@ SceDbrecoveryUtility	vs0:sys/external/dbrecovery_utility.suprx	1	0	0	0	1	0	0	0	0
 SceDbutil	vs0:sys/external/dbutil.suprx	214	3	0	0	100	0	0	0	0
 SceDebugLed	os0:kd/sysmem.skprx	4	4	1	1	0	0	0	0	0
 SceDipsw	os0:kd/sysmem.skprx	3	3	0	0	3	3	0	0	0
-SceDisplay	os0:kd/display.skprx	21	20	8	8	9	8	0	0	0
+SceDisplay	os0:kd/display.skprx	21	21	8	8	9	9	0	0	0
 SceDisplayUser	os0:us/driver_us.suprx	7	7	3	3	4	4	0	0	0
 SceDmacmgr	os0:kd/dmacmgr.skprx	2	2	1	1	1	1	0	0	0
 SceDrmBridge	os0:kd/bootimage.skprx/SceVshBridge	5	4	0	0	5	4	0	0	0
 SceDrmBridgeUser	os0:us/driver_us.suprx	5	4	0	0	5	4	0	0	0
 SceDrmPsmKdc	vs0:sys/external/psmkdc.suprx	14	0	0	0	12	0	0	0	0
 SceDtcpIp	vs0:sys/external/libSceDtcpIp.suprx	25	0	0	0	0	0	0	0	0
-SceEmailEngine	vs0:app/NPXS10072/email_engine.suprx	325	0	0	0	223	0	0	0	0
+SceEmailEngine	vs0:app/NPXS10072/email_engine.suprx	325	99	0	0	223	88	0	0	0
 SceError	os0:kd/bootimage.skprx/SceError	6	6	0	0	6	6	0	0	0
 SceErrorUser	os0:us/driver_us.suprx	6	6	0	0	6	6	0	0	0
 SceFiber	vs0:sys/external/libfiber.suprx	16	16	8	8	0	0	0	0	0
@@ -88,8 +88,8 @@ SceGpuEs4ForUser	os0:kd/bootimage.skprx/SceGpuEs4	7	0	0	0	4	0	0	0	0
 SceGpuEs4User	os0:us/libgpu_es4.suprx	49	1	0	0	42	1	0	0	0
 SceGpuEs4UserForVsh	os0:us/libgpu_es4.suprx	5	0	0	0	5	0	0	0	0
 SceGriefReportDialog	vs0:app/NPXS10065/grief_report_dialog.suprx	9	2	0	0	7	0	0	0	0
-SceGxm	os0:us/libgxm_es4.suprx	267	265	185	185	2	2	0	0	0
-SceGxmInternal	os0:us/libgxm_es4.suprx	16	8	0	0	10	8	0	0	0
+SceGxm	os0:us/libgxm_es4.suprx	267	266	185	185	2	2	0	0	0
+SceGxmInternal	os0:us/libgxm_es4.suprx	16	13	0	0	10	10	0	0	0
 SceGxmInternalForGles	os0:us/libgxm_es4.suprx	1	0	0	0	0	0	0	0	0
 SceGxmInternalForReplay	os0:us/libgxm_es4.suprx	1	0	0	0	0	0	0	0	0
 SceGxmInternalForTest	os0:us/libgxm_es4.suprx	15	0	0	0	0	0	0	0	0
@@ -117,7 +117,7 @@ SceLibFflMp4	vs0:vsh/common/libFflMp4.suprx	213	0	0	0	113	0	0	0	0
 SceLibFflVuMp4	vs0:vsh/common/libSenvuabsFFsdk.suprx	61	0	0	0	13	0	0	0	0
 SceLibGcc	os0:us/libkernel.suprx	20	20	0	0	0	0	0	0	0
 SceLibJson	vs0:sys/external/libSceJson.suprx	179	179	50	50	16	16	0	0	0
-SceLibKernel	os0:us/libkernel.suprx	341	292	99	99	83	53	0	0	0
+SceLibKernel	os0:us/libkernel.suprx	341	304	99	99	83	60	8	0	4
 SceLibLocation	vs0:sys/external/liblocation.suprx	33	22	5	5	25	14	0	0	0
 SceLibLocationExtension	vs0:sys/external/liblocation_extension.suprx	3	0	0	0	1	0	0	0	0
 SceLibLocationFactory	vs0:sys/external/liblocation_factory.suprx	1	0	0	0	0	0	0	0	0
@@ -132,13 +132,13 @@ SceLibRng	os0:us/libkernel.suprx	1	1	1	1	0	0	0	0	0
 SceLibRudp	vs0:sys/external/librudp.suprx	31	31	11	11	4	4	0	0	0
 SceLibSsp	os0:us/libkernel.suprx	1	1	0	0	0	0	0	0	0
 SceLibVitaJSExtObj	vs0:data/external/webcore/vita_jsextobj.suprx	10	0	0	0	7	0	0	0	0
-SceLibXml	vs0:sys/external/libSceXml.suprx	186	6	0	0	19	0	0	0	0
+SceLibXml	vs0:sys/external/libSceXml.suprx	186	186	0	0	19	19	0	0	0
 SceLibc	vs0:sys/external/libc.suprx	350	350	177	177	5	5	0	0	0
 SceLibm	vs0:sys/external/libc.suprx	201	201	59	59	7	7	0	0	0
-SceLibstdcxx	vs0:sys/external/libc.suprx	522	496	76	76	3	3	0	0	0
+SceLibstdcxx	vs0:sys/external/libc.suprx	522	512	76	76	3	3	0	0	0
 SceLiveAreaUtil	vs0:sys/external/livearea_util.suprx	14	14	0	0	7	7	0	0	0
 SceLiveAreaUtilBgApp	vs0:sys/external/livearea_util.suprx	1	0	0	0	0	0	0	0	0
-SceLsdb	vs0:vsh/shell/livespace_db.suprx	199	0	0	0	162	0	0	0	0
+SceLsdb	vs0:vsh/shell/livespace_db.suprx	199	63	0	0	162	50	0	0	0
 SceMarlin	vs0:sys/external/libmln.suprx	42	0	0	0	29	0	0	0	0
 SceMarlinHci	os0:kd/marlin_hci.skprx	44	0	0	0	20	0	0	0	0
 SceMetaGen	vs0:vsh/common/mms/meta_gen.suprx	16	0	0	0	12	0	0	0	0
@@ -202,7 +202,7 @@ ScePafGraphics	vs0:sys/external/libpaf.suprx	686	70	0	0	214	40	0	0	0
 ScePafLowlayer	vs0:sys/external/libpaf.suprx	20	1	0	0	18	1	0	0	0
 ScePafMisc	vs0:sys/external/libpaf.suprx	1075	366	0	0	421	186	0	0	0
 ScePafResource	vs0:sys/external/libpaf.suprx	274	85	0	0	63	21	0	0	0
-ScePafStdc	vs0:sys/external/libpaf.suprx	163	142	0	0	100	100	0	0	0
+ScePafStdc	vs0:sys/external/libpaf.suprx	163	144	0	0	100	100	0	0	0
 ScePafThread	vs0:sys/external/libpaf.suprx	95	67	0	0	61	44	0	0	0
 ScePafToplevel	vs0:sys/external/libpaf.suprx	202	11	0	0	65	10	0	0	0
 ScePafWebMapView	vs0:sys/external/libpaf_web_map_view.suprx	140	33	0	0	71	20	0	0	0
@@ -214,10 +214,10 @@ ScePgf	vs0:sys/external/libpgf.suprx	23	23	0	0	0	0	0	0	0
 ScePhotoExport	vs0:sys/external/libScePhotoExport.suprx	10	4	0	0	9	3	0	0	0
 ScePngPromoter	vs0:vsh/common/mms/png_promoter.suprx	3	2	0	0	0	0	0	0	0
 ScePower	os0:kd/bootimage.skprx/ScePower	42	42	9	9	19	19	0	0	0
-SceProcessmgr	os0:kd/processmgr.skprx	31	29	12	12	17	15	0	0	0
-ScePromoterUtil	vs0:sys/external/libScePromoterUtil.suprx	26	8	0	0	21	7	0	0	0
+SceProcessmgr	os0:kd/processmgr.skprx	31	31	12	12	17	17	0	0	0
+ScePromoterUtil	vs0:sys/external/libScePromoterUtil.suprx	26	16	0	0	21	14	0	0	0
 ScePsmDrm	os0:kd/bootimage.skprx/SceNpDrm	6	6	0	0	6	6	6	0	6
-ScePsp2Compat	vs0:data/external/webcore/ScePsp2Compat.suprx	1047	34	0	0	537	19	0	0	0
+ScePsp2Compat	vs0:data/external/webcore/ScePsp2Compat.suprx	1047	98	0	0	537	56	0	0	0
 ScePspnetAdhoc	vs0:sys/external/pspnet_adhoc.suprx	32	28	4	4	3	0	0	0	0
 ScePvf	vs0:sys/external/libpvf.suprx	43	43	18	18	6	6	0	0	0
 SceRegMgr	os0:kd/bootimage.skprx/SceRegistryMgr	22	17	0	0	20	15	0	0	0
@@ -264,8 +264,8 @@ SceSystemGesture	vs0:sys/external/libsystemgesture.suprx	17	17	7	7	0	0	0	0	0
 SceSystemSettingsCore	vs0:app/NPXS10015/system_settings_core.suprx	93	1	0	0	71	1	0	0	0
 SceTelephonyUtil	vs0:sys/external/libSceTelephonyUtil.suprx	3	0	0	0	2	0	0	0	0
 SceTeleportClient	vs0:sys/external/libSceTeleportClient.suprx	13	13	0	0	13	13	0	0	0
-SceTeleportServer	vs0:sys/external/libSceTeleportServer.suprx	1	0	0	0	1	0	0	0	0
-SceThreadmgr	os0:kd/threadmgr.skprx	184	169	48	48	108	100	0	0	0
+SceTeleportServer	vs0:sys/external/libSceTeleportServer.suprx	1	1	0	0	1	1	0	0	0
+SceThreadmgr	os0:kd/threadmgr.skprx	184	174	48	48	108	105	0	0	0
 SceTiffPromoter	vs0:vsh/common/mms/tiff_promoter.suprx	3	2	0	0	0	0	0	0	0
 SceTouch	os0:kd/bootimage.skprx/SceTouch	27	27	7	7	12	12	0	0	0
 SceTriggerUtil	vs0:sys/external/trigger_util.suprx	19	12	0	0	12	9	0	0	0

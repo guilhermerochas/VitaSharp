@@ -202,6 +202,7 @@ public sealed partial class Display : HleModule
     public static int FrameSleepMs;
 
     [Hle("sceDisplaySetFrameBufForCompat")]
+    [Hle("_sceDisplaySetFrameBufForCompat")] // syscall: (pParam, sync, opt)
     int SetFrameBufForCompat(uint pParam, uint sync) => SetFrameBuf(pParam, sync);
 
     [Hle("_sceDisplayGetFrameBuf")] // syscall: (pParam, sync, opt {pParam->size})

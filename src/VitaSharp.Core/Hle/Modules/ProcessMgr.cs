@@ -179,6 +179,7 @@ public sealed partial class ProcessMgr : HleModule
     internal void ExitProcess(int res) => sceKernelExitProcess(res);
 
     [Hle]
+    [Hle("_sceKernelExitProcessForUser")] // the SceProcessmgr syscall libkernel's sceKernelExitProcess ends with
     void sceKernelExitProcess(int res)
     {
         Log.Info($"sceKernelExitProcess({res})");

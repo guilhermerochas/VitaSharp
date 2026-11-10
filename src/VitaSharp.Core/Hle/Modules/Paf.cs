@@ -49,7 +49,7 @@ public sealed partial class Paf : HleModule
 
     // ---- paf::string / paf::wstring: { T *ptr; size_t count; allocator (empty, padded) }, 12 bytes; an empty string
     // points at the class's static empty_string, any other buffer comes from the heap and is count + 1 elements long.
-    uint EmptyString => _emptyString != 0 ? _emptyString : _emptyString = Static(4);
+    internal uint EmptyString => _emptyString != 0 ? _emptyString : _emptyString = Static(4);
     uint EmptyWString => _emptyWString != 0 ? _emptyWString : _emptyWString = Static(4);
 
     /// <summary>An empty string object at <paramref name="s"/> (the constructor).</summary>
