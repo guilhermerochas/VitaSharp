@@ -327,8 +327,8 @@ public static class EnvVars
     public const string DisplaySync = "VITASHARP_DISPLAY_SYNC";
     /// <summary>1 (A/B): sceGxmDisplayQueueAddEntry keeps at most displayQueueMaxPendingCount entries queued or flipping.</summary>
     public const string DisplayQueueStrict = "VITASHARP_DISPLAY_QUEUE_STRICT";
-    /// <summary>1 (experiment): sceDisplaySetFrameBuf in IMMEDIATE mode flips at most once per vblank (a second flip in the
-    /// same vblank waits for the next one). Default off.</summary>
+    /// <summary>0: sceDisplaySetFrameBuf in IMMEDIATE mode no longer flips at most once per vblank (by default a second
+    /// flip in the same vblank waits for the next one: the panel shows no more than that).</summary>
     public const string DisplayImmediatePace = "VITASHARP_DISPLAY_IMMEDIATE_PACE";
     /// <summary>Frame rate mode: native (default), 30, 60 or unlimited (Hle/Modules/Display.cs FrameRate; desktop
     /// --frame-rate=, the launcher's "Taxa de quadros" per game).</summary>
