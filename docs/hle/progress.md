@@ -12,10 +12,10 @@ How many of the functions that the PS Vita firmware 3.74 exports to user code (t
 | Group | Implemented | Real | Default | Total | % |
 |---|---:|---:|---:|---:|---:|
 | Games imports | 1,566 | 1,566 | 0 | 1,566 | 100% |
-| System imports | 3,374 | 3,227 | 147 | 7,511 | 44.9% |
-| General | 3,451 | 3,275 | 176 | 10,329 | 33.4% |
-| All firmware 3.74 exports | 8,391 | 8,068 | 323 | 19,406 | 43.2% |
-| VitaSDK user functions | 5,849 | 5,526 | 323 | 7,006 | 83.4% |
+| System imports | 3,401 | 3,227 | 174 | 7,511 | 45.2% |
+| General | 3,480 | 3,296 | 184 | 10,329 | 33.6% |
+| All firmware 3.74 exports | 8,447 | 8,089 | 358 | 19,406 | 43.5% |
+| VitaSDK user functions | 5,905 | 5,547 | 358 | 7,006 | 84.2% |
 
 ## Per library (308)
 
@@ -95,7 +95,7 @@ How many of the functions that the PS Vita firmware 3.74 exports to user code (t
 | SceError | `os0:kd/bootimage.skprx/SceError` | 6 / 6 | 100% | - | - | 6 / 6 |
 | SceErrorUser | `os0:us/driver_us.suprx` | 6 / 6 | 100% | - | - | 6 / 6 |
 | SceFiber | `vs0:sys/external/libfiber.suprx` | 16 / 16 | 100% | - | 8 / 8 | - |
-| SceFios2 | `vs0:sys/external/libfios2.suprx` | 164 / 168 | 97.6% | - | 57 / 57 | - |
+| SceFios2 | `vs0:sys/external/libfios2.suprx` | 168 / 168 | 100% | 1 | 57 / 57 | - |
 | SceFios2Kernel | `os0:kd/bootimage.skprx/SceFios2Kernel` | 20 / 20 | 100% | - | 20 / 20 | - |
 | SceFios2Kernel02 | `os0:kd/bootimage.skprx/SceFios2Kernel` | 10 / 10 | 100% | - | - | 10 / 10 |
 | SceFios2User | `os0:us/driver_us.suprx` | 10 / 10 | 100% | - | 8 / 8 | - |
@@ -183,7 +183,7 @@ How many of the functions that the PS Vita firmware 3.74 exports to user code (t
 | SceNetInternal | `vs0:sys/external/libnet.suprx` | 7 / 58 | 12% | - | - | 6 / 45 |
 | SceNetPsForSyscalls | `os0:kd/bootimage.skprx/SceNetPs` | 34 / 34 | 100% | - | - | 34 / 34 |
 | SceNgs | `vs0:sys/external/libngs.suprx` | 68 / 68 | 100% | - | 48 / 48 | - |
-| SceNgsInternal | `os0:kd/bootimage.skprx/SceNgs` | 57 / 62 | 91.9% | - | - | 56 / 61 |
+| SceNgsInternal | `os0:kd/bootimage.skprx/SceNgs` | 62 / 62 | 100% | 5 | - | 61 / 61 |
 | SceNotificationUtil | `vs0:sys/external/notification_util.suprx` | 2 / 2 | 100% | - | - | - |
 | SceNotificationUtilBgApp | `vs0:sys/external/notification_util.suprx` | 1 / 1 | 100% | - | - | - |
 | SceNotificationUtilProgress | `vs0:sys/external/notification_util.suprx` | 3 / 3 | 100% | - | - | - |
@@ -193,8 +193,8 @@ How many of the functions that the PS Vita firmware 3.74 exports to user code (t
 | SceNpCommerce2 | `vs0:sys/external/np_commerce2.suprx` | 432 / 502 | 86% | - | 30 / 30 | 397 / 397 |
 | SceNpCommon | `vs0:sys/external/np_common.suprx` | 48 / 71 | 67.6% | - | 11 / 11 | 36 / 53 |
 | SceNpCommonPs4 | `vs0:sys/external/np_common_ps4.suprx` | 40 / 713 | 5.6% | - | - | 36 / 246 |
-| SceNpDrm | `os0:kd/bootimage.skprx/SceNpDrm` | 1 / 8 | 12.5% | - | - | 1 / 8 |
-| SceNpDrmPackage | `os0:kd/bootimage.skprx/SceNpDrm` | 13 / 16 | 81.2% | - | - | 13 / 16 |
+| SceNpDrm | `os0:kd/bootimage.skprx/SceNpDrm` | 8 / 8 | 100% | 7 | - | 8 / 8 |
+| SceNpDrmPackage | `os0:kd/bootimage.skprx/SceNpDrm` | 16 / 16 | 100% | 3 | - | 16 / 16 |
 | SceNpFriendPrivacyLevel | `vs0:sys/external/np_friend_privacylevel.suprx` | 0 / 16 | 0% | - | - | 0 / 8 |
 | SceNpGriefReport | `vs0:vsh/common/np_grief_report.suprx` | 1 / 18 | 5.5% | - | - | 0 / 14 |
 | SceNpKdc | `vs0:sys/external/np_kdc.suprx` | 0 / 7 | 0% | - | - | 0 / 7 |
@@ -236,9 +236,9 @@ How many of the functions that the PS Vita firmware 3.74 exports to user code (t
 | ScePower | `os0:kd/bootimage.skprx/ScePower` | 42 / 42 | 100% | - | 9 / 9 | 19 / 19 |
 | SceProcessmgr | `os0:kd/processmgr.skprx` | 29 / 31 | 93.5% | - | 12 / 12 | 15 / 17 |
 | ScePromoterUtil | `vs0:sys/external/libScePromoterUtil.suprx` | 8 / 26 | 30.7% | - | - | 7 / 21 |
-| ScePsmDrm | `os0:kd/bootimage.skprx/SceNpDrm` | 0 / 6 | 0% | - | - | 0 / 6 |
+| ScePsmDrm | `os0:kd/bootimage.skprx/SceNpDrm` | 6 / 6 | 100% | 6 | - | 6 / 6 |
 | ScePsp2Compat | `vs0:data/external/webcore/ScePsp2Compat.suprx` | 34 / 1047 | 3.2% | - | - | 19 / 537 |
-| ScePspnetAdhoc | `vs0:sys/external/pspnet_adhoc.suprx` | 11 / 32 | 34.3% | - | 4 / 4 | 0 / 3 |
+| ScePspnetAdhoc | `vs0:sys/external/pspnet_adhoc.suprx` | 28 / 32 | 87.5% | - | 4 / 4 | 0 / 3 |
 | ScePvf | `vs0:sys/external/libpvf.suprx` | 43 / 43 | 100% | - | 18 / 18 | 6 / 6 |
 | SceRegMgr | `os0:kd/bootimage.skprx/SceRegistryMgr` | 17 / 22 | 77.2% | - | - | 15 / 20 |
 | SceRegMgrForGame | `os0:kd/bootimage.skprx/SceRegistryMgr` | 7 / 7 | 100% | - | - | 6 / 6 |
@@ -276,7 +276,7 @@ How many of the functions that the PS Vita firmware 3.74 exports to user code (t
 | SceSslInternal | `vs0:sys/external/libssl.suprx` | 5 / 98 | 5.1% | - | - | 2 / 70 |
 | SceStitchAdapter | `vs0:app/NPXS10095/stitch_prx.suprx` | 0 / 14 | 0% | - | - | 0 / 11 |
 | SceStitcherCoreAdapter | `vs0:app/NPXS10095/stitch_core_prx.suprx` | 0 / 57 | 0% | - | - | 0 / 53 |
-| SceSulpha | `vs0:sys/external/libsulpha.suprx` | 9 / 23 | 39.1% | - | - | 4 / 10 |
+| SceSulpha | `vs0:sys/external/libsulpha.suprx` | 23 / 23 | 100% | 13 | - | 10 / 10 |
 | SceSvcCtrl | `vs0:sys/external/libshellsvc.suprx` | 0 / 4 | 0% | - | - | 0 / 4 |
 | SceSysmem | `os0:kd/sysmem.skprx` | 19 / 20 | 95% | - | 6 / 6 | 10 / 10 |
 | SceSysmodule | `os0:kd/bootimage.skprx/SceSysmodule` | 8 / 8 | 100% | - | 3 / 3 | 5 / 5 |

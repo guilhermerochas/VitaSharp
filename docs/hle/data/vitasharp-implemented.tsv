@@ -1137,6 +1137,8 @@
 0xC58DF766	sceFiosCachePrefetchFile	Fios2	SceFios2	vh
 0x21619E35	sceFiosCachePrefetchFileRange	Fios2	SceFios2	vh
 0x1E920B1D	sceFiosCancelAllOps	Fios2	SceFios2	vh
+0xD2CD9AF2	sceFiosChangeStat	Fios2	SceFios2	vh
+0xC781D7B4	sceFiosChangeStatSync	Fios2	SceFios2	vh
 0xF85C208B	sceFiosCloseAllFiles	Fios2	SceFios2	vh
 0xF6CACFC7	sceFiosDHClose	Fios2	SceFios2	vh
 0x1F3CC428	sceFiosDHCloseSync	Fios2	SceFios2	vh
@@ -1227,6 +1229,7 @@
 0x156EAFDC	sceFiosGetSuspendCount	Fios2	SceFios2	vh
 0xD55B8555	sceFiosIOFilterAdd	Fios2	SceFios2	vh
 0x428E927D	sceFiosIOFilterCache	Fios2	SceFios2	vh
+0x7C9B14EB	sceFiosIOFilterGetInfo	Fios2	SceFios2	vh
 0x057252F2	sceFiosIOFilterPsarcDearchiver	Fios2	SceFios2	vh
 0x22E35018	sceFiosIOFilterRemove	Fios2	SceFios2	vh
 0x774C2C05	sceFiosInitialize	Fios2	SceFios2	vh
@@ -1270,6 +1273,7 @@
 0x5B8D48C4	sceFiosShutdownAndCancelOps	Fios2	SceFios2	vh
 0xFF04AF72	sceFiosStat	Fios2	SceFios2	vh
 0xACBAF3E0	sceFiosStatSync	Fios2	SceFios2	vh
+0xFE86B30D	sceFiosStatisticsGet	Fios2	SceFios2	vh	default
 0x590DD306	sceFiosStatisticsPrint	Fios2	SceFios2	vh
 0x5216E0DA	sceFiosStatisticsReset	Fios2	SceFios2	vh
 0x510953DC	sceFiosSuspend	Fios2	SceFios2	vh
@@ -3916,6 +3920,11 @@
 0x0B1A2AF8	sceNgsRackInitInternal	Ngs	SceNgsInternal	vh
 0x7C434055	sceNgsRackReleaseInternal	Ngs	SceNgsInternal	vh
 0xA7454973	sceNgsRackSetParamErrorCallbackInternal	Ngs	SceNgsInternal	vh
+0x0DE53F9A	sceNgsSulphaGetInfoInternal	Ngs	SceNgsInternal	vh	default
+0x5B889852	sceNgsSulphaGetModuleListInternal	Ngs	SceNgsInternal	vh	default
+0xB9027A52	sceNgsSulphaGetSynthUpdateCallbackInternal	Ngs	SceNgsInternal	vh	default
+0xEBC5957D	sceNgsSulphaQueryModuleInternal	Ngs	SceNgsInternal	vh	default
+0x9B4B54AF	sceNgsSulphaSetSynthUpdateCallbackInternal	Ngs	SceNgsInternal	vh	default
 0x00993680	sceNgsSystemGetCallbackListInternal	Ngs	SceNgsInternal	vh
 0x19FF8A35	sceNgsSystemGetRequiredMemorySizeInternal	Ngs	SceNgsInternal	vh
 0x6F31AD08	sceNgsSystemGetSysHandleFromRack	Ngs	SceNgsInternal	vh
@@ -4065,9 +4074,19 @@
 0x95EFA15C	sceNpCommonMallocNpServerName	NpManager	SceNpCommon	vh
 0xE9A003DE	sceNpGetPlatformType	NpManager	SceNpCommon	vh
 0xE807D0BC	sceNpSetPlatformType	NpManager	SceNpCommon	vh
+0xFEEBCD62	_sceNpDrmCheckActData	SystemServicesVsh	SceNpDrm	vh	default
+0x4458812B	_sceNpDrmCheckDrmReset	SystemServicesVsh	SceNpDrm	vh	default
 0xE935B0FC	_sceNpDrmGetFixedRifName	SystemServicesVsh	SceNpDrm	vh
+0xE8343660	_sceNpDrmGetRifInfo	SystemServicesVsh	SceNpDrm	vh	default
+0xB8C5DA7C	_sceNpDrmGetRifName	SystemServicesVsh	SceNpDrm	vh	default
+0xD312424D	_sceNpDrmGetRifNameForInstall	SystemServicesVsh	SceNpDrm	vh	default
+0x2523F57F	_sceNpDrmPresetRifProvisionalFlag	SystemServicesVsh	SceNpDrm	vh	default
+0x507D06A6	_sceNpDrmRemoveActData	SystemServicesVsh	SceNpDrm	vh	default
+0xA1D885FA	_sceNpDrmPackageCheck	SystemServicesVsh	SceNpDrmPackage	vh	default
+0xD6F05ACC	_sceNpDrmPackageDecrypt	SystemServicesVsh	SceNpDrmPackage	vh	default
 0x6896EAF2	_sceNpDrmPackageInstallFinished	SystemServicesVsh	SceNpDrmPackage	vh
 0xCEC18DA4	_sceNpDrmPackageInstallStarted	SystemServicesVsh	SceNpDrmPackage	vh
+0x0567DCA1	_sceNpDrmPackageTransform	SystemServicesVsh	SceNpDrmPackage	vh	default
 0x23A28861	_sceNpDrmPackageUninstallFinished	SystemServicesVsh	SceNpDrmPackage	vh
 0x4901C3E6	_sceNpDrmPackageUninstallStarted	SystemServicesVsh	SceNpDrmPackage	vh
 0xC75A775B	_sceNpDrmSaveDataFormatFinished	SystemServicesVsh	SceNpDrmPackage	vh
@@ -5553,15 +5572,38 @@
 0x49B473F0	scePromoterUtilityGetResult	SystemFallback	ScePromoterUtil	vh
 0xABEC74D2	scePromoterUtilityGetState	SystemFallback	ScePromoterUtil	vh
 0x93451536	scePromoterUtilityInit	SystemFallback	ScePromoterUtil	vh
+0xA89653B3	scePsmDrmGetActInfo	SystemServicesVsh	ScePsmDrm	vh	default
+0xE31A6220	scePsmDrmGetRifInfo	SystemServicesVsh	ScePsmDrm	vh	default
+0x207A2C53	scePsmDrmGetRifKey	SystemServicesVsh	ScePsmDrm	vh	default
+0x3E881391	scePsmDrmGetRifName	SystemServicesVsh	ScePsmDrm	vh	default
+0x0D6470DA	scePsmDrmGetRifNameForInstall	SystemServicesVsh	ScePsmDrm	vh	default
+0x0E193CBB	scePsmDrmRemoveActData	SystemServicesVsh	ScePsmDrm	vh	default
+0x02098B69	sceNetAdhocGetPdpStat	NetAdhoc	ScePspnetAdhoc	vh
+0xE45F0801	sceNetAdhocGetPtpStat	NetAdhoc	ScePspnetAdhoc	vh
 0xCA249F53	sceNetAdhocGetSocketAlert	NetAdhoc	ScePspnetAdhoc	vh
 0x87805E13	sceNetAdhocInit	NetAdhoc	ScePspnetAdhoc	vh
 0xF2EC12CD	sceNetAdhocPdpCreate	NetAdhoc	ScePspnetAdhoc	vh
 0xB7B6A662	sceNetAdhocPdpDelete	NetAdhoc	ScePspnetAdhoc	vh
 0x1172398C	sceNetAdhocPdpRecv	NetAdhoc	ScePspnetAdhoc	vh
 0xB56238BA	sceNetAdhocPdpSend	NetAdhoc	ScePspnetAdhoc	vh
+0x54ED636D	sceNetAdhocPollSocket	NetAdhoc	ScePspnetAdhoc	vh
+0x0A0423DD	sceNetAdhocPtpAccept	NetAdhoc	ScePspnetAdhoc	vh
+0xA083BF7C	sceNetAdhocPtpClose	NetAdhoc	ScePspnetAdhoc	vh
+0x632EDB11	sceNetAdhocPtpConnect	NetAdhoc	ScePspnetAdhoc	vh
+0xAD5F570D	sceNetAdhocPtpFlush	NetAdhoc	ScePspnetAdhoc	vh
+0x8F683810	sceNetAdhocPtpListen	NetAdhoc	ScePspnetAdhoc	vh
+0x81498625	sceNetAdhocPtpOpen	NetAdhoc	ScePspnetAdhoc	vh
+0x0291EF5B	sceNetAdhocPtpRecv	NetAdhoc	ScePspnetAdhoc	vh
+0x0A4E32EF	sceNetAdhocPtpSend	NetAdhoc	ScePspnetAdhoc	vh
 0x31F45B51	sceNetAdhocSetSocketAlert	NetAdhoc	ScePspnetAdhoc	vh
 0x6C0B4971	sceNetAdhocTerm	NetAdhoc	ScePspnetAdhoc	vh
+0xD3230114	sceNetAdhocctlGetAddrByName	NetAdhoc	ScePspnetAdhoc	vh
+0x49AF74AE	sceNetAdhocctlGetAdhocId	NetAdhoc	ScePspnetAdhoc	vh
 0xA40F17E0	sceNetAdhocctlGetEtherAddr	NetAdhoc	ScePspnetAdhoc	vh
+0xFCA965F6	sceNetAdhocctlGetNameByAddr	NetAdhoc	ScePspnetAdhoc	vh
+0x051D8368	sceNetAdhocctlGetParameter	NetAdhoc	ScePspnetAdhoc	vh
+0x14552BB1	sceNetAdhocctlGetPeerInfo	NetAdhoc	ScePspnetAdhoc	vh
+0x356AA25E	sceNetAdhocctlGetPeerList	NetAdhoc	ScePspnetAdhoc	vh
 0xE2FE9DD6	sceNetAdhocctlInit	NetAdhoc	ScePspnetAdhoc	vh
 0x97A80065	sceNetAdhocctlTerm	NetAdhoc	ScePspnetAdhoc	vh
 0x58142D71	__scePvfSetFt2DoneLibCHook	Pvf	ScePvf	vh
@@ -6092,13 +6134,27 @@
 0x03CE6E3A	sceSslTerm	Ssl	SceSsl	vh
 0x064DFC99	sceSslInternalGetCertificateAuthority	Ssl	SceSslInternal	vh
 0x4B4A2307	sceSslInternalIsInitalized	Ssl	SceSslInternal	vh
+0xC5752B6B	sceSulphaAgentsGetNeededMemory	SystemFallback	SceSulpha	vh	default
+0x7ADB454D	sceSulphaAgentsRegister	SystemFallback	SceSulpha	vh	default
+0x2A8B74D7	sceSulphaAgentsUnregister	SystemFallback	SceSulpha	vh	default
 0xB0C2B9CE	sceSulphaEventAdd	SystemFallback	SceSulpha	vh
 0xD5D995A9	sceSulphaEventDelete	SystemFallback	SceSulpha	vh
+0xBF61F3B8	sceSulphaEventNew	SystemFallback	SceSulpha	vh	default
 0xBC6A2833	sceSulphaEventReport	SystemFallback	SceSulpha	vh
+0x7968A138	sceSulphaFileConnect	SystemFallback	SceSulpha	vh	default
+0xB16E7B88	sceSulphaFileDisconnect	SystemFallback	SceSulpha	vh	default
+0xDE7E2911	sceSulphaGetAgent	SystemFallback	SceSulpha	vh	default
 0xA6A05C50	sceSulphaGetDefaultConfig	SystemFallback	SceSulpha	vh
+0xD52E5A5A	sceSulphaGetNeededMemory	SystemFallback	SceSulpha	vh
+0x29F0DA12	sceSulphaGetTimestamp	SystemFallback	SceSulpha	vh	default
 0x324F158F	sceSulphaInit	SystemFallback	SceSulpha	vh
+0x5C6815C6	sceSulphaLogHandler	SystemFallback	SceSulpha	vh	default
 0x951D159D	sceSulphaLogSetLevel	SystemFallback	SceSulpha	vh
+0xB4668AEA	sceSulphaNetworkInit	SystemFallback	SceSulpha	vh	default
+0x0FC71B72	sceSulphaNetworkShutdown	SystemFallback	SceSulpha	vh	default
 0xD44C9F86	sceSulphaNodeDelete	SystemFallback	SceSulpha	vh
+0xA41B7402	sceSulphaNodeNew	SystemFallback	SceSulpha	vh	default
+0x5E15E164	sceSulphaSetBookmark	SystemFallback	SceSulpha	vh	default
 0x10770BA7	sceSulphaShutdown	SystemFallback	SceSulpha	vh
 0x920EC7BF	sceSulphaUpdate	SystemFallback	SceSulpha	vh
 0xB9D5EBDE	sceKernelAllocMemBlock	SysMem	SceSysmem	vh
