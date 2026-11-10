@@ -1375,6 +1375,13 @@ Lista de itens futuros do VitaSharp. Marque `[x]` quando um item for concluído.
 
 ## Bugs em aberto
 
+- [ ] Android, controle conectado no celular (relato do usuário, 10/11/2026): (1) o L2 não funciona (conferir o
+  mapeamento do eixo/botão do gatilho: no Android o L2 pode chegar como AXIS_LTRIGGER/AXIS_BRAKE ou KEYCODE_BUTTON_L2,
+  conforme o controle; o Vita não tem L2, então conferir para o que o VitaSharp o mapeia (toque traseiro/atalho) e se
+  isso funciona); (2) com controle de PS4, o touchpad do controle vira mouse no Android e esse ponteiro se mistura com o
+  toque na tela: o app deve tratar o touchpad do DualShock 4 como entrada do controle (SOURCE_TOUCHPAD/MOUSE do
+  dispositivo do controle, separado do SOURCE_TOUCHSCREEN do aparelho; ou capturar o ponteiro) e mapear para o toque
+  frontal/traseiro do Vita sem mexer no toque da tela. Validar com o controle real no celular.
 - [x] Dead Space (port Android, DEADSPACE, so_loader + vitaGL): não rodava sem o kubridge (08/11/2026). Feito (agente C,
   fix/bugs-c-24): kubridge em HLE (aabf2d6), VFP short vectors no CPU (7501ec8: o motor do jogo usa FPSCR LEN=8),
   trampolim do taiHookFunctionOffsetForUser em endereço de meia palavra (907b204), taiHEN import/export hooks e
