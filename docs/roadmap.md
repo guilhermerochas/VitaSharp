@@ -1390,7 +1390,7 @@ Lista de itens futuros do VitaSharp. Marque `[x]` quando um item for concluído.
   `config.ini` existente (o jogador do vídeo já tinha jogado) a aplicação da configuração acontece depois do 1º
   Present e cai na estrutura 1. Próximo passo: descobrir o formato do config.ini (o jogo lê com o FIOS) e testar com
   um; se for isso, o defeito também existe num Vita sem config e não é do emulador
-- [x] Silent Hill 4 (SILH00004), controles (o relato era visual): não iniciado nesta rodada. Preparado: `<scratchpad>\c24\sh4.nav` e
+- [ ] Silent Hill 4 (SILH00004), visual (câmera; o relato não era de controles): não iniciado nesta rodada. Preparado: `<scratchpad>\c24\sh4.nav` e
   `ux0:data/sh4/env.txt` com `SH4_AUDIT_PAD=1` (o port loga `[audit-pad]` com os eixos e `[audit-pad-player]` com a
   rotação). Atenção: nos scripts NAV, `lstick x y` usa -1..1 (para frente = `lstick 0 -1`); agora aceita rampa
   (`lstick x y quadros rampa`)
@@ -1427,7 +1427,20 @@ Lista de itens futuros do VitaSharp. Marque `[x]` quando um item for concluído.
   nos dois: a vista estreita é do próprio port, não do VitaSharp. Diferenças pequenas que sobram: o 4º componente dos
   vec4 de posição é 1.0 aqui e 0.0 no Vita3K (não entra na matriz WVP que medimos), e o yaw inicial de um New Game sem
   entrada é -1,395092 aqui contra -1,370750 no Vita3K (o usuário mexeu no analógico antes). O vídeo do Vita real
-  (i1CuZULiQ6w) parece mais aberto; pode ser outra versão do port. Fechado como comportamento do port
+  (i1CuZULiQ6w) parece mais aberto; pode ser outra versão do port. ~~Fechado como comportamento do port~~ **Reaberto** (usuário, 10/11: o Vita3K não é
+  referência; vale só o vídeo do Vita real `kHpX5jbI5DE`, enviado em 30/10, mesmo dia do v1.0.1 = o eboot do usuário,
+  md5 idêntico). Comparação lado a lado com a gravação nova `captures\SILH00004_20261110_155931_tudo` e um New Game
+  headless: no vídeo o texto da introdução ("Pero algo extraño...") aparece **sobre a cena 3D** (Henry na cama olhando
+  o ventilador do teto, com letterbox) e depois vem um despertar roteirizado de ~8 s (teto, vistas inclinadas); aqui o
+  mesmo texto sai sobre um **cinza chapado** e o despertar fica escondido no mesmo cinza, até a vista parada na parede
+  (`<scratchpad>\bA\yt\cmp_intro.png`). Dump da GPU da introdução (`<scratchpad>\bA\runs\sh4intro.vsgd`, quadros
+  2350-2420; trace de 2400): o alvo da cena 0x60FBE800 recebe 23 desenhos de cenário (vs A6BA1847, fs 63EB500A) e
+  depois `mask update` NEVER/ALWAYS (o vitaGL usa a máscara GXM, que o VitaSharp ignora) e um quad sem fragmento; no fim
+  do quadro o alvo está cinza com o texto. Suspeitas: a máscara GXM ignorada (o mesmo do Salt and Sanctuary, mas aqui com
+  NEVER, que zera a máscara e deveria rejeitar desenhos) ou a névoa (fog) saindo total. Os quadros intermediários de
+  60 fps (interpolação do port, qgl.c) estão coerentes: com a cena parada, quadros seguidos iguais, com e sem
+  `SH4_INTERP=0`. Próximo passo: implementar a máscara GXM (Vita3K: imagem por alvo, iniciada pela background mask,
+  mask update grava 1 com stencil ALWAYS e 0 com NEVER, desenhos rejeitados onde é 0) e repetir o replay do dump
 - [ ] Comparação com o Vita3K (pedido do usuário): lista de lacunas em `<scratchpad>\c24\vita3k_gap.tsv` (agente de
   tarefas rápidas). Do lado do usuário só ~20 funções reais faltavam; feitas: aliases sceKernelLock/Unlock/TryLock
   LwMutex_0/_16XX, _sceKernelSuspend/ResumeThreadForVM, _sceKernelGetRandomNumber,
