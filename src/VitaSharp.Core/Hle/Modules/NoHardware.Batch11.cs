@@ -246,7 +246,7 @@ public sealed partial class SystemServicesVsh
         return 0;
     }
     [Hle(Default = true)] int sceSblUtMgrResetUtokenFile() => Sbl ? 0 : SBL_ERR_PERM;
-    [Hle("sceSblUtMgrGetUtName", Default = true)]
+    [Hle("sceSblUtMgrGetUtName", Nid = 0x04CA1311, Library = "SceSblUtMgr", Default = true)]
     [Hle("sceSblUtMgrReadUtoken", Default = true)]
     [Hle("sceSblUtMgrUpdateUtoken", Default = true)]
     int sceSblUtMgrSecure() => SblUnsupported();

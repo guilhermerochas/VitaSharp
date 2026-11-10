@@ -120,4 +120,26 @@ public sealed class HleBatch11Tests(GuestMemoryFixture fx) : IDisposable
         Assert.Equal(0, Call(sq, "SdkClose", db2));
         Assert.Equal(0, Call(sq, "SdkClose", db));
     }
+
+    [Fact]
+    public void DefaultEntriesAreMarkedAndRealOnesAreNot()
+    {
+        var bindings = VitaSharp.Core.Hle.HleBindings.Modules.SelectMany(m => m.Bindings()).ToList();
+        bool IsDefault(string name) => bindings.Where(b => (b.Name ?? b.Method) == name).All(b => b.Default) && bindings.Any(b => (b.Name ?? b.Method) == name);
+        Assert.True(IsDefault("sceBtStartAudio"));
+        Assert.True(IsDefault("sceCompatInitEx"));
+        Assert.True(IsDefault("_sceSblGcAuthMgrPkgVry"));
+        Assert.False(IsDefault("sqlite3_open"));
+        Assert.False(IsDefault("sceCompatLCDCSync"));
+    }
+
+    [Fact]
+    public void CompatIsForTheEmulatorAndSystemPrograms()
+    {
+        var c = Module<Compat>();
+        // the test process is not a system program: every entry refuses as the module does for other callers
+        Assert.Equal(unchecked((int)0x80010058), Call(c, "sceCompatGetPspSystemSoftwareVersion"));
+        Assert.Equal(unchecked((int)0x80010058), Call(c, "sceCompatAllocCdramWithHole", 0u));
+        Assert.Equal(0, Call(c, "sceCompatAvailableColorSpaceSetting"));
+    }
 }

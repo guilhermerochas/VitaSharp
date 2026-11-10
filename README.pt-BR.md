@@ -1,4 +1,4 @@
-<!-- pair: README.md sha256=451fd52fd07e872e06b1ad495df08075ac8917fc231a9b3224887184628291ed -->
+<!-- pair: README.md sha256=50b0047f502ee09de7ee4efe2cd6dce465c76d7e8fb4bfd4a1373d7c02e4489b -->
 <div align="center">
 
 [English](README.md) | **Português**
@@ -77,8 +77,9 @@ LiveArea e jogos abertos por elas. É um projeto de pesquisa em desenvolvimento 
 <sub>* Porcentagens das funções que o firmware 3.74 exporta para o código de usuário (seus módulos de usuário e as
 bibliotecas de syscall dos módulos do kernel) com implementação HLE, não de todas as funções do sistema do PS Vita.
 "Games imports": as funções exportadas que os jogos de teste instalados importam; "system imports": as que só o
-software do sistema importa; VitaSDK: as funções de usuário da lista de NIDs do VitaSDK. Atualizado com
-`build/hle-status.ps1`.</sub>
+software do sistema importa; VitaSDK: as funções de usuário da lista de NIDs do VitaSDK. "Default": funções
+implementadas que precisam de hardware ou serviço que o emulador não tem e devolvem o resultado do próprio firmware
+para esse caso (contam na porcentagem, mostradas à parte). Atualizado com `build/hle-status.ps1`.</sub>
 
 ## Jogos
 
