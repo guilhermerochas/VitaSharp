@@ -318,7 +318,9 @@ public static class EnvVars
     /// reproduce a phone's worker cost on a PC (default 1).</summary>
     public const string GpuWorkerSlowdown = "VITASHARP_GPU_WORKER_SLOWDOWN";
     /// <summary>1: a display queue entry's flip callback runs once the GPU worker recorded and submitted the frame, not
-    /// once the GPU finished it (the callback only flips; presents stay in GPU order). Default 0.</summary>
+    /// once the GPU finished it (the callback only flips; presents stay in GPU order). auto: chosen from measured frame
+    /// times (Gpu/AdaptiveEarlySignal.cs: tried while the game misses its cadence and waits on the display queue, kept
+    /// only when frames got faster). Default 0.</summary>
     public const string DisplayEarlySignal = "VITASHARP_DISPLAY_EARLY_SIGNAL";
     /// <summary>1 (A/B): a scene's GPU work waits until the display released its colour buffer (fragment sync object);
     /// trace also logs the waits. Default off.</summary>

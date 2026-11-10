@@ -709,7 +709,12 @@ public sealed partial class Gxm : HleModule
     }
     static readonly bool DisplayQueueStrict = Environment.GetEnvironmentVariable(EnvVars.DisplayQueueStrict) == "1";
 
-    static readonly bool DisplayEarlySignal = Environment.GetEnvironmentVariable(EnvVars.DisplayEarlySignal) == "1";
+    static readonly string? DisplayEarlyMode = Environment.GetEnvironmentVariable(EnvVars.DisplayEarlySignal);
+    static readonly bool DisplayEarlySignal = DisplayEarlyMode == "1";
+    /// <summary><see cref="EnvVars.DisplayEarlySignal"/>=auto: the flip callback's signal is chosen from measured frame
+    /// times (<see cref="AdaptiveEarlySignal"/>); null otherwise.</summary>
+    readonly AdaptiveEarlySignal? _earlyAuto = DisplayEarlyMode == "auto" ? new AdaptiveEarlySignal() : null;
+    long _lastDisplayEntry;
 
     [Hle]
     int sceGxmDisplayQueueAddEntry(uint oldBuffer, uint newBuffer, uint callbackData)
@@ -724,6 +729,7 @@ public sealed partial class Gxm : HleModule
         // VITASHARP_DISPLAY_QUEUE_STRICT=1 (A/B): at most displayQueueMaxPendingCount entries queued or being flipped, as
         // in Vita3K; by default a pending count of 1 still allows one queued entry plus the one the display thread holds
         long tq = System.Diagnostics.Stopwatch.GetTimestamp();
+        bool early = _earlyAuto?.Early ?? DisplayEarlySignal;
         using (Scheduler.Block()) using (FrameLedger.Time(FrameLedger.Cat.GuestGpuWait))
             lock (_displayLock)
             {
@@ -741,11 +747,28 @@ public sealed partial class Gxm : HleModule
         if (DisplaySync && _syncObjects.GetValueOrDefault(newBuffer) is { } newSync) lock (newSync) newSync.Queued++;
         // a full queue waits for the display thread; when the process is being stopped (a LoadExec the host started, the
         // shell ending it) that thread has already ended and nobody takes the entry: the wait ends with the thread's stop
-        var item = (copy, Gpu.SubmitFence(DisplayEarlySignal), oldSync, oldDisplays);
+        var item = (copy, Gpu.SubmitFence(early), oldSync, oldDisplays);
         using (Scheduler.Block()) using (FrameLedger.Time(FrameLedger.Cat.GuestGpuWait))
             _displayQueue.TryAdd(item, () => GuestThread.Current?.Core.StopRequested != true);
         GpuQueue.CountGuestWait(GpuQueue.GuestWait.DisplayQueue, t0);
+        if (_earlyAuto != null) FeedEarlyAuto(tq);
         return 0;
+    }
+
+    /// <summary>One frame for <see cref="AdaptiveEarlySignal"/>: the interval between entries and the time the game was
+    /// blocked in this one (the pending-count wait and the queue wait).</summary>
+    void FeedEarlyAuto(long tq)
+    {
+        long now = System.Diagnostics.Stopwatch.GetTimestamp();
+        double tick = 1000.0 / System.Diagnostics.Stopwatch.Frequency;
+        lock (_earlyAuto!)
+        {
+            long last = _lastDisplayEntry;
+            _lastDisplayEntry = now;
+            if (last == 0) return;
+            _earlyAuto.OnFrame((now - last) * tick, (now - tq) * tick, out bool changed);
+            if (changed) Log.Info($"[early-auto] {_earlyAuto.State}: {_earlyAuto.LastDecision}");
+        }
     }
 
     [Hle]
