@@ -64,6 +64,7 @@ public sealed unsafe class HleGuestCodeKernelTests(GuestMemoryFixture fx)
         var oldMode = Jit.Mode;
         CpuCore.InstructionsPerSecond = 0;
         NativeX64Compiler.Instance.HotInstructions = 1;
+        using var jitOn = JitTestState.Enable(); // other tests' emulators may have switched the JIT off
         try
         {
             foreach (var backend in Backends())

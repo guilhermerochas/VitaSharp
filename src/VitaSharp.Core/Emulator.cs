@@ -101,9 +101,16 @@ public sealed class Emulator : IDisposable
     public event Action<GuestThread, Exception>? Fatal;
     public volatile bool Running;
 
+    /// <summary>The process-wide JIT state the root emulator replaced (restored by <see cref="Dispose"/>).</summary>
+    (bool Enabled, string Mode)? _jitBefore;
+
     public Emulator(EmulatorOptions options)
     {
+
         Options = options;
+        // the JIT switches are process-wide: Dispose gives them back, so an emulator built with EnableJit = false (the
+        // HLE unit tests, the disasm command) does not leave the JIT off for everything that runs after it
+        _jitBefore = (Jit.Enabled, Jit.Mode);
         Jit.Enabled = options.EnableJit;
         string? backend = options.CpuBackend ?? Environment.GetEnvironmentVariable(EnvVars.Cpu);
         if (!Jit.Select(backend))
@@ -922,6 +929,7 @@ public sealed class Emulator : IDisposable
     {
         Stop();
         if (Parent != null) return; // the GPU and host devices are the first process's
+        if (_jitBefore is { } jit) { Jit.Enabled = jit.Enabled; Jit.Select(jit.Mode); _jitBefore = null; }
         EmulationPause.Changed -= OnPauseChanged;
         Gpu.Dispose();
         Gpu.Backend?.Dispose();
