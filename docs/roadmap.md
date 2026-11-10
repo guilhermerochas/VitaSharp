@@ -760,6 +760,19 @@ Lista de itens futuros do VitaSharp. Marque `[x]` quando um item for concluído.
   (2) carregar o pspemu e seguir as funções que faltam pelos logs; (3) primeiro um homebrew de PSP simples, depois um
   jogo; (4) medir o desempenho (é emulação dentro de emulação: esperar lento no início, otimizar depois). Exige o
   firmware com os módulos do pspemu; nada do firmware vai para o repositório
+  - Como o SceCompat move o núcleo de compatibilidade (estudo do bootimage SceCompat 3.74, lote 11, 10/11/2026): o
+    pspemu (NPXS10028) pede uma janela de memória (`sceCompatAllocCdramWithHole`: 64 MB com um buraco em +32 MB, vista
+    cached e uncached, mais um bloco de CDRAM do kernel); `sceCompatInitEx` carrega `vs0:app/NPXS10028/pcff.skprx` em
+    CDRAM+0x3000000 e `os0:kd/pcbc.skprx` em CDRAM+0x600000 (SceSblFwLoader), sobe o clock (ScePower 0x14D) e reserva um
+    núcleo ARM para eles (SceGrab); `sceCompatStart` liga esse núcleo. Daí em diante o PSP do lado do núcleo e o pspemu
+    conversam por um bloco compartilhado: 16 canais de pedidos (`sceCompatWaitAndGetRequest`, fila de 16 por canal),
+    interrupções nos dois sentidos (`sceCompatInterrupt` 1..15, `sceCompatWaitIntr` 0..2), registradores de 32 bits
+    (`Read/WriteShared32`, `WriteSharedCtrl` com o controle), valores de retorno (`ReturnValueEx`), o bloco "dat" de
+    0x1038 bytes e um aperto de mão em CDRAM+0x3D78000 (estados 1/2/3) para boot, suspensão e retomada. No HLE de hoje
+    (`Compat.cs`) tudo o que não depende do núcleo segue o módulo; InitEx/Start estão marcados default (0x80027205) e
+    NÃO contam como feitos. Para emular: rodar o pcff.skprx/pcbc.skprx num segundo núcleo ARM emulado (bare-metal, com
+    o hardware que ele toca), ligado ao bloco compartilhado acima. Obs.: o `ScePsp2Compat` não é do pspemu: é a camada
+    POSIX do WebKit (vs0:data/external/webcore).
 - [ ] Emular tudo o que for possível do Vita (diretriz do usuário, 10/11/2026): além dos jogos e do sistema, listar
   os recursos do aparelho ainda não emulados (ex.: PSP, PS Mobile/PSM, Remote Play/PS TV, Near, Party, Content
   Manager, câmera/AR, apps de vídeo/música/browser) e abrir um item por recurso com o caminho (LLE do módulo real +
