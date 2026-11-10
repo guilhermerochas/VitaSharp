@@ -53,14 +53,19 @@ public sealed partial class SqliteVsh : HleModule
     sealed class Blob { public sqlite3_blob H = null!; public Db Db = null!; }
 
     /// <summary>A function call's context (valid while the guest function runs).</summary>
-    sealed class Ctx { public sqlite3_context H = null!; public uint UserData; public readonly List<uint> Bufs = new(); }
+    sealed class Ctx
+    {
+        public sqlite3_context H = null!; public uint UserData; public Db? Db;
+        public readonly List<uint> Bufs = new();
+        public readonly List<(uint Del, uint Data)> Aux = new(); // sqlite3_set_auxdata: dropped when the call returns
+    }
 
     /// <summary>A value: a function argument (live while the function runs) or a column value (a copy).</summary>
     sealed class Val
     {
         public int Type; // 1 int, 2 float, 3 text, 4 blob, 5 null
         public long I; public double D; public byte[]? Bytes;
-        public uint Text, Blob;
+        public uint Text, Blob, Text16, Text16Be; // guest copies (UTF-8, blob, UTF-16LE, UTF-16BE)
     }
 
     static void Init()
@@ -524,7 +529,7 @@ public sealed partial class SqliteVsh : HleModule
         return v;
     }
 
-    void FreeVal(Val v) { Free(v.Text); Free(v.Blob); Drop(v); }
+    void FreeVal(Val v) { Free(v.Text); Free(v.Blob); Free(v.Text16); Free(v.Text16Be); Drop(v); }
 
     // ---- user functions and collations
 
@@ -536,23 +541,23 @@ public sealed partial class SqliteVsh : HleModule
         string n = Str(name) ?? "";
         if (xFunc != 0)
         {
-            delegate_function_scalar f = (ctx, _, args) => RunFunction(xFunc, ctx, app, args);
+            delegate_function_scalar f = (ctx, _, args) => RunFunction(xFunc, ctx, app, args, d);
             d.Keep.Add(f);
             return raw.sqlite3_create_function(d.H, n, nArg, enc & 0xF, null, f);
         }
         if (xStep != 0 && xFinal != 0)
         {
-            delegate_function_aggregate_step s = (ctx, _, args) => RunFunction(xStep, ctx, app, args);
-            delegate_function_aggregate_final fin = (ctx, _) => RunFunction(xFinal, ctx, app, null);
+            delegate_function_aggregate_step s = (ctx, _, args) => { CountAggregateStep(ctx); RunFunction(xStep, ctx, app, args, d); };
+            delegate_function_aggregate_final fin = (ctx, _) => { try { RunFunction(xFinal, ctx, app, null, d); } finally { FreeAggregate(ctx); } };
             d.Keep.Add(s); d.Keep.Add(fin);
             return raw.sqlite3_create_function(d.H, n, nArg, enc & 0xF, null, s, fin);
         }
         return raw.sqlite3_create_function(d.H, n, nArg, enc & 0xF, null, (delegate_function_scalar?)null);
     });
 
-    void RunFunction(uint fn, sqlite3_context ctx, uint app, sqlite3_value[]? args)
+    void RunFunction(uint fn, sqlite3_context ctx, uint app, sqlite3_value[]? args, Db? db = null)
     {
-        var c = new Ctx { H = ctx, UserData = app };
+        var c = new Ctx { H = ctx, UserData = app, Db = db };
         uint ch = HandleOf(c);
         var vals = (args ?? []).Select(FromNative).ToList();
         uint argv = vals.Count == 0 ? 0 : Malloc((uint)vals.Count * 4);
@@ -563,6 +568,7 @@ public sealed partial class SqliteVsh : HleModule
             foreach (var v in vals) FreeVal(v);
             Free(argv);
             foreach (uint b in c.Bufs) Free(b);
+            foreach (var (del, data) in c.Aux) RunDestructor(del, data);
             Drop(c);
         }
     }
