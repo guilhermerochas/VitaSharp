@@ -1390,7 +1390,7 @@ Lista de itens futuros do VitaSharp. Marque `[x]` quando um item for concluído.
   `config.ini` existente (o jogador do vídeo já tinha jogado) a aplicação da configuração acontece depois do 1º
   Present e cai na estrutura 1. Próximo passo: descobrir o formato do config.ini (o jogo lê com o FIOS) e testar com
   um; se for isso, o defeito também existe num Vita sem config e não é do emulador
-- [ ] Silent Hill 4 (SILH00004), controles: não iniciado nesta rodada. Preparado: `<scratchpad>\c24\sh4.nav` e
+- [x] Silent Hill 4 (SILH00004), controles (o relato era visual): não iniciado nesta rodada. Preparado: `<scratchpad>\c24\sh4.nav` e
   `ux0:data/sh4/env.txt` com `SH4_AUDIT_PAD=1` (o port loga `[audit-pad]` com os eixos e `[audit-pad-player]` com a
   rotação). Atenção: nos scripts NAV, `lstick x y` usa -1..1 (para frente = `lstick 0 -1`); agora aceita rampa
   (`lstick x y quadros rampa`)
@@ -1419,6 +1419,15 @@ Lista de itens futuros do VitaSharp. Marque `[x]` quando um item for concluído.
   dele, sem libc/libm do sistema; o port não tem opção de FOV). Falta uma referência no mesmo estado (o port no
   Vita3K do usuário com `SH4_CAMERA_TRACE=1`, ou um print logo depois de "He couldn't leave Room 302..." num New Game;
   o nosso: `<scratchpad>\bA\proofs\sh4_newgame_start.png`)
+  Referência do Vita3K (rodada do usuário com `SH4_CAMERA_TRACE=1` e `SH4_CAMERA_SNAP=1`, 10/11): a estrutura da
+  câmera do jogo é a mesma nos dois emuladores (no nosso dump achada em 0x848E5B70, no snap do Vita3K em +0x11B70):
+  olho a 300 unidades acima da base (Vita3K -15/-315, aqui -18/-318: o Vita3K tinha andado, x/z também diferem),
+  vetores de direção unitários, o par de parâmetros da câmera (-3.721, 100.0) idêntico, e o giro igual (0,0667
+  rad/quadro na mesma sensibilidade 3/10). Ou seja, a altura, a inclinação e a abertura saem da mesma conta do port
+  nos dois: a vista estreita é do próprio port, não do VitaSharp. Diferenças pequenas que sobram: o 4º componente dos
+  vec4 de posição é 1.0 aqui e 0.0 no Vita3K (não entra na matriz WVP que medimos), e o yaw inicial de um New Game sem
+  entrada é -1,395092 aqui contra -1,370750 no Vita3K (o usuário mexeu no analógico antes). O vídeo do Vita real
+  (i1CuZULiQ6w) parece mais aberto; pode ser outra versão do port. Fechado como comportamento do port
 - [ ] Comparação com o Vita3K (pedido do usuário): lista de lacunas em `<scratchpad>\c24\vita3k_gap.tsv` (agente de
   tarefas rápidas). Do lado do usuário só ~20 funções reais faltavam; feitas: aliases sceKernelLock/Unlock/TryLock
   LwMutex_0/_16XX, _sceKernelSuspend/ResumeThreadForVM, _sceKernelGetRandomNumber,
