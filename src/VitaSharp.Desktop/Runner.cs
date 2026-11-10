@@ -739,6 +739,7 @@ public static class Runner
                 long f = VitaSharp.Core.Hle.Modules.Display.FramesPresented;
                 Log.Info($"FPS frame {f}: {(f - fpsFrames) / (now - fpsAt):F1} frames/s");
                 LogAllocWindow(allocMarks, f);
+                if (SessionReport.ThreadMarkFrame < 0 && f >= SessionReport.ThreadMarkFrom) SessionReport.MarkThreadCpu(f);
                 fpsFrames = f; fpsAt = now;
             }
             if (emu.ExecRequest != null)

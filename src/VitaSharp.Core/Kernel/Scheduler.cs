@@ -30,6 +30,10 @@ public static class Scheduler
 
     static readonly Pool App = new(), Sys = new();
 
+    /// <summary>Statistics (PERF sched): acquires that had to wait for a core, and waits repeated after a wake-up that
+    /// did not get one (another thread took it, or a timeout poll).</summary>
+    public static long AcquireBlocked, AcquireRewaits;
+
     static Pool PoolOf(GuestThread t) => t.OnSystemCore ? Sys : App;
     static int CoresOf(Pool p) => p == Sys ? SystemCores : Cores;
 

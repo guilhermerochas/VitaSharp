@@ -13,9 +13,13 @@ public static class Wait
     /// VITASHARP_SYSCALL_LATENCY_US overrides it (timing bisection).</summary>
     public static int SyscallLatencyUs = int.TryParse(Environment.GetEnvironmentVariable(EnvVars.SyscallLatencyUs), out var lat) ? lat : 30;
 
+    /// <summary>Statistics (PERF sched): host waits inside blocking syscalls, and wake-up latencies served.</summary>
+    public static long BlockingWaits, Latencies;
+
     static void Latency()
     {
         if (SyscallLatencyUs <= 0 || GuestClock.Turbo) return;
+        Interlocked.Increment(ref Latencies);
         PreciseSleep.Until(System.Diagnostics.Stopwatch.GetTimestamp() + SyscallLatencyUs * System.Diagnostics.Stopwatch.Frequency / 1_000_000);
     }
 
@@ -79,6 +83,7 @@ public static class Wait
                 // blocked: give the emulated core away; take one back before touching guest state again (never while
                 // holding sync, or a core-holding signaller could deadlock against us)
                 if (self != null) Scheduler.Release(self);
+                Interlocked.Increment(ref BlockingWaits);
                 Monitor.Wait(sync, sliceMs);
                 waited = true;
                 if (self != null && !self.HasCore)
@@ -112,10 +117,21 @@ public static class Wait
     /// =0 on none.</summary>
     static readonly ulong DelaySpinMinUs = Environment.GetEnvironmentVariable(EnvVars.DelaySpin) switch { "1" => 0, "0" => ulong.MaxValue, _ => 5000 };
 
+    /// <summary>Statistics (PERF delays): guest delays per thread name, by length (0, up to 100 us, up to 1 ms, up to
+    /// 5 ms, longer).</summary>
+    public static readonly System.Collections.Concurrent.ConcurrentDictionary<string, long[]> Delays = new();
+
+    static void CountDelay(GuestThread t, ulong us)
+    {
+        var a = Delays.GetOrAdd(t.Name ?? "?", static _ => new long[8]);
+        Interlocked.Increment(ref a[us == 0 ? 0 : us <= 100 ? 1 : us <= 1000 ? 2 : us <= 5000 ? 3 : 4]);
+    }
+
     /// <summary>Plain sleep that stays responsive to emulator shutdown.</summary>
     public static void Sleep(ulong microseconds)
     {
         var self = GuestThread.Current;
+        if (self != null) CountDelay(self, microseconds);
         if (microseconds == 0) { Thread.Yield(); Latency(); return; }
         if (microseconds < (ulong)SyscallLatencyUs) microseconds = (ulong)SyscallLatencyUs; // a delay cannot be shorter than a reschedule
         // guest time: follows the test speed factor, and turbo mode skips the wait
@@ -125,7 +141,7 @@ public static class Wait
             // the delay starts where the thread's emulated CPU time is, and it resumes at the deadline however late the
             // host wakes it (CpuCore.WokeAt): pacing sleeps and timer wake-ups overshoot by fractions of a millisecond
             long end = (self?.Core.BlockedAt ?? GuestClock.Ticks) + GuestClock.FromSeconds(microseconds / 1e6 / TimeScale.Wait), slice = GuestClock.FromSeconds(0.05);
-            bool spin = microseconds >= DelaySpinMinUs;
+            bool spin = microseconds >= DelaySpinMinUs, slept = false;
             // sceKernelDelayThreadCB: callbacks notified during the delay run inside it, as they arrive, and the delay
             // goes on. Jak and Daxter's vblank-callback thread sits in DelayThreadCB(0xFFFFFFFF) and counts vblanks in
             // its callback: run only on return, its callback never ran and the game's vsync counter stood still.
@@ -151,6 +167,14 @@ public static class Wait
                 }
                 // sleep in slices so a stop request is noticed; short delays really sleep instead of spinning a host core
                 GuestClock.WaitUntil(Math.Min(end, GuestClock.Ticks + slice), spin);
+                slept = true;
+            }
+            if (slept && self != null && Delays.TryGetValue(self.Name ?? "?", out var st))
+            {
+                // statistics: delays that slept on the host, total requested and total overshoot past the deadline (us)
+                Interlocked.Increment(ref st[5]);
+                Interlocked.Add(ref st[6], (long)microseconds);
+                Interlocked.Add(ref st[7], (long)((GuestClock.Ticks - end) * 1e6 / System.Diagnostics.Stopwatch.Frequency));
             }
             self?.Core.WokeAt(end);
         }
