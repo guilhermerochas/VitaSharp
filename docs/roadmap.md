@@ -444,7 +444,10 @@ Lista de itens futuros do VitaSharp. Marque `[x]` quando um item for concluído.
   tenta o EARLY por uma janela de 60 quadros só quando o jogo perde a cadência (menos de 90% dos intervalos perto da
   mediana) e espera >= 3 ms/quadro na fila de display; mantém só se o quadro médio cair 5%, reconfere a cada 900
   quadros e recua (300 -> 7200 quadros) quando não ajuda. Só por env; ainda não medido no celular (KZ em medição;
-  F1 sem estado compatível com o build): virar padrão do Android só com KZ melhor e F1 igual
+  F1 sem estado compatível com o build). KZ escada (slot 5 salvo pelo build, parcial: 1 base, 2 auto): base 24,7 fps,
+  auto 26,1/25,5 (+3-5%), p90 66,6 nos três, fila de display ~7,5 ms/quadro igual; o auto ficou em EARLY quase todo o
+  tempo (uma reconferência voltou à conclusão e retentou). A 1ª tentativa compara com quadros de carga (63 ms): ganho
+  inflado no começo. Faltam a 2ª corrida base e o F1 corrida (precisa de estado do mesmo build) antes de virar padrão
 
 - [ ] Uncharted (PCSA00029) no Android: plantas piscando no começo do Prologue (Drake parado; APK LLVM perf/uc-cpu, dump
   `and_flicker/PCSA00029_plants075.vsgd`, presents 4000-4150, escala 0,75; pisca em 0,75 e 1,0, nenhuma
