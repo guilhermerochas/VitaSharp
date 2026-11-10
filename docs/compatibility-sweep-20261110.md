@@ -1,0 +1,51 @@
+# Varredura de compatibilidade (10/11/2026)
+
+Agente A, branch fix/bugs-a-2, build do main 5843bbd. Cada jogo instalado no ux0 do usuário (47, por junction numa pasta
+de dados de teste, saves copiados) rodou headless com Vulkan por 180 s, um por vez, fixado em 0xF0, com uma entrada
+roteirizada (cross a cada 150 quadros, START a cada 600). Colunas: até onde chegou (pelos prints a cada 300 quadros),
+quadros apresentados, fps (média da rodada / mediana e mínimo das janelas de 5 s), funções HLE sem implementação, linhas
+`[Error]`. O fps headless não é o da janela (sem vsync e com outro emulador às vezes rodando ao mesmo tempo).
+
+Achado e corrigido: **MotorStorm RC (PCSA00034)** travava no quadro 1 (o caminho rápido em código guest do
+`sceKernelSignalLwCond` perdia sinais dados por uma cópia da área da lwcond); correção genérica em be76b00.
+
+Nenhum outro jogo travou, deu exceção ou chamou função sem implementação nesses 180 s. Os que pararam em
+"touch to start"/"press start" esperam toque ou um START mais longo que o roteiro dá (não são defeitos).
+
+## Resultados
+
+| ID | Jogo | Chegou a | Quadros (180 s) | fps médio / mediana / mín | Unimpl | Erros | Notas |
+|---|---|---|---|---|---|---|---|
+| DEADSPACE | Dead Space | menu principal | 10380 | 57.6 / 59.9 / 59.8 | 0 | 0 | 60 fps |
+| MANIA0001 | Sonic Mania | gameplay (Green Hill) | 9773 | 54.3 / 59.8 / 10.6 | 0 | 0 | 60 fps |
+| PCSA00008 | Resistance: Burning Skies™ | título (Touch here to start) | 5279 | 29.3 / 29.9 / 28.3 | 0 | 0 | precisa de toque |
+| PCSA00017 | LittleBigPlanet™ PlayStation®Vita | menu (pod) | 4452 | 24.7 / 29.8 / 4.2 | 0 | 0 | aviso: caminho 'memory:/output' não mapeado (inofensivo) |
+| PCSA00029 | Uncharted: Golden Abyss™ | título (Touch to start) | 6312 | 35.1 / 58.1 / 0.4 | 0 | 0 | 1 STALL de 5 s da GPU no 1º boot (cache de shaders frio) |
+| PCSA00034 | MOTORSTORM® RC | quadro 1 (travado) | 1 | 0.0 / 0.0 / 0.0 | 0 | 0 | **corrigido em be76b00** (lwcond por cópia da área); depois: tutorial de condução |
+| PCSA00048 | Table Top Tanks | título (Touch the screen) | 2883 | 16.0 / 22.7 / 1.0 | 0 | 0 | carregamento lento (1-4 fps), dirs '/asset_00/...' não mapeados (FIOS LLE) |
+| PCSA00080 | Jak and Daxter Collection | título (Press Start) | 3290 | 18.3 / 19.9 / 11.7 | 0 | 0 | 18-20 fps (nativo 30); DisplayQueue 27 ms/quadro |
+| PCSA00115 | MLB® 14 The Show™ | título (Swipe) | 9684 | 50.8 / 59.9 / 6.7 | 0 | 4 | 4 erros = sondagem de memória do jogo (AllocMemBlock OOM esperado) |
+| PCSA00126 | God of War® Collection | menu (Credits) | 5875 | 32.6 / 33.5 / 2.7 | 0 | 0 |  |
+| PCSA00152 | Soul Sacrifice™ Delta | filme/intro | 3988 | 22.1 / 29.7 / 3.0 | 0 | 0 |  |
+| PCSA00552 | Invizimals™: The Resistance | menu principal | 4475 | 24.4 / 29.8 / 3.6 | 0 | 0 |  |
+| PCSB00097 | NINJA GAIDEN Σ PLUS | gameplay | 4951 | 27.5 / 30.0 / 18.9 | 0 | 0 | 30 fps |
+| PCSB00232 | Call of Duty® Black Ops: Declassified (рус) | título (Press START) | 5130 | 28.5 / 30.0 / 15.8 | 0 | 0 | START de 8 quadros não passa; de 30 quadros passa (teste à parte) |
+| PCSB00245 | Persona 4 GOLDEN | gameplay (Shopping District) | 5004 | 26.4 / 29.9 / 8.3 | 0 | 0 |  |
+| PCSB01070 | The Deer God | gameplay | 19952 | 110.8 / 72.2 / 8.1 | 0 | 0 | IMMEDIATE sem ritmo no headless (110 fps) |
+| PCSB01073 | GOD WARS Future Past | cena de abertura | 8696 | 48.3 / 59.8 / 2.8 | 0 | 0 |  |
+| PCSB01240 | Devious Dungeon | gameplay | 9935 | 55.2 / 59.8 / 21.5 | 0 | 0 | 60 fps |
+| PCSC00045 | Killzone®: Mercenary | cartão Valor (diálogo de toque) | 3584 | 19.9 / 29.9 / 0.7 | 0 | 0 | precisa de toque |
+| PCSE00002 | F1 2011 | corrida | 8917 | 49.5 / 58.6 / 25.1 | 0 | 0 | ~58 fps |
+| PCSE00006 | ARMY CORPS OF HELL | Formation (menu) | 5033 | 27.9 / 30.0 / 15.2 | 0 | 0 |  |
+| PCSE00011 | Silent Hill: Book of Memories | seleção de área | 2906 | 16.1 / 17.2 / 2.6 | 0 | 0 | 17 fps de mediana nesta rodada (outro emulador junto) |
+| PCSE00015 | Shinobido 2: Revenge of Zen | gameplay | 4504 | 25.0 / 29.8 / 13.0 | 0 | 2 | 2 erros: AllocMemBlock(gxm, CDRAM, 256 KB) sem memória; o jogo segue |
+| PCSE00056 | Sonic & All-Stars Racing Transformed™ | menu | 5301 | 28.9 / 29.9 / 20.9 | 0 | 0 |  |
+| PCSE00089 | Need For Speed™ Most Wanted | diálogo do Origin | 4277 | 23.7 / 29.8 / 2.1 | 0 | 0 | X de 8 quadros não passa (rodada guiada passa) |
+
+## Não rodados nesta rodada
+
+PCSE00093, PCSE00213, PCSE00233, PCSE00269, PCSE00271, PCSE00293, PCSE00333, PCSE00491, PCSE00589, PCSE00606,
+PCSE00781, PCSE00914, PCSE01023, PCSE01235, PCSF00024, PCSF00034, PCSF00476, PCSG00198, PCSG00537, PCSG00845,
+PCSG00952, SILH00004: a limpeza de arquivos temporários do Windows (Storage Sense, disco a 99%) apagou as DLLs do build
+da varredura às 15:37 e às 16:17, e essas rodadas não iniciaram (o "crash" do Gravity Rush era a StbTrueTypeSharp.dll
+apagada). Ficam para a próxima rodada.
