@@ -3445,11 +3445,38 @@ on-existing PPS 0 e nenhum quadro). Ainda aberto: depois da carga no meio do fil
     nome para na f625 e a `main` faz a cena 87 ms depois (sem corrida, `s4`); com 2.000 a `main` chega na cena dela na
     f342/f378 com a thread sem nome ainda no laço (`s3`, `s5`), os dois contextos se cruzam (0x805B0006) e o jogo aborta
     (assert do SceLibc, `s1`). Falta achar como a `main` manda a thread sem nome parar (não é mutex nem semáforo:
-    provavelmente uma variável lida no topo do laço) e por que no Vita ela para antes; até lá o custo de 12.000 fica
+    provavelmente uma variável lida no topo do laço) e por que no Vita ela para antes; até lá o custo de 12.000 fica (achado da rodada 5)
+    Agente B (10/11/2026, fix/bugs-b-6, `<scratchpad>\bB6\runs\a2000`, `b_io7`, `c_full`): **corrigido**. Não existe
+    sinal da `main` para a thread sem nome: ela é a sequência de logos (0x81196FAB: aviso de salvamento, Konami,
+    WayForward, CRI/Wwise, ~18 s de fades em tempo fixo), que no fim abre a tela de carregamento (0x81196551, o livro no
+    canto). O jogo serializa quem desenha com uma trava gráfica contada (0x81224BC8, sobre um mutex) que só fica ligada
+    enquanto os logos ou a tela de carregamento rodam; a `main`, ao terminar de carregar, chama o "fecha a tela de
+    carregamento" (0x8119714E), que só espera a tela de carregamento e desliga a trava. Se a `main` chega antes do fim
+    dos logos, a trava some com os logos ainda desenhando e os jobs de render (`jobQueueWorker1`) desenham no mesmo
+    contexto: 0x805B0006 e o assert. No Vita isso nunca acontece porque o carregamento é mais lento que os logos: em
+    vídeo de um Vita (YouTube BXrVtH4HP2w, ~2:07) os logos duram ~18 s e a tela de carregamento depois deles ~9 s.
+    Aqui, com o mutex a 2.000 a `main` acabava em 14,8 s (antes dos logos acabarem); a `main` lê 139 MB no boot e o
+    modelo de leitura estava a 25 MB/s (5,5 s). O cartão de memória do Vita lê a 6,3-7,6 MB/s (medição da Digital
+    Foundry dos cartões oficiais, 2012): com `IoTiming` a 7 MB/s e o lock/unlock de mutex cobrado como entrada no kernel
+    (2.000; o `sceKernelLockMutex` do firmware é um syscall direto ao threadmgr, o escalonador só entra quando a thread
+    bloqueia), os logos duram 18,8 s e a tela de carregamento depois deles 10 s, como no console; 0 erros 0x805B0006,
+    sem BKPT, e o cenário inteiro chega ao quarto (f2950). A criação do personagem foi de ~15 para 57-59 fps (no Vita
+    ~30: vídeo ruh4O2ZO7aA em 60 fps troca de imagem a cada 2 quadros; o jogo apresenta a 60). Efeito colateral
+    esperado: todo carregamento fica mais lento (como no Vita); os cenários com entrada por número de quadro podem
+    precisar de mais quadros. Outros jogos (build com as duas mudanças contra a main, mesma raiz de dados, `kz_idle`, `uc_menu`,
+    `f1_menu`): Killzone 29-30 fps no gameplay nos dois (o gameplay chega igual com 7 MB/s), Uncharted 59-60 nos menus,
+    F1 25 nos filmes e 59-60 nos menus; as quedas isoladas de uma rodada de cada lado coincidiram com outro emulador
+    ou a suíte de testes rodando junto e não se repetiram
   - Crazy Market (PCSE00291) e Soul Sacrifice Delta: o Crazy Market não está mais instalado; o Soul Sacrifice chegou ao
     fogo e à fumaça da primeira área na rodada do agente B de hoje (`<scratchpad>\bB2\runs\soulsac_boot`).
   - NIDs que faltavam (FFBFC540, D5B26179, sceNpSnsFacebookInit, sceCoredumpRegisterCoredumpHandler): todos implementados;
     0 "Unimplemented" nas sete execuções
+- [x] Suíte `Category!=Slow`: 3 falhas do NativeJitTests só na suíte completa (a classe sozinha passava 37/37; agente B,
+  10/11/2026, fix/bugs-b-6). Causa: o construtor do `Emulator` escreve o `Jit.Enabled`/`Jit.Mode` do processo e os testes
+  de HLE criam emuladores com `EnableJit = false` sem devolver; os testes que rodavam depois (Invalidation, TierUp,
+  Dispatcher) nunca compilavam um bloco. Agora o emulador devolve o estado no `Dispose` e os testes que precisam de
+  blocos compilados ligam o JIT na duração deles (`JitTestState.Enable`). Reproduzido na main (`<scratchpad>\bB6\runs\t1`:
+  1558/1562, 3 falhas) e verde depois em 3 suítes completas seguidas
 - [ ] Filmes no celular ainda mais lentos que no PC (31/10/2026, perf/android-phone-2): o primeiro filme do F1 2011 leva
   5,6 s contra 4,8 s no PC (45 grãos de silêncio no som do filme; Uncharted 40 por volta do filme do título), já com o
   decodificador H.264 do próprio Android (o da MediaTek segurava quadros: 6,25 s, 75 lacunas). Os decodificadores não

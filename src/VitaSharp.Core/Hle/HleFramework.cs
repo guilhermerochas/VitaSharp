@@ -165,12 +165,19 @@ public sealed class HleFunction
             || n.StartsWith("sceNgs") || n.StartsWith("sceKernelGetProcessTime") || n.StartsWith("sceRtc") || n.StartsWith("sceFiber")
             || n.StartsWith("sceKernelGetSystemTime") || n == "sceKernelGetThreadTLSAddr")
             return 200;
+        // A mutex lock that does not wait (the owner relocking or the mutex free) and an unlock are a kernel entry: the
+        // firmware's sceKernelLockMutex is a syscall straight into the thread manager, which only goes through the
+        // scheduler when the caller blocks (that time is the wait itself). At 12,000 like the waits below, Silent Hill:
+        // Book of Memories' interface thread (~1,200 heap-lock calls per frame) needed 44 ms of emulated CPU per frame
+        // and the character creation ran at 15 fps (30 on a Vita, YouTube ruh4O2ZO7aA in 60 fps).
+        if (n.StartsWith("sceKernelLockMutex") || n.StartsWith("sceKernelUnlockMutex"))
+            return 2_000;
         // Delays are in this class too, so a DelayThread(1) polling loop costs 27 us of charge + the 30 us latency floor of
         // Wait.Sleep per iteration (57 us; Killzone's job waits make ~500 per frame). Charging delays as a kernel entry
         // only (2_000) looked more realistic but changed Killzone's scripted walk (another route, where the renderer ran
         // out of VRAM), so it stays until it can be checked against hardware: docs/notes/kz-mainthread.md.
         if (n.StartsWith("sceKernelWait") || n.StartsWith("sceKernelSignal") || n.StartsWith("sceKernelDelay") || n.StartsWith("sceKernelSetEventFlag")
-            || n.StartsWith("sceKernelClearEventFlag") || n.StartsWith("sceKernelPollEventFlag") || n.StartsWith("sceKernelLockMutex") || n.StartsWith("sceKernelUnlockMutex")
+            || n.StartsWith("sceKernelClearEventFlag") || n.StartsWith("sceKernelPollEventFlag")
             || n.StartsWith("sceKernelPollSema") || n.StartsWith("sceKernelStartThread") || n.StartsWith("sceKernelChangeThread") || n.StartsWith("sceKernelExitThread")
             || n.StartsWith("sceIo") || n.StartsWith("sceDisplay") || n.StartsWith("sceAudioOut") || n.StartsWith("sceCtrl") || n.StartsWith("sceTouch")
             || n.StartsWith("sceKernelSendMsgPipe") || n.StartsWith("sceKernelReceiveMsgPipe") || n.StartsWith("sceCamera")

@@ -13,8 +13,15 @@ namespace VitaSharp.Core.Util;
 /// </summary>
 public static class IoTiming
 {
-    /// <summary>Sustained read throughput in bytes per second; 0 = instant reads.</summary>
-    public static double BytesPerSecond { get; set; } = 25e6;
+    /// <summary>
+    /// Sustained read throughput in bytes per second; 0 = instant reads. The Vita memory card (where installed games
+    /// live) reads at 6.3-7.6 MB/s (Digital Foundry's measurement of the official cards, 2012). At the earlier 25 MB/s
+    /// Silent Hill: Book of Memories read its 139 MB of boot data in 5.5 s and finished loading before its fixed-length
+    /// splash sequence ended (on a Vita the loading screen after the splash stays ~9 s; YouTube BXrVtH4HP2w): the
+    /// splash and the game's render jobs then drew in the same GXM context and the game asserted. At 7 MB/s the splash
+    /// takes 18.8 s and the loading screen after it 10 s, as on the console.
+    /// </summary>
+    public static double BytesPerSecond { get; set; } = 7e6;
     /// <summary>Per-request access latency in seconds.</summary>
     public static double LatencySeconds { get; set; } = 0.0005;
     /// <summary>Bytes of a file a missing read leaves cached after its own range; 0 = no read-ahead.</summary>
