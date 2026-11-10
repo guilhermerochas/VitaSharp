@@ -31,6 +31,46 @@ public sealed partial class ProcessMgr : HleModule
         });
     }
 
+    uint _timer5;
+
+    /// <summary>
+    /// _sceKernelGetTimer5Reg(const uint64_t **reg): the user address of the process's mapping of the free-running
+    /// microsecond counter (3.74 processmgr: the base of the memblock the process object keeps for it). libkernel calls
+    /// it at start-up and computes sceKernelGetProcessTime* by reading the two words directly (hi, lo, hi again) minus
+    /// the process start time; the HLE libkernel answers those itself, so only a firmware module would read it. The
+    /// page holds the process time (the HLE start time is 0) and a host thread keeps it running (every millisecond).
+    /// </summary>
+    [Hle]
+    int _sceKernelGetTimer5Reg(Ptr<uint> reg)
+    {
+        if (reg.IsNull) return SceError.ILLEGAL_ADDR;
+        lock (this)
+        {
+            if (_timer5 == 0)
+            {
+                uint page = Mem.Alloc(0x1000, "SceKernelTimer5Reg");
+                WriteTimer5(page);
+                var emu = Emu;
+                var t = new Thread(() =>
+                {
+                    while (emu.Running) { WriteTimer5(page); Thread.Sleep(1); }
+                }) { IsBackground = true, Name = "timer5", Priority = ThreadPriority.BelowNormal };
+                t.Start();
+                _timer5 = page;
+            }
+        }
+        reg.Value = _timer5;
+        return 0;
+
+        void WriteTimer5(uint page)
+        {
+            ulong now = Emu.Kernel.ProcessTimeUs;
+            // high word last: a reader that sees the same high word twice has a consistent low word
+            GuestMemory.W32(page, (uint)now);
+            GuestMemory.W32(page + 4, (uint)(now >> 32));
+        }
+    }
+
     [Hle] uint sceKernelGetProcessParam() => Emu.Linker.ProcessParam;
     [Hle] int sceKernelGetStdin() => 0x10;
     [Hle] int sceKernelGetStdout() => 0x11;

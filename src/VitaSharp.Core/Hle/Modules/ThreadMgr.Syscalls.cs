@@ -153,6 +153,11 @@ public sealed partial class ThreadMgr
     int _sceKernelWaitEvent(int uid, uint waitPattern, Ptr<uint> resultPattern, uint opt)
         => sceKernelWaitEvent(uid, waitPattern, resultPattern, new Ptr<ulong>(OptWord(opt, 0)), new Ptr<uint>(OptWord(opt, 1)));
     [Hle] int _sceKernelPollEvent(int uid, uint waitPattern, Ptr<uint> resultPattern, Ptr<ulong> userData) => sceKernelPollEvent(uid, waitPattern, resultPattern, userData);
+    /// <summary>(events, count, mode, opt {results*, timeout*}).</summary>
+    [Hle("_sceKernelWaitMultipleEvents")]
+    [Hle("_sceKernelWaitMultipleEventsCB")]
+    int _sceKernelWaitMultipleEvents(uint events, uint count, uint mode, uint opt)
+        => sceKernelWaitMultipleEvents(events, count, mode, OptWord(opt, 0), new Ptr<uint>(OptWord(opt, 1)));
     [Hle] int _sceKernelCancelEvent(int uid, Ptr<uint> numWait) => sceKernelCancelEvent(uid, numWait);
     [Hle] int _sceKernelGetEventPattern(int uid, Ptr<uint> pattern) => sceKernelGetEventPattern(uid, pattern);
 
