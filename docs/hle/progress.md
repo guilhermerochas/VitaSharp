@@ -13,9 +13,9 @@ How many of the functions that the PS Vita firmware 3.74 exports to user code (t
 |---|---:|---:|---:|---:|---:|
 | Games imports | 1,566 | 1,566 | 0 | 1,566 | 100% |
 | System imports | 3,401 | 3,227 | 174 | 7,511 | 45.2% |
-| General | 3,480 | 3,296 | 184 | 10,329 | 33.6% |
-| All firmware 3.74 exports | 8,447 | 8,089 | 358 | 19,406 | 43.5% |
-| VitaSDK user functions | 5,905 | 5,547 | 358 | 7,006 | 84.2% |
+| General | 3,481 | 3,296 | 185 | 10,329 | 33.7% |
+| All firmware 3.74 exports | 8,448 | 8,089 | 359 | 19,406 | 43.5% |
+| VitaSDK user functions | 5,906 | 5,547 | 359 | 7,006 | 84.2% |
 
 ## Per library (308)
 
@@ -259,7 +259,7 @@ How many of the functions that the PS Vita firmware 3.74 exports to user code (t
 | SceSblRng | `os0:kd/ss_mgr.skprx` | 1 / 1 | 100% | - | - | 1 / 1 |
 | SceSblRtcMgr | `os0:kd/bootimage.skprx/SceSblPostSsMgr` | 7 / 7 | 100% | 7 | - | - |
 | SceSblSsUpdateMgr | `os0:kd/bootimage.skprx/SceSblUpdateMgr` | 25 / 25 | 100% | 24 | - | 25 / 25 |
-| SceSblUtMgr | `os0:kd/bootimage.skprx/SceSblPostSsMgr` | 4 / 5 | 80% | 4 | - | - |
+| SceSblUtMgr | `os0:kd/bootimage.skprx/SceSblPostSsMgr` | 5 / 5 | 100% | 5 | - | - |
 | SceScreenShot | `vs0:sys/external/libSceScreenShot.suprx` | 8 / 9 | 88.8% | - | 4 / 4 | 1 / 2 |
 | SceSecondScreen | `vs0:app/NPXS10013/libSceSecondScreen.suprx` | 0 / 3 | 0% | - | - | 0 / 3 |
 | SceSensMe | `vs0:vsh/common/mms/SensMe.suprx` | 2 / 21 | 9.5% | - | - | 0 / 18 |

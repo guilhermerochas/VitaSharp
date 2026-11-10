@@ -1,10 +1,10 @@
-<svg xmlns="http://www.w3.org/2000/svg" width="348" height="20" role="img" aria-label="firmware 3.74 exports: 43.5% (8,447/19,406, 358 default)">
-<title>firmware 3.74 exports: 43.5% (8,447/19,406, 358 default)</title>
+<svg xmlns="http://www.w3.org/2000/svg" width="348" height="20" role="img" aria-label="firmware 3.74 exports: 43.5% (8,448/19,406, 359 default)">
+<title>firmware 3.74 exports: 43.5% (8,448/19,406, 359 default)</title>
 <linearGradient id="s" x2="0" y2="100%"><stop offset="0" stop-color="#bbb" stop-opacity=".1"/><stop offset="1" stop-opacity=".1"/></linearGradient>
 <clipPath id="r"><rect width="348" height="20" rx="3" fill="#fff"/></clipPath>
 <g clip-path="url(#r)"><rect width="140" height="20" fill="#555"/><rect x="140" width="208" height="20" fill="#dfb317"/><rect width="348" height="20" fill="url(#s)"/></g>
 <g fill="#fff" text-anchor="middle" font-family="Verdana,Geneva,DejaVu Sans,sans-serif" font-size="11">
 <text x="70" y="15" fill="#010101" fill-opacity=".3">firmware 3.74 exports</text><text x="70" y="14">firmware 3.74 exports</text>
-<text x="244" y="15" fill="#010101" fill-opacity=".3">43.5% (8,447/19,406, 358 default)</text><text x="244" y="14">43.5% (8,447/19,406, 358 default)</text>
+<text x="244" y="15" fill="#010101" fill-opacity=".3">43.5% (8,448/19,406, 359 default)</text><text x="244" y="14">43.5% (8,448/19,406, 359 default)</text>
 </g>
 </svg>

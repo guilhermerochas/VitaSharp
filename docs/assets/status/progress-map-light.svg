@@ -240,7 +240,7 @@
 <g><title>ScePartyMemberListPlugin: 2/5 (40%)</title><rect x="936.8" y="513.9" width="11" height="12.6" fill="#d8c164" stroke="#ffffff" stroke-width="1"/></g>
 <g><title>SceRegMgrService: 4/5 (80%)</title><rect x="947.9" y="513.9" width="11" height="12.6" fill="#92d864" stroke="#ffffff" stroke-width="1"/></g>
 <g><title>SceSblPmMgr: 5/5 (100%), 4 default</title><rect x="958.9" y="513.9" width="11" height="12.6" fill="#64d864" stroke="#ffffff" stroke-width="1"/></g>
-<g><title>SceSblUtMgr: 4/5 (80%), 4 default</title><rect x="969.9" y="513.9" width="11" height="12.6" fill="#92d864" stroke="#ffffff" stroke-width="1"/></g>
+<g><title>SceSblUtMgr: 5/5 (100%), 5 default</title><rect x="969.9" y="513.9" width="11" height="12.6" fill="#64d864" stroke="#ffffff" stroke-width="1"/></g>
 <g><title>SceWlan: 5/5 (100%)</title><rect x="981" y="513.9" width="11" height="12.6" fill="#64d864" stroke="#ffffff" stroke-width="1"/></g>
 <g><title>libicalss: 0/5 (0%)</title><rect x="925.8" y="526.5" width="10.6" height="13.1" fill="#d86464" stroke="#ffffff" stroke-width="1"/></g>
 <g><title>SceAACPromoter: 1/4 (25%)</title><rect x="925.8" y="539.6" width="10.6" height="10.5" fill="#d89e64" stroke="#ffffff" stroke-width="1"/></g>
