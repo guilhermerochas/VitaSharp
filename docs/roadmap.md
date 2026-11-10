@@ -875,7 +875,7 @@ Lista de itens futuros do VitaSharp. Marque `[x]` quando um item for concluído.
   aberta e quem espera quem (gate, arbitragem, cerca da display queue) em vez de trace HLE (o trace deixa tudo lento
   demais para medir); depois escolher entre gravar as cenas de processos diferentes em render passes separados (sem
   arbitragem) ou liberar o gate quando outro processo espera a cena.
-- [ ] Apps do sistema rodados sozinhos (`run NPXS...`, como o launcher abre um app do sistema) caem (10/11/2026, agente
+- [x] Apps do sistema rodados sozinhos (`run NPXS...`, como o launcher abre um app do sistema) caem (10/11/2026, agente
   B, fix/bugs-b-4; logs das rodadas sem cabeça do lote HLE 11 em `<scratchpad>\hle11_out\x1_*`): NPXS10015/10004/10002
   (prefetch abort na `ScePafJobDefault`), NPXS10014 -> NPXS10018 (`SceSignup`), NPXS10009 (`SceMBJobFast`) e o NPXS10026
   (sai na hora com `sceKernelExitProcess(0x80020583)` e o emulador fica 150 s sem quadro). Causa única: sem o shell não
@@ -892,6 +892,20 @@ Lista de itens futuros do VitaSharp. Marque `[x]` quando um item for concluído.
   bloqueio/início por cima. Próximo passo: o launcher abrir os apps do sistema pelo shell de verdade (boot-shell e o
   toque no ícone, ou achar a resposta que o applauncher_plugin espera para um pedido de outro app), em vez do `run`
   sozinho
+  Corrigido (10/11/2026, agente B, fix/bugs-b-5; provas em `<scratchpad>\bB5\runs\a_*\strip.png`): o `run` de um app do
+  vs0 (o que o launcher usa) boota o shell de verdade e, quando ele está de pé (iniciou o primeiro serviço de fundo,
+  NPXS10079, depois da tela de boot e da atualização do banco), pede o app como outro app pede
+  (sceAppMgrLaunchAppByName com flags 0x20000, evento 6). No shell 3.74 o handler (0x8127D402 -> GetAppInfoJob ->
+  0x812782CC) abre a LiveArea do título para todo pedido e só mantém o pedido (e inicia o app com o 2ndStage) quando ele
+  tem 0x20000 (o que a Música usa para o Gerenciador de conteúdo); sem ele, e no `psgm:play?titleid=`, ele cancela e
+  deixa a LiveArea aberta no portão: era o "cancela na hora" das tentativas (a)/(b). Pedido antes do shell estar de pé
+  derruba o shell (salto para 0 em 0x812787E0: o applauncher_plugin ainda não foi carregado). O app abre atrás da tela
+  de bloqueio, como no Vita; enquanto o shell a mostra (sceAppMgrSetSystemImposeState2(1), 0 ao desbloquear) os quadros
+  do shell ficam por cima e os botões e toques são do shell (era o "continua compondo por cima" da tentativa (c): a
+  entrada ia para o app). Validados (headless, desbloquear, abrir um item, voltar, botão PS -> LiveArea com Continuar,
+  0 crash): Configurações (Atualização do sistema), Música (Conectar-se ao dispositivo), Vídeos, Navegador (sem rede:
+  C2-14921-7, esperado), Troféus (lista e um jogo), Gerenciador de conteúdo (cartão de memória), Email (Adicionar
+  conta). `--no-shell` roda o app sozinho como antes; `--launch-uri=` abre uma URI pelo shell
 - [x] Validar a fundo TODOS os apps do sistema (04/11/2026, pedido do usuário): cada menu, aba, categoria, sub-página,
   botão, menu de opções e caminho de voltar/fechar de cada app, abrir e fechar duas vezes, alternar entre apps (botão PS,
   retomar, encerrar); nada pode travar ou crashar. Erros só por falta de rede/PSN/USB/aparelho ficam anotados como
@@ -3418,6 +3432,20 @@ on-existing PPS 0 e nenhum quadro). Ainda aberto: depois da carga no meio do fil
     (0x80028142, 1097 vezes, igual nos dois custos) e o desbloqueio interno solta o externo, então o ritmo mais rápido
     deixa duas threads desenharem no mesmo contexto. Mudança revertida; falta ver se o Vita de verdade aceita esse lock
     (atributo do mutex 0x40010075 na criação) antes de baratear o custo
+    Agente B (10/11/2026, fix/bugs-b-5, `<scratchpad>\bB5\runs\m1`, `m2`, `s1`..`s6`; só achados, nada mudou no
+    código): (1) o mutex 0x40010075 é o lock do heap do jogo (o malloc em 0x81450342), criado com atributo 0 (não
+    recursivo); a função em ~0x8144FF00 trava o lock e chama o malloc, que trava de novo (backtrace `814500C6 8144F2D4`).
+    (2) No firmware a semântica é a nossa: o SceLibKernel 3.74 passa direto para o syscall do threadmgr
+    (NID 0x1D8D7945 -> SceThreadmgr_7FA945AD) e o threadmgr devolve 0x80028142 sem mudar a contagem quando o dono
+    trava de novo um mutex sem o bit 0x2 (attr+0x20), e só soma a contagem com o bit; o desbloqueio de dentro solta o
+    de fora no Vita também. Então os 1097 erros são do próprio jogo e não são a causa do BKPT. (3) A causa do BKPT com
+    o custo 2.000 é uma corrida na troca de quem desenha no início do carregamento: a thread sem nome (0x400101E3, o
+    laço de 30 fps da tela: Begin/EndScene, sceKernelDelayThreadCB(33.333 us), sem nenhum lock) continua desenhando
+    depois que a `main` faz a cena dela (lr 0x8127421F) e a `jobQueueWorker1` assume; com o custo antigo a thread sem
+    nome para na f625 e a `main` faz a cena 87 ms depois (sem corrida, `s4`); com 2.000 a `main` chega na cena dela na
+    f342/f378 com a thread sem nome ainda no laço (`s3`, `s5`), os dois contextos se cruzam (0x805B0006) e o jogo aborta
+    (assert do SceLibc, `s1`). Falta achar como a `main` manda a thread sem nome parar (não é mutex nem semáforo:
+    provavelmente uma variável lida no topo do laço) e por que no Vita ela para antes; até lá o custo de 12.000 fica
   - Crazy Market (PCSE00291) e Soul Sacrifice Delta: o Crazy Market não está mais instalado; o Soul Sacrifice chegou ao
     fogo e à fumaça da primeira área na rodada do agente B de hoje (`<scratchpad>\bB2\runs\soulsac_boot`).
   - NIDs que faltavam (FFBFC540, D5B26179, sceNpSnsFacebookInit, sceCoredumpRegisterCoredumpHandler): todos implementados;

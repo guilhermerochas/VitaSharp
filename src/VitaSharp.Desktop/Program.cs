@@ -240,11 +240,27 @@ public static class Program
             case "test" when args.Length >= 2:
                 return TestScenario.Run(args[1], args.Skip(2).ToArray());
             case "run" when args.Length >= 2:
-                return Runner.Run(ResolveApp(args[1]), args.Skip(2).ToArray());
+            {
+                string app = ResolveApp(args[1]);
+                var opts = args.Skip(2).ToArray();
+                // a system application (vs0:app/NPXS*) runs under the shell, as on the Vita: the shell boots and opens it
+                // (as when an application asks it to); --no-shell runs it alone (its libshellsvc then finds no shell to talk to)
+                if (SystemAppTitle(app) is { } tid && !opts.Contains("--no-shell") && Runner.Opt(opts, "--self") == null && Runner.Opt(opts, "--load-state") == null)
+                    return Runner.Run(ResolveApp("vs0:vsh/shell"), opts.Append("--self=shell.self").Append($"--launch-app={tid}").ToArray());
+                return Runner.Run(app, opts);
+            }
             default:
                 PrintUsage();
                 return 1;
         }
+    }
+
+    /// <summary>The title id of a system application folder of the installed firmware (vs0:app/NPXS*), else null.</summary>
+    internal static string? SystemAppTitle(string appDir)
+    {
+        string sys = Path.GetFullPath(Path.Combine(FsRoot, "vs0", "app"));
+        string full = Path.TrimEndingDirectorySeparator(Path.GetFullPath(appDir));
+        return string.Equals(Path.GetDirectoryName(full), sys, StringComparison.OrdinalIgnoreCase) ? Path.GetFileName(full) : null;
     }
 
     public static string ResolveApp(string arg)
@@ -566,7 +582,8 @@ public static class Program
         Console.WriteLine("  firmware-info                        show the installed firmware version");
         Console.WriteLine("  firmware-verify [other fs root]      check the key modules decrypt; compare files with another installation");
         Console.WriteLine("  import-trophies <folder>|--vita3k    import a PS Vita's ur0:user/00/trophy (decrypted copy) or Vita3K's trophies");
-        Console.WriteLine("  run <TITLEID|folder> [options]       boot a title (also a system app: NPXS10008; a vs0: folder with --self=x.self)");
+        Console.WriteLine("  run <TITLEID|folder> [options]       boot a title (a system app such as NPXS10008 boots the shell, which opens it; --no-shell: alone; a vs0: folder with --self=x.self)");
+        Console.WriteLine("  run options: --launch-app=<TITLEID> | --launch-uri=<uri> [--launch-flags=N] [--launch-after=<frames>]  with boot-shell: once the shell is up, ask it to start the app (flags 0x20000) / open the URI (as an application asks it)");
         Console.WriteLine("  boot-shell [options]                 boot the installed firmware's shell (vs0:vsh/shell/shell.self)");
         Console.WriteLine("  registry [prefix] [path=value]       list / set the system registry (firmware template + written values)");
         Console.WriteLine("  run <game.vpk> [--reinstall] [options]  install the VPK if needed, then boot it");

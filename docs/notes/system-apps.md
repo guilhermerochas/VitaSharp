@@ -9,11 +9,22 @@ was checked with firmware 3.74 copied from Vita3K into a scratch data folder.
 
 ```
 VitaSharp.Desktop --data=<root> boot-shell [run options]        # the shell
-VitaSharp.Desktop --data=<root> run NPXS10008                   # a system app (vs0:app is searched after ux0:app)
+VitaSharp.Desktop --data=<root> run NPXS10008                   # a system app, through the shell (see below); --no-shell: alone
 VitaSharp.Desktop --data=<root> registry /CONFIG/SYSTEM/        # list registry keys; path=value sets one
 ```
 
 Test scenarios: `title=vs0:vsh/shell` plus `args=--self=shell.self ...`, or `title=NPXS10008`.
+
+A system app (`run NPXS...`, the launcher's system app tiles) runs under the real shell, as on the Vita: `run` of a
+vs0:app folder boots the shell with `--launch-app=<title id>`, and once the shell is up (it has started its first
+resident background service, NPXS10079, after its boot screen and database update) the host asks it to start the app the
+way another application does (sceAppMgrLaunchAppByName with flags 0x20000: shell event 6). The 3.74 shell's handler
+(0x8127D402 -> GetAppInfoJob -> 0x812782CC) opens the title's LiveArea for every request and keeps the request, starting
+the app at once (sceAppMgrLaunchAppByName2ndStage), only when it carries 0x20000; without it, and for a
+`psgm:play?titleid=` URI (`--launch-uri=`), it cancels the request and leaves the LiveArea open on the gate. A request
+handled before the shell is up crashes it (jump to 0 from 0x812787E0: the applauncher_plugin is not loaded yet). The app
+starts behind the lock screen; while the shell shows it (sceAppMgrSetSystemImposeState2(1), cleared with 0 when it is
+unlocked) the shell's frames are on top and the buttons and touches are the shell's.
 The lock screen opens with `--input=swipe@f400:0.95:0.08:0.3:0.7:f30` (the peel corner).
 In the launcher, the system app bubbles of the Vita-style home screen start the app (same `run` path
 as a game), and the toolbar button **Sistema do Vita** boots the real shell in the emulator window

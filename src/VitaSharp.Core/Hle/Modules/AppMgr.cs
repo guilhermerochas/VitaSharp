@@ -512,9 +512,8 @@ public sealed partial class AppMgr : HleModule
         string u = GuestMemory.ReadCString(uri, 0x823);
         if (u.Length > 0x822) return unchecked((int)0x8002710B);
         if (Emu.Vita.Shell == null) { Log.Info($"{fn}({u}): no shell, not launched"); return 0; }
-        var pl = Emu.Vita.AddPendingLaunch(Emu, "", "", flags | 0x100000, u);
-        Log.Info($"{fn}(0x{flags:X}, {u}) from {Emu.Describe()}: request 0x{pl.App.Uid:X} for the shell");
-        Emu.Vita.PostShellEvent(Kernel.ShellEvents.LaunchRequest, pl.App.Uid, pl.App.Uid);
+        Log.Info($"{fn}(0x{flags:X}, {u})");
+        Emu.Vita.RequestLaunchByUri(Emu, u, flags);
         return 0;
     }
 
