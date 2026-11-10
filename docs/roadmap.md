@@ -1363,6 +1363,16 @@ Lista de itens futuros do VitaSharp. Marque `[x]` quando um item for concluído.
   aberto: um evento do sistema/janela que o VitaSharp entrega cedo demais (ou uma vez só). Próximo passo: descobrir o
   que dispara o delegate de 0x8102A788 (pilha 81000104 < 81000A0C < 81487FC8 < 8122DBE6 < 8103D404 < 82021B36 <
   8102A78C) e comparar com o Vita3K
+  Rodada 2 (agente A, fix/bugs-a-2, `--trace-hle` do quadro 0 com probes no setter e no Present): entre as duas
+  chamadas do setter o jogo abre a primeira cena (BeginScene + o Clear) e lê `savedata0:/config.ini`
+  (`sceIoGetstat` -> não existe; stdout "Missing config: /savedata0/config.ini", "Read config failed"); a 2ª chamada
+  é a aplicação dos padrões depois dessa falha, ainda antes do 1º Present (índice 0). O save do usuário (`dat0.slv`,
+  `SlotParam_0.bin`) não tem config.ini e o jogo não grava um em 90 s de menus. O ritmo é do próprio jogo: laço de
+  passo fixo com `sceKernelDelayThread` calculado e um vblank por troca (a fila de exibição faz `SetFrameBuf` +
+  `WaitVblankStart(1)`), 30 fps, então no Vita a alternância também seria visível a 15 Hz. Hipótese que sobra: com um
+  `config.ini` existente (o jogador do vídeo já tinha jogado) a aplicação da configuração acontece depois do 1º
+  Present e cai na estrutura 1. Próximo passo: descobrir o formato do config.ini (o jogo lê com o FIOS) e testar com
+  um; se for isso, o defeito também existe num Vita sem config e não é do emulador
 - [ ] Silent Hill 4 (SILH00004), controles: não iniciado nesta rodada. Preparado: `<scratchpad>\c24\sh4.nav` e
   `ux0:data/sh4/env.txt` com `SH4_AUDIT_PAD=1` (o port loga `[audit-pad]` com os eixos e `[audit-pad-player]` com a
   rotação). Atenção: nos scripts NAV, `lstick x y` usa -1..1 (para frente = `lstick 0 -1`); agora aceita rampa
@@ -1375,6 +1385,23 @@ Lista de itens futuros do VitaSharp. Marque `[x]` quando um item for concluído.
   parte: com o `sh4.sav` do usuário copiado (694288 bytes, lido inteiro duas vezes no boot) o Load mostra as 10 vagas
   "No game data" e o Continue fica cinza. Falta o usuário dizer o que nos controles parece errado (botão, eixo, menu
   ou gameplay)
+  Agente A (10/11/2026, fix/bugs-a-2): o "No game data" **está certo**: o `sh4.sav` do usuário só tem a área de
+  sistema/opções do port (4 bytes em 0 e 1508 em 0x7C, o resto zero), nenhuma vaga de jogo. O port o criou no primeiro
+  boot (log do usuário de 08/11 17:25: CreateFileA falhou, depois "[save] staged replacement complete" duas vezes, a
+  segunda sobre o arquivo existente, então gravar e renomear funcionam); a cópia do Vita3K do usuário é idêntica
+  (mesmo md5) e nenhuma sessão depois gravou nele. O usuário nunca salvou um jogo, em nenhum dos dois emuladores.
+  **Correção do usuário (10/11): o relato é visual, não de controle**: "quando mexo a câmera parece que o cenário se
+  mexe, não o personagem". Achados (gravação `captures\SILH00004_20261108_211441_tudo`, a única que existe):
+  girando para a direita (analógico direito X=255), o centro da câmera tirado da matriz WVP de cada desenho de cenário
+  fica parado em (417, -300, -335) nos quadros 1812-1844 (todos os 19 desenhos estáticos; os com skin usam as mesmas
+  linhas de vista), então a vista é um giro no lugar (yaw +0,0667 rad/quadro, o valor do próprio jogo no
+  `SH4_CAMERA_TRACE=1` do port), sem matriz velha nem desenho atrasado. A vista inicial de um New Game sai igual pixel a
+  pixel no backend IL e no nativo (diferença média 0,4/255). O que difere do vídeo do Vita real (YouTube i1CuZULiQ6w,
+  mesmo quarto) é a abertura: aqui HFOV ~70°/VFOV ~44° a 640x362 e a câmera colada nas paredes; um FOV estreito faz o
+  giro parecer o cenário deslizando. A projeção vem das constantes do próprio jogo (código x86 do port sobre o newlib
+  dele, sem libc/libm do sistema; o port não tem opção de FOV). Falta uma referência no mesmo estado (o port no
+  Vita3K do usuário com `SH4_CAMERA_TRACE=1`, ou um print logo depois de "He couldn't leave Room 302..." num New Game;
+  o nosso: `<scratchpad>\bA\proofs\sh4_newgame_start.png`)
 - [ ] Comparação com o Vita3K (pedido do usuário): lista de lacunas em `<scratchpad>\c24\vita3k_gap.tsv` (agente de
   tarefas rápidas). Do lado do usuário só ~20 funções reais faltavam; feitas: aliases sceKernelLock/Unlock/TryLock
   LwMutex_0/_16XX, _sceKernelSuspend/ResumeThreadForVM, _sceKernelGetRandomNumber,
