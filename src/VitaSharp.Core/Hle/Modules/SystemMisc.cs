@@ -40,6 +40,15 @@ public sealed partial class SystemMisc : HleModule
             int r = TryLoadModuleLle(lib, args, argp, out start);
             if (r < 0) return r;
         }
+        else if (PublicSysmodules.TryGetValue(id, out var files) && files.Where(FirmwareOnly).ToArray() is { Length: > 0 } fwOnly)
+        {
+            // libraries the HLE knows nothing of: the firmware's module, as the Vita loads it (HLE first, then the real one)
+            foreach (var f in fwOnly)
+            {
+                int r = TryLoadModuleLle(f, args, argp, out start);
+                if (r < 0) return r;
+            }
+        }
         else Log.Debug($"sceSysmoduleLoadModule(0x{id:X}) -> HLE");
         if (resultPtr != 0) GuestMemory.W32(resultPtr, (uint)start);
         lock (_loadedSysmodules) _loadedSysmodules.Add(id);
@@ -64,6 +73,42 @@ public sealed partial class SystemMisc : HleModule
         [0x0039] = "libsmart",     // SMART
         [0x0055] = "libSceJson",   // JSON
     };
+
+    /// <summary>
+    /// The public sysmodule ids and the vs0:sys/external modules each one loads (psp2/sysmodule.h ids; module lists as
+    /// in Vita3K's sysmodule_paths). The ids in <see cref="LleSysmodules"/> keep their own rules; for the others a module
+    /// is loaded only when the HLE has no function of any library it exports (<see cref="FirmwareOnly"/>): what the HLE
+    /// emulates stays on HLE, and a library it does not know comes from the real module instead of staying unimplemented.
+    /// </summary>
+    static readonly Dictionary<uint, string[]> PublicSysmodules = new()
+    {
+        [0x0001] = ["libnet", "libnetctl"], [0x0002] = ["libhttp"], [0x0003] = ["libssl"], [0x0004] = ["libhttp", "libssl"],
+        [0x0005] = ["libperf"], [0x000B] = ["libngs"], [0x000C] = ["libsulpha"], [0x000E] = ["libpgf"],
+        [0x000F] = ["apputil"], [0x0010] = ["libfios2"], [0x0011] = ["libime"], [0x0012] = ["np_basic"],
+        [0x0013] = ["libsystemgesture"], [0x0014] = ["liblocation"], [0x0015] = ["np_common", "np_manager", "np_basic"],
+        [0x0016] = ["libScePhotoExport"], [0x0018] = ["np_commerce2"], [0x0019] = ["np_utility"], [0x001A] = ["libvoice"],
+        [0x001B] = ["libvoiceqos"], [0x001C] = ["np_matching2"], [0x001D] = ["libSceScreenShot"], [0x001E] = ["np_ranking"],
+        [0x0020] = ["trigger_util"], [0x0021] = ["librudp"], [0x0023] = ["livearea_util"], [0x0024] = ["np_activity_sdk"],
+        [0x0025] = ["np_trophy"], [0x0026] = ["np_message_padding", "np_message"], [0x0027] = ["libSceShutterSound"],
+        [0x0028] = ["libclipboard"], [0x0029] = ["np_party"], [0x002A] = ["adhoc_matching"], [0x002C] = ["np_tus"],
+        [0x002D] = ["libscemp4"], [0x002E] = ["libnaac"], [0x002F] = ["libhandwriting"], [0x0031] = ["np_sns_facebook"],
+        [0x0032] = ["libSceVideoExport"], [0x0033] = ["notification_util"], [0x0034] = ["bgapputil"],
+        [0x0035] = ["incoming_dialog"], [0x0036] = ["libipmi_nongame"], [0x003A] = ["libmln"], [0x003B] = ["libmlndownloader"],
+        [0x003C] = ["libmlnapplib"], [0x003D] = ["libSceTelephonyUtil"], [0x0043] = ["pspnet_adhoc"],
+        [0x0044] = ["libSceDtcpIp"], [0x0045] = ["libSceVideoSearchEmpr"], [0x0046] = ["np_signaling"],
+        [0x0047] = ["libSceBeisobmf"], [0x0048] = ["libSceBemp2sys"], [0x0049] = ["libSceMusicExport"],
+        [0x004A] = ["libSceNearDialogUtil"], [0x004B] = ["liblocation_extension"], [0x004C] = ["libsceavplayer", "libscemp4"],
+        [0x004E] = ["mail_api_for_local_libc"], [0x004F] = ["libSceTeleportClient"], [0x0050] = ["libSceTeleportServer"],
+        [0x0051] = ["libSceMp4Rec"], [0x0052] = ["apputil_ext"], [0x0053] = ["np_webapi"], [0x0054] = ["avcdec_for_player"],
+    };
+
+    /// <summary>The installed firmware has <paramref name="file"/> and the HLE has no function of any library it exports.</summary>
+    internal bool FirmwareOnly(string file)
+    {
+        var mod = Firmware.FirmwareLibraries.For(Emu.Options.FsRoot).Modules
+            .FirstOrDefault(m => string.Equals(Path.GetFileNameWithoutExtension(m.VitaPath), file, StringComparison.OrdinalIgnoreCase));
+        return mod != null && mod.Libraries.Count > 0 && mod.Libraries.All(l => !Emu.Hle.KnowsLibrary(l.Library));
+    }
 
     /// <summary>
     /// SCE_SYSMODULE_INTERNAL_* (0x80000000 | n): the system software's own modules, loaded LLE from the firmware for
@@ -119,14 +164,12 @@ public sealed partial class SystemMisc : HleModule
         _lleModules ??= ModuleList(Emu.Options.LleModules, EnvVars.LleModules);
         _hleModules ??= ModuleList(Emu.Options.HleModules, EnvVars.HleModules);
         if (Listed(_hleModules, lib)) return [];
-        string app = $"app0:sce_module/{lib}.suprx", fw = $"vs0:sys/external/{lib}.suprx";
-        if (Emu.IsSystemProgram)
-        {
-            // the system software's modules: whichever vs0 module folder holds the file
-            fw = Firmware.FirmwareLibraries.For(Emu.Options.FsRoot).Modules
-                .FirstOrDefault(m => string.Equals(Path.GetFileNameWithoutExtension(m.VitaPath), lib, StringComparison.OrdinalIgnoreCase))?.VitaPath ?? fw;
-            return [fw];
-        }
+        string app = $"app0:sce_module/{lib}.suprx";
+        // the system software's modules: whichever vs0 module folder holds the file
+        string fw = Firmware.FirmwareLibraries.For(Emu.Options.FsRoot).Modules
+            .FirstOrDefault(m => string.Equals(Path.GetFileNameWithoutExtension(m.VitaPath), lib, StringComparison.OrdinalIgnoreCase))?.VitaPath
+            ?? $"vs0:sys/external/{lib}.suprx";
+        if (Emu.IsSystemProgram) return [fw];
         return !HleImplemented.Contains(lib) || Listed(_lleModules, lib) ? [app, fw] : [app];
     }
 
@@ -150,9 +193,9 @@ public sealed partial class SystemMisc : HleModule
             try
             {
                 var m = Emu.LoadModule(path);
-                // system programs: the libraries it imports that nothing provides yet (sysmodule's dependency lists),
-                // loaded and started first (games keep the HLE for those)
-                foreach (var dep in Emu.IsSystemProgram ? Emu.LoadFirmwareDependencies(m) : [])
+                // the libraries it imports that nothing provides yet (sysmodule's dependency lists), loaded and started
+                // first; a game takes from the firmware only libraries the HLE knows nothing of
+                foreach (var dep in Emu.LoadFirmwareDependencies(m))
                     if (dep.StartEntry != 0 && (int)GuestThread.Current!.CallGuest(dep.StartEntry, 0, 0) is var dr and < 0)
                         Log.Warn($"sceSysmoduleLoadModule: dependency {dep.Path} module_start = 0x{dr:X8}");
                 if (m.StartEntry != 0) startResult = (int)GuestThread.Current!.CallGuest(m.StartEntry, args, argp);

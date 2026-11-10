@@ -245,6 +245,16 @@ public sealed partial class HleRegistry : IImportResolver
         return _implementedLibraries.Contains(library);
     }
 
+    HashSet<string>? _knownLibraries;
+
+    /// <summary>True when the HLE has any function of <paramref name="library"/>, firmware fallbacks included: a library
+    /// it knows nothing of can only come from the firmware module.</summary>
+    public bool KnowsLibrary(string library)
+    {
+        _knownLibraries ??= _impls.Keys.Select(NidDatabase.Lookup).Where(i => i != null).Select(i => i!.Library).ToHashSet(StringComparer.Ordinal);
+        return _knownLibraries.Contains(library);
+    }
+
     /// <summary>Registers host code as a callable HLE function without a NID (test harnesses: guest vtables and
     /// callbacks that land in C#). Returns the SVC number for <see cref="Loader.Linker.WriteHleStub"/>.</summary>
     public uint RegisterHostFunction(string name, Action<HleContext> body)
