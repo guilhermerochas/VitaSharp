@@ -15,6 +15,15 @@ public sealed class HleAttribute(string? name = null) : Attribute
     public uint Nid { get; init; }
     /// <summary>Restrict the NID lookup to a library when the same name exists in several.</summary>
     public string? Library { get; init; }
+    /// <summary>A default, not a real implementation: the function needs hardware or a service the emulator does not
+    /// have (Bluetooth, USB, system update, game card authentication, PSP ad hoc, debug hooks...) and returns the
+    /// firmware's documented result (success or its specific error) without doing anything. Counted apart from the
+    /// real implementations by hle-coverage (docs/hle/progress.md).</summary>
+    public bool Default { get; init; }
+    /// <summary>The function returns a value (a texture type, a size, an address, a count...), not an SCE error code: a
+    /// return in 0x80000000-0x80FFFFFF is a normal result and the HLE error counter (debug mode, session captures)
+    /// leaves it out.</summary>
+    public bool ReturnsValue { get; init; }
 }
 
 /// <summary>Base class for an HLE module (a group of related exported functions).</summary>
@@ -115,6 +124,8 @@ public sealed class HleFunction
     public long CallCount;
     /// <summary>The "unimplemented" warning was issued (skips building its key on every later call).</summary>
     public bool WarnedUnimplemented;
+    /// <summary>The implementation returns a value, not an error code (<see cref="HleAttribute.ReturnsValue"/>).</summary>
+    public bool ReturnsValue;
     /// <summary>An exception of the function was logged (GuestThread.InvokeGuarded).</summary>
     public bool ExceptionLogged;
     /// <summary>Emulated CPU cycles charged for this function so far (profiling).</summary>
@@ -180,6 +191,8 @@ public sealed partial class HleRegistry : IImportResolver
     readonly Dictionary<uint, int> _indexByNid = new();
     readonly Dictionary<uint, Action<HleContext>> _impls = new();
     readonly Dictionary<uint, string> _implNames = new();
+    /// <summary>NIDs whose implementation returns a value, not an error code (<see cref="HleAttribute.ReturnsValue"/>).</summary>
+    readonly HashSet<uint> _valueReturns = new();
     readonly Dictionary<uint, Func<uint>> _varFactories = new();
     readonly Dictionary<uint, uint> _vars = new();
     public List<HleModule> Modules { get; } = new();
@@ -223,7 +236,8 @@ public sealed partial class HleRegistry : IImportResolver
                 if (!module.FirmwareFallbackOnly) _serviceNids.Add(nid);
                 _impls[nid] = invoker;
                 _implNames[nid] = name;
-                if (_indexByNid.TryGetValue(nid, out var idx)) _functions[idx].Invoke = invoker;
+                if (b.ReturnsValue) _valueReturns.Add(nid); else _valueReturns.Remove(nid);
+                if (_indexByNid.TryGetValue(nid, out var idx)) { _functions[idx].Invoke = invoker; _functions[idx].ReturnsValue = b.ReturnsValue; }
             }
         }
         module.Initialize();
@@ -278,6 +292,7 @@ public sealed partial class HleRegistry : IImportResolver
                 Name = _implNames.GetValueOrDefault(nid) ?? info?.Name ?? $"NID_{nid:X8}",
                 Library = libName,
                 Invoke = _impls.GetValueOrDefault(nid),
+                ReturnsValue = _valueReturns.Contains(nid),
             };
             _functions.Add(f);
             _indexByNid[nid] = _functions.Count - 1;
@@ -315,7 +330,9 @@ public sealed partial class HleRegistry : IImportResolver
 /// <param name="Library">The attribute's library restriction for the NID lookup.</param>
 /// <param name="Layout">Argument/return marshalling description (compared against a reflection reference in tests).</param>
 /// <param name="Bind">Creates the invoker for a module instance.</param>
-public sealed record HleBinding(string Method, string? Name, uint Nid, string? Library, string Layout, Func<HleModule, Action<HleContext>> Bind);
+/// <param name="Default">The attribute's <see cref="HleAttribute.Default"/>: a default, not a real implementation.</param>
+public sealed record HleBinding(string Method, string? Name, uint Nid, string? Library, string Layout, Func<HleModule, Action<HleContext>> Bind,
+    bool Default = false, bool ReturnsValue = false);
 
 /// <summary>A concrete HLE module type with its factory and bindings.</summary>
 public sealed record HleModuleEntry(Type Type, Func<HleModule> Create, Func<HleBinding[]> Bindings);
