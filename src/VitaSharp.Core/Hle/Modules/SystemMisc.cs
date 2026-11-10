@@ -98,9 +98,9 @@ public sealed partial class SystemMisc : HleModule
     /// <summary>
     /// Libraries with an HLE replacement that only runs without the firmware module: the firmware's copy stays the
     /// default when installed, and the HLE (Json.cs) takes over when it is missing or when the library is listed in
-    /// the HLE modules option. Xml, Sqlite, face and smart have no HLE.
+    /// the HLE modules option (Json.cs, Xml.cs). Sqlite, face and smart have no HLE.
     /// </summary>
-    static readonly HashSet<string> HleFallback = new(StringComparer.OrdinalIgnoreCase) { "libSceJson" };
+    static readonly HashSet<string> HleFallback = new(StringComparer.OrdinalIgnoreCase) { "libSceJson", "libSceXml" };
 
     HashSet<string>? _lleModules, _hleModules;
 

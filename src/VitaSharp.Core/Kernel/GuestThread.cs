@@ -436,6 +436,9 @@ public sealed unsafe partial class GuestThread : KernelObject, IDisposable, Cpu.
     /// <summary>Calls a guest function on this (current) thread and returns R0. Re-entrant.</summary>
     public uint CallGuest(uint addr, params ReadOnlySpan<uint> args) => CallGuestOnStack(addr, 0, args);
 
+    /// <summary>r1 when the last <see cref="CallGuestOnStack"/> returned (the high word of a 64-bit result).</summary>
+    public uint LastCallR1 { get; private set; }
+
     /// <summary>Like <see cref="CallGuest"/>, with sp set to <paramref name="stackTop"/> (0 = just below the current sp).</summary>
     public uint CallGuestOnStack(uint addr, uint stackTop, params ReadOnlySpan<uint> args)
     {
@@ -462,6 +465,7 @@ public sealed unsafe partial class GuestThread : KernelObject, IDisposable, Cpu.
         {
             _callDepth--;
             uint r0 = s->R[0];
+            LastCallR1 = s->R[1];
             *s = saved;
             s->Exit = ExitReason.None;
         }
