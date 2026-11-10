@@ -875,6 +875,23 @@ Lista de itens futuros do VitaSharp. Marque `[x]` quando um item for concluído.
   aberta e quem espera quem (gate, arbitragem, cerca da display queue) em vez de trace HLE (o trace deixa tudo lento
   demais para medir); depois escolher entre gravar as cenas de processos diferentes em render passes separados (sem
   arbitragem) ou liberar o gate quando outro processo espera a cena.
+- [ ] Apps do sistema rodados sozinhos (`run NPXS...`, como o launcher abre um app do sistema) caem (10/11/2026, agente
+  B, fix/bugs-b-4; logs das rodadas sem cabeça do lote HLE 11 em `<scratchpad>\hle11_out\x1_*`): NPXS10015/10004/10002
+  (prefetch abort na `ScePafJobDefault`), NPXS10014 -> NPXS10018 (`SceSignup`), NPXS10009 (`SceMBJobFast`) e o NPXS10026
+  (sai na hora com `sceKernelExitProcess(0x80020583)` e o emulador fica 150 s sem quadro). Causa única: sem o shell não
+  existe o servidor IPC do serviço do shell; o libshellsvc de verdade avisa "[SceShellSvc] *WARNING* IPC Server is not
+  available. (0x80020583)" (o MTP do Content Manager/Music: "Connect failed: 0x80020583") e depois chama por um
+  ponteiro de serviço NULL (pc 0 / 0x80000000, lr dentro do SceShellSvc ou do app). Dentro do `boot-shell` os mesmos apps
+  abrem pelo LiveArea. Tentado (revertido; patch `<scratchpad>\bB4\item3_shell_launch_wip.patch`, com testes): `run` de
+  um app do vs0 bootar o shell e pedir o app a ele: (a) pedido por URI `psgm:play?titleid=NPXS10015` (evento 6, como
+  `sceAppMgrLaunchAppByUri`): o shell mostra "Ocorreu um erro (C2-12570-5)" e cancela (o applauncher_plugin recusa,
+  erro 0x80103907); (b) pedido por nome (evento 6, como `sceAppMgrLaunchAppByName` de outro app): o shell cancela na
+  hora (`sceAppMgrLaunchAppCancel`, FUN_8127ac1e do shell 3.74); com o +0x74 bit 0 no status dos serviços de fundo
+  (NPXS10079) também; (c) criar o processo ao lado do shell como o `LaunchAppByPath4` faz e ativá-lo: Configurações
+  abre e navega sem cair (`<scratchpad>\bB4\runs\seti`), mas o shell não lançou o app e continua compondo a tela de
+  bloqueio/início por cima. Próximo passo: o launcher abrir os apps do sistema pelo shell de verdade (boot-shell e o
+  toque no ícone, ou achar a resposta que o applauncher_plugin espera para um pedido de outro app), em vez do `run`
+  sozinho
 - [x] Validar a fundo TODOS os apps do sistema (04/11/2026, pedido do usuário): cada menu, aba, categoria, sub-página,
   botão, menu de opções e caminho de voltar/fechar de cada app, abrir e fechar duas vezes, alternar entre apps (botão PS,
   retomar, encerrar); nada pode travar ou crashar. Erros só por falta de rede/PSN/USB/aparelho ficam anotados como
@@ -2926,7 +2943,7 @@ on-existing PPS 0 e nenhum quadro). Ainda aberto: depois da carga no meio do fil
   agentes no `<scratchpad>` têm o aviso `a program stores to memory at ..., outside CDRAM`; o único jogo conhecido com
   VLDST store é o Croixleur (CDRAM). Sem jogo que precise, não mexi (fica aberto até aparecer o aviso)
 
-- [ ] The Deer God (PCSB01070; no Vita3K trava no boot): engasgos no gameplay (30/10/2026, main 4603a03, logs
+- [x] The Deer God (PCSB01070; no Vita3K trava no boot): engasgos no gameplay (30/10/2026, main 4603a03, logs
   `20261030_230111_PCSB01070` e `20261030_230208_PCSB01070`). Roda a 60 fps, mas cai de repente para 12–16 fps por
   ~5 s (quadros ~1500 e ~2200) sem nenhuma linha no log; uma troca de cena (thread `UnityPreload`) deixou a tela parada
   por ~15 s (watchdog `STALL`, quadro 3813); e no fim da segunda sessão o fps caiu aos poucos (49 → 32 → 15 → 8 em
@@ -2978,6 +2995,15 @@ on-existing PPS 0 e nenhum quadro). Ainda aberto: depois da carga no meio do fil
   com o PC ocioso, então não há ganho medido para ligar por padrão. Com a chave na janela, Devious Dungeon 60, F1 2011
   25 no menu / 60 depois, Uncharted 60 e Killzone 30 (title) como antes (`reg_dd/f1/uc/kz`, com a main eb950c1).
   Mantida desligada; falta a janela de verdade do usuário (vsync do monitor)
+  Ligada por padrão (10/11/2026, agente B, fix/bugs-b-4): no Vita um flip IMMEDIATE só troca o ponteiro de varredura e
+  o painel mostra no máximo um quadro por vblank; quem freia um jogo que vira IMMEDIATE sem esperar vblank (Unity "don't
+  sync": The Deer God, Akiba's Beat) é a GPU dele, que aqui nunca freia, e ele desenhava 140-650 quadros por segundo
+  que ninguém vê (CPU do PC jogada fora). O Vita3K trata IMMEDIATE como NEXTFRAME sem esperar nada (o ritmo vem do vsync
+  do host), por isso não serve de referência aqui. Um jogo mais lento que o painel nunca tem dois flips no mesmo vblank
+  e não muda; o modo "sem limite" da taxa de quadros desliga a regra; `VITASHARP_DISPLAY_IMMEDIATE_PACE=0` volta ao
+  antigo. Medido sem janela (`<scratchpad>\bB4\runs\deer1`, cenário `deergod` com uma raiz sem saves): menu e gameplay
+  56-60 fps (antes 142-147), 2966 flips segurados; a parada de ~5 s no quadro 2752 é a troca de cena já conhecida (carga
+  do jogo). Os engasgos do relato de 30/10 já tinham sido atribuídos à CPU do PC dividida; não reapareceram
 
 - [x] Sonic & All-Stars Racing Transformed (PCSE00056; no Vita3K também não abre): trava no quadro 24, antes dos
   logos (watchdog `STALL` aos 6 s e 31 s; 30/10/2026, main 4603a03, log `20261030_225954_PCSE00056`). A
@@ -3320,6 +3346,18 @@ on-existing PPS 0 e nenhum quadro). Ainda aberto: depois da carga no meio do fil
   - Silent Hill: Book of Memories (`shbom_boot`, não chega à seleção de zona): criação do personagem a ~16 fps
     (f1328-2064) e ~1 fps enquanto o teclado na tela abre (f1700-1740); quarto inicial a 60. Fica aberto (jogo do
     agente A).
+    Agente B (10/11/2026, fix/bugs-b-4, `<scratchpad>\bB4\runs\sh1`..`sh4`): o ~1 fps com o teclado não se repete sem
+    a gravação contínua ligada (coincidia com o pre-roll do "Gravar tudo" da raiz de dados daquela rodada, que gravava o
+    estado em até 5,5 s); sem ela a tela do nome fica nos mesmos ~15 fps do resto da criação. Os 16 fps da criação: a thread
+    `SwiftUpdate` (a interface) faz ~614 pares sceKernelLockMutex/UnlockMutex por quadro, e cada chamada é cobrada
+    como uma passagem pelo escalonador (12.000 ciclos, `HleFunction.Cost`): 14,7 M ciclos/quadro = 44 ms no relógio de
+    333 MHz, então a thread fica 80% do tempo no freio ("throttle") e o quadro sai a cada 60 ms. Cobrar o lock/unlock sem
+    disputa como uma entrada no kernel (2.000) tiraria o freio, mas nas duas rodadas com essa mudança (`sh3`, `sh4`) o
+    jogo parou no carregamento (~f880, BKPT do próprio jogo depois de `sceGxmDraw` fora de cena 0x805B0006 da
+    `jobQueueWorker1` e da `main`, que não aparecem com o custo antigo): o jogo trava um mutex não recursivo de novo
+    (0x80028142, 1097 vezes, igual nos dois custos) e o desbloqueio interno solta o externo, então o ritmo mais rápido
+    deixa duas threads desenharem no mesmo contexto. Mudança revertida; falta ver se o Vita de verdade aceita esse lock
+    (atributo do mutex 0x40010075 na criação) antes de baratear o custo
   - Crazy Market (PCSE00291) e Soul Sacrifice Delta: o Crazy Market não está mais instalado; o Soul Sacrifice chegou ao
     fogo e à fumaça da primeira área na rodada do agente B de hoje (`<scratchpad>\bB2\runs\soulsac_boot`).
   - NIDs que faltavam (FFBFC540, D5B26179, sceNpSnsFacebookInit, sceCoredumpRegisterCoredumpHandler): todos implementados;

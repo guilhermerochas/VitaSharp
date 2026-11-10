@@ -115,10 +115,13 @@ public sealed partial class Display : HleModule
     uint _base, _pitch, _format, _width, _height;
     long _lastSetVcount;
     bool _shownBase;
-    /// <summary>VITASHARP_DISPLAY_IMMEDIATE_PACE=1: a SCE_DISPLAY_SETBUF_IMMEDIATE flip waits for the next vblank when one
-    /// was already set in this one (the panel shows at most one frame per vblank; experiment for games that flip
-    /// IMMEDIATE without any vblank wait, e.g. The Deer God, whose only brake is then the host's presentation).</summary>
-    static readonly bool ImmediateOnePerVblank = Environment.GetEnvironmentVariable(EnvVars.DisplayImmediatePace) is "1" or "on";
+    /// <summary>A SCE_DISPLAY_SETBUF_IMMEDIATE flip waits for the next vblank when one was already set in this one. On the
+    /// Vita an IMMEDIATE flip only moves the scanout pointer, and the panel shows at most one frame per vblank; what bounds
+    /// a game that flips IMMEDIATE without any vblank wait (Unity's "don't sync": The Deer God, Akiba's Beat) is its GPU,
+    /// which is never the brake here, so such a game would render 150-600 frames per second nobody sees. A game slower
+    /// than the panel never has two flips in one vblank and is not touched. VITASHARP_DISPLAY_IMMEDIATE_PACE=0 turns it
+    /// off; the unlimited frame rate mode skips it.</summary>
+    static readonly bool ImmediateOnePerVblank = Environment.GetEnvironmentVariable(EnvVars.DisplayImmediatePace) is not ("0" or "off");
     long _lastFlipVcount = -1;
     public static long ImmediateFlipsPaced;
 
@@ -140,7 +143,7 @@ public sealed partial class Display : HleModule
         _height = GuestMemory.R32(pParam + 20);
         if (_base == 0) { if (Emu.IsShell) Emu.Vita.SetShellOverlay(null, VBlank.Count); return 0; }
         if (!_shownBase) { _shownBase = true; Log.Info($"Display: {Emu.Describe()} framebuffer 0x{_base:X8} {_width}x{_height} pitch {_pitch} format 0x{_format:X} in {Emu.Memory.FindBlock(_base)}"); }
-        if (sync == 0 && ImmediateOnePerVblank && _lastFlipVcount == VBlank.Count)
+        if (sync == 0 && ImmediateOnePerVblank && !FrameRate.NoWaits && _lastFlipVcount == VBlank.Count)
         {
             ImmediateFlipsPaced++;
             using (FrameLedger.Time(FrameLedger.Cat.GuestGpuWait)) VBlank.WaitFor(_lastFlipVcount + 1);
