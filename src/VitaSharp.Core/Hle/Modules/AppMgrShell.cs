@@ -278,15 +278,15 @@ public sealed partial class AppMgrShell : HleModule
         string? launchParam = param != 0 ? GuestMemory.ReadCString(param, 0x400) : null;
         if (!Emu.IsShell && Emu.Vita.Shell != null)
         {
-            var pl = Emu.Vita.AddPendingLaunch(Emu, tid, dir, flags, launchParam);
-            Log.Info($"sceAppMgrLaunchAppByName(0x{flags:X}, {tid}) from {Emu.Describe()}: application id 0x{pl.App.Uid:X} waits for the shell");
-            Emu.Vita.PostShellEvent(Kernel.ShellEvents.LaunchRequest, pl.App.Uid, pl.App.Uid);
+            Log.Info($"sceAppMgrLaunchAppByName(0x{flags:X}, {tid}) from {Emu.Describe()}");
+            Emu.Vita.RequestLaunchByName(Emu, tid, dir, flags, launchParam);
             return 0;
         }
         var app = Emu.SpawnProcess(dir, "eboot.bin", [], background: true);
         // the parameter reaches the application as its launch parameter (sceAppMgrGetAppParam)
         if (launchParam != null) app.Hle.Modules.OfType<AppMgr>().First().LaunchParam = launchParam;
         Log.Info($"sceAppMgrLaunchAppByName(0x{flags:X}, {tid}): background process {app.Describe()}");
+        if (Emu.IsShell) Emu.Vita.MarkShellUp();
         return app.AppId;
     }
 

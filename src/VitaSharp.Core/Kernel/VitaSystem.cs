@@ -159,6 +159,40 @@ public sealed class VitaSystem
         return pl;
     }
 
+    /// <summary>An application asking the shell to open a URI (sceAppMgrLaunchAppByUri: "psgm:play?titleid=...",
+    /// "settings_dlg:"...): a request without an application (flags | 0x100000) and shell event 6; the shell decides and
+    /// starts it with sceAppMgrLaunchAppByName2ndStage.</summary>
+    public PendingLaunch RequestLaunchByUri(Emulator caller, string uri, int flags)
+    {
+        var pl = AddPendingLaunch(caller, "", "", flags | 0x100000, uri);
+        Log.Info($"Launch by URI (0x{flags:X}, {uri}) from {caller.Describe()}: request 0x{pl.App.Uid:X} for the shell");
+        PostShellEvent(ShellEvents.LaunchRequest, pl.App.Uid, pl.App.Uid);
+        return pl;
+    }
+
+    /// <summary>An application asking the shell to start another one by title id (sceAppMgrLaunchAppByName from an
+    /// application): its entry with the flags and parameter, and shell event 6.</summary>
+    public PendingLaunch RequestLaunchByName(Emulator caller, string titleId, string dir, int flags, string? param)
+    {
+        var pl = AddPendingLaunch(caller, titleId, dir, flags, param);
+        Log.Info($"Launch of {titleId} (0x{flags:X}) asked by {caller.Describe()}: application id 0x{pl.App.Uid:X} waits for the shell");
+        PostShellEvent(ShellEvents.LaunchRequest, pl.App.Uid, pl.App.Uid);
+        return pl;
+    }
+
+    readonly ManualResetEventSlim _shellUp = new();
+
+    /// <summary>Set once the shell has started its first resident background service (sceAppMgrLaunchAppByName from
+    /// the shell: NPXS10079 on FW 3.74), which it does after its boot screen and database update, with its home and lock
+    /// screens built. A launch request (shell event 6) handled before that crashes the 3.74 shell: its handler calls the
+    /// applauncher_plugin through an interface that is not loaded yet (a jump to 0 from 0x812787E0).</summary>
+    public bool ShellUp => _shellUp.IsSet;
+
+    internal void MarkShellUp() => _shellUp.Set();
+
+    /// <summary>Waits up to <paramref name="timeoutMs"/> for <see cref="ShellUp"/>.</summary>
+    public bool WaitShellUp(int timeoutMs) => _shellUp.Wait(timeoutMs);
+
     public PendingLaunch? GetPendingLaunch(int appId) { lock (_pendingLaunches) return _pendingLaunches.GetValueOrDefault(appId); }
 
     /// <summary>Takes a pending launch out (its second stage, or its cancellation).</summary>
@@ -187,6 +221,15 @@ public sealed class VitaSystem
     /// system chat, +4 system impose state, +8 initialised to -1, +0xC audio routing, +0x10 recommended screen
     /// orientation, +0x14 system impose state 2.</summary>
     public readonly byte[] AppMgrState = InitialAppMgrState();
+
+    /// <summary>The shell shows a system screen over every application (sceAppMgrSetSystemImposeState2(1): the 3.74
+    /// shell sets it when its lock screen comes up and clears it with 0 once it is unlocked): the shell's frames are on
+    /// top and the buttons and the touch panels are the shell's, also while an application is in front (one the shell
+    /// started behind its lock screen for a launch request).</summary>
+    public bool ShellImposesSystemUi
+    {
+        get { lock (AppMgrState) return BitConverter.ToInt32(AppMgrState, 0x14) != 0; }
+    }
 
     static byte[] InitialAppMgrState()
     {
@@ -262,6 +305,7 @@ public sealed class VitaSystem
     public bool TouchClaimedByShell(int port)
     {
         if (Foreground is not { IsShell: false }) return false;
+        if (ShellImposesSystemUi) return true;
         lock (_shellTouchRegions)
             foreach (var (key, r) in _shellTouchRegions)
                 if (key.Port == port && r.Active) return true;
@@ -273,6 +317,7 @@ public sealed class VitaSystem
     public bool ShellTouchRegionAt(int port, int x, int y)
     {
         if (Foreground is not { IsShell: false }) return false;
+        if (ShellImposesSystemUi) return true;
         lock (_shellTouchRegions)
             foreach (var (key, r) in _shellTouchRegions)
                 if (key.Port == port && r.Active && x >= r.X && x < r.X + r.W && y >= r.Y && y < r.Y + r.H) return true;
@@ -282,6 +327,7 @@ public sealed class VitaSystem
     public bool ButtonsClaimedByShell()
     {
         if (Foreground is not { IsShell: false }) return false;
+        if (ShellImposesSystemUi) return true;
         lock (_shellTouchRegions)
             foreach (var (key, r) in _shellTouchRegions)
                 if (key.Port == 0 && r.Active && r.H >= 256) return true;

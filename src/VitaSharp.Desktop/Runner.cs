@@ -428,6 +428,7 @@ public static class Runner
             if (!emu.TitleId.StartsWith("NPXS", StringComparison.Ordinal)) ShowBootSplash(renderer, emu.AppPath);
             window.TitleId = emu.TitleId; // its saved mouse mode (input.json)
             emu.Start();
+            StartShellLaunch(emu, options);
             // --start-paused: the threads stop right after the start (debugging: attach, set up captures, then P)
             if (options.Contains("--start-paused")) EmulationPause.Pause("--start-paused");
         };
@@ -576,6 +577,52 @@ public static class Runner
         };
     }
 
+    /// <summary>
+    /// --launch-app=&lt;title id&gt; or --launch-uri=&lt;uri&gt; (with boot-shell; "run" of a system application adds
+    /// --launch-app): once the shell is up, it is asked to start that application or open that URI the way another
+    /// application asks it (sceAppMgrLaunchAppByName / sceAppMgrLaunchAppByUri: shell event 6), and the shell itself
+    /// answers. The 3.74 shell (0x812782CC) opens the title's LiveArea for every request and keeps the request, starting
+    /// the application at once with sceAppMgrLaunchAppByName2ndStage, only when it carries flag 0x20000 (what Music's
+    /// "Start [Content Manager]" passes); without it, and for "psgm:play?titleid=", it cancels the request and leaves the
+    /// LiveArea open on the gate. --launch-flags= the request's flags (--launch-app: 0x20000, --launch-uri: 0),
+    /// --launch-after= at least that many frames first.
+    /// A system application needs the shell running: its libshellsvc connects to the shell's IPC server at start, and
+    /// without one Settings, Store, Camera, Music, Content Manager and the PSN sign-up called through a NULL service
+    /// pointer or exited.
+    /// </summary>
+    static void StartShellLaunch(Emulator emu, string[] options)
+    {
+        string? app = Opt(options, "--launch-app"), uri = Opt(options, "--launch-uri");
+        if (string.IsNullOrEmpty(app) && string.IsNullOrEmpty(uri)) return;
+        int flags = Opt(options, "--launch-flags") is { } lfs ? Convert.ToInt32(lfs, lfs.StartsWith("0x", StringComparison.OrdinalIgnoreCase) ? 16 : 10)
+            : string.IsNullOrEmpty(uri) ? LaunchAtOnceFlag : 0;
+        long after = long.TryParse(Opt(options, "--launch-after"), out var la) && la > 0 ? la : 0;
+        var t = new Thread(() =>
+        {
+            // the shell handles requests once its home screen is built (VitaSystem.ShellUp), a moment after that
+            static long Frames() => VitaSharp.Core.Hle.Modules.Display.FramesPresented;
+            while (emu.Running && !emu.Vita.WaitShellUp(50) && Frames() < ShellUpFallbackFrames) { }
+            long ready = Frames() + ShellLaunchDelayFrames;
+            while (emu.Running && Frames() < Math.Max(ready, after)) Thread.Sleep(50);
+            if (!emu.Running || emu.Vita.Shell is not { } shell) return;
+            if (!string.IsNullOrEmpty(uri)) { shell.Vita.RequestLaunchByUri(shell, uri, flags); return; }
+            string? dir = null;
+            foreach (var root in new[] { "vs0:app/", "ux0:app/" })
+                if (shell.Vfs.Resolve(root + app) is { } d && File.Exists(Path.Combine(d, "eboot.bin"))) { dir = d; break; }
+            if (dir == null) { Log.Warn($"--launch-app={app}: not installed"); return; }
+            shell.Vita.RequestLaunchByName(shell, app!, dir, flags, null);
+        }) { IsBackground = true, Name = "shell launch" };
+        t.Start();
+    }
+
+    /// <summary>sceAppMgrLaunchAppByName flag the shell starts the requested application for, instead of only opening
+    /// its LiveArea.</summary>
+    const int LaunchAtOnceFlag = 0x20000;
+    /// <summary>Frames between the shell being up and the request (its first home/lock screen frames settle).</summary>
+    const long ShellLaunchDelayFrames = 30;
+    /// <summary>A shell that never starts a background service still gets the request after this many frames.</summary>
+    const long ShellUpFallbackFrames = 1800;
+
     /// <summary>The executable to boot: --self, else the one a --load-state state was saved in (a program a LoadExec
     /// started, booted directly: Jak1.self of the Jak and Daxter Collection), else eboot.bin.</summary>
     static string BootSelf(string[] options)
@@ -718,6 +765,7 @@ public static class Runner
         var wall = Stopwatch.StartNew();
         emu.LoadTitle(appPath, BootSelf(options));
         emu.Start();
+        StartShellLaunch(emu, options);
         if (options.Contains("--start-paused")) EmulationPause.Pause("--start-paused");
         var hostKeyScript = emu.Host.Input is ScriptedInput { HasHostKeySteps: true } ps ? ps : null;
         var graphics = new GraphicsHotkeys(emu, ro, () => emu.Gpu.Backend as VulkanRenderer, () => NewHeadlessRenderer(ro, diag), text => Log.Info($"[notice] {text}"));

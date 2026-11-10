@@ -875,7 +875,7 @@ Lista de itens futuros do VitaSharp. Marque `[x]` quando um item for concluído.
   aberta e quem espera quem (gate, arbitragem, cerca da display queue) em vez de trace HLE (o trace deixa tudo lento
   demais para medir); depois escolher entre gravar as cenas de processos diferentes em render passes separados (sem
   arbitragem) ou liberar o gate quando outro processo espera a cena.
-- [ ] Apps do sistema rodados sozinhos (`run NPXS...`, como o launcher abre um app do sistema) caem (10/11/2026, agente
+- [x] Apps do sistema rodados sozinhos (`run NPXS...`, como o launcher abre um app do sistema) caem (10/11/2026, agente
   B, fix/bugs-b-4; logs das rodadas sem cabeça do lote HLE 11 em `<scratchpad>\hle11_out\x1_*`): NPXS10015/10004/10002
   (prefetch abort na `ScePafJobDefault`), NPXS10014 -> NPXS10018 (`SceSignup`), NPXS10009 (`SceMBJobFast`) e o NPXS10026
   (sai na hora com `sceKernelExitProcess(0x80020583)` e o emulador fica 150 s sem quadro). Causa única: sem o shell não
@@ -892,6 +892,20 @@ Lista de itens futuros do VitaSharp. Marque `[x]` quando um item for concluído.
   bloqueio/início por cima. Próximo passo: o launcher abrir os apps do sistema pelo shell de verdade (boot-shell e o
   toque no ícone, ou achar a resposta que o applauncher_plugin espera para um pedido de outro app), em vez do `run`
   sozinho
+  Corrigido (10/11/2026, agente B, fix/bugs-b-5; provas em `<scratchpad>\bB5\runs\a_*\strip.png`): o `run` de um app do
+  vs0 (o que o launcher usa) boota o shell de verdade e, quando ele está de pé (iniciou o primeiro serviço de fundo,
+  NPXS10079, depois da tela de boot e da atualização do banco), pede o app como outro app pede
+  (sceAppMgrLaunchAppByName com flags 0x20000, evento 6). No shell 3.74 o handler (0x8127D402 -> GetAppInfoJob ->
+  0x812782CC) abre a LiveArea do título para todo pedido e só mantém o pedido (e inicia o app com o 2ndStage) quando ele
+  tem 0x20000 (o que a Música usa para o Gerenciador de conteúdo); sem ele, e no `psgm:play?titleid=`, ele cancela e
+  deixa a LiveArea aberta no portão: era o "cancela na hora" das tentativas (a)/(b). Pedido antes do shell estar de pé
+  derruba o shell (salto para 0 em 0x812787E0: o applauncher_plugin ainda não foi carregado). O app abre atrás da tela
+  de bloqueio, como no Vita; enquanto o shell a mostra (sceAppMgrSetSystemImposeState2(1), 0 ao desbloquear) os quadros
+  do shell ficam por cima e os botões e toques são do shell (era o "continua compondo por cima" da tentativa (c): a
+  entrada ia para o app). Validados (headless, desbloquear, abrir um item, voltar, botão PS -> LiveArea com Continuar,
+  0 crash): Configurações (Atualização do sistema), Música (Conectar-se ao dispositivo), Vídeos, Navegador (sem rede:
+  C2-14921-7, esperado), Troféus (lista e um jogo), Gerenciador de conteúdo (cartão de memória), Email (Adicionar
+  conta). `--no-shell` roda o app sozinho como antes; `--launch-uri=` abre uma URI pelo shell
 - [x] Validar a fundo TODOS os apps do sistema (04/11/2026, pedido do usuário): cada menu, aba, categoria, sub-página,
   botão, menu de opções e caminho de voltar/fechar de cada app, abrir e fechar duas vezes, alternar entre apps (botão PS,
   retomar, encerrar); nada pode travar ou crashar. Erros só por falta de rede/PSN/USB/aparelho ficam anotados como
