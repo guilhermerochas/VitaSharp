@@ -178,4 +178,22 @@ public sealed class HleBatch12Tests(GuestMemoryFixture fx) : IDisposable
         Assert.Equal(0xABCDu, Invoke(e, "Get48", o));
         Assert.Null(Invoke(e, "Release", 0u)); // NULL: nothing to delete
     }
+
+    [Fact]
+    public void Psp2CompatAccessorsAndConstants()
+    {
+        var p = Module<Psp2Compat>();
+        uint o = Alloc(0x400);
+        for (uint off = 0; off < 0x400; off += 4) GuestMemory.W32(o + off, 0x2000 + off);
+        Assert.Equal(0x2004u, Invoke(p, "Get04", o));
+        Assert.Equal(0x2320u, Invoke(p, "Get320", o));
+        Assert.Equal(0x0000202400002020ul, Invoke(p, "Get20Wide", o));
+        Invoke(p, "Flag2C", o);
+        Assert.Equal((byte)1, GuestMemory.Read<byte>(o + 0x2C));
+        Assert.Equal(0x44700000u, Invoke(p, "Width"));
+        Assert.Equal(true, Invoke(p, "Equal", 5u, 5u));
+        uint name = Alloc(0x20);
+        Invoke(p, "PoolName", 0x1Fu, name);
+        Assert.Equal("SceManxMemoryPool1f", GuestMemory.ReadCString(name));
+    }
 }

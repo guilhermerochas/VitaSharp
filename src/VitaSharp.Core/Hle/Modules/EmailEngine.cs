@@ -104,6 +104,9 @@ public sealed partial class EmailEngine : HleModule
     [Hle("NID_48F0095D", Nid = 0x48F0095D, Library = Lib)] void Set44(uint o, uint v) => W(o, 0x44, v);
     [Hle("NID_6A2FE369", Nid = 0x6A2FE369, Library = Lib)] void Set48(uint o, uint v) => W(o, 0x48, v);
 
+    /// <summary>A two-state member (0 or 1; anything else is stored as -1).</summary>
+    [Hle("NID_6B4FD48B", Nid = 0x6B4FD48B, Library = Lib)] void Set14State(uint o, int v) => W(o, 0x14, v is 0 or 1 ? (uint)v : 0xFFFFFFFF);
+
     // ------------------------------------------------------------------ release helpers
 
     /// <summary>(Object* o): delete o (its deleting destructor, vtable slot 1) unless it is NULL.</summary>

@@ -27,6 +27,12 @@ public sealed partial class DebugPerf
     /// counters here assume.</summary>
     [Hle] uint sceKernelGetPMUSERENR() => 1;
 
+    /// <summary>(SceUID thid, int counter, uint *value): a thread's PMU counter (with value NULL the count is the
+    /// answer); nothing counts, as in ScePerf.</summary>
+    [Hle("_sceKernelPMonThreadGetCounter")]
+    [Hle("sceKernelPMonThreadGetCounter")] // libkernel forwards to the syscall
+    int PMonThreadGetCounter(int thid, int counter, uint value) { if (value != 0) GuestMemory.W32(value, 0); return 0; }
+
     // ---------------------------------------------------------------- timebase
 
     [Hle] uint sceKernelPaGetTimebaseFrequency() => TimebaseFrequency;
