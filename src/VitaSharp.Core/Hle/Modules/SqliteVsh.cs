@@ -218,6 +218,13 @@ public sealed partial class SqliteVsh : HleModule
     [Hle("NID_61BFA3AB", Nid = 0x61BFA3AB, Library = Lib)] int GetAutocommit(uint p) => DbOp(p, d => raw.sqlite3_get_autocommit(d.H));
     [Hle("NID_E37D81B5", Nid = 0xE37D81B5, Library = Lib)] void Interrupt(uint p) { if (Get<Db>(p) is { } d) raw.sqlite3_interrupt(d.H); }
     [Hle("NID_3E7EF391", Nid = 0x3E7EF391, Library = Lib)] int BusyTimeout(uint p, int ms) => DbOp(p, d => raw.sqlite3_busy_timeout(d.H, ms));
+    /// <summary>sqlite3_busy_handler(db, cb, arg): the vsh library stores the handler on the connection and returns
+    /// SQLITE_OK. The engine underneath retries by its busy timeout; the handler is accepted.</summary>
+    [Hle("NID_9EA70062", Nid = 0x9EA70062, Library = Lib)] int BusyHandler(uint p, uint cb, uint arg) => DbOp(p, _ => SQLITE_OK);
+    /// <summary>sqlite3_config(op, ...): the process-wide settings (threading modes 1..3, memory and mutex methods,
+    /// page caches, log...) of SQLite 3.7.6, ops 1..16; others are SQLITE_ERROR. The engine underneath configures
+    /// itself, so a known setting is accepted.</summary>
+    [Hle("NID_99998D1F", Nid = 0x99998D1F, Library = Lib)] int Config(int op) => op is >= 1 and <= 16 ? SQLITE_OK : SQLITE_ERROR;
     /// <summary>sqlite3_extended_result_codes(db, on).</summary>
     [Hle("NID_EDD56591", Nid = 0xEDD56591, Library = Lib)] int ExtendedResultCodes(uint p, int on) => DbOp(p, d => raw.sqlite3_extended_result_codes(d.H, on));
     /// <summary>sqlite3_limit(db, id 0..10, value): the previous value.</summary>

@@ -119,7 +119,9 @@ public sealed partial class NpManager
         {
             if (!_sysInited) return ERR_NOT_INITIALIZED;
             _sysInited = false;
-            return 0;
+            if (_npInited) return 0;
         }
+        IpmiClose();
+        return 0;
     }
 }
