@@ -3137,7 +3137,19 @@ fs8):
   nativo não serve o formato; cópia só com VITASHARP_MSAA_FETCH=copy) e o tile-based é do Android. Nenhum log ou
   gravação do usuário nem execução no `<scratchpad>` tem o aviso `... which the scene cannot keep (...)`; sem jogo
   que precise, não mexi
-- [ ] Fibers: `_sceFiberAttachContext*` exige status Init (o firmware aceita qualquer fiber ocioso sem área de contexto; 0/0 é switch simples) e o topo da pilha deveria ser `(addr+size-1)&~7` (conferido em 29/10/2026 no main c12927d: `Fiber.AttachContext` ainda devolve ERR_STATE fora de Init e R13 = `(addr+size)&~7`)
+- [x] Fibers: `_sceFiberAttachContext*` exige status Init (o firmware aceita qualquer fiber ocioso sem área de contexto; 0/0 é switch simples) e o topo da pilha deveria ser `(addr+size-1)&~7` (conferido em 29/10/2026 no main c12927d: `Fiber.AttachContext` ainda devolve ERR_STATE fora de Init e R13 = `(addr+size)&~7`)
+  Feito (10/11/2026, agente B, fix/bugs-b-2), pelo libfiber.suprx 3.74 desmontado: as checagens do
+  _sceFiberAttachContextAndRun/AndSwitch seguem a ordem do firmware (NULL; fiber ou contexto desalinhado; Run já dentro
+  de um fiber ou Switch fora de um = PERMISSION; tamanho < 512 = RANGE; endereço NULL, tamanho não múltiplo de 8 ou
+  fiber que já tem área = INVALID; fiber rodando = STATE); qualquer fiber ocioso sem área recebe a área e começa de novo
+  na entrada sobre a pilha nova; 0/0 é um run/switch simples; o topo da pilha é `(addr+size-1)&~7`. Achado no mesmo
+  desmonte e corrigido: quando a função de entrada de um fiber retorna, o firmware volta para a thread logo depois do
+  sceFiberRun, que devolve 0x80590006 com *argOnReturn = o fiber (que fica ocioso e recomeça na entrada); aqui a thread
+  inteira terminava (LR = ThreadExitTrap). Testes em `FiberHleTests` (3). No jogo: Ninja Gaiden Sigma 2 Plus
+  (`ngs2_boot` até o gameplay em Sky City Tokyo, 40273 sceFiberSwitch e 2604 sceFiberRun,
+  `<scratchpad>\bB2\runs\ngs2\frames\sheet.png`) e Soul Sacrifice Delta (`soulsac_boot` até a fogueira da primeira
+  área, 16610 sceFiberSwitch, `<scratchpad>\bB2\runs\soulsac_boot\frames\sheet_3.png`). Nenhum jogo rodado chama o AttachContext (só o libult importa; NGS2,
+  Unit 13 e Soul Sacrifice Delta não criam ulthreads no caminho testado): essa parte só tem os testes
 - [ ] MSAA real: leitura da imagem pelo próprio desenho (input attachment) é indefinida quando triângulos do mesmo desenho se sobrepõem (sem `VK_EXT_rasterization_order_attachment_access` na GTX 1650/Iris Xe); causa diferenças de ±1 entre execuções (29/10/2026: o log da GTX 1650 ainda mostra `GPU missing: ... RasterizationOrderColor`)
 - [ ] Sonic Mania: ~18 estalos por segundo na saída de música (44,1 kHz); pode ser do próprio conteúdo, não investigado (29/10/2026, main c12927d, `mania_boot.txt` com `--audio-dump`: 522 estalos em 34,5 s de som, 15,1/s, sem relação com a fase do grain de 1024; sem underruns)
   Não reproduz (05/11/2026, fix/bugs-audio, os mesmos `mania_boot` e `--audio-dump`): porta BGM 44,1 kHz grain 1024, 62 s (34 s com som), `audrep.py` 0 estalos e um detector de segunda diferença mais sensível 0,1/s; sem underruns. A conversão 44,1→48 kHz da saída é do OpenAL (fora do dump); falta o usuário ouvir no PC.

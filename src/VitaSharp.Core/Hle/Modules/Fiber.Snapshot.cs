@@ -6,7 +6,7 @@ namespace VitaSharp.Core.Hle.Modules;
 
 /// <summary>Save states: every fiber with its saved register context, and per thread the fiber it runs and the
 /// context it returns to.</summary>
-[GenerateSnapshot, SnapshotIgnoreFields("_fibers", "_threads", "_freeFibers", "_names")]
+[GenerateSnapshot, SnapshotIgnoreFields("_fibers", "_threads", "_freeFibers", "_names", "_entryReturn")]
 public sealed unsafe partial class Fiber
 {
     static void WriteCtx(SnapshotWriter w, CpuState c) => GuestThread.WriteCpu(w, &c, false);
@@ -37,6 +37,7 @@ public sealed unsafe partial class Fiber
         lock (_fibers)
         {
             _fibers.Clear(); _threads.Clear();
+            _entryReturn = 0; // guest memory and the HLE table are the saved session's now: the next start makes a new stub
             int n = r.ReadInt32();
             for (int i = 0; i < n; i++)
             {

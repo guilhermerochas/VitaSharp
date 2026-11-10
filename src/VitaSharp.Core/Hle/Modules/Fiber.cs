@@ -116,8 +116,8 @@ public sealed unsafe partial class Fiber : HleModule
             CpuState c = *s;
             c.R[0] = f.ArgOnInitialize;
             c.R[1] = argOnRunTo;
-            c.R[13] = f.ContextAddr != 0 ? (f.ContextAddr + f.ContextSize) & ~7u : threadSp & ~7u;
-            c.R[14] = Emu.Kernel.ThreadExitTrap; // fiber entry functions must never return
+            c.R[13] = f.ContextAddr != 0 ? (f.ContextAddr + f.ContextSize - 1) & ~7u : threadSp & ~7u; // the firmware's top: last byte, 8-aligned
+            c.R[14] = EntryReturnStub();
             c.R[15] = f.Entry & ~1u;
             c.Thumb = f.Entry & 1;
             c.ITState = 0;
@@ -130,6 +130,50 @@ public sealed unsafe partial class Fiber : HleModule
             f.Context.R[0] = OK;
         }
         f.Status = Status.Running;
+    }
+
+    const string EntryReturnName = "SceFiber:entryReturned";
+    /// <summary>The guest stub of <see cref="EntryReturned"/> in this session (not saved: a restored fiber context that
+    /// returns into the stub of the saved session reaches the same host function, which every session registers).</summary>
+    uint _entryReturn;
+
+    public override void Initialize() => Emu.Hle.RegisterHostFunction(EntryReturnName, c => c.Return(EntryReturned(c.Thread, c.Cpu)));
+
+    /// <summary>Where a fiber's entry function returns to (its LR at the start): host code that ends the fiber's run.</summary>
+    uint EntryReturnStub()
+    {
+        if (_entryReturn != 0) return _entryReturn;
+        var fns = Emu.Hle.Functions;
+        int svc = -1;
+        for (int i = fns.Count - 1; i > 0 && svc < 0; i--)
+            if (fns[i].Nid == 0 && fns[i].Library == "host" && fns[i].Name == EntryReturnName) svc = i;
+        // a save state of a session before this function existed drops it from the table: register it again
+        if (svc < 0) svc = (int)Emu.Hle.RegisterHostFunction(EntryReturnName, c => c.Return(EntryReturned(c.Thread, c.Cpu)));
+        uint stub = Emu.Memory.Alloc(0x10, "fiber:entry-return");
+        Loader.Linker.WriteHleStub(stub, (uint)svc, 0);
+        Emu.Code.Invalidate(stub, 0x10);
+        return _entryReturn = stub;
+    }
+
+    /// <summary>
+    /// A fiber's entry function returned (libfiber 3.74: the entry is called with the return into the library): the
+    /// thread resumes after the sceFiberRun that started the fibers, which returns ERR_STATE with *argOnReturn = the
+    /// fiber that returned. The fiber is idle again and starts over at its entry when it runs next.
+    /// </summary>
+    int EntryReturned(GuestThread t, CpuState* s)
+    {
+        lock (_fibers)
+        {
+            var tf = Self(t);
+            var cur = tf.Current;
+            if (cur == null) return ERR_PERMISSION;
+            cur.Status = Status.Init;
+            tf.Current = null;
+            if (tf.ArgOnReturnPtr != 0) GuestMemory.W32(tf.ArgOnReturnPtr, cur.Address);
+            var ctx = tf.ThreadContext;
+            ctx.R[0] = unchecked((uint)ERR_STATE);
+            return Load(t, s, ctx);
+        }
     }
 
     int Initialize(uint fiber, uint name, uint entry, uint argOnInitialize, uint addrContext, uint sizeContext)
@@ -297,13 +341,28 @@ public sealed unsafe partial class Fiber : HleModule
     [Hle] int sceFiberPushUserMarkerWithHud(uint color, uint name) => OK;
     [Hle] int sceFiberPopUserMarkerWithHud() => OK;
 
-    int AttachContext(uint fiber, uint addrContext, uint sizeContext)
+    /// <summary>
+    /// The argument and state checks of _sceFiberAttachContextAndRun/AndSwitch, in the firmware's order (libfiber 3.74):
+    /// fiber NULL, fiber or context address not 8-aligned, the caller in the wrong mode (Run: already in a fiber; Switch: not
+    /// in one), then the context area: 0/0 attaches nothing (a plain run/switch); otherwise a size under 512 is a range error
+    /// and a NULL address, a size not a multiple of 8 or a fiber that already has a context area is invalid. Then the fiber
+    /// must not be running. Any idle fiber without a context area takes one, not only a never-run one: a fiber without a
+    /// context keeps no state, so it starts again at its entry, now on the attached stack.
+    /// </summary>
+    int AttachContext(uint fiber, uint addrContext, uint sizeContext, bool inFiber, bool forSwitch)
     {
+        if (fiber == 0) return ERR_NULL;
+        if ((fiber & 7) != 0 || (addrContext & 7) != 0) return ERR_ALIGNMENT;
+        if (inFiber != forSwitch) return ERR_PERMISSION;
+        bool attach = addrContext != 0 || sizeContext != 0;
+        if (attach && sizeContext != 0 && sizeContext < ContextMinimumSize) return ERR_RANGE;
         if (!_fibers.TryGetValue(fiber, out var f)) return ERR_INVALID;
-        if (f.ContextAddr != 0 || f.Status != Status.Init) return ERR_STATE;
-        if (addrContext == 0 || sizeContext < ContextMinimumSize || (sizeContext & 7) != 0) return ERR_RANGE;
+        if (attach && (addrContext == 0 || sizeContext == 0 || (sizeContext & 7) != 0 || f.ContextAddr != 0)) return ERR_INVALID;
+        if (f.Status == Status.Running) return ERR_STATE;
+        if (!attach) return OK;
         f.ContextAddr = addrContext;
         f.ContextSize = sizeContext;
+        f.Status = Status.Init;
         if (_sizeCheck) GuestMemory.Fill(addrContext, 0xCC, sizeContext);
         return OK;
     }
@@ -311,14 +370,22 @@ public sealed unsafe partial class Fiber : HleModule
     [Hle("_sceFiberAttachContextAndRun")]
     int _sceFiberAttachContextAndRun(uint fiber, uint addrContext, uint sizeContext, uint argOnRunTo, uint argOnReturn)
     {
-        lock (_fibers) { int r = AttachContext(fiber, addrContext, sizeContext); if (r != OK) return r; }
+        lock (_fibers)
+        {
+            int r = AttachContext(fiber, addrContext, sizeContext, Self(GuestThread.Current!).Current != null, forSwitch: false);
+            if (r != OK) return r;
+        }
         return sceFiberRun(fiber, argOnRunTo, argOnReturn);
     }
 
     [Hle("_sceFiberAttachContextAndSwitch")]
     int _sceFiberAttachContextAndSwitch(uint fiber, uint addrContext, uint sizeContext, uint argOnRunTo, uint argOnRun)
     {
-        lock (_fibers) { int r = AttachContext(fiber, addrContext, sizeContext); if (r != OK) return r; }
+        lock (_fibers)
+        {
+            int r = AttachContext(fiber, addrContext, sizeContext, Self(GuestThread.Current!).Current != null, forSwitch: true);
+            if (r != OK) return r;
+        }
         return sceFiberSwitch(fiber, argOnRunTo, argOnRun);
     }
 }

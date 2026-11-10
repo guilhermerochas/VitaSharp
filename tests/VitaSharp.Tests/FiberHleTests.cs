@@ -27,6 +27,18 @@ public sealed unsafe class FiberHleTests(GuestMemoryFixture fx)
     static void SetBacking(object o, string prop, object? value) =>
         o.GetType().GetField($"<{prop}>k__BackingField", BindingFlags.Instance | BindingFlags.NonPublic)!.SetValue(o, value);
 
+    /// <summary>An emulator with just what SceFiber uses: the kernel, guest memory, the HLE table (the stub fiber entries
+    /// return to) and the code cache.</summary>
+    Emulator NewEmulator()
+    {
+        var emu = (Emulator)RuntimeHelpers.GetUninitializedObject(typeof(Emulator));
+        SetBacking(emu, "Kernel", new VitaSharp.Core.Kernel.Kernel(emu));
+        SetBacking(emu, "Memory", fx.Memory);
+        SetBacking(emu, "Code", fx.Cache);
+        SetBacking(emu, "Hle", new VitaSharp.Core.Hle.HleRegistry(emu));
+        return emu;
+    }
+
     /// <summary>Makes the test thread a guest thread with its own register file and returns that file.</summary>
     static CpuState* EnterFakeThread(Emulator emu)
     {
@@ -47,8 +59,7 @@ public sealed unsafe class FiberHleTests(GuestMemoryFixture fx)
     [Fact]
     public void ContextlessFiberRestartsAtEntryOnEverySwitch()
     {
-        var emu = (Emulator)RuntimeHelpers.GetUninitializedObject(typeof(Emulator));
-        SetBacking(emu, "Kernel", new VitaSharp.Core.Kernel.Kernel(emu));
+        var emu = NewEmulator();
         var f = new Fiber { Emu = emu };
         uint a = Alloc(128), b = Alloc(128), name = Alloc(32), ctxA = Alloc(0x1000);
         GuestMemory.WriteCString(name, "fib");
@@ -70,7 +81,7 @@ public sealed unsafe class FiberHleTests(GuestMemoryFixture fx)
             CallFrom(s, 0x8300_0100, ThreadSp - 0x40);
             Call(f, "sceFiberSwitch", a, 6u, 0u);
             Assert.Equal(EntryA & ~1u, s->R[15]);
-            Assert.Equal(ctxA + 0x1000, s->R[13]);
+            Assert.Equal(ctxA + 0xFF8, s->R[13]); // (addr + size - 1) & ~7
 
             // A switches back to B: B does not resume after its sceFiberSwitch call but starts over
             CallFrom(s, 0x8200_0200, ctxA + 0xF00);
@@ -92,6 +103,96 @@ public sealed unsafe class FiberHleTests(GuestMemoryFixture fx)
             Call(f, "sceFiberReturnToThread", 0u, 0u);
             Assert.Equal(ThreadLr & ~1u, s->R[15]);
             Assert.Equal(ThreadSp, s->R[13]);
+        }
+        finally
+        {
+            LeaveFakeThread();
+            CpuState.Free(s);
+        }
+    }
+
+    [Fact]
+    public void AttachContextAcceptsAnyIdleFiberWithoutContextArea()
+    {
+        var emu = NewEmulator();
+        var f = new Fiber { Emu = emu };
+        uint a = Alloc(128), b = Alloc(128), c = Alloc(128), name = Alloc(32), ctxA = Alloc(0x1000), ctxB = Alloc(0x800);
+        GuestMemory.WriteCString(name, "fib");
+        Assert.Equal(0, Call(f, "_sceFiberInitializeImpl", a, name, EntryA, 0x11u, ctxA, 0x1000u));
+        Assert.Equal(0, Call(f, "_sceFiberInitializeImpl", b, name, EntryB, 0x22u, 0u, 0u));
+        Assert.Equal(0, Call(f, "_sceFiberInitializeImpl", c, name, EntryB, 0x33u, 0u, 0u));
+        const int ERR_ALIGNMENT = unchecked((int)0x80590002), ERR_RANGE = unchecked((int)0x80590003),
+            ERR_INVALID = unchecked((int)0x80590004), ERR_PERMISSION = unchecked((int)0x80590005), ERR_STATE = unchecked((int)0x80590006);
+
+        var s = EnterFakeThread(emu);
+        try
+        {
+            s->R[14] = ThreadLr; s->R[13] = ThreadSp;
+            Assert.Equal(ERR_PERMISSION, Call(f, "_sceFiberAttachContextAndSwitch", b, ctxB, 0x800u, 0u, 0u)); // not in a fiber
+            // B runs on the thread stack (no context), then switches to A: B is now idle (suspended) without a context area
+            Call(f, "sceFiberRun", b, 0u, 0u);
+            Assert.Equal(ERR_PERMISSION, Call(f, "_sceFiberAttachContextAndRun", c, ctxB, 0x800u, 0u, 0u)); // already in one
+            CallFrom(s, 0x8300_0100, ThreadSp - 0x40);
+            Call(f, "sceFiberSwitch", a, 0u, 0u);
+            Assert.Equal(ERR_STATE, Call(f, "_sceFiberAttachContextAndSwitch", a, 0u, 0u, 0u, 0u)); // A is running
+            Assert.Equal(ERR_RANGE, Call(f, "_sceFiberAttachContextAndSwitch", b, ctxB, 0x100u, 0u, 0u));
+            Assert.Equal(ERR_ALIGNMENT, Call(f, "_sceFiberAttachContextAndSwitch", b, ctxB + 4, 0x800u, 0u, 0u));
+            Assert.Equal(ERR_INVALID, Call(f, "_sceFiberAttachContextAndSwitch", b, ctxB, 0x804u, 0u, 0u));
+            Assert.Equal(ERR_INVALID, Call(f, "_sceFiberAttachContextAndSwitch", b, 0u, 0x800u, 0u, 0u));
+
+            // A attaches a context to the suspended B: B starts at its entry on the new stack
+            CallFrom(s, 0x8200_0200, ctxA + 0xF00);
+            Assert.Equal(0x22, Call(f, "_sceFiberAttachContextAndSwitch", b, ctxB, 0x800u, 9u, 0u));
+            Assert.Equal(EntryB & ~1u, s->R[15]);
+            Assert.Equal(9u, s->R[1]);
+            Assert.Equal(ctxB + 0x7F8, s->R[13]);
+
+            // B (now with a context) switches to A with 0/0: a plain switch, A resumes after its call
+            CallFrom(s, 0x8300_0400, ctxB + 0x700);
+            Assert.Equal(0, Call(f, "_sceFiberAttachContextAndSwitch", a, 0u, 0u, 0u, 0u));
+            Assert.Equal(0x8200_0204u, s->R[15]);
+            Assert.Equal(ERR_INVALID, Call(f, "_sceFiberAttachContextAndSwitch", b, ctxB, 0x800u, 0u, 0u)); // B has one now
+            // B keeps its state now: switching back resumes it
+            Call(f, "sceFiberSwitch", b, 0u, 0u);
+            Assert.Equal(0x8300_0404u, s->R[15]);
+            Assert.Equal(ctxB + 0x700, s->R[13]);
+        }
+        finally
+        {
+            LeaveFakeThread();
+            CpuState.Free(s);
+        }
+    }
+
+    [Fact]
+    public void EntryReturnResumesTheThreadWithErrState()
+    {
+        var emu = NewEmulator();
+        var f = new Fiber { Emu = emu };
+        uint a = Alloc(128), name = Alloc(32), ctxA = Alloc(0x1000), argOnReturn = Alloc(4);
+        GuestMemory.WriteCString(name, "fib");
+        Assert.Equal(0, Call(f, "_sceFiberInitializeImpl", a, name, EntryA, 0x11u, ctxA, 0x1000u));
+        var s = EnterFakeThread(emu);
+        try
+        {
+            s->R[14] = ThreadLr; s->R[13] = ThreadSp;
+            Call(f, "sceFiberRun", a, 0u, argOnReturn);
+            uint lr = s->R[14];
+            Assert.NotEqual(emu.Kernel.ThreadExitTrap, lr);
+            // the entry returns: the stub's host function puts the thread back after its sceFiberRun with ERR_STATE
+            uint svc = GuestMemory.R32(lr) & 0xFFFFFF;
+            var fn = emu.Hle.GetFunction(svc);
+            Assert.Equal("SceFiber:entryReturned", fn.Name);
+            var ctx = new VitaSharp.Core.Hle.HleContext { Cpu = s, Thread = GuestThread.Current!, Emu = emu };
+            fn.Invoke!(ctx);
+            Assert.Equal(0x80590006u, s->R[0]);
+            Assert.Equal(ThreadLr & ~1u, s->R[15]);
+            Assert.Equal(ThreadSp, s->R[13]);
+            Assert.Equal(a, GuestMemory.R32(argOnReturn));
+            // the fiber is idle and starts over at its entry
+            Call(f, "sceFiberRun", a, 3u, 0u);
+            Assert.Equal(EntryA & ~1u, s->R[15]);
+            Assert.Equal(3u, s->R[1]);
         }
         finally
         {
