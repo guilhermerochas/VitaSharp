@@ -751,6 +751,20 @@ Lista de itens futuros do VitaSharp. Marque `[x]` quando um item for concluído.
 
 ## Firmware e sistema
 
+- [ ] Jogos de PSP pelo emulador de PSP do próprio Vita (pedido do usuário, 10/11/2026: "eu quero que ele emule tudo o
+  que seja possível do psvita"). O Vita roda PSP com o `pspemu` do firmware (código ARM que traduz o MIPS do PSP) e os
+  serviços de compatibilidade (`SceCompat`, `ScePsp2Compat`: tela, áudio, arquivos, controles, memória compartilhada).
+  Caminho: rodar o `pspemu` real em LLE dentro do VitaSharp, como o shell e os apps do sistema, e completar o HLE dos
+  serviços que ele usa (não escrever um emulador de PSP próprio: não reproduzir o PPSSPP). Passos: (1) descobrir como
+  o shell inicia um título de PSP (PBOOT/EBOOT.PBP, ISO/CSO, `ux0:pspemu`) e quais módulos do firmware carrega;
+  (2) carregar o pspemu e seguir as funções que faltam pelos logs; (3) primeiro um homebrew de PSP simples, depois um
+  jogo; (4) medir o desempenho (é emulação dentro de emulação: esperar lento no início, otimizar depois). Exige o
+  firmware com os módulos do pspemu; nada do firmware vai para o repositório
+- [ ] Emular tudo o que for possível do Vita (diretriz do usuário, 10/11/2026): além dos jogos e do sistema, listar
+  os recursos do aparelho ainda não emulados (ex.: PSP, PS Mobile/PSM, Remote Play/PS TV, Near, Party, Content
+  Manager, câmera/AR, apps de vídeo/música/browser) e abrir um item por recurso com o caminho (LLE do módulo real +
+  HLE do que falta); os grupos que o plano do VitaSDK marcou como "não se aplica" (Mono do PSM, Piglet, ShaccCg)
+  entram aqui como recursos a emular, não como ignorados
 - [ ] Idioma do sistema por jogo (pedido do usuário, 09/11/2026): opção "Idioma do sistema" nos ajustes de cada jogo
   (desktop e Android) que sobrepõe o idioma que o jogo recebe (SceSystemParamLang / `/CONFIG/SYSTEM/language`), para
   jogos sem o idioma do aparelho. Caso real: Killzone Mercenary PCSC00045 (lançamento asiático) só tem japonês
