@@ -190,12 +190,13 @@ public sealed partial class Fios2
     // I/O filters: the dearchiver and cache filters are callbacks the module calls on every request; archives are
     // read here directly, so a filter only takes its slot (index 0..7).
     readonly uint[] _filters = new uint[8];
+    readonly uint[] _filterContexts = new uint[8];
 
     [Hle]
     int sceFiosIOFilterAdd(int index, uint callback, uint context)
     {
         if (index is < 0 or >= 8) return ERR_BAD_INDEX;
-        lock (_lock) { if (_filters[index] != 0) return ERR_BUSY; _filters[index] = callback; }
+        lock (_lock) { if (_filters[index] != 0) return ERR_BUSY; _filters[index] = callback; _filterContexts[index] = context; }
         return 0;
     }
 
