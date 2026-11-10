@@ -174,15 +174,21 @@ public sealed partial class SystemServicesVsh
     [Hle("_sceSblGcAuthMgrAdhocBB224Auth5", Default = true)]
     [Hle("_sceSblGcAuthMgrAdhocBB224GetKeys", Default = true)]
     [Hle("_sceSblGcAuthMgrGetMediaIdType01", Default = true)]
+    [Hle("sceSblGcAuthMgrGetMediaIdType01", Library = "SceLibKernel", Default = true)] // libkernel 3.74 forwards these
     [Hle("_sceSblGcAuthMgrMsSaveBBCipherFinal", Default = true)]
+    [Hle("sceSblGcAuthMgrMsSaveBBCipherFinal", Library = "SceLibKernel", Default = true)]
     [Hle("_sceSblGcAuthMgrMsSaveBBCipherInit", Default = true)]
     [Hle("_sceSblGcAuthMgrMsSaveBBCipherUpdate", Default = true)]
     [Hle("_sceSblGcAuthMgrMsSaveBBMacFinal", Default = true)]
     [Hle("_sceSblGcAuthMgrMsSaveBBMacInit", Default = true)]
     [Hle("_sceSblGcAuthMgrMsSaveBBMacUpdate", Default = true)]
+    [Hle("sceSblGcAuthMgrMsSaveBBMacUpdate", Library = "SceLibKernel", Default = true)]
     [Hle("_sceSblGcAuthMgrPcactActivation", Default = true)]
+    [Hle("sceSblGcAuthMgrPcactActivation", Library = "SceLibKernel", Default = true)]
     [Hle("_sceSblGcAuthMgrPcactGetChallenge", Default = true)]
+    [Hle("sceSblGcAuthMgrPcactGetChallenge", Library = "SceLibKernel", Default = true)]
     [Hle("_sceSblGcAuthMgrPkgVry", Default = true)]
+    [Hle("sceSblGcAuthMgrPkgVry", Library = "SceLibKernel", Default = true)]
     [Hle("_sceSblGcAuthMgrPsmactCreateC1", Default = true)]
     [Hle("_sceSblGcAuthMgrPsmactVerifyR1", Default = true)]
     [Hle("_sceSblGcAuthMgrSclkGetData1", Default = true)]
@@ -191,8 +197,10 @@ public sealed partial class SystemServicesVsh
     /// <summary>The ad hoc authentication sessions: opened and closed without the secure module.</summary>
     [Hle("_sceSblGcAuthMgrAdhocBB160Init", Default = true)]
     [Hle("_sceSblGcAuthMgrAdhocBB160Shutdown", Default = true)]
+    [Hle("sceSblGcAuthMgrAdhocBB160Shutdown", Library = "SceLibKernel", Default = true)]
     [Hle("_sceSblGcAuthMgrAdhocBB224Init", Default = true)]
     [Hle("_sceSblGcAuthMgrAdhocBB224Shutdown", Default = true)]
+    [Hle("sceSblGcAuthMgrAdhocBB224Shutdown", Library = "SceLibKernel", Default = true)]
     int sceSblGcAuthMgrAdhocSession() => 0;
 
     // SceSblLicMgr: devkit/testkit activation; a retail unit has none

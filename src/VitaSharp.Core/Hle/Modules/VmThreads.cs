@@ -86,6 +86,8 @@ public sealed unsafe partial class VmThreads : HleModule
     [Hle("sceKernelWaitException")]
     [Hle("sceKernelWaitExceptionCB")]
     [Hle("sceKernelWaitExceptionCBForMono")] // libkernel.suprx 3.74: forwards to sceKernelWaitExceptionCB
+    [Hle("_sceKernelWaitException")]          // the SceThreadmgr syscalls behind them
+    [Hle("_sceKernelWaitExceptionCB")]
     int WaitException()
     {
         var self = GuestThread.Current!;
