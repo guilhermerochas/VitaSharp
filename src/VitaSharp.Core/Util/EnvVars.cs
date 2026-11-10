@@ -24,6 +24,9 @@ public static class EnvVars
     public const string ShaderMemo = "VITASHARP_SHADER_MEMO";
     /// <summary>=0: texture images are not kept for earlier contents (Renderer.Vulkan VulkanRenderer.TexContentCache.cs, A/B).</summary>
     public const string TexContentCache = "VITASHARP_TEX_CONTENT_CACHE";
+    /// <summary>=0: a retired frame's deferred actions (destruction, uniform chunk references) wait until its slot is
+    /// reused, as before (Renderer.Vulkan VulkanRenderer.RetireFrame, A/B).</summary>
+    public const string RetireDeferred = "VITASHARP_RETIRE_DEFERRED";
     /// <summary>Developer builds: presented frame from which VITASHARP_WORKER_PROF measures (default 30).</summary>
     public const string WorkerProfFrom = "VITASHARP_WORKER_PROF_FROM";
     /// <summary>A/B switch: =old scans draw indices for their min/max one at a time; default new (128-bit vectors).</summary>

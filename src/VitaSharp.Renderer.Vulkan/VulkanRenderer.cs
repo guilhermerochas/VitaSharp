@@ -329,6 +329,10 @@ public sealed unsafe partial class VulkanRenderer : IGpuBackend
     /// Waits for a submitted frame and publishes its results: dumps, render-target writebacks into guest memory,
     /// visibility results and the scene notifications that were deferred until the GPU really finished.
     /// </summary>
+    /// <summary><see cref="EnvVars.RetireDeferred"/>=0: a frame's deferred actions run when its slot is reused (the old
+    /// behaviour, A/B).</summary>
+    static readonly bool RetireDeferred = Environment.GetEnvironmentVariable(EnvVars.RetireDeferred) != "0";
+
     void RetireFrame(Frame f, RetireCause cause)
     {
         if (!f.Submitted || f.Retired) return;
@@ -338,6 +342,15 @@ public sealed unsafe partial class VulkanRenderer : IGpuBackend
         WaitFrameFence(f, cause);
         f.Retired = true;
         RunAfterGpu(f.SubmitSeq);
+        // what waited for this frame's GPU work (deferred destruction, the uniform arena chunks its draws read) goes now,
+        // not when the slot is recorded again FramesInFlight submits later: the uniform heap's chunks were held that long,
+        // so the heap ran out and later draws' uniforms were copied into the upload ring instead (Killzone: ~0.8 ms of
+        // copies per frame on the PC, more with the phone's 8 slots)
+        if (RetireDeferred && f.Deferred.Count > 0)
+        {
+            foreach (var a in f.Deferred) a();
+            f.Deferred.Clear();
+        }
         CompleteGpuTime(f);
         if (_longWait is { } lw) { Log.Info($"[sync] waited {lw.Ms:F1} ms ({lw.Cause}) for a frame with {_lastGpuMs:F1} ms of GPU work, present {_presentCount}"); _longWait = null; }
         if (f.Readback is { } rb) WriteDump(f, rb);

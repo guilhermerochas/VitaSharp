@@ -128,6 +128,42 @@ public static class SessionReport
         foreach (var l in DebugMode.HleSummary()) yield return l;
     }
 
+    /// <summary>Presented frame from which the PERF steady lines measure host CPU per thread (VITASHARP_WORKER_PROF_FROM;
+    /// none without it): the whole-run PERF thread lines include the boot and the loading screens.</summary>
+    public static readonly long ThreadMarkFrom = long.TryParse(Environment.GetEnvironmentVariable(EnvVars.WorkerProfFrom), out long tm) && tm > 0 ? tm : long.MaxValue;
+    public static long ThreadMarkFrame { get; private set; } = -1;
+    static Dictionary<int, double>? _threadMark;
+    static double _processMark;
+
+    /// <summary>Snapshots every host thread's CPU time (start of the steady-state measurement).</summary>
+    public static void MarkThreadCpu(long frame)
+    {
+        var proc = System.Diagnostics.Process.GetCurrentProcess();
+        var mark = new Dictionary<int, double>();
+        foreach (System.Diagnostics.ProcessThread t in proc.Threads)
+        {
+            try { mark[t.Id] = t.TotalProcessorTime.TotalMilliseconds; }
+            catch (Exception e) when (e is InvalidOperationException or NotSupportedException or PlatformNotSupportedException or System.ComponentModel.Win32Exception) { }
+        }
+        _processMark = proc.TotalProcessorTime.TotalMilliseconds;
+        _threadMark = mark;
+        ThreadMarkFrame = frame;
+    }
+
+    static IEnumerable<string> SteadyThreadLines(System.Diagnostics.Process proc, long frames)
+    {
+        if (_threadMark is not { } mark || frames <= ThreadMarkFrame) yield break;
+        double n = frames - ThreadMarkFrame;
+        yield return $"PERF steady cpu (frames {ThreadMarkFrame}-{frames}): {(proc.TotalProcessorTime.TotalMilliseconds - _processMark) / n:F2} ms/frame";
+        var rows = new List<(string Name, double Ms)>();
+        foreach (System.Diagnostics.ProcessThread t in proc.Threads)
+        {
+            try { rows.Add((NativeThread.Names.GetValueOrDefault(t.Id, $"host#{t.Id}"), t.TotalProcessorTime.TotalMilliseconds - mark.GetValueOrDefault(t.Id))); }
+            catch (Exception e) when (e is InvalidOperationException or NotSupportedException or PlatformNotSupportedException or System.ComponentModel.Win32Exception) { }
+        }
+        foreach (var (name, ms) in rows.OrderByDescending(x => x.Ms).Take(14))
+            yield return $"PERF steady thread {name}: {ms / n:F2} ms/frame";
+    }
     /// <summary>Host process: CPU time, the busiest host threads, allocations and GC.</summary>
     static IEnumerable<string> ProcessLines()
     {
@@ -144,6 +180,9 @@ public static class SessionReport
         }
         foreach (var (name, ms) in byCpu.OrderByDescending(x => x.Ms).Take(12))
             yield return $"PERF thread {name}: {ms / 1000:F1} s cpu ({ms / frames:F2} ms/frame)";
+        foreach (var l in SteadyThreadLines(proc, frames)) yield return l;
+        yield return "PERF delays (per frame: 0 / <=100us / <=1ms / <=5ms / longer; host sleeps, asked and late on average):" + string.Concat(VitaSharp.Core.Kernel.Wait.Delays.OrderByDescending(kv => kv.Value.Sum()).Take(8).Select(kv => $" {kv.Key} {kv.Value[0] / (double)frames:F1}/{kv.Value[1] / (double)frames:F1}/{kv.Value[2] / (double)frames:F1}/{kv.Value[3] / (double)frames:F1}/{kv.Value[4] / (double)frames:F1} slept {kv.Value[5] / (double)frames:F1} (asked {kv.Value[6] / Math.Max(1.0, kv.Value[5]):F0} us, late {kv.Value[7] / Math.Max(1.0, kv.Value[5]):F0} us);"));
+        yield return $"PERF sched: core acquires that waited {VitaSharp.Core.Kernel.Scheduler.AcquireBlocked / (double)frames:F1}/frame, re-waits after a wake without a core {VitaSharp.Core.Kernel.Scheduler.AcquireRewaits / (double)frames:F1}/frame; blocking syscall host waits {VitaSharp.Core.Kernel.Wait.BlockingWaits / (double)frames:F1}/frame, wake-up latencies {VitaSharp.Core.Kernel.Wait.Latencies / (double)frames:F1}/frame";
         yield return $"PERF allocated {GC.GetTotalAllocatedBytes() / 1048576.0:F0} MB total ({GC.GetTotalAllocatedBytes() / 1024.0 / frames:F0} KB/frame), GC gen0 {GC.CollectionCount(0)} gen1 {GC.CollectionCount(1)} gen2 {GC.CollectionCount(2)}, pause {gcInfo.PauseTimePercentage:F1}%, heap {gcInfo.HeapSizeBytes / 1048576.0:F0} MB, working set {Environment.WorkingSet / 1048576.0:F0} MB";
     }
 }

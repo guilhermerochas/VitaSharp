@@ -157,7 +157,7 @@ public sealed unsafe partial class VulkanRenderer
             sb.Append($" {(RetireCause)i} {_retireBlocked[i]}/{_retireCount[i]} {Ms(_retireWaitTicks[i]):F0};");
         }
         sb.Append($" total {Ms(total) / frames:F3} ms/frame; idle (queue empty) {Ms(_idleWaitTicks) / frames:F3} ms/frame, {_idleYields} yields to new work;");
-        sb.Append($" {_submitSeq / frames:F2} submits/frame; writebacks {_wbCount / frames:F2}/frame ({_wbBytes / frames / 1024:F0} KB/frame, {Ms(_wbTicks) / frames:F3} ms/frame); uploads {_uploadBytes / frames / 1024:F0} KB/frame");
+        sb.Append($" {_submitSeq / frames:F2} submits/frame; writebacks {_wbCount / frames:F2}/frame ({_wbBytes / frames / 1024:F0} KB/frame, {Ms(_wbTicks) / frames:F3} ms/frame); uploads {_uploadBytes / frames / 1024:F0} KB/frame; uniform blocks bound in the heap {_statUniformInHeap / frames:F0}/frame, copied {_statUniformCopied / frames:F0}/frame");
         double wf = Math.Max(1, _workFrames); // presents of this renderer (a replay starts at the recorded present number)
         sb.Append($"; work per frame ({_workFrames} frames): {_statDraws / wf:F0} draws, {_statPipelineBinds / wf:F0} pipeline binds, {_statSets / wf:F0} descriptor sets, {_statDescWrites / wf:F0} descriptor writes, {_uploadBytes / wf / 1024:F0} KB uploaded ({_statOverflowBytes / wf / 1024:F0} KB/frame past the ring, {_statOverflowChunks} overflow buffers); one-sample fetch draws {_statSingleFetchDraws + _statFetchPassMerged} ({_statFetchPassMerged} in an open fetch pass)");
         sb.Append($"; uniform blocks {_statUniformBytes / wf / 1024:F0} KB/frame, guest memory into the CDRAM mirror {_statMirrorCopyBytes / wf / 1024:F0} KB/frame");
