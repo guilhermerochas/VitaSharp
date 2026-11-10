@@ -725,7 +725,10 @@ public sealed class Emulator : IDisposable
                 // and for the libraries whose firmware version is a client of a service the system runs, which the HLE
                 // only approximates (FirmwareServiceClients): a system program gets the real one
                 bool serviceClient = IsSystemProgram && FirmwareServiceClients.Contains(lib);
-                if ((HleServesLibrary(lib) && !firmwareNeedsInternals && !serviceClient) || nids.All(n => Linker.TryGetFunctionExport(n, out _))) continue;
+                // a game keeps every library the HLE has anything of, firmware fallbacks included (its own libc and FIOS2
+                // or the HLE ones): only libraries the HLE knows nothing of come from the firmware
+                bool hleServes = IsSystemProgram ? HleServesLibrary(lib) : Hle.KnowsLibrary(lib);
+                if ((hleServes && !firmwareNeedsInternals && !serviceClient) || nids.All(n => Linker.TryGetFunctionExport(n, out _))) continue;
                 if (withoutOnRequest && NeedsOnRequest(provider.VitaPath)) continue;
                 if (!visiting.Add(provider.VitaPath)) continue;
                 LoadedModule dep;

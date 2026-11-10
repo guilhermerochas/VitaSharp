@@ -63,7 +63,7 @@ public sealed partial class HleRegistry
                     continue;
                 }
                 // the existing record when there is one (call counts and warnings carry on)
-                var f = _indexByNid.TryGetValue(nid, out var cur) ? _functions[cur] : new HleFunction { Nid = nid, Name = name, Library = lib, Invoke = _impls.GetValueOrDefault(nid) };
+                var f = _indexByNid.TryGetValue(nid, out var cur) ? _functions[cur] : new HleFunction { Nid = nid, Name = name, Library = lib, Invoke = _impls.GetValueOrDefault(nid), ReturnsValue = _valueReturns.Contains(nid) };
                 list.Add(f);
                 index[nid] = list.Count - 1;
             }

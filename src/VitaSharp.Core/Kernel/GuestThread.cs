@@ -400,7 +400,7 @@ public sealed unsafe partial class GuestThread : KernelObject, IDisposable, Cpu.
             else InvokeGuarded(f, s);
             f.ChargedCycles += Core.ChargedCycles - charged0;
             if (dbg) DebugHleReturn(f, s->R[0], a0, a1, a2, a3, lr);
-            else if (DebugMode.CollectHleErrors && s->R[0] is >= 0x80000000 and < 0x81000000) DebugMode.HleError(Name, f.Name, s->R[0], a0, a1, a2, a3, lr);
+            else if (DebugMode.CollectHleErrors && !f.ReturnsValue && s->R[0] is >= 0x80000000 and < 0x81000000) DebugMode.HleError(Name, f.Name, s->R[0], a0, a1, a2, a3, lr);
             if (trace) Log.Info($"  -> {f.Name} = 0x{s->R[0]:X} t={Util.GuestClock.Microseconds}");
             if (ContextReplaced) { ContextReplaced = false; _hleSeq++; return; }
         }
@@ -601,7 +601,7 @@ public sealed unsafe partial class GuestThread : KernelObject, IDisposable, Cpu.
             r.Ret = ret;
             r.Returned = true;
         }
-        if (ret is >= 0x80000000 and < 0x81000000) DebugMode.HleError(Name, f.Name, ret, a0, a1, a2, a3, lr);
+        if (!f.ReturnsValue && ret is >= 0x80000000 and < 0x81000000) DebugMode.HleError(Name, f.Name, ret, a0, a1, a2, a3, lr);
     }
 
     /// <summary>Debug mode: this thread's last HLE calls, oldest first (a call without a result has not returned: the

@@ -124,15 +124,17 @@ public sealed class HleBinderGenerator : IIncrementalGenerator
                     uint nid = 0;
                     string? library = null;
                     bool isDefault = false;
+                    bool returnsValue = false;
                     foreach (var na in a.NamedArguments)
                     {
                         if (na.Key == "Nid" && na.Value.Value is uint n) nid = n;
                         else if (na.Key == "Library") library = na.Value.Value as string;
                         else if (na.Key == "Default" && na.Value.Value is bool dv) isDefault = dv;
+                        else if (na.Key == "ReturnsValue" && na.Value.Value is bool rv) returnsValue = rv;
                     }
                     string invocation = target.StartsWith("self.") ? $"{target}({call.Args})" : $"{target}(self{(call.Args.Length > 0 ? ", " + call.Args : "")})";
                     sb.AppendLine($"        new(\"{m.Name}\", {Str(name)}, 0x{nid:X8}u, {Str(library)}, {Str(layout)},");
-                    sb.AppendLine($"            static m => {{ var self = ({Fq(t)})m; return ctx => {{ unchecked {{ {call.Wrap(invocation)}; }} }}; }}{(isDefault ? ", true" : "")}),");
+                    sb.AppendLine($"            static m => {{ var self = ({Fq(t)})m; return ctx => {{ unchecked {{ {call.Wrap(invocation)}; }} }}; }}{(isDefault ? ", true" : "")}{(returnsValue ? ", ReturnsValue: true" : "")}),");
                 }
             }
             sb.AppendLine("    };");

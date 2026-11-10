@@ -179,6 +179,23 @@ public sealed unsafe class HleBinderTests(GuestMemoryFixture fx)
         foreach (var m in HleBindings.Modules) Assert.IsType(m.Type, m.Create());
     }
 
+    /// <summary>[Hle(ReturnsValue = true)] reaches the binding (the HLE error counter skips those functions), and only
+    /// there: sceGxmTextureGetType returns SCE_GXM_TEXTURE_TILED (0x80000000), which is no error.</summary>
+    [Fact]
+    public void ReturnsValueReachesTheBindings()
+    {
+        foreach (var m in HleBindings.Modules)
+            foreach (var b in HleBindings.For(m.Type)!)
+            {
+                var attrs = m.Type.GetMethods(BindingFlags.Instance | BindingFlags.Static | BindingFlags.Public | BindingFlags.NonPublic | BindingFlags.DeclaredOnly)
+                    .Where(x => x.Name == b.Method).SelectMany(x => x.GetCustomAttributes<HleAttribute>())
+                    .Where(a => a.Name == b.Name && a.Nid == b.Nid && a.Library == b.Library).ToList();
+                Assert.NotEmpty(attrs);
+                Assert.Equal(attrs[0].ReturnsValue, b.ReturnsValue);
+            }
+        Assert.Contains(HleBindings.For(typeof(VitaSharp.Core.Hle.Modules.Gxm))!, b => b.Method == "sceGxmTextureGetType" && b.ReturnsValue);
+    }
+
     [Fact]
     public void EveryHleMethodBindsLikeTheReflectionBinder()
     {

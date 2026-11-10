@@ -1396,6 +1396,17 @@ Lista de itens futuros do VitaSharp. Marque `[x]` quando um item for concluído.
   existiriam se o jogo importasse esses módulos (nenhum importa). Próximo passo sugerido para o lead: os jogos não
   passam por `LoadFirmwareDependencies` (só os programas do sistema), então uma biblioteca do firmware que o HLE não
   conhece fica "não implementada" num jogo em vez de vir do módulo real
+  Feito (10/11/2026, agente B, fix/bugs-b-3): o sceSysmoduleLoadModule de um id público (tabela de ids do
+  psp2/sysmodule.h e módulos como no sysmodule_paths do Vita3K) carrega o módulo do firmware quando o HLE não tem
+  nenhuma função de nenhuma biblioteca que ele exporta (HleRegistry.KnowsLibrary, que conta também os HLE de reserva
+  como libc e FIOS2); o que o HLE emula continua no HLE. As dependências de um módulo carregado assim (e dos de
+  `LleSysmodules`, como o libult do jogo) agora também vêm do firmware num jogo, mas só as bibliotecas que o HLE não
+  conhece. Pelo índice do firmware 3.74 isso vale para AACENC (libnaac), BG_APP_UTIL, IPMI, MARLIN (3),
+  TELEPHONY_UTIL, DTCP_IP, VIDEO_SEARCH_EMPR, BEISOBMF, BEMP2SYS, LOCATION_EXTENSION, MAIL_API, TELEPORT_SERVER,
+  APPUTIL_EXT e AVCDEC. Nenhum dos 47 jogos instalados importa essas bibliotecas (o `imports` de todos só acusa o
+  SceShaccCg do Dead Space e do SH4, que é do runtime do PSM e não do firmware), então não houve jogo para provar a
+  carga; sem regressão no NGS2 Plus (libult LLE, gameplay, `<scratchpad>\bB2\runs\v3_ngs2_boot`), SH: BoM
+  (`v3_shbom_boot`) e nos jogos da revalidação abaixo
 - [x] Câmera (Fotos, NPXS10004): um vídeo de 7 s gravado pela câmera mostra 1:09 de duração no player (relato do
   usuário, 08/11/2026, gravação `captures\shell_20261108_170201_tudo`). O MP4 gravado está certo (ffprobe 7,70 s;
   `mvhd` 90000/693120). **Corrigido** (feat/product-4): o player da câmera (avPlayer LLE) pega a duração do arquivo no
@@ -3238,6 +3249,15 @@ on-existing PPS 0 e nenhum quadro). Ainda aberto: depois da carga no meio do fil
   área, 16610 sceFiberSwitch, `<scratchpad>\bB2\runs\soulsac_boot\frames\sheet_3.png`). Nenhum jogo rodado chama o AttachContext (só o libult importa; NGS2,
   Unit 13 e Soul Sacrifice Delta não criam ulthreads no caminho testado): essa parte só tem os testes
 - [ ] MSAA real: leitura da imagem pelo próprio desenho (input attachment) é indefinida quando triângulos do mesmo desenho se sobrepõem (sem `VK_EXT_rasterization_order_attachment_access` na GTX 1650/Iris Xe); causa diferenças de ±1 entre execuções (29/10/2026: o log da GTX 1650 ainda mostra `GPU missing: ... RasterizationOrderColor`)
+  Estudado (10/11/2026, agente B, fix/bugs-b-3): o Vita3K (vulkan/renderer.cpp, context.cpp) usa o
+  rasterization-order quando existe e, sem ele, só no modo "alta precisão" o `VK_EXT_fragment_shader_interlock`
+  (fragmentShaderSampleInterlock + fragmentStoresAndAtomics): a cor vira uma storage image (visão UNORM separada
+  da sRGB, VK_KHR_maintenance2), lida e escrita pelo shader dentro da seção crítica, num render pass próprio; fora
+  disso ele também fica indefinido. A correção exata
+  aqui seria esse mesmo caminho (variante do gerador com begin/endInvocationInterlock e imageLoad/imageStore da cor,
+  storage image multisample para o MSAA nativo), uma mudança grande no renderizador para diferenças de ±1; não feita
+  nesta rodada. Primeiro passo se for fazer: conferir na GTX 1650 e na Iris Xe se `fragmentShaderSampleInterlock` e
+  `shaderStorageImageMultisample` existem (logar no início, como o `GPU missing`)
 - [ ] Sonic Mania: ~18 estalos por segundo na saída de música (44,1 kHz); pode ser do próprio conteúdo, não investigado (29/10/2026, main c12927d, `mania_boot.txt` com `--audio-dump`: 522 estalos em 34,5 s de som, 15,1/s, sem relação com a fase do grain de 1024; sem underruns)
   Não reproduz (05/11/2026, fix/bugs-audio, os mesmos `mania_boot` e `--audio-dump`): porta BGM 44,1 kHz grain 1024, 62 s (34 s com som), `audrep.py` 0 estalos e um detector de segunda diferença mais sensível 0,1/s; sem underruns. A conversão 44,1→48 kHz da saída é do OpenAL (fora do dump); falta o usuário ouvir no PC.
   Agente C dia 11 (06/11/2026, fix/bugs-games-10, `mania_boot` com `--audio-dump`, 62 s, 35,6 s com som): nas emendas
@@ -3250,12 +3270,20 @@ on-existing PPS 0 e nenhum quadro). Ainda aberto: depois da carga no meio do fil
   Conferido de novo (05/11/2026, fix/bugs-audio-2, no mesmo dump): 0 quedas de >30 dB em 2,5 ms (`drops.py`) e nenhuma
   emenda na fase de 256/512/1024 amostras (`phase.py`, pico 1,16x da mediana, o mesmo do FIFA sem defeito); os 8
   eventos de segunda diferença são transientes da música entre 32 e 38 s. Sem defeito medível no que o jogo gera
-- [ ] ATRAC9: a saída do nosso decodificador tem a polaridade invertida em relação ao FFmpeg (inaudível; confirmar qual está certa; o decodificador não mudou desde então, e só dá para decidir comparando com o Vita real)
+- [x] ATRAC9: a saída do nosso decodificador tem a polaridade invertida em relação ao FFmpeg (inaudível; confirmar qual está certa; o decodificador não mudou desde então, e só dá para decidir comparando com o Vita real)
   Conferido (10/11/2026, agente B): o nosso é o LibAtrac9/VGAudio (Alex Barney, engenharia reversa do decodificador da
   Sony); o do FFmpeg (2018) foi escrito sem comparar com o binário da Sony ("confiança de que está perto do binário",
   na lista do FFmpeg) e usa o MDCT genérico do FFmpeg com escala positiva (outros codecs do FFmpeg, como o Vorbis,
   usam escala negativa para acertar o sinal). O Vita3K usa o FFmpeg. Indício a favor do nosso, sem prova: decidir só
   com uma gravação digital do Vita/PSTV de um som isolado (logo) correlacionada com o nosso decodificado
+  **Decidido (10/11/2026, agente B): o nosso está certo, o FFmpeg tem a polaridade invertida.** Áudio de dois vídeos
+  de PS TV do YouTube (captura HDMI; só o áudio, baixado com yt-dlp para o scratchpad e apagado depois), em mono a
+  8 kHz, correlacionado por FFT com as faixas .at9 dos próprios jogos decodificadas pelo FFmpeg: Unit 13
+  (`TudV1nnrZLk`, "Unit 13: HD Gameplay (PS TV)") bate com 6 sons diferentes, todos com correlação negativa
+  (post_mission_complete -0,96, combat_set1_fl_11 -0,92, menu_splash -0,92, combat_set1_fl_12 -0,91, fl_05 -0,91,
+  hud_logo -0,86); Zero Time Dilemma (`9CpD-ZeIR5E`, "Part 42 PS Vita / PS TV") bate com o bgm049 a -0,80. O nosso
+  decodificador no mesmo bgm049 dá exatamente o FFmpeg com o sinal trocado (correlação -1,000000 no atraso 0, 106,2 dB
+  de SNR com a inversão), ou seja, o mesmo sinal do Vita de verdade. Nada a mudar
 - [x] `sceNpManagerGetCachedParam`: layout não confirmado, por isso responde "sem conta" mesmo com a conta PSN emulada conectada (o UnityNpToolkit do 99Vidas chama e segue em frente; 29/10/2026: `Np.cs` ainda devolve ERR_SIGNED_OUT)
   Feito (06/11/2026, fix/bugs-games-11): desmontado do np_manager.suprx 3.74, copia do registro de 0x148 bytes do
   NID_E45E4003 o SceNpId (+0, 0x24) e a URL do avatar (+0x38, 0x80) para um SceNpManagerCacheParam de 0xA4 bytes e
@@ -3277,6 +3305,25 @@ on-existing PPS 0 e nenhum quadro). Ainda aberto: depois da carga no meio do fil
   russo do Call of Duty não é defeito (04/11/2026): o PCSB00232 instalado é a edição `DECLASSIFIEDEU02` (russo e
   polonês; o `TITLE` padrão do param.sfo é "(рус)" e só há "(Polski)" como alternativa); o jogo lê o idioma 1 (inglês)
   pelo `sceAppUtilSystemParamGetInt` e, sem inglês nessa edição, fica no russo, como faria no Vita
+  Revalidado (10/11/2026, agente B, fix/bugs-b-3 sobre a main 2cfe1ec, headless, cenários de `tests/scenarios` com uma
+  raiz de dados sem saves; folhas em `<scratchpad>\bB2\runs\rv_*\frames`; fps das janelas de 5 s do log):
+  - Zero Time Dilemma: menu do título 57-60 fps (era 47-57) e 60 até a abertura, 30 nas cenas (a taxa do jogo): ok.
+  - Call of Duty: logos e título a 30 fps estáveis; o russo continua sendo da edição (não é defeito): ok.
+  - Shinobido 2: boot e filme 15-20 fps até ~f960, depois 28-30 fps até f3954; 0 não implementadas: ok depois do filme
+    (os 15 fps do começo são o filme de abertura, a conferir com o PC ocioso).
+  - Tearaway: 30 fps no menu de perfil, carregamento e intro (o menu parado lento não aparece mais): ok.
+  - Skullgirls: na primeira rodada a abertura da luta caiu para 5-16 fps; repetida com a CPU entre 3 e 22%, a luta
+    ficou em 43-60 fps (`rv2_skullgirls`): era a CPU dividida, não o jogo.
+  - The Deer God: continua sem limite de quadros (142-147 fps nas janelas do log, 4045 quadros em ~19 s). O jogo vira
+    os buffers com SCE_DISPLAY_SETBUF_IMMEDIATE e não espera vblank; o `VITASHARP_DISPLAY_IMMEDIATE_PACE=1` (um flip
+    por vblank) continua sendo só um experimento. Fica aberto (jogo do agente A).
+  - Silent Hill: Book of Memories (`shbom_boot`, não chega à seleção de zona): criação do personagem a ~16 fps
+    (f1328-2064) e ~1 fps enquanto o teclado na tela abre (f1700-1740); quarto inicial a 60. Fica aberto (jogo do
+    agente A).
+  - Crazy Market (PCSE00291) e Soul Sacrifice Delta: o Crazy Market não está mais instalado; o Soul Sacrifice chegou ao
+    fogo e à fumaça da primeira área na rodada do agente B de hoje (`<scratchpad>\bB2\runs\soulsac_boot`).
+  - NIDs que faltavam (FFBFC540, D5B26179, sceNpSnsFacebookInit, sceCoredumpRegisterCoredumpHandler): todos implementados;
+    0 "Unimplemented" nas sete execuções
 - [ ] Filmes no celular ainda mais lentos que no PC (31/10/2026, perf/android-phone-2): o primeiro filme do F1 2011 leva
   5,6 s contra 4,8 s no PC (45 grãos de silêncio no som do filme; Uncharted 40 por volta do filme do título), já com o
   decodificador H.264 do próprio Android (o da MediaTek segurava quadros: 6,25 s, 75 lacunas). Os decodificadores não

@@ -443,9 +443,9 @@ public sealed partial class Gxm : HleModule
     [Hle] uint sceGxmColorSurfaceGetGammaMode(uint surface) => ((GuestMemory.R32(surface) >> 2) & 3) << 12;
     [Hle] uint sceGxmColorSurfaceGetData(uint surface) => GuestMemory.R32(surface + 16);
     [Hle] int sceGxmColorSurfaceSetData(uint surface, uint data) { GuestMemory.W32(surface + 16, data); GuestMemory.W32(surface + 40, data); return 0; }
-    [Hle] uint sceGxmColorSurfaceGetFormat(uint surface) => GuestMemory.R32(surface + 20);
+    [Hle(ReturnsValue = true)] uint sceGxmColorSurfaceGetFormat(uint surface) => GuestMemory.R32(surface + 20);
     [Hle] int sceGxmColorSurfaceSetFormat(uint surface, uint f) { GuestMemory.W32(surface + 20, f); return 0; }
-    [Hle] uint sceGxmColorSurfaceGetType(uint surface) => GuestMemory.R32(surface + 24);
+    [Hle(ReturnsValue = true)] uint sceGxmColorSurfaceGetType(uint surface) => GuestMemory.R32(surface + 24);
     [Hle] uint sceGxmColorSurfaceGetStrideInPixels(uint surface) => GuestMemory.R32(surface + 12);
     [Hle] bool sceGxmColorSurfaceIsEnabled(uint surface) => (GuestMemory.R32(surface) & 1) == 0;
     [Hle] uint sceGxmColorSurfaceGetScaleMode(uint surface) => (GuestMemory.R32(surface) >> 1) & 1;
@@ -526,7 +526,7 @@ public sealed partial class Gxm : HleModule
     [Hle] bool sceGxmDepthStencilSurfaceGetBackgroundMask(uint s) => (GuestMemory.R32(s + 16) & 0x100) != 0;
     [Hle] void sceGxmDepthStencilSurfaceSetBackgroundMask(uint s, bool m) { uint w = GuestMemory.R32(s + 16) & ~0x100u; GuestMemory.W32(s + 16, w | (m ? 0x100u : 0)); }
     [Hle] bool sceGxmDepthStencilSurfaceIsEnabled(uint s) => ((GuestMemory.R32(s) >> 12) & 0x7EEE) != 0;
-    [Hle] uint sceGxmDepthStencilSurfaceGetFormat(uint s) => ((GuestMemory.R32(s) >> 12) & 0x7EEE) << 12;
+    [Hle(ReturnsValue = true)] uint sceGxmDepthStencilSurfaceGetFormat(uint s) => ((GuestMemory.R32(s) >> 12) & 0x7EEE) << 12;
     [Hle] uint sceGxmDepthStencilSurfaceGetStrideInSamples(uint s) => (((GuestMemory.R32(s) >> 3) & 0xFF) + 1) << 5;
 
     static DepthSurfaceInfo? ReadDepthSurface(uint s)
@@ -2379,8 +2379,8 @@ public sealed partial class Gxm : HleModule
     [Hle] int sceGxmTextureSetNormalizeMode(uint tex, uint mode) => SetBits(tex + 12, 31, 1, mode >> 31);
     [Hle] uint sceGxmTextureGetNormalizeMode(uint tex) => GuestMemory.R32(tex + 12) & 0x80000000;
     [Hle] uint sceGxmTextureGetPalette(uint tex) => (GuestMemory.R32(tex + 12) & 0x03FFFFFF) << 6;
-    [Hle] uint sceGxmTextureGetFormat(uint tex) => GxmTextureDesc.Read(tex).Format;
-    [Hle] uint sceGxmTextureGetType(uint tex) => GuestMemory.R32(tex + 4) & 0xE0000000;
+    [Hle(ReturnsValue = true)] uint sceGxmTextureGetFormat(uint tex) => GxmTextureDesc.Read(tex).Format;
+    [Hle(ReturnsValue = true)] uint sceGxmTextureGetType(uint tex) => GuestMemory.R32(tex + 4) & 0xE0000000;
     [Hle] uint sceGxmTextureGetWidth(uint tex) => GxmTextureDesc.Read(tex).Width;
     [Hle] uint sceGxmTextureGetHeight(uint tex) => GxmTextureDesc.Read(tex).Height;
     [Hle] uint sceGxmTextureGetMipmapCount(uint tex) => GxmTextureDesc.Read(tex).MipCount;
