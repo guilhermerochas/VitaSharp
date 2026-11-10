@@ -755,6 +755,16 @@ Lista de itens futuros do VitaSharp. Marque `[x]` quando um item for concluído.
   (desktop e Android) que sobrepõe o idioma que o jogo recebe (SceSystemParamLang / `/CONFIG/SYSTEM/language`), para
   jogos sem o idioma do aparelho. Caso real: Killzone Mercenary PCSC00045 (lançamento asiático) só tem japonês
   (padrão) e inglês; com o sistema em pt-BR o jogo cai no japonês. Padrão: seguir o idioma do sistema/app
+- [ ] HLE lote 10b (09/11/2026, feat/hle-batch-10b, parado no fim do dia): feito o SceLibMtpHttpWrapper (26), o
+  SceLibMtpHttp (28, libhttp/libssl sobre o MTP numa instância própria e offline do Http/Ssl), o sceHttpSetProxy
+  (SceHttp 53B722F2), o SceLibMtp (153: núcleo Init/Start/Stop/End, sem PC conectado = os erros da checagem de conexão
+  da biblioteca, configurações locais, callbacks, Wi-Fi sem PC registrado) e o SceMtpClient (163: sem cliente IPC do
+  SceMtpService no HLE, então NOTINIT; observadores, ouvintes e textos de erro funcionam). Tudo firmware-fallback
+  (o shell continua com os módulos de verdade). Sistema 2.819 -> 3.129. Testes de unidade em HleBatch10bTests.
+  Próximo passo: livespace_db (SceLsdb, 162; os getters são buscas no std::map do AppInfo: nó +0x10 chave, +4/+8
+  filhos, +0x29 nil, +0x18 tipo (0 int64 em +0x20, 1 string em *(+0x20)); chaves como 0xA1541070 nome, 0x21CA76B1
+  categoria), o email_engine (223: classes C++ com vtables do módulo, getters/setters, construtores e destrutores) e os
+  helpers do ScePsp2Compat. Falta validar o shell headless com este build (só testes de unidade).
 - [x] Diálogos comuns com interface de verdade (08/11/2026): o sceMsgDialog (e os outros diálogos comuns sem UI)
   respondia sozinho; hoje um SIM/NÃO responde SIM, menos logo depois de um NetCheckDialog cancelado, quando responde NÃO
   uma vez (282ec7d, 99Vidas sem rede). Como no Vita3K, mostrar o diálogo por cima do jogo e deixar o usuário escolher
