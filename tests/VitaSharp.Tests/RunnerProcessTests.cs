@@ -108,17 +108,9 @@ public sealed class RunnerProcessTests : IDisposable
     /// save state picker over the game (its panel dumped with --overlay-dump) and Circle closes it, F10 captures, F1
     /// changes the internal resolution (a new renderer on the same window), and "Close" closes the window as its X does.
     /// </summary>
-    [SoftwareVulkanFact]
+    [HiddenWindowVulkanFact]
     public void HiddenWindowRunPresentsAndAnswersTheHostKeys()
     {
-        // a window needs a display (Linux/macOS CI runners have none) and, on Windows, the system Vulkan loader for
-        // its surface: without them there is nothing to run
-        if (OperatingSystem.IsWindows() ? !File.Exists(Path.Combine(Environment.SystemDirectory, "vulkan-1.dll"))
-            : !OperatingSystem.IsLinux() || string.IsNullOrEmpty(Environment.GetEnvironmentVariable("DISPLAY")))
-        {
-            return;
-        }
-
         string frames = Path.Combine(_root, "frames"), overlays = Path.Combine(_root, "overlays");
         DesktopProcess.Result r = DesktopProcess.Run(_root, ["run", _app, "--no-vsync", $"--dump-frames={frames}", "--dump-every=1", $"--overlay-dump={overlays}",
             "--input=cross@f20:10,key@f40:F5,key@f60:F7,key@f80:F6,circle@f80+1:0.3,key@f100:F10,key@f120:F1,key@f160:Close"], timeoutMs: 180_000, systemLoader: true);

@@ -203,9 +203,87 @@ public static class SoftwareVulkan
         }
     }
 
+    /// <summary>Why a child process cannot get the software driver through the system Vulkan loader (a window
+    /// surface needs the loader), or null when it can. Windows: the loader ignores VK_DRIVER_FILES / VK_ICD_FILENAMES in
+    /// an elevated process ("Loader is running with elevated permissions"; GitHub's Windows runners run elevated), so
+    /// there the manifest must be registered under HKLM\SOFTWARE\Khronos\Vulkan\Drivers (the CI does that).</summary>
+    public static string? SystemLoaderSkipReason
+    {
+        get
+        {
+            if (SkipReason is { } missing)
+            {
+                return missing;
+            }
+
+            if (!OperatingSystem.IsWindows())
+            {
+                return null;
+            }
+
+            if (!File.Exists(Path.Combine(Environment.SystemDirectory, "vulkan-1.dll")))
+            {
+                return "no system Vulkan loader (vulkan-1.dll, installed with any GPU driver or the LunarG Vulkan Runtime)";
+            }
+
+            if (IcdManifest is not { } manifest)
+            {
+                return $"the software driver {Driver} has no ICD manifest (*_icd.json) next to it for the system Vulkan loader";
+            }
+
+            if (IsElevated() && !RegisteredDriver(manifest))
+            {
+                return "this process runs elevated, and the Vulkan loader then ignores VK_DRIVER_FILES: register the software driver "
+                    + $"for the loader (a DWORD value 0 named {manifest} under HKLM\\SOFTWARE\\Khronos\\Vulkan\\Drivers), or run unelevated";
+            }
+
+            return null;
+        }
+    }
+
+    [System.Runtime.Versioning.SupportedOSPlatform("windows")]
+    private static bool IsElevated()
+    {
+        using var identity = System.Security.Principal.WindowsIdentity.GetCurrent();
+        return new System.Security.Principal.WindowsPrincipal(identity).IsInRole(System.Security.Principal.WindowsBuiltInRole.Administrator);
+    }
+
+    [System.Runtime.Versioning.SupportedOSPlatform("windows")]
+    private static bool RegisteredDriver(string manifest)
+    {
+        using Microsoft.Win32.RegistryKey? key = Microsoft.Win32.Registry.LocalMachine.OpenSubKey(@"SOFTWARE\Khronos\Vulkan\Drivers");
+        return key != null && key.GetValueNames().Any(name => string.Equals(Path.GetFullPath(name), Path.GetFullPath(manifest), StringComparison.OrdinalIgnoreCase));
+    }
+
     private sealed class Restore(Action a) : IDisposable
     {
         public void Dispose() => a();
+    }
+}
+
+/// <summary>[Fact] of a hidden-window run in a child process (<see cref="DesktopProcess"/> with <c>systemLoader</c>):
+/// skipped when the child cannot get the software Vulkan driver through the system loader
+/// (<see cref="SoftwareVulkan.SystemLoaderSkipReason"/>), shaderc does not load, no desktop window can be created
+/// (<see cref="WindowAvailability"/>: Linux without a display), or on macOS, where the window and its MoltenVK surface
+/// are not covered by the tests.</summary>
+public sealed class HiddenWindowVulkanFactAttribute : FactAttribute
+{
+    public HiddenWindowVulkanFactAttribute()
+    {
+        string? display = null;
+        if (OperatingSystem.IsLinux())
+        {
+            display = WindowAvailability.SkipReason;
+        }
+        else if (!OperatingSystem.IsWindows())
+        {
+            display = "the window run is tested on Windows and on Linux with a display, not on this OS";
+        }
+
+        if ((display ?? SoftwareVulkan.SystemLoaderSkipReason ?? ShadercAvailability.SkipReason) is { } reason)
+        {
+            Skip = reason;
+        }
     }
 }
 
