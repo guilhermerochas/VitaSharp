@@ -3,8 +3,8 @@ using VitaSharp.Core.Memory;
 
 namespace VitaSharp.Core.Hle.Modules;
 
-// The SceVshBridge syscalls homebrew uses (the so_loader ports print the firmware version and check that the kubridge
-// kernel plugin is loaded before anything else).
+// SceVshBridge syscalls of the module manager and system version (homebrew such as the so_loader ports prints the
+// firmware version and checks that the kernel plugin it needs is loaded before anything else).
 public sealed partial class VshBridge
 {
     /// <summary>_vshSblGetSystemSwVersion(SceKernelSystemSwVersion *): ksceKernelGetSystemSwVersion, the same
@@ -14,8 +14,9 @@ public sealed partial class VshBridge
 
     /// <summary>
     /// _vshKernelSearchModuleByName(name, int buf[2]): the uid of a loaded module (user or kernel) by name, else
-    /// SCE_KERNEL_ERROR_MODULEMGR_NO_MOD. The kernel plugins whose user API the HLE provides (kubridge) count as loaded,
-    /// as they would be on a unit set up for the homebrew that asks.
+    /// SCE_KERNEL_ERROR_MODULEMGR_NO_MOD. The kernel modules whose user API an HLE module provides
+    /// (<see cref="Hle.HleModule.KernelModuleName"/>) count as loaded, as they would be on a unit set up for the
+    /// program that asks.
     /// </summary>
     [Hle]
     int _vshKernelSearchModuleByName(uint namePtr, uint buf)
@@ -24,7 +25,7 @@ public sealed partial class VshBridge
         string name = GuestMemory.ReadCString(namePtr, 0x100);
         var m = K.Modules.Values.OrderBy(x => x.Uid).FirstOrDefault(x => x.Name == name);
         if (m != null) return m.Uid;
-        if (name == "kubridge") return HleKernelModuleUid;
+        if (Emu.Hle.Modules.Any(x => x.KernelModuleName == name)) return HleKernelModuleUid;
         return SceError.MODULEMGR_NO_MOD;
     }
 

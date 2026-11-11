@@ -1,11 +1,12 @@
 namespace VitaSharp.Core.Hle;
 
 /// <summary>
-/// Libraries the emulator provides by running the real module (LLE) instead of an HLE: the program brings the module
-/// (a game's app0:sce_module, a file the user extracts from their own console) and the loader links its exports to
-/// the program's imports. Their functions are emulated, so the coverage counts them as covered, shown apart as "LLE"
-/// (like "default"). Each entry is checked by LleLibrariesTests: the module loads under VitaSharp, exports the
-/// library and one export runs.
+/// The coverage report's list of libraries the emulator provides by running the real module (LLE) instead of an HLE:
+/// the program brings the module (a game's app0:sce_module) or the loader gives every importer the firmware module
+/// (<see cref="HleModule.FirmwareForEveryImporter"/>), and links its exports to the program's imports. Their functions
+/// are emulated, so the coverage counts them as covered, shown apart as "LLE" (like "default"). The list only feeds the
+/// report (hle-coverage, the HLE status page): the loader decides by its own generic rules, never by this list. Each
+/// entry is checked by LleLibrariesTests: the module loads under VitaSharp, exports the library and one export runs.
 /// </summary>
 public static class LleLibraries
 {
@@ -16,18 +17,8 @@ public static class LleLibraries
     [
         new("SceSmart", "app0:sce_module/libsmart.suprx", "shipped by the games that use it (loaded with sceSysmoduleLoadModule(SCE_SYSMODULE_SMART))"),
         new("SceFace", "app0:sce_module/libface.suprx", "shipped by the games that use it (loaded with sceSysmoduleLoadModule(SCE_SYSMODULE_FACE))"),
-        new("SceShaccCg", "ur0:data/libshacccg.suprx", "the PSM runtime's Cg compiler, extracted by the user from their own console (vitaGL homebrew loads it)"),
         new("SceLsdb", "vs0:vsh/shell/livespace_db.suprx", "the firmware's LiveArea database module: the emulator loads it for every program that imports the library (the HLE keeps only a fallback for its getters)"),
     ];
-
-    /// <summary>True when <paramref name="library"/> is LLE-provided by the firmware module at <paramref name="vitaPath"/>
-    /// (loaded for every importer by the firmware dependency resolution).</summary>
-    public static bool FromFirmware(string library, string vitaPath) =>
-        All.Any(e => e.Library == library && e.Module.StartsWith("vs0:", StringComparison.Ordinal) && string.Equals(e.Module, vitaPath, StringComparison.OrdinalIgnoreCase));
-
-    static readonly HashSet<string> _names = All.Select(e => e.Library).ToHashSet(StringComparer.Ordinal);
-
-    public static bool Provides(string library) => _names.Contains(library);
 
     /// <summary>The installed copies of an entry's module under <paramref name="fsRoot"/> with the key that decrypts
     /// each (a game's work.bin or licence for app0: modules; none for the others).</summary>

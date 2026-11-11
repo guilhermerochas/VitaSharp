@@ -8,8 +8,9 @@ namespace VitaSharp.Core.Hle.Modules;
 
 /// <summary>
 /// Shaders and programs of libScePiglet. Shader sources (Cg, the language of the PSM shaders and of SceShaccCg) are
-/// compiled by the real runtime compiler libshacccg.suprx, loaded and run LLE as the PSM runtime does (the application's
-/// own copy when it loaded one, else ur0:data/libshacccg.suprx, the copy vitaGL homebrew uses). Compiled shaders, and
+/// compiled by the real runtime compiler libshacccg.suprx, run LLE: the copy the program already loaded (its SceShaccCg
+/// exports), else the module where the loader looks for a program's modules (its own app0:sce_module, then the system
+/// software's vs0:sys/external). Compiled shaders, and
 /// those given to glShaderBinary, are GXM programs; linking registers both with the shader patcher and reads their
 /// parameter tables: attributes, uniforms (in the default uniform buffers) and samplers (texture units).
 /// </summary>
@@ -20,7 +21,7 @@ public sealed partial class Piglet
     const uint ShaccLib = 0xA05BBEBB;
     const uint NidCompileProgram = 0x66814F35, NidDestroyOutput = 0xAA82EF0C, NidInitCallbacks = 0xA8C2C1C8, NidInitOptions = 0x3B58AFA0,
         NidSetAllocator = 0x6F01D573, NidReleaseCompiler = 0x95F57A23;
-    static readonly string[] CompilerPaths = ["app0:sce_module/libshacccg.suprx", "ur0:data/libshacccg.suprx", "vs0:sys/external/libshacccg.suprx"];
+    static readonly string[] CompilerPaths = ["app0:sce_module/libshacccg.suprx", "vs0:sys/external/libshacccg.suprx"];
 
     bool _compilerTried, _compilerReady;
     uint _openFileStub, _mainSourceFile;
@@ -49,8 +50,8 @@ public sealed partial class Piglet
         }
         if (ShaccExport(NidCompileProgram) == 0)
         {
-            Log.WarnOnce("piglet-noshacccg", "[piglet] libshacccg.suprx (the runtime Cg compiler) is missing: glCompileShader fails. Extract it from your own PS Vita " +
-                "with ShaRKF00D (it takes it from the PSM runtime) and copy it to ur0:data/libshacccg.suprx in the emulator's data folder (fs/ur0/data).");
+            Log.WarnOnce("piglet-noshacccg", "[piglet] libshacccg.suprx (the runtime Cg compiler) is not loaded: glCompileShader fails. The program loads it " +
+                "itself (from a file copied from your own PS Vita into the emulator's data folder) or ships it in app0:sce_module.");
             return false;
         }
         // the compiler allocates through the C library's malloc/free (the HLE ones)

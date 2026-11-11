@@ -38,6 +38,14 @@ public abstract class HleModule
     /// constant): its functions serve a process that does not load the firmware module, and never make the HLE
     /// take a library over from the firmware when a system program's dependencies are resolved.</summary>
     public virtual bool FirmwareFallbackOnly => false;
+
+    /// <summary>The module is only a fallback for a firmware module the loader gives every program that imports its
+    /// library, games included (the HLE has a few getters of it; the real module does the work).</summary>
+    public virtual bool FirmwareForEveryImporter => false;
+
+    /// <summary>The kernel module whose user API this HLE module stands in for (its name as the module manager
+    /// reports it to a module search), or null. Nothing outside the module itself names it.</summary>
+    public virtual string? KernelModuleName => null;
 }
 
 /// <summary>Per-thread view used by HLE functions: argument access and the calling guest thread.</summary>
@@ -244,6 +252,7 @@ public sealed partial class HleRegistry : IImportResolver
             {
                 NoteModuleNid(module, nid);
                 if (!module.FirmwareFallbackOnly) _serviceNids.Add(nid);
+                if (module.FirmwareForEveryImporter) _firmwareForEveryImporterNids.Add(nid);
                 _impls[nid] = invoker;
                 _implNames[nid] = name;
                 if (b.ReturnsValue) _valueReturns.Add(nid); else _valueReturns.Remove(nid);
@@ -269,7 +278,16 @@ public sealed partial class HleRegistry : IImportResolver
         return _implementedLibraries.Contains(library);
     }
 
-    HashSet<string>? _knownLibraries;
+    HashSet<string>? _knownLibraries, _firmwareForEveryImporter;
+    readonly HashSet<uint> _firmwareForEveryImporterNids = new();
+
+    /// <summary>True when <paramref name="library"/> comes from its firmware module for every importer: the HLE module
+    /// that has its functions is <see cref="HleModule.FirmwareForEveryImporter"/>.</summary>
+    public bool FirmwareForEveryImporter(string library)
+    {
+        _firmwareForEveryImporter ??= _firmwareForEveryImporterNids.Select(NidDatabase.Lookup).Where(i => i != null).Select(i => i!.Library).ToHashSet(StringComparer.Ordinal);
+        return _firmwareForEveryImporter.Contains(library);
+    }
 
     /// <summary>True when the HLE has any function of <paramref name="library"/>, firmware fallbacks included: a library
     /// it knows nothing of can only come from the firmware module.</summary>

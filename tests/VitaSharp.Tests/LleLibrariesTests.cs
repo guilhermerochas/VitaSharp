@@ -15,7 +15,7 @@ namespace VitaSharp.Tests;
 /// The libraries the coverage counts as "LLE" (<see cref="LleLibraries"/>): the real module the program brings loads
 /// under VitaSharp, exports the library's functions and one of them runs. The modules come from the installed data
 /// (read only: VITASHARP_DATA or %APPDATA%\VitaSharp): a game that ships libsmart/libface (decrypted with its
-/// work.bin or licence) and ur0:data/libshacccg.suprx; without them the test is skipped and says what is missing.
+/// work.bin or licence) and the firmware's livespace_db; without them the test is skipped and says what is missing.
 /// </summary>
 [Collection("guest")]
 public sealed class LleLibrariesTests(GuestMemoryFixture fx, ITestOutputHelper output)
@@ -34,7 +34,6 @@ public sealed class LleLibrariesTests(GuestMemoryFixture fx, ITestOutputHelper o
     [Theory]
     [InlineData("SceSmart", "sceSmartRelease")]
     [InlineData("SceFace", "sceFaceDetectionGetWorkingMemorySize")]
-    [InlineData("SceShaccCg", "sceShaccCgGetVersionString")]
     [InlineData("SceLsdb", "sceLsdbAppDatabaseInit")]
     public void RealModuleLoadsAndRuns(string library, string export)
     {
@@ -74,7 +73,6 @@ public sealed class LleLibrariesTests(GuestMemoryFixture fx, ITestOutputHelper o
             emu.Kernel.DeleteThread(t);
             Assert.Null(failure);
             output.WriteLine($"{export} -> 0x{result:X8}");
-            if (export == "sceShaccCgGetVersionString") Assert.False(string.IsNullOrEmpty(GuestMemory.ReadCString(result)));
             if (export == "sceLsdbAppDatabaseInit") { Assert.Equal(buf, result); Assert.NotEqual(0u, GuestMemory.R32(buf)); }
         }
         finally { try { Directory.Delete(root, true); } catch (IOException) { } }

@@ -14,6 +14,9 @@ namespace VitaSharp.Core.Hle.Modules;
 /// </summary>
 public sealed partial class Kubridge : HleModule
 {
+    /// <summary>The plugin's module name (module info), which homebrew searches for before using it.</summary>
+    public override string? KernelModuleName => "kubridge";
+
     // SceKernelAllocMemBlockKernelOpt attr bits
     const uint AttrHasVbase = 0x1, AttrHasAlignment = 0x4;
     const uint ProtRead = 0x40, ProtWrite = 0x20, ProtExec = 0x10;

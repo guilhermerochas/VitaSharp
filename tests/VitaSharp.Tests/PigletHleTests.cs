@@ -655,12 +655,15 @@ sealed class PigletHarness : IDisposable
     {
         _root = Path.Combine(Path.GetTempPath(), "vitasharp-piglet-" + Guid.NewGuid().ToString("N"));
         Directory.CreateDirectory(_root);
+        _emu = new Emulator(new EmulatorOptions { FsRoot = _root, Memory = fx.Memory, EnableJit = false, CpuBackend = "interp" });
         if (compiler && PigletCompiler.Path is { } shacccg)
         {
-            Directory.CreateDirectory(Path.Combine(_root, "ur0", "data"));
-            File.Copy(shacccg, Path.Combine(_root, "ur0", "data", "libshacccg.suprx"));
+            // the program's own copy (app0:sce_module), where the loader looks for the modules a program ships
+            string app = Path.Combine(_root, "app");
+            Directory.CreateDirectory(Path.Combine(app, "sce_module"));
+            File.Copy(shacccg, Path.Combine(app, "sce_module", "libshacccg.suprx"));
+            _emu.Vfs.Mount("app0", app);
         }
-        _emu = new Emulator(new EmulatorOptions { FsRoot = _root, Memory = fx.Memory, EnableJit = false, CpuBackend = "interp" });
         if (backend != null) _emu.Gpu.Backend = backend;
         Piglet = _emu.Hle.Modules.OfType<Piglet>().First();
         _arena = _emu.Memory.Alloc(ArenaSize, "piglet test arena");
