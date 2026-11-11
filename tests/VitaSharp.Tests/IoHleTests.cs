@@ -113,8 +113,12 @@ public sealed class IoHleTests(GuestMemoryFixture fx)
             GuestMemory.W32(st, 0x2000 | 0x1B6);       // regular, rw
             GuestMemory.Write(st + 8, 10L);            // size
             // mtime 2010-01-02 03:04:05
-            GuestMemory.Write(st + 48, (ushort)2010); GuestMemory.Write(st + 50, (ushort)1); GuestMemory.Write(st + 52, (ushort)2);
-            GuestMemory.Write(st + 54, (ushort)3); GuestMemory.Write(st + 56, (ushort)4); GuestMemory.Write(st + 58, (ushort)5);
+            GuestMemory.Write(st + 48, (ushort)2010);
+            GuestMemory.Write(st + 50, (ushort)1);
+            GuestMemory.Write(st + 52, (ushort)2);
+            GuestMemory.Write(st + 54, (ushort)3);
+            GuestMemory.Write(st + 56, (ushort)4);
+            GuestMemory.Write(st + 58, (ushort)5);
             Assert.Equal(0, Call<IoFileMgr>(null!, "ApplyChstat", host, st, 0x20 | 0x04 | 0x01, null));
             Assert.Equal(new DateTime(2010, 1, 2, 3, 4, 5), File.GetLastWriteTime(host));
             Assert.Equal(10, new FileInfo(host).Length);
@@ -126,7 +130,11 @@ public sealed class IoHleTests(GuestMemoryFixture fx)
         }
         finally
         {
-            if (File.Exists(host)) { new FileInfo(host).IsReadOnly = false; File.Delete(host); }
+            if (File.Exists(host))
+            {
+                new FileInfo(host).IsReadOnly = false;
+                File.Delete(host);
+            }
         }
     }
 
@@ -214,7 +222,16 @@ public sealed class IoHleTests(GuestMemoryFixture fx)
             Assert.Equal((long)SceError.IO_ENOENT, Done(Call(io, "_sceIoRemoveAsync", "ux0:f", param, opt)));
             Done(Call(io, "_sceIoSyncAsync", 0u, 0, param, opt));
         }
-        finally { try { Directory.Delete(root, true); } catch (IOException) { } }
+        finally
+        {
+            try
+            {
+                Directory.Delete(root, true);
+            }
+            catch (IOException)
+            {
+            }
+        }
     }
 
     [Fact]
@@ -288,7 +305,11 @@ public sealed class IoHleTests(GuestMemoryFixture fx)
         }
         finally
         {
-            try { Directory.Delete(root, true); } catch (IOException) { }
+            try
+            {
+                Directory.Delete(root, true);
+            }
+            catch (IOException) { }
         }
     }
 }

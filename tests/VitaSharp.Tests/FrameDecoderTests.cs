@@ -16,8 +16,27 @@ public sealed class FrameDecoderTests(ITestOutputHelper output)
     {
         readonly List<byte> _bytes = new();
         int _cur, _n;
-        public void U(int bits, uint v) { for (int i = bits - 1; i >= 0; i--) { _cur = (_cur << 1) | (int)((v >> i) & 1); if (++_n == 8) { _bytes.Add((byte)_cur); _cur = _n = 0; } } }
-        public byte[] ToArray() { while (_n != 0) U(1, 0); return _bytes.ToArray(); }
+        public void U(int bits, uint v)
+        {
+            for (int i = bits - 1; i >= 0; i--)
+            {
+                _cur = (_cur << 1) | (int)((v >> i) & 1);
+                if (++_n == 8)
+                {
+                    _bytes.Add((byte)_cur);
+                    _cur = _n = 0;
+                }
+            }
+        }
+        public byte[] ToArray()
+        {
+            while (_n != 0)
+            {
+                U(1, 0);
+            }
+
+            return _bytes.ToArray();
+        }
     }
 
     /// <summary>A raw AAC-LC mono frame: a FIL element carrying the libfaac encoder tag (as libfaac writes it into the
@@ -27,15 +46,29 @@ public sealed class FrameDecoderTests(ITestOutputHelper output)
         var b = new Bits();
         if (encoderTag)
         {
-            b.U(3, 6); b.U(4, 15); b.U(8, 2);  // ID_FIL, 15 + 2 - 1 = 16 payload bytes
-            b.U(4, 0); b.U(13, 0);            // EXT_FILL; the fill data starts with 13 bits FFmpeg skips
-            foreach (char c in "libfaac 1.28\0") b.U(8, c);
+            b.U(3, 6);
+            b.U(4, 15);
+            b.U(8, 2);  // ID_FIL, 15 + 2 - 1 = 16 payload bytes
+            b.U(4, 0);
+            b.U(13, 0);            // EXT_FILL; the fill data starts with 13 bits FFmpeg skips
+            foreach (char c in "libfaac 1.28\0")
+            {
+                b.U(8, c);
+            }
+
             b.U(7, 0);
         }
-        b.U(3, 0); b.U(4, 0); b.U(8, 0);      // ID_SCE, tag 0, global gain
-        b.U(1, 0); b.U(2, 0); b.U(1, 0);      // ics_reserved, ONLY_LONG_SEQUENCE, window shape
-        b.U(6, 0); b.U(1, 0);                 // max_sfb 0, no prediction
-        b.U(1, 0); b.U(1, 0); b.U(1, 0);      // no pulse, TNS or gain control data
+        b.U(3, 0);
+        b.U(4, 0);
+        b.U(8, 0);      // ID_SCE, tag 0, global gain
+        b.U(1, 0);
+        b.U(2, 0);
+        b.U(1, 0);      // ics_reserved, ONLY_LONG_SEQUENCE, window shape
+        b.U(6, 0);
+        b.U(1, 0);                 // max_sfb 0, no prediction
+        b.U(1, 0);
+        b.U(1, 0);
+        b.U(1, 0);      // no pulse, TNS or gain control data
         b.U(3, 7);                            // ID_END
         return b.ToArray();
     }
@@ -43,7 +76,11 @@ public sealed class FrameDecoderTests(ITestOutputHelper output)
     [Fact]
     public unsafe void AacFirstFrameIsAFullFrame()
     {
-        if (!FFmpegLoader.Available) { output.WriteLine("FFmpeg not available: skipped"); return; }
+        if (!FFmpegLoader.Available)
+        {
+            output.WriteLine("FFmpeg not available: skipped");
+            return;
+        }
         using var d = FrameDecoder.Create(AVCodecID.AV_CODEC_ID_AAC, 48000, 1, FrameDecoder.AacConfig(48000, 1));
         Assert.NotNull(d);
         var pcm = new short[4096];
@@ -51,7 +88,11 @@ public sealed class FrameDecoderTests(ITestOutputHelper output)
         {
             var data = Frame(encoderTag: frame == 0);
             int samples;
-            fixed (byte* p = data) samples = d!.Decode(p, data.Length, pcm, 1);
+            fixed (byte* p = data)
+            {
+                samples = d!.Decode(p, data.Length, pcm, 1);
+            }
+
             Assert.Equal(1024, samples);
         }
     }
@@ -70,14 +111,22 @@ public sealed class RawAacFrameLengthTests(ITestOutputHelper output)
         config = [];
         var packets = new List<byte[]>();
         var codec = ffmpeg.avcodec_find_encoder(AVCodecID.AV_CODEC_ID_AAC);
-        if (codec == null) return packets;
+        if (codec == null)
+        {
+            return packets;
+        }
+
         var ctx = ffmpeg.avcodec_alloc_context3(codec);
         ctx->sample_rate = 48000;
         ctx->sample_fmt = AVSampleFormat.AV_SAMPLE_FMT_FLTP;
         ctx->bit_rate = 128000;
         ffmpeg.av_channel_layout_default(&ctx->ch_layout, 2);
         ctx->flags |= ffmpeg.AV_CODEC_FLAG_GLOBAL_HEADER;
-        if (ffmpeg.avcodec_open2(ctx, codec, null) < 0) { ffmpeg.avcodec_free_context(&ctx); return packets; }
+        if (ffmpeg.avcodec_open2(ctx, codec, null) < 0)
+        {
+            ffmpeg.avcodec_free_context(&ctx);
+            return packets;
+        }
         config = new Span<byte>(ctx->extradata, ctx->extradata_size).ToArray();
         var frame = ffmpeg.av_frame_alloc();
         var pkt = ffmpeg.av_packet_alloc();
@@ -99,7 +148,11 @@ public sealed class RawAacFrameLengthTests(ITestOutputHelper output)
                 ffmpeg.avcodec_send_frame(ctx, frame);
                 ffmpeg.av_frame_unref(frame);
             }
-            else ffmpeg.avcodec_send_frame(ctx, null);
+            else
+            {
+                ffmpeg.avcodec_send_frame(ctx, null);
+            }
+
             while (ffmpeg.avcodec_receive_packet(ctx, pkt) == 0)
             {
                 packets.Add(new Span<byte>(pkt->data, pkt->size).ToArray());
@@ -115,15 +168,26 @@ public sealed class RawAacFrameLengthTests(ITestOutputHelper output)
     [Fact]
     public unsafe void FramesInFixedSlotsDecodeLikeExactPackets()
     {
-        if (!FFmpegLoader.Available) { output.WriteLine("FFmpeg not available: skipped"); return; }
+        if (!FFmpegLoader.Available)
+        {
+            output.WriteLine("FFmpeg not available: skipped");
+            return;
+        }
         var packets = EncodeSine(40, out var config);
-        if (packets.Count == 0) { output.WriteLine("no AAC encoder: skipped"); return; }
+        if (packets.Count == 0)
+        {
+            output.WriteLine("no AAC encoder: skipped");
+            return;
+        }
         const int Slot = 0x200, MaxEs = 1536;
         Assert.All(packets, p => Assert.True(p.Length < Slot));
         // the game's layout: each access unit at the start of its slot, the rest of the slot stale (non-zero) bytes
         var es = new byte[packets.Count * Slot + MaxEs];
         new Random(1).NextBytes(es);
-        for (int i = 0; i < packets.Count; i++) packets[i].CopyTo(es, i * Slot);
+        for (int i = 0; i < packets.Count; i++)
+        {
+            packets[i].CopyTo(es, i * Slot);
+        }
 
         using var exact = FrameDecoder.Create(AVCodecID.AV_CODEC_ID_AAC, 48000, 2, config);
         using var slotted = FrameDecoder.Create(AVCodecID.AV_CODEC_ID_AAC, 48000, 2, config);
@@ -132,16 +196,22 @@ public sealed class RawAacFrameLengthTests(ITestOutputHelper output)
         var want = new short[8192];
         var got = new short[8192];
         fixed (byte* e = es)
+        {
             for (int i = 0; i < packets.Count; i++)
             {
                 byte* slot = e + i * Slot;
                 int len = slotted!.RawFrameLength(slot, MaxEs);
                 Assert.Equal(packets[i].Length, len);
                 int n1, n2;
-                fixed (byte* p = packets[i]) n1 = exact!.Decode(p, packets[i].Length, want, 2);
+                fixed (byte* p = packets[i])
+                {
+                    n1 = exact!.Decode(p, packets[i].Length, want, 2);
+                }
+
                 n2 = slotted.Decode(slot, len, got, 2);
                 Assert.Equal(n1, n2);
                 Assert.True(want.AsSpan(0, n1 * 2).SequenceEqual(got.AsSpan(0, n2 * 2)), $"frame {i} differs");
             }
+        }
     }
 }

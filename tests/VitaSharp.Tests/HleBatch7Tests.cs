@@ -16,7 +16,11 @@ public sealed class HleBatch7Tests(GuestMemoryFixture fx) : IDisposable
 
     Emulator Emu()
     {
-        if (_emu != null) return _emu;
+        if (_emu != null)
+        {
+            return _emu;
+        }
+
         Directory.CreateDirectory(_root);
         return _emu = new Emulator(new EmulatorOptions { FsRoot = _root, Memory = fx.Memory, EnableJit = false, CpuBackend = "interp" });
     }
@@ -28,14 +32,28 @@ public sealed class HleBatch7Tests(GuestMemoryFixture fx) : IDisposable
 
     static int Call(object module, string name, params object?[] args) => Convert.ToInt32(Invoke(module, name, args));
 
-    uint Alloc(uint size) { uint p = fx.Memory.Alloc(size, "hle7"); GuestMemory.Fill(p, 0, size); return p; }
+    uint Alloc(uint size)
+    {
+        uint p = fx.Memory.Alloc(size, "hle7");
+        GuestMemory.Fill(p, 0, size);
+        return p;
+    }
 
-    uint Str(string s) { uint p = Alloc((uint)s.Length + 1); GuestMemory.WriteCString(p, s); return p; }
+    uint Str(string s)
+    {
+        uint p = Alloc((uint)s.Length + 1);
+        GuestMemory.WriteCString(p, s);
+        return p;
+    }
 
     public void Dispose()
     {
         _emu?.Dispose();
-        try { Directory.Delete(_root, true); } catch (IOException) { }
+        try
+        {
+            Directory.Delete(_root, true);
+        }
+        catch (IOException) { }
     }
 
     [Fact]
@@ -43,7 +61,11 @@ public sealed class HleBatch7Tests(GuestMemoryFixture fx) : IDisposable
     {
         var vsh = Module<VshBridge>();
         uint buf = Alloc(0x20), opt = Alloc(8), back = Alloc(0x20);
-        for (uint i = 0; i < 0x10; i++) GuestMemory.Write(buf + i, (byte)(0xA0 + i));
+        for (uint i = 0; i < 0x10; i++)
+        {
+            GuestMemory.Write(buf + i, (byte)(0xA0 + i));
+        }
+
         GuestMemory.W32(opt, 0x10);
         Assert.Equal(0, Call(vsh, "_vshSblSsSetNvsData", 0x480, buf, 0, opt));
         Assert.Equal(0, Call(vsh, "_vshSblSsGetNvsData", 0x480, back, 0, opt));
@@ -60,8 +82,13 @@ public sealed class HleBatch7Tests(GuestMemoryFixture fx) : IDisposable
         var vsh = Module<VshBridge>();
         int ctx = Call(vsh, "vshCoredumpCafContextCreate");
         uint opt = Alloc(0x18), src = Alloc(0x40), enc = Alloc(0x40), dec = Alloc(0x40), iv = Alloc(0x10), digA = Alloc(0x20), digB = Alloc(0x20), o8 = Alloc(8);
-        for (uint i = 0; i < 0x40; i++) GuestMemory.Write(src + i, (byte)i);
-        GuestMemory.W32(opt + 8, iv); GuestMemory.W32(opt + 0xC, 0x10);
+        for (uint i = 0; i < 0x40; i++)
+        {
+            GuestMemory.Write(src + i, (byte)i);
+        }
+
+        GuestMemory.W32(opt + 8, iv);
+        GuestMemory.W32(opt + 0xC, 0x10);
         Assert.Equal(0, Call(vsh, "_vshCoredumpCafSegmentInit", ctx, 1u, 1, 2u, opt));
         GuestMemory.W32(o8, 0x40);
         Assert.Equal(0, Call(vsh, "_vshCoredumpCafSegmentTransform", ctx, src, enc, o8));
@@ -84,7 +111,11 @@ public sealed class HleBatch7Tests(GuestMemoryFixture fx) : IDisposable
     {
         var vsh = Module<VshBridge>();
         uint path = Str("ux0:pspemu/PSP/GAME/NPUZ00001/EBOOT.PBP"), sha = Alloc(0x20), sig = Alloc(0x200), sw = Alloc(4);
-        for (uint i = 0; i < 0x20; i++) GuestMemory.Write(sha + i, (byte)(i * 7));
+        for (uint i = 0; i < 0x20; i++)
+        {
+            GuestMemory.Write(sha + i, (byte)(i * 7));
+        }
+
         Assert.Equal(0, Call(vsh, "_vshNpDrmEbootSigGenPsp", path, sha, sig, sw));
         Assert.Equal(0x03740011u, GuestMemory.R32(sw));
         Assert.Equal(1, Call(vsh, "_vshNpDrmEbootSigVerify", path, sig, 0u, 0u));
@@ -162,7 +193,8 @@ public sealed class HleBatch7Tests(GuestMemoryFixture fx) : IDisposable
     {
         var net = Module<Net>();
         uint block = Alloc(0x18), name = Alloc(8);
-        GuestMemory.W32(block, name); GuestMemory.W32(block + 4, 2);
+        GuestMemory.W32(block, name);
+        GuestMemory.W32(block + 4, 2);
         Assert.Equal(-2, Call(net, "sceNetSyscallSysctl", block));
         GuestMemory.W32(block + 4, 25);
         Assert.Equal(-22, Call(net, "sceNetSyscallSysctl", block));
@@ -220,12 +252,19 @@ public sealed class HleBatch7Tests(GuestMemoryFixture fx) : IDisposable
                 results.Add(Call(libc, "_Thrd_equal", 5, 5));
                 results.Add(Call(libc, "_Thrd_current") == t.Uid ? 1 : 0);
             }
-            catch (Exception e) { failure = e; }
+            catch (Exception e)
+            {
+                failure = e;
+            }
         };
         th.Start(0, 0);
         Assert.True(th.WaitForExit(60_000), "test thread did not finish");
         emu.Kernel.DeleteThread(th);
-        if (failure != null) throw new Xunit.Sdk.XunitException(failure.ToString());
+        if (failure != null)
+        {
+            throw new Xunit.Sdk.XunitException(failure.ToString());
+        }
+
         Assert.Equal([0, 0, 1, 0, 0, 0, 0, 0, 1, 1, 1, 1], results);
     }
 }

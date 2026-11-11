@@ -39,7 +39,9 @@ public sealed class AudiodecHleTests(GuestMemoryFixture fx) : IDisposable
         Assert.Equal(INVALID_PTR, Call(A, "sceAudiodecInitLibrary", MP3, 0u));
         Assert.Equal(NOT_INITIALIZED, Call(A, "sceAudiodecTermLibrary", MP3));
         uint info = _h.Alloc(32);
-        GuestMemory.W32(info, 0x10); GuestMemory.W32(info + 4, 2); GuestMemory.W32(info + 8, 3); // stereo MPEG-1
+        GuestMemory.W32(info, 0x10);
+        GuestMemory.W32(info + 4, 2);
+        GuestMemory.W32(info + 8, 3); // stereo MPEG-1
         uint ctrl = Ctrl(info);
         Assert.Equal(NOT_INITIALIZED, Call(A, "sceAudiodecCreateDecoder", ctrl, MP3));
         Assert.Equal(0, Call(A, "sceAudiodecInitLibrary", MP3, init));
@@ -71,7 +73,8 @@ public sealed class AudiodecHleTests(GuestMemoryFixture fx) : IDisposable
         // N streams: same codec, distinct handles
         Assert.Equal(INVALID_PTR, Call(A, "sceAudiodecDecodeNStreams", 0u, 1u));
         uint arr = _h.Alloc(8);
-        GuestMemory.W32(arr, ctrl); GuestMemory.W32(arr + 4, ctrl);
+        GuestMemory.W32(arr, ctrl);
+        GuestMemory.W32(arr + 4, ctrl);
         Assert.Equal(INVALID_NSTREAMS, Call(A, "sceAudiodecDecodeNStreams", arr, 0u));
         Assert.Equal(SAME_HANDLES, Call(A, "sceAudiodecDecodeNStreams", arr, 2u));
         uint at9Info = _h.Alloc(32);
@@ -116,14 +119,21 @@ public sealed class AudiodecHleTests(GuestMemoryFixture fx) : IDisposable
     {
         Assert.Equal(0, Call(A, "sceAudiodecInitLibrary", MP3, _h.Alloc(16)));
         uint info = _h.Alloc(32);
-        GuestMemory.W32(info, 0x10); GuestMemory.W32(info + 4, 2); GuestMemory.W32(info + 8, 3);
+        GuestMemory.W32(info, 0x10);
+        GuestMemory.W32(info + 4, 2);
+        GuestMemory.W32(info + 8, 3);
         uint ctrl = Ctrl(info);
         Assert.Equal(0, Call(A, "sceAudiodecCreateDecoder", ctrl, MP3));
         // two frames: header FF FB 90 64 (MPEG-1 Layer III, 128 kbps, 44.1 kHz, joint stereo), zero side info and data
         uint es = _h.Alloc(417 * 2 + 64), pcm = _h.Alloc(2 * 2304 * 2);
-        for (uint f = 0; f < 2; f++) new byte[] { 0xFF, 0xFB, 0x90, 0x64 }.CopyTo(GuestMemory.Span(es + f * 417, 4));
+        for (uint f = 0; f < 2; f++)
+        {
+            new byte[] { 0xFF, 0xFB, 0x90, 0x64 }.CopyTo(GuestMemory.Span(es + f * 417, 4));
+        }
+
         GuestMemory.Fill(pcm, 0x55, 2 * 2304 * 2);
-        GuestMemory.W32(ctrl + 8, es); GuestMemory.W32(ctrl + 16, 417 * 2);
+        GuestMemory.W32(ctrl + 8, es);
+        GuestMemory.W32(ctrl + 16, 417 * 2);
         GuestMemory.W32(ctrl + 20, pcm);
         Assert.Equal(0, Call(A, "sceAudiodecDecode", ctrl));
         Assert.Equal(417u, GuestMemory.R32(ctrl + 12));    // inputEsSize: one frame consumed

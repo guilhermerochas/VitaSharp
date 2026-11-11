@@ -11,14 +11,22 @@ public sealed class FetchSplitTests
     static byte[] U16(params ushort[] v)
     {
         var b = new byte[v.Length * 2];
-        for (int i = 0; i < v.Length; i++) BitConverter.TryWriteBytes(b.AsSpan(i * 2), v[i]);
+        for (int i = 0; i < v.Length; i++)
+        {
+            BitConverter.TryWriteBytes(b.AsSpan(i * 2), v[i]);
+        }
+
         return b;
     }
 
     static byte[] U32(params uint[] v)
     {
         var b = new byte[v.Length * 4];
-        for (int i = 0; i < v.Length; i++) BitConverter.TryWriteBytes(b.AsSpan(i * 4), v[i]);
+        for (int i = 0; i < v.Length; i++)
+        {
+            BitConverter.TryWriteBytes(b.AsSpan(i * 4), v[i]);
+        }
+
         return b;
     }
 

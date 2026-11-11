@@ -33,8 +33,13 @@ public sealed unsafe class HleBinderTests(GuestMemoryFixture fx)
     {
         var list = new List<RefBinding>();
         foreach (var mi in module.GetMethods(BindingFlags.Instance | BindingFlags.Public | BindingFlags.NonPublic | BindingFlags.DeclaredOnly))
+        {
             foreach (var attr in mi.GetCustomAttributes<HleAttribute>())
+            {
                 list.Add(new RefBinding(mi.Name, attr.Name, attr.Nid, attr.Library, Layout(mi), mi));
+            }
+        }
+
         return list;
     }
 
@@ -46,24 +51,60 @@ public sealed unsafe class HleBinderTests(GuestMemoryFixture fx)
         foreach (var p in mi.GetParameters())
         {
             var t = p.ParameterType;
-            if (t == typeof(HleContext)) { parts.Add("ctx"); continue; }
-            if (t == typeof(VarArgs)) { parts.Add($"va@{gpr}"); continue; }
-            if (t == typeof(float)) { parts.Add($"s{fpr++}=float"); continue; }
+            if (t == typeof(HleContext))
+            {
+                parts.Add("ctx");
+                continue;
+            }
+            if (t == typeof(VarArgs))
+            {
+                parts.Add($"va@{gpr}");
+                continue;
+            }
+            if (t == typeof(float))
+            {
+                parts.Add($"s{fpr++}=float");
+                continue;
+            }
             bool wide = t == typeof(long) || t == typeof(ulong) || t == typeof(double);
             string token;
             if (wide)
             {
-                if ((gpr & 1) != 0) gpr++;
-                if (gpr + 2 <= 4) { token = $"r{gpr}r{gpr + 1}"; gpr += 2; }
-                else { gpr = 4; stack = (stack + 7) & ~7; token = $"sp{stack}+8"; stack += 8; }
+                if ((gpr & 1) != 0)
+                {
+                    gpr++;
+                }
+
+                if (gpr + 2 <= 4)
+                {
+                    token = $"r{gpr}r{gpr + 1}";
+                    gpr += 2;
+                }
+                else
+                {
+                    gpr = 4;
+                    stack = (stack + 7) & ~7;
+                    token = $"sp{stack}+8";
+                    stack += 8;
+                }
             }
-            else if (gpr < 4) token = $"r{gpr++}";
-            else { token = $"sp{stack}"; stack += 4; }
+            else if (gpr < 4)
+            {
+                token = $"r{gpr++}";
+            }
+            else
+            {
+                token = $"sp{stack}";
+                stack += 4;
+            }
             parts.Add($"{token}={Name(t)}");
         }
         var rt = mi.ReturnType;
         string ret;
-        if (rt == typeof(void)) ret = "void";
+        if (rt == typeof(void))
+        {
+            ret = "void";
+        }
         else
         {
             var norm = NormalizeReturn(rt);
@@ -74,19 +115,71 @@ public sealed unsafe class HleBinderTests(GuestMemoryFixture fx)
 
     static string Name(Type t)
     {
-        if (t == typeof(int)) return "int";
-        if (t == typeof(uint)) return "uint";
-        if (t == typeof(long)) return "long";
-        if (t == typeof(ulong)) return "ulong";
-        if (t == typeof(short)) return "short";
-        if (t == typeof(ushort)) return "ushort";
-        if (t == typeof(byte)) return "byte";
-        if (t == typeof(sbyte)) return "sbyte";
-        if (t == typeof(float)) return "float";
-        if (t == typeof(double)) return "double";
-        if (t == typeof(bool)) return "bool";
-        if (t == typeof(string)) return "string";
-        if (t == typeof(char)) return "char";
+        if (t == typeof(int))
+        {
+            return "int";
+        }
+
+        if (t == typeof(uint))
+        {
+            return "uint";
+        }
+
+        if (t == typeof(long))
+        {
+            return "long";
+        }
+
+        if (t == typeof(ulong))
+        {
+            return "ulong";
+        }
+
+        if (t == typeof(short))
+        {
+            return "short";
+        }
+
+        if (t == typeof(ushort))
+        {
+            return "ushort";
+        }
+
+        if (t == typeof(byte))
+        {
+            return "byte";
+        }
+
+        if (t == typeof(sbyte))
+        {
+            return "sbyte";
+        }
+
+        if (t == typeof(float))
+        {
+            return "float";
+        }
+
+        if (t == typeof(double))
+        {
+            return "double";
+        }
+
+        if (t == typeof(bool))
+        {
+            return "bool";
+        }
+
+        if (t == typeof(string))
+        {
+            return "string";
+        }
+
+        if (t == typeof(char))
+        {
+            return "char";
+        }
+
         if (t.IsGenericType)
         {
             var def = t.GetGenericTypeDefinition().FullName!;
@@ -103,8 +196,16 @@ public sealed unsafe class HleBinderTests(GuestMemoryFixture fx)
         foreach (var p in mi.GetParameters())
         {
             var t = p.ParameterType;
-            if (t == typeof(HleContext)) { args.Add(ctx); continue; }
-            if (t == typeof(VarArgs)) { args.Add(Expression.New(typeof(VarArgs).GetConstructors()[0], ctx, Expression.Constant(gpr))); continue; }
+            if (t == typeof(HleContext))
+            {
+                args.Add(ctx);
+                continue;
+            }
+            if (t == typeof(VarArgs))
+            {
+                args.Add(Expression.New(typeof(VarArgs).GetConstructors()[0], ctx, Expression.Constant(gpr)));
+                continue;
+            }
             if (t == typeof(float))
             {
                 args.Add(Expression.Call(MArgF32, ctx, Expression.Constant(fpr++)));
@@ -114,21 +215,45 @@ public sealed unsafe class HleBinderTests(GuestMemoryFixture fx)
             Expression raw;
             if (wide)
             {
-                if ((gpr & 1) != 0) gpr++;
-                if (gpr + 2 <= 4) { raw = Expression.Call(MArgU64, ctx, Expression.Constant(gpr)); gpr += 2; }
-                else { gpr = 4; stack = (stack + 7) & ~7; raw = Expression.Call(MArgU64Stack, ctx, Expression.Constant(stack)); stack += 8; }
+                if ((gpr & 1) != 0)
+                {
+                    gpr++;
+                }
+
+                if (gpr + 2 <= 4)
+                {
+                    raw = Expression.Call(MArgU64, ctx, Expression.Constant(gpr));
+                    gpr += 2;
+                }
+                else
+                {
+                    gpr = 4;
+                    stack = (stack + 7) & ~7;
+                    raw = Expression.Call(MArgU64Stack, ctx, Expression.Constant(stack));
+                    stack += 8;
+                }
             }
             else
             {
-                if (gpr < 4) raw = Expression.Call(MArgU32, ctx, Expression.Constant(gpr++));
-                else { raw = Expression.Call(MArgStack, ctx, Expression.Constant(stack)); stack += 4; }
+                if (gpr < 4)
+                {
+                    raw = Expression.Call(MArgU32, ctx, Expression.Constant(gpr++));
+                }
+                else
+                {
+                    raw = Expression.Call(MArgStack, ctx, Expression.Constant(stack));
+                    stack += 4;
+                }
             }
             args.Add(Convert(raw, t));
         }
         Expression call = Expression.Call(Expression.Constant(module), mi, args);
         Expression body;
         var rt = mi.ReturnType;
-        if (rt == typeof(void)) body = call;
+        if (rt == typeof(void))
+        {
+            body = call;
+        }
         else
         {
             var ret = typeof(HleContext).GetMethods().First(m => m.Name == nameof(HleContext.Return)
@@ -140,29 +265,72 @@ public sealed unsafe class HleBinderTests(GuestMemoryFixture fx)
 
     static Type NormalizeReturn(Type t)
     {
-        if (t == typeof(int) || t == typeof(uint) || t == typeof(ulong) || t == typeof(long) || t == typeof(float) || t == typeof(bool) || t == typeof(double)) return t;
-        if (t.IsEnum) return NormalizeReturn(Enum.GetUnderlyingType(t));
-        if (t == typeof(short) || t == typeof(sbyte)) return typeof(int);
+        if (t == typeof(int) || t == typeof(uint) || t == typeof(ulong) || t == typeof(long) || t == typeof(float) || t == typeof(bool) || t == typeof(double))
+        {
+            return t;
+        }
+
+        if (t.IsEnum)
+        {
+            return NormalizeReturn(Enum.GetUnderlyingType(t));
+        }
+
+        if (t == typeof(short) || t == typeof(sbyte))
+        {
+            return typeof(int);
+        }
+
         return typeof(uint); // ushort, byte, Ptr<T>
     }
 
     static Expression ConvertReturn(Expression e, Type t)
     {
         var target = NormalizeReturn(t);
-        if (t == target) return e;
-        if (t.IsGenericType && t.GetGenericTypeDefinition() == typeof(Ptr<>)) return Expression.Field(e, "Address");
+        if (t == target)
+        {
+            return e;
+        }
+
+        if (t.IsGenericType && t.GetGenericTypeDefinition() == typeof(Ptr<>))
+        {
+            return Expression.Field(e, "Address");
+        }
+
         return Expression.Convert(e, target);
     }
 
     static Expression Convert(Expression raw, Type t)
     {
-        if (t == raw.Type) return raw;
-        if (t == typeof(string)) return Expression.Call(MArgString, raw);
-        if (t == typeof(bool)) return Expression.NotEqual(raw, Expression.Constant(0u));
+        if (t == raw.Type)
+        {
+            return raw;
+        }
+
+        if (t == typeof(string))
+        {
+            return Expression.Call(MArgString, raw);
+        }
+
+        if (t == typeof(bool))
+        {
+            return Expression.NotEqual(raw, Expression.Constant(0u));
+        }
+
         if (t.IsGenericType && t.GetGenericTypeDefinition() == typeof(Ptr<>))
+        {
             return Expression.New(t.GetConstructor([typeof(uint)])!, raw);
-        if (t == typeof(double)) return Expression.Call(typeof(BitConverter).GetMethod(nameof(BitConverter.UInt64BitsToDouble))!, raw);
-        if (t.IsEnum) return Expression.Convert(Expression.Convert(raw, Enum.GetUnderlyingType(t)), t);
+        }
+
+        if (t == typeof(double))
+        {
+            return Expression.Call(typeof(BitConverter).GetMethod(nameof(BitConverter.UInt64BitsToDouble))!, raw);
+        }
+
+        if (t.IsEnum)
+        {
+            return Expression.Convert(Expression.Convert(raw, Enum.GetUnderlyingType(t)), t);
+        }
+
         return Expression.Convert(raw, t);
     }
 
@@ -176,7 +344,10 @@ public sealed unsafe class HleBinderTests(GuestMemoryFixture fx)
             .OrderBy(t => t.FullName).ToList();
         var generated = HleBindings.Modules.OrderBy(m => m.Type.FullName).Select(m => m.Type).ToList();
         Assert.Equal(reflected, generated);
-        foreach (var m in HleBindings.Modules) Assert.IsType(m.Type, m.Create());
+        foreach (var m in HleBindings.Modules)
+        {
+            Assert.IsType(m.Type, m.Create());
+        }
     }
 
     /// <summary>[Hle(ReturnsValue = true)] reaches the binding (the HLE error counter skips those functions), and only
@@ -185,6 +356,7 @@ public sealed unsafe class HleBinderTests(GuestMemoryFixture fx)
     public void ReturnsValueReachesTheBindings()
     {
         foreach (var m in HleBindings.Modules)
+        {
             foreach (var b in HleBindings.For(m.Type)!)
             {
                 var attrs = m.Type.GetMethods(BindingFlags.Instance | BindingFlags.Static | BindingFlags.Public | BindingFlags.NonPublic | BindingFlags.DeclaredOnly)
@@ -193,6 +365,8 @@ public sealed unsafe class HleBinderTests(GuestMemoryFixture fx)
                 Assert.NotEmpty(attrs);
                 Assert.Equal(attrs[0].ReturnsValue, b.ReturnsValue);
             }
+        }
+
         Assert.Contains(HleBindings.For(typeof(VitaSharp.Core.Hle.Modules.Gxm))!, b => b.Method == "sceGxmTextureGetType" && b.ReturnsValue);
     }
 
@@ -216,10 +390,21 @@ public sealed unsafe class HleBinderTests(GuestMemoryFixture fx)
     static void RandomState(CpuState* s, Random rng)
     {
         uint Word() => rng.Next(4) == 0 ? (uint)rng.NextInt64() : DataBase + (uint)rng.Next((int)DataSize - 0x100);
-        for (int i = 0; i < 13; i++) s->R[i] = Word();
+        for (int i = 0; i < 13; i++)
+        {
+            s->R[i] = Word();
+        }
+
         s->R[13] = DataBase + 0x8000;
-        for (uint i = 0; i < 64; i++) GuestMemory.Write(s->R[13] + i * 4, Word());
-        for (int i = 0; i < 32; i++) ((ulong*)s->D)[i] = (ulong)rng.NextInt64();
+        for (uint i = 0; i < 64; i++)
+        {
+            GuestMemory.Write(s->R[13] + i * 4, Word());
+        }
+
+        for (int i = 0; i < 32; i++)
+        {
+            ((ulong*)s->D)[i] = (ulong)rng.NextInt64();
+        }
     }
 
     static (uint R0, uint R1, ulong D0) Result(CpuState* s) => (s->R[0], s->R[1], ((ulong*)s->D)[0]);
@@ -227,10 +412,18 @@ public sealed unsafe class HleBinderTests(GuestMemoryFixture fx)
     [Fact]
     public void GeneratedInvokersMarshalLikeTheReflectionBinder()
     {
-        if (fx.Memory.FindBlock(DataBase) == null) fx.Memory.MapFixed(DataBase, DataSize, "binder test data");
+        if (fx.Memory.FindBlock(DataBase) == null)
+        {
+            fx.Memory.MapFixed(DataBase, DataSize, "binder test data");
+        }
+
         var rng = new Random(1234);
         var text = new byte[DataSize];
-        for (int i = 0; i < text.Length; i++) text[i] = rng.Next(8) == 0 ? (byte)0 : (byte)rng.Next(0x20, 0x7F);
+        for (int i = 0; i < text.Length; i++)
+        {
+            text[i] = rng.Next(8) == 0 ? (byte)0 : (byte)rng.Next(0x20, 0x7F);
+        }
+
         text.CopyTo(GuestMemory.Span(DataBase, (int)DataSize));
 
         var entry = VitaSharp.Generated.HleLocalBindings.Modules().Single(e => e.Type == typeof(ProbeModule));
@@ -266,24 +459,45 @@ public sealed unsafe class HleBinderTests(GuestMemoryFixture fx)
                 }
             }
         }
-        finally { CpuState.Free(s); }
+        finally
+        {
+            CpuState.Free(s);
+        }
     }
 }
 
-public enum ProbeEnum { A = 1, B = -7 }
-public enum ProbeByteEnum : byte { X = 3 }
-public enum ProbeLongEnum : long { Y = 5 }
-public struct ProbeStruct { public uint A; }
+public enum ProbeEnum
+{
+    A = 1, B = -7
+}
+public enum ProbeByteEnum : byte
+{
+    X = 3
+}
+public enum ProbeLongEnum : long
+{
+    Y = 5
+}
+public struct ProbeStruct
+{
+    public uint A;
+}
 
 /// <summary>Records the arguments it receives and returns values derived from <see cref="Seed"/>.</summary>
 public sealed class ProbeModule : HleModule
 {
     public int Seed;
     readonly List<string> _log = new();
-    public string Take() { var s = string.Join("|", _log); _log.Clear(); return s; }
+    public string Take()
+    {
+        var s = string.Join("|", _log);
+        _log.Clear();
+        return s;
+    }
     void Log(params object?[] a)
     {
         foreach (var x in a)
+        {
             _log.Add(x switch
             {
                 float f => BitConverter.SingleToUInt32Bits(f).ToString("X"),
@@ -294,22 +508,102 @@ public sealed class ProbeModule : HleModule
                 null => "null",
                 _ => $"{x.GetType().Name}:{x}",
             });
+        }
     }
 
-    [Hle("probeInts", Nid = 0x1)] int Ints(int a, uint b, short c, ushort d, byte e, sbyte f, char g) { Log(a, b, c, d, e, f, g); return Seed; }
-    [Hle("probeWide", Nid = 0x2)] long Wide(uint a, long b, ulong c, int d, long e) { Log(a, b, c, d, e); return (long)Seed * 31; }
-    [Hle("probeWide2", Nid = 0x3)] ulong Wide2(ulong a, uint b, uint c, double d, uint e) { Log(a, b, c, d, e); return (ulong)Seed << 20; }
-    [Hle("probeFloats", Nid = 0x4)] float Floats(float a, uint b, float c, long d, float e, double f) { Log(a, b, c, d, e, f); return Seed / 3f; }
-    [Hle("probeDouble", Nid = 0x5)] double Double(double a, float b) { Log(a, b); return Seed / 7.0; }
-    [Hle("probeMisc", Nid = 0x6)] bool Misc(bool a, string s, Ptr<ProbeStruct> p, ProbeEnum e, ProbeByteEnum be, ProbeLongEnum le) { Log(a, s, p, e, be, le); return (Seed & 1) != 0; }
-    [Hle("probeVa", Nid = 0x7)] uint Va(uint a, string fmt, VarArgs va) { Log(a, fmt, va); return (uint)Seed; }
-    [Hle("probeStackVa", Nid = 0x8)] int StackVa(uint a, uint b, uint c, uint d, uint e, VarArgs va) { Log(a, b, c, d, e, va); return -Seed; }
-    [Hle("probeCtx", Nid = 0x9)] void Ctx(HleContext ctx, uint a, long b) { Log(ctx, a, b); }
-    [Hle("probeRetEnum", Nid = 0xA)] ProbeEnum RetEnum(uint a) { Log(a); return (ProbeEnum)Seed; }
-    [Hle("probeRetShort", Nid = 0xB)] short RetShort(uint a) { Log(a); return (short)Seed; }
-    [Hle("probeRetByte", Nid = 0xC)] byte RetByte(uint a) { Log(a); return (byte)Seed; }
-    [Hle("probeRetPtr", Nid = 0xD)] Ptr<ProbeStruct> RetPtr(Ptr<ProbeStruct> p) { Log(p); return new Ptr<ProbeStruct>((uint)Seed); }
-    [Hle("probeRetByteEnum", Nid = 0xE)] ProbeByteEnum RetByteEnum() { Log(); return (ProbeByteEnum)Seed; }
-    [Hle("probeManyStack", Nid = 0xF)] uint ManyStack(uint a, uint b, uint c, long d, uint e, long f, ushort g, string h) { Log(a, b, c, d, e, f, g, h); return 0; }
-    [Hle("probeA", Nid = 0x10), Hle("probeB", Nid = 0x11, Library = "SceProbe")] public uint TwoAttrs(uint a) { Log(a); return a + 1; }
+    [Hle("probeInts", Nid = 0x1)]
+    int Ints(int a, uint b, short c, ushort d, byte e, sbyte f, char g)
+    {
+        Log(a, b, c, d, e, f, g);
+        return Seed;
+    }
+    [Hle("probeWide", Nid = 0x2)]
+    long Wide(uint a, long b, ulong c, int d, long e)
+    {
+        Log(a, b, c, d, e);
+        return (long)Seed * 31;
+    }
+    [Hle("probeWide2", Nid = 0x3)]
+    ulong Wide2(ulong a, uint b, uint c, double d, uint e)
+    {
+        Log(a, b, c, d, e);
+        return (ulong)Seed << 20;
+    }
+    [Hle("probeFloats", Nid = 0x4)]
+    float Floats(float a, uint b, float c, long d, float e, double f)
+    {
+        Log(a, b, c, d, e, f);
+        return Seed / 3f;
+    }
+    [Hle("probeDouble", Nid = 0x5)]
+    double Double(double a, float b)
+    {
+        Log(a, b);
+        return Seed / 7.0;
+    }
+    [Hle("probeMisc", Nid = 0x6)]
+    bool Misc(bool a, string s, Ptr<ProbeStruct> p, ProbeEnum e, ProbeByteEnum be, ProbeLongEnum le)
+    {
+        Log(a, s, p, e, be, le);
+        return (Seed & 1) != 0;
+    }
+    [Hle("probeVa", Nid = 0x7)]
+    uint Va(uint a, string fmt, VarArgs va)
+    {
+        Log(a, fmt, va);
+        return (uint)Seed;
+    }
+    [Hle("probeStackVa", Nid = 0x8)]
+    int StackVa(uint a, uint b, uint c, uint d, uint e, VarArgs va)
+    {
+        Log(a, b, c, d, e, va);
+        return -Seed;
+    }
+    [Hle("probeCtx", Nid = 0x9)]
+    void Ctx(HleContext ctx, uint a, long b)
+    {
+        Log(ctx, a, b);
+    }
+    [Hle("probeRetEnum", Nid = 0xA)]
+    ProbeEnum RetEnum(uint a)
+    {
+        Log(a);
+        return (ProbeEnum)Seed;
+    }
+    [Hle("probeRetShort", Nid = 0xB)]
+    short RetShort(uint a)
+    {
+        Log(a);
+        return (short)Seed;
+    }
+    [Hle("probeRetByte", Nid = 0xC)]
+    byte RetByte(uint a)
+    {
+        Log(a);
+        return (byte)Seed;
+    }
+    [Hle("probeRetPtr", Nid = 0xD)]
+    Ptr<ProbeStruct> RetPtr(Ptr<ProbeStruct> p)
+    {
+        Log(p);
+        return new Ptr<ProbeStruct>((uint)Seed);
+    }
+    [Hle("probeRetByteEnum", Nid = 0xE)]
+    ProbeByteEnum RetByteEnum()
+    {
+        Log();
+        return (ProbeByteEnum)Seed;
+    }
+    [Hle("probeManyStack", Nid = 0xF)]
+    uint ManyStack(uint a, uint b, uint c, long d, uint e, long f, ushort g, string h)
+    {
+        Log(a, b, c, d, e, f, g, h);
+        return 0;
+    }
+    [Hle("probeA", Nid = 0x10), Hle("probeB", Nid = 0x11, Library = "SceProbe")]
+    public uint TwoAttrs(uint a)
+    {
+        Log(a);
+        return a + 1;
+    }
 }

@@ -16,7 +16,11 @@ public sealed class HleBatch11Tests(GuestMemoryFixture fx) : IDisposable
 
     Emulator Emu()
     {
-        if (_emu != null) return _emu;
+        if (_emu != null)
+        {
+            return _emu;
+        }
+
         Directory.CreateDirectory(_root);
         return _emu = new Emulator(new EmulatorOptions { FsRoot = _root, Memory = fx.Memory, EnableJit = false, CpuBackend = "interp" });
     }
@@ -28,7 +32,12 @@ public sealed class HleBatch11Tests(GuestMemoryFixture fx) : IDisposable
 
     static int Call(object module, string name, params object?[] args) => Convert.ToInt32(Invoke(module, name, args));
 
-    uint Alloc(uint size) { uint p = fx.Memory.Alloc(size, "hle11"); GuestMemory.Fill(p, 0, size); return p; }
+    uint Alloc(uint size)
+    {
+        uint p = fx.Memory.Alloc(size, "hle11");
+        GuestMemory.Fill(p, 0, size);
+        return p;
+    }
 
     uint Str(string s)
     {
@@ -49,14 +58,22 @@ public sealed class HleBatch11Tests(GuestMemoryFixture fx) : IDisposable
     static string Read16(uint p)
     {
         var sb = new StringBuilder();
-        for (; GuestMemory.Read<ushort>(p) != 0; p += 2) sb.Append((char)GuestMemory.Read<ushort>(p));
+        for (; GuestMemory.Read<ushort>(p) != 0; p += 2)
+        {
+            sb.Append((char)GuestMemory.Read<ushort>(p));
+        }
+
         return sb.ToString();
     }
 
     public void Dispose()
     {
         _emu?.Dispose();
-        try { Directory.Delete(_root, true); } catch (IOException) { }
+        try
+        {
+            Directory.Delete(_root, true);
+        }
+        catch (IOException) { }
     }
 
     [Fact]
@@ -168,7 +185,10 @@ public sealed class HleBatch11Tests(GuestMemoryFixture fx) : IDisposable
         GuestMemory.Write(aid, 0x1234UL);
         GuestMemory.Write(start, 0x5678UL);
         uint[] block = [cid, aid, 0, 0, 0, 0, start, exp, 0, 0];
-        for (int i = 0; i < block.Length; i++) GuestMemory.W32(outs + (uint)i * 4, block[i]);
+        for (int i = 0; i < block.Length; i++)
+        {
+            GuestMemory.W32(outs + (uint)i * 4, block[i]);
+        }
 
         Assert.Equal(0, Call(sys, "NpDrmGetRifInfo", rif, 0x98u, 1u, outs));
         Assert.Equal(id, GuestMemory.ReadCString(cid));

@@ -83,7 +83,10 @@ public class TrophyImportTests
             Assert.False(File.Exists(Path.Combine(sys, "db", "old.txt")));
             Assert.True(File.Exists(Path.Combine(r.Backup!, "db", "old.txt")));
         }
-        finally { Directory.Delete(root, true); }
+        finally
+        {
+            Directory.Delete(root, true);
+        }
     }
 
     [Theory]

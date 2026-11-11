@@ -72,7 +72,10 @@ public sealed class JpegEncHleTests(GuestMemoryFixture fx)
         Assert.False(HasMarker(mjpeg, 0xC4) || HasMarker(mjpeg, 0xE0));
         var a = JpegDecoder.Decode(jpeg);
         var b = JpegDecoder.Decode(mjpeg);
-        for (int p = 0; p < 3; p++) Assert.Equal(a.Planes[p].Data, b.Planes[p].Data);
+        for (int p = 0; p < 3; p++)
+        {
+            Assert.Equal(a.Planes[p].Data, b.Planes[p].Data);
+        }
     }
 
     [Fact]
@@ -83,7 +86,10 @@ public sealed class JpegEncHleTests(GuestMemoryFixture fx)
         var rst = Encode(src, 32, restart: 2);
         Assert.True(HasMarker(rst, 0xDD) && HasMarker(rst, 0xD0) && HasMarker(rst, 0xD7));
         var withRst = JpegDecoder.Decode(rst);
-        for (int p = 0; p < 3; p++) Assert.Equal(plain.Planes[p].Data, withRst.Planes[p].Data);
+        for (int p = 0; p < 3; p++)
+        {
+            Assert.Equal(plain.Planes[p].Data, withRst.Planes[p].Data);
+        }
     }
 
     // ------------------------------------------------------------------ HLE
@@ -127,7 +133,11 @@ public sealed class JpegEncHleTests(GuestMemoryFixture fx)
         // InitWithParam reads SceJpegEncoderInitParam (0x1C)
         uint param = Alloc(0x1C, "enc-param");
         uint[] f = [0x1C, 96, 48, 9, outp, 0x1000, 1];
-        for (int i = 0; i < f.Length; i++) GuestMemory.W32(param + (uint)i * 4, f[i]);
+        for (int i = 0; i < f.Length; i++)
+        {
+            GuestMemory.W32(param + (uint)i * 4, f[i]);
+        }
+
         Assert.Equal(0, Call(e, "sceJpegEncoderInitWithParam", ctx, param));
         Assert.Equal(JpegEnc.ERR_INVALID_POINTER, Call(e, "sceJpegEncoderInitWithParam", ctx, 0u));
         Assert.Equal(JpegEnc.ERR_INVALID_POINTER, Call(e, "sceJpegEncoderEncode", ctx, 0u));
@@ -191,11 +201,17 @@ public sealed class JpegEncHleTests(GuestMemoryFixture fx)
         var rgba = new byte[pitch * h * 4];
         var rnd = new Random(3);
         for (int y = 0; y < h; y++)
+        {
             for (int x = 0; x < w; x++)
             {
                 int i = (y * pitch + x) * 4;
-                rgba[i] = (byte)(x * 7); rgba[i + 1] = (byte)(y * 11); rgba[i + 2] = (byte)(100 + rnd.Next(-4, 5) + (x + y) * 2); rgba[i + 3] = 0xFF;
+                rgba[i] = (byte)(x * 7);
+                rgba[i + 1] = (byte)(y * 11);
+                rgba[i + 2] = (byte)(100 + rnd.Next(-4, 5) + (x + y) * 2);
+                rgba[i + 3] = 0xFF;
             }
+        }
+
         uint src = Alloc(rgba.Length, "csc-src");
         rgba.CopyTo(GuestMemory.Span(src, rgba.Length));
         uint yuv = Alloc(w * h * 2, "csc-yuv");
@@ -219,8 +235,17 @@ public sealed class JpegEncHleTests(GuestMemoryFixture fx)
         YuvConvert.ToRgba(p[0].Data, p[0].Stride, p[1].Data, p[2].Data, p[1].Stride, w, h, 2, 2, back, w);
         double se = 0;
         for (int y = 0; y < h; y++)
+        {
             for (int x = 0; x < w; x++)
-                for (int c = 0; c < 3; c++) { double d = back[(y * w + x) * 4 + c] - rgba[(y * pitch + x) * 4 + c]; se += d * d; }
+            {
+                for (int c = 0; c < 3; c++)
+                {
+                    double d = back[(y * w + x) * 4 + c] - rgba[(y * pitch + x) * 4 + c];
+                    se += d * d;
+                }
+            }
+        }
+
         double psnr = 10 * Math.Log10(255.0 * 255 * w * h * 3 / se);
         Assert.True(psnr > 30, $"psnr {psnr}");
 

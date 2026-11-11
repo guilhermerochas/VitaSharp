@@ -49,7 +49,10 @@ public sealed class IoTimingTests
             Assert.Equal(IoTiming.VitaBytesPerSecond, IoTiming.BytesPerSecond);
             Assert.False(IoTiming.FastLoading);
         }
-        finally { IoTiming.BytesPerSecond = saved; }
+        finally
+        {
+            IoTiming.BytesPerSecond = saved;
+        }
     }
 
     [Fact]
@@ -72,7 +75,10 @@ public sealed class IoTimingTests
             IoTiming.FastLoading = EffectiveSettings.Resolve(off, new GameSettings()).FastLoading;
             Assert.Equal(7e6, IoTiming.BytesPerSecond);
         }
-        finally { IoTiming.BytesPerSecond = saved; }
+        finally
+        {
+            IoTiming.BytesPerSecond = saved;
+        }
     }
 
     [Fact]
@@ -95,6 +101,12 @@ public sealed class IoTimingTests
             Assert.Null(GameSettings.Load(game).FastLoading);
             Assert.DoesNotContain("FastLoading", File.ReadAllText(game)); // no choice of its own: not written
         }
-        finally { if (Directory.Exists(dir)) Directory.Delete(dir, true); }
+        finally
+        {
+            if (Directory.Exists(dir))
+            {
+                Directory.Delete(dir, true);
+            }
+        }
     }
 }

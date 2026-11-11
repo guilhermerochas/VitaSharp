@@ -16,13 +16,21 @@ public class Atrac9MdctTests
     {
         int n = 1 << bits;
         var window = new double[n];
-        for (int i = 0; i < n; i++) window[i] = Math.Sin(Math.PI * (i + 0.5) / n);
+        for (int i = 0; i < n; i++)
+        {
+            window[i] = Math.Sin(Math.PI * (i + 0.5) / n);
+        }
+
         var mdct = new Mdct(bits, window, 1.0 / 32768);
         var rng = new Random(bits);
         for (int round = 0; round < 20; round++)
         {
             var input = new double[n];
-            for (int i = 0; i < n; i++) input[i] = (rng.NextDouble() - 0.5) * 65536;
+            for (int i = 0; i < n; i++)
+            {
+                input[i] = (rng.NextDouble() - 0.5) * 65536;
+            }
+
             var fast = new double[n];
             var reference = new double[n];
             mdct.Dct4ForTest(input, fast);

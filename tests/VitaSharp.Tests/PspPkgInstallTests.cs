@@ -64,7 +64,9 @@ public class PspPkgInstallTests
         Assert.Equal(PkgKind.VitaApp, info.Kind);
         Assert.True(info.NeedsLicense);
         foreach (var k in new[] { PkgKind.VitaApp, PkgKind.VitaPatch, PkgKind.VitaDlc, PkgKind.VitaTheme, PkgKind.VitaPsm })
+        {
             Assert.True(k.NeedsLicense());
+        }
     }
 
     [Fact]
@@ -77,7 +79,10 @@ public class PspPkgInstallTests
             Assert.Contains("license", e.Message);
             Assert.False(Directory.Exists(ux0));
         }
-        finally { dir.Delete(true); }
+        finally
+        {
+            dir.Delete(true);
+        }
     }
 
     [Fact]
@@ -111,7 +116,10 @@ public class PspPkgInstallTests
             Assert.False(Directory.Exists(Path.Combine(ux0, "pspemu", "ISO"))); // nothing of the game is decrypted
             Assert.False(File.Exists(Path.Combine(ux0, "id.dat"))); // the shell rebuilds its database and lists the title
         }
-        finally { dir.Delete(true); }
+        finally
+        {
+            dir.Delete(true);
+        }
     }
 
     [Fact]
@@ -125,7 +133,10 @@ public class PspPkgInstallTests
             Assert.Equal(PkgKind.PspMini, t.Kind);
             Assert.Equal(eboot, File.ReadAllBytes(Path.Combine(ux0, "pspemu", "PSP", "GAME", "ULUS99999", "EBOOT.PBP")));
         }
-        finally { dir.Delete(true); }
+        finally
+        {
+            dir.Delete(true);
+        }
     }
 
     /// <summary>A license-shaped test file (a header and the content id at 0x10; not a real license).</summary>
@@ -133,7 +144,11 @@ public class PspPkgInstallTests
     {
         var rif = new byte[0x98];
         System.Text.Encoding.ASCII.GetBytes(contentId).CopyTo(rif, 0x10);
-        for (int i = 0x40; i < rif.Length; i++) rif[i] = (byte)i;
+        for (int i = 0x40; i < rif.Length; i++)
+        {
+            rif[i] = (byte)i;
+        }
+
         return rif;
     }
 
@@ -151,7 +166,10 @@ public class PspPkgInstallTests
             Assert.Equal(rif, File.ReadAllBytes(Path.Combine(ux0, "pspemu", "PSP", "LICENSE", PspContent + ".rif")));
             Assert.Equal(act, File.ReadAllBytes(Path.Combine(dir.FullName, "tm0", "npdrm", "act.dat")));
         }
-        finally { dir.Delete(true); }
+        finally
+        {
+            dir.Delete(true);
+        }
     }
 
     [Fact]
@@ -166,7 +184,10 @@ public class PspPkgInstallTests
             Assert.Contains(PspContent, e.Message);
             Assert.False(Directory.Exists(Path.Combine(ux0, "pspemu", "PSP", "GAME")));
         }
-        finally { dir.Delete(true); }
+        finally
+        {
+            dir.Delete(true);
+        }
     }
 
     [Fact]
@@ -181,7 +202,10 @@ public class PspPkgInstallTests
             Assert.Equal(eboot, File.ReadAllBytes(Path.Combine(t.Path, "EBOOT.PBP")));
             Assert.False(Directory.Exists(Path.Combine(ux0, "license")));
         }
-        finally { dir.Delete(true); }
+        finally
+        {
+            dir.Delete(true);
+        }
     }
 
     [Fact]
@@ -210,7 +234,10 @@ public class PspPkgInstallTests
             Assert.False(File.Exists(Path.Combine(game, "texture.enc")));
             Assert.Equal(PspEbootSignature.KindPs1, PspEbootSignature.Verify("EBOOT.PBP", File.ReadAllBytes(Path.Combine(game, "__sce_ebootpbp"))));
         }
-        finally { dir.Delete(true); }
+        finally
+        {
+            dir.Delete(true);
+        }
     }
 
     [Fact]
@@ -236,7 +263,10 @@ public class PspPkgInstallTests
             Assert.Equal(eboot, File.ReadAllBytes(Path.Combine(t.Path, "EBOOT.PBP")));
             Assert.Equal([3, 3], File.ReadAllBytes(Path.Combine(t.Path, "DOCUMENT.DAT")));
         }
-        finally { dir.Delete(true); }
+        finally
+        {
+            dir.Delete(true);
+        }
     }
 
     [Fact]
@@ -258,7 +288,10 @@ public class PspPkgInstallTests
             Assert.Equal([5, 6], File.ReadAllBytes(Path.Combine(game, "EXTRA", "PACK1.EDAT")));
             Assert.False(File.Exists(Path.Combine(game, "__sce_ebootpbp")));
         }
-        finally { dir.Delete(true); }
+        finally
+        {
+            dir.Delete(true);
+        }
     }
 
     [Fact]
@@ -275,7 +308,10 @@ public class PspPkgInstallTests
             Assert.Throws<InvalidDataException>(() => PkgInstaller.InstallWithoutLicense(pkg, ux0));
             Assert.False(File.Exists(Path.Combine(ux0, "pspemu", "evil.txt")));
         }
-        finally { dir.Delete(true); }
+        finally
+        {
+            dir.Delete(true);
+        }
     }
 
     [Fact]
@@ -288,7 +324,10 @@ public class PspPkgInstallTests
             var e = Assert.Throws<InvalidDataException>(() => PkgInstaller.InstallWithoutLicense(pkg, ux0));
             Assert.Contains("EBOOT.PBP", e.Message);
         }
-        finally { dir.Delete(true); }
+        finally
+        {
+            dir.Delete(true);
+        }
     }
 
     [Fact]

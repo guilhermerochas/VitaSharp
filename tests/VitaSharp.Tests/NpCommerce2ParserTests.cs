@@ -19,7 +19,12 @@ public sealed class NpCommerce2ParserTests(GuestMemoryFixture fx)
         Convert.ToInt32(m.GetType().GetMethod(name, BindingFlags.Instance | BindingFlags.Static | BindingFlags.NonPublic | BindingFlags.Public)!
             .Invoke(m, args));
 
-    uint Alloc(uint size) { uint p = fx.Memory.Alloc(size, "c2parse"); GuestMemory.Fill(p, 0, size); return p; }
+    uint Alloc(uint size)
+    {
+        uint p = fx.Memory.Alloc(size, "c2parse");
+        GuestMemory.Fill(p, 0, size);
+        return p;
+    }
 
     static NpCommerce2 Lib()
     {
@@ -33,7 +38,11 @@ public sealed class NpCommerce2ParserTests(GuestMemoryFixture fx)
     static byte[] Be64(ulong v) => [.. Be32((uint)(v >> 32)), .. Be32((uint)v)];
     static byte[] Z(string s) => [.. Encoding.ASCII.GetBytes(s), 0];
     static byte[] Cat(params byte[][] parts) => parts.SelectMany(x => x).ToArray();
-    static byte[] T(int tag, params byte[][] value) { var v = Cat(value); return Cat(Be16(tag), Be16(v.Length), v); }
+    static byte[] T(int tag, params byte[][] value)
+    {
+        var v = Cat(value);
+        return Cat(Be16(tag), Be16(v.Length), v);
+    }
     static byte[] Sec(int type, int count, params byte[][] items) => T(1, Be16(type), Be16(count), Cat(items));
     static byte[] Sec8(int type, int count, int w4, int w6, params byte[][] items) => T(2, Be16(type), Be16(count), Be16(w4), Be16(w6), Cat(items));
 
@@ -53,8 +62,11 @@ public sealed class NpCommerce2ParserTests(GuestMemoryFixture fx)
     uint Parent(uint buf, uint data, uint len)
     {
         uint rec = Alloc(0x100);
-        GuestMemory.W32(rec, 0x1234); GuestMemory.W32(rec + 4, buf); GuestMemory.W32(rec + 12, data);
-        GuestMemory.W32(rec + 16, len); GuestMemory.W32(rec + 20, data);
+        GuestMemory.W32(rec, 0x1234);
+        GuestMemory.W32(rec + 4, buf);
+        GuestMemory.W32(rec + 12, data);
+        GuestMemory.W32(rec + 16, len);
+        GuestMemory.W32(rec + 20, data);
         return rec;
     }
 
@@ -163,8 +175,13 @@ public sealed class NpCommerce2ParserTests(GuestMemoryFixture fx)
         var c = Lib();
         var block = new byte[0xA1];
         void Put(int off, byte[] v) => v.CopyTo(block, off);
-        Put(0x39, Be32(2)); Put(0x3D, Be32(11)); Put(0x41, Be32(12));
-        Put(0x4D, Be32(1)); Put(0x51, Be32(5)); Put(0x59, Be32(13)); Put(0x7D, Be64(2000));
+        Put(0x39, Be32(2));
+        Put(0x3D, Be32(11));
+        Put(0x41, Be32(12));
+        Put(0x4D, Be32(1));
+        Put(0x51, Be32(5));
+        Put(0x59, Be32(13));
+        Put(0x7D, Be64(2000));
         byte[] value = Cat(block, T(0x08, Z("name")), T(0x38, Z("desc")), T(0x12, Z("x")), T(0x07, Z("a")), T(0x10, Z("b")),
             T(0x04, Z("c")), Sec(0x3D, 1), Sec(0x3E, 2), Sec(0x85, 9));
         uint buf = Reply(T(0x4D, value), out _);
@@ -219,7 +236,14 @@ public sealed class NpCommerce2ParserTests(GuestMemoryFixture fx)
     {
         var c = Lib();
         uint text = Alloc(0x400), flags = Alloc(4);
-        void Set(string s) { GuestMemory.Fill(text, 0, 0x400); for (int i = 0; i < s.Length; i++) GuestMemory.Write(text + (uint)i * 2, (ushort)s[i]); }
+        void Set(string s)
+        {
+            GuestMemory.Fill(text, 0, 0x400);
+            for (int i = 0; i < s.Length; i++)
+            {
+                GuestMemory.Write(text + (uint)i * 2, (ushort)s[i]);
+            }
+        }
         Set("Abc");
         Assert.Equal(0, Call(c, "C2CheckField", 0x10, text, flags));
         Assert.Equal(0u, GuestMemory.R32(flags));

@@ -12,7 +12,9 @@ public class AppMetaTests
     {
         // a minimal PARAM.SFO with TITLE_ID and CATEGORY (UTF-8 strings)
         var keys = new[] { ("CATEGORY", category), ("TITLE_ID", titleId) };
-        var keyTable = new List<byte>(); var dataTable = new List<byte>(); var index = new List<byte>();
+        var keyTable = new List<byte>();
+        var dataTable = new List<byte>();
+        var index = new List<byte>();
         foreach (var (k, v) in keys)
         {
             var data = System.Text.Encoding.UTF8.GetBytes(v + "\0");
@@ -24,13 +26,21 @@ public class AppMetaTests
             keyTable.AddRange(System.Text.Encoding.ASCII.GetBytes(k + "\0"));
             dataTable.AddRange(data);
         }
-        while (keyTable.Count % 4 != 0) keyTable.Add(0);
+        while (keyTable.Count % 4 != 0)
+        {
+            keyTable.Add(0);
+        }
+
         uint keyOff = (uint)(0x14 + index.Count), dataOff = keyOff + (uint)keyTable.Count;
         var sfo = new List<byte>();
-        sfo.AddRange(BitConverter.GetBytes(0x46535000u)); sfo.AddRange(BitConverter.GetBytes(0x101u));
-        sfo.AddRange(BitConverter.GetBytes(keyOff)); sfo.AddRange(BitConverter.GetBytes(dataOff));
+        sfo.AddRange(BitConverter.GetBytes(0x46535000u));
+        sfo.AddRange(BitConverter.GetBytes(0x101u));
+        sfo.AddRange(BitConverter.GetBytes(keyOff));
+        sfo.AddRange(BitConverter.GetBytes(dataOff));
         sfo.AddRange(BitConverter.GetBytes((uint)keys.Length));
-        sfo.AddRange(index); sfo.AddRange(keyTable); sfo.AddRange(dataTable);
+        sfo.AddRange(index);
+        sfo.AddRange(keyTable);
+        sfo.AddRange(dataTable);
         return sfo.ToArray();
     }
 
@@ -63,7 +73,13 @@ public class AppMetaTests
             Assert.Equal(1, AppMeta.Sync(ux0));
             Assert.False(Directory.Exists(meta));
         }
-        finally { if (Directory.Exists(ux0)) Directory.Delete(ux0, true); }
+        finally
+        {
+            if (Directory.Exists(ux0))
+            {
+                Directory.Delete(ux0, true);
+            }
+        }
     }
 
     sealed class Dummy : KernelObject;
@@ -73,8 +89,16 @@ public class AppMetaTests
     {
         var table = new ObjectTable();
         int a, b;
-        using (ProcessScope.Enter(0x1001)) a = table.Register(new Dummy { Name = "pipeA" });
-        using (ProcessScope.Enter(0x2001)) b = table.Register(new Dummy { Name = "pipeB" });
+        using (ProcessScope.Enter(0x1001))
+        {
+            a = table.Register(new Dummy { Name = "pipeA" });
+        }
+
+        using (ProcessScope.Enter(0x2001))
+        {
+            b = table.Register(new Dummy { Name = "pipeB" });
+        }
+
         Assert.Equal(0x1001, table.Get<Dummy>(a)!.OwnerPid);
         Assert.NotNull(table.FindByName<Dummy>("pipeB")); // one namespace for every process
         Assert.Equal(1, table.RemoveOwnedBy(0x1001));

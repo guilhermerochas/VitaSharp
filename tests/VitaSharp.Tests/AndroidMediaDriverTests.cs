@@ -18,7 +18,11 @@ public sealed class AndroidMediaDriverTests : IDisposable
 
     public void Dispose()
     {
-        try { Directory.Delete(_root, true); } catch (DirectoryNotFoundException) { }
+        try
+        {
+            Directory.Delete(_root, true);
+        }
+        catch (DirectoryNotFoundException) { }
     }
 
     // ---------------------------------------------------------------- audio
@@ -47,12 +51,28 @@ public sealed class AndroidMediaDriverTests : IDisposable
 
         public int Write(ReadOnlySpan<short> interleaved, long timeoutNanos)
         {
-            if (Writes++ == DisconnectOnWrite) { Lost = true; return PcmSinkStatus.Disconnected; }
+            if (Writes++ == DisconnectOnWrite)
+            {
+                Lost = true;
+                return PcmSinkStatus.Disconnected;
+            }
             long room = BufferFrames - (FramesWritten - Read);
-            if (room <= 0 && timeoutNanos > 0) { Read = FramesWritten; room = BufferFrames; } // the device drained
+            if (room <= 0 && timeoutNanos > 0)
+            {
+                Read = FramesWritten;
+                room = BufferFrames;
+            } // the device drained
             int n = (int)Math.Min(room, interleaved.Length / channels);
-            if (n <= 0) return 0;
-            foreach (var s in interleaved[..(n * channels)]) Data.Add(s);
+            if (n <= 0)
+            {
+                return 0;
+            }
+
+            foreach (var s in interleaved[..(n * channels)])
+            {
+                Data.Add(s);
+            }
+
             return n;
         }
 
@@ -79,7 +99,11 @@ public sealed class AndroidMediaDriverTests : IDisposable
         var sink = new FakeSink(48000, 960);
         using var s = new BufferedPcmStream(_ => sink, 48000, 2, 256);
         Assert.Equal(10 * 256, sink.BufferFrames); // capacity in device frames
-        for (int i = 0; i < 4; i++) s.Submit(Grain(256));
+        for (int i = 0; i < 4; i++)
+        {
+            s.Submit(Grain(256));
+        }
+
         Assert.Equal(0, sink.Starts);              // below the start threshold (5 grains)
         s.Submit(Grain(256));
         Assert.Equal(1, sink.Starts);
@@ -117,7 +141,12 @@ public sealed class AndroidMediaDriverTests : IDisposable
     public void DisconnectedDeviceIsReopenedOnTheNextGrain()
     {
         var sinks = new List<FakeSink>();
-        IPcmSink Open(int ch) { var f = new FakeSink(sinks.Count == 0 ? 48000 : 44100, 192); sinks.Add(f); return f; }
+        IPcmSink Open(int ch)
+        {
+            var f = new FakeSink(sinks.Count == 0 ? 48000 : 44100, 192);
+            sinks.Add(f);
+            return f;
+        }
         using var s = new BufferedPcmStream(Open, 48000, 2, 256);
         s.Submit(Grain(256));
         s.Submit(Grain(256));
@@ -141,7 +170,11 @@ public sealed class AndroidMediaDriverTests : IDisposable
     {
         using var s = new BufferedPcmStream(_ => null, 48000, 2, 480);
         var sw = Stopwatch.StartNew();
-        for (int i = 0; i < 10; i++) s.Submit(Grain(480)); // 10 x 10 ms
+        for (int i = 0; i < 10; i++)
+        {
+            s.Submit(Grain(480)); // 10 x 10 ms
+        }
+
         Assert.True(sw.ElapsedMilliseconds >= 60, $"{sw.ElapsedMilliseconds} ms");
         Assert.Equal(0, s.PendingSamples);
         Assert.Contains("no output device", s.Describe());
@@ -160,7 +193,11 @@ public sealed class AndroidMediaDriverTests : IDisposable
         {
             // a rising ramp across the calls: the output must rise too (no jumps back at the boundaries)
             var input = new short[256 * 2];
-            for (int i = 0; i < 256; i++) input[2 * i] = input[2 * i + 1] = (short)(call * 256 + i - 16000);
+            for (int i = 0; i < 256; i++)
+            {
+                input[2 * i] = input[2 * i + 1] = (short)(call * 256 + i - 16000);
+            }
+
             int n = r.Process(input, out_);
             for (int i = 0; i < n; i++)
             {
@@ -181,13 +218,23 @@ public sealed class AndroidMediaDriverTests : IDisposable
         // 8x4 picture, stride 12, slice height 6, crop at (2, 2) 4x2; luma = x + 16 * y, U = 100 + x + 10y, V = 200 + ...
         int stride = 12, slice = 6;
         var buf = new byte[stride * slice * 3 / 2];
-        for (int y = 0; y < slice; y++) for (int x = 0; x < stride; x++) buf[y * stride + x] = (byte)(x + 16 * y);
+        for (int y = 0; y < slice; y++)
+        {
+            for (int x = 0; x < stride; x++)
+            {
+                buf[y * stride + x] = (byte)(x + 16 * y);
+            }
+        }
+
         for (int y = 0; y < slice / 2; y++)
+        {
             for (int x = 0; x < stride / 2; x++)
             {
                 buf[stride * slice + y * stride + 2 * x] = (byte)(100 + x + 10 * y);
                 buf[stride * slice + y * stride + 2 * x + 1] = (byte)(200 + x + 10 * y);
             }
+        }
+
         var p = new DecodedPicture();
         Assert.True(YuvImageCopy.CopyRaw(buf, YuvImageCopy.ColorFormatYuv420SemiPlanar, stride, slice, 2, 2, 4, 2, p));
         Assert.Equal((4, 2), (p.Width, p.Height));
@@ -242,11 +289,15 @@ public sealed class AndroidMediaDriverTests : IDisposable
     public void ReplayStartsAtTheLastIdrAndSkipsShownPictures()
     {
         var r = new DecoderReplay();
-        r.Add(Idr, 0); r.Produced();
-        r.Add(PSlice, 1); r.Produced();
-        r.Add(Idr, 2); r.Produced();
+        r.Add(Idr, 0);
+        r.Produced();
+        r.Add(PSlice, 1);
+        r.Produced();
+        r.Add(Idr, 2);
+        r.Produced();
         r.Add(PSlice, 3);
-        r.Add(PSlice, 4); r.Produced();
+        r.Add(PSlice, 4);
+        r.Produced();
         var (units, skip) = r.TakeReplay();
         Assert.Equal(new long[] { 2, 3, 4 }, units.Select(u => u.Pts));
         Assert.Equal(2, skip);
@@ -265,9 +316,20 @@ public sealed class AndroidMediaDriverTests : IDisposable
         using var z = ZipFile.Open(zip, ZipArchiveMode.Create);
         string prefix = nested ? name + "/" : "";
         using (var w = new StreamWriter(z.CreateEntry(prefix + "meta.json").Open()))
+        {
             w.Write($$"""{"schemaVersion":1,"name":"{{name}}","vendor":"Mesa","driverVersion":"25.1.0","minApi":28,"libraryName":"vulkan.ad07XX.so","author":"a","packageVersion":"1"}""");
-        using (var w = z.CreateEntry(prefix + "vulkan.ad07XX.so").Open()) w.Write([0x7F, (byte)'E', (byte)'L', (byte)'F']);
-        using (var w = z.CreateEntry(prefix + "notgsl.so").Open()) w.Write([1]);
+        }
+
+        using (var w = z.CreateEntry(prefix + "vulkan.ad07XX.so").Open())
+        {
+            w.Write([0x7F, (byte)'E', (byte)'L', (byte)'F']);
+        }
+
+        using (var w = z.CreateEntry(prefix + "notgsl.so").Open())
+        {
+            w.Write([1]);
+        }
+
         z.CreateEntry("../evil.so");
         return zip;
     }
@@ -289,7 +351,9 @@ public sealed class AndroidMediaDriverTests : IDisposable
         }
         Assert.Equal(["", "Turnip", "Turnip-nested"], screen.Options().Select(o => o.Id));
         using (var old = File.OpenRead(Package("Old", false)))
+        {
             Assert.Throws<InvalidDataException>(() => screen.Install(old, 27)); // minApi 28
+        }
     }
 
     [Fact]
@@ -297,7 +361,11 @@ public sealed class AndroidMediaDriverTests : IDisposable
     {
         var data = new DataLayout(Path.Combine(_root, "ext"), Path.Combine(_root, "int"));
         var screen = new GpuDriverScreen(data, null);
-        using (var f = File.OpenRead(Package("Turnip", false))) screen.Install(f, 34);
+        using (var f = File.OpenRead(Package("Turnip", false)))
+        {
+            screen.Install(f, 34);
+        }
+
         string systemConfig = screen.Config;
         var running = new GameProcessInfo(1234, "PCSB00001", "Jogo", systemConfig, DateTime.UtcNow);
         Assert.False(screen.RestartNeeded(running));
@@ -306,7 +374,10 @@ public sealed class AndroidMediaDriverTests : IDisposable
         Assert.True(screen.RestartNeeded(running));
         Assert.False(screen.Select("Turnip"));
         // the options are part of the configuration too
-        var withTurnip = running with { GpuConfig = screen.Config };
+        var withTurnip = running with
+        {
+            GpuConfig = screen.Config
+        };
         Assert.False(screen.RestartNeeded(withTurnip));
         screen.SetOptions(turbo: true);
         Assert.True(screen.RestartNeeded(withTurnip));

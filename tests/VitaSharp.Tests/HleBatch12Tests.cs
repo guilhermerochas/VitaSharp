@@ -16,7 +16,11 @@ public sealed class HleBatch12Tests(GuestMemoryFixture fx) : IDisposable
 
     Emulator Emu()
     {
-        if (_emu != null) return _emu;
+        if (_emu != null)
+        {
+            return _emu;
+        }
+
         Directory.CreateDirectory(_root);
         return _emu = new Emulator(new EmulatorOptions { FsRoot = _root, Memory = fx.Memory, EnableJit = false, CpuBackend = "interp" });
     }
@@ -26,7 +30,12 @@ public sealed class HleBatch12Tests(GuestMemoryFixture fx) : IDisposable
     static object? Invoke(object module, string name, params object?[] args) =>
         module.GetType().GetMethod(name, BindingFlags.Instance | BindingFlags.Static | BindingFlags.NonPublic | BindingFlags.Public)!.Invoke(module, args);
 
-    uint Alloc(uint size) { uint p = fx.Memory.Alloc(size, "hle12"); GuestMemory.Fill(p, 0, size); return p; }
+    uint Alloc(uint size)
+    {
+        uint p = fx.Memory.Alloc(size, "hle12");
+        GuestMemory.Fill(p, 0, size);
+        return p;
+    }
 
     uint CStr(string s)
     {
@@ -39,7 +48,11 @@ public sealed class HleBatch12Tests(GuestMemoryFixture fx) : IDisposable
     public void Dispose()
     {
         _emu?.Dispose();
-        try { Directory.Delete(_root, true); } catch (IOException) { }
+        try
+        {
+            Directory.Delete(_root, true);
+        }
+        catch (IOException) { }
     }
 
     /// <summary>An AppInfo as the module builds it: { -> { header } }, a binary search tree of nodes { +4 larger,
@@ -52,22 +65,36 @@ public sealed class HleBatch12Tests(GuestMemoryFixture fx) : IDisposable
         foreach (var (key, value) in entries.OrderBy(e => e.Key))
         {
             uint n = Alloc(0x30);
-            GuestMemory.W32(n + 4, head); GuestMemory.W32(n + 8, head);
+            GuestMemory.W32(n + 4, head);
+            GuestMemory.W32(n + 8, head);
             GuestMemory.W32(n + 0x10, key);
             if (value is string s)
             {
                 uint holder = Alloc(4);
                 GuestMemory.W32(holder, CStr(s));
-                GuestMemory.W32(n + 0x18, 1); GuestMemory.W32(n + 0x20, holder);
+                GuestMemory.W32(n + 0x18, 1);
+                GuestMemory.W32(n + 0x20, holder);
             }
-            else { GuestMemory.W32(n + 0x18, 0); GuestMemory.Write(n + 0x20, Convert.ToUInt64(value)); }
-            if (root == head) { root = n; continue; }
+            else
+            {
+                GuestMemory.W32(n + 0x18, 0);
+                GuestMemory.Write(n + 0x20, Convert.ToUInt64(value));
+            }
+            if (root == head)
+            {
+                root = n;
+                continue;
+            }
             // insert into the tree (larger keys at +4)
             for (uint p = root; ;)
             {
                 uint off = GuestMemory.R32(p + 0x10) > key ? 4u : 8u;
                 uint next = GuestMemory.R32(p + off);
-                if (next == head) { GuestMemory.W32(p + off, n); break; }
+                if (next == head)
+                {
+                    GuestMemory.W32(p + off, n);
+                    break;
+                }
                 p = next;
             }
         }
@@ -109,19 +136,24 @@ public sealed class HleBatch12Tests(GuestMemoryFixture fx) : IDisposable
     {
         var l = Module<Lsdb>();
         uint str = Alloc(8);
-        GuestMemory.W32(str, CStr("03.65")); GuestMemory.W32(str + 4, 5);
+        GuestMemory.W32(str, CStr("03.65"));
+        GuestMemory.W32(str + 4, 5);
         Assert.Equal(365, Invoke(l, "ParseVersion", str));
         GuestMemory.W32(str, CStr("3.650"));
         Assert.Equal(-1, Invoke(l, "ParseVersion", str));
         uint range = Alloc(16);
-        GuestMemory.Write(range, 0ul); GuestMemory.Write(range + 8, ulong.MaxValue);
+        GuestMemory.Write(range, 0ul);
+        GuestMemory.Write(range + 8, ulong.MaxValue);
         Assert.Equal(true, Invoke(l, "sceLsdbIsCurrentTimeInRange", range, false, false));
-        GuestMemory.Write(range, 1ul); GuestMemory.Write(range + 8, 2ul);
+        GuestMemory.Write(range, 1ul);
+        GuestMemory.Write(range + 8, 2ul);
         Assert.Equal(false, Invoke(l, "sceLsdbIsCurrentTimeInRange", range, false, false));
         Assert.Equal(true, Invoke(l, "sceLsdbNormalizeBool", 5));
         uint frame = Alloc(0x40), items = Alloc(8);
-        GuestMemory.W32(items, 0x1111); GuestMemory.W32(items + 4, 0x2222);
-        GuestMemory.W32(frame + 0x38, items); GuestMemory.W32(frame + 0x3C, 2);
+        GuestMemory.W32(items, 0x1111);
+        GuestMemory.W32(items + 4, 0x2222);
+        GuestMemory.W32(frame + 0x38, items);
+        GuestMemory.W32(frame + 0x3C, 2);
         Assert.Equal(0x2222u, Invoke(l, "sceLsdbLiveAreaFrameGetItem", frame, 1));
         Assert.Equal(0u, Invoke(l, "sceLsdbLiveAreaFrameGetItem", frame, 2));
     }
@@ -171,7 +203,11 @@ public sealed class HleBatch12Tests(GuestMemoryFixture fx) : IDisposable
     {
         var e = Module<EmailEngine>();
         uint o = Alloc(0x100);
-        for (uint off = 0; off < 0x100; off += 4) GuestMemory.W32(o + off, 0x1000 + off);
+        for (uint off = 0; off < 0x100; off += 4)
+        {
+            GuestMemory.W32(o + off, 0x1000 + off);
+        }
+
         Assert.Equal(0x100Cu, Invoke(e, "Get0C", o));
         Assert.Equal(0x1080u, Invoke(e, "Get80", o));
         Invoke(e, "Set48", o, 0xABCDu);
@@ -184,7 +220,11 @@ public sealed class HleBatch12Tests(GuestMemoryFixture fx) : IDisposable
     {
         var p = Module<Psp2Compat>();
         uint o = Alloc(0x400);
-        for (uint off = 0; off < 0x400; off += 4) GuestMemory.W32(o + off, 0x2000 + off);
+        for (uint off = 0; off < 0x400; off += 4)
+        {
+            GuestMemory.W32(o + off, 0x2000 + off);
+        }
+
         Assert.Equal(0x2004u, Invoke(p, "Get04", o));
         Assert.Equal(0x2320u, Invoke(p, "Get320", o));
         Assert.Equal(0x0000202400002020ul, Invoke(p, "Get20Wide", o));

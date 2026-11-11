@@ -55,10 +55,18 @@ public sealed class DevicesHleTests(GuestMemoryFixture fx)
         uint rule = fx.Memory.Alloc(0x20, "rapid");
         const uint Cross = 0x4000;
         uint[] r = [Cross, Cross, Cross, 0, 2, 2];
-        for (int i = 0; i < 6; i++) GuestMemory.W32(rule + (uint)i * 4, r[i]);
+        for (int i = 0; i < 6; i++)
+        {
+            GuestMemory.W32(rule + (uint)i * 4, r[i]);
+        }
+
         Assert.Equal(0, Call(c, "sceCtrlSetRapidFire", 0, 0, rule));
         var seen = new List<uint>();
-        for (long v = 100; v < 108; v++) seen.Add(c.ApplyRapidFire(Cross, v) & Cross);
+        for (long v = 100; v < 108; v++)
+        {
+            seen.Add(c.ApplyRapidFire(Cross, v) & Cross);
+        }
+
         Assert.Equal(new uint[] { Cross, Cross, 0, 0, Cross, Cross, 0, 0 }, seen);
         Assert.Equal(0u, c.ApplyRapidFire(0, 108)); // trigger released: untouched
         Assert.Equal(unchecked((int)0x80340001), Call(c, "sceCtrlSetRapidFire", 0, 16, rule));
@@ -149,7 +157,11 @@ public sealed class DevicesHleTests(GuestMemoryFixture fx)
     {
         var a = new Audio();
         // handles are positive (Vita3K next_port_id = 1; Wwise treats <= 0 as a failed open)
-        for (int i = 1; i <= 8; i++) Assert.Equal(i, Call(a, "sceAudioOutOpenPort", 0, 256, 48000, 1));
+        for (int i = 1; i <= 8; i++)
+        {
+            Assert.Equal(i, Call(a, "sceAudioOutOpenPort", 0, 256, 48000, 1));
+        }
+
         Assert.Equal(unchecked((int)0x80260005), Call(a, "sceAudioOutOpenPort", 1, 256, 48000, 1));
         Assert.Equal(9, Call(a, "sceAudioOutOpenExtPort", 256, 1));
         Assert.Equal(unchecked((int)0x80260005), Call(a, "sceAudioOutOpenExtPort", 256, 1));
@@ -231,7 +243,8 @@ public sealed class DevicesHleTests(GuestMemoryFixture fx)
         systems[sys.Handle] = sys;
 
         var t = new Thread(() => Call(n, "sceNgsSystemLock", sys.Handle));
-        t.Start(); t.Join();
+        t.Start();
+        t.Join();
         Assert.Equal(1, sys.GuestLockCount);
 
         var waiter = new Thread(() => Call(n, "sceNgsSystemLock", sys.Handle)); // held by the first thread: blocks
@@ -257,20 +270,31 @@ public sealed class DevicesHleTests(GuestMemoryFixture fx)
         var rack = new VitaSharp.Core.Hle.Audio.NgsRack { System = sys, ChannelsPerVoice = 2 };
         var voice = new VitaSharp.Core.Hle.Audio.NgsVoice { Rack = rack };
         uint pcm = fx.Memory.Alloc(0x1000, "ngs pcm");
-        for (uint i = 0; i < 0x1000; i += 2) GuestMemory.Write<short>(pcm + i, 0x1000);
+        for (uint i = 0; i < 0x1000; i += 2)
+        {
+            GuestMemory.Write<short>(pcm + i, 0x1000);
+        }
+
         uint prm = fx.Memory.Alloc(0x54, "ngs player params");
         GuestMemory.Fill(prm, 0, 0x54);
         GuestMemory.W32(prm + 4, 0x54);                                                  // 84-byte layout
-        GuestMemory.W32(prm + 8, pcm); GuestMemory.Write<short>(prm + 18, 1);             // buffer 0: 0 bytes, next 1
-        GuestMemory.W32(prm + 20, pcm); GuestMemory.W32(prm + 24, 0x1000);                // buffer 1: loops forever
-        GuestMemory.Write<short>(prm + 28, -1); GuestMemory.Write<short>(prm + 30, -1);
+        GuestMemory.W32(prm + 8, pcm);
+        GuestMemory.Write<short>(prm + 18, 1);             // buffer 0: 0 bytes, next 1
+        GuestMemory.W32(prm + 20, pcm);
+        GuestMemory.W32(prm + 24, 0x1000);                // buffer 1: loops forever
+        GuestMemory.Write<short>(prm + 28, -1);
+        GuestMemory.Write<short>(prm + 30, -1);
         GuestMemory.W32(prm + 56, BitConverter.SingleToUInt32Bits(48000f));
         GuestMemory.W32(prm + 60, BitConverter.SingleToUInt32Bits(1f));
         GuestMemory.Write<byte>(prm + 76, 2);                                             // stereo PCM16
         var m = new VitaSharp.Core.Hle.Audio.NgsModuleData
         {
-            Voice = voice, Kind = VitaSharp.Core.Hle.Audio.NgsModuleKind.Player, ParamAddr = prm, ParamSize = 0x54,
-            GuestState = new byte[0x20], Source = new VitaSharp.Core.Hle.Audio.NgsSourceState(),
+            Voice = voice,
+            Kind = VitaSharp.Core.Hle.Audio.NgsModuleKind.Player,
+            ParamAddr = prm,
+            ParamSize = 0x54,
+            GuestState = new byte[0x20],
+            Source = new VitaSharp.Core.Hle.Audio.NgsSourceState(),
         };
         voice.Modules = [m];
         bool finished = (bool)Invoke(n, "ProcessPlayer", voice, m, 256)!;
@@ -296,7 +320,8 @@ public sealed class DevicesHleTests(GuestMemoryFixture fx)
         var voice = new VitaSharp.Core.Hle.Audio.NgsVoice { Rack = rack };
         uint prm = fx.Memory.Alloc(0x48, "ngs envelope params");
         GuestMemory.Fill(prm, 0, 0x48);
-        GuestMemory.W32(prm, 0x01015CE3); GuestMemory.W32(prm + 4, 0x48);
+        GuestMemory.W32(prm, 0x01015CE3);
+        GuestMemory.W32(prm + 4, 0x48);
         float[] amp = [0f, 1f, 1f, 1f];
         uint[] ms = [0, 0, 1000, 0];
         for (uint i = 0; i < 4; i++)
@@ -305,15 +330,27 @@ public sealed class DevicesHleTests(GuestMemoryFixture fx)
             GuestMemory.W32(prm + 12 + i * 12, BitConverter.SingleToUInt32Bits(amp[i]));
             GuestMemory.W32(prm + 16 + i * 12, 1);
         }
-        GuestMemory.W32(prm + 56, 10); GuestMemory.W32(prm + 60, 4); GuestMemory.W32(prm + 64, 3); GuestMemory.W32(prm + 68, 0xFFFFFFFF);
+        GuestMemory.W32(prm + 56, 10);
+        GuestMemory.W32(prm + 60, 4);
+        GuestMemory.W32(prm + 64, 3);
+        GuestMemory.W32(prm + 68, 0xFFFFFFFF);
         var m = new VitaSharp.Core.Hle.Audio.NgsModuleData
         {
-            Voice = voice, Kind = VitaSharp.Core.Hle.Audio.NgsModuleKind.Envelope, ParamAddr = prm, ParamSize = 0x48, GuestState = new byte[20],
+            Voice = voice,
+            Kind = VitaSharp.Core.Hle.Audio.NgsModuleKind.Envelope,
+            ParamAddr = prm,
+            ParamSize = 0x48,
+            GuestState = new byte[20],
         };
         voice.Modules = [m];
         object? Static(string name, params object[] args) =>
             typeof(Ngs).GetMethod(name, BindingFlags.Static | BindingFlags.NonPublic)!.Invoke(null, args);
-        float[] Ones() { var b = new float[512]; Array.Fill(b, 1f); return b; }
+        float[] Ones()
+        {
+            var b = new float[512];
+            Array.Fill(b, 1f);
+            return b;
+        }
         Static("ResetEnvelope", m);
         voice.Product = Ones();
         Assert.False((bool)Invoke(n, "ProcessEnvelope", voice, m, 256)!);

@@ -16,7 +16,11 @@ public sealed class HleBatch13Tests(GuestMemoryFixture fx) : IDisposable
 
     Emulator Emu()
     {
-        if (_emu != null) return _emu;
+        if (_emu != null)
+        {
+            return _emu;
+        }
+
         Directory.CreateDirectory(_root);
         return _emu = new Emulator(new EmulatorOptions { FsRoot = _root, Memory = fx.Memory, EnableJit = false, CpuBackend = "interp" });
     }
@@ -26,12 +30,21 @@ public sealed class HleBatch13Tests(GuestMemoryFixture fx) : IDisposable
     static int I(object module, string name, params object?[] args) =>
         Convert.ToInt32(module.GetType().GetMethod(name, BindingFlags.Instance | BindingFlags.Static | BindingFlags.NonPublic | BindingFlags.Public)!.Invoke(module, args));
 
-    uint Alloc(uint size) { uint p = fx.Memory.Alloc(size, "hle13"); GuestMemory.Fill(p, 0, size); return p; }
+    uint Alloc(uint size)
+    {
+        uint p = fx.Memory.Alloc(size, "hle13");
+        GuestMemory.Fill(p, 0, size);
+        return p;
+    }
 
     public void Dispose()
     {
         _emu?.Dispose();
-        try { Directory.Delete(_root, true); } catch (IOException) { }
+        try
+        {
+            Directory.Delete(_root, true);
+        }
+        catch (IOException) { }
     }
 
     [Fact]
@@ -90,7 +103,8 @@ public sealed class HleBatch13Tests(GuestMemoryFixture fx) : IDisposable
     {
         var g = Module<Gxm>();
         uint arena = Alloc(0x20), outp = Alloc(4), mem = Alloc(0x40);
-        GuestMemory.W32(arena + 8, mem + 1); GuestMemory.W32(arena + 0xC, mem + 0x20);
+        GuestMemory.W32(arena + 8, mem + 1);
+        GuestMemory.W32(arena + 0xC, mem + 0x20);
         Assert.Equal(0, I(g, "GxmReplayArenaAlloc", arena, 0x10u, outp));
         Assert.Equal(mem + 4, GuestMemory.R32(outp));
         Assert.Equal(mem + 0x14, GuestMemory.R32(arena + 8));

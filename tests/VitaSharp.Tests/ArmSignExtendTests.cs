@@ -21,10 +21,12 @@ public sealed class ArmSignExtendTests
     public void MatchesTheShiftDefinition()
     {
         for (int bits = 1; bits <= 32; bits++)
+        {
             for (uint v = 0; v < 4096; v += 7)
             {
                 uint x = v * 2654435761u;
                 Assert.Equal((uint)(((int)(x << (32 - bits))) >> (32 - bits)), Arm.SignExtend(x, bits));
             }
+        }
     }
 }

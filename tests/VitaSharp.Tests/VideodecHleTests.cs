@@ -24,7 +24,9 @@ public sealed class VideodecHleTests(GuestMemoryFixture fx) : IDisposable
     uint Query(uint w, uint h, uint refs)
     {
         uint q = _h.Alloc(12);
-        GuestMemory.W32(q, w); GuestMemory.W32(q + 4, h); GuestMemory.W32(q + 8, refs);
+        GuestMemory.W32(q, w);
+        GuestMemory.W32(q + 4, h);
+        GuestMemory.W32(q + 8, refs);
         return q;
     }
 
@@ -91,11 +93,16 @@ public sealed class VideodecHleTests(GuestMemoryFixture fx) : IDisposable
         GuestMemory.Write(picture + 4 + 0x29, csc);
         GuestMemory.W32(picture + 4 + 0x38, dst);
         GuestMemory.W32(list, picture);
-        GuestMemory.W32(array + 4, 1); GuestMemory.W32(array + 8, list);
+        GuestMemory.W32(array + 4, 1);
+        GuestMemory.W32(array + 8, list);
         var got = new Dictionary<long, byte[]>();
         void Collect()
         {
-            if (GuestMemory.R32(array) == 0) return;
+            if (GuestMemory.R32(array) == 0)
+            {
+                return;
+            }
+
             Assert.Equal(1u, GuestMemory.R32(array));
             Assert.Equal((uint)W, GuestMemory.R32(picture + 4 + 16)); // horizontalSize
             Assert.Equal((uint)H, GuestMemory.R32(picture + 4 + 20)); // verticalSize
@@ -107,12 +114,18 @@ public sealed class VideodecHleTests(GuestMemoryFixture fx) : IDisposable
         for (int i = 0; i < stream.Count; i++)
         {
             stream[i].Au.CopyTo(GuestMemory.Span(es, stream[i].Au.Length));
-            GuestMemory.W32(au, 0); GuestMemory.W32(au + 4, (uint)(i * 3000));
-            GuestMemory.W32(au + 16, es); GuestMemory.W32(au + 20, (uint)stream[i].Au.Length);
+            GuestMemory.W32(au, 0);
+            GuestMemory.W32(au + 4, (uint)(i * 3000));
+            GuestMemory.W32(au + 16, es);
+            GuestMemory.W32(au + 20, (uint)stream[i].Au.Length);
             Assert.Equal(0, Call(V, "sceAvcdecDecode", ctrl, au, array));
             Collect();
         }
-        for (int k = 0; k < 4; k++) { Assert.Equal(0, Call(V, "sceAvcdecDecodeStop", ctrl, array)); Collect(); }
+        for (int k = 0; k < 4; k++)
+        {
+            Assert.Equal(0, Call(V, "sceAvcdecDecodeStop", ctrl, array));
+            Collect();
+        }
         Assert.Equal(0, Call(V, "sceAvcdecDeleteDecoder", ctrl));
         return got;
     }
@@ -127,7 +140,11 @@ public sealed class VideodecHleTests(GuestMemoryFixture fx) : IDisposable
         for (int i = 0; i < 3; i++)
         {
             var b = got[i * 3000];
-            for (int y = 0; y < H; y++) Assert.Equal(stream[i].Y.AsSpan(y * W, W).ToArray(), b.AsSpan(y * (int)pitch, W).ToArray());
+            for (int y = 0; y < H; y++)
+            {
+                Assert.Equal(stream[i].Y.AsSpan(y * W, W).ToArray(), b.AsSpan(y * (int)pitch, W).ToArray());
+            }
+
             int uOff = (int)(pitch * H), vOff = uOff + (int)(pitch / 2 * (H / 2));
             for (int y = 0; y < H / 2; y++)
             {

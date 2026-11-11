@@ -24,7 +24,12 @@ public sealed class TaihenSecurityTests(GuestMemoryFixture fx) : IDisposable
 
     public void Dispose() => _h.Dispose();
 
-    uint Bytes(byte[] b) { uint p = _h.Alloc((uint)b.Length + 4); b.CopyTo(GuestMemory.Span(p, b.Length)); return p; }
+    uint Bytes(byte[] b)
+    {
+        uint p = _h.Alloc((uint)b.Length + 4);
+        b.CopyTo(GuestMemory.Span(p, b.Length));
+        return p;
+    }
 
     [Fact]
     public void InjectionsRestoreTheOriginalBytes()
@@ -48,7 +53,10 @@ public sealed class TaihenSecurityTests(GuestMemoryFixture fx) : IDisposable
         // module-relative injections need a known module and segment, and must fit in it
         uint args = _h.Alloc(0x1C);
         Assert.Equal(INVALID_ARGS, Call(T, "taiInjectDataForUser", 0u));
-        GuestMemory.W32(args, 0x1C); GuestMemory.W32(args + 4, 0x7FFF0001); GuestMemory.W32(args + 20, patch); GuestMemory.W32(args + 24, 3);
+        GuestMemory.W32(args, 0x1C);
+        GuestMemory.W32(args + 4, 0x7FFF0001);
+        GuestMemory.W32(args + 20, patch);
+        GuestMemory.W32(args + 24, 3);
         Assert.Equal(NOT_FOUND, Call(T, "taiInjectDataForUser", args));
         GuestMemory.W32(args + 24, 0);
         Assert.Equal(INVALID_ARGS, Call(T, "taiInjectDataForUser", args));
@@ -95,8 +103,14 @@ public sealed class TaihenSecurityTests(GuestMemoryFixture fx) : IDisposable
     string Hash(uint command, byte[] data, byte[]? key = null)
     {
         uint param = _h.Alloc(24), dst = _h.Alloc(32);
-        GuestMemory.W32(param, Bytes(data)); GuestMemory.W32(param + 4, dst); GuestMemory.W32(param + 8, (uint)data.Length);
-        if (key != null) { GuestMemory.W32(param + 12, Bytes(key)); GuestMemory.W32(param + 16, (uint)key.Length); }
+        GuestMemory.W32(param, Bytes(data));
+        GuestMemory.W32(param + 4, dst);
+        GuestMemory.W32(param + 8, (uint)data.Length);
+        if (key != null)
+        {
+            GuestMemory.W32(param + 12, Bytes(key));
+            GuestMemory.W32(param + 16, (uint)key.Length);
+        }
         Assert.Equal(0, Call(S, "sceSblDmac5HashTransform", param, command, 0u));
         return Convert.ToHexString(GuestMemory.ReadSpan(dst, (command & 0xF0) is 0x10 or 0x30 ? 32 : 20)).ToLowerInvariant();
     }

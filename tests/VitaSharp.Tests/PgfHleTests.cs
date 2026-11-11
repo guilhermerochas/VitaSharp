@@ -28,12 +28,23 @@ public sealed class PgfHleTests(GuestMemoryFixture fx)
         switch (fn)
         {
             case AllocFn:
-                if (_failAlloc) return 0;
+                if (_failAlloc)
+                {
+                    return 0;
+                }
+
                 _allocs++;
                 return fx.Memory.Alloc(Math.Max(a[1], 4u), "pgf-test", MemoryRegion.User, 16);
-            case FreeFn: _frees++; fx.Memory.Free(a[1]); return 0;
-            case OpenFn: _userPos = 0; return 0x77;
-            case SeekFn: _userPos = (int)a[2]; return 0;
+            case FreeFn:
+                _frees++;
+                fx.Memory.Free(a[1]);
+                return 0;
+            case OpenFn:
+                _userPos = 0;
+                return 0x77;
+            case SeekFn:
+                _userPos = (int)a[2];
+                return 0;
             case ReadFn:
             {
                 int n = (int)Math.Min(a[3] * a[4], (uint)(_userFile.Length - _userPos));
@@ -41,7 +52,8 @@ public sealed class PgfHleTests(GuestMemoryFixture fx)
                 _userPos += n;
                 return (uint)n / a[3];
             }
-            case CloseFn: return 0;
+            case CloseFn:
+                return 0;
         }
         throw new InvalidOperationException($"unexpected guest call {fn:X}");
     }
@@ -62,13 +74,20 @@ public sealed class PgfHleTests(GuestMemoryFixture fx)
         GuestMemory.W32(p + 0x10, FreeFn);
         if (io)
         {
-            GuestMemory.W32(p + 0x14, OpenFn); GuestMemory.W32(p + 0x18, CloseFn);
-            GuestMemory.W32(p + 0x1C, ReadFn); GuestMemory.W32(p + 0x20, SeekFn);
+            GuestMemory.W32(p + 0x14, OpenFn);
+            GuestMemory.W32(p + 0x18, CloseFn);
+            GuestMemory.W32(p + 0x1C, ReadFn);
+            GuestMemory.W32(p + 0x20, SeekFn);
         }
         return p;
     }
 
-    uint Err() { uint e = fx.Memory.Alloc(16, "pgf-err", MemoryRegion.User, 16); GuestMemory.W32(e, 0x12345678); return e; }
+    uint Err()
+    {
+        uint e = fx.Memory.Alloc(16, "pgf-err", MemoryRegion.User, 16);
+        GuestMemory.W32(e, 0x12345678);
+        return e;
+    }
 
     (Pgf m, uint lib) NewLib(uint numFonts = 4, Func<string, byte[]?>? files = null, bool io = false)
     {
@@ -291,7 +310,11 @@ public sealed class PgfHleTests(GuestMemoryFixture fx)
         uint ci = fx.Memory.Alloc(0x3C, "pgf-ci", MemoryRegion.User, 16);
         Assert.Equal(0, Call(m, "sceFontGetCharInfo", f, (uint)'A', ci));
         int[] expected = [3, 2, 1, 2, 192, 128, 128, 0, 64, 128, -96, 16, 256, 320];
-        for (int i = 0; i < expected.Length; i++) Assert.Equal(expected[i], GuestMemory.Read<int>(ci + (uint)i * 4));
+        for (int i = 0; i < expected.Length; i++)
+        {
+            Assert.Equal(expected[i], GuestMemory.Read<int>(ci + (uint)i * 4));
+        }
+
         Assert.Equal((short)0x33, GuestMemory.Read<short>(ci + 0x38));
         Assert.Equal((short)7, GuestMemory.Read<short>(ci + 0x3A));
 
@@ -348,7 +371,10 @@ public sealed class PgfHleTests(GuestMemoryFixture fx)
         Assert.Equal(new byte[] { 0x00, 0x08, 0, 0 }, Row(img, 1, 4));
 
         foreach (uint bad in new uint[] { 1, 3, 4 })
+        {
             Assert.Equal(Pgf.ERR_INVALID_PARAMETER, Call(m, "sceFontGetCharGlyphImage", f, (uint)'A', Image(bad, 0, 0, 8, 4, 8, 0)));
+        }
+
         Assert.Equal(Pgf.ERR_INVALID_PARAMETER, Call(m, "sceFontGetCharGlyphImage", f, (uint)'A', 0u));
         // a missing glyph draws nothing and succeeds whatever the format
         Assert.Equal(0, Call(m, "sceFontGetCharGlyphImage", f, (uint)'B', Image(3, 0, 0, 8, 4, 8, 0)));
@@ -398,7 +424,11 @@ public sealed class PgfHleTests(GuestMemoryFixture fx)
     [Fact]
     public void FirmwareLatinFont()
     {
-        if (FontTestData.FirmwareFontDir("pgf") is not { } dir) return;
+        if (FontTestData.FirmwareFontDir("pgf") is not { } dir)
+        {
+            return;
+        }
+
         var (m, lib) = NewLib(files: name => File.Exists(Path.Combine(dir, name)) ? File.ReadAllBytes(Path.Combine(dir, name)) : null);
         uint f = Open(m, lib, 1);
         uint ci = fx.Memory.Alloc(0x3C, "pgf-ci", MemoryRegion.User, 16);
@@ -412,7 +442,11 @@ public sealed class PgfHleTests(GuestMemoryFixture fx)
         uint img = Image(2, 0, 0, 32, 32, 32, 0);
         Assert.Equal(0, Call(m, "sceFontGetCharGlyphImage", kr, 0xD55Cu, img));
         int ink = 0;
-        for (int y = 0; y < 32; y++) ink += Row(img, y, 32).Count(b => b != 0);
+        for (int y = 0; y < 32; y++)
+        {
+            ink += Row(img, y, 32).Count(b => b != 0);
+        }
+
         Assert.True(ink > 30);
     }
 }

@@ -42,7 +42,10 @@ public sealed class EmulationPauseTests(GuestMemoryFixture fx)
             Thread.Sleep(30);
             Assert.True(GuestClock.Ticks > afterResume); // running again
         }
-        finally { EmulationPause.Resume("test cleanup"); }
+        finally
+        {
+            EmulationPause.Resume("test cleanup");
+        }
     }
 
     [Fact]
@@ -57,14 +60,23 @@ public sealed class EmulationPauseTests(GuestMemoryFixture fx)
             EmulationPause.Resume("test");
             Assert.Same(wait, await Task.WhenAny(wait, Task.Delay(2000))); // and ends after the resume
         }
-        finally { EmulationPause.Resume("test cleanup"); }
+        finally
+        {
+            EmulationPause.Resume("test cleanup");
+        }
     }
 
     [Fact]
     public void ToggleAndChangedEvent()
     {
         var seen = new List<bool>();
-        void OnChanged(bool p) { lock (seen) seen.Add(p); }
+        void OnChanged(bool p)
+        {
+            lock (seen)
+            {
+                seen.Add(p);
+            }
+        }
         EmulationPause.Changed += OnChanged;
         try
         {
@@ -93,7 +105,11 @@ public sealed class EmulationPauseTests(GuestMemoryFixture fx)
         Exception? fatal = null;
         emu.Fatal += (_, e) => fatal ??= e;
         uint code = fx.Memory.Alloc(0x100, "pause test code"), data = fx.Memory.Alloc(0x10, "pause test counter");
-        for (int i = 0; i < CountingLoop.Length; i++) GuestMemory.W32(code + (uint)i * 4, CountingLoop[i]);
+        for (int i = 0; i < CountingLoop.Length; i++)
+        {
+            GuestMemory.W32(code + (uint)i * 4, CountingLoop[i]);
+        }
+
         GuestMemory.W32(data, 0);
         GuestMemory.W32(data + 4, 0);
         emu.Code.Invalidate(code, 0x100);
@@ -101,7 +117,15 @@ public sealed class EmulationPauseTests(GuestMemoryFixture fx)
         bool WaitFor(Func<bool> cond, int ms)
         {
             var sw = Stopwatch.StartNew();
-            while (!cond()) { if (sw.ElapsedMilliseconds > ms) return false; Thread.Sleep(5); }
+            while (!cond())
+            {
+                if (sw.ElapsedMilliseconds > ms)
+                {
+                    return false;
+                }
+
+                Thread.Sleep(5);
+            }
             return true;
         }
 
@@ -139,7 +163,11 @@ public sealed class EmulationPauseTests(GuestMemoryFixture fx)
             emu.Dispose();
             VitaSharp.Core.Cpu.Jit.Enabled = jitEnabled;
             VitaSharp.Core.Cpu.Jit.Select(jitMode);
-            try { Directory.Delete(root, true); } catch (IOException) { }
+            try
+            {
+                Directory.Delete(root, true);
+            }
+            catch (IOException) { }
         }
         Assert.Null(fatal);
     }
@@ -152,7 +180,10 @@ public sealed class EmulationPauseTests(GuestMemoryFixture fx)
         Assert.Equal(new[] { InputBinding.OfKey("P") }, kb.Get(VitaControl.PauseEmulation));
         Assert.Contains(InputBinding.OfKey("Space"), kb.Get(VitaControl.Cross));
         foreach (var c in VitaControls.All.Where(c => c != VitaControl.PauseEmulation))
+        {
             Assert.DoesNotContain(InputBinding.OfKey("P"), kb.Get(c));
+        }
+
         var cp = new CompiledProfile(kb);
         Assert.True(InputMapper.HotkeyHeld(cp, VitaControl.PauseEmulation, null, new HashSet<string> { "P" }));
         Assert.Equal(VitaSharp.Core.Host.VitaButtons.None, InputMapper.Map(cp, null, new HashSet<string> { "P" }).State.Buttons);

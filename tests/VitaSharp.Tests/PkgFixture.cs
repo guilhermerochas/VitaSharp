@@ -24,10 +24,18 @@ public static class PkgFixture
             var bytes = Encoding.UTF8.GetBytes(v + "\0");
             int dataOff = (int)data.Length;
             data.Write(bytes);
-            while (data.Length % 4 != 0) data.WriteByte(0);
+            while (data.Length % 4 != 0)
+            {
+                data.WriteByte(0);
+            }
+
             entries.Add((keyOff, bytes.Length, dataOff));
         }
-        while (keys.Length % 4 != 0) keys.WriteByte(0);
+        while (keys.Length % 4 != 0)
+        {
+            keys.WriteByte(0);
+        }
+
         int keyTable = 0x14 + entries.Count * 16, dataTable = keyTable + (int)keys.Length;
         var sfo = new byte[dataTable + data.Length];
         BinaryPrimitives.WriteUInt32LittleEndian(sfo, 0x46535000);
@@ -66,15 +74,25 @@ public static class PkgFixture
             var n = Encoding.UTF8.GetBytes(name);
             nameOffs.Add(((int)area.Length, n.Length));
             area.Write(n);
-            while (area.Length % 16 != 0) area.WriteByte(0);
+            while (area.Length % 16 != 0)
+            {
+                area.WriteByte(0);
+            }
         }
         var dataOffs = new List<long>();
         foreach (var (_, data) in all)
         {
             dataOffs.Add(area.Length);
-            if (data == null) continue;
+            if (data == null)
+            {
+                continue;
+            }
+
             area.Write(data);
-            while (area.Length % 16 != 0) area.WriteByte(0);
+            while (area.Length % 16 != 0)
+            {
+                area.WriteByte(0);
+            }
         }
         var plain = area.ToArray();
         for (int i = 0; i < all.Count; i++)
@@ -99,7 +117,11 @@ public static class PkgFixture
         BinaryPrimitives.WriteUInt64BigEndian(hdr[0x28..], (ulong)plain.Length);
         Encoding.ASCII.GetBytes(contentId).CopyTo(hdr[0x30..]);
         var iv = new byte[16];
-        for (int i = 0; i < 16; i++) iv[i] = (byte)(0xA0 + i);
+        for (int i = 0; i < 16; i++)
+        {
+            iv[i] = (byte)(0xA0 + i);
+        }
+
         iv.CopyTo(hdr[0x70..]);
         BinaryPrimitives.WriteUInt32BigEndian(hdr[0xE4..], 2);
 

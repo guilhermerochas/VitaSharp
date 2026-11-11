@@ -28,8 +28,14 @@ public sealed class PsnAccountTests(GuestMemoryFixture fx)
     {
         var saved = PsnAccount.Current;
         PsnAccount.Current = account;
-        try { body(); }
-        finally { PsnAccount.Current = saved; }
+        try
+        {
+            body();
+        }
+        finally
+        {
+            PsnAccount.Current = saved;
+        }
     }
 
     /// <summary>Runs one NetCheckDialog of <paramref name="mode"/> and returns (result, psnModeSucceeded).</summary>

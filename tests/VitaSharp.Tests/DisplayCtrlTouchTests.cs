@@ -34,8 +34,12 @@ public sealed class DisplayCtrlTouchTests(GuestMemoryFixture fx) : IDisposable
     uint FrameBuf(uint size, uint baseAddr, uint pitch, uint fmt, uint w, uint h)
     {
         uint p = _h.Alloc(0x20);
-        GuestMemory.W32(p, size); GuestMemory.W32(p + 4, baseAddr); GuestMemory.W32(p + 8, pitch);
-        GuestMemory.W32(p + 12, fmt); GuestMemory.W32(p + 16, w); GuestMemory.W32(p + 20, h);
+        GuestMemory.W32(p, size);
+        GuestMemory.W32(p + 4, baseAddr);
+        GuestMemory.W32(p + 8, pitch);
+        GuestMemory.W32(p + 12, fmt);
+        GuestMemory.W32(p + 16, w);
+        GuestMemory.W32(p + 20, h);
         return p;
     }
 
@@ -142,7 +146,9 @@ public sealed class DisplayCtrlTouchTests(GuestMemoryFixture fx) : IDisposable
         {
             // reads wait for the next sample: two reads are at least a vblank apart
             foreach (var fn in new[] { "sceCtrlReadBufferPositive", "sceCtrlReadBufferNegative", "sceCtrlReadBufferPositiveExt", "sceCtrlReadBufferPositive2", "sceCtrlReadBufferPositiveExt2", "sceCtrlReadBufferNegative2" })
+            {
                 Assert.Equal(1, Call(c, fn, 0, buf, 1u));
+            }
         });
 
         Assert.Equal(1, Call(c, "sceCtrlSetSamplingModeExt", 0u));

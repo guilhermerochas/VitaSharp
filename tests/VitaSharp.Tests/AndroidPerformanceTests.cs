@@ -12,7 +12,11 @@ public sealed class AndroidPerformanceTests : IDisposable
 
     public void Dispose()
     {
-        try { Directory.Delete(_root, true); } catch (DirectoryNotFoundException) { }
+        try
+        {
+            Directory.Delete(_root, true);
+        }
+        catch (DirectoryNotFoundException) { }
     }
 
     // Helio G99 (MT6789): 6 x Cortex-A55 at 2.0 GHz + 2 x Cortex-A76 at 2.2 GHz
@@ -179,12 +183,20 @@ public sealed class AndroidPerformanceTests : IDisposable
         // a 30 fps game with headroom: two vblanks per frame, each frame waiting longer than a vblank period
         long t = 0;
         bool changed = false;
-        for (int i = 0; i < 10; i++) changed |= e.OnFrame(t += Ticks(2), Freq, longWait: true);
+        for (int i = 0; i < 10; i++)
+        {
+            changed |= e.OnFrame(t += Ticks(2), Freq, longWait: true);
+        }
+
         Assert.True(changed);
         Assert.Equal(2, e.Vblanks);
         Assert.Equal(30f, e.RefreshRate);
         // falling behind (3 vblanks per frame, no long wait) does not change the target
-        for (int i = 0; i < 100; i++) e.OnFrame(t += Ticks(3), Freq, longWait: false);
+        for (int i = 0; i < 100; i++)
+        {
+            e.OnFrame(t += Ticks(3), Freq, longWait: false);
+        }
+
         Assert.Equal(2, e.Vblanks);
         // a load hitch is not a rate
         e.OnFrame(t += Ticks(40), Freq, true);
@@ -201,10 +213,18 @@ public sealed class AndroidPerformanceTests : IDisposable
         // 20 ms of work, then a wait for the next vblank: every frame takes 2 vblanks, but no wait was longer than one
         var e = new FrameRateEstimator();
         long t = 0;
-        for (int i = 0; i < 200; i++) e.OnFrame(t += Ticks(i % 3 == 0 ? 1 : 2), Freq, longWait: false);
+        for (int i = 0; i < 200; i++)
+        {
+            e.OnFrame(t += Ticks(i % 3 == 0 ? 1 : 2), Freq, longWait: false);
+        }
+
         Assert.Equal(1, e.Vblanks);
         e = new FrameRateEstimator();
-        for (int i = 0; i < 200; i++) e.OnFrame(t += Ticks(2), Freq, longWait: false);
+        for (int i = 0; i < 200; i++)
+        {
+            e.OnFrame(t += Ticks(2), Freq, longWait: false);
+        }
+
         Assert.Equal(1, e.Vblanks);
     }
 

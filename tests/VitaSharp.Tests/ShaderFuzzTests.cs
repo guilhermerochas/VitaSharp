@@ -16,10 +16,18 @@ public sealed class ShaderFuzzTests
     {
         var d = new byte[0x100 + code.Length * 8];
         void W32(int o, uint v) => BinaryPrimitives.WriteUInt32LittleEndian(d.AsSpan(o), v);
-        if (fragment) W32(0x14, GxpProgram.FlagFragment);
+        if (fragment)
+        {
+            W32(0x14, GxpProgram.FlagFragment);
+        }
+
         W32(0x3C, (uint)code.Length);
         W32(0x40, 0x100 - 0x40);
-        for (int i = 0; i < code.Length; i++) { W32(0x100 + i * 8, (uint)code[i]); W32(0x104 + i * 8, (uint)(code[i] >> 32)); }
+        for (int i = 0; i < code.Length; i++)
+        {
+            W32(0x100 + i * 8, (uint)code[i]);
+            W32(0x104 + i * 8, (uint)(code[i] >> 32));
+        }
         return new GxpProgram(d, 0x81000000);
     }
 
@@ -29,6 +37,7 @@ public sealed class ShaderFuzzTests
     {
         var rng = new Random(20261110);
         for (uint opcode = 0; opcode < 32; opcode++)
+        {
             for (int n = 0; n < 12; n++)
             {
                 ulong low = (ulong)(uint)rng.Next() | ((ulong)(uint)rng.Next(1 << 27) << 32);
@@ -39,11 +48,18 @@ public sealed class ShaderFuzzTests
                     ulong[] code = fragment ? [word] : [word, 0x6081000460600003, 0x50C9000A20200180];
                     string? glsl = null;
                     Exception? error = null;
-                    try { glsl = ShaderGenerator.Generate(Program(code, fragment), new ShaderHints([], [], 0x00000000, false, 0)).Glsl; }
-                    catch (Exception e) { error = e; }
+                    try
+                    {
+                        glsl = ShaderGenerator.Generate(Program(code, fragment), new ShaderHints([], [], 0x00000000, false, 0)).Glsl;
+                    }
+                    catch (Exception e)
+                    {
+                        error = e;
+                    }
                     yield return ($"{(fragment ? "fs" : "vs")} 0x{word:X16}", word, fragment, glsl, error);
                 }
             }
+        }
     }
 
     [Fact]
@@ -83,8 +99,13 @@ public sealed class ShaderFuzzTests
         var all = Programs().Where(p => p.Glsl != null).ToList();
         var errors = new List<string>();
         foreach (var p in all)
+        {
             if (compiler.Compile(p.Glsl!, !p.Fragment, out string? error) == null)
+            {
                 errors.Add($"{p.Name}: {error?.Split('\n').FirstOrDefault()}");
+            }
+        }
+
         Assert.True(errors.Count == 0, $"{errors.Count} of {all.Count} programs did not compile: " + string.Join(" | ", errors.Take(15)));
     }
 }

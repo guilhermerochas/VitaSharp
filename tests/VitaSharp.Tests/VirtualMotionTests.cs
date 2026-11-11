@@ -24,7 +24,12 @@ public sealed class VirtualMotionTests
         {
             int n;
             while ((n = vm.Generate(t, buf)) > 0)
-                for (int i = 0; i < n; i++) sink?.Invoke(buf[i]);
+            {
+                for (int i = 0; i < n; i++)
+                {
+                    sink?.Invoke(buf[i]);
+                }
+            }
         }
         return t;
     }
@@ -72,8 +77,16 @@ public sealed class VirtualMotionTests
             Assert.True(pitch >= -30.0001f, $"overshoot: {pitch}");
             prev = pitch;
             t = (long)s.TimestampUs;
-            if (t <= 200_000) at200 = pitch;
-            if (t <= 450_000) at450 = pitch;
+            if (t <= 200_000)
+            {
+                at200 = pitch;
+            }
+
+            if (t <= 450_000)
+            {
+                at450 = pitch;
+            }
+
             maxRate = Math.Max(maxRate, MathF.Abs(s.AngularVelocity.X));
         });
         Assert.InRange(at200, -26f, -10f);          // ramping, not a jump
@@ -93,7 +106,14 @@ public sealed class VirtualMotionTests
         vm.SetControls(0, 0, 0, 0, 0, 0, false);
         float mid = 0;
         var last = default(MotionSample);
-        Run(vm, t, 1, s => { if ((long)s.TimestampUs - t <= 150_000) mid = vm.Angles.Roll; last = s; });
+        Run(vm, t, 1, s =>
+        {
+            if ((long)s.TimestampUs - t <= 150_000)
+            {
+                mid = vm.Angles.Roll;
+            }
+            last = s;
+        });
         Assert.InRange(mid, 3f, 28f);
         Assert.Equal(0f, vm.Angles.Roll, 0.05f);
         AssertNear(new Vector3(0, 0, -1), last.Acceleration);
@@ -128,7 +148,10 @@ public sealed class VirtualMotionTests
             {
                 float dt = (s.TimestampUs - l) / 1e6f;
                 var w = s.AngularVelocity;
-                if (w != Vector3.Zero) q = Quaternion.Normalize(q * Quaternion.CreateFromAxisAngle(Vector3.Normalize(w), w.Length() * dt));
+                if (w != Vector3.Zero)
+                {
+                    q = Quaternion.Normalize(q * Quaternion.CreateFromAxisAngle(Vector3.Normalize(w), w.Length() * dt));
+                }
             }
             last = s.TimestampUs;
             AssertNear(VirtualMotion.Gravity(q), s.Acceleration, 0.002f);
@@ -196,7 +219,11 @@ public sealed class VirtualMotionTests
         vm.Generate(0, buf);
         int n = vm.Generate(10_000_000, buf); // the game did not poll for 10 s
         Assert.Equal(250, n);
-        for (int i = 1; i < n; i++) Assert.Equal(buf[i - 1].TimestampUs + (ulong)Step, buf[i].TimestampUs);
+        for (int i = 1; i < n; i++)
+        {
+            Assert.Equal(buf[i - 1].TimestampUs + (ulong)Step, buf[i].TimestampUs);
+        }
+
         Assert.Equal(10_000_000UL, buf[n - 1].TimestampUs);
         Assert.Equal(-30f, vm.Angles.Pitch, 0.01f);
         // a short destination hands the rest over on the next call
@@ -214,11 +241,24 @@ public sealed class VirtualMotionTests
         foreach (var c in VitaControls.All)
         {
             var keys = p.Get(c).Select(b => b.Key!).ToList();
-            if (VitaControls.IsMotion(c)) { Assert.Equal(2, keys.Count); keys.ForEach(k => Assert.True(motionKeys.Add(k), $"{k} bound twice")); }
+            if (VitaControls.IsMotion(c))
+            {
+                Assert.Equal(2, keys.Count);
+                keys.ForEach(k => Assert.True(motionKeys.Add(k), $"{k} bound twice"));
+            }
         }
         foreach (var c in VitaControls.All.Where(c => !VitaControls.IsMotion(c)))
-            foreach (var b in p.Get(c)) Assert.DoesNotContain(b.Key!, motionKeys);
-        foreach (var k in new[] { "F8", "F9", "F10", "F11", "Home", "Escape" }) Assert.DoesNotContain(k, motionKeys);
+        {
+            foreach (var b in p.Get(c))
+            {
+                Assert.DoesNotContain(b.Key!, motionKeys);
+            }
+        }
+
+        foreach (var k in new[] { "F8", "F9", "F10", "F11", "Home", "Escape" })
+        {
+            Assert.DoesNotContain(k, motionKeys);
+        }
         // keypad 8 = tilt forward, through the compiled profile; tilt keys press no Vita button
         var cp = new CompiledProfile(p);
         Assert.True(cp.HasMotionBindings);
@@ -237,7 +277,11 @@ public sealed class VirtualMotionTests
     {
         // a version 1 input.json whose keyboard profile uses T for Cross: T stays Cross, keypad 8 tilts forward
         var old = DefaultMappings.Keyboard();
-        foreach (var c in VitaControls.All.Where(VitaControls.IsMotion)) old.Set(c, null);
+        foreach (var c in VitaControls.All.Where(VitaControls.IsMotion))
+        {
+            old.Set(c, null);
+        }
+
         old.Set(VitaControl.Cross, InputBinding.OfKey("T"));
         var store = new InputProfileStore();
         store.Put(old);
@@ -245,8 +289,14 @@ public sealed class VirtualMotionTests
         var path = Path.Combine(Path.GetTempPath(), $"vitasharp_input_{Guid.NewGuid():N}.json");
         File.WriteAllText(path, InputProfileStore.Serialize(store.Config));
         InputProfileStore loaded;
-        try { loaded = InputProfileStore.Load(path); }
-        finally { File.Delete(path); }
+        try
+        {
+            loaded = InputProfileStore.Load(path);
+        }
+        finally
+        {
+            File.Delete(path);
+        }
         Assert.Equal(1, loaded.Config.Version);
         var p = loaded.KeyboardProfile();
         Assert.Equal(new[] { "key:Keypad8" }, p.Bindings[nameof(VitaControl.TiltForward)]);

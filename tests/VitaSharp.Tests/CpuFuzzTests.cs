@@ -15,7 +15,9 @@ public sealed class GuestMemoryFixture : IDisposable
 {
     public GuestMemory Memory { get; } = new();
     public BlockCache Cache { get; } = new();
-    public void Dispose() { }
+    public void Dispose()
+    {
+    }
 }
 
 [CollectionDefinition("guest")]
@@ -60,8 +62,15 @@ public sealed unsafe class CpuFuzzTests(GuestMemoryFixture fx, ITestOutputHelper
 
     void EnsureGuestPages()
     {
-        if (fx.Memory.FindBlock(CodeBase) == null) fx.Memory.MapFixed(CodeBase, 0x1000, "fuzz code");
-        if (fx.Memory.FindBlock(DataBase) == null) fx.Memory.MapFixed(DataBase, DataSize, "fuzz data");
+        if (fx.Memory.FindBlock(CodeBase) == null)
+        {
+            fx.Memory.MapFixed(CodeBase, 0x1000, "fuzz code");
+        }
+
+        if (fx.Memory.FindBlock(DataBase) == null)
+        {
+            fx.Memory.MapFixed(DataBase, DataSize, "fuzz data");
+        }
     }
 
     /// <summary>Re-runs specific encodings (from a fuzz failure) with many random states and prints every difference.</summary>
@@ -71,9 +80,15 @@ public sealed unsafe class CpuFuzzTests(GuestMemoryFixture fx, ITestOutputHelper
     public void Replay(bool thumb, string encodings)
     {
         // VITASHARP_REPLAY=T:enc,enc or A:enc,... replays other encodings without editing the test
-        if (Environment.GetEnvironmentVariable(EnvVars.Replay) is { Length: > 2 } env) { thumb = env[0] == 'T'; encodings = env[2..]; }
+        if (Environment.GetEnvironmentVariable(EnvVars.Replay) is { Length: > 2 } env)
+        {
+            thumb = env[0] == 'T';
+            encodings = env[2..];
+        }
         foreach (var enc in encodings.Split(','))
+        {
             Fuzz(thumb, 400, 7, Convert.ToUInt32(enc, 16), simd: true);
+        }
     }
 
     [UnicornTheory]
@@ -197,13 +212,21 @@ public sealed unsafe class CpuFuzzTests(GuestMemoryFixture fx, ITestOutputHelper
             else if (!thumb)
             {
                 ins = (uint)rng.NextInt64();
-                if ((ins >> 28) == 0xF && rng.Next(4) != 0) ins = (ins & 0x0FFFFFFF) | 0xE000_0000;
+                if ((ins >> 28) == 0xF && rng.Next(4) != 0)
+                {
+                    ins = (ins & 0x0FFFFFFF) | 0xE000_0000;
+                }
+
                 code = BitConverter.GetBytes(ins);
             }
             else
             {
                 ushort hw1 = (ushort)rng.Next(0x10000);
-                if (rng.Next(2) == 0) hw1 |= 0xE800; // bias towards 32-bit encodings
+                if (rng.Next(2) == 0)
+                {
+                    hw1 |= 0xE800; // bias towards 32-bit encodings
+                }
+
                 if (Decoder.IsThumb32(hw1))
                 {
                     ushort hw2 = (ushort)rng.Next(0x10000);
@@ -219,28 +242,49 @@ public sealed unsafe class CpuFuzzTests(GuestMemoryFixture fx, ITestOutputHelper
 
             // decode with our decoder
             DecodedInst d;
-            if (!thumb) d = Decoder.DecodeArm(ins, CodeBase);
-            else d = code.Length == 4 ? Decoder.DecodeThumb32(ins, CodeBase, false, 14) : Decoder.DecodeThumb16(ins, CodeBase, false, 14);
+            if (!thumb)
+            {
+                d = Decoder.DecodeArm(ins, CodeBase);
+            }
+            else
+            {
+                d = code.Length == 4 ? Decoder.DecodeThumb32(ins, CodeBase, false, 14) : Decoder.DecodeThumb16(ins, CodeBase, false, 14);
+            }
+
             if (d.Op is Op.A32_Udf or Op.T16_Udf or Op.T32_Udf)
             {
                 // Our decoder claims UNDEFINED: Unicorn must agree (raise an exception) or we have a decoding hole.
                 bool ucRan;
                 try
                 {
-                    uc.Close(); uc = NewUnicorn(thumb);
+                    uc.Close();
+                    uc = NewUnicorn(thumb);
                     uc.MemWrite(CodeBase, (!thumb && (ins >> 28) < 0xE ? BitConverter.GetBytes((ins & 0x0FFFFFFFu) | 0xE0000000u) : code));
                     uc.RegWrite(UcArm.UC_ARM_REG_CPSR, (long)(0x10u | (thumb ? 0x20u : 0)));
-                    for (int r = 0; r < 15; r++) uc.RegWrite(RegIds[r], DataBase + 0x8000);
+                    for (int r = 0; r < 15; r++)
+                    {
+                        uc.RegWrite(RegIds[r], DataBase + 0x8000);
+                    }
+
                     uc.EmuStart(CodeBase | (thumb ? 1u : 0), CodeBase + 0x800, 0, 1);
                     uint pcAfter = (uint)uc.RegRead(UcArm.UC_ARM_REG_PC);
                     ucRan = (pcAfter & ~1u) != 0x4 && (pcAfter & ~1u) != 0xFFFF0004; // undefined-instruction vector taken = UNDEF
                 }
-                catch (Exception) { ucRan = false; uc.Close(); uc = NewUnicorn(thumb); }
+                catch (Exception)
+                {
+                    ucRan = false;
+                    uc.Close();
+                    uc = NewUnicorn(thumb);
+                }
                 // Unicorn silently ignores accesses to coprocessors the Cortex-A9 does not have.
                 uint cp = (ins >> 8) & 0xF;
                 bool absentCoproc = (thumb ? (ins >> 25 & 7) == 6 || (ins >> 24 & 0xF) == 0xE : (ins >> 25 & 7) == 6 || (ins >> 24 & 0xF) == 0xE)
                                     && cp != 10 && cp != 11 && cp != 15;
-                if (ucRan && !absentCoproc) Record(failures, d.Op, $"{ins:X8}: decoded as UNDEFINED but executes on hardware");
+                if (ucRan && !absentCoproc)
+                {
+                    Record(failures, d.Op, $"{ins:X8}: decoded as UNDEFINED but executes on hardware");
+                }
+
                 skipped++;
                 continue;
             }
@@ -248,40 +292,81 @@ public sealed unsafe class CpuFuzzTests(GuestMemoryFixture fx, ITestOutputHelper
                 or Op.Thumb_It or Op.A32_Yield or Op.T16_Yield or Op.T32_Yield or Op.A32_Mrc or Op.A32_Mcr or Op.T32_Mrc or Op.T32_Mcr
                 or Op.Vfp_Vmrs or Op.Vfp_Vmsr or Op.A32_Mrs or Op.T32_Mrs or Op.A32_MsrImm or Op.A32_MsrReg or Op.T32_Msr
                 or Op.T32_BxjOrSubsPcLr)
-            { skipped++; continue; }
-            if (IsUnpredictable(d, thumb)) { skipped++; continue; }
+            {
+                skipped++;
+                continue;
+            }
+            if (IsUnpredictable(d, thumb))
+            {
+                skipped++;
+                continue;
+            }
 
             // random initial state; most registers point into the data window so memory ops stay mapped
             var regs = new uint[16];
             for (int r = 0; r < 15; r++)
+            {
                 regs[r] = rng.Next(3) == 0 ? (uint)rng.NextInt64() : DataBase + 0x4000 + (uint)rng.Next(0x4000) * (rng.Next(2) == 0 ? 4u : 1u) % 0x7000;
+            }
+
             uint flags = (uint)rng.Next(32) << 27 | (uint)rng.Next(16) << 16;
             var dregs = new ulong[32];
-            for (int r = 0; r < 32; r++) dregs[r] = simd ? RandomSpecialSimd(rng) : RandomSimd(rng);
+            for (int r = 0; r < 32; r++)
+            {
+                dregs[r] = simd ? RandomSpecialSimd(rng) : RandomSimd(rng);
+            }
+
             uint fpscr = (uint)rng.Next(16) << 28 | 0x0300_0000; // DN + FZ like the Vita runtime
-            if (anyFpscr && rng.Next(2) == 0) fpscr = (uint)rng.Next(16) << 28 | (uint)rng.Next(4) << 22; // IEEE mode, any rounding
+            if (anyFpscr && rng.Next(2) == 0)
+            {
+                fpscr = (uint)rng.Next(16) << 28 | (uint)rng.Next(4) << 22; // IEEE mode, any rounding
+            }
+
             rng.NextBytes(data);
 
             // ---- unicorn
             try
             {
-                uc.Close(); uc = NewUnicorn(thumb); // fresh instance: QEMU caches translated code per address
+                uc.Close();
+                uc = NewUnicorn(thumb); // fresh instance: QEMU caches translated code per address
                 uc.MemWrite(CodeBase, code);
                 uc.MemWrite(DataBase, data);
                 uc.RegWrite(UcArm.UC_ARM_REG_CPSR, (long)(flags | 0x10 | (thumb ? 0x20u : 0)));
-                for (int r = 0; r < 15; r++) uc.RegWrite(RegIds[r], regs[r]);
-                for (int r = 0; r < 32; r++) uc.RegWrite(UcArm.UC_ARM_REG_D0 + r, (long)dregs[r]);
+                for (int r = 0; r < 15; r++)
+                {
+                    uc.RegWrite(RegIds[r], regs[r]);
+                }
+
+                for (int r = 0; r < 32; r++)
+                {
+                    uc.RegWrite(UcArm.UC_ARM_REG_D0 + r, (long)dregs[r]);
+                }
+
                 uc.RegWrite(UcArm.UC_ARM_REG_FPSCR, fpscr);
                 uc.EmuStart(CodeBase | (thumb ? 1u : 0), CodeBase + 0x800, 0, 1);
             }
-            catch (Exception) { skipped++; uc.Close(); uc = NewUnicorn(thumb); continue; }
+            catch (Exception)
+            {
+                skipped++;
+                uc.Close();
+                uc = NewUnicorn(thumb);
+                continue;
+            }
 
             // ---- ours
             var s = core.State;
-            for (int r = 0; r < 15; r++) s->R[r] = regs[r];
+            for (int r = 0; r < 15; r++)
+            {
+                s->R[r] = regs[r];
+            }
+
             s->R[15] = CodeBase;
             s->Cpsr = flags | 0x10 | (thumb ? 0x20u : 0);
-            for (int r = 0; r < 32; r++) s->D[r] = dregs[r];
+            for (int r = 0; r < 32; r++)
+            {
+                s->D[r] = dregs[r];
+            }
+
             s->Fpscr = fpscr;
             s->Exit = ExitReason.None;
             data.CopyTo(GuestMemory.Span(DataBase, (int)DataSize));
@@ -289,8 +374,15 @@ public sealed unsafe class CpuFuzzTests(GuestMemoryFixture fx, ITestOutputHelper
             uc.MemRead(CodeBase, ucCode);
             ucCode.CopyTo(GuestMemory.Span(CodeBase, 0x1000));
             var block = new Block { Start = CodeBase, Thumb = thumb, Insts = [d], End = CodeBase + d.Size };
-            try { CpuCore.Interpret(s, block); }
-            catch (Exception e) { Record(failures, d.Op, $"{ins:X8}: exception {e.GetType().Name} {e.Message}"); continue; }
+            try
+            {
+                CpuCore.Interpret(s, block);
+            }
+            catch (Exception e)
+            {
+                Record(failures, d.Op, $"{ins:X8}: exception {e.GetType().Name} {e.Message}");
+                continue;
+            }
 
             // ---- compare
             compared++;
@@ -298,38 +390,76 @@ public sealed unsafe class CpuFuzzTests(GuestMemoryFixture fx, ITestOutputHelper
             for (int r = 0; r < 15; r++)
             {
                 uint u = (uint)uc.RegRead(RegIds[r]);
-                if (u != s->R[r]) sb.Append($" R{r}: uc={u:X8} us={s->R[r]:X8}");
+                if (u != s->R[r])
+                {
+                    sb.Append($" R{r}: uc={u:X8} us={s->R[r]:X8}");
+                }
             }
             uint ucPc = (uint)uc.RegRead(UcArm.UC_ARM_REG_PC);
             uint ucCpsr = (uint)uc.RegRead(UcArm.UC_ARM_REG_CPSR);
             // interworking to an address with bits[1:0]=10 is UNPREDICTABLE in ARM state (QEMU keeps bit 1, we align)
             bool oddArmTarget = (ucPc & 3) == 2 && (ucCpsr & 0x20) == 0;
-            if ((ucPc & ~1u) != s->R[15] && !oddArmTarget) sb.Append($" PC: uc={ucPc:X8} us={s->R[15]:X8}");
-            if ((ucCpsr & 0xF80F0020) != (s->Cpsr & 0xF80F0020)) sb.Append($" CPSR: uc={ucCpsr & 0xF80F0020:X8} us={s->Cpsr & 0xF80F0020:X8}");
+            if ((ucPc & ~1u) != s->R[15] && !oddArmTarget)
+            {
+                sb.Append($" PC: uc={ucPc:X8} us={s->R[15]:X8}");
+            }
+
+            if ((ucCpsr & 0xF80F0020) != (s->Cpsr & 0xF80F0020))
+            {
+                sb.Append($" CPSR: uc={ucCpsr & 0xF80F0020:X8} us={s->Cpsr & 0xF80F0020:X8}");
+            }
+
             for (int r = 0; r < 32; r++)
             {
                 ulong u = (ulong)uc.RegRead(UcArm.UC_ARM_REG_D0 + r);
-                if (u != s->D[r]) sb.Append($" D{r}: uc={u:X16} us={s->D[r]:X16}");
+                if (u != s->D[r])
+                {
+                    sb.Append($" D{r}: uc={u:X16} us={s->D[r]:X16}");
+                }
             }
             uint ucFpscr = (uint)uc.RegRead(UcArm.UC_ARM_REG_FPSCR);
-            if ((ucFpscr & 0xF8000000) != (s->Fpscr & 0xF8000000)) sb.Append($" FPSCR: uc={ucFpscr:X8} us={s->Fpscr:X8}");
+            if ((ucFpscr & 0xF8000000) != (s->Fpscr & 0xF8000000))
+            {
+                sb.Append($" FPSCR: uc={ucFpscr:X8} us={s->Fpscr:X8}");
+            }
+
             var ucData = new byte[DataSize];
             uc.MemRead(DataBase, ucData);
             var ourData = GuestMemory.Span(DataBase, (int)DataSize);
             for (int i = 0; i < DataSize; i++)
-                if (ucData[i] != ourData[i]) { sb.Append($" MEM@{DataBase + i:X8}: uc={ucData[i]:X2} us={ourData[i]:X2} (was {data[i]:X2})"); if (fixedIns == null) break; }
+            {
+                if (ucData[i] != ourData[i])
+                {
+                    sb.Append($" MEM@{DataBase + i:X8}: uc={ucData[i]:X2} us={ourData[i]:X2} (was {data[i]:X2})");
+                    if (fixedIns == null)
+                    {
+                        break;
+                    }
+                }
+            }
 
             if (sb.Length > 0 && fixedIns != null)
+            {
                 output.WriteLine($"{ins:X8} regs=[{string.Join(" ", regs.Take(15).Select(r => r.ToString("X8")))}] D=[{string.Join(" ", dregs.Take(8).Select(r => r.ToString("X16")))}] cpsr={flags:X8}:{sb}");
+            }
 
             if (sb.Length > 0 && simd && fixedIns == null && detailed++ < 400)
+            {
                 output.WriteLine($"FAIL {ins:X8} {d.Op} fpscr={fpscr:X8} D=[{string.Join(" ", dregs.Select(r => r.ToString("X16")))}]:{sb}");
-            if (sb.Length > 0) Record(failures, d.Op, $"{ins:X8}:{sb}");
+            }
+
+            if (sb.Length > 0)
+            {
+                Record(failures, d.Op, $"{ins:X8}:{sb}");
+            }
         }
 
         output.WriteLine($"compared={compared} skipped={skipped} failingOps={failures.Count}");
         foreach (var (op, (count, example)) in failures.OrderByDescending(f => f.Value.count))
+        {
             output.WriteLine($"{op,-28} x{count,-6} e.g. {example}");
+        }
+
         uc.Close();
         Assert.True(failures.Count == 0, $"{failures.Count} handlers disagree with Unicorn (see output)");
     }
@@ -342,11 +472,21 @@ public sealed unsafe class CpuFuzzTests(GuestMemoryFixture fx, ITestOutputHelper
     {
         uint i = d.Raw;
         uint F(int hi, int lo) => (i >> lo) & (uint)((1L << (hi - lo + 1)) - 1);
-        if (d.Op == Op.Neon_LoadStore) return NeonRegsOutOfRange(i) || F(19, 16) == 15; // Rn = PC is UNPREDICTABLE
+        if (d.Op == Op.Neon_LoadStore)
+        {
+            return NeonRegsOutOfRange(i) || F(19, 16) == 15; // Rn = PC is UNPREDICTABLE
+        }
         // VQDMLAL / VQDMLSL / VQDMULL exist only with U = 0: U = 1 is UNDEFINED (QEMU computes something anyway)
-        if (d.Op == Op.Neon_ThreeDiff && (thumb ? F(28, 28) : F(24, 24)) == 1 && F(11, 8) is 9 or 11 or 13) return true;
+        if (d.Op == Op.Neon_ThreeDiff && (thumb ? F(28, 28) : F(24, 24)) == 1 && F(11, 8) is 9 or 11 or 13)
+        {
+            return true;
+        }
         // VTRN / VUZP / VZIP with d == m are UNPREDICTABLE (QEMU and the handlers pick different element orders)
-        if (d.Op == Op.Neon_Misc && F(17, 16) == 2 && F(10, 7) is 1 or 2 or 3 && (F(22, 22) << 4 | F(15, 12)) == (F(5, 5) << 4 | F(3, 0))) return true;
+        if (d.Op == Op.Neon_Misc && F(17, 16) == 2 && F(10, 7) is 1 or 2 or 3 && (F(22, 22) << 4 | F(15, 12)) == (F(5, 5) << 4 | F(3, 0)))
+        {
+            return true;
+        }
+
         if (!thumb)
         {
             switch (d.Op)
@@ -434,10 +574,29 @@ public sealed unsafe class CpuFuzzTests(GuestMemoryFixture fx, ITestOutputHelper
                 {
                     regs = (int)F(9, 8) + 1;
                     uint size = F(11, 10), ia = F(7, 4);
-                    if (size == 3) inc = F(5, 5) == 1 ? 2 : 1;
-                    else inc = size switch { 0 => 1, 1 => (ia & 2) != 0 ? 2 : 1, _ => (ia & 4) != 0 ? 2 : 1 };
-                    if (regs == 1 && size == 3) regs = 1 + (int)F(5, 5);
-                    if (regs == 1) inc = 1;
+                    if (size == 3)
+                    {
+                        inc = F(5, 5) == 1 ? 2 : 1;
+                    }
+                    else
+                    {
+                        inc = size switch
+                        {
+                            0 => 1,
+                            1 => (ia & 2) != 0 ? 2 : 1,
+                            _ => (ia & 4) != 0 ? 2 : 1
+                        };
+                    }
+
+                    if (regs == 1 && size == 3)
+                    {
+                        regs = 1 + (int)F(5, 5);
+                    }
+
+                    if (regs == 1)
+                    {
+                        inc = 1;
+                    }
                 }
                 return vd + (uint)((regs - 1) * inc) > 31;
             }
@@ -446,8 +605,14 @@ public sealed unsafe class CpuFuzzTests(GuestMemoryFixture fx, ITestOutputHelper
 
     static void Record(Dictionary<Op, (int, string)> f, Op op, string example)
     {
-        if (f.TryGetValue(op, out var v)) f[op] = (v.Item1 + 1, v.Item1 < 12 ? v.Item2 + " | " + example.Split(':')[0] : v.Item2);
-        else f[op] = (1, example);
+        if (f.TryGetValue(op, out var v))
+        {
+            f[op] = (v.Item1 + 1, v.Item1 < 12 ? v.Item2 + " | " + example.Split(':')[0] : v.Item2);
+        }
+        else
+        {
+            f[op] = (1, example);
+        }
     }
 
     static ulong RandomSimd(Random rng) => rng.Next(4) switch

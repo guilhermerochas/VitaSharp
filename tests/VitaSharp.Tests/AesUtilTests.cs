@@ -13,9 +13,18 @@ public class AesUtilTests
         for (int off = 0; off < outp.Length; off += 16)
         {
             AesUtil.EcbEncrypt(key, c, ks);
-            for (int i = 0; i < 16 && off + i < outp.Length; i++) outp[off + i] ^= ks[i];
+            for (int i = 0; i < 16 && off + i < outp.Length; i++)
+            {
+                outp[off + i] ^= ks[i];
+            }
+
             for (int i = 15; i >= 0; i--)
-                if (++c[i] != 0) break;
+            {
+                if (++c[i] != 0)
+                {
+                    break;
+                }
+            }
         }
         return outp;
     }

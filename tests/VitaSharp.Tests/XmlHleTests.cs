@@ -32,7 +32,12 @@ public sealed unsafe class XmlHleTests(GuestMemoryFixture fx, ITestOutputHelper 
         output.WriteLine(string.Join("\n", log));
         Assert.DoesNotContain(log, l => l.StartsWith("EXCEPTION", StringComparison.Ordinal));
         if (XmlScenarios.Expected.TryGetValue(scenario, out var expect))
-            foreach (string e in expect) Assert.Contains(e, log);
+        {
+            foreach (string e in expect)
+            {
+                Assert.Contains(e, log);
+            }
+        }
     }
 
     [XmlFirmwareTheory]
@@ -125,7 +130,10 @@ static class XmlScenarios
             d.Call(XmlDriver.BuilderCtor, b);
             d.Call(XmlDriver.BuilderInit, b, d.Initializer);
             foreach (string s in new[] { "<a></b>", "<a>", "<a b=1/>", "<a b=\"1\" b=\"2\"/>", "<a>&bogus;</a>", "", "<a/><b/>", "<a><!-- x</a>", "<a b></a>", "text" })
+            {
                 d.Rec("parse " + s, d.Call(XmlDriver.BuilderParse, b, s.Length == 0 ? d.EmptyStr() : d.Str(s), 1));
+            }
+
             d.Call(XmlDriver.BuilderTerm, b);
             d.Term();
         },
@@ -258,8 +266,10 @@ static class XmlScenarios
             d.Call(XmlDriver.NodeCtor, node, 0, d.Lo(root), d.Hi(root));
             d.Rec("available", d.Call(XmlDriver.NodeAvailable, node) & 0xFF);
             d.Rec("type", d.Call(XmlDriver.NodeGetType, node));
-            d.Call(XmlDriver.NodeName, s, node); d.RecStr("name", s);
-            d.Call(XmlDriver.NodeValue, s, node); d.RecStr("value", s);
+            d.Call(XmlDriver.NodeName, s, node);
+            d.RecStr("name", s);
+            d.Call(XmlDriver.NodeValue, s, node);
+            d.RecStr("value", s);
             d.Rec("owner==doc", d.Call(XmlDriver.NodeOwner, node) == doc ? 1u : 0u);
             d.Rec("hasChildNodes", d.Call(XmlDriver.NodeHasChildren, node) & 0xFF);
             d.Rec("hasAttributes", d.Call(XmlDriver.NodeHasAttrs, node) & 0xFF);
@@ -281,11 +291,14 @@ static class XmlScenarios
             d.Call(XmlDriver.NodeListDtor, nl);
             ulong first = d.Call64(XmlDriver.NodeFirstChild, node);
             d.Call(XmlDriver.NodeCtor, node2, 0, d.Lo(first), d.Hi(first));
-            d.Call(XmlDriver.NodeName, s, node2); d.RecStr("first.name", s);
+            d.Call(XmlDriver.NodeName, s, node2);
+            d.RecStr("first.name", s);
             ulong txt = d.Call64(XmlDriver.NodeFirstChild, node2);
             d.Call(XmlDriver.NodeCtor, node2, 0, d.Lo(txt), d.Hi(txt));
-            d.Call(XmlDriver.NodeName, s, node2); d.RecStr("text.name", s);
-            d.Call(XmlDriver.NodeValue, s, node2); d.RecStr("text.value", s);
+            d.Call(XmlDriver.NodeName, s, node2);
+            d.RecStr("text.name", s);
+            d.Call(XmlDriver.NodeValue, s, node2);
+            d.RecStr("text.value", s);
             d.Rec("text.parent==first", d.Call64(XmlDriver.NodeParent, node2) == first ? 1u : 0u);
             ulong lastc = d.Call64(XmlDriver.NodeLastChild, node);
             d.Rec("last.type", d.NodeType(doc, lastc));
@@ -310,8 +323,10 @@ static class XmlScenarios
             d.Rec("setName.empty", d.Call(XmlDriver.AttrSetName, a, d.EmptyStr()));
             d.Rec("setName", d.Call(XmlDriver.AttrSetName, a, d.StrObj("name")));
             d.Rec("setValue", d.Call(XmlDriver.AttrSetValue, a, d.StrObj("value")));
-            d.Call(XmlDriver.AttrGetName, s, a); d.RecStr("name", s);
-            d.Call(XmlDriver.AttrGetValue, s, a); d.RecStr("value", s);
+            d.Call(XmlDriver.AttrGetName, s, a);
+            d.RecStr("name", s);
+            d.Call(XmlDriver.AttrGetValue, s, a);
+            d.RecStr("value", s);
             d.Rec("term", d.Call(XmlDriver.AttrTerm, a));
             d.Rec("term2", d.Call(XmlDriver.AttrTerm, a));
             d.Term();
@@ -419,7 +434,13 @@ sealed unsafe class XmlDriver(XmlHarness h, GuestThread thread, Func<string, uin
     public uint Hi(ulong v) => (uint)(v >> 32);
     public uint Obj(uint size) => h.Game(size);
     public uint Str(string s) => StrObj(s);
-    public uint EmptyStr() { uint o = h.Game(8); GuestMemory.W32(o, 0); GuestMemory.W32(o + 4, 0); return o; }
+    public uint EmptyStr()
+    {
+        uint o = h.Game(8);
+        GuestMemory.W32(o, 0);
+        GuestMemory.W32(o + 4, 0);
+        return o;
+    }
 
     public uint StrObj(string s)
     {
@@ -428,7 +449,8 @@ sealed unsafe class XmlDriver(XmlHarness h, GuestThread thread, Func<string, uin
         b.CopyTo(GuestMemory.Span(p, b.Length));
         GuestMemory.Write(p + (uint)b.Length, (byte)0);
         uint o = h.Game(8);
-        GuestMemory.W32(o, p); GuestMemory.W32(o + 4, (uint)b.Length);
+        GuestMemory.W32(o, p);
+        GuestMemory.W32(o + 4, (uint)b.Length);
         return o;
     }
 
@@ -472,7 +494,10 @@ sealed unsafe class XmlDriver(XmlHarness h, GuestThread thread, Func<string, uin
             };
             Log.Add($"{ind}node {depth} type={type} {extra}");
             for (ulong a = Call64(DocFirstAttr, doc, 0, Lo(id), Hi(id)); a != 0; a = Call64(DocNextAttr, doc, 0, Lo(a), Hi(a)))
+            {
                 Log.Add($"{ind}  attr {StrOf(DocAttrName, doc, a)}={StrOf(DocAttrValue, doc, a)}");
+            }
+
             Walk(doc, Call64(DocFirstChild, doc, 0, Lo(id), Hi(id)), depth + 1);
         }
     }
@@ -516,7 +541,11 @@ sealed unsafe class XmlHarness : IDisposable
             File.Copy(firmwareModule, Path.Combine(_root, "vs0", "sys", "external", "libSceXml.suprx"));
         }
         _emu = new Emulator(new EmulatorOptions { FsRoot = _root, Memory = fx.Memory, EnableJit = false, CpuBackend = "interp" });
-        if (firmwareModule != null) _emu.LoadModule("vs0:sys/external/libSceXml.suprx");
+        if (firmwareModule != null)
+        {
+            _emu.LoadModule("vs0:sys/external/libSceXml.suprx");
+        }
+
         var mem = _emu.Memory;
         _arena = mem.Alloc(ArenaSize, "xml test arena");
         _gameBase = mem.Alloc(GameSize, "xml test game");
@@ -532,14 +561,16 @@ sealed unsafe class XmlHarness : IDisposable
         // the game's MemAllocator: vptr -> [D1, D0, allocate, deallocate]
         uint vt = mem.Alloc(0x100, "xml test vtables");
         uint nop = Stub("xmltest:nop", c => { });
-        GuestMemory.W32(vt, nop); GuestMemory.W32(vt + 4, nop);
+        GuestMemory.W32(vt, nop);
+        GuestMemory.W32(vt + 4, nop);
         GuestMemory.W32(vt + 8, Stub("xmltest:allocate", c => c.Return(Allocate(c.Gpr(1)))));
         GuestMemory.W32(vt + 12, Stub("xmltest:deallocate", c => { }));
         Allocator = vt + 0x80;
         GuestMemory.W32(Allocator, vt);
         // the DocumentHandler: vptr -> [D1, D0, startDocument, startElement, text, endElement, endDocument, skippedText, entity, errorFound]
         uint hv = vt + 0x40;
-        GuestMemory.W32(hv, nop); GuestMemory.W32(hv + 4, nop);
+        GuestMemory.W32(hv, nop);
+        GuestMemory.W32(hv + 4, nop);
         GuestMemory.W32(hv + 8, Stub("xmltest:startDocument", c => { Current!.Add($"cb startDocument ud={c.Gpr(1):X}"); c.Return(0); }));
         GuestMemory.W32(hv + 12, Stub("xmltest:startElement", c => { Current!.Add($"cb startElement {ReadStr(c.Gpr(2))} [{Attrs(c.Gpr(3))}]"); c.Return(0); }));
         GuestMemory.W32(hv + 16, Stub("xmltest:text", c => { Current!.Add($"cb text {ReadStr(c.Gpr(2))}"); c.Return(0); }));
@@ -586,7 +617,11 @@ sealed unsafe class XmlHarness : IDisposable
     {
         uint p = _arena + _bump;
         _bump = (_bump + size + 15) & ~15u;
-        if (_bump > ArenaSize) return 0;
+        if (_bump > ArenaSize)
+        {
+            return 0;
+        }
+
         return p;
     }
 
@@ -594,14 +629,22 @@ sealed unsafe class XmlHarness : IDisposable
     {
         uint p = _gameBase + _gameBump;
         _gameBump = (_gameBump + size + 7) & ~7u;
-        if (_gameBump > GameSize) throw new InvalidOperationException("xml test game memory exhausted");
+        if (_gameBump > GameSize)
+        {
+            throw new InvalidOperationException("xml test game memory exhausted");
+        }
+
         GuestMemory.Fill(p, 0, size);
         return p;
     }
 
     uint HleStub(string name)
     {
-        if (_hleStubs.TryGetValue(name, out uint a)) return a;
+        if (_hleStubs.TryGetValue(name, out uint a))
+        {
+            return a;
+        }
+
         var info = NidDatabase.LookupName(name).Single(n => n.Library == "SceLibXml");
         a = _nextStub;
         _nextStub += 16;
@@ -622,20 +665,34 @@ sealed unsafe class XmlHarness : IDisposable
         var t = _emu.Kernel.CreateThread("xml-test", 0, 0x10000100, 0x10000, 0, 0x70000);
         t.HostBody = th =>
         {
-            try { body(new XmlDriver(this, th, _resolve)); }
-            catch (Exception e) { failure = e; }
+            try
+            {
+                body(new XmlDriver(this, th, _resolve));
+            }
+            catch (Exception e)
+            {
+                failure = e;
+            }
         };
         t.Start(0, 0);
         Assert.True(t.WaitForExit(120_000), "xml test thread did not finish");
         _emu.Kernel.DeleteThread(t);
-        if (failure != null) log.Add("EXCEPTION " + failure);
+        if (failure != null)
+        {
+            log.Add("EXCEPTION " + failure);
+        }
+
         return log;
     }
 
     public void Dispose()
     {
         _emu.Dispose();
-        try { Directory.Delete(_root, true); } catch (IOException) { }
+        try
+        {
+            Directory.Delete(_root, true);
+        }
+        catch (IOException) { }
     }
 }
 
@@ -651,6 +708,8 @@ public sealed class XmlFirmwareTheoryAttribute : TheoryAttribute
     public XmlFirmwareTheoryAttribute()
     {
         if (XmlFirmware.ModulePath == null)
+        {
             Skip = $"libSceXml.suprx not found (set {EnvVars.FirmwareDir} to a Vita3K data folder or vs0, or {EnvVars.FirmwarePup})";
+        }
     }
 }

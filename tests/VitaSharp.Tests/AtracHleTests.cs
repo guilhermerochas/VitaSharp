@@ -30,7 +30,12 @@ public sealed class AtracHleTests(GuestMemoryFixture fx)
             Decodes++;
             int k = BinaryPrimitives.ReadUInt16LittleEndian(sf);
             for (int c = 0; c < pcm.Length; c++)
-                for (int i = 0; i < SfSamples; i++) pcm[c][i] = (short)((c == 0 ? 1 : -1) * (k * SfSamples + i));
+            {
+                for (int i = 0; i < SfSamples; i++)
+                {
+                    pcm[c][i] = (short)((c == 0 ? 1 : -1) * (k * SfSamples + i));
+                }
+            }
         }
     }
 
@@ -38,21 +43,55 @@ public sealed class AtracHleTests(GuestMemoryFixture fx)
     {
         var ms = new MemoryStream();
         var w = new BinaryWriter(ms);
-        w.Write("RIFF"u8); w.Write(0); w.Write("WAVE"u8);
-        w.Write("fmt "u8); w.Write(0x34);
-        w.Write((ushort)0xFFFE); w.Write((ushort)channels); w.Write(48000); w.Write(48000 * SfBytes / SfSamples);
-        w.Write((ushort)SfBytes); w.Write((ushort)0); w.Write((ushort)0x22); w.Write((ushort)SfSamples);
-        w.Write(channels == 2 ? 3 : 4); w.Write(guid ?? At9Container.Atrac9Guid); w.Write(1); w.Write(Config(channels)); w.Write(0);
-        w.Write("fact"u8); w.Write(12); w.Write(totalSamples); w.Write(delay); w.Write(delay);
+        w.Write("RIFF"u8);
+        w.Write(0);
+        w.Write("WAVE"u8);
+        w.Write("fmt "u8);
+        w.Write(0x34);
+        w.Write((ushort)0xFFFE);
+        w.Write((ushort)channels);
+        w.Write(48000);
+        w.Write(48000 * SfBytes / SfSamples);
+        w.Write((ushort)SfBytes);
+        w.Write((ushort)0);
+        w.Write((ushort)0x22);
+        w.Write((ushort)SfSamples);
+        w.Write(channels == 2 ? 3 : 4);
+        w.Write(guid ?? At9Container.Atrac9Guid);
+        w.Write(1);
+        w.Write(Config(channels));
+        w.Write(0);
+        w.Write("fact"u8);
+        w.Write(12);
+        w.Write(totalSamples);
+        w.Write(delay);
+        w.Write(delay);
         if (smplStart >= 0)
         {
-            w.Write("smpl"u8); w.Write(0x3C);
-            for (int i = 0; i < 7; i++) w.Write(0);
-            w.Write(1); w.Write(0);                                   // one loop, no sampler data
-            w.Write(0); w.Write(0); w.Write(smplStart); w.Write(smplEnd); w.Write(0); w.Write(0);
+            w.Write("smpl"u8);
+            w.Write(0x3C);
+            for (int i = 0; i < 7; i++)
+            {
+                w.Write(0);
+            }
+
+            w.Write(1);
+            w.Write(0);                                   // one loop, no sampler data
+            w.Write(0);
+            w.Write(0);
+            w.Write(smplStart);
+            w.Write(smplEnd);
+            w.Write(0);
+            w.Write(0);
         }
-        w.Write("data"u8); w.Write(blocks * SfBytes);
-        for (int k = 0; k < blocks; k++) { var sf = new byte[SfBytes]; BinaryPrimitives.WriteUInt16LittleEndian(sf, (ushort)k); w.Write(sf); }
+        w.Write("data"u8);
+        w.Write(blocks * SfBytes);
+        for (int k = 0; k < blocks; k++)
+        {
+            var sf = new byte[SfBytes];
+            BinaryPrimitives.WriteUInt16LittleEndian(sf, (ushort)k);
+            w.Write(sf);
+        }
         w.Flush();
         var b = ms.ToArray();
         BinaryPrimitives.WriteInt32LittleEndian(b.AsSpan(4), b.Length - 8);
@@ -70,7 +109,9 @@ public sealed class AtracHleTests(GuestMemoryFixture fx)
     {
         var a = new Atrac { DecoderFactory = _ => new FakeDecoder() };
         uint g = fx.Memory.Alloc(0x100, "atracgrp");
-        GuestMemory.W32(g, 0xC); GuestMemory.W32(g + 4, 16); GuestMemory.W32(g + 8, totalCh);
+        GuestMemory.W32(g, 0xC);
+        GuestMemory.W32(g + 4, 16);
+        GuestMemory.W32(g + 8, totalCh);
         Assert.Equal(0, Call(a, "sceAtracCreateDecoderGroup", 0x2003u, g, fx.Memory.Alloc(0x1000, "atracwork"), 0));
         return a;
     }
@@ -84,12 +125,27 @@ public sealed class AtracHleTests(GuestMemoryFixture fx)
         {
             beforeEach?.Invoke();
             int r = Call(a, "sceAtracDecode", h, outBuf, P<uint>(outN), P<uint>(outN + 4));
-            if (r == Atrac.ERR_INVALID_HANDLE) throw new InvalidOperationException();
-            if (r == unchecked((int)0x80630011)) break;
-            if (r == AtracStream.ERR_DATA_SHORTAGE_IN_BUFFER && beforeEach != null) continue;
+            if (r == Atrac.ERR_INVALID_HANDLE)
+            {
+                throw new InvalidOperationException();
+            }
+
+            if (r == unchecked((int)0x80630011))
+            {
+                break;
+            }
+
+            if (r == AtracStream.ERR_DATA_SHORTAGE_IN_BUFFER && beforeEach != null)
+            {
+                continue;
+            }
+
             Assert.Equal(0, r);
             uint n = GuestMemory.R32(outN);
-            for (int i = 0; i < n; i++) got.Add(GuestMemory.Read<short>(outBuf + (uint)(i * 4)));
+            for (int i = 0; i < n; i++)
+            {
+                got.Add(GuestMemory.Read<short>(outBuf + (uint)(i * 4)));
+            }
         }
         return got;
     }
@@ -120,7 +176,8 @@ public sealed class AtracHleTests(GuestMemoryFixture fx)
         Assert.Equal(At9ParseResult.TooSmall, At9Container.Parse(f.AsSpan(0, 40), out _));
         Assert.Equal(At9ParseResult.TooSmall, At9Container.Parse(f.AsSpan(0, (int)info.DataOffset - 4), out _));
         Assert.Equal(At9ParseResult.Ok, At9Container.Parse(f.AsSpan(0, (int)info.DataOffset), out _));
-        var bad = (byte[])f.Clone(); bad[0] = (byte)'X';
+        var bad = (byte[])f.Clone();
+        bad[0] = (byte)'X';
         Assert.Equal(At9ParseResult.Invalid, At9Container.Parse(bad, out _));
         Assert.Equal(At9ParseResult.Unsupported, At9Container.Parse(BuildAt9(2, 100, 0, 1, guid: new byte[16]), out _));
     }
@@ -130,7 +187,9 @@ public sealed class AtracHleTests(GuestMemoryFixture fx)
     {
         var a = new Atrac { DecoderFactory = _ => new FakeDecoder() };
         uint g = fx.Memory.Alloc(0x100, "grp"), work = fx.Memory.Alloc(0x1000, "work");
-        GuestMemory.W32(g, 0xC); GuestMemory.W32(g + 4, 16); GuestMemory.W32(g + 8, 3);
+        GuestMemory.W32(g, 0xC);
+        GuestMemory.W32(g + 4, 16);
+        GuestMemory.W32(g + 8, 3);
         Assert.Equal(3 << 10, Call(a, "sceAtracQueryDecoderGroupMemSize", 0x2003u, g));
         Assert.Equal(Atrac.ERR_INVALID_TYPE, Call(a, "sceAtracQueryDecoderGroupMemSize", 0x1003u, g));
         Assert.Equal(Atrac.ERR_INVALID_POINTER, Call(a, "sceAtracQueryDecoderGroupMemSize", 0x2003u, 0u));
@@ -150,7 +209,8 @@ public sealed class AtracHleTests(GuestMemoryFixture fx)
         int h = Call(a, "sceAtracSetDataAndAcquireHandle", buf, (uint)file.Length, 0x4000u);
         Assert.Equal(0x2003, h >> 16);
         uint created = fx.Memory.Alloc(0x100, "c"), avail = created + 0x10;
-        GuestMemory.W32(created, 0xC); GuestMemory.W32(avail, 0xC);
+        GuestMemory.W32(created, 0xC);
+        GuestMemory.W32(avail, 0xC);
         Assert.Equal(0, Call(a, "sceAtracGetDecoderGroupInfo", 0x2003u, created, avail));
         Assert.Equal(3u, GuestMemory.R32(created + 8));
         Assert.Equal(1u, GuestMemory.R32(avail + 8));
@@ -257,7 +317,11 @@ public sealed class AtracHleTests(GuestMemoryFixture fx)
     {
         var e = new List<int>();
         e.AddRange(Enumerable.Range(0, loopEnd + 1));
-        for (int i = 0; i < loops; i++) e.AddRange(Enumerable.Range(loopStart, loopEnd - loopStart + 1));
+        for (int i = 0; i < loops; i++)
+        {
+            e.AddRange(Enumerable.Range(loopStart, loopEnd - loopStart + 1));
+        }
+
         e.AddRange(Enumerable.Range(loopEnd + 1, total - loopEnd - 1));
         return e.Select(x => x + delay).ToList();
     }
@@ -302,7 +366,11 @@ public sealed class AtracHleTests(GuestMemoryFixture fx)
             Assert.Equal(0, Call(a, "sceAtracGetStreamInfo", h, si));
             uint wp = GuestMemory.R32(si + 4), rp = GuestMemory.R32(si + 8), n = GuestMemory.R32(si + 12);
             n = Math.Min(n, 0x500); // feed in odd-sized pieces
-            if (n == 0) return true;
+            if (n == 0)
+            {
+                return true;
+            }
+
             file.AsSpan((int)rp, (int)n).CopyTo(GuestMemory.Span(wp, (int)n));
             Assert.Equal(0, Call(a, "sceAtracAddStreamData", h, n));
             return true;

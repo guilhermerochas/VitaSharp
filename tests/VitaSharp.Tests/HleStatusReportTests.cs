@@ -14,7 +14,13 @@ public class HleStatusReportTests
     static string Root([CallerFilePath] string source = "")
     {
         for (var d = new DirectoryInfo(Path.GetDirectoryName(source)!); d != null; d = d.Parent)
-            if (File.Exists(Path.Combine(d.FullName, "VitaSharp.sln"))) return d.FullName;
+        {
+            if (File.Exists(Path.Combine(d.FullName, "VitaSharp.sln")))
+            {
+                return d.FullName;
+            }
+        }
+
         throw new DirectoryNotFoundException("repository root");
     }
 

@@ -28,11 +28,20 @@ public sealed class HleLibcTests(GuestMemoryFixture fx)
     {
         uint p = fx.Memory.Alloc((uint)s.Length * 2 + 16, "libc-test");
         GuestMemory.Fill(p, 0, (uint)s.Length * 2 + 16);
-        for (int i = 0; i < s.Length; i++) GuestMemory.Write(p + (uint)i * 2, (ushort)s[i]);
+        for (int i = 0; i < s.Length; i++)
+        {
+            GuestMemory.Write(p + (uint)i * 2, (ushort)s[i]);
+        }
+
         return p;
     }
 
-    uint Buf(uint n) { uint p = fx.Memory.Alloc(n, "libc-test"); GuestMemory.Fill(p, 0, n); return p; }
+    uint Buf(uint n)
+    {
+        uint p = fx.Memory.Alloc(n, "libc-test");
+        GuestMemory.Fill(p, 0, n);
+        return p;
+    }
 
     static void SetBacking(object o, string prop, object value) =>
         o.GetType().GetField($"<{prop}>k__BackingField", BindingFlags.Instance | BindingFlags.NonPublic)!.SetValue(o, value);
@@ -51,7 +60,11 @@ public sealed class HleLibcTests(GuestMemoryFixture fx)
     uint VaList(params uint[] words)
     {
         uint p = Buf((uint)words.Length * 4 + 4);
-        for (int i = 0; i < words.Length; i++) GuestMemory.W32(p + (uint)i * 4, words[i]);
+        for (int i = 0; i < words.Length; i++)
+        {
+            GuestMemory.W32(p + (uint)i * 4, words[i]);
+        }
+
         return p;
     }
 
@@ -104,8 +117,14 @@ public sealed class HleLibcTests(GuestMemoryFixture fx)
         var h = typeof(Libc).GetField("_constraintHandler", BindingFlags.Instance | BindingFlags.NonPublic)!;
         // a non-zero handler with no guest thread is not called: the violation is still reported by the return value
         h.SetValue(c, 1u);
-        try { return Call<int>(c, name, args); }
-        finally { h.SetValue(c, 0u); }
+        try
+        {
+            return Call<int>(c, name, args);
+        }
+        finally
+        {
+            h.SetValue(c, 0u);
+        }
     }
 
     [Fact]
@@ -314,7 +333,9 @@ public sealed class HleLibcTests(GuestMemoryFixture fx)
         Invoke(c, "_Atomic_flag_clear", w + 4, 5);
         // a generic compare-exchange under a free flag
         uint obj = Buf(8), e = Buf(8), d = Buf(8);
-        GuestMemory.Write(obj, 7L); GuestMemory.Write(e, 7L); GuestMemory.Write(d, 9L);
+        GuestMemory.Write(obj, 7L);
+        GuestMemory.Write(e, 7L);
+        GuestMemory.Write(d, 9L);
         Assert.Equal(1, Call<int>(c, "_Atomic_compare_exchange_strong", w + 4, 8u, obj, e, d));
         Assert.Equal(9L, GuestMemory.Read<long>(obj));
         Assert.Equal(0, Call<int>(c, "_Atomic_compare_exchange_strong", w + 4, 8u, obj, e, d));

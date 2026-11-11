@@ -115,8 +115,20 @@ public class NativeColorOutputTests
     public void OutputFormatChangesTheHintKeyOnlyWhenSet()
     {
         var plain = new ShaderHints([0x0C000000], [], 0);
-        Assert.Equal(plain.Key(), (plain with { OutputRegisterFormat = 0 }).Key());
-        Assert.NotEqual(plain.Key(), (plain with { OutputRegisterFormat = 1 }).Key());
-        Assert.NotEqual((plain with { OutputRegisterFormat = 1 }).Key(), (plain with { OutputRegisterFormat = 5 }).Key());
+        Assert.Equal(plain.Key(), (plain with
+        {
+            OutputRegisterFormat = 0
+        }).Key());
+        Assert.NotEqual(plain.Key(), (plain with
+        {
+            OutputRegisterFormat = 1
+        }).Key());
+        Assert.NotEqual((plain with
+        {
+            OutputRegisterFormat = 1
+        }).Key(), (plain with
+        {
+            OutputRegisterFormat = 5
+        }).Key());
     }
 }

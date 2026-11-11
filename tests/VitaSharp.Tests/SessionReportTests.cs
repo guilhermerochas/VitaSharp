@@ -43,7 +43,11 @@ public sealed class SessionReportTests(GuestMemoryFixture fx)
             emu.Dispose();
             VitaSharp.Core.Cpu.Jit.Enabled = jitEnabled;
             VitaSharp.Core.Cpu.Jit.Select(jitMode);
-            try { Directory.Delete(root, true); } catch (IOException) { }
+            try
+            {
+                Directory.Delete(root, true);
+            }
+            catch (IOException) { }
         }
     }
 }

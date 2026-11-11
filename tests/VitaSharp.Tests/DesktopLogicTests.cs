@@ -13,7 +13,11 @@ public sealed class DesktopLogicTests : IDisposable
 
     public void Dispose()
     {
-        try { Directory.Delete(_root, true); } catch (IOException) { }
+        try
+        {
+            Directory.Delete(_root, true);
+        }
+        catch (IOException) { }
     }
 
     [Fact]
@@ -29,15 +33,31 @@ public sealed class DesktopLogicTests : IDisposable
         Assert.Contains("--psn=off", opts);
         Assert.Contains("--psn-local=on", opts);
         Assert.Contains("--net=off", opts);
-        s.Fullscreen = true; s.Scale = 2; s.VSync = false; s.Validation = true; s.CameraFront = "none"; s.CpuBackend = "interp";
-        s.CpuMhz = 444; s.FastShaderCompile = false; s.BackgroundShaderCompile = false; s.DebugMode = true; s.CapturePreRoll = true;
-        s.TrophySound = false; s.PsnSignedIn = true; s.PsnLocalServices = false; s.RealInternet = true; s.AudioDevice = "Speakers";
+        s.Fullscreen = true;
+        s.Scale = 2;
+        s.VSync = false;
+        s.Validation = true;
+        s.CameraFront = "none";
+        s.CpuBackend = "interp";
+        s.CpuMhz = 444;
+        s.FastShaderCompile = false;
+        s.BackgroundShaderCompile = false;
+        s.DebugMode = true;
+        s.CapturePreRoll = true;
+        s.TrophySound = false;
+        s.PsnSignedIn = true;
+        s.PsnLocalServices = false;
+        s.RealInternet = true;
+        s.AudioDevice = "Speakers";
         s.HleModules = "libc, libm;libfios2";
         opts = s.RunOptions().ToList();
         foreach (var o in new[] { "--fullscreen", "--scale=2", "--no-vsync", "--validation", "--camera-front=none", "--cpu=interp", "--cpu-mhz=444",
             "--shaderc-opt=perf", "--async-shaders=off", "--debug-mode", "--capture-preroll", "--trophy-sound=off", "--psn=on", "--psn-local=off",
             "--net=real", "--audio-device=Speakers", "--hle-modules=libc,libm,libfios2" })
+        {
             Assert.Contains(o, opts);
+        }
+
         Assert.DoesNotContain(opts, o => o.StartsWith("--rpcn", StringComparison.Ordinal)); // no RPCN account configured
 
         // a game's own options come first, and only for that game
@@ -73,11 +93,26 @@ public sealed class DesktopLogicTests : IDisposable
             data.Write(new byte[max - bytes.Length]);
             index.Add((ko, doff, bytes.Length, max));
         }
-        while (keys.Length % 4 != 0) keys.WriteByte(0);
+        while (keys.Length % 4 != 0)
+        {
+            keys.WriteByte(0);
+        }
+
         int keyStart = 20 + index.Count * 16, dataStart = keyStart + (int)keys.Length;
         using var w = new BinaryWriter(File.Create(path));
-        w.Write(0x46535000u); w.Write(0x00000101u); w.Write(keyStart); w.Write(dataStart); w.Write(index.Count);
-        foreach (var (ko, doff, len, max) in index) { w.Write((ushort)ko); w.Write((ushort)0x0204); w.Write(len); w.Write(max); w.Write(doff); }
+        w.Write(0x46535000u);
+        w.Write(0x00000101u);
+        w.Write(keyStart);
+        w.Write(dataStart);
+        w.Write(index.Count);
+        foreach (var (ko, doff, len, max) in index)
+        {
+            w.Write((ushort)ko);
+            w.Write((ushort)0x0204);
+            w.Write(len);
+            w.Write(max);
+            w.Write(doff);
+        }
         w.Write(keys.ToArray());
         w.Write(data.ToArray());
     }
@@ -87,7 +122,11 @@ public sealed class DesktopLogicTests : IDisposable
     {
         string ux0 = Path.Combine(_root, "ux0");
         string game = Path.Combine(ux0, "app", "PCSB00123"), homebrew = Path.Combine(ux0, "app", "VSHB00001"), broken = Path.Combine(ux0, "app", "NOEBOOT00");
-        foreach (var d in new[] { game, homebrew, broken }) Directory.CreateDirectory(Path.Combine(d, "sce_sys"));
+        foreach (var d in new[] { game, homebrew, broken })
+        {
+            Directory.CreateDirectory(Path.Combine(d, "sce_sys"));
+        }
+
         File.WriteAllBytes(Path.Combine(game, "eboot.bin"), new byte[2048]);
         File.WriteAllBytes(Path.Combine(homebrew, "eboot.bin"), new byte[16]);
         WriteSfo(Path.Combine(game, "sce_sys", "param.sfo"), ("APP_VER", "01.05"), ("CATEGORY", "gd"), ("TITLE", "Zeta\nGame"), ("TITLE_ID", "PCSB00123"), ("CONTENT_ID", "EP0000-PCSB00123_00-0000000000000000"));

@@ -19,7 +19,11 @@ public sealed class CxxExceptionHleTests(GuestMemoryFixture fx)
     sealed class Code(uint at)
     {
         public uint Pc = at;
-        public void H(ushort v) { GuestMemory.Write(Pc, v); Pc += 2; }
+        public void H(ushort v)
+        {
+            GuestMemory.Write(Pc, v);
+            Pc += 2;
+        }
         public void Push() => H(0xB510);            // push {r4, lr}
         public void Pop() => H(0xBD10);             // pop {r4, pc}
         public void MovR4R0() => H(0x0004);         // movs r4, r0
@@ -34,7 +38,11 @@ public sealed class CxxExceptionHleTests(GuestMemoryFixture fx)
             H((ushort)(op | ((imm16 >> 11) & 1) << 10 | (imm16 >> 12)));
             H((ushort)(((imm16 >> 8) & 7) << 12 | (uint)rd << 8 | (imm16 & 0xFF)));
         }
-        public void Call(uint target) { Imm(3, target); H(0x4798); } // blx r3
+        public void Call(uint target)
+        {
+            Imm(3, target);
+            H(0x4798);
+        } // blx r3
         public void MovsR0(byte v) => H((ushort)(0x2000 | v));
         public void MovsR0Imm(int rd, byte v) => H((ushort)(0x2000 | rd << 8 | v));
         public void LdrR4R0() => H(0x6804);         // ldr r4, [r0]
@@ -75,7 +83,11 @@ public sealed class CxxExceptionHleTests(GuestMemoryFixture fx)
         public uint Stub(string name, string library = "SceLibstdcxx")
         {
             uint nid = Core.Hle.NidDatabase.LookupName(name).Single(n => n.Library == library).Nid;
-            if (_stubs.TryGetValue(nid, out uint a)) return a;
+            if (_stubs.TryGetValue(nid, out uint a))
+            {
+                return a;
+            }
+
             a = _nextStub;
             _nextStub += 16;
             Linker.WriteHleStub(a, Emu.Hle.GetHleFunctionIndex(nid, 0, library), nid);
@@ -96,7 +108,13 @@ public sealed class CxxExceptionHleTests(GuestMemoryFixture fx)
             GuestMemory.W32(e + 4, 0x00A8B0B0);
             var lsda = new List<byte> { 0xFF, 0x00 };
             var cs = new List<byte>();
-            foreach (var s in sites) { cs.Add((byte)s.Start); cs.Add((byte)s.Len); cs.Add((byte)s.Lp); cs.Add((byte)s.Action); }
+            foreach (var s in sites)
+            {
+                cs.Add((byte)s.Start);
+                cs.Add((byte)s.Len);
+                cs.Add((byte)s.Lp);
+                cs.Add((byte)s.Action);
+            }
             // ttype offset (one byte, filled below), call-site encoding, length, sites, actions
             int offAt = lsda.Count;
             lsda.Add(0);
@@ -106,10 +124,17 @@ public sealed class CxxExceptionHleTests(GuestMemoryFixture fx)
             lsda.AddRange(cs);
             lsda.AddRange(actions);
             uint lsdaAddr = e + 8;
-            while ((lsdaAddr + (uint)lsda.Count) % 4 != 0) lsda.Add(0);
+            while ((lsdaAddr + (uint)lsda.Count) % 4 != 0)
+            {
+                lsda.Add(0);
+            }
+
             uint typesAt = lsdaAddr + (uint)lsda.Count, ttypeBase = typesAt + (uint)types.Length * 4;
             lsda[offAt] = (byte)(ttypeBase - (lsdaAddr + (uint)afterOff));
-            for (int i = 0; i < lsda.Count; i++) GuestMemory.Write(lsdaAddr + (uint)i, lsda[i]);
+            for (int i = 0; i < lsda.Count; i++)
+            {
+                GuestMemory.Write(lsdaAddr + (uint)i, lsda[i]);
+            }
             // filter n is at ttypeBase - 4n, self-relative
             for (int n = 1; n <= types.Length; n++)
             {
@@ -127,7 +152,15 @@ public sealed class CxxExceptionHleTests(GuestMemoryFixture fx)
             foreach (var (fn, entry, inline) in _exidx.OrderBy(x => x.Fn))
             {
                 Prel31(t, fn);
-                if (inline) GuestMemory.W32(t + 4, entry); else Prel31(t + 4, entry);
+                if (inline)
+                {
+                    GuestMemory.W32(t + 4, entry);
+                }
+                else
+                {
+                    Prel31(t + 4, entry);
+                }
+
                 t += 8;
             }
             _module.ExidxEnd = t;
@@ -141,20 +174,34 @@ public sealed class CxxExceptionHleTests(GuestMemoryFixture fx)
             var th = Emu.Kernel.CreateThread("cxx-test", 0, 0x10000100, 0x10000, 0, 0x70000);
             th.HostBody = t =>
             {
-                try { result = t.CallGuest(fn | 1, args); }
-                catch (Exception e) { failure = e; }
+                try
+                {
+                    result = t.CallGuest(fn | 1, args);
+                }
+                catch (Exception e)
+                {
+                    failure = e;
+                }
             };
             th.Start(0, 0);
             Assert.True(th.WaitForExit(60_000), "test thread did not finish");
             Emu.Kernel.DeleteThread(th);
-            if (failure != null) throw new Xunit.Sdk.XunitException(failure.ToString());
+            if (failure != null)
+            {
+                throw new Xunit.Sdk.XunitException(failure.ToString());
+            }
+
             return result;
         }
 
         public void Dispose()
         {
             Emu.Kernel.Modules.TryRemove(_module.Uid, out _);
-            try { Directory.Delete(_root, true); } catch (IOException) { }
+            try
+            {
+                Directory.Delete(_root, true);
+            }
+            catch (IOException) { }
         }
     }
 
@@ -164,8 +211,15 @@ public sealed class CxxExceptionHleTests(GuestMemoryFixture fx)
     static uint EmitThrower(World w, Code c, uint intTi)
     {
         uint fn = c.Pc;
-        c.Push(); c.MovR4R0(); c.MovsR0(4); c.Call(w.Stub("__cxa_allocate_exception"));
-        c.StrR4R0(); c.Imm(1, intTi); c.H(0x2200); c.Call(w.Stub("__cxa_throw")); c.Pop();
+        c.Push();
+        c.MovR4R0();
+        c.MovsR0(4);
+        c.Call(w.Stub("__cxa_allocate_exception"));
+        c.StrR4R0();
+        c.Imm(1, intTi);
+        c.H(0x2200);
+        c.Call(w.Stub("__cxa_throw"));
+        c.Pop();
         w.Compact(fn, 0xA8B0B0);
         return fn;
     }
@@ -177,13 +231,17 @@ public sealed class CxxExceptionHleTests(GuestMemoryFixture fx)
         uint fn = c.Pc;
         c.Push();                       // +0
         c.Call(callee | 1);             // +2: movw/movt r3 (8 bytes) + blx r3 at +10, returns to +12
-        c.MovsR0(0); c.Pop();           // +12
+        c.MovsR0(0);
+        c.Pop();           // +12
         uint lp = c.Pc - fn;            // +16: landing pad
-        c.Call(w.Stub("__cxa_begin_catch")); c.MovR4R0();
+        c.Call(w.Stub("__cxa_begin_catch"));
+        c.MovR4R0();
         onCatch(c);
         c.H(0x0001);                    // movs r1, r0 (keeps the result)
         c.H(0x000C);                    // movs r4, r1
-        c.Call(w.Stub("__cxa_end_catch")); c.MovR0R4(); c.Pop();
+        c.Call(w.Stub("__cxa_end_catch"));
+        c.MovR0R4();
+        c.Pop();
         w.Snc(fn, [(10, 4, lp, 1)], [0x01, 0x00], [catchTi]);
         return fn;
     }
@@ -210,10 +268,18 @@ public sealed class CxxExceptionHleTests(GuestMemoryFixture fx)
         uint thrower = EmitThrower(w, c, ti);
         // middle(v): calls thrower; its cleanup adds 1 to the counter word, then _Unwind_Resume(ucb)
         uint middle = c.Pc;
-        c.Push(); c.Call(thrower | 1); c.MovsR0(0); c.Pop();
+        c.Push();
+        c.Call(thrower | 1);
+        c.MovsR0(0);
+        c.Pop();
         uint lp = c.Pc - middle;
-        c.MovR4R0(); c.Imm(0, w.Counter); c.H(0x6801); c.H(0x3101); c.H(0x6001); // ldr r1,[r0]; adds r1,#1; str r1,[r0]
-        c.MovR0R4(); c.Call(w.Stub("_Unwind_Resume"));
+        c.MovR4R0();
+        c.Imm(0, w.Counter);
+        c.H(0x6801);
+        c.H(0x3101);
+        c.H(0x6001); // ldr r1,[r0]; adds r1,#1; str r1,[r0]
+        c.MovR0R4();
+        c.Call(w.Stub("_Unwind_Resume"));
         w.Snc(middle, [(10, 4, lp, 0), (lp, c.Pc - middle - lp, 0, 0)], [], []);
         uint catcher = EmitCatcher(w, c, middle, ti, c => c.LdrR0R4());
         w.Finish();
@@ -229,7 +295,9 @@ public sealed class CxxExceptionHleTests(GuestMemoryFixture fx)
         var c = new Code(w.Base);
         // thrower: std::_Xbad_alloc()
         uint thrower = c.Pc;
-        c.Push(); c.Call(w.Stub("_ZSt11_Xbad_allocv")); c.Pop();
+        c.Push();
+        c.Call(w.Stub("_ZSt11_Xbad_allocv"));
+        c.Pop();
         w.Compact(thrower, 0xA8B0B0);
         uint catcher = EmitCatcher(w, c, thrower, w.Libc.Rtti.Ti(TiException), c => c.LdrR0R4()); // the caught object's vptr
         w.Finish();
@@ -245,10 +313,19 @@ public sealed class CxxExceptionHleTests(GuestMemoryFixture fx)
         uint thrower = EmitThrower(w, c, ti);
         // catch (std::exception&) first (filter 2, does not match an int), then catch (...) (filter 1)
         uint fn = c.Pc;
-        c.Push(); c.Call(thrower | 1); c.MovsR0(0); c.Pop();
+        c.Push();
+        c.Call(thrower | 1);
+        c.MovsR0(0);
+        c.Pop();
         uint lp = c.Pc - fn;
-        c.Call(w.Stub("__cxa_begin_catch")); c.MovR4R0(); c.LdrR0R4(); c.H(0x0001); c.H(0x000C);
-        c.Call(w.Stub("__cxa_end_catch")); c.MovR0R4(); c.Pop();
+        c.Call(w.Stub("__cxa_begin_catch"));
+        c.MovR4R0();
+        c.LdrR0R4();
+        c.H(0x0001);
+        c.H(0x000C);
+        c.Call(w.Stub("__cxa_end_catch"));
+        c.MovR0R4();
+        c.Pop();
         // action record 1: filter 2, next +1 -> record 2: filter 1, end
         w.Snc(fn, [(10, 4, lp, 1)], [0x02, 0x01, 0x01, 0x00], [0, w.Libc.Rtti.Ti(TiException)]);
         w.Finish();
@@ -268,7 +345,12 @@ public sealed class CxxExceptionHleTests(GuestMemoryFixture fx)
         GuestMemory.W32(ios + 0xC, 4); // exceptions(badbit)
         // thrower: ios.clear(badbit | failbit, false)
         uint thrower = c.Pc;
-        c.Push(); c.Imm(0, ios); c.MovsR0Imm(1, 6); c.H(0x2200); c.Call(w.Stub("_ZNSt8ios_base5clearENSt5_IosbIiE8_IostateEb")); c.Pop();
+        c.Push();
+        c.Imm(0, ios);
+        c.MovsR0Imm(1, 6);
+        c.H(0x2200);
+        c.Call(w.Stub("_ZNSt8ios_base5clearENSt5_IosbIiE8_IostateEb"));
+        c.Pop();
         w.Compact(thrower, 0xA8B0B0);
         uint catcher = EmitCatcher(w, c, thrower, w.Libc.Rtti.Ti(TiException), c => c.LdrR0R4());
         w.Finish();
@@ -288,15 +370,29 @@ public sealed class CxxExceptionHleTests(GuestMemoryFixture fx)
             uint fn = GuestMemory.R32(m), arg = GuestMemory.R32(m + 4);
             var c = new Code(w.Base);
             uint f = c.Pc;
-            c.Push(); c.Imm(0, ios); c.Imm(1, arg); c.Call(fn); c.Pop();
+            c.Push();
+            c.Imm(0, ios);
+            c.Imm(1, arg);
+            c.Call(fn);
+            c.Pop();
             w.Finish();
             return w.Run(f);
         }
-        w.Libc._ZSt4setwi(m, 12); Apply(); Assert.Equal(12u, GuestMemory.R32(ios + 0x18));
-        w.Libc._ZSt12setprecisioni(m, 3); Apply(); Assert.Equal(3u, GuestMemory.R32(ios + 0x14));
-        w.Libc._ZSt7setbasei(m, 16); Apply(); Assert.Equal(0x801u, GuestMemory.R32(ios + 0x10));
-        w.Libc._ZSt13resetiosflagsNSt5_IosbIiE9_FmtflagsE(m, 1); Apply(); Assert.Equal(0x800u, GuestMemory.R32(ios + 0x10));
-        w.Libc._ZSt11setiosflagsNSt5_IosbIiE9_FmtflagsE(m, 0x4001); Apply(); Assert.Equal(0x4801u, GuestMemory.R32(ios + 0x10));
+        w.Libc._ZSt4setwi(m, 12);
+        Apply();
+        Assert.Equal(12u, GuestMemory.R32(ios + 0x18));
+        w.Libc._ZSt12setprecisioni(m, 3);
+        Apply();
+        Assert.Equal(3u, GuestMemory.R32(ios + 0x14));
+        w.Libc._ZSt7setbasei(m, 16);
+        Apply();
+        Assert.Equal(0x801u, GuestMemory.R32(ios + 0x10));
+        w.Libc._ZSt13resetiosflagsNSt5_IosbIiE9_FmtflagsE(m, 1);
+        Apply();
+        Assert.Equal(0x800u, GuestMemory.R32(ios + 0x10));
+        w.Libc._ZSt11setiosflagsNSt5_IosbIiE9_FmtflagsE(m, 0x4001);
+        Apply();
+        Assert.Equal(0x4801u, GuestMemory.R32(ios + 0x10));
     }
 
     /// <summary>__cxa type matching on an exception header (TypeMatch): pointer qualification, void*, nullptr and
@@ -319,12 +415,15 @@ public sealed class CxxExceptionHleTests(GuestMemoryFixture fx)
             return libc.TypeMatch(h + 0x28, r.Ti(catchNid), false, out adjusted);
         }
         const uint Pi = 0x15C21CC8, PKi = 0x33DAF949, Pv = 0x4722F2AE, Dn = 0x64F462B0, BadAlloc = 0x35E135A0;
-        Assert.Equal(1, Match(TiInt, TiInt, out uint a)); Assert.Equal(obj, a);
+        Assert.Equal(1, Match(TiInt, TiInt, out uint a));
+        Assert.Equal(obj, a);
         Assert.Equal(1, Match(Pi, PKi, out _));        // adding const to the pointee
         Assert.Equal(0, Match(PKi, Pi, out _));        // dropping it
         Assert.Equal(1, Match(Pi, Pv, out _));         // any object pointer to void*
-        Assert.Equal(1, Match(Dn, Pi, out a)); Assert.Equal(r.NullPtr, a);
-        Assert.Equal(1, Match(BadAlloc, TiException, out a)); Assert.Equal(obj, a);
+        Assert.Equal(1, Match(Dn, Pi, out a));
+        Assert.Equal(r.NullPtr, a);
+        Assert.Equal(1, Match(BadAlloc, TiException, out a));
+        Assert.Equal(obj, a);
         Assert.Equal(0, Match(TiException, BadAlloc, out _));
         Assert.Equal(0, Match(TiInt, TiException, out _));
     }

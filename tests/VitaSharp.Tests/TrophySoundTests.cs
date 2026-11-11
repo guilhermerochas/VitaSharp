@@ -17,7 +17,10 @@ public sealed class TrophySoundTests
             Assert.Equal(48000, pcm.SampleRate);
             Assert.Equal(1, pcm.Channels);
         }
-        finally { Directory.Delete(root, true); }
+        finally
+        {
+            Directory.Delete(root, true);
+        }
     }
 
     [Fact]
@@ -50,8 +53,12 @@ public sealed class TrophySoundTests
         public int XRunCount => 0;
         public bool Disconnected => false;
         public void Start() => Started = true;
-        public void Pause() { }
-        public void Dispose() { }
+        public void Pause()
+        {
+        }
+        public void Dispose()
+        {
+        }
     }
 
     [Fact]

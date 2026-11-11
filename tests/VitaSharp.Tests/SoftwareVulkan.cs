@@ -28,16 +28,31 @@ public static class SoftwareVulkan
                 Environment.GetFolderPath(Environment.SpecialFolder.ProgramFilesX86) + @"\Google\Chrome\Application",
             })
             {
-                if (!Directory.Exists(root)) continue;
+                if (!Directory.Exists(root))
+                {
+                    continue;
+                }
+
                 var dll = Directory.EnumerateDirectories(root).Select(d => Path.Combine(d, "vk_swiftshader.dll")).Where(File.Exists)
                     .OrderByDescending(File.GetLastWriteTimeUtc).FirstOrDefault();
-                if (dll != null) return dll;
+                if (dll != null)
+                {
+                    return dll;
+                }
             }
             return null;
         }
         if (OperatingSystem.IsLinux())
+        {
             foreach (var dir in new[] { "/usr/share/vulkan/icd.d", "/etc/vulkan/icd.d" })
-                if (Directory.Exists(dir) && Directory.EnumerateFiles(dir, "lvp_icd*.json").FirstOrDefault() is { } json) return json;
+            {
+                if (Directory.Exists(dir) && Directory.EnumerateFiles(dir, "lvp_icd*.json").FirstOrDefault() is { } json)
+                {
+                    return json;
+                }
+            }
+        }
+
         return null;
     }
 
@@ -52,7 +67,10 @@ public static class SoftwareVulkan
     {
         var saved = VulkanLoader.DriverProvider;
         string? savedFiles = Environment.GetEnvironmentVariable("VK_DRIVER_FILES"), savedIcd = Environment.GetEnvironmentVariable("VK_ICD_FILENAMES");
-        if (OperatingSystem.IsWindows()) VulkanLoader.DriverProvider = new SwiftShaderProvider(Driver!);
+        if (OperatingSystem.IsWindows())
+        {
+            VulkanLoader.DriverProvider = new SwiftShaderProvider(Driver!);
+        }
         else
         {
             Environment.SetEnvironmentVariable("VK_DRIVER_FILES", Driver);
@@ -66,11 +84,20 @@ public static class SoftwareVulkan
         });
     }
 
-    sealed class Restore(Action a) : IDisposable { public void Dispose() => a(); }
+    sealed class Restore(Action a) : IDisposable
+    {
+        public void Dispose() => a();
+    }
 }
 
 /// <summary>[Fact] skipped when no software Vulkan driver is installed.</summary>
 public sealed class SoftwareVulkanFactAttribute : FactAttribute
 {
-    public SoftwareVulkanFactAttribute() { if (SoftwareVulkan.SkipReason is { } r) Skip = r; }
+    public SoftwareVulkanFactAttribute()
+    {
+        if (SoftwareVulkan.SkipReason is { } r)
+        {
+            Skip = r;
+        }
+    }
 }

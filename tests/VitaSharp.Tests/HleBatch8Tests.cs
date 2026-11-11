@@ -16,7 +16,11 @@ public sealed class HleBatch8Tests(GuestMemoryFixture fx) : IDisposable
 
     Emulator Emu()
     {
-        if (_emu != null) return _emu;
+        if (_emu != null)
+        {
+            return _emu;
+        }
+
         Directory.CreateDirectory(_root);
         return _emu = new Emulator(new EmulatorOptions { FsRoot = _root, Memory = fx.Memory, EnableJit = false, CpuBackend = "interp" });
     }
@@ -27,15 +31,30 @@ public sealed class HleBatch8Tests(GuestMemoryFixture fx) : IDisposable
     static object? Invoke(object module, string name, params object?[] args) =>
         module.GetType().GetMethod(name, BindingFlags.Instance | BindingFlags.Static | BindingFlags.NonPublic | BindingFlags.Public)!.Invoke(module, args);
 
-    uint Alloc(uint size) { uint p = fx.Memory.Alloc(size, "hle8"); GuestMemory.Fill(p, 0, size); return p; }
-    uint Str(string s) { var b = Encoding.UTF8.GetBytes(s); uint p = Alloc((uint)b.Length + 1); b.CopyTo(GuestMemory.Span(p, b.Length)); return p; }
+    uint Alloc(uint size)
+    {
+        uint p = fx.Memory.Alloc(size, "hle8");
+        GuestMemory.Fill(p, 0, size);
+        return p;
+    }
+    uint Str(string s)
+    {
+        var b = Encoding.UTF8.GetBytes(s);
+        uint p = Alloc((uint)b.Length + 1);
+        b.CopyTo(GuestMemory.Span(p, b.Length));
+        return p;
+    }
     static float F(uint a) => GuestMemory.Read<float>(a);
     static string PStr(uint s) => GuestMemory.R32(s + 4) == 0 ? "" : Encoding.UTF8.GetString(GuestMemory.ReadSpan(GuestMemory.R32(s), (int)GuestMemory.R32(s + 4)));
 
     public void Dispose()
     {
         _emu?.Dispose();
-        try { Directory.Delete(_root, true); } catch (IOException) { }
+        try
+        {
+            Directory.Delete(_root, true);
+        }
+        catch (IOException) { }
     }
 
     [Fact]
@@ -48,9 +67,11 @@ public sealed class HleBatch8Tests(GuestMemoryFixture fx) : IDisposable
         Assert.Equal(8f, (float)Invoke(P, "RectLeftEdge", r)!);
         Assert.Equal(23f, (float)Invoke(P, "RectTopEdge", r)!);
         Invoke(P, "RectSetLeft", r, 6f); // right edge (12) stays
-        Assert.Equal(9f, F(r)); Assert.Equal(6f, F(r + 8));
+        Assert.Equal(9f, F(r));
+        Assert.Equal(6f, F(r + 8));
         Invoke(P, "RectSetLeft", r, 20f); // past the right edge: stops there
-        Assert.Equal(12f, F(r)); Assert.Equal(0f, F(r + 8));
+        Assert.Equal(12f, F(r));
+        Assert.Equal(0f, F(r + 8));
         Invoke(P, "RectSet", r, 0f, 0f, 2f, 2f);
         Invoke(P, "RectSet", o, 1f, 1f, 2f, 2f);
         Assert.True((bool)Invoke(P, "RectHit", r, o)!);
@@ -127,7 +148,11 @@ public sealed class HleBatch8Tests(GuestMemoryFixture fx) : IDisposable
     {
         var plain = Encoding.ASCII.GetBytes(string.Concat(Enumerable.Repeat("libpaf zlib ", 40)));
         var ms = new MemoryStream();
-        using (var z = new System.IO.Compression.ZLibStream(ms, System.IO.Compression.CompressionLevel.Optimal, true)) z.Write(plain);
+        using (var z = new System.IO.Compression.ZLibStream(ms, System.IO.Compression.CompressionLevel.Optimal, true))
+        {
+            z.Write(plain);
+        }
+
         var packed = ms.ToArray();
         uint src = Alloc((uint)packed.Length), dst = Alloc(0x400);
         packed.CopyTo(GuestMemory.Span(src, packed.Length));
@@ -187,9 +212,17 @@ public sealed class HleBatch8Tests(GuestMemoryFixture fx) : IDisposable
         "CXML"u8.ToArray().CopyTo(buf, 0);
         W(4, 0x110);
         int[] tables = [0x58, 0x58, 0xBE, 0, 0xBE, 0, 0xB0, 14, 0xBE, 0, 0xBE, 0, 0xBE, 0, 0xBE, 0, 0xBE, 0];
-        for (int i = 0; i < tables.Length; i++) W(8 + i * 4, tables[i]);
+        for (int i = 0; i < tables.Length; i++)
+        {
+            W(8 + i * 4, tables[i]);
+        }
+
         int[] tree = [0, 2, -1, -1, -1, 0x3C, 0x3C, 5, 1, 5, 0, 7, 3, 11, 2, 9, 0, 0, -1, -1, -1, -1];
-        for (int i = 0; i < tree.Length; i++) W(0x58 + i * 4, tree[i]);
+        for (int i = 0; i < tree.Length; i++)
+        {
+            W(0x58 + i * 4, tree[i]);
+        }
+
         "root\0a\0s\0c\0hi\0"u8.ToArray().CopyTo(buf, 0xB0);
         uint src = Alloc((uint)buf.Length), doc = Alloc(0xAC), root = Alloc(8), child = Alloc(8), attr = Alloc(12), v = Alloc(4), len = Alloc(4);
         buf.CopyTo(GuestMemory.Span(src, buf.Length));
@@ -220,11 +253,16 @@ public sealed class HleBatch8Tests(GuestMemoryFixture fx) : IDisposable
         uint url = Alloc(0x50), s = Alloc(12), ret = Alloc(12);
         typeof(Paf).GetMethod("StrAssign", BindingFlags.Instance | BindingFlags.NonPublic, [typeof(uint), typeof(string)])!.Invoke(P, [s, "https://user@example.com:8443/a/b.html?x=1#top"]);
         Invoke(P, "UrlFromString", url, s);
-        Invoke(P, "UrlGetHost", ret, url); Assert.Equal("example.com", PStr(ret));
-        Invoke(P, "UrlGetPath", ret, url); Assert.Equal("/a/b.html", PStr(ret));
-        Invoke(P, "UrlGetQuery", ret, url); Assert.Equal("x=1", PStr(ret));
-        Invoke(P, "UrlGetUser", ret, url); Assert.Equal("user", PStr(ret));
-        Invoke(P, "UrlGetBase", ret, url); Assert.Equal("https://example.com:8443/a/", PStr(ret));
+        Invoke(P, "UrlGetHost", ret, url);
+        Assert.Equal("example.com", PStr(ret));
+        Invoke(P, "UrlGetPath", ret, url);
+        Assert.Equal("/a/b.html", PStr(ret));
+        Invoke(P, "UrlGetQuery", ret, url);
+        Assert.Equal("x=1", PStr(ret));
+        Invoke(P, "UrlGetUser", ret, url);
+        Assert.Equal("user", PStr(ret));
+        Invoke(P, "UrlGetBase", ret, url);
+        Assert.Equal("https://example.com:8443/a/", PStr(ret));
         Assert.Equal(8443, (int)Invoke(P, "UrlGetPort", url)!);
         Assert.Equal(1f, (float)Invoke(P, "EaseBounceOut", 2f)!);
         Assert.Equal(0f, (float)Invoke(P, "EaseQuadIn", -1f)!);

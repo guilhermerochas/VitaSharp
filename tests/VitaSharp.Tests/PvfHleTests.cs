@@ -23,8 +23,13 @@ public sealed class PvfHleTests(GuestMemoryFixture fx)
     {
         switch (fn)
         {
-            case AllocFn: _allocs++; return fx.Memory.Alloc(Math.Max(a[1], 4u), "pvf-test", MemoryRegion.User, 16);
-            case FreeFn: _frees++; fx.Memory.Free(a[1]); return 0;
+            case AllocFn:
+                _allocs++;
+                return fx.Memory.Alloc(Math.Max(a[1], 4u), "pvf-test", MemoryRegion.User, 16);
+            case FreeFn:
+                _frees++;
+                fx.Memory.Free(a[1]);
+                return 0;
         }
         throw new InvalidOperationException($"unexpected guest call {fn:X}");
     }
@@ -47,8 +52,18 @@ public sealed class PvfHleTests(GuestMemoryFixture fx)
         return p;
     }
 
-    uint Err() { uint e = fx.Memory.Alloc(16, "pvf-err", MemoryRegion.User, 16); GuestMemory.W32(e, 0x12345678); return e; }
-    uint Buf(uint size) { uint b = fx.Memory.Alloc(size, "pvf-buf", MemoryRegion.User, 16); GuestMemory.Fill(b, 0, size); return b; }
+    uint Err()
+    {
+        uint e = fx.Memory.Alloc(16, "pvf-err", MemoryRegion.User, 16);
+        GuestMemory.W32(e, 0x12345678);
+        return e;
+    }
+    uint Buf(uint size)
+    {
+        uint b = fx.Memory.Alloc(size, "pvf-buf", MemoryRegion.User, 16);
+        GuestMemory.Fill(b, 0, size);
+        return b;
+    }
 
     (Pvf m, uint lib) NewLib(uint maxFonts = 4, Func<string, byte[]?>? files = null)
     {
@@ -120,8 +135,18 @@ public sealed class PvfHleTests(GuestMemoryFixture fx)
         Assert.Equal(Pvf.ERR_ARG, Call(m, "scePvfGetFontInfoByIndexNumber", lib, s, 18));
         Assert.Equal(Pvf.ERR_LIBID, Call(m, "scePvfGetFontList", 0u, list, 1));
 
-        int Optimum(Action<uint> set) { uint st = Buf(0xD8); set(st); return Call(m, "scePvfFindOptimumFont", lib, st, P(e)); }
-        int Find(Action<uint> set) { uint st = Buf(0xD8); set(st); return Call(m, "scePvfFindFont", lib, st, P(e)); }
+        int Optimum(Action<uint> set)
+        {
+            uint st = Buf(0xD8);
+            set(st);
+            return Call(m, "scePvfFindOptimumFont", lib, st, P(e));
+        }
+        int Find(Action<uint> set)
+        {
+            uint st = Buf(0xD8);
+            set(st);
+            return Call(m, "scePvfFindFont", lib, st, P(e));
+        }
         Assert.Equal(0, Optimum(_ => { }));
         Assert.Equal(4, Optimum(st => GuestMemory.Write<ushort>(st + 0xA, 2)));
         Assert.Equal(5, Optimum(st => { GuestMemory.Write<ushort>(st + 4, 2); GuestMemory.Write<ushort>(st + 0xA, 2); }));
@@ -213,10 +238,16 @@ public sealed class PvfHleTests(GuestMemoryFixture fx)
         GuestMemory.Fill(ci, 0xEE, 0x40);
         Assert.Equal(0, Call(m, "scePvfGetCharInfo", f, (ushort)'A', ci));
         // bitmap fields are not filled by libpvf here
-        for (uint o = 0; o < 0x14; o += 4) Assert.Equal(0u, GuestMemory.R32(ci + o));
+        for (uint o = 0; o < 0x14; o += 4)
+        {
+            Assert.Equal(0u, GuestMemory.R32(ci + o));
+        }
         // square (100,0)-(500,700) at 1.152 26.6-units per font unit, grid fitted
         int[] expected = [512, 832, 832, 0, 64, 832, -256, 64, 704, 1152];
-        for (int i = 0; i < expected.Length; i++) Assert.Equal(expected[i], GuestMemory.Read<int>(ci + 0x14 + (uint)i * 4));
+        for (int i = 0; i < expected.Length; i++)
+        {
+            Assert.Equal(expected[i], GuestMemory.Read<int>(ci + 0x14 + (uint)i * 4));
+        }
 
         Assert.Equal(1, Call(m, "scePvfIsElement", f, (ushort)'V'));
         Assert.Equal(0, Call(m, "scePvfIsElement", f, (ushort)'Z'));
@@ -333,7 +364,14 @@ public sealed class PvfHleTests(GuestMemoryFixture fx)
         Assert.Equal(0, Call(m, "scePvfGetVertCharGlyphImage", f, (ushort)0x3001, img));
         Assert.Equal(0, Call(m, "scePvfGetVertCharGlyphImage_Clip", f, (ushort)0x3001, img, 0, 0, 32u, 32u));
         int ink = 0;
-        for (int y = 0; y < 32; y++) for (int x = 0; x < 32; x++) ink += Pixel(img, x, y) != 0 ? 1 : 0;
+        for (int y = 0; y < 32; y++)
+        {
+            for (int x = 0; x < 32; x++)
+            {
+                ink += Pixel(img, x, y) != 0 ? 1 : 0;
+            }
+        }
+
         Assert.True(ink > 0);
     }
 
@@ -391,7 +429,11 @@ public sealed class PvfHleTests(GuestMemoryFixture fx)
     [Fact]
     public void FirmwareFonts()
     {
-        if (FontTestData.FirmwareFontDir("pvf") is not { } dir) return;
+        if (FontTestData.FirmwareFontDir("pvf") is not { } dir)
+        {
+            return;
+        }
+
         var (m, lib) = NewLib(files: name => File.Exists(Path.Combine(dir, name)) ? File.ReadAllBytes(Path.Combine(dir, name)) : null);
         uint latin = Open(m, lib, 4), japanese = Open(m, lib, 0);
         uint rect = Buf(4);

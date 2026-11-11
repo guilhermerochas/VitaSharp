@@ -13,7 +13,9 @@ public sealed class GpuQueueReplaceTests(GuestMemoryFixture fx)
         public int CreatedOn = Environment.CurrentManagedThreadId, DisposedOn;
         public long PresentCount => 0;
         public byte[]? ExportDumpState() => null;
-        public void Execute(GpuCommand command) { }
+        public void Execute(GpuCommand command)
+        {
+        }
         public void Dispose() => DisposedOn = Environment.CurrentManagedThreadId;
     }
 
@@ -22,7 +24,14 @@ public sealed class GpuQueueReplaceTests(GuestMemoryFixture fx)
     {
         _ = fx;
         using var work = new BlockingCollection<Action>();
-        var owner = new Thread(() => { foreach (var a in work.GetConsumingEnumerable()) a(); }) { IsBackground = true };
+        var owner = new Thread(() =>
+        {
+            foreach (var a in work.GetConsumingEnumerable())
+            {
+                a();
+            }
+        })
+        { IsBackground = true };
         owner.Start();
         using var queue = new GpuQueue();
         var first = new ThreadBackend();

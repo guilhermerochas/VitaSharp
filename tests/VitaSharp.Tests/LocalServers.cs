@@ -36,8 +36,14 @@ public sealed class LocalHttpServer : IDisposable
         while (!_cts.IsCancellationRequested)
         {
             TcpClient c;
-            try { c = await _listener.AcceptTcpClientAsync(_cts.Token); }
-            catch (Exception) { return; }
+            try
+            {
+                c = await _listener.AcceptTcpClientAsync(_cts.Token);
+            }
+            catch (Exception)
+            {
+                return;
+            }
             _ = Task.Run(() => Serve(c));
         }
     }
@@ -52,7 +58,11 @@ public sealed class LocalHttpServer : IDisposable
             var one = new byte[1];
             while (!head.ToString().EndsWith("\r\n\r\n"))
             {
-                if (await s.ReadAsync(one) == 0) return;
+                if (await s.ReadAsync(one) == 0)
+                {
+                    return;
+                }
+
                 head.Append((char)one[0]);
             }
             Interlocked.Increment(ref Requests);
@@ -71,7 +81,10 @@ public sealed class LocalHttpServer : IDisposable
                 var h = $"HTTP/1.1 {status}\r\nConnection: close\r\n{extraHeaders}" +
                         (chunked ? "Transfer-Encoding: chunked\r\n" : $"Content-Length: {content.Length}\r\n") + "\r\n";
                 await s.WriteAsync(Encoding.ASCII.GetBytes(h));
-                if (!chunked) await s.WriteAsync(content);
+                if (!chunked)
+                {
+                    await s.WriteAsync(content);
+                }
                 else
                 {
                     for (int i = 0; i < content.Length; i += 7)
@@ -88,10 +101,18 @@ public sealed class LocalHttpServer : IDisposable
             }
             switch (path)
             {
-                case "/hello": await Send("200 OK", "Content-Type: text/plain\r\nX-Server: local\r\n", "hello vita"u8.ToArray()); break;
-                case "/chunked": await Send("200 OK", "", Encoding.ASCII.GetBytes(string.Concat(Enumerable.Range(0, 20).Select(i => $"line {i}\n"))), chunked: true); break;
-                case "/redirect": await Send("302 Found", "Location: /hello\r\n", []); break;
-                case "/cookie": await Send("200 OK", "Set-Cookie: session=abc123; Path=/\r\n", "ok"u8.ToArray()); break;
+                case "/hello":
+                    await Send("200 OK", "Content-Type: text/plain\r\nX-Server: local\r\n", "hello vita"u8.ToArray());
+                    break;
+                case "/chunked":
+                    await Send("200 OK", "", Encoding.ASCII.GetBytes(string.Concat(Enumerable.Range(0, 20).Select(i => $"line {i}\n"))), chunked: true);
+                    break;
+                case "/redirect":
+                    await Send("302 Found", "Location: /hello\r\n", []);
+                    break;
+                case "/cookie":
+                    await Send("200 OK", "Set-Cookie: session=abc123; Path=/\r\n", "ok"u8.ToArray());
+                    break;
                 case "/echo":
                     string info = $"{method} x-test={headers.GetValueOrDefault("X-Test")} cookie={headers.GetValueOrDefault("Cookie")} ua={headers.GetValueOrDefault("User-Agent")} body=";
                     await Send("201 Created", "", [.. Encoding.ASCII.GetBytes(info), .. body]);
@@ -105,11 +126,17 @@ public sealed class LocalHttpServer : IDisposable
                 case "/gzip":
                     using (var ms = new MemoryStream())
                     {
-                        using (var gz = new System.IO.Compression.GZipStream(ms, System.IO.Compression.CompressionLevel.Fastest, true)) gz.Write("compressed body"u8);
+                        using (var gz = new System.IO.Compression.GZipStream(ms, System.IO.Compression.CompressionLevel.Fastest, true))
+                        {
+                            gz.Write("compressed body"u8);
+                        }
+
                         await Send("200 OK", "Content-Encoding: gzip\r\n", ms.ToArray());
                     }
                     break;
-                default: await Send("404 Not Found", "", "missing"u8.ToArray()); break;
+                default:
+                    await Send("404 Not Found", "", "missing"u8.ToArray());
+                    break;
             }
         }
         catch (IOException) { }
@@ -164,8 +191,14 @@ public sealed class MockRpcnServer : IDisposable
         while (!_cts.IsCancellationRequested)
         {
             TcpClient c;
-            try { c = await _listener.AcceptTcpClientAsync(_cts.Token); }
-            catch (Exception) { return; }
+            try
+            {
+                c = await _listener.AcceptTcpClientAsync(_cts.Token);
+            }
+            catch (Exception)
+            {
+                return;
+            }
             _ = Task.Run(() => Serve(c));
         }
     }
@@ -208,12 +241,19 @@ public sealed class MockRpcnServer : IDisposable
                 ulong id = BinaryPrimitives.ReadUInt64LittleEndian(h.AsSpan(7));
                 var data = new byte[size - RpcnClient.HeaderSize];
                 s.ReadExactly(data);
-                lock (Commands) Commands.Add(cmd);
+                lock (Commands)
+                {
+                    Commands.Add(cmd);
+                }
+
                 byte[] reply;
                 if (cmd == RpcnCommand.Login)
                 {
                     var f = Encoding.UTF8.GetString(data).Split('\0');
-                    if (f[0] != User || f[1] != Password) reply = [(byte)RpcnError.LoginInvalidPassword];
+                    if (f[0] != User || f[1] != Password)
+                    {
+                        reply = [(byte)RpcnError.LoginInvalidPassword];
+                    }
                     else
                     {
                         logged = true;
@@ -228,12 +268,23 @@ public sealed class MockRpcnServer : IDisposable
                         ms.Write(new byte[12]);
                         ms.Write("\0\0\0"u8);
                         ms.Write(BitConverter.GetBytes(0u));
-                        for (int i = 0; i < 3; i++) ms.Write(BitConverter.GetBytes(0u)); // requests sent/received, blocked
+                        for (int i = 0; i < 3; i++)
+                        {
+                            ms.Write(BitConverter.GetBytes(0u)); // requests sent/received, blocked
+                        }
+
                         reply = ms.ToArray();
                     }
                 }
-                else if (!logged) reply = [(byte)RpcnError.Invalid];
-                else reply = Handle(cmd, data);
+                else if (!logged)
+                {
+                    reply = [(byte)RpcnError.Invalid];
+                }
+                else
+                {
+                    reply = Handle(cmd, data);
+                }
+
                 s.Write(Packet(1, (ushort)cmd, id, reply));
                 s.Flush();
             }
@@ -241,7 +292,11 @@ public sealed class MockRpcnServer : IDisposable
         catch (Exception e) when (e is IOException or SocketException or ObjectDisposedException or EndOfStreamException) { }
     }
 
-    static byte[] Ok(ProtoWriter m) { var b = m.ToArray(); return [0, .. BitConverter.GetBytes((uint)b.Length), .. b]; }
+    static byte[] Ok(ProtoWriter m)
+    {
+        var b = m.ToArray();
+        return [0, .. BitConverter.GetBytes((uint)b.Length), .. b];
+    }
     static byte[] Err(RpcnError e) => [(byte)e];
 
     byte[] Handle(RpcnCommand cmd, byte[] data)
@@ -250,7 +305,11 @@ public sealed class MockRpcnServer : IDisposable
         if (cmd == RpcnCommand.GetBoardInfos)
         {
             uint board = BinaryPrimitives.ReadUInt32LittleEndian(data.AsSpan(12));
-            if (board == 99) return Err(RpcnError.NotFound);
+            if (board == 99)
+            {
+                return Err(RpcnError.NotFound);
+            }
+
             return Ok(new ProtoWriter().UInt32(1, 100).UInt32(2, 0).UInt32(3, board == 2 ? 1u : 0u).UInt32(4, 10).UInt32(5, 1000));
         }
         int len = (int)BinaryPrimitives.ReadUInt32LittleEndian(data.AsSpan(12));
@@ -280,7 +339,10 @@ public sealed class MockRpcnServer : IDisposable
                     {
                         var var = new ProtoWriter().String(1, owner);
                         if (_vars.TryGetValue((comm, owner, (int)slot), out var v))
+                        {
                             var.Bool(2, true).UInt64(3, v.Date).String(4, v.Author).Int64(5, v.Value).Int64(6, v.Old);
+                        }
+
                         resp.Message(1, var);
                     }
                     return Ok(resp);
@@ -299,8 +361,18 @@ public sealed class MockRpcnServer : IDisposable
                     int slot = m.Int32(2), op = m.Int32(3);
                     long value = m.Int64(4);
                     bool has = _vars.TryGetValue((comm, owner, slot), out var v);
-                    bool ok = !has || op switch { 3 => value > v.Value, 5 => value < v.Value, 1 => value == v.Value, _ => true };
-                    if (!ok) return Err(RpcnError.CondFail);
+                    bool ok = !has || op switch
+                    {
+                        3 => value > v.Value,
+                        5 => value < v.Value,
+                        1 => value == v.Value,
+                        _ => true
+                    };
+                    if (!ok)
+                    {
+                        return Err(RpcnError.CondFail);
+                    }
+
                     _vars[(comm, owner, slot)] = (value, v.Value, now, User);
                     return Ok(new ProtoWriter().String(1, owner).Bool(2, true).UInt64(3, now).String(4, User).Int64(5, value).Int64(6, v.Value));
                 }
@@ -320,7 +392,11 @@ public sealed class MockRpcnServer : IDisposable
                         st.Bool(2, true).UInt64(3, d.Date).String(4, d.Author).Bytes(5, d.Info);
                         resp.Message(1, st).Bytes(2, d.Data);
                     }
-                    else resp.Message(1, st);
+                    else
+                    {
+                        resp.Message(1, st);
+                    }
+
                     return Ok(resp);
                 }
                 case RpcnCommand.TusGetMultiSlotDataStatus:
@@ -330,7 +406,11 @@ public sealed class MockRpcnServer : IDisposable
                     foreach (var slot in m.Repeated(2))
                     {
                         var st = new ProtoWriter().String(1, owner);
-                        if (_data.TryGetValue((comm, owner, (int)slot), out var d)) st.Bool(2, true).UInt64(3, d.Date).String(4, d.Author).Bytes(5, d.Info);
+                        if (_data.TryGetValue((comm, owner, (int)slot), out var d))
+                        {
+                            st.Bool(2, true).UInt64(3, d.Date).String(4, d.Author).Bytes(5, d.Info);
+                        }
+
                         resp.Message(1, st);
                     }
                     return Ok(resp);
@@ -338,7 +418,11 @@ public sealed class MockRpcnServer : IDisposable
                 case RpcnCommand.TusDeleteMultiSlotData:
                 {
                     string owner = m.Message(1).String(2);
-                    foreach (var slot in m.Repeated(2)) _data.Remove((comm, owner, (int)slot));
+                    foreach (var slot in m.Repeated(2))
+                    {
+                        _data.Remove((comm, owner, (int)slot));
+                    }
+
                     return [0];
                 }
                 case RpcnCommand.RecordScore:
@@ -348,8 +432,16 @@ public sealed class MockRpcnServer : IDisposable
                     long score = m.Int64(3);
                     int pc = m.Int32(2);
                     int i = list.FindIndex(e => e.NpId == User && e.PcId == pc);
-                    if (i >= 0 && list[i].Score >= score) return Err(RpcnError.ScoreNotBest);
-                    if (i >= 0) list.RemoveAt(i);
+                    if (i >= 0 && list[i].Score >= score)
+                    {
+                        return Err(RpcnError.ScoreNotBest);
+                    }
+
+                    if (i >= 0)
+                    {
+                        list.RemoveAt(i);
+                    }
+
                     list.Add((User, pc, score, m.String(4), m.Bytes(5).ToArray(), now, null));
                     list.Sort((a, b) => b.Score.CompareTo(a.Score));
                     uint rank = (uint)list.FindIndex(e => e.NpId == User && e.PcId == pc) + 1;
@@ -372,7 +464,13 @@ public sealed class MockRpcnServer : IDisposable
                     var resp = new ProtoWriter();
                     foreach (var r in rows)
                     {
-                        if (r is not { } e) { resp.Message(1, new ProtoWriter()); resp.String(2, ""); resp.Message(3, new ProtoWriter()); continue; }
+                        if (r is not { } e)
+                        {
+                            resp.Message(1, new ProtoWriter());
+                            resp.String(2, "");
+                            resp.Message(3, new ProtoWriter());
+                            continue;
+                        }
                         int rank = list.IndexOf(e) + 1;
                         resp.Message(1, new ProtoWriter().String(1, e.Item1).String(2, e.Item1).Int32(3, e.Item2).UInt32(4, (uint)rank).Int64(5, e.Item3).Bool(6, e.Item7 != null).UInt64(7, e.Item6));
                         resp.String(2, e.Item4);
@@ -385,7 +483,11 @@ public sealed class MockRpcnServer : IDisposable
                 {
                     var list = Board(comm, m.UInt32(1));
                     var e = list.FirstOrDefault(x => x.NpId == m.String(2) && x.PcId == m.Int32(3));
-                    if (e.GameData == null) return Err(RpcnError.NotFound);
+                    if (e.GameData == null)
+                    {
+                        return Err(RpcnError.NotFound);
+                    }
+
                     return [0, .. BitConverter.GetBytes((uint)e.GameData.Length), .. e.GameData];
                 }
                 case RpcnCommand.RecordScoreData:
@@ -394,9 +496,20 @@ public sealed class MockRpcnServer : IDisposable
                     int dlen = (int)BinaryPrimitives.ReadUInt32LittleEndian(data.AsSpan(16 + len));
                     var blob = data.AsSpan(20 + len, dlen).ToArray();
                     int i = list.FindIndex(x => x.NpId == User && x.PcId == m.Int32(2) && x.Score == m.Int64(3));
-                    if (i < 0) return Err(RpcnError.ScoreInvalid);
-                    if (list[i].GameData != null) return Err(RpcnError.ScoreHasData);
-                    list[i] = list[i] with { GameData = blob };
+                    if (i < 0)
+                    {
+                        return Err(RpcnError.ScoreInvalid);
+                    }
+
+                    if (list[i].GameData != null)
+                    {
+                        return Err(RpcnError.ScoreHasData);
+                    }
+
+                    list[i] = list[i] with
+                    {
+                        GameData = blob
+                    };
                     return [0];
                 }
                 default:
@@ -407,7 +520,11 @@ public sealed class MockRpcnServer : IDisposable
 
     List<(string NpId, int PcId, long Score, string Comment, byte[] Info, ulong Date, byte[]? GameData)> Board(string comm, uint board)
     {
-        if (!_boards.TryGetValue((comm, board), out var l)) _boards[(comm, board)] = l = new();
+        if (!_boards.TryGetValue((comm, board), out var l))
+        {
+            _boards[(comm, board)] = l = new();
+        }
+
         return l;
     }
 
@@ -415,9 +532,20 @@ public sealed class MockRpcnServer : IDisposable
     {
         var resp = new ProtoWriter();
         foreach (var (e, rank) in rows)
+        {
             resp.Message(1, new ProtoWriter().String(1, e.NpId).String(2, e.NpId).Int32(3, e.PcId).UInt32(4, (uint)rank).Int64(5, e.Score).Bool(6, e.GameData != null).UInt64(7, e.Date));
-        foreach (var (e, _) in rows) resp.String(2, e.Comment);
-        foreach (var (e, _) in rows) resp.Message(3, new ProtoWriter().Bytes(1, e.Info));
+        }
+
+        foreach (var (e, _) in rows)
+        {
+            resp.String(2, e.Comment);
+        }
+
+        foreach (var (e, _) in rows)
+        {
+            resp.Message(3, new ProtoWriter().Bytes(1, e.Info));
+        }
+
         resp.UInt64(4, (ulong)DateTime.UtcNow.Ticks / 10).UInt32(5, (uint)total);
         return resp;
     }

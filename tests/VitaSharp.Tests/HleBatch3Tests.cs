@@ -19,7 +19,12 @@ public sealed class HleBatch3Tests(GuestMemoryFixture fx)
 
     static int Call(object module, string name, params object?[] args) => Convert.ToInt32(Invoke(module, name, args));
 
-    uint Alloc(uint size) { uint p = fx.Memory.Alloc(size, "hle3"); GuestMemory.Fill(p, 0, size); return p; }
+    uint Alloc(uint size)
+    {
+        uint p = fx.Memory.Alloc(size, "hle3");
+        GuestMemory.Fill(p, 0, size);
+        return p;
+    }
 
     static void SetBacking(object o, string prop, object value) =>
         o.GetType().GetField($"<{prop}>k__BackingField", BindingFlags.Instance | BindingFlags.NonPublic)!.SetValue(o, value);

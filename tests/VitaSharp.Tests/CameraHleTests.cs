@@ -19,11 +19,19 @@ public sealed class CameraHleTests(GuestMemoryFixture fx)
             Opens.Add((facing, width, height, fps));
             Last = new FakeStream();
             var img = new byte[64 * 48 * 4];
-            for (int i = 0; i < img.Length; i += 4) { img[i] = 200; img[i + 1] = 100; img[i + 2] = 50; img[i + 3] = 255; }
+            for (int i = 0; i < img.Length; i += 4)
+            {
+                img[i] = 200;
+                img[i + 1] = 100;
+                img[i + 2] = 50;
+                img[i + 3] = 255;
+            }
             Last.Frames.Publish(img, 64, 48);
             return Last;
         }
-        public void Dispose() { }
+        public void Dispose()
+        {
+        }
     }
 
     sealed class FakeStream : ICameraStream
@@ -128,7 +136,13 @@ public sealed class CameraHleTests(GuestMemoryFixture fx)
             Assert.True(frame >= 1);
             Assert.True(timestamp > 0);
             Assert.Equal(0xEE, pastStruct); // nothing written past SceCameraRead
-            for (int i = 0; i < size; i += 4) { Assert.Equal(200, px[i]); Assert.Equal(100, px[i + 1]); Assert.Equal(50, px[i + 2]); Assert.Equal(255, px[i + 3]); }
+            for (int i = 0; i < size; i += 4)
+            {
+                Assert.Equal(200, px[i]);
+                Assert.Equal(100, px[i + 1]);
+                Assert.Equal(50, px[i + 2]);
+                Assert.Equal(255, px[i + 3]);
+            }
             Assert.Equal(0xCC, pastBuffer); // buffer end respected
             Assert.Equal(1u, noWaitStatus);
             Assert.Equal(frame, noWaitFrame);
@@ -148,7 +162,9 @@ public sealed class CameraHleTests(GuestMemoryFixture fx)
         }
         finally
         {
-            mem.Free(info); mem.Free(read); mem.Free(buf);
+            mem.Free(info);
+            mem.Free(read);
+            mem.Free(buf);
         }
     }
 
@@ -172,9 +188,15 @@ public sealed class CameraHleTests(GuestMemoryFixture fx)
             GuestMemory.W32(read + 0x04, 0);
             GuestMemory.W32(read + 0x3C, 0); // SETBYREAD needs buffers in the read struct
             Assert.Equal(PARAM, Call(cam, "sceCameraRead", 0, read));
-            GuestMemory.W32(read + 0x30, w * h); GuestMemory.W32(read + 0x34, w * h / 4); GuestMemory.W32(read + 0x38, w * h / 4);
-            GuestMemory.W32(read + 0x3C, y); GuestMemory.W32(read + 0x40, u); GuestMemory.W32(read + 0x44, v);
-            GuestMemory.Fill(y, 0, 0x10000); GuestMemory.Fill(u, 0, 0x10000); GuestMemory.Fill(v, 0, 0x10000);
+            GuestMemory.W32(read + 0x30, w * h);
+            GuestMemory.W32(read + 0x34, w * h / 4);
+            GuestMemory.W32(read + 0x38, w * h / 4);
+            GuestMemory.W32(read + 0x3C, y);
+            GuestMemory.W32(read + 0x40, u);
+            GuestMemory.W32(read + 0x44, v);
+            GuestMemory.Fill(y, 0, 0x10000);
+            GuestMemory.Fill(u, 0, 0x10000);
+            GuestMemory.Fill(v, 0, 0x10000);
             Assert.Equal(0, Call(cam, "sceCameraRead", 0, read));
             Assert.All(GuestMemory.Span(y, w * h).ToArray(), b => Assert.Equal(128, b));
             Assert.All(GuestMemory.Span(u, w * h / 4).ToArray(), b => Assert.Equal(128, b));
@@ -184,7 +206,11 @@ public sealed class CameraHleTests(GuestMemoryFixture fx)
         }
         finally
         {
-            mem.Free(info); mem.Free(read); mem.Free(y); mem.Free(u); mem.Free(v);
+            mem.Free(info);
+            mem.Free(read);
+            mem.Free(y);
+            mem.Free(u);
+            mem.Free(v);
         }
     }
 }

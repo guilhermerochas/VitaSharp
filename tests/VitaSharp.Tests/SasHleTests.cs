@@ -51,7 +51,11 @@ public sealed class SasHleTests(GuestMemoryFixture fx)
         var b = new byte[16];
         b[0] = (byte)(predictor << 4 | shift);
         b[1] = (byte)flags;
-        for (int i = 0; i < nibbles.Length; i++) b[2 + i / 2] |= (byte)((nibbles[i] & 0xF) << ((i & 1) * 4));
+        for (int i = 0; i < nibbles.Length; i++)
+        {
+            b[2 + i / 2] |= (byte)((nibbles[i] & 0xF) << ((i & 1) * 4));
+        }
+
         return b;
     }
 
@@ -71,13 +75,15 @@ public sealed class SasHleTests(GuestMemoryFixture fx)
         Assert.Equal(new short[] { 7 * 256, -8 * 256, 256, 0 }, o[..4]);
 
         // filter 4 (122/64, -60/64) overflows and clamps
-        hist[0] = 28672; hist[1] = 0;
+        hist[0] = 28672;
+        hist[1] = 0;
         Adpcm.DecodeBlock(VagBlock(4, 0, 0, 7), hist, o);
         Assert.Equal(short.MaxValue, o[0]);
 
         // HEVAG: byte 1's high nibble extends the predictor (index 16 = 910, -7680 over 8192)
         Array.Clear(hist);
-        hist[0] = 8192; hist[1] = 8192;
+        hist[0] = 8192;
+        hist[1] = 8192;
         var hb = VagBlock(0, 12, 0x10);
         Adpcm.DecodeBlock(hb, hist, o);
         Assert.Equal((short)((8192 * 910 + 8192 * -7680 >> 5) >> 8), o[0]);
@@ -90,7 +96,8 @@ public sealed class SasHleTests(GuestMemoryFixture fx)
         var s = Init();
         byte[] b0 = VagBlock(1, 0, 0, 1, 2, 3, 4, 5, 6, 7), b1 = VagBlock(0, 2, Adpcm.FlagLoopEnd, 1, 1, 1, 1);
         uint vag = fx.Memory.Alloc(0x100, "vag");
-        b0.CopyTo(GuestMemory.Span(vag, 16)); b1.CopyTo(GuestMemory.Span(vag + 16, 16));
+        b0.CopyTo(GuestMemory.Span(vag, 16));
+        b1.CopyTo(GuestMemory.Span(vag + 16, 16));
         var expected = new short[56];
         var h = new int[4];
         Adpcm.DecodeBlock(b0, h, expected.AsSpan(0, 28));
@@ -120,7 +127,11 @@ public sealed class SasHleTests(GuestMemoryFixture fx)
         var l = Left(Core(s));
         int[] starts = [0, 28, 56, 84, 112, 140];
         short[] want = [256, 512, 768, 512, 768, 512];
-        for (int i = 0; i < starts.Length; i++) Assert.Equal(want[i], l[starts[i]]);
+        for (int i = 0; i < starts.Length; i++)
+        {
+            Assert.Equal(want[i], l[starts[i]]);
+        }
+
         Assert.Equal(0, Call(s, "sceSasGetEndState", 0));
     }
 
@@ -179,26 +190,43 @@ public sealed class SasHleTests(GuestMemoryFixture fx)
     public void EnvelopeCurves()
     {
         var env = new SasEnvelope();
-        env.Modes[0] = SasCurve.LinearIncrease; env.Rates[0] = SasEnvelope.Max / 8;
-        env.Modes[1] = SasCurve.ExponentDecrease; env.Rates[1] = 1 << 30; // halve per sample
+        env.Modes[0] = SasCurve.LinearIncrease;
+        env.Rates[0] = SasEnvelope.Max / 8;
+        env.Modes[1] = SasCurve.ExponentDecrease;
+        env.Rates[1] = 1 << 30; // halve per sample
         env.SustainLevel = SasEnvelope.Max / 8;
-        env.Modes[2] = SasCurve.LinearDecrease; env.Rates[2] = 0;
-        env.Modes[3] = SasCurve.LinearDecrease; env.Rates[3] = SasEnvelope.Max / 16;
+        env.Modes[2] = SasCurve.LinearDecrease;
+        env.Rates[2] = 0;
+        env.Modes[3] = SasCurve.LinearDecrease;
+        env.Rates[3] = SasEnvelope.Max / 16;
         env.KeyOn();
         var h = new List<int>();
-        for (int i = 0; i < 12; i++) { env.Step(); h.Add(env.Height); }
+        for (int i = 0; i < 12; i++)
+        {
+            env.Step();
+            h.Add(env.Height);
+        }
         Assert.Equal(Enumerable.Range(1, 8).Select(i => SasEnvelope.Max / 8 * i), h.Take(8));
         Assert.Equal(SasEnvPhase.Sustain, env.Phase);
         Assert.Equal([SasEnvelope.Max / 2, SasEnvelope.Max / 4, SasEnvelope.Max / 8, SasEnvelope.Max / 8], h.Skip(8));
         env.KeyOff();
-        for (int i = 0; i < 2; i++) env.Step();
+        for (int i = 0; i < 2; i++)
+        {
+            env.Step();
+        }
+
         Assert.Equal(0, env.Height);
         Assert.Equal(SasEnvPhase.Off, env.Phase);
 
         // bent attack slows to a quarter of the rate above 3/4 of the height
-        env.Modes[0] = SasCurve.LinearBent; env.Rates[0] = SasEnvelope.Max / 4;
+        env.Modes[0] = SasCurve.LinearBent;
+        env.Rates[0] = SasEnvelope.Max / 4;
         env.KeyOn();
-        for (int i = 0; i < 3; i++) env.Step();
+        for (int i = 0; i < 3; i++)
+        {
+            env.Step();
+        }
+
         Assert.Equal(SasEnvelope.Max / 4 * 3, env.Height);
         env.Step();
         Assert.Equal(SasEnvelope.Max / 16 * 13, env.Height);
@@ -210,7 +238,11 @@ public sealed class SasHleTests(GuestMemoryFixture fx)
         Assert.Equal(SasEnvelope.Max / 2, env.SustainLevel);
         Assert.Equal(SasCurve.ExponentDecrease, env.Modes[1]);
         env.KeyOn();
-        for (int i = 0; i < 3; i++) env.Step();
+        for (int i = 0; i < 3; i++)
+        {
+            env.Step();
+        }
+
         Assert.Equal(SasEnvPhase.Decay, env.Phase);
         env.SetSimple(0x8000, 0xC020);
         Assert.Equal(SasCurve.LinearBent, env.Modes[0]);

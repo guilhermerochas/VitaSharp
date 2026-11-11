@@ -16,7 +16,11 @@ public sealed class HleBatch13bTests(GuestMemoryFixture fx) : IDisposable
 
     Emulator Emu()
     {
-        if (_emu != null) return _emu;
+        if (_emu != null)
+        {
+            return _emu;
+        }
+
         Directory.CreateDirectory(_root);
         return _emu = new Emulator(new EmulatorOptions { FsRoot = _root, Memory = fx.Memory, EnableJit = false, CpuBackend = "interp" });
     }
@@ -26,7 +30,12 @@ public sealed class HleBatch13bTests(GuestMemoryFixture fx) : IDisposable
     static object? Invoke(object module, string name, params object?[] args) =>
         module.GetType().GetMethod(name, BindingFlags.Instance | BindingFlags.Static | BindingFlags.NonPublic | BindingFlags.Public)!.Invoke(module, args);
 
-    uint Alloc(uint size) { uint p = fx.Memory.Alloc(size, "hle13b"); GuestMemory.Fill(p, 0, size); return p; }
+    uint Alloc(uint size)
+    {
+        uint p = fx.Memory.Alloc(size, "hle13b");
+        GuestMemory.Fill(p, 0, size);
+        return p;
+    }
 
     uint CStr(string s)
     {
@@ -39,7 +48,11 @@ public sealed class HleBatch13bTests(GuestMemoryFixture fx) : IDisposable
     public void Dispose()
     {
         _emu?.Dispose();
-        try { Directory.Delete(_root, true); } catch (IOException) { }
+        try
+        {
+            Directory.Delete(_root, true);
+        }
+        catch (IOException) { }
     }
 
     uint TypeName(string s) => (uint)Invoke(Module<Libc>(), "ConstString", s)!;
@@ -83,7 +96,11 @@ public sealed class HleBatch13bTests(GuestMemoryFixture fx) : IDisposable
         Assert.Equal(0, Invoke(s, "Request0B"));
         // four slots in flight
         Assert.Equal(unchecked((int)0x80101803), Invoke(s, "Request05", 0u, 0u));
-        for (int i = 0; i < 4; i++) Assert.Equal(0, Invoke(s, "Poll"));
+        for (int i = 0; i < 4; i++)
+        {
+            Assert.Equal(0, Invoke(s, "Poll"));
+        }
+
         Assert.Equal(0, Invoke(s, "Request0C"));
         Assert.Equal(0x804u, s.LockedBits);
         Invoke(s, "TermEvents");
@@ -96,7 +113,11 @@ public sealed class HleBatch13bTests(GuestMemoryFixture fx) : IDisposable
     {
         var s = Module<ShellUtil>();
         uint text = Alloc(0x40);
-        foreach (var (c, i) in "hello".Select((c, i) => (c, (uint)i))) GuestMemory.Write(text + i * 2, (ushort)c);
+        foreach (var (c, i) in "hello".Select((c, i) => (c, (uint)i)))
+        {
+            GuestMemory.Write(text + i * 2, (ushort)c);
+        }
+
         Assert.Equal(0, Invoke(s, "SetClipboard", text, 5u));
         Assert.Equal(5u, Invoke(s, "ClipboardLength"));
         uint buf = Alloc(0x40), len = Alloc(4);
@@ -127,7 +148,8 @@ public sealed class HleBatch13bTests(GuestMemoryFixture fx) : IDisposable
     {
         var n = Module<NpCommonPs4>();
         uint o = Alloc(0x120);
-        GuestMemory.W32(o + 0x10, 5); GuestMemory.W32(o + 0x14, 5);
+        GuestMemory.W32(o + 0x10, 5);
+        GuestMemory.W32(o + 0x14, 5);
         Assert.Equal(true, Invoke(n, "Ps4_E67CA80C", o));
         GuestMemory.W32(o + 0x14, 6);
         Assert.Equal(false, Invoke(n, "Ps4_E67CA80C", o));
@@ -154,7 +176,11 @@ public sealed class HleBatch13bTests(GuestMemoryFixture fx) : IDisposable
         Assert.Equal(0, Invoke(p, "KeyDelete", k));
         Assert.Equal(2, Invoke(p, "KeyDelete", k));
         Assert.Equal(0x16, Invoke(p, "KeyDelete", 0x40u));
-        for (int i = 0; i < 0x40; i++) Assert.Equal(0, Invoke(p, "KeyCreate", key, 0u));
+        for (int i = 0; i < 0x40; i++)
+        {
+            Assert.Equal(0, Invoke(p, "KeyCreate", key, 0u));
+        }
+
         Assert.Equal(0xB, Invoke(p, "KeyCreate", key, 0u));
 
         Assert.Equal(0u, Invoke(p, "Getenv", CStr("HOME")));

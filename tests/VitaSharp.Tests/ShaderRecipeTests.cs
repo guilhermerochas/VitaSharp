@@ -12,7 +12,11 @@ public class ShaderRecipeTests : IDisposable
 
     public void Dispose()
     {
-        try { Directory.Delete(_dir, true); } catch { }
+        try
+        {
+            Directory.Delete(_dir, true);
+        }
+        catch { }
     }
 
     /// <summary>A minimal GXP (all-zero tables) whose flags select vertex or fragment; <paramref name="seed"/> varies its hash.</summary>
@@ -60,7 +64,10 @@ public class ShaderRecipeTests : IDisposable
     {
         // only point-size programs get the new key: every other program keeps its cached shaders
         var plain = VertexHints();
-        Assert.NotEqual(plain.Key(), (plain with { ScaledPointSize = true }).Key());
+        Assert.NotEqual(plain.Key(), (plain with
+        {
+            ScaledPointSize = true
+        }).Key());
         Assert.Equal(new ShaderHints(plain.TextureFormats, plain.Attributes, 0).Key(), plain.Key());
     }
 
@@ -68,7 +75,10 @@ public class ShaderRecipeTests : IDisposable
     public void SingleSampleFetchVariantsHaveTheirOwnKey()
     {
         var ms = FragmentHints(fetch: true);
-        var single = ms with { FetchInputSingleSample = true };
+        var single = ms with
+        {
+            FetchInputSingleSample = true
+        };
         Assert.NotEqual(ms.Key(), single.Key());
         // records of the other variants keep their fetch flag byte
         Assert.Equal(1, new ShaderRecipe(1, ms.Key(), false, ms).Encode()[^1]);
@@ -78,10 +88,22 @@ public class ShaderRecipeTests : IDisposable
     [Fact]
     public void TileWord1VariantsHaveTheirOwnKeyAndLeaveOthersUnchanged()
     {
-        var h = FragmentHints() with { OutputRegisterFormat = 1 };
-        var tw = h with { TileWord1 = true };
+        var h = FragmentHints() with
+        {
+            OutputRegisterFormat = 1
+        };
+        var tw = h with
+        {
+            TileWord1 = true
+        };
         Assert.NotEqual(h.Key(), tw.Key());
-        Assert.NotEqual((h with { FetchInputAttachment = true }).Key(), (tw with { FetchInputAttachment = true }).Key());
+        Assert.NotEqual((h with
+        {
+            FetchInputAttachment = true
+        }).Key(), (tw with
+        {
+            FetchInputAttachment = true
+        }).Key());
         // records without the flag keep their bytes (fetch flag byte 0/1)
         var plain = new ShaderRecipe(1, h.Key(), false, h).Encode();
         var flagged = new ShaderRecipe(1, tw.Key(), false, tw).Encode();
@@ -96,7 +118,13 @@ public class ShaderRecipeTests : IDisposable
         var h = FragmentHints();
         var plain = new ShaderRecipe(1, h.Key(), false, h).Encode();
         Assert.Equal(2, plain[0]); // the tag and size older builds read
-        var withFormat = new ShaderRecipe(1, (h with { OutputRegisterFormat = 1 }).Key(), false, h with { OutputRegisterFormat = 1 }).Encode();
+        var withFormat = new ShaderRecipe(1, (h with
+        {
+            OutputRegisterFormat = 1
+        }).Key(), false, h with
+        {
+            OutputRegisterFormat = 1
+        }).Encode();
         Assert.Equal(3, withFormat[0]);
         Assert.Equal(plain.Length + 4, withFormat.Length);
         Assert.Null(ShaderRecipe.Decode(withFormat.AsSpan(0, withFormat.Length - 1)));
@@ -106,9 +134,15 @@ public class ShaderRecipeTests : IDisposable
     public void VaryingMaskVariantsHaveTheirOwnKeyAndLeaveOthersUnchanged()
     {
         var h = VertexHints();
-        var masked = h with { VaryingMask = 0x31 };
+        var masked = h with
+        {
+            VaryingMask = 0x31
+        };
         Assert.NotEqual(h.Key(), masked.Key());
-        Assert.NotEqual(masked.Key(), (h with { VaryingMask = 0x11 }).Key());
+        Assert.NotEqual(masked.Key(), (h with
+        {
+            VaryingMask = 0x11
+        }).Key());
         var plain = new ShaderRecipe(1, h.Key(), true, h).Encode();
         Assert.Equal(2, plain[0]); // records without a mask keep tag 2
         var withMask = new ShaderRecipe(1, masked.Key(), true, masked).Encode();
@@ -125,11 +159,13 @@ public class ShaderRecipeTests : IDisposable
         Assert.Null(ShaderRecipe.Decode(good.AsSpan(0, good.Length - 1))); // truncated
         Assert.Null(ShaderRecipe.Decode([.. good, 0])); // trailing byte
         Assert.Null(ShaderRecipe.Decode(new byte[3]));
-        var badTag = (byte[])good.Clone(); badTag[0] = 9;
+        var badTag = (byte[])good.Clone();
+        badTag[0] = 9;
         Assert.Null(ShaderRecipe.Decode(badTag));
         var badKey = new ShaderRecipe(1, h.Key() ^ 1, true, h).Encode(); // hints no longer produce the key
         Assert.Null(ShaderRecipe.Decode(badKey));
-        var badCount = (byte[])good.Clone(); badCount[18] = 200; // texture count beyond the record
+        var badCount = (byte[])good.Clone();
+        badCount[18] = 200; // texture count beyond the record
         Assert.Null(ShaderRecipe.Decode(badCount));
     }
 
@@ -145,11 +181,16 @@ public class ShaderRecipeTests : IDisposable
         Assert.NotNull(back);
         Assert.Equal(p.Attributes, back!.Attributes);
         Assert.Equal(p.Streams, back.Streams);
-        Assert.Equal(p with { Attributes = back.Attributes, Streams = back.Streams }, back);
+        Assert.Equal(p with
+        {
+            Attributes = back.Attributes,
+            Streams = back.Streams
+        }, back);
         Assert.Equal(PipelineRecipe.KeyOf(enc), PipelineRecipe.KeyOf(back.Encode()));
         Assert.Null(PipelineRecipe.Decode(enc.AsSpan(0, enc.Length - 2)));
         Assert.Null(PipelineRecipe.Decode(enc.AsSpan(0, 10)));
-        var bad = (byte[])enc.Clone(); bad[36] = 7;
+        var bad = (byte[])enc.Clone();
+        bad[36] = 7;
         Assert.Null(PipelineRecipe.Decode(bad));
     }
 
@@ -186,7 +227,10 @@ public class ShaderRecipeTests : IDisposable
     public void CorruptedRecordsAreSkipped()
     {
         var vp = Program(false, 3);
-        using (var s = ShaderRecipeStore.Open(StorePath)!) s.Add(vp, VertexHints().Key(), VertexHints());
+        using (var s = ShaderRecipeStore.Open(StorePath)!)
+        {
+            s.Add(vp, VertexHints().Key(), VertexHints());
+        }
         // flip the last byte: the recipe (last record) fails its checksum
         var bytes = File.ReadAllBytes(StorePath);
         bytes[^1] ^= 0xFF;
@@ -199,7 +243,11 @@ public class ShaderRecipeTests : IDisposable
         }
         // a corrupted program record reads as missing
         var fresh = Path.Combine(_dir, "p2.pack");
-        using (var s = ShaderRecipeStore.Open(fresh)!) s.Add(vp, VertexHints().Key(), VertexHints());
+        using (var s = ShaderRecipeStore.Open(fresh)!)
+        {
+            s.Add(vp, VertexHints().Key(), VertexHints());
+        }
+
         bytes = File.ReadAllBytes(fresh);
         bytes[16 + 24 + 10] ^= 0x55; // inside the first payload (file header 16, record header 24, tag + GXP)
         File.WriteAllBytes(fresh, bytes);
@@ -219,7 +267,11 @@ public class ShaderRecipeTests : IDisposable
             s.Add(b, FragmentHints().Key(), FragmentHints());
         }
         long len = new FileInfo(StorePath).Length;
-        using (var fs = new FileStream(StorePath, FileMode.Open)) fs.SetLength(len - 5); // killed while writing b's recipe
+        using (var fs = new FileStream(StorePath, FileMode.Open))
+        {
+            fs.SetLength(len - 5); // killed while writing b's recipe
+        }
+
         using var q = ShaderRecipeStore.Open(StorePath)!;
         var list = q.Recipes(out _);
         Assert.Single(list);
@@ -230,7 +282,11 @@ public class ShaderRecipeTests : IDisposable
     public void OtherFormatVersionStartsOver()
     {
         // a pack written with another version (e.g. a shaders.pack, or a future programs.pack) is not read as recipes
-        using (var p = BlobPack.Open(StorePath, 0x00030008)!) p.Add(1, [2, 1, 2, 3]);
+        using (var p = BlobPack.Open(StorePath, 0x00030008)!)
+        {
+            p.Add(1, [2, 1, 2, 3]);
+        }
+
         using var q = ShaderRecipeStore.Open(StorePath)!;
         Assert.Empty(q.Recipes(out int bad));
         Assert.Equal(0, bad);
@@ -258,7 +314,11 @@ public class ShaderRecipeTests : IDisposable
     [Fact]
     public void PeekVersionDoesNotModify()
     {
-        using (var p = BlobPack.Open(StorePath, 0x00030008)!) p.Add(1, [1]);
+        using (var p = BlobPack.Open(StorePath, 0x00030008)!)
+        {
+            p.Add(1, [1]);
+        }
+
         long len = new FileInfo(StorePath).Length;
         Assert.Equal(0x00030008u, BlobPack.PeekVersion(StorePath));
         Assert.Equal(len, new FileInfo(StorePath).Length);

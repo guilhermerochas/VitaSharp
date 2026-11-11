@@ -45,7 +45,11 @@ sealed class BenchCommand : IPerfCommand
 
     static int Cut(PerfArgs a)
     {
-        if (a.Positional.Count != 2) throw new PerfArgsException("bench cut needs one dump");
+        if (a.Positional.Count != 2)
+        {
+            throw new PerfArgsException("bench cut needs one dump");
+        }
+
         string dump = Path.GetFullPath(a.Positional[1]);
         if (a.Get("--frame") is null or "list")
         {
@@ -53,8 +57,14 @@ sealed class BenchCommand : IPerfCommand
             long i = 0, draws = 0, scenes = 0;
             while (r.Next())
             {
-                if (r.Kind == Core.Gpu.GpuDumpRecord.Draw) draws++;
-                else if (r.Kind == Core.Gpu.GpuDumpRecord.BeginScene) scenes++;
+                if (r.Kind == Core.Gpu.GpuDumpRecord.Draw)
+                {
+                    draws++;
+                }
+                else if (r.Kind == Core.Gpu.GpuDumpRecord.BeginScene)
+                {
+                    scenes++;
+                }
                 else if (r.Kind == Core.Gpu.GpuDumpRecord.Present)
                 {
                     Console.WriteLine($"frame {i++}: present {r.PresentInfo.Present}, {scenes} scenes, {draws} draws, {r.CompressedBytesRead / 1024} KiB into the file");
@@ -122,7 +132,9 @@ sealed class BenchCommand : IPerfCommand
         string prefix = Path.GetFileNameWithoutExtension(self).Equals("dotnet", StringComparison.OrdinalIgnoreCase) ? $"\"{Environment.GetCommandLineArgs()[0]}\" " : "";
         var wall = Stopwatch.StartNew();
         for (int round = 0; round < rounds; round++)
+        {
             foreach (var f in fixtures)
+            {
                 foreach (var v in round % 2 == 0 ? variants : variants.Reverse())
                 {
                     string spec = $"fixture={f};variant={v};reps={reps};run={run};{extra}";
@@ -130,17 +142,34 @@ sealed class BenchCommand : IPerfCommand
                     using var p = Process.Start(psi)!;
                     try
                     {
-                        if (OperatingSystem.IsWindows() || OperatingSystem.IsLinux()) p.ProcessorAffinity = Math.Min(0x0F, (1 << Environment.ProcessorCount) - 1);
+                        if (OperatingSystem.IsWindows() || OperatingSystem.IsLinux())
+                        {
+                            p.ProcessorAffinity = Math.Min(0x0F, (1 << Environment.ProcessorCount) - 1);
+                        }
+
                         p.PriorityClass = ProcessPriorityClass.BelowNormal;
                     }
                     catch (Exception e) when (e is InvalidOperationException or System.ComponentModel.Win32Exception) { }
                     var err = p.StandardError.ReadToEndAsync();
                     string? line;
                     while ((line = p.StandardOutput.ReadLine()) != null)
-                        if (line.StartsWith("BENCH ") || line.Contains("[Error")) Console.WriteLine($"  r{round} {line}");
+                    {
+                        if (line.StartsWith("BENCH ") || line.Contains("[Error"))
+                        {
+                            Console.WriteLine($"  r{round} {line}");
+                        }
+                    }
+
                     p.WaitForExit();
-                    if (p.ExitCode != 0) { Console.Error.WriteLine($"{spec}: exit {p.ExitCode}\n{err.Result}"); return 1; }
+                    if (p.ExitCode != 0)
+                    {
+                        Console.Error.WriteLine($"{spec}: exit {p.ExitCode}\n{err.Result}");
+                        return 1;
+                    }
                 }
+            }
+        }
+
         Console.WriteLine($"{rounds} rounds in {wall.Elapsed.TotalSeconds:F0} s");
         return Table([Path.Combine(root, "results", run + ".tsv")], variants[0], (int)a.Double("--scenes", 0.0001));
     }

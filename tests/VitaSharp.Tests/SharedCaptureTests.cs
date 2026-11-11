@@ -14,7 +14,11 @@ public sealed class SharedCaptureTests
         public void RetryNow() => Retries++;
         public Task StopAsync()
         {
-            lock (events) events.Add("stop " + name);
+            lock (events)
+            {
+                events.Add("stop " + name);
+            }
+
             Stopped.TrySetResult();
             return Task.CompletedTask;
         }
@@ -25,7 +29,11 @@ public sealed class SharedCaptureTests
 
     Func<Task, IHostCapture> Factory(string name) => after =>
     {
-        lock (_events) _events.Add("open " + name);
+        lock (_events)
+        {
+            _events.Add("open " + name);
+        }
+
         var c = new FakeCapture(after, _events, name);
         _made.Add(c);
         return c;

@@ -20,7 +20,11 @@ public class MaliDeviceTests
         ulong[] code = fragment ? [] : [0x6081000460600003, 0x50C9000A20200180];
         var d = new byte[0x100 + code.Length * 8];
         void W32(int o, uint v) => BinaryPrimitives.WriteUInt32LittleEndian(d.AsSpan(o), v);
-        if (fragment) W32(0x14, GxpProgram.FlagFragment);
+        if (fragment)
+        {
+            W32(0x14, GxpProgram.FlagFragment);
+        }
+
         W32(0x3C, (uint)code.Length);
         W32(0x40, 0x100 - 0x40);
         for (int i = 0; i < code.Length; i++)
@@ -35,8 +39,14 @@ public class MaliDeviceTests
     {
         var saved = ShaderGenerator.FarPlane;
         ShaderGenerator.FarPlane = mode;
-        try { return ShaderGenerator.Generate(Program(fragment), new ShaderHints([], [], 0x00000000, false, 0)).Glsl; }
-        finally { ShaderGenerator.FarPlane = saved; }
+        try
+        {
+            return ShaderGenerator.Generate(Program(fragment), new ShaderHints([], [], 0x00000000, false, 0)).Glsl;
+        }
+        finally
+        {
+            ShaderGenerator.FarPlane = saved;
+        }
     }
 
     [Fact]
@@ -133,7 +143,11 @@ public class MaliDeviceTests
         File.WriteAllText(path, "circle@0:100" + Environment.NewLine + "start@50");
         // the file is polled every 0.25 s
         var until = DateTime.UtcNow.AddSeconds(5);
-        while (pad.Count == 0 && DateTime.UtcNow < until) { pad.Apply(ControllerState.Neutral); Thread.Sleep(20); }
+        while (pad.Count == 0 && DateTime.UtcNow < until)
+        {
+            pad.Apply(ControllerState.Neutral);
+            Thread.Sleep(20);
+        }
         Assert.Equal(2, pad.Count);
         Assert.False(File.Exists(path));
         Assert.Equal(VitaButtons.Circle, pad.Apply(ControllerState.Neutral).Buttons);
@@ -151,11 +165,24 @@ public class MaliDeviceTests
         var rng = new Random(n);
         var u16 = new ushort[n];
         var u32 = new uint[n];
-        for (int i = 0; i < n; i++) { u16[i] = (ushort)rng.Next(1, 65536); u32[i] = (uint)rng.NextInt64(1, uint.MaxValue); }
-        if (n > 0) { u16[n / 2] = 0; u16[n - 1] = 65535; u32[n - 1] = uint.MaxValue; }
+        for (int i = 0; i < n; i++)
+        {
+            u16[i] = (ushort)rng.Next(1, 65536);
+            u32[i] = (uint)rng.NextInt64(1, uint.MaxValue);
+        }
+        if (n > 0)
+        {
+            u16[n / 2] = 0;
+            u16[n - 1] = 65535;
+            u32[n - 1] = uint.MaxValue;
+        }
         var r16 = VitaSharp.Renderer.Vulkan.VulkanRenderer.MinMax((ReadOnlySpan<ushort>)u16);
         var r32 = VitaSharp.Renderer.Vulkan.VulkanRenderer.MinMax((ReadOnlySpan<uint>)u32);
-        if (n == 0) { Assert.Equal((uint)ushort.MaxValue, r16.Min); return; }
+        if (n == 0)
+        {
+            Assert.Equal((uint)ushort.MaxValue, r16.Min);
+            return;
+        }
         Assert.Equal(((uint)u16.Min(), (uint)u16.Max()), r16);
         Assert.Equal((u32.Min(), u32.Max()), r32);
     }

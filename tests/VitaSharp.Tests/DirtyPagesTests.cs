@@ -18,8 +18,15 @@ public sealed unsafe class DirtyPagesTests(GuestMemoryFixture fx)
 
     void EnsureGuestPages()
     {
-        if (fx.Memory.FindBlock(CodeBase) == null) fx.Memory.MapFixed(CodeBase, 0x1000, "fuzz code");
-        if (fx.Memory.FindBlock(DataBase) == null) fx.Memory.MapFixed(DataBase, DataSize, "fuzz data");
+        if (fx.Memory.FindBlock(CodeBase) == null)
+        {
+            fx.Memory.MapFixed(CodeBase, 0x1000, "fuzz code");
+        }
+
+        if (fx.Memory.FindBlock(DataBase) == null)
+        {
+            fx.Memory.MapFixed(DataBase, DataSize, "fuzz data");
+        }
     }
 
     /// <summary>Sweeps twice with no writes in between: a stamp nothing earlier counts against.</summary>
@@ -87,7 +94,11 @@ public sealed unsafe class DirtyPagesTests(GuestMemoryFixture fx)
     {
         EnsureGuestPages();
         var bytes = new List<byte>();
-        foreach (var w in words.Split(',')) bytes.AddRange(BitConverter.GetBytes(Convert.ToUInt32(w, 16)));
+        foreach (var w in words.Split(','))
+        {
+            bytes.AddRange(BitConverter.GetBytes(Convert.ToUInt32(w, 16)));
+        }
+
         bytes.ToArray().CopyTo(GuestMemory.Span(CodeBase, 0x1000));
         var b = BlockBuilder.Build(CodeBase, false);
         bool native = NativeX64Compiler.Instance.IsSupported;
@@ -104,16 +115,30 @@ public sealed unsafe class DirtyPagesTests(GuestMemoryFixture fx)
                 if (useNative)
                 {
                     var cb = NativeX64Compiler.Instance.Compile(b)!;
-                    s->CycleAcc = 0; s->CheckWindow = 0; s->LinkBreak = 1; s->NBlocks = 0; s->NInstr = 0;
+                    s->CycleAcc = 0;
+                    s->CheckWindow = 0;
+                    s->LinkBreak = 1;
+                    s->NBlocks = 0;
+                    s->NInstr = 0;
                     NativeRuntime.Instance.Run(s, cb.NativeEntry);
-                    if (s->CalloutFault != 0) NativeRuntime.ThrowPendingFault(s);
+                    if (s->CalloutFault != 0)
+                    {
+                        NativeRuntime.ThrowPendingFault(s);
+                    }
                 }
-                else CpuCore.Interpret(s, b);
+                else
+                {
+                    CpuCore.Interpret(s, b);
+                }
+
                 DirtyPages.Sweep();
                 Assert.True(Written(DataBase + (uint)page, 0x1000, stamp), $"{(useNative ? "native" : "interpreter")}: page not marked");
                 Assert.False(Written(DataBase + (uint)probe, 0x1000, stamp), $"{(useNative ? "native" : "interpreter")}: unrelated page marked");
             }
-            finally { CpuState.Free(s); }
+            finally
+            {
+                CpuState.Free(s);
+            }
         }
     }
 }

@@ -24,8 +24,14 @@ public sealed class NpHleTests(GuestMemoryFixture fx)
     {
         var saved = VitaSharp.Core.Hle.PsnAccount.Current;
         VitaSharp.Core.Hle.PsnAccount.Current = VitaSharp.Core.Hle.PsnAccount.Create(true, null, localServices: false);
-        try { body(); }
-        finally { VitaSharp.Core.Hle.PsnAccount.Current = saved; }
+        try
+        {
+            body();
+        }
+        finally
+        {
+            VitaSharp.Core.Hle.PsnAccount.Current = saved;
+        }
     }
 
     [Fact]
@@ -76,7 +82,11 @@ public sealed class NpHleTests(GuestMemoryFixture fx)
         var lib = new NpCommunity("test");
         lib.Init();
         uint id = CommId();
-        for (int i = 0; i < NpCommunity.MaxObjects; i++) Assert.True(lib.CreateTitleCtx(id) > 0);
+        for (int i = 0; i < NpCommunity.MaxObjects; i++)
+        {
+            Assert.True(lib.CreateTitleCtx(id) > 0);
+        }
+
         Assert.Equal(NpCommunity.TOO_MANY_OBJECTS, lib.CreateTitleCtx(id));
     }
 
@@ -87,7 +97,11 @@ public sealed class NpHleTests(GuestMemoryFixture fx)
         GuestMemory.WriteCString(p, online);
         var plat = System.Text.Encoding.ASCII.GetBytes(platform);
         plat.CopyTo(GuestMemory.Span(p + 0x18, plat.Length));
-        if (valid) GuestMemory.Write(p + 0x1C, (byte)1);
+        if (valid)
+        {
+            GuestMemory.Write(p + 0x1C, (byte)1);
+        }
+
         return p;
     }
 

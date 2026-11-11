@@ -16,7 +16,11 @@ public sealed class HleBatch10Tests(GuestMemoryFixture fx) : IDisposable
 
     Emulator Emu()
     {
-        if (_emu != null) return _emu;
+        if (_emu != null)
+        {
+            return _emu;
+        }
+
         Directory.CreateDirectory(_root);
         return _emu = new Emulator(new EmulatorOptions { FsRoot = _root, Memory = fx.Memory, EnableJit = false, CpuBackend = "interp" });
     }
@@ -28,12 +32,21 @@ public sealed class HleBatch10Tests(GuestMemoryFixture fx) : IDisposable
 
     static int Call(object module, string name, params object?[] args) => Convert.ToInt32(Invoke(module, name, args));
 
-    uint Alloc(uint size) { uint p = fx.Memory.Alloc(size, "hle10"); GuestMemory.Fill(p, 0, size); return p; }
+    uint Alloc(uint size)
+    {
+        uint p = fx.Memory.Alloc(size, "hle10");
+        GuestMemory.Fill(p, 0, size);
+        return p;
+    }
 
     public void Dispose()
     {
         _emu?.Dispose();
-        try { Directory.Delete(_root, true); } catch (IOException) { }
+        try
+        {
+            Directory.Delete(_root, true);
+        }
+        catch (IOException) { }
     }
 
     const int NpNotInit = unchecked((int)0x80550502), NpInvalid = unchecked((int)0x80550503);
@@ -64,7 +77,8 @@ public sealed class HleBatch10Tests(GuestMemoryFixture fx) : IDisposable
     {
         var net = Module<Net>();
         uint ctx = Alloc(0x1F44), tried = Alloc(4), done = Alloc(4), commId = Alloc(0x10);
-        GuestMemory.W32(tried, 0xFF); GuestMemory.W32(done, 0xFF);
+        GuestMemory.W32(tried, 0xFF);
+        GuestMemory.W32(done, 0xFF);
         Assert.Equal(unchecked((int)0x80414105), Call(net, "NetAuthCtxMapPorts", 0u, 0u, 0u, 0u, 0u, tried, done));
         Assert.Equal(0u, GuestMemory.R32(tried));
         Assert.Equal(unchecked((int)0x80414101), Call(net, "NetAuthCtxMapPorts", ctx, 0u, 0u, 0u, 0u, tried, done));

@@ -21,7 +21,13 @@ public partial class LocalizationTests
     static string Root([CallerFilePath] string source = "")
     {
         for (var d = new DirectoryInfo(Path.GetDirectoryName(source)!); d != null; d = d.Parent)
-            if (File.Exists(Path.Combine(d.FullName, "VitaSharp.sln"))) return d.FullName;
+        {
+            if (File.Exists(Path.Combine(d.FullName, "VitaSharp.sln")))
+            {
+                return d.FullName;
+            }
+        }
+
         throw new DirectoryNotFoundException("repository root");
     }
 
@@ -35,12 +41,27 @@ public partial class LocalizationTests
         foreach (var (key, en) in English)
         {
             string pt = Portuguese[key];
-            if (en.Trim().Length == 0 || pt.Trim().Length == 0) bad.Add($"{key}: empty");
+            if (en.Trim().Length == 0 || pt.Trim().Length == 0)
+            {
+                bad.Add($"{key}: empty");
+            }
+
             var a = Placeholder().Matches(en).Select(m => m.Groups[1].Value).Distinct().Order();
             var b = Placeholder().Matches(pt).Select(m => m.Groups[1].Value).Distinct().Order();
-            if (!a.SequenceEqual(b)) bad.Add($"{key}: placeholders {string.Join(",", a)} vs {string.Join(",", b)}");
-            try { _ = string.Format(CultureInfo.InvariantCulture, en, new object[10]); _ = string.Format(CultureInfo.InvariantCulture, pt, new object[10]); }
-            catch (FormatException) { bad.Add($"{key}: not a valid format text"); }
+            if (!a.SequenceEqual(b))
+            {
+                bad.Add($"{key}: placeholders {string.Join(",", a)} vs {string.Join(",", b)}");
+            }
+
+            try
+            {
+                _ = string.Format(CultureInfo.InvariantCulture, en, new object[10]);
+                _ = string.Format(CultureInfo.InvariantCulture, pt, new object[10]);
+            }
+            catch (FormatException)
+            {
+                bad.Add($"{key}: not a valid format text");
+            }
         }
         Assert.Empty(bad);
     }
@@ -67,11 +88,24 @@ public partial class LocalizationTests
         var own = new Regex(@"public static string (\w+)(?:\([^)]*\))? => (?:T\(\)|F\(T\(\))");
         foreach (var file in Directory.EnumerateFiles(src, "*.cs", SearchOption.AllDirectories))
         {
-            if (file.Contains($"{Path.DirectorySeparatorChar}obj{Path.DirectorySeparatorChar}")) continue;
+            if (file.Contains($"{Path.DirectorySeparatorChar}obj{Path.DirectorySeparatorChar}"))
+            {
+                continue;
+            }
+
             string text = File.ReadAllText(file);
-            foreach (Match m in call.Matches(text)) used.Add(m.Groups[1].Value);
+            foreach (Match m in call.Matches(text))
+            {
+                used.Add(m.Groups[1].Value);
+            }
+
             if (Path.GetFileName(file) == "Strings.cs")
-                foreach (Match m in own.Matches(text)) used.Add(m.Groups[1].Value);
+            {
+                foreach (Match m in own.Matches(text))
+                {
+                    used.Add(m.Groups[1].Value);
+                }
+            }
         }
         Assert.True(used.Count > 400, $"only {used.Count} keys found in the sources");
         var missing = used.Where(k => !English.ContainsKey(k)).ToList();
@@ -90,10 +124,19 @@ public partial class LocalizationTests
         var bad = new List<string>();
         foreach (var file in Directory.EnumerateFiles(dir, "*.cs", SearchOption.AllDirectories))
         {
-            if (file.Contains($"{Path.DirectorySeparatorChar}obj{Path.DirectorySeparatorChar}") || file.Contains($"{Path.DirectorySeparatorChar}bin{Path.DirectorySeparatorChar}")) continue;
+            if (file.Contains($"{Path.DirectorySeparatorChar}obj{Path.DirectorySeparatorChar}") || file.Contains($"{Path.DirectorySeparatorChar}bin{Path.DirectorySeparatorChar}"))
+            {
+                continue;
+            }
+
             var lines = File.ReadAllLines(file);
             for (int i = 0; i < lines.Length; i++)
-                if (lines[i].Any(c => c > 127 && c != '\uFEFF')) bad.Add($"{Path.GetRelativePath(dir, file)}:{i + 1}: {lines[i].Trim()}");
+            {
+                if (lines[i].Any(c => c > 127 && c != '\uFEFF'))
+                {
+                    bad.Add($"{Path.GetRelativePath(dir, file)}:{i + 1}: {lines[i].Trim()}");
+                }
+            }
         }
         Assert.Empty(bad);
     }

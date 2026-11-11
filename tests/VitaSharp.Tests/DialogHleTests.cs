@@ -74,7 +74,10 @@ public sealed class DialogHleTests(GuestMemoryFixture fx)
                 Assert.Equal(0, Call(d, "sceMsgDialogTerm"));
             }
         }
-        finally { VitaSharp.Core.Hle.PsnAccount.Current = saved; }
+        finally
+        {
+            VitaSharp.Core.Hle.PsnAccount.Current = saved;
+        }
     }
 
     uint ImeParam()
@@ -178,7 +181,11 @@ public sealed class DialogHleTests(GuestMemoryFixture fx)
         public VitaSharp.Core.Host.ImeDialogRequest? Request;
         public Action<string?>? Done;
         public int Closed;
-        public void Open(VitaSharp.Core.Host.ImeDialogRequest request, Action<string?> done) { Request = request; Done = done; }
+        public void Open(VitaSharp.Core.Host.ImeDialogRequest request, Action<string?> done)
+        {
+            Request = request;
+            Done = done;
+        }
         public void Close() => Closed++;
     }
 
@@ -204,7 +211,11 @@ public sealed class DialogHleTests(GuestMemoryFixture fx)
     static string ReadUtf16Z(uint addr)
     {
         int n = 0;
-        while (GuestMemory.Read<ushort>(addr + (uint)n * 2) != 0) n++;
+        while (GuestMemory.Read<ushort>(addr + (uint)n * 2) != 0)
+        {
+            n++;
+        }
+
         return Encoding.Unicode.GetString(GuestMemory.Span(addr, n * 2));
     }
 
@@ -212,8 +223,14 @@ public sealed class DialogHleTests(GuestMemoryFixture fx)
     {
         string? saved = CommonDialog.ImeDefaultText;
         CommonDialog.ImeDefaultText = null;
-        try { return f(); }
-        finally { CommonDialog.ImeDefaultText = saved; }
+        try
+        {
+            return f();
+        }
+        finally
+        {
+            CommonDialog.ImeDefaultText = saved;
+        }
     }
 
     [Fact]
@@ -320,7 +337,10 @@ public sealed class DialogHleTests(GuestMemoryFixture fx)
             Assert.Equal((0u, 2u), (GuestMemory.R32(res), GuestMemory.R32(res + 4)));
             Assert.Equal(0, Call(d, "sceImeDialogTerm"));
         }
-        finally { CommonDialog.ImeDefaultText = saved; }
+        finally
+        {
+            CommonDialog.ImeDefaultText = saved;
+        }
     }
 
     [Fact]
@@ -392,7 +412,11 @@ public sealed class DialogHleTests(GuestMemoryFixture fx)
         public VitaSharp.Core.Host.MessageDialogRequest? Request;
         public Action<int>? Done;
         public int Closed, Progress = -1;
-        public void Open(VitaSharp.Core.Host.MessageDialogRequest request, Action<int> done) { Request = request; Done = done; }
+        public void Open(VitaSharp.Core.Host.MessageDialogRequest request, Action<int> done)
+        {
+            Request = request;
+            Done = done;
+        }
         public void SetProgress(int percent, string? message) => Progress = percent;
         public void Close() => Closed++;
     }

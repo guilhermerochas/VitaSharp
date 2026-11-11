@@ -19,7 +19,11 @@ public sealed class AndroidAppTests : IDisposable
 
     public void Dispose()
     {
-        try { Directory.Delete(_root, true); } catch (DirectoryNotFoundException) { }
+        try
+        {
+            Directory.Delete(_root, true);
+        }
+        catch (DirectoryNotFoundException) { }
     }
 
     // ---------------------------------------------------------------- env.txt
@@ -96,7 +100,13 @@ public sealed class AndroidAppTests : IDisposable
     sealed class ListSink : ILogSink
     {
         public readonly List<(LogLevel, string, string)> Lines = new();
-        public void Write(LogLevel level, string thread, string message) { lock (Lines) Lines.Add((level, thread, message)); }
+        public void Write(LogLevel level, string thread, string message)
+        {
+            lock (Lines)
+            {
+                Lines.Add((level, thread, message));
+            }
+        }
     }
 
     [Fact]
@@ -114,7 +124,11 @@ public sealed class AndroidAppTests : IDisposable
             Log.InfoFileOnly("android-sink-test file only");
             // other tests running in parallel log through the same global sink: read a snapshot under the sink's lock
             (LogLevel, string, string)[] lines;
-            lock (sink.Lines) lines = sink.Lines.ToArray();
+            lock (sink.Lines)
+            {
+                lines = sink.Lines.ToArray();
+            }
+
             Assert.Contains(lines, l => l.Item1 == LogLevel.Warn && l.Item3 == "android-sink-test warning");
             Assert.DoesNotContain(lines, l => l.Item3 == "filtered out");
             Assert.DoesNotContain(lines, l => l.Item3 == "android-sink-test file only");
@@ -226,7 +240,11 @@ public sealed class AndroidAppTests : IDisposable
         var none = GameLibrary.Trophies(kz, data);
         Assert.Equal(("0/3", 0), (none.Text, none.Percent));
 
-        TrophyUnlocks.Save(TrophyUnlocks.PathFor(data.Fs, "NPWR00001_00"), new() { [1] = 63_900_000_000_000_000UL, [2] = 63_900_000_100_000_000UL });
+        TrophyUnlocks.Save(TrophyUnlocks.PathFor(data.Fs, "NPWR00001_00"), new()
+        {
+            [1] = 63_900_000_000_000_000UL,
+            [2] = 63_900_000_100_000_000UL
+        });
         var p = GameLibrary.Trophies(kz, data);
         Assert.Equal(("2/3", 66), (p.Text, p.Percent));
         Assert.Equal((1, 1), p.ByGrade[TrophyGrade.Gold]);
@@ -361,7 +379,10 @@ public sealed class AndroidAppTests : IDisposable
 
         var axes = new Dictionary<int, float>
         {
-            [AndroidKeys.AxisX] = 1f, [AndroidKeys.AxisZ] = -1f, [AndroidKeys.AxisHatY] = -1f, [AndroidKeys.AxisRTrigger] = 1f,
+            [AndroidKeys.AxisX] = 1f,
+            [AndroidKeys.AxisZ] = -1f,
+            [AndroidKeys.AxisHatY] = -1f,
+            [AndroidKeys.AxisRTrigger] = 1f,
             [AndroidKeys.AxisRx] = 1f, // ignored: the right stick of this pad is Z/RZ
         };
         pads.OnMotion(7, a => axes.GetValueOrDefault(a));
@@ -422,8 +443,12 @@ public sealed class AndroidAppTests : IDisposable
         // every key of the default keyboard profile has an Android key code
         var names = Enumerable.Range(0, 300).Select(AndroidKeyNames.Name).OfType<string>().ToHashSet();
         foreach (var keys in DefaultMappings.Keyboard().Bindings.Values)
+        {
             foreach (var k in keys)
+            {
                 Assert.True(InputBinding.TryParse(k, out var b) && b.Key is { } key && names.Contains(key), k);
+            }
+        }
     }
 
     [Fact]

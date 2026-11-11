@@ -15,7 +15,11 @@ public sealed class SystemUtilHleTests(GuestMemoryFixture fx) : IDisposable
 
     public void Dispose()
     {
-        try { Directory.Delete(_root, true); } catch (IOException) { }
+        try
+        {
+            Directory.Delete(_root, true);
+        }
+        catch (IOException) { }
     }
 
     static object? Invoke<T>(T module, string name, params object[] args) =>
@@ -107,7 +111,9 @@ public sealed class SystemUtilHleTests(GuestMemoryFixture fx) : IDisposable
             0x008D89EB, 0x004E7A16, 0x00987180, 0x000504E4, 0x004F7E60, 0x0094E320, 0x008C3860];
         Assert.Equal(writable.OrderBy(x => x), RegMgr.Table.Values.Where(k => k.Writable).Select(k => k.Id).OrderBy(x => x));
         foreach (var k in RegMgr.Table.Values)
+        {
             Assert.IsType(k.Type == RegMgr.KeyType.Int ? typeof(int) : typeof(byte[]), k.Default());
+        }
     }
 
     [Fact]
@@ -349,7 +355,11 @@ public sealed class SystemUtilHleTests(GuestMemoryFixture fx) : IDisposable
         Assert.Equal(0, Call(t, "sceTriggerUtilGetRegisteredSystemTitleIdList", outp, 4));
 
         // max 6 events per app; re-registering an id replaces it
-        for (int id = 3; id <= 6; id++) Assert.Equal(0, Call(t, "sceTriggerUtilRegisterDailyEvent", 0u, daily, id, 0, 0));
+        for (int id = 3; id <= 6; id++)
+        {
+            Assert.Equal(0, Call(t, "sceTriggerUtilRegisterDailyEvent", 0u, daily, id, 0, 0));
+        }
+
         Assert.Equal(TriggerUtil.ERR_INVALID_ARG, Call(t, "sceTriggerUtilRegisterDailyEvent", 0u, daily, 7, 0, 0));
         Assert.Equal(0, Call(t, "sceTriggerUtilRegisterDailyEvent", 0u, daily, 6, 0, 0));
         Assert.Equal(6, t.Events.Count);

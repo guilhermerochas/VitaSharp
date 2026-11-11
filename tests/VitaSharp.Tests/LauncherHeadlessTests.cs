@@ -19,7 +19,12 @@ public sealed class LauncherHeadlessTests : IDisposable
     public void Dispose()
     {
         Environment.SetEnvironmentVariable(EnvVars.Data, _savedData);
-        try { Directory.Delete(_root, true); } catch (IOException) { } catch (UnauthorizedAccessException) { }
+        try
+        {
+            Directory.Delete(_root, true);
+        }
+        catch (IOException) { }
+        catch (UnauthorizedAccessException) { }
     }
 
     [Fact]
@@ -37,7 +42,10 @@ public sealed class LauncherHeadlessTests : IDisposable
         var shots = Directory.GetFiles(outDir, "*.png").Select(Path.GetFileNameWithoutExtension).ToHashSet();
         Assert.Equal(0, rc);
         foreach (var page in new[] { "library_dark", "library-list_dark", "library-home_dark", "game_dark", "livearea_dark", "settings_dark" })
+        {
             Assert.Contains(page, shots);
+        }
+
         Assert.True(shots.Count >= 12, $"{shots.Count} pages rendered");
         // nothing was written to the data folder but what the test put there (settings are not saved)
         Assert.Equal("{ \"CheckUpdates\": false }", File.ReadAllText(Path.Combine(data, "launcher.json")));

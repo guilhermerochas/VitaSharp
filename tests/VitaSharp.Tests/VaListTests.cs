@@ -13,8 +13,18 @@ public sealed class VaListTests
         readonly uint _start;
         readonly uint[] _words;
         uint _p;
-        public Words(uint start, params uint[] words) { _start = start; _words = words; _p = start; }
-        public uint Next() { uint v = _words[(_p - _start) / 4]; _p += 4; return v; }
+        public Words(uint start, params uint[] words)
+        {
+            _start = start;
+            _words = words;
+            _p = start;
+        }
+        public uint Next()
+        {
+            uint v = _words[(_p - _start) / 4];
+            _p += 4;
+            return v;
+        }
         public uint? Address => _p;
     }
 

@@ -13,9 +13,16 @@ public static class UnicornAvailability
 {
     static readonly Lazy<string?> Reason = new(() =>
     {
-        if (Environment.GetEnvironmentVariable(EnvVars.SkipUnicorn) == "1") return "VITASHARP_SKIP_UNICORN=1";
+        if (Environment.GetEnvironmentVariable(EnvVars.SkipUnicorn) == "1")
+        {
+            return "VITASHARP_SKIP_UNICORN=1";
+        }
         // same resolution as Unicorn's own [DllImport("unicorn")] (deps.json runtimes/<rid>/native first)
-        if (NativeLibrary.TryLoad("unicorn", typeof(Unicorn).Assembly, null, out var h)) { NativeLibrary.Free(h); return null; }
+        if (NativeLibrary.TryLoad("unicorn", typeof(Unicorn).Assembly, null, out var h))
+        {
+            NativeLibrary.Free(h);
+            return null;
+        }
         return $"Unicorn native library not available for {RuntimeInformation.RuntimeIdentifier}";
     });
 
@@ -25,11 +32,23 @@ public static class UnicornAvailability
 /// <summary>[Fact] that is skipped when Unicorn's native library is unavailable.</summary>
 public sealed class UnicornFactAttribute : FactAttribute
 {
-    public UnicornFactAttribute() { if (UnicornAvailability.SkipReason is { } r) Skip = r; }
+    public UnicornFactAttribute()
+    {
+        if (UnicornAvailability.SkipReason is { } r)
+        {
+            Skip = r;
+        }
+    }
 }
 
 /// <summary>[Theory] that is skipped when Unicorn's native library is unavailable.</summary>
 public sealed class UnicornTheoryAttribute : TheoryAttribute
 {
-    public UnicornTheoryAttribute() { if (UnicornAvailability.SkipReason is { } r) Skip = r; }
+    public UnicornTheoryAttribute()
+    {
+        if (UnicornAvailability.SkipReason is { } r)
+        {
+            Skip = r;
+        }
+    }
 }

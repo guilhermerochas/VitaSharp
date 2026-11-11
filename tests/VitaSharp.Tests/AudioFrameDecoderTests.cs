@@ -17,7 +17,10 @@ public sealed class AudioFrameDecoderTests(ITestOutputHelper output)
     static byte[] Mp3Frame(byte b1, byte b2, byte b3, int length)
     {
         var f = new byte[length];
-        f[0] = 0xFF; f[1] = b1; f[2] = b2; f[3] = b3;
+        f[0] = 0xFF;
+        f[1] = b1;
+        f[2] = b2;
+        f[3] = b3;
         return f;
     }
 
@@ -34,22 +37,47 @@ public sealed class AudioFrameDecoderTests(ITestOutputHelper output)
     [Fact]
     public unsafe void FFmpegDecodesOneFullFramePerFrame()
     {
-        if (!FFmpegLoader.Available) { output.WriteLine("FFmpeg not available: skipped"); return; }
+        if (!FFmpegLoader.Available)
+        {
+            output.WriteLine("FFmpeg not available: skipped");
+            return;
+        }
         var pcm = new short[8192];
-        int Decode(IAudioFrameDecoder d, byte[] frame, int ch) { fixed (byte* p = frame) return d.Decode(p, frame.Length, pcm, ch); }
+        int Decode(IAudioFrameDecoder d, byte[] frame, int ch)
+        {
+            fixed (byte* p = frame)
+            {
+                return d.Decode(p, frame.Length, pcm, ch);
+            }
+        }
         using (var mp3 = AudioFrameDecoders.CreateMp3(2))
         {
             Assert.NotNull(mp3);
-            for (int i = 0; i < 4; i++) Assert.Equal(1152, Decode(mp3!, Mp3Mpeg1, 2));
+            for (int i = 0; i < 4; i++)
+            {
+                Assert.Equal(1152, Decode(mp3!, Mp3Mpeg1, 2));
+            }
         }
         using (var mp3 = AudioFrameDecoders.CreateMp3(1))
-            for (int i = 0; i < 4; i++) Assert.Equal(576, Decode(mp3!, Mp3Mpeg2, 1));
+        {
+            for (int i = 0; i < 4; i++)
+            {
+                Assert.Equal(576, Decode(mp3!, Mp3Mpeg2, 1));
+            }
+        }
 
         var packets = RawAacFrameLengthTests.EncodeSine(20, out var config);
-        if (packets.Count == 0) { output.WriteLine("no AAC encoder: AAC part skipped"); return; }
+        if (packets.Count == 0)
+        {
+            output.WriteLine("no AAC encoder: AAC part skipped");
+            return;
+        }
         using var aac = AudioFrameDecoders.CreateAac(48000, 2, config);
         Assert.NotNull(aac);
-        foreach (var p in packets) Assert.Equal(1024, Decode(aac!, p, 2));
+        foreach (var p in packets)
+        {
+            Assert.Equal(1024, Decode(aac!, p, 2));
+        }
     }
 
     sealed class FakeDemuxer : IMp4Demuxer
@@ -57,8 +85,12 @@ public sealed class AudioFrameDecoderTests(ITestOutputHelper output)
         public IReadOnlyList<DemuxedStream> Streams { get; } = [];
         public long Duration90k => 90000;
         public DemuxedUnit? Next(Func<int, bool> enabled) => null;
-        public void Seek(long pts90k) { }
-        public void Dispose() { }
+        public void Seek(long pts90k)
+        {
+        }
+        public void Dispose()
+        {
+        }
     }
 
     [Fact]
@@ -72,6 +104,9 @@ public sealed class AudioFrameDecoderTests(ITestOutputHelper output)
             Assert.Same(fake, Mp4Demuxers.Open("fake:movie.mp4"));
             Assert.Null(Mp4Demuxers.Open(Path.Combine(Path.GetTempPath(), "vitasharp-missing-" + Guid.NewGuid().ToString("N") + ".mp4")));
         }
-        finally { Mp4Demuxers.Backend = previous; }
+        finally
+        {
+            Mp4Demuxers.Backend = previous;
+        }
     }
 }

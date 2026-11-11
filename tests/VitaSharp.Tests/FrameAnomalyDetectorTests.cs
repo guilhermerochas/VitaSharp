@@ -12,7 +12,11 @@ public class FrameAnomalyDetectorTests
     {
         var all = new List<FrameAnomalyDetector.Event>();
         long p = first;
-        foreach (var m in frames) all.AddRange(d.Feed(p++, m));
+        foreach (var m in frames)
+        {
+            all.AddRange(d.Feed(p++, m));
+        }
+
         return all;
     }
 
@@ -117,7 +121,10 @@ public class FrameAnomalyDetectorTests
         for (int i = 0; i < w * h; i++)
         {
             bool top = i < w * h / 2;
-            px[i * 4] = 0; px[i * 4 + 1] = (byte)(top ? 255 : 0); px[i * 4 + 2] = 0; px[i * 4 + 3] = 255;
+            px[i * 4] = 0;
+            px[i * 4 + 1] = (byte)(top ? 255 : 0);
+            px[i * 4 + 2] = 0;
+            px[i * 4 + 3] = 255;
         }
         fixed (byte* p = px)
         {

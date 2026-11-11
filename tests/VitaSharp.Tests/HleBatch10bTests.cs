@@ -17,7 +17,11 @@ public sealed class HleBatch10bTests(GuestMemoryFixture fx) : IDisposable
 
     Emulator Emu()
     {
-        if (_emu != null) return _emu;
+        if (_emu != null)
+        {
+            return _emu;
+        }
+
         Directory.CreateDirectory(_root);
         return _emu = new Emulator(new EmulatorOptions { FsRoot = _root, Memory = fx.Memory, EnableJit = false, CpuBackend = "interp" });
     }
@@ -29,14 +33,28 @@ public sealed class HleBatch10bTests(GuestMemoryFixture fx) : IDisposable
 
     static int Call(object module, string name, params object?[] args) => Convert.ToInt32(Invoke(module, name, args));
 
-    uint Alloc(uint size) { uint p = fx.Memory.Alloc(size, "hle10b"); GuestMemory.Fill(p, 0, size); return p; }
+    uint Alloc(uint size)
+    {
+        uint p = fx.Memory.Alloc(size, "hle10b");
+        GuestMemory.Fill(p, 0, size);
+        return p;
+    }
 
-    uint Str(string s) { uint p = Alloc((uint)s.Length + 1); GuestMemory.WriteCString(p, s); return p; }
+    uint Str(string s)
+    {
+        uint p = Alloc((uint)s.Length + 1);
+        GuestMemory.WriteCString(p, s);
+        return p;
+    }
 
     public void Dispose()
     {
         _emu?.Dispose();
-        try { Directory.Delete(_root, true); } catch (IOException) { }
+        try
+        {
+            Directory.Delete(_root, true);
+        }
+        catch (IOException) { }
     }
 
     [Fact]
@@ -112,7 +130,8 @@ public sealed class HleBatch10bTests(GuestMemoryFixture fx) : IDisposable
         // the Marlin settings: a size reallocates its buffer, which then holds the data
         GuestMemory.W32(v, 8);
         Assert.Equal(0, Call(mtp, "SetMarlinConfig", 1, 0u, v, 4u));
-        GuestMemory.W32(v, 0x11223344); GuestMemory.W32(v + 4, 0x55667788);
+        GuestMemory.W32(v, 0x11223344);
+        GuestMemory.W32(v + 4, 0x55667788);
         Assert.Equal(0, Call(mtp, "SetMarlinConfig", 3, 0u, v, 8u));
         Assert.Equal(0, Call(mtp, "GetMarlinConfig", 3, 4u, 4u, id, got));
         Assert.Equal(0x55667788u, GuestMemory.R32(id));

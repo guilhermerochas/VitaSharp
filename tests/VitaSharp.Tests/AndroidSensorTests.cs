@@ -99,7 +99,11 @@ public sealed class AndroidSensorTests
     {
         var src = new SensorMotionSource(SensorFrame.Phone, "test");
         src.OnAccelerometer(new Vector3(0, 0, G));
-        for (int i = 1; i <= SensorMotionSource.Capacity + 10; i++) src.OnGyroscope(i * 1000L, Vector3.Zero);
+        for (int i = 1; i <= SensorMotionSource.Capacity + 10; i++)
+        {
+            src.OnGyroscope(i * 1000L, Vector3.Zero);
+        }
+
         var buf = new MotionSample[4];
         Assert.Equal(4, src.ReadSamples(buf));
         Assert.Equal((ulong)(SensorMotionSource.Capacity + 10), buf[3].TimestampUs);
@@ -117,7 +121,11 @@ public sealed class AndroidSensorTests
         Assert.Equal(1, src.ReadSamples(buf));
         Near(new Vector3(0, 0, -1), buf[0].Acceleration, 1e-3f); // now reads as lying flat
         // re-centring while lying flat clears it
-        for (int i = 0; i < 200; i++) src.OnAccelerometer(new Vector3(0, 0, G));
+        for (int i = 0; i < 200; i++)
+        {
+            src.OnAccelerometer(new Vector3(0, 0, G));
+        }
+
         src.Recenter();
         Assert.True(Quaternion.Dot(Quaternion.Identity, src.RecentreRotation) > 0.9999f);
     }
@@ -125,7 +133,11 @@ public sealed class AndroidSensorTests
     sealed class Fake(bool has) : IMotionSource
     {
         public bool HasSensors { get; set; } = has;
-        public int ReadSamples(Span<MotionSample> dest) { dest[0] = new MotionSample(42, default, default); return 1; }
+        public int ReadSamples(Span<MotionSample> dest)
+        {
+            dest[0] = new MotionSample(42, default, default);
+            return 1;
+        }
     }
 
     [Fact]
@@ -234,10 +246,18 @@ public sealed class AndroidSensorTests
     {
         int ys = w + pad, cs = (w + 1) / 2 + pad;
         var y = new byte[ys * h];
-        for (int j = 0; j < h; j++) for (int i = 0; i < w; i++) y[j * ys + i] = luma(i, j);
+        for (int j = 0; j < h; j++)
+        {
+            for (int i = 0; i < w; i++)
+            {
+                y[j * ys + i] = luma(i, j);
+            }
+        }
+
         var uu = new byte[cs * ((h + 1) / 2)];
         var vv = new byte[cs * ((h + 1) / 2)];
-        Array.Fill(uu, u); Array.Fill(vv, v);
+        Array.Fill(uu, u);
+        Array.Fill(vv, v);
         return (y, uu, vv);
     }
 
@@ -279,10 +299,22 @@ public sealed class AndroidSensorTests
         // where the source's top-left pixel (10) and top-right pixel (13) land after a clockwise turn
         switch (rotation)
         {
-            case 0: Assert.Equal(10, At(0, 0)); Assert.Equal(13, At(ow - 1, 0)); break;
-            case 90: Assert.Equal(10, At(ow - 1, 0)); Assert.Equal(13, At(ow - 1, oh - 1)); break;
-            case 180: Assert.Equal(10, At(ow - 1, oh - 1)); Assert.Equal(13, At(0, oh - 1)); break;
-            case 270: Assert.Equal(10, At(0, oh - 1)); Assert.Equal(13, At(0, 0)); break;
+            case 0:
+                Assert.Equal(10, At(0, 0));
+                Assert.Equal(13, At(ow - 1, 0));
+                break;
+            case 90:
+                Assert.Equal(10, At(ow - 1, 0));
+                Assert.Equal(13, At(ow - 1, oh - 1));
+                break;
+            case 180:
+                Assert.Equal(10, At(ow - 1, oh - 1));
+                Assert.Equal(13, At(0, oh - 1));
+                break;
+            case 270:
+                Assert.Equal(10, At(0, oh - 1));
+                Assert.Equal(13, At(0, 0));
+                break;
         }
     }
 
@@ -294,7 +326,11 @@ public sealed class AndroidSensorTests
         var y = new byte[ys * h];
         Array.Fill(y, (byte)128);
         var vu = new byte[ys];
-        for (int i = 0; i < w; i += 2) { vu[i] = 255; vu[i + 1] = 128; } // V = 255 (red), U = 128
+        for (int i = 0; i < w; i += 2)
+        {
+            vu[i] = 255;
+            vu[i + 1] = 128;
+        } // V = 255 (red), U = 128
         var dst = new byte[w * h * 4];
         CameraSupport.ToRgba(new YuvImageCopy.Plane(y, ys, 1), new YuvImageCopy.Plane(vu.AsSpan(1), ys, 2), new YuvImageCopy.Plane(vu, ys, 2), w, h, 0, dst);
         for (int p = 0; p < w * h; p++)

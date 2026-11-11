@@ -133,10 +133,16 @@ public sealed class SystemMiscHleTests(GuestMemoryFixture fx) : IDisposable
         Assert.Equal(222, Call(S, "scePowerGetGpuClockFrequency"));
         Assert.Equal(166, Call(S, "scePowerGetGpuXbarClockFrequency"));
         foreach (var fn in new[] { "scePowerSetBusClockFrequency", "scePowerSetGpuClockFrequency", "scePowerSetGpuXbarClockFrequency", "scePowerSetConfigurationMode", "scePowerRegisterCallback", "scePowerUnregisterCallback" })
+        {
             Assert.Equal(0, Call(S, fn, 1));
+        }
+
         foreach (var fn in new[] { "scePowerRequestDisplayOn", "scePowerRequestDisplayOff", "scePowerRequestSuspend", "scePowerRequestStandby", "scePowerRequestColdReset",
             "scePowerIsLowBatteryInhibitUpdateDownload", "scePowerIsLowBatteryInhibitUpdateReboot", "scePowerBatteryUpdateInfo", "scePowerGetBatteryElec", "scePowerGetBatteryChargingStatus" })
+        {
             Assert.Equal(0, Call(S, fn));
+        }
+
         Assert.Equal(3000, Call(S, "scePowerGetBatteryTemp"));
         Assert.Equal(4150, Call(S, "scePowerGetBatteryVolt"));
         Assert.Equal(100, Call(S, "scePowerGetBatterySOH"));

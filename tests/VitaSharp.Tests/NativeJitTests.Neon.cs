@@ -28,13 +28,20 @@ public sealed unsafe partial class NativeJitTests
     }
 
     /// <summary>NEON classes the generator targets (each with its encoding template).</summary>
-    public enum NeonClass { ThreeSame, ThreeSameFloat, Scalar, Shift, Misc, Vext, Vtbl, LoadStore, ThreeDiff, Any }
+    public enum NeonClass
+    {
+        ThreeSame, ThreeSameFloat, Scalar, Shift, Misc, Vext, Vtbl, LoadStore, ThreeDiff, Any
+    }
 
     /// <summary>A random NEON instruction of <paramref name="cls"/> in ARM form (callers convert it to Thumb).</summary>
     internal static uint RandomNeon(Random rng, NeonClass cls)
     {
         uint r = (uint)rng.NextInt64();
-        if (cls == NeonClass.Any) cls = (NeonClass)rng.Next((int)NeonClass.Any);
+        if (cls == NeonClass.Any)
+        {
+            cls = (NeonClass)rng.Next((int)NeonClass.Any);
+        }
+
         switch (cls)
         {
             case NeonClass.ThreeSame: // 1111 001U 0Dsz nnnn dddd AAAA NQMB mmmm
@@ -50,7 +57,11 @@ public sealed unsafe partial class NativeJitTests
             case NeonClass.Shift: // 1111 001U 1D imm6 dddd AAAA LQM1 mmmm
             {
                 uint ins = 0xF2800010u | (r & 0x017FFFEF);
-                if ((ins & 0x80) == 0 && ((ins >> 16) & 0x3F) < 8) ins |= 8u << 16;
+                if ((ins & 0x80) == 0 && ((ins >> 16) & 0x3F) < 8)
+                {
+                    ins |= 8u << 16;
+                }
+
                 return ins;
             }
             case NeonClass.Misc: // 1111 0011 1D11 ssAA dddd 0BBB BBM0 mmmm
@@ -70,8 +81,17 @@ public sealed unsafe partial class NativeJitTests
                 // the data area the test restores between the two runs
                 uint ins = 0xF4000000u | (r & 0x00E00FF0);
                 ins |= (uint)rng.Next(4, 13) << 16;
-                ins |= rng.Next(3) switch { 0 => 15u, 1 => 13u, _ => (uint)rng.Next(4) };
-                if (rng.Next(2) == 0) ins |= 1u << 23; // lanes / all lanes
+                ins |= rng.Next(3) switch
+                {
+                    0 => 15u,
+                    1 => 13u,
+                    _ => (uint)rng.Next(4)
+                };
+                if (rng.Next(2) == 0)
+                {
+                    ins |= 1u << 23; // lanes / all lanes
+                }
+
                 return ins;
             }
         }
@@ -90,7 +110,11 @@ public sealed unsafe partial class NativeJitTests
         {
             // top byte special, the rest all zeros / all ones / random
             int fill = rng.Next(3);
-            for (int k = 0; k < lane - 1; k++) bytes[i + k] = fill == 0 ? (byte)0 : fill == 1 ? (byte)0xFF : (byte)rng.Next(256);
+            for (int k = 0; k < lane - 1; k++)
+            {
+                bytes[i + k] = fill == 0 ? (byte)0 : fill == 1 ? (byte)0xFF : (byte)rng.Next(256);
+            }
+
             bytes[i + lane - 1] = rng.Next(4) == 0 ? (byte)rng.Next(256) : special[rng.Next(special.Length)];
         }
         return BitConverter.ToUInt64(bytes);
@@ -106,11 +130,19 @@ public sealed unsafe partial class NativeJitTests
             uint arm = RandomNeon(rng, cls);
             uint ins = thumb ? ToThumb(arm) : arm;
             var d = !thumb ? Decoder.DecodeArm(ins, CodeBase) : Decoder.DecodeThumb32(ins, CodeBase, false, 14);
-            if (!d.Op.ToString().StartsWith("Neon_") || d.EndsBlock || CpuFuzzTests.IsUnpredictable(d, thumb) || !SimdDefined(ins, thumb)) continue;
+            if (!d.Op.ToString().StartsWith("Neon_") || d.EndsBlock || CpuFuzzTests.IsUnpredictable(d, thumb) || !SimdDefined(ins, thumb))
+            {
+                continue;
+            }
+
             code.AddRange(!thumb ? BitConverter.GetBytes(ins) : [(byte)(ins >> 16), (byte)(ins >> 24), (byte)ins, (byte)(ins >> 8)]);
             k++;
         }
-        if (code.Count == 0) return null;
+        if (code.Count == 0)
+        {
+            return null;
+        }
+
         code.AddRange(thumb ? [0xFE, 0xE7] : [0xFE, 0xFF, 0xFF, 0xEA]);
         code.ToArray().CopyTo(GuestMemory.Span(CodeBase, 0x1000));
         return BlockBuilder.Build(CodeBase, thumb);
@@ -118,19 +150,32 @@ public sealed unsafe partial class NativeJitTests
 
     static void NeonState(Random rng, RandomState st)
     {
-        for (int i = 0; i < 32; i++) st.D[i] = rng.Next(3) == 0 ? SpecialInts(rng) : CpuFuzzTests.RandomSpecialSimd(rng);
+        for (int i = 0; i < 32; i++)
+        {
+            st.D[i] = rng.Next(3) == 0 ? SpecialInts(rng) : CpuFuzzTests.RandomSpecialSimd(rng);
+        }
         // lanes whose products round up to +/- 2^-126 from below (ARM flushes them: tininess before rounding):
         // (1 - 2^-24) * 2^-63 times 2^-63, with both signs
         uint[] tinyEdge = [0x1FFFFFFF, 0x20000000, 0x9FFFFFFF, 0xA0000000, 0x20000001, 0x00800000];
         for (int i = 0; i < 32; i++)
+        {
             if (rng.Next(4) == 0)
             {
                 ulong lo = tinyEdge[rng.Next(tinyEdge.Length)], hi = tinyEdge[rng.Next(tinyEdge.Length)];
                 st.D[i] = lo | (hi << 32);
             }
+        }
+
         st.Fpscr = (uint)rng.Next(32) << 27 | 0x0300_0000; // NZCV and QC random, DN + FZ
-        for (int r = 0; r < 4; r++) st.Regs[r] = (uint)rng.Next(-64, 64);
-        for (int r = 4; r < 13; r++) st.Regs[r] = DataBase + 0x4000 + (uint)rng.Next(0x6000);
+        for (int r = 0; r < 4; r++)
+        {
+            st.Regs[r] = (uint)rng.Next(-64, 64);
+        }
+
+        for (int r = 4; r < 13; r++)
+        {
+            st.Regs[r] = DataBase + 0x4000 + (uint)rng.Next(0x6000);
+        }
     }
 
     /// <summary>Quick per-class pass for the fast suite (the long version below runs under Category=Slow).</summary>
@@ -175,7 +220,11 @@ public sealed unsafe partial class NativeJitTests
     {
         using var arena = new ArenaScope(); // the code of these throwaway blocks is reclaimed afterwards
         EnsureGuestPages();
-        if (int.TryParse(Environment.GetEnvironmentVariable(EnvVars.FuzzIter), out int itOverride)) iterations = itOverride;
+        if (int.TryParse(Environment.GetEnvironmentVariable(EnvVars.FuzzIter), out int itOverride))
+        {
+            iterations = itOverride;
+        }
+
         bool oldValidate = NativeX64Compiler.ValidateIr;
         NativeX64Compiler.ValidateIr = true;
         var rng = new Random(seed);
@@ -187,28 +236,47 @@ public sealed unsafe partial class NativeJitTests
             for (int it = 0; it < iterations; it++)
             {
                 var b = NeonBlock(rng, thumb, cls);
-                if (b == null) continue;
+                if (b == null)
+                {
+                    continue;
+                }
+
                 var st = new RandomState(rng);
                 NeonState(rng, st);
                 st.Apply(s, thumb);
                 var interp = Take(s, Guard(() => CpuCore.Interpret(s, b)));
                 var cb = NativeX64Compiler.Instance.Compile(b)!;
-                if (new ArmFrontend().Translate(b).Callouts == 0) inlined++;
+                if (new ArmFrontend().Translate(b).Callouts == 0)
+                {
+                    inlined++;
+                }
+
                 st.Apply(s, thumb);
                 var native = Take(s, Guard(() => RunNative(s, cb.NativeEntry)));
                 compared++;
                 string diff = Diff(interp, native);
                 if (diff.Length > 0)
                 {
-                    if (detailed++ < 6) output.WriteLine($"--- fpscr {st.Fpscr:X8} D=[{string.Join(" ", st.D.Select(v => v.ToString("X16")))}]{diff}\n{DescribeNative(b, cb)}");
+                    if (detailed++ < 6)
+                    {
+                        output.WriteLine($"--- fpscr {st.Fpscr:X8} D=[{string.Join(" ", st.D.Select(v => v.ToString("X16")))}]{diff}\n{DescribeNative(b, cb)}");
+                    }
+
                     Record(failures, "native", b, diff);
                 }
             }
         }
-        finally { CpuState.Free(s); NativeX64Compiler.ValidateIr = oldValidate; }
+        finally
+        {
+            CpuState.Free(s);
+            NativeX64Compiler.ValidateIr = oldValidate;
+        }
         output.WriteLine($"compared {compared} NEON blocks ({inlined} fully inline); failing kinds {failures.Count}");
         foreach (var (k, (count, ex)) in failures.OrderByDescending(f => f.Value.Item1).Take(40))
+        {
             output.WriteLine($"{k,-40} x{count,-5} {ex}");
+        }
+
         Assert.True(failures.Count == 0, $"{failures.Count} kinds of differences (see output)");
     }
 
@@ -303,13 +371,22 @@ public sealed unsafe partial class NativeJitTests
                 var native = Take(s, Guard(() => RunNative(s, cb.NativeEntry)));
                 compared++;
                 string diff = Diff(interp, native);
-                if (diff.Length > 0) Record(failures, $"fpscr {st.Fpscr:X8}", b, diff);
+                if (diff.Length > 0)
+                {
+                    Record(failures, $"fpscr {st.Fpscr:X8}", b, diff);
+                }
             }
         }
-        finally { CpuState.Free(s); }
+        finally
+        {
+            CpuState.Free(s);
+        }
         output.WriteLine($"compared {compared} half-conversion blocks; failing kinds {failures.Count}");
         foreach (var (k, (count, ex)) in failures.OrderByDescending(f => f.Value.Item1).Take(20))
+        {
             output.WriteLine($"{k,-40} x{count,-5} {ex}");
+        }
+
         Assert.True(failures.Count == 0, $"{failures.Count} kinds of differences (see output)");
     }
 
@@ -354,13 +431,21 @@ public sealed unsafe partial class NativeJitTests
                 {
                     uint ins = RandomFixedConversion(rng);
                     Vfp.FixedParams(ins, out _, out _, out _, out int frac);
-                    if (frac < 0) unpredictable++;
+                    if (frac < 0)
+                    {
+                        unpredictable++;
+                    }
+
                     code.AddRange(!thumb ? BitConverter.GetBytes(ins) : [(byte)(ins >> 16), (byte)(ins >> 24), (byte)ins, (byte)(ins >> 8)]);
                 }
                 code.AddRange(thumb ? [0xFE, 0xE7] : [0xFE, 0xFF, 0xFF, 0xEA]);
                 code.ToArray().CopyTo(GuestMemory.Span(CodeBase, 0x1000));
                 var b = BlockBuilder.Build(CodeBase, thumb);
-                if (unpredictable == 0) Assert.DoesNotContain(new ArmFrontend().Translate(b).Insts, x => x.Op == IrOp.Callout);
+                if (unpredictable == 0)
+                {
+                    Assert.DoesNotContain(new ArmFrontend().Translate(b).Insts, x => x.Op == IrOp.Callout);
+                }
+
                 var st = new RandomState(rng);
                 for (int i = 0; i < 32; i++)
                 {
@@ -376,13 +461,22 @@ public sealed unsafe partial class NativeJitTests
                 var native = Take(s, Guard(() => RunNative(s, cb.NativeEntry)));
                 compared++;
                 string diff = Diff(interp, native);
-                if (diff.Length > 0) Record(failures, $"fpscr {st.Fpscr:X8}", b, diff);
+                if (diff.Length > 0)
+                {
+                    Record(failures, $"fpscr {st.Fpscr:X8}", b, diff);
+                }
             }
         }
-        finally { CpuState.Free(s); }
+        finally
+        {
+            CpuState.Free(s);
+        }
         output.WriteLine($"compared {compared} fixed-point conversion blocks; failing kinds {failures.Count}");
         foreach (var (k, (count, ex)) in failures.OrderByDescending(f => f.Value.Item1).Take(20))
+        {
             output.WriteLine($"{k,-40} x{count,-5} {ex}");
+        }
+
         Assert.True(failures.Count == 0, $"{failures.Count} kinds of differences (see output)");
     }
 
@@ -395,7 +489,11 @@ public sealed unsafe partial class NativeJitTests
     {
         using var arena = new ArenaScope(); // the code of these throwaway blocks is reclaimed afterwards
         EnsureGuestPages();
-        if (int.TryParse(Environment.GetEnvironmentVariable(EnvVars.FuzzIter), out int itOverride)) iterations = itOverride;
+        if (int.TryParse(Environment.GetEnvironmentVariable(EnvVars.FuzzIter), out int itOverride))
+        {
+            iterations = itOverride;
+        }
+
         var rng = new Random(seed);
         var s = CpuState.Allocate();
         var failures = new Dictionary<string, (int, string)>();
@@ -405,7 +503,11 @@ public sealed unsafe partial class NativeJitTests
             for (int it = 0; it < iterations; it++)
             {
                 var b = NeonBlock(rng, thumb, NeonClass.Any);
-                if (b == null) continue;
+                if (b == null)
+                {
+                    continue;
+                }
+
                 var st = new RandomState(rng);
                 NeonState(rng, st);
                 var codeBytes = GuestMemory.Span(CodeBase, 0x1000).ToArray();
@@ -416,45 +518,91 @@ public sealed unsafe partial class NativeJitTests
                     uc.MemWrite(CodeBase, codeBytes);
                     uc.MemWrite(DataBase, st.Data);
                     uc.RegWrite(UcArm.UC_ARM_REG_CPSR, (long)(st.Flags | 0x10 | (thumb ? 0x20u : 0)));
-                    for (int r = 0; r < 15; r++) uc.RegWrite(RegIds[r], st.Regs[r]);
-                    for (int r = 0; r < 32; r++) uc.RegWrite(UcArm.UC_ARM_REG_D0 + r, (long)st.D[r]);
+                    for (int r = 0; r < 15; r++)
+                    {
+                        uc.RegWrite(RegIds[r], st.Regs[r]);
+                    }
+
+                    for (int r = 0; r < 32; r++)
+                    {
+                        uc.RegWrite(UcArm.UC_ARM_REG_D0 + r, (long)st.D[r]);
+                    }
+
                     uc.RegWrite(UcArm.UC_ARM_REG_FPSCR, st.Fpscr);
                     uc.EmuStart(CodeBase | (thumb ? 1u : 0), CodeBase + 0x800, 0, b.Insts.Length);
                 }
-                catch (Exception) { skipped++; uc?.Close(); continue; }
+                catch (Exception)
+                {
+                    skipped++;
+                    uc?.Close();
+                    continue;
+                }
                 st.Apply(s, thumb);
                 var cb = NativeX64Compiler.Instance.Compile(b)!;
-                if (Guard(() => RunNative(s, cb.NativeEntry)) != null) { skipped++; uc.Close(); continue; }
+                if (Guard(() => RunNative(s, cb.NativeEntry)) != null)
+                {
+                    skipped++;
+                    uc.Close();
+                    continue;
+                }
                 compared++;
                 var sb = new StringBuilder();
                 for (int r = 0; r < 15; r++)
                 {
                     uint u = (uint)uc.RegRead(RegIds[r]);
-                    if (u != s->R[r]) sb.Append($" R{r}: uc={u:X8} us={s->R[r]:X8}");
+                    if (u != s->R[r])
+                    {
+                        sb.Append($" R{r}: uc={u:X8} us={s->R[r]:X8}");
+                    }
                 }
                 for (int r = 0; r < 32; r++)
                 {
                     ulong u = (ulong)uc.RegRead(UcArm.UC_ARM_REG_D0 + r);
-                    if (u != s->D[r]) sb.Append($" D{r}: uc={u:X16} us={s->D[r]:X16}");
+                    if (u != s->D[r])
+                    {
+                        sb.Append($" D{r}: uc={u:X16} us={s->D[r]:X16}");
+                    }
                 }
                 uint ucFpscr = (uint)uc.RegRead(UcArm.UC_ARM_REG_FPSCR);
-                if ((ucFpscr & 0xF8000000) != (s->Fpscr & 0xF8000000)) sb.Append($" FPSCR: uc={ucFpscr:X8} us={s->Fpscr:X8}");
+                if ((ucFpscr & 0xF8000000) != (s->Fpscr & 0xF8000000))
+                {
+                    sb.Append($" FPSCR: uc={ucFpscr:X8} us={s->Fpscr:X8}");
+                }
+
                 var ucData = new byte[DataSize];
                 uc.MemRead(DataBase, ucData);
                 var ours = GuestMemory.Span(DataBase, (int)DataSize);
-                for (int i = 0; i < DataSize; i++) if (ucData[i] != ours[i]) { sb.Append($" MEM@{DataBase + i:X8}: uc={ucData[i]:X2} us={ours[i]:X2}"); break; }
+                for (int i = 0; i < DataSize; i++)
+                {
+                    if (ucData[i] != ours[i])
+                    {
+                        sb.Append($" MEM@{DataBase + i:X8}: uc={ucData[i]:X2} us={ours[i]:X2}");
+                        break;
+                    }
+                }
+
                 uc.Close();
                 if (sb.Length > 0)
                 {
-                    if (detailed++ < 6) output.WriteLine($"--- fpscr {st.Fpscr:X8} D=[{string.Join(" ", st.D.Select(v => v.ToString("X16")))}]{sb}\n{DescribeNative(b, cb)}");
+                    if (detailed++ < 6)
+                    {
+                        output.WriteLine($"--- fpscr {st.Fpscr:X8} D=[{string.Join(" ", st.D.Select(v => v.ToString("X16")))}]{sb}\n{DescribeNative(b, cb)}");
+                    }
+
                     Record(failures, "unicorn", b, sb.ToString());
                 }
             }
         }
-        finally { CpuState.Free(s); }
+        finally
+        {
+            CpuState.Free(s);
+        }
         output.WriteLine($"compared {compared} NEON blocks against Unicorn, skipped {skipped}; failing kinds {failures.Count}");
         foreach (var (k, (count, ex)) in failures.OrderByDescending(f => f.Value.Item1).Take(40))
+        {
             output.WriteLine($"{k,-40} x{count,-5} {ex}");
+        }
+
         Assert.True(failures.Count == 0, $"{failures.Count} kinds of differences against Unicorn (see output)");
     }
 }

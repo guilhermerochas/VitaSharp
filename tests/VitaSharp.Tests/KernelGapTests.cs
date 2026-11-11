@@ -17,7 +17,12 @@ public sealed class KernelGapTests(GuestMemoryFixture fx)
     static int Call(object module, string name, params object?[] args) =>
         Convert.ToInt32(module.GetType().GetMethod(name, BindingFlags.Instance | BindingFlags.NonPublic | BindingFlags.Public)!.Invoke(module, args));
 
-    uint Alloc(uint size) { uint p = fx.Memory.Alloc(size, "wme"); GuestMemory.Fill(p, 0, size); return p; }
+    uint Alloc(uint size)
+    {
+        uint p = fx.Memory.Alloc(size, "wme");
+        GuestMemory.Fill(p, 0, size);
+        return p;
+    }
 
     Emulator Shell()
     {
@@ -59,8 +64,10 @@ public sealed class KernelGapTests(GuestMemoryFixture fx)
         var tm = Module();
         int a = Event(tm, EventBits.AttrAutoReset, 0), b = Event(tm, 0, 0);
         uint events = Alloc(3 * 8), results = Alloc(3 * 0x18), timeout = Alloc(4);
-        GuestMemory.W32(events, (uint)a); GuestMemory.W32(events + 4, A);
-        GuestMemory.W32(events + 8, (uint)b); GuestMemory.W32(events + 12, B);
+        GuestMemory.W32(events, (uint)a);
+        GuestMemory.W32(events + 4, A);
+        GuestMemory.W32(events + 8, (uint)b);
+        GuestMemory.W32(events + 12, B);
 
         Assert.Equal(SceError.ILLEGAL_ADDR, Call(tm, "sceKernelWaitMultipleEvents", 0u, 2u, 1u, results, new Ptr<uint>(0)));
         Assert.Equal(SceError.ILLEGAL_SIZE, Call(tm, "sceKernelWaitMultipleEvents", events, 65u, 1u, results, new Ptr<uint>(0)));
@@ -93,7 +100,8 @@ public sealed class KernelGapTests(GuestMemoryFixture fx)
         Assert.Equal(B, GuestMemory.R32(pat) & B);
 
         // an unknown uid is a result of its own (UNKNOWN_EVENT_ID, pattern 0x10) and satisfies OR
-        GuestMemory.W32(events + 16, 0x7FFF0001); GuestMemory.W32(events + 20, A);
+        GuestMemory.W32(events + 16, 0x7FFF0001);
+        GuestMemory.W32(events + 20, A);
         Assert.Equal(1, Call(tm, "sceKernelWaitMultipleEvents", events + 16, 1u, 1u, results, new Ptr<uint>(0)));
         Assert.Equal(0x7FFF0001u, GuestMemory.R32(results));
         Assert.Equal(SceError.UNKNOWN_EVENT_ID, (int)GuestMemory.R32(results + 4));

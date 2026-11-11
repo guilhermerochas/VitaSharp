@@ -11,7 +11,10 @@ public class TrophySignatureTests
     {
         var s = new byte[TrophyUnlocks.SignatureSize];
         Array.Fill(s, fill);
-        s[0] = 0xB9; s[1] = 0xDD; s[2] = 0xE1; s[3] = 0x3B;
+        s[0] = 0xB9;
+        s[1] = 0xDD;
+        s[2] = 0xE1;
+        s[3] = 0x3B;
         return s;
     }
 

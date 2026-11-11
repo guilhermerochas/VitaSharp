@@ -39,9 +39,15 @@ public sealed class RendererFeatureTests(GuestMemoryFixture fx)
         try
         {
             foreach (var (msaa, scale, async) in new[] { ("native", 1f, true), ("ss", 2f, false), ("off", 1f, true) })
+            {
                 WithRenderer(h, new VulkanRendererOptions
                 {
-                    VSync = false, Msaa = msaa, ResScale = scale, AsyncShaders = async, AsyncPipelines = async, ShaderCacheDir = cache,
+                    VSync = false,
+                    Msaa = msaa,
+                    ResScale = scale,
+                    AsyncShaders = async,
+                    AsyncPipelines = async,
+                    ShaderCacheDir = cache,
                 }, r =>
                 {
                     Assert.True(w.Run(64) > 0);
@@ -50,10 +56,14 @@ public sealed class RendererFeatureTests(GuestMemoryFixture fx)
                     Assert.False(string.IsNullOrEmpty(r.RecentFrames()));
                     Assert.NotNull(r.DebugState());
                 });
+            }
             // the shaders went to the disk cache, which the later renderers read back
             Assert.NotEmpty(Directory.EnumerateFiles(cache, "*", SearchOption.AllDirectories));
         }
-        finally { w.Terminate(); }
+        finally
+        {
+            w.Terminate();
+        }
     }
 
     [SoftwareVulkanFact]
@@ -94,6 +104,9 @@ public sealed class RendererFeatureTests(GuestMemoryFixture fx)
                 Assert.False(r.CancelDiagnosticCapture()); // nothing pending
             });
         }
-        finally { w.Terminate(); }
+        finally
+        {
+            w.Terminate();
+        }
     }
 }

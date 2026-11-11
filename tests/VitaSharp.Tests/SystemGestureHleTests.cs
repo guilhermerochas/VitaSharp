@@ -13,7 +13,12 @@ public sealed class SystemGestureHleTests(GuestMemoryFixture fx)
     static int Call(SystemGesture g, string name, params object[] args) =>
         Convert.ToInt32(typeof(SystemGesture).GetMethod(name, BindingFlags.Instance | BindingFlags.NonPublic | BindingFlags.Public)!.Invoke(g, args));
 
-    uint Alloc(uint size) { uint p = fx.Memory.Alloc(size, "gesture"); GuestMemory.Fill(p, 0, size); return p; }
+    uint Alloc(uint size)
+    {
+        uint p = fx.Memory.Alloc(size, "gesture");
+        GuestMemory.Fill(p, 0, size);
+        return p;
+    }
 
     [Fact]
     public void EveryRecognizerTypeCanBeCreated()
@@ -22,9 +27,13 @@ public sealed class SystemGestureHleTests(GuestMemoryFixture fx)
         // recognizers and shut down during init when any create fails
         var g = new SystemGesture();
         uint rect = Alloc(8);
-        GuestMemory.Write(rect + 4, (short)1919); GuestMemory.Write(rect + 6, (short)1087);
+        GuestMemory.Write(rect + 4, (short)1919);
+        GuestMemory.Write(rect + 6, (short)1087);
         foreach (uint type in new uint[] { 1, 2, 4, 8, 0x10 })
+        {
             Assert.Equal(0, Call(g, "sceSystemGestureCreateTouchRecognizer", Alloc(0x998), type, 0u, rect, 0u));
+        }
+
         Assert.Equal(INVALID_ARG, Call(g, "sceSystemGestureCreateTouchRecognizer", Alloc(0x998), 0x20u, 0u, rect, 0u));
         Assert.Equal(INVALID_ARG, Call(g, "sceSystemGestureCreateTouchRecognizer", Alloc(0x998), 3u, 0u, rect, 0u));
         Assert.Equal(INVALID_ARG, Call(g, "sceSystemGestureCreateTouchRecognizer", 0u, 1u, 0u, rect, 0u));

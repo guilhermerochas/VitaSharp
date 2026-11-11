@@ -17,21 +17,38 @@ public sealed class GpuQuirkTests
 
     static readonly GpuLimits DesktopLimits = new()
     {
-        MaxPushConstantsSize = 256, MaxBoundDescriptorSets = 32, MaxPerStageDescriptorSamplers = 1048576, MaxPerStageDescriptorSampledImages = 1048576,
-        MaxPerStageDescriptorStorageBuffers = 1048576, MaxPerStageDescriptorInputAttachments = 1048576, MaxPerStageResources = 4294967295,
-        MaxDescriptorSetSamplers = 1048576, FramebufferSampleCounts = 1 | 2 | 4 | 8, MaxImageDimension2D = 32768,
+        MaxPushConstantsSize = 256,
+        MaxBoundDescriptorSets = 32,
+        MaxPerStageDescriptorSamplers = 1048576,
+        MaxPerStageDescriptorSampledImages = 1048576,
+        MaxPerStageDescriptorStorageBuffers = 1048576,
+        MaxPerStageDescriptorInputAttachments = 1048576,
+        MaxPerStageResources = 4294967295,
+        MaxDescriptorSetSamplers = 1048576,
+        FramebufferSampleCounts = 1 | 2 | 4 | 8,
+        MaxImageDimension2D = 32768,
     };
 
     static GpuDeviceInfo Device(uint vendor, uint driverId, uint version, GpuFeature? features = null, GpuLimits? limits = null, bool unified = false) => new()
     {
-        VendorId = vendor, DeviceId = 0x1234, DriverId = driverId, DriverVersion = version, ApiVersion = GpuQuirkTable.MakeVersion(1, 3, 250),
-        DeviceName = "test GPU", Features = features ?? Desktop, Limits = limits ?? DesktopLimits, UnifiedMemory = unified,
+        VendorId = vendor,
+        DeviceId = 0x1234,
+        DriverId = driverId,
+        DriverVersion = version,
+        ApiVersion = GpuQuirkTable.MakeVersion(1, 3, 250),
+        DeviceName = "test GPU",
+        Features = features ?? Desktop,
+        Limits = limits ?? DesktopLimits,
+        UnifiedMemory = unified,
     };
 
     // GTX 1650 on 5xx drivers (NVIDIA encodes 10.8.8.6 bits)
     static readonly GpuDeviceInfo Nvidia = Device(GpuQuirkTable.VendorNvidia, GpuQuirkTable.DriverNvidiaProprietary, (566u << 22) | (36u << 14));
     static readonly GpuDeviceInfo AdrenoBlob = Device(GpuQuirkTable.VendorQualcomm, GpuQuirkTable.DriverQualcommProprietary, GpuQuirkTable.MakeVersion(512, 744),
-        Desktop & ~(GpuFeature.TextureCompressionBC | GpuFeature.MemoryBudget), DesktopLimits with { FramebufferSampleCounts = 1 | 2 | 4 }, unified: true);
+        Desktop & ~(GpuFeature.TextureCompressionBC | GpuFeature.MemoryBudget), DesktopLimits with
+        {
+            FramebufferSampleCounts = 1 | 2 | 4
+        }, unified: true);
 
     [Fact]
     public void DesktopNvidiaHasNoQuirks()
@@ -65,7 +82,10 @@ public sealed class GpuQuirkTests
         foreach (var q in new[] { GpuQuirk.TileBased, GpuQuirk.DynamicIndexLowering, GpuQuirk.StaticExtendedDynamicState, GpuQuirk.StaticDepthBiasEnable,
                      GpuQuirk.AvoidPushDescriptors, GpuQuirk.AvoidClearAttachments, GpuQuirk.PipelineCachePerDriverBuild, GpuQuirk.CustomDriverCapable,
                      GpuQuirk.DynamicRenderingSuspect, GpuQuirk.ConservativeMemoryBudget })
+        {
             Assert.True(c.Has(q), q.ToString());
+        }
+
         Assert.False(c.Has(GpuQuirk.TurnipDriver));
         Assert.False(c.Has(GpuQuirk.Msaa2xAs4x));
         Assert.Equal("512.744", GpuCapabilities.FormatDriverVersion(c.Vendor, c.Driver, c.DriverVersion));
@@ -99,7 +119,10 @@ public sealed class GpuQuirkTests
     public void MaliWithoutTwoSamplesRendersTwoXAsFour()
     {
         var c = GpuQuirkTable.Select(Device(GpuQuirkTable.VendorArm, GpuQuirkTable.DriverArmProprietary, GpuQuirkTable.MakeVersion(38, 1),
-            Desktop & ~GpuFeature.TextureCompressionBC, DesktopLimits with { FramebufferSampleCounts = 1 | 4 }));
+            Desktop & ~GpuFeature.TextureCompressionBC, DesktopLimits with
+            {
+                FramebufferSampleCounts = 1 | 4
+            }));
         Assert.Equal(GpuDriver.ArmProprietary, c.Driver);
         Assert.True(c.Has(GpuQuirk.TileBased));
         Assert.True(c.Has(GpuQuirk.Msaa2xAs4x));
@@ -115,7 +138,10 @@ public sealed class GpuQuirkTests
     [Fact]
     public void NoMultisamplingAtAllFallsBack()
     {
-        var c = GpuQuirkTable.Select(Device(GpuQuirkTable.VendorArm, GpuQuirkTable.DriverArmProprietary, 1, limits: DesktopLimits with { FramebufferSampleCounts = 1 }));
+        var c = GpuQuirkTable.Select(Device(GpuQuirkTable.VendorArm, GpuQuirkTable.DriverArmProprietary, 1, limits: DesktopLimits with
+        {
+            FramebufferSampleCounts = 1
+        }));
         Assert.False(c.Has(GpuQuirk.Msaa2xAs4x));
         Assert.Equal(0, c.MsaaSamples(2));
         Assert.Equal(0, c.MsaaSamples(4));
@@ -211,7 +237,11 @@ public sealed class GpuQuirkTests
     [Fact]
     public void ProfilesNeverAddWhatTheDeviceLacks()
     {
-        var weak = Device(GpuQuirkTable.VendorNvidia, GpuQuirkTable.DriverNvidiaProprietary, 1, GpuFeature.Timestamps, DesktopLimits with { FramebufferSampleCounts = 1 | 4, MaxPerStageDescriptorSamplers = 8 });
+        var weak = Device(GpuQuirkTable.VendorNvidia, GpuQuirkTable.DriverNvidiaProprietary, 1, GpuFeature.Timestamps, DesktopLimits with
+        {
+            FramebufferSampleCounts = 1 | 4,
+            MaxPerStageDescriptorSamplers = 8
+        });
         var c = GpuQuirkTable.Select(weak, GpuProfile.Adreno);
         Assert.Equal(GpuFeature.Timestamps, c.Features);
         Assert.Equal(1u | 4, c.Limits.FramebufferSampleCounts);
@@ -252,7 +282,9 @@ public sealed class GpuQuirkTests
     {
         var old = Device(GpuQuirkTable.VendorQualcomm, GpuQuirkTable.DriverQualcommProprietary, GpuQuirkTable.MakeVersion(512, 454),
             Desktop & ~(GpuFeature.DynamicRendering | GpuFeature.ExtendedDynamicState | GpuFeature.TextureCompressionBC)) with
-        { ApiVersion = GpuQuirkTable.MakeVersion(1, 1, 128) };
+        {
+            ApiVersion = GpuQuirkTable.MakeVersion(1, 1, 128)
+        };
         var c = GpuQuirkTable.Select(old);
         Assert.True(c.Has(GpuQuirk.RenderPasses));
         Assert.True(c.Has(GpuQuirk.StaticExtendedDynamicState));
@@ -260,7 +292,11 @@ public sealed class GpuQuirkTests
         Assert.Contains(c.QuirkReasons, r => r.StartsWith("RenderPasses:"));
         // what the device cannot do is not overridable; Turnip on the same phone (no blob quirks) still needs them
         Assert.True(GpuQuirkTable.Select(old, GpuProfile.Native, "-RenderPasses,-StaticExtendedDynamicState").Has(GpuQuirk.RenderPasses | GpuQuirk.StaticExtendedDynamicState));
-        var turnip = GpuQuirkTable.Select(old with { DriverId = GpuQuirkTable.DriverTurnip, DriverVersion = GpuQuirkTable.MakeVersion(24, 1) });
+        var turnip = GpuQuirkTable.Select(old with
+        {
+            DriverId = GpuQuirkTable.DriverTurnip,
+            DriverVersion = GpuQuirkTable.MakeVersion(24, 1)
+        });
         Assert.True(turnip.Has(GpuQuirk.RenderPasses | GpuQuirk.StaticExtendedDynamicState));
     }
 
@@ -314,8 +350,19 @@ public sealed class GpuQuirkTests
     {
         string zip = Path.Combine(dir, $"pkg{Guid.NewGuid():N}.zip");
         using var z = ZipFile.Open(zip, ZipArchiveMode.Create);
-        using (var w = new StreamWriter(z.CreateEntry("meta.json").Open())) w.Write(meta);
-        foreach (var f in files) using (var w = new StreamWriter(z.CreateEntry(f).Open())) w.Write("ELF");
+        using (var w = new StreamWriter(z.CreateEntry("meta.json").Open()))
+        {
+            w.Write(meta);
+        }
+
+        foreach (var f in files)
+        {
+            using (var w = new StreamWriter(z.CreateEntry(f).Open()))
+            {
+                w.Write("ELF");
+            }
+        }
+
         return zip;
     }
 
@@ -347,7 +394,10 @@ public sealed class GpuQuirkTests
             Assert.False(store.Remove("../.."));
             Assert.Empty(store.List());
         }
-        finally { Directory.Delete(root, true); }
+        finally
+        {
+            Directory.Delete(root, true);
+        }
     }
 
     [Theory]
@@ -373,7 +423,10 @@ public sealed class GpuQuirkTests
             Assert.Contains("not in the package", Assert.Throws<InvalidDataException>(() => store.Install(MakeZip(root, TurnipMeta))).Message);
             Assert.Contains("API 27", Assert.Throws<InvalidDataException>(() => store.Install(MakeZip(root, TurnipMeta, "vulkan.ad07XX.so"), deviceApiLevel: 26)).Message);
         }
-        finally { Directory.Delete(root, true); }
+        finally
+        {
+            Directory.Delete(root, true);
+        }
     }
 
     [Fact]
@@ -390,6 +443,9 @@ public sealed class GpuQuirkTests
             Assert.False(s.PatchBcn);
             Assert.False(s.FileRedirect);
         }
-        finally { File.Delete(path); }
+        finally
+        {
+            File.Delete(path);
+        }
     }
 }

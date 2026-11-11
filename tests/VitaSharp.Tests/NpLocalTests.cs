@@ -17,7 +17,11 @@ public sealed class NpLocalTests(GuestMemoryFixture fx) : IDisposable
     public void Dispose()
     {
         PsnAccount.Current = _savedAccount;
-        try { Directory.Delete(_root, true); } catch (DirectoryNotFoundException) { }
+        try
+        {
+            Directory.Delete(_root, true);
+        }
+        catch (DirectoryNotFoundException) { }
     }
 
     static int Call<T>(T module, string name, params object[] args) =>
@@ -47,14 +51,22 @@ public sealed class NpLocalTests(GuestMemoryFixture fx) : IDisposable
     uint Ints(params int[] v)
     {
         uint p = Alloc((uint)(v.Length * 4));
-        for (int i = 0; i < v.Length; i++) GuestMemory.W32(p + (uint)i * 4, (uint)v[i]);
+        for (int i = 0; i < v.Length; i++)
+        {
+            GuestMemory.W32(p + (uint)i * 4, (uint)v[i]);
+        }
+
         return p;
     }
 
     uint Longs(params long[] v)
     {
         uint p = Alloc((uint)(v.Length * 8));
-        for (int i = 0; i < v.Length; i++) GuestMemory.Write(p + (uint)i * 8, v[i]);
+        for (int i = 0; i < v.Length; i++)
+        {
+            GuestMemory.Write(p + (uint)i * 8, v[i]);
+        }
+
         return p;
     }
 
@@ -542,7 +554,11 @@ public sealed class NpLocalTests(GuestMemoryFixture fx) : IDisposable
             off += files[i].Data.Length;
         }
         ms.Write(header);
-        foreach (var f in files) ms.Write(f.Data);
+        foreach (var f in files)
+        {
+            ms.Write(f.Data);
+        }
+
         return ms.ToArray();
     }
 
