@@ -182,7 +182,7 @@ public static class ShaderGenerator
     /// Version of the translator output. Persistent shader caches are keyed by it: bump it whenever a change to the
     /// USSE translation or to this generator alters the GLSL (or its metadata) produced for an existing program.
     /// </summary>
-    public const int GeneratorVersion = 26;
+    public const int GeneratorVersion = 27;
 
     /// <summary>Clip distances the generated vertex shaders may write (index 0 the far plane, 1-7 the GXM user clip
     /// planes 0-6): the Vulkan minimum of maxClipDistances.</summary>
@@ -830,7 +830,13 @@ float packC10(vec3 c) {
         // every register an instruction names with a constant index is in its array (a GLSL constant index past the
         // array does not compile: the whole draw was lost); a dynamic index (Track(255)) covers 64 registers
         int Size(int max, int min) => Math.Max(max + 1, min);
-        sb.AppendLine($"vec4 pa[{Size(t.MaxPa, 8)}];");
+        // the primary attributes start at zero: the fixed-function loads (varyings, non-dependent texture reads) fill
+        // only the components their format has, and the program may read the rest of the registers they were given
+        // (a one-component U8 texture read into four F32 registers, output as F32x4). A GLSL private variable
+        // without an initializer is undefined: most drivers hand out zeros, MoltenVK (SPIRV-Cross to Metal) whatever
+        // the GPU registers held, which came out as random NaN/huge colours on the macOS CI.
+        int paSize = Size(t.MaxPa, 8);
+        sb.AppendLine($"vec4 pa[{paSize}] = vec4[{paSize}]({string.Join(", ", Enumerable.Repeat("vec4(0.0)", paSize))});");
         sb.AppendLine($"vec4 sa[{Size(t.MaxSa, 8)}];");
         sb.AppendLine($"vec4 r[{Size(t.MaxTemp, 8)}];");
         sb.AppendLine($"vec4 o[{Size(t.MaxOut, vertex ? 16 : 8)}];");
