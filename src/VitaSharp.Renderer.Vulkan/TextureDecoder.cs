@@ -66,6 +66,26 @@ public static class TextureDecoder
         return GuestMemory.ReadSpan(addr, length);
     }
 
+    /// <summary>
+    /// A swizzled image (or block grid) inside a larger power-of-two swizzle, read as one span and reordered through
+    /// <see cref="TextureLayout.MortonToLinear"/> instead of one read per element. False (nothing written) under
+    /// VITASHARP_TEX_LAYOUT=legacy, or when an earlier decoder picture covers only part of the range (the per-element
+    /// reads take each element from wherever it lies).
+    /// </summary>
+    static bool MortonGather(Span<byte> dst, uint addr, uint w, uint h, uint pw, uint ph, int bytesPerElement)
+    {
+        if (TextureLayout.Legacy) return false;
+        long bytes = TextureLayout.MortonSourceBytes(w, h, pw, ph, bytesPerElement);
+        if (bytes > int.MaxValue) return false;
+        if (t_srcData is { } d)
+        {
+            ulong lo = addr, hi = addr + (ulong)bytes, dLo = t_srcAddr, dHi = t_srcAddr + (ulong)d.Length;
+            bool inside = lo >= dLo && hi <= dHi, apart = hi <= dLo || lo >= dHi;
+            if (!inside && !apart) return false;
+        }
+        return TextureLayout.MortonToLinear(dst, Mem(addr, (int)bytes), w, h, pw, ph, bytesPerElement);
+    }
+
     static byte Mem8(uint addr) => t_srcData is { } d && addr - t_srcAddr < (uint)d.Length ? d[addr - t_srcAddr] : GuestMemory.Read<byte>(addr);
 
     /// <summary>Decodes one level. The result is pooled: dispose it once its bytes were copied.</summary>
@@ -106,12 +126,13 @@ public static class TextureDecoder
             else
             {
                 uint pw = BitOperations.RoundUpToPowerOf2(bw), ph = BitOperations.RoundUpToPowerOf2(bh);
-                for (uint y = 0; y < bh; y++)
-                    for (uint x = 0; x < bw; x++)
-                    {
-                        uint idx = TextureLayout.Morton(x, y, pw, ph);
-                        Mem(addr + idx * (uint)bb, bb).CopyTo(o.Slice((int)((y * bw + x) * bb), bb));
-                    }
+                if (!MortonGather(o, addr, bw, bh, pw, ph, bb))
+                    for (uint y = 0; y < bh; y++)
+                        for (uint x = 0; x < bw; x++)
+                        {
+                            uint idx = TextureLayout.Morton(x, y, pw, ph);
+                            Mem(addr + idx * (uint)bb, bb).CopyTo(o.Slice((int)((y * bw + x) * bb), bb));
+                        }
             }
             if (info.Convert == TexConvert.BcSoftware)
             {
@@ -210,6 +231,7 @@ public static class TextureDecoder
                 TextureLayout.SwizzledToLinear(dst, Mem(addr, (int)(w * h * bpp)), w, h, bpp);
                 return result;
             }
+            if (MortonGather(dst, addr, w, h, pw, ph, bpp)) return result;
             for (uint y = 0; y < h; y++)
                 for (uint x = 0; x < w; x++)
                     Mem(addr + TextureLayout.Morton(x, y, pw, ph) * (uint)bpp, bpp).CopyTo(dst.Slice((int)((y * w + x) * bpp), bpp));
