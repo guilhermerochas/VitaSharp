@@ -9,7 +9,7 @@ namespace VitaSharp.PerfTools;
 /// equal to the one before it, non-silent), clicks (a jump between neighbouring samples above the threshold) and
 /// the duration. Run it on the phone's and the desktop's dumps of the same scene and compare the lines.
 /// </summary>
-sealed class AudioCheckCommand : IPerfCommand
+internal sealed class AudioCheckCommand : IPerfCommand
 {
     public string Name => "audio-check";
     public string Summary => "silent gaps, repeated grains and clicks in guest audio WAV dumps";
@@ -30,9 +30,9 @@ sealed class AudioCheckCommand : IPerfCommand
         int grain = (int)a.Double("--grain", 512);
         int click = (int)a.Double("--click", 12000);
         var files = a.Positional.SelectMany(p => Directory.Exists(p) ? Directory.GetFiles(p, "*.wav", SearchOption.AllDirectories).Order() : (IEnumerable<string>)[p]).ToList();
-        foreach (var f in files)
+        foreach (string? f in files)
         {
-            var (pcm, ch, rate) = ReadWav(f);
+            (short[]? pcm, int ch, int rate) = ReadWav(f);
             if (ch == 0)
             {
                 Console.WriteLine($"{Path.GetFileName(f)}: not a 16-bit PCM WAV");
@@ -94,7 +94,7 @@ sealed class AudioCheckCommand : IPerfCommand
         return 0;
     }
 
-    static bool Silent(short[] pcm, int frame, int ch)
+    private static bool Silent(short[] pcm, int frame, int ch)
     {
         for (int c = 0; c < ch; c++)
         {
@@ -107,7 +107,7 @@ sealed class AudioCheckCommand : IPerfCommand
         return true;
     }
 
-    static bool AllSilent(short[] pcm, int start, int n, int ch)
+    private static bool AllSilent(short[] pcm, int start, int n, int ch)
     {
         for (int i = start; i < start + n; i++)
         {
@@ -121,9 +121,9 @@ sealed class AudioCheckCommand : IPerfCommand
     }
 
     /// <summary>16-bit PCM samples, channels and rate of a RIFF WAV (0 channels when it is something else).</summary>
-    static (short[] Pcm, int Channels, int Rate) ReadWav(string path)
+    private static (short[] Pcm, int Channels, int Rate) ReadWav(string path)
     {
-        var d = File.ReadAllBytes(path);
+        byte[] d = File.ReadAllBytes(path);
         if (d.Length < 12 || BinaryPrimitives.ReadUInt32LittleEndian(d) != 0x46464952)
         {
             return ([], 0, 0);
@@ -142,7 +142,7 @@ sealed class AudioCheckCommand : IPerfCommand
             }
             else if (id == 0x61746164 && bits == 16 && ch > 0) // "data"
             {
-                var pcm = new short[len / 2];
+                short[] pcm = new short[len / 2];
                 Buffer.BlockCopy(d, p + 8, pcm, 0, pcm.Length * 2);
                 return (pcm, ch, rate);
             }

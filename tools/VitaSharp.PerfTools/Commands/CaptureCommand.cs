@@ -9,7 +9,7 @@ namespace VitaSharp.PerfTools;
 /// folder. <c>--frames DIR</c> also writes every presented frame as frame_PRESENT.png (for <c>flicker</c> or a
 /// viewer); <c>--rerun</c> prints the re-run command line. Exit code 1 when a finding that is not (info) is reported.
 /// </summary>
-sealed class CaptureCommand : IPerfCommand
+internal sealed class CaptureCommand : IPerfCommand
 {
     public string Name => "capture";
     public string Summary => "analyze a Gravar tudo capture (frames, timing, GPU dump, input, audio)";
@@ -55,7 +55,7 @@ sealed class CaptureCommand : IPerfCommand
             Directory.CreateDirectory(framesDir);
             int n = 0;
             long from = (long)a.Double("--from", 0), to = (long)a.Double("--to", long.MaxValue), every = Math.Max(1, (long)a.Double("--every", 1));
-            foreach (var (f, pic) in FramesFile.ReadAll(Path.Combine(path, "frames.vsfr")))
+            foreach ((FramesFile.Frame? f, (byte[] Rgba, int W, int H)? pic) in FramesFile.ReadAll(Path.Combine(path, "frames.vsfr")))
             {
                 long pr = f.Info.Present;
                 if (pr > to)

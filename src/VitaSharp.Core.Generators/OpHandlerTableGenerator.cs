@@ -13,16 +13,16 @@ namespace VitaSharp.Core.Generators;
 [Generator(LanguageNames.CSharp)]
 public sealed class OpHandlerTableGenerator : IIncrementalGenerator
 {
-    static readonly DiagnosticDescriptor Missing = new(
+    private static readonly DiagnosticDescriptor s_missing = new(
         "VSHLE002", "Missing CPU handler", "Op {0}: no static handler {1}(CpuState*, uint, uint) in VitaSharp.Core.Cpu", "VitaSharp.Cpu", DiagnosticSeverity.Error, true);
 
     public void Initialize(IncrementalGeneratorInitializationContext context) =>
         context.RegisterSourceOutput(context.CompilationProvider, static (spc, c) => Emit(spc, c));
 
-    static void Emit(SourceProductionContext spc, Compilation c)
+    private static void Emit(SourceProductionContext spc, Compilation c)
     {
-        var op = c.GetTypeByMetadataName("VitaSharp.Core.Cpu.Op");
-        var state = c.GetTypeByMetadataName("VitaSharp.Core.Cpu.CpuState");
+        INamedTypeSymbol? op = c.GetTypeByMetadataName("VitaSharp.Core.Cpu.Op");
+        INamedTypeSymbol? state = c.GetTypeByMetadataName("VitaSharp.Core.Cpu.CpuState");
         // only in the core itself (other assemblies see its internals through InternalsVisibleTo)
         if (op == null || state == null || op.TypeKind != TypeKind.Enum || !SymbolEqualityComparer.Default.Equals(op.ContainingAssembly, c.Assembly))
         {
@@ -42,7 +42,7 @@ public sealed class OpHandlerTableGenerator : IIncrementalGenerator
         methods.AppendLine("    {");
         methods.AppendLine("        const global::System.Reflection.BindingFlags f = global::System.Reflection.BindingFlags.Static | global::System.Reflection.BindingFlags.Public | global::System.Reflection.BindingFlags.NonPublic;");
         methods.AppendLine("        global::System.Type[] sig = [typeof(CpuState*), typeof(uint), typeof(uint)];");
-        foreach (var f in op.GetMembers().OfType<IFieldSymbol>().Where(f => f.IsConst))
+        foreach (IFieldSymbol? f in op.GetMembers().OfType<IFieldSymbol>().Where(f => f.IsConst))
         {
             if (f.Name is "Invalid" or "Count")
             {
@@ -52,17 +52,17 @@ public sealed class OpHandlerTableGenerator : IIncrementalGenerator
             int us = f.Name.IndexOf('_');
             if (us <= 0)
             {
-                spc.ReportDiagnostic(Diagnostic.Create(Missing, f.Locations.FirstOrDefault(), f.Name, f.Name));
+                spc.ReportDiagnostic(Diagnostic.Create(s_missing, f.Locations.FirstOrDefault(), f.Name, f.Name));
                 continue;
             }
             string cls = f.Name.Substring(0, us), name = f.Name.Substring(us + 1);
-            var type = c.GetTypeByMetadataName("VitaSharp.Core.Cpu." + cls);
-            var handler = type?.GetMembers(name).OfType<IMethodSymbol>().FirstOrDefault(m => m.IsStatic && m.Parameters.Length == 3
+            INamedTypeSymbol? type = c.GetTypeByMetadataName("VitaSharp.Core.Cpu." + cls);
+            IMethodSymbol? handler = type?.GetMembers(name).OfType<IMethodSymbol>().FirstOrDefault(m => m.IsStatic && m.Parameters.Length == 3
                 && m.Parameters[0].Type is IPointerTypeSymbol ptr && SymbolEqualityComparer.Default.Equals(ptr.PointedAtType, state)
                 && m.Parameters[1].Type.SpecialType == SpecialType.System_UInt32 && m.Parameters[2].Type.SpecialType == SpecialType.System_UInt32 && m.ReturnsVoid);
             if (handler == null)
             {
-                spc.ReportDiagnostic(Diagnostic.Create(Missing, f.Locations.FirstOrDefault(), f.Name, $"{cls}.{name}"));
+                spc.ReportDiagnostic(Diagnostic.Create(s_missing, f.Locations.FirstOrDefault(), f.Name, $"{cls}.{name}"));
                 continue;
             }
             sb.AppendLine($"        p[(int)Op.{f.Name}] = &global::VitaSharp.Core.Cpu.{cls}.{name};");

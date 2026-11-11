@@ -8,7 +8,7 @@ namespace VitaSharp.PerfTools.Commands;
 
 /// <summary><c>vitasharp-perf bench</c>: the GPU bench of the developer flavour (tools/dev/README.md). cut and table work in
 /// any build; run, shaders and --child need -p:VitaSharpDeveloper=true (the renderer's bench hooks).</summary>
-sealed class BenchCommand : IPerfCommand
+internal sealed class BenchCommand : IPerfCommand
 {
     public string Name => "bench";
     public string Summary => "GPU bench: cut fixtures from GPU dumps, replay them with variants A/B, tabulate GPU ms";
@@ -41,9 +41,9 @@ sealed class BenchCommand : IPerfCommand
         };
     }
 
-    static string Root(PerfArgs a) => Path.GetFullPath(a.Get("--root") ?? throw new PerfArgsException("--root DIR missing"));
+    private static string Root(PerfArgs a) => Path.GetFullPath(a.Get("--root") ?? throw new PerfArgsException("--root DIR missing"));
 
-    static int Cut(PerfArgs a)
+    private static int Cut(PerfArgs a)
     {
         if (a.Positional.Count != 2)
         {
@@ -85,7 +85,7 @@ sealed class BenchCommand : IPerfCommand
 #endif
     }
 
-    static int Child(PerfArgs a)
+    private static int Child(PerfArgs a)
     {
 #if VITASHARP_DEVELOPER
         var spec = GpuBenchSpec.Parse(a.Get("--child") ?? throw new PerfArgsException("--child SPEC"), Root(a));
@@ -97,7 +97,7 @@ sealed class BenchCommand : IPerfCommand
 #endif
     }
 
-    static int Shaders(PerfArgs a)
+    private static int Shaders(PerfArgs a)
     {
 #if VITASHARP_DEVELOPER
         string root = Root(a);
@@ -120,11 +120,11 @@ sealed class BenchCommand : IPerfCommand
     }
 
     /// <summary>Rounds of one child process per (fixture, variant), variants interleaved, then the table.</summary>
-    static int RunRounds(PerfArgs a)
+    private static int RunRounds(PerfArgs a)
     {
         string root = Root(a);
-        var fixtures = (a.Get("--fixtures") ?? throw new PerfArgsException("--fixtures a,b missing")).Split(',', StringSplitOptions.RemoveEmptyEntries);
-        var variants = (a.Get("--variants") ?? "base").Split(',', StringSplitOptions.RemoveEmptyEntries);
+        string[] fixtures = (a.Get("--fixtures") ?? throw new PerfArgsException("--fixtures a,b missing")).Split(',', StringSplitOptions.RemoveEmptyEntries);
+        string[] variants = (a.Get("--variants") ?? "base").Split(',', StringSplitOptions.RemoveEmptyEntries);
         int rounds = (int)a.Double("--rounds", 4), reps = (int)a.Double("--reps", 3);
         string run = a.Get("--run") ?? DateTime.Now.ToString("yyyyMMdd_HHmmss", CultureInfo.InvariantCulture);
         string extra = a.Get("--param") ?? "";
@@ -133,13 +133,13 @@ sealed class BenchCommand : IPerfCommand
         var wall = Stopwatch.StartNew();
         for (int round = 0; round < rounds; round++)
         {
-            foreach (var f in fixtures)
+            foreach (string f in fixtures)
             {
-                foreach (var v in round % 2 == 0 ? variants : variants.Reverse())
+                foreach (string? v in round % 2 == 0 ? variants : variants.Reverse())
                 {
                     string spec = $"fixture={f};variant={v};reps={reps};run={run};{extra}";
                     var psi = new ProcessStartInfo(self, $"{prefix}bench --child \"{spec}\" --root \"{root}\"") { RedirectStandardOutput = true, RedirectStandardError = true, UseShellExecute = false };
-                    using var p = Process.Start(psi)!;
+                    using Process p = Process.Start(psi)!;
                     try
                     {
                         if (OperatingSystem.IsWindows() || OperatingSystem.IsLinux())
@@ -150,7 +150,7 @@ sealed class BenchCommand : IPerfCommand
                         p.PriorityClass = ProcessPriorityClass.BelowNormal;
                     }
                     catch (Exception e) when (e is InvalidOperationException or System.ComponentModel.Win32Exception) { }
-                    var err = p.StandardError.ReadToEndAsync();
+                    Task<string> err = p.StandardError.ReadToEndAsync();
                     string? line;
                     while ((line = p.StandardOutput.ReadLine()) != null)
                     {
@@ -174,7 +174,7 @@ sealed class BenchCommand : IPerfCommand
         return Table([Path.Combine(root, "results", run + ".tsv")], variants[0], (int)a.Double("--scenes", 0.0001));
     }
 
-    static int Table(List<string> files, string baseVariant, int scenes)
+    private static int Table(List<string> files, string baseVariant, int scenes)
     {
 #if VITASHARP_DEVELOPER
         var text = GpuBenchTable.Format(files.SelectMany(File.ReadAllLines), baseVariant, scenes);

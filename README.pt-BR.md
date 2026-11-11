@@ -1,4 +1,4 @@
-<!-- pair: README.md sha256=deafa45b31135756dfe1bfa0ad90af91839d6cf4f8853c83b8485261c7a87e4b -->
+<!-- pair: README.md sha256=97c512551d03e856c39ea2bb3206b7df9bd5f03ab759facb290f9eea3c0cc857 -->
 <div align="center">
 
 [English](README.md) | **Português**
@@ -250,8 +250,11 @@ O estilo do C# é o do Ryujinx/Ryubing, e o [`.editorconfig`](.editorconfig) é 
 desligado e por quê). `build/format-check.ps1` (Windows) / `build/format-check.sh` (Linux, macOS) roda
 `dotnet format whitespace` e `dotnet format style --severity warn` com `--verify-no-changes` só nos arquivos `.cs`
 versionados (`git ls-files`: nunca a `.claude/` com as worktrees dos agentes, nem arquivos fora do git), como o job
-"Code style" do CI, com o mesmo código de saída (2 quando algo difere); `-Fix` / `--fix` reescreve os arquivos em vez de conferir (rodando também o `build/FormatTool`, que
-quebra os blocos escritos numa linha e mantém `{ get; set; }` numa linha). As pastas ainda não convertidas ficam em
+"Code style" do CI, com o mesmo código de saída (2 quando algo difere); `-Fix` / `--fix` reescreve os arquivos em
+vez de conferir (rodando também o `build/NamingTool`, que renomeia os símbolos fora das regras de nomes junto com
+todas as referências, já que o `dotnet format` aponta o IDE1006 mas não sabe corrigi-lo, e o `build/FormatTool`, que
+quebra os blocos escritos numa linha e mantém `{ get; set; }` numa linha; a correção precisa dos pacotes NuGet do
+`build/NamingTool`, baixados na primeira vez). As pastas ainda não convertidas ficam em
 [`build/format-pending.txt`](build/format-pending.txt) e são puladas. O `OneLineBlockTests` (na suíte de testes)
 recusa blocos escritos numa linha só (`if (x) { a; }`): todo corpo vai em linhas próprias.
 

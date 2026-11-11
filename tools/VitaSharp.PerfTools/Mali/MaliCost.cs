@@ -18,14 +18,14 @@ namespace VitaSharp.PerfTools.Mali;
 /// the shaders with the GXP's half-precision values (and, as an upper bound, every fragment float) relaxed to mediump.
 /// See docs/notes/mobile-gpu.md ("Mali cost estimator").
 /// </summary>
-sealed class MaliCost(MaliCost.Settings s)
+internal sealed class MaliCost(MaliCost.Settings s)
 {
     public sealed record Settings(string Core, string Malioc, string CacheDir, string OutDir, double Mhz, double Cores, double Gbps, double Scale,
         long FirstFrame, long LastFrame, bool Fp16WhatIf);
 
-    static readonly CultureInfo Inv = CultureInfo.InvariantCulture;
-    static readonly string[] Units = ["arith_total", "load_store", "varying", "texture"];
-    static readonly string[] UnitNames = ["A", "LS", "V", "T"];
+    private static readonly CultureInfo s_inv = CultureInfo.InvariantCulture;
+    private static readonly string[] s_units = ["arith_total", "load_store", "varying", "texture"];
+    private static readonly string[] s_unitNames = ["A", "LS", "V", "T"];
 
     /// <summary>malioc result of one shader (vertex: the position and varying variants summed).</summary>
     internal sealed record Stats(double[] Cycles, int Bound, bool Spills, int Occupancy, int WorkRegisters, int Fp16, string? Error)
@@ -33,14 +33,14 @@ sealed class MaliCost(MaliCost.Settings s)
         public double BoundCycles => Bound < 0 ? 0 : Cycles[Bound];
     }
 
-    readonly string _cacheDir = Path.Combine(s.CacheDir, "malioc", s.Core);
-    readonly List<DrawCostRecord> _draws = new();
-    IReadOnlyDictionary<(ulong Hash, ulong Hint, bool Vertex), string> _glsl = new Dictionary<(ulong, ulong, bool), string>();
-    IReadOnlyDictionary<long, (long LoadBytes, long StoreBytes)> _tile = new Dictionary<long, (long, long)>();
+    private readonly string _cacheDir = Path.Combine(s.CacheDir, "malioc", s.Core);
+    private readonly List<DrawCostRecord> _draws = new();
+    private IReadOnlyDictionary<(ulong Hash, ulong Hint, bool Vertex), string> _glsl = new Dictionary<(ulong, ulong, bool), string>();
+    private IReadOnlyDictionary<long, (long LoadBytes, long StoreBytes)> _tile = new Dictionary<long, (long, long)>();
 
     public static string? FindMalioc(string? opt)
     {
-        foreach (var c in new[] { opt, Environment.GetEnvironmentVariable(EnvVars.Malioc) })
+        foreach (string? c in new[] { opt, Environment.GetEnvironmentVariable(EnvVars.Malioc) })
         {
             if (!string.IsNullOrEmpty(c) && File.Exists(c))
             {
@@ -49,7 +49,7 @@ sealed class MaliCost(MaliCost.Settings s)
         }
 
         string exe = OperatingSystem.IsWindows() ? "malioc.exe" : "malioc";
-        foreach (var dir in (Environment.GetEnvironmentVariable("PATH") ?? "").Split(Path.PathSeparator))
+        foreach (string dir in (Environment.GetEnvironmentVariable("PATH") ?? "").Split(Path.PathSeparator))
         {
             if (dir.Length > 0 && File.Exists(Path.Combine(dir, exe)))
             {
@@ -57,10 +57,10 @@ sealed class MaliCost(MaliCost.Settings s)
             }
         }
 
-        var arm = Path.Combine(Environment.GetFolderPath(Environment.SpecialFolder.ProgramFiles), "Arm");
+        string arm = Path.Combine(Environment.GetFolderPath(Environment.SpecialFolder.ProgramFiles), "Arm");
         if (Directory.Exists(arm))
         {
-            foreach (var d in Directory.GetDirectories(arm, "Arm Performance Studio*").OrderDescending())
+            foreach (string? d in Directory.GetDirectories(arm, "Arm Performance Studio*").OrderDescending())
             {
                 if (File.Exists(Path.Combine(d, "mali_offline_compiler", exe)))
                 {
@@ -77,7 +77,7 @@ sealed class MaliCost(MaliCost.Settings s)
     {
         lock (_draws)
         {
-            foreach (var d in draws)
+            foreach (DrawCostRecord d in draws)
             {
                 if (d.Present >= s.FirstFrame && d.Present <= s.LastFrame)
                 {
@@ -105,9 +105,9 @@ sealed class MaliCost(MaliCost.Settings s)
 
     // =========================================================== malioc
 
-    readonly ConcurrentDictionary<string, Lazy<Stats>> _compiled = new();
+    private readonly ConcurrentDictionary<string, Lazy<Stats>> _compiled = new();
 
-    Stats Compile(ulong hash, ulong hint, bool vertex, string variant, string glsl)
+    private Stats Compile(ulong hash, ulong hint, bool vertex, string variant, string glsl)
     {
         if (glsl.Length == 0)
         {
@@ -120,7 +120,7 @@ sealed class MaliCost(MaliCost.Settings s)
         return _compiled.GetOrAdd(name, n => new Lazy<Stats>(() => CompileOnce(n, vertex, glsl))).Value;
     }
 
-    Stats CompileOnce(string name, bool vertex, string glsl)
+    private Stats CompileOnce(string name, bool vertex, string glsl)
     {
         string src = Path.Combine(_cacheDir, name + (vertex ? ".vert" : ".frag")), json = Path.Combine(_cacheDir, name + ".json");
         if (File.Exists(json))
@@ -130,7 +130,7 @@ sealed class MaliCost(MaliCost.Settings s)
 
         File.WriteAllText(src, glsl);
         var psi = new ProcessStartInfo(s.Malioc) { RedirectStandardOutput = true, RedirectStandardError = true, UseShellExecute = false, CreateNoWindow = true };
-        foreach (var a in new[] { "-c", s.Core, "--vulkan", "--format", "json", src })
+        foreach (string? a in new[] { "-c", s.Core, "--vulkan", "--format", "json", src })
         {
             psi.ArgumentList.Add(a);
         }
@@ -139,7 +139,7 @@ sealed class MaliCost(MaliCost.Settings s)
         Directory.CreateDirectory(tmp);
         psi.Environment["TEMP"] = psi.Environment["TMP"] = psi.Environment["TMPDIR"] = tmp;
         string text;
-        using (var p = Process.Start(psi)!)
+        using (Process p = Process.Start(psi)!)
         {
             try
             {
@@ -147,8 +147,8 @@ sealed class MaliCost(MaliCost.Settings s)
             }
             catch (InvalidOperationException) { }
             catch (System.ComponentModel.Win32Exception) { }
-            var stdout = p.StandardOutput.ReadToEndAsync();
-            var stderr = p.StandardError.ReadToEnd();
+            Task<string> stdout = p.StandardOutput.ReadToEndAsync();
+            string stderr = p.StandardError.ReadToEnd();
             p.WaitForExit();
             text = stdout.Result;
             if (!text.TrimStart().StartsWith('{'))
@@ -173,41 +173,41 @@ sealed class MaliCost(MaliCost.Settings s)
     internal static Stats Parse(string json)
     {
         using var doc = JsonDocument.Parse(json);
-        var cycles = new double[4];
+        double[] cycles = new double[4];
         bool spills = false;
         int occupancy = 100, regs = 0, fp16 = 0;
         string? error = null;
-        foreach (var sh in doc.RootElement.GetProperty("shaders").EnumerateArray())
+        foreach (JsonElement sh in doc.RootElement.GetProperty("shaders").EnumerateArray())
         {
-            if (sh.TryGetProperty("errors", out var errs) && errs.ValueKind == JsonValueKind.Array && errs.GetArrayLength() > 0)
+            if (sh.TryGetProperty("errors", out JsonElement errs) && errs.ValueKind == JsonValueKind.Array && errs.GetArrayLength() > 0)
             {
                 error = errs[0].ToString();
             }
 
-            if (!sh.TryGetProperty("variants", out var variants))
+            if (!sh.TryGetProperty("variants", out JsonElement variants))
             {
                 continue;
             }
 
-            foreach (var v in variants.EnumerateArray())
+            foreach (JsonElement v in variants.EnumerateArray())
             {
-                var perf = v.GetProperty("performance");
+                JsonElement perf = v.GetProperty("performance");
                 var names = perf.GetProperty("pipelines").EnumerateArray().Select(e => e.GetString()).ToList();
                 // longest path per invocation (loops: total)
-                var path = perf.TryGetProperty("longest_path_cycles", out var lp) && lp.TryGetProperty("cycle_count", out var lc) && lc.ValueKind == JsonValueKind.Array && lc.EnumerateArray().All(x => x.ValueKind == JsonValueKind.Number)
+                JsonElement path = perf.TryGetProperty("longest_path_cycles", out JsonElement lp) && lp.TryGetProperty("cycle_count", out JsonElement lc) && lc.ValueKind == JsonValueKind.Array && lc.EnumerateArray().All(x => x.ValueKind == JsonValueKind.Number)
                     ? lc : perf.GetProperty("total_cycles").GetProperty("cycle_count");
-                var vals = path.EnumerateArray().Select(x => x.ValueKind == JsonValueKind.Number ? x.GetDouble() : 0).ToArray();
-                for (int u = 0; u < Units.Length; u++)
+                double[] vals = path.EnumerateArray().Select(x => x.ValueKind == JsonValueKind.Number ? x.GetDouble() : 0).ToArray();
+                for (int u = 0; u < s_units.Length; u++)
                 {
-                    if (names.IndexOf(Units[u]) is var i and >= 0 && i < vals.Length)
+                    if (names.IndexOf(s_units[u]) is var i and >= 0 && i < vals.Length)
                     {
                         cycles[u] += vals[i];
                     }
                 }
 
-                foreach (var prop in v.GetProperty("properties").EnumerateArray())
+                foreach (JsonElement prop in v.GetProperty("properties").EnumerateArray())
                 {
-                    var val = prop.GetProperty("value");
+                    JsonElement val = prop.GetProperty("value");
                     switch (prop.GetProperty("name").GetString())
                     {
                         case "has_stack_spilling" when val.ValueKind == JsonValueKind.True:
@@ -245,7 +245,7 @@ sealed class MaliCost(MaliCost.Settings s)
 
     // =========================================================== report
 
-    sealed record DrawCost(DrawCostRecord D, double VsMs, double FsMs, Stats Vs, Stats Fs)
+    private sealed record DrawCost(DrawCostRecord D, double VsMs, double FsMs, Stats Vs, Stats Fs)
     {
         public double Ms => VsMs + FsMs;
     }
@@ -276,7 +276,7 @@ sealed class MaliCost(MaliCost.Settings s)
         // two malioc processes at a time (CPU cap)
         Parallel.ForEach(keys.SelectMany(k => variants.Where(v => v != "allmp" || !k.Item3).Select(v => (k, v))), new ParallelOptions { MaxDegreeOfParallelism = 2 }, kv =>
         {
-            var ((h, hint, vertex), v) = kv;
+            ((ulong h, ulong hint, bool vertex), string? v) = kv;
             string glsl = _glsl.GetValueOrDefault((h, hint, vertex)) ?? "";
             // Mali Bifrost/Valhall has no clip distances (the device path is FarPlaneDiscard) and malioc crashes on them
             if (vertex)
@@ -293,9 +293,9 @@ sealed class MaliCost(MaliCost.Settings s)
             // a variant identical to the base shader compiles under the base name
             stats[(h, hint, vertex, v)] = Compile(h, hint, vertex, src == glsl ? "" : v, src);
         });
-        Stats S(ulong h, ulong hint, bool vertex, string v) => stats.TryGetValue((h, hint, vertex, v), out var st) ? st : stats[(h, hint, vertex, "")];
+        Stats S(ulong h, ulong hint, bool vertex, string v) => stats.TryGetValue((h, hint, vertex, v), out Stats? st) ? st : stats[(h, hint, vertex, "")];
         sb.AppendLine($"{keys.Count} shaders ({keys.Count(k => k.Item3)} vertex, {keys.Count(k => !k.Item3)} fragment), malioc {sw.Elapsed.TotalSeconds:F1} s (cached in {_cacheDir})");
-        foreach (var e in keys.Select(k => (k, st: S(k.Item1, k.Item2, k.Item3, ""))).Where(x => x.st.Error != null).Take(10))
+        foreach (((ulong, ulong, bool) k, Stats st) e in keys.Select(k => (k, st: S(k.Item1, k.Item2, k.Item3, ""))).Where(x => x.st.Error != null).Take(10))
         {
             sb.AppendLine($"  malioc failed on {e.k.Item1:x16}/{e.k.Item2:x16} {(e.k.Item3 ? "vert" : "frag")}: {e.st.Error}");
         }
@@ -303,58 +303,58 @@ sealed class MaliCost(MaliCost.Settings s)
         double cyclesPerMs = s.Cores * s.Mhz * 1000 / s.Scale;
         DrawCost Cost(DrawCostRecord d, string v)
         {
-            var vs = S(d.VsHash, d.VsHint, true, v == "allmp" ? "" : v);
-            var fs = S(d.FsHash, d.FsHint, false, v);
+            Stats vs = S(d.VsHash, d.VsHint, true, v == "allmp" ? "" : v);
+            Stats fs = S(d.FsHash, d.FsHint, false, v);
             // unmeasured (a programmable-blending draw split into pieces with a visibility test): a quarter of the target
             double frags = d.Samples < 0 ? (double)d.RtW * d.RtH * 0.25 : (double)d.Samples / Math.Max(1, d.SampleCount);
             return new DrawCost(d, d.Vertices * vs.BoundCycles / cyclesPerMs, frags * fs.BoundCycles / cyclesPerMs, vs, fs);
         }
-        double TileMs(long present) => _tile.TryGetValue(present, out var t) ? (t.LoadBytes + t.StoreBytes) / (s.Gbps * 1e6) : 0;
+        double TileMs(long present) => _tile.TryGetValue(present, out (long LoadBytes, long StoreBytes) t) ? (t.LoadBytes + t.StoreBytes) / (s.Gbps * 1e6) : 0;
 
         var frames = draws.GroupBy(d => d.Present).OrderBy(g => g.Key).ToList();
         sb.AppendLine();
         sb.AppendLine("frame  draws  unmeasured  vertices   fragments   vertex ms  fragment ms  tile MB (load/store)  tile ms  Mali ms" + (s.Fp16WhatIf ? "  | fp16 half: ms (saving)  | all-fragment mediump: ms" : ""));
         var totals = new List<(long Present, double Ms, double Half, double All)>();
-        foreach (var g in frames)
+        foreach (IGrouping<long, DrawCostRecord>? g in frames)
         {
             var c = g.Select(d => Cost(d, "")).ToList();
             double vms = c.Sum(x => x.VsMs), fms = c.Sum(x => x.FsMs), tms = TileMs(g.Key);
             double ms = vms + fms + tms;
             double half = s.Fp16WhatIf ? g.Sum(d => Cost(d, "half").Ms) + tms : ms, all = s.Fp16WhatIf ? g.Sum(d => Cost(d, "allmp").Ms) + tms : ms;
-            var t = _tile.GetValueOrDefault(g.Key);
+            (long LoadBytes, long StoreBytes) t = _tile.GetValueOrDefault(g.Key);
             totals.Add((g.Key, ms, half, all));
-            sb.Append(Inv, $"{g.Key,5} {g.Count(),6} {g.Count(d => d.Samples < 0),11} {g.Sum(d => d.Vertices),9} {g.Sum(d => Math.Max(0, d.Samples) / (double)Math.Max(1, d.SampleCount)),11:F0} {vms,11:F2} {fms,12:F2} {t.LoadBytes / 1048576.0,9:F1}/{t.StoreBytes / 1048576.0,-9:F1} {tms,9:F2} {ms,8:F2}");
-            sb.AppendLine(s.Fp16WhatIf ? string.Create(Inv, $"  | {half,8:F2} ({(ms - half) / Math.Max(ms, 1e-9) * 100,5:F1}%)    | {all,8:F2}") : "");
+            sb.Append(s_inv, $"{g.Key,5} {g.Count(),6} {g.Count(d => d.Samples < 0),11} {g.Sum(d => d.Vertices),9} {g.Sum(d => Math.Max(0, d.Samples) / (double)Math.Max(1, d.SampleCount)),11:F0} {vms,11:F2} {fms,12:F2} {t.LoadBytes / 1048576.0,9:F1}/{t.StoreBytes / 1048576.0,-9:F1} {tms,9:F2} {ms,8:F2}");
+            sb.AppendLine(s.Fp16WhatIf ? string.Create(s_inv, $"  | {half,8:F2} ({(ms - half) / Math.Max(ms, 1e-9) * 100,5:F1}%)    | {all,8:F2}") : "");
         }
         double avg = totals.Average(t => t.Ms);
-        sb.Append(Inv, $"average {avg:F2} ms over {totals.Count} frames");
+        sb.Append(s_inv, $"average {avg:F2} ms over {totals.Count} frames");
         if (s.Fp16WhatIf)
         {
             double avgHalf = totals.Average(t => t.Half), avgAll = totals.Average(t => t.All);
-            sb.Append(Inv, $"; fp16 on half registers {avgHalf:F2} ms ({(avg - avgHalf) / avg * 100:F1}% less); every fragment float mediump {avgAll:F2} ms ({(avg - avgAll) / avg * 100:F1}% less, upper bound)");
+            sb.Append(s_inv, $"; fp16 on half registers {avgHalf:F2} ms ({(avg - avgHalf) / avg * 100:F1}% less); every fragment float mediump {avgAll:F2} ms ({(avg - avgAll) / avg * 100:F1}% less, upper bound)");
         }
         sb.AppendLine();
         var inRange = totals.Select(t => t.Present).ToHashSet();
         long allLoad = _tile.Where(k => inRange.Contains(k.Key)).Sum(k => k.Value.LoadBytes), allStore = _tile.Where(k => inRange.Contains(k.Key)).Sum(k => k.Value.StoreBytes);
-        sb.AppendLine(Inv, $"tile load/store bytes, all frames: {allLoad / 1048576.0:F1} MB load, {allStore / 1048576.0:F1} MB store ({(allLoad + allStore) / 1048576.0 / totals.Count:F1} MB per frame)");
+        sb.AppendLine(s_inv, $"tile load/store bytes, all frames: {allLoad / 1048576.0:F1} MB load, {allStore / 1048576.0:F1} MB store ({(allLoad + allStore) / 1048576.0 / totals.Count:F1} MB per frame)");
 
         // the most expensive frame's top draws
-        var worst = totals.MaxBy(t => t.Ms);
+        (long Present, double Ms, double Half, double All) worst = totals.MaxBy(t => t.Ms);
         var top = frames.First(g => g.Key == worst.Present).Select(d => Cost(d, "")).OrderByDescending(x => x.Ms).Take(10).ToList();
         sb.AppendLine();
-        sb.AppendLine(Inv, $"top 10 draws of frame {worst.Present} ({worst.Ms:F2} ms):");
+        sb.AppendLine(s_inv, $"top 10 draws of frame {worst.Present} ({worst.Ms:F2} ms):");
         sb.AppendLine("  draw   ms     %   vertices  fragments  stage bound  vs hash           fs hash           fs cycles A/LS/V/T");
-        foreach (var x in top)
+        foreach (DrawCost? x in top)
         {
             bool fsHeavy = x.FsMs >= x.VsMs;
-            var st = fsHeavy ? x.Fs : x.Vs;
-            string bound = st.Bound < 0 ? "-" : UnitNames[st.Bound];
-            sb.AppendLine(Inv, $"  {x.D.Serial,4} {x.Ms,6:F3} {x.Ms / worst.Ms * 100,4:F1} {x.D.Vertices,9} {(x.D.Samples < 0 ? "?" : (x.D.Samples / Math.Max(1, x.D.SampleCount)).ToString(Inv)),10}  {(fsHeavy ? "frag" : "vert")} {bound,-5} {x.D.VsHash:x16}  {x.D.FsHash:x16}  {string.Join("/", x.Fs.Cycles.Select(c => c.ToString("F2", Inv)))}");
+            Stats st = fsHeavy ? x.Fs : x.Vs;
+            string bound = st.Bound < 0 ? "-" : s_unitNames[st.Bound];
+            sb.AppendLine(s_inv, $"  {x.D.Serial,4} {x.Ms,6:F3} {x.Ms / worst.Ms * 100,4:F1} {x.D.Vertices,9} {(x.D.Samples < 0 ? "?" : (x.D.Samples / Math.Max(1, x.D.SampleCount)).ToString(s_inv)),10}  {(fsHeavy ? "frag" : "vert")} {bound,-5} {x.D.VsHash:x16}  {x.D.FsHash:x16}  {string.Join("/", x.Fs.Cycles.Select(c => c.ToString("F2", s_inv)))}");
         }
 
         // shaders that spill or run below full occupancy, weighted by their share of the estimate
         var share = new Dictionary<(ulong, ulong, bool), double>();
-        foreach (var x in draws.Select(d => Cost(d, "")))
+        foreach (DrawCost? x in draws.Select(d => Cost(d, "")))
         {
             share[(x.D.VsHash, x.D.VsHint, true)] = share.GetValueOrDefault((x.D.VsHash, x.D.VsHint, true)) + x.VsMs;
             share[(x.D.FsHash, x.D.FsHint, false)] = share.GetValueOrDefault((x.D.FsHash, x.D.FsHint, false)) + x.FsMs;
@@ -362,9 +362,9 @@ sealed class MaliCost(MaliCost.Settings s)
         var bad = keys.Select(k => (k, st: S(k.Item1, k.Item2, k.Item3, ""))).Where(x => x.st.Spills || x.st.Occupancy < 100).OrderByDescending(x => share.GetValueOrDefault(x.k)).ToList();
         sb.AppendLine();
         sb.AppendLine($"shaders that spill or run at reduced occupancy: {bad.Count} of {keys.Count}");
-        foreach (var (k, st) in bad.Take(20))
+        foreach (((ulong, ulong, bool) k, Stats? st) in bad.Take(20))
         {
-            sb.AppendLine(Inv, $"  {k.Item1:x16}/{k.Item2:x16} {(k.Item3 ? "vert" : "frag")}: {(st.Spills ? "spills, " : "")}occupancy {st.Occupancy}%, {st.WorkRegisters} work registers, {share.GetValueOrDefault(k) / totals.Count:F3} ms per frame");
+            sb.AppendLine(s_inv, $"  {k.Item1:x16}/{k.Item2:x16} {(k.Item3 ? "vert" : "frag")}: {(st.Spills ? "spills, " : "")}occupancy {st.Occupancy}%, {st.WorkRegisters} work registers, {share.GetValueOrDefault(k) / totals.Count:F3} ms per frame");
         }
 
         if (s.Fp16WhatIf)
@@ -375,7 +375,7 @@ sealed class MaliCost(MaliCost.Settings s)
         Write(sb);
     }
 
-    void Write(StringBuilder sb)
+    private void Write(StringBuilder sb)
     {
         string path = Path.Combine(s.OutDir, "mali_cost.txt");
         Directory.CreateDirectory(s.OutDir);
