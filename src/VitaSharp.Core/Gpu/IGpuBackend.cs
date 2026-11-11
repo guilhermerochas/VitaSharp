@@ -11,10 +11,14 @@ public interface IGpuBackend : IDisposable
     void Execute(GpuCommand command);
 
     /// <summary>Called on the worker thread when the queue runs empty (good moment to flush/submit).</summary>
-    void Idle() { }
+    void Idle()
+    {
+    }
 
     /// <summary>The backend was installed on <paramref name="queue"/> (lets <see cref="Idle"/> notice newly queued work).</summary>
-    void Attach(GpuQueue queue) { }
+    void Attach(GpuQueue queue)
+    {
+    }
 
     /// <summary>
     /// Queues <paramref name="signal"/> to run once all work executed so far has completed on the GPU and its results
@@ -26,14 +30,18 @@ public interface IGpuBackend : IDisposable
     /// A title is about to start on this backend (called once its id is known, before its first command).
     /// Backends use it to load per-title caches (shaders, pipelines) and warm them up in the background.
     /// </summary>
-    void BeginTitle(string titleId) { }
+    void BeginTitle(string titleId)
+    {
+    }
 
     /// <summary>The title passed to <see cref="BeginTitle"/>, or null (a backend without per-title state).</summary>
     string? TitleId => null;
 
     /// <summary>Called on the submitting thread for each command before it is queued (no worker state may be touched):
     /// lets a backend start slow preparation, e.g. shader compilation, ahead of execution.</summary>
-    void Prefetch(GpuCommand command) { }
+    void Prefetch(GpuCommand command)
+    {
+    }
 
     /// <summary>Presents executed so far (frame numbering of dumps and traces); -1 when the backend does not count them.</summary>
     long PresentCount => -1;
@@ -45,7 +53,9 @@ public interface IGpuBackend : IDisposable
     /// <summary>Called on the worker thread right before a <see cref="CallbackCommand"/>'s CPU action runs: content the
     /// backend holds only on the GPU (rendered surfaces) inside the range the action reads
     /// (<see cref="CallbackCommand.ReadAddress"/>) must be in guest memory when this returns.</summary>
-    void BeforeCallback(CallbackCommand command) { }
+    void BeforeCallback(CallbackCommand command)
+    {
+    }
 
     /// <summary>Called on the worker thread before <see cref="BeforeCallback"/>: true when the backend takes the action
     /// and runs it itself once the GPU work it reads is complete (in order with the sync points after it), instead of

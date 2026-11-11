@@ -44,27 +44,40 @@ public static class AstcEncoder
     public static void Encode(ReadOnlySpan<byte> rgba, int w, int h, Span<byte> blocks, AstcChannels channels)
     {
         int bw = (w + 3) / 4, bh = (h + 3) / 4;
-        if (blocks.Length < bw * bh * BlockBytes) throw new ArgumentException("block buffer too small");
+        if (blocks.Length < bw * bh * BlockBytes)
+        {
+            throw new ArgumentException("block buffer too small");
+        }
+
         Span<byte> texels = stackalloc byte[64];
         for (int by = 0; by < bh; by++)
+        {
             for (int bx = 0; bx < bw; bx++)
             {
                 // partial blocks repeat the edge texels (they are never sampled)
                 for (int y = 0; y < 4; y++)
+                {
                     for (int x = 0; x < 4; x++)
                     {
                         int sx = Math.Min(bx * 4 + x, w - 1), sy = Math.Min(by * 4 + y, h - 1);
                         rgba.Slice((sy * w + sx) * 4, 4).CopyTo(texels.Slice((y * 4 + x) * 4, 4));
                     }
+                }
+
                 EncodeBlock(texels, blocks.Slice((by * bw + bx) * BlockBytes, BlockBytes), channels);
             }
+        }
     }
 
     /// <summary>Rows of blocks encoded in parallel (large textures).</summary>
     public static void EncodeParallel(ReadOnlySpan<byte> rgba, int w, int h, byte[] blocks, AstcChannels channels, int maxThreads)
     {
         int bh = (h + 3) / 4;
-        if (bh < 8 || maxThreads <= 1) { Encode(rgba, w, h, blocks, channels); return; }
+        if (bh < 8 || maxThreads <= 1)
+        {
+            Encode(rgba, w, h, blocks, channels);
+            return;
+        }
         var src = rgba.ToArray();
         int bw = (w + 3) / 4;
         Parallel.For(0, bh, new ParallelOptions { MaxDegreeOfParallelism = maxThreads }, by =>
@@ -73,11 +86,14 @@ public static class AstcEncoder
             for (int bx = 0; bx < bw; bx++)
             {
                 for (int y = 0; y < 4; y++)
+                {
                     for (int x = 0; x < 4; x++)
                     {
                         int sx = Math.Min(bx * 4 + x, w - 1), sy = Math.Min(by * 4 + y, h - 1);
                         src.AsSpan((sy * w + sx) * 4, 4).CopyTo(texels.Slice((y * 4 + x) * 4, 4));
                     }
+                }
+
                 EncodeBlock(texels, blocks.AsSpan((by * bw + bx) * BlockBytes, BlockBytes), channels);
             }
         });
@@ -96,8 +112,16 @@ public static class AstcEncoder
 
         public Config(int cem, int weightLevels, int ccs)
         {
-            Cem = cem; WeightLevels = weightLevels; Ccs = ccs;
-            Nc = cem switch { 0 => 1, 4 => 2, 8 => 3, _ => 4 };
+            Cem = cem;
+            WeightLevels = weightLevels;
+            Ccs = ccs;
+            Nc = cem switch
+            {
+                0 => 1,
+                4 => 2,
+                8 => 3,
+                _ => 4
+            };
             Dual = ccs >= 0;
             PlaneChannel = Dual ? (Nc == 2 ? 1 : ccs) : -1; // LA: alpha is value index 1
             WeightBits = Ise.BitCount(16 * (Dual ? 2 : 1), weightLevels);
@@ -126,21 +150,39 @@ public static class AstcEncoder
         {
             case AstcChannels.R:
                 nc = 1;
-                for (int i = 0; i < 16; i++) v[i] = texels[i * 4];
+                for (int i = 0; i < 16; i++)
+                {
+                    v[i] = texels[i * 4];
+                }
+
                 configs = LConfigs;
                 break;
             case AstcChannels.Rg:
                 nc = 2;
-                for (int i = 0; i < 16; i++) { v[i * 2] = texels[i * 4]; v[i * 2 + 1] = texels[i * 4 + 1]; }
+                for (int i = 0; i < 16; i++)
+                {
+                    v[i * 2] = texels[i * 4];
+                    v[i * 2 + 1] = texels[i * 4 + 1];
+                }
                 configs = LaConfigs;
                 break;
             default:
             {
                 bool opaque = true;
-                for (int i = 0; i < 16; i++) opaque &= texels[i * 4 + 3] == 255;
+                for (int i = 0; i < 16; i++)
+                {
+                    opaque &= texels[i * 4 + 3] == 255;
+                }
+
                 nc = opaque ? 3 : 4;
                 for (int i = 0; i < 16; i++)
-                    for (int c = 0; c < nc; c++) v[i * nc + c] = texels[i * 4 + c];
+                {
+                    for (int c = 0; c < nc; c++)
+                    {
+                        v[i * nc + c] = texels[i * 4 + c];
+                    }
+                }
+
                 configs = opaque ? RgbConfigs : RgbaConfigs;
                 break;
             }
@@ -163,12 +205,30 @@ public static class AstcEncoder
             if ((slot == 0 ? axisFor0 : axisFor1) != cfg.PlaneChannel)
             {
                 FitAxis(v, nc, cfg.PlaneChannel, e[..4], e[4..]);
-                if (cfg.PlaneChannel >= 0) FitSingle(v, nc, cfg.PlaneChannel, e[..4], e[4..]);
-                if (slot == 0) axisFor0 = cfg.PlaneChannel; else axisFor1 = cfg.PlaneChannel;
+                if (cfg.PlaneChannel >= 0)
+                {
+                    FitSingle(v, nc, cfg.PlaneChannel, e[..4], e[4..]);
+                }
+
+                if (slot == 0)
+                {
+                    axisFor0 = cfg.PlaneChannel;
+                }
+                else
+                {
+                    axisFor1 = cfg.PlaneChannel;
+                }
             }
             float err = EncodeConfig(v, nc, cfg, e[..4], e[4..], trial);
-            if (err < bestErr) { bestErr = err; trial.CopyTo(best); }
-            if (bestErr <= GoodEnough * 16 * nc) break;
+            if (err < bestErr)
+            {
+                bestErr = err;
+                trial.CopyTo(best);
+            }
+            if (bestErr <= GoodEnough * 16 * nc)
+            {
+                break;
+            }
         }
         best.CopyTo(block);
     }
@@ -176,8 +236,16 @@ public static class AstcEncoder
     static bool IsUniform(ReadOnlySpan<float> v, int nc)
     {
         for (int i = 1; i < 16; i++)
+        {
             for (int c = 0; c < nc; c++)
-                if (v[i * nc + c] != v[c]) return false;
+            {
+                if (v[i * nc + c] != v[c])
+                {
+                    return false;
+                }
+            }
+        }
+
         return true;
     }
 
@@ -186,8 +254,16 @@ public static class AstcEncoder
         // block mode 0x1FC, LDR, reserved bits 11, all extent coordinates 1s; colour as UNORM16
         ulong lo = 0xDFCul | (0xFFFFFFFFFFFFFul << 12);
         int r = t[0], g = t[1], b = t[2], a = t[3];
-        if (channels == AstcChannels.R) { g = b = r; a = 255; }
-        else if (channels == AstcChannels.Rg) { a = g; g = b = r; }
+        if (channels == AstcChannels.R)
+        {
+            g = b = r;
+            a = 255;
+        }
+        else if (channels == AstcChannels.Rg)
+        {
+            a = g;
+            g = b = r;
+        }
         ulong hi = (uint)(r * 257) | (ulong)(uint)(g * 257) << 16 | (ulong)(uint)(b * 257) << 32 | (ulong)(uint)(a * 257) << 48;
         Unsafe.WriteUnaligned(ref block[0], lo);
         Unsafe.WriteUnaligned(ref block[8], hi);
@@ -200,7 +276,11 @@ public static class AstcEncoder
         int planeChannel = cfg.PlaneChannel;
         int weightBits = cfg.WeightBits;
         int endpointLevels = cfg.EndpointLevels;
-        if (endpointLevels < 6) return float.MaxValue;
+        if (endpointLevels < 6)
+        {
+            return float.MaxValue;
+        }
+
         var eq = cfg.Eq;
 
         Span<float> e0 = stackalloc float[4], e1 = stackalloc float[4];
@@ -217,7 +297,11 @@ public static class AstcEncoder
                 axis0.CopyTo(e0);
                 axis1.CopyTo(e1);
             }
-            else if (bestErr <= GoodEnough * 16 * nc || !Refine(v, nc, planeChannel, w, wu, e0, e1)) break;
+            else if (bestErr <= GoodEnough * 16 * nc || !Refine(v, nc, planeChannel, w, wu, e0, e1))
+            {
+                break;
+            }
+
             for (int c = 0; c < nc; c++)
             {
                 q0[c] = eq.Quantize[ClampByte(e0[c])];
@@ -229,7 +313,12 @@ public static class AstcEncoder
                 int s0 = eq.Unquant[q0[0]] + eq.Unquant[q0[1]] + eq.Unquant[q0[2]];
                 int s1 = eq.Unquant[q1[0]] + eq.Unquant[q1[1]] + eq.Unquant[q1[2]];
                 if (s1 < s0)
-                    for (int c = 0; c < nc; c++) (q0[c], q1[c]) = (q1[c], q0[c]);
+                {
+                    for (int c = 0; c < nc; c++)
+                    {
+                        (q0[c], q1[c]) = (q1[c], q0[c]);
+                    }
+                }
             }
             float err = ChooseWeights(v, nc, planeChannel, q0, q1, eq.Unquant, wu, w);
             if (err < bestErr)
@@ -238,7 +327,10 @@ public static class AstcEncoder
                 Pack(trial, cfg, nc, dual, weightBits, endpointLevels, q0, q1, w);
                 trial.CopyTo(block);
             }
-            if (err == 0) break;
+            if (err == 0)
+            {
+                break;
+            }
         }
         return bestErr;
     }
@@ -252,24 +344,56 @@ public static class AstcEncoder
         Span<float> mean = stackalloc float[4];
         mean.Clear();
         for (int i = 0; i < 16; i++)
-            for (int c = 0; c < nc; c++) mean[c] += v[i * nc + c];
-        for (int c = 0; c < nc; c++) mean[c] /= 16;
+        {
+            for (int c = 0; c < nc; c++)
+            {
+                mean[c] += v[i * nc + c];
+            }
+        }
+
+        for (int c = 0; c < nc; c++)
+        {
+            mean[c] /= 16;
+        }
+
         Span<float> cov = stackalloc float[16];
         cov.Clear();
         for (int i = 0; i < 16; i++)
+        {
             for (int a = 0; a < nc; a++)
             {
-                if (a == skip) continue;
+                if (a == skip)
+                {
+                    continue;
+                }
+
                 float da = v[i * nc + a] - mean[a];
                 for (int b = a; b < nc; b++)
                 {
-                    if (b == skip) continue;
+                    if (b == skip)
+                    {
+                        continue;
+                    }
+
                     cov[a * 4 + b] += da * (v[i * nc + b] - mean[b]);
                 }
             }
-        for (int a = 0; a < nc; a++) for (int b = 0; b < a; b++) cov[a * 4 + b] = cov[b * 4 + a];
+        }
+
+        for (int a = 0; a < nc; a++)
+        {
+            for (int b = 0; b < a; b++)
+            {
+                cov[a * 4 + b] = cov[b * 4 + a];
+            }
+        }
+
         Span<float> axis = stackalloc float[4];
-        for (int c = 0; c < nc; c++) axis[c] = c == skip ? 0 : 1;
+        for (int c = 0; c < nc; c++)
+        {
+            axis[c] = c == skip ? 0 : 1;
+        }
+
         Span<float> next = stackalloc float[4];
         for (int it = 0; it < 8; it++)
         {
@@ -277,31 +401,64 @@ public static class AstcEncoder
             for (int a = 0; a < nc; a++)
             {
                 float s = 0;
-                for (int b = 0; b < nc; b++) s += cov[a * 4 + b] * axis[b];
+                for (int b = 0; b < nc; b++)
+                {
+                    s += cov[a * 4 + b] * axis[b];
+                }
+
                 next[a] = a == skip ? 0 : s;
                 len = MathF.Max(len, MathF.Abs(next[a]));
             }
-            if (len < 1e-6f) break;
-            for (int a = 0; a < nc; a++) axis[a] = next[a] / len;
+            if (len < 1e-6f)
+            {
+                break;
+            }
+
+            for (int a = 0; a < nc; a++)
+            {
+                axis[a] = next[a] / len;
+            }
         }
         float tmin = float.MaxValue, tmax = float.MinValue, norm = 0;
-        for (int c = 0; c < nc; c++) norm += axis[c] * axis[c];
+        for (int c = 0; c < nc; c++)
+        {
+            norm += axis[c] * axis[c];
+        }
+
         if (norm < 1e-12f)
         {
-            for (int c = 0; c < nc; c++) if (c != skip) e0[c] = e1[c] = mean[c];
+            for (int c = 0; c < nc; c++)
+            {
+                if (c != skip)
+                {
+                    e0[c] = e1[c] = mean[c];
+                }
+            }
+
             return;
         }
         for (int i = 0; i < 16; i++)
         {
             float t = 0;
-            for (int c = 0; c < nc; c++) if (c != skip) t += (v[i * nc + c] - mean[c]) * axis[c];
+            for (int c = 0; c < nc; c++)
+            {
+                if (c != skip)
+                {
+                    t += (v[i * nc + c] - mean[c]) * axis[c];
+                }
+            }
+
             t /= norm;
             tmin = MathF.Min(tmin, t);
             tmax = MathF.Max(tmax, t);
         }
         for (int c = 0; c < nc; c++)
         {
-            if (c == skip) continue;
+            if (c == skip)
+            {
+                continue;
+            }
+
             e0[c] = mean[c] + axis[c] * tmin;
             e1[c] = mean[c] + axis[c] * tmax;
         }
@@ -311,7 +468,11 @@ public static class AstcEncoder
     static void FitSingle(ReadOnlySpan<float> v, int nc, int c, Span<float> e0, Span<float> e1)
     {
         float lo = float.MaxValue, hi = float.MinValue;
-        for (int i = 0; i < 16; i++) { lo = MathF.Min(lo, v[i * nc + c]); hi = MathF.Max(hi, v[i * nc + c]); }
+        for (int i = 0; i < 16; i++)
+        {
+            lo = MathF.Min(lo, v[i * nc + c]);
+            hi = MathF.Max(hi, v[i * nc + c]);
+        }
         e0[c] = lo;
         e1[c] = hi;
     }
@@ -330,19 +491,33 @@ public static class AstcEncoder
             for (int i = 0; i < 16; i++)
             {
                 float t = wu[w[i * stride + plane]] / 64f, s = 1 - t;
-                aa += s * s; ab += s * t; bb += t * t;
+                aa += s * s;
+                ab += s * t;
+                bb += t * t;
                 for (int c = 0; c < nc; c++)
                 {
-                    if ((c == planeChannel) != (plane == 1)) continue;
+                    if ((c == planeChannel) != (plane == 1))
+                    {
+                        continue;
+                    }
+
                     ax[c] += s * v[i * nc + c];
                     bx[c] += t * v[i * nc + c];
                 }
             }
             float det = aa * bb - ab * ab;
-            if (MathF.Abs(det) < 1e-6f) continue;
+            if (MathF.Abs(det) < 1e-6f)
+            {
+                continue;
+            }
+
             for (int c = 0; c < nc; c++)
             {
-                if ((c == planeChannel) != (plane == 1)) continue;
+                if ((c == planeChannel) != (plane == 1))
+                {
+                    continue;
+                }
+
                 e0[c] = (bb * ax[c] - ab * bx[c]) / det;
                 e1[c] = (aa * bx[c] - ab * ax[c]) / det;
             }
@@ -358,16 +533,25 @@ public static class AstcEncoder
         int planes = planeChannel >= 0 ? 2 : 1;
         int levels = wu.Length;
         Span<int> u0 = stackalloc int[4], u1 = stackalloc int[4];
-        for (int c = 0; c < nc; c++) { u0[c] = unq[q0[c]]; u1[c] = unq[q1[c]]; }
+        for (int c = 0; c < nc; c++)
+        {
+            u0[c] = unq[q0[c]];
+            u1[c] = unq[q1[c]];
+        }
         float total = 0;
         for (int i = 0; i < 16; i++)
+        {
             for (int plane = 0; plane < planes; plane++)
             {
                 // project onto the endpoint line, then check the neighbouring levels exactly
                 float num = 0, den = 0;
                 for (int c = 0; c < nc; c++)
                 {
-                    if (planes == 2 && (c == planeChannel) != (plane == 1)) continue;
+                    if (planes == 2 && (c == planeChannel) != (plane == 1))
+                    {
+                        continue;
+                    }
+
                     float d = u1[c] - u0[c];
                     num += (v[i * nc + c] - u0[c]) * d;
                     den += d * d;
@@ -381,15 +565,25 @@ public static class AstcEncoder
                     float e = 0;
                     for (int c = 0; c < nc; c++)
                     {
-                        if (planes == 2 && (c == planeChannel) != (plane == 1)) continue;
+                        if (planes == 2 && (c == planeChannel) != (plane == 1))
+                        {
+                            continue;
+                        }
+
                         float d = AstcDecoder.Interpolate(u0[c], u1[c], wu[k]) - v[i * nc + c];
                         e += d * d;
                     }
-                    if (e < bestE) { bestE = e; bestW = k; }
+                    if (e < bestE)
+                    {
+                        bestE = e;
+                        bestW = k;
+                    }
                 }
                 w[i * planes + plane] = bestW;
                 total += bestE;
             }
+        }
+
         return total;
     }
 
@@ -404,9 +598,16 @@ public static class AstcEncoder
         bits.Write(13, 4, (uint)cfg.Cem);
         // endpoint values: v0 = c0.e0, v1 = c0.e1, v2 = c1.e0 ...
         Span<int> vals = stackalloc int[8];
-        for (int c = 0; c < nc; c++) { vals[c * 2] = q0[c]; vals[c * 2 + 1] = q1[c]; }
+        for (int c = 0; c < nc; c++)
+        {
+            vals[c * 2] = q0[c];
+            vals[c * 2 + 1] = q1[c];
+        }
         Ise.Encode(ref bits, 17, vals[..(nc * 2)], endpointLevels);
-        if (dual) bits.Write(128 - weightBits - 2, 2, (uint)cfg.Ccs);
+        if (dual)
+        {
+            bits.Write(128 - weightBits - 2, 2, (uint)cfg.Ccs);
+        }
         // weights: their own bit stream, stored bit-reversed from the top of the block
         var wbits = new Bits128();
         Ise.Encode(ref wbits, 0, w[..(16 * (dual ? 2 : 1))], cfg.WeightLevels);
@@ -422,19 +623,33 @@ struct Bits128
 
     public void Write(int pos, int n, uint value)
     {
-        if (n <= 0 || pos >= 128) return;
+        if (n <= 0 || pos >= 128)
+        {
+            return;
+        }
+
         ulong v = value & (n >= 32 ? 0xFFFFFFFFul : (1ul << n) - 1);
         if (pos < 64)
         {
             Lo |= v << pos;
-            if (pos + n > 64) Hi |= v >> (64 - pos);
+            if (pos + n > 64)
+            {
+                Hi |= v >> (64 - pos);
+            }
         }
-        else Hi |= v << (pos - 64);
+        else
+        {
+            Hi |= v << (pos - 64);
+        }
     }
 
     public readonly uint Read(int pos, int n)
     {
-        if (n <= 0 || pos >= 128) return 0;
+        if (n <= 0 || pos >= 128)
+        {
+            return 0;
+        }
+
         ulong v = pos < 64 ? (Lo >> pos) | (pos > 0 ? Hi << (64 - pos) : 0) : Hi >> (pos - 64);
         return (uint)(v & (n >= 32 ? 0xFFFFFFFFul : (1ul << n) - 1));
     }
@@ -480,7 +695,14 @@ static class Ise
 
     static (int Bits, bool Trit, bool Quint) Info(int levels)
     {
-        foreach (var r in Ranges) if (r.Levels == levels) return (r.Bits, r.Trit, r.Quint);
+        foreach (var r in Ranges)
+        {
+            if (r.Levels == levels)
+            {
+                return (r.Bits, r.Trit, r.Quint);
+            }
+        }
+
         throw new ArgumentException($"no ISE range with {levels} levels");
     }
 
@@ -494,7 +716,13 @@ static class Ise
     public static int ColorLevels(int bits, int values)
     {
         foreach (var r in Ranges)
-            if (BitCount(values, r.Levels) <= bits) return r.Levels;
+        {
+            if (BitCount(values, r.Levels) <= bits)
+            {
+                return r.Levels;
+            }
+        }
+
         return 0;
     }
 
@@ -541,14 +769,26 @@ static class Ise
     {
         lock (WeightTables)
         {
-            if (WeightTables.TryGetValue(levels, out var t)) return t;
+            if (WeightTables.TryGetValue(levels, out var t))
+            {
+                return t;
+            }
+
             var (bits, trit, quint) = Info(levels);
-            if (trit || quint) throw new NotSupportedException($"weight range {levels} (trit/quint weights are not used)");
+            if (trit || quint)
+            {
+                throw new NotSupportedException($"weight range {levels} (trit/quint weights are not used)");
+            }
+
             t = new int[levels];
             for (int i = 0; i < levels; i++)
             {
                 int u = 0, filled = 0;
-                while (filled < 6) { u = (u << bits) | i; filled += bits; }
+                while (filled < 6)
+                {
+                    u = (u << bits) | i;
+                    filled += bits;
+                }
                 u >>= filled - 6;
                 t[i] = u > 32 ? u + 1 : u;
             }
@@ -564,9 +804,17 @@ static class Ise
     {
         lock (EndpointTables)
         {
-            if (EndpointTables.TryGetValue(levels, out var e)) return e;
+            if (EndpointTables.TryGetValue(levels, out var e))
+            {
+                return e;
+            }
+
             var unq = new int[levels];
-            for (int i = 0; i < levels; i++) unq[i] = UnquantEndpoint(i, levels);
+            for (int i = 0; i < levels; i++)
+            {
+                unq[i] = UnquantEndpoint(i, levels);
+            }
+
             var q = new int[256];
             for (int x = 0; x < 256; x++)
             {
@@ -574,7 +822,11 @@ static class Ise
                 for (int i = 0; i < levels; i++)
                 {
                     int d = Math.Abs(unq[i] - x);
-                    if (d < bestD) { bestD = d; best = i; }
+                    if (d < bestD)
+                    {
+                        bestD = d;
+                        best = i;
+                    }
                 }
                 q[x] = best;
             }
@@ -589,7 +841,11 @@ static class Ise
         if (!trit && !quint)
         {
             int u = 0, filled = 0;
-            while (filled < 8) { u = (u << bits) | v; filled += bits; }
+            while (filled < 8)
+            {
+                u = (u << bits) | v;
+                filled += bits;
+            }
             return u >> (filled - 8);
         }
         int d = v >> bits, m = v & ((1 << bits) - 1);
@@ -601,7 +857,19 @@ static class Ise
         {
             int r = 0;
             foreach (char ch in pattern)
-                r = (r << 1) | ch switch { '0' => 0, 'b' => b, 'c' => c, 'd' => d, 'e' => e, 'f' => f, _ => 0 };
+            {
+                r = (r << 1) | ch switch
+                {
+                    '0' => 0,
+                    'b' => b,
+                    'c' => c,
+                    'd' => d,
+                    'e' => e,
+                    'f' => f,
+                    _ => 0
+                };
+            }
+
             return r;
         }
         if (trit)
@@ -647,18 +915,46 @@ static class Ise
             if (((T >> 2) & 7) == 7)
             {
                 C = (((T >> 5) & 7) << 2) | (T & 3);
-                t4 = 2; t3 = 2;
+                t4 = 2;
+                t3 = 2;
             }
             else
             {
                 C = T & 0x1F;
-                if (((T >> 5) & 3) == 3) { t4 = 2; t3 = (T >> 7) & 1; }
-                else { t4 = (T >> 7) & 1; t3 = (T >> 5) & 3; }
+                if (((T >> 5) & 3) == 3)
+                {
+                    t4 = 2;
+                    t3 = (T >> 7) & 1;
+                }
+                else
+                {
+                    t4 = (T >> 7) & 1;
+                    t3 = (T >> 5) & 3;
+                }
             }
-            if ((C & 3) == 3) { t2 = 2; t1 = (C >> 4) & 1; t0 = (((C >> 3) & 1) << 1) | (((C >> 2) & 1) & ~((C >> 3) & 1) & 1); }
-            else if (((C >> 2) & 3) == 3) { t2 = 2; t1 = 2; t0 = C & 3; }
-            else { t2 = (C >> 4) & 1; t1 = (C >> 2) & 3; t0 = (((C >> 1) & 1) << 1) | ((C & 1) & ~((C >> 1) & 1) & 1); }
-            TritOf[T, 0] = t0; TritOf[T, 1] = t1; TritOf[T, 2] = t2; TritOf[T, 3] = t3; TritOf[T, 4] = t4;
+            if ((C & 3) == 3)
+            {
+                t2 = 2;
+                t1 = (C >> 4) & 1;
+                t0 = (((C >> 3) & 1) << 1) | (((C >> 2) & 1) & ~((C >> 3) & 1) & 1);
+            }
+            else if (((C >> 2) & 3) == 3)
+            {
+                t2 = 2;
+                t1 = 2;
+                t0 = C & 3;
+            }
+            else
+            {
+                t2 = (C >> 4) & 1;
+                t1 = (C >> 2) & 3;
+                t0 = (((C >> 1) & 1) << 1) | ((C & 1) & ~((C >> 1) & 1) & 1);
+            }
+            TritOf[T, 0] = t0;
+            TritOf[T, 1] = t1;
+            TritOf[T, 2] = t2;
+            TritOf[T, 3] = t3;
+            TritOf[T, 4] = t4;
         }
         for (int Q = 0; Q < 128; Q++)
         {
@@ -667,7 +963,8 @@ static class Ise
             {
                 int b0 = Q & 1, b3 = (Q >> 3) & 1, b4 = (Q >> 4) & 1;
                 q2 = (b0 << 2) | ((b4 & ~b0 & 1) << 1) | (b3 & ~b0 & 1);
-                q1 = 4; q0 = 4;
+                q1 = 4;
+                q0 = 4;
             }
             else
             {
@@ -682,19 +979,37 @@ static class Ise
                     q2 = (Q >> 5) & 3;
                     C = Q & 0x1F;
                 }
-                if ((C & 7) == 5) { q1 = 4; q0 = (C >> 3) & 3; }
-                else { q1 = (C >> 3) & 3; q0 = C & 7; }
+                if ((C & 7) == 5)
+                {
+                    q1 = 4;
+                    q0 = (C >> 3) & 3;
+                }
+                else
+                {
+                    q1 = (C >> 3) & 3;
+                    q0 = C & 7;
+                }
             }
-            QuintOf[Q, 0] = q0; QuintOf[Q, 1] = q1; QuintOf[Q, 2] = q2;
+            QuintOf[Q, 0] = q0;
+            QuintOf[Q, 1] = q1;
+            QuintOf[Q, 2] = q2;
         }
         for (int k = 1; k <= 5; k++)
         {
             var d = TritEnc[k] = new Dictionary<int, int>();
             for (int T = 0; T < 256; T++)
             {
-                if ((T >> TritBitsPresent[k]) != 0) continue;
+                if ((T >> TritBitsPresent[k]) != 0)
+                {
+                    continue;
+                }
+
                 int key = 0;
-                for (int j = k - 1; j >= 0; j--) key = key * 3 + TritOf[T, j];
+                for (int j = k - 1; j >= 0; j--)
+                {
+                    key = key * 3 + TritOf[T, j];
+                }
+
                 d.TryAdd(key, T);
             }
         }
@@ -703,9 +1018,17 @@ static class Ise
             var d = QuintEnc[k] = new Dictionary<int, int>();
             for (int Q = 0; Q < 128; Q++)
             {
-                if ((Q >> QuintBitsPresent[k]) != 0) continue;
+                if ((Q >> QuintBitsPresent[k]) != 0)
+                {
+                    continue;
+                }
+
                 int key = 0;
-                for (int j = k - 1; j >= 0; j--) key = key * 5 + QuintOf[Q, j];
+                for (int j = k - 1; j >= 0; j--)
+                {
+                    key = key * 5 + QuintOf[Q, j];
+                }
+
                 d.TryAdd(key, Q);
             }
         }
@@ -721,7 +1044,11 @@ static class Ise
         uint mask = (1u << b) - 1;
         if (!trit && !quint)
         {
-            foreach (int v in values) { bits.Write(pos, b, (uint)v); pos += b; }
+            foreach (int v in values)
+            {
+                bits.Write(pos, b, (uint)v);
+                pos += b;
+            }
             return;
         }
         int group = trit ? 5 : 3;
@@ -730,13 +1057,19 @@ static class Ise
         {
             int k = Math.Min(group, values.Length - g);
             int key = 0, radix = trit ? 3 : 5;
-            for (int j = k - 1; j >= 0; j--) key = key * radix + (values[g + j] >> b);
+            for (int j = k - 1; j >= 0; j--)
+            {
+                key = key * radix + (values[g + j] >> b);
+            }
+
             int packed = trit ? TritEnc[k][key] : QuintEnc[k][key];
             for (int j = 0; j < k; j++)
             {
-                bits.Write(pos, b, (uint)values[g + j] & mask); pos += b;
+                bits.Write(pos, b, (uint)values[g + j] & mask);
+                pos += b;
                 var (from, count) = chunks[j];
-                bits.Write(pos, count, (uint)(packed >> from)); pos += count;
+                bits.Write(pos, count, (uint)(packed >> from));
+                pos += count;
             }
         }
     }
@@ -746,7 +1079,11 @@ static class Ise
         var (b, trit, quint) = Info(levels);
         if (!trit && !quint)
         {
-            for (int i = 0; i < values.Length; i++) { values[i] = (int)bits.Read(pos, b); pos += b; }
+            for (int i = 0; i < values.Length; i++)
+            {
+                values[i] = (int)bits.Read(pos, b);
+                pos += b;
+            }
             return;
         }
         int group = trit ? 5 : 3;
@@ -758,12 +1095,16 @@ static class Ise
             int packed = 0;
             for (int j = 0; j < k; j++)
             {
-                low[j] = (int)bits.Read(pos, b); pos += b;
+                low[j] = (int)bits.Read(pos, b);
+                pos += b;
                 var (from, count) = chunks[j];
-                packed |= (int)bits.Read(pos, count) << from; pos += count;
+                packed |= (int)bits.Read(pos, count) << from;
+                pos += count;
             }
             for (int j = 0; j < k; j++)
+            {
                 values[g + j] = ((trit ? TritOf[packed, j] : QuintOf[packed, j]) << b) | low[j];
+            }
         }
     }
 }
@@ -787,16 +1128,23 @@ public static class AstcDecoder
         int bw = (w + 3) / 4, bh = (h + 3) / 4;
         Span<byte> texels = stackalloc byte[64];
         for (int by = 0; by < bh; by++)
+        {
             for (int bx = 0; bx < bw; bx++)
             {
                 DecodeBlock(blocks.Slice((by * bw + bx) * 16, 16), texels);
                 for (int y = 0; y < 4; y++)
+                {
                     for (int x = 0; x < 4; x++)
                     {
                         int px = bx * 4 + x, py = by * 4 + y;
-                        if (px < w && py < h) texels.Slice((y * 4 + x) * 4, 4).CopyTo(rgba.Slice((py * w + px) * 4, 4));
+                        if (px < w && py < h)
+                        {
+                            texels.Slice((y * 4 + x) * 4, 4).CopyTo(rgba.Slice((py * w + px) * 4, 4));
+                        }
                     }
+                }
             }
+        }
     }
 
     public static void DecodeBlock(ReadOnlySpan<byte> block, Span<byte> texels)
@@ -806,7 +1154,13 @@ public static class AstcDecoder
         if ((mode & 0x1FF) == 0x1FC)
         {
             for (int i = 0; i < 16; i++)
-                for (int c = 0; c < 4; c++) texels[i * 4 + c] = (byte)(bits.Read(64 + c * 16, 16) >> 8);
+            {
+                for (int c = 0; c < 4; c++)
+                {
+                    texels[i * 4 + c] = (byte)(bits.Read(64 + c * 16, 16) >> 8);
+                }
+            }
+
             return;
         }
         // only the 4x4-grid single-partition layout the encoder writes
@@ -820,8 +1174,19 @@ public static class AstcDecoder
             return;
         }
         int cem = (int)bits.Read(13, 4);
-        int nc = cem switch { 0 => 1, 4 => 2, 8 => 3, 12 => 4, _ => 0 };
-        if (nc == 0) { Magenta(texels); return; }
+        int nc = cem switch
+        {
+            0 => 1,
+            4 => 2,
+            8 => 3,
+            12 => 4,
+            _ => 0
+        };
+        if (nc == 0)
+        {
+            Magenta(texels);
+            return;
+        }
         int weightCount = 16 * (dual ? 2 : 1);
         int weightBits = Ise.BitCount(weightCount, levels);
         int colorBits = 128 - 17 - weightBits - (dual ? 2 : 0);
@@ -829,7 +1194,11 @@ public static class AstcDecoder
         Span<int> vals = stackalloc int[8];
         Ise.Decode(bits, 17, vals[..(nc * 2)], endpointLevels);
         var eq = Ise.Endpoint(endpointLevels);
-        for (int i = 0; i < nc * 2; i++) vals[i] = eq.Unquant[vals[i]];
+        for (int i = 0; i < nc * 2; i++)
+        {
+            vals[i] = eq.Unquant[vals[i]];
+        }
+
         int ccs = dual ? (int)bits.Read(128 - weightBits - 2, 2) : -1;
         Span<int> wv = stackalloc int[32];
         Ise.Decode(bits.Reversed(), 0, wv[..weightCount], levels);
@@ -839,10 +1208,15 @@ public static class AstcDecoder
         switch (cem)
         {
             case 0:
-                e0[0] = e0[1] = e0[2] = vals[0]; e1[0] = e1[1] = e1[2] = vals[1]; e0[3] = e1[3] = 255;
+                e0[0] = e0[1] = e0[2] = vals[0];
+                e1[0] = e1[1] = e1[2] = vals[1];
+                e0[3] = e1[3] = 255;
                 break;
             case 4:
-                e0[0] = e0[1] = e0[2] = vals[0]; e1[0] = e1[1] = e1[2] = vals[1]; e0[3] = vals[2]; e1[3] = vals[3];
+                e0[0] = e0[1] = e0[2] = vals[0];
+                e1[0] = e1[1] = e1[2] = vals[1];
+                e0[3] = vals[2];
+                e1[3] = vals[3];
                 break;
             default:
             {
@@ -850,19 +1224,32 @@ public static class AstcDecoder
                 int s0 = vals[0] + vals[2] + vals[4], s1 = vals[1] + vals[3] + vals[5];
                 if (s1 >= s0)
                 {
-                    e0[0] = vals[0]; e0[1] = vals[2]; e0[2] = vals[4]; e0[3] = a0;
-                    e1[0] = vals[1]; e1[1] = vals[3]; e1[2] = vals[5]; e1[3] = a1;
+                    e0[0] = vals[0];
+                    e0[1] = vals[2];
+                    e0[2] = vals[4];
+                    e0[3] = a0;
+                    e1[0] = vals[1];
+                    e1[1] = vals[3];
+                    e1[2] = vals[5];
+                    e1[3] = a1;
                 }
                 else
                 {
                     // blue contraction, endpoints swapped
-                    e0[0] = (vals[1] + vals[5]) >> 1; e0[1] = (vals[3] + vals[5]) >> 1; e0[2] = vals[5]; e0[3] = a1;
-                    e1[0] = (vals[0] + vals[4]) >> 1; e1[1] = (vals[2] + vals[4]) >> 1; e1[2] = vals[4]; e1[3] = a0;
+                    e0[0] = (vals[1] + vals[5]) >> 1;
+                    e0[1] = (vals[3] + vals[5]) >> 1;
+                    e0[2] = vals[5];
+                    e0[3] = a1;
+                    e1[0] = (vals[0] + vals[4]) >> 1;
+                    e1[1] = (vals[2] + vals[4]) >> 1;
+                    e1[2] = vals[4];
+                    e1[3] = a0;
                 }
                 break;
             }
         }
         for (int i = 0; i < 16; i++)
+        {
             for (int c = 0; c < 4; c++)
             {
                 // LA with two planes: the second plane drives alpha (CCS 3)
@@ -870,11 +1257,18 @@ public static class AstcDecoder
                 int wt = wu[wv[dual ? i * 2 + plane : i]];
                 texels[i * 4 + c] = (byte)Interpolate(e0[c], e1[c], wt);
             }
+        }
     }
 
     static void Magenta(Span<byte> texels)
     {
-        for (int i = 0; i < 16; i++) { texels[i * 4] = 255; texels[i * 4 + 1] = 0; texels[i * 4 + 2] = 255; texels[i * 4 + 3] = 255; }
+        for (int i = 0; i < 16; i++)
+        {
+            texels[i * 4] = 255;
+            texels[i * 4 + 1] = 0;
+            texels[i * 4 + 2] = 255;
+            texels[i * 4 + 3] = 255;
+        }
     }
 
     /// <summary>Peak signal-to-noise ratio of two RGBA8 images over the given channels (dB; 99 when identical).</summary>
@@ -884,12 +1278,20 @@ public static class AstcDecoder
         long n = 0;
         for (int i = 0; i < a.Length; i++)
         {
-            if ((channelMask & (1 << (i & 3))) == 0) continue;
+            if ((channelMask & (1 << (i & 3))) == 0)
+            {
+                continue;
+            }
+
             double d = a[i] - b[i];
             sum += d * d;
             n++;
         }
-        if (sum == 0) return 99;
+        if (sum == 0)
+        {
+            return 99;
+        }
+
         return 10 * Math.Log10(255.0 * 255.0 * n / sum);
     }
 }

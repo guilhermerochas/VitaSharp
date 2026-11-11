@@ -3,7 +3,10 @@ using System.Text;
 namespace VitaSharp.Core.Gpu;
 
 /// <summary>GPU vendors the renderer distinguishes (PCI / Khronos vendor IDs).</summary>
-public enum GpuVendor { Unknown, Nvidia, Amd, Intel, Qualcomm, Arm, Imagination, Samsung, Apple, Broadcom, Software }
+public enum GpuVendor
+{
+    Unknown, Nvidia, Amd, Intel, Qualcomm, Arm, Imagination, Samsung, Apple, Broadcom, Software
+}
 
 /// <summary>Driver families, from VkPhysicalDeviceDriverProperties::driverID (with vendor/version fallbacks).</summary>
 public enum GpuDriver
@@ -193,8 +196,16 @@ public sealed class GpuCapabilities
     public int MsaaSamples(int gxmSamples)
     {
         uint counts = Limits.FramebufferSampleCounts;
-        if ((counts & (uint)gxmSamples) != 0) return gxmSamples;
-        if (gxmSamples == 2 && Has(GpuQuirk.Msaa2xAs4x) && (counts & 4) != 0) return 4;
+        if ((counts & (uint)gxmSamples) != 0)
+        {
+            return gxmSamples;
+        }
+
+        if (gxmSamples == 2 && Has(GpuQuirk.Msaa2xAs4x) && (counts & 4) != 0)
+        {
+            return 4;
+        }
+
         return 0;
     }
 
@@ -227,7 +238,11 @@ public sealed class GpuCapabilities
     {
         var sb = new StringBuilder();
         sb.Append($"GPU profile: {Profile.ToString().ToLowerInvariant()}");
-        if (Profile is GpuProfile.Adreno or GpuProfile.AdrenoVulkan11 or GpuProfile.Mali) sb.Append($" (emulating {VendorName(Vendor)} {Driver} {FormatDriverVersion(Vendor, Driver, DriverVersion)} on {Device.DeviceName})");
+        if (Profile is GpuProfile.Adreno or GpuProfile.AdrenoVulkan11 or GpuProfile.Mali)
+        {
+            sb.Append($" (emulating {VendorName(Vendor)} {Driver} {FormatDriverVersion(Vendor, Driver, DriverVersion)} on {Device.DeviceName})");
+        }
+
         sb.AppendLine();
         sb.AppendLine($"GPU class: {VendorName(Vendor)}, driver {Driver} {FormatDriverVersion(Vendor, Driver, DriverVersion)}{(Has(GpuQuirk.TileBased) ? ", tile-based" : "")}{(Device.UnifiedMemory ? ", unified memory" : "")}");
         var all = Enum.GetValues<GpuFeature>().Where(f => f != GpuFeature.None).ToArray();
@@ -236,15 +251,30 @@ public sealed class GpuCapabilities
         var l = Limits;
         sb.AppendLine($"GPU limits: pushConstants {l.MaxPushConstantsSize}, sets {l.MaxBoundDescriptorSets}, per-stage samplers {l.MaxPerStageDescriptorSamplers}/sampled images {l.MaxPerStageDescriptorSampledImages}/storage buffers {l.MaxPerStageDescriptorStorageBuffers}/input attachments {l.MaxPerStageDescriptorInputAttachments}/resources {l.MaxPerStageResources}, set samplers {l.MaxDescriptorSetSamplers}, framebuffer samples {SampleCounts(l.FramebufferSampleCounts)}, max 2D {l.MaxImageDimension2D}");
         sb.Append($"GPU quirks: {(Quirks == GpuQuirk.None ? "none" : string.Join(" ", Enum.GetValues<GpuQuirk>().Where(q => q != GpuQuirk.None && Has(q))))}");
-        foreach (var r in QuirkReasons) sb.Append($"\n  {r}");
-        foreach (var u in UnknownOverrides) sb.Append($"\n  {Util.EnvVars.GpuQuirks}: '{u}' is not a quirk or feature name (ignored)");
+        foreach (var r in QuirkReasons)
+        {
+            sb.Append($"\n  {r}");
+        }
+
+        foreach (var u in UnknownOverrides)
+        {
+            sb.Append($"\n  {Util.EnvVars.GpuQuirks}: '{u}' is not a quirk or feature name (ignored)");
+        }
+
         return sb.ToString();
     }
 
     static string SampleCounts(uint bits)
     {
         var s = new List<string>();
-        for (int i = 0; i < 7; i++) if ((bits & (1u << i)) != 0) s.Add($"{1 << i}x");
+        for (int i = 0; i < 7; i++)
+        {
+            if ((bits & (1u << i)) != 0)
+            {
+                s.Add($"{1 << i}x");
+            }
+        }
+
         return string.Join("/", s);
     }
 }
@@ -443,7 +473,11 @@ public static class GpuQuirkTable
         {
             foreach (var e in Table)
             {
-                if (!e.When(vendor, driver, version)) continue;
+                if (!e.When(vendor, driver, version))
+                {
+                    continue;
+                }
+
                 quirks |= e.Quirk;
                 reasons.Add($"{e.Quirk}: {e.Applies} [{e.Source}]");
             }
@@ -477,7 +511,15 @@ public static class GpuQuirkTable
             string name = raw.TrimStart('+', '-');
             if (Enum.TryParse<GpuQuirk>(name, true, out var q) && q != GpuQuirk.None && Enum.IsDefined(q))
             {
-                if (off) quirks &= ~q; else quirks |= q;
+                if (off)
+                {
+                    quirks &= ~q;
+                }
+                else
+                {
+                    quirks |= q;
+                }
+
                 reasons.Add($"{q}: forced {(off ? "off" : "on")} by {Util.EnvVars.GpuQuirks}");
             }
             else if (Enum.TryParse<GpuFeature>(name, true, out var f) && f != GpuFeature.None && Enum.IsDefined(f) && off)
@@ -485,7 +527,10 @@ public static class GpuQuirkTable
                 features &= ~f;
                 mask |= f & dev.Features;
             }
-            else unknown.Add(raw);
+            else
+            {
+                unknown.Add(raw);
+            }
         }
         // what the device (or the profile/overrides) cannot do at all: not overridable
         if ((features & GpuFeature.DynamicRendering) == 0 && (quirks & GpuQuirk.RenderPasses) == 0)
@@ -497,7 +542,11 @@ public static class GpuQuirkTable
         {
             foreach (var q in new[] { GpuQuirk.StaticExtendedDynamicState, GpuQuirk.StaticDepthBiasEnable })
             {
-                if ((quirks & q) != 0) continue;
+                if ((quirks & q) != 0)
+                {
+                    continue;
+                }
+
                 quirks |= q;
                 reasons.Add($"{q}: no extended dynamic state (Vulkan 1.3 core)");
             }
@@ -516,9 +565,17 @@ public static class GpuQuirkTable
         reasons.RemoveAll(r => !r.Contains(" forced ") && Enum.TryParse<GpuQuirk>(r[..r.IndexOf(':')], out var q) && (quirks & q) == 0);
         return new GpuCapabilities
         {
-            Device = dev, Profile = profile, Vendor = vendor, Driver = driver, DriverVersion = version,
-            Features = features, Limits = limits, Quirks = quirks, Masked = mask & dev.Features,
-            QuirkReasons = reasons, UnknownOverrides = unknown,
+            Device = dev,
+            Profile = profile,
+            Vendor = vendor,
+            Driver = driver,
+            DriverVersion = version,
+            Features = features,
+            Limits = limits,
+            Quirks = quirks,
+            Masked = mask & dev.Features,
+            QuirkReasons = reasons,
+            UnknownOverrides = unknown,
         };
     }
 }

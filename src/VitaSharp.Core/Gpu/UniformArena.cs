@@ -27,10 +27,19 @@ public sealed unsafe class UniformChunk
     /// <summary>On the free stack (guards against a second recycle: see UniformArena.Release).</summary>
     internal bool InFree;
 
-    internal UniformChunk(int size) { _data = new byte[size]; Size = size; _written = new ulong[WrittenWords(size)]; }
+    internal UniformChunk(int size)
+    {
+        _data = new byte[size];
+        Size = size;
+        _written = new ulong[WrittenWords(size)];
+    }
     internal UniformChunk(nint ptr, int size, IUniformHeap heap, int id)
     {
-        _ptr = ptr; Size = size; Heap = heap; HeapId = id; _written = new ulong[WrittenWords(size)];
+        _ptr = ptr;
+        Size = size;
+        Heap = heap;
+        HeapId = id;
+        _written = new ulong[WrittenWords(size)];
         Span.Clear(); // heap memory comes uninitialised: the zero invariant below starts here
     }
 
@@ -47,13 +56,20 @@ public sealed unsafe class UniformChunk
     /// cleared when the chunk is recycled. Any thread.</summary>
     public void MarkWritten(int offset, int length)
     {
-        if (length <= 0 || !UniformArena.ZeroOnRecycle) return;
+        if (length <= 0 || !UniformArena.ZeroOnRecycle)
+        {
+            return;
+        }
+
         int g0 = offset >> GranuleShift, g1 = (offset + length - 1) >> GranuleShift;
         for (int w = g0 >> 6; w <= g1 >> 6; w++)
         {
             int lo = w == g0 >> 6 ? g0 & 63 : 0, hi = w == g1 >> 6 ? g1 & 63 : 63;
             ulong bits = (hi == 63 ? ulong.MaxValue : (1UL << (hi + 1)) - 1) & ~((1UL << lo) - 1);
-            if ((Volatile.Read(ref _written[w]) & bits) != bits) Interlocked.Or(ref _written[w], bits);
+            if ((Volatile.Read(ref _written[w]) & bits) != bits)
+            {
+                Interlocked.Or(ref _written[w], bits);
+            }
         }
     }
 
@@ -65,16 +81,32 @@ public sealed unsafe class UniformChunk
         for (int w = 0; w < _written.Length; w++)
         {
             ulong bits = _written[w];
-            if (bits == 0) continue;
+            if (bits == 0)
+            {
+                continue;
+            }
+
             _written[w] = 0;
             for (int b = 0; b < 64;)
             {
-                if ((bits >> b) == 0) break;
+                if ((bits >> b) == 0)
+                {
+                    break;
+                }
+
                 b += System.Numerics.BitOperations.TrailingZeroCount(bits >> b); // the next written granule
                 int e = b;
-                while (e < 64 && ((bits >> e) & 1) != 0) e++; // and the run of written ones from it
+                while (e < 64 && ((bits >> e) & 1) != 0)
+                {
+                    e++; // and the run of written ones from it
+                }
+
                 int start = ((w << 6) + b) << GranuleShift, end = Math.Min(((w << 6) + e) << GranuleShift, Size);
-                if (start < end) { span[start..end].Clear(); UniformArena.ClearedBytes += end - start; }
+                if (start < end)
+                {
+                    span[start..end].Clear();
+                    UniformArena.ClearedBytes += end - start;
+                }
                 b = e;
             }
         }
@@ -132,7 +164,11 @@ public static class UniformArena
         {
             _heap = heap;
             Alignment = Math.Max(16, (int)System.Numerics.BitOperations.RoundUpToPowerOf2((uint)alignment));
-            if (_current != null) { Retire(_current); _current = null; }
+            if (_current != null)
+            {
+                Retire(_current);
+                _current = null;
+            }
         }
     }
 
@@ -141,8 +177,19 @@ public static class UniformArena
     {
         lock (Lock)
         {
-            if (_heap == heap) _heap = null;
-            foreach (var c in HeapChunks) if (c.Heap == heap) c.Detach();
+            if (_heap == heap)
+            {
+                _heap = null;
+            }
+
+            foreach (var c in HeapChunks)
+            {
+                if (c.Heap == heap)
+                {
+                    c.Detach();
+                }
+            }
+
             HeapChunks.RemoveAll(c => c.Heap == null);
             _freeManaged = Free.Count(c => c.Heap == null);
         }
@@ -167,7 +214,10 @@ public static class UniformArena
             c = _current!;
             if (c == null || Align(c.Used) + bytes > c.Size)
             {
-                if (c != null) { Retire(c); }
+                if (c != null)
+                {
+                    Retire(c);
+                }
                 c = _current = NewChunk();
                 c.Retired = false;
                 c.Used = 0;
@@ -176,13 +226,27 @@ public static class UniformArena
             c.Used = offset + bytes;
             Interlocked.Increment(ref c.Outstanding);
         }
-        if (clear) c.MarkWritten(offset, bytes); // zero already; the caller may write any of it
+        if (clear)
+        {
+            c.MarkWritten(offset, bytes); // zero already; the caller may write any of it
+        }
+
         return c;
     }
 
     static UniformChunk NewChunk()
     {
-        if (Free.Count > 0) { var f = Free.Pop(); f.InFree = false; if (f.Heap == null) _freeManaged--; return f; }
+        if (Free.Count > 0)
+        {
+            var f = Free.Pop();
+            f.InFree = false;
+            if (f.Heap == null)
+            {
+                _freeManaged--;
+            }
+
+            return f;
+        }
         if (_heap is { } h && h.Alloc(out int id) is var p and not 0)
         {
             var hc = new UniformChunk(p, ChunkSize, h, id);
@@ -203,9 +267,18 @@ public static class UniformArena
     /// after checking again that the chunk is retired, unreferenced and not already free.</summary>
     public static void Release(UniformChunk c)
     {
-        if (Interlocked.Decrement(ref c.Outstanding) != 0 || c.Dedicated || !Volatile.Read(ref c.Retired)) return;
+        if (Interlocked.Decrement(ref c.Outstanding) != 0 || c.Dedicated || !Volatile.Read(ref c.Retired))
+        {
+            return;
+        }
+
         lock (Lock)
-            if (Volatile.Read(ref c.Outstanding) == 0 && c.Retired) Recycle(c);
+        {
+            if (Volatile.Read(ref c.Outstanding) == 0 && c.Retired)
+            {
+                Recycle(c);
+            }
+        }
     }
 
     /// <summary>A full chunk is no longer rented from (under the lock): free now, or by its last <see cref="Release"/>.</summary>
@@ -213,15 +286,34 @@ public static class UniformArena
     {
         Volatile.Write(ref c.Retired, true);
         Interlocked.MemoryBarrier(); // pairs with the full fence of Release's decrement: one of the two sees the other
-        if (Volatile.Read(ref c.Outstanding) == 0) Recycle(c);
+        if (Volatile.Read(ref c.Outstanding) == 0)
+        {
+            Recycle(c);
+        }
     }
 
     static void Recycle(UniformChunk c)
     {
-        if (c.InFree) return;
-        if (ZeroOnRecycle) c.ClearWritten();
+        if (c.InFree)
+        {
+            return;
+        }
+
+        if (ZeroOnRecycle)
+        {
+            c.ClearWritten();
+        }
         // heap chunks are bounded by the heap and always kept; managed ones up to MaxFreeChunks
-        if (c.Heap != null) { c.InFree = true; Free.Push(c); }
-        else if (_freeManaged < MaxFreeChunks) { c.InFree = true; Free.Push(c); _freeManaged++; }
+        if (c.Heap != null)
+        {
+            c.InFree = true;
+            Free.Push(c);
+        }
+        else if (_freeManaged < MaxFreeChunks)
+        {
+            c.InFree = true;
+            Free.Push(c);
+            _freeManaged++;
+        }
     }
 }

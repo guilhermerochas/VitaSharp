@@ -24,12 +24,28 @@ public sealed record CustomDriverMeta(int SchemaVersion, string Name, string Des
             int I(string k) => r.TryGetProperty(k, out var v) && v.ValueKind == JsonValueKind.Number && v.TryGetInt32(out int n) ? n : 0;
             var m = new CustomDriverMeta(I("schemaVersion"), S("name"), S("description"), S("author"), S("packageVersion"),
                 S("vendor"), S("driverVersion"), I("minApi"), S("libraryName"));
-            if (m.SchemaVersion != 1) { error = $"unsupported schemaVersion {m.SchemaVersion}"; return null; }
-            if (m.Name.Length == 0) { error = "no name"; return null; }
-            if (!IsSafeFileName(m.LibraryName) || !m.LibraryName.EndsWith(".so", StringComparison.Ordinal)) { error = $"bad libraryName '{m.LibraryName}'"; return null; }
+            if (m.SchemaVersion != 1)
+            {
+                error = $"unsupported schemaVersion {m.SchemaVersion}";
+                return null;
+            }
+            if (m.Name.Length == 0)
+            {
+                error = "no name";
+                return null;
+            }
+            if (!IsSafeFileName(m.LibraryName) || !m.LibraryName.EndsWith(".so", StringComparison.Ordinal))
+            {
+                error = $"bad libraryName '{m.LibraryName}'";
+                return null;
+            }
             return m;
         }
-        catch (JsonException e) { error = $"invalid JSON ({e.Message})"; return null; }
+        catch (JsonException e)
+        {
+            error = $"invalid JSON ({e.Message})";
+            return null;
+        }
     }
 
     /// <summary>A plain file name: no directories, no "..", no control characters.</summary>
@@ -70,34 +86,72 @@ public sealed class CustomDriverStore(string root)
         if (metaEntry == null)
         {
             var nested = zip.Entries.Where(e => e.FullName.EndsWith("/meta.json", StringComparison.Ordinal) && e.FullName.Count(c => c == '/') == 1).ToArray();
-            if (nested.Length != 1) throw new InvalidDataException("no meta.json in the package");
+            if (nested.Length != 1)
+            {
+                throw new InvalidDataException("no meta.json in the package");
+            }
+
             metaEntry = nested[0];
             prefix = metaEntry.FullName[..^"meta.json".Length];
         }
         string json;
-        using (var s = new StreamReader(metaEntry.Open())) json = s.ReadToEnd();
+        using (var s = new StreamReader(metaEntry.Open()))
+        {
+            json = s.ReadToEnd();
+        }
+
         var meta = CustomDriverMeta.Parse(json, out var err) ?? throw new InvalidDataException($"meta.json: {err}");
-        if (meta.MinApi > deviceApiLevel) throw new InvalidDataException($"needs Android API {meta.MinApi}, the device has {deviceApiLevel}");
-        if (zip.GetEntry(prefix + meta.LibraryName) == null) throw new InvalidDataException($"{meta.LibraryName} (libraryName) is not in the package");
+        if (meta.MinApi > deviceApiLevel)
+        {
+            throw new InvalidDataException($"needs Android API {meta.MinApi}, the device has {deviceApiLevel}");
+        }
+
+        if (zip.GetEntry(prefix + meta.LibraryName) == null)
+        {
+            throw new InvalidDataException($"{meta.LibraryName} (libraryName) is not in the package");
+        }
+
         string id = IdOf(meta.Name);
         string dir = Path.Combine(Root, id);
         string tmp = dir + ".installing";
-        if (System.IO.Directory.Exists(tmp)) System.IO.Directory.Delete(tmp, true);
+        if (System.IO.Directory.Exists(tmp))
+        {
+            System.IO.Directory.Delete(tmp, true);
+        }
+
         System.IO.Directory.CreateDirectory(tmp);
         string fullTmp = Path.GetFullPath(tmp) + Path.DirectorySeparatorChar;
         foreach (var e in zip.Entries)
         {
-            if (e.FullName.EndsWith('/') || !e.FullName.StartsWith(prefix, StringComparison.Ordinal)) continue;
+            if (e.FullName.EndsWith('/') || !e.FullName.StartsWith(prefix, StringComparison.Ordinal))
+            {
+                continue;
+            }
             // flat packages only: the library and its companions live next to meta.json
             string name = e.FullName[prefix.Length..];
-            if (!CustomDriverMeta.IsSafeFileName(name)) continue;
+            if (!CustomDriverMeta.IsSafeFileName(name))
+            {
+                continue;
+            }
+
             string dest = Path.GetFullPath(Path.Combine(tmp, name));
-            if (!dest.StartsWith(fullTmp, StringComparison.Ordinal)) continue;
+            if (!dest.StartsWith(fullTmp, StringComparison.Ordinal))
+            {
+                continue;
+            }
+
             e.ExtractToFile(dest, true);
             // read-only, as Android 14 requires of dynamically loaded code (the driver is dlopen'd from here)
-            if (!OperatingSystem.IsWindows()) File.SetUnixFileMode(dest, UnixFileMode.UserRead | UnixFileMode.GroupRead);
+            if (!OperatingSystem.IsWindows())
+            {
+                File.SetUnixFileMode(dest, UnixFileMode.UserRead | UnixFileMode.GroupRead);
+            }
         }
-        if (System.IO.Directory.Exists(dir)) System.IO.Directory.Delete(dir, true);
+        if (System.IO.Directory.Exists(dir))
+        {
+            System.IO.Directory.Delete(dir, true);
+        }
+
         System.IO.Directory.Move(tmp, dir);
         return new InstalledGpuDriver(id, dir + Path.DirectorySeparatorChar, meta);
     }
@@ -105,15 +159,29 @@ public sealed class CustomDriverStore(string root)
     public IReadOnlyList<InstalledGpuDriver> List()
     {
         var list = new List<InstalledGpuDriver>();
-        if (!System.IO.Directory.Exists(Root)) return list;
+        if (!System.IO.Directory.Exists(Root))
+        {
+            return list;
+        }
+
         foreach (var dir in System.IO.Directory.GetDirectories(Root).Order(StringComparer.Ordinal))
         {
-            if (dir.EndsWith(".installing", StringComparison.Ordinal)) continue;
+            if (dir.EndsWith(".installing", StringComparison.Ordinal))
+            {
+                continue;
+            }
+
             var metaPath = Path.Combine(dir, "meta.json");
-            if (!File.Exists(metaPath)) continue;
+            if (!File.Exists(metaPath))
+            {
+                continue;
+            }
+
             var meta = CustomDriverMeta.Parse(File.ReadAllText(metaPath), out _);
             if (meta != null && File.Exists(Path.Combine(dir, meta.LibraryName)))
+            {
                 list.Add(new InstalledGpuDriver(Path.GetFileName(dir), dir + Path.DirectorySeparatorChar, meta));
+            }
         }
         return list;
     }
@@ -122,9 +190,17 @@ public sealed class CustomDriverStore(string root)
 
     public bool Remove(string id)
     {
-        if (!CustomDriverMeta.IsSafeFileName(id)) return false;
+        if (!CustomDriverMeta.IsSafeFileName(id))
+        {
+            return false;
+        }
+
         string dir = Path.Combine(Root, id);
-        if (!System.IO.Directory.Exists(dir)) return false;
+        if (!System.IO.Directory.Exists(dir))
+        {
+            return false;
+        }
+
         System.IO.Directory.Delete(dir, true);
         return true;
     }
@@ -146,17 +222,26 @@ public sealed class GpuDriverSettings
     {
         try
         {
-            if (!File.Exists(path)) return new();
+            if (!File.Exists(path))
+            {
+                return new();
+            }
+
             using var doc = JsonDocument.Parse(File.ReadAllText(path));
             var r = doc.RootElement;
             bool B(string k, bool d) => r.TryGetProperty(k, out var v) && v.ValueKind is JsonValueKind.True or JsonValueKind.False ? v.GetBoolean() : d;
             return new GpuDriverSettings
             {
                 Driver = r.TryGetProperty("driver", out var dv) && dv.ValueKind == JsonValueKind.String ? dv.GetString() ?? "" : "",
-                FileRedirect = B("fileRedirect", false), Turbo = B("turbo", false), PatchBcn = B("patchBcn", true),
+                FileRedirect = B("fileRedirect", false),
+                Turbo = B("turbo", false),
+                PatchBcn = B("patchBcn", true),
             };
         }
-        catch (Exception e) when (e is JsonException or IOException) { return new(); }
+        catch (Exception e) when (e is JsonException or IOException)
+        {
+            return new();
+        }
     }
 
     public void Save(string path)

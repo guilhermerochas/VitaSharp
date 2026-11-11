@@ -49,7 +49,11 @@ public static class DecoderOutputs
     /// <summary>Records the picture a decoder just wrote at <paramref name="addr"/> (call after the write).</summary>
     public static void Record(uint addr, uint width, uint height, ReadOnlySpan<byte> data, uint altWidth = 0, uint altHeight = 0)
     {
-        if (!Enabled || addr == 0 || data.IsEmpty) return;
+        if (!Enabled || addr == 0 || data.IsEmpty)
+        {
+            return;
+        }
+
         var key = (SpaceOf(addr), addr);
         lock (Lock)
         {
@@ -65,8 +69,16 @@ public static class DecoderOutputs
             }
             // reuse the array of the picture that falls out of the history
             byte[]? buf = null;
-            if (list.Count == Depth) { buf = list[0].Data; list.RemoveAt(0); }
-            if (buf == null || buf.Length != data.Length) buf = new byte[data.Length];
+            if (list.Count == Depth)
+            {
+                buf = list[0].Data;
+                list.RemoveAt(0);
+            }
+            if (buf == null || buf.Length != data.Length)
+            {
+                buf = new byte[data.Length];
+            }
+
             data.CopyTo(buf);
             list.Add(new Picture { Address = addr, Width = width, Height = height, AltWidth = altWidth, AltHeight = altHeight, Data = buf, Seq = ++_seq });
         }
@@ -83,11 +95,19 @@ public static class DecoderOutputs
     /// </summary>
     public static Picture? EarlierFor(uint addr, uint w, uint h)
     {
-        if (!Enabled) return null;
+        if (!Enabled)
+        {
+            return null;
+        }
+
         Picture newest, match;
         lock (Lock)
         {
-            if (History.Count == 0 || !History.TryGetValue((SpaceOf(addr), addr), out var list)) return null;
+            if (History.Count == 0 || !History.TryGetValue((SpaceOf(addr), addr), out var list))
+            {
+                return null;
+            }
+
             newest = list[^1];
             int space = SpaceOf(addr);
             // a picture decoded before one of its size that an upload already took (at any address) was skipped by the
@@ -98,22 +118,50 @@ public static class DecoderOutputs
             if (found != null)
             {
                 // every picture before it was drawn or skipped
-                foreach (var p in list) { if (p == found) break; p.Taken = true; }
+                foreach (var p in list)
+                {
+                    if (p == found)
+                    {
+                        break;
+                    }
+
+                    p.Taken = true;
+                }
                 found.Taken = true;
                 LastTaken[(space, found.Width, found.Height)] = found.Seq;
-                if (found == newest) return null;
+                if (found == newest)
+                {
+                    return null;
+                }
             }
             else
             {
-                if (newest.Fits(w, h)) return null;
+                if (newest.Fits(w, h))
+                {
+                    return null;
+                }
+
                 for (int i = list.Count - 2; i >= 0 && found == null; i--)
-                    if (list[i].Fits(w, h)) found = list[i];
-                if (found == null) return null;
+                {
+                    if (list[i].Fits(w, h))
+                    {
+                        found = list[i];
+                    }
+                }
+
+                if (found == null)
+                {
+                    return null;
+                }
             }
             // a copy: Record reuses the array of a picture leaving the history
             match = new Picture { Address = found.Address, Width = found.Width, Height = found.Height, Data = (byte[])found.Data.Clone(), Seq = found.Seq };
         }
-        if (!GuestMemory.ReadSpan(addr, newest.Data.Length).SequenceEqual(newest.Data)) return null;
+        if (!GuestMemory.ReadSpan(addr, newest.Data.Length).SequenceEqual(newest.Data))
+        {
+            return null;
+        }
+
         Interlocked.Increment(ref _served);
         return match;
     }

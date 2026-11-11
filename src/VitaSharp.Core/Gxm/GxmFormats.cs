@@ -55,8 +55,10 @@ public static class GxmFormats
             case TexBase.U32U32:
             case TexBase.F32F32:
                 return swz == 0 ? 2 : 4;
-            case TexBase.X8U24: return 1;
-            default: return 4;
+            case TexBase.X8U24:
+                return 1;
+            default:
+                return 4;
         }
     }
 }

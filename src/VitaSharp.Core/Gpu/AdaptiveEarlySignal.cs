@@ -28,7 +28,10 @@ public sealed class AdaptiveEarlySignal
     /// median (the game already presents at a steady cadence).</summary>
     public const double LockedFraction = 0.9, LockedTolMs = 3;
 
-    public enum Phase { Off, ProbeOn, On, ProbeOff }
+    public enum Phase
+    {
+        Off, ProbeOn, On, ProbeOff
+    }
 
     readonly double[] _intervals = new double[Window], _sorted = new double[Window];
     int _n, _skip, _cooldown, _backoff = BackoffMin, _sinceCheck;
@@ -46,12 +49,24 @@ public sealed class AdaptiveEarlySignal
     public bool OnFrame(double intervalMs, double displayWaitMs, out bool changed)
     {
         changed = false;
-        if (_skip > 0) { _skip--; return Early; }
-        if (_cooldown > 0) _cooldown--;
+        if (_skip > 0)
+        {
+            _skip--;
+            return Early;
+        }
+        if (_cooldown > 0)
+        {
+            _cooldown--;
+        }
+
         _intervals[_n++] = intervalMs;
         _sum += intervalMs;
         _waitSum += displayWaitMs;
-        if (_n < Window) return Early;
+        if (_n < Window)
+        {
+            return Early;
+        }
+
         double mean = _sum / Window, wait = _waitSum / Window;
         bool locked = Locked();
         _n = 0;
@@ -73,7 +88,11 @@ public sealed class AdaptiveEarlySignal
                     _sinceCheck = 0;
                     Go(Phase.On, $"early kept: {_baseline:F1} -> {mean:F1} ms");
                 }
-                else Back($"early dropped: {_baseline:F1} -> {mean:F1} ms");
+                else
+                {
+                    Back($"early dropped: {_baseline:F1} -> {mean:F1} ms");
+                }
+
                 break;
             case Phase.On:
                 _sinceCheck += Window;
@@ -84,7 +103,10 @@ public sealed class AdaptiveEarlySignal
                 }
                 break;
             case Phase.ProbeOff:
-                if (mean <= _baseline * KeepMargin) Back($"completion signal back: early {_baseline:F1} vs {mean:F1} ms");
+                if (mean <= _baseline * KeepMargin)
+                {
+                    Back($"completion signal back: early {_baseline:F1} vs {mean:F1} ms");
+                }
                 else
                 {
                     _sinceCheck = 0;
@@ -98,7 +120,11 @@ public sealed class AdaptiveEarlySignal
 
     void Go(Phase p, string why)
     {
-        if (p != State) _skip = Settle;
+        if (p != State)
+        {
+            _skip = Settle;
+        }
+
         State = p;
         LastDecision = why;
     }
@@ -116,7 +142,14 @@ public sealed class AdaptiveEarlySignal
         Array.Sort(_sorted);
         double median = _sorted[Window / 2];
         int near = 0;
-        foreach (double v in _intervals) if (Math.Abs(v - median) <= LockedTolMs) near++;
+        foreach (double v in _intervals)
+        {
+            if (Math.Abs(v - median) <= LockedTolMs)
+            {
+                near++;
+            }
+        }
+
         return near >= LockedFraction * Window;
     }
 }

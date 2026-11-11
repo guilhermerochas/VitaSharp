@@ -27,7 +27,11 @@ public sealed class UssePattern
 
     public UssePattern(UsseOp op, string bits)
     {
-        if (bits.Length != 64) throw new ArgumentException($"{op}: pattern must be 64 bits");
+        if (bits.Length != 64)
+        {
+            throw new ArgumentException($"{op}: pattern must be 64 bits");
+        }
+
         Op = op;
         var positions = new Dictionary<char, List<int>>();
         for (int i = 0; i < 64; i++)
@@ -37,15 +41,25 @@ public sealed class UssePattern
             if (c is '0' or '1')
             {
                 Mask |= 1ul << bit;
-                if (c == '1') Expected |= 1ul << bit;
+                if (c == '1')
+                {
+                    Expected |= 1ul << bit;
+                }
             }
             else if (c != '-')
             {
-                if (!positions.TryGetValue(c, out var l)) positions[c] = l = new List<int>();
+                if (!positions.TryGetValue(c, out var l))
+                {
+                    positions[c] = l = new List<int>();
+                }
+
                 l.Add(bit);
             }
         }
-        foreach (var (c, l) in positions) _fieldBits[c] = l.ToArray();
+        foreach (var (c, l) in positions)
+        {
+            _fieldBits[c] = l.ToArray();
+        }
     }
 
     public bool Matches(ulong raw) => (raw & Mask) == Expected;
@@ -53,9 +67,17 @@ public sealed class UssePattern
     public uint Field(ulong raw, char letter)
     {
         var bits = _fieldBits[letter];
-        if (bits == null) return 0;
+        if (bits == null)
+        {
+            return 0;
+        }
+
         uint v = 0;
-        foreach (int b in bits) v = (v << 1) | (uint)((raw >> b) & 1);
+        foreach (int b in bits)
+        {
+            v = (v << 1) | (uint)((raw >> b) & 1);
+        }
+
         return v;
     }
 }
@@ -105,7 +127,13 @@ public static class UsseDecoder
     public static UsseInst Decode(ulong raw)
     {
         foreach (var p in Table)
-            if (p.Matches(raw)) return new UsseInst(p.Op, raw, p);
+        {
+            if (p.Matches(raw))
+            {
+                return new UsseInst(p.Op, raw, p);
+            }
+        }
+
         return new UsseInst(UsseOp.Invalid, raw, null);
     }
 }

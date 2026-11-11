@@ -46,10 +46,22 @@ public sealed class GpuDumpReader : IDisposable
     static void MoveUniformsToArena(DrawCommand d)
     {
         // dumps hold each stage's whole uniform layout; split slots (ShaderGenerator.SplitUniformSlots) are bound apart
-        if (d.VertexProgram.Info.HasSplit) SplitRecorded(d, d.VertexProgram.Info, ref d.VertexUniforms, ref d.VertexUniformsOffset, ref d.VertexUniformsLength, 0);
-        if (d.FragmentProgram.Info is { HasSplit: true } fi) SplitRecorded(d, fi, ref d.FragmentUniforms, ref d.FragmentUniformsOffset, ref d.FragmentUniformsLength, 2);
+        if (d.VertexProgram.Info.HasSplit)
+        {
+            SplitRecorded(d, d.VertexProgram.Info, ref d.VertexUniforms, ref d.VertexUniformsOffset, ref d.VertexUniformsLength, 0);
+        }
+
+        if (d.FragmentProgram.Info is { HasSplit: true } fi)
+        {
+            SplitRecorded(d, fi, ref d.FragmentUniforms, ref d.FragmentUniformsOffset, ref d.FragmentUniformsLength, 2);
+        }
+
         int v = d.VertexUniformsLength, f = d.FragmentUniformsLength, va = UniformArena.Align(v);
-        if (v + f == 0) return;
+        if (v + f == 0)
+        {
+            return;
+        }
+
         byte[] vu = d.VertexUniforms, fu = d.FragmentUniforms;
         var c = d.UniformChunk = UniformArena.Rent(va + f, out int off);
         vu.AsSpan(d.VertexUniformsOffset, v).CopyTo(c.Span.Slice(off));
@@ -71,11 +83,18 @@ public sealed class GpuDumpReader : IDisposable
                 var c = UniformArena.Rent(s.ByteSize, out int off, clear: false);
                 var dst = c.Span.Slice(off, s.ByteSize);
                 dst.Clear();
-                if (n > 0) src.Slice(s.ByteOffset, n).CopyTo(dst);
+                if (n > 0)
+                {
+                    src.Slice(s.ByteOffset, n).CopyTo(dst);
+                }
+
                 d.SetSplit(stage + s.Split, c, off, s.ByteSize);
                 UniformArena.Release(c);
             }
-            else if (n > 0 && s.DataOffset < compact.Length) src.Slice(s.ByteOffset, Math.Min(n, compact.Length - s.DataOffset)).CopyTo(compact.AsSpan(s.DataOffset));
+            else if (n > 0 && s.DataOffset < compact.Length)
+            {
+                src.Slice(s.ByteOffset, Math.Min(n, compact.Length - s.DataOffset)).CopyTo(compact.AsSpan(s.DataOffset));
+            }
         }
         data = compact;
         offset = 0;
@@ -88,9 +107,21 @@ public sealed class GpuDumpReader : IDisposable
         {
             while (_cur.AtEnd)
             {
-                if (!GpuDumpCodec.ReadChunk(_input, ref _chunk, ref _scratch, out byte type, out int len)) return false;
-                if (type == GpuDumpFormat.ChunkEnd) { Summary = GpuDumpHeader.Parse(System.Text.Encoding.UTF8.GetString(_chunk, 0, len)); continue; }
-                if (type != GpuDumpFormat.ChunkRecords) continue; // unknown chunk types from newer writers are skipped
+                if (!GpuDumpCodec.ReadChunk(_input, ref _chunk, ref _scratch, out byte type, out int len))
+                {
+                    return false;
+                }
+
+                if (type == GpuDumpFormat.ChunkEnd)
+                {
+                    Summary = GpuDumpHeader.Parse(System.Text.Encoding.UTF8.GetString(_chunk, 0, len));
+                    continue;
+                }
+                if (type != GpuDumpFormat.ChunkRecords)
+                {
+                    continue; // unknown chunk types from newer writers are skipped
+                }
+
                 _cur.Reset(_chunk, len);
             }
             var kind = (GpuDumpRecord)_cur.U8();
@@ -117,16 +148,32 @@ public sealed class GpuDumpReader : IDisposable
                 case GpuDumpRecord.Idle:
                     return true;
                 default:
-                    if (kind == GpuDumpRecord.Draw) _draw.ReleaseUniforms();
+                    if (kind == GpuDumpRecord.Draw)
+                    {
+                        _draw.ReleaseUniforms();
+                    }
+
                     Command = _codec.ReadCommand(kind, _cur, _draw);
-                    if (kind == GpuDumpRecord.Draw) MoveUniformsToArena(_draw);
-                    if (kind == GpuDumpRecord.Present) PresentInfo = GpuDumpCodec.ReadPresentInfo(_cur);
+                    if (kind == GpuDumpRecord.Draw)
+                    {
+                        MoveUniformsToArena(_draw);
+                    }
+
+                    if (kind == GpuDumpRecord.Present)
+                    {
+                        PresentInfo = GpuDumpCodec.ReadPresentInfo(_cur);
+                    }
+
                     return true;
             }
         }
     }
 
-    public void Dispose() { _draw.ReleaseUniforms(); _input.Dispose(); }
+    public void Dispose()
+    {
+        _draw.ReleaseUniforms();
+        _input.Dispose();
+    }
 
     /// <summary>Rewrites a dump with another Brotli quality (chunks are re-encoded, records are untouched).
     /// Returns (chunks, raw bytes, seconds spent compressing).</summary>
