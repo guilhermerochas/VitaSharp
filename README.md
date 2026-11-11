@@ -1,4 +1,4 @@
-<!-- pair: README.pt-BR.md sha256=01d808aca61188ac7d2062143b68ca5f106fd541bc7bc3d8489cad7585c13971 -->
+<!-- pair: README.pt-BR.md sha256=06ed3dbf4f72f78b7eee368d80d75bc742aa6d9b5b5354391fe6f4658ab65866 -->
 <div align="center">
 
 **English** | [Português](README.pt-BR.md)
@@ -247,7 +247,7 @@ The C# style is the Ryujinx/Ryubing one, and [`.editorconfig`](.editorconfig) is
 off and why). `build/format-check.ps1` (Windows) / `build/format-check.sh` (Linux, macOS) runs
 `dotnet format whitespace` and `dotnet format style --severity warn` with `--verify-no-changes` over the tracked `.cs`
 files only (`git ls-files`: never `.claude/` with the agents' worktrees, nor untracked files), as the CI job
-"Code style" does, with the same exit code (2 when something differs); `-Fix` / `--fix` rewrites the files instead
+"Code style" does (that job is commented out in `.github/workflows/ci.yml` for now: run it locally), with the same exit code (2 when something differs); `-Fix` / `--fix` rewrites the files instead
 (also running `build/NamingTool`, which renames the symbols that break the naming rules with all their references,
 since `dotnet format` reports IDE1006 but cannot fix it, and `build/FormatTool`, which splits the blocks written on
 one line and keeps `{ get; set; }` on one line; the fix needs the NuGet packages of `build/NamingTool`, restored on

@@ -1,4 +1,4 @@
-<!-- pair: README.md sha256=1449efee64681f65932f60bd74ee4b34b5d9ab1cc4d2d946fb1c25047c02db0a -->
+<!-- pair: README.md sha256=3c2e86e807a71f1580fd4b0192a61ac3b4ce68d17e7a626d77649348b63055f0 -->
 <div align="center">
 
 [English](README.md) | **Português**
@@ -250,7 +250,7 @@ O estilo do C# é o do Ryujinx/Ryubing, e o [`.editorconfig`](.editorconfig) é 
 desligado e por quê). `build/format-check.ps1` (Windows) / `build/format-check.sh` (Linux, macOS) roda
 `dotnet format whitespace` e `dotnet format style --severity warn` com `--verify-no-changes` só nos arquivos `.cs`
 versionados (`git ls-files`: nunca a `.claude/` com as worktrees dos agentes, nem arquivos fora do git), como o job
-"Code style" do CI, com o mesmo código de saída (2 quando algo difere); `-Fix` / `--fix` reescreve os arquivos em
+"Code style" do CI (esse job está comentado no `.github/workflows/ci.yml` por enquanto: rode localmente), com o mesmo código de saída (2 quando algo difere); `-Fix` / `--fix` reescreve os arquivos em
 vez de conferir (rodando também o `build/NamingTool`, que renomeia os símbolos fora das regras de nomes junto com
 todas as referências, já que o `dotnet format` aponta o IDE1006 mas não sabe corrigi-lo, e o `build/FormatTool`, que
 quebra os blocos escritos numa linha e mantém `{ get; set; }` numa linha; a correção precisa dos pacotes NuGet do

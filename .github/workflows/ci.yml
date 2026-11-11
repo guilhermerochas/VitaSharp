@@ -29,25 +29,27 @@ jobs:
       - name: Every script has a Windows and a Linux/macOS version
         run: bash build/check-script-parity.sh
 
-  # C# code style (.editorconfig, the Ryujinx/Ryubing style): layout and the :warning rules, through build/format-check.sh
-  # (the same check developers run locally); folders in build/format-pending.txt are skipped until converted.
-  code-style:
-    name: Code style (dotnet format)
-    runs-on: ubuntu-latest
-    timeout-minutes: 20
-    steps:
-      - uses: actions/checkout@v4
-      - uses: actions/setup-dotnet@v4
-        with:
-          dotnet-version: '10.0.x'
-      - uses: actions/cache@v4
-        with:
-          path: third_party/ffmpeg
-          key: ffmpeg-${{ runner.os }}-${{ runner.arch }}-${{ hashFiles('build/FFmpeg.targets') }}
-      - name: Restore
-        run: dotnet restore VitaSharp.sln
-      - name: dotnet format --verify-no-changes
-        run: bash build/format-check.sh
+  # Code style job disabled for now (user decision, 11/11/2026): run build/format-check.sh / .ps1 locally.
+  # Uncomment the block below to bring the CI check back.
+  # # C# code style (.editorconfig, the Ryujinx/Ryubing style): layout and the :warning rules, through build/format-check.sh
+  # # (the same check developers run locally); folders in build/format-pending.txt are skipped until converted.
+  # code-style:
+  #   name: Code style (dotnet format)
+  #   runs-on: ubuntu-latest
+  #   timeout-minutes: 20
+  #   steps:
+  #     - uses: actions/checkout@v4
+  #     - uses: actions/setup-dotnet@v4
+  #       with:
+  #         dotnet-version: '10.0.x'
+  #     - uses: actions/cache@v4
+  #       with:
+  #         path: third_party/ffmpeg
+  #         key: ffmpeg-${{ runner.os }}-${{ runner.arch }}-${{ hashFiles('build/FFmpeg.targets') }}
+  #     - name: Restore
+  #       run: dotnet restore VitaSharp.sln
+  #     - name: dotnet format --verify-no-changes
+  #       run: bash build/format-check.sh
 
   # Shell scripts: ShellCheck clean (Google Shell Style Guide, docs/agents/regras.md), and every build/*.sh at least
   # parses and answers --help on macOS (bash 3.2 and the BSD tools, the platform most likely to break them).
