@@ -313,6 +313,79 @@ public sealed unsafe partial class NativeJitTests
         Assert.True(failures.Count == 0, $"{failures.Count} kinds of differences (see output)");
     }
 
+    /// <summary>Operand values for the fixed-point conversion tests: integers around the 16/32-bit limits, floats that
+    /// saturate, round towards zero or are denormal, NaNs and infinities.</summary>
+    internal static readonly uint[] FixedSpecial =
+    [
+        0, 1, 0xFFFFFFFF, 0x7FFFFFFF, 0x80000000, 0x00007FFF, 0x00008000, 0x0000FFFF, 0xFFFF8000, 0x00010000, 0x12345678,
+        0x3F800000, 0xBF800000, 0x3F7FFFFF, 0xBF7FFFFF, 0x4F000000 /* 2^31 */, 0xCF000000, 0x4EFFFFFF, 0x47000000 /* 2^15 */,
+        0x477FFF00, 0x47800000 /* 2^16 */, 0x00000001, 0x807FFFFF /* denormals */, 0x7F800000, 0xFF800000, 0x7FC00000,
+        0x7F800001, 0x2F800000 /* 2^-32 */, 0x41200000, 0xC1200001,
+    ];
+
+    /// <summary>Random VCVT between floating-point and fixed-point (single/double, signed/unsigned, 16/32-bit, every
+    /// fraction size; cond AL): 1110 1D11 1o1U Vd 101f s1i0 imm4.</summary>
+    internal static uint RandomFixedConversion(Random rng) =>
+        0xEEBA0A40u | ((uint)rng.Next(2) << 22) | ((uint)rng.Next(2) << 18) | ((uint)rng.Next(2) << 16) | ((uint)rng.Next(16) << 12)
+        | ((uint)rng.Next(2) << 8) | ((uint)rng.Next(2) << 7) | ((uint)rng.Next(2) << 5) | (uint)rng.Next(16);
+
+    /// <summary>
+    /// VCVT between floating-point and fixed-point (inline: scaled conversion with saturation) against the interpreter,
+    /// Vita FPSCR mode and others (handler fallback); the blocks have no callout unless an encoding is UNPREDICTABLE.
+    /// </summary>
+    [NativeTheory]
+    [InlineData(false, 3_000, 811)]
+    [InlineData(true, 3_000, 812)]
+    public void NativeFixedConversionsMatchInterpreter(bool thumb, int iterations, int seed)
+    {
+        using var arena = new ArenaScope();
+        EnsureGuestPages();
+        var rng = new Random(seed);
+        var s = CpuState.Allocate();
+        var failures = new Dictionary<string, (int, string)>();
+        int compared = 0;
+        try
+        {
+            for (int it = 0; it < iterations; it++)
+            {
+                var code = new List<byte>();
+                int n = rng.Next(1, 6), unpredictable = 0;
+                for (int k = 0; k < n; k++)
+                {
+                    uint ins = RandomFixedConversion(rng);
+                    Vfp.FixedParams(ins, out _, out _, out _, out int frac);
+                    if (frac < 0) unpredictable++;
+                    code.AddRange(!thumb ? BitConverter.GetBytes(ins) : [(byte)(ins >> 16), (byte)(ins >> 24), (byte)ins, (byte)(ins >> 8)]);
+                }
+                code.AddRange(thumb ? [0xFE, 0xE7] : [0xFE, 0xFF, 0xFF, 0xEA]);
+                code.ToArray().CopyTo(GuestMemory.Span(CodeBase, 0x1000));
+                var b = BlockBuilder.Build(CodeBase, thumb);
+                if (unpredictable == 0) Assert.DoesNotContain(new ArmFrontend().Translate(b).Insts, x => x.Op == IrOp.Callout);
+                var st = new RandomState(rng);
+                for (int i = 0; i < 32; i++)
+                {
+                    uint lo = rng.Next(3) == 0 ? (uint)rng.NextInt64() : FixedSpecial[rng.Next(FixedSpecial.Length)];
+                    uint hi = rng.Next(3) == 0 ? (uint)rng.NextInt64() : FixedSpecial[rng.Next(FixedSpecial.Length)];
+                    st.D[i] = rng.Next(4) == 0 ? BitConverter.DoubleToUInt64Bits(rng.NextDouble() * Math.Pow(2, rng.Next(-40, 70)) * (rng.Next(2) * 2 - 1)) : lo | ((ulong)hi << 32);
+                }
+                st.Fpscr = rng.Next(5) != 0 ? 0x0300_0000u : (uint)rng.Next(16) << 22;
+                st.Apply(s, thumb);
+                var interp = Take(s, Guard(() => CpuCore.Interpret(s, b)));
+                var cb = NativeX64Compiler.Instance.Compile(b)!;
+                st.Apply(s, thumb);
+                var native = Take(s, Guard(() => RunNative(s, cb.NativeEntry)));
+                compared++;
+                string diff = Diff(interp, native);
+                if (diff.Length > 0) Record(failures, $"fpscr {st.Fpscr:X8}", b, diff);
+            }
+        }
+        finally { CpuState.Free(s); }
+        output.WriteLine($"compared {compared} fixed-point conversion blocks; failing kinds {failures.Count}");
+        foreach (var (k, (count, ex)) in failures.OrderByDescending(f => f.Value.Item1).Take(20))
+            output.WriteLine($"{k,-40} x{count,-5} {ex}");
+        Assert.True(failures.Count == 0, $"{failures.Count} kinds of differences (see output)");
+    }
+
     /// <summary>The same NEON blocks natively against Unicorn (QEMU): keeps the shared reference honest.</summary>
     [NativeTheory(unicorn: true)]
     [InlineData(false, 4_000, 701)]

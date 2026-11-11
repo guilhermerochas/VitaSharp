@@ -141,6 +141,7 @@ public enum FpKind : byte
     CvtToS32, CvtToU32,        // float m -> integer in single d, round towards zero
     CvtToS32R, CvtToU32R,      // ... with the FPSCR rounding mode
     CvtToHalf, CvtFromHalf,    // VCVTB/VCVTT: single m -> half at byte offset d / half at byte offset m -> single d (F16C)
+    CvtToFixed, CvtFromFixed,  // VCVT between floating-point and fixed-point, in place on d (parameters: VfpFixed.Decode of the instruction)
 }
 
 [Flags]

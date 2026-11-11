@@ -1583,6 +1583,44 @@ public sealed unsafe partial class Arm64Emitter
                 a.FcvtHS(0, 1);
                 a.LdSt(LsKind.StrS, 0, State, dOff);
                 break;
+            case FpKind.CvtToFixed:
+            {
+                // AArch64's fixed-point FCVTZS/FCVTZU are VCVT's: round towards zero, saturate, NaN -> 0 (FZ flushes a
+                // denormal input); a 16-bit size saturates the 32-bit result further; extended into a double register
+                Vfp.FixedParams(x.Imm2, out _, out bool unsigned, out int size, out int frac);
+                a.LdSt(ld, 1, State, dOff);
+                if (frac == 0) { if (unsigned) a.Fcvtzu(X16, 1, dbl); else a.Fcvtzs(X16, 1, dbl); }
+                else if (unsigned) a.FcvtzuFixed(X16, 1, frac, dbl);
+                else a.FcvtzsFixed(X16, 1, frac, dbl);
+                if (size == 16)
+                {
+                    if (unsigned) { a.MovImm(X17, 0xFFFF); a.Cmp(X16, X17); a.Csel(X16, X16, X17, Cond.LS); }
+                    else
+                    {
+                        a.MovImm(X17, 0x7FFF); a.Cmp(X16, X17); a.Csel(X16, X16, X17, Cond.LE);
+                        a.MovImm(X17, 0xFFFF8000); a.Cmp(X16, X17); a.Csel(X16, X16, X17, Cond.GE);
+                    }
+                }
+                if (dbl)
+                {
+                    if (!unsigned) a.Sxtw(X16, X16); // a W result already has a zero upper half
+                    a.StrX(X16, State, dOff);
+                }
+                else StState(X16, dOff);
+                break;
+            }
+            case FpKind.CvtFromFixed:
+            {
+                // one rounding (round to nearest in this mode), as the handler's (float)(v / 2^frac); exact for doubles
+                Vfp.FixedParams(x.Imm2, out _, out bool unsigned, out int size, out int frac);
+                LdState(X16, dOff);
+                if (size == 16) { if (unsigned) a.Uxth(X16, X16); else a.Sxth(X16, X16); }
+                if (frac == 0) { if (unsigned) a.Ucvtf(0, X16, dbl); else a.Scvtf(0, X16, dbl); }
+                else if (unsigned) a.UcvtfFixed(0, X16, frac, dbl);
+                else a.ScvtfFixed(0, X16, frac, dbl);
+                a.LdSt(st, 0, State, dOff);
+                break;
+            }
             default:
                 if (checkedAtEntry) throw new NotSupportedException($"FpOp {kind} has no inline form"); // FpOp is then not a call site
                 a.B(slow);

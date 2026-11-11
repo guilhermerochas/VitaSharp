@@ -434,6 +434,12 @@ public sealed class Arm64Assembler
     public void Ucvtf(int fd, int wn, bool dbl = false) => Emit(0x1E230000 | Ty(dbl) | (uint)wn << 5 | (uint)fd);
     public void Fcvtzs(int wd, int fn, bool dbl = false) => Emit(0x1E380000 | Ty(dbl) | (uint)fn << 5 | (uint)wd);
     public void Fcvtzu(int wd, int fn, bool dbl = false) => Emit(0x1E390000 | Ty(dbl) | (uint)fn << 5 | (uint)wd);
+    // conversions between floating-point and 32-bit fixed-point (W register, 1..32 fraction bits: scale = 64 - fbits)
+    static uint FixedScale(int fbits) => fbits is >= 1 and <= 32 ? (uint)(64 - fbits) << 10 : throw new ArgumentOutOfRangeException(nameof(fbits));
+    public void FcvtzsFixed(int wd, int fn, int fbits, bool dbl = false) => Emit(0x1E180000 | Ty(dbl) | FixedScale(fbits) | (uint)fn << 5 | (uint)wd);
+    public void FcvtzuFixed(int wd, int fn, int fbits, bool dbl = false) => Emit(0x1E190000 | Ty(dbl) | FixedScale(fbits) | (uint)fn << 5 | (uint)wd);
+    public void ScvtfFixed(int fd, int wn, int fbits, bool dbl = false) => Emit(0x1E020000 | Ty(dbl) | FixedScale(fbits) | (uint)wn << 5 | (uint)fd);
+    public void UcvtfFixed(int fd, int wn, int fbits, bool dbl = false) => Emit(0x1E030000 | Ty(dbl) | FixedScale(fbits) | (uint)wn << 5 | (uint)fd);
     public void Fcvtns(int wd, int fn, bool dbl = false) => Emit(0x1E200000 | Ty(dbl) | (uint)fn << 5 | (uint)wd);
     public void Fcvtnu(int wd, int fn, bool dbl = false) => Emit(0x1E210000 | Ty(dbl) | (uint)fn << 5 | (uint)wd);
     /// <summary>Wd = bits of Sn / Sd = bits of Wn.</summary>
