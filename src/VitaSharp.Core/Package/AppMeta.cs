@@ -115,7 +115,7 @@ public static class AppMeta
 
     /// <summary>Removes ux0:id.dat, the memory card's binding to this system (MID/DIG/DID, written by the shell): the
     /// shell then treats ux0 as a card it has not seen and rebuilds that part of its database from ux0:appmeta.</summary>
-    static void InvalidateCardId(string ux0Root, Action<string>? log)
+    internal static void InvalidateCardId(string ux0Root, Action<string>? log)
     {
         var id = Path.Combine(ux0Root, "id.dat");
         if (!File.Exists(id)) return;

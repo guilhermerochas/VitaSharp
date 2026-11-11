@@ -506,19 +506,9 @@ public sealed partial class VshBridge
     /// the emulated licenses are not bound to an account (see vshNpDrmIsLooseAccountBind), nothing to update.</summary>
     [Hle] int vshNpDrmUpdateAccountId(uint accountId) => 0;
 
-    /// <summary>The PSP emulator's eboot signature (__sce_ebootpbp): 0x200 bytes the security module signs with the
-    /// console's keys. Those keys are not here: the signature is the SHA-256 of the request (path and eboot hash)
-    /// under a fixed header, so the verify of the same eboot passes and a changed eboot does not.</summary>
-    static byte[] EbootSignature(string path, ReadOnlySpan<byte> sha256, int kind)
-    {
-        var sig = new byte[0x200];
-        "NPUMDSIG"u8.CopyTo(sig);
-        sig[8] = (byte)kind;
-        var h = SHA256.HashData([.. System.Text.Encoding.UTF8.GetBytes(Path.GetFileName(path)), .. sha256]);
-        h.CopyTo(sig, 0x10);
-        sha256.CopyTo(sig.AsSpan(0x30));
-        return sig;
-    }
+    /// <summary>The PSP emulator's eboot signature (__sce_ebootpbp), made the same way as the package installer makes it
+    /// (<see cref="Package.PspEbootSignature"/>).</summary>
+    static byte[] EbootSignature(string path, ReadOnlySpan<byte> sha256, int kind) => Package.PspEbootSignature.Create(path, sha256, kind);
 
     int EbootSigGen(uint path, uint sha, uint sig, uint swVersion, int shaSize, int kind)
     {

@@ -275,6 +275,27 @@ public static class Strings
     public static string PickLicenseTitle => T();
     public static string LicenseFileType => T();
     public static string LicenseFor(string name) => F(T(), name);
+    public static string PkgKindName(VitaSharp.Core.Package.PkgKind kind) => kind switch
+    {
+        VitaSharp.Core.Package.PkgKind.VitaApp => T("PkgKindVitaApp"),
+        VitaSharp.Core.Package.PkgKind.VitaPatch => T("PkgKindVitaPatch"),
+        VitaSharp.Core.Package.PkgKind.VitaDlc => T("PkgKindVitaDlc"),
+        VitaSharp.Core.Package.PkgKind.VitaTheme => T("PkgKindVitaTheme"),
+        VitaSharp.Core.Package.PkgKind.VitaPsm => T("PkgKindVitaPsm"),
+        VitaSharp.Core.Package.PkgKind.Psp => T("PkgKindPsp"),
+        VitaSharp.Core.Package.PkgKind.PspPcEngine => T("PkgKindPspPcEngine"),
+        VitaSharp.Core.Package.PkgKind.PspGo => T("PkgKindPspGo"),
+        VitaSharp.Core.Package.PkgKind.PspMini => T("PkgKindPspMini"),
+        VitaSharp.Core.Package.PkgKind.PspNeoGeo => T("PkgKindPspNeoGeo"),
+        VitaSharp.Core.Package.PkgKind.PspDlc => T("PkgKindPspDlc"),
+        VitaSharp.Core.Package.PkgKind.PspTheme => T("PkgKindPspTheme"),
+        VitaSharp.Core.Package.PkgKind.Psx => T("PkgKindPsx"),
+        _ => VitaSharp.Core.Package.PkgKindExtensions.Describe(kind),
+    };
+    public static string PkgNoLicense(VitaSharp.Core.Package.PkgInfo p) => F(T(), PkgKindName(p.Kind), p.Title, p.TitleId);
+    public static string PkgNeedsLicense(VitaSharp.Core.Package.PkgInfo p) => F(T(), PkgKindName(p.Kind), p.Title, p.TitleId);
+    public static string PkgUnreadable(string error) => F(T(), error);
+    public static string InstalledPspEmu(string title, VitaSharp.Core.Package.PkgKind kind) => F(T(), title, PkgKindName(kind));
     public static string LicenseText => T();
     public static string ConfirmUninstall(string title, string id) => F(T(), title, id);
     public static string Uninstalled(string title) => F(T(), title);

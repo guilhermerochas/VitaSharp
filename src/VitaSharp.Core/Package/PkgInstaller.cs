@@ -2,11 +2,65 @@ using VitaSharp.Core.Package.Pfs;
 
 namespace VitaSharp.Core.Package;
 
-public sealed record InstalledTitle(string TitleId, string Title, string Path, PkgContentType Type);
+public sealed record InstalledTitle(string TitleId, string Title, string Path, PkgContentType Type)
+{
+    /// <summary>The kind of package installed (null for VPKs).</summary>
+    public PkgKind? Kind { get; init; }
+    /// <summary>The decrypted UMD image a PSP install also wrote (ux0:pspemu/ISO), if any.</summary>
+    public string? IsoPath { get; init; }
+}
 
-/// <summary>Installs a retail .pkg + NoNpDrm license (work.bin / .rif) into the virtual ux0.</summary>
+/// <summary>What a .pkg is, read from its header before installing (the UIs ask for a license only when it needs one).</summary>
+public sealed record PkgInfo(PkgKind Kind, string ContentId, string TitleId, string Title)
+{
+    public bool NeedsLicense => Kind.NeedsLicense();
+    public string Description => Kind.Describe();
+}
+
+/// <summary>A PS Vita package was given without its license.</summary>
+public sealed class LicenseRequiredException(string message) : InvalidOperationException(message);
+
+/// <summary>Installs a retail .pkg into the virtual ux0: a PS Vita package with its NoNpDrm license (work.bin / .rif /
+/// zRIF), or a PSP/PSone package, which needs none (<see cref="PspPkgInstaller"/>).</summary>
 public static class PkgInstaller
 {
+    /// <summary>Reads what <paramref name="pkgPath"/> is (kind, IDs, title) without installing it.</summary>
+    public static PkgInfo Inspect(string pkgPath) => Inspect(new FileStream(pkgPath, FileMode.Open, FileAccess.Read, FileShare.Read, 1 << 16));
+
+    /// <summary>Reads what the package in <paramref name="pkgStream"/> is (seekable; disposed here).</summary>
+    public static PkgInfo Inspect(Stream pkgStream)
+    {
+        using var pkg = new PkgReader(pkgStream);
+        var kind = pkg.Kind;
+        var sfo = pkg.ParamSfo.Length > 0 ? new Sfo(pkg.ParamSfo) : null;
+        string titleId = sfo?.TitleId is { Length: > 0 } t ? t : pkg.TitleId;
+        return new PkgInfo(kind, pkg.ContentId, titleId, sfo?.Title is { Length: > 0 } title ? title : pkg.ContentId);
+    }
+
+    /// <summary>Installs a PSP/PSone package, which needs no license (a Vita package is refused with
+    /// <see cref="LicenseRequiredException"/>).</summary>
+    public static InstalledTitle InstallWithoutLicense(string pkgPath, string ux0Root, PspInstallOptions? options = null,
+                                                       Action<string>? log = null, Action<InstallProgress>? progress = null,
+                                                       CancellationToken cancellationToken = default) =>
+        InstallWithoutLicense(new FileStream(pkgPath, FileMode.Open, FileAccess.Read, FileShare.Read, 1 << 20), ux0Root, options, log, progress, cancellationToken);
+
+    /// <summary>Installs the PSP/PSone package read from <paramref name="pkgStream"/> (seekable; disposed here).</summary>
+    public static InstalledTitle InstallWithoutLicense(Stream pkgStream, string ux0Root, PspInstallOptions? options = null,
+                                                       Action<string>? log = null, Action<InstallProgress>? progress = null,
+                                                       CancellationToken cancellationToken = default)
+    {
+        var pkg = new PkgReader(pkgStream);
+        PkgKind kind;
+        try { kind = pkg.Kind; }
+        catch { pkg.Dispose(); throw; }
+        if (kind.NeedsLicense())
+        {
+            pkg.Dispose();
+            throw new LicenseRequiredException($"This is a {kind.Describe()} package ({pkg.ContentId}): it needs its license (work.bin, .rif or zRIF)");
+        }
+        return PspPkgInstaller.Install(pkg, ux0Root, options, log, progress, cancellationToken);
+    }
+
     public static byte[] ReadKlicensee(string licensePath)
     {
         var rif = File.ReadAllBytes(licensePath);
@@ -42,8 +96,18 @@ public static class PkgInstaller
                                          Action<string>? log = null, Action<InstallProgress>? progress = null,
                                          CancellationToken cancellationToken = default)
     {
-        if (license.Length < 0x60) { pkgStream.Dispose(); throw new InvalidDataException("License file is too small"); }
-        using var pkg = new PkgReader(pkgStream);
+        var reader = new PkgReader(pkgStream);
+        PkgKind kind;
+        try { kind = reader.Kind; }
+        catch { reader.Dispose(); throw; }
+        if (kind.IsPspEmu())
+        {
+            log?.Invoke($"{kind.Describe()} package: it needs no license, the one given is not used");
+            return PspPkgInstaller.Install(reader, ux0Root, null, log, progress, cancellationToken);
+        }
+        if (kind == PkgKind.VitaPsm) { reader.Dispose(); throw new NotSupportedException("PlayStation Mobile packages are not supported yet"); }
+        if (license.Length < 0x60) { reader.Dispose(); throw new InvalidDataException("License file is too small"); }
+        using var pkg = reader;
         string licContent = Zrif.ContentId(license);
         if (licContent.Length == 36 && licContent != pkg.ContentId)
             throw new InvalidDataException($"The license is for {licContent}, the package is {pkg.ContentId}");
@@ -85,7 +149,7 @@ public static class PkgInstaller
         Directory.CreateDirectory(Path.Combine(dest, "sce_sys", "package"));
         File.WriteAllBytes(Path.Combine(dest, "sce_sys", "package", "work.bin"), license);
         if (type is PkgContentType.App or PkgContentType.Patch) AppMeta.Installed(ux0Root, titleId, log);
-        return new InstalledTitle(titleId, sfo.Title, dest, type);
+        return new InstalledTitle(titleId, sfo.Title, dest, type) { Kind = kind };
     }
 
     static PkgEntry? FindEntry(PkgReader pkg, string name) =>

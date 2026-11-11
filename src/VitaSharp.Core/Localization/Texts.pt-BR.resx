@@ -987,6 +987,57 @@
   <data name="LicenseFor" xml:space="preserve">
     <value>Licença de {0}</value>
   </data>
+  <data name="PkgNoLicense" xml:space="preserve">
+    <value>{0}: {1} ({2}). Não precisa de licença.</value>
+  </data>
+  <data name="PkgNeedsLicense" xml:space="preserve">
+    <value>{0}: {1} ({2})</value>
+  </data>
+  <data name="PkgUnreadable" xml:space="preserve">
+    <value>Este pacote não pode ser instalado: {0}</value>
+  </data>
+  <data name="InstalledPspEmu" xml:space="preserve">
+    <value>{0} ({1}) instalado em ux0:pspemu.</value>
+  </data>
+  <data name="PkgKindVitaApp" xml:space="preserve">
+    <value>Jogo de PS Vita</value>
+  </data>
+  <data name="PkgKindVitaPatch" xml:space="preserve">
+    <value>Atualização de PS Vita</value>
+  </data>
+  <data name="PkgKindVitaDlc" xml:space="preserve">
+    <value>Conteúdo adicional (DLC) de PS Vita</value>
+  </data>
+  <data name="PkgKindVitaTheme" xml:space="preserve">
+    <value>Tema de PS Vita</value>
+  </data>
+  <data name="PkgKindVitaPsm" xml:space="preserve">
+    <value>PlayStation Mobile</value>
+  </data>
+  <data name="PkgKindPsp" xml:space="preserve">
+    <value>Jogo de PSP</value>
+  </data>
+  <data name="PkgKindPspPcEngine" xml:space="preserve">
+    <value>Jogo de PSP (PC Engine)</value>
+  </data>
+  <data name="PkgKindPspGo" xml:space="preserve">
+    <value>Jogo de PSP (PSP Go)</value>
+  </data>
+  <data name="PkgKindPspMini" xml:space="preserve">
+    <value>PSP minis</value>
+  </data>
+  <data name="PkgKindPspNeoGeo" xml:space="preserve">
+    <value>Jogo de PSP (NEOGEO)</value>
+  </data>
+  <data name="PkgKindPspDlc" xml:space="preserve">
+    <value>Conteúdo adicional (DLC) de PSP</value>
+  </data>
+  <data name="PkgKindPspTheme" xml:space="preserve">
+    <value>Tema de PSP</value>
+  </data>
+  <data name="PkgKindPsx" xml:space="preserve">
+    <value>Clássico de PSone</value>
+  </data>
   <data name="LicenseText" xml:space="preserve">
     <value>Cole o zRIF deste pacote ou escolha o arquivo de licença (work.bin ou .rif).</value>
   </data>
