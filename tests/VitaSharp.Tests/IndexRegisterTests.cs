@@ -13,11 +13,11 @@ namespace VitaSharp.Tests;
 public class IndexRegisterTests
 {
     // 19: VBW r0.w.u16 = (o0.x.u16 << 3); 20: VBW idx1 = r0.w | 0
-    static readonly ulong[] BoneIndex = [0x6081000460600003, 0x50C9000A20200180];
+    private static readonly ulong[] s_boneIndex = [0x6081000460600003, 0x50C9000A20200180];
 
-    static string Generate(ulong[] code)
+    private static string Generate(ulong[] code)
     {
-        var d = new byte[0x100 + code.Length * 8];
+        byte[] d = new byte[0x100 + code.Length * 8];
         void W32(int o, uint v) => BinaryPrimitives.WriteUInt32LittleEndian(d.AsSpan(o), v);
         W32(0x3C, (uint)code.Length);
         W32(0x40, 0x100 - 0x40); // primary program
@@ -34,15 +34,15 @@ public class IndexRegisterTests
     [Fact]
     public void WholeWordMoveToIndexKeepsTheLow16Bits()
     {
-        var glsl = Generate(BoneIndex);
-        var line = glsl.Split('\n').Single(l => l.TrimStart().StartsWith("idx[0] = ") && l.Contains("r[0].w"));
+        string glsl = Generate(s_boneIndex);
+        string line = glsl.Split('\n').Single(l => l.TrimStart().StartsWith("idx[0] = ") && l.Contains("r[0].w"));
         Assert.Contains("& 65535", line);
     }
 
     [Fact]
     public void TemporariesStartAtZero()
     {
-        var glsl = Generate(BoneIndex);
+        string glsl = Generate(s_boneIndex);
         int init = glsl.IndexOf("r[k] = vec4(0.0);", StringComparison.Ordinal);
         Assert.True(init > 0);
         Assert.True(init < glsl.IndexOf("r[0].w = ", StringComparison.Ordinal));

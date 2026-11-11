@@ -16,9 +16,9 @@ namespace VitaSharp.Tests;
 /// Guest-executing paths (sceKernelCallWithChangeStack switching stacks) were checked with a scratch harness.
 /// </summary>
 [Collection("guest")]
-public sealed class HleRestTests(GuestMemoryFixture fx) : IDisposable
+public sealed class HleRestTests(GuestMemoryFixture fixture) : IDisposable
 {
-    readonly string _root = Path.Combine(Path.GetTempPath(), "vitasharp-hlerest-" + Guid.NewGuid().ToString("N"));
+    private readonly string _root = Path.Combine(Path.GetTempPath(), "vitasharp-hlerest-" + Guid.NewGuid().ToString("N"));
 
     public void Dispose()
     {
@@ -29,23 +29,23 @@ public sealed class HleRestTests(GuestMemoryFixture fx) : IDisposable
         catch (IOException) { }
     }
 
-    static object? Invoke(object module, string name, params object?[] args) =>
+    private static object? Invoke(object module, string name, params object?[] args) =>
         module.GetType().GetMethod(name, BindingFlags.Instance | BindingFlags.Static | BindingFlags.NonPublic | BindingFlags.Public)!.Invoke(module, args);
 
-    static int Call(object module, string name, params object?[] args) => Convert.ToInt32(Invoke(module, name, args));
+    private static int Call(object module, string name, params object?[] args) => Convert.ToInt32(Invoke(module, name, args));
 
-    uint Alloc(uint size)
+    private uint Alloc(uint size)
     {
-        uint p = fx.Memory.Alloc(size, "hlerest");
+        uint p = fixture.Memory.Alloc(size, "hlerest");
         GuestMemory.Fill(p, 0, size);
         return p;
     }
 
-    static void SetBacking(object o, string prop, object value) =>
+    private static void SetBacking(object o, string prop, object value) =>
         o.GetType().GetField($"<{prop}>k__BackingField", BindingFlags.Instance | BindingFlags.NonPublic)!.SetValue(o, value);
 
     /// <summary>An Emulator shell with options, VFS, a kernel object table and an (empty) linker.</summary>
-    Emulator Shell()
+    private Emulator Shell()
     {
         var emu = (Emulator)RuntimeHelpers.GetUninitializedObject(typeof(Emulator));
         SetBacking(emu, "Options", new EmulatorOptions { FsRoot = _root });
@@ -64,7 +64,7 @@ public sealed class HleRestTests(GuestMemoryFixture fx) : IDisposable
     [Fact]
     public void ThreadEventInfoLayout()
     {
-        var emu = Shell();
+        Emulator emu = Shell();
         var tm = new ThreadMgr { Emu = emu };
         int uid = emu.Kernel.Objects.Register(new ThreadEventHandler { Name = "evh", ThreadMask = 0x10027, EventMask = 0xF, Handler = 0x81000001, Common = 0x1234 });
         uint info = Alloc(0x44);
@@ -183,7 +183,7 @@ public sealed class HleRestTests(GuestMemoryFixture fx) : IDisposable
     public void AppUtilInitChecksReservedBytesAndBusy()
     {
         const int PARAMETER = unchecked((int)0x80100600), NOT_INITIALIZED = unchecked((int)0x80100601), BUSY = unchecked((int)0x80100603);
-        var emu = Shell();
+        Emulator emu = Shell();
         var util = new AppUtil { Emu = emu };
         uint init = Alloc(0x40), boot = Alloc(0x28);
         Assert.Equal(NOT_INITIALIZED, Call(util, "sceAppUtilShutdown"));

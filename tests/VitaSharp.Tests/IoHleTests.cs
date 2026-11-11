@@ -11,16 +11,16 @@ namespace VitaSharp.Tests;
 
 /// <summary>Package B (I/O): FIOS kernel overlays, chstat, async I/O and I/O priorities.</summary>
 [Collection("guest")]
-public sealed class IoHleTests(GuestMemoryFixture fx)
+public sealed class IoHleTests(GuestMemoryFixture fixture)
 {
-    static object? Invoke<T>(T module, string name, params object?[] args) =>
+    private static object? Invoke<T>(T module, string name, params object?[] args) =>
         typeof(T).GetMethod(name, BindingFlags.Instance | BindingFlags.Static | BindingFlags.NonPublic | BindingFlags.Public)!.Invoke(module, args);
 
-    static int Call<T>(T module, string name, params object?[] args) => (int)Invoke(module, name, args)!;
+    private static int Call<T>(T module, string name, params object?[] args) => (int)Invoke(module, name, args)!;
 
-    uint WriteOverlay(byte type, byte order, string dst, string src)
+    private uint WriteOverlay(byte type, byte order, string dst, string src)
     {
-        uint p = fx.Memory.Alloc(0x258, "overlay");
+        uint p = fixture.Memory.Alloc(0x258, "overlay");
         GuestMemory.Fill(p, 0, 0x258);
         GuestMemory.Write(p, type);
         GuestMemory.Write(p + 1, order);
@@ -29,9 +29,9 @@ public sealed class IoHleTests(GuestMemoryFixture fx)
         return p;
     }
 
-    int Add(Fios2User f, byte order, string dst, string src)
+    private int Add(Fios2User f, byte order, string dst, string src)
     {
-        uint id = fx.Memory.Alloc(4, "id");
+        uint id = fixture.Memory.Alloc(4, "id");
         Assert.Equal(0, Call(f, "_sceFiosKernelOverlayAdd", WriteOverlay(0, order, dst, src), new Ptr<int>(id)));
         return (int)GuestMemory.R32(id);
     }
@@ -41,7 +41,7 @@ public sealed class IoHleTests(GuestMemoryFixture fx)
     {
         var f = new Fios2User();
         int id = Add(f, 5, "app0:/data", "ux0:patch/data");
-        uint o = fx.Memory.Alloc(0x258, "out");
+        uint o = fixture.Memory.Alloc(0x258, "out");
         Assert.Equal(0, Call(f, "_sceFiosKernelOverlayGetInfo", id, o));
         Assert.Equal(5, GuestMemory.Read<byte>(o + 1));
         Assert.Equal("app0:data".Length, GuestMemory.Read<ushort>(o + 2));
@@ -58,7 +58,7 @@ public sealed class IoHleTests(GuestMemoryFixture fx)
     {
         var f = new Fios2User();
         int a = Add(f, 10, "app0:a", "ux0:a"), b = Add(f, 2, "app0:b", "ux0:b"), c = Add(f, 0x90, "app0:c", "ux0:c");
-        uint args = fx.Memory.Alloc(0x18, "args"), ids = fx.Memory.Alloc(16, "ids"), actual = fx.Memory.Alloc(4, "actual");
+        uint args = fixture.Memory.Alloc(0x18, "args"), ids = fixture.Memory.Alloc(16, "ids"), actual = fixture.Memory.Alloc(4, "actual");
         GuestMemory.Fill(args, 0, 0x18);
         GuestMemory.W32(args, ids);
         GuestMemory.W32(args + 4, 4);
@@ -96,9 +96,9 @@ public sealed class IoHleTests(GuestMemoryFixture fx)
     public void OverlayDirectoryHandlesAreUnsupported()
     {
         var f = new Fios2User();
-        const int unsup = unchecked((int)0x80020004);
-        Assert.Equal(unsup, Call(f, "_sceFiosKernelOverlayDHOpenSync", 0u, "app0:", 0, 0u));
-        Assert.Equal(unsup, Call(f, "_sceFiosKernelOverlayDHCloseSync", 1));
+        const int Unsupported = unchecked((int)0x80020004);
+        Assert.Equal(Unsupported, Call(f, "_sceFiosKernelOverlayDHOpenSync", 0u, "app0:", 0, 0u));
+        Assert.Equal(Unsupported, Call(f, "_sceFiosKernelOverlayDHCloseSync", 1));
     }
 
     [Fact]
@@ -108,7 +108,7 @@ public sealed class IoHleTests(GuestMemoryFixture fx)
         File.WriteAllBytes(host, new byte[100]);
         try
         {
-            uint st = fx.Memory.Alloc(0x58, "stat");
+            uint st = fixture.Memory.Alloc(0x58, "stat");
             GuestMemory.Fill(st, 0, 0x58);
             GuestMemory.W32(st, 0x2000 | 0x1B6);       // regular, rw
             GuestMemory.Write(st + 8, 10L);            // size
@@ -143,7 +143,7 @@ public sealed class IoHleTests(GuestMemoryFixture fx)
     {
         var io = new IoFileMgr();
         // every request also writes its result (64 bits) to its SceIoAsyncParam, where libpaf reads the fd of an open
-        uint param = fx.Memory.Alloc(0x18, "asyncParam");
+        uint param = fixture.Memory.Alloc(0x18, "asyncParam");
         GuestMemory.Write(param, -1L);
         int op = Call(io, "sceIoOpenAsync", "tty0:", 3, 0, param);
         Assert.True(op > 0);
@@ -153,7 +153,7 @@ public sealed class IoHleTests(GuestMemoryFixture fx)
         Assert.Equal(fd, paramFd);
         Assert.Equal(SceError.UNKNOWN_EVENT_ID, Call(io, "sceIoComplete", op)); // opid freed
 
-        uint buf = fx.Memory.Alloc(16, "buf");
+        uint buf = fixture.Memory.Alloc(16, "buf");
         GuestMemory.WriteCString(buf, "hello");
         int wop = Call(io, "sceIoWriteAsync", fd, buf, 5u, param);
         Assert.Equal(5L, GuestMemory.Read<long>(param));
@@ -169,13 +169,13 @@ public sealed class IoHleTests(GuestMemoryFixture fx)
     {
         // 3.74 libkernel: sceIoOpenAsync puts its SceIoAsyncParam* at opt+0, sceIoPwriteAsync after the 64-bit offset
         var io = new IoFileMgr();
-        uint opt = fx.Memory.Alloc(0x10, "opt"), param = fx.Memory.Alloc(0x18, "asyncParam");
+        uint opt = fixture.Memory.Alloc(0x10, "opt"), param = fixture.Memory.Alloc(0x18, "asyncParam");
         GuestMemory.W32(opt, param);
         GuestMemory.Write(param, -1L);
         int op = Call(io, "_sceIoOpenAsync", "tty0:", 3, 0, opt);
         int fd = Call(io, "sceIoComplete", op);
         Assert.Equal((long)fd, GuestMemory.Read<long>(param));
-        uint buf = fx.Memory.Alloc(16, "buf");
+        uint buf = fixture.Memory.Alloc(16, "buf");
         GuestMemory.Write(opt, 0L);       // offset
         GuestMemory.W32(opt + 8, param);  // then the param
         int wop = Call(io, "_sceIoPwriteAsync", fd, buf, 4u, opt);
@@ -195,12 +195,12 @@ public sealed class IoHleTests(GuestMemoryFixture fx)
         {
             var emu = (Emulator)RuntimeHelpers.GetUninitializedObject(typeof(Emulator));
             void Set(string prop, object v) => typeof(Emulator).GetField($"<{prop}>k__BackingField", BindingFlags.Instance | BindingFlags.NonPublic)!.SetValue(emu, v);
-            Set("Memory", fx.Memory);
+            Set("Memory", fixture.Memory);
             Set("Vfs", new Vfs(root));
             Set("Hle", new HleRegistry(emu));
             emu.Vfs.Mount("ux0", Path.Combine(root, "d"));
             var io = new IoFileMgr { Emu = emu };
-            uint opt = fx.Memory.Alloc(0x14, "opt"), param = fx.Memory.Alloc(0x18, "asyncParam"), stat = fx.Memory.Alloc(0x60, "stat");
+            uint opt = fixture.Memory.Alloc(0x14, "opt"), param = fixture.Memory.Alloc(0x18, "asyncParam"), stat = fixture.Memory.Alloc(0x60, "stat");
             GuestMemory.W32(opt, 0x5A5A5A5A);
             GuestMemory.Write(param, -1L);
             long Done(int op)
@@ -238,7 +238,7 @@ public sealed class IoHleTests(GuestMemoryFixture fx)
     public void AsyncOpIsAnEventObject()
     {
         // libpaf waits for each sceIoReadAsync with sceKernelWaitEvent(opid, 1, ...) before sceIoComplete
-        uint m = fx.Memory.Alloc(16, "evt");
+        uint m = fixture.Memory.Alloc(16, "evt");
         Ptr<uint> result = new(m), timeout = new(m + 4);
         Ptr<ulong> user = new(m + 8);
         var op = new IoAsyncOp { UserData = 0x1234 };
@@ -275,7 +275,7 @@ public sealed class IoHleTests(GuestMemoryFixture fx)
     {
         var io = new IoFileMgr();
         int fd = Call(io, "sceIoOpen", "tty1:", 3, 0);
-        uint outBuf = fx.Memory.Alloc(8, "out");
+        uint outBuf = fixture.Memory.Alloc(8, "out");
         GuestMemory.Fill(outBuf, 0xAA, 8);
         Assert.Equal(0, Call(io, "sceIoIoctl", fd, 0x1234, 0u, 0u, outBuf, 8u));
         Assert.Equal(0u, GuestMemory.R32(outBuf + 4));

@@ -15,21 +15,21 @@ namespace VitaSharp.Tests;
 /// the _ctype/_codecvt facets and the ios_base helpers; everything runs on a guest thread through HLE stubs.
 /// </summary>
 [Collection("guest")]
-public sealed class IostreamHleTests(GuestMemoryFixture fx)
+public sealed class IostreamHleTests(GuestMemoryFixture fixture)
 {
-    sealed class World : IDisposable
+    private sealed class World : IDisposable
     {
         public readonly Emulator Emu;
         public readonly Libc Libc;
         public readonly string Root = Path.Combine(Path.GetTempPath(), "vitasharp-ios-" + Guid.NewGuid().ToString("N"));
-        readonly uint _stubs;
-        uint _nextStub;
-        readonly Dictionary<uint, uint> _stubAt = [];
+        private readonly uint _stubs;
+        private uint _nextStub;
+        private readonly Dictionary<uint, uint> _stubAt = [];
 
-        public World(GuestMemoryFixture fx)
+        public World(GuestMemoryFixture fixture)
         {
             Directory.CreateDirectory(Path.Combine(Root, "ux0", "data"));
-            Emu = new Emulator(new EmulatorOptions { FsRoot = Root, Memory = fx.Memory, EnableJit = false, CpuBackend = "interp" });
+            Emu = new Emulator(new EmulatorOptions { FsRoot = Root, Memory = fixture.Memory, EnableJit = false, CpuBackend = "interp" });
             Libc = Emu.Hle.Modules.OfType<Libc>().Single();
             _stubs = Emu.Memory.Alloc(0x2000, "ios test stubs");
             _nextStub = _stubs;
@@ -55,7 +55,7 @@ public sealed class IostreamHleTests(GuestMemoryFixture fx)
         {
             uint result = 0;
             Exception? failure = null;
-            var th = Emu.Kernel.CreateThread("ios-test", 0, 0x10000100, 0x10000, 0, 0x70000);
+            GuestThread th = Emu.Kernel.CreateThread("ios-test", 0, 0x10000100, 0x10000, 0, 0x70000);
             th.HostBody = t =>
             {
                 try
@@ -110,13 +110,13 @@ public sealed class IostreamHleTests(GuestMemoryFixture fx)
         }
     }
 
-    const uint VtFilebufC = 0xC3233C50, VtFilebufW = 0xF269A8EB, VtCodecvtC = 0x9B3E5D29, VtCodecvtW = 0x95405266,
+    private const uint VtFilebufC = 0xC3233C50, VtFilebufW = 0xF269A8EB, VtCodecvtC = 0x9B3E5D29, VtCodecvtW = 0x95405266,
         VtCtypeC = 0x214E1395, VtCtypeW = 0x798E7C29, VtStreambufC = 0x05548FF7;
 
     [Fact]
     public void InitBuildsTheStandardStreamsOnce()
     {
-        using var w = new World(fx);
+        using var w = new World(fixture);
         uint obj = w.Alloc(4);
         uint count = w.Emu.Hle.GetHleVariable(0x554B7625);
         Assert.Equal(0xFFFFFFFFu, GuestMemory.R32(count));
@@ -145,7 +145,7 @@ public sealed class IostreamHleTests(GuestMemoryFixture fx)
         Assert.Equal(0x201u, GuestMemory.R32(iLog + 0x10));
         // cerr and clog share the stderr filebuf; cin, cout and cerr each have their own FILE
         Assert.Equal(GuestMemory.R32(iErr + 0x24), GuestMemory.R32(iLog + 0x24));
-        var files = new[] { iIn, iOut, iErr }.Select(i => GuestMemory.R32(GuestMemory.R32(i + 0x24) + 0x8C)).ToArray();
+        uint[] files = new[] { iIn, iOut, iErr }.Select(i => GuestMemory.R32(GuestMemory.R32(i + 0x24) + 0x8C)).ToArray();
         Assert.Equal(3, files.Distinct().Count());
         Assert.DoesNotContain(0u, files);
         uint fb = GuestMemory.R32(iOut + 0x24);
@@ -162,7 +162,7 @@ public sealed class IostreamHleTests(GuestMemoryFixture fx)
     [Fact]
     public void WinitBuildsTheWideStreams()
     {
-        using var w = new World(fx);
+        using var w = new World(fixture);
         uint obj = w.Alloc(4);
         w.Call("_ZNSt6_WinitC1Ev", obj);
         uint wcin = w.Emu.Hle.GetHleVariable(0x8054BC8E), wcout = w.Emu.Hle.GetHleVariable(0x4F726424),
@@ -180,7 +180,7 @@ public sealed class IostreamHleTests(GuestMemoryFixture fx)
 
     /// <summary>A basic_filebuf over a file opened with fopen, the way the inline constructor and open() set it up
     /// (_Closef: the filebuf closes it).</summary>
-    uint OpenFilebuf(World w, string name, string mode, bool wide)
+    private uint OpenFilebuf(World w, string name, string mode, bool wide)
     {
         uint file = w.CallC("fopen", w.Str("ux0:data/" + name), w.Str(mode));
         Assert.NotEqual(0u, file);
@@ -193,7 +193,7 @@ public sealed class IostreamHleTests(GuestMemoryFixture fx)
     [Fact]
     public void FilebufWritesThroughTheFileAndClosesIt()
     {
-        using var w = new World(fx);
+        using var w = new World(fixture);
         uint fb = OpenFilebuf(w, "out.txt", "w", false);
         uint text = w.Str("hello, stream\n");
         Assert.Equal(14u, w.Virtual(fb, 0x28, text, 14));          // xsputn
@@ -209,7 +209,7 @@ public sealed class IostreamHleTests(GuestMemoryFixture fx)
     [Fact]
     public void FilebufReadsPutsBackAndSeeks()
     {
-        using var w = new World(fx);
+        using var w = new World(fixture);
         File.WriteAllText(Path.Combine(w.Root, "ux0", "data", "in.txt"), "abcdef");
         uint fb = OpenFilebuf(w, "in.txt", "r", false);
         Assert.Equal((uint)'a', w.Virtual(fb, 0x1C));              // underflow peeks
@@ -232,7 +232,7 @@ public sealed class IostreamHleTests(GuestMemoryFixture fx)
     [Fact]
     public void WideFilebufConvertsToUtf8()
     {
-        using var w = new World(fx);
+        using var w = new World(fixture);
         uint fb = OpenFilebuf(w, "wide.txt", "w", true);
         foreach (char c in "aé€")
         {
@@ -255,7 +255,7 @@ public sealed class IostreamHleTests(GuestMemoryFixture fx)
     [Fact]
     public void FacetsOfTheCLocale()
     {
-        using var w = new World(fx);
+        using var w = new World(fixture);
         uint ct = w.Alloc(4), wct = w.Alloc(4), cvt = w.Alloc(4);
         GuestMemory.W32(ct, w.Libc.Rtti.Vptr(VtCtypeC));
         GuestMemory.W32(wct, w.Libc.Rtti.Vptr(VtCtypeW));
@@ -269,7 +269,7 @@ public sealed class IostreamHleTests(GuestMemoryFixture fx)
         Assert.Equal(1u, w.Virtual(wct, 8, 0x20, '7'));
         Assert.Equal(0u, w.Virtual(wct, 8, 0x20, 'x'));
         uint ws = w.Alloc(16);
-        foreach (var (c, i) in "abCd".Select((c, i) => (c, i)))
+        foreach ((char c, int i) in "abCd".Select((c, i) => (c, i)))
         {
             GuestMemory.Write(ws + (uint)i * 2, (ushort)c);
         }
@@ -298,7 +298,7 @@ public sealed class IostreamHleTests(GuestMemoryFixture fx)
     [Fact]
     public void IosBaseArraysCallbacksAndCopyfmt()
     {
-        using var w = new World(fx);
+        using var w = new World(fixture);
         uint a = w.Alloc(0x30), b = w.Alloc(0x30);
         w.Call("_ZNSt8ios_base5_InitEv", a);
         w.Call("_ZNSt8ios_base5_InitEv", b);
@@ -322,7 +322,7 @@ public sealed class IostreamHleTests(GuestMemoryFixture fx)
     [Fact]
     public void StrstreamBuffersGrowSeekAndFreeze()
     {
-        using var w = new World(fx);
+        using var w = new World(fixture);
         // ostrstream() over a dynamic buffer: 100 characters make it grow from 32 bytes
         uint os = w.Alloc(0xC8);
         w.Call("_ZNSt10ostrstreamC1EPciNSt5_IosbIiE9_OpenmodeE", os, 0, 0, 2);

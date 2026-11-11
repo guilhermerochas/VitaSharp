@@ -9,12 +9,12 @@ namespace VitaSharp.Tests;
 /// <summary>HLE batch 13: the small libraries (GPU driver signals and salvage, cookie statistics, Wi-Fi location
 /// history, the GXM replay arena, AppUtil's book/video/additional-content mounts, event notify callbacks).</summary>
 [Collection("guest")]
-public sealed class HleBatch13Tests(GuestMemoryFixture fx) : IDisposable
+public sealed class HleBatch13Tests(GuestMemoryFixture fixture) : IDisposable
 {
-    readonly string _root = Path.Combine(Path.GetTempPath(), "vitasharp-hle13-" + Guid.NewGuid().ToString("N"));
-    Emulator? _emu;
+    private readonly string _root = Path.Combine(Path.GetTempPath(), "vitasharp-hle13-" + Guid.NewGuid().ToString("N"));
+    private Emulator? _emu;
 
-    Emulator Emu()
+    private Emulator Emu()
     {
         if (_emu != null)
         {
@@ -22,17 +22,17 @@ public sealed class HleBatch13Tests(GuestMemoryFixture fx) : IDisposable
         }
 
         Directory.CreateDirectory(_root);
-        return _emu = new Emulator(new EmulatorOptions { FsRoot = _root, Memory = fx.Memory, EnableJit = false, CpuBackend = "interp" });
+        return _emu = new Emulator(new EmulatorOptions { FsRoot = _root, Memory = fixture.Memory, EnableJit = false, CpuBackend = "interp" });
     }
 
-    T Module<T>() => Emu().Hle.Modules.OfType<T>().Single();
+    private T Module<T>() => Emu().Hle.Modules.OfType<T>().Single();
 
-    static int I(object module, string name, params object?[] args) =>
+    private static int I(object module, string name, params object?[] args) =>
         Convert.ToInt32(module.GetType().GetMethod(name, BindingFlags.Instance | BindingFlags.Static | BindingFlags.NonPublic | BindingFlags.Public)!.Invoke(module, args));
 
-    uint Alloc(uint size)
+    private uint Alloc(uint size)
     {
-        uint p = fx.Memory.Alloc(size, "hle13");
+        uint p = fixture.Memory.Alloc(size, "hle13");
         GuestMemory.Fill(p, 0, size);
         return p;
     }
@@ -50,7 +50,7 @@ public sealed class HleBatch13Tests(GuestMemoryFixture fx) : IDisposable
     [Fact]
     public void GpuSalvageRegistration()
     {
-        var g = Module<GpuEs4>();
+        GpuEs4 g = Module<GpuEs4>();
         Assert.Equal(unchecked((int)0x804C0000), I(g, "sceGpuRegisterSalvage", -1));
         Assert.Equal(0, I(g, "sceGpuRegisterSalvage", 0x1234));
         Assert.Equal(unchecked((int)0x804C000E), I(g, "sceGpuRegisterSalvage", 0x5678));
@@ -62,7 +62,7 @@ public sealed class HleBatch13Tests(GuestMemoryFixture fx) : IDisposable
     [Fact]
     public void GpuSignalWaitReturnsTheCounter()
     {
-        var g = Module<GpuEs4>();
+        GpuEs4 g = Module<GpuEs4>();
         uint cell = Alloc(4);
         Assert.Equal(unchecked((int)0x804C0000), I(g, "sceGpuSignalWait", 0u, 0u));
         GuestMemory.W32(cell, VitaSharp.Core.Gpu.GpuQueue.SignalCount + 1); // not the current value: no wait
@@ -76,7 +76,7 @@ public sealed class HleBatch13Tests(GuestMemoryFixture fx) : IDisposable
     [Fact]
     public void CookieStatsNeedInit()
     {
-        var h = Module<Http>();
+        Http h = Module<Http>();
         uint stats = Alloc(20);
         Assert.Equal(unchecked((int)0x80431001), I(h, "sceHttpGetCookieStats", stats));
         Assert.Equal(0, I(h, "sceHttpInit", 0x10000u));
@@ -88,7 +88,7 @@ public sealed class HleBatch13Tests(GuestMemoryFixture fx) : IDisposable
     [Fact]
     public void LocationWifiHistoryIsDeniedLikeTheOtherMeasurements()
     {
-        var l = Module<Location>();
+        Location l = Module<Location>();
         uint handle = Alloc(4), info = Alloc(0x40);
         Assert.Equal(0, I(l, "sceLocationOpen", new Ptr<uint>(handle), 0u, 0u));
         uint h = GuestMemory.R32(handle);
@@ -101,7 +101,7 @@ public sealed class HleBatch13Tests(GuestMemoryFixture fx) : IDisposable
     [Fact]
     public void ReplayArenaAllocates()
     {
-        var g = Module<Gxm>();
+        Gxm g = Module<Gxm>();
         uint arena = Alloc(0x20), outp = Alloc(4), mem = Alloc(0x40);
         GuestMemory.W32(arena + 8, mem + 1);
         GuestMemory.W32(arena + 0xC, mem + 0x20);
@@ -115,7 +115,7 @@ public sealed class HleBatch13Tests(GuestMemoryFixture fx) : IDisposable
     [Fact]
     public void AppUtilVideoAndAddcontMounts()
     {
-        var a = Module<AppUtil>();
+        AppUtil a = Module<AppUtil>();
         Assert.Equal(unchecked((int)0x80100604), I(a, "sceAppUtilExtVideoUmount"));
         Assert.Equal(0, I(a, "sceAppUtilExtVideoMount"));
         Assert.Equal(unchecked((int)0x80100603), I(a, "sceAppUtilExtVideoMount"));
@@ -138,7 +138,7 @@ public sealed class HleBatch13Tests(GuestMemoryFixture fx) : IDisposable
     [Fact]
     public void RegMgrRegionNamesAndInitValChecks()
     {
-        var r = Module<RegMgrSystem>();
+        RegMgrSystem r = Module<RegMgrSystem>();
         uint name = Alloc(4);
         GuestMemory.WriteCString(name, "UC2");
         Assert.Equal(2, I(r, "sceRegMgrSrvCnvRegionInt", name));
@@ -157,7 +157,7 @@ public sealed class HleBatch13Tests(GuestMemoryFixture fx) : IDisposable
     [Fact]
     public void AppMgrDumpAndNonSuspendableQuit()
     {
-        var a = Module<AppMgr>();
+        AppMgr a = Module<AppMgr>();
         Assert.Equal(0, I(a, "sceAppMgrDump"));
         Assert.Equal(unchecked((int)0x8080201F), I(a, "sceAppMgrQuitForNonSuspendableApp")); // not a system program
     }

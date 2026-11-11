@@ -17,7 +17,7 @@ public partial class GenericCodeTests
     [GeneratedRegex(@"^(?:[A-Z]{4}\d{5}|NPXS\d{0,4}|PCS[A-H]\d{0,4}|NP[A-Z][A-Z]\d{0,4})$")]
     private static partial Regex TitleIdLiteral();
 
-    static string? RepoRoot([CallerFilePath] string source = "")
+    private static string? RepoRoot([CallerFilePath] string source = "")
     {
         foreach (string start in new[] { AppContext.BaseDirectory, Path.GetDirectoryName(source) ?? "" })
         {
@@ -124,8 +124,8 @@ public partial class GenericCodeTests
     [Fact]
     public void ScannerSkipsCommentsAndReadsLiterals()
     {
-        const string src = "// \"NPXS10008\"\nvar a = \"PCSB00123\"; /* \"NPXS\" */ char q = '\"'; var b = @\"x\"\"y\";\n/// \"PCSE\"\n";
-        var found = StringLiterals(src).ToList();
+        const string Src = "// \"NPXS10008\"\nvar a = \"PCSB00123\"; /* \"NPXS\" */ char q = '\"'; var b = @\"x\"\"y\";\n/// \"PCSE\"\n";
+        var found = StringLiterals(Src).ToList();
         Assert.Equal([(2, "PCSB00123"), (2, "x\"y")], found);
         Assert.Matches(TitleIdLiteral(), "PCSB00123");
         Assert.Matches(TitleIdLiteral(), "NPXS");
@@ -148,7 +148,7 @@ public partial class GenericCodeTests
                 continue;
             }
 
-            foreach (var (line, text) in StringLiterals(File.ReadAllText(f)))
+            foreach ((int line, string? text) in StringLiterals(File.ReadAllText(f)))
             {
                 if (TitleIdLiteral().IsMatch(text))
                 {

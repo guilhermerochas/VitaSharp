@@ -5,9 +5,9 @@ namespace VitaSharp.Tests;
 
 public class InputMappingTests
 {
-    static PadSnapshot Gamepad() => new() { IsGamepad = true };
+    private static PadSnapshot Gamepad() => new() { IsGamepad = true };
 
-    static MappedInput Map(ControllerProfile p, PadSnapshot? pad = null, params string[] keys)
+    private static MappedInput Map(ControllerProfile p, PadSnapshot? pad = null, params string[] keys)
         => InputMapper.Map(new CompiledProfile(p), pad, keys.Length > 0 ? new HashSet<string>(keys) : null);
 
     [Theory]
@@ -24,7 +24,7 @@ public class InputMappingTests
     [InlineData("joy:h0.8")]
     public void BindingStringsRoundTrip(string s)
     {
-        Assert.True(InputBinding.TryParse(s, out var b));
+        Assert.True(InputBinding.TryParse(s, out InputBinding b));
         Assert.Equal(s, b.ToString());
     }
 
@@ -41,7 +41,7 @@ public class InputMappingTests
     public void ConfigJsonRoundTrip()
     {
         var cfg = new InputConfig { Keyboard = DefaultMappings.Keyboard() };
-        var pad = DefaultMappings.Gamepad("030000004c050000e60c000000016800", "DualSense Wireless Controller", ControllerKind.PlayStation);
+        ControllerProfile pad = DefaultMappings.Gamepad("030000004c050000e60c000000016800", "DualSense Wireless Controller", ControllerKind.PlayStation);
         pad.SwapConfirm = true;
         pad.LeftStick.Deadzone = 0.2f;
         pad.RightStick.InvertY = true;
@@ -53,9 +53,9 @@ public class InputMappingTests
         string json = InputProfileStore.Serialize(cfg);
         Assert.Contains("\"kind\": \"PlayStation\"", json);
         Assert.Contains("\"pad:a\"", json);
-        var back = InputProfileStore.Deserialize(json)!;
+        InputConfig back = InputProfileStore.Deserialize(json)!;
         Assert.Equal(json, InputProfileStore.Serialize(back));
-        var p = back.Controllers.Single();
+        ControllerProfile p = back.Controllers.Single();
         Assert.True(p.SwapConfirm);
         Assert.Equal(0.2f, p.LeftStick.Deadzone);
         Assert.True(p.RightStick.InvertY);
@@ -67,15 +67,15 @@ public class InputMappingTests
     [Fact]
     public void StoreSavesLoadsAndMatchesByGuidThenName()
     {
-        var dir = Directory.CreateTempSubdirectory("vs-input-");
+        DirectoryInfo dir = Directory.CreateTempSubdirectory("vs-input-");
         try
         {
-            var path = Path.Combine(dir.FullName, InputProfileStore.FileName);
+            string path = Path.Combine(dir.FullName, InputProfileStore.FileName);
             var store = new InputProfileStore(path);
-            var p = DefaultMappings.Gamepad("guid-1", "Xbox Wireless Controller", ControllerKind.Xbox);
+            ControllerProfile p = DefaultMappings.Gamepad("guid-1", "Xbox Wireless Controller", ControllerKind.Xbox);
             p.Set(VitaControl.Cross, InputBinding.Of(PadButton.North));
             store.Put(p);
-            var kb = DefaultMappings.Keyboard();
+            ControllerProfile kb = DefaultMappings.Keyboard();
             kb.Set(VitaControl.Start, InputBinding.OfKey("P"));
             store.Put(kb);
             store.Save();
@@ -100,10 +100,10 @@ public class InputMappingTests
     [Fact]
     public void MissingOrCorruptFileGivesDefaults()
     {
-        var dir = Directory.CreateTempSubdirectory("vs-input-");
+        DirectoryInfo dir = Directory.CreateTempSubdirectory("vs-input-");
         try
         {
-            var path = Path.Combine(dir.FullName, InputProfileStore.FileName);
+            string path = Path.Combine(dir.FullName, InputProfileStore.FileName);
             Assert.Empty(InputProfileStore.Load(path).Config.Controllers);
             File.WriteAllText(path, "{ not json");
             var s = InputProfileStore.Load(path);
@@ -133,10 +133,10 @@ public class InputMappingTests
     public void DefaultGamepadMappingIsPositionalForEveryFamily()
     {
         // the bottom face button is Cross whatever is printed on it (A on Xbox, Cross on PlayStation, B on Nintendo)
-        foreach (var kind in new[] { ControllerKind.Xbox, ControllerKind.PlayStation, ControllerKind.Nintendo, ControllerKind.Generic })
+        foreach (ControllerKind kind in new[] { ControllerKind.Xbox, ControllerKind.PlayStation, ControllerKind.Nintendo, ControllerKind.Generic })
         {
-            var p = DefaultMappings.For("g", "n", kind, isGamepad: true);
-            var pad = Gamepad();
+            ControllerProfile p = DefaultMappings.For("g", "n", kind, isGamepad: true);
+            PadSnapshot pad = Gamepad();
             pad.Buttons[(int)PadButton.South] = true;
             Assert.Equal(VitaButtons.Cross, Map(p, pad).State.Buttons);
             pad.Buttons[(int)PadButton.South] = false;
@@ -151,7 +151,7 @@ public class InputMappingTests
     [Fact]
     public void DefaultGamepadMatchesTheHistoricFixedMapping()
     {
-        var p = DefaultMappings.Gamepad("g", "n", ControllerKind.Xbox);
+        ControllerProfile p = DefaultMappings.Gamepad("g", "n", ControllerKind.Xbox);
         (PadButton Pad, VitaButtons Vita)[] table =
         [
             (PadButton.South, VitaButtons.Cross), (PadButton.East, VitaButtons.Circle), (PadButton.West, VitaButtons.Square),
@@ -160,25 +160,25 @@ public class InputMappingTests
             (PadButton.DpadDown, VitaButtons.Down), (PadButton.DpadLeft, VitaButtons.Left), (PadButton.DpadRight, VitaButtons.Right),
             (PadButton.LeftStick, VitaButtons.L3), (PadButton.RightStick, VitaButtons.R3), (PadButton.Guide, VitaButtons.PsButton),
         ];
-        foreach (var (padButton, vita) in table)
+        foreach ((PadButton padButton, VitaButtons vita) in table)
         {
-            var pad = Gamepad();
+            PadSnapshot pad = Gamepad();
             pad.Buttons[(int)padButton] = true;
             Assert.Equal(vita, Map(p, pad).State.Buttons);
         }
         // triggers act as L/R once pressed past half way
-        var t = Gamepad();
+        PadSnapshot t = Gamepad();
         t.Axes[(int)PadAxis.LeftTrigger] = 0.4f;
         Assert.Equal(VitaButtons.None, Map(p, t).State.Buttons);
         t.Axes[(int)PadAxis.LeftTrigger] = 0.8f;
         t.Axes[(int)PadAxis.RightTrigger] = 1f;
         Assert.Equal(VitaButtons.LTrigger | VitaButtons.RTrigger, Map(p, t).State.Buttons);
         // sticks: full deflection reaches the ends, rest is exactly 128
-        var s = Gamepad();
+        PadSnapshot s = Gamepad();
         Assert.Equal(ControllerState.Neutral, Map(p, s).State);
         s.Axes[(int)PadAxis.LeftX] = -1f;
         s.Axes[(int)PadAxis.RightY] = 1f;
-        var st = Map(p, s).State;
+        ControllerState st = Map(p, s).State;
         Assert.Equal((byte)0, st.Lx);
         Assert.Equal((byte)128, st.Ly);
         Assert.Equal((byte)255, st.Ry);
@@ -187,11 +187,11 @@ public class InputMappingTests
     [Fact]
     public void TriggersAsShouldersCanBeTurnedOff()
     {
-        var p = DefaultMappings.Gamepad("g", "n", ControllerKind.Xbox);
+        ControllerProfile p = DefaultMappings.Gamepad("g", "n", ControllerKind.Xbox);
         Assert.True(DefaultMappings.TriggersAsShoulders(p));
         DefaultMappings.SetTriggersAsShoulders(p, false);
         Assert.False(DefaultMappings.TriggersAsShoulders(p));
-        var pad = Gamepad();
+        PadSnapshot pad = Gamepad();
         pad.Axes[(int)PadAxis.LeftTrigger] = 1f;
         Assert.Equal(VitaButtons.None, Map(p, pad).State.Buttons);
         pad.Buttons[(int)PadButton.LeftShoulder] = true;
@@ -201,12 +201,12 @@ public class InputMappingTests
     [Fact]
     public void DefaultKeyboardMatchesTheHistoricFixedMapping()
     {
-        var p = DefaultMappings.Keyboard();
+        ControllerProfile p = DefaultMappings.Keyboard();
         Assert.Equal(VitaButtons.Cross, Map(p, null, "Space").State.Buttons);
         Assert.Equal(VitaButtons.Cross, Map(p, null, "X").State.Buttons);
         Assert.Equal(VitaButtons.Select, Map(p, null, "ShiftRight").State.Buttons);
         Assert.Equal(VitaButtons.Start | VitaButtons.Up, Map(p, null, "Enter", "Up").State.Buttons);
-        var st = Map(p, null, "A", "S", "L").State;
+        ControllerState st = Map(p, null, "A", "S", "L").State;
         Assert.Equal((byte)0, st.Lx);
         Assert.Equal((byte)255, st.Ly);
         Assert.Equal((byte)255, st.Rx);
@@ -218,16 +218,16 @@ public class InputMappingTests
     [Fact]
     public void RawJoystickDefaults()
     {
-        var ps = DefaultMappings.RawJoystick("g", "n", ControllerKind.PlayStation);
+        ControllerProfile ps = DefaultMappings.RawJoystick("g", "n", ControllerKind.PlayStation);
         var pad = new PadSnapshot { JoyButtonCount = 14, JoyAxisCount = 6, JoyHatCount = 1 };
         pad.JoyButtons[1] = true; // DirectInput DualShock 4: button 1 = Cross
         pad.JoyHats[0] = 1 | 2;
         pad.JoyAxes[5] = -1f; // right stick Y on axis 5
-        var st = Map(ps, pad).State;
+        ControllerState st = Map(ps, pad).State;
         Assert.Equal(VitaButtons.Cross | VitaButtons.Up | VitaButtons.Right, st.Buttons);
         Assert.Equal((byte)0, st.Ry);
 
-        var gen = DefaultMappings.RawJoystick("g", "n", ControllerKind.Generic);
+        ControllerProfile gen = DefaultMappings.RawJoystick("g", "n", ControllerKind.Generic);
         var g = new PadSnapshot { JoyButtonCount = 12, JoyAxisCount = 4 };
         g.JoyButtons[0] = true;
         g.JoyAxes[3] = 1f;
@@ -244,12 +244,12 @@ public class InputMappingTests
         Assert.Equal(VitaButtons.Cross, InputMapper.SwapCrossCircle(VitaButtons.Circle));
         Assert.Equal(VitaButtons.Cross | VitaButtons.Circle, InputMapper.SwapCrossCircle(VitaButtons.Cross | VitaButtons.Circle));
 
-        var p = DefaultMappings.Gamepad("g", "n", ControllerKind.PlayStation);
+        ControllerProfile p = DefaultMappings.Gamepad("g", "n", ControllerKind.PlayStation);
         p.SwapConfirm = true;
-        var pad = Gamepad();
+        PadSnapshot pad = Gamepad();
         pad.Buttons[(int)PadButton.South] = true;
         Assert.Equal(VitaButtons.Circle, Map(p, pad).State.Buttons);
-        var kb = DefaultMappings.Keyboard();
+        ControllerProfile kb = DefaultMappings.Keyboard();
         kb.SwapConfirm = true;
         Assert.Equal(VitaButtons.Cross, Map(kb, null, "C").State.Buttons);
     }
@@ -260,7 +260,7 @@ public class InputMappingTests
         var s = new StickSettings { Deadzone = 0.2f, Sensitivity = 1f };
         Assert.Equal((0f, 0f), StickMath.Apply(0.19f, 0f, s));
         Assert.Equal((0f, 0f), StickMath.Apply(0.1f, 0.1f, s)); // |v| = 0.14 < 0.2 although both axes are non-zero
-        var (x, y) = StickMath.Apply(0.6f, 0f, s);
+        (float x, float y) = StickMath.Apply(0.6f, 0f, s);
         Assert.Equal(0.5f, x, 4); // (0.6 - 0.2) / 0.8
         Assert.Equal(0f, y);
         (x, y) = StickMath.Apply(1f, 0f, s);
@@ -279,7 +279,7 @@ public class InputMappingTests
     public void SensitivityAndInvertY()
     {
         var s = new StickSettings { Deadzone = 0f, Sensitivity = 2f, InvertY = true };
-        var (x, y) = StickMath.Apply(0.3f, 0.6f, s);
+        (float x, float y) = StickMath.Apply(0.3f, 0.6f, s);
         Assert.Equal(0.6f, x, 4);
         Assert.Equal(-1f, y, 4); // inverted and clamped
         Assert.Equal((byte)128, StickMath.ToByte(0));
@@ -291,10 +291,10 @@ public class InputMappingTests
     [Fact]
     public void ProfileStickSettingsApplyInMapping()
     {
-        var p = DefaultMappings.Gamepad("g", "n", ControllerKind.Xbox);
+        ControllerProfile p = DefaultMappings.Gamepad("g", "n", ControllerKind.Xbox);
         p.LeftStick.Deadzone = 0.3f;
         p.LeftStick.InvertY = true;
-        var pad = Gamepad();
+        PadSnapshot pad = Gamepad();
         pad.Axes[(int)PadAxis.LeftX] = 0.25f; // inside the deadzone
         Assert.Equal((byte)128, Map(p, pad).State.Lx);
         pad.Axes[(int)PadAxis.LeftX] = 0f;
@@ -305,14 +305,14 @@ public class InputMappingTests
     [Fact]
     public void TouchpadFingersGoToFrontRearOrBothWithTheTriggers()
     {
-        var p = DefaultMappings.Gamepad("g", "DualSense", ControllerKind.PlayStation);
-        var pad = Gamepad();
+        ControllerProfile p = DefaultMappings.Gamepad("g", "DualSense", ControllerKind.PlayStation);
+        PadSnapshot pad = Gamepad();
         pad.HasTouchpad = true;
         pad.FingerDown[0] = true;
         pad.FingerX[0] = 0.25f;
         pad.FingerY[0] = 0.75f;
 
-        var m = Map(p, pad);
+        MappedInput m = Map(p, pad);
         Assert.Equal(1, m.FrontCount);
         Assert.Equal(0, m.BackCount);
         Assert.Equal(new TouchPoint(MappedInput.FingerId, 0.25f, 0.75f), m.Front[0]);
@@ -350,12 +350,12 @@ public class InputMappingTests
     [Fact]
     public void TouchPointControls()
     {
-        var p = DefaultMappings.Keyboard();
+        ControllerProfile p = DefaultMappings.Keyboard();
         p.Set(VitaControl.TouchFront, InputBinding.OfKey("T"));
         p.Set(VitaControl.TouchBack, InputBinding.OfKey("Y"));
         p.TouchFrontX = 0.1f;
         p.TouchFrontY = 0.2f;
-        var m = Map(p, null, "T", "Y");
+        MappedInput m = Map(p, null, "T", "Y");
         Assert.Equal(new TouchPoint(MappedInput.PointId, 0.1f, 0.2f), m.Front[0]);
         Assert.Equal(1, m.BackCount);
         Span<TouchPoint> dest = stackalloc TouchPoint[8];
@@ -365,12 +365,12 @@ public class InputMappingTests
     [Fact]
     public void CombineMergesKeyboardAndController()
     {
-        var kb = Map(DefaultMappings.Keyboard(), null, "Enter", "A");
-        var pad = Gamepad();
+        MappedInput kb = Map(DefaultMappings.Keyboard(), null, "Enter", "A");
+        PadSnapshot pad = Gamepad();
         pad.Buttons[(int)PadButton.South] = true;
         pad.Axes[(int)PadAxis.LeftY] = 1f;
-        var gp = Map(DefaultMappings.Gamepad("g", "n", ControllerKind.Xbox), pad);
-        var c = InputMapper.Combine(kb, gp);
+        MappedInput gp = Map(DefaultMappings.Gamepad("g", "n", ControllerKind.Xbox), pad);
+        MappedInput c = InputMapper.Combine(kb, gp);
         Assert.Equal(VitaButtons.Start | VitaButtons.Cross, c.State.Buttons);
         Assert.Equal((byte)0, c.State.Lx);
         Assert.Equal((byte)255, c.State.Ly);
@@ -379,8 +379,8 @@ public class InputMappingTests
     [Fact]
     public void CaptureDetectsTheMovedInput()
     {
-        var baseline = Gamepad();
-        var now = Gamepad();
+        PadSnapshot baseline = Gamepad();
+        PadSnapshot now = Gamepad();
         Assert.Null(InputCapture.Detect(baseline, now));
         now.Axes[(int)PadAxis.RightX] = -0.9f;
         Assert.Equal(InputBinding.Of(PadAxis.RightX, -1), InputCapture.Detect(baseline, now));
@@ -390,17 +390,17 @@ public class InputMappingTests
         baseline.Buttons[(int)PadButton.Touchpad] = true;
         Assert.Equal(InputBinding.Of(PadAxis.RightX, -1), InputCapture.Detect(baseline, now));
 
-        var t = Gamepad();
+        PadSnapshot t = Gamepad();
         t.Axes[(int)PadAxis.RightTrigger] = 0.9f;
         Assert.Equal(InputBinding.Of(PadAxis.RightTrigger), InputCapture.Detect(Gamepad(), t));
 
         // raw joystick: a trigger resting at -1 is bound over its full range; hats bind one direction
         var rb = new PadSnapshot { JoyAxisCount = 4, JoyHatCount = 1 };
         rb.JoyAxes[3] = -1f;
-        var rn = rb.Clone();
+        PadSnapshot rn = rb.Clone();
         rn.JoyAxes[3] = 0.5f;
         Assert.Equal(InputBinding.JoyAxis(3, 2), InputCapture.Detect(rb, rn));
-        var rh = rb.Clone();
+        PadSnapshot rh = rb.Clone();
         rh.JoyHats[0] = 8;
         Assert.Equal(InputBinding.JoyHat(0, 8), InputCapture.Detect(rb, rh));
         // the full-range binding reads 0 at rest and 1 fully pressed

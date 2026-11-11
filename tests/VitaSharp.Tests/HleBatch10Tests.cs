@@ -9,12 +9,12 @@ namespace VitaSharp.Tests;
 /// <summary>HLE batch 10: np_manager's own IPMI requests, the last libnetctl exports, kernel services of the system
 /// software (update manager, Bluetooth, USB PSP-communication, motion driver, registry region strings...).</summary>
 [Collection("guest")]
-public sealed class HleBatch10Tests(GuestMemoryFixture fx) : IDisposable
+public sealed class HleBatch10Tests(GuestMemoryFixture fixture) : IDisposable
 {
-    readonly string _root = Path.Combine(Path.GetTempPath(), "vitasharp-hle10-" + Guid.NewGuid().ToString("N"));
-    Emulator? _emu;
+    private readonly string _root = Path.Combine(Path.GetTempPath(), "vitasharp-hle10-" + Guid.NewGuid().ToString("N"));
+    private Emulator? _emu;
 
-    Emulator Emu()
+    private Emulator Emu()
     {
         if (_emu != null)
         {
@@ -22,19 +22,19 @@ public sealed class HleBatch10Tests(GuestMemoryFixture fx) : IDisposable
         }
 
         Directory.CreateDirectory(_root);
-        return _emu = new Emulator(new EmulatorOptions { FsRoot = _root, Memory = fx.Memory, EnableJit = false, CpuBackend = "interp" });
+        return _emu = new Emulator(new EmulatorOptions { FsRoot = _root, Memory = fixture.Memory, EnableJit = false, CpuBackend = "interp" });
     }
 
-    T Module<T>() => Emu().Hle.Modules.OfType<T>().Single();
+    private T Module<T>() => Emu().Hle.Modules.OfType<T>().Single();
 
-    static object? Invoke(object module, string name, params object?[] args) =>
+    private static object? Invoke(object module, string name, params object?[] args) =>
         module.GetType().GetMethod(name, BindingFlags.Instance | BindingFlags.Static | BindingFlags.NonPublic | BindingFlags.Public)!.Invoke(module, args);
 
-    static int Call(object module, string name, params object?[] args) => Convert.ToInt32(Invoke(module, name, args));
+    private static int Call(object module, string name, params object?[] args) => Convert.ToInt32(Invoke(module, name, args));
 
-    uint Alloc(uint size)
+    private uint Alloc(uint size)
     {
-        uint p = fx.Memory.Alloc(size, "hle10");
+        uint p = fixture.Memory.Alloc(size, "hle10");
         GuestMemory.Fill(p, 0, size);
         return p;
     }
@@ -49,12 +49,12 @@ public sealed class HleBatch10Tests(GuestMemoryFixture fx) : IDisposable
         catch (IOException) { }
     }
 
-    const int NpNotInit = unchecked((int)0x80550502), NpInvalid = unchecked((int)0x80550503);
+    private const int NpNotInit = unchecked((int)0x80550502), NpInvalid = unchecked((int)0x80550503);
 
     [Fact]
     public void NpManagerIpmiRequestsCheckArgumentsAndNeedTheConnection()
     {
-        var np = Module<NpManager>();
+        NpManager np = Module<NpManager>();
         uint p = Alloc(0x200);
         // the library's argument checks come before the connection
         Assert.Equal(NpInvalid, Call(np, "NpIpmiB002C", 1u, 0u, 0u, p));
@@ -75,7 +75,7 @@ public sealed class HleBatch10Tests(GuestMemoryFixture fx) : IDisposable
     [Fact]
     public void NetCtlAdhocAuthAndPortMappingFailWithoutTheNetworks()
     {
-        var net = Module<Net>();
+        Net net = Module<Net>();
         uint ctx = Alloc(0x1F44), tried = Alloc(4), done = Alloc(4), commId = Alloc(0x10);
         GuestMemory.W32(tried, 0xFF);
         GuestMemory.W32(done, 0xFF);
@@ -95,7 +95,7 @@ public sealed class HleBatch10Tests(GuestMemoryFixture fx) : IDisposable
     [Fact]
     public void SystemServicesAnswerLikeTheirKernelModules()
     {
-        var sys = Module<SystemServicesVsh>();
+        SystemServicesVsh sys = Module<SystemServicesVsh>();
         uint p = Alloc(0x40);
         Assert.Equal(0, Call(sys, "sceSblUsSetUpdateMode", 3));
         Assert.Equal(0, Call(sys, "sceSblUsGetUpdateMode", p));
@@ -117,7 +117,7 @@ public sealed class HleBatch10Tests(GuestMemoryFixture fx) : IDisposable
     [Fact]
     public void MotionDriverReturnsItsEmptyRecords()
     {
-        var s = Module<Sensors>();
+        Sensors s = Module<Sensors>();
         uint p = Alloc(0x60);
         GuestMemory.Fill(p, 0xAA, 0x60);
         Assert.Equal(0, Call(s, "sceMotionDevGetAccCalibData", p));

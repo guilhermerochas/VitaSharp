@@ -10,17 +10,17 @@ namespace VitaSharp.Tests;
 /// </summary>
 internal static class JpegTestWriter
 {
-    sealed class Comp
+    private sealed class Comp
     {
         public int Id, H, V, BlocksX, BlocksY, CodedX, CodedY;
         public int[] Coefs = [];
     }
 
-    sealed class Bits
+    private sealed class Bits
     {
         public readonly List<byte> Out;
-        ulong _acc;
-        int _n;
+        private ulong _acc;
+        private int _n;
         public Bits(List<byte> o) => Out = o;
         public void Put(int v, int n)
         {
@@ -55,9 +55,9 @@ internal static class JpegTestWriter
         }
     }
 
-    const int DcLen = 4, AcLen = 10;
+    private const int DcLen = 4, AcLen = 10;
 
-    static void Word(List<byte> o, int w)
+    private static void Word(List<byte> o, int w)
     {
         o.Add((byte)(w >> 8));
         o.Add((byte)w);
@@ -98,7 +98,7 @@ internal static class JpegTestWriter
         Word(o, h);
         Word(o, w);
         o.Add((byte)comps.Count);
-        foreach (var c in comps)
+        foreach (Comp c in comps)
         {
             o.Add((byte)c.Id);
             o.Add((byte)((c.H << 4) | c.V));
@@ -144,7 +144,7 @@ internal static class JpegTestWriter
         }
         else
         {
-            var all = comps;
+            List<Comp> all = comps;
             var lum = comps.Take(1).ToList();
             Scan(o, all, mcusX, mcusY, 0, 0, 0, 1, restart, true);
             Scan(o, lum, mcusX, mcusY, 1, 5, 0, 2, restart, true);
@@ -167,7 +167,7 @@ internal static class JpegTestWriter
         return o.ToArray();
     }
 
-    static Comp Make(int id, int hf, int vf, byte[] plane, int pw, int ph, int stride, int mcusX, int mcusY, byte[] q)
+    private static Comp Make(int id, int hf, int vf, byte[] plane, int pw, int ph, int stride, int mcusX, int mcusY, byte[] q)
     {
         var c = new Comp
         {
@@ -204,7 +204,7 @@ internal static class JpegTestWriter
         return c;
     }
 
-    static int Cat(int v)
+    private static int Cat(int v)
     {
         v = Math.Abs(v);
         int n = 0;
@@ -216,12 +216,12 @@ internal static class JpegTestWriter
         return n;
     }
 
-    static void Scan(List<byte> o, List<Comp> sc, int mcusX, int mcusY, int ss, int se, int ah, int al, int restart, bool progressive)
+    private static void Scan(List<byte> o, List<Comp> sc, int mcusX, int mcusY, int ss, int se, int ah, int al, int restart, bool progressive)
     {
         Word(o, 0xFFDA);
         Word(o, 6 + 2 * sc.Count);
         o.Add((byte)sc.Count);
-        foreach (var c in sc)
+        foreach (Comp c in sc)
         {
             o.Add((byte)c.Id);
             o.Add(0x00);
@@ -232,7 +232,7 @@ internal static class JpegTestWriter
         var b = new Bits(o);
         var st = new State();
         int count = sc.Count == 1 ? sc[0].CodedX * sc[0].CodedY : mcusX * mcusY, since = 0, rst = 0;
-        var preds = new int[sc.Count];
+        int[] preds = new int[sc.Count];
         for (int m = 0; m < count; m++)
         {
             if (restart > 0 && since == restart)
@@ -246,7 +246,7 @@ internal static class JpegTestWriter
             since++;
             if (sc.Count == 1)
             {
-                var c = sc[0];
+                Comp c = sc[0];
                 int bx = m % c.CodedX, by = m / c.CodedX;
                 Block(b, st, c.Coefs.AsSpan((by * c.BlocksX + bx) * 64, 64), ref preds[0], ss, se, ah, al, progressive);
             }
@@ -255,7 +255,7 @@ internal static class JpegTestWriter
                 int mx = m % mcusX, my = m / mcusX;
                 for (int i = 0; i < sc.Count; i++)
                 {
-                    var c = sc[i];
+                    Comp c = sc[i];
                     for (int v = 0; v < c.V; v++)
                     {
                         for (int h = 0; h < c.H; h++)
@@ -270,14 +270,14 @@ internal static class JpegTestWriter
         b.Flush();
     }
 
-    sealed class State
+    private sealed class State
     {
         public int EobRun;
         public readonly List<int> EobBits = new(); // correction bits buffered with the EOB run (refinement)
     }
 
     /// <summary>Canonical code of an AC symbol: 0..254 at 10 bits, 255 at 11 bits.</summary>
-    static void PutAc(Bits b, int s)
+    private static void PutAc(Bits b, int s)
     {
         if (s < 255)
         {
@@ -289,7 +289,7 @@ internal static class JpegTestWriter
         }
     }
 
-    static void EmitEobRun(Bits b, State st)
+    private static void EmitEobRun(Bits b, State st)
     {
         if (st.EobRun > 0)
         {
@@ -311,7 +311,7 @@ internal static class JpegTestWriter
         st.EobBits.Clear();
     }
 
-    static void Block(Bits b, State st, Span<int> blk, ref int pred, int ss, int se, int ah, int al, bool progressive)
+    private static void Block(Bits b, State st, Span<int> blk, ref int pred, int ss, int se, int ah, int al, bool progressive)
     {
         if (!progressive)
         {

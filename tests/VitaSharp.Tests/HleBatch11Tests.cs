@@ -9,12 +9,12 @@ namespace VitaSharp.Tests;
 
 /// <summary>HLE batch 11: the SDK's SQLite (SceSqlite) on the SceSqliteVsh engine and the default entries.</summary>
 [Collection("guest")]
-public sealed class HleBatch11Tests(GuestMemoryFixture fx) : IDisposable
+public sealed class HleBatch11Tests(GuestMemoryFixture fixture) : IDisposable
 {
-    readonly string _root = Path.Combine(Path.GetTempPath(), "vitasharp-hle11-" + Guid.NewGuid().ToString("N"));
-    Emulator? _emu;
+    private readonly string _root = Path.Combine(Path.GetTempPath(), "vitasharp-hle11-" + Guid.NewGuid().ToString("N"));
+    private Emulator? _emu;
 
-    Emulator Emu()
+    private Emulator Emu()
     {
         if (_emu != null)
         {
@@ -22,24 +22,24 @@ public sealed class HleBatch11Tests(GuestMemoryFixture fx) : IDisposable
         }
 
         Directory.CreateDirectory(_root);
-        return _emu = new Emulator(new EmulatorOptions { FsRoot = _root, Memory = fx.Memory, EnableJit = false, CpuBackend = "interp" });
+        return _emu = new Emulator(new EmulatorOptions { FsRoot = _root, Memory = fixture.Memory, EnableJit = false, CpuBackend = "interp" });
     }
 
-    T Module<T>() => Emu().Hle.Modules.OfType<T>().Single();
+    private T Module<T>() => Emu().Hle.Modules.OfType<T>().Single();
 
-    static object? Invoke(object module, string name, params object?[] args) =>
+    private static object? Invoke(object module, string name, params object?[] args) =>
         module.GetType().GetMethod(name, BindingFlags.Instance | BindingFlags.Static | BindingFlags.NonPublic | BindingFlags.Public)!.Invoke(module, args);
 
-    static int Call(object module, string name, params object?[] args) => Convert.ToInt32(Invoke(module, name, args));
+    private static int Call(object module, string name, params object?[] args) => Convert.ToInt32(Invoke(module, name, args));
 
-    uint Alloc(uint size)
+    private uint Alloc(uint size)
     {
-        uint p = fx.Memory.Alloc(size, "hle11");
+        uint p = fixture.Memory.Alloc(size, "hle11");
         GuestMemory.Fill(p, 0, size);
         return p;
     }
 
-    uint Str(string s)
+    private uint Str(string s)
     {
         byte[] b = Encoding.UTF8.GetBytes(s + "\0");
         uint p = Alloc((uint)b.Length);
@@ -47,7 +47,7 @@ public sealed class HleBatch11Tests(GuestMemoryFixture fx) : IDisposable
         return p;
     }
 
-    uint Str16(string s)
+    private uint Str16(string s)
     {
         byte[] b = Encoding.Unicode.GetBytes(s + "\0");
         uint p = Alloc((uint)b.Length);
@@ -55,7 +55,7 @@ public sealed class HleBatch11Tests(GuestMemoryFixture fx) : IDisposable
         return p;
     }
 
-    static string Read16(uint p)
+    private static string Read16(uint p)
     {
         var sb = new StringBuilder();
         for (; GuestMemory.Read<ushort>(p) != 0; p += 2)
@@ -79,7 +79,7 @@ public sealed class HleBatch11Tests(GuestMemoryFixture fx) : IDisposable
     [Fact]
     public void SdkSqliteRunsTheUtf16AndTableApi()
     {
-        var sq = Module<SqliteVsh>();
+        SqliteVsh sq = Module<SqliteVsh>();
         uint ppDb = Alloc(4), ppStmt = Alloc(4), tail = Alloc(4), res = Alloc(4), rows = Alloc(4), cols = Alloc(4), err = Alloc(4);
         Assert.Equal(0, Call(sq, "SdkInitialize"));
         Assert.Equal(0, Call(sq, "Open16", Str16(":memory:"), ppDb));
@@ -153,7 +153,7 @@ public sealed class HleBatch11Tests(GuestMemoryFixture fx) : IDisposable
     [Fact]
     public void CompatIsForTheEmulatorAndSystemPrograms()
     {
-        var c = Module<Compat>();
+        Compat c = Module<Compat>();
         // the test process is not a system program: every entry refuses as the module does for other callers
         Assert.Equal(unchecked((int)0x80010058), Call(c, "sceCompatGetPspSystemSoftwareVersion"));
         Assert.Equal(unchecked((int)0x80010058), Call(c, "sceCompatAllocCdramWithHole", 0u));
@@ -173,12 +173,12 @@ public sealed class HleBatch11Tests(GuestMemoryFixture fx) : IDisposable
     [Fact]
     public void GetRifInfoReadsTheLicenseHeader()
     {
-        var sys = Module<SystemServicesVsh>();
-        const string id = "UP0001-NPUZ00001_00-0000000000000001";
+        SystemServicesVsh sys = Module<SystemServicesVsh>();
+        const string Id = "UP0001-NPUZ00001_00-0000000000000001";
         // a PSP rif header: version, version flag, type 1, flags, account id 0, the content id at 0x10
-        var rifBytes = new byte[0x98];
+        byte[] rifBytes = new byte[0x98];
         rifBytes[5] = 1;
-        Encoding.ASCII.GetBytes(id).CopyTo(rifBytes, 0x10);
+        Encoding.ASCII.GetBytes(Id).CopyTo(rifBytes, 0x10);
         uint rif = Alloc(0x98);
         rifBytes.CopyTo(GuestMemory.Span(rif, 0x98));
         uint cid = Alloc(0x30), aid = Alloc(8), start = Alloc(8), exp = Alloc(8), outs = Alloc(0x28);
@@ -191,7 +191,7 @@ public sealed class HleBatch11Tests(GuestMemoryFixture fx) : IDisposable
         }
 
         Assert.Equal(0, Call(sys, "NpDrmGetRifInfo", rif, 0x98u, 1u, outs));
-        Assert.Equal(id, GuestMemory.ReadCString(cid));
+        Assert.Equal(Id, GuestMemory.ReadCString(cid));
         Assert.Equal(0UL, GuestMemory.Read<ulong>(aid));
         Assert.Equal(0UL, GuestMemory.Read<ulong>(start));
         Assert.Equal(0x7FFFFFFFFFFFFFFFUL, GuestMemory.Read<ulong>(exp));

@@ -12,24 +12,24 @@ namespace VitaSharp.Tests;
 /// </summary>
 public sealed class HleHarness : IDisposable
 {
-    readonly GuestMemoryFixture _fx;
-    readonly string _tag;
-    readonly List<GuestThread> _threads = [];
+    private readonly GuestMemoryFixture _fixture;
+    private readonly string _tag;
+    private readonly List<GuestThread> _threads = [];
     public string Root { get; }
     public Emulator Emu { get; }
 
-    public HleHarness(GuestMemoryFixture fx, string tag)
+    public HleHarness(GuestMemoryFixture fixture, string tag)
     {
-        _fx = fx;
+        _fixture = fixture;
         _tag = tag;
         Root = Path.Combine(Path.GetTempPath(), $"vitasharp-{tag}-" + Guid.NewGuid().ToString("N"));
         Directory.CreateDirectory(Root);
-        Emu = new Emulator(new EmulatorOptions { FsRoot = Root, Memory = fx.Memory, EnableJit = false, CpuBackend = "interp" });
+        Emu = new Emulator(new EmulatorOptions { FsRoot = Root, Memory = fixture.Memory, EnableJit = false, CpuBackend = "interp" });
     }
 
     public void Dispose()
     {
-        foreach (var t in _threads)
+        foreach (GuestThread t in _threads)
         {
             t.Core.StopRequested = true;
             t.WaitForExit(5000);
@@ -49,7 +49,7 @@ public sealed class HleHarness : IDisposable
     {
         const BindingFlags All = BindingFlags.Instance | BindingFlags.Static | BindingFlags.NonPublic | BindingFlags.Public;
         // the C# method, or the method exporting the name as an alias ([Hle("sceKernelWaitSemaCB")] on sceKernelWaitSema)
-        var m = module.GetType().GetMethod(name, All)
+        MethodInfo m = module.GetType().GetMethod(name, All)
             ?? module.GetType().GetMethods(All).SingleOrDefault(x => x.GetCustomAttributes<VitaSharp.Core.Hle.HleAttribute>().Any(a => a.Name == name))
             ?? throw new MissingMethodException(module.GetType().Name, name);
         try
@@ -67,7 +67,7 @@ public sealed class HleHarness : IDisposable
 
     public uint Alloc(uint size)
     {
-        uint p = _fx.Memory.Alloc(size, _tag);
+        uint p = _fixture.Memory.Alloc(size, _tag);
         GuestMemory.Fill(p, 0, size);
         return p;
     }
@@ -91,7 +91,7 @@ public sealed class HleHarness : IDisposable
     public GuestRun Start(Action<GuestThread> body, string name = "hle-test", int priority = 0x10000100)
     {
         var run = new GuestRun();
-        var t = Emu.Kernel.CreateThread(name, 0, priority, 0x10000, 0, 0x70000);
+        GuestThread t = Emu.Kernel.CreateThread(name, 0, priority, 0x10000, 0, 0x70000);
         run.Thread = t;
         t.HostBody = th =>
         {
@@ -125,7 +125,7 @@ public sealed class HleHarness : IDisposable
     /// <summary>Runs <paramref name="body"/> on a guest thread and waits for it.</summary>
     public void OnGuest(Action<GuestThread> body, string name = "hle-test")
     {
-        var r = Start(body, name);
+        GuestRun r = Start(body, name);
         Join(r);
     }
 
