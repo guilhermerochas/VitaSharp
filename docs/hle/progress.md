@@ -15,7 +15,7 @@ How many of the functions that the PS Vita firmware 3.74 exports to user code (t
 | System imports | 3,785 | 3,576 | 209 | 0 | 7,373 | 51.3% |
 | General | 3,601 | 3,411 | 190 | 0 | 9,984 | 36% |
 | All firmware 3.74 exports | 9,435 | 8,898 | 399 | 138 | 19,406 | 48.6% |
-| VitaSDK user functions | 6,958 | 6,355 | 401 | 202 | 7,006 | 99.3% |
+| VitaSDK user functions | 6,991 | 6,355 | 401 | 235 | 7,006 | 99.7% |
 
 ## Libraries provided by LLE
 
@@ -24,7 +24,7 @@ How many of the functions that the PS Vita firmware 3.74 exports to user code (t
 | SceLibstdcxx | `vs0:sys/external/libc.suprx` | 2 |
 | SceLsdb | `vs0:vsh/shell/livespace_db.suprx` | 136 |
 
-VitaSDK user functions provided by LLE (the modules the installed games ship in app0:sce_module): 202.
+VitaSDK user functions provided by LLE (the modules the installed games ship in app0:sce_module): 235.
 
 ## Per library (308)
 
