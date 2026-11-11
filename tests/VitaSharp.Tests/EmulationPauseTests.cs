@@ -14,9 +14,9 @@ namespace VitaSharp.Tests;
 /// these tests run in the "guest" collection (sequentially with the other guest-state tests) and keep it short.
 /// </summary>
 [Collection("guest")]
-public sealed class EmulationPauseTests(GuestMemoryFixture fx)
+public sealed class EmulationPauseTests(GuestMemoryFixture fixture)
 {
-    static double Ms(long ticks) => ticks * 1000.0 / Stopwatch.Frequency;
+    private static double Ms(long ticks) => ticks * 1000.0 / Stopwatch.Frequency;
 
     [Fact]
     public void GuestClockStopsWhilePausedAndResumesWithoutAJump()
@@ -92,7 +92,7 @@ public sealed class EmulationPauseTests(GuestMemoryFixture fx)
     }
 
     // ARM: loop: ldr r1,[r0]; add r1,r1,#1; str r1,[r0]; ldr r2,[r0,#4]; cmp r2,#0; beq loop; bx lr
-    static readonly uint[] CountingLoop = [0xE5901000, 0xE2811001, 0xE5801000, 0xE5902004, 0xE3520000, 0x0AFFFFF9, 0xE12FFF1E];
+    private static readonly uint[] s_countingLoop = [0xE5901000, 0xE2811001, 0xE5801000, 0xE5902004, 0xE3520000, 0x0AFFFFF9, 0xE12FFF1E];
 
     [Fact]
     public void GuestThreadsParkWhilePausedAndContinueAfterwards()
@@ -101,13 +101,13 @@ public sealed class EmulationPauseTests(GuestMemoryFixture fx)
         Directory.CreateDirectory(root);
         bool jitEnabled = VitaSharp.Core.Cpu.Jit.Enabled;
         string jitMode = VitaSharp.Core.Cpu.Jit.Mode;
-        var emu = new Emulator(new EmulatorOptions { FsRoot = root, Memory = fx.Memory, EnableJit = false, CpuBackend = "interp" });
+        var emu = new Emulator(new EmulatorOptions { FsRoot = root, Memory = fixture.Memory, EnableJit = false, CpuBackend = "interp" });
         Exception? fatal = null;
         emu.Fatal += (_, e) => fatal ??= e;
-        uint code = fx.Memory.Alloc(0x100, "pause test code"), data = fx.Memory.Alloc(0x10, "pause test counter");
-        for (int i = 0; i < CountingLoop.Length; i++)
+        uint code = fixture.Memory.Alloc(0x100, "pause test code"), data = fixture.Memory.Alloc(0x10, "pause test counter");
+        for (int i = 0; i < s_countingLoop.Length; i++)
         {
-            GuestMemory.W32(code + (uint)i * 4, CountingLoop[i]);
+            GuestMemory.W32(code + (uint)i * 4, s_countingLoop[i]);
         }
 
         GuestMemory.W32(data, 0);
@@ -129,7 +129,7 @@ public sealed class EmulationPauseTests(GuestMemoryFixture fx)
             return true;
         }
 
-        var t = emu.Kernel.CreateThread("pause-test", 0, 0x10000100, 0x10000, 0, 0x70000);
+        GuestThread t = emu.Kernel.CreateThread("pause-test", 0, 0x10000100, 0x10000, 0, 0x70000);
         t.HostBody = th => th.CallGuest(code, data);
         try
         {
@@ -176,10 +176,10 @@ public sealed class EmulationPauseTests(GuestMemoryFixture fx)
     public void PauseHotkeyDefaultsAndCombinations()
     {
         // keyboard: P pauses; Space stays a Cross key (the usual pause key of emulators is taken here)
-        var kb = DefaultMappings.Keyboard();
+        ControllerProfile kb = DefaultMappings.Keyboard();
         Assert.Equal(new[] { InputBinding.OfKey("P") }, kb.Get(VitaControl.PauseEmulation));
         Assert.Contains(InputBinding.OfKey("Space"), kb.Get(VitaControl.Cross));
-        foreach (var c in VitaControls.All.Where(c => c != VitaControl.PauseEmulation))
+        foreach (VitaControl c in VitaControls.All.Where(c => c != VitaControl.PauseEmulation))
         {
             Assert.DoesNotContain(InputBinding.OfKey("P"), kb.Get(c));
         }
@@ -189,15 +189,15 @@ public sealed class EmulationPauseTests(GuestMemoryFixture fx)
         Assert.Equal(VitaSharp.Core.Host.VitaButtons.None, InputMapper.Map(cp, null, new HashSet<string> { "P" }).State.Buttons);
 
         // controllers: off by default; a combination needs every button
-        var pad = DefaultMappings.Gamepad("g", "n", ControllerKind.PlayStation);
+        ControllerProfile pad = DefaultMappings.Gamepad("g", "n", ControllerKind.PlayStation);
         Assert.Empty(pad.Get(VitaControl.PauseEmulation));
-        Assert.True(InputCombo.TryParse("pad:back&pad:start", out var combo));
+        Assert.True(InputCombo.TryParse("pad:back&pad:start", out InputCombo combo));
         Assert.Equal("pad:back&pad:start", combo.ToString());
         Assert.False(InputCombo.TryParse("pad:back", out _));
         Assert.False(InputBinding.TryParse("pad:back&pad:start", out _)); // single-binding code skips it
         pad.AddCombo(VitaControl.PauseEmulation, combo);
-        var json = InputProfileStore.Serialize(new InputConfig { Controllers = [pad] });
-        var back = InputProfileStore.Deserialize(json)!.Controllers[0];
+        string json = InputProfileStore.Serialize(new InputConfig { Controllers = [pad] });
+        ControllerProfile back = InputProfileStore.Deserialize(json)!.Controllers[0];
         Assert.Equal("pad:back&pad:start", back.GetCombos(VitaControl.PauseEmulation).Single().ToString());
         var pcp = new CompiledProfile(back);
         var snap = new PadSnapshot { IsGamepad = true };
@@ -207,14 +207,14 @@ public sealed class EmulationPauseTests(GuestMemoryFixture fx)
         Assert.True(InputMapper.HotkeyHeld(pcp, VitaControl.PauseEmulation, snap, null));
 
         // recording a combination: the buttons held beyond the baseline
-        var held = InputCapture.Held(new PadSnapshot { IsGamepad = true }, snap);
+        List<InputBinding> held = InputCapture.Held(new PadSnapshot { IsGamepad = true }, snap);
         Assert.Equal(new[] { InputBinding.Of(PadButton.Back), InputBinding.Of(PadButton.Start) }, held);
     }
 
     [Fact]
     public void OlderKeyboardProfilesGetThePauseKeyWhenFree()
     {
-        var old = DefaultMappings.Keyboard();
+        ControllerProfile old = DefaultMappings.Keyboard();
         old.Set(VitaControl.PauseEmulation, null);
         var store = new InputProfileStore();
         store.Put(old);

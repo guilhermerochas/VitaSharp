@@ -9,19 +9,19 @@ public sealed class AdaptiveEarlySignalTests
 {
     /// <summary>Feeds <paramref name="frames"/> frames from a model of the game: frame time and display wait as a
     /// function of the current signal. Alternating 2 and 3 vblank frames model a game that misses its cadence.</summary>
-    static void Run(AdaptiveEarlySignal a, int frames, Func<bool, int, (double interval, double wait)> game)
+    private static void Run(AdaptiveEarlySignal a, int frames, Func<bool, int, (double interval, double wait)> game)
     {
         for (int i = 0; i < frames; i++)
         {
-            var (interval, wait) = game(a.Early, i);
+            (double interval, double wait) = game(a.Early, i);
             a.OnFrame(interval, wait, out _);
         }
     }
 
     // Killzone-like: GPU-latency bound, 24 fps (2-3 vblanks), 8 ms on the display queue; early -> ~27 fps
-    static (double, double) Kz(bool early, int i) => early ? (i % 8 == 0 ? 50 : 33.3, 8) : (i % 2 == 0 ? 50 : 33.3, 8.5);
+    private static (double, double) Kz(bool early, int i) => early ? (i % 8 == 0 ? 50 : 33.3, 8) : (i % 2 == 0 ? 50 : 33.3, 8.5);
     // F1-like: CPU bound and locked at 30 fps with the completion signal; early runs ahead and drops to ~25 fps
-    static (double, double) F1(bool early, int i) => early ? (i % 2 == 0 ? 50 : 33.3, 2) : (i % 20 == 0 ? 50 : 33.3, 6);
+    private static (double, double) F1(bool early, int i) => early ? (i % 2 == 0 ? 50 : 33.3, 2) : (i % 20 == 0 ? 50 : 33.3, 6);
 
     [Fact]
     public void GpuLatencyBoundGameKeepsEarly()

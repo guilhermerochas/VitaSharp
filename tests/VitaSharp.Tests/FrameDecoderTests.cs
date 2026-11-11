@@ -12,10 +12,10 @@ namespace VitaSharp.Tests;
 /// </summary>
 public sealed class FrameDecoderTests(ITestOutputHelper output)
 {
-    sealed class Bits
+    private sealed class Bits
     {
-        readonly List<byte> _bytes = new();
-        int _cur, _n;
+        private readonly List<byte> _bytes = new();
+        private int _cur, _n;
         public void U(int bits, uint v)
         {
             for (int i = bits - 1; i >= 0; i--)
@@ -41,7 +41,7 @@ public sealed class FrameDecoderTests(ITestOutputHelper output)
 
     /// <summary>A raw AAC-LC mono frame: a FIL element carrying the libfaac encoder tag (as libfaac writes it into the
     /// first frame), then a silent SCE (global gain 0, long window, max_sfb 0, no tools) and END.</summary>
-    static byte[] Frame(bool encoderTag)
+    private static byte[] Frame(bool encoderTag)
     {
         var b = new Bits();
         if (encoderTag)
@@ -83,10 +83,10 @@ public sealed class FrameDecoderTests(ITestOutputHelper output)
         }
         using var d = FrameDecoder.Create(AVCodecID.AV_CODEC_ID_AAC, 48000, 1, FrameDecoder.AacConfig(48000, 1));
         Assert.NotNull(d);
-        var pcm = new short[4096];
+        short[] pcm = new short[4096];
         for (int frame = 0; frame < 3; frame++)
         {
-            var data = Frame(encoderTag: frame == 0);
+            byte[] data = Frame(encoderTag: frame == 0);
             int samples;
             fixed (byte* p = data)
             {
@@ -110,13 +110,13 @@ public sealed class RawAacFrameLengthTests(ITestOutputHelper output)
     {
         config = [];
         var packets = new List<byte[]>();
-        var codec = ffmpeg.avcodec_find_encoder(AVCodecID.AV_CODEC_ID_AAC);
+        AVCodec* codec = ffmpeg.avcodec_find_encoder(AVCodecID.AV_CODEC_ID_AAC);
         if (codec == null)
         {
             return packets;
         }
 
-        var ctx = ffmpeg.avcodec_alloc_context3(codec);
+        AVCodecContext* ctx = ffmpeg.avcodec_alloc_context3(codec);
         ctx->sample_rate = 48000;
         ctx->sample_fmt = AVSampleFormat.AV_SAMPLE_FMT_FLTP;
         ctx->bit_rate = 128000;
@@ -128,8 +128,8 @@ public sealed class RawAacFrameLengthTests(ITestOutputHelper output)
             return packets;
         }
         config = new Span<byte>(ctx->extradata, ctx->extradata_size).ToArray();
-        var frame = ffmpeg.av_frame_alloc();
-        var pkt = ffmpeg.av_packet_alloc();
+        AVFrame* frame = ffmpeg.av_frame_alloc();
+        AVPacket* pkt = ffmpeg.av_packet_alloc();
         long t = 0;
         for (int f = 0; f <= frames; f++)
         {
@@ -173,7 +173,7 @@ public sealed class RawAacFrameLengthTests(ITestOutputHelper output)
             output.WriteLine("FFmpeg not available: skipped");
             return;
         }
-        var packets = EncodeSine(40, out var config);
+        List<byte[]> packets = EncodeSine(40, out byte[]? config);
         if (packets.Count == 0)
         {
             output.WriteLine("no AAC encoder: skipped");
@@ -182,7 +182,7 @@ public sealed class RawAacFrameLengthTests(ITestOutputHelper output)
         const int Slot = 0x200, MaxEs = 1536;
         Assert.All(packets, p => Assert.True(p.Length < Slot));
         // the game's layout: each access unit at the start of its slot, the rest of the slot stale (non-zero) bytes
-        var es = new byte[packets.Count * Slot + MaxEs];
+        byte[] es = new byte[packets.Count * Slot + MaxEs];
         new Random(1).NextBytes(es);
         for (int i = 0; i < packets.Count; i++)
         {
@@ -193,8 +193,8 @@ public sealed class RawAacFrameLengthTests(ITestOutputHelper output)
         using var slotted = FrameDecoder.Create(AVCodecID.AV_CODEC_ID_AAC, 48000, 2, config);
         Assert.NotNull(exact);
         Assert.NotNull(slotted);
-        var want = new short[8192];
-        var got = new short[8192];
+        short[] want = new short[8192];
+        short[] got = new short[8192];
         fixed (byte* e = es)
         {
             for (int i = 0; i < packets.Count; i++)

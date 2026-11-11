@@ -6,13 +6,13 @@ namespace VitaSharp.Tests;
 public class ErrorTableTests
 {
     /// <summary>A table laid out like error_table.bin: default prefix, ranges, base 2000, codes.</summary>
-    static byte[] Table(params uint[] codes)
+    private static byte[] Table(params uint[] codes)
     {
         var b = new List<byte>();
         void U16(int v) => b.AddRange(BitConverter.GetBytes((ushort)v));
         void Pfx(string s)
         {
-            var p = new byte[4];
+            byte[] p = new byte[4];
             System.Text.Encoding.ASCII.GetBytes(s).CopyTo(p, 0);
             b.AddRange(p);
         }

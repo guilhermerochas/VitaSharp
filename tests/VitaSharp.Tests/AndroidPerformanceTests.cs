@@ -8,7 +8,7 @@ namespace VitaSharp.Tests;
 /// thread placement, the game's frame rate and the per-frame work for ADPF, the logcat level during gameplay.</summary>
 public sealed class AndroidPerformanceTests : IDisposable
 {
-    readonly string _root = Path.Combine(Path.GetTempPath(), "vitasharp-android-perf-" + Guid.NewGuid().ToString("N"));
+    private readonly string _root = Path.Combine(Path.GetTempPath(), "vitasharp-android-perf-" + Guid.NewGuid().ToString("N"));
 
     public void Dispose()
     {
@@ -20,10 +20,10 @@ public sealed class AndroidPerformanceTests : IDisposable
     }
 
     // Helio G99 (MT6789): 6 x Cortex-A55 at 2.0 GHz + 2 x Cortex-A76 at 2.2 GHz
-    static CpuTopology HelioG99() => CpuTopology.Build(Enumerable.Range(0, 8).Select(i => i < 6 ? (i, 2_000_000L, 382) : (i, 2_200_000L, 1024)));
+    private static CpuTopology HelioG99() => CpuTopology.Build(Enumerable.Range(0, 8).Select(i => i < 6 ? (i, 2_000_000L, 382) : (i, 2_200_000L, 1024)));
 
     // Snapdragon 8 Gen 1 style: 4 x A510 + 3 x A710 + 1 x X2
-    static CpuTopology OnePlusThreePlusFour() => CpuTopology.Build(Enumerable.Range(0, 8).Select(i =>
+    private static CpuTopology OnePlusThreePlusFour() => CpuTopology.Build(Enumerable.Range(0, 8).Select(i =>
         i < 4 ? (i, 1_800_000L, 300) : i < 7 ? (i, 2_500_000L, 800) : (i, 3_000_000L, 1024)));
 
     // ---------------------------------------------------------------- topology
@@ -31,7 +31,7 @@ public sealed class AndroidPerformanceTests : IDisposable
     [Fact]
     public void TopologyGroupsTheHelioG99()
     {
-        var t = HelioG99();
+        CpuTopology t = HelioG99();
         Assert.Equal(2, t.Clusters.Count);
         Assert.Equal([6, 7], t.Big!.Cpus);
         Assert.Null(t.Mid);
@@ -46,7 +46,7 @@ public sealed class AndroidPerformanceTests : IDisposable
         // cpu_capacity tells cores apart even at the same frequency; folders such as cpufreq/ and cpuidle/ are skipped
         for (int i = 0; i < 4; i++)
         {
-            var d = Path.Combine(_root, $"cpu{i}");
+            string d = Path.Combine(_root, $"cpu{i}");
             Directory.CreateDirectory(Path.Combine(d, "cpufreq"));
             File.WriteAllText(Path.Combine(d, "cpufreq", "cpuinfo_max_freq"), "2000000\n");
             File.WriteAllText(Path.Combine(d, "cpu_capacity"), i < 2 ? "400\n" : "1024\n");
@@ -80,13 +80,13 @@ public sealed class AndroidPerformanceTests : IDisposable
 
     // ---------------------------------------------------------------- placement
 
-    static ThreadSample Guest(int tid, double load) => new(tid, ThreadKind.Guest, $"g{tid}", load, tid);
+    private static ThreadSample Guest(int tid, double load) => new(tid, ThreadKind.Guest, $"g{tid}", load, tid);
 
     [Fact]
     public void MainGuestAndGpuGoToTheFastCores()
     {
         var p = new ThreadPlacementPlanner(HelioG99());
-        var plan = p.Plan([Guest(10, 0.9), Guest(11, 0.5), new(20, ThreadKind.Gpu, "GPU worker", 0.6, 20),
+        PlacementPlan plan = p.Plan([Guest(10, 0.9), Guest(11, 0.5), new(20, ThreadKind.Gpu, "GPU worker", 0.6, 20),
             new(30, ThreadKind.JitWorker, "JIT worker", 0.2, 30), new(40, ThreadKind.ShaderWorker, "Shader worker", 0.1, 40),
             new(50, ThreadKind.Other, "main", 0.1, 50)]);
         Assert.Equal(10, plan.MainTid);
@@ -123,7 +123,7 @@ public sealed class AndroidPerformanceTests : IDisposable
     {
         // 4 + 4 (A73 + A53): main, GPU and two more busy guest threads; a quiet one stays on the slow cores
         var t = CpuTopology.Build(Enumerable.Range(0, 8).Select(i => i < 4 ? (i, 1_800_000L, 0) : (i, 2_400_000L, 0)));
-        var plan = new ThreadPlacementPlanner(t).Plan([Guest(1, 0.9), Guest(2, 0.6), Guest(3, 0.4), Guest(4, 0.1),
+        PlacementPlan plan = new ThreadPlacementPlanner(t).Plan([Guest(1, 0.9), Guest(2, 0.6), Guest(3, 0.4), Guest(4, 0.1),
             new(9, ThreadKind.Gpu, "GPU worker", 0.5, 9)]);
         Assert.Equal([1, 9, 2, 3], plan.HotTids);
         Assert.Equal(Placement.NotBig, plan.Placements[4]);
@@ -133,7 +133,7 @@ public sealed class AndroidPerformanceTests : IDisposable
     public void OneFastCoreKeepsItForTheMainThreadAndTheGpuGoesToTheMidCores()
     {
         var p = new ThreadPlacementPlanner(OnePlusThreePlusFour());
-        var plan = p.Plan([Guest(1, 0.9), Guest(2, 0.6), new(9, ThreadKind.Gpu, "GPU worker", 0.5, 9)]);
+        PlacementPlan plan = p.Plan([Guest(1, 0.9), Guest(2, 0.6), new(9, ThreadKind.Gpu, "GPU worker", 0.5, 9)]);
         Assert.Equal(Placement.Big, plan.Placements[1]);
         Assert.Equal(Placement.Mid, plan.Placements[9]);
         Assert.Equal(Placement.NotBig, plan.Placements[2]);
@@ -170,9 +170,9 @@ public sealed class AndroidPerformanceTests : IDisposable
 
     // ---------------------------------------------------------------- frame rate and work
 
-    const long Freq = 1_000_000; // ticks per second in these tests
+    private const long Freq = 1_000_000; // ticks per second in these tests
 
-    static long Ticks(double vblanks) => (long)(vblanks * FrameRateEstimator.VblankSeconds * Freq);
+    private static long Ticks(double vblanks) => (long)(vblanks * FrameRateEstimator.VblankSeconds * Freq);
 
     [Fact]
     public void FrameRateFollowsTheGamesOwnVblankWaits()

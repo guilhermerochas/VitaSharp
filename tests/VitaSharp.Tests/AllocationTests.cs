@@ -6,24 +6,24 @@ namespace VitaSharp.Tests;
 /// <summary>Allocation-free helpers: logging handlers and the uniform arena.</summary>
 public sealed class AllocationTests
 {
-    static int _evaluations;
-    static int Evaluate()
+    private static int s_evaluations;
+    private static int Evaluate()
     {
-        _evaluations++;
+        s_evaluations++;
         return 42;
     }
 
     [Fact]
     public void DisabledDebugDoesNotFormat()
     {
-        var level = Log.Level;
+        LogLevel level = Log.Level;
         try
         {
             Log.Level = LogLevel.Info;
-            _evaluations = 0;
+            s_evaluations = 0;
             Log.Debug($"value {Evaluate()}");
             Log.Trace($"value {Evaluate()}");
-            Assert.Equal(0, _evaluations);
+            Assert.Equal(0, s_evaluations);
             long before = GC.GetAllocatedBytesForCurrentThread();
             for (int i = 0; i < 100; i++)
             {
@@ -42,17 +42,17 @@ public sealed class AllocationTests
     public void WarnOnceWithInterpolatedKeyFormatsTheMessageOnce()
     {
         string tag = Guid.NewGuid().ToString("N");
-        _evaluations = 0;
+        s_evaluations = 0;
         for (int i = 0; i < 3; i++)
         {
             Log.WarnOnce($"alloc-test-{tag}-{0x1234:X8}", $"first {Evaluate()}");
         }
 
-        Assert.Equal(1, _evaluations);
+        Assert.Equal(1, s_evaluations);
         // the same key built as a plain string is the same entry
         Log.WarnOnce($"alloc-test-{tag}-00001234", "never");
         Log.WarnOnce($"alloc-test-{tag}-{0x1234:X8}", $"again {Evaluate()}");
-        Assert.Equal(1, _evaluations);
+        Assert.Equal(1, s_evaluations);
         // a seen key costs no allocation
         long before = GC.GetAllocatedBytesForCurrentThread();
         for (int i = 0; i < 100; i++)
@@ -69,7 +69,7 @@ public sealed class AllocationTests
         var chunks = new List<(UniformChunk Chunk, int Offset)>();
         for (int i = 0; i < 4000; i++)
         {
-            var c = UniformArena.Rent(1000, out int off);
+            UniformChunk c = UniformArena.Rent(1000, out int off);
             // zero only with the old invariant (VITASHARP_UB_ZERO=recycle); by default the renter writes every byte
             if (UniformArena.ZeroOnRecycle)
             {
@@ -80,7 +80,7 @@ public sealed class AllocationTests
             chunks.Add((c, off));
         }
         // slices of one chunk never overlap
-        foreach (var g in chunks.GroupBy(x => x.Chunk))
+        foreach (IGrouping<UniformChunk, (UniformChunk Chunk, int Offset)> g in chunks.GroupBy(x => x.Chunk))
         {
             var offs = g.Select(x => x.Offset).OrderBy(x => x).ToList();
             for (int i = 1; i < offs.Count; i++)
@@ -88,7 +88,7 @@ public sealed class AllocationTests
                 Assert.True(offs[i] - offs[i - 1] >= 1000);
             }
         }
-        foreach (var (c, _) in chunks)
+        foreach ((UniformChunk? c, int _) in chunks)
         {
             UniformArena.Release(c);
         }
@@ -114,8 +114,8 @@ public sealed class AllocationTests
             for (int i = 0; i < 3000; i++)
             {
                 int len = 16 + rng.Next(20000);
-                var c = UniformArena.Rent(len, out int off, clear: false);
-                var slice = c.Span.Slice(off, len);
+                UniformChunk c = UniformArena.Rent(len, out int off, clear: false);
+                Span<byte> slice = c.Span.Slice(off, len);
                 if (UniformArena.ZeroOnRecycle)
                 {
                     Assert.True(slice.IndexOfAnyExcept((byte)0) < 0, $"round {round} slice {i} not zero");
@@ -129,7 +129,7 @@ public sealed class AllocationTests
                 }
                 held.Add(c);
             }
-            foreach (var c in held)
+            foreach (UniformChunk c in held)
             {
                 UniformArena.Release(c);
             }

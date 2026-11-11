@@ -14,11 +14,11 @@ namespace VitaSharp.Tests;
 public class ExternalDocPairsTests
 {
     /// <summary>The external docs that must have both languages (English path; the pair is *.pt-BR.md).</summary>
-    static readonly string[] Required = ["README.md", "docs/compatibility.md"];
+    private static readonly string[] s_required = ["README.md", "docs/compatibility.md"];
 
-    const string Marker = "<!-- pair: ";
+    private const string Marker = "<!-- pair: ";
 
-    static string Root([CallerFilePath] string source = "")
+    private static string Root([CallerFilePath] string source = "")
     {
         for (var d = new DirectoryInfo(Path.GetDirectoryName(source)!); d != null; d = d.Parent)
         {
@@ -34,7 +34,7 @@ public class ExternalDocPairsTests
     /// <summary>SHA-256 of a doc without its own pair line, with LF line ends (the same on every checkout).</summary>
     public static string Hash(string path)
     {
-        var lines = File.ReadAllText(path).Replace("\r\n", "\n").Split('\n').ToList();
+        List<string> lines = File.ReadAllText(path).Replace("\r\n", "\n").Split('\n').ToList();
         if (lines.Count > 0 && lines[0].StartsWith(Marker, StringComparison.Ordinal))
         {
             lines.RemoveAt(0);
@@ -43,26 +43,26 @@ public class ExternalDocPairsTests
         return Convert.ToHexStringLower(SHA256.HashData(Encoding.UTF8.GetBytes(string.Join("\n", lines))));
     }
 
-    static string PairLine(string path) =>
+    private static string PairLine(string path) =>
         File.ReadLines(path).FirstOrDefault() is { } first && first.StartsWith(Marker, StringComparison.Ordinal) ? first : "";
 
-    static string Expected(string other) => $"{Marker}{Path.GetFileName(other)} sha256={Hash(other)} -->";
+    private static string Expected(string other) => $"{Marker}{Path.GetFileName(other)} sha256={Hash(other)} -->";
 
     [Fact]
     public void EveryExternalDocHasItsTranslationInStep()
     {
         string root = Root();
-        var english = Required.Select(p => Path.Combine(root, p)).ToList();
-        foreach (var dir in new[] { root, Path.Combine(root, "docs") })
+        var english = s_required.Select(p => Path.Combine(root, p)).ToList();
+        foreach (string? dir in new[] { root, Path.Combine(root, "docs") })
         {
-            foreach (var pt in Directory.EnumerateFiles(dir, "*.pt-BR.md"))
+            foreach (string pt in Directory.EnumerateFiles(dir, "*.pt-BR.md"))
             {
                 english.Add(pt[..^".pt-BR.md".Length] + ".md");
             }
         }
 
         var bad = new List<string>();
-        foreach (var en in english.Distinct())
+        foreach (string? en in english.Distinct())
         {
             string pt = en[..^".md".Length] + ".pt-BR.md";
             string name = Path.GetRelativePath(root, en);
@@ -71,7 +71,7 @@ public class ExternalDocPairsTests
                 bad.Add($"{name}: needs both {Path.GetFileName(en)} and {Path.GetFileName(pt)}");
                 continue;
             }
-            foreach (var (file, other) in new[] { (en, pt), (pt, en) })
+            foreach ((string? file, string? other) in new[] { (en, pt), (pt, en) })
             {
                 string text = File.ReadAllText(file);
                 if (!text.Contains($"({Path.GetFileName(other)})", StringComparison.Ordinal))

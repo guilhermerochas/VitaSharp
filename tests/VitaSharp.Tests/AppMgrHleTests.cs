@@ -9,9 +9,9 @@ namespace VitaSharp.Tests;
 
 /// <summary>Package D, second pass: SceAppMgrUser mounts, boot param and save data info.</summary>
 [Collection("guest")]
-public sealed class AppMgrHleTests(GuestMemoryFixture fx) : IDisposable
+public sealed class AppMgrHleTests(GuestMemoryFixture fixture) : IDisposable
 {
-    readonly string _root = Path.Combine(Path.GetTempPath(), "vitasharp-appmgr-" + Guid.NewGuid().ToString("N"));
+    private readonly string _root = Path.Combine(Path.GetTempPath(), "vitasharp-appmgr-" + Guid.NewGuid().ToString("N"));
 
     public void Dispose()
     {
@@ -22,28 +22,28 @@ public sealed class AppMgrHleTests(GuestMemoryFixture fx) : IDisposable
         catch (IOException) { }
     }
 
-    static T Call<T>(object module, string name, params object[] args) =>
+    private static T Call<T>(object module, string name, params object[] args) =>
         (T)module.GetType().GetMethod(name, BindingFlags.Instance | BindingFlags.NonPublic | BindingFlags.Public)!.Invoke(module, args)!;
 
-    uint Alloc(uint size)
+    private uint Alloc(uint size)
     {
-        uint p = fx.Memory.Alloc(size, "appmgr");
+        uint p = fixture.Memory.Alloc(size, "appmgr");
         GuestMemory.Fill(p, 0, size);
         return p;
     }
 
-    uint Str(string s)
+    private uint Str(string s)
     {
         uint p = Alloc((uint)s.Length + 16);
         GuestMemory.WriteCString(p, s);
         return p;
     }
 
-    static void SetBacking(object o, string prop, object value) =>
+    private static void SetBacking(object o, string prop, object value) =>
         typeof(Emulator).GetField($"<{prop}>k__BackingField", BindingFlags.Instance | BindingFlags.NonPublic)!.SetValue(o, value);
 
     /// <summary>An Emulator shell with only Options, Vfs and TitleId (a real one would reserve a second guest address space).</summary>
-    (AppMgr mgr, Emulator emu) Make()
+    private (AppMgr mgr, Emulator emu) Make()
     {
         var emu = (Emulator)RuntimeHelpers.GetUninitializedObject(typeof(Emulator));
         SetBacking(emu, "Options", new EmulatorOptions { FsRoot = _root });
@@ -53,13 +53,13 @@ public sealed class AppMgrHleTests(GuestMemoryFixture fx) : IDisposable
         return (new AppMgr { Emu = emu }, emu);
     }
 
-    const int ERR_PARAM = unchecked((int)0x80802002), ERR_NOT_FOUND = unchecked((int)0x80802012),
+    private const int ERR_PARAM = unchecked((int)0x80802002), ERR_NOT_FOUND = unchecked((int)0x80802012),
         ERR_NULL_POINTER = unchecked((int)0x80802016);
 
     [Fact]
     public void AppDataMountByIdMountsPsmDirectories()
     {
-        var (mgr, emu) = Make();
+        (AppMgr? mgr, Emulator? emu) = Make();
         uint mp = Alloc(16), tid = Str("NPXS10001");
         Assert.Equal(ERR_NOT_FOUND, Call<int>(mgr, "sceAppMgrAppDataMountById", 106, tid, mp));
         Directory.CreateDirectory(Path.Combine(_root, "ux0", "psm", "NPXS10001", "RO"));
@@ -76,7 +76,7 @@ public sealed class AppMgrHleTests(GuestMemoryFixture fx) : IDisposable
     [Fact]
     public void GameDataMountMountsInstalledApp()
     {
-        var (mgr, emu) = Make();
+        (AppMgr? mgr, Emulator? emu) = Make();
         uint mp = Alloc(16), opt = Alloc(0x18);
         Assert.Equal(ERR_NOT_FOUND, Call<int>(mgr, "sceAppMgrGameDataMount", Str("ux0:app/PCSB99999"), 0u, 0u, mp));
         Directory.CreateDirectory(Path.Combine(_root, "ux0", "app", "PCSB00002"));
@@ -92,7 +92,7 @@ public sealed class AppMgrHleTests(GuestMemoryFixture fx) : IDisposable
     [Fact]
     public void GenericMountContextMounts()
     {
-        var (mgr, emu) = Make();
+        (AppMgr? mgr, Emulator? emu) = Make();
         uint ctx = Alloc(0x40);
         GuestMemory.WriteCString(ctx, "DLC0001");
         Assert.Equal(ERR_NOT_FOUND, Call<int>(mgr, "sceAppMgrAddContMount", 0, ctx));
@@ -111,7 +111,7 @@ public sealed class AppMgrHleTests(GuestMemoryFixture fx) : IDisposable
     [Fact]
     public void BootParamZeroesReservedWords()
     {
-        var (mgr, _) = Make();
+        (AppMgr? mgr, Emulator _) = Make();
         uint bp = Alloc(0x2C), opt = Alloc(8);
         for (uint o = 0; o < 0x2C; o += 4)
         {
@@ -136,7 +136,7 @@ public sealed class AppMgrHleTests(GuestMemoryFixture fx) : IDisposable
     [Fact]
     public void SaveDataInfoReportsSize()
     {
-        var (mgr, _) = Make();
+        (AppMgr? mgr, Emulator _) = Make();
         uint res = Alloc(0x1C), opt = Alloc(0x10);
         GuestMemory.W32(opt, res);
         Assert.Equal(ERR_NOT_FOUND, Call<int>(mgr, "_sceAppMgrGetSaveDataInfo", 0u, Str("PCSA00001"), 0, opt));
@@ -152,13 +152,13 @@ public sealed class AppMgrHleTests(GuestMemoryFixture fx) : IDisposable
 
     // ---- third pass: the wrappers whose layouts came from the FW 3.60 SceDriverUser/SceAppMgr/libSceAppUtil
 
-    const int ERR_STRUCT = unchecked((int)0x80800001), ERR_TOO_BIG = unchecked((int)0x8002710B),
+    private const int ERR_STRUCT = unchecked((int)0x80800001), ERR_TOO_BIG = unchecked((int)0x8002710B),
         ERR_SLOT_NOT_FOUND = unchecked((int)0x8080108B), ERR_SLOT_RANGE = unchecked((int)0x80801084);
 
     /// <summary>Make() plus the HLE AppUtil the save data functions share, with savedata0: mounted.</summary>
-    (AppMgr mgr, AppUtil util, Emulator emu) MakeWithAppUtil()
+    private (AppMgr mgr, AppUtil util, Emulator emu) MakeWithAppUtil()
     {
-        var (mgr, emu) = Make();
+        (AppMgr? mgr, Emulator? emu) = Make();
         var hle = new VitaSharp.Core.Hle.HleRegistry(emu);
         var util = new AppUtil { Emu = emu };
         hle.Modules.Add(util);
@@ -168,7 +168,7 @@ public sealed class AppMgrHleTests(GuestMemoryFixture fx) : IDisposable
         return (mgr, util, emu);
     }
 
-    uint Sized(uint size)
+    private uint Sized(uint size)
     {
         uint p = Alloc(size);
         GuestMemory.W32(p, size);
@@ -178,7 +178,7 @@ public sealed class AppMgrHleTests(GuestMemoryFixture fx) : IDisposable
     [Fact]
     public void PublicWrappersOfBootParamAndSaveDataInfo()
     {
-        var (mgr, _) = Make();
+        (AppMgr? mgr, Emulator _) = Make();
         uint bp = Alloc(0x2C);
         for (uint o = 4; o < 0x2C; o += 4)
         {
@@ -204,7 +204,7 @@ public sealed class AppMgrHleTests(GuestMemoryFixture fx) : IDisposable
     [Fact]
     public void SaveDataSlotStatusQuotaAndFileGetParam()
     {
-        var (mgr, util, _) = MakeWithAppUtil();
+        (AppMgr? mgr, AppUtil? util, Emulator _) = MakeWithAppUtil();
         uint param = Alloc(0x34C);
         GuestMemory.W32(param, 0); // status ok
         GuestMemory.WriteCString(param + 4, "slot title");
@@ -254,7 +254,7 @@ public sealed class AppMgrHleTests(GuestMemoryFixture fx) : IDisposable
     [Fact]
     public void SaveDataMountUmountAndVariants()
     {
-        var (mgr, util, emu) = MakeWithAppUtil();
+        (AppMgr? mgr, AppUtil? util, Emulator? emu) = MakeWithAppUtil();
         uint m = Sized(0x3C);
         GuestMemory.WriteCString(m + 0x14, "savedata0");
         Assert.Equal(0, Call<int>(mgr, "sceAppMgrSaveDataMount", m));
@@ -291,7 +291,7 @@ public sealed class AppMgrHleTests(GuestMemoryFixture fx) : IDisposable
     [Fact]
     public void AppEventsArePendingFlagsTakenInKernelOrder()
     {
-        var (mgr, _, _) = MakeWithAppUtil();
+        (AppMgr? mgr, AppUtil _, Emulator _) = MakeWithAppUtil();
         uint num = Alloc(4), ev = Alloc(0x40);
         Assert.Equal(0, Call<int>(mgr, "sceAppMgrReceiveEventNum", new Ptr<int>(num)));
         Assert.Equal(0, (int)GuestMemory.R32(num));
@@ -317,7 +317,7 @@ public sealed class AppMgrHleTests(GuestMemoryFixture fx) : IDisposable
     [Fact]
     public void AppParam2TrophyMountsDateTimeAndMediaType()
     {
-        var (mgr, util, emu) = MakeWithAppUtil();
+        (AppMgr? mgr, AppUtil? util, Emulator? emu) = MakeWithAppUtil();
         uint p2 = Alloc(0x440);
         GuestMemory.Fill(p2, 0xEE, 0x440);
         mgr.LaunchParam = "psgm:play?titleid=PCSA00001";

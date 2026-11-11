@@ -1,3 +1,4 @@
+using System.Diagnostics.CodeAnalysis;
 using System.Runtime.InteropServices;
 using VitaSharp.Core.Cpu;
 using VitaSharp.Core.Cpu.Native;
@@ -16,28 +17,29 @@ namespace VitaSharp.Tests;
 /// </summary>
 public sealed unsafe partial class Arm64Sandbox : IArm64Runner
 {
-    const int UC_ARCH_ARM64 = 2, UC_MODE_ARM = 0, UC_PROT_ALL = 7, UC_PROT_READ = 1, UC_PROT_EXEC = 4;
-    const int UC_HOOK_CODE = 4, UC_HOOK_MEM_UNMAPPED = 112;
-    const int RegX0 = 199, RegX30 = 2, RegSp = 4, RegPc = 260;
+    private const int UC_ARCH_ARM64 = 2, UC_MODE_ARM = 0, UC_PROT_ALL = 7, UC_PROT_READ = 1, UC_PROT_EXEC = 4;
+    private const int UC_HOOK_CODE = 4, UC_HOOK_MEM_UNMAPPED = 112;
+    private const int RegX0 = 199, RegX30 = 2, RegSp = 4, RegPc = 260;
     public const ulong CalloutStub = 0x1000, ReturnStub = 0x2000;
     /// <summary>A RET whose code hook calls <see cref="FakeFunction"/> with x0-x3 and puts its result in x0.</summary>
     public const ulong FakeStub = 0x1800;
     public Func<ulong, ulong, ulong, ulong, ulong>? FakeFunction;
-    const ulong Page = 0x1000;
+    private const ulong Page = 0x1000;
 
-    nint _uc;
-    readonly HashSet<ulong> _pages = new();
-    readonly byte* _stack;
-    const int StackSize = 256 << 10;
-    readonly ulong _tramp;
+    private nint _unicorn;
+    private readonly HashSet<ulong> _pages = new();
+    private readonly byte* _stack;
+    private const int StackSize = 256 << 10;
+    private readonly ulong _tramp;
     public Arm64Emitter.Runtime Stubs { get; }
     /// <summary>The sandbox's own indirect-exit table (the process table holds x64 entries).</summary>
     public readonly NativeRuntime.DispatchEntry* Dispatch;
     public long Callouts => _hits;
-    long _hits;
-    string? _fault;
+    private long _hits;
+    private string? _fault;
 
-    [ThreadStatic] static Arm64Sandbox? _current;
+    [SuppressMessage("Style", "IDE1006", Justification = "[ThreadStatic]: t_camelCase; .editorconfig cannot select the attribute")]
+    [ThreadStatic] private static Arm64Sandbox? t_current;
 
     public static string? SkipReason =>
         UnicornAvailability.SkipReason ?? (OperatingSystem.IsWindows() ? null : "the ARM64 sandbox maps host memory with VirtualQuery checks (Windows only)");
@@ -51,17 +53,17 @@ public sealed unsafe partial class Arm64Sandbox : IArm64Runner
     /// <param name="noBlockCounts">The device's budget-only trampoline (<see cref="Arm64Emitter.Runtime.NoBlockCounts"/>).</param>
     public Arm64Sandbox(bool countInstructions, bool noBlockCounts)
     {
-        Check(uc_open(UC_ARCH_ARM64, UC_MODE_ARM, out _uc), "uc_open");
+        Check(uc_open(UC_ARCH_ARM64, UC_MODE_ARM, out _unicorn), "uc_open");
         // stub page: callout stub (RET after the hook ran the bridge) and the return address of the trampoline
-        Check(uc_mem_map(_uc, CalloutStub, 0x2000, UC_PROT_ALL), "map stubs");
+        Check(uc_mem_map(_unicorn, CalloutStub, 0x2000, UC_PROT_ALL), "map stubs");
         uint ret = 0xD65F03C0, brk = 0xD4200000;
-        Check(uc_mem_write(_uc, CalloutStub, &ret, 4), "write stub");
-        Check(uc_mem_write(_uc, ReturnStub, &brk, 4), "write stub");
-        Check(uc_mem_write(_uc, FakeStub, &ret, 4), "write stub");
+        Check(uc_mem_write(_unicorn, CalloutStub, &ret, 4), "write stub");
+        Check(uc_mem_write(_unicorn, ReturnStub, &brk, 4), "write stub");
+        Check(uc_mem_write(_unicorn, FakeStub, &ret, 4), "write stub");
         // guest address space incl. the dirty-page table right below it
         ulong gb = (ulong)GuestMemory.Base - DirtyPages.TableBytes;
         MapRange(gb, 0x1_0001_0000UL + DirtyPages.TableBytes, UC_PROT_ALL);
-        var code = NativeRuntime.Instance.Code;
+        ExecutableMemory code = NativeRuntime.Instance.Code;
         MapRange((ulong)code.ExecBase, ExecutableMemory.ReserveSize, UC_PROT_READ | UC_PROT_EXEC);
         _stack = (byte*)NativeMemory.AlignedAlloc(StackSize, 4096);
         MapRange((ulong)_stack, StackSize, UC_PROT_ALL);
@@ -88,19 +90,19 @@ public sealed unsafe partial class Arm64Sandbox : IArm64Runner
             // the device's exit layout (patch sites; tests link through the slots, so the sites stay unlinked)
             PatchLinks = pinned && (Arm64Emitter.Opts & Arm64Emitter.A64Opt.PatchLinks) != 0
         };
-        Check(uc_hook_add(_uc, out _, UC_HOOK_CODE, (void*)(delegate* unmanaged<nint, ulong, uint, void*, void>)&OnCallout, null, CalloutStub, CalloutStub), "hook callout");
-        Check(uc_hook_add(_uc, out _, UC_HOOK_CODE, (void*)(delegate* unmanaged<nint, ulong, uint, void*, void>)&OnFake, null, FakeStub, FakeStub), "hook fake");
-        Check(uc_hook_add(_uc, out _, UC_HOOK_MEM_UNMAPPED, (void*)(delegate* unmanaged<nint, int, ulong, int, long, void*, int>)&OnUnmapped, null, 1, 0), "hook unmapped");
+        Check(uc_hook_add(_unicorn, out _, UC_HOOK_CODE, (void*)(delegate* unmanaged<nint, ulong, uint, void*, void>)&OnCallout, null, CalloutStub, CalloutStub), "hook callout");
+        Check(uc_hook_add(_unicorn, out _, UC_HOOK_CODE, (void*)(delegate* unmanaged<nint, ulong, uint, void*, void>)&OnFake, null, FakeStub, FakeStub), "hook fake");
+        Check(uc_hook_add(_unicorn, out _, UC_HOOK_MEM_UNMAPPED, (void*)(delegate* unmanaged<nint, int, ulong, int, long, void*, int>)&OnUnmapped, null, 1, 0), "hook unmapped");
         if (countInstructions)
         {
             HookCount();
         }
     }
 
-    void MapRange(ulong addr, ulong size, int perms)
+    private void MapRange(ulong addr, ulong size, int perms)
     {
         ulong lo = addr & ~(Page - 1), hi = (addr + size + Page - 1) & ~(Page - 1);
-        Check(uc_mem_map_ptr(_uc, lo, (nuint)(hi - lo), (uint)perms, (void*)lo), $"map {lo:X}");
+        Check(uc_mem_map_ptr(_unicorn, lo, (nuint)(hi - lo), (uint)perms, (void*)lo), $"map {lo:X}");
         for (ulong p = lo; p < hi && hi - lo <= 64 * Page; p += Page)
         {
             _pages.Add(p); // small ranges: remember the pages
@@ -109,16 +111,16 @@ public sealed unsafe partial class Arm64Sandbox : IArm64Runner
         _big.Add((lo, hi));
     }
 
-    readonly List<(ulong Lo, ulong Hi)> _big = new();
+    private readonly List<(ulong Lo, ulong Hi)> _big = new();
 
-    bool Mapped(ulong page)
+    private bool Mapped(ulong page)
     {
         if (_pages.Contains(page))
         {
             return true;
         }
 
-        foreach (var (lo, hi) in _big)
+        foreach ((ulong lo, ulong hi) in _big)
         {
             if (page >= lo && page < hi)
             {
@@ -132,7 +134,7 @@ public sealed unsafe partial class Arm64Sandbox : IArm64Runner
     /// <summary>Makes the indirect-exit table point <paramref name="pc"/>/<paramref name="thumb"/> at <paramref name="entry"/>.</summary>
     public void Publish(uint pc, bool thumb, nint entry)
     {
-        var e = Dispatch + ((pc >> 1) & ((1u << NativeRuntime.DispatchBits) - 1));
+        NativeRuntime.DispatchEntry* e = Dispatch + ((pc >> 1) & ((1u << NativeRuntime.DispatchBits) - 1));
         e->Key = NativeRuntime.NoKey;
         e->Code = entry;
         *(ulong*)e = NativeRuntime.Instance.PackedEntry(pc | (thumb ? 1u : 0u), entry);
@@ -141,7 +143,7 @@ public sealed unsafe partial class Arm64Sandbox : IArm64Runner
     /// <summary>Runs generated code from <paramref name="entry"/> through the trampoline until it returns.</summary>
     public void Run(CpuState* s, nint entry)
     {
-        _current = this;
+        t_current = this;
         _fault = null;
         // the trampoline loads the guest base and generated code the indirect-exit table from the state
         s->DispatchTable = (nint)Dispatch;
@@ -151,16 +153,16 @@ public sealed unsafe partial class Arm64Sandbox : IArm64Runner
         }
 
         ulong x0 = (ulong)s, x1 = (ulong)entry, lr = ReturnStub, sp = (ulong)(_stack + StackSize - 64);
-        uc_reg_write(_uc, RegX0, &x0);
-        uc_reg_write(_uc, RegX0 + 1, &x1);
-        uc_reg_write(_uc, RegX30, &lr);
-        uc_reg_write(_uc, RegSp, &sp);
-        int err = uc_emu_start(_uc, _tramp, ReturnStub, 0, 0);
-        _current = null;
+        uc_reg_write(_unicorn, RegX0, &x0);
+        uc_reg_write(_unicorn, RegX0 + 1, &x1);
+        uc_reg_write(_unicorn, RegX30, &lr);
+        uc_reg_write(_unicorn, RegSp, &sp);
+        int err = uc_emu_start(_unicorn, _tramp, ReturnStub, 0, 0);
+        t_current = null;
         if (err != 0 || _fault != null)
         {
             ulong pc;
-            uc_reg_read(_uc, RegPc, &pc);
+            uc_reg_read(_unicorn, RegPc, &pc);
             throw new InvalidOperationException($"ARM64 sandbox: {(_fault ?? Marshal.PtrToStringAnsi(uc_strerror(err)))} at pc={pc:X} (arena +0x{pc - (ulong)NativeRuntime.Instance.Code.ExecBase:X})");
         }
     }
@@ -168,15 +170,15 @@ public sealed unsafe partial class Arm64Sandbox : IArm64Runner
     /// <summary>Calls an AAPCS64 function at <paramref name="fn"/> with two arguments (no trampoline).</summary>
     public void Call(ulong fn, ulong arg0, ulong arg1)
     {
-        _current = this;
+        t_current = this;
         _fault = null;
         ulong lr = ReturnStub, sp = (ulong)(_stack + StackSize - 64);
-        uc_reg_write(_uc, RegX0, &arg0);
-        uc_reg_write(_uc, RegX0 + 1, &arg1);
-        uc_reg_write(_uc, RegX30, &lr);
-        uc_reg_write(_uc, RegSp, &sp);
-        int err = uc_emu_start(_uc, fn, ReturnStub, 0, 0);
-        _current = null;
+        uc_reg_write(_unicorn, RegX0, &arg0);
+        uc_reg_write(_unicorn, RegX0 + 1, &arg1);
+        uc_reg_write(_unicorn, RegX30, &lr);
+        uc_reg_write(_unicorn, RegSp, &sp);
+        int err = uc_emu_start(_unicorn, fn, ReturnStub, 0, 0);
+        t_current = null;
         if (err != 0 || _fault != null)
         {
             throw new InvalidOperationException($"ARM64 sandbox: {(_fault ?? Marshal.PtrToStringAnsi(uc_strerror(err)))} at pc={Pc:X}");
@@ -188,16 +190,16 @@ public sealed unsafe partial class Arm64Sandbox : IArm64Runner
     public long Executed;
     public bool Counting;
 
-    void HookCount()
+    private void HookCount()
     {
         ulong lo = (ulong)NativeRuntime.Instance.Code.ExecBase;
-        Check(uc_hook_add(_uc, out _, UC_HOOK_CODE, (void*)(delegate* unmanaged<nint, ulong, uint, void*, void>)&OnCount, null, lo, lo + ExecutableMemory.ReserveSize - 1), "hook count");
+        Check(uc_hook_add(_unicorn, out _, UC_HOOK_CODE, (void*)(delegate* unmanaged<nint, ulong, uint, void*, void>)&OnCount, null, lo, lo + ExecutableMemory.ReserveSize - 1), "hook count");
     }
 
     [UnmanagedCallersOnly]
-    static void OnCount(nint uc, ulong address, uint size, void* user)
+    private static void OnCount(nint uc, ulong address, uint size, void* user)
     {
-        if (_current is { Counting: true } sb)
+        if (t_current is { Counting: true } sb)
         {
             sb.Executed++;
         }
@@ -208,7 +210,7 @@ public sealed unsafe partial class Arm64Sandbox : IArm64Runner
         get
         {
             ulong pc;
-            uc_reg_read(_uc, RegPc, &pc);
+            uc_reg_read(_unicorn, RegPc, &pc);
             return pc;
         }
     }
@@ -217,25 +219,25 @@ public sealed unsafe partial class Arm64Sandbox : IArm64Runner
         get
         {
             ulong v;
-            uc_reg_read(_uc, RegX0, &v);
+            uc_reg_read(_unicorn, RegX0, &v);
             return v;
         }
     }
 
     [UnmanagedCallersOnly]
-    static void OnFake(nint uc, ulong address, uint size, void* user)
+    private static void OnFake(nint uc, ulong address, uint size, void* user)
     {
         ulong x0, x1, x2, x3;
         uc_reg_read(uc, RegX0, &x0);
         uc_reg_read(uc, RegX0 + 1, &x1);
         uc_reg_read(uc, RegX0 + 2, &x2);
         uc_reg_read(uc, RegX0 + 3, &x3);
-        ulong r = _current?.FakeFunction?.Invoke(x0, x1, x2, x3) ?? 0;
+        ulong r = t_current?.FakeFunction?.Invoke(x0, x1, x2, x3) ?? 0;
         uc_reg_write(uc, RegX0, &r);
     }
 
     [UnmanagedCallersOnly]
-    static void OnCallout(nint uc, ulong address, uint size, void* user)
+    private static void OnCallout(nint uc, ulong address, uint size, void* user)
     {
         ulong x0, x1, x2, x3;
         uc_reg_read(uc, RegX0, &x0);
@@ -246,27 +248,27 @@ public sealed unsafe partial class Arm64Sandbox : IArm64Runner
         ulong r = (uint)bridge((CpuState*)x0, (int)x1, (uint)x2, (uint)x3);
         uc_reg_write(uc, RegX0, &r);
         ClobberCallerSaved(uc);
-        if (_current != null)
+        if (t_current != null)
         {
-            _current._hits++;
+            t_current._hits++;
         }
     }
 
-    const int RegQ0 = 104;
+    private const int RegQ0 = 104;
 
     /// <summary>
     /// What a real AAPCS64 callee may do: the handler ran on the host, so without this the emulated caller-saved
     /// registers would survive the call and code that wrongly keeps values in them (x1-x17, v0-v7, v16-v31, the upper
     /// halves of v8-v15) would pass here and fail on hardware.
     /// </summary>
-    static void ClobberCallerSaved(nint uc)
+    private static void ClobberCallerSaved(nint uc)
     {
         for (int n = 1; n <= 17; n++)
         {
             ulong junk = 0xDEAD_0000_0000_0000UL | (uint)n << 8;
             uc_reg_write(uc, RegX0 + n, &junk);
         }
-        var q = stackalloc ulong[2];
+        ulong* q = stackalloc ulong[2];
         for (int n = 0; n < 32; n++)
         {
             if (n is >= 8 and < 16)
@@ -284,9 +286,9 @@ public sealed unsafe partial class Arm64Sandbox : IArm64Runner
     }
 
     [UnmanagedCallersOnly]
-    static int OnUnmapped(nint uc, int type, ulong address, int size, long value, void* user)
+    private static int OnUnmapped(nint uc, int type, ulong address, int size, long value, void* user)
     {
-        var sb = _current;
+        Arm64Sandbox? sb = t_current;
         if (sb == null)
         {
             return 0;
@@ -316,7 +318,7 @@ public sealed unsafe partial class Arm64Sandbox : IArm64Runner
         return 1;
     }
 
-    static bool Committed(ulong page)
+    private static bool Committed(ulong page)
     {
         MEMORY_BASIC_INFORMATION mbi;
         if (VirtualQuery((void*)page, &mbi, (nuint)sizeof(MEMORY_BASIC_INFORMATION)) == 0)
@@ -327,7 +329,7 @@ public sealed unsafe partial class Arm64Sandbox : IArm64Runner
         return mbi.State == 0x1000 && (mbi.Protect & 0x01) == 0 && (mbi.Protect & 0x100) == 0; // MEM_COMMIT, not NOACCESS/GUARD
     }
 
-    static void Check(int err, string what)
+    private static void Check(int err, string what)
     {
         if (err != 0)
         {
@@ -337,17 +339,17 @@ public sealed unsafe partial class Arm64Sandbox : IArm64Runner
 
     public void Dispose()
     {
-        if (_uc != 0)
+        if (_unicorn != 0)
         {
-            uc_close(_uc);
-            _uc = 0;
+            uc_close(_unicorn);
+            _unicorn = 0;
         }
         NativeMemory.AlignedFree(_stack);
         NativeMemory.AlignedFree(Dispatch);
     }
 
     [StructLayout(LayoutKind.Sequential)]
-    struct MEMORY_BASIC_INFORMATION
+    private struct MEMORY_BASIC_INFORMATION
     {
         public nint BaseAddress, AllocationBase;
         public uint AllocationProtect;

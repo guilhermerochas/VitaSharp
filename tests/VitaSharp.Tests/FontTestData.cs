@@ -8,10 +8,10 @@ namespace VitaSharp.Tests;
 internal static class FontTestData
 {
     /// <summary>LSB-first bit writer (the PGF bit order).</summary>
-    sealed class Bits
+    private sealed class Bits
     {
-        readonly List<byte> _b = new();
-        int _bit;
+        private readonly List<byte> _b = new();
+        private int _bit;
         public int Position => _b.Count * 8 - (_bit == 0 ? 0 : 8 - _bit);
         public void Put(long v, int n)
         {
@@ -43,7 +43,7 @@ internal static class FontTestData
     /// </summary>
     public static byte[] Pgf()
     {
-        var h = new byte[0x188];
+        byte[] h = new byte[0x188];
         void I32(int o, int v) => BinaryPrimitives.WriteInt32LittleEndian(h.AsSpan(o), v);
         void U16(int o, int v) => BinaryPrimitives.WriteUInt16LittleEndian(h.AsSpan(o), (ushort)v);
         U16(2, 0x188);
@@ -94,8 +94,8 @@ internal static class FontTestData
         Pair(256, 320);
         body.AddRange(new byte[] { 0x41, 0, 0, 0 });            // shadow charmap: 1 x 16 bits, padded to 4 bytes
         body.AddRange(new byte[] { 0, 0xFF, 1, 0 });            // charmap: 'A' → 0, 'B' missing, 'C' → 1
-        var g0 = Glyph(3, 2, 1, 2, 1, [15, 15, 15, 0, 8, 0]);
-        var g1 = Glyph(2, 2, 0, 1, 2, [1, 2, 3, 4]);
+        byte[] g0 = Glyph(3, 2, 1, 2, 1, [15, 15, 15, 0, 8, 0]);
+        byte[] g1 = Glyph(2, 2, 0, 1, 2, [1, 2, 3, 4]);
         int g1Ptr = (g0.Length + 3) / 4;
         body.AddRange(BitConverter.GetBytes((ushort)0));        // pointer table: 2 x 16 bits (units of 4 bytes)
         body.AddRange(BitConverter.GetBytes((ushort)g1Ptr));
@@ -111,7 +111,7 @@ internal static class FontTestData
     }
 
     /// <summary>One character glyph with indexed metrics (entry 0 of each table) and a literal-run RLE bitmap.</summary>
-    static byte[] Glyph(int w, int h, int left, int top, int layout, int[] values)
+    private static byte[] Glyph(int w, int h, int left, int top, int layout, int[] values)
     {
         var b = new Bits();
         b.Put(0, 14);                                // size, patched below
@@ -138,7 +138,7 @@ internal static class FontTestData
                 b.Put(values[i + k], 4);
             }
         }
-        var bytes = b.ToArray();
+        byte[] bytes = b.ToArray();
         int size = bytes.Length;
         bytes[0] = (byte)size;
         bytes[1] = (byte)((bytes[1] & 0xC0) | (size >> 8));
@@ -163,7 +163,7 @@ internal static class FontTestData
         };
         var glyf = new List<byte>();
         var loca = new List<byte>();
-        foreach (var g in glyphs)
+        foreach (byte[] g in glyphs)
         {
             loca.AddRange(BE16(glyf.Count / 2));
             glyf.AddRange(g);
@@ -174,7 +174,7 @@ internal static class FontTestData
         }
         loca.AddRange(BE16(glyf.Count / 2));
 
-        var head = new byte[54];
+        byte[] head = new byte[54];
         BinaryPrimitives.WriteUInt32BigEndian(head, 0x00010000);
         BinaryPrimitives.WriteUInt32BigEndian(head.AsSpan(12), 0x5F0F3CF5);
         BinaryPrimitives.WriteUInt16BigEndian(head.AsSpan(18), UnitsPerEm);
@@ -184,7 +184,7 @@ internal static class FontTestData
         BinaryPrimitives.WriteInt16BigEndian(head.AsSpan(42), 800);
         BinaryPrimitives.WriteInt16BigEndian(head.AsSpan(50), 0);   // short loca
 
-        var hhea = new byte[36];
+        byte[] hhea = new byte[36];
         BinaryPrimitives.WriteUInt32BigEndian(hhea, 0x00010000);
         BinaryPrimitives.WriteInt16BigEndian(hhea.AsSpan(4), 800);
         BinaryPrimitives.WriteInt16BigEndian(hhea.AsSpan(6), -200);
@@ -192,16 +192,16 @@ internal static class FontTestData
         BinaryPrimitives.WriteUInt16BigEndian(hhea.AsSpan(10), 600);
         BinaryPrimitives.WriteUInt16BigEndian(hhea.AsSpan(34), (ushort)glyphs.Count);
 
-        var vhea = (byte[])hhea.Clone();
+        byte[] vhea = (byte[])hhea.Clone();
         BinaryPrimitives.WriteUInt16BigEndian(vhea.AsSpan(10), 1000);
 
-        var maxp = new byte[32];
+        byte[] maxp = new byte[32];
         BinaryPrimitives.WriteUInt32BigEndian(maxp, 0x00010000);
         BinaryPrimitives.WriteUInt16BigEndian(maxp.AsSpan(4), (ushort)glyphs.Count);
 
         var hmtx = new List<byte>();
         var vmtx = new List<byte>();
-        foreach (var _ in glyphs)
+        foreach (byte[] _ in glyphs)
         {
             hmtx.AddRange(BE16(600));
             hmtx.AddRange(BE16(0));
@@ -221,13 +221,13 @@ internal static class FontTestData
         f4.AddRange(BE16(8));
         f4.AddRange(BE16(2));
         f4.AddRange(BE16(0));
-        foreach (var s in starts)
+        foreach (ushort s in starts)
         {
             f4.AddRange(BE16(s));
         }
 
         f4.AddRange(BE16(0));
-        foreach (var s in starts)
+        foreach (ushort s in starts)
         {
             f4.AddRange(BE16(s));
         }
@@ -314,7 +314,7 @@ internal static class FontTestData
         font.AddRange(BE16(0));
         int offset = 12 + 16 * tables.Count;
         var data = new List<byte>();
-        foreach (var (tag, t) in tables)
+        foreach ((string? tag, byte[]? t) in tables)
         {
             font.AddRange(Encoding.ASCII.GetBytes(tag));
             font.AddRange(BE32(0));
@@ -331,7 +331,7 @@ internal static class FontTestData
     }
 
     /// <summary>One closed contour of on-curve points, coordinates as 16-bit deltas.</summary>
-    static byte[] SimpleGlyph((int X, int Y)[] pts)
+    private static byte[] SimpleGlyph((int X, int Y)[] pts)
     {
         var b = new List<byte>();
         b.AddRange(BE16(1));
@@ -341,18 +341,18 @@ internal static class FontTestData
         b.AddRange(BE16(pts.Max(p => p.Y) & 0xFFFF));
         b.AddRange(BE16(pts.Length - 1));
         b.AddRange(BE16(0));
-        foreach (var _ in pts)
+        foreach ((int X, int Y) _ in pts)
         {
             b.Add(1);
         }
 
         int px = 0, py = 0;
-        foreach (var p in pts)
+        foreach ((int X, int Y) p in pts)
         {
             b.AddRange(BE16((p.X - px) & 0xFFFF));
             px = p.X;
         }
-        foreach (var p in pts)
+        foreach ((int X, int Y) p in pts)
         {
             b.AddRange(BE16((p.Y - py) & 0xFFFF));
             py = p.Y;
@@ -360,8 +360,8 @@ internal static class FontTestData
         return b.ToArray();
     }
 
-    static byte[] BE16(int v) => [(byte)(v >> 8), (byte)v];
-    static byte[] BE32(int v) => [(byte)(v >> 24), (byte)(v >> 16), (byte)(v >> 8), (byte)v];
+    private static byte[] BE16(int v) => [(byte)(v >> 8), (byte)v];
+    private static byte[] BE32(int v) => [(byte)(v >> 24), (byte)(v >> 16), (byte)(v >> 8), (byte)v];
 
     /// <summary>Firmware font directory of a local Vita3K install, used by optional checks against the real files.</summary>
     public static string? FirmwareFontDir(string sub)

@@ -9,7 +9,7 @@ namespace VitaSharp.Tests;
 /// </summary>
 public sealed class DesktopLogicTests : IDisposable
 {
-    readonly string _root = Path.Combine(Path.GetTempPath(), "vitasharp-desktop-" + Guid.NewGuid().ToString("N"));
+    private readonly string _root = Path.Combine(Path.GetTempPath(), "vitasharp-desktop-" + Guid.NewGuid().ToString("N"));
 
     public void Dispose()
     {
@@ -51,7 +51,7 @@ public sealed class DesktopLogicTests : IDisposable
         s.AudioDevice = "Speakers";
         s.HleModules = "libc, libm;libfios2";
         opts = s.RunOptions().ToList();
-        foreach (var o in new[] { "--fullscreen", "--scale=2", "--no-vsync", "--validation", "--camera-front=none", "--cpu=interp", "--cpu-mhz=444",
+        foreach (string? o in new[] { "--fullscreen", "--scale=2", "--no-vsync", "--validation", "--camera-front=none", "--cpu=interp", "--cpu-mhz=444",
             "--shaderc-opt=perf", "--async-shaders=off", "--debug-mode", "--capture-preroll", "--trophy-sound=off", "--psn=on", "--psn-local=off",
             "--net=real", "--audio-device=Speakers", "--hle-modules=libc,libm,libfios2" })
         {
@@ -76,17 +76,17 @@ public sealed class DesktopLogicTests : IDisposable
         Assert.Equal(("Webcam X", "Webcam X", ""), (old.CameraFront, old.CameraBack, old.Camera));
     }
 
-    static void WriteSfo(string path, params (string Key, string Value)[] entries)
+    private static void WriteSfo(string path, params (string Key, string Value)[] entries)
     {
         // a PSF file: header, index table, key table, data table (UTF-8 strings)
         var keys = new MemoryStream();
         var data = new MemoryStream();
         var index = new List<(int KeyOff, int DataOff, int Len, int Max)>();
-        foreach (var (k, v) in entries)
+        foreach ((string? k, string? v) in entries)
         {
             int ko = (int)keys.Length;
             keys.Write(System.Text.Encoding.ASCII.GetBytes(k + "\0"));
-            var bytes = System.Text.Encoding.UTF8.GetBytes(v + "\0");
+            byte[] bytes = System.Text.Encoding.UTF8.GetBytes(v + "\0");
             int max = (bytes.Length + 3) & ~3;
             int doff = (int)data.Length;
             data.Write(bytes);
@@ -105,7 +105,7 @@ public sealed class DesktopLogicTests : IDisposable
         w.Write(keyStart);
         w.Write(dataStart);
         w.Write(index.Count);
-        foreach (var (ko, doff, len, max) in index)
+        foreach ((int ko, int doff, int len, int max) in index)
         {
             w.Write((ushort)ko);
             w.Write((ushort)0x0204);
@@ -122,7 +122,7 @@ public sealed class DesktopLogicTests : IDisposable
     {
         string ux0 = Path.Combine(_root, "ux0");
         string game = Path.Combine(ux0, "app", "PCSB00123"), homebrew = Path.Combine(ux0, "app", "VSHB00001"), broken = Path.Combine(ux0, "app", "NOEBOOT00");
-        foreach (var d in new[] { game, homebrew, broken })
+        foreach (string? d in new[] { game, homebrew, broken })
         {
             Directory.CreateDirectory(Path.Combine(d, "sce_sys"));
         }
@@ -130,9 +130,9 @@ public sealed class DesktopLogicTests : IDisposable
         File.WriteAllBytes(Path.Combine(game, "eboot.bin"), new byte[2048]);
         File.WriteAllBytes(Path.Combine(homebrew, "eboot.bin"), new byte[16]);
         WriteSfo(Path.Combine(game, "sce_sys", "param.sfo"), ("APP_VER", "01.05"), ("CATEGORY", "gd"), ("TITLE", "Zeta\nGame"), ("TITLE_ID", "PCSB00123"), ("CONTENT_ID", "EP0000-PCSB00123_00-0000000000000000"));
-        var list = GameLibrary.Scan(ux0);
+        List<GameEntry> list = GameLibrary.Scan(ux0);
         Assert.Equal(2, list.Count); // a folder without eboot.bin is no title
-        var g = list.Single(e => e.TitleId == "PCSB00123");
+        GameEntry g = list.Single(e => e.TitleId == "PCSB00123");
         Assert.Equal("Zeta Game", g.Title);
         Assert.Equal("1.05", g.Version);
         Assert.Equal("gd", g.Category);
@@ -141,7 +141,7 @@ public sealed class DesktopLogicTests : IDisposable
         Assert.Equal("ZG", g.Initials);
         Assert.Null(g.IconPath);
         Assert.Null(g.Pic0Path);
-        var h = list.Single(e => e.TitleId == "VSHB00001"); // no param.sfo: the folder name
+        GameEntry h = list.Single(e => e.TitleId == "VSHB00001"); // no param.sfo: the folder name
         Assert.Equal("VSHB00001", h.Title);
         Assert.Equal(VitaSharp.Desktop.Launcher.Ui.Strings.RegionEurope, g.Region); // the content ID's region letter
         Assert.Equal(VitaSharp.Desktop.Launcher.Ui.Strings.RegionHomebrew, h.Region); // no content ID

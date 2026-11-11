@@ -14,7 +14,7 @@ namespace VitaSharp.Tests;
 /// copies and fallback replay, driver packages, the driver screen and the game process marker.</summary>
 public sealed class AndroidMediaDriverTests : IDisposable
 {
-    readonly string _root = Path.Combine(Path.GetTempPath(), "vitasharp-am-tests-" + Guid.NewGuid().ToString("N"));
+    private readonly string _root = Path.Combine(Path.GetTempPath(), "vitasharp-am-tests-" + Guid.NewGuid().ToString("N"));
 
     public void Dispose()
     {
@@ -29,7 +29,7 @@ public sealed class AndroidMediaDriverTests : IDisposable
 
     /// <summary>A device stream that records what it is given; the "device" consumes frames when the test says so, or
     /// by itself when a blocking write finds the buffer full.</summary>
-    sealed class FakeSink(int rate, int burst, int channels = 2) : IPcmSink
+    private sealed class FakeSink(int rate, int burst, int channels = 2) : IPcmSink
     {
         public readonly List<short> Data = new();
         public int BufferFrames = int.MaxValue, Starts, Pauses, DisconnectOnWrite = -1, Writes;
@@ -68,7 +68,7 @@ public sealed class AndroidMediaDriverTests : IDisposable
                 return 0;
             }
 
-            foreach (var s in interleaved[..(n * channels)])
+            foreach (short s in interleaved[..(n * channels)])
             {
                 Data.Add(s);
             }
@@ -79,7 +79,7 @@ public sealed class AndroidMediaDriverTests : IDisposable
         public void ConsumeAll() => Read = FramesWritten;
     }
 
-    static short[] Grain(int frames, short value = 1000) => Enumerable.Repeat(value, frames * 2).ToArray();
+    private static short[] Grain(int frames, short value = 1000) => Enumerable.Repeat(value, frames * 2).ToArray();
 
     [Theory]
     [InlineData(256, 48000, 48000, 192, 4, 2)]   // a 4 ms burst: one grain per period
@@ -186,13 +186,13 @@ public sealed class AndroidMediaDriverTests : IDisposable
         var r = new LinearResampler(2);
         r.Reset(48000, 44100);
         Assert.True(r.Active);
-        var out_ = new short[r.MaxOutputFrames(256) * 2];
+        short[] out_ = new short[r.MaxOutputFrames(256) * 2];
         long total = 0;
         short last = short.MinValue;
         for (int call = 0; call < 100; call++)
         {
             // a rising ramp across the calls: the output must rise too (no jumps back at the boundaries)
-            var input = new short[256 * 2];
+            short[] input = new short[256 * 2];
             for (int i = 0; i < 256; i++)
             {
                 input[2 * i] = input[2 * i + 1] = (short)(call * 256 + i - 16000);
@@ -217,7 +217,7 @@ public sealed class AndroidMediaDriverTests : IDisposable
     {
         // 8x4 picture, stride 12, slice height 6, crop at (2, 2) 4x2; luma = x + 16 * y, U = 100 + x + 10y, V = 200 + ...
         int stride = 12, slice = 6;
-        var buf = new byte[stride * slice * 3 / 2];
+        byte[] buf = new byte[stride * slice * 3 / 2];
         for (int y = 0; y < slice; y++)
         {
             for (int x = 0; x < stride; x++)
@@ -257,7 +257,7 @@ public sealed class AndroidMediaDriverTests : IDisposable
         byte[] luma = [1, 2, 9, 9, 3, 4, 9, 9];
         byte[] vu = [50, 60, 9, 9];
         var q = new DecodedPicture { Y = new byte[4] };
-        var yRef = q.Y;
+        byte[] yRef = q.Y;
         YuvImageCopy.Copy(new YuvImageCopy.Plane(luma, 4, 1), new YuvImageCopy.Plane(vu.AsSpan(1), 4, 2), new YuvImageCopy.Plane(vu, 4, 2), 0, 0, 2, 2, q);
         Assert.Same(yRef, q.Y); // planes of the right size are reused
         Assert.Equal(new byte[] { 1, 2, 3, 4 }, q.Y);
@@ -265,67 +265,67 @@ public sealed class AndroidMediaDriverTests : IDisposable
         Assert.Equal(new byte[] { 50 }, q.V);
     }
 
-    static readonly byte[] Idr = [0, 0, 0, 1, 0x67, 1, 0, 0, 1, 0x68, 2, 0, 0, 1, 0x65, 3];
-    static readonly byte[] PSlice = [0, 0, 1, 0x41, 4, 5];
+    private static readonly byte[] s_idr = [0, 0, 0, 1, 0x67, 1, 0, 0, 1, 0x68, 2, 0, 0, 1, 0x65, 3];
+    private static readonly byte[] s_pSlice = [0, 0, 1, 0x41, 4, 5];
 
     [Fact]
     public void AnnexBHelpers()
     {
-        Assert.True(H264AnnexB.ContainsIdr(Idr));
-        Assert.False(H264AnnexB.ContainsIdr(PSlice));
-        Assert.True(H264AnnexB.StartsWithStartCode(PSlice));
+        Assert.True(H264AnnexB.ContainsIdr(s_idr));
+        Assert.False(H264AnnexB.ContainsIdr(s_pSlice));
+        Assert.True(H264AnnexB.StartsWithStartCode(s_pSlice));
         // MP4 sample with 4-byte lengths, SPS/PPS header in front of a key frame
         byte[] avcc = [0, 0, 0, 2, 0x65, 7, 0, 0, 0, 1, 0x06];
         byte[] header = [0, 0, 0, 1, 0x67, 0, 0, 0, 1, 0x68];
-        var buf = Array.Empty<byte>();
+        byte[] buf = Array.Empty<byte>();
         int n = H264AnnexB.BuildAccessUnit(avcc, header, ref buf);
         Assert.Equal(new byte[] { 0, 0, 0, 1, 0x67, 0, 0, 0, 1, 0x68, 0, 0, 0, 1, 0x65, 7, 0, 0, 0, 1, 0x06 }, buf[..n]);
         // already Annex B (what MediaExtractor gives): copied as is
-        n = H264AnnexB.BuildAccessUnit(PSlice, [], ref buf);
-        Assert.Equal(PSlice, buf[..n]);
+        n = H264AnnexB.BuildAccessUnit(s_pSlice, [], ref buf);
+        Assert.Equal(s_pSlice, buf[..n]);
     }
 
     [Fact]
     public void ReplayStartsAtTheLastIdrAndSkipsShownPictures()
     {
         var r = new DecoderReplay();
-        r.Add(Idr, 0);
+        r.Add(s_idr, 0);
         r.Produced();
-        r.Add(PSlice, 1);
+        r.Add(s_pSlice, 1);
         r.Produced();
-        r.Add(Idr, 2);
+        r.Add(s_idr, 2);
         r.Produced();
-        r.Add(PSlice, 3);
-        r.Add(PSlice, 4);
+        r.Add(s_pSlice, 3);
+        r.Add(s_pSlice, 4);
         r.Produced();
-        var (units, skip) = r.TakeReplay();
+        (IReadOnlyList<(byte[] Data, long Pts)>? units, int skip) = r.TakeReplay();
         Assert.Equal(new long[] { 2, 3, 4 }, units.Select(u => u.Pts));
         Assert.Equal(2, skip);
         Assert.Equal(0, r.Count);
-        r.Add(PSlice, 5);
+        r.Add(s_pSlice, 5);
         r.Clear();
         Assert.Empty(r.TakeReplay().Units);
     }
 
     // ---------------------------------------------------------------- GPU driver packages and screen
 
-    string Package(string name, bool nested)
+    private string Package(string name, bool nested)
     {
         Directory.CreateDirectory(_root);
         string zip = Path.Combine(_root, name + ".zip");
-        using var z = ZipFile.Open(zip, ZipArchiveMode.Create);
+        using ZipArchive z = ZipFile.Open(zip, ZipArchiveMode.Create);
         string prefix = nested ? name + "/" : "";
         using (var w = new StreamWriter(z.CreateEntry(prefix + "meta.json").Open()))
         {
             w.Write($$"""{"schemaVersion":1,"name":"{{name}}","vendor":"Mesa","driverVersion":"25.1.0","minApi":28,"libraryName":"vulkan.ad07XX.so","author":"a","packageVersion":"1"}""");
         }
 
-        using (var w = z.CreateEntry(prefix + "vulkan.ad07XX.so").Open())
+        using (Stream w = z.CreateEntry(prefix + "vulkan.ad07XX.so").Open())
         {
             w.Write([0x7F, (byte)'E', (byte)'L', (byte)'F']);
         }
 
-        using (var w = z.CreateEntry(prefix + "notgsl.so").Open())
+        using (Stream w = z.CreateEntry(prefix + "notgsl.so").Open())
         {
             w.Write([1]);
         }
@@ -340,17 +340,17 @@ public sealed class AndroidMediaDriverTests : IDisposable
         var data = new DataLayout(Path.Combine(_root, "ext"), Path.Combine(_root, "int"));
         var screen = new GpuDriverScreen(data, null);
         Assert.StartsWith(data.InternalRoot, screen.Store.Root);
-        foreach (var (name, nested) in new[] { ("Turnip", false), ("Turnip-nested", true) })
+        foreach ((string? name, bool nested) in new[] { ("Turnip", false), ("Turnip-nested", true) })
         {
-            using var f = File.OpenRead(Package(name, nested));
-            var d = screen.Install(f, 34);
+            using FileStream f = File.OpenRead(Package(name, nested));
+            InstalledGpuDriver d = screen.Install(f, 34);
             Assert.True(File.Exists(d.LibraryPath));
             Assert.True(File.Exists(Path.Combine(d.Directory, "notgsl.so")));
             Assert.True(File.Exists(Path.Combine(d.Directory, "meta.json")));
             Assert.False(File.Exists(Path.Combine(_root, "int", "evil.so")));
         }
         Assert.Equal(["", "Turnip", "Turnip-nested"], screen.Options().Select(o => o.Id));
-        using (var old = File.OpenRead(Package("Old", false)))
+        using (FileStream old = File.OpenRead(Package("Old", false)))
         {
             Assert.Throws<InvalidDataException>(() => screen.Install(old, 27)); // minApi 28
         }
@@ -361,7 +361,7 @@ public sealed class AndroidMediaDriverTests : IDisposable
     {
         var data = new DataLayout(Path.Combine(_root, "ext"), Path.Combine(_root, "int"));
         var screen = new GpuDriverScreen(data, null);
-        using (var f = File.OpenRead(Package("Turnip", false)))
+        using (FileStream f = File.OpenRead(Package("Turnip", false)))
         {
             screen.Install(f, 34);
         }
@@ -374,7 +374,7 @@ public sealed class AndroidMediaDriverTests : IDisposable
         Assert.True(screen.RestartNeeded(running));
         Assert.False(screen.Select("Turnip"));
         // the options are part of the configuration too
-        var withTurnip = running with
+        GameProcessInfo withTurnip = running with
         {
             GpuConfig = screen.Config
         };

@@ -2,6 +2,7 @@ using System.Reflection;
 using System.Runtime.CompilerServices;
 using VitaSharp.Core;
 using VitaSharp.Core.Cpu;
+using VitaSharp.Core.Hle;
 using VitaSharp.Core.Hle.Modules;
 using VitaSharp.Core.Kernel;
 using VitaSharp.Core.Memory;
@@ -14,41 +15,41 @@ namespace VitaSharp.Tests;
 /// context area keeps no state, so every run or switch into it restarts it at its entry on the thread's stack.
 /// </summary>
 [Collection("guest")]
-public sealed unsafe class FiberHleTests(GuestMemoryFixture fx)
+public sealed unsafe class FiberHleTests(GuestMemoryFixture fixture)
 {
-    const uint ThreadSp = 0x8100_8000, ThreadLr = 0x8100_1235;
-    const uint EntryA = 0x8200_0001, EntryB = 0x8300_0001;
+    private const uint ThreadSp = 0x8100_8000, ThreadLr = 0x8100_1235;
+    private const uint EntryA = 0x8200_0001, EntryB = 0x8300_0001;
 
-    static int Call(Fiber f, string name, params object[] args) =>
+    private static int Call(Fiber f, string name, params object[] args) =>
         Convert.ToInt32(typeof(Fiber).GetMethod(name, BindingFlags.Instance | BindingFlags.NonPublic | BindingFlags.Public)!.Invoke(f, args));
 
-    uint Alloc(uint size)
+    private uint Alloc(uint size)
     {
-        uint p = fx.Memory.Alloc(size, "fiber");
+        uint p = fixture.Memory.Alloc(size, "fiber");
         GuestMemory.Fill(p, 0, size);
         return p;
     }
 
-    static void SetBacking(object o, string prop, object? value) =>
+    private static void SetBacking(object o, string prop, object? value) =>
         o.GetType().GetField($"<{prop}>k__BackingField", BindingFlags.Instance | BindingFlags.NonPublic)!.SetValue(o, value);
 
     /// <summary>An emulator with just what SceFiber uses: the kernel, guest memory, the HLE table (the stub fiber entries
     /// return to) and the code cache.</summary>
-    Emulator NewEmulator()
+    private Emulator NewEmulator()
     {
         var emu = (Emulator)RuntimeHelpers.GetUninitializedObject(typeof(Emulator));
         SetBacking(emu, "Kernel", new VitaSharp.Core.Kernel.Kernel(emu));
-        SetBacking(emu, "Memory", fx.Memory);
-        SetBacking(emu, "Code", fx.Cache);
+        SetBacking(emu, "Memory", fixture.Memory);
+        SetBacking(emu, "Code", fixture.Cache);
         SetBacking(emu, "Hle", new VitaSharp.Core.Hle.HleRegistry(emu));
         return emu;
     }
 
     /// <summary>Makes the test thread a guest thread with its own register file and returns that file.</summary>
-    static CpuState* EnterFakeThread(Emulator emu)
+    private static CpuState* EnterFakeThread(Emulator emu)
     {
         var core = (CpuCore)RuntimeHelpers.GetUninitializedObject(typeof(CpuCore));
-        var s = CpuState.Allocate();
+        CpuState* s = CpuState.Allocate();
         SetBacking(core, "State", Pointer.Box(s, typeof(CpuState*)));
         var t = (GuestThread)RuntimeHelpers.GetUninitializedObject(typeof(GuestThread));
         SetBacking(t, "Core", core);
@@ -56,10 +57,10 @@ public sealed unsafe class FiberHleTests(GuestMemoryFixture fx)
         return s;
     }
 
-    static void LeaveFakeThread() => typeof(GuestThread).GetField("_current", BindingFlags.Static | BindingFlags.NonPublic)!.SetValue(null, null);
+    private static void LeaveFakeThread() => typeof(GuestThread).GetField("_current", BindingFlags.Static | BindingFlags.NonPublic)!.SetValue(null, null);
 
     /// <summary>Simulates the guest calling an HLE function from <paramref name="pc"/> (returning to pc+4 in Thumb).</summary>
-    static void CallFrom(CpuState* s, uint pc, uint sp)
+    private static void CallFrom(CpuState* s, uint pc, uint sp)
     {
         s->R[14] = (pc + 4) | 1;
         s->R[13] = sp;
@@ -68,14 +69,14 @@ public sealed unsafe class FiberHleTests(GuestMemoryFixture fx)
     [Fact]
     public void ContextlessFiberRestartsAtEntryOnEverySwitch()
     {
-        var emu = NewEmulator();
+        Emulator emu = NewEmulator();
         var f = new Fiber { Emu = emu };
         uint a = Alloc(128), b = Alloc(128), name = Alloc(32), ctxA = Alloc(0x1000);
         GuestMemory.WriteCString(name, "fib");
         Assert.Equal(0, Call(f, "_sceFiberInitializeImpl", a, name, EntryA, 0x11u, ctxA, 0x1000u));
         Assert.Equal(0, Call(f, "_sceFiberInitializeImpl", b, name, EntryB, 0x22u, 0u, 0u)); // no context area
 
-        var s = EnterFakeThread(emu);
+        CpuState* s = EnterFakeThread(emu);
         try
         {
             // the thread runs the scheduler fiber B: it starts on the thread's stack
@@ -124,7 +125,7 @@ public sealed unsafe class FiberHleTests(GuestMemoryFixture fx)
     [Fact]
     public void AttachContextAcceptsAnyIdleFiberWithoutContextArea()
     {
-        var emu = NewEmulator();
+        Emulator emu = NewEmulator();
         var f = new Fiber { Emu = emu };
         uint a = Alloc(128), b = Alloc(128), c = Alloc(128), name = Alloc(32), ctxA = Alloc(0x1000), ctxB = Alloc(0x800);
         GuestMemory.WriteCString(name, "fib");
@@ -134,7 +135,7 @@ public sealed unsafe class FiberHleTests(GuestMemoryFixture fx)
         const int ERR_ALIGNMENT = unchecked((int)0x80590002), ERR_RANGE = unchecked((int)0x80590003),
             ERR_INVALID = unchecked((int)0x80590004), ERR_PERMISSION = unchecked((int)0x80590005), ERR_STATE = unchecked((int)0x80590006);
 
-        var s = EnterFakeThread(emu);
+        CpuState* s = EnterFakeThread(emu);
         try
         {
             s->R[14] = ThreadLr;
@@ -178,12 +179,12 @@ public sealed unsafe class FiberHleTests(GuestMemoryFixture fx)
     [Fact]
     public void EntryReturnResumesTheThreadWithErrState()
     {
-        var emu = NewEmulator();
+        Emulator emu = NewEmulator();
         var f = new Fiber { Emu = emu };
         uint a = Alloc(128), name = Alloc(32), ctxA = Alloc(0x1000), argOnReturn = Alloc(4);
         GuestMemory.WriteCString(name, "fib");
         Assert.Equal(0, Call(f, "_sceFiberInitializeImpl", a, name, EntryA, 0x11u, ctxA, 0x1000u));
-        var s = EnterFakeThread(emu);
+        CpuState* s = EnterFakeThread(emu);
         try
         {
             s->R[14] = ThreadLr;
@@ -193,7 +194,7 @@ public sealed unsafe class FiberHleTests(GuestMemoryFixture fx)
             Assert.NotEqual(emu.Kernel.ThreadExitTrap, lr);
             // the entry returns: the stub's host function puts the thread back after its sceFiberRun with ERR_STATE
             uint svc = GuestMemory.R32(lr) & 0xFFFFFF;
-            var fn = emu.Hle.GetFunction(svc);
+            HleFunction fn = emu.Hle.GetFunction(svc);
             Assert.Equal("SceFiber:entryReturned", fn.Name);
             var ctx = new VitaSharp.Core.Hle.HleContext { Cpu = s, Thread = GuestThread.Current!, Emu = emu };
             fn.Invoke!(ctx);

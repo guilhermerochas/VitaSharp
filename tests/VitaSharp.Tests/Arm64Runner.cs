@@ -34,7 +34,7 @@ public sealed unsafe class Arm64HostRunner : IArm64Runner
     public void Run(CpuState* s, nint entry) => NativeRuntime.Instance.Run(s, entry);
     public void Publish(uint pc, bool thumb, nint entry)
     {
-        var e = NativeRuntime.Instance.Dispatch + ((pc >> 1) & ((1u << NativeRuntime.DispatchBits) - 1));
+        NativeRuntime.DispatchEntry* e = NativeRuntime.Instance.Dispatch + ((pc >> 1) & ((1u << NativeRuntime.DispatchBits) - 1));
         Volatile.Write(ref e->Key, NativeRuntime.NoKey);
         Volatile.Write(ref e->Code, entry);
         Volatile.Write(ref *(ulong*)e, NativeRuntime.Instance.PackedEntry(pc | (thumb ? 1u : 0u), entry));

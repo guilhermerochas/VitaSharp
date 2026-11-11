@@ -28,11 +28,11 @@ public sealed class GuestCollection : ICollectionFixture<GuestMemoryFixture>;
 /// executed one at a time on both CPUs from identical random state and the resulting state is compared.
 /// </summary>
 [Collection("guest")]
-public sealed unsafe class CpuFuzzTests(GuestMemoryFixture fx, ITestOutputHelper output)
+public sealed unsafe class CpuFuzzTests(GuestMemoryFixture fixture, ITestOutputHelper output)
 {
-    const uint CodeBase = 0x0010_0000, DataBase = 0x0020_0000, DataSize = 0x10000;
+    private const uint CodeBase = 0x0010_0000, DataBase = 0x0020_0000, DataSize = 0x10000;
 
-    static readonly int[] RegIds =
+    private static readonly int[] s_regIds =
     [
         UcArm.UC_ARM_REG_R0, UcArm.UC_ARM_REG_R1, UcArm.UC_ARM_REG_R2, UcArm.UC_ARM_REG_R3, UcArm.UC_ARM_REG_R4,
         UcArm.UC_ARM_REG_R5, UcArm.UC_ARM_REG_R6, UcArm.UC_ARM_REG_R7, UcArm.UC_ARM_REG_R8, UcArm.UC_ARM_REG_R9,
@@ -54,22 +54,22 @@ public sealed unsafe class CpuFuzzTests(GuestMemoryFixture fx, ITestOutputHelper
             0xE3A00101, // mov r0, #0x40000000
             0xEEE80A10, // vmsr fpexc, r0
         ];
-        var bytes = init.SelectMany(BitConverter.GetBytes).ToArray();
+        byte[] bytes = init.SelectMany(BitConverter.GetBytes).ToArray();
         uc.MemWrite(CodeBase, bytes);
         uc.EmuStart(CodeBase, CodeBase + (uint)bytes.Length, 0, 0);
         return uc;
     }
 
-    void EnsureGuestPages()
+    private void EnsureGuestPages()
     {
-        if (fx.Memory.FindBlock(CodeBase) == null)
+        if (fixture.Memory.FindBlock(CodeBase) == null)
         {
-            fx.Memory.MapFixed(CodeBase, 0x1000, "fuzz code");
+            fixture.Memory.MapFixed(CodeBase, 0x1000, "fuzz code");
         }
 
-        if (fx.Memory.FindBlock(DataBase) == null)
+        if (fixture.Memory.FindBlock(DataBase) == null)
         {
-            fx.Memory.MapFixed(DataBase, DataSize, "fuzz data");
+            fixture.Memory.MapFixed(DataBase, DataSize, "fuzz data");
         }
     }
 
@@ -85,7 +85,7 @@ public sealed unsafe class CpuFuzzTests(GuestMemoryFixture fx, ITestOutputHelper
             thumb = env[0] == 'T';
             encodings = env[2..];
         }
-        foreach (var enc in encodings.Split(','))
+        foreach (string enc in encodings.Split(','))
         {
             Fuzz(thumb, 400, 7, Convert.ToUInt32(enc, 16), simd: true);
         }
@@ -166,7 +166,7 @@ public sealed unsafe class CpuFuzzTests(GuestMemoryFixture fx, ITestOutputHelper
         _ => BitConverter.SingleToUInt32Bits((float)((rng.NextDouble() - 0.5) * Math.Pow(2, rng.Next(-30, 30)))),
     };
 
-    static ulong SpecialDouble(Random rng) => rng.Next(10) switch
+    private static ulong SpecialDouble(Random rng) => rng.Next(10) switch
     {
         0 => 0,
         1 => 0x8000000000000000,
@@ -185,15 +185,15 @@ public sealed unsafe class CpuFuzzTests(GuestMemoryFixture fx, ITestOutputHelper
         _ => SpecialFloat(rng) | ((ulong)SpecialFloat(rng) << 32),
     };
 
-    void Fuzz(bool thumb, int iterations, int seed, uint? fixedIns, bool simd = false, bool anyFpscr = false)
+    private void Fuzz(bool thumb, int iterations, int seed, uint? fixedIns, bool simd = false, bool anyFpscr = false)
     {
         EnsureGuestPages();
         var rng = new Random(seed);
         using var core = new CpuCore(new BlockCache());
-        var uc = NewUnicorn(thumb);
+        Unicorn uc = NewUnicorn(thumb);
         var failures = new Dictionary<Op, (int count, string example)>();
         int compared = 0, skipped = 0, detailed = 0;
-        var data = new byte[DataSize];
+        byte[] data = new byte[DataSize];
 
         for (int it = 0; it < iterations; it++)
         {
@@ -263,7 +263,7 @@ public sealed unsafe class CpuFuzzTests(GuestMemoryFixture fx, ITestOutputHelper
                     uc.RegWrite(UcArm.UC_ARM_REG_CPSR, (long)(0x10u | (thumb ? 0x20u : 0)));
                     for (int r = 0; r < 15; r++)
                     {
-                        uc.RegWrite(RegIds[r], DataBase + 0x8000);
+                        uc.RegWrite(s_regIds[r], DataBase + 0x8000);
                     }
 
                     uc.EmuStart(CodeBase | (thumb ? 1u : 0), CodeBase + 0x800, 0, 1);
@@ -303,14 +303,14 @@ public sealed unsafe class CpuFuzzTests(GuestMemoryFixture fx, ITestOutputHelper
             }
 
             // random initial state; most registers point into the data window so memory ops stay mapped
-            var regs = new uint[16];
+            uint[] regs = new uint[16];
             for (int r = 0; r < 15; r++)
             {
                 regs[r] = rng.Next(3) == 0 ? (uint)rng.NextInt64() : DataBase + 0x4000 + (uint)rng.Next(0x4000) * (rng.Next(2) == 0 ? 4u : 1u) % 0x7000;
             }
 
             uint flags = (uint)rng.Next(32) << 27 | (uint)rng.Next(16) << 16;
-            var dregs = new ulong[32];
+            ulong[] dregs = new ulong[32];
             for (int r = 0; r < 32; r++)
             {
                 dregs[r] = simd ? RandomSpecialSimd(rng) : RandomSimd(rng);
@@ -334,7 +334,7 @@ public sealed unsafe class CpuFuzzTests(GuestMemoryFixture fx, ITestOutputHelper
                 uc.RegWrite(UcArm.UC_ARM_REG_CPSR, (long)(flags | 0x10 | (thumb ? 0x20u : 0)));
                 for (int r = 0; r < 15; r++)
                 {
-                    uc.RegWrite(RegIds[r], regs[r]);
+                    uc.RegWrite(s_regIds[r], regs[r]);
                 }
 
                 for (int r = 0; r < 32; r++)
@@ -354,7 +354,7 @@ public sealed unsafe class CpuFuzzTests(GuestMemoryFixture fx, ITestOutputHelper
             }
 
             // ---- ours
-            var s = core.State;
+            CpuState* s = core.State;
             for (int r = 0; r < 15; r++)
             {
                 s->R[r] = regs[r];
@@ -370,7 +370,7 @@ public sealed unsafe class CpuFuzzTests(GuestMemoryFixture fx, ITestOutputHelper
             s->Fpscr = fpscr;
             s->Exit = ExitReason.None;
             data.CopyTo(GuestMemory.Span(DataBase, (int)DataSize));
-            var ucCode = new byte[0x1000];
+            byte[] ucCode = new byte[0x1000];
             uc.MemRead(CodeBase, ucCode);
             ucCode.CopyTo(GuestMemory.Span(CodeBase, 0x1000));
             var block = new Block { Start = CodeBase, Thumb = thumb, Insts = [d], End = CodeBase + d.Size };
@@ -389,7 +389,7 @@ public sealed unsafe class CpuFuzzTests(GuestMemoryFixture fx, ITestOutputHelper
             var sb = new StringBuilder();
             for (int r = 0; r < 15; r++)
             {
-                uint u = (uint)uc.RegRead(RegIds[r]);
+                uint u = (uint)uc.RegRead(s_regIds[r]);
                 if (u != s->R[r])
                 {
                     sb.Append($" R{r}: uc={u:X8} us={s->R[r]:X8}");
@@ -423,9 +423,9 @@ public sealed unsafe class CpuFuzzTests(GuestMemoryFixture fx, ITestOutputHelper
                 sb.Append($" FPSCR: uc={ucFpscr:X8} us={s->Fpscr:X8}");
             }
 
-            var ucData = new byte[DataSize];
+            byte[] ucData = new byte[DataSize];
             uc.MemRead(DataBase, ucData);
-            var ourData = GuestMemory.Span(DataBase, (int)DataSize);
+            Span<byte> ourData = GuestMemory.Span(DataBase, (int)DataSize);
             for (int i = 0; i < DataSize; i++)
             {
                 if (ucData[i] != ourData[i])
@@ -455,7 +455,7 @@ public sealed unsafe class CpuFuzzTests(GuestMemoryFixture fx, ITestOutputHelper
         }
 
         output.WriteLine($"compared={compared} skipped={skipped} failingOps={failures.Count}");
-        foreach (var (op, (count, example)) in failures.OrderByDescending(f => f.Value.count))
+        foreach ((Op op, (int count, string? example)) in failures.OrderByDescending(f => f.Value.count))
         {
             output.WriteLine($"{op,-28} x{count,-6} e.g. {example}");
         }
@@ -544,7 +544,7 @@ public sealed unsafe class CpuFuzzTests(GuestMemoryFixture fx, ITestOutputHelper
     }
 
     /// <summary>NEON element load/store whose register list runs past D31: UNPREDICTABLE (QEMU reads zeros there).</summary>
-    static bool NeonRegsOutOfRange(uint i)
+    private static bool NeonRegsOutOfRange(uint i)
     {
         uint F(int hi, int lo) => (i >> lo) & (uint)((1L << (hi - lo + 1)) - 1);
         {
@@ -603,9 +603,9 @@ public sealed unsafe class CpuFuzzTests(GuestMemoryFixture fx, ITestOutputHelper
         }
     }
 
-    static void Record(Dictionary<Op, (int, string)> f, Op op, string example)
+    private static void Record(Dictionary<Op, (int, string)> f, Op op, string example)
     {
-        if (f.TryGetValue(op, out var v))
+        if (f.TryGetValue(op, out (int, string) v))
         {
             f[op] = (v.Item1 + 1, v.Item1 < 12 ? v.Item2 + " | " + example.Split(':')[0] : v.Item2);
         }
@@ -615,7 +615,7 @@ public sealed unsafe class CpuFuzzTests(GuestMemoryFixture fx, ITestOutputHelper
         }
     }
 
-    static ulong RandomSimd(Random rng) => rng.Next(4) switch
+    private static ulong RandomSimd(Random rng) => rng.Next(4) switch
     {
         0 => (ulong)rng.NextInt64(),
         1 => BitConverter.DoubleToUInt64Bits((rng.NextDouble() - 0.5) * 1000),
