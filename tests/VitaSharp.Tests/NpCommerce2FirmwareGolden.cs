@@ -2,7 +2,7 @@ namespace VitaSharp.Tests;
 
 /// <summary>Hashes of the firmware np_commerce2.suprx's logs per parser NID (NpCommerce2FirmwareTests.MatchesFirmwareModule
 /// prints this table when run with the firmware module).</summary>
-static class NpCommerce2FirmwareGolden
+internal static class NpCommerce2FirmwareGolden
 {
     public static readonly Dictionary<uint, string> Hashes = new()
     {

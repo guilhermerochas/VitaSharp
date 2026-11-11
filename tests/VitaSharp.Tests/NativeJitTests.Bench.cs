@@ -1,5 +1,7 @@
 using System.Diagnostics;
+using System.Reflection;
 using VitaSharp.Core.Cpu;
+using VitaSharp.Core.Cpu.Backends;
 using VitaSharp.Core.Cpu.Native;
 using VitaSharp.Core.Memory;
 using VitaSharp.Core.Util;
@@ -23,9 +25,9 @@ public sealed unsafe partial class NativeJitTests
         string? path = Environment.GetEnvironmentVariable(EnvVars.BenchCorpus);
         if (path is { Length: > 0 } && File.Exists(path))
         {
-            foreach (var line in File.ReadLines(path))
+            foreach (string line in File.ReadLines(path))
             {
-                var parts = line.Split(' ', StringSplitOptions.RemoveEmptyEntries);
+                string[] parts = line.Split(' ', StringSplitOptions.RemoveEmptyEntries);
                 if (parts.Length < 3)
                 {
                     continue;
@@ -33,7 +35,7 @@ public sealed unsafe partial class NativeJitTests
 
                 bool thumb = parts[0] == "T";
                 var bytes = new List<byte>();
-                foreach (var p in parts.Skip(2))
+                foreach (string? p in parts.Skip(2))
                 {
                     int c = p.IndexOf(':');
                     int size = int.Parse(p[..c]);
@@ -64,7 +66,7 @@ public sealed unsafe partial class NativeJitTests
             for (int i = 0; i < 3_000; i++)
             {
                 bool thumb = (i & 1) != 0;
-                var b = RandomBlock(rng, thumb, 12, forUnicorn: false);
+                Block? b = RandomBlock(rng, thumb, 12, forUnicorn: false);
                 if (b != null)
                 {
                     blocks.Add((thumb, GuestMemory.Span(CodeBase, 0x1000)[..(int)(b.End - b.Start + 4)].ToArray()));
@@ -74,13 +76,13 @@ public sealed unsafe partial class NativeJitTests
         output.WriteLine($"corpus: {blocks.Count} blocks ({(path is { Length: > 0 } ? path : "random")})");
 
         var decoded = new List<Block>();
-        foreach (var (thumb, code) in blocks)
+        foreach ((bool thumb, byte[]? code) in blocks)
         {
-            var mem = GuestMemory.Span(CodeBase, 0x1000);
+            Span<byte> mem = GuestMemory.Span(CodeBase, 0x1000);
             mem.Clear();
             code.AsSpan(0, Math.Min(code.Length, 0xFF0)).CopyTo(mem);
             // a branch-to-self after the block keeps the builder inside the written code
-            var pad = thumb ? new byte[] { 0xFE, 0xE7 } : [0xFE, 0xFF, 0xFF, 0xEA];
+            byte[] pad = thumb ? new byte[] { 0xFE, 0xE7 } : [0xFE, 0xFF, 0xFF, 0xEA];
             pad.CopyTo(mem[Math.Min(code.Length, 0xFF0)..]);
             decoded.Add(BlockBuilder.Build(CodeBase, thumb));
         }
@@ -90,8 +92,8 @@ public sealed unsafe partial class NativeJitTests
         // end to end through the compilers (IR, passes, allocation, lowering, encoding, arena install), several rounds;
         // the per-phase split comes from BackendStats.Phases where the build has it (looked up by reflection so this file
         // also builds against older trees for before/after numbers)
-        var phasesField = typeof(VitaSharp.Core.Cpu.Backends.BackendStats).GetField("Phases");
-        using var sb = Arm64Runner.Create();
+        FieldInfo? phasesField = typeof(VitaSharp.Core.Cpu.Backends.BackendStats).GetField("Phases");
+        using IArm64Runner sb = Arm64Runner.Create();
         foreach (bool arm64 in new[] { false, true })
         {
             VitaSharp.Core.Cpu.Backends.IBlockCompiler compiler = arm64 ? VitaSharp.Core.Cpu.Backends.NativeArm64Compiler.Instance : VitaSharp.Core.Cpu.Backends.NativeX64Compiler.Instance;
@@ -101,7 +103,7 @@ public sealed unsafe partial class NativeJitTests
                 using var arena = new ArenaScope();
                 object? before = phasesField?.GetValue(compiler.Stats) is { } p0 ? Snapshot(p0) : null;
                 long m0 = GC.GetAllocatedBytesForCurrentThread(), c0 = Stopwatch.GetTimestamp();
-                foreach (var b in decoded)
+                foreach (Block b in decoded)
                 {
                     if (arm64)
                     {
@@ -144,10 +146,10 @@ public sealed unsafe partial class NativeJitTests
     {
         EnsureGuestPages();
         using var arena = new ArenaScope();
-        var s = CpuState.Allocate();
+        CpuState* s = CpuState.Allocate();
         try
         {
-            foreach (var (name, word, rotate) in new[] { ("vadd.f32 dependent", 0xF2000D42u, false), ("vadd.f32 8 chains", 0xF2000D42u, true), ("vadd.i32 dependent", 0xF2200842u, false), ("vadd.i32 8 chains", 0xF2200842u, true) })
+            foreach ((string? name, uint word, bool rotate) in new[] { ("vadd.f32 dependent", 0xF2000D42u, false), ("vadd.f32 8 chains", 0xF2000D42u, true), ("vadd.i32 dependent", 0xF2200842u, false), ("vadd.i32 8 chains", 0xF2200842u, true) })
             {
                 var code = new List<byte>();
                 for (int i = 0; i < 128; i++)
@@ -162,8 +164,8 @@ public sealed unsafe partial class NativeJitTests
                 }
                 code.AddRange([0xFE, 0xFF, 0xFF, 0xEA]);
                 code.ToArray().CopyTo(GuestMemory.Span(CodeBase, 0x1000));
-                var b = BlockBuilder.Build(CodeBase, false);
-                var cb = VitaSharp.Core.Cpu.Backends.NativeX64Compiler.Instance.Compile(b)!;
+                Block b = BlockBuilder.Build(CodeBase, false);
+                CompiledBlock cb = VitaSharp.Core.Cpu.Backends.NativeX64Compiler.Instance.Compile(b)!;
                 *s = default;
                 s->Fpscr = 0x03000000;
                 for (int i = 0; i < 32; i++)

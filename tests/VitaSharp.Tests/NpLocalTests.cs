@@ -11,8 +11,8 @@ namespace VitaSharp.Tests;
 [Collection("guest")]
 public sealed class NpLocalTests(GuestMemoryFixture fx) : IDisposable
 {
-    readonly string _root = Path.Combine(Path.GetTempPath(), "vs-np-" + Guid.NewGuid().ToString("N"));
-    readonly PsnAccount _savedAccount = PsnAccount.Current;
+    private readonly string _root = Path.Combine(Path.GetTempPath(), "vs-np-" + Guid.NewGuid().ToString("N"));
+    private readonly PsnAccount _savedAccount = PsnAccount.Current;
 
     public void Dispose()
     {
@@ -24,31 +24,31 @@ public sealed class NpLocalTests(GuestMemoryFixture fx) : IDisposable
         catch (DirectoryNotFoundException) { }
     }
 
-    static int Call<T>(T module, string name, params object[] args) =>
+    private static int Call<T>(T module, string name, params object[] args) =>
         Convert.ToInt32(typeof(T).GetMethod(name, BindingFlags.Instance | BindingFlags.NonPublic | BindingFlags.Public)!.Invoke(module, args)!);
 
-    uint Alloc(uint size, byte fill = 0)
+    private uint Alloc(uint size, byte fill = 0)
     {
         uint p = fx.Memory.Alloc(size, "np test", MemoryRegion.User, 16);
         GuestMemory.Fill(p, fill, size);
         return p;
     }
 
-    uint CommId(string id = "NPWR99999")
+    private uint CommId(string id = "NPWR99999")
     {
         uint p = Alloc(12);
         GuestMemory.WriteCString(p, id);
         return p;
     }
 
-    uint NpId(string online)
+    private uint NpId(string online)
     {
         uint p = Alloc(0x24);
         NpManager.WriteNpId(p, online);
         return p;
     }
 
-    uint Ints(params int[] v)
+    private uint Ints(params int[] v)
     {
         uint p = Alloc((uint)(v.Length * 4));
         for (int i = 0; i < v.Length; i++)
@@ -59,7 +59,7 @@ public sealed class NpLocalTests(GuestMemoryFixture fx) : IDisposable
         return p;
     }
 
-    uint Longs(params long[] v)
+    private uint Longs(params long[] v)
     {
         uint p = Alloc((uint)(v.Length * 8));
         for (int i = 0; i < v.Length; i++)
@@ -80,7 +80,7 @@ public sealed class NpLocalTests(GuestMemoryFixture fx) : IDisposable
         tus.SetVariables("NPWR00001_00", "alice", [(0, 12)], "bob");
 
         var again = new TusStore(_root); // a new run reads the files
-        var v0 = again.GetVariable("NPWR00001_00", "alice", 0)!;
+        TusVariable v0 = again.GetVariable("NPWR00001_00", "alice", 0)!;
         Assert.Equal(12, v0.Value);
         Assert.Equal(10, v0.OldValue);
         Assert.Equal("bob", v0.Author);
@@ -94,10 +94,10 @@ public sealed class NpLocalTests(GuestMemoryFixture fx) : IDisposable
         Assert.Equal(7, again.AddAndGet("NPWR00001_00", "alice", 9, 7, "alice").Value); // empty slot starts at 0
 
         // TryAndSet GREATER_THAN keeps a maximum
-        var (kept, w1) = again.TryAndSet("NPWR00001_00", "alice", 0, TusOpeType.GreaterThan, 3, null, "alice");
+        (TusVariable? kept, bool w1) = again.TryAndSet("NPWR00001_00", "alice", 0, TusOpeType.GreaterThan, 3, null, "alice");
         Assert.False(w1);
         Assert.Equal(17, kept.Value);
-        var (set, w2) = again.TryAndSet("NPWR00001_00", "alice", 0, TusOpeType.GreaterThan, 40, null, "alice");
+        (TusVariable? set, bool w2) = again.TryAndSet("NPWR00001_00", "alice", 0, TusOpeType.GreaterThan, 40, null, "alice");
         Assert.True(w2);
         Assert.Equal(40, set.Value);
         Assert.Equal(17, set.OldValue);
@@ -110,7 +110,7 @@ public sealed class NpLocalTests(GuestMemoryFixture fx) : IDisposable
 
         byte[] blob = Enumerable.Range(0, 3000).Select(i => (byte)i).ToArray();
         again.SetData("NPWR00001_00", "alice", 2, blob, [1, 2, 3], "alice");
-        var d = new TusStore(_root).GetData("NPWR00001_00", "alice", 2)!.Value;
+        (TusDataStatus Status, byte[] Data) d = new TusStore(_root).GetData("NPWR00001_00", "alice", 2)!.Value;
         Assert.Equal(blob, d.Data);
         Assert.Equal(new byte[] { 1, 2, 3 }, d.Status.Info);
         Assert.Equal(3000, d.Status.Size);
@@ -131,14 +131,14 @@ public sealed class NpLocalTests(GuestMemoryFixture fx) : IDisposable
 
     // ---------------------------------------------------------------- TUS module
 
-    NpTus NewTus()
+    private NpTus NewTus()
     {
         var m = new NpTus { StoreOverride = new TusStore(_root) };
         Assert.Equal(0, Call(m, "sceNpTusInit", 0, 0, 0u));
         return m;
     }
 
-    int TusRequest(NpTus m)
+    private int TusRequest(NpTus m)
     {
         int ctx = Call(m, "sceNpTusCreateTitleCtx", CommId(), 0u, 0u);
         Assert.True(ctx > 0);
@@ -151,7 +151,7 @@ public sealed class NpLocalTests(GuestMemoryFixture fx) : IDisposable
     public void TusVariablesThroughTheLibrary()
     {
         PsnAccount.Current = PsnAccount.Create(true, "Alice");
-        var m = NewTus();
+        NpTus m = NewTus();
         uint me = NpId("Alice");
 
         int req = TusRequest(m);
@@ -186,7 +186,7 @@ public sealed class NpLocalTests(GuestMemoryFixture fx) : IDisposable
         Assert.Equal(105, GuestMemory.Read<long>(outVar + 88));                       // current value reported
 
         // persisted: a new library instance (next boot) sees the values
-        var m2 = NewTus();
+        NpTus m2 = NewTus();
         uint v = Alloc(NpTus.VariableSize);
         Assert.Equal(1, Call(m2, "sceNpTusGetMultiSlotVariable", TusRequest(m2), me, Ints(1), v, NpTus.VariableSize, 1, 0u));
         Assert.Equal(105, GuestMemory.Read<long>(v + 88));
@@ -200,7 +200,7 @@ public sealed class NpLocalTests(GuestMemoryFixture fx) : IDisposable
     public void TusDataInChunks()
     {
         PsnAccount.Current = PsnAccount.Create(true, "Alice");
-        var m = NewTus();
+        NpTus m = NewTus();
         uint me = NpId("Alice");
         byte[] save = Enumerable.Range(0, 1000).Select(i => (byte)(i * 7)).ToArray();
         uint data = Alloc(1000);
@@ -247,7 +247,7 @@ public sealed class NpLocalTests(GuestMemoryFixture fx) : IDisposable
     public void TusWithoutLocalServicesFailsLikeAnUnreachableServer()
     {
         PsnAccount.Current = PsnAccount.Create(true, "Alice", localServices: false);
-        var m = NewTus();
+        NpTus m = NewTus();
         uint vars = Alloc(NpTus.VariableSize, 0xCC);
         Assert.Equal(PsnAccount.ServerUnreachable,
             Call(m, "sceNpTusGetMultiSlotVariable", TusRequest(m), NpId("Alice"), Ints(1), vars, NpTus.VariableSize, 1, 0u));
@@ -270,7 +270,7 @@ public sealed class NpLocalTests(GuestMemoryFixture fx) : IDisposable
         Assert.Equal(1u, r4);
         Assert.True(s.Record("T", 1, "bob", 1, 50, "", [], out _)); // another character of bob
 
-        var (rows, total, last) = new ScoreStore(_root).GetRange("T", 1, 1, 10);
+        (List<RankedScore>? rows, uint total, ulong last) = new ScoreStore(_root).GetRange("T", 1, 1, 10);
         Assert.Equal(4u, total);
         Assert.True(last > 0);
         Assert.Equal(["bob", "alice", "carol", "bob"], rows.Select(r => r.Entry.OnlineId).ToArray());
@@ -279,7 +279,7 @@ public sealed class NpLocalTests(GuestMemoryFixture fx) : IDisposable
         Assert.Equal("hi", rows[0].Entry.Comment);
         Assert.Equal(["alice", "carol"], s.GetRange("T", 1, 2, 2).Entries.Select(r => r.Entry.OnlineId).ToArray());
 
-        var (byId, _, _) = s.GetByIds("T", 1, [("carol", 0), ("nobody", 0)]);
+        (List<RankedScore?>? byId, uint _, ulong _) = s.GetByIds("T", 1, [("carol", 0), ("nobody", 0)]);
         Assert.Equal(2u, byId[0]!.Value.Rank);
         Assert.Null(byId[1]);
 
@@ -293,7 +293,7 @@ public sealed class NpLocalTests(GuestMemoryFixture fx) : IDisposable
     {
         var s = new ScoreStore(_root);
         s.Record("T", 2, "a", 0, 90, "", [], out _);
-        var path = Directory.GetFiles(Path.Combine(_root, "T"), "board_2.json").Single();
+        string path = Directory.GetFiles(Path.Combine(_root, "T"), "board_2.json").Single();
         File.WriteAllText(path, File.ReadAllText(path).Replace("\"SortMode\": 0", "\"SortMode\": 1")); // a lap-time board
         Assert.True(s.Record("T", 2, "a", 0, 80, "", [], out _));
         Assert.False(s.Record("T", 2, "a", 0, 85, "", [], out _));
@@ -363,9 +363,9 @@ public sealed class NpLocalTests(GuestMemoryFixture fx) : IDisposable
 
     // ---------------------------------------------------------------- Matching2
 
-    sealed record Cb(uint Func, uint[] Args, uint[] Data);
+    private sealed record Cb(uint Func, uint[] Args, uint[] Data);
 
-    (NpMatching2 M, List<Cb> Calls) NewMatching2()
+    private (NpMatching2 M, List<Cb> Calls) NewMatching2()
     {
         var m = new NpMatching2 { MemoryOverride = fx.Memory };
         var calls = new List<Cb>();
@@ -376,7 +376,7 @@ public sealed class NpLocalTests(GuestMemoryFixture fx) : IDisposable
         return (m, calls);
     }
 
-    ushort Context(NpMatching2 m)
+    private ushort Context(NpMatching2 m)
     {
         uint id = Alloc(4);
         Assert.Equal(0, Call(m, "sceNpMatching2CreateContext", NpId("Alice"), CommId(), 0u, new Ptr<ushort>(id)));
@@ -387,14 +387,14 @@ public sealed class NpLocalTests(GuestMemoryFixture fx) : IDisposable
     public void Matching2ContextStartCallsBack()
     {
         PsnAccount.Current = PsnAccount.SignedInAccount;
-        var (m, calls) = NewMatching2();
+        (NpMatching2? m, List<Cb>? calls) = NewMatching2();
         ushort ctx = Context(m);
         Assert.Equal(0, Call(m, "sceNpMatching2RegisterContextCallback", (uint)ctx, 0x81000001u, 0x1234u));
         uint reqId = Alloc(4);
         Assert.NotEqual(0, Call(m, "sceNpMatching2SearchRoom", ctx, Alloc(16), 0u, reqId)); // not started yet
 
         Assert.Equal(0, Call(m, "sceNpMatching2ContextStart", ctx, 0UL));
-        var start = Assert.Single(calls);
+        Cb start = Assert.Single(calls);
         Assert.Equal(0x81000001u, start.Func);
         Assert.Equal([ctx, (uint)NpMatching2.CONTEXT_EVENT_START, (uint)NpMatching2.EVENT_CAUSE_CONTEXT_ACTION, 0u, 0x1234u], start.Args);
         Assert.NotEqual(0, Call(m, "sceNpMatching2ContextStart", ctx, 0UL)); // already started
@@ -412,7 +412,7 @@ public sealed class NpLocalTests(GuestMemoryFixture fx) : IDisposable
     public void Matching2RequestsAlwaysAnswer()
     {
         PsnAccount.Current = PsnAccount.SignedInAccount;
-        var (m, calls) = NewMatching2();
+        (NpMatching2? m, List<Cb>? calls) = NewMatching2();
         ushort ctx = Context(m);
         Assert.Equal(0, Call(m, "sceNpMatching2ContextStart", ctx, 0UL)); // no context callback registered: nothing called
         Assert.Empty(calls);
@@ -424,7 +424,7 @@ public sealed class NpLocalTests(GuestMemoryFixture fx) : IDisposable
         uint reqId = Alloc(4);
 
         Assert.Equal(0, Call(m, "sceNpMatching2SearchRoom", ctx, Alloc(64), opt, reqId));
-        var search = calls[^1];
+        Cb search = calls[^1];
         Assert.Equal(0x81000101u, search.Func);
         Assert.Equal(GuestMemory.R32(reqId), search.Args[1]);
         Assert.Equal((uint)NpMatching2.EV_SEARCH_ROOM, search.Args[2]);
@@ -455,12 +455,12 @@ public sealed class NpLocalTests(GuestMemoryFixture fx) : IDisposable
     public void Matching2WithoutLocalServicesFailsToStartThroughTheCallback()
     {
         PsnAccount.Current = PsnAccount.Create(true, null, localServices: false);
-        var (m, calls) = NewMatching2();
+        (NpMatching2? m, List<Cb>? calls) = NewMatching2();
         ushort ctx = Context(m);
         Assert.Equal(0, Call(m, "sceNpMatching2RegisterContextCallback", (uint)ctx, 0x81000001u, 0x42u));
         // accepted, then the context callback reports START_OVER (context error) with the network error
         Assert.Equal(0, Call(m, "sceNpMatching2ContextStart", ctx, 0UL));
-        var over = Assert.Single(calls);
+        Cb over = Assert.Single(calls);
         Assert.Equal([ctx, (uint)NpMatching2.CONTEXT_EVENT_START_OVER, (uint)NpMatching2.EVENT_CAUSE_CONTEXT_ERROR,
             unchecked((uint)PsnAccount.ServerUnreachable), 0x42u], over.Args);
         Assert.NotEqual(0, Call(m, "sceNpMatching2SearchRoom", ctx, Alloc(16), 0u, Alloc(4))); // still not started
@@ -471,7 +471,7 @@ public sealed class NpLocalTests(GuestMemoryFixture fx) : IDisposable
     public void Matching2Ps4StyleContextCallback()
     {
         PsnAccount.Current = PsnAccount.SignedInAccount;
-        var (m, calls) = NewMatching2();
+        (NpMatching2? m, List<Cb>? calls) = NewMatching2();
         Assert.Equal(0, Call(m, "sceNpMatching2RegisterContextCallback", 0x81000301u, 0x77u, 0u)); // (cb, arg), no context yet
         ushort ctx = Context(m);
         Assert.Equal(0, Call(m, "sceNpMatching2ContextStart", ctx, 0UL));
@@ -488,10 +488,10 @@ public sealed class NpLocalTests(GuestMemoryFixture fx) : IDisposable
         Assert.Equal("PCSE00914_00-DLCPACK000000001", ents[0].Id);
         Assert.True(ents[0].Matches("DLCPACK000000001"));
         Assert.True(ents[0].Matches("UP0001-PCSE00914_00-DLCPACK000000001"));
-        var bytes = NpTicket.Build("Alice", "UP0001-PCSE00914_00", ents, new DateTime(2026, 1, 2, 0, 0, 0, DateTimeKind.Utc));
+        byte[] bytes = NpTicket.Build("Alice", "UP0001-PCSE00914_00", ents, new DateTime(2026, 1, 2, 0, 0, 0, DateTimeKind.Utc));
         Assert.Equal(0x21u, bytes[0]);
         Assert.Equal((uint)bytes.Length - 8, System.Buffers.Binary.BinaryPrimitives.ReadUInt32BigEndian(bytes.AsSpan(4)));
-        var t = NpTicket.Parse(bytes)!;
+        NpTicket t = NpTicket.Parse(bytes)!;
         Assert.Equal("Alice", t.OnlineId);
         Assert.Equal(20, t.Serial.Length);
         Assert.Equal("UP0001-PCSE00914_00", Encoding.ASCII.GetString(t.ServiceId).TrimEnd('\0'));
@@ -536,25 +536,25 @@ public sealed class NpLocalTests(GuestMemoryFixture fx) : IDisposable
     /// <summary>A TRP archive with the given files (big-endian header, 0x40-byte entries).</summary>
     internal static byte[] BuildTrp(params (string Name, byte[] Data)[] files)
     {
-        const int entrySize = 0x40;
-        int dataStart = 0x40 + files.Length * entrySize;
+        const int EntrySize = 0x40;
+        int dataStart = 0x40 + files.Length * EntrySize;
         var ms = new MemoryStream();
-        var header = new byte[dataStart];
+        byte[] header = new byte[dataStart];
         BitConverter.GetBytes(TrophyPackage.Magic).CopyTo(header, 0);
         header[7] = 3; // version
         System.Buffers.Binary.BinaryPrimitives.WriteUInt32BigEndian(header.AsSpan(0x10), (uint)files.Length);
-        System.Buffers.Binary.BinaryPrimitives.WriteUInt32BigEndian(header.AsSpan(0x14), entrySize);
+        System.Buffers.Binary.BinaryPrimitives.WriteUInt32BigEndian(header.AsSpan(0x14), EntrySize);
         long off = dataStart;
         for (int i = 0; i < files.Length; i++)
         {
-            int e = 0x40 + i * entrySize;
+            int e = 0x40 + i * EntrySize;
             Encoding.ASCII.GetBytes(files[i].Name).CopyTo(header, e);
             System.Buffers.Binary.BinaryPrimitives.WriteUInt64BigEndian(header.AsSpan(e + 0x20), (ulong)off);
             System.Buffers.Binary.BinaryPrimitives.WriteUInt64BigEndian(header.AsSpan(e + 0x28), (ulong)files[i].Data.Length);
             off += files[i].Data.Length;
         }
         ms.Write(header);
-        foreach (var f in files)
+        foreach ((string Name, byte[] Data) f in files)
         {
             ms.Write(f.Data);
         }
@@ -576,14 +576,14 @@ public sealed class NpLocalTests(GuestMemoryFixture fx) : IDisposable
     public void TrophyPackageParses()
     {
         byte[] png = [0x89, (byte)'P', (byte)'N', (byte)'G'];
-        var trp = BuildTrp(("TROPCONF.SFM", Sfm("Conf", "x")), ("TROP.SFM", Sfm("Game", "First")), ("TROP_17.SFM", Sfm("Jogo", "Primeiro")),
+        byte[] trp = BuildTrp(("TROPCONF.SFM", Sfm("Conf", "x")), ("TROP.SFM", Sfm("Game", "First")), ("TROP_17.SFM", Sfm("Jogo", "Primeiro")),
             ("ICON0.PNG", png), ("TROP001.PNG", png));
         var p = TrophyPackage.Parse(trp, "NPWR00001_00");
         Assert.Equal("Game", p.Title);
         Assert.Equal("Detail", p.Detail);
         Assert.Equal(3, p.Trophies.Count);
         Assert.Equal(TrophyGrade.Platinum, p.Trophies[0].Grade);
-        var first = p.Trophies[1];
+        TrophyInfo first = p.Trophies[1];
         Assert.Equal((1, TrophyGrade.Bronze, true, 0, -1, "First"), (first.Id, first.Grade, first.Hidden, first.PlatinumLink, first.Group, first.Name));
         Assert.Equal((TrophyGrade.Gold, 1), (p.Trophies[2].Grade, p.Trophies[2].Group));
         Assert.Equal("DLC", Assert.Single(p.Groups).Name);
@@ -594,7 +594,7 @@ public sealed class NpLocalTests(GuestMemoryFixture fx) : IDisposable
         Assert.Equal("Primeiro", TrophyPackage.Parse(trp, "", 17).Trophies[1].Name); // pt-BR translation
         Assert.Equal("First", TrophyPackage.Parse(trp, "", 3).Trophies[1].Name);     // no Spanish: default texts
 
-        var bad = (byte[])trp.Clone();
+        byte[] bad = (byte[])trp.Clone();
         bad[0] = 0;
         Assert.Throws<InvalidDataException>(() => TrophyPackage.Parse(bad));
         Assert.Throws<InvalidDataException>(() => TrophyPackage.Parse(BuildTrp(("ICON0.PNG", png))));
@@ -607,7 +607,7 @@ public sealed class NpLocalTests(GuestMemoryFixture fx) : IDisposable
         Assert.Empty(TrophyUnlocks.Load(path));
         ulong tick = (ulong)(new DateTime(2026, 10, 29, 12, 0, 0, DateTimeKind.Utc).Ticks / 10);
         TrophyUnlocks.Save(path, new Dictionary<int, ulong> { [1] = tick, [2] = tick + 1 });
-        var back = TrophyUnlocks.Load(path);
+        Dictionary<int, ulong> back = TrophyUnlocks.Load(path);
         Assert.Equal(tick, back[1]);
         Assert.Equal(new DateTime(2026, 10, 29, 12, 0, 0, DateTimeKind.Utc), TrophyUnlocks.TickToUtc(back[1]));
         Assert.EndsWith(Path.Combine("ux0", "user", "00", "trophy", "NPWR00001_00.json"), path);
@@ -618,7 +618,7 @@ public sealed class NpLocalTests(GuestMemoryFixture fx) : IDisposable
     public void TrophySignatureRoundTrip()
     {
         Assert.Null(TrophyUnlocks.LoadSignature(_root, "NPWR00001_00"));
-        var sign = Enumerable.Range(0, TrophyUnlocks.SignatureSize).Select(i => (byte)i).ToArray();
+        byte[] sign = Enumerable.Range(0, TrophyUnlocks.SignatureSize).Select(i => (byte)i).ToArray();
         TrophyUnlocks.SaveSignature(_root, "NPWR00001_00", sign);
         Assert.Equal(sign, TrophyUnlocks.LoadSignature(_root, "NPWR00001_00"));
         Assert.EndsWith(Path.Combine("ux0", "user", "00", "trophy", "NPWR00001_00.sig"), TrophyUnlocks.SignaturePathFor(_root, "NPWR00001_00"));

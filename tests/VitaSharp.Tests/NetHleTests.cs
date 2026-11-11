@@ -10,26 +10,26 @@ namespace VitaSharp.Tests;
 [Collection("guest")]
 public sealed class NetHleTests(GuestMemoryFixture fx)
 {
-    static object Invoke<T>(T module, string name, params object[] args) =>
+    private static object Invoke<T>(T module, string name, params object[] args) =>
         typeof(T).GetMethod(name, BindingFlags.Instance | BindingFlags.NonPublic | BindingFlags.Public)!.Invoke(module, args)!;
-    static int Call<T>(T module, string name, params object[] args) => (int)Invoke(module, name, args);
+    private static int Call<T>(T module, string name, params object[] args) => (int)Invoke(module, name, args);
 
-    uint Str(string s)
+    private uint Str(string s)
     {
-        var b = Encoding.UTF8.GetBytes(s);
+        byte[] b = Encoding.UTF8.GetBytes(s);
         uint p = fx.Memory.Alloc((uint)b.Length + 16, "str");
         b.CopyTo(GuestMemory.Span(p, b.Length));
         GuestMemory.Write<byte>(p + (uint)b.Length, 0);
         return p;
     }
 
-    static string L1(byte[] b) => Encoding.Latin1.GetString(b);
+    private static string Latin1Text(byte[] b) => Encoding.Latin1.GetString(b);
 
     /// <summary>
     /// Waits until <paramref name="blocked"/> counts the waiter as blocked: a non-preserving abort or cancel only
     /// interrupts waits already in progress, so aborting after a fixed sleep races with a slow (loaded) host.
     /// </summary>
-    static void WaitUntilBlocked(Func<int> blocked, Task<int> waiter)
+    private static void WaitUntilBlocked(Func<int> blocked, Task<int> waiter)
     {
         Assert.True(SpinWait.SpinUntil(() => blocked() > 0 || waiter.IsCompleted, TimeSpan.FromSeconds(30)), "the wait never blocked");
         Assert.False(waiter.IsCompleted, $"the wait returned {(waiter.IsCompletedSuccessfully ? $"0x{waiter.Result:X8}" : "with an exception")} instead of blocking");
@@ -38,11 +38,11 @@ public sealed class NetHleTests(GuestMemoryFixture fx)
     [Fact]
     public void EscapeUnescape()
     {
-        var input = Encoding.UTF8.GetBytes("a b&c=d/é");
-        Assert.Equal("a%20b%26c%3Dd%2F%C3%A9", L1(HttpUri.Escape(input)));
-        Assert.Equal("AZaz09-._~", L1(HttpUri.Escape("AZaz09-._~"u8)));
-        Assert.Equal("JJ%zz%", L1(HttpUri.Unescape("%4a%4A%zz%"u8)));
-        var all = Enumerable.Range(1, 255).Select(i => (byte)i).ToArray();
+        byte[] input = Encoding.UTF8.GetBytes("a b&c=d/é");
+        Assert.Equal("a%20b%26c%3Dd%2F%C3%A9", Latin1Text(HttpUri.Escape(input)));
+        Assert.Equal("AZaz09-._~", Latin1Text(HttpUri.Escape("AZaz09-._~"u8)));
+        Assert.Equal("JJ%zz%", Latin1Text(HttpUri.Unescape("%4a%4A%zz%"u8)));
+        byte[] all = Enumerable.Range(1, 255).Select(i => (byte)i).ToArray();
         Assert.Equal(all, HttpUri.Unescape(HttpUri.Escape(all)));
     }
 
@@ -62,17 +62,17 @@ public sealed class NetHleTests(GuestMemoryFixture fx)
     [Fact]
     public void ParseAndBuild()
     {
-        const string url = "http://user:pw@host:8080/a/b?x=1#f";
-        Assert.Equal(0, HttpUri.ParseStrict(url, out var p));
+        const string Url = "http://user:pw@host:8080/a/b?x=1#f";
+        Assert.Equal(0, HttpUri.ParseStrict(Url, out HttpUri.Parts? p));
         var e = HttpUri.ToElement(p);
         Assert.Equal(("http", "user", "pw", "host", "/a/b", "?x=1", "#f", (ushort)8080), (e.Scheme, e.User, e.Password, e.Host, e.Path, e.Query, e.Fragment, e.Port));
-        Assert.Equal(url, HttpUri.Build(e, HttpUri.BuildAll));
+        Assert.Equal(Url, HttpUri.Build(e, HttpUri.BuildAll));
         Assert.Equal("host/a/b", HttpUri.Build(e, HttpUri.BuildHostname | HttpUri.BuildPath));
         Assert.Equal(HttpUri.ERR_UNKNOWN_SCHEME, HttpUri.ParseStrict("ftp://x/", out _));
         Assert.Equal(HttpUri.ERR_INVALID_URL, HttpUri.ParseStrict("nothing", out _));
 
         var http = new Http();
-        uint src = Str(url), elem = fx.Memory.Alloc(0x40, "elem"), pool = fx.Memory.Alloc(64, "pool"), req = fx.Memory.Alloc(16, "req");
+        uint src = Str(Url), elem = fx.Memory.Alloc(0x40, "elem"), pool = fx.Memory.Alloc(64, "pool"), req = fx.Memory.Alloc(16, "req");
         Assert.Equal(0, Call(http, "sceHttpUriParse", 0u, src, 0u, req, 0u));
         Assert.Equal(31u, GuestMemory.R32(req));
         Assert.Equal(0, Call(http, "sceHttpUriParse", elem, src, pool, req, 64u));
@@ -81,7 +81,7 @@ public sealed class NetHleTests(GuestMemoryFixture fx)
         Assert.Equal((ushort)8080, GuestMemory.Read<ushort>(elem + 0x20));
         uint outp = fx.Memory.Alloc(64, "out");
         Assert.Equal(0, Call(http, "sceHttpUriBuild", outp, req, 64u, elem, HttpUri.BuildAll));
-        Assert.Equal(url, GuestMemory.ReadCString(outp));
+        Assert.Equal(Url, GuestMemory.ReadCString(outp));
     }
 
     [Theory]
@@ -101,7 +101,7 @@ public sealed class NetHleTests(GuestMemoryFixture fx)
     [InlineData("g;x=1/../y", "http://a/b/c/y")]
     public void MergeRfc3986(string rel, string expected)
     {
-        Assert.Equal(0, HttpUri.Merge("http://a/b/c/d;p?q", rel, out var r));
+        Assert.Equal(0, HttpUri.Merge("http://a/b/c/d;p?q", rel, out string? r));
         Assert.Equal(expected, r);
     }
 
@@ -121,7 +121,7 @@ public sealed class NetHleTests(GuestMemoryFixture fx)
         Assert.Equal((200, 0), (code, len));
         Assert.Equal(HttpParse.ERR_INVALID_RESPONSE, HttpParse.StatusLine("HTTX/1.1 200 OK"u8, out _, out _, out _, out _, out _));
 
-        var hdr = "Content-Type: text/html\r\nX-A:  1 \r\n"u8;
+        ReadOnlySpan<byte> hdr = "Content-Type: text/html\r\nX-A:  1 \r\n"u8;
         Assert.True(HttpParse.FindHeader(hdr, "x-a"u8, out off, out len));
         Assert.Equal("1", Encoding.ASCII.GetString(hdr.Slice(off, len)));
         Assert.False(HttpParse.FindHeader(hdr, "nope"u8, out _, out _));
@@ -165,11 +165,11 @@ public sealed class NetHleTests(GuestMemoryFixture fx)
     public void Cookies()
     {
         var jar = new CookieJar();
-        var now = DateTime.UtcNow;
+        DateTime now = DateTime.UtcNow;
         Assert.True(jar.Add("http://h/x/y", "a=1; Path=/x", now));
         Assert.Equal("a=1", jar.Get("http://h/x/z", false, now));
         Assert.Null(jar.Get("http://h/w", false, now));
-        var data = jar.Export();
+        byte[] data = jar.Export();
         jar.Flush();
         Assert.Null(jar.Get("http://h/x/z", false, now));
         Assert.True(jar.Import(data));
@@ -191,7 +191,7 @@ public sealed class NetHleTests(GuestMemoryFixture fx)
         Assert.Equal(0, Call(net, "sceNetEpollWait", eid, ev, 1, 20_000));
         Assert.True(sw.ElapsedMilliseconds >= 10, $"waited {sw.ElapsedMilliseconds} ms");
 
-        var waiter = Task.Run(() => Call(net, "sceNetEpollWait", eid, ev, 1, -1));
+        Task<int> waiter = Task.Run(() => Call(net, "sceNetEpollWait", eid, ev, 1, -1));
         WaitUntilBlocked(() => net.BlockedWaits, waiter); // a non-preserving abort only interrupts waits in progress
         Assert.Equal(0, Call(net, "sceNetEpollAbort", eid, 0));
         await waiter.WaitAsync(TimeSpan.FromSeconds(30));
@@ -217,7 +217,7 @@ public sealed class NetHleTests(GuestMemoryFixture fx)
         Assert.Equal(Net.EAGAIN, Call(net, "sceNetRecv", s, 0u, 0u, 0));
         GuestMemory.W32(opt, 0);
         Assert.Equal(0, Call(net, "sceNetSetsockopt", s, 0xFFFF, 0x1100, opt, 4u));
-        var waiter = Task.Run(() => Call(net, "sceNetRecv", s, 0u, 0u, 0));
+        Task<int> waiter = Task.Run(() => Call(net, "sceNetRecv", s, 0u, 0u, 0));
         WaitUntilBlocked(() => net.BlockedWaits, waiter);
         Assert.Equal(0, Call(net, "sceNetSocketAbort", s, 0));
         await waiter.WaitAsync(TimeSpan.FromSeconds(30));
@@ -236,12 +236,12 @@ public sealed class NetHleTests(GuestMemoryFixture fx)
         var sw = Stopwatch.StartNew();
         Assert.Equal(0, Call(rudp, "sceRudpPollWait", poll, evs, 4u, 20_000UL));
         Assert.True(sw.ElapsedMilliseconds >= 10);
-        var waiter = Task.Run(() => Call(rudp, "sceRudpPollWait", poll, evs, 4u, ulong.MaxValue));
+        Task<int> waiter = Task.Run(() => Call(rudp, "sceRudpPollWait", poll, evs, 4u, ulong.MaxValue));
         WaitUntilBlocked(() => rudp.BlockedPollWaits, waiter);
         Assert.Equal(0, Call(rudp, "sceRudpPollCancel", poll));
         await waiter.WaitAsync(TimeSpan.FromSeconds(30));
         Assert.Equal(0, Call(rudp, "sceRudpSetMaxSegmentSize", (ushort)1000));
-        var mss = fx.Memory.Alloc(16, "mss");
+        uint mss = fx.Memory.Alloc(16, "mss");
         Call(rudp, "sceRudpGetMaxSegmentSize", new Ptr<ushort>(mss));
         Assert.Equal((ushort)1000, GuestMemory.Read<ushort>(mss));
     }

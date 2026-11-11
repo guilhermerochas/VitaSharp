@@ -31,9 +31,9 @@ public sealed class NpCommerce2FirmwareTests(GuestMemoryFixture fx, ITestOutputH
         var bad = new List<string>();
         int parsed = 0;
         var unparsed = new List<string>();
-        foreach (var p in C2Harness.Parsers)
+        foreach (C2Harness.Parser p in C2Harness.Parsers)
         {
-            var log = h.Run(p, lle: false);
+            List<string> log = h.Run(p, lle: false);
             // the reply with everything in it parses: a record, not an error code
             if (log.FirstOrDefault(l => l.StartsWith("full: ", StringComparison.Ordinal) || l.StartsWith("[0] full: ", StringComparison.Ordinal)) is { } full
                 && full.Split(": ")[1] is var r && !(r.Length == 8 && r.StartsWith("80", StringComparison.Ordinal)))
@@ -46,7 +46,7 @@ public sealed class NpCommerce2FirmwareTests(GuestMemoryFixture fx, ITestOutputH
             }
 
             string hash = C2Harness.Hash(log);
-            if (!NpCommerce2FirmwareGolden.Hashes.TryGetValue(p.Nid, out var want))
+            if (!NpCommerce2FirmwareGolden.Hashes.TryGetValue(p.Nid, out string? want))
             {
                 bad.Add($"{p.Nid:X8} {p.Method.Name}: no firmware hash");
             }
@@ -70,10 +70,10 @@ public sealed class NpCommerce2FirmwareTests(GuestMemoryFixture fx, ITestOutputH
         using var h = new C2Harness(fx, C2Firmware.ModulePath);
         var bad = new List<string>();
         var golden = new StringBuilder();
-        foreach (var p in C2Harness.Parsers)
+        foreach (C2Harness.Parser p in C2Harness.Parsers)
         {
-            var lle = h.Run(p, lle: true);
-            var hle = h.Run(p, lle: false);
+            List<string> lle = h.Run(p, lle: true);
+            List<string> hle = h.Run(p, lle: false);
             golden.AppendLine($"        [0x{p.Nid:X8}] = \"{C2Harness.Hash(lle)}\", // {p.Method.Name}");
             int i = 0;
             while (i < lle.Count && i < hle.Count && lle[i] == hle[i])
@@ -95,21 +95,21 @@ public sealed class NpCommerce2FirmwareTests(GuestMemoryFixture fx, ITestOutputH
 }
 
 /// <summary>Runs one np_commerce2 parser NID on the crafted replies, through the HLE or the firmware module.</summary>
-sealed class C2Harness : IDisposable
+internal sealed class C2Harness : IDisposable
 {
-    const uint LibNid = 0x40120DC3, InitNid = 0xC73F209A;
-    const uint Fill = 0xCDCDCDCD, RecSize = 0x110;
-    readonly Emulator _emu;
-    readonly string _root;
-    readonly NpCommerce2 _hle;
-    readonly uint _arena;
-    const uint ArenaSize = 0x40_0000;
-    uint _bump;
-    readonly GuestThread? _thread;
-    readonly Queue<(Action<GuestThread> Work, ManualResetEventSlim Done)> _work = new();
-    readonly SemaphoreSlim _pending = new(0);
-    bool _stop;
-    Exception? _failure;
+    private const uint LibNid = 0x40120DC3, InitNid = 0xC73F209A;
+    private const uint Fill = 0xCDCDCDCD, RecSize = 0x110;
+    private readonly Emulator _emu;
+    private readonly string _root;
+    private readonly NpCommerce2 _hle;
+    private readonly uint _arena;
+    private const uint ArenaSize = 0x40_0000;
+    private uint _bump;
+    private readonly GuestThread? _thread;
+    private readonly Queue<(Action<GuestThread> Work, ManualResetEventSlim Done)> _work = new();
+    private readonly SemaphoreSlim _pending = new(0);
+    private bool _stop;
+    private Exception? _failure;
 
     public sealed record Parser(uint Nid, MethodInfo Method, string Kind);
 
@@ -120,9 +120,9 @@ sealed class C2Harness : IDisposable
         .SelectMany(m => m.GetCustomAttributes<HleAttribute>().Where(a => a.Library == "SceNpCommerce2").Select(a => new Parser(a.Nid, m, KindOf(m))))
         .OrderBy(p => p.Nid).ToList();
 
-    static string KindOf(MethodInfo m)
+    private static string KindOf(MethodInfo m)
     {
-        var n = m.GetParameters().Select(p => p.Name).ToArray();
+        string?[] n = m.GetParameters().Select(p => p.Name).ToArray();
         return n switch
         {
             ["rec", "buf", "size"] => "root",
@@ -152,7 +152,7 @@ sealed class C2Harness : IDisposable
             return;
         }
 
-        var lle = _emu.LoadModule("vs0:sys/external/np_commerce2.suprx");
+        LoadedModule lle = _emu.LoadModule("vs0:sys/external/np_commerce2.suprx");
         _thread = _emu.Kernel.CreateThread("c2-test", 0, 0x10000100, 0x40000, 0, 0x70000);
         _thread.HostBody = t =>
         {
@@ -195,9 +195,9 @@ sealed class C2Harness : IDisposable
         }
     }
 
-    uint Export(uint nid) => _emu.Linker.TryGetFunctionExport(LibNid, nid, out uint a) ? a : throw new InvalidOperationException($"no export {nid:X8}");
+    private uint Export(uint nid) => _emu.Linker.TryGetFunctionExport(LibNid, nid, out uint a) ? a : throw new InvalidOperationException($"no export {nid:X8}");
 
-    void OnGuest(Action<GuestThread> work)
+    private void OnGuest(Action<GuestThread> work)
     {
         using var done = new ManualResetEventSlim();
         lock (_work)
@@ -217,10 +217,10 @@ sealed class C2Harness : IDisposable
         }
     }
 
-    static int Call(object m, string name, params object[] args) =>
+    private static int Call(object m, string name, params object[] args) =>
         Convert.ToInt32(m.GetType().GetMethod(name, BindingFlags.Instance | BindingFlags.NonPublic | BindingFlags.Public)!.Invoke(m, args));
 
-    uint Alloc(uint size)
+    private uint Alloc(uint size)
     {
         uint p = _arena + _bump;
         _bump = (_bump + size + 15) & ~15u;
@@ -233,7 +233,7 @@ sealed class C2Harness : IDisposable
         return p;
     }
 
-    int Invoke(Parser p, bool lle, params uint[] args)
+    private int Invoke(Parser p, bool lle, params uint[] args)
     {
         if (!lle)
         {
@@ -248,53 +248,53 @@ sealed class C2Harness : IDisposable
 
     // ------------------------------------------------------------------ replies
 
-    static byte[] Be16(int v) => [(byte)(v >> 8), (byte)v];
-    static byte[] Cat(params byte[][] parts) => parts.SelectMany(x => x).ToArray();
-    static byte[] T(int tag, params byte[][] value)
+    private static byte[] Be16(int v) => [(byte)(v >> 8), (byte)v];
+    private static byte[] Cat(params byte[][] parts) => parts.SelectMany(x => x).ToArray();
+    private static byte[] Tlv(int tag, params byte[][] value)
     {
-        var v = Cat(value);
+        byte[] v = Cat(value);
         return Cat(Be16(tag), Be16(v.Length), v);
     }
-    static byte[] Sec(int type, int count, params byte[][] items) => T(1, Be16(type), Be16(count), Cat(items));
-    static byte[] Sec8(int type, int count, params byte[][] items) => T(2, Be16(type), Be16(count), Be16(0x1111), Be16(0x2222), Cat(items));
-    static byte[] Z(string s) => [.. Encoding.ASCII.GetBytes(s), 0];
+    private static byte[] Sec(int type, int count, params byte[][] items) => Tlv(1, Be16(type), Be16(count), Cat(items));
+    private static byte[] Sec8(int type, int count, params byte[][] items) => Tlv(2, Be16(type), Be16(count), Be16(0x1111), Be16(0x2222), Cat(items));
+    private static byte[] CString(string s) => [.. Encoding.ASCII.GetBytes(s), 0];
 
     /// <summary>Patterned bytes (no zero bytes, so values and times are non-zero).</summary>
-    static byte[] P(int n, int seed) => Enumerable.Range(0, n).Select(i => (byte)(((seed * 31 + i * 7) % 255) + 1)).ToArray();
+    private static byte[] Pattern(int n, int seed) => Enumerable.Range(0, n).Select(i => (byte)(((seed * 31 + i * 7) % 255) + 1)).ToArray();
 
     /// <summary>Every tag a parser reads after an item's fixed part: strings, nested blocks and section counts.</summary>
-    static readonly int[] StringTags =
+    private static readonly int[] s_stringTags =
     [
         0x03, 0x04, 0x05, 0x07, 0x08, 0x09, 0x0A, 0x0C, 0x0D, 0x0E, 0x0F, 0x10, 0x11, 0x12, 0x14, 0x15, 0x2D, 0x31, 0x36, 0x38,
         0x3A, 0x3C, 0x3F, 0x40, 0x41, 0x42, 0x43, 0x44, 0x45, 0x46, 0x47, 0x4F, 0x50, 0x51, 0x52, 0x54, 0x55, 0x59, 0x5A, 0x5C,
         0x5D, 0x60, 0x62, 0x65, 0x66, 0x6A, 0x6C, 0x6E, 0x76, 0x77, 0x79, 0x7D, 0x7E, 0x82, 0x84, 0x92, 0x94, 0x97, 0xA6, 0xB7, 0xB8,
     ];
 
-    static readonly int[] CountTypes =
+    private static readonly int[] s_countTypes =
     [
         0x11, 0x15, 0x16, 0x17, 0x18, 0x23, 0x24, 0x25, 0x2E, 0x37, 0x38, 0x39, 0x3B, 0x3D, 0x3E, 0x58, 0x5C, 0x61, 0x64, 0x6B,
         0x6D, 0x6F, 0x74, 0x78, 0x7A, 0x7B, 0x80, 0x85, 0x90, 0x95, 0x96, 0x9B, 0x9C, 0x9D,
     ];
 
     /// <summary>The strings read inside the nested blocks (0x4B, 0x91, 0x63 and what follows a 0x56 / 0x8D price).</summary>
-    static readonly int[] NestedTags = [0x07, 0x38, 0x44, 0x46, 0x47, 0x55, 0x59, 0x5A, 0x62, 0x92, 0xB7, 0xB8];
+    private static readonly int[] s_nestedTags = [0x07, 0x38, 0x44, 0x46, 0x47, 0x55, 0x59, 0x5A, 0x62, 0x92, 0xB7, 0xB8];
 
-    static byte[] Strings(int[] tags, int seed) => Cat(tags.Select(t => T(t, Z($"s{t:X2}.{seed:D4}"))).ToArray());
+    private static byte[] Strings(int[] tags, int seed) => Cat(tags.Select(t => Tlv(t, CString($"s{t:X2}.{seed:D4}"))).ToArray());
 
-    static byte[] Tail(int seed)
+    private static byte[] Tail(int seed)
     {
-        var n = Cat(Strings(NestedTags, seed), T(0x4A, P(0xC, seed + 1)), Sec(0x9D, 3), Sec(0x80, 2));
+        byte[] n = Cat(Strings(s_nestedTags, seed), Tlv(0x4A, Pattern(0xC, seed + 1)), Sec(0x9D, 3), Sec(0x80, 2));
         return Cat(
-            Strings(StringTags, seed),
-            T(0x4B, P(8, seed + 2), n), T(0x91, P(8, seed + 3), n),
-            T(0x56, P(0x14, seed + 4), T(0x4B, P(8, seed + 5), n), n), T(0x8D, P(0x14, seed + 6), T(0x91, P(8, seed + 7), n), n),
-            T(0x58, P(8, seed + 8)), T(0x63, P(0x10, seed + 9), n), T(0x83, P(0x14, seed + 10)), T(0x98, P(0x14, seed + 11)),
-            T(0x4A, P(0xC, seed + 12)), T(0x18, P(0x20, seed + 13)),
-            Cat(CountTypes.Select(c => Sec(c, (c & 7) + 1)).ToArray()));
+            Strings(s_stringTags, seed),
+            Tlv(0x4B, Pattern(8, seed + 2), n), Tlv(0x91, Pattern(8, seed + 3), n),
+            Tlv(0x56, Pattern(0x14, seed + 4), Tlv(0x4B, Pattern(8, seed + 5), n), n), Tlv(0x8D, Pattern(0x14, seed + 6), Tlv(0x91, Pattern(8, seed + 7), n), n),
+            Tlv(0x58, Pattern(8, seed + 8)), Tlv(0x63, Pattern(0x10, seed + 9), n), Tlv(0x83, Pattern(0x14, seed + 10)), Tlv(0x98, Pattern(0x14, seed + 11)),
+            Tlv(0x4A, Pattern(0xC, seed + 12)), Tlv(0x18, Pattern(0x20, seed + 13)),
+            Cat(s_countTypes.Select(c => Sec(c, (c & 7) + 1)).ToArray()));
     }
 
     /// <summary>The tags a parser looks items up by (plain, tag-1 and tag-2 sections).</summary>
-    static readonly int[] ItemTags =
+    private static readonly int[] s_itemTags =
     [
         0x15, 0x16, 0x17, 0x18, 0x1E, 0x1F, 0x21, 0x22, 0x23, 0x24, 0x25, 0x26, 0x27, 0x28, 0x29, 0x2B, 0x2C, 0x2E, 0x2F,
         0x30, 0x32, 0x33, 0x37, 0x38, 0x39, 0x3B, 0x3D, 0x3E, 0x4B, 0x4C, 0x4D, 0x4E, 0x56, 0x58, 0x5B, 0x5C, 0x5E, 0x5F,
@@ -304,29 +304,29 @@ sealed class C2Harness : IDisposable
 
     /// <summary>A body with every item tag: a plain item, a tag-1 section of two and a tag-2 section of two. Each item is
     /// <paramref name="fixedLen"/> patterned bytes, then (<paramref name="withTail"/>) the strings, blocks and counts.</summary>
-    static byte[] Body(int fixedLen, bool withTail)
+    private static byte[] Body(int fixedLen, bool withTail)
     {
-        byte[] Item(int tag, int seed) => T(tag, P(fixedLen, tag + seed), withTail ? Tail(tag + seed) : []);
-        var plain = ItemTags.Select(t => Item(t, 0));
-        var sec = ItemTags.Select(t => Sec(t, 2, Item(t, 1), Item(t, 2)));
-        var sec8 = ItemTags.Select(t => Sec8(t, 2, Item(t, 3), Item(t, 4)));
+        byte[] Item(int tag, int seed) => Tlv(tag, Pattern(fixedLen, tag + seed), withTail ? Tail(tag + seed) : []);
+        IEnumerable<byte[]> plain = s_itemTags.Select(t => Item(t, 0));
+        IEnumerable<byte[]> sec = s_itemTags.Select(t => Sec(t, 2, Item(t, 1), Item(t, 2)));
+        IEnumerable<byte[]> sec8 = s_itemTags.Select(t => Sec8(t, 2, Item(t, 3), Item(t, 4)));
         // then, for the reply records, the strings, blocks and counts at the top level (after the items, so a plain
         // item is found before a block of the same tag)
         return Cat(plain.Concat(sec).Concat(sec8).Append(withTail ? Tail(0) : []).ToArray());
     }
 
-    static readonly Dictionary<(int, bool), byte[]> Bodies = [];
+    private static readonly Dictionary<(int, bool), byte[]> s_bodies = [];
 
-    static byte[] CachedBody(int fixedLen, bool withTail)
+    private static byte[] CachedBody(int fixedLen, bool withTail)
     {
-        lock (Bodies)
+        lock (s_bodies)
         {
-            return Bodies.TryGetValue((fixedLen, withTail), out var b) ? b : Bodies[(fixedLen, withTail)] = Body(fixedLen, withTail);
+            return s_bodies.TryGetValue((fixedLen, withTail), out byte[]? b) ? b : s_bodies[(fixedLen, withTail)] = Body(fixedLen, withTail);
         }
     }
 
     /// <summary>A reply buffer: id, 4 + body length, the lenient flag, the body at +0x68.</summary>
-    (uint Buf, uint Size) Reply(byte[] body, uint lenient)
+    private (uint Buf, uint Size) Reply(byte[] body, uint lenient)
     {
         uint size = 0x68 + (uint)body.Length;
         uint buf = Alloc(size + 16);
@@ -338,7 +338,7 @@ sealed class C2Harness : IDisposable
     }
 
     /// <summary>A parent record over the reply body (data and cursor at its start).</summary>
-    uint Parent(uint buf, uint size, uint lenient)
+    private uint Parent(uint buf, uint size, uint lenient)
     {
         uint rec = Alloc(0x100);
         GuestMemory.W32(rec, 0x1234);
@@ -351,7 +351,7 @@ sealed class C2Harness : IDisposable
         return rec;
     }
 
-    uint Record()
+    private uint Record()
     {
         uint r = Alloc(RecSize);
         for (uint i = 0; i < RecSize; i += 4)
@@ -364,11 +364,11 @@ sealed class C2Harness : IDisposable
 
     /// <summary>How far the second run of a scenario places everything (reply, records) after the first: a record
     /// word that moves by exactly this much is an address (logged relative to the reply), any other is a value.</summary>
-    const uint Shift = 0x3000;
+    private const uint Shift = 0x3000;
 
-    static uint[] Words(uint rec) => Enumerable.Range(0, (int)RecSize / 4).Select(i => GuestMemory.R32(rec + (uint)i * 4)).ToArray();
+    private static uint[] Words(uint rec) => Enumerable.Range(0, (int)RecSize / 4).Select(i => GuestMemory.R32(rec + (uint)i * 4)).ToArray();
 
-    static string Dump(uint[] first, uint[] second, uint buf)
+    private static string Dump(uint[] first, uint[] second, uint buf)
     {
         var sb = new StringBuilder();
         for (int i = 0; i < first.Length; i++)
@@ -382,9 +382,9 @@ sealed class C2Harness : IDisposable
 
     /// <summary>The fixed part of the parser's item: where its cursor (word 5) lands on an item with nothing after it
     /// (0x40 when the parser keeps no cursor).</summary>
-    int FixedLength(Parser p)
+    private int FixedLength(Parser p)
     {
-        var (buf, size) = Reply(CachedBody(0x120, false), 0);
+        (uint buf, uint size) = Reply(CachedBody(0x120, false), 0);
         uint parent = Parent(buf, size, 0), rec = Record();
         if (p.Kind is "root" or "ptr" or "ptr2")
         {
@@ -410,9 +410,9 @@ sealed class C2Harness : IDisposable
             foreach (uint start in new[] { 0u, Shift })
             {
                 _bump = start;
-                var (buf, size) = Reply(body, lenient);
+                (uint buf, uint size) = Reply(body, lenient);
                 uint parent = Parent(buf, size, lenient), rec = Record(), rec2 = Record();
-                var a = args(buf, cut ? size - 1 : size, parent, rec);
+                uint[] a = args(buf, cut ? size - 1 : size, parent, rec);
                 if (a.Length > 3 && a[3] == uint.MaxValue)
                 {
                     a[3] = rec2;
@@ -422,7 +422,7 @@ sealed class C2Harness : IDisposable
                 runs.Add((r, buf, Words(rec), Words(rec2)));
                 _bump = 0;
             }
-            var (r0, b0, w0, x0) = runs[0];
+            (int r0, uint b0, uint[]? w0, uint[]? x0) = runs[0];
             log.Add($"{name}: {(r0 < 0 ? $"{r0:X8}" : $"{r0:X}")}{(runs[1].R != r0 ? " (?)" : "")}");
             log.Add("  " + Dump(w0, runs[1].Rec, b0));
             if (p.Kind == "ptr2")
@@ -485,11 +485,11 @@ sealed class C2Harness : IDisposable
     }
 }
 
-static class C2Firmware
+internal static class C2Firmware
 {
-    static readonly Lazy<string?> _path = new(() =>
+    private static readonly Lazy<string?> s_path = new(() =>
         JsonFirmware.ModulePath is { } json && Path.Combine(Path.GetDirectoryName(json)!, "np_commerce2.suprx") is var p && File.Exists(p) ? p : null);
-    public static string? ModulePath => _path.Value;
+    public static string? ModulePath => s_path.Value;
 }
 
 public sealed class C2FirmwareFactAttribute : FactAttribute

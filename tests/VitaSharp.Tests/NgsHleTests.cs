@@ -12,19 +12,19 @@ namespace VitaSharp.Tests;
 [Collection("guest")]
 public sealed class NgsHleTests(GuestMemoryFixture fx) : IDisposable
 {
-    const int OK = 0, ERROR = unchecked((int)0x804A0001), INVALID_ARG = unchecked((int)0x804A0002),
+    private const int OK = 0, ERROR = unchecked((int)0x804A0001), INVALID_ARG = unchecked((int)0x804A0002),
         INVALID_STATE = unchecked((int)0x804A0010), INVALID_HANDLE = unchecked((int)0x804A000C), PATCH_NOT_AVAIL = unchecked((int)0x804A000E);
-    const int Granularity = 256;
+    private const int Granularity = 256;
 
-    readonly HleHarness _h = new(fx, "ngs");
-    Ngs N => _h.Module<Ngs>();
+    private readonly HleHarness _h = new(fx, "ngs");
+    private Ngs N => _h.Module<Ngs>();
 
     public void Dispose() => _h.Dispose();
 
-    uint Out() => _h.Word(0);
+    private uint Out() => _h.Word(0);
 
     /// <summary>SceNgsSystemInitParams: +4 max voices, +8 granularity, +12 sample rate.</summary>
-    uint System()
+    private uint System()
     {
         uint p = _h.Alloc(32);
         GuestMemory.W32(p + 4, 16);
@@ -37,7 +37,7 @@ public sealed class NgsHleTests(GuestMemoryFixture fx) : IDisposable
 
     /// <summary>A rack of <paramref name="voices"/> voices of the given definition: SceNgsRackDescription {definition,
     /// voices, channelsPerVoice, maxPatchesPerInput, patchesPerOutput}, memory sized by GetRequiredMemorySize.</summary>
-    uint Rack(uint system, uint def, int voices, int channels)
+    private uint Rack(uint system, uint def, int voices, int channels)
     {
         uint desc = _h.Alloc(32);
         GuestMemory.W32(desc, def);
@@ -55,14 +55,14 @@ public sealed class NgsHleTests(GuestMemoryFixture fx) : IDisposable
         return GuestMemory.R32(o);
     }
 
-    uint Voice(uint rack, uint index)
+    private uint Voice(uint rack, uint index)
     {
         uint o = Out();
         Assert.Equal(OK, Call(N, "sceNgsRackGetVoiceHandle", rack, index, new Ptr<uint>(o)));
         return GuestMemory.R32(o);
     }
 
-    uint Patch(uint src, uint dst)
+    private uint Patch(uint src, uint dst)
     {
         uint setup = _h.Alloc(20), o = Out();
         GuestMemory.W32(setup, src);
@@ -76,7 +76,7 @@ public sealed class NgsHleTests(GuestMemoryFixture fx) : IDisposable
 
     /// <summary>The 84-byte SceNgsPlayerParams of the player module (module 0) as a params block: buffer 0 holds
     /// <paramref name="bytes"/> of stereo PCM16 played <paramref name="loops"/> extra times, no next buffer.</summary>
-    int SetPlayer(uint voice, uint pcm, uint bytes, short loops, int channels = 2)
+    private int SetPlayer(uint voice, uint pcm, uint bytes, short loops, int channels = 2)
     {
         uint blk = _h.Alloc(8 + 84);
         GuestMemory.W32(blk, 0);                    // module index
@@ -96,7 +96,7 @@ public sealed class NgsHleTests(GuestMemoryFixture fx) : IDisposable
         return r;
     }
 
-    uint Pcm(int frames, short l, short r)
+    private uint Pcm(int frames, short l, short r)
     {
         uint p = _h.Alloc((uint)frames * 4);
         for (int i = 0; i < frames; i++)
@@ -107,7 +107,7 @@ public sealed class NgsHleTests(GuestMemoryFixture fx) : IDisposable
         return p;
     }
 
-    short[] MasterOutput(uint master)
+    private short[] MasterOutput(uint master)
     {
         uint mem = _h.Alloc(Granularity * 4);
         Assert.Equal(OK, Call(N, "sceNgsVoiceGetStateData", master, 1u, mem, (uint)Granularity * 4));
@@ -124,7 +124,7 @@ public sealed class NgsHleTests(GuestMemoryFixture fx) : IDisposable
         Assert.Equal(12u, GuestMemory.R32(simple));
         Assert.Equal(2u, GuestMemory.R32(simple + 4));
         Assert.Equal(4u, GuestMemory.R32((uint)Invoke(N, "sceNgsVoiceDefGetAtrac9Voice")! + 4));
-        foreach (var name in new[] { "sceNgsVoiceDefGetCompressorBuss", "sceNgsVoiceDefGetCompressorSideChainBuss", "sceNgsVoiceDefGetDelayBuss",
+        foreach (string? name in new[] { "sceNgsVoiceDefGetCompressorBuss", "sceNgsVoiceDefGetCompressorSideChainBuss", "sceNgsVoiceDefGetDelayBuss",
             "sceNgsVoiceDefGetDistortionBuss", "sceNgsVoiceDefGetEnvelopeBuss", "sceNgsVoiceDefGetEqBuss", "sceNgsVoiceDefGetMixerBuss",
             "sceNgsVoiceDefGetPauserBuss", "sceNgsVoiceDefGetPitchShiftBuss", "sceNgsVoiceDefGetReverbBuss", "sceNgsVoiceDefGetSasEmuVoice",
             "sceNgsVoiceDefGetSimpleAtrac9Voice", "sceNgsVoiceDefGetScreamVoice", "sceNgsVoiceDefGetScreamAtrac9Voice", "sceNgsVoiceDefGetTemplate1",
@@ -248,7 +248,7 @@ public sealed class NgsHleTests(GuestMemoryFixture fx) : IDisposable
         Assert.Equal(ERROR, Call(N, "sceNgsVoicePlay", voice)); // already playing
         Assert.Equal(INVALID_STATE, Call(N, "sceNgsVoiceInit", voice, 0u, 0u));
         Assert.Equal(OK, Call(N, "sceNgsSystemUpdate", sys));
-        var outS = MasterOutput(master);
+        short[] outS = MasterOutput(master);
         Assert.All(outS.Where((_, i) => i % 2 == 0), s => Assert.Equal(16384, s));
         Assert.All(outS.Where((_, i) => i % 2 == 1), s => Assert.Equal(-8192, s));
 
@@ -324,7 +324,7 @@ public sealed class NgsHleTests(GuestMemoryFixture fx) : IDisposable
             Assert.Equal(OK, Call(N, "sceNgsSystemUpdate", sys));
         }
 
-        var o = MasterOutput(master);
+        short[] o = MasterOutput(master);
         Assert.All(o, s => Assert.Equal(8192, s));
         uint info = _h.Alloc(24);
         Call(N, "sceNgsVoiceGetInfo", voice, info);
@@ -356,7 +356,7 @@ public sealed class NgsHleTests(GuestMemoryFixture fx) : IDisposable
         Assert.Equal(OK, Call(N, "sceNgsVoiceKill", voice));
         Call(N, "sceNgsVoiceGetInfo", voice, info);
         Assert.Equal(0u, GuestMemory.R32(info) & 1);
-        foreach (var fn in new[] { "sceNgsVoicePlay", "sceNgsVoiceKill", "sceNgsVoiceKeyOff", "sceNgsVoicePause", "sceNgsVoiceResume" })
+        foreach (string? fn in new[] { "sceNgsVoicePlay", "sceNgsVoiceKill", "sceNgsVoiceKeyOff", "sceNgsVoicePause", "sceNgsVoiceResume" })
         {
             Assert.Equal(INVALID_ARG, Call(N, fn, 0x1234u));
         }
