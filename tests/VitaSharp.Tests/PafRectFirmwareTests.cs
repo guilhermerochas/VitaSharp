@@ -1,3 +1,4 @@
+using System.Globalization;
 using System.Reflection;
 using System.Security.Cryptography;
 using System.Text;
@@ -18,8 +19,10 @@ namespace VitaSharp.Tests;
 [Collection("guest")]
 public sealed unsafe class PafRectFirmwareTests(GuestMemoryFixture fx)
 {
-    /// <summary>The hash of the firmware's log (MatchesFirmwareModule names it when it changes).</summary>
-    const string FirmwareLogHash = "809626268B605A11";
+    /// <summary>The hash of the firmware's log (MatchesFirmwareModule names it when it changes). Every number in the log
+    /// is written with the invariant culture: the guest thread takes the process's default culture (pt-BR writes 1,5),
+    /// which differs between machines and changes when a test sets <see cref="CultureInfo.DefaultThreadCurrentCulture"/>.</summary>
+    const string FirmwareLogHash = "C9B4F51ED15F26E2";
 
     static readonly Lazy<string?> FirmwarePath = new(() =>
         JsonFirmware.ModulePath is { } json && Path.Combine(Path.GetDirectoryName(json)!, "libpaf.suprx") is var p && File.Exists(p) ? p : null);
@@ -52,7 +55,7 @@ public sealed unsafe class PafRectFirmwareTests(GuestMemoryFixture fx)
                 GuestMemory.Write(p + 8, w);
                 GuestMemory.Write(p + 12, h);
             }
-            string Dump(uint p) => string.Join(",", Enumerable.Range(0, 4).Select(i => GuestMemory.Read<float>(p + (uint)i * 4).ToString("R", System.Globalization.CultureInfo.InvariantCulture)));
+            string Dump(uint p) => string.Join(",", Enumerable.Range(0, 4).Select(i => GuestMemory.Read<float>(p + (uint)i * 4).ToString("R", CultureInfo.InvariantCulture)));
             var th = emu.Kernel.CreateThread("paf-rect-test", 0, 0x10000100, 0x10000, 0, 0x70000);
             Exception? failure = null;
             th.HostBody = t =>
@@ -84,7 +87,8 @@ public sealed unsafe class PafRectFirmwareTests(GuestMemoryFixture fx)
                         }
                         var ret = typeof(Paf).GetMethod(hle, BindingFlags.Instance | BindingFlags.NonPublic)!.ReturnType;
                         string rs = ret == typeof(bool) ? $" = {(r & 0xFF) != 0}" : ret == typeof(uint) ? $" = @{r - arena:X}" : "";
-                        log.Add($"{hle}({string.Join(",", floats)}){rs} {Dump(me)}");
+                        string floatText = string.Join(",", floats.Select(f => f.ToString(CultureInfo.InvariantCulture)));
+                        log.Add($"{hle}({floatText}){rs} {Dump(me)}");
                     }
                     var start = new (float, float, float, float)[] { (0, 0, 10, 4), (5, -3, 0, 2), (-2.5f, 7, 3, 3) };
                     foreach (var (cx, cy, w, h) in start)
