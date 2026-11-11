@@ -1,4 +1,4 @@
-<!-- pair: README.md sha256=c0745b585f465b3bb4baf499bc4e421c72f33f45343e52425169ca8d12e9bc0b -->
+<!-- pair: README.md sha256=1449efee64681f65932f60bd74ee4b34b5d9ab1cc4d2d946fb1c25047c02db0a -->
 <div align="center">
 
 [English](README.md) | **Português**
@@ -286,7 +286,7 @@ O que o `dotnet test tests/VitaSharp.Tests` precisa em cada sistema; um teste se
 | SDK | .NET 10 SDK | .NET 10 SDK | .NET 10 SDK |
 | Dispositivo Vulkan (testes do renderizador, dos dumps da GPU e dos jogos rodando) | o SwiftShader que vem com o Microsoft Edge ou o Google Chrome (achado sozinho) | o lavapipe do Mesa: `sudo apt install mesa-vulkan-drivers libvulkan1` (Fedora: `mesa-vulkan-drivers vulkan-loader`) | o MoltenVK: o Vulkan SDK da LunarG, ou `brew install molten-vk vulkan-loader` |
 | shaderc (testes do renderizador e de compilação de shaders; o renderizador também precisa dele) | vem do pacote Silk.NET.Shaderc.Native | vem do pacote; quando essa cópia não carrega: `sudo apt install libshaderc-dev` (Fedora, Arch: `shaderc`) | vem do pacote |
-| Uma janela do desktop (testes do overlay do jogo) | sempre | uma tela X11 ou Wayland; sem tela: `xvfb-run dotnet test tests/VitaSharp.Tests` (`sudo apt install xvfb`) | sempre |
+| Uma janela do desktop (testes do overlay do jogo) | sempre | uma tela X11 ou Wayland; sem tela: `xvfb-run dotnet test tests/VitaSharp.Tests` (`sudo apt install xvfb`) | pulados: o AppKit só cria janelas na thread principal, e os testes rodam em threads de trabalho |
 | FFmpeg (testes de decodificação de vídeo e áudio) | baixado pelo primeiro build | baixado pelo primeiro build | o do sistema: `brew install ffmpeg` |
 
 - Qualquer sistema: `VK_DRIVER_FILES` (ou `VK_ICD_FILENAMES`) com o manifesto ICD de um SwiftShader ou Mesa baixado é
