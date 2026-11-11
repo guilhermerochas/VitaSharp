@@ -74,7 +74,7 @@ public sealed partial class UsseTranslator
     readonly int[,] _repeatIncrease = new int[4, 17];
     readonly int[] _repeatMultiplier = new int[4];
 
-    public int MaxTemp, MaxPa, MaxSa, MaxOut;
+    public int MaxTemp, MaxPa, MaxSa, MaxOut, MaxFi;
 
     // data type of the last write to each register word (program order, statically addressed words only). Bit-copy
     // moves carry the source word's type, so a word VPCK'd to U8 stays U8 when moved to the output registers.
@@ -174,6 +174,7 @@ public sealed partial class UsseTranslator
             case Bank.PrimAttr: MaxPa = Math.Max(MaxPa, v); break;
             case Bank.SecAttr: MaxSa = Math.Max(MaxSa, v); break;
             case Bank.Output: MaxOut = Math.Max(MaxOut, v); break;
+            case Bank.FpInternal: MaxFi = Math.Max(MaxFi, v); break;
         }
     }
 
@@ -305,6 +306,8 @@ public sealed partial class UsseTranslator
         if (op.Bank == Bank.Predicate) return new Val($"p[{op.Num}]", 'b', 1);
         if (op.Bank == Bank.Index)
         {
+            // the USSE has two index registers (numbers 1 and 2: i.l, i.h); any other number names none, reads 0
+            if (op.Num is not (1 or 2)) { Warnings.Add($"read of index register {op.Num} (0)"); return kind == 'u' ? new Val("0u", 'u', 1) : new Val("0", 'i', 1); }
             string e = $"idx[{op.Num - 1}]";
             int sz = GxpProgram.TypeSize(op.Type);
             if (!GxpProgram.IsFloat(op.Type) && sz < 4) e = $"({e} & {(sz == 1 ? 0xFF : 0xFFFF)})";
@@ -407,6 +410,8 @@ public sealed partial class UsseTranslator
             // moves the whole word to idx, the upper half being whatever the register held before).
             int sz = GxpProgram.TypeSize(dest.Type);
             e = $"({e} & {(!GxpProgram.IsFloat(dest.Type) && sz == 1 ? 0xFF : 0xFFFF)})";
+            // only the two index registers (1 and 2) exist: a write to another number changes nothing
+            if (dest.Num is not (1 or 2)) { Warnings.Add($"write to index register {dest.Num} (dropped)"); return; }
             Line($"idx[{dest.Num - 1}] = {e};");
             return;
         }

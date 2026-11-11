@@ -146,6 +146,9 @@ public sealed partial class UsseTranslator
             case VOp.Shl: return new Val($"({a} << {b})", a.K, a.N);
             case VOp.Shr: return new Val($"({a} >> {b})", a.K, a.N);
             case VOp.Asr: return new Val($"(int({a}) >> int({b}))", 'i', a.N);
+            // the USSE takes derivatives across the 2x2 pixel quad; a vertex program has no quad (the shader compiler
+            // never emits them there) and the GLSL built-ins exist only in fragment shaders: no change across it, 0
+            case VOp.VDsx or VOp.VDsy when _program.IsVertex: return new Val(a.N == 1 ? "0.0" : $"vec{a.N}(0.0)", 'f', a.N);
             case VOp.VDsx: return new Val($"dFdx({a})", 'f', a.N);
             case VOp.VDsy: return new Val($"dFdy({a})", 'f', a.N);
             case VOp.VAdd: return new Val($"({a} + {b})", a.K, a.N);

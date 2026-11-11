@@ -1730,7 +1730,7 @@ Lista de itens futuros do VitaSharp. Marque `[x]` quando um item for concluído.
   toque na tela: o app deve tratar o touchpad do DualShock 4 como entrada do controle (SOURCE_TOUCHPAD/MOUSE do
   dispositivo do controle, separado do SOURCE_TOUCHSCREEN do aparelho; ou capturar o ponteiro) e mapear para o toque
   frontal/traseiro do Vita sem mexer no toque da tela. Validar com o controle real no celular.
-- [ ] Tradutor de shaders: GLSL que não compila em dois casos (agente de testes, 11/11/2026; vai para o dia de melhorias:
+- [x] Tradutor de shaders: GLSL que não compila em dois casos (agente de testes, 11/11/2026; vai para o dia de melhorias:
   mexe em todo shader, precisa subir a versão do gerador e replay-gpu --compare em todos os dumps). Achado pelo
   ShaderFuzzTests (os 32 opcodes USSE com operandos pseudoaleatórios, vertex e fragment, compilados com shaderc): 35 de
   768 programas. (1) dFdx/dFdy emitidos num vertex shader ("no matching overloaded function"): vs 0x0DBA30DF384131F5,
@@ -1739,13 +1739,34 @@ Lista de itens futuros do VitaSharp. Marque `[x]` quando um item for concluído.
   registradores declarado ("array index out of range"): 0x0868574A028E3EB4 (índice 19), 0x1A3B247670E1028A (5),
   0x31AC7E864902C658 (143), 0x3C5942B26370B3DD (27), 0x42CA9BAA3693FE7A (51), em vs e fs. O array deve ter o tamanho do
   maior índice que alguma instrução pode endereçar, incluindo as formas indexadas/relativas; hoje o draw inteiro cai.
-  Teste: ShaderFuzzTests.EveryTranslationCompiles (Skip até a correção; tirar o Skip junto).
-- [ ] Tempo de processo menor que um delay em volta dele (agente de testes, 10/11/2026): dois sceKernelGetProcessTimeWide
-  em volta de sceKernelDelayThread(2000) num thread guest mediram 1839 us; no Vita é sempre >= 2 ms. Suspeita:
+  Teste: ShaderFuzzTests.EveryTranslationCompiles (Skip até a correção; tirar o Skip junto). **Corrigido** (agente de
+  testes T1, 11/11/2026, gerador v26): (1) derivada num vertex program vira 0 (o USSE deriva pelo quad 2x2 de pixels, que
+  um vértice não tem; o compilador de shaders nunca a emite ali); (2) os arrays têm o tamanho do maior índice constante
+  usado (o teto de 64 registradores fazia o GLSL não compilar; fi também é rastreado). A rodada sem Skip achou mais dois
+  casos, corrigidos juntos: registrador de índice fora de 1/2 (i.l/i.h; escrita sem efeito, leitura 0) e DEPTHF num
+  vertex program (sem profundidade de fragmento: ignorado). Testes: EveryTranslationCompiles (0 de 768 falham) e
+  StageAndRegisterLimitsFollowTheHardware.
+- [x] Tempo de processo menor que um delay em volta dele (agente de testes, 10/11/2026): dois sceKernelGetProcessTimeWide
+  em volta de sceKernelDelayThread(2000) num thread guest mediram 1839 us; no Vita é sempre >= 2 ms. Causa:
   GuestClock.Observed é monotônico entre threads (_lastObserved) e um thread com ritmo de CPU (que corre até ~1 ms à
-  frente do tempo real) deixa o relógio adiantado; a leitura antes do delay já sai adiantada e a diferença encolhe. Pode
-  afetar limitadores de quadro que medem o próprio sleep. Teste: ThreadMgrHleTests.ProcessTimeAroundADelayIsAtLeastTheDelay
-  (Skip até a correção; tirar o Skip junto).
+  frente do tempo real) deixa o relógio adiantado; a leitura antes do delay já sai adiantada e o delay contava do tempo
+  real. **Corrigido** (agente de testes T1, 11/11/2026): o delay começa no maior entre a posição do thread e o último
+  tempo que algum thread leu (`GuestClock.ObservedFloor`, limitado a 5 ms à frente do relógio). Teste sem Skip:
+  ThreadMgrHleTests.ProcessTimeAroundADelayIsAtLeastTheDelay (agora simula a vantagem de 1 ms de outro thread a cada
+  medida). Correção feita, ainda não validada com jogo (limitadores de quadro que medem o próprio sleep).
+- [x] MsgPipe: envio FULL e tamanho do buffer como o threadmgr (agente de testes T1, 11/11/2026; decompilação do
+  threadmgr 3.74, só estudo: envio 0x81013DFC, TrySend 0x4CF1BE58, criação 0x81015D10). (1) Uma mensagem maior que o
+  buffer é recusada com 0x8002000B (ILLEGAL_SIZE) nos dois modos. (2) FULL só entra no buffer inteira: o Try falha com
+  MPP_FULL sem mandar nada (antes mandava a parte que cabia e devolvia MPP_FULL) e o bloqueante espera caber tudo. (3) O
+  buffer é o tamanho pedido arredondado para páginas de 4 KB (o bloco de memória que o threadmgr aloca; o campo de
+  capacidade guarda o arredondado). Testes: ThreadMgrHleTests.MsgPipeSendReceiveModes,
+  MsgPipeFullSendWaitsForRoomForTheWholeMessage. Correção feita, ainda não validada com jogo.
+- [ ] MsgPipe: DONT_WAIT (0x10) nas formas bloqueantes (sceKernelSendMsgPipe/ReceiveMsgPipe e Vector) não é "falhar em
+  vez de esperar" no firmware: o threadmgr copia o vetor, enfileira o pedido para os threads "SceKernelMsgPipeAsync"
+  (até 0x100 pedidos por processo, depois 0x80028225) e volta na hora; o envio/recebimento acontece depois nesse thread
+  (decompilação 0x81015004 / 0x8101533C, só estudo). O HLE trata 0x10 como Try. Também não há entrega direta a um
+  receptor que espera (o firmware passa os dados ao receptor antes do buffer) nem pipe sem buffer (tamanho 0). Conferir
+  com um jogo que use 0x10 antes de mudar.
 - [x] Dragon's Crown (PCSE00019): flicker e texturas erradas (relato do usuário, 10/11/2026, capturas
   `PCSE00019_20261110_214605_tudo` e `..._214648_tudo`). Agente A4 (fix/bugs-a-4), duas causas:
   (1) **corrigido em bf2f3b9**: o jogo lê o back buffer (960x544, pitch 1024) como uma textura 1024x1024 que também

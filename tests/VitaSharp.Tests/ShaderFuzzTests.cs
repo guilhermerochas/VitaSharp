@@ -54,7 +54,29 @@ public sealed class ShaderFuzzTests
         Assert.True(throws.Count == 0, $"{throws.Count} of {all.Count} translations threw: " + string.Join(" | ", throws.Take(15)));
     }
 
-    [Fact(Skip = "bug: ShaderGenerator dFdx in vertex / constant index out of the declared array, see roadmap")]
+    static GeneratedShader Translate(ulong word, bool fragment) =>
+        ShaderGenerator.Generate(Program(fragment ? [word] : [word, 0x6081000460600003, 0x50C9000A20200180], fragment),
+            new ShaderHints([], [], 0x00000000, false, 0));
+
+    /// <summary>The fuzz programs that did not compile: a derivative in a vertex program (the USSE takes it across the
+    /// pixel quad, which a vertex has none of: 0), DEPTHF in a vertex program (no fragment depth: ignored) and the
+    /// index bank past its two registers (i.l / i.h: a write changes nothing, a read gives 0).</summary>
+    [Fact]
+    public void StageAndRegisterLimitsFollowTheHardware()
+    {
+        const ulong dsx = 0x0DBA30DF384131F5, depthf = 0xFB7092E470237659, index = 0x1A3B247670E1028A;
+        Assert.DoesNotContain("dFd", Translate(dsx, false).Glsl);
+        Assert.Contains("dFd", Translate(dsx, true).Glsl);
+        var v = Translate(depthf, false);
+        Assert.DoesNotContain("gl_FragDepth", v.Glsl);
+        Assert.Contains("DEPTHF in a vertex program (ignored)", v.Warnings);
+        Assert.Contains("gl_FragDepth", Translate(depthf, true).Glsl);
+        var i = Translate(index, true);
+        Assert.Contains(i.Warnings, w => w.StartsWith("write to index register", StringComparison.Ordinal));
+        Assert.DoesNotContain("idx[5]", i.Glsl);
+    }
+
+    [Fact]
     public void EveryTranslationCompiles()
     {
         using var compiler = new ShaderCompiler(null);

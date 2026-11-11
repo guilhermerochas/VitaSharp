@@ -187,6 +187,10 @@ public static class Wait
         Interlocked.Increment(ref a[us == 0 ? 0 : us <= 100 ? 1 : us <= 1000 ? 2 : us <= 5000 ? 3 : 4]);
     }
 
+    /// <summary>How far ahead of the clock a delay may start because of <see cref="GuestClock.ObservedFloor"/> (a paced
+    /// thread runs up to ~1 ms ahead before it sleeps; the cap keeps a stray reading from stretching every delay).</summary>
+    static readonly long MaxObservedLead = Stopwatch.Frequency / 200; // 5 ms
+
     /// <summary>Plain sleep that stays responsive to emulator shutdown.</summary>
     public static void Sleep(ulong microseconds)
     {
@@ -212,7 +216,10 @@ public static class Wait
         {
             // the delay starts where the thread's emulated CPU time is, and it resumes at the deadline however late the
             // host wakes it (CpuCore.WokeAt): pacing sleeps and timer wake-ups overshoot by fractions of a millisecond
-            long end = (self?.Core.BlockedAt ?? GuestClock.Ticks) + GuestClock.FromSeconds(microseconds / 1e6 / TimeScale.Wait), slice = GuestClock.FromSeconds(0.05);
+            // nor before the process time the guest has already read (GuestClock.Observed runs ahead of real time by
+            // up to a paced thread's lead): on the Vita the process time measured around a delay is never shorter
+            long start = Math.Max(self?.Core.BlockedAt ?? GuestClock.Ticks, Math.Min(GuestClock.ObservedFloor, GuestClock.Ticks + MaxObservedLead));
+            long end = start + GuestClock.FromSeconds(microseconds / 1e6 / TimeScale.Wait), slice = GuestClock.FromSeconds(0.05);
             bool spin = microseconds >= DelaySpinMinUs, slept = false;
             // sceKernelDelayThreadCB: callbacks notified during the delay run inside it, as they arrive, and the delay
             // goes on. Jak and Daxter's vblank-callback thread sits in DelayThreadCB(0xFFFFFFFF) and counts vblanks in
@@ -1050,6 +1057,13 @@ public sealed partial class MsgPipe : KernelObject
                 result.TrySet(0);
                 return SceError.MPP_DELETED;
             }
+
+            // threadmgr refuses a message larger than the pipe's buffer, in either mode
+            if (size > BufferSize)
+            {
+                return SceError.ILLEGAL_SIZE;
+            }
+
             int gen = _cancelled;
             int sent = 0;
             bool asap = (mode & WaitAll) == 0;
@@ -1059,8 +1073,10 @@ public sealed partial class MsgPipe : KernelObject
             {
                 while (sent < size)
                 {
+                    // ASAP moves what fits; FULL goes into the buffer only whole (threadmgr copies the rest of a FULL
+                    // message only when all of it fits, and the Try form fails with MPP_FULL without sending any)
                     int free = BufferSize - _data.Count;
-                    if (free > 0)
+                    if (asap ? free > 0 : free >= size - sent)
                     {
                         int n = Math.Min(free, size - sent);
                         src.ForEach(sent, n, (a, len) => { foreach (var b in GuestMemory.Span(a, len)) { _data.Enqueue(b); } });
@@ -1078,7 +1094,8 @@ public sealed partial class MsgPipe : KernelObject
                         break;
                     }
 
-                    int r = Wait.Until(this, (p: this, gen), static t => t.p._data.Count < t.p.BufferSize, timeout,
+                    int need = asap ? 1 : size - sent;
+                    int r = Wait.Until(this, (p: this, gen, need), static t => t.p.BufferSize - t.p._data.Count >= t.need, timeout,
                         static t => t.p._deleted ? SceError.WAIT_DELETE : t.p._cancelled != t.gen ? SceError.WAIT_CANCEL : 0, WaitDescription);
                     if (r != SceError.OK)
                     {
@@ -1089,12 +1106,7 @@ public sealed partial class MsgPipe : KernelObject
             }
             finally { SendWaiters--; }
             result.TrySet((uint)sent);
-            if (sent == 0 && size > 0)
-            {
-                return SceError.MPP_FULL;
-            }
-
-            if (!asap && sent < size)
+            if (asap ? sent == 0 && size > 0 : sent < size)
             {
                 return SceError.MPP_FULL;
             }

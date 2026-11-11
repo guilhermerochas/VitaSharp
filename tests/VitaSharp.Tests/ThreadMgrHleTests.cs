@@ -1,6 +1,7 @@
 using VitaSharp.Core.Hle.Modules;
 using VitaSharp.Core.Kernel;
 using VitaSharp.Core.Memory;
+using VitaSharp.Core.Util;
 using static VitaSharp.Tests.HleHarness;
 using Mutex = VitaSharp.Core.Kernel.Mutex;
 
@@ -301,16 +302,20 @@ public sealed class ThreadMgrHleTests(GuestMemoryFixture fx) : IDisposable
         });
     }
 
-    /// <summary>On the Vita the process time measured around sceKernelDelayThread(2000) is at least 2 ms. Here the
-    /// process clock (GuestClock.Observed) is monotonic across threads and another, paced thread can leave it up to
-    /// ~1 ms ahead of real time, so the measured delay can come out shorter (1839 us seen).</summary>
-    [Fact(Skip = "bug: GuestClock.Observed cross-thread monotonic lead, see roadmap")]
+    /// <summary>On the Vita the process time measured around sceKernelDelayThread(2000) is at least 2 ms. The process
+    /// clock (GuestClock.Observed) is monotonic across threads, and another, paced thread leaves it up to ~1 ms ahead of
+    /// real time (simulated here with a 1 ms lead before each reading); the delay counts from that reading, or the
+    /// measured delay comes out shorter (1839 us seen).</summary>
+    [Fact]
     public void ProcessTimeAroundADelayIsAtLeastTheDelay()
     {
         _h.OnGuest(_ =>
         {
             for (int i = 0; i < 20; i++)
             {
+                var other = new Thread(() => GuestClock.Observed(GuestClock.Ticks + GuestClock.FromSeconds(0.001)));
+                other.Start();
+                other.Join();
                 ulong t0 = (ulong)Invoke(Tm, "sceKernelGetProcessTimeWide")!;
                 Call(Tm, "sceKernelDelayThread", 2000u);
                 ulong t1 = (ulong)Invoke(Tm, "sceKernelGetProcessTimeWide")!;
@@ -903,24 +908,35 @@ public sealed class ThreadMgrHleTests(GuestMemoryFixture fx) : IDisposable
     {
         _h.OnGuest(self =>
         {
+            // threadmgr rounds the buffer up to whole 4 KB pages
             int p = Call(Tm, "sceKernelCreateMsgPipe", "mpp", 0x40u, 0u, 16u, 0u);
             Assert.Equal(7, Call(Tm, "sceKernelGetThreadmgrUIDClass", p));
             Assert.Equal(self.Uid, Call(Tm, "sceKernelGetMsgPipeCreatorId", (uint)p));
-            uint src = _h.Alloc(32), dst = _h.Alloc(32), res = _h.Word(0);
-            for (uint i = 0; i < 32; i++) GuestMemory.Write(src + i, (byte)(i + 1));
-            // FULL (1): all 12 bytes fit
-            Assert.Equal(0, Call(Tm, "sceKernelSendMsgPipe", p, src, 12u, MsgPipe.WaitAll, new Ptr<uint>(res), new Ptr<uint>(0)));
-            Assert.Equal(12u, GuestMemory.R32(res));
+            uint src = _h.Alloc(0x1100), dst = _h.Alloc(0x1100), res = _h.Word(0);
+            for (uint i = 0; i < 0x1100; i++) GuestMemory.Write(src + i, (byte)(i * 7 + 1));
+            // a message larger than the buffer is refused in either mode
+            Assert.Equal(SceError.ILLEGAL_SIZE, Call(Tm, "sceKernelSendMsgPipe", p, src, 0x1001u, MsgPipe.WaitAsap, new Ptr<uint>(res), new Ptr<uint>(0)));
+            Assert.Equal(SceError.ILLEGAL_SIZE, Call(Tm, "sceKernelTrySendMsgPipe", p, src, 0x1001u, MsgPipe.WaitAll, new Ptr<uint>(res)));
+            // FULL (1): all 0xFF4 bytes fit
+            Assert.Equal(0, Call(Tm, "sceKernelSendMsgPipe", p, src, 0xFF4u, MsgPipe.WaitAll, new Ptr<uint>(res), new Ptr<uint>(0)));
+            Assert.Equal(0xFF4u, GuestMemory.R32(res));
             // SceKernelMppInfo: +0x2C bufSize, +0x30 freeSize
             uint info = Info(0x3C);
             Assert.Equal(0, Call(Tm, "sceKernelGetMsgPipeInfo", p, info));
-            Assert.Equal(16u, GuestMemory.R32(info + 0x2C));
-            Assert.Equal(4u, GuestMemory.R32(info + 0x30));
+            Assert.Equal(0x1000u, GuestMemory.R32(info + 0x2C));
+            Assert.Equal(12u, GuestMemory.R32(info + 0x30));
             Assert.Equal(0, Call(Tm, "_sceKernelGetMsgPipeInfo", p, info, _h.Word(0x34)));
             GuestMemory.W32(info, 0x3C); // the syscall form wrote its smaller size there
+            // FULL that does not fit: the Try form sends nothing and fails, the blocking one times out with nothing sent
+            Assert.Equal(SceError.MPP_FULL, Call(Tm, "sceKernelTrySendMsgPipe", p, src + 0xFF4, 16u, MsgPipe.WaitAll, new Ptr<uint>(res)));
+            Assert.Equal(0u, GuestMemory.R32(res));
+            Assert.Equal(SceError.WAIT_TIMEOUT, Call(Tm, "sceKernelSendMsgPipe", p, src + 0xFF4, 16u, MsgPipe.WaitAll, new Ptr<uint>(res), new Ptr<uint>(_h.Word(1000))));
+            Assert.Equal(0u, GuestMemory.R32(res));
+            Assert.Equal(0, Call(Tm, "sceKernelGetMsgPipeInfo", p, info));
+            Assert.Equal(12u, GuestMemory.R32(info + 0x30));
             // ASAP (0): moves what fits
-            Assert.Equal(0, Call(Tm, "sceKernelTrySendMsgPipe", p, src + 12, 8u, MsgPipe.WaitAsap, new Ptr<uint>(res)));
-            Assert.Equal(4u, GuestMemory.R32(res));
+            Assert.Equal(0, Call(Tm, "sceKernelTrySendMsgPipe", p, src + 0xFF4, 16u, MsgPipe.WaitAsap, new Ptr<uint>(res)));
+            Assert.Equal(12u, GuestMemory.R32(res));
             Assert.Equal(SceError.MPP_FULL, Call(Tm, "sceKernelTrySendMsgPipe", p, src, 1u, MsgPipe.WaitAsap, new Ptr<uint>(res)));
             Assert.Equal(0u, GuestMemory.R32(res));
             // a full pipe with a timed send: WAIT_TIMEOUT, nothing sent
@@ -929,12 +945,13 @@ public sealed class ThreadMgrHleTests(GuestMemoryFixture fx) : IDisposable
             Assert.Equal(0, Call(Tm, "sceKernelReceiveMsgPipe", p, dst, 10u, MsgPipe.WaitAsap, new Ptr<uint>(res), new Ptr<uint>(0)));
             Assert.Equal(10u, GuestMemory.R32(res));
             Assert.True(GuestMemory.ReadSpan(dst, 10).SequenceEqual(GuestMemory.ReadSpan(src, 10)));
-            Assert.Equal(0, Call(Tm, "sceKernelTryReceiveMsgPipe", p, dst, 32u, MsgPipe.WaitAsap, new Ptr<uint>(res)));
-            Assert.Equal(6u, GuestMemory.R32(res));
+            Assert.Equal(0, Call(Tm, "sceKernelTryReceiveMsgPipe", p, dst, 0x1100u, MsgPipe.WaitAsap, new Ptr<uint>(res)));
+            Assert.Equal(0xFF6u, GuestMemory.R32(res));
+            Assert.True(GuestMemory.ReadSpan(dst, 0xFF6).SequenceEqual(GuestMemory.ReadSpan(src + 10, 0xFF6)));
             Assert.Equal(SceError.MPP_EMPTY, Call(Tm, "sceKernelTryReceiveMsgPipe", p, dst, 4u, MsgPipe.WaitAsap, new Ptr<uint>(res)));
             Assert.Equal(SceError.WAIT_TIMEOUT, Call(Tm, "sceKernelReceiveMsgPipe", p, dst, 4u, MsgPipe.WaitAll, new Ptr<uint>(res), new Ptr<uint>(_h.Word(1000))));
             Assert.Equal(0u, GuestMemory.R32(res));
-            // DONT_WAIT (0x10) on the blocking call behaves like the Try form
+            // DONT_WAIT (0x10) on the blocking call: here like the Try form (the firmware queues it to its async threads, roadmap)
             Assert.Equal(SceError.MPP_EMPTY, Call(Tm, "sceKernelReceiveMsgPipe", p, dst, 4u, MsgPipe.DontWait, new Ptr<uint>(res), new Ptr<uint>(0)));
 
             Assert.Equal(0, Call(Tm, "sceKernelCancelMsgPipe", p, new Ptr<int>(_h.Word(9)), new Ptr<int>(_h.Word(9))));
@@ -960,7 +977,7 @@ public sealed class ThreadMgrHleTests(GuestMemoryFixture fx) : IDisposable
             GuestMemory.W32(opt, 8);
             int sys = Call(Tm, "_sceKernelCreateMsgPipeWithLR", "sys", 0x40u, 0u, opt);
             Call(Tm, "sceKernelGetMsgPipeInfo", sys, info);
-            Assert.Equal(8u, GuestMemory.R32(info + 0x2C));
+            Assert.Equal(0x1000u, GuestMemory.R32(info + 0x2C));
         });
     }
 
@@ -1045,6 +1062,38 @@ public sealed class ThreadMgrHleTests(GuestMemoryFixture fx) : IDisposable
             Assert.Equal(0, Call(Tm, "sceKernelDeleteMsgPipe", p));
             _h.Join(d);
             Assert.Equal(SceError.WAIT_DELETE, got);
+        });
+    }
+
+    /// <summary>A blocking FULL send that does not fit waits with nothing sent (threadmgr copies a FULL message into the
+    /// buffer only whole) and completes once a receive leaves room for all of it.</summary>
+    [Fact]
+    public void MsgPipeFullSendWaitsForRoomForTheWholeMessage()
+    {
+        _h.OnGuest(_ =>
+        {
+            int p = Call(Tm, "sceKernelCreateMsgPipe", "mppf", 0x40u, 0u, 0x1000u, 0u);
+            uint src = _h.Alloc(0x1000), dst = _h.Alloc(0x1000), res = _h.Word(9), info = Info(0x3C);
+            for (uint i = 0; i < 0x1000; i++) GuestMemory.Write(src + i, (byte)i);
+            Assert.Equal(0, Call(Tm, "sceKernelSendMsgPipe", p, src, 0xFFCu, MsgPipe.WaitAll, new Ptr<uint>(0), new Ptr<uint>(0)));
+            int got = 1;
+            var w = _h.Start(_ => got = Call(Tm, "sceKernelSendMsgPipe", p, src + 0x100, 8u, MsgPipe.WaitAll, new Ptr<uint>(res), new Ptr<uint>(0)), "mpp-full");
+            Until(() => { Call(Tm, "sceKernelGetMsgPipeInfo", p, info); return GuestMemory.R32(info + 0x34) == 1; }, "the send wait");
+            Assert.Equal(4u, GuestMemory.R32(info + 0x30)); // nothing of the 8 bytes went in
+            // 2 bytes out: still no room for the whole message
+            Assert.Equal(0, Call(Tm, "sceKernelReceiveMsgPipe", p, dst, 2u, MsgPipe.WaitAll, new Ptr<uint>(0), new Ptr<uint>(0)));
+            Thread.Sleep(20);
+            Call(Tm, "sceKernelGetMsgPipeInfo", p, info);
+            Assert.Equal(1u, GuestMemory.R32(info + 0x34));
+            Assert.Equal(6u, GuestMemory.R32(info + 0x30));
+            Assert.Equal(0, Call(Tm, "sceKernelReceiveMsgPipe", p, dst + 2, 2u, MsgPipe.WaitAll, new Ptr<uint>(0), new Ptr<uint>(0)));
+            _h.Join(w);
+            Assert.Equal(0, got);
+            Assert.Equal(8u, GuestMemory.R32(res));
+            Assert.Equal(0, Call(Tm, "sceKernelReceiveMsgPipe", p, dst, 0x1000u, MsgPipe.WaitAsap, new Ptr<uint>(res), new Ptr<uint>(0)));
+            Assert.Equal(0x1000u, GuestMemory.R32(res));
+            Assert.True(GuestMemory.ReadSpan(dst + 0xFF8, 8).SequenceEqual(GuestMemory.ReadSpan(src + 0x100, 8)));
+            Assert.Equal(0, Call(Tm, "sceKernelDeleteMsgPipe", p));
         });
     }
 
@@ -1152,8 +1201,21 @@ public sealed class ThreadMgrHleTests(GuestMemoryFixture fx) : IDisposable
             Assert.Equal(0x3Cu, GuestMemory.R32(info));
             GuestMemory.W32(info, 0x44); // the syscall form wrote its smaller size there
             // cancel drops the notifications without running the callback
+            // a second callback of the thread notified once: cancelling the first leaves only its notification pending
+            int cb2 = Call(Tm, "sceKernelCreateCallback", "cb2", 0u, 0x81000003u, 0u);
+            _h.Join(_h.Start(_ => Call(Tm, "sceKernelNotifyCallback", cb2, 1), "cb2-notify"));
+            Assert.Equal(3, self.PendingCallbacks);
+            // the kernel clears the count, the argument and the notifier: all of its notifications stop being pending
             Assert.Equal(0, Call(Tm, "sceKernelCancelCallback", cb));
             Assert.Equal(0, Call(Tm, "sceKernelGetCallbackCount", cb));
+            Assert.Equal(1, self.PendingCallbacks);
+            Assert.Equal(0, Call(Tm, "sceKernelGetCallbackInfo", cb, info));
+            Assert.Equal(0u, GuestMemory.R32(info + 0x34));
+            Assert.Equal(0u, GuestMemory.R32(info + 0x38));
+            Assert.Equal(0u, GuestMemory.R32(info + 0x3C));
+            Assert.Equal(0, Call(Tm, "sceKernelCancelCallback", cb2));
+            Assert.Equal(0, self.PendingCallbacks);
+            Assert.Equal(0, Call(Tm, "sceKernelDeleteCallback", cb2));
             Assert.Equal(0, Call(Tm, "sceKernelCheckCallback")); // nothing pending: nothing runs
             Assert.Equal(0, Call(Tm, "sceKernelDeleteCallback", cb));
             Assert.Equal(SceError.UNKNOWN_CALLBACK_ID, Call(Tm, "sceKernelNotifyCallback", cb, 1));
