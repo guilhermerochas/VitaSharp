@@ -7,18 +7,18 @@ namespace VitaSharp.Tests;
 
 /// <summary>G2 sections 5 and 6: SceLibLocation, SceGps, SceNear*, ScePerf/Razor, SceDeci4pUserp, backtrace, RNG.</summary>
 [Collection("guest")]
-public sealed class LocationPerfHleTests(GuestMemoryFixture fx)
+public sealed class LocationPerfHleTests(GuestMemoryFixture fixture)
 {
-    static object? Invoke<T>(T module, string name, params object[] args) =>
+    private static object? Invoke<T>(T module, string name, params object[] args) =>
         typeof(T).GetMethod(name, BindingFlags.Instance | BindingFlags.NonPublic | BindingFlags.Public)!.Invoke(module, args);
-    static int Call<T>(T module, string name, params object[] args) => (int)Invoke(module, name, args)!;
-    static Ptr<T> P<T>(uint a) where T : unmanaged => new(a);
+    private static int Call<T>(T module, string name, params object[] args) => (int)Invoke(module, name, args)!;
+    private static Ptr<T> P<T>(uint a) where T : unmanaged => new(a);
 
     [Fact]
     public void LocationHandlesAndMethods()
     {
         var l = new Location();
-        uint p = fx.Memory.Alloc(0x10, "loc-h");
+        uint p = fixture.Memory.Alloc(0x10, "loc-h");
         Assert.Equal(Location.ERR_INVALID_ADDRESS, Call(l, "sceLocationOpen", P<uint>(0), 1u, 1u));
         Assert.Equal(Location.ERR_INVALID_LOCATION_METHOD, Call(l, "sceLocationOpen", P<uint>(p), 6u, 1u));
         Assert.Equal(Location.ERR_INVALID_HEADING_METHOD, Call(l, "sceLocationOpen", P<uint>(p), 5u, 5u));
@@ -44,7 +44,7 @@ public sealed class LocationPerfHleTests(GuestMemoryFixture fx)
     public void LocationMeasurementsAreDenied()
     {
         var l = new Location();
-        uint p = fx.Memory.Alloc(0x80, "loc-m");
+        uint p = fixture.Memory.Alloc(0x80, "loc-m");
         Assert.Equal(0, Call(l, "sceLocationOpen", P<uint>(p), 1u, 1u));
         uint h = GuestMemory.R32(p);
         uint info = p + 0x10;
@@ -77,7 +77,7 @@ public sealed class LocationPerfHleTests(GuestMemoryFixture fx)
     public void LocationConfirmDialogAndPermission()
     {
         var l = new Location();
-        uint p = fx.Memory.Alloc(0x40, "loc-c");
+        uint p = fixture.Memory.Alloc(0x40, "loc-c");
         Assert.Equal(0, Call(l, "sceLocationOpen", P<uint>(p), 0u, 0u));
         uint h = GuestMemory.R32(p);
         Assert.Equal(0, Call(l, "sceLocationConfirmGetStatus", h, P<uint>(p + 4)));
@@ -116,7 +116,7 @@ public sealed class LocationPerfHleTests(GuestMemoryFixture fx)
     public void NearIsUnavailableAndDialogFinishesAborted()
     {
         var n = new NearUtil();
-        uint id = fx.Memory.Alloc(0x40, "near-id"), mem = fx.Memory.Alloc(8, "near-mem");
+        uint id = fixture.Memory.Alloc(0x40, "near-id"), mem = fixture.Memory.Alloc(8, "near-mem");
         GuestMemory.WriteCString(id, "NPWR01234_00");
         GuestMemory.W32(mem, 0x81000000);
         GuestMemory.W32(mem + 4, 0x40000);
@@ -134,7 +134,7 @@ public sealed class LocationPerfHleTests(GuestMemoryFixture fx)
         Assert.Equal(0, Call(n, "NearE608000B", 0u));
         Assert.Equal(0, Call(n, "NearEarlyNothing"));
 
-        uint r = fx.Memory.Alloc(0x40, "near-dlg");
+        uint r = fixture.Memory.Alloc(0x40, "near-dlg");
         GuestMemory.W32(r, 0xFFFFFFFF);
         GuestMemory.W32(r + 4, 0x11223344);
         Assert.Equal(NearUtil.DialogNone, Call(n, "sceNearDialogGetStatus"));
@@ -152,7 +152,7 @@ public sealed class LocationPerfHleTests(GuestMemoryFixture fx)
     public void PerfAndRazorQueries()
     {
         var d = new DebugPerf();
-        uint p = fx.Memory.Alloc(0x40, "perf");
+        uint p = fixture.Memory.Alloc(0x40, "perf");
         GuestMemory.W32(p, 0xFFFFFFFF);
         Assert.Equal(0, Call(d, "scePerfArmPmonGetCounterValue", 0, 0u, P<uint>(p)));
         Assert.Equal(0u, GuestMemory.R32(p));
@@ -176,7 +176,7 @@ public sealed class LocationPerfHleTests(GuestMemoryFixture fx)
     public void Deci4pHasNoHost()
     {
         var d = new DebugPerf();
-        uint name = fx.Memory.Alloc(0x10, "deci");
+        uint name = fixture.Memory.Alloc(0x10, "deci");
         GuestMemory.WriteCString(name, "proto");
         Assert.Equal(SceError.ERROR, Call(d, "sceKernelDeci4pOpen", name, 1u, 0x100u));
         Assert.Equal(SceError.UNKNOWN_UID, Call(d, "sceKernelDeci4pRead", 1, 0u, 0u, 0u));
@@ -187,7 +187,7 @@ public sealed class LocationPerfHleTests(GuestMemoryFixture fx)
     public void BacktraceArgsValidation()
     {
         var pm = new ProcessMgr();
-        uint args = fx.Memory.Alloc(0x10, "bt-args");
+        uint args = fixture.Memory.Alloc(0x10, "bt-args");
         Assert.Equal(SceError.INVALID_ARGUMENT, Call(pm, "_sceKernelBacktrace", 0, 0u, 0u, 0u));
         GuestMemory.W32(args, 0);
         GuestMemory.W32(args + 4, 1); // SCE_KERNEL_BACKTRACE_MODE_KERNEL
@@ -200,7 +200,7 @@ public sealed class LocationPerfHleTests(GuestMemoryFixture fx)
     public void RandomNumberLimits()
     {
         var s = new Security();
-        uint p = fx.Memory.Alloc(0x80, "rng");
+        uint p = fixture.Memory.Alloc(0x80, "rng");
         GuestMemory.Span(p, 0x41).Clear();
         Assert.Equal(0, Call(s, "sceKernelGetRandomNumber", p, 64u));
         Assert.Contains(GuestMemory.Span(p, 64).ToArray(), b => b != 0);

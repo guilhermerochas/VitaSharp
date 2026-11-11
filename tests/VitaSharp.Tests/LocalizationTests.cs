@@ -12,13 +12,13 @@ namespace VitaSharp.Tests;
 /// </summary>
 public partial class LocalizationTests
 {
-    static readonly IReadOnlyDictionary<string, string> English = Loc.Table(CultureInfo.InvariantCulture);
-    static readonly IReadOnlyDictionary<string, string> Portuguese = Loc.Table(CultureInfo.GetCultureInfo(Loc.Portuguese));
+    private static readonly IReadOnlyDictionary<string, string> s_english = Loc.Table(CultureInfo.InvariantCulture);
+    private static readonly IReadOnlyDictionary<string, string> s_portuguese = Loc.Table(CultureInfo.GetCultureInfo(Loc.Portuguese));
 
     [GeneratedRegex(@"\{(\d+)")]
     private static partial Regex Placeholder();
 
-    static string Root([CallerFilePath] string source = "")
+    private static string Root([CallerFilePath] string source = "")
     {
         for (var d = new DirectoryInfo(Path.GetDirectoryName(source)!); d != null; d = d.Parent)
         {
@@ -34,20 +34,20 @@ public partial class LocalizationTests
     [Fact]
     public void BothLanguagesHaveTheSameKeysAndPlaceholders()
     {
-        Assert.True(English.Count > 400, $"English table has {English.Count} texts");
-        Assert.Empty(English.Keys.Except(Portuguese.Keys).Select(k => "missing in pt-BR: " + k));
-        Assert.Empty(Portuguese.Keys.Except(English.Keys).Select(k => "missing in en: " + k));
+        Assert.True(s_english.Count > 400, $"English table has {s_english.Count} texts");
+        Assert.Empty(s_english.Keys.Except(s_portuguese.Keys).Select(k => "missing in pt-BR: " + k));
+        Assert.Empty(s_portuguese.Keys.Except(s_english.Keys).Select(k => "missing in en: " + k));
         var bad = new List<string>();
-        foreach (var (key, en) in English)
+        foreach ((string? key, string? en) in s_english)
         {
-            string pt = Portuguese[key];
+            string pt = s_portuguese[key];
             if (en.Trim().Length == 0 || pt.Trim().Length == 0)
             {
                 bad.Add($"{key}: empty");
             }
 
-            var a = Placeholder().Matches(en).Select(m => m.Groups[1].Value).Distinct().Order();
-            var b = Placeholder().Matches(pt).Select(m => m.Groups[1].Value).Distinct().Order();
+            IOrderedEnumerable<string> a = Placeholder().Matches(en).Select(m => m.Groups[1].Value).Distinct().Order();
+            IOrderedEnumerable<string> b = Placeholder().Matches(pt).Select(m => m.Groups[1].Value).Distinct().Order();
             if (!a.SequenceEqual(b))
             {
                 bad.Add($"{key}: placeholders {string.Join(",", a)} vs {string.Join(",", b)}");
@@ -73,8 +73,8 @@ public partial class LocalizationTests
         Assert.Equal(Loc.Portuguese, Loc.Pick("pt").Name);
         Assert.Equal(Loc.English, Loc.Pick("en").Name);
         Assert.Equal(Loc.English, Loc.Pick("fr-FR").Name);
-        Assert.Equal("Biblioteca", Portuguese["Library"]);
-        Assert.Equal("Library", English["Library"]);
+        Assert.Equal("Biblioteca", s_portuguese["Library"]);
+        Assert.Equal("Library", s_english["Library"]);
     }
 
     /// <summary>Every key the sources ask for: Loc.Get/Format("Key"), T("Key"), and the launcher's Strings properties and
@@ -86,7 +86,7 @@ public partial class LocalizationTests
         var used = new SortedSet<string>();
         var call = new Regex(@"\b(?:Loc\.(?:Get|Format)|T)\(""(\w+)""");
         var own = new Regex(@"public static string (\w+)(?:\([^)]*\))? => (?:T\(\)|F\(T\(\))");
-        foreach (var file in Directory.EnumerateFiles(src, "*.cs", SearchOption.AllDirectories))
+        foreach (string file in Directory.EnumerateFiles(src, "*.cs", SearchOption.AllDirectories))
         {
             if (file.Contains($"{Path.DirectorySeparatorChar}obj{Path.DirectorySeparatorChar}"))
             {
@@ -108,7 +108,7 @@ public partial class LocalizationTests
             }
         }
         Assert.True(used.Count > 400, $"only {used.Count} keys found in the sources");
-        var missing = used.Where(k => !English.ContainsKey(k)).ToList();
+        var missing = used.Where(k => !s_english.ContainsKey(k)).ToList();
         Assert.Empty(missing);
     }
 
@@ -122,14 +122,14 @@ public partial class LocalizationTests
     {
         string dir = Path.Combine(Root(), "src", project);
         var bad = new List<string>();
-        foreach (var file in Directory.EnumerateFiles(dir, "*.cs", SearchOption.AllDirectories))
+        foreach (string file in Directory.EnumerateFiles(dir, "*.cs", SearchOption.AllDirectories))
         {
             if (file.Contains($"{Path.DirectorySeparatorChar}obj{Path.DirectorySeparatorChar}") || file.Contains($"{Path.DirectorySeparatorChar}bin{Path.DirectorySeparatorChar}"))
             {
                 continue;
             }
 
-            var lines = File.ReadAllLines(file);
+            string[] lines = File.ReadAllLines(file);
             for (int i = 0; i < lines.Length; i++)
             {
                 if (lines[i].Any(c => c > 127 && c != '\uFEFF'))

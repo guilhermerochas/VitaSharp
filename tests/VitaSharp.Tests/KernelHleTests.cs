@@ -10,14 +10,14 @@ namespace VitaSharp.Tests;
 /// <summary>Package A (kernel) HLE: info structs, open/close handles, atomics, simple events, timers, cond SignalTo,
 /// message pipe vectors, rw lock cancel, RTC calendar helpers.</summary>
 [Collection("guest")]
-public sealed class KernelHleTests(GuestMemoryFixture fx)
+public sealed class KernelHleTests(GuestMemoryFixture fixture)
 {
-    static T Call<T>(object module, string name, params object[] args) =>
+    private static T Call<T>(object module, string name, params object[] args) =>
         (T)module.GetType().GetMethod(name, BindingFlags.Instance | BindingFlags.NonPublic | BindingFlags.Public)!.Invoke(module, args)!;
 
-    uint Alloc(uint size, string tag = "kt")
+    private uint Alloc(uint size, string tag = "kt")
     {
-        uint p = fx.Memory.Alloc(size, tag);
+        uint p = fixture.Memory.Alloc(size, tag);
         GuestMemory.Fill(p, 0, size);
         return p;
     }
@@ -281,7 +281,7 @@ public sealed class KernelHleTests(GuestMemoryFixture fx)
         Assert.Null(table.Get<MsgPipe>(lu));
     }
 
-    uint WriteName(string s)
+    private uint WriteName(string s)
     {
         uint p = Alloc(32);
         GuestMemory.WriteCString(p, s, 32);

@@ -1,3 +1,5 @@
+using System.Reflection;
+using VitaSharp.Core.Hle;
 using VitaSharp.Core.Kernel;
 using VitaSharp.Core.Loader;
 using VitaSharp.Core.Memory;
@@ -7,24 +9,24 @@ namespace VitaSharp.Tests;
 
 /// <summary>Package A, second pass: sceKernelCancelMutex and module unloading (linker unbinding).</summary>
 [Collection("guest")]
-public sealed class KernelModuleHleTests(GuestMemoryFixture fx)
+public sealed class KernelModuleHleTests(GuestMemoryFixture fixture)
 {
-    uint Alloc(uint size, string tag = "km")
+    private uint Alloc(uint size, string tag = "km")
     {
-        uint p = fx.Memory.Alloc(size, tag);
+        uint p = fixture.Memory.Alloc(size, tag);
         GuestMemory.Fill(p, 0, size);
         return p;
     }
 
-    static GuestThread FakeThread() =>
+    private static GuestThread FakeThread() =>
         (GuestThread)System.Runtime.CompilerServices.RuntimeHelpers.GetUninitializedObject(typeof(GuestThread));
 
     [Fact]
     public void CancelMutexWakesWaitersAndResetsCount()
     {
-        var owner = FakeThread();
-        var waiter = FakeThread();
-        var canceller = FakeThread();
+        GuestThread owner = FakeThread();
+        GuestThread waiter = FakeThread();
+        GuestThread canceller = FakeThread();
         var m = new Mutex { Name = "m", InitCount = 0 };
         Assert.Equal(0, m.TryLock(owner, 1));
         int r = 0;
@@ -142,13 +144,13 @@ public sealed class KernelModuleHleTests(GuestMemoryFixture fx)
     public void EveryHleRegistrationHasANid()
     {
         var missing = new List<string>();
-        foreach (var t in typeof(VitaSharp.Core.Hle.HleModule).Assembly.GetTypes()
+        foreach (Type? t in typeof(VitaSharp.Core.Hle.HleModule).Assembly.GetTypes()
                      .Where(t => t.IsSubclassOf(typeof(VitaSharp.Core.Hle.HleModule)) && !t.IsAbstract))
         {
-            foreach (var mi in t.GetMethods(System.Reflection.BindingFlags.Instance | System.Reflection.BindingFlags.Public |
+            foreach (MethodInfo mi in t.GetMethods(System.Reflection.BindingFlags.Instance | System.Reflection.BindingFlags.Public |
                                             System.Reflection.BindingFlags.NonPublic | System.Reflection.BindingFlags.DeclaredOnly))
             {
-                foreach (var a in System.Reflection.CustomAttributeExtensions.GetCustomAttributes<VitaSharp.Core.Hle.HleAttribute>(mi))
+                foreach (HleAttribute a in System.Reflection.CustomAttributeExtensions.GetCustomAttributes<VitaSharp.Core.Hle.HleAttribute>(mi))
                 {
                     string name = a.Name ?? mi.Name;
                     if (a.Nid == 0 && !VitaSharp.Core.Hle.NidDatabase.LookupName(name).Any(n => a.Library == null || n.Library == a.Library))
@@ -162,13 +164,13 @@ public sealed class KernelModuleHleTests(GuestMemoryFixture fx)
         Assert.Empty(missing);
     }
 
-    sealed class FakeHle : IImportResolver
+    private sealed class FakeHle : IImportResolver
     {
         public uint GetHleFunctionIndex(uint nid, uint libNid, string libName) => nid & 0xFFFF;
         public uint GetHleVariable(uint nid) => 0;
     }
 
-    sealed class GuestCodeHle(uint nid, uint code) : IImportResolver
+    private sealed class GuestCodeHle(uint nid, uint code) : IImportResolver
     {
         public uint GetHleFunctionIndex(uint n, uint libNid, string libName) => n & 0xFFFF;
         public uint GetHleVariable(uint n) => 0;
@@ -186,7 +188,7 @@ public sealed class KernelModuleHleTests(GuestMemoryFixture fx)
         var linker = new Linker(new GuestCodeHle(nidCode, newCode));
         var importer = new LoadedModule { Name = "importer", Segments = { [0] = new SegmentInfo(seg, 0, 0x100) } };
         uint sCode = seg, sCode2 = seg + 0x10, sSvc = seg + 0x20, sExport = seg + 0x30, sHooked = seg + 0x40;
-        foreach (var (n, s) in new[] { (nidCode, sCode), (nidCode, sCode2), (nidSvc, sSvc), (nidExport, sExport), (nidHooked, sHooked) })
+        foreach ((uint n, uint s) in new[] { (nidCode, sCode), (nidCode, sCode2), (nidSvc, sSvc), (nidExport, sExport), (nidHooked, sHooked) })
         {
             linker.BindFunctionImport(n, libNid, "Lib", s, importer.Segments);
         }
@@ -207,7 +209,7 @@ public sealed class KernelModuleHleTests(GuestMemoryFixture fx)
         Assert.Equal(hook, StubTarget(sHooked));
     }
 
-    static uint StubTarget(uint stub)
+    private static uint StubTarget(uint stub)
     {
         uint w0 = GuestMemory.R32(stub), w1 = GuestMemory.R32(stub + 4);
         return ((w0 >> 4) & 0xF000) | (w0 & 0xFFF) | ((((w1 >> 4) & 0xF000) | (w1 & 0xFFF)) << 16);
