@@ -1405,6 +1405,19 @@ Lista de itens futuros do VitaSharp. Marque `[x]` quando um item for concluído.
 
 ## Código
 
+- [ ] **PRIORIDADE (11/11/2026, dia de refatoração)** O emulador é genérico (regra do usuário: nada específico a
+  não ser a camada Vulkan; ver `docs/agents/regras.md`). (1) Auditoria arquivo por arquivo de src/ procurando qualquer
+  comportamento por jogo, app, homebrew ou módulo de terceiro (comparação de ID/nome, listas fixas, caminhos fixos,
+  HLE de módulo que não é do firmware) e lista com o arquivo:linha de cada um. (2) Trocar cada um pelo caminho
+  genérico, já encontrados: `Hle/Modules/Taihen.cs` e `Hle/Modules/Kubridge.cs` (módulos de kernel de homebrew em
+  HLE -> rodar o `.skprx` original no ambiente de kernel genérico; enquanto ele não existe, deixar registrado como
+  dívida e não acrescentar nada específico), `Hle/LleLibraries.cs` (lista fixa e caminhos de homebrew -> carregar
+  qualquer módulo importado pelos caminhos do carregador do Vita), `Shell/ShellAssets.cs` `HomeSystemApps` (lista de
+  NPXS -> app.db do firmware), "é app do sistema" pelo prefixo `NPXS` em `Capture/CaptureContext.cs` e
+  `Desktop/Runner.cs` (-> categoria do param.sfo / origem vs0:), região pela letra do ID em
+  `Desktop/Launcher/GameLibrary.cs` (-> param.sfo). (3) Teste que falha se aparecer comparação com ID de título
+  literal no código (exceto testes e comentários). Validar: suíte completa, replay-gpu --compare idêntico, shell + apps
+  do sistema e os jogos da varredura sem regressão.
 - [ ] Projeto de benchmark à parte (pedido do usuário, 11/11/2026): `tests/VitaSharp.Benchmarks` com BenchmarkDotNet
   (`[MemoryDiagnoser]` + `[DisassemblyDiagnoser]`), fora da suíte de testes e do build normal, para medir os caminhos
   quentes isolados antes e depois de cada otimização: execução do worker da GPU (dump curto do Killzone), cópia e
