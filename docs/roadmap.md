@@ -68,17 +68,6 @@ Lista de itens futuros do VitaSharp. Marque `[x]` quando um item for concluído.
   do controle) falha com "thread 'AudioOutput' did not stop (in ); restart the game" (09/11/2026, main 9f21653, APK
   CoreCLR; log `lab\f1_clr1\clr_0\last.log` no scratchpad do agente); em 60 s carrega e roda. O roteiro de medida
   (`build/android-perf-run.sh`) carrega o F1 em 60 s por isso.
-- [ ] F1 2011 (PCSE00002) no Android pisca nos vídeos de abertura (09/11/2026, laboratório): quadros inteiros pretos
-  entre as pictures do filme (luma 16 <-> 0). Contagem de `FLICKER frame` com `VITASHARP_FLICKER_CHECK=1`, cold boot,
-  35 s, 2 execuções por variante intercaladas: NativeAOT f010c45 40/36 e 32/58 (controle de outra rodada);
-  `DECODER_HISTORY=0` 110/78; `TEX_CONTENT_CACHE=0` 99/47; `UNIT_MEMO=0` 46/55; `UB_ZERO=full` 45/47;
-  `HLE_GUEST_CODE=0` 45/42; `HLE_GUEST_CODE=nogxmctx` 64/45; Mono LLVM 901f294 (mesmo código) 44/19; APK mono-aot
-  ead401c (base ebfe72c) 14/8. Não é o runtime e nenhuma chave isola a causa (todas dentro do ruído do controle).
-  Ressalva: o APK mono-aot decodifica a 16 ms por chamada contra 10-11 ms nos outros, então a contagem menor pode ser
-  efeito de tempo e não de código. O sceAvcdec é igual em todas (0 repetidas, 0 descartadas, 7-8 chamadas sem picture
-  no 1º decodificador). Com `VITASHARP_DISPLAY_EARLY_SIGNAL=1` (a622069) cai para 15/13, contra 32/69 sem ela: o tempo
-  do flip/apresentação pesa. Próximo passo: um mono-aot da main com o mesmo detector, depois bisectar. Logs e prints no
-  scratchpad do agente: `lab\flicker\{A..J}_{0,1}.log` / `.png`, roteiro `lab\flicker\intro_ab.sh`.
 - [x] Save states mais visuais, no estilo do PCSX2 (pedido do usuário, 06/11/2026): uma tela de estados por cima do
   jogo pausado (desktop e Android), com uma grade/lista de slots, cada um com o print da tela no momento do
   salvamento, data e hora, tempo de jogo e a versão do VitaSharp; slot vazio identificado. Ações: salvar no slot
@@ -1424,6 +1413,40 @@ Lista de itens futuros do VitaSharp. Marque `[x]` quando um item for concluído.
   `Desktop/Launcher/GameLibrary.cs` (-> param.sfo). (3) Teste que falha se aparecer comparação com ID de título
   literal no código (exceto testes e comentários). Validar: suíte completa, replay-gpu --compare idêntico, shell + apps
   do sistema e os jogos da varredura sem regressão.
+  **Auditoria (11/11/2026, R1, refactor/generic-1)**, todo o `src/` (busca por IDs de título, prefixos, nomes de
+  módulo/plugin/homebrew, caminhos fixos, endereços de jogo). Trocado pelo caminho genérico:
+  - `Capture/CaptureContext.cs:30,79` (prefixo `NPXS` = "app do sistema") e `Desktop/Runner.cs:446` (sem tela de
+    início para `NPXS`) -> `Emulator.IsSystemProgram` (o programa roda de `vs0:`).
+  - `Desktop/Launcher/GameLibrary.cs:25` (região pela 4ª letra do ID `PCSx`) -> letra de região do `CONTENT_ID` do
+    `param.sfo` (U/E/J/H-K; sem content ID = homebrew).
+  - `Shell/ShellAssets.cs:175` (`HomeSystemApps`, lista fixa de 4 NPXS) -> as bolhas do banco do próprio shell
+    (`ur0:shell/db/app.db`, `tbl_appinfo_icon` por página/posição) que são pastas de `vs0:app`; sem o banco (shell
+    nunca rodou), todo `vs0:app` com ícone.
+  - `Hle/Modules/VshBridge.Homebrew.cs:27` (`name == "kubridge"`) -> `HleModule.KernelModuleName` (o nome fica só em
+    `Kubridge.cs`).
+  - `Hle/LleLibraries.cs` (lista fixa que mudava o carregador: `FromFirmware` para o SceLsdb, e
+    `ur0:data/libshacccg.suprx`) -> o carregador decide por `HleModule.FirmwareForEveryImporter` (declarado pelo
+    próprio módulo HLE, hoje o `Lsdb`); a lista ficou só como tabela do relatório de cobertura (SceSmart/SceFace do
+    `app0:sce_module` do jogo, SceLsdb do firmware) e sem o caminho de homebrew.
+  - `Hle/Modules/Piglet.Shaders.cs:23` (`ur0:data/libshacccg.suprx`, caminho do vitaGL) -> o compilador que o
+    programa já carregou, senão `app0:sce_module` e `vs0:sys/external` (regras do carregador).
+  - `Hle/Modules/SystemMisc.cs:262` (aviso só para `libshacccg.suprx`/vitaGL) -> aviso genérico para qualquer módulo
+    fora de `vs0:`/`app0:` que falta.
+  - `Loader/TitlePatches.cs` (tabela `Builtin` de patches por título, vazia) -> removida; ficam só os patches do
+    usuário (`<data>/patches/<TITLEID>.txt`).
+  - Teste `GenericCodeTests`: falha com qualquer literal de ID de título ou prefixo (`NPXS`, `PCSx`, `NPxx`,
+    `XXXX00000`) em `src/` fora de comentários.
+  Dívida (fica, sem acrescentar nada; a correção é o ambiente de kernel genérico para plugins, item próprio):
+  `Hle/Modules/Taihen.cs` + `Taihen.Snapshot.cs` (API do taiHEN em HLE), `Hle/Modules/Kubridge.cs` +
+  `Kubridge.Snapshot.cs` (API de usuário do kubridge em HLE), `Emulator.cs:820` `LoadTaiPlugins` (lê
+  `ux0:tai/config.txt`/`ur0:tai/config.txt` e carrega os plugins `*ALL`/`*TITLEID`; `*KERNEL` não roda). Nada fora
+  deles depende dos nomes (só comentários em `Cpu/Vfp.cs`, `Hle/Modules/SysMem.cs`, `Loader/ModuleLoader.cs`).
+  Listas de nomes de módulos **do firmware** (conhecimento do firmware, não de um programa; ficam):
+  `Emulator.cs:538,637` (preloads do processo pelos bits do process param), `Emulator.cs:668` `OnRequestModules`
+  (libpaf só sob pedido), `Emulator.cs:675` `FirmwareServiceClients` (ScePhotoExport é cliente IPC do serviço),
+  `Hle/Modules/SystemMisc.cs:66-100` (IDs de sysmodule -> módulos), `:141` `HleImplemented` e `:148` `HleFallback`
+  (política HLE x LLE por módulo do firmware), `Hle/Modules/Rtc.cs:44` (threads `SceNpTrophyServer*` do shell levam a
+  data do troféu da ponte do servidor de troféus). A camada Vulkan (`GpuQuirks`) é a exceção da regra.
 - [ ] Projeto de benchmark à parte (pedido do usuário, 11/11/2026): `tests/VitaSharp.Benchmarks` com BenchmarkDotNet
   (`[MemoryDiagnoser]` + `[DisassemblyDiagnoser]`), fora da suíte de testes e do build normal, para medir os caminhos
   quentes isolados antes e depois de cada otimização: execução do worker da GPU (dump curto do Killzone), cópia e
@@ -1691,7 +1714,7 @@ Lista de itens futuros do VitaSharp. Marque `[x]` quando um item for concluído.
   frente do tempo real) deixa o relógio adiantado; a leitura antes do delay já sai adiantada e a diferença encolhe. Pode
   afetar limitadores de quadro que medem o próprio sleep. Teste: ThreadMgrHleTests.ProcessTimeAroundADelayIsAtLeastTheDelay
   (Skip até a correção; tirar o Skip junto).
-- [ ] Dragon's Crown (PCSE00019): flicker e texturas erradas (relato do usuário, 10/11/2026, capturas
+- [x] Dragon's Crown (PCSE00019): flicker e texturas erradas (relato do usuário, 10/11/2026, capturas
   `PCSE00019_20261110_214605_tudo` e `..._214648_tudo`). Agente A4 (fix/bugs-a-4), duas causas:
   (1) **corrigido em bf2f3b9**: o jogo lê o back buffer (960x544, pitch 1024) como uma textura 1024x1024 que também
   alcança o segundo back buffer 3 MB adiante; com outro alvo dentro da memória da textura o renderizador lia a memória
@@ -1708,6 +1731,8 @@ Lista de itens futuros do VitaSharp. Marque `[x]` quando um item for concluído.
   numa segunda rodada com `=trace` (esperas de 0,1-27 ms, nenhuma de 250 ms). Falta: validar no celular (Killzone) e
   numa janela; uma única espera de 250 ms apareceu no Killzone (no fim da execução) e no Gravity Rush (PC carregado).
   Sobra 1 quadro preto isolado na criação de personagem (também sem a correção)
+  Concluído (11/11/2026, dia de refatoração): as duas causas corrigidas na main (bf2f3b9, 758ad0a); o que sobra
+  (validação no celular, o quadro preto isolado) fica nos itens do Killzone/celular e do renderizador
 - [x] Dead Space (port Android, DEADSPACE, so_loader + vitaGL): não rodava sem o kubridge (08/11/2026). Feito (agente C,
   fix/bugs-c-24): kubridge em HLE (aabf2d6), VFP short vectors no CPU (7501ec8: o motor do jogo usa FPSCR LEN=8),
   trampolim do hook por offset em endereço de meia palavra (907b204), hooks de import/export e
@@ -2541,6 +2566,11 @@ on-existing PPS 0 e nenhum quadro). Ainda aberto: depois da carga no meio do fil
     a amostra é submetido (o que a GPU do Vita leria logo depois) e fazer o worker usar essa foto quando a memória já
     mudou, no lugar das heurísticas do `DecoderOutputs.EarlierFor`. Só custa quando há histórico de decodificador.
     Medir o fps no celular antes e depois (restrição acima). Com o agente de bugs
+  - Do item duplicado do laboratório (juntado aqui em 11/11/2026): com `VITASHARP_DISPLAY_EARLY_SIGNAL=1` (a622069) a
+    contagem cai para 15/13, contra 32/69 sem ela (o tempo do flip/apresentação pesa); o APK mono-aot decodifica a
+    16 ms por chamada contra 10-11 ms nos outros, então a contagem menor dele pode ser efeito de tempo. Próximo passo
+    do lab: um mono-aot da main com o mesmo detector, depois bisectar (logs `lab\flicker\{A..J}_{0,1}.log`, roteiro
+    `lab\flicker\intro_ab.sh` no scratchpad do agente).
 - [ ] Android: crash do GC do Mono logo depois de um load state (06/11/2026, perf/android-8, Killzone): SIGSEGV
   (SEGV_ACCERR) na thread `SGen worker` (libmonosgen-2.0.so) 1 s depois de "Estado do slot 1 carregado"
   (`and8_runs/crash_B1_sgen.txt`, log `log_B1.txt`); de novo às 16:01 (`VITASHARP_MSAA=off`), 1 s depois da
@@ -2842,9 +2872,6 @@ on-existing PPS 0 e nenhum quadro). Ainda aberto: depois da carga no meio do fil
   Vita (aqui a notificação da cena 1 sai em <1 ms) e do decoder; um vídeo do Vita do menu confirmaria se a faixa está
   limpa no console
   Concluído por decisão do usuário (06/11/2026): Jak and Daxter fechado, exceto o save state no gameplay (item abaixo)
-- [ ] Silent Hill: Book of Memories (PCSE00011): a lanterna e algumas partes do jogo não funcionam direito (relato do
-  usuário; o áudio já foi corrigido antes). Falta uma captura: F9 (modo de depuração) + F10 na cena com a lanterna,
-  para comparar a luz/sombra com o esperado e achar o desenho ou shader errado
 - [x] Army Corps of Hell (PCSE00006; no Vita3K trava na intro; aqui roda a 30 fps estáveis, 31/10/2026, main 13ca113,
   log `20261031_193541_PCSE00006`): implementar `SceDebugLed::sceKernelGetGPI` (NID 0x14F582CF), lida pela `main`
   em 0x81064351 — num Vita de varejo devolve 0 (as chaves de depuração só existem em kits); também ver os 4
