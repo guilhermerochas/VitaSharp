@@ -32,7 +32,11 @@ public sealed record FirmwareInfo(string? Version, uint Build, string Source, Da
             {
                 var d = JsonSerializer.Deserialize(File.ReadAllText(meta), CoreJson.Indented.SortedDictionaryStringString) ?? new();
                 var parts = d.GetValueOrDefault("partitions", "").Split(',', StringSplitOptions.RemoveEmptyEntries);
-                if (!hasModules && parts.Contains("vs0")) return null; // metadata left behind after vs0 was removed
+                if (!hasModules && parts.Contains("vs0"))
+                {
+                    return null; // metadata left behind after vs0 was removed
+                }
+
                 return new FirmwareInfo(d.GetValueOrDefault("version"), uint.TryParse(d.GetValueOrDefault("build"), out var b) ? b : 0,
                     d.GetValueOrDefault("source", ""),
                     DateTime.TryParse(d.GetValueOrDefault("installed"), null, System.Globalization.DateTimeStyles.RoundtripKind, out var t) ? t : null,
@@ -43,7 +47,11 @@ public sealed record FirmwareInfo(string? Version, uint Build, string Source, Da
                 Log.Warn($"firmware: cannot read {meta}: {e.Message}");
             }
         }
-        if (!hasModules) return null;
+        if (!hasModules)
+        {
+            return null;
+        }
+
         return new FirmwareInfo(DetectVersion(fsRoot), 0, "", null, false,
             PartitionNames.Where(p => Directory.Exists(Path.Combine(fsRoot, p)) && Directory.EnumerateFileSystemEntries(Path.Combine(fsRoot, p)).Any()).ToArray());
     }
@@ -69,7 +77,13 @@ public sealed record FirmwareInfo(string? Version, uint Build, string Source, Da
         foreach (var kind in new[] { "pgf", "pvf" })
         {
             var dir = Path.Combine(fsRoot, "sa0", "data", "font", kind);
-            try { if (Directory.Exists(dir) && Directory.EnumerateFiles(dir, "*." + kind).Any()) return true; }
+            try
+            {
+                if (Directory.Exists(dir) && Directory.EnumerateFiles(dir, "*." + kind).Any())
+                {
+                    return true;
+                }
+            }
             catch (Exception e) when (e is IOException or UnauthorizedAccessException) { }
         }
         return false;
@@ -78,7 +92,10 @@ public sealed record FirmwareInfo(string? Version, uint Build, string Source, Da
     static bool HasModules(string fsRoot)
     {
         var ext = Path.Combine(fsRoot, "vs0", "sys", "external");
-        try { return Directory.Exists(ext) && Directory.EnumerateFiles(ext, "*.suprx").Any(); }
+        try
+        {
+            return Directory.Exists(ext) && Directory.EnumerateFiles(ext, "*.suprx").Any();
+        }
         catch (Exception e) when (e is IOException or UnauthorizedAccessException) { return false; }
     }
 
@@ -90,15 +107,35 @@ public sealed record FirmwareInfo(string? Version, uint Build, string Source, Da
             var path = Path.Combine(fsRoot, rel.Replace('/', Path.DirectorySeparatorChar));
             try
             {
-                if (!File.Exists(path)) continue;
+                if (!File.Exists(path))
+                {
+                    continue;
+                }
+
                 var head = new byte[0x400];
-                using (var f = File.OpenRead(path)) f.ReadAtLeast(head, head.Length, throwOnEndOfStream: false);
-                if (BinaryPrimitives.ReadUInt32LittleEndian(head) != 0x00454353) continue;
+                using (var f = File.OpenRead(path))
+                {
+                    f.ReadAtLeast(head, head.Length, throwOnEndOfStream: false);
+                }
+
+                if (BinaryPrimitives.ReadUInt32LittleEndian(head) != 0x00454353)
+                {
+                    continue;
+                }
+
                 long appinfo = (long)BinaryPrimitives.ReadUInt64LittleEndian(head.AsSpan(32 + 24));
-                if (appinfo <= 0 || appinfo + 24 > head.Length) continue;
+                if (appinfo <= 0 || appinfo + 24 > head.Length)
+                {
+                    continue;
+                }
+
                 ulong sysver = BinaryPrimitives.ReadUInt64LittleEndian(head.AsSpan((int)appinfo + 16));
                 uint v = (uint)(sysver >> 32);
-                if (v == 0) continue;
+                if (v == 0)
+                {
+                    continue;
+                }
+
                 return $"{(v >> 8) & 0xFF:X}.{v & 0xFF:X2}";
             }
             catch (Exception e) when (e is IOException or UnauthorizedAccessException) { }
@@ -125,7 +162,11 @@ public static class FirmwareInstaller
 
     static string? PartitionOf(SpkgType t) => t switch
     {
-        SpkgType.Os0 => "os0", SpkgType.Vs0 => "vs0", SpkgType.Sa0 => "sa0", SpkgType.Pd0 => "pd0", _ => null,
+        SpkgType.Os0 => "os0",
+        SpkgType.Vs0 => "vs0",
+        SpkgType.Sa0 => "sa0",
+        SpkgType.Pd0 => "pd0",
+        _ => null,
     };
 
     public static FirmwareInfo Install(string pupPath, string fsRoot, IProgress<FirmwareProgress>? progress = null, CancellationToken ct = default)
@@ -139,8 +180,15 @@ public static class FirmwareInstaller
     /// copied.</summary>
     public static FirmwareInfo? ImportFactoryDataFromVita3KIfMissing(string fsRoot, CancellationToken ct = default)
     {
-        if (HasFactoryData(fsRoot) || FindVita3KFirmware() is not { } v3k || !HasFactoryData(v3k)) return null;
-        try { return ImportFactoryData(v3k, fsRoot, ct); }
+        if (HasFactoryData(fsRoot) || FindVita3KFirmware() is not { } v3k || !HasFactoryData(v3k))
+        {
+            return null;
+        }
+
+        try
+        {
+            return ImportFactoryData(v3k, fsRoot, ct);
+        }
         catch (Exception e) when (e is IOException or UnauthorizedAccessException or InvalidDataException)
         {
             Log.Warn($"firmware: pd0 from {v3k}: {e.Message}");
@@ -160,7 +208,11 @@ public static class FirmwareInstaller
     public static FirmwareInfo ImportFactoryData(string sourceFsRoot, string fsRoot, CancellationToken ct = default)
     {
         string src = Path.Combine(sourceFsRoot, "pd0");
-        if (!HasFactoryData(sourceFsRoot)) throw new InvalidDataException($"{sourceFsRoot} has no pd0 (pd0/data is missing)");
+        if (!HasFactoryData(sourceFsRoot))
+        {
+            throw new InvalidDataException($"{sourceFsRoot} has no pd0 (pd0/data is missing)");
+        }
+
         string staging = Path.Combine(fsRoot, StagingName);
         DeleteTree(staging);
         Directory.CreateDirectory(staging);
@@ -176,7 +228,10 @@ public static class FirmwareInstaller
             Commit(Path.Combine(staging, "pd0"), Path.Combine(fsRoot, "pd0"), merge: false, staging);
             var previous = FirmwareInfo.Read(fsRoot);
             var info = previous is null ? new FirmwareInfo(FirmwareInfo.DetectVersion(fsRoot), 0, "pd0", DateTime.UtcNow, false, ["pd0"])
-                : previous with { Partitions = previous.Partitions.Union(["pd0"]).OrderBy(p => Array.IndexOf(FirmwareInfo.PartitionNames, p)).ToArray() };
+                : previous with
+                {
+                    Partitions = previous.Partitions.Union(["pd0"]).OrderBy(p => Array.IndexOf(FirmwareInfo.PartitionNames, p)).ToArray()
+                };
             info.Write(fsRoot);
             Log.Info($"firmware: copied pd0 from {sourceFsRoot} into {fsRoot}");
             return info;
@@ -203,16 +258,36 @@ public static class FirmwareInstaller
             var tarPatches = new List<PupEntry>();
             foreach (var e in pup.Entries)
             {
-                if (e.KnownName != null || e.Length < 0x500) continue;
-                var head = pup.Read(e with { Length = Math.Min(e.Length, 0x1000) });
-                if (!Spkg.TryReadHeader(head, out var h)) continue;
+                if (e.KnownName != null || e.Length < 0x500)
+                {
+                    continue;
+                }
+
+                var head = pup.Read(e with
+                {
+                    Length = Math.Min(e.Length, 0x1000)
+                });
+                if (!Spkg.TryReadHeader(head, out var h))
+                {
+                    continue;
+                }
+
                 var part = PartitionOf(h.Type);
-                if (part != null) parts.Add((e, part));
+                if (part != null)
+                {
+                    parts.Add((e, part));
+                }
                 // files the updater adds to vs0 per console model: take the ones for every model and for the handheld
                 // (target 2 = PS TV: its own system apps and location provider)
-                else if (h.Type == SpkgType.Vs0TarPatch && h.Target is 0 or 1) tarPatches.Add(e);
+                else if (h.Type == SpkgType.Vs0TarPatch && h.Target is 0 or 1)
+                {
+                    tarPatches.Add(e);
+                }
             }
-            if (parts.Count == 0) throw new InvalidDataException("The PUP holds no os0/vs0/sa0/pd0 partition (is it a Vita system update?)");
+            if (parts.Count == 0)
+            {
+                throw new InvalidDataException("The PUP holds no os0/vs0/sa0/pd0 partition (is it a Vita system update?)");
+            }
 
             long totalPkg = parts.Sum(p => p.Entry.Length), donePkg = 0;
             var images = new Dictionary<string, FileStream>();
@@ -224,7 +299,10 @@ public static class FirmwareInstaller
                     progress?.Report(new FirmwareProgress("Descriptografando", 0.5 * donePkg / totalPkg, part));
                     var data = Spkg.Decrypt(pup.Read(entry));
                     if (!images.TryGetValue(part, out var img))
+                    {
                         images[part] = img = new FileStream(Path.Combine(staging, part + ".img"), FileMode.Create, FileAccess.ReadWrite, FileShare.None, 1 << 16);
+                    }
+
                     img.Write(data);
                     donePkg += entry.Length;
                 }
@@ -243,21 +321,34 @@ public static class FirmwareInstaller
                 int files = 0;
                 foreach (var part in FirmwareInfo.PartitionNames)
                 {
-                    if (!listings.TryGetValue(part, out var l)) continue;
+                    if (!listings.TryGetValue(part, out var l))
+                    {
+                        continue;
+                    }
+
                     string dest = Path.Combine(staging, part);
                     Directory.CreateDirectory(dest);
                     foreach (var e in l.Entries)
                     {
                         ct.ThrowIfCancellationRequested();
                         string host = Path.Combine(dest, e.Path.Replace('/', Path.DirectorySeparatorChar));
-                        if (e.IsDirectory) { Directory.CreateDirectory(host); continue; }
+                        if (e.IsDirectory)
+                        {
+                            Directory.CreateDirectory(host);
+                            continue;
+                        }
                         Directory.CreateDirectory(Path.GetDirectoryName(host)!);
                         using (var o = new FileStream(host, FileMode.Create, FileAccess.Write, FileShare.None, 1 << 16))
+                        {
                             l.Image.CopyTo(e, o, ct);
+                        }
+
                         doneBytes += e.Size;
                         files++;
                         if ((files & 31) == 0 || e.Size > 1 << 20)
+                        {
                             progress?.Report(new FirmwareProgress("Extraindo", 0.5 + 0.45 * doneBytes / Math.Max(1, totalBytes), part + ":" + e.Path));
+                        }
                     }
                     Log.Info($"firmware: {part}: {l.Entries.Count(x => !x.IsDirectory)} files, {l.Entries.Where(x => !x.IsDirectory).Sum(x => x.Size) / 1024} KiB");
                 }
@@ -273,8 +364,15 @@ public static class FirmwareInstaller
             }
             finally
             {
-                foreach (var img in images.Values) img.Dispose();
-                foreach (var part in images.Keys) TryDeleteFile(Path.Combine(staging, part + ".img"));
+                foreach (var img in images.Values)
+                {
+                    img.Dispose();
+                }
+
+                foreach (var part in images.Keys)
+                {
+                    TryDeleteFile(Path.Combine(staging, part + ".img"));
+                }
             }
 
             // 3. swap the partitions in
@@ -313,10 +411,16 @@ public static class FirmwareInstaller
     public static FirmwareInfo ImportFrom(string sourceFsRoot, string fsRoot, string sourceName, IProgress<FirmwareProgress>? progress = null, CancellationToken ct = default)
     {
         if (Path.GetFullPath(sourceFsRoot).TrimEnd(Path.DirectorySeparatorChar).Equals(Path.GetFullPath(fsRoot).TrimEnd(Path.DirectorySeparatorChar), StringComparison.OrdinalIgnoreCase))
+        {
             throw new InvalidOperationException("Source and destination are the same folder");
+        }
+
         var parts = FirmwareInfo.PartitionNames.Where(p => Directory.Exists(Path.Combine(sourceFsRoot, p))).ToList();
         if (!parts.Contains("vs0") || !Directory.Exists(Path.Combine(sourceFsRoot, "vs0", "sys", "external")))
+        {
             throw new InvalidDataException($"{sourceFsRoot} has no installed firmware (vs0/sys/external is missing)");
+        }
+
         Directory.CreateDirectory(fsRoot);
         string staging = Path.Combine(fsRoot, StagingName);
         DeleteTree(staging);
@@ -334,10 +438,17 @@ public static class FirmwareInstaller
                 Directory.CreateDirectory(Path.GetDirectoryName(dst)!);
                 File.Copy(file, dst, overwrite: true);
                 done += new FileInfo(dst).Length;
-                if ((++n & 31) == 0) progress?.Report(new FirmwareProgress("Copiando", 0.95 * done / Math.Max(1, total), part + ":" + rel.Replace('\\', '/')));
+                if ((++n & 31) == 0)
+                {
+                    progress?.Report(new FirmwareProgress("Copiando", 0.95 * done / Math.Max(1, total), part + ":" + rel.Replace('\\', '/')));
+                }
             }
             progress?.Report(new FirmwareProgress("Instalando", 0.96));
-            foreach (var part in parts) Commit(Path.Combine(staging, part), Path.Combine(fsRoot, part), merge: part == "sa0", staging);
+            foreach (var part in parts)
+            {
+                Commit(Path.Combine(staging, part), Path.Combine(fsRoot, part), merge: part == "sa0", staging);
+            }
+
             var info = new FirmwareInfo(FirmwareInfo.DetectVersion(fsRoot), 0, sourceName, DateTime.UtcNow, false, parts);
             info.Write(fsRoot);
             progress?.Report(new FirmwareProgress(Localization.Loc.Get("FwDone"), 1.0));
@@ -360,7 +471,10 @@ public static class FirmwareInstaller
             try
             {
                 var ext = Path.Combine(c, "vs0", "sys", "external");
-                if (Directory.Exists(ext) && Directory.EnumerateFiles(ext, "*.suprx").Any()) return c;
+                if (Directory.Exists(ext) && Directory.EnumerateFiles(ext, "*.suprx").Any())
+                {
+                    return c;
+                }
             }
             catch (Exception e) when (e is IOException or UnauthorizedAccessException) { }
         }
@@ -373,8 +487,14 @@ public static class FirmwareInstaller
         var candidates = new List<string>();
         string appData = Environment.GetFolderPath(Environment.SpecialFolder.ApplicationData);
         string home = Environment.GetFolderPath(Environment.SpecialFolder.UserProfile);
-        if (OperatingSystem.IsWindows()) candidates.Add(Path.Combine(appData, "Vita3K", "Vita3K"));
-        else if (OperatingSystem.IsMacOS()) candidates.Add(Path.Combine(home, "Library", "Application Support", "Vita3K", "Vita3K"));
+        if (OperatingSystem.IsWindows())
+        {
+            candidates.Add(Path.Combine(appData, "Vita3K", "Vita3K"));
+        }
+        else if (OperatingSystem.IsMacOS())
+        {
+            candidates.Add(Path.Combine(home, "Library", "Application Support", "Vita3K", "Vita3K"));
+        }
         else
         {
             var xdg = Environment.GetEnvironmentVariable("XDG_DATA_HOME");
@@ -387,7 +507,11 @@ public static class FirmwareInstaller
     /// first. Merge: staged files overwrite same-named ones, others stay.</summary>
     static void Commit(string staged, string target, bool merge, string staging)
     {
-        if (!Directory.Exists(staged)) return;
+        if (!Directory.Exists(staged))
+        {
+            return;
+        }
+
         bool targetIsLink = Directory.Exists(target) && new DirectoryInfo(target).Attributes.HasFlag(FileAttributes.ReparsePoint);
         if (targetIsLink)
         {
@@ -423,21 +547,35 @@ public static class FirmwareInstaller
         for (long o = 0; o + 512 <= tar.Length;)
         {
             var h = tar.AsSpan((int)o, 512);
-            if (h[0] == 0) break; // end-of-archive blocks
+            if (h[0] == 0)
+            {
+                break; // end-of-archive blocks
+            }
+
             string name = System.Text.Encoding.UTF8.GetString(h[..100]).TrimEnd('\0');
             if (h.Slice(257, 5).SequenceEqual("ustar"u8))
             {
                 string prefix = System.Text.Encoding.UTF8.GetString(h.Slice(345, 155)).TrimEnd('\0');
-                if (prefix.Length > 0) name = prefix + "/" + name;
+                if (prefix.Length > 0)
+                {
+                    name = prefix + "/" + name;
+                }
             }
             string sizeText = System.Text.Encoding.ASCII.GetString(h.Slice(124, 12)).Trim('\0', ' ');
             long size = sizeText.Length == 0 ? 0 : Convert.ToInt64(sizeText, 8);
             byte type = h[156];
             long data = o + 512;
-            if (size < 0 || data + size > tar.Length) throw new InvalidDataException($"tar entry {name} is truncated");
+            if (size < 0 || data + size > tar.Length)
+            {
+                throw new InvalidDataException($"tar entry {name} is truncated");
+            }
+
             string host = Path.GetFullPath(Path.Combine(dest, name.TrimStart('/').Replace('/', Path.DirectorySeparatorChar)));
             bool inside = host.StartsWith(root, StringComparison.OrdinalIgnoreCase);
-            if (inside && type == (byte)'5') Directory.CreateDirectory(host);
+            if (inside && type == (byte)'5')
+            {
+                Directory.CreateDirectory(host);
+            }
             else if (inside && type is (byte)'0' or 0 && !name.EndsWith('/'))
             {
                 Directory.CreateDirectory(Path.GetDirectoryName(host)!);
@@ -456,22 +594,47 @@ public static class FirmwareInstaller
         while (stack.Count > 0)
         {
             var d = stack.Pop();
-            foreach (var f in Directory.EnumerateFiles(d)) yield return f;
+            foreach (var f in Directory.EnumerateFiles(d))
+            {
+                yield return f;
+            }
+
             foreach (var sub in Directory.EnumerateDirectories(d))
-                if (!new DirectoryInfo(sub).Attributes.HasFlag(FileAttributes.ReparsePoint)) stack.Push(sub);
+            {
+                if (!new DirectoryInfo(sub).Attributes.HasFlag(FileAttributes.ReparsePoint))
+                {
+                    stack.Push(sub);
+                }
+            }
         }
     }
 
     /// <summary>Deletes a folder tree without following junctions or symbolic links (they are removed as links).</summary>
     internal static void DeleteTree(string dir)
     {
-        if (!Directory.Exists(dir)) return;
+        if (!Directory.Exists(dir))
+        {
+            return;
+        }
+
         var info = new DirectoryInfo(dir);
-        if (info.Attributes.HasFlag(FileAttributes.ReparsePoint)) { info.Delete(recursive: false); return; }
-        foreach (var sub in info.EnumerateDirectories()) DeleteTree(sub.FullName);
+        if (info.Attributes.HasFlag(FileAttributes.ReparsePoint))
+        {
+            info.Delete(recursive: false);
+            return;
+        }
+        foreach (var sub in info.EnumerateDirectories())
+        {
+            DeleteTree(sub.FullName);
+        }
+
         foreach (var f in info.EnumerateFiles())
         {
-            if (f.Attributes.HasFlag(FileAttributes.ReadOnly)) f.Attributes &= ~FileAttributes.ReadOnly;
+            if (f.Attributes.HasFlag(FileAttributes.ReadOnly))
+            {
+                f.Attributes &= ~FileAttributes.ReadOnly;
+            }
+
             f.Delete();
         }
         info.Delete(recursive: false);
@@ -479,6 +642,10 @@ public static class FirmwareInstaller
 
     static void TryDeleteFile(string path)
     {
-        try { File.Delete(path); } catch (Exception e) when (e is IOException or UnauthorizedAccessException) { }
+        try
+        {
+            File.Delete(path);
+        }
+        catch (Exception e) when (e is IOException or UnauthorizedAccessException) { }
     }
 }

@@ -20,7 +20,9 @@ public static class TrophySound
         try
         {
             if (new ShellAssets(fsRoot).Sound(ShellSoundEffect.Notice) is { Samples.Length: > 0 } fw)
+            {
                 return (fw, "firmware (common_resource.rco 0xE0D9F918)");
+            }
         }
         catch (Exception e) when (e is IOException or InvalidDataException or UnauthorizedAccessException)
         {
@@ -69,7 +71,11 @@ public static class TrophySound
     public static short[] Convert(PcmSound pcm, int rate, int channels)
     {
         int inCh = Math.Max(1, pcm.Channels), inFrames = pcm.Samples.Length / inCh;
-        if (inFrames == 0 || rate <= 0 || channels <= 0) return [];
+        if (inFrames == 0 || rate <= 0 || channels <= 0)
+        {
+            return [];
+        }
+
         double Frame(int i, int c) => inCh == 1 ? pcm.Samples[i] : channels == 1 ? (pcm.Samples[i * inCh] + pcm.Samples[i * inCh + 1]) / 2.0
             : pcm.Samples[i * inCh + Math.Min(c, inCh - 1)];
         long outFrames = (long)inFrames * rate / Math.Max(1, pcm.SampleRate);
@@ -82,7 +88,9 @@ public static class TrophySound
             double frac = pos - i;
             int j = Math.Min(i + 1, inFrames - 1);
             for (int c = 0; c < channels; c++)
+            {
                 o[f * channels + c] = (short)Math.Clamp(Math.Round(Frame(i, c) * (1 - frac) + Frame(j, c) * frac), short.MinValue, short.MaxValue);
+            }
         }
         return o;
     }

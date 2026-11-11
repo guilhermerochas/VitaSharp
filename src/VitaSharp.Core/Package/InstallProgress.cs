@@ -17,10 +17,17 @@ public readonly record struct InstallProgress(long BytesDone, long BytesTotal, s
     public string Describe(string left = "left")
     {
         var text = $"{Fraction:P0}";
-        if (BytesPerSecond <= 0) return text;
+        if (BytesPerSecond <= 0)
+        {
+            return text;
+        }
+
         text += $" · {BytesPerSecond / (1024 * 1024):N0} MB/s";
         if (Remaining is { } r)
+        {
             text += r.TotalHours >= 1 ? $" · {(int)r.TotalHours}:{r.Minutes:00}:{r.Seconds:00} {left}" : $" · {r.Minutes}:{r.Seconds:00} {left}";
+        }
+
         return text;
     }
 }
@@ -39,9 +46,17 @@ internal sealed class InstallProgressReporter(Action<InstallProgress>? sink, lon
     public void Add(long bytes, string? entry = null)
     {
         long done = Interlocked.Add(ref _done, bytes);
-        if (sink == null) return;
+        if (sink == null)
+        {
+            return;
+        }
+
         var now = _clock.Elapsed;
-        if (_last is { } last && now - last < Interval) return;
+        if (_last is { } last && now - last < Interval)
+        {
+            return;
+        }
+
         _last = now;
         sink(new InstallProgress(done, total, entry, now));
     }

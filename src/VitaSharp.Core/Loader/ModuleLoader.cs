@@ -53,25 +53,51 @@ public sealed class Linker(IImportResolver hle)
     readonly List<(uint nid, byte[] relocs, Dictionary<int, SegmentInfo> segs)> _varBindings = new();
     readonly Dictionary<uint, string> _varSources = new(); // variable import NID -> "library (importing module)", for the log
 
-    public uint ProcessParam { get; private set; }
+    public uint ProcessParam
+    {
+        get; private set;
+    }
 
     /// <summary>Address ranges whose import stubs keep their binding while modules load (a module loaded for the
     /// emulator's own use must not take over the program's imports); null = none.</summary>
-    public List<(uint Start, uint Size)>? KeepBindingsIn { get; set; }
+    public List<(uint Start, uint Size)>? KeepBindingsIn
+    {
+        get; set;
+    }
 
     bool Kept(uint stub)
     {
-        if (KeepBindingsIn is not { } ranges) return false;
-        foreach (var (s, n) in ranges) if (stub - s < n) return true;
+        if (KeepBindingsIn is not { } ranges)
+        {
+            return false;
+        }
+
+        foreach (var (s, n) in ranges)
+        {
+            if (stub - s < n)
+            {
+                return true;
+            }
+        }
+
         return false;
     }
 
-    public Action<uint, uint>? InvalidateCode { get; set; }
-    public Action<string>? Log { get; set; }
+    public Action<uint, uint>? InvalidateCode
+    {
+        get; set;
+    }
+    public Action<string>? Log
+    {
+        get; set;
+    }
 
     public bool TryGetFunctionExport(uint nid, out uint addr)
     {
-        lock (_lock) return _funcExports.TryGetValue(nid, out addr);
+        lock (_lock)
+        {
+            return _funcExports.TryGetValue(nid, out addr);
+        }
     }
 
     /// <summary>Import stubs bound to function <paramref name="nid"/> (any library when <paramref name="libNid"/> is null),
@@ -79,13 +105,18 @@ public sealed class Linker(IImportResolver hle)
     public List<uint> BoundStubs(uint nid, uint? libNid = null)
     {
         lock (_lock)
+        {
             return _funcBindings.Where(b => b.nid == nid && (libNid == null || b.libNid == libNid)).Select(b => b.stub).ToList();
+        }
     }
 
     /// <summary>The function <paramref name="nid"/> of library <paramref name="libNid"/> a loaded module exports.</summary>
     public bool TryGetFunctionExport(uint libNid, uint nid, out uint addr)
     {
-        lock (_lock) return _funcExportsByLib.TryGetValue((libNid, nid), out addr);
+        lock (_lock)
+        {
+            return _funcExportsByLib.TryGetValue((libNid, nid), out addr);
+        }
     }
 
     public static void WriteHleStub(uint stub, uint svcIndex, uint nid)
@@ -98,8 +129,14 @@ public sealed class Linker(IImportResolver hle)
     void BindHle(uint stub, uint nid, uint libNid, string libName)
     {
         uint code = hle.GetHleGuestCode(nid);
-        if (code != 0) WriteJumpStub(stub, code);
-        else WriteHleStub(stub, hle.GetHleFunctionIndex(nid, libNid, libName), nid);
+        if (code != 0)
+        {
+            WriteJumpStub(stub, code);
+        }
+        else
+        {
+            WriteHleStub(stub, hle.GetHleFunctionIndex(nid, libNid, libName), nid);
+        }
     }
 
     /// <summary>
@@ -113,18 +150,29 @@ public sealed class Linker(IImportResolver hle)
     {
         int n = 0;
         lock (_lock)
+        {
             foreach (var (nid, libNid, libName, stub) in _funcBindings)
             {
-                if (_funcExportsByLib.ContainsKey((libNid, nid)) || _funcExports.ContainsKey(nid) || Kept(stub)) continue;
+                if (_funcExportsByLib.ContainsKey((libNid, nid)) || _funcExports.ContainsKey(nid) || Kept(stub))
+                {
+                    continue;
+                }
+
                 uint w0 = GuestMemory.R32(stub), w1 = GuestMemory.R32(stub + 4), w2 = GuestMemory.R32(stub + 8);
                 bool svc = (w0 & 0xFF000000) == 0xEF000000 && w1 == 0xE12FFF1E && w2 == nid;
                 bool jump = (w0 & 0xFFF0F000) == 0xE300C000 && (w1 & 0xFFF0F000) == 0xE340C000 && w2 == 0xE12FFF1C
                     && isOldGuestCode(((w1 & 0xF0000) << 12) | ((w1 & 0xFFF) << 16) | ((w0 & 0xF0000) >> 4) | (w0 & 0xFFF));
-                if (!svc && !jump) continue;
+                if (!svc && !jump)
+                {
+                    continue;
+                }
+
                 BindHle(stub, nid, libNid, libName);
                 InvalidateCode?.Invoke(stub, 12);
                 n++;
             }
+        }
+
         return n;
     }
 
@@ -141,9 +189,14 @@ public sealed class Linker(IImportResolver hle)
         {
             uint target;
             if (_funcExportsByLib.TryGetValue((libNid, nid), out target) || _funcExports.TryGetValue(nid, out target))
+            {
                 WriteJumpStub(stub, target);
+            }
             else
+            {
                 BindHle(stub, nid, libNid, libName);
+            }
+
             _funcBindings.Add((nid, libNid, libName, stub));
         }
         // reftable: relocations applied against the stub address
@@ -151,7 +204,10 @@ public sealed class Linker(IImportResolver hle)
         if (reftable != 0)
         {
             uint size = (GuestMemory.R32(reftable) >> 4) & 0xFFFFFF;
-            if (size > 4) Relocation.Relocate(GuestMemory.Span(reftable + 4, (int)(size - 4)), segs, true, stub);
+            if (size > 4)
+            {
+                Relocation.Relocate(GuestMemory.Span(reftable + 4, (int)(size - 4)), segs, true, stub);
+            }
         }
     }
 
@@ -172,13 +228,19 @@ public sealed class Linker(IImportResolver hle)
             _varBindings.Add((nid, relocs, segs));
             _varSources.TryAdd(nid, source);
         }
-        if (relocs.Length > 0 && addr != 0) Relocation.Relocate(relocs, segs, true, addr);
+        if (relocs.Length > 0 && addr != 0)
+        {
+            Relocation.Relocate(relocs, segs, true, addr);
+        }
     }
 
     /// <summary>The library a variable import NID is imported from and the module that imports it.</summary>
     public string VariableImportSource(uint nid)
     {
-        lock (_lock) return _varSources.GetValueOrDefault(nid, "");
+        lock (_lock)
+        {
+            return _varSources.GetValueOrDefault(nid, "");
+        }
     }
 
     /// <summary>NIDs of variable imports that neither a loaded module nor HLE provides (their relocations were never
@@ -186,8 +248,10 @@ public sealed class Linker(IImportResolver hle)
     public List<uint> UnresolvedVariables()
     {
         lock (_lock)
+        {
             return _varBindings.Select(b => b.nid).Distinct()
                 .Where(n => !_varExports.ContainsKey(n) && hle.GetHleVariable(n) == 0).ToList();
+        }
     }
 
     internal void RegisterExports(LoadedModule m, uint libNid, uint[] nids, uint[] entries, int funcCount)
@@ -201,26 +265,53 @@ public sealed class Linker(IImportResolver hle)
                 {
                     switch (nid)
                     {
-                        case NidModuleStart: m.StartEntry = addr; continue;
-                        case NidModuleStop: m.StopEntry = addr; continue;
-                        case NidModuleExit: m.ExitEntry = addr; continue;
+                        case NidModuleStart:
+                            m.StartEntry = addr;
+                            continue;
+                        case NidModuleStop:
+                            m.StopEntry = addr;
+                            continue;
+                        case NidModuleExit:
+                            m.ExitEntry = addr;
+                            continue;
                     }
                     _funcExports.TryAdd(nid, addr);
                     _funcExportsByLib[(libNid, nid)] = addr;
                     foreach (var (bnid, blib, _, stub) in _funcBindings)
                     {
-                        if (bnid != nid || blib != libNid || Kept(stub)) continue;
+                        if (bnid != nid || blib != libNid || Kept(stub))
+                        {
+                            continue;
+                        }
+
                         WriteJumpStub(stub, addr);
                         InvalidateCode?.Invoke(stub, 12);
                     }
                 }
                 else
                 {
-                    if (nid == NidProcessParam) { if (ProcessParam == 0) ProcessParam = addr; continue; }
-                    if (nid is NidModuleInfo or NidSyslib) continue;
+                    if (nid == NidProcessParam)
+                    {
+                        if (ProcessParam == 0)
+                        {
+                            ProcessParam = addr;
+                        }
+
+                        continue;
+                    }
+                    if (nid is NidModuleInfo or NidSyslib)
+                    {
+                        continue;
+                    }
+
                     _varExports[nid] = addr;
                     foreach (var (bnid, relocs, segs) in _varBindings)
-                        if (bnid == nid && relocs.Length > 0) Relocation.Relocate(relocs, segs, true, addr);
+                    {
+                        if (bnid == nid && relocs.Length > 0)
+                        {
+                            Relocation.Relocate(relocs, segs, true, addr);
+                        }
+                    }
                 }
             }
         }
@@ -230,7 +321,13 @@ public sealed class Linker(IImportResolver hle)
     {
         addr &= ~1u; // Thumb entry points
         foreach (var s in m.Segments.Values)
-            if (addr >= s.Address && addr - s.Address < s.Size) return true;
+        {
+            if (addr >= s.Address && addr - s.Address < s.Size)
+            {
+                return true;
+            }
+        }
+
         return false;
     }
 
@@ -250,39 +347,78 @@ public sealed class Linker(IImportResolver hle)
             _varBindings.RemoveAll(b => ReferenceEquals(b.segs, m.Segments));
 
             foreach (var key in _funcExportsByLib.Where(kv => InModule(m, kv.Value)).Select(kv => kv.Key).ToArray())
+            {
                 _funcExportsByLib.Remove(key);
+            }
+
             foreach (var nid in _funcExports.Where(kv => InModule(m, kv.Value)).Select(kv => kv.Key).ToArray())
             {
                 _funcExports.Remove(nid);
                 foreach (var kv in _funcExportsByLib)
-                    if (kv.Key.nid == nid) { _funcExports[nid] = kv.Value; break; }
+                {
+                    if (kv.Key.nid == nid)
+                    {
+                        _funcExports[nid] = kv.Value;
+                        break;
+                    }
+                }
             }
 
             foreach (var (nid, libNid, libName, stub) in _funcBindings)
             {
                 // only stubs that jumped into the unloaded module change
                 uint w0 = GuestMemory.R32(stub), w1 = GuestMemory.R32(stub + 4);
-                if ((w0 & 0xFFF0F000) != 0xE300C000 || (w1 & 0xFFF0F000) != 0xE340C000) continue;
+                if ((w0 & 0xFFF0F000) != 0xE300C000 || (w1 & 0xFFF0F000) != 0xE340C000)
+                {
+                    continue;
+                }
+
                 uint target = ((w0 >> 4) & 0xF000) | (w0 & 0xFFF) | ((((w1 >> 4) & 0xF000) | (w1 & 0xFFF)) << 16);
-                if (!InModule(m, target)) continue;
+                if (!InModule(m, target))
+                {
+                    continue;
+                }
+
                 if (_funcExportsByLib.TryGetValue((libNid, nid), out uint next) || _funcExports.TryGetValue(nid, out next))
+                {
                     WriteJumpStub(stub, next);
+                }
                 else
+                {
                     BindHle(stub, nid, libNid, libName);
+                }
+
                 InvalidateCode?.Invoke(stub, 12);
                 rebound++;
             }
 
             var removedVars = _varExports.Where(kv => InModule(m, kv.Value)).Select(kv => kv.Key).ToHashSet();
-            foreach (var nid in removedVars) _varExports.Remove(nid);
+            foreach (var nid in removedVars)
+            {
+                _varExports.Remove(nid);
+            }
+
             foreach (var (bnid, relocs, segs) in _varBindings)
             {
-                if (!removedVars.Contains(bnid) || relocs.Length == 0) continue;
+                if (!removedVars.Contains(bnid) || relocs.Length == 0)
+                {
+                    continue;
+                }
+
                 uint addr = hle.GetHleVariable(bnid);
-                if (addr != 0) Relocation.Relocate(relocs, segs, true, addr);
-                else Log?.Invoke($"Variable import NID {bnid:X8} pointed into unloaded module {m.Name}");
+                if (addr != 0)
+                {
+                    Relocation.Relocate(relocs, segs, true, addr);
+                }
+                else
+                {
+                    Log?.Invoke($"Variable import NID {bnid:X8} pointed into unloaded module {m.Name}");
+                }
             }
-            if (InModule(m, ProcessParam)) ProcessParam = 0;
+            if (InModule(m, ProcessParam))
+            {
+                ProcessParam = 0;
+            }
         }
         return rebound;
     }
@@ -296,9 +432,17 @@ public static class ModuleLoader
     public static LoadedModule Load(byte[] elf, string path, GuestMemory mem, Linker linker, int uid)
     {
         ReadOnlySpan<byte> e = elf;
-        if (U32LE(e, 0) != 0x464C457F) throw new InvalidDataException($"{path}: not an ELF");
+        if (U32LE(e, 0) != 0x464C457F)
+        {
+            throw new InvalidDataException($"{path}: not an ELF");
+        }
+
         ushort type = U16LE(e, 16);
-        if (type != ET_SCE_EXEC && type != ET_SCE_RELEXEC) throw new NotSupportedException($"{path}: ELF type 0x{type:X}");
+        if (type != ET_SCE_EXEC && type != ET_SCE_RELEXEC)
+        {
+            throw new NotSupportedException($"{path}: ELF type 0x{type:X}");
+        }
+
         uint entry = U32LE(e, 24), phoff = U32LE(e, 28);
         ushort phnum = U16LE(e, 44);
         bool relocatable = type == ET_SCE_RELEXEC;
@@ -318,7 +462,11 @@ public static class ModuleLoader
                 uint addr = vaddr != 0 ? mem.TryAllocAt(vaddr, memsz, name, exclusive: relocatable) : 0;
                 if (addr == 0)
                 {
-                    if (!relocatable) throw new InvalidOperationException($"{path}: cannot map fixed segment at 0x{vaddr:X8}");
+                    if (!relocatable)
+                    {
+                        throw new InvalidOperationException($"{path}: cannot map fixed segment at 0x{vaddr:X8}");
+                    }
+
                     addr = mem.Alloc(memsz, name, MemoryRegion.User, 0x10000);
                 }
                 e.Slice((int)off, (int)filesz).CopyTo(GuestMemory.Span(addr, (int)filesz));
@@ -330,7 +478,10 @@ public static class ModuleLoader
                 relas.Add(e.Slice((int)off, (int)filesz).ToArray());
             }
         }
-        foreach (var r in relas) Relocation.Relocate(r, m.Segments);
+        foreach (var r in relas)
+        {
+            Relocation.Relocate(r, m.Segments);
+        }
 
         // module_info
         int infoSeg = (int)(entry >> 30);
@@ -344,19 +495,37 @@ public static class ModuleLoader
         uint exportTop = U32LE(info, 0x24), exportEnd = U32LE(info, 0x28);
         uint importTop = U32LE(info, 0x2C), importEnd = U32LE(info, 0x30);
         m.ModuleNid = U32LE(info, 0x34);
-        m.ExportsStart = infoBase + exportTop; m.ExportsEnd = infoBase + exportEnd;
-        m.ImportsStart = infoBase + importTop; m.ImportsEnd = infoBase + importEnd;
+        m.ExportsStart = infoBase + exportTop;
+        m.ExportsEnd = infoBase + exportEnd;
+        m.ImportsStart = infoBase + importTop;
+        m.ImportsEnd = infoBase + importEnd;
         uint tlsStart = U32LE(info, 0x38);
         m.TlsInitSize = U32LE(info, 0x3C);
         m.TlsAreaSize = U32LE(info, 0x40);
         uint modStart = U32LE(info, 0x44), modStop = U32LE(info, 0x48);
         m.TlsInit = tlsStart != 0 ? infoBase + tlsStart : 0;
-        if (modStart != 0 && modStart != 0xFFFFFFFF) m.StartEntry = infoBase + modStart;
-        if (modStop != 0 && modStop != 0xFFFFFFFF) m.StopEntry = infoBase + modStop;
+        if (modStart != 0 && modStart != 0xFFFFFFFF)
+        {
+            m.StartEntry = infoBase + modStart;
+        }
+
+        if (modStop != 0 && modStop != 0xFFFFFFFF)
+        {
+            m.StopEntry = infoBase + modStop;
+        }
+
         uint exidxTop = U32LE(info, 0x4C), exidxEnd = U32LE(info, 0x50);
-        if (exidxTop != 0) { m.ExidxTop = infoBase + exidxTop; m.ExidxEnd = infoBase + exidxEnd; }
+        if (exidxTop != 0)
+        {
+            m.ExidxTop = infoBase + exidxTop;
+            m.ExidxEnd = infoBase + exidxEnd;
+        }
         uint extabTop = U32LE(info, 0x54), extabEnd = U32LE(info, 0x58);
-        if (extabTop != 0) { m.ExtabTop = infoBase + extabTop; m.ExtabEnd = infoBase + extabEnd; }
+        if (extabTop != 0)
+        {
+            m.ExtabTop = infoBase + extabTop;
+            m.ExtabEnd = infoBase + extabEnd;
+        }
 
         // exports first (so a module can resolve against itself), then imports
         for (uint p = infoBase + exportTop; p < infoBase + exportEnd;)
@@ -371,7 +540,11 @@ public static class ModuleLoader
             var entries = GuestMemory.Span<uint>(entryTable, total).ToArray();
             m.Exports.Add((GuestMemory.ReadCString(libName), libNid, nids[..nfunc], nids[nfunc..]));
             linker.RegisterExports(m, libNid, nids, entries, nfunc);
-            if (size == 0) break;
+            if (size == 0)
+            {
+                break;
+            }
+
             p += size;
         }
 
@@ -383,28 +556,45 @@ public static class ModuleLoader
             uint libNid, libName, funcNids, funcEntries, varNids, varEntries;
             if (size == 0x24)
             {
-                libNid = U32LE(im, 0x0C); libName = U32LE(im, 0x10);
-                funcNids = U32LE(im, 0x14); funcEntries = U32LE(im, 0x18);
-                varNids = U32LE(im, 0x1C); varEntries = U32LE(im, 0x20);
+                libNid = U32LE(im, 0x0C);
+                libName = U32LE(im, 0x10);
+                funcNids = U32LE(im, 0x14);
+                funcEntries = U32LE(im, 0x18);
+                varNids = U32LE(im, 0x1C);
+                varEntries = U32LE(im, 0x20);
             }
             else
             {
-                libNid = U32LE(im, 0x10); libName = U32LE(im, 0x14);
-                funcNids = U32LE(im, 0x1C); funcEntries = U32LE(im, 0x20);
-                varNids = U32LE(im, 0x24); varEntries = U32LE(im, 0x28);
+                libNid = U32LE(im, 0x10);
+                libName = U32LE(im, 0x14);
+                funcNids = U32LE(im, 0x1C);
+                funcEntries = U32LE(im, 0x20);
+                varNids = U32LE(im, 0x24);
+                varEntries = U32LE(im, 0x28);
             }
             string lib = GuestMemory.ReadCString(libName);
             var fn = nfunc > 0 ? GuestMemory.Span<uint>(funcNids, nfunc).ToArray() : [];
             var fe = nfunc > 0 ? GuestMemory.Span<uint>(funcEntries, nfunc).ToArray() : [];
-            for (int i = 0; i < nfunc; i++) linker.BindFunctionImport(fn[i], libNid, lib, fe[i], m.Segments);
+            for (int i = 0; i < nfunc; i++)
+            {
+                linker.BindFunctionImport(fn[i], libNid, lib, fe[i], m.Segments);
+            }
+
             if (nvar > 0)
             {
                 var vn = GuestMemory.Span<uint>(varNids, nvar).ToArray();
                 var ve = GuestMemory.Span<uint>(varEntries, nvar).ToArray();
-                for (int i = 0; i < nvar; i++) linker.BindVariableImport(vn[i], ve[i], m.Segments, $"{lib} (imported by {m.Name})");
+                for (int i = 0; i < nvar; i++)
+                {
+                    linker.BindVariableImport(vn[i], ve[i], m.Segments, $"{lib} (imported by {m.Name})");
+                }
             }
             m.Imports.Add((lib, libNid, fn));
-            if (size == 0) break;
+            if (size == 0)
+            {
+                break;
+            }
+
             p += size;
         }
         return m;

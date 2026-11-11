@@ -41,7 +41,11 @@ public static class CaptureAnalyzer
         var sb = new StringBuilder();
         sb.AppendLine($"VitaSharp capture report: {Path.GetFileName(dir)}");
         sb.AppendLine($"title: {session.GetValueOrDefault("title-id", "?")} {session.GetValueOrDefault("title", "")}");
-        if (session.GetValueOrDefault("recorded") is { } rec) sb.AppendLine($"recorded: {rec}");
+        if (session.GetValueOrDefault("recorded") is { } rec)
+        {
+            sb.AppendLine($"recorded: {rec}");
+        }
+
         var findings = new List<Finding>();
         var stats = new List<FrameStat>();
         // the contact sheet: SheetCells frames spread over the recording, picked by index from the frame count
@@ -53,7 +57,11 @@ public static class CaptureAnalyzer
             foreach (var (f, pic) in FramesFile.ReadAll(framesPath))
             {
                 cancel.ThrowIfCancellationRequested();
-                if (expectedFrames > 0 && (stats.Count & 63) == 0) progress?.Invoke(0.6 * Math.Min(1.0, stats.Count / (double)expectedFrames));
+                if (expectedFrames > 0 && (stats.Count & 63) == 0)
+                {
+                    progress?.Invoke(0.6 * Math.Min(1.0, stats.Count / (double)expectedFrames));
+                }
+
                 var st = new FrameStat { F = f };
                 if (pic is { } pv)
                 {
@@ -61,13 +69,19 @@ public static class CaptureAnalyzer
                     st.Hash = XxHash64.HashToUInt64(px);
                     (st.Luma, st.Dark) = Brightness(px);
                     st.Thumb = Downscale(px, w, h, TW, TH);
-                    if (sheetAt.Contains(stats.Count)) sheet[stats.Count] = Downscale(px, w, h, SheetW, SheetH);
+                    if (sheetAt.Contains(stats.Count))
+                    {
+                        sheet[stats.Count] = Downscale(px, w, h, SheetW, SheetH);
+                    }
                 }
                 stats.Add(st);
             }
             FindFrames(stats, findings, threshold, ReadInput(dir));
         }
-        else sb.AppendLine("no frames.vsfr: no presented frames in this capture");
+        else
+        {
+            sb.AppendLine("no frames.vsfr: no presented frames in this capture");
+        }
 
         // the GPU dump's presents
         var dumpPresents = new Dictionary<long, int>();
@@ -81,12 +95,17 @@ public static class CaptureAnalyzer
                 double len = Math.Max(1, fs.Length);
                 int k = 0;
                 while (r.Next())
+                {
                     if (r.Kind == GpuDumpRecord.Present)
                     {
                         dumpPresents[r.PresentInfo.Present] = ++k;
                         cancel.ThrowIfCancellationRequested();
-                        if ((k & 15) == 0) progress?.Invoke(0.6 + 0.3 * Math.Min(1.0, fs.Position / len));
+                        if ((k & 15) == 0)
+                        {
+                            progress?.Invoke(0.6 + 0.3 * Math.Min(1.0, fs.Position / len));
+                        }
                     }
+                }
             }
             catch (Exception e) when (e is IOException or InvalidDataException or EndOfStreamException) { sb.AppendLine($"GPU dump unreadable past frame {dumpPresents.Count}: {e.Message}"); }
         }
@@ -113,13 +132,27 @@ public static class CaptureAnalyzer
 
         // where the player is, what the screen showed, what they did just before
         sb.AppendLine();
-        foreach (var l in ContextLines(dir, input, startNs, stats, sheet)) sb.AppendLine(l);
+        foreach (var l in ContextLines(dir, input, startNs, stats, sheet))
+        {
+            sb.AppendLine(l);
+        }
 
         sb.AppendLine();
         sb.AppendLine($"Findings ({findings.Count}):");
-        if (findings.Count == 0) sb.AppendLine("  none in the presented frames");
+        if (findings.Count == 0)
+        {
+            sb.AppendLine("  none in the presented frames");
+        }
+
         string findDir = Path.Combine(dir, "findings");
-        if (Directory.Exists(findDir)) foreach (var old in Directory.GetFiles(findDir, "*.png")) File.Delete(old);
+        if (Directory.Exists(findDir))
+        {
+            foreach (var old in Directory.GetFiles(findDir, "*.png"))
+            {
+                File.Delete(old);
+            }
+        }
+
         var strips = new List<(Finding F, string Path)>();
         foreach (var f in findings.OrderBy(f => f.Index))
         {
@@ -137,10 +170,20 @@ public static class CaptureAnalyzer
             {
                 long a = stats[f.Index - 1].F.Info.PresentNs;
                 var during = input.Where(e => e.Kind is "mark" or "key" && e.Ns > a - 150_000_000 && e.Ns <= p.PresentNs).Select(e => $"{e.Kind} {e.Data}").ToList();
-                if (during.Count > 0) sb.AppendLine($"      during: {string.Join(", ", during)} (an emulator action, not the game)");
+                if (during.Count > 0)
+                {
+                    sb.AppendLine($"      during: {string.Join(", ", during)} (an emulator action, not the game)");
+                }
             }
-            if (NearInput(input, p.PresentNs) is { } ni) sb.AppendLine($"      input: {ni}");
-            if (s.Thumb != null && strips.Count < 40) strips.Add((f, Path.Combine(findDir, $"{f.Kind}_p{p.Present}.png")));
+            if (NearInput(input, p.PresentNs) is { } ni)
+            {
+                sb.AppendLine($"      input: {ni}");
+            }
+
+            if (s.Thumb != null && strips.Count < 40)
+            {
+                strips.Add((f, Path.Combine(findDir, $"{f.Kind}_p{p.Present}.png")));
+            }
         }
 
         if (strips.Count > 0)
@@ -153,7 +196,11 @@ public static class CaptureAnalyzer
         // audio
         string audioDir = Path.Combine(dir, "audio");
         var wavs = Directory.Exists(audioDir) ? Directory.GetFiles(audioDir, "*.wav").OrderBy(x => x).ToList() : new List<string>();
-        if (File.Exists(Path.Combine(dir, "audio_mix.wav"))) wavs.Insert(0, Path.Combine(dir, "audio_mix.wav"));
+        if (File.Exists(Path.Combine(dir, "audio_mix.wav")))
+        {
+            wavs.Insert(0, Path.Combine(dir, "audio_mix.wav"));
+        }
+
         sb.AppendLine();
         sb.AppendLine($"Audio ({wavs.Count} files):");
         var owners = PortOwners(dir);
@@ -165,33 +212,75 @@ public static class CaptureAnalyzer
                 var c = CaptureAudio.Analyze(w);
                 string name = Path.GetFileName(w);
                 bool port = name.Contains("_port", StringComparison.Ordinal) && !name.Contains("ngs_voice", StringComparison.Ordinal);
-                if (port) portSound.Add((c.File, c.Seconds, c.SoundSeconds));
+                if (port)
+                {
+                    portSound.Add((c.File, c.Seconds, c.SoundSeconds));
+                }
+
                 sb.Append(FormattableString.Invariant($"  {c.File}: {c.Seconds:F1} s at {c.Rate} Hz, sound {c.SoundSeconds:F1} s, peak {c.PeakDb:F1} dBFS, rms {c.RmsDb:F1} dBFS"));
-                if (owners.FirstOrDefault(o => name.Contains("_" + o.Key + "_", StringComparison.Ordinal)).Value is { } who) sb.Append($" [{who}]");
-                if (c.ClippedPct > 0.01) sb.Append(FormattableString.Invariant($", CLIPPED {c.ClippedPct:F2}%"));
-                if (c.Gaps > 0) sb.Append(FormattableString.Invariant($", {c.Gaps} silent gaps inside the sound (longest {c.LongestGapMs:F0} ms; at {string.Join(" ", c.GapTimesS.Take(8).Select(t => t.ToString("F2", CultureInfo.InvariantCulture)))} s)"));
-                if (c.Clicks > 0) sb.Append(FormattableString.Invariant($", {c.Clicks} clicks (at {string.Join(" ", c.ClickTimesS.Take(8).Select(t => t.ToString("F2", CultureInfo.InvariantCulture)))} s)"));
-                if (c.RmsDb < -90) sb.Append(", SILENT");
+                if (owners.FirstOrDefault(o => name.Contains("_" + o.Key + "_", StringComparison.Ordinal)).Value is { } who)
+                {
+                    sb.Append($" [{who}]");
+                }
+
+                if (c.ClippedPct > 0.01)
+                {
+                    sb.Append(FormattableString.Invariant($", CLIPPED {c.ClippedPct:F2}%"));
+                }
+
+                if (c.Gaps > 0)
+                {
+                    sb.Append(FormattableString.Invariant($", {c.Gaps} silent gaps inside the sound (longest {c.LongestGapMs:F0} ms; at {string.Join(" ", c.GapTimesS.Take(8).Select(t => t.ToString("F2", CultureInfo.InvariantCulture)))} s)"));
+                }
+
+                if (c.Clicks > 0)
+                {
+                    sb.Append(FormattableString.Invariant($", {c.Clicks} clicks (at {string.Join(" ", c.ClickTimesS.Take(8).Select(t => t.ToString("F2", CultureInfo.InvariantCulture)))} s)"));
+                }
+
+                if (c.RmsDb < -90)
+                {
+                    sb.Append(", SILENT");
+                }
+
                 sb.AppendLine();
             }
             catch (Exception e) when (e is IOException or InvalidDataException) { sb.AppendLine($"  {Path.GetFileName(w)}: {e.Message}"); }
         }
         // session.txt is written after the analysis of a new recording: the frames' span then gives the length
         double recorded = ParseSeconds(session.GetValueOrDefault("recorded"));
-        if (recorded <= 0 && stats.Count > 1) recorded = (stats[^1].F.Info.PresentNs - stats[0].F.Info.PresentNs) / 1e9;
+        if (recorded <= 0 && stats.Count > 1)
+        {
+            recorded = (stats[^1].F.Info.PresentNs - stats[0].F.Info.PresentNs) / 1e9;
+        }
+
         sb.AppendLine("  " + CaptureContext.StreamVerdict(portSound, recorded));
         var ctxStop = ContextSection(dir, stop: true);
-        if (ctxStop.Count > 0) sb.AppendLine("  at the stop of the recording (context.txt):");
+        if (ctxStop.Count > 0)
+        {
+            sb.AppendLine("  at the stop of the recording (context.txt):");
+        }
+
         foreach (var l in ctxStop.Where(l => l.StartsWith("audio: ", StringComparison.Ordinal)))
+        {
             sb.AppendLine("    " + l["audio: ".Length..]);
+        }
 
         sb.AppendLine();
         sb.AppendLine("Re-run (desktop, headless): VitaSharp.Desktop rerun \"" + dir + "\"" +
                       (File.Exists(Path.Combine(dir, "state_preroll.vss")) ? "   (--from=start to begin at the recording start instead of the pre-roll)" : ""));
-        if (File.Exists(dumpPath)) sb.AppendLine($"GPU replay: VitaSharp.Desktop replay-gpu \"{dumpPath}\"");
+        if (File.Exists(dumpPath))
+        {
+            sb.AppendLine($"GPU replay: VitaSharp.Desktop replay-gpu \"{dumpPath}\"");
+        }
+
         string text = sb.ToString();
         File.WriteAllText(Path.Combine(dir, "report.txt"), text);
-        if (!quiet) Console.Write(text);
+        if (!quiet)
+        {
+            Console.Write(text);
+        }
+
         return text;
     }
 
@@ -210,7 +299,11 @@ public static class CaptureAnalyzer
         var a = Load(original);
         var b = Load(rerun);
         var sb = new StringBuilder("# originalPresent rerunPresent guestTimeS dtMs diff\n");
-        if (a.Count == 0 || b.Count == 0) return "compare: no frames";
+        if (a.Count == 0 || b.Count == 0)
+        {
+            return "compare: no frames";
+        }
+
         long from = b[0].Us, to = b[^1].Us;
         int n = 0, same = 0;
         double firstDiverge = double.NaN;
@@ -218,13 +311,28 @@ public static class CaptureAnalyzer
         int j = 0;
         foreach (var (us, present, t) in a)
         {
-            if (us < from || us > to) continue;
-            while (j + 1 < b.Count && Math.Abs(b[j + 1].Us - us) <= Math.Abs(b[j].Us - us)) j++;
+            if (us < from || us > to)
+            {
+                continue;
+            }
+
+            while (j + 1 < b.Count && Math.Abs(b[j + 1].Us - us) <= Math.Abs(b[j].Us - us))
+            {
+                j++;
+            }
+
             double d = Diff(t, b[j].T);
             n++;
             diffs.Add(d);
-            if (d < threshold) same++;
-            else if (double.IsNaN(firstDiverge)) firstDiverge = us / 1e6;
+            if (d < threshold)
+            {
+                same++;
+            }
+            else if (double.IsNaN(firstDiverge))
+            {
+                firstDiverge = us / 1e6;
+            }
+
             sb.AppendLine(FormattableString.Invariant($"{present} {b[j].Present} {us / 1e6:F3} {(b[j].Us - us) / 1000.0:F1} {d:F2}"));
         }
         diffs.Sort();
@@ -243,11 +351,18 @@ public static class CaptureAnalyzer
     static Dictionary<string, string> ReadSession(string path)
     {
         var d = new Dictionary<string, string>();
-        if (!File.Exists(path)) return d;
+        if (!File.Exists(path))
+        {
+            return d;
+        }
+
         foreach (var line in File.ReadLines(path))
         {
             int c = line.IndexOf(": ", StringComparison.Ordinal);
-            if (c > 0 && !line.StartsWith(' ')) d.TryAdd(line[..c], line[(c + 2)..]);
+            if (c > 0 && !line.StartsWith(' '))
+            {
+                d.TryAdd(line[..c], line[(c + 2)..]);
+            }
         }
         return d;
     }
@@ -260,7 +375,11 @@ public static class CaptureAnalyzer
         {
             int l = (px[i] * 77 + px[i + 1] * 150 + px[i + 2] * 29) >> 8;
             sum += l;
-            if (l < 16) dark++;
+            if (l < 16)
+            {
+                dark++;
+            }
+
             n++;
         }
         return (n == 0 ? 0 : sum / (double)n, n == 0 ? 0 : dark / (double)n);
@@ -270,27 +389,47 @@ public static class CaptureAnalyzer
     {
         var dst = new byte[tw * th * 4];
         for (int y = 0; y < th; y++)
+        {
             for (int x = 0; x < tw; x++)
             {
                 int x0 = x * w / tw, x1 = Math.Max(x0 + 1, (x + 1) * w / tw), y0 = y * h / th, y1 = Math.Max(y0 + 1, (y + 1) * h / th);
                 int r = 0, g = 0, b = 0, n = 0;
                 for (int sy = y0; sy < y1; sy++)
+                {
                     for (int sx = x0; sx < x1; sx++)
                     {
                         int o = (sy * w + sx) * 4;
-                        r += src[o]; g += src[o + 1]; b += src[o + 2]; n++;
+                        r += src[o];
+                        g += src[o + 1];
+                        b += src[o + 2];
+                        n++;
                     }
+                }
+
                 int d = (y * tw + x) * 4;
-                dst[d] = (byte)(r / n); dst[d + 1] = (byte)(g / n); dst[d + 2] = (byte)(b / n); dst[d + 3] = 255;
+                dst[d] = (byte)(r / n);
+                dst[d + 1] = (byte)(g / n);
+                dst[d + 2] = (byte)(b / n);
+                dst[d + 3] = 255;
             }
+        }
+
         return dst;
     }
 
     static double Diff(byte[]? a, byte[]? b)
     {
-        if (a == null || b == null || a.Length != b.Length) return -1;
+        if (a == null || b == null || a.Length != b.Length)
+        {
+            return -1;
+        }
+
         long s = 0;
-        for (int i = 0; i < a.Length; i += 4) s += Math.Abs(a[i] - b[i]) + Math.Abs(a[i + 1] - b[i + 1]) + Math.Abs(a[i + 2] - b[i + 2]);
+        for (int i = 0; i < a.Length; i += 4)
+        {
+            s += Math.Abs(a[i] - b[i]) + Math.Abs(a[i + 1] - b[i + 1]) + Math.Abs(a[i + 2] - b[i + 2]);
+        }
+
         return s / (3.0 * a.Length / 4);
     }
 
@@ -302,18 +441,33 @@ public static class CaptureAnalyzer
         // black frames: a run of 1-3 between normal frames is a black flash, a longer run a black screen
         for (int i = 0; i < n;)
         {
-            if (!IsBlack(st[i])) { i++; continue; }
+            if (!IsBlack(st[i]))
+            {
+                i++;
+                continue;
+            }
             int j = i;
-            while (j + 1 < n && IsBlack(st[j + 1])) j++;
+            while (j + 1 < n && IsBlack(st[j + 1]))
+            {
+                j++;
+            }
+
             int count = j - i + 1;
             bool before = i > 0 && !IsBlack(st[i - 1]) && st[i - 1].Thumb != null, after = j + 1 < n && st[j + 1].Thumb != null;
             double ms = (st[j].F.Info.PresentNs - st[i].F.Info.PresentNs) / 1e6 + st[j].F.Info.IntervalMs;
             if (count <= 3 && before && after)
+            {
                 findings.Add(new Finding("black-flash", i, count, FormattableString.Invariant($"{count} black frame(s) between normal pictures (luma {st[i].Luma:F1})")));
+            }
             else if (ms < 1000 && before && after)
+            {
                 findings.Add(new Finding("black-transition", i, count, FormattableString.Invariant($"(info) black for {count} frames ({ms / 1000:F2} s) between pictures: a fade or a loading cut, unless it should not be there")));
+            }
             else
+            {
                 findings.Add(new Finding("black-screen", i, count, FormattableString.Invariant($"black for {count} frames ({ms / 1000:F2} s){(i == 0 ? ", from the first captured frame" : "")}{(j == n - 1 ? ", to the last captured frame" : "")}")));
+            }
+
             i = j + 1;
         }
 
@@ -321,11 +475,19 @@ public static class CaptureAnalyzer
         var det = new FlickerDetector(threshold);
         for (int i = 0; i < n; i++)
         {
-            if (st[i].Thumb is not { } t) continue;
+            if (st[i].Thumb is not { } t)
+            {
+                continue;
+            }
+
             if (det.Add(i, t, TW, TH) is { } f)
             {
                 int k = (int)f.Frame;
-                if (IsBlack(st[k])) continue; // reported as a black flash
+                if (IsBlack(st[k]))
+                {
+                    continue; // reported as a black flash
+                }
+
                 findings.Add(new Finding("flash", k, 1, $"differs from both neighbours, which match each other: {det.Describe(f).Replace($"frame {f.Frame}: ", "")}"));
             }
         }
@@ -333,12 +495,25 @@ public static class CaptureAnalyzer
         // presentation order: guest flip numbers going back, a flip presented twice, flips the renderer skipped
         for (int i = 1; i < n; i++)
         {
-            var a = st[i - 1].F.Info; var b = st[i].F.Info;
-            if (a.Flip < 0 || b.Flip < 0) continue;
-            if (b.Flip < a.Flip) findings.Add(new Finding("out-of-order", i, 1, $"guest flip {b.Flip} presented after flip {a.Flip}"));
-            else if (b.Flip == a.Flip) findings.Add(new Finding("re-presented", i, 1, $"guest flip {b.Flip} presented twice (renderer presents {a.Present} and {b.Present})"));
+            var a = st[i - 1].F.Info;
+            var b = st[i].F.Info;
+            if (a.Flip < 0 || b.Flip < 0)
+            {
+                continue;
+            }
+
+            if (b.Flip < a.Flip)
+            {
+                findings.Add(new Finding("out-of-order", i, 1, $"guest flip {b.Flip} presented after flip {a.Flip}"));
+            }
+            else if (b.Flip == a.Flip)
+            {
+                findings.Add(new Finding("re-presented", i, 1, $"guest flip {b.Flip} presented twice (renderer presents {a.Present} and {b.Present})"));
+            }
             else if (b.Flip > a.Flip + 1 && b.Present == a.Present + 1)
+            {
                 findings.Add(new Finding("flips-skipped", i, (int)(b.Flip - a.Flip - 1), $"guest flips {a.Flip + 1}-{b.Flip - 1} never reached the screen"));
+            }
         }
 
         // pictures out of order: swapping frames i and i+1 makes the sequence much smoother (a decode-order or
@@ -347,7 +522,11 @@ public static class CaptureAnalyzer
         {
             double d01 = Diff(st[i - 1].Thumb, st[i].Thumb), d12 = Diff(st[i].Thumb, st[i + 1].Thumb), d23 = Diff(st[i + 1].Thumb, st[i + 2].Thumb);
             double d02 = Diff(st[i - 1].Thumb, st[i + 1].Thumb), d13 = Diff(st[i].Thumb, st[i + 2].Thumb);
-            if (d01 < 0 || d12 < 0 || d23 < 0 || d02 < 0 || d13 < 0) continue;
+            if (d01 < 0 || d12 < 0 || d23 < 0 || d02 < 0 || d13 < 0)
+            {
+                continue;
+            }
+
             double asIs = d01 + d12 + d23, swapped = d02 + d12 + d13;
             if (asIs > 3 * threshold && swapped < 0.6 * asIs && d02 < d01 * 0.5 && d13 < d23 * 0.5)
             {
@@ -360,7 +539,11 @@ public static class CaptureAnalyzer
         for (int i = 0; i < n;)
         {
             int j = i;
-            while (j + 1 < n && st[j + 1].Thumb != null && st[i].Thumb != null && st[j + 1].Hash == st[i].Hash) j++;
+            while (j + 1 < n && st[j + 1].Thumb != null && st[i].Thumb != null && st[j + 1].Hash == st[i].Hash)
+            {
+                j++;
+            }
+
             double ms = (st[j].F.Info.PresentNs - st[i].F.Info.PresentNs) / 1e6;
             if (ms >= 1500 && !IsBlack(st[i]) && st[j].F.Info.Flip - st[i].F.Info.Flip >= 30)
             {
@@ -373,14 +556,22 @@ public static class CaptureAnalyzer
             i = j + 1;
         }
         var iv = new List<double>();
-        for (int i = 1; i < n; i++) iv.Add((st[i].F.Info.PresentNs - st[i - 1].F.Info.PresentNs) / 1e6);
+        for (int i = 1; i < n; i++)
+        {
+            iv.Add((st[i].F.Info.PresentNs - st[i - 1].F.Info.PresentNs) / 1e6);
+        }
+
         var sorted = iv.Where(v => v > 0).OrderBy(v => v).ToList();
         double med = sorted.Count > 0 ? sorted[sorted.Count / 2] : 16.7;
         double limit = Math.Max(3 * med, med + 50);
         for (int i = 1; i < n; i++)
         {
             double d = iv[i - 1];
-            if (d < limit) continue;
+            if (d < limit)
+            {
+                continue;
+            }
+
             var p = st[i].F.Info;
             bool restarted = p.Present < st[i - 1].F.Info.Present;
             // a cause longer than the interval is a ledger total carried over a renderer change, not this frame's
@@ -397,8 +588,16 @@ public static class CaptureAnalyzer
         // frames presented in each second (the dips)
         long t0 = st[0].F.Info.PresentNs;
         var perSecond = st.GroupBy(s => (s.F.Info.PresentNs - t0) / 1_000_000_000).OrderBy(g => g.Key).Select(g => g.Count()).ToList();
-        if (perSecond.Count > 2) perSecond = perSecond.Skip(1).SkipLast(1).ToList();
-        if (perSecond.Count == 0) return "fps per second: -";
+        if (perSecond.Count > 2)
+        {
+            perSecond = perSecond.Skip(1).SkipLast(1).ToList();
+        }
+
+        if (perSecond.Count == 0)
+        {
+            return "fps per second: -";
+        }
+
         return $"fps per second: min {perSecond.Min()}, median {perSecond.OrderBy(x => x).ElementAt(perSecond.Count / 2)}, max {perSecond.Max()}: {string.Join(' ', perSecond.Take(120))}";
     }
 
@@ -407,19 +606,42 @@ public static class CaptureAnalyzer
         InputEvent? best = null;
         foreach (var e in input)
         {
-            if (e.Kind is "motion" or "rng") continue;
-            if (e.Ns > ns) break;
-            if (ns - e.Ns <= 2_000_000_000) best = e;
+            if (e.Kind is "motion" or "rng")
+            {
+                continue;
+            }
+
+            if (e.Ns > ns)
+            {
+                break;
+            }
+
+            if (ns - e.Ns <= 2_000_000_000)
+            {
+                best = e;
+            }
         }
-        if (best is not { } b) return null;
+        if (best is not { } b)
+        {
+            return null;
+        }
+
         return FormattableString.Invariant($"{(ns - b.Ns) / 1e6:F0} ms after {b.Kind} {DescribeInput(b)} (guest frame {b.Flip})");
     }
 
     static string DescribeInput(InputEvent e)
     {
-        if (e.Kind != "pad") return e.Data;
+        if (e.Kind != "pad")
+        {
+            return e.Data;
+        }
+
         var p = e.Data.Split(' ');
-        if (p.Length < 6 || !uint.TryParse(p[1], NumberStyles.HexNumber, null, out uint btn)) return e.Data;
+        if (p.Length < 6 || !uint.TryParse(p[1], NumberStyles.HexNumber, null, out uint btn))
+        {
+            return e.Data;
+        }
+
         var names = Enum.GetValues<Host.VitaButtons>().Where(v => v != 0 && ((uint)v & ((uint)v - 1)) == 0 && (btn & (uint)v) != 0).Select(v => v.ToString()).Distinct();
         return $"port {p[0]} buttons [{string.Join(' ', names)}] sticks {p[2]},{p[3]} {p[4]},{p[5]}";
     }
@@ -432,8 +654,15 @@ public static class CaptureAnalyzer
     static int CountFrames(string dir, int expected)
     {
         string t = Path.Combine(dir, "timeline.tsv");
-        if (!File.Exists(t)) return expected;
-        try { return File.ReadLines(t).Count(l => l.Length > 0 && l[0] != '#'); }
+        if (!File.Exists(t))
+        {
+            return expected;
+        }
+
+        try
+        {
+            return File.ReadLines(t).Count(l => l.Length > 0 && l[0] != '#');
+        }
         catch (IOException) { return expected; }
     }
 
@@ -441,8 +670,16 @@ public static class CaptureAnalyzer
     internal static HashSet<int> SheetIndices(int total, int cells)
     {
         var s = new HashSet<int>();
-        if (total <= 0) return s;
-        for (int i = 0; i < cells; i++) s.Add((int)Math.Round(i * (total - 1) / (double)Math.Max(1, cells - 1)));
+        if (total <= 0)
+        {
+            return s;
+        }
+
+        for (int i = 0; i < cells; i++)
+        {
+            s.Add((int)Math.Round(i * (total - 1) / (double)Math.Max(1, cells - 1)));
+        }
+
         return s;
     }
 
@@ -451,12 +688,23 @@ public static class CaptureAnalyzer
     {
         string p = Path.Combine(dir, "context.txt");
         var lines = new List<string>();
-        if (!File.Exists(p)) return lines;
+        if (!File.Exists(p))
+        {
+            return lines;
+        }
+
         bool inside = false;
         foreach (var l in File.ReadLines(p))
         {
-            if (l.StartsWith('[')) { inside = l.StartsWith(stop ? "[stop" : "[start", StringComparison.Ordinal); continue; }
-            if (inside && l.Length > 0) lines.Add(l);
+            if (l.StartsWith('['))
+            {
+                inside = l.StartsWith(stop ? "[stop" : "[start", StringComparison.Ordinal);
+                continue;
+            }
+            if (inside && l.Length > 0)
+            {
+                lines.Add(l);
+            }
         }
         return lines;
     }
@@ -470,7 +718,11 @@ public static class CaptureAnalyzer
         {
             // audio: port 1 MAIN (port1_MAIN.wav): role; opened by X thread 'Y'; ...
             int a = l.IndexOf(" (port", StringComparison.Ordinal), b = l.IndexOf(".wav): ", StringComparison.Ordinal);
-            if (!l.StartsWith("audio: port", StringComparison.Ordinal) || a < 0 || b < a) continue;
+            if (!l.StartsWith("audio: port", StringComparison.Ordinal) || a < 0 || b < a)
+            {
+                continue;
+            }
+
             string key = l[(a + 2)..b];
             var parts = l[(b + 7)..].Split("; ");
             string who = parts.Length >= 2 ? $"{parts[0]}, {parts[1]}" : parts[0];
@@ -488,16 +740,34 @@ public static class CaptureAnalyzer
     {
         var o = new List<string>();
         // times from the recording's start mark (start-ns of session.txt is the capture clock's origin)
-        if (input.FirstOrDefault(e => e.Kind == "mark" && e.Data.StartsWith("start", StringComparison.Ordinal)) is { Kind: not null } m) startNs = m.Ns;
+        if (input.FirstOrDefault(e => e.Kind == "mark" && e.Data.StartsWith("start", StringComparison.Ordinal)) is { Kind: not null } m)
+        {
+            startNs = m.Ns;
+        }
+
         var start = ContextSection(dir, false);
         var ctx = input.Where(e => e.Kind == "ctx").ToList();
         o.Add("Where:");
-        if (start.Count == 0 && ctx.Count == 0) o.Add("  (no context.txt: a capture from an older build)");
+        if (start.Count == 0 && ctx.Count == 0)
+        {
+            o.Add("  (no context.txt: a capture from an older build)");
+        }
+
         foreach (var e in ctx)
+        {
             o.Add(FormattableString.Invariant($"  {(e.Ns - startNs) / 1e9:+0.0;-0.0} s: {e.Data}"));
-        foreach (var l in start.Where(l => l.StartsWith("process: ", StringComparison.Ordinal))) o.Add("  " + l);
+        }
+
+        foreach (var l in start.Where(l => l.StartsWith("process: ", StringComparison.Ordinal)))
+        {
+            o.Add("  " + l);
+        }
+
         var stopWhere = ContextSection(dir, true).FirstOrDefault(l => l.StartsWith("where: ", StringComparison.Ordinal));
-        if (stopWhere != null) o.Add($"  at the stop: {stopWhere["where: ".Length..]}");
+        if (stopWhere != null)
+        {
+            o.Add($"  at the stop: {stopWhere["where: ".Length..]}");
+        }
 
         if (sheet.Count > 0)
         {
@@ -509,7 +779,10 @@ public static class CaptureAnalyzer
             {
                 int cx = k % SheetCols, cy = k / SheetCols;
                 for (int y = 0; y < SheetH; y++)
+                {
                     cell.AsSpan(y * SheetW * 4, SheetW * 4).CopyTo(img.AsSpan(((cy * SheetH + y) * SheetW * SheetCols + cx * SheetW) * 4));
+                }
+
                 times.Add(FormattableString.Invariant($"{(stats[idx].F.Info.PresentNs - startNs) / 1e9:+0.0;-0.0}"));
                 k++;
             }
@@ -527,7 +800,9 @@ public static class CaptureAnalyzer
             var ev = File.ReadLines(before).Select(InputEvent.Parse).OfType<InputEvent>().ToList();
             o.Add(ev.Count == 0 ? "  input before the recording: none (no button or touch change since the game started)" : "  input before the recording (the last changes, input_before.tsv):");
             foreach (var e in ev.TakeLast(8))
+            {
                 o.Add(FormattableString.Invariant($"    {(e.Ns - startNs) / 1e9:+0.0;-0.0} s: {e.Kind} {DescribeInput(e)}"));
+            }
         }
         return o;
     }
@@ -544,8 +819,16 @@ public static class CaptureAnalyzer
         foreach (var (_, pic) in FramesFile.ReadAll(framesPath))
         {
             cancel.ThrowIfCancellationRequested();
-            if (i > last) break; // the pictures after the last finding are not needed
-            if (need.Contains(i) && pic is { } p) cells[i] = Downscale(p.Rgba, p.W, p.H, cw, ch);
+            if (i > last)
+            {
+                break; // the pictures after the last finding are not needed
+            }
+
+            if (need.Contains(i) && pic is { } p)
+            {
+                cells[i] = Downscale(p.Rgba, p.W, p.H, cw, ch);
+            }
+
             i++;
         }
         foreach (var (f, path) in strips)
@@ -553,17 +836,32 @@ public static class CaptureAnalyzer
             var img = new byte[cw * cols * ch * 4];
             for (int c = 0; c < cols; c++)
             {
-                if (!cells.TryGetValue(f.Index - 2 + c, out var cell)) continue;
+                if (!cells.TryGetValue(f.Index - 2 + c, out var cell))
+                {
+                    continue;
+                }
+
                 for (int y = 0; y < ch; y++)
+                {
                     cell.AsSpan(y * cw * 4, cw * 4).CopyTo(img.AsSpan((y * cw * cols + c * cw) * 4));
+                }
+
                 if (c == 2)
+                {
                     for (int y = 0; y < ch; y++)
+                    {
                         for (int x = 0; x < cw; x++)
+                        {
                             if (y < 3 || y >= ch - 3 || x < 3 || x >= cw - 3)
                             {
                                 int o = (y * cw * cols + c * cw + x) * 4;
-                                img[o] = 255; img[o + 1] = 0; img[o + 2] = 0;
+                                img[o] = 255;
+                                img[o + 1] = 0;
+                                img[o + 2] = 0;
                             }
+                        }
+                    }
+                }
             }
             CapturePng.Write(path, img, cw * cols, ch);
         }

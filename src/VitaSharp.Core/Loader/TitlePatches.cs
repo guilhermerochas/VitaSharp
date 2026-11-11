@@ -13,15 +13,31 @@ public static class TitlePatches
 {
     public static void Apply(string titleId, string? patchDir)
     {
-        if (patchDir == null) return;
+        if (patchDir == null)
+        {
+            return;
+        }
+
         var file = Path.Combine(patchDir, titleId + ".txt");
-        if (!File.Exists(file)) return;
+        if (!File.Exists(file))
+        {
+            return;
+        }
+
         foreach (var raw in File.ReadLines(file))
         {
             var line = raw.Split('#')[0].Trim();
-            if (line.Length == 0) continue;
+            if (line.Length == 0)
+            {
+                continue;
+            }
+
             var parts = line.Split(':');
-            if (parts.Length != 2) { Log.Warn($"patch {file}: bad line '{raw}'"); continue; }
+            if (parts.Length != 2)
+            {
+                Log.Warn($"patch {file}: bad line '{raw}'");
+                continue;
+            }
             try
             {
                 uint addr = Convert.ToUInt32(parts[0], 16), value = Convert.ToUInt32(parts[1], 16);
@@ -33,7 +49,15 @@ public static class TitlePatches
 
     static void Write(uint addr, uint value, int size, string source)
     {
-        if (size == 2) GuestMemory.Write(addr, (ushort)value); else GuestMemory.W32(addr, value);
+        if (size == 2)
+        {
+            GuestMemory.Write(addr, (ushort)value);
+        }
+        else
+        {
+            GuestMemory.W32(addr, value);
+        }
+
         Log.Info($"Applied patch {addr:X8} <- {value:X} ({source})");
     }
 }

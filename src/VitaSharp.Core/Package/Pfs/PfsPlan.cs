@@ -36,9 +36,15 @@ public sealed class PfsPlan
     readonly List<PfsTable> _unmatched;
     Aes? _aes;
 
-    public IReadOnlyList<PfsTable> Tables { get; }
+    public IReadOnlyList<PfsTable> Tables
+    {
+        get;
+    }
     /// <summary>Sum of the logical sizes of the files in files.db.</summary>
-    public long TotalSize { get; }
+    public long TotalSize
+    {
+        get;
+    }
 
     internal PfsPlan(List<PfsTable> tables, Dictionary<string, PfsNode> nodes, long totalSize, byte[] drvKey)
     {
@@ -66,11 +72,19 @@ public sealed class PfsPlan
     /// </summary>
     public PfsTable? Match(long size, ReadOnlySpan<byte> head)
     {
-        if (size <= 0) return null;
+        if (size <= 0)
+        {
+            return null;
+        }
+
         uint sectors = SectorCount(size);
         foreach (var t in _unmatched)
         {
-            if (t.NumSectors != sectors) continue;
+            if (t.NumSectors != sectors)
+            {
+                continue;
+            }
+
             if (t.Matches(head[..(int)Math.Min(size, t.SectorSize)]))
             {
                 _unmatched.Remove(t);
@@ -84,7 +98,9 @@ public sealed class PfsPlan
     public void EnsureAllMatched()
     {
         if (_unmatched.Count > 0)
+        {
             throw new InvalidDataException($"PFS: no file matches unicv table at page {_unmatched[0].Salt}");
+        }
     }
 
     public PfsNode Node(string relPath) =>
@@ -134,7 +150,10 @@ public sealed class PfsSectorCipher
             ulong tweak = (ulong)_sector * (ulong)sectorIndex;
             BitConverter.TryWriteBytes(iv[..8], tweak);
             iv[8..].Clear();
-            for (int i = 0; i < 16; i++) iv[i] ^= _tweakKey[i];
+            for (int i = 0; i < 16; i++)
+            {
+                iv[i] ^= _tweakKey[i];
+            }
 
             int aligned = buf.Length & ~15;
             if (aligned > 0)
@@ -146,7 +165,10 @@ public sealed class PfsSectorCipher
             if (buf.Length > aligned)
             {
                 _aes.EncryptEcb(iv, ks, PaddingMode.None);
-                for (int i = aligned; i < buf.Length; i++) buf[i] ^= ks[i - aligned];
+                for (int i = aligned; i < buf.Length; i++)
+                {
+                    buf[i] ^= ks[i - aligned];
+                }
             }
         }
     }

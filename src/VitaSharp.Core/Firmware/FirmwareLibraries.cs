@@ -22,7 +22,10 @@ public sealed class FirmwareLibraries
     public sealed record Module(string VitaPath, string Name, IReadOnlyList<(string Library, uint LibNid)> Libraries);
 
     readonly Dictionary<string, Module> _byLibrary = new(StringComparer.Ordinal);
-    public IReadOnlyList<Module> Modules { get; }
+    public IReadOnlyList<Module> Modules
+    {
+        get;
+    }
 
     static readonly ConcurrentDictionary<string, FirmwareLibraries> Cache = new(StringComparer.OrdinalIgnoreCase);
 
@@ -43,14 +46,21 @@ public sealed class FirmwareLibraries
         foreach (var folder in ModuleFolders)
         {
             string dir = Path.Combine(fsRoot, "vs0", folder.Replace('/', Path.DirectorySeparatorChar));
-            if (!Directory.Exists(dir)) continue;
+            if (!Directory.Exists(dir))
+            {
+                continue;
+            }
+
             foreach (var file in Directory.EnumerateFiles(dir, "*.suprx").Order(StringComparer.OrdinalIgnoreCase))
             {
                 string vita = $"vs0:{folder}/{Path.GetFileName(file)}";
                 var fi = new FileInfo(file);
                 string stamp = $"{fi.Length}\t{fi.LastWriteTimeUtc.Ticks}";
                 Module? m = null;
-                if (cached.TryGetValue(vita, out var c) && c.Stamp == stamp) m = c.Module;
+                if (cached.TryGetValue(vita, out var c) && c.Stamp == stamp)
+                {
+                    m = c.Module;
+                }
                 else
                 {
                     changed = true;
@@ -67,14 +77,20 @@ public sealed class FirmwareLibraries
                 }
                 modules.Add(m);
                 lines.Add($"{vita}\t{stamp}\t{m.Name}\t{string.Join(',', m.Libraries.Select(l => $"{l.Library}:{l.LibNid:X8}"))}");
-                foreach (var (lib, _) in m.Libraries) _byLibrary.TryAdd(lib, m);
+                foreach (var (lib, _) in m.Libraries)
+                {
+                    _byLibrary.TryAdd(lib, m);
+                }
             }
         }
         Modules = modules;
         if (changed || cached.Count != modules.Count)
         {
             Log.Info($"firmware libraries: indexed {modules.Count} modules, {_byLibrary.Count} libraries in {sw.ElapsedMilliseconds} ms");
-            try { File.WriteAllLines(cacheFile, lines, new UTF8Encoding(false)); }
+            try
+            {
+                File.WriteAllLines(cacheFile, lines, new UTF8Encoding(false));
+            }
             catch (Exception e) when (e is IOException or UnauthorizedAccessException) { Log.Debug($"firmware libraries: cannot write {cacheFile}: {e.Message}"); }
         }
     }
@@ -82,13 +98,21 @@ public sealed class FirmwareLibraries
     static Dictionary<string, (string Stamp, Module Module)> ReadCache(string file)
     {
         var d = new Dictionary<string, (string, Module)>(StringComparer.OrdinalIgnoreCase);
-        if (!File.Exists(file)) return d;
+        if (!File.Exists(file))
+        {
+            return d;
+        }
+
         try
         {
             foreach (var line in File.ReadLines(file))
             {
                 var f = line.Split('\t');
-                if (f.Length != 5) continue;
+                if (f.Length != 5)
+                {
+                    continue;
+                }
+
                 var libs = f[4].Split(',', StringSplitOptions.RemoveEmptyEntries).Select(x =>
                 {
                     int c = x.LastIndexOf(':');

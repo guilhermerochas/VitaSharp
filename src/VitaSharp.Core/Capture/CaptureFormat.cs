@@ -80,7 +80,11 @@ public static class FramesFile
         public (byte[] Data, byte Flags) Encode(ReadOnlySpan<byte> rgba, int w, int h)
         {
             int bytes = w * h * 4, max = Qoi.MaxSize(w, h);
-            if (_qoi.Length < max) _qoi = new byte[max];
+            if (_qoi.Length < max)
+            {
+                _qoi = new byte[max];
+            }
+
             bool key = _prev == null || _prevW != w || _prevH != h || ++_sinceKey >= KeyInterval;
             byte[] result;
             if (key)
@@ -91,17 +95,34 @@ public static class FramesFile
             }
             else
             {
-                if (_delta.Length < bytes) _delta = new byte[bytes];
+                if (_delta.Length < bytes)
+                {
+                    _delta = new byte[bytes];
+                }
+
                 var prev = _prev!;
-                for (int i = 0; i < bytes; i++) _delta[i] = (byte)(rgba[i] - prev[i]);
+                for (int i = 0; i < bytes; i++)
+                {
+                    _delta[i] = (byte)(rgba[i] - prev[i]);
+                }
+
                 int n = Qoi.Encode(_delta.AsSpan(0, bytes), w, h, _qoi);
                 using var ms = new MemoryStream(n / 2 + 64);
-                using (var z = new BrotliStream(ms, CompressionLevel.Fastest, leaveOpen: true)) z.Write(_qoi, 0, n);
+                using (var z = new BrotliStream(ms, CompressionLevel.Fastest, leaveOpen: true))
+                {
+                    z.Write(_qoi, 0, n);
+                }
+
                 result = ms.ToArray();
             }
-            if (_prev == null || _prev.Length != bytes) _prev = new byte[bytes];
+            if (_prev == null || _prev.Length != bytes)
+            {
+                _prev = new byte[bytes];
+            }
+
             rgba[..bytes].CopyTo(_prev);
-            _prevW = w; _prevH = h;
+            _prevW = w;
+            _prevH = h;
             return (result, key ? FlagKey : FlagDelta);
         }
     }
@@ -113,22 +134,42 @@ public static class FramesFile
 
         public (byte[] Rgba, int W, int H)? Decode(Frame f, ReadOnlySpan<byte> data)
         {
-            if (!f.HasPicture) return null;
+            if (!f.HasPicture)
+            {
+                return null;
+            }
+
             if ((f.Flags & FlagDelta) == 0)
             {
                 var k = Qoi.Decode(data);
                 _prev = k.Rgba;
                 return (k.Rgba.ToArray(), k.W, k.H);
             }
-            if (_prev == null) return null; // a delta without its key picture (the start of a cut file)
+            if (_prev == null)
+            {
+                return null; // a delta without its key picture (the start of a cut file)
+            }
+
             using var z = new BrotliStream(new MemoryStream(data.ToArray()), CompressionMode.Decompress);
             using var raw = new MemoryStream();
             z.CopyTo(raw);
             var d = Qoi.Decode(raw.GetBuffer().AsSpan(0, (int)raw.Length));
-            if (d.Rgba.Length != _prev.Length) return null;
+            if (d.Rgba.Length != _prev.Length)
+            {
+                return null;
+            }
+
             var px = d.Rgba;
-            for (int i = 0; i < px.Length; i++) px[i] = (byte)(px[i] + _prev[i]);
-            for (int i = 3; i < px.Length; i += 4) px[i] = 255;
+            for (int i = 0; i < px.Length; i++)
+            {
+                px[i] = (byte)(px[i] + _prev[i]);
+            }
+
+            for (int i = 3; i < px.Length; i += 4)
+            {
+                px[i] = 255;
+            }
+
             _prev = px;
             return (px.ToArray(), d.W, d.H);
         }
@@ -143,8 +184,16 @@ public static class FramesFile
         var buf = Array.Empty<byte>();
         foreach (var f in index)
         {
-            if (!f.HasPicture) { yield return (f, null); continue; }
-            if (buf.Length < f.QoiLength) buf = new byte[f.QoiLength];
+            if (!f.HasPicture)
+            {
+                yield return (f, null);
+                continue;
+            }
+            if (buf.Length < f.QoiLength)
+            {
+                buf = new byte[f.QoiLength];
+            }
+
             s.Position = f.QoiOffset;
             s.ReadExactly(buf, 0, f.QoiLength);
             yield return (f, dec.Decode(f, buf.AsSpan(0, f.QoiLength)));
@@ -162,22 +211,55 @@ public static class FramesFile
     public static void WriteRecord(Stream s, in PresentInfo p, byte flags, ReadOnlySpan<byte> qoi)
     {
         var hitch = Encoding.UTF8.GetBytes(p.Hitch ?? "");
-        if (hitch.Length > 255) Array.Resize(ref hitch, 255);
+        if (hitch.Length > 255)
+        {
+            Array.Resize(ref hitch, 255);
+        }
+
         int len = 6 * 8 + 3 * 4 + 4 * 4 + 3 * 4 + 1 + 1 + hitch.Length + 4 + qoi.Length;
         var b = new byte[4 + len - qoi.Length];
         int o = 0;
-        void I32(int v) { BinaryPrimitives.WriteInt32LittleEndian(b.AsSpan(o), v); o += 4; }
-        void U32(uint v) { BinaryPrimitives.WriteUInt32LittleEndian(b.AsSpan(o), v); o += 4; }
-        void I64(long v) { BinaryPrimitives.WriteInt64LittleEndian(b.AsSpan(o), v); o += 8; }
-        void F32(float v) { BinaryPrimitives.WriteSingleLittleEndian(b.AsSpan(o), v); o += 4; }
+        void I32(int v)
+        {
+            BinaryPrimitives.WriteInt32LittleEndian(b.AsSpan(o), v);
+            o += 4;
+        }
+        void U32(uint v)
+        {
+            BinaryPrimitives.WriteUInt32LittleEndian(b.AsSpan(o), v);
+            o += 4;
+        }
+        void I64(long v)
+        {
+            BinaryPrimitives.WriteInt64LittleEndian(b.AsSpan(o), v);
+            o += 8;
+        }
+        void F32(float v)
+        {
+            BinaryPrimitives.WriteSingleLittleEndian(b.AsSpan(o), v);
+            o += 4;
+        }
         I32(len);
-        I64(p.Present); I64(p.Flip); I64(p.VBlank); I64(p.GuestUs); I64(p.FlipNs); I64(p.PresentNs);
-        F32(p.IntervalMs); F32(p.GpuMs); F32(p.HitchMs);
-        I32(p.Draws); I32(p.Scenes); I32(p.NewShaders); I32(p.NewPipelines);
-        U32(p.Address); U32(p.SrcW); U32(p.SrcH);
+        I64(p.Present);
+        I64(p.Flip);
+        I64(p.VBlank);
+        I64(p.GuestUs);
+        I64(p.FlipNs);
+        I64(p.PresentNs);
+        F32(p.IntervalMs);
+        F32(p.GpuMs);
+        F32(p.HitchMs);
+        I32(p.Draws);
+        I32(p.Scenes);
+        I32(p.NewShaders);
+        I32(p.NewPipelines);
+        U32(p.Address);
+        U32(p.SrcW);
+        U32(p.SrcH);
         b[o++] = flags;
         b[o++] = (byte)hitch.Length;
-        hitch.CopyTo(b, o); o += hitch.Length;
+        hitch.CopyTo(b, o);
+        o += hitch.Length;
         I32(qoi.Length);
         s.Write(b, 0, o);
         s.Write(qoi);
@@ -195,22 +277,50 @@ public static class FramesFile
         var list = new List<Frame>();
         using var s = File.OpenRead(path);
         Span<byte> head = stackalloc byte[12];
-        if (s.Read(head) < 12 || !head[..8].SequenceEqual(Magic)) throw new InvalidDataException($"{path}: not a VitaSharp frames file");
+        if (s.Read(head) < 12 || !head[..8].SequenceEqual(Magic))
+        {
+            throw new InvalidDataException($"{path}: not a VitaSharp frames file");
+        }
+
         var lenBuf = new byte[4];
         while (s.Position + 4 <= s.Length)
         {
             long at = s.Position;
             s.ReadExactly(lenBuf);
             int len = BinaryPrimitives.ReadInt32LittleEndian(lenBuf);
-            if (len <= 0 || at + 4 + len > s.Length) break;
+            if (len <= 0 || at + 4 + len > s.Length)
+            {
+                break;
+            }
+
             int fixedLen = Math.Min(len, 6 * 8 + 3 * 4 + 4 * 4 + 3 * 4 + 2 + 255 + 4);
             var b = new byte[fixedLen];
             s.ReadExactly(b);
             int o = 0;
-            int I32() { int v = BinaryPrimitives.ReadInt32LittleEndian(b.AsSpan(o)); o += 4; return v; }
-            uint U32() { uint v = BinaryPrimitives.ReadUInt32LittleEndian(b.AsSpan(o)); o += 4; return v; }
-            long I64() { long v = BinaryPrimitives.ReadInt64LittleEndian(b.AsSpan(o)); o += 8; return v; }
-            float F32() { float v = BinaryPrimitives.ReadSingleLittleEndian(b.AsSpan(o)); o += 4; return v; }
+            int I32()
+            {
+                int v = BinaryPrimitives.ReadInt32LittleEndian(b.AsSpan(o));
+                o += 4;
+                return v;
+            }
+            uint U32()
+            {
+                uint v = BinaryPrimitives.ReadUInt32LittleEndian(b.AsSpan(o));
+                o += 4;
+                return v;
+            }
+            long I64()
+            {
+                long v = BinaryPrimitives.ReadInt64LittleEndian(b.AsSpan(o));
+                o += 8;
+                return v;
+            }
+            float F32()
+            {
+                float v = BinaryPrimitives.ReadSingleLittleEndian(b.AsSpan(o));
+                o += 4;
+                return v;
+            }
             var p = new PresentInfo
             {
                 Present = I64(), Flip = I64(), VBlank = I64(), GuestUs = I64(), FlipNs = I64(), PresentNs = I64(),
@@ -233,16 +343,28 @@ public static class FramesFile
     /// before it), or null.</summary>
     public static (byte[] Rgba, int W, int H)? ReadPicture(string path, IReadOnlyList<Frame> index, int i)
     {
-        if (i < 0 || i >= index.Count || !index[i].HasPicture) return null;
+        if (i < 0 || i >= index.Count || !index[i].HasPicture)
+        {
+            return null;
+        }
+
         int k = i;
-        while (k > 0 && ((index[k].Flags & FlagDelta) != 0 || !index[k].HasPicture)) k--;
+        while (k > 0 && ((index[k].Flags & FlagDelta) != 0 || !index[k].HasPicture))
+        {
+            k--;
+        }
+
         var dec = new Decoder();
         using var s = File.OpenRead(path);
         (byte[], int, int)? last = null;
         for (int j = k; j <= i; j++)
         {
             var f = index[j];
-            if (!f.HasPicture) continue;
+            if (!f.HasPicture)
+            {
+                continue;
+            }
+
             var buf = new byte[f.QoiLength];
             s.Position = f.QoiOffset;
             s.ReadExactly(buf);

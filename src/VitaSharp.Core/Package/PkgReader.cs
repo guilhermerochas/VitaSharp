@@ -3,7 +3,10 @@ using static VitaSharp.Core.Util.BinaryHelpers;
 
 namespace VitaSharp.Core.Package;
 
-public enum PkgContentType { App, Dlc, Patch, Theme, Psp, PspDlc, Psx, PspTheme }
+public enum PkgContentType
+{
+    App, Dlc, Patch, Theme, Psp, PspDlc, Psx, PspTheme
+}
 
 /// <summary>What a .pkg holds, from its content type (info block 2), PARAM.SFO and DLC install folder (pkg2zip's
 /// table, psdevwiki "PKG files").</summary>
@@ -78,17 +81,35 @@ public sealed class PkgReader : IDisposable
     readonly byte[] _key = new byte[16];
     readonly ulong _dataOffset;
 
-    public string ContentId { get; }
+    public string ContentId
+    {
+        get;
+    }
     public string TitleId => ContentId.Length >= 16 ? ContentId.Substring(7, 9) : "";
-    public uint ContentTypeRaw { get; }
+    public uint ContentTypeRaw
+    {
+        get;
+    }
     /// <summary>The key type (header 0xE7 &amp; 7): 1 PSP/PSone, 2-4 PS Vita; 0 for a package in the PS3 format (header
     /// type 1, as some PSone Classics are sold), whose items all use the PS3 key.</summary>
-    public int KeyType { get; }
+    public int KeyType
+    {
+        get;
+    }
     /// <summary>The PARAM.SFO of the package (info block 14 for Vita, the PARAM.SFO item for PSP/PSone; empty if none).</summary>
-    public byte[] ParamSfo { get; }
+    public byte[] ParamSfo
+    {
+        get;
+    }
     /// <summary>The install folder of a PSP add-on (info block 10), empty otherwise.</summary>
-    public string InstallDirectory { get; }
-    public IReadOnlyList<PkgEntry> Entries { get; }
+    public string InstallDirectory
+    {
+        get;
+    }
+    public IReadOnlyList<PkgEntry> Entries
+    {
+        get;
+    }
 
     public PkgReader(string path) : this(new FileStream(path, FileMode.Open, FileAccess.Read, FileShare.Read, 1 << 20)) { }
 
@@ -99,10 +120,16 @@ public sealed class PkgReader : IDisposable
         try
         {
             Span<byte> hdr = stackalloc byte[0x100];
-            if (_fs.Length < hdr.Length) throw new InvalidDataException("Not a PKG file (too short)");
+            if (_fs.Length < hdr.Length)
+            {
+                throw new InvalidDataException("Not a PKG file (too short)");
+            }
+
             _fs.ReadExactly(hdr);
             if (U32BE(hdr, 0) != 0x7F504B47)
+            {
                 throw new InvalidDataException("Not a PKG file");
+            }
 
             uint infoOffset = U32BE(hdr, 8);
             uint infoCount = U32BE(hdr, 0xC);
@@ -116,12 +143,23 @@ public sealed class PkgReader : IDisposable
             KeyType = (U32BE(hdr, 4) & 0xFFFF) == 1 ? 0 : (int)(U32BE(hdr, 0xE4) & 7);
             switch (KeyType)
             {
-                case 0: PkgPs3.CopyTo(_key, 0); break;
-                case 1: PkgPsp.CopyTo(_key, 0); break; // PSP/PSone: the PSP key as is (the PS3 parts use PkgPs3)
-                case 2: AesUtil.EcbEncrypt(PkgVita2, _iv, _key); break;
-                case 3: AesUtil.EcbEncrypt(PkgVita3, _iv, _key); break;
-                case 4: AesUtil.EcbEncrypt(PkgVita4, _iv, _key); break;
-                default: throw new NotSupportedException($"Unsupported PKG key type {KeyType} (a PS3 package?)");
+                case 0:
+                    PkgPs3.CopyTo(_key, 0);
+                    break;
+                case 1:
+                    PkgPsp.CopyTo(_key, 0);
+                    break; // PSP/PSone: the PSP key as is (the PS3 parts use PkgPs3)
+                case 2:
+                    AesUtil.EcbEncrypt(PkgVita2, _iv, _key);
+                    break;
+                case 3:
+                    AesUtil.EcbEncrypt(PkgVita3, _iv, _key);
+                    break;
+                case 4:
+                    AesUtil.EcbEncrypt(PkgVita4, _iv, _key);
+                    break;
+                default:
+                    throw new NotSupportedException($"Unsupported PKG key type {KeyType} (a PS3 package?)");
             }
 
             uint itemsOffset = 0, sfoOffset = 0, sfoSize = 0;
@@ -135,7 +173,9 @@ public sealed class PkgReader : IDisposable
                 uint type = U32BE(block, 0), size = U32BE(block, 4);
                 switch (type)
                 {
-                    case 2: ContentTypeRaw = U32BE(block, 8); break;
+                    case 2:
+                        ContentTypeRaw = U32BE(block, 8);
+                        break;
                     case 10 when size > 8:
                     {
                         // the PSP add-on's install folder: 8 bytes in, a NUL-terminated name (lusid1/pkg2zip)
@@ -145,8 +185,13 @@ public sealed class PkgReader : IDisposable
                         installDir = CString(dir);
                         break;
                     }
-                    case 13: itemsOffset = U32BE(block, 8); break;
-                    case 14: sfoOffset = U32BE(block, 8); sfoSize = U32BE(block, 12); break;
+                    case 13:
+                        itemsOffset = U32BE(block, 8);
+                        break;
+                    case 14:
+                        sfoOffset = U32BE(block, 8);
+                        sfoSize = U32BE(block, 12);
+                        break;
                 }
                 off += 8 + size;
             }
@@ -163,7 +208,10 @@ public sealed class PkgReader : IDisposable
                 byte pspType = raw[24];
                 int t = raw[27];
                 if (nameSize > 0x1000 || _dataOffset + dataOff + dataSize > (ulong)_fs.Length)
+                {
                     throw new InvalidDataException("The PKG file is truncated or corrupted (an item lies past its end)");
+                }
+
                 var name = new byte[nameSize];
                 ReadDecrypted(nameOff, name, KeyFor(pspType));
                 entries.Add(new PkgEntry(System.Text.Encoding.UTF8.GetString(name), dataOff, dataSize, t == 4 || t == 18, pspType));
@@ -182,7 +230,10 @@ public sealed class PkgReader : IDisposable
                 Extract(sfoItem, ms);
                 ParamSfo = ms.ToArray();
             }
-            else ParamSfo = [];
+            else
+            {
+                ParamSfo = [];
+            }
         }
         catch
         {
@@ -258,7 +309,11 @@ public sealed class PkgReader : IDisposable
     /// </summary>
     public (TimeSpan read, TimeSpan decrypt) ReadData(PkgEntry e, long offset, Span<byte> dst, AesUtil.Ctr ctr)
     {
-        if ((offset & 15) != 0) throw new ArgumentException("offset must be 16-aligned", nameof(offset));
+        if ((offset & 15) != 0)
+        {
+            throw new ArgumentException("offset must be 16-aligned", nameof(offset));
+        }
+
         long t0 = System.Diagnostics.Stopwatch.GetTimestamp();
         _fs.Position = (long)(_dataOffset + e.DataOffset) + offset;
         _fs.ReadExactly(dst);
@@ -274,13 +329,20 @@ public sealed class PkgReader : IDisposable
     public void ReadAt(PkgEntry e, long offset, Span<byte> dst)
     {
         if (offset < 0 || (ulong)offset + (ulong)dst.Length > e.DataSize)
+        {
             throw new InvalidDataException($"{e.Name}: read past the end of the file (corrupted package?)");
+        }
+
         ReadDecrypted(e.DataOffset + (ulong)offset, dst, KeyFor(e.PspType));
     }
 
     public void Extract(PkgEntry e, Stream output, Action<long>? progress = null)
     {
-        if (e.IsDirectory) return;
+        if (e.IsDirectory)
+        {
+            return;
+        }
+
         using var ctr = new AesUtil.Ctr(KeyFor(e.PspType));
         var counter = AesUtil.CounterAt(_iv, e.DataOffset / 16);
         _fs.Position = (long)(_dataOffset + e.DataOffset);

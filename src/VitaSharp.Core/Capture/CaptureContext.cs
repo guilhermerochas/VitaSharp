@@ -19,11 +19,17 @@ public static class CaptureContext
         var v = emu.Vita;
         var fg = v.Foreground ?? emu;
         if (v.Shell != null && v.ShellImposesSystemUi)
+        {
             return "lock screen (the shell's system screen is on top" + (fg.IsShell ? ")" : $"; {Name(fg)} behind it)");
+        }
+
         if (fg.IsShell)
+        {
             return v.ShellLiveArea is { } la
                 ? $"shell: LiveArea page of {la.TitleId} '{la.Title}' (the last LiveArea the shell opened; frames.png shows if it went back to the bubbles)"
                 : "shell: home screen (bubble pages; no LiveArea opened yet)";
+        }
+
         return $"{Kind(fg)} {Name(fg)} in front";
     }
 
@@ -44,7 +50,11 @@ public static class CaptureContext
             string state = ReferenceEquals(p, fg) ? "in front" : p.Suspended ? "suspended (in the background)" : "running in the background";
             sb.AppendLine($"process: {Kind(p)} {Name(p)} pid 0x{p.Pid:X}: {state}");
         }
-        foreach (var l in AudioLines(emu)) sb.AppendLine(l);
+        foreach (var l in AudioLines(emu))
+        {
+            sb.AppendLine(l);
+        }
+
         return sb.ToString();
     }
 
@@ -56,19 +66,31 @@ public static class CaptureContext
         var ports = AudioDiagnostics.AllPorts();
         foreach (var p in ports)
         {
-            if (p.ClosedAt > 0) continue;
+            if (p.ClosedAt > 0)
+            {
+                continue;
+            }
+
             double since = AudioDiagnostics.SecondsSinceOutput(p);
             string activity = since < 0 ? "no output yet" : since < 0.5 ? "outputting now" : FormattableString.Invariant($"idle (last output {since:F1} s ago)");
             string muted = p.Type == 1 && p.Owner is { } o && v.BgmMuted(o) ? ", muted: another application is in front" : "";
             lines.Add(FormattableString.Invariant($"audio: {p.Name} ({p.DumpName}.wav): {Role(p)}; opened by {(p.Owner is { } ow ? Name(ow) : "?")} thread '{p.OwnerThread}'; {p.Freq} Hz grain {p.Grain}; {activity}{muted}"));
         }
-        if (lines.Count == 0) lines.Add("audio: no audio port open");
+        if (lines.Count == 0)
+        {
+            lines.Add("audio: no audio port open");
+        }
+
         var holder = v.BgmHolder(out int prio);
         lines.Add(holder == null ? "audio: BGM: no process (nothing to route it to)"
             : $"audio: BGM routed to {Name(holder)}{(holder.IsShell ? " (the shell's music player, SceShellMusicCore: the home screen / LiveArea music)" : "")}" +
               (prio == Kernel.VitaSystem.BgmNoPriority ? ", as the process in front (no BGM priority set)" : $", BGM priority 0x{prio:X}") +
               string.Concat(v.Processes.Where(p => p.BgmPriority > 0).Select(p => $"; {Name(p)} priority 0x{p.BgmPriority:X}{(p.Suspended ? " (suspended: not counted)" : "")}")));
-        foreach (var s in AudioDiagnostics.StreamDescriptions()) lines.Add("audio: decoder/stream " + s);
+        foreach (var s in AudioDiagnostics.StreamDescriptions())
+        {
+            lines.Add("audio: decoder/stream " + s);
+        }
+
         return lines;
     }
 
@@ -95,7 +117,10 @@ public static class CaptureContext
     {
         var cont = ports.Where(p => recordedSeconds > 0 && p.SoundSeconds >= 0.6 * recordedSeconds).ToList();
         if (cont.Count == 0)
+        {
             return FormattableString.Invariant($"no continuous audio stream (music) during the recording: {(ports.Count == 0 ? "no port output anything" : string.Join(", ", ports.Select(p => FormattableString.Invariant($"{p.File} sounded {p.SoundSeconds:F1} s"))))} of {recordedSeconds:F1} s");
+        }
+
         return string.Join("; ", cont.Select(p => FormattableString.Invariant($"continuous sound (music or a stream) on {p.File}: {p.SoundSeconds:F1} s of {recordedSeconds:F1} s")));
     }
 }

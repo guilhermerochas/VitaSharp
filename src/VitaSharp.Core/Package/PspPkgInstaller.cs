@@ -9,10 +9,16 @@ public sealed record PspInstallOptions
     /// <summary>The user's own license for the title (the .rif from their console's ux0:pspemu/PSP/LICENSE), installed as
     /// ux0:pspemu/PSP/LICENSE/&lt;content id&gt;.rif; its content id must be the title's. Without one the title installs and
     /// the system shows its normal "no license" message when it is started.</summary>
-    public byte[]? License { get; init; }
+    public byte[]? License
+    {
+        get; init;
+    }
 
     /// <summary>The user's console activation data (tm0:npdrm/act.dat from their console), installed as tm0:npdrm/act.dat.</summary>
-    public byte[]? ActDat { get; init; }
+    public byte[]? ActDat
+    {
+        get; init;
+    }
 }
 
 /// <summary>
@@ -45,7 +51,11 @@ public static class PspPkgInstaller
         using var _ = pkg;
         options ??= new PspInstallOptions();
         var kind = pkg.Kind;
-        if (!kind.IsPspEmu()) throw new InvalidOperationException($"{pkg.ContentId} is a {kind.Describe()} package, not a PSP/PSone one");
+        if (!kind.IsPspEmu())
+        {
+            throw new InvalidOperationException($"{pkg.ContentId} is a {kind.Describe()} package, not a PSP/PSone one");
+        }
+
         var sfo = pkg.ParamSfo.Length > 0 ? new Sfo(pkg.ParamSfo) : null;
         string content = ContentFolder(pkg);
         var eboot = Find(pkg, content + "EBOOT.PBP");
@@ -58,17 +68,25 @@ public static class PspPkgInstaller
             _ => (eboot != null ? SafeId(EbootDiscId(pkg, eboot)) : null) ?? SafeId(sfo?.TitleId ?? "") ?? SafeId(pkg.TitleId),
         } ?? throw new InvalidDataException($"The package has no usable title ID ({pkg.ContentId})");
         if (kind is not (PkgKind.PspDlc or PkgKind.PspTheme) && eboot == null)
+        {
             throw new InvalidDataException($"The {kind.Describe()} package {pkg.ContentId} has no USRDIR/CONTENT/EBOOT.PBP");
+        }
 
         // the license is named after the content id the eboot carries (DATA.PSP + 0x560, what the shell reads before it
         // starts the title), which can differ from the package's
         string licenseId = eboot != null && EbootContentId(pkg, eboot) is { } ec ? ec : pkg.ContentId;
         if (options.License is { } lic)
         {
-            if (lic.Length < 0x40) throw new InvalidDataException("The license file is too small to be a PSP rif");
+            if (lic.Length < 0x40)
+            {
+                throw new InvalidDataException("The license file is too small to be a PSP rif");
+            }
+
             string licId = CString(lic.AsSpan(0x10, 0x30));
             if (licId != licenseId)
+            {
                 throw new InvalidDataException($"The license is for {licId}, the title is {licenseId}");
+            }
         }
         string pspemu = Path.Combine(ux0Root, "pspemu");
         string dest = kind == PkgKind.PspTheme ? Path.Combine(pspemu, "PSP", "THEME") : Path.Combine(pspemu, "PSP", "GAME", id);
@@ -78,23 +96,40 @@ public static class PspPkgInstaller
         var plan = new List<(PkgEntry Entry, string Target)>();
         foreach (var e in pkg.Entries)
         {
-            if (e.IsDirectory) continue;
+            if (e.IsDirectory)
+            {
+                continue;
+            }
+
             if (kind == PkgKind.PspTheme)
             {
                 // the theme files (.PTF), wherever the package keeps them (USRDIR/CONTENT or the root)
                 if (e.Name.StartsWith(content, StringComparison.OrdinalIgnoreCase) || !e.Name.Contains('/'))
                 {
                     string rel = e.Name.StartsWith(content, StringComparison.OrdinalIgnoreCase) ? e.Name[content.Length..] : e.Name;
-                    if (rel.Equals("PARAM.SFO", StringComparison.OrdinalIgnoreCase) || rel.EndsWith(".PNG", StringComparison.OrdinalIgnoreCase)) continue;
+                    if (rel.Equals("PARAM.SFO", StringComparison.OrdinalIgnoreCase) || rel.EndsWith(".PNG", StringComparison.OrdinalIgnoreCase))
+                    {
+                        continue;
+                    }
+
                     plan.Add((e, Combine(dest, rel)));
                 }
                 continue;
             }
-            if (!e.Name.StartsWith(content, StringComparison.OrdinalIgnoreCase)) continue; // the PS3 wrapper (PARAM.SFO, ICON0...)
+            if (!e.Name.StartsWith(content, StringComparison.OrdinalIgnoreCase))
+            {
+                continue; // the PS3 wrapper (PARAM.SFO, ICON0...)
+            }
+
             string relPath = e.Name[content.Length..];
             if (kind == PkgKind.Psx && relPath.Equals("texture.enc", StringComparison.OrdinalIgnoreCase))
+            {
                 plan.Add((e, Combine(Path.Combine(ux0Root, "ps1emu", id), "texture.enc")));
-            else plan.Add((e, Combine(dest, relPath)));
+            }
+            else
+            {
+                plan.Add((e, Combine(dest, relPath)));
+            }
         }
 
         long total = plan.Sum(p => (long)p.Entry.DataSize);
@@ -116,7 +151,11 @@ public static class PspPkgInstaller
                 using var outFile = new FileStream(target, FileMode.Create, FileAccess.Write, FileShare.None, 1 << 20);
                 using var sha = e == eboot ? IncrementalHash.CreateHash(HashAlgorithmName.SHA256) : null;
                 pkg.Extract(e, new ProgressStream(outFile, sha, n => { reporter.Add(n, e.Name); cancellationToken.ThrowIfCancellationRequested(); }));
-                if (sha != null) ebootHash = sha.GetHashAndReset();
+                if (sha != null)
+                {
+                    ebootHash = sha.GetHashAndReset();
+                }
+
                 log?.Invoke($"wrote {Path.GetRelativePath(ux0Root, target)}");
             }
 
@@ -148,13 +187,20 @@ public static class PspPkgInstaller
             }
             else if (options.License == null && kind is not (PkgKind.PspTheme or PkgKind.PspDlc)
                      && !File.Exists(Path.Combine(pspemu, "PSP", "LICENSE", licenseId + ".rif")))
+            {
                 log?.Invoke($"no license for {licenseId}: the title is installed, the system will say it has no license");
+            }
         }
         catch
         {
             foreach (var f in written)
             {
-                try { File.Delete(f); } catch (IOException) { } catch (UnauthorizedAccessException) { }
+                try
+                {
+                    File.Delete(f);
+                }
+                catch (IOException) { }
+                catch (UnauthorizedAccessException) { }
             }
             throw;
         }
@@ -162,8 +208,18 @@ public static class PspPkgInstaller
         reporter.Finish();
 
         // a new PSP/PSone title: the shell lists ux0:pspemu/PSP/GAME when it rebuilds the card's database
-        if (kind is not (PkgKind.PspDlc or PkgKind.PspTheme)) AppMeta.InvalidateCardId(ux0Root, log);
-        var type = kind switch { PkgKind.Psx => PkgContentType.Psx, PkgKind.PspDlc => PkgContentType.PspDlc, PkgKind.PspTheme => PkgContentType.PspTheme, _ => PkgContentType.Psp };
+        if (kind is not (PkgKind.PspDlc or PkgKind.PspTheme))
+        {
+            AppMeta.InvalidateCardId(ux0Root, log);
+        }
+
+        var type = kind switch
+        {
+            PkgKind.Psx => PkgContentType.Psx,
+            PkgKind.PspDlc => PkgContentType.PspDlc,
+            PkgKind.PspTheme => PkgContentType.PspTheme,
+            _ => PkgContentType.Psp
+        };
         return new InstalledTitle(id, title, dest, type) { Kind = kind };
     }
 
@@ -175,7 +231,10 @@ public static class PspPkgInstaller
     {
         var parts = rel.Split('/', StringSplitOptions.RemoveEmptyEntries);
         if (parts.Length == 0 || parts.Any(p => p is "." or ".." || p.IndexOfAny(Path.GetInvalidFileNameChars()) >= 0 || p.Contains(':')))
+        {
             throw new InvalidDataException($"The package has an invalid file name: {rel}");
+        }
+
         return Path.Combine([root, .. parts]);
     }
 
@@ -189,10 +248,18 @@ public static class PspPkgInstaller
     /// <summary>The PBP header of an EBOOT.PBP: (PARAM.SFO offset, ICON0 offset, DATA.PSAR offset).</summary>
     static (uint Sfo, uint Icon0, uint Psar) PbpHeader(PkgReader pkg, PkgEntry eboot)
     {
-        if (eboot.DataSize < 0x28) throw new InvalidDataException("EBOOT.PBP is too short");
+        if (eboot.DataSize < 0x28)
+        {
+            throw new InvalidDataException("EBOOT.PBP is too short");
+        }
+
         Span<byte> h = stackalloc byte[0x28];
         pkg.ReadAt(eboot, 0, h);
-        if (U32LE(h, 0) != 0x50425000) throw new InvalidDataException("EBOOT.PBP: wrong PBP signature");
+        if (U32LE(h, 0) != 0x50425000)
+        {
+            throw new InvalidDataException("EBOOT.PBP: wrong PBP signature");
+        }
+
         return (U32LE(h, 8), U32LE(h, 0xC), U32LE(h, 0x24));
     }
 
@@ -212,7 +279,11 @@ public static class PspPkgInstaller
         try
         {
             var (sfoOff, icon0, _) = PbpHeader(pkg, eboot);
-            if (icon0 <= sfoOff || icon0 - sfoOff > 0x10000 || icon0 > eboot.DataSize) return null;
+            if (icon0 <= sfoOff || icon0 - sfoOff > 0x10000 || icon0 > eboot.DataSize)
+            {
+                return null;
+            }
+
             var sfo = new byte[icon0 - sfoOff];
             pkg.ReadAt(eboot, sfoOff, sfo);
             return new Sfo(sfo);
@@ -236,11 +307,19 @@ public static class PspPkgInstaller
     /// <summary>The content id an NPDRM eboot carries at DATA.PSP + 0x560 (PSP and PSone alike), or null.</summary>
     static string? EbootContentId(PkgReader pkg, PkgEntry eboot)
     {
-        if (eboot.DataSize < 0x28) return null;
+        if (eboot.DataSize < 0x28)
+        {
+            return null;
+        }
+
         Span<byte> h = stackalloc byte[0x28];
         pkg.ReadAt(eboot, 0, h);
         uint dataPsp = U32LE(h, 0x20);
-        if (U32LE(h, 0) != 0x50425000 || dataPsp + 0x560UL + 0x30 > eboot.DataSize) return null;
+        if (U32LE(h, 0) != 0x50425000 || dataPsp + 0x560UL + 0x30 > eboot.DataSize)
+        {
+            return null;
+        }
+
         var id = new byte[0x30];
         pkg.ReadAt(eboot, dataPsp + 0x560, id);
         string s = CString(id);
@@ -254,7 +333,10 @@ public static class PspPkgInstaller
         public override bool CanSeek => false;
         public override bool CanWrite => true;
         public override long Length => inner.Length;
-        public override long Position { get => inner.Position; set => throw new NotSupportedException(); }
+        public override long Position
+        {
+            get => inner.Position; set => throw new NotSupportedException();
+        }
         public override void Flush() => inner.Flush();
         public override int Read(byte[] buffer, int offset, int count) => throw new NotSupportedException();
         public override long Seek(long offset, SeekOrigin origin) => throw new NotSupportedException();

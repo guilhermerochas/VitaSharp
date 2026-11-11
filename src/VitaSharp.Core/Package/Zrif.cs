@@ -32,8 +32,16 @@ public static class Zrif
     public static bool LooksLikeZrif(string text)
     {
         text = text.Trim();
-        if (text.Length < 16 || File.Exists(text)) return false;
-        try { var raw = Convert.FromBase64String(Pad(text)); return raw.Length > 6 && (raw[0] & 0xF) == 8 && ((raw[0] << 8) | raw[1]) % 31 == 0; }
+        if (text.Length < 16 || File.Exists(text))
+        {
+            return false;
+        }
+
+        try
+        {
+            var raw = Convert.FromBase64String(Pad(text));
+            return raw.Length > 6 && (raw[0] & 0xF) == 8 && ((raw[0] << 8) | raw[1]) % 31 == 0;
+        }
         catch (FormatException) { return false; }
     }
 
@@ -43,31 +51,54 @@ public static class Zrif
     public static byte[] Decode(string zrif)
     {
         byte[] raw;
-        try { raw = Convert.FromBase64String(Pad(zrif.Trim())); }
+        try
+        {
+            raw = Convert.FromBase64String(Pad(zrif.Trim()));
+        }
         catch (FormatException) { throw new InvalidDataException("zRIF is not valid base64"); }
-        if (raw.Length < 2 + 4) throw new InvalidDataException("zRIF is too short");
-        if (((raw[0] << 8) | raw[1]) % 31 != 0 || (raw[0] & 0xF) != 8) throw new InvalidDataException("zRIF header is corrupted");
+        if (raw.Length < 2 + 4)
+        {
+            throw new InvalidDataException("zRIF is too short");
+        }
+
+        if (((raw[0] << 8) | raw[1]) % 31 != 0 || (raw[0] & 0xF) != 8)
+        {
+            throw new InvalidDataException("zRIF header is corrupted");
+        }
 
         byte[] dict = [];
         int start = 2;
         if ((raw[1] & 0x20) != 0)
         {
-            if (raw.Length < 6 + 4) throw new InvalidDataException("zRIF is too short");
+            if (raw.Length < 6 + 4)
+            {
+                throw new InvalidDataException("zRIF is too short");
+            }
+
             uint id = (uint)(raw[2] << 24 | raw[3] << 16 | raw[4] << 8 | raw[5]);
-            if (id != DictionaryId) throw new InvalidDataException("zRIF uses an unknown dictionary");
+            if (id != DictionaryId)
+            {
+                throw new InvalidDataException("zRIF uses an unknown dictionary");
+            }
+
             dict = Dictionary();
             start = 6;
         }
         int bodyLen = raw.Length - start - 4;
-        if (bodyLen <= 0) throw new InvalidDataException("zRIF is too short");
+        if (bodyLen <= 0)
+        {
+            throw new InvalidDataException("zRIF is too short");
+        }
 
         using var input = new MemoryStream();
         if (dict.Length > 0)
         {
             // stored block, not final: header byte 0, LEN, ~LEN (little endian), then the bytes
             input.WriteByte(0);
-            input.WriteByte((byte)dict.Length); input.WriteByte((byte)(dict.Length >> 8));
-            input.WriteByte((byte)~dict.Length); input.WriteByte((byte)(~dict.Length >> 8));
+            input.WriteByte((byte)dict.Length);
+            input.WriteByte((byte)(dict.Length >> 8));
+            input.WriteByte((byte)~dict.Length);
+            input.WriteByte((byte)(~dict.Length >> 8));
             input.Write(dict);
         }
         input.Write(raw, start, bodyLen);
@@ -85,8 +116,16 @@ public static class Zrif
         var rif = all.AsSpan(dict.Length).ToArray();
 
         uint expected = (uint)(raw[^4] << 24 | raw[^3] << 16 | raw[^2] << 8 | raw[^1]);
-        if (Adler32(rif) != expected) throw new InvalidDataException("zRIF is corrupted (wrong checksum)");
-        if (rif.Length != RifSize) throw new InvalidDataException($"zRIF holds {rif.Length} bytes, not a {RifSize}-byte license");
+        if (Adler32(rif) != expected)
+        {
+            throw new InvalidDataException("zRIF is corrupted (wrong checksum)");
+        }
+
+        if (rif.Length != RifSize)
+        {
+            throw new InvalidDataException($"zRIF holds {rif.Length} bytes, not a {RifSize}-byte license");
+        }
+
         return rif;
     }
 
@@ -97,7 +136,11 @@ public static class Zrif
     internal static uint Adler32(ReadOnlySpan<byte> data)
     {
         uint a = 1, b = 0;
-        foreach (byte x in data) { a = (a + x) % 65521; b = (b + a) % 65521; }
+        foreach (byte x in data)
+        {
+            a = (a + x) % 65521;
+            b = (b + a) % 65521;
+        }
         return b << 16 | a;
     }
 }

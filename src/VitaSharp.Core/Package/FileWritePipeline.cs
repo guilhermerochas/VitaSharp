@@ -22,16 +22,29 @@ internal sealed class FileWritePipeline : IDisposable
     readonly Action<long>? _written;
     Exception? _error;
 
-    public int BufferSize { get; }
+    public int BufferSize
+    {
+        get;
+    }
     /// <summary>Time the writer thread spent in file system calls, and the bytes it wrote.</summary>
-    public TimeSpan WriteTime { get; private set; }
-    public long BytesWritten { get; private set; }
+    public TimeSpan WriteTime
+    {
+        get; private set;
+    }
+    public long BytesWritten
+    {
+        get; private set;
+    }
 
     /// <param name="written">Called on the writer thread after each chunk with its size.</param>
     public FileWritePipeline(int bufferSize, int buffers, Action<long>? written, CancellationToken ct)
     {
         BufferSize = bufferSize;
-        for (int i = 0; i < buffers; i++) _free.Add(new byte[bufferSize]);
+        for (int i = 0; i < buffers; i++)
+        {
+            _free.Add(new byte[bufferSize]);
+        }
+
         _written = written;
         _cts = CancellationTokenSource.CreateLinkedTokenSource(ct);
         _thread = new Thread(Run) { Name = "Install writer", IsBackground = true, Priority = ThreadPriority.BelowNormal };
@@ -41,7 +54,10 @@ internal sealed class FileWritePipeline : IDisposable
     /// <summary>A free buffer of <see cref="BufferSize"/> bytes (waits while all of them are queued).</summary>
     public byte[] Rent()
     {
-        try { return _free.Take(_cts.Token); }
+        try
+        {
+            return _free.Take(_cts.Token);
+        }
         catch (OperationCanceledException) { ThrowIfFailed(); throw; }
     }
 
@@ -61,7 +77,10 @@ internal sealed class FileWritePipeline : IDisposable
 
     void ThrowIfFailed()
     {
-        if (_error != null) throw new IOException("Writing the installed files failed: " + _error.Message, _error);
+        if (_error != null)
+        {
+            throw new IOException("Writing the installed files failed: " + _error.Message, _error);
+        }
     }
 
     /// <summary>Waits until everything queued is on disk.</summary>
@@ -98,16 +117,31 @@ internal sealed class FileWritePipeline : IDisposable
                         BytesWritten += w.Count;
                         break;
                     case CloseCmd cl:
-                        if (cl.Length is { } len && fs!.Length != len) fs.SetLength(len);
+                        if (cl.Length is { } len && fs!.Length != len)
+                        {
+                            fs.SetLength(len);
+                        }
+
                         var path = fs!.Name;
                         fs.Dispose();
                         fs = null;
                         if (cl.LastWrite is { } t)
-                            try { File.SetLastWriteTime(path, t); } catch (IOException) { } catch (ArgumentException) { }
+                        {
+                            try
+                            {
+                                File.SetLastWriteTime(path, t);
+                            }
+                            catch (IOException) { }
+                            catch (ArgumentException) { }
+                        }
+
                         break;
                 }
                 sw.Stop();
-                if (c is WriteCmd wc) _written?.Invoke(wc.Count);
+                if (c is WriteCmd wc)
+                {
+                    _written?.Invoke(wc.Count);
+                }
             }
         }
         catch (OperationCanceledException) { }

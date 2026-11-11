@@ -37,7 +37,10 @@ public sealed class PfsDecryptor
         public List<byte[][]> Blocks = new();
     }
 
-    public Action<string>? Log { get; set; }
+    public Action<string>? Log
+    {
+        get; set;
+    }
 
     /// <summary>A decryptor for a PFS image whose files.db/unicv.db are given to <see cref="Plan"/> (no title folder).</summary>
     public PfsDecryptor(byte[] klicensee) : this("", klicensee) { }
@@ -73,12 +76,21 @@ public sealed class PfsDecryptor
                     using var fs = File.OpenRead(Path.Combine(_root, c));
                     var head = new byte[(int)Math.Min(fs.Length, t.SectorSize)];
                     fs.ReadExactly(head);
-                    if (t.Matches(head)) { match = c; break; }
+                    if (t.Matches(head))
+                    {
+                        match = c;
+                        break;
+                    }
                 }
-                if (match != null) candidates.Remove(match);
+                if (match != null)
+                {
+                    candidates.Remove(match);
+                }
             }
             if (match == null)
+            {
                 throw new InvalidDataException($"PFS: no file matches unicv table at page {t.Salt}");
+            }
 
             var node = plan.Node(match);
             var path = Path.Combine(_root, match);
@@ -88,11 +100,18 @@ public sealed class PfsDecryptor
                 DecryptFile(path, plan.Cipher(t));
             }
             else
+            {
                 Log?.Invoke($"plain   {match}");
+            }
 
             // Trim sector padding back to the logical size.
             using (var fs = new FileStream(path, FileMode.Open))
-                if (fs.Length != node.Size) fs.SetLength(node.Size);
+            {
+                if (fs.Length != node.Size)
+                {
+                    fs.SetLength(node.Size);
+                }
+            }
 
             done += node.Size;
             progress?.Invoke(done, plan.TotalSize);
@@ -116,7 +135,11 @@ public sealed class PfsDecryptor
             while (got < n)
             {
                 int r = RandomAccess.Read(handle, span[got..], pos + got);
-                if (r <= 0) throw new EndOfStreamException(path);
+                if (r <= 0)
+                {
+                    throw new EndOfStreamException(path);
+                }
+
                 got += r;
             }
             cipher.Decrypt(span, pos);
@@ -132,17 +155,28 @@ public sealed class PfsDecryptor
     {
         var files = ParseFilesDb(filesDb, out _);
         if (_imageSpec != 1 && _imageSpec != 4)
+        {
             throw new NotSupportedException($"PFS image spec {_imageSpec} (icv.db / savedata) is not supported for installs");
+        }
+
         var tables = new List<PfsTable>();
         foreach (var t in ParseUnicvDb(unicvDb))
         {
-            if (t.NumSectors == 0) continue;
+            if (t.NumSectors == 0)
+            {
+                continue;
+            }
+
             byte[] secret = MakeSecret(t.Salt);
             tables.Add(new PfsTable(t.Salt, t.NumSectors, t.SectorSize, HMACSHA1.HashData(secret, BitConverter.GetBytes(0)),
                                     t.Blocks[0][0], MakeTweakKey(t)));
         }
         var nodes = new Dictionary<string, PfsNode>();
-        foreach (var f in files) nodes[f.RelPath.ToUpperInvariant()] = new PfsNode(f.RelPath, f.Size, (f.Type & AttrNenc) == 0);
+        foreach (var f in files)
+        {
+            nodes[f.RelPath.ToUpperInvariant()] = new PfsNode(f.RelPath, f.Size, (f.Type & AttrNenc) == 0);
+        }
+
         return new PfsPlan(tables, nodes, files.Where(f => !IsDir(f.Type)).Sum(f => (long)f.Size), _drvKey);
     }
 
@@ -154,7 +188,10 @@ public sealed class PfsDecryptor
         foreach (var f in Directory.EnumerateFiles(_root, "*", SearchOption.AllDirectories))
         {
             var rel = Path.GetRelativePath(_root, f).Replace('\\', '/');
-            if (PfsPlan.IsCandidatePath(rel)) list.Add(rel);
+            if (PfsPlan.IsCandidatePath(rel))
+            {
+                list.Add(rel);
+            }
         }
         return list;
     }
@@ -163,7 +200,11 @@ public sealed class PfsDecryptor
 
     byte[] SaltBytes(uint icvSalt)
     {
-        if (_filesSalt == 0) return BitConverter.GetBytes(icvSalt);
+        if (_filesSalt == 0)
+        {
+            return BitConverter.GetBytes(icvSalt);
+        }
+
         var b = new byte[8];
         BitConverter.TryWriteBytes(b.AsSpan(0, 4), _filesSalt);
         BitConverter.TryWriteBytes(b.AsSpan(4, 4), icvSalt);
@@ -178,14 +219,21 @@ public sealed class PfsDecryptor
         AesUtil.CbcEncrypt(_drvKey, Iv0, combo.AsSpan(0, 16), secret.AsSpan(0, 16));
         var ks = new byte[16];
         AesUtil.EcbEncrypt(_drvKey, secret.AsSpan(0, 16), ks); // iv is now the last ciphertext block
-        for (int i = 0; i < 4; i++) secret[16 + i] = (byte)(combo[16 + i] ^ ks[i]);
+        for (int i = 0; i < 4; i++)
+        {
+            secret[16 + i] = (byte)(combo[16 + i] ^ ks[i]);
+        }
+
         return secret;
     }
 
     byte[] MakeTweakKey(Table t)
     {
         if (t.Version > 1) // has dbseed (SCEIFTBL_RO, icv version > 1)
+        {
             return HMACSHA1.HashData(HmacKey0, t.DbSeed)[..16];
+        }
+
         return HMACSHA1.HashData(HmacKey0, SaltBytes(t.Salt))[..16];
     }
 
@@ -193,7 +241,11 @@ public sealed class PfsDecryptor
 
     List<FileNode> ParseFilesDb(byte[] db, out List<string> dirs)
     {
-        if (CString(db.AsSpan(0, 8)) != "SCENGPFS") throw new InvalidDataException("files.db: bad magic");
+        if (CString(db.AsSpan(0, 8)) != "SCENGPFS")
+        {
+            throw new InvalidDataException("files.db: bad magic");
+        }
+
         _imageSpec = U16LE(db, 0xC);
         uint pageSize = U32LE(db, 0x10);
         _filesSalt = U32LE(db, 0x1C);
@@ -204,7 +256,11 @@ public sealed class PfsDecryptor
         {
             var page = db.AsSpan(off, (int)pageSize);
             uint nFiles = U32LE(page, 8);
-            if (nFiles > 9) continue;
+            if (nFiles > 9)
+            {
+                continue;
+            }
+
             for (int i = 0; i < nFiles; i++)
             {
                 int fh = 16 + i * 72;
@@ -214,9 +270,17 @@ public sealed class PfsDecryptor
                 uint idx = U32LE(page, fi);
                 ushort type = U16LE(page, fi + 4);
                 uint size = U32LE(page, fi + 8);
-                if (type == 0 && size == 0) continue; // unexisting
+                if (type == 0 && size == 0)
+                {
+                    continue; // unexisting
+                }
+
                 bool isDir = IsDir(type);
-                if (isDir) dirParent[idx] = parent;
+                if (isDir)
+                {
+                    dirParent[idx] = parent;
+                }
+
                 names[(idx, isDir)] = (name, parent, type, size);
             }
         }
@@ -240,8 +304,14 @@ public sealed class PfsDecryptor
         foreach (var ((idx, isDir), v) in names)
         {
             var p = PathOf(v.parent, v.name);
-            if (isDir) dirs.Add(p);
-            else files.Add(new FileNode(p, v.type, v.size));
+            if (isDir)
+            {
+                dirs.Add(p);
+            }
+            else
+            {
+                files.Add(new FileNode(p, v.type, v.size));
+            }
         }
         return files;
     }
@@ -250,15 +320,27 @@ public sealed class PfsDecryptor
 
     static List<Table> ParseUnicvDb(byte[] db)
     {
-        if (CString(db.AsSpan(0, 8)) != "SCEIRODB") throw new InvalidDataException("unicv.db: bad magic");
+        if (CString(db.AsSpan(0, 8)) != "SCEIRODB")
+        {
+            throw new InvalidDataException("unicv.db: bad magic");
+        }
+
         uint blockSize = U32LE(db, 0xC);
         var tables = new List<Table>();
         int off = (int)blockSize;
         while (off + blockSize <= db.Length)
         {
             var page = db.AsSpan(off, (int)blockSize);
-            if (IsZero(page)) { off += (int)blockSize; continue; }
-            if (CString(page[..8]) != "SCEIFTBL") throw new InvalidDataException($"unicv.db: unexpected page at 0x{off:X}");
+            if (IsZero(page))
+            {
+                off += (int)blockSize;
+                continue;
+            }
+            if (CString(page[..8]) != "SCEIFTBL")
+            {
+                throw new InvalidDataException($"unicv.db: unexpected page at 0x{off:X}");
+            }
+
             var t = new Table
             {
                 Version = U32LE(page, 8),
@@ -275,7 +357,11 @@ public sealed class PfsDecryptor
                 var sp = db.AsSpan(off, (int)blockSize);
                 uint nSig = U32LE(sp, 8);
                 var sigs = new byte[nSig][];
-                for (int i = 0; i < nSig; i++) sigs[i] = sp.Slice(16 + i * 20, 20).ToArray();
+                for (int i = 0; i < nSig; i++)
+                {
+                    sigs[i] = sp.Slice(16 + i * 20, 20).ToArray();
+                }
+
                 t.Blocks.Add(sigs);
                 left -= Math.Min(left, nSig);
                 off += (int)blockSize;

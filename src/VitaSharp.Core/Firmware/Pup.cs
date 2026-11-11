@@ -46,13 +46,31 @@ public sealed class Pup : IDisposable
     readonly Stream _stream;
     readonly bool _ownsStream;
 
-    public ulong PackageVersion { get; }
+    public ulong PackageVersion
+    {
+        get;
+    }
     /// <summary>Firmware version as stored in the header, e.g. 0x03740000 for 3.74.</summary>
-    public uint FirmwareVersion { get; }
-    public uint BuildNumber { get; }
-    public long HeaderLength { get; }
-    public long PackageLength { get; }
-    public IReadOnlyList<PupEntry> Entries { get; }
+    public uint FirmwareVersion
+    {
+        get;
+    }
+    public uint BuildNumber
+    {
+        get;
+    }
+    public long HeaderLength
+    {
+        get;
+    }
+    public long PackageLength
+    {
+        get;
+    }
+    public IReadOnlyList<PupEntry> Entries
+    {
+        get;
+    }
 
     /// <summary>"3.74" from <see cref="FirmwareVersion"/> (major.minor, each a BCD byte).</summary>
     public string FirmwareVersionString => FormatVersion(FirmwareVersion);
@@ -66,7 +84,10 @@ public sealed class Pup : IDisposable
         Span<byte> h = stackalloc byte[HeaderSize];
         stream.Position = 0;
         if (stream.ReadAtLeast(h, HeaderSize, throwOnEndOfStream: false) < HeaderSize || !h[..5].SequenceEqual(Magic))
+        {
             throw new InvalidDataException("Not a PUP file (missing SCEUF header)");
+        }
+
         PackageVersion = BinaryPrimitives.ReadUInt64LittleEndian(h[0x08..]);
         FirmwareVersion = BinaryPrimitives.ReadUInt32LittleEndian(h[0x10..]);
         BuildNumber = BinaryPrimitives.ReadUInt32LittleEndian(h[0x14..]);
@@ -75,7 +96,9 @@ public sealed class Pup : IDisposable
         PackageLength = (long)BinaryPrimitives.ReadUInt64LittleEndian(h[0x28..]);
         long tableEnd = HeaderSize + (long)count * EntrySize;
         if (count == 0 || count > 4096 || tableEnd > stream.Length)
+        {
             throw new InvalidDataException($"PUP file table is invalid ({count} files)");
+        }
 
         var table = new byte[(int)count * EntrySize];
         stream.ReadExactly(table);
@@ -97,12 +120,18 @@ public sealed class Pup : IDisposable
             long len = (long)BinaryPrimitives.ReadUInt64LittleEndian(r[16..]);
             ulong flags = BinaryPrimitives.ReadUInt64LittleEndian(r[24..]);
             if (off < 0 || len < 0 || off + len > stream.Length)
+            {
                 throw new InvalidDataException($"PUP file {i} (type 0x{type:X}) lies outside the file (truncated download?)");
+            }
+
             byte[]? digest = null;
             if (digests != null)
             {
                 var d = digests.AsSpan(i * DigestEntrySize, DigestEntrySize);
-                if (BinaryPrimitives.ReadUInt64LittleEndian(d) == (ulong)i) digest = d.Slice(8, 32).ToArray();
+                if (BinaryPrimitives.ReadUInt64LittleEndian(d) == (ulong)i)
+                {
+                    digest = d.Slice(8, 32).ToArray();
+                }
             }
             entries.Add(new PupEntry(type, off, len, flags, digest));
         }
@@ -113,7 +142,11 @@ public sealed class Pup : IDisposable
 
     public byte[] Read(PupEntry e)
     {
-        if (e.Length > Array.MaxLength) throw new InvalidDataException("PUP entry too large");
+        if (e.Length > Array.MaxLength)
+        {
+            throw new InvalidDataException("PUP entry too large");
+        }
+
         var buf = new byte[e.Length];
         lock (_stream)
         {
@@ -127,7 +160,11 @@ public sealed class Pup : IDisposable
     public string? ReadVersionText()
     {
         var e = Entries.FirstOrDefault(x => x.Type == 0x100);
-        if (e == null) return null;
+        if (e == null)
+        {
+            return null;
+        }
+
         var text = System.Text.Encoding.ASCII.GetString(Read(e)).TrimEnd('\0');
         var line = text.Split('\n', 2)[0].Trim();
         return line.Length > 0 ? line : null;
@@ -135,7 +172,10 @@ public sealed class Pup : IDisposable
 
     public void Dispose()
     {
-        if (_ownsStream) _stream.Dispose();
+        if (_ownsStream)
+        {
+            _stream.Dispose();
+        }
     }
 }
 
@@ -164,10 +204,22 @@ public static class Spkg
     public static bool TryReadHeader(ReadOnlySpan<byte> file, out Header header)
     {
         header = default;
-        if (file.Length < 32 || BinaryPrimitives.ReadUInt32LittleEndian(file) != SceMagic) return false;
-        if (BinaryPrimitives.ReadUInt16LittleEndian(file[10..]) != 3) return false; // SceType.SPKG
+        if (file.Length < 32 || BinaryPrimitives.ReadUInt32LittleEndian(file) != SceMagic)
+        {
+            return false;
+        }
+
+        if (BinaryPrimitives.ReadUInt16LittleEndian(file[10..]) != 3)
+        {
+            return false; // SceType.SPKG
+        }
+
         long hl = (long)BinaryPrimitives.ReadUInt64LittleEndian(file[16..]);
-        if (hl <= 0 || hl + 0x80 > file.Length) return false;
+        if (hl <= 0 || hl + 0x80 > file.Length)
+        {
+            return false;
+        }
+
         var s = file.Slice((int)hl, 0x80);
         header = new Header((SpkgType)BinaryPrimitives.ReadUInt32LittleEndian(s[4..]), BinaryPrimitives.ReadUInt64LittleEndian(s[0x10..]),
             BinaryPrimitives.ReadUInt64LittleEndian(s[0x60..]), BinaryPrimitives.ReadUInt64LittleEndian(s[0x68..]), s[0x2C]);
@@ -177,7 +229,11 @@ public static class Spkg
     /// <summary>Decrypts (and inflates) the payload of an SPKG. Several encrypted sections are concatenated in order.</summary>
     public static byte[] Decrypt(byte[] file)
     {
-        if (!TryReadHeader(file, out var hdr)) throw new InvalidDataException("Not an SPKG container");
+        if (!TryReadHeader(file, out var hdr))
+        {
+            throw new InvalidDataException("Not an SPKG container");
+        }
+
         int keyRev = file[9];
         uint metadataOffset = BinaryPrimitives.ReadUInt32LittleEndian(file.AsSpan(12));
         ulong headerLength = BinaryPrimitives.ReadUInt64LittleEndian(file.AsSpan(16));
@@ -186,16 +242,31 @@ public static class Spkg
         using var output = new MemoryStream();
         foreach (var s in sections)
         {
-            if (s.Encryption != 3) continue;
-            if (s.Offset + s.Size > (ulong)file.Length) throw new InvalidDataException("SPKG section lies outside the container");
+            if (s.Encryption != 3)
+            {
+                continue;
+            }
+
+            if (s.Offset + s.Size > (ulong)file.Length)
+            {
+                throw new InvalidDataException("SPKG section lies outside the container");
+            }
+
             var raw = file.AsSpan((int)s.Offset, (int)s.Size).ToArray();
-            using (var ctr = new AesUtil.Ctr(s.Key)) ctr.Transform(raw, s.Iv.ToArray());
+            using (var ctr = new AesUtil.Ctr(s.Key))
+            {
+                ctr.Transform(raw, s.Iv.ToArray());
+            }
+
             if (s.Compression == 2)
             {
                 using var z = new ZLibStream(new MemoryStream(raw), CompressionMode.Decompress);
                 z.CopyTo(output);
             }
-            else output.Write(raw);
+            else
+            {
+                output.Write(raw);
+            }
         }
         return output.ToArray();
     }
