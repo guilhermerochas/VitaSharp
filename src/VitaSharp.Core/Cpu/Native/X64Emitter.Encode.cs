@@ -19,7 +19,7 @@ public sealed unsafe partial class X64Emitter
     /// <summary>Blocks the fast encoder handed to Iced's BlockEncoder (diagnostics; expected 0).</summary>
     public static long FastEncodeFallbacks;
 
-    sealed class ByteWriter : CodeWriter
+    private sealed class ByteWriter : CodeWriter
     {
         public byte[] Buf = new byte[8192];
         public int Pos;
@@ -34,20 +34,20 @@ public sealed unsafe partial class X64Emitter
         }
     }
 
-    ByteWriter? _fw;
-    Encoder? _enc;
-    int[] _fOff = new int[256], _fLen = new int[256], _fTarget = new int[256];
-    ulong[] _fAddr = new ulong[256];
-    bool[] _fShort = new bool[256];
-    readonly Dictionary<ulong, int> _labelAt = new();
+    private ByteWriter? _fw;
+    private Encoder? _enc;
+    private int[] _fOff = new int[256], _fLen = new int[256], _fTarget = new int[256];
+    private ulong[] _fAddr = new ulong[256];
+    private bool[] _fShort = new bool[256];
+    private readonly Dictionary<ulong, int> _labelAt = new();
 
-    const int NotBranch = -2, AbsoluteTarget = -1;
+    private const int NotBranch = -2, AbsoluteTarget = -1;
 
     [System.Runtime.CompilerServices.MethodImpl(System.Runtime.CompilerServices.MethodImplOptions.AggressiveOptimization)]
-    bool TryFastAssemble(ulong rip, out byte[] code)
+    private bool TryFastAssemble(ulong rip, out byte[] code)
     {
         code = [];
-        var list = _a.Instructions;
+        IReadOnlyList<Instruction> list = Asm.Instructions;
         int n = list.Count;
         if (_fOff.Length < n + 1)
         {
@@ -58,8 +58,8 @@ public sealed unsafe partial class X64Emitter
             _fAddr = new ulong[m];
             _fShort = new bool[m];
         }
-        var fw = _fw ??= new ByteWriter();
-        var enc = _enc ??= Encoder.Create(64, fw);
+        ByteWriter fw = _fw ??= new ByteWriter();
+        Encoder enc = _enc ??= Encoder.Create(64, fw);
         fw.Pos = 0;
         _labelAt.Clear();
         // Iced's assembler stores a label's id in the IP of the instruction it labels
@@ -73,7 +73,7 @@ public sealed unsafe partial class X64Emitter
         }
         for (int i = 0; i < n; i++)
         {
-            var ins = list[i];
+            Instruction ins = list[i];
             if (ins.IsJmpShortOrNear || ins.IsJccShortOrNear)
             {
                 if (_labelAt.TryGetValue(ins.NearBranch64, out int li))
@@ -156,7 +156,7 @@ public sealed unsafe partial class X64Emitter
                 continue;
             }
 
-            var ins = list[i];
+            Instruction ins = list[i];
             if (_fTarget[i] >= 0)
             {
                 ins.NearBranch64 = _fAddr[_fTarget[i]];

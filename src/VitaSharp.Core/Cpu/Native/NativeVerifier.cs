@@ -1,3 +1,4 @@
+using System.Diagnostics.CodeAnalysis;
 using System.Runtime.InteropServices;
 using System.Text;
 using VitaSharp.Core.Cpu.Backends;
@@ -21,12 +22,13 @@ public static unsafe class NativeVerifier
     public static readonly bool Enabled = Environment.GetEnvironmentVariable(EnvVars.NativeVerify) == "1";
     public static long Verified, Mismatches, SimdMismatches, Skipped;
     public static Action<string>? Log;
-    const int MaxReports = 40;
+    private const int MaxReports = 40;
 
-    [ThreadStatic] static nint _log;
+    [SuppressMessage("Style", "IDE1006", Justification = "[ThreadStatic]: t_camelCase; .editorconfig cannot select the attribute")]
+    [ThreadStatic] private static nint t_log;
 
 #pragma warning disable CS0649 // written by generated code
-    struct Entry
+    private struct Entry
     {
         public uint Addr, Size, Old, Pad;
     }
@@ -47,13 +49,13 @@ public static unsafe class NativeVerifier
             CpuCore.Interpret(s, b);
             return;
         }
-        if (_log == 0)
+        if (t_log == 0)
         {
-            _log = (nint)NativeMemory.Alloc((nuint)(X64Emitter.StoreLogEntries * sizeof(Entry)));
+            t_log = (nint)NativeMemory.Alloc((nuint)(X64Emitter.StoreLogEntries * sizeof(Entry)));
         }
 
-        var s0 = *s;
-        s->StoreLog = _log;
+        CpuState s0 = *s;
+        s->StoreLog = t_log;
         s->StoreLogCount = 0;
         s->CycleAcc = 0;
         s->CheckWindow = 0;
@@ -73,7 +75,7 @@ public static unsafe class NativeVerifier
         {
             nativeFault = e.GetType().Name;
         }
-        var sn = *s;
+        CpuState sn = *s;
         if (sn.TierUpRequest != 0)
         {
             // the block asked to be recompiled by the IL backend before running: nothing executed, nothing to compare
@@ -83,8 +85,8 @@ public static unsafe class NativeVerifier
             return;
         }
         int n = (int)s->StoreLogCount;
-        var log = (Entry*)_log;
-        var finals = new uint[n];
+        var log = (Entry*)t_log;
+        uint[] finals = new uint[n];
         for (int i = 0; i < n; i++)
         {
             finals[i] = Read(log[i].Addr, log[i].Size);
@@ -124,7 +126,7 @@ public static unsafe class NativeVerifier
             CpuCore.Interpret(s, b);
             return;
         }
-        var s0 = *s;
+        CpuState s0 = *s;
         string? compiledFault = null;
         try
         {
@@ -134,7 +136,7 @@ public static unsafe class NativeVerifier
         {
             compiledFault = e.GetType().Name;
         }
-        var sc = *s;
+        CpuState sc = *s;
         *s = s0;
         string? interpFault = null;
         try
@@ -150,14 +152,14 @@ public static unsafe class NativeVerifier
         Compare(s, &s0, &sc, b, 0, [], compiledFault, interpFault);
     }
 
-    static uint Read(uint addr, uint size) => size switch
+    private static uint Read(uint addr, uint size) => size switch
     {
         1 => GuestMemory.Read<byte>(addr),
         2 => GuestMemory.Read<ushort>(addr),
         _ => GuestMemory.Read<uint>(addr),
     };
 
-    static void Write(uint addr, uint size, uint v)
+    private static void Write(uint addr, uint size, uint v)
     {
         if (size == 1)
         {
@@ -173,7 +175,7 @@ public static unsafe class NativeVerifier
         }
     }
 
-    static void Compare(CpuState* si, CpuState* s0, CpuState* sn, Block b, int n, uint[] finals, string? nativeFault, string? interpFault)
+    private static void Compare(CpuState* si, CpuState* s0, CpuState* sn, Block b, int n, uint[] finals, string? nativeFault, string? interpFault)
     {
         Interlocked.Increment(ref Verified);
         var sb = new StringBuilder();
@@ -224,7 +226,7 @@ public static unsafe class NativeVerifier
         }
         // memory: what the native code left at each address it stored to, against the interpreter's result
         var seen = new HashSet<uint>();
-        var log = (Entry*)_log;
+        var log = (Entry*)t_log;
         for (int i = n - 1; i >= 0; i--)
         {
             uint a = log[i].Addr;
@@ -266,12 +268,12 @@ public static unsafe class NativeVerifier
             return;
         }
 
-        var regs = string.Join(" ", Enumerable.Range(0, 16).Select(r => s0->R[r].ToString("X8")));
-        var detail = $"NATIVE VERIFY MISMATCH #{k}{tag} {b}:{sb}\n  in: r=[{regs}] cpsr={s0->Cpsr:X8} fpscr={s0->Fpscr:X8}\n  " +
+        string regs = string.Join(" ", Enumerable.Range(0, 16).Select(r => s0->R[r].ToString("X8")));
+        string detail = $"NATIVE VERIFY MISMATCH #{k}{tag} {b}:{sb}\n  in: r=[{regs}] cpsr={s0->Cpsr:X8} fpscr={s0->Fpscr:X8}\n  " +
                      string.Join(" ", b.Insts.Select(i => $"{i.Address:X8}:{i.Raw:X8}:{i.Op}{(i.Cond != 14 ? $"/c{i.Cond}" : "")}"));
         if (k <= 8 && b.Code?.Tag is NativeCodeInfo info)
         {
-            var ir = new ArmFrontend().Translate(b);
+            IrBlock ir = new ArmFrontend().Translate(b);
             IrPasses.DeadCode(ir);
             detail += $"\nIR:\n{ir}\nx64:\n{info.Disassemble(b.NativeEntry)}";
         }

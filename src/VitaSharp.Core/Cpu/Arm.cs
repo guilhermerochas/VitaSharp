@@ -435,10 +435,10 @@ internal static unsafe class Arm
 
     internal const int ExclusiveStripes = 4096;
     // pinned (pinned object heap): the native backend addresses it directly
-    internal static readonly uint[] ExclusiveGens = GC.AllocateArray<uint>(ExclusiveStripes, pinned: true);
+    internal static readonly uint[] s_exclusiveGens = GC.AllocateArray<uint>(ExclusiveStripes, pinned: true);
 
     [MethodImpl(MethodImplOptions.AggressiveInlining)]
-    static ref uint GenOf(uint addr) => ref ExclusiveGens[(addr >> 3) & (ExclusiveStripes - 1)];
+    private static ref uint GenOf(uint addr) => ref s_exclusiveGens[(addr >> 3) & (ExclusiveStripes - 1)];
 
     /// <summary>Arms the monitor. Must run BEFORE the value is read, so an exclusive store in between fails the STREX.</summary>
     [MethodImpl(MethodImplOptions.AggressiveInlining)]
@@ -464,7 +464,7 @@ internal static unsafe class Arm
 
     /// <summary>Locks the granule if nobody stored to it exclusively since our LDREX; false = the STREX fails.</summary>
     [MethodImpl(MethodImplOptions.AggressiveInlining)]
-    static bool BeginExclusiveStore(CpuState* s, uint addr)
+    private static bool BeginExclusiveStore(CpuState* s, uint addr)
     {
         if (s->ExclusiveValid == 0 || s->ExclusiveAddr != addr)
         {
@@ -477,7 +477,7 @@ internal static unsafe class Arm
     }
 
     [MethodImpl(MethodImplOptions.AggressiveInlining)]
-    static bool EndExclusiveStore(CpuState* s, uint addr, bool ok)
+    private static bool EndExclusiveStore(CpuState* s, uint addr, bool ok)
     {
         Volatile.Write(ref GenOf(addr), ok ? s->ExclusiveGen + 2 : s->ExclusiveGen);
         if (ok)

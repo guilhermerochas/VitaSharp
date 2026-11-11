@@ -10,11 +10,11 @@ namespace VitaSharp.Core.Cpu.Native;
 /// </summary>
 public static unsafe class NativeCodeMap
 {
-    static readonly StreamWriter? Writer = Open();
+    private static readonly StreamWriter? s_writer = Open();
 
-    public static bool Enabled => Writer != null;
+    public static bool Enabled => s_writer != null;
 
-    static StreamWriter? Open()
+    private static StreamWriter? Open()
     {
         if (Environment.GetEnvironmentVariable(EnvVars.NativeMap) is not { Length: > 0 } path)
         {
@@ -38,7 +38,7 @@ public static unsafe class NativeCodeMap
     /// (0 for runtime stubs, <paramref name="name"/> then says which).</summary>
     public static void Add(nint code, int size, uint guestPc, bool thumb, string? name = null)
     {
-        var w = Writer;
+        StreamWriter? w = s_writer;
         if (w == null)
         {
             return;

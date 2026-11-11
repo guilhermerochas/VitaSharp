@@ -6,19 +6,19 @@ namespace VitaSharp.Core.Cpu;
 /// <summary>VFPv3 handlers. Thumb encodings are bit-identical to ARM with cond = 1110, so both share these.</summary>
 internal static unsafe class Vfp
 {
-    const uint FpscrDN = 1u << 25, FpscrFZ = 1u << 24;
+    private const uint FpscrDN = 1u << 25, FpscrFZ = 1u << 24;
 
-    [MethodImpl(MethodImplOptions.AggressiveInlining)] static ref float Sf(CpuState* s, uint n) => ref ((float*)s->D)[n];
-    [MethodImpl(MethodImplOptions.AggressiveInlining)] static ref uint Su(CpuState* s, uint n) => ref ((uint*)s->D)[n];
-    [MethodImpl(MethodImplOptions.AggressiveInlining)] static ref double Df(CpuState* s, uint n) => ref ((double*)s->D)[n];
-    [MethodImpl(MethodImplOptions.AggressiveInlining)] static ref ulong Du(CpuState* s, uint n) => ref s->D[n];
+    [MethodImpl(MethodImplOptions.AggressiveInlining)] private static ref float Sf(CpuState* s, uint n) => ref ((float*)s->D)[n];
+    [MethodImpl(MethodImplOptions.AggressiveInlining)] private static ref uint Su(CpuState* s, uint n) => ref ((uint*)s->D)[n];
+    [MethodImpl(MethodImplOptions.AggressiveInlining)] private static ref double Df(CpuState* s, uint n) => ref ((double*)s->D)[n];
+    [MethodImpl(MethodImplOptions.AggressiveInlining)] private static ref ulong Du(CpuState* s, uint n) => ref s->D[n];
 
-    [MethodImpl(MethodImplOptions.AggressiveInlining)] static uint SingleD(uint ins) => (Bits(ins, 15, 12) << 1) | Bit(ins, 22);
-    [MethodImpl(MethodImplOptions.AggressiveInlining)] static uint SingleN(uint ins) => (Bits(ins, 19, 16) << 1) | Bit(ins, 7);
-    [MethodImpl(MethodImplOptions.AggressiveInlining)] static uint SingleM(uint ins) => ((ins & 0xF) << 1) | Bit(ins, 5);
-    [MethodImpl(MethodImplOptions.AggressiveInlining)] static uint DoubleD(uint ins) => (Bit(ins, 22) << 4) | Bits(ins, 15, 12);
-    [MethodImpl(MethodImplOptions.AggressiveInlining)] static uint DoubleN(uint ins) => (Bit(ins, 7) << 4) | Bits(ins, 19, 16);
-    [MethodImpl(MethodImplOptions.AggressiveInlining)] static uint DoubleM(uint ins) => (Bit(ins, 5) << 4) | (ins & 0xF);
+    [MethodImpl(MethodImplOptions.AggressiveInlining)] private static uint SingleD(uint ins) => (Bits(ins, 15, 12) << 1) | Bit(ins, 22);
+    [MethodImpl(MethodImplOptions.AggressiveInlining)] private static uint SingleN(uint ins) => (Bits(ins, 19, 16) << 1) | Bit(ins, 7);
+    [MethodImpl(MethodImplOptions.AggressiveInlining)] private static uint SingleM(uint ins) => ((ins & 0xF) << 1) | Bit(ins, 5);
+    [MethodImpl(MethodImplOptions.AggressiveInlining)] private static uint DoubleD(uint ins) => (Bit(ins, 22) << 4) | Bits(ins, 15, 12);
+    [MethodImpl(MethodImplOptions.AggressiveInlining)] private static uint DoubleN(uint ins) => (Bit(ins, 7) << 4) | Bits(ins, 19, 16);
+    [MethodImpl(MethodImplOptions.AggressiveInlining)] private static uint DoubleM(uint ins) => (Bit(ins, 5) << 4) | (ins & 0xF);
 
     // ------------------------------------------------------------ FPSCR-controlled result fixups
 
@@ -329,7 +329,7 @@ internal static unsafe class Vfp
         Udf(s, pc);
     }
 
-    static void Udf(CpuState* s, uint pc)
+    private static void Udf(CpuState* s, uint pc)
     {
         s->Exit = ExitReason.Undefined;
         s->SvcPc = pc;
@@ -398,7 +398,7 @@ internal static unsafe class Vfp
 
     /// <summary>The instruction with other registers: Vd always, Vn for the arithmetic ops, Vm unless it is VMOV
     /// immediate (whose immediate sits in the Vn/Vm fields; VMOV/VABS/VNEG/VSQRT have opc2 in the Vn field).</summary>
-    static uint Encode(uint ins, uint d, uint n, uint m, bool dbl, Op op)
+    private static uint Encode(uint ins, uint d, uint n, uint m, bool dbl, Op op)
     {
         ins &= ~((1u << 22) | (0xFu << 12));
         ins |= dbl ? ((d >> 4) << 22) | ((d & 0xF) << 12) : ((d & 1) << 22) | ((d >> 1) << 12);
@@ -432,7 +432,7 @@ internal static unsafe class Vfp
     }
 
     /// <summary>VCVT between floating-point and fixed-point (see <see cref="FixedParams"/>).</summary>
-    static void FixedConvert(CpuState* s, uint ins, bool dbl)
+    private static void FixedConvert(CpuState* s, uint ins, bool dbl)
     {
         FixedParams(ins, out bool toFixed, out bool unsigned, out int size, out int frac);
         double scale = Math.Pow(2, frac);
@@ -527,7 +527,7 @@ internal static unsafe class Vfp
     }
 
     [MethodImpl(MethodImplOptions.AggressiveInlining)]
-    static void SetCompareFlags(CpuState* s, bool unordered, bool equal, bool less)
+    private static void SetCompareFlags(CpuState* s, bool unordered, bool equal, bool less)
     {
         uint nzcv = unordered ? 0x3u : equal ? 0x6u : less ? 0x8u : 0x2u;
         s->Fpscr = (s->Fpscr & 0x0FFFFFFF) | (nzcv << 28);

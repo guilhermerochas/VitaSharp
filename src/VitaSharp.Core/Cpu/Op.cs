@@ -52,7 +52,7 @@ public static unsafe partial class HandlerTable
 {
     public static readonly delegate*<CpuState*, uint, uint, void>[] Pointers = BuildPointers();
 
-    static delegate*<CpuState*, uint, uint, void>[] BuildPointers()
+    private static delegate*<CpuState*, uint, uint, void>[] BuildPointers()
     {
         var p = new delegate*<CpuState*, uint, uint, void>[(int)Op.Count];
         FillGenerated(p);
@@ -62,21 +62,21 @@ public static unsafe partial class HandlerTable
     static partial void FillGenerated(delegate*<CpuState*, uint, uint, void>[] p);
     static partial void FillMethods(MethodInfo[] m);
 
-    static MethodInfo[]? _methods;
+    private static MethodInfo[]? s_methods;
 
     /// <summary>Handler methods (IL backend only; looked up by constant name, so trimming keeps them).</summary>
     public static MethodInfo[] Methods
     {
         get
         {
-            if (_methods != null)
+            if (s_methods != null)
             {
-                return _methods;
+                return s_methods;
             }
 
             var m = new MethodInfo[(int)Op.Count];
             FillMethods(m);
-            return _methods = m;
+            return s_methods = m;
         }
     }
 

@@ -10,22 +10,22 @@ namespace VitaSharp.Core.Cpu.Native;
 /// </summary>
 public sealed unsafe partial class ArmFrontend
 {
-    static uint NRd(uint ins) => (Bit(ins, 22) << 4) | Bits(ins, 15, 12);
-    static uint NRn(uint ins) => (Bit(ins, 7) << 4) | Bits(ins, 19, 16);
-    static uint NRm(uint ins) => (Bit(ins, 5) << 4) | (ins & 0xF);
+    private static uint NRd(uint ins) => (Bit(ins, 22) << 4) | Bits(ins, 15, 12);
+    private static uint NRn(uint ins) => (Bit(ins, 7) << 4) | Bits(ins, 19, 16);
+    private static uint NRm(uint ins) => (Bit(ins, 5) << 4) | (ins & 0xF);
 
-    uint _ins;
-    Op _op;
+    private uint _ins;
+    private Op _op;
 
     /// <summary>
     /// Float kinds whose rounded product (or fused result) can be +/- the smallest normal while the exact value was
     /// below it: ARM flushes those (FZ tininess is detected before rounding), so the emitter sends such lanes to the
     /// interpreter handler (<see cref="VecFlags.SlowPath"/>, instruction word in Imm3, op in Imm2 bits 16+).
     /// </summary>
-    static bool NeedsTinyCheck(VecKind k) => k is VecKind.MulF or VecKind.MlaF or VecKind.MlsF or VecKind.FmaF or VecKind.FmsF
+    private static bool NeedsTinyCheck(VecKind k) => k is VecKind.MulF or VecKind.MlaF or VecKind.MlsF or VecKind.FmaF or VecKind.FmsF
         or VecKind.MulFS or VecKind.MlaFS or VecKind.MlsFS;
 
-    bool? Vec(VecKind k, bool q, uint size, uint vd, uint vn, uint vm, VecFlags f = 0, uint aux = 0)
+    private bool? Vec(VecKind k, bool q, uint size, uint vd, uint vn, uint vm, VecFlags f = 0, uint aux = 0)
     {
         if (!_supportsVec(k, size))
         {
@@ -42,7 +42,7 @@ public sealed unsafe partial class ArmFrontend
     }
 
     /// <summary>Neon.ThreeSame: three registers of the same length.</summary>
-    bool? NeonThreeSame(in DecodedInst d)
+    private bool? NeonThreeSame(in DecodedInst d)
     {
         uint ins = d.Raw, a = Bits(ins, 11, 8), size = Bits(ins, 21, 20);
         bool b = Bit(ins, 4) != 0, u = Bit(ins, 24) != 0, q = Bit(ins, 6) != 0;
@@ -52,7 +52,7 @@ public sealed unsafe partial class ArmFrontend
             return null; // odd Q registers: UNDEFINED, the handler decides
         }
 
-        var f = u ? VecFlags.Unsigned : 0;
+        VecFlags f = u ? VecFlags.Unsigned : 0;
         bool sz1 = (size & 2) != 0, s64 = size == 3;
         VecKind? k = a switch
         {
@@ -111,7 +111,7 @@ public sealed unsafe partial class ArmFrontend
     }
 
     /// <summary>Neon.Scalar: two registers and a scalar (non-long forms).</summary>
-    bool? NeonScalar(in DecodedInst d)
+    private bool? NeonScalar(in DecodedInst d)
     {
         uint ins = d.Raw, a = Bits(ins, 11, 8), size = Bits(ins, 21, 20);
         bool q = Bit(ins, 24) != 0;
@@ -155,7 +155,7 @@ public sealed unsafe partial class ArmFrontend
     }
 
     /// <summary>Neon.Shift: two registers and a shift amount.</summary>
-    bool? NeonShift(in DecodedInst d)
+    private bool? NeonShift(in DecodedInst d)
     {
         uint ins = d.Raw, a = Bits(ins, 11, 8), imm6 = Bits(ins, 21, 16);
         bool u = Bit(ins, 24) != 0, l = Bit(ins, 7) != 0, q = Bit(ins, 6) != 0;
@@ -169,7 +169,7 @@ public sealed unsafe partial class ArmFrontend
         uint size = esize == 8 ? 0u : esize == 16 ? 1u : esize == 32 ? 2u : 3u;
         uint rshift = (uint)(l ? 64 - (int)imm6 : 2 * esize - (int)imm6);
         uint lshift = (uint)(l ? (int)imm6 : (int)imm6 - esize);
-        var uf = u ? VecFlags.Unsigned : 0;
+        VecFlags uf = u ? VecFlags.Unsigned : 0;
         bool oddQ = q && ((vd | vm) & 1) != 0;
         switch (a)
         {
@@ -205,7 +205,7 @@ public sealed unsafe partial class ArmFrontend
                     return null;
                 }
 
-                var rf = q ? VecFlags.Round : 0;
+                VecFlags rf = q ? VecFlags.Round : 0;
                 if (a == 8 && !u)
                 {
                     return Vec(VecKind.ShrnImm, false, size, vd, 0, vm, rf, rshift);
@@ -230,7 +230,7 @@ public sealed unsafe partial class ArmFrontend
     }
 
     /// <summary>Neon.Misc: two registers, miscellaneous.</summary>
-    bool? NeonMisc(in DecodedInst d)
+    private bool? NeonMisc(in DecodedInst d)
     {
         uint ins = d.Raw, a = Bits(ins, 17, 16), b = Bits(ins, 10, 6), size = Bits(ins, 19, 18);
         bool q = Bit(ins, 6) != 0;
@@ -400,7 +400,7 @@ public sealed unsafe partial class ArmFrontend
     }
 
     /// <summary>VEXT: byte extraction from the concatenation of two registers.</summary>
-    bool? NeonVext(in DecodedInst d)
+    private bool? NeonVext(in DecodedInst d)
     {
         uint ins = d.Raw, imm = Bits(ins, 11, 8);
         bool q = Bit(ins, 6) != 0;
@@ -414,7 +414,7 @@ public sealed unsafe partial class ArmFrontend
     }
 
     /// <summary>VTBL/VTBX.</summary>
-    bool? NeonVtbl(in DecodedInst d)
+    private bool? NeonVtbl(in DecodedInst d)
     {
         uint ins = d.Raw, len = Bits(ins, 9, 8) + 1;
         bool tbx = Bit(ins, 6) != 0;
@@ -422,7 +422,7 @@ public sealed unsafe partial class ArmFrontend
     }
 
     /// <summary>VDUP (scalar): plain data movement on the register file.</summary>
-    bool? NeonVdupScalar(in DecodedInst d)
+    private bool? NeonVdupScalar(in DecodedInst d)
     {
         uint ins = d.Raw, imm4 = Bits(ins, 19, 16), vd = NRd(ins), vm = NRm(ins);
         bool q = Bit(ins, 6) != 0;
@@ -456,7 +456,7 @@ public sealed unsafe partial class ArmFrontend
     }
 
     /// <summary>VMOV/VMVN/VORR/VBIC (immediate): the expanded immediate is a compile-time constant.</summary>
-    bool? NeonImm(in DecodedInst d)
+    private bool? NeonImm(in DecodedInst d)
     {
         uint ins = d.Raw, imm8 = (Bit(ins, 24) << 7) | (Bits(ins, 18, 16) << 4) | (ins & 0xF), cmode = Bits(ins, 11, 8);
         bool op = Bit(ins, 5) != 0, q = Bit(ins, 6) != 0;
@@ -495,7 +495,7 @@ public sealed unsafe partial class ArmFrontend
     // ------------------------------------------------------------------ element / structure loads and stores
 
     /// <summary>Neon.LoadStore: VLD1/VST1 multiple (contiguous), single lanes and all lanes; VLD2-4/VST2-4 multiple.</summary>
-    bool? NeonLoadStore(in DecodedInst d)
+    private bool? NeonLoadStore(in DecodedInst d)
     {
         uint ins = d.Raw, rn = Bits(ins, 19, 16), rm = ins & 0xF;
         if (rn == 15)
@@ -638,7 +638,7 @@ public sealed unsafe partial class ArmFrontend
         return false;
     }
 
-    int LoadElem(int addr, uint eb) => B.Load(eb == 1 ? IrOp.Load8 : eb == 2 ? IrOp.Load16 : IrOp.Load32, addr);
+    private int LoadElem(int addr, uint eb) => B.Load(eb == 1 ? IrOp.Load8 : eb == 2 ? IrOp.Load16 : IrOp.Load32, addr);
 
     /// <summary>
     /// VLD2-4/VST2-4 (multiple structures, Neon.MultipleStructures/Interleave) in plain IR: element e of structure
@@ -646,7 +646,7 @@ public sealed unsafe partial class ArmFrontend
     /// elements (the registers are distinct, so the final state equals the handler's element order); stores run in the
     /// handler's order, element by element, so overlapping stores land the same way.
     /// </summary>
-    bool? InterleavedLoadStore(bool load, uint type, uint size, uint vd, int baseVal, uint rn, uint rm)
+    private bool? InterleavedLoadStore(bool load, uint type, uint size, uint vd, int baseVal, uint rn, uint rm)
     {
         int nStruct, inc, passes = 1;
         switch (type)
@@ -713,7 +713,7 @@ public sealed unsafe partial class ArmFrontend
             }
             else
             {
-                var words = new int[nStruct * 2];
+                int[] words = new int[nStruct * 2];
                 Array.Fill(words, -1);
                 for (int e = 0; e < elements; e++)
                 {
@@ -742,7 +742,7 @@ public sealed unsafe partial class ArmFrontend
     }
 
     /// <summary>Neon.ThreeDiff: VMULL (signed, unsigned, polynomial), VMLAL, VMLSL. The other long/wide/narrow forms stay callouts.</summary>
-    bool? NeonThreeDiff(in DecodedInst d)
+    private bool? NeonThreeDiff(in DecodedInst d)
     {
         uint ins = d.Raw, a = Bits(ins, 11, 8), size = Bits(ins, 21, 20);
         bool u = Bit(ins, 24) != 0;
@@ -752,7 +752,7 @@ public sealed unsafe partial class ArmFrontend
             return null; // Q destination: odd registers are UNDEFINED
         }
 
-        var uf = u ? VecFlags.Unsigned : 0;
+        VecFlags uf = u ? VecFlags.Unsigned : 0;
         return a switch
         {
             12 => Vec(VecKind.MullI, false, size, vd, vn, vm, uf),

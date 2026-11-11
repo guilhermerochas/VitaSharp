@@ -16,16 +16,16 @@ namespace VitaSharp.Core.Cpu.Backends;
 internal sealed class IlDump
 {
     /// <summary>Methods per assembly file.</summary>
-    const int BatchSize = 512;
+    private const int BatchSize = 512;
 
-    readonly string _dir;
-    readonly Lock _lock = new();
-    readonly List<(Block Block, string Name, int File)> _blocks = [];
-    PersistedAssemblyBuilder? _asm;
-    TypeBuilder? _type;
-    int _file, _inFile;
+    private readonly string _dir;
+    private readonly Lock _lock = new();
+    private readonly List<(Block Block, string Name, int File)> _blocks = [];
+    private PersistedAssemblyBuilder? _asm;
+    private TypeBuilder? _type;
+    private int _file, _inFile;
 
-    IlDump(string dir)
+    private IlDump(string dir)
     {
         _dir = dir;
         Directory.CreateDirectory(dir);
@@ -58,7 +58,7 @@ internal sealed class IlDump
                     name += $"_{_blocks.Count}";
                 }
 
-                var mb = _type.DefineMethod(name, MethodAttributes.Public | MethodAttributes.Static, typeof(void), [typeof(CpuState).MakePointerType()]);
+                MethodBuilder mb = _type.DefineMethod(name, MethodAttributes.Public | MethodAttributes.Static, typeof(void), [typeof(CpuState).MakePointerType()]);
                 mb.DefineParameter(1, ParameterAttributes.None, "s");
                 emit(mb.GetILGenerator());
                 _blocks.Add((b, name, _file));
@@ -74,7 +74,7 @@ internal sealed class IlDump
         }
     }
 
-    void SaveAssembly()
+    private void SaveAssembly()
     {
         if (_type == null || _asm == null)
         {
@@ -91,10 +91,10 @@ internal sealed class IlDump
     }
 
     /// <summary>index.tsv: method, file, guest start, ARM/Thumb, length, executions, executed instructions; hottest first.</summary>
-    void WriteIndex()
+    private void WriteIndex()
     {
         var sb = new System.Text.StringBuilder("method\tfile\tstart\tmode\tinstructions\texecutions\texecuted_instructions\n");
-        foreach (var (b, name, file) in _blocks.OrderByDescending(x => (long)x.Block.ExecCount * x.Block.Insts.Length))
+        foreach ((Block? b, string? name, int file) in _blocks.OrderByDescending(x => (long)x.Block.ExecCount * x.Block.Insts.Length))
         {
             sb.Append($"{name}\til_blocks_{file:D3}.dll\t{b.Start:X8}\t{(b.Thumb ? "T" : "A")}\t{b.Insts.Length}\t{b.ExecCount}\t{(long)b.ExecCount * b.Insts.Length}\n");
         }

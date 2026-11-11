@@ -13,46 +13,46 @@ namespace VitaSharp.Core.Cpu.Native;
 /// </summary>
 public sealed unsafe partial class X64Emitter
 {
-    const int RAX = 0, RCX = 1, RDX = 2, RBX = 3, RSP = 4, RBP = 5, RSI = 6, RDI = 7, R8 = 8, R9 = 9, R10 = 10, R11 = 11, R12 = 12, R13 = 13, R14 = 14, R15 = 15;
+    private const int RAX = 0, RCX = 1, RDX = 2, RBX = 3, RSP = 4, RBP = 5, RSI = 6, RDI = 7, R8 = 8, R9 = 9, R10 = 10, R11 = 11, R12 = 12, R13 = 13, R14 = 14, R15 = 15;
 
-    static readonly AssemblerRegister32[] G32 = [eax, ecx, edx, ebx, esp, ebp, esi, edi, r8d, r9d, r10d, r11d, r12d, r13d, r14d, r15d];
-    static readonly AssemblerRegister64[] G64 = [rax, rcx, rdx, rbx, rsp, rbp, rsi, rdi, r8, r9, r10, r11, r12, r13, r14, r15];
-    static readonly AssemblerRegister16[] G16 = [ax, cx, dx, bx, sp, bp, si, di, r8w, r9w, r10w, r11w, r12w, r13w, r14w, r15w];
-    static readonly AssemblerRegister8[] G8 = [al, cl, dl, bl, spl, bpl, sil, dil, r8b, r9b, r10b, r11b, r12b, r13b, r14b, r15b];
+    private static readonly AssemblerRegister32[] s_g32 = [eax, ecx, edx, ebx, esp, ebp, esi, edi, r8d, r9d, r10d, r11d, r12d, r13d, r14d, r15d];
+    private static readonly AssemblerRegister64[] s_g64 = [rax, rcx, rdx, rbx, rsp, rbp, rsi, rdi, r8, r9, r10, r11, r12, r13, r14, r15];
+    private static readonly AssemblerRegister16[] s_g16 = [ax, cx, dx, bx, sp, bp, si, di, r8w, r9w, r10w, r11w, r12w, r13w, r14w, r15w];
+    private static readonly AssemblerRegister8[] s_g8 = [al, cl, dl, bl, spl, bpl, sil, dil, r8b, r9b, r10b, r11b, r12b, r13b, r14b, r15b];
 
     public static readonly bool Windows = OperatingSystem.IsWindows();
     /// <summary>Callee-saved registers available for temps (survive callouts).</summary>
-    static readonly int[] CalleeSaved = Windows ? [RSI, RDI, RBP, R12, R13, R14] : [RBP, R12, R13, R14];
+    private static readonly int[] s_calleeSaved = Windows ? [RSI, RDI, RBP, R12, R13, R14] : [RBP, R12, R13, R14];
     /// <summary>Caller-saved registers available for temps (not across callouts).</summary>
-    static readonly int[] CallerSaved = Windows ? [R8, R9, R10, R11] : [RSI, RDI, R8, R9, R10, R11];
+    private static readonly int[] s_callerSaved = Windows ? [R8, R9, R10, R11] : [RSI, RDI, R8, R9, R10, R11];
 
     /// <summary>Spill slots the trampoline frame provides (8 bytes each, above the 32-byte shadow space).</summary>
     public const int SpillSlots = 64;
     public const int ShadowSpace = 32;
 
-    static readonly bool HasLzcnt = System.Runtime.Intrinsics.X86.Lzcnt.IsSupported;
+    private static readonly bool s_hasLzcnt = System.Runtime.Intrinsics.X86.Lzcnt.IsSupported;
 
     // CpuState field offsets
-    static readonly int OffR = 0;
-    static readonly int OffN = StateLayout.Of(nameof(CpuState.N));
-    static readonly int OffCycleAcc = StateLayout.Of(nameof(CpuState.CycleAcc));
-    static readonly int OffCheckWindow = StateLayout.Of(nameof(CpuState.CheckWindow));
-    static readonly int OffNBlocks = StateLayout.Of(nameof(CpuState.NBlocks));
-    static readonly int OffNInstr = StateLayout.Of(nameof(CpuState.NInstr));
-    static readonly int OffLastExitSlot = StateLayout.Of(nameof(CpuState.LastExitSlot));
-    static readonly int OffLinkBreak = StateLayout.Of(nameof(CpuState.LinkBreak));
-    static readonly int OffThumb = StateLayout.Of(nameof(CpuState.Thumb));
-    static readonly int OffMxcsrHost = StateLayout.Of(nameof(CpuState.MxcsrHost));
-    static readonly int OffMxcsrGuest = StateLayout.Of(nameof(CpuState.MxcsrGuest));
-    static readonly int OffMxcsrNeon = StateLayout.Of(nameof(CpuState.MxcsrNeon));
-    static readonly int OffFpscr = StateLayout.Of(nameof(CpuState.Fpscr));
-    static readonly int OffD = StateLayout.Of(nameof(CpuState.D));
-    static readonly int OffExit = StateLayout.Of(nameof(CpuState.Exit));
-    static readonly int OffTierUp = StateLayout.Of(nameof(CpuState.TierUpRequest));
-    static readonly int OffMemBase = StateLayout.Of(nameof(CpuState.MemBase));
-    static readonly int OffDispatchTable = StateLayout.Of(nameof(CpuState.DispatchTable));
-    static readonly int OffNSimdOps = StateLayout.Of(nameof(CpuState.NSimdOps));
-    static readonly int OffNCondBranches = StateLayout.Of(nameof(CpuState.NCondBranches));
+    private static readonly int s_offR = 0;
+    private static readonly int s_offN = StateLayout.Of(nameof(CpuState.N));
+    private static readonly int s_offCycleAcc = StateLayout.Of(nameof(CpuState.CycleAcc));
+    private static readonly int s_offCheckWindow = StateLayout.Of(nameof(CpuState.CheckWindow));
+    private static readonly int s_offNBlocks = StateLayout.Of(nameof(CpuState.NBlocks));
+    private static readonly int s_offNInstr = StateLayout.Of(nameof(CpuState.NInstr));
+    private static readonly int s_offLastExitSlot = StateLayout.Of(nameof(CpuState.LastExitSlot));
+    private static readonly int s_offLinkBreak = StateLayout.Of(nameof(CpuState.LinkBreak));
+    private static readonly int s_offThumb = StateLayout.Of(nameof(CpuState.Thumb));
+    private static readonly int s_offMxcsrHost = StateLayout.Of(nameof(CpuState.MxcsrHost));
+    private static readonly int s_offMxcsrGuest = StateLayout.Of(nameof(CpuState.MxcsrGuest));
+    private static readonly int s_offMxcsrNeon = StateLayout.Of(nameof(CpuState.MxcsrNeon));
+    private static readonly int s_offFpscr = StateLayout.Of(nameof(CpuState.Fpscr));
+    private static readonly int s_offD = StateLayout.Of(nameof(CpuState.D));
+    private static readonly int s_offExit = StateLayout.Of(nameof(CpuState.Exit));
+    private static readonly int s_offTierUp = StateLayout.Of(nameof(CpuState.TierUpRequest));
+    private static readonly int s_offMemBase = StateLayout.Of(nameof(CpuState.MemBase));
+    private static readonly int s_offDispatchTable = StateLayout.Of(nameof(CpuState.DispatchTable));
+    private static readonly int s_offNSimdOps = StateLayout.Of(nameof(CpuState.NSimdOps));
+    private static readonly int s_offNCondBranches = StateLayout.Of(nameof(CpuState.NCondBranches));
 
     /// <summary>Profiling counters in generated code (<see cref="Util.EnvVars.NativeCounters"/>).</summary>
     public static readonly bool Counters = Environment.GetEnvironmentVariable(Util.EnvVars.NativeCounters) == "1";
@@ -60,15 +60,15 @@ public sealed unsafe partial class X64Emitter
     /// <summary>Debug knob for tests: restricts the temp registers so spilling paths get exercised.</summary>
     public static int MaxTempRegisters = int.MaxValue;
 
-    Assembler? _assembler;
-    Assembler _a { get => _assembler!; set => _assembler = value; }
-    readonly MemoryStream _code = new(1024);
-    StreamCodeWriter? _writer;
-    IrBlock _ir = null!;
-    int[] _loc = null!; // >= 0 register, <= -2 spill slot -(loc+2), -1 none
-    Label[] _labels = null!;
-    Label _abort;
-    bool _checkExit;
+    private Assembler? _assembler;
+    private Assembler Asm { get => _assembler!; set => _assembler = value; }
+    private readonly MemoryStream _code = new(1024);
+    private StreamCodeWriter? _writer;
+    private IrBlock _ir = null!;
+    private int[] _loc = null!; // >= 0 register, <= -2 spill slot -(loc+2), -1 none
+    private Label[] _labels = null!;
+    private Label _abort;
+    private bool _checkExit;
 
     /// <summary>Addresses of the runtime entry points the code jumps to or calls.</summary>
     public struct Runtime
@@ -104,24 +104,24 @@ public sealed unsafe partial class X64Emitter
         _labels = new Label[ir.Labels];
         for (int i = 0; i < ir.Labels; i++)
         {
-            _labels[i] = _a.CreateLabel();
+            _labels[i] = Asm.CreateLabel();
         }
 
-        _abort = _a.CreateLabel();
+        _abort = Asm.CreateLabel();
         _checkExit = ir.Callouts > 0; // a handler may raise an exit mid-block: such blocks never chain while Exit is set
-        var tierUp = _a.CreateLabel();
+        Label tierUp = Asm.CreateLabel();
         if (tierUpCounter != 0)
         {
             // execution budget of a block the IL backend runs better: at zero, ask the dispatcher to recompile it
             // (the block has not run: the state is exactly the block entry state)
-            _a.mov(rax, (ulong)tierUpCounter);
-            _a.dec(__dword_ptr[rax]);
-            _a.jz(tierUp);
+            Asm.mov(rax, (ulong)tierUpCounter);
+            Asm.dec(__dword_ptr[rax]);
+            Asm.jz(tierUp);
         }
         if (Counters)
         {
             int simd = 0, cond = 0;
-            foreach (var x in ir.Insts)
+            foreach (IrInst x in ir.Insts)
             {
                 if (x.Op is IrOp.VecOp or IrOp.FpOp)
                 {
@@ -134,30 +134,30 @@ public sealed unsafe partial class X64Emitter
             }
             if (simd > 0)
             {
-                _a.add(__qword_ptr[rbx + OffNSimdOps], simd);
+                Asm.add(__qword_ptr[rbx + s_offNSimdOps], simd);
             }
 
             if (cond > 0)
             {
-                _a.add(__qword_ptr[rbx + OffNCondBranches], cond);
+                Asm.add(__qword_ptr[rbx + s_offNCondBranches], cond);
             }
         }
         int exitIndex = 0;
-        foreach (var x in ir.Insts)
+        foreach (IrInst x in ir.Insts)
         {
             Lower(x, rt, slotFor, ref exitIndex);
         }
         // shared path for callouts that threw: account the block and leave
         Place(ref _abort);
         EmitAccounting();
-        _a.mov(__qword_ptr[rbx + OffLastExitSlot], 0);
-        _a.jmp(rt.Epilogue);
+        Asm.mov(__qword_ptr[rbx + s_offLastExitSlot], 0);
+        Asm.jmp(rt.Epilogue);
         if (tierUpCounter != 0)
         {
             Place(ref tierUp);
-            _a.mov(__qword_ptr[rbx + OffLastExitSlot], 0);
-            _a.mov(State(OffTierUp), 1);
-            _a.jmp(rt.Epilogue);
+            Asm.mov(__qword_ptr[rbx + s_offLastExitSlot], 0);
+            Asm.mov(State(s_offTierUp), 1);
+            Asm.jmp(rt.Epilogue);
         }
         return true;
     }
@@ -167,7 +167,7 @@ public sealed unsafe partial class X64Emitter
     {
         if (FastEncode)
         {
-            if (TryFastAssemble(rip, out var fast))
+            if (TryFastAssemble(rip, out byte[]? fast))
             {
                 return fast;
             }
@@ -175,7 +175,7 @@ public sealed unsafe partial class X64Emitter
             Interlocked.Increment(ref FastEncodeFallbacks);
         }
         _code.SetLength(0);
-        _a.Assemble(_writer ??= new StreamCodeWriter(_code), rip);
+        Asm.Assemble(_writer ??= new StreamCodeWriter(_code), rip);
         return _code.ToArray();
     }
 
@@ -184,10 +184,10 @@ public sealed unsafe partial class X64Emitter
     /// <summary>Stopwatch ticks the last <see cref="Prepare"/> spent in register allocation (compile-phase statistics).</summary>
     public long AllocTicks;
 
-    bool Allocate()
+    private bool Allocate()
     {
         long t0 = System.Diagnostics.Stopwatch.GetTimestamp();
-        var loc = LinearScan.Allocate(_ir, CallerSaved, CalleeSaved, SpillSlots, MaxTempRegisters, VerifyAllocation, reuse: true);
+        int[]? loc = LinearScan.Allocate(_ir, s_callerSaved, s_calleeSaved, SpillSlots, MaxTempRegisters, VerifyAllocation, reuse: true);
         AllocTicks = System.Diagnostics.Stopwatch.GetTimestamp() - t0;
         if (loc == null)
         {
@@ -203,37 +203,37 @@ public sealed unsafe partial class X64Emitter
 
     // ------------------------------------------------------------------ operand helpers
 
-    bool IsConst(int t, out uint v) => _ir.TryConst(t, out v);
-    bool InReg(int t, out int r)
+    private bool IsConst(int t, out uint v) => _ir.TryConst(t, out v);
+    private bool InReg(int t, out int r)
     {
         r = t >= 0 ? _loc[t] : -1;
         return r >= 0;
     }
-    AssemblerMemoryOperand Slot(int t) => __dword_ptr[rsp + (ShadowSpace + 8 * (-(_loc[t] + 2)))];
-    static AssemblerMemoryOperand State(int off) => __dword_ptr[rbx + off];
+    private AssemblerMemoryOperand Slot(int t) => __dword_ptr[rsp + (ShadowSpace + 8 * (-(_loc[t] + 2)))];
+    private static AssemblerMemoryOperand State(int off) => __dword_ptr[rbx + off];
 
     /// <summary>Loads temp <paramref name="t"/> into register <paramref name="r"/> (flags preserved).</summary>
-    void LoadTo(int r, int t)
+    private void LoadTo(int r, int t)
     {
         if (IsConst(t, out uint v))
         {
-            _a.mov(G32[r], v);
+            Asm.mov(s_g32[r], v);
         }
         else if (InReg(t, out int s))
         {
             if (s != r)
             {
-                _a.mov(G32[r], G32[s]);
+                Asm.mov(s_g32[r], s_g32[s]);
             }
         }
         else
         {
-            _a.mov(G32[r], Slot(t));
+            Asm.mov(s_g32[r], Slot(t));
         }
     }
 
     /// <summary>A register holding temp t: its own, or <paramref name="scratch"/> loaded with it.</summary>
-    int Use(int t, int scratch)
+    private int Use(int t, int scratch)
     {
         if (!IsConst(t, out _) && InReg(t, out int r))
         {
@@ -244,9 +244,9 @@ public sealed unsafe partial class X64Emitter
         return scratch;
     }
 
-    int Def(int t, int scratch) => t >= 0 && InReg(t, out int r) ? r : scratch;
+    private int Def(int t, int scratch) => t >= 0 && InReg(t, out int r) ? r : scratch;
 
-    void Commit(int t, int r)
+    private void Commit(int t, int r)
     {
         if (t < 0)
         {
@@ -257,129 +257,129 @@ public sealed unsafe partial class X64Emitter
         {
             if (own != r)
             {
-                _a.mov(G32[own], G32[r]);
+                Asm.mov(s_g32[own], s_g32[r]);
             }
 
             return;
         }
-        _a.mov(Slot(t), G32[r]);
+        Asm.mov(Slot(t), s_g32[r]);
     }
 
-    enum Alu
+    private enum Alu
     {
         Add, Sub, And, Or, Xor, Adc, Sbb, Cmp, Imul
     }
 
     /// <summary>d = d (op) t, with t as immediate, register or spill slot.</summary>
-    void AluOp(Alu k, int d, int t)
+    private void AluOp(Alu k, int d, int t)
     {
-        var D = G32[d];
+        AssemblerRegister32 D = s_g32[d];
         if (IsConst(t, out uint v))
         {
             int iv = (int)v;
             switch (k)
             {
                 case Alu.Add:
-                    _a.add(D, iv);
+                    Asm.add(D, iv);
                     break;
                 case Alu.Sub:
-                    _a.sub(D, iv);
+                    Asm.sub(D, iv);
                     break;
                 case Alu.And:
-                    _a.and(D, iv);
+                    Asm.and(D, iv);
                     break;
                 case Alu.Or:
-                    _a.or(D, iv);
+                    Asm.or(D, iv);
                     break;
                 case Alu.Xor:
-                    _a.xor(D, iv);
+                    Asm.xor(D, iv);
                     break;
                 case Alu.Adc:
-                    _a.adc(D, iv);
+                    Asm.adc(D, iv);
                     break;
                 case Alu.Sbb:
-                    _a.sbb(D, iv);
+                    Asm.sbb(D, iv);
                     break;
                 case Alu.Cmp:
-                    _a.cmp(D, iv);
+                    Asm.cmp(D, iv);
                     break;
                 case Alu.Imul:
-                    _a.imul(D, D, iv);
+                    Asm.imul(D, D, iv);
                     break;
             }
         }
         else if (InReg(t, out int r))
         {
-            var S = G32[r];
+            AssemblerRegister32 S = s_g32[r];
             switch (k)
             {
                 case Alu.Add:
-                    _a.add(D, S);
+                    Asm.add(D, S);
                     break;
                 case Alu.Sub:
-                    _a.sub(D, S);
+                    Asm.sub(D, S);
                     break;
                 case Alu.And:
-                    _a.and(D, S);
+                    Asm.and(D, S);
                     break;
                 case Alu.Or:
-                    _a.or(D, S);
+                    Asm.or(D, S);
                     break;
                 case Alu.Xor:
-                    _a.xor(D, S);
+                    Asm.xor(D, S);
                     break;
                 case Alu.Adc:
-                    _a.adc(D, S);
+                    Asm.adc(D, S);
                     break;
                 case Alu.Sbb:
-                    _a.sbb(D, S);
+                    Asm.sbb(D, S);
                     break;
                 case Alu.Cmp:
-                    _a.cmp(D, S);
+                    Asm.cmp(D, S);
                     break;
                 case Alu.Imul:
-                    _a.imul(D, S);
+                    Asm.imul(D, S);
                     break;
             }
         }
         else
         {
-            var M = Slot(t);
+            AssemblerMemoryOperand M = Slot(t);
             switch (k)
             {
                 case Alu.Add:
-                    _a.add(D, M);
+                    Asm.add(D, M);
                     break;
                 case Alu.Sub:
-                    _a.sub(D, M);
+                    Asm.sub(D, M);
                     break;
                 case Alu.And:
-                    _a.and(D, M);
+                    Asm.and(D, M);
                     break;
                 case Alu.Or:
-                    _a.or(D, M);
+                    Asm.or(D, M);
                     break;
                 case Alu.Xor:
-                    _a.xor(D, M);
+                    Asm.xor(D, M);
                     break;
                 case Alu.Adc:
-                    _a.adc(D, M);
+                    Asm.adc(D, M);
                     break;
                 case Alu.Sbb:
-                    _a.sbb(D, M);
+                    Asm.sbb(D, M);
                     break;
                 case Alu.Cmp:
-                    _a.cmp(D, M);
+                    Asm.cmp(D, M);
                     break;
                 case Alu.Imul:
-                    _a.imul(D, M);
+                    Asm.imul(D, M);
                     break;
             }
         }
     }
 
     /// <summary>Stores 0/1 of the current host condition into flag temp t (setcc + movzx: flags preserved).</summary>
-    void SetFlagOut(int t, Action<AssemblerRegister8> setcc)
+    private void SetFlagOut(int t, Action<AssemblerRegister8> setcc)
     {
         if (t < 0)
         {
@@ -387,16 +387,16 @@ public sealed unsafe partial class X64Emitter
         }
 
         int r = Def(t, RDX);
-        setcc(G8[r]);
-        _a.movzx(G32[r], G8[r]);
+        setcc(s_g8[r]);
+        Asm.movzx(s_g32[r], s_g8[r]);
         Commit(t, r);
     }
 
     /// <summary>Guest memory operand for address temp t (loads it into rax unless it is in a register).</summary>
-    AssemblerMemoryOperand GuestMem(int t, MemorySize size)
+    private AssemblerMemoryOperand GuestMem(int t, MemorySize size)
     {
         int r = Use(t, RAX);
-        var m = r15 + G64[r];
+        AssemblerMemoryOperand m = r15 + s_g64[r];
         return size switch
         {
             MemorySize.UInt8 => __byte_ptr[m],
@@ -407,22 +407,22 @@ public sealed unsafe partial class X64Emitter
 
     // ------------------------------------------------------------------ lowering
 
-    void EmitAccounting()
+    private void EmitAccounting()
     {
-        _a.add(__qword_ptr[rbx + OffCycleAcc], (int)Math.Min(_ir.Cycles, int.MaxValue));
-        _a.inc(__qword_ptr[rbx + OffNBlocks]);
-        _a.add(__qword_ptr[rbx + OffNInstr], _ir.GuestInstructions);
+        Asm.add(__qword_ptr[rbx + s_offCycleAcc], (int)Math.Min(_ir.Cycles, int.MaxValue));
+        Asm.inc(__qword_ptr[rbx + s_offNBlocks]);
+        Asm.add(__qword_ptr[rbx + s_offNInstr], _ir.GuestInstructions);
     }
 
     // the compile-time hot spots are compiled fully optimized from the start: a game compiles only thousands of blocks
     // per worker, much of it while these big methods would still run as unoptimized tier-0 code
     [System.Runtime.CompilerServices.MethodImpl(System.Runtime.CompilerServices.MethodImplOptions.AggressiveOptimization)]
-    void Lower(IrInst x, Runtime rt, Func<int, nint> slotFor, ref int exitIndex)
+    private void Lower(IrInst x, Runtime rt, Func<int, nint> slotFor, ref int exitIndex)
     {
-        var a = _a;
+        Assembler a = Asm;
         if (_neonMxcsr && x.Op is not (IrOp.VecOp or IrOp.VecLdSt))
         {
-            a.ldmxcsr(State(OffMxcsrHost));
+            a.ldmxcsr(State(s_offMxcsrHost));
             _neonMxcsr = false;
         }
         switch (x.Op)
@@ -434,29 +434,29 @@ public sealed unsafe partial class X64Emitter
             case IrOp.GetReg:
             {
                 int d = Def(x.D, RAX);
-                a.mov(G32[d], State(OffR + 4 * (int)x.Imm));
+                a.mov(s_g32[d], State(s_offR + 4 * (int)x.Imm));
                 Commit(x.D, d);
                 return;
             }
             case IrOp.GetFlag:
             {
                 int d = Def(x.D, RAX);
-                a.mov(G32[d], State(OffN + 4 * (int)x.Imm));
+                a.mov(s_g32[d], State(s_offN + 4 * (int)x.Imm));
                 Commit(x.D, d);
                 return;
             }
             case IrOp.LoadState:
             {
                 int d = Def(x.D, RAX);
-                a.mov(G32[d], State((int)x.Imm));
+                a.mov(s_g32[d], State((int)x.Imm));
                 Commit(x.D, d);
                 return;
             }
             case IrOp.SetReg:
-                StoreTo(State(OffR + 4 * (int)x.Imm), x.A);
+                StoreTo(State(s_offR + 4 * (int)x.Imm), x.A);
                 return;
             case IrOp.SetFlag:
-                StoreTo(State(OffN + 4 * (int)x.Imm), x.A);
+                StoreTo(State(s_offN + 4 * (int)x.Imm), x.A);
                 return;
             case IrOp.StoreState:
                 StoreTo(State((int)x.Imm), x.A);
@@ -486,7 +486,7 @@ public sealed unsafe partial class X64Emitter
             {
                 int d = Def(x.D, RAX);
                 LoadTo(d, x.B);
-                a.not(G32[d]);
+                a.not(s_g32[d]);
                 AluOp(x.Op == IrOp.AndNot ? Alu.And : Alu.Or, d, x.A);
                 Commit(x.D, d);
                 return;
@@ -495,7 +495,7 @@ public sealed unsafe partial class X64Emitter
             {
                 int d = Def(x.D, RAX);
                 LoadTo(d, x.A);
-                a.not(G32[d]);
+                a.not(s_g32[d]);
                 Commit(x.D, d);
                 return;
             }
@@ -503,7 +503,7 @@ public sealed unsafe partial class X64Emitter
             {
                 int d = Def(x.D, RAX);
                 LoadTo(d, x.A);
-                a.neg(G32[d]);
+                a.neg(s_g32[d]);
                 Commit(x.D, d);
                 return;
             }
@@ -516,22 +516,22 @@ public sealed unsafe partial class X64Emitter
             case IrOp.Clz:
             {
                 int d = Def(x.D, RAX);
-                if (HasLzcnt)
+                if (s_hasLzcnt)
                 {
                     int s = Use(x.A, RCX);
-                    a.lzcnt(G32[d], G32[s]);
+                    a.lzcnt(s_g32[d], s_g32[s]);
                 }
                 else
                 {
                     int s = Use(x.A, RCX);
-                    var zero = a.CreateLabel();
-                    var done = a.CreateLabel();
-                    a.bsr(G32[d], G32[s]);
+                    Label zero = a.CreateLabel();
+                    Label done = a.CreateLabel();
+                    a.bsr(s_g32[d], s_g32[s]);
                     a.jz(zero);
-                    a.xor(G32[d], 31);
+                    a.xor(s_g32[d], 31);
                     a.jmp(done);
                     Place(ref zero);
-                    a.mov(G32[d], 32u);
+                    a.mov(s_g32[d], 32u);
                     Place(ref done);
                 }
                 Commit(x.D, d);
@@ -541,7 +541,7 @@ public sealed unsafe partial class X64Emitter
             {
                 int d = Def(x.D, RAX);
                 LoadTo(d, x.A);
-                a.bswap(G32[d]);
+                a.bswap(s_g32[d]);
                 Commit(x.D, d);
                 return;
             }
@@ -549,8 +549,8 @@ public sealed unsafe partial class X64Emitter
             {
                 int d = Def(x.D, RAX);
                 LoadTo(d, x.A);
-                a.bswap(G32[d]);
-                a.ror(G32[d], (byte)16);
+                a.bswap(s_g32[d]);
+                a.ror(s_g32[d], (byte)16);
                 Commit(x.D, d);
                 return;
             }
@@ -559,14 +559,14 @@ public sealed unsafe partial class X64Emitter
                 LoadTo(RAX, x.A);
                 a.rol(ax, (byte)8);
                 int d = Def(x.D, RAX);
-                a.movsx(G32[d], ax);
+                a.movsx(s_g32[d], ax);
                 Commit(x.D, d);
                 return;
             }
             case IrOp.Rbit:
             {
                 LoadTo(RAX, x.A);
-                foreach (var (sh, mask) in new[] { (1, 0x55555555), (2, 0x33333333), (4, 0x0F0F0F0F) })
+                foreach ((int sh, int mask) in new[] { (1, 0x55555555), (2, 0x33333333), (4, 0x0F0F0F0F) })
                 {
                     a.mov(edx, eax);
                     a.shr(edx, (byte)sh);
@@ -579,7 +579,7 @@ public sealed unsafe partial class X64Emitter
                 int d = Def(x.D, RAX);
                 if (d != RAX)
                 {
-                    a.mov(G32[d], eax);
+                    a.mov(s_g32[d], eax);
                 }
 
                 Commit(x.D, d);
@@ -595,16 +595,16 @@ public sealed unsafe partial class X64Emitter
                 switch (x.Op)
                 {
                     case IrOp.SExt8:
-                        a.movsx(G32[d], G8[s]);
+                        a.movsx(s_g32[d], s_g8[s]);
                         break;
                     case IrOp.SExt16:
-                        a.movsx(G32[d], G16[s]);
+                        a.movsx(s_g32[d], s_g16[s]);
                         break;
                     case IrOp.ZExt8:
-                        a.movzx(G32[d], G8[s]);
+                        a.movzx(s_g32[d], s_g8[s]);
                         break;
                     default:
-                        a.movzx(G32[d], G16[s]);
+                        a.movzx(s_g32[d], s_g16[s]);
                         break;
                 }
                 Commit(x.D, d);
@@ -616,10 +616,10 @@ public sealed unsafe partial class X64Emitter
                 LoadTo(d, x.A);
                 if (x.Imm != 0)
                 {
-                    a.shr(G32[d], (byte)x.Imm);
+                    a.shr(s_g32[d], (byte)x.Imm);
                 }
 
-                a.and(G32[d], 1);
+                a.and(s_g32[d], 1);
                 Commit(x.D, d);
                 return;
             }
@@ -628,8 +628,8 @@ public sealed unsafe partial class X64Emitter
                 int s = Use(x.A, RCX);
                 AluOp(Alu.Cmp, s, x.B);
                 int d = Def(x.D, RAX);
-                a.sete(G8[d]);
-                a.movzx(G32[d], G8[d]);
+                a.sete(s_g8[d]);
+                a.movzx(s_g32[d], s_g8[d]);
                 Commit(x.D, d);
                 return;
             }
@@ -640,17 +640,17 @@ public sealed unsafe partial class X64Emitter
                 int va = Use(x.A, RDX);
                 LoadTo(d, x.B);
                 int c = Use(x.C, RCX);
-                a.test(G32[c], G32[c]);
-                a.cmovne(G32[d], G32[va]);
+                a.test(s_g32[c], s_g32[c]);
+                a.cmovne(s_g32[d], s_g32[va]);
                 Commit(x.D, d);
                 return;
             }
             case IrOp.UDiv:
             case IrOp.SDiv:
             {
-                var zero = a.CreateLabel();
-                var done = a.CreateLabel();
-                var div = a.CreateLabel();
+                Label zero = a.CreateLabel();
+                Label done = a.CreateLabel();
+                Label div = a.CreateLabel();
                 LoadTo(RAX, x.A);
                 LoadTo(RCX, x.B);
                 a.test(ecx, ecx);
@@ -677,7 +677,7 @@ public sealed unsafe partial class X64Emitter
                 int d = Def(x.D, RAX);
                 if (d != RAX)
                 {
-                    a.mov(G32[d], eax);
+                    a.mov(s_g32[d], eax);
                 }
 
                 Commit(x.D, d);
@@ -692,7 +692,7 @@ public sealed unsafe partial class X64Emitter
             case IrOp.TestNZ:
             {
                 int s = Use(x.A, RAX);
-                a.test(G32[s], G32[s]);
+                a.test(s_g32[s], s_g32[s]);
                 SetFlagOut(x.Fn, r => a.sets(r));
                 SetFlagOut(x.Fz, r => a.sete(r));
                 return;
@@ -721,7 +721,7 @@ public sealed unsafe partial class X64Emitter
                 if (x.D >= 0)
                 {
                     int d = Def(x.D, RCX);
-                    a.mov(G32[d], eax);
+                    a.mov(s_g32[d], eax);
                     Commit(x.D, d);
                 }
                 if (x.D2 >= 0)
@@ -730,7 +730,7 @@ public sealed unsafe partial class X64Emitter
                     int d = Def(x.D2, RAX);
                     if (d != RAX)
                     {
-                        a.mov(G32[d], eax);
+                        a.mov(s_g32[d], eax);
                     }
 
                     Commit(x.D2, d);
@@ -767,19 +767,19 @@ public sealed unsafe partial class X64Emitter
                 switch (x.Op)
                 {
                     case IrOp.Load8:
-                        a.movzx(G32[d], GuestMem(x.A, MemorySize.UInt8));
+                        a.movzx(s_g32[d], GuestMem(x.A, MemorySize.UInt8));
                         break;
                     case IrOp.Load8S:
-                        a.movsx(G32[d], GuestMem(x.A, MemorySize.UInt8));
+                        a.movsx(s_g32[d], GuestMem(x.A, MemorySize.UInt8));
                         break;
                     case IrOp.Load16:
-                        a.movzx(G32[d], GuestMem(x.A, MemorySize.UInt16));
+                        a.movzx(s_g32[d], GuestMem(x.A, MemorySize.UInt16));
                         break;
                     case IrOp.Load16S:
-                        a.movsx(G32[d], GuestMem(x.A, MemorySize.UInt16));
+                        a.movsx(s_g32[d], GuestMem(x.A, MemorySize.UInt16));
                         break;
                     default:
-                        a.mov(G32[d], GuestMem(x.A, MemorySize.UInt32));
+                        a.mov(s_g32[d], GuestMem(x.A, MemorySize.UInt32));
                         break;
                 }
                 Commit(x.D, d);
@@ -794,7 +794,7 @@ public sealed unsafe partial class X64Emitter
                     EmitStoreLog(x);
                 }
 
-                var mem = GuestMem(x.A, x.Op == IrOp.Store8 ? MemorySize.UInt8 : x.Op == IrOp.Store16 ? MemorySize.UInt16 : MemorySize.UInt32);
+                AssemblerMemoryOperand mem = GuestMem(x.A, x.Op == IrOp.Store8 ? MemorySize.UInt8 : x.Op == IrOp.Store16 ? MemorySize.UInt16 : MemorySize.UInt32);
                 if (IsConst(x.B, out uint v))
                 {
                     if (x.Op == IrOp.Store8)
@@ -815,15 +815,15 @@ public sealed unsafe partial class X64Emitter
                     int s = Use(x.B, RDX);
                     if (x.Op == IrOp.Store8)
                     {
-                        a.mov(mem, G8[s]);
+                        a.mov(mem, s_g8[s]);
                     }
                     else if (x.Op == IrOp.Store16)
                     {
-                        a.mov(mem, G16[s]);
+                        a.mov(mem, s_g16[s]);
                     }
                     else
                     {
-                        a.mov(mem, G32[s]);
+                        a.mov(mem, s_g32[s]);
                     }
                 }
                 MarkDirty(x.A);
@@ -841,7 +841,7 @@ public sealed unsafe partial class X64Emitter
             case IrOp.LoadD:
             {
                 int r = Use(x.A, RAX);
-                a.mov(rcx, __qword_ptr[r15 + G64[r]]);
+                a.mov(rcx, __qword_ptr[r15 + s_g64[r]]);
                 a.mov(__qword_ptr[rbx + (int)x.Imm], rcx);
                 return;
             }
@@ -849,7 +849,7 @@ public sealed unsafe partial class X64Emitter
             {
                 int r = Use(x.A, RAX);
                 a.mov(rcx, __qword_ptr[rbx + (int)x.Imm]);
-                a.mov(__qword_ptr[r15 + G64[r]], rcx);
+                a.mov(__qword_ptr[r15 + s_g64[r]], rcx);
                 MarkDirty(x.A);
                 return;
             }
@@ -863,7 +863,7 @@ public sealed unsafe partial class X64Emitter
             // ---------------- control
             case IrOp.Label:
             {
-                var l = _labels[x.Imm];
+                Label l = _labels[x.Imm];
                 Place(ref l);
                 _labels[x.Imm] = l;
                 return;
@@ -871,7 +871,7 @@ public sealed unsafe partial class X64Emitter
             case IrOp.BranchIf:
             {
                 int s = Use(x.A, RAX);
-                a.test(G32[s], G32[s]);
+                a.test(s_g32[s], s_g32[s]);
                 if (x.Imm != 0)
                 {
                     a.jnz(_labels[x.Imm2]);
@@ -911,16 +911,16 @@ public sealed unsafe partial class X64Emitter
             case IrOp.ExitStatic:
             {
                 nint slot = slotFor(exitIndex++);
-                var ret = a.CreateLabel();
+                Label ret = a.CreateLabel();
                 EmitAccounting();
-                a.mov(rax, __qword_ptr[rbx + OffCycleAcc]);
-                a.cmp(rax, __qword_ptr[rbx + OffCheckWindow]);
+                a.mov(rax, __qword_ptr[rbx + s_offCycleAcc]);
+                a.cmp(rax, __qword_ptr[rbx + s_offCheckWindow]);
                 a.jge(ret);
-                a.cmp(State(OffLinkBreak), 0);
+                a.cmp(State(s_offLinkBreak), 0);
                 a.jne(ret);
                 if (_checkExit)
                 {
-                    a.cmp(State(OffExit), 0);
+                    a.cmp(State(s_offExit), 0);
                     a.jne(ret);
                 }
                 a.mov(rax, (ulong)slot);
@@ -930,35 +930,35 @@ public sealed unsafe partial class X64Emitter
                 a.jmp(rax);
                 Place(ref ret);
                 a.mov(rax, (ulong)slot);
-                a.mov(__qword_ptr[rbx + OffLastExitSlot], rax);
+                a.mov(__qword_ptr[rbx + s_offLastExitSlot], rax);
                 a.jmp(rt.Epilogue);
                 return;
             }
             case IrOp.ExitDynamic:
             {
-                var ret = a.CreateLabel();
+                Label ret = a.CreateLabel();
                 EmitAccounting();
                 if (x.Imm == 0 && rt.DispatchTable != 0)
                 {
                     // indirect exit: look the target up in the dispatch table (key, code, key: see
                     // NativeRuntime.Publish) and jump straight to it when the pacing window allows
-                    a.mov(rax, __qword_ptr[rbx + OffCycleAcc]);
-                    a.cmp(rax, __qword_ptr[rbx + OffCheckWindow]);
+                    a.mov(rax, __qword_ptr[rbx + s_offCycleAcc]);
+                    a.cmp(rax, __qword_ptr[rbx + s_offCheckWindow]);
                     a.jge(ret);
-                    a.cmp(State(OffLinkBreak), 0);
+                    a.cmp(State(s_offLinkBreak), 0);
                     a.jne(ret);
                     if (_checkExit)
                     {
-                        a.cmp(State(OffExit), 0);
+                        a.cmp(State(s_offExit), 0);
                         a.jne(ret);
                     }
-                    a.mov(eax, State(OffR + 60));
+                    a.mov(eax, State(s_offR + 60));
                     a.mov(edx, eax);
-                    a.or(eax, State(OffThumb));
+                    a.or(eax, State(s_offThumb));
                     a.shr(edx, (byte)1);
                     a.and(edx, (1 << NativeRuntime.DispatchBits) - 1);
                     a.shl(rdx, (byte)4);
-                    a.mov(rcx, __qword_ptr[rbx + OffDispatchTable]); // the thread's process's table
+                    a.mov(rcx, __qword_ptr[rbx + s_offDispatchTable]); // the thread's process's table
                     a.add(rcx, rdx);
                     // key, code, key again: a concurrent republish (key=invalid, code=new, key=new) between the
                     // loads is detected by the second compare (x64 never reorders loads with other loads)
@@ -970,7 +970,7 @@ public sealed unsafe partial class X64Emitter
                     a.jmp(rdx);
                 }
                 Place(ref ret);
-                a.mov(__qword_ptr[rbx + OffLastExitSlot], 0);
+                a.mov(__qword_ptr[rbx + s_offLastExitSlot], 0);
                 a.jmp(rt.Epilogue);
                 return;
             }
@@ -981,31 +981,31 @@ public sealed unsafe partial class X64Emitter
 
     // ------------------------------------------------------------------ exclusive monitor
 
-    static readonly ulong GensBase = (ulong)System.Runtime.InteropServices.Marshal.UnsafeAddrOfPinnedArrayElement(Arm.ExclusiveGens, 0);
-    static readonly int OffExAddr = StateLayout.Of(nameof(CpuState.ExclusiveAddr));
-    static readonly int OffExValue = StateLayout.Of(nameof(CpuState.ExclusiveValue));
-    static readonly int OffExValid = StateLayout.Of(nameof(CpuState.ExclusiveValid));
-    static readonly int OffExGen = StateLayout.Of(nameof(CpuState.ExclusiveGen));
-    static readonly int OffExTmp = StateLayout.Of(nameof(CpuState.ExTmp));
-    static readonly int OffExTmpHi = StateLayout.Of(nameof(CpuState.ExTmpHi));
+    private static readonly ulong s_gensBase = (ulong)System.Runtime.InteropServices.Marshal.UnsafeAddrOfPinnedArrayElement(Arm.s_exclusiveGens, 0);
+    private static readonly int s_offExAddr = StateLayout.Of(nameof(CpuState.ExclusiveAddr));
+    private static readonly int s_offExValue = StateLayout.Of(nameof(CpuState.ExclusiveValue));
+    private static readonly int s_offExValid = StateLayout.Of(nameof(CpuState.ExclusiveValid));
+    private static readonly int s_offExGen = StateLayout.Of(nameof(CpuState.ExclusiveGen));
+    private static readonly int s_offExTmp = StateLayout.Of(nameof(CpuState.ExTmp));
+    private static readonly int s_offExTmpHi = StateLayout.Of(nameof(CpuState.ExTmpHi));
 
     /// <summary>rdx = address of the generation counter of the granule of guest address ecx (clobbers rax, rdx).</summary>
-    void GenPointer()
+    private void GenPointer()
     {
-        var a = _a;
+        Assembler a = Asm;
         a.mov(edx, ecx);
         a.shr(edx, (byte)3);
         a.and(edx, Arm.ExclusiveStripes - 1);
-        a.mov(rax, GensBase);
+        a.mov(rax, s_gensBase);
         a.lea(rdx, __[rax + rdx * 4]);
     }
 
     /// <summary>LDREX (word): Arm.ReserveExclusive + read + SetExclusive.</summary>
-    void LoadExclusive(IrInst x)
+    private void LoadExclusive(IrInst x)
     {
-        var a = _a;
-        var spin = a.CreateLabel();
-        var ok = a.CreateLabel();
+        Assembler a = Asm;
+        Label spin = a.CreateLabel();
+        Label ok = a.CreateLabel();
         LoadTo(RCX, x.A);
         GenPointer();
         Place(ref spin);
@@ -1015,7 +1015,7 @@ public sealed unsafe partial class X64Emitter
         a.pause();                           // an exclusive store of another core is in flight
         a.jmp(spin);
         Place(ref ok);
-        a.mov(State(OffExGen), eax);
+        a.mov(State(s_offExGen), eax);
         if (x.Imm == 1)
         {
             a.mov(rax, __qword_ptr[r15 + rcx]); // LDREXD: one 64-bit read, like Volatile.Read(ulong)
@@ -1025,9 +1025,9 @@ public sealed unsafe partial class X64Emitter
             a.mov(eax, __dword_ptr[r15 + rcx]);
         }
 
-        a.mov(State(OffExAddr), ecx);
-        a.mov(__qword_ptr[rbx + OffExValue], rax); // word: zero-extended to 64 bits, like SetExclusive(uint)
-        a.mov(State(OffExValid), 1);
+        a.mov(State(s_offExAddr), ecx);
+        a.mov(__qword_ptr[rbx + s_offExValue], rax); // word: zero-extended to 64 bits, like SetExclusive(uint)
+        a.mov(State(s_offExValid), 1);
         if (x.Imm == 1 && x.D2 >= 0)
         {
             a.mov(rdx, rax);
@@ -1035,7 +1035,7 @@ public sealed unsafe partial class X64Emitter
             int d2 = Def(x.D2, RDX);
             if (d2 != RDX)
             {
-                a.mov(G32[d2], edx);
+                a.mov(s_g32[d2], edx);
             }
 
             Commit(x.D2, d2);
@@ -1045,7 +1045,7 @@ public sealed unsafe partial class X64Emitter
             int d = Def(x.D, RAX);
             if (d != RAX)
             {
-                a.mov(G32[d], eax);
+                a.mov(s_g32[d], eax);
             }
 
             Commit(x.D, d);
@@ -1053,69 +1053,69 @@ public sealed unsafe partial class X64Emitter
     }
 
     /// <summary>STREX (word): Arm.StoreExclusive32 (generation lock, value CAS against the LDREX value, release).</summary>
-    void StoreExclusive(IrInst x)
+    private void StoreExclusive(IrInst x)
     {
-        var a = _a;
-        var fail = a.CreateLabel();
-        var done = a.CreateLabel();
-        var keep = a.CreateLabel();
+        Assembler a = Asm;
+        Label fail = a.CreateLabel();
+        Label done = a.CreateLabel();
+        Label keep = a.CreateLabel();
         // the value goes through the state: only rax/rcx/rdx are free here
         bool dual = x.Imm == 1;
         if (IsConst(x.B, out uint bv))
         {
-            a.mov(State(OffExTmp), (int)bv);
+            a.mov(State(s_offExTmp), (int)bv);
         }
         else
         {
-            a.mov(State(OffExTmp), G32[Use(x.B, RAX)]);
+            a.mov(State(s_offExTmp), s_g32[Use(x.B, RAX)]);
         }
 
         if (dual)
         {
             if (IsConst(x.C, out uint cv))
             {
-                a.mov(State(OffExTmpHi), (int)cv);
+                a.mov(State(s_offExTmpHi), (int)cv);
             }
             else
             {
-                a.mov(State(OffExTmpHi), G32[Use(x.C, RAX)]);
+                a.mov(State(s_offExTmpHi), s_g32[Use(x.C, RAX)]);
             }
         }
         LoadTo(RCX, x.A);
-        a.cmp(State(OffExValid), 0);
+        a.cmp(State(s_offExValid), 0);
         a.je(fail);
-        a.cmp(State(OffExAddr), ecx);
+        a.cmp(State(s_offExAddr), ecx);
         a.jne(fail);
-        a.mov(State(OffExValid), 0);
+        a.mov(State(s_offExValid), 0);
         GenPointer();
-        a.mov(eax, State(OffExGen));
+        a.mov(eax, State(s_offExGen));
         a.lea(ecx, __dword_ptr[rax + 1]);
         a.@lock.cmpxchg(__dword_ptr[rdx], ecx); // gen: snap -> snap+1 (odd: store in flight)
         a.jne(fail);
-        a.mov(edx, State(OffExAddr));
+        a.mov(edx, State(s_offExAddr));
         if (dual)
         {
-            a.mov(rcx, __qword_ptr[rbx + OffExTmp]);    // ExTmp:ExTmpHi = Rt | Rt2 << 32
-            a.mov(rax, __qword_ptr[rbx + OffExValue]);
+            a.mov(rcx, __qword_ptr[rbx + s_offExTmp]);    // ExTmp:ExTmpHi = Rt | Rt2 << 32
+            a.mov(rax, __qword_ptr[rbx + s_offExValue]);
             a.@lock.cmpxchg(__qword_ptr[r15 + rdx], rcx); // 64-bit CAS against what LDREXD read
         }
         else
         {
-            a.mov(ecx, State(OffExTmp));
-            a.mov(eax, State(OffExValue));
+            a.mov(ecx, State(s_offExTmp));
+            a.mov(eax, State(s_offExValue));
             a.@lock.cmpxchg(__dword_ptr[r15 + rdx], ecx); // value CAS against what LDREX read
         }
         a.sete(cl);
         a.movzx(ecx, cl);                       // ecx = ok
-        a.mov(edx, State(OffExAddr));
+        a.mov(edx, State(s_offExAddr));
         a.mov(eax, edx);
         a.mov(edx, ecx);                        // keep ok in edx while computing the gen pointer in rcx/rax
         a.mov(ecx, eax);
         a.shr(ecx, (byte)3);
         a.and(ecx, Arm.ExclusiveStripes - 1);
-        a.mov(rax, GensBase);
+        a.mov(rax, s_gensBase);
         a.lea(rcx, __[rax + rcx * 4]);
-        a.mov(eax, State(OffExGen));
+        a.mov(eax, State(s_offExGen));
         a.test(edx, edx);
         a.jz(keep);
         a.add(eax, 2);
@@ -1123,10 +1123,10 @@ public sealed unsafe partial class X64Emitter
         a.mov(__dword_ptr[rcx], eax);           // release: snap+2 on success, snap on failure
         if (Memory.DirtyPages.Enabled)
         {
-            var clean = a.CreateLabel();
+            Label clean = a.CreateLabel();
             a.test(edx, edx);
             a.jz(clean);
-            a.mov(ecx, State(OffExAddr));
+            a.mov(ecx, State(s_offExAddr));
             MarkDirtyEcx();
             Place(ref clean);
         }
@@ -1139,7 +1139,7 @@ public sealed unsafe partial class X64Emitter
         int d = Def(x.D, RCX);
         if (d != RCX)
         {
-            a.mov(G32[d], ecx);
+            a.mov(s_g32[d], ecx);
         }
 
         Commit(x.D, d);
@@ -1153,24 +1153,24 @@ public sealed unsafe partial class X64Emitter
     /// detects tininess before rounding, x86 after): those, any other FPSCR mode and unrepresentable conversions run
     /// the interpreter handler instead. NaN results become the default NaN. MXCSR is the host's outside fast paths.
     /// </summary>
-    void FpOp(IrInst x, Runtime rt)
+    private void FpOp(IrInst x, Runtime rt)
     {
-        var a = _a;
+        Assembler a = Asm;
         var kind = (FpKind)(x.Imm & 0xFF);
         bool dbl = (x.Imm & (uint)FpFlags.Double) != 0;
-        var op = (x.Imm & (uint)FpFlags.OtherOp) != 0 ? Op.Vfp_Other : Op.Vfp_Arith;
-        int dOff = OffD + (int)(x.Imm4 & 0xFF), nOff = OffD + (int)((x.Imm4 >> 8) & 0xFF), mOff = OffD + (int)((x.Imm4 >> 16) & 0xFF);
-        var slow = a.CreateLabel();
-        var slowGuest = a.CreateLabel();
-        var done = a.CreateLabel();
+        Op op = (x.Imm & (uint)FpFlags.OtherOp) != 0 ? Op.Vfp_Other : Op.Vfp_Arith;
+        int dOff = s_offD + (int)(x.Imm4 & 0xFF), nOff = s_offD + (int)((x.Imm4 >> 8) & 0xFF), mOff = s_offD + (int)((x.Imm4 >> 16) & 0xFF);
+        Label slow = a.CreateLabel();
+        Label slowGuest = a.CreateLabel();
+        Label done = a.CreateLabel();
         AssemblerMemoryOperand S(int off) => __dword_ptr[rbx + off];
         AssemblerMemoryOperand Dq(int off) => __qword_ptr[rbx + off];
 
-        a.mov(eax, State(OffFpscr));
+        a.mov(eax, State(s_offFpscr));
         a.and(eax, 0x03F70000);
         a.cmp(eax, 0x03000000);
         a.jne(slow);
-        a.ldmxcsr(State(OffMxcsrGuest));
+        a.ldmxcsr(State(s_offMxcsrGuest));
 
         switch (kind)
         {
@@ -1280,7 +1280,7 @@ public sealed unsafe partial class X64Emitter
             case FpKind.Cmp:
             case FpKind.CmpZero:
             {
-                var set = a.CreateLabel();
+                Label set = a.CreateLabel();
                 if (dbl)
                 {
                     a.movsd(xmm0, Dq(dOff));
@@ -1319,11 +1319,11 @@ public sealed unsafe partial class X64Emitter
                 a.jb(set);
                 a.mov(eax, 0x20000000u); // greater: C
                 Place(ref set);
-                a.ldmxcsr(State(OffMxcsrHost));
-                a.mov(edx, State(OffFpscr));
+                a.ldmxcsr(State(s_offMxcsrHost));
+                a.mov(edx, State(s_offFpscr));
                 a.and(edx, 0x0FFFFFFF);
                 a.or(edx, eax);
-                a.mov(State(OffFpscr), edx);
+                a.mov(State(s_offFpscr), edx);
                 a.jmp(done);
                 break;
             }
@@ -1361,7 +1361,7 @@ public sealed unsafe partial class X64Emitter
                     }
                 }
                 // integers convert to normal numbers or zero: no fix-up needed
-                a.ldmxcsr(State(OffMxcsrHost));
+                a.ldmxcsr(State(s_offMxcsrHost));
                 if (dbl)
                 {
                     a.movsd(Dq(dOff), xmm0);
@@ -1400,15 +1400,15 @@ public sealed unsafe partial class X64Emitter
                 }
                 a.cmp(eax, unchecked((int)0x80000000));
                 a.je(slowGuest);
-                a.ldmxcsr(State(OffMxcsrHost));
+                a.ldmxcsr(State(s_offMxcsrHost));
                 a.mov(S(dOff), eax);
                 a.jmp(done);
                 break;
             case FpKind.CvtToU32:
             case FpKind.CvtToU32R:
             {
-                var store = a.CreateLabel();
-                var pos = a.CreateLabel();
+                Label store = a.CreateLabel();
+                Label pos = a.CreateLabel();
                 if (kind == FpKind.CvtToU32)
                 {
                     if (dbl)
@@ -1444,7 +1444,7 @@ public sealed unsafe partial class X64Emitter
                 a.jbe(store);
                 a.mov(eax, edx);       // saturate
                 Place(ref store);
-                a.ldmxcsr(State(OffMxcsrHost));
+                a.ldmxcsr(State(s_offMxcsrHost));
                 a.mov(S(dOff), eax);
                 a.jmp(done);
                 break;
@@ -1453,7 +1453,7 @@ public sealed unsafe partial class X64Emitter
             {
                 // round to nearest even; DAZ flushes the input like InF; half denormals are produced (vcvtps2ph ignores
                 // FTZ), like the handler's (Half) conversion; NaN -> the default half NaN (DN)
-                var store = a.CreateLabel();
+                Label store = a.CreateLabel();
                 a.movss(xmm0, S(mOff));
                 a.mov(eax, 0x7E00);
                 a.ucomiss(xmm0, xmm0);
@@ -1461,7 +1461,7 @@ public sealed unsafe partial class X64Emitter
                 a.vcvtps2ph(xmm0, xmm0, 0);
                 a.movd(eax, xmm0);
                 Place(ref store);
-                a.ldmxcsr(State(OffMxcsrHost));
+                a.ldmxcsr(State(s_offMxcsrHost));
                 a.mov(__word_ptr[rbx + dOff], ax);
                 a.jmp(done);
                 break;
@@ -1469,7 +1469,7 @@ public sealed unsafe partial class X64Emitter
             case FpKind.CvtFromHalf:
             {
                 // exact (every half is a normal single or zero); NaN -> default NaN
-                var store = a.CreateLabel();
+                Label store = a.CreateLabel();
                 a.movzx(eax, __word_ptr[rbx + mOff]);
                 a.movd(xmm0, eax);
                 a.vcvtph2ps(xmm0, xmm0);
@@ -1478,7 +1478,7 @@ public sealed unsafe partial class X64Emitter
                 a.jnp(store);
                 a.mov(eax, 0x7FC00000);
                 Place(ref store);
-                a.ldmxcsr(State(OffMxcsrHost));
+                a.ldmxcsr(State(s_offMxcsrHost));
                 a.mov(S(dOff), eax);
                 a.jmp(done);
                 break;
@@ -1512,7 +1512,7 @@ public sealed unsafe partial class X64Emitter
                 a.mov(rdx, (ulong)max);
                 a.cmp(rax, rdx);
                 a.cmovg(rax, rdx);
-                a.ldmxcsr(State(OffMxcsrHost));
+                a.ldmxcsr(State(s_offMxcsrHost));
                 if (dbl)
                 {
                     a.mov(Dq(dOff), rax);
@@ -1559,7 +1559,7 @@ public sealed unsafe partial class X64Emitter
                     a.cvtsd2ss(xmm0, xmm0);
                 }
 
-                a.ldmxcsr(State(OffMxcsrHost));
+                a.ldmxcsr(State(s_offMxcsrHost));
                 if (dbl)
                 {
                     a.movsd(Dq(dOff), xmm0);
@@ -1578,7 +1578,7 @@ public sealed unsafe partial class X64Emitter
         }
 
         Place(ref slowGuest);
-        a.ldmxcsr(State(OffMxcsrHost));
+        a.ldmxcsr(State(s_offMxcsrHost));
         Place(ref slow);
         if (Windows)
         {
@@ -1601,19 +1601,19 @@ public sealed unsafe partial class X64Emitter
         Place(ref done);
     }
 
-    void NegateXmm0(bool dbl)
+    private void NegateXmm0(bool dbl)
     {
         if (dbl)
         {
-            _a.movq(rax, xmm0);
-            _a.btc(rax, 63);
-            _a.movq(xmm0, rax);
+            Asm.movq(rax, xmm0);
+            Asm.btc(rax, 63);
+            Asm.movq(xmm0, rax);
         }
         else
         {
-            _a.movd(eax, xmm0);
-            _a.xor(eax, unchecked((int)0x80000000));
-            _a.movd(xmm0, eax);
+            Asm.movd(eax, xmm0);
+            Asm.xor(eax, unchecked((int)0x80000000));
+            Asm.movd(xmm0, eax);
         }
     }
 
@@ -1621,11 +1621,11 @@ public sealed unsafe partial class X64Emitter
     /// Stores the arithmetic result in xmm0 to the guest register: NaN -> default NaN (then optionally negated, like
     /// VNMUL), a result equal to +/- the smallest normal goes to the handler (FZ tininess before rounding).
     /// </summary>
-    void StoreFpResult(int dOff, bool dbl, bool negate, Label slowGuest, Label done)
+    private void StoreFpResult(int dOff, bool dbl, bool negate, Label slowGuest, Label done)
     {
-        var a = _a;
-        var nan = a.CreateLabel();
-        var store = a.CreateLabel();
+        Assembler a = Asm;
+        Label nan = a.CreateLabel();
+        Label store = a.CreateLabel();
         if (dbl)
         {
             a.movq(rax, xmm0);
@@ -1646,7 +1646,7 @@ public sealed unsafe partial class X64Emitter
                 a.btc(rax, 63);
             }
 
-            a.ldmxcsr(State(OffMxcsrHost));
+            a.ldmxcsr(State(s_offMxcsrHost));
             a.mov(__qword_ptr[rbx + dOff], rax);
         }
         else
@@ -1667,7 +1667,7 @@ public sealed unsafe partial class X64Emitter
                 a.xor(eax, unchecked((int)0x80000000));
             }
 
-            a.ldmxcsr(State(OffMxcsrHost));
+            a.ldmxcsr(State(s_offMxcsrHost));
             a.mov(State(dOff), eax);
         }
         a.jmp(done);
@@ -1676,18 +1676,18 @@ public sealed unsafe partial class X64Emitter
     /// <summary>Verify mode: blocks record every guest store (address, size, previous value) so it can be undone.</summary>
     public static bool LogStores = NativeVerifier.Enabled;
     public const int StoreLogEntries = 8192;
-    static readonly int OffStoreLog = StateLayout.Of(nameof(CpuState.StoreLog));
-    static readonly int OffStoreLogCount = StateLayout.Of(nameof(CpuState.StoreLogCount));
+    private static readonly int s_offStoreLog = StateLayout.Of(nameof(CpuState.StoreLog));
+    private static readonly int s_offStoreLogCount = StateLayout.Of(nameof(CpuState.StoreLogCount));
 
     /// <summary>Appends {address, size, old value} (16-byte entry) to the state's store log; clobbers rcx, rdx, flags.</summary>
-    void EmitStoreLog(IrInst x)
+    private void EmitStoreLog(IrInst x)
     {
-        var a = _a;
+        Assembler a = Asm;
         int size = x.Op == IrOp.Store8 ? 1 : x.Op == IrOp.Store16 ? 2 : 4;
         LoadTo(RCX, x.A);
-        a.mov(edx, State(OffStoreLogCount));
+        a.mov(edx, State(s_offStoreLogCount));
         a.shl(rdx, (byte)4);
-        a.add(rdx, __qword_ptr[rbx + OffStoreLog]);
+        a.add(rdx, __qword_ptr[rbx + s_offStoreLog]);
         a.mov(__dword_ptr[rdx], ecx);
         a.mov(__dword_ptr[rdx + 4], size);
         if (size == 1)
@@ -1704,10 +1704,10 @@ public sealed unsafe partial class X64Emitter
         }
 
         a.mov(__dword_ptr[rdx + 8], ecx);
-        a.inc(State(OffStoreLogCount));
+        a.inc(State(s_offStoreLogCount));
     }
 
-    int _lastLabelAt = -1;
+    private int _lastLabelAt = -1;
 
     /// <summary>Places a label; Iced allows one label per instruction, so two in a row get a nop between them.</summary>
     /// <summary>
@@ -1715,7 +1715,7 @@ public sealed unsafe partial class X64Emitter
     /// The table sits right below guest address 0, so it is addressed from the guest base register. Clobbers rcx and
     /// flags (no flags are live across IR instructions).
     /// </summary>
-    void MarkDirty(int t)
+    private void MarkDirty(int t)
     {
         if (!Memory.DirtyPages.Enabled)
         {
@@ -1724,21 +1724,21 @@ public sealed unsafe partial class X64Emitter
 
         if (IsConst(t, out uint addr))
         {
-            _a.mov(ecx, addr);
+            Asm.mov(ecx, addr);
         }
         else
         {
-            _a.mov(ecx, G32[Use(t, RAX)]);
+            Asm.mov(ecx, s_g32[Use(t, RAX)]);
         }
 
         MarkDirtyEcx();
     }
 
     /// <summary>Dirty mark for the guest address in ecx: the byte is only written while clear (keeps the line shared).</summary>
-    void MarkDirtyEcx()
+    private void MarkDirtyEcx()
     {
-        var a = _a;
-        var done = a.CreateLabel();
+        Assembler a = Asm;
+        Label done = a.CreateLabel();
         a.shr(ecx, (byte)Memory.DirtyPages.PageShift);
         a.cmp(__byte_ptr[r15 + rcx - (int)Memory.DirtyPages.TableBytes], 0);
         a.jne(done);
@@ -1746,30 +1746,30 @@ public sealed unsafe partial class X64Emitter
         Place(ref done);
     }
 
-    void Place(ref Label l)
+    private void Place(ref Label l)
     {
-        if (_a.Instructions.Count == _lastLabelAt)
+        if (Asm.Instructions.Count == _lastLabelAt)
         {
-            _a.nop();
+            Asm.nop();
         }
 
-        _a.Label(ref l);
-        _lastLabelAt = _a.Instructions.Count;
+        Asm.Label(ref l);
+        _lastLabelAt = Asm.Instructions.Count;
     }
 
-    void StoreTo(AssemblerMemoryOperand m, int t)
+    private void StoreTo(AssemblerMemoryOperand m, int t)
     {
         if (IsConst(t, out uint v))
         {
-            _a.mov(m, (int)v);
+            Asm.mov(m, (int)v);
         }
         else
         {
-            _a.mov(m, G32[Use(t, RAX)]);
+            Asm.mov(m, s_g32[Use(t, RAX)]);
         }
     }
 
-    void Bin(Alu k, IrInst x)
+    private void Bin(Alu k, IrInst x)
     {
         int d = Def(x.D, RAX);
         // commutative ops with a constant first operand: swap so the constant becomes the immediate
@@ -1783,13 +1783,13 @@ public sealed unsafe partial class X64Emitter
         {
             if (IsConst(B, out uint imm))
             {
-                _a.lea(G32[d], __dword_ptr[G64[ra] + (int)imm]);
+                Asm.lea(s_g32[d], __dword_ptr[s_g64[ra] + (int)imm]);
                 Commit(x.D, d);
                 return;
             }
             if (InReg(B, out int rb))
             {
-                _a.lea(G32[d], __dword_ptr[G64[ra] + G64[rb]]);
+                Asm.lea(s_g32[d], __dword_ptr[s_g64[ra] + s_g64[rb]]);
                 Commit(x.D, d);
                 return;
             }
@@ -1799,9 +1799,9 @@ public sealed unsafe partial class X64Emitter
         Commit(x.D, d);
     }
 
-    void Shift(IrInst x)
+    private void Shift(IrInst x)
     {
-        var a = _a;
+        Assembler a = Asm;
         int d = Def(x.D, RAX);
         if (IsConst(x.B, out uint n))
         {
@@ -1812,16 +1812,16 @@ public sealed unsafe partial class X64Emitter
                 switch (x.Op)
                 {
                     case IrOp.Shl:
-                        a.shl(G32[d], (byte)n);
+                        a.shl(s_g32[d], (byte)n);
                         break;
                     case IrOp.Shr:
-                        a.shr(G32[d], (byte)n);
+                        a.shr(s_g32[d], (byte)n);
                         break;
                     case IrOp.Sar:
-                        a.sar(G32[d], (byte)n);
+                        a.sar(s_g32[d], (byte)n);
                         break;
                     default:
-                        a.ror(G32[d], (byte)n);
+                        a.ror(s_g32[d], (byte)n);
                         break;
                 }
             }
@@ -1833,16 +1833,16 @@ public sealed unsafe partial class X64Emitter
             switch (x.Op)
             {
                 case IrOp.Shl:
-                    a.shl(G32[d], cl);
+                    a.shl(s_g32[d], cl);
                     break;
                 case IrOp.Shr:
-                    a.shr(G32[d], cl);
+                    a.shr(s_g32[d], cl);
                     break;
                 case IrOp.Sar:
-                    a.sar(G32[d], cl);
+                    a.sar(s_g32[d], cl);
                     break;
                 default:
-                    a.ror(G32[d], cl);
+                    a.ror(s_g32[d], cl);
                     break;
             }
         }
@@ -1850,9 +1850,9 @@ public sealed unsafe partial class X64Emitter
     }
 
     /// <summary>ARM AddWithCarry with NZCV outputs (SubC: x - y with ARM's inverted borrow).</summary>
-    void ArithFlags(IrInst x)
+    private void ArithFlags(IrInst x)
     {
-        var a = _a;
+        Assembler a = Asm;
         bool sub = x.Op == IrOp.SubC;
         int d = Def(x.D, RAX);
         Alu k;
@@ -1907,7 +1907,7 @@ public sealed unsafe partial class X64Emitter
             {
                 if (InReg(x.C, out int cr))
                 {
-                    a.cmp(G32[cr], 1);
+                    a.cmp(s_g32[cr], 1);
                 }
                 else
                 {
@@ -1920,7 +1920,7 @@ public sealed unsafe partial class X64Emitter
             {
                 if (InReg(x.C, out int cr))
                 {
-                    a.bt(G32[cr], (byte)0);
+                    a.bt(s_g32[cr], (byte)0);
                 }
                 else
                 {
@@ -1951,17 +1951,17 @@ public sealed unsafe partial class X64Emitter
     }
 
     /// <summary>ARM register-controlled shift (Shift_C with the amount in the low byte of Rs).</summary>
-    void ShiftReg(IrInst x)
+    private void ShiftReg(IrInst x)
     {
-        var a = _a;
+        Assembler a = Asm;
         uint type = x.Imm;
         bool wantC = x.Fc >= 0;
         LoadTo(RCX, x.B);
         a.movzx(ecx, cl);
         int d = Def(x.D, RAX);
         LoadTo(d, x.A);
-        var D = G32[d];
-        var done = a.CreateLabel();
+        AssemblerRegister32 D = s_g32[d];
+        Label done = a.CreateLabel();
         if (!wantC)
         {
             switch (type)
@@ -1969,7 +1969,7 @@ public sealed unsafe partial class X64Emitter
                 case 0:
                 case 1:
                 {
-                    var small = a.CreateLabel();
+                    Label small = a.CreateLabel();
                     a.cmp(ecx, 32);
                     a.jb(small);
                     a.xor(D, D);
@@ -1988,7 +1988,7 @@ public sealed unsafe partial class X64Emitter
                 }
                 case 2:
                 {
-                    var small = a.CreateLabel();
+                    Label small = a.CreateLabel();
                     a.cmp(ecx, 32);
                     a.jb(small);
                     a.mov(ecx, 31u);
@@ -2005,9 +2005,9 @@ public sealed unsafe partial class X64Emitter
             return;
         }
         // with carry-out in edx
-        var zero = a.CreateLabel();
-        var setc = a.CreateLabel();
-        var store = a.CreateLabel();
+        Label zero = a.CreateLabel();
+        Label setc = a.CreateLabel();
+        Label store = a.CreateLabel();
         a.test(ecx, ecx);
         a.jz(zero);
         switch (type)
@@ -2015,8 +2015,8 @@ public sealed unsafe partial class X64Emitter
             case 0:
             case 1:
             {
-                var eq = a.CreateLabel();
-                var gt = a.CreateLabel();
+                Label eq = a.CreateLabel();
+                Label gt = a.CreateLabel();
                 a.cmp(ecx, 32);
                 a.je(eq);
                 a.ja(gt);
@@ -2051,7 +2051,7 @@ public sealed unsafe partial class X64Emitter
             }
             case 2:
             {
-                var big = a.CreateLabel();
+                Label big = a.CreateLabel();
                 a.cmp(ecx, 32);
                 a.jae(big);
                 a.sar(D, cl);
@@ -2065,7 +2065,7 @@ public sealed unsafe partial class X64Emitter
             }
             default:
             {
-                var mult = a.CreateLabel();
+                Label mult = a.CreateLabel();
                 a.and(ecx, 31);
                 a.jz(mult);
                 a.ror(D, cl);
@@ -2097,15 +2097,15 @@ public sealed unsafe partial class X64Emitter
     }
 
     /// <summary>Jumps to the label when ARM condition Imm does not hold (A=N, B=Z, C=C, E=V).</summary>
-    void CondBranch(IrInst x)
+    private void CondBranch(IrInst x)
     {
-        var a = _a;
-        var skip = _labels[x.Imm2];
+        Assembler a = Asm;
+        Label skip = _labels[x.Imm2];
         uint cond = x.Imm;
         void TestFlag(int t)
         {
             int r = Use(t, RAX);
-            a.test(G32[r], G32[r]);
+            a.test(s_g32[r], s_g32[r]);
         }
         switch (cond)
         {
@@ -2204,7 +2204,7 @@ public sealed unsafe partial class X64Emitter
     public static byte[] EmitFaultFilter(ulong rip, ulong lo, ulong hi, ulong handler)
     {
         var a = new Assembler(64);
-        var no = a.CreateLabel();
+        Label no = a.CreateLabel();
         a.mov(rax, __qword_ptr[rcx + 8]);
         a.mov(rax, __qword_ptr[rax + 0xF8]);
         a.mov(rdx, lo);
@@ -2228,10 +2228,10 @@ public sealed unsafe partial class X64Emitter
     public static byte[] EmitTrampoline(ulong rip, out int epilogueOffset)
     {
         var a = new Assembler(64);
-        var epi = a.CreateLabel();
+        Label epi = a.CreateLabel();
         // 8 pushes keep rsp == 8 (mod 16); the frame (32 shadow + spill + 8) realigns it to 16 for callouts
         AssemblerRegister64[] saved = [rbx, rbp, rsi, rdi, r12, r13, r14, r15];
-        foreach (var r in saved)
+        foreach (AssemblerRegister64 r in saved)
         {
             a.push(r);
         }
@@ -2247,16 +2247,16 @@ public sealed unsafe partial class X64Emitter
             a.mov(rbx, rdi);
         }
 
-        a.mov(r15, __qword_ptr[rbx + OffMemBase]);
+        a.mov(r15, __qword_ptr[rbx + s_offMemBase]);
         // VFP fast paths switch to FTZ+DAZ, round to nearest, all exceptions masked, and back to the host mode
-        a.stmxcsr(__dword_ptr[rbx + OffMxcsrHost]);
-        a.mov(eax, __dword_ptr[rbx + OffMxcsrHost]);
+        a.stmxcsr(__dword_ptr[rbx + s_offMxcsrHost]);
+        a.mov(eax, __dword_ptr[rbx + s_offMxcsrHost]);
         a.and(eax, ~0x6000);
         a.or(eax, 0x8040 | 0x1F80);
-        a.mov(__dword_ptr[rbx + OffMxcsrGuest], eax);
+        a.mov(__dword_ptr[rbx + s_offMxcsrGuest], eax);
         // NEON fast paths: DAZ only (denormal inputs read as zero), results are flushed explicitly like the handlers do
         a.and(eax, ~0x8000);
-        a.mov(__dword_ptr[rbx + OffMxcsrNeon], eax);
+        a.mov(__dword_ptr[rbx + s_offMxcsrNeon], eax);
         if (Windows)
         {
             a.jmp(rdx);
@@ -2275,7 +2275,7 @@ public sealed unsafe partial class X64Emitter
 
         a.ret();
         using var ms = new MemoryStream();
-        var res = a.Assemble(new StreamCodeWriter(ms), rip, BlockEncoderOptions.ReturnNewInstructionOffsets);
+        AssemblerResult res = a.Assemble(new StreamCodeWriter(ms), rip, BlockEncoderOptions.ReturnNewInstructionOffsets);
         epilogueOffset = (int)res.GetLabelRIP(epi) - (int)rip;
         return ms.ToArray();
     }
@@ -2286,14 +2286,14 @@ public static unsafe class X64Disassembler
 {
     public static string Disassemble(nint code, int length)
     {
-        var bytes = new ReadOnlySpan<byte>((void*)code, length).ToArray();
+        byte[] bytes = new ReadOnlySpan<byte>((void*)code, length).ToArray();
         var decoder = Iced.Intel.Decoder.Create(64, new ByteArrayCodeReader(bytes), (ulong)code);
         var formatter = new NasmFormatter();
         var output = new StringOutput();
         var sb = new System.Text.StringBuilder();
         while (decoder.IP < (ulong)code + (ulong)length)
         {
-            decoder.Decode(out var ins);
+            decoder.Decode(out Instruction ins);
             formatter.Format(ins, output);
             sb.Append($"{ins.IP - (ulong)code,5:X}: {output.ToStringAndReset()}\n");
         }

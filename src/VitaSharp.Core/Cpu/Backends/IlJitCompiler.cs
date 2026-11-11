@@ -14,8 +14,8 @@ public sealed unsafe class IlJitCompiler : IBlockCompiler
 {
     public static readonly IlJitCompiler Instance = new();
 
-    static readonly MethodInfo CondPassed = typeof(Arm).GetMethod(nameof(Arm.CondPassed), BindingFlags.Static | BindingFlags.Public)!;
-    const int PcOffset = 15 * 4; // offsetof(CpuState, R[15])
+    private static readonly MethodInfo s_condPassed = typeof(Arm).GetMethod(nameof(Arm.CondPassed), BindingFlags.Static | BindingFlags.Public)!;
+    private const int PcOffset = 15 * 4; // offsetof(CpuState, R[15])
 
     public string Name => "il";
     public bool IsSupported => RuntimeFeature.IsDynamicCodeSupported;
@@ -41,38 +41,38 @@ public sealed unsafe class IlJitCompiler : IBlockCompiler
     }
 
     [System.Diagnostics.CodeAnalysis.RequiresDynamicCode("The IL backend emits a DynamicMethod per block (Reflection.Emit); it is skipped when dynamic code is not supported.")]
-    CompiledBlock CompileDynamic(Block b)
+    private CompiledBlock CompileDynamic(Block b)
     {
         var dm = new DynamicMethod(IlDump.MethodName(b), typeof(void), [typeof(CpuState*)], typeof(IlJitCompiler).Module, skipVisibility: true);
         EmitBlock(dm.GetILGenerator(), b);
         if (CountExecutions)
         {
-            lock (DumpLock)
+            lock (s_dumpLock)
             {
-                _dump ??= IlDump.Create(Environment.GetEnvironmentVariable(Util.EnvVars.IlDump));
+                s_dump ??= IlDump.Create(Environment.GetEnvironmentVariable(Util.EnvVars.IlDump));
             }
 
-            _dump?.Add(b, il => EmitBlock(il, b));
+            s_dump?.Add(b, il => EmitBlock(il, b));
         }
-        var fn = dm.CreateDelegate<JitBlockFn>();
+        JitBlockFn fn = dm.CreateDelegate<JitBlockFn>();
         RuntimeHelpers.PrepareDelegate(fn); // compile to native here, off the guest thread
         return new CompiledBlock(this, fn);
     }
 
     /// <summary>IL dump mode (VITASHARP_IL_DUMP=dir): the compiled blocks are also written to assemblies there.</summary>
-    static IlDump? _dump; // created by the first compile
-    static readonly Lock DumpLock = new();
+    private static IlDump? s_dump; // created by the first compile
+    private static readonly Lock s_dumpLock = new();
 
     /// <summary>True in IL dump mode: the dispatcher counts the executions of IL blocks for the dump's index.</summary>
     public static readonly bool CountExecutions = !string.IsNullOrWhiteSpace(Environment.GetEnvironmentVariable(Util.EnvVars.IlDump));
 
     /// <summary>The block's body: one handler call per instruction, guarded by its condition, then return.</summary>
-    static void EmitBlock(ILGenerator il, Block b)
+    private static void EmitBlock(ILGenerator il, Block b)
     {
-        var insts = b.Insts;
+        DecodedInst[] insts = b.Insts;
         for (int i = 0; i < insts.Length; i++)
         {
-            ref readonly var d = ref insts[i];
+            ref readonly DecodedInst d = ref insts[i];
             bool last = i == insts.Length - 1;
             if (d.EndsBlock || last)
             {
@@ -91,7 +91,7 @@ public sealed unsafe class IlJitCompiler : IBlockCompiler
                 skip = il.DefineLabel();
                 il.Emit(OpCodes.Ldarg_0);
                 il.Emit(OpCodes.Ldc_I4, (int)d.Cond);
-                il.Emit(OpCodes.Call, CondPassed);
+                il.Emit(OpCodes.Call, s_condPassed);
                 il.Emit(OpCodes.Brfalse, skip);
             }
             il.Emit(OpCodes.Ldarg_0);
@@ -106,7 +106,7 @@ public sealed unsafe class IlJitCompiler : IBlockCompiler
         il.Emit(OpCodes.Ret);
     }
 
-    static void EmitStorePc(ILGenerator il, uint pc)
+    private static void EmitStorePc(ILGenerator il, uint pc)
     {
         il.Emit(OpCodes.Ldarg_0);
         il.Emit(OpCodes.Ldc_I4, PcOffset);

@@ -1,3 +1,5 @@
+using System.Diagnostics.CodeAnalysis;
+
 namespace VitaSharp.Core.Cpu.Native;
 
 /// <summary>
@@ -12,15 +14,16 @@ public static class LinearScan
     /// the block needs more than <paramref name="spillSlots"/> slots.
     /// </summary>
     /// <summary>Per-thread buffers (the compile workers allocate nothing per block once warm).</summary>
-    sealed class Scratch
+    private sealed class Scratch
     {
         public int[] Def = new int[256], Last = new int[256], Loc = new int[256], CalloutsBefore = new int[257], SlotFreeAfter = [];
         public readonly List<int> FreeRegs = new(16), Active = new(16);
     }
 
-    [ThreadStatic] static Scratch? _scratch;
+    [SuppressMessage("Style", "IDE1006", Justification = "[ThreadStatic]: t_camelCase; .editorconfig cannot select the attribute")]
+    [ThreadStatic] private static Scratch? t_scratch;
 
-    static int[] Ensure(ref int[] a, int n) => a.Length >= n ? a : a = new int[Math.Max(n, a.Length * 2)];
+    private static int[] Ensure(ref int[] a, int n) => a.Length >= n ? a : a = new int[Math.Max(n, a.Length * 2)];
 
     /// <summary>
     /// Returns the location of every temp (&gt;= 0 host register, &lt;= -2 spill slot -(loc+2), -1 none), or null when
@@ -30,19 +33,19 @@ public static class LinearScan
     [System.Runtime.CompilerServices.MethodImpl(System.Runtime.CompilerServices.MethodImplOptions.AggressiveOptimization)]
     public static int[]? Allocate(IrBlock ir, int[] callerSaved, int[] calleeSaved, int spillSlots, int maxTempRegisters, bool verify, bool reuse = false)
     {
-        var sc = reuse ? _scratch ??= new Scratch() : new Scratch();
+        Scratch sc = reuse ? t_scratch ??= new Scratch() : new Scratch();
         int n = ir.TempCount;
-        var def = Ensure(ref sc.Def, n);
-        var last = Ensure(ref sc.Last, n);
+        int[] def = Ensure(ref sc.Def, n);
+        int[] last = Ensure(ref sc.Last, n);
         Array.Fill(def, -1, 0, n);
         Array.Fill(last, -1, 0, n);
-        var insts = System.Runtime.InteropServices.CollectionsMarshal.AsSpan(ir.Insts);
+        Span<IrInst> insts = System.Runtime.InteropServices.CollectionsMarshal.AsSpan(ir.Insts);
         int count = insts.Length;
-        var calloutsBefore = Ensure(ref sc.CalloutsBefore, count + 1);
+        int[] calloutsBefore = Ensure(ref sc.CalloutsBefore, count + 1);
         calloutsBefore[0] = 0;
         for (int i = 0; i < count; i++)
         {
-            ref readonly var x = ref insts[i];
+            ref readonly IrInst x = ref insts[i];
             calloutsBefore[i + 1] = calloutsBefore[i] + (IsCallSite(x) ? 1 : 0);
             if (x.D >= 0)
             {
@@ -94,12 +97,12 @@ public static class LinearScan
                 last[x.E] = i;
             }
         }
-        var loc = reuse ? Ensure(ref sc.Loc, n) : new int[n];
+        int[] loc = reuse ? Ensure(ref sc.Loc, n) : new int[n];
         Array.Fill(loc, -1, 0, n);
-        var freeRegs = sc.FreeRegs;
+        List<int> freeRegs = sc.FreeRegs;
         freeRegs.Clear();
         int limit = maxTempRegisters;
-        foreach (var r in callerSaved)
+        foreach (int r in callerSaved)
         {
             if (freeRegs.Count < limit)
             {
@@ -107,7 +110,7 @@ public static class LinearScan
             }
         }
 
-        foreach (var r in calleeSaved)
+        foreach (int r in calleeSaved)
         {
             if (freeRegs.Count < limit)
             {
@@ -116,16 +119,16 @@ public static class LinearScan
         }
 
         uint calleeMask = 0;
-        foreach (var r in calleeSaved)
+        foreach (int r in calleeSaved)
         {
             calleeMask |= 1u << r;
         }
 
-        var active = sc.Active; // temps currently holding registers
+        List<int> active = sc.Active; // temps currently holding registers
         active.Clear();
         // a slot is free for a whole live range [from, until] when its previous occupant died before "from"
         // (spill victims are spilled retroactively from their definition, not from the current instruction)
-        var slotFreeAfter = Ensure(ref sc.SlotFreeAfter, spillSlots);
+        int[] slotFreeAfter = Ensure(ref sc.SlotFreeAfter, spillSlots);
         Array.Fill(slotFreeAfter, -1, 0, spillSlots);
         int TakeSlot(int from, int until)
         {
@@ -143,7 +146,7 @@ public static class LinearScan
 
         bool Crosses(int t) => last[t] > def[t] && calloutsBefore[last[t]] - calloutsBefore[def[t] + 1] > 0;
         bool IsCallee(int r) => (calleeMask >> r & 1) != 0;
-        var isConst = System.Runtime.InteropServices.CollectionsMarshal.AsSpan(ir.IsConst);
+        Span<bool> isConst = System.Runtime.InteropServices.CollectionsMarshal.AsSpan(ir.IsConst);
 
         for (int i = 0; i < count; i++)
         {
@@ -157,7 +160,7 @@ public static class LinearScan
                 }
             }
 
-            ref readonly var x = ref insts[i];
+            ref readonly IrInst x = ref insts[i];
             foreach (int t in (ReadOnlySpan<int>)[x.D, x.D2, x.Fn, x.Fz, x.Fc, x.Fv])
             {
                 if (t < 0 || isConst[t])
@@ -234,7 +237,7 @@ public static class LinearScan
         if (verify)
         {
             // no two temps whose live ranges overlap may share a register or a spill slot
-            var temps = Enumerable.Range(0, n).Where(t => loc[t] != -1).ToArray();
+            int[] temps = Enumerable.Range(0, n).Where(t => loc[t] != -1).ToArray();
             foreach (int x in temps)
             {
                 foreach (int y in temps)

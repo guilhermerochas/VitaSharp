@@ -482,24 +482,24 @@ internal static unsafe partial class Neon
 
     internal static ulong ExpandImm(bool op, uint cmode, uint imm8)
     {
-        ulong r32(uint v) => v | ((ulong)v << 32);
-        ulong r16(uint v) => (v & 0xFFFF) * 0x0001000100010001ul;
+        ulong Replicate32(uint v) => v | ((ulong)v << 32);
+        ulong Replicate16(uint v) => (v & 0xFFFF) * 0x0001000100010001ul;
         switch (cmode >> 1)
         {
             case 0:
-                return r32(imm8);
+                return Replicate32(imm8);
             case 1:
-                return r32(imm8 << 8);
+                return Replicate32(imm8 << 8);
             case 2:
-                return r32(imm8 << 16);
+                return Replicate32(imm8 << 16);
             case 3:
-                return r32(imm8 << 24);
+                return Replicate32(imm8 << 24);
             case 4:
-                return r16(imm8);
+                return Replicate16(imm8);
             case 5:
-                return r16(imm8 << 8);
+                return Replicate16(imm8 << 8);
             case 6:
-                return (cmode & 1) == 0 ? r32((imm8 << 8) | 0xFF) : r32((imm8 << 16) | 0xFFFF);
+                return (cmode & 1) == 0 ? Replicate32((imm8 << 8) | 0xFF) : Replicate32((imm8 << 16) | 0xFFFF);
             default:
                 if ((cmode & 1) == 0)
                 {
@@ -520,7 +520,7 @@ internal static unsafe partial class Neon
                     return r;
                 }
                 uint f = ((imm8 & 0x80) << 24) | ((imm8 & 0x40) != 0 ? 0x3E000000u : 0x40000000u) | ((imm8 & 0x3F) << 19);
-                return r32(f);
+                return Replicate32(f);
         }
     }
 

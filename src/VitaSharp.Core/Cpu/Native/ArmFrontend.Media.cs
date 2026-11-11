@@ -14,27 +14,27 @@ namespace VitaSharp.Core.Cpu.Native;
 /// </summary>
 public sealed unsafe partial class ArmFrontend
 {
-    static readonly uint QOffset = (uint)StateLayout.Of(nameof(CpuState.Q));
-    static readonly uint GeOffset = (uint)StateLayout.Of(nameof(CpuState.GE));
+    private static readonly uint s_qOffset = (uint)StateLayout.Of(nameof(CpuState.Q));
+    private static readonly uint s_geOffset = (uint)StateLayout.Of(nameof(CpuState.GE));
 
     /// <summary>CPSR.Q |= bit (0/1 temp).</summary>
-    void OrQ(int bit)
+    private void OrQ(int bit)
     {
         if (B.IsConst(bit, 0u))
         {
             return;
         }
 
-        B.StoreState(QOffset, B.Or(B.LoadState(QOffset), bit));
+        B.StoreState(s_qOffset, B.Or(B.LoadState(s_qOffset), bit));
     }
 
-    int NotBit(int bit) => B.Xor(bit, C(1));
+    private int NotBit(int bit) => B.Xor(bit, C(1));
 
     /// <summary>Signed 16-bit half of v (top or bottom), sign-extended.</summary>
-    int Half(int v, bool top) => top ? B.Sar(v, 16) : B.SExt16(v);
+    private int Half(int v, bool top) => top ? B.Sar(v, 16) : B.SExt16(v);
 
     /// <summary>Arm.SignedSat of an exact int32 value to <paramref name="bits"/> (1-32): (result, saturated 0/1).</summary>
-    (int R, int Sat) SignedSatIr(int v, int bits)
+    private (int R, int Sat) SignedSatIr(int v, int bits)
     {
         if (bits >= 32)
         {
@@ -49,7 +49,7 @@ public sealed unsafe partial class ArmFrontend
     }
 
     /// <summary>Arm.UnsignedSat of an exact int32 value to <paramref name="bits"/> (0-31).</summary>
-    (int R, int Sat) UnsignedSatIr(int v, int bits)
+    private (int R, int Sat) UnsignedSatIr(int v, int bits)
     {
         int inRange = B.CmpEq(B.Shr(v, bits), C(0));
         uint max = (uint)((1ul << bits) - 1);
@@ -57,29 +57,29 @@ public sealed unsafe partial class ArmFrontend
     }
 
     /// <summary>Arm.SatQ of the 32-bit result r of an addition/subtraction whose signed overflow flag is v.</summary>
-    int SatOnOverflow(int r, int v) => B.Select(v, B.Xor(B.Sar(r, 31), C(0x80000000)), r);
+    private int SatOnOverflow(int r, int v) => B.Select(v, B.Xor(B.Sar(r, 31), C(0x80000000)), r);
 
     // ------------------------------------------------------------------ multiplies
 
     /// <summary>A32.HalfMultiplyCore: op 0 SMLAxy, 1 SMLAWy (x = 0) / SMULWy (x = 1), 2 SMLALxy, 3 SMULxy.</summary>
-    void HalfMultiply(uint op, uint rd, uint ra, int vn, int vm, bool x, bool y)
+    private void HalfMultiply(uint op, uint rd, uint ra, int vn, int vm, bool x, bool y)
     {
         switch (op)
         {
             case 0:
             {
-                var f = B.AddC(B.Mul(Half(vn, x), Half(vm, y)), Reg(ra), -1);
+                (int R, int N, int Z, int C, int V) f = B.AddC(B.Mul(Half(vn, x), Half(vm, y)), Reg(ra), -1);
                 SetReg(rd, f.R);
                 OrQ(f.V);
                 break;
             }
             case 1:
             {
-                var (lo, hi) = B.MulLong(vn, Half(vm, y), true);
+                (int lo, int hi) = B.MulLong(vn, Half(vm, y), true);
                 int p = B.Or(B.Shr(lo, 16), B.Shl(hi, 16)); // (n * m) >> 16, low 32 bits (the product fits in 48)
                 if (!x)
                 {
-                    var f = B.AddC(p, Reg(ra), -1);
+                    (int R, int N, int Z, int C, int V) f = B.AddC(p, Reg(ra), -1);
                     SetReg(rd, f.R);
                     OrQ(f.V);
                 }
@@ -93,7 +93,7 @@ public sealed unsafe partial class ArmFrontend
             case 2:
             {
                 int p = B.Mul(Half(vn, x), Half(vm, y));
-                var (l, h) = B.Add64(Reg(ra), Reg(rd), p, B.Sar(p, 31));
+                (int l, int h) = B.Add64(Reg(ra), Reg(rd), p, B.Sar(p, 31));
                 SetReg(ra, l);
                 SetReg(rd, h);
                 break;
@@ -109,12 +109,12 @@ public sealed unsafe partial class ArmFrontend
     /// SMLSD/SMUSD, 4 SMLALD/SMLSLD (rd = RdHi, ra = RdLo), 5 SMMLA/SMMUL (op2 &amp; 6 = 0) and SMMLS; op2 &amp; 1 = swap
     /// the halves of m (dual forms) or round (SMM forms). <paramref name="accumulate"/> = false for Ra = 15 (SMUAD/SMUSD/SMMUL).
     /// </summary>
-    void SignedMultiplyMedia(uint op1, uint op2, uint rd, uint ra, bool accumulate, int vn, int vm)
+    private void SignedMultiplyMedia(uint op1, uint op2, uint rd, uint ra, bool accumulate, int vn, int vm)
     {
         bool swap = (op2 & 1) != 0;
         if (op1 == 5)
         {
-            var (lo, hi) = B.MulLong(vn, vm, true);
+            (int lo, int hi) = B.MulLong(vn, vm, true);
             uint round = swap ? 0x80000000u : 0;
             int r;
             if ((op2 & 6) == 0)
@@ -139,7 +139,7 @@ public sealed unsafe partial class ArmFrontend
         bool sub = (op2 & 2) != 0;
         if (op1 == 4)
         {
-            var (l, h) = (Reg(ra), Reg(rd));
+            (int l, int h) = (Reg(ra), Reg(rd));
             if (sub)
             {
                 int dif = B.Sub(p1, p2); // never overflows: |p1|, |p2| <= 2^30
@@ -162,13 +162,13 @@ public sealed unsafe partial class ArmFrontend
                 SetReg(rd, dif);
                 return;
             }
-            var f = B.AddC(dif, Reg(ra), -1);
+            (int R, int N, int Z, int C, int V) f = B.AddC(dif, Reg(ra), -1);
             SetReg(rd, f.R);
             OrQ(f.V);
             return;
         }
         // p1 + p2 (+ a) in 64 bits: Q when the sum is not an int32 (only the final result counts, like the handler)
-        var (sl, sh) = B.Add64(p1, B.Sar(p1, 31), p2, B.Sar(p2, 31));
+        (int sl, int sh) = B.Add64(p1, B.Sar(p1, 31), p2, B.Sar(p2, 31));
         if (accumulate)
         {
             int a = Reg(ra);
@@ -178,7 +178,7 @@ public sealed unsafe partial class ArmFrontend
         OrQ(NotBit(B.CmpEq(sh, B.Sar(sl, 31))));
     }
 
-    bool? A32HalfMultiply(in DecodedInst d)
+    private bool? A32HalfMultiply(in DecodedInst d)
     {
         uint ins = d.Raw, op = Bits(ins, 22, 21);
         uint rd = Bits(ins, 19, 16), ra = Bits(ins, 15, 12), rm = Bits(ins, 11, 8), rn = ins & 0xF;
@@ -192,7 +192,7 @@ public sealed unsafe partial class ArmFrontend
         return false;
     }
 
-    bool? A32SignedMultiplyMedia(in DecodedInst d)
+    private bool? A32SignedMultiplyMedia(in DecodedInst d)
     {
         uint ins = d.Raw, op1 = Bits(ins, 22, 20), op2 = Bits(ins, 7, 5);
         uint rd = Bits(ins, 19, 16), ra = Bits(ins, 15, 12), rm = Bits(ins, 11, 8), rn = ins & 0xF;
@@ -229,7 +229,7 @@ public sealed unsafe partial class ArmFrontend
         }
     }
 
-    bool? T32MulMedia(in DecodedInst d)
+    private bool? T32MulMedia(in DecodedInst d)
     {
         uint ins = d.Raw, op1 = Bits(ins, 22, 20), op2 = Bits(ins, 5, 4);
         uint rn = Bits(ins, 19, 16), ra = Bits(ins, 15, 12), rd = Bits(ins, 11, 8), rm = ins & 0xF;
@@ -283,7 +283,7 @@ public sealed unsafe partial class ArmFrontend
     }
 
     /// <summary>T32.LongMul forms beyond SMULL/UMULL/SMLAL/UMLAL/SDIV/UDIV: SMLALxy, SMLALD, SMLSLD, UMAAL.</summary>
-    bool? T32LongMulMedia(in DecodedInst d, uint op1, uint op2, uint rn, uint lo, uint hi, uint rm)
+    private bool? T32LongMulMedia(in DecodedInst d, uint op1, uint op2, uint rn, uint lo, uint hi, uint rm)
     {
         if (lo == 15 || hi == 15)
         {
@@ -309,9 +309,9 @@ public sealed unsafe partial class ArmFrontend
                 return false;
             case 6:
             {
-                var (pl, ph) = B.MulLong(vn, vm, false);
-                var (l1, h1) = B.Add64(pl, ph, Reg(lo), C(0));
-                var (l2, h2) = B.Add64(l1, h1, Reg(hi), C(0));
+                (int pl, int ph) = B.MulLong(vn, vm, false);
+                (int l1, int h1) = B.Add64(pl, ph, Reg(lo), C(0));
+                (int l2, int h2) = B.Add64(l1, h1, Reg(hi), C(0));
                 SetReg(lo, l2);
                 SetReg(hi, h2);
                 return false;
@@ -321,7 +321,7 @@ public sealed unsafe partial class ArmFrontend
         }
     }
 
-    int Usad8Ir(int a, int b)
+    private int Usad8Ir(int a, int b)
     {
         int sum = C(0);
         for (int i = 0; i < 32; i += 8)
@@ -335,7 +335,7 @@ public sealed unsafe partial class ArmFrontend
         return sum;
     }
 
-    bool? A32Usad8(in DecodedInst d)
+    private bool? A32Usad8(in DecodedInst d)
     {
         uint ins = d.Raw, rd = Bits(ins, 19, 16), ra = Bits(ins, 15, 12), rm = Bits(ins, 11, 8), rn = ins & 0xF;
         if (rd == 15)
@@ -354,7 +354,7 @@ public sealed unsafe partial class ArmFrontend
     /// A32.ParallelCore: op1 1 = S, 2 = Q, 3 = SH, 5 = U, 6 = UQ, 7 = UH (op1 &amp; 3 = 1 plain and sets GE, 2 saturating,
     /// else halving); op2 0 ADD16, 1 ASX, 2 SAX, 3 SUB16, 4 ADD8, 7 SUB8 (other values: SUB16, like the handler).
     /// </summary>
-    int Parallel(uint op1, uint op2, int a, int b)
+    private int Parallel(uint op1, uint op2, int a, int b)
     {
         bool signed = op1 < 4;
         uint kind = op1 & 3;
@@ -440,13 +440,13 @@ public sealed unsafe partial class ArmFrontend
         }
         if (kind == 1)
         {
-            B.StoreState(GeOffset, ge);
+            B.StoreState(s_geOffset, ge);
         }
 
         return r;
     }
 
-    int Lane8(int v, int sh, bool signed)
+    private int Lane8(int v, int sh, bool signed)
     {
         if (sh == 24)
         {
@@ -457,7 +457,7 @@ public sealed unsafe partial class ArmFrontend
         return signed ? B.SExt8(s) : B.ZExt8(s);
     }
 
-    bool? A32Parallel(in DecodedInst d)
+    private bool? A32Parallel(in DecodedInst d)
     {
         uint ins = d.Raw, op1 = Bits(ins, 22, 20), op2 = Bits(ins, 7, 5);
         uint rn = Bits(ins, 19, 16), rd = Bits(ins, 15, 12), rm = ins & 0xF;
@@ -470,7 +470,7 @@ public sealed unsafe partial class ArmFrontend
         return false;
     }
 
-    bool? T32Parallel(in DecodedInst d)
+    private bool? T32Parallel(in DecodedInst d)
     {
         uint ins = d.Raw, op1 = Bits(ins, 22, 20), rn = Bits(ins, 19, 16), rd = Bits(ins, 11, 8), rm = ins & 0xF;
         if (rd == 15)
@@ -495,15 +495,15 @@ public sealed unsafe partial class ArmFrontend
     }
 
     /// <summary>A32.SelCore: bytes of a where GE[i] is set, else of b.</summary>
-    int Sel(int a, int b)
+    private int Sel(int a, int b)
     {
         // spread GE[3:0] to bits 0, 8, 16, 24 (no carries: the shifted copies never overlap), then to whole bytes
-        int ge = B.AndK(B.LoadState(GeOffset), 0xF);
+        int ge = B.AndK(B.LoadState(s_geOffset), 0xF);
         int mask = B.Mul(B.AndK(B.Mul(ge, C(0x00204081)), 0x01010101), C(0xFF));
         return B.Or(B.And(a, mask), B.AndNot(b, mask));
     }
 
-    bool? A32Sel(in DecodedInst d)
+    private bool? A32Sel(in DecodedInst d)
     {
         uint ins = d.Raw, rn = Bits(ins, 19, 16), rd = Bits(ins, 15, 12), rm = ins & 0xF;
         if (rd == 15)
@@ -518,21 +518,21 @@ public sealed unsafe partial class ArmFrontend
     // ------------------------------------------------------------------ saturation, packing
 
     /// <summary>A32.SatAddSubCore: op bit 0 = subtract, bit 1 = double n first (QADD/QSUB/QDADD/QDSUB).</summary>
-    int SatAddSub(uint op, int vm, int vn)
+    private int SatAddSub(uint op, int vm, int vn)
     {
         int b = vn;
         if ((op & 2) != 0)
         {
-            var dbl = B.AddC(vn, vn, -1);
+            (int R, int N, int Z, int C, int V) dbl = B.AddC(vn, vn, -1);
             b = SatOnOverflow(dbl.R, dbl.V);
             OrQ(dbl.V);
         }
-        var f = (op & 1) == 0 ? B.AddC(vm, b, -1) : B.SubC(vm, b, -1);
+        (int R, int N, int Z, int C, int V) f = (op & 1) == 0 ? B.AddC(vm, b, -1) : B.SubC(vm, b, -1);
         OrQ(f.V);
         return SatOnOverflow(f.R, f.V);
     }
 
-    bool? A32SatAddSub(in DecodedInst d)
+    private bool? A32SatAddSub(in DecodedInst d)
     {
         uint ins = d.Raw, op = Bits(ins, 22, 21), rn = Bits(ins, 19, 16), rd = Bits(ins, 15, 12), rm = ins & 0xF;
         if (rd == 15)
@@ -545,26 +545,26 @@ public sealed unsafe partial class ArmFrontend
     }
 
     /// <summary>A32.SatCore: SSAT/USAT of the shifted operand (sh = 0 LSL, 1 ASR).</summary>
-    int SatIr(bool unsigned, uint satImm, int v, uint sh, uint imm5)
+    private int SatIr(bool unsigned, uint satImm, int v, uint sh, uint imm5)
     {
         DecodeImmShift(sh << 1, imm5, out int t, out int n);
         int operand = n == 0 ? v : t == LSL ? B.Shl(v, n) : B.Sar(v, Math.Min(n, 31));
-        var (r, sat) = unsigned ? UnsignedSatIr(operand, (int)satImm) : SignedSatIr(operand, (int)satImm + 1);
+        (int r, int sat) = unsigned ? UnsignedSatIr(operand, (int)satImm) : SignedSatIr(operand, (int)satImm + 1);
         OrQ(sat);
         return r;
     }
 
     /// <summary>A32.Sat16Core: SSAT16/USAT16 of both halves.</summary>
-    int Sat16Ir(bool unsigned, uint satImm, int v)
+    private int Sat16Ir(bool unsigned, uint satImm, int v)
     {
         int lo = B.SExt16(v), hi = B.Sar(v, 16);
-        var (rl, s1) = unsigned ? UnsignedSatIr(lo, (int)satImm) : SignedSatIr(lo, (int)satImm + 1);
-        var (rh, s2) = unsigned ? UnsignedSatIr(hi, (int)satImm) : SignedSatIr(hi, (int)satImm + 1);
+        (int rl, int s1) = unsigned ? UnsignedSatIr(lo, (int)satImm) : SignedSatIr(lo, (int)satImm + 1);
+        (int rh, int s2) = unsigned ? UnsignedSatIr(hi, (int)satImm) : SignedSatIr(hi, (int)satImm + 1);
         OrQ(B.Or(s1, s2));
         return B.Or(B.ZExt16(rl), B.Shl(rh, 16));
     }
 
-    bool? A32Sat(in DecodedInst d)
+    private bool? A32Sat(in DecodedInst d)
     {
         uint ins = d.Raw, rd = Bits(ins, 15, 12), rn = ins & 0xF;
         if (rd == 15)
@@ -576,7 +576,7 @@ public sealed unsafe partial class ArmFrontend
         return false;
     }
 
-    bool? A32Sat16(in DecodedInst d)
+    private bool? A32Sat16(in DecodedInst d)
     {
         uint ins = d.Raw, rd = Bits(ins, 15, 12), rn = ins & 0xF;
         if (rd == 15)
@@ -589,7 +589,7 @@ public sealed unsafe partial class ArmFrontend
     }
 
     /// <summary>A32.PkhCore: PKHTB (tb) = top of n, bottom of ASR(m); PKHBT = bottom of n, top of LSL(m).</summary>
-    int Pkh(int vn, int vm, bool tb, uint imm5)
+    private int Pkh(int vn, int vm, bool tb, uint imm5)
     {
         if (tb)
         {
@@ -599,7 +599,7 @@ public sealed unsafe partial class ArmFrontend
         return B.Or(B.AndK(B.Shl(vm, (int)imm5), 0xFFFF0000), B.ZExt16(vn));
     }
 
-    bool? A32Pkh(in DecodedInst d)
+    private bool? A32Pkh(in DecodedInst d)
     {
         uint ins = d.Raw, rn = Bits(ins, 19, 16), rd = Bits(ins, 15, 12), rm = ins & 0xF;
         if (rd == 15)
@@ -612,7 +612,7 @@ public sealed unsafe partial class ArmFrontend
     }
 
     /// <summary>T32 SSAT/USAT/SSAT16/USAT16 (data processing, plain immediate, op 0x10/0x12/0x18/0x1A).</summary>
-    bool? T32Sat(in DecodedInst d, uint op, uint rn, uint rd, uint imm3, uint imm2)
+    private bool? T32Sat(in DecodedInst d, uint op, uint rn, uint rd, uint imm3, uint imm2)
     {
         if (rd == 15)
         {

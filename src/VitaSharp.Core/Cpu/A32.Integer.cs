@@ -12,10 +12,10 @@ namespace VitaSharp.Core.Cpu;
 internal static unsafe partial class A32
 {
     [MethodImpl(MethodImplOptions.AggressiveInlining)]
-    static uint Rg(CpuState* s, uint n, uint pc) => n == 15 ? pc + 8 : s->R[n];
+    private static uint Rg(CpuState* s, uint n, uint pc) => n == 15 ? pc + 8 : s->R[n];
 
     [MethodImpl(MethodImplOptions.AggressiveInlining)]
-    static void WriteRd(CpuState* s, uint rd, uint v)
+    private static void WriteRd(CpuState* s, uint rd, uint v)
     {
         if (rd == 15)
         {
@@ -262,7 +262,7 @@ internal static unsafe partial class A32
     }
 
     [MethodImpl(MethodImplOptions.AggressiveInlining)]
-    static int Half(uint v, uint top) => top != 0 ? (short)(v >> 16) : (short)v;
+    private static int Half(uint v, uint top) => top != 0 ? (short)(v >> 16) : (short)v;
 
     /// <summary>SMLAxy/SMLAWy/SMULWy/SMLALxy/SMULxy: cond 00010 op 0 Rd Ra Rm 1 y x 0 Rn</summary>
     [MethodImpl(MethodImplOptions.AggressiveInlining)]
@@ -963,7 +963,7 @@ internal static unsafe partial class A32
     }
 
     /// <summary>Size of a Cortex-A9 instruction cache line (ICIMVAU invalidates one).</summary>
-    const uint IcacheLine = 32;
+    private const uint IcacheLine = 32;
 
     /// <summary>
     /// An instruction cache invalidation run by guest code (kernel code that rewrote instructions, as ARMv7 requires
@@ -972,7 +972,7 @@ internal static unsafe partial class A32
     /// reference ARM recompilers (Dynarmic's and Ryujinx's cache-maintenance exits), stores alone do not drop code: on
     /// the hardware the instruction side sees new code only after this maintenance.
     /// </summary>
-    static void InvalidateInstructionCache(uint ins, uint mva)
+    private static void InvalidateInstructionCache(uint ins, uint mva)
     {
         if (Kernel.GuestThread.Current?.Process.Code is not { } code)
         {
@@ -1011,7 +1011,7 @@ internal static unsafe partial class A32
     }
 
     [MethodImpl(MethodImplOptions.AggressiveInlining)]
-    static void LdStCore(CpuState* s, uint ins, uint pc, uint rn, uint rt, uint offset)
+    private static void LdStCore(CpuState* s, uint ins, uint pc, uint rn, uint rt, uint offset)
     {
         bool P = Bit(ins, 24) != 0, U = Bit(ins, 23) != 0, Bb = Bit(ins, 22) != 0, W = Bit(ins, 21) != 0, L = Bit(ins, 20) != 0;
         uint baseVal = rn == 15 ? (pc + 8) & ~3u : s->R[rn];

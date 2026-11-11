@@ -35,7 +35,7 @@ internal static unsafe partial class Neon
         s->R[rn] = rm == 13 ? addr + transferred : addr + s->R[rm];
     }
 
-    static uint MultipleStructures(CpuState* s, uint ins, bool load, uint d, uint addr)
+    private static uint MultipleStructures(CpuState* s, uint ins, bool load, uint d, uint addr)
     {
         uint type = Bits(ins, 11, 8);
         int esize = 8 << (int)Bits(ins, 7, 6);
@@ -140,7 +140,7 @@ internal static unsafe partial class Neon
         return a - addr;
     }
 
-    static uint Interleave(CpuState* s, bool load, uint d, int nStruct, int inc, int esize, int elements, uint a)
+    private static uint Interleave(CpuState* s, bool load, uint d, int nStruct, int inc, int esize, int elements, uint a)
     {
         int ebytes = esize / 8;
         for (int e = 0; e < elements; e++)
@@ -163,7 +163,7 @@ internal static unsafe partial class Neon
         return a;
     }
 
-    static ulong ReadElem(CpuState* s, uint a, int esize) => esize switch
+    private static ulong ReadElem(CpuState* s, uint a, int esize) => esize switch
     {
         8 => Mem.R8(s, a),
         16 => Mem.R16(s, a),
@@ -171,7 +171,7 @@ internal static unsafe partial class Neon
         _ => Mem.R64(s, a),
     };
 
-    static void WriteElem(CpuState* s, uint a, int esize, ulong v)
+    private static void WriteElem(CpuState* s, uint a, int esize, ulong v)
     {
         switch (esize)
         {
@@ -190,7 +190,7 @@ internal static unsafe partial class Neon
         }
     }
 
-    static uint SingleLane(CpuState* s, uint ins, bool load, uint d, uint addr)
+    private static uint SingleLane(CpuState* s, uint ins, bool load, uint d, uint addr)
     {
         int nStruct = (int)Bits(ins, 9, 8) + 1;
         uint size = Bits(ins, 11, 10);
@@ -235,7 +235,7 @@ internal static unsafe partial class Neon
         return a - addr;
     }
 
-    static uint AllLanes(CpuState* s, uint ins, uint d, uint addr)
+    private static uint AllLanes(CpuState* s, uint ins, uint d, uint addr)
     {
         int nStruct = (int)Bits(ins, 9, 8) + 1;
         uint size = Bits(ins, 7, 6);

@@ -615,7 +615,7 @@ public sealed unsafe partial class NativeJitTests(GuestMemoryFixture fx, ITestOu
                 var b = BlockBuilder.Build(CodeBase, thumb);
                 var cb = NativeX64Compiler.Instance.Compile(b)!;
                 int genIdx = (int)((addr >> 3) & (VitaSharp.Core.Cpu.Arm.ExclusiveStripes - 1));
-                var gens = VitaSharp.Core.Cpu.Arm.ExclusiveGens;
+                var gens = VitaSharp.Core.Cpu.Arm.s_exclusiveGens;
 
                 (Snapshot Snap, uint GenDelta) Run(bool native)
                 {
@@ -731,7 +731,7 @@ public sealed unsafe partial class NativeJitTests(GuestMemoryFixture fx, ITestOu
                 var cb = NativeX64Compiler.Instance.Compile(b)!;
                 Assert.Equal(0, new ArmFrontend().Translate(b).Callouts);
                 int genIdx = (int)((addr >> 3) & (VitaSharp.Core.Cpu.Arm.ExclusiveStripes - 1));
-                var gens = VitaSharp.Core.Cpu.Arm.ExclusiveGens;
+                var gens = VitaSharp.Core.Cpu.Arm.s_exclusiveGens;
 
                 (Snapshot Snap, uint GenDelta) Run(bool native)
                 {

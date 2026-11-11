@@ -594,7 +594,7 @@ public sealed unsafe partial class NativeJitTests
                 var cb = NativeArm64Compiler.Instance.Compile(b, sb.Stubs)!;
                 Assert.Equal(0, NativeArm64Compiler.NewFrontend().Translate(b).Callouts);
                 int genIdx = (int)((at >> 3) & (VitaSharp.Core.Cpu.Arm.ExclusiveStripes - 1));
-                var gens = VitaSharp.Core.Cpu.Arm.ExclusiveGens;
+                var gens = VitaSharp.Core.Cpu.Arm.s_exclusiveGens;
 
                 (Snapshot Snap, uint GenDelta) Run(bool native)
                 {

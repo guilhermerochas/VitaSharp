@@ -20,14 +20,14 @@ public sealed class Arm64Assembler
 
     public static Cond Invert(Cond c) => (Cond)((uint)c ^ 1);
 
-    readonly List<uint> _code = new(256);
-    readonly List<int> _labels = new();
-    readonly List<(int At, int Label, Fix Kind)> _fixups = new();
-    readonly List<(int At, int Literal)> _litFixups = new();
-    readonly List<(ulong Lo, ulong Hi, bool Wide)> _literals = new();
-    readonly Dictionary<(ulong, ulong, bool), int> _literalIndex = new();
+    private readonly List<uint> _code = new(256);
+    private readonly List<int> _labels = new();
+    private readonly List<(int At, int Label, Fix Kind)> _fixups = new();
+    private readonly List<(int At, int Literal)> _litFixups = new();
+    private readonly List<(ulong Lo, ulong Hi, bool Wide)> _literals = new();
+    private readonly Dictionary<(ulong, ulong, bool), int> _literalIndex = new();
 
-    enum Fix
+    private enum Fix
     {
         B26, Imm19, Imm14, Adr
     }
@@ -57,13 +57,13 @@ public sealed class Arm64Assembler
     public void Bind(int label) => _labels[label] = _code.Count;
     public bool IsBound(int label) => _labels[label] >= 0;
 
-    void Ref(int label, Fix kind, uint word)
+    private void Ref(int label, Fix kind, uint word)
     {
         _fixups.Add((_code.Count, label, kind));
         _code.Add(word);
     }
 
-    int Literal(ulong lo, ulong hi, bool wide)
+    private int Literal(ulong lo, ulong hi, bool wide)
     {
         if (!_literalIndex.TryGetValue((lo, hi, wide), out int i))
         {
@@ -79,7 +79,7 @@ public sealed class Arm64Assembler
     {
         // literal pool: 128-bit entries first (16-byte aligned), then 64-bit ones
         var words = new List<uint>(_code);
-        var litPos = new int[_literals.Count];
+        int[] litPos = new int[_literals.Count];
         if (_literals.Count > 0)
         {
             while ((words.Count & 3) != 0)
@@ -106,7 +106,7 @@ public sealed class Arm64Assembler
                 }
             }
         }
-        foreach (var (at, label, kind) in _fixups)
+        foreach ((int at, int label, Fix kind) in _fixups)
         {
             int target = _labels[label];
             if (target < 0)
@@ -116,12 +116,12 @@ public sealed class Arm64Assembler
 
             words[at] = Patch(words[at], target - at, kind);
         }
-        foreach (var (at, lit) in _litFixups)
+        foreach ((int at, int lit) in _litFixups)
         {
             words[at] = Patch(words[at], litPos[lit] - at, Fix.Imm19);
         }
 
-        var bytes = new byte[words.Count * 4];
+        byte[] bytes = new byte[words.Count * 4];
         for (int i = 0; i < words.Count; i++)
         {
             BitConverter.TryWriteBytes(bytes.AsSpan(i * 4), words[i]);
@@ -130,7 +130,7 @@ public sealed class Arm64Assembler
         return bytes;
     }
 
-    static void Add128(List<uint> w, ulong lo, ulong hi)
+    private static void Add128(List<uint> w, ulong lo, ulong hi)
     {
         w.Add((uint)lo);
         w.Add((uint)(lo >> 32));
@@ -138,7 +138,7 @@ public sealed class Arm64Assembler
         w.Add((uint)(hi >> 32));
     }
 
-    static uint Patch(uint word, int delta, Fix kind)
+    private static uint Patch(uint word, int delta, Fix kind)
     {
         switch (kind)
         {
@@ -207,9 +207,9 @@ public sealed class Arm64Assembler
 
     // ------------------------------------------------------------------ integer data processing
 
-    static uint Sf(bool x) => x ? 0x80000000u : 0;
+    private static uint Sf(bool x) => x ? 0x80000000u : 0;
 
-    static void CheckReg(int r)
+    private static void CheckReg(int r)
     {
         if ((uint)r > 31)
         {
@@ -220,7 +220,7 @@ public sealed class Arm64Assembler
     /// <summary>ADD/SUB (immediate); imm 0..4095, or a multiple of 4096 up to 4095 &lt;&lt; 12.</summary>
     public static bool IsAddImm(uint imm) => imm < 4096 || ((imm & 0xFFF) == 0 && imm >> 12 < 4096);
 
-    void AddSubImm(uint op, int rd, int rn, uint imm, bool x)
+    private void AddSubImm(uint op, int rd, int rn, uint imm, bool x)
     {
         if (!IsAddImm(imm))
         {
@@ -246,7 +246,7 @@ public sealed class Arm64Assembler
         Lsl, Lsr, Asr, Ror
     }
 
-    void ShiftedReg(uint op, int rd, int rn, int rm, Shift sh, int amount, bool x)
+    private void ShiftedReg(uint op, int rd, int rn, int rm, Shift sh, int amount, bool x)
     {
         Emit(op | Sf(x) | (uint)sh << 22 | (uint)rm << 16 | (uint)amount << 10 | (uint)rn << 5 | (uint)rd);
     }
@@ -334,7 +334,7 @@ public sealed class Arm64Assembler
         return false;
     }
 
-    void LogicalImm(uint op, int rd, int rn, ulong imm, bool x)
+    private void LogicalImm(uint op, int rd, int rn, ulong imm, bool x)
     {
         if (!TryLogicalImm(imm, x, out uint enc))
         {
@@ -469,7 +469,7 @@ public sealed class Arm64Assembler
 
     // register shifts, misc
 
-    void DataProc2(uint op, int rd, int rn, int rm, bool x) => Emit(op | Sf(x) | (uint)rm << 16 | (uint)rn << 5 | (uint)rd);
+    private void DataProc2(uint op, int rd, int rn, int rm, bool x) => Emit(op | Sf(x) | (uint)rm << 16 | (uint)rn << 5 | (uint)rd);
     public void Lslv(int rd, int rn, int rm, bool x = false) => DataProc2(0x1AC02000, rd, rn, rm, x);
     public void Lsrv(int rd, int rn, int rm, bool x = false) => DataProc2(0x1AC02400, rd, rn, rm, x);
     public void Asrv(int rd, int rn, int rm, bool x = false) => DataProc2(0x1AC02800, rd, rn, rm, x);
@@ -506,7 +506,7 @@ public sealed class Arm64Assembler
         StrS, LdrS, StrD, LdrD, StrQ, LdrQ, StrH, LdrH, StrB, LdrB,
     }
 
-    static (uint Op, int Scale) LsInfo(LsKind k) => k switch
+    private static (uint Op, int Scale) LsInfo(LsKind k) => k switch
     {
         LsKind.Strb => (0x39000000, 0),
         LsKind.Ldrb => (0x39400000, 0),
@@ -541,7 +541,7 @@ public sealed class Arm64Assembler
     /// <summary>Load/store with an immediate offset: [Xn, #off] (scaled, or LDUR/STUR when unaligned or negative).</summary>
     public void LdSt(LsKind k, int rt, int rn, int off)
     {
-        var (op, scale) = LsInfo(k);
+        (uint op, int scale) = LsInfo(k);
         if (off >= 0 && (off & ((1 << scale) - 1)) == 0 && off >> scale < 4096)
         {
             Emit(op | (uint)(off >> scale) << 10 | (uint)rn << 5 | (uint)rt);
@@ -559,7 +559,7 @@ public sealed class Arm64Assembler
     /// <summary>Load/store with a register offset: [Xn, Wm, UXTW] (or [Xn, Xm] when <paramref name="xIndex"/>), optionally scaled.</summary>
     public void LdStReg(LsKind k, int rt, int rn, int rm, bool xIndex = false, bool scaled = false)
     {
-        var (op, _) = LsInfo(k);
+        (uint op, int _) = LsInfo(k);
         uint baseOp = (op & ~0x01000000u) | 0x00200800u; // register-offset form
         uint option = xIndex ? 3u : 2u;
         Emit(baseOp | (uint)rm << 16 | option << 13 | (scaled ? 1u << 12 : 0) | (uint)rn << 5 | (uint)rt);
@@ -608,14 +608,14 @@ public sealed class Arm64Assembler
 
     // ------------------------------------------------------------------ scalar floating point (s = single, d = double)
 
-    static uint Ty(bool dbl) => dbl ? 0x00400000u : 0;
-    void Fp2(uint op, int rd, int rn, int rm, bool dbl) => Emit(op | Ty(dbl) | (uint)rm << 16 | (uint)rn << 5 | (uint)rd);
+    private static uint Ty(bool dbl) => dbl ? 0x00400000u : 0;
+    private void Fp2(uint op, int rd, int rn, int rm, bool dbl) => Emit(op | Ty(dbl) | (uint)rm << 16 | (uint)rn << 5 | (uint)rd);
     public void Fadd(int rd, int rn, int rm, bool dbl = false) => Fp2(0x1E202800, rd, rn, rm, dbl);
     public void Fsub(int rd, int rn, int rm, bool dbl = false) => Fp2(0x1E203800, rd, rn, rm, dbl);
     public void Fmul(int rd, int rn, int rm, bool dbl = false) => Fp2(0x1E200800, rd, rn, rm, dbl);
     public void Fdiv(int rd, int rn, int rm, bool dbl = false) => Fp2(0x1E201800, rd, rn, rm, dbl);
     public void Fnmul(int rd, int rn, int rm, bool dbl = false) => Fp2(0x1E208800, rd, rn, rm, dbl);
-    void Fp1(uint op, int rd, int rn, bool dbl) => Emit(op | Ty(dbl) | (uint)rn << 5 | (uint)rd);
+    private void Fp1(uint op, int rd, int rn, bool dbl) => Emit(op | Ty(dbl) | (uint)rn << 5 | (uint)rd);
     public void Fsqrt(int rd, int rn, bool dbl = false) => Fp1(0x1E21C000, rd, rn, dbl);
     public void Fneg(int rd, int rn, bool dbl = false) => Fp1(0x1E214000, rd, rn, dbl);
     public void Fabs(int rd, int rn, bool dbl = false) => Fp1(0x1E20C000, rd, rn, dbl);
@@ -631,7 +631,7 @@ public sealed class Arm64Assembler
     public void Fcvtzs(int wd, int fn, bool dbl = false) => Emit(0x1E380000 | Ty(dbl) | (uint)fn << 5 | (uint)wd);
     public void Fcvtzu(int wd, int fn, bool dbl = false) => Emit(0x1E390000 | Ty(dbl) | (uint)fn << 5 | (uint)wd);
     // conversions between floating-point and 32-bit fixed-point (W register, 1..32 fraction bits: scale = 64 - fbits)
-    static uint FixedScale(int fbits) => fbits is >= 1 and <= 32 ? (uint)(64 - fbits) << 10 : throw new ArgumentOutOfRangeException(nameof(fbits));
+    private static uint FixedScale(int fbits) => fbits is >= 1 and <= 32 ? (uint)(64 - fbits) << 10 : throw new ArgumentOutOfRangeException(nameof(fbits));
     public void FcvtzsFixed(int wd, int fn, int fbits, bool dbl = false) => Emit(0x1E180000 | Ty(dbl) | FixedScale(fbits) | (uint)fn << 5 | (uint)wd);
     public void FcvtzuFixed(int wd, int fn, int fbits, bool dbl = false) => Emit(0x1E190000 | Ty(dbl) | FixedScale(fbits) | (uint)fn << 5 | (uint)wd);
     public void ScvtfFixed(int fd, int wn, int fbits, bool dbl = false) => Emit(0x1E020000 | Ty(dbl) | FixedScale(fbits) | (uint)wn << 5 | (uint)fd);
@@ -646,7 +646,7 @@ public sealed class Arm64Assembler
 
     // ------------------------------------------------------------------ Advanced SIMD (vector)
 
-    static uint Qb(bool q) => q ? 0x40000000u : 0;
+    private static uint Qb(bool q) => q ? 0x40000000u : 0;
 
     /// <summary>Three registers, same type: opcode = bits 15:11, U = bit 29, size = bits 23:22.</summary>
     public void V3(uint opcode, bool u, uint size, bool q, int rd, int rn, int rm) =>

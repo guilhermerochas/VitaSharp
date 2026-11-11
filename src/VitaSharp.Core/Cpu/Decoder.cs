@@ -26,8 +26,8 @@ public struct DecodedInst
 /// <summary>A32/T16/T32 decoders producing handler ids. VFP/NEON encodings are routed to <see cref="SimdDecoder"/>.</summary>
 public static class Decoder
 {
-    static uint B(uint v, int n) => (v >> n) & 1;
-    static uint Bs(uint v, int hi, int lo) => (v >> lo) & (uint)((1L << (hi - lo + 1)) - 1);
+    private static uint B(uint v, int n) => (v >> n) & 1;
+    private static uint Bs(uint v, int hi, int lo) => (v >> lo) & (uint)((1L << (hi - lo + 1)) - 1);
 
     // ================================================================ ARM
 
@@ -54,7 +54,7 @@ public static class Decoder
         return d;
     }
 
-    static Op DecodeArmOp(uint ins, out bool writesPc)
+    private static Op DecodeArmOp(uint ins, out bool writesPc)
     {
         writesPc = false;
         uint cond = ins >> 28;
@@ -239,7 +239,7 @@ public static class Decoder
         }
     }
 
-    static Op DecodeArmMedia(uint ins, out bool writesPc)
+    private static Op DecodeArmMedia(uint ins, out bool writesPc)
     {
         writesPc = false;
         uint op1 = Bs(ins, 24, 20), op2 = Bs(ins, 7, 5);
@@ -379,7 +379,7 @@ public static class Decoder
         return Op.A32_Udf;
     }
 
-    static Op DecodeArmUnconditional(uint ins, out bool writesPc)
+    private static Op DecodeArmUnconditional(uint ins, out bool writesPc)
     {
         writesPc = false;
         if ((ins & 0x0E00_0000) == 0x0A00_0000)
@@ -449,7 +449,7 @@ public static class Decoder
         return d;
     }
 
-    static Op DecodeT16Op(uint hw, out bool writesPc, ref byte cond)
+    private static Op DecodeT16Op(uint hw, out bool writesPc, ref byte cond)
     {
         writesPc = false;
         switch (hw >> 10)
@@ -536,7 +536,7 @@ public static class Decoder
         return Op.T16_Udf;
     }
 
-    static Op DecodeT16Misc(uint hw, out bool writesPc)
+    private static Op DecodeT16Misc(uint hw, out bool writesPc)
     {
         writesPc = false;
         uint op = Bs(hw, 11, 5);
@@ -621,7 +621,7 @@ public static class Decoder
     }
 
     /// <summary>Decodes a 32-bit Thumb instruction. NEON encodings are rewritten into their ARM form in <paramref name="raw"/>.</summary>
-    static Op DecodeT32Op(uint ins, ref uint raw, out bool writesPc, ref byte cond)
+    private static Op DecodeT32Op(uint ins, ref uint raw, out bool writesPc, ref byte cond)
     {
         writesPc = false;
         uint hw1 = ins >> 16, hw2 = ins & 0xFFFF;
@@ -757,7 +757,7 @@ public static class Decoder
         }
     }
 
-    static Op DecodeT32Branch(uint ins, out bool writesPc, ref byte cond)
+    private static Op DecodeT32Branch(uint ins, out bool writesPc, ref byte cond)
     {
         writesPc = true;
         uint hw1 = ins >> 16, hw2 = ins & 0xFFFF;

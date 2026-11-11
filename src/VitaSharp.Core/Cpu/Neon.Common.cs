@@ -7,14 +7,14 @@ namespace VitaSharp.Core.Cpu;
 internal static unsafe partial class Neon
 {
     // Register numbering: Vd = D:Vd(15:12), Vn = N:Vn(19:16), Vm = M:Vm(3:0)
-    [MethodImpl(MethodImplOptions.AggressiveInlining)] static uint Rd(uint ins) => (Bit(ins, 22) << 4) | Bits(ins, 15, 12);
-    [MethodImpl(MethodImplOptions.AggressiveInlining)] static uint Rn(uint ins) => (Bit(ins, 7) << 4) | Bits(ins, 19, 16);
-    [MethodImpl(MethodImplOptions.AggressiveInlining)] static uint Rm(uint ins) => (Bit(ins, 5) << 4) | (ins & 0xF);
-    [MethodImpl(MethodImplOptions.AggressiveInlining)] static byte* Reg(CpuState* s, uint d) => (byte*)&s->D[d & 31];
+    [MethodImpl(MethodImplOptions.AggressiveInlining)] private static uint Rd(uint ins) => (Bit(ins, 22) << 4) | Bits(ins, 15, 12);
+    [MethodImpl(MethodImplOptions.AggressiveInlining)] private static uint Rn(uint ins) => (Bit(ins, 7) << 4) | Bits(ins, 19, 16);
+    [MethodImpl(MethodImplOptions.AggressiveInlining)] private static uint Rm(uint ins) => (Bit(ins, 5) << 4) | (ins & 0xF);
+    [MethodImpl(MethodImplOptions.AggressiveInlining)] private static byte* Reg(CpuState* s, uint d) => (byte*)&s->D[d & 31];
 
-    const uint FpscrQC = 1u << 27;
+    private const uint FpscrQC = 1u << 27;
 
-    [MethodImpl(MethodImplOptions.AggressiveInlining)] static void SetQC(CpuState* s) => s->Fpscr |= FpscrQC;
+    [MethodImpl(MethodImplOptions.AggressiveInlining)] private static void SetQC(CpuState* s) => s->Fpscr |= FpscrQC;
 
     // ---------------------------------------------------------- element access (esize in bits)
 
@@ -60,7 +60,7 @@ internal static unsafe partial class Neon
     }
 
     [MethodImpl(MethodImplOptions.AggressiveInlining)]
-    static ulong Mask(int esize) => esize == 64 ? ulong.MaxValue : (1ul << esize) - 1;
+    private static ulong Mask(int esize) => esize == 64 ? ulong.MaxValue : (1ul << esize) - 1;
 
     // ---------------------------------------------------------- saturation helpers
 
@@ -121,10 +121,10 @@ internal static unsafe partial class Neon
         return Ftz(v);
     }
 
-    [MethodImpl(MethodImplOptions.AggressiveInlining)] static float F(byte* v, int i) => Ftz(((float*)v)[i]);
-    [MethodImpl(MethodImplOptions.AggressiveInlining)] static void SetF(byte* v, int i, float x) => ((float*)v)[i] = FRes(x);
+    [MethodImpl(MethodImplOptions.AggressiveInlining)] private static float F(byte* v, int i) => Ftz(((float*)v)[i]);
+    [MethodImpl(MethodImplOptions.AggressiveInlining)] private static void SetF(byte* v, int i, float x) => ((float*)v)[i] = FRes(x);
 
-    const double MinNormal = 1.1754943508222875e-38; // 2^-126
+    private const double MinNormal = 1.1754943508222875e-38; // 2^-126
 
     /// <summary>
     /// x * y (inputs already flushed) under Advanced SIMD FZ: ARM detects tininess before rounding, so a product that
@@ -191,7 +191,7 @@ internal static unsafe partial class Neon
     }
 
     // ARM ARM "recip_estimate" / "recip_sqrt_estimate": 9-bit table-equivalent computations.
-    static double RecipEstimateCore(double a) // 0.5 <= a < 1.0
+    private static double RecipEstimateCore(double a) // 0.5 <= a < 1.0
     {
         int q = (int)(a * 512.0);
         double r = 1.0 / ((q + 0.5) / 512.0);
@@ -199,7 +199,7 @@ internal static unsafe partial class Neon
         return s / 256.0;
     }
 
-    static double RecipSqrtEstimateCore(double a) // 0.25 <= a < 1.0
+    private static double RecipSqrtEstimateCore(double a) // 0.25 <= a < 1.0
     {
         double r;
         if (a < 0.5)

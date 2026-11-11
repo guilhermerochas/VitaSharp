@@ -195,7 +195,7 @@ internal static unsafe partial class Neon
         return (byte)r;
     }
 
-    static void ThreeSameFloat(CpuState* s, uint a, bool b, bool u, uint size, byte* tn, byte* tm, byte* td, int bytes)
+    private static void ThreeSameFloat(CpuState* s, uint a, bool b, bool u, uint size, byte* tn, byte* tm, byte* td, int bytes)
     {
         int count = bytes / 4;
         bool sz1 = (size & 2) != 0;
@@ -411,7 +411,7 @@ internal static unsafe partial class Neon
         Buffer.MemoryCopy(td, Reg(s, d), 16, 16);
     }
 
-    static ulong PolyMulLong(ulong a, ulong b, int esize)
+    private static ulong PolyMulLong(ulong a, ulong b, int esize)
     {
         ulong r = 0;
         for (int i = 0; i < esize; i++)

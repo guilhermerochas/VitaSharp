@@ -1,4 +1,5 @@
 using System.Diagnostics;
+using System.Diagnostics.CodeAnalysis;
 using System.Runtime.InteropServices;
 using VitaSharp.Core.Cpu.Native;
 using VitaSharp.Core.Util;
@@ -16,9 +17,11 @@ public sealed unsafe class NativeArm64Compiler : IBlockCompiler
 {
     public static readonly NativeArm64Compiler Instance = new();
 
-    [ThreadStatic] static Arm64Emitter? _emitter;
-    [ThreadStatic] static ArmFrontend? _frontend; // reuses its IR buffers (consumed before the next block)
-    static readonly bool[] NeonOp = Enumerable.Range(0, (int)Op.Count).Select(i => ((Op)i).ToString().StartsWith("Neon_", StringComparison.Ordinal)).ToArray();
+    [SuppressMessage("Style", "IDE1006", Justification = "[ThreadStatic]: t_camelCase; .editorconfig cannot select the attribute")]
+    [ThreadStatic] private static Arm64Emitter? t_emitter;
+    [SuppressMessage("Style", "IDE1006", Justification = "[ThreadStatic]: t_camelCase; .editorconfig cannot select the attribute")]
+    [ThreadStatic] private static ArmFrontend? t_frontend; // reuses its IR buffers (consumed before the next block)
+    private static readonly bool[] s_neonOp = Enumerable.Range(0, (int)Op.Count).Select(i => ((Op)i).ToString().StartsWith("Neon_", StringComparison.Ordinal)).ToArray();
 
     public string Name => "native";
     public bool IsSupported => UnsupportedReason == null;
@@ -56,22 +59,22 @@ public sealed unsafe class NativeArm64Compiler : IBlockCompiler
     public CompiledBlock? Compile(Block b, Arm64Emitter.Runtime stubs, bool hleCallouts = false, Func<uint, bool, Block?>? successors = null)
     {
         long t0 = Stopwatch.GetTimestamp();
-        var fe = _frontend ??= new ArmFrontend(Arm64Emitter.SupportsVec, tinyCheck: false, reuseIr: true);
+        ArmFrontend fe = t_frontend ??= new ArmFrontend(Arm64Emitter.SupportsVec, tinyCheck: false, reuseIr: true);
         fe.HleCallouts = hleCallouts;
         fe.DeferRegions = (Arm64Emitter.Opts & Arm64Emitter.A64Opt.DeferRegions) != 0;
         fe.DynamicExitOperands = true;
-        var deps = _deps ??= new();
+        List<uint> deps = t_deps ??= new();
         deps.Clear();
         bool cross = successors != null && !NativeVerifier.Enabled && CpuCore.Probes == null; // analyses beyond the block
-        var chain = cross && (Arm64Emitter.Opts & Arm64Emitter.A64Opt.Superblocks) != 0 ? BuildChain(b, successors!, deps) : null;
-        var ir = fe.Translate(b, chain);
+        List<Block>? chain = cross && (Arm64Emitter.Opts & Arm64Emitter.A64Opt.Superblocks) != 0 ? BuildChain(b, successors!, deps) : null;
+        IrBlock ir = fe.Translate(b, chain);
         long t1 = Stopwatch.GetTimestamp();
         if (cross && (Arm64Emitter.Opts & Arm64Emitter.A64Opt.Successors) != 0)
         {
             DropDeadStores(b, ir, fe, successors!, coldPc: stubs.PinnedCounters && stubs.PatchLinks && (Arm64Emitter.Opts & Arm64Emitter.A64Opt.ExitStubs) != 0, deps);
         }
 
-        b.Deps = deps.Count > 0 ? deps.ToArray() : null;
+        b._deps = deps.Count > 0 ? deps.ToArray() : null;
         if ((Arm64Emitter.Opts & Arm64Emitter.A64Opt.MergeFences) != 0)
         {
             IrPasses.MergeFences(ir);
@@ -84,9 +87,9 @@ public sealed unsafe class NativeArm64Compiler : IBlockCompiler
         }
 
         long t2 = Stopwatch.GetTimestamp();
-        var rt = NativeRuntime.Instance;
+        NativeRuntime rt = NativeRuntime.Instance;
         int exits = 0;
-        foreach (var x in ir.Insts)
+        foreach (IrInst x in ir.Insts)
         {
             if (x.Op == IrOp.ExitStatic)
             {
@@ -96,14 +99,14 @@ public sealed unsafe class NativeArm64Compiler : IBlockCompiler
         // patched links: two words per exit, the target and the patch site (Arm64Emitter.Runtime.PatchLinks)
         int stride = stubs.PatchLinks ? 2 : 1;
         nint* slots = rt.AllocateSlots(exits * stride);
-        var em = _emitter ??= new Arm64Emitter();
+        Arm64Emitter em = t_emitter ??= new Arm64Emitter();
         nint tierUp = 0;
         if (NativeX64Compiler.TierUp && Jit.Chain.Contains(IlJitCompiler.Instance))
         {
             int simd = 0;
-            foreach (var x in ir.Insts)
+            foreach (IrInst x in ir.Insts)
             {
-                if (x.Op == IrOp.Callout && x.Imm < (uint)NeonOp.Length && NeonOp[x.Imm])
+                if (x.Op == IrOp.Callout && x.Imm < (uint)s_neonOp.Length && s_neonOp[x.Imm])
                 {
                     simd++;
                 }
@@ -123,7 +126,7 @@ public sealed unsafe class NativeArm64Compiler : IBlockCompiler
         long t3 = Stopwatch.GetTimestamp();
         int size = 0;
         long encode = 0;
-        byte* code = rt.Code.Place(addr => { long e0 = Stopwatch.GetTimestamp(); var bytes = em.Assemble(addr); encode = Stopwatch.GetTimestamp() - e0; size = bytes.Length; return bytes; });
+        byte* code = rt.Code.Place(addr => { long e0 = Stopwatch.GetTimestamp(); byte[] bytes = em.Assemble(addr); encode = Stopwatch.GetTimestamp() - e0; size = bytes.Length; return bytes; });
         Interlocked.Add(ref NativeX64Compiler.CodeBytes, size); // one counter for both native backends (Report)
         if (stubs.PatchLinks)
         {
@@ -150,7 +153,7 @@ public sealed unsafe class NativeArm64Compiler : IBlockCompiler
         }
 
         bool unlogged = false;
-        foreach (var x in ir.Insts)
+        foreach (IrInst x in ir.Insts)
         {
             if (x.Op is IrOp.StrEx or IrOp.StoreD || (x.Op == IrOp.Callout && (x.Imm == ArmFrontend.HleCalloutOp || NativeVerifier.MayStore((Op)x.Imm))))
             {
@@ -161,11 +164,13 @@ public sealed unsafe class NativeArm64Compiler : IBlockCompiler
         return new CompiledBlock(this, (nint)code, new NativeCodeInfo(size, exits, unlogged, Arm64: true));
     }
 
-    [ThreadStatic] static List<(uint Pc, bool Thumb, int Dead)>? _targets;
-    [ThreadStatic] static List<uint>? _deps;
+    [SuppressMessage("Style", "IDE1006", Justification = "[ThreadStatic]: t_camelCase; .editorconfig cannot select the attribute")]
+    [ThreadStatic] private static List<(uint Pc, bool Thumb, int Dead)>? t_targets;
+    [SuppressMessage("Style", "IDE1006", Justification = "[ThreadStatic]: t_camelCase; .editorconfig cannot select the attribute")]
+    [ThreadStatic] private static List<uint>? t_deps;
 
     /// <summary>Superblock limits (<see cref="Arm64Emitter.A64Opt.Superblocks"/>).</summary>
-    const int MaxChainBlocks = 4, MaxChainInstructions = 128;
+    private const int MaxChainBlocks = 4, MaxChainInstructions = 128;
 
     /// <summary>
     /// <see cref="Arm64Emitter.A64Opt.Superblocks"/>: the blocks that follow <paramref name="b"/> through the not-taken
@@ -173,10 +178,10 @@ public sealed unsafe class NativeArm64Compiler : IBlockCompiler
     /// translation keeps the guest state in temps across them and saves an exit and an entry per conditional branch.
     /// Their ranges become dependencies. Null when the block does not continue.
     /// </summary>
-    static List<Block>? BuildChain(Block b, Func<uint, bool, Block?> successors, List<uint> deps)
+    private static List<Block>? BuildChain(Block b, Func<uint, bool, Block?> successors, List<uint> deps)
     {
         List<Block>? chain = null;
-        var cur = b;
+        Block cur = b;
         int n = b.Insts.Length;
         while ((chain?.Count ?? 1) < MaxChainBlocks && cur.Insts.Length > 0 && ArmFrontend.Continues(cur.Insts[^1]))
         {
@@ -206,13 +211,13 @@ public sealed unsafe class NativeArm64Compiler : IBlockCompiler
 
     /// <summary>
     /// <see cref="StateLiveness.DropDeadStores"/> against the decoded targets of the block's static exits. The targets'
-    /// code ranges become dependencies of the block (rewriting them drops it, <see cref="Block.Deps"/>), published
+    /// code ranges become dependencies of the block (rewriting them drops it, <see cref="Block._deps"/>), published
     /// before the code exists, so an invalidation racing with this compile drops the block too.
     /// </summary>
-    static void DropDeadStores(Block b, IrBlock ir, ArmFrontend fe, Func<uint, bool, Block?> successors, bool coldPc, List<uint> deps)
+    private static void DropDeadStores(Block b, IrBlock ir, ArmFrontend fe, Func<uint, bool, Block?> successors, bool coldPc, List<uint> deps)
     {
-        var insts = System.Runtime.InteropServices.CollectionsMarshal.AsSpan(ir.Insts);
-        foreach (ref readonly var x in insts)
+        Span<IrInst> insts = System.Runtime.InteropServices.CollectionsMarshal.AsSpan(ir.Insts);
+        foreach (ref readonly IrInst x in insts)
         {
             if (x.Op == IrOp.Callout)
             {
@@ -220,9 +225,9 @@ public sealed unsafe class NativeArm64Compiler : IBlockCompiler
             }
         }
 
-        var targets = _targets ??= new();
+        List<(uint Pc, bool Thumb, int Dead)> targets = t_targets ??= new();
         targets.Clear();
-        foreach (ref var x in insts)
+        foreach (ref IrInst x in insts)
         {
             if (x.Op != IrOp.ExitStatic)
             {
@@ -265,7 +270,7 @@ public sealed unsafe class NativeArm64Compiler : IBlockCompiler
 
         int n = StateLiveness.DropDeadStores(ir, (pc, thumb) =>
         {
-            foreach (var (p, th, d) in targets)
+            foreach ((uint p, bool th, int d) in targets)
             {
                 if (p == pc && th == thumb)
                 {
