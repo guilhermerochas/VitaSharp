@@ -166,4 +166,22 @@ public sealed class HleBatch13bTests(GuestMemoryFixture fx) : IDisposable
         Assert.Equal(true, Invoke(p, "EndsWithPad", CStr("ux0:/a/b.pad")));
         Assert.Equal(false, Invoke(p, "EndsWithPad", CStr("ux0:/a/b.txt")));
     }
+
+    [Fact]
+    public void TextLayoutLayoutAttributes()
+    {
+        var paf = Module<Paf>();
+        uint l = Alloc(0x100), o = Alloc(8);
+        Assert.Equal(0, Invoke(paf, "TextLayoutGetBool", l, 9, o));
+        Assert.Equal((byte)0, GuestMemory.Read<byte>(o));
+        Assert.Equal(unchecked((int)0x80AF2302), Invoke(paf, "TextLayoutGetBool", l, 8, o));
+        Assert.Equal(unchecked((int)0x80AF2302), Invoke(paf, "TextLayoutGetFloat", l, 3, o));
+        Assert.Equal(unchecked((int)0x80AF2302), Invoke(paf, "TextLayoutGetInt", l, 4, o));
+        GuestMemory.Write<byte>(l + 0xD, 0xFE);
+        Assert.Equal(0, Invoke(paf, "TextLayoutGetInt", l, 1, o));
+        Assert.Equal(unchecked((uint)-2), GuestMemory.R32(o));
+        GuestMemory.Write(l + 0x18, 12.5f);
+        Assert.Equal(0, Invoke(paf, "TextLayoutGetFloat", l, 0x13, o));
+        Assert.Equal(12.5f, GuestMemory.Read<float>(o));
+    }
 }

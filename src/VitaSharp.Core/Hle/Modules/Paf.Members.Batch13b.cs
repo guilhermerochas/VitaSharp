@@ -82,4 +82,129 @@ public sealed partial class Paf
     [Hle("NID_80B84E6A", Nid = 0x80B84E6A, Library = "ScePafResource")] uint Paf_80B84E6A(uint p1) => U32(p1 + 0x14);
     [Hle("NID_1172424E", Nid = 0x1172424E, Library = "ScePafResource")] uint Paf_1172424E(uint p1) => U32(p1 + 0x18);
     [Hle("NID_50C5EB72", Nid = 0x50C5EB72, Library = "ScePafCommon")] uint Paf_50C5EB72(uint p1) => U32(p1 + 0x4);
+
+    // ------------------------------------------------------------------ TextObj over its TextLayout (+0x50)
+
+    /// <summary>TextObj's queries forward to its TextLayout (+0x50) with the same arguments; 0x80AF0022 (not ready)
+    /// while it has none.</summary>
+    unsafe void TextObjForward(HleContext c, uint nid)
+    {
+        uint layout = U32(c.Gpr(0) + 0x50);
+        if (layout == 0) { c.Return(unchecked((int)0x80AF0022)); return; }
+        c.Cpu->R[0] = layout;
+        Emu.Hle.ImplOf(nid)!(c);
+    }
+
+    [Hle("_ZN3paf5graph7TextObj12GetLineCountERj")] void TextObjLineCount(HleContext c) => TextObjForward(c, 0xBFDF8AC1);
+    [Hle("_ZN3paf5graph7TextObj9GetBoundsERNS_4math2v2E")] void TextObjBounds(HleContext c) => TextObjForward(c, 0xD08F1491);
+    [Hle("_ZN3paf5graph7TextObj18GetLayoutAttributeENS0_19TextLayoutAttributeERNS_4math2v2E")]
+    void TextObjLayoutV2(HleContext c) => TextObjForward(c, 0xE48BBEAB);
+
+    // ------------------------------------------------------------------ TextLayout's layout attributes
+    // flags +0x10 (attributes 9..0x12 = bits 0..9), ints +0xC/+0xD/+0xE (signed bytes, attributes 0..2) and +0x12
+    // (attribute 3), floats +0x14/+0x18 (attributes 4, 5; 0x13 reads +0x18); every change is made under the layout's
+    // optional RMutex (+0x8C), marks the dirty bits +0x70 and returns them (0 when nothing changed); 0x80AF2302 for
+    // an attribute of another type.
+
+    const int PafBadLayoutAttr = unchecked((int)0x80AF2302);
+
+    unsafe void LayoutLocked(HleContext c, uint me, Action change)
+    {
+        uint m = U32(me + 0x8C);
+        if (m != 0) CallPafExport(c, 0xF9FFA0BE, m);
+        change();
+        if (m != 0) CallPafExport(c, 0x95F9C45F, m);
+    }
+
+    unsafe void CallPafExport(HleContext c, uint nid, uint arg)
+    {
+        uint r0 = c.Cpu->R[0];
+        c.Cpu->R[0] = arg;
+        Emu.Hle.ImplOf(nid)?.Invoke(c);
+        c.Cpu->R[0] = r0;
+    }
+
+    static readonly ushort[] LayoutBoolDirty = [6, 6, 4, 4, 7, 7, 7, 7, 4, 7];
+
+    [Hle("_ZN3paf5graph10TextLayout18GetLayoutAttributeENS0_19TextLayoutAttributeERb")]
+    int TextLayoutGetBool(uint me, int attr, uint outp)
+    {
+        if ((uint)(attr - 9) >= 10) return PafBadLayoutAttr;
+        U8(outp, (byte)((U16(me + 0x10) >> (attr - 9)) & 1));
+        return 0;
+    }
+
+    [Hle("_ZN3paf5graph10TextLayout18SetLayoutAttributeENS0_19TextLayoutAttributeEb")]
+    int TextLayoutSetBool(HleContext c, uint me, int attr, bool on)
+    {
+        if ((uint)(attr - 9) >= 10) return 0;
+        ushort bit = (ushort)(1 << (attr - 9));
+        if (on == ((U16(me + 0x10) & bit) != 0)) return 0;
+        // the last-but-one flag (attribute 0x11) only dirties the layout when it is cleared
+        ushort dirty = attr == 0x11 ? (ushort)(on ? 0 : 4) : LayoutBoolDirty[attr - 9];
+        LayoutLocked(c, me, () =>
+        {
+            U16(me + 0x70, (ushort)(U16(me + 0x70) | dirty));
+            ushort v = U16(me + 0x10);
+            U16(me + 0x10, (ushort)(on ? v | bit : v & ~bit));
+        });
+        return dirty;
+    }
+
+    [Hle("_ZN3paf5graph10TextLayout18GetLayoutAttributeENS0_19TextLayoutAttributeERi")]
+    int TextLayoutGetInt(uint me, int attr, uint outp)
+    {
+        switch (attr)
+        {
+            case 0: case 1: case 2: U32(outp, (uint)(sbyte)U8(me + 0xC + (uint)attr)); return 0;
+            case 3: U32(outp, U16(me + 0x12)); return 0;
+            default: return PafBadLayoutAttr;
+        }
+    }
+
+    [Hle("_ZN3paf5graph10TextLayout18SetLayoutAttributeENS0_19TextLayoutAttributeEi")]
+    int TextLayoutSetInt(HleContext c, uint me, int attr, int value)
+    {
+        if (attr is >= 0 and <= 2)
+        {
+            uint a = me + 0xC + (uint)attr;
+            if (value == (sbyte)U8(a)) return 0;
+            LayoutLocked(c, me, () => { U8(a, (byte)value); U16(me + 0x70, (ushort)(U16(me + 0x70) | 6)); });
+            return 6;
+        }
+        if (attr == 3)
+        {
+            if ((uint)value == U16(me + 0x12)) return 0;
+            LayoutLocked(c, me, () => { U16(me + 0x12, (ushort)value); U16(me + 0x70, (ushort)(U16(me + 0x70) | 7)); });
+            return 7;
+        }
+        return PafBadLayoutAttr;
+    }
+
+    [Hle("_ZN3paf5graph10TextLayout18GetLayoutAttributeENS0_19TextLayoutAttributeERf")]
+    int TextLayoutGetFloat(uint me, int attr, uint outp)
+    {
+        // attribute 0x13 is the line height (+0x18), scaled by 1.35 in the module's large-text mode, which the HLE
+        // does not have
+        switch (attr)
+        {
+            case 4: F(outp, F(me + 0x14)); return 0;
+            case 5: case 0x13: F(outp, F(me + 0x18)); return 0;
+            default: return PafBadLayoutAttr;
+        }
+    }
+
+    [Hle("_ZN3paf5graph10TextLayout18SetLayoutAttributeENS0_19TextLayoutAttributeEf")]
+    int TextLayoutSetFloat(HleContext c, float value, uint me, int attr)
+    {
+        if (attr != 4 && attr != 5) return PafBadLayoutAttr;
+        uint a = me + (attr == 4 ? 0x14u : 0x18u);
+        if (value == F(a)) return 0;
+        LayoutLocked(c, me, () => { F(a, value); U16(me + 0x70, (ushort)(U16(me + 0x70) | 7)); });
+        return 7;
+    }
+
+    [Hle("_ZN3paf5graph7TextObj18GetLayoutAttributeENS0_19TextLayoutAttributeERb")] void TextObjLayoutBool(HleContext c) => TextObjForward(c, 0xE9CB81D3);
+    [Hle("_ZN3paf5graph7TextObj18GetLayoutAttributeENS0_19TextLayoutAttributeERf")] void TextObjLayoutFloat(HleContext c) => TextObjForward(c, 0x4B2C6994);
+    [Hle("_ZN3paf5graph7TextObj18GetLayoutAttributeENS0_19TextLayoutAttributeERi")] void TextObjLayoutInt(HleContext c) => TextObjForward(c, 0x5D9D3B40);
 }

@@ -386,14 +386,14 @@ public sealed unsafe partial class Psp2Compat
         Sys(c, LibcAbort);
     }
 
-    /// <summary>(context): the fatal-error path: the context's two cleanup callbacks (+0xC4, then +0xC0 with 1), then
-    /// abort().</summary>
+    /// <summary>png_error(png, message): the png struct's error callback (+0xC4) with the message, then its longjmp
+    /// (+0xC0) with 1, then abort() when neither leaves.</summary>
     [Hle("NID_83B22ED9", Nid = 0x83B22ED9, Library = Lib)]
-    void FatalAbort(HleContext c, uint ctx)
+    void FatalAbort(HleContext c, uint ctx, uint message)
     {
         if (ctx != 0)
         {
-            if (GuestMemory.R32(ctx + 0xC4) is var a and not 0) GuestThread.Current!.CallGuest(a, ctx);
+            if (GuestMemory.R32(ctx + 0xC4) is var a and not 0) GuestThread.Current!.CallGuest(a, ctx, message);
             if (GuestMemory.R32(ctx + 0xC0) is var b and not 0) GuestThread.Current!.CallGuest(b, ctx, 1);
         }
         Sys(c, LibcAbort);
@@ -565,5 +565,81 @@ public sealed unsafe partial class Psp2Compat
         uint flag = GuestMemory.R32(v);
         if (flag == 0 || flag == uint.MaxValue) return false;
         return GuestMemory.ReadCString(url, 13) == "manx://netlog";
+    }
+
+    // ------------------------------------------------------------------ more of the module's helpers
+
+    /// <summary>(worker): locks its mutex (+8).</summary>
+    [Hle("NID_81F02ABA", Nid = 0x81F02ABA, Library = Lib)] void WorkerLock(HleContext c, uint w) => MutexLock(c, w + 8);
+
+    /// <summary>(worker): whether its mutex (+8) could be taken without waiting.</summary>
+    [Hle("NID_F3A7ABF3", Nid = 0xF3A7ABF3, Library = Lib)] bool WorkerTryLock(HleContext c, uint w) => MutexTryLock(c, w + 8) == 0;
+
+    /// <summary>(const char *path, F *f): opens a file for reading into the module's FILE-like object { fd, 0, size };
+    /// -1 when it is missing, 4 GiB or larger, or does not open.</summary>
+    [Hle("NID_B17A54D9", Nid = 0xB17A54D9, Library = Lib)]
+    int FileOpenRead(HleContext c, uint path, uint f)
+    {
+        if (f == 0) return -1;
+        uint st = Scratch(c, 0x60);
+        if (SysI(c, IoGetstat, path, st) != 0) return -1;
+        uint lo = R32(st + 8);
+        int hi = (int)R32(st + 12);
+        if (!(hi < 0 || (hi == 0 && lo != uint.MaxValue))) return -1;
+        int fd = SysI(c, IoOpen, path, 1, 0);
+        if (fd < 1) return -1;
+        W32(f, (uint)fd);
+        W32(f + 4, 0);
+        W32(f + 8, lo);
+        return 0;
+    }
+
+    /// <summary>pthread_cond_timedwait(cond, mutex, const struct timespec *abstime): waits on the lightweight condition
+    /// until the absolute time (seconds and nanoseconds since 1970, against the RTC's current tick); a time already
+    /// past waits 0 us.</summary>
+    [Hle("NID_A7911448", Nid = 0xA7911448, Library = Lib)]
+    int CondTimedWait(HleContext c, uint cond, uint mutex, uint abstime)
+    {
+        uint buf = Scratch(c, 0x40), now = buf, epoch = buf + 8, dt = buf + 0x10, timeout = buf + 0x20;
+        Sys(c, 0x23F79274, now);                                  // sceRtcGetCurrentTick
+        GuestMemory.Write(dt, (ushort)1970); GuestMemory.Write(dt + 2, (ushort)1); GuestMemory.Write(dt + 4, (ushort)1);
+        Sys(c, 0xF2B238E2, dt, epoch);                            // sceRtcGetTick
+        ulong elapsed = GuestMemory.Read<ulong>(now) - GuestMemory.Read<ulong>(epoch);
+        ulong target = (ulong)R32(abstime) * 1000000 + (ulong)((int)R32(abstime + 4) / 1000);
+        W32(timeout, target > elapsed ? (uint)(target - elapsed) : 0);
+        return SysI(c, 0xE1878282, cond, timeout);                // sceKernelWaitLwCond
+    }
+
+    // libpng's I/O through the png struct's callbacks (read +0xD0, write +0xCC, error +0xC4, longjmp +0xC0)
+
+    /// <summary>png_read_data(png, data, length): the read callback, or png_error "Call to NULL read function".</summary>
+    [Hle("NID_4251E6F9", Nid = 0x4251E6F9, Library = Lib)]
+    void PngReadData(HleContext c, uint png, uint data, uint length) => PngIo(c, png, data, length, 0xD0, "Call to NULL read function");
+
+    /// <summary>png_write_data(png, data, length): the write callback, or png_error "Call to NULL write function".</summary>
+    [Hle("NID_A0EBF4E1", Nid = 0xA0EBF4E1, Library = Lib)]
+    void PngWriteData(HleContext c, uint png, uint data, uint length) => PngIo(c, png, data, length, 0xCC, "Call to NULL write function");
+
+    void PngIo(HleContext c, uint png, uint data, uint length, uint slot, string error)
+    {
+        if (R32(png + slot) is var fn and not 0) GuestThread.Current!.CallGuest(fn, png, data, length);
+        else FatalAbort(c, png, ErrorText(c, error));
+    }
+
+    /// <summary>The message as a static C string (the module's are in its read-only data).</summary>
+    uint ErrorText(HleContext c, string s) => Emu.Hle.Modules.OfType<Libc>().First().ConstString(s);
+
+    /// <summary>png_process_data_skip(png): during a progressive read (mode 3) the bytes still to skip (+0x258), which
+    /// are cleared, leaving mode 1; png_error when called from inside png_process_data or with saved data.</summary>
+    [Hle("NID_7C201693", Nid = 0x7C201693, Library = Lib)]
+    uint PngProcessDataSkip(HleContext c, uint png)
+    {
+        if (png == 0 || R32(png + 0x26C) != 3 || R32(png + 0x258) == 0) return 0;
+        if (R32(png + 0x264) != 0) FatalAbort(c, png, ErrorText(c, "png_process_data_skip called inside png_process_data"));
+        if (R32(png + 0x25C) != 0) FatalAbort(c, png, ErrorText(c, "png_process_data_skip called with saved data"));
+        uint n = R32(png + 0x258);
+        W32(png + 0x258, 0);
+        W32(png + 0x26C, 1);
+        return n;
     }
 }
