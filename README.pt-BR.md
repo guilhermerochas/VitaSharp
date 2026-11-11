@@ -241,8 +241,9 @@ sistema, veja as especificações em [`docs/hle`](docs/hle/README.md).
 
 O estilo do C# é o do Ryujinx/Ryubing, e o [`.editorconfig`](.editorconfig) é a regra (o que é cobrado, o que está
 desligado e por quê). `build/format-check.ps1` (Windows) / `build/format-check.sh` (Linux, macOS) roda
-`dotnet format whitespace` e `dotnet format style --severity warn` com `--verify-no-changes`, como o job "Code style"
-do CI; `-Fix` / `--fix` reescreve os arquivos em vez de conferir (rodando também o `build/FormatTool`, que
+`dotnet format whitespace` e `dotnet format style --severity warn` com `--verify-no-changes` só nos arquivos `.cs`
+versionados (`git ls-files`: nunca a `.claude/` com as worktrees dos agentes, nem arquivos fora do git), como o job
+"Code style" do CI, com o mesmo código de saída (2 quando algo difere); `-Fix` / `--fix` reescreve os arquivos em vez de conferir (rodando também o `build/FormatTool`, que
 quebra os blocos escritos numa linha e mantém `{ get; set; }` numa linha). As pastas ainda não convertidas ficam em
 [`build/format-pending.txt`](build/format-pending.txt) e são puladas. O `OneLineBlockTests` (na suíte de testes)
 recusa blocos escritos numa linha só (`if (x) { a; }`): todo corpo vai em linhas próprias.
@@ -274,6 +275,7 @@ O que o `dotnet test tests/VitaSharp.Tests` precisa em cada sistema; um teste se
 |---|---|---|---|
 | SDK | .NET 10 SDK | .NET 10 SDK | .NET 10 SDK |
 | Dispositivo Vulkan (testes do renderizador, dos dumps da GPU e dos jogos rodando) | o SwiftShader que vem com o Microsoft Edge ou o Google Chrome (achado sozinho) | o lavapipe do Mesa: `sudo apt install mesa-vulkan-drivers libvulkan1` (Fedora: `mesa-vulkan-drivers vulkan-loader`) | o MoltenVK: o Vulkan SDK da LunarG, ou `brew install molten-vk vulkan-loader` |
+| shaderc (testes do renderizador e de compilação de shaders; o renderizador também precisa dele) | vem do pacote Silk.NET.Shaderc.Native | vem do pacote; quando essa cópia não carrega: `sudo apt install libshaderc-dev` (Fedora, Arch: `shaderc`) | vem do pacote |
 | FFmpeg (testes de decodificação de vídeo e áudio) | baixado pelo primeiro build | baixado pelo primeiro build | o do sistema: `brew install ffmpeg` |
 
 - Qualquer sistema: `VK_DRIVER_FILES` (ou `VK_ICD_FILENAMES`) com o manifesto ICD de um SwiftShader ou Mesa baixado é

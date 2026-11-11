@@ -239,8 +239,9 @@ see the specifications in [`docs/hle`](docs/hle/README.md).
 
 The C# style is the Ryujinx/Ryubing one, and [`.editorconfig`](.editorconfig) is the rule (what is enforced, what is
 off and why). `build/format-check.ps1` (Windows) / `build/format-check.sh` (Linux, macOS) runs
-`dotnet format whitespace` and `dotnet format style --severity warn` with `--verify-no-changes`, as the CI job
-"Code style" does; `-Fix` / `--fix` rewrites the files instead (also running `build/FormatTool`, which splits
+`dotnet format whitespace` and `dotnet format style --severity warn` with `--verify-no-changes` over the tracked `.cs`
+files only (`git ls-files`: never `.claude/` with the agents' worktrees, nor untracked files), as the CI job
+"Code style" does, with the same exit code (2 when something differs); `-Fix` / `--fix` rewrites the files instead (also running `build/FormatTool`, which splits
 the blocks written on one line and keeps `{ get; set; }` on one line). Folders not converted yet are listed in
 [`build/format-pending.txt`](build/format-pending.txt) and skipped. `OneLineBlockTests` (in the test suite) rejects
 blocks written on one line (`if (x) { a; }`): every body goes on its own lines.
@@ -271,6 +272,7 @@ What `dotnet test tests/VitaSharp.Tests` needs per system; a test whose requirem
 |---|---|---|---|
 | SDK | .NET 10 SDK | .NET 10 SDK | .NET 10 SDK |
 | Vulkan device (renderer, GPU dump and game-run tests) | SwiftShader as Microsoft Edge or Google Chrome ship it (found by itself) | Mesa lavapipe: `sudo apt install mesa-vulkan-drivers libvulkan1` (Fedora: `mesa-vulkan-drivers vulkan-loader`) | MoltenVK: the LunarG Vulkan SDK, or `brew install molten-vk vulkan-loader` |
+| shaderc (renderer and shader-compile tests; the renderer needs it too) | from the Silk.NET.Shaderc.Native package | from the package; when that copy does not load: `sudo apt install libshaderc-dev` (Fedora, Arch: `shaderc`) | from the package |
 | FFmpeg (video and audio decode tests) | downloaded by the first build | downloaded by the first build | the system's: `brew install ffmpeg` |
 
 - Any system: `VK_DRIVER_FILES` (or `VK_ICD_FILENAMES`) set to the ICD manifest of a downloaded SwiftShader or Mesa
