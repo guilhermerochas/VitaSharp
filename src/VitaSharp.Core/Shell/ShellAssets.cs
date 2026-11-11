@@ -31,7 +31,7 @@ public enum ShellSoundEffect { Confirm, Cancel, Alternate, Notice }
 /// <summary>
 /// What the installed firmware offers the launcher's Vita-style home screen: themes (vs0:data/internal/theme and
 /// ux0:theme/*/theme.xml), the system BGM (pd0:data/systembgm/home.at9 or the theme's), the system apps' bubbles
-/// (vs0:app/NPXS*), textures from the shell RCOs (status-bar icons, page dots) and the system sound effects (the
+/// (vs0:app, in the order of the shell's database), textures from the shell RCOs (status-bar icons, page dots) and the system sound effects (the
 /// decide/cancel sounds of common_resource.rco). Every member degrades to null/empty without firmware.
 /// </summary>
 public sealed class ShellAssets
@@ -170,14 +170,22 @@ public sealed class ShellAssets
 
     // ------------------------------------------------------------------ system apps
 
-    /// <summary>System apps the home screen shows as bubbles, like the Vita's first page: Browser, Trophies, Settings,
-    /// Content manager (those Vita3K also lists), when their sce_sys has an icon.</summary>
-    public static readonly string[] HomeSystemApps = ["NPXS10003", "NPXS10008", "NPXS10015", "NPXS10026"];
-
+    /// <summary>
+    /// The system apps (vs0:app) the home screen shows as bubbles, in the shell's order: the bubbles of the shell's own
+    /// database (ur0:shell/db/app.db, table tbl_appinfo_icon by page and position, which the real shell writes) whose
+    /// title is a vs0:app folder; without that database (the shell never ran) every vs0:app title, in folder order.
+    /// Only titles whose sce_sys has an icon are listed.
+    /// </summary>
     public List<ShellSystemApp> SystemApps()
     {
         var list = new List<ShellSystemApp>();
-        foreach (var id in HomeSystemApps)
+        var apps = Vs0("app");
+        if (!Directory.Exists(apps)) return list;
+        var installed = Directory.GetDirectories(apps).Select(d => Path.GetFileName(d)).Order(StringComparer.Ordinal).ToList();
+        var ids = ShellDatabaseBubbles() is { } bubbles
+            ? bubbles.Where(b => installed.Contains(b, StringComparer.OrdinalIgnoreCase)).ToList()
+            : installed;
+        foreach (var id in ids)
         {
             var dir = Vs0("app", id);
             var icon = Io.Vfs.ResolveCaseInsensitive(dir, "sce_sys/icon0.png");
@@ -189,6 +197,37 @@ public sealed class ShellAssets
             list.Add(new ShellSystemApp(id, title, dir, icon));
         }
         return list;
+    }
+
+    /// <summary>The title IDs of the shell database's bubbles in page and position order, or null when the database
+    /// is missing or unreadable.</summary>
+    List<string>? ShellDatabaseBubbles()
+    {
+        var db = Path.Combine(FsRoot, "ur0", "shell", "db", "app.db");
+        if (!File.Exists(db)) return null;
+        SQLitePCL.Batteries_V2.Init();
+        // read only and immutable: the file is the shell's (a running shell may hold it open)
+        if (SQLitePCL.raw.sqlite3_open_v2(new Uri(Path.GetFullPath(db)).AbsoluteUri + "?immutable=1",
+                out var h, SQLitePCL.raw.SQLITE_OPEN_READONLY | SQLitePCL.raw.SQLITE_OPEN_URI, null) != SQLitePCL.raw.SQLITE_OK)
+        {
+            h.Dispose();
+            return null;
+        }
+        using (h)
+        {
+            if (SQLitePCL.raw.sqlite3_prepare_v2(h, "SELECT titleId FROM tbl_appinfo_icon WHERE titleId IS NOT NULL ORDER BY pageId, pos", out var st) != SQLitePCL.raw.SQLITE_OK)
+            {
+                st.Dispose();
+                return null;
+            }
+            using (st)
+            {
+                var ids = new List<string>();
+                int rc;
+                while ((rc = SQLitePCL.raw.sqlite3_step(st)) == SQLitePCL.raw.SQLITE_ROW) ids.Add(SQLitePCL.raw.sqlite3_column_text(st, 0).utf8_to_string());
+                return rc == SQLitePCL.raw.SQLITE_DONE ? ids : null;
+            }
+        }
     }
 
     // ------------------------------------------------------------------ RCO resources
