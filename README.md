@@ -239,7 +239,8 @@ see the specifications in [`docs/hle`](docs/hle/README.md).
 The C# style is the Ryujinx/Ryubing one, and [`.editorconfig`](.editorconfig) is the rule (what is enforced, what is
 off and why). `build/format-check.ps1` (Windows) / `build/format-check.sh` (Linux, macOS) runs
 `dotnet format whitespace` and `dotnet format style --severity warn` with `--verify-no-changes`, as the CI job
-"Code style" does; `-Fix` / `--fix` rewrites the files instead. Folders not converted yet are listed in
+"Code style" does; `-Fix` / `--fix` rewrites the files instead (also running `build/FormatTool`, which splits
+the blocks written on one line and keeps `{ get; set; }` on one line). Folders not converted yet are listed in
 [`build/format-pending.txt`](build/format-pending.txt) and skipped. `OneLineBlockTests` (in the test suite) rejects
 blocks written on one line (`if (x) { a; }`): every body goes on its own lines.
 
