@@ -1,4 +1,5 @@
 using VitaSharp.Core;
+using VitaSharp.Core.Loader;
 using VitaSharp.Core.Util;
 
 namespace VitaSharp.Tests;
@@ -12,7 +13,7 @@ namespace VitaSharp.Tests;
 [Collection("guest")]
 public sealed class PluginLoaderTests(GuestMemoryFixture fx, Xunit.Abstractions.ITestOutputHelper output) : IDisposable
 {
-    readonly string _root = Path.Combine(Path.GetTempPath(), "vitasharp-plugins-" + Guid.NewGuid().ToString("N"));
+    private readonly string _root = Path.Combine(Path.GetTempPath(), "vitasharp-plugins-" + Guid.NewGuid().ToString("N"));
 
     public void Dispose()
     {
@@ -28,12 +29,12 @@ public sealed class PluginLoaderTests(GuestMemoryFixture fx, Xunit.Abstractions.
         }
     }
 
-    static string InstalledTai => Path.Combine(Environment.GetEnvironmentVariable(EnvVars.Data) is { Length: > 0 } d ? d
+    private static string InstalledTai => Path.Combine(Environment.GetEnvironmentVariable(EnvVars.Data) is { Length: > 0 } d ? d
         : Path.Combine(Environment.GetFolderPath(Environment.SpecialFolder.ApplicationData), "VitaSharp"), "fs", "ur0", "tai");
 
-    Emulator NewEmulator(string config)
+    private Emulator NewEmulator(string config)
     {
-        var tai = Path.Combine(_root, "ur0", "tai");
+        string tai = Path.Combine(_root, "ur0", "tai");
         Directory.CreateDirectory(tai);
         File.WriteAllText(Path.Combine(tai, "config.txt"), config);
         return new Emulator(new EmulatorOptions { FsRoot = _root, Memory = fx.Memory, EnableJit = false, CpuBackend = "interp" });
@@ -42,8 +43,8 @@ public sealed class PluginLoaderTests(GuestMemoryFixture fx, Xunit.Abstractions.
     [Fact]
     public void ConfigSectionsPickTheModulesKernelFirst()
     {
-        using var emu = NewEmulator("# comment\n*ALL\nur0:tai/user_all.suprx\n*OTHER00001\nur0:tai/other.suprx\n*KERNEL\nur0:tai/kernel.skprx\n");
-        var results = emu.LoadPlugins();
+        using Emulator emu = NewEmulator("# comment\n*ALL\nur0:tai/user_all.suprx\n*OTHER00001\nur0:tai/other.suprx\n*KERNEL\nur0:tai/kernel.skprx\n");
+        List<string> results = emu.LoadPlugins();
         Assert.Equal(2, results.Count);
         Assert.StartsWith("ur0:tai/kernel.skprx: not loaded", results[0]);
         Assert.StartsWith("ur0:tai/user_all.suprx: not loaded", results[1]); // missing file: the loader's error, no exception
@@ -56,11 +57,11 @@ public sealed class PluginLoaderTests(GuestMemoryFixture fx, Xunit.Abstractions.
         Assert.Empty(emu.LoadPlugins());
     }
 
-    void CopyInstalledPlugins(params string[] only)
+    private void CopyInstalledPlugins(params string[] only)
     {
         string tai = Path.Combine(_root, "ur0", "tai");
         Directory.CreateDirectory(tai);
-        foreach (var file in Directory.GetFiles(InstalledTai, "*.skprx"))
+        foreach (string file in Directory.GetFiles(InstalledTai, "*.skprx"))
         {
             if (only.Length == 0 || only.Contains(Path.GetFileName(file)))
             {
@@ -83,11 +84,11 @@ public sealed class PluginLoaderTests(GuestMemoryFixture fx, Xunit.Abstractions.
         string tai = Path.Combine(_root, "ur0", "tai");
         var listed = Directory.GetFiles(tai, "*.skprx").Select(f => "ur0:tai/" + Path.GetFileName(f))
             .OrderBy(p => p == "ur0:tai/taihen.skprx" ? 0 : 1).ThenBy(p => p, StringComparer.Ordinal).ToList();
-        using var emu = NewEmulator("*KERNEL\n" + string.Join("\n", listed) + "\n");
-        var results = emu.LoadPlugins();
+        using Emulator emu = NewEmulator("*KERNEL\n" + string.Join("\n", listed) + "\n");
+        List<string> results = emu.LoadPlugins();
         output.WriteLine(string.Join("\n", results));
         Assert.Equal(listed.Count, results.Count);
-        foreach (var r in results)
+        foreach (string r in results)
         {
             Assert.DoesNotContain("not loaded", r);
             if (r.StartsWith("ur0:tai/taihen.skprx", StringComparison.Ordinal))
@@ -113,8 +114,8 @@ public sealed class PluginLoaderTests(GuestMemoryFixture fx, Xunit.Abstractions.
     public void RealTaihenRunsItsModuleStartAndFailsOnItsOwn()
     {
         CopyInstalledPlugins("taihen.skprx");
-        using var emu = NewEmulator("*KERNEL\nur0:tai/taihen.skprx\n");
-        var m = emu.LoadModule("ur0:tai/taihen.skprx", kernel: true);
+        using Emulator emu = NewEmulator("*KERNEL\nur0:tai/taihen.skprx\n");
+        LoadedModule m = emu.LoadModule("ur0:tai/taihen.skprx", kernel: true);
         Assert.True(m.IsKernel);
         Assert.InRange(m.Segments[0].Address, VitaSharp.Core.Memory.GuestMemory.KernelStart, VitaSharp.Core.Memory.GuestMemory.KernelEnd - 1);
         var unbound = m.Imports.SelectMany(i => i.FuncNids.Select(n => (i.Library, Nid: n)))
@@ -124,7 +125,7 @@ public sealed class PluginLoaderTests(GuestMemoryFixture fx, Xunit.Abstractions.
         Assert.Equal(Emulator.ModuleStartFailed, emu.StartKernelModule(m, 0, 0));
         emu.UnloadModule(m);
 
-        var results = emu.LoadPlugins();
+        List<string> results = emu.LoadPlugins();
         Assert.Equal(["ur0:tai/taihen.skprx: not started: module_start of taihen returned 0x2, unloaded"], results);
         Assert.DoesNotContain(emu.Kernel.Modules.Values, x => x.IsKernel);
     }

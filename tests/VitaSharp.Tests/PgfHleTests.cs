@@ -10,20 +10,20 @@ namespace VitaSharp.Tests;
 [Collection("guest")]
 public sealed class PgfHleTests(GuestMemoryFixture fx)
 {
-    static object? Invoke(Pgf m, string name, params object[] args) =>
+    private static object? Invoke(Pgf m, string name, params object[] args) =>
         typeof(Pgf).GetMethod(name, BindingFlags.Instance | BindingFlags.NonPublic | BindingFlags.Public)!.Invoke(m, args);
-    static int Call(Pgf m, string name, params object[] args) => (int)Invoke(m, name, args)!;
-    static uint CallU(Pgf m, string name, params object[] args) => (uint)Invoke(m, name, args)!;
-    static float CallF(Pgf m, string name, params object[] args) => (float)Invoke(m, name, args)!;
-    static Ptr<uint> P(uint a) => new(a);
+    private static int Call(Pgf m, string name, params object[] args) => (int)Invoke(m, name, args)!;
+    private static uint CallU(Pgf m, string name, params object[] args) => (uint)Invoke(m, name, args)!;
+    private static float CallF(Pgf m, string name, params object[] args) => (float)Invoke(m, name, args)!;
+    private static Ptr<uint> P(uint a) => new(a);
 
-    const uint AllocFn = 0x100, FreeFn = 0x200, OpenFn = 0x300, CloseFn = 0x400, ReadFn = 0x500, SeekFn = 0x600;
-    int _allocs, _frees;
-    bool _failAlloc;
-    byte[] _userFile = [];
-    int _userPos;
+    private const uint AllocFn = 0x100, FreeFn = 0x200, OpenFn = 0x300, CloseFn = 0x400, ReadFn = 0x500, SeekFn = 0x600;
+    private int _allocs, _frees;
+    private bool _failAlloc;
+    private byte[] _userFile = [];
+    private int _userPos;
 
-    uint Guest(uint fn, uint[] a)
+    private uint Guest(uint fn, uint[] a)
     {
         switch (fn)
         {
@@ -58,13 +58,13 @@ public sealed class PgfHleTests(GuestMemoryFixture fx)
         throw new InvalidOperationException($"unexpected guest call {fn:X}");
     }
 
-    Pgf Module(Func<string, byte[]?>? files = null) => new()
+    private Pgf Module(Func<string, byte[]?>? files = null) => new()
     {
         GuestCallOverride = Guest,
         SystemFontOverride = files ?? (name => name == "ltn0.pgf" ? FontTestData.Pgf() : null),
     };
 
-    uint Params(uint numFonts, bool io = false)
+    private uint Params(uint numFonts, bool io = false)
     {
         uint p = fx.Memory.Alloc(0x40, "pgf-params", MemoryRegion.User, 16);
         GuestMemory.Fill(p, 0, 0x40);
@@ -82,16 +82,16 @@ public sealed class PgfHleTests(GuestMemoryFixture fx)
         return p;
     }
 
-    uint Err()
+    private uint Err()
     {
         uint e = fx.Memory.Alloc(16, "pgf-err", MemoryRegion.User, 16);
         GuestMemory.W32(e, 0x12345678);
         return e;
     }
 
-    (Pgf m, uint lib) NewLib(uint numFonts = 4, Func<string, byte[]?>? files = null, bool io = false)
+    private (Pgf m, uint lib) NewLib(uint numFonts = 4, Func<string, byte[]?>? files = null, bool io = false)
     {
-        var m = Module(files);
+        Pgf m = Module(files);
         uint e = Err();
         uint lib = CallU(m, "sceFontNewLib", Params(numFonts, io), P(e));
         Assert.NotEqual(0u, lib);
@@ -99,7 +99,7 @@ public sealed class PgfHleTests(GuestMemoryFixture fx)
         return (m, lib);
     }
 
-    uint Open(Pgf m, uint lib, int index = 1)
+    private uint Open(Pgf m, uint lib, int index = 1)
     {
         uint e = Err();
         uint f = CallU(m, "sceFontOpen", lib, index, 0, P(e));
@@ -111,11 +111,11 @@ public sealed class PgfHleTests(GuestMemoryFixture fx)
     [Fact]
     public void ParsesSyntheticFont()
     {
-        var f = PgfFont.Parse(FontTestData.Pgf())!;
+        PgfFont f = PgfFont.Parse(FontTestData.Pgf())!;
         Assert.NotNull(f);
         Assert.Equal("Test Sans", f.FontName);
         Assert.Equal(2, f.CharPointerLength);
-        var a = f.GetGlyph('A')!;
+        PgfGlyph a = f.GetGlyph('A')!;
         Assert.Equal((3, 2, 1, 2), (a.Width, a.Height, a.Left, a.Top));
         Assert.Equal(new byte[] { 15, 15, 15, 0, 8, 0 }, a.Pixels);
         Assert.Equal((192, 128, 64, -96, 128, 16, 256, 320), (a.DimW, a.DimH, a.XAdjH, a.XAdjV, a.YAdjH, a.YAdjV, a.AdvH, a.AdvV));
@@ -129,7 +129,7 @@ public sealed class PgfHleTests(GuestMemoryFixture fx)
     [Fact]
     public void NewLibValidatesAndAllocatesThroughTheGame()
     {
-        var m = Module();
+        Pgf m = Module();
         uint e = Err();
         Assert.Equal(0u, CallU(m, "sceFontNewLib", Params(4), P(0)));
         Assert.Equal(0u, CallU(m, "sceFontNewLib", 0u, P(e)));
@@ -159,7 +159,7 @@ public sealed class PgfHleTests(GuestMemoryFixture fx)
         Assert.Equal(Pgf.ERR_INVALID_LIBID, Call(m, "sceFontDoneLib", lib));
     }
 
-    static uint StyleBuf(GuestMemoryFixture fx, int count = 1)
+    private static uint StyleBuf(GuestMemoryFixture fx, int count = 1)
     {
         uint s = fx.Memory.Alloc((uint)(0xA8 * count), "pgf-style", MemoryRegion.User, 16);
         GuestMemory.Fill(s, 0, (uint)(0xA8 * count));
@@ -169,7 +169,7 @@ public sealed class PgfHleTests(GuestMemoryFixture fx)
     [Fact]
     public void SystemFontListAndMatching()
     {
-        var (m, lib) = NewLib();
+        (Pgf? m, uint lib) = NewLib();
         uint e = Err();
         Assert.Equal(18, Call(m, "sceFontGetNumFontList", lib, P(e)));
         Assert.Equal(0u, GuestMemory.R32(e));
@@ -225,7 +225,7 @@ public sealed class PgfHleTests(GuestMemoryFixture fx)
     [Fact]
     public void OpenCloseAndFontInfo()
     {
-        var (m, lib) = NewLib(numFonts: 2);
+        (Pgf? m, uint lib) = NewLib(numFonts: 2);
         uint e = Err();
         Assert.Equal(0u, CallU(m, "sceFontOpen", lib, 1, 0, P(0)));
         Assert.Equal(0u, CallU(m, "sceFontOpen", lib, 18, 0, P(e)));
@@ -270,9 +270,9 @@ public sealed class PgfHleTests(GuestMemoryFixture fx)
     [Fact]
     public void UserFontsFromMemoryAndCallbacks()
     {
-        var (m, lib) = NewLib(io: false);
+        (Pgf? m, uint lib) = NewLib(io: false);
         uint e = Err();
-        var data = FontTestData.Pgf();
+        byte[] data = FontTestData.Pgf();
         uint buf = fx.Memory.Alloc((uint)data.Length, "pgf-user", MemoryRegion.User, 16);
         data.CopyTo(GuestMemory.Span(buf, data.Length));
         uint f = CallU(m, "sceFontOpenUserMemory", lib, buf, (uint)data.Length, P(e));
@@ -293,7 +293,7 @@ public sealed class PgfHleTests(GuestMemoryFixture fx)
         Assert.Equal(0u, CallU(m, "sceFontOpenUserFile", lib, name, 0, P(e)));      // stream mode needs the I/O callbacks
         Assert.Equal(unchecked((uint)Pgf.ERR_INVALID_PARAMETER), GuestMemory.R32(e));
 
-        var (m2, lib2) = NewLib(io: true);
+        (Pgf? m2, uint lib2) = NewLib(io: true);
         _userFile = data;
         f = CallU(m2, "sceFontOpenUserFile", lib2, name, 0, P(e));
         Assert.NotEqual(0u, f);
@@ -305,7 +305,7 @@ public sealed class PgfHleTests(GuestMemoryFixture fx)
     [Fact]
     public void CharInfoUsesTheAltChar()
     {
-        var (m, lib) = NewLib();
+        (Pgf? m, uint lib) = NewLib();
         uint f = Open(m, lib);
         uint ci = fx.Memory.Alloc(0x3C, "pgf-ci", MemoryRegion.User, 16);
         Assert.Equal(0, Call(m, "sceFontGetCharInfo", f, (uint)'A', ci));
@@ -335,7 +335,7 @@ public sealed class PgfHleTests(GuestMemoryFixture fx)
         Assert.Equal((ushort)2, GuestMemory.Read<ushort>(rect + 2));
     }
 
-    uint Image(uint format, int x64, int y64, int w, int h, int bpl, byte fill)
+    private uint Image(uint format, int x64, int y64, int w, int h, int bpl, byte fill)
     {
         uint buf = fx.Memory.Alloc((uint)(bpl * h), "pgf-buf", MemoryRegion.User, 16);
         GuestMemory.Fill(buf, fill, (uint)(bpl * h));
@@ -350,12 +350,12 @@ public sealed class PgfHleTests(GuestMemoryFixture fx)
         return img;
     }
 
-    static byte[] Row(uint img, int y, int n) => GuestMemory.ReadSpan(GuestMemory.R32(img + 0x14) + (uint)(y * GuestMemory.Read<ushort>(img + 0x10)), n).ToArray();
+    private static byte[] Row(uint img, int y, int n) => GuestMemory.ReadSpan(GuestMemory.R32(img + 0x14) + (uint)(y * GuestMemory.Read<ushort>(img + 0x10)), n).ToArray();
 
     [Fact]
     public void GlyphImageIsAddedWithSubpixelSpread()
     {
-        var (m, lib) = NewLib();
+        (Pgf? m, uint lib) = NewLib();
         uint f = Open(m, lib);
         // 8 bpp, x = 2 + 32/64: each pixel gives half of its coverage to its right neighbour
         uint img = Image(2, 2 * 64 + 32, 64, 8, 4, 8, 0x10);
@@ -383,7 +383,7 @@ public sealed class PgfHleTests(GuestMemoryFixture fx)
     [Fact]
     public void ClippedGlyphImage()
     {
-        var (m, lib) = NewLib();
+        (Pgf? m, uint lib) = NewLib();
         uint f = Open(m, lib);
         uint img = Image(2, 2 * 64 + 32, 64, 8, 4, 8, 0x10);
         Assert.Equal(0, Call(m, "sceFontGetCharGlyphImage_Clip", f, (uint)'A', img, 0, 0, 4, 4));
@@ -403,7 +403,7 @@ public sealed class PgfHleTests(GuestMemoryFixture fx)
     [Fact]
     public void PointPixelConversions()
     {
-        var (m, lib) = NewLib();
+        (Pgf? m, uint lib) = NewLib();
         uint e = Err();
         Assert.Equal(128f, CallF(m, "sceFontPointToPixelH", lib, 72f, P(e)));
         Assert.Equal(0u, GuestMemory.R32(e));
@@ -429,7 +429,7 @@ public sealed class PgfHleTests(GuestMemoryFixture fx)
             return;
         }
 
-        var (m, lib) = NewLib(files: name => File.Exists(Path.Combine(dir, name)) ? File.ReadAllBytes(Path.Combine(dir, name)) : null);
+        (Pgf? m, uint lib) = NewLib(files: name => File.Exists(Path.Combine(dir, name)) ? File.ReadAllBytes(Path.Combine(dir, name)) : null);
         uint f = Open(m, lib, 1);
         uint ci = fx.Memory.Alloc(0x3C, "pgf-ci", MemoryRegion.User, 16);
         Assert.Equal(0, Call(m, "sceFontGetCharInfo", f, (uint)'A', ci));

@@ -12,21 +12,21 @@ namespace VitaSharp.Tests;
 [Collection("guest")]
 public sealed class PsnAccountTests(GuestMemoryFixture fx)
 {
-    const int USER_CANCELED = 1, OK = 0, NP_SIGNED_OUT = unchecked((int)0x80550006), HTTP_NETWORK = unchecked((int)0x80431063);
+    private const int USER_CANCELED = 1, OK = 0, NP_SIGNED_OUT = unchecked((int)0x80550006), HTTP_NETWORK = unchecked((int)0x80431063);
 
-    static int Call<T>(T module, string name, params object[] args) =>
+    private static int Call<T>(T module, string name, params object[] args) =>
         Convert.ToInt32(typeof(T).GetMethod(name, BindingFlags.Instance | BindingFlags.NonPublic | BindingFlags.Public)!.Invoke(module, args)!);
 
-    uint Alloc(uint size, byte fill = 0)
+    private uint Alloc(uint size, byte fill = 0)
     {
         uint p = fx.Memory.Alloc(size, "psn test");
         GuestMemory.Fill(p, fill, size);
         return p;
     }
 
-    static void With(PsnAccount account, Action body)
+    private static void With(PsnAccount account, Action body)
     {
-        var saved = PsnAccount.Current;
+        PsnAccount saved = PsnAccount.Current;
         PsnAccount.Current = account;
         try
         {
@@ -39,7 +39,7 @@ public sealed class PsnAccountTests(GuestMemoryFixture fx)
     }
 
     /// <summary>Runs one NetCheckDialog of <paramref name="mode"/> and returns (result, psnModeSucceeded).</summary>
-    (uint Result, uint PsnSucceeded) NetCheck(CommonDialog d, int mode)
+    private (uint Result, uint PsnSucceeded) NetCheck(CommonDialog d, int mode)
     {
         uint param = Alloc(0xE0);
         GuestMemory.W32(param + 0x50, (uint)mode);

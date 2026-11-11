@@ -22,19 +22,19 @@ namespace VitaSharp.Tests;
 public sealed unsafe class PafTimeFirmwareTests(GuestMemoryFixture fx, ITestOutputHelper output)
 {
     /// <summary>The hash of the firmware's log (MatchesFirmwareModule prints it when it changes).</summary>
-    const string FirmwareLogHash = "172B6FD7BEE9FE4D";
+    private const string FirmwareLogHash = "172B6FD7BEE9FE4D";
 
-    static readonly Lazy<string?> FirmwarePath = new(() =>
+    private static readonly Lazy<string?> s_firmwarePath = new(() =>
         JsonFirmware.ModulePath is { } json && Path.Combine(Path.GetDirectoryName(json)!, "libpaf.suprx") is var p && File.Exists(p) ? p : null);
 
-    sealed class Run : IDisposable
+    private sealed class Run : IDisposable
     {
-        readonly string _root = Path.Combine(Path.GetTempPath(), "vitasharp-paftime-" + Guid.NewGuid().ToString("N"));
+        private readonly string _root = Path.Combine(Path.GetTempPath(), "vitasharp-paftime-" + Guid.NewGuid().ToString("N"));
         public readonly Emulator Emu;
-        readonly Paf _paf;
-        readonly uint _arena;
-        uint _bump;
-        readonly bool _lle;
+        private readonly Paf _paf;
+        private readonly uint _arena;
+        private uint _bump;
+        private readonly bool _lle;
         public readonly List<string> Log = [];
 
         public Run(GuestMemoryFixture fx, string? module)
@@ -98,7 +98,7 @@ public sealed unsafe class PafTimeFirmwareTests(GuestMemoryFixture fx, ITestOutp
             return p;
         }
 
-        string Hex(uint p, uint n) => p == 0 ? "-" : Convert.ToHexString(GuestMemory.ReadSpan(p, (int)n));
+        private string Hex(uint p, uint n) => p == 0 ? "-" : Convert.ToHexString(GuestMemory.ReadSpan(p, (int)n));
 
         /// <summary>Calls <paramref name="fw"/> (registers <paramref name="regs"/>; a 64-bit result in r0:r1) or the HLE
         /// method <paramref name="hle"/> with <paramref name="args"/>, then logs the result and the outputs.</summary>
@@ -114,7 +114,7 @@ public sealed unsafe class PafTimeFirmwareTests(GuestMemoryFixture fx, ITestOutp
             }
             else
             {
-                var m = typeof(Paf).GetMethod(hle, BindingFlags.Instance | BindingFlags.NonPublic)!;
+                MethodInfo m = typeof(Paf).GetMethod(hle, BindingFlags.Instance | BindingFlags.NonPublic)!;
                 object? v = m.Invoke(_paf, args);
                 r = v switch { null => 0, bool b => b ? 1u : 0u, int i => (uint)i, uint u => u, ulong ul => ul, _ => throw new InvalidOperationException(hle) };
             }
@@ -133,13 +133,13 @@ public sealed unsafe class PafTimeFirmwareTests(GuestMemoryFixture fx, ITestOutp
         }
     }
 
-    static readonly string[] Rfc3339 = ["2020-02-29T12:34:56Z", "2020-02-29T12:34:56.5+09:00", "1999-12-31T23:59:59-05:30", "2020-13-01T00:00:00Z", "junk", ""];
-    static readonly string[] Sqlite = ["2020-02-29 12:34:56", "2020-02-29", "2020-02-29 12:34", "2020-02-29T12:34:56.123", "12:34:56", "junk", ""];
+    private static readonly string[] s_rfc3339 = ["2020-02-29T12:34:56Z", "2020-02-29T12:34:56.5+09:00", "1999-12-31T23:59:59-05:30", "2020-13-01T00:00:00Z", "junk", ""];
+    private static readonly string[] s_sqlite = ["2020-02-29 12:34:56", "2020-02-29", "2020-02-29 12:34", "2020-02-29T12:34:56.123", "12:34:56", "junk", ""];
 
     /// <summary>Every call, on a guest thread of <paramref name="r"/>.</summary>
-    static void Scenario(Run r)
+    private static void Scenario(Run r)
     {
-        var th = r.Emu.Kernel.CreateThread("paf-time-test", 0, 0x10000100, 0x10000, 0, 0x70000);
+        GuestThread th = r.Emu.Kernel.CreateThread("paf-time-test", 0, 0x10000100, 0x10000, 0, 0x70000);
         Exception? failure = null;
         th.HostBody = t =>
         {
@@ -151,8 +151,8 @@ public sealed unsafe class PafTimeFirmwareTests(GuestMemoryFixture fx, ITestOutp
                     C("_ZN3paf3rtc10IsLeapYearEt", "RtcIsLeapYear", [y], [(int)y]);
                 }
 
-                const ulong t2020 = 63718562096789000; // 2020-02-29 12:34:56.789 (SceRtc ticks: microseconds since year 1)
-                ulong[] ticks = [t2020, t2020 - 59L * 86_400_000_000, 62135596800000000, 0];
+                const ulong Ticks2020 = 63718562096789000; // 2020-02-29 12:34:56.789 (SceRtc ticks: microseconds since year 1)
+                ulong[] ticks = [Ticks2020, Ticks2020 - 59L * 86_400_000_000, 62135596800000000, 0];
                 foreach (ulong k in ticks)
                 {
                     uint p = r.Tick(k);
@@ -172,22 +172,22 @@ public sealed unsafe class PafTimeFirmwareTests(GuestMemoryFixture fx, ITestOutp
                 }
                 foreach (long n in new long[] { 1, -7, 1_000_000 })
                 {
-                    uint src = r.Tick(t2020), dst = r.Alloc(8);
-                    foreach (var (fw, hle) in new[] { ("_ZN3paf3rtc19TickAddMicrosecondsEPyPKyx", "RtcAddUs"), ("_ZN3paf3rtc14TickAddSecondsEPyPKyx", "RtcAddSeconds"), ("_ZN3paf3rtc14TickAddMinutesEPyPKyx", "RtcAddMinutes") })
+                    uint src = r.Tick(Ticks2020), dst = r.Alloc(8);
+                    foreach ((string fw, string hle) in new[] { ("_ZN3paf3rtc19TickAddMicrosecondsEPyPKyx", "RtcAddUs"), ("_ZN3paf3rtc14TickAddSecondsEPyPKyx", "RtcAddSeconds"), ("_ZN3paf3rtc14TickAddMinutesEPyPKyx", "RtcAddMinutes") })
                     {
                         C(fw, hle, [dst, src, (uint)n, (uint)(n >> 32)], [dst, src, n], (dst, 8));
                     }
                 }
                 foreach (int n in new[] { 1, -1, 12, -25 })
                 {
-                    uint src = r.Tick(t2020 - 29L * 86_400_000_000), dst = r.Alloc(8); // 2020-01-31
-                    foreach (var (fw, hle) in new[] { ("_ZN3paf3rtc12TickAddHoursEPyPKyi", "RtcAddHours"), ("_ZN3paf3rtc11TickAddDaysEPyPKyi", "RtcAddDays"),
+                    uint src = r.Tick(Ticks2020 - 29L * 86_400_000_000), dst = r.Alloc(8); // 2020-01-31
+                    foreach ((string fw, string hle) in new[] { ("_ZN3paf3rtc12TickAddHoursEPyPKyi", "RtcAddHours"), ("_ZN3paf3rtc11TickAddDaysEPyPKyi", "RtcAddDays"),
                                  ("_ZN3paf3rtc12TickAddWeeksEPyPKyi", "RtcAddWeeks"), ("_ZN3paf3rtc13TickAddMonthsEPyPKyi", "RtcAddMonths"), ("_ZN3paf3rtc12TickAddYearsEPyPKyi", "RtcAddYears") })
                     {
                         C(fw, hle, [dst, src, (uint)n], [dst, src, n], (dst, 8));
                     }
                 }
-                foreach (string s in Rfc3339)
+                foreach (string s in s_rfc3339)
                 {
                     uint tk = r.Alloc(8), str = r.Str(s), dt = r.Alloc(0x18);
                     C("_ZN3paf3rtc12ParseRFC3339EPyPKc", "RtcParseRfc3339", [tk, str], [tk, str], (tk, 8));
@@ -197,10 +197,10 @@ public sealed unsafe class PafTimeFirmwareTests(GuestMemoryFixture fx, ITestOutp
                 C("_ZN3paf3rtc12ParseRFC3339EPyPKc", "RtcParseRfc3339", [0, none], [0u, none]);
                 foreach (int tz in new[] { 0, 540, -330 })
                 {
-                    uint buf = r.Alloc(40), tk = r.Tick(t2020);
+                    uint buf = r.Alloc(40), tk = r.Tick(Ticks2020);
                     C("_ZN3paf3rtc13FormatRFC3339EPcPKyi", "RtcFormatRfc3339", [buf, tk, (uint)tz], [buf, tk, tz], (buf, 40));
                 }
-                foreach (string s in Sqlite)
+                foreach (string s in s_sqlite)
                 {
                     uint tk = r.Alloc(8), fmt = r.Alloc(4), str = r.Str(s), dt = r.Alloc(0x18);
                     C("_ZN3paf3rtc19ParseSQLiteDateTimeEPyPKc", "RtcParseSqlite", [tk, str], [tk, str], (tk, 8));
@@ -213,7 +213,7 @@ public sealed unsafe class PafTimeFirmwareTests(GuestMemoryFixture fx, ITestOutp
                 C("_ZNK3paf8datetime8DateTimeplERKS1_", "DtAdd", [sum, a, b], [sum, a, b], (sum, 0x15));
                 C("_ZNK3paf8datetime8DateTimeltERKS1_", "DtLess", [a, sum], [a, sum]);
                 C("_ZNK3paf8datetime8DateTimeltERKS1_", "DtLess", [sum, a], [sum, a]);
-                foreach (var (y, m, d) in new[] { (2020u, 2u, 29u), (2000u, 1u, 1u), (1999u, 12u, 31u), (2024u, 3u, 1u) })
+                foreach ((uint y, uint m, uint d) in new[] { (2020u, 2u, 29u), (2000u, 1u, 1u), (1999u, 12u, 31u), (2024u, 3u, 1u) })
                 {
                     C("_ZN3paf8datetime8DateTime9DayOfWeekEttt", "DtDayOfWeek", [y, m, d], [y, m, d]);
                 }
@@ -232,7 +232,7 @@ public sealed unsafe class PafTimeFirmwareTests(GuestMemoryFixture fx, ITestOutp
         }
     }
 
-    static string Hash(List<string> log) => Convert.ToHexString(SHA256.HashData(Encoding.UTF8.GetBytes(string.Join("\n", log))))[..16];
+    private static string Hash(List<string> log) => Convert.ToHexString(SHA256.HashData(Encoding.UTF8.GetBytes(string.Join("\n", log))))[..16];
 
     [Fact]
     public void Hle_MatchesTheFirmwareLog()
@@ -251,7 +251,7 @@ public sealed unsafe class PafTimeFirmwareTests(GuestMemoryFixture fx, ITestOutp
     public void MatchesFirmwareModule()
     {
         List<string> fw, hle;
-        using (var r = new Run(fx, FirmwarePath.Value))
+        using (var r = new Run(fx, s_firmwarePath.Value))
         {
             Scenario(r);
             fw = r.Log;

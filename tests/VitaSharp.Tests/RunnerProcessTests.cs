@@ -1,3 +1,6 @@
+using System.Text.RegularExpressions;
+using VitaSharp.Core.SaveState;
+
 namespace VitaSharp.Tests;
 
 /// <summary>
@@ -8,8 +11,8 @@ namespace VitaSharp.Tests;
 /// </summary>
 public sealed class RunnerProcessTests : IDisposable
 {
-    readonly string _root = Path.Combine(Path.GetTempPath(), "vitasharp-runner-" + Guid.NewGuid().ToString("N"));
-    readonly string _app;
+    private readonly string _root = Path.Combine(Path.GetTempPath(), "vitasharp-runner-" + Guid.NewGuid().ToString("N"));
+    private readonly string _app;
 
     public RunnerProcessTests()
     {
@@ -27,19 +30,19 @@ public sealed class RunnerProcessTests : IDisposable
         catch (UnauthorizedAccessException) { }
     }
 
-    static long FramesOf(string output)
+    private static long FramesOf(string output)
     {
-        var m = System.Text.RegularExpressions.Regex.Match(output, @"Run finished: (\d+) frames");
+        Match m = System.Text.RegularExpressions.Regex.Match(output, @"Run finished: (\d+) frames");
         Assert.True(m.Success, "no 'Run finished' line:\n" + Tail(output));
         return long.Parse(m.Groups[1].Value);
     }
 
-    static string Tail(string s) => s.Length > 6000 ? s[^6000..] : s;
+    private static string Tail(string s) => s.Length > 6000 ? s[^6000..] : s;
 
     [Fact]
     public void HeadlessRunBootsTheTitleAndStopsAtItsFrameLimit()
     {
-        var r = DesktopProcess.Run(_root, ["run", _app, "--headless", "--frames=20", "--turbo", "--cpu=interp"]);
+        DesktopProcess.Result r = DesktopProcess.Run(_root, ["run", _app, "--headless", "--frames=20", "--turbo", "--cpu=interp"]);
         Assert.True(r.ExitCode == 0, Tail(r.Output));
         Assert.Contains("Loading VSTS00001", r.Output);
         Assert.Contains("framebuffer 0x81001000 480x272", r.Output);
@@ -56,12 +59,12 @@ public sealed class RunnerProcessTests : IDisposable
     {
         string frames = Path.Combine(_root, "frames");
         // cross held from frame 30 for 30 frames: the guest fills its framebuffer with the "pressed" colour meanwhile
-        var r = DesktopProcess.Run(_root, ["run", _app, "--headless", "--vulkan", "--no-vsync", "--frames=90",
+        DesktopProcess.Result r = DesktopProcess.Run(_root, ["run", _app, "--headless", "--vulkan", "--no-vsync", "--frames=90",
             $"--dump-frames={frames}", "--dump-every=1", "--input=cross@f30:30"]);
         Assert.True(r.ExitCode == 0, Tail(r.Output));
-        var pngs = Directory.GetFiles(frames, "frame_*.png").Order().ToArray();
+        string[] pngs = Directory.GetFiles(frames, "frame_*.png").Order().ToArray();
         Assert.True(pngs.Length >= 60, $"{pngs.Length} frames dumped:\n{Tail(r.Output)}");
-        var colours = pngs.Select(p => DesktopProcess.Probe(p)).ToArray();
+        ((byte R, byte G, byte B) Center, int Width, int Height)[] colours = pngs.Select(p => DesktopProcess.Probe(p)).ToArray();
         Assert.All(colours, c => Assert.Equal((SyntheticTitle.Width, SyntheticTitle.Height), (c.Width, c.Height)));
         // I = idle, P = pressed, ? = anything else, in present order
         string seq = string.Concat(colours.Select(c => c.Center == SyntheticTitle.Idle ? 'I' : c.Center == SyntheticTitle.Pressed ? 'P' : '?'));
@@ -70,7 +73,7 @@ public sealed class RunnerProcessTests : IDisposable
         // the contact sheets of the thumbnails (30 a sheet) and the frame metrics: two different pictures in all
         Assert.True(File.Exists(Path.Combine(frames, "sheet.png")));
         Assert.True(File.Exists(Path.Combine(frames, "sheet_2.png")));
-        var metrics = File.ReadAllLines(Path.Combine(frames, "metrics.csv")).Skip(1).Select(l => l.Split(',')).ToArray();
+        string[][] metrics = File.ReadAllLines(Path.Combine(frames, "metrics.csv")).Skip(1).Select(l => l.Split(',')).ToArray();
         Assert.True(metrics.Length >= 60);
         Assert.Equal(2, metrics.Select(m => m[^1]).Distinct().Count());
     }
@@ -86,7 +89,7 @@ public sealed class RunnerProcessTests : IDisposable
         string nav = Path.Combine(_root, "steps.nav"), shots = Path.Combine(_root, "shots"), scenario = Path.Combine(_root, "synthetic.txt");
         File.WriteAllLines(nav, ["wait 10", "shot idle", "hold cross", "wait 10", "shot pressed", "hold none", "wait 5", "stable 0.3 20", "log steps done", "quit"]);
         File.WriteAllLines(scenario, ["title=VSTS00001", $"args=--vulkan --no-vsync --dump-every=10 --profile \"--nav={nav}\" \"--nav-out={shots}\""]);
-        var r = DesktopProcess.Run(_root, ["test", scenario], timeoutMs: 180_000);
+        DesktopProcess.Result r = DesktopProcess.Run(_root, ["test", scenario], timeoutMs: 180_000);
         Assert.True(r.ExitCode == 0, Tail(r.Output));
         Assert.Equal(SyntheticTitle.Idle, DesktopProcess.Probe(Path.Combine(shots, "idle.png")).Center);
         Assert.Equal(SyntheticTitle.Pressed, DesktopProcess.Probe(Path.Combine(shots, "pressed.png")).Center);
@@ -117,14 +120,14 @@ public sealed class RunnerProcessTests : IDisposable
         }
 
         string frames = Path.Combine(_root, "frames"), overlays = Path.Combine(_root, "overlays");
-        var r = DesktopProcess.Run(_root, ["run", _app, "--no-vsync", $"--dump-frames={frames}", "--dump-every=1", $"--overlay-dump={overlays}",
+        DesktopProcess.Result r = DesktopProcess.Run(_root, ["run", _app, "--no-vsync", $"--dump-frames={frames}", "--dump-every=1", $"--overlay-dump={overlays}",
             "--input=cross@f20:10,key@f40:F5,key@f60:F7,key@f80:F6,circle@f80+1:0.3,key@f100:F10,key@f120:F1,key@f160:Close"], timeoutMs: 180_000, systemLoader: true);
         Assert.True(r.ExitCode == 0, Tail(r.Output));
         Assert.True(File.Exists(Path.Combine(_root, "savestates", "VSTS00001", "quick.vss")), Tail(r.Output));
         Assert.Contains("Save state picker: open", r.Output);
         Assert.NotEmpty(Directory.GetFiles(overlays, "overlay_*.png"));
         Assert.Single(Directory.GetDirectories(Path.Combine(_root, "diagnostics"), "VSTS00001_*"));
-        var colours = Directory.GetFiles(frames, "frame_*.png").Order().Select(f => DesktopProcess.Probe(f).Center).ToArray();
+        (byte R, byte G, byte B)[] colours = Directory.GetFiles(frames, "frame_*.png").Order().Select(f => DesktopProcess.Probe(f).Center).ToArray();
         Assert.True(colours.Length >= 60, $"{colours.Length} frames:\n{Tail(r.Output)}");
         Assert.Contains(SyntheticTitle.Pressed, colours);
         Assert.Equal(SyntheticTitle.Idle, colours[^1]);
@@ -139,7 +142,7 @@ public sealed class RunnerProcessTests : IDisposable
     public void ScheduledSaveStateCaptureAndGpuDumpThatReplays()
     {
         string dump = Path.Combine(_root, "synthetic.vsgd");
-        var r = DesktopProcess.Run(_root, ["run", _app, "--headless", "--vulkan", "--no-vsync", "--frames=70",
+        DesktopProcess.Result r = DesktopProcess.Run(_root, ["run", _app, "--headless", "--vulkan", "--no-vsync", "--frames=70",
             "--input=cross@f20:20", "--save-state=f25", "--load-state-at=f45", "--debug-mode-at=f2", "--diag-at=f30",
             $"--gpu-dump-at=10:40:{dump}"], timeoutMs: 180_000);
         Assert.True(r.ExitCode == 0, Tail(r.Output));
@@ -147,18 +150,18 @@ public sealed class RunnerProcessTests : IDisposable
         // the save state: written for the title with a picture of the pressed frame, then loaded
         string state = Path.Combine(_root, "savestates", "VSTS00001", "test_f25.vss");
         Assert.True(File.Exists(state), Tail(r.Output));
-        var header = VitaSharp.Core.SaveState.SaveStateFile.ReadHeader(state);
+        SaveStateHeader header = VitaSharp.Core.SaveState.SaveStateFile.ReadHeader(state);
         Assert.Equal("VSTS00001", header.TitleId);
         Assert.NotEmpty(header.Thumbnail);
         // the save at frame 25 or a little later, the load at frame 45 or later (the step waits for the save to finish)
-        var steps = System.Text.RegularExpressions.Regex.Matches(r.Output, @"Save state step at guest frame (\d+)").Select(m => long.Parse(m.Groups[1].Value)).ToArray();
+        long[] steps = System.Text.RegularExpressions.Regex.Matches(r.Output, @"Save state step at guest frame (\d+)").Select(m => long.Parse(m.Groups[1].Value)).ToArray();
         Assert.Equal(2, steps.Length);
         Assert.InRange(steps[0], 25, 44);
         Assert.True(steps[1] >= 45, $"the load ran at frame {steps[1]}");
         Assert.True(FramesOf(r.Output) >= 70);
 
         // the capture of debug mode: its folder with the info, the log and the screenshot of the frame
-        var diag = Directory.GetDirectories(Path.Combine(_root, "diagnostics"), "VSTS00001_*").Single();
+        string diag = Directory.GetDirectories(Path.Combine(_root, "diagnostics"), "VSTS00001_*").Single();
         Assert.True(File.Exists(Path.Combine(diag, "info.txt")));
         Assert.True(File.Exists(Path.Combine(diag, "screenshot.png")), string.Join(", ", Directory.GetFileSystemEntries(diag).Select(Path.GetFileName)));
         Assert.Equal((SyntheticTitle.Width, SyntheticTitle.Height), (DesktopProcess.Probe(Path.Combine(diag, "screenshot.png")).Width, DesktopProcess.Probe(Path.Combine(diag, "screenshot.png")).Height));
@@ -166,14 +169,14 @@ public sealed class RunnerProcessTests : IDisposable
         // the dump: 31 frames, replayed without the game in a process of its own
         Assert.True(new FileInfo(dump).Length > 0);
         string replay = Path.Combine(_root, "replay");
-        var p = DesktopProcess.Run(_root, ["replay-gpu", dump, $"--out={replay}"], timeoutMs: 180_000);
+        DesktopProcess.Result p = DesktopProcess.Run(_root, ["replay-gpu", dump, $"--out={replay}"], timeoutMs: 180_000);
         Assert.True(p.ExitCode == 0, Tail(p.Output));
-        var frames = Directory.GetFiles(replay, "frame_*.png").Order().Select(f => DesktopProcess.Probe(f).Center).ToArray();
+        (byte R, byte G, byte B)[] frames = Directory.GetFiles(replay, "frame_*.png").Order().Select(f => DesktopProcess.Probe(f).Center).ToArray();
         Assert.InRange(frames.Length, 25, 35);
         Assert.Contains(SyntheticTitle.Idle, frames);
         Assert.Contains(SyntheticTitle.Pressed, frames);
         Assert.All(frames, c => Assert.True(c == SyntheticTitle.Idle || c == SyntheticTitle.Pressed, $"unexpected colour {c}"));
-        var info = DesktopProcess.Run(_root, ["replay-gpu", dump, "--info"]);
+        DesktopProcess.Result info = DesktopProcess.Run(_root, ["replay-gpu", dump, "--info"]);
         Assert.Contains("VSTS00001", info.Output);
     }
 }

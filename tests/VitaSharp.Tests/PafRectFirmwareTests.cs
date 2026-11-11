@@ -22,12 +22,12 @@ public sealed unsafe class PafRectFirmwareTests(GuestMemoryFixture fx)
     /// <summary>The hash of the firmware's log (MatchesFirmwareModule names it when it changes). Every number in the log
     /// is written with the invariant culture: the guest thread takes the process's default culture (pt-BR writes 1,5),
     /// which differs between machines and changes when a test sets <see cref="CultureInfo.DefaultThreadCurrentCulture"/>.</summary>
-    const string FirmwareLogHash = "C9B4F51ED15F26E2";
+    private const string FirmwareLogHash = "C9B4F51ED15F26E2";
 
-    static readonly Lazy<string?> FirmwarePath = new(() =>
+    private static readonly Lazy<string?> s_firmwarePath = new(() =>
         JsonFirmware.ModulePath is { } json && Path.Combine(Path.GetDirectoryName(json)!, "libpaf.suprx") is var p && File.Exists(p) ? p : null);
 
-    static List<string> RunAll(GuestMemoryFixture fx, string? module)
+    private static List<string> RunAll(GuestMemoryFixture fx, string? module)
     {
         string root = Path.Combine(Path.GetTempPath(), "vitasharp-pafrect-" + Guid.NewGuid().ToString("N"));
         Directory.CreateDirectory(Path.Combine(root, "vs0", "sys", "external"));
@@ -45,7 +45,7 @@ public sealed unsafe class PafRectFirmwareTests(GuestMemoryFixture fx)
                 emu.LoadModule("vs0:sys/external/libpaf.suprx");
             }
 
-            var paf = emu.Hle.Modules.OfType<Paf>().Single();
+            Paf paf = emu.Hle.Modules.OfType<Paf>().Single();
             uint arena = emu.Memory.Alloc(0x1000, "paf rect test");
             uint me = arena, other = arena + 0x20, v = arena + 0x40;
             void Rect(uint p, float cx, float cy, float w, float h)
@@ -56,7 +56,7 @@ public sealed unsafe class PafRectFirmwareTests(GuestMemoryFixture fx)
                 GuestMemory.Write(p + 12, h);
             }
             string Dump(uint p) => string.Join(",", Enumerable.Range(0, 4).Select(i => GuestMemory.Read<float>(p + (uint)i * 4).ToString("R", CultureInfo.InvariantCulture)));
-            var th = emu.Kernel.CreateThread("paf-rect-test", 0, 0x10000100, 0x10000, 0, 0x70000);
+            GuestThread th = emu.Kernel.CreateThread("paf-rect-test", 0, 0x10000100, 0x10000, 0, 0x70000);
             Exception? failure = null;
             th.HostBody = t =>
             {
@@ -79,19 +79,19 @@ public sealed unsafe class PafRectFirmwareTests(GuestMemoryFixture fx)
                         }
                         else
                         {
-                            var m = typeof(Paf).GetMethod(hle, BindingFlags.Instance | BindingFlags.NonPublic)!;
+                            MethodInfo m = typeof(Paf).GetMethod(hle, BindingFlags.Instance | BindingFlags.NonPublic)!;
                             int pi = 0, fi = 0;
-                            var args = m.GetParameters().Select(p => p.ParameterType == typeof(float) ? (object)floats[fi++] : ptrs[pi++]).ToArray();
+                            object[] args = m.GetParameters().Select(p => p.ParameterType == typeof(float) ? (object)floats[fi++] : ptrs[pi++]).ToArray();
                             object? res = m.Invoke(paf, args);
                             r = res switch { bool b => b ? 1u : 0u, uint u => u, _ => 0 };
                         }
-                        var ret = typeof(Paf).GetMethod(hle, BindingFlags.Instance | BindingFlags.NonPublic)!.ReturnType;
+                        Type ret = typeof(Paf).GetMethod(hle, BindingFlags.Instance | BindingFlags.NonPublic)!.ReturnType;
                         string rs = ret == typeof(bool) ? $" = {(r & 0xFF) != 0}" : ret == typeof(uint) ? $" = @{r - arena:X}" : "";
                         string floatText = string.Join(",", floats.Select(f => f.ToString(CultureInfo.InvariantCulture)));
                         log.Add($"{hle}({floatText}){rs} {Dump(me)}");
                     }
                     var start = new (float, float, float, float)[] { (0, 0, 10, 4), (5, -3, 0, 2), (-2.5f, 7, 3, 3) };
-                    foreach (var (cx, cy, w, h) in start)
+                    foreach ((float cx, float cy, float w, float h) in start)
                     {
                         void Reset() => Rect(me, cx, cy, w, h);
                         Reset();
@@ -131,7 +131,7 @@ public sealed unsafe class PafRectFirmwareTests(GuestMemoryFixture fx)
                             Reset();
                             C("_ZN3paf4math4rect12align_bottomEf", "RectAlignBottom", [me], e);
                         }
-                        foreach (var (ox, oy, ow, oh) in new (float, float, float, float)[] { (0, 0, 10, 4), (10, 0, 10, 4), (1, 1, 2, 1), (100, 100, 1, 1), (5, 2, 0, 0) })
+                        foreach ((float ox, float oy, float ow, float oh) in new (float, float, float, float)[] { (0, 0, 10, 4), (10, 0, 10, 4), (1, 1, 2, 1), (100, 100, 1, 1), (5, 2, 0, 0) })
                         {
                             Reset();
                             Rect(other, ox, oy, ow, oh);
@@ -139,7 +139,7 @@ public sealed unsafe class PafRectFirmwareTests(GuestMemoryFixture fx)
                             C("_ZN3paf4math4rect10is_in_rectERKS1_", "RectIsIn", [me, other]);
                             C("_ZNK3paf4math4recteqERKS1_", "RectDiffers", [me, other]);
                         }
-                        foreach (var (px, py) in new (float, float)[] { (0, 0), (5, 2), (5.01f, 0), (-5, -2), (cx, cy) })
+                        foreach ((float px, float py) in new (float, float)[] { (0, 0), (5, 2), (5.01f, 0), (-5, -2), (cx, cy) })
                         {
                             Reset();
                             C("_ZN3paf4math4rect16is_point_in_rectEff", "RectHasPoint", [me], px, py);
@@ -173,12 +173,12 @@ public sealed unsafe class PafRectFirmwareTests(GuestMemoryFixture fx)
         return log;
     }
 
-    static string Hash(List<string> log) => Convert.ToHexString(SHA256.HashData(Encoding.UTF8.GetBytes(string.Join("\n", log))))[..16];
+    private static string Hash(List<string> log) => Convert.ToHexString(SHA256.HashData(Encoding.UTF8.GetBytes(string.Join("\n", log))))[..16];
 
     [Fact]
     public void Hle_MatchesTheFirmwareLog()
     {
-        var log = RunAll(fx, null);
+        List<string> log = RunAll(fx, null);
         // a left edge past the right one stops there (width 0, centre on the right edge); a touching rect is no hit
         Assert.Contains("RectSetLeft(20) 5,0,0,4", log);
         Assert.Contains("RectHit() = False 0,0,10,4", log);
@@ -188,8 +188,8 @@ public sealed unsafe class PafRectFirmwareTests(GuestMemoryFixture fx)
     [PafFirmwareFact]
     public void MatchesFirmwareModule()
     {
-        var fw = RunAll(fx, FirmwarePath.Value);
-        var hle = RunAll(fx, null);
+        List<string> fw = RunAll(fx, s_firmwarePath.Value);
+        List<string> hle = RunAll(fx, null);
         var diff = fw.Zip(hle).Where(p => p.First != p.Second).Select(p => $"fw:  {p.First}\nhle: {p.Second}").ToList();
         Assert.True(diff.Count == 0 && fw.Count == hle.Count, $"{diff.Count} calls differ from libpaf ({fw.Count} / {hle.Count} lines):\n" + string.Join("\n", diff.Take(20)));
         Assert.True(Hash(fw) == FirmwareLogHash, $"FirmwareLogHash is out of date: the firmware log hashes to {Hash(fw)}");

@@ -124,7 +124,7 @@ public sealed class NgsHleTests(GuestMemoryFixture fx) : IDisposable
         Assert.Equal(12u, GuestMemory.R32(simple));
         Assert.Equal(2u, GuestMemory.R32(simple + 4));
         Assert.Equal(4u, GuestMemory.R32((uint)Invoke(N, "sceNgsVoiceDefGetAtrac9Voice")! + 4));
-        foreach (string? name in new[] { "sceNgsVoiceDefGetCompressorBuss", "sceNgsVoiceDefGetCompressorSideChainBuss", "sceNgsVoiceDefGetDelayBuss",
+        foreach (string name in new[] { "sceNgsVoiceDefGetCompressorBuss", "sceNgsVoiceDefGetCompressorSideChainBuss", "sceNgsVoiceDefGetDelayBuss",
             "sceNgsVoiceDefGetDistortionBuss", "sceNgsVoiceDefGetEnvelopeBuss", "sceNgsVoiceDefGetEqBuss", "sceNgsVoiceDefGetMixerBuss",
             "sceNgsVoiceDefGetPauserBuss", "sceNgsVoiceDefGetPitchShiftBuss", "sceNgsVoiceDefGetReverbBuss", "sceNgsVoiceDefGetSasEmuVoice",
             "sceNgsVoiceDefGetSimpleAtrac9Voice", "sceNgsVoiceDefGetScreamVoice", "sceNgsVoiceDefGetScreamAtrac9Voice", "sceNgsVoiceDefGetTemplate1",
@@ -356,7 +356,7 @@ public sealed class NgsHleTests(GuestMemoryFixture fx) : IDisposable
         Assert.Equal(OK, Call(N, "sceNgsVoiceKill", voice));
         Call(N, "sceNgsVoiceGetInfo", voice, info);
         Assert.Equal(0u, GuestMemory.R32(info) & 1);
-        foreach (string? fn in new[] { "sceNgsVoicePlay", "sceNgsVoiceKill", "sceNgsVoiceKeyOff", "sceNgsVoicePause", "sceNgsVoiceResume" })
+        foreach (string fn in new[] { "sceNgsVoicePlay", "sceNgsVoiceKill", "sceNgsVoiceKeyOff", "sceNgsVoicePause", "sceNgsVoiceResume" })
         {
             Assert.Equal(INVALID_ARG, Call(N, fn, 0x1234u));
         }

@@ -16,15 +16,15 @@ namespace VitaSharp.Tests;
 [Collection("guest")]
 public sealed class RendererTextureTests(GuestMemoryFixture fx)
 {
-    const int W = 64, H = 64;
+    private const int W = 64, H = 64;
 
-    static readonly TexBase[] Formats = Enum.GetValues<TexBase>();
+    private static readonly TexBase[] s_formats = Enum.GetValues<TexBase>();
 
     /// <summary>The GXM side of the workload, on whatever backend the emulator's GPU queue has.</summary>
     internal sealed class Workload
     {
-        readonly HleHarness _h;
-        readonly Gxm _g;
+        private readonly HleHarness _h;
+        private readonly Gxm _g;
         public uint Ctx, Rt, Color, Data, Vp, Fp, FpCube, Verts, Idx;
         /// <summary>The cube textures among <see cref="Textures"/>: drawn with <see cref="FpCube"/>, whose unit 3 is a samplerCube.</summary>
         public readonly HashSet<uint> CubeTextures = [];
@@ -99,9 +99,9 @@ public sealed class RendererTextureTests(GuestMemoryFixture fx)
                 GuestMemory.W32(palette + i * 4, 0xFF000000u | (i * 0x010203u));
             }
 
-            foreach (var f in Formats)
+            foreach (TexBase f in s_formats)
             {
-                foreach (var init in new[] { "sceGxmTextureInitLinear", "sceGxmTextureInitSwizzled", "sceGxmTextureInitTiled", "sceGxmTextureInitCube", "strided" })
+                foreach (string init in new[] { "sceGxmTextureInitLinear", "sceGxmTextureInitSwizzled", "sceGxmTextureInitTiled", "sceGxmTextureInitCube", "strided" })
                 {
                     uint t = h.Alloc(16);
                     int r = init == "strided"
@@ -141,7 +141,7 @@ public sealed class RendererTextureTests(GuestMemoryFixture fx)
                 Invoke(_g, "sceGxmSetFrontDepthFunc", Ctx, 0x00E00000u); // ALWAYS
                 Invoke(_g, "sceGxmSetCullMode", Ctx, 0u);
                 Assert.Equal(0, Call(_g, "sceGxmSetVertexStream", Ctx, 0u, Verts));
-                foreach (var t in Textures.Skip(start).Take(group))
+                foreach (uint t in Textures.Skip(start).Take(group))
                 {
                     Invoke(_g, "sceGxmSetFragmentProgram", Ctx, CubeTextures.Contains(t) ? FpCube : Fp);
                     Assert.Equal(0, Call(_g, "sceGxmSetFragmentTexture", Ctx, 3u, t));
@@ -159,12 +159,12 @@ public sealed class RendererTextureTests(GuestMemoryFixture fx)
     }
 
     /// <summary>The vertex program's code: o0-o3 (position) and o4-o7 (texture coordinate 0) = pa0-pa3, the vertex.</summary>
-    internal static readonly ulong[] VertexCode = [UsseEncoding.MovF32OutputFromPa(0, 0), UsseEncoding.MovF32OutputFromPa(4, 0)];
+    internal static readonly ulong[] s_vertexCode = [UsseEncoding.MovF32OutputFromPa(0, 0), UsseEncoding.MovF32OutputFromPa(4, 0)];
 
-    /// <summary>The vertex program's GXP: position and texture coordinate 0 (four components) out, <see cref="VertexCode"/>.</summary>
+    /// <summary>The vertex program's GXP: position and texture coordinate 0 (four components) out, <see cref="s_vertexCode"/>.</summary>
     internal static byte[] VertexGxp()
     {
-        var d = new byte[0x100 + VertexCode.Length * 8];
+        byte[] d = new byte[0x100 + s_vertexCode.Length * 8];
         void W32(int o, uint v) => System.Buffers.Binary.BinaryPrimitives.WriteUInt32LittleEndian(d.AsSpan(o), v);
         W32(0, 0x00505847);
         W32(8, (uint)d.Length);
@@ -179,12 +179,12 @@ public sealed class RendererTextureTests(GuestMemoryFixture fx)
         W32(0x88, 1);               // array size
         W32(0x8C, 0);               // resource index: pa0
         "pos"u8.CopyTo(d.AsSpan(0x90));
-        W32(0x3C, (uint)VertexCode.Length);
+        W32(0x3C, (uint)s_vertexCode.Length);
         W32(0x40, 0x100 - 0x40);    // primary program
-        for (int i = 0; i < VertexCode.Length; i++)
+        for (int i = 0; i < s_vertexCode.Length; i++)
         {
-            W32(0x100 + i * 8, (uint)VertexCode[i]);
-            W32(0x104 + i * 8, (uint)(VertexCode[i] >> 32));
+            W32(0x100 + i * 8, (uint)s_vertexCode[i]);
+            W32(0x104 + i * 8, (uint)(s_vertexCode[i] >> 32));
         }
         return d;
     }
@@ -194,7 +194,7 @@ public sealed class RendererTextureTests(GuestMemoryFixture fx)
     /// output is pa0-pa3 as F32x4: the draw shows the texture.</summary>
     internal static byte[] SamplingFragmentGxp(bool cube = false)
     {
-        var d = new byte[0x200];
+        byte[] d = new byte[0x200];
         void W32(int o, uint v) => System.Buffers.Binary.BinaryPrimitives.WriteUInt32LittleEndian(d.AsSpan(o), v);
         W32(0, 0x00505847);
         W32(8, (uint)d.Length);
@@ -222,7 +222,7 @@ public sealed class RendererTextureTests(GuestMemoryFixture fx)
         return d;
     }
 
-    static uint Copy(HleHarness h, byte[] gxp)
+    private static uint Copy(HleHarness h, byte[] gxp)
     {
         uint p = h.Alloc((uint)gxp.Length);
         gxp.CopyTo(GuestMemory.Span(p, gxp.Length));
@@ -233,7 +233,7 @@ public sealed class RendererTextureTests(GuestMemoryFixture fx)
 
     internal static uint SamplingFragmentProgram(HleHarness h, bool cube = false) => Copy(h, SamplingFragmentGxp(cube));
 
-    static VulkanRenderer NewRenderer(string frames) => new(new VulkanRendererOptions
+    private static VulkanRenderer NewRenderer(string frames) => new(new VulkanRendererOptions
     {
         VSync = false,
         AsyncShaders = false,
@@ -245,15 +245,15 @@ public sealed class RendererTextureTests(GuestMemoryFixture fx)
     [SoftwareVulkanFact]
     public void EveryTextureFormatAndLayoutSamplesAndTheDumpReplaysTheSame()
     {
-        using var driver = SoftwareVulkan.Use();
+        using IDisposable driver = SoftwareVulkan.Use();
         using var h = new HleHarness(fx, "vktex");
         string live = Path.Combine(h.Root, "live"), replay = Path.Combine(h.Root, "replay"), dump = Path.Combine(h.Root, "tex.vsgd");
         Directory.CreateDirectory(live);
         Directory.CreateDirectory(replay);
         var w = new Workload(h);
-        Assert.True(w.Textures.Count > Formats.Length * 3, $"only {w.Textures.Count} textures were accepted");
+        Assert.True(w.Textures.Count > s_formats.Length * 3, $"only {w.Textures.Count} textures were accepted");
 
-        var renderer = NewRenderer(live);
+        VulkanRenderer renderer = NewRenderer(live);
         int frames;
         try
         {
@@ -282,7 +282,7 @@ public sealed class RendererTextureTests(GuestMemoryFixture fx)
         Assert.True(new FileInfo(dump).Length > 0);
 
         // the replay, on a fresh renderer and an empty guest memory: the same frames come out
-        var second = NewRenderer(replay);
+        VulkanRenderer second = NewRenderer(replay);
         GpuDumpPlayStats stats;
         try
         {
@@ -297,8 +297,8 @@ public sealed class RendererTextureTests(GuestMemoryFixture fx)
         }
         Assert.True(stats.Draws >= w.Textures.Count, $"{stats.Draws} draws replayed of {w.Textures.Count}");
         Assert.True(stats.Frames >= frames);
-        var liveFrames = Directory.GetFiles(live, "*.png").Order().ToArray();
-        var replayFrames = Directory.GetFiles(replay, "*.png").Order().ToArray();
+        string[] liveFrames = Directory.GetFiles(live, "*.png").Order().ToArray();
+        string[] replayFrames = Directory.GetFiles(replay, "*.png").Order().ToArray();
         Assert.NotEmpty(replayFrames);
         Assert.NotEmpty(liveFrames);
         // replay-gpu --compare: every replayed frame is one the game showed, pixel for pixel

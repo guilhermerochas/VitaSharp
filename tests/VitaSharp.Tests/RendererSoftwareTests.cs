@@ -16,9 +16,9 @@ namespace VitaSharp.Tests;
 [Collection("guest")]
 public sealed class RendererSoftwareTests(GuestMemoryFixture fx)
 {
-    const int W = 64, H = 64;
+    private const int W = 64, H = 64;
 
-    static uint Program(HleHarness h, bool fragment)
+    private static uint Program(HleHarness h, bool fragment)
     {
         ulong[] code = fragment ? [] : [0x6081000460600003, 0x50C9000A20200180];
         uint size = 0x100 + (uint)code.Length * 8, p = h.Alloc(size);
@@ -42,7 +42,7 @@ public sealed class RendererSoftwareTests(GuestMemoryFixture fx)
     [SoftwareVulkanFact]
     public void ScenesTransfersDrawsAndPresentsOnASoftwareDevice()
     {
-        using var driver = SoftwareVulkan.Use();
+        using IDisposable driver = SoftwareVulkan.Use();
         using var h = new HleHarness(fx, "vkrender");
         string frames = Path.Combine(h.Root, "frames");
         Directory.CreateDirectory(frames);
@@ -59,7 +59,7 @@ public sealed class RendererSoftwareTests(GuestMemoryFixture fx)
             Assert.False(string.IsNullOrEmpty(renderer.DeviceName));
             renderer.BeginTitle("PCSA00000");
             h.Emu.Gpu.Backend = renderer;
-            var g = h.Module<Gxm>();
+            Gxm g = h.Module<Gxm>();
             uint ip = h.Alloc(0x14);
             GuestMemory.W32(ip + 4, 2);
             Assert.Equal(0, Call(g, "sceGxmInitialize", ip));
@@ -87,7 +87,7 @@ public sealed class RendererSoftwareTests(GuestMemoryFixture fx)
                     GuestMemory.W32(data + i * 4, 0xFF000000u | (i * 2654435761u >> 8));
                 }
 
-                var pattern = GuestMemory.ReadSpan(data, W * H * 4).ToArray();
+                byte[] pattern = GuestMemory.ReadSpan(data, W * H * 4).ToArray();
                 Assert.Equal(0, Call(g, "sceGxmColorSurfaceInit", color, 0u, 0u, 0u, 0u, (uint)W, (uint)H, (uint)W, data));
 
                 // 1. a scene without draws: the surface comes back as it was
