@@ -232,6 +232,39 @@ public sealed class GxmHleTests(GuestMemoryFixture fx)
         Assert.Equal(InvalidPointer, U(Call(gxm, "sceGxmPrecomputedDrawSetVertexStream", draw, 0u, 0u)));
     }
 
+    /// <summary>NID 0x8FF68274 (imported by Wipeout 2048) is the old-SDK sceGxmPrecomputedVertexStateSetAllTextures:
+    /// libgxm_es4 binds it to the vertex state's texture words, a null state or array is INVALID_POINTER, and only the
+    /// textures the program samples are copied.</summary>
+    [Fact]
+    public void PrecomputedVertexSetAllTexturesOldNid()
+    {
+        const uint InvalidPointer = 0x805B0004;
+        uint[] nids = typeof(Gxm).GetMethod("sceGxmPrecomputedVertexStateSetAllTextures", BindingFlags.Instance | BindingFlags.NonPublic)!
+            .GetCustomAttributes<VitaSharp.Core.Hle.HleAttribute>().Select(a => a.Nid).ToArray();
+        Assert.Contains(0x8FF68274u, nids);
+        Assert.Contains(0u, nids);   // and the current NID (0xC40C9127) by name
+
+        var gxm = new Gxm();
+        uint state = fx.Memory.Alloc(0x40, "pstate");
+        uint extra = fx.Memory.Alloc(0x100, "pextra");
+        uint textures = fx.Memory.Alloc(0x40, "ptextures");
+        GuestMemory.Fill(extra, 0xEE, 0x100);
+        for (uint i = 0; i < 16; i++)
+        {
+            GuestMemory.W32(textures + i * 4, 0x01010101u * (i + 1));
+        }
+        // 2 textures (state layout: textures@4 textureCount@8)
+        GuestMemory.W32(state + 4, extra);
+        GuestMemory.Write(state + 8, (ushort)2);
+
+        Assert.Equal(0u, U(Call(gxm, "sceGxmPrecomputedVertexStateSetAllTextures", state, textures)));
+        Assert.Equal(0x01010101u, GuestMemory.R32(extra));
+        Assert.Equal(0x08080808u, GuestMemory.R32(extra + 28));
+        Assert.Equal(0xEEEEEEEEu, GuestMemory.R32(extra + 32));   // no third texture slot: not written
+        Assert.Equal(InvalidPointer, U(Call(gxm, "sceGxmPrecomputedVertexStateSetAllTextures", state, 0u)));
+        Assert.Equal(InvalidPointer, U(Call(gxm, "sceGxmPrecomputedVertexStateSetAllTextures", 0u, textures)));
+    }
+
     /// <summary>The guest-code versions of libgxm's precomputed-state calls (Hle/HleGuestCode) return and store exactly
     /// what their C# versions do, checks in the same order; the context setters store into the context's guest
     /// words and bytes that GxmContext reads back.</summary>
