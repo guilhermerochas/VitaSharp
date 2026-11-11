@@ -208,6 +208,9 @@ public sealed partial class HleRegistry : IImportResolver
 
     public void RegisterVariable(uint nid, Func<uint> factory) => _varFactories[nid] = factory;
 
+    /// <summary>The data exports (variables) the HLE provides to importers: their NIDs.</summary>
+    public IReadOnlyCollection<uint> VariableNids { get { lock (_vars) return _varFactories.Keys.ToArray(); } }
+
     /// <summary>
     /// Registers every [Hle] method of the module. The bindings (attribute data plus an argument marshalling invoker)
     /// are generated at compile time by VitaSharp.Core.Generators, in declaration order; later registrations of a NID

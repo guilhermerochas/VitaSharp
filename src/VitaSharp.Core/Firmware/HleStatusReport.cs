@@ -15,12 +15,15 @@ public static class HleStatusReport
     /// <summary>One firmware library: exported functions, how many have an HLE implementation, and the split of both
     /// into the ones the installed games import and the ones only the system programs import. The *Default counts are
     /// the part of the implemented ones that only return the firmware's documented result (no hardware or service to
-    /// emulate: <see cref="Hle.HleAttribute.Default"/>); Impl includes them.</summary>
+    /// emulate: <see cref="Hle.HleAttribute.Default"/>); Lle the ones covered by running the real module
+    /// (<see cref="Hle.LleLibraries"/>). Impl includes both.</summary>
     public sealed record Library(string Name, string Module, int Total, int Impl, int Games, int GamesImpl, int System, int SystemImpl,
-        int Default = 0, int GamesDefault = 0, int SystemDefault = 0);
+        int Default = 0, int GamesDefault = 0, int SystemDefault = 0, int Lle = 0);
 
-    public sealed record Status(string Firmware, int GameTitles, int VitaSdk, int VitaSdkImpl, IReadOnlyList<Library> Libraries, int VitaSdkDefault = 0)
+    public sealed record Status(string Firmware, int GameTitles, int VitaSdk, int VitaSdkImpl, IReadOnlyList<Library> Libraries, int VitaSdkDefault = 0,
+        int VitaSdkLle = 0)
     {
+        public int Lle => Libraries.Sum(l => l.Lle);
         public int Default => Libraries.Sum(l => l.Default);
         public int GamesDefault => Libraries.Sum(l => l.GamesDefault);
         public int SystemDefault => Libraries.Sum(l => l.SystemDefault);
@@ -41,7 +44,7 @@ public static class HleStatusReport
     /// <summary>Per-library summary from hle-coverage rows (group: games/system/general; rows of NIDs no firmware
     /// module exports are not passed in).</summary>
     public static Status Build(string firmware, int gameTitles, int vitaSdk, int vitaSdkImpl,
-        IEnumerable<(string Library, string Module, string Group, bool Impl, bool Default)> rows, int vitaSdkDefault = 0)
+        IEnumerable<(string Library, string Module, string Group, bool Impl, bool Default, bool Lle)> rows, int vitaSdkDefault = 0, int vitaSdkLle = 0)
     {
         var libs = rows.GroupBy(r => r.Library, StringComparer.Ordinal).Select(g => new Library(g.Key,
                 g.GroupBy(r => r.Module).OrderByDescending(m => m.Count()).ThenBy(m => m.Key, StringComparer.Ordinal).First().Key,
@@ -49,26 +52,26 @@ public static class HleStatusReport
                 g.Count(r => r.Group == "games"), g.Count(r => r.Group == "games" && r.Impl),
                 g.Count(r => r.Group == "system"), g.Count(r => r.Group == "system" && r.Impl),
                 g.Count(r => r.Impl && r.Default), g.Count(r => r.Group == "games" && r.Impl && r.Default),
-                g.Count(r => r.Group == "system" && r.Impl && r.Default)))
+                g.Count(r => r.Group == "system" && r.Impl && r.Default), g.Count(r => r.Impl && r.Lle)))
             .OrderBy(l => l.Name, StringComparer.Ordinal).ToList();
-        return new Status(firmware, gameTitles, vitaSdk, vitaSdkImpl, libs, vitaSdkDefault);
+        return new Status(firmware, gameTitles, vitaSdk, vitaSdkImpl, libs, vitaSdkDefault, vitaSdkLle);
     }
 
     public static string ToTsv(Status s)
     {
         var b = new StringBuilder();
         b.Append("# HLE status per firmware library, written by VitaSharp.Desktop hle-coverage --status (build/hle-status.ps1)\n");
-        b.Append(Inv, $"# firmware={s.Firmware} games={s.GameTitles} vitasdk={s.VitaSdkImpl}/{s.VitaSdk} vitasdk_default={s.VitaSdkDefault}\n");
-        b.Append("library\tmodule\ttotal\timpl\tgames\tgames_impl\tsystem\tsystem_impl\tdefault\tgames_default\tsystem_default\n");
+        b.Append(Inv, $"# firmware={s.Firmware} games={s.GameTitles} vitasdk={s.VitaSdkImpl}/{s.VitaSdk} vitasdk_default={s.VitaSdkDefault} vitasdk_lle={s.VitaSdkLle}\n");
+        b.Append("library\tmodule\ttotal\timpl\tgames\tgames_impl\tsystem\tsystem_impl\tdefault\tgames_default\tsystem_default\tlle\n");
         foreach (var l in s.Libraries)
-            b.Append(Inv, $"{l.Name}\t{l.Module}\t{l.Total}\t{l.Impl}\t{l.Games}\t{l.GamesImpl}\t{l.System}\t{l.SystemImpl}\t{l.Default}\t{l.GamesDefault}\t{l.SystemDefault}\n");
+            b.Append(Inv, $"{l.Name}\t{l.Module}\t{l.Total}\t{l.Impl}\t{l.Games}\t{l.GamesImpl}\t{l.System}\t{l.SystemImpl}\t{l.Default}\t{l.GamesDefault}\t{l.SystemDefault}\t{l.Lle}\n");
         return b.ToString();
     }
 
     public static Status Parse(string tsv)
     {
         string firmware = "?";
-        int games = 0, sdk = 0, sdkImpl = 0, sdkDefault = 0;
+        int games = 0, sdk = 0, sdkImpl = 0, sdkDefault = 0, sdkLle = 0;
         var libs = new List<Library>();
         foreach (var raw in tsv.Replace("\r\n", "\n").Split('\n'))
         {
@@ -83,15 +86,16 @@ public static class HleStatusReport
                     else if (p[0] == "games") games = int.Parse(p[1], Inv);
                     else if (p[0] == "vitasdk") { var f = p[1].Split('/'); sdkImpl = int.Parse(f[0], Inv); sdk = int.Parse(f[1], Inv); }
                     else if (p[0] == "vitasdk_default") sdkDefault = int.Parse(p[1], Inv);
+                    else if (p[0] == "vitasdk_lle") sdkLle = int.Parse(p[1], Inv);
                 }
                 continue;
             }
             if (raw[0] == '#' || raw.StartsWith("library\t", StringComparison.Ordinal)) continue;
             var c = raw.Split('\t');
             libs.Add(new Library(c[0], c[1], I(c[2]), I(c[3]), I(c[4]), I(c[5]), I(c[6]), I(c[7]),
-                c.Length > 10 ? I(c[8]) : 0, c.Length > 10 ? I(c[9]) : 0, c.Length > 10 ? I(c[10]) : 0));
+                c.Length > 10 ? I(c[8]) : 0, c.Length > 10 ? I(c[9]) : 0, c.Length > 10 ? I(c[10]) : 0, c.Length > 11 ? I(c[11]) : 0));
         }
-        return new Status(firmware, games, sdk, sdkImpl, libs, sdkDefault);
+        return new Status(firmware, games, sdk, sdkImpl, libs, sdkDefault, sdkLle);
         static int I(string v) => int.Parse(v, Inv);
     }
 
@@ -110,8 +114,8 @@ public static class HleStatusReport
     public static IReadOnlyDictionary<string, string> Render(Status s)
     {
         var files = new SortedDictionary<string, string>(StringComparer.Ordinal);
-        foreach (var (id, label, n, total, d) in BadgesWithDefault(s))
-            files[$"{AssetDir}/badge-{id}.svg"] = Badge(label, $"{PctText(n, total)} ({Count(n)}/{Count(total)}{(d > 0 ? $", {Count(d)} default" : "")})", BadgeColor(Pct(n, total)));
+        foreach (var (id, label, n, total, d, lle) in BadgesWithParts(s))
+            files[$"{AssetDir}/badge-{id}.svg"] = Badge(label, $"{PctText(n, total)} ({Count(n)}/{Count(total)}{(d > 0 ? $", {Count(d)} default" : "")}{(lle > 0 ? $", {Count(lle)} LLE" : "")})", BadgeColor(Pct(n, total)));
         files[$"{AssetDir}/progress-map.svg"] = Map(s, dark: true);
         files[$"{AssetDir}/progress-map-light.svg"] = Map(s, dark: false);
         files[ProgressPath] = ProgressPage(s);
@@ -123,11 +127,15 @@ public static class HleStatusReport
 
     /// <summary>The badges with the default part of each implemented count.</summary>
     public static IEnumerable<(string Id, string Label, int Impl, int Total, int Default)> BadgesWithDefault(Status s) =>
+        BadgesWithParts(s).Select(b => (b.Id, b.Label, b.Impl, b.Total, b.Default));
+
+    /// <summary>The badges with the default and LLE parts of each covered count.</summary>
+    public static IEnumerable<(string Id, string Label, int Impl, int Total, int Default, int Lle)> BadgesWithParts(Status s) =>
     [
-        ("games", "games imports", s.GamesImpl, s.Games, s.GamesDefault),
-        ("system", "system imports", s.SystemImpl, s.System, s.SystemDefault),
-        ("vitasdk", "VitaSDK functions", s.VitaSdkImpl, s.VitaSdk, s.VitaSdkDefault),
-        ("overall", $"firmware {s.Firmware} exports", s.Impl, s.Total, s.Default),
+        ("games", "games imports", s.GamesImpl, s.Games, s.GamesDefault, 0),
+        ("system", "system imports", s.SystemImpl, s.System, s.SystemDefault, 0),
+        ("vitasdk", "VitaSDK functions", s.VitaSdkImpl, s.VitaSdk, s.VitaSdkDefault, s.VitaSdkLle),
+        ("overall", $"firmware {s.Firmware} exports", s.Impl, s.Total, s.Default, s.Lle),
     ];
 
     static string BadgeColor(double p) => p >= 95 ? "#4c1" : p >= 80 ? "#97ca00" : p >= 60 ? "#a4a61d" : p >= 40 ? "#dfb317" : p >= 20 ? "#fe7d37" : "#e05d44";
@@ -269,14 +277,17 @@ public static class HleStatusReport
         b.Append(Inv, $"\"Games\" are the exported functions that the {s.GameTitles} installed test games import, \"system\" the ones only the system software (shell, system apps and modules) imports, \"general\" the rest. ");
         b.Append("This is not a count of every PS Vita system function: functions that only kernel code calls, and imports no installed firmware module exports, are not counted. ");
         b.Append("The VitaSDK row counts the user functions of the VitaSDK NID list (`docs/hle/data/vitasdk-user-functions.tsv`). ");
-        b.Append("A function counts as implemented when it has an `[Hle]` entry point. \"Default\" is the part of those that needs hardware or a service the emulator does not have (Bluetooth, USB, game card authentication, system update, PSP ad hoc, debug hooks...) and returns the result the firmware gives for that case (success or its specific error) without doing anything; \"real\" is the rest.\n\n");
+        b.Append("A function counts as implemented when it has an `[Hle]` entry point. \"Default\" is the part of those that needs hardware or a service the emulator does not have (Bluetooth, USB, game card authentication, system update, PSP ad hoc, debug hooks...) and returns the result the firmware gives for that case (success or its specific error) without doing anything; \"real\" is the rest. \"LLE\" counts the functions of libraries the emulator provides by loading and running the real module (the game's own copy, a file the user extracts from their own console, or the firmware module the emulator loads for every program that imports the library; listed below): they are covered, with no HLE.\n\n");
         b.Append("<picture>\n  <source media=\"(prefers-color-scheme: light)\" srcset=\"../assets/status/progress-map-light.svg\">\n");
         b.Append("  <img src=\"../assets/status/progress-map.svg\" alt=\"HLE progress map: one cell per firmware library\" width=\"100%\">\n</picture>\n\n");
-        b.Append("| Group | Implemented | Real | Default | Total | % |\n|---|---:|---:|---:|---:|---:|\n");
-        foreach (var (label, n, d, total) in new[] { ("Games imports", s.GamesImpl, s.GamesDefault, s.Games), ("System imports", s.SystemImpl, s.SystemDefault, s.System),
-                     ("General", s.Impl - s.GamesImpl - s.SystemImpl, s.Default - s.GamesDefault - s.SystemDefault, s.Total - s.Games - s.System),
-                     ($"All firmware {s.Firmware} exports", s.Impl, s.Default, s.Total), ("VitaSDK user functions", s.VitaSdkImpl, s.VitaSdkDefault, s.VitaSdk) })
-            b.Append(Inv, $"| {label} | {Count(n)} | {Count(n - d)} | {Count(d)} | {Count(total)} | {PctText(n, total)} |\n");
+        b.Append("| Group | Covered | Real | Default | LLE | Total | % |\n|---|---:|---:|---:|---:|---:|---:|\n");
+        foreach (var (label, n, d, l, total) in new[] { ("Games imports", s.GamesImpl, s.GamesDefault, 0, s.Games), ("System imports", s.SystemImpl, s.SystemDefault, 0, s.System),
+                     ("General", s.Impl - s.GamesImpl - s.SystemImpl, s.Default - s.GamesDefault - s.SystemDefault, 0, s.Total - s.Games - s.System),
+                     ($"All firmware {s.Firmware} exports", s.Impl, s.Default, s.Lle, s.Total), ("VitaSDK user functions", s.VitaSdkImpl, s.VitaSdkDefault, s.VitaSdkLle, s.VitaSdk) })
+            b.Append(Inv, $"| {label} | {Count(n)} | {Count(n - d - l)} | {Count(d)} | {Count(l)} | {Count(total)} | {PctText(n, total)} |\n");
+        b.Append("\n## Libraries provided by LLE\n\n| Library | Module | Source |\n|---|---|---|\n");
+        foreach (var e in Hle.LleLibraries.All)
+            b.Append(Inv, $"| {e.Library} | `{e.Module}` | {e.Source} |\n");
         b.Append(Inv, $"\n## Per library ({s.Libraries.Count})\n\n");
         b.Append("| Library | Module | Implemented / total | % | Default | Games | System |\n|---|---|---:|---:|---:|---:|---:|\n");
         foreach (var l in s.Libraries)

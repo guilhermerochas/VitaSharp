@@ -31,6 +31,7 @@ public static class NidDatabase
     public static string NameOf(uint nid) => ByNid.TryGetValue(nid, out var i) ? i.Name : $"NID_{nid:X8}";
     public static IReadOnlyList<NidInfo> LookupName(string name) => ByName.TryGetValue(name, out var l) ? l : [];
     public static int Count => ByNid.Count;
+    public static IEnumerable<NidInfo> All => ByNid.Values;
 
     /// <summary>NID computation for symbols not present in the database: SHA1(name + suffix) first word, little endian.</summary>
     public static uint ComputeNid(string name, ReadOnlySpan<byte> suffix)

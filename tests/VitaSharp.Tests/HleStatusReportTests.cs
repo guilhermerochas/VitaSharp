@@ -47,14 +47,14 @@ public class HleStatusReportTests
     {
         var s = HleStatusReport.Build("3.74", 2, 10, 4,
         [
-            ("SceA", "vs0:a.suprx", "games", true, false), ("SceA", "vs0:a.suprx", "system", false, false), ("SceB", "os0:b.skprx", "general", true, true),
-            ("SceB", "os0:b.skprx", "system", true, true),
-        ], 3);
+            ("SceA", "vs0:a.suprx", "games", true, false, false), ("SceA", "vs0:a.suprx", "system", false, false, false), ("SceB", "os0:b.skprx", "general", true, true, false),
+            ("SceB", "os0:b.skprx", "system", true, true, false), ("SceC", "ux0:c.suprx", "general", true, false, true),
+        ], 3, 5);
         var back = HleStatusReport.Parse(HleStatusReport.ToTsv(s));
         Assert.Equal(s.Firmware, back.Firmware);
-        Assert.Equal((s.VitaSdk, s.VitaSdkImpl, s.VitaSdkDefault, s.GameTitles), (back.VitaSdk, back.VitaSdkImpl, back.VitaSdkDefault, back.GameTitles));
+        Assert.Equal((s.VitaSdk, s.VitaSdkImpl, s.VitaSdkDefault, s.VitaSdkLle, s.GameTitles), (back.VitaSdk, back.VitaSdkImpl, back.VitaSdkDefault, back.VitaSdkLle, back.GameTitles));
         Assert.Equal(s.Libraries, back.Libraries);
-        Assert.Equal((4, 3, 1, 1, 2, 1), (back.Total, back.Impl, back.Games, back.GamesImpl, back.System, back.SystemImpl));
-        Assert.Equal((2, 0, 1), (back.Default, back.GamesDefault, back.SystemDefault));
+        Assert.Equal((5, 4, 1, 1, 2, 1), (back.Total, back.Impl, back.Games, back.GamesImpl, back.System, back.SystemImpl));
+        Assert.Equal((2, 0, 1, 1), (back.Default, back.GamesDefault, back.SystemDefault, back.Lle));
     }
 }

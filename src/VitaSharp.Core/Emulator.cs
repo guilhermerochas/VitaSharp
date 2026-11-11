@@ -735,7 +735,9 @@ public sealed class Emulator : IDisposable
                 // a game keeps every library the HLE has anything of, firmware fallbacks included (its own libc and FIOS2
                 // or the HLE ones): only libraries the HLE knows nothing of come from the firmware
                 bool hleServes = IsSystemProgram ? HleServesLibrary(lib) : Hle.KnowsLibrary(lib);
-                if ((hleServes && !firmwareNeedsInternals && !serviceClient) || nids.All(n => Linker.TryGetFunctionExport(n, out _))) continue;
+                // libraries VitaSharp provides by running their firmware module (LleLibraries): every importer gets it
+                bool lleProvided = VitaSharp.Core.Hle.LleLibraries.FromFirmware(lib, provider.VitaPath);
+                if ((hleServes && !firmwareNeedsInternals && !serviceClient && !lleProvided) || nids.All(n => Linker.TryGetFunctionExport(n, out _))) continue;
                 if (withoutOnRequest && NeedsOnRequest(provider.VitaPath)) continue;
                 if (!visiting.Add(provider.VitaPath)) continue;
                 LoadedModule dep;

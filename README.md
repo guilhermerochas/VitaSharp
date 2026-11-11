@@ -1,4 +1,4 @@
-<!-- pair: README.pt-BR.md sha256=672ad39f990dca75e6adcba75b8268af2dbabcae7fd76326c74f19fc1e050926 -->
+<!-- pair: README.pt-BR.md sha256=1ebcee5075c6410cc2164d61e8fed49ed21159ef0769a3b43e68aa8e4b940f6a -->
 <div align="center">
 
 **English** | [Português](README.pt-BR.md)
@@ -79,7 +79,10 @@ libraries of its kernel modules) with an HLE implementation, not of every PS Vit
 the exported functions the installed test games import; "system imports": those only the system software imports;
 VitaSDK: the user functions of the VitaSDK NID list. "Default": implemented functions that need hardware or a
 service the emulator does not have and return the firmware's own result for that case (counted in the percentage, shown
-apart). Refreshed with `build/hle-status.ps1`.</sub>
+apart). "LLE": functions of libraries the emulator provides by loading and running the real module the program brings
+(a game's own libsmart/libface, the libshacccg.suprx the user extracts from their console, the firmware module of a
+library the emulator loads for every importer; also counted, shown apart;
+list in [`docs/hle/progress.md`](docs/hle/progress.md)). Refreshed with `build/hle-status.ps1`.</sub>
 
 ## Games
 
