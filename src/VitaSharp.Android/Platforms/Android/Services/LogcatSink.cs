@@ -27,7 +27,8 @@ public sealed partial class LogcatSink : ILogSink
     public static void EnterGameplay()
     {
         var level = LogcatFormat.GameplayLevel(Environment.GetEnvironmentVariable(EnvVars.AndroidLogcat));
-        if (_minLevel == (int)level) return;
+        if (_minLevel == (int)level)
+            return;
         Notice($"logcat: {(level >= LogLevel.Warn ? "warnings and errors only" : $"{level} and above")} while the game runs " +
                $"(the log file keeps every line; {EnvVars.AndroidLogcat}=info|debug to change)");
         _minLevel = (int)level;
@@ -43,7 +44,8 @@ public sealed partial class LogcatSink : ILogSink
 
     public void Write(LogLevel level, string thread, string message)
     {
-        if ((int)level < _minLevel) return;
+        if ((int)level < _minLevel)
+            return;
         Forward(level, thread, message);
     }
 

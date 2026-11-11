@@ -112,7 +112,10 @@ public sealed class BufferedPcmStream : IAudioStream
         Channels = Math.Max(1, channels);
         Grain = Math.Max(1, grain);
         _resampler = new LinearResampler(Channels);
-        lock (_lock) Open();
+        lock (_lock)
+        {
+            Open();
+        }
     }
 
     public float Volume { get; set; } = 1;
@@ -126,8 +129,15 @@ public sealed class BufferedPcmStream : IAudioStream
     {
         _sink = null;
         IPcmSink? s;
-        try { s = _factory(Channels); }
-        catch (Exception e) { Log.Warn($"Audio: opening the output failed: {e.Message}"); s = null; }
+        try
+        {
+            s = _factory(Channels);
+        }
+        catch (Exception e)
+        {
+            Log.Warn($"Audio: opening the output failed: {e.Message}");
+            s = null;
+        }
         if (s == null)
         {
             _nextReopenAt = _clock.Elapsed.TotalSeconds + ReopenRetrySeconds;
@@ -139,7 +149,10 @@ public sealed class BufferedPcmStream : IAudioStream
         int asked = (int)Math.Min(int.MaxValue, _policy.Capacity * Math.Max(1, deviceGrain));
         int got = s.SetBufferSize(asked);
         if (got > 0 && got < asked)
+        {
             Log.Info($"Audio: the device holds {got} frames, not {asked}: the stream queues less than {_policy.Capacity} grains");
+        }
+
         _resampler.Reset(Rate, s.SampleRate);
         _xrunsSeen = s.XRunCount;
         _started = false;
@@ -152,9 +165,24 @@ public sealed class BufferedPcmStream : IAudioStream
     {
         var s = _sink;
         _sink = null;
-        if (s == null) return;
-        try { s.Pause(); } catch (Exception) { }
-        try { s.Dispose(); } catch (Exception e) { Log.Warn($"Audio: closing the output: {e.Message}"); }
+        if (s == null)
+        {
+            return;
+        }
+
+        try
+        {
+            s.Pause();
+        }
+        catch (Exception) { }
+        try
+        {
+            s.Dispose();
+        }
+        catch (Exception e)
+        {
+            Log.Warn($"Audio: closing the output: {e.Message}");
+        }
     }
 
     /// <summary>The device configuration changed (AudioDeviceCallback): reopen at the next grain.</summary>
@@ -163,7 +191,11 @@ public sealed class BufferedPcmStream : IAudioStream
     public string Describe()
     {
         var s = _sink;
-        if (s == null) return $"stream {Rate} Hz grain {Grain}: no output device, paced by the clock, underruns {Underruns}";
+        if (s == null)
+        {
+            return $"stream {Rate} Hz grain {Grain}: no output device, paced by the clock, underruns {Underruns}";
+        }
+
         double grainMs = Grain * 1000.0 / Rate;
         return $"{s.Description} {s.SampleRate} Hz{(s.SampleRate != Rate ? $" (resampled from {Rate})" : "")}, burst {s.FramesPerBurst} frames " +
                $"({s.FramesPerBurst * 1000.0 / s.SampleRate:F1} ms); stream grain {Grain}: up to {_policy.Capacity} grains queued " +
@@ -173,22 +205,55 @@ public sealed class BufferedPcmStream : IAudioStream
 
     public void Submit(ReadOnlySpan<short> interleaved)
     {
-        if (interleaved.IsEmpty) return;
+        if (interleaved.IsEmpty)
+        {
+            return;
+        }
+
         lock (_lock)
         {
-            if (_disposed) return;
-            if (_sink is { } cur && (cur.Disconnected || Volatile.Read(ref _reopen))) Reopen(cur.Disconnected ? "the output device was disconnected" : "the output device changed");
-            if (_sink == null && _clock.Elapsed.TotalSeconds >= _nextReopenAt) Open();
-            if (_sink == null) { Pace(interleaved.Length / Channels); return; }
+            if (_disposed)
+            {
+                return;
+            }
+
+            if (_sink is { } cur && (cur.Disconnected || Volatile.Read(ref _reopen)))
+            {
+                Reopen(cur.Disconnected ? "the output device was disconnected" : "the output device changed");
+            }
+
+            if (_sink == null && _clock.Elapsed.TotalSeconds >= _nextReopenAt)
+            {
+                Open();
+            }
+
+            if (_sink == null)
+            {
+                Pace(interleaved.Length / Channels);
+                return;
+            }
 
             var data = Prepare(interleaved);
             for (int attempt = 0; attempt < 2; attempt++)
             {
                 int r = WriteGrain(data);
-                if (r >= 0) return;
-                if (r != PcmSinkStatus.Disconnected) { Log.WarnOnce("android-audio-write", $"Audio: write failed ({r})"); Pace(interleaved.Length / Channels); return; }
+                if (r >= 0)
+                {
+                    return;
+                }
+
+                if (r != PcmSinkStatus.Disconnected)
+                {
+                    Log.WarnOnce("android-audio-write", $"Audio: write failed ({r})");
+                    Pace(interleaved.Length / Channels);
+                    return;
+                }
                 Reopen("the output device was disconnected");
-                if (_sink == null) { Pace(interleaved.Length / Channels); return; }
+                if (_sink == null)
+                {
+                    Pace(interleaved.Length / Channels);
+                    return;
+                }
                 data = Prepare(interleaved);
             }
         }
@@ -201,7 +266,10 @@ public sealed class BufferedPcmStream : IAudioStream
         Interlocked.Increment(ref _reopens);
         Log.Info($"Audio: {why}: reopening the output");
         Open();
-        if (_sink != null && _paused) _sink.Pause();
+        if (_sink != null && _paused)
+        {
+            _sink.Pause();
+        }
     }
 
     /// <summary>Volume, then the device rate.</summary>
@@ -210,13 +278,29 @@ public sealed class BufferedPcmStream : IAudioStream
         float vol = Volume;
         if (vol != 1)
         {
-            if (_scaled.Length < data.Length) _scaled = new short[data.Length];
-            for (int i = 0; i < data.Length; i++) _scaled[i] = (short)Math.Clamp((int)(data[i] * vol), short.MinValue, short.MaxValue);
+            if (_scaled.Length < data.Length)
+            {
+                _scaled = new short[data.Length];
+            }
+
+            for (int i = 0; i < data.Length; i++)
+            {
+                _scaled[i] = (short)Math.Clamp((int)(data[i] * vol), short.MinValue, short.MaxValue);
+            }
+
             data = _scaled.AsSpan(0, data.Length);
         }
-        if (!_resampler.Active) return data;
+        if (!_resampler.Active)
+        {
+            return data;
+        }
+
         int need = _resampler.MaxOutputFrames(data.Length / Channels) * Channels;
-        if (_resampled.Length < need) _resampled = new short[need];
+        if (_resampled.Length < need)
+        {
+            _resampled = new short[need];
+        }
+
         int frames = _resampler.Process(data, _resampled);
         return _resampled.AsSpan(0, frames * Channels);
     }
@@ -239,7 +323,10 @@ public sealed class BufferedPcmStream : IAudioStream
             {
                 int pad = (int)((long)(_policy.StartGrains - 1) * Grain * s.SampleRate / Rate);
                 int r = WriteSilence(s, pad);
-                if (r < 0) return r;
+                if (r < 0)
+                {
+                    return r;
+                }
             }
         }
         int done = 0;
@@ -247,18 +334,40 @@ public sealed class BufferedPcmStream : IAudioStream
         {
             // before the start the buffer has room for every primed grain (capacity >= start threshold): no wait
             int n = s.Write(data[(done * Channels)..], _started ? WriteTimeoutNanos : 0);
-            if (n < 0) return n;
+            if (n < 0)
+            {
+                return n;
+            }
+
             done += n;
-            if (n > 0) continue;
-            if (!_started) { Start(s); continue; }
+            if (n > 0)
+            {
+                continue;
+            }
+
+            if (!_started)
+            {
+                Start(s);
+                continue;
+            }
             // full: wait for room; while the activity is paused the device does not drain, so wait for Resume
-            while (_paused && !_disposed) Monitor.Wait(_lock, 100);
-            if (_disposed || s.Disconnected) return s.Disconnected ? PcmSinkStatus.Disconnected : 0;
+            while (_paused && !_disposed)
+            {
+                Monitor.Wait(_lock, 100);
+            }
+
+            if (_disposed || s.Disconnected)
+            {
+                return s.Disconnected ? PcmSinkStatus.Disconnected : 0;
+            }
         }
         if (!_started)
         {
             _primedFrames += frames;
-            if (_primedFrames >= (long)_policy.StartGrains * Grain * s.SampleRate / Rate) Start(s);
+            if (_primedFrames >= (long)_policy.StartGrains * Grain * s.SampleRate / Rate)
+            {
+                Start(s);
+            }
         }
         return done;
     }
@@ -267,13 +376,20 @@ public sealed class BufferedPcmStream : IAudioStream
     {
         _started = true;
         _xrunsSeen = s.XRunCount;
-        if (!_paused) s.Start();
+        if (!_paused)
+        {
+            s.Start();
+        }
     }
 
     int WriteSilence(IPcmSink s, int frames)
     {
         int n = frames * Channels;
-        if (_silence.Length < n) _silence = new short[n];
+        if (_silence.Length < n)
+        {
+            _silence = new short[n];
+        }
+
         return s.Write(_silence.AsSpan(0, n), 0);
     }
 
@@ -281,10 +397,17 @@ public sealed class BufferedPcmStream : IAudioStream
     void Pace(int frames)
     {
         double now = _clock.Elapsed.TotalSeconds;
-        if (_paceAt < now - 0.1) _paceAt = now;
+        if (_paceAt < now - 0.1)
+        {
+            _paceAt = now;
+        }
+
         _paceAt += (double)frames / Rate;
         double wait = _paceAt - now;
-        if (wait > 0) Monitor.Wait(_lock, TimeSpan.FromSeconds(Math.Min(wait, 0.5)));
+        if (wait > 0)
+        {
+            Monitor.Wait(_lock, TimeSpan.FromSeconds(Math.Min(wait, 0.5)));
+        }
     }
 
     public int PendingSamples
@@ -292,7 +415,11 @@ public sealed class BufferedPcmStream : IAudioStream
         get
         {
             var s = _sink;
-            if (s == null) return 0;
+            if (s == null)
+            {
+                return 0;
+            }
+
             long q = Math.Max(0, s.FramesWritten - s.FramesRead);
             return (int)Math.Min(int.MaxValue, q * Rate / Math.Max(1, s.SampleRate));
         }
@@ -302,14 +429,28 @@ public sealed class BufferedPcmStream : IAudioStream
     public void Pause()
     {
         _paused = true;
-        try { _sink?.Pause(); } catch (Exception) { }
+        try
+        {
+            _sink?.Pause();
+        }
+        catch (Exception) { }
     }
 
     public void Resume()
     {
         _paused = false;
-        try { if (_started) _sink?.Start(); } catch (Exception) { }
-        lock (_lock) Monitor.PulseAll(_lock);
+        try
+        {
+            if (_started)
+            {
+                _sink?.Start();
+            }
+        }
+        catch (Exception) { }
+        lock (_lock)
+        {
+            Monitor.PulseAll(_lock);
+        }
     }
 
     public void Dispose()
@@ -352,14 +493,21 @@ public sealed class LinearResampler(int channels)
     public int Process(ReadOnlySpan<short> input, Span<short> output)
     {
         int ch = _channels, frames = input.Length / ch;
-        if (frames == 0) return 0;
+        if (frames == 0)
+        {
+            return 0;
+        }
         // the frames of this call, preceded by the previous call's last one (index 0) when there is one;
         // _pos is the next output position on that index scale
         int off = _haveLast ? 1 : 0, n = frames + off, o = 0;
         while (true)
         {
             int i0 = (int)_pos;
-            if (i0 + 1 >= n) break; // needs a frame of the next call
+            if (i0 + 1 >= n)
+            {
+                break; // needs a frame of the next call
+            }
+
             double t = _pos - i0;
             for (int c = 0; c < ch; c++)
             {
@@ -370,7 +518,11 @@ public sealed class LinearResampler(int channels)
             o++;
             _pos += _step;
         }
-        for (int c = 0; c < ch; c++) _last[c] = input[(frames - 1) * ch + c];
+        for (int c = 0; c < ch; c++)
+        {
+            _last[c] = input[(frames - 1) * ch + c];
+        }
+
         _haveLast = true;
         // the last frame becomes index 0 of the next call
         _pos -= n - 1;

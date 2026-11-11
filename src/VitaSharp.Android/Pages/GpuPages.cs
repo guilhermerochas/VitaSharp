@@ -96,7 +96,8 @@ public sealed class GpuDriverPage : Screen<GpuDriverState>
 
     async void Select(GpuDriverOption o)
     {
-        if (State.Model is not { } m) return;
+        if (State.Model is not { } m)
+            return;
         if (o.Removable && o.Selected)
         {
             if (await Confirm(o.Title, Loc.Get("MRemoveDriverConfirm"), Loc.Get("MRemove")))
@@ -108,8 +109,15 @@ public sealed class GpuDriverPage : Screen<GpuDriverState>
 
     void Option(Action change)
     {
-        try { change(); }
-        catch (Exception e) { _ = Alert(Loc.Get("MGpuDriver"), e.Message); return; }
+        try
+        {
+            change();
+        }
+        catch (Exception e)
+        {
+            _ = Alert(Loc.Get("MGpuDriver"), e.Message);
+            return;
+        }
         SetState(s => s.Revision++);
         _ = OfferRestartAsync();
     }
@@ -118,18 +126,22 @@ public sealed class GpuDriverPage : Screen<GpuDriverState>
     /// end it and start it again.</summary>
     async Task OfferRestartAsync()
     {
-        if (State.Model is not { } m) return;
+        if (State.Model is not { } m)
+            return;
         var running = await Task.Run(() => GameProcessMarker.Read(AppServices.Data.GameProcessFile, GameProcessMarker.IsGameProcess));
-        if (running == null || !m.RestartNeeded(running)) return;
+        if (running == null || !m.RestartNeeded(running))
+            return;
         if (await Confirm(Loc.Get("MRestartGame"), Loc.Format("MRestartGameConfirm", running.Title), Loc.Get("MRestart"), Loc.Get("MLater")))
             await GameActivity.RestartAsync(MainActivity.Current!, running);
     }
 
     async void Install()
     {
-        if (State.Model is not { } m) return;
+        if (State.Model is not { } m)
+            return;
         var doc = await Saf.PickAsync("application/zip", "application/octet-stream");
-        if (doc == null) return;
+        if (doc == null)
+            return;
         SetState(s => s.Installing = true);
         await Run(Loc.Get("MInstallDriver"), async () =>
         {

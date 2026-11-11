@@ -39,12 +39,16 @@ public static class AppServices
     {
         lock (Lock)
         {
-            if (Initialized) return;
+            if (Initialized)
+                return;
             AppContext = context.ApplicationContext ?? context;
             LogcatSink.Install();
             string root = context.GetExternalFilesDir(null)?.AbsolutePath is { Length: > 0 } ext ? ext : context.FilesDir!.AbsolutePath;
             Data = new DataLayout(root, context.FilesDir!.AbsolutePath);
-            try { Data.EnsureCreated(); }
+            try
+            {
+                Data.EnsureCreated();
+            }
             catch (Exception e) when (e is IOException or UnauthorizedAccessException)
             {
                 Log.Warn($"Data folder {root} unusable ({e.Message}): internal storage");
@@ -53,15 +57,27 @@ public static class AppServices
             }
             // config/env.txt: the desktop's VITASHARP_* switches, set before anything below reads them
             List<KeyValuePair<string, string>> env = [];
-            try { env = EnvironmentFile.Apply(Path.Combine(Data.Config, EnvironmentFile.FileName)); }
-            catch (Exception e) when (e is IOException or UnauthorizedAccessException) { Log.Warn($"{EnvironmentFile.FileName}: {e.Message}"); }
+            try
+            {
+                env = EnvironmentFile.Apply(Path.Combine(Data.Config, EnvironmentFile.FileName));
+            }
+            catch (Exception e) when (e is IOException or UnauthorizedAccessException)
+            {
+                Log.Warn($"{EnvironmentFile.FileName}: {e.Message}");
+            }
             // the UI process keeps logs/app.log (truncated per start); a game session writes logs/last.log (SessionLog)
-            if (!gameProcess) Log.OpenFile(Path.Combine(Data.Logs, "app.log"));
-            foreach (var (name, value) in env) Log.Info($"{EnvironmentFile.FileName}: {name}={value}");
+            if (!gameProcess)
+                Log.OpenFile(Path.Combine(Data.Logs, "app.log"));
+            foreach (var (name, value) in env)
+                Log.Info($"{EnvironmentFile.FileName}: {name}={value}");
             Prefs = AppPreferences.Load(Data.AppSettingsFile);
             // the texts' language (Ajustes > Language): set before any screen or the game reads a text
             VitaSharp.Core.Localization.Loc.SetLanguage(Prefs.Language);
-            if (Prefs.DebugMode) { Log.Level = LogLevel.Debug; DebugMode.Enable(); }
+            if (Prefs.DebugMode)
+            {
+                Log.Level = LogLevel.Debug;
+                DebugMode.Enable();
+            }
             InputProfiles = InputProfileStore.Load(Data.InputProfiles);
             Gamepads = new AndroidGamepads(InputProfiles);
 #if VITASHARP_DEVELOPER
@@ -70,7 +86,8 @@ public static class AppServices
             Log.Info($"VitaSharp Android {(gameProcess ? "game" : "UI")} process, data in {Data.Root}");
 #endif
 
-            foreach (var line in RuntimeReport.Lines()) Log.Info(line);
+            foreach (var line in RuntimeReport.Lines())
+                Log.Info(line);
             Initialized = true;
         }
     }
@@ -79,8 +96,14 @@ public static class AppServices
     {
         lock (Lock)
         {
-            try { Prefs.Save(Data.AppSettingsFile); }
-            catch (Exception e) when (e is IOException or UnauthorizedAccessException) { Log.Warn($"Settings: {e.Message}"); }
+            try
+            {
+                Prefs.Save(Data.AppSettingsFile);
+            }
+            catch (Exception e) when (e is IOException or UnauthorizedAccessException)
+            {
+                Log.Warn($"Settings: {e.Message}");
+            }
         }
     }
 
@@ -109,8 +132,14 @@ public static class AppServices
         lock (Lock)
         {
             GameSettingsCache[titleId] = s;
-            try { s.Save(Data.GameSettingsFile(titleId)); }
-            catch (Exception e) when (e is IOException or UnauthorizedAccessException) { Log.Warn($"Settings of {titleId}: {e.Message}"); }
+            try
+            {
+                s.Save(Data.GameSettingsFile(titleId));
+            }
+            catch (Exception e) when (e is IOException or UnauthorizedAccessException)
+            {
+                Log.Warn($"Settings of {titleId}: {e.Message}");
+            }
         }
     }
 
@@ -119,18 +148,30 @@ public static class AppServices
     /// <summary>The RPCN password, kept in the Android Keystore (MAUI SecureStorage: EncryptedSharedPreferences).</summary>
     public static async Task<string> RpcnPasswordAsync()
     {
-        try { return await SecureStorage.Default.GetAsync(RpcnPasswordKey) ?? ""; }
-        catch (Exception e) { Log.Warn($"Keystore: {e.Message}"); return ""; }
+        try
+        {
+            return await SecureStorage.Default.GetAsync(RpcnPasswordKey) ?? "";
+        }
+        catch (Exception e)
+        {
+            Log.Warn($"Keystore: {e.Message}");
+            return "";
+        }
     }
 
     public static async Task SetRpcnPasswordAsync(string password)
     {
         try
         {
-            if (password.Length == 0) SecureStorage.Default.Remove(RpcnPasswordKey);
-            else await SecureStorage.Default.SetAsync(RpcnPasswordKey, password);
+            if (password.Length == 0)
+                SecureStorage.Default.Remove(RpcnPasswordKey);
+            else
+                await SecureStorage.Default.SetAsync(RpcnPasswordKey, password);
         }
-        catch (Exception e) { Log.Warn($"Keystore: {e.Message}"); }
+        catch (Exception e)
+        {
+            Log.Warn($"Keystore: {e.Message}");
+        }
     }
 
     const string RpcnPasswordKey = "rpcn_password";

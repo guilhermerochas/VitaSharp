@@ -133,7 +133,8 @@ public abstract class Screen<TState, TProps> : Component<TState, TProps>
     /// <summary>A choice from a list (action sheet); null when cancelled.</summary>
     protected async Task<string?> Choose(string title, IReadOnlyList<Choice> choices)
     {
-        if (ContainerPage is not { } page) return null;
+        if (ContainerPage is not { } page)
+            return null;
         var labels = choices.Select(c => c.Label).ToArray();
         var picked = await page.DisplayActionSheetAsync(title, Loc.Get("MCancel"), null, labels);
         return choices.FirstOrDefault(c => c.Label == picked)?.Value;
@@ -144,12 +145,14 @@ public abstract class Screen<TState, TProps> : Component<TState, TProps>
 
     protected async Task Alert(string title, string message)
     {
-        if (ContainerPage is { } page) await page.DisplayAlertAsync(title, message, Loc.Get("MOk"));
+        if (ContainerPage is { } page)
+            await page.DisplayAlertAsync(title, message, Loc.Get("MOk"));
     }
 
     protected async Task<string?> Prompt(string title, string message, string initial = "", bool password = false)
     {
-        if (ContainerPage is not { } page) return null;
+        if (ContainerPage is not { } page)
+            return null;
         return await page.DisplayPromptAsync(title, message, Loc.Get("MOk"), Loc.Get("MCancel"), initialValue: initial,
             keyboard: password ? Keyboard.Default : Keyboard.Text);
     }
@@ -157,7 +160,10 @@ public abstract class Screen<TState, TProps> : Component<TState, TProps>
     /// <summary>Runs work off the UI thread and reports failures in a dialog (and the log).</summary>
     protected async Task Run(string what, Func<Task> work)
     {
-        try { await work(); }
+        try
+        {
+            await work();
+        }
         catch (Exception e)
         {
             Log.Warn($"{what}: {e}");

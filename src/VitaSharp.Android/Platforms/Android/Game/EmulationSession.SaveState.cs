@@ -18,24 +18,53 @@ public sealed partial class EmulationSession
     /// <summary>Header of the state in <paramref name="slot"/>, or null when the slot is empty or unreadable.</summary>
     public SaveStateHeader? StateInfo(int slot)
     {
-        try { return File.Exists(StatePath(slot)) ? SaveStateFile.ReadHeader(StatePath(slot)) : null; }
-        catch (Exception e) when (e is SnapshotException or IOException) { return null; }
+        try
+        {
+            return File.Exists(StatePath(slot)) ? SaveStateFile.ReadHeader(StatePath(slot)) : null;
+        }
+        catch (Exception e) when (e is SnapshotException or IOException)
+        {
+            return null;
+        }
     }
 
     /// <summary>Reads back the next presented frame (at most 150 ms) as the picture of a state saved from the menu.</summary>
     public void CaptureMenuThumbnail()
     {
         _menuThumbnail = null;
-        if (Paused || !_emuStarted) return;
-        byte[]? px = null; int w = 0, h = 0;
+        if (Paused || !_emuStarted)
+            return;
+        byte[]? px = null;
+        int w = 0, h = 0;
         using var got = new ManualResetEventSlim();
         var previous = _rendererOptions.FrameSink;
-        _rendererOptions.FrameSink = (n, p, pw, ph) => { previous?.Invoke(n, p, pw, ph); if (!got.IsSet) { px = p; w = pw; h = ph; got.Set(); } };
-        try { got.Wait(150); }
-        finally { _rendererOptions.FrameSink = previous; }
-        if (px == null) return;
+        _rendererOptions.FrameSink = (n, p, pw, ph) =>
+        {
+            previous?.Invoke(n, p, pw, ph);
+            if (!got.IsSet)
+            {
+                px = p;
+                w = pw;
+                h = ph;
+                got.Set();
+            }
+        };
+        try
+        {
+            got.Wait(150);
+        }
+        finally
+        {
+            _rendererOptions.FrameSink = previous;
+        }
+        if (px == null)
+            return;
         string tmp = Path.Combine(Path.GetTempPath(), "vitasharp-thumb.png");
-        try { Png.Write(tmp, px, w, h); _menuThumbnail = File.ReadAllBytes(tmp); }
+        try
+        {
+            Png.Write(tmp, px, w, h);
+            _menuThumbnail = File.ReadAllBytes(tmp);
+        }
         catch (IOException) { }
     }
 
@@ -66,9 +95,17 @@ public sealed partial class EmulationSession
                 && !string.Equals(program, main.Path, StringComparison.OrdinalIgnoreCase))
             {
                 bool paused = EmulationPause.IsPaused;
-                if (paused) EmulationPause.Resume("load state: LoadExec");
-                try { SaveStates.SwitchProgramFor(_emu, StatePath(slot), s => CaptureStatus?.Invoke(s)); }
-                finally { if (paused) EmulationPause.Pause("load state: LoadExec"); }
+                if (paused)
+                    EmulationPause.Resume("load state: LoadExec");
+                try
+                {
+                    SaveStates.SwitchProgramFor(_emu, StatePath(slot), s => CaptureStatus?.Invoke(s));
+                }
+                finally
+                {
+                    if (paused)
+                        EmulationPause.Pause("load state: LoadExec");
+                }
             }
             SaveStates.Load(_emu, StatePath(slot), () => { lock (_surfaceLock) return _renderer = new VulkanRenderer(_rendererOptions); });
             return Loc.Format("MStateLoaded", slot);

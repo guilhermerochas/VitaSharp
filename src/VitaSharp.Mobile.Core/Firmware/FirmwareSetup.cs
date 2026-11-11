@@ -24,8 +24,14 @@ public sealed record FirmwareStatus(FirmwareInfo? Installed, bool SystemFonts, b
 
     static bool HasEntries(string dir)
     {
-        try { return Directory.Exists(dir) && Directory.EnumerateFileSystemEntries(dir).Any(); }
-        catch (Exception e) when (e is IOException or UnauthorizedAccessException) { return false; }
+        try
+        {
+            return Directory.Exists(dir) && Directory.EnumerateFileSystemEntries(dir).Any();
+        }
+        catch (Exception e) when (e is IOException or UnauthorizedAccessException)
+        {
+            return false;
+        }
     }
 }
 
@@ -47,7 +53,11 @@ public static class FirmwareSetup
         IProgress<FirmwareProgress>? progress = null, CancellationToken ct = default) => Task.Run(() =>
     {
         using var stream = openDocument();
-        if (!stream.CanSeek) throw new NotSupportedException("the firmware file must be opened as a seekable stream (OpenFileDescriptor)");
+        if (!stream.CanSeek)
+        {
+            throw new NotSupportedException("the firmware file must be opened as a seekable stream (OpenFileDescriptor)");
+        }
+
         using var pup = new Pup(stream);
         return FirmwareInstaller.Install(pup, displayName, fsRoot, progress, ct);
     }, ct);

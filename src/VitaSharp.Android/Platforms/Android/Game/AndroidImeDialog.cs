@@ -40,7 +40,8 @@ public sealed class AndroidImeDialog(Activity activity) : IImeDialogBackend, ITe
 
     public void SetText(string text, int caret) => activity.RunOnUiThread(() =>
     {
-        if (_edit == null) return;
+        if (_edit == null)
+            return;
         _suppressEcho = true; // the change came from the game: not reported back
         _edit.Text = text;
         _edit.SetSelection(Math.Clamp(caret, 0, _edit.Text?.Length ?? 0));
@@ -58,8 +59,10 @@ public sealed class AndroidImeDialog(Activity activity) : IImeDialogBackend, ITe
         if (type is 4 or 5)
         {
             var n = InputTypes.ClassNumber;
-            if (type == 5) n |= InputTypes.NumberFlagDecimal | InputTypes.NumberFlagSigned;
-            if (password) n |= InputTypes.NumberVariationPassword;
+            if (type == 5)
+                n |= InputTypes.NumberFlagDecimal | InputTypes.NumberFlagSigned;
+            if (password)
+                n |= InputTypes.NumberVariationPassword;
             return n;
         }
         var t = InputTypes.ClassText;
@@ -70,7 +73,8 @@ public sealed class AndroidImeDialog(Activity activity) : IImeDialogBackend, ITe
             3 => InputTypes.TextVariationEmailAddress,
             _ => InputTypes.TextFlagNoSuggestions,
         };
-        if (multiline) t |= InputTypes.TextFlagMultiLine;
+        if (multiline)
+            t |= InputTypes.TextFlagMultiLine;
         return t;
     }
 
@@ -84,29 +88,44 @@ public sealed class AndroidImeDialog(Activity activity) : IImeDialogBackend, ITe
         edit.SetFilters([new InputFilterLengthFilter(Math.Max(1, maxLength))]);
         edit.InputType = InputTypeFor(type, multiline, password);
         edit.ImeOptions = multiline ? ImeAction.Unspecified : ImeAction.Done;
-        if (!multiline) edit.SetSingleLine(true);
+        if (!multiline)
+            edit.SetSingleLine(true);
         edit.SetSelection(edit.Text?.Length ?? 0);
 
         void Answer(bool ok)
         {
-            if (answered || session != _session) return;
+            if (answered || session != _session)
+                return;
             string text = edit.Text ?? "";
             Log.Info($"IME (Android): {(ok ? $"entered \"{(password ? new string('*', text.Length) : text)}\"" : "canceled")}");
-            if (done != null) { answered = true; Dismiss(); done(ok ? text : null); }
-            else if (ok) enter?.Invoke();  // SceIme: Enter can come again; the game closes the keyboard (sceImeClose -> End)
-            else { answered = true; Dismiss(); close?.Invoke(); }
+            if (done != null)
+            {
+                answered = true;
+                Dismiss();
+                done(ok ? text : null);
+            }
+            else if (ok)
+                enter?.Invoke();  // SceIme: Enter can come again; the game closes the keyboard (sceImeClose -> End)
+            else
+            {
+                answered = true;
+                Dismiss();
+                close?.Invoke();
+            }
         }
 
         if (changed != null)
             edit.TextChanged += (_, _) =>
             {
-                if (!_suppressEcho && session == _session) changed(edit.Text ?? "", edit.SelectionEnd);
+                if (!_suppressEcho && session == _session)
+                    changed(edit.Text ?? "", edit.SelectionEnd);
             };
         edit.EditorAction += (_, e) =>
         {
             bool enterKey = e.Event is { KeyCode: Keycode.Enter, Action: KeyEventActions.Down };
             e.Handled = e.ActionId == ImeAction.Done || (enterKey && !multiline);
-            if (e.Handled) Answer(true);
+            if (e.Handled)
+                Answer(true);
         };
 
         var container = new FrameLayout(activity);
@@ -138,7 +157,8 @@ public sealed class AndroidImeDialog(Activity activity) : IImeDialogBackend, ITe
             imm.HideSoftInputFromWindow(e.WindowToken, HideSoftInputFlags.None);
         _dialog = null;
         _edit = null;
-        if (d?.IsShowing == true) d.Dismiss();
+        if (d?.IsShowing == true)
+            d.Dismiss();
     }
 
     sealed class CancelListener(Action onCancel) : Java.Lang.Object, IDialogInterfaceOnCancelListener

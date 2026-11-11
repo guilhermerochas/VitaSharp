@@ -20,8 +20,22 @@ public static class CameraSupport
     public static string? PickCamera(IReadOnlyList<(string Id, int Facing)> cameras, int vitaFacing)
     {
         int want = vitaFacing == 0 ? LensFront : LensBack;
-        foreach (var c in cameras) if (c.Facing == want) return c.Id;
-        foreach (var c in cameras) if (c.Facing == LensExternal) return c.Id;
+        foreach (var c in cameras)
+        {
+            if (c.Facing == want)
+            {
+                return c.Id;
+            }
+        }
+
+        foreach (var c in cameras)
+        {
+            if (c.Facing == LensExternal)
+            {
+                return c.Id;
+            }
+        }
+
         return cameras.Count > 0 ? cameras[0].Id : null;
     }
 
@@ -47,16 +61,32 @@ public static class CameraSupport
     /// </summary>
     public static (int W, int H)? ChooseSize(IReadOnlyList<(int W, int H)> sizes, int width, int height, bool rotated = false)
     {
-        if (sizes.Count == 0) return null;
-        if (rotated) (width, height) = (height, width);
+        if (sizes.Count == 0)
+        {
+            return null;
+        }
+
+        if (rotated)
+        {
+            (width, height) = (height, width);
+        }
+
         double aspect = (double)width / Math.Max(1, height);
         bool Covers((int W, int H) s) => s.W >= width && s.H >= height;
         double AspectError((int W, int H) s) => Math.Round(Math.Abs((double)s.W / s.H - aspect), 2);
         long Area((int W, int H) s) => (long)s.W * s.H;
         var valid = sizes.Where(s => s.W > 0 && s.H > 0).ToList();
-        if (valid.Count == 0) return null;
+        if (valid.Count == 0)
+        {
+            return null;
+        }
+
         var pick = valid.Where(Covers).OrderBy(AspectError).ThenBy(Area).FirstOrDefault();
-        if (pick != default) return pick;
+        if (pick != default)
+        {
+            return pick;
+        }
+
         return valid.OrderByDescending(Area).First();
     }
 
@@ -67,12 +97,24 @@ public static class CameraSupport
     /// </summary>
     public static (int Lo, int Hi)? ChooseFpsRange(IReadOnlyList<(int Lo, int Hi)> ranges, int fps)
     {
-        if (ranges.Count == 0) return null;
+        if (ranges.Count == 0)
+        {
+            return null;
+        }
+
         fps = Math.Max(1, fps);
         var reach = ranges.Where(r => r.Hi >= fps && r.Lo <= fps).ToList();
-        if (reach.Count > 0) return reach.OrderByDescending(r => r.Lo).ThenBy(r => r.Hi).First();
+        if (reach.Count > 0)
+        {
+            return reach.OrderByDescending(r => r.Lo).ThenBy(r => r.Hi).First();
+        }
+
         var above = ranges.Where(r => r.Lo >= fps).ToList();
-        if (above.Count > 0) return above.OrderBy(r => r.Lo).ThenBy(r => r.Hi).First();
+        if (above.Count > 0)
+        {
+            return above.OrderBy(r => r.Lo).ThenBy(r => r.Hi).First();
+        }
+
         return ranges.OrderByDescending(r => r.Hi).ThenByDescending(r => r.Lo).First();
     }
 
@@ -89,7 +131,11 @@ public static class CameraSupport
     public static void ToRgba(YuvImageCopy.Plane y, YuvImageCopy.Plane u, YuvImageCopy.Plane v, int width, int height, int rotation, Span<byte> dst)
     {
         var (ow, oh) = RotatedSize(width, height, rotation);
-        if (dst.Length < ow * oh * 4) throw new ArgumentException("destination too small", nameof(dst));
+        if (dst.Length < ow * oh * 4)
+        {
+            throw new ArgumentException("destination too small", nameof(dst));
+        }
+
         for (int oy = 0; oy < oh; oy++)
         {
             var o = dst.Slice(oy * ow * 4, ow * 4);
@@ -98,10 +144,22 @@ public static class CameraSupport
                 int sx, sy;
                 switch (rotation)
                 {
-                    case 90: sx = oy; sy = height - 1 - ox; break;
-                    case 180: sx = width - 1 - ox; sy = height - 1 - oy; break;
-                    case 270: sx = width - 1 - oy; sy = ox; break;
-                    default: sx = ox; sy = oy; break;
+                    case 90:
+                        sx = oy;
+                        sy = height - 1 - ox;
+                        break;
+                    case 180:
+                        sx = width - 1 - ox;
+                        sy = height - 1 - oy;
+                        break;
+                    case 270:
+                        sx = width - 1 - oy;
+                        sy = ox;
+                        break;
+                    default:
+                        sx = ox;
+                        sy = oy;
+                        break;
                 }
                 int luma = y.Data[sy * y.RowStride + sx * y.PixelStride];
                 int cx = sx >> 1, cy = sy >> 1;

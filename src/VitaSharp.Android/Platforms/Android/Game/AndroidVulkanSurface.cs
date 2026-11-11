@@ -19,7 +19,8 @@ public sealed unsafe partial class AndroidVulkanSurface : IPresentationSurface, 
     public AndroidVulkanSurface(global::Android.Views.Surface surface)
     {
         _window = ANativeWindow_fromSurface(JNIEnv.Handle, surface.Handle);
-        if (_window == 0) throw new InvalidOperationException("ANativeWindow_fromSurface returned null");
+        if (_window == 0)
+            throw new InvalidOperationException("ANativeWindow_fromSurface returned null");
     }
 
     public string[] RequiredInstanceExtensions => [KhrSurface.ExtensionName, KhrAndroidSurface.ExtensionName];
@@ -41,7 +42,8 @@ public sealed unsafe partial class AndroidVulkanSurface : IPresentationSurface, 
 
     public void Dispose()
     {
-        if (_window != 0) ANativeWindow_release(_window);
+        if (_window != 0)
+            ANativeWindow_release(_window);
         _window = 0;
     }
 

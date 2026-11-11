@@ -40,8 +40,10 @@ public sealed class PsnPage : Screen<PsnState>
                     Divider(),
                     Row(Loc.Get("MOnlineId"), n.PsnOnlineId, () => Edit(Loc.Get("MOnlineId"), Loc.Get("MOnlineIdHint"), n.PsnOnlineId, v =>
                     {
-                        if (PsnAccount.IsValidOnlineId(v)) Change(x => x.PsnOnlineId = v);
-                        else _ = Alert(Loc.Get("MOnlineId"), Loc.Get("MOnlineIdInvalid"));
+                        if (PsnAccount.IsValidOnlineId(v))
+                            Change(x => x.PsnOnlineId = v);
+                        else
+                            _ = Alert(Loc.Get("MOnlineId"), Loc.Get("MOnlineIdInvalid"));
                     })),
                     Divider(),
                     ToggleRow(Loc.Get("MPsnLocal"), n.PsnLocalServices, v => Change(x => x.PsnLocalServices = v),
@@ -78,13 +80,15 @@ public sealed class PsnPage : Screen<PsnState>
     async void Edit(string title, string message, string current, Action<string> apply)
     {
         var v = await Prompt(title, message, current);
-        if (v != null) apply(v);
+        if (v != null)
+            apply(v);
     }
 
     async void EditPassword()
     {
         var v = await Prompt(Loc.Get("MRpcnPassword"), Loc.Get("MRpcnPasswordDetail"), "", password: true);
-        if (v == null) return;
+        if (v == null)
+            return;
         await AppServices.SetRpcnPasswordAsync(v);
         SetState(s => s.HasPassword = v.Length > 0);
     }

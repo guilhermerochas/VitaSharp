@@ -50,7 +50,8 @@ public sealed class AndroidCamera : ICameraSource
 
     List<Info> Cameras()
     {
-        if (_cameras != null) return _cameras;
+        if (_cameras != null)
+            return _cameras;
         var list = new List<Info>();
         try
         {
@@ -66,12 +67,19 @@ public sealed class AndroidCamera : ICameraSource
                     var fps = ch.Get(CameraCharacteristics.ControlAeAvailableTargetFpsRanges) is { } r
                         ? JNIEnv.GetArray<global::Android.Util.Range>(r.Handle)?.Select(x => (Int(x.Lower) ?? 0, Int(x.Upper) ?? 0)).ToArray() ?? []
                         : [];
-                    if (sizes.Length > 0) list.Add(new Info(id, facing, orient, sizes, fps));
+                    if (sizes.Length > 0)
+                        list.Add(new Info(id, facing, orient, sizes, fps));
                 }
-                catch (Exception e) { Log.Warn($"Camera: characteristics of camera {id}: {e.Message}"); }
+                catch (Exception e)
+                {
+                    Log.Warn($"Camera: characteristics of camera {id}: {e.Message}");
+                }
             }
         }
-        catch (Exception e) { Log.Warn($"Camera: camera list: {e.Message}"); }
+        catch (Exception e)
+        {
+            Log.Warn($"Camera: camera list: {e.Message}");
+        }
         return _cameras = list;
     }
 
@@ -91,7 +99,11 @@ public sealed class AndroidCamera : ICameraSource
             }
         var cams = Cameras();
         var id = CameraSupport.PickCamera(cams.Select(c => (c.Id, c.Facing)).ToList(), (int)facing);
-        if (id == null) { Log.Info("Camera: the device has no camera"); return null; }
+        if (id == null)
+        {
+            Log.Info("Camera: the device has no camera");
+            return null;
+        }
         var info = cams.First(c => c.Id == id);
         bool front = info.Facing == CameraSupport.LensFront;
         int rot = CameraSupport.UprightRotation(info.SensorOrientation, front, _displayRotation());
@@ -107,7 +119,8 @@ public sealed class AndroidCamera : ICameraSource
     Capture NewCapture(Info info, (int W, int H) size, (int Lo, int Hi)? range, Task after)
     {
         var c = new Capture(this, info, size, range, after);
-        lock (_lock) _captures.Add(c);
+        lock (_lock)
+            _captures.Add(c);
         return c;
     }
 
@@ -116,18 +129,28 @@ public sealed class AndroidCamera : ICameraSource
     /// <summary>True once the CAMERA permission is granted; asks for it (once per game process) otherwise.</summary>
     Task<bool> EnsurePermissionAsync()
     {
-        if (_activity.CheckSelfPermission(Manifest.Permission.Camera) == Permission.Granted) return Task.FromResult(true);
+        if (_activity.CheckSelfPermission(Manifest.Permission.Camera) == Permission.Granted)
+            return Task.FromResult(true);
         lock (_lock)
         {
-            if (_denied) return Task.FromResult(false);
-            if (_permission != null) return _permission.Task;
+            if (_denied)
+                return Task.FromResult(false);
+            if (_permission != null)
+                return _permission.Task;
             _permission = new TaskCompletionSource<bool>(TaskCreationOptions.RunContinuationsAsynchronously);
         }
         Log.Info("Camera: asking for the CAMERA permission");
         _activity.RunOnUiThread(() =>
         {
-            try { _activity.RequestPermissions([Manifest.Permission.Camera], PermissionRequestCode); }
-            catch (Exception e) { Log.Warn($"Camera: permission request failed: {e.Message}"); OnPermissionResult(false); }
+            try
+            {
+                _activity.RequestPermissions([Manifest.Permission.Camera], PermissionRequestCode);
+            }
+            catch (Exception e)
+            {
+                Log.Warn($"Camera: permission request failed: {e.Message}");
+                OnPermissionResult(false);
+            }
         });
         return _permission.Task;
     }
@@ -135,7 +158,8 @@ public sealed class AndroidCamera : ICameraSource
     /// <summary>GameActivity.OnRequestPermissionsResult; false when the request was not this one.</summary>
     public bool OnRequestPermissionsResult(int requestCode, string[] permissions, Permission[] grantResults)
     {
-        if (requestCode != PermissionRequestCode) return false;
+        if (requestCode != PermissionRequestCode)
+            return false;
         OnPermissionResult(grantResults.Length > 0 && grantResults[0] == Permission.Granted);
         return true;
     }
@@ -147,7 +171,8 @@ public sealed class AndroidCamera : ICameraSource
         {
             tcs = _permission;
             _permission = null;
-            if (!granted) _denied = true;
+            if (!granted)
+                _denied = true;
         }
         Log.Info(granted ? "Camera: permission granted" : "Camera: permission denied, the Vita cameras deliver grey frames");
         tcs?.TrySetResult(granted);
@@ -159,19 +184,36 @@ public sealed class AndroidCamera : ICameraSource
     public void Pause()
     {
         List<Capture> list;
-        lock (_lock) { _paused = true; list = _captures.ToList(); }
-        foreach (var c in list) c.Suspend();
+        lock (_lock)
+        {
+            _paused = true;
+            list = _captures.ToList();
+        }
+        foreach (var c in list)
+            c.Suspend();
     }
 
     /// <summary>OnResume: reopens them.</summary>
     public void Resume()
     {
         List<Capture> list;
-        lock (_lock) { _paused = false; list = _captures.ToList(); }
-        foreach (var c in list) c.RetryNow();
+        lock (_lock)
+        {
+            _paused = false;
+            list = _captures.ToList();
+        }
+        foreach (var c in list)
+            c.RetryNow();
     }
 
-    bool Paused { get { lock (_lock) return _paused; } }
+    bool Paused
+    {
+        get
+        {
+            lock (_lock)
+                return _paused;
+        }
+    }
 
     public void Dispose() => _shared.Dispose();
 
@@ -217,42 +259,76 @@ public sealed class AndroidCamera : ICameraSource
         async Task RunAsync(Task after)
         {
             var ct = _cts.Token;
-            try { await after.WaitAsync(TimeSpan.FromSeconds(5), ct); } // the previous capture closes its camera first
-            catch (OperationCanceledException) { return; }
+            try
+            {
+                await after.WaitAsync(TimeSpan.FromSeconds(5), ct);
+            } // the previous capture closes its camera first
+            catch (OperationCanceledException)
+            {
+                return;
+            }
             catch { }
             bool granted;
-            try { granted = await _owner.EnsurePermissionAsync().WaitAsync(ct); }
-            catch (OperationCanceledException) { return; }
-            if (!granted) return; // grey frames
+            try
+            {
+                granted = await _owner.EnsurePermissionAsync().WaitAsync(ct);
+            }
+            catch (OperationCanceledException)
+            {
+                return;
+            }
+            if (!granted)
+                return; // grey frames
             for (int attempt = 1; ;)
             {
                 if (_owner.Paused)
                 {
-                    try { await _wake.WaitAsync(ct); } catch (OperationCanceledException) { return; }
+                    try
+                    {
+                        await _wake.WaitAsync(ct);
+                    }
+                    catch (OperationCanceledException)
+                    {
+                        return;
+                    }
                     continue;
                 }
                 string reason;
                 try
                 {
                     var lost = await OpenAsync(ct);
-                    if (attempt > 1) Log.Info($"Camera: camera {_info.Id} started on attempt {attempt}");
+                    if (attempt > 1)
+                        Log.Info($"Camera: camera {_info.Id} started on attempt {attempt}");
                     attempt = 1;
                     reason = await lost.WaitAsync(ct);
                     Log.Info($"Camera: camera {_info.Id} {reason}");
                 }
-                catch (OperationCanceledException) when (ct.IsCancellationRequested) { return; }
+                catch (OperationCanceledException) when (ct.IsCancellationRequested)
+                {
+                    return;
+                }
                 catch (Exception e)
                 {
                     reason = e.Message;
-                    if (attempt == 1) Log.Warn($"Camera: could not start camera {_info.Id}: {e.Message} (grey frames, retrying)");
-                    else if (attempt % 10 == 0) Log.Warn($"Camera: camera {_info.Id} still failing after {attempt} attempts: {e.Message}");
+                    if (attempt == 1)
+                        Log.Warn($"Camera: could not start camera {_info.Id}: {e.Message} (grey frames, retrying)");
+                    else if (attempt % 10 == 0)
+                        Log.Warn($"Camera: camera {_info.Id} still failing after {attempt} attempts: {e.Message}");
                     attempt++;
                 }
                 Close();
-                if (ct.IsCancellationRequested) return;
-                if (_owner.Paused) continue;
-                try { await _wake.WaitAsync(TimeSpan.FromSeconds(Math.Min(10, 2 * attempt)), ct); }
-                catch (OperationCanceledException) { return; }
+                if (ct.IsCancellationRequested)
+                    return;
+                if (_owner.Paused)
+                    continue;
+                try
+                {
+                    await _wake.WaitAsync(TimeSpan.FromSeconds(Math.Min(10, 2 * attempt)), ct);
+                }
+                catch (OperationCanceledException)
+                {
+                    return;
+                }
             }
         }
 
@@ -261,28 +337,47 @@ public sealed class AndroidCamera : ICameraSource
         async Task<Task<string>> OpenAsync(CancellationToken ct)
         {
             var lost = new TaskCompletionSource<string>(TaskCreationOptions.RunContinuationsAsynchronously);
-            lock (_lock) _lost = lost;
+            lock (_lock)
+                _lost = lost;
             var opened = new TaskCompletionSource<CameraDevice>(TaskCreationOptions.RunContinuationsAsynchronously);
             _owner._manager!.OpenCamera(_info.Id, new DeviceCallback(opened, lost), _handler);
             CameraDevice device;
-            try { device = await opened.Task.WaitAsync(TimeSpan.FromSeconds(10), ct); }
+            try
+            {
+                device = await opened.Task.WaitAsync(TimeSpan.FromSeconds(10), ct);
+            }
             catch
             {
                 // stopped or timed out while opening: a device that opens later is closed at once
-                _ = opened.Task.ContinueWith(t => { if (t.IsCompletedSuccessfully) try { t.Result.Close(); } catch (Exception) { } }, TaskScheduler.Default);
+                _ = opened.Task.ContinueWith(t =>
+                {
+                    if (t.IsCompletedSuccessfully)
+                    {
+                        try
+                        {
+                            t.Result.Close();
+                        }
+                        catch (Exception)
+                        {
+                        }
+                    }
+                }, TaskScheduler.Default);
                 throw;
             }
-            lock (_lock) _device = device;
+            lock (_lock)
+                _device = device;
 
             var reader = ImageReader.NewInstance(_size.W, _size.H, ImageFormatType.Yuv420888, 2);
             reader.SetOnImageAvailableListener(new ImageListener(this), _handler);
-            lock (_lock) _reader = reader;
+            lock (_lock)
+                _reader = reader;
             var configured = new TaskCompletionSource<CameraCaptureSession>(TaskCreationOptions.RunContinuationsAsynchronously);
 #pragma warning disable CA1422 // createCaptureSession(List, ...) is deprecated from API 30 but available from 21; minSdk is 26
             device.CreateCaptureSession([reader.Surface!], new SessionCallback(configured, lost), _handler);
 #pragma warning restore CA1422
             var session = await configured.Task.WaitAsync(TimeSpan.FromSeconds(10), ct);
-            lock (_lock) _session = session;
+            lock (_lock)
+                _session = session;
 
             var request = device.CreateCaptureRequest(CameraTemplate.Preview);
             request.AddTarget(reader.Surface!);
@@ -298,20 +393,33 @@ public sealed class AndroidCamera : ICameraSource
             try
             {
                 img = reader.AcquireLatestImage();
-                if (img == null) return;
+                if (img == null)
+                    return;
                 var planes = img.GetPlanes();
-                if (planes is not { Length: 3 }) return;
+                if (planes is not { Length: 3 })
+                    return;
                 int w = img.Width, h = img.Height;
                 int rot = CameraSupport.UprightRotation(_info.SensorOrientation, _info.Facing == CameraSupport.LensFront, _owner._displayRotation());
                 var (ow, oh) = CameraSupport.RotatedSize(w, h, rot);
                 _frames.Publish(ow, oh, dst => Convert(planes, w, h, rot, dst));
-                if (!_loggedFirst) { _loggedFirst = true; Log.Info($"Camera: first frame {w}x{h}, rotation {rot}, pixel stride {planes[1].PixelStride}"); }
+                if (!_loggedFirst)
+                {
+                    _loggedFirst = true;
+                    Log.Info($"Camera: first frame {w}x{h}, rotation {rot}, pixel stride {planes[1].PixelStride}");
+                }
             }
             catch (Exception e)
             {
-                if (!_loggedError) { _loggedError = true; Log.Warn($"Camera: frame conversion failed: {e.Message}"); }
+                if (!_loggedError)
+                {
+                    _loggedError = true;
+                    Log.Warn($"Camera: frame conversion failed: {e.Message}");
+                }
             }
-            finally { img?.Close(); }
+            finally
+            {
+                img?.Close();
+            }
         }
 
         static void Convert(global::Android.Media.Image.Plane[] p, int w, int h, int rot, Span<byte> dst) =>
@@ -331,40 +439,71 @@ public sealed class AndroidCamera : ICameraSource
             ImageReader? r;
             lock (_lock)
             {
-                s = _session; d = _device; r = _reader;
-                _session = null; _device = null; _reader = null; _lost = null;
+                s = _session;
+                d = _device;
+                r = _reader;
+                _session = null;
+                _device = null;
+                _reader = null;
+                _lost = null;
             }
-            try { s?.Close(); } catch (Exception) { }
-            try { d?.Close(); } catch (Exception) { }
-            try { r?.Close(); } catch (Exception) { }
+            try
+            {
+                s?.Close();
+            }
+            catch (Exception) { }
+            try
+            {
+                d?.Close();
+            }
+            catch (Exception) { }
+            try
+            {
+                r?.Close();
+            }
+            catch (Exception) { }
         }
 
         /// <summary>The activity went to the background: close the camera now.</summary>
         public void Suspend()
         {
             TaskCompletionSource<string>? lost;
-            lock (_lock) lost = _lost;
+            lock (_lock)
+                lost = _lost;
             lost?.TrySetResult("closed (in the background)");
         }
 
         public void RetryNow()
         {
-            try { _wake.Release(); } catch (SemaphoreFullException) { }
+            try
+            {
+                _wake.Release();
+            }
+            catch (SemaphoreFullException) { }
         }
 
         public async Task StopAsync()
         {
             _cts.Cancel();
-            try { await _run; } catch { }
+            try
+            {
+                await _run;
+            }
+            catch { }
             Close();
-            lock (_owner._lock) _owner._captures.Remove(this);
+            lock (_owner._lock)
+                _owner._captures.Remove(this);
             _thread.QuitSafely();
             _cts.Dispose();
         }
 
         sealed class ImageListener(Capture owner) : Java.Lang.Object, ImageReader.IOnImageAvailableListener
         {
-            public void OnImageAvailable(ImageReader? reader) { if (reader != null) owner.OnImage(reader); }
+            public void OnImageAvailable(ImageReader? reader)
+            {
+                if (reader != null)
+                    owner.OnImage(reader);
+            }
         }
     }
 
@@ -374,14 +513,24 @@ public sealed class AndroidCamera : ICameraSource
 
         public override void OnDisconnected(CameraDevice camera)
         {
-            if (!opened.TrySetException(new IOException("camera disconnected"))) lost.TrySetResult("disconnected");
-            try { camera.Close(); } catch (Exception) { }
+            if (!opened.TrySetException(new IOException("camera disconnected")))
+                lost.TrySetResult("disconnected");
+            try
+            {
+                camera.Close();
+            }
+            catch (Exception) { }
         }
 
         public override void OnError(CameraDevice camera, [GeneratedEnum] CameraError error)
         {
-            if (!opened.TrySetException(new IOException($"camera error {error}"))) lost.TrySetResult($"error {error}");
-            try { camera.Close(); } catch (Exception) { }
+            if (!opened.TrySetException(new IOException($"camera error {error}")))
+                lost.TrySetResult($"error {error}");
+            try
+            {
+                camera.Close();
+            }
+            catch (Exception) { }
         }
     }
 
@@ -391,7 +540,8 @@ public sealed class AndroidCamera : ICameraSource
 
         public override void OnConfigureFailed(CameraCaptureSession session)
         {
-            if (!configured.TrySetException(new IOException("session configuration failed"))) lost.TrySetResult("session failed");
+            if (!configured.TrySetException(new IOException("session configuration failed")))
+                lost.TrySetResult("session failed");
         }
     }
 }

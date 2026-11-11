@@ -83,12 +83,24 @@ public static class AndroidMotionAxes
     /// </summary>
     public static Quaternion Recentre(Vector3 gravityG)
     {
-        if (gravityG.LengthSquared() < 1e-6f) return Quaternion.Identity;
+        if (gravityG.LengthSquared() < 1e-6f)
+        {
+            return Quaternion.Identity;
+        }
+
         var a = Vector3.Normalize(gravityG);
         var b = new Vector3(0, 0, -1);
         float dot = Vector3.Dot(a, b);
-        if (dot > 0.99999f) return Quaternion.Identity;
-        if (dot < -0.99999f) return Quaternion.CreateFromAxisAngle(Vector3.UnitX, MathF.PI);
+        if (dot > 0.99999f)
+        {
+            return Quaternion.Identity;
+        }
+
+        if (dot < -0.99999f)
+        {
+            return Quaternion.CreateFromAxisAngle(Vector3.UnitX, MathF.PI);
+        }
+
         var axis = Vector3.Normalize(Vector3.Cross(a, b));
         return Quaternion.CreateFromAxisAngle(axis, MathF.Acos(Math.Clamp(dot, -1f, 1f)));
     }
@@ -99,7 +111,10 @@ public static class AndroidMotionAxes
 }
 
 /// <summary>Which frame a <see cref="SensorMotionSource"/>'s raw vectors are in.</summary>
-public enum SensorFrame { Phone, Controller }
+public enum SensorFrame
+{
+    Phone, Controller
+}
 
 /// <summary>
 /// An accelerometer + gyroscope pair (the phone's SensorManager, or a controller's) as an <see cref="IMotionSource"/>.
@@ -137,10 +152,28 @@ public sealed class SensorMotionSource : IMotionSource
 
     /// <summary>Both sensors have delivered: from then on the Vita follows them (also while the activity is paused and
     /// the listeners are off, so a resume does not snap the game back to the at-rest pose).</summary>
-    public bool HasSensors { get { lock (_lock) return _hasAccel && _hasGyro; } }
+    public bool HasSensors
+    {
+        get
+        {
+            lock (_lock)
+            {
+                return _hasAccel && _hasGyro;
+            }
+        }
+    }
 
     /// <summary>The re-centre rotation in use (identity = none).</summary>
-    public Quaternion RecentreRotation { get { lock (_lock) return _recentre; } }
+    public Quaternion RecentreRotation
+    {
+        get
+        {
+            lock (_lock)
+            {
+                return _recentre;
+            }
+        }
+    }
 
     /// <summary>An accelerometer event: m/s^2 in the sensor's own frame.</summary>
     public void OnAccelerometer(Vector3 ms2)
@@ -159,11 +192,18 @@ public sealed class SensorMotionSource : IMotionSource
         lock (_lock)
         {
             _hasGyro = true;
-            if (!_hasAccel) return;
+            if (!_hasAccel)
+            {
+                return;
+            }
+
             var s = Map((ulong)Math.Max(0, timestampNs / 1000), _accel, rads);
             _ring[_head] = AndroidMotionAxes.Rotate(s, _recentre);
             _head = (_head + 1) % Capacity;
-            if (_count < Capacity) _count++;
+            if (_count < Capacity)
+            {
+                _count++;
+            }
         }
     }
 
@@ -177,14 +217,24 @@ public sealed class SensorMotionSource : IMotionSource
     {
         lock (_lock)
         {
-            if (!_hasAccel) return;
+            if (!_hasAccel)
+            {
+                return;
+            }
+
             _recentre = AndroidMotionAxes.Recentre(Map(0, _gravity, Vector3.Zero).Acceleration);
             Log.Info($"Motion: re-centred {Name} (gravity {Map(0, _gravity, Vector3.Zero).Acceleration:F2} G)");
         }
     }
 
     /// <summary>Forgets the samples queued so far (a listener registered again after a pause).</summary>
-    public void Clear() { lock (_lock) _count = 0; }
+    public void Clear()
+    {
+        lock (_lock)
+        {
+            _count = 0;
+        }
+    }
 
     public int ReadSamples(Span<MotionSample> dest)
     {
@@ -194,7 +244,11 @@ public sealed class SensorMotionSource : IMotionSource
             int start = (_head - _count + Capacity) % Capacity;
             // more queued than fit: keep the newest
             start = (start + (_count - n)) % Capacity;
-            for (int i = 0; i < n; i++) dest[i] = _ring[(start + i) % Capacity];
+            for (int i = 0; i < n; i++)
+            {
+                dest[i] = _ring[(start + i) % Capacity];
+            }
+
             _count = 0;
             return n;
         }
@@ -225,8 +279,16 @@ public sealed class AndroidMotion : IMotionSource
 
     IMotionSource? Pick()
     {
-        if (Mode == AndroidMotionMode.Off) return null;
-        if (Sensors is { HasSensors: true } s) return s;
+        if (Mode == AndroidMotionMode.Off)
+        {
+            return null;
+        }
+
+        if (Sensors is { HasSensors: true } s)
+        {
+            return s;
+        }
+
         return Fallback is { HasSensors: true } f ? f : null;
     }
 
@@ -241,7 +303,11 @@ public sealed class AndroidMotion : IMotionSource
             {
                 _active = src;
                 string name = src is SensorMotionSource s ? s.Name : src != null ? "tilt keys" : "none";
-                if (name != _logged) { _logged = name; Log.Info($"Motion: {name} drives the Vita's motion sensors ({Mode})"); }
+                if (name != _logged)
+                {
+                    _logged = name;
+                    Log.Info($"Motion: {name} drives the Vita's motion sensors ({Mode})");
+                }
             }
         }
         return src?.ReadSamples(dest) ?? 0;

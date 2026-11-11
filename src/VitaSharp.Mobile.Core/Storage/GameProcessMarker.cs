@@ -38,7 +38,11 @@ public static class GameProcessMarker
         GameProcessInfo? info;
         try
         {
-            if (!File.Exists(path)) return null;
+            if (!File.Exists(path))
+            {
+                return null;
+            }
+
             using var doc = JsonDocument.Parse(File.ReadAllText(path));
             var r = doc.RootElement;
             string S(string k) => r.TryGetProperty(k, out var v) && v.ValueKind == JsonValueKind.String ? v.GetString() ?? "" : "";
@@ -46,9 +50,20 @@ public static class GameProcessMarker
             DateTime started = r.TryGetProperty("started", out var s) && s.TryGetDateTime(out var d) ? d : default;
             info = new GameProcessInfo(pid, S("titleId"), S("title"), S("gpuConfig"), started);
         }
-        catch (Exception e) when (e is JsonException or IOException or InvalidOperationException) { info = null; }
-        if (info != null && info.Pid > 0 && isAlive(info.Pid)) return info;
-        try { File.Delete(path); } catch (IOException) { }
+        catch (Exception e) when (e is JsonException or IOException or InvalidOperationException)
+        {
+            info = null;
+        }
+        if (info != null && info.Pid > 0 && isAlive(info.Pid))
+        {
+            return info;
+        }
+
+        try
+        {
+            File.Delete(path);
+        }
+        catch (IOException) { }
         return null;
     }
 
@@ -56,15 +71,29 @@ public static class GameProcessMarker
     public static void Clear(string path, int pid)
     {
         var info = Read(path, _ => true);
-        if (info == null || info.Pid != pid) return;
-        try { File.Delete(path); } catch (IOException) { }
+        if (info == null || info.Pid != pid)
+        {
+            return;
+        }
+
+        try
+        {
+            File.Delete(path);
+        }
+        catch (IOException) { }
     }
 
     /// <summary>True when <paramref name="pid"/> is a live game process of this app (Linux /proc: its command line is
     /// "&lt;package&gt;:game"). Processes of the same app share a user id, so /proc shows them.</summary>
     public static bool IsGameProcess(int pid)
     {
-        try { return File.ReadAllText($"/proc/{pid}/cmdline").TrimEnd('\0').EndsWith(":game", StringComparison.Ordinal); }
-        catch (Exception e) when (e is IOException or UnauthorizedAccessException) { return false; }
+        try
+        {
+            return File.ReadAllText($"/proc/{pid}/cmdline").TrimEnd('\0').EndsWith(":game", StringComparison.Ordinal);
+        }
+        catch (Exception e) when (e is IOException or UnauthorizedAccessException)
+        {
+            return false;
+        }
     }
 }

@@ -16,7 +16,11 @@ public static class CpuChoices
     public static IReadOnlyList<Choice> Available()
     {
         var list = new List<Choice> { new("", Loc.Format("MAutomaticWith", Label(Jit.All.FirstOrDefault(b => b.IsSupported)?.Name ?? "interp"))) };
-        foreach (var b in Jit.All.Where(b => b.IsSupported)) list.Add(new(b.Name, Label(b.Name)));
+        foreach (var b in Jit.All.Where(b => b.IsSupported))
+        {
+            list.Add(new(b.Name, Label(b.Name)));
+        }
+
         list.Add(new("interp", Label("interp")));
         return list;
     }
@@ -60,7 +64,9 @@ public sealed class NetworkSettings
     {
         RpcnConfig? rpcn = null;
         if (RpcnEditable && RpcnConfig.ParseServer(RpcnServer) is { } server && RpcnUser.Length > 0 && rpcnPassword.Length > 0)
+        {
             rpcn = new RpcnConfig(server.Host, server.Port, RpcnUser, rpcnPassword, RpcnToken);
+        }
         // with an RPCN server the online ID is the RPCN user (as on the desktop)
         string? id = rpcn != null && PsnAccount.IsValidOnlineId(rpcn.User) ? rpcn.User
             : PsnAccount.IsValidOnlineId(PsnOnlineId) ? PsnOnlineId : null;

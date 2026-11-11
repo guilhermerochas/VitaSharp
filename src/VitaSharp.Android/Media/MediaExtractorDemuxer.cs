@@ -46,7 +46,8 @@ public sealed unsafe class MediaExtractorDemuxer : IMp4Demuxer
             };
             long dur = f.ContainsKey(MediaFormat.KeyDuration) ? f.GetLong(MediaFormat.KeyDuration) * 9 / 100 : 0;
             duration = Math.Max(duration, dur);
-            if (f.ContainsKey(MediaFormat.KeyMaxInputSize)) _maxSample = Math.Max(_maxSample, f.GetInteger(MediaFormat.KeyMaxInputSize));
+            if (f.ContainsKey(MediaFormat.KeyMaxInputSize))
+                _maxSample = Math.Max(_maxSample, f.GetInteger(MediaFormat.KeyMaxInputSize));
             streams.Add(new DemuxedStream(video, codec, Int(f, MediaFormat.KeyWidth), Int(f, MediaFormat.KeyHeight), Int(f, MediaFormat.KeyChannelCount),
                 Int(f, MediaFormat.KeySampleRate), Int(f, MediaFormat.KeyBitRate), dur, Number(f, MediaFormat.KeyFrameRate),
                 f.ContainsKey(MediaFormat.KeyLanguage) ? f.GetString(MediaFormat.KeyLanguage) ?? "und" : "und"));
@@ -54,7 +55,8 @@ public sealed unsafe class MediaExtractorDemuxer : IMp4Demuxer
             {
                 var csd = new List<byte>();
                 foreach (var k in new[] { "csd-0", "csd-1" })
-                    if (f.ContainsKey(k) && f.GetByteBuffer(k) is { } b) csd.AddRange(Bytes(b));
+                    if (f.ContainsKey(k) && f.GetByteBuffer(k) is { } b)
+                        csd.AddRange(Bytes(b));
                 _csd[i] = [.. csd];
             }
             ex.SelectTrack(i);
@@ -66,12 +68,17 @@ public sealed unsafe class MediaExtractorDemuxer : IMp4Demuxer
     /// <summary>The demuxer for <paramref name="path"/>, or null when MediaExtractor cannot read it.</summary>
     public static IMp4Demuxer? Open(string path)
     {
-        if (!File.Exists(path)) return null;
+        if (!File.Exists(path))
+            return null;
         var ex = new MediaExtractor();
         try
         {
             ex.SetDataSource(path);
-            if (ex.TrackCount == 0) { ex.Release(); return null; }
+            if (ex.TrackCount == 0)
+            {
+                ex.Release();
+                return null;
+            }
             return new MediaExtractorDemuxer(ex);
         }
         catch (Java.Lang.Exception e)
@@ -84,16 +91,30 @@ public sealed unsafe class MediaExtractorDemuxer : IMp4Demuxer
 
     static int Int(MediaFormat f, string key)
     {
-        if (!f.ContainsKey(key)) return 0;
-        try { return f.GetInteger(key); }
-        catch (Java.Lang.ClassCastException) { return (int)f.GetFloat(key); }
+        if (!f.ContainsKey(key))
+            return 0;
+        try
+        {
+            return f.GetInteger(key);
+        }
+        catch (Java.Lang.ClassCastException)
+        {
+            return (int)f.GetFloat(key);
+        }
     }
 
     static double Number(MediaFormat f, string key)
     {
-        if (!f.ContainsKey(key)) return 0;
-        try { return f.GetInteger(key); }
-        catch (Java.Lang.ClassCastException) { return f.GetFloat(key); }
+        if (!f.ContainsKey(key))
+            return 0;
+        try
+        {
+            return f.GetInteger(key);
+        }
+        catch (Java.Lang.ClassCastException)
+        {
+            return f.GetFloat(key);
+        }
     }
 
     static byte[] Bytes(JByteBuffer b) => AndroidMediaPlayer.Bytes(b);
@@ -101,8 +122,15 @@ public sealed unsafe class MediaExtractorDemuxer : IMp4Demuxer
     public DemuxedUnit? Next(Func<int, bool> enabled)
     {
         long t0 = System.Diagnostics.Stopwatch.GetTimestamp();
-        try { return NextCore(enabled); }
-        finally { _nextTicks += System.Diagnostics.Stopwatch.GetTimestamp() - t0; _nexts++; }
+        try
+        {
+            return NextCore(enabled);
+        }
+        finally
+        {
+            _nextTicks += System.Diagnostics.Stopwatch.GetTimestamp() - t0;
+            _nexts++;
+        }
     }
 
     long _nextTicks, _nexts;
@@ -113,7 +141,8 @@ public sealed unsafe class MediaExtractorDemuxer : IMp4Demuxer
         {
             for (int track; (track = _ex.SampleTrackIndex) >= 0; _ex.Advance())
             {
-                if (!enabled(track)) continue;
+                if (!enabled(track))
+                    continue;
                 // getSampleSize is API 28; before that the largest sample the tracks declare (max-input-size)
                 long need = OperatingSystem.IsAndroidVersionAtLeast(28) ? Math.Max(_ex.SampleSize, 1) : _maxSample;
                 if (_sample == null || _sample.Capacity() < need)
@@ -140,13 +169,19 @@ public sealed unsafe class MediaExtractorDemuxer : IMp4Demuxer
     {
         bool startCodes = s.Length >= 4 && s[0] == 0 && s[1] == 0 && (s[2] == 1 || (s[2] == 0 && s[3] == 1));
         var ms = new MemoryStream(s.Length + (header?.Length ?? 0) + 16);
-        if (header != null) ms.Write(header);
-        if (startCodes) { ms.Write(s); return ms.ToArray(); }
+        if (header != null)
+            ms.Write(header);
+        if (startCodes)
+        {
+            ms.Write(s);
+            return ms.ToArray();
+        }
         for (int p = 0; p + 4 <= s.Length;)
         {
             int l = (s[p] << 24) | (s[p + 1] << 16) | (s[p + 2] << 8) | s[p + 3];
             p += 4;
-            if (l <= 0 || p + l > s.Length) break;
+            if (l <= 0 || p + l > s.Length)
+                break;
             ms.Write([0, 0, 0, 1]);
             ms.Write(s.Slice(p, l));
             p += l;
@@ -156,12 +191,14 @@ public sealed unsafe class MediaExtractorDemuxer : IMp4Demuxer
 
     public void Seek(long pts90k)
     {
-        lock (_ex) _ex.SeekTo(pts90k * 100 / 9, MediaExtractorSeekTo.PreviousSync);
+        lock (_ex)
+            _ex.SeekTo(pts90k * 100 / 9, MediaExtractorSeekTo.PreviousSync);
     }
 
     public void Dispose()
     {
-        if (_nexts > 0) Log.Info($"SceMp4: MediaExtractor read {_nexts} units, {_nextTicks * 1000.0 / System.Diagnostics.Stopwatch.Frequency / _nexts:F2} ms per unit");
+        if (_nexts > 0)
+            Log.Info($"SceMp4: MediaExtractor read {_nexts} units, {_nextTicks * 1000.0 / System.Diagnostics.Stopwatch.Frequency / _nexts:F2} ms per unit");
         lock (_ex)
         {
             _sample?.Dispose();

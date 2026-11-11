@@ -58,11 +58,26 @@ public static class LogcatFormat
     /// <summary>The tag and text of a message: guest output to <see cref="GuestTag"/>, the rest to <see cref="Tag"/>.</summary>
     public static (string Tag, string Text) Route(string message)
     {
-        if (!message.StartsWith("[guest", StringComparison.Ordinal)) return (Tag, message);
+        if (!message.StartsWith("[guest", StringComparison.Ordinal))
+        {
+            return (Tag, message);
+        }
         // "[guest] x" and "[guest stdout] x" are the plain output; "[guest stderr]", "[guest fd3]" keep their marker
-        if (message.StartsWith("[guest] ", StringComparison.Ordinal)) return (GuestTag, message["[guest] ".Length..]);
-        if (message.StartsWith("[guest stdout] ", StringComparison.Ordinal)) return (GuestTag, message["[guest stdout] ".Length..]);
-        if (message.StartsWith("[guest ", StringComparison.Ordinal) || message.StartsWith("[guest]", StringComparison.Ordinal)) return (GuestTag, message);
+        if (message.StartsWith("[guest] ", StringComparison.Ordinal))
+        {
+            return (GuestTag, message["[guest] ".Length..]);
+        }
+
+        if (message.StartsWith("[guest stdout] ", StringComparison.Ordinal))
+        {
+            return (GuestTag, message["[guest stdout] ".Length..]);
+        }
+
+        if (message.StartsWith("[guest ", StringComparison.Ordinal) || message.StartsWith("[guest]", StringComparison.Ordinal))
+        {
+            return (GuestTag, message);
+        }
+
         return (Tag, message); // "[guestfoo]": not guest output
     }
 
@@ -72,12 +87,18 @@ public static class LogcatFormat
         var prio = Priority(level);
         var (tag, text) = Route(message);
         string prefix = tag == GuestTag || thread.Length == 0 ? "" : $"[{thread}] ";
-        if (text.Length == 0) { yield return new(prio, tag, prefix); yield break; }
+        if (text.Length == 0)
+        {
+            yield return new(prio, tag, prefix);
+            yield break;
+        }
         foreach (var line in text.Split('\n'))
         {
             var l = line.TrimEnd('\r');
             foreach (var chunk in Chunks(l, MaxEntryBytes - Encoding.UTF8.GetByteCount(prefix)))
+            {
                 yield return new(prio, tag, prefix + chunk);
+            }
         }
     }
 
@@ -86,7 +107,11 @@ public static class LogcatFormat
     public static IEnumerable<string> Chunks(string s, int maxBytes)
     {
         maxBytes = Math.Max(maxBytes, 16);
-        if (Encoding.UTF8.GetByteCount(s) <= maxBytes) { yield return s; yield break; }
+        if (Encoding.UTF8.GetByteCount(s) <= maxBytes)
+        {
+            yield return s;
+            yield break;
+        }
         int start = 0;
         while (start < s.Length)
         {
@@ -95,7 +120,11 @@ public static class LogcatFormat
             {
                 int n = char.IsHighSurrogate(s[i]) && i + 1 < s.Length && char.IsLowSurrogate(s[i + 1]) ? 2 : 1;
                 int b = n == 2 ? 4 : s[i] < 0x80 ? 1 : s[i] < 0x800 ? 2 : 3;
-                if (bytes + b > maxBytes) break;
+                if (bytes + b > maxBytes)
+                {
+                    break;
+                }
+
                 bytes += b;
                 i += n;
             }

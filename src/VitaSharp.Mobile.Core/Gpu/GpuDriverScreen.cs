@@ -48,25 +48,48 @@ public sealed class GpuDriverScreen
             // libadrenotools only opens it on Adreno GPUs; elsewhere the system's Vulkan loader does
             CustomDriversSupported ? Loc.Get("MSystemDriverAdreno") : Loc.Get("MSystemDriverDetail"), systemSelected, false) };
         foreach (var d in installed)
+        {
             list.Add(new(d.Id, d.Meta.Name, Detail(d.Meta), !systemSelected && d.Id == Settings.Driver, true));
+        }
+
         return list;
     }
 
     static string Detail(CustomDriverMeta m)
     {
         var parts = new List<string>();
-        if (m.Vendor.Length > 0) parts.Add(m.Vendor);
-        if (m.DriverVersion.Length > 0) parts.Add(m.DriverVersion);
+        if (m.Vendor.Length > 0)
+        {
+            parts.Add(m.Vendor);
+        }
+
+        if (m.DriverVersion.Length > 0)
+        {
+            parts.Add(m.DriverVersion);
+        }
+
         parts.Add(m.LibraryName);
-        if (m.MinApi > 0) parts.Add($"API {m.MinApi}+");
+        if (m.MinApi > 0)
+        {
+            parts.Add($"API {m.MinApi}+");
+        }
+
         return string.Join(" \u00B7 ", parts);
     }
 
     /// <summary>Selects a driver ("" = the system driver). True when the choice changed (applies on the next start).</summary>
     public bool Select(string id)
     {
-        if (id.Length > 0 && Store.Find(id) == null) throw new ArgumentException($"GPU driver '{id}' is not installed", nameof(id));
-        if (id == Settings.Driver) return false;
+        if (id.Length > 0 && Store.Find(id) == null)
+        {
+            throw new ArgumentException($"GPU driver '{id}' is not installed", nameof(id));
+        }
+
+        if (id == Settings.Driver)
+        {
+            return false;
+        }
+
         Settings.Driver = id;
         Settings.Save(_settingsPath);
         return true;
@@ -83,7 +106,11 @@ public sealed class GpuDriverScreen
         string tmp = Path.Combine(Store.Root, ".download.zip");
         try
         {
-            using (var f = File.Create(tmp)) package.CopyTo(f);
+            using (var f = File.Create(tmp))
+            {
+                package.CopyTo(f);
+            }
+
             return Store.Install(tmp, deviceApiLevel);
         }
         finally
@@ -95,7 +122,11 @@ public sealed class GpuDriverScreen
     /// <summary>Removes an installed package; removing the selected one goes back to the system driver.</summary>
     public bool Remove(string id)
     {
-        if (!Store.Remove(id)) return false;
+        if (!Store.Remove(id))
+        {
+            return false;
+        }
+
         if (Settings.Driver == id)
         {
             Settings.Driver = "";
@@ -108,9 +139,21 @@ public sealed class GpuDriverScreen
     /// arquivos do driver"); null leaves a value unchanged.</summary>
     public void SetOptions(bool? patchBcn = null, bool? turbo = null, bool? fileRedirect = null)
     {
-        if (patchBcn is { } b) Settings.PatchBcn = b;
-        if (turbo is { } t) Settings.Turbo = t;
-        if (fileRedirect is { } r) Settings.FileRedirect = r;
+        if (patchBcn is { } b)
+        {
+            Settings.PatchBcn = b;
+        }
+
+        if (turbo is { } t)
+        {
+            Settings.Turbo = t;
+        }
+
+        if (fileRedirect is { } r)
+        {
+            Settings.FileRedirect = r;
+        }
+
         Settings.Save(_settingsPath);
     }
 
@@ -149,8 +192,16 @@ public static class GpuInfoView
         var d = caps.Device;
         string driver = customDriver ?? $"{DriverName(caps.Driver)} {GpuCapabilities.FormatDriverVersion(caps.Vendor, caps.Driver, caps.DriverVersion)}";
         var arch = new List<string>();
-        if (caps.Has(GpuQuirk.TileBased)) arch.Add("tile-based");
-        if (d.UnifiedMemory) arch.Add(Loc.Get("MUnifiedMemory"));
+        if (caps.Has(GpuQuirk.TileBased))
+        {
+            arch.Add("tile-based");
+        }
+
+        if (d.UnifiedMemory)
+        {
+            arch.Add(Loc.Get("MUnifiedMemory"));
+        }
+
         return
         [
             new("GPU", d.DeviceName),

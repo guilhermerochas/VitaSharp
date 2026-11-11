@@ -93,12 +93,17 @@ public sealed partial class GamePerformance : IDisposable
     /// default 50 us makes every short nanosleep late, and these threads no longer spin to make up for it).</summary>
     void OnRegistered(int tid, NativeThread.Role role)
     {
-        if (role is not (NativeThread.Role.Guest or NativeThread.Role.Gpu)) return;
+        if (role is not (NativeThread.Role.Guest or NativeThread.Role.Gpu))
+            return;
         try
         {
-            if (prctl(PR_SET_TIMERSLACK, 1000, 0, 0, 0) != 0) Fail("timerslack", $"prctl(PR_SET_TIMERSLACK) failed: errno {Marshal.GetLastPInvokeError()}");
+            if (prctl(PR_SET_TIMERSLACK, 1000, 0, 0, 0) != 0)
+                Fail("timerslack", $"prctl(PR_SET_TIMERSLACK) failed: errno {Marshal.GetLastPInvokeError()}");
         }
-        catch (Exception e) { Fail("timerslack", $"prctl: {e.Message}"); }
+        catch (Exception e)
+        {
+            Fail("timerslack", $"prctl: {e.Message}");
+        }
     }
 
     /// <summary>One placement step: sample the threads, plan, apply the masks, update the ADPF session's threads.</summary>
@@ -110,11 +115,17 @@ public sealed partial class GamePerformance : IDisposable
         try
         {
             if (step % 5 == 0 && _gameState.PollMode())
-                lock (_lock) _hints?.PreferPowerEfficiency(_gameState.PreferPowerEfficiency);
-            if (step % 30 == 0) _gameState.LogThermal();
+                lock (_lock)
+                    _hints?.PreferPowerEfficiency(_gameState.PreferPowerEfficiency);
+            if (step % 30 == 0)
+                _gameState.LogThermal();
         }
-        catch (Exception e) { Fail("gamestate", $"game mode / thermal step failed: {e.Message}"); }
-        if (!_enabled) return;
+        catch (Exception e)
+        {
+            Fail("gamestate", $"game mode / thermal step failed: {e.Message}");
+        }
+        if (!_enabled)
+            return;
         try
         {
             var planner = _planner!;
@@ -125,7 +136,12 @@ public sealed partial class GamePerformance : IDisposable
             foreach (var (tid, name) in NativeThread.Names)
             {
                 long cpu = ThreadCpuNanos(tid);
-                if (cpu < 0) { _lastCpu.Remove(tid); _applied.Remove(tid); continue; } // the thread is gone
+                if (cpu < 0)
+                {
+                    _lastCpu.Remove(tid);
+                    _applied.Remove(tid);
+                    continue;
+                } // the thread is gone
                 NativeThread.Roles.TryGetValue(tid, out var role);
                 double load = seconds > 0 && _lastCpu.TryGetValue(tid, out long before) ? Math.Max(0, cpu - before) / 1e9 / seconds : 0;
                 _lastCpu[tid] = cpu;
@@ -135,17 +151,23 @@ public sealed partial class GamePerformance : IDisposable
             foreach (var (tid, placement) in plan.Placements)
             {
                 ulong mask = planner.MaskOf(placement);
-                if (mask == 0 || _applied.TryGetValue(tid, out ulong had) && had == mask) continue;
-                if (SetAffinity(tid, mask)) _applied[tid] = mask;
+                if (mask == 0 || _applied.TryGetValue(tid, out ulong had) && had == mask)
+                    continue;
+                if (SetAffinity(tid, mask))
+                    _applied[tid] = mask;
             }
-            if (!plan.HotTids.SequenceEqual(_hot)) UpdateHotThreads(plan);
+            if (!plan.HotTids.SequenceEqual(_hot))
+                UpdateHotThreads(plan);
             if (!_reported && plan.MainTid != 0)
             {
                 _reported = true;
                 LogcatSink.Notice(Describe(planner, plan, samples));
             }
         }
-        catch (Exception e) { Fail("step", $"CPU placement step failed: {e}"); }
+        catch (Exception e)
+        {
+            Fail("step", $"CPU placement step failed: {e}");
+        }
     }
 
     string Describe(ThreadPlacementPlanner planner, PlacementPlan plan, List<ThreadSample> samples)
@@ -168,9 +190,19 @@ public sealed partial class GamePerformance : IDisposable
         {
             _hot = plan.HotTids;
             _meter.Reset(_hot, _hot.Select(ThreadCpuNanos).ToArray(), NowNanos());
-            if (_hot.Length == 0) return;
-            if (_hints == null) { _hints = HintSession.Create(_context, _hot, _rate.TargetNanos); _hints?.PreferPowerEfficiency(_gameState.PreferPowerEfficiency); }
-            else if (!_hints.SetThreads(_hot)) { _hints.Dispose(); _hints = HintSession.Create(_context, _hot, _rate.TargetNanos); _hints?.PreferPowerEfficiency(_gameState.PreferPowerEfficiency); }
+            if (_hot.Length == 0)
+                return;
+            if (_hints == null)
+            {
+                _hints = HintSession.Create(_context, _hot, _rate.TargetNanos);
+                _hints?.PreferPowerEfficiency(_gameState.PreferPowerEfficiency);
+            }
+            else if (!_hints.SetThreads(_hot))
+            {
+                _hints.Dispose();
+                _hints = HintSession.Create(_context, _hot, _rate.TargetNanos);
+                _hints?.PreferPowerEfficiency(_gameState.PreferPowerEfficiency);
+            }
         }
         Log.Info($"ADPF/placement: hot threads {string.Join(", ", plan.HotTids.Select(t => $"{t} '{NativeThread.Names.GetValueOrDefault(t)}'"))}");
     }
@@ -182,7 +214,11 @@ public sealed partial class GamePerformance : IDisposable
     {
         try
         {
-            if (!_firstFrame) { _firstFrame = true; LogcatSink.EnterGameplay(); }
+            if (!_firstFrame)
+            {
+                _firstFrame = true;
+                LogcatSink.EnterGameplay();
+            }
             _gameState.SetLoading(false);
             long longWaits = Volatile.Read(ref VBlank.LongWaits);
             bool longWait = longWaits != _lastLongWaits;
@@ -190,15 +226,19 @@ public sealed partial class GamePerformance : IDisposable
             if (_rate.OnFrame(Stopwatch.GetTimestamp(), Stopwatch.Frequency, longWait))
             {
                 Log.Info($"Game frame rate: {60.0 / _rate.Vblanks:F0} fps ({_rate.TargetNanos / 1e6:F2} ms per frame)");
-                lock (_lock) _hints?.UpdateTarget(_rate.TargetNanos);
+                lock (_lock)
+                    _hints?.UpdateTarget(_rate.TargetNanos);
                 FrameRateChanged?.Invoke(_rate.RefreshRate);
             }
-            if (!_enabled) return;
+            if (!_enabled)
+                return;
             lock (_lock)
             {
-                if (_hints == null || _meter.Tids.Length == 0) return;
+                if (_hints == null || _meter.Tids.Length == 0)
+                    return;
                 var cpu = new long[_meter.Tids.Length];
-                for (int i = 0; i < cpu.Length; i++) cpu[i] = ThreadCpuNanos(_meter.Tids[i]);
+                for (int i = 0; i < cpu.Length; i++)
+                    cpu[i] = ThreadCpuNanos(_meter.Tids[i]);
                 long now = NowNanos();
                 long work = _meter.OnFrame(cpu, now);
                 long gpuBusy = GpuBusy.Nanos;
@@ -207,17 +247,23 @@ public sealed partial class GamePerformance : IDisposable
                 long start = _lastFrameStart;
                 _lastGpuBusy = gpuBusy;
                 _lastFrameStart = now;
-                if (work > 0) _hints.Report(_report, start, work, gpu, wall);
+                if (work > 0)
+                    _hints.Report(_report, start, work, gpu, wall);
             }
         }
-        catch (Exception e) { Fail("frame", $"frame report failed: {e.Message}"); }
+        catch (Exception e)
+        {
+            Fail("frame", $"frame report failed: {e.Message}");
+        }
     }
 
     static long NowNanos() => (long)(Stopwatch.GetTimestamp() * (1e9 / Stopwatch.Frequency));
 
     void Fail(string key, string message)
     {
-        lock (_failures) if (!_failures.Add(key)) return;
+        lock (_failures)
+            if (!_failures.Add(key))
+                return;
         Log.Warn(message);
     }
 
@@ -247,11 +293,17 @@ public sealed partial class GamePerformance : IDisposable
 
     public void Dispose()
     {
-        if (Display.Presented == OnFrame) Display.Presented = null;
-        if (NativeThread.Registered == OnRegistered) NativeThread.Registered = null;
+        if (Display.Presented == OnFrame)
+            Display.Presented = null;
+        if (NativeThread.Registered == OnRegistered)
+            NativeThread.Registered = null;
         _timer?.Dispose();
         _timer = null;
-        lock (_lock) { _hints?.Dispose(); _hints = null; }
+        lock (_lock)
+        {
+            _hints?.Dispose();
+            _hints = null;
+        }
     }
 
     // ------------------------------------------------------------------ libc
@@ -266,12 +318,17 @@ public sealed partial class GamePerformance : IDisposable
             unsafe
             {
                 fixed (ulong* p = set)
-                    if (sched_setaffinity(tid, (nuint)(set.Length * sizeof(ulong)), p) == 0) return true;
+                    if (sched_setaffinity(tid, (nuint)(set.Length * sizeof(ulong)), p) == 0)
+                        return true;
             }
             int errno = Marshal.GetLastPInvokeError();
-            if (errno != ESRCH) Fail("affinity-" + errno, $"sched_setaffinity({tid}, {CpuTopology.Ranges(mask)}) failed: errno {errno}");
+            if (errno != ESRCH)
+                Fail("affinity-" + errno, $"sched_setaffinity({tid}, {CpuTopology.Ranges(mask)}) failed: errno {errno}");
         }
-        catch (Exception e) { Fail("affinity", $"sched_setaffinity: {e.Message}"); }
+        catch (Exception e)
+        {
+            Fail("affinity", $"sched_setaffinity: {e.Message}");
+        }
         return false;
     }
 
@@ -282,9 +339,13 @@ public sealed partial class GamePerformance : IDisposable
         long* ts = stackalloc long[2];
         try
         {
-            if (clock_gettime((~tid << 3) | 6, ts) != 0) return -1;
+            if (clock_gettime((~tid << 3) | 6, ts) != 0)
+                return -1;
         }
-        catch (Exception e) when (e is DllNotFoundException or EntryPointNotFoundException) { return -1; }
+        catch (Exception e) when (e is DllNotFoundException or EntryPointNotFoundException)
+        {
+            return -1;
+        }
         return ts[0] * 1_000_000_000 + ts[1];
     }
 
@@ -307,27 +368,56 @@ public sealed partial class GamePerformance : IDisposable
         public static string Unavailable = "not created yet";
         PerformanceHintManager.Session? _session;
 
-        HintSession(PerformanceHintManager.Session s) { _session = s; }
+        HintSession(PerformanceHintManager.Session s)
+        {
+            _session = s;
+        }
 
         public static HintSession? Create(Context context, int[] tids, long targetNanos)
         {
-            if (!OperatingSystem.IsAndroidVersionAtLeast(31)) { Unavailable = "needs Android 12"; return null; }
+            if (!OperatingSystem.IsAndroidVersionAtLeast(31))
+            {
+                Unavailable = "needs Android 12";
+                return null;
+            }
             try
             {
-                if (context.GetSystemService(Context.PerformanceHintService) is not PerformanceHintManager mgr) { Unavailable = "no PerformanceHintManager"; return null; }
-                if (mgr.CreateHintSession(tids, targetNanos) is not { } s) { Unavailable = "the device does not support hint sessions"; return null; }
+                if (context.GetSystemService(Context.PerformanceHintService) is not PerformanceHintManager mgr)
+                {
+                    Unavailable = "no PerformanceHintManager";
+                    return null;
+                }
+                if (mgr.CreateHintSession(tids, targetNanos) is not { } s)
+                {
+                    Unavailable = "the device does not support hint sessions";
+                    return null;
+                }
                 Log.Info($"ADPF: hint session for threads {string.Join(",", tids)}, target {targetNanos / 1e6:F2} ms, preferred update rate {mgr.PreferredUpdateRateNanos / 1e6:F1} ms");
                 return new HintSession(s);
             }
-            catch (Exception e) { Unavailable = e.Message; Log.Warn($"ADPF: no hint session: {e.Message}"); return null; }
+            catch (Exception e)
+            {
+                Unavailable = e.Message;
+                Log.Warn($"ADPF: no hint session: {e.Message}");
+                return null;
+            }
         }
 
         /// <summary>Changes the session's threads (API 34+); false = recreate the session.</summary>
         public bool SetThreads(int[] tids)
         {
-            if (_session == null || !OperatingSystem.IsAndroidVersionAtLeast(34)) return false;
-            try { _session.SetThreads(tids); return true; }
-            catch (Exception e) { Log.Warn($"ADPF: setThreads failed: {e.Message}"); return false; }
+            if (_session == null || !OperatingSystem.IsAndroidVersionAtLeast(34))
+                return false;
+            try
+            {
+                _session.SetThreads(tids);
+                return true;
+            }
+            catch (Exception e)
+            {
+                Log.Warn($"ADPF: setThreads failed: {e.Message}");
+                return false;
+            }
         }
 
         bool _workDurationFailed;
@@ -337,7 +427,8 @@ public sealed partial class GamePerformance : IDisposable
         /// the first), <paramref name="start"/> = when the interval began (CLOCK_MONOTONIC ns).</summary>
         public void Report(AdpfReport mode, long start, long cpu, long gpu, long wall)
         {
-            if (_session == null || !OperatingSystem.IsAndroidVersionAtLeast(31)) return;
+            if (_session == null || !OperatingSystem.IsAndroidVersionAtLeast(31))
+                return;
             if (mode != AdpfReport.Cpu && !_workDurationFailed && start > 0 && gpu >= 0 && wall > 0 && OperatingSystem.IsAndroidVersionAtLeast(35))
             {
                 long total = mode == AdpfReport.Wall ? wall : Math.Clamp(Math.Max(cpu, gpu), 1, wall);
@@ -353,7 +444,11 @@ public sealed partial class GamePerformance : IDisposable
                     _session.ReportActualWorkDuration(d);
                     return;
                 }
-                catch (Exception e) { _workDurationFailed = true; Log.Warn($"ADPF: WorkDuration report failed ({e.Message}): CPU time only from now"); }
+                catch (Exception e)
+                {
+                    _workDurationFailed = true;
+                    Log.Warn($"ADPF: WorkDuration report failed ({e.Message}): CPU time only from now");
+                }
             }
             _session.ReportActualWorkDuration(cpu);
         }
@@ -361,20 +456,35 @@ public sealed partial class GamePerformance : IDisposable
         /// <summary>API 35+: the game mode's wish (battery: efficient cores and clocks first; else speed first).</summary>
         public void PreferPowerEfficiency(bool on)
         {
-            if (_session == null || !OperatingSystem.IsAndroidVersionAtLeast(35)) return;
-            try { _session.SetPreferPowerEfficiency(on); }
-            catch (Exception e) { Log.Warn($"ADPF: setPreferPowerEfficiency failed: {e.Message}"); }
+            if (_session == null || !OperatingSystem.IsAndroidVersionAtLeast(35))
+                return;
+            try
+            {
+                _session.SetPreferPowerEfficiency(on);
+            }
+            catch (Exception e)
+            {
+                Log.Warn($"ADPF: setPreferPowerEfficiency failed: {e.Message}");
+            }
         }
 
         public void UpdateTarget(long nanos)
         {
-            if (_session == null || !OperatingSystem.IsAndroidVersionAtLeast(31)) return;
+            if (_session == null || !OperatingSystem.IsAndroidVersionAtLeast(31))
+                return;
             _session.UpdateTargetWorkDuration(nanos);
         }
 
         public void Dispose()
         {
-            if (_session != null && OperatingSystem.IsAndroidVersionAtLeast(31)) { try { _session.Close(); } catch (Exception) { } }
+            if (_session != null && OperatingSystem.IsAndroidVersionAtLeast(31))
+            {
+                try
+                {
+                    _session.Close();
+                }
+                catch (Exception) { }
+            }
             _session = null;
         }
     }

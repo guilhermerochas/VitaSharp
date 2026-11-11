@@ -52,11 +52,15 @@ public sealed class GamePage : Screen<GameState, GameProps>
     {
         try
         {
-            if (!Directory.Exists(dir)) return (0, null);
+            if (!Directory.Exists(dir))
+                return (0, null);
             var files = new DirectoryInfo(dir).EnumerateFiles("*", SearchOption.AllDirectories).ToList();
             return (files.Sum(f => f.Length), files.Count > 0 ? files.Max(f => f.LastWriteTimeUtc) : null);
         }
-        catch (Exception e) when (e is IOException or UnauthorizedAccessException) { return (0, null); }
+        catch (Exception e) when (e is IOException or UnauthorizedAccessException)
+        {
+            return (0, null);
+        }
     }
 
     public override VisualNode Render()
@@ -116,7 +120,14 @@ public sealed class GamePage : Screen<GameState, GameProps>
                         s.HasOverrides ? Divider() : null,
                         s.HasOverrides ? Row(Loc.Get("MResetToDefaults"), null, () => Save(x =>
                         {
-                            x.CpuBackend = null; x.CpuMhz = null; x.GpuProfile = null; x.VSync = null; x.ShowFps = null; x.ResScale = null; x.Msaa = null; x.FastLoading = null;
+                            x.CpuBackend = null;
+                            x.CpuMhz = null;
+                            x.GpuProfile = null;
+                            x.VSync = null;
+                            x.ShowFps = null;
+                            x.ResScale = null;
+                            x.Msaa = null;
+                            x.FastLoading = null;
                         })) : null
                     ),
                     SectionTitle(Loc.Get("MSaves")),
@@ -173,7 +184,8 @@ public sealed class GamePage : Screen<GameState, GameProps>
     async void Pick(string title, IReadOnlyList<Choice> choices, string globalValue, Action<string?> apply)
     {
         var v = await Choose(title, SettingsChoices.WithDefault(choices, globalValue));
-        if (v == null) return;
+        if (v == null)
+            return;
         Save(_ => apply(v == SettingsChoices.DefaultValue ? null : v));
     }
 
@@ -187,7 +199,8 @@ public sealed class GamePage : Screen<GameState, GameProps>
 
     async void DeleteSaves()
     {
-        if (!await Confirm(Loc.Get("MDeleteSaves"), Loc.Format("MDeleteSavesConfirm", State.Game?.Title), Loc.Get("MDelete"))) return;
+        if (!await Confirm(Loc.Get("MDeleteSaves"), Loc.Format("MDeleteSavesConfirm", State.Game?.Title), Loc.Get("MDelete")))
+            return;
         await Run(Loc.Get("MDeleteSaves"), async () =>
         {
             await Task.Run(() => Directory.Delete(AppServices.Data.SaveDir(Props.TitleId), true));
@@ -197,7 +210,8 @@ public sealed class GamePage : Screen<GameState, GameProps>
 
     async void More()
     {
-        if (State.Game is not { } g || ContainerPage is not { } page) return;
+        if (State.Game is not { } g || ContainerPage is not { } page)
+            return;
         var pick = await page.DisplayActionSheetAsync(g.Title, Loc.Get("MCancel"), Loc.Get("MUninstall"), Loc.Get("MTrophies"), Loc.Get("MCopyFolderPath"));
         switch (pick)
         {
@@ -208,7 +222,8 @@ public sealed class GamePage : Screen<GameState, GameProps>
                 await Clipboard.Default.SetTextAsync(g.AppDir);
                 break;
             case var u when u == Loc.Get("MUninstall"):
-                if (!await Confirm(Loc.Get("MUninstall"), Loc.Format("MUninstallConfirm", g.Title, g.TitleId), Loc.Get("MRemove"))) return;
+                if (!await Confirm(Loc.Get("MUninstall"), Loc.Format("MUninstallConfirm", g.Title, g.TitleId), Loc.Get("MRemove")))
+                    return;
                 await Run(Loc.Get("MUninstall"), async () =>
                 {
                     await Task.Run(() => Directory.Delete(g.AppDir, true));

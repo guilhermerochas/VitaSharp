@@ -42,7 +42,11 @@ public sealed class ScriptedPad
         foreach (var raw in script.Split(',', StringSplitOptions.RemoveEmptyEntries | StringSplitOptions.TrimEntries))
         {
             var at = raw.Split('@');
-            if (at.Length != 2) throw new FormatException($"bad input step '{raw}'");
+            if (at.Length != 2)
+            {
+                throw new FormatException($"bad input step '{raw}'");
+            }
+
             var p = at[1].Split(':');
             double start = offset + double.Parse(p[0], inv);
             string name = at[0].ToLowerInvariant();
@@ -53,14 +57,22 @@ public sealed class ScriptedPad
             }
             if (name is "tap" or "btap")
             {
-                if (p.Length < 3) throw new FormatException($"bad tap step '{raw}'");
+                if (p.Length < 3)
+                {
+                    throw new FormatException($"bad tap step '{raw}'");
+                }
+
                 steps.Add(new Step(0, name == "tap" ? 3 : 4, start, p.Length > 3 ? double.Parse(p[3], inv) : 0.25,
                     float.Parse(p[1], inv), float.Parse(p[2], inv)));
                 continue;
             }
             if (name is "lstick" or "rstick")
             {
-                if (p.Length < 3) throw new FormatException($"bad stick step '{raw}'");
+                if (p.Length < 3)
+                {
+                    throw new FormatException($"bad stick step '{raw}'");
+                }
+
                 steps.Add(new Step(0, name == "lstick" ? 1 : 2, start, p.Length > 3 ? double.Parse(p[3], inv) : 0.25,
                     float.Parse(p[1], inv), float.Parse(p[2], inv)));
                 continue;
@@ -93,7 +105,11 @@ public sealed class ScriptedPad
         _nextPoll = t + 0.25;
         try
         {
-            if (!File.Exists(LivePath)) return;
+            if (!File.Exists(LivePath))
+            {
+                return;
+            }
+
             string text = File.ReadAllText(LivePath!);
             File.Delete(LivePath!);
             // copy on write: AddTouches may run on another thread
@@ -111,15 +127,35 @@ public sealed class ScriptedPad
     {
         _clock ??= Stopwatch.StartNew();
         double t = _clock.Elapsed.TotalSeconds;
-        if (LivePath != null && t >= _nextPoll) PollLive(t);
-        if (_states.Count > 0) FireStates(t);
+        if (LivePath != null && t >= _nextPoll)
+        {
+            PollLive(t);
+        }
+
+        if (_states.Count > 0)
+        {
+            FireStates(t);
+        }
+
         foreach (var st in _steps)
         {
-            if (t < st.Start || t >= st.Start + st.Length) continue;
+            if (t < st.Start || t >= st.Start + st.Length)
+            {
+                continue;
+            }
+
             s.Buttons |= st.Button;
             static byte ax(float v) => (byte)Math.Clamp((int)MathF.Round(128 + v * 127), 0, 255);
-            if (st.Stick == 1) { s.Lx = ax(st.X); s.Ly = ax(st.Y); }
-            else if (st.Stick == 2) { s.Rx = ax(st.X); s.Ry = ax(st.Y); }
+            if (st.Stick == 1)
+            {
+                s.Lx = ax(st.X);
+                s.Ly = ax(st.Y);
+            }
+            else if (st.Stick == 2)
+            {
+                s.Rx = ax(st.X);
+                s.Ry = ax(st.Y);
+            }
         }
         return s;
     }
@@ -127,9 +163,16 @@ public sealed class ScriptedPad
     void FireStates(double t)
     {
         var due = _states.FindAll(s => s.At <= t);
-        if (due.Count == 0) return;
+        if (due.Count == 0)
+        {
+            return;
+        }
+
         _states = _states.FindAll(s => s.At > t);
-        foreach (var (save, slot, _) in due) StateRequested?.Invoke(save, slot);
+        foreach (var (save, slot, _) in due)
+        {
+            StateRequested?.Invoke(save, slot);
+        }
     }
 
     /// <summary>Adds the touches of the tap steps active now (front: tap, rear: btap), each step its own contact.</summary>
@@ -140,7 +183,11 @@ public sealed class ScriptedPad
         for (int i = 0; i < _steps.Count; i++)
         {
             var st = _steps[i];
-            if (st.Stick < 3 || t < st.Start || t >= st.Start + st.Length) continue;
+            if (st.Stick < 3 || t < st.Start || t >= st.Start + st.Length)
+            {
+                continue;
+            }
+
             m.AddTouch(st.Stick == 4, new TouchPoint(TouchIdBase + i, st.X, st.Y));
         }
     }

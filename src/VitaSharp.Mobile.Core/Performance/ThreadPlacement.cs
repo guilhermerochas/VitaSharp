@@ -3,7 +3,10 @@ using VitaSharp.Core.Util;
 namespace VitaSharp.Mobile.Core.Performance;
 
 /// <summary>The kinds of threads the placement knows (from <c>NativeThread.Roles</c> and names).</summary>
-public enum ThreadKind { Guest, Gpu, JitWorker, ShaderWorker, Other }
+public enum ThreadKind
+{
+    Guest, Gpu, JitWorker, ShaderWorker, Other
+}
 
 /// <summary>One thread at a placement step: its CPU use over the last window (1.0 = one core all the time) and the
 /// order it registered in (the first guest thread is the game's main thread until the loads say otherwise).</summary>
@@ -58,7 +61,10 @@ public sealed class ThreadPlacementPlanner
     int _main;
     bool _shadersOnBig;
 
-    public ThreadPlacementPlanner(CpuTopology topology) { _topology = topology; }
+    public ThreadPlacementPlanner(CpuTopology topology)
+    {
+        _topology = topology;
+    }
 
     public CpuTopology Topology => _topology;
 
@@ -77,7 +83,11 @@ public sealed class ThreadPlacementPlanner
 
     public PlacementPlan Plan(IReadOnlyList<ThreadSample> threads)
     {
-        if (_topology.Big is not { } big) return PlacementPlan.None;
+        if (_topology.Big is not { } big)
+        {
+            return PlacementPlan.None;
+        }
+
         int slots = big.Cpus.Length;
         var placements = new Dictionary<int, Placement>();
         var guests = threads.Where(t => t.Kind == ThreadKind.Guest).ToList();
@@ -85,11 +95,21 @@ public sealed class ThreadPlacementPlanner
         // the main thread: the busiest guest thread, kept until another one is clearly busier
         var current = guests.FirstOrDefault(t => t.Tid == _main);
         var busiest = guests.OrderByDescending(t => t.Load).ThenBy(t => t.Order).FirstOrDefault();
-        if (current.Tid == 0) _main = guests.Count == 0 ? 0 : busiest.Load > 0 ? busiest.Tid : guests.MinBy(t => t.Order).Tid;
-        else if (busiest.Tid != _main && busiest.Load > current.Load * 1.5 + 0.1) _main = busiest.Tid;
+        if (current.Tid == 0)
+        {
+            _main = guests.Count == 0 ? 0 : busiest.Load > 0 ? busiest.Tid : guests.MinBy(t => t.Order).Tid;
+        }
+        else if (busiest.Tid != _main && busiest.Load > current.Load * 1.5 + 0.1)
+        {
+            _main = busiest.Tid;
+        }
 
         var hot = new List<int>();
-        if (_main != 0) { hot.Add(_main); placements[_main] = Placement.Big; }
+        if (_main != 0)
+        {
+            hot.Add(_main);
+            placements[_main] = Placement.Big;
+        }
         var gpu = threads.FirstOrDefault(t => t.Kind == ThreadKind.Gpu);
         if (gpu.Tid != 0)
         {
@@ -98,19 +118,38 @@ public sealed class ThreadPlacementPlanner
         }
         foreach (var g in guests.Where(g => g.Tid != _main).OrderByDescending(g => g.Load).ThenBy(g => g.Order))
         {
-            if (g.Load >= HotLoad && hot.Count < slots) { hot.Add(g.Tid); placements[g.Tid] = Placement.Big; }
-            else placements[g.Tid] = Placement.NotBig;
+            if (g.Load >= HotLoad && hot.Count < slots)
+            {
+                hot.Add(g.Tid);
+                placements[g.Tid] = Placement.Big;
+            }
+            else
+            {
+                placements[g.Tid] = Placement.NotBig;
+            }
         }
 
         // idle fast-core time over the window decides where the shader workers may run (with hysteresis)
         double hotLoad = threads.Where(t => placements.TryGetValue(t.Tid, out var p) && p == Placement.Big).Sum(t => t.Load);
-        if (_shadersOnBig && hotLoad > slots - 0.25) _shadersOnBig = false;
-        else if (!_shadersOnBig && hotLoad < slots - 0.5) _shadersOnBig = true;
+        if (_shadersOnBig && hotLoad > slots - 0.25)
+        {
+            _shadersOnBig = false;
+        }
+        else if (!_shadersOnBig && hotLoad < slots - 0.5)
+        {
+            _shadersOnBig = true;
+        }
 
         foreach (var t in threads)
         {
-            if (t.Kind == ThreadKind.JitWorker) placements[t.Tid] = Placement.NotBig;
-            else if (t.Kind == ThreadKind.ShaderWorker) placements[t.Tid] = _shadersOnBig ? Placement.All : Placement.NotBig;
+            if (t.Kind == ThreadKind.JitWorker)
+            {
+                placements[t.Tid] = Placement.NotBig;
+            }
+            else if (t.Kind == ThreadKind.ShaderWorker)
+            {
+                placements[t.Tid] = _shadersOnBig ? Placement.All : Placement.NotBig;
+            }
         }
         return new PlacementPlan(placements, hot.ToArray(), _main, gpu.Tid, _shadersOnBig);
     }

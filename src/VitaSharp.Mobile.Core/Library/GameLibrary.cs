@@ -45,15 +45,29 @@ public static class GameLibrary
     public static List<GameEntry> Scan(DataLayout data)
     {
         var list = new List<GameEntry>();
-        if (!Directory.Exists(data.Apps)) return list;
+        if (!Directory.Exists(data.Apps))
+        {
+            return list;
+        }
+
         foreach (var dir in Directory.GetDirectories(data.Apps))
-            if (Read(dir) is { } e) list.Add(e);
+        {
+            if (Read(dir) is { } e)
+            {
+                list.Add(e);
+            }
+        }
+
         return list.OrderBy(g => g.Title, StringComparer.CurrentCultureIgnoreCase).ToList();
     }
 
     public static GameEntry? Read(string dir)
     {
-        if (!File.Exists(Vfs.ResolveCaseInsensitive(dir, "eboot.bin"))) return null;
+        if (!File.Exists(Vfs.ResolveCaseInsensitive(dir, "eboot.bin")))
+        {
+            return null;
+        }
+
         string id = Path.GetFileName(dir), title = id, version = "", category = "gd";
         var sfoPath = Vfs.ResolveCaseInsensitive(dir, "sce_sys/param.sfo");
         try
@@ -61,10 +75,22 @@ public static class GameLibrary
             if (File.Exists(sfoPath))
             {
                 var sfo = Sfo.Load(sfoPath);
-                if (sfo.Title.Length > 0) title = sfo.Title.Replace('\n', ' ');
-                if (sfo.TitleId.Length > 0) id = sfo.TitleId;
+                if (sfo.Title.Length > 0)
+                {
+                    title = sfo.Title.Replace('\n', ' ');
+                }
+
+                if (sfo.TitleId.Length > 0)
+                {
+                    id = sfo.TitleId;
+                }
+
                 version = sfo.AppVersion.TrimStart('0');
-                if (version.StartsWith('.')) version = "0" + version;
+                if (version.StartsWith('.'))
+                {
+                    version = "0" + version;
+                }
+
                 category = sfo.Category;
             }
         }
@@ -80,13 +106,21 @@ public static class GameLibrary
         var grades = new Dictionary<TrophyGrade, (int Earned, int Total)>();
         foreach (var (commId, trp) in TrophyPackage.FindSets(game.AppDir))
         {
-            if (TrophyPackage.Load(trp, commId) is not { } pkg) continue;
+            if (TrophyPackage.Load(trp, commId) is not { } pkg)
+            {
+                continue;
+            }
+
             var unlocked = TrophyUnlocks.Load(TrophyUnlocks.PathFor(data.Fs, commId));
             foreach (var t in pkg.Trophies)
             {
                 bool got = unlocked.ContainsKey(t.Id);
                 total++;
-                if (got) earned++;
+                if (got)
+                {
+                    earned++;
+                }
+
                 var g = grades.GetValueOrDefault(t.Grade);
                 grades[t.Grade] = (g.Earned + (got ? 1 : 0), g.Total + 1);
             }
@@ -95,7 +129,10 @@ public static class GameLibrary
     }
 
     /// <summary>Library filters (the chips "Todos - N", "Recentes", "Jogaveis").</summary>
-    public enum Filter { All, Recent, Playable }
+    public enum Filter
+    {
+        All, Recent, Playable
+    }
 
     /// <summary>
     /// The games matching the search text and filter. "Recentes": played at least once, most recent first.
@@ -126,7 +163,11 @@ public static class GameLibrary
     /// <summary>"Hoje", "Ontem", "ha 3 dias" or the date.</summary>
     public static string LastPlayed(DateTime? utc, DateTime nowUtc)
     {
-        if (utc is not { } t) return Loc.Get("MNever");
+        if (utc is not { } t)
+        {
+            return Loc.Get("MNever");
+        }
+
         int days = (nowUtc.ToLocalTime().Date - t.ToLocalTime().Date).Days;
         return days switch
         {
@@ -143,7 +184,11 @@ public static class GameLibrary
     {
         var words = title.Split([' ', ':', '-', '_', '.', '\u2122', '\u00AE'], StringSplitOptions.RemoveEmptyEntries)
             .Where(w => char.IsLetterOrDigit(w[0]) && !(w.Length <= 2 && char.IsLower(w[0]))).ToArray();
-        if (words.Length >= 2) return string.Concat(words.Take(3).Select(w => char.ToUpperInvariant(w[0])));
+        if (words.Length >= 2)
+        {
+            return string.Concat(words.Take(3).Select(w => char.ToUpperInvariant(w[0])));
+        }
+
         var s = words.Length == 1 ? words[0] : title;
         return s.Length >= 2 ? s[..2].ToUpperInvariant() : s.ToUpperInvariant();
     }
@@ -153,13 +198,23 @@ public static class GameLibrary
     {
         string[] palette = ["#4A3A28", "#4A2A30", "#3B2F4F", "#2A3D5C", "#2E4A3A", "#4A4128", "#34405C", "#4A2E45"];
         uint h = 2166136261;
-        foreach (char c in titleId) h = (h ^ c) * 16777619;
+        foreach (char c in titleId)
+        {
+            h = (h ^ c) * 16777619;
+        }
+
         return palette[h % (uint)palette.Length];
     }
 
     static long DirectorySize(string dir)
     {
-        try { return new DirectoryInfo(dir).EnumerateFiles("*", SearchOption.AllDirectories).Sum(f => f.Length); }
-        catch (Exception e) when (e is IOException or UnauthorizedAccessException) { return 0; }
+        try
+        {
+            return new DirectoryInfo(dir).EnumerateFiles("*", SearchOption.AllDirectories).Sum(f => f.Length);
+        }
+        catch (Exception e) when (e is IOException or UnauthorizedAccessException)
+        {
+            return 0;
+        }
     }
 }

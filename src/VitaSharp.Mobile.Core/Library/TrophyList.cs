@@ -20,7 +20,10 @@ public sealed class TrophyList
     public IReadOnlyList<TrophyRow> Rows { get; }
     public TrophyProgress Progress { get; }
 
-    public enum Filter { All, Earned, Missing }
+    public enum Filter
+    {
+        All, Earned, Missing
+    }
 
     TrophyList(string title, IReadOnlyList<TrophyRow> rows, TrophyProgress progress)
     {
@@ -35,12 +38,22 @@ public sealed class TrophyList
         string title = game.Title;
         foreach (var (commId, trp) in TrophyPackage.FindSets(game.AppDir))
         {
-            if (TrophyPackage.Load(trp, commId, language) is not { } pkg) continue;
-            if (pkg.Title.Length > 0) title = pkg.Title;
+            if (TrophyPackage.Load(trp, commId, language) is not { } pkg)
+            {
+                continue;
+            }
+
+            if (pkg.Title.Length > 0)
+            {
+                title = pkg.Title;
+            }
+
             var unlocked = TrophyUnlocks.Load(TrophyUnlocks.PathFor(data.Fs, commId));
             foreach (var t in pkg.Trophies)
+            {
                 rows.Add(new TrophyRow(commId, t.Id, t.Grade, t.Name, t.Detail, t.Hidden,
                     unlocked.TryGetValue(t.Id, out var tick) ? TrophyUnlocks.TickToUtc(tick) : null, pkg.TrophyIcon(t.Id)));
+            }
         }
         return new TrophyList(title, rows, Summarize(rows));
     }
@@ -61,7 +74,11 @@ public sealed class TrophyList
         foreach (var r in rows)
         {
             total++;
-            if (r.Unlocked) earned++;
+            if (r.Unlocked)
+            {
+                earned++;
+            }
+
             var g = grades.GetValueOrDefault(r.Grade);
             grades[r.Grade] = (g.Earned + (r.Unlocked ? 1 : 0), g.Total + 1);
         }

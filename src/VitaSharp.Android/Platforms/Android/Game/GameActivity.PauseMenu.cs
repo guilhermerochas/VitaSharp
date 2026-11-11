@@ -46,9 +46,17 @@ public sealed partial class GameActivity
 
     Typeface Font(ref Typeface? cache, string asset)
     {
-        if (cache != null) return cache;
-        try { cache = Typeface.CreateFromAsset(Assets, asset); }
-        catch (Exception e) { Log.Warn($"Pause menu: font {asset}: {e.Message}"); cache = Typeface.Default; }
+        if (cache != null)
+            return cache;
+        try
+        {
+            cache = Typeface.CreateFromAsset(Assets, asset);
+        }
+        catch (Exception e)
+        {
+            Log.Warn($"Pause menu: font {asset}: {e.Message}");
+            cache = Typeface.Default;
+        }
         return cache!;
     }
 
@@ -63,8 +71,13 @@ public sealed partial class GameActivity
     /// open goes one page back.</summary>
     void OpenMenu()
     {
-        if (MenuVisible) { _menuBack?.Invoke(); return; }
-        if (_menuOpen || _root == null) return; // a fatal dialog
+        if (MenuVisible)
+        {
+            _menuBack?.Invoke();
+            return;
+        }
+        if (_menuOpen || _root == null)
+            return; // a fatal dialog
         _menuOpen = true;
         _session?.CaptureMenuThumbnail(); // the picture of a state saved from this menu (taken before the pause)
         _session?.Pause();
@@ -88,14 +101,16 @@ public sealed partial class GameActivity
 
     void CloseMenu(bool resume)
     {
-        if (_menu == null) return;
+        if (_menu == null)
+            return;
         _root?.RemoveView(_menu);
         _menu = null;
         _menuCard = null;
         _menuBack = null;
         _menuOpen = false;
         _controls?.Invalidate();
-        if (resume && !IsFinishing) _session?.Resume();
+        if (resume && !IsFinishing)
+            _session?.Resume();
         EnterImmersive();
     }
 
@@ -103,7 +118,8 @@ public sealed partial class GameActivity
 
     void ShowMainPage()
     {
-        if (_menuCard is not { } card) return;
+        if (_menuCard is not { } card)
+            return;
         card.RemoveAllViews();
         _menuBack = CloseMenu;
         var session = _session;
@@ -153,7 +169,8 @@ public sealed partial class GameActivity
     /// ends with a toast, and the game resumes.</summary>
     void ShowSlotsPage(bool save)
     {
-        if (_menuCard is not { } card || _session is not { } session) return;
+        if (_menuCard is not { } card || _session is not { } session)
+            return;
         card.RemoveAllViews();
         _menuBack = ShowMainPage;
         card.AddView(PageHeader(save ? Loc.Get("MSaveState") : Loc.Get("MLoadState"), save ? Loc.Get("MPickSlotSave") : Loc.Get("MPickSlotLoad")));
@@ -174,11 +191,13 @@ public sealed partial class GameActivity
                     RunOnUiThread(() =>
                     {
                         Toast.MakeText(this, msg, ToastLength.Long)?.Show();
-                        if (!IsFinishing && !MenuVisible) session.Resume();
+                        if (!IsFinishing && !MenuVisible)
+                            session.Resume();
                     });
                 });
             });
-            if (enabled && first == null) first = v;
+            if (enabled && first == null)
+                first = v;
             slots.Add(v);
         }
         card.AddView(Grid(slots, 3), new LinearLayout.LayoutParams(ViewGroup.LayoutParams.MatchParent, ViewGroup.LayoutParams.WrapContent) { TopMargin = Dp(12) });
@@ -188,7 +207,8 @@ public sealed partial class GameActivity
     /// <summary>The in-game settings: what can change while the game runs (the rest is in the game's page of the app).</summary>
     void ShowSettingsPage()
     {
-        if (_menuCard is not { } card) return;
+        if (_menuCard is not { } card)
+            return;
         card.RemoveAllViews();
         _menuBack = ShowMainPage;
         card.AddView(PageHeader(Loc.Get("MGameSettingsShort"), Loc.Get("MGameSettingsNote")));
@@ -197,7 +217,8 @@ public sealed partial class GameActivity
         AView? first = null;
         void Add(AView row)
         {
-            if (list.ChildCount > 0) list.AddView(new AView(this) { Background = new ColorDrawable(CBorder) }, new LinearLayout.LayoutParams(ViewGroup.LayoutParams.MatchParent, 1) { LeftMargin = Dp(16), RightMargin = Dp(16) });
+            if (list.ChildCount > 0)
+                list.AddView(new AView(this) { Background = new ColorDrawable(CBorder) }, new LinearLayout.LayoutParams(ViewGroup.LayoutParams.MatchParent, 1) { LeftMargin = Dp(16), RightMargin = Dp(16) });
             list.AddView(row);
             first ??= row;
         }
@@ -264,15 +285,33 @@ public sealed partial class GameActivity
     /// reach the controller state, so a button held when the menu opened is not left pressed.</summary>
     bool MenuControllerKey(KeyEvent e)
     {
-        if (e.Action == KeyEventActions.Up) { AppServices.Gamepads.OnKey(e.DeviceId, (int)e.KeyCode, false); return e.KeyCode is not (Keycode.DpadUp or Keycode.DpadDown or Keycode.DpadLeft or Keycode.DpadRight or Keycode.DpadCenter); }
-        if (e.RepeatCount > 0 && e.KeyCode is not (Keycode.DpadUp or Keycode.DpadDown or Keycode.DpadLeft or Keycode.DpadRight)) return true;
+        if (e.Action == KeyEventActions.Up)
+        {
+            AppServices.Gamepads.OnKey(e.DeviceId, (int)e.KeyCode, false);
+            return e.KeyCode is not (Keycode.DpadUp or Keycode.DpadDown or Keycode.DpadLeft or Keycode.DpadRight or Keycode.DpadCenter);
+        }
+        if (e.RepeatCount > 0 && e.KeyCode is not (Keycode.DpadUp or Keycode.DpadDown or Keycode.DpadLeft or Keycode.DpadRight))
+            return true;
         switch (e.KeyCode)
         {
-            case Keycode.ButtonA: case Keycode.DpadCenter: CurrentFocus?.PerformClick(); return true;
-            case Keycode.ButtonB: _menuBack?.Invoke(); return true;
-            case Keycode.ButtonStart: case Keycode.ButtonMode: CloseMenu(); return true;
-            case Keycode.DpadUp: case Keycode.DpadDown: case Keycode.DpadLeft: case Keycode.DpadRight: return false;
-            default: return true; // nothing else reaches the paused game
+            case Keycode.ButtonA:
+            case Keycode.DpadCenter:
+                CurrentFocus?.PerformClick();
+                return true;
+            case Keycode.ButtonB:
+                _menuBack?.Invoke();
+                return true;
+            case Keycode.ButtonStart:
+            case Keycode.ButtonMode:
+                CloseMenu();
+                return true;
+            case Keycode.DpadUp:
+            case Keycode.DpadDown:
+            case Keycode.DpadLeft:
+            case Keycode.DpadRight:
+                return false;
+            default:
+                return true; // nothing else reaches the paused game
         }
     }
 
@@ -280,7 +319,8 @@ public sealed partial class GameActivity
     /// controller's first D-pad press restores when the menu was opened by touch (ViewRootImpl.leaveTouchMode).</summary>
     static void FocusFirst(AView? v)
     {
-        if (v == null) return;
+        if (v == null)
+            return;
         v.FocusedByDefault = true;
         v.RequestFocus();
     }
@@ -292,7 +332,8 @@ public sealed partial class GameActivity
         var d = new GradientDrawable();
         d.SetColor(fill);
         d.SetCornerRadius(Dp(radiusDp));
-        if (stroke is { } s) d.SetStroke(Math.Max(1, Dp(strokeDp)), s);
+        if (stroke is { } s)
+            d.SetStroke(Math.Max(1, Dp(strokeDp)), s);
         return d;
     }
 
@@ -311,7 +352,11 @@ public sealed partial class GameActivity
         var t = new TextView(this) { Text = text, TextSize = sp };
         t.SetTypeface(font, TypefaceStyle.Normal);
         t.SetTextColor(color);
-        if (single) { t.SetSingleLine(true); t.Ellipsize = global::Android.Text.TextUtils.TruncateAt.End; }
+        if (single)
+        {
+            t.SetSingleLine(true);
+            t.Ellipsize = global::Android.Text.TextUtils.TruncateAt.End;
+        }
         return t;
     }
 
@@ -407,7 +452,8 @@ public sealed partial class GameActivity
         header.AddView(back, new LinearLayout.LayoutParams(Dp(44), Dp(44)));
         var titles = new LinearLayout(this) { Orientation = Orientation.Vertical };
         titles.AddView(Text(title, 18, Sora, CText, single: true));
-        if (detail != null) titles.AddView(Text(detail, 12, Inter, CMuted, single: true));
+        if (detail != null)
+            titles.AddView(Text(detail, 12, Inter, CMuted, single: true));
         header.AddView(titles, new LinearLayout.LayoutParams(0, ViewGroup.LayoutParams.WrapContent, 1) { LeftMargin = Dp(14) });
         return header;
     }
@@ -430,8 +476,13 @@ public sealed partial class GameActivity
         b.AddView(image);
         b.AddView(Text($"Slot {slot}", 13, InterSemiBold, enabled ? CText : CFaint), new LinearLayout.LayoutParams(ViewGroup.LayoutParams.WrapContent, ViewGroup.LayoutParams.WrapContent) { TopMargin = Dp(8) });
         b.AddView(Text(info != null ? info.CreatedUtc.ToLocalTime().ToString("g", Loc.Culture) : Loc.Get("MEmptyLower"), 12, Inter, CMuted, single: true));
-        if (enabled) MakeButton(b, onClick);
-        else { b.Focusable = false; b.Alpha = 0.6f; }
+        if (enabled)
+            MakeButton(b, onClick);
+        else
+        {
+            b.Focusable = false;
+            b.Alpha = 0.6f;
+        }
         return b;
     }
 
@@ -462,7 +513,8 @@ public sealed partial class GameActivity
         row.Background = Focusable(Color.Transparent, 20, Color.Transparent);
         var texts = new LinearLayout(this) { Orientation = Orientation.Vertical };
         texts.AddView(Text(label, 15, InterMedium, CText));
-        if (detail != null) texts.AddView(Text(detail, 12, Inter, CMuted, single: true));
+        if (detail != null)
+            texts.AddView(Text(detail, 12, Inter, CMuted, single: true));
         row.AddView(texts, new LinearLayout.LayoutParams(0, ViewGroup.LayoutParams.WrapContent, 1));
         return row;
     }
@@ -473,7 +525,14 @@ public sealed partial class GameActivity
         readonly Paint _paint = new(PaintFlags.AntiAlias);
         bool _checked;
 
-        public bool Checked { get => _checked; set { _checked = value; Invalidate(); } }
+        public bool Checked
+        {
+            get => _checked; set
+            {
+                _checked = value;
+                Invalidate();
+            }
+        }
 
         protected override void OnDraw(Canvas canvas)
         {

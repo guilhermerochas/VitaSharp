@@ -82,9 +82,14 @@ public sealed unsafe class MediaCodecVideoDecoder : IVideoDecoder
         // puts the hardware decoders first again, =1 always the software one.
         string? sw = System.Environment.GetEnvironmentVariable(VitaSharp.Core.Util.EnvVars.MediaCodecSoftware);
         var names = H264Decoders(sw == "1" || (sw != "0" && (long)maxWidth * maxHeight <= 960 * 544));
-        if (names.Length == 0) { Log.Warn("MediaCodec: no H.264 decoder on this device"); return null; }
+        if (names.Length == 0)
+        {
+            Log.Warn("MediaCodec: no H.264 decoder on this device");
+            return null;
+        }
         var d = new MediaCodecVideoDecoder(names, maxWidth, maxHeight);
-        if (!d.OpenNext()) return null;
+        if (!d.OpenNext())
+            return null;
         return d;
     }
 
@@ -96,14 +101,19 @@ public sealed unsafe class MediaCodecVideoDecoder : IVideoDecoder
         {
             foreach (var info in new MediaCodecList(MediaCodecListKind.RegularCodecs).GetCodecInfos() ?? [])
             {
-                if (info.IsEncoder || info.Name is not { } name) continue;
-                if (!(info.GetSupportedTypes() ?? []).Any(t => string.Equals(t, Mime, StringComparison.OrdinalIgnoreCase))) continue;
+                if (info.IsEncoder || info.Name is not { } name)
+                    continue;
+                if (!(info.GetSupportedTypes() ?? []).Any(t => string.Equals(t, Mime, StringComparison.OrdinalIgnoreCase)))
+                    continue;
                 bool software = OperatingSystem.IsAndroidVersionAtLeast(29) ? info.IsSoftwareOnly
                     : name.StartsWith("OMX.google.", StringComparison.Ordinal) || name.StartsWith("c2.android.", StringComparison.Ordinal);
                 list.Add((name, software));
             }
         }
-        catch (Java.Lang.Exception e) { Log.Warn($"MediaCodec: listing decoders failed: {e.Message}"); }
+        catch (Java.Lang.Exception e)
+        {
+            Log.Warn($"MediaCodec: listing decoders failed: {e.Message}");
+        }
         return list.OrderBy(c => c.Software != softwareFirst).Select(c => c.Name).ToArray();
     }
 
@@ -144,7 +154,11 @@ public sealed unsafe class MediaCodecVideoDecoder : IVideoDecoder
             catch (Java.Lang.Exception e)
             {
                 Log.Warn($"MediaCodec: {name} could not be configured: {e.Message}");
-                try { codec?.Release(); } catch (Java.Lang.Exception) { }
+                try
+                {
+                    codec?.Release();
+                }
+                catch (Java.Lang.Exception) { }
             }
         }
         return false;
@@ -154,9 +168,18 @@ public sealed unsafe class MediaCodecVideoDecoder : IVideoDecoder
     {
         var c = _codec;
         _codec = null;
-        if (c == null) return;
-        try { c.Stop(); } catch (Java.Lang.Exception) { }
-        try { c.Release(); } catch (Java.Lang.Exception) { }
+        if (c == null)
+            return;
+        try
+        {
+            c.Stop();
+        }
+        catch (Java.Lang.Exception) { }
+        try
+        {
+            c.Release();
+        }
+        catch (Java.Lang.Exception) { }
         c.Dispose();
     }
 
@@ -166,26 +189,39 @@ public sealed unsafe class MediaCodecVideoDecoder : IVideoDecoder
         Interlocked.Increment(ref Fallbacks);
         string failed = _codecName;
         ReleaseCodec();
-        if (!OpenNext()) { Log.Warn($"MediaCodec: {failed} failed ({why}) and no other H.264 decoder is left"); return; }
+        if (!OpenNext())
+        {
+            Log.Warn($"MediaCodec: {failed} failed ({why}) and no other H.264 decoder is left");
+            return;
+        }
         Log.Warn($"MediaCodec: {failed} failed ({why}); continuing with {_codecName} from the last IDR picture");
         var (units, skip) = _replay.TakeReplay();
         _skip = skip;
         _queued = _produced = 0;
-        foreach (var (data, pts) in units) Send(data, pts);
+        foreach (var (data, pts) in units)
+            Send(data, pts);
     }
 
     public void Send(ReadOnlySpan<byte> accessUnit, long pts)
     {
         long t0 = System.Diagnostics.Stopwatch.GetTimestamp();
-        try { SendCore(accessUnit, pts); }
-        finally { _sendTicks += System.Diagnostics.Stopwatch.GetTimestamp() - t0; _sends++; }
+        try
+        {
+            SendCore(accessUnit, pts);
+        }
+        finally
+        {
+            _sendTicks += System.Diagnostics.Stopwatch.GetTimestamp() - t0;
+            _sends++;
+        }
     }
 
     long _sendTicks, _queueTicks, _waitTicks, _copyTicks, _sends;
 
     void SendCore(ReadOnlySpan<byte> accessUnit, long pts)
     {
-        if (_codec == null) return;
+        if (_codec == null)
+            return;
         _replay.Add(accessUnit, pts);
         try
         {
@@ -202,7 +238,10 @@ public sealed unsafe class MediaCodecVideoDecoder : IVideoDecoder
                 _waitTicks += System.Diagnostics.Stopwatch.GetTimestamp() - w0;
             }
         }
-        catch (Java.Lang.Exception e) { FallBack(e.Message ?? e.GetType().Name); }
+        catch (Java.Lang.Exception e)
+        {
+            FallBack(e.Message ?? e.GetType().Name);
+        }
     }
 
     void Queue(ReadOnlySpan<byte> data, long pts, MediaCodecBufferFlags flags)
@@ -211,13 +250,19 @@ public sealed unsafe class MediaCodecVideoDecoder : IVideoDecoder
         for (int attempt = 0; attempt < InputAttempts; attempt++)
         {
             int idx = c.DequeueInputBuffer(InputTimeoutUs);
-            if (idx < 0) { Drain(); continue; } // every input buffer is held: make room by taking pictures out
+            if (idx < 0)
+            {
+                Drain();
+                continue;
+            } // every input buffer is held: make room by taking pictures out
             using var buf = c.GetInputBuffer(idx)!;
             int n = Math.Min(data.Length, buf.Capacity());
-            if (n < data.Length) Log.WarnOnce("mediacodec-in-size", $"MediaCodec: access unit of {data.Length} bytes truncated to {n}");
+            if (n < data.Length)
+                Log.WarnOnce("mediacodec-in-size", $"MediaCodec: access unit of {data.Length} bytes truncated to {n}");
             data[..n].CopyTo(new Span<byte>((void*)buf.GetDirectBufferAddress(), n));
             c.QueueInputBuffer(idx, 0, n, Math.Max(0, pts), flags);
-            if (n > 0) _queued++;
+            if (n > 0)
+                _queued++;
             return;
         }
         Log.WarnOnce("mediacodec-in", "MediaCodec: no input buffer available, access unit dropped");
@@ -230,10 +275,17 @@ public sealed unsafe class MediaCodecVideoDecoder : IVideoDecoder
         while (true)
         {
             int idx = c.DequeueOutputBuffer(_info, timeoutUs);
-            if (idx >= 0) timeoutUs = 0; // waited for one buffer; the rest only if already there
-            if (idx == InfoOutputFormatChanged) { ReadOutputFormat(c.OutputFormat); continue; }
-            if (idx == InfoOutputBuffersChanged) continue;
-            if (idx < 0) return false; // InfoTryAgainLater
+            if (idx >= 0)
+                timeoutUs = 0; // waited for one buffer; the rest only if already there
+            if (idx == InfoOutputFormatChanged)
+            {
+                ReadOutputFormat(c.OutputFormat);
+                continue;
+            }
+            if (idx == InfoOutputBuffersChanged)
+                continue;
+            if (idx < 0)
+                return false; // InfoTryAgainLater
             bool eos = (_info.Flags & MediaCodecBufferFlags.EndOfStream) != 0;
             if (_info.Size > 0)
             {
@@ -245,12 +297,18 @@ public sealed unsafe class MediaCodecVideoDecoder : IVideoDecoder
                     Interlocked.Increment(ref Pictures);
                     _produced++;
                     _replay.Produced();
-                    if (_skip > 0) { _skip--; Recycle(p); }
-                    else _ready.Enqueue(p);
+                    if (_skip > 0)
+                    {
+                        _skip--;
+                        Recycle(p);
+                    }
+                    else
+                        _ready.Enqueue(p);
                 }
             }
             c.ReleaseOutputBuffer(idx, false);
-            if (eos) return true;
+            if (eos)
+                return true;
         }
     }
 
@@ -298,16 +356,19 @@ public sealed unsafe class MediaCodecVideoDecoder : IVideoDecoder
                 int h = crop is { } r2 && r2.Height() > 0 ? r2.Height() : image.Height;
                 var p = Rent();
                 YuvImageCopy.Copy(Plane(planes[0]), Plane(planes[1]), Plane(planes[2]), cx, cy, w, h, p);
-                foreach (var pl in planes) pl.Dispose();
+                foreach (var pl in planes)
+                    pl.Dispose();
                 return p;
             }
         }
         // no image (decoders without flexible YUV): the raw buffer in a standard layout
         using var buf = c.GetOutputBuffer(idx);
-        if (buf == null) return null;
+        if (buf == null)
+            return null;
         var data = new ReadOnlySpan<byte>((byte*)buf.GetDirectBufferAddress() + _info.Offset, _info.Size);
         var pic = Rent();
-        if (YuvImageCopy.CopyRaw(data, _colorFormat, _stride, _sliceHeight, _cropX, _cropY, _width, _height, pic)) return pic;
+        if (YuvImageCopy.CopyRaw(data, _colorFormat, _stride, _sliceHeight, _cropX, _cropY, _width, _height, pic))
+            return pic;
         Log.WarnOnce($"mediacodec-cf{_colorFormat}", $"MediaCodec: {_codecName} gives no image and an unknown colour format 0x{_colorFormat:X}: pictures dropped");
         _free.Push(pic);
         return null;
@@ -323,24 +384,37 @@ public sealed unsafe class MediaCodecVideoDecoder : IVideoDecoder
 
     public void Flush()
     {
-        if (_codec == null) return;
+        if (_codec == null)
+            return;
         try
         {
             Queue([], 0, MediaCodecBufferFlags.EndOfStream);
             // pictures held for reordering come out before the end-of-stream buffer
-            for (int i = 0; i < 50; i++) if (Drain(10_000)) break;
+            for (int i = 0; i < 50; i++)
+                if (Drain(10_000))
+                    break;
             _codec?.Flush(); // accepts a new stream afterwards
         }
-        catch (Java.Lang.Exception e) { FallBack(e.Message ?? e.GetType().Name); }
+        catch (Java.Lang.Exception e)
+        {
+            FallBack(e.Message ?? e.GetType().Name);
+        }
         _replay.Clear();
         _queued = _produced = 0;
     }
 
     public void Reset()
     {
-        try { _codec?.Flush(); }
-        catch (Java.Lang.Exception e) { FallBack(e.Message ?? e.GetType().Name); }
-        while (_ready.Count > 0) Recycle(_ready.Dequeue());
+        try
+        {
+            _codec?.Flush();
+        }
+        catch (Java.Lang.Exception e)
+        {
+            FallBack(e.Message ?? e.GetType().Name);
+        }
+        while (_ready.Count > 0)
+            Recycle(_ready.Dequeue());
         _replay.Clear();
         _queued = _produced = 0;
         _skip = 0;
@@ -348,12 +422,17 @@ public sealed unsafe class MediaCodecVideoDecoder : IVideoDecoder
 
     public DecodedPicture? Take() => _ready.Count > 0 ? _ready.Dequeue() : null;
 
-    public void Recycle(DecodedPicture picture) { if (_free.Count < 4) _free.Push(picture); }
+    public void Recycle(DecodedPicture picture)
+    {
+        if (_free.Count < 4)
+            _free.Push(picture);
+    }
 
     public void Dispose()
     {
         double f = 1000.0 / System.Diagnostics.Stopwatch.Frequency, n = Math.Max(1, _sends);
-        if (_sends > 0) Log.Info($"MediaCodec: {_codecName}: {_sends} units, per unit {_sendTicks * f / n:F1} ms in Send (queue {_queueTicks * f / n:F1}, output waits {_waitTicks * f / n:F1}, picture copies {_copyTicks * f / n:F1})");
+        if (_sends > 0)
+            Log.Info($"MediaCodec: {_codecName}: {_sends} units, per unit {_sendTicks * f / n:F1} ms in Send (queue {_queueTicks * f / n:F1}, output waits {_waitTicks * f / n:F1}, picture copies {_copyTicks * f / n:F1})");
         ReleaseCodec();
         _info.Dispose();
     }
