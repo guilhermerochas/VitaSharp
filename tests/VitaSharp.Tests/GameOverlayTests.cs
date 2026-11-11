@@ -88,7 +88,7 @@ public sealed class GameOverlayTests : IDisposable
 
     // ---------------------------------------------------------------- message dialog
 
-    [Fact]
+    [WindowFact]
     public void MessageDialogAnswersWithTheKeyboardMouseAndController()
     {
         var overlay = new MessageOverlay(_window, Show, () => _pad);
@@ -167,7 +167,7 @@ public sealed class GameOverlayTests : IDisposable
         Assert.NotEqual(99, answer);
     }
 
-    [Fact]
+    [WindowFact]
     public void MessagePanelWrapsLongTextAndGrowsWithTheScale()
     {
         var one = MessageOverlay.Render("short", ["OK"], 0, null, 1f);
@@ -184,7 +184,7 @@ public sealed class GameOverlayTests : IDisposable
 
     // ---------------------------------------------------------------- IME
 
-    [Fact]
+    [WindowFact]
     public void ImeDialogEditsTextAndReturnsItOrNothing()
     {
         var overlay = new ImeOverlay(_window, Show, () => _pad);
@@ -230,7 +230,7 @@ public sealed class GameOverlayTests : IDisposable
         Assert.Null(result);
     }
 
-    [Fact]
+    [WindowFact]
     public void SceImeSessionReportsEditsAndLeavesClosingToTheGame()
     {
         var overlay = new ImeOverlay(_window, Show, () => _pad);
@@ -251,7 +251,7 @@ public sealed class GameOverlayTests : IDisposable
         Assert.Null(_window.TextCapture);
     }
 
-    [Fact]
+    [WindowFact]
     public void ImePanelMasksPasswordsAndScrollsMultilineText()
     {
         var plain = ImeOverlay.Render(new TextEntry("Password", "secret", 16, 0, false, false), 1f);
@@ -268,7 +268,7 @@ public sealed class GameOverlayTests : IDisposable
 
     // ---------------------------------------------------------------- save states
 
-    [Fact]
+    [WindowFact]
     public void SaveStatePickerSavesLoadsAndDeletesSlots()
     {
         string dir = Path.Combine(_root, "states");
@@ -339,7 +339,7 @@ public sealed class GameOverlayTests : IDisposable
         other.Close();
     }
 
-    [Fact]
+    [WindowFact]
     public void SaveStateNamesAndPlayTimes()
     {
         Assert.Equal("0:00", SaveStateOverlay.PlayTime(-5));
@@ -351,7 +351,7 @@ public sealed class GameOverlayTests : IDisposable
 
     // ---------------------------------------------------------------- trophies and badges
 
-    [Fact]
+    [WindowFact]
     public void TrophyCardsQueueAndEachOneIsShown()
     {
         var shown = new List<(byte[]? Bgra, int W, int H)>();
@@ -382,7 +382,7 @@ public sealed class GameOverlayTests : IDisposable
             .SequenceEqual(TrophyToast.Render(new TrophyUnlockedEvent("", "", bronze, null), 1f).Bgra));
     }
 
-    [Fact]
+    [WindowFact]
     public void PauseBadgeHasItsSignAndScales()
     {
         Assert.NotEqual(PauseBadge.Text(""), PauseBadge.Text("P"));
