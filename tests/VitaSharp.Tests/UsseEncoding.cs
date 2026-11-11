@@ -66,4 +66,14 @@ public sealed class TestShaderProgramTests
         Assert.True(glsl.Contains("texture(ftex3, v_TexCoord0.xy)"), glsl);
         Assert.True(glsl.Contains("out_color = vec4(pa[0].x, pa[0].y, pa[0].z, pa[0].w);"), glsl);
     }
+
+    [Fact]
+    public void CubeFragmentProgramSamplesThroughACubeSampler()
+    {
+        var p = new VitaSharp.Core.Gxm.Shader.GxpProgram(RendererTextureTests.SamplingFragmentGxp(cube: true), 0x81000000);
+        Assert.Equal(1u << 3, p.CubeSamplers());
+        var glsl = VitaSharp.Core.Gxm.Shader.ShaderGenerator.Generate(p, new VitaSharp.Core.Gxm.Shader.ShaderHints([0, 0, 0, 0x0C000000], [], 0, false, 0)).Glsl;
+        Assert.True(glsl.Contains("samplerCube ftex3"), glsl);
+        Assert.True(glsl.Contains("texture(ftex3, v_TexCoord0.xyz)"), glsl);
+    }
 }
