@@ -1238,6 +1238,16 @@ Lista de itens futuros do VitaSharp. Marque `[x]` quando um item for concluído.
 
 ## Código
 
+- [ ] Scripts `.sh` no Google Shell Style Guide (pedido do usuário, 10/11/2026):
+  https://google.github.io/styleguide/shellguide.html, junto com a regra de que todo `.sh` roda em Linux e macOS
+  (bash 3.2, sem ferramentas só do GNU sem alternativa; ver `docs/agents/regras.md`). Passos: (1) adequar os 17
+  scripts de `build/`: `#!/usr/bin/env bash` + `set -euo pipefail` onde couber, cabeçalho com o que o script faz,
+  funções com comentário e `local`, `main "$@"` no fim dos scripts com funções, variáveis entre aspas e com `${}`,
+  `[[ ]]` e `$(...)`, nomes em minúsculas_com_sublinhado, constantes em MAIÚSCULAS com `readonly`, erros no stderr,
+  indentação de 2 espaços e linhas até 80 colunas (o guia pede; conferir com o par `.ps1`); (2) ShellCheck sem avisos
+  em todos (`shellcheck build/*.sh`); (3) no CI: um passo de ShellCheck e a execução rápida dos scripts (`--help` ou
+  modo de teste) também no `macos-latest`, para pegar o que só funciona no Linux. O par `.ps1` continua fazendo a mesma
+  coisa (check-script-parity).
 - [ ] Cobertura de código mínima de 70% em tudo (pedido do usuário, 10/11/2026). Base de hoje (`build/coverage.ps1` /
   `.sh`, coverlet + ReportGenerator, `Category!=Slow`): geral 59,4% linhas / 42,5% ramos; VitaSharp.Core 65,8%;
   Mobile.Core 85,4%; Renderer.Vulkan 1,3%. Meta: cada projeto e cada namespace com pelo menos 70% de linhas, e manter
