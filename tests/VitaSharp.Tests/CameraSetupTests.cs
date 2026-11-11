@@ -45,7 +45,7 @@ public sealed class CameraSetupTests
         Assert.Equal(-1, CameraSpec.SelectDevice([], null, null, CameraFacing.Front));
     }
 
-    sealed class Probe(string name) : ICameraSource
+    private sealed class Probe(string name) : ICameraSource
     {
         public readonly List<CameraFacing> Opened = new();
         public int Disposed;
@@ -81,7 +81,7 @@ public sealed class CameraSetupTests
     [Fact]
     public void StillPictureDeliversItsPixels()
     {
-        var rgba = new byte[4 * 2 * 4];
+        byte[] rgba = new byte[4 * 2 * 4];
         for (int i = 0; i < rgba.Length; i += 4)
         {
             rgba[i] = 200;
@@ -90,7 +90,7 @@ public sealed class CameraSetupTests
             rgba[i + 3] = 255;
         }
         using var cam = new StillImageCamera("p.png", rgba, 4, 2);
-        using var s = cam.Open(CameraFacing.Back, 640, 480, 30)!;
+        using ICameraStream s = cam.Open(CameraFacing.Back, 640, 480, 30)!;
         byte[] dst = [];
         Assert.True(s.Frames.CopyLatest(ref dst, out int w, out int h, out _));
         Assert.Equal((4, 2), (w, h));
@@ -105,7 +105,7 @@ public sealed class CameraSetupTests
         using var ms = new MemoryStream();
         void Chunk(string type, byte[] body)
         {
-            var len = new byte[4];
+            byte[] len = new byte[4];
             System.Buffers.Binary.BinaryPrimitives.WriteInt32BigEndian(len, body.Length);
             ms.Write(len);
             ms.Write(System.Text.Encoding.ASCII.GetBytes(type));
@@ -124,7 +124,7 @@ public sealed class CameraSetupTests
             Chunk("IDAT", z.ToArray());
         }
         Chunk("IEND", []);
-        var (px, w, h) = StillImageCamera.Decode(ms.ToArray(), "t.png");
+        (byte[]? px, int w, int h) = StillImageCamera.Decode(ms.ToArray(), "t.png");
         Assert.Equal((2, 1), (w, h));
         Assert.Equal(new byte[] { 255, 0, 0, 255, 0, 0, 255, 255 }, px);
         Assert.Throws<InvalidDataException>(() => StillImageCamera.Decode([1, 2, 3], "x"));

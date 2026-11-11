@@ -12,13 +12,13 @@ namespace VitaSharp.Tests;
 /// with a scripted host input.
 /// </summary>
 [Collection("guest")]
-public sealed class DisplayCtrlTouchTests(GuestMemoryFixture fx) : IDisposable
+public sealed class DisplayCtrlTouchTests(GuestMemoryFixture fixture) : IDisposable
 {
-    const int DISP_INVALID_HEAD = unchecked((int)0x80290000), DISP_INVALID_VALUE = unchecked((int)0x80290001),
+    private const int DISP_INVALID_HEAD = unchecked((int)0x80290000), DISP_INVALID_VALUE = unchecked((int)0x80290001),
         DISP_INVALID_ADDR = unchecked((int)0x80290002), DISP_INVALID_TIMING = unchecked((int)0x80290006),
         CTRL_INVALID_ARG = unchecked((int)0x80340001), TOUCH_INVALID_ARG = unchecked((int)0x80350001);
 
-    sealed class ScriptedInput : IInputBackend
+    private sealed class ScriptedInput : IInputBackend
     {
         public ControllerState Pad = ControllerState.Neutral;
         public List<TouchPoint> Front = [];
@@ -26,14 +26,14 @@ public sealed class DisplayCtrlTouchTests(GuestMemoryFixture fx) : IDisposable
         public IReadOnlyList<TouchPoint> GetTouches(bool back) => back ? [] : Front;
     }
 
-    readonly HleHarness _h = new(fx, "dispctrl");
-    readonly ScriptedInput _in = new();
+    private readonly HleHarness _harness = new(fixture, "dispctrl");
+    private readonly ScriptedInput _input = new();
 
-    public void Dispose() => _h.Dispose();
+    public void Dispose() => _harness.Dispose();
 
-    uint FrameBuf(uint size, uint baseAddr, uint pitch, uint fmt, uint w, uint h)
+    private uint FrameBuf(uint size, uint baseAddr, uint pitch, uint fmt, uint w, uint h)
     {
-        uint p = _h.Alloc(0x20);
+        uint p = _harness.Alloc(0x20);
         GuestMemory.W32(p, size);
         GuestMemory.W32(p + 4, baseAddr);
         GuestMemory.W32(p + 8, pitch);
@@ -46,8 +46,8 @@ public sealed class DisplayCtrlTouchTests(GuestMemoryFixture fx) : IDisposable
     [Fact]
     public void FramebufferSetGetAndWaits()
     {
-        var d = _h.Module<Display>();
-        uint fbMem = _h.Alloc(960 * 544 * 4);
+        Display d = _harness.Module<Display>();
+        uint fbMem = _harness.Alloc(960 * 544 * 4);
         Assert.Equal(DISP_INVALID_VALUE, Call(d, "sceDisplaySetFrameBuf", FrameBuf(0x10, fbMem, 960, 0, 960, 544), 1u));
         Assert.Equal(0, Call(d, "sceDisplaySetFrameBuf", FrameBuf(0x18, fbMem, 1024, 0, 960, 544), 1u));
         uint get = FrameBuf(0x1C, 0, 0, 0, 0, 0);
@@ -62,14 +62,14 @@ public sealed class DisplayCtrlTouchTests(GuestMemoryFixture fx) : IDisposable
         Assert.Equal(0, Call(d, "sceDisplaySetFrameBufForCompat", FrameBuf(0x18, fbMem, 960, 0, 960, 544), 0u));
         Assert.Equal(0, Call(d, "sceDisplaySetFrameBuf", 0u, 1u)); // NULL: blank
 
-        uint rate = _h.Alloc(4), w = _h.Alloc(4), hgt = _h.Alloc(4);
+        uint rate = _harness.Alloc(4), w = _harness.Alloc(4), hgt = _harness.Alloc(4);
         Assert.Equal(0, Call(d, "sceDisplayGetRefreshRate", new Ptr<float>(rate)));
         Assert.Equal(59.94005f, GuestMemory.Read<float>(rate));
         Assert.Equal(0, Call(d, "sceDisplayGetMaximumFrameBufResolution", new Ptr<int>(w), new Ptr<int>(hgt)));
         Assert.Equal((960u, 544u), (GuestMemory.R32(w), GuestMemory.R32(hgt)));
         Assert.Equal(0, Call(d, "sceDisplayGetPrimaryHead"));
 
-        _h.OnGuest(_ =>
+        _harness.OnGuest(_ =>
         {
             uint v0 = (uint)Invoke(d, "sceDisplayGetVcount")!;
             Assert.Equal(0, Call(d, "sceDisplayWaitVblankStart"));
@@ -100,17 +100,17 @@ public sealed class DisplayCtrlTouchTests(GuestMemoryFixture fx) : IDisposable
         Assert.Equal(DISP_INVALID_ADDR, Call(d, "sceDisplayGetFrameBufInternal", 0, 0, 0u, 1u));
         Assert.Equal(DISP_INVALID_TIMING, Call(d, "sceDisplayGetFrameBufInternal", 0, 0, g2, 3u));
         Assert.Equal(DISP_INVALID_VALUE, Call(d, "sceDisplayGetFrameBufInternal", 0, 1, FrameBuf(0x30, 0, 0, 0, 0, 0), 1u));
-        Assert.Equal(DISP_INVALID_HEAD, Call(d, "sceDisplayGetResolutionInfoInternal", 1, _h.Alloc(0x1C)));
+        Assert.Equal(DISP_INVALID_HEAD, Call(d, "sceDisplayGetResolutionInfoInternal", 1, _harness.Alloc(0x1C)));
         Assert.Equal(DISP_INVALID_ADDR, Call(d, "sceDisplayGetResolutionInfoInternal", 0, 0u));
     }
 
     [Fact]
     public void ControllerBufferFamiliesMapTheShoulders()
     {
-        _h.Emu.Host.Input = _in;
-        var c = _h.Module<Ctrl>();
-        _in.Pad = new ControllerState { Buttons = VitaButtons.Cross | VitaButtons.LTrigger, Lx = 10, Ly = 20, Rx = 30, Ry = 40 };
-        uint buf = _h.Alloc(32 * 4);
+        _harness.Emu.Host.Input = _input;
+        Ctrl c = _harness.Module<Ctrl>();
+        _input.Pad = new ControllerState { Buttons = VitaButtons.Cross | VitaButtons.LTrigger, Lx = 10, Ly = 20, Rx = 30, Ry = 40 };
+        uint buf = _harness.Alloc(32 * 4);
         Assert.Equal(CTRL_INVALID_ARG, Call(c, "sceCtrlPeekBufferPositive", 0, 0u, 1u));
         Assert.Equal(0, Call(c, "sceCtrlPeekBufferPositive", 0, buf, 0u));
         // digital sampling (mode 0): the sticks read centred
@@ -120,7 +120,7 @@ public sealed class DisplayCtrlTouchTests(GuestMemoryFixture fx) : IDisposable
         Assert.Equal((byte)128, GuestMemory.Read<byte>(buf + 12));
         // analog: the sticks; the old mode comes back
         Assert.Equal(0, Call(c, "sceCtrlSetSamplingMode", 1u));
-        uint mode = _h.Word(9);
+        uint mode = _harness.Word(9);
         Assert.Equal(0, Call(c, "sceCtrlGetSamplingMode", new Ptr<uint>(mode)));
         Assert.Equal(1u, GuestMemory.R32(mode));
         Assert.Equal(3, Call(c, "sceCtrlPeekBufferPositive", 0, buf, 3u)); // every sample requested
@@ -139,13 +139,13 @@ public sealed class DisplayCtrlTouchTests(GuestMemoryFixture fx) : IDisposable
         Assert.Equal(1u, Ctrl.MapButtons(1, Ctrl.Api.Standard));
         Assert.Equal(0x800u, Ctrl.MapButtons((uint)VitaButtons.RTrigger, Ctrl.Api.Ext | Ctrl.Api.V2));
         // the PS button never reaches an application
-        _in.Pad = new ControllerState { Buttons = VitaButtons.PsButton | VitaButtons.Circle, Lx = 128, Ly = 128, Rx = 128, Ry = 128 };
+        _input.Pad = new ControllerState { Buttons = VitaButtons.PsButton | VitaButtons.Circle, Lx = 128, Ly = 128, Rx = 128, Ry = 128 };
         Call(c, "sceCtrlPeekBufferPositiveExt", 0, buf, 1u);
         Assert.Equal((uint)VitaButtons.Circle, GuestMemory.R32(buf + 8));
-        _h.OnGuest(_ =>
+        _harness.OnGuest(_ =>
         {
             // reads wait for the next sample: two reads are at least a vblank apart
-            foreach (var fn in new[] { "sceCtrlReadBufferPositive", "sceCtrlReadBufferNegative", "sceCtrlReadBufferPositiveExt", "sceCtrlReadBufferPositive2", "sceCtrlReadBufferPositiveExt2", "sceCtrlReadBufferNegative2" })
+            foreach (string? fn in new[] { "sceCtrlReadBufferPositive", "sceCtrlReadBufferNegative", "sceCtrlReadBufferPositiveExt", "sceCtrlReadBufferPositive2", "sceCtrlReadBufferPositiveExt2", "sceCtrlReadBufferNegative2" })
             {
                 Assert.Equal(1, Call(c, fn, 0, buf, 1u));
             }
@@ -165,7 +165,7 @@ public sealed class DisplayCtrlTouchTests(GuestMemoryFixture fx) : IDisposable
         Assert.Equal(0, Call(c, "sceCtrlSetButtonIntercept", 1u));
         Assert.Equal(0, Call(c, "sceCtrlGetButtonIntercept", new Ptr<uint>(mode)));
         // rapid fire rules: index 0-15, ports 0-1, a rule pointer
-        Assert.Equal(CTRL_INVALID_ARG, Call(c, "sceCtrlSetRapidFire", 0, 16, _h.Alloc(24)));
+        Assert.Equal(CTRL_INVALID_ARG, Call(c, "sceCtrlSetRapidFire", 0, 16, _harness.Alloc(24)));
         Assert.Equal(CTRL_INVALID_ARG, Call(c, "sceCtrlSetRapidFire", 0, 0, 0u));
         Assert.Equal(CTRL_INVALID_ARG, Call(c, "sceCtrlClearRapidFire", 2, 0));
         Assert.Equal(0, Call(c, "sceCtrlClearRapidFire", 0, 0));
@@ -174,7 +174,7 @@ public sealed class DisplayCtrlTouchTests(GuestMemoryFixture fx) : IDisposable
         Assert.Equal(0, Call(c, "sceCtrlResetLightBar", 0));
         Assert.Equal(0, Call(c, "sceCtrlIsMultiControllerSupported"));
         Assert.Equal(0, Call(c, "sceCtrlSingleControllerMode", 1));
-        uint level = _h.Alloc(4);
+        uint level = _harness.Alloc(4);
         Assert.Equal(0, Call(c, "sceCtrlGetBatteryInfo", 0, new Ptr<byte>(level)));
         Assert.Equal((byte)5, GuestMemory.Read<byte>(level));
     }
@@ -182,9 +182,9 @@ public sealed class DisplayCtrlTouchTests(GuestMemoryFixture fx) : IDisposable
     [Fact]
     public void TouchPanelsSamplingAndContactIds()
     {
-        _h.Emu.Host.Input = _in;
-        var t = _h.Module<Touch>();
-        uint info = _h.Alloc(0x30), data = _h.Alloc(0x90 * 2);
+        _harness.Emu.Host.Input = _input;
+        Touch t = _harness.Module<Touch>();
+        uint info = _harness.Alloc(0x30), data = _harness.Alloc(0x90 * 2);
         Assert.Equal(TOUCH_INVALID_ARG, Call(t, "sceTouchGetPanelInfo", 2, info));
         Assert.Equal(0, Call(t, "sceTouchGetPanelInfo", 0, info));
         Assert.Equal((short)1919, GuestMemory.Read<short>(info + 4));
@@ -193,7 +193,7 @@ public sealed class DisplayCtrlTouchTests(GuestMemoryFixture fx) : IDisposable
         Assert.Equal((short)108, GuestMemory.Read<short>(info + 2));
         Assert.Equal((short)889, GuestMemory.Read<short>(info + 6));
 
-        _in.Front = [new TouchPoint(1, 0.5f, 0.5f)];
+        _input.Front = [new TouchPoint(1, 0.5f, 0.5f)];
         // sampling stopped: the read succeeds with no reports
         Assert.Equal(1, Call(t, "sceTouchPeek", 0, data, 1u));
         Assert.Equal(0u, GuestMemory.R32(data + 12));
@@ -201,7 +201,7 @@ public sealed class DisplayCtrlTouchTests(GuestMemoryFixture fx) : IDisposable
         Assert.Equal(TOUCH_INVALID_ARG, Call(t, "sceTouchPeek", 0, data, 65u));
         Assert.Equal(0, Call(t, "sceTouchPeek", 0, data, 0u));
         Assert.Equal(0, Call(t, "sceTouchSetSamplingState", 0, 1u));
-        uint st = _h.Word(9);
+        uint st = _harness.Word(9);
         Assert.Equal(0, Call(t, "sceTouchGetSamplingState", 0, new Ptr<uint>(st)));
         Assert.Equal(1u, GuestMemory.R32(st));
         Call(t, "sceTouchPeek", 0, data, 1u);
@@ -213,10 +213,10 @@ public sealed class DisplayCtrlTouchTests(GuestMemoryFixture fx) : IDisposable
         // the same contact keeps its id; a new contact gets another one
         Call(t, "sceTouchPeek", 0, data, 1u);
         Assert.Equal(id, GuestMemory.Read<byte>(data + 16));
-        _in.Front = [];
+        _input.Front = [];
         Call(t, "sceTouchPeek", 0, data, 1u);
         Assert.Equal(0u, GuestMemory.R32(data + 12));
-        _in.Front = [new TouchPoint(2, 0f, 1f)];
+        _input.Front = [new TouchPoint(2, 0f, 1f)];
         Call(t, "sceTouchPeek", 0, data, 1u);
         Assert.NotEqual(id, GuestMemory.Read<byte>(data + 16));
         Assert.Equal((ushort)1087, GuestMemory.Read<ushort>(data + 20));
@@ -226,7 +226,7 @@ public sealed class DisplayCtrlTouchTests(GuestMemoryFixture fx) : IDisposable
         Call(t, "sceTouchPeek", 0, data, 1u);
         Assert.Equal(128, GuestMemory.Read<byte>(data + 17));
         Assert.Equal(0, Call(t, "sceTouchDisableTouchForce", 0));
-        _h.OnGuest(_ => Assert.True(Call(t, "sceTouchRead", 0, data, 2u) >= 0));
+        _harness.OnGuest(_ => Assert.True(Call(t, "sceTouchRead", 0, data, 2u) >= 0));
         Assert.Equal(TOUCH_INVALID_ARG, Call(t, "sceTouchPeekRegion", 0, data, 1u, 0x100));
         Assert.True(Call(t, "sceTouchPeekRegion", 0, data, 1u, 1) >= 0);
         // the rear panel maps y into its active area

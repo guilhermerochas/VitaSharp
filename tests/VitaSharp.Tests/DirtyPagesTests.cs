@@ -12,32 +12,32 @@ namespace VitaSharp.Tests;
 /// following page too (stores that cross a page end).
 /// </summary>
 [Collection("guest")]
-public sealed unsafe class DirtyPagesTests(GuestMemoryFixture fx)
+public sealed unsafe class DirtyPagesTests(GuestMemoryFixture fixture)
 {
-    const uint CodeBase = 0x0010_0000, DataBase = 0x0020_0000, DataSize = 0x10000;
+    private const uint CodeBase = 0x0010_0000, DataBase = 0x0020_0000, DataSize = 0x10000;
 
-    void EnsureGuestPages()
+    private void EnsureGuestPages()
     {
-        if (fx.Memory.FindBlock(CodeBase) == null)
+        if (fixture.Memory.FindBlock(CodeBase) == null)
         {
-            fx.Memory.MapFixed(CodeBase, 0x1000, "fuzz code");
+            fixture.Memory.MapFixed(CodeBase, 0x1000, "fuzz code");
         }
 
-        if (fx.Memory.FindBlock(DataBase) == null)
+        if (fixture.Memory.FindBlock(DataBase) == null)
         {
-            fx.Memory.MapFixed(DataBase, DataSize, "fuzz data");
+            fixture.Memory.MapFixed(DataBase, DataSize, "fuzz data");
         }
     }
 
     /// <summary>Sweeps twice with no writes in between: a stamp nothing earlier counts against.</summary>
-    static uint FreshStamp()
+    private static uint FreshStamp()
     {
         DirtyPages.Sweep();
         DirtyPages.Sweep();
         return DirtyPages.Epoch;
     }
 
-    static bool Written(uint addr, uint len, uint stamp) => DirtyPages.WrittenSince(addr, len, stamp);
+    private static bool Written(uint addr, uint len, uint stamp) => DirtyPages.WrittenSince(addr, len, stamp);
 
     [Fact]
     public void HleWritesMarkPagesAndReadsDoNot()
@@ -94,17 +94,17 @@ public sealed unsafe class DirtyPagesTests(GuestMemoryFixture fx)
     {
         EnsureGuestPages();
         var bytes = new List<byte>();
-        foreach (var w in words.Split(','))
+        foreach (string w in words.Split(','))
         {
             bytes.AddRange(BitConverter.GetBytes(Convert.ToUInt32(w, 16)));
         }
 
         bytes.ToArray().CopyTo(GuestMemory.Span(CodeBase, 0x1000));
-        var b = BlockBuilder.Build(CodeBase, false);
+        Block b = BlockBuilder.Build(CodeBase, false);
         bool native = NativeX64Compiler.Instance.IsSupported;
         foreach (bool useNative in native ? new[] { false, true } : [false])
         {
-            var s = CpuState.Allocate();
+            CpuState* s = CpuState.Allocate();
             try
             {
                 s->R[1] = DataBase + target;
@@ -114,7 +114,7 @@ public sealed unsafe class DirtyPagesTests(GuestMemoryFixture fx)
                 uint stamp = FreshStamp();
                 if (useNative)
                 {
-                    var cb = NativeX64Compiler.Instance.Compile(b)!;
+                    CompiledBlock cb = NativeX64Compiler.Instance.Compile(b)!;
                     s->CycleAcc = 0;
                     s->CheckWindow = 0;
                     s->LinkBreak = 1;

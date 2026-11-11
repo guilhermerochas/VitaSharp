@@ -13,7 +13,7 @@ namespace VitaSharp.Tests;
 /// </summary>
 public sealed class Arm64AssemblerTests
 {
-    static readonly (uint Expected, string Asm, Action<A> Emit)[] Cases =
+    private static readonly (uint Expected, string Asm, Action<A> Emit)[] s_cases =
     [
         // ---- add/sub
         (0x11000420, "add w0, w1, #1", a => a.AddImm(0, 1, 1)),
@@ -370,22 +370,22 @@ public sealed class Arm64AssemblerTests
         (0x3D806676, "str q22, [x19, #400]", a => a.LdSt(LsKind.StrQ, 22, 19, 400)),
     ];
 
-    public static IEnumerable<object[]> CaseIndices() => Enumerable.Range(0, Cases.Length).Select(i => new object[] { i });
+    public static IEnumerable<object[]> CaseIndices() => Enumerable.Range(0, s_cases.Length).Select(i => new object[] { i });
 
     [Theory]
     [MemberData(nameof(CaseIndices))]
     public void EncodingMatchesGnuAs(int index)
     {
-        var (expected, asm, emit) = Cases[index];
+        (uint expected, string? asm, Action<A>? emit) = s_cases[index];
         var a = new A();
         emit(a);
-        var bytes = a.Finish();
+        byte[] bytes = a.Finish();
         uint word = BitConverter.ToUInt32(bytes, asm.StartsWith("1:", StringComparison.Ordinal) ? 4 : 0); // backward branch: 2nd word
         Assert.True(expected == word, $"{asm}: expected {expected:X8}, got {word:X8}");
     }
 
     /// <summary>The assembly text of every case (input for regenerating the expected words with GNU as).</summary>
-    public static string AllAsm() => string.Join("\n", Cases.Select(c => c.Asm.Replace("; ", "\n")));
+    public static string AllAsm() => string.Join("\n", s_cases.Select(c => c.Asm.Replace("; ", "\n")));
 
     [Fact]
     public void LogicalImmediatesRoundTrip()
@@ -426,7 +426,7 @@ public sealed class Arm64AssemblerTests
     }
 
     /// <summary>The ARM ARM's DecodeBitMasks (immediate form).</summary>
-    static ulong Decode(uint enc, bool x)
+    private static ulong Decode(uint enc, bool x)
     {
         uint n = (enc >> 12) & 1, immr = (enc >> 6) & 0x3F, imms = enc & 0x3F;
         int len = 31 - System.Numerics.BitOperations.LeadingZeroCount((n << 6) | (~imms & 0x3F));

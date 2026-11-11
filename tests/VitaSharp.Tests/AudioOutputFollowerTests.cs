@@ -7,9 +7,9 @@ namespace VitaSharp.Tests;
 /// audio output on its own (told by the device the output belongs to, or by name).</summary>
 public class AudioOutputFollowerTests
 {
-    const string Speakers = "OpenAL Soft on Alto-falantes (Realtek(R) Audio)";
-    const string Headset = "OpenAL Soft on Fones de ouvido (HyperX Cloud II)";
-    const string Ds4 = "OpenAL Soft on Fone de ouvido do headset (Wireless Controller)";
+    private const string Speakers = "OpenAL Soft on Alto-falantes (Realtek(R) Audio)";
+    private const string Headset = "OpenAL Soft on Fones de ouvido (HyperX Cloud II)";
+    private const string Ds4 = "OpenAL Soft on Fone de ouvido do headset (Wireless Controller)";
 
     [Theory]
     [InlineData("Fone de ouvido do headset (Wireless Controller)", true)]
@@ -30,7 +30,7 @@ public class AudioOutputFollowerTests
     public void DeviceRuleMatchesOutputsInAControllersContainer()
     {
         Guid pad = Guid.NewGuid(), xbox = Guid.NewGuid(), headset = Guid.NewGuid(), pc = new("00000000-0000-0000-ffff-ffffffffffff");
-        var outputs = new[] { ("Alto-falantes (Realtek)", pc), ("Fone (Wireless Controller)", pad), ("Headset (Xbox)", xbox), ("Fones (Brand X)", headset) };
+        (string, Guid)[] outputs = new[] { ("Alto-falantes (Realtek)", pc), ("Fone (Wireless Controller)", pad), ("Headset (Xbox)", xbox), ("Fones (Brand X)", headset) };
         var devices = new (Guid, IReadOnlyList<string>, string, string)[]
         {
             (pad, ["HID_DEVICE_SYSTEM_GAME", "HID_DEVICE_UP:0001_U:0005", "HID_DEVICE"], "HIDClass", "HidUsb"),
@@ -38,7 +38,7 @@ public class AudioOutputFollowerTests
             (headset, ["HID_DEVICE_SYSTEM_CONSUMER", "HID_DEVICE"], "HIDClass", "HidUsb"), // volume keys of a headset
             (pc, ["HID_DEVICE_SYSTEM_GAME"], "HIDClass", "HidUsb"), // the PC's own container is never a controller
         };
-        var found = AudioOutputFollower.ControllerOutputs(outputs, devices);
+        HashSet<string> found = AudioOutputFollower.ControllerOutputs(outputs, devices);
         Assert.Equal(["Fone (Wireless Controller)", "Headset (Xbox)"], found.Order());
     }
 
@@ -49,7 +49,7 @@ public class AudioOutputFollowerTests
         var f = new AudioOutputFollower(null, n => n.Contains("Generic USB Audio"));
         string first = f.Initial([Speakers, "OpenAL Soft on Speakers (Generic USB Audio)"], Speakers, out _);
         Assert.Equal(Speakers, first);
-        Assert.Null(f.Check([Speakers, "OpenAL Soft on Speakers (Generic USB Audio)"], "OpenAL Soft on Speakers (Generic USB Audio)", true, out var msg));
+        Assert.Null(f.Check([Speakers, "OpenAL Soft on Speakers (Generic USB Audio)"], "OpenAL Soft on Speakers (Generic USB Audio)", true, out string? msg));
         Assert.Contains("game controller", msg);
     }
 
@@ -62,11 +62,11 @@ public class AudioOutputFollowerTests
         Assert.Null(f.Check([Speakers, Headset, Ds4], Headset, true, out _));
         Assert.Equal(Ds4, f.Current);
         // unplugged: the system default until it returns
-        Assert.Equal(Headset, f.Check([Speakers, Headset], Headset, false, out var gone));
+        Assert.Equal(Headset, f.Check([Speakers, Headset], Headset, false, out string? gone));
         Assert.True(f.OnFallback);
         Assert.Contains("disconnected", gone);
         Assert.Null(f.Check([Speakers, Headset], Headset, true, out _));
-        Assert.Equal(Ds4, f.Check([Speakers, Headset, Ds4], Headset, true, out var back));
+        Assert.Equal(Ds4, f.Check([Speakers, Headset, Ds4], Headset, true, out string? back));
         Assert.False(f.OnFallback);
         Assert.Contains("back", back);
     }
@@ -85,13 +85,13 @@ public class AudioOutputFollowerTests
     {
         var f = new AudioOutputFollower(null);
         Assert.Equal(Speakers, f.Initial([Speakers, Headset, Ds4], Speakers, out _));
-        Assert.Null(f.Check([Speakers, Headset, Ds4], Speakers, true, out var none));
+        Assert.Null(f.Check([Speakers, Headset, Ds4], Speakers, true, out string? none));
         Assert.Null(none);
         // headphones become the default: follow them, and log it
-        Assert.Equal(Headset, f.Check([Speakers, Headset, Ds4], Headset, true, out var moved));
+        Assert.Equal(Headset, f.Check([Speakers, Headset, Ds4], Headset, true, out string? moved));
         Assert.Contains("changed", moved);
         // the controller's headset jack becomes the default: stay
-        Assert.Null(f.Check([Speakers, Headset, Ds4], Ds4, true, out var stay));
+        Assert.Null(f.Check([Speakers, Headset, Ds4], Ds4, true, out string? stay));
         Assert.Contains("staying", stay);
         Assert.Equal(Headset, f.Current);
     }
@@ -100,7 +100,7 @@ public class AudioOutputFollowerTests
     public void ControllerDefaultAtStartPicksAnotherOutput()
     {
         var f = new AudioOutputFollower("");
-        Assert.Equal(Speakers, f.Initial([Ds4, Speakers], Ds4, out var why));
+        Assert.Equal(Speakers, f.Initial([Ds4, Speakers], Ds4, out string? why));
         Assert.Contains("game controller", why);
         // the only output left is the controller: it is used rather than nothing
         Assert.Equal(Ds4, new AudioOutputFollower(null).Initial([Ds4], Ds4, out _));

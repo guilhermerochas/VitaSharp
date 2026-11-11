@@ -16,25 +16,25 @@ namespace VitaSharp.Tests;
 /// installed firmware (VITASHARP_DATA or %APPDATA%\VitaSharp, read only); without it the test only runs the HLE.
 /// </summary>
 [Collection("guest")]
-public sealed class DbutilHleTests(GuestMemoryFixture fx, ITestOutputHelper output)
+public sealed class DbutilHleTests(GuestMemoryFixture fixture, ITestOutputHelper output)
 {
-    static string FsRoot => Path.Combine(Environment.GetEnvironmentVariable(EnvVars.Data) is { Length: > 0 } d ? d
+    private static string FsRoot => Path.Combine(Environment.GetEnvironmentVariable(EnvVars.Data) is { Length: > 0 } d ? d
         : Path.Combine(Environment.GetFolderPath(Environment.SpecialFolder.ApplicationData), "VitaSharp"), "fs");
 
-    const string Lib = "SceDbutil";
-    const uint ObjSize = 0x120;
+    private const string Lib = "SceDbutil";
+    private const uint ObjSize = 0x120;
 
-    sealed class Harness : IDisposable
+    private sealed class Harness : IDisposable
     {
         public readonly Emulator Emu;
-        readonly string _root;
-        readonly uint _stubs;
-        uint _next;
+        private readonly string _root;
+        private readonly uint _stubs;
+        private uint _next;
         public readonly bool HasModule;
         public readonly List<string> Calls = [];
         public uint Callback;
 
-        public Harness(GuestMemoryFixture fx)
+        public Harness(GuestMemoryFixture fixture)
         {
             _root = Path.Combine(Path.GetTempPath(), "vitasharp-dbutil-" + Guid.NewGuid().ToString("N"));
             Directory.CreateDirectory(Path.Combine(_root, "vs0", "sys", "external"));
@@ -45,7 +45,7 @@ public sealed class DbutilHleTests(GuestMemoryFixture fx, ITestOutputHelper outp
                 File.Copy(src, Path.Combine(_root, "vs0", "sys", "external", "dbutil.suprx"));
             }
 
-            Emu = new Emulator(new EmulatorOptions { FsRoot = _root, Memory = fx.Memory, EnableJit = false, CpuBackend = "interp" });
+            Emu = new Emulator(new EmulatorOptions { FsRoot = _root, Memory = fixture.Memory, EnableJit = false, CpuBackend = "interp" });
             if (HasModule)
             {
                 Emu.LoadModule("vs0:sys/external/dbutil.suprx");
@@ -79,7 +79,7 @@ public sealed class DbutilHleTests(GuestMemoryFixture fx, ITestOutputHelper outp
         public void Run(Action<GuestThread> body)
         {
             Exception? failure = null;
-            var t = Emu.Kernel.CreateThread("dbutil-test", 0, 0x10000100, 0x10000, 0, 0x70000);
+            GuestThread t = Emu.Kernel.CreateThread("dbutil-test", 0, 0x10000100, 0x10000, 0, 0x70000);
             t.HostBody = th =>
             {
                 try
@@ -113,7 +113,7 @@ public sealed class DbutilHleTests(GuestMemoryFixture fx, ITestOutputHelper outp
 
     /// <summary>An object with an RMutex at the offset the function locks (none: <paramref name="mutex"/> 0), the other words
     /// set to a pattern.</summary>
-    static uint MakeObject(Harness h, GuestThread t, uint ctorStub, uint name, uint mutex)
+    private static uint MakeObject(Harness h, GuestThread t, uint ctorStub, uint name, uint mutex)
     {
         uint o = h.Emu.Memory.Alloc(ObjSize, "dbutil test object");
         for (uint i = 0; i < ObjSize; i += 4)
@@ -133,7 +133,7 @@ public sealed class DbutilHleTests(GuestMemoryFixture fx, ITestOutputHelper outp
     }
 
     // (label, export, extra arguments, the RMutex offset it locks (0: none), returns a value)
-    static readonly (string Name, uint Nid, uint[] Args, uint Mutex, bool HasResult)[] Scenarios =
+    private static readonly (string Name, uint Nid, uint[] Args, uint Mutex, bool HasResult)[] s_scenarios =
     [
         ("map error 0", 0xB0BF2396, [0], 0, true), ("map error 5", 0xB0BF2396, [5], 0, true),
         ("interrupt", 0x37AD6852, [], 0x98, false), ("changes", 0xD1D0D3CA, [], 0x98, true), ("total changes", 0x1FD46F4E, [], 0x98, true),
@@ -148,7 +148,7 @@ public sealed class DbutilHleTests(GuestMemoryFixture fx, ITestOutputHelper outp
     [Fact]
     public void MatchesTheFirmwareModule()
     {
-        using var h = new Harness(fx);
+        using var h = new Harness(fixture);
         if (!h.HasModule)
         {
             output.WriteLine("dbutil.suprx not installed: HLE only");
@@ -160,7 +160,7 @@ public sealed class DbutilHleTests(GuestMemoryFixture fx, ITestOutputHelper outp
         var diffs = new List<string>();
         h.Run(t =>
         {
-            foreach (var (label, nid, args, mutex, hasResult) in Scenarios)
+            foreach ((string? label, uint nid, uint[]? args, uint mutex, bool hasResult) in s_scenarios)
             {
                 var results = new List<(uint R, byte[] Bytes, string Calls)>();
                 foreach (bool lle in h.HasModule ? new[] { true, false } : new[] { false })
@@ -179,7 +179,7 @@ public sealed class DbutilHleTests(GuestMemoryFixture fx, ITestOutputHelper outp
                         r = 0;
                     }
 
-                    var bytes = GuestMemory.ReadSpan(o, (int)ObjSize).ToArray();
+                    byte[] bytes = GuestMemory.ReadSpan(o, (int)ObjSize).ToArray();
                     // the RMutex words hold kernel ids that differ between the two objects
                     if (mutex != 0)
                     {

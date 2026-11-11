@@ -1,5 +1,6 @@
 using System.Reflection;
 using System.Text;
+using VitaSharp.Core.Hle;
 using VitaSharp.Core.Hle.Modules;
 using VitaSharp.Core.Memory;
 
@@ -7,23 +8,23 @@ namespace VitaSharp.Tests;
 
 /// <summary>SceCommonDialog: the shared dialog slot, per-family results and struct offsets.</summary>
 [Collection("guest")]
-public sealed class DialogHleTests(GuestMemoryFixture fx)
+public sealed class DialogHleTests(GuestMemoryFixture fixture)
 {
-    const int BUSY = unchecked((int)0x80020401), NULL = unchecked((int)0x80020402), NOT_RUNNING = unchecked((int)0x80020404),
+    private const int BUSY = unchecked((int)0x80020401), NULL = unchecked((int)0x80020402), NOT_RUNNING = unchecked((int)0x80020404),
         NOT_SUPPORTED = unchecked((int)0x80020405), NOT_AVAILABLE = unchecked((int)0x80020408), NOT_FINISHED = unchecked((int)0x80020410),
         NOT_IN_USE = unchecked((int)0x80020411);
 
-    static int Call(CommonDialog d, string name, params object[] args) =>
+    private static int Call(CommonDialog d, string name, params object[] args) =>
         Convert.ToInt32(typeof(CommonDialog).GetMethod(name, BindingFlags.Instance | BindingFlags.NonPublic | BindingFlags.Public)!.Invoke(d, args)!);
 
-    uint Alloc(uint size)
+    private uint Alloc(uint size)
     {
-        uint p = fx.Memory.Alloc(size, "dialog test");
+        uint p = fixture.Memory.Alloc(size, "dialog test");
         GuestMemory.Fill(p, 0, size);
         return p;
     }
 
-    uint MsgParam(int mode, int buttonType, string msg = "hello")
+    private uint MsgParam(int mode, int buttonType, string msg = "hello")
     {
         uint param = Alloc(0x88), up = Alloc(0x10), text = Alloc(64);
         GuestMemory.WriteCString(text, msg);
@@ -56,7 +57,7 @@ public sealed class DialogHleTests(GuestMemoryFixture fx)
     [Fact]
     public void YesNoAfterFailedNetCheckAnswersNo()
     {
-        var saved = VitaSharp.Core.Hle.PsnAccount.Current;
+        PsnAccount saved = VitaSharp.Core.Hle.PsnAccount.Current;
         VitaSharp.Core.Hle.PsnAccount.Current = VitaSharp.Core.Hle.PsnAccount.Offline;
         try
         {
@@ -80,7 +81,7 @@ public sealed class DialogHleTests(GuestMemoryFixture fx)
         }
     }
 
-    uint ImeParam()
+    private uint ImeParam()
     {
         uint param = Alloc(0xA8);
         GuestMemory.W32(param + 0x2C, 16);
@@ -155,9 +156,9 @@ public sealed class DialogHleTests(GuestMemoryFixture fx)
     {
         var d = new CommonDialog();
         uint param = Alloc(0xA8), title = Alloc(64), init = Alloc(64), buf = Alloc(64);
-        var t = Encoding.Unicode.GetBytes("Name\0");
+        byte[] t = Encoding.Unicode.GetBytes("Name\0");
         t.CopyTo(GuestMemory.Span(title, t.Length));
-        var i = Encoding.Unicode.GetBytes("Abcdefgh\0");
+        byte[] i = Encoding.Unicode.GetBytes("Abcdefgh\0");
         i.CopyTo(GuestMemory.Span(init, i.Length));
         GuestMemory.W32(param + 0x28, title);
         GuestMemory.W32(param + 0x2C, 4);
@@ -176,7 +177,7 @@ public sealed class DialogHleTests(GuestMemoryFixture fx)
         Assert.Equal(NOT_FINISHED, Call(d, "sceImeDialogGetResult", res));
     }
 
-    sealed class FakeImeBackend : VitaSharp.Core.Host.IImeDialogBackend
+    private sealed class FakeImeBackend : VitaSharp.Core.Host.IImeDialogBackend
     {
         public VitaSharp.Core.Host.ImeDialogRequest? Request;
         public Action<string?>? Done;
@@ -190,12 +191,12 @@ public sealed class DialogHleTests(GuestMemoryFixture fx)
     }
 
     /// <summary>An IME dialog param: title, initial text, max length, type, option, text box mode; returns the buffer.</summary>
-    (uint Param, uint Buffer) ImeDialogParam(string title, string initial, uint maxLen, uint type = 0, uint option = 0, uint textBoxMode = 0)
+    private (uint Param, uint Buffer) ImeDialogParam(string title, string initial, uint maxLen, uint type = 0, uint option = 0, uint textBoxMode = 0)
     {
         uint param = Alloc(0xA8), t = Alloc(0x110), init = Alloc(0x1010), buf = Alloc(0x1010);
-        var tb = Encoding.Unicode.GetBytes(title + "\0");
+        byte[] tb = Encoding.Unicode.GetBytes(title + "\0");
         tb.CopyTo(GuestMemory.Span(t, tb.Length));
-        var ib = Encoding.Unicode.GetBytes(initial + "\0");
+        byte[] ib = Encoding.Unicode.GetBytes(initial + "\0");
         ib.CopyTo(GuestMemory.Span(init, ib.Length));
         GuestMemory.Fill(buf, 0xEE, 0x40); // garbage: the dialog must NUL-terminate
         GuestMemory.W32(param + 0x14, type);
@@ -208,7 +209,7 @@ public sealed class DialogHleTests(GuestMemoryFixture fx)
         return (param, buf);
     }
 
-    static string ReadUtf16Z(uint addr)
+    private static string ReadUtf16Z(uint addr)
     {
         int n = 0;
         while (GuestMemory.Read<ushort>(addr + (uint)n * 2) != 0)
@@ -219,7 +220,7 @@ public sealed class DialogHleTests(GuestMemoryFixture fx)
         return Encoding.Unicode.GetString(GuestMemory.Span(addr, n * 2));
     }
 
-    static T WithoutScriptedText<T>(Func<T> f)
+    private static T WithoutScriptedText<T>(Func<T> f)
     {
         string? saved = CommonDialog.ImeDefaultText;
         CommonDialog.ImeDefaultText = null;
@@ -238,7 +239,7 @@ public sealed class DialogHleTests(GuestMemoryFixture fx)
     {
         var host = new FakeImeBackend();
         var d = new CommonDialog { ImeBackendOverride = host };
-        var (param, buf) = ImeDialogParam("Nome", "Yu", 6, type: 1, textBoxMode: 1);
+        (uint param, uint buf) = ImeDialogParam("Nome", "Yu", 6, type: 1, textBoxMode: 1);
         Assert.Equal(0, Call(d, "sceImeDialogInit", param));
         // waits for the user: RUNNING, no result yet, the buffer holds the initial text
         Assert.Equal(1, Call(d, "sceImeDialogGetStatus"));
@@ -268,12 +269,12 @@ public sealed class DialogHleTests(GuestMemoryFixture fx)
     {
         var host = new FakeImeBackend();
         var d = new CommonDialog { ImeBackendOverride = host };
-        var (param, buf) = ImeDialogParam("Msg", "", 32, option: 1);
+        (uint param, uint buf) = ImeDialogParam("Msg", "", 32, option: 1);
         Assert.Equal(0, Call(d, "sceImeDialogInit", param));
         Assert.True(host.Request!.Multiline);
         host.Done!("Olá\r\nmundo ção 鳴上");
         Assert.Equal("Olá\nmundo ção 鳴上", ReadUtf16Z(buf));
-        var bytes = GuestMemory.Span(buf, 4).ToArray();
+        byte[] bytes = GuestMemory.Span(buf, 4).ToArray();
         Assert.Equal(new byte[] { (byte)'O', 0, (byte)'l', 0 }, bytes); // UTF-16LE
         Assert.Equal(0, Call(d, "sceImeDialogTerm"));
         return 0;
@@ -284,7 +285,7 @@ public sealed class DialogHleTests(GuestMemoryFixture fx)
     {
         var host = new FakeImeBackend();
         var d = new CommonDialog { ImeBackendOverride = host };
-        var (param, buf) = ImeDialogParam("Nome", "Souji", 16);
+        (uint param, uint buf) = ImeDialogParam("Nome", "Souji", 16);
         Assert.Equal(0, Call(d, "sceImeDialogInit", param));
         host.Done!(null);
         Assert.Equal(2, Call(d, "sceImeDialogGetStatus"));
@@ -302,7 +303,7 @@ public sealed class DialogHleTests(GuestMemoryFixture fx)
     {
         var host = new FakeImeBackend();
         var d = new CommonDialog { ImeBackendOverride = host };
-        var (param, buf) = ImeDialogParam("Nome", "A", 16);
+        (uint param, uint buf) = ImeDialogParam("Nome", "A", 16);
         Assert.Equal(0, Call(d, "sceImeDialogInit", param));
         Assert.Equal(0, Call(d, "sceImeDialogAbort"));
         Assert.Equal(1, host.Closed);
@@ -327,7 +328,7 @@ public sealed class DialogHleTests(GuestMemoryFixture fx)
         {
             var host = new FakeImeBackend();
             var d = new CommonDialog { ImeBackendOverride = host };
-            var (param, buf) = ImeDialogParam("Nome", "", 8);
+            (uint param, uint buf) = ImeDialogParam("Nome", "", 8);
             Assert.Equal(0, Call(d, "sceImeDialogInit", param));
             Assert.Null(host.Request);
             Assert.Equal(2, Call(d, "sceImeDialogGetStatus"));
@@ -375,7 +376,7 @@ public sealed class DialogHleTests(GuestMemoryFixture fx)
     }
 
     /// <summary>SceSaveDataDialogParam with a system message (mode 4) or a user message (mode 3) sub-parameter.</summary>
-    uint SaveParam(int mode, uint subWord0)
+    private uint SaveParam(int mode, uint subWord0)
     {
         uint param = Alloc(0x88), sub = Alloc(0x40);
         GuestMemory.W32(sub, subWord0); // sysMsgType / buttonType
@@ -407,7 +408,7 @@ public sealed class DialogHleTests(GuestMemoryFixture fx)
         Assert.Equal(0, Call(d, "sceSaveDataDialogTerm"));
     }
 
-    sealed class FakeMessageUi : VitaSharp.Core.Host.IMessageDialogBackend
+    private sealed class FakeMessageUi : VitaSharp.Core.Host.IMessageDialogBackend
     {
         public VitaSharp.Core.Host.MessageDialogRequest? Request;
         public Action<int>? Done;

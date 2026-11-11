@@ -5,11 +5,11 @@ namespace VitaSharp.Tests;
 public class AesUtilTests
 {
     /// <summary>CTR keystream built the slow way: one ECB block per counter, byte-wise big-endian increment.</summary>
-    static byte[] ReferenceCtr(byte[] key, byte[] counter, byte[] data)
+    private static byte[] ReferenceCtr(byte[] key, byte[] counter, byte[] data)
     {
-        var c = (byte[])counter.Clone();
-        var outp = (byte[])data.Clone();
-        var ks = new byte[16];
+        byte[] c = (byte[])counter.Clone();
+        byte[] outp = (byte[])data.Clone();
+        byte[] ks = new byte[16];
         for (int off = 0; off < outp.Length; off += 16)
         {
             AesUtil.EcbEncrypt(key, c, ks);
@@ -35,14 +35,14 @@ public class AesUtilTests
     [InlineData("FFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFE", 64)]               // wraps around 2^128
     public void Ctr_MatchesBlockByBlockReference(string counterHex, int length)
     {
-        var key = Convert.FromHexString("2B7E151628AED2A6ABF7158809CF4F3C");
-        var counter = Convert.FromHexString(counterHex);
-        var data = new byte[length];
+        byte[] key = Convert.FromHexString("2B7E151628AED2A6ABF7158809CF4F3C");
+        byte[] counter = Convert.FromHexString(counterHex);
+        byte[] data = new byte[length];
         new Random(length).NextBytes(data);
 
-        var expected = ReferenceCtr(key, counter, data);
-        var actual = (byte[])data.Clone();
-        var c = (byte[])counter.Clone();
+        byte[] expected = ReferenceCtr(key, counter, data);
+        byte[] actual = (byte[])data.Clone();
+        byte[] c = (byte[])counter.Clone();
         using (var ctr = new AesUtil.Ctr(key))
         {
             // two calls: the counter must carry on where the first one stopped

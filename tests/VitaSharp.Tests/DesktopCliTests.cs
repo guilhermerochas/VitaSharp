@@ -10,7 +10,7 @@ namespace VitaSharp.Tests;
 /// </summary>
 public sealed class DesktopCliTests : IDisposable
 {
-    readonly string _root = Path.Combine(Path.GetTempPath(), "vitasharp-cli-" + Guid.NewGuid().ToString("N"));
+    private readonly string _root = Path.Combine(Path.GetTempPath(), "vitasharp-cli-" + Guid.NewGuid().ToString("N"));
 
     public DesktopCliTests() => Directory.CreateDirectory(_root);
 
@@ -24,13 +24,13 @@ public sealed class DesktopCliTests : IDisposable
         catch (UnauthorizedAccessException) { }
     }
 
-    DesktopProcess.Result Run(params string[] args)
+    private DesktopProcess.Result Run(params string[] args)
     {
-        var r = DesktopProcess.Run(_root, args, softwareVulkan: false);
+        DesktopProcess.Result r = DesktopProcess.Run(_root, args, softwareVulkan: false);
         return r;
     }
 
-    static string Tail(string s) => s.Length > 4000 ? s[^4000..] : s;
+    private static string Tail(string s) => s.Length > 4000 ? s[^4000..] : s;
 
     [Fact]
     public void VpkInstallsAndRunsAndTheToolsReadTheInstalledExecutable()
@@ -39,7 +39,7 @@ public sealed class DesktopCliTests : IDisposable
         SyntheticTitle.WriteVpk(vpk);
 
         // install, then a second install without --force skips the installed title (stdin is not a terminal: no prompt)
-        var r = Run("install", vpk);
+        DesktopProcess.Result r = Run("install", vpk);
         Assert.True(r.ExitCode == 0, Tail(r.Output));
         Assert.Contains($"Installed VSTS00001 \"{SyntheticTitle.Title}\"", r.Output);
         string app = Path.Combine(_root, "fs", "ux0", "app", "VSTS00001");
@@ -59,7 +59,7 @@ public sealed class DesktopCliTests : IDisposable
         r = Run("imports", "VSTS00001");
         Assert.True(r.ExitCode == 0, Tail(r.Output));
         Assert.Contains("== VitaSharpSynthetic", r.Output);
-        foreach (var lib in new[] { "SceCtrl", "SceDisplayUser", "SceDisplay" })
+        foreach (string? lib in new[] { "SceCtrl", "SceDisplayUser", "SceDisplay" })
         {
             Assert.Matches(new Regex($@"\b{lib}\s+1 imports,\s+0 missing"), r.Output);
         }
@@ -95,9 +95,9 @@ public sealed class DesktopCliTests : IDisposable
     {
         SyntheticTitle.Install(Path.Combine(_root, "fs"));
         string tsv = Path.Combine(_root, "coverage.tsv");
-        var r = Run("hle-coverage", $"--out={tsv}");
+        DesktopProcess.Result r = Run("hle-coverage", $"--out={tsv}");
         Assert.True(r.ExitCode == 0, Tail(r.Output));
-        var rows = File.ReadAllLines(tsv);
+        string[] rows = File.ReadAllLines(tsv);
         Assert.Contains(rows, l => l.StartsWith("0xA9C3CED6\tsceCtrlPeekBufferPositive\t") && l.Contains("\timpl\t"));
         Assert.Equal(3, rows.Length);
     }
@@ -110,7 +110,7 @@ public sealed class DesktopCliTests : IDisposable
         Assert.Equal(0, Run("toast-preview", toast).ExitCode);
         Assert.Equal(0, Run("ime-preview", ime, "Name", "hello", "--max=8").ExitCode);
         Assert.Equal(0, Run("msg-preview", msg, "Save?", "--buttons=Yes,No", "--selected=1", "--progress=40").ExitCode);
-        var (_, iw, ih) = DesktopProcess.Probe(ime);
+        ((byte R, byte G, byte B) _, int iw, int ih) = DesktopProcess.Probe(ime);
         Assert.Equal(1200, iw);
         Assert.True(ih > 100);
         Assert.Equal(1200, DesktopProcess.Probe(msg).Width);
@@ -125,13 +125,13 @@ public sealed class DesktopCliTests : IDisposable
         File.Copy(msg, Path.Combine(b, "x.png"));
         File.Copy(msg0, Path.Combine(a, "y.png"));
         File.Copy(msg, Path.Combine(b, "y.png"));
-        var r = Run("png-diff", a, b);
+        DesktopProcess.Result r = Run("png-diff", a, b);
         Assert.True(r.ExitCode == 0, Tail(r.Output));
         Assert.Contains("COMPARE 2 frames", r.Output);
         // the numbers are culture-independent (a dot decimal separator whatever the system language)
         Assert.Matches(@"worst mean difference \d+\.\d{4} \(y\.png\)", r.Output);
         Assert.Contains("1 pixel-identical", r.Output);
-        var compare = File.ReadAllLines(Path.Combine(a, "compare.txt"));
+        string[] compare = File.ReadAllLines(Path.Combine(a, "compare.txt"));
         Assert.Contains("x.png 100.000 0.000 0.0000 0", compare);
         Assert.Contains(compare, l => Regex.IsMatch(l, @"^y\.png \d+\.\d{3} \d+\.\d{3} \d+\.\d{4} \d+$") && !l.StartsWith("y.png 100.000"));
         Assert.True(File.Exists(Path.Combine(a, "diff_y.png")));
@@ -165,7 +165,7 @@ public sealed class DesktopCliTests : IDisposable
             using var w = new BinaryWriter(File.Create(path));
             w.Write(0x81000000u);
             w.Write((uint)floats.Length * 4);
-            foreach (var f in floats)
+            foreach (float f in floats)
             {
                 w.Write(f);
             }
@@ -196,14 +196,14 @@ public sealed class DesktopCliTests : IDisposable
         SyntheticTitle.Install(Path.Combine(_root, "fs"));
         File.WriteAllText(Path.Combine(_root, "launcher.json"), "{ \"CheckUpdates\": false }");
         string shots = Path.Combine(_root, "shots");
-        var r = DesktopProcess.Run(_root, ["ui-render", shots, "--theme=dark", "--size=960x600", "--launch=VSTS00001", "--seconds=3"], timeoutMs: 240_000, softwareVulkan: false);
+        DesktopProcess.Result r = DesktopProcess.Run(_root, ["ui-render", shots, "--theme=dark", "--size=960x600", "--launch=VSTS00001", "--seconds=3"], timeoutMs: 240_000, softwareVulkan: false);
         Assert.True(r.ExitCode == 0, Tail(r.Output));
         Assert.Contains("PASS", r.Output);
-        var m = Regex.Match(r.Output, @"launch VSTS00001: exit 0, play time (\d+) -> (\d+) s");
+        Match m = Regex.Match(r.Output, @"launch VSTS00001: exit 0, play time (\d+) -> (\d+) s");
         Assert.True(m.Success, Tail(r.Output));
         Assert.True(int.Parse(m.Groups[2].Value) > int.Parse(m.Groups[1].Value));
         var pngs = Directory.GetFiles(shots, "*.png").Select(Path.GetFileNameWithoutExtension).ToHashSet();
-        foreach (var page in new[] { "game_dark", "livearea_dark", "running_dark", "after-launch_dark" })
+        foreach (string? page in new[] { "game_dark", "livearea_dark", "running_dark", "after-launch_dark" })
         {
             Assert.Contains(page, pngs);
         }

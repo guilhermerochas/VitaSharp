@@ -9,12 +9,12 @@ namespace VitaSharp.Tests;
 /// </summary>
 public class DeveloperGatingTests
 {
-    static readonly Assembly[] Assemblies = [typeof(Core.Gpu.GpuDumpReader).Assembly, typeof(Renderer.Vulkan.VulkanRenderer).Assembly];
+    private static readonly Assembly[] s_assemblies = [typeof(Core.Gpu.GpuDumpReader).Assembly, typeof(Renderer.Vulkan.VulkanRenderer).Assembly];
 
     [Fact]
     public void NormalBuildHasNoDeveloperTooling()
     {
-        var types = Assemblies.SelectMany(a => a.GetTypes()).Where(t => t.Namespace?.EndsWith(".Developer", StringComparison.Ordinal) == true).Select(t => t.FullName).ToList();
+        var types = s_assemblies.SelectMany(a => a.GetTypes()).Where(t => t.Namespace?.EndsWith(".Developer", StringComparison.Ordinal) == true).Select(t => t.FullName).ToList();
         var hooks = typeof(Renderer.Vulkan.VulkanRenderer).GetMembers(BindingFlags.Instance | BindingFlags.Static | BindingFlags.Public | BindingFlags.NonPublic)
             .Where(m => m.Name.StartsWith("Dev", StringComparison.Ordinal) && !m.Name.StartsWith("Device", StringComparison.Ordinal)).Select(m => m.Name).ToList();
 #if VITASHARP_DEVELOPER

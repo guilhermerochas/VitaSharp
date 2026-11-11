@@ -7,9 +7,9 @@ namespace VitaSharp.Tests;
 
 /// <summary>SceCamera HLE calls against guest memory with a fake host camera (struct layouts, state machine, Read).</summary>
 [Collection("guest")]
-public sealed class CameraHleTests(GuestMemoryFixture fx)
+public sealed class CameraHleTests(GuestMemoryFixture fixture)
 {
-    sealed class FakeSource : ICameraSource
+    private sealed class FakeSource : ICameraSource
     {
         public readonly List<(CameraFacing, int, int, int)> Opens = new();
         public FakeStream? Last;
@@ -18,7 +18,7 @@ public sealed class CameraHleTests(GuestMemoryFixture fx)
         {
             Opens.Add((facing, width, height, fps));
             Last = new FakeStream();
-            var img = new byte[64 * 48 * 4];
+            byte[] img = new byte[64 * 48 * 4];
             for (int i = 0; i < img.Length; i += 4)
             {
                 img[i] = 200;
@@ -34,21 +34,21 @@ public sealed class CameraHleTests(GuestMemoryFixture fx)
         }
     }
 
-    sealed class FakeStream : ICameraStream
+    private sealed class FakeStream : ICameraStream
     {
         public CameraFrameBuffer Frames { get; } = new();
         public bool Disposed;
         public void Dispose() => Disposed = true;
     }
 
-    const int PARAM = unchecked((int)0x802E0000), NOT_OPEN = unchecked((int)0x802E0004), NOT_START = unchecked((int)0x802E0006),
+    private const int PARAM = unchecked((int)0x802E0000), NOT_OPEN = unchecked((int)0x802E0004), NOT_START = unchecked((int)0x802E0006),
         ALREADY_OPEN = unchecked((int)0x802E0003), FORMAT_UNKNOWN = unchecked((int)0x802E0007), RES_UNKNOWN = unchecked((int)0x802E0008),
         BAD_FPS = unchecked((int)0x802E0009), ATTR_UNKNOWN = unchecked((int)0x802E000C), OTHER_STARTED = unchecked((int)0x802E0012);
 
-    static int Call(Camera cam, string name, params object[] args) =>
+    private static int Call(Camera cam, string name, params object[] args) =>
         (int)typeof(Camera).GetMethod(name, BindingFlags.Instance | BindingFlags.NonPublic)!.Invoke(cam, args)!;
 
-    void WriteInfo(uint info, ushort format, ushort res, ushort fps, uint buf, uint bufSize)
+    private void WriteInfo(uint info, ushort format, ushort res, ushort fps, uint buf, uint bufSize)
     {
         GuestMemory.Fill(info, 0, 0x30);
         GuestMemory.W32(info + 0x00, 0x30);
@@ -62,17 +62,17 @@ public sealed class CameraHleTests(GuestMemoryFixture fx)
     [Fact]
     public void OpenStartReadStopClose()
     {
-        var mem = fx.Memory;
+        GuestMemory mem = fixture.Memory;
         uint info = mem.Alloc(0x1000, "caminfo");
         uint read = mem.Alloc(0x1000, "camread");
-        const int w = 320, h = 240, size = w * h * 4;
-        uint buf = mem.Alloc(size + 0x1000, "cambuf");
+        const int Width = 320, Height = 240, Size = Width * Height * 4;
+        uint buf = mem.Alloc(Size + 0x1000, "cambuf");
         var src = new FakeSource();
         var cam = new Camera { HostOverride = new HostServices { Camera = src } };
         try
         {
             GuestMemory.Fill(info, 0xEE, 0x40);
-            WriteInfo(info, 5 /* ABGR */, 2 /* 320x240 */, 3 /* 3.75 fps: wide frame period keeps the no-wait check deterministic */, buf, size);
+            WriteInfo(info, 5 /* ABGR */, 2 /* 320x240 */, 3 /* 3.75 fps: wide frame period keeps the no-wait check deterministic */, buf, Size);
             Assert.Equal(PARAM, Call(cam, "sceCameraOpen", 2, info));
             Assert.Equal(PARAM, Call(cam, "sceCameraOpen", 0, 0u));
             GuestMemory.Write<ushort>(info + 6, 7);
@@ -86,15 +86,15 @@ public sealed class CameraHleTests(GuestMemoryFixture fx)
             GuestMemory.Write<ushort>(info + 0xA, 3);
 
             Assert.Equal(0, Call(cam, "sceCameraOpen", 0, info));
-            Assert.Equal((ushort)w, GuestMemory.Read<ushort>(info + 0x0C));
-            Assert.Equal((ushort)h, GuestMemory.Read<ushort>(info + 0x0E));
+            Assert.Equal((ushort)Width, GuestMemory.Read<ushort>(info + 0x0C));
+            Assert.Equal((ushort)Height, GuestMemory.Read<ushort>(info + 0x0E));
             Assert.Equal(0xEEu, (uint)GuestMemory.Read<byte>(info + 0x30)); // nothing written past SceCameraInfo
             Assert.Equal(ALREADY_OPEN, Call(cam, "sceCameraOpen", 0, info));
 
             Assert.Equal(NOT_START, Call(cam, "sceCameraSetBrightness", 0, 200));
             Assert.Equal(NOT_START, Call(cam, "sceCameraIsActive", 0));
             Assert.Equal(0, Call(cam, "sceCameraStart", 0));
-            Assert.Equal((CameraFacing.Front, w, h, 4), Assert.Single(src.Opens));
+            Assert.Equal((CameraFacing.Front, Width, Height, 4), Assert.Single(src.Opens));
             Assert.Equal(1, Call(cam, "sceCameraIsActive", 0));
             Assert.Equal(NOT_OPEN, Call(cam, "sceCameraIsActive", 1));
 
@@ -113,8 +113,8 @@ public sealed class CameraHleTests(GuestMemoryFixture fx)
 
             // Read, waiting for the next frame
             GuestMemory.Fill(read, 0xEE, 0x50);
-            GuestMemory.Fill(buf, 0, (uint)size + 16);
-            GuestMemory.Fill(buf + size, 0xCC, 16);
+            GuestMemory.Fill(buf, 0, (uint)Size + 16);
+            GuestMemory.Fill(buf + Size, 0xCC, 16);
             GuestMemory.W32(read + 0x00, 0x48);
             GuestMemory.W32(read + 0x04, 0); // WAIT_NEXTFRAME_ON
             Assert.Equal(0, Call(cam, "sceCameraRead", 0, read));
@@ -122,8 +122,8 @@ public sealed class CameraHleTests(GuestMemoryFixture fx)
             ulong frame = GuestMemory.Read<ulong>(read + 0x10);
             ulong timestamp = GuestMemory.Read<ulong>(read + 0x18);
             byte pastStruct = GuestMemory.Read<byte>(read + 0x48);
-            byte[] px = GuestMemory.ReadSpan(buf, size).ToArray();
-            byte pastBuffer = GuestMemory.Read<byte>(buf + size);
+            byte[] px = GuestMemory.ReadSpan(buf, Size).ToArray();
+            byte pastBuffer = GuestMemory.Read<byte>(buf + Size);
 
             // no-wait read right after (before the slow checks below, which can outlast a 266 ms frame period on a
             // slow CI host): same frame, ALREADY_READ
@@ -136,7 +136,7 @@ public sealed class CameraHleTests(GuestMemoryFixture fx)
             Assert.True(frame >= 1);
             Assert.True(timestamp > 0);
             Assert.Equal(0xEE, pastStruct); // nothing written past SceCameraRead
-            for (int i = 0; i < size; i += 4)
+            for (int i = 0; i < Size; i += 4)
             {
                 Assert.Equal(200, px[i]);
                 Assert.Equal(100, px[i + 1]);
@@ -171,10 +171,10 @@ public sealed class CameraHleTests(GuestMemoryFixture fx)
     [Fact]
     public void GreyFramesWithoutHostCamera()
     {
-        var mem = fx.Memory;
+        GuestMemory mem = fixture.Memory;
         uint info = mem.Alloc(0x1000, "caminfo");
         uint read = mem.Alloc(0x1000, "camread");
-        const int w = 160, h = 120;
+        const int Width = 160, Height = 120;
         uint y = mem.Alloc(0x10000, "y"), u = mem.Alloc(0x10000, "u"), v = mem.Alloc(0x10000, "v");
         var cam = new Camera { HostOverride = new HostServices() };
         try
@@ -188,9 +188,9 @@ public sealed class CameraHleTests(GuestMemoryFixture fx)
             GuestMemory.W32(read + 0x04, 0);
             GuestMemory.W32(read + 0x3C, 0); // SETBYREAD needs buffers in the read struct
             Assert.Equal(PARAM, Call(cam, "sceCameraRead", 0, read));
-            GuestMemory.W32(read + 0x30, w * h);
-            GuestMemory.W32(read + 0x34, w * h / 4);
-            GuestMemory.W32(read + 0x38, w * h / 4);
+            GuestMemory.W32(read + 0x30, Width * Height);
+            GuestMemory.W32(read + 0x34, Width * Height / 4);
+            GuestMemory.W32(read + 0x38, Width * Height / 4);
             GuestMemory.W32(read + 0x3C, y);
             GuestMemory.W32(read + 0x40, u);
             GuestMemory.W32(read + 0x44, v);
@@ -198,10 +198,10 @@ public sealed class CameraHleTests(GuestMemoryFixture fx)
             GuestMemory.Fill(u, 0, 0x10000);
             GuestMemory.Fill(v, 0, 0x10000);
             Assert.Equal(0, Call(cam, "sceCameraRead", 0, read));
-            Assert.All(GuestMemory.Span(y, w * h).ToArray(), b => Assert.Equal(128, b));
-            Assert.All(GuestMemory.Span(u, w * h / 4).ToArray(), b => Assert.Equal(128, b));
-            Assert.All(GuestMemory.Span(v, w * h / 4).ToArray(), b => Assert.Equal(128, b));
-            Assert.Equal(0, GuestMemory.Read<byte>(u + w * h / 4)); // chroma plane size respected
+            Assert.All(GuestMemory.Span(y, Width * Height).ToArray(), b => Assert.Equal(128, b));
+            Assert.All(GuestMemory.Span(u, Width * Height / 4).ToArray(), b => Assert.Equal(128, b));
+            Assert.All(GuestMemory.Span(v, Width * Height / 4).ToArray(), b => Assert.Equal(128, b));
+            Assert.Equal(0, GuestMemory.Read<byte>(u + Width * Height / 4)); // chroma plane size respected
             Assert.Equal(0, Call(cam, "sceCameraClose", 0)); // close while started stops first
         }
         finally

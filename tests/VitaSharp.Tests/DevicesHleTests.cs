@@ -6,19 +6,19 @@ namespace VitaSharp.Tests;
 
 /// <summary>Package F HLE (touch, ctrl, motion, audio out/in, power, sulpha) against guest memory.</summary>
 [Collection("guest")]
-public sealed class DevicesHleTests(GuestMemoryFixture fx)
+public sealed class DevicesHleTests(GuestMemoryFixture fixture)
 {
-    static object? Invoke<T>(T module, string name, params object[] args) =>
+    private static object? Invoke<T>(T module, string name, params object[] args) =>
         typeof(T).GetMethod(name, BindingFlags.Instance | BindingFlags.NonPublic | BindingFlags.Public)!.Invoke(module, args);
-    static int Call<T>(T module, string name, params object[] args) => (int)Invoke(module, name, args)!;
+    private static int Call<T>(T module, string name, params object[] args) => (int)Invoke(module, name, args)!;
 
-    static Ptr<T> P<T>(uint a) where T : unmanaged => new(a);
+    private static Ptr<T> P<T>(uint a) where T : unmanaged => new(a);
 
     [Fact]
     public void TouchSamplingStateAndForce()
     {
         var t = new Touch();
-        uint p = fx.Memory.Alloc(0x10, "touch");
+        uint p = fixture.Memory.Alloc(0x10, "touch");
         GuestMemory.W32(p, 0xFF);
         Assert.Equal(0, Call(t, "sceTouchGetSamplingState", 0, P<uint>(p)));
         Assert.Equal(0u, GuestMemory.R32(p)); // hardware default: stopped
@@ -41,7 +41,7 @@ public sealed class DevicesHleTests(GuestMemoryFixture fx)
     public void TouchPixelDensity()
     {
         var t = new Touch();
-        uint p = fx.Memory.Alloc(0x10, "density");
+        uint p = fixture.Memory.Alloc(0x10, "density");
         Assert.Equal(0, Call(t, "sceTouchGetPixelDensity", P<float>(p), P<float>(p + 4)));
         Assert.Equal(22.0f, GuestMemory.Read<float>(p));
         Assert.Equal(22.0f, GuestMemory.Read<float>(p + 4));
@@ -52,7 +52,7 @@ public sealed class DevicesHleTests(GuestMemoryFixture fx)
     public void CtrlRapidFire()
     {
         var c = new Ctrl();
-        uint rule = fx.Memory.Alloc(0x20, "rapid");
+        uint rule = fixture.Memory.Alloc(0x20, "rapid");
         const uint Cross = 0x4000;
         uint[] r = [Cross, Cross, Cross, 0, 2, 2];
         for (int i = 0; i < 6; i++)
@@ -95,7 +95,7 @@ public sealed class DevicesHleTests(GuestMemoryFixture fx)
     public void CtrlAnalogStickCheck()
     {
         var c = new Ctrl();
-        uint p = fx.Memory.Alloc(0x10, "stick");
+        uint p = fixture.Memory.Alloc(0x10, "stick");
         Assert.Equal(0, Call(c, "sceCtrlSetAnalogStickCheckMode", 3));
         Assert.Equal(0, Call(c, "sceCtrlGetAnalogStickCheckMode", P<int>(p)));
         Assert.Equal(3u, GuestMemory.R32(p));
@@ -126,7 +126,7 @@ public sealed class DevicesHleTests(GuestMemoryFixture fx)
         Assert.Equal(0, Call(s, "sceMotionSetAngleThreshold", 30.0f));
         Assert.Equal(30.0f, (float)Invoke(s, "sceMotionGetAngleThreshold")!);
 
-        uint v = fx.Memory.Alloc(0x40, "basicori");
+        uint v = fixture.Memory.Alloc(0x40, "basicori");
         Assert.Equal(0, Call(s, "sceMotionGetBasicOrientation", v));
         Assert.Equal(1.0f, GuestMemory.Read<float>(v + 8));
         Assert.Equal(0, Call(s, "sceMotionGetDeviceLocation", v));
@@ -139,7 +139,7 @@ public sealed class DevicesHleTests(GuestMemoryFixture fx)
     [Fact]
     public void MotionSensorRecords()
     {
-        uint p = fx.Memory.Alloc(64 * 0x40, "sensors");
+        uint p = fixture.Memory.Alloc(64 * 0x40, "sensors");
         Sensors.WriteSensorStates(p, 64, 2_000_000, 100);
         for (uint i = 0; i < 64; i++)
         {
@@ -222,7 +222,7 @@ public sealed class DevicesHleTests(GuestMemoryFixture fx)
         Assert.Equal(4150, Call(m, "scePowerGetBatteryVolt"));
 
         var n = new Ngs();
-        uint cfg = fx.Memory.Alloc(0x10, "sulpha");
+        uint cfg = fixture.Memory.Alloc(0x10, "sulpha");
         Assert.Equal(0, Call(n, "sceSulphaNgsGetDefaultConfig", cfg));
         Assert.Equal(1024u, GuestMemory.R32(cfg));
         Assert.Equal(4096u, GuestMemory.R32(cfg + 4));
@@ -269,13 +269,13 @@ public sealed class DevicesHleTests(GuestMemoryFixture fx)
         var sys = new VitaSharp.Core.Hle.Audio.NgsSystem { Handle = 0x1000, Granularity = 256, SampleRate = 48000 };
         var rack = new VitaSharp.Core.Hle.Audio.NgsRack { System = sys, ChannelsPerVoice = 2 };
         var voice = new VitaSharp.Core.Hle.Audio.NgsVoice { Rack = rack };
-        uint pcm = fx.Memory.Alloc(0x1000, "ngs pcm");
+        uint pcm = fixture.Memory.Alloc(0x1000, "ngs pcm");
         for (uint i = 0; i < 0x1000; i += 2)
         {
             GuestMemory.Write<short>(pcm + i, 0x1000);
         }
 
-        uint prm = fx.Memory.Alloc(0x54, "ngs player params");
+        uint prm = fixture.Memory.Alloc(0x54, "ngs player params");
         GuestMemory.Fill(prm, 0, 0x54);
         GuestMemory.W32(prm + 4, 0x54);                                                  // 84-byte layout
         GuestMemory.W32(prm + 8, pcm);
@@ -318,7 +318,7 @@ public sealed class DevicesHleTests(GuestMemoryFixture fx)
         var sys = new VitaSharp.Core.Hle.Audio.NgsSystem { Handle = 0x1000, Granularity = 256, SampleRate = 48000 };
         var rack = new VitaSharp.Core.Hle.Audio.NgsRack { System = sys, ChannelsPerVoice = 2 };
         var voice = new VitaSharp.Core.Hle.Audio.NgsVoice { Rack = rack };
-        uint prm = fx.Memory.Alloc(0x48, "ngs envelope params");
+        uint prm = fixture.Memory.Alloc(0x48, "ngs envelope params");
         GuestMemory.Fill(prm, 0, 0x48);
         GuestMemory.W32(prm, 0x01015CE3);
         GuestMemory.W32(prm + 4, 0x48);
@@ -347,7 +347,7 @@ public sealed class DevicesHleTests(GuestMemoryFixture fx)
             typeof(Ngs).GetMethod(name, BindingFlags.Static | BindingFlags.NonPublic)!.Invoke(null, args);
         float[] Ones()
         {
-            var b = new float[512];
+            float[] b = new float[512];
             Array.Fill(b, 1f);
             return b;
         }

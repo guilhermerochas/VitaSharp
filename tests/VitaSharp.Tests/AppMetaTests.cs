@@ -8,16 +8,16 @@ namespace VitaSharp.Tests;
 /// ownership of kernel objects in the shared table.</summary>
 public class AppMetaTests
 {
-    static byte[] Sfo(string titleId, string category)
+    private static byte[] Sfo(string titleId, string category)
     {
         // a minimal PARAM.SFO with TITLE_ID and CATEGORY (UTF-8 strings)
-        var keys = new[] { ("CATEGORY", category), ("TITLE_ID", titleId) };
+        (string, string)[] keys = new[] { ("CATEGORY", category), ("TITLE_ID", titleId) };
         var keyTable = new List<byte>();
         var dataTable = new List<byte>();
         var index = new List<byte>();
-        foreach (var (k, v) in keys)
+        foreach ((string? k, string? v) in keys)
         {
-            var data = System.Text.Encoding.UTF8.GetBytes(v + "\0");
+            byte[] data = System.Text.Encoding.UTF8.GetBytes(v + "\0");
             index.AddRange(BitConverter.GetBytes((ushort)keyTable.Count));
             index.AddRange(BitConverter.GetBytes((ushort)0x0204));
             index.AddRange(BitConverter.GetBytes((uint)data.Length));
@@ -82,7 +82,7 @@ public class AppMetaTests
         }
     }
 
-    sealed class Dummy : KernelObject;
+    private sealed class Dummy : KernelObject;
 
     [Fact]
     public void ObjectsBelongToTheProcessThatCreatedThem()

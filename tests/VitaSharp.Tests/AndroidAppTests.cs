@@ -15,7 +15,7 @@ namespace VitaSharp.Tests;
 /// library and trophies, on-screen pad and gamepad mapping.</summary>
 public sealed class AndroidAppTests : IDisposable
 {
-    readonly string _root = Path.Combine(Path.GetTempPath(), "vitasharp-android-tests-" + Guid.NewGuid().ToString("N"));
+    private readonly string _root = Path.Combine(Path.GetTempPath(), "vitasharp-android-tests-" + Guid.NewGuid().ToString("N"));
 
     public void Dispose()
     {
@@ -31,7 +31,7 @@ public sealed class AndroidAppTests : IDisposable
     [Fact]
     public void EnvironmentFileTakesOnlyVitaSharpVariables()
     {
-        var vars = EnvironmentFile.Parse("# comment\r\nVITASHARP_GPU_QUIRKS=-RenderPasses,+TileBased\r\n\r\nexport VITASHARP_ASTC = \"0\"\nPATH=/x\nVITASHARP_BAD NAME=1\n=1\nVITASHARP_EMPTY=\n");
+        List<KeyValuePair<string, string>> vars = EnvironmentFile.Parse("# comment\r\nVITASHARP_GPU_QUIRKS=-RenderPasses,+TileBased\r\n\r\nexport VITASHARP_ASTC = \"0\"\nPATH=/x\nVITASHARP_BAD NAME=1\n=1\nVITASHARP_EMPTY=\n");
         Assert.Equal([new("VITASHARP_GPU_QUIRKS", "-RenderPasses,+TileBased"), new("VITASHARP_ASTC", "0"), new("VITASHARP_EMPTY", "")], vars);
     }
 
@@ -64,7 +64,7 @@ public sealed class AndroidAppTests : IDisposable
     [Fact]
     public void LogcatTagsAndText()
     {
-        var e = LogcatFormat.Format(LogLevel.Info, "gpu", "Swapchain 2400x1080").Single();
+        LogcatEntry e = LogcatFormat.Format(LogLevel.Info, "gpu", "Swapchain 2400x1080").Single();
         Assert.Equal(("VitaSharp", "[gpu] Swapchain 2400x1080"), (e.Tag, e.Text));
 
         // guest output: own tag, no thread prefix, the plain prefixes removed
@@ -97,7 +97,7 @@ public sealed class AndroidAppTests : IDisposable
         Assert.Equal("[t] ", LogcatFormat.Format(LogLevel.Info, "t", "").Single().Text);
     }
 
-    sealed class ListSink : ILogSink
+    private sealed class ListSink : ILogSink
     {
         public readonly List<(LogLevel, string, string)> Lines = new();
         public void Write(LogLevel level, string thread, string message)
@@ -113,7 +113,7 @@ public sealed class AndroidAppTests : IDisposable
     public void LogSinkReceivesWrittenLines()
     {
         var sink = new ListSink();
-        var prevLevel = Log.Level;
+        LogLevel prevLevel = Log.Level;
         Log.Sink = sink;
         try
         {
@@ -196,7 +196,7 @@ public sealed class AndroidAppTests : IDisposable
     [Fact]
     public void PerGameChoicesStartWithTheGlobalDefault()
     {
-        var c = SettingsChoices.WithDefault(SettingsChoices.Clocks, "444");
+        IReadOnlyList<Choice> c = SettingsChoices.WithDefault(SettingsChoices.Clocks, "444");
         Assert.Equal(SettingsChoices.DefaultValue, c[0].Value);
         Assert.Equal(Loc.Format("MDefaultParen", Loc.Get("MClock444")), c[0].Label);
         Assert.Equal(3, c.Count);
@@ -206,7 +206,7 @@ public sealed class AndroidAppTests : IDisposable
 
     // ---------------------------------------------------------------- library and trophies
 
-    string InstallFakeGame(DataLayout data, string titleId, string title, bool withTrophies)
+    private string InstallFakeGame(DataLayout data, string titleId, string title, bool withTrophies)
     {
         string dir = Path.Combine(data.Apps, titleId);
         Directory.CreateDirectory(Path.Combine(dir, "sce_sys"));
@@ -230,14 +230,14 @@ public sealed class AndroidAppTests : IDisposable
         InstallFakeGame(data, "PCSA00029", "Uncharted: Golden Abyss", false);
         Directory.CreateDirectory(Path.Combine(data.Apps, "NOTAGAME")); // no eboot.bin: skipped
 
-        var games = GameLibrary.Scan(data);
+        List<GameEntry> games = GameLibrary.Scan(data);
         Assert.Equal(["Killzone Mercenary", "Uncharted: Golden Abyss"], games.Select(g => g.Title));
-        var kz = games[0];
+        GameEntry kz = games[0];
         Assert.Equal(("PCSC00045", "1.12", "KM"), (kz.TitleId, kz.Version, kz.Initials));
         Assert.StartsWith("PCSC00045 · v1.12 · ", kz.Subtitle);
 
         Assert.Equal(Loc.Get("MNoTrophies"), GameLibrary.Trophies(games[1], data).Text);
-        var none = GameLibrary.Trophies(kz, data);
+        TrophyProgress none = GameLibrary.Trophies(kz, data);
         Assert.Equal(("0/3", 0), (none.Text, none.Percent));
 
         TrophyUnlocks.Save(TrophyUnlocks.PathFor(data.Fs, "NPWR00001_00"), new()
@@ -245,7 +245,7 @@ public sealed class AndroidAppTests : IDisposable
             [1] = 63_900_000_000_000_000UL,
             [2] = 63_900_000_100_000_000UL
         });
-        var p = GameLibrary.Trophies(kz, data);
+        TrophyProgress p = GameLibrary.Trophies(kz, data);
         Assert.Equal(("2/3", 66), (p.Text, p.Percent));
         Assert.Equal((1, 1), p.ByGrade[TrophyGrade.Gold]);
         Assert.Equal((0, 1), p.ByGrade[TrophyGrade.Platinum]);
@@ -253,9 +253,9 @@ public sealed class AndroidAppTests : IDisposable
         var list = TrophyList.Load(kz, data);
         Assert.Equal(3, list.Rows.Count);
         Assert.Equal([2, 1], list.Filtered(TrophyList.Filter.Earned).Select(r => r.Id)); // most recent first
-        var missing = Assert.Single(list.Filtered(TrophyList.Filter.Missing));
+        TrophyRow missing = Assert.Single(list.Filtered(TrophyList.Filter.Missing));
         Assert.Equal((0, "All"), (missing.Id, missing.ShownName));
-        var hidden = list.Rows.Single(r => r.Id == 1);
+        TrophyRow hidden = list.Rows.Single(r => r.Id == 1);
         Assert.Equal("First", hidden.ShownName); // hidden but unlocked: shown
 
         var settings = new Dictionary<string, GameSettings> { ["PCSA00029"] = new() { LastPlayedUtc = DateTime.UtcNow } };
@@ -280,7 +280,7 @@ public sealed class AndroidAppTests : IDisposable
         Assert.Equal("12h 40m", GameLibrary.PlayTime(12 * 3600 + 40 * 60));
         Assert.Equal("5m", GameLibrary.PlayTime(300));
         Assert.Equal("—", GameLibrary.PlayTime(0));
-        var now = new DateTime(2026, 10, 30, 15, 0, 0, DateTimeKind.Local).ToUniversalTime();
+        DateTime now = new DateTime(2026, 10, 30, 15, 0, 0, DateTimeKind.Local).ToUniversalTime();
         Assert.Equal(Loc.Get("MToday"), GameLibrary.LastPlayed(now.AddHours(-1), now));
         Assert.Equal(Loc.Get("MYesterday"), GameLibrary.LastPlayed(now.AddDays(-1), now));
         Assert.Equal(Loc.Format("MDaysAgo", 3), GameLibrary.LastPlayed(now.AddDays(-3), now));
@@ -289,17 +289,17 @@ public sealed class AndroidAppTests : IDisposable
 
     // ---------------------------------------------------------------- input
 
-    static (int, float, float)[] Finger(OnScreenControl c, float fx = 0.5f, float fy = 0.5f, int id = 1) =>
+    private static (int, float, float)[] Finger(OnScreenControl c, float fx = 0.5f, float fy = 0.5f, int id = 1) =>
         [(id, c.X + c.Width * fx, c.Y + c.Height * fy)];
 
-    static void Update(OnScreenPad pad, params (int, float, float)[] fingers) => pad.Update(fingers);
+    private static void Update(OnScreenPad pad, params (int, float, float)[] fingers) => pad.Update(fingers);
 
     [Fact]
     public void OnScreenButtonsSticksAndFrontTouch()
     {
         var pad = new OnScreenPad();
-        var cross = pad.Layout.Single(c => c.Control == VitaControl.Cross);
-        var lstick = pad.Layout.Single(c => c.Control == VitaControl.LStickUp);
+        OnScreenControl cross = pad.Layout.Single(c => c.Control == VitaControl.Cross);
+        OnScreenControl lstick = pad.Layout.Single(c => c.Control == VitaControl.LStickUp);
         Update(pad, Finger(cross));
         Assert.Equal(VitaButtons.Cross, pad.GetController(0).Buttons);
         Assert.True(pad.IsPressed(cross));
@@ -312,9 +312,9 @@ public sealed class AndroidAppTests : IDisposable
         Assert.Equal(1f, pad.Knob(lstick).X, 3);
 
         // a finger on the image is a front touch, normalised to the image
-        var im = pad.Image;
+        (float X, float Y, float Width, float Height) im = pad.Image;
         Update(pad, (3, im.X + im.Width / 4, im.Y + im.Height / 2));
-        var t = Assert.Single(pad.GetTouches(false));
+        TouchPoint t = Assert.Single(pad.GetTouches(false));
         Assert.Equal((0.25f, 0.5f), (t.X, t.Y), new FloatPairComparer());
         Assert.Empty(pad.GetTouches(true));
 
@@ -325,7 +325,7 @@ public sealed class AndroidAppTests : IDisposable
         Assert.Equal(ControllerState.Neutral.Lx, pad.GetController(0).Lx);
     }
 
-    sealed class FloatPairComparer : IEqualityComparer<(float, float)>
+    private sealed class FloatPairComparer : IEqualityComparer<(float, float)>
     {
         public bool Equals((float, float) a, (float, float) b) => Math.Abs(a.Item1 - b.Item1) < 1e-4 && Math.Abs(a.Item2 - b.Item2) < 1e-4;
         public int GetHashCode((float, float) obj) => 0;
@@ -335,8 +335,8 @@ public sealed class AndroidAppTests : IDisposable
     public void RearTouchToggleAndPsButton()
     {
         var pad = new OnScreenPad();
-        var back = pad.Layout.Single(c => c.Control == VitaControl.TouchBack);
-        var ps = pad.Layout.Single(c => c.Control == VitaControl.PS);
+        OnScreenControl back = pad.Layout.Single(c => c.Control == VitaControl.TouchBack);
+        OnScreenControl ps = pad.Layout.Single(c => c.Control == VitaControl.PS);
         int psPresses = 0;
         pad.PsPressed += () => psPresses++;
 
@@ -344,7 +344,7 @@ public sealed class AndroidAppTests : IDisposable
         Update(pad);
         Assert.True(pad.RearTouch); // a tap switches it on, it stays on
         Assert.True(pad.IsPressed(back));
-        var im = pad.Image;
+        (float X, float Y, float Width, float Height) im = pad.Image;
         Update(pad, (5, im.X + im.Width / 2, im.Y + im.Height / 2));
         Assert.Single(pad.GetTouches(true));
         Assert.Empty(pad.GetTouches(false));
@@ -386,7 +386,7 @@ public sealed class AndroidAppTests : IDisposable
             [AndroidKeys.AxisRx] = 1f, // ignored: the right stick of this pad is Z/RZ
         };
         pads.OnMotion(7, a => axes.GetValueOrDefault(a));
-        var m = pads.Map().State;
+        ControllerState m = pads.Map().State;
         Assert.Equal(VitaButtons.Up | VitaButtons.RTrigger, m.Buttons); // hat up = D-pad up, R2 = R
         Assert.Equal(((byte)255, (byte)0, (byte)128), (m.Lx, m.Rx, m.Ry));
 
@@ -410,14 +410,14 @@ public sealed class AndroidAppTests : IDisposable
         var pad = new OnScreenPad();
         var pads = new AndroidGamepads();
         var input = new AndroidInput(pad, pads);
-        var square = pad.Layout.Single(c => c.Control == VitaControl.Square);
+        OnScreenControl square = pad.Layout.Single(c => c.Control == VitaControl.Square);
         Update(pad, Finger(square));
         pads.Connect(1, "Xbox Wireless Controller", 0x045E, 0x0B13, [AndroidKeys.AxisX, AndroidKeys.AxisY, AndroidKeys.AxisZ, AndroidKeys.AxisRz]);
         pads.OnKey(1, AndroidKeys.ButtonStart, true);
         Assert.Equal(VitaButtons.Square | VitaButtons.Start, input.GetController(0).Buttons);
         Assert.Equal(ControllerState.Neutral.Lx, input.GetController(1).Lx);
 
-        var im = pad.Image;
+        (float X, float Y, float Width, float Height) im = pad.Image;
         Update(pad, (4, im.X + im.Width / 2, im.Y + im.Height / 2));
         Span<TouchPoint> dest = stackalloc TouchPoint[4];
         Assert.Equal(1, input.GetTouches(false, dest));
@@ -442,11 +442,11 @@ public sealed class AndroidAppTests : IDisposable
         Assert.Null(AndroidKeyNames.Name(AndroidKeys.ButtonA));
         // every key of the default keyboard profile has an Android key code
         var names = Enumerable.Range(0, 300).Select(AndroidKeyNames.Name).OfType<string>().ToHashSet();
-        foreach (var keys in DefaultMappings.Keyboard().Bindings.Values)
+        foreach (List<string> keys in DefaultMappings.Keyboard().Bindings.Values)
         {
-            foreach (var k in keys)
+            foreach (string k in keys)
             {
-                Assert.True(InputBinding.TryParse(k, out var b) && b.Key is { } key && names.Contains(key), k);
+                Assert.True(InputBinding.TryParse(k, out InputBinding b) && b.Key is { } key && names.Contains(key), k);
             }
         }
     }
@@ -458,7 +458,7 @@ public sealed class AndroidAppTests : IDisposable
         Assert.Equal(KeyboardKeyAction.Handled, kb.OnKey(AndroidKeys.DpadLeft, true));
         Assert.Equal(KeyboardKeyAction.Handled, kb.OnKey(52 /* X */, true));
         Assert.Equal(KeyboardKeyAction.Handled, kb.OnKey(32 /* D */, true));
-        var s = kb.Map().State;
+        ControllerState s = kb.Map().State;
         Assert.Equal(VitaButtons.Left | VitaButtons.Cross, s.Buttons);
         Assert.Equal(255, s.Lx);
         Assert.Equal(128, s.Ly);
@@ -495,7 +495,7 @@ public sealed class AndroidAppTests : IDisposable
     public void AndroidKeyboardFollowsTheSavedKeyboardProfile()
     {
         var store = new InputProfileStore(Path.Combine(_root, "input.json"));
-        var p = DefaultMappings.Keyboard();
+        ControllerProfile p = DefaultMappings.Keyboard();
         p.Remove(VitaControl.Cross, InputBinding.OfKey("X"));
         p.Add(VitaControl.Cross, InputBinding.OfKey("K"));
         p.Remove(VitaControl.RStickDown, InputBinding.OfKey("K"));
@@ -518,7 +518,7 @@ public sealed class AndroidAppTests : IDisposable
         Assert.Equal(KeyboardKeyAction.Handled, kb.OnKey(52 /* X */, true));
         Assert.Equal(VitaButtons.Cross, kb.Map().State.Buttons);
         var launcher = InputProfileStore.Load(path);
-        var p = DefaultMappings.Keyboard();
+        ControllerProfile p = DefaultMappings.Keyboard();
         p.Remove(VitaControl.Cross, InputBinding.OfKey("X"));
         p.Add(VitaControl.Cross, InputBinding.OfKey("K"));
         p.Remove(VitaControl.RStickDown, InputBinding.OfKey("K"));
@@ -535,8 +535,8 @@ public sealed class AndroidAppTests : IDisposable
         pads.Connect(1, "Xbox Wireless Controller", 0x045E, 0x0B13, [AndroidKeys.AxisX, AndroidKeys.AxisY, AndroidKeys.AxisZ, AndroidKeys.AxisRz]);
         pads.OnKey(1, AndroidKeys.ButtonA, true);
         Assert.Equal(VitaButtons.Cross, pads.Map().State.Buttons);
-        var (id, name, kind) = Assert.Single(pads.Devices);
-        var pad = store.ProfileFor(AndroidGamepads.Guid(0x045E, 0x0B13), name, kind, isGamepad: true);
+        (int id, string? name, ControllerKind kind) = Assert.Single(pads.Devices);
+        ControllerProfile pad = store.ProfileFor(AndroidGamepads.Guid(0x045E, 0x0B13), name, kind, isGamepad: true);
         pad.SwapConfirm = !pad.SwapConfirm;
         store.Put(pad);
         Assert.Equal(VitaButtons.Circle, pads.Map().State.Buttons);
@@ -571,7 +571,7 @@ public sealed class AndroidAppTests : IDisposable
 
         // motion source Off: the tilt keys do nothing
         var store = new InputProfileStore(Path.Combine(_root, "input.json"));
-        var off = DefaultMappings.Keyboard();
+        ControllerProfile off = DefaultMappings.Keyboard();
         off.MotionSource = MotionSourceMode.Off;
         store.Put(off);
         var kbOff = new AndroidKeyboard(store, () => now);
@@ -593,7 +593,7 @@ public sealed class AndroidAppTests : IDisposable
         pads.OnKey(1, AndroidKeys.ButtonStart, true);
         kb.OnKey(31 /* C */, true);
         kb.OnKey(51 /* W */, true);
-        var s = input.GetController(0);
+        ControllerState s = input.GetController(0);
         Assert.Equal(VitaButtons.Start | VitaButtons.Circle, s.Buttons);
         Assert.Equal(0, s.Ly);
         kb.ReleaseAll();

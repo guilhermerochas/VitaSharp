@@ -13,10 +13,10 @@ namespace VitaSharp.Tests;
 /// HLE __cxa_* entry points on a guest thread; the type matching is checked directly on exception headers.
 /// </summary>
 [Collection("guest")]
-public sealed class CxxExceptionHleTests(GuestMemoryFixture fx)
+public sealed class CxxExceptionHleTests(GuestMemoryFixture fixture)
 {
     /// <summary>A minimal Thumb assembler for the test functions.</summary>
-    sealed class Code(uint at)
+    private sealed class Code(uint at)
     {
         public uint Pc = at;
         public void H(ushort v)
@@ -33,7 +33,7 @@ public sealed class CxxExceptionHleTests(GuestMemoryFixture fx)
             Mov(0xF240, rd, v & 0xFFFF);
             Mov(0xF2C0, rd, v >> 16);
         }
-        void Mov(ushort op, int rd, uint imm16)
+        private void Mov(ushort op, int rd, uint imm16)
         {
             H((ushort)(op | ((imm16 >> 11) & 1) << 10 | (imm16 >> 12)));
             H((ushort)(((imm16 >> 8) & 7) << 12 | (uint)rd << 8 | (imm16 & 0xFF)));
@@ -50,25 +50,25 @@ public sealed class CxxExceptionHleTests(GuestMemoryFixture fx)
         public void StrR4R0() => H(0x6004);         // str r4, [r0]
     }
 
-    sealed class World : IDisposable
+    private sealed class World : IDisposable
     {
         public readonly Emulator Emu;
         public readonly Libc Libc;
-        readonly string _root = Path.Combine(Path.GetTempPath(), "vitasharp-cxx-" + Guid.NewGuid().ToString("N"));
+        private readonly string _root = Path.Combine(Path.GetTempPath(), "vitasharp-cxx-" + Guid.NewGuid().ToString("N"));
         public uint Base, Stubs;
-        uint _nextStub;
-        readonly Dictionary<uint, uint> _stubs = [];
-        readonly LoadedModule _module = new() { Name = "cxx-test", Uid = 0x7777 };
-        readonly List<(uint Fn, uint Entry, bool Inline)> _exidx = [];
+        private uint _nextStub;
+        private readonly Dictionary<uint, uint> _stubs = [];
+        private readonly LoadedModule _module = new() { Name = "cxx-test", Uid = 0x7777 };
+        private readonly List<(uint Fn, uint Entry, bool Inline)> _exidx = [];
         private uint _extab;
         private readonly uint _counter;
 
         public uint Counter => _counter;
 
-        public World(GuestMemoryFixture fx)
+        public World(GuestMemoryFixture fixture)
         {
             Directory.CreateDirectory(_root);
-            Emu = new Emulator(new EmulatorOptions { FsRoot = _root, Memory = fx.Memory, EnableJit = false, CpuBackend = "interp" });
+            Emu = new Emulator(new EmulatorOptions { FsRoot = _root, Memory = fixture.Memory, EnableJit = false, CpuBackend = "interp" });
             Libc = Emu.Hle.Modules.OfType<Libc>().Single();
             Base = Emu.Memory.Alloc(0x4000, "cxx test code");
             GuestMemory.Fill(Base, 0, 0x4000);
@@ -94,7 +94,7 @@ public sealed class CxxExceptionHleTests(GuestMemoryFixture fx)
             return _stubs[nid] = a;
         }
 
-        static void Prel31(uint at, uint target) => GuestMemory.W32(at, (target - at) & 0x7FFFFFFF);
+        private static void Prel31(uint at, uint target) => GuestMemory.W32(at, (target - at) & 0x7FFFFFFF);
 
         /// <summary>A compact pr0 entry: the three unwind instruction bytes inline.</summary>
         public void Compact(uint fn, uint ops) => _exidx.Add((fn, 0x80000000 | ops, true));
@@ -108,7 +108,7 @@ public sealed class CxxExceptionHleTests(GuestMemoryFixture fx)
             GuestMemory.W32(e + 4, 0x00A8B0B0);
             var lsda = new List<byte> { 0xFF, 0x00 };
             var cs = new List<byte>();
-            foreach (var s in sites)
+            foreach ((uint Start, uint Len, uint Lp, uint Action) s in sites)
             {
                 cs.Add((byte)s.Start);
                 cs.Add((byte)s.Len);
@@ -149,7 +149,7 @@ public sealed class CxxExceptionHleTests(GuestMemoryFixture fx)
         {
             uint t = Base + 0x3000;
             _module.ExidxTop = t;
-            foreach (var (fn, entry, inline) in _exidx.OrderBy(x => x.Fn))
+            foreach ((uint fn, uint entry, bool inline) in _exidx.OrderBy(x => x.Fn))
             {
                 Prel31(t, fn);
                 if (inline)
@@ -171,7 +171,7 @@ public sealed class CxxExceptionHleTests(GuestMemoryFixture fx)
         {
             uint result = 0;
             Exception? failure = null;
-            var th = Emu.Kernel.CreateThread("cxx-test", 0, 0x10000100, 0x10000, 0, 0x70000);
+            GuestThread th = Emu.Kernel.CreateThread("cxx-test", 0, 0x10000100, 0x10000, 0, 0x70000);
             th.HostBody = t =>
             {
                 try
@@ -205,10 +205,10 @@ public sealed class CxxExceptionHleTests(GuestMemoryFixture fx)
         }
     }
 
-    const uint TiInt = 0xA58E84A3, TiException = 0x1E8C6100, VtBadAlloc = 0xA27EFBA3;
+    private const uint TiInt = 0xA58E84A3, TiException = 0x1E8C6100, VtBadAlloc = 0xA27EFBA3;
 
     /// <summary>thrower(v): throws the int v (a compact pr0 frame: push {r4, lr}).</summary>
-    static uint EmitThrower(World w, Code c, uint intTi)
+    private static uint EmitThrower(World w, Code c, uint intTi)
     {
         uint fn = c.Pc;
         c.Push();
@@ -226,7 +226,7 @@ public sealed class CxxExceptionHleTests(GuestMemoryFixture fx)
 
     /// <summary>catcher(call): calls fn and returns 0, or for an exception caught by type filter 1, what
     /// <paramref name="onCatch"/> leaves in r0 (r4 = the caught object).</summary>
-    static uint EmitCatcher(World w, Code c, uint callee, uint catchTi, Action<Code> onCatch)
+    private static uint EmitCatcher(World w, Code c, uint callee, uint catchTi, Action<Code> onCatch)
     {
         uint fn = c.Pc;
         c.Push();                       // +0
@@ -249,7 +249,7 @@ public sealed class CxxExceptionHleTests(GuestMemoryFixture fx)
     [Fact]
     public void ThrownIntIsCaughtByItsType()
     {
-        using var w = new World(fx);
+        using var w = new World(fixture);
         var c = new Code(w.Base);
         uint ti = w.Libc.Rtti.Ti(TiInt);
         uint thrower = EmitThrower(w, c, ti);
@@ -262,7 +262,7 @@ public sealed class CxxExceptionHleTests(GuestMemoryFixture fx)
     [Fact]
     public void CleanupLandingPadRunsAndUnwindingResumes()
     {
-        using var w = new World(fx);
+        using var w = new World(fixture);
         var c = new Code(w.Base);
         uint ti = w.Libc.Rtti.Ti(TiInt);
         uint thrower = EmitThrower(w, c, ti);
@@ -291,7 +291,7 @@ public sealed class CxxExceptionHleTests(GuestMemoryFixture fx)
     [Fact]
     public void BadAllocIsCaughtAsStdException()
     {
-        using var w = new World(fx);
+        using var w = new World(fixture);
         var c = new Code(w.Base);
         // thrower: std::_Xbad_alloc()
         uint thrower = c.Pc;
@@ -307,7 +307,7 @@ public sealed class CxxExceptionHleTests(GuestMemoryFixture fx)
     [Fact]
     public void UnmatchedTypeFallsToTheCatchAll()
     {
-        using var w = new World(fx);
+        using var w = new World(fixture);
         var c = new Code(w.Base);
         uint ti = w.Libc.Rtti.Ti(TiInt);
         uint thrower = EmitThrower(w, c, ti);
@@ -335,7 +335,7 @@ public sealed class CxxExceptionHleTests(GuestMemoryFixture fx)
     [Fact]
     public void IosClearThrowsFailureWhenTheExceptionMaskSaysSo()
     {
-        using var w = new World(fx);
+        using var w = new World(fixture);
         var c = new Code(w.Base);
         uint ios = w.Emu.Memory.Alloc(0x40, "ios_base");
         GuestMemory.Fill(ios, 0, 0x40);
@@ -361,7 +361,7 @@ public sealed class CxxExceptionHleTests(GuestMemoryFixture fx)
     [Fact]
     public void ManipulatorsSetTheStreamFields()
     {
-        using var w = new World(fx);
+        using var w = new World(fixture);
         uint ios = w.Emu.Memory.Alloc(0x40, "ios_base"), m = w.Emu.Memory.Alloc(8, "manip");
         GuestMemory.Fill(ios, 0, 0x40);
         w.Libc._ZNSt8ios_base5_InitEv(null!, ios);
@@ -400,9 +400,9 @@ public sealed class CxxExceptionHleTests(GuestMemoryFixture fx)
     [Fact]
     public void TypeMatchingFollowsTheModulesRules()
     {
-        using var w = new World(fx);
-        var libc = w.Libc;
-        var r = libc.Rtti;
+        using var w = new World(fixture);
+        Libc libc = w.Libc;
+        Libc.RttiData r = libc.Rtti;
         uint obj = 0;
         int Match(uint thrownNid, uint catchNid, out uint adjusted, uint value = 0)
         {

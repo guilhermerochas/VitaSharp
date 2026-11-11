@@ -9,9 +9,9 @@ namespace VitaSharp.Tests;
 /// axis mapping, re-centring, source selection, camera choice, rotation and YUV_420_888 conversion.</summary>
 public sealed class AndroidSensorTests
 {
-    const float G = 9.80665f;
+    private const float G = 9.80665f;
 
-    static void Near(Vector3 expected, Vector3 actual, float tol = 1e-4f) =>
+    private static void Near(Vector3 expected, Vector3 actual, float tol = 1e-4f) =>
         Assert.True(Vector3.Distance(expected, actual) < tol, $"expected {expected}, got {actual}");
 
     // ---------------------------------------------------------------- motion axes
@@ -24,7 +24,7 @@ public sealed class AndroidSensorTests
     [InlineData(3, -G, 0f, 0f)]  // ROTATION_270, turned clockwise: the left edge points up
     public void PhoneHeldUprightIsTheVitaHeldUpright(int rotation, float x, float y, float z)
     {
-        var s = AndroidMotionAxes.FromPhone(1, new Vector3(x, y, z), Vector3.Zero, rotation);
+        MotionSample s = AndroidMotionAxes.FromPhone(1, new Vector3(x, y, z), Vector3.Zero, rotation);
         Near(new Vector3(0, -1, 0), s.Acceleration); // the Vita reads gravity towards its bottom edge
     }
 
@@ -35,7 +35,7 @@ public sealed class AndroidSensorTests
     [InlineData(3)]
     public void PhoneLyingFlatIsTheVitaLyingFlat(int rotation)
     {
-        var s = AndroidMotionAxes.FromPhone(5, new Vector3(0, 0, G), new Vector3(0, 0, 0.5f), rotation);
+        MotionSample s = AndroidMotionAxes.FromPhone(5, new Vector3(0, 0, G), new Vector3(0, 0, 0.5f), rotation);
         Near(new Vector3(0, 0, -1), s.Acceleration);
         Near(new Vector3(0, 0, 0.5f), s.AngularVelocity); // turning on the table is about z in every rotation
         Assert.Equal(5UL, s.TimestampUs);
@@ -47,7 +47,7 @@ public sealed class AndroidSensorTests
         // ROTATION_90: the screen's right edge is the device's bottom edge (-y), its top edge the device's right edge (+x).
         // Lying flat with the screen's right edge lowered: the upward reaction leans towards the screen's left edge,
         // which is the device's top (+y); the Vita's gravity then leans towards its right edge (+x)
-        var s = AndroidMotionAxes.FromPhone(0, new Vector3(0, 0.3f * G, 0.95f * G), Vector3.Zero, 1);
+        MotionSample s = AndroidMotionAxes.FromPhone(0, new Vector3(0, 0.3f * G, 0.95f * G), Vector3.Zero, 1);
         Near(new Vector3(0.3f, 0, -0.95f), s.Acceleration);
         // a turn about the screen's vertical axis is a turn about the device's x axis
         Near(new Vector3(0, 1.5f, 0), AndroidMotionAxes.FromPhone(0, Vector3.Zero, new Vector3(1.5f, 0, 0), 1).AngularVelocity);
@@ -60,7 +60,7 @@ public sealed class AndroidSensorTests
     public void ControllerLyingFlatIsTheVitaLyingFlat()
     {
         // SDL/hid-playstation frame: y out of the face, reading +g when the controller lies on the desk
-        var s = AndroidMotionAxes.FromController(0, new Vector3(0, G, 0), new Vector3(0, 2f, 0));
+        MotionSample s = AndroidMotionAxes.FromController(0, new Vector3(0, G, 0), new Vector3(0, 2f, 0));
         Near(new Vector3(0, 0, -1), s.Acceleration);
         Near(new Vector3(0, 0, 2f), s.AngularVelocity);
     }
@@ -130,7 +130,7 @@ public sealed class AndroidSensorTests
         Assert.True(Quaternion.Dot(Quaternion.Identity, src.RecentreRotation) > 0.9999f);
     }
 
-    sealed class Fake(bool has) : IMotionSource
+    private sealed class Fake(bool has) : IMotionSource
     {
         public bool HasSensors { get; set; } = has;
         public int ReadSamples(Span<MotionSample> dest)
@@ -242,10 +242,10 @@ public sealed class AndroidSensorTests
     }
 
     /// <summary>A planar 4:2:0 image with row padding: Y = <paramref name="luma"/>(x, y), neutral chroma unless given.</summary>
-    static (byte[] Y, byte[] U, byte[] V) Planar(int w, int h, int pad, Func<int, int, byte> luma, byte u = 128, byte v = 128)
+    private static (byte[] Y, byte[] U, byte[] V) Planar(int w, int h, int pad, Func<int, int, byte> luma, byte u = 128, byte v = 128)
     {
         int ys = w + pad, cs = (w + 1) / 2 + pad;
-        var y = new byte[ys * h];
+        byte[] y = new byte[ys * h];
         for (int j = 0; j < h; j++)
         {
             for (int i = 0; i < w; i++)
@@ -254,17 +254,17 @@ public sealed class AndroidSensorTests
             }
         }
 
-        var uu = new byte[cs * ((h + 1) / 2)];
-        var vv = new byte[cs * ((h + 1) / 2)];
+        byte[] uu = new byte[cs * ((h + 1) / 2)];
+        byte[] vv = new byte[cs * ((h + 1) / 2)];
         Array.Fill(uu, u);
         Array.Fill(vv, v);
         return (y, uu, vv);
     }
 
-    static byte[] Convert((byte[] Y, byte[] U, byte[] V) p, int w, int h, int pad, int rotation)
+    private static byte[] Convert((byte[] Y, byte[] U, byte[] V) p, int w, int h, int pad, int rotation)
     {
-        var (ow, oh) = CameraSupport.RotatedSize(w, h, rotation);
-        var dst = new byte[ow * oh * 4];
+        (int ow, int oh) = CameraSupport.RotatedSize(w, h, rotation);
+        byte[] dst = new byte[ow * oh * 4];
         int cs = (w + 1) / 2 + pad;
         CameraSupport.ToRgba(new YuvImageCopy.Plane(p.Y, w + pad, 1), new YuvImageCopy.Plane(p.U, cs, 1), new YuvImageCopy.Plane(p.V, cs, 1), w, h, rotation, dst);
         return dst;
@@ -273,12 +273,12 @@ public sealed class AndroidSensorTests
     [Fact]
     public void CameraYuvIsFullRangeBt601()
     {
-        var px = Convert(Planar(2, 2, 3, (_, _) => 128), 2, 2, 3, 0);
+        byte[] px = Convert(Planar(2, 2, 3, (_, _) => 128), 2, 2, 3, 0);
         Assert.Equal(new byte[] { 128, 128, 128, 255 }, px[..4]);
         Assert.Equal(new byte[] { 0, 0, 0, 255 }, Convert(Planar(2, 2, 0, (_, _) => 0), 2, 2, 0, 0)[..4]); // not lifted to 16
         Assert.Equal(new byte[] { 255, 255, 255, 255 }, Convert(Planar(2, 2, 0, (_, _) => 255), 2, 2, 0, 0)[..4]);
         // pure red in full-range BT.601: Y 76, U 85, V 255
-        var red = Convert(Planar(2, 2, 0, (_, _) => 76, 85, 255), 2, 2, 0, 0);
+        byte[] red = Convert(Planar(2, 2, 0, (_, _) => 76, 85, 255), 2, 2, 0, 0);
         Assert.InRange(red[0], 250, 255);
         Assert.InRange(red[1], 0, 5);
         Assert.InRange(red[2], 0, 5);
@@ -291,10 +291,10 @@ public sealed class AndroidSensorTests
     [InlineData(270)]
     public void CameraRotationTurnsTheImageClockwise(int rotation)
     {
-        const int w = 4, h = 2;
-        var img = Planar(w, h, 1, (x, y) => (byte)(10 + y * w + x));
-        var dst = Convert(img, w, h, 1, rotation);
-        var (ow, oh) = CameraSupport.RotatedSize(w, h, rotation);
+        const int Width = 4, Height = 2;
+        (byte[] Y, byte[] U, byte[] V) img = Planar(Width, Height, 1, (x, y) => (byte)(10 + y * Width + x));
+        byte[] dst = Convert(img, Width, Height, 1, rotation);
+        (int ow, int oh) = CameraSupport.RotatedSize(Width, Height, rotation);
         byte At(int x, int y) => dst[(y * ow + x) * 4]; // grey: R = Y
         // where the source's top-left pixel (10) and top-right pixel (13) land after a clockwise turn
         switch (rotation)
@@ -322,18 +322,18 @@ public sealed class AndroidSensorTests
     public void CameraInterleavedChroma()
     {
         // NV21-style memory (V U V U ...) described as two planes of pixel stride 2, rows padded to 8 bytes
-        const int w = 4, h = 2, ys = 8;
-        var y = new byte[ys * h];
+        const int Width = 4, Height = 2, RowStride = 8;
+        byte[] y = new byte[RowStride * Height];
         Array.Fill(y, (byte)128);
-        var vu = new byte[ys];
-        for (int i = 0; i < w; i += 2)
+        byte[] vu = new byte[RowStride];
+        for (int i = 0; i < Width; i += 2)
         {
             vu[i] = 255;
             vu[i + 1] = 128;
         } // V = 255 (red), U = 128
-        var dst = new byte[w * h * 4];
-        CameraSupport.ToRgba(new YuvImageCopy.Plane(y, ys, 1), new YuvImageCopy.Plane(vu.AsSpan(1), ys, 2), new YuvImageCopy.Plane(vu, ys, 2), w, h, 0, dst);
-        for (int p = 0; p < w * h; p++)
+        byte[] dst = new byte[Width * Height * 4];
+        CameraSupport.ToRgba(new YuvImageCopy.Plane(y, RowStride, 1), new YuvImageCopy.Plane(vu.AsSpan(1), RowStride, 2), new YuvImageCopy.Plane(vu, RowStride, 2), Width, Height, 0, dst);
+        for (int p = 0; p < Width * Height; p++)
         {
             Assert.Equal(255, dst[p * 4]);       // R pushed to the top by V
             Assert.True(dst[p * 4 + 1] < 128);   // G pulled down

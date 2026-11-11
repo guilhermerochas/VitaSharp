@@ -15,7 +15,7 @@ public class Atrac9MdctTests
     public void Dct4MatchesTheOriginal(int bits)
     {
         int n = 1 << bits;
-        var window = new double[n];
+        double[] window = new double[n];
         for (int i = 0; i < n; i++)
         {
             window[i] = Math.Sin(Math.PI * (i + 0.5) / n);
@@ -25,14 +25,14 @@ public class Atrac9MdctTests
         var rng = new Random(bits);
         for (int round = 0; round < 20; round++)
         {
-            var input = new double[n];
+            double[] input = new double[n];
             for (int i = 0; i < n; i++)
             {
                 input[i] = (rng.NextDouble() - 0.5) * 65536;
             }
 
-            var fast = new double[n];
-            var reference = new double[n];
+            double[] fast = new double[n];
+            double[] reference = new double[n];
             mdct.Dct4ForTest(input, fast);
             mdct.Dct4Reference(input, reference);
             Assert.Equal(reference, fast);

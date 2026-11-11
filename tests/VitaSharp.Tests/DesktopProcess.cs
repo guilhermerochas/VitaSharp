@@ -13,7 +13,7 @@ public static class DesktopProcess
 {
     public sealed record Result(int ExitCode, string Output);
 
-    static string Exe => Path.Combine(AppContext.BaseDirectory, OperatingSystem.IsWindows() ? "VitaSharp.Desktop.exe" : "VitaSharp.Desktop");
+    private static string Exe => Path.Combine(AppContext.BaseDirectory, OperatingSystem.IsWindows() ? "VitaSharp.Desktop.exe" : "VitaSharp.Desktop");
 
     /// <summary>Runs the front-end with <paramref name="args"/> and <c>--data=<paramref name="data"/></c>; the output
     /// is stdout and stderr together. Fails the test when it does not end in <paramref name="timeoutMs"/>.</summary>
@@ -30,7 +30,7 @@ public static class DesktopProcess
             WorkingDirectory = data,
         };
         psi.ArgumentList.Add("--data=" + data);
-        foreach (var a in args)
+        foreach (string a in args)
         {
             psi.ArgumentList.Add(a);
         }
@@ -39,7 +39,7 @@ public static class DesktopProcess
         psi.Environment.Remove(VitaSharp.Core.Util.EnvVars.Data);
         if (softwareVulkan)
         {
-            foreach (var (name, value) in SoftwareVulkan.ChildEnvironment(systemLoader))
+            foreach ((string? name, string? value) in SoftwareVulkan.ChildEnvironment(systemLoader))
             {
                 psi.Environment[name] = value;
             }
@@ -47,13 +47,13 @@ public static class DesktopProcess
 
         if (env != null)
         {
-            foreach (var (k, v) in env)
+            foreach ((string? k, string? v) in env)
             {
                 psi.Environment[k] = v;
             }
         }
 
-        using var p = Process.Start(psi)!;
+        using Process p = Process.Start(psi)!;
         var output = new System.Text.StringBuilder();
         p.OutputDataReceived += (_, e) =>
         {
@@ -94,11 +94,11 @@ public static class DesktopProcess
         }
     }
 
-    static string Tail(System.Text.StringBuilder sb)
+    private static string Tail(System.Text.StringBuilder sb)
     {
         lock (sb)
         {
-            var s = sb.ToString();
+            string s = sb.ToString();
             return s.Length > 6000 ? s[^6000..] : s;
         }
     }
@@ -106,8 +106,8 @@ public static class DesktopProcess
     /// <summary>The pixel at the centre of a PNG as R, G, B, and its size.</summary>
     public static ((byte R, byte G, byte B) Center, int Width, int Height) Probe(string png)
     {
-        using var bmp = SKBitmap.Decode(png) ?? throw new InvalidDataException(png);
-        var c = bmp.GetPixel(bmp.Width / 2, bmp.Height / 2);
+        using SKBitmap bmp = SKBitmap.Decode(png) ?? throw new InvalidDataException(png);
+        SKColor c = bmp.GetPixel(bmp.Width / 2, bmp.Height / 2);
         return ((c.Red, c.Green, c.Blue), bmp.Width, bmp.Height);
     }
 }
