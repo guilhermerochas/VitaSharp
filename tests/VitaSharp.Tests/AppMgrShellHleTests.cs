@@ -84,12 +84,16 @@ public sealed class AppMgrShellHleTests(GuestMemoryFixture fx) : IDisposable
         uint bgm = _h.Alloc(0x20);
         Assert.Equal(ERR_NULL, Call(S, "sceAppMgrGetCurrentBgmState2", 0u));
         Assert.Equal(0, Call(S, "sceAppMgrGetCurrentBgmState2", bgm));
-        Assert.Equal(0xFFFFFFFFu, GuestMemory.R32(bgm));       // nobody holds the BGM port
-        Assert.Equal(0xFFFFFFFFu, GuestMemory.R32(bgm + 0xC));
-        Assert.Equal(0, Call(S, "sceAppMgrAcquireBgmPortWithPriority", 0));
+        // Layout as in the kernel appmgr: +0 pid, +4 priority, +0xC app id. With no positive priority the BGM goes to the
+        // process in front with the default priority 0xFFFF.
+        Assert.Equal((uint)Emu.Pid, GuestMemory.R32(bgm));
+        Assert.Equal(0xFFFFu, GuestMemory.R32(bgm + 4));
+        Assert.Equal((uint)Emu.AppId, GuestMemory.R32(bgm + 0xC));
+        Assert.Equal(0, Call(S, "sceAppMgrAcquireBgmPortWithPriority", 0x90));
         Call(S, "sceAppMgrGetCurrentBgmState2", bgm);
-        Assert.Equal((uint)Emu.AppId, GuestMemory.R32(bgm));
-        Assert.Equal((uint)Emu.Pid, GuestMemory.R32(bgm + 0xC));
+        Assert.Equal((uint)Emu.Pid, GuestMemory.R32(bgm));
+        Assert.Equal(0x90u, GuestMemory.R32(bgm + 4));
+        Assert.Equal((uint)Emu.AppId, GuestMemory.R32(bgm + 0xC));
         Assert.Equal(0, Call(S, "sceAppMgrRestoreBgmSettingForShell"));
         Assert.Equal(0, Call(S, "sceAppMgrSetPowerSaveMode", 1, 0));
         Assert.Equal(0, Call(S, "sceAppMgrSetDisplayMergeConf", 0, 0));
