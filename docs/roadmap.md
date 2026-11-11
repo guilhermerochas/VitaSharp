@@ -1663,6 +1663,11 @@ Lista de itens futuros do VitaSharp. Marque `[x]` quando um item for concluído.
 
 ## Bugs em aberto
 
+- [ ] Wipeout 2048 (PCSA00015): depois do loading do primeiro evento (Empire Climb), o loading e a corrida ficam
+  travados em ~7,5 fps (60/8), com o cronômetro do jogo andando ~70 s em ~2 min reais; a CPU das threads é baixa
+  (main 3,3 ms/quadro, GPU 6,6 ms/quadro), então parece espera de tempo/vblank/sincronização, não falta de CPU
+  (agente hlegxm, 11/11/2026, headless; antes do loading o jogo fica a 60 fps). O jogo chega à corrida desde a
+  função SceGxm NID_8FF68274 (2e9919e).
 - [ ] Texturas de inteiro de 32 bits (U32, S32, U32U32) amostradas por um sampler float (agente T2, test/apps-2,
   11/11/2026): o renderer criava views R32_UINT/R32_SINT, mas o gerador de shader lê toda textura por um sampler float
   e guarda a palavra como bits F32; no Vulkan isso é indefinido (camada de validação: VUID-vkCmdDrawIndexed-format-07753;
