@@ -61,7 +61,7 @@ SceDbRecovery	vs0:vsh/common/dbrecovery_plugin.suprx	1	0	0	0	0	0	0	0	0	0
 SceDbSetup	vs0:vsh/common/dbsetup.suprx	1	0	0	0	1	0	0	0	0	0
 SceDbg	vs0:sys/external/libdbg.suprx	5	5	2	2	0	0	0	0	0	0
 SceDbrecoveryUtility	vs0:sys/external/dbrecovery_utility.suprx	1	0	0	0	1	0	0	0	0	0
-SceDbutil	vs0:sys/external/dbutil.suprx	214	9	0	0	100	4	0	0	0	0
+SceDbutil	vs0:sys/external/dbutil.suprx	214	33	0	0	100	17	0	0	0	0
 SceDebugLed	os0:kd/sysmem.skprx	4	4	1	1	0	0	0	0	0	0
 SceDipsw	os0:kd/sysmem.skprx	3	3	0	0	3	3	0	0	0	0
 SceDisplay	os0:kd/display.skprx	21	21	8	8	9	9	0	0	0	0

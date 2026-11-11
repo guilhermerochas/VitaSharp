@@ -2,7 +2,7 @@
 <rect width="1000" height="600" rx="8" fill="#0d1117"/>
 <g font-family="-apple-system,Segoe UI,Helvetica,Arial,sans-serif">
 <text x="12" y="27" font-size="17" font-weight="600" fill="#e6edf3">HLE progress map</text>
-<text x="170" y="27" font-size="12" fill="#9198a1">308 libraries of firmware 3.74, area = exported functions, 48.4% implemented</text>
+<text x="170" y="27" font-size="12" fill="#9198a1">308 libraries of firmware 3.74, area = exported functions, 48.5% implemented</text>
 <text x="798" y="27" font-size="11" fill="#9198a1">0%</text>
 <rect x="820" y="16" width="24" height="14" rx="2" fill="#8e2929"/>
 <rect x="846" y="16" width="24" height="14" rx="2" fill="#8e5c29"/>
@@ -24,7 +24,7 @@
 <g><title>SceEmailEngine: 99/325 (30.4%)</title><rect x="379.2" y="504.7" width="103.4" height="87.3" fill="#8e6729" stroke="#0d1117" stroke-width="1"/><text x="382.2" y="519.7" font-size="13" fill="#ffffff">EmailEngine</text><text x="382.2" y="535.7" font-size="11" fill="#ffffff" fill-opacity=".8">30.4%</text></g>
 <g><title>ScePafResource: 94/274 (34.3%)</title><rect x="482.7" y="44" width="88.5" height="86" fill="#8e6f29" stroke="#0d1117" stroke-width="1"/><text x="485.7" y="58.6" font-size="12.6" fill="#ffffff">PafResource</text><text x="485.7" y="74.3" font-size="10.7" fill="#ffffff" fill-opacity=".8">34.3%</text></g>
 <g><title>SceGxm: 266/267 (99.6%)</title><rect x="571.2" y="44" width="86.2" height="86" fill="#2a8e29" stroke="#0d1117" stroke-width="1"/><text x="574.2" y="58.3" font-size="12.3" fill="#ffffff">Gxm</text><text x="574.2" y="73.6" font-size="10.5" fill="#ffffff" fill-opacity=".8">99.6%</text></g>
-<g><title>SceDbutil: 9/214 (4.2%)</title><rect x="657.4" y="44" width="69.1" height="86" fill="#8e3229" stroke="#0d1117" stroke-width="1"/><text x="660.4" y="55.9" font-size="9.9" fill="#ffffff">Dbutil</text><text x="660.4" y="68.7" font-size="8.4" fill="#ffffff" fill-opacity=".8">4.2%</text></g>
+<g><title>SceDbutil: 33/214 (15.4%)</title><rect x="657.4" y="44" width="69.1" height="86" fill="#8e4829" stroke="#0d1117" stroke-width="1"/><text x="660.4" y="55.9" font-size="9.9" fill="#ffffff">Dbutil</text><text x="660.4" y="68.7" font-size="8.4" fill="#ffffff" fill-opacity=".8">15.4%</text></g>
 <g><title>SceLibFflMp4: 0/213 (0%)</title><rect x="726.5" y="44" width="68.8" height="86" fill="#8e2929" stroke="#0d1117" stroke-width="1"/><text x="729.5" y="55.8" font-size="9.8" fill="#ffffff">LibFflMp4</text><text x="729.5" y="68.7" font-size="8.4" fill="#ffffff" fill-opacity=".8">0%</text></g>
 <g><title>SceVshBridge: 206/206 (100%), 49 default</title><rect x="795.3" y="44" width="66.5" height="86" fill="#298e29" stroke="#0d1117" stroke-width="1"/><text x="798.3" y="55.5" font-size="9.5" fill="#ffffff">VshBridge</text><text x="798.3" y="68" font-size="8.1" fill="#ffffff" fill-opacity=".8">100%</text></g>
 <g><title>ScePafToplevel: 11/202 (5.4%)</title><rect x="861.8" y="44" width="65.2" height="86" fill="#8e3429" stroke="#0d1117" stroke-width="1"/><text x="864.8" y="55.3" font-size="9.3" fill="#ffffff">PafToplevel</text><text x="864.8" y="67.6" font-size="7.9" fill="#ffffff" fill-opacity=".8">5.4%</text></g>

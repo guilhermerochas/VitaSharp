@@ -12,9 +12,9 @@ How many of the functions that the PS Vita firmware 3.74 exports to user code (t
 | Group | Covered | Real | Default | LLE | Total | % |
 |---|---:|---:|---:|---:|---:|---:|
 | Games imports | 1,594 | 1,594 | 0 | 0 | 1,594 | 100% |
-| System imports | 3,906 | 3,696 | 210 | 0 | 7,507 | 52% |
-| General | 3,904 | 3,714 | 190 | 0 | 10,305 | 37.8% |
-| All firmware 3.74 exports | 9,404 | 8,868 | 400 | 136 | 19,406 | 48.4% |
+| System imports | 3,919 | 3,709 | 210 | 0 | 7,507 | 52.2% |
+| General | 3,915 | 3,725 | 190 | 0 | 10,305 | 37.9% |
+| All firmware 3.74 exports | 9,428 | 8,892 | 400 | 136 | 19,406 | 48.5% |
 | VitaSDK user functions | 6,990 | 6,354 | 402 | 234 | 7,006 | 99.7% |
 
 ## Libraries provided by LLE
@@ -90,7 +90,7 @@ How many of the functions that the PS Vita firmware 3.74 exports to user code (t
 | SceDbSetup | `vs0:vsh/common/dbsetup.suprx` | 0 / 1 | 0% | - | - | 0 / 1 |
 | SceDbg | `vs0:sys/external/libdbg.suprx` | 5 / 5 | 100% | - | 2 / 2 | - |
 | SceDbrecoveryUtility | `vs0:sys/external/dbrecovery_utility.suprx` | 0 / 1 | 0% | - | - | 0 / 1 |
-| SceDbutil | `vs0:sys/external/dbutil.suprx` | 9 / 214 | 4.2% | - | - | 4 / 100 |
+| SceDbutil | `vs0:sys/external/dbutil.suprx` | 33 / 214 | 15.4% | - | - | 17 / 100 |
 | SceDebugLed | `os0:kd/sysmem.skprx` | 4 / 4 | 100% | - | 1 / 1 | - |
 | SceDipsw | `os0:kd/sysmem.skprx` | 3 / 3 | 100% | - | - | 3 / 3 |
 | SceDisplay | `os0:kd/display.skprx` | 21 / 21 | 100% | - | 8 / 8 | 9 / 9 |
