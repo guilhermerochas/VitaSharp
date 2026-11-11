@@ -12,10 +12,10 @@ How many of the functions that the PS Vita firmware 3.74 exports to user code (t
 | Group | Covered | Real | Default | LLE | Total | % |
 |---|---:|---:|---:|---:|---:|---:|
 | Games imports | 1,594 | 1,594 | 0 | 0 | 1,594 | 100% |
-| System imports | 3,903 | 3,694 | 209 | 0 | 7,507 | 51.9% |
+| System imports | 3,906 | 3,696 | 210 | 0 | 7,507 | 52% |
 | General | 3,902 | 3,712 | 190 | 0 | 10,305 | 37.8% |
-| All firmware 3.74 exports | 9,399 | 8,864 | 399 | 136 | 19,406 | 48.4% |
-| VitaSDK user functions | 6,806 | 6,170 | 402 | 234 | 7,006 | 97.1% |
+| All firmware 3.74 exports | 9,402 | 8,866 | 400 | 136 | 19,406 | 48.4% |
+| VitaSDK user functions | 6,988 | 6,352 | 402 | 234 | 7,006 | 99.7% |
 
 ## Libraries provided by LLE
 
@@ -80,7 +80,7 @@ How many of the functions that the PS Vita firmware 3.74 exports to user code (t
 | SceCommonGuiDialog | `vs0:sys/external/common_gui_dialog.suprx` | 0 / 54 | 0% | - | - | 0 / 40 |
 | SceCompanionUtil | `vs0:sys/external/libSceCompanionUtil.suprx` | 0 / 14 | 0% | - | - | 0 / 14 |
 | SceCompat | `os0:kd/bootimage.skprx/SceCompat` | 34 / 34 | 100% | 3 | - | 33 / 33 |
-| SceCompatForVsh | `os0:kd/bootimage.skprx/SceCompat` | 0 / 3 | 0% | - | - | 0 / 3 |
+| SceCompatForVsh | `os0:kd/bootimage.skprx/SceCompat` | 3 / 3 | 100% | 1 | - | 3 / 3 |
 | SceContentOperation | `vs0:vsh/common/content_operation.suprx` | 0 / 10 | 0% | - | - | 0 / 10 |
 | SceCoredump | `os0:kd/bootimage.skprx/SceCoredump` | 2 / 2 | 100% | - | - | 2 / 2 |
 | SceCoredumpNounlink | `os0:kd/bootimage.skprx/SceCoredump` | 1 / 1 | 100% | - | - | 1 / 1 |

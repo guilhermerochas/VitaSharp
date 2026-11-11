@@ -1,5 +1,5 @@
 # HLE status per firmware library, written by VitaSharp.Desktop hle-coverage --status (build/hle-status.ps1)
-# firmware=3.74 games=52 vitasdk=6806/7006 vitasdk_default=402 vitasdk_lle=234
+# firmware=3.74 games=52 vitasdk=6988/7006 vitasdk_default=402 vitasdk_lle=234
 library	module	total	impl	games	games_impl	system	system_impl	default	games_default	system_default	lle
 SceAACPromoter	vs0:vsh/common/mms/AACPromoter.suprx	4	1	0	0	0	0	0	0	0	0
 SceAVConfig	os0:kd/bootimage.skprx/SceAVConfig	34	34	0	0	31	31	0	0	0	0
@@ -51,7 +51,7 @@ SceCommonDialogMain	vs0:sys/external/libcdlg_main.suprx	15	0	0	0	11	0	0	0	0	0
 SceCommonGuiDialog	vs0:sys/external/common_gui_dialog.suprx	54	0	0	0	40	0	0	0	0	0
 SceCompanionUtil	vs0:sys/external/libSceCompanionUtil.suprx	14	0	0	0	14	0	0	0	0	0
 SceCompat	os0:kd/bootimage.skprx/SceCompat	34	34	0	0	33	33	3	0	3	0
-SceCompatForVsh	os0:kd/bootimage.skprx/SceCompat	3	0	0	0	3	0	0	0	0	0
+SceCompatForVsh	os0:kd/bootimage.skprx/SceCompat	3	3	0	0	3	3	1	0	1	0
 SceContentOperation	vs0:vsh/common/content_operation.suprx	10	0	0	0	10	0	0	0	0	0
 SceCoredump	os0:kd/bootimage.skprx/SceCoredump	2	2	0	0	2	2	0	0	0	0
 SceCoredumpNounlink	os0:kd/bootimage.skprx/SceCoredump	1	1	0	0	1	1	0	0	0	0

@@ -255,7 +255,7 @@
 <g><title>SceUsbstorVStor: 4/4 (100%), 4 default</title><rect x="980.9" y="526.5" width="11.1" height="10" fill="#64d864" stroke="#ffffff" stroke-width="1"/></g>
 <g><title>SceAppUtilCache: 3/3 (100%)</title><rect x="936.4" y="536.5" width="9" height="9.2" fill="#64d864" stroke="#ffffff" stroke-width="1"/></g>
 <g><title>SceBmpPromoter: 2/3 (66.6%)</title><rect x="936.4" y="545.8" width="9" height="9.2" fill="#b1d864" stroke="#ffffff" stroke-width="1"/></g>
-<g><title>SceCompatForVsh: 0/3 (0%)</title><rect x="936.4" y="555" width="9" height="9.2" fill="#d86464" stroke="#ffffff" stroke-width="1"/></g>
+<g><title>SceCompatForVsh: 3/3 (100%), 1 default</title><rect x="936.4" y="555" width="9" height="9.2" fill="#64d864" stroke="#ffffff" stroke-width="1"/></g>
 <g><title>SceDipsw: 3/3 (100%)</title><rect x="936.4" y="564.3" width="9" height="9.2" fill="#64d864" stroke="#ffffff" stroke-width="1"/></g>
 <g><title>SceGifPromoter: 2/3 (66.6%)</title><rect x="936.4" y="573.5" width="9" height="9.2" fill="#b1d864" stroke="#ffffff" stroke-width="1"/></g>
 <g><title>SceJpegPromoter: 2/3 (66.6%)</title><rect x="936.4" y="582.8" width="9" height="9.2" fill="#b1d864" stroke="#ffffff" stroke-width="1"/></g>
