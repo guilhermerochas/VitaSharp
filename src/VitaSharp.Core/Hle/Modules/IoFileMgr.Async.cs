@@ -99,9 +99,11 @@ public sealed partial class IoFileMgr
         int uid = Emu?.Kernel != null ? K.Objects.Register(o) : (o.Uid = Interlocked.Add(ref _nextLocalOp, 2));
         _ops[uid] = o;
         long r;
+        Util.IoTiming.InAsyncRequest = true;
         try { r = op(); }
         catch (IOException) { r = SceError.IO_EINVAL; }
         catch (UnauthorizedAccessException) { r = SceError.IO_EACCES; }
+        finally { Util.IoTiming.InAsyncRequest = false; }
         if (param != 0 && GuestMemory.IsMapped(param)) new Ptr<long>(param).Value = r;
         o.Finish(r);
         return uid;

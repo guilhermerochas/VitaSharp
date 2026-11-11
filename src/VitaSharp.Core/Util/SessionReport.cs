@@ -48,6 +48,7 @@ public static class SessionReport
         yield return IoTiming.FastLoading
             ? "  storage: fast loading (no read speed limit)"
             : $"  storage: {IoTiming.BytesPerSecond / 1e6:0.#} MB/s, {IoTiming.TimedReads} device reads, {IoTiming.DeviceTicks / (double)System.Diagnostics.Stopwatch.Frequency:0.0} s of device time";
+        if (!IoTiming.FastLoading) foreach (var l in IoTiming.WaitLines()) yield return l;
         foreach (var l in GpuLines(emu)) yield return l;
         foreach (var l in AudioDiagnostics.SummaryLines()) yield return l; // always: ports, outputs/s, underruns per minute
         foreach (var l in VitaSharp.Core.Hle.Modules.Ngs.PerfLines()) yield return l;
