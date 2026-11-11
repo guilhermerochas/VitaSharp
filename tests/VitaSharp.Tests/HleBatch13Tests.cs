@@ -139,4 +139,12 @@ public sealed class HleBatch13Tests(GuestMemoryFixture fx) : IDisposable
         GuestMemory.W32(keys, 0x10);
         Assert.Equal(unchecked((int)0x800D0004), I(r, "sceRegMgrGetInitVals", cat, keys, 1));
     }
+
+    [Fact]
+    public void AppMgrDumpAndNonSuspendableQuit()
+    {
+        var a = Module<AppMgr>();
+        Assert.Equal(0, I(a, "sceAppMgrDump"));
+        Assert.Equal(unchecked((int)0x8080201F), I(a, "sceAppMgrQuitForNonSuspendableApp")); // not a system program
+    }
 }
