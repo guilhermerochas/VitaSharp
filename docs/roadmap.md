@@ -1405,6 +1405,12 @@ Lista de itens futuros do VitaSharp. Marque `[x]` quando um item for concluído.
 
 ## Código
 
+- [ ] **PRIORIDADE (11/11/2026)** Builds do GitHub Actions quebrando na main (relato do usuário, 11/11/2026, página de
+  commits da main). Ver em cada workflow (ci.yml: Windows/Ubuntu/macOS, publish, "Coverage gate" novo de 11/11;
+  release.yml) qual job falha desde quando e por quê (suspeitos do dia: o job de cobertura e o build-coverage-gate.txt,
+  testes que dependem de rede ou de GPU de software no runner, o par .ps1/.sh, o build do Desktop no macOS/Linux com o
+  teste que referencia o Desktop, NativeAOT), corrigir a causa (não desligar job nem pular teste) e deixar todos os
+  commits verdes; a checagem local do lead passa a rodar também o que o CI roda que ela não roda.
 - [ ] **PRIORIDADE (11/11/2026, dia de refatoração)** O emulador é genérico (regra do usuário: nada específico a
   não ser a camada Vulkan; ver `docs/agents/regras.md`). (1) Auditoria arquivo por arquivo de src/ procurando qualquer
   comportamento por jogo, app, homebrew ou módulo de terceiro (comparação de ID/nome, listas fixas, caminhos fixos,
