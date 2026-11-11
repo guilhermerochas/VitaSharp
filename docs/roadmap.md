@@ -401,10 +401,24 @@ Lista de itens futuros do VitaSharp. Marque `[x]` quando um item for concluído.
   personagem e chega ao quarto (f2950, sem 0x805B0006 nem BKPT, `shbom_off`); ligado ele aborta no boot (0x805B0006 em
   f236 e BKPT na `main`, `shbom_on`), que é o caso que o aviso descreve. A mesma rodada corrigiu `--cpu-mhz` e
   `--frame-rate` (o "Clock da CPU" e a "Taxa de quadros" do launcher), que também só eram lidos no headless
-- [ ] Carregamento do Killzone desligado mais longo do que o tempo de dispositivo explica (feat/fast-loading,
-  10/11/2026): a missão leva ~50 s a mais que com o carregamento rápido, mas o modelo cobra só 22-25 s de dispositivo na
-  sessão inteira (`storage:` no relatório). Falta medir quanto o carregamento do Vita de verdade leva (vídeo) e ver se a
-  espera bloqueada atrasa outras threads além da que lê
+- [x] Carregamento do Killzone desligado mais longo do que o tempo de dispositivo explica (feat/fast-loading,
+  11/11/2026): **não é o modelo de E/S, é carga do PC durante as medições**. Os 70,6/75,7 s da primeira medida
+  rodaram com outros emuladores e builds dos outros agentes nos mesmos núcleos (fixados em 0x0F ou sem fixar). Com o
+  relatório novo por thread (`storage:` lista quem esperou o cartão, quanto, e quanto levou para pegar um núcleo de
+  volta), toda a E/S do Killzone é da `SceFiosIO` (libfios2 do jogo, LLE): `sceIoPread` síncronos de 16-34 KB, nenhum
+  pedido assíncrono, 22,8-29,8 s de espera na sessão inteira para 22-25 s de dispositivo, 0,0-1,0 s para pegar o núcleo de
+  volta; o timer, o lock e a fila do dispositivo não somam tempo. Medidas do toque da dificuldade até a cena (headless,
+  `<scratchpad>\fastio_data\tests`): rápido 20,1/20,1/21,1/23,0 s; 7 MB/s 35,4 e 40,0 s com o PC mais livre e 80,3 s
+  com outro emulador e builds nos mesmos núcleos (`kz_p_off2`); 10 MB/s 37,6 s; 14 MB/s 32,3 s; 1000 MB/s 21,6 s (o
+  caminho de bloqueio em si não custa nada). Os ~15-19 s a mais em 7 MB/s batem com os ~100 MB que a missão lê
+  (~14 s a 7 MB/s mais 0,5 ms por leitura). Vita de verdade (longplay YouTube drriyW7Mn3M): depois da dificuldade a
+  tela escura dura ~5 s e entra o briefing interativo "VAN-Guard" de ~4 min, durante o qual a fase carrega; no fim
+  dele faltam ~7 s até a mesma cena. O padrão de 7 MB/s fica; SH:BoM continua precisando dele
+- [ ] Killzone: o briefing "VAN-Guard" depois da escolha de dificuldade não aparece (11/11/2026, feat/fast-loading,
+  `kz_fresh2`): no Vita ele entra ~5 s depois da tela escura; aqui, com o save do usuário, a tela escura com o ícone
+  de carregamento fica até a fase abrir (20 s com carregamento rápido) e, com save novo, passou de 15 s sem briefing
+  (fim da gravação). Falta ver o que o jogo espera para
+  abrir o briefing (provavelmente um filme ou áudio em streaming)
 
 ## Android
 

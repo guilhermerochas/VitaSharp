@@ -95,6 +95,30 @@ public static class IoTiming
             TimedReads++;
             DeviceTicks += done - start;
         }
-        if (GuestClock.Ticks < done) { using var blocked = Kernel.Scheduler.Block(); GuestClock.WaitUntil(done); }
+        long t0 = GuestClock.Ticks;
+        long woke = t0;
+        if (t0 < done) { var blocked = Kernel.Scheduler.Block(); GuestClock.WaitUntil(done); woke = GuestClock.Ticks; blocked.Dispose(); }
+        long waited = GuestClock.Ticks - t0, regain = GuestClock.Ticks - woke;
+        string who = (Kernel.GuestThread.Current?.Name ?? "host") + (InAsyncRequest ? " (async)" : "");
+        lock (Lock)
+        {
+            var s = WaitsByThread.GetValueOrDefault(who);
+            WaitsByThread[who] = (s.Reads + 1, s.Ticks + waited, s.Bytes + bytes, s.Regain + regain);
+        }
+    }
+
+    /// <summary>Set while an sceIoXxxAsync request runs (session report attribution).</summary>
+    [ThreadStatic] public static bool InAsyncRequest;
+
+    /// <summary>Per guest thread: device reads, guest time spent blocked in them, bytes (session report).</summary>
+    static readonly Dictionary<string, (long Reads, long Ticks, long Bytes, long Regain)> WaitsByThread = new();
+
+    /// <summary>The threads that waited longest for the device, longest first (session report).</summary>
+    public static IEnumerable<string> WaitLines(int max = 6)
+    {
+        List<KeyValuePair<string, (long Reads, long Ticks, long Bytes, long Regain)>> all;
+        lock (Lock) all = WaitsByThread.ToList();
+        foreach (var (name, s) in all.OrderByDescending(e => e.Value.Ticks).Take(max))
+            yield return $"    {name}: {s.Ticks / (double)System.Diagnostics.Stopwatch.Frequency:0.0} s waiting, {s.Reads} reads, {s.Bytes / 1e6:0.0} MB, {s.Regain / (double)System.Diagnostics.Stopwatch.Frequency:0.0} s of it getting a core back";
     }
 }
