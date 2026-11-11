@@ -1460,11 +1460,32 @@ Lista de itens futuros do VitaSharp. Marque `[x]` quando um item for concluído.
     usuário (`<data>/patches/<TITLEID>.txt`).
   - Teste `GenericCodeTests`: falha com qualquer literal de ID de título ou prefixo (`NPXS`, `PCSx`, `NPxx`,
     `XXXX00000`) em `src/` fora de comentários.
-  Dívida (fica, sem acrescentar nada; a correção é o ambiente de kernel genérico para plugins, item próprio):
-  `Hle/Modules/Taihen.cs` + `Taihen.Snapshot.cs` (API do taiHEN em HLE), `Hle/Modules/Kubridge.cs` +
-  `Kubridge.Snapshot.cs` (API de usuário do kubridge em HLE), `Emulator.cs:820` `LoadTaiPlugins` (lê
-  `ux0:tai/config.txt`/`ur0:tai/config.txt` e carrega os plugins `*ALL`/`*TITLEID`; `*KERNEL` não roda). Nada fora
-  deles depende dos nomes (só comentários em `Cpu/Vfp.cs`, `Hle/Modules/SysMem.cs`, `Loader/ModuleLoader.cs`).
+  Em troca (pedido do usuário, 11/11/2026: tudo trocado pelo caminho genérico, nada fica como dívida):
+  - feito: `Emulator.LoadPlugins` (era `LoadTaiPlugins`) é o carregador genérico da configuração de plugins
+    (`ux0:tai/config.txt`, senão `ur0:tai/config.txt`): módulos de kernel (`*KERNEL`, `.skprx`) e de usuário (`*ALL`,
+    `*TITLEID`) pelo mesmo caminho do carregador, os de kernel primeiro; como o gerenciador de módulos do firmware, um
+    módulo que importa uma biblioteca que ninguém fornece (nenhum módulo carregado e nenhuma HLE) não é iniciado, e o
+    log diz quais (`PluginLoaderTests`, com os módulos reais quando instalados).
+  - feito: `Hle/LleLibraries.cs` sem tabela fixa: conta como LLE o que um módulo instalado realmente exporta, achado
+    varrendo os `app0:sce_module/*.suprx` dos jogos instalados e os módulos do firmware que o carregador dá a todo
+    importador (`HleModule.FirmwareForEveryImporter`); a tabela do `docs/hle/progress.md` sai do TSV medido.
+  - em andamento: ambiente de kernel genérico para os `.skprx` reais (taiHEN, kubridge, fd_fix, copiados da pasta do
+    usuário para a pasta de teste). Importações lidas das tabelas dos módulos: taihen.skprx 60 (SceCpuForDriver/
+    ForKernel, SceCtrlForDriver, SceIofilemgrForDriver, SceModulemgrForDriver 9 + SceModulemgrForKernel 5,
+    SceSblACMgrForDriver, SceSysclibForDriver, SceSysmemForDriver 21 + ForKernel 2, SceSysrootForKernel,
+    SceThreadmgrForDriver 7); kubridge.skprx 33 (SceCpu/Debug/Processmgr/ProcEvent/Sysclib/Sysmem/Sysroot/
+    Threadmgr ForDriver + taihenForKernel 3 + taihenModuleUtils 2); fd_fix.skprx 2 (taihenForKernel). Etapas: (M1) o
+    carregador acima, feito; (M2) HLE genérica das exportações de kernel do firmware que eles importam, com a semântica
+    do firmware e um teste por exportação; (M3) exportações chamáveis do usuário dos módulos de kernel carregados
+    ligadas às importações dos programas (a API de usuário do taiHEN e do kubridge); (M4) código que se modifica:
+    invalidar os blocos traduzidos em escrita em página de código (os hooks do taiHEN escrevem no código guest); (M5)
+    o taiHEN de verdade: ele corrige por deslocamento o código dos módulos de kernel do firmware (module_get_offset em
+    SceModulemgr/SceSysmem, vetores de exceção para o kubridge), então precisa desses módulos do firmware (`os0:`
+    `*.skprx`) carregados e em parte rodando em LLE; e quem carrega o `taihen.skprx` num Vita real é a cadeia de boot do
+    homebrew (lista de módulos de boot), que também precisa ser o caminho genérico (configuração de boot), não um
+    caminho fixo. `Hle/Modules/Taihen.cs` e `Hle/Modules/Kubridge.cs` saem no mesmo hash em que os módulos reais
+    passam a servir o Dead Space (kubridge) e o Sonic Mania (API do taiHEN); a pasta de dados do usuário não tem
+    `ur0:tai/config.txt`, então ele precisa listar os plugins nela (como num Vita com HENkaku).
   Listas de nomes de módulos **do firmware** (conhecimento do firmware, não de um programa; ficam):
   `Emulator.cs:538,637` (preloads do processo pelos bits do process param), `Emulator.cs:668` `OnRequestModules`
   (libpaf só sob pedido), `Emulator.cs:675` `FirmwareServiceClients` (ScePhotoExport é cliente IPC do serviço),
