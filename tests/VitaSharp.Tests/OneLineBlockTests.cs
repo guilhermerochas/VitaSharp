@@ -1,25 +1,17 @@
-using System.Text;
 using System.Text.RegularExpressions;
+using VitaSharp.FormatTool;
 
 namespace VitaSharp.Tests;
 
 /// <summary>
 /// "Código legível" (docs/agents/regras.md): no block with statements on a single line (`if (x) { a; }`,
 /// `catch (E) { Log(); }`, `void M() { a; b; }`). The formatter keeps one-line blocks (it has to, for auto-property
-/// accessor lists), so this test is the check: every `{ ...; }` on one line fails, except accessor lists
-/// (`{ get; set; }`) and lambda bodies (`=> { ...; }`). Strings and comments are ignored; the folders still listed in
-/// build/format-pending.txt are skipped until they are converted.
+/// accessor lists), so this test is the check; build/format-check --fix applies the same rules (SourceLayout).
+/// Accessor lists (`{ get; set; }`) and lambda bodies (`=> { ...; }`) are allowed, strings and comments ignored; the
+/// folders still listed in build/format-pending.txt are skipped until they are converted.
 /// </summary>
 public partial class OneLineBlockTests
 {
-    private const string Accessor = @"(?:\[[^\]]*\]\s*)?(?:(?:public|private|protected|internal)\s+)*(?:readonly\s+)?(?:get|set|init)\s*(?:;|=>[^;{}]*;)";
-
-    [GeneratedRegex(@"\{([^{}]*;[^{}]*)\}")]
-    private static partial Regex StatementBlock();
-
-    [GeneratedRegex(@"^\s*(?:" + Accessor + @"\s*)+$")]
-    private static partial Regex AccessorList();
-
     [GeneratedRegex(@"(^|[\\/])(obj|bin|obj-dev|bin-dev)([\\/]|$)")]
     private static partial Regex BuildOutput();
 
@@ -39,136 +31,6 @@ public partial class OneLineBlockTests
         return null;
     }
 
-    /// <summary>The source with string/char literal contents and comments blanked (same length, newlines kept).</summary>
-    internal static string Mask(string src)
-    {
-        StringBuilder sb = new(src);
-        int n = src.Length;
-        int i = 0;
-
-        void Blank(int from, int to)
-        {
-            for (int k = from; k < Math.Min(to, n); k++)
-            {
-                if (sb[k] != '\n' && sb[k] != '\r')
-                {
-                    sb[k] = '_';
-                }
-            }
-        }
-
-        while (i < n)
-        {
-            char c = src[i];
-            if (c == '/' && i + 1 < n && src[i + 1] == '/')
-            {
-                int j = src.IndexOf('\n', i);
-                j = j < 0 ? n : j;
-                Blank(i, j);
-                i = j;
-                continue;
-            }
-
-            if (c == '/' && i + 1 < n && src[i + 1] == '*')
-            {
-                int j = src.IndexOf("*/", i + 2, StringComparison.Ordinal);
-                j = j < 0 ? n : j + 2;
-                Blank(i, j);
-                i = j;
-                continue;
-            }
-
-            int p = i;
-            bool verbatim = false;
-            while (p < n && (src[p] == '$' || src[p] == '@'))
-            {
-                verbatim |= src[p] == '@';
-                p++;
-            }
-
-            if (p < n && src[p] == '"')
-            {
-                int quotes = 0;
-                while (p + quotes < n && src[p + quotes] == '"')
-                {
-                    quotes++;
-                }
-
-                if (quotes >= 3)
-                {
-                    string fence = new('"', quotes);
-                    int end = src.IndexOf(fence, p + quotes, StringComparison.Ordinal);
-                    end = end < 0 ? n : end;
-                    Blank(p + quotes, end);
-                    i = end + quotes;
-                    continue;
-                }
-
-                int k = p + 1;
-                while (k < n)
-                {
-                    if (verbatim && src[k] == '"' && k + 1 < n && src[k + 1] == '"')
-                    {
-                        k += 2;
-                        continue;
-                    }
-
-                    if (src[k] == '"' || (!verbatim && src[k] == '\n'))
-                    {
-                        break;
-                    }
-
-                    k += !verbatim && src[k] == '\\' ? 2 : 1;
-                }
-
-                Blank(p + 1, k);
-                i = k + 1;
-                continue;
-            }
-
-            if (c == '\'')
-            {
-                int k = i + 1;
-                while (k < n && k < i + 12 && src[k] != '\'' && src[k] != '\n')
-                {
-                    k += src[k] == '\\' ? 2 : 1;
-                }
-
-                if (k < n && src[k] == '\'')
-                {
-                    Blank(i + 1, k);
-                    i = k + 1;
-                    continue;
-                }
-            }
-
-            i++;
-        }
-
-        return sb.ToString();
-    }
-
-    /// <summary>The one-line statement blocks of a source, as (line number, line).</summary>
-    internal static IEnumerable<(int Line, string Text)> OneLineBlocks(string source)
-    {
-        string[] masked = Mask(source).Split('\n');
-        string[] lines = source.Split('\n');
-        for (int i = 0; i < masked.Length; i++)
-        {
-            foreach (Match m in StatementBlock().Matches(masked[i]))
-            {
-                string before = masked[i][..m.Index].TrimEnd();
-                if (before.EndsWith("=>", StringComparison.Ordinal) || AccessorList().IsMatch(m.Groups[1].Value))
-                {
-                    continue;
-                }
-
-                yield return (i + 1, lines[i].Trim());
-                break;
-            }
-        }
-    }
-
     [Fact]
     public void DetectsOneLineBlocksButNotAccessorsOrLambdas()
     {
@@ -180,8 +42,29 @@ public partial class OneLineBlockTests
             if (x) { Go(); }
             catch (Exception e) { Log(e); }
             """;
-        int[] lines = OneLineBlocks(src).Select(h => h.Line).ToArray();
+        int[] lines = SourceLayout.OneLineBlocks(src).Select(h => h.Line).ToArray();
         Assert.Equal([5, 6], lines);
+    }
+
+    [Fact]
+    public void FixSplitsBlocksAndFoldsAccessors()
+    {
+        string src = string.Join("\n",
+            "class A",
+            "{",
+            "    public int P",
+            "    {",
+            "        get; set;",
+            "    }",
+            "    void M() { if (x) { Go(); } else { Stop(); } } // note",
+            "    void N() => Run(() => { try { a(); } finally { b(); } });",
+            "}");
+        (string text, int changes) = SourceLayout.Fix(src);
+        Assert.True(changes > 0);
+        Assert.Contains("    public int P { get; set; }", text);
+        Assert.Contains("    void M() // note\n    {\n    if (x)\n    {\n    Go();\n    }\n    else", text);
+        Assert.Contains("try\n    {\n    a();\n    }\n    finally", text);
+        Assert.Empty(SourceLayout.OneLineBlocks(text));
     }
 
     [Fact]
@@ -211,13 +94,13 @@ public partial class OneLineBlockTests
                     continue;
                 }
 
-                foreach ((int line, string text) in OneLineBlocks(File.ReadAllText(f)))
+                foreach ((int line, string text) in SourceLayout.OneLineBlocks(File.ReadAllText(f)))
                 {
                     bad.Add($"{rel}:{line}: {text}");
                 }
             }
         }
 
-        Assert.True(bad.Count == 0, $"{bad.Count} one-line blocks (put the body on its own lines, docs/agents/regras.md \"Código legível\"):\n" + string.Join("\n", bad.Take(40)));
+        Assert.True(bad.Count == 0, $"{bad.Count} one-line blocks (build/format-check --fix splits them; docs/agents/regras.md \"Código legível\"):\n" + string.Join("\n", bad.Take(40)));
     }
 }
