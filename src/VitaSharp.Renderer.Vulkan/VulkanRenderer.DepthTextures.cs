@@ -30,10 +30,36 @@ public sealed unsafe partial class VulkanRenderer
     {
         var b = GxmFormats.BaseOf(d.Format);
         if (b is not (TexBase.X8U24 or TexBase.F32 or TexBase.F32M or TexBase.U16)) return null;
-        DepthTarget? best = null;
+        return StoredDepthSource(addr, stencil: false, unpack: true);
+    }
+
+    /// <summary>
+    /// The depth target whose content a read of the depth (or stencil) surface at <paramref name="addr"/> sees: the
+    /// latest scene that rendered it, unless that scene was multisampled and did not store its samples. Such a scene
+    /// leaves memory as the last scene that stored it left it, so the latest target that holds stored content is used
+    /// (Metal Gear Solid 3 HD renders its 720x448 world into a one-sample 768x480 scene that stores the depth, then
+    /// draws effects in a 4X downscaled scene that loads that depth and does not store it, and its final composite
+    /// reads the depth as an X8U24 texture: taken from the 4X scene it fell back to guest memory, never written, and
+    /// the fog/colour pass painted red and blue wedges over the plane interior). Only when no such target exists is
+    /// the multisampled read reported and guest memory used (<see cref="MultisampledDepthRead"/>).
+    /// </summary>
+    DepthTarget? StoredDepthSource(uint addr, bool stencil, bool unpack)
+    {
+        DepthTarget? best = null, stored = null;
         foreach (var dt in _depthTargets.Values)
-            if (dt.Address == addr && (best == null || dt.LastScene > best.LastScene)) best = dt;
-        return best != null && MultisampledDepthRead(best, false, unpack: true) ? null : best;
+        {
+            if ((stencil ? dt.StencilAddress : dt.Address) != addr) continue;
+            if (best == null || dt.LastScene > best.LastScene) best = dt;
+            bool samplesStored = dt.Samples == SampleCountFlags.Count1Bit || (unpack && !stencil && dt.ForceStored);
+            if (samplesStored && (stored == null || dt.LastScene > stored.LastScene)) stored = dt;
+        }
+        if (best == null) return null;
+        if (stored != null && stored != best && !(best.Samples != SampleCountFlags.Count1Bit && best.ForceStored))
+        {
+            best.EverRead = true;
+            return stored;
+        }
+        return MultisampledDepthRead(best, stencil, unpack) ? null : best;
     }
 
     (ImageView, ImageLayout) DepthTexture(DepthTarget dt, uint w, uint h)
@@ -290,10 +316,7 @@ void main() {
     DepthTarget? StencilTextureSource(uint addr, GxmTextureDesc d)
     {
         if (GxmFormats.BaseOf(d.Format) != TexBase.U8 || addr is < GuestMemory.CdramStart or >= GuestMemory.CdramEnd) return null;
-        DepthTarget? best = null;
-        foreach (var dt in _depthTargets.Values)
-            if (dt.StencilAddress == addr && (best == null || dt.LastScene > best.LastScene)) best = dt;
-        return best != null && MultisampledDepthRead(best, true) ? null : best;
+        return StoredDepthSource(addr, stencil: true, unpack: false);
     }
 
     (ImageView, ImageLayout) StencilTexture(DepthTarget dt, GxmTextureDesc d)
