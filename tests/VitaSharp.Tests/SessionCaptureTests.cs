@@ -228,6 +228,20 @@ public sealed class SessionCaptureTests : IDisposable
         Assert.True(File.Exists(Path.Combine(dir, "report.txt")));
     }
 
+    /// <summary>A port that is simply idle between short sounds (the shell's UI sounds) drains its host queue: that
+    /// is not an underrun; a port that keeps outputting grains on time and still runs dry is.</summary>
+    [Fact]
+    public void Underrun_after_an_idle_pause_is_not_an_underrun()
+    {
+        var p = new VitaSharp.Core.Util.AudioDiagnostics.PortStats { Name = "port 1 MAIN", Grain = 1024, Freq = 48000, Channels = 2 };
+        p.LastGap = 5.7;
+        Assert.True(VitaSharp.Core.Util.AudioDiagnostics.ResumedAfterIdle(p));
+        p.LastGap = 0.021;
+        Assert.False(VitaSharp.Core.Util.AudioDiagnostics.ResumedAfterIdle(p));
+        p.LastGap = 0.06; // a late grain of a running stream (3 grains of 21 ms): a real underrun
+        Assert.False(VitaSharp.Core.Util.AudioDiagnostics.ResumedAfterIdle(p));
+    }
+
     /// <summary>A capture folder of <paramref name="frames"/> moving pictures (the save's progress and zip tests).</summary>
     string SimpleCapture(string name, int frames)
     {

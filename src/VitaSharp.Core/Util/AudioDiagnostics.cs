@@ -41,6 +41,8 @@ public static class AudioDiagnostics
         internal bool InBurst;
         internal double BurstStart, BurstLast;
         internal long BurstCount, BurstNumber;
+        /// <summary>Outputs after an idle pause whose host queue had drained (not underruns).</summary>
+        public long IdleResumes;
 
         public double ExpectedPerSecond => Grain > 0 ? (double)Freq / Grain : 0;
 
@@ -122,9 +124,22 @@ public static class AudioDiagnostics
         int u = s.Underruns;
         if (u == p.StreamUnderrunsSeen) return;
         int n;
-        lock (p.Lock) { n = u - p.StreamUnderrunsSeen; p.StreamUnderrunsSeen = u; }
-        if (n > 0) Underrun(p, n);
+        bool idle;
+        lock (p.Lock) { n = u - p.StreamUnderrunsSeen; p.StreamUnderrunsSeen = u; idle = ResumedAfterIdle(p); }
+        if (n <= 0) return;
+        // a port that was simply idle (UI sounds of the shell: one short sound now and then) drains its host queue
+        // between sounds: that is not a stall of the guest's output, so it is counted apart and not logged
+        if (idle) { lock (p.Lock) p.IdleResumes++; return; }
+        Underrun(p, n);
     }
+
+    /// <summary>The last output came after a pause much longer than the host queue holds (the guest stopped
+    /// outputting and started again): the queue ran dry because the port was idle, not because output was late.</summary>
+    internal static bool ResumedAfterIdle(PortStats p) =>
+        p.LastGap > Math.Max(IdleGapSeconds, 4.0 * p.Grain / Math.Max(1, p.Freq));
+
+    /// <summary>Gap between two outputs from which a port counts as having been idle (no sound to play).</summary>
+    const double IdleGapSeconds = 0.25;
 
     static void Underrun(PortStats p, int n)
     {
@@ -225,7 +240,8 @@ public static class AudioDiagnostics
         double active = p.Gaps > 0 ? p.GapSum : 0;
         return $"{p.Outputs} outputs in {secs:F1} s ({(p.Gaps >= 10 && active > 0 ? $"{p.Gaps / active:F1}" : "-")}/s while active, expected {p.ExpectedPerSecond:F1}), " +
                $"gap avg {(p.Gaps > 0 ? p.GapSum / p.Gaps * 1000 : 0):F2} ms max {p.GapMax * 1000:F1} ms, " +
-               $"underruns {p.Underruns} ({p.Underruns / secs * 60:F1}/min) in {p.BurstNumber} bursts, silent {p.Silent}";
+               $"underruns {p.Underruns} ({p.Underruns / secs * 60:F1}/min) in {p.BurstNumber} bursts, silent {p.Silent}" +
+               (p.IdleResumes > 0 ? $", {p.IdleResumes} starts after an idle pause (not underruns)" : "");
     }
 
     /// <summary>End of session (always): device and every port of the session.</summary>

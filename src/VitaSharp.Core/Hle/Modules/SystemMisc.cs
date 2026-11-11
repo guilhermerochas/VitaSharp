@@ -536,7 +536,15 @@ public sealed partial class SystemMisc : HleModule
     // ------------------------------------------------------------------ SceAppMgr
 
     [Hle] int sceAppMgrAcquireBgmPort() => 0;
-    [Hle] int sceAppMgrReleaseBgmPort() => 0;
+    /// <summary>The caller gives the BGM port back (the shell's music player fades out and releases it, e.g. when the
+    /// Browser opens after a game ran): the port has no holder until the next acquire, which
+    /// sceAppMgrGetCurrentBgmState2 reports (it said the shell still held it).</summary>
+    [Hle]
+    int sceAppMgrReleaseBgmPort()
+    {
+        if (Emu.Vita.BgmPortOwner == Emu.AppId) Emu.Vita.BgmPortOwner = -1;
+        return 0;
+    }
     [Hle] int sceAppMgrIsGameProgram() => Emu.IsGameProgram ? 1 : 0;
     /// <summary>Third-party applications that are not games (store "apps"); libpaf asserts that the system software
     /// is neither a game nor a non-game program.</summary>
