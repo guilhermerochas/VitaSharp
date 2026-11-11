@@ -543,7 +543,7 @@ public sealed class Emulator : IDisposable
             var host = Vfs.Resolve($"app0:sce_module/{name}.suprx");
             if (host != null && File.Exists(host)) LoadModule($"app0:sce_module/{name}.suprx");
         }
-        if (!IsSystemProgram) LoadTaiPlugins();
+        if (!IsSystemProgram) LoadPlugins();
         if (IsSystemProgram)
         {
             PreloadFirmwareModules(preloadDisabled);
@@ -812,39 +812,96 @@ public sealed class Emulator : IDisposable
     }
 
     /// <summary>
-    /// taiHEN's user plugins for the application: the .suprx listed under <c>*ALL</c> and <c>*TITLEID</c> in
-    /// ux0:tai/config.txt (else ur0:tai/config.txt) load into the process before it starts, and their module_start runs
-    /// before the main thread (as Vita3K does). <c>*KERNEL</c> plugins are kernel code, which does not run here; the
-    /// user API of kubridge, the one homebrew relies on, is HLE.
+    /// The plugins of the system's plugin configuration (ux0:tai/config.txt, else ur0:tai/config.txt, the format the
+    /// plugin loaders of the homebrew environment read): the modules listed under <c>*KERNEL</c> (kernel modules) and
+    /// under <c>*ALL</c> and <c>*TITLEID</c> (user modules) all load through the same path, the module loader, before the
+    /// process starts; their module_start runs before the main thread (as Vita3K does for user plugins). Like the
+    /// firmware's module manager, a module whose imports name a library nothing in the system provides (no loaded module
+    /// exports it and the HLE has none of its functions) is not started: it is unloaded again and the log names the
+    /// missing libraries. Returns what happened to each listed module, for the log and the tests.
     /// </summary>
-    void LoadTaiPlugins()
+    internal List<string> LoadPlugins()
     {
+        var results = new List<string>();
         string? config = null;
         foreach (var path in new[] { "ux0:tai/config.txt", "ur0:tai/config.txt" })
-            if (Vfs.Resolve(path) is { } host && File.Exists(host)) { config = host; break; }
-        if (config == null) return;
+        {
+            if (Vfs.Resolve(path) is { } host && File.Exists(host))
+            {
+                config = host;
+                break;
+            }
+        }
+
+        if (config == null)
+        {
+            return results;
+        }
+
         string section = "";
+        var kernel = new List<string>();
+        var user = new List<string>();
         foreach (var raw in File.ReadAllLines(config))
         {
             string line = raw.Trim();
-            if (line.Length == 0 || line[0] == '#') continue;
-            if (line[0] == '*') { section = line[1..].Trim(); continue; }
-            if (section == "KERNEL")
+            if (line.Length == 0 || line[0] == '#')
             {
-                Log.Info($"taiHEN: kernel plugin {line} not run (kernel code)");
                 continue;
             }
-            if (section != "ALL" && !string.Equals(section, TitleId, StringComparison.OrdinalIgnoreCase)) continue;
-            try
+
+            if (line[0] == '*')
             {
-                var m = LoadModule(line);
-                Log.Info($"taiHEN: plugin {line} loaded for {TitleId} ({m.Name})");
+                section = line[1..].Trim();
+                continue;
             }
-            catch (Exception e) when (e is not OutOfMemoryException)
+
+            if (section == "KERNEL")
             {
-                Log.Warn($"taiHEN: plugin {line} not loaded: {e.Message}");
+                kernel.Add(line);
+            }
+            else if (section == "ALL" || string.Equals(section, TitleId, StringComparison.OrdinalIgnoreCase))
+            {
+                user.Add(line);
             }
         }
+
+        // kernel modules first: the user modules may import what they export
+        foreach (var path in kernel.Concat(user))
+        {
+            string result = LoadPlugin(path);
+            Log.Info($"plugin {path}: {result}");
+            results.Add($"{path}: {result}");
+        }
+
+        return results;
+    }
+
+    /// <summary>Loads one plugin module; it stays (and starts with the process) only when every library it imports is
+    /// provided by a loaded module or the HLE.</summary>
+    string LoadPlugin(string path)
+    {
+        LoadedModule m;
+        try
+        {
+            m = LoadModule(path);
+        }
+        catch (Exception e) when (e is not OutOfMemoryException)
+        {
+            return $"not loaded ({e.Message})";
+        }
+
+        var missing = m.Imports
+            .Where(i => !i.FuncNids.Any(n => Linker.TryGetFunctionExport(n, out _) || Hle.Implements(n)))
+            .Select(i => i.Library)
+            .Distinct(StringComparer.Ordinal)
+            .ToList();
+        if (missing.Count > 0)
+        {
+            UnloadModule(m);
+            return $"not started: no module provides {string.Join(", ", missing)}";
+        }
+
+        return $"loaded ({m.Name})";
     }
 
     /// <summary>Runs library module_start functions, then starts the main thread at the eboot entry.</summary>

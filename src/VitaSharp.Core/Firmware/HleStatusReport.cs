@@ -338,7 +338,7 @@ public static class HleStatusReport
         b.Append(Inv, $"\"Games\" are the exported functions that the {s.GameTitles} installed test games import, \"system\" the ones only the system software (shell, system apps and modules) imports, \"general\" the rest. ");
         b.Append("This is not a count of every PS Vita system function: functions that only kernel code calls, and imports no installed firmware module exports, are not counted. ");
         b.Append("The VitaSDK row counts the user functions of the VitaSDK NID list (`docs/hle/data/vitasdk-user-functions.tsv`). ");
-        b.Append("A function counts as implemented when it has an `[Hle]` entry point. \"Default\" is the part of those that needs hardware or a service the emulator does not have (Bluetooth, USB, game card authentication, system update, PSP ad hoc, debug hooks...) and returns the result the firmware gives for that case (success or its specific error) without doing anything; \"real\" is the rest. \"LLE\" counts the functions of libraries the emulator provides by loading and running the real module (the game's own copy, a file the user extracts from their own console, or the firmware module the emulator loads for every program that imports the library; listed below): they are covered, with no HLE.\n\n");
+        b.Append("A function counts as implemented when it has an `[Hle]` entry point. \"Default\" is the part of those that needs hardware or a service the emulator does not have (Bluetooth, USB, game card authentication, system update, PSP ad hoc, debug hooks...) and returns the result the firmware gives for that case (success or its specific error) without doing anything; \"real\" is the rest. \"LLE\" counts the functions of libraries the emulator provides by loading and running the real module (the game's own copy in app0:sce_module, or the firmware module the loader gives every program that imports the library; found by scanning the installed modules, listed below): they are covered, with no HLE.\n\n");
         b.Append("<picture>\n  <source media=\"(prefers-color-scheme: light)\" srcset=\"../assets/status/progress-map-light.svg\">\n");
         b.Append("  <img src=\"../assets/status/progress-map.svg\" alt=\"HLE progress map: one cell per firmware library\" width=\"100%\">\n</picture>\n\n");
         b.Append("| Group | Covered | Real | Default | LLE | Total | % |\n|---|---:|---:|---:|---:|---:|---:|\n");
@@ -349,11 +349,15 @@ public static class HleStatusReport
             b.Append(Inv, $"| {label} | {Count(n)} | {Count(n - d - l)} | {Count(d)} | {Count(l)} | {Count(total)} | {PctText(n, total)} |\n");
         }
 
-        b.Append("\n## Libraries provided by LLE\n\n| Library | Module | Source |\n|---|---|---|\n");
-        foreach (var e in Hle.LleLibraries.All)
+        // the firmware libraries the measurement found LLE functions in (Hle.LleLibraries: installed modules that really
+        // export them, found by scanning)
+        b.Append("\n## Libraries provided by LLE\n\n| Library | Module | LLE functions |\n|---|---|---:|\n");
+        foreach (var l in s.Libraries.Where(l => l.Lle > 0))
         {
-            b.Append(Inv, $"| {e.Library} | `{e.Module}` | {e.Source} |\n");
+            b.Append(Inv, $"| {l.Name} | `{l.Module}` | {Count(l.Lle)} |\n");
         }
+
+        b.Append(Inv, $"\nVitaSDK user functions provided by LLE (the modules the installed games ship in app0:sce_module): {Count(s.VitaSdkLle)}.\n");
 
         b.Append(Inv, $"\n## Per library ({s.Libraries.Count})\n\n");
         b.Append("| Library | Module | Implemented / total | % | Default | Games | System |\n|---|---|---:|---:|---:|---:|---:|\n");
