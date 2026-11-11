@@ -20,16 +20,20 @@ public sealed record GameEntry(string TitleId, string Title, string Version, str
         _ => Category,
     };
 
-    /// <summary>Region from the title ID: PCSA/PCSE US, PCSB/PCSF Europe, PCSC/PCSG Japan, PCSD/PCSH Asia; anything
-    /// else (homebrew IDs) "Homebrew". Labels come from <see cref="Ui.Strings"/>.</summary>
-    public string Region => TitleId.Length >= 4 && TitleId.StartsWith("PCS", StringComparison.Ordinal) ? TitleId[3] switch
+    /// <summary>The param.sfo CONTENT_ID ("UP9000-PCSA00008_00-..."): its first letter is the store region the
+    /// content was published for. Empty when the title has none (homebrew).</summary>
+    public string ContentId { get; init; } = "";
+
+    /// <summary>Region from the param.sfo content ID: U America, E Europe, J Japan, H/K Asia; no content ID
+    /// (homebrew) "Homebrew". Labels come from <see cref="Ui.Strings"/>.</summary>
+    public string Region => ContentId.Length == 0 ? Ui.Strings.RegionHomebrew : ContentId[0] switch
     {
-        'A' or 'E' => Ui.Strings.RegionUs,
-        'B' or 'F' => Ui.Strings.RegionEurope,
-        'C' or 'G' => Ui.Strings.RegionJapan,
-        'D' or 'H' => Ui.Strings.RegionAsia,
+        'U' => Ui.Strings.RegionUs,
+        'E' => Ui.Strings.RegionEurope,
+        'J' => Ui.Strings.RegionJapan,
+        'H' or 'K' => Ui.Strings.RegionAsia,
         _ => Ui.Strings.RegionOther,
-    } : Ui.Strings.RegionHomebrew;
+    };
 
     /// <summary>sce_sys/pic0.png: the 960x544 picture shown behind the game (LiveArea background), when the game has one.</summary>
     public string? Pic0Path => VitaSharp.Core.Io.Vfs.ResolveCaseInsensitive(Path, "sce_sys/pic0.png") is var p && File.Exists(p) ? p : null;
@@ -57,7 +61,7 @@ public static class GameLibrary
     public static GameEntry? Read(string dir)
     {
         if (!File.Exists(VitaSharp.Core.Io.Vfs.ResolveCaseInsensitive(dir, "eboot.bin"))) return null;
-        string id = System.IO.Path.GetFileName(dir), title = id, version = "", category = "gd";
+        string id = System.IO.Path.GetFileName(dir), title = id, version = "", category = "gd", contentId = "";
         var sfoPath = VitaSharp.Core.Io.Vfs.ResolveCaseInsensitive(dir, "sce_sys/param.sfo");
         try
         {
@@ -69,11 +73,12 @@ public static class GameLibrary
                 version = sfo.AppVersion.TrimStart('0');
                 if (version.StartsWith('.')) version = "0" + version;
                 category = sfo.Category;
+                contentId = sfo.ContentId;
             }
         }
         catch (InvalidDataException) { }
         var icon = VitaSharp.Core.Io.Vfs.ResolveCaseInsensitive(dir, "sce_sys/icon0.png");
-        return new GameEntry(id, title, version, category, dir, File.Exists(icon) ? icon : null, DirectorySize(dir));
+        return new GameEntry(id, title, version, category, dir, File.Exists(icon) ? icon : null, DirectorySize(dir)) { ContentId = contentId };
     }
 
     static long DirectorySize(string dir)
