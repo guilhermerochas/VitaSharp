@@ -448,4 +448,38 @@ public sealed class GpuQuirkTests
             File.Delete(path);
         }
     }
+
+    /// <summary>The "Driver da GPU" screen's information block (VitaSharp.Mobile.Core.Gpu.GpuInfoView): the rows, the
+    /// feature chips and the quirk lines, workarounds first.</summary>
+    [Fact]
+    public void GpuInfoViewDescribesTheDeviceFeaturesAndQuirks()
+    {
+        var adreno = GpuQuirkTable.Select(AdrenoBlob);
+        var rows = VitaSharp.Mobile.Core.Gpu.GpuInfoView.Rows(adreno);
+        Assert.Equal(["GPU", "Driver", "Vulkan"], rows.Take(3).Select(r => r.Label));
+        Assert.Equal("test GPU", rows[0].Value);
+        Assert.EndsWith("512.744", rows[1].Value);
+        Assert.Equal("1.3.250", rows[2].Value);
+        Assert.Contains("tile-based", rows[3].Value);
+        Assert.DoesNotContain("VK_EXT_memory_budget", rows[4].Value); // the blob has no budget extension: a heap fraction
+        Assert.Equal("Turnip 24.1", VitaSharp.Mobile.Core.Gpu.GpuInfoView.Rows(adreno, "Turnip 24.1")[1].Value);
+
+        var chips = VitaSharp.Mobile.Core.Gpu.GpuInfoView.Features(adreno);
+        Assert.False(chips.Single(c => c.Name == "BCn").Present);
+        var patched = VitaSharp.Mobile.Core.Gpu.GpuInfoView.Features(adreno, bcnPatched: true).Single(c => c.Name == "BCn");
+        Assert.True(patched.Present);
+        Assert.Equal("via BCeNabler", patched.Note);
+
+        var quirks = VitaSharp.Mobile.Core.Gpu.GpuInfoView.Quirks(adreno);
+        Assert.Contains(quirks, q => q.Quirk == GpuQuirk.TileBased && q.Workaround);
+        Assert.Contains(quirks, q => q.Quirk == GpuQuirk.CustomDriverCapable && !q.Workaround);
+        Assert.All(quirks, q => Assert.False(string.IsNullOrEmpty(q.Description)));
+        int lastWorkaround = quirks.ToList().FindLastIndex(q => q.Workaround), firstOther = quirks.ToList().FindIndex(q => !q.Workaround);
+        Assert.True(lastWorkaround < firstOther, "workarounds come first");
+
+        var nvidia = GpuQuirkTable.Select(Nvidia);
+        Assert.Empty(VitaSharp.Mobile.Core.Gpu.GpuInfoView.Quirks(nvidia));
+        Assert.Contains("VK_EXT_memory_budget", VitaSharp.Mobile.Core.Gpu.GpuInfoView.Rows(nvidia)[4].Value);
+        Assert.True(VitaSharp.Mobile.Core.Gpu.GpuInfoView.Features(nvidia).Single(c => c.Name == "BCn").Present);
+    }
 }

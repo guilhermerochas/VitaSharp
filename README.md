@@ -1,4 +1,5 @@
 <!-- pair: README.pt-BR.md sha256=382b1d3faa073163758faafe8d43e496211f07ad98f4b8be812e141a60c99192 -->
+<!-- pair: README.pt-BR.md sha256=d84170c76f0ce78a59188fbba28020ba043c7e4e6e0f6e8e366473773e923507 -->
 <div align="center">
 
 **English** | [Português](README.pt-BR.md)
@@ -261,6 +262,28 @@ Shell scripts follow the Google Shell Style Guide and must pass ShellCheck (CI j
   GPU dumps (`replay-gpu`, [`docs/notes/gpu-dump.md`](docs/notes/gpu-dump.md)) on every OS.
 - Profiling: `dotnet-trace` / `dotnet-counters` (`dotnet tool install -g dotnet-trace`, every OS); on Windows also
   PerfView and WPR/WPA (Windows Performance Toolkit).
+
+### Test requirements
+
+What `dotnet test tests/VitaSharp.Tests` needs per system; a test whose requirement is missing is skipped and says why.
+
+| | Windows | Linux | macOS |
+|---|---|---|---|
+| SDK | .NET 10 SDK | .NET 10 SDK | .NET 10 SDK |
+| Vulkan device (renderer, GPU dump and game-run tests) | SwiftShader as Microsoft Edge or Google Chrome ship it (found by itself) | Mesa lavapipe: `sudo apt install mesa-vulkan-drivers libvulkan1` (Fedora: `mesa-vulkan-drivers vulkan-loader`) | MoltenVK: the LunarG Vulkan SDK, or `brew install molten-vk vulkan-loader` |
+| FFmpeg (video and audio decode tests) | downloaded by the first build | downloaded by the first build | the system's: `brew install ffmpeg` |
+
+- Any system: `VK_DRIVER_FILES` (or `VK_ICD_FILENAMES`) set to the ICD manifest of a downloaded SwiftShader or Mesa
+  build is used instead.
+- Firmware: without it the tests of the real firmware modules (`libSceJson`, `libSceXml`, `libpaf`, the update file
+  install) are skipped. `VITASHARP_FIRMWARE_PUP` names a `PSVUPDAT.PUP`, `VITASHARP_FIRMWARE_DIR` a `vs0` or Vita3K
+  data folder; the Piglet compiler tests need `libshacccg.suprx` in `ur0:data`.
+- The tests never use your data folder: each one makes a scratch folder (`VITASHARP_DATA` for the child processes);
+  the game-run tests boot a small executable the tests write themselves.
+- Optional: the LunarG Vulkan SDK's validation layers run the renderer workloads under validation with
+  `dotnet test tests/VitaSharp.Tests --filter Category=Slow` (`RendererValidationTests`; skipped without the layer).
+- The window test runs a hidden window (`VITASHARP_HIDDEN_WINDOW=1`): on Linux it needs a display (`DISPLAY`), on
+  Windows the system Vulkan loader (`vulkan-1.dll`, installed with any GPU driver).
 
 ## Releases
 
