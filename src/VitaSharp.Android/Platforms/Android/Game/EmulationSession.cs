@@ -73,9 +73,10 @@ public sealed partial class EmulationSession : IDisposable
         SessionLog.Open(data.Logs, game.TitleId);
         foreach (var line in RuntimeReport.Lines()) Log.Info(line);
         Log.Info($"Game {game.TitleId} '{game.Title}' {game.Version}: CPU {(_settings.CpuBackend.Length > 0 ? _settings.CpuBackend : "auto")}, " +
-                 $"{_settings.ClockHz / 1_000_000} MHz, GPU profile {(_settings.GpuProfile.Length > 0 ? _settings.GpuProfile : "native")}, VSync {_settings.VSync}" + (_settings.ResScale.Length > 0 ? $", resolution scale {_settings.ResScale}" : ""));
+                 $"{_settings.ClockHz / 1_000_000} MHz, GPU profile {(_settings.GpuProfile.Length > 0 ? _settings.GpuProfile : "native")}, VSync {_settings.VSync}" + (_settings.ResScale.Length > 0 ? $", resolution scale {_settings.ResScale}" : "") + (_settings.FastLoading ? ", fast loading" : ""));
 
         CpuCore.InstructionsPerSecond = _settings.ClockHz;
+        VitaSharp.Core.Util.IoTiming.FastLoading = _settings.FastLoading; // "Carregamento rapido" (else the Vita memory card's speed)
         HostThreads.Enabled = true;
         Performance = new GamePerformance(AppServices.AppContext);
         var (psn, net, rpcn) = prefs.Network.ToOptions(rpcnPassword);

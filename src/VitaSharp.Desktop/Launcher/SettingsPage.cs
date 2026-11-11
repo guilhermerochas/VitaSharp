@@ -279,6 +279,8 @@ public sealed class SettingsPage : UserControl
                 i => Set(() => _settings.CpuBackend = cpuChoices[i].Value), 300)),
             _k.Row("gauge", S.CpuClock, S.CpuClockDetail, _k.Dropdown([S.Clock333, S.Clock444], _settings.CpuMhz == 444 ? 1 : 0,
                 i => Set(() => _settings.CpuMhz = i == 1 ? 444 : 0), 300)),
+            _k.Row("zap", S.FastLoading, S.FastLoadingGlobalDetail, _k.Switch(_settings.FastLoading, v => Set(() => _settings.FastLoading = v)),
+                tip: S.FastLoadingTip),
             CameraRow(webcams, back: false),
             CameraRow(webcams, back: true)));
 

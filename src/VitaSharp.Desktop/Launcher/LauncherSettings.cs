@@ -24,6 +24,10 @@ public sealed class LauncherSettings
     /// <summary>Emulated ARM clock in MHz (--cpu-mhz=): 0 = the Vita's default for applications (333), 444 = the
     /// maximum a game can request. Faster loads, but games that rely on retail timing can break.</summary>
     public int CpuMhz { get; set; }
+    /// <summary>"Carregamento rapido" for every game without its own choice (<see cref="GameOptions.FastLoading"/>):
+    /// storage reads with no speed limit (--fast-loading). Off by default: games load at the Vita memory card's speed,
+    /// which some of them need (Core/Util/IoTiming.cs).</summary>
+    public bool FastLoading { get; set; }
     /// <summary>"Compilacao rapida de shaders": shaderc optimisation Zero (on) or Performance (off), --shaderc-opt=.</summary>
     public bool FastShaderCompile { get; set; } = true;
     /// <summary>"Compilar shaders e pipelines em segundo plano": shader/pipeline prefetch workers, --async-shaders=.</summary>
@@ -156,8 +160,10 @@ public sealed class LauncherSettings
     /// <summary>Command-line options for "run" (with <paramref name="titleId"/>'s own options, <see cref="Games"/>).</summary>
     public IEnumerable<string> RunOptions(string? titleId = null)
     {
-        if (titleId != null && Games.TryGetValue(titleId, out var game))
+        GameOptions? game = null;
+        if (titleId != null && Games.TryGetValue(titleId, out game))
             foreach (var o in game.RunOptions()) yield return o;
+        if (game?.FastLoading ?? FastLoading) yield return "--fast-loading";
         if (Fullscreen) yield return "--fullscreen";
         if (Scale > 1) yield return $"--scale={Scale}";
         if (!VSync) yield return "--no-vsync";
@@ -207,6 +213,15 @@ public sealed class GameOptions
         [("native", Core.Localization.Loc.Get("RateNative")), ("30", Core.Localization.Loc.Get("RateFixed30")),
          ("60", Core.Localization.Loc.Get("RateFixed60")), ("unlimited", Core.Localization.Loc.Get("RateUnlimited"))];
 
+    /// <summary>"Carregamento rapido": true/false = this game's own choice, null = the global default
+    /// (<see cref="LauncherSettings.FastLoading"/>); passed by <see cref="LauncherSettings.RunOptions"/>.</summary>
+    public bool? FastLoading { get; set; }
+
+    /// <summary>Fast loading choices: value (null = the global default, its state in the label) and label.</summary>
+    public static (bool? Value, string Label)[] FastLoadings(bool global) =>
+        [(null, Core.Localization.Loc.Format("MDefaultParen", Core.Localization.Loc.Get(global ? "MOn" : "MOff"))),
+         (true, Core.Localization.Loc.Get("MOn")), (false, Core.Localization.Loc.Get("MOff"))];
+
     public IEnumerable<string> RunOptions()
     {
         if (ResScale is >= 2 and <= 4) yield return $"--res-scale={ResScale}";
@@ -215,7 +230,7 @@ public sealed class GameOptions
 
     /// <summary>Every option at its default: the entry can be dropped.</summary>
     [System.Text.Json.Serialization.JsonIgnore]
-    public bool IsDefault => ResScale is < 2 or > 4 && FrameRate is not ("30" or "60" or "unlimited");
+    public bool IsDefault => ResScale is < 2 or > 4 && FrameRate is not ("30" or "60" or "unlimited") && FastLoading == null;
 }
 
 /// <summary>Source-generated JSON metadata for the settings file (Native AOT has no reflection-based serializer).</summary>

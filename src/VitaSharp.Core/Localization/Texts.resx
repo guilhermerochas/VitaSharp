@@ -2931,4 +2931,19 @@
   <data name="AudioOutputDefault" xml:space="preserve">
     <value>System default</value>
   </data>
+  <data name="MOn" xml:space="preserve">
+    <value>On</value>
+  </data>
+  <data name="FastLoading" xml:space="preserve">
+    <value>Fast loading</value>
+  </data>
+  <data name="FastLoadingDetail" xml:space="preserve">
+    <value>Faster than the Vita; some games may have timing errors</value>
+  </data>
+  <data name="FastLoadingGlobalDetail" xml:space="preserve">
+    <value>Default of every game (each game can have its own on its page). Faster than the Vita; some games may have timing errors</value>
+  </data>
+  <data name="FastLoadingTip" xml:space="preserve">
+    <value>Off (default): games read their data at the Vita memory card&apos;s speed (about 7 MB/s), as on the console. On: no speed limit, loading screens get much shorter. A few games only work with the real loading time (e.g. Silent Hill: Book of Memories stops at its first loading); if a game freezes or crashes while loading, turn this off.</value>
+  </data>
 </root>

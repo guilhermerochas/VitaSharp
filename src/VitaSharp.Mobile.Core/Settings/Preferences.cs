@@ -21,6 +21,9 @@ public sealed class AppPreferences
     /// <summary>Emulated ARM clock in MHz: 0 = the Vita's default for applications (333), 444 = the most a game may ask
     /// for (--cpu-mhz=, same meaning as the desktop launcher).</summary>
     public int CpuMhz { get; set; }
+    /// <summary>"Carregamento rapido" of every game without its own choice: storage reads with no speed limit
+    /// (Core/Util/IoTiming.cs FastLoading). Off by default: games load at the Vita memory card's speed, which some need.</summary>
+    public bool FastLoading { get; set; }
     /// <summary>GPU profile: "" = the real device (quirks from its vendor/driver), "desktop", "adreno" or "mali"
     /// (--gpu-profile=, docs/notes/mobile-gpu.md).</summary>
     public string GpuProfile { get; set; } = "";
@@ -77,6 +80,8 @@ public sealed class GameSettings
     /// <summary>"MSAA": "off" renders the game's multisampled scenes with one sample (faster on the GPU, edges alias);
     /// null = native (as the game asks, 2x/4x). Per game only.</summary>
     public string? Msaa { get; set; }
+    /// <summary>"Carregamento rapido" of this game (null = <see cref="AppPreferences.FastLoading"/>).</summary>
+    public bool? FastLoading { get; set; }
 
     /// <summary>Total time played, in seconds.</summary>
     public long PlaySeconds { get; set; }
@@ -85,7 +90,7 @@ public sealed class GameSettings
     public double AverageFps { get; set; }
 
     [JsonIgnore]
-    public bool HasOverrides => CpuBackend != null || CpuMhz != null || GpuProfile != null || VSync != null || ShowFps != null || ResScale != null || Msaa != null;
+    public bool HasOverrides => CpuBackend != null || CpuMhz != null || GpuProfile != null || VSync != null || ShowFps != null || ResScale != null || Msaa != null || FastLoading != null;
 
     public static GameSettings Load(string path) => SettingsFile.Load(path, PrefsJson.Default.GameSettings) ?? new();
     public void Save(string path) => SettingsFile.Save(path, this, PrefsJson.Default.GameSettings);
@@ -101,7 +106,7 @@ public sealed class GameSettings
 }
 
 /// <summary>What a game runs with: the game's settings over the global ones, validated.</summary>
-public sealed record EffectiveSettings(string CpuBackend, int CpuMhz, string GpuProfile, bool VSync, bool ShowFps, string ResScale = "", string Msaa = "")
+public sealed record EffectiveSettings(string CpuBackend, int CpuMhz, string GpuProfile, bool VSync, bool ShowFps, string ResScale = "", string Msaa = "", bool FastLoading = false)
 {
     public static EffectiveSettings Resolve(AppPreferences app, GameSettings? game)
     {
@@ -112,7 +117,7 @@ public sealed record EffectiveSettings(string CpuBackend, int CpuMhz, string Gpu
         string gpu = SettingsChoices.GpuProfiles.Any(c => c.Value == (game?.GpuProfile ?? app.GpuProfile)) ? game?.GpuProfile ?? app.GpuProfile : "";
         string res = SettingsChoices.ResScales.Any(c => c.Value == game?.ResScale) ? game!.ResScale! : "";
         string msaa = game?.Msaa == "off" ? "off" : "";
-        return new(cpu, mhz, gpu, game?.VSync ?? app.VSync, game?.ShowFps ?? app.ShowFps, res, msaa);
+        return new(cpu, mhz, gpu, game?.VSync ?? app.VSync, game?.ShowFps ?? app.ShowFps, res, msaa, game?.FastLoading ?? app.FastLoading);
     }
 
     /// <summary>VulkanRendererOptions.ResScale for <see cref="ResScale"/> (0 = native).</summary>

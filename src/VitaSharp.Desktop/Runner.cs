@@ -137,6 +137,17 @@ public static class Runner
         static string[]? ModuleListOpt(string[] o, string name) => Opt(o, name)?.Split(',', StringSplitOptions.RemoveEmptyEntries | StringSplitOptions.TrimEntries);
         if (FirmwareInfo.Read(Program.FsRoot) is { } fw) Log.Info($"Firmware {fw.Display} installed ({string.Join(", ", fw.Partitions)})");
         else Log.Info("No firmware installed: Json runs on HLE; system libraries without HLE (Xml, Sqlite...) are unavailable");
+        // storage speed: the Vita memory card's by default (VITASHARP_IO_SPEED); --fast-loading[=on|off] is the launchers'
+        // "Carregamento rapido" (per game or the global default: no read speed limit), --io-speed=<MB/s> sets it (0 = instant)
+        if (options.Contains("--fast-loading")) VitaSharp.Core.Util.IoTiming.FastLoading = true;
+        else if (OnOff(options, "--fast-loading") is { } fastLoading) VitaSharp.Core.Util.IoTiming.FastLoading = fastLoading;
+        if (Opt(options, "--io-speed") is { } ioSpeed)
+        {
+            if (VitaSharp.Core.Util.IoTiming.ParseSpeed(ioSpeed) is { } bps) VitaSharp.Core.Util.IoTiming.BytesPerSecond = bps;
+            else Log.Warn($"--io-speed={ioSpeed} not recognised (use MB/s, vita or fast): using the default");
+        }
+        Log.Info(VitaSharp.Core.Util.IoTiming.FastLoading ? "Storage: fast loading (no read speed limit)"
+            : $"Storage: {VitaSharp.Core.Util.IoTiming.BytesPerSecond / 1e6:0.#} MB/s (the Vita memory card's speed is {VitaSharp.Core.Util.IoTiming.VitaBytesPerSecond / 1e6:0} MB/s)");
         // --cpu=native|il|interp selects the CPU backend (default: VITASHARP_CPU, else the best one the host supports)
         using var emu = new Emulator(new EmulatorOptions
         {
@@ -719,8 +730,6 @@ public static class Runner
         if (Opt(options, "--frame-rate") is { } frameRate) VitaSharp.Core.Hle.Modules.FrameRate.Mode = VitaSharp.Core.Hle.Modules.FrameRate.Parse(frameRate);
         if (VitaSharp.Core.Hle.Modules.FrameRate.Mode != VitaSharp.Core.Hle.Modules.FrameRateMode.Native)
             Log.Info($"Frame rate: {VitaSharp.Core.Hle.Modules.FrameRate.Label} (--frame-rate)");
-        if (double.TryParse(Opt(options, "--io-speed"), System.Globalization.NumberStyles.Float, System.Globalization.CultureInfo.InvariantCulture, out var ioMBps))
-            VitaSharp.Core.Util.IoTiming.BytesPerSecond = ioMBps * 1e6; // 0 = instant reads
         if (double.TryParse(Opt(options, "--speed"), System.Globalization.NumberStyles.Float, System.Globalization.CultureInfo.InvariantCulture, out var speed) && speed > 0) VitaSharp.Core.Util.GuestClock.Speed = speed;
         if (Opt(options, "--input") is { } script) { var si = new ScriptedInput(script); emu.Host.Input = si; emu.Host.Motion = si; }
         // --nav=<file>: screen-driven navigation script (NavScript), shots in --nav-out (default <dump dir>/nav)

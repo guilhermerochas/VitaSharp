@@ -21,7 +21,43 @@ public static class IoTiming
     /// splash and the game's render jobs then drew in the same GXM context and the game asserted. At 7 MB/s the splash
     /// takes 18.8 s and the loading screen after it 10 s, as on the console.
     /// </summary>
-    public static double BytesPerSecond { get; set; } = 7e6;
+    public static double BytesPerSecond { get; set; } = ParseSpeed(Environment.GetEnvironmentVariable(EnvVars.IoSpeed)) ?? VitaBytesPerSecond;
+
+    /// <summary>The Vita memory card's sustained read throughput, bytes per second.</summary>
+    public const double VitaBytesPerSecond = 7e6;
+
+    /// <summary>The speed of a session without "Carregamento rapido": VITASHARP_IO_SPEED when set, else the Vita's.</summary>
+    public static double DefaultBytesPerSecond { get; } = ParseSpeed(Environment.GetEnvironmentVariable(EnvVars.IoSpeed)) ?? VitaBytesPerSecond;
+
+    /// <summary>"Carregamento rapido" (fast loading, per game or the launchers' global default; desktop --fast-loading):
+    /// reads complete as fast as the host storage allows, with no device latency or throughput limit. Loads finish
+    /// sooner than on a Vita, so a game whose order of events depends on the real loading time (Silent Hill: Book of
+    /// Memories' boot splash, see <see cref="BytesPerSecond"/>) can fail; off by default. Turning it off goes back to
+    /// <see cref="DefaultBytesPerSecond"/>.</summary>
+    public static bool FastLoading
+    {
+        get => BytesPerSecond <= 0;
+        set => BytesPerSecond = value ? 0 : DefaultBytesPerSecond > 0 ? DefaultBytesPerSecond : VitaBytesPerSecond;
+    }
+
+    /// <summary>A storage speed setting in MB/s: "vita" (or "real", "default") = <see cref="VitaBytesPerSecond"/>, "fast"
+    /// (or "unlimited", "instant") = 0, a number >= 0 = that many MB/s; null when empty or not recognised.</summary>
+    public static double? ParseSpeed(string? s)
+    {
+        s = s?.Trim().ToLowerInvariant();
+        return s switch
+        {
+            null or "" => null,
+            "vita" or "real" or "default" => VitaBytesPerSecond,
+            "fast" or "unlimited" or "instant" => 0,
+            _ => double.TryParse(s, System.Globalization.NumberStyles.Float, System.Globalization.CultureInfo.InvariantCulture, out var mb) && mb >= 0 && double.IsFinite(mb)
+                ? mb * 1e6 : null,
+        };
+    }
+
+    /// <summary>Reads that went to the device model, and the guest time the device spent on them (session report).</summary>
+    public static long TimedReads, DeviceTicks;
+
     /// <summary>Per-request access latency in seconds.</summary>
     public static double LatencySeconds { get; set; } = 0.0005;
     /// <summary>Bytes of a file a missing read leaves cached after its own range; 0 = no read-ahead.</summary>
@@ -56,6 +92,8 @@ public static class IoTiming
             long start = Math.Max(now, _deviceFreeAt);
             done = start + GuestClock.FromSeconds(LatencySeconds + bytes / BytesPerSecond);
             _deviceFreeAt = done;
+            TimedReads++;
+            DeviceTicks += done - start;
         }
         if (GuestClock.Ticks < done) { using var blocked = Kernel.Scheduler.Block(); GuestClock.WaitUntil(done); }
     }
