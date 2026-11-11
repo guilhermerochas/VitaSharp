@@ -179,6 +179,10 @@ public static class EnvVars
     /// <summary>=1: the end-of-run report lists every HLE function called, of every process (not only the 40 busiest),
     /// as "hle-call PROCESS COUNT NAME" lines (proves which HLE paths a run exercised).</summary>
     public const string HleCalls = "VITASHARP_HLE_CALLS";
+    /// <summary>TITLEID:param (developer): the launch parameter an application started directly (run ... --no-shell)
+    /// reads with sceAppMgrGetAppParam, as if the shell had launched it with it (e.g. the PSP emulator NPXS10028 with the
+    /// "originalpath=...&amp;selfpath=...&amp;discid=..." string the shell builds for a PSP/PSone title).</summary>
+    public const string AppParam = "VITASHARP_APP_PARAM";
     public const string Replay = "VITASHARP_REPLAY";
     /// <summary>Internal resolution scale of colour/depth targets (0.5, 0.75 below native; 2, 3, 4 above it; 1 = native, the default): see VulkanRenderer.ResScale.cs.</summary>
     public const string ResScale = "VITASHARP_RES_SCALE";

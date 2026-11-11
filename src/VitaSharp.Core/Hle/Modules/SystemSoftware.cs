@@ -102,6 +102,9 @@ public sealed partial class SystemSoftware : HleModule
         }
         var launcher = Emu;
         var app = Emu.SpawnProcess(dir, self, [], cannotPlace: () => launcher.RequestLaunch(dir, self, [], suspendCurrent: true));
+        // the launch parameter (up to 0x400 bytes) is what the application reads first with sceAppMgrGetAppParam: the
+        // PSP emulator (vs0:app/NPXS10028) gets its title this way ("originalpath=...&selfpath=...&discid=...")
+        if (param != 0) app.Hle.Modules.OfType<AppMgr>().First().LaunchParam = GuestMemory.ReadCString(param, 0x400);
         Log.Info($"sceAppMgrLaunchAppByPath4({path}, {tid}, flags 0x{flags:X}, param {(param != 0 ? Convert.ToHexString(GuestMemory.ReadSpan(param, 32)) : "null")}): new process {app.Describe()}, application id 0x{app.AppId:X}");
         // the sixth argument (the shell's launch parameters, 0x80 bytes, size first) points at +0x28 to where the
         // new application's SceAppMgrAppStatus goes: the shell takes the application id from it (+0x30)

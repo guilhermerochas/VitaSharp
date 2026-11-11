@@ -150,4 +150,31 @@ public sealed class HleBatch11Tests(GuestMemoryFixture fx) : IDisposable
     [InlineData(0x4915DEE7u)] // sceCompatGetTitleList
     [InlineData(0x70997F92u)] // sceCompatIsPocketStationTitle
     public void CompatForVshExportsAreImplemented(uint nid) => Assert.True(Emu().Hle.IsImplemented(nid));
+
+    /// <summary>_sceNpDrmGetRifInfo as the shell calls it before a PSP/PSone title starts: the content id and account of
+    /// the license, and no validity limit (the emulated unit's licenses never expire).</summary>
+    [Fact]
+    public void GetRifInfoReadsTheLicenseHeader()
+    {
+        var sys = Module<SystemServicesVsh>();
+        const string id = "UP0001-NPUZ00001_00-0000000000000001";
+        // a PSP rif header: version, version flag, type 1, flags, account id 0, the content id at 0x10
+        var rifBytes = new byte[0x98];
+        rifBytes[5] = 1;
+        Encoding.ASCII.GetBytes(id).CopyTo(rifBytes, 0x10);
+        uint rif = Alloc(0x98);
+        rifBytes.CopyTo(GuestMemory.Span(rif, 0x98));
+        uint cid = Alloc(0x30), aid = Alloc(8), start = Alloc(8), exp = Alloc(8), outs = Alloc(0x28);
+        GuestMemory.Write(aid, 0x1234UL);
+        GuestMemory.Write(start, 0x5678UL);
+        uint[] block = [cid, aid, 0, 0, 0, 0, start, exp, 0, 0];
+        for (int i = 0; i < block.Length; i++) GuestMemory.W32(outs + (uint)i * 4, block[i]);
+
+        Assert.Equal(0, Call(sys, "NpDrmGetRifInfo", rif, 0x98u, 1u, outs));
+        Assert.Equal(id, GuestMemory.ReadCString(cid));
+        Assert.Equal(0UL, GuestMemory.Read<ulong>(aid));
+        Assert.Equal(0UL, GuestMemory.Read<ulong>(start));
+        Assert.Equal(0x7FFFFFFFFFFFFFFFUL, GuestMemory.Read<ulong>(exp));
+        Assert.Equal(unchecked((int)0x80870001), Call(sys, "NpDrmGetRifInfo", 0u, 0x98u, 1u, outs));
+    }
 }
