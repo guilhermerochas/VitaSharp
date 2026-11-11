@@ -1375,6 +1375,51 @@ Lista de itens futuros do VitaSharp. Marque `[x]` quando um item for concluído.
 
 ## Bugs em aberto
 
+- [ ] Metal Gear Solid HD Collection (PCSE00020), abertura do MGS3 dentro do avião (relato do usuário, 10/11/2026;
+  `captures\PCSE00020_20261110_214209_tudo`, `_214218_tudo` com dump da GPU, `_214309_tudo` com a trava). Agente B
+  (fix/bugs-b-7). Referência do Vita de verdade: YouTube GaPPb3zatq0 (longplay, 1:45-4:00).
+  - **(2) cunhas vermelhas/azuis e borrão no interior: correção feita, validada só no replay** (2ae181d). A composição
+    final lê a profundidade 0x60C80000 como textura X8U24 720x448. Ordem do quadro: cena de 1 amostra 768x480 que grava
+    a profundidade, depois uma cena 4X com downscale 360x224 (efeitos, hélices, vidros) que carrega essa profundidade e
+    não a grava. O renderizador pegava o alvo mais recente (o 4X, amostras não gravadas) e caía na memória do guest
+    (nunca escrita); agora usa o último alvo cuja profundidade está gravada, como a memória do hardware. Replay do dump
+    214218 (343 quadros): quadros com cunha vermelha 47 -> 1, personagens visíveis e imagem nítida (antes a névoa/DOF
+    borrava tudo). As texturas P8 do quadro (trace) decodificam certo. **No jogo rodando** (estado da captura, 75 s)
+    ainda aparecem cunhas de um quadro (5 de 111 quadros amostrados; main: 1 de 56), com o formato dos "flashes" do
+    relatório: triângulos finos saindo de um ponto e regiões chapadas vermelhas/azuis que mudam a cada quadro, o que
+    aponta para dados de vértice/uniform lidos fora de hora (ver FIFA 13, `UbLate`), não para a profundidade.
+    Próximo: `--gpu-dump-at` num trecho com cunha no jogo rodando e `--trace-draws` no quadro ruim.
+    `replay-gpu --compare` contra a main nos 24 dumps de `captures` e `gpudumps`: só os dois do PCSE00020 mudam; no
+    PCSE00333_20261108_194141 29 de 1080 quadros diferem em até 0,05% dos pixels (ruído do replay: o dump não tem cena
+    MSAA nem leitura de profundidade, o caminho alterado não roda).
+  - **(1) vidro da cabine (vista externa "Flying over Pakistan"): causa achada, falta corrigir.** Os vidros e o borrão
+    das hélices são desenhados na cena 4X 360x224 com teste de profundidade (função GREATER_EQUAL) contra a
+    profundidade que ela carrega (load=True) da cena de 1 amostra. `SeedLoadedDepth` só copia de alvos com o mesmo
+    número de amostras, então a cena 4X testa contra a própria profundidade do quadro anterior (ou zero): vidros da
+    direita saem com a textura pontilhada azul opaca e o da esquerda sem o reflexo claro do Vita. Correção proposta:
+    ao carregar a profundidade numa cena 4X (2X) cujo conteúdo mais novo está num alvo de 1 amostra no mesmo endereço,
+    empacotar os texels nas amostras (amostra (x&1, y&1) do pixel (x/2, y/2) = texel (x, y); o inverso de
+    `UnpackedDepthTexture`), com um passe de tela cheia por amostra.
+  - Ainda aparecem triângulos soltos de um quadro (faixas azuladas finas, ex. quadros 2725 e 2898 do replay).
+  - **(3) trava: reproduz, causa no protocolo do jogo, sem correção ainda.** Reproduz no boot carregando o
+    `state_start.vss` da captura 214218 (o boot vai direto ao MGS3.self): 4 de 5 boots param entre os quadros 4 e 36
+    com `main` e `End Frame Thread` esperando o mesmo event flag "End Frame Event". Protocolo (trace HLE):
+    main `Wait(2)`, `Set(1)`, `Clear(~2)`; End Frame `Wait(1, clear pat)`, trabalho, `Set(2)`. Trava quando o End Frame
+    faz o ciclo inteiro e `Set(2)` antes de a main chegar ao `Clear(~2)` logo depois do `Set(1)` (a main então apaga o
+    "pronto" e as duas esperam para sempre). No Vita o `Set`→`Clear` da main leva ~1 us; aqui o relógio emulado da main
+    pula ~5,7 ms entre as duas chamadas (ela perde o núcleo/thread do host). A trava do usuário no quadro 3416 tem o
+    mesmo formato (End Frame esperando o flag; a main aparecia "Running" num callback, o que b86dc3b corrige no dump).
+    Tentativas medidas (5 boots cada, base 4/5 travando): liberar os waiters na hora do `Set` como o kernel (2/5),
+    CPU sem ritmo `--cpu-mhz=0` (2/5), ceder o núcleo a uma thread de prioridade maior em todo retorno de HLE (3/5):
+    nenhuma resolve, todas revertidas. Próximo passo: instrumentar o Scheduler (quem segura os 3 núcleos quando a main
+    espera núcleo depois do `Set`, e por quanto tempo) e o tempo de host da main entre as duas chamadas.
+  - **MGS2 a partir do menu da coleção: trava logo depois de abrir** (boot limpo, menu MGS3|MGS2, direita + X no
+    quadro 260): `LoadExec app0:MGS2.self` ok, módulos, NGS, troféus e BPE Render Thread criados, e no quadro 523 a
+    main espera o fim da thread 'BackgroundLoadSDX', que espera uma operação do FIOS (condvar SceFiosOpWait) que nunca
+    termina; as threads do FIOS (SceFiosIO, SceFiosCallback...) dormem em SceFiosSchedulerWakeup. Nenhum erro de HLE
+    ou arquivo no log. Uma tentativa só; próximo: `--trace-hle-only=sceIo+sceFios+sceKernelSignalCond` nesse boot para
+    ver se a operação chegou ao sceIo e quem deveria acordar o escalonador do FIOS (pode ser o mesmo tipo de corrida
+    da trava do MGS3).
 - [ ] Android, controle conectado no celular (relato do usuário, 10/11/2026): (1) o L2 não funciona (conferir o
   mapeamento do eixo/botão do gatilho: no Android o L2 pode chegar como AXIS_LTRIGGER/AXIS_BRAKE ou KEYCODE_BUTTON_L2,
   conforme o controle; o Vita não tem L2, então conferir para o que o VitaSharp o mapeia (toque traseiro/atalho) e se
