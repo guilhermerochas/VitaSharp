@@ -529,10 +529,13 @@ public sealed unsafe partial class VulkanRenderer
                 if (!linear || texRow != rowBytes || x0 >= rt.Width) continue;
                 // a power-of-two texture laid over a smaller surface with the same row pitch (Persona 4 Golden's
                 // 840x476 scene, stride 1024, sampled as a 1024x1024 texture): the surface fills its top-left corner.
-                // Only when no other colour target lies in the texture's memory (atlases of several targets keep
-                // reading the guest memory that the writeback fills).
+                // When other colour targets lie in the texture's memory too (atlases of several targets), the guest
+                // memory is read instead, but only if this surface is written back there: otherwise that memory is
+                // stale. Dragon's Crown samples its 960x544 back buffer (pitch 1024) as a 1024x1024 texture that
+                // also reaches the second back buffer 3 MB further on; read from memory, every other frame showed
+                // old memory (a magenta block) where the post effect copies the frame.
                 bool overhang = x0 + w > rt.Width || y0 + h > rt.Height;
-                if (overhang && !OnlyTargetIn(rt, addr, texRow * h)) continue;
+                if (overhang && rt.WrittenBack && !OnlyTargetIn(rt, addr, texRow * h)) continue;
                 _texSrc = TexSource.Region | sceneStart;
                 return (RenderTargetRegion(rt, x0, y0, w, h, d.Format, gamma), ImageLayout.ShaderReadOnlyOptimal);
             }
@@ -916,7 +919,7 @@ public sealed unsafe partial class VulkanRenderer
             logged++;
         }
         return logged == changes;
-    }
+    }
     /// <summary>True when <paramref name="rt"/> is the only colour target whose memory intersects [addr, addr + bytes).</summary>
     bool OnlyTargetIn(RenderTarget rt, uint addr, uint bytes)
     {
