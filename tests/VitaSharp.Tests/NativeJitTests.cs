@@ -23,9 +23,9 @@ namespace VitaSharp.Tests;
 [Collection("guest")]
 public sealed unsafe partial class NativeJitTests(GuestMemoryFixture fx, ITestOutputHelper output)
 {
-    const uint CodeBase = 0x0010_0000, DataBase = 0x0020_0000, DataSize = 0x10000;
+    private const uint CodeBase = 0x0010_0000, DataBase = 0x0020_0000, DataSize = 0x10000;
 
-    void EnsureGuestPages()
+    private void EnsureGuestPages()
     {
         if (fx.Memory.FindBlock(CodeBase) == null)
         {
@@ -39,16 +39,16 @@ public sealed unsafe partial class NativeJitTests(GuestMemoryFixture fx, ITestOu
     }
 
     /// <summary>VITASHARP_TEST_TRACE=file logs every block before it runs natively (finds the block that crashed the host).</summary>
-    static readonly StreamWriter? Trace = Environment.GetEnvironmentVariable(EnvVars.TestTrace) is { Length: > 0 } p ? new StreamWriter(p) : null;
+    private static readonly StreamWriter? s_trace = Environment.GetEnvironmentVariable(EnvVars.TestTrace) is { Length: > 0 } p ? new StreamWriter(p) : null;
 
     // ---- SIMD encodings Unicorn accepts (the interpreter's NEON handlers assume defined encodings)
-    static readonly Dictionary<(uint, bool), bool> SimdOk = new();
-    static readonly Unicorn?[] SimdUc = new Unicorn?[2];
-    static readonly uint[] SimdNext = new uint[2];
+    private static readonly Dictionary<(uint, bool), bool> s_simdOk = new();
+    private static readonly Unicorn?[] s_simdUc = new Unicorn?[2];
+    private static readonly uint[] s_simdNext = new uint[2];
 
-    static bool SimdDefined(uint ins, bool thumb)
+    private static bool SimdDefined(uint ins, bool thumb)
     {
-        if (SimdOk.TryGetValue((ins, thumb), out bool ok))
+        if (s_simdOk.TryGetValue((ins, thumb), out bool ok))
         {
             return ok;
         }
@@ -61,17 +61,17 @@ public sealed unsafe partial class NativeJitTests(GuestMemoryFixture fx, ITestOu
 
         int k = thumb ? 1 : 0;
         const uint Region = 0x0030_0000, RegionSize = 0x10_0000;
-        if (SimdUc[k] == null || SimdNext[k] >= RegionSize - 8)
+        if (s_simdUc[k] == null || s_simdNext[k] >= RegionSize - 8)
         {
-            SimdUc[k]?.Close();
-            var uc = CpuFuzzTests.NewUnicorn(thumb);
+            s_simdUc[k]?.Close();
+            Unicorn uc = CpuFuzzTests.NewUnicorn(thumb);
             uc.MemMap(Region, RegionSize, Common.UC_PROT_ALL);
-            SimdUc[k] = uc;
-            SimdNext[k] = 0;
+            s_simdUc[k] = uc;
+            s_simdNext[k] = 0;
         }
-        var u = SimdUc[k]!;
-        uint at = Region + SimdNext[k];
-        SimdNext[k] += 8; // fresh address: QEMU caches translations
+        Unicorn u = s_simdUc[k]!;
+        uint at = Region + s_simdNext[k];
+        s_simdNext[k] += 8; // fresh address: QEMU caches translations
         byte[] code = !thumb ? BitConverter.GetBytes(ins) : [(byte)(ins >> 16), (byte)(ins >> 24), (byte)ins, (byte)(ins >> 8)];
         try
         {
@@ -79,7 +79,7 @@ public sealed unsafe partial class NativeJitTests(GuestMemoryFixture fx, ITestOu
             u.RegWrite(UcArm.UC_ARM_REG_CPSR, (long)(0x10u | (thumb ? 0x20u : 0)));
             for (int r = 0; r < 15; r++)
             {
-                u.RegWrite(RegIds[r], DataBase + 0x8000);
+                u.RegWrite(s_regIds[r], DataBase + 0x8000);
             }
 
             u.EmuStart(at | (thumb ? 1u : 0), at + 4, 0, 1);
@@ -89,10 +89,10 @@ public sealed unsafe partial class NativeJitTests(GuestMemoryFixture fx, ITestOu
         catch (Exception)
         {
             ok = false;
-            SimdUc[k]!.Close();
-            SimdUc[k] = null;
+            s_simdUc[k]!.Close();
+            s_simdUc[k] = null;
         }
-        SimdOk[(ins, thumb)] = ok;
+        s_simdOk[(ins, thumb)] = ok;
         return ok;
     }
 
@@ -101,7 +101,7 @@ public sealed unsafe partial class NativeJitTests(GuestMemoryFixture fx, ITestOu
     /// address, or the next address on the last instruction), Unicorn reads PC+4. The single-instruction fuzz never
     /// sees the difference because its instruction is always last.
     /// </summary>
-    static bool PcOperandUnpredictable(DecodedInst d, bool thumb)
+    private static bool PcOperandUnpredictable(DecodedInst d, bool thumb)
     {
         if (!thumb)
         {
@@ -118,10 +118,10 @@ public sealed unsafe partial class NativeJitTests(GuestMemoryFixture fx, ITestOu
         };
     }
 
-    static bool Excluded(Op op) => op is Op.A32_Exclusive or Op.T32_ExclusiveWord or Op.T32_ExclusiveOther or Op.A32_Swp;
+    private static bool Excluded(Op op) => op is Op.A32_Exclusive or Op.T32_ExclusiveWord or Op.T32_ExclusiveOther or Op.A32_Swp;
 
     /// <summary>Writes a random block at CodeBase and decodes it like the dispatcher would.</summary>
-    static Block? RandomBlock(Random rng, bool thumb, int maxInsts, bool forUnicorn)
+    private static Block? RandomBlock(Random rng, bool thumb, int maxInsts, bool forUnicorn)
     {
         var code = new List<byte>();
         uint addr = CodeBase;
@@ -249,26 +249,26 @@ public sealed unsafe partial class NativeJitTests(GuestMemoryFixture fx, ITestOu
         // pad with a branch-to-self so the builder stops inside the written code
         code.AddRange(thumb ? [0xFE, 0xE7] : [0xFE, 0xFF, 0xFF, 0xEA]);
         code.ToArray().CopyTo(GuestMemory.Span(CodeBase, 0x1000));
-        var b = BlockBuilder.Build(CodeBase, thumb);
+        Block b = BlockBuilder.Build(CodeBase, thumb);
         // drop the padding branch unless the random code ran into it (it is the natural end otherwise)
         return b;
     }
 
-    struct Snapshot
+    private struct Snapshot
     {
         public uint[] R; public uint Cpsr, Fpscr, Exit, SvcImm, SvcPc, Q, GE, ExclusiveValid, ExclusiveAddr, TpidrUrw; public ulong[] D; public byte[] Mem;
         public string? Error;
     }
 
-    static Snapshot Take(CpuState* s, string? error)
+    private static Snapshot Take(CpuState* s, string? error)
     {
-        var r = new uint[16];
+        uint[] r = new uint[16];
         for (int i = 0; i < 16; i++)
         {
             r[i] = s->R[i];
         }
 
-        var d = new ulong[32];
+        ulong[] d = new ulong[32];
         for (int i = 0; i < 32; i++)
         {
             d[i] = s->D[i];
@@ -293,7 +293,7 @@ public sealed unsafe partial class NativeJitTests(GuestMemoryFixture fx, ITestOu
         };
     }
 
-    static string Diff(Snapshot a, Snapshot b)
+    private static string Diff(Snapshot a, Snapshot b)
     {
         var sb = new StringBuilder();
         if (a.Error != b.Error)
@@ -364,7 +364,7 @@ public sealed unsafe partial class NativeJitTests(GuestMemoryFixture fx, ITestOu
         return sb.ToString();
     }
 
-    sealed class RandomState
+    private sealed class RandomState
     {
         public uint[] Regs = new uint[15];
         public uint Flags, Fpscr;
@@ -412,18 +412,18 @@ public sealed unsafe partial class NativeJitTests(GuestMemoryFixture fx, ITestOu
         }
     }
 
-    static string DescribeNative(Block b, CompiledBlock cb)
+    private static string DescribeNative(Block b, CompiledBlock cb)
     {
-        var ir = new ArmFrontend().Translate(b);
+        IrBlock ir = new ArmFrontend().Translate(b);
         IrPasses.DeadCode(ir);
         var info = (NativeCodeInfo)cb.Tag!;
         return $"guest: {string.Join(" ", b.Insts.Select(i => $"{i.Address:X}:{i.Raw:X8}:{i.Op}{(i.Cond != 14 ? $"/c{i.Cond}" : "")}"))}\nIR:\n{ir}\nx64:\n{info.Disassemble(cb.NativeEntry)}";
     }
 
     /// <summary>Lets the background workers compile what the last run queued (no guessed sleep: CI hosts are slow).</summary>
-    static void WaitForJit() => Assert.True(Jit.WaitIdle(TimeSpan.FromSeconds(60)), "the JIT queue did not drain");
+    private static void WaitForJit() => Assert.True(Jit.WaitIdle(TimeSpan.FromSeconds(60)), "the JIT queue did not drain");
 
-    static string? Guard(Action a)
+    private static string? Guard(Action a)
     {
         try
         {
@@ -437,7 +437,7 @@ public sealed unsafe partial class NativeJitTests(GuestMemoryFixture fx, ITestOu
     }
 
     /// <summary>Runs native code for one block without linking (the dispatcher's per-block contract).</summary>
-    static void RunNative(CpuState* s, nint entry)
+    private static void RunNative(CpuState* s, nint entry)
     {
         s->CycleAcc = 0;
         s->CheckWindow = 0;
@@ -495,7 +495,7 @@ public sealed unsafe partial class NativeJitTests(GuestMemoryFixture fx, ITestOu
         ];
         void Load(uint patchAdd)
         {
-            var code = GuestMemory.Span(CodeBase, 0x1000);
+            Span<byte> code = GuestMemory.Span(CodeBase, 0x1000);
             code.Clear();
             for (int i = 0; i < arm.Length; i++)
             {
@@ -510,10 +510,10 @@ public sealed unsafe partial class NativeJitTests(GuestMemoryFixture fx, ITestOu
 
         long oldRate = CpuCore.InstructionsPerSecond;
         long oldHot = NativeX64Compiler.Instance.HotInstructions;
-        var oldChain = Jit.Mode;
+        string oldChain = Jit.Mode;
         CpuCore.InstructionsPerSecond = 0;
         NativeX64Compiler.Instance.HotInstructions = 1;
-        using var jitOn = JitTestState.Enable(); // other tests' emulators may have switched the JIT off
+        using JitTestState.Scope jitOn = JitTestState.Enable(); // other tests' emulators may have switched the JIT off
         try
         {
             (uint[] Regs, byte[] Mem, long Blocks, long Insts, long Cycles) Run(string backend, uint patch)
@@ -522,7 +522,7 @@ public sealed unsafe partial class NativeJitTests(GuestMemoryFixture fx, ITestOu
                 Load(patch);
                 var cache = new BlockCache();
                 using var core = new CpuCore(cache);
-                var s = core.State;
+                CpuState* s = core.State;
                 s->R[13] = DataBase + 0xF000;
                 s->R[15] = CodeBase;
                 GuestMemory.Span(DataBase, 0xF000).Clear();
@@ -532,20 +532,20 @@ public sealed unsafe partial class NativeJitTests(GuestMemoryFixture fx, ITestOu
                     s->R[15] = CodeBase;
                     s->Thumb = 0;
                     s->R[13] = DataBase + 0xF000;
-                    var exit = core.Run();
+                    ExitReason exit = core.Run();
                     Assert.Equal(ExitReason.Svc, exit);
                     Assert.Equal(0x42u, s->SvcImm);
                     WaitForJit();
                 }
-                var regs = Enumerable.Range(0, 16).Select(i => s->R[i]).Append(s->Cpsr).ToArray();
+                uint[] regs = Enumerable.Range(0, 16).Select(i => s->R[i]).Append(s->Cpsr).ToArray();
                 return (regs, GuestMemory.Span(DataBase, 0xF000).ToArray(), core.BlocksExecuted, core.InstructionsExecuted, core.BlockCycles);
             }
 
             long links0 = NativeRuntime.Links;
             foreach (uint patch in new uint[] { 0xE0800002, 0xE0400002 }) // add r0,r0,r2 / sub r0,r0,r2
             {
-                var interp = Run("interp", patch);
-                var native = Run("native", patch);
+                (uint[] Regs, byte[] Mem, long Blocks, long Insts, long Cycles) interp = Run("interp", patch);
+                (uint[] Regs, byte[] Mem, long Blocks, long Insts, long Cycles) native = Run("native", patch);
                 Assert.Equal(interp.Regs, native.Regs);
                 Assert.True(interp.Mem.AsSpan().SequenceEqual(native.Mem), "memory differs");
                 Assert.Equal(interp.Blocks, native.Blocks);
@@ -581,7 +581,7 @@ public sealed unsafe partial class NativeJitTests(GuestMemoryFixture fx, ITestOu
         string[] thumbFull = ["E8501F00", "3101", "E8401200", "E7FE"];  // ldrex r1,[r0]; adds r1,#1; strex r2,r1,[r0]; b .
         string[] thumbStore = ["E8401200", "E7FE"];
         uint addr = DataBase + 0x100;
-        var s = CpuState.Allocate();
+        CpuState* s = CpuState.Allocate();
         try
         {
             for (int scenario = 0; scenario < 6; scenario++)
@@ -590,14 +590,14 @@ public sealed unsafe partial class NativeJitTests(GuestMemoryFixture fx, ITestOu
                 var bytes = new List<byte>();
                 if (!thumb)
                 {
-                    foreach (var w in storeOnly ? armStore : armFull)
+                    foreach (uint w in storeOnly ? armStore : armFull)
                     {
                         bytes.AddRange(BitConverter.GetBytes(w));
                     }
                 }
                 else
                 {
-                    foreach (var w in storeOnly ? thumbStore : thumbFull)
+                    foreach (string w in storeOnly ? thumbStore : thumbFull)
                     {
                         uint v = Convert.ToUInt32(w, 16);
                         if (w.Length > 4)
@@ -612,10 +612,10 @@ public sealed unsafe partial class NativeJitTests(GuestMemoryFixture fx, ITestOu
                 }
 
                 bytes.ToArray().CopyTo(GuestMemory.Span(CodeBase, 0x1000));
-                var b = BlockBuilder.Build(CodeBase, thumb);
-                var cb = NativeX64Compiler.Instance.Compile(b)!;
+                Block b = BlockBuilder.Build(CodeBase, thumb);
+                CompiledBlock cb = NativeX64Compiler.Instance.Compile(b)!;
                 int genIdx = (int)((addr >> 3) & (VitaSharp.Core.Cpu.Arm.ExclusiveStripes - 1));
-                var gens = VitaSharp.Core.Cpu.Arm.s_exclusiveGens;
+                uint[] gens = VitaSharp.Core.Cpu.Arm.s_exclusiveGens;
 
                 (Snapshot Snap, uint GenDelta) Run(bool native)
                 {
@@ -668,8 +668,8 @@ public sealed unsafe partial class NativeJitTests(GuestMemoryFixture fx, ITestOu
 
                     return (Take(s, null), gens[genIdx] - g0);
                 }
-                var i = Run(false);
-                var n = Run(true);
+                (Snapshot Snap, uint GenDelta) i = Run(false);
+                (Snapshot Snap, uint GenDelta) n = Run(true);
                 string diff = Diff(i.Snap, n.Snap);
                 Assert.True(diff.Length == 0, $"scenario {scenario}: {diff}");
                 Assert.Equal(i.GenDelta, n.GenDelta);
@@ -696,7 +696,7 @@ public sealed unsafe partial class NativeJitTests(GuestMemoryFixture fx, ITestOu
         string[] thumbStore = ["E8C02374", "E7FE"];
         uint addr = DataBase + 0x100;
         const ulong Mem0 = 41 | (7ul << 32);
-        var s = CpuState.Allocate();
+        CpuState* s = CpuState.Allocate();
         try
         {
             for (int scenario = 0; scenario < 6; scenario++)
@@ -705,14 +705,14 @@ public sealed unsafe partial class NativeJitTests(GuestMemoryFixture fx, ITestOu
                 var bytes = new List<byte>();
                 if (!thumb)
                 {
-                    foreach (var w in storeOnly ? armStore : armFull)
+                    foreach (uint w in storeOnly ? armStore : armFull)
                     {
                         bytes.AddRange(BitConverter.GetBytes(w));
                     }
                 }
                 else
                 {
-                    foreach (var w in storeOnly ? thumbStore : thumbFull)
+                    foreach (string w in storeOnly ? thumbStore : thumbFull)
                     {
                         uint v = Convert.ToUInt32(w, 16);
                         if (w.Length > 4)
@@ -727,11 +727,11 @@ public sealed unsafe partial class NativeJitTests(GuestMemoryFixture fx, ITestOu
                 }
 
                 bytes.ToArray().CopyTo(GuestMemory.Span(CodeBase, 0x1000));
-                var b = BlockBuilder.Build(CodeBase, thumb);
-                var cb = NativeX64Compiler.Instance.Compile(b)!;
+                Block b = BlockBuilder.Build(CodeBase, thumb);
+                CompiledBlock cb = NativeX64Compiler.Instance.Compile(b)!;
                 Assert.Equal(0, new ArmFrontend().Translate(b).Callouts);
                 int genIdx = (int)((addr >> 3) & (VitaSharp.Core.Cpu.Arm.ExclusiveStripes - 1));
-                var gens = VitaSharp.Core.Cpu.Arm.s_exclusiveGens;
+                uint[] gens = VitaSharp.Core.Cpu.Arm.s_exclusiveGens;
 
                 (Snapshot Snap, uint GenDelta) Run(bool native)
                 {
@@ -787,8 +787,8 @@ public sealed unsafe partial class NativeJitTests(GuestMemoryFixture fx, ITestOu
 
                     return (Take(s, null), gens[genIdx] - g0);
                 }
-                var i = Run(false);
-                var n = Run(true);
+                (Snapshot Snap, uint GenDelta) i = Run(false);
+                (Snapshot Snap, uint GenDelta) n = Run(true);
                 string diff = Diff(i.Snap, n.Snap);
                 Assert.True(diff.Length == 0, $"scenario {scenario}: {diff}");
                 Assert.Equal(i.GenDelta, n.GenDelta);
@@ -819,7 +819,7 @@ public sealed unsafe partial class NativeJitTests(GuestMemoryFixture fx, ITestOu
         // rev r1, r0; vmov d1, r1, r1; vzip.8 d1, d1; vzip.16 q0, q0; vcvt.f32.u32 q0, q0, #32; b .
         string[] code = ["BA01", "EC411B11", "FFB21181", "FFB601C0", "FFA00E50", "E7FE"];
         var bytes = new List<byte>();
-        foreach (var w in code)
+        foreach (string w in code)
         {
             uint v = Convert.ToUInt32(w, 16);
             if (w.Length > 4)
@@ -832,9 +832,9 @@ public sealed unsafe partial class NativeJitTests(GuestMemoryFixture fx, ITestOu
             }
         }
         bytes.ToArray().CopyTo(GuestMemory.Span(CodeBase, 0x1000));
-        var b = BlockBuilder.Build(CodeBase, true);
-        var cb = NativeX64Compiler.Instance.Compile(b)!;
-        var s = CpuState.Allocate();
+        Block b = BlockBuilder.Build(CodeBase, true);
+        CompiledBlock cb = NativeX64Compiler.Instance.Compile(b)!;
+        CpuState* s = CpuState.Allocate();
         try
         {
             foreach (bool native in new[] { false, true })
@@ -888,7 +888,7 @@ public sealed unsafe partial class NativeJitTests(GuestMemoryFixture fx, ITestOu
             0x1AFFFFF8, // 18 bne loop
             0xEF000042, // 1C svc #0x42
         ];
-        var code = GuestMemory.Span(CodeBase, 0x1000);
+        Span<byte> code = GuestMemory.Span(CodeBase, 0x1000);
         code.Clear();
         for (int i = 0; i < arm.Length; i++)
         {
@@ -897,37 +897,37 @@ public sealed unsafe partial class NativeJitTests(GuestMemoryFixture fx, ITestOu
 
         GuestMemory.Write(counter, 0u);
         long oldRate = CpuCore.InstructionsPerSecond, oldHot = NativeX64Compiler.Instance.HotInstructions;
-        var oldMode = Jit.Mode;
+        string oldMode = Jit.Mode;
         CpuCore.InstructionsPerSecond = 0;
         NativeX64Compiler.Instance.HotInstructions = 1;
-        using var jitOn = JitTestState.Enable(); // other tests' emulators may have switched the JIT off
+        using JitTestState.Scope jitOn = JitTestState.Enable(); // other tests' emulators may have switched the JIT off
         const int Threads = 4, Per = 1_000_000;
         try
         {
             Assert.True(Jit.Select("native"));
             var cache = new BlockCache();
-            var threads = Enumerable.Range(0, Threads).Select(_ => new Thread(() =>
+            Thread[] threads = Enumerable.Range(0, Threads).Select(_ => new Thread(() =>
             {
                 using var core = new CpuCore(cache);
-                var s = core.State;
+                CpuState* s = core.State;
                 s->R[0] = counter;
                 s->R[3] = Per;
                 s->R[15] = CodeBase;
                 while (true)
                 {
-                    var e = core.Run();
+                    ExitReason e = core.Run();
                     if (e == ExitReason.Svc)
                     {
                         break;
                     }
                 }
             })).ToArray();
-            foreach (var t in threads)
+            foreach (Thread? t in threads)
             {
                 t.Start();
             }
 
-            foreach (var t in threads)
+            foreach (Thread? t in threads)
             {
                 t.Join();
             }
@@ -952,7 +952,7 @@ public sealed unsafe partial class NativeJitTests(GuestMemoryFixture fx, ITestOu
     {
         EnsureGuestPages();
         // loop: r0 += 3 (patched to r0 += 5), 4096 times, then svc
-        uint[] prog(uint addImm) =>
+        uint[] LoopProgram(uint addImm) =>
         [
             0xE3A00000, // mov r0, #0
             0xE3A01000, // mov r1, #0
@@ -963,21 +963,21 @@ public sealed unsafe partial class NativeJitTests(GuestMemoryFixture fx, ITestOu
             0xEF000042, // svc #0x42
         ];
         long oldRate = CpuCore.InstructionsPerSecond, oldHot = NativeX64Compiler.Instance.HotInstructions;
-        var oldMode = Jit.Mode;
+        string oldMode = Jit.Mode;
         CpuCore.InstructionsPerSecond = 0;
         NativeX64Compiler.Instance.HotInstructions = 1;
-        using var jitOn = JitTestState.Enable(); // other tests' emulators may have switched the JIT off
+        using JitTestState.Scope jitOn = JitTestState.Enable(); // other tests' emulators may have switched the JIT off
         try
         {
             Assert.True(Jit.Select("native"));
             var cache = new BlockCache();
             using var core = new CpuCore(cache);
-            var s = core.State;
+            CpuState* s = core.State;
             void Load(uint imm)
             {
-                var c = GuestMemory.Span(CodeBase, 0x1000);
+                Span<byte> c = GuestMemory.Span(CodeBase, 0x1000);
                 c.Clear();
-                var p = prog(imm);
+                uint[] p = LoopProgram(imm);
                 for (int i = 0; i < p.Length; i++)
                 {
                     BitConverter.GetBytes(p[i]).CopyTo(c[(i * 4)..]);
@@ -996,7 +996,7 @@ public sealed unsafe partial class NativeJitTests(GuestMemoryFixture fx, ITestOu
                 Assert.Equal(3u * 0x1000, RunOnce());
                 WaitForJit();
             }
-            var loop = cache.Get(CodeBase + 8, false);
+            Block loop = cache.Get(CodeBase + 8, false);
             Assert.True(loop.NativeEntry != 0, "loop block was not compiled natively");
             Load(5);
             cache.Invalidate(CodeBase, 0x1000);
@@ -1036,17 +1036,17 @@ public sealed unsafe partial class NativeJitTests(GuestMemoryFixture fx, ITestOu
             0xEF000042, // 20 svc #0x42
         ];
         long oldRate = CpuCore.InstructionsPerSecond, oldHot = NativeX64Compiler.Instance.HotInstructions, oldIl = IlJitCompiler.Instance.HotInstructions;
-        var oldMode = Jit.Mode;
+        string oldMode = Jit.Mode;
         CpuCore.InstructionsPerSecond = 0;
         NativeX64Compiler.Instance.HotInstructions = 1;
-        using var jitOn = JitTestState.Enable(); // other tests' emulators may have switched the JIT off
+        using JitTestState.Scope jitOn = JitTestState.Enable(); // other tests' emulators may have switched the JIT off
         IlJitCompiler.Instance.HotInstructions = 200; // budget = max(64, 200 / 7) executions
         try
         {
             (uint[] Regs, ulong[] D, long Blocks, long Insts, long Cycles) Run(string backend)
             {
                 Assert.True(Jit.Select(backend));
-                var code = GuestMemory.Span(CodeBase, 0x1000);
+                Span<byte> code = GuestMemory.Span(CodeBase, 0x1000);
                 code.Clear();
                 for (int i = 0; i < arm.Length; i++)
                 {
@@ -1054,7 +1054,7 @@ public sealed unsafe partial class NativeJitTests(GuestMemoryFixture fx, ITestOu
                 }
 
                 using var core = new CpuCore(new BlockCache());
-                var s = core.State;
+                CpuState* s = core.State;
                 for (int i = 0; i < 32; i++)
                 {
                     s->D[i] = 0x0001000200030004ul * (ulong)(i + 1);
@@ -1071,8 +1071,8 @@ public sealed unsafe partial class NativeJitTests(GuestMemoryFixture fx, ITestOu
                     core.BlocksExecuted, core.InstructionsExecuted, core.BlockCycles);
             }
             long tiered0 = NativeRuntime.TieredUp;
-            var interp = Run("interp");
-            var native = Run("native");
+            (uint[] Regs, ulong[] D, long Blocks, long Insts, long Cycles) interp = Run("interp");
+            (uint[] Regs, ulong[] D, long Blocks, long Insts, long Cycles) native = Run("native");
             Assert.Equal(interp.Regs, native.Regs);
             Assert.Equal(interp.D, native.D);
             Assert.Equal(interp.Blocks, native.Blocks);
@@ -1102,7 +1102,7 @@ public sealed unsafe partial class NativeJitTests(GuestMemoryFixture fx, ITestOu
         bool thumb = spec[0] == 'T';
         EnsureGuestPages();
         var bytes = new List<byte>();
-        foreach (var w in spec[2..].Split(','))
+        foreach (string w in spec[2..].Split(','))
         {
             uint v = Convert.ToUInt32(w, 16);
             if (!thumb)
@@ -1118,14 +1118,14 @@ public sealed unsafe partial class NativeJitTests(GuestMemoryFixture fx, ITestOu
                 bytes.AddRange([(byte)v, (byte)(v >> 8)]);
             }
         }
-        var s = CpuState.Allocate();
+        CpuState* s = CpuState.Allocate();
         if (Environment.GetEnvironmentVariable(EnvVars.HuntNative) == "1")
         {
             // native vs interpreter from many random states: print the first mismatch in full
             bytes.ToArray().CopyTo(GuestMemory.Span(CodeBase, 0x1000));
-            var nb = BlockBuilder.Build(CodeBase, thumb);
-            var cb = NativeX64Compiler.Instance.Compile(nb)!;
-            var code = GuestMemory.Span(CodeBase, 0x1000).ToArray();
+            Block nb = BlockBuilder.Build(CodeBase, thumb);
+            CompiledBlock cb = NativeX64Compiler.Instance.Compile(nb)!;
+            byte[] code = GuestMemory.Span(CodeBase, 0x1000).ToArray();
             for (int seed = 0; seed < 20000; seed++)
             {
                 var st = new RandomState(new Random(seed));
@@ -1146,7 +1146,7 @@ public sealed unsafe partial class NativeJitTests(GuestMemoryFixture fx, ITestOu
 
                 st.Apply(s, thumb);
                 code.CopyTo(GuestMemory.Span(CodeBase, 0x1000));
-                var n = Take(s, Guard(() => RunNative(s, cb.NativeEntry)));
+                Snapshot n = Take(s, Guard(() => RunNative(s, cb.NativeEntry)));
                 string d = Diff(a, n);
                 if (d.Length == 0)
                 {
@@ -1162,16 +1162,16 @@ public sealed unsafe partial class NativeJitTests(GuestMemoryFixture fx, ITestOu
         for (int seed = 0; seed < 20000; seed++)
         {
             bytes.ToArray().CopyTo(GuestMemory.Span(CodeBase, 0x1000));
-            var b = BlockBuilder.Build(CodeBase, thumb);
+            Block b = BlockBuilder.Build(CodeBase, thumb);
             var st = new RandomState(new Random(seed));
             st.Apply(s, thumb);
-            Trace?.WriteLine($"seed {seed} regs {string.Join(" ", st.Regs.Select(r => r.ToString("X8")))}");
-            Trace?.Flush();
+            s_trace?.WriteLine($"seed {seed} regs {string.Join(" ", st.Regs.Select(r => r.ToString("X8")))}");
+            s_trace?.Flush();
             for (int i = 0; i < b.Insts.Length; i++)
             {
                 var one = new Block { Start = b.Insts[i].Address, Thumb = thumb, Insts = [b.Insts[i]], End = b.Insts[i].Address + b.Insts[i].Size };
-                Trace?.WriteLine($"  {b.Insts[i]} r=[{string.Join(" ", Enumerable.Range(0, 16).Select(r => s->R[r].ToString("X8")))}]");
-                Trace?.Flush();
+                s_trace?.WriteLine($"  {b.Insts[i]} r=[{string.Join(" ", Enumerable.Range(0, 16).Select(r => s->R[r].ToString("X8")))}]");
+                s_trace?.Flush();
                 Guard(() => CpuCore.Interpret(s, one));
             }
         }
@@ -1191,7 +1191,7 @@ public sealed unsafe partial class NativeJitTests(GuestMemoryFixture fx, ITestOu
         EnsureGuestPages();
         X64Emitter.VerifyAllocation = true;
         var bytes = new List<byte>();
-        foreach (var w in words.Split(','))
+        foreach (string w in words.Split(','))
         {
             uint v = Convert.ToUInt32(w, 16);
             if (!thumb)
@@ -1208,10 +1208,10 @@ public sealed unsafe partial class NativeJitTests(GuestMemoryFixture fx, ITestOu
             }
         }
         bytes.ToArray().CopyTo(GuestMemory.Span(CodeBase, 0x1000));
-        var b = BlockBuilder.Build(CodeBase, thumb);
-        var cb = NativeX64Compiler.Instance.Compile(b)!;
+        Block b = BlockBuilder.Build(CodeBase, thumb);
+        CompiledBlock cb = NativeX64Compiler.Instance.Compile(b)!;
         output.WriteLine(DescribeNative(b, cb));
-        var s = CpuState.Allocate();
+        CpuState* s = CpuState.Allocate();
         try
         {
             var st = new RandomState(new Random(5));
@@ -1219,12 +1219,12 @@ public sealed unsafe partial class NativeJitTests(GuestMemoryFixture fx, ITestOu
             s->R[13] = DataBase + 0x100;
             s->R[0] = DataBase + 0x200;
             CpuCore.Interpret(s, b);
-            var interp = Take(s, null);
+            Snapshot interp = Take(s, null);
             st.Apply(s, thumb);
             s->R[13] = DataBase + 0x100;
             s->R[0] = DataBase + 0x200;
             RunNative(s, cb.NativeEntry);
-            var native = Take(s, null);
+            Snapshot native = Take(s, null);
             output.WriteLine($"accounting: blocks {s->NBlocks} instr {s->NInstr} cycles {s->CycleAcc} (expected 1/{b.Insts.Length}/{b.Cycles}) slot {s->LastExitSlot:X}");
             Assert.Equal("", Diff(interp, native));
             Assert.Equal(b.Cycles, s->CycleAcc);
@@ -1267,7 +1267,7 @@ public sealed unsafe partial class NativeJitTests(GuestMemoryFixture fx, ITestOu
         }
 
         var rng = new Random(seed);
-        var s = CpuState.Allocate();
+        CpuState* s = CpuState.Allocate();
         var failures = new Dictionary<string, (int, string)>();
         int compared = 0, detailed = 0;
         try
@@ -1298,7 +1298,7 @@ public sealed unsafe partial class NativeJitTests(GuestMemoryFixture fx, ITestOu
 
                         ins = thumb ? (((arm & 0x01000000) != 0 ? 0xFF000000u : 0xEF000000u) | (arm & 0x00FFFFFF)) : arm;
                     }
-                    var d = !thumb ? Decoder.DecodeArm(ins, CodeBase) : Decoder.DecodeThumb32(ins, CodeBase, false, 14);
+                    DecodedInst d = !thumb ? Decoder.DecodeArm(ins, CodeBase) : Decoder.DecodeThumb32(ins, CodeBase, false, 14);
                     if (d.EndsBlock || CpuFuzzTests.IsUnpredictable(d, thumb))
                     {
                         continue;
@@ -1313,7 +1313,7 @@ public sealed unsafe partial class NativeJitTests(GuestMemoryFixture fx, ITestOu
 
                 code.AddRange(thumb ? [0xFE, 0xE7] : [0xFE, 0xFF, 0xFF, 0xEA]);
                 code.ToArray().CopyTo(GuestMemory.Span(CodeBase, 0x1000));
-                var b = BlockBuilder.Build(CodeBase, thumb);
+                Block b = BlockBuilder.Build(CodeBase, thumb);
                 var st = new RandomState(rng);
                 for (int i = 0; i < 32; i++)
                 {
@@ -1323,10 +1323,10 @@ public sealed unsafe partial class NativeJitTests(GuestMemoryFixture fx, ITestOu
                 st.Fpscr = rng.Next(5) != 0 ? (uint)rng.Next(16) << 28 | 0x0300_0000 : (uint)rng.Next(16) << 28 | (uint)rng.Next(16) << 22;
 
                 st.Apply(s, thumb);
-                var interp = Take(s, Guard(() => CpuCore.Interpret(s, b)));
-                var cb = NativeX64Compiler.Instance.Compile(b)!;
+                Snapshot interp = Take(s, Guard(() => CpuCore.Interpret(s, b)));
+                CompiledBlock cb = NativeX64Compiler.Instance.Compile(b)!;
                 st.Apply(s, thumb);
-                var native = Take(s, Guard(() => RunNative(s, cb.NativeEntry)));
+                Snapshot native = Take(s, Guard(() => RunNative(s, cb.NativeEntry)));
                 compared++;
                 string diff = Diff(interp, native);
                 if (diff.Length > 0)
@@ -1345,7 +1345,7 @@ public sealed unsafe partial class NativeJitTests(GuestMemoryFixture fx, ITestOu
             CpuState.Free(s);
         }
         output.WriteLine($"compared {compared} VFP blocks; failing kinds {failures.Count}");
-        foreach (var (k, (count, ex)) in failures.OrderByDescending(f => f.Value.Item1).Take(40))
+        foreach ((string? k, (int count, string? ex)) in failures.OrderByDescending(f => f.Value.Item1).Take(40))
         {
             output.WriteLine($"{k,-40} x{count,-5} {ex}");
         }
@@ -1360,7 +1360,7 @@ public sealed unsafe partial class NativeJitTests(GuestMemoryFixture fx, ITestOu
     [Trait("Category", "Slow")]
     public void AllBackendsMatchInterpreter(bool thumb, int iterations, int seed) => Differential(thumb, iterations, seed, withIl: true, spillStress: false);
 
-    void Differential(bool thumb, int iterations, int seed, bool withIl, bool spillStress)
+    private void Differential(bool thumb, int iterations, int seed, bool withIl, bool spillStress)
     {
         using var arena = new ArenaScope(); // the code of these throwaway blocks is reclaimed afterwards
         EnsureGuestPages();
@@ -1379,14 +1379,14 @@ public sealed unsafe partial class NativeJitTests(GuestMemoryFixture fx, ITestOu
         }
 
         var rng = new Random(seed);
-        var s = CpuState.Allocate();
+        CpuState* s = CpuState.Allocate();
         var failures = new Dictionary<string, (int Count, string Example)>();
         int compared = 0, insts = 0, callouts = 0, unstable = 0, detailed = 0;
         try
         {
             for (int it = 0; it < iterations; it++)
             {
-                var b = RandomBlock(rng, thumb, 12, forUnicorn: false);
+                Block? b = RandomBlock(rng, thumb, 12, forUnicorn: false);
                 if (b == null)
                 {
                     continue;
@@ -1396,16 +1396,16 @@ public sealed unsafe partial class NativeJitTests(GuestMemoryFixture fx, ITestOu
 
                 // Random addresses reach memory outside the restored windows (and the code page holds literals):
                 // rerun the interpreter until it reproduces itself, so every run starts from the same memory.
-                var codeSnap = GuestMemory.Span(CodeBase, 0x1000).ToArray();
+                byte[] codeSnap = GuestMemory.Span(CodeBase, 0x1000).ToArray();
                 void Restore()
                 {
                     st.Apply(s, thumb);
                     codeSnap.CopyTo(GuestMemory.Span(CodeBase, 0x1000));
                 }
-                if (Trace != null)
+                if (s_trace != null)
                 {
-                    Trace.WriteLine($"{it} {(thumb ? "T" : "A")} {string.Join(",", b.Insts.Select(i => $"{i.Raw:X8}:{i.Op}"))}");
-                    Trace.Flush();
+                    s_trace.WriteLine($"{it} {(thumb ? "T" : "A")} {string.Join(",", b.Insts.Select(i => $"{i.Raw:X8}:{i.Op}"))}");
+                    s_trace.Flush();
                 }
                 Snapshot interp = default, prev = default;
                 bool stable = false;
@@ -1422,15 +1422,15 @@ public sealed unsafe partial class NativeJitTests(GuestMemoryFixture fx, ITestOu
                     continue;
                 }
 
-                if (Trace != null)
+                if (s_trace != null)
                 {
-                    Trace.WriteLine("  native");
-                    Trace.Flush();
+                    s_trace.WriteLine("  native");
+                    s_trace.Flush();
                 }
-                var cb = NativeX64Compiler.Instance.Compile(b);
+                CompiledBlock? cb = NativeX64Compiler.Instance.Compile(b);
                 Assert.NotNull(cb);
                 Restore();
-                var native = Take(s, Guard(() => RunNative(s, cb!.NativeEntry)));
+                Snapshot native = Take(s, Guard(() => RunNative(s, cb!.NativeEntry)));
                 bool accountingOk = native.Error != null || s->NBlocks == 1 && s->NInstr == b.Insts.Length && s->CycleAcc == b.Cycles;
                 compared++;
                 insts += b.Insts.Length;
@@ -1452,9 +1452,9 @@ public sealed unsafe partial class NativeJitTests(GuestMemoryFixture fx, ITestOu
 
                 if (withIl)
                 {
-                    var il = IlJitCompiler.Instance.Compile(b)!;
+                    CompiledBlock il = IlJitCompiler.Instance.Compile(b)!;
                     Restore();
-                    var ils = Take(s, Guard(() => il.Managed!(s)));
+                    Snapshot ils = Take(s, Guard(() => il.Managed!(s)));
                     string di = Diff(interp, ils);
                     if (di.Length > 0)
                     {
@@ -1469,13 +1469,13 @@ public sealed unsafe partial class NativeJitTests(GuestMemoryFixture fx, ITestOu
             X64Emitter.MaxTempRegisters = oldMax;
             CpuState.Free(s);
         }
-        foreach (var c in ArmFrontend.CalloutCount)
+        foreach (long c in ArmFrontend.CalloutCount)
         {
             callouts += (int)Math.Min(c, int.MaxValue);
         }
 
         output.WriteLine($"compared {compared} blocks, {insts} instructions (callouts so far {callouts}, {unstable} blocks skipped: memory-dependent); failing kinds {failures.Count}");
-        foreach (var (k, (count, ex)) in failures.OrderByDescending(f => f.Value.Count).Take(40))
+        foreach ((string? k, (int count, string? ex)) in failures.OrderByDescending(f => f.Value.Count).Take(40))
         {
             output.WriteLine($"{k,-40} x{count,-5} {ex}");
         }
@@ -1483,12 +1483,12 @@ public sealed unsafe partial class NativeJitTests(GuestMemoryFixture fx, ITestOu
         Assert.True(failures.Count == 0, $"{failures.Count} kinds of differences (see output)");
     }
 
-    static void Record(Dictionary<string, (int, string)> f, string backend, Block b, string diff)
+    private static void Record(Dictionary<string, (int, string)> f, string backend, Block b, string diff)
     {
         // classify by the first instruction's op of the block (the usual culprit in a 1-3 instruction repro)
         string key = backend + ":" + string.Join(",", b.Insts.Select(i => i.Op).Distinct().Take(3));
         string ex = $"[{string.Join(" ", b.Insts.Select(i => $"{i.Raw:X8}{(i.Cond != 14 ? $"/c{i.Cond}" : "")}"))}]:{diff}";
-        if (f.TryGetValue(key, out var v))
+        if (f.TryGetValue(key, out (int, string) v))
         {
             f[key] = (v.Item1 + 1, v.Item2);
         }
@@ -1500,7 +1500,7 @@ public sealed unsafe partial class NativeJitTests(GuestMemoryFixture fx, ITestOu
 
     // ------------------------------------------------------------------ against Unicorn
 
-    static readonly int[] RegIds =
+    private static readonly int[] s_regIds =
     [
         UcArm.UC_ARM_REG_R0, UcArm.UC_ARM_REG_R1, UcArm.UC_ARM_REG_R2, UcArm.UC_ARM_REG_R3, UcArm.UC_ARM_REG_R4,
         UcArm.UC_ARM_REG_R5, UcArm.UC_ARM_REG_R6, UcArm.UC_ARM_REG_R7, UcArm.UC_ARM_REG_R8, UcArm.UC_ARM_REG_R9,
@@ -1517,21 +1517,21 @@ public sealed unsafe partial class NativeJitTests(GuestMemoryFixture fx, ITestOu
         using var arena = new ArenaScope(); // the code of these throwaway blocks is reclaimed afterwards
         EnsureGuestPages();
         var rng = new Random(seed);
-        var s = CpuState.Allocate();
+        CpuState* s = CpuState.Allocate();
         var failures = new Dictionary<string, (int, string)>();
         int compared = 0, skipped = 0;
         try
         {
             for (int it = 0; it < iterations; it++)
             {
-                var b = RandomBlock(rng, thumb, 6, forUnicorn: true);
+                Block? b = RandomBlock(rng, thumb, 6, forUnicorn: true);
                 if (b == null)
                 {
                     continue;
                 }
                 // only the random instructions: a block that ran into the padding branch is cut before it
                 var st = new RandomState(rng);
-                var codeBytes = GuestMemory.Span(CodeBase, 0x1000).ToArray();
+                byte[] codeBytes = GuestMemory.Span(CodeBase, 0x1000).ToArray();
 
                 Unicorn? uc = null;
                 try
@@ -1544,7 +1544,7 @@ public sealed unsafe partial class NativeJitTests(GuestMemoryFixture fx, ITestOu
                     uc.RegWrite(UcArm.UC_ARM_REG_CPSR, (long)(st.Flags | 0x10 | (thumb ? 0x20u : 0)));
                     for (int r = 0; r < 15; r++)
                     {
-                        uc.RegWrite(RegIds[r], st.Regs[r]);
+                        uc.RegWrite(s_regIds[r], st.Regs[r]);
                     }
 
                     uc.EmuStart(CodeBase | (thumb ? 1u : 0), CodeBase + 0x800, 0, b.Insts.Length);
@@ -1557,7 +1557,7 @@ public sealed unsafe partial class NativeJitTests(GuestMemoryFixture fx, ITestOu
                 }
 
                 st.Apply(s, thumb);
-                var cb = NativeX64Compiler.Instance.Compile(b)!;
+                CompiledBlock cb = NativeX64Compiler.Instance.Compile(b)!;
                 string? err = Guard(() => RunNative(s, cb.NativeEntry));
                 if (err != null)
                 {
@@ -1569,7 +1569,7 @@ public sealed unsafe partial class NativeJitTests(GuestMemoryFixture fx, ITestOu
                 var sb = new StringBuilder();
                 for (int r = 0; r < 15; r++)
                 {
-                    uint u = (uint)uc.RegRead(RegIds[r]);
+                    uint u = (uint)uc.RegRead(s_regIds[r]);
                     if (u != s->R[r])
                     {
                         sb.Append($" R{r}: uc={u:X8} us={s->R[r]:X8}");
@@ -1587,9 +1587,9 @@ public sealed unsafe partial class NativeJitTests(GuestMemoryFixture fx, ITestOu
                     sb.Append($" CPSR: uc={ucCpsr & 0xF80F0020:X8} us={s->Cpsr & 0xF80F0020:X8}");
                 }
 
-                var ucData = new byte[DataSize];
+                byte[] ucData = new byte[DataSize];
                 uc.MemRead(DataBase, ucData);
-                var ours = GuestMemory.Span(DataBase, (int)DataSize);
+                Span<byte> ours = GuestMemory.Span(DataBase, (int)DataSize);
                 for (int i = 0; i < DataSize; i++)
                 {
                     if (ucData[i] != ours[i])
@@ -1611,7 +1611,7 @@ public sealed unsafe partial class NativeJitTests(GuestMemoryFixture fx, ITestOu
             CpuState.Free(s);
         }
         output.WriteLine($"compared {compared} blocks against Unicorn, skipped {skipped}; failing kinds {failures.Count}");
-        foreach (var (k, (count, ex)) in failures.OrderByDescending(f => f.Value.Item1).Take(40))
+        foreach ((string? k, (int count, string? ex)) in failures.OrderByDescending(f => f.Value.Item1).Take(40))
         {
             output.WriteLine($"{k,-40} x{count,-5} {ex}");
         }

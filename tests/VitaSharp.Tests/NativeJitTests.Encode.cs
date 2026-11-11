@@ -1,3 +1,5 @@
+using Iced.Intel;
+using VitaSharp.Core.Cpu;
 using VitaSharp.Core.Cpu.Native;
 
 namespace VitaSharp.Tests;
@@ -14,7 +16,7 @@ public sealed unsafe partial class NativeJitTests
         EnsureGuestPages();
         var rng = new Random(4242);
         var em = new X64Emitter();
-        var slots = (nint*)System.Runtime.InteropServices.NativeMemory.AllocZeroed(4096 * 8);
+        nint* slots = (nint*)System.Runtime.InteropServices.NativeMemory.AllocZeroed(4096 * 8);
         long fallbacks0 = X64Emitter.FastEncodeFallbacks;
         int compared = 0;
         try
@@ -22,13 +24,13 @@ public sealed unsafe partial class NativeJitTests
             for (int it = 0; it < 1500; it++)
             {
                 bool thumb = (it & 1) != 0;
-                var b = it % 3 == 0 ? MediaBlock(rng, thumb) : RandomBlock(rng, thumb, 12, forUnicorn: false);
+                Block? b = it % 3 == 0 ? MediaBlock(rng, thumb) : RandomBlock(rng, thumb, 12, forUnicorn: false);
                 if (b == null)
                 {
                     continue;
                 }
 
-                var ir = new ArmFrontend().Translate(b);
+                IrBlock ir = new ArmFrontend().Translate(b);
                 IrPasses.DeadCode(ir);
                 const ulong Rip = 0x7FF0_0000_0000;
                 var stubs = new X64Emitter.Runtime { Epilogue = Rip + 0x100000, Callout = Rip + 0x200000, DispatchTable = Rip + 0x300000 };
@@ -71,7 +73,7 @@ public sealed unsafe partial class NativeJitTests
 
             var fmt = new Iced.Intel.NasmFormatter();
             var sb = new System.Text.StringBuilder();
-            foreach (var ins in list)
+            foreach (Instruction ins in list)
             {
                 if (ins.IsJmpShortOrNear || ins.IsJccShortOrNear || ins.IsCallNear)
                 {

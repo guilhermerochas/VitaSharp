@@ -19,31 +19,31 @@ namespace VitaSharp.Tests;
 [Collection("guest")]
 public sealed class NetRealTests(GuestMemoryFixture fx) : IDisposable
 {
-    static readonly NetConfig LocalOnly = new(NetMode.Real, ["localhost"]);
-    readonly PsnAccount _savedAccount = PsnAccount.Current;
+    private static readonly NetConfig s_localOnly = new(NetMode.Real, ["localhost"]);
+    private readonly PsnAccount _savedAccount = PsnAccount.Current;
 
     public void Dispose() => PsnAccount.Current = _savedAccount;
 
-    static object? Invoke(object module, string name, object[] args) =>
+    private static object? Invoke(object module, string name, object[] args) =>
         module.GetType().GetMethod(name, BindingFlags.Instance | BindingFlags.NonPublic | BindingFlags.Public)!.Invoke(module, args);
-    static int Call(object module, string name, params object[] args) => Convert.ToInt32(Invoke(module, name, args));
+    private static int Call(object module, string name, params object[] args) => Convert.ToInt32(Invoke(module, name, args));
 
-    uint Alloc(uint size)
+    private uint Alloc(uint size)
     {
         uint p = fx.Memory.Alloc(size, "net test", MemoryRegion.User, 16);
         GuestMemory.Fill(p, 0, size);
         return p;
     }
 
-    uint Str(string s)
+    private uint Str(string s)
     {
-        var b = Encoding.UTF8.GetBytes(s);
+        byte[] b = Encoding.UTF8.GetBytes(s);
         uint p = Alloc((uint)b.Length + 1);
         b.CopyTo(GuestMemory.Span(p, b.Length));
         return p;
     }
 
-    uint Bytes(byte[] b)
+    private uint Bytes(byte[] b)
     {
         uint p = Alloc((uint)Math.Max(b.Length, 1));
         b.CopyTo(GuestMemory.Span(p, b.Length));
@@ -51,7 +51,7 @@ public sealed class NetRealTests(GuestMemoryFixture fx) : IDisposable
     }
 
     /// <summary>SceNetSockaddrIn for 127.0.0.1:port.</summary>
-    uint Sa(int port, string ip = "127.0.0.1")
+    private uint Sa(int port, string ip = "127.0.0.1")
     {
         uint p = Alloc(16);
         GuestMemory.Write<byte>(p, 16);
@@ -61,9 +61,9 @@ public sealed class NetRealTests(GuestMemoryFixture fx) : IDisposable
         return p;
     }
 
-    static int SaPort(uint sa) => (ushort)IPAddress.NetworkToHostOrder((short)GuestMemory.Read<ushort>(sa + 2));
+    private static int SaPort(uint sa) => (ushort)IPAddress.NetworkToHostOrder((short)GuestMemory.Read<ushort>(sa + 2));
 
-    uint Int(int v)
+    private uint Int(int v)
     {
         uint p = Alloc(4);
         GuestMemory.W32(p, (uint)v);
@@ -71,16 +71,16 @@ public sealed class NetRealTests(GuestMemoryFixture fx) : IDisposable
     }
 
     /// <summary>An Emulator shell with only the guest memory (SceHttp allocates the library-owned header buffers there).</summary>
-    Emulator Shell()
+    private Emulator Shell()
     {
         var emu = (Emulator)RuntimeHelpers.GetUninitializedObject(typeof(Emulator));
         typeof(Emulator).GetField("<Memory>k__BackingField", BindingFlags.Instance | BindingFlags.NonPublic)!.SetValue(emu, fx.Memory);
         return emu;
     }
 
-    Net NewNet() => new() { ConfigOverride = LocalOnly };
+    private Net NewNet() => new() { ConfigOverride = s_localOnly };
 
-    static void WaitUntilBlocked(Func<int> blocked, Task<int> waiter)
+    private static void WaitUntilBlocked(Func<int> blocked, Task<int> waiter)
     {
         Assert.True(SpinWait.SpinUntil(() => blocked() > 0 || waiter.IsCompleted, TimeSpan.FromSeconds(30)), "the wait never blocked");
         Assert.False(waiter.IsCompleted, "the call returned instead of blocking");
@@ -94,14 +94,14 @@ public sealed class NetRealTests(GuestMemoryFixture fx) : IDisposable
         Assert.False(NetConfig.Off.Permits("example.com", out _));
         var any = new NetConfig(NetMode.Real);
         Assert.True(any.Permits("example.com", out _));
-        Assert.False(any.Permits("auth.np.ac.playstation.net", out var why));
+        Assert.False(any.Permits("auth.np.ac.playstation.net", out string? why));
         Assert.Contains("Sony", why);
         Assert.False(any.Permits("PLAYSTATION.COM.", out _));
         Assert.True(any.Permits("notplaystation.net", out _));
-        Assert.True(LocalOnly.Permits("localhost", out _));
-        Assert.True(LocalOnly.PermitsAddress(IPAddress.Loopback, out _));
-        Assert.False(LocalOnly.Permits("example.com", out _));
-        Assert.False(LocalOnly.PermitsAddress(IPAddress.Parse("192.0.2.1"), out _));
+        Assert.True(s_localOnly.Permits("localhost", out _));
+        Assert.True(s_localOnly.PermitsAddress(IPAddress.Loopback, out _));
+        Assert.False(s_localOnly.Permits("example.com", out _));
+        Assert.False(s_localOnly.PermitsAddress(IPAddress.Parse("192.0.2.1"), out _));
         // an address resolved from a blocked name stays blocked even when listed by address
         var byIp = new NetConfig(NetMode.Real, ["192.0.2.7"]);
         Assert.True(byIp.PermitsAddress(IPAddress.Parse("192.0.2.7"), out _));
@@ -115,7 +115,7 @@ public sealed class NetRealTests(GuestMemoryFixture fx) : IDisposable
     [Fact]
     public void BlockedDestinationsNeverConnect()
     {
-        var net = NewNet();
+        Net net = NewNet();
         int s = Call(net, "sceNetSocket", "t", 2, 1, 0);
         Assert.True(s > 0);
         Assert.Equal(unchecked((int)0x80410133), Call(net, "sceNetConnect", s, Sa(80, "192.0.2.1"), 16u)); // ENETUNREACH
@@ -136,7 +136,7 @@ public sealed class NetRealTests(GuestMemoryFixture fx) : IDisposable
     [Fact]
     public void ResolverUsesTheHost()
     {
-        var net = NewNet();
+        Net net = NewNet();
         int rid = Call(net, "sceNetResolverCreate", "r", 0u, 0);
         uint addr = Alloc(4), err = Alloc(4);
         Assert.Equal(0, Call(net, "sceNetResolverStartNtoa", rid, "localhost", addr, 0, 0, 0));
@@ -154,22 +154,22 @@ public sealed class NetRealTests(GuestMemoryFixture fx) : IDisposable
         using var server = new TcpListener(IPAddress.Loopback, 0);
         server.Start();
         int port = ((IPEndPoint)server.LocalEndpoint).Port;
-        var net = NewNet();
+        Net net = NewNet();
         int s = Call(net, "sceNetSocket", "tcp", 2, 1, 0);
-        var accept = server.AcceptTcpClientAsync();
+        Task<TcpClient> accept = server.AcceptTcpClientAsync();
         Assert.Equal(0, Call(net, "sceNetConnect", s, Sa(port), 16u));
-        using var peer = await accept.WaitAsync(TimeSpan.FromSeconds(10));
-        var ps = peer.GetStream();
+        using TcpClient peer = await accept.WaitAsync(TimeSpan.FromSeconds(10));
+        NetworkStream ps = peer.GetStream();
 
         uint msg = Bytes("ping"u8.ToArray());
         Assert.Equal(4, Call(net, "sceNetSend", s, msg, 4u, 0));
-        var got = new byte[4];
+        byte[] got = new byte[4];
         await ps.ReadExactlyAsync(got).AsTask().WaitAsync(TimeSpan.FromSeconds(10));
         Assert.Equal("ping", Encoding.ASCII.GetString(got));
 
         // a blocking recv waits (cooperatively) until the peer sends
         uint buf = Alloc(64);
-        var recv = Task.Run(() => Call(net, "sceNetRecv", s, buf, 64u, 0));
+        Task<int> recv = Task.Run(() => Call(net, "sceNetRecv", s, buf, 64u, 0));
         WaitUntilBlocked(() => net.BlockedWaits, recv);
         await ps.WriteAsync("pong!"u8.ToArray());
         Assert.Equal(5, await recv.WaitAsync(TimeSpan.FromSeconds(10)));
@@ -194,12 +194,12 @@ public sealed class NetRealTests(GuestMemoryFixture fx) : IDisposable
         using var server = new TcpListener(IPAddress.Loopback, 0);
         server.Start();
         int port = ((IPEndPoint)server.LocalEndpoint).Port;
-        var net = NewNet();
+        Net net = NewNet();
         int s = Call(net, "sceNetSocket", "nb", 2, 1, 0);
         Assert.Equal(0, Call(net, "sceNetSetsockopt", s, 0xFFFF, 0x1100, Int(1), 4u)); // SO_NBIO
         int r = Call(net, "sceNetConnect", s, Sa(port), 16u);
         Assert.True(r is 0 or unchecked((int)0x80410124), $"connect returned 0x{r:X8}"); // EINPROGRESS
-        using var peer = await server.AcceptTcpClientAsync().WaitAsync(TimeSpan.FromSeconds(10));
+        using TcpClient peer = await server.AcceptTcpClientAsync().WaitAsync(TimeSpan.FromSeconds(10));
 
         int eid = Call(net, "sceNetEpollCreate", "ep", 0);
         uint ev = Alloc(0x40);
@@ -220,7 +220,7 @@ public sealed class NetRealTests(GuestMemoryFixture fx) : IDisposable
         uint buf = Alloc(32);
         Assert.Equal(Net.EAGAIN, Call(net, "sceNetRecv", s, buf, 32u, 0));
         Assert.Equal(0, Call(net, "sceNetEpollWait", eid, outEv, 2, 0));
-        var wait = Task.Run(() => Call(net, "sceNetEpollWait", eid, outEv, 2, -1));
+        Task<int> wait = Task.Run(() => Call(net, "sceNetEpollWait", eid, outEv, 2, -1));
         WaitUntilBlocked(() => net.BlockedWaits, wait);
         await peer.GetStream().WriteAsync("data"u8.ToArray());
         Assert.Equal(1, await wait.WaitAsync(TimeSpan.FromSeconds(10)));
@@ -228,7 +228,7 @@ public sealed class NetRealTests(GuestMemoryFixture fx) : IDisposable
         Assert.Equal(4, Call(net, "sceNetRecv", s, buf, 32u, 0));
 
         // an epoll wait is still abortable
-        var wait2 = Task.Run(() => Call(net, "sceNetEpollWait", eid, outEv, 2, -1));
+        Task<int> wait2 = Task.Run(() => Call(net, "sceNetEpollWait", eid, outEv, 2, -1));
         WaitUntilBlocked(() => net.BlockedWaits, wait2);
         Assert.Equal(0, Call(net, "sceNetEpollAbort", eid, 0));
         Assert.Equal(Net.EINTR, await wait2.WaitAsync(TimeSpan.FromSeconds(10)));
@@ -240,13 +240,13 @@ public sealed class NetRealTests(GuestMemoryFixture fx) : IDisposable
     {
         using var server = new TcpListener(IPAddress.Loopback, 0);
         server.Start();
-        var net = NewNet();
+        Net net = NewNet();
         int s = Call(net, "sceNetSocket", "a", 2, 1, 0);
-        var accept = server.AcceptTcpClientAsync();
+        Task<TcpClient> accept = server.AcceptTcpClientAsync();
         Assert.Equal(0, Call(net, "sceNetConnect", s, Sa(((IPEndPoint)server.LocalEndpoint).Port), 16u));
-        using var peer = await accept;
+        using TcpClient peer = await accept;
         uint buf = Alloc(8);
-        var recv = Task.Run(() => Call(net, "sceNetRecv", s, buf, 8u, 0));
+        Task<int> recv = Task.Run(() => Call(net, "sceNetRecv", s, buf, 8u, 0));
         WaitUntilBlocked(() => net.BlockedWaits, recv);
         Assert.Equal(0, Call(net, "sceNetSocketAbort", s, 0));
         Assert.Equal(Net.EINTR, await recv.WaitAsync(TimeSpan.FromSeconds(10)));
@@ -255,7 +255,7 @@ public sealed class NetRealTests(GuestMemoryFixture fx) : IDisposable
         Assert.Equal(Net.EAGAIN, Call(net, "sceNetRecv", s, buf, 8u, 0));
         // close from another thread wakes a blocked recv with EBADF
         Assert.Equal(0, Call(net, "sceNetSetsockopt", s, 0xFFFF, 0x1006, Int(0), 4u));
-        var recv2 = Task.Run(() => Call(net, "sceNetRecv", s, buf, 8u, 0));
+        Task<int> recv2 = Task.Run(() => Call(net, "sceNetRecv", s, buf, 8u, 0));
         WaitUntilBlocked(() => net.BlockedWaits, recv2);
         Assert.Equal(0, Call(net, "sceNetSocketClose", s));
         Assert.Equal(Net.EBADF, await recv2.WaitAsync(TimeSpan.FromSeconds(10)));
@@ -266,7 +266,7 @@ public sealed class NetRealTests(GuestMemoryFixture fx) : IDisposable
     {
         using var peer = new UdpClient(new IPEndPoint(IPAddress.Loopback, 0));
         int peerPort = ((IPEndPoint)peer.Client.LocalEndPoint!).Port;
-        var net = NewNet();
+        Net net = NewNet();
         int s = Call(net, "sceNetSocket", "udp", 2, 2, 0);
         Assert.Equal(0, Call(net, "sceNetBind", s, Sa(0), 16u));
         uint name = Alloc(16), len = Int(16);
@@ -275,7 +275,7 @@ public sealed class NetRealTests(GuestMemoryFixture fx) : IDisposable
         Assert.True(myPort > 0);
 
         Assert.Equal(5, Call(net, "sceNetSendto", s, Bytes("hello"u8.ToArray()), 5u, 0, Sa(peerPort), 16u));
-        var got = await peer.ReceiveAsync().WaitAsync(TimeSpan.FromSeconds(10));
+        UdpReceiveResult got = await peer.ReceiveAsync().WaitAsync(TimeSpan.FromSeconds(10));
         Assert.Equal("hello", Encoding.ASCII.GetString(got.Buffer));
         Assert.Equal(myPort, got.RemoteEndPoint.Port);
 
@@ -291,7 +291,7 @@ public sealed class NetRealTests(GuestMemoryFixture fx) : IDisposable
     [Fact]
     public async Task GuestListensAndAccepts()
     {
-        var net = NewNet();
+        Net net = NewNet();
         int l = Call(net, "sceNetSocket", "srv", 2, 1, 0);
         Assert.Equal(0, Call(net, "sceNetSetsockopt", l, 0xFFFF, 0x4, Int(1), 4u)); // SO_REUSEADDR
         Assert.Equal(0, Call(net, "sceNetBind", l, Sa(0), 16u));
@@ -299,13 +299,13 @@ public sealed class NetRealTests(GuestMemoryFixture fx) : IDisposable
         uint name = Alloc(16), len = Int(16);
         Assert.Equal(0, Call(net, "sceNetGetsockname", l, name, len));
         using var client = new TcpClient();
-        var acc = Task.Run(() => Call(net, "sceNetAccept", l, Alloc(16), Int(16)));
+        Task<int> acc = Task.Run(() => Call(net, "sceNetAccept", l, Alloc(16), Int(16)));
         await client.ConnectAsync(IPAddress.Loopback, SaPort(name)).WaitAsync(TimeSpan.FromSeconds(10));
         int c = await acc.WaitAsync(TimeSpan.FromSeconds(10));
         Assert.True(c > 0, $"accept returned 0x{c:X8}");
         // MSG_WAITALL: returns only when the whole buffer is filled, across several TCP segments
         uint buf = Alloc(8);
-        var recv = Task.Run(() => Call(net, "sceNetRecv", c, buf, 6u, 0x40 /* WAITALL */));
+        Task<int> recv = Task.Run(() => Call(net, "sceNetRecv", c, buf, 6u, 0x40 /* WAITALL */));
         await client.GetStream().WriteAsync("abc"u8.ToArray());
         WaitUntilBlocked(() => net.BlockedWaits, recv);
         await client.GetStream().WriteAsync("def"u8.ToArray());
@@ -318,7 +318,7 @@ public sealed class NetRealTests(GuestMemoryFixture fx) : IDisposable
     [Fact]
     public void NetCtlReportsTheHostAddress()
     {
-        var net = NewNet();
+        Net net = NewNet();
         uint info = Alloc(256);
         Assert.Equal(0, Call(net, "sceNetCtlInetGetInfo", 15, info));
         Assert.True(IPAddress.TryParse(GuestMemory.ReadCString(info), out _));
@@ -328,19 +328,19 @@ public sealed class NetRealTests(GuestMemoryFixture fx) : IDisposable
 
     // ---------------------------------------------------------------- SceHttp
 
-    const int HTTP_EAGAIN = unchecked((int)0x80431082), HTTP_NETWORK = unchecked((int)0x80431063),
+    private const int HTTP_EAGAIN = unchecked((int)0x80431082), HTTP_NETWORK = unchecked((int)0x80431063),
         HTTP_NO_CONTENT_LENGTH = unchecked((int)0x80431071);
 
-    (Http Http, int Tmpl) NewHttp(string ua = "VitaSharpTest/1.0")
+    private (Http Http, int Tmpl) NewHttp(string ua = "VitaSharpTest/1.0")
     {
-        var http = new Http { Emu = Shell(), ConfigOverride = LocalOnly };
+        var http = new Http { Emu = Shell(), ConfigOverride = s_localOnly };
         Assert.Equal(0, Call(http, "sceHttpInit", 0x40000u));
         int t = Call(http, "sceHttpCreateTemplate", Str(ua), 2, 0);
         Assert.True(t > 0);
         return (http, t);
     }
 
-    int Request(Http http, int tmpl, string url, int method = 0, ulong len = 0)
+    private int Request(Http http, int tmpl, string url, int method = 0, ulong len = 0)
     {
         int c = Call(http, "sceHttpCreateConnectionWithURL", tmpl, Str(url), 1);
         Assert.True(c > 0, $"connection 0x{c:X8}");
@@ -349,7 +349,7 @@ public sealed class NetRealTests(GuestMemoryFixture fx) : IDisposable
         return r;
     }
 
-    string ReadAll(Http http, int req)
+    private string ReadAll(Http http, int req)
     {
         var sb = new StringBuilder();
         uint buf = Alloc(10);
@@ -371,7 +371,7 @@ public sealed class NetRealTests(GuestMemoryFixture fx) : IDisposable
     public void HttpGetBlocking()
     {
         using var srv = new LocalHttpServer();
-        var (http, t) = NewHttp();
+        (Http? http, int t) = NewHttp();
         int r = Request(http, t, srv.Base + "/hello");
         uint v = Alloc(16);
         Assert.Equal(0, Call(http, "sceHttpSendRequest", r, 0u, 0u));
@@ -393,7 +393,7 @@ public sealed class NetRealTests(GuestMemoryFixture fx) : IDisposable
     public void HttpChunkedRedirectPostAndCookies()
     {
         using var srv = new LocalHttpServer();
-        var (http, t) = NewHttp();
+        (Http? http, int t) = NewHttp();
         uint v = Alloc(16);
 
         int chunked = Request(http, t, srv.Base + "/chunked");
@@ -434,7 +434,7 @@ public sealed class NetRealTests(GuestMemoryFixture fx) : IDisposable
     public void HttpNonblockingWithEpoll()
     {
         using var srv = new LocalHttpServer();
-        var (http, t) = NewHttp();
+        (Http? http, int t) = NewHttp();
         int r = Request(http, t, srv.Base + "/slow");
         Assert.Equal(0, Call(http, "sceHttpSetNonblock", r, 1));
         uint eh = Alloc(4), nbev = Alloc(0x40), v = Alloc(16);
@@ -464,7 +464,7 @@ public sealed class NetRealTests(GuestMemoryFixture fx) : IDisposable
     public void HttpToBlockedHostsFailsLikeOffline()
     {
         using var srv = new LocalHttpServer();
-        var (http, t) = NewHttp();
+        (Http? http, int t) = NewHttp();
         int r = Request(http, t, "http://ps4-system.sec.np.dl.playstation.net/hello");
         Assert.Equal(HTTP_NETWORK, Call(http, "sceHttpSendRequest", r, 0u, 0u));
         uint errno = Alloc(4);
@@ -488,8 +488,8 @@ public sealed class NetRealTests(GuestMemoryFixture fx) : IDisposable
 
     // ---------------------------------------------------------------- RPCN
 
-    static RpcnClient Client(MockRpcnServer srv, string password = "secret", bool tls = true) =>
-        new(new RpcnConfig("localhost", srv.Port, "Tester", password), LocalOnly)
+    private static RpcnClient Client(MockRpcnServer srv, string password = "secret", bool tls = true) =>
+        new(new RpcnConfig("localhost", srv.Port, "Tester", password), s_localOnly)
         {
             UseTls = tls,
             Timeout = TimeSpan.FromSeconds(10)
@@ -499,35 +499,35 @@ public sealed class NetRealTests(GuestMemoryFixture fx) : IDisposable
     public void RpcnLoginAndTus()
     {
         using var srv = new MockRpcnServer(tls: true);
-        using var client = Client(srv);
+        using RpcnClient client = Client(srv);
         var tus = new RpcnTusService(client);
-        const string comm = "NPWR00001_00";
-        Assert.Null(tus.GetVariable(comm, "Tester", 1));
+        const string CommunicationId = "NPWR00001_00";
+        Assert.Null(tus.GetVariable(CommunicationId, "Tester", 1));
         Assert.True(client.Connected);
         Assert.Equal("Tester Online", client.OnlineName);
         Assert.Equal([new RpcnFriend("Buddy", true)], client.Friends);
-        tus.SetVariables(comm, "Tester", [(1, 100), (2, -5)], "Tester");
-        Assert.Equal(100, tus.GetVariable(comm, "Tester", 1)!.Value);
-        Assert.Equal(-5, tus.GetVariable(comm, "Tester", 2)!.Value);
-        var added = tus.AddAndGet(comm, "Tester", 1, 7, "Tester");
+        tus.SetVariables(CommunicationId, "Tester", [(1, 100), (2, -5)], "Tester");
+        Assert.Equal(100, tus.GetVariable(CommunicationId, "Tester", 1)!.Value);
+        Assert.Equal(-5, tus.GetVariable(CommunicationId, "Tester", 2)!.Value);
+        TusVariable added = tus.AddAndGet(CommunicationId, "Tester", 1, 7, "Tester");
         Assert.Equal((107L, 100L), (added.Value, added.OldValue));
-        var (v, written) = tus.TryAndSet(comm, "Tester", 1, TusOpeType.GreaterThan, 50, null, "Tester");
+        (TusVariable? v, bool written) = tus.TryAndSet(CommunicationId, "Tester", 1, TusOpeType.GreaterThan, 50, null, "Tester");
         Assert.False(written);
         Assert.Equal(107, v.Value);
-        (v, written) = tus.TryAndSet(comm, "Tester", 1, TusOpeType.GreaterThan, 500, null, "Tester");
+        (v, written) = tus.TryAndSet(CommunicationId, "Tester", 1, TusOpeType.GreaterThan, 500, null, "Tester");
         Assert.True(written);
         Assert.Equal(500, v.Value);
 
-        Assert.Null(tus.GetData(comm, "Tester", 3));
+        Assert.Null(tus.GetData(CommunicationId, "Tester", 3));
         byte[] save = Enumerable.Range(0, 3000).Select(i => (byte)i).ToArray();
-        tus.SetData(comm, "Tester", 3, save, [9, 8, 7], "Tester");
-        var d = tus.GetData(comm, "Tester", 3)!.Value;
+        tus.SetData(CommunicationId, "Tester", 3, save, [9, 8, 7], "Tester");
+        (TusDataStatus Status, byte[] Data) d = tus.GetData(CommunicationId, "Tester", 3)!.Value;
         Assert.Equal(save, d.Data);
         Assert.Equal([9, 8, 7], d.Status.Info);
         Assert.Equal(3000, d.Status.Size);
-        Assert.NotNull(tus.GetDataStatus(comm, "Tester", 3));
-        tus.DeleteData(comm, "Tester", [3]);
-        Assert.Null(tus.GetData(comm, "Tester", 3));
+        Assert.NotNull(tus.GetDataStatus(CommunicationId, "Tester", 3));
+        tus.DeleteData(CommunicationId, "Tester", [3]);
+        Assert.Null(tus.GetData(CommunicationId, "Tester", 3));
         Assert.Equal(1, srv.Logins); // one connection for every request
     }
 
@@ -535,43 +535,43 @@ public sealed class NetRealTests(GuestMemoryFixture fx) : IDisposable
     public void RpcnScore()
     {
         using var srv = new MockRpcnServer(tls: false);
-        using var client = Client(srv, tls: false);
+        using RpcnClient client = Client(srv, tls: false);
         var score = new RpcnScoreService(client);
-        const string comm = "NPWR00002_00";
-        Assert.Equal(1u, score.GetBoard(comm, 2).SortMode);
-        var e = Assert.Throws<NpServerException>(() => score.GetBoard(comm, 99));
+        const string CommunicationId = "NPWR00002_00";
+        Assert.Equal(1u, score.GetBoard(CommunicationId, 2).SortMode);
+        NpServerException e = Assert.Throws<NpServerException>(() => score.GetBoard(CommunicationId, 99));
         Assert.Equal(unchecked((int)0x80550817), e.Code); // RANKING_BOARD_MASTER_NOT_FOUND
-        Assert.True(score.Record(comm, 1, "Tester", 0, 5000, "great run", [1, 2], out uint rank));
+        Assert.True(score.Record(CommunicationId, 1, "Tester", 0, 5000, "great run", [1, 2], out uint rank));
         Assert.Equal(1u, rank);
-        Assert.False(score.Record(comm, 1, "Tester", 0, 10, "", [], out _)); // NOT_BEST_SCORE
-        var (rows, total, _) = score.GetRange(comm, 1, 1, 10);
+        Assert.False(score.Record(CommunicationId, 1, "Tester", 0, 10, "", [], out _)); // NOT_BEST_SCORE
+        (List<RankedScore>? rows, uint total, ulong _) = score.GetRange(CommunicationId, 1, 1, 10);
         Assert.Equal(1u, total);
-        var row = Assert.Single(rows);
+        RankedScore row = Assert.Single(rows);
         Assert.Equal(("Tester", 5000L, "great run", 1u, 1u), (row.Entry.OnlineId, row.Entry.Score, row.Entry.Comment, row.Rank, row.SerialRank));
         Assert.Equal([1, 2], row.Entry.GameInfo);
-        var (byId, _, _) = score.GetByIds(comm, 1, [("Tester", 0), ("Nobody", 0)]);
+        (List<RankedScore?>? byId, uint _, ulong _) = score.GetByIds(CommunicationId, 1, [("Tester", 0), ("Nobody", 0)]);
         Assert.Equal(2, byId.Count);
         Assert.Equal(5000, byId[0]!.Value.Entry.Score);
         Assert.Null(byId[1]);
-        Assert.Null(score.GetGameData(comm, 1, "Tester", 0));
-        Assert.True(score.RecordGameData(comm, 1, "Tester", 0, 5000, [7, 7, 7]));
-        Assert.Equal([7, 7, 7], score.GetGameData(comm, 1, "Tester", 0));
-        Assert.Equal(unchecked((int)0x8055082C), Assert.Throws<NpServerException>(() => score.RecordGameData(comm, 1, "Tester", 0, 5000, [1])).Code);
-        Assert.False(score.RecordGameData(comm, 1, "Tester", 0, 1234, [1])); // no such score
+        Assert.Null(score.GetGameData(CommunicationId, 1, "Tester", 0));
+        Assert.True(score.RecordGameData(CommunicationId, 1, "Tester", 0, 5000, [7, 7, 7]));
+        Assert.Equal([7, 7, 7], score.GetGameData(CommunicationId, 1, "Tester", 0));
+        Assert.Equal(unchecked((int)0x8055082C), Assert.Throws<NpServerException>(() => score.RecordGameData(CommunicationId, 1, "Tester", 0, 5000, [1])).Code);
+        Assert.False(score.RecordGameData(CommunicationId, 1, "Tester", 0, 1234, [1])); // no such score
     }
 
     [Fact]
     public void RpcnFailuresAreUnreachableServers()
     {
         using var srv = new MockRpcnServer(tls: false);
-        using var bad = Client(srv, password: "wrong", tls: false);
+        using RpcnClient bad = Client(srv, password: "wrong", tls: false);
         Assert.Throws<IOException>(() => new RpcnTusService(bad).GetVariable("NPWR00001_00", "Tester", 0));
         Assert.False(bad.Connected);
         using var old = new MockRpcnServer(tls: false) { Version = 20 };
-        using var c2 = Client(old, tls: false);
+        using RpcnClient c2 = Client(old, tls: false);
         Assert.Contains("protocol", Assert.Throws<IOException>(() => new RpcnScoreService(c2).GetBoard("NPWR00001_00", 1)).Message);
         // a server that is not allowed is never contacted
-        using var notAllowed = new RpcnClient(new RpcnConfig("np.rpcs3.net", 31313, "Tester", "secret"), LocalOnly);
+        using var notAllowed = new RpcnClient(new RpcnConfig("np.rpcs3.net", 31313, "Tester", "secret"), s_localOnly);
         Assert.Throws<IOException>(() => new RpcnScoreService(notAllowed).GetBoard("NPWR00001_00", 1));
         Assert.Throws<IOException>(() => new RpcnClient(new RpcnConfig("localhost", srv.Port, "Tester", "secret"), NetConfig.Off) { UseTls = false }
             .Request(RpcnCommand.GetNetworkTime, []));
@@ -584,7 +584,7 @@ public sealed class NetRealTests(GuestMemoryFixture fx) : IDisposable
     public void TusThroughTheLibraryOnRpcn()
     {
         using var srv = new MockRpcnServer(tls: false);
-        using var client = Client(srv, tls: false);
+        using RpcnClient client = Client(srv, tls: false);
         PsnAccount.Current = PsnAccount.Create(true, "Tester", localServices: false) with
         {
             Server = $"localhost:{srv.Port}"

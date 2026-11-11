@@ -12,7 +12,7 @@ public partial class NoPersonalPathsTests
     [GeneratedRegex(@"[A-Za-z]:[\\/]+Users[\\/]+(?!%|<|Public\b|Default\b|\$|\{)[A-Za-z0-9._-]+|/home/(?!<|\$)[a-z0-9._-]+/", RegexOptions.IgnoreCase)]
     private static partial Regex UserFolder();
 
-    static string? RepoRoot([CallerFilePath] string source = "")
+    private static string? RepoRoot([CallerFilePath] string source = "")
     {
         foreach (string start in new[] { AppContext.BaseDirectory, Path.GetDirectoryName(source) ?? "" })
         {

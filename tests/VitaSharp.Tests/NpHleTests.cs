@@ -1,4 +1,5 @@
 using System.Reflection;
+using VitaSharp.Core.Hle;
 using VitaSharp.Core.Hle.Modules;
 using VitaSharp.Core.Memory;
 
@@ -8,10 +9,10 @@ namespace VitaSharp.Tests;
 [Collection("guest")]
 public sealed class NpHleTests(GuestMemoryFixture fx)
 {
-    static int Call<T>(T module, string name, params object[] args) =>
+    private static int Call<T>(T module, string name, params object[] args) =>
         (int)typeof(T).GetMethod(name, BindingFlags.Instance | BindingFlags.NonPublic | BindingFlags.Public)!.Invoke(module, args)!;
 
-    uint CommId()
+    private uint CommId()
     {
         uint p = fx.Memory.Alloc(0x10, "commid");
         GuestMemory.Fill(p, 0, 0x10);
@@ -20,9 +21,9 @@ public sealed class NpHleTests(GuestMemoryFixture fx)
     }
 
     /// <summary>The offline model (no local PSN services): every transaction ends with the server error.</summary>
-    static void Offline(Action body)
+    private static void Offline(Action body)
     {
-        var saved = VitaSharp.Core.Hle.PsnAccount.Current;
+        PsnAccount saved = VitaSharp.Core.Hle.PsnAccount.Current;
         VitaSharp.Core.Hle.PsnAccount.Current = VitaSharp.Core.Hle.PsnAccount.Create(true, null, localServices: false);
         try
         {
@@ -90,12 +91,12 @@ public sealed class NpHleTests(GuestMemoryFixture fx)
         Assert.Equal(NpCommunity.TOO_MANY_OBJECTS, lib.CreateTitleCtx(id));
     }
 
-    uint NpId(string online, string platform, bool valid = true)
+    private uint NpId(string online, string platform, bool valid = true)
     {
         uint p = fx.Memory.Alloc(0x24, "npid");
         GuestMemory.Fill(p, 0, 0x24);
         GuestMemory.WriteCString(p, online);
-        var plat = System.Text.Encoding.ASCII.GetBytes(platform);
+        byte[] plat = System.Text.Encoding.ASCII.GetBytes(platform);
         plat.CopyTo(GuestMemory.Span(p + 0x18, plat.Length));
         if (valid)
         {

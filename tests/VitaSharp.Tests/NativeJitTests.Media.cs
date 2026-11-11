@@ -15,7 +15,7 @@ namespace VitaSharp.Tests;
 /// </summary>
 public sealed unsafe partial class NativeJitTests
 {
-    static readonly Op[] MediaOps =
+    private static readonly Op[] s_mediaOps =
     [
         Op.A32_HalfMultiply, Op.A32_SignedMultiplyMedia, Op.A32_SatAddSub, Op.A32_Parallel, Op.A32_Pkh, Op.A32_Sat,
         Op.A32_Sat16, Op.A32_Sel, Op.A32_Usad8, Op.A32_Extend, Op.A32_Multiply,
@@ -23,7 +23,7 @@ public sealed unsafe partial class NativeJitTests
     ];
 
     /// <summary>A random media instruction (ARM word, or Thumb-2 as hw1 &lt;&lt; 16 | hw2). Destinations are never PC.</summary>
-    static uint RandomMedia(Random rng, bool thumb)
+    private static uint RandomMedia(Random rng, bool thumb)
     {
         uint R() => (uint)rng.Next(15);                          // destinations
         uint S() => rng.Next(12) == 0 ? 15u : (uint)rng.Next(15); // sources: PC now and then
@@ -116,7 +116,7 @@ public sealed unsafe partial class NativeJitTests
     }
 
     /// <summary>Register values at the halfword/byte/word saturation and overflow edges.</summary>
-    static uint SpecialMediaValue(Random rng)
+    private static uint SpecialMediaValue(Random rng)
     {
         uint[] halves = [0x0000, 0x0001, 0x7FFF, 0x8000, 0x8001, 0xFFFF, 0xFFFE, 0x4000, 0xC000, 0x00FF, 0xFF00, 0x7F80, 0x807F];
         uint[] words = [0, 1, 0x7FFFFFFF, 0x80000000, 0x80000001, 0xFFFFFFFF, 0x40000000, 0xC0000000, 0x7F7F7F7F, 0x80808080, 0xFF00FF00, 0x01FF7F80];
@@ -128,15 +128,15 @@ public sealed unsafe partial class NativeJitTests
         };
     }
 
-    static Block? MediaBlock(Random rng, bool thumb)
+    private static Block? MediaBlock(Random rng, bool thumb)
     {
         var code = new List<byte>();
         int n = rng.Next(1, 7);
         for (int k = 0, attempts = 0; k < n && attempts < 200; attempts++)
         {
             uint ins = RandomMedia(rng, thumb);
-            var d = !thumb ? Decoder.DecodeArm(ins, CodeBase) : Decoder.DecodeThumb32(ins, CodeBase, false, 14);
-            if (Array.IndexOf(MediaOps, d.Op) < 0 || d.EndsBlock)
+            DecodedInst d = !thumb ? Decoder.DecodeArm(ins, CodeBase) : Decoder.DecodeThumb32(ins, CodeBase, false, 14);
+            if (Array.IndexOf(s_mediaOps, d.Op) < 0 || d.EndsBlock)
             {
                 continue;
             }
@@ -176,11 +176,11 @@ public sealed unsafe partial class NativeJitTests
     [InlineData(true, 15_000, 3212)]
     public void Arm64MediaMatchesInterpreter(bool thumb, int iterations, int seed) => MediaDifferential(thumb, iterations, seed, arm64: true);
 
-    void MediaDifferential(bool thumb, int iterations, int seed, bool arm64)
+    private void MediaDifferential(bool thumb, int iterations, int seed, bool arm64)
     {
         using var arena = new ArenaScope();
         EnsureGuestPages();
-        using var sb = arm64 ? Arm64Runner.Create() : null;
+        using IArm64Runner? sb = arm64 ? Arm64Runner.Create() : null;
         if (int.TryParse(Environment.GetEnvironmentVariable(EnvVars.FuzzIter), out int itOverride))
         {
             iterations = itOverride;
@@ -194,14 +194,14 @@ public sealed unsafe partial class NativeJitTests
         }
 
         var rng = new Random(seed);
-        var s = CpuState.Allocate();
+        CpuState* s = CpuState.Allocate();
         var failures = new Dictionary<string, (int, string)>();
         int compared = 0, detailed = 0, withCallouts = 0;
         try
         {
             for (int it = 0; it < iterations; it++)
             {
-                var b = MediaBlock(rng, thumb);
+                Block? b = MediaBlock(rng, thumb);
                 if (b == null)
                 {
                     continue;
@@ -216,7 +216,7 @@ public sealed unsafe partial class NativeJitTests
                     }
                 }
 
-                var fe = arm64 ? NativeArm64Compiler.NewFrontend() : new ArmFrontend();
+                ArmFrontend fe = arm64 ? NativeArm64Compiler.NewFrontend() : new ArmFrontend();
                 if (fe.Translate(b).Callouts != 0)
                 {
                     if (withCallouts++ < 4)
@@ -227,10 +227,10 @@ public sealed unsafe partial class NativeJitTests
                     continue;
                 }
                 st.Apply(s, thumb);
-                var interp = Take(s, Guard(() => CpuCore.Interpret(s, b)));
-                var cb = arm64 ? NativeArm64Compiler.Instance.Compile(b, sb!.Stubs)! : NativeX64Compiler.Instance.Compile(b)!;
+                Snapshot interp = Take(s, Guard(() => CpuCore.Interpret(s, b)));
+                CompiledBlock cb = arm64 ? NativeArm64Compiler.Instance.Compile(b, sb!.Stubs)! : NativeX64Compiler.Instance.Compile(b)!;
                 st.Apply(s, thumb);
-                var native = Take(s, Guard(() =>
+                Snapshot native = Take(s, Guard(() =>
                 {
                     if (arm64)
                     {
@@ -270,7 +270,7 @@ public sealed unsafe partial class NativeJitTests
             NativeX64Compiler.ValidateIr = oldValidate;
         }
         output.WriteLine($"compared {compared} media blocks on the {(arm64 ? "ARM64" : "x64")} backend; {withCallouts} with callouts; failing kinds {failures.Count}");
-        foreach (var (k, (count, ex)) in failures.OrderByDescending(f => f.Value.Item1).Take(40))
+        foreach ((string? k, (int count, string? ex)) in failures.OrderByDescending(f => f.Value.Item1).Take(40))
         {
             output.WriteLine($"{k,-40} x{count,-5} {ex}");
         }
