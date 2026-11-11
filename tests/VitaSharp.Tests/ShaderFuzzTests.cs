@@ -92,7 +92,7 @@ public sealed class ShaderFuzzTests
         Assert.DoesNotContain("idx[5]", i.Glsl);
     }
 
-    [Fact]
+    [ShadercFact]
     public void EveryTranslationCompiles()
     {
         using var compiler = new ShaderCompiler(null);

@@ -1,51 +1,40 @@
 using VitaSharp.FormatTool;
 
 // build/format-check.ps1 -Fix / build/format-check.sh --fix: after `dotnet format`, splits the statement blocks
-// written on one line and folds the accessor lists back to one line (SourceLayout). Usage: FormatTool <repo root>.
-// The folders listed in build/format-pending.txt are skipped.
-if (args.Length != 1 || !Directory.Exists(args[0]))
+// written on one line and folds the accessor lists back to one line (SourceLayout). Usage: FormatTool <repo root>
+// <file list>: the list is the scripts' dotnet format response file (--include, then one repository-relative path per
+// line: the tracked .cs files outside build/format-pending.txt and .claude/), so nothing else is ever rewritten.
+if (args.Length != 2 || !Directory.Exists(args[0]) || !File.Exists(args[1]))
 {
-    Console.Error.WriteLine("usage: FormatTool <repository root>");
+    Console.Error.WriteLine("usage: FormatTool <repository root> <file list>");
     return 2;
 }
 
 string root = Path.GetFullPath(args[0]);
-string[] pending = File.ReadAllLines(Path.Combine(root, "build", "format-pending.txt"))
-    .Select(l => l.Split('#')[0].Trim())
-    .Where(l => l.Length > 0)
-    .Select(l => l.Replace('/', Path.DirectorySeparatorChar))
+string[] list = File.ReadAllLines(args[1])
+    .Select(l => l.Trim())
+    .Where(l => l.Length > 0 && !l.StartsWith('-'))
     .ToArray();
-string[] outputs = ["obj", "bin", "obj-dev", "bin-dev"];
 int files = 0;
 int changes = 0;
-foreach (string top in new[] { "src", "tests", "tools", "build" })
+foreach (string rel in list)
 {
-    string dir = Path.Combine(root, top);
-    if (!Directory.Exists(dir))
+    string file = Path.Combine(root, rel.Replace('/', Path.DirectorySeparatorChar));
+    if (!rel.EndsWith(".cs", StringComparison.Ordinal) || !File.Exists(file))
     {
         continue;
     }
 
-    foreach (string file in Directory.EnumerateFiles(dir, "*.cs", SearchOption.AllDirectories))
+    byte[] bytes = File.ReadAllBytes(file);
+    bool bom = bytes.Length >= 3 && bytes[0] == 0xEF && bytes[1] == 0xBB && bytes[2] == 0xBF;
+    string text = new System.Text.UTF8Encoding(false).GetString(bytes, bom ? 3 : 0, bytes.Length - (bom ? 3 : 0));
+    (string fixedText, int n) = SourceLayout.Fix(text);
+    if (n > 0 && fixedText != text)
     {
-        string rel = Path.GetRelativePath(root, file);
-        string[] parts = rel.Split(Path.DirectorySeparatorChar);
-        if (parts.Any(outputs.Contains) || pending.Any(p => rel.StartsWith(p + Path.DirectorySeparatorChar, StringComparison.Ordinal)))
-        {
-            continue;
-        }
-
-        byte[] bytes = File.ReadAllBytes(file);
-        bool bom = bytes.Length >= 3 && bytes[0] == 0xEF && bytes[1] == 0xBB && bytes[2] == 0xBF;
-        string text = new System.Text.UTF8Encoding(false).GetString(bytes, bom ? 3 : 0, bytes.Length - (bom ? 3 : 0));
-        (string fixedText, int n) = SourceLayout.Fix(text);
-        if (n > 0 && fixedText != text)
-        {
-            // the file keeps its encoding: UTF-8, with a BOM only when it had one
-            File.WriteAllText(file, fixedText, new System.Text.UTF8Encoding(bom));
-            files++;
-            changes += n;
-        }
+        // the file keeps its encoding: UTF-8, with a BOM only when it had one
+        File.WriteAllText(file, fixedText, new System.Text.UTF8Encoding(bom));
+        files++;
+        changes += n;
     }
 }
 
