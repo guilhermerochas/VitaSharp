@@ -248,8 +248,7 @@ public sealed partial class MainWindow
         var lic = items.FirstOrDefault(p => p.EndsWith(".bin", StringComparison.OrdinalIgnoreCase) || p.EndsWith(".rif", StringComparison.OrdinalIgnoreCase));
         var archives = items.Where(p => File.Exists(p) && (p.EndsWith(".vpk", StringComparison.OrdinalIgnoreCase) || p.EndsWith(".zip", StringComparison.OrdinalIgnoreCase))).ToList();
         if (archives.Count > 0) foreach (var a in archives) EnqueueVpk(a);
-        else if (pkg != null && lic != null) EnqueuePkg(pkg, lic);
-        else if (pkg != null && await AskPkgLicense(pkg) is { } asked) EnqueuePkg(pkg, asked);
+        else if (pkg != null) await QueuePkg(pkg, lic);
         else foreach (var dir in items.Where(Directory.Exists)) await EnqueueFolder(dir);
     }
 
@@ -308,6 +307,46 @@ public sealed partial class MainWindow
         },
     });
 
+    /// <summary>A PSP or PSone Classic package: no license to ask for, it goes to ux0:pspemu.</summary>
+    void EnqueuePspPkg(string pkg, PkgInfo info) => Enqueue(new InstallJob
+    {
+        Name = Path.GetFileName(pkg),
+        Work = async (job, ct) =>
+        {
+            var t = await Task.Run(() => PkgInstaller.InstallWithoutLicense(pkg, Program.Ux0, null,
+                msg => Dispatcher.UIThread.Post(() => AppendLog(msg)), p => Report(job, p), ct), ct);
+            AppendLog($"Installed {t.TitleId} \"{t.Title}\" ({info.Description}) -> {t.Path}");
+            if (t.IsoPath != null) AppendLog($"Decrypted UMD image -> {t.IsoPath}");
+            job.Detail = S.InstalledPspEmu(t.Title, info.Kind);
+            return t.TitleId;
+        },
+    });
+
+    /// <summary>A .pkg picked or dropped (with the license dropped next to it, if any): reads what it is, installs a
+    /// PSP/PSone package right away and asks for the license of a PS Vita one. False when nothing was queued.</summary>
+    async Task<bool> QueuePkg(string pkg, string? lic)
+    {
+        PkgInfo info;
+        try { info = await Task.Run(() => PkgInstaller.Inspect(pkg)); }
+        catch (Exception e) when (e is InvalidDataException or NotSupportedException or IOException or UnauthorizedAccessException)
+        {
+            SetStatus(S.PkgUnreadable(e.Message));
+            AppendLog(S.PkgUnreadable(e.Message));
+            return false;
+        }
+        if (!info.NeedsLicense)
+        {
+            SetStatus(S.PkgNoLicense(info));
+            AppendLog(S.PkgNoLicense(info));
+            EnqueuePspPkg(pkg, info);
+            return true;
+        }
+        lic ??= await AskPkgLicense(pkg, info);
+        if (lic == null) return false;
+        EnqueuePkg(pkg, lic);
+        return true;
+    }
+
     async Task EnqueueFolder(string dir)
     {
         var entry = GameLibrary.Read(dir);
@@ -349,7 +388,7 @@ public sealed partial class MainWindow
 
     /// <summary>The license of a package: a work.bin/.rif file chosen with the picker, or a zRIF pasted in the text
     /// field (the text NoNpDrm and pkg2zip lists give). Returns the file path or the zRIF text; null when cancelled.</summary>
-    async Task<string?> AskPkgLicense(string pkg)
+    async Task<string?> AskPkgLicense(string pkg, PkgInfo? info = null)
     {
         string? result = null;
         Window? dlg = null;
@@ -379,7 +418,9 @@ public sealed partial class MainWindow
         var cancel = _k.Secondary(S.Cancel, null, () => dlg?.Close(), 40);
         var buttons = _k.HStack(8, cancel, install);
         buttons.HorizontalAlignment = HorizontalAlignment.Right;
-        var panel = _k.VStack(12, _k.Heading(S.LicenseFor(Path.GetFileName(pkg)), 18), _k.Wrap(S.LicenseText, 13.5, P.TextSoft), zrif, file.Also(f => f.HorizontalAlignment = HorizontalAlignment.Left), error, buttons);
+        var panel = _k.VStack(12, _k.Heading(S.LicenseFor(Path.GetFileName(pkg)), 18),
+            info != null ? _k.Text(S.PkgNeedsLicense(info), 13, FontWeight.SemiBold, P.Accent) : null,
+            _k.Wrap(S.LicenseText, 13.5, P.TextSoft), zrif, file.Also(f => f.HorizontalAlignment = HorizontalAlignment.Left), error, buttons);
         panel.Margin = new Thickness(24);
         dlg = Dialog(panel, 500);
         if (LicenseDialogForTests is { } hook) dlg.Opened += (_, _) => hook(dlg, zrif, Submit);
@@ -393,13 +434,7 @@ public sealed partial class MainWindow
 
     /// <summary>The "Escolher pkg" flow after the file picker: asks for the license and queues the install; false when
     /// the dialog was cancelled.</summary>
-    internal async Task<bool> AskLicenseAndQueue(string pkg)
-    {
-        var lic = await AskPkgLicense(pkg);
-        if (lic == null) return false;
-        EnqueuePkg(pkg, lic);
-        return true;
-    }
+    internal Task<bool> AskLicenseAndQueue(string pkg) => QueuePkg(pkg, null);
 
     internal IReadOnlyList<InstallJob> JobsForTests => _jobs;
 

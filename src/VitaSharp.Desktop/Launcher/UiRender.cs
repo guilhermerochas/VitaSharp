@@ -4,7 +4,7 @@ using Avalonia.Threading;
 namespace VitaSharp.Desktop.Launcher;
 
 /// <summary>
-/// <c>ui-render &lt;out-dir&gt; [--size=WxH] [--title=ID] [--theme=dark|light] [--launch=ID|shell] [--seconds=N] [--install-pkg=P --license=zRIF]</c> (use a
+/// <c>ui-render &lt;out-dir&gt; [--size=WxH] [--title=ID] [--theme=dark|light] [--launch=ID|shell] [--seconds=N] [--install-pkg=P [--license=zRIF]]</c> (use a
 /// scratch --data folder): the real launcher on Avalonia's headless platform (no window on screen), every page saved
 /// as a PNG in the dark and light themes, from the data folder's games, trophies, captures and save states.
 /// <c>--launch</c> also starts a game (or the Vita system) through the launcher with --headless --seconds=N and reports
@@ -200,7 +200,9 @@ static class UiRender
     /// <summary>
     /// <c>--install-pkg=&lt;pkg&gt; --license=&lt;zRIF&gt;</c>: the "Escolher pkg" flow after the file picker. The license
     /// dialog opens, the zRIF is typed in its field and "Instalar" pressed; the queue then installs the package into
-    /// the --data folder, and the .rif in ux0:license and the work.bin are checked against the decoded zRIF.
+    /// the --data folder, and the .rif in ux0:license and the work.bin are checked against the decoded zRIF. Without
+    /// --license (a PSP or PSone Classic package) no dialog may open: the package goes straight to the queue and its
+    /// EBOOT.PBP must land in ux0:pspemu/PSP/GAME/&lt;id&gt;.
     /// </summary>
     static int InstallPkg(MainWindow main, string pkg, string zrif, string outDir, string theme, Action<string> shot)
     {
@@ -220,7 +222,9 @@ static class UiRender
         var deadline = DateTime.UtcNow.AddMinutes(10);
         while (!asked.IsCompleted && DateTime.UtcNow < deadline) { Dispatcher.UIThread.RunJobs(); Thread.Sleep(20); }
         main.LicenseDialogForTests = null;
-        if (!dialogShown || !asked.IsCompleted || !asked.Result) { Console.WriteLine($"  install-pkg: the license dialog did not accept the zRIF (shown {dialogShown})"); return 1; }
+        bool noLicense = zrif.Length == 0;
+        if (noLicense && (dialogShown || !asked.IsCompleted || !asked.Result)) { Console.WriteLine($"  install-pkg: a license-free package was not queued directly (dialog shown {dialogShown})"); return 1; }
+        if (!noLicense && (!dialogShown || !asked.IsCompleted || !asked.Result)) { Console.WriteLine($"  install-pkg: the license dialog did not accept the zRIF (shown {dialogShown})"); return 1; }
 
         while (main.JobsForTests.Any(j => j.State is JobState.Waiting or JobState.Running) && DateTime.UtcNow < deadline)
         {
@@ -233,6 +237,13 @@ static class UiRender
         var job = main.JobsForTests.LastOrDefault();
         Console.WriteLine($"  install-pkg: {job?.State} {job?.TitleId} {job?.Detail}");
         if (job is not { State: JobState.Done, TitleId: { } titleId }) return 1;
+        if (noLicense)
+        {
+            var eboot = Path.Combine(Program.Ux0, "pspemu", "PSP", "GAME", titleId, "EBOOT.PBP");
+            bool there = File.Exists(eboot) && File.Exists(Path.Combine(Path.GetDirectoryName(eboot)!, "__sce_ebootpbp"));
+            Console.WriteLine($"  install-pkg: {eboot} {(there ? "and its __sce_ebootpbp installed" : "MISSING")}");
+            return there ? 0 : 1;
+        }
 
         var rif = Core.Package.Zrif.Decode(zrif);
         string contentId = Core.Package.Zrif.ContentId(rif);

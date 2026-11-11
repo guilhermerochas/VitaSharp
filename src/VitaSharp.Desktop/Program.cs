@@ -37,12 +37,8 @@ public static class Program
         {
             case "install" when args.Length >= 2 && IsArchive(args[1]):
                 return InstallVpkCli(args[1], args.Skip(2).ToArray());
-            case "install" when args.Length >= 3:
-            {
-                var t = PkgInstaller.Install(args[1], args[2], Ux0, Console.WriteLine);
-                Console.WriteLine($"Installed {t.TitleId} \"{t.Title}\" ({t.Type}) -> {t.Path}");
-                return 0;
-            }
+            case "install" when args.Length >= 2:
+                return InstallPkgCli(args[1], args.Skip(2).ToArray());
             case "run" when args.Length >= 2 && IsArchive(args[1]) && File.Exists(args[1]):
             {
                 var app = InstallVpkForRun(args[1], args.Skip(2).ToArray());
@@ -294,6 +290,46 @@ public static class Program
         w.Write(pcm.SampleRate); w.Write(pcm.SampleRate * pcm.Channels * 2); w.Write((short)(pcm.Channels * 2)); w.Write((short)16);
         w.Write("data"u8); w.Write(bytes);
         foreach (var s in pcm.Samples) w.Write(s);
+    }
+
+    /// <summary>install &lt;game.pkg&gt; [&lt;work.bin|.rif|zRIF&gt;] [--no-iso]: a PS Vita package needs its license; a
+    /// PSP or PSone Classic package needs none (it goes to ux0:pspemu; --no-iso skips the decrypted PSP UMD image).</summary>
+    static int InstallPkgCli(string pkg, string[] rest)
+    {
+        if (!File.Exists(pkg)) { Console.Error.WriteLine($"Package not found: {pkg}"); return 1; }
+        string? license = rest.FirstOrDefault(a => !a.StartsWith("--"));
+        PkgInfo info;
+        try { info = PkgInstaller.Inspect(pkg); }
+        catch (Exception e) when (e is InvalidDataException or NotSupportedException or IOException)
+        {
+            Console.Error.WriteLine($"Not an installable package: {e.Message}");
+            return 1;
+        }
+        Console.WriteLine($"{info.Description}: {info.TitleId} \"{info.Title}\" ({info.ContentId})");
+        try
+        {
+            InstalledTitle t;
+            if (!info.NeedsLicense)
+            {
+                if (license != null) Console.WriteLine("This package needs no license; the one given is not used.");
+                var options = new PspInstallOptions { DecryptedIso = !rest.Contains("--no-iso") };
+                t = PkgInstaller.InstallWithoutLicense(pkg, Ux0, options, Console.WriteLine);
+            }
+            else if (license == null)
+            {
+                Console.Error.WriteLine($"A {info.Description} package needs its license: install <game.pkg> <work.bin|.rif|zRIF>");
+                return 1;
+            }
+            else t = PkgInstaller.Install(pkg, license, Ux0, Console.WriteLine);
+            Console.WriteLine($"Installed {t.TitleId} \"{t.Title}\" ({t.Kind?.Describe() ?? t.Type.ToString()}) -> {t.Path}");
+            if (t.IsoPath != null) Console.WriteLine($"Decrypted UMD image -> {t.IsoPath}");
+            return 0;
+        }
+        catch (Exception e) when (e is InvalidDataException or NotSupportedException or FileNotFoundException)
+        {
+            Console.Error.WriteLine($"Install failed: {e.Message}");
+            return 1;
+        }
     }
 
     static bool IsArchive(string path) =>
@@ -573,7 +609,8 @@ public static class Program
     {
         Console.WriteLine("VitaSharp - PS Vita emulator");
         Console.WriteLine("  (no arguments)                        open the game library window");
-        Console.WriteLine("  install <game.pkg> <work.bin|.rif>   install a package into the virtual ux0");
+        Console.WriteLine("  install <game.pkg> <work.bin|.rif|zRIF>   install a PS Vita package into the virtual ux0");
+        Console.WriteLine("  install <psp-or-ps1.pkg> [--no-iso]  install a PSP / PSone Classic package (no license needed)");
         Console.WriteLine("  install <game.vpk|.zip> [--license=<work.bin|.rif>] [--force]");
         Console.WriteLine("                                       install a VPK/content zip (app, patch or add-on, by param.sfo category)");
         Console.WriteLine("  install-firmware <PSVUPDAT.PUP>       install the official system software (os0/vs0/sa0/pd0) into the data folder");
@@ -606,7 +643,7 @@ public static class Program
         Console.WriteLine("  version                              print the version and commit of this build");
         Console.WriteLine("  update [--channel=builds|releases] [--feed=URL|folder] [--apply]  check the GitHub releases for a newer emulator; --apply installs it");
         Console.WriteLine("  ui-snapshot <out-dir>               render Settings > Controles driven by a simulated DualSense (use a scratch --data)");
-        Console.WriteLine("  ui-render <out-dir> [--title=ID] [--launch=ID|shell] [--install-pkg=P --license=zRIF]  render every launcher page to PNGs without a window (use a scratch --data)");
+        Console.WriteLine("  ui-render <out-dir> [--title=ID] [--launch=ID|shell] [--install-pkg=P [--license=zRIF]]  render every launcher page to PNGs without a window (use a scratch --data)");
         Console.WriteLine("  toast-preview <out.png> [TITLEID] [--sound=<out.wav>]  draw the trophy notification; write the trophy sound");
         Console.WriteLine("  ime-preview <out.png> [title] [text] [--max=N] [--multiline] [--password]  draw the IME text entry overlay");
         Console.WriteLine("  msg-preview <out.png> [message] [--buttons=A,B] [--selected=N] [--progress=N]  draw the message dialog overlay");

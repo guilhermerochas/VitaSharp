@@ -987,6 +987,57 @@
   <data name="LicenseFor" xml:space="preserve">
     <value>License for {0}</value>
   </data>
+  <data name="PkgNoLicense" xml:space="preserve">
+    <value>{0}: {1} ({2}). No license needed.</value>
+  </data>
+  <data name="PkgNeedsLicense" xml:space="preserve">
+    <value>{0}: {1} ({2})</value>
+  </data>
+  <data name="PkgUnreadable" xml:space="preserve">
+    <value>This package cannot be installed: {0}</value>
+  </data>
+  <data name="InstalledPspEmu" xml:space="preserve">
+    <value>{0} ({1}) installed in ux0:pspemu.</value>
+  </data>
+  <data name="PkgKindVitaApp" xml:space="preserve">
+    <value>PS Vita game</value>
+  </data>
+  <data name="PkgKindVitaPatch" xml:space="preserve">
+    <value>PS Vita update</value>
+  </data>
+  <data name="PkgKindVitaDlc" xml:space="preserve">
+    <value>PS Vita add-on (DLC)</value>
+  </data>
+  <data name="PkgKindVitaTheme" xml:space="preserve">
+    <value>PS Vita theme</value>
+  </data>
+  <data name="PkgKindVitaPsm" xml:space="preserve">
+    <value>PlayStation Mobile</value>
+  </data>
+  <data name="PkgKindPsp" xml:space="preserve">
+    <value>PSP game</value>
+  </data>
+  <data name="PkgKindPspPcEngine" xml:space="preserve">
+    <value>PSP game (PC Engine)</value>
+  </data>
+  <data name="PkgKindPspGo" xml:space="preserve">
+    <value>PSP game (PSP Go)</value>
+  </data>
+  <data name="PkgKindPspMini" xml:space="preserve">
+    <value>PSP minis</value>
+  </data>
+  <data name="PkgKindPspNeoGeo" xml:space="preserve">
+    <value>PSP game (NEOGEO)</value>
+  </data>
+  <data name="PkgKindPspDlc" xml:space="preserve">
+    <value>PSP add-on (DLC)</value>
+  </data>
+  <data name="PkgKindPspTheme" xml:space="preserve">
+    <value>PSP theme</value>
+  </data>
+  <data name="PkgKindPsx" xml:space="preserve">
+    <value>PSone Classic</value>
+  </data>
   <data name="LicenseText" xml:space="preserve">
     <value>Paste the zRIF of this package or choose the license file (work.bin or .rif).</value>
   </data>

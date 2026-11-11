@@ -249,6 +249,30 @@ public sealed class LibraryView : Screen<LibraryState>
         if (!pkg.DisplayName.EndsWith(".pkg", StringComparison.OrdinalIgnoreCase)
             && !await Confirm(Loc.Get("MInstallPkg"), Loc.Format("MNotPkgConfirm", pkg.DisplayName), Loc.Get("MTry")))
             return;
+        // PSP and PSone Classic packages need no license: straight to ux0:pspemu
+        PkgInfo? info = null;
+        await Run(Loc.Get("MInstallPkg"), async () => info = await Task.Run(() => PkgInstaller.Inspect(pkg.OpenSeekable(ImportCache))));
+        if (info == null) return;
+        if (!info.NeedsLicense)
+        {
+            string kindText = info.Description;
+            SetState(s => { s.Installing = pkg.DisplayName; s.InstallProgress = 0; s.InstallDetail = ""; });
+            await Run(Loc.Get("MInstallPkg"), async () =>
+            {
+                try
+                {
+                    var t = await Task.Run(() => PkgInstaller.InstallWithoutLicense(pkg.OpenSeekable(ImportCache), AppServices.Data.Ux0, null,
+                        m => Log.Info($"PKG: {m}"), ShowProgress));
+                    await Alert(Loc.Get("MInstallPkg"), Loc.Format("MInstalledOne", t.TitleId, t.Title, kindText));
+                }
+                finally
+                {
+                    SetState(s => s.Installing = null);
+                    Reload();
+                }
+            });
+            return;
+        }
         var source = await Choose(Loc.Get("MGameLicense"), [
             new Mobile.Core.Settings.Choice("file", Loc.Get("MLicenseFile")),
             new Mobile.Core.Settings.Choice("zrif", Loc.Get("MPasteZrif")),
