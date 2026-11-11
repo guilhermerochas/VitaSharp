@@ -861,8 +861,10 @@ Lista de itens futuros do VitaSharp. Marque `[x]` quando um item for concluído.
   camada de hardware/kernel que eles tocam e ligá-la ao que o VitaSharp já emula: clock (kscePower*/registradores ->
   o clock emulado), controles Bluetooth/USB (ksceBt*, ksceUsb*, HID -> controles do host), armazenamento USB/SD2Vita
   (montagens -> pastas do host), tela/brilho/áudio. Meta: todo plugin de kernel público funcionando como no console.
-  Única exceção: plugins cuja função é contornar DRM (licença falsa, descriptografar conteúdo sem a licença do
-  usuário), que não entram, como o act.dat falso. Validar com uma lista dos plugins públicos mais usados (um teste
+  O ambiente é genérico e não bloqueia plugin nenhum (decisão do usuário, 11/11/2026): ele roda o código que o
+  usuário instalar, como o console. O projeto não implementa, não testa e não ajusta nada voltado a contornar DRM
+  (licença falsa, descriptografia sem a licença do usuário); os jogos comprados rodam pela licença real do usuário
+  (.rif/act.dat do console). Validar com uma lista dos plugins públicos mais usados (um teste
   por exportação e cada plugin rodando).
 - [ ] Temas do Vita (pedido do usuário, 10/11/2026): instalar e usar temas como no aparelho. (1) Instalação: `.pkg` de
   tema da loja (content type de tema; o agente de PKG já detecta o tipo) com a licença, extraído para `ux0:theme/<id>`
