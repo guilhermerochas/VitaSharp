@@ -1,6 +1,6 @@
-using VitaSharp.Core.Util;
 using Silk.NET.Vulkan;
 using VitaSharp.Core.Gxm;
+using VitaSharp.Core.Util;
 
 namespace VitaSharp.Renderer.Vulkan;
 
@@ -87,30 +87,66 @@ public static class Formats
         uint s = GxmFormats.SwizzleOf(format) >> 12;
         switch (b)
         {
-            case TexBase.U8: case TexBase.S8: case TexBase.U16: case TexBase.S16: case TexBase.F16:
-            case TexBase.U32: case TexBase.S32: case TexBase.F32: case TexBase.F32M: case TexBase.UBC4: case TexBase.SBC4:
+            case TexBase.U8:
+            case TexBase.S8:
+            case TexBase.U16:
+            case TexBase.S16:
+            case TexBase.F16:
+            case TexBase.U32:
+            case TexBase.S32:
+            case TexBase.F32:
+            case TexBase.F32M:
+            case TexBase.UBC4:
+            case TexBase.SBC4:
                 // SCE_GXM_TEXTURE_SWIZZLE1_{R,000R,111R,RRRR,0RRR,1RRR,R000,R111}: names list the result in RGBA order
                 // (R111 = (R,1,1,1)); the legacy ABGR-order reading is kept behind VITASHARP_SWZ1=A for comparison
                 if (Swizzle1Legacy)
                     return s switch
                     {
-                        0 => M(R, Z, Z, O), 1 => M(R, Z, Z, Z), 2 => M(R, O, O, O), 3 => M(R, R, R, R),
-                        4 => M(R, R, R, Z), 5 => M(R, R, R, O), 6 => M(Z, Z, Z, R), _ => M(O, O, O, R),
+                        0 => M(R, Z, Z, O),
+                        1 => M(R, Z, Z, Z),
+                        2 => M(R, O, O, O),
+                        3 => M(R, R, R, R),
+                        4 => M(R, R, R, Z),
+                        5 => M(R, R, R, O),
+                        6 => M(Z, Z, Z, R),
+                        _ => M(O, O, O, R),
                     };
                 return s switch
                 {
-                    0 => M(R, Z, Z, O), 1 => M(Z, Z, Z, R), 2 => M(O, O, O, R), 3 => M(R, R, R, R),
-                    4 => M(Z, R, R, R), 5 => M(O, R, R, R), 6 => M(R, Z, Z, Z), _ => M(R, O, O, O),
+                    0 => M(R, Z, Z, O),
+                    1 => M(Z, Z, Z, R),
+                    2 => M(O, O, O, R),
+                    3 => M(R, R, R, R),
+                    4 => M(Z, R, R, R),
+                    5 => M(O, R, R, R),
+                    6 => M(R, Z, Z, Z),
+                    _ => M(R, O, O, O),
                 };
-            case TexBase.U8U8: case TexBase.S8S8: case TexBase.U16U16: case TexBase.S16S16: case TexBase.F16F16:
-            case TexBase.U32U32: case TexBase.F32F32: case TexBase.UBC5: case TexBase.SBC5:
+            case TexBase.U8U8:
+            case TexBase.S8S8:
+            case TexBase.U16U16:
+            case TexBase.S16S16:
+            case TexBase.F16F16:
+            case TexBase.U32U32:
+            case TexBase.F32F32:
+            case TexBase.UBC5:
+            case TexBase.SBC5:
                 return s switch
                 {
-                    0 => M(R, G, Z, O), 1 => M(R, G, Z, Z), 2 => M(R, R, R, G), 3 => M(G, G, G, R),
-                    4 => M(R, G, R, G), 5 => M(G, R, Z, Z), _ => Identity,
+                    0 => M(R, G, Z, O),
+                    1 => M(R, G, Z, Z),
+                    2 => M(R, R, R, G),
+                    3 => M(G, G, G, R),
+                    4 => M(R, G, R, G),
+                    5 => M(G, R, Z, Z),
+                    _ => Identity,
                 };
             case TexBase.X8U24: return Identity;
-            case TexBase.U8U8U8: case TexBase.S8S8S8: case TexBase.F11F11F10: case TexBase.SE5M9M9M9:
+            case TexBase.U8U8U8:
+            case TexBase.S8S8S8:
+            case TexBase.F11F11F10:
+            case TexBase.SE5M9M9M9:
                 return s == 0 ? M(R, G, B, O) : M(B, G, R, O);
             case TexBase.U5U6U5:
                 return s == 0 ? M(B, G, R, O) : M(R, G, B, O);
@@ -123,16 +159,26 @@ public static class Formats
                 // (Vita3K translate_swizzle4_a1r5g5b5)
                 return s switch
                 {
-                    0 or 3 => M(B, G, R, A), 1 or 2 => M(R, G, B, A),
-                    4 or 7 => M(B, G, R, O), _ => M(R, G, B, O),
+                    0 or 3 => M(B, G, R, A),
+                    1 or 2 => M(R, G, B, A),
+                    4 or 7 => M(B, G, R, O),
+                    _ => M(R, G, B, O),
                 };
-            case TexBase.YUV420P2: case TexBase.YUV420P3: case TexBase.YUV422:
+            case TexBase.YUV420P2:
+            case TexBase.YUV420P3:
+            case TexBase.YUV422:
                 return Identity;
             default:
                 return s switch
                 {
-                    0 => M(R, G, B, A), 1 => M(B, G, R, A), 2 => M(A, B, G, R), 3 => M(G, B, A, R),
-                    4 => M(R, G, B, O), 5 => M(B, G, R, O), 6 => M(A, B, G, O), _ => M(G, B, A, O),
+                    0 => M(R, G, B, A),
+                    1 => M(B, G, R, A),
+                    2 => M(A, B, G, R),
+                    3 => M(G, B, A, R),
+                    4 => M(R, G, B, O),
+                    5 => M(B, G, R, O),
+                    6 => M(A, B, G, O),
+                    _ => M(G, B, A, O),
                 };
         }
     }

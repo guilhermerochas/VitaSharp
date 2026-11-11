@@ -52,10 +52,27 @@ public static class IrPasses
                     if (fenced) { x = new IrInst(IrOp.Nop); removed++; }
                     fenced = true;
                     break;
-                case IrOp.Load8: case IrOp.Load8S: case IrOp.Load16: case IrOp.Load16S: case IrOp.Load32:
-                case IrOp.Store8: case IrOp.Store16: case IrOp.Store32: case IrOp.LoadD: case IrOp.StoreD:
-                case IrOp.LdrEx: case IrOp.StrEx: case IrOp.VecLdSt: case IrOp.Callout: case IrOp.FpOp: case IrOp.VecOp:
-                case IrOp.Label: case IrOp.CondBranch: case IrOp.BranchIf: case IrOp.ExitStatic: case IrOp.ExitDynamic:
+                case IrOp.Load8:
+                case IrOp.Load8S:
+                case IrOp.Load16:
+                case IrOp.Load16S:
+                case IrOp.Load32:
+                case IrOp.Store8:
+                case IrOp.Store16:
+                case IrOp.Store32:
+                case IrOp.LoadD:
+                case IrOp.StoreD:
+                case IrOp.LdrEx:
+                case IrOp.StrEx:
+                case IrOp.VecLdSt:
+                case IrOp.Callout:
+                case IrOp.FpOp:
+                case IrOp.VecOp:
+                case IrOp.Label:
+                case IrOp.CondBranch:
+                case IrOp.BranchIf:
+                case IrOp.ExitStatic:
+                case IrOp.ExitDynamic:
                     fenced = false;
                     break;
             }

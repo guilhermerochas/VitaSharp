@@ -1,6 +1,6 @@
+using Microsoft.Win32.SafeHandles;
 using System.Buffers.Binary;
 using System.IO.Hashing;
-using Microsoft.Win32.SafeHandles;
 
 namespace VitaSharp.Core.Util;
 

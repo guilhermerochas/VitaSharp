@@ -1,7 +1,7 @@
-using VitaSharp.Core.Localization;
 using VitaSharp.Core.Hle.Np;
 using VitaSharp.Core.Host;
 using VitaSharp.Core.Input;
+using VitaSharp.Core.Localization;
 using VitaSharp.Core.Util;
 using VitaSharp.Mobile.Core.Input;
 using VitaSharp.Mobile.Core.Library;

@@ -1,6 +1,6 @@
-using System.Runtime.CompilerServices;
 using Silk.NET.Core;
 using Silk.NET.Vulkan;
+using System.Runtime.CompilerServices;
 using VitaSharp.Core.Util;
 using Buffer = Silk.NET.Vulkan.Buffer;
 

@@ -67,9 +67,18 @@ public sealed class ScriptedPad
             }
             var button = name switch
             {
-                "cross" => VitaButtons.Cross, "circle" => VitaButtons.Circle, "square" => VitaButtons.Square, "triangle" => VitaButtons.Triangle,
-                "start" => VitaButtons.Start, "select" => VitaButtons.Select, "up" => VitaButtons.Up, "down" => VitaButtons.Down,
-                "left" => VitaButtons.Left, "right" => VitaButtons.Right, "ltrigger" or "l" => VitaButtons.LTrigger, "rtrigger" or "r" => VitaButtons.RTrigger,
+                "cross" => VitaButtons.Cross,
+                "circle" => VitaButtons.Circle,
+                "square" => VitaButtons.Square,
+                "triangle" => VitaButtons.Triangle,
+                "start" => VitaButtons.Start,
+                "select" => VitaButtons.Select,
+                "up" => VitaButtons.Up,
+                "down" => VitaButtons.Down,
+                "left" => VitaButtons.Left,
+                "right" => VitaButtons.Right,
+                "ltrigger" or "l" => VitaButtons.LTrigger,
+                "rtrigger" or "r" => VitaButtons.RTrigger,
                 _ => throw new FormatException($"unknown button '{at[0]}'"),
             };
             steps.Add(new Step(button, 0, start, p.Length > 1 ? double.Parse(p[1], inv) : 0.25, 0, 0));
@@ -108,7 +117,7 @@ public sealed class ScriptedPad
         {
             if (t < st.Start || t >= st.Start + st.Length) continue;
             s.Buttons |= st.Button;
-            byte ax(float v) => (byte)Math.Clamp((int)MathF.Round(128 + v * 127), 0, 255);
+            static byte ax(float v) => (byte)Math.Clamp((int)MathF.Round(128 + v * 127), 0, 255);
             if (st.Stick == 1) { s.Lx = ax(st.X); s.Ly = ax(st.Y); }
             else if (st.Stick == 2) { s.Rx = ax(st.X); s.Ry = ax(st.Y); }
         }

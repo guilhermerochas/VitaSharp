@@ -1,11 +1,11 @@
+using Silk.NET.SDL;
 using System.Collections.Concurrent;
 using System.Diagnostics;
 using System.Numerics;
 using System.Runtime.InteropServices;
-using Silk.NET.SDL;
-using Thread = System.Threading.Thread;
 using VitaSharp.Core.Input;
 using VitaSharp.Core.Util;
+using Thread = System.Threading.Thread;
 
 namespace VitaSharp.Desktop.Input;
 
@@ -213,11 +213,17 @@ public sealed unsafe class SdlGamepads : IDisposable
                       && sdl.GameControllerSetSensorEnabled(gc, SensorType.Accel, SdlBool.True) == 0;
         string model = type switch
         {
-            GameControllerType.Xbox360 => "Xbox 360", GameControllerType.Xboxone => "Xbox One / Series",
-            GameControllerType.PS3 => "DualShock 3", GameControllerType.PS4 => "DualShock 4", GameControllerType.PS5 => "DualSense",
-            GameControllerType.NintendoSwitchPro => "Switch Pro", GameControllerType.NintendoSwitchJoyconPair => "Joy-Con pair",
+            GameControllerType.Xbox360 => "Xbox 360",
+            GameControllerType.Xboxone => "Xbox One / Series",
+            GameControllerType.PS3 => "DualShock 3",
+            GameControllerType.PS4 => "DualShock 4",
+            GameControllerType.PS5 => "DualSense",
+            GameControllerType.NintendoSwitchPro => "Switch Pro",
+            GameControllerType.NintendoSwitchJoyconPair => "Joy-Con pair",
             GameControllerType.NintendoSwitchJoyconLeft or GameControllerType.NintendoSwitchJoyconRight => "Joy-Con",
-            GameControllerType.Virtual => "virtual", GameControllerType.AmazonLuna => "Luna", GameControllerType.GoogleStadia => "Stadia",
+            GameControllerType.Virtual => "virtual",
+            GameControllerType.AmazonLuna => "Luna",
+            GameControllerType.GoogleStadia => "Stadia",
             GameControllerType.NvidiaShield => "Shield",
             _ => isGamepad ? "standard gamepad" : "joystick",
         };

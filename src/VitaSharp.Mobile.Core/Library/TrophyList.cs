@@ -1,5 +1,5 @@
-using VitaSharp.Core.Localization;
 using VitaSharp.Core.Hle.Np;
+using VitaSharp.Core.Localization;
 using VitaSharp.Mobile.Core.Storage;
 
 namespace VitaSharp.Mobile.Core.Library;
@@ -70,12 +70,18 @@ public sealed class TrophyList
 
     public static string GradeName(TrophyGrade g) => g switch
     {
-        TrophyGrade.Platinum => Loc.Get("MPlatinum"), TrophyGrade.Gold => Loc.Get("MGold"), TrophyGrade.Silver => Loc.Get("MSilver"), _ => "Bronze",
+        TrophyGrade.Platinum => Loc.Get("MPlatinum"),
+        TrophyGrade.Gold => Loc.Get("MGold"),
+        TrophyGrade.Silver => Loc.Get("MSilver"),
+        _ => "Bronze",
     };
 
     /// <summary>The grade colours of the mockups (and the desktop's trophy window).</summary>
     public static string GradeColor(TrophyGrade g) => g switch
     {
-        TrophyGrade.Platinum => "#A9C4E8", TrophyGrade.Gold => "#E2B13C", TrophyGrade.Silver => "#C3C7CE", _ => "#C07A44",
+        TrophyGrade.Platinum => "#A9C4E8",
+        TrophyGrade.Gold => "#E2B13C",
+        TrophyGrade.Silver => "#C3C7CE",
+        _ => "#C07A44",
     };
 }

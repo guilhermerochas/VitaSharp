@@ -72,10 +72,13 @@ public sealed unsafe partial class Arm64Sandbox : IArm64Runner
         bool pinned = (Arm64Emitter.Opts & Arm64Emitter.A64Opt.PinnedCounters) != 0;
         noBlockCounts &= pinned;
         _tramp = (ulong)code.Place(_ => Arm64Emitter.EmitTrampoline(out epi, pinned, blockCounts: !noBlockCounts));
-        Stubs = new Arm64Emitter.Runtime { Epilogue = _tramp + (ulong)epi, Callout = CalloutStub, DispatchTable = (ulong)Dispatch, CodeBase = (ulong)code.ExecBase, PinnedCounters = pinned,
+        Stubs = new Arm64Emitter.Runtime
+        {
+            Epilogue = _tramp + (ulong)epi, Callout = CalloutStub, DispatchTable = (ulong)Dispatch, CodeBase = (ulong)code.ExecBase, PinnedCounters = pinned,
             TwoWayDispatch = (Arm64Emitter.Opts & (Arm64Emitter.A64Opt.AssocDispatch | Arm64Emitter.A64Opt.PackedDispatch)) == (Arm64Emitter.A64Opt.AssocDispatch | Arm64Emitter.A64Opt.PackedDispatch), NoBlockCounts = noBlockCounts,
             // the device's exit layout (patch sites; tests link through the slots, so the sites stay unlinked)
-            PatchLinks = pinned && (Arm64Emitter.Opts & Arm64Emitter.A64Opt.PatchLinks) != 0 };
+            PatchLinks = pinned && (Arm64Emitter.Opts & Arm64Emitter.A64Opt.PatchLinks) != 0
+        };
         Check(uc_hook_add(_uc, out _, UC_HOOK_CODE, (void*)(delegate* unmanaged<nint, ulong, uint, void*, void>)&OnCallout, null, CalloutStub, CalloutStub), "hook callout");
         Check(uc_hook_add(_uc, out _, UC_HOOK_CODE, (void*)(delegate* unmanaged<nint, ulong, uint, void*, void>)&OnFake, null, FakeStub, FakeStub), "hook fake");
         Check(uc_hook_add(_uc, out _, UC_HOOK_MEM_UNMAPPED, (void*)(delegate* unmanaged<nint, int, ulong, int, long, void*, int>)&OnUnmapped, null, 1, 0), "hook unmapped");

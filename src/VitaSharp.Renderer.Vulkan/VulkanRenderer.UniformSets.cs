@@ -46,8 +46,11 @@ public sealed unsafe partial class VulkanRenderer
                 bool dynamic = i < 2 || i >= 4; // 0/1 and the split slots: bound with dynamic offsets
                 bi[i] = dynamic ? new DescriptorBufferInfo(infos[i].Buffer, 0, infos[i].Range) : infos[i];
                 uint binding = i < 4 ? (uint)i : (uint)ShaderGenerator.SplitBinding(i < 6, (i - 4) & 1);
-                writes[nw++] = new WriteDescriptorSet { SType = StructureType.WriteDescriptorSet, DstSet = set, DstBinding = binding, DescriptorCount = 1,
-                    DescriptorType = dynamic ? DescriptorType.StorageBufferDynamic : DescriptorType.StorageBuffer, PBufferInfo = &bi[i] };
+                writes[nw++] = new WriteDescriptorSet
+                {
+                    SType = StructureType.WriteDescriptorSet, DstSet = set, DstBinding = binding, DescriptorCount = 1,
+                    DescriptorType = dynamic ? DescriptorType.StorageBufferDynamic : DescriptorType.StorageBuffer, PBufferInfo = &bi[i]
+                };
             }
             if (nw > 0) _vk.UpdateDescriptorSets(_dev, nw, writes, 0, null);
             _statDescWrites += nw;

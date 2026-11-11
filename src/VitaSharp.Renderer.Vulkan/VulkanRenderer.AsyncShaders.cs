@@ -1,5 +1,5 @@
-using System.Collections.Concurrent;
 using Silk.NET.Vulkan;
+using System.Collections.Concurrent;
 using VitaSharp.Core.Gpu;
 using VitaSharp.Core.Gxm;
 using VitaSharp.Core.Gxm.Shader;
@@ -351,7 +351,8 @@ public sealed unsafe partial class VulkanRenderer
                 {
                     NativeThread.Register("Shader worker");
                     WorkerLoop();
-                }) { IsBackground = true, Name = $"Shader worker {i}", Priority = WorkerPriority };
+                })
+                { IsBackground = true, Name = $"Shader worker {i}", Priority = WorkerPriority };
                 workers[i].Start();
             }
             _shaderWorkers = workers;

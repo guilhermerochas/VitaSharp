@@ -1,6 +1,6 @@
+using Silk.NET.Vulkan;
 using System.Diagnostics;
 using System.Text;
-using Silk.NET.Vulkan;
 using VitaSharp.Core.Gpu;
 using VitaSharp.Core.Gxm.Shader;
 using VitaSharp.Core.Util;
@@ -431,7 +431,7 @@ void main() {
                 lines++;
                 Log.Info($"[nan-draw] f{di.GuestFrame} p{di.Present} {line}{(h.Presents > 1 ? $" (#{h.Presents} presents with NaN from this vs/fs/rt)" : "")}");
             }
-            if (summary == null) summary = new StringBuilder();
+            summary ??= new StringBuilder();
             if (summary.Length < 600) summary.Append($" id={di.Id}:fs={di.Fs:X16}({frags})");
         }
         if (hits == 0) return;

@@ -52,7 +52,9 @@ public sealed class CxxExceptionHleTests(GuestMemoryFixture fx)
         readonly Dictionary<uint, uint> _stubs = [];
         readonly LoadedModule _module = new() { Name = "cxx-test", Uid = 0x7777 };
         readonly List<(uint Fn, uint Entry, bool Inline)> _exidx = [];
-        uint _extab, _counter;
+        private uint _extab;
+        private readonly uint _counter;
+
         public uint Counter => _counter;
 
         public World(GuestMemoryFixture fx)

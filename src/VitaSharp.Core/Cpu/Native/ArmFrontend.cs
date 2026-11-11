@@ -1,5 +1,5 @@
-using VitaSharp.Core.Util;
 using System.Numerics;
+using VitaSharp.Core.Util;
 using static VitaSharp.Core.Cpu.Arm;
 
 namespace VitaSharp.Core.Cpu.Native;
@@ -746,7 +746,10 @@ public sealed unsafe partial class ArmFrontend
         {
             case 0x0: { int r = B.And(a, b); SetReg(rdn, r); if (sf) SetNZ(r); break; }
             case 0x1: { int r = B.Xor(a, b); SetReg(rdn, r); if (sf) SetNZ(r); break; }
-            case 0x2: case 0x3: case 0x4: case 0x7:
+            case 0x2:
+            case 0x3:
+            case 0x4:
+            case 0x7:
             {
                 uint type = op switch { 2 => 0u, 3 => 1u, 4 => 2u, _ => 3u };
                 var (r, c) = B.ShiftReg(type, a, b, B.Flag(IrFlag.C));
@@ -1000,7 +1003,8 @@ public sealed unsafe partial class ArmFrontend
         {
             case 0: case 2: { var (l, h) = B.MulLong(vn, vm, op1 == 0); SetReg(lo, l); SetReg(hi, h); return false; }
             case 5: return T32LongMulMedia(in d, op1, op2, rn, lo, hi, rm); // SMLSLD
-            case 4: case 6:
+            case 4:
+            case 6:
                 if (op2 != 0) return T32LongMulMedia(in d, op1, op2, rn, lo, hi, rm); // SMLALxy / SMLALD / UMAAL
                 {
                     var (l, h) = B.MulLong(vn, vm, op1 == 4);
@@ -1340,7 +1344,8 @@ public sealed unsafe partial class ArmFrontend
         const FpFlags O = FpFlags.OtherOp;
         switch (opc2)
         {
-            case 0: case 1:
+            case 0:
+            case 1:
                 if (opc2 == 1 && b7) // VSQRT
                 {
                     B.FpOp(FpKind.Sqrt, O | (dbl ? FpFlags.Double : 0), dbl ? dd : sd, 0, dbl ? dm : sm, ins, d.Address);
@@ -1359,7 +1364,8 @@ public sealed unsafe partial class ArmFrontend
                     B.StoreState(DOffset + dd + 4, opc2 == 0 ? (b7 ? B.AndK(hi, 0x7FFFFFFF) : hi) : B.Xor(hi, C(0x80000000)));
                 }
                 return false;
-            case 2: case 3:
+            case 2:
+            case 3:
             {
                 // VCVTB/VCVTT: the half lives in bits 15:0 (B) or 31:16 (T) of the single register
                 if (dbl || !_supportsVec(VecKind.CvtF2H, 2)) return null;
@@ -1368,7 +1374,8 @@ public sealed unsafe partial class ArmFrontend
                 else B.FpOp(FpKind.CvtFromHalf, O, sd, 0, sm + half, ins, d.Address);
                 return false;
             }
-            case 4: case 5:
+            case 4:
+            case 5:
                 B.FpOp(opc2 == 5 ? FpKind.CmpZero : FpKind.Cmp, O | (dbl ? FpFlags.Double : 0), dbl ? dd : sd, 0, dbl ? dm : sm, ins, d.Address);
                 return false;
             case 7:
@@ -1378,7 +1385,8 @@ public sealed unsafe partial class ArmFrontend
             case 8:
                 B.FpOp(b7 ? FpKind.CvtFromS32 : FpKind.CvtFromU32, O | (dbl ? FpFlags.Double : 0), dbl ? dd : sd, 0, sm, ins, d.Address);
                 return false;
-            case 0xC: case 0xD:
+            case 0xC:
+            case 0xD:
             {
                 bool signed = opc2 == 0xD;
                 var kind = b7 ? (signed ? FpKind.CvtToS32 : FpKind.CvtToU32) : (signed ? FpKind.CvtToS32R : FpKind.CvtToU32R);

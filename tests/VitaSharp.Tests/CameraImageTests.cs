@@ -15,8 +15,15 @@ public sealed class CameraImageTests
     }
 
     [Theory]
-    [InlineData(1, 640, 480)] [InlineData(2, 320, 240)] [InlineData(3, 160, 120)] [InlineData(4, 352, 288)]
-    [InlineData(5, 176, 144)] [InlineData(6, 480, 272)] [InlineData(8, 640, 360)] [InlineData(7, 0, 0)] [InlineData(0, 0, 0)]
+    [InlineData(1, 640, 480)]
+    [InlineData(2, 320, 240)]
+    [InlineData(3, 160, 120)]
+    [InlineData(4, 352, 288)]
+    [InlineData(5, 176, 144)]
+    [InlineData(6, 480, 272)]
+    [InlineData(8, 640, 360)]
+    [InlineData(7, 0, 0)]
+    [InlineData(0, 0, 0)]
     public void ResolutionSizes(int res, int w, int h) => Assert.Equal((w, h), Camera.ResolutionSize(res));
 
     [Fact]
@@ -113,11 +120,11 @@ public sealed class CameraImageTests
         const int w = 16, h = 8;
         var img = new byte[w * h * 4];
         for (int y = 0; y < h; y++)
-        for (int x = 0; x < w; x++)
-        {
-            int i = (y * w + x) * 4;
-            img[i] = (byte)(x * 16); img[i + 1] = (byte)(y * 32); img[i + 2] = 200; img[i + 3] = 255;
-        }
+            for (int x = 0; x < w; x++)
+            {
+                int i = (y * w + x) * 4;
+                img[i] = (byte)(x * 16); img[i + 1] = (byte)(y * 32); img[i + 2] = 200; img[i + 3] = 255;
+            }
         // horizontally smooth content: 4:2:2 subsampling loses little
         var yuyv = new byte[w * h * 2];
         CameraImage.Encode(img, w, h, VitaCameraFormat.Yuv422Packed, false, w, yuyv, default, default);
@@ -148,8 +155,8 @@ public sealed class CameraImageTests
         const int sw = 64, sh = 36;
         var src = Solid(sw, sh, 0, 0, 255);
         for (int y = 0; y < sh; y++)
-        for (int x = 0; x < sw; x++)
-            if (x < 8 || x >= 56) { int i = (y * sw + x) * 4; src[i] = 255; src[i + 2] = 0; }
+            for (int x = 0; x < sw; x++)
+                if (x < 8 || x >= 56) { int i = (y * sw + x) * 4; src[i] = 255; src[i + 2] = 0; }
         var dst = new byte[16 * 12 * 4];
         CameraImage.Resample(src, sw, sh, dst, 16, 12);
         for (int i = 0; i < dst.Length; i += 4) { Assert.True(dst[i] < 40, $"red leaked at {i / 4}"); Assert.True(dst[i + 2] > 215); }

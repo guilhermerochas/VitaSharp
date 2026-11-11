@@ -1,7 +1,7 @@
-using System.Diagnostics.CodeAnalysis;
-using System.Text;
 using Silk.NET.Core;
 using Silk.NET.Vulkan;
+using System.Diagnostics.CodeAnalysis;
+using System.Text;
 
 namespace VitaSharp.Renderer.Vulkan;
 

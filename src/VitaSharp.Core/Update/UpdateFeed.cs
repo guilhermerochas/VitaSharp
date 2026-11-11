@@ -64,7 +64,7 @@ public static class UpdateFeed
         foreach (var r in doc.RootElement.EnumerateArray())
         {
             if (r.TryGetProperty("draft", out var draft) && draft.ValueKind == JsonValueKind.True) continue;
-            string Str(JsonElement e, string name) => e.TryGetProperty(name, out var v) && v.ValueKind == JsonValueKind.String ? v.GetString() ?? "" : "";
+            static string Str(JsonElement e, string name) => e.TryGetProperty(name, out var v) && v.ValueKind == JsonValueKind.String ? v.GetString() ?? "" : "";
             var assets = new List<UpdateAsset>();
             if (r.TryGetProperty("assets", out var arr) && arr.ValueKind == JsonValueKind.Array)
                 foreach (var a in arr.EnumerateArray())

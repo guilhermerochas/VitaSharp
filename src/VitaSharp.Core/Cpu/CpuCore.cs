@@ -1,5 +1,5 @@
-using VitaSharp.Core.Util;
 using System.Runtime.CompilerServices;
+using VitaSharp.Core.Util;
 
 namespace VitaSharp.Core.Cpu;
 

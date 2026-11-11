@@ -1,6 +1,6 @@
+using Silk.NET.Vulkan;
 using System.Diagnostics;
 using System.Text;
-using Silk.NET.Vulkan;
 using VitaSharp.Core.Gpu;
 using VitaSharp.Core.Util;
 using Buffer = Silk.NET.Vulkan.Buffer;

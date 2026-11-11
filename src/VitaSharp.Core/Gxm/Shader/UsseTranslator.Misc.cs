@@ -16,26 +16,43 @@ public sealed partial class UsseTranslator
             case 1:
                 return aluOp switch
                 {
-                    6 => (VOp.VAdd, DataType.Int16, false), 7 => (VOp.VSub, DataType.Int16, true), 8 => (VOp.VMul, DataType.Int16, false),
-                    9 => (VOp.VAdd, DataType.UInt16, false), 10 => (VOp.VSub, DataType.UInt16, true), 11 => (VOp.VMul, DataType.UInt16, false),
-                    12 => (VOp.VAdd, DataType.Int32, false), 13 => (VOp.VAdd, DataType.UInt32, false),
-                    14 => (VOp.VSub, DataType.Int32, true), 15 => (VOp.VSub, DataType.UInt32, true),
+                    6 => (VOp.VAdd, DataType.Int16, false),
+                    7 => (VOp.VSub, DataType.Int16, true),
+                    8 => (VOp.VMul, DataType.Int16, false),
+                    9 => (VOp.VAdd, DataType.UInt16, false),
+                    10 => (VOp.VSub, DataType.UInt16, true),
+                    11 => (VOp.VMul, DataType.UInt16, false),
+                    12 => (VOp.VAdd, DataType.Int32, false),
+                    13 => (VOp.VAdd, DataType.UInt32, false),
+                    14 => (VOp.VSub, DataType.Int32, true),
+                    15 => (VOp.VSub, DataType.UInt32, true),
                     _ => (VOp.Invalid, DataType.Unk, false),
                 };
             case 2:
                 return aluOp switch
                 {
-                    0 => (VOp.VAdd, DataType.UInt8, false), 1 => (VOp.VSub, DataType.UInt8, true), 2 => (VOp.VAdd, DataType.UInt8, false),
-                    3 => (VOp.VSub, DataType.UInt8, true), 4 => (VOp.VMul, DataType.UInt8, false), 5 => (VOp.VMul, DataType.UInt8, false),
-                    6 => (VOp.VMul, DataType.UInt8, false), 7 => (VOp.VAdd, DataType.UInt8, false), 8 => (VOp.VSub, DataType.UInt8, true),
+                    0 => (VOp.VAdd, DataType.UInt8, false),
+                    1 => (VOp.VSub, DataType.UInt8, true),
+                    2 => (VOp.VAdd, DataType.UInt8, false),
+                    3 => (VOp.VSub, DataType.UInt8, true),
+                    4 => (VOp.VMul, DataType.UInt8, false),
+                    5 => (VOp.VMul, DataType.UInt8, false),
+                    6 => (VOp.VMul, DataType.UInt8, false),
+                    7 => (VOp.VAdd, DataType.UInt8, false),
+                    8 => (VOp.VSub, DataType.UInt8, true),
                     _ => (VOp.Invalid, DataType.Unk, false),
                 };
             default:
                 return aluOp switch
                 {
-                    0 => (VOp.And, DataType.UInt32, false), 1 => (VOp.Or, DataType.UInt32, false), 2 => (VOp.Xor, DataType.UInt32, false),
-                    3 => (VOp.Shl, DataType.UInt32, false), 4 => (VOp.Shr, DataType.UInt32, false), 5 => (VOp.Rol, DataType.UInt32, false),
-                    7 => (VOp.Asr, DataType.UInt32, false), _ => (VOp.Invalid, DataType.Unk, false),
+                    0 => (VOp.And, DataType.UInt32, false),
+                    1 => (VOp.Or, DataType.UInt32, false),
+                    2 => (VOp.Xor, DataType.UInt32, false),
+                    3 => (VOp.Shl, DataType.UInt32, false),
+                    4 => (VOp.Shr, DataType.UInt32, false),
+                    5 => (VOp.Rol, DataType.UInt32, false),
+                    7 => (VOp.Asr, DataType.UInt32, false),
+                    _ => (VOp.Invalid, DataType.Unk, false),
                 };
         }
     }
@@ -152,8 +169,12 @@ public sealed partial class UsseTranslator
             {
                 (uint ones, bool signed) = dt switch
                 {
-                    DataType.Int8 => (0x7Fu, true), DataType.Int16 => (0x7FFFu, true), DataType.Int32 => (0x7FFFFFFFu, true),
-                    DataType.UInt8 => (0xFFu, false), DataType.UInt16 => (0xFFFFu, false), _ => (0xFFFFFFFFu, false),
+                    DataType.Int8 => (0x7Fu, true),
+                    DataType.Int16 => (0x7FFFu, true),
+                    DataType.Int32 => (0x7FFFFFFFu, true),
+                    DataType.UInt8 => (0xFFu, false),
+                    DataType.UInt16 => (0xFFFFu, false),
+                    _ => (0xFFFFFFFFu, false),
                 };
                 string zero = signed ? "0" : "0u", one = signed ? $"{(int)ones}" : $"{ones}u";
                 outV = res.N == 1 ? new Val($"({res} ? {one} : {zero})", signed ? 'i' : 'u', 1)
@@ -295,7 +316,7 @@ public sealed partial class UsseTranslator
         var dest = DecodeDest(3, i['u'], i['t'], i.Bit('d'), false, 7);
         src1.Type = src2.Type = dest.Type = DataType.UInt8;
         uint sel1 = i['l'], sel2 = i['f'];
-        string? Sel(uint s, string a, string b) => s switch { 0 => "vec4(0.0)", 2 => a, 3 => $"{a}.wwww", 6 => b, 7 => $"{b}.wwww", _ => null };
+        static string? Sel(uint s, string a, string b) => s switch { 0 => "vec4(0.0)", 2 => a, 3 => $"{a}.wwww", 6 => b, 7 => $"{b}.wwww", _ => null };
         var s1 = Bind(ToFloat(Load(src1, 0b1111), DataType.UInt8, true));
         var s2 = Bind(ToFloat(Load(src2, 0b1111), DataType.UInt8, true));
         var op1 = Sel(sel1, s1.E, s2.E);

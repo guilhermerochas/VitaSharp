@@ -1,5 +1,5 @@
-using System.Text;
 using Silk.NET.Vulkan;
+using System.Text;
 using VitaSharp.Core.Gpu;
 using VitaSharp.Core.Gxm;
 using VitaSharp.Core.Util;
@@ -119,7 +119,8 @@ public sealed unsafe partial class VulkanRenderer
                 }
                 catch (Exception e) { Log.WarnOnce("texinspectbg", $"[gpu] background texture inspection failed: {e.Message}"); }
             }
-        }) { IsBackground = true, Name = "Texture inspection", Priority = ThreadPriority.BelowNormal };
+        })
+        { IsBackground = true, Name = "Texture inspection", Priority = ThreadPriority.BelowNormal };
         t.Start();
         return t;
         static ulong HashOf(uint addr, int len) => System.IO.Hashing.XxHash3.HashToUInt64(VitaSharp.Core.Memory.GuestMemory.ReadSpan(addr, len));

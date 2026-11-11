@@ -1,6 +1,6 @@
-using VitaSharp.Core.Localization;
 using VitaSharp.Core;
 using VitaSharp.Core.Hle.Modules;
+using VitaSharp.Core.Localization;
 using VitaSharp.Core.SaveState;
 using VitaSharp.Core.Util;
 using VitaSharp.Renderer.Vulkan;

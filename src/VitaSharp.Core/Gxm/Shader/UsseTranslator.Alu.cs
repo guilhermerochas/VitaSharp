@@ -114,7 +114,7 @@ public sealed partial class UsseTranslator
         var dest = DecodeDest(3, i['j'], i['k'], i.Bit('d'), true, 7);
         var src2 = Operand.Make(2); src2.Bank = Bank.FpInternal; src2.Flags = OpFlags.Gpi; src2.Num = (int)i['i'];
         src2.Swizzle = DecodeVec34Swizzle(i['z'], false, type);
-        Sw Dec(uint v) => v < 8 ? (Sw)v : Sw.Undef;
+        static Sw Dec(uint v) => v < 8 ? (Sw)v : Sw.Undef;
         src1.Swizzle = [Dec(i['x']), Dec(i['y']), Dec(i['q']), Dec(i['m'])];
         if (i.Bit('b')) src1.Flags |= OpFlags.Neg;
         if (i.Bit('f')) src1.Flags |= OpFlags.Abs;
@@ -232,8 +232,11 @@ public sealed partial class UsseTranslator
         2 => cfg switch { 0 => [DualSrc.U, DualSrc.I1], 1 => [DualSrc.I0, DualSrc.U], 2 => [DualSrc.I0, DualSrc.I1], _ => null },
         3 => cfg switch
         {
-            0 => [DualSrc.U, DualSrc.I1, DualSrc.I2], 1 => [DualSrc.I0, DualSrc.U, DualSrc.I2],
-            2 => [DualSrc.I0, DualSrc.I1, DualSrc.U], 3 => [DualSrc.I0, DualSrc.I1, DualSrc.I2], _ => null,
+            0 => [DualSrc.U, DualSrc.I1, DualSrc.I2],
+            1 => [DualSrc.I0, DualSrc.U, DualSrc.I2],
+            2 => [DualSrc.I0, DualSrc.I1, DualSrc.U],
+            3 => [DualSrc.I0, DualSrc.I1, DualSrc.I2],
+            _ => null,
         },
         _ => null,
     };
@@ -244,8 +247,10 @@ public sealed partial class UsseTranslator
         (1, 2) => cfg switch { 0 => [DualSrc.I0, DualSrc.I1], 1 => [DualSrc.U, DualSrc.I1], 2 => [DualSrc.I0, DualSrc.U], _ => [DualSrc.I1, DualSrc.U] },
         (1, 3) => cfg switch
         {
-            0 => [DualSrc.I0, DualSrc.I1, DualSrc.I2], 1 => [DualSrc.U, DualSrc.I1, DualSrc.I2],
-            2 => [DualSrc.I0, DualSrc.U, DualSrc.I2], _ => [DualSrc.I0, DualSrc.U, DualSrc.I1],
+            0 => [DualSrc.I0, DualSrc.I1, DualSrc.I2],
+            1 => [DualSrc.U, DualSrc.I1, DualSrc.I2],
+            2 => [DualSrc.I0, DualSrc.U, DualSrc.I2],
+            _ => [DualSrc.I0, DualSrc.U, DualSrc.I1],
         },
         (2, 1) => cfg switch { 0 => [DualSrc.I0], 1 => [DualSrc.I1], 2 => [DualSrc.U], _ => null },
         (2, 2) => cfg switch { 0 => [DualSrc.I0, DualSrc.I2], 1 => [DualSrc.I1, DualSrc.I2], 2 => [DualSrc.I2, DualSrc.U], _ => null },
@@ -260,10 +265,21 @@ public sealed partial class UsseTranslator
 
     static (int srcCount, bool vecLoad, bool vecStore) DualInfo(DOp op) => op switch
     {
-        DOp.VMad => (3, true, true), DOp.VDp => (2, true, false), DOp.VSsq => (1, true, false), DOp.VMul => (2, true, true),
-        DOp.VAdd => (2, true, true), DOp.VMov => (1, true, true), DOp.FRsq => (1, false, false), DOp.FRcp => (1, false, false),
-        DOp.FMad => (3, false, false), DOp.FAdd => (2, false, false), DOp.FMul => (2, false, false), DOp.FSubFlr => (2, false, false),
-        DOp.FExp => (1, false, false), DOp.FLog => (1, false, false), _ => (0, false, false),
+        DOp.VMad => (3, true, true),
+        DOp.VDp => (2, true, false),
+        DOp.VSsq => (1, true, false),
+        DOp.VMul => (2, true, true),
+        DOp.VAdd => (2, true, true),
+        DOp.VMov => (1, true, true),
+        DOp.FRsq => (1, false, false),
+        DOp.FRcp => (1, false, false),
+        DOp.FMad => (3, false, false),
+        DOp.FAdd => (2, false, false),
+        DOp.FMul => (2, false, false),
+        DOp.FSubFlr => (2, false, false),
+        DOp.FExp => (1, false, false),
+        DOp.FLog => (1, false, false),
+        _ => (0, false, false),
     };
 
     void Vdual(UsseInst i)
@@ -348,7 +364,8 @@ public sealed partial class UsseTranslator
                 case DOp.FExp: { var a = Bind(Load(ops[0], srcMask)); return new Val($"mix(exp2({a}), {Splat(1f, a.N)}, isnan(exp2({a})))", 'f', a.N); }
                 case DOp.FLog: { var a = Load(ops[0], srcMask); return new Val($"log2({a})", 'f', a.N); }
                 case DOp.VSsq: { var a = Bind(Load(ops[0], srcMask)); return new Val(a.N > 1 ? $"dot({a}, {a})" : $"({a} * {a})", 'f', 1); }
-                case DOp.FMad: case DOp.VMad:
+                case DOp.FMad:
+                case DOp.VMad:
                 { var a = Load(ops[0], srcMask); var b = Load(ops[1], srcMask); var c = Load(ops[2], srcMask); return new Val($"({a} * {b} + {c})", 'f', a.N); }
                 case DOp.FSubFlr:
                 {

@@ -1,5 +1,5 @@
-using VitaSharp.Core.Localization;
 using SkiaSharp;
+using VitaSharp.Core.Localization;
 using VitaSharp.Core.Util;
 
 namespace VitaSharp.Desktop.Host;
@@ -42,10 +42,10 @@ public static class PauseBadge
                 }
                 else if (pauseSign)
                 {
-                using var accent = new SKPaint { Color = new SKColor(0xFF, 0xB5, 0x47), IsAntialias = true };
-                float top = h * 0.28f, bottom = h * 0.72f, bw = bar * 0.36f;
-                c.DrawRect(pad, top, bw, bottom - top, accent);
-                c.DrawRect(pad + bar - bw, top, bw, bottom - top, accent);
+                    using var accent = new SKPaint { Color = new SKColor(0xFF, 0xB5, 0x47), IsAntialias = true };
+                    float top = h * 0.28f, bottom = h * 0.72f, bw = bar * 0.36f;
+                    c.DrawRect(pad, top, bw, bottom - top, accent);
+                    c.DrawRect(pad + bar - bw, top, bw, bottom - top, accent);
                 }
                 var metrics = font.Metrics;
                 float baseline = h / 2f - (metrics.Ascent + metrics.Descent) / 2f;

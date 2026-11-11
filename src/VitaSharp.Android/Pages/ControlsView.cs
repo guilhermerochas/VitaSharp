@@ -115,9 +115,16 @@ public sealed class ControlsView : Screen<ControlsState>
 
     static string ControlName(VitaControl c) => c switch
     {
-        VitaControl.Cross => "\u2715", VitaControl.Circle => "\u25CB", VitaControl.Square => "\u25A1", VitaControl.Triangle => "\u25B3",
-        VitaControl.PS => Loc.Get("MPsButton"), VitaControl.Up => Loc.Get("MDpad"), VitaControl.LStickUp => Loc.Get("MLeftStick"),
-        VitaControl.RStickUp => Loc.Get("MRightStick"), VitaControl.Start => "START", VitaControl.Select => "SELECT",
+        VitaControl.Cross => "\u2715",
+        VitaControl.Circle => "\u25CB",
+        VitaControl.Square => "\u25A1",
+        VitaControl.Triangle => "\u25B3",
+        VitaControl.PS => Loc.Get("MPsButton"),
+        VitaControl.Up => Loc.Get("MDpad"),
+        VitaControl.LStickUp => Loc.Get("MLeftStick"),
+        VitaControl.RStickUp => Loc.Get("MRightStick"),
+        VitaControl.Start => "START",
+        VitaControl.Select => "SELECT",
         _ => c.ToString(),
     };
 

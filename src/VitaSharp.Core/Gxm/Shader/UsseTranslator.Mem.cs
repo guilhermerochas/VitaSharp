@@ -15,7 +15,7 @@ public sealed partial class UsseTranslator
         string e;
         // a reinterpreted render target above native: one texel at the native mapping (ShaderGenerator.RtFetchHelper)
         if (s.RtFetch != null && gatherComp < 0 && !s.IsCube) e = lodMode == 4 && dim == 3 ? $"{s.RtFetch}(({coords}).xy / ({coords}).z)" : $"{s.RtFetch}(({coords}).xy)";
-        else if (gatherComp >= 0) e =$"textureGather({s.GlslName}, {coords}, {gatherComp})";
+        else if (gatherComp >= 0) e = $"textureGather({s.GlslName}, {coords}, {gatherComp})";
         else if (extra1 == null) e = lodMode == 4 ? $"textureProj({s.GlslName}, {coords})" : $"texture({s.GlslName}, {coords})";
         else e = lodMode switch
         {

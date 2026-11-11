@@ -251,7 +251,8 @@ public sealed class GpuQuirkTests
     public void Vulkan11DeviceUsesRenderPassesAndStaticState()
     {
         var old = Device(GpuQuirkTable.VendorQualcomm, GpuQuirkTable.DriverQualcommProprietary, GpuQuirkTable.MakeVersion(512, 454),
-            Desktop & ~(GpuFeature.DynamicRendering | GpuFeature.ExtendedDynamicState | GpuFeature.TextureCompressionBC)) with { ApiVersion = GpuQuirkTable.MakeVersion(1, 1, 128) };
+            Desktop & ~(GpuFeature.DynamicRendering | GpuFeature.ExtendedDynamicState | GpuFeature.TextureCompressionBC)) with
+        { ApiVersion = GpuQuirkTable.MakeVersion(1, 1, 128) };
         var c = GpuQuirkTable.Select(old);
         Assert.True(c.Has(GpuQuirk.RenderPasses));
         Assert.True(c.Has(GpuQuirk.StaticExtendedDynamicState));

@@ -93,7 +93,7 @@ public sealed class ControllerSettingsPanel : UserControl
             _ownsPads = true;
         }
         _pads = pads.Available ? pads : null;
-        if (_pads != null) _pads.DevicesChanged += () => _devicesChanged = true;
+        _pads?.DevicesChanged += () => _devicesChanged = true;
         _profile = _store.KeyboardProfile();
         _compiled = new CompiledProfile(_profile);
 

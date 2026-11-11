@@ -1,6 +1,6 @@
-using System.Runtime.InteropServices;
 using Silk.NET.Core.Contexts;
 using Silk.NET.Vulkan;
+using System.Runtime.InteropServices;
 using VitaSharp.Core.Util;
 
 namespace VitaSharp.Renderer.Vulkan;

@@ -303,7 +303,8 @@ public sealed unsafe partial class X64Emitter
             case IrOp.Or: Bin(Alu.Or, x); return;
             case IrOp.Xor: Bin(Alu.Xor, x); return;
             case IrOp.Mul: Bin(Alu.Imul, x); return;
-            case IrOp.AndNot: case IrOp.OrNot:
+            case IrOp.AndNot:
+            case IrOp.OrNot:
             {
                 int d = Def(x.D, RAX);
                 LoadTo(d, x.B);
@@ -367,7 +368,10 @@ public sealed unsafe partial class X64Emitter
                 Commit(x.D, d);
                 return;
             }
-            case IrOp.SExt8: case IrOp.SExt16: case IrOp.ZExt8: case IrOp.ZExt16:
+            case IrOp.SExt8:
+            case IrOp.SExt16:
+            case IrOp.ZExt8:
+            case IrOp.ZExt16:
             {
                 int d = Def(x.D, RAX);
                 int s = Use(x.A, RCX);
@@ -412,7 +416,8 @@ public sealed unsafe partial class X64Emitter
                 Commit(x.D, d);
                 return;
             }
-            case IrOp.UDiv: case IrOp.SDiv:
+            case IrOp.UDiv:
+            case IrOp.SDiv:
             {
                 var zero = a.CreateLabel(); var done = a.CreateLabel(); var div = a.CreateLabel();
                 LoadTo(RAX, x.A);
@@ -453,7 +458,8 @@ public sealed unsafe partial class X64Emitter
             case IrOp.ShiftReg: ShiftReg(x); return;
 
             // ---------------- 64-bit
-            case IrOp.UMulL: case IrOp.SMulL:
+            case IrOp.UMulL:
+            case IrOp.SMulL:
             {
                 if (x.Op == IrOp.UMulL) { LoadTo(RAX, x.A); LoadTo(RCX, x.B); }
                 else
@@ -478,7 +484,11 @@ public sealed unsafe partial class X64Emitter
             }
 
             // ---------------- memory
-            case IrOp.Load8: case IrOp.Load8S: case IrOp.Load16: case IrOp.Load16S: case IrOp.Load32:
+            case IrOp.Load8:
+            case IrOp.Load8S:
+            case IrOp.Load16:
+            case IrOp.Load16S:
+            case IrOp.Load32:
             {
                 int d = Def(x.D, RCX);
                 switch (x.Op)
@@ -492,7 +502,9 @@ public sealed unsafe partial class X64Emitter
                 Commit(x.D, d);
                 return;
             }
-            case IrOp.Store8: case IrOp.Store16: case IrOp.Store32:
+            case IrOp.Store8:
+            case IrOp.Store16:
+            case IrOp.Store32:
             {
                 if (LogStores) EmitStoreLog(x);
                 var mem = GuestMem(x.A, x.Op == IrOp.Store8 ? MemorySize.UInt8 : x.Op == IrOp.Store16 ? MemorySize.UInt16 : MemorySize.UInt32);
@@ -772,7 +784,11 @@ public sealed unsafe partial class X64Emitter
 
         switch (kind)
         {
-            case FpKind.Add: case FpKind.Sub: case FpKind.Mul: case FpKind.NMul: case FpKind.Div:
+            case FpKind.Add:
+            case FpKind.Sub:
+            case FpKind.Mul:
+            case FpKind.NMul:
+            case FpKind.Div:
                 if (dbl)
                 {
                     a.movsd(xmm0, Dq(nOff));
@@ -785,7 +801,10 @@ public sealed unsafe partial class X64Emitter
                 }
                 StoreFpResult(dOff, dbl, kind == FpKind.NMul, slowGuest, done);
                 break;
-            case FpKind.Mla: case FpKind.Mls: case FpKind.Nmla: case FpKind.Nmls:
+            case FpKind.Mla:
+            case FpKind.Mls:
+            case FpKind.Nmla:
+            case FpKind.Nmls:
                 // d = (+/-)d (+/-) round(n * m): the product is rounded (and flushed / NaN-defaulted) on its own
                 if (dbl) { a.movsd(xmm1, Dq(nOff)); a.mulsd(xmm1, Dq(mOff)); a.movsd(xmm0, Dq(dOff)); }
                 else { a.movss(xmm1, S(nOff)); a.mulss(xmm1, S(mOff)); a.movss(xmm0, S(dOff)); }
@@ -798,7 +817,8 @@ public sealed unsafe partial class X64Emitter
                 if (dbl) a.sqrtsd(xmm0, Dq(mOff)); else a.sqrtss(xmm0, S(mOff));
                 StoreFpResult(dOff, dbl, false, slowGuest, done);
                 break;
-            case FpKind.Cmp: case FpKind.CmpZero:
+            case FpKind.Cmp:
+            case FpKind.CmpZero:
             {
                 var set = a.CreateLabel();
                 if (dbl) a.movsd(xmm0, Dq(dOff)); else a.movss(xmm0, S(dOff));
@@ -828,7 +848,8 @@ public sealed unsafe partial class X64Emitter
                 a.cvtsd2ss(xmm0, Dq(mOff));
                 StoreFpResult(dOff, false, false, slowGuest, done);
                 break;
-            case FpKind.CvtFromS32: case FpKind.CvtFromU32:
+            case FpKind.CvtFromS32:
+            case FpKind.CvtFromU32:
                 if (kind == FpKind.CvtFromS32) { if (dbl) a.cvtsi2sd(xmm0, S(mOff)); else a.cvtsi2ss(xmm0, S(mOff)); }
                 else
                 {
@@ -840,7 +861,8 @@ public sealed unsafe partial class X64Emitter
                 if (dbl) a.movsd(Dq(dOff), xmm0); else a.movss(S(dOff), xmm0);
                 a.jmp(done);
                 break;
-            case FpKind.CvtToS32: case FpKind.CvtToS32R:
+            case FpKind.CvtToS32:
+            case FpKind.CvtToS32R:
                 // 0x80000000 is the x86 "indefinite" result (NaN, out of range) but also a real value: the handler decides
                 if (kind == FpKind.CvtToS32) { if (dbl) a.cvttsd2si(eax, Dq(mOff)); else a.cvttss2si(eax, S(mOff)); }
                 else { if (dbl) a.cvtsd2si(eax, Dq(mOff)); else a.cvtss2si(eax, S(mOff)); }
@@ -850,7 +872,8 @@ public sealed unsafe partial class X64Emitter
                 a.mov(S(dOff), eax);
                 a.jmp(done);
                 break;
-            case FpKind.CvtToU32: case FpKind.CvtToU32R:
+            case FpKind.CvtToU32:
+            case FpKind.CvtToU32R:
             {
                 var store = a.CreateLabel(); var pos = a.CreateLabel();
                 if (kind == FpKind.CvtToU32) { if (dbl) a.cvttsd2si(rax, Dq(mOff)); else a.cvttss2si(rax, S(mOff)); }
@@ -1155,7 +1178,8 @@ public sealed unsafe partial class X64Emitter
         {
             switch (type)
             {
-                case 0: case 1:
+                case 0:
+                case 1:
                 {
                     var small = a.CreateLabel();
                     a.cmp(ecx, 32);
@@ -1188,7 +1212,8 @@ public sealed unsafe partial class X64Emitter
         a.jz(zero);
         switch (type)
         {
-            case 0: case 1:
+            case 0:
+            case 1:
             {
                 var eq = a.CreateLabel(); var gt = a.CreateLabel();
                 a.cmp(ecx, 32);
@@ -1263,18 +1288,21 @@ public sealed unsafe partial class X64Emitter
             case 5: TestFlag(x.A); a.jnz(skip); break;  // PL
             case 6: TestFlag(x.E); a.jz(skip); break;   // VS
             case 7: TestFlag(x.E); a.jnz(skip); break;  // VC
-            case 8: case 9: // HI: C && !Z ; LS: !C || Z
+            case 8:
+            case 9: // HI: C && !Z ; LS: !C || Z
                 LoadTo(RAX, x.B);
                 a.xor(eax, 1);
                 AluOp(Alu.And, RAX, x.C);
                 if (cond == 8) a.jz(skip); else a.jnz(skip);
                 break;
-            case 10: case 11: // GE: N == V ; LT: N != V
+            case 10:
+            case 11: // GE: N == V ; LT: N != V
                 LoadTo(RAX, x.A);
                 AluOp(Alu.Cmp, RAX, x.E);
                 if (cond == 10) a.jne(skip); else a.je(skip);
                 break;
-            case 12: case 13: // GT: !Z && N == V ; LE: Z || N != V
+            case 12:
+            case 13: // GT: !Z && N == V ; LE: Z || N != V
                 LoadTo(RAX, x.A);
                 AluOp(Alu.Xor, RAX, x.E);
                 AluOp(Alu.Or, RAX, x.B);

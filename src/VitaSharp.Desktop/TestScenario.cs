@@ -1,5 +1,5 @@
-using VitaSharp.Core.Util;
 using System.Text;
+using VitaSharp.Core.Util;
 
 namespace VitaSharp.Desktop;
 

@@ -109,7 +109,8 @@ public sealed class AndroidAudioBackend : IAudioBackend
             }
             catch (Exception e) { Log.WarnOnce("effect-play", $"Audio: sound effect failed: {e.Message}"); }
             finally { Volatile.Write(ref _effectBusy, 0); }
-        }) { IsBackground = true, Name = "Sound effect" }.Start();
+        })
+        { IsBackground = true, Name = "Sound effect" }.Start();
     }
 
     /// <summary>Activity lifecycle: pauses every stream (onPause) so the device stops playing the queued grains.</summary>

@@ -1,9 +1,9 @@
+using Silk.NET.Vulkan;
 using System.Buffers.Binary;
 using System.Collections.Concurrent;
 using System.Diagnostics;
 using System.IO.Hashing;
 using System.Runtime.InteropServices;
-using Silk.NET.Vulkan;
 using VitaSharp.Core.Gpu;
 using VitaSharp.Core.Gxm;
 using VitaSharp.Core.Gxm.Shader;

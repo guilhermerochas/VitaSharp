@@ -110,7 +110,9 @@ public ref struct OnceKeyHandler
         if (typeof(T) == typeof(long)) { Append(Unsafe.As<T, long>(ref value), format); return; }
         if (typeof(T) == typeof(ushort)) { Append(Unsafe.As<T, ushort>(ref value), format); return; }
         if (typeof(T) == typeof(byte)) { Append(Unsafe.As<T, byte>(ref value), format); return; }
+#pragma warning disable IDE0038 // `is X x` boxes a generic T; `is X` + cast is the shape the JIT compiles box-free
         if (value is ISpanFormattable)
+#pragma warning restore IDE0038
         {
             int written;
             while (!((ISpanFormattable)value).TryFormat(_buf.AsSpan(_pos), out written, format, null)) Grow(64);

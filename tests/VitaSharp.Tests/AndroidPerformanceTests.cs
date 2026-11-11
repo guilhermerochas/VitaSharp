@@ -145,7 +145,7 @@ public sealed class AndroidPerformanceTests : IDisposable
     public void ShaderWorkersUseTheFastCoresWhileTheyAreIdle()
     {
         var p = new ThreadPlacementPlanner(HelioG99());
-        ThreadSample[] Threads(double main, double gpu) =>
+        static ThreadSample[] Threads(double main, double gpu) =>
             [Guest(1, main), new(9, ThreadKind.Gpu, "GPU worker", gpu, 9), new(5, ThreadKind.ShaderWorker, "Shader worker", 0.9, 5)];
         Assert.Equal(Placement.All, p.Plan(Threads(0.6, 0.3)).Placements[5]);    // 0.9 of 2 cores: idle enough
         Assert.Equal(Placement.All, p.Plan(Threads(0.9, 0.7)).Placements[5]);    // 1.6: hysteresis keeps it

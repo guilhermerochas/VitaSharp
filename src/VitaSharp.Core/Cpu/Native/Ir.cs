@@ -34,7 +34,7 @@ public enum IrOp : byte
     TestNZ,       // Fn = A >> 31, Fz = A == 0
     ShiftReg,     // ARM register-controlled shift: Imm = type (0 LSL,1 LSR,2 ASR,3 ROR), A = value, B = Rs (low byte used),
                   // C = carry-in; D = result, Fc = carry-out (optional)
-    // ---- 64-bit pairs
+                  // ---- 64-bit pairs
     UMulL, SMulL, // D = low, D2 = high of A * B
     Add64,        // (D2:D) = (B:A) + (E:C)
     // ---- memory (guest address A; Imm unused)
@@ -77,7 +77,7 @@ public struct IrInst
         // loads may fault on unmapped memory exactly like the interpreter: keep them
         or IrOp.Load8 or IrOp.Load8S or IrOp.Load16 or IrOp.Load16S or IrOp.Load32;
 
-    public readonly override string ToString()
+    public override readonly string ToString()
     {
         var sb = new System.Text.StringBuilder();
         void O(string n, int t) { if (t >= 0) sb.Append($" {n}=t{t}"); }

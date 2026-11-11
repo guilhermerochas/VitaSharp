@@ -41,11 +41,30 @@ public static class CalloutClasses
                 uint a = s >> 4, b = (s >> 3) & 1, u = (s >> 2) & 1, size = s & 3;
                 string m = (a, b) switch
                 {
-                    (0, 0) => "VHADD", (0, 1) => "VQADD", (1, 0) => "VRHADD", (1, 1) => "bitwise", (2, 0) => "VHSUB", (2, 1) => "VQSUB",
-                    (3, 0) => "VCGT", (3, 1) => "VCGE", (4, 0) => "VSHL.reg", (4, 1) => "VQSHL.reg", (5, 0) => "VRSHL", (5, 1) => "VQRSHL",
-                    (6, 0) => "VMAX", (6, 1) => "VMIN", (7, 0) => "VABD", (7, 1) => "VABA", (8, 0) => u == 0 ? "VADD" : "VSUB",
-                    (8, 1) => u == 0 ? "VTST" : "VCEQ", (9, 0) => u == 0 ? "VMLA" : "VMLS", (9, 1) => "VMUL", (10, 0) => "VPMAX",
-                    (10, 1) => "VPMIN", (11, 0) => u == 0 ? "VQDMULH" : "VQRDMULH", (11, 1) => "VPADD",
+                    (0, 0) => "VHADD",
+                    (0, 1) => "VQADD",
+                    (1, 0) => "VRHADD",
+                    (1, 1) => "bitwise",
+                    (2, 0) => "VHSUB",
+                    (2, 1) => "VQSUB",
+                    (3, 0) => "VCGT",
+                    (3, 1) => "VCGE",
+                    (4, 0) => "VSHL.reg",
+                    (4, 1) => "VQSHL.reg",
+                    (5, 0) => "VRSHL",
+                    (5, 1) => "VQRSHL",
+                    (6, 0) => "VMAX",
+                    (6, 1) => "VMIN",
+                    (7, 0) => "VABD",
+                    (7, 1) => "VABA",
+                    (8, 0) => u == 0 ? "VADD" : "VSUB",
+                    (8, 1) => u == 0 ? "VTST" : "VCEQ",
+                    (9, 0) => u == 0 ? "VMLA" : "VMLS",
+                    (9, 1) => "VMUL",
+                    (10, 0) => "VPMAX",
+                    (10, 1) => "VPMIN",
+                    (11, 0) => u == 0 ? "VQDMULH" : "VQRDMULH",
+                    (11, 1) => "VPADD",
                     (12, _) => "VFMA/VFMS.F32",
                     (13, 0) => u == 0 ? (size >= 2 ? "VSUB.F32" : "VADD.F32") : (size >= 2 ? "VABD.F32" : "VPADD.F32"),
                     (13, 1) => u == 0 ? (size >= 2 ? "VMLS.F32" : "VMLA.F32") : "VMUL.F32",
@@ -71,9 +90,19 @@ public static class CalloutClasses
                 uint a = s >> 2, u = (s >> 1) & 1, l = s & 1;
                 string m = a switch
                 {
-                    0 => "VSHR", 1 => "VSRA", 2 => "VRSHR", 3 => "VRSRA", 4 => u != 0 ? "VSRI" : "?", 5 => u != 0 ? "VSLI" : "VSHL",
-                    6 => "VQSHLU", 7 => "VQSHL", 8 => u != 0 ? "VQSHRUN/VQRSHRUN" : "VSHRN/VRSHRN", 9 => "VQSHRN/VQRSHRN", 10 => "VSHLL/VMOVL",
-                    14 or 15 => "VCVT.fixed", _ => "?",
+                    0 => "VSHR",
+                    1 => "VSRA",
+                    2 => "VRSHR",
+                    3 => "VRSRA",
+                    4 => u != 0 ? "VSRI" : "?",
+                    5 => u != 0 ? "VSLI" : "VSHL",
+                    6 => "VQSHLU",
+                    7 => "VQSHL",
+                    8 => u != 0 ? "VQSHRUN/VQRSHRUN" : "VSHRN/VRSHRN",
+                    9 => "VQSHRN/VQRSHRN",
+                    10 => "VSHLL/VMOVL",
+                    14 or 15 => "VCVT.fixed",
+                    _ => "?",
                 };
                 return $"{n}.{m}.{(u != 0 ? "U" : "S")}{(l != 0 ? "64" : "")}";
             }
@@ -119,9 +148,14 @@ public static class CalloutClasses
                 string xy = $"{(n2 != 0 ? "T" : "B")}{(m2 != 0 ? "T" : "B")}";
                 string m = op1 switch
                 {
-                    0 => noAcc ? "MUL" : m2 != 0 ? "MLS" : "MLA", 1 => (noAcc ? "SMUL" : "SMLA") + xy, 2 => noAcc ? "SMUAD" : "SMLAD",
-                    3 => (noAcc ? "SMULW" : "SMLAW") + (m2 != 0 ? "T" : "B"), 4 => noAcc ? "SMUSD" : "SMLSD", 5 => noAcc ? "SMMUL" : "SMMLA",
-                    6 => "SMMLS", _ => noAcc ? "USAD8" : "USADA8",
+                    0 => noAcc ? "MUL" : m2 != 0 ? "MLS" : "MLA",
+                    1 => (noAcc ? "SMUL" : "SMLA") + xy,
+                    2 => noAcc ? "SMUAD" : "SMLAD",
+                    3 => (noAcc ? "SMULW" : "SMLAW") + (m2 != 0 ? "T" : "B"),
+                    4 => noAcc ? "SMUSD" : "SMLSD",
+                    5 => noAcc ? "SMMUL" : "SMMLA",
+                    6 => "SMMLS",
+                    _ => noAcc ? "USAD8" : "USADA8",
                 };
                 return $"{n}.{m}";
             }
@@ -130,9 +164,17 @@ public static class CalloutClasses
                 uint opc2 = s >> 2, b7 = (s >> 1) & 1;
                 string m = opc2 switch
                 {
-                    0 => b7 != 0 ? "VABS" : "VMOV", 1 => b7 != 0 ? "VSQRT" : "VNEG", 2 => "VCVTB/T.F32.F16", 3 => "VCVTB/T.F16.F32",
-                    4 => "VCMP", 5 => "VCMP#0", 7 => "VCVT.F64/F32", 8 => "VCVT.from.int",
-                    0xC or 0xD => b7 != 0 ? "VCVT.to.int" : "VCVTR.to.int", 0xA or 0xB or 0xE or 0xF => "VCVT.fixed", _ => "?",
+                    0 => b7 != 0 ? "VABS" : "VMOV",
+                    1 => b7 != 0 ? "VSQRT" : "VNEG",
+                    2 => "VCVTB/T.F32.F16",
+                    3 => "VCVTB/T.F16.F32",
+                    4 => "VCMP",
+                    5 => "VCMP#0",
+                    7 => "VCVT.F64/F32",
+                    8 => "VCVT.from.int",
+                    0xC or 0xD => b7 != 0 ? "VCVT.to.int" : "VCVTR.to.int",
+                    0xA or 0xB or 0xE or 0xF => "VCVT.fixed",
+                    _ => "?",
                 };
                 return $"{n}.{m}{((s & 1) != 0 ? ".F64" : ".F32")}";
             }

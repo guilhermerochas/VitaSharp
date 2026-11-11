@@ -1,9 +1,9 @@
-using VitaSharp.Core.Localization;
 using System.Collections;
 using System.IO.Compression;
 using System.Reflection;
 using System.Text;
 using VitaSharp.Core;
+using VitaSharp.Core.Localization;
 using VitaSharp.Core.Util;
 using VitaSharp.Renderer.Vulkan;
 

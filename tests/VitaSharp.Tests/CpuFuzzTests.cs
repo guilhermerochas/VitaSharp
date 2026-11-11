@@ -1,13 +1,13 @@
-﻿using VitaSharp.Core.Util;
-using System.Text;
-using UcArm = UnicornEngine.Const.Arm;
-using Decoder = VitaSharp.Core.Cpu.Decoder;
+﻿using System.Text;
 using UnicornEngine;
 using UnicornEngine.Const;
 using VitaSharp.Core.Cpu;
 using VitaSharp.Core.Memory;
+using VitaSharp.Core.Util;
 using Xunit;
 using Xunit.Abstractions;
+using Decoder = VitaSharp.Core.Cpu.Decoder;
+using UcArm = UnicornEngine.Const.Arm;
 
 namespace VitaSharp.Tests;
 
@@ -99,7 +99,8 @@ public sealed unsafe class CpuFuzzTests(GuestMemoryFixture fx, ITestOutputHelper
         uint r = (uint)rng.NextInt64();
         switch (rng.Next(8))
         {
-            case 6: case 7: // NEON shifts / one-register immediates and two-register misc (VRECPE/VRSQRTE, VCVT, VREV, ...)
+            case 6:
+            case 7: // NEON shifts / one-register immediates and two-register misc (VRECPE/VRSQRTE, VCVT, VREV, ...)
             {
                 uint a = (r & 1) == 0 ? 0xF2800010u | (r & 0x017FFFEF) : 0xF3B00000u | (r & 0x004FFFEF);
                 return thumb ? ((a & 0x01000000) != 0 ? 0xFF000000u : 0xEF000000u) | (a & 0x00FFFFFF) : a;
@@ -116,7 +117,8 @@ public sealed unsafe class CpuFuzzTests(GuestMemoryFixture fx, ITestOutputHelper
                     uint step = 0x02000F10u | (r & 0x006FF0EF);
                     return thumb ? 0xEF000000u | (step & 0x00FFFFFF) : 0xF0000000u | step;
                 }
-            case 0: case 1: // Advanced SIMD data processing: ARM 1111 001U, Thumb 111U 1111
+            case 0:
+            case 1: // Advanced SIMD data processing: ARM 1111 001U, Thumb 111U 1111
             {
                 uint u = (r >> 24) & 1, rest = r & 0x00FFFFFF;
                 return thumb ? 0xEF000000u | (u << 28) | rest : 0xF2000000u | (u << 24) | rest;
@@ -386,7 +388,7 @@ public sealed unsafe class CpuFuzzTests(GuestMemoryFixture fx, ITestOutputHelper
             case Op.T32_LdStDual:
                 return F(21, 21) == 1 && (F(19, 16) == F(15, 12) || F(19, 16) == F(11, 8)) || F(15, 12) == F(11, 8) || F(15, 12) >= 13 || F(11, 8) >= 13;
             case Op.T32_LdSt:
-                return F(15, 12) == 15 || (F(19, 16) == 15 && F(20, 20) == 0) ||(F(11, 11) == 1 && F(23, 23) == 0 && F(8, 8) == 1 && F(19, 16) == F(15, 12));
+                return F(15, 12) == 15 || (F(19, 16) == 15 && F(20, 20) == 0) || (F(11, 11) == 1 && F(23, 23) == 0 && F(8, 8) == 1 && F(19, 16) == F(15, 12));
             case Op.T32_LdmStm:
                 return F(19, 16) == 15 || (i & 0xFFFF) == 0 || (F(21, 21) == 1 && (i & (1u << (int)F(19, 16))) != 0) || (i & 0x2000) != 0;
             case Op.T32_ExclusiveWord or Op.T32_ExclusiveOther or Op.T32_Tbb:
@@ -414,10 +416,17 @@ public sealed unsafe class CpuFuzzTests(GuestMemoryFixture fx, ITestOutputHelper
                     uint type = F(11, 8);
                     (regs, inc) = type switch
                     {
-                        0b0111 => (1, 1), 0b1010 => (2, 1), 0b0110 => (3, 1), 0b0010 => (4, 1),
-                        0b1000 => (2, 1), 0b1001 => (2, 2), 0b0011 => (4, 1),
-                        0b0100 => (3, 1), 0b0101 => (3, 2),
-                        0b0000 => (4, 1), 0b0001 => (4, 2),
+                        0b0111 => (1, 1),
+                        0b1010 => (2, 1),
+                        0b0110 => (3, 1),
+                        0b0010 => (4, 1),
+                        0b1000 => (2, 1),
+                        0b1001 => (2, 2),
+                        0b0011 => (4, 1),
+                        0b0100 => (3, 1),
+                        0b0101 => (3, 2),
+                        0b0000 => (4, 1),
+                        0b0001 => (4, 2),
                         _ => (1, 1),
                     };
                 }

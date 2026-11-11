@@ -1,10 +1,10 @@
-using VitaSharp.Core.Localization;
 using Avalonia;
 using Avalonia.Controls;
 using Avalonia.Controls.Primitives;
 using Avalonia.Layout;
 using Avalonia.Media;
 using Avalonia.Platform.Storage;
+using VitaSharp.Core.Localization;
 using VitaSharp.Desktop.Input;
 using VitaSharp.Desktop.Launcher.Ui;
 using S = VitaSharp.Desktop.Launcher.Ui.Strings;

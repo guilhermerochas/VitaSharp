@@ -1,5 +1,5 @@
-using System.Runtime.CompilerServices;
 using Silk.NET.Vulkan;
+using System.Runtime.CompilerServices;
 using VitaSharp.Core.Gpu;
 using VitaSharp.Core.Gxm;
 using VitaSharp.Core.Memory;
@@ -594,36 +594,36 @@ public sealed unsafe partial class VulkanRenderer : IGpuBackend
         var vf = viewFormats ?? Array.Empty<Format>();
         fixed (Format* pvf = vf)
         {
-        var list = new ImageFormatListCreateInfo { SType = StructureType.ImageFormatListCreateInfo, ViewFormatCount = (uint)vf.Length, PViewFormats = pvf };
-        var ici = new ImageCreateInfo
-        {
-            SType = StructureType.ImageCreateInfo,
-            PNext = vf.Length > 0 ? &list : null,
-            ImageType = ImageType.Type2D,
-            Format = format,
-            Extent = new Extent3D(Math.Max(w, 1), Math.Max(h, 1), 1),
-            MipLevels = mips,
-            ArrayLayers = layers,
-            Samples = samples,
-            Tiling = ImageTiling.Optimal,
-            Usage = usage,
-            SharingMode = SharingMode.Exclusive,
-            InitialLayout = ImageLayout.Undefined,
-            Flags = (mutable ? ImageCreateFlags.CreateMutableFormatBit : 0) | (cube ? ImageCreateFlags.CreateCubeCompatibleBit : 0),
-        };
-        _vk.CreateImage(_dev, in ici, null, out var image).Ok("vkCreateImage");
-        _vk.GetImageMemoryRequirements(_dev, image, out var req);
-        ImageMemoryPool.Allocation alloc;
-        try { alloc = _imagePool.Allocate(req, cat); }
-        catch
-        {
-            _vk.DestroyImage(_dev, image, null);
-            throw;
-        }
-        _vk.BindImageMemory(_dev, image, alloc.Memory, alloc.Offset).Ok("vkBindImageMemory");
-        var view = CreateView(image, format, aspect, mips, layers, cube, swizzle ?? default);
-        if (_core.CompressionQuery) LogCompression(cat, image, format, aspect, usage, mutable, vf.Length, samples);
-        return (image, view, alloc);
+            var list = new ImageFormatListCreateInfo { SType = StructureType.ImageFormatListCreateInfo, ViewFormatCount = (uint)vf.Length, PViewFormats = pvf };
+            var ici = new ImageCreateInfo
+            {
+                SType = StructureType.ImageCreateInfo,
+                PNext = vf.Length > 0 ? &list : null,
+                ImageType = ImageType.Type2D,
+                Format = format,
+                Extent = new Extent3D(Math.Max(w, 1), Math.Max(h, 1), 1),
+                MipLevels = mips,
+                ArrayLayers = layers,
+                Samples = samples,
+                Tiling = ImageTiling.Optimal,
+                Usage = usage,
+                SharingMode = SharingMode.Exclusive,
+                InitialLayout = ImageLayout.Undefined,
+                Flags = (mutable ? ImageCreateFlags.CreateMutableFormatBit : 0) | (cube ? ImageCreateFlags.CreateCubeCompatibleBit : 0),
+            };
+            _vk.CreateImage(_dev, in ici, null, out var image).Ok("vkCreateImage");
+            _vk.GetImageMemoryRequirements(_dev, image, out var req);
+            ImageMemoryPool.Allocation alloc;
+            try { alloc = _imagePool.Allocate(req, cat); }
+            catch
+            {
+                _vk.DestroyImage(_dev, image, null);
+                throw;
+            }
+            _vk.BindImageMemory(_dev, image, alloc.Memory, alloc.Offset).Ok("vkBindImageMemory");
+            var view = CreateView(image, format, aspect, mips, layers, cube, swizzle ?? default);
+            if (_core.CompressionQuery) LogCompression(cat, image, format, aspect, usage, mutable, vf.Length, samples);
+            return (image, view, alloc);
         }
     }
 
@@ -720,7 +720,8 @@ public sealed unsafe partial class VulkanRenderer : IGpuBackend
             if ((_traceManual || _traceDumpFrame == _presentCount + 1) && _traceDir != null) _traceReplaced.Add(old); // keep it for the target dump (taken when present #TraceDrawsFrame is reached)
             else DestroyLater(old);
             _mirroredRt.Remove(old);
-        }        var format = SurfaceFormat(c.ColorFormat);
+        }
+        var format = SurfaceFormat(c.ColorFormat);
         format = RenderableFormat(format);
         float scale = TargetScale(c.Width, c.Height, format); // internal resolution (VulkanRenderer.ResScale.cs)
         // input attachment: programmable-blending draws of one-sample scenes read it in a render pass (VulkanRenderer.SingleFetch.cs)
@@ -999,7 +1000,7 @@ public sealed unsafe partial class VulkanRenderer : IGpuBackend
         // same holds for every result of earlier work (visibility tests of this or a previous scene, writebacks):
         // games read occlusion results once the frame's last notification arrived
         if (e.Notifications.Length > 0 && ((writeback && !LazyWritebackSync && !RelaxedGpuSync) || ResultsPending())) { var space = e.Space; foreach (var (addr, value) in e.Notifications) F.Signals.Add(() => GpuQueue.SignalNotification(space, addr, value)); e.NotificationsDeferred = true; }
-        if (TraceVis) Log.Info($"[vis] endscene rt=0x{_rt?.Address ?? 0:X8} present={_presentCount} drawsSoFar={_drawSerial} gpuframe={FrameCount} queries={F.Visibility?.Used ?? 0} notif={string.Join(",", e.Notifications.Select(n => $"{n.Item1:X}={n.Item2:X}"))} deferred={e.NotificationsDeferred}");
+        if (TraceVis) Log.Info($"[vis] endscene rt=0x{_rt?.Address ?? 0:X8} present={_presentCount} drawsSoFar={_drawSerial} gpuframe={FrameCount} queries={F.Visibility?.Used ?? 0} notif={string.Join(",", e.Notifications.Select(n => $"{n.Address:X}={n.Value:X}"))} deferred={e.NotificationsDeferred}");
         _inScene = false;
         _scene = null;
         _ss = false;

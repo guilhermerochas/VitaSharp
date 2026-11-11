@@ -173,7 +173,8 @@ internal static unsafe class Vfp
                     Df(s, d) = FixD(s, Math.Sqrt(InD(s, Df(s, m))));
                 }
                 return;
-            case 2: case 3: // VCVTB / VCVTT (half <-> single)
+            case 2:
+            case 3: // VCVTB / VCVTT (half <-> single)
             {
                 uint d = SingleD(ins), m = SingleM(ins);
                 int shift = b7 ? 16 : 0;
@@ -190,7 +191,8 @@ internal static unsafe class Vfp
                 }
                 return;
             }
-            case 4: case 5: // VCMP / VCMPE (5: compare with zero)
+            case 4:
+            case 5: // VCMP / VCMPE (5: compare with zero)
                 if (!dbl)
                 {
                     float a = InF(s, Sf(s, SingleD(ins))), b = opc2 == 5 ? 0f : InF(s, Sf(s, SingleM(ins))); // FZ applies to compares too
@@ -214,10 +216,14 @@ internal static unsafe class Vfp
                 else Df(s, DoubleD(ins)) = v;
                 return;
             }
-            case 0xA: case 0xB: case 0xE: case 0xF: // VCVT fixed-point (operates in place on Vd)
+            case 0xA:
+            case 0xB:
+            case 0xE:
+            case 0xF: // VCVT fixed-point (operates in place on Vd)
                 FixedConvert(s, ins, dbl);
                 return;
-            case 0xC: case 0xD: // VCVT/VCVTR float -> int
+            case 0xC:
+            case 0xD: // VCVT/VCVTR float -> int
             {
                 bool signed = opc2 == 0xD;
                 double v = dbl ? InD(s, Df(s, DoubleM(ins))) : InF(s, Sf(s, SingleM(ins)));

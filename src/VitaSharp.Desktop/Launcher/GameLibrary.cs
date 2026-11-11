@@ -24,8 +24,11 @@ public sealed record GameEntry(string TitleId, string Title, string Version, str
     /// else (homebrew IDs) "Homebrew". Labels come from <see cref="Ui.Strings"/>.</summary>
     public string Region => TitleId.Length >= 4 && TitleId.StartsWith("PCS", StringComparison.Ordinal) ? TitleId[3] switch
     {
-        'A' or 'E' => Ui.Strings.RegionUs, 'B' or 'F' => Ui.Strings.RegionEurope, 'C' or 'G' => Ui.Strings.RegionJapan,
-        'D' or 'H' => Ui.Strings.RegionAsia, _ => Ui.Strings.RegionOther,
+        'A' or 'E' => Ui.Strings.RegionUs,
+        'B' or 'F' => Ui.Strings.RegionEurope,
+        'C' or 'G' => Ui.Strings.RegionJapan,
+        'D' or 'H' => Ui.Strings.RegionAsia,
+        _ => Ui.Strings.RegionOther,
     } : Ui.Strings.RegionHomebrew;
 
     /// <summary>sce_sys/pic0.png: the 960x544 picture shown behind the game (LiveArea background), when the game has one.</summary>

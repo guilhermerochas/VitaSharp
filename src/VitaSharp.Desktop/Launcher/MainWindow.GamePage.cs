@@ -173,7 +173,9 @@ public sealed partial class MainWindow
             try { h = SaveStateFile.ReadHeader(f); } catch (Exception e) when (e is SnapshotException or IOException) { }
             string name = System.IO.Path.GetFileNameWithoutExtension(f) switch
             {
-                "quick" => S.QuickState, var n when n.StartsWith("slot", StringComparison.Ordinal) => S.Slot(n[4..]), var n => n,
+                "quick" => S.QuickState,
+                var n when n.StartsWith("slot", StringComparison.Ordinal) => S.Slot(n[4..]),
+                var n => n,
             };
             list.Add(new StateFile(f, name, File.GetLastWriteTime(f), h, h == null ? S.StateUnreadable : SaveStateFile.Incompatibility(h, g.TitleId)));
         }
@@ -277,7 +279,10 @@ public sealed partial class MainWindow
 
     Color GradeColor(TrophyGrade g) => g switch
     {
-        TrophyGrade.Platinum => P.Platinum, TrophyGrade.Gold => P.Gold, TrophyGrade.Silver => P.Silver, _ => P.Bronze,
+        TrophyGrade.Platinum => P.Platinum,
+        TrophyGrade.Gold => P.Gold,
+        TrophyGrade.Silver => P.Silver,
+        _ => P.Bronze,
     };
 
     // ------------------------------------------------------------------ captures of this game

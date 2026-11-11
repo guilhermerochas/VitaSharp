@@ -1,7 +1,7 @@
-using VitaSharp.Core.Util;
 using System.Diagnostics;
 using System.Runtime.InteropServices;
 using VitaSharp.Core.Cpu.Native;
+using VitaSharp.Core.Util;
 
 namespace VitaSharp.Core.Cpu.Backends;
 

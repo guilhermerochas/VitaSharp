@@ -1,6 +1,6 @@
+using FlashCap;
 using System.Buffers.Binary;
 using System.Diagnostics.CodeAnalysis;
-using FlashCap;
 using VitaSharp.Core.Host;
 using VitaSharp.Core.Media;
 using VitaSharp.Core.Util;

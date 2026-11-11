@@ -1,6 +1,6 @@
-using VitaSharp.Core.Util;
 using System.Text;
 using System.Text.RegularExpressions;
+using VitaSharp.Core.Util;
 
 namespace VitaSharp.Core.Gxm.Shader;
 

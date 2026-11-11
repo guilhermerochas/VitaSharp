@@ -504,7 +504,8 @@ public sealed partial class GameActivity : Activity, ISurfaceHolderCallback, Inp
                 while (c.IsRecording && !c.Stop("leaving the game")) System.Threading.Thread.Sleep(250);
                 c.Idle.Wait();
                 RunOnUiThread(() => { _root?.RemoveView(saving); Finish(); });
-            }) { IsBackground = true, Name = "capture leave" }.Start();
+            })
+            { IsBackground = true, Name = "capture leave" }.Start();
             return;
         }
         Finish();

@@ -19,10 +19,10 @@ public sealed unsafe class MediaPlayer : MediaPlayerBase
     AVCodecContext* _video, _audio;
     // H.264 video: Annex B access units into the pluggable decoder (the MP4 avcC header goes in front of key frames)
     IVideoDecoder? _videoDecoder;
-    byte[]? _annexBHeader;
-    int _nalLengthSize;
+    readonly byte[]? _annexBHeader;
+    readonly int _nalLengthSize;
     byte[] _annexB = new byte[64 * 1024];
-    int _videoStream = -1, _audioStream = -1;
+    readonly int _videoStream = -1, _audioStream = -1;
     AVRational _videoTb, _audioTb;
 
     readonly Thread _thread;
