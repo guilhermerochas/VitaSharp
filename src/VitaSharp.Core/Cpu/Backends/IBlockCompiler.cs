@@ -61,6 +61,15 @@ public sealed unsafe class CompiledBlock
     /// <summary>Backend-specific data kept alive with the block (native: link slots).</summary>
     public object? Tag { get; }
 
-    public CompiledBlock(IBlockCompiler backend, JitBlockFn managed) { Backend = backend; Managed = managed; }
-    public CompiledBlock(IBlockCompiler backend, nint nativeEntry, object? tag) { Backend = backend; NativeEntry = nativeEntry; Tag = tag; }
+    public CompiledBlock(IBlockCompiler backend, JitBlockFn managed)
+    {
+        Backend = backend;
+        Managed = managed;
+    }
+    public CompiledBlock(IBlockCompiler backend, nint nativeEntry, object? tag)
+    {
+        Backend = backend;
+        NativeEntry = nativeEntry;
+        Tag = tag;
+    }
 }

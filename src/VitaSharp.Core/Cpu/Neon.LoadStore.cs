@@ -14,11 +14,24 @@ internal static unsafe partial class Neon
         uint addr = s->R[rn];
         uint transferred;
 
-        if (all) transferred = MultipleStructures(s, ins, load, d, addr);
-        else if (Bits(ins, 11, 10) == 3) transferred = AllLanes(s, ins, d, addr);
-        else transferred = SingleLane(s, ins, load, d, addr);
+        if (all)
+        {
+            transferred = MultipleStructures(s, ins, load, d, addr);
+        }
+        else if (Bits(ins, 11, 10) == 3)
+        {
+            transferred = AllLanes(s, ins, d, addr);
+        }
+        else
+        {
+            transferred = SingleLane(s, ins, load, d, addr);
+        }
 
-        if (rm == 15) return;
+        if (rm == 15)
+        {
+            return;
+        }
+
         s->R[rn] = rm == 13 ? addr + transferred : addr + s->R[rm];
     }
 
@@ -31,18 +44,64 @@ internal static unsafe partial class Neon
         int nStruct, regs, inc;
         switch (type)
         {
-            case 0x7: nStruct = 1; regs = 1; inc = 1; break;
-            case 0xA: nStruct = 1; regs = 2; inc = 1; break;
-            case 0x6: nStruct = 1; regs = 3; inc = 1; break;
-            case 0x2: nStruct = 1; regs = 4; inc = 1; break;
-            case 0x8: nStruct = 2; regs = 1; inc = 1; break;
-            case 0x9: nStruct = 2; regs = 1; inc = 2; break;
-            case 0x3: nStruct = 2; regs = 2; inc = 2; break;
-            case 0x4: nStruct = 3; regs = 1; inc = 1; break;
-            case 0x5: nStruct = 3; regs = 1; inc = 2; break;
-            case 0x0: nStruct = 4; regs = 1; inc = 1; break;
-            case 0x1: nStruct = 4; regs = 1; inc = 2; break;
-            default: Undefined(s, 0); return 0;
+            case 0x7:
+                nStruct = 1;
+                regs = 1;
+                inc = 1;
+                break;
+            case 0xA:
+                nStruct = 1;
+                regs = 2;
+                inc = 1;
+                break;
+            case 0x6:
+                nStruct = 1;
+                regs = 3;
+                inc = 1;
+                break;
+            case 0x2:
+                nStruct = 1;
+                regs = 4;
+                inc = 1;
+                break;
+            case 0x8:
+                nStruct = 2;
+                regs = 1;
+                inc = 1;
+                break;
+            case 0x9:
+                nStruct = 2;
+                regs = 1;
+                inc = 2;
+                break;
+            case 0x3:
+                nStruct = 2;
+                regs = 2;
+                inc = 2;
+                break;
+            case 0x4:
+                nStruct = 3;
+                regs = 1;
+                inc = 1;
+                break;
+            case 0x5:
+                nStruct = 3;
+                regs = 1;
+                inc = 2;
+                break;
+            case 0x0:
+                nStruct = 4;
+                regs = 1;
+                inc = 1;
+                break;
+            case 0x1:
+                nStruct = 4;
+                regs = 1;
+                inc = 2;
+                break;
+            default:
+                Undefined(s, 0);
+                return 0;
         }
 
         uint a = addr;
@@ -52,7 +111,15 @@ internal static unsafe partial class Neon
             for (int r = 0; r < regs; r++)
             {
                 ulong* reg = &s->D[(d + (uint)r) & 31];
-                if (load) *reg = Mem.R64(s, a); else Mem.W64(s, a, *reg);
+                if (load)
+                {
+                    *reg = Mem.R64(s, a);
+                }
+                else
+                {
+                    Mem.W64(s, a, *reg);
+                }
+
                 a += 8;
             }
             return (uint)(8 * regs);
@@ -62,7 +129,10 @@ internal static unsafe partial class Neon
         {
             // two interleaved pairs: (d, d+2) then (d+1, d+3)
             for (int r = 0; r < 2; r++)
+            {
                 a = Interleave(s, load, d + (uint)r, 2, 2, esize, elements, a);
+            }
+
             return a - addr;
         }
 
@@ -78,8 +148,15 @@ internal static unsafe partial class Neon
             for (int k = 0; k < nStruct; k++)
             {
                 byte* reg = (byte*)&s->D[(d + (uint)(k * inc)) & 31];
-                if (load) Set(reg, e, esize, ReadElem(s, a, esize));
-                else WriteElem(s, a, esize, GetU(reg, e, esize));
+                if (load)
+                {
+                    Set(reg, e, esize, ReadElem(s, a, esize));
+                }
+                else
+                {
+                    WriteElem(s, a, esize, GetU(reg, e, esize));
+                }
+
                 a += (uint)ebytes;
             }
         }
@@ -98,10 +175,18 @@ internal static unsafe partial class Neon
     {
         switch (esize)
         {
-            case 8: Mem.W8(s, a, (uint)v); break;
-            case 16: Mem.W16(s, a, (uint)v); break;
-            case 32: Mem.W32(s, a, (uint)v); break;
-            default: Mem.W64(s, a, v); break;
+            case 8:
+                Mem.W8(s, a, (uint)v);
+                break;
+            case 16:
+                Mem.W16(s, a, (uint)v);
+                break;
+            case 32:
+                Mem.W32(s, a, (uint)v);
+                break;
+            default:
+                Mem.W64(s, a, v);
+                break;
         }
     }
 
@@ -114,17 +199,37 @@ internal static unsafe partial class Neon
         int index, inc;
         switch (size)
         {
-            case 0: index = (int)(ia >> 1); inc = 1; break;
-            case 1: index = (int)(ia >> 2); inc = (ia & 2) != 0 ? 2 : 1; break;
-            default: index = (int)(ia >> 3); inc = (ia & 4) != 0 ? 2 : 1; break;
+            case 0:
+                index = (int)(ia >> 1);
+                inc = 1;
+                break;
+            case 1:
+                index = (int)(ia >> 2);
+                inc = (ia & 2) != 0 ? 2 : 1;
+                break;
+            default:
+                index = (int)(ia >> 3);
+                inc = (ia & 4) != 0 ? 2 : 1;
+                break;
         }
-        if (nStruct == 1) inc = 1;
+        if (nStruct == 1)
+        {
+            inc = 1;
+        }
+
         uint a = addr;
         for (int k = 0; k < nStruct; k++)
         {
             byte* reg = (byte*)&s->D[(d + (uint)(k * inc)) & 31];
-            if (load) Set(reg, index, esize, ReadElem(s, a, esize));
-            else WriteElem(s, a, esize, GetU(reg, index, esize));
+            if (load)
+            {
+                Set(reg, index, esize, ReadElem(s, a, esize));
+            }
+            else
+            {
+                WriteElem(s, a, esize, GetU(reg, index, esize));
+            }
+
             a += (uint)(esize / 8);
         }
         return a - addr;
@@ -141,9 +246,18 @@ internal static unsafe partial class Neon
         if (nStruct == 1)
         {
             ulong v = ReadElem(s, a, esize);
-            ulong rep = esize switch { 8 => v * 0x0101010101010101ul, 16 => v * 0x0001000100010001ul, _ => v | (v << 32) };
+            ulong rep = esize switch
+            {
+                8 => v * 0x0101010101010101ul,
+                16 => v * 0x0001000100010001ul,
+                _ => v | (v << 32)
+            };
             s->D[d & 31] = rep;
-            if (t) s->D[(d + 1) & 31] = rep;
+            if (t)
+            {
+                s->D[(d + 1) & 31] = rep;
+            }
+
             return (uint)(esize / 8);
         }
         int inc = t ? 2 : 1;
@@ -151,7 +265,11 @@ internal static unsafe partial class Neon
         {
             ulong v = ReadElem(s, a, esize);
             byte* reg = (byte*)&s->D[(d + (uint)(k * inc)) & 31];
-            for (int e = 0; e < count; e++) Set(reg, e, esize, v);
+            for (int e = 0; e < count; e++)
+            {
+                Set(reg, e, esize, v);
+            }
+
             a += (uint)(esize / 8);
         }
         return a - addr;

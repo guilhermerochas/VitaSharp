@@ -13,7 +13,10 @@ public sealed class Arm64Assembler
     public const int ZR = 31, SP = 31, LR = 30, FP = 29;
 
     /// <summary>Condition codes (the same numbering as ARM32's).</summary>
-    public enum Cond : uint { EQ, NE, HS, LO, MI, PL, VS, VC, HI, LS, GE, LT, GT, LE, AL }
+    public enum Cond : uint
+    {
+        EQ, NE, HS, LO, MI, PL, VS, VC, HI, LS, GE, LT, GT, LE, AL
+    }
 
     public static Cond Invert(Cond c) => (Cond)((uint)c ^ 1);
 
@@ -24,25 +27,41 @@ public sealed class Arm64Assembler
     readonly List<(ulong Lo, ulong Hi, bool Wide)> _literals = new();
     readonly Dictionary<(ulong, ulong, bool), int> _literalIndex = new();
 
-    enum Fix { B26, Imm19, Imm14, Adr }
+    enum Fix
+    {
+        B26, Imm19, Imm14, Adr
+    }
 
     public int Count => _code.Count;
     public IReadOnlyList<uint> Words => _code;
 
     public void Reset()
     {
-        _code.Clear(); _labels.Clear(); _fixups.Clear(); _litFixups.Clear(); _literals.Clear(); _literalIndex.Clear();
+        _code.Clear();
+        _labels.Clear();
+        _fixups.Clear();
+        _litFixups.Clear();
+        _literals.Clear();
+        _literalIndex.Clear();
     }
 
     public void Emit(uint w) => _code.Add(w);
 
     // ------------------------------------------------------------------ labels
 
-    public int NewLabel() { _labels.Add(-1); return _labels.Count - 1; }
+    public int NewLabel()
+    {
+        _labels.Add(-1);
+        return _labels.Count - 1;
+    }
     public void Bind(int label) => _labels[label] = _code.Count;
     public bool IsBound(int label) => _labels[label] >= 0;
 
-    void Ref(int label, Fix kind, uint word) { _fixups.Add((_code.Count, label, kind)); _code.Add(word); }
+    void Ref(int label, Fix kind, uint word)
+    {
+        _fixups.Add((_code.Count, label, kind));
+        _code.Add(word);
+    }
 
     int Literal(ulong lo, ulong hi, bool wide)
     {
@@ -63,38 +82,86 @@ public sealed class Arm64Assembler
         var litPos = new int[_literals.Count];
         if (_literals.Count > 0)
         {
-            while ((words.Count & 3) != 0) words.Add(Nop);
+            while ((words.Count & 3) != 0)
+            {
+                words.Add(Nop);
+            }
+
             for (int i = 0; i < _literals.Count; i++)
-                if (_literals[i].Wide) { litPos[i] = words.Count; Add128(words, _literals[i].Lo, _literals[i].Hi); }
+            {
+                if (_literals[i].Wide)
+                {
+                    litPos[i] = words.Count;
+                    Add128(words, _literals[i].Lo, _literals[i].Hi);
+                }
+            }
+
             for (int i = 0; i < _literals.Count; i++)
-                if (!_literals[i].Wide) { litPos[i] = words.Count; words.Add((uint)_literals[i].Lo); words.Add((uint)(_literals[i].Lo >> 32)); }
+            {
+                if (!_literals[i].Wide)
+                {
+                    litPos[i] = words.Count;
+                    words.Add((uint)_literals[i].Lo);
+                    words.Add((uint)(_literals[i].Lo >> 32));
+                }
+            }
         }
         foreach (var (at, label, kind) in _fixups)
         {
             int target = _labels[label];
-            if (target < 0) throw new InvalidOperationException("unbound label");
+            if (target < 0)
+            {
+                throw new InvalidOperationException("unbound label");
+            }
+
             words[at] = Patch(words[at], target - at, kind);
         }
-        foreach (var (at, lit) in _litFixups) words[at] = Patch(words[at], litPos[lit] - at, Fix.Imm19);
+        foreach (var (at, lit) in _litFixups)
+        {
+            words[at] = Patch(words[at], litPos[lit] - at, Fix.Imm19);
+        }
+
         var bytes = new byte[words.Count * 4];
-        for (int i = 0; i < words.Count; i++) BitConverter.TryWriteBytes(bytes.AsSpan(i * 4), words[i]);
+        for (int i = 0; i < words.Count; i++)
+        {
+            BitConverter.TryWriteBytes(bytes.AsSpan(i * 4), words[i]);
+        }
+
         return bytes;
     }
 
-    static void Add128(List<uint> w, ulong lo, ulong hi) { w.Add((uint)lo); w.Add((uint)(lo >> 32)); w.Add((uint)hi); w.Add((uint)(hi >> 32)); }
+    static void Add128(List<uint> w, ulong lo, ulong hi)
+    {
+        w.Add((uint)lo);
+        w.Add((uint)(lo >> 32));
+        w.Add((uint)hi);
+        w.Add((uint)(hi >> 32));
+    }
 
     static uint Patch(uint word, int delta, Fix kind)
     {
         switch (kind)
         {
             case Fix.B26:
-                if (delta < -(1 << 25) || delta >= 1 << 25) throw new InvalidOperationException("branch out of range");
+                if (delta < -(1 << 25) || delta >= 1 << 25)
+                {
+                    throw new InvalidOperationException("branch out of range");
+                }
+
                 return word | ((uint)delta & 0x03FFFFFF);
             case Fix.Imm19:
-                if (delta < -(1 << 18) || delta >= 1 << 18) throw new InvalidOperationException("branch out of range");
+                if (delta < -(1 << 18) || delta >= 1 << 18)
+                {
+                    throw new InvalidOperationException("branch out of range");
+                }
+
                 return word | (((uint)delta & 0x7FFFF) << 5);
             case Fix.Imm14:
-                if (delta < -(1 << 13) || delta >= 1 << 13) throw new InvalidOperationException("branch out of range");
+                if (delta < -(1 << 13) || delta >= 1 << 13)
+                {
+                    throw new InvalidOperationException("branch out of range");
+                }
+
                 return word | (((uint)delta & 0x3FFF) << 5);
             default:
             {
@@ -129,7 +196,10 @@ public sealed class Arm64Assembler
     public void Clrex() => Emit(0xD5033F5F);
     public void Brk(ushort imm) => Emit(0xD4200000 | (uint)imm << 5);
 
-    public enum SysReg : uint { Nzcv = 0xDA10, Fpcr = 0xDA20, Fpsr = 0xDA21, CtrEl0 = 0xD801 }
+    public enum SysReg : uint
+    {
+        Nzcv = 0xDA10, Fpcr = 0xDA20, Fpsr = 0xDA21, CtrEl0 = 0xD801
+    }
     public void Mrs(int rt, SysReg r) => Emit(0xD5300000 | (uint)r << 5 | (uint)rt);
     public void Msr(SysReg r, int rt) => Emit(0xD5100000 | (uint)r << 5 | (uint)rt);
     public void DcCvau(int rt) => Emit(0xD50B7B20 | (uint)rt);
@@ -139,14 +209,24 @@ public sealed class Arm64Assembler
 
     static uint Sf(bool x) => x ? 0x80000000u : 0;
 
-    static void CheckReg(int r) { if ((uint)r > 31) throw new ArgumentOutOfRangeException(nameof(r)); }
+    static void CheckReg(int r)
+    {
+        if ((uint)r > 31)
+        {
+            throw new ArgumentOutOfRangeException(nameof(r));
+        }
+    }
 
     /// <summary>ADD/SUB (immediate); imm 0..4095, or a multiple of 4096 up to 4095 &lt;&lt; 12.</summary>
     public static bool IsAddImm(uint imm) => imm < 4096 || ((imm & 0xFFF) == 0 && imm >> 12 < 4096);
 
     void AddSubImm(uint op, int rd, int rn, uint imm, bool x)
     {
-        if (!IsAddImm(imm)) throw new ArgumentOutOfRangeException(nameof(imm));
+        if (!IsAddImm(imm))
+        {
+            throw new ArgumentOutOfRangeException(nameof(imm));
+        }
+
         uint sh = imm < 4096 ? 0u : 1u;
         uint v = sh != 0 ? imm >> 12 : imm;
         Emit(op | Sf(x) | sh << 22 | v << 10 | (uint)rn << 5 | (uint)rd);
@@ -161,7 +241,10 @@ public sealed class Arm64Assembler
     /// <summary>MOV to/from SP (ADD #0).</summary>
     public void MovSp(int rd, int rn) => AddImm(rd, rn, 0, true);
 
-    public enum Shift : uint { Lsl, Lsr, Asr, Ror }
+    public enum Shift : uint
+    {
+        Lsl, Lsr, Asr, Ror
+    }
 
     void ShiftedReg(uint op, int rd, int rn, int rm, Shift sh, int amount, bool x)
     {
@@ -184,7 +267,10 @@ public sealed class Arm64Assembler
     public void Mov(int rd, int rm, bool x = false) => Orr(rd, ZR, rm, x: x);
     public void Mvn(int rd, int rm) => Orn(rd, ZR, rm);
 
-    public enum Extend : uint { Uxtb, Uxth, Uxtw, Uxtx, Sxtb, Sxth, Sxtw, Sxtx }
+    public enum Extend : uint
+    {
+        Uxtb, Uxth, Uxtw, Uxtx, Sxtb, Sxth, Sxtw, Sxtx
+    }
 
     /// <summary>ADD (extended register), 64-bit: Xd = Xn + extend(Rm) &lt;&lt; amount (Xn/Xd may be SP).</summary>
     public void AddExt(int rd, int rn, int rm, Extend ext, int amount = 0) =>
@@ -201,15 +287,26 @@ public sealed class Arm64Assembler
     public static bool TryLogicalImm(ulong value, bool x, out uint enc)
     {
         enc = 0;
-        if (!x) value = (value & 0xFFFFFFFF) | (value << 32);
-        if (value == 0 || value == ulong.MaxValue) return false;
+        if (!x)
+        {
+            value = (value & 0xFFFFFFFF) | (value << 32);
+        }
+
+        if (value == 0 || value == ulong.MaxValue)
+        {
+            return false;
+        }
         // smallest element size whose repetition gives the value
         int size = 64;
         while (size > 2)
         {
             int half = size / 2;
             ulong mask = (1UL << half) - 1;
-            if ((value & mask) != ((value >> half) & mask)) break;
+            if ((value & mask) != ((value >> half) & mask))
+            {
+                break;
+            }
+
             size = half;
         }
         ulong emask = size == 64 ? ulong.MaxValue : (1UL << size) - 1;
@@ -225,7 +322,11 @@ public sealed class Arm64Assembler
                 uint immr = (uint)((size - rot) % size);
                 uint imms = (uint)((~(size - 1) << 1) & 0x3F) | (uint)(ones - 1);
                 uint n = size == 64 ? 1u : 0u;
-                if (size == 64) imms = (uint)(ones - 1);
+                if (size == 64)
+                {
+                    imms = (uint)(ones - 1);
+                }
+
                 enc = n << 12 | immr << 6 | (imms & 0x3F);
                 return true;
             }
@@ -235,7 +336,11 @@ public sealed class Arm64Assembler
 
     void LogicalImm(uint op, int rd, int rn, ulong imm, bool x)
     {
-        if (!TryLogicalImm(imm, x, out uint enc)) throw new ArgumentOutOfRangeException(nameof(imm));
+        if (!TryLogicalImm(imm, x, out uint enc))
+        {
+            throw new ArgumentOutOfRangeException(nameof(imm));
+        }
+
         Emit(op | Sf(x) | enc << 10 | (uint)rn << 5 | (uint)rd);
     }
 
@@ -254,45 +359,100 @@ public sealed class Arm64Assembler
     /// <summary>Wd = imm (one or two instructions).</summary>
     public void MovImm(int rd, uint v)
     {
-        if ((v & 0xFFFF0000) == 0) Movz(rd, v);
-        else if ((v & 0xFFFF) == 0) Movz(rd, v >> 16, 16);
-        else if ((~v & 0xFFFF0000) == 0) Movn(rd, ~v & 0xFFFF);
-        else if ((~v & 0xFFFF) == 0) Movn(rd, (~v >> 16) & 0xFFFF, 16);
-        else if (TryLogicalImm(v, false, out _)) OrrImm(rd, ZR, v);
-        else { Movz(rd, v & 0xFFFF); Movk(rd, v >> 16, 16); }
+        if ((v & 0xFFFF0000) == 0)
+        {
+            Movz(rd, v);
+        }
+        else if ((v & 0xFFFF) == 0)
+        {
+            Movz(rd, v >> 16, 16);
+        }
+        else if ((~v & 0xFFFF0000) == 0)
+        {
+            Movn(rd, ~v & 0xFFFF);
+        }
+        else if ((~v & 0xFFFF) == 0)
+        {
+            Movn(rd, (~v >> 16) & 0xFFFF, 16);
+        }
+        else if (TryLogicalImm(v, false, out _))
+        {
+            OrrImm(rd, ZR, v);
+        }
+        else
+        {
+            Movz(rd, v & 0xFFFF);
+            Movk(rd, v >> 16, 16);
+        }
     }
 
     /// <summary>Xd = imm (up to four instructions; addresses usually take three).</summary>
     public void MovImm64(int rd, ulong v)
     {
-        if (v >> 32 == 0) { MovImm(rd, (uint)v); return; }
-        if (TryLogicalImm(v, true, out _)) { OrrImm(rd, ZR, v, true); return; }
+        if (v >> 32 == 0)
+        {
+            MovImm(rd, (uint)v);
+            return;
+        }
+        if (TryLogicalImm(v, true, out _))
+        {
+            OrrImm(rd, ZR, v, true);
+            return;
+        }
         bool first = true;
         for (int sh = 0; sh < 64; sh += 16)
         {
             uint part = (uint)(v >> sh) & 0xFFFF;
-            if (part == 0) continue;
-            if (first) { Movz(rd, part, sh, true); first = false; } else Movk(rd, part, sh, true);
+            if (part == 0)
+            {
+                continue;
+            }
+
+            if (first)
+            {
+                Movz(rd, part, sh, true);
+                first = false;
+            }
+            else
+            {
+                Movk(rd, part, sh, true);
+            }
         }
     }
 
     /// <summary>Xd = 64-bit literal (LDR literal from the pool).</summary>
-    public void LdrLit(int rt, ulong v) { _litFixups.Add((_code.Count, Literal(v, 0, false))); Emit(0x58000000 | (uint)rt); }
+    public void LdrLit(int rt, ulong v)
+    {
+        _litFixups.Add((_code.Count, Literal(v, 0, false)));
+        Emit(0x58000000 | (uint)rt);
+    }
     /// <summary>Wt = 32-bit literal (the low word of a 64-bit pool entry, shared with <see cref="LdrLit"/> entries of the same value).</summary>
-    public void LdrLitW(int rt, uint v) { _litFixups.Add((_code.Count, Literal(v, 0, false))); Emit(0x18000000 | (uint)rt); }
+    public void LdrLitW(int rt, uint v)
+    {
+        _litFixups.Add((_code.Count, Literal(v, 0, false)));
+        Emit(0x18000000 | (uint)rt);
+    }
 
     /// <summary>Whether <see cref="MovImm"/> needs two instructions for <paramref name="v"/> (MOVZ + MOVK).</summary>
     public static bool MovImmIsLong(uint v) =>
         (v & 0xFFFF0000) != 0 && (v & 0xFFFF) != 0 && (~v & 0xFFFF0000) != 0 && (~v & 0xFFFF) != 0 && !TryLogicalImm(v, false, out _);
     /// <summary>Qt = 128-bit literal.</summary>
-    public void LdrLitQ(int vt, ulong lo, ulong hi) { _litFixups.Add((_code.Count, Literal(lo, hi, true))); Emit(0x9C000000 | (uint)vt); }
+    public void LdrLitQ(int vt, ulong lo, ulong hi)
+    {
+        _litFixups.Add((_code.Count, Literal(lo, hi, true)));
+        Emit(0x9C000000 | (uint)vt);
+    }
 
     // bitfield / shifts by immediate
 
     public void Ubfm(int rd, int rn, int immr, int imms, bool x = false) => Emit((x ? 0xD3400000u : 0x53000000u) | (uint)immr << 16 | (uint)imms << 10 | (uint)rn << 5 | (uint)rd);
     public void Sbfm(int rd, int rn, int immr, int imms, bool x = false) => Emit((x ? 0x93400000u : 0x13000000u) | (uint)immr << 16 | (uint)imms << 10 | (uint)rn << 5 | (uint)rd);
     public void Bfm(int rd, int rn, int immr, int imms, bool x = false) => Emit((x ? 0xB3400000u : 0x33000000u) | (uint)immr << 16 | (uint)imms << 10 | (uint)rn << 5 | (uint)rd);
-    public void LslImm(int rd, int rn, int s, bool x = false) { int w = x ? 64 : 32; Ubfm(rd, rn, (w - s) % w, w - 1 - s, x); }
+    public void LslImm(int rd, int rn, int s, bool x = false)
+    {
+        int w = x ? 64 : 32;
+        Ubfm(rd, rn, (w - s) % w, w - 1 - s, x);
+    }
     public void LsrImm(int rd, int rn, int s, bool x = false) => Ubfm(rd, rn, s, x ? 63 : 31, x);
     public void AsrImm(int rd, int rn, int s, bool x = false) => Sbfm(rd, rn, s, x ? 63 : 31, x);
     public void RorImm(int rd, int rn, int s) => Emit(0x13800000 | (uint)rn << 16 | (uint)s << 10 | (uint)rn << 5 | (uint)rd);
@@ -335,7 +495,10 @@ public sealed class Arm64Assembler
     // ------------------------------------------------------------------ loads and stores
 
     /// <summary>Access size of a load/store: 0 = byte, 1 = half, 2 = word, 3 = doubleword (4 = 128-bit for SIMD).</summary>
-    public enum Ls { B, H, W, X, Q }
+    public enum Ls
+    {
+        B, H, W, X, Q
+    }
 
     public enum LsKind
     {
@@ -380,10 +543,17 @@ public sealed class Arm64Assembler
     {
         var (op, scale) = LsInfo(k);
         if (off >= 0 && (off & ((1 << scale) - 1)) == 0 && off >> scale < 4096)
+        {
             Emit(op | (uint)(off >> scale) << 10 | (uint)rn << 5 | (uint)rt);
+        }
         else if (off >= -256 && off < 256)
+        {
             Emit((op & ~0x01000000u) | ((uint)off & 0x1FF) << 12 | (uint)rn << 5 | (uint)rt); // unscaled form: bit 24 clear
-        else throw new ArgumentOutOfRangeException(nameof(off));
+        }
+        else
+        {
+            throw new ArgumentOutOfRangeException(nameof(off));
+        }
     }
 
     /// <summary>Load/store with a register offset: [Xn, Wm, UXTW] (or [Xn, Xm] when <paramref name="xIndex"/>), optionally scaled.</summary>
@@ -401,17 +571,32 @@ public sealed class Arm64Assembler
     public void StrX(int rt, int rn, int off) => LdSt(LsKind.StrX, rt, rn, off);
 
     /// <summary>STP/LDP of X registers: signed offset, pre-index (writeback before) or post-index.</summary>
-    public enum PairMode : uint { Post = 1, Offset = 2, Pre = 3 }
+    public enum PairMode : uint
+    {
+        Post = 1, Offset = 2, Pre = 3
+    }
     public void Stp(int rt, int rt2, int rn, int off, PairMode m = PairMode.Offset) => Emit(0xA8000000 | (uint)m << 23 | (((uint)(off / 8)) & 0x7F) << 15 | (uint)rt2 << 10 | (uint)rn << 5 | (uint)rt);
     public void Ldp(int rt, int rt2, int rn, int off, PairMode m = PairMode.Offset) => Emit(0xA8400000 | (uint)m << 23 | (((uint)(off / 8)) & 0x7F) << 15 | (uint)rt2 << 10 | (uint)rn << 5 | (uint)rt);
     /// <summary>Whether a 32-bit pair access can use <paramref name="off"/> (signed offset, multiple of 4 in -256..252).</summary>
     public static bool FitsPairW(int off) => off % 4 == 0 && off >= -256 && off <= 252;
     /// <summary>STP Wt, Wt2, [Xn, #off] (signed offset).</summary>
-    public void StpW(int rt, int rt2, int rn, int off) { if (!FitsPairW(off)) throw new ArgumentOutOfRangeException(nameof(off)); Emit(0x29000000 | (((uint)(off / 4)) & 0x7F) << 15 | (uint)rt2 << 10 | (uint)rn << 5 | (uint)rt); }
+    public void StpW(int rt, int rt2, int rn, int off)
+    {
+        if (!FitsPairW(off))
+        {
+            throw new ArgumentOutOfRangeException(nameof(off));
+        }
+
+        Emit(0x29000000 | (((uint)(off / 4)) & 0x7F) << 15 | (uint)rt2 << 10 | (uint)rn << 5 | (uint)rt);
+    }
     /// <summary>LDP Wt, Wt2, [Xn, #off] (signed offset; Wt != Wt2).</summary>
     public void LdpW(int rt, int rt2, int rn, int off)
     {
-        if (!FitsPairW(off) || rt == rt2) throw new ArgumentOutOfRangeException(nameof(off));
+        if (!FitsPairW(off) || rt == rt2)
+        {
+            throw new ArgumentOutOfRangeException(nameof(off));
+        }
+
         Emit(0x29400000 | (((uint)(off / 4)) & 0x7F) << 15 | (uint)rt2 << 10 | (uint)rn << 5 | (uint)rt);
     }
 
@@ -531,7 +716,13 @@ public sealed class Arm64Assembler
     /// <summary>LD1 {Vt.16B - Vt+n-1.16B}, [Xn] (n = 1-4).</summary>
     public void Ld1(int vt, int regs, int rn)
     {
-        uint opcode = regs switch { 1 => 0x7u, 2 => 0xAu, 3 => 0x6u, _ => 0x2u };
+        uint opcode = regs switch
+        {
+            1 => 0x7u,
+            2 => 0xAu,
+            3 => 0x6u,
+            _ => 0x2u
+        };
         Emit(0x4C400000 | opcode << 12 | (uint)rn << 5 | (uint)vt);
     }
 }

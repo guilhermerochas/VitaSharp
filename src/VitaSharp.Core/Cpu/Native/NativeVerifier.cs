@@ -26,7 +26,10 @@ public static unsafe class NativeVerifier
     [ThreadStatic] static nint _log;
 
 #pragma warning disable CS0649 // written by generated code
-    struct Entry { public uint Addr, Size, Old, Pad; }
+    struct Entry
+    {
+        public uint Addr, Size, Old, Pad;
+    }
 #pragma warning restore CS0649
 
     /// <summary>Ops whose interpreter handler may write guest memory (used to flag blocks with unlogged stores).</summary>
@@ -44,18 +47,32 @@ public static unsafe class NativeVerifier
             CpuCore.Interpret(s, b);
             return;
         }
-        if (_log == 0) _log = (nint)NativeMemory.Alloc((nuint)(X64Emitter.StoreLogEntries * sizeof(Entry)));
+        if (_log == 0)
+        {
+            _log = (nint)NativeMemory.Alloc((nuint)(X64Emitter.StoreLogEntries * sizeof(Entry)));
+        }
 
         var s0 = *s;
-        s->StoreLog = _log; s->StoreLogCount = 0;
-        s->CycleAcc = 0; s->CheckWindow = 0; s->LinkBreak = 1; s->NBlocks = 0; s->NInstr = 0;
+        s->StoreLog = _log;
+        s->StoreLogCount = 0;
+        s->CycleAcc = 0;
+        s->CheckWindow = 0;
+        s->LinkBreak = 1;
+        s->NBlocks = 0;
+        s->NInstr = 0;
         string? nativeFault = null;
         try
         {
             NativeRuntime.Instance.Run(s, b.NativeEntry);
-            if (s->CalloutFault != 0) NativeRuntime.ThrowPendingFault(s);
+            if (s->CalloutFault != 0)
+            {
+                NativeRuntime.ThrowPendingFault(s);
+            }
         }
-        catch (Exception e) { nativeFault = e.GetType().Name; }
+        catch (Exception e)
+        {
+            nativeFault = e.GetType().Name;
+        }
         var sn = *s;
         if (sn.TierUpRequest != 0)
         {
@@ -68,13 +85,28 @@ public static unsafe class NativeVerifier
         int n = (int)s->StoreLogCount;
         var log = (Entry*)_log;
         var finals = new uint[n];
-        for (int i = 0; i < n; i++) finals[i] = Read(log[i].Addr, log[i].Size);
-        for (int i = n - 1; i >= 0; i--) Write(log[i].Addr, log[i].Size, log[i].Old);
+        for (int i = 0; i < n; i++)
+        {
+            finals[i] = Read(log[i].Addr, log[i].Size);
+        }
+
+        for (int i = n - 1; i >= 0; i--)
+        {
+            Write(log[i].Addr, log[i].Size, log[i].Old);
+        }
 
         *s = s0;
         string? interpFault = null;
-        try { CpuCore.Interpret(s, b); }
-        catch (Exception e) { interpFault = e.GetType().Name; Compare(s, &s0, &sn, b, n, finals, nativeFault, interpFault); throw; }
+        try
+        {
+            CpuCore.Interpret(s, b);
+        }
+        catch (Exception e)
+        {
+            interpFault = e.GetType().Name;
+            Compare(s, &s0, &sn, b, n, finals, nativeFault, interpFault);
+            throw;
+        }
         Compare(s, &s0, &sn, b, n, finals, nativeFault, interpFault);
     }
 
@@ -94,13 +126,27 @@ public static unsafe class NativeVerifier
         }
         var s0 = *s;
         string? compiledFault = null;
-        try { fn(s); }
-        catch (Exception e) { compiledFault = e.GetType().Name; }
+        try
+        {
+            fn(s);
+        }
+        catch (Exception e)
+        {
+            compiledFault = e.GetType().Name;
+        }
         var sc = *s;
         *s = s0;
         string? interpFault = null;
-        try { CpuCore.Interpret(s, b); }
-        catch (Exception e) { interpFault = e.GetType().Name; Compare(s, &s0, &sc, b, 0, [], compiledFault, interpFault); throw; }
+        try
+        {
+            CpuCore.Interpret(s, b);
+        }
+        catch (Exception e)
+        {
+            interpFault = e.GetType().Name;
+            Compare(s, &s0, &sc, b, 0, [], compiledFault, interpFault);
+            throw;
+        }
         Compare(s, &s0, &sc, b, 0, [], compiledFault, interpFault);
     }
 
@@ -113,34 +159,91 @@ public static unsafe class NativeVerifier
 
     static void Write(uint addr, uint size, uint v)
     {
-        if (size == 1) GuestMemory.Write(addr, (byte)v);
-        else if (size == 2) GuestMemory.Write(addr, (ushort)v);
-        else GuestMemory.Write(addr, v);
+        if (size == 1)
+        {
+            GuestMemory.Write(addr, (byte)v);
+        }
+        else if (size == 2)
+        {
+            GuestMemory.Write(addr, (ushort)v);
+        }
+        else
+        {
+            GuestMemory.Write(addr, v);
+        }
     }
 
     static void Compare(CpuState* si, CpuState* s0, CpuState* sn, Block b, int n, uint[] finals, string? nativeFault, string? interpFault)
     {
         Interlocked.Increment(ref Verified);
         var sb = new StringBuilder();
-        if (nativeFault != interpFault) sb.Append($" fault: native {nativeFault ?? "-"} interp {interpFault ?? "-"}");
-        for (int r = 0; r < 16; r++) if (si->R[r] != sn->R[r]) sb.Append($" R{r}: interp {si->R[r]:X8} native {sn->R[r]:X8}");
-        if (si->Cpsr != sn->Cpsr) sb.Append($" CPSR: interp {si->Cpsr:X8} native {sn->Cpsr:X8}");
-        if (si->Fpscr != sn->Fpscr) sb.Append($" FPSCR: interp {si->Fpscr:X8} native {sn->Fpscr:X8}");
-        if (si->Exit != sn->Exit) sb.Append($" Exit: interp {si->Exit} native {sn->Exit}");
-        if (si->Exit != ExitReason.None && (si->SvcImm != sn->SvcImm || si->SvcPc != sn->SvcPc)) sb.Append(" svc fields");
-        if (si->TpidrUrw != sn->TpidrUrw) sb.Append(" TPIDRURW");
-        for (int i = 0; i < 32; i++) if (si->D[i] != sn->D[i]) sb.Append($" D{i}: interp {si->D[i]:X16} native {sn->D[i]:X16}");
+        if (nativeFault != interpFault)
+        {
+            sb.Append($" fault: native {nativeFault ?? "-"} interp {interpFault ?? "-"}");
+        }
+
+        for (int r = 0; r < 16; r++)
+        {
+            if (si->R[r] != sn->R[r])
+            {
+                sb.Append($" R{r}: interp {si->R[r]:X8} native {sn->R[r]:X8}");
+            }
+        }
+
+        if (si->Cpsr != sn->Cpsr)
+        {
+            sb.Append($" CPSR: interp {si->Cpsr:X8} native {sn->Cpsr:X8}");
+        }
+
+        if (si->Fpscr != sn->Fpscr)
+        {
+            sb.Append($" FPSCR: interp {si->Fpscr:X8} native {sn->Fpscr:X8}");
+        }
+
+        if (si->Exit != sn->Exit)
+        {
+            sb.Append($" Exit: interp {si->Exit} native {sn->Exit}");
+        }
+
+        if (si->Exit != ExitReason.None && (si->SvcImm != sn->SvcImm || si->SvcPc != sn->SvcPc))
+        {
+            sb.Append(" svc fields");
+        }
+
+        if (si->TpidrUrw != sn->TpidrUrw)
+        {
+            sb.Append(" TPIDRURW");
+        }
+
+        for (int i = 0; i < 32; i++)
+        {
+            if (si->D[i] != sn->D[i])
+            {
+                sb.Append($" D{i}: interp {si->D[i]:X16} native {sn->D[i]:X16}");
+            }
+        }
         // memory: what the native code left at each address it stored to, against the interpreter's result
         var seen = new HashSet<uint>();
         var log = (Entry*)_log;
         for (int i = n - 1; i >= 0; i--)
         {
             uint a = log[i].Addr;
-            if (!seen.Add(a | (log[i].Size << 30))) continue;
+            if (!seen.Add(a | (log[i].Size << 30)))
+            {
+                continue;
+            }
+
             uint v = Read(a, log[i].Size);
-            if (v != finals[i]) sb.Append($" MEM[{a:X8}/{log[i].Size}]: interp {v:X} native {finals[i]:X}");
+            if (v != finals[i])
+            {
+                sb.Append($" MEM[{a:X8}/{log[i].Size}]: interp {v:X} native {finals[i]:X}");
+            }
         }
-        if (sb.Length == 0) return;
+        if (sb.Length == 0)
+        {
+            return;
+        }
+
         long k = Interlocked.Increment(ref Mismatches);
         // Blocks of plain integer code that read memory another host thread writes concurrently (HLE, GPU worker,
         // other guest cores) can legitimately see different values in the two runs. Mismatches in blocks with
@@ -151,10 +254,18 @@ public static unsafe class NativeVerifier
         if (simd)
         {
             long ks = Interlocked.Increment(ref SimdMismatches);
-            if (ks > MaxReports) return;
+            if (ks > MaxReports)
+            {
+                return;
+            }
+
             tag = $" (SIMD/FP #{ks})";
         }
-        else if (k - SimdMismatches > MaxReports) return;
+        else if (k - SimdMismatches > MaxReports)
+        {
+            return;
+        }
+
         var regs = string.Join(" ", Enumerable.Range(0, 16).Select(r => s0->R[r].ToString("X8")));
         var detail = $"NATIVE VERIFY MISMATCH #{k}{tag} {b}:{sb}\n  in: r=[{regs}] cpsr={s0->Cpsr:X8} fpscr={s0->Fpscr:X8}\n  " +
                      string.Join(" ", b.Insts.Select(i => $"{i.Address:X8}:{i.Raw:X8}:{i.Op}{(i.Cond != 14 ? $"/c{i.Cond}" : "")}"));

@@ -23,24 +23,68 @@ internal static unsafe class T32
         bool arith;
         switch (op)
         {
-            case 0: r = a & b; arith = false; break;
-            case 1: r = a & ~b; arith = false; break;
-            case 2: r = a | b; arith = false; break;
-            case 3: r = a | ~b; arith = false; break;
-            case 4: r = a ^ b; arith = false; break;
-            case 8: r = AddWithCarry(a, b, 0, out c, out v); arith = true; break;
-            case 10: r = AddWithCarry(a, b, s->C, out c, out v); arith = true; break;
-            case 11: r = AddWithCarry(a, ~b, s->C, out c, out v); arith = true; break;
-            case 13: r = AddWithCarry(a, ~b, 1, out c, out v); arith = true; break;
-            case 14: r = AddWithCarry(~a, b, 1, out c, out v); arith = true; break;
-            default: r = 0; arith = false; break;
+            case 0:
+                r = a & b;
+                arith = false;
+                break;
+            case 1:
+                r = a & ~b;
+                arith = false;
+                break;
+            case 2:
+                r = a | b;
+                arith = false;
+                break;
+            case 3:
+                r = a | ~b;
+                arith = false;
+                break;
+            case 4:
+                r = a ^ b;
+                arith = false;
+                break;
+            case 8:
+                r = AddWithCarry(a, b, 0, out c, out v);
+                arith = true;
+                break;
+            case 10:
+                r = AddWithCarry(a, b, s->C, out c, out v);
+                arith = true;
+                break;
+            case 11:
+                r = AddWithCarry(a, ~b, s->C, out c, out v);
+                arith = true;
+                break;
+            case 13:
+                r = AddWithCarry(a, ~b, 1, out c, out v);
+                arith = true;
+                break;
+            case 14:
+                r = AddWithCarry(~a, b, 1, out c, out v);
+                arith = true;
+                break;
+            default:
+                r = 0;
+                arith = false;
+                break;
         }
         if (S)
         {
             SetNZ(s, r);
-            if (arith) { s->C = c; s->V = v; } else s->C = carry;
+            if (arith)
+            {
+                s->C = c;
+                s->V = v;
+            }
+            else
+            {
+                s->C = carry;
+            }
         }
-        if (rd != 15) s->R[rd] = r;
+        if (rd != 15)
+        {
+            s->R[rd] = r;
+        }
     }
 
     /// <summary>Data processing (modified immediate): 11110 i 0 op S Rn | 0 imm3 Rd imm8</summary>
@@ -84,23 +128,51 @@ internal static unsafe class T32
         uint imm3 = Bits(ins, 14, 12), imm2 = Bits(ins, 7, 6);
         switch (op)
         {
-            case 0x00: s->R[rd] = (rn == 15 ? (pc + 4) & ~3u : s->R[rn]) + imm12; break;   // ADDW / ADR
-            case 0x0A: s->R[rd] = (rn == 15 ? (pc + 4) & ~3u : s->R[rn]) - imm12; break;   // SUBW / ADR
-            case 0x04: s->R[rd] = (Bits(ins, 19, 16) << 12) | imm12; break;                 // MOVW
-            case 0x0C: s->R[rd] = (s->R[rd] & 0xFFFF) | (((Bits(ins, 19, 16) << 12) | imm12) << 16); break; // MOVT
+            case 0x00:
+                s->R[rd] = (rn == 15 ? (pc + 4) & ~3u : s->R[rn]) + imm12;
+                break;   // ADDW / ADR
+            case 0x0A:
+                s->R[rd] = (rn == 15 ? (pc + 4) & ~3u : s->R[rn]) - imm12;
+                break;   // SUBW / ADR
+            case 0x04:
+                s->R[rd] = (Bits(ins, 19, 16) << 12) | imm12;
+                break;                 // MOVW
+            case 0x0C:
+                s->R[rd] = (s->R[rd] & 0xFFFF) | (((Bits(ins, 19, 16) << 12) | imm12) << 16);
+                break; // MOVT
             case 0x10:
             case 0x12: // SSAT / SSAT16
-                if (op == 0x12 && imm3 == 0 && imm2 == 0) s->R[rd] = A32.Sat16Core(s, false, ins & 0xF, s->R[rn]);
-                else s->R[rd] = A32.SatCore(s, false, ins & 0x1F, s->R[rn], Bit(ins, 21), (imm3 << 2) | imm2);
+                if (op == 0x12 && imm3 == 0 && imm2 == 0)
+                {
+                    s->R[rd] = A32.Sat16Core(s, false, ins & 0xF, s->R[rn]);
+                }
+                else
+                {
+                    s->R[rd] = A32.SatCore(s, false, ins & 0x1F, s->R[rn], Bit(ins, 21), (imm3 << 2) | imm2);
+                }
+
                 break;
             case 0x18:
             case 0x1A: // USAT / USAT16
-                if (op == 0x1A && imm3 == 0 && imm2 == 0) s->R[rd] = A32.Sat16Core(s, true, ins & 0xF, s->R[rn]);
-                else s->R[rd] = A32.SatCore(s, true, ins & 0x1F, s->R[rn], Bit(ins, 21), (imm3 << 2) | imm2);
+                if (op == 0x1A && imm3 == 0 && imm2 == 0)
+                {
+                    s->R[rd] = A32.Sat16Core(s, true, ins & 0xF, s->R[rn]);
+                }
+                else
+                {
+                    s->R[rd] = A32.SatCore(s, true, ins & 0x1F, s->R[rn], Bit(ins, 21), (imm3 << 2) | imm2);
+                }
+
                 break;
-            case 0x14: s->R[rd] = A32.BfxCore(s->R[rn], false, (int)((imm3 << 2) | imm2), (int)(ins & 0x1F)); break; // SBFX
-            case 0x1C: s->R[rd] = A32.BfxCore(s->R[rn], true, (int)((imm3 << 2) | imm2), (int)(ins & 0x1F)); break;  // UBFX
-            case 0x16: s->R[rd] = A32.BfiCore(s->R[rd], rn == 15 ? 0 : s->R[rn], (int)((imm3 << 2) | imm2), (int)(ins & 0x1F)); break; // BFI/BFC
+            case 0x14:
+                s->R[rd] = A32.BfxCore(s->R[rn], false, (int)((imm3 << 2) | imm2), (int)(ins & 0x1F));
+                break; // SBFX
+            case 0x1C:
+                s->R[rd] = A32.BfxCore(s->R[rn], true, (int)((imm3 << 2) | imm2), (int)(ins & 0x1F));
+                break;  // UBFX
+            case 0x16:
+                s->R[rd] = A32.BfiCore(s->R[rd], rn == 15 ? 0 : s->R[rn], (int)((imm3 << 2) | imm2), (int)(ins & 0x1F));
+                break; // BFI/BFC
         }
     }
 
@@ -115,7 +187,11 @@ internal static unsafe class T32
         uint rn = Bits(ins, 19, 16), rd = Bits(ins, 11, 8), rm = ins & 0xF;
         uint r = ShiftRegC(s->R[rn], type, s->R[rm], s->C, out uint c);
         s->R[rd] = r;
-        if (S) { SetNZ(s, r); s->C = c; }
+        if (S)
+        {
+            SetNZ(s, r);
+            s->C = c;
+        }
     }
 
     /// <summary>SXTAH..UXTAB: 11111010 0 op Rn | 1111 Rd 1 0 rot Rm</summary>
@@ -125,7 +201,15 @@ internal static unsafe class T32
         uint op = Bits(ins, 22, 20), rn = Bits(ins, 19, 16), rd = Bits(ins, 11, 8), rm = ins & 0xF;
         int rot = (int)Bits(ins, 5, 4) * 8;
         // Thumb op: 000 SXTAH,001 UXTAH,010 SXTAB16,011 UXTAB16,100 SXTAB,101 UXTAB -> ARM ExtendCore op
-        uint armOp = op switch { 0 => 3u, 1 => 7u, 2 => 0u, 3 => 4u, 4 => 2u, _ => 6u };
+        uint armOp = op switch
+        {
+            0 => 3u,
+            1 => 7u,
+            2 => 0u,
+            3 => 4u,
+            4 => 2u,
+            _ => 6u
+        };
         s->R[rd] = A32.ExtendCore(armOp, rn == 15 ? 0 : s->R[rn], rn == 15, BitOperations.RotateRight(s->R[rm], rot));
     }
 
@@ -136,7 +220,15 @@ internal static unsafe class T32
         uint op1 = Bits(ins, 22, 20), rn = Bits(ins, 19, 16), rd = Bits(ins, 11, 8), rm = ins & 0xF;
         bool unsigned = Bit(ins, 6) != 0;
         uint kind = Bits(ins, 5, 4);
-        uint armOp2 = op1 switch { 1 => 0u, 2 => 1u, 6 => 2u, 5 => 3u, 0 => 4u, _ => 7u };
+        uint armOp2 = op1 switch
+        {
+            1 => 0u,
+            2 => 1u,
+            6 => 2u,
+            5 => 3u,
+            0 => 4u,
+            _ => 7u
+        };
         uint armOp1 = (unsigned ? 4u : 0u) + (kind == 0 ? 1u : kind == 1 ? 2u : 3u);
         s->R[rd] = A32.ParallelCore(s, armOp1, armOp2, s->R[rn], s->R[rm]);
     }
@@ -168,8 +260,12 @@ internal static unsafe class T32
                 };
                 break;
             }
-            case 2: s->R[rd] = A32.SelCore(s, s->R[rn], s->R[rm]); break;
-            default: s->R[rd] = (uint)BitOperations.LeadingZeroCount(s->R[rm]); break;
+            case 2:
+                s->R[rd] = A32.SelCore(s, s->R[rn], s->R[rm]);
+                break;
+            default:
+                s->R[rd] = (uint)BitOperations.LeadingZeroCount(s->R[rm]);
+                break;
         }
     }
 
@@ -183,22 +279,53 @@ internal static unsafe class T32
         switch (op1)
         {
             case 0:
-                if (op2 == 0) s->R[rd] = vn * vm + (ra == 15 ? 0 : s->R[ra]);
-                else s->R[rd] = s->R[ra] - vn * vm;
+                if (op2 == 0)
+                {
+                    s->R[rd] = vn * vm + (ra == 15 ? 0 : s->R[ra]);
+                }
+                else
+                {
+                    s->R[rd] = s->R[ra] - vn * vm;
+                }
+
                 break;
             case 1: // SMLAxy / SMULxy
-                if (ra == 15) A32.HalfMultiplyCore(s, 3, rd, 0, vn, vm, Bit(ins, 5), Bit(ins, 4));
-                else A32.HalfMultiplyCore(s, 0, rd, ra, vn, vm, Bit(ins, 5), Bit(ins, 4));
+                if (ra == 15)
+                {
+                    A32.HalfMultiplyCore(s, 3, rd, 0, vn, vm, Bit(ins, 5), Bit(ins, 4));
+                }
+                else
+                {
+                    A32.HalfMultiplyCore(s, 0, rd, ra, vn, vm, Bit(ins, 5), Bit(ins, 4));
+                }
+
                 break;
-            case 2: A32.SignedMultiplyMediaCore(s, 0, op2 & 1, rd, ra, vn, vm); break;          // SMLAD/SMUAD
+            case 2:
+                A32.SignedMultiplyMediaCore(s, 0, op2 & 1, rd, ra, vn, vm);
+                break;          // SMLAD/SMUAD
             case 3: // SMLAWy / SMULWy
-                if (ra == 15) A32.HalfMultiplyCore(s, 1, rd, 0, vn, vm, 1, Bit(ins, 4));
-                else A32.HalfMultiplyCore(s, 1, rd, ra, vn, vm, 0, Bit(ins, 4));
+                if (ra == 15)
+                {
+                    A32.HalfMultiplyCore(s, 1, rd, 0, vn, vm, 1, Bit(ins, 4));
+                }
+                else
+                {
+                    A32.HalfMultiplyCore(s, 1, rd, ra, vn, vm, 0, Bit(ins, 4));
+                }
+
                 break;
-            case 4: A32.SignedMultiplyMediaCore(s, 0, 2 | (op2 & 1), rd, ra, vn, vm); break;    // SMLSD/SMUSD
-            case 5: A32.SignedMultiplyMediaCore(s, 5, op2 & 1, rd, ra, vn, vm); break;          // SMMLA/SMMUL
-            case 6: A32.SignedMultiplyMediaCore(s, 5, 6 | (op2 & 1), rd, ra, vn, vm); break;    // SMMLS
-            default: s->R[rd] = A32.Usad8Core(vn, vm) + (ra == 15 ? 0 : s->R[ra]); break;      // USAD8/USADA8
+            case 4:
+                A32.SignedMultiplyMediaCore(s, 0, 2 | (op2 & 1), rd, ra, vn, vm);
+                break;    // SMLSD/SMUSD
+            case 5:
+                A32.SignedMultiplyMediaCore(s, 5, op2 & 1, rd, ra, vn, vm);
+                break;          // SMMLA/SMMUL
+            case 6:
+                A32.SignedMultiplyMediaCore(s, 5, 6 | (op2 & 1), rd, ra, vn, vm);
+                break;    // SMMLS
+            default:
+                s->R[rd] = A32.Usad8Core(vn, vm) + (ra == 15 ? 0 : s->R[ra]);
+                break;      // USAD8/USADA8
         }
     }
 
@@ -211,19 +338,59 @@ internal static unsafe class T32
         uint vn = s->R[rn], vm = s->R[rm];
         switch (op1)
         {
-            case 0: { long r = (long)(int)vn * (int)vm; s->R[lo] = (uint)r; s->R[hi] = (uint)((ulong)r >> 32); break; }
-            case 1: A32.SignedMultiplyMediaCore(s, 1, 0, hi, 0, vn, vm); break;   // SDIV (Rd in hi field)
-            case 2: { ulong r = (ulong)vn * vm; s->R[lo] = (uint)r; s->R[hi] = (uint)(r >> 32); break; }
-            case 3: A32.SignedMultiplyMediaCore(s, 3, 0, hi, 0, vn, vm); break;   // UDIV
-            case 4:
-                if (op2 == 0) { long r = (long)(int)vn * (int)vm + (long)(((ulong)s->R[hi] << 32) | s->R[lo]); s->R[lo] = (uint)r; s->R[hi] = (uint)((ulong)r >> 32); }
-                else if ((op2 & 0xC) == 0x8) A32.HalfMultiplyCore(s, 2, hi, lo, vn, vm, Bit(ins, 5), Bit(ins, 4)); // SMLALxy
-                else A32.SignedMultiplyMediaCore(s, 4, op2 & 1, hi, lo, vn, vm);   // SMLALD
+            case 0:
+            {
+                long r = (long)(int)vn * (int)vm;
+                s->R[lo] = (uint)r;
+                s->R[hi] = (uint)((ulong)r >> 32);
                 break;
-            case 5: A32.SignedMultiplyMediaCore(s, 4, 2 | (op2 & 1), hi, lo, vn, vm); break; // SMLSLD
+            }
+            case 1:
+                A32.SignedMultiplyMediaCore(s, 1, 0, hi, 0, vn, vm);
+                break;   // SDIV (Rd in hi field)
+            case 2:
+            {
+                ulong r = (ulong)vn * vm;
+                s->R[lo] = (uint)r;
+                s->R[hi] = (uint)(r >> 32);
+                break;
+            }
+            case 3:
+                A32.SignedMultiplyMediaCore(s, 3, 0, hi, 0, vn, vm);
+                break;   // UDIV
+            case 4:
+                if (op2 == 0)
+                {
+                    long r = (long)(int)vn * (int)vm + (long)(((ulong)s->R[hi] << 32) | s->R[lo]);
+                    s->R[lo] = (uint)r;
+                    s->R[hi] = (uint)((ulong)r >> 32);
+                }
+                else if ((op2 & 0xC) == 0x8)
+                {
+                    A32.HalfMultiplyCore(s, 2, hi, lo, vn, vm, Bit(ins, 5), Bit(ins, 4)); // SMLALxy
+                }
+                else
+                {
+                    A32.SignedMultiplyMediaCore(s, 4, op2 & 1, hi, lo, vn, vm);   // SMLALD
+                }
+
+                break;
+            case 5:
+                A32.SignedMultiplyMediaCore(s, 4, 2 | (op2 & 1), hi, lo, vn, vm);
+                break; // SMLSLD
             case 6:
-                if (op2 == 0) { ulong r = (ulong)vn * vm + (((ulong)s->R[hi] << 32) | s->R[lo]); s->R[lo] = (uint)r; s->R[hi] = (uint)(r >> 32); }
-                else { ulong r = (ulong)vn * vm + s->R[lo] + s->R[hi]; s->R[lo] = (uint)r; s->R[hi] = (uint)(r >> 32); } // UMAAL
+                if (op2 == 0)
+                {
+                    ulong r = (ulong)vn * vm + (((ulong)s->R[hi] << 32) | s->R[lo]);
+                    s->R[lo] = (uint)r;
+                    s->R[hi] = (uint)(r >> 32);
+                }
+                else
+                {
+                    ulong r = (ulong)vn * vm + s->R[lo] + s->R[hi];
+                    s->R[lo] = (uint)r;
+                    s->R[hi] = (uint)(r >> 32);
+                } // UMAAL
                 break;
         }
     }
@@ -277,8 +444,14 @@ internal static unsafe class T32
     public static void BxjOrSubsPcLr(CpuState* s, uint ins, uint pc)
     {
         // BXJ behaves as BX when Jazelle is not available; SUBS PC, LR, #imm is an exception return
-        if (Bits(ins, 26, 20) == 0x3C) BxWritePc(s, s->R[Bits(ins, 19, 16)]);
-        else BxWritePc(s, s->R[14] - (ins & 0xFF));
+        if (Bits(ins, 26, 20) == 0x3C)
+        {
+            BxWritePc(s, s->R[Bits(ins, 19, 16)]);
+        }
+        else
+        {
+            BxWritePc(s, s->R[14] - (ins & 0xFF));
+        }
     }
 
     /// <summary>TBB/TBH: 111010001101 Rn | 1111 0000 000 H Rm</summary>
@@ -317,13 +490,22 @@ internal static unsafe class T32
         if (L)
         {
             uint a = Mem.R32(s, addr), b = Mem.R32(s, addr + 4);
-            if (W) s->R[rn] = offAddr;
-            s->R[rt] = a; s->R[rt2] = b;
+            if (W)
+            {
+                s->R[rn] = offAddr;
+            }
+
+            s->R[rt] = a;
+            s->R[rt2] = b;
         }
         else
         {
-            Mem.W32(s, addr, s->R[rt]); Mem.W32(s, addr + 4, s->R[rt2]);
-            if (W) s->R[rn] = offAddr;
+            Mem.W32(s, addr, s->R[rt]);
+            Mem.W32(s, addr + 4, s->R[rt2]);
+            if (W)
+            {
+                s->R[rn] = offAddr;
+            }
         }
     }
 
@@ -343,7 +525,12 @@ internal static unsafe class T32
     {
         bool L = Bit(ins, 20) != 0;
         uint rn = Bits(ins, 19, 16), rt = Bits(ins, 15, 12), rt2 = Bits(ins, 11, 8), op3 = Bits(ins, 7, 4), rd = ins & 0xF;
-        uint op = op3 switch { 4 => 2u, 5 => 3u, _ => 1u };
+        uint op = op3 switch
+        {
+            4 => 2u,
+            5 => 3u,
+            _ => 1u
+        };
         A32.ExclusiveCore(s, op, L, s->R[rn], rt, rd, rt2);
     }
 
@@ -389,23 +576,42 @@ internal static unsafe class T32
                 1 => signed ? (uint)(short)Mem.R16(s, addr) : Mem.R16(s, addr),
                 _ => Mem.R32(s, addr),
             };
-            if (wback) s->R[rn] = offAddr;
+            if (wback)
+            {
+                s->R[rn] = offAddr;
+            }
+
             if (rt == 15)
             {
-                if (size == 2) BxWritePc(s, v); // PLD/PLI otherwise (no-op)
+                if (size == 2)
+                {
+                    BxWritePc(s, v); // PLD/PLI otherwise (no-op)
+                }
             }
-            else s->R[rt] = v;
+            else
+            {
+                s->R[rt] = v;
+            }
         }
         else
         {
             uint v = s->R[rt];
             switch (size)
             {
-                case 0: Mem.W8(s, addr, v); break;
-                case 1: Mem.W16(s, addr, v); break;
-                default: Mem.W32(s, addr, v); break;
+                case 0:
+                    Mem.W8(s, addr, v);
+                    break;
+                case 1:
+                    Mem.W16(s, addr, v);
+                    break;
+                default:
+                    Mem.W32(s, addr, v);
+                    break;
             }
-            if (wback) s->R[rn] = offAddr;
+            if (wback)
+            {
+                s->R[rn] = offAddr;
+            }
         }
     }
 
@@ -414,7 +620,9 @@ internal static unsafe class T32
     [MethodImpl(MethodImplOptions.AggressiveInlining)]
     public static void Barrier(CpuState* s, uint ins, uint pc) => Interlocked.MemoryBarrier();
     [MethodImpl(MethodImplOptions.AggressiveInlining)]
-    public static void Nop(CpuState* s, uint ins, uint pc) { }
+    public static void Nop(CpuState* s, uint ins, uint pc)
+    {
+    }
 
     [MethodImpl(MethodImplOptions.AggressiveInlining)]
     public static void Yield(CpuState* s, uint ins, uint pc)

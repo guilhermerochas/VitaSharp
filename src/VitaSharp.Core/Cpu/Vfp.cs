@@ -26,20 +26,39 @@ internal static unsafe class Vfp
     internal static float FixF(CpuState* s, float r)
     {
         uint fpscr = s->Fpscr;
-        if ((fpscr & (FpscrDN | FpscrFZ)) == 0) return r;
+        if ((fpscr & (FpscrDN | FpscrFZ)) == 0)
+        {
+            return r;
+        }
+
         uint bits = BitConverter.SingleToUInt32Bits(r);
-        if ((fpscr & FpscrDN) != 0 && float.IsNaN(r)) return BitConverter.UInt32BitsToSingle(0x7FC00000);
+        if ((fpscr & FpscrDN) != 0 && float.IsNaN(r))
+        {
+            return BitConverter.UInt32BitsToSingle(0x7FC00000);
+        }
+
         if ((fpscr & FpscrFZ) != 0 && (bits & 0x7F800000) == 0 && (bits & 0x7FFFFF) != 0)
+        {
             return BitConverter.UInt32BitsToSingle(bits & 0x80000000);
+        }
+
         return r;
     }
 
     [MethodImpl(MethodImplOptions.AggressiveInlining)]
     internal static float InF(CpuState* s, float v)
     {
-        if ((s->Fpscr & FpscrFZ) == 0) return v;
+        if ((s->Fpscr & FpscrFZ) == 0)
+        {
+            return v;
+        }
+
         uint bits = BitConverter.SingleToUInt32Bits(v);
-        if ((bits & 0x7F800000) == 0 && (bits & 0x7FFFFF) != 0) return BitConverter.UInt32BitsToSingle(bits & 0x80000000);
+        if ((bits & 0x7F800000) == 0 && (bits & 0x7FFFFF) != 0)
+        {
+            return BitConverter.UInt32BitsToSingle(bits & 0x80000000);
+        }
+
         return v;
     }
 
@@ -47,20 +66,39 @@ internal static unsafe class Vfp
     internal static double FixD(CpuState* s, double r)
     {
         uint fpscr = s->Fpscr;
-        if ((fpscr & (FpscrDN | FpscrFZ)) == 0) return r;
+        if ((fpscr & (FpscrDN | FpscrFZ)) == 0)
+        {
+            return r;
+        }
+
         ulong bits = BitConverter.DoubleToUInt64Bits(r);
-        if ((fpscr & FpscrDN) != 0 && double.IsNaN(r)) return BitConverter.UInt64BitsToDouble(0x7FF8000000000000);
+        if ((fpscr & FpscrDN) != 0 && double.IsNaN(r))
+        {
+            return BitConverter.UInt64BitsToDouble(0x7FF8000000000000);
+        }
+
         if ((fpscr & FpscrFZ) != 0 && (bits & 0x7FF0000000000000) == 0 && (bits & 0xFFFFFFFFFFFFF) != 0)
+        {
             return BitConverter.UInt64BitsToDouble(bits & 0x8000000000000000);
+        }
+
         return r;
     }
 
     [MethodImpl(MethodImplOptions.AggressiveInlining)]
     internal static double InD(CpuState* s, double v)
     {
-        if ((s->Fpscr & FpscrFZ) == 0) return v;
+        if ((s->Fpscr & FpscrFZ) == 0)
+        {
+            return v;
+        }
+
         ulong bits = BitConverter.DoubleToUInt64Bits(v);
-        if ((bits & 0x7FF0000000000000) == 0 && (bits & 0xFFFFFFFFFFFFF) != 0) return BitConverter.UInt64BitsToDouble(bits & 0x8000000000000000);
+        if ((bits & 0x7FF0000000000000) == 0 && (bits & 0xFFFFFFFFFFFFF) != 0)
+        {
+            return BitConverter.UInt64BitsToDouble(bits & 0x8000000000000000);
+        }
+
         return v;
     }
 
@@ -95,16 +133,34 @@ internal static unsafe class Vfp
                 double x, y;
                 switch (opc1)
                 {
-                    case 2: x = (double)a * b; y = 0; break;
-                    case 3: x = a; y = op ? -(double)b : b; break;
-                    case 4: x = (double)a / b; y = 0; break;
-                    case 5: x = (op ? -(double)a : a) * b; y = -(double)acc; break;
-                    default: x = (op ? -(double)a : a) * b; y = acc; break;
+                    case 2:
+                        x = (double)a * b;
+                        y = 0;
+                        break;
+                    case 3:
+                        x = a;
+                        y = op ? -(double)b : b;
+                        break;
+                    case 4:
+                        x = (double)a / b;
+                        y = 0;
+                        break;
+                    case 5:
+                        x = (op ? -(double)a : a) * b;
+                        y = -(double)acc;
+                        break;
+                    default:
+                        x = (op ? -(double)a : a) * b;
+                        y = acc;
+                        break;
                 }
                 double sum = x + y, bv = sum - x, err = (x - (sum - bv)) + (y - bv);
                 const double MinNormal = 1.1754943508222875e-38;
                 bool tiny = Math.Abs(sum) < MinNormal || (Math.Abs(sum) == MinNormal && err != 0 && Math.Sign(err) != Math.Sign(sum));
-                if (tiny) r = BitConverter.UInt32BitsToSingle(BitConverter.SingleToUInt32Bits(r) & 0x80000000);
+                if (tiny)
+                {
+                    r = BitConverter.UInt32BitsToSingle(BitConverter.SingleToUInt32Bits(r) & 0x80000000);
+                }
             }
             // VNMUL negates the rounded product, after any default-NaN substitution (so its NaN is 0xFFC00000)
             Sf(s, d) = opc1 == 2 && op ? -FixF(s, r) : FixF(s, r);
@@ -159,17 +215,41 @@ internal static unsafe class Vfp
                 if (!dbl)
                 {
                     uint d = SingleD(ins), m = SingleM(ins);
-                    if (opc2 == 0 && !b7) { Su(s, d) = Su(s, m); return; }
-                    if (opc2 == 0) { Su(s, d) = Su(s, m) & 0x7FFFFFFF; return; }
-                    if (!b7) { Su(s, d) = Su(s, m) ^ 0x80000000; return; }
+                    if (opc2 == 0 && !b7)
+                    {
+                        Su(s, d) = Su(s, m);
+                        return;
+                    }
+                    if (opc2 == 0)
+                    {
+                        Su(s, d) = Su(s, m) & 0x7FFFFFFF;
+                        return;
+                    }
+                    if (!b7)
+                    {
+                        Su(s, d) = Su(s, m) ^ 0x80000000;
+                        return;
+                    }
                     Sf(s, d) = FixF(s, MathF.Sqrt(InF(s, Sf(s, m))));
                 }
                 else
                 {
                     uint d = DoubleD(ins), m = DoubleM(ins);
-                    if (opc2 == 0 && !b7) { Du(s, d) = Du(s, m); return; }
-                    if (opc2 == 0) { Du(s, d) = Du(s, m) & 0x7FFFFFFFFFFFFFFF; return; }
-                    if (!b7) { Du(s, d) = Du(s, m) ^ 0x8000000000000000; return; }
+                    if (opc2 == 0 && !b7)
+                    {
+                        Du(s, d) = Du(s, m);
+                        return;
+                    }
+                    if (opc2 == 0)
+                    {
+                        Du(s, d) = Du(s, m) & 0x7FFFFFFFFFFFFFFF;
+                        return;
+                    }
+                    if (!b7)
+                    {
+                        Du(s, d) = Du(s, m) ^ 0x8000000000000000;
+                        return;
+                    }
                     Df(s, d) = FixD(s, Math.Sqrt(InD(s, Df(s, m))));
                 }
                 return;
@@ -205,15 +285,29 @@ internal static unsafe class Vfp
                 }
                 return;
             case 7: // VCVT double <-> single
-                if (!dbl) Df(s, DoubleD(ins)) = FixD(s, InF(s, Sf(s, SingleM(ins))));
-                else Sf(s, SingleD(ins)) = FixF(s, (float)InD(s, Df(s, DoubleM(ins))));
+                if (!dbl)
+                {
+                    Df(s, DoubleD(ins)) = FixD(s, InF(s, Sf(s, SingleM(ins))));
+                }
+                else
+                {
+                    Sf(s, SingleD(ins)) = FixF(s, (float)InD(s, Df(s, DoubleM(ins))));
+                }
+
                 return;
             case 8: // VCVT int -> float  (Vm is always a single register)
             {
                 uint raw = Su(s, SingleM(ins));
                 double v = b7 ? (int)raw : raw;
-                if (!dbl) Sf(s, SingleD(ins)) = (float)v;
-                else Df(s, DoubleD(ins)) = v;
+                if (!dbl)
+                {
+                    Sf(s, SingleD(ins)) = (float)v;
+                }
+                else
+                {
+                    Df(s, DoubleD(ins)) = v;
+                }
+
                 return;
             }
             case 0xA:
@@ -274,7 +368,11 @@ internal static unsafe class Vfp
         uint d = dbl ? DoubleD(ins) : SingleD(ins), n = dbl ? DoubleN(ins) : SingleN(ins), m = dbl ? DoubleM(ins) : SingleM(ins);
         // bank 0 is S0-S7, or D0-D3 (and D16-D19, the bank 0 of the upper half: the bank field is bits 3:2)
         uint bankMask = dbl ? 3u : 7u, bankField = dbl ? 0xCu : 0x18u;
-        if ((d & bankField) == 0) len = 1;
+        if ((d & bankField) == 0)
+        {
+            len = 1;
+        }
+
         uint mStride = (m & bankField) == 0 ? 0 : stride;
         // the vector bits are only read here: the scalar handlers ignore them
         for (uint i = 0; i < len; i++)
@@ -282,9 +380,15 @@ internal static unsafe class Vfp
             uint e = Encode(ins, d, n, m, dbl, op);
             switch (op)
             {
-                case Op.Vfp_Arith: Arith(s, e, pc); break;
-                case Op.Vfp_MovImm: MovImm(s, e, pc); break;
-                default: Other(s, e, pc); break;
+                case Op.Vfp_Arith:
+                    Arith(s, e, pc);
+                    break;
+                case Op.Vfp_MovImm:
+                    MovImm(s, e, pc);
+                    break;
+                default:
+                    Other(s, e, pc);
+                    break;
             }
             d = (d & ~bankMask) | ((d + stride) & bankMask);
             n = (n & ~bankMask) | ((n + stride) & bankMask);
@@ -298,10 +402,18 @@ internal static unsafe class Vfp
     {
         ins &= ~((1u << 22) | (0xFu << 12));
         ins |= dbl ? ((d >> 4) << 22) | ((d & 0xF) << 12) : ((d & 1) << 22) | ((d >> 1) << 12);
-        if (op == Op.Vfp_MovImm) return ins;
+        if (op == Op.Vfp_MovImm)
+        {
+            return ins;
+        }
+
         ins &= ~((1u << 5) | 0xFu);
         ins |= dbl ? ((m >> 4) << 5) | (m & 0xF) : ((m & 1) << 5) | (m >> 1);
-        if (op != Op.Vfp_Arith) return ins;
+        if (op != Op.Vfp_Arith)
+        {
+            return ins;
+        }
+
         ins &= ~((0xFu << 16) | (1u << 7));
         return ins | (dbl ? ((n & 0xF) << 16) | ((n >> 4) << 7) : ((n >> 1) << 16) | ((n & 1) << 7));
     }
@@ -330,11 +442,27 @@ internal static unsafe class Vfp
             // result is sign- or zero-extended to 32 bits, or to 64 for a double register)
             double v = Math.Truncate((dbl ? InD(s, Df(s, DoubleD(ins))) : InF(s, Sf(s, SingleD(ins)))) * scale);
             long r;
-            if (double.IsNaN(v)) r = 0;
-            else if (unsigned) r = (long)Math.Clamp(v, 0, size == 32 ? uint.MaxValue : ushort.MaxValue);
-            else r = (long)Math.Clamp(v, size == 32 ? int.MinValue : short.MinValue, size == 32 ? int.MaxValue : short.MaxValue);
-            if (dbl) Du(s, DoubleD(ins)) = (ulong)r;
-            else Su(s, SingleD(ins)) = (uint)r;
+            if (double.IsNaN(v))
+            {
+                r = 0;
+            }
+            else if (unsigned)
+            {
+                r = (long)Math.Clamp(v, 0, size == 32 ? uint.MaxValue : ushort.MaxValue);
+            }
+            else
+            {
+                r = (long)Math.Clamp(v, size == 32 ? int.MinValue : short.MinValue, size == 32 ? int.MaxValue : short.MaxValue);
+            }
+
+            if (dbl)
+            {
+                Du(s, DoubleD(ins)) = (ulong)r;
+            }
+            else
+            {
+                Su(s, SingleD(ins)) = (uint)r;
+            }
         }
         else if (dbl)
         {
@@ -364,17 +492,37 @@ internal static unsafe class Vfp
     [MethodImpl(MethodImplOptions.AggressiveInlining)]
     internal static int ToS32(double v)
     {
-        if (double.IsNaN(v)) return 0;
-        if (v >= 2147483647.0) return int.MaxValue;
-        if (v <= -2147483648.0) return int.MinValue;
+        if (double.IsNaN(v))
+        {
+            return 0;
+        }
+
+        if (v >= 2147483647.0)
+        {
+            return int.MaxValue;
+        }
+
+        if (v <= -2147483648.0)
+        {
+            return int.MinValue;
+        }
+
         return (int)v;
     }
 
     [MethodImpl(MethodImplOptions.AggressiveInlining)]
     internal static uint ToU32(double v)
     {
-        if (double.IsNaN(v) || v <= 0) return 0;
-        if (v >= 4294967295.0) return uint.MaxValue;
+        if (double.IsNaN(v) || v <= 0)
+        {
+            return 0;
+        }
+
+        if (v >= 4294967295.0)
+        {
+            return uint.MaxValue;
+        }
+
         return (uint)v;
     }
 
@@ -392,7 +540,14 @@ internal static unsafe class Vfp
     public static void MovCoreSingle(CpuState* s, uint ins, uint pc)
     {
         uint n = SingleN(ins), rt = Bits(ins, 15, 12);
-        if (Bit(ins, 20) != 0) s->R[rt] = Su(s, n); else Su(s, n) = s->R[rt];
+        if (Bit(ins, 20) != 0)
+        {
+            s->R[rt] = Su(s, n);
+        }
+        else
+        {
+            Su(s, n) = s->R[rt];
+        }
     }
 
     /// <summary>VMRS / VMSR: cond 1110 111 L 0001 Rt 1010 0001 0000 (only FPSCR reg 0001 is modelled)</summary>
@@ -409,18 +564,34 @@ internal static unsafe class Vfp
             8 => 0x40000000, // FPEXC.EN
             _ => 0,
         };
-        if (rt == 15) { s->N = v >> 31; s->Z = (v >> 30) & 1; s->C = (v >> 29) & 1; s->V = (v >> 28) & 1; }
-        else s->R[rt] = v;
+        if (rt == 15)
+        {
+            s->N = v >> 31;
+            s->Z = (v >> 30) & 1;
+            s->C = (v >> 29) & 1;
+            s->V = (v >> 28) & 1;
+        }
+        else
+        {
+            s->R[rt] = v;
+        }
     }
 
     [MethodImpl(MethodImplOptions.AggressiveInlining)]
     public static void Vmsr(CpuState* s, uint ins, uint pc)
     {
-        if (Bits(ins, 19, 16) != 1) return;
+        if (Bits(ins, 19, 16) != 1)
+        {
+            return;
+        }
+
         uint old = s->Fpscr, v = s->R[Bits(ins, 15, 12)];
         s->Fpscr = v;
         // entering or leaving short-vector mode: the dispatcher switches between generated code and the interpreter
-        if (((old ^ v) & FpscrVectorMask) != 0 && s->Exit == ExitReason.None) s->Exit = ExitReason.FpMode;
+        if (((old ^ v) & FpscrVectorMask) != 0 && s->Exit == ExitReason.None)
+        {
+            s->Exit = ExitReason.FpMode;
+        }
     }
 
     /// <summary>VMOV core -> scalar: cond 1110 0 opc1 0 Vd Rt 1011 D opc2 1 0000</summary>
@@ -431,9 +602,18 @@ internal static unsafe class Vfp
         uint opc = (Bits(ins, 22, 21) << 2) | Bits(ins, 6, 5);
         byte* p = (byte*)&s->D[d];
         uint v = s->R[rt];
-        if ((opc & 8) != 0) p[opc & 7] = (byte)v;
-        else if ((opc & 1) != 0) ((ushort*)p)[(opc >> 1) & 3] = (ushort)v;
-        else ((uint*)p)[(opc >> 2) & 1] = v;
+        if ((opc & 8) != 0)
+        {
+            p[opc & 7] = (byte)v;
+        }
+        else if ((opc & 1) != 0)
+        {
+            ((ushort*)p)[(opc >> 1) & 3] = (ushort)v;
+        }
+        else
+        {
+            ((uint*)p)[(opc >> 2) & 1] = v;
+        }
     }
 
     /// <summary>VMOV scalar -> core: cond 1110 U opc1 1 Vn Rt 1011 N opc2 1 0000</summary>
@@ -445,9 +625,21 @@ internal static unsafe class Vfp
         uint opc = (Bits(ins, 22, 21) << 2) | Bits(ins, 6, 5);
         byte* p = (byte*)&s->D[n];
         uint v;
-        if ((opc & 8) != 0) { byte b = p[opc & 7]; v = u ? b : (uint)(sbyte)b; }
-        else if ((opc & 1) != 0) { ushort h = ((ushort*)p)[(opc >> 1) & 3]; v = u ? h : (uint)(short)h; }
-        else v = ((uint*)p)[(opc >> 2) & 1];
+        if ((opc & 8) != 0)
+        {
+            byte b = p[opc & 7];
+            v = u ? b : (uint)(sbyte)b;
+        }
+        else if ((opc & 1) != 0)
+        {
+            ushort h = ((ushort*)p)[(opc >> 1) & 3];
+            v = u ? h : (uint)(short)h;
+        }
+        else
+        {
+            v = ((uint*)p)[(opc >> 2) & 1];
+        }
+
         s->R[rt] = v;
     }
 
@@ -466,7 +658,10 @@ internal static unsafe class Vfp
             _ => (v & 0xFF) * 0x0101010101010101ul,
         };
         s->D[d] = rep;
-        if (q) s->D[d + 1] = rep;
+        if (q)
+        {
+            s->D[d + 1] = rep;
+        }
     }
 
     /// <summary>VMOV two core registers &lt;-&gt; two singles / one double: cond 1100 010 op Rt2 Rt 101 sz 00 M 1 Vm</summary>
@@ -478,14 +673,30 @@ internal static unsafe class Vfp
         if (Bit(ins, 8) == 0)
         {
             uint m = SingleM(ins);
-            if (toCore) { s->R[rt] = Su(s, m); s->R[rt2] = Su(s, m + 1); }
-            else { Su(s, m) = s->R[rt]; Su(s, m + 1) = s->R[rt2]; }
+            if (toCore)
+            {
+                s->R[rt] = Su(s, m);
+                s->R[rt2] = Su(s, m + 1);
+            }
+            else
+            {
+                Su(s, m) = s->R[rt];
+                Su(s, m + 1) = s->R[rt2];
+            }
         }
         else
         {
             uint m = DoubleM(ins);
-            if (toCore) { ulong v = Du(s, m); s->R[rt] = (uint)v; s->R[rt2] = (uint)(v >> 32); }
-            else Du(s, m) = s->R[rt] | ((ulong)s->R[rt2] << 32);
+            if (toCore)
+            {
+                ulong v = Du(s, m);
+                s->R[rt] = (uint)v;
+                s->R[rt2] = (uint)(v >> 32);
+            }
+            else
+            {
+                Du(s, m) = s->R[rt] | ((ulong)s->R[rt2] << 32);
+            }
         }
     }
 
@@ -502,13 +713,28 @@ internal static unsafe class Vfp
         if (dbl)
         {
             uint d = DoubleD(ins);
-            if (l) Du(s, d) = Mem.R32(s, addr) | ((ulong)Mem.R32(s, addr + 4) << 32);
-            else { ulong v = Du(s, d); Mem.W32(s, addr, (uint)v); Mem.W32(s, addr + 4, (uint)(v >> 32)); }
+            if (l)
+            {
+                Du(s, d) = Mem.R32(s, addr) | ((ulong)Mem.R32(s, addr + 4) << 32);
+            }
+            else
+            {
+                ulong v = Du(s, d);
+                Mem.W32(s, addr, (uint)v);
+                Mem.W32(s, addr + 4, (uint)(v >> 32));
+            }
         }
         else
         {
             uint d = SingleD(ins);
-            if (l) Su(s, d) = Mem.R32(s, addr); else Mem.W32(s, addr, Su(s, d));
+            if (l)
+            {
+                Su(s, d) = Mem.R32(s, addr);
+            }
+            else
+            {
+                Mem.W32(s, addr, Su(s, d));
+            }
         }
     }
 
@@ -527,15 +753,27 @@ internal static unsafe class Vfp
         uint words = imm8;
         uint baseVal = s->R[rn];
         uint addr = p ? baseVal - words * 4 : baseVal;
-        if (w) s->R[rn] = u ? baseVal + words * 4 : baseVal - words * 4;
+        if (w)
+        {
+            s->R[rn] = u ? baseVal + words * 4 : baseVal - words * 4;
+        }
+
         if (dbl)
         {
             uint d = DoubleD(ins);
             uint regs = imm8 >> 1;
             for (uint i = 0; i < regs; i++, addr += 8)
             {
-                if (l) Du(s, (d + i) & 31) = Mem.R32(s, addr) | ((ulong)Mem.R32(s, addr + 4) << 32);
-                else { ulong v = Du(s, (d + i) & 31); Mem.W32(s, addr, (uint)v); Mem.W32(s, addr + 4, (uint)(v >> 32)); }
+                if (l)
+                {
+                    Du(s, (d + i) & 31) = Mem.R32(s, addr) | ((ulong)Mem.R32(s, addr + 4) << 32);
+                }
+                else
+                {
+                    ulong v = Du(s, (d + i) & 31);
+                    Mem.W32(s, addr, (uint)v);
+                    Mem.W32(s, addr + 4, (uint)(v >> 32));
+                }
             }
         }
         else
@@ -543,7 +781,14 @@ internal static unsafe class Vfp
             uint d = SingleD(ins);
             for (uint i = 0; i < imm8; i++, addr += 4)
             {
-                if (l) Su(s, (d + i) & 63) = Mem.R32(s, addr); else Mem.W32(s, addr, Su(s, (d + i) & 63));
+                if (l)
+                {
+                    Su(s, (d + i) & 63) = Mem.R32(s, addr);
+                }
+                else
+                {
+                    Mem.W32(s, addr, Su(s, (d + i) & 63));
+                }
             }
         }
     }

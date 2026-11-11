@@ -31,7 +31,11 @@ public sealed unsafe class IlJitCompiler : IBlockCompiler
     /// <summary>Null when dynamic code is unavailable (Native AOT): the dispatcher then leaves the block to the next backend.</summary>
     public CompiledBlock? Compile(Block b)
     {
-        if (RuntimeFeature.IsDynamicCodeSupported) return CompileDynamic(b);
+        if (RuntimeFeature.IsDynamicCodeSupported)
+        {
+            return CompileDynamic(b);
+        }
+
         BackendStats.RejectReason = "no dynamic code";
         return null;
     }
@@ -43,7 +47,11 @@ public sealed unsafe class IlJitCompiler : IBlockCompiler
         EmitBlock(dm.GetILGenerator(), b);
         if (CountExecutions)
         {
-            lock (DumpLock) _dump ??= IlDump.Create(Environment.GetEnvironmentVariable(Util.EnvVars.IlDump));
+            lock (DumpLock)
+            {
+                _dump ??= IlDump.Create(Environment.GetEnvironmentVariable(Util.EnvVars.IlDump));
+            }
+
             _dump?.Add(b, il => EmitBlock(il, b));
         }
         var fn = dm.CreateDelegate<JitBlockFn>();
@@ -66,8 +74,15 @@ public sealed unsafe class IlJitCompiler : IBlockCompiler
         {
             ref readonly var d = ref insts[i];
             bool last = i == insts.Length - 1;
-            if (d.EndsBlock || last) EmitStorePc(il, d.Address + d.Size);
-            if (d.Op is Op.Thumb_It or Op.A32_Nop or Op.T16_Nop or Op.T32_Nop) continue;
+            if (d.EndsBlock || last)
+            {
+                EmitStorePc(il, d.Address + d.Size);
+            }
+
+            if (d.Op is Op.Thumb_It or Op.A32_Nop or Op.T16_Nop or Op.T32_Nop)
+            {
+                continue;
+            }
 
             Label skip = default;
             bool cond = (d.Flags & InstFlags.Conditional) != 0;
@@ -83,7 +98,10 @@ public sealed unsafe class IlJitCompiler : IBlockCompiler
             il.Emit(OpCodes.Ldc_I4, (int)d.Raw);
             il.Emit(OpCodes.Ldc_I4, (int)d.Address);
             il.Emit(OpCodes.Call, HandlerTable.Methods[(int)d.Op]);
-            if (cond) il.MarkLabel(skip);
+            if (cond)
+            {
+                il.MarkLabel(skip);
+            }
         }
         il.Emit(OpCodes.Ret);
     }

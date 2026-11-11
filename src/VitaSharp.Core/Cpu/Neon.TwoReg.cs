@@ -8,7 +8,11 @@ internal static unsafe partial class Neon
     /// <summary>Two registers and a shift amount: 1111 001U 1 D imm6 Vd A L Q M 1 Vm</summary>
     public static void Shift(CpuState* s, uint ins, uint pc)
     {
-        if (ShiftFast(s, ins)) return;
+        if (ShiftFast(s, ins))
+        {
+            return;
+        }
+
         uint a = Bits(ins, 11, 8);
         bool u = Bit(ins, 24) != 0, l = Bit(ins, 7) != 0, q = Bit(ins, 6) != 0;
         uint imm6 = Bits(ins, 21, 16);
@@ -33,9 +37,19 @@ internal static unsafe partial class Neon
                 Int128 x = GetI(tm, i, w, srcUnsigned);
                 Int128 r = (x + (round ? (Int128.One << (rshift - 1)) : 0)) >> rshift;
                 ulong res;
-                if (a == 8 && !u) res = (ulong)(long)r;                 // VSHRN / VRSHRN
-                else if (a == 8) res = SatU(s, r, esize);                // VQSHRUN / VQRSHRUN
-                else res = u ? SatU(s, r, esize) : (ulong)SatS(s, r, esize); // VQSHRN / VQRSHRN
+                if (a == 8 && !u)
+                {
+                    res = (ulong)(long)r;                 // VSHRN / VRSHRN
+                }
+                else if (a == 8)
+                {
+                    res = SatU(s, r, esize);                // VQSHRUN / VQRSHRUN
+                }
+                else
+                {
+                    res = u ? SatU(s, r, esize) : (ulong)SatS(s, r, esize); // VQSHRN / VQRSHRN
+                }
+
                 Set(td, i, esize, res);
             }
             Buffer.MemoryCopy(td, Reg(s, d), 8, 8);
@@ -48,7 +62,10 @@ internal static unsafe partial class Neon
             int w = esize * 2;
             byte* res = stackalloc byte[16];
             for (int i = 0; i < count; i++)
+            {
                 Set(res, i, w, (ulong)(long)(GetI(tm, i, esize, u) << lshift));
+            }
+
             Buffer.MemoryCopy(res, Reg(s, d), 16, 16);
             return;
         }
@@ -91,7 +108,11 @@ internal static unsafe partial class Neon
                     bool round = (a & 2) != 0;
                     Int128 r = (x + (round ? (Int128.One << (rshift - 1)) : 0)) >> rshift;
                     ulong res = (ulong)(long)r;
-                    if ((a & 1) != 0) res += GetU(td, i, esize);
+                    if ((a & 1) != 0)
+                    {
+                        res += GetU(td, i, esize);
+                    }
+
                     Set(td, i, esize, res);
                     break;
                 }
@@ -110,7 +131,11 @@ internal static unsafe partial class Neon
                         ulong keep = ~(mask << lshift) & mask;
                         Set(td, i, esize, (GetU(td, i, esize) & keep) | (sh & mask));
                     }
-                    else Set(td, i, esize, sh);
+                    else
+                    {
+                        Set(td, i, esize, sh);
+                    }
+
                     break;
                 }
                 case 6: // VQSHLU (signed in, unsigned saturate)
@@ -175,7 +200,11 @@ internal static unsafe partial class Neon
                         for (int i = 0; i < count / 2; i++)
                         {
                             Int128 r = GetI(tm, 2 * i, esize, uns) + GetI(tm, 2 * i + 1, esize, uns);
-                            if (acc) r += GetI(td, i, w, uns);
+                            if (acc)
+                            {
+                                r += GetI(td, i, w, uns);
+                            }
+
                             Set(td, i, w, (ulong)(long)r);
                         }
                         break;
@@ -197,18 +226,36 @@ internal static unsafe partial class Neon
                         }
                         break;
                     case 0xA: // VCNT
-                        for (int i = 0; i < bytes; i++) td[i] = (byte)BitOperations.PopCount(tm[i]);
+                        for (int i = 0; i < bytes; i++)
+                        {
+                            td[i] = (byte)BitOperations.PopCount(tm[i]);
+                        }
+
                         break;
                     case 0xB: // VMVN
-                        for (int i = 0; i < bytes; i++) td[i] = (byte)~tm[i];
+                        for (int i = 0; i < bytes; i++)
+                        {
+                            td[i] = (byte)~tm[i];
+                        }
+
                         break;
                     case 0xE: // VQABS
-                        for (int i = 0; i < count; i++) Set(td, i, esize, (ulong)SatS(s, Int128.Abs(GetS(tm, i, esize)), esize));
+                        for (int i = 0; i < count; i++)
+                        {
+                            Set(td, i, esize, (ulong)SatS(s, Int128.Abs(GetS(tm, i, esize)), esize));
+                        }
+
                         break;
                     case 0xF: // VQNEG
-                        for (int i = 0; i < count; i++) Set(td, i, esize, (ulong)SatS(s, -(Int128)GetS(tm, i, esize), esize));
+                        for (int i = 0; i < count; i++)
+                        {
+                            Set(td, i, esize, (ulong)SatS(s, -(Int128)GetS(tm, i, esize), esize));
+                        }
+
                         break;
-                    default: Arm.Undefined(s, pc); return;
+                    default:
+                        Arm.Undefined(s, pc);
+                        return;
                 }
                 break;
             case 1:
@@ -306,10 +353,23 @@ internal static unsafe partial class Neon
                         for (int i = 0; i < 64 / esize; i++)
                         {
                             ulong r;
-                            if (b == 8) r = GetU(tm, i, w);
-                            else if (b == 9) r = SatU(s, GetS(tm, i, w), esize);
-                            else if (b == 10) r = (ulong)SatS(s, GetS(tm, i, w), esize);
-                            else r = SatU(s, GetU(tm, i, w), esize);
+                            if (b == 8)
+                            {
+                                r = GetU(tm, i, w);
+                            }
+                            else if (b == 9)
+                            {
+                                r = SatU(s, GetS(tm, i, w), esize);
+                            }
+                            else if (b == 10)
+                            {
+                                r = (ulong)SatS(s, GetS(tm, i, w), esize);
+                            }
+                            else
+                            {
+                                r = SatU(s, GetU(tm, i, w), esize);
+                            }
+
                             Set(res, i, esize, r);
                         }
                         Buffer.MemoryCopy(res, Reg(s, d), 8, 8);
@@ -319,25 +379,39 @@ internal static unsafe partial class Neon
                     {
                         int w = esize * 2;
                         byte* res = stackalloc byte[16];
-                        for (int i = 0; i < 64 / esize; i++) Set(res, i, w, GetU(tm, i, esize) << esize);
+                        for (int i = 0; i < 64 / esize; i++)
+                        {
+                            Set(res, i, w, GetU(tm, i, esize) << esize);
+                        }
+
                         Buffer.MemoryCopy(res, Reg(s, d), 16, 16);
                         return;
                     }
                     case 0xC: // VCVT.F16.F32 (b=11000)
                     {
                         ushort* res = stackalloc ushort[4];
-                        for (int i = 0; i < 4; i++) { float f = Ftz(((float*)tm)[i]); res[i] = float.IsNaN(f) ? (ushort)0x7E00 : BitConverter.HalfToUInt16Bits((Half)f); } // FZ + DN
+                        for (int i = 0; i < 4; i++)
+                        {
+                            float f = Ftz(((float*)tm)[i]);
+                            res[i] = float.IsNaN(f) ? (ushort)0x7E00 : BitConverter.HalfToUInt16Bits((Half)f);
+                        } // FZ + DN
                         Buffer.MemoryCopy(res, Reg(s, d), 8, 8);
                         return;
                     }
                     case 0xE: // VCVT.F32.F16 (b=11100)
                     {
                         float* res = stackalloc float[4];
-                        for (int i = 0; i < 4; i++) res[i] = FRes((float)BitConverter.UInt16BitsToHalf(((ushort*)tm)[i]));
+                        for (int i = 0; i < 4; i++)
+                        {
+                            res[i] = FRes((float)BitConverter.UInt16BitsToHalf(((ushort*)tm)[i]));
+                        }
+
                         Buffer.MemoryCopy(res, Reg(s, d), 16, 16);
                         return;
                     }
-                    default: Arm.Undefined(s, pc); return;
+                    default:
+                        Arm.Undefined(s, pc);
+                        return;
                 }
                 break;
             case 3:
@@ -350,8 +424,14 @@ internal static unsafe partial class Neon
                     if ((op & 0xC) == 0x8) // VRECPE / VRSQRTE
                     {
                         bool fp = (op & 2) != 0, rsqrt = (op & 1) != 0;
-                        if (fp) r = BitConverter.SingleToUInt32Bits(rsqrt ? RSqrtEstimate(x) : RecipEstimate(x));
-                        else r = rsqrt ? URSqrtEstimate(raw) : URecipEstimate(raw);
+                        if (fp)
+                        {
+                            r = BitConverter.SingleToUInt32Bits(rsqrt ? RSqrtEstimate(x) : RecipEstimate(x));
+                        }
+                        else
+                        {
+                            r = rsqrt ? URSqrtEstimate(raw) : URecipEstimate(raw);
+                        }
                     }
                     else // VCVT: op bits 1:0 -> 00 s32->f32, 01 u32->f32, 10 f32->s32, 11 f32->u32
                     {
@@ -385,9 +465,18 @@ internal static unsafe partial class Neon
         bool orrBic = (cmode & 1) != 0 && cmode < 12;
         for (int i = 0; i < words; i++)
         {
-            if (orrBic) vd[i] = op ? vd[i] & ~imm : vd[i] | imm;
-            else if (op && cmode != 14) vd[i] = ~imm;
-            else vd[i] = imm;
+            if (orrBic)
+            {
+                vd[i] = op ? vd[i] & ~imm : vd[i] | imm;
+            }
+            else if (op && cmode != 14)
+            {
+                vd[i] = ~imm;
+            }
+            else
+            {
+                vd[i] = imm;
+            }
         }
     }
 
@@ -397,19 +486,37 @@ internal static unsafe partial class Neon
         ulong r16(uint v) => (v & 0xFFFF) * 0x0001000100010001ul;
         switch (cmode >> 1)
         {
-            case 0: return r32(imm8);
-            case 1: return r32(imm8 << 8);
-            case 2: return r32(imm8 << 16);
-            case 3: return r32(imm8 << 24);
-            case 4: return r16(imm8);
-            case 5: return r16(imm8 << 8);
-            case 6: return (cmode & 1) == 0 ? r32((imm8 << 8) | 0xFF) : r32((imm8 << 16) | 0xFFFF);
+            case 0:
+                return r32(imm8);
+            case 1:
+                return r32(imm8 << 8);
+            case 2:
+                return r32(imm8 << 16);
+            case 3:
+                return r32(imm8 << 24);
+            case 4:
+                return r16(imm8);
+            case 5:
+                return r16(imm8 << 8);
+            case 6:
+                return (cmode & 1) == 0 ? r32((imm8 << 8) | 0xFF) : r32((imm8 << 16) | 0xFFFF);
             default:
                 if ((cmode & 1) == 0)
                 {
-                    if (!op) return imm8 * 0x0101010101010101ul;
+                    if (!op)
+                    {
+                        return imm8 * 0x0101010101010101ul;
+                    }
+
                     ulong r = 0;
-                    for (int i = 0; i < 8; i++) if ((imm8 & (1u << i)) != 0) r |= 0xFFul << (i * 8);
+                    for (int i = 0; i < 8; i++)
+                    {
+                        if ((imm8 & (1u << i)) != 0)
+                        {
+                            r |= 0xFFul << (i * 8);
+                        }
+                    }
+
                     return r;
                 }
                 uint f = ((imm8 & 0x80) << 24) | ((imm8 & 0x40) != 0 ? 0x3E000000u : 0x40000000u) | ((imm8 & 0x3F) << 19);
@@ -437,7 +544,11 @@ internal static unsafe partial class Neon
         bool tbx = Bit(ins, 6) != 0;
         uint n = Rn(ins);
         byte* table = stackalloc byte[32];
-        for (int i = 0; i < len; i++) *(ulong*)(table + 8 * i) = s->D[(n + (uint)i) & 31];
+        for (int i = 0; i < len; i++)
+        {
+            *(ulong*)(table + 8 * i) = s->D[(n + (uint)i) & 31];
+        }
+
         byte* idx = Reg(s, Rm(ins));
         byte* dst = Reg(s, Rd(ins));
         byte* res = stackalloc byte[8];
@@ -456,11 +567,24 @@ internal static unsafe partial class Neon
         bool q = Bit(ins, 6) != 0;
         byte* src = Reg(s, Rm(ins));
         ulong rep;
-        if ((imm4 & 1) != 0) rep = src[imm4 >> 1] * 0x0101010101010101ul;
-        else if ((imm4 & 2) != 0) rep = ((ushort*)src)[imm4 >> 2] * 0x0001000100010001ul;
-        else { uint v = ((uint*)src)[imm4 >> 3]; rep = v | ((ulong)v << 32); }
+        if ((imm4 & 1) != 0)
+        {
+            rep = src[imm4 >> 1] * 0x0101010101010101ul;
+        }
+        else if ((imm4 & 2) != 0)
+        {
+            rep = ((ushort*)src)[imm4 >> 2] * 0x0001000100010001ul;
+        }
+        else
+        {
+            uint v = ((uint*)src)[imm4 >> 3];
+            rep = v | ((ulong)v << 32);
+        }
         uint d = Rd(ins);
         s->D[d] = rep;
-        if (q) s->D[(d + 1) & 31] = rep;
+        if (q)
+        {
+            s->D[(d + 1) & 31] = rep;
+        }
     }
 }

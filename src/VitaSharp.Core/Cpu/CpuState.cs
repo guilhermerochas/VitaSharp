@@ -83,8 +83,13 @@ public unsafe struct CpuState
                         | (Thumb << 5) | 0x10;
         set
         {
-            N = (value >> 31) & 1; Z = (value >> 30) & 1; C = (value >> 29) & 1; V = (value >> 28) & 1;
-            Q = (value >> 27) & 1; GE = (value >> 16) & 0xF; Thumb = (value >> 5) & 1;
+            N = (value >> 31) & 1;
+            Z = (value >> 30) & 1;
+            C = (value >> 29) & 1;
+            V = (value >> 28) & 1;
+            Q = (value >> 27) & 1;
+            GE = (value >> 16) & 0xF;
+            Thumb = (value >> 5) & 1;
             ITState = ((value >> 25) & 3) | (((value >> 10) & 0x3F) << 2);
         }
     }

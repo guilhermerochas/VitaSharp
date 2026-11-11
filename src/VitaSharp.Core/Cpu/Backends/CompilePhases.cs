@@ -44,10 +44,18 @@ public sealed class CompilePhases
     /// </summary>
     public static void Record(Block b)
     {
-        if (Corpus == null) return;
+        if (Corpus == null)
+        {
+            return;
+        }
+
         var sb = new System.Text.StringBuilder(16 + b.Insts.Length * 12);
         sb.Append(b.Thumb ? 'T' : 'A').Append(' ').Append(b.Start.ToString("X8"));
-        foreach (ref readonly var d in b.Insts.AsSpan()) sb.Append(' ').Append(d.Size).Append(':').Append(d.Raw.ToString("X"));
+        foreach (ref readonly var d in b.Insts.AsSpan())
+        {
+            sb.Append(' ').Append(d.Size).Append(':').Append(d.Raw.ToString("X"));
+        }
+
         lock (CorpusLock)
         {
             Corpus.WriteLine(sb.ToString());

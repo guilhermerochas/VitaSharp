@@ -67,15 +67,32 @@ public sealed unsafe class NativeArm64Compiler : IBlockCompiler
         var ir = fe.Translate(b, chain);
         long t1 = Stopwatch.GetTimestamp();
         if (cross && (Arm64Emitter.Opts & Arm64Emitter.A64Opt.Successors) != 0)
+        {
             DropDeadStores(b, ir, fe, successors!, coldPc: stubs.PinnedCounters && stubs.PatchLinks && (Arm64Emitter.Opts & Arm64Emitter.A64Opt.ExitStubs) != 0, deps);
+        }
+
         b.Deps = deps.Count > 0 ? deps.ToArray() : null;
-        if ((Arm64Emitter.Opts & Arm64Emitter.A64Opt.MergeFences) != 0) IrPasses.MergeFences(ir);
+        if ((Arm64Emitter.Opts & Arm64Emitter.A64Opt.MergeFences) != 0)
+        {
+            IrPasses.MergeFences(ir);
+        }
+
         IrPasses.DeadCode(ir);
-        if (NativeX64Compiler.ValidateIr) IrPasses.Validate(ir);
+        if (NativeX64Compiler.ValidateIr)
+        {
+            IrPasses.Validate(ir);
+        }
+
         long t2 = Stopwatch.GetTimestamp();
         var rt = NativeRuntime.Instance;
         int exits = 0;
-        foreach (var x in ir.Insts) if (x.Op == IrOp.ExitStatic) exits++;
+        foreach (var x in ir.Insts)
+        {
+            if (x.Op == IrOp.ExitStatic)
+            {
+                exits++;
+            }
+        }
         // patched links: two words per exit, the target and the patch site (Arm64Emitter.Runtime.PatchLinks)
         int stride = stubs.PatchLinks ? 2 : 1;
         nint* slots = rt.AllocateSlots(exits * stride);
@@ -85,29 +102,62 @@ public sealed unsafe class NativeArm64Compiler : IBlockCompiler
         {
             int simd = 0;
             foreach (var x in ir.Insts)
-                if (x.Op == IrOp.Callout && x.Imm < (uint)NeonOp.Length && NeonOp[x.Imm]) simd++;
+            {
+                if (x.Op == IrOp.Callout && x.Imm < (uint)NeonOp.Length && NeonOp[x.Imm])
+                {
+                    simd++;
+                }
+            }
+
             if (simd >= 2 && simd * 4 >= b.Insts.Length)
             {
                 tierUp = (nint)rt.AllocateSlots(1);
                 *(int*)tierUp = (int)Math.Clamp(IlJitCompiler.Instance.HotInstructions / Math.Max(1, b.Insts.Length), 64, int.MaxValue);
             }
         }
-        if (!em.Prepare(ir, stubs, k => (nint)(slots + k * stride), tierUp)) { BackendStats.RejectReason = "register allocation out of spill slots"; return null; }
+        if (!em.Prepare(ir, stubs, k => (nint)(slots + k * stride), tierUp))
+        {
+            BackendStats.RejectReason = "register allocation out of spill slots";
+            return null;
+        }
         long t3 = Stopwatch.GetTimestamp();
         int size = 0;
         long encode = 0;
         byte* code = rt.Code.Place(addr => { long e0 = Stopwatch.GetTimestamp(); var bytes = em.Assemble(addr); encode = Stopwatch.GetTimestamp() - e0; size = bytes.Length; return bytes; });
         Interlocked.Add(ref NativeX64Compiler.CodeBytes, size); // one counter for both native backends (Report)
         if (stubs.PatchLinks)
+        {
             for (int k = 0; k < em.PatchSites.Count; k++)
-                if (em.PatchSites[k] >= 0) slots[k * 2 + 1] = (nint)(code + em.PatchSites[k]);
+            {
+                if (em.PatchSites[k] >= 0)
+                {
+                    slots[k * 2 + 1] = (nint)(code + em.PatchSites[k]);
+                }
+            }
+        }
+
         rt.Register((nint)code, size, b);
-        if (NativeCodeMap.Enabled) NativeCodeMap.Add((nint)code, size, b.Start, b.Thumb);
+        if (NativeCodeMap.Enabled)
+        {
+            NativeCodeMap.Add((nint)code, size, b.Start, b.Thumb);
+        }
+
         Stats.Phases!.Add(t1 - t0, t2 - t1, em.AllocTicks, t3 - t2 - em.AllocTicks, encode, Stopwatch.GetTimestamp() - t3 - encode);
         CompilePhases.Record(b);
-        if (NativeX64Compiler.DumpCode) Console.Error.WriteLine($"[native-arm64] {b}\n{ir}\n{Arm64Dump.Dump((nint)code, size)}");
+        if (NativeX64Compiler.DumpCode)
+        {
+            Console.Error.WriteLine($"[native-arm64] {b}\n{ir}\n{Arm64Dump.Dump((nint)code, size)}");
+        }
+
         bool unlogged = false;
-        foreach (var x in ir.Insts) if (x.Op is IrOp.StrEx or IrOp.StoreD || (x.Op == IrOp.Callout && (x.Imm == ArmFrontend.HleCalloutOp || NativeVerifier.MayStore((Op)x.Imm)))) unlogged = true;
+        foreach (var x in ir.Insts)
+        {
+            if (x.Op is IrOp.StrEx or IrOp.StoreD || (x.Op == IrOp.Callout && (x.Imm == ArmFrontend.HleCalloutOp || NativeVerifier.MayStore((Op)x.Imm))))
+            {
+                unlogged = true;
+            }
+        }
+
         return new CompiledBlock(this, (nint)code, new NativeCodeInfo(size, exits, unlogged, Arm64: true));
     }
 
@@ -131,12 +181,24 @@ public sealed unsafe class NativeArm64Compiler : IBlockCompiler
         while ((chain?.Count ?? 1) < MaxChainBlocks && cur.Insts.Length > 0 && ArmFrontend.Continues(cur.Insts[^1]))
         {
             Block? next;
-            try { next = successors(cur.End, cur.Thumb); } catch (Exception) { break; }
+            try
+            {
+                next = successors(cur.End, cur.Thumb);
+            }
+            catch (Exception)
+            {
+                break;
+            }
             if (next == null || next == b || next.Thumb != cur.Thumb || next.Insts.Length == 0 || next.Start != cur.End
-                || (next.ExecCount == 0 && next.NativeEntry == 0) || n + next.Insts.Length > MaxChainInstructions) break;
+                || (next.ExecCount == 0 && next.NativeEntry == 0) || n + next.Insts.Length > MaxChainInstructions)
+            {
+                break;
+            }
+
             (chain ??= [b]).Add(next);
             n += next.Insts.Length;
-            deps.Add(next.Start); deps.Add(next.End);
+            deps.Add(next.Start);
+            deps.Add(next.End);
             cur = next;
         }
         return chain;
@@ -150,13 +212,28 @@ public sealed unsafe class NativeArm64Compiler : IBlockCompiler
     static void DropDeadStores(Block b, IrBlock ir, ArmFrontend fe, Func<uint, bool, Block?> successors, bool coldPc, List<uint> deps)
     {
         var insts = System.Runtime.InteropServices.CollectionsMarshal.AsSpan(ir.Insts);
-        foreach (ref readonly var x in insts) if (x.Op == IrOp.Callout) return; // see StateLiveness.DropDeadStores
+        foreach (ref readonly var x in insts)
+        {
+            if (x.Op == IrOp.Callout)
+            {
+                return; // see StateLiveness.DropDeadStores
+            }
+        }
+
         var targets = _targets ??= new();
         targets.Clear();
         foreach (ref var x in insts)
         {
-            if (x.Op != IrOp.ExitStatic) continue;
-            if (coldPc) x.Imm3 = StateLiveness.ColdPc; // patched exits store R15 on their dispatcher paths only
+            if (x.Op != IrOp.ExitStatic)
+            {
+                continue;
+            }
+
+            if (coldPc)
+            {
+                x.Imm3 = StateLiveness.ColdPc; // patched exits store R15 on their dispatcher paths only
+            }
+
             bool thumb = x.Imm2 != 0;
             Block? t;
             int dead;
@@ -165,17 +242,42 @@ public sealed unsafe class NativeArm64Compiler : IBlockCompiler
                 t = successors(x.Imm, thumb);
                 dead = t == null || t.Insts.Length == 0 ? 0 : StateLiveness.DeadIn(t, fe);
             }
-            catch (Exception) { continue; } // whatever the target holds, this block still compiles (with the stores)
-            if (dead == 0) continue;
+            catch (Exception) // whatever the target holds, this block still compiles (with the stores)
+            {
+                continue;
+            }
+            if (dead == 0)
+            {
+                continue;
+            }
+
             targets.Add((x.Imm, thumb, dead));
-            if (t!.Start < b.Start || t.End > b.End) { deps.Add(t.Start); deps.Add(t.End); }
+            if (t!.Start < b.Start || t.End > b.End)
+            {
+                deps.Add(t.Start);
+                deps.Add(t.End);
+            }
         }
-        if (targets.Count == 0 && !coldPc) return;
+        if (targets.Count == 0 && !coldPc)
+        {
+            return;
+        }
+
         int n = StateLiveness.DropDeadStores(ir, (pc, thumb) =>
         {
-            foreach (var (p, th, d) in targets) if (p == pc && th == thumb) return d;
+            foreach (var (p, th, d) in targets)
+            {
+                if (p == pc && th == thumb)
+                {
+                    return d;
+                }
+            }
+
             return 0;
         });
-        if (n > 0) Interlocked.Add(ref DeadStoresDropped, n);
+        if (n > 0)
+        {
+            Interlocked.Add(ref DeadStoresDropped, n);
+        }
     }
 }

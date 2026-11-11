@@ -45,11 +45,22 @@ public sealed unsafe class NativeX64Compiler : IBlockCompiler
         var ir = (_frontend ??= new ArmFrontend(X64Emitter.SupportsVec, tinyCheck: true, reuseIr: true)).Translate(b);
         long t1 = Stopwatch.GetTimestamp();
         IrPasses.DeadCode(ir);
-        if (ValidateIr) IrPasses.Validate(ir);
+        if (ValidateIr)
+        {
+            IrPasses.Validate(ir);
+        }
+
         long t2 = Stopwatch.GetTimestamp();
         var rt = NativeRuntime.Instance;
         int exits = 0;
-        foreach (var x in ir.Insts) if (x.Op == IrOp.ExitStatic) exits++;
+        foreach (var x in ir.Insts)
+        {
+            if (x.Op == IrOp.ExitStatic)
+            {
+                exits++;
+            }
+        }
+
         nint* slots = rt.AllocateSlots(exits);
         var em = _emitter ??= new X64Emitter(); // per compile thread: the Iced assembler and buffers are reused
         // Blocks dominated by NEON callouts run better in the IL backend once hot (it inlines the handlers, a callout
@@ -59,14 +70,24 @@ public sealed unsafe class NativeX64Compiler : IBlockCompiler
         {
             int simd = 0;
             foreach (var x in ir.Insts)
-                if (x.Op == IrOp.Callout && NeonOp[x.Imm]) simd++;
+            {
+                if (x.Op == IrOp.Callout && NeonOp[x.Imm])
+                {
+                    simd++;
+                }
+            }
+
             if (simd >= 2 && simd * 4 >= b.Insts.Length)
             {
                 tierUp = (nint)rt.AllocateSlots(1);
                 *(int*)tierUp = (int)Math.Clamp(IlJitCompiler.Instance.HotInstructions / Math.Max(1, b.Insts.Length), 64, int.MaxValue);
             }
         }
-        if (!em.Prepare(ir, rt.Stubs, k => (nint)(slots + k), tierUp)) { BackendStats.RejectReason = "register allocation out of spill slots"; return null; }
+        if (!em.Prepare(ir, rt.Stubs, k => (nint)(slots + k), tierUp))
+        {
+            BackendStats.RejectReason = "register allocation out of spill slots";
+            return null;
+        }
         long t3 = Stopwatch.GetTimestamp();
         int size = 0;
         long encode = 0;
@@ -75,9 +96,20 @@ public sealed unsafe class NativeX64Compiler : IBlockCompiler
         rt.Register((nint)code, size, b);
         Stats.Phases!.Add(t1 - t0, t2 - t1, em.AllocTicks, t3 - t2 - em.AllocTicks, encode, Stopwatch.GetTimestamp() - t3 - encode);
         CompilePhases.Record(b);
-        if (DumpCode) Console.Error.WriteLine($"[native] {b}\n{ir}\n{X64Disassembler.Disassemble((nint)code, size)}");
+        if (DumpCode)
+        {
+            Console.Error.WriteLine($"[native] {b}\n{ir}\n{X64Disassembler.Disassemble((nint)code, size)}");
+        }
+
         bool unlogged = false; // callouts that may store to memory: the verifier cannot undo them
-        foreach (var x in ir.Insts) if (x.Op is IrOp.StrEx or IrOp.StoreD || (x.Op == IrOp.Callout && NativeVerifier.MayStore((Op)x.Imm))) unlogged = true;
+        foreach (var x in ir.Insts)
+        {
+            if (x.Op is IrOp.StrEx or IrOp.StoreD || (x.Op == IrOp.Callout && NativeVerifier.MayStore((Op)x.Imm)))
+            {
+                unlogged = true;
+            }
+        }
+
         return new CompiledBlock(this, (nint)code, new NativeCodeInfo(size, exits, unlogged));
     }
 

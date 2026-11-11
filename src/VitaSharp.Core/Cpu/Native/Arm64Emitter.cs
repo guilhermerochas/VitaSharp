@@ -144,13 +144,24 @@ public sealed unsafe partial class Arm64Emitter
 
     public static A64Opt ParseOpts(string? noOpt)
     {
-        if (string.IsNullOrWhiteSpace(noOpt)) return A64Opt.All;
+        if (string.IsNullOrWhiteSpace(noOpt))
+        {
+            return A64Opt.All;
+        }
+
         var o = A64Opt.All;
         foreach (var raw in noOpt.Split(',', StringSplitOptions.RemoveEmptyEntries | StringSplitOptions.TrimEntries))
         {
-            if (raw.Equals("all", StringComparison.OrdinalIgnoreCase)) return A64Opt.None;
+            if (raw.Equals("all", StringComparison.OrdinalIgnoreCase))
+            {
+                return A64Opt.None;
+            }
+
             int i = Array.FindIndex(OptNames, n => n.Equals(raw, StringComparison.OrdinalIgnoreCase));
-            if (i >= 0) o &= ~(A64Opt)(1 << i);
+            if (i >= 0)
+            {
+                o &= ~(A64Opt)(1 << i);
+            }
         }
         return o;
     }
@@ -204,7 +215,11 @@ public sealed unsafe partial class Arm64Emitter
     public static uint BranchWord(long site, long target)
     {
         long d = target - site;
-        if ((d & 3) != 0 || d < -(1L << 27) || d >= 1L << 27) return 0;
+        if ((d & 3) != 0 || d < -(1L << 27) || d >= 1L << 27)
+        {
+            return 0;
+        }
+
         return 0x14000000u | (uint)((d >> 2) & 0x3FFFFFF);
     }
 
@@ -246,8 +261,15 @@ public sealed unsafe partial class Arm64Emitter
             bool checkFp = (opts & A64Opt.FpEntryCheck) != 0 && !NativeVerifier.Enabled;
             foreach (ref var x in all)
             {
-                if (x.Op == IrOp.FpOp && checkFp) { x.Imm |= (uint)FpFlags.Checked; fpEntry = true; }
-                if (LinearScan.IsCallSite(x)) calls = true;
+                if (x.Op == IrOp.FpOp && checkFp)
+                {
+                    x.Imm |= (uint)FpFlags.Checked;
+                    fpEntry = true;
+                }
+                if (LinearScan.IsCallSite(x))
+                {
+                    calls = true;
+                }
             }
         }
         _coldExits.Clear();
@@ -262,11 +284,19 @@ public sealed unsafe partial class Arm64Emitter
         long t0 = System.Diagnostics.Stopwatch.GetTimestamp();
         var loc = LinearScan.Allocate(ir, CallerSaved, _pin ? _count ? CalleeSavedPinned : CalleeSavedBudgetOnly : CalleeSaved, SpillSlots, MaxTempRegisters, VerifyAllocation, reuse: true);
         AllocTicks = System.Diagnostics.Stopwatch.GetTimestamp() - t0;
-        if (loc == null) return false;
+        if (loc == null)
+        {
+            return false;
+        }
+
         _loc = loc;
         PlanMarks(ir, (opts & A64Opt.GroupMarks) != 0);
         _labels = new int[ir.Labels];
-        for (int i = 0; i < ir.Labels; i++) _labels[i] = _a.NewLabel();
+        for (int i = 0; i < ir.Labels; i++)
+        {
+            _labels[i] = _a.NewLabel();
+        }
+
         _abort = _a.NewLabel();
         _tail = _a.NewLabel();
         _tailZero = _a.NewLabel();
@@ -293,7 +323,11 @@ public sealed unsafe partial class Arm64Emitter
         var insts = System.Runtime.InteropServices.CollectionsMarshal.AsSpan(ir.Insts);
         for (int i = 0; i < insts.Length; i++)
         {
-            if (_pair && i + 1 < insts.Length && TryPair(insts[i], insts[i + 1])) { i++; continue; }
+            if (_pair && i + 1 < insts.Length && TryPair(insts[i], insts[i + 1]))
+            {
+                i++;
+                continue;
+            }
             _cur = i;
             Lower(insts[i], slotFor, ref exitIndex);
         }
@@ -308,20 +342,42 @@ public sealed unsafe partial class Arm64Emitter
         {
             _a.Bind(tierUp);
             StorePc(ir.StartPc); // linked exits into this block may have left R15 to their cold paths (StateLiveness.ColdPc)
-            if (!_stub) _a.StrX(ZR, State, OffLastExitSlot);
+            if (!_stub)
+            {
+                _a.StrX(ZR, State, OffLastExitSlot);
+            }
+
             _a.MovImm(X16, 1);
             _a.Str(X16, State, OffTierUp);
-            if (_stub) ExitZero(); else JumpTo(rt.Epilogue);
+            if (_stub)
+            {
+                ExitZero();
+            }
+            else
+            {
+                JumpTo(rt.Epilogue);
+            }
         }
         if (fpEntry)
         {
             // another FPSCR mode: nothing ran yet; the dispatcher interprets the block (CpuCore.Run)
             _a.Bind(fpMode);
             StorePc(ir.StartPc);
-            if (!_stub) _a.StrX(ZR, State, OffLastExitSlot);
+            if (!_stub)
+            {
+                _a.StrX(ZR, State, OffLastExitSlot);
+            }
+
             _a.MovImm(X16, 2);
             _a.Str(X16, State, OffTierUp);
-            if (_stub) ExitZero(); else JumpTo(rt.Epilogue);
+            if (_stub)
+            {
+                ExitZero();
+            }
+            else
+            {
+                JumpTo(rt.Epilogue);
+            }
         }
         foreach (var (cold, back) in _coldMarks)
         {
@@ -331,7 +387,11 @@ public sealed unsafe partial class Arm64Emitter
             _a.LdStReg(LsKind.Strb, X8, PinDirty, X16, xIndex: true);
             _a.B(back);
         }
-        if (_stub) EmitSharedTails();
+        if (_stub)
+        {
+            EmitSharedTails();
+        }
+
         return true;
     }
 
@@ -350,14 +410,26 @@ public sealed unsafe partial class Arm64Emitter
     /// <summary>Stores a static exit's target to R15 (<see cref="StateLiveness.ColdPc"/>).</summary>
     void StorePc(uint pc)
     {
-        if (_storeLit && MovImmIsLong(pc)) _a.LdrLitW(X0, pc); else _a.MovImm(X0, pc);
+        if (_storeLit && MovImmIsLong(pc))
+        {
+            _a.LdrLitW(X0, pc);
+        }
+        else
+        {
+            _a.MovImm(X0, pc);
+        }
+
         StState(X0, OffR + 60);
     }
 
     /// <summary>Returns to the dispatcher with LastExitSlot = x16 (the exit's link slot).</summary>
     void ExitSlot()
     {
-        if (_stub) { _a.B(_tail); return; }
+        if (_stub)
+        {
+            _a.B(_tail);
+            return;
+        }
         _a.StrX(X16, State, OffLastExitSlot);
         JumpTo(_rt.Epilogue);
     }
@@ -365,7 +437,12 @@ public sealed unsafe partial class Arm64Emitter
     /// <summary>Returns to the dispatcher with no link slot (indirect exits, aborts, tier-up).</summary>
     void ExitZero()
     {
-        if (_stub) { _tailZeroUsed = true; _a.B(_tailZero); return; }
+        if (_stub)
+        {
+            _tailZeroUsed = true;
+            _a.B(_tailZero);
+            return;
+        }
         _a.StrX(ZR, State, OffLastExitSlot);
         JumpTo(_rt.Epilogue);
     }
@@ -376,14 +453,22 @@ public sealed unsafe partial class Arm64Emitter
         foreach (var (label, slot, pc) in _coldUnlinked)
         {
             a.Bind(label);
-            if (pc is uint p) StorePc(p);
+            if (pc is uint p)
+            {
+                StorePc(p);
+            }
+
             a.LdrLit(X16, (ulong)slot);
             a.B(_slotPath);
         }
         foreach (var (label, slot, pc) in _coldExits)
         {
             a.Bind(label);
-            if (pc is uint p) StorePc(p);
+            if (pc is uint p)
+            {
+                StorePc(p);
+            }
+
             a.LdrLit(X16, (ulong)slot);
             a.B(_tail);
         }
@@ -411,26 +496,50 @@ public sealed unsafe partial class Arm64Emitter
     /// <summary>The words of the prepared block (tests).</summary>
     public IReadOnlyList<uint> Words => _a.Words;
 
-    void JumpTo(ulong target) { _a.LdrLit(X16, target); _a.Br(X16); }
+    void JumpTo(ulong target)
+    {
+        _a.LdrLit(X16, target);
+        _a.Br(X16);
+    }
 
     // ------------------------------------------------------------------ operand helpers
 
     bool IsConst(int t, out uint v) => _ir.TryConst(t, out v);
-    bool InReg(int t, out int r) { r = t >= 0 ? _loc[t] : -1; return r >= 0; }
+    bool InReg(int t, out int r)
+    {
+        r = t >= 0 ? _loc[t] : -1;
+        return r >= 0;
+    }
     int SlotOff(int t) => SpillBase + 8 * (-(_loc[t] + 2));
 
     /// <summary>Loads temp <paramref name="t"/> into W<paramref name="r"/>.</summary>
     void LoadTo(int r, int t)
     {
-        if (IsConst(t, out uint v)) _a.MovImm(r, v);
-        else if (InReg(t, out int s)) { if (s != r) _a.Mov(r, s); }
-        else _a.Ldr(r, SP, SlotOff(t));
+        if (IsConst(t, out uint v))
+        {
+            _a.MovImm(r, v);
+        }
+        else if (InReg(t, out int s))
+        {
+            if (s != r)
+            {
+                _a.Mov(r, s);
+            }
+        }
+        else
+        {
+            _a.Ldr(r, SP, SlotOff(t));
+        }
     }
 
     /// <summary>A register holding temp t: its own, or <paramref name="scratch"/> loaded with it.</summary>
     int Use(int t, int scratch)
     {
-        if (!IsConst(t, out _) && InReg(t, out int r)) return r;
+        if (!IsConst(t, out _) && InReg(t, out int r))
+        {
+            return r;
+        }
+
         LoadTo(scratch, t);
         return scratch;
     }
@@ -442,7 +551,11 @@ public sealed unsafe partial class Arm64Emitter
     /// load instead (<see cref="A64Opt.StoreLiteral"/>; the load's latency is off the critical path of a store).</summary>
     int UseStored(int t, int scratch)
     {
-        if (_storeLit && IsConst(t, out uint v) && MovImmIsLong(v)) { _a.LdrLitW(scratch, v); return scratch; }
+        if (_storeLit && IsConst(t, out uint v) && MovImmIsLong(v))
+        {
+            _a.LdrLitW(scratch, v);
+            return scratch;
+        }
         return UseZ(t, scratch);
     }
 
@@ -450,8 +563,20 @@ public sealed unsafe partial class Arm64Emitter
 
     void Commit(int t, int r)
     {
-        if (t < 0) return;
-        if (InReg(t, out int own)) { if (own != r) _a.Mov(own, r); return; }
+        if (t < 0)
+        {
+            return;
+        }
+
+        if (InReg(t, out int own))
+        {
+            if (own != r)
+            {
+                _a.Mov(own, r);
+            }
+
+            return;
+        }
         _a.Str(r, SP, SlotOff(t));
     }
 
@@ -476,7 +601,11 @@ public sealed unsafe partial class Arm64Emitter
     bool TryPair(in IrInst x, in IrInst y)
     {
         var a = _a;
-        if (_vcAnyDirty && (x.Op is IrOp.LoadState or IrOp.StoreState || y.Op is IrOp.LoadState or IrOp.StoreState)) VcFlushAll();
+        if (_vcAnyDirty && (x.Op is IrOp.LoadState or IrOp.StoreState || y.Op is IrOp.LoadState or IrOp.StoreState))
+        {
+            VcFlushAll();
+        }
+
         int o1 = StateOffset(x, true), o2 = StateOffset(y, true);
         if (o1 >= 0 && o2 == o1 + 4 && FitsPairW(o1))
         {
@@ -485,11 +614,16 @@ public sealed unsafe partial class Arm64Emitter
             StateWritten(o1, 8);
             return true;
         }
-        o1 = StateOffset(x, false); o2 = StateOffset(y, false);
+        o1 = StateOffset(x, false);
+        o2 = StateOffset(y, false);
         if (o1 >= 0 && o2 == o1 + 4 && FitsPairW(o1) && x.D >= 0 && y.D >= 0)
         {
             int d1 = Def(x.D, X0), d2 = Def(y.D, X1);
-            if (d1 == d2) return false;
+            if (d1 == d2)
+            {
+                return false;
+            }
+
             a.LdpW(d1, d2, State, o1);
             Commit(x.D, d1);
             Commit(y.D, d2);
@@ -522,8 +656,15 @@ public sealed unsafe partial class Arm64Emitter
                 AddConst64(PinInstr, (ulong)_ir.GuestInstructions);
             }
             ulong c = (ulong)Math.Min(ExitCycles, int.MaxValue);
-            if (c < 4096 || (IsAddImm((uint)c) && c < 1u << 24)) a.AddsImm(PinBudget, PinBudget, (uint)c, true);
-            else { a.MovImm64(X8, c); a.Adds(PinBudget, PinBudget, X8, x: true); }
+            if (c < 4096 || (IsAddImm((uint)c) && c < 1u << 24))
+            {
+                a.AddsImm(PinBudget, PinBudget, (uint)c, true);
+            }
+            else
+            {
+                a.MovImm64(X8, c);
+                a.Adds(PinBudget, PinBudget, X8, x: true);
+            }
             return;
         }
         a.LdrX(X16, State, OffCycleAcc);
@@ -539,9 +680,20 @@ public sealed unsafe partial class Arm64Emitter
 
     void AddConst64(int r, ulong v)
     {
-        if (v == 0) return;
-        if (v < 4096 || (IsAddImm((uint)v) && v < 1u << 24)) _a.AddImm(r, r, (uint)v, true);
-        else { _a.MovImm64(X8, v); _a.Add(r, r, X8, x: true); }
+        if (v == 0)
+        {
+            return;
+        }
+
+        if (v < 4096 || (IsAddImm((uint)v) && v < 1u << 24))
+        {
+            _a.AddImm(r, r, (uint)v, true);
+        }
+        else
+        {
+            _a.MovImm64(X8, v);
+            _a.Add(r, r, X8, x: true);
+        }
     }
 
     // ------------------------------------------------------------------ host flags (compare + branch fusion)
@@ -559,10 +711,22 @@ public sealed unsafe partial class Arm64Emitter
         or IrOp.Load16S or IrOp.Load32 or IrOp.Store8 or IrOp.Store16 or IrOp.Store32 or IrOp.LoadD or IrOp.StoreD
         or IrOp.Fence or IrOp.CondBranch or IrOp.BranchIf;
 
-    void ForgetHostFlags() { _hfN = _hfZ = _hfC = _hfV = -1; }
+    void ForgetHostFlags()
+    {
+        _hfN = _hfZ = _hfC = _hfV = -1;
+    }
 
     /// <summary>Records that the host NZCV now equal these flag temps (call right after the flag-setting instruction).</summary>
-    void HostFlagsAre(int n, int z, int c, int v) { if (_fuse) { _hfN = n; _hfZ = z; _hfC = c; _hfV = v; } }
+    void HostFlagsAre(int n, int z, int c, int v)
+    {
+        if (_fuse)
+        {
+            _hfN = n;
+            _hfZ = z;
+            _hfC = c;
+            _hfV = v;
+        }
+    }
 
     /// <summary>Whether CondBranch <paramref name="x"/> can test the host flags: every flag its condition reads is the
     /// temp the host flag currently holds.</summary>
@@ -578,22 +742,65 @@ public sealed unsafe partial class Arm64Emitter
     {
         var a = _a;
         if (_hfN >= 0 || _hfZ >= 0 || _hfC >= 0 || _hfV >= 0)
-            if (!KeepsHostFlags(x.Op)) ForgetHostFlags();
+        {
+            if (!KeepsHostFlags(x.Op))
+            {
+                ForgetHostFlags();
+            }
+        }
         // merge points and callouts end the SIMD register cache (FpOp reloads it after its handler path instead)
-        if (_vcAnyDirty && !KeepsDirtyVec(x)) VcFlushAll(); // before branches, labels, calls, exits, register-file accesses
-        if (_vcAny && x.Op is IrOp.Label or IrOp.Callout) VcForget();
-        if (_fpcrHost && NeedsGuestFpcr(x.Op)) EnsureGuestFpcr(); // MSR FPCR leaves NZCV alone (branch fusion)
+        if (_vcAnyDirty && !KeepsDirtyVec(x))
+        {
+            VcFlushAll(); // before branches, labels, calls, exits, register-file accesses
+        }
+
+        if (_vcAny && x.Op is IrOp.Label or IrOp.Callout)
+        {
+            VcForget();
+        }
+
+        if (_fpcrHost && NeedsGuestFpcr(x.Op))
+        {
+            EnsureGuestFpcr(); // MSR FPCR leaves NZCV alone (branch fusion)
+        }
+
         switch (x.Op)
         {
-            case IrOp.Nop: return;
+            case IrOp.Nop:
+                return;
 
             // ---------------- state
-            case IrOp.GetReg: { int d = Def(x.D, X0); LdState(d, OffR + 4 * (int)x.Imm); Commit(x.D, d); return; }
-            case IrOp.GetFlag: { int d = Def(x.D, X0); LdState(d, OffN + 4 * (int)x.Imm); Commit(x.D, d); return; }
-            case IrOp.LoadState: { int d = Def(x.D, X0); LdState(d, (int)x.Imm); Commit(x.D, d); return; }
-            case IrOp.SetReg: StState(UseStored(x.A, X0), OffR + 4 * (int)x.Imm); return;
-            case IrOp.SetFlag: StState(UseStored(x.A, X0), OffN + 4 * (int)x.Imm); return;
-            case IrOp.StoreState: StState(UseStored(x.A, X0), (int)x.Imm); StateWritten((int)x.Imm, 4); return;
+            case IrOp.GetReg:
+            {
+                int d = Def(x.D, X0);
+                LdState(d, OffR + 4 * (int)x.Imm);
+                Commit(x.D, d);
+                return;
+            }
+            case IrOp.GetFlag:
+            {
+                int d = Def(x.D, X0);
+                LdState(d, OffN + 4 * (int)x.Imm);
+                Commit(x.D, d);
+                return;
+            }
+            case IrOp.LoadState:
+            {
+                int d = Def(x.D, X0);
+                LdState(d, (int)x.Imm);
+                Commit(x.D, d);
+                return;
+            }
+            case IrOp.SetReg:
+                StState(UseStored(x.A, X0), OffR + 4 * (int)x.Imm);
+                return;
+            case IrOp.SetFlag:
+                StState(UseStored(x.A, X0), OffN + 4 * (int)x.Imm);
+                return;
+            case IrOp.StoreState:
+                StState(UseStored(x.A, X0), (int)x.Imm);
+                StateWritten((int)x.Imm, 4);
+                return;
 
             // ---------------- ALU
             case IrOp.Add:
@@ -604,15 +811,64 @@ public sealed unsafe partial class Arm64Emitter
             case IrOp.AndNot:
             case IrOp.OrNot:
             case IrOp.Mul:
-                Bin(x); return;
-            case IrOp.Not: { int d = Def(x.D, X0); a.Mvn(d, UseZ(x.A, X1)); Commit(x.D, d); return; }
-            case IrOp.Neg: { int d = Def(x.D, X0); a.Neg(d, UseZ(x.A, X1)); Commit(x.D, d); return; }
-            case IrOp.Shl: case IrOp.Shr: case IrOp.Sar: case IrOp.Ror: ShiftOp(x); return;
-            case IrOp.Clz: { int d = Def(x.D, X0); a.Clz(d, UseZ(x.A, X1)); Commit(x.D, d); return; }
-            case IrOp.Bswap: { int d = Def(x.D, X0); a.Rev(d, UseZ(x.A, X1)); Commit(x.D, d); return; }
-            case IrOp.Rev16: { int d = Def(x.D, X0); a.Rev16(d, UseZ(x.A, X1)); Commit(x.D, d); return; }
-            case IrOp.RevSh: { int d = Def(x.D, X0); a.Rev16(d, UseZ(x.A, X1)); a.Sxth(d, d); Commit(x.D, d); return; }
-            case IrOp.Rbit: { int d = Def(x.D, X0); a.Rbit(d, UseZ(x.A, X1)); Commit(x.D, d); return; }
+                Bin(x);
+                return;
+            case IrOp.Not:
+            {
+                int d = Def(x.D, X0);
+                a.Mvn(d, UseZ(x.A, X1));
+                Commit(x.D, d);
+                return;
+            }
+            case IrOp.Neg:
+            {
+                int d = Def(x.D, X0);
+                a.Neg(d, UseZ(x.A, X1));
+                Commit(x.D, d);
+                return;
+            }
+            case IrOp.Shl:
+            case IrOp.Shr:
+            case IrOp.Sar:
+            case IrOp.Ror:
+                ShiftOp(x);
+                return;
+            case IrOp.Clz:
+            {
+                int d = Def(x.D, X0);
+                a.Clz(d, UseZ(x.A, X1));
+                Commit(x.D, d);
+                return;
+            }
+            case IrOp.Bswap:
+            {
+                int d = Def(x.D, X0);
+                a.Rev(d, UseZ(x.A, X1));
+                Commit(x.D, d);
+                return;
+            }
+            case IrOp.Rev16:
+            {
+                int d = Def(x.D, X0);
+                a.Rev16(d, UseZ(x.A, X1));
+                Commit(x.D, d);
+                return;
+            }
+            case IrOp.RevSh:
+            {
+                int d = Def(x.D, X0);
+                a.Rev16(d, UseZ(x.A, X1));
+                a.Sxth(d, d);
+                Commit(x.D, d);
+                return;
+            }
+            case IrOp.Rbit:
+            {
+                int d = Def(x.D, X0);
+                a.Rbit(d, UseZ(x.A, X1));
+                Commit(x.D, d);
+                return;
+            }
             case IrOp.SExt8:
             case IrOp.SExt16:
             case IrOp.ZExt8:
@@ -622,15 +878,29 @@ public sealed unsafe partial class Arm64Emitter
                 int s = UseZ(x.A, X1);
                 switch (x.Op)
                 {
-                    case IrOp.SExt8: a.Sxtb(d, s); break;
-                    case IrOp.SExt16: a.Sxth(d, s); break;
-                    case IrOp.ZExt8: a.Uxtb(d, s); break;
-                    default: a.Uxth(d, s); break;
+                    case IrOp.SExt8:
+                        a.Sxtb(d, s);
+                        break;
+                    case IrOp.SExt16:
+                        a.Sxth(d, s);
+                        break;
+                    case IrOp.ZExt8:
+                        a.Uxtb(d, s);
+                        break;
+                    default:
+                        a.Uxth(d, s);
+                        break;
                 }
                 Commit(x.D, d);
                 return;
             }
-            case IrOp.Bit: { int d = Def(x.D, X0); a.Ubfx(d, UseZ(x.A, X1), (int)x.Imm, 1); Commit(x.D, d); return; }
+            case IrOp.Bit:
+            {
+                int d = Def(x.D, X0);
+                a.Ubfx(d, UseZ(x.A, X1), (int)x.Imm, 1);
+                Commit(x.D, d);
+                return;
+            }
             case IrOp.CmpEq:
             {
                 CmpWith(Use(x.A, X1), x.B);
@@ -655,13 +925,24 @@ public sealed unsafe partial class Arm64Emitter
                 // ARM64 division is ARM's: x / 0 = 0, INT_MIN / -1 = INT_MIN
                 int n = UseZ(x.A, X0), m = UseZ(x.B, X1);
                 int d = Def(x.D, X2);
-                if (x.Op == IrOp.UDiv) a.Udiv(d, n, m); else a.Sdiv(d, n, m);
+                if (x.Op == IrOp.UDiv)
+                {
+                    a.Udiv(d, n, m);
+                }
+                else
+                {
+                    a.Sdiv(d, n, m);
+                }
+
                 Commit(x.D, d);
                 return;
             }
 
             // ---------------- flags
-            case IrOp.AddC: case IrOp.SubC: ArithFlags(x); return;
+            case IrOp.AddC:
+            case IrOp.SubC:
+                ArithFlags(x);
+                return;
             case IrOp.TestNZ:
             {
                 int s = UseZ(x.A, X0);
@@ -671,16 +952,36 @@ public sealed unsafe partial class Arm64Emitter
                 SetFlagOut(x.Fz, Cond.EQ);
                 return;
             }
-            case IrOp.ShiftReg: ShiftReg(x); return;
+            case IrOp.ShiftReg:
+                ShiftReg(x);
+                return;
 
             // ---------------- 64-bit
             case IrOp.UMulL:
             case IrOp.SMulL:
             {
                 int n = UseZ(x.A, X0), m = UseZ(x.B, X1);
-                if (x.Op == IrOp.UMulL) a.Umull(X2, n, m); else a.Smull(X2, n, m);
-                if (x.D >= 0) { int d = Def(x.D, X3); a.Mov(d, X2); Commit(x.D, d); }
-                if (x.D2 >= 0) { int d = Def(x.D2, X3); a.LsrImm(d, X2, 32, true); Commit(x.D2, d); }
+                if (x.Op == IrOp.UMulL)
+                {
+                    a.Umull(X2, n, m);
+                }
+                else
+                {
+                    a.Smull(X2, n, m);
+                }
+
+                if (x.D >= 0)
+                {
+                    int d = Def(x.D, X3);
+                    a.Mov(d, X2);
+                    Commit(x.D, d);
+                }
+                if (x.D2 >= 0)
+                {
+                    int d = Def(x.D2, X3);
+                    a.LsrImm(d, X2, 32, true);
+                    Commit(x.D2, d);
+                }
                 return;
             }
             case IrOp.Add64:
@@ -688,8 +989,16 @@ public sealed unsafe partial class Arm64Emitter
                 int lo1 = UseZ(x.A, X0), hi1 = UseZ(x.B, X1), lo2 = UseZ(x.C, X2), hi2 = UseZ(x.E, X3);
                 a.Adds(X4, lo1, lo2);
                 a.Adc(X5, hi1, hi2);
-                if (x.D >= 0) Commit(x.D, X4);
-                if (x.D2 >= 0) Commit(x.D2, X5);
+                if (x.D >= 0)
+                {
+                    Commit(x.D, X4);
+                }
+
+                if (x.D2 >= 0)
+                {
+                    Commit(x.D2, X5);
+                }
+
                 return;
             }
 
@@ -718,7 +1027,11 @@ public sealed unsafe partial class Arm64Emitter
             case IrOp.Store16:
             case IrOp.Store32:
             {
-                if (LogStores) EmitStoreLog(x);
+                if (LogStores)
+                {
+                    EmitStoreLog(x);
+                }
+
                 int ad = UseZ(x.A, X16);
                 int v = UseStored(x.B, X17);
                 var k = x.Op == IrOp.Store8 ? LsKind.Strb : x.Op == IrOp.Store16 ? LsKind.Strh : LsKind.StrW;
@@ -726,9 +1039,15 @@ public sealed unsafe partial class Arm64Emitter
                 MarkPlanned(x.A);
                 return;
             }
-            case IrOp.Fence: a.DmbIsh(); return;
-            case IrOp.FpOp: FpOp(x); return;
-            case IrOp.VecOp: VecOp(x); return;
+            case IrOp.Fence:
+                a.DmbIsh();
+                return;
+            case IrOp.FpOp:
+                FpOp(x);
+                return;
+            case IrOp.VecOp:
+                VecOp(x);
+                return;
             case IrOp.LoadD:
             {
                 int ad = UseZ(x.A, X16);
@@ -745,19 +1064,37 @@ public sealed unsafe partial class Arm64Emitter
                 MarkPlanned(x.A);
                 return;
             }
-            case IrOp.LdrEx: LoadExclusive(x); return;
-            case IrOp.StrEx: StoreExclusive(x); return;
+            case IrOp.LdrEx:
+                LoadExclusive(x);
+                return;
+            case IrOp.StrEx:
+                StoreExclusive(x);
+                return;
 
             // ---------------- control
-            case IrOp.Label: a.Bind(_labels[x.Imm]); return;
+            case IrOp.Label:
+                a.Bind(_labels[x.Imm]);
+                return;
             case IrOp.BranchIf:
             {
                 int s = UseZ(x.A, X0);
-                if (x.Imm != 0) a.Cbnz(s, _labels[x.Imm2]); else a.Cbz(s, _labels[x.Imm2]);
+                if (x.Imm != 0)
+                {
+                    a.Cbnz(s, _labels[x.Imm2]);
+                }
+                else
+                {
+                    a.Cbz(s, _labels[x.Imm2]);
+                }
+
                 return;
             }
-            case IrOp.CondBranch: CondBranch(x); return;
-            case IrOp.Callout: CallHandler(x.Imm, x.Imm2, x.Imm3); return;
+            case IrOp.CondBranch:
+                CondBranch(x);
+                return;
+            case IrOp.Callout:
+                CallHandler(x.Imm, x.Imm2, x.Imm3);
+                return;
             case IrOp.ExitStatic:
             {
                 _exitCost = x.Imm4;
@@ -773,9 +1110,21 @@ public sealed unsafe partial class Arm64Emitter
                     int ret2 = a.NewLabel();
                     EmitAccounting();
                     a.BCond(Cond.GE, ret);                     // CycleAcc >= CheckWindow
-                    if (linkBreak) { LdState(X8, OffLinkBreak); a.Cbnz(X8, ret); }
-                    if (_checkExit) { LdState(X8, OffExit); a.Cbnz(X8, ret); }
-                    while (PatchSites.Count < exitIndex - 1) PatchSites.Add(-1);
+                    if (linkBreak)
+                    {
+                        LdState(X8, OffLinkBreak);
+                        a.Cbnz(X8, ret);
+                    }
+                    if (_checkExit)
+                    {
+                        LdState(X8, OffExit);
+                        a.Cbnz(X8, ret);
+                    }
+                    while (PatchSites.Count < exitIndex - 1)
+                    {
+                        PatchSites.Add(-1);
+                    }
+
                     PatchSites.Add(a.Count * 4);
                     a.Emit(UnlinkedSiteWord);
                     // StateLiveness.ColdPc: the IR left R15 to this exit, which stores it on the paths to the dispatcher only
@@ -802,20 +1151,40 @@ public sealed unsafe partial class Arm64Emitter
                     JumpTo(_rt.Epilogue);
                     return;
                 }
-                if (x.Imm3 == StateLiveness.ColdPc) StorePc(x.Imm); // no patched exit here: R15 on every path
+                if (x.Imm3 == StateLiveness.ColdPc)
+                {
+                    StorePc(x.Imm); // no patched exit here: R15 on every path
+                }
+
                 if (_pin)
                 {
                     // the slot address first (it is also the return path's LastExitSlot), the link target load early
                     a.LdrLit(X16, (ulong)slot);
                     EmitAccounting();
                     a.LdrX(X17, X16, 0);
-                    if (_stub) ret = _tail;                   // x16 is the slot: every return path is the shared tail
+                    if (_stub)
+                    {
+                        ret = _tail;                   // x16 is the slot: every return path is the shared tail
+                    }
+
                     a.BCond(Cond.GE, ret);                     // CycleAcc >= CheckWindow
-                    if (linkBreak) { LdState(X8, OffLinkBreak); a.Cbnz(X8, ret); }
-                    if (_checkExit) { LdState(X8, OffExit); a.Cbnz(X8, ret); }
+                    if (linkBreak)
+                    {
+                        LdState(X8, OffLinkBreak);
+                        a.Cbnz(X8, ret);
+                    }
+                    if (_checkExit)
+                    {
+                        LdState(X8, OffExit);
+                        a.Cbnz(X8, ret);
+                    }
                     a.Cbz(X17, ret, true);
                     a.Br(X17);
-                    if (_stub) return;
+                    if (_stub)
+                    {
+                        return;
+                    }
+
                     a.Bind(ret);
                     a.StrX(X16, State, OffLastExitSlot);
                     JumpTo(_rt.Epilogue);
@@ -844,10 +1213,30 @@ public sealed unsafe partial class Arm64Emitter
                     // the second key read after the code pointer.
                     WindowChecks(ret);
                     int pc = X0, th = X1;
-                    if (x.A >= 0) pc = Use(x.A, X0); else LdState(X0, OffR + 60);
-                    if (x.B >= 0) th = UseZ(x.B, X1); else LdState(X1, OffThumb);
+                    if (x.A >= 0)
+                    {
+                        pc = Use(x.A, X0);
+                    }
+                    else
+                    {
+                        LdState(X0, OffR + 60);
+                    }
+
+                    if (x.B >= 0)
+                    {
+                        th = UseZ(x.B, X1);
+                    }
+                    else
+                    {
+                        LdState(X1, OffThumb);
+                    }
+
                     a.Orr(X1, pc, th);                                   // key = pc | thumb
-                    if (pc != X0) a.Mov(X0, pc);
+                    if (pc != X0)
+                    {
+                        a.Mov(X0, pc);
+                    }
+
                     bool packed = _rt.CodeBase != 0 && (Opts & A64Opt.PackedDispatch) != 0;
                     if (packed && _rt.TwoWayDispatch)
                     {
@@ -896,7 +1285,8 @@ public sealed unsafe partial class Arm64Emitter
                 ExitZero();
                 return;
             }
-            default: throw new NotSupportedException($"IR op {x.Op}");
+            default:
+                throw new NotSupportedException($"IR op {x.Op}");
         }
     }
 
@@ -913,8 +1303,16 @@ public sealed unsafe partial class Arm64Emitter
             a.Cmp(X16, X17, true);
         }
         a.BCond(Cond.GE, ret);
-        if (linkBreak) { LdState(X17, OffLinkBreak); a.Cbnz(X17, ret); }
-        if (_checkExit) { LdState(X17, OffExit); a.Cbnz(X17, ret); }
+        if (linkBreak)
+        {
+            LdState(X17, OffLinkBreak);
+            a.Cbnz(X17, ret);
+        }
+        if (_checkExit)
+        {
+            LdState(X17, OffExit);
+            a.Cbnz(X17, ret);
+        }
     }
 
     /// <summary>FPCR holds the host mode at this point of the straight-line code (<see cref="A64Opt.LazyFpcr"/>: after a
@@ -924,7 +1322,11 @@ public sealed unsafe partial class Arm64Emitter
     /// <summary>Switches FPCR back to the guest mode if a callout left the host mode in it.</summary>
     void EnsureGuestFpcr()
     {
-        if (!_fpcrHost) return;
+        if (!_fpcrHost)
+        {
+            return;
+        }
+
         _a.LdrX(X16, SP, FrameGuestFpcr);
         _a.Msr(SysReg.Fpcr, X16);
         _fpcrHost = false;
@@ -954,7 +1356,10 @@ public sealed unsafe partial class Arm64Emitter
         a.MovImm(X3, pc);
         a.LdrLit(X16, _rt.Callout);
         a.Blr(X16);
-        if (_lazyFpcr && !restore) _fpcrHost = true;
+        if (_lazyFpcr && !restore)
+        {
+            _fpcrHost = true;
+        }
         else
         {
             a.LdrX(X16, SP, FrameGuestFpcr);
@@ -967,7 +1372,11 @@ public sealed unsafe partial class Arm64Emitter
 
     void SetFlagOut(int t, Cond c)
     {
-        if (t < 0) return;
+        if (t < 0)
+        {
+            return;
+        }
+
         int r = Def(t, X3);
         _a.Cset(r, c);
         Commit(t, r);
@@ -978,8 +1387,16 @@ public sealed unsafe partial class Arm64Emitter
     {
         if (IsConst(t, out uint v))
         {
-            if (IsAddImm(v)) { _a.CmpImm(n, v); return; }
-            if (IsAddImm(unchecked(0u - v))) { _a.CmnImm(n, unchecked(0u - v)); return; }
+            if (IsAddImm(v))
+            {
+                _a.CmpImm(n, v);
+                return;
+            }
+            if (IsAddImm(unchecked(0u - v)))
+            {
+                _a.CmnImm(n, unchecked(0u - v));
+                return;
+            }
         }
         _a.Cmp(n, UseZ(t, X17));
     }
@@ -990,38 +1407,93 @@ public sealed unsafe partial class Arm64Emitter
         int d = Def(x.D, X0);
         int A = x.A, B = x.B;
         bool commutative = x.Op is IrOp.Add or IrOp.And or IrOp.Or or IrOp.Xor or IrOp.Mul;
-        if (commutative && IsConst(A, out _) && !IsConst(B, out _)) (A, B) = (B, A);
+        if (commutative && IsConst(A, out _) && !IsConst(B, out _))
+        {
+            (A, B) = (B, A);
+        }
+
         int n = UseZ(A, X16);
         if (IsConst(B, out uint v))
         {
             switch (x.Op)
             {
                 case IrOp.Add when n != ZR:
-                    if (IsAddImm(v)) { a.AddImm(d, n, v); Commit(x.D, d); return; }
-                    if (IsAddImm(unchecked(0u - v))) { a.SubImm(d, n, unchecked(0u - v)); Commit(x.D, d); return; }
+                    if (IsAddImm(v))
+                    {
+                        a.AddImm(d, n, v);
+                        Commit(x.D, d);
+                        return;
+                    }
+                    if (IsAddImm(unchecked(0u - v)))
+                    {
+                        a.SubImm(d, n, unchecked(0u - v));
+                        Commit(x.D, d);
+                        return;
+                    }
                     break;
                 case IrOp.Sub when n != ZR:
-                    if (IsAddImm(v)) { a.SubImm(d, n, v); Commit(x.D, d); return; }
-                    if (IsAddImm(unchecked(0u - v))) { a.AddImm(d, n, unchecked(0u - v)); Commit(x.D, d); return; }
+                    if (IsAddImm(v))
+                    {
+                        a.SubImm(d, n, v);
+                        Commit(x.D, d);
+                        return;
+                    }
+                    if (IsAddImm(unchecked(0u - v)))
+                    {
+                        a.AddImm(d, n, unchecked(0u - v));
+                        Commit(x.D, d);
+                        return;
+                    }
                     break;
-                case IrOp.And when TryLogicalImm(v, false, out _): a.AndImm(d, n, v); Commit(x.D, d); return;
-                case IrOp.Or when TryLogicalImm(v, false, out _): a.OrrImm(d, n, v); Commit(x.D, d); return;
-                case IrOp.Xor when TryLogicalImm(v, false, out _): a.EorImm(d, n, v); Commit(x.D, d); return;
-                case IrOp.AndNot when TryLogicalImm(~v, false, out _): a.AndImm(d, n, ~v); Commit(x.D, d); return;
-                case IrOp.OrNot when TryLogicalImm(~v, false, out _): a.OrrImm(d, n, ~v); Commit(x.D, d); return;
+                case IrOp.And when TryLogicalImm(v, false, out _):
+                    a.AndImm(d, n, v);
+                    Commit(x.D, d);
+                    return;
+                case IrOp.Or when TryLogicalImm(v, false, out _):
+                    a.OrrImm(d, n, v);
+                    Commit(x.D, d);
+                    return;
+                case IrOp.Xor when TryLogicalImm(v, false, out _):
+                    a.EorImm(d, n, v);
+                    Commit(x.D, d);
+                    return;
+                case IrOp.AndNot when TryLogicalImm(~v, false, out _):
+                    a.AndImm(d, n, ~v);
+                    Commit(x.D, d);
+                    return;
+                case IrOp.OrNot when TryLogicalImm(~v, false, out _):
+                    a.OrrImm(d, n, ~v);
+                    Commit(x.D, d);
+                    return;
             }
         }
         int m = UseZ(B, X17);
         switch (x.Op)
         {
-            case IrOp.Add: a.Add(d, n, m); break;
-            case IrOp.Sub: a.Sub(d, n, m); break;
-            case IrOp.And: a.And(d, n, m); break;
-            case IrOp.Or: a.Orr(d, n, m); break;
-            case IrOp.Xor: a.Eor(d, n, m); break;
-            case IrOp.AndNot: a.Bic(d, n, m); break;
-            case IrOp.OrNot: a.Orn(d, n, m); break;
-            default: a.Mul(d, n, m); break;
+            case IrOp.Add:
+                a.Add(d, n, m);
+                break;
+            case IrOp.Sub:
+                a.Sub(d, n, m);
+                break;
+            case IrOp.And:
+                a.And(d, n, m);
+                break;
+            case IrOp.Or:
+                a.Orr(d, n, m);
+                break;
+            case IrOp.Xor:
+                a.Eor(d, n, m);
+                break;
+            case IrOp.AndNot:
+                a.Bic(d, n, m);
+                break;
+            case IrOp.OrNot:
+                a.Orn(d, n, m);
+                break;
+            default:
+                a.Mul(d, n, m);
+                break;
         }
         Commit(x.D, d);
     }
@@ -1034,24 +1506,46 @@ public sealed unsafe partial class Arm64Emitter
         if (IsConst(x.B, out uint k))
         {
             int n = (int)(k & 31);
-            if (n == 0) a.Mov(d, s);
-            else switch (x.Op)
+            if (n == 0)
+            {
+                a.Mov(d, s);
+            }
+            else
+            {
+                switch (x.Op)
                 {
-                    case IrOp.Shl: a.LslImm(d, s, n); break;
-                    case IrOp.Shr: a.LsrImm(d, s, n); break;
-                    case IrOp.Sar: a.AsrImm(d, s, n); break;
-                    default: a.RorImm(d, s, n); break;
+                    case IrOp.Shl:
+                        a.LslImm(d, s, n);
+                        break;
+                    case IrOp.Shr:
+                        a.LsrImm(d, s, n);
+                        break;
+                    case IrOp.Sar:
+                        a.AsrImm(d, s, n);
+                        break;
+                    default:
+                        a.RorImm(d, s, n);
+                        break;
                 }
+            }
         }
         else
         {
             int m = Use(x.B, X17); // W-register variable shifts use the amount modulo 32, like the IR
             switch (x.Op)
             {
-                case IrOp.Shl: a.Lslv(d, s, m); break;
-                case IrOp.Shr: a.Lsrv(d, s, m); break;
-                case IrOp.Sar: a.Asrv(d, s, m); break;
-                default: a.Rorv(d, s, m); break;
+                case IrOp.Shl:
+                    a.Lslv(d, s, m);
+                    break;
+                case IrOp.Shr:
+                    a.Lsrv(d, s, m);
+                    break;
+                case IrOp.Sar:
+                    a.Asrv(d, s, m);
+                    break;
+                default:
+                    a.Rorv(d, s, m);
+                    break;
             }
         }
         Commit(x.D, d);
@@ -1066,24 +1560,67 @@ public sealed unsafe partial class Arm64Emitter
         int d = x.D >= 0 ? Def(x.D, X0) : ZR;
         // carry-in: -1 = none (0 for add, 1 for sub)
         int cinConst = -1;
-        if (x.C < 0) cinConst = sub ? 1 : 0;
-        else if (IsConst(x.C, out uint cv)) cinConst = (int)(cv & 1);
+        if (x.C < 0)
+        {
+            cinConst = sub ? 1 : 0;
+        }
+        else if (IsConst(x.C, out uint cv))
+        {
+            cinConst = (int)(cv & 1);
+        }
+
         bool plain = cinConst == (sub ? 1 : 0);
         if (plain && IsConst(x.B, out uint v) && n != ZR)
         {
-            if (IsAddImm(v)) { if (sub) a.SubsImm(d, n, v); else a.AddsImm(d, n, v); goto flags; }
+            if (IsAddImm(v))
+            {
+                if (sub)
+                {
+                    a.SubsImm(d, n, v);
+                }
+                else
+                {
+                    a.AddsImm(d, n, v);
+                }
+
+                goto flags;
+            }
         }
         int m = UseZ(x.B, X17);
         if (plain)
         {
-            if (sub) a.Subs(d, n, m); else a.Adds(d, n, m);
+            if (sub)
+            {
+                a.Subs(d, n, m);
+            }
+            else
+            {
+                a.Adds(d, n, m);
+            }
         }
         else
         {
-            if (cinConst == 1) a.Cmp(ZR, ZR);                    // C = 1
-            else if (cinConst == 0) a.Adds(ZR, ZR, ZR);          // C = 0
-            else a.CmpImm(Use(x.C, X1), 1);                      // C = (carry temp == 1)
-            if (sub) a.Sbcs(d, n, m); else a.Adcs(d, n, m);
+            if (cinConst == 1)
+            {
+                a.Cmp(ZR, ZR);                    // C = 1
+            }
+            else if (cinConst == 0)
+            {
+                a.Adds(ZR, ZR, ZR);          // C = 0
+            }
+            else
+            {
+                a.CmpImm(Use(x.C, X1), 1);                      // C = (carry temp == 1)
+            }
+
+            if (sub)
+            {
+                a.Sbcs(d, n, m);
+            }
+            else
+            {
+                a.Adcs(d, n, m);
+            }
         }
     flags:
         HostFlagsAre(x.Fn, x.Fz, x.Fc, x.Fv);
@@ -1091,7 +1628,10 @@ public sealed unsafe partial class Arm64Emitter
         SetFlagOut(x.Fz, Cond.EQ);
         SetFlagOut(x.Fc, Cond.HS);
         SetFlagOut(x.Fv, Cond.VS);
-        if (x.D >= 0) Commit(x.D, d);
+        if (x.D >= 0)
+        {
+            Commit(x.D, d);
+        }
     }
 
     /// <summary>ARM register-controlled shift (Shift_C with the amount in the low byte of Rs).</summary>
@@ -1106,17 +1646,34 @@ public sealed unsafe partial class Arm64Emitter
         {
             case 0: // LSL
                 a.Lslv(X2, v, X0, true);         // 64-bit: amounts 32..63 shift the value out of the low word
-                if (wantC) a.Ubfx(X3, X2, 32, 1, true);
+                if (wantC)
+                {
+                    a.Ubfx(X3, X2, 32, 1, true);
+                }
+
                 a.CmpImm(X0, 32);
                 a.Csel(X2, ZR, X2, Cond.HS);
-                if (wantC) a.Csel(X3, ZR, X3, Cond.HI);
+                if (wantC)
+                {
+                    a.Csel(X3, ZR, X3, Cond.HI);
+                }
+
                 break;
             case 1: // LSR
                 a.Lsrv(X2, v, X0, true);
-                if (wantC) { a.LslImm(X3, v, 1, true); a.Lsrv(X3, X3, X0, true); a.AndImm(X3, X3, 1); }
+                if (wantC)
+                {
+                    a.LslImm(X3, v, 1, true);
+                    a.Lsrv(X3, X3, X0, true);
+                    a.AndImm(X3, X3, 1);
+                }
                 a.CmpImm(X0, 32);
                 a.Csel(X2, ZR, X2, Cond.HS);
-                if (wantC) a.Csel(X3, ZR, X3, Cond.HI);
+                if (wantC)
+                {
+                    a.Csel(X3, ZR, X3, Cond.HI);
+                }
+
                 break;
             case 2: // ASR: amounts >= 32 act like 31 (sign fill); clamp to 63 for the 64-bit shift
                 a.MovImm(X4, 63);
@@ -1124,12 +1681,21 @@ public sealed unsafe partial class Arm64Emitter
                 a.Csel(X4, X0, X4, Cond.LO);
                 a.Sxtw(X5, v);
                 a.Asrv(X2, X5, X4, true);
-                if (wantC) { a.LslImm(X3, X5, 1, true); a.Asrv(X3, X3, X4, true); a.AndImm(X3, X3, 1); }
+                if (wantC)
+                {
+                    a.LslImm(X3, X5, 1, true);
+                    a.Asrv(X3, X3, X4, true);
+                    a.AndImm(X3, X3, 1);
+                }
                 a.Mov(X2, X2);                   // keep the low word only (zero-extended)
                 break;
             default: // ROR
                 a.Rorv(X2, v, X0);
-                if (wantC) a.LsrImm(X3, X2, 31);
+                if (wantC)
+                {
+                    a.LsrImm(X3, X2, 31);
+                }
+
                 break;
         }
         if (wantC)
@@ -1154,17 +1720,44 @@ public sealed unsafe partial class Arm64Emitter
             a.BCond(Invert((Cond)cond), skip);
             return;
         }
-        void If(int t, bool set) { int r = UseZ(t, X0); if (set) a.Cbnz(r, skip); else a.Cbz(r, skip); }
+        void If(int t, bool set)
+        {
+            int r = UseZ(t, X0);
+            if (set)
+            {
+                a.Cbnz(r, skip);
+            }
+            else
+            {
+                a.Cbz(r, skip);
+            }
+        }
         switch (cond)
         {
-            case 0: If(x.B, false); break;  // EQ: skip when Z clear
-            case 1: If(x.B, true); break;   // NE
-            case 2: If(x.C, false); break;  // CS
-            case 3: If(x.C, true); break;   // CC
-            case 4: If(x.A, false); break;  // MI
-            case 5: If(x.A, true); break;   // PL
-            case 6: If(x.E, false); break;  // VS
-            case 7: If(x.E, true); break;   // VC
+            case 0:
+                If(x.B, false);
+                break;  // EQ: skip when Z clear
+            case 1:
+                If(x.B, true);
+                break;   // NE
+            case 2:
+                If(x.C, false);
+                break;  // CS
+            case 3:
+                If(x.C, true);
+                break;   // CC
+            case 4:
+                If(x.A, false);
+                break;  // MI
+            case 5:
+                If(x.A, true);
+                break;   // PL
+            case 6:
+                If(x.E, false);
+                break;  // VS
+            case 7:
+                If(x.E, true);
+                break;   // VC
             // compound conditions on the full flag values, exactly like Arm.CondPassed (a flag field can hold more than
             // 0/1 after an UNPREDICTABLE encoding wrote past R15)
             case 8:
@@ -1173,7 +1766,15 @@ public sealed unsafe partial class Arm64Emitter
                 a.Cset(X0, Cond.NE);
                 a.CmpImm(Use(x.B, X1), 0);
                 a.Csel(X0, X0, ZR, Cond.EQ);
-                if (cond == 8) a.Cbz(X0, skip); else a.Cbnz(X0, skip);
+                if (cond == 8)
+                {
+                    a.Cbz(X0, skip);
+                }
+                else
+                {
+                    a.Cbnz(X0, skip);
+                }
+
                 break;
             case 10:
             case 11: // GE: N == V ; LT: N != V
@@ -1186,9 +1787,18 @@ public sealed unsafe partial class Arm64Emitter
                 a.Cset(X0, Cond.EQ);
                 a.CmpImm(Use(x.B, X1), 0);
                 a.Csel(X0, X0, ZR, Cond.EQ);
-                if (cond == 12) a.Cbz(X0, skip); else a.Cbnz(X0, skip);
+                if (cond == 12)
+                {
+                    a.Cbz(X0, skip);
+                }
+                else
+                {
+                    a.Cbnz(X0, skip);
+                }
+
                 break;
-            default: break; // AL
+            default:
+                break; // AL
         }
     }
 
@@ -1223,14 +1833,31 @@ public sealed unsafe partial class Arm64Emitter
         a.B(spin);
         a.Bind(ok);
         StState(X4, OffExGen);
-        if (dual) a.LdStReg(LsKind.LdrX, X6, MemBase, X1); // one 64-bit read, like Volatile.Read(ulong)
-        else a.LdStReg(LsKind.LdrW, X6, MemBase, X1);      // zero-extended to 64 bits, like SetExclusive(uint)
+        if (dual)
+        {
+            a.LdStReg(LsKind.LdrX, X6, MemBase, X1); // one 64-bit read, like Volatile.Read(ulong)
+        }
+        else
+        {
+            a.LdStReg(LsKind.LdrW, X6, MemBase, X1);      // zero-extended to 64 bits, like SetExclusive(uint)
+        }
+
         StState(X1, OffExAddr);
         a.StrX(X6, State, OffExValue);
         a.MovImm(X7, 1);
         StState(X7, OffExValid);
-        if (dual && x.D2 >= 0) { int d2 = Def(x.D2, X5); a.LsrImm(d2, X6, 32, true); Commit(x.D2, d2); }
-        if (x.D >= 0) { int d = Def(x.D, X0); a.Mov(d, X6); Commit(x.D, d); }
+        if (dual && x.D2 >= 0)
+        {
+            int d2 = Def(x.D2, X5);
+            a.LsrImm(d2, X6, 32, true);
+            Commit(x.D2, d2);
+        }
+        if (x.D >= 0)
+        {
+            int d = Def(x.D, X0);
+            a.Mov(d, X6);
+            Commit(x.D, d);
+        }
     }
 
     /// <summary>
@@ -1246,7 +1873,11 @@ public sealed unsafe partial class Arm64Emitter
         int fail = a.NewLabel(), done = a.NewLabel(), lockGen = a.NewLabel(), lockFail = a.NewLabel(), release = a.NewLabel();
         int unaligned = a.NewLabel(), casLoop = a.NewLabel(), valueFail = a.NewLabel(), valueDiffers = a.NewLabel();
         LoadTo(X6, x.B);
-        if (dual) { int hi = UseZ(x.C, X7); a.Orr(X6, X6, hi, Shift.Lsl, 32, x: true); } // Rt | Rt2 << 32
+        if (dual)
+        {
+            int hi = UseZ(x.C, X7);
+            a.Orr(X6, X6, hi, Shift.Lsl, 32, x: true);
+        } // Rt | Rt2 << 32
         LoadTo(X1, x.A);
         LdState(X16, OffExValid);
         a.Cbz(X16, fail);
@@ -1308,7 +1939,11 @@ public sealed unsafe partial class Arm64Emitter
         a.MovImm(X0, 1);
         a.Bind(done);
         int d = Def(x.D, X2);
-        if (d != X0) a.Mov(d, X0);
+        if (d != X0)
+        {
+            a.Mov(d, X0);
+        }
+
         Commit(x.D, d);
     }
 
@@ -1332,17 +1967,33 @@ public sealed unsafe partial class Arm64Emitter
     void PlanMarks(IrBlock ir, bool group)
     {
         var insts = System.Runtime.InteropServices.CollectionsMarshal.AsSpan(ir.Insts);
-        if (_markPlan.Length < insts.Length) _markPlan = new int[Math.Max(insts.Length, _markPlan.Length * 2)];
+        if (_markPlan.Length < insts.Length)
+        {
+            _markPlan = new int[Math.Max(insts.Length, _markPlan.Length * 2)];
+        }
+
         Array.Clear(_markPlan, 0, insts.Length);
-        if (!group || !Memory.DirtyPages.Enabled) return;
+        if (!group || !Memory.DirtyPages.Enabled)
+        {
+            return;
+        }
+
         int n = ir.TempCount;
-        if (_addrBase.Length < n) { _addrBase = new int[Math.Max(n, _addrBase.Length * 2)]; _addrOff = new uint[_addrBase.Length]; }
+        if (_addrBase.Length < n)
+        {
+            _addrBase = new int[Math.Max(n, _addrBase.Length * 2)];
+            _addrOff = new uint[_addrBase.Length];
+        }
         Array.Fill(_addrBase, -1, 0, n);
         int gBase = -1, gLast = -1;
         uint gMin = 0, gEnd = 0, lastOff = 0;
         void Close()
         {
-            if (gLast >= 0) _markPlan[gLast] = (int)(lastOff - gMin);
+            if (gLast >= 0)
+            {
+                _markPlan[gLast] = (int)(lastOff - gMin);
+            }
+
             gBase = gLast = -1;
         }
         for (int i = 0; i < insts.Length; i++)
@@ -1353,9 +2004,15 @@ public sealed unsafe partial class Arm64Emitter
                 case IrOp.Add when x.D >= 0 && x.A >= 0 && !IsConst(x.A, out _) && IsConst(x.B, out uint k) && k < 0x8000_0000:
                 {
                     // base + k, folded through chains of constant adds (both kept small: offsets of one access group)
-                    int b = x.A; uint off = k;
-                    if (_addrBase[b] >= 0 && _addrOff[b] + k < 0x8000_0000) { off = _addrOff[b] + k; b = _addrBase[b]; }
-                    _addrBase[x.D] = b; _addrOff[x.D] = off;
+                    int b = x.A;
+                    uint off = k;
+                    if (_addrBase[b] >= 0 && _addrOff[b] + k < 0x8000_0000)
+                    {
+                        off = _addrOff[b] + k;
+                        b = _addrBase[b];
+                    }
+                    _addrBase[x.D] = b;
+                    _addrOff[x.D] = off;
                     break;
                 }
                 case IrOp.Store8:
@@ -1363,18 +2020,36 @@ public sealed unsafe partial class Arm64Emitter
                 case IrOp.Store32:
                 case IrOp.StoreD:
                 {
-                    if (IsConst(x.A, out _)) { Close(); break; }
+                    if (IsConst(x.A, out _))
+                    {
+                        Close();
+                        break;
+                    }
                     int b = _addrBase[x.A] >= 0 ? _addrBase[x.A] : x.A;
                     uint off = _addrBase[x.A] >= 0 ? _addrOff[x.A] : 0;
-                    uint size = x.Op switch { IrOp.Store8 => 1u, IrOp.Store16 => 2u, IrOp.Store32 => 4u, _ => 8u };
+                    uint size = x.Op switch
+                    {
+                        IrOp.Store8 => 1u,
+                        IrOp.Store16 => 2u,
+                        IrOp.Store32 => 4u,
+                        _ => 8u
+                    };
                     uint min = Math.Min(gMin, off), end = Math.Max(gEnd, off + size);
                     if (gBase == b && end - min <= 4096 && off - min < 4096)
                     {
                         _markPlan[gLast] = -1;
-                        gMin = min; gEnd = end;
+                        gMin = min;
+                        gEnd = end;
                     }
-                    else { Close(); gBase = b; gMin = off; gEnd = off + size; }
-                    gLast = i; lastOff = off;
+                    else
+                    {
+                        Close();
+                        gBase = b;
+                        gMin = off;
+                        gEnd = off + size;
+                    }
+                    gLast = i;
+                    lastOff = off;
                     break;
                 }
                 case IrOp.Load8:
@@ -1439,8 +2114,16 @@ public sealed unsafe partial class Arm64Emitter
     void MarkPlanned(int t)
     {
         int plan = _markPlan[_cur];
-        if (plan < 0 || !Memory.DirtyPages.Enabled) return;
-        if (plan == 0) { MarkDirty(t); return; }
+        if (plan < 0 || !Memory.DirtyPages.Enabled)
+        {
+            return;
+        }
+
+        if (plan == 0)
+        {
+            MarkDirty(t);
+            return;
+        }
         int r = Use(t, X0);
         _a.SubImm(X16, r, (uint)plan);
         MarkDirtyReg(X16);
@@ -1448,8 +2131,16 @@ public sealed unsafe partial class Arm64Emitter
 
     void MarkDirty(int t)
     {
-        if (!Memory.DirtyPages.Enabled) return;
-        if (_dirtyReg && !IsConst(t, out _) && InReg(t, out int r)) { MarkDirtyReg(r); return; }
+        if (!Memory.DirtyPages.Enabled)
+        {
+            return;
+        }
+
+        if (_dirtyReg && !IsConst(t, out _) && InReg(t, out int r))
+        {
+            MarkDirtyReg(r);
+            return;
+        }
         LoadTo(X0, t);
         MarkDirtyReg(X0);
     }
@@ -1520,7 +2211,9 @@ public sealed unsafe partial class Arm64Emitter
         var st = dbl ? LsKind.StrD : LsKind.StrS;
         bool checkedAtEntry = (x.Imm & (uint)FpFlags.Checked) != 0;
 
-        if (checkedAtEntry) { } // A64Opt.FpEntryCheck: the block entry checked the mode
+        if (checkedAtEntry)
+        {
+        } // A64Opt.FpEntryCheck: the block entry checked the mode
         else if (_fastFpCheck)
         {
             LdState(X16, OffFpscr);
@@ -1537,16 +2230,27 @@ public sealed unsafe partial class Arm64Emitter
             a.MovImm(X17, 0x03000000);
             a.Cmp(X16, X17);
         }
-        if (!checkedAtEntry) a.BCond(Cond.NE, slow);
+        if (!checkedAtEntry)
+        {
+            a.BCond(Cond.NE, slow);
+        }
 
         // operands from the SIMD register cache when the op has no handler path (A64Opt.FpEntryCheck): a D register, or
         // an S register in the low half of its D register; double results are cached (write-through, like VecOps)
         bool cache = checkedAtEntry && _vcache, resultCached = false;
-        if (cache) _vcBusy = 0;
+        if (cache)
+        {
+            _vcBusy = 0;
+        }
+
         int Opnd(int scratch, int off)
         {
             int rel = off - OffD;
-            if (cache && (dbl || (rel & 7) == 0)) return Src(scratch, rel, false);
+            if (cache && (dbl || (rel & 7) == 0))
+            {
+                return Src(scratch, rel, false);
+            }
+
             VcFlushOverlap(rel, dbl ? 8 : 4);
             a.LdSt(ld, scratch, State, off);
             return scratch;
@@ -1554,8 +2258,16 @@ public sealed unsafe partial class Arm64Emitter
         int ResultReg() => cache && dbl ? Dst(0) : 0;
         void Result(int r)
         {
-            if (cache && dbl) { Put(dOff - OffD, r, false); resultCached = true; }
-            else { VcFlushOverlap(dOff - OffD, dbl ? 8 : 4); a.LdSt(st, r, State, dOff); }
+            if (cache && dbl)
+            {
+                Put(dOff - OffD, r, false);
+                resultCached = true;
+            }
+            else
+            {
+                VcFlushOverlap(dOff - OffD, dbl ? 8 : 4);
+                a.LdSt(st, r, State, dOff);
+            }
         }
         if (_vcAnyDirty && kind is not (FpKind.Add or FpKind.Sub or FpKind.Mul or FpKind.NMul or FpKind.Div or FpKind.Mla
             or FpKind.Mls or FpKind.Nmla or FpKind.Nmls or FpKind.Sqrt or FpKind.Cmp or FpKind.CmpZero))
@@ -1576,11 +2288,21 @@ public sealed unsafe partial class Arm64Emitter
                 int n = Opnd(1, nOff), m = Opnd(2, mOff), r = ResultReg();
                 switch (kind)
                 {
-                    case FpKind.Add: a.Fadd(r, n, m, dbl); break;
-                    case FpKind.Sub: a.Fsub(r, n, m, dbl); break;
-                    case FpKind.Mul: a.Fmul(r, n, m, dbl); break;
-                    case FpKind.NMul: a.Fnmul(r, n, m, dbl); break; // -(n*m): a NaN product negates the default NaN, like VNMUL
-                    default: a.Fdiv(r, n, m, dbl); break;
+                    case FpKind.Add:
+                        a.Fadd(r, n, m, dbl);
+                        break;
+                    case FpKind.Sub:
+                        a.Fsub(r, n, m, dbl);
+                        break;
+                    case FpKind.Mul:
+                        a.Fmul(r, n, m, dbl);
+                        break;
+                    case FpKind.NMul:
+                        a.Fnmul(r, n, m, dbl);
+                        break; // -(n*m): a NaN product negates the default NaN, like VNMUL
+                    default:
+                        a.Fdiv(r, n, m, dbl);
+                        break;
                 }
                 Result(r);
                 break;
@@ -1594,9 +2316,21 @@ public sealed unsafe partial class Arm64Emitter
                 // never written in place
                 int n = Opnd(1, nOff), m = Opnd(2, mOff), d = Opnd(3, dOff);
                 a.Fmul(1, n, m, dbl);
-                if (kind is FpKind.Nmla or FpKind.Nmls) { a.Fneg(3, d, dbl); d = 3; }
+                if (kind is FpKind.Nmla or FpKind.Nmls)
+                {
+                    a.Fneg(3, d, dbl);
+                    d = 3;
+                }
                 int r = ResultReg();
-                if (kind is FpKind.Mla or FpKind.Nmls) a.Fadd(r, d, 1, dbl); else a.Fsub(r, d, 1, dbl);
+                if (kind is FpKind.Mla or FpKind.Nmls)
+                {
+                    a.Fadd(r, d, 1, dbl);
+                }
+                else
+                {
+                    a.Fsub(r, d, 1, dbl);
+                }
+
                 Result(r);
                 break;
             }
@@ -1611,8 +2345,15 @@ public sealed unsafe partial class Arm64Emitter
             case FpKind.CmpZero:
             {
                 int d = Opnd(0, dOff);
-                if (kind == FpKind.CmpZero) a.FcmpZero(d, dbl);
-                else a.Fcmp(d, Opnd(1, mOff), dbl);
+                if (kind == FpKind.CmpZero)
+                {
+                    a.FcmpZero(d, dbl);
+                }
+                else
+                {
+                    a.Fcmp(d, Opnd(1, mOff), dbl);
+                }
+
                 a.Mrs(X16, SysReg.Nzcv);              // FCMP's NZCV are VCMP's (unordered 0011, equal 0110, less 1000, greater 0010)
                 LdState(X17, OffFpscr);
                 a.AndImm(X17, X17, 0x0FFFFFFF);
@@ -1633,7 +2374,15 @@ public sealed unsafe partial class Arm64Emitter
             case FpKind.CvtFromS32:
             case FpKind.CvtFromU32:
                 LdState(X16, mOff);
-                if (kind == FpKind.CvtFromS32) a.Scvtf(0, X16, dbl); else a.Ucvtf(0, X16, dbl);
+                if (kind == FpKind.CvtFromS32)
+                {
+                    a.Scvtf(0, X16, dbl);
+                }
+                else
+                {
+                    a.Ucvtf(0, X16, dbl);
+                }
+
                 a.LdSt(st, 0, State, dOff);
                 break;
             case FpKind.CvtToS32:
@@ -1643,10 +2392,18 @@ public sealed unsafe partial class Arm64Emitter
                 a.LdSt(ld, 1, State, mOff);
                 switch (kind)
                 {
-                    case FpKind.CvtToS32: a.Fcvtzs(X16, 1, dbl); break;
-                    case FpKind.CvtToS32R: a.Fcvtns(X16, 1, dbl); break;   // FPSCR rounding = nearest in this mode
-                    case FpKind.CvtToU32: a.Fcvtzu(X16, 1, dbl); break;
-                    default: a.Fcvtnu(X16, 1, dbl); break;
+                    case FpKind.CvtToS32:
+                        a.Fcvtzs(X16, 1, dbl);
+                        break;
+                    case FpKind.CvtToS32R:
+                        a.Fcvtns(X16, 1, dbl);
+                        break;   // FPSCR rounding = nearest in this mode
+                    case FpKind.CvtToU32:
+                        a.Fcvtzu(X16, 1, dbl);
+                        break;
+                    default:
+                        a.Fcvtnu(X16, 1, dbl);
+                        break;
                 }
                 StState(X16, dOff);
                 break;
@@ -1667,24 +2424,58 @@ public sealed unsafe partial class Arm64Emitter
                 // denormal input); a 16-bit size saturates the 32-bit result further; extended into a double register
                 Vfp.FixedParams(x.Imm2, out _, out bool unsigned, out int size, out int frac);
                 a.LdSt(ld, 1, State, dOff);
-                if (frac == 0) { if (unsigned) a.Fcvtzu(X16, 1, dbl); else a.Fcvtzs(X16, 1, dbl); }
-                else if (unsigned) a.FcvtzuFixed(X16, 1, frac, dbl);
-                else a.FcvtzsFixed(X16, 1, frac, dbl);
-                if (size == 16)
+                if (frac == 0)
                 {
-                    if (unsigned) { a.MovImm(X17, 0xFFFF); a.Cmp(X16, X17); a.Csel(X16, X16, X17, Cond.LS); }
+                    if (unsigned)
+                    {
+                        a.Fcvtzu(X16, 1, dbl);
+                    }
                     else
                     {
-                        a.MovImm(X17, 0x7FFF); a.Cmp(X16, X17); a.Csel(X16, X16, X17, Cond.LE);
-                        a.MovImm(X17, 0xFFFF8000); a.Cmp(X16, X17); a.Csel(X16, X16, X17, Cond.GE);
+                        a.Fcvtzs(X16, 1, dbl);
+                    }
+                }
+                else if (unsigned)
+                {
+                    a.FcvtzuFixed(X16, 1, frac, dbl);
+                }
+                else
+                {
+                    a.FcvtzsFixed(X16, 1, frac, dbl);
+                }
+
+                if (size == 16)
+                {
+                    if (unsigned)
+                    {
+                        a.MovImm(X17, 0xFFFF);
+                        a.Cmp(X16, X17);
+                        a.Csel(X16, X16, X17, Cond.LS);
+                    }
+                    else
+                    {
+                        a.MovImm(X17, 0x7FFF);
+                        a.Cmp(X16, X17);
+                        a.Csel(X16, X16, X17, Cond.LE);
+                        a.MovImm(X17, 0xFFFF8000);
+                        a.Cmp(X16, X17);
+                        a.Csel(X16, X16, X17, Cond.GE);
                     }
                 }
                 if (dbl)
                 {
-                    if (!unsigned) a.Sxtw(X16, X16); // a W result already has a zero upper half
+                    if (!unsigned)
+                    {
+                        a.Sxtw(X16, X16); // a W result already has a zero upper half
+                    }
+
                     a.StrX(X16, State, dOff);
                 }
-                else StState(X16, dOff);
+                else
+                {
+                    StState(X16, dOff);
+                }
+
                 break;
             }
             case FpKind.CvtFromFixed:
@@ -1692,15 +2483,46 @@ public sealed unsafe partial class Arm64Emitter
                 // one rounding (round to nearest in this mode), as the handler's (float)(v / 2^frac); exact for doubles
                 Vfp.FixedParams(x.Imm2, out _, out bool unsigned, out int size, out int frac);
                 LdState(X16, dOff);
-                if (size == 16) { if (unsigned) a.Uxth(X16, X16); else a.Sxth(X16, X16); }
-                if (frac == 0) { if (unsigned) a.Ucvtf(0, X16, dbl); else a.Scvtf(0, X16, dbl); }
-                else if (unsigned) a.UcvtfFixed(0, X16, frac, dbl);
-                else a.ScvtfFixed(0, X16, frac, dbl);
+                if (size == 16)
+                {
+                    if (unsigned)
+                    {
+                        a.Uxth(X16, X16);
+                    }
+                    else
+                    {
+                        a.Sxth(X16, X16);
+                    }
+                }
+                if (frac == 0)
+                {
+                    if (unsigned)
+                    {
+                        a.Ucvtf(0, X16, dbl);
+                    }
+                    else
+                    {
+                        a.Scvtf(0, X16, dbl);
+                    }
+                }
+                else if (unsigned)
+                {
+                    a.UcvtfFixed(0, X16, frac, dbl);
+                }
+                else
+                {
+                    a.ScvtfFixed(0, X16, frac, dbl);
+                }
+
                 a.LdSt(st, 0, State, dOff);
                 break;
             }
             default:
-                if (checkedAtEntry) throw new NotSupportedException($"FpOp {kind} has no inline form"); // FpOp is then not a call site
+                if (checkedAtEntry)
+                {
+                    throw new NotSupportedException($"FpOp {kind} has no inline form"); // FpOp is then not a call site
+                }
+
                 a.B(slow);
                 break;
         }
@@ -1711,7 +2533,11 @@ public sealed unsafe partial class Arm64Emitter
             // exactly the bytes written: a dirty cached neighbour of an S result is still the only copy of its value
             bool arith = kind is FpKind.Add or FpKind.Sub or FpKind.Mul or FpKind.NMul or FpKind.Div or FpKind.Mla or FpKind.Mls
                 or FpKind.Nmla or FpKind.Nmls or FpKind.Sqrt;
-            if (!resultCached && kind is not (FpKind.Cmp or FpKind.CmpZero)) VcInvalidate((int)(x.Imm4 & 0xFF), arith && !dbl ? 4 : 8);
+            if (!resultCached && kind is not (FpKind.Cmp or FpKind.CmpZero))
+            {
+                VcInvalidate((int)(x.Imm4 & 0xFF), arith && !dbl ? 4 : 8);
+            }
+
             return;
         }
         a.B(done);
@@ -1753,7 +2579,10 @@ public sealed unsafe partial class Arm64Emitter
                 a.LdrX(PinBlocks, State, OffNBlocks);
                 a.LdrX(PinInstr, State, OffNInstr);
             }
-            else a.SubImm(PinDirty, MemBase, (uint)Memory.DirtyPages.TableBytes, true);
+            else
+            {
+                a.SubImm(PinDirty, MemBase, (uint)Memory.DirtyPages.TableBytes, true);
+            }
         }
         a.Mrs(X16, SysReg.Fpcr);
         a.StrX(X16, SP, FrameHostFpcr);
@@ -1937,7 +2766,11 @@ public static unsafe class Arm64Dump
     public static string Dump(nint code, int length)
     {
         var sb = new System.Text.StringBuilder();
-        for (int i = 0; i + 4 <= length; i += 4) sb.Append($"{i,5:X}: {*(uint*)(code + i):X8}\n");
+        for (int i = 0; i + 4 <= length; i += 4)
+        {
+            sb.Append($"{i,5:X}: {*(uint*)(code + i):X8}\n");
+        }
+
         return sb.ToString();
     }
 }

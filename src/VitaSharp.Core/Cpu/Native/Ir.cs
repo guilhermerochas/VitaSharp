@@ -60,7 +60,10 @@ public enum IrOp : byte
                   // word and address: an emitter may run the interpreter handler instead (any FPSCR mode, edge cases)
 }
 
-public enum IrFlag : byte { N, Z, C, V }
+public enum IrFlag : byte
+{
+    N, Z, C, V
+}
 
 public struct IrInst
 {
@@ -69,7 +72,10 @@ public struct IrInst
     public int A = -1, B = -1, C = -1, E = -1;
     public uint Imm, Imm2, Imm3, Imm4;
 
-    public IrInst(IrOp op) { Op = op; }
+    public IrInst(IrOp op)
+    {
+        Op = op;
+    }
 
     public readonly bool HasSideEffects => Op is IrOp.SetReg or IrOp.SetFlag or IrOp.StoreState or IrOp.Store8 or IrOp.Store16
         or IrOp.Store32 or IrOp.Fence or IrOp.VecOp or IrOp.VecLdSt or IrOp.LoadD or IrOp.StoreD or IrOp.LdrEx or IrOp.StrEx or IrOp.Label or IrOp.CondBranch or IrOp.BranchIf or IrOp.Callout or IrOp.ExitStatic
@@ -80,10 +86,24 @@ public struct IrInst
     public override readonly string ToString()
     {
         var sb = new System.Text.StringBuilder();
-        void O(string n, int t) { if (t >= 0) sb.Append($" {n}=t{t}"); }
+        void O(string n, int t)
+        {
+            if (t >= 0)
+            {
+                sb.Append($" {n}=t{t}");
+            }
+        }
         sb.Append(Op);
-        O("d", D); O("d2", D2); O("n", Fn); O("z", Fz); O("c", Fc); O("v", Fv);
-        O("a", A); O("b", B); O("c", C); O("e", E);
+        O("d", D);
+        O("d2", D2);
+        O("n", Fn);
+        O("z", Fz);
+        O("c", Fc);
+        O("v", Fv);
+        O("a", A);
+        O("b", B);
+        O("c", C);
+        O("e", E);
         sb.Append($" #{Imm:X} #{Imm2:X} #{Imm3:X}");
         return sb.ToString();
     }
@@ -107,17 +127,39 @@ public sealed class IrBlock
     /// <summary>Empties the block for reuse (keeps the list capacity).</summary>
     public void Reset()
     {
-        Insts.Clear(); IsConst.Clear(); ConstValue.Clear();
-        Labels = 0; Cycles = 0; GuestInstructions = 0; StartPc = 0; Thumb = false; Callouts = 0;
+        Insts.Clear();
+        IsConst.Clear();
+        ConstValue.Clear();
+        Labels = 0;
+        Cycles = 0;
+        GuestInstructions = 0;
+        StartPc = 0;
+        Thumb = false;
+        Callouts = 0;
     }
 
-    public int NewTemp() { IsConst.Add(false); ConstValue.Add(0); return IsConst.Count - 1; }
-    public int NewConst(uint v) { IsConst.Add(true); ConstValue.Add(v); return IsConst.Count - 1; }
+    public int NewTemp()
+    {
+        IsConst.Add(false);
+        ConstValue.Add(0);
+        return IsConst.Count - 1;
+    }
+    public int NewConst(uint v)
+    {
+        IsConst.Add(true);
+        ConstValue.Add(v);
+        return IsConst.Count - 1;
+    }
 
     public bool TryConst(int t, out uint v)
     {
-        if (t >= 0 && IsConst[t]) { v = ConstValue[t]; return true; }
-        v = 0; return false;
+        if (t >= 0 && IsConst[t])
+        {
+            v = ConstValue[t];
+            return true;
+        }
+        v = 0;
+        return false;
     }
 
     public override string ToString() => string.Join("\n", Insts.Select((i, n) => $"{n,4}: {i}"));
