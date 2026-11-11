@@ -94,9 +94,14 @@ public sealed class InputRecorder(IInputBackend? inner, IMotionSource? innerMoti
 
     public bool HasSensors => InnerMotion?.HasSensors ?? false;
 
+    /// <summary>Motion samples go to the sink only while this is set (armed or recording): with the capture off the
+    /// recorder only keeps the last button and touch changes (the input before a recording).</summary>
+    public volatile bool RecordMotion = true;
+
     public int ReadSamples(Span<MotionSample> dest)
     {
         int n = InnerMotion?.ReadSamples(dest) ?? 0;
+        if (!RecordMotion) return n;
         for (int i = 0; i < n; i++)
         {
             var m = dest[i];

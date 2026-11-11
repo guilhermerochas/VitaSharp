@@ -44,6 +44,32 @@ public sealed partial class IoFileMgr : HleModule
         return r;
     }
 
+    /// <summary>
+    /// The shell loads a title's LiveArea page from its contents (vs0:app/ID/sce_sys/livearea/contents/... for system
+    /// apps, ur0:appmeta/ID/livearea/contents/... for installed titles) when it opens that page: the title becomes the
+    /// shell's current LiveArea for the diagnostics (<see cref="Kernel.VitaSystem.ShellLiveArea"/>, Gravar tudo's
+    /// "where"). Only the path is looked at; the title's name is read from its param.sfo once per change.
+    /// </summary>
+    void NoteShellLiveArea(string path)
+    {
+        int i = path.IndexOf("/livearea/contents/", StringComparison.OrdinalIgnoreCase);
+        if (i < 0) return;
+        string head = path[..i];
+        if (head.EndsWith("/sce_sys", StringComparison.OrdinalIgnoreCase)) head = head[..^8];
+        string id = head[(head.LastIndexOfAny(['/', ':']) + 1)..];
+        if (id.Length != 9 || Emu.Vita.ShellLiveArea?.TitleId == id) return;
+        string title = "";
+        foreach (var sfo in new[] { $"ux0:app/{id}/sce_sys/param.sfo", $"vs0:app/{id}/sce_sys/param.sfo", $"ur0:appmeta/{id}/param.sfo" })
+        {
+            try
+            {
+                if (HostPath(sfo) is { } h && File.Exists(h)) { title = Package.Sfo.Load(h).Title; break; }
+            }
+            catch (Exception e) when (e is IOException or InvalidDataException or UnauthorizedAccessException or ArgumentException) { }
+        }
+        Emu.Vita.NoteShellLiveArea(id, title);
+    }
+
     [Hle("sceIoOpen")]
     internal int sceIoOpen(string path, int flags, int mode)
     {
@@ -54,6 +80,7 @@ public sealed partial class IoFileMgr : HleModule
             _files[tfd] = new OpenFile { VitaPath = path, Tty = tty };
             return tfd;
         }
+        if (Emu.IsShell) NoteShellLiveArea(path);
         var host = HostPath(path, (flags & O_WRONLY) != 0);
         if (host == null) return SceError.IO_ENOENT;
         if (Directory.Exists(host)) return SceError.IO_EISDIR;

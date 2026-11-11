@@ -19,6 +19,16 @@ Lista de itens futuros do VitaSharp. Marque `[x]` quando um item for concluído.
 
 ## Diagnóstico
 
+- [x] Gravar tudo (F8) diz o contexto no próprio report.txt (pedido do usuário, 10/11/2026; agente snd1,
+  fix/shell-audio): seção "Where" com onde o jogador está no começo e cada mudança durante a gravação (app/jogo na
+  frente com título; no shell: tela de bloqueio, tela inicial ou a página de LiveArea de qual título, pela abertura
+  dos arquivos `livearea/contents` do título e pelo botão PS; eventos `ctx` no input.tsv), os processos (na frente,
+  suspensos), uma folha de contatos `frames.png` (12 quadros ao longo da gravação, com os tempos no relatório), e as
+  últimas entradas antes da gravação (`input_before.tsv`, sempre guardadas: as últimas 32 mudanças de botão/toque).
+  Áudio: cada WAV de porta com dono e papel (processo e thread que abriu: música do shell, sons da interface, jogo),
+  tempo com som, a linha "no continuous audio stream (music)" / "continuous sound on <porta>", quem tem a porta BGM e
+  os decodificadores; `context.txt` com tudo isso no começo e no fim. Testes em SessionCaptureTests
+
 - [x] Teclas para alternar opções gráficas com o jogo rodando (MSAA real / antigo / desligado e outras)
   Feito em parte (07/11/2026, perf/desktop-11): `F1` / `Shift+F1` passam para a resolução interna seguinte / anterior
   (1x, 2x, 3x, 4x) e `F2` / `Shift+F2` para a taxa de quadros seguinte / anterior (nativa, fixa em 30, fixa em 60, sem
@@ -1435,6 +1445,31 @@ Lista de itens futuros do VitaSharp. Marque `[x]` quando um item for concluído.
   (o diff toca quase todos os arquivos); `dotnet format` + analisadores no CI para não voltar
 
 ## Bugs em aberto
+
+- [ ] Música da LiveArea / tela inicial para "do nada" (relato do usuário, 10/11/2026, captura
+  `shell_20261110_223155_tudo`, na LiveArea do LittleBigPlanet): o que o Vita toca ali é a música de fundo do sistema,
+  `pd0:data/systembgm/home.at9` (registro `/CONFIG/SHELL/bgm` = 1; 162 s, em laço), pelo player do shell
+  (SceShellMusicCore, porta BGM), na tela inicial e nas páginas de LiveArea; os sons curtos da interface saem na porta
+  MAIN (SceWaveMain). Não é regressão de um commit: o main e o 1834769 (08/11) tocam igual numa sessão simples (boot,
+  tela inicial 4 min com o laço, app de sistema e jogo com o botão PS: a música volta). Reproduzido (agente snd1,
+  fix/shell-audio, `boot-shell` sem janela, nav `snd1_gw2.nav`): jogo (Batman PCSE00269) aberto e suspenso com o botão
+  PS, depois o Navegador aberto da LiveArea: no instante em que o Navegador vem para a frente o player do shell chama
+  `sceAppMgrReleaseBgmPort`, abaixa o volume da porta BGM até 0 e a libera (`sceAudioOutReleasePort`), e não pede a
+  porta de novo nunca mais (tela inicial, LiveArea, outros apps: silêncio até reiniciar). Sem o jogo suspenso (só apps
+  de sistema) isso não acontece. Achados do shell 3.74 (estudo): o pedido do player fica num campo (+0x94 do objeto de
+  saída, -1 = não quer a porta) que o Controller do music core muda; a função 0x811E872A pede/solta a porta conforme
+  esse campo; a resposta de `sceAppMgrGetCurrentBgmState2` usada é +8 (prioridade de quem tem a porta, comparada com a
+  pedida). O jogo chama `sceAppMgrAcquireBgmPort` no boot (aqui sem efeito). Tentativas: (1) `sceAppMgrReleaseBgmPort`
+  passa a liberar a porta de verdade (feito, não basta: o player não volta a pedir); (2) o jogo virar dono da porta
+  ao chamar `sceAppMgrAcquireBgmPort` (revertido: a música do shell tocou por cima do jogo e a liberação no Navegador
+  continuou). Próximo passo: descompilar o Controller do music core (0x811D5E24, o tratador de mensagem 0x8800 em
+  0x811D70D6 e quem escreve +0x94 via 0x811E6EF8/0x811E6F14) para saber que estado do kernel (status do app da frente
+  +0x38/+0x71/+0x74, BGM state +4/+8, evento do shell) faz o shell soltar e voltar a pedir a porta, e modelar o
+  dono/prioridade da porta BGM como o kernel 3.74. O aviso "underrun burst" da porta MAIN do shell era alarme falso
+  (porta parada entre sons curtos): corrigido (abaixo)
+- [x] "underrun burst" em porta que só fica parada entre sons curtos (os sons da interface do shell: 5 s sem saída e a
+  fila do host esvaziou) era alarme falso: uma saída depois de uma pausa maior que 4 grains (mínimo 250 ms) conta como
+  "começo depois de pausa", sem aviso, e aparece no resumo da porta (agente snd1, fix/shell-audio)
 
 - [ ] Android, controle conectado no celular (relato do usuário, 10/11/2026): (1) o L2 não funciona (conferir o
   mapeamento do eixo/botão do gatilho: no Android o L2 pode chegar como AXIS_LTRIGGER/AXIS_BRAKE ou KEYCODE_BUTTON_L2,
