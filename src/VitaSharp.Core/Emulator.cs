@@ -873,6 +873,9 @@ public sealed class Emulator : IDisposable
         if (!RunsOnSystemCore)
         {
             var appMgr = Hle.Modules.OfType<VitaSharp.Core.Hle.Modules.AppMgr>().First();
+            if (appMgr.LaunchParam == null && Environment.GetEnvironmentVariable(Util.EnvVars.AppParam) is { } ap
+                && ap.IndexOf(':') is > 0 and var colon && ap[..colon].Equals(TitleId, StringComparison.OrdinalIgnoreCase))
+                appMgr.LaunchParam = ap[(colon + 1)..];
             appMgr.LaunchParam ??= "";
             appMgr.PostEvent(VitaSharp.Core.Hle.Modules.AppMgr.EventParamNotify);
         }

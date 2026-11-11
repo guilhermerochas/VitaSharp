@@ -12,12 +12,9 @@ public class PspPkgInstallTests
 
     static readonly byte[] Icon = [0x89, 0x50, 0x4E, 0x47, 1, 2, 3, 4];
 
-    static byte[] Sector(int seed) => Enumerable.Range(0, 2048).Select(i => (byte)(i * 7 + seed * 31)).ToArray();
-
-    static (byte[] Pkg, byte[] Eboot, byte[][] Sectors) PspGame(uint contentType = 7, string category = "EG")
+    static (byte[] Pkg, byte[] Eboot) PspGame(uint contentType = 7, string category = "EG")
     {
-        var sectors = new[] { Sector(1), Sector(2), Sector(3) };
-        var eboot = PspPkgFixture.Pbp("ULUS99999", "Fixture Game", PspPkgFixture.UmdImage(sectors, plainBlock: 1));
+        var eboot = PspPkgFixture.Pbp("ULUS99999", "Fixture Game", PspPkgFixture.Psar("NPUMDIMG"));
         var pkg = PspPkgFixture.Build(PspContent, contentType,
         [
             new Item("PARAM.SFO", PspPkgFixture.OuterSfo("Fixture Game", "NPUZ00001", category), 0),
@@ -28,7 +25,7 @@ public class PspPkgInstallTests
             new Item("USRDIR/CONTENT/DOCUMENT.DAT", [1, 2, 3, 4, 5]),
             new Item("USRDIR/CONTENT/PSP-KEY.EDAT", [9, 8, 7]),
         ]);
-        return (pkg, eboot, sectors);
+        return (pkg, eboot);
     }
 
     static (DirectoryInfo Dir, string Pkg, string Ux0) Write(byte[] pkg)
@@ -86,7 +83,7 @@ public class PspPkgInstallTests
     [Fact]
     public void InstallsPspGameWithoutLicense()
     {
-        var (bytes, eboot, sectors) = PspGame();
+        var (bytes, eboot) = PspGame();
         var (dir, pkg, ux0) = Write(bytes);
         try
         {
@@ -111,26 +108,63 @@ public class PspPkgInstallTests
             Assert.Equal(PspEbootSignature.KindPsp, PspEbootSignature.Verify("ux0:pspemu/PSP/GAME/ULUS99999/EBOOT.PBP", sig));
             Assert.Equal(SHA256.HashData(eboot), sig.AsSpan(0x30, 0x20).ToArray());
 
-            Assert.NotNull(t.IsoPath);
-            Assert.Equal(Path.Combine(ux0, "pspemu", "ISO", "Fixture Game [ULUS99999].iso"), t.IsoPath);
-            Assert.Equal(sectors.SelectMany(s => s).ToArray(), File.ReadAllBytes(t.IsoPath!));
+            Assert.False(Directory.Exists(Path.Combine(ux0, "pspemu", "ISO"))); // nothing of the game is decrypted
             Assert.False(File.Exists(Path.Combine(ux0, "id.dat"))); // the shell rebuilds its database and lists the title
         }
         finally { dir.Delete(true); }
     }
 
     [Fact]
-    public void IsoCanBeSkippedAndMinisInstallTheSameWay()
+    public void MinisInstallTheSameWay()
     {
-        var (bytes, eboot, _) = PspGame(contentType: 0xF);
+        var (bytes, eboot) = PspGame(contentType: 0xF);
         var (dir, pkg, ux0) = Write(bytes);
         try
         {
-            var t = PkgInstaller.InstallWithoutLicense(pkg, ux0, new PspInstallOptions { DecryptedIso = false });
+            var t = PkgInstaller.InstallWithoutLicense(pkg, ux0);
             Assert.Equal(PkgKind.PspMini, t.Kind);
-            Assert.Null(t.IsoPath);
-            Assert.False(Directory.Exists(Path.Combine(ux0, "pspemu", "ISO")));
             Assert.Equal(eboot, File.ReadAllBytes(Path.Combine(ux0, "pspemu", "PSP", "GAME", "ULUS99999", "EBOOT.PBP")));
+        }
+        finally { dir.Delete(true); }
+    }
+
+    /// <summary>A license-shaped test file (a header and the content id at 0x10; not a real license).</summary>
+    static byte[] TestRif(string contentId)
+    {
+        var rif = new byte[0x98];
+        System.Text.Encoding.ASCII.GetBytes(contentId).CopyTo(rif, 0x10);
+        for (int i = 0x40; i < rif.Length; i++) rif[i] = (byte)i;
+        return rif;
+    }
+
+    [Fact]
+    public void InstallsTheUsersOwnLicenseAndActivation()
+    {
+        var (bytes, _) = PspGame();
+        var (dir, pkg, ux0) = Write(bytes);
+        try
+        {
+            var rif = TestRif(PspContent);
+            var act = Enumerable.Range(0, 0x1040).Select(i => (byte)i).ToArray();
+            PkgInstaller.InstallWithoutLicense(pkg, ux0, new PspInstallOptions { License = rif, ActDat = act });
+            // named after the eboot's content id (the fixture's eboot has none: the package's)
+            Assert.Equal(rif, File.ReadAllBytes(Path.Combine(ux0, "pspemu", "PSP", "LICENSE", PspContent + ".rif")));
+            Assert.Equal(act, File.ReadAllBytes(Path.Combine(dir.FullName, "tm0", "npdrm", "act.dat")));
+        }
+        finally { dir.Delete(true); }
+    }
+
+    [Fact]
+    public void LicenseOfAnotherTitleIsRefused()
+    {
+        var (bytes, _) = PspGame();
+        var (dir, pkg, ux0) = Write(bytes);
+        try
+        {
+            var e = Assert.Throws<InvalidDataException>(() => PkgInstaller.InstallWithoutLicense(pkg, ux0,
+                new PspInstallOptions { License = TestRif("UP0001-NPUZ99999_00-0000000000000009") }));
+            Assert.Contains(PspContent, e.Message);
+            Assert.False(Directory.Exists(Path.Combine(ux0, "pspemu", "PSP", "GAME")));
         }
         finally { dir.Delete(true); }
     }
@@ -138,7 +172,7 @@ public class PspPkgInstallTests
     [Fact]
     public void PspPackageGivenALicenseIgnoresIt()
     {
-        var (bytes, eboot, _) = PspGame();
+        var (bytes, eboot) = PspGame();
         var (dir, pkg, ux0) = Write(bytes);
         try
         {
@@ -151,10 +185,9 @@ public class PspPkgInstallTests
     }
 
     [Fact]
-    public void InstallsPsoneClassicWithKeysBin()
+    public void InstallsPsoneClassicAsShipped()
     {
-        var (psar, keys) = PspPkgFixture.PsoneImage();
-        var eboot = PspPkgFixture.Pbp("SLUS99999", "Fixture One", psar, "ME");
+        var eboot = PspPkgFixture.Pbp("SLUS99999", "Fixture One", PspPkgFixture.Psar("PSISOIMG0000"), "ME");
         var texture = new byte[] { 7, 7, 7 };
         var bytes = PspPkgFixture.Build(PsxContent, 6,
         [
@@ -169,11 +202,10 @@ public class PspPkgInstallTests
             var t = PkgInstaller.InstallWithoutLicense(pkg, ux0);
             Assert.Equal(PkgKind.Psx, t.Kind);
             Assert.Equal("SLUS99999", t.TitleId);
-            Assert.Null(t.IsoPath);
             string game = Path.Combine(ux0, "pspemu", "PSP", "GAME", "SLUS99999");
             Assert.Equal(eboot, File.ReadAllBytes(Path.Combine(game, "EBOOT.PBP")));
             Assert.Equal([4, 4], File.ReadAllBytes(Path.Combine(game, "DOCUMENT.DAT")));
-            Assert.Equal(keys, File.ReadAllBytes(Path.Combine(game, "KEYS.BIN")));
+            Assert.False(File.Exists(Path.Combine(game, "KEYS.BIN"))); // no key is derived from the game
             Assert.Equal(texture, File.ReadAllBytes(Path.Combine(ux0, "ps1emu", "SLUS99999", "texture.enc")));
             Assert.False(File.Exists(Path.Combine(game, "texture.enc")));
             Assert.Equal(PspEbootSignature.KindPs1, PspEbootSignature.Verify("EBOOT.PBP", File.ReadAllBytes(Path.Combine(game, "__sce_ebootpbp"))));
@@ -184,8 +216,7 @@ public class PspPkgInstallTests
     [Fact]
     public void InstallsPsoneClassicInThePs3PackageFormat()
     {
-        var (psar, keys) = PspPkgFixture.PsoneImage();
-        var eboot = PspPkgFixture.Pbp("SCUS99998", "Fixture PS3 Format", psar, "ME");
+        var eboot = PspPkgFixture.Pbp("SCUS99998", "Fixture PS3 Format", PspPkgFixture.Psar("PSISOIMG0000"), "ME");
         // content type 1 with the files under <ID>/ and no PARAM.SFO of its own (lusid1/pkg2zip's "PS3" PSone packages)
         var bytes = PspPkgFixture.Build(PsxContent, 1,
         [
@@ -204,7 +235,6 @@ public class PspPkgInstallTests
             Assert.Equal("Fixture PS3 Format", t.Title);
             Assert.Equal(eboot, File.ReadAllBytes(Path.Combine(t.Path, "EBOOT.PBP")));
             Assert.Equal([3, 3], File.ReadAllBytes(Path.Combine(t.Path, "DOCUMENT.DAT")));
-            Assert.Equal(keys, File.ReadAllBytes(Path.Combine(t.Path, "KEYS.BIN")));
         }
         finally { dir.Delete(true); }
     }
@@ -266,25 +296,5 @@ public class PspPkgInstallTests
     {
         var e = Assert.Throws<InvalidDataException>(() => PkgInstaller.Inspect(new MemoryStream(new byte[0x200])));
         Assert.Contains("Not a PKG", e.Message);
-    }
-
-    // RFC 4493 test vectors (AES-128-CMAC)
-    [Theory]
-    [InlineData("", "BB1D6929E95937287FA37D129B756746")]
-    [InlineData("6BC1BEE22E409F96E93D7E117393172A", "070A16B46B4D4144F79BDD9DD04A287C")]
-    [InlineData("6BC1BEE22E409F96E93D7E117393172AAE2D8A571E03AC9C9EB76FAC45AF8E5130C81C46A35CE411", "DFA66747DE9AE63030CA32611497C827")]
-    public void CmacMatchesRfc4493(string message, string mac)
-    {
-        var key = Convert.FromHexString("2B7E151628AED2A6ABF7158809CF4F3C");
-        Assert.Equal(mac, Convert.ToHexString(PspCrypto.Cmac(key, Convert.FromHexString(message))));
-    }
-
-    [Fact]
-    public void LzrcStoredBlockIsCopied()
-    {
-        var input = new byte[] { 0x80, 0, 0, 0, 3, 10, 20, 30 };
-        var output = new byte[8];
-        Assert.Equal(3, PspCrypto.Lzrc(output, input));
-        Assert.Equal(new byte[] { 10, 20, 30 }, output[..3]);
     }
 }

@@ -292,8 +292,9 @@ public static class Program
         foreach (var s in pcm.Samples) w.Write(s);
     }
 
-    /// <summary>install &lt;game.pkg&gt; [&lt;work.bin|.rif|zRIF&gt;] [--no-iso]: a PS Vita package needs its license; a
-    /// PSP or PSone Classic package needs none (it goes to ux0:pspemu; --no-iso skips the decrypted PSP UMD image).</summary>
+    /// <summary>install &lt;game.pkg&gt; [&lt;work.bin|.rif|zRIF&gt;]: a PS Vita package needs its license; a
+    /// PSP or PSone Classic package installs without one (it goes to ux0:pspemu; the user's own .rif and --act=act.dat are
+    /// installed when given).</summary>
     static int InstallPkgCli(string pkg, string[] rest)
     {
         if (!File.Exists(pkg)) { Console.Error.WriteLine($"Package not found: {pkg}"); return 1; }
@@ -311,8 +312,15 @@ public static class Program
             InstalledTitle t;
             if (!info.NeedsLicense)
             {
-                if (license != null) Console.WriteLine("This package needs no license; the one given is not used.");
-                var options = new PspInstallOptions { DecryptedIso = !rest.Contains("--no-iso") };
+                // optional: the user's own license (.rif from their console) and activation data (--act=act.dat)
+                string? act = OptValue(rest, "--act");
+                if (license != null && !File.Exists(license)) { Console.Error.WriteLine($"License file not found: {license}"); return 1; }
+                if (act != null && !File.Exists(act)) { Console.Error.WriteLine($"act.dat not found: {act}"); return 1; }
+                var options = new PspInstallOptions
+                {
+                    License = license != null ? File.ReadAllBytes(license) : null,
+                    ActDat = act != null ? File.ReadAllBytes(act) : null,
+                };
                 t = PkgInstaller.InstallWithoutLicense(pkg, Ux0, options, Console.WriteLine);
             }
             else if (license == null)
@@ -322,7 +330,6 @@ public static class Program
             }
             else t = PkgInstaller.Install(pkg, license, Ux0, Console.WriteLine);
             Console.WriteLine($"Installed {t.TitleId} \"{t.Title}\" ({t.Kind?.Describe() ?? t.Type.ToString()}) -> {t.Path}");
-            if (t.IsoPath != null) Console.WriteLine($"Decrypted UMD image -> {t.IsoPath}");
             return 0;
         }
         catch (Exception e) when (e is InvalidDataException or NotSupportedException or FileNotFoundException)
@@ -622,7 +629,7 @@ public static class Program
         Console.WriteLine("VitaSharp - PS Vita emulator");
         Console.WriteLine("  (no arguments)                        open the game library window");
         Console.WriteLine("  install <game.pkg> <work.bin|.rif|zRIF>   install a PS Vita package into the virtual ux0");
-        Console.WriteLine("  install <psp-or-ps1.pkg> [--no-iso]  install a PSP / PSone Classic package (no license needed)");
+        Console.WriteLine("  install <psp-or-ps1.pkg> [<your .rif>] [--act=<act.dat>]  install a PSP / PSone Classic package (your own license optional)");
         Console.WriteLine("  install <game.vpk|.zip> [--license=<work.bin|.rif>] [--force]");
         Console.WriteLine("                                       install a VPK/content zip (app, patch or add-on, by param.sfo category)");
         Console.WriteLine("  install-firmware <PSVUPDAT.PUP>       install the official system software (os0/vs0/sa0/pd0) into the data folder");

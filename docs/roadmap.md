@@ -879,7 +879,7 @@ Lista de itens futuros do VitaSharp. Marque `[x]` quando um item for concluído.
     byte 24 = 0x90, na chave PSP; o invólucro PS3 na chave PS3) e diz o tipo (`PkgKind`: jogo de Vita, atualização,
     DLC, tema, PSM; PSP, PSP Go 0xE, minis 0xF, NEOGEO 0x10, PC Engine (7 + categoria HG), DLC de PSP (7 + bloco 10
     com a pasta de instalação), tema de PSP 9, PSone 6; tabela do pkg2zip/psdevwiki). PSP/PS1 não pedem licença no
-    launcher, no Android nem no CLI (`install <pkg>`; `--no-iso`); Vita continua exigindo (`LicenseRequiredException`).
+    launcher, no Android nem no CLI (`install <pkg>`); Vita continua exigindo (`LicenseRequiredException`).
     O que a instalação deixa para o pspemu (o layout de um título baixado da loja num Vita de verdade, onde o
     `dbrecovery_plugin` do firmware procura: ele lista `ux0:pspemu/PSP/GAME` e `ux0:pspemu/PSP/GAME/%s` na
     reconstrução do banco; a instalação apaga `ux0:id.dat` para o shell reconstruir):
@@ -888,28 +888,29 @@ Lista de itens futuros do VitaSharp. Marque `[x]` quando um item for concluído.
       `USRDIR/CONTENT` (DOCUMENT.DAT, DOCINFO.EDAT, PSP-KEY.EDAT, CONTENT.DAT, EDATs) como estão, e `__sce_ebootpbp`
       (a assinatura do eboot, `PspEbootSignature`: o mesmo formato que o HLE de `_vshNpDrmEbootSigGenPsp` gera e que
       `_vshNpDrmEbootSigVerify`/`PspEbootVerify` aceitam; o shell.self importa essas quatro funções, o dbrecovery não).
-      E a imagem UMD decifrada `ux0:pspemu/ISO/<título> [<DISC_ID>].iso` (forma do pkg2zip: a chave do NPUMDIMG sai
-      do próprio cabeçalho, CMAC KIRK 0x38 + chaves de hash do amctrl; blocos LZRC expandidos).
-    - PSone Classic: `ux0:pspemu/PSP/GAME/<DISC_ID>/EBOOT.PBP` (PSISOIMG/PSTITLEIMG, NPDRM), DOCUMENT.DAT, `KEYS.BIN`
-      (a chave de versão de 16 bytes tirada do cabeçalho PGD, lusid1/pkg2zip) e `__sce_ebootpbp` (tipo 2);
+      Nada do jogo é decifrado: só a camada do pacote (chaves fixas) sai; EBOOT.PBP e EDATs ficam NPDRM, como vendidos.
+      (Até 11/11/2026 havia também a ISO decifrada e o KEYS.BIN derivado do eboot, como o pkg2zip faz; removidos por
+      decisão do lead: decifrar o jogo sem a licença do usuário é contornar o DRM.)
+    - PSone Classic: `ux0:pspemu/PSP/GAME/<DISC_ID>/EBOOT.PBP` (PSISOIMG/PSTITLEIMG, NPDRM), DOCUMENT.DAT e
+      `__sce_ebootpbp` (tipo 2);
       `texture.enc` vai para `ux0:ps1emu/<DISC_ID>`. Multidisco (`__sce_discinfo`, tipo 3) ainda não é gerado.
     - DLC de PSP: os arquivos em `ux0:pspemu/PSP/GAME/<pasta do bloco 10>/`; tema: `ux0:pspemu/PSP/THEME`.
-    - Nenhum `.rif` é gravado (o título não tem licença; `ux0:pspemu/PSP/LICENSE` fica vazio) e não há act.dat.
+    - Licença: só a do próprio usuário (decisão do usuário, 11/11/2026: nada de licença gerada). O shell procura
+      `ux0:pspemu/PSP/LICENSE/<content id do eboot>.rif` (o content id que o eboot leva em DATA.PSP + 0x560; no PSone
+      de teste ele difere do content id do pacote). O instalador grava ali o .rif do console do usuário quando ele o
+      dá (CLI: `install <pkg> <seu .rif> [--act=act.dat]`; launcher: o .rif e o act.dat soltos junto com o .pkg), e o
+      act.dat em tm0:npdrm/act.dat; confere o content id do rif com o do título. Sem eles o jogo instala e o sistema
+      mostra a mensagem normal de falta de licença (C0-11136-2). Falta: os campos opcionais no diálogo do launcher.
     Para o trabalho do pspemu: o pspemu de verdade (NPXS10028) abre o EBOOT.PBP NPDRM e pede a licença
-    (`sceCompatSetRif` aponta para `ux0:pspemu/PSP/LICENSE/<content id>.rif`) e a ativação; sem elas o firmware de
-    fábrica recusa. Use o EBOOT.PBP (é o que o firmware roda) e faça o HLE do lado NpDrm/SceCompat aceitar a falta de
-    licença como o NoPspEmuDrm faz (a chave de versão sai do próprio eboot/EDAT, sem rif nem act.dat; KEYS.BIN já
-    traz a do PS1). A ISO é a forma do Adrenaline/PPSSPP, mantida para referência e conferência (dá para desligar com
-    `--no-iso`; dobra o espaço em disco). Validado: testes `PspPkgInstallTests` (pacotes sintéticos montados no
-    teste, `PspPkgFixture`: detecção de cada tipo, layout, ISO decifrada bloco a bloco, KEYS.BIN, assinatura, DLC,
-    nomes que saem da pasta recusados, Vita sem licença recusado, CMAC pelos vetores da RFC 4493, pacote PS1 no
+    (`sceCompatSetRif` aponta para `ux0:pspemu/PSP/LICENSE/<content id>.rif`) e a ativação. Use o EBOOT.PBP (é o que
+    o firmware roda) com a licença do usuário. Validado: testes `PspPkgInstallTests` (pacotes sintéticos montados no
+    teste, `PspPkgFixture`: detecção de cada tipo, layout, assinatura, DLC, licença do usuário,
+    nomes que saem da pasta recusados, Vita sem licença recusado, pacote PS1 no
     formato PS3). Com pacotes reais do usuário (só leitura, instalados numa pasta de dados de teste): um jogo de PSP
-    (0,5 GB) instala em 36 s pelo CLI sem licença; a ISO decifrada é ISO 9660 válida (CD001, "PSP GAME", o volume de
-    287.968 setores bate com o tamanho do arquivo, UMD_DATA.BIN/PARAM.SFO/EBOOT.BIN dentro) e o EBOOT.PBP instalado
-    é o NPUMDIMG original; no `boot-shell` (shell de verdade, sem cabeça) a reconstrução do banco (dbrecovery) pôs a
+    (0,5 GB) instala em 36 s pelo CLI sem licença; o EBOOT.PBP instalado é o NPUMDIMG original; no `boot-shell` (shell de verdade, sem cabeça) a reconstrução do banco (dbrecovery) pôs a
     bolha do jogo na tela inicial com o ícone e o nome. Um PSone Classic real veio no formato PS3 (cabeçalho tipo 1,
     content type 1, arquivos em `<ID>/EBOOT.PBP`, tudo na chave PS3, sem PARAM.SFO próprio; lusid1/pkg2zip trata
-    igual): `PkgReader` reconhece esse formato; instala em 2 s (EBOOT.PBP com PSISOIMG, DOCUMENT.DAT, KEYS.BIN,
+    igual): `PkgReader` reconhece esse formato; instala em 2 s (EBOOT.PBP com PSISOIMG, DOCUMENT.DAT,
     `__sce_ebootpbp`). Com os dois instalados, o shell mostra as duas bolhas na mesma página (nomes certos).
     As duas diferenças vistas no shell (11/11/2026):
     - "Você deve atualizar o software de sistema para a versão - ou posterior" ao tocar na bolha do PSone: o shell
@@ -921,7 +922,41 @@ Lista de itens futuros do VitaSharp. Marque `[x]` quando um item for concluído.
     - A bolha do PSone sem ícone é o firmware: o shell monta o ícone da bolha (ICON0 sobre vs0:vsh/game/psp_icon_base.raw,
       gravado em ur0:appmeta/<ID>/icon0.dds) e, para a categoria ME (PSone), recusa um ICON0 com mais de 80 pixels de
       largura (erro 0x80101134; PSP: até 144); o ICON0 desse eboot é 144x80, então o firmware não gera o ícone. Não é
-      um defeito do emulador nem da instalação (não mexemos nos arquivos do jogo).
+      um defeito do emulador nem da instalação (não mexemos nos arquivos do jogo). Ponto em aberto (o lead lembra que
+      no Vita de verdade as bolhas de PSone têm ícone): ver se o caminho de instalação da loja (promoter,
+      ux0:pspemu/temp/promote) grava outro ícone; a montagem do ícone no shell é uma só (FUN_81037978, chamada pelo
+      dbrecovery e pela promoção).
+  - Do toque em "Iniciar" até o pspemu de verdade (11/11/2026, com os dois jogos reais de teste, um de PSP e um PSone):
+    1. Licença: o shell (FUN_8101bd12/FUN_8101f8b2) lê o content id do eboot (DATA.PSP + 0x560), abre
+       `ux0:pspemu/PSP/LICENSE/<content id>.rif` e chama `_sceNpDrmGetRifInfo`; sem o arquivo: C0-11136-2 (a validação
+       abaixo usou um rif de teste numa pasta de dados de teste, fora do repositório). A forma
+       syscall do GetRifInfo é (rif, tamanho, checkSign, ponteiro para os outros 9 argumentos); o HLE agora lê o rif
+       (content id, conta, versão) e devolve validade de 0 a 0x7FFFFFFFFFFFFFFF ("sem expiração"; com a ordem errada
+       dos ponteiros o shell dizia "ainda não atingiu a data de início").
+    2. O shell inicia `vs0:app/NPXS10028/eboot.bin` (sceAppMgrLaunchAppByPath4, com o título do jogo) com o parâmetro
+       "originalpath=ux0:pspemu/PSP/GAME/<ID>&selfpath=.../EBOOT.PBP&discid=<ID>&parentallevel=3&gamedataid=&appver=00.00&bootable=1&category=ME"
+       (para PSP, "EG"). O HLE não repassava esse parâmetro ao processo novo: o pspemu lia "" e saía com 0x80010016;
+       corrigido (sceAppMgrGetAppParam devolve o parâmetro do launch).
+    3. O pspemu de verdade sobe: escolhe 444 MHz, cria as threads (ScePspemuMain, TitleInfo, ErrDlg, PrepareSuspend,
+       PromoteRequest), inicia o GXM (framebuffer 480x272), pega a janela de memória (`sceCompatAllocCdramWithHole`),
+       ajusta o cache das duas metades (`sceCompatCache` 0x2000000 + 0x1000000), registra os semáforos de suspensão e
+       para em `sceCompatInitEx(1)`, que o HLE recusa (0x80027205): o núcleo de compatibilidade não é emulado. O
+       pspemu então mostra o erro e volta à LiveArea (que fica com "Continuar" e a tela de aviso do PSone).
+    Onde para e o que falta: InitEx carrega `vs0:app/NPXS10028/pcff.skprx` e `os0:kd/pcbc.skprx` no CDRAM e liga um
+    núcleo ARM. Decifrados com o self2elf: o pcff é o flash0 do PSP 6.61 (fontes, `kd/*.prx` com os módulos `kermit_*`
+    que falam com o Vita), dados; o pcbc (SceSblPcbcBin, 0x5CE0 bytes) é o código do núcleo, ainda cifrado (entropia
+    7,7 bits/byte; os 0x60 primeiros bytes cifrados, cabeçalho em 0x60, o resto cifrado até 0x5400): o
+    SceSblFwLoader o decifra no processador seguro, com chaves que o projeto não tem e não vai procurar nem derivar
+    (decisão do lead, 11/11/2026). O caminho do núcleo de compatibilidade PARA aqui até existir o arquivo:
+    - O que precisa: o SceSblPcbcBin decifrado, isto é, o código que o SceSblFwLoader coloca em CDRAM+0x600000 quando o
+      pspemu chama sceCompatInitEx (o conteúdo de os0:kd/pcbc.skprx depois da decifração do processador seguro),
+      tirado pelo próprio usuário do console dele (como os arquivos do firmware): por exemplo um plugin no console do
+      usuário que, depois do sceCompatInitEx do pspemu, copia essa região de CDRAM para um arquivo.
+    - Onde pôr: `%APPDATA%\VitaSharp\fs\os0\kd\pcbc.bin` (o binário puro, como fica na memória do núcleo), ao lado do
+      pcbc.skprx do firmware instalado. Nada disso vai para o repositório.
+    - Com ele: (a) o InitEx do HLE carrega o pcbc.bin em CDRAM+0x600000 e o pcff (já decifrável pelo self2elf, é
+      dado) em CDRAM+0x3000000; (b) emular esse núcleo ARM (bare-metal, CDRAM, o bloco compartilhado dos
+      pedidos/interrupções do SceCompat descrito acima) e o lado PSP (Allegrex) que o pcff traz. Os dois jogos de teste param nesse ponto (o de PSP chama antes também `sceCompatFrameBufferInit`).
 - [ ] Emular tudo o que for possível do Vita (diretriz do usuário, 10/11/2026): além dos jogos e do sistema, listar
   os recursos do aparelho ainda não emulados (ex.: PSP, PS Mobile/PSM, Remote Play/PS TV, Near, Party, Content
   Manager, câmera/AR, apps de vídeo/música/browser) e abrir um item por recurso com o caminho (LLE do módulo real +

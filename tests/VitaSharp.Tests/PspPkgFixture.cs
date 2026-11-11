@@ -15,12 +15,6 @@ public static class PspPkgFixture
 {
     static readonly byte[] PkgPs3 = Convert.FromHexString("2E7B71D7C9C9A14EA3221F188828B8F8");
     static readonly byte[] PkgPsp = Convert.FromHexString("07F2C68290B50D2C33818D709B60E62B");
-    static readonly byte[] Key38 = Convert.FromHexString("12468D7E1C42209BBA5426835EB03303");
-    static readonly byte[] Key39 = Convert.FromHexString("C43BB6D653EE67493EA95FBC0CED6F8A");
-    static readonly byte[] Key63 = Convert.FromHexString("9C9B1372F8C640CF1C62F5D592DDB582");
-    static readonly byte[] Hash3 = Convert.FromHexString("E350ED1D910A1FD029BB1C3EF34077FB");
-    static readonly byte[] Hash4 = Convert.FromHexString("135FA47CAB395BA476B8CCA98F3A0445");
-    static readonly byte[] Hash5 = Convert.FromHexString("678D7FA32A9CA0D1508AD8385E4B017E");
 
     public record struct Item(string Name, byte[]? Data, byte PspType = 0x90);
 
@@ -147,72 +141,13 @@ public static class PspPkgFixture
         return pbp;
     }
 
-    /// <summary>
-    /// An NPUMDIMG DATA.PSAR holding <paramref name="sectors"/> (2048 bytes each), one sector per block: block i is
-    /// encrypted unless <paramref name="plainBlock"/> == i (table flag 4). The header's key seed (0xC0) is solved so the
-    /// derived IV is a chosen one, which lets the test encrypt the header fields it needs.
-    /// </summary>
-    public static byte[] UmdImage(IReadOnlyList<byte[]> sectors, int plainBlock = -1)
+    /// <summary>A stand-in DATA.PSAR (the magic of a PSP UMD image or a PSone image, then filler bytes): the installer
+    /// copies the eboot as it is, it never looks inside.</summary>
+    public static byte[] Psar(string magic, int size = 0x400)
     {
-        const int tableAt = 0x100;
-        int dataAt = tableAt + sectors.Count * 32;
-        var psar = new byte[dataAt + sectors.Count * 2048];
-        "NPUMDIMG"u8.CopyTo(psar);
-        BinaryPrimitives.WriteUInt32LittleEndian(psar.AsSpan(0xC), 1); // sectors per block
-        for (int i = 0x10; i < 0x40; i++) psar[i] = (byte)i;
-        for (int i = 0xA0; i < 0xC0; i++) psar[i] = (byte)(i * 3);
-
-        var iv = Convert.FromHexString("00112233445566778899AABBCCDDEEFF");
-        using var cipher = new PspCrypto.BbCipher(Key63, iv);
-        var fields = new byte[0x60]; // header 0x40..0xA0
-        BinaryPrimitives.WriteUInt32LittleEndian(fields.AsSpan(0x54 - 0x40), 0);                         // first LBA
-        BinaryPrimitives.WriteUInt32LittleEndian(fields.AsSpan(0x64 - 0x40), (uint)sectors.Count - 1);   // last LBA
-        BinaryPrimitives.WriteUInt32LittleEndian(fields.AsSpan(0x6C - 0x40), tableAt);                    // offset table
-        cipher.Decrypt(fields, 0); // a xor stream: decrypting encrypts
-        fields.CopyTo(psar, 0x40);
-
-        // seed at 0xC0 so that SectionCipher's derived IV is iv
-        var mac = PspCrypto.HeaderMac(psar, 0xC0);
-        var x = new byte[16];
-        var ivh4 = new byte[16];
-        for (int i = 0; i < 16; i++) ivh4[i] = (byte)(iv[i] ^ Hash4[i]);
-        AesUtil.EcbEncrypt(Key39, ivh4, x);
-        for (int i = 0; i < 16; i++) x[i] ^= (byte)(mac[i] ^ psar[0xA0 + i] ^ Hash3[i] ^ Hash5[i]);
-        var seed = new byte[16];
-        AesUtil.EcbEncrypt(Key38, x, seed);
-        AesUtil.EcbEncrypt(Key63, seed, seed);
-        seed.CopyTo(psar, 0xC0);
-
-        for (int b = 0; b < sectors.Count; b++)
-        {
-            uint offset = (uint)(dataAt + b * 2048), size = 2048, flags = b == plainBlock ? 4u : 0u;
-            uint t0 = 0x11111111u * (uint)(b + 1), t1 = 0x2468ACE0u + (uint)b, t2 = 0x0F0F0F0Fu ^ (uint)b, t3 = 0x5A5A5A5Au;
-            var e = psar.AsSpan(tableAt + b * 32);
-            uint[] t = [t0, t1, t2, t3, offset ^ t2 ^ t3, size ^ t1 ^ t2, flags ^ t0 ^ t3, 0];
-            for (int k = 0; k < 8; k++) BinaryPrimitives.WriteUInt32LittleEndian(e[(k * 4)..], t[k]);
-            var data = (byte[])sectors[b].Clone();
-            if (flags == 0) cipher.Decrypt(data, offset / 16);
-            data.CopyTo(psar, offset);
-        }
+        var psar = new byte[size];
+        for (int i = 0; i < size; i++) psar[i] = (byte)(i * 7 + 3);
+        Encoding.ASCII.GetBytes(magic).CopyTo(psar, 0);
         return psar;
-    }
-
-    /// <summary>A PSISOIMG DATA.PSAR whose PGD key header sits at +0x400, and the KEYS.BIN it implies.</summary>
-    public static (byte[] Psar, byte[] KeysBin) PsoneImage()
-    {
-        var psar = new byte[0x400 + 0x90 + 0x100];
-        "PSISOIMG0000"u8.CopyTo(psar);
-        var pgd = psar.AsSpan(0x400, 0x90);
-        "\0PGD"u8.CopyTo(pgd);
-        BinaryPrimitives.WriteUInt32LittleEndian(pgd[4..], 1);
-        BinaryPrimitives.WriteUInt32LittleEndian(pgd[8..], 1);
-        for (int i = 0x10; i < 0x90; i++) pgd[i] = (byte)(i ^ 0x5C);
-        // KEYS.BIN = CMAC_38(pgd[0..0x70]) ^ AES-dec_38(pgd[0x70..0x80]) ^ amctrl hash key 3 (lusid1/pkg2zip)
-        var mac = PspCrypto.Cmac(Key38, pgd[..0x70]);
-        var tmp = new byte[16];
-        AesUtil.EcbDecrypt(Key38, pgd.Slice(0x70, 16), tmp);
-        var keys = new byte[16];
-        for (int i = 0; i < 16; i++) keys[i] = (byte)(mac[i] ^ tmp[i] ^ Hash3[i]);
-        return (psar, keys);
     }
 }
