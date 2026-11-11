@@ -9,6 +9,14 @@ public sealed record PspInstallOptions
     /// <summary>Also write the decrypted UMD image of a PSP game to ux0:pspemu/ISO (what pkg2zip produces; the stock
     /// PSP emulator boots the NPDRM EBOOT.PBP instead, so this is a second copy of the game).</summary>
     public bool DecryptedIso { get; init; } = true;
+
+    /// <summary>The user's own license for the title (the .rif from their console's ux0:pspemu/PSP/LICENSE), installed as
+    /// ux0:pspemu/PSP/LICENSE/&lt;content id&gt;.rif; its content id must be the title's. Without one the title installs and
+    /// the system shows its normal "no license" message when it is started.</summary>
+    public byte[]? License { get; init; }
+
+    /// <summary>The user's console activation data (tm0:npdrm/act.dat from their console), installed as tm0:npdrm/act.dat.</summary>
+    public byte[]? ActDat { get; init; }
 }
 
 /// <summary>
@@ -25,7 +33,9 @@ public sealed record PspInstallOptions
 /// <item>PSone Classic: ux0:pspemu/PSP/GAME/&lt;DISC_ID&gt;/EBOOT.PBP, DOCUMENT.DAT, KEYS.BIN (the version key, which
 /// stands in for the license, lusid1/pkg2zip) and __sce_ebootpbp; texture.enc (PS3 upscaling data) in ux0:ps1emu.</item>
 /// </list>
-/// No rif is written: the title has none (see docs/roadmap.md, the PSP item, for what the PSP emulator needs).
+/// The shell reads the title's license from ux0:pspemu/PSP/LICENSE/&lt;content id&gt;.rif before it starts it (the content id
+/// the eboot carries at DATA.PSP + 0x560): the user's own license and act.dat go there when given
+/// (<see cref="PspInstallOptions.License"/>, <see cref="PspInstallOptions.ActDat"/>).
 /// </summary>
 public static class PspPkgInstaller
 {
@@ -55,6 +65,16 @@ public static class PspPkgInstaller
         if (kind is not (PkgKind.PspDlc or PkgKind.PspTheme) && eboot == null)
             throw new InvalidDataException($"The {kind.Describe()} package {pkg.ContentId} has no USRDIR/CONTENT/EBOOT.PBP");
 
+        // the license is named after the content id the eboot carries (DATA.PSP + 0x560, what the shell reads before it
+        // starts the title), which can differ from the package's
+        string licenseId = eboot != null && EbootContentId(pkg, eboot) is { } ec ? ec : pkg.ContentId;
+        if (options.License is { } lic)
+        {
+            if (lic.Length < 0x40) throw new InvalidDataException("The license file is too small to be a PSP rif");
+            string licId = CString(lic.AsSpan(0x10, 0x30));
+            if (licId != licenseId)
+                throw new InvalidDataException($"The license is for {licId}, the title is {licenseId}");
+        }
         string pspemu = Path.Combine(ux0Root, "pspemu");
         string dest = kind == PkgKind.PspTheme ? Path.Combine(pspemu, "PSP", "THEME") : Path.Combine(pspemu, "PSP", "GAME", id);
         log?.Invoke($"{kind.Describe()} {id} \"{title}\" ({pkg.ContentId}): no license needed");
@@ -123,6 +143,27 @@ public static class PspPkgInstaller
                 File.WriteAllBytes(keysPath, keys);
                 log?.Invoke($"wrote {Path.GetRelativePath(ux0Root, keysPath)} (version key)");
             }
+            // the license is named after the content id the eboot carries (DATA.PSP + 0x560, what the shell reads before
+            // it starts the title), which can differ from the package's
+            if (options.License is { } rif && kind != PkgKind.PspTheme)
+            {
+                var rifPath = Path.Combine(pspemu, "PSP", "LICENSE", licenseId + ".rif");
+                Directory.CreateDirectory(Path.GetDirectoryName(rifPath)!);
+                written.Add(rifPath);
+                File.WriteAllBytes(rifPath, rif);
+                log?.Invoke($"wrote {Path.GetRelativePath(ux0Root, rifPath)} (the user's license)");
+            }
+            if (options.ActDat is { } act)
+            {
+                // the console's activation data: tm0:npdrm/act.dat (next to ux0 in the virtual file system)
+                var actPath = Path.Combine(Path.GetDirectoryName(Path.GetFullPath(ux0Root).TrimEnd(Path.DirectorySeparatorChar))!, "tm0", "npdrm", "act.dat");
+                Directory.CreateDirectory(Path.GetDirectoryName(actPath)!);
+                File.WriteAllBytes(actPath, act);
+                log?.Invoke("wrote tm0:npdrm/act.dat (the user's activation data)");
+            }
+            else if (options.License == null && kind is not (PkgKind.PspTheme or PkgKind.PspDlc)
+                     && !File.Exists(Path.Combine(pspemu, "PSP", "LICENSE", licenseId + ".rif")))
+                log?.Invoke($"no license for {licenseId}: the title is installed, the system will say it has no license");
             if (iso)
             {
                 isoPath = Path.Combine(pspemu, "ISO", $"{SafeFileName(title)} [{id}].iso");
@@ -220,6 +261,20 @@ public static class PspPkgInstaller
     {
         PbpHeader(pkg, eboot);
         return EbootSfo(pkg, eboot)?.GetString("DISC_ID") ?? "";
+    }
+
+    /// <summary>The content id an NPDRM eboot carries at DATA.PSP + 0x560 (PSP and PSone alike), or null.</summary>
+    static string? EbootContentId(PkgReader pkg, PkgEntry eboot)
+    {
+        if (eboot.DataSize < 0x28) return null;
+        Span<byte> h = stackalloc byte[0x28];
+        pkg.ReadAt(eboot, 0, h);
+        uint dataPsp = U32LE(h, 0x20);
+        if (U32LE(h, 0) != 0x50425000 || dataPsp + 0x560UL + 0x30 > eboot.DataSize) return null;
+        var id = new byte[0x30];
+        pkg.ReadAt(eboot, dataPsp + 0x560, id);
+        string s = CString(id);
+        return s.Length == 36 && s.All(c => char.IsAsciiLetterOrDigit(c) || c is '-' or '_') ? s : null;
     }
 
     static bool IsUmdImage(PkgReader pkg, PkgEntry eboot)

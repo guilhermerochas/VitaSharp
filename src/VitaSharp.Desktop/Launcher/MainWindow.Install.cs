@@ -248,7 +248,7 @@ public sealed partial class MainWindow
         var lic = items.FirstOrDefault(p => p.EndsWith(".bin", StringComparison.OrdinalIgnoreCase) || p.EndsWith(".rif", StringComparison.OrdinalIgnoreCase));
         var archives = items.Where(p => File.Exists(p) && (p.EndsWith(".vpk", StringComparison.OrdinalIgnoreCase) || p.EndsWith(".zip", StringComparison.OrdinalIgnoreCase))).ToList();
         if (archives.Count > 0) foreach (var a in archives) EnqueueVpk(a);
-        else if (pkg != null) await QueuePkg(pkg, lic);
+        else if (pkg != null) await QueuePkg(pkg, lic, items.FirstOrDefault(p => Path.GetFileName(p).Equals("act.dat", StringComparison.OrdinalIgnoreCase)));
         else foreach (var dir in items.Where(Directory.Exists)) await EnqueueFolder(dir);
     }
 
@@ -308,12 +308,13 @@ public sealed partial class MainWindow
     });
 
     /// <summary>A PSP or PSone Classic package: no license to ask for, it goes to ux0:pspemu.</summary>
-    void EnqueuePspPkg(string pkg, PkgInfo info) => Enqueue(new InstallJob
+    void EnqueuePspPkg(string pkg, PkgInfo info, string? rif = null, string? act = null) => Enqueue(new InstallJob
     {
         Name = Path.GetFileName(pkg),
         Work = async (job, ct) =>
         {
-            var t = await Task.Run(() => PkgInstaller.InstallWithoutLicense(pkg, Program.Ux0, null,
+            var t = await Task.Run(() => PkgInstaller.InstallWithoutLicense(pkg, Program.Ux0,
+                new PspInstallOptions { License = rif != null ? File.ReadAllBytes(rif) : null, ActDat = act != null ? File.ReadAllBytes(act) : null },
                 msg => Dispatcher.UIThread.Post(() => AppendLog(msg)), p => Report(job, p), ct), ct);
             AppendLog($"Installed {t.TitleId} \"{t.Title}\" ({info.Description}) -> {t.Path}");
             if (t.IsoPath != null) AppendLog($"Decrypted UMD image -> {t.IsoPath}");
@@ -323,8 +324,8 @@ public sealed partial class MainWindow
     });
 
     /// <summary>A .pkg picked or dropped (with the license dropped next to it, if any): reads what it is, installs a
-    /// PSP/PSone package right away and asks for the license of a PS Vita one. False when nothing was queued.</summary>
-    async Task<bool> QueuePkg(string pkg, string? lic)
+    /// PSP/PSone package right away (with the user's own .rif and act.dat dropped with it) and asks for the license of a PS Vita one. False when nothing was queued.</summary>
+    async Task<bool> QueuePkg(string pkg, string? lic, string? act = null)
     {
         PkgInfo info;
         try { info = await Task.Run(() => PkgInstaller.Inspect(pkg)); }
@@ -338,7 +339,7 @@ public sealed partial class MainWindow
         {
             SetStatus(S.PkgNoLicense(info));
             AppendLog(S.PkgNoLicense(info));
-            EnqueuePspPkg(pkg, info);
+            EnqueuePspPkg(pkg, info, lic, act); // the user's own license and act.dat, when dropped with the package
             return true;
         }
         lic ??= await AskPkgLicense(pkg, info);

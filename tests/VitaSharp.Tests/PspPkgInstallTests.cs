@@ -135,6 +135,47 @@ public class PspPkgInstallTests
         finally { dir.Delete(true); }
     }
 
+    /// <summary>A license-shaped test file (a header and the content id at 0x10; not a real license).</summary>
+    static byte[] TestRif(string contentId)
+    {
+        var rif = new byte[0x98];
+        System.Text.Encoding.ASCII.GetBytes(contentId).CopyTo(rif, 0x10);
+        for (int i = 0x40; i < rif.Length; i++) rif[i] = (byte)i;
+        return rif;
+    }
+
+    [Fact]
+    public void InstallsTheUsersOwnLicenseAndActivation()
+    {
+        var (bytes, _, _) = PspGame();
+        var (dir, pkg, ux0) = Write(bytes);
+        try
+        {
+            var rif = TestRif(PspContent);
+            var act = Enumerable.Range(0, 0x1040).Select(i => (byte)i).ToArray();
+            PkgInstaller.InstallWithoutLicense(pkg, ux0, new PspInstallOptions { DecryptedIso = false, License = rif, ActDat = act });
+            // named after the eboot's content id (the fixture's eboot has none: the package's)
+            Assert.Equal(rif, File.ReadAllBytes(Path.Combine(ux0, "pspemu", "PSP", "LICENSE", PspContent + ".rif")));
+            Assert.Equal(act, File.ReadAllBytes(Path.Combine(dir.FullName, "tm0", "npdrm", "act.dat")));
+        }
+        finally { dir.Delete(true); }
+    }
+
+    [Fact]
+    public void LicenseOfAnotherTitleIsRefused()
+    {
+        var (bytes, _, _) = PspGame();
+        var (dir, pkg, ux0) = Write(bytes);
+        try
+        {
+            var e = Assert.Throws<InvalidDataException>(() => PkgInstaller.InstallWithoutLicense(pkg, ux0,
+                new PspInstallOptions { License = TestRif("UP0001-NPUZ99999_00-0000000000000009") }));
+            Assert.Contains(PspContent, e.Message);
+            Assert.False(Directory.Exists(Path.Combine(ux0, "pspemu", "PSP", "GAME")));
+        }
+        finally { dir.Delete(true); }
+    }
+
     [Fact]
     public void PspPackageGivenALicenseIgnoresIt()
     {

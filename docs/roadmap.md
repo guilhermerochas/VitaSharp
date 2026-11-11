@@ -894,11 +894,12 @@ Lista de itens futuros do VitaSharp. Marque `[x]` quando um item for concluído.
       (a chave de versão de 16 bytes tirada do cabeçalho PGD, lusid1/pkg2zip) e `__sce_ebootpbp` (tipo 2);
       `texture.enc` vai para `ux0:ps1emu/<DISC_ID>`. Multidisco (`__sce_discinfo`, tipo 3) ainda não é gerado.
     - DLC de PSP: os arquivos em `ux0:pspemu/PSP/GAME/<pasta do bloco 10>/`; tema: `ux0:pspemu/PSP/THEME`.
-    - Licença: nenhuma é gravada. O shell procura `ux0:pspemu/PSP/LICENSE/<content id do eboot>.rif` (o content id
-      que o eboot leva em DATA.PSP + 0x560; no PSone de teste ele difere do content id do pacote): a licença do
-      próprio usuário (o rif do console dele, com o act.dat do console) vai ali. Sem ela o shell recusa o título
-      (C0-11136-2). Gerar uma licença sem chaves para passar dessa checagem espera a decisão do usuário (lead,
-      11/11/2026).
+    - Licença: só a do próprio usuário (decisão do usuário, 11/11/2026: nada de licença gerada). O shell procura
+      `ux0:pspemu/PSP/LICENSE/<content id do eboot>.rif` (o content id que o eboot leva em DATA.PSP + 0x560; no PSone
+      de teste ele difere do content id do pacote). O instalador grava ali o .rif do console do usuário quando ele o
+      dá (CLI: `install <pkg> <seu .rif> [--act=act.dat]`; launcher: o .rif e o act.dat soltos junto com o .pkg), e o
+      act.dat em tm0:npdrm/act.dat; confere o content id do rif com o do título. Sem eles o jogo instala e o sistema
+      mostra a mensagem normal de falta de licença (C0-11136-2). Falta: os campos opcionais no diálogo do launcher.
     Para o trabalho do pspemu: o pspemu de verdade (NPXS10028) abre o EBOOT.PBP NPDRM e pede a licença
     (`sceCompatSetRif` aponta para `ux0:pspemu/PSP/LICENSE/<content id>.rif`) e a ativação. Use o EBOOT.PBP (é o que
     o firmware roda) com a licença do usuário; KEYS.BIN traz a chave de versão do PS1. A ISO é a forma do Adrenaline/PPSSPP, mantida para referência e conferência (dá para desligar com
