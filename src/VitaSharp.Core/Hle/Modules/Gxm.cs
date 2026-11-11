@@ -2009,7 +2009,12 @@ public sealed partial class Gxm : HleModule
     [Hle(Nid = 0x1625D348, Library = "SceGxm")]
     int sceGxmPrecomputedVertexStateSetTexture(uint s, uint i, uint t) => PrecomputedSetTexture(s, i, t);
     [Hle] int sceGxmPrecomputedFragmentStateSetTexture(uint s, uint i, uint t) => PrecomputedSetTexture(s, i, t);
-    [Hle] int sceGxmPrecomputedVertexStateSetAllTextures(uint s, uint t) => PrecomputedSetAllTextures(s, t);
+    // 0x8FF68274: old-SDK NID of the same function, the 0x1625D348 counterpart (Wipeout 2048 imports it). In
+    // libgxm_es4 3.74 it fills the vertex state's texture words from the array exactly like 0xC40C9127, only without
+    // that NID's per-texture validation: a null state or array is INVALID_POINTER, anything else succeeds.
+    [Hle]
+    [Hle(Nid = 0x8FF68274, Library = "SceGxm")]
+    int sceGxmPrecomputedVertexStateSetAllTextures(uint s, uint t) => PrecomputedSetAllTextures(s, t);
     [Hle] int sceGxmPrecomputedFragmentStateSetAllTextures(uint s, uint t) => PrecomputedSetAllTextures(s, t);
     [Hle] int sceGxmPrecomputedVertexStateSetUniformBuffer(uint s, uint i, uint d) => PrecomputedSetUniformBuffer(s, i, d);
     [Hle] int sceGxmPrecomputedFragmentStateSetUniformBuffer(uint s, uint i, uint d) => PrecomputedSetUniformBuffer(s, i, d);

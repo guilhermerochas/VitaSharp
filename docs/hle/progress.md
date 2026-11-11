@@ -11,10 +11,10 @@ How many of the functions that the PS Vita firmware 3.74 exports to user code (t
 
 | Group | Covered | Real | Default | LLE | Total | % |
 |---|---:|---:|---:|---:|---:|---:|
-| Games imports | 2,048 | 2,048 | 0 | 0 | 2,049 | 99.9% |
+| Games imports | 2,049 | 2,049 | 0 | 0 | 2,049 | 100% |
 | System imports | 3,785 | 3,576 | 209 | 0 | 7,373 | 51.3% |
 | General | 3,595 | 3,405 | 190 | 0 | 9,984 | 36% |
-| All firmware 3.74 exports | 9,428 | 8,893 | 399 | 136 | 19,406 | 48.5% |
+| All firmware 3.74 exports | 9,429 | 8,894 | 399 | 136 | 19,406 | 48.5% |
 | VitaSDK user functions | 6,957 | 6,355 | 401 | 201 | 7,006 | 99.3% |
 
 ## Libraries provided by LLE
@@ -116,7 +116,7 @@ How many of the functions that the PS Vita firmware 3.74 exports to user code (t
 | SceGpuEs4User | `os0:us/libgpu_es4.suprx` | 1 / 49 | 2% | - | - | 1 / 42 |
 | SceGpuEs4UserForVsh | `os0:us/libgpu_es4.suprx` | 0 / 5 | 0% | - | - | 0 / 5 |
 | SceGriefReportDialog | `vs0:app/NPXS10065/grief_report_dialog.suprx` | 2 / 9 | 22.2% | - | - | 0 / 7 |
-| SceGxm | `os0:us/libgxm_es4.suprx` | 266 / 267 | 99.6% | - | 244 / 245 | - |
+| SceGxm | `os0:us/libgxm_es4.suprx` | 267 / 267 | 100% | - | 245 / 245 | - |
 | SceGxmInternal | `os0:us/libgxm_es4.suprx` | 13 / 16 | 81.2% | - | - | 10 / 10 |
 | SceGxmInternalForGles | `os0:us/libgxm_es4.suprx` | 0 / 1 | 0% | - | - | - |
 | SceGxmInternalForReplay | `os0:us/libgxm_es4.suprx` | 1 / 1 | 100% | - | - | - |
