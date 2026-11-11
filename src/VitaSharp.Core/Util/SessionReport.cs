@@ -96,6 +96,7 @@ public static class SessionReport
             yield return $"CPU backend report: native verify: {VitaSharp.Core.Cpu.Native.NativeVerifier.Verified} block runs verified, {VitaSharp.Core.Cpu.Native.NativeVerifier.Mismatches} mismatches ({VitaSharp.Core.Cpu.Native.NativeVerifier.SimdMismatches} in blocks with NEON/VFP ops), {VitaSharp.Core.Cpu.Native.NativeVerifier.Skipped} interpreted (unloggable stores)";
         if (VitaSharp.Core.Cpu.Jit.Chain.Any(c => c is VitaSharp.Core.Cpu.Backends.NativeX64Compiler or VitaSharp.Core.Cpu.Backends.NativeArm64Compiler))
             yield return $"CPU backend report: {VitaSharp.Core.Cpu.Backends.NativeX64Compiler.Report()}";
+        yield return $"CPU backend report: {VitaSharp.Core.Cpu.CpuCore.TierReport()}";
     }
 
     /// <summary>Guest cycles per frame of the six busiest threads.</summary>

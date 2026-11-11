@@ -34,9 +34,19 @@ public sealed class BackendStats
     /// <summary>Per-phase compile time (native backends).</summary>
     public CompilePhases? Phases;
 
+    /// <summary>Rejected blocks by reason (<see cref="RejectReason"/>), with their guest instructions.</summary>
+    public readonly System.Collections.Concurrent.ConcurrentDictionary<string, (long Blocks, long Instructions)> Rejects = new();
+
+    /// <summary>Why the last <see cref="IBlockCompiler.Compile"/> on this thread returned null (set by the backend).</summary>
+    [ThreadStatic] public static string? RejectReason;
+
+    public void AddReject(string reason, int instructions) =>
+        Rejects.AddOrUpdate(reason, (1, instructions), (_, v) => (v.Blocks + 1, v.Instructions + instructions));
+
     public override string ToString() =>
         $"{Blocks} blocks ({Instructions} instructions, {Ticks * 1000.0 / System.Diagnostics.Stopwatch.Frequency:F0} ms compiling, " +
         $"{Ticks * 1e6 / System.Diagnostics.Stopwatch.Frequency / Math.Max(1, Blocks):F0} us/block, {Rejected} rejected" +
+        (Rejects.IsEmpty ? "" : $" [{string.Join(", ", Rejects.OrderByDescending(kv => kv.Value.Blocks).Select(kv => $"{kv.Key}: {kv.Value.Blocks} blocks, {kv.Value.Instructions} instructions"))}]") +
         (Phases is { Blocks: > 0 } p ? $"; {p}" : "") + ")";
 }
 

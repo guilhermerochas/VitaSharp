@@ -149,6 +149,7 @@ public static unsafe class Jit
         if (b.Tier >= chain.Length) { b.JitState = 3; return; }
         var backend = chain[b.Tier];
         long t0 = System.Diagnostics.Stopwatch.GetTimestamp();
+        BackendStats.RejectReason = null;
 #if VITASHARP_DEVELOPER
         Util.Developer.DevTrace.Begin("jit compile");
         var cb = backend.Compile(b);
@@ -164,6 +165,7 @@ public static unsafe class Jit
         if (cb == null)
         {
             Interlocked.Increment(ref st.Rejected);
+            st.AddReject(BackendStats.RejectReason ?? "unspecified", b.Insts.Length);
             b.Tier++;
             b.HotAt = NextThreshold(b);
             b.JitState = b.Tier < chain.Length ? 0 : 3; // the next backend takes it once the block reaches its threshold

@@ -92,7 +92,7 @@ public sealed unsafe class NativeArm64Compiler : IBlockCompiler
                 *(int*)tierUp = (int)Math.Clamp(IlJitCompiler.Instance.HotInstructions / Math.Max(1, b.Insts.Length), 64, int.MaxValue);
             }
         }
-        if (!em.Prepare(ir, stubs, k => (nint)(slots + k * stride), tierUp)) return null;
+        if (!em.Prepare(ir, stubs, k => (nint)(slots + k * stride), tierUp)) { BackendStats.RejectReason = "register allocation out of spill slots"; return null; }
         long t3 = Stopwatch.GetTimestamp();
         int size = 0;
         long encode = 0;

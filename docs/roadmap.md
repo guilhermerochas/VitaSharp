@@ -157,6 +157,17 @@ Lista de itens futuros do VitaSharp. Marque `[x]` quando um item for concluído.
 
 ## Desempenho (PC)
 
+- [x] Onde o código do guest roda (perf/il-1, 11/11/2026): linha nova `CPU tiers` no relatório do fim da execução
+  (instruções executadas no código nativo, nas callouts, no backend IL e no interpretador, com o estado dos blocos
+  interpretados) e os motivos de rejeição por backend. Desktop x64, cenários inteiros (boot incluído): Killzone 99,40%
+  nativo, Uncharted 99,54%, F1 2011 99,88%, Sonic Mania 99,77%, Gravity Rush 99,61%, Silent Hill 4 98,26%, Persona 4
+  Golden 99,43%; o backend IL roda 0,00% em todos e o resto é o interpretador em blocos frios (ainda abaixo do limiar
+  de 2.000 instruções ou na fila de compilação); 0 blocos rejeitados pelo nativo (o único motivo possível é falta de
+  slots de spill). No Android a cadeia é `native > interp` (logs do laboratório: 0 rejeições, 100% inline). **Descartado
+  com esses números:** otimizar o IL emitido (cache de registradores em locais, flags preguiçosas, menos checagens de
+  memória, constantes do PC): o backend IL não roda código nos jogos, então não há fps a ganhar. Fica o modo de dump
+  (`VITASHARP_IL_DUMP`, docs/notes/il-jit.md) para quando o IL voltar a ser usado (`--cpu=il`, watchpoints).
+
 - [ ] Avaliar o .NET 11 para desempenho (pedido do usuário, 09/11/2026), desktop e Android: ler as notas
   oficiais de desempenho do .NET 11 (blog "Performance Improvements in .NET" e release notes: JIT/RyuJIT ARM64 e x64,
   NativeAOT, GC, SIMD/Vector, interop) e listar o que toca o emulador (JIT do guest em C#, renderer, HLE, áudio).

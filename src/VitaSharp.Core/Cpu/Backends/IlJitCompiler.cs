@@ -29,13 +29,38 @@ public sealed unsafe class IlJitCompiler : IBlockCompiler
     public long HotInstructions { get; set; } = 400_000;
 
     /// <summary>Null when dynamic code is unavailable (Native AOT): the dispatcher then leaves the block to the next backend.</summary>
-    public CompiledBlock? Compile(Block b) => RuntimeFeature.IsDynamicCodeSupported ? CompileDynamic(b) : null;
+    public CompiledBlock? Compile(Block b)
+    {
+        if (RuntimeFeature.IsDynamicCodeSupported) return CompileDynamic(b);
+        BackendStats.RejectReason = "no dynamic code";
+        return null;
+    }
 
     [System.Diagnostics.CodeAnalysis.RequiresDynamicCode("The IL backend emits a DynamicMethod per block (Reflection.Emit); it is skipped when dynamic code is not supported.")]
     CompiledBlock CompileDynamic(Block b)
     {
-        var dm = new DynamicMethod($"blk_{b.Start:X8}{(b.Thumb ? "t" : "a")}", typeof(void), [typeof(CpuState*)], typeof(IlJitCompiler).Module, skipVisibility: true);
-        var il = dm.GetILGenerator();
+        var dm = new DynamicMethod(IlDump.MethodName(b), typeof(void), [typeof(CpuState*)], typeof(IlJitCompiler).Module, skipVisibility: true);
+        EmitBlock(dm.GetILGenerator(), b);
+        if (CountExecutions)
+        {
+            lock (DumpLock) _dump ??= IlDump.Create(Environment.GetEnvironmentVariable(Util.EnvVars.IlDump));
+            _dump?.Add(b, il => EmitBlock(il, b));
+        }
+        var fn = dm.CreateDelegate<JitBlockFn>();
+        RuntimeHelpers.PrepareDelegate(fn); // compile to native here, off the guest thread
+        return new CompiledBlock(this, fn);
+    }
+
+    /// <summary>IL dump mode (VITASHARP_IL_DUMP=dir): the compiled blocks are also written to assemblies there.</summary>
+    static IlDump? _dump; // created by the first compile
+    static readonly Lock DumpLock = new();
+
+    /// <summary>True in IL dump mode: the dispatcher counts the executions of IL blocks for the dump's index.</summary>
+    public static readonly bool CountExecutions = !string.IsNullOrWhiteSpace(Environment.GetEnvironmentVariable(Util.EnvVars.IlDump));
+
+    /// <summary>The block's body: one handler call per instruction, guarded by its condition, then return.</summary>
+    static void EmitBlock(ILGenerator il, Block b)
+    {
         var insts = b.Insts;
         for (int i = 0; i < insts.Length; i++)
         {
@@ -61,10 +86,6 @@ public sealed unsafe class IlJitCompiler : IBlockCompiler
             if (cond) il.MarkLabel(skip);
         }
         il.Emit(OpCodes.Ret);
-
-        var fn = dm.CreateDelegate<JitBlockFn>();
-        RuntimeHelpers.PrepareDelegate(fn); // compile to native here, off the guest thread
-        return new CompiledBlock(this, fn);
     }
 
     static void EmitStorePc(ILGenerator il, uint pc)
