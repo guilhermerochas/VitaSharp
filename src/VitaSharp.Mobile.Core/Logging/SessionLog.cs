@@ -11,7 +11,7 @@ namespace VitaSharp.Mobile.Core.Logging;
 public static class SessionLog
 {
     public const int Keep = 10;
-    const string Header = "VitaSharp Android session ";
+    private const string Header = "VitaSharp Android session ";
 
     public static string Open(string dir, string tag)
     {
@@ -32,7 +32,7 @@ public static class SessionLog
                 }
                 // the file may be the one Log still has open (the app's own run): copy it, Log.OpenFile truncates it
                 using (var src = new FileStream(last, FileMode.Open, FileAccess.Read, FileShare.ReadWrite))
-                using (var dst = File.Create(dest))
+                using (FileStream dst = File.Create(dest))
                 {
                     src.CopyTo(dst);
                 }
@@ -49,7 +49,7 @@ public static class SessionLog
         return last;
     }
 
-    static string ReadTag(string path)
+    private static string ReadTag(string path)
     {
         try
         {
@@ -67,17 +67,17 @@ public static class SessionLog
         return "unknown";
     }
 
-    static string Clean(string s)
+    private static string Clean(string s)
     {
-        var c = string.Concat(s.Where(ch => char.IsAsciiLetterOrDigit(ch) || ch is '_' or '-'));
+        string c = string.Concat(s.Where(ch => char.IsAsciiLetterOrDigit(ch) || ch is '_' or '-'));
         return c.Length > 0 ? c : "unknown";
     }
 
-    static void Prune(string dir)
+    private static void Prune(string dir)
     {
         try
         {
-            foreach (var f in Directory.GetFiles(dir, "*_*.log").Select(f => new FileInfo(f)).OrderByDescending(f => f.LastWriteTimeUtc).Skip(Keep))
+            foreach (FileInfo f in Directory.GetFiles(dir, "*_*.log").Select(f => new FileInfo(f)).OrderByDescending(f => f.LastWriteTimeUtc).Skip(Keep))
             {
                 try
                 {

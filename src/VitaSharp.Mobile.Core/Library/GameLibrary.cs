@@ -50,7 +50,7 @@ public static class GameLibrary
             return list;
         }
 
-        foreach (var dir in Directory.GetDirectories(data.Apps))
+        foreach (string dir in Directory.GetDirectories(data.Apps))
         {
             if (Read(dir) is { } e)
             {
@@ -69,7 +69,7 @@ public static class GameLibrary
         }
 
         string id = Path.GetFileName(dir), title = id, version = "", category = "gd";
-        var sfoPath = Vfs.ResolveCaseInsensitive(dir, "sce_sys/param.sfo");
+        string sfoPath = Vfs.ResolveCaseInsensitive(dir, "sce_sys/param.sfo");
         try
         {
             if (File.Exists(sfoPath))
@@ -95,7 +95,7 @@ public static class GameLibrary
             }
         }
         catch (Exception e) when (e is InvalidDataException or IOException) { }
-        var icon = Vfs.ResolveCaseInsensitive(dir, "sce_sys/icon0.png");
+        string icon = Vfs.ResolveCaseInsensitive(dir, "sce_sys/icon0.png");
         return new GameEntry(id, title, version, category, dir, File.Exists(icon) ? icon : null, DirectorySize(dir));
     }
 
@@ -104,15 +104,15 @@ public static class GameLibrary
     {
         int earned = 0, total = 0;
         var grades = new Dictionary<TrophyGrade, (int Earned, int Total)>();
-        foreach (var (commId, trp) in TrophyPackage.FindSets(game.AppDir))
+        foreach ((string commId, string trp) in TrophyPackage.FindSets(game.AppDir))
         {
             if (TrophyPackage.Load(trp, commId) is not { } pkg)
             {
                 continue;
             }
 
-            var unlocked = TrophyUnlocks.Load(TrophyUnlocks.PathFor(data.Fs, commId));
-            foreach (var t in pkg.Trophies)
+            Dictionary<int, ulong> unlocked = TrophyUnlocks.Load(TrophyUnlocks.PathFor(data.Fs, commId));
+            foreach (TrophyInfo t in pkg.Trophies)
             {
                 bool got = unlocked.ContainsKey(t.Id);
                 total++;
@@ -121,7 +121,7 @@ public static class GameLibrary
                     earned++;
                 }
 
-                var g = grades.GetValueOrDefault(t.Grade);
+                (int Earned, int Total) g = grades.GetValueOrDefault(t.Grade);
                 grades[t.Grade] = (g.Earned + (got ? 1 : 0), g.Total + 1);
             }
         }
@@ -140,7 +140,7 @@ public static class GameLibrary
     /// </summary>
     public static IReadOnlyList<GameEntry> Query(IEnumerable<GameEntry> games, string search, Filter filter, Func<GameEntry, GameSettings> settings)
     {
-        var q = games.Where(g => search.Length == 0
+        IEnumerable<GameEntry> q = games.Where(g => search.Length == 0
             || g.Title.Contains(search, StringComparison.CurrentCultureIgnoreCase)
             || g.TitleId.Contains(search, StringComparison.OrdinalIgnoreCase));
         return filter switch
@@ -182,14 +182,14 @@ public static class GameLibrary
     /// "KM", "Resistance: Burning Skies" = "RBS"), or its first two letters.</summary>
     public static string Initials(string title)
     {
-        var words = title.Split([' ', ':', '-', '_', '.', '\u2122', '\u00AE'], StringSplitOptions.RemoveEmptyEntries)
+        string[] words = title.Split([' ', ':', '-', '_', '.', '\u2122', '\u00AE'], StringSplitOptions.RemoveEmptyEntries)
             .Where(w => char.IsLetterOrDigit(w[0]) && !(w.Length <= 2 && char.IsLower(w[0]))).ToArray();
         if (words.Length >= 2)
         {
             return string.Concat(words.Take(3).Select(w => char.ToUpperInvariant(w[0])));
         }
 
-        var s = words.Length == 1 ? words[0] : title;
+        string s = words.Length == 1 ? words[0] : title;
         return s.Length >= 2 ? s[..2].ToUpperInvariant() : s.ToUpperInvariant();
     }
 
@@ -206,7 +206,7 @@ public static class GameLibrary
         return palette[h % (uint)palette.Length];
     }
 
-    static long DirectorySize(string dir)
+    private static long DirectorySize(string dir)
     {
         try
         {

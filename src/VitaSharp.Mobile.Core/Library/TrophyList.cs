@@ -25,7 +25,7 @@ public sealed class TrophyList
         All, Earned, Missing
     }
 
-    TrophyList(string title, IReadOnlyList<TrophyRow> rows, TrophyProgress progress)
+    private TrophyList(string title, IReadOnlyList<TrophyRow> rows, TrophyProgress progress)
     {
         Title = title;
         Rows = rows;
@@ -36,7 +36,7 @@ public sealed class TrophyList
     {
         var rows = new List<TrophyRow>();
         string title = game.Title;
-        foreach (var (commId, trp) in TrophyPackage.FindSets(game.AppDir))
+        foreach ((string commId, string trp) in TrophyPackage.FindSets(game.AppDir))
         {
             if (TrophyPackage.Load(trp, commId, language) is not { } pkg)
             {
@@ -48,11 +48,11 @@ public sealed class TrophyList
                 title = pkg.Title;
             }
 
-            var unlocked = TrophyUnlocks.Load(TrophyUnlocks.PathFor(data.Fs, commId));
-            foreach (var t in pkg.Trophies)
+            Dictionary<int, ulong> unlocked = TrophyUnlocks.Load(TrophyUnlocks.PathFor(data.Fs, commId));
+            foreach (TrophyInfo t in pkg.Trophies)
             {
                 rows.Add(new TrophyRow(commId, t.Id, t.Grade, t.Name, t.Detail, t.Hidden,
-                    unlocked.TryGetValue(t.Id, out var tick) ? TrophyUnlocks.TickToUtc(tick) : null, pkg.TrophyIcon(t.Id)));
+                    unlocked.TryGetValue(t.Id, out ulong tick) ? TrophyUnlocks.TickToUtc(tick) : null, pkg.TrophyIcon(t.Id)));
             }
         }
         return new TrophyList(title, rows, Summarize(rows));
@@ -71,7 +71,7 @@ public sealed class TrophyList
     {
         var grades = new Dictionary<TrophyGrade, (int Earned, int Total)>();
         int earned = 0, total = 0;
-        foreach (var r in rows)
+        foreach (TrophyRow r in rows)
         {
             total++;
             if (r.Unlocked)
@@ -79,7 +79,7 @@ public sealed class TrophyList
                 earned++;
             }
 
-            var g = grades.GetValueOrDefault(r.Grade);
+            (int Earned, int Total) g = grades.GetValueOrDefault(r.Grade);
             grades[r.Grade] = (g.Earned + (r.Unlocked ? 1 : 0), g.Total + 1);
         }
         return total == 0 ? TrophyProgress.None : new TrophyProgress(earned, total, grades);

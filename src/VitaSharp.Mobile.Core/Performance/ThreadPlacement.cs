@@ -57,9 +57,9 @@ public sealed class ThreadPlacementPlanner
     /// <summary>A guest thread using at least this much of a core is hot.</summary>
     public const double HotLoad = 0.3;
 
-    readonly CpuTopology _topology;
-    int _main;
-    bool _shadersOnBig;
+    private readonly CpuTopology _topology;
+    private int _main;
+    private bool _shadersOnBig;
 
     public ThreadPlacementPlanner(CpuTopology topology)
     {
@@ -93,8 +93,8 @@ public sealed class ThreadPlacementPlanner
         var guests = threads.Where(t => t.Kind == ThreadKind.Guest).ToList();
 
         // the main thread: the busiest guest thread, kept until another one is clearly busier
-        var current = guests.FirstOrDefault(t => t.Tid == _main);
-        var busiest = guests.OrderByDescending(t => t.Load).ThenBy(t => t.Order).FirstOrDefault();
+        ThreadSample current = guests.FirstOrDefault(t => t.Tid == _main);
+        ThreadSample busiest = guests.OrderByDescending(t => t.Load).ThenBy(t => t.Order).FirstOrDefault();
         if (current.Tid == 0)
         {
             _main = guests.Count == 0 ? 0 : busiest.Load > 0 ? busiest.Tid : guests.MinBy(t => t.Order).Tid;
@@ -110,13 +110,13 @@ public sealed class ThreadPlacementPlanner
             hot.Add(_main);
             placements[_main] = Placement.Big;
         }
-        var gpu = threads.FirstOrDefault(t => t.Kind == ThreadKind.Gpu);
+        ThreadSample gpu = threads.FirstOrDefault(t => t.Kind == ThreadKind.Gpu);
         if (gpu.Tid != 0)
         {
             hot.Add(gpu.Tid);
             placements[gpu.Tid] = hot.Count <= slots ? Placement.Big : Placement.Mid;
         }
-        foreach (var g in guests.Where(g => g.Tid != _main).OrderByDescending(g => g.Load).ThenBy(g => g.Order))
+        foreach (ThreadSample g in guests.Where(g => g.Tid != _main).OrderByDescending(g => g.Load).ThenBy(g => g.Order))
         {
             if (g.Load >= HotLoad && hot.Count < slots)
             {
@@ -130,7 +130,7 @@ public sealed class ThreadPlacementPlanner
         }
 
         // idle fast-core time over the window decides where the shader workers may run (with hysteresis)
-        double hotLoad = threads.Where(t => placements.TryGetValue(t.Tid, out var p) && p == Placement.Big).Sum(t => t.Load);
+        double hotLoad = threads.Where(t => placements.TryGetValue(t.Tid, out Placement p) && p == Placement.Big).Sum(t => t.Load);
         if (_shadersOnBig && hotLoad > slots - 0.25)
         {
             _shadersOnBig = false;
@@ -140,7 +140,7 @@ public sealed class ThreadPlacementPlanner
             _shadersOnBig = true;
         }
 
-        foreach (var t in threads)
+        foreach (ThreadSample t in threads)
         {
             if (t.Kind == ThreadKind.JitWorker)
             {

@@ -82,23 +82,23 @@ public readonly record struct PcmBufferPolicy(int Capacity, int StartGrains, int
 /// </summary>
 public sealed class BufferedPcmStream : IAudioStream
 {
-    const long WriteTimeoutNanos = 200_000_000;
-    const double ReopenRetrySeconds = 1.0;
+    private const long WriteTimeoutNanos = 200_000_000;
+    private const double ReopenRetrySeconds = 1.0;
 
-    readonly PcmSinkFactory _factory;
-    readonly Action<BufferedPcmStream>? _closed;
-    readonly object _lock = new();
-    readonly LinearResampler _resampler;
-    IPcmSink? _sink;
-    PcmBufferPolicy _policy;
-    short[] _scaled = [], _resampled = [], _silence = [];
-    bool _started, _paused, _disposed, _reopen;
-    int _xrunsSeen, _underruns, _reopens;
-    long _primedFrames;
-    double _nextReopenAt;
+    private readonly PcmSinkFactory _factory;
+    private readonly Action<BufferedPcmStream>? _closed;
+    private readonly object _lock = new();
+    private readonly LinearResampler _resampler;
+    private IPcmSink? _sink;
+    private PcmBufferPolicy _policy;
+    private short[] _scaled = [], _resampled = [], _silence = [];
+    private bool _started, _paused, _disposed, _reopen;
+    private int _xrunsSeen, _underruns, _reopens;
+    private long _primedFrames;
+    private double _nextReopenAt;
     // pacing while no device is open
-    readonly Stopwatch _clock = Stopwatch.StartNew();
-    double _paceAt;
+    private readonly Stopwatch _clock = Stopwatch.StartNew();
+    private double _paceAt;
 
     public int Rate { get; }
     public int Channels { get; }
@@ -125,7 +125,7 @@ public sealed class BufferedPcmStream : IAudioStream
     public PcmBufferPolicy Policy => _policy;
     public IPcmSink? Sink => _sink;
 
-    void Open()
+    private void Open()
     {
         _sink = null;
         IPcmSink? s;
@@ -161,9 +161,9 @@ public sealed class BufferedPcmStream : IAudioStream
         Log.Info($"Audio: {Describe()}");
     }
 
-    void Close()
+    private void Close()
     {
-        var s = _sink;
+        IPcmSink? s = _sink;
         _sink = null;
         if (s == null)
         {
@@ -190,7 +190,7 @@ public sealed class BufferedPcmStream : IAudioStream
 
     public string Describe()
     {
-        var s = _sink;
+        IPcmSink? s = _sink;
         if (s == null)
         {
             return $"stream {Rate} Hz grain {Grain}: no output device, paced by the clock, underruns {Underruns}";
@@ -233,7 +233,7 @@ public sealed class BufferedPcmStream : IAudioStream
                 return;
             }
 
-            var data = Prepare(interleaved);
+            ReadOnlySpan<short> data = Prepare(interleaved);
             for (int attempt = 0; attempt < 2; attempt++)
             {
                 int r = WriteGrain(data);
@@ -259,7 +259,7 @@ public sealed class BufferedPcmStream : IAudioStream
         }
     }
 
-    void Reopen(string why)
+    private void Reopen(string why)
     {
         Volatile.Write(ref _reopen, false);
         Close();
@@ -273,7 +273,7 @@ public sealed class BufferedPcmStream : IAudioStream
     }
 
     /// <summary>Volume, then the device rate.</summary>
-    ReadOnlySpan<short> Prepare(ReadOnlySpan<short> data)
+    private ReadOnlySpan<short> Prepare(ReadOnlySpan<short> data)
     {
         float vol = Volume;
         if (vol != 1)
@@ -305,9 +305,9 @@ public sealed class BufferedPcmStream : IAudioStream
         return _resampled.AsSpan(0, frames * Channels);
     }
 
-    int WriteGrain(ReadOnlySpan<short> data)
+    private int WriteGrain(ReadOnlySpan<short> data)
     {
-        var s = _sink!;
+        IPcmSink s = _sink!;
         int frames = data.Length / Channels;
         if (_started)
         {
@@ -372,7 +372,7 @@ public sealed class BufferedPcmStream : IAudioStream
         return done;
     }
 
-    void Start(IPcmSink s)
+    private void Start(IPcmSink s)
     {
         _started = true;
         _xrunsSeen = s.XRunCount;
@@ -382,7 +382,7 @@ public sealed class BufferedPcmStream : IAudioStream
         }
     }
 
-    int WriteSilence(IPcmSink s, int frames)
+    private int WriteSilence(IPcmSink s, int frames)
     {
         int n = frames * Channels;
         if (_silence.Length < n)
@@ -394,7 +394,7 @@ public sealed class BufferedPcmStream : IAudioStream
     }
 
     /// <summary>No device: sleep for the grain's duration so the guest keeps its pace.</summary>
-    void Pace(int frames)
+    private void Pace(int frames)
     {
         double now = _clock.Elapsed.TotalSeconds;
         if (_paceAt < now - 0.1)
@@ -414,7 +414,7 @@ public sealed class BufferedPcmStream : IAudioStream
     {
         get
         {
-            var s = _sink;
+            IPcmSink? s = _sink;
             if (s == null)
             {
                 return 0;
@@ -471,10 +471,10 @@ public sealed class BufferedPcmStream : IAudioStream
 /// </summary>
 public sealed class LinearResampler(int channels)
 {
-    readonly int _channels = Math.Max(1, channels);
-    short[] _last = new short[Math.Max(1, channels)];
-    bool _haveLast;
-    double _pos, _step = 1;
+    private readonly int _channels = Math.Max(1, channels);
+    private short[] _last = new short[Math.Max(1, channels)];
+    private bool _haveLast;
+    private double _pos, _step = 1;
 
     public bool Active { get; private set; }
 

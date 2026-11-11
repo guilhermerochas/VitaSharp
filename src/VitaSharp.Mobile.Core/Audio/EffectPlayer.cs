@@ -12,7 +12,7 @@ public static class EffectPlayer
 {
     public static void Play(IPcmSink sink, PcmSound pcm, float gain = 1f)
     {
-        var data = TrophySound.Convert(pcm, sink.SampleRate, sink.Channels);
+        short[] data = TrophySound.Convert(pcm, sink.SampleRate, sink.Channels);
         if (data.Length == 0)
         {
             return;
@@ -48,7 +48,7 @@ public static class EffectPlayer
         }
         // let the device play what was queued before the stream is closed
         long target = start + data.Length / ch;
-        var until = DateTime.UtcNow.AddSeconds(2);
+        DateTime until = DateTime.UtcNow.AddSeconds(2);
         while (sink.FramesRead < target && DateTime.UtcNow < until && !sink.Disconnected)
         {
             Thread.Sleep(10);

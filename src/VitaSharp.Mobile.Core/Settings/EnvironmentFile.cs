@@ -16,9 +16,9 @@ public static class EnvironmentFile
     public static List<KeyValuePair<string, string>> Parse(string text)
     {
         var list = new List<KeyValuePair<string, string>>();
-        foreach (var raw in text.Split('\n'))
+        foreach (string raw in text.Split('\n'))
         {
-            var line = raw.Trim();
+            string line = raw.Trim();
             if (line.Length == 0 || line[0] == '#')
             {
                 continue;
@@ -59,8 +59,8 @@ public static class EnvironmentFile
             return [];
         }
 
-        var vars = Parse(File.ReadAllText(path));
-        foreach (var (name, value) in vars)
+        List<KeyValuePair<string, string>> vars = Parse(File.ReadAllText(path));
+        foreach ((string name, string value) in vars)
         {
             Environment.SetEnvironmentVariable(name, value.Length > 0 ? value : null);
         }

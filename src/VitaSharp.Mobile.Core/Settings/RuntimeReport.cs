@@ -2,6 +2,7 @@ using System.Reflection;
 using System.Runtime.CompilerServices;
 using System.Runtime.InteropServices;
 using VitaSharp.Core.Cpu;
+using VitaSharp.Core.Cpu.Backends;
 
 namespace VitaSharp.Mobile.Core.Settings;
 
@@ -40,7 +41,7 @@ public static class RuntimeReport
         yield return $"Runtime: {Runtime} ({Kind}), {RuntimeInformation.ProcessArchitecture}, " +
                      $"{RuntimeInformation.RuntimeIdentifier}, build {BuildRuntime ?? "?"}";
         yield return $"Dynamic code: supported {DynamicCodeSupported}, compiled {DynamicCodeCompiled}";
-        foreach (var b in Jit.All)
+        foreach (IBlockCompiler b in Jit.All)
         {
             yield return $"CPU backend {b.Name} ({b.GetType().Name}): {(b.IsSupported ? "available" : b.UnsupportedReason ?? "unavailable")}";
         }

@@ -136,7 +136,7 @@ public sealed record EffectiveSettings(string CpuBackend, int CpuMhz, string Gpu
     }
 
     /// <summary>VulkanRendererOptions.ResScale for <see cref="ResScale"/> (0 = native).</summary>
-    public float ResScaleValue => float.TryParse(ResScale, System.Globalization.NumberStyles.Float, System.Globalization.CultureInfo.InvariantCulture, out var v) ? v : 0f;
+    public float ResScaleValue => float.TryParse(ResScale, System.Globalization.NumberStyles.Float, System.Globalization.CultureInfo.InvariantCulture, out float v) ? v : 0f;
 
     /// <summary>CpuCore.InstructionsPerSecond for <see cref="CpuMhz"/>.</summary>
     public long ClockHz => CpuMhz > 0 ? CpuMhz * 1_000_000L : CpuCore.DefaultClockHz;
@@ -183,7 +183,7 @@ public static class SettingsChoices
     public const string DefaultValue = "\u0001default";
 }
 
-static class SettingsFile
+internal static class SettingsFile
 {
     public static T? Load<T>(string path, System.Text.Json.Serialization.Metadata.JsonTypeInfo<T> info) where T : class
     {
@@ -204,7 +204,7 @@ static class SettingsFile
     public static void Save<T>(string path, T value, System.Text.Json.Serialization.Metadata.JsonTypeInfo<T> info)
     {
         Directory.CreateDirectory(Path.GetDirectoryName(path)!);
-        var tmp = path + ".tmp";
+        string tmp = path + ".tmp";
         File.WriteAllText(tmp, JsonSerializer.Serialize(value, info));
         File.Move(tmp, path, true);
     }

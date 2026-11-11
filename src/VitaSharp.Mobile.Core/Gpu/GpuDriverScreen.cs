@@ -22,7 +22,7 @@ public sealed record GpuDriverOption(string Id, string Title, string Detail, boo
 /// </summary>
 public sealed class GpuDriverScreen
 {
-    readonly string _settingsPath;
+    private readonly string _settingsPath;
 
     public CustomDriverStore Store { get; }
     public GpuDriverSettings Settings { get; }
@@ -42,12 +42,12 @@ public sealed class GpuDriverScreen
 
     public IReadOnlyList<GpuDriverOption> Options()
     {
-        var installed = Store.List();
+        IReadOnlyList<InstalledGpuDriver> installed = Store.List();
         bool systemSelected = Settings.Driver.Length == 0 || installed.All(d => d.Id != Settings.Driver);
         var list = new List<GpuDriverOption> { new("", Loc.Get("MSystemDriver"),
             // libadrenotools only opens it on Adreno GPUs; elsewhere the system's Vulkan loader does
             CustomDriversSupported ? Loc.Get("MSystemDriverAdreno") : Loc.Get("MSystemDriverDetail"), systemSelected, false) };
-        foreach (var d in installed)
+        foreach (InstalledGpuDriver d in installed)
         {
             list.Add(new(d.Id, d.Meta.Name, Detail(d.Meta), !systemSelected && d.Id == Settings.Driver, true));
         }
@@ -55,7 +55,7 @@ public sealed class GpuDriverScreen
         return list;
     }
 
-    static string Detail(CustomDriverMeta m)
+    private static string Detail(CustomDriverMeta m)
     {
         var parts = new List<string>();
         if (m.Vendor.Length > 0)
@@ -106,7 +106,7 @@ public sealed class GpuDriverScreen
         string tmp = Path.Combine(Store.Root, ".download.zip");
         try
         {
-            using (var f = File.Create(tmp))
+            using (FileStream f = File.Create(tmp))
             {
                 package.CopyTo(f);
             }
@@ -189,7 +189,7 @@ public static class GpuInfoView
 {
     public static IReadOnlyList<GpuInfoRow> Rows(GpuCapabilities caps, string? customDriver = null)
     {
-        var d = caps.Device;
+        GpuDeviceInfo d = caps.Device;
         string driver = customDriver ?? $"{DriverName(caps.Driver)} {GpuCapabilities.FormatDriverVersion(caps.Vendor, caps.Driver, caps.DriverVersion)}";
         var arch = new List<string>();
         if (caps.Has(GpuQuirk.TileBased))
@@ -212,7 +212,7 @@ public static class GpuInfoView
         ];
     }
 
-    static string DriverName(GpuDriver d) => d switch
+    private static string DriverName(GpuDriver d) => d switch
     {
         GpuDriver.QualcommProprietary => Loc.Get("MQualcommProprietary"),
         GpuDriver.Turnip => "Mesa Turnip",
@@ -243,10 +243,10 @@ public static class GpuInfoView
             .Select(q => new GpuQuirkLine(q, Describe(q), IsWorkaround(q)))
             .OrderBy(l => l.Workaround ? 0 : 1).ToArray();
 
-    static bool IsWorkaround(GpuQuirk q) => q is GpuQuirk.TileBased or GpuQuirk.DynamicIndexLowering or GpuQuirk.StaticExtendedDynamicState
+    private static bool IsWorkaround(GpuQuirk q) => q is GpuQuirk.TileBased or GpuQuirk.DynamicIndexLowering or GpuQuirk.StaticExtendedDynamicState
         or GpuQuirk.StaticDepthBiasEnable or GpuQuirk.PipelineCachePerDriverBuild or GpuQuirk.Msaa2xAs4x or GpuQuirk.ConservativeMemoryBudget;
 
-    static string Describe(GpuQuirk q) => q switch
+    private static string Describe(GpuQuirk q) => q switch
     {
         GpuQuirk.TileBased => Loc.Get("MQuirkTileBased"),
         GpuQuirk.DynamicIndexLowering => Loc.Get("MQuirkDynamicIndex"),

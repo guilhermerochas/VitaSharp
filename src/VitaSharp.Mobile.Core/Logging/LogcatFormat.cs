@@ -84,18 +84,18 @@ public static class LogcatFormat
     /// <summary>The logcat entries for one log line, in order.</summary>
     public static IEnumerable<LogcatEntry> Format(LogLevel level, string thread, string message)
     {
-        var prio = Priority(level);
-        var (tag, text) = Route(message);
+        LogcatPriority prio = Priority(level);
+        (string tag, string text) = Route(message);
         string prefix = tag == GuestTag || thread.Length == 0 ? "" : $"[{thread}] ";
         if (text.Length == 0)
         {
             yield return new(prio, tag, prefix);
             yield break;
         }
-        foreach (var line in text.Split('\n'))
+        foreach (string line in text.Split('\n'))
         {
-            var l = line.TrimEnd('\r');
-            foreach (var chunk in Chunks(l, MaxEntryBytes - Encoding.UTF8.GetByteCount(prefix)))
+            string l = line.TrimEnd('\r');
+            foreach (string chunk in Chunks(l, MaxEntryBytes - Encoding.UTF8.GetByteCount(prefix)))
             {
                 yield return new(prio, tag, prefix + chunk);
             }

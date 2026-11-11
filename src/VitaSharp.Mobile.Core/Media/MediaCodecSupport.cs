@@ -46,7 +46,7 @@ public static class YuvImageCopy
     // Every movie picture goes through here on the decoding thread (F1 2011's movies spent 5 ms per 960x544 picture
     // with Span.CopyTo rows, Mono's slow block copy, and a bounds-checked byte loop for interleaved chroma): rows go to
     // FastCopy (libc memmove on Mono), interleaved chroma through pointers.
-    static unsafe void CopyPlane(Plane p, int x0, int y0, int w, int h, Span<byte> dst)
+    private static unsafe void CopyPlane(Plane p, int x0, int y0, int w, int h, Span<byte> dst)
     {
         if (h <= 0 || w <= 0)
         {
@@ -104,7 +104,7 @@ public static class YuvImageCopy
         {
             case ColorFormatYuv420SemiPlanar:
             {
-                var uv = buffer[chromaStart..];
+                ReadOnlySpan<byte> uv = buffer[chromaStart..];
                 Copy(new Plane(buffer, stride, 1), new Plane(uv, stride, 2), new Plane(uv[1..], stride, 2), cropX, cropY, width, height, picture);
                 return true;
             }
@@ -131,10 +131,10 @@ public static class YuvImageCopy
 public sealed class DecoderReplay
 {
     public const long MaxBytes = 16 << 20;
-    readonly List<(byte[] Data, long Pts)> _units = new();
-    long _bytes;
-    bool _replayable = true;
-    int _producedSinceIdr;
+    private readonly List<(byte[] Data, long Pts)> _units = new();
+    private long _bytes;
+    private bool _replayable = true;
+    private int _producedSinceIdr;
 
     /// <summary>Records an access unit before it goes to the decoder.</summary>
     public void Add(ReadOnlySpan<byte> accessUnit, long pts)
@@ -161,7 +161,7 @@ public sealed class DecoderReplay
     /// <summary>The access units to send to the new decoder and how many of its first pictures to drop.</summary>
     public (IReadOnlyList<(byte[] Data, long Pts)> Units, int Skip) TakeReplay()
     {
-        var units = _replayable ? _units.ToArray() : [];
+        (byte[] Data, long Pts)[] units = _replayable ? _units.ToArray() : [];
         int skip = units.Length > 0 ? _producedSinceIdr : 0;
         Clear(replayable: _replayable);
         return (units, skip);
