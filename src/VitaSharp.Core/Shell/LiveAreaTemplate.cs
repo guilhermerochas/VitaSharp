@@ -35,10 +35,7 @@ public sealed class LiveAreaItem
 /// the items rotate.</summary>
 public sealed class LiveAreaFrame
 {
-    public required string Id
-    {
-        get; init;
-    }
+    public required string Id { get; init; }
     public string Multi = "";
     public int AutoflipSeconds;
     public List<LiveAreaItem> Items { get; } = new();
@@ -56,20 +53,11 @@ public sealed class LiveAreaTemplate
     public string FormatVersion { get; private set; } = "";
     /// <summary>Folder the file names are relative to (the contents folder), or "" when parsed from a string.</summary>
     public string ContentsDir { get; private set; } = "";
-    public string? Background
-    {
-        get; private set;
-    }
-    public string? Gate
-    {
-        get; private set;
-    }
+    public string? Background { get; private set; }
+    public string? Gate { get; private set; }
     public List<LiveAreaFrame> Frames { get; } = new();
     /// <summary>True when this is the firmware's default LiveArea (the game ships none).</summary>
-    public bool IsDefault
-    {
-        get; private set;
-    }
+    public bool IsDefault { get; private set; }
 
     /// <summary>Parses template.xml text. <paramref name="language"/> is a Vita language code ("en", "pt-br", "ja"...).</summary>
     public static LiveAreaTemplate Parse(string xml, string language = "en")
@@ -79,7 +67,10 @@ public sealed class LiveAreaTemplate
         {
             doc = XDocument.Parse(xml, LoadOptions.None);
         }
-        catch (XmlException e) { throw new InvalidDataException("template.xml is not valid XML: " + e.Message, e); }
+        catch (XmlException e)
+        {
+            throw new InvalidDataException("template.xml is not valid XML: " + e.Message, e);
+        }
         var root = doc.Root;
         if (root == null || root.Name.LocalName != "livearea")
         {
@@ -227,13 +218,24 @@ public sealed class LiveAreaTemplate
     {
         var t = new LiveAreaText
         {
-            Align = Attr(e, "align"), Valign = Attr(e, "valign"), TextAlign = Attr(e, "text-align"), TextValign = Attr(e, "text-valign"),
-            LineAlign = Attr(e, "line-align"), Origin = Attr(e, "origin"),
-            X = Int(e.Attribute("x")), Y = Int(e.Attribute("y")), Width = Int(e.Attribute("width")), Height = Int(e.Attribute("height")),
-            MarginTop = Int(e.Attribute("margin-top")), MarginBottom = Int(e.Attribute("margin-bottom")),
-            MarginLeft = Int(e.Attribute("margin-left")), MarginRight = Int(e.Attribute("margin-right")),
+            Align = Attr(e, "align"),
+            Valign = Attr(e, "valign"),
+            TextAlign = Attr(e, "text-align"),
+            TextValign = Attr(e, "text-valign"),
+            LineAlign = Attr(e, "line-align"),
+            Origin = Attr(e, "origin"),
+            X = Int(e.Attribute("x")),
+            Y = Int(e.Attribute("y")),
+            Width = Int(e.Attribute("width")),
+            Height = Int(e.Attribute("height")),
+            MarginTop = Int(e.Attribute("margin-top")),
+            MarginBottom = Int(e.Attribute("margin-bottom")),
+            MarginLeft = Int(e.Attribute("margin-left")),
+            MarginRight = Int(e.Attribute("margin-right")),
             LineSpace = Int(e.Attribute("line-space")),
-            WordWrap = Attr(e, "word-wrap") != "off", WordScroll = Attr(e, "word-scroll") == "on", Ellipsis = Attr(e, "ellipsis") == "on",
+            WordWrap = Attr(e, "word-wrap") != "off",
+            WordScroll = Attr(e, "word-scroll") == "on",
+            Ellipsis = Attr(e, "ellipsis") == "on",
         };
         foreach (var s in e.Elements("str"))
         {

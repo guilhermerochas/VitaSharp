@@ -135,7 +135,10 @@ public sealed class SessionCapture : IPresentTap, IRandomHook, IDisposable
         {
             return CaptureContext.Where(_emu);
         }
-        catch (Exception e) { return $"(unknown: {e.GetType().Name})"; }
+        catch (Exception e)
+        {
+            return $"(unknown: {e.GetType().Name})";
+        }
     }
 
     string SafeDescribe(string when)
@@ -144,7 +147,10 @@ public sealed class SessionCapture : IPresentTap, IRandomHook, IDisposable
         {
             return CaptureContext.Describe(_emu, when);
         }
-        catch (Exception e) { return $"[{when}]\n(context unavailable: {e.Message})\n"; }
+        catch (Exception e)
+        {
+            return $"[{when}]\n(context unavailable: {e.Message})\n";
+        }
     }
 
     public SessionCapture(Emulator emu, SessionCaptureOptions options)
@@ -169,15 +175,9 @@ public sealed class SessionCapture : IPresentTap, IRandomHook, IDisposable
     public bool Armed => _preRollSeconds > 0;
     public double PreRollSeconds => _preRollSeconds;
     /// <summary>The folder of the running recording, or of the last one.</summary>
-    public string? Dir
-    {
-        get; private set;
-    }
+    public string? Dir { get; private set; }
     /// <summary>The zip of the last completed recording.</summary>
-    public string? LastZip
-    {
-        get; private set;
-    }
+    public string? LastZip { get; private set; }
     /// <summary>Set when the last recording was completely written (tests, scripted runs wait on it).</summary>
     public readonly ManualResetEventSlim Idle = new(true);
     /// <summary>Seconds since the running recording started (0 when none runs): the REC badge.</summary>
@@ -405,8 +405,14 @@ public sealed class SessionCapture : IPresentTap, IRandomHook, IDisposable
                     Log.Info($"[capture] pre-roll save state skipped: {e.Message}");
                 }
             }
-            catch (Exception e) when (e is IOException or UnauthorizedAccessException) { Log.Warn($"[capture] pre-roll save state: {e.Message}"); }
-            finally { _stateGate.Release(); }
+            catch (Exception e) when (e is IOException or UnauthorizedAccessException)
+            {
+                Log.Warn($"[capture] pre-roll save state: {e.Message}");
+            }
+            finally
+            {
+                _stateGate.Release();
+            }
         }
     }
 
@@ -642,7 +648,12 @@ public sealed class SessionCapture : IPresentTap, IRandomHook, IDisposable
                         break;
                 }
             }
-            catch (Exception e) { Log.WarnOnce("capture-encoder", $"[capture] frame encoder: {e.Message}"); enc.ForceKey(); work.Done?.Set(); }
+            catch (Exception e)
+            {
+                Log.WarnOnce("capture-encoder", $"[capture] frame encoder: {e.Message}");
+                enc.ForceKey();
+                work.Done?.Set();
+            }
         }
     }
 
@@ -733,7 +744,11 @@ public sealed class SessionCapture : IPresentTap, IRandomHook, IDisposable
         Directory.CreateDirectory(dir);
         var r = new Recording(dir)
         {
-            LimitReached = !limit, StartNs = CaptureClock.NowNs, StartFlip = Hle.Modules.Display.FramesPresented, StartUs = GuestClock.Microseconds, StartTime = DateTime.Now,
+            LimitReached = !limit,
+            StartNs = CaptureClock.NowNs,
+            StartFlip = Hle.Modules.Display.FramesPresented,
+            StartUs = GuestClock.Microseconds,
+            StartTime = DateTime.Now,
             ProcessCpuMs0 = (long)Process.GetCurrentProcess().TotalProcessorTime.TotalMilliseconds,
         };
         r.FramesFile = new FileStream(Path.Combine(dir, "frames.vsfr"), FileMode.Create, FileAccess.Write, FileShare.Read, 1 << 20);
@@ -773,7 +788,11 @@ public sealed class SessionCapture : IPresentTap, IRandomHook, IDisposable
             {
                 File.Copy(pre.Path, Path.Combine(dir, "state_preroll.vss"));
             }
-            catch (IOException e) { r.Notes.Add($"pre-roll state not copied: {e.Message}"); r.PreRoll = null; }
+            catch (IOException e)
+            {
+                r.Notes.Add($"pre-roll state not copied: {e.Message}");
+                r.PreRoll = null;
+            }
         }
         if (!AudioDump.Enabled)
         {
@@ -811,8 +830,15 @@ public sealed class SessionCapture : IPresentTap, IRandomHook, IDisposable
                     r.Input.Add(InputEvent.Now("mark", "state_start"));
                 }
             }
-            catch (SnapshotException e) { r.Notes.Add($"no start save state: {e.Message}"); Log.Info($"[capture] start save state: {e.Message}"); }
-            finally { _stateGate.Release(); }
+            catch (SnapshotException e)
+            {
+                r.Notes.Add($"no start save state: {e.Message}");
+                Log.Info($"[capture] start save state: {e.Message}");
+            }
+            finally
+            {
+                _stateGate.Release();
+            }
         }
 
         if (_o.GpuDump && _rec == r)
@@ -902,7 +928,14 @@ public sealed class SessionCapture : IPresentTap, IRandomHook, IDisposable
         r.Dump?.Stop();
         Step(r, "context.txt", () => File.AppendAllText(Path.Combine(r.Dir, "context.txt"), Environment.NewLine + SafeDescribe("stop of the recording")));
         List<(string File, double StartMs)> wavs = [];
-        Step(r, "audio dump", () => { if (r.OwnsAudio) { wavs = AudioDump.Disable(); AudioDump.VoiceDumps = false; } });
+        Step(r, "audio dump", () =>
+        {
+            if (r.OwnsAudio)
+            {
+                wavs = AudioDump.Disable();
+                AudioDump.VoiceDumps = false;
+            }
+        });
         DebugMode.CollectHleErrors = false;
         if (ReferenceEquals(CaptureHooks.Random, this))
         {
@@ -1034,7 +1067,11 @@ public sealed class SessionCapture : IPresentTap, IRandomHook, IDisposable
                 ZipFolder(dir, zip, p => SetProgress("zip", zipFrom + p * (100 - zipFrom)));
                 LastZip = zip;
             }
-            catch (Exception e) { Log.Warn($"[capture] zip failed: {e.Message}"); zip = null; }
+            catch (Exception e)
+            {
+                Log.Warn($"[capture] zip failed: {e.Message}");
+                zip = null;
+            }
         }
         Log.Info(FormattableString.Invariant($"[capture] saved {zip ?? dir} in {saveClock.Elapsed.TotalSeconds:F1} s (analysis {analysisS:F1} s{(_hurry.IsCancellationRequested ? ", hurried: the window is closing" : "")})"));
         _o.Status?.Invoke(Localization.Loc.Format("CaptureSaved", zip ?? dir));
@@ -1166,7 +1203,10 @@ public sealed class SessionCapture : IPresentTap, IRandomHook, IDisposable
             using var output = File.Create(dest);
             input.CopyTo(output);
         }
-        catch (IOException e) { Log.Warn($"[capture] log copy: {e.Message}"); }
+        catch (IOException e)
+        {
+            Log.Warn($"[capture] log copy: {e.Message}");
+        }
     }
 
     /// <summary>The guest threads (state, wait, recent HLE calls in debug mode) and the GPU queue, for front-ends
@@ -1193,7 +1233,10 @@ public sealed class SessionCapture : IPresentTap, IRandomHook, IDisposable
                 }
             }
         }
-        catch (Exception e) { sb.AppendLine($"(thread list changed while reading: {e.Message})"); }
+        catch (Exception e)
+        {
+            sb.AppendLine($"(thread list changed while reading: {e.Message})");
+        }
         return sb.ToString();
     }
 
@@ -1203,7 +1246,10 @@ public sealed class SessionCapture : IPresentTap, IRandomHook, IDisposable
         {
             File.WriteAllText(Path.Combine(dir, name), text?.Invoke() ?? DescribeThreads(_emu));
         }
-        catch (Exception e) { Log.Warn($"[capture] {name}: {e.Message}"); }
+        catch (Exception e)
+        {
+            Log.Warn($"[capture] {name}: {e.Message}");
+        }
     }
 
     /// <summary>The folder as a zip next to it; files that are already compressed (states, dumps) are stored.</summary>

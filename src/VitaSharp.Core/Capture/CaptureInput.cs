@@ -151,19 +151,10 @@ public sealed class InputPlayback : IInputBackend, IMotionSource, IRandomHook
     long _motionReadUs = long.MinValue;
     int _motionIndex;
 
-    public bool Active
-    {
-        get; private set;
-    }
+    public bool Active { get; private set; }
     /// <summary>Guest time of the last recorded event (the re-run's natural end).</summary>
-    public long LastUs
-    {
-        get; private set;
-    }
-    public int Events
-    {
-        get; private set;
-    }
+    public long LastUs { get; private set; }
+    public int Events { get; private set; }
 
     public InputPlayback(IEnumerable<InputEvent> events)
     {
@@ -178,7 +169,10 @@ public sealed class InputPlayback : IInputBackend, IMotionSource, IRandomHook
                         _pad[port].Add((e.GuestUs, new ControllerState
                         {
                             Buttons = (VitaButtons)uint.Parse(p[1], NumberStyles.HexNumber),
-                            Lx = byte.Parse(p[2]), Ly = byte.Parse(p[3]), Rx = byte.Parse(p[4]), Ry = byte.Parse(p[5]),
+                            Lx = byte.Parse(p[2]),
+                            Ly = byte.Parse(p[3]),
+                            Rx = byte.Parse(p[4]),
+                            Ry = byte.Parse(p[5]),
                         }));
                         break;
                     case "touch" when p.Length >= 1:

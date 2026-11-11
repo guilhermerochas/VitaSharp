@@ -40,10 +40,7 @@ public sealed class Registry
     readonly Dictionary<string, byte[]> _written = new(StringComparer.Ordinal);
     /// <summary>Defaults that follow the emulator's options (language, button assignment...) instead of the template.</summary>
     readonly Dictionary<string, Func<int>> _dynamicDefaults = new(StringComparer.Ordinal);
-    public string StorePath
-    {
-        get;
-    }
+    public string StorePath { get; }
 
     /// <summary>Called after a value changes (path), e.g. to notify registry callbacks.</summary>
     public event Action<string>? Changed;

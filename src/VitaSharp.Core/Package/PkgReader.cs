@@ -81,35 +81,17 @@ public sealed class PkgReader : IDisposable
     readonly byte[] _key = new byte[16];
     readonly ulong _dataOffset;
 
-    public string ContentId
-    {
-        get;
-    }
+    public string ContentId { get; }
     public string TitleId => ContentId.Length >= 16 ? ContentId.Substring(7, 9) : "";
-    public uint ContentTypeRaw
-    {
-        get;
-    }
+    public uint ContentTypeRaw { get; }
     /// <summary>The key type (header 0xE7 &amp; 7): 1 PSP/PSone, 2-4 PS Vita; 0 for a package in the PS3 format (header
     /// type 1, as some PSone Classics are sold), whose items all use the PS3 key.</summary>
-    public int KeyType
-    {
-        get;
-    }
+    public int KeyType { get; }
     /// <summary>The PARAM.SFO of the package (info block 14 for Vita, the PARAM.SFO item for PSP/PSone; empty if none).</summary>
-    public byte[] ParamSfo
-    {
-        get;
-    }
+    public byte[] ParamSfo { get; }
     /// <summary>The install folder of a PSP add-on (info block 10), empty otherwise.</summary>
-    public string InstallDirectory
-    {
-        get;
-    }
-    public IReadOnlyList<PkgEntry> Entries
-    {
-        get;
-    }
+    public string InstallDirectory { get; }
+    public IReadOnlyList<PkgEntry> Entries { get; }
 
     public PkgReader(string path) : this(new FileStream(path, FileMode.Open, FileAccess.Read, FileShare.Read, 1 << 20)) { }
 

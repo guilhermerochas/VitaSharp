@@ -8,38 +8,17 @@ namespace VitaSharp.Core.Shell;
 public sealed class ShellTheme
 {
     public const string DefaultId = "default";
-    public required string Id
-    {
-        get; init;
-    }
-    public required string Title
-    {
-        get; init;
-    }
+    public required string Id { get; init; }
+    public required string Title { get; init; }
     /// <summary>Home screen wallpapers (the first is used for every page here); empty for the default theme, whose
     /// wave background the shell draws itself.</summary>
     public List<string> HomeBackgrounds { get; } = new();
-    public string? StartScreenImage
-    {
-        get; set;
-    }
-    public string? BgmPath
-    {
-        get; set;
-    }
-    public string? PreviewImage
-    {
-        get; set;
-    }
+    public string? StartScreenImage { get; set; }
+    public string? BgmPath { get; set; }
+    public string? PreviewImage { get; set; }
     /// <summary>Status bar colour and the text colour on the wallpapers (0xAARRGGBB), when the theme sets them.</summary>
-    public uint? BarColor
-    {
-        get; set;
-    }
-    public uint? FontColor
-    {
-        get; set;
-    }
+    public uint? BarColor { get; set; }
+    public uint? FontColor { get; set; }
 }
 
 /// <summary>A system application in vs0:app with a home-screen bubble (Settings, Trophies, Browser, Content manager...).</summary>
@@ -60,10 +39,7 @@ public enum ShellSoundEffect
 /// </summary>
 public sealed class ShellAssets
 {
-    public string FsRoot
-    {
-        get;
-    }
+    public string FsRoot { get; }
     readonly Dictionary<string, Rco?> _rcos = new(StringComparer.OrdinalIgnoreCase);
     readonly Dictionary<string, RgbaImage?> _textures = new();
     readonly Dictionary<ShellSoundEffect, PcmSound?> _sounds = new();
@@ -383,7 +359,10 @@ public sealed class ShellAssets
                     img = Gim.Decode(data);
                 }
             }
-            catch (InvalidDataException ex) { Util.Log.Warn($"shell: texture {id} of {rco}: {ex.Message}"); }
+            catch (InvalidDataException ex)
+            {
+                Util.Log.Warn($"shell: texture {id} of {rco}: {ex.Message}");
+            }
         }
         lock (_lock)
         {
@@ -406,7 +385,10 @@ public sealed class ShellAssets
         {
             return r.ReadFile(e);
         }
-        catch (InvalidDataException) { return null; }
+        catch (InvalidDataException)
+        {
+            return null;
+        }
     }
 
     /// <summary>
@@ -453,7 +435,10 @@ public sealed class ShellAssets
                         pcm = Vag.Decode(r.ReadFile(sd, "left"), sd.Attribute("right") != null ? r.ReadFile(sd, "right") : null);
                     }
                 }
-                catch (InvalidDataException e) { Util.Log.Warn($"shell: sound {effect}: {e.Message}"); }
+                catch (InvalidDataException e)
+                {
+                    Util.Log.Warn($"shell: sound {effect}: {e.Message}");
+                }
             }
         }
         lock (_lock)

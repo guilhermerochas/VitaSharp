@@ -85,9 +85,15 @@ public static class Gim
         int I32(int o) => BinaryPrimitives.ReadInt32LittleEndian(d.AsSpan(h + o));
         var s = new Section
         {
-            Format = U16(4), Order = U16(6), Width = U16(8), Height = U16(10), Bpp = U16(12),
-            PitchAlign = Math.Max(U16(14), 1), HeightAlign = Math.Max(U16(16), 1),
-            PixelOffset = h + I32(0x1C), PixelEnd = h + I32(0x20),
+            Format = U16(4),
+            Order = U16(6),
+            Width = U16(8),
+            Height = U16(10),
+            Bpp = U16(12),
+            PitchAlign = Math.Max(U16(14), 1),
+            HeightAlign = Math.Max(U16(16), 1),
+            PixelOffset = h + I32(0x1C),
+            PixelEnd = h + I32(0x20),
         };
         if (s.PixelOffset < h || s.PixelEnd > blockEnd || s.PixelEnd > d.Length || s.PixelEnd < s.PixelOffset)
         {

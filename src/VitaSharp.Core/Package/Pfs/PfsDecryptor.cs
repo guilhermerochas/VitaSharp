@@ -37,10 +37,7 @@ public sealed class PfsDecryptor
         public List<byte[][]> Blocks = new();
     }
 
-    public Action<string>? Log
-    {
-        get; set;
-    }
+    public Action<string>? Log { get; set; }
 
     /// <summary>A decryptor for a PFS image whose files.db/unicv.db are given to <see cref="Plan"/> (no title folder).</summary>
     public PfsDecryptor(byte[] klicensee) : this("", klicensee) { }

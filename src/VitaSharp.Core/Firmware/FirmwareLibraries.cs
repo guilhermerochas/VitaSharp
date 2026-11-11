@@ -22,10 +22,7 @@ public sealed class FirmwareLibraries
     public sealed record Module(string VitaPath, string Name, IReadOnlyList<(string Library, uint LibNid)> Libraries);
 
     readonly Dictionary<string, Module> _byLibrary = new(StringComparer.Ordinal);
-    public IReadOnlyList<Module> Modules
-    {
-        get;
-    }
+    public IReadOnlyList<Module> Modules { get; }
 
     static readonly ConcurrentDictionary<string, FirmwareLibraries> Cache = new(StringComparer.OrdinalIgnoreCase);
 
@@ -91,7 +88,10 @@ public sealed class FirmwareLibraries
             {
                 File.WriteAllLines(cacheFile, lines, new UTF8Encoding(false));
             }
-            catch (Exception e) when (e is IOException or UnauthorizedAccessException) { Log.Debug($"firmware libraries: cannot write {cacheFile}: {e.Message}"); }
+            catch (Exception e) when (e is IOException or UnauthorizedAccessException)
+            {
+                Log.Debug($"firmware libraries: cannot write {cacheFile}: {e.Message}");
+            }
         }
     }
 
@@ -121,7 +121,10 @@ public sealed class FirmwareLibraries
                 d[f[0]] = ($"{f[1]}\t{f[2]}", new Module(f[0], f[3], libs));
             }
         }
-        catch (Exception e) when (e is IOException or FormatException or ArgumentException) { d.Clear(); }
+        catch (Exception e) when (e is IOException or FormatException or ArgumentException)
+        {
+            d.Clear();
+        }
         return d;
     }
 }

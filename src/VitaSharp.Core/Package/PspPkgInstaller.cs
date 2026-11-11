@@ -9,16 +9,10 @@ public sealed record PspInstallOptions
     /// <summary>The user's own license for the title (the .rif from their console's ux0:pspemu/PSP/LICENSE), installed as
     /// ux0:pspemu/PSP/LICENSE/&lt;content id&gt;.rif; its content id must be the title's. Without one the title installs and
     /// the system shows its normal "no license" message when it is started.</summary>
-    public byte[]? License
-    {
-        get; init;
-    }
+    public byte[]? License { get; init; }
 
     /// <summary>The user's console activation data (tm0:npdrm/act.dat from their console), installed as tm0:npdrm/act.dat.</summary>
-    public byte[]? ActDat
-    {
-        get; init;
-    }
+    public byte[]? ActDat { get; init; }
 }
 
 /// <summary>
@@ -204,7 +198,10 @@ public static class PspPkgInstaller
             }
             throw;
         }
-        finally { thread.Priority = priority; }
+        finally
+        {
+            thread.Priority = priority;
+        }
         reporter.Finish();
 
         // a new PSP/PSone title: the shell lists ux0:pspemu/PSP/GAME when it rebuilds the card's database
@@ -288,7 +285,10 @@ public static class PspPkgInstaller
             pkg.ReadAt(eboot, sfoOff, sfo);
             return new Sfo(sfo);
         }
-        catch (Exception e) when (e is InvalidDataException or ArgumentException or IndexOutOfRangeException) { return null; }
+        catch (Exception e) when (e is InvalidDataException or ArgumentException or IndexOutOfRangeException)
+        {
+            return null;
+        }
     }
 
     /// <summary>The PARAM.SFO of the EBOOT.PBP of a PSP/PSone package (its title and DISC_ID), or null.</summary>
@@ -333,10 +333,7 @@ public static class PspPkgInstaller
         public override bool CanSeek => false;
         public override bool CanWrite => true;
         public override long Length => inner.Length;
-        public override long Position
-        {
-            get => inner.Position; set => throw new NotSupportedException();
-        }
+        public override long Position { get => inner.Position; set => throw new NotSupportedException(); }
         public override void Flush() => inner.Flush();
         public override int Read(byte[] buffer, int offset, int count) => throw new NotSupportedException();
         public override long Seek(long offset, SeekOrigin origin) => throw new NotSupportedException();

@@ -141,7 +141,10 @@ public static class Wait
                     {
                         Scheduler.Acquire(self);
                     }
-                    finally { Monitor.Enter(sync); }
+                    finally
+                    {
+                        Monitor.Enter(sync);
+                    }
                 }
             }
         }
@@ -241,7 +244,10 @@ public static class Wait
                         {
                             GuestThread.CallbackProcessor!(self);
                         }
-                        finally { blocked = Scheduler.Block(); }
+                        finally
+                        {
+                            blocked = Scheduler.Block();
+                        }
                         continue;
                     }
                     // Callback.Notify pulses the owner's WaitLock
@@ -270,7 +276,10 @@ public static class Wait
             }
             self?.Core.WokeAt(end);
         }
-        finally { blocked.Dispose(); }
+        finally
+        {
+            blocked.Dispose();
+        }
     }
 }
 
@@ -305,7 +314,10 @@ public sealed partial class Semaphore : KernelObject
 
                 return r;
             }
-            finally { Waiters--; }
+            finally
+            {
+                Waiters--;
+            }
         }
     }
 
@@ -401,7 +413,10 @@ public sealed partial class EventFlag : KernelObject
 
                 return r;
             }
-            finally { Waiters--; }
+            finally
+            {
+                Waiters--;
+            }
         }
     }
 
@@ -715,7 +730,10 @@ public sealed partial class Mutex : KernelObject
                     return SceError.OK;
                 }
             }
-            finally { Waiters--; }
+            finally
+            {
+                Waiters--;
+            }
         }
     }
 
@@ -907,7 +925,10 @@ public sealed partial class CondVar : KernelObject
             {
                 Mutex.Lock(self, count, default);
             }
-            finally { Monitor.Enter(this); }
+            finally
+            {
+                Monitor.Enter(this);
+            }
             return r;
         }
     }
@@ -1079,7 +1100,13 @@ public sealed partial class MsgPipe : KernelObject
                     if (asap ? free > 0 : free >= size - sent)
                     {
                         int n = Math.Min(free, size - sent);
-                        src.ForEach(sent, n, (a, len) => { foreach (var b in GuestMemory.Span(a, len)) { _data.Enqueue(b); } });
+                        src.ForEach(sent, n, (a, len) =>
+                        {
+                            foreach (var b in GuestMemory.Span(a, len))
+                            {
+                                _data.Enqueue(b);
+                            }
+                        });
                         sent += n;
                         Monitor.PulseAll(this);
                         if (asap)
@@ -1104,7 +1131,10 @@ public sealed partial class MsgPipe : KernelObject
                     }
                 }
             }
-            finally { SendWaiters--; }
+            finally
+            {
+                SendWaiters--;
+            }
             result.TrySet((uint)sent);
             if (asap ? sent == 0 && size > 0 : sent < size)
             {
@@ -1140,7 +1170,14 @@ public sealed partial class MsgPipe : KernelObject
                     if (_data.Count > 0)
                     {
                         int n = Math.Min(_data.Count, size - got);
-                        dst.ForEach(got, n, (a, len) => { var span = GuestMemory.Span(a, len); for (int i = 0; i < len; i++) { span[i] = _data.Dequeue(); } });
+                        dst.ForEach(got, n, (a, len) =>
+                        {
+                            var span = GuestMemory.Span(a, len);
+                            for (int i = 0; i < len; i++)
+                            {
+                                span[i] = _data.Dequeue();
+                            }
+                        });
                         got += n;
                         Monitor.PulseAll(this);
                         if (asap)
@@ -1164,7 +1201,10 @@ public sealed partial class MsgPipe : KernelObject
                     }
                 }
             }
-            finally { RecvWaiters--; }
+            finally
+            {
+                RecvWaiters--;
+            }
             result.TrySet((uint)got);
             if (got == 0 && size > 0)
             {
@@ -1295,7 +1335,10 @@ public sealed partial class RwLock : KernelObject
 
                 return r;
             }
-            finally { ReadWaiters--; }
+            finally
+            {
+                ReadWaiters--;
+            }
         }
     }
 
@@ -1350,7 +1393,10 @@ public sealed partial class RwLock : KernelObject
                 }
                 return r;
             }
-            finally { WriteWaiters--; }
+            finally
+            {
+                WriteWaiters--;
+            }
         }
     }
 

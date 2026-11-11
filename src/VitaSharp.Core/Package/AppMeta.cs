@@ -62,7 +62,10 @@ public static class AppMeta
                     changed++;
                     log?.Invoke($"appmeta: {id} removed (no longer installed)");
                 }
-                catch (Exception e) when (e is IOException or UnauthorizedAccessException) { log?.Invoke($"appmeta: {id} not removed ({e.Message})"); }
+                catch (Exception e) when (e is IOException or UnauthorizedAccessException)
+                {
+                    log?.Invoke($"appmeta: {id} not removed ({e.Message})");
+                }
             }
         }
         if (changed > 0)
@@ -166,7 +169,10 @@ public static class AppMeta
             File.Delete(id);
             log?.Invoke("appmeta: installed applications changed; ux0:id.dat reset so the shell rebuilds its database");
         }
-        catch (Exception e) when (e is IOException or UnauthorizedAccessException) { log?.Invoke($"appmeta: ux0:id.dat not reset ({e.Message})"); }
+        catch (Exception e) when (e is IOException or UnauthorizedAccessException)
+        {
+            log?.Invoke($"appmeta: ux0:id.dat not reset ({e.Message})");
+        }
     }
 
     static bool SameFile(string a, string b)
@@ -183,7 +189,10 @@ public static class AppMeta
         {
             return File.Exists(sfoPath) && Sfo.Load(sfoPath).Category.StartsWith('g');
         }
-        catch (Exception e) when (e is IOException or InvalidDataException or ArgumentException or IndexOutOfRangeException) { return false; }
+        catch (Exception e) when (e is IOException or InvalidDataException or ArgumentException or IndexOutOfRangeException)
+        {
+            return false;
+        }
     }
 
     static void CopyTree(string src, string dst)

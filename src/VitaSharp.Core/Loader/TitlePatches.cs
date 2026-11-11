@@ -43,7 +43,10 @@ public static class TitlePatches
                 uint addr = Convert.ToUInt32(parts[0], 16), value = Convert.ToUInt32(parts[1], 16);
                 Write(addr, value, parts[1].Trim().Length <= 4 ? 2 : 4, Path.GetFileName(file));
             }
-            catch (FormatException) { Log.Warn($"patch {file}: bad line '{raw}'"); }
+            catch (FormatException)
+            {
+                Log.Warn($"patch {file}: bad line '{raw}'");
+            }
         }
     }
 

@@ -22,19 +22,10 @@ internal sealed class FileWritePipeline : IDisposable
     readonly Action<long>? _written;
     Exception? _error;
 
-    public int BufferSize
-    {
-        get;
-    }
+    public int BufferSize { get; }
     /// <summary>Time the writer thread spent in file system calls, and the bytes it wrote.</summary>
-    public TimeSpan WriteTime
-    {
-        get; private set;
-    }
-    public long BytesWritten
-    {
-        get; private set;
-    }
+    public TimeSpan WriteTime { get; private set; }
+    public long BytesWritten { get; private set; }
 
     /// <param name="written">Called on the writer thread after each chunk with its size.</param>
     public FileWritePipeline(int bufferSize, int buffers, Action<long>? written, CancellationToken ct)
@@ -58,7 +49,11 @@ internal sealed class FileWritePipeline : IDisposable
         {
             return _free.Take(_cts.Token);
         }
-        catch (OperationCanceledException) { ThrowIfFailed(); throw; }
+        catch (OperationCanceledException)
+        {
+            ThrowIfFailed();
+            throw;
+        }
     }
 
     public void Open(string path, long preallocate) => Post(new OpenCmd(path, preallocate));
@@ -107,8 +102,11 @@ internal sealed class FileWritePipeline : IDisposable
                         Directory.CreateDirectory(System.IO.Path.GetDirectoryName(o.Path)!);
                         fs = new FileStream(o.Path, new FileStreamOptions
                         {
-                            Mode = FileMode.Create, Access = FileAccess.Write, Share = FileShare.None,
-                            BufferSize = 0, PreallocationSize = o.Preallocate,
+                            Mode = FileMode.Create,
+                            Access = FileAccess.Write,
+                            Share = FileShare.None,
+                            BufferSize = 0,
+                            PreallocationSize = o.Preallocate,
                         });
                         break;
                     case WriteCmd w:

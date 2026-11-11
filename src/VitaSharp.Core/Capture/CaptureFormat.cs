@@ -323,10 +323,22 @@ public static class FramesFile
             }
             var p = new PresentInfo
             {
-                Present = I64(), Flip = I64(), VBlank = I64(), GuestUs = I64(), FlipNs = I64(), PresentNs = I64(),
-                IntervalMs = F32(), GpuMs = F32(), HitchMs = F32(),
-                Draws = I32(), Scenes = I32(), NewShaders = I32(), NewPipelines = I32(),
-                Address = U32(), SrcW = U32(), SrcH = U32(),
+                Present = I64(),
+                Flip = I64(),
+                VBlank = I64(),
+                GuestUs = I64(),
+                FlipNs = I64(),
+                PresentNs = I64(),
+                IntervalMs = F32(),
+                GpuMs = F32(),
+                HitchMs = F32(),
+                Draws = I32(),
+                Scenes = I32(),
+                NewShaders = I32(),
+                NewPipelines = I32(),
+                Address = U32(),
+                SrcW = U32(),
+                SrcH = U32(),
             };
             byte flags = b[o++];
             int hl = b[o++];

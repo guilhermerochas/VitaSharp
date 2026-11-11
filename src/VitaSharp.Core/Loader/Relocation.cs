@@ -27,7 +27,10 @@ public static unsafe class Relocation
         {
             Relocate(data, segs);
         }
-        finally { _imageBase = null; }
+        finally
+        {
+            _imageBase = null;
+        }
     }
 
     static void Apply(uint p, uint code, uint s, uint a)

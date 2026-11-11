@@ -58,7 +58,12 @@ public sealed class FunctionCensus
                 {
                     elf = SelfDecryptor.ToElf(File.ReadAllBytes(file), null);
                 }
-                catch (Exception e) when (e is not OutOfMemoryException) { c.Failed.Add(vita); Log.Debug($"census: {vita}: {e.Message}"); continue; }
+                catch (Exception e) when (e is not OutOfMemoryException)
+                {
+                    c.Failed.Add(vita);
+                    Log.Debug($"census: {vita}: {e.Message}");
+                    continue;
+                }
                 bool kernel = ext == ".skprx";
                 // a kernel image (bootimage.skprx) carries more modules as whole ELFs after its own
                 var starts = new List<int> { 0 };
@@ -80,7 +85,15 @@ public sealed class FunctionCensus
                     {
                         img = ModuleImage.Read(k == 0 && starts.Count == 1 ? elf : elf[starts[k]..end]);
                     }
-                    catch (Exception e) when (e is not OutOfMemoryException) { if (starts.Count == 1) { c.Failed.Add(vita); Log.Debug($"census: {vita}: {e.Message}"); } continue; }
+                    catch (Exception e) when (e is not OutOfMemoryException)
+                    {
+                        if (starts.Count == 1)
+                        {
+                            c.Failed.Add(vita);
+                            Log.Debug($"census: {vita}: {e.Message}");
+                        }
+                        continue;
+                    }
                     c.FirmwareModules++;
                     string where = k == 0 ? vita : $"{vita}/{img.Name}";
                     foreach (var (lib, _, attr, funcs, _) in img.Exports)
@@ -140,7 +153,10 @@ public sealed class FunctionCensus
                             imports.AddRange(funcs);
                         }
                     }
-                    catch (Exception e) when (e is not OutOfMemoryException) { Log.Debug($"census: {title}/{rel}: {e.Message}"); }
+                    catch (Exception e) when (e is not OutOfMemoryException)
+                    {
+                        Log.Debug($"census: {title}/{rel}: {e.Message}");
+                    }
                 }
                 if (any)
                 {

@@ -17,30 +17,12 @@ public sealed class Kernel
     ObjectTable? _standalone;
     public ConcurrentDictionary<int, LoadedModule> Modules { get; } = new();
 
-    public uint ThreadExitTrap
-    {
-        get; private set;
-    }
-    public uint TlsInit
-    {
-        get; set;
-    }
-    public uint TlsInitSize
-    {
-        get; set;
-    }
-    public uint TlsAreaSize
-    {
-        get; set;
-    }
-    public uint ProcessParam
-    {
-        get; set;
-    }
-    public GuestThread? MainThread
-    {
-        get; set;
-    }
+    public uint ThreadExitTrap { get; private set; }
+    public uint TlsInit { get; set; }
+    public uint TlsInitSize { get; set; }
+    public uint TlsAreaSize { get; set; }
+    public uint ProcessParam { get; set; }
+    public GuestThread? MainThread { get; set; }
     public readonly DateTime BootTime = DateTime.UtcNow;
 
     public Kernel(Emulator emu) => _emu = emu;
