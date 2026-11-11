@@ -1,6 +1,4 @@
-<!-- pair: README.pt-BR.md sha256=2f816895725dc1612f334f3c249fe47b6711ffff5f35b825d7aadabab0823f80 -->
-<!-- pair: README.pt-BR.md sha256=aa4540c0ad318448648c5eb6095e6d662178f5faabe3e7414de670efc1b802c1 -->
-<!-- pair: README.pt-BR.md sha256=d84170c76f0ce78a59188fbba28020ba043c7e4e6e0f6e8e366473773e923507 -->
+<!-- pair: README.pt-BR.md sha256=44b2a412395ed0c7facbc1dd3a19c5194ac6f28479d0e5cb470cc8fce74012e2 -->
 <div align="center">
 
 **English** | [Português](README.pt-BR.md)
