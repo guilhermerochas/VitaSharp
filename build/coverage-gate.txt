@@ -3,8 +3,8 @@
 # ReportGenerator names them. The target is 70 for each. Raise a minimum when a measurement passes it by a point or
 # more (the gate says so); never lower one. Each is set half a point under the measurement it came from, so the
 # run-to-run noise of timing-dependent paths does not fail the build.
-Overall 64.5
-VitaSharp.Core 71.6
-VitaSharp.Desktop 27.9
+Overall 65.3
+VitaSharp.Core 71.7
+VitaSharp.Desktop 28.4
 VitaSharp.Mobile.Core 83.8
-VitaSharp.Renderer.Vulkan 36.2
+VitaSharp.Renderer.Vulkan 43.6

@@ -21,14 +21,14 @@ public sealed class RendererTextureTests(GuestMemoryFixture fx)
     static readonly TexBase[] Formats = Enum.GetValues<TexBase>();
 
     /// <summary>The GXM side of the workload, on whatever backend the emulator's GPU queue has.</summary>
-    sealed class Workload
+    internal sealed class Workload
     {
         readonly HleHarness _h;
         readonly Gxm _g;
         public uint Ctx, Rt, Color, Data, Vp, Fp, Verts, Idx;
         public readonly List<uint> Textures = [];
 
-        public Workload(HleHarness h)
+        public Workload(HleHarness h, ushort multisample = 0)
         {
             _h = h;
             _g = h.Module<Gxm>();
@@ -42,7 +42,7 @@ public sealed class RendererTextureTests(GuestMemoryFixture fx)
             Assert.Equal(0, Call(_g, "sceGxmCreateContext", cp, new Ptr<uint>(o)));
             Ctx = GuestMemory.R32(o);
             uint rp = h.Alloc(0x14);
-            GuestMemory.Write(rp + 4, (ushort)W); GuestMemory.Write(rp + 6, (ushort)H); GuestMemory.Write(rp + 8, (ushort)1);
+            GuestMemory.Write(rp + 4, (ushort)W); GuestMemory.Write(rp + 6, (ushort)H); GuestMemory.Write(rp + 8, (ushort)1); GuestMemory.Write(rp + 10, multisample);
             Assert.Equal(0, Call(_g, "sceGxmCreateRenderTarget", rp, new Ptr<uint>(o)));
             Rt = GuestMemory.R32(o);
             Data = h.Alloc(W * H * 4);
@@ -111,7 +111,7 @@ public sealed class RendererTextureTests(GuestMemoryFixture fx)
         public void Terminate() => Call(_g, "sceGxmTerminate");
     }
 
-    static uint VertexProgram(HleHarness h)
+    internal static uint VertexProgram(HleHarness h)
     {
         ulong[] code = [0x6081000460600003, 0x50C9000A20200180];
         uint size = 0x100 + (uint)code.Length * 8, p = h.Alloc(size);
@@ -125,7 +125,7 @@ public sealed class RendererTextureTests(GuestMemoryFixture fx)
 
     /// <summary>A fragment program whose only input is a non-dependent texture read of texcoord 0 through unit 3 (a
     /// fragment varying descriptor, as stripped programs have).</summary>
-    static uint SamplingFragmentProgram(HleHarness h)
+    internal static uint SamplingFragmentProgram(HleHarness h)
     {
         uint p = h.Alloc(0x200);
         GuestMemory.W32(p, 0x00505847);
@@ -203,5 +203,17 @@ public sealed class RendererTextureTests(GuestMemoryFixture fx)
         static string Hash(string f) => Convert.ToHexString(System.Security.Cryptography.SHA256.HashData(File.ReadAllBytes(f)));
         var shown = liveFrames.Select(Hash).ToHashSet();
         Assert.All(replayFrames, f => Assert.Contains(Hash(f), shown));
+
+        // the front-end's replay-gpu on the dump: its statistics and a recompressed copy (a full replay needs a guest
+        // memory of its own, one per process: GpuDumpPlayer above is the same replay in this process)
+        Assert.Equal(0, VitaSharp.Desktop.ReplayGpu.Run(dump, ["--info"]));
+        string small = Path.Combine(h.Root, "small.vsgd");
+        Assert.Equal(0, VitaSharp.Desktop.ReplayGpu.Run(dump, [$"--recompress={small}", "--quality=1"]));
+        using (var re = new GpuDumpReader(small))
+        {
+            int draws = 0;
+            while (re.Next()) if (re.Kind == GpuDumpRecord.Draw) draws++;
+            Assert.Equal(stats.Draws, draws); // the same commands, compressed again
+        }
     }
 }
