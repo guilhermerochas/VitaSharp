@@ -1,3 +1,4 @@
+using System.IO.Compression;
 using VitaSharp.Core.Capture;
 using VitaSharp.Core.Host;
 
@@ -7,7 +8,7 @@ namespace VitaSharp.Tests;
 /// audio mix and the analyzer's findings on a synthetic capture.</summary>
 public sealed class SessionCaptureTests : IDisposable
 {
-    readonly string _dir = Path.Combine(Path.GetTempPath(), "vitasharp-capture-" + Guid.NewGuid().ToString("N"));
+    private readonly string _dir = Path.Combine(Path.GetTempPath(), "vitasharp-capture-" + Guid.NewGuid().ToString("N"));
 
     public SessionCaptureTests() => Directory.CreateDirectory(_dir);
 
@@ -20,17 +21,17 @@ public sealed class SessionCaptureTests : IDisposable
         catch { }
     }
 
-    const int W = 120, H = 68;
+    private const int Width = 120, Height = 68;
 
     /// <summary>A moving gradient (frame <paramref name="t"/>), optionally with a solid block.</summary>
-    static byte[] Picture(int t, (byte R, byte G, byte B)? fill = null)
+    private static byte[] Picture(int t, (byte R, byte G, byte B)? fill = null)
     {
-        var px = new byte[W * H * 4];
-        for (int y = 0; y < H; y++)
+        byte[] px = new byte[Width * Height * 4];
+        for (int y = 0; y < Height; y++)
         {
-            for (int x = 0; x < W; x++)
+            for (int x = 0; x < Width; x++)
             {
-                int o = (y * W + x) * 4;
+                int o = (y * Width + x) * 4;
                 if (fill is { } f)
                 {
                     px[o] = f.R;
@@ -54,22 +55,22 @@ public sealed class SessionCaptureTests : IDisposable
     public void Qoi_round_trips()
     {
         var rnd = new Random(7);
-        var noise = new byte[W * H * 4];
+        byte[] noise = new byte[Width * Height * 4];
         rnd.NextBytes(noise);
         for (int i = 3; i < noise.Length; i += 4)
         {
             noise[i] = 255;
         }
 
-        foreach (var px in new[] { Picture(3), noise, Picture(0, (10, 20, 30)) })
+        foreach (byte[]? px in new[] { Picture(3), noise, Picture(0, (10, 20, 30)) })
         {
-            var enc = Qoi.Encode(px, W, H);
-            var (back, w, h) = Qoi.Decode(enc);
-            Assert.Equal((W, H), (w, h));
+            byte[] enc = Qoi.Encode(px, Width, Height);
+            (byte[]? back, int w, int h) = Qoi.Decode(enc);
+            Assert.Equal((Width, Height), (w, h));
             Assert.Equal(px, back);
         }
         // a solid picture is mostly runs
-        Assert.True(Qoi.Encode(Picture(0, (1, 2, 3)), W, H).Length < 200);
+        Assert.True(Qoi.Encode(Picture(0, (1, 2, 3)), Width, Height).Length < 200);
     }
 
     [Fact]
@@ -77,7 +78,7 @@ public sealed class SessionCaptureTests : IDisposable
     {
         string path = Path.Combine(_dir, "frames.vsfr");
         var pictures = new List<byte[]?>();
-        using (var fs = File.Create(path))
+        using (FileStream fs = File.Create(path))
         {
             FramesFile.WriteHeader(fs);
             var enc = new FramesFile.Encoder();
@@ -92,8 +93,8 @@ public sealed class SessionCaptureTests : IDisposable
                     pictures.Add(null);
                     continue;
                 }
-                var px = Picture(i);
-                var (data, flags) = enc.Encode(px, W, H);
+                byte[] px = Picture(i);
+                (byte[]? data, byte flags) = enc.Encode(px, Width, Height);
                 Assert.Equal(encoded++ % FramesFile.KeyInterval == 0, (flags & FramesFile.FlagKey) != 0);
                 FramesFile.WriteRecord(fs, info, flags, data);
                 pictures.Add(px);
@@ -114,7 +115,7 @@ public sealed class SessionCaptureTests : IDisposable
             }
         }
         Assert.Equal("fileIo", all[5].Frame.Info.Hitch);
-        var index = FramesFile.ReadIndex(path);
+        List<FramesFile.Frame> index = FramesFile.ReadIndex(path);
         Assert.Equal(pictures[55], FramesFile.ReadPicture(path, index, 55)!.Value.Rgba);
         // deltas of a slowly moving picture are much smaller than the key pictures
         Assert.True(index[2].QoiLength * 3 < index[0].QoiLength, $"delta {index[2].QoiLength} vs key {index[0].QoiLength}");
@@ -124,13 +125,13 @@ public sealed class SessionCaptureTests : IDisposable
     public void Frames_file_cut_short_reads_complete_records()
     {
         string path = Path.Combine(_dir, "cut.vsfr");
-        using (var fs = File.Create(path))
+        using (FileStream fs = File.Create(path))
         {
             FramesFile.WriteHeader(fs);
             var enc = new FramesFile.Encoder();
             for (int i = 0; i < 5; i++)
             {
-                var (d, f) = enc.Encode(Picture(i), W, H);
+                (byte[]? d, byte f) = enc.Encode(Picture(i), Width, Height);
                 FramesFile.WriteRecord(fs, new PresentInfo { Present = i }, f, d);
             }
         }
@@ -146,7 +147,7 @@ public sealed class SessionCaptureTests : IDisposable
     public void Input_events_round_trip_and_play_back()
     {
         var pad = new ControllerState { Buttons = VitaButtons.Cross | VitaButtons.Up, Lx = 10, Ly = 250, Rx = 128, Ry = 128 };
-        var events = new[]
+        InputEvent[] events = new[]
         {
             new InputEvent("pad", 100, 1_000_000, 10, InputRecorder.FormatPad(0, pad)),
             new InputEvent("touch", 200, 1_500_000, 12, "front 3:0.2500:0.7500"),
@@ -191,7 +192,7 @@ public sealed class SessionCaptureTests : IDisposable
         Assert.EndsWith("00002000 128 128 128 128", log[1].Data);
     }
 
-    sealed class FakeInput : IInputBackend
+    private sealed class FakeInput : IInputBackend
     {
         public ControllerState State = ControllerState.Neutral;
         public readonly List<TouchPoint> Touches = new();
@@ -203,7 +204,7 @@ public sealed class SessionCaptureTests : IDisposable
     public void Audio_mix_places_ports_at_their_start_and_checks_find_gaps()
     {
         string a = Path.Combine(_dir, "a.wav"), b = Path.Combine(_dir, "b.wav"), mix = Path.Combine(_dir, "mix.wav");
-        var tone = new short[48000 * 2];
+        short[] tone = new short[48000 * 2];
         for (int i = 0; i < 48000; i++)
         {
             tone[2 * i] = tone[2 * i + 1] = (short)(8000 * Math.Sin(i * 0.05));
@@ -213,11 +214,11 @@ public sealed class SessionCaptureTests : IDisposable
         CaptureAudio.WriteWav(a, tone, 48000);
         CaptureAudio.WriteWav(b, new short[24000 * 2].Select((_, i) => (short)1000).ToArray(), 24000);
         CaptureAudio.Mix([(a, 0), (b, 500)], mix);
-        var (m, rate) = CaptureAudio.ReadWav(mix);
+        (short[]? m, int rate) = CaptureAudio.ReadWav(mix);
         Assert.Equal(48000, rate);
         Assert.Equal(48000 + 24000, m.Length / 2); // b (1 s) starts at 0.5 s
         Assert.Equal(1000, m[2 * 60000]); // only b there
-        var check = CaptureAudio.Analyze(a);
+        CaptureAudio.Check check = CaptureAudio.Analyze(a);
         Assert.Equal(1, check.Gaps);
         Assert.InRange(check.LongestGapMs, 150, 250);
     }
@@ -230,7 +231,7 @@ public sealed class SessionCaptureTests : IDisposable
         Directory.CreateDirectory(dir);
         File.WriteAllText(Path.Combine(dir, "session.txt"), "title-id: TEST00000\ntitle: Test\nstart-ns: 0\n");
         File.WriteAllLines(Path.Combine(dir, "input.tsv"), [InputEvent.Header, new InputEvent("pad", 1_000_000_000, 1, 59, "0 00004000 128 128 128 128").ToString()]);
-        using (var fs = File.Create(Path.Combine(dir, "frames.vsfr")))
+        using (FileStream fs = File.Create(Path.Combine(dir, "frames.vsfr")))
         {
             FramesFile.WriteHeader(fs);
             var enc = new FramesFile.Encoder();
@@ -258,7 +259,7 @@ public sealed class SessionCaptureTests : IDisposable
 
                 long f = i == 121 ? flip - 2 : flip;                            // a flip presented out of order
                 ns += i == 80 ? 400_000_000 : 16_666_667;                       // a 400 ms stall
-                var (data, flags) = enc.Encode(px, W, H);
+                (byte[]? data, byte flags) = enc.Encode(px, Width, Height);
                 FramesFile.WriteRecord(fs, new PresentInfo { Present = i + 1, Flip = f, PresentNs = ns, IntervalMs = 16.7f, Hitch = i == 80 ? "shaderCompile" : "", HitchMs = i == 80 ? 380 : 0 }, flags, data);
                 flip++;
             }
@@ -299,14 +300,14 @@ public sealed class SessionCaptureTests : IDisposable
             "\n[stop of the recording]\nwhere: game PCSA00017 'LittleBigPlanet' in front\n" +
             "audio: BGM port held by shell (the shell's music player, SceShellMusicCore: the home screen / LiveArea music)\n");
         Directory.CreateDirectory(Path.Combine(dir, "audio"));
-        var music = new short[48000 * 2 * 2];
+        short[] music = new short[48000 * 2 * 2];
         for (int i = 0; i < music.Length / 2; i++)
         {
             music[2 * i] = music[2 * i + 1] = (short)(6000 * Math.Sin(i * 0.03));
         }
 
         CaptureAudio.WriteWav(Path.Combine(dir, "audio", "02_port2_BGM_48000.wav"), music, 48000);
-        var click = new short[48000 / 5 * 2];
+        short[] click = new short[48000 / 5 * 2];
         for (int i = 0; i < click.Length / 2; i++)
         {
             click[2 * i] = click[2 * i + 1] = (short)(6000 * Math.Sin(i * 0.2));
@@ -347,17 +348,17 @@ public sealed class SessionCaptureTests : IDisposable
     }
 
     /// <summary>A capture folder of <paramref name="frames"/> moving pictures (the save's progress and zip tests).</summary>
-    string SimpleCapture(string name, int frames)
+    private string SimpleCapture(string name, int frames)
     {
         string dir = Path.Combine(_dir, name);
         Directory.CreateDirectory(dir);
         File.WriteAllText(Path.Combine(dir, "session.txt"), "title-id: TEST00000\ntitle: Test\nstart-ns: 0\n");
-        using var fs = File.Create(Path.Combine(dir, "frames.vsfr"));
+        using FileStream fs = File.Create(Path.Combine(dir, "frames.vsfr"));
         FramesFile.WriteHeader(fs);
         var enc = new FramesFile.Encoder();
         for (int i = 0; i < frames; i++)
         {
-            var (data, flags) = enc.Encode(Picture(i), W, H);
+            (byte[]? data, byte flags) = enc.Encode(Picture(i), Width, Height);
             FramesFile.WriteRecord(fs, new PresentInfo { Present = i + 1, Flip = i, PresentNs = (i + 1) * 16_666_667L, IntervalMs = 16.7f, Hitch = "" }, flags, data);
         }
         return dir;
@@ -391,11 +392,11 @@ public sealed class SessionCaptureTests : IDisposable
         SessionCapture.ZipFolder(dir, zip, seen.Add);
         Assert.Equal(1.0, seen[^1], 3);
         Assert.True(seen.Zip(seen.Skip(1)).All(p => p.Second >= p.First), "progress goes backwards");
-        using var z = System.IO.Compression.ZipFile.OpenRead(zip);
-        var frames = z.GetEntry("zipped/frames.vsfr")!;
+        using ZipArchive z = System.IO.Compression.ZipFile.OpenRead(zip);
+        ZipArchiveEntry frames = z.GetEntry("zipped/frames.vsfr")!;
         Assert.Equal(new FileInfo(Path.Combine(dir, "frames.vsfr")).Length, frames.Length);
         Assert.Equal(frames.Length, frames.CompressedLength); // stored
-        var log = z.GetEntry("zipped/log.txt")!;
+        ZipArchiveEntry log = z.GetEntry("zipped/log.txt")!;
         Assert.True(log.CompressedLength < log.Length / 4); // deflated
     }
 }

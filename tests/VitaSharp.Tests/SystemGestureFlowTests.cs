@@ -10,27 +10,27 @@ namespace VitaSharp.Tests;
 /// rotation recognizers (144-byte events). The time comes from the touch data's timestamp, so the tests set it.
 /// </summary>
 [Collection("guest")]
-public sealed class SystemGestureFlowTests(GuestMemoryFixture fx) : IDisposable
+public sealed class SystemGestureFlowTests(GuestMemoryFixture fixture) : IDisposable
 {
-    const int INVALID_ARG = unchecked((int)0x80800001), NOT_INITIALIZED = unchecked((int)0x80800002);
-    const uint BEGIN = 1, ACTIVE = 2, END = 3;
+    private const int INVALID_ARG = unchecked((int)0x80800001), NOT_INITIALIZED = unchecked((int)0x80800002);
+    private const uint BEGIN = 1, ACTIVE = 2, END = 3;
 
-    readonly HleHarness _h = new(fx, "gesture");
-    SystemGesture G => _h.Module<SystemGesture>();
-    ulong _t = 1_000_000_000_000; // far past the process clock, so the touch timestamps rule
+    private readonly HleHarness _harness = new(fixture, "gesture");
+    private SystemGesture SystemGesture => _harness.Module<SystemGesture>();
+    private ulong _timestamp = 1_000_000_000_000; // far past the process clock, so the touch timestamps rule
 
-    public void Dispose() => _h.Dispose();
+    public void Dispose() => _harness.Dispose();
 
-    uint Touch => _touchBuf ??= _h.Alloc(16 + 8 * 16);
-    uint? _touchBuf;
+    private uint Touch => _touchBuf ??= _harness.Alloc(16 + 8 * 16);
+    private uint? _touchBuf;
 
     /// <summary>One frame of front touch reports, <paramref name="dtUs"/> after the previous one.</summary>
-    void Frame(ulong dtUs, params (byte Id, short X, short Y)[] reports)
+    private void Frame(ulong dtUs, params (byte Id, short X, short Y)[] reports)
     {
-        _t += dtUs;
+        _timestamp += dtUs;
         uint d = Touch;
         GuestMemory.Fill(d, 0, 16 + 8 * 16);
-        GuestMemory.Write(d, _t);
+        GuestMemory.Write(d, _timestamp);
         GuestMemory.W32(d + 12, (uint)reports.Length);
         for (int i = 0; i < reports.Length; i++)
         {
@@ -40,41 +40,41 @@ public sealed class SystemGestureFlowTests(GuestMemoryFixture fx) : IDisposable
             GuestMemory.Write(r + 2, (ushort)reports[i].X);
             GuestMemory.Write(r + 4, (ushort)reports[i].Y);
         }
-        Assert.Equal(0, Call(G, "sceSystemGestureUpdatePrimitiveTouchRecognizer", d, 0u));
+        Assert.Equal(0, Call(SystemGesture, "sceSystemGestureUpdatePrimitiveTouchRecognizer", d, 0u));
     }
 
-    uint Recognizer(uint type, short x = 0, short y = 0, short w = 1920, short h = 1088, uint param = 0)
+    private uint Recognizer(uint type, short x = 0, short y = 0, short w = 1920, short h = 1088, uint param = 0)
     {
-        uint rec = _h.Alloc(307 * 8), rect = _h.Alloc(8);
+        uint rec = _harness.Alloc(307 * 8), rect = _harness.Alloc(8);
         GuestMemory.Write(rect, x);
         GuestMemory.Write(rect + 2, y);
         GuestMemory.Write(rect + 4, w);
         GuestMemory.Write(rect + 6, h);
-        Assert.Equal(0, Call(G, "sceSystemGestureCreateTouchRecognizer", rec, type, 0u, rect, param));
+        Assert.Equal(0, Call(SystemGesture, "sceSystemGestureCreateTouchRecognizer", rec, type, 0u, rect, param));
         return rec;
     }
 
-    List<byte[]> Events(uint rec)
+    private List<byte[]> Events(uint rec)
     {
-        Assert.Equal(0, Call(G, "sceSystemGestureUpdateTouchRecognizer", rec));
-        uint buf = _h.Alloc(144 * 8), n = _h.Word(0);
-        Assert.Equal(0, Call(G, "sceSystemGestureGetTouchEvents", rec, buf, 8u, new Ptr<uint>(n)));
-        Assert.Equal((uint)Call(G, "sceSystemGestureGetTouchEventsCount", rec), GuestMemory.R32(n));
+        Assert.Equal(0, Call(SystemGesture, "sceSystemGestureUpdateTouchRecognizer", rec));
+        uint buf = _harness.Alloc(144 * 8), n = _harness.Word(0);
+        Assert.Equal(0, Call(SystemGesture, "sceSystemGestureGetTouchEvents", rec, buf, 8u, new Ptr<uint>(n)));
+        Assert.Equal((uint)Call(SystemGesture, "sceSystemGestureGetTouchEventsCount", rec), GuestMemory.R32(n));
         return Enumerable.Range(0, (int)GuestMemory.R32(n)).Select(i => GuestMemory.ReadSpan(buf + (uint)i * 144, 144).ToArray()).ToList();
     }
 
-    static uint State(byte[] e) => BitConverter.ToUInt32(e, 4);
-    static short S16(byte[] e, int o) => BitConverter.ToInt16(e, o);
+    private static uint State(byte[] e) => BitConverter.ToUInt32(e, 4);
+    private static short S16(byte[] e, int o) => BitConverter.ToInt16(e, o);
 
     [Fact]
     public void PrimitiveEventsFollowEachFinger()
     {
-        Assert.Equal(NOT_INITIALIZED, Call(G, "sceSystemGestureUpdatePrimitiveTouchRecognizer", Touch, 0u));
-        Assert.Equal(0, Call(G, "sceSystemGestureInitializePrimitiveTouchRecognizer", 0u));
+        Assert.Equal(NOT_INITIALIZED, Call(SystemGesture, "sceSystemGestureUpdatePrimitiveTouchRecognizer", Touch, 0u));
+        Assert.Equal(0, Call(SystemGesture, "sceSystemGestureInitializePrimitiveTouchRecognizer", 0u));
         Frame(16_000, (1, 100, 200));
-        Assert.Equal(1, Call(G, "sceSystemGestureGetPrimitiveTouchEventsCount"));
-        uint ev = _h.Alloc(96 * 4), n = _h.Word(0);
-        Assert.Equal(0, Call(G, "sceSystemGestureGetPrimitiveTouchEvents", ev, 4u, new Ptr<uint>(n)));
+        Assert.Equal(1, Call(SystemGesture, "sceSystemGestureGetPrimitiveTouchEventsCount"));
+        uint ev = _harness.Alloc(96 * 4), n = _harness.Word(0);
+        Assert.Equal(0, Call(SystemGesture, "sceSystemGestureGetPrimitiveTouchEvents", ev, 4u, new Ptr<uint>(n)));
         Assert.Equal(1u, GuestMemory.R32(n));
         Assert.Equal(BEGIN, GuestMemory.R32(ev));
         ushort id = GuestMemory.Read<ushort>(ev + 4);
@@ -83,7 +83,7 @@ public sealed class SystemGestureFlowTests(GuestMemoryFixture fx) : IDisposable
 
         // the same report id moves: ACTIVE, with the delta and the time since the last frame
         Frame(16_000, (1, 130, 190));
-        Assert.Equal(0, Call(G, "sceSystemGestureGetPrimitiveTouchEventByIndex", 0u, ev));
+        Assert.Equal(0, Call(SystemGesture, "sceSystemGestureGetPrimitiveTouchEventByIndex", 0u, ev));
         Assert.Equal(ACTIVE, GuestMemory.R32(ev));
         Assert.Equal(id, GuestMemory.Read<ushort>(ev + 4));
         Assert.Equal((short)130, GuestMemory.Read<short>(ev + 12));
@@ -94,36 +94,36 @@ public sealed class SystemGestureFlowTests(GuestMemoryFixture fx) : IDisposable
 
         // a second finger is a new primitive
         Frame(16_000, (1, 130, 190), (2, 800, 600));
-        Assert.Equal(2, Call(G, "sceSystemGestureGetPrimitiveTouchEventsCount"));
+        Assert.Equal(2, Call(SystemGesture, "sceSystemGestureGetPrimitiveTouchEventsCount"));
         // the first finger lifts: END for one frame, then gone
         Frame(16_000, (2, 800, 600));
-        Assert.Equal(0, Call(G, "sceSystemGestureGetPrimitiveTouchEventByPrimitiveID", (uint)id, ev));
+        Assert.Equal(0, Call(SystemGesture, "sceSystemGestureGetPrimitiveTouchEventByPrimitiveID", (uint)id, ev));
         Assert.Equal(END, GuestMemory.R32(ev));
         Frame(16_000, (2, 800, 600));
-        Assert.Equal(1, Call(G, "sceSystemGestureGetPrimitiveTouchEventsCount"));
-        Assert.Equal(INVALID_ARG, Call(G, "sceSystemGestureGetPrimitiveTouchEventByPrimitiveID", (uint)id, ev));
-        Assert.Equal(INVALID_ARG, Call(G, "sceSystemGestureGetPrimitiveTouchEventByIndex", 5u, ev));
-        Assert.Equal(INVALID_ARG, Call(G, "sceSystemGestureGetPrimitiveTouchEventByIndex", 0u, 0u));
+        Assert.Equal(1, Call(SystemGesture, "sceSystemGestureGetPrimitiveTouchEventsCount"));
+        Assert.Equal(INVALID_ARG, Call(SystemGesture, "sceSystemGestureGetPrimitiveTouchEventByPrimitiveID", (uint)id, ev));
+        Assert.Equal(INVALID_ARG, Call(SystemGesture, "sceSystemGestureGetPrimitiveTouchEventByIndex", 5u, ev));
+        Assert.Equal(INVALID_ARG, Call(SystemGesture, "sceSystemGestureGetPrimitiveTouchEventByIndex", 0u, 0u));
         // capacity limits the copy; a NULL buffer only counts
-        Assert.Equal(0, Call(G, "sceSystemGestureGetPrimitiveTouchEvents", 0u, 4u, new Ptr<uint>(n)));
+        Assert.Equal(0, Call(SystemGesture, "sceSystemGestureGetPrimitiveTouchEvents", 0u, 4u, new Ptr<uint>(n)));
         Assert.Equal(1u, GuestMemory.R32(n));
-        Assert.Equal(0, Call(G, "sceSystemGestureResetPrimitiveTouchRecognizer"));
-        Assert.Equal(0, Call(G, "sceSystemGestureGetPrimitiveTouchEventsCount"));
-        Assert.Equal(0, Call(G, "sceSystemGestureFinalizePrimitiveTouchRecognizer"));
-        Assert.Equal(NOT_INITIALIZED, Call(G, "sceSystemGestureUpdatePrimitiveTouchRecognizer", Touch, 0u));
+        Assert.Equal(0, Call(SystemGesture, "sceSystemGestureResetPrimitiveTouchRecognizer"));
+        Assert.Equal(0, Call(SystemGesture, "sceSystemGestureGetPrimitiveTouchEventsCount"));
+        Assert.Equal(0, Call(SystemGesture, "sceSystemGestureFinalizePrimitiveTouchRecognizer"));
+        Assert.Equal(NOT_INITIALIZED, Call(SystemGesture, "sceSystemGestureUpdatePrimitiveTouchRecognizer", Touch, 0u));
     }
 
     [Fact]
     public void TapsAndDoubleTaps()
     {
-        Call(G, "sceSystemGestureInitializePrimitiveTouchRecognizer", 0u);
-        uint param = _h.Alloc(4);
+        Call(SystemGesture, "sceSystemGestureInitializePrimitiveTouchRecognizer", 0u);
+        uint param = _harness.Alloc(4);
         GuestMemory.Write(param, (byte)2); // up to double taps
         uint tap = Recognizer(1, 0, 0, 960, 1088, param);
         Frame(16_000, (1, 300, 300));
         Assert.Empty(Events(tap));
         Frame(100_000);
-        var e = Assert.Single(Events(tap));
+        byte[] e = Assert.Single(Events(tap));
         Assert.Equal(END, State(e));
         Assert.Equal(1u, BitConverter.ToUInt32(e, 8));  // TAP
         Assert.Equal((short)300, S16(e, 26));
@@ -150,23 +150,23 @@ public sealed class SystemGestureFlowTests(GuestMemoryFixture fx) : IDisposable
         Frame(500_000, (1, 100, 100));
         Frame(50_000);
         e = Assert.Single(Events(tap));
-        uint dst = _h.Alloc(144);
-        Assert.Equal(0, Call(G, "sceSystemGestureGetTouchEventByIndex", tap, 0u, dst));
+        uint dst = _harness.Alloc(144);
+        Assert.Equal(0, Call(SystemGesture, "sceSystemGestureGetTouchEventByIndex", tap, 0u, dst));
         Assert.Equal(BitConverter.ToUInt32(e, 0), GuestMemory.R32(dst));
-        Assert.Equal(0, Call(G, "sceSystemGestureGetTouchEventByEventID", tap, BitConverter.ToUInt32(e, 0), dst));
-        Assert.Equal(INVALID_ARG, Call(G, "sceSystemGestureGetTouchEventByEventID", tap, 0xFFFFu, dst));
-        Assert.Equal(INVALID_ARG, Call(G, "sceSystemGestureGetTouchEventByIndex", tap, 1u, dst));
-        Assert.Equal(0, Call(G, "sceSystemGestureResetTouchRecognizer", tap));
-        Assert.Equal(0, Call(G, "sceSystemGestureGetTouchEventsCount", tap));
+        Assert.Equal(0, Call(SystemGesture, "sceSystemGestureGetTouchEventByEventID", tap, BitConverter.ToUInt32(e, 0), dst));
+        Assert.Equal(INVALID_ARG, Call(SystemGesture, "sceSystemGestureGetTouchEventByEventID", tap, 0xFFFFu, dst));
+        Assert.Equal(INVALID_ARG, Call(SystemGesture, "sceSystemGestureGetTouchEventByIndex", tap, 1u, dst));
+        Assert.Equal(0, Call(SystemGesture, "sceSystemGestureResetTouchRecognizer", tap));
+        Assert.Equal(0, Call(SystemGesture, "sceSystemGestureGetTouchEventsCount", tap));
     }
 
     [Fact]
     public void DragBeginsAtTouchDownAndEndsOnRelease()
     {
-        Call(G, "sceSystemGestureInitializePrimitiveTouchRecognizer", 0u);
+        Call(SystemGesture, "sceSystemGestureInitializePrimitiveTouchRecognizer", 0u);
         uint drag = Recognizer(2);
         Frame(16_000, (1, 100, 100));
-        var e = Assert.Single(Events(drag));
+        byte[] e = Assert.Single(Events(drag));
         Assert.Equal(BEGIN, State(e));
         uint id = BitConverter.ToUInt32(e, 0);
         Frame(16_000, (1, 150, 120));
@@ -182,7 +182,7 @@ public sealed class SystemGestureFlowTests(GuestMemoryFixture fx) : IDisposable
         // pressed and released between two updates: begin and end together
         Frame(16_000, (2, 500, 500));
         Frame(16_000);
-        var both = Events(drag);
+        List<byte[]> both = Events(drag);
         Assert.Equal([BEGIN, END], both.Select(State).ToArray());
         Assert.Equal(BitConverter.ToUInt32(both[0], 0), BitConverter.ToUInt32(both[1], 0));
     }
@@ -190,7 +190,7 @@ public sealed class SystemGestureFlowTests(GuestMemoryFixture fx) : IDisposable
     [Fact]
     public void TapAndHoldNeedsHalfASecondStill()
     {
-        Call(G, "sceSystemGestureInitializePrimitiveTouchRecognizer", 0u);
+        Call(SystemGesture, "sceSystemGestureInitializePrimitiveTouchRecognizer", 0u);
         uint hold = Recognizer(4);
         Frame(16_000, (1, 200, 200));
         Assert.Empty(Events(hold));
@@ -207,14 +207,14 @@ public sealed class SystemGestureFlowTests(GuestMemoryFixture fx) : IDisposable
     [Fact]
     public void PinchAndRotation()
     {
-        Call(G, "sceSystemGestureInitializePrimitiveTouchRecognizer", 0u);
+        Call(SystemGesture, "sceSystemGestureInitializePrimitiveTouchRecognizer", 0u);
         uint pinch = Recognizer(8), rot = Recognizer(0x10);
         Frame(16_000, (1, 500, 500), (2, 700, 500));
         Assert.Equal(BEGIN, State(Assert.Single(Events(pinch))));
         Assert.Equal(BEGIN, State(Assert.Single(Events(rot))));
         // spread to twice the distance; turn the second finger a quarter turn around the first
         Frame(16_000, (1, 500, 500), (2, 900, 500));
-        var e = Assert.Single(Events(pinch));
+        byte[] e = Assert.Single(Events(pinch));
         Assert.Equal(ACTIVE, State(e));
         Assert.Equal(2f, BitConverter.ToSingle(e, 24), 3);
         Frame(16_000, (1, 500, 500), (2, 500, 900));
@@ -224,40 +224,40 @@ public sealed class SystemGestureFlowTests(GuestMemoryFixture fx) : IDisposable
         // a finger lifts: the gesture ends
         Frame(16_000, (1, 500, 500));
         Events(rot);
-        var end = Events(pinch);
+        List<byte[]> end = Events(pinch);
         Assert.Contains(end, x => State(x) == END);
     }
 
     [Fact]
     public void RecognizerInformationAndErrors()
     {
-        uint rec = Recognizer(2, 10, 20, 300, 400), info = _h.Alloc(280);
-        Assert.Equal(0, Call(G, "sceSystemGestureGetTouchRecognizerInformation", rec, info));
+        uint rec = Recognizer(2, 10, 20, 300, 400), info = _harness.Alloc(280);
+        Assert.Equal(0, Call(SystemGesture, "sceSystemGestureGetTouchRecognizerInformation", rec, info));
         Assert.Equal(2u, GuestMemory.R32(info));
         Assert.Equal((short)10, GuestMemory.Read<short>(info + 8));
         Assert.Equal((short)400, GuestMemory.Read<short>(info + 14));
-        uint rect = _h.Alloc(8);
+        uint rect = _harness.Alloc(8);
         GuestMemory.Write(rect + 4, (short)50);
         GuestMemory.Write(rect + 6, (short)60);
-        Assert.Equal(0, Call(G, "sceSystemGestureUpdateTouchRecognizerRectangle", rec, rect));
-        Call(G, "sceSystemGestureGetTouchRecognizerInformation", rec, info);
+        Assert.Equal(0, Call(SystemGesture, "sceSystemGestureUpdateTouchRecognizerRectangle", rec, rect));
+        Call(SystemGesture, "sceSystemGestureGetTouchRecognizerInformation", rec, info);
         Assert.Equal((short)0, GuestMemory.Read<short>(info + 8));
         Assert.Equal((short)60, GuestMemory.Read<short>(info + 14));
         // NULL rectangle: the whole front panel
-        Assert.Equal(0, Call(G, "sceSystemGestureUpdateTouchRecognizerRectangle", rec, 0u));
-        Call(G, "sceSystemGestureGetTouchRecognizerInformation", rec, info);
+        Assert.Equal(0, Call(SystemGesture, "sceSystemGestureUpdateTouchRecognizerRectangle", rec, 0u));
+        Call(SystemGesture, "sceSystemGestureGetTouchRecognizerInformation", rec, info);
         Assert.Equal((short)1920, GuestMemory.Read<short>(info + 12));
 
-        uint unknown = _h.Alloc(16), n = _h.Word(5);
-        Assert.Equal(INVALID_ARG, Call(G, "sceSystemGestureGetTouchRecognizerInformation", unknown, info));
-        Assert.Equal(INVALID_ARG, Call(G, "sceSystemGestureGetTouchRecognizerInformation", rec, 0u));
-        Assert.Equal(INVALID_ARG, Call(G, "sceSystemGestureUpdateTouchRecognizerRectangle", unknown, rect));
-        Assert.Equal(INVALID_ARG, Call(G, "sceSystemGestureResetTouchRecognizer", unknown));
-        Assert.Equal(INVALID_ARG, Call(G, "sceSystemGestureUpdateTouchRecognizer", unknown));
-        Assert.Equal(INVALID_ARG, Call(G, "sceSystemGestureGetTouchEvents", unknown, 0u, 1u, new Ptr<uint>(n)));
+        uint unknown = _harness.Alloc(16), n = _harness.Word(5);
+        Assert.Equal(INVALID_ARG, Call(SystemGesture, "sceSystemGestureGetTouchRecognizerInformation", unknown, info));
+        Assert.Equal(INVALID_ARG, Call(SystemGesture, "sceSystemGestureGetTouchRecognizerInformation", rec, 0u));
+        Assert.Equal(INVALID_ARG, Call(SystemGesture, "sceSystemGestureUpdateTouchRecognizerRectangle", unknown, rect));
+        Assert.Equal(INVALID_ARG, Call(SystemGesture, "sceSystemGestureResetTouchRecognizer", unknown));
+        Assert.Equal(INVALID_ARG, Call(SystemGesture, "sceSystemGestureUpdateTouchRecognizer", unknown));
+        Assert.Equal(INVALID_ARG, Call(SystemGesture, "sceSystemGestureGetTouchEvents", unknown, 0u, 1u, new Ptr<uint>(n)));
         Assert.Equal(0u, GuestMemory.R32(n));
-        Assert.Equal(INVALID_ARG, Call(G, "sceSystemGestureGetTouchEventsCount", unknown));
-        Assert.Equal(INVALID_ARG, Call(G, "sceSystemGestureGetTouchEventByIndex", unknown, 0u, info));
-        Assert.Equal(INVALID_ARG, Call(G, "sceSystemGestureGetTouchEventByEventID", unknown, 0u, info));
+        Assert.Equal(INVALID_ARG, Call(SystemGesture, "sceSystemGestureGetTouchEventsCount", unknown));
+        Assert.Equal(INVALID_ARG, Call(SystemGesture, "sceSystemGestureGetTouchEventByIndex", unknown, 0u, info));
+        Assert.Equal(INVALID_ARG, Call(SystemGesture, "sceSystemGestureGetTouchEventByEventID", unknown, 0u, info));
     }
 }

@@ -8,7 +8,7 @@ namespace VitaSharp.Tests;
 /// subset Android puts in its log file while a game runs (the process is often killed instead of stopped).
 /// </summary>
 [Collection("guest")]
-public sealed class SessionReportTests(GuestMemoryFixture fx)
+public sealed class SessionReportTests(GuestMemoryFixture fixture)
 {
     [Fact]
     public void EndOfRunAndPeriodicLines()
@@ -17,7 +17,7 @@ public sealed class SessionReportTests(GuestMemoryFixture fx)
         Directory.CreateDirectory(root);
         bool jitEnabled = VitaSharp.Core.Cpu.Jit.Enabled;
         string jitMode = VitaSharp.Core.Cpu.Jit.Mode;
-        var emu = new Emulator(new EmulatorOptions { FsRoot = root, Memory = fx.Memory, EnableJit = false, CpuBackend = "interp" });
+        var emu = new Emulator(new EmulatorOptions { FsRoot = root, Memory = fixture.Memory, EnableJit = false, CpuBackend = "interp" });
         try
         {
             var lines = SessionReport.Lines(emu).ToList();

@@ -10,7 +10,7 @@ namespace VitaSharp.Tests;
 /// </summary>
 public static class ShadercAvailability
 {
-    static readonly Lazy<string?> Reason = new(() =>
+    private static readonly Lazy<string?> s_reason = new(() =>
     {
         try
         {
@@ -23,10 +23,10 @@ public static class ShadercAvailability
         }
     });
 
-    public static string? SkipReason => Reason.Value;
+    public static string? SkipReason => s_reason.Value;
 
     /// <summary>Why the copy from Silk.NET.Shaderc.Native did not load (the loader's own message, e.g. dlerror's).</summary>
-    static string BundledLoadError()
+    private static string BundledLoadError()
     {
         string name = OperatingSystem.IsWindows() ? "shaderc_shared.dll" : OperatingSystem.IsMacOS() ? "libshaderc_shared.dylib" : "libshaderc_shared.so";
         string path = Path.Combine(AppContext.BaseDirectory, "runtimes", RuntimeInformation.RuntimeIdentifier, "native", name);
@@ -46,7 +46,7 @@ public static class ShadercAvailability
         }
     }
 
-    static string InstallHint()
+    private static string InstallHint()
     {
         if (OperatingSystem.IsLinux())
         {

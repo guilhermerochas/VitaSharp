@@ -11,13 +11,13 @@ namespace VitaSharp.Tests;
 /// </summary>
 public sealed class SceModuleBuilder(string name)
 {
-    const uint NidModuleStart = 0x935CD196;
-    const int CodeAt = 0x0, InfoAt = 0x400, ExportsAt = 0x500, ImportsAt = 0x700, StubsAt = 0x900, DataAt = 0xA00, Size = 0x1000;
+    private const uint NidModuleStart = 0x935CD196;
+    private const int CodeAt = 0x0, InfoAt = 0x400, ExportsAt = 0x500, ImportsAt = 0x700, StubsAt = 0x900, DataAt = 0xA00, Size = 0x1000;
 
-    readonly List<(string Name, uint Nid, ushort Attr, List<(uint Nid, int Function)> Functions)> _exports = [];
-    readonly List<(string Name, uint Nid, uint[] Functions)> _imports = [];
-    readonly List<ushort[]> _code = [];
-    int _startFunction = -1;
+    private readonly List<(string Name, uint Nid, ushort Attr, List<(uint Nid, int Function)> Functions)> _exports = [];
+    private readonly List<(string Name, uint Nid, uint[] Functions)> _imports = [];
+    private readonly List<ushort[]> _code = [];
+    private int _startFunction = -1;
 
     /// <summary>A Thumb function returning <paramref name="value"/> (0..255); returns its index.</summary>
     public int ReturnConstant(byte value)
@@ -56,7 +56,7 @@ public sealed class SceModuleBuilder(string name)
 
     public byte[] Build()
     {
-        var seg = new byte[Size];
+        byte[] seg = new byte[Size];
         var relocs = new List<(uint Offset, uint Value)>();
         void W16(int at, ushort v) => BinaryPrimitives.WriteUInt16LittleEndian(seg.AsSpan(at), v);
         void W32(int at, uint v) => BinaryPrimitives.WriteUInt32LittleEndian(seg.AsSpan(at), v);
@@ -81,7 +81,7 @@ public sealed class SceModuleBuilder(string name)
         {
             int at = CodeAt + i * 0x10;
             functionAt.Add(at);
-            var words = _code[i];
+            ushort[] words = _code[i];
             bool call = words.Length == 6;
             for (int k = 0; k < (call ? 4 : words.Length); k++)
             {
@@ -103,13 +103,13 @@ public sealed class SceModuleBuilder(string name)
             libs.Add((null, 0, 0x8000, [(NidModuleStart, (uint)functionAt[_startFunction] | 1)]));
         }
 
-        foreach (var e in _exports)
+        foreach ((string Name, uint Nid, ushort Attr, List<(uint Nid, int Function)> Functions) e in _exports)
         {
             libs.Add((e.Name, e.Nid, e.Attr, e.Functions.Select(f => (f.Nid, (uint)functionAt[f.Function] | 1)).ToList()));
         }
 
         int exp = ExportsAt;
-        foreach (var lib in libs)
+        foreach ((string? Name, uint Nid, ushort Attr, List<(uint Nid, uint Addr)> F) lib in libs)
         {
             uint nids = (uint)data;
             data += lib.F.Count * 4;
@@ -138,7 +138,7 @@ public sealed class SceModuleBuilder(string name)
 
         // imports (0x34-byte entries) and their stubs (16 bytes each, rewritten by the linker)
         int imp0 = ImportsAt, stub = StubsAt;
-        foreach (var lib in _imports)
+        foreach ((string Name, uint Nid, uint[] Functions) lib in _imports)
         {
             uint nids = (uint)data;
             data += lib.Functions.Length * 4;
@@ -174,7 +174,7 @@ public sealed class SceModuleBuilder(string name)
         W32(InfoAt + 0x48, 0xFFFFFFFF);
 
         // the ELF: header, 2 program headers (PT_LOAD, PT_SCE_RELA), the segment, the relocations (format 0, R_ARM_ABS32)
-        var rela = new byte[relocs.Count * 12];
+        byte[] rela = new byte[relocs.Count * 12];
         for (int i = 0; i < relocs.Count; i++)
         {
             BinaryPrimitives.WriteUInt32LittleEndian(rela.AsSpan(i * 12), 2u << 8);
@@ -183,7 +183,7 @@ public sealed class SceModuleBuilder(string name)
         }
 
         const int SegOffset = 0x100;
-        var elf = new byte[SegOffset + Size + rela.Length];
+        byte[] elf = new byte[SegOffset + Size + rela.Length];
         Span<byte> h = elf;
         h[0] = 0x7F;
         h[1] = (byte)'E';

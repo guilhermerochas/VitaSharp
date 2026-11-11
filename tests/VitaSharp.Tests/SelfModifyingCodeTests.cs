@@ -1,4 +1,6 @@
 using VitaSharp.Core;
+using VitaSharp.Core.Cpu;
+using VitaSharp.Core.Kernel;
 using VitaSharp.Core.Memory;
 
 namespace VitaSharp.Tests;
@@ -9,10 +11,10 @@ namespace VitaSharp.Tests;
 /// leaves the old translation, as the hardware's instruction side keeps the old line until it is invalidated.
 /// </summary>
 [Collection("guest")]
-public sealed class SelfModifyingCodeTests(GuestMemoryFixture fx) : IDisposable
+public sealed class SelfModifyingCodeTests(GuestMemoryFixture fixture) : IDisposable
 {
-    readonly string _root = Path.Combine(Path.GetTempPath(), "vitasharp-smc-" + Guid.NewGuid().ToString("N"));
-    Emulator? _emu;
+    private readonly string _root = Path.Combine(Path.GetTempPath(), "vitasharp-smc-" + Guid.NewGuid().ToString("N"));
+    private Emulator? _emu;
 
     public void Dispose()
     {
@@ -31,7 +33,7 @@ public sealed class SelfModifyingCodeTests(GuestMemoryFixture fx) : IDisposable
     /// <paramref name="invalidate"/>, mcr p15, 0, r0, c7, c5, 1 (ICIMVAU of r0's line); ICIALLU at +0x40 (mcr p15, 0, r0,
     /// c7, c5, 0); all Thumb. Returns the block's address.
     /// </summary>
-    static uint WriteCode(GuestMemory memory)
+    private static uint WriteCode(GuestMemory memory)
     {
         uint code = memory.Alloc(0x1000, "smc test");
         GuestMemory.Fill(code, 0, 0x1000);
@@ -54,24 +56,24 @@ public sealed class SelfModifyingCodeTests(GuestMemoryFixture fx) : IDisposable
         return code;
     }
 
-    Emulator NewEmulator(string backend)
+    private Emulator NewEmulator(string backend)
     {
         Directory.CreateDirectory(_root);
-        _emu = new Emulator(new EmulatorOptions { FsRoot = _root, Memory = fx.Memory, EnableJit = backend != "interp", CpuBackend = backend });
+        _emu = new Emulator(new EmulatorOptions { FsRoot = _root, Memory = fixture.Memory, EnableJit = backend != "interp", CpuBackend = backend });
         return _emu;
     }
 
     /// <summary>movs r0, #value; bx lr, as the word P stores.</summary>
-    static uint ReturnWord(byte value) => 0x4770_2000u | value;
+    private static uint ReturnWord(byte value) => 0x4770_2000u | value;
 
     [Theory]
     [InlineData("interp")]
     [InlineData("native")]
     public void RewrittenCodeRunsAfterTheInstructionCacheIsInvalidated(string backend)
     {
-        var emu = NewEmulator(backend);
+        Emulator emu = NewEmulator(backend);
         var h = new HleRunner(emu);
-        uint code = WriteCode(fx.Memory);
+        uint code = WriteCode(fixture.Memory);
         uint f = code | 1;
         h.Run(t =>
         {
@@ -81,7 +83,7 @@ public sealed class SelfModifyingCodeTests(GuestMemoryFixture fx) : IDisposable
             {
                 Assert.Equal(1u, t.CallGuest(f));
             }
-            while (backend == "native" && !(emu.Code.TryGet(code, true, out var b) && b!.NativeEntry != 0) && sw.ElapsedMilliseconds < 20_000);
+            while (backend == "native" && !(emu.Code.TryGet(code, true, out Block? b) && b!.NativeEntry != 0) && sw.ElapsedMilliseconds < 20_000);
 
             // a store alone: the old translation keeps running
             t.CallGuest((code + 0x30) | 1, code, ReturnWord(2));
@@ -94,16 +96,16 @@ public sealed class SelfModifyingCodeTests(GuestMemoryFixture fx) : IDisposable
             t.CallGuest((code + 0x40) | 1);
             Assert.Equal(4u, t.CallGuest(f));
         });
-        fx.Memory.Free(code);
+        fixture.Memory.Free(code);
     }
 
     /// <summary>Runs a body on a guest thread of an emulator and rethrows its failure.</summary>
-    sealed class HleRunner(Emulator emu)
+    private sealed class HleRunner(Emulator emu)
     {
         public void Run(Action<VitaSharp.Core.Kernel.GuestThread> body)
         {
             Exception? failure = null;
-            var t = emu.Kernel.CreateThread("smc", 0, 0x10000100, 0x10000, 0, 0x70000);
+            GuestThread t = emu.Kernel.CreateThread("smc", 0, 0x10000100, 0x10000, 0, 0x70000);
             t.HostBody = th =>
             {
                 try

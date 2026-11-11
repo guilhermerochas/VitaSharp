@@ -8,12 +8,12 @@ namespace VitaSharp.Tests;
 /// --launch-app / --launch-uri): the application's entry waits for the shell's second stage and the shell gets event 6;
 /// the shell's system screen (lock screen) state and the shell-up signal the host waits for.</summary>
 [Collection("guest")]
-public sealed class ShellLaunchRequestTests(GuestMemoryFixture fx) : IDisposable
+public sealed class ShellLaunchRequestTests(GuestMemoryFixture fixture) : IDisposable
 {
-    readonly string _root = Path.Combine(Path.GetTempPath(), "vitasharp-shell-launch-" + Guid.NewGuid().ToString("N"));
-    Emulator? _emu;
+    private readonly string _root = Path.Combine(Path.GetTempPath(), "vitasharp-shell-launch-" + Guid.NewGuid().ToString("N"));
+    private Emulator? _emu;
 
-    Emulator Emu()
+    private Emulator Emu()
     {
         if (_emu != null)
         {
@@ -21,7 +21,7 @@ public sealed class ShellLaunchRequestTests(GuestMemoryFixture fx) : IDisposable
         }
 
         Directory.CreateDirectory(_root);
-        return _emu = new Emulator(new EmulatorOptions { FsRoot = _root, Memory = fx.Memory, EnableJit = false, CpuBackend = "interp" });
+        return _emu = new Emulator(new EmulatorOptions { FsRoot = _root, Memory = fixture.Memory, EnableJit = false, CpuBackend = "interp" });
     }
 
     public void Dispose()
@@ -34,7 +34,7 @@ public sealed class ShellLaunchRequestTests(GuestMemoryFixture fx) : IDisposable
         catch (IOException) { }
     }
 
-    static (int Type, int W1, int W2) Event(byte[] e) =>
+    private static (int Type, int W1, int W2) Event(byte[] e) =>
         (BitConverter.ToInt32(e, 0), BitConverter.ToInt32(e, 4), BitConverter.ToInt32(e, 8));
 
     /// <summary>The kernel's BGM routing: with no BGM priority the BGM goes to the process in front; a positive priority
@@ -42,7 +42,7 @@ public sealed class ShellLaunchRequestTests(GuestMemoryFixture fx) : IDisposable
     [Fact]
     public void BgmGoesToTheProcessInFrontUnlessAnActiveOneHasAPriority()
     {
-        var emu = Emu();
+        Emulator emu = Emu();
         Assert.Same(emu, emu.Vita.BgmHolder(out int prio));
         Assert.Equal(VitaSystem.BgmNoPriority, prio);
         Assert.False(emu.Vita.BgmMuted(emu));
@@ -59,11 +59,11 @@ public sealed class ShellLaunchRequestTests(GuestMemoryFixture fx) : IDisposable
     [Fact]
     public void ByNameReservesTheApplicationAndPostsEvent6()
     {
-        var emu = Emu();
+        Emulator emu = Emu();
         while (emu.Vita.TakeShellEvent() != null)
         {
         }
-        var pl = emu.Vita.RequestLaunchByName(emu, "NPXS10015", "dir", 0x20000, "param");
+        PendingLaunch pl = emu.Vita.RequestLaunchByName(emu, "NPXS10015", "dir", 0x20000, "param");
         Assert.Same(pl, emu.Vita.GetPendingLaunch(pl.App.Uid));
         Assert.Equal(("NPXS10015", "dir", 0x20000, "param"), (pl.TitleId, pl.Dir, pl.Flags, pl.Param));
         Assert.Equal((ShellEvents.LaunchRequest, pl.App.Uid, pl.App.Uid), Event(emu.Vita.TakeShellEvent()!));
@@ -74,11 +74,11 @@ public sealed class ShellLaunchRequestTests(GuestMemoryFixture fx) : IDisposable
     [Fact]
     public void ByUriIsARequestWithoutAnApplication()
     {
-        var emu = Emu();
+        Emulator emu = Emu();
         while (emu.Vita.TakeShellEvent() != null)
         {
         }
-        var pl = emu.Vita.RequestLaunchByUri(emu, "psgm:play?titleid=NPXS10015", 0xFFFFF);
+        PendingLaunch pl = emu.Vita.RequestLaunchByUri(emu, "psgm:play?titleid=NPXS10015", 0xFFFFF);
         Assert.Equal(("", "", 0xFFFFF | 0x100000, "psgm:play?titleid=NPXS10015"), (pl.TitleId, pl.Dir, pl.Flags, pl.Param));
         Assert.Equal((ShellEvents.LaunchRequest, pl.App.Uid, pl.App.Uid), Event(emu.Vita.TakeShellEvent()!));
     }
@@ -86,7 +86,7 @@ public sealed class ShellLaunchRequestTests(GuestMemoryFixture fx) : IDisposable
     [Fact]
     public void SystemImposeState2IsTheShellsSystemScreen()
     {
-        var emu = Emu();
+        Emulator emu = Emu();
         Assert.False(emu.Vita.ShellImposesSystemUi);
         lock (emu.Vita.AppMgrState)
         {
@@ -105,7 +105,7 @@ public sealed class ShellLaunchRequestTests(GuestMemoryFixture fx) : IDisposable
     [Fact]
     public void ShellUpIsSetOnceTheShellStartsItsFirstService()
     {
-        var emu = Emu();
+        Emulator emu = Emu();
         Assert.False(emu.Vita.WaitShellUp(0));
         emu.Vita.MarkShellUp();
         Assert.True(emu.Vita.ShellUp);

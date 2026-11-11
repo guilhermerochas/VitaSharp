@@ -6,16 +6,16 @@ namespace VitaSharp.Tests;
 
 /// <summary>SceSystemGesture touch recognizers.</summary>
 [Collection("guest")]
-public sealed class SystemGestureHleTests(GuestMemoryFixture fx)
+public sealed class SystemGestureHleTests(GuestMemoryFixture fixture)
 {
-    const int INVALID_ARG = unchecked((int)0x80800001);
+    private const int INVALID_ARG = unchecked((int)0x80800001);
 
-    static int Call(SystemGesture g, string name, params object[] args) =>
+    private static int Call(SystemGesture g, string name, params object[] args) =>
         Convert.ToInt32(typeof(SystemGesture).GetMethod(name, BindingFlags.Instance | BindingFlags.NonPublic | BindingFlags.Public)!.Invoke(g, args));
 
-    uint Alloc(uint size)
+    private uint Alloc(uint size)
     {
-        uint p = fx.Memory.Alloc(size, "gesture");
+        uint p = fixture.Memory.Alloc(size, "gesture");
         GuestMemory.Fill(p, 0, size);
         return p;
     }
