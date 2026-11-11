@@ -16,7 +16,8 @@ public static class Program
 {
     public static int Main(string[] args)
     {
-        if (args.Length == 3 && args[0] == "compare") return ResultCompare.Run(args[1], args[2]);
+        if (args.Length == 3 && args[0] == "compare")
+            return ResultCompare.Run(args[1], args[2]);
         foreach (var (name, path) in new[] { (EnvVars.BenchDump, Fixtures.DumpPath), (EnvVars.BenchAt9, Fixtures.At9Path) })
             Console.WriteLine(path != null ? $"{name}={path}" : $"{name} not set: its fixture benchmarks {(name == EnvVars.BenchDump ? "fail in setup" : "use generated data")}");
         var summaries = BenchmarkSwitcher.FromAssembly(typeof(Program).Assembly).Run(args, BenchConfig.Create());
@@ -59,12 +60,14 @@ static class PriorityKeeper
                 try
                 {
                     me.Refresh();
-                    if (me.PriorityClass != System.Diagnostics.ProcessPriorityClass.BelowNormal) me.PriorityClass = System.Diagnostics.ProcessPriorityClass.BelowNormal;
+                    if (me.PriorityClass != System.Diagnostics.ProcessPriorityClass.BelowNormal)
+                        me.PriorityClass = System.Diagnostics.ProcessPriorityClass.BelowNormal;
                 }
                 catch (Exception) { } // not allowed on this system: keep what there is
                 Thread.Sleep(250);
             }
-        }) { IsBackground = true, Name = "bench priority" };
+        })
+        { IsBackground = true, Name = "bench priority" };
         t.Start();
     }
 }
@@ -85,9 +88,11 @@ public static class Fixtures
     /// <summary>Sets the switches of <paramref name="variant"/> in this process (before the code reading them initialises).</summary>
     public static void Apply(string variant)
     {
-        if (variant == "base") return;
+        if (variant == "base")
+            return;
         foreach (var kv in variant.Split(',', StringSplitOptions.RemoveEmptyEntries | StringSplitOptions.TrimEntries))
-            if (kv.IndexOf('=') is var eq and > 0) Environment.SetEnvironmentVariable(kv[..eq], kv[(eq + 1)..]);
+            if (kv.IndexOf('=') is var eq and > 0)
+                Environment.SetEnvironmentVariable(kv[..eq], kv[(eq + 1)..]);
     }
 
     public static string RequireDump() => DumpPath

@@ -24,7 +24,8 @@ public class Atrac9Benchmarks
         if (Fixtures.At9Path is { } path)
         {
             var file = File.ReadAllBytes(path);
-            if (At9Container.Parse(file, out var info) != At9ParseResult.Ok) throw new InvalidOperationException($"{path}: not an ATRAC9 .at9 file");
+            if (At9Container.Parse(file, out var info) != At9ParseResult.Ok)
+                throw new InvalidOperationException($"{path}: not an ATRAC9 .at9 file");
             _decoder.Initialize(info.Config);
             int sf = _decoder.Config.SuperframeBytes;
             for (long at = info.DataOffset; at + sf <= info.DataOffset + info.DataSize && _superframes.Count < 2048; at += sf)
@@ -38,12 +39,17 @@ public class Atrac9Benchmarks
             for (int tries = 0; tries < 200_000 && _superframes.Count < 256; tries++)
             {
                 var sf = Superframe(rng, _decoder.Config.FrameBytes, _decoder.Config.SuperframeBytes);
-                try { _decoder.Decode(sf, pcm); _superframes.Add(sf); }
+                try
+                {
+                    _decoder.Decode(sf, pcm);
+                    _superframes.Add(sf);
+                }
                 catch (Exception) { } // an invalid bitstream: try another
             }
             _decoder.Initialize([0xFE, 0x74, 0x1F, 0xF0]);
         }
-        if (_superframes.Count == 0) throw new InvalidOperationException("no ATRAC9 superframe to decode");
+        if (_superframes.Count == 0)
+            throw new InvalidOperationException("no ATRAC9 superframe to decode");
         _pcm = NewPcm();
     }
 
@@ -62,7 +68,10 @@ public class Atrac9Benchmarks
                 for (int i = bits - 1; i >= 0; i--, bit++)
                 {
                     int mask = 0x80 >> (bit & 7);
-                    if ((value >> i & 1) != 0) sf[bit >> 3] |= (byte)mask; else sf[bit >> 3] &= (byte)~mask;
+                    if ((value >> i & 1) != 0)
+                        sf[bit >> 3] |= (byte)mask;
+                    else
+                        sf[bit >> 3] &= (byte)~mask;
                 }
             }
             Put(f == 0 ? 0 : 1, 1);       // first in superframe (inverted)
@@ -90,6 +99,7 @@ public class Atrac9Benchmarks
     public void DecodeSuperframe()
     {
         _decoder.Decode(_superframes[_next], _pcm);
-        if (++_next == _superframes.Count) _next = 0;
+        if (++_next == _superframes.Count)
+            _next = 0;
     }
 }

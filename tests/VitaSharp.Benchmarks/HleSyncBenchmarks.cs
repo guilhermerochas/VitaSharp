@@ -50,7 +50,12 @@ public class HleSyncBenchmarks
     {
         _emu?.Dispose();
         _memory?.Dispose();
-        try { Directory.Delete(_root, true); } catch (IOException) { } catch (UnauthorizedAccessException) { }
+        try
+        {
+            Directory.Delete(_root, true);
+        }
+        catch (IOException) { }
+        catch (UnauthorizedAccessException) { }
     }
 
     [Benchmark]

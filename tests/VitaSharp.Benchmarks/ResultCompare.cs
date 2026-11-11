@@ -15,16 +15,25 @@ public static class ResultCompare
     {
         var a = Read(basePath);
         var b = Read(newPath);
-        if (a.Count == 0 || b.Count == 0) { Console.Error.WriteLine("no benchmark table in one of the files"); return 2; }
+        if (a.Count == 0 || b.Count == 0)
+        {
+            Console.Error.WriteLine("no benchmark table in one of the files");
+            return 2;
+        }
         Console.WriteLine($"| Benchmark | {Path.GetFileNameWithoutExtension(basePath)} | {Path.GetFileNameWithoutExtension(newPath)} | Ratio | Allocated (base -> new) |");
         Console.WriteLine("|---|---:|---:|---:|---|");
         foreach (var (key, nb) in b)
         {
-            if (!a.TryGetValue(key, out var ob)) { Console.WriteLine($"| {key} | - | {nb.Mean} | new | {nb.Allocated} |"); continue; }
+            if (!a.TryGetValue(key, out var ob))
+            {
+                Console.WriteLine($"| {key} | - | {nb.Mean} | new | {nb.Allocated} |");
+                continue;
+            }
             string ratio = ob.MeanNs > 0 && nb.MeanNs > 0 ? (nb.MeanNs / ob.MeanNs).ToString("F3", CultureInfo.InvariantCulture) : "?";
             Console.WriteLine($"| {key} | {ob.Mean} | {nb.Mean} | {ratio} | {ob.Allocated} -> {nb.Allocated} |");
         }
-        foreach (var key in a.Keys.Where(k => !b.ContainsKey(k))) Console.WriteLine($"| {key} | {a[key].Mean} | - | gone | |");
+        foreach (var key in a.Keys.Where(k => !b.ContainsKey(k)))
+            Console.WriteLine($"| {key} | {a[key].Mean} | - | gone | |");
         return 0;
     }
 
@@ -36,12 +45,22 @@ public static class ResultCompare
         foreach (var raw in File.ReadLines(path))
         {
             var line = raw.Trim();
-            if (!line.StartsWith('|')) { header = null; continue; }
+            if (!line.StartsWith('|'))
+            {
+                header = null;
+                continue;
+            }
             var cells = line.Trim('|').Split('|').Select(c => c.Trim().Trim('\'')).ToArray();
-            if (header == null) { header = cells; continue; }
-            if (cells.All(c => c.Length == 0 || c.All(ch => ch is '-' or ':'))) continue;
+            if (header == null)
+            {
+                header = cells;
+                continue;
+            }
+            if (cells.All(c => c.Length == 0 || c.All(ch => ch is '-' or ':')))
+                continue;
             int mean = Array.IndexOf(header, "Mean");
-            if (mean < 0 || cells.Length != header.Length) continue;
+            if (mean < 0 || cells.Length != header.Length)
+                continue;
             // the identity: everything before Mean except the job and environment columns BenchmarkDotNet adds
             var id = Enumerable.Range(0, mean).Where(i => header[i] is not ("Job" or "Runtime" or "Toolchain" or "IterationCount"
                 or "LaunchCount" or "WarmupCount" or "RunStrategy" or "Affinity" or "Error" or "StdDev"))
@@ -56,7 +75,8 @@ public static class ResultCompare
     static double Nanoseconds(string mean)
     {
         var parts = mean.Replace(",", "").Split(' ', StringSplitOptions.RemoveEmptyEntries);
-        if (parts.Length != 2 || !double.TryParse(parts[0], NumberStyles.Float, CultureInfo.InvariantCulture, out var v)) return 0;
+        if (parts.Length != 2 || !double.TryParse(parts[0], NumberStyles.Float, CultureInfo.InvariantCulture, out var v))
+            return 0;
         return parts[1] switch { "ns" => v, "μs" or "us" => v * 1e3, "ms" => v * 1e6, "s" => v * 1e9, _ => 0 };
     }
 }

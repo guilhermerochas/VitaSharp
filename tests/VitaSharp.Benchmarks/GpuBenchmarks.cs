@@ -31,10 +31,12 @@ public class GpuWorkerBenchmarks
         string path = Fixtures.RequireDump();
         _dump = File.ReadAllBytes(path);
         GpuDumpHeader header;
-        using (var r = new GpuDumpReader(new MemoryStream(_dump))) header = r.Header;
+        using (var r = new GpuDumpReader(new MemoryStream(_dump)))
+            header = r.Header;
         // renderer switches before the renderer and the shader generator types initialise
         Fixtures.Apply(Variant);
-        foreach (var (k, v) in GpuDumpPlayer.RecordedEnvironment(header)) Environment.SetEnvironmentVariable(k, v);
+        foreach (var (k, v) in GpuDumpPlayer.RecordedEnvironment(header))
+            Environment.SetEnvironmentVariable(k, v);
         _cache = Path.Combine(Path.GetTempPath(), "vitasharp-bench-shadercache");
         _memory = new GuestMemory();
         _renderer = new VulkanRenderer(new VulkanRendererOptions
@@ -45,7 +47,8 @@ public class GpuWorkerBenchmarks
             AsyncPipelines = false,
             FirstPresent = header.Long("first-present"),
         });
-        if (header["title-id"] is { Length: > 0 } title) _renderer.BeginTitle(title);
+        if (header["title-id"] is { Length: > 0 } title)
+            _renderer.BeginTitle(title);
         ReplayDump();
     }
 
@@ -87,8 +90,10 @@ public class ShaderTranslationBenchmarks
             while (reader.Next())
                 if (reader.Kind is not (GpuDumpRecord.Memory or GpuDumpRecord.Idle or GpuDumpRecord.BackendState) && reader.Command is DrawCommand d)
                     foreach (var p in new[] { d.VertexProgram.Info.Program, d.FragmentProgram.Info.Program })
-                        if (seen.Add(p.Hash)) _programs.Add(p);
-        if (_programs.Count == 0) throw new InvalidOperationException($"{path}: no draws");
+                        if (seen.Add(p.Hash))
+                            _programs.Add(p);
+        if (_programs.Count == 0)
+            throw new InvalidOperationException($"{path}: no draws");
         _hints = new ShaderHints(Enumerable.Repeat(0x0C000000u, 16).ToArray(), [], 0);
         Console.WriteLine($"// {_programs.Count} programs");
     }
@@ -99,7 +104,8 @@ public class ShaderTranslationBenchmarks
     public int TranslateAll()
     {
         int chars = 0;
-        foreach (var p in _programs) chars += ShaderGenerator.Generate(p, _hints).Glsl.Length;
+        foreach (var p in _programs)
+            chars += ShaderGenerator.Generate(p, _hints).Glsl.Length;
         return chars;
     }
 }

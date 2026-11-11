@@ -23,7 +23,8 @@ public class UniformArenaBenchmarks
     {
         _memory = new GuestMemory();
         _src = _memory.Alloc(0x10000, "bench uniforms");
-        for (uint i = 0; i < 0x10000; i += 4) GuestMemory.W32(_src + i, 0x3F800000 + i);
+        for (uint i = 0; i < 0x10000; i += 4)
+            GuestMemory.W32(_src + i, 0x3F800000 + i);
     }
 
     [GlobalCleanup] public void Cleanup() => _memory?.Dispose();
@@ -51,6 +52,7 @@ public class UniformArenaBenchmarks
             Gxm.WriteSlot(0, SlotBytes, _src, SlotBytes, chunk.Span.Slice(off, SlotBytes), chunk, off);
             held[d] = chunk;
         }
-        foreach (var c in held) UniformArena.Release(c);
+        foreach (var c in held)
+            UniformArena.Release(c);
     }
 }

@@ -49,7 +49,11 @@ public static class TextureLayout
     /// <summary>Converts a swizzled image to linear rows (bpp must be a whole number of bytes).</summary>
     public static void SwizzledToLinear(Span<byte> dst, ReadOnlySpan<byte> src, uint width, uint height, int bytesPerPixel)
     {
-        if (!Legacy && MortonToLinear(dst, src, width, height, width, height, bytesPerPixel)) return;
+        if (!Legacy && MortonToLinear(dst, src, width, height, width, height, bytesPerPixel))
+        {
+            return;
+        }
+
         SwizzledToLinearPerTexel(dst, src, width, height, bytesPerPixel);
     }
 
@@ -97,48 +101,87 @@ public static class TextureLayout
     /// </summary>
     public static bool MortonToLinear(Span<byte> dst, ReadOnlySpan<byte> src, uint width, uint height, uint pw, uint ph, int bytesPerElement)
     {
-        if (width == 0 || height == 0) return true;
-        if (width > pw || height > ph || !BitOperations.IsPow2(pw) || !BitOperations.IsPow2(ph) || width > 1u << 15 || height > 1u << 15) return false;
-        if (src.Length < MortonSourceBytes(width, height, pw, ph, bytesPerElement) || dst.Length < (long)width * height * bytesPerElement) return false;
+        if (width == 0 || height == 0)
+        {
+            return true;
+        }
+
+        if (width > pw || height > ph || !BitOperations.IsPow2(pw) || !BitOperations.IsPow2(ph) || width > 1u << 15 || height > 1u << 15)
+        {
+            return false;
+        }
+
+        if (src.Length < MortonSourceBytes(width, height, pw, ph, bytesPerElement) || dst.Length < (long)width * height * bytesPerElement)
+        {
+            return false;
+        }
+
         uint min = Math.Min(pw, ph);
         int k = BitOperations.Log2(min);
         int[]? rented = width + height > 4096 ? System.Buffers.ArrayPool<int>.Shared.Rent((int)(width + height)) : null;
         Span<int> tables = rented ?? stackalloc int[(int)(width + height)];
-        var xs = tables[..(int)width];
-        var ys = tables.Slice((int)width, (int)height);
-        for (uint x = 0; x < width; x++) xs[(int)x] = (int)(((x >> k) << (2 * k)) | (Part1By1(x & (min - 1)) << 1));
-        for (uint y = 0; y < height; y++) ys[(int)y] = (int)(((y >> k) << (2 * k)) | Part1By1(y & (min - 1)));
+        Span<int> xs = tables[..(int)width];
+        Span<int> ys = tables.Slice((int)width, (int)height);
+        for (uint x = 0; x < width; x++)
+        {
+            xs[(int)x] = (int)(((x >> k) << (2 * k)) | (Part1By1(x & (min - 1)) << 1));
+        }
+
+        for (uint y = 0; y < height; y++)
+        {
+            ys[(int)y] = (int)(((y >> k) << (2 * k)) | Part1By1(y & (min - 1)));
+        }
+
         switch (bytesPerElement)
         {
-            case 1: Gather<byte>(dst, src, xs, ys); break;
-            case 2: Gather<ushort>(dst, src, xs, ys); break;
-            case 4: Gather<uint>(dst, src, xs, ys); break;
-            case 8: Gather<ulong>(dst, src, xs, ys); break;
-            case 16: Gather<System.Runtime.Intrinsics.Vector128<byte>>(dst, src, xs, ys); break;
+            case 1:
+                Gather<byte>(dst, src, xs, ys);
+                break;
+            case 2:
+                Gather<ushort>(dst, src, xs, ys);
+                break;
+            case 4:
+                Gather<uint>(dst, src, xs, ys);
+                break;
+            case 8:
+                Gather<ulong>(dst, src, xs, ys);
+                break;
+            case 16:
+                Gather<System.Runtime.Intrinsics.Vector128<byte>>(dst, src, xs, ys);
+                break;
             default:
                 for (int y = 0; y < ys.Length; y++)
                 {
-                    var row = dst.Slice(y * xs.Length * bytesPerElement, xs.Length * bytesPerElement);
+                    Span<byte> row = dst.Slice(y * xs.Length * bytesPerElement, xs.Length * bytesPerElement);
                     for (int x = 0; x < xs.Length; x++)
+                    {
                         src.Slice((xs[x] | ys[y]) * bytesPerElement, bytesPerElement).CopyTo(row.Slice(x * bytesPerElement, bytesPerElement));
+                    }
                 }
                 break;
         }
-        if (rented != null) System.Buffers.ArrayPool<int>.Shared.Return(rented);
+        if (rented != null)
+        {
+            System.Buffers.ArrayPool<int>.Shared.Return(rented);
+        }
+
         return true;
 
         static void Gather<T>(Span<byte> dst, ReadOnlySpan<byte> src, ReadOnlySpan<int> xs, ReadOnlySpan<int> ys) where T : unmanaged
         {
-            var d = System.Runtime.InteropServices.MemoryMarshal.Cast<byte, T>(dst);
-            var s = System.Runtime.InteropServices.MemoryMarshal.Cast<byte, T>(src);
+            global::System.Span<T> d = System.Runtime.InteropServices.MemoryMarshal.Cast<byte, T>(dst);
+            global::System.ReadOnlySpan<T> s = System.Runtime.InteropServices.MemoryMarshal.Cast<byte, T>(src);
             ref T sRef = ref System.Runtime.InteropServices.MemoryMarshal.GetReference(s);
             int w = xs.Length;
             for (int y = 0; y < ys.Length; y++)
             {
                 int yi = ys[y];
-                var row = d.Slice(y * w, w);
+                global::System.Span<T> row = d.Slice(y * w, w);
                 // the spans were checked against the last element: every index is in range
-                for (int x = 0; x < row.Length; x++) row[x] = System.Runtime.CompilerServices.Unsafe.Add(ref sRef, xs[x] | yi);
+                for (int x = 0; x < row.Length; x++)
+                {
+                    row[x] = System.Runtime.CompilerServices.Unsafe.Add(ref sRef, xs[x] | yi);
+                }
             }
         }
     }
@@ -147,18 +190,28 @@ public static class TextureLayout
     /// source lies outside <paramref name="src"/> are skipped.</summary>
     public static void TiledToLinear(Span<byte> dst, ReadOnlySpan<byte> src, uint width, uint height, int bytesPerPixel)
     {
-        if (Legacy) { TiledToLinearPerTexel(dst, src, width, height, bytesPerPixel); return; }
+        if (Legacy)
+        {
+            TiledToLinearPerTexel(dst, src, width, height, bytesPerPixel);
+            return;
+        }
         // each tile row is 32 texels in a row of the source: one copy per tile row
         for (uint y = 0; y < height; y++)
+        {
             for (uint x = 0; x < width; x += 32)
             {
                 int run = (int)Math.Min(32, width - x);
                 long s = (long)Tiled(x, y, width) * bytesPerPixel;
                 long fit = s >= src.Length ? 0 : (src.Length - s) / bytesPerPixel;
                 int n = (int)Math.Min(run, fit);
-                if (n <= 0) continue;
+                if (n <= 0)
+                {
+                    continue;
+                }
+
                 src.Slice((int)s, n * bytesPerPixel).CopyTo(dst.Slice((int)((y * width + x) * bytesPerPixel), n * bytesPerPixel));
             }
+        }
     }
 
     internal static void TiledToLinearPerTexel(Span<byte> dst, ReadOnlySpan<byte> src, uint width, uint height, int bytesPerPixel)

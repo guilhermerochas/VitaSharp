@@ -88,14 +88,25 @@ public static class TextureDecoder
     /// </summary>
     static bool MortonGather(Span<byte> dst, uint addr, uint w, uint h, uint pw, uint ph, int bytesPerElement)
     {
-        if (TextureLayout.Legacy) return false;
+        if (TextureLayout.Legacy)
+        {
+            return false;
+        }
+
         long bytes = TextureLayout.MortonSourceBytes(w, h, pw, ph, bytesPerElement);
-        if (bytes > int.MaxValue) return false;
+        if (bytes > int.MaxValue)
+        {
+            return false;
+        }
+
         if (t_srcData is { } d)
         {
             ulong lo = addr, hi = addr + (ulong)bytes, dLo = t_srcAddr, dHi = t_srcAddr + (ulong)d.Length;
             bool inside = lo >= dLo && hi <= dHi, apart = hi <= dLo || lo >= dHi;
-            if (!inside && !apart) return false;
+            if (!inside && !apart)
+            {
+                return false;
+            }
         }
         return TextureLayout.MortonToLinear(dst, Mem(addr, (int)bytes), w, h, pw, ph, bytesPerElement);
     }
@@ -267,7 +278,11 @@ public static class TextureDecoder
                 TextureLayout.SwizzledToLinear(dst, Mem(addr, (int)(w * h * bpp)), w, h, bpp);
                 return result;
             }
-            if (MortonGather(dst, addr, w, h, pw, ph, bpp)) return result;
+            if (MortonGather(dst, addr, w, h, pw, ph, bpp))
+            {
+                return result;
+            }
+
             for (uint y = 0; y < h; y++)
             {
                 for (uint x = 0; x < w; x++)

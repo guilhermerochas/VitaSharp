@@ -23,7 +23,8 @@ static class GuestCode
     public static void Write(uint at, uint[] arm)
     {
         var code = GuestMemory.Span(at, arm.Length * 4);
-        for (int i = 0; i < arm.Length; i++) BitConverter.GetBytes(arm[i]).CopyTo(code[(i * 4)..]);
+        for (int i = 0; i < arm.Length; i++)
+            BitConverter.GetBytes(arm[i]).CopyTo(code[(i * 4)..]);
     }
 }
 
@@ -60,7 +61,8 @@ public unsafe class CpuTranslatorBenchmarks
             foreach (var line in File.ReadLines(corpus))
             {
                 var parts = line.Split(' ', StringSplitOptions.RemoveEmptyEntries);
-                if (parts.Length < 3) continue;
+                if (parts.Length < 3)
+                    continue;
                 bool thumb = parts[0] == "T";
                 var bytes = new List<byte>();
                 foreach (var p in parts.Skip(2))
@@ -68,19 +70,24 @@ public unsafe class CpuTranslatorBenchmarks
                     int c = p.IndexOf(':');
                     int size = int.Parse(p[..c]);
                     uint raw = Convert.ToUInt32(p[(c + 1)..], 16);
-                    if (size == 2) bytes.AddRange([(byte)raw, (byte)(raw >> 8)]);
-                    else if (thumb) bytes.AddRange([(byte)(raw >> 16), (byte)(raw >> 24), (byte)raw, (byte)(raw >> 8)]);
-                    else bytes.AddRange(BitConverter.GetBytes(raw));
+                    if (size == 2)
+                        bytes.AddRange([(byte)raw, (byte)(raw >> 8)]);
+                    else if (thumb)
+                        bytes.AddRange([(byte)(raw >> 16), (byte)(raw >> 24), (byte)raw, (byte)(raw >> 8)]);
+                    else
+                        bytes.AddRange(BitConverter.GetBytes(raw));
                 }
                 // each block in its own 0x400 slot, followed by a branch-to-self that keeps the builder inside it
-                if (bytes.Count > 0x3F0) continue;
+                if (bytes.Count > 0x3F0)
+                    continue;
                 var mem = GuestMemory.Span(at, 0x400);
                 mem.Clear();
                 bytes.ToArray().CopyTo(mem);
                 (thumb ? new byte[] { 0xFE, 0xE7 } : [0xFE, 0xFF, 0xFF, 0xEA]).CopyTo(mem[bytes.Count..]);
                 _blocks.Add(BlockBuilder.Build(at, thumb));
                 at += 0x400;
-                if (_blocks.Count == 2000) break;
+                if (_blocks.Count == 2000)
+                    break;
             }
         }
         if (_blocks.Count == 0)
@@ -98,7 +105,8 @@ public unsafe class CpuTranslatorBenchmarks
     Block NextBlock()
     {
         var b = _blocks[_next];
-        if (++_next == _blocks.Count) _next = 0;
+        if (++_next == _blocks.Count)
+            _next = 0;
         return b;
     }
 
@@ -116,7 +124,8 @@ public unsafe class CpuTranslatorBenchmarks
     public object? CompileNativeX64()
     {
         var r = NativeX64Compiler.Instance.Compile(NextBlock());
-        if (NativeRuntime.Instance.Code.Used > _arenaMark + (8 << 20)) NativeRuntime.Instance.Code.Reset(_arenaMark);
+        if (NativeRuntime.Instance.Code.Used > _arenaMark + (8 << 20))
+            NativeRuntime.Instance.Code.Reset(_arenaMark);
         return r;
     }
 }
@@ -159,9 +168,14 @@ public unsafe class CpuDispatchBenchmarks
         NativeX64Compiler.Instance.HotInstructions = 1;
         IlJitCompiler.Instance.HotInstructions = 1;
         Jit.Enabled = true;
-        if (!Jit.Select(Backend)) throw new InvalidOperationException($"backend {Backend} is not supported here");
+        if (!Jit.Select(Backend))
+            throw new InvalidOperationException($"backend {Backend} is not supported here");
         _core = new CpuCore(new BlockCache());
-        for (int i = 0; i < 8; i++) { RunLoop(); Jit.WaitIdle(TimeSpan.FromSeconds(60)); }
+        for (int i = 0; i < 8; i++)
+        {
+            RunLoop();
+            Jit.WaitIdle(TimeSpan.FromSeconds(60));
+        }
     }
 
     [GlobalCleanup]
@@ -176,8 +190,11 @@ public unsafe class CpuDispatchBenchmarks
     public uint RunLoop()
     {
         var s = _core!.State;
-        s->R[15] = GuestCode.CodeBase; s->Thumb = 0; s->R[13] = GuestCode.DataBase + 0xF000;
-        if (_core.Run() != ExitReason.Svc) throw new InvalidOperationException("the loop did not reach its svc");
+        s->R[15] = GuestCode.CodeBase;
+        s->Thumb = 0;
+        s->R[13] = GuestCode.DataBase + 0xF000;
+        if (_core.Run() != ExitReason.Svc)
+            throw new InvalidOperationException("the loop did not reach its svc");
         return s->R[0];
     }
 }

@@ -63,8 +63,14 @@ public sealed class TextureLayoutTests
     /// <summary>The table-based swizzle conversion (<see cref="TextureLayout.MortonToLinear"/>) gives the per-texel
     /// result for square and non-square power-of-two images and every element size, also inside a larger swizzle.</summary>
     [Theory]
-    [InlineData(1, 1, 4)] [InlineData(64, 64, 1)] [InlineData(64, 64, 2)] [InlineData(128, 32, 4)] [InlineData(16, 256, 8)]
-    [InlineData(32, 32, 16)] [InlineData(8, 4, 3)] [InlineData(256, 256, 4)]
+    [InlineData(1, 1, 4)]
+    [InlineData(64, 64, 1)]
+    [InlineData(64, 64, 2)]
+    [InlineData(128, 32, 4)]
+    [InlineData(16, 256, 8)]
+    [InlineData(32, 32, 16)]
+    [InlineData(8, 4, 3)]
+    [InlineData(256, 256, 4)]
     public void MortonToLinearMatchesPerTexel(int w, int h, int bpp)
     {
         var rng = new Random(w * 131 + h * 7 + bpp);
@@ -82,8 +88,12 @@ public sealed class TextureLayoutTests
             var part = new byte[sw * sh * bpp];
             Assert.True(TextureLayout.MortonToLinear(part, src, sw, sh, 8, 4, bpp));
             for (uint y = 0; y < sh; y++)
+            {
                 for (uint x = 0; x < sw; x++)
+                {
                     Assert.Equal(src.AsSpan((int)(TextureLayout.Morton(x, y, 8, 4) * bpp), bpp).ToArray(), part.AsSpan((int)((y * sw + x) * bpp), bpp).ToArray());
+                }
+            }
         }
     }
 
@@ -98,7 +108,10 @@ public sealed class TextureLayoutTests
     /// <summary>Tiled to linear by tile rows equals the per-texel copy, including widths that are not a multiple of
     /// the 32-texel tile and a source that ends inside the image.</summary>
     [Theory]
-    [InlineData(64, 64, 4, 0)] [InlineData(100, 40, 2, 0)] [InlineData(33, 70, 4, 1000)] [InlineData(31, 31, 1, 0)]
+    [InlineData(64, 64, 4, 0)]
+    [InlineData(100, 40, 2, 0)]
+    [InlineData(33, 70, 4, 1000)]
+    [InlineData(31, 31, 1, 0)]
     public void TiledToLinearMatchesPerTexel(int w, int h, int bpp, int cut)
     {
         int tw = (w + 31) & ~31, th = (h + 31) & ~31;
