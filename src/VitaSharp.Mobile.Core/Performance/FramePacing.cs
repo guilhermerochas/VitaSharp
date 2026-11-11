@@ -15,9 +15,9 @@ public sealed class FrameRateEstimator
     public const int Window = 60, MaxVblanks = 4;
     public const double VblankSeconds = 1.0 / 59.94;
 
-    readonly int[] _ring = new int[Window];
-    int _count, _next;
-    long _lastTicks = -1;
+    private readonly int[] _ring = new int[Window];
+    private int _count, _next;
+    private long _lastTicks = -1;
 
     /// <summary>Vblanks per frame (1-4).</summary>
     public int Vblanks { get; private set; } = 1;
@@ -79,9 +79,9 @@ public sealed class FrameRateEstimator
 /// </summary>
 public sealed class FrameWorkMeter
 {
-    long[] _last = [];
-    int[] _tids = [];
-    long _lastWall = -1;
+    private long[] _last = [];
+    private int[] _tids = [];
+    private long _lastWall = -1;
 
     /// <summary>Starts measuring these threads (their CPU times now, nanoseconds; a negative time = unreadable).</summary>
     public void Reset(int[] tids, long[] cpuNanos, long wallNanos)

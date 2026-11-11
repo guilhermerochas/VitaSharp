@@ -1,4 +1,5 @@
 using VitaSharp.Core.Cpu;
+using VitaSharp.Core.Cpu.Backends;
 using VitaSharp.Core.Hle;
 using VitaSharp.Core.Hle.Np.Rpcn;
 using VitaSharp.Core.Localization;
@@ -16,7 +17,7 @@ public static class CpuChoices
     public static IReadOnlyList<Choice> Available()
     {
         var list = new List<Choice> { new("", Loc.Format("MAutomaticWith", Label(Jit.All.FirstOrDefault(b => b.IsSupported)?.Name ?? "interp"))) };
-        foreach (var b in Jit.All.Where(b => b.IsSupported))
+        foreach (IBlockCompiler b in Jit.All.Where(b => b.IsSupported))
         {
             list.Add(new(b.Name, Label(b.Name)));
         }

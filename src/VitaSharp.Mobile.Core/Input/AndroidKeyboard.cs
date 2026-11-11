@@ -108,16 +108,16 @@ public enum KeyboardKeyAction
 /// </summary>
 public sealed class AndroidKeyboard : IMotionSource
 {
-    readonly object _lock = new();
-    readonly HashSet<string> _keys = new(StringComparer.Ordinal);
-    readonly HashSet<string> _pauseHeld = new(StringComparer.Ordinal);
-    CompiledProfile _profile;
-    readonly InputProfileStore? _profiles;
-    int _revision;
-    readonly HashSet<string> _bound = new(StringComparer.Ordinal), _pauseKeys = new(StringComparer.Ordinal), _psKeys = new(StringComparer.Ordinal);
-    readonly VirtualMotion _virtual;
-    readonly Func<long> _nowUs;
-    bool _virtualLogged;
+    private readonly object _lock = new();
+    private readonly HashSet<string> _keys = new(StringComparer.Ordinal);
+    private readonly HashSet<string> _pauseHeld = new(StringComparer.Ordinal);
+    private CompiledProfile _profile;
+    private readonly InputProfileStore? _profiles;
+    private int _revision;
+    private readonly HashSet<string> _bound = new(StringComparer.Ordinal), _pauseKeys = new(StringComparer.Ordinal), _psKeys = new(StringComparer.Ordinal);
+    private readonly VirtualMotion _virtual;
+    private readonly Func<long> _nowUs;
+    private bool _virtualLogged;
 
     /// <param name="profiles">input.json (null: the default keyboard mapping).</param>
     /// <param name="nowUs">Host clock in microseconds for the virtual motion (tests); null = Stopwatch.</param>
@@ -132,14 +132,14 @@ public sealed class AndroidKeyboard : IMotionSource
     }
 
     /// <summary>The keys of the keyboard profile: the pause and PS hotkeys and every other bound key.</summary>
-    void IndexKeys()
+    private void IndexKeys()
     {
         _bound.Clear();
         _pauseKeys.Clear();
         _psKeys.Clear();
-        foreach (var c in VitaControls.All)
+        foreach (VitaControl c in VitaControls.All)
         {
-            foreach (ref readonly var b in _profile[c])
+            foreach (ref readonly InputBinding b in _profile[c])
             {
                 if (b.Kind != BindingKind.Key || b.Key == null)
                 {
@@ -157,7 +157,7 @@ public sealed class AndroidKeyboard : IMotionSource
 
     /// <summary>input.json changed (the Controles screen, another process): the new keyboard mapping applies at once,
     /// without restarting the game. Called under _lock.</summary>
-    void ReloadIfChanged()
+    private void ReloadIfChanged()
     {
         if (_profiles == null || !_profiles.CheckChanged(ref _revision))
         {
@@ -218,7 +218,7 @@ public sealed class AndroidKeyboard : IMotionSource
                 return KeyboardKeyAction.Handled;
             }
 
-            var action = KeyboardKeyAction.Handled;
+            KeyboardKeyAction action = KeyboardKeyAction.Handled;
             if (down)
             {
                 if (_keys.Add(name) && _psKeys.Contains(name))
@@ -268,7 +268,7 @@ public sealed class AndroidKeyboard : IMotionSource
     // ------------------------------------------------------------------ motion (IMotionSource)
 
     /// <summary>The tilt keys may drive the Vita's sensors (the profile's motion source is not Off or Controller).</summary>
-    bool MotionAllowed => _profile.Profile.MotionSource is not (MotionSourceMode.Off or MotionSourceMode.Controller);
+    private bool MotionAllowed => _profile.Profile.MotionSource is not (MotionSourceMode.Off or MotionSourceMode.Controller);
 
     public VirtualMotion Virtual => _virtual;
 

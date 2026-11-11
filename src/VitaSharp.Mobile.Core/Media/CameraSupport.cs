@@ -20,7 +20,7 @@ public static class CameraSupport
     public static string? PickCamera(IReadOnlyList<(string Id, int Facing)> cameras, int vitaFacing)
     {
         int want = vitaFacing == 0 ? LensFront : LensBack;
-        foreach (var c in cameras)
+        foreach ((string Id, int Facing) c in cameras)
         {
             if (c.Facing == want)
             {
@@ -28,7 +28,7 @@ public static class CameraSupport
             }
         }
 
-        foreach (var c in cameras)
+        foreach ((string Id, int Facing) c in cameras)
         {
             if (c.Facing == LensExternal)
             {
@@ -81,7 +81,7 @@ public static class CameraSupport
             return null;
         }
 
-        var pick = valid.Where(Covers).OrderBy(AspectError).ThenBy(Area).FirstOrDefault();
+        (int W, int H) pick = valid.Where(Covers).OrderBy(AspectError).ThenBy(Area).FirstOrDefault();
         if (pick != default)
         {
             return pick;
@@ -130,7 +130,7 @@ public static class CameraSupport
     /// </summary>
     public static void ToRgba(YuvImageCopy.Plane y, YuvImageCopy.Plane u, YuvImageCopy.Plane v, int width, int height, int rotation, Span<byte> dst)
     {
-        var (ow, oh) = RotatedSize(width, height, rotation);
+        (int ow, int oh) = RotatedSize(width, height, rotation);
         if (dst.Length < ow * oh * 4)
         {
             throw new ArgumentException("destination too small", nameof(dst));
@@ -138,7 +138,7 @@ public static class CameraSupport
 
         for (int oy = 0; oy < oh; oy++)
         {
-            var o = dst.Slice(oy * ow * 4, ow * 4);
+            Span<byte> o = dst.Slice(oy * ow * 4, ow * 4);
             for (int ox = 0; ox < ow; ox++)
             {
                 int sx, sy;
@@ -175,5 +175,5 @@ public static class CameraSupport
         }
     }
 
-    static byte Clamp(int v) => (byte)(v < 0 ? 0 : v > 255 ? 255 : v);
+    private static byte Clamp(int v) => (byte)(v < 0 ? 0 : v > 255 ? 255 : v);
 }

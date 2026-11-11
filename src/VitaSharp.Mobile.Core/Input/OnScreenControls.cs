@@ -45,11 +45,11 @@ public sealed class OnScreenPad : IInputBackend
     /// <summary>The Vita system view shows only the PS button (the shell is driven by front touch); the controls
     /// button of sistema.html switches to <see cref="DefaultLayout"/>.</summary>
     public static IReadOnlyList<OnScreenControl> SystemLayout { get; } =
-        [new(VitaControl.PS, "PS", R(11, 0), R(308, 1), R(56, 0), R(56, 1))];
+        [new(VitaControl.PS, "PS", DpFraction(11, 0), DpFraction(308, 1), DpFraction(56, 0), DpFraction(56, 1))];
 
     /// <summary>Where the 960x544 image sits on the screen (fractions), set by the front-end when the surface changes.
     /// Touches inside it that hit no control become front-touch points.</summary>
-    public (float X, float Y, float Width, float Height) Image { get; set; } = (R(78, 0), 0, R(688, 0), 1);
+    public (float X, float Y, float Width, float Height) Image { get; set; } = (DpFraction(78, 0), 0, DpFraction(688, 0), 1);
 
     public IReadOnlyList<OnScreenControl> Layout { get; set; } = DefaultLayout;
     public bool Visible { get; set; } = true;
@@ -79,14 +79,14 @@ public sealed class OnScreenPad : IInputBackend
     /// <summary>Raised on the UI thread when a control is newly pressed (haptics, redraw).</summary>
     public event Action<OnScreenControl>? ControlPressed;
 
-    readonly object _lock = new();
-    ControllerState _state = ControllerState.Neutral;
-    TouchPoint[] _front = [], _back = [];
-    bool _rear;
+    private readonly object _lock = new();
+    private ControllerState _state = ControllerState.Neutral;
+    private TouchPoint[] _front = [], _back = [];
+    private bool _rear;
     // what each finger started on: a control, or null for the image / nothing
-    readonly Dictionary<int, OnScreenControl?> _captured = new();
-    readonly HashSet<OnScreenControl> _pressed = new();
-    readonly Dictionary<OnScreenControl, (float X, float Y)> _knobs = new();
+    private readonly Dictionary<int, OnScreenControl?> _captured = new();
+    private readonly HashSet<OnScreenControl> _pressed = new();
+    private readonly Dictionary<OnScreenControl, (float X, float Y)> _knobs = new();
 
     /// <summary>Controls held right now, and TRAS while it is on (drawn in the accent colour).</summary>
     public bool IsPressed(OnScreenControl c)
@@ -109,7 +109,7 @@ public sealed class OnScreenPad : IInputBackend
     /// <summary>Feeds the current fingers (MotionEvent pointers, in fractions of the screen) from the UI thread.</summary>
     public void Update(ReadOnlySpan<(int Id, float X, float Y)> fingers)
     {
-        var st = ControllerState.Neutral;
+        ControllerState st = ControllerState.Neutral;
         var image = new List<TouchPoint>();
         var newlyPressed = new List<OnScreenControl>();
         bool psBefore, psNow;
@@ -120,17 +120,17 @@ public sealed class OnScreenPad : IInputBackend
             _pressed.Clear();
             _knobs.Clear();
             var live = new HashSet<int>();
-            foreach (var f in fingers)
+            foreach ((int Id, float X, float Y) f in fingers)
             {
                 live.Add(f.Id);
-                if (!_captured.TryGetValue(f.Id, out var hit))
+                if (!_captured.TryGetValue(f.Id, out OnScreenControl? hit))
                 {
                     _captured[f.Id] = hit = Visible ? Layout.FirstOrDefault(c => c.Contains(f.X, f.Y)) : null;
                 }
 
                 if (hit == null)
                 {
-                    var im = Image;
+                    (float X, float Y, float Width, float Height) im = Image;
                     if (f.X >= im.X && f.X < im.X + im.Width && f.Y >= im.Y && f.Y < im.Y + im.Height)
                     {
                         image.Add(new TouchPoint(f.Id, (f.X - im.X) / im.Width, (f.Y - im.Y) / im.Height));
@@ -154,12 +154,12 @@ public sealed class OnScreenPad : IInputBackend
                     st.Buttons |= VitaControls.Button(hit.Control);
                 }
             }
-            foreach (var id in _captured.Keys.Where(id => !live.Contains(id)).ToList())
+            foreach (int id in _captured.Keys.Where(id => !live.Contains(id)).ToList())
             {
                 _captured.Remove(id);
             }
 
-            foreach (var c in _pressed)
+            foreach (OnScreenControl c in _pressed)
             {
                 if (before.Contains(c))
                 {
@@ -185,7 +185,7 @@ public sealed class OnScreenPad : IInputBackend
                 _back = [];
             }
         }
-        foreach (var c in newlyPressed)
+        foreach (OnScreenControl c in newlyPressed)
         {
             ControlPressed?.Invoke(c);
         }
@@ -199,7 +199,7 @@ public sealed class OnScreenPad : IInputBackend
     /// <summary>Releases every finger (the activity lost focus or the overlay was hidden).</summary>
     public void Reset() => Update([]);
 
-    static (float, float) Stick(ref ControllerState st, OnScreenControl c, float x, float y)
+    private static (float, float) Stick(ref ControllerState st, OnScreenControl c, float x, float y)
     {
         float dx = (x - (c.X + c.Width / 2)) / (c.Width / 2), dy = (y - (c.Y + c.Height / 2)) / (c.Height / 2);
         // a finger outside the ring pushes the stick to its edge in that direction
@@ -241,25 +241,25 @@ public sealed class OnScreenPad : IInputBackend
     }
 
     // dp of the 844x390 reference screen to a fraction (axis 0 = x, 1 = y)
-    static float R(float dp, int axis) => dp / (axis == 0 ? 844f : 390f);
+    private static float DpFraction(float dp, int axis) => dp / (axis == 0 ? 844f : 390f);
 
-    static IReadOnlyList<OnScreenControl> BuildDefault() =>
+    private static IReadOnlyList<OnScreenControl> BuildDefault() =>
     [
-        new(VitaControl.L, "L", R(18, 0), R(12, 1), R(108, 0), R(40, 1)),
-        new(VitaControl.R, "R", R(718, 0), R(12, 1), R(108, 0), R(40, 1)),
-        new(VitaControl.Up, "\u25B2", R(70, 0), R(92, 1), R(40, 0), R(44, 1)),
-        new(VitaControl.Down, "\u25BC", R(70, 0), R(168, 1), R(40, 0), R(44, 1)),
-        new(VitaControl.Left, "\u25C0", R(30, 0), R(132, 1), R(44, 0), R(40, 1)),
-        new(VitaControl.Right, "\u25B6", R(106, 0), R(132, 1), R(44, 0), R(40, 1)),
-        new(VitaControl.Triangle, "\u25B3", R(714, 0), R(84, 1), R(50, 0), R(50, 1)),
-        new(VitaControl.Square, "\u25A1", R(664, 0), R(134, 1), R(50, 0), R(50, 1)),
-        new(VitaControl.Circle, "\u25CB", R(764, 0), R(134, 1), R(50, 0), R(50, 1)),
-        new(VitaControl.Cross, "\u2715", R(714, 0), R(184, 1), R(50, 0), R(50, 1)),
-        new(VitaControl.LStickUp, "", R(112, 0), R(236, 1), R(124, 0), R(124, 1), OnScreenShape.Stick),
-        new(VitaControl.RStickUp, "", R(608, 0), R(236, 1), R(124, 0), R(124, 1), OnScreenShape.Stick),
-        new(VitaControl.Select, "SELECT", R(322, 0), R(346, 1), R(76, 0), R(30, 1)),
-        new(VitaControl.PS, "PS", R(410, 0), R(346, 1), R(30, 0), R(30, 1)),
-        new(VitaControl.Start, "START", R(452, 0), R(346, 1), R(70, 0), R(30, 1)),
-        new(VitaControl.TouchBack, Loc.Get("MRearButton"), R(22, 0), R(320, 1), R(52, 0), R(36, 1), OnScreenShape.Toggle),
+        new(VitaControl.L, "L", DpFraction(18, 0), DpFraction(12, 1), DpFraction(108, 0), DpFraction(40, 1)),
+        new(VitaControl.R, "R", DpFraction(718, 0), DpFraction(12, 1), DpFraction(108, 0), DpFraction(40, 1)),
+        new(VitaControl.Up, "\u25B2", DpFraction(70, 0), DpFraction(92, 1), DpFraction(40, 0), DpFraction(44, 1)),
+        new(VitaControl.Down, "\u25BC", DpFraction(70, 0), DpFraction(168, 1), DpFraction(40, 0), DpFraction(44, 1)),
+        new(VitaControl.Left, "\u25C0", DpFraction(30, 0), DpFraction(132, 1), DpFraction(44, 0), DpFraction(40, 1)),
+        new(VitaControl.Right, "\u25B6", DpFraction(106, 0), DpFraction(132, 1), DpFraction(44, 0), DpFraction(40, 1)),
+        new(VitaControl.Triangle, "\u25B3", DpFraction(714, 0), DpFraction(84, 1), DpFraction(50, 0), DpFraction(50, 1)),
+        new(VitaControl.Square, "\u25A1", DpFraction(664, 0), DpFraction(134, 1), DpFraction(50, 0), DpFraction(50, 1)),
+        new(VitaControl.Circle, "\u25CB", DpFraction(764, 0), DpFraction(134, 1), DpFraction(50, 0), DpFraction(50, 1)),
+        new(VitaControl.Cross, "\u2715", DpFraction(714, 0), DpFraction(184, 1), DpFraction(50, 0), DpFraction(50, 1)),
+        new(VitaControl.LStickUp, "", DpFraction(112, 0), DpFraction(236, 1), DpFraction(124, 0), DpFraction(124, 1), OnScreenShape.Stick),
+        new(VitaControl.RStickUp, "", DpFraction(608, 0), DpFraction(236, 1), DpFraction(124, 0), DpFraction(124, 1), OnScreenShape.Stick),
+        new(VitaControl.Select, "SELECT", DpFraction(322, 0), DpFraction(346, 1), DpFraction(76, 0), DpFraction(30, 1)),
+        new(VitaControl.PS, "PS", DpFraction(410, 0), DpFraction(346, 1), DpFraction(30, 0), DpFraction(30, 1)),
+        new(VitaControl.Start, "START", DpFraction(452, 0), DpFraction(346, 1), DpFraction(70, 0), DpFraction(30, 1)),
+        new(VitaControl.TouchBack, Loc.Get("MRearButton"), DpFraction(22, 0), DpFraction(320, 1), DpFraction(52, 0), DpFraction(36, 1), OnScreenShape.Toggle),
     ];
 }

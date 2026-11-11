@@ -127,16 +127,16 @@ public sealed class SensorMotionSource : IMotionSource
 {
     public const int Capacity = 512;
     /// <summary>Smoothing of the gravity the re-centre uses (per accelerometer event).</summary>
-    const float GravityAlpha = 0.1f;
+    private const float GravityAlpha = 0.1f;
 
-    readonly object _lock = new();
-    readonly MotionSample[] _ring = new MotionSample[Capacity];
-    readonly SensorFrame _frame;
-    int _head, _count;
-    Vector3 _accel, _gravity;
-    bool _hasAccel, _hasGyro;
-    Quaternion _recentre = Quaternion.Identity;
-    volatile int _rotation;
+    private readonly object _lock = new();
+    private readonly MotionSample[] _ring = new MotionSample[Capacity];
+    private readonly SensorFrame _frame;
+    private int _head, _count;
+    private Vector3 _accel, _gravity;
+    private bool _hasAccel, _hasGyro;
+    private Quaternion _recentre = Quaternion.Identity;
+    private volatile int _rotation;
 
     public SensorMotionSource(SensorFrame frame, string name)
     {
@@ -197,7 +197,7 @@ public sealed class SensorMotionSource : IMotionSource
                 return;
             }
 
-            var s = Map((ulong)Math.Max(0, timestampNs / 1000), _accel, rads);
+            MotionSample s = Map((ulong)Math.Max(0, timestampNs / 1000), _accel, rads);
             _ring[_head] = AndroidMotionAxes.Rotate(s, _recentre);
             _head = (_head + 1) % Capacity;
             if (_count < Capacity)
@@ -207,7 +207,7 @@ public sealed class SensorMotionSource : IMotionSource
         }
     }
 
-    MotionSample Map(ulong us, Vector3 accel, Vector3 gyro) => _frame == SensorFrame.Phone
+    private MotionSample Map(ulong us, Vector3 accel, Vector3 gyro) => _frame == SensorFrame.Phone
         ? AndroidMotionAxes.FromPhone(us, accel, gyro, _rotation)
         : AndroidMotionAxes.FromController(us, accel, gyro);
 
@@ -263,9 +263,9 @@ public sealed class SensorMotionSource : IMotionSource
 /// </summary>
 public sealed class AndroidMotion : IMotionSource
 {
-    readonly object _lock = new();
-    IMotionSource? _active;
-    string? _logged;
+    private readonly object _lock = new();
+    private IMotionSource? _active;
+    private string? _logged;
 
     public AndroidMotion(AndroidMotionMode mode) => Mode = mode;
 
@@ -277,7 +277,7 @@ public sealed class AndroidMotion : IMotionSource
     /// <summary>The motion source the session had before (keyboard tilt keys), used while no sensor device feeds.</summary>
     public IMotionSource? Fallback { get; set; }
 
-    IMotionSource? Pick()
+    private IMotionSource? Pick()
     {
         if (Mode == AndroidMotionMode.Off)
         {
@@ -296,7 +296,7 @@ public sealed class AndroidMotion : IMotionSource
 
     public int ReadSamples(Span<MotionSample> dest)
     {
-        var src = Pick();
+        IMotionSource? src = Pick();
         lock (_lock)
         {
             if (src != _active)

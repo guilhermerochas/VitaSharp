@@ -18,7 +18,7 @@ public static class GameProcessMarker
     {
         Directory.CreateDirectory(Path.GetDirectoryName(Path.GetFullPath(path))!);
         string tmp = path + ".tmp";
-        using (var f = File.Create(tmp))
+        using (FileStream f = File.Create(tmp))
         using (var w = new Utf8JsonWriter(f, new JsonWriterOptions { Indented = true }))
         {
             w.WriteStartObject();
@@ -44,11 +44,11 @@ public static class GameProcessMarker
             }
 
             using var doc = JsonDocument.Parse(File.ReadAllText(path));
-            var r = doc.RootElement;
-            string S(string k) => r.TryGetProperty(k, out var v) && v.ValueKind == JsonValueKind.String ? v.GetString() ?? "" : "";
-            int pid = r.TryGetProperty("pid", out var p) && p.TryGetInt32(out int n) ? n : 0;
-            DateTime started = r.TryGetProperty("started", out var s) && s.TryGetDateTime(out var d) ? d : default;
-            info = new GameProcessInfo(pid, S("titleId"), S("title"), S("gpuConfig"), started);
+            JsonElement r = doc.RootElement;
+            string StringProperty(string k) => r.TryGetProperty(k, out JsonElement v) && v.ValueKind == JsonValueKind.String ? v.GetString() ?? "" : "";
+            int pid = r.TryGetProperty("pid", out JsonElement p) && p.TryGetInt32(out int n) ? n : 0;
+            DateTime started = r.TryGetProperty("started", out JsonElement s) && s.TryGetDateTime(out DateTime d) ? d : default;
+            info = new GameProcessInfo(pid, StringProperty("titleId"), StringProperty("title"), StringProperty("gpuConfig"), started);
         }
         catch (Exception e) when (e is JsonException or IOException or InvalidOperationException)
         {
@@ -70,7 +70,7 @@ public static class GameProcessMarker
     /// <summary>Removes the marker if it is this process's (a newer game process may have replaced it).</summary>
     public static void Clear(string path, int pid)
     {
-        var info = Read(path, _ => true);
+        GameProcessInfo? info = Read(path, _ => true);
         if (info == null || info.Pid != pid)
         {
             return;

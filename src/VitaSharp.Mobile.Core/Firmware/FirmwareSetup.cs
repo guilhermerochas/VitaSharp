@@ -22,7 +22,7 @@ public sealed record FirmwareStatus(FirmwareInfo? Installed, bool SystemFonts, b
     public string Summary => Installed is not { } fw ? Loc.Get("MNotInstalled")
         : SystemFonts ? fw.Display : Loc.Format("MFontsMissing", fw.Version ?? Loc.Get("MUnknownVersion"));
 
-    static bool HasEntries(string dir)
+    private static bool HasEntries(string dir)
     {
         try
         {
@@ -52,7 +52,7 @@ public static class FirmwareSetup
     public static Task<FirmwareInfo> InstallAsync(Func<Stream> openDocument, string displayName, string fsRoot,
         IProgress<FirmwareProgress>? progress = null, CancellationToken ct = default) => Task.Run(() =>
     {
-        using var stream = openDocument();
+        using Stream stream = openDocument();
         if (!stream.CanSeek)
         {
             throw new NotSupportedException("the firmware file must be opened as a seekable stream (OpenFileDescriptor)");

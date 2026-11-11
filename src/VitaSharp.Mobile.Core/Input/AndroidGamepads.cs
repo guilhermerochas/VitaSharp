@@ -64,7 +64,7 @@ public readonly record struct AndroidPadLayout(bool RightStickOnZ = true, bool T
 /// </summary>
 public sealed class AndroidGamepads
 {
-    sealed class Device(int id, string guid, string name, ControllerKind kind, AndroidPadLayout layout, CompiledProfile profile)
+    private sealed class Device(int id, string guid, string name, ControllerKind kind, AndroidPadLayout layout, CompiledProfile profile)
     {
         public readonly int Id = id;
         public readonly string Guid = guid;
@@ -79,10 +79,10 @@ public sealed class AndroidGamepads
         public readonly float[] KeyTrigger = new float[2], AxisTrigger = new float[2];
     }
 
-    readonly object _lock = new();
-    readonly Dictionary<int, Device> _devices = new();
-    readonly InputProfileStore? _profiles;
-    int _revision;
+    private readonly object _lock = new();
+    private readonly Dictionary<int, Device> _devices = new();
+    private readonly InputProfileStore? _profiles;
+    private int _revision;
 
     public AndroidGamepads(InputProfileStore? profiles = null)
     {
@@ -90,7 +90,7 @@ public sealed class AndroidGamepads
         _revision = profiles?.Revision ?? 0;
     }
 
-    ControllerProfile ProfileFor(string guid, string name, ControllerKind kind)
+    private ControllerProfile ProfileFor(string guid, string name, ControllerKind kind)
         => _profiles?.ProfileFor(guid, name, kind, isGamepad: true) ?? DefaultMappings.Gamepad(guid, name, kind);
 
     /// <summary>Raised (on the caller's thread) when a controller connects or disconnects.</summary>
@@ -140,8 +140,8 @@ public sealed class AndroidGamepads
     public void Connect(int deviceId, string name, int vendorId, int productId, IReadOnlyCollection<int> axes)
     {
         string guid = Guid(vendorId, productId);
-        var kind = ControllerClassifier.Classify(guid, name);
-        var profile = ProfileFor(guid, name, kind);
+        ControllerKind kind = ControllerClassifier.Classify(guid, name);
+        ControllerProfile profile = ProfileFor(guid, name, kind);
         lock (_lock)
         {
             _devices[deviceId] = new Device(deviceId, guid, name, kind, AndroidPadLayout.FromAxes(axes), new CompiledProfile(profile));
@@ -166,14 +166,14 @@ public sealed class AndroidGamepads
 
     /// <summary>The Controles screen (or another process) saved input.json: every connected controller takes its new
     /// profile at once, without reconnecting or restarting the game. Called under _lock.</summary>
-    void ReloadIfChanged()
+    private void ReloadIfChanged()
     {
         if (_profiles == null || !_profiles.CheckChanged(ref _revision))
         {
             return;
         }
 
-        foreach (var d in _devices.Values)
+        foreach (Device d in _devices.Values)
         {
             d.Profile = new CompiledProfile(ProfileFor(d.Guid, d.Name, d.Kind));
         }
@@ -184,7 +184,7 @@ public sealed class AndroidGamepads
     {
         lock (_lock)
         {
-            if (!_devices.TryGetValue(deviceId, out var d))
+            if (!_devices.TryGetValue(deviceId, out Device? d))
             {
                 return false;
             }
@@ -219,12 +219,12 @@ public sealed class AndroidGamepads
     {
         lock (_lock)
         {
-            if (!_devices.TryGetValue(deviceId, out var d))
+            if (!_devices.TryGetValue(deviceId, out Device? d))
             {
                 return false;
             }
 
-            var a = d.Pad.Axes;
+            float[] a = d.Pad.Axes;
             a[(int)PadAxis.LeftX] = axisValue(AndroidKeys.AxisX);
             a[(int)PadAxis.LeftY] = axisValue(AndroidKeys.AxisY);
             a[(int)PadAxis.RightX] = axisValue(d.Layout.RightStickOnZ ? AndroidKeys.AxisZ : AndroidKeys.AxisRx);
@@ -240,15 +240,15 @@ public sealed class AndroidGamepads
     }
 
     // pads with analog triggers often report L2/R2 as keys too: keep whichever is pressed further
-    static void UpdateTriggers(Device d)
+    private static void UpdateTriggers(Device d)
     {
         d.Pad.Axes[(int)PadAxis.LeftTrigger] = Math.Clamp(Math.Max(d.KeyTrigger[0], d.AxisTrigger[0]), 0f, 1f);
         d.Pad.Axes[(int)PadAxis.RightTrigger] = Math.Clamp(Math.Max(d.KeyTrigger[1], d.AxisTrigger[1]), 0f, 1f);
     }
 
-    static void UpdateDpad(Device d)
+    private static void UpdateDpad(Device d)
     {
-        var b = d.Pad.Buttons;
+        bool[] b = d.Pad.Buttons;
         b[(int)PadButton.DpadUp] = d.KeyDpad[0] || d.HatY < -0.5f;
         b[(int)PadButton.DpadDown] = d.KeyDpad[1] || d.HatY > 0.5f;
         b[(int)PadButton.DpadLeft] = d.KeyDpad[2] || d.HatX < -0.5f;
@@ -261,11 +261,11 @@ public sealed class AndroidGamepads
         lock (_lock)
         {
             ReloadIfChanged();
-            var r = MappedInput.Neutral;
+            MappedInput r = MappedInput.Neutral;
             bool first = true;
-            foreach (var d in _devices.Values)
+            foreach (Device d in _devices.Values)
             {
-                var m = InputMapper.Map(d.Profile, d.Pad, null);
+                MappedInput m = InputMapper.Map(d.Profile, d.Pad, null);
                 r = first ? m : InputMapper.Combine(r, m);
                 first = false;
             }
@@ -284,20 +284,20 @@ public sealed class AndroidInput(OnScreenPad pad, AndroidGamepads gamepads, Andr
     public AndroidGamepads Gamepads { get; } = gamepads;
     public AndroidKeyboard? Keyboard { get; } = keyboard;
 
-    MappedInput Current()
+    private MappedInput Current()
     {
         var touch = new MappedInput { State = Pad.GetController(0) };
-        foreach (var t in Pad.GetTouches(false))
+        foreach (TouchPoint t in Pad.GetTouches(false))
         {
             touch.AddTouch(false, t);
         }
 
-        foreach (var t in Pad.GetTouches(true))
+        foreach (TouchPoint t in Pad.GetTouches(true))
         {
             touch.AddTouch(true, t);
         }
 
-        var r = Gamepads.AnyConnected ? InputMapper.Combine(touch, Gamepads.Map()) : touch;
+        MappedInput r = Gamepads.AnyConnected ? InputMapper.Combine(touch, Gamepads.Map()) : touch;
         // keyboard contacts (TouchFront/TouchBack keys) get ids of their own
         if (Keyboard is { AnyHeld: true } k)
         {
@@ -319,7 +319,7 @@ public sealed class AndroidInput(OnScreenPad pad, AndroidGamepads gamepads, Andr
 
     public IReadOnlyList<TouchPoint> GetTouches(bool back)
     {
-        var m = Current();
+        MappedInput m = Current();
         var list = new TouchPoint[back ? m.BackCount : m.FrontCount];
         m.CopyTouches(back, list);
         return list;

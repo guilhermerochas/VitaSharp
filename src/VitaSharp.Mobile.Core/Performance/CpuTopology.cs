@@ -20,7 +20,7 @@ public sealed class CpuTopology
 {
     public IReadOnlyList<CpuCluster> Clusters { get; }
 
-    CpuTopology(List<CpuCluster> clusters)
+    private CpuTopology(List<CpuCluster> clusters)
     {
         Clusters = clusters;
     }
@@ -60,9 +60,9 @@ public sealed class CpuTopology
         var cores = new List<(int, long, int)>();
         try
         {
-            foreach (var dir in Directory.EnumerateDirectories(root, "cpu*"))
+            foreach (string dir in Directory.EnumerateDirectories(root, "cpu*"))
             {
-                var name = Path.GetFileName(dir);
+                string name = Path.GetFileName(dir);
                 if (name.Length < 4 || !int.TryParse(name.AsSpan(3), NumberStyles.None, CultureInfo.InvariantCulture, out int cpu))
                 {
                     continue;
@@ -77,7 +77,7 @@ public sealed class CpuTopology
         return Build(cores);
     }
 
-    static long ReadLong(string path)
+    private static long ReadLong(string path)
     {
         try
         {

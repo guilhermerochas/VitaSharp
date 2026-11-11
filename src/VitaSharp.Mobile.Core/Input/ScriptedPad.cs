@@ -18,15 +18,15 @@ namespace VitaSharp.Mobile.Core.Input;
 /// </summary>
 public sealed class ScriptedPad
 {
-    sealed record Step(VitaButtons Button, int Stick, double Start, double Length, float X, float Y);
+    private sealed record Step(VitaButtons Button, int Stick, double Start, double Length, float X, float Y);
 
-    List<Step> _steps = [];
-    List<(bool Save, int Slot, double At)> _states = [];
+    private List<Step> _steps = [];
+    private List<(bool Save, int Slot, double At)> _states = [];
 
     /// <summary>A <c>savestate</c>/<c>loadstate</c> step is due: (save, slot). Raised on the thread that polls the pad.</summary>
     public event Action<bool, int>? StateRequested;
-    Stopwatch? _clock;
-    double _nextPoll;
+    private Stopwatch? _clock;
+    private double _nextPoll;
 
     /// <summary>A file polled while the game runs (VITASHARP_ANDROID_INPUT_LIVE): its steps, in the same syntax with T
     /// relative to the moment it is read, are added and the file is deleted. Lets a script on the PC react to the
@@ -35,19 +35,19 @@ public sealed class ScriptedPad
 
     public ScriptedPad(string script) => _steps = Parse(script, 0, _states);
 
-    static List<Step> Parse(string script, double offset, List<(bool, int, double)> states)
+    private static List<Step> Parse(string script, double offset, List<(bool, int, double)> states)
     {
         var steps = new List<Step>();
-        var inv = CultureInfo.InvariantCulture;
-        foreach (var raw in script.Split(',', StringSplitOptions.RemoveEmptyEntries | StringSplitOptions.TrimEntries))
+        CultureInfo inv = CultureInfo.InvariantCulture;
+        foreach (string raw in script.Split(',', StringSplitOptions.RemoveEmptyEntries | StringSplitOptions.TrimEntries))
         {
-            var at = raw.Split('@');
+            string[] at = raw.Split('@');
             if (at.Length != 2)
             {
                 throw new FormatException($"bad input step '{raw}'");
             }
 
-            var p = at[1].Split(':');
+            string[] p = at[1].Split(':');
             double start = offset + double.Parse(p[0], inv);
             string name = at[0].ToLowerInvariant();
             if (name is "savestate" or "loadstate")
@@ -77,7 +77,7 @@ public sealed class ScriptedPad
                     float.Parse(p[1], inv), float.Parse(p[2], inv)));
                 continue;
             }
-            var button = name switch
+            VitaButtons button = name switch
             {
                 "cross" => VitaButtons.Cross,
                 "circle" => VitaButtons.Circle,
@@ -100,7 +100,7 @@ public sealed class ScriptedPad
 
     public int Count => _steps.Count;
 
-    void PollLive(double t)
+    private void PollLive(double t)
     {
         _nextPoll = t + 0.25;
         try
@@ -137,7 +137,7 @@ public sealed class ScriptedPad
             FireStates(t);
         }
 
-        foreach (var st in _steps)
+        foreach (Step st in _steps)
         {
             if (t < st.Start || t >= st.Start + st.Length)
             {
@@ -145,31 +145,31 @@ public sealed class ScriptedPad
             }
 
             s.Buttons |= st.Button;
-            static byte ax(float v) => (byte)Math.Clamp((int)MathF.Round(128 + v * 127), 0, 255);
+            static byte AxisByte(float v) => (byte)Math.Clamp((int)MathF.Round(128 + v * 127), 0, 255);
             if (st.Stick == 1)
             {
-                s.Lx = ax(st.X);
-                s.Ly = ax(st.Y);
+                s.Lx = AxisByte(st.X);
+                s.Ly = AxisByte(st.Y);
             }
             else if (st.Stick == 2)
             {
-                s.Rx = ax(st.X);
-                s.Ry = ax(st.Y);
+                s.Rx = AxisByte(st.X);
+                s.Ry = AxisByte(st.Y);
             }
         }
         return s;
     }
 
-    void FireStates(double t)
+    private void FireStates(double t)
     {
-        var due = _states.FindAll(s => s.At <= t);
+        List<(bool Save, int Slot, double At)> due = _states.FindAll(s => s.At <= t);
         if (due.Count == 0)
         {
             return;
         }
 
         _states = _states.FindAll(s => s.At > t);
-        foreach (var (save, slot, _) in due)
+        foreach ((bool save, int slot, double _) in due)
         {
             StateRequested?.Invoke(save, slot);
         }
@@ -182,7 +182,7 @@ public sealed class ScriptedPad
         double t = _clock.Elapsed.TotalSeconds;
         for (int i = 0; i < _steps.Count; i++)
         {
-            var st = _steps[i];
+            Step st = _steps[i];
             if (st.Stick < 3 || t < st.Start || t >= st.Start + st.Length)
             {
                 continue;
@@ -193,5 +193,5 @@ public sealed class ScriptedPad
     }
 
     /// <summary>Host contact ids of scripted taps (above the on-screen pad's and the gamepads').</summary>
-    const int TouchIdBase = 100;
+    private const int TouchIdBase = 100;
 }
