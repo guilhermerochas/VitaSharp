@@ -1,6 +1,7 @@
 using VitaSharp.Core;
 using VitaSharp.Core.Hle;
 using VitaSharp.Core.Hle.Modules;
+using VitaSharp.Core.Kernel;
 using VitaSharp.Core.Loader;
 using VitaSharp.Core.Memory;
 
@@ -13,21 +14,21 @@ namespace VitaSharp.Tests;
 [Collection("guest")]
 public sealed class LibcStdioTests : IDisposable
 {
-    readonly string _root = Path.Combine(Path.GetTempPath(), "vitasharp-libcio-" + Guid.NewGuid().ToString("N"));
-    readonly Emulator Emu;
-    uint _next;
-    readonly Dictionary<string, uint> _at = [];
+    private readonly string _root = Path.Combine(Path.GetTempPath(), "vitasharp-libcio-" + Guid.NewGuid().ToString("N"));
+    private readonly Emulator _emu;
+    private uint _next;
+    private readonly Dictionary<string, uint> _at = [];
 
-    public LibcStdioTests(GuestMemoryFixture fx)
+    public LibcStdioTests(GuestMemoryFixture fixture)
     {
         Directory.CreateDirectory(Path.Combine(_root, "ux0", "data"));
-        Emu = new Emulator(new EmulatorOptions { FsRoot = _root, Memory = fx.Memory, EnableJit = false, CpuBackend = "interp" });
-        _next = Emu.Memory.Alloc(0x2000, "libc io stubs");
+        _emu = new Emulator(new EmulatorOptions { FsRoot = _root, Memory = fixture.Memory, EnableJit = false, CpuBackend = "interp" });
+        _next = _emu.Memory.Alloc(0x2000, "libc io stubs");
     }
 
     public void Dispose()
     {
-        Emu.Dispose();
+        _emu.Dispose();
         try
         {
             Directory.Delete(_root, true);
@@ -35,7 +36,7 @@ public sealed class LibcStdioTests : IDisposable
         catch (IOException) { }
     }
 
-    uint Stub(string name)
+    private uint Stub(string name)
     {
         if (_at.TryGetValue(name, out uint a))
         {
@@ -45,25 +46,25 @@ public sealed class LibcStdioTests : IDisposable
         uint nid = NidDatabase.LookupName(name).Single(n => n.Library == "SceLibc").Nid;
         a = _next;
         _next += 16;
-        Linker.WriteHleStub(a, Emu.Hle.GetHleFunctionIndex(nid, 0, "SceLibc"), nid);
-        Emu.Code.Invalidate(a, 16);
+        Linker.WriteHleStub(a, _emu.Hle.GetHleFunctionIndex(nid, 0, "SceLibc"), nid);
+        _emu.Code.Invalidate(a, 16);
         return _at[name] = a;
     }
 
-    uint HostStub(string name, Action<HleContext> body)
+    private uint HostStub(string name, Action<HleContext> body)
     {
         uint a = _next;
         _next += 16;
-        Linker.WriteHleStub(a, Emu.Hle.RegisterHostFunction(name, body), 0);
-        Emu.Code.Invalidate(a, 16);
+        Linker.WriteHleStub(a, _emu.Hle.RegisterHostFunction(name, body), 0);
+        _emu.Code.Invalidate(a, 16);
         return a;
     }
 
-    uint Run(uint fn, params uint[] args)
+    private uint Run(uint fn, params uint[] args)
     {
         uint result = 0;
         Exception? failure = null;
-        var th = Emu.Kernel.CreateThread("libc-io-test", 0, 0x10000100, 0x10000, 0, 0x70000);
+        GuestThread th = _emu.Kernel.CreateThread("libc-io-test", 0, 0x10000100, 0x10000, 0, 0x70000);
         th.HostBody = t =>
         {
             try
@@ -77,7 +78,7 @@ public sealed class LibcStdioTests : IDisposable
         };
         th.Start(0, 0);
         Assert.True(th.WaitForExit(60_000), "test thread did not finish");
-        Emu.Kernel.DeleteThread(th);
+        _emu.Kernel.DeleteThread(th);
         if (failure != null)
         {
             throw new Xunit.Sdk.XunitException(failure.ToString());
@@ -86,20 +87,20 @@ public sealed class LibcStdioTests : IDisposable
         return result;
     }
 
-    uint C(string name, params uint[] args) => Run(Stub(name), args);
-    uint Alloc(uint n)
+    private uint C(string name, params uint[] args) => Run(Stub(name), args);
+    private uint Alloc(uint n)
     {
-        uint p = Emu.Memory.Alloc(n, "libc io test");
+        uint p = _emu.Memory.Alloc(n, "libc io test");
         GuestMemory.Fill(p, 0, n);
         return p;
     }
-    uint Str(string s)
+    private uint Str(string s)
     {
         uint p = Alloc((uint)s.Length + 1);
         GuestMemory.WriteCString(p, s);
         return p;
     }
-    void File(string name, string text) => System.IO.File.WriteAllText(Path.Combine(_root, "ux0", "data", name), text);
+    private void File(string name, string text) => System.IO.File.WriteAllText(Path.Combine(_root, "ux0", "data", name), text);
 
     [Fact]
     public void FgetsReadsLineByLineAndSetsEndOfFile()
@@ -234,7 +235,7 @@ public sealed class LibcStdioTests : IDisposable
             GuestMemory.W32(arr + (uint)i * 8 + 4, (uint)items[i][1]);
         }
         C("qsort", arr, (uint)items.Length, 8, cmp);
-        var sorted = Enumerable.Range(0, items.Length).Select(i => ((int)GuestMemory.R32(arr + (uint)i * 8), (int)GuestMemory.R32(arr + (uint)i * 8 + 4))).ToArray();
+        (int, int)[] sorted = Enumerable.Range(0, items.Length).Select(i => ((int)GuestMemory.R32(arr + (uint)i * 8), (int)GuestMemory.R32(arr + (uint)i * 8 + 4))).ToArray();
         Assert.Equal(new[] { (1, 1), (1, 4), (3, 3), (5, 0), (5, 2), (9, 5) }, sorted);
         Assert.True(calls > 0);
         uint key = Alloc(4);

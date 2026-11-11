@@ -10,15 +10,15 @@ namespace VitaSharp.Tests;
 /// errno EDOM (33), a pole or an overflow ERANGE (34); the hard-float ABI passes doubles in d0-d2.
 /// </summary>
 [Collection("guest")]
-public sealed class LibmTests(GuestMemoryFixture fx) : IDisposable
+public sealed class LibmTests(GuestMemoryFixture fixture) : IDisposable
 {
-    const int EDOM = 33, ERANGE = 34;
-    readonly HleHarness _h = new(fx, "libm");
-    Libm M => _h.Module<Libm>();
+    private const int EDOM = 33, ERANGE = 34;
+    private readonly HleHarness _harness = new(fixture, "libm");
+    private Libm Libm => _harness.Module<Libm>();
 
-    public void Dispose() => _h.Dispose();
+    public void Dispose() => _harness.Dispose();
 
-    static unsafe double D(GuestThread t, string fn, double[] args, params object[] extra)
+    private static unsafe double D(GuestThread t, string fn, double[] args, params object[] extra)
     {
         for (int i = 0; i < args.Length; i++)
         {
@@ -28,13 +28,13 @@ public sealed class LibmTests(GuestMemoryFixture fx) : IDisposable
         return Convert.ToDouble(Invoke(t.Process.Hle.Modules.OfType<Libm>().Single(), fn, [t.Hle, .. extra]));
     }
 
-    static uint Errno(GuestThread t) => GuestMemory.R32(t.TlsBase + 0x88 * 4);
-    static void ClearErrno(GuestThread t) => GuestMemory.W32(t.TlsBase + 0x88 * 4, 0);
+    private static uint Errno(GuestThread t) => GuestMemory.R32(t.TlsBase + 0x88 * 4);
+    private static void ClearErrno(GuestThread t) => GuestMemory.W32(t.TlsBase + 0x88 * 4, 0);
 
     [Fact]
     public void DoubleFunctionsAndErrors()
     {
-        _h.OnGuest(t =>
+        _harness.OnGuest(t =>
         {
             double R(string fn, params double[] a) => D(t, fn, a);
             Assert.Equal(0, R("sin", 0));
@@ -109,9 +109,9 @@ public sealed class LibmTests(GuestMemoryFixture fx) : IDisposable
     [Fact]
     public void FloatFunctionsAndDecomposition()
     {
-        _h.OnGuest(t =>
+        _harness.OnGuest(t =>
         {
-            float F(string fn, params float[] a) => Convert.ToSingle(Invoke(M, fn, a.Cast<object>().ToArray()));
+            float F(string fn, params float[] a) => Convert.ToSingle(Invoke(Libm, fn, a.Cast<object>().ToArray()));
             Assert.Equal(0f, F("sinf", 0));
             Assert.Equal(1f, F("cosf", 0));
             Assert.Equal(1f, F("tanf", MathF.PI / 4), 5);
@@ -156,49 +156,49 @@ public sealed class LibmTests(GuestMemoryFixture fx) : IDisposable
             Assert.Equal(1f, F("fminf", 1, 2));
             Assert.True(F("nextafterf", 1, 0) < 1);
             Assert.Equal(7f, F("fmaf", 2, 3, 1));
-            Assert.Equal(3, Call(M, "ilogbf", 8f));
-            Assert.Equal(2, Call(M, "lrintf", 2.5f));
-            Assert.Equal(-3, Call(M, "lroundf", -2.5f));
-            Assert.Equal(2L, Convert.ToInt64(Invoke(M, "llrintf", 2.5f)));
-            Assert.Equal(3L, Convert.ToInt64(Invoke(M, "llroundf", 2.5f)));
-            Assert.Equal(1024f, Convert.ToSingle(Invoke(M, "ldexpf", 1f, 10)));
+            Assert.Equal(3, Call(Libm, "ilogbf", 8f));
+            Assert.Equal(2, Call(Libm, "lrintf", 2.5f));
+            Assert.Equal(-3, Call(Libm, "lroundf", -2.5f));
+            Assert.Equal(2L, Convert.ToInt64(Invoke(Libm, "llrintf", 2.5f)));
+            Assert.Equal(3L, Convert.ToInt64(Invoke(Libm, "llroundf", 2.5f)));
+            Assert.Equal(1024f, Convert.ToSingle(Invoke(Libm, "ldexpf", 1f, 10)));
 
             // frexp/modf/remquo write through their pointers
-            uint p = _h.Alloc(8);
+            uint p = _harness.Alloc(8);
             Assert.Equal(0.5, D(t, "frexp", [8], p));
             Assert.Equal(4u, GuestMemory.R32(p));
-            Assert.Equal(0.5f, Convert.ToSingle(Invoke(M, "frexpf", 8f, p)));
+            Assert.Equal(0.5f, Convert.ToSingle(Invoke(Libm, "frexpf", 8f, p)));
             Assert.Equal(0.75, D(t, "modf", [3.75], p));
             Assert.Equal(3.0, GuestMemory.Read<double>(p));
-            Assert.Equal(0.75f, Convert.ToSingle(Invoke(M, "modff", 3.75f, p)));
+            Assert.Equal(0.75f, Convert.ToSingle(Invoke(Libm, "modff", 3.75f, p)));
             Assert.Equal(3.0f, GuestMemory.Read<float>(p));
             Assert.Equal(1, D(t, "remquo", [7, 3], p));
             Assert.Equal(2u, GuestMemory.R32(p) & 7);
-            Assert.Equal(1f, Convert.ToSingle(Invoke(M, "remquof", 7f, 3f, p)));
+            Assert.Equal(1f, Convert.ToSingle(Invoke(Libm, "remquof", 7f, 3f, p)));
             Assert.Equal(3, D(t, "ilogb", [8]));
             Assert.Equal(-3, D(t, "lround", [-2.5]));
             Assert.Equal(2, D(t, "lrint", [2.5]));
 
             // nan(tag) payloads; the Dinkumware classification helpers
-            double nan = Convert.ToDouble(Invoke(M, "nan", "5"));
+            double nan = Convert.ToDouble(Invoke(Libm, "nan", "5"));
             Assert.True(double.IsNaN(nan));
             Assert.Equal(5UL, BitConverter.DoubleToUInt64Bits(nan) & 0xFFFFF);
-            Assert.True(float.IsNaN(Convert.ToSingle(Invoke(M, "nanf", ""))));
+            Assert.True(float.IsNaN(Convert.ToSingle(Invoke(Libm, "nanf", ""))));
             GuestMemory.Write(p, double.PositiveInfinity);
-            Assert.Equal((short)1, (short)Invoke(M, "_Dtest", p)!);     // infinite
+            Assert.Equal((short)1, (short)Invoke(Libm, "_Dtest", p)!);     // infinite
             GuestMemory.Write(p, 0.0);
-            Assert.Equal((short)0, (short)Invoke(M, "_Dtest", p)!);     // zero
+            Assert.Equal((short)0, (short)Invoke(Libm, "_Dtest", p)!);     // zero
             GuestMemory.Write(p, 1.5f);
-            Assert.Equal((short)-1, (short)Invoke(M, "_FDtest", p)!);   // finite
-            Assert.Equal((short)2, (short)Invoke(M, "_FDclass", float.NaN)!);
-            Assert.Equal(1, Call(M, "_FDsign", -1f));
-            Assert.Equal(1, Call(M, "_FFpcomp", 1f, 2f));   // less
-            Assert.Equal(2, Call(M, "_FFpcomp", 2f, 2f));   // equal
-            Assert.Equal(4, Call(M, "_FFpcomp", 3f, 2f));   // greater
-            Assert.Equal(0, Call(M, "_FFpcomp", float.NaN, 2f));
-            Assert.Equal(1f, Convert.ToSingle(Invoke(M, "_FSin", 0f, 1u)), 5);  // sin(x + pi/2)
-            Assert.Equal(2f, Convert.ToSingle(Invoke(M, "_FLog", 100f, 1)), 5); // base 10
-            Assert.Equal(2f, Convert.ToSingle(Invoke(M, "_FCosh", 0f, 2f)));    // 2 cosh 0
+            Assert.Equal((short)-1, (short)Invoke(Libm, "_FDtest", p)!);   // finite
+            Assert.Equal((short)2, (short)Invoke(Libm, "_FDclass", float.NaN)!);
+            Assert.Equal(1, Call(Libm, "_FDsign", -1f));
+            Assert.Equal(1, Call(Libm, "_FFpcomp", 1f, 2f));   // less
+            Assert.Equal(2, Call(Libm, "_FFpcomp", 2f, 2f));   // equal
+            Assert.Equal(4, Call(Libm, "_FFpcomp", 3f, 2f));   // greater
+            Assert.Equal(0, Call(Libm, "_FFpcomp", float.NaN, 2f));
+            Assert.Equal(1f, Convert.ToSingle(Invoke(Libm, "_FSin", 0f, 1u)), 5);  // sin(x + pi/2)
+            Assert.Equal(2f, Convert.ToSingle(Invoke(Libm, "_FLog", 100f, 1)), 5); // base 10
+            Assert.Equal(2f, Convert.ToSingle(Invoke(Libm, "_FCosh", 0f, 2f)));    // 2 cosh 0
         });
     }
 }

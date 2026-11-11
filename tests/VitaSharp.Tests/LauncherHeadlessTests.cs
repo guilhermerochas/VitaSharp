@@ -13,8 +13,8 @@ namespace VitaSharp.Tests;
 [Collection("launcher")]
 public sealed class LauncherHeadlessTests : IDisposable
 {
-    readonly string _root = Path.Combine(Path.GetTempPath(), "vitasharp-launcher-" + Guid.NewGuid().ToString("N"));
-    readonly string? _savedData = Environment.GetEnvironmentVariable(EnvVars.Data);
+    private readonly string _root = Path.Combine(Path.GetTempPath(), "vitasharp-launcher-" + Guid.NewGuid().ToString("N"));
+    private readonly string? _savedData = Environment.GetEnvironmentVariable(EnvVars.Data);
 
     public void Dispose()
     {
@@ -41,7 +41,7 @@ public sealed class LauncherHeadlessTests : IDisposable
         int rc = UiRender.Run([outDir, "--theme=dark", "--size=1280x720"]);
         var shots = Directory.GetFiles(outDir, "*.png").Select(Path.GetFileNameWithoutExtension).ToHashSet();
         Assert.Equal(0, rc);
-        foreach (var page in new[] { "library_dark", "library-list_dark", "library-home_dark", "game_dark", "livearea_dark", "settings_dark" })
+        foreach (string? page in new[] { "library_dark", "library-list_dark", "library-home_dark", "game_dark", "livearea_dark", "settings_dark" })
         {
             Assert.Contains(page, shots);
         }

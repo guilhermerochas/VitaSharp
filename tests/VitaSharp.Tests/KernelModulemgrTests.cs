@@ -26,29 +26,29 @@ namespace VitaSharp.Tests;
 
 [Collection("guest")]
 
-public sealed class KernelModulemgrTests(GuestMemoryFixture fx) : IDisposable
+public sealed class KernelModulemgrTests(GuestMemoryFixture fixture) : IDisposable
 
 {
 
-    const uint Lib = 0x5EC5A120, Fn = 0x55555555, Other = 0x66666666;
+    private const uint Lib = 0x5EC5A120, Fn = 0x55555555, Other = 0x66666666;
 
 
 
-    readonly HleHarness _h = new(fx, "kernmgr");
+    private readonly HleHarness _harness = new(fixture, "kernmgr");
 
-    ModulemgrKernel Modmgr => _h.Module<ModulemgrKernel>();
-
-
-
-    public void Dispose() => _h.Dispose();
+    private ModulemgrKernel Modmgr => _harness.Module<ModulemgrKernel>();
 
 
 
-    string Write(string file, byte[] elf)
+    public void Dispose() => _harness.Dispose();
+
+
+
+    private string Write(string file, byte[] elf)
 
     {
 
-        string dir = Path.Combine(_h.Root, "ur0", "tai");
+        string dir = Path.Combine(_harness.Root, "ur0", "tai");
 
         Directory.CreateDirectory(dir);
 
@@ -62,11 +62,11 @@ public sealed class KernelModulemgrTests(GuestMemoryFixture fx) : IDisposable
 
     /// <summary>A kernel module: function 0 returns 5 (exported as <see cref="Fn"/>), function 1 returns 6.</summary>
 
-    static byte[] Module(string name, byte start = 0)
+    private static byte[] Module(string name, byte start = 0)
 
     {
 
-        var b = new SceModuleBuilder(name).Start(start);
+        SceModuleBuilder b = new SceModuleBuilder(name).Start(start);
 
         int five = b.ReturnConstant(5), six = b.ReturnConstant(6);
 
@@ -76,7 +76,7 @@ public sealed class KernelModulemgrTests(GuestMemoryFixture fx) : IDisposable
 
 
 
-    LoadedModule ModuleOf(int uid) => _h.Emu.Kernel.Modules[uid];
+    private LoadedModule ModuleOf(int uid) => _harness.Emu.Kernel.Modules[uid];
 
 
 
@@ -90,7 +90,7 @@ public sealed class KernelModulemgrTests(GuestMemoryFixture fx) : IDisposable
 
         Assert.Equal(SceError.MODULEMGR_NOENT, Call(Modmgr, "ksceKernelLoadModule", "ur0:tai/none.skprx", 0, 0u));
 
-        _h.OnGuest(_ =>
+        _harness.OnGuest(_ =>
 
         {
 
@@ -100,7 +100,7 @@ public sealed class KernelModulemgrTests(GuestMemoryFixture fx) : IDisposable
 
             Assert.True(ModuleOf(uid).IsKernel);
 
-            uint status = _h.Word(0xFF);
+            uint status = _harness.Word(0xFF);
 
             Assert.Equal(0, Call(Modmgr, "ksceKernelStartModule", uid, 0u, 0u, 0, 0u, status));
 
@@ -122,7 +122,7 @@ public sealed class KernelModulemgrTests(GuestMemoryFixture fx) : IDisposable
 
             Assert.Equal(0, Call(Modmgr, "ksceKernelStopUnloadModule", uid2, 0u, 0u, 0, 0u, status));
 
-            Assert.False(_h.Emu.Kernel.Modules.ContainsKey(uid2));
+            Assert.False(_harness.Emu.Kernel.Modules.ContainsKey(uid2));
 
 
 
@@ -134,7 +134,7 @@ public sealed class KernelModulemgrTests(GuestMemoryFixture fx) : IDisposable
 
             Assert.Equal(2u, GuestMemory.R32(status));
 
-            Assert.False(_h.Emu.Kernel.Modules.ContainsKey(uid3));
+            Assert.False(_harness.Emu.Kernel.Modules.ContainsKey(uid3));
 
         });
 
@@ -150,13 +150,13 @@ public sealed class KernelModulemgrTests(GuestMemoryFixture fx) : IDisposable
 
         string path = Write("u.suprx", Module("UMod"));
 
-        _h.OnGuest(_ =>
+        _harness.OnGuest(_ =>
 
         {
 
-            uint status = _h.Word(0xFF);
+            uint status = _harness.Word(0xFF);
 
-            int uid = Call(Modmgr, "ksceKernelLoadStartModuleForPid", _h.Emu.Pid, path, 0u, 0u, 0, 0u, status);
+            int uid = Call(Modmgr, "ksceKernelLoadStartModuleForPid", _harness.Emu.Pid, path, 0u, 0u, 0, 0u, status);
 
             Assert.True(uid > 0);
 
@@ -164,11 +164,11 @@ public sealed class KernelModulemgrTests(GuestMemoryFixture fx) : IDisposable
 
             Assert.Equal(0u, GuestMemory.R32(status));
 
-            Assert.Equal(0, Call(Modmgr, "ksceKernelStopModuleForPid", _h.Emu.Pid, uid, 0u, 0u, 0, 0u, status));
+            Assert.Equal(0, Call(Modmgr, "ksceKernelStopModuleForPid", _harness.Emu.Pid, uid, 0u, 0u, 0, 0u, status));
 
-            Assert.Equal(0, Call(Modmgr, "ksceKernelUnloadModuleForPid", _h.Emu.Pid, uid, 0, 0u));
+            Assert.Equal(0, Call(Modmgr, "ksceKernelUnloadModuleForPid", _harness.Emu.Pid, uid, 0, 0u));
 
-            Assert.Equal(SceError.MODULEMGR_NO_MOD, Call(Modmgr, "ksceKernelUnloadModuleForPid", _h.Emu.Pid, uid, 0, 0u));
+            Assert.Equal(SceError.MODULEMGR_NO_MOD, Call(Modmgr, "ksceKernelUnloadModuleForPid", _harness.Emu.Pid, uid, 0, 0u));
 
             int uid2 = Call(Modmgr, "ksceKernelLoadStartModuleForPid", 0, path, 0u, 0u, 0, 0u, 0u);
 
@@ -198,11 +198,11 @@ public sealed class KernelModulemgrTests(GuestMemoryFixture fx) : IDisposable
 
     {
 
-        var k = _h.Emu.LoadModule(Write("k.skprx", Module("KInfo")), kernel: true);
+        LoadedModule k = _harness.Emu.LoadModule(Write("k.skprx", Module("KInfo")), kernel: true);
 
-        var u = _h.Emu.LoadModule(Write("u.suprx", Module("UInfo")));
+        LoadedModule u = _harness.Emu.LoadModule(Write("u.suprx", Module("UInfo")));
 
-        uint info = _h.Alloc(0x1B8);
+        uint info = _harness.Alloc(0x1B8);
 
         Assert.Equal(0, Call(Modmgr, "ksceKernelGetModuleInfo", KernelSpace.KernelPid, k.Uid, info));
 
@@ -212,7 +212,7 @@ public sealed class KernelModulemgrTests(GuestMemoryFixture fx) : IDisposable
 
         // a process's call does not see the kernel's modules, nor the kernel the process's
 
-        Assert.Equal(SceError.MODULEMGR_NO_MOD, Call(Modmgr, "ksceKernelGetModuleInfo", _h.Emu.Pid, k.Uid, info));
+        Assert.Equal(SceError.MODULEMGR_NO_MOD, Call(Modmgr, "ksceKernelGetModuleInfo", _harness.Emu.Pid, k.Uid, info));
 
         Assert.Equal(SceError.MODULEMGR_NO_MOD, Call(Modmgr, "ksceKernelGetModuleInfo", KernelSpace.KernelPid, u.Uid, info));
 
@@ -224,7 +224,7 @@ public sealed class KernelModulemgrTests(GuestMemoryFixture fx) : IDisposable
 
 
 
-        uint ids = _h.Alloc(16 * 4), num = _h.Word(16);
+        uint ids = _harness.Alloc(16 * 4), num = _harness.Word(16);
 
         Assert.Equal(0, Call(Modmgr, "ksceKernelGetModuleList", KernelSpace.KernelPid, 0xFF, 1, ids, num));
 
@@ -242,7 +242,7 @@ public sealed class KernelModulemgrTests(GuestMemoryFixture fx) : IDisposable
 
 
 
-        uint cbOut = _h.Alloc(4);
+        uint cbOut = _harness.Alloc(4);
 
         Assert.Equal(0, Call(Modmgr, "ksceKernelGetModuleCB", k.Uid, cbOut));
 

@@ -1,6 +1,7 @@
 using System.Buffers.Binary;
 using VitaSharp.Core.Gxm.Shader;
 using VitaSharp.Core.Host;
+using VitaSharp.Core.Input;
 using VitaSharp.Core.Media;
 using VitaSharp.Mobile.Core.Input;
 
@@ -15,10 +16,10 @@ namespace VitaSharp.Tests;
 public class MaliDeviceTests
 {
     // a vertex program (position is always an output) and an empty fragment program
-    static GxpProgram Program(bool fragment)
+    private static GxpProgram Program(bool fragment)
     {
         ulong[] code = fragment ? [] : [0x6081000460600003, 0x50C9000A20200180];
-        var d = new byte[0x100 + code.Length * 8];
+        byte[] d = new byte[0x100 + code.Length * 8];
         void W32(int o, uint v) => BinaryPrimitives.WriteUInt32LittleEndian(d.AsSpan(o), v);
         if (fragment)
         {
@@ -35,9 +36,9 @@ public class MaliDeviceTests
         return new GxpProgram(d, 0x81000000);
     }
 
-    static string Glsl(bool fragment, ShaderGenerator.FarPlaneClip mode)
+    private static string Glsl(bool fragment, ShaderGenerator.FarPlaneClip mode)
     {
-        var saved = ShaderGenerator.FarPlane;
+        ShaderGenerator.FarPlaneClip saved = ShaderGenerator.FarPlane;
         ShaderGenerator.FarPlane = mode;
         try
         {
@@ -53,7 +54,7 @@ public class MaliDeviceTests
     public void ClipDistanceIsTheDefaultAndUnchanged()
     {
         Assert.Equal(ShaderGenerator.FarPlaneClip.ClipDistance, ShaderGenerator.FarPlane);
-        var vs = Glsl(false, ShaderGenerator.FarPlaneClip.ClipDistance);
+        string vs = Glsl(false, ShaderGenerator.FarPlaneClip.ClipDistance);
         Assert.Contains("gl_ClipDistance[0] = gl_Position.w - gl_Position.z;", vs);
         Assert.DoesNotContain("v_FarClip", vs);
         Assert.DoesNotContain("v_FarClip", Glsl(true, ShaderGenerator.FarPlaneClip.ClipDistance));
@@ -62,11 +63,11 @@ public class MaliDeviceTests
     [Fact]
     public void DiscardPassesTheDistanceAndDiscardsLast()
     {
-        var vs = Glsl(false, ShaderGenerator.FarPlaneClip.Discard);
+        string vs = Glsl(false, ShaderGenerator.FarPlaneClip.Discard);
         Assert.DoesNotContain("gl_ClipDistance", vs);
         Assert.Contains("layout(location = 14) out float v_FarClip;", vs);
         Assert.Contains("v_FarClip = gl_Position.w - gl_Position.z;", vs);
-        var fs = Glsl(true, ShaderGenerator.FarPlaneClip.Discard);
+        string fs = Glsl(true, ShaderGenerator.FarPlaneClip.Discard);
         Assert.Contains("layout(location = 14) in float v_FarClip;", fs);
         // after the colour output: texture derivatives stay in uniform control flow
         int discard = fs.IndexOf("if (v_FarClip < 0.0) discard;", StringComparison.Ordinal);
@@ -76,7 +77,7 @@ public class MaliDeviceTests
     [Fact]
     public void HardwareClipWritesNoDistance()
     {
-        var vs = Glsl(false, ShaderGenerator.FarPlaneClip.Hardware);
+        string vs = Glsl(false, ShaderGenerator.FarPlaneClip.Hardware);
         Assert.DoesNotContain("gl_ClipDistance", vs);
         Assert.DoesNotContain("v_FarClip", vs);
     }
@@ -105,13 +106,13 @@ public class MaliDeviceTests
     {
         var pad = new ScriptedPad("cross@0:100, lstick@0:1:-1:100, start@50");
         Assert.Equal(3, pad.Count);
-        var s = pad.Apply(ControllerState.Neutral);
+        ControllerState s = pad.Apply(ControllerState.Neutral);
         Assert.Equal(VitaButtons.Cross, s.Buttons);
         Assert.Equal(255, s.Lx);
         Assert.Equal(1, s.Ly);
         Assert.Equal(128, s.Rx);
         var taps = new ScriptedPad("tap@0:0.25:0.75:100,btap@0:0.5:0.5:100,tap@50:0.1:0.1");
-        var m = VitaSharp.Core.Input.MappedInput.Neutral;
+        MappedInput m = VitaSharp.Core.Input.MappedInput.Neutral;
         taps.AddTouches(ref m);
         Assert.Equal(1, m.FrontCount);
         Assert.Equal(1, m.BackCount);
@@ -142,7 +143,7 @@ public class MaliDeviceTests
         Assert.Equal(VitaButtons.None, pad.Apply(ControllerState.Neutral).Buttons);
         File.WriteAllText(path, "circle@0:100" + Environment.NewLine + "start@50");
         // the file is polled every 0.25 s
-        var until = DateTime.UtcNow.AddSeconds(5);
+        DateTime until = DateTime.UtcNow.AddSeconds(5);
         while (pad.Count == 0 && DateTime.UtcNow < until)
         {
             pad.Apply(ControllerState.Neutral);
@@ -163,8 +164,8 @@ public class MaliDeviceTests
     public void IndexMinMaxMatchesScalar(int n)
     {
         var rng = new Random(n);
-        var u16 = new ushort[n];
-        var u32 = new uint[n];
+        ushort[] u16 = new ushort[n];
+        uint[] u32 = new uint[n];
         for (int i = 0; i < n; i++)
         {
             u16[i] = (ushort)rng.Next(1, 65536);
@@ -176,8 +177,8 @@ public class MaliDeviceTests
             u16[n - 1] = 65535;
             u32[n - 1] = uint.MaxValue;
         }
-        var r16 = VitaSharp.Renderer.Vulkan.VulkanRenderer.MinMax((ReadOnlySpan<ushort>)u16);
-        var r32 = VitaSharp.Renderer.Vulkan.VulkanRenderer.MinMax((ReadOnlySpan<uint>)u32);
+        (uint Min, uint Max) r16 = VitaSharp.Renderer.Vulkan.VulkanRenderer.MinMax((ReadOnlySpan<ushort>)u16);
+        (uint Min, uint Max) r32 = VitaSharp.Renderer.Vulkan.VulkanRenderer.MinMax((ReadOnlySpan<uint>)u32);
         if (n == 0)
         {
             Assert.Equal((uint)ushort.MaxValue, r16.Min);
