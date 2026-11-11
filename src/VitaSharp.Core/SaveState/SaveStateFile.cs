@@ -31,7 +31,7 @@ public sealed class SaveStateHeader
 public static class SaveStateFile
 {
     public const int FormatVersion = 1;
-    static ReadOnlySpan<byte> Magic => "VSSTATE\0"u8;
+    private static ReadOnlySpan<byte> Magic => "VSSTATE\0"u8;
 
     /// <summary>Emulator version string stored in new states (front-ends set it from their assembly).</summary>
     public static string EmulatorVersion { get; set; } = typeof(SaveStateFile).Assembly
@@ -76,7 +76,7 @@ public static class SaveStateFile
             throw new SnapshotException("the save state header is corrupt");
         }
 
-        var buf = new byte[len];
+        byte[] buf = new byte[len];
         input.ReadExactly(buf);
         var r = new SnapshotReader(buf);
         var h = new SaveStateHeader { FormatVersion = version };
@@ -93,7 +93,7 @@ public static class SaveStateFile
 
     public static SaveStateHeader ReadHeader(string path)
     {
-        using var f = File.OpenRead(path);
+        using FileStream f = File.OpenRead(path);
         return ReadHeader(f);
     }
 
@@ -135,7 +135,7 @@ public static class SaveStateFile
 /// <summary>Writes the compressed sections of a save state after its header.</summary>
 public sealed class SaveStateWriter : IDisposable
 {
-    readonly BrotliStream _z;
+    private readonly BrotliStream _z;
 
     public SaveStateWriter(Stream output, SaveStateHeader header)
     {
@@ -146,7 +146,7 @@ public sealed class SaveStateWriter : IDisposable
     /// <summary>Starts a section of <paramref name="length"/> bytes; the caller writes exactly that many to the result.</summary>
     public Stream Begin(string name, long length)
     {
-        var nb = Encoding.UTF8.GetBytes(name);
+        byte[] nb = Encoding.UTF8.GetBytes(name);
         Span<byte> b = stackalloc byte[12];
         BitConverter.TryWriteBytes(b, nb.Length);
         _z.Write(b[..4]);
@@ -165,8 +165,8 @@ public sealed class SaveStateWriter : IDisposable
 /// <summary>Reads the sections of a save state in file order (<see cref="Next"/>, then the section's bytes).</summary>
 public sealed class SaveStateReader : IDisposable
 {
-    readonly BrotliStream _z;
-    long _left;
+    private readonly BrotliStream _z;
+    private long _left;
 
     public SaveStateHeader Header { get; }
 
@@ -209,7 +209,7 @@ public sealed class SaveStateReader : IDisposable
             throw new SnapshotException("the save state is corrupt");
         }
 
-        var nb = new byte[nl];
+        byte[] nb = new byte[nl];
         Fill(nb);
         Fill(b);
         length = BitConverter.ToInt64(b);
@@ -223,7 +223,7 @@ public sealed class SaveStateReader : IDisposable
         return true;
     }
 
-    void Fill(Span<byte> dst)
+    private void Fill(Span<byte> dst)
     {
         try
         {
@@ -259,14 +259,14 @@ public sealed class SaveStateReader : IDisposable
             throw new SnapshotException("the save state is corrupt (section too large)");
         }
 
-        var data = new byte[_left];
+        byte[] data = new byte[_left];
         Read(data);
         return data;
     }
 
-    void Skip(long n)
+    private void Skip(long n)
     {
-        var tmp = new byte[(int)Math.Min(n, 1 << 16)];
+        byte[] tmp = new byte[(int)Math.Min(n, 1 << 16)];
         while (n > 0)
         {
             int c = (int)Math.Min(n, tmp.Length);

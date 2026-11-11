@@ -9,8 +9,8 @@ namespace VitaSharp.Core.Util;
 /// </summary>
 public static partial class GuestClock
 {
-    static readonly long Start = Stopwatch.GetTimestamp();
-    static long _offset; // Stopwatch ticks added to real elapsed time
+    private static readonly long s_start = Stopwatch.GetTimestamp();
+    private static long s_offset; // Stopwatch ticks added to real elapsed time
 
     /// <summary>Skip frame pacing (vblank and audio-without-device waits).</summary>
     public static bool Turbo { get; set; }
@@ -18,23 +18,23 @@ public static partial class GuestClock
     /// <summary>Guest time runs this many times faster than real time (tests; 1 = normal).</summary>
     public static double Speed { get; set; } = 1.0;
 
-    static long RealElapsed => Speed == 1.0 ? Stopwatch.GetTimestamp() - Start : (long)((Stopwatch.GetTimestamp() - Start) * Speed);
+    private static long RealElapsed => Speed == 1.0 ? Stopwatch.GetTimestamp() - s_start : (long)((Stopwatch.GetTimestamp() - s_start) * Speed);
 
     /// <summary>The clock's reading while the emulation is paused (<see cref="EmulationPause"/>); NotFrozen otherwise.</summary>
-    static long _frozen = NotFrozen;
-    const long NotFrozen = long.MinValue;
+    private static long s_frozen = NotFrozen;
+    private const long NotFrozen = long.MinValue;
 
     public static long Ticks
     {
         get
         {
-            long f = Volatile.Read(ref _frozen);
-            return f != NotFrozen ? f : RealElapsed + Interlocked.Read(ref _offset);
+            long f = Volatile.Read(ref s_frozen);
+            return f != NotFrozen ? f : RealElapsed + Interlocked.Read(ref s_offset);
         }
     }
 
     /// <summary>The clock is stopped (the emulation is paused).</summary>
-    public static bool Frozen => Volatile.Read(ref _frozen) != NotFrozen;
+    public static bool Frozen => Volatile.Read(ref s_frozen) != NotFrozen;
 
     /// <summary>Stops the clock at its current reading (<see cref="EmulationPause.Pause"/>).</summary>
     internal static void Freeze()
@@ -44,28 +44,28 @@ public static partial class GuestClock
             return;
         }
 
-        Volatile.Write(ref _frozen, RealElapsed + Interlocked.Read(ref _offset));
+        Volatile.Write(ref s_frozen, RealElapsed + Interlocked.Read(ref s_offset));
     }
 
     /// <summary>Restarts the clock from the reading it stopped at: the time spent frozen never reaches the guest, so a
     /// game sees no jump on resume. Moves made by <see cref="AdvanceTo"/> while frozen are dropped.</summary>
     internal static void Thaw()
     {
-        long f = Volatile.Read(ref _frozen);
+        long f = Volatile.Read(ref s_frozen);
         if (f == NotFrozen)
         {
             return;
         }
 
-        Interlocked.Exchange(ref _offset, f - RealElapsed);
-        Volatile.Write(ref _frozen, NotFrozen);
+        Interlocked.Exchange(ref s_offset, f - RealElapsed);
+        Volatile.Write(ref s_frozen, NotFrozen);
     }
     public static long Microseconds => (long)(Ticks * (1_000_000.0 / Stopwatch.Frequency));
     public static double Seconds => Ticks / (double)Stopwatch.Frequency;
 
     public static long FromSeconds(double s) => (long)(s * Stopwatch.Frequency);
 
-    static long _lastObserved;
+    private static long s_lastObserved;
 
     /// <summary>
     /// The clock as a guest thread reads it (process/system time): never behind the thread's own emulated CPU
@@ -77,10 +77,10 @@ public static partial class GuestClock
     public static long Observed(long threadPosition)
     {
         long t = Math.Max(Ticks, threadPosition);
-        long last = Volatile.Read(ref _lastObserved);
+        long last = Volatile.Read(ref s_lastObserved);
         while (t > last)
         {
-            long seen = Interlocked.CompareExchange(ref _lastObserved, t, last);
+            long seen = Interlocked.CompareExchange(ref s_lastObserved, t, last);
             if (seen == last)
             {
                 return t;
@@ -94,7 +94,7 @@ public static partial class GuestClock
     /// <summary>The latest reading any guest thread got from <see cref="Observed"/>: a thread that starts a timed wait
     /// may already have read the clock this far ahead of real time (another thread's CPU position moved it), so the
     /// wait is measured from here, or the thread would see it end early (a 2 ms delay measured as 1.8 ms).</summary>
-    internal static long ObservedFloor => Volatile.Read(ref _lastObserved);
+    internal static long ObservedFloor => Volatile.Read(ref s_lastObserved);
 
     public static long ToMicroseconds(long ticks) => (long)(ticks * (1_000_000.0 / Stopwatch.Frequency));
 
@@ -123,18 +123,18 @@ public static partial class GuestClock
 
     /// <summary>Moves the clock forward so that it reads at least <paramref name="deadline"/>. Never moves it back,
     /// and concurrent callers do not add up: the clock ends at the latest deadline.</summary>
-    static void AdvanceTo(long deadline)
+    private static void AdvanceTo(long deadline)
     {
         while (true)
         {
-            long off = Interlocked.Read(ref _offset);
+            long off = Interlocked.Read(ref s_offset);
             long needed = deadline - RealElapsed;
             if (needed <= off)
             {
                 return;
             }
 
-            if (Interlocked.CompareExchange(ref _offset, needed, off) == off)
+            if (Interlocked.CompareExchange(ref s_offset, needed, off) == off)
             {
                 return;
             }
@@ -145,7 +145,7 @@ public static partial class GuestClock
 /// <summary>A stopwatch measuring guest time (follows turbo mode).</summary>
 public sealed class GuestStopwatch
 {
-    long _start, _accumulated;
+    private long _start, _accumulated;
     public bool IsRunning { get; private set; }
 
     public void Start()
@@ -181,5 +181,5 @@ public sealed class GuestStopwatch
 public static class TimeScale
 {
     public static readonly double Proc = Read(EnvVars.TscaleProc), VBlank = Read(EnvVars.TscaleVblank), Wait = Read(EnvVars.TscaleWait);
-    static double Read(string name) => double.TryParse(Environment.GetEnvironmentVariable(name), System.Globalization.NumberStyles.Float, System.Globalization.CultureInfo.InvariantCulture, out var v) && v > 0 ? v : 1.0;
+    private static double Read(string name) => double.TryParse(Environment.GetEnvironmentVariable(name), System.Globalization.NumberStyles.Float, System.Globalization.CultureInfo.InvariantCulture, out double v) && v > 0 ? v : 1.0;
 }

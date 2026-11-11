@@ -1,3 +1,4 @@
+using System.Diagnostics.CodeAnalysis;
 using VitaSharp.Core.Util;
 
 namespace VitaSharp.Core.Kernel;
@@ -10,7 +11,8 @@ namespace VitaSharp.Core.Kernel;
 /// </summary>
 public static class ProcessScope
 {
-    [ThreadStatic] static int t_pid;
+    [SuppressMessage("Style", "IDE1006", Justification = "[ThreadStatic]: t_camelCase; .editorconfig cannot select the attribute")]
+    [ThreadStatic] private static int t_pid;
 
     /// <summary>The current process id; 0 = the system (host threads that belong to no process).</summary>
     public static int CurrentPid => t_pid != 0 ? t_pid : GuestThread.Current?.Pid ?? 0;
@@ -112,9 +114,9 @@ public sealed class VitaSystem
 {
     public ObjectTable Objects { get; } = new();
 
-    readonly object _lock = new();
-    readonly List<Emulator> _processes = new();
-    Emulator? _foreground;
+    private readonly object _lock = new();
+    private readonly List<Emulator> _processes = new();
+    private Emulator? _foreground;
 
     /// <summary>Raised (off the lock) when another process takes the display and the input.</summary>
     public event Action<Emulator>? ForegroundChanged;
@@ -158,13 +160,13 @@ public sealed class VitaSystem
     /// <summary>The application id of process <paramref name="e"/> (an <see cref="AppObject"/> it owns).</summary>
     internal int RegisterApp(Emulator e)
     {
-        using var scope = ProcessScope.Enter(e);
+        using ProcessScope.Scope scope = ProcessScope.Enter(e);
         return Objects.Register(new AppObject(e));
     }
 
     public Emulator? ByAppId(int appId) => Objects.Get<AppObject>(appId)?.Process;
 
-    readonly Dictionary<int, PendingLaunch> _pendingLaunches = new();
+    private readonly Dictionary<int, PendingLaunch> _pendingLaunches = new();
 
     /// <summary>Reserves the application id of a launch another application asked for (<see cref="PendingLaunch"/>).</summary>
     public PendingLaunch AddPendingLaunch(Emulator caller, string titleId, string dir, int flags, string? param)
@@ -190,7 +192,7 @@ public sealed class VitaSystem
     /// starts it with sceAppMgrLaunchAppByName2ndStage.</summary>
     public PendingLaunch RequestLaunchByUri(Emulator caller, string uri, int flags)
     {
-        var pl = AddPendingLaunch(caller, "", "", flags | 0x100000, uri);
+        PendingLaunch pl = AddPendingLaunch(caller, "", "", flags | 0x100000, uri);
         Log.Info($"Launch by URI (0x{flags:X}, {uri}) from {caller.Describe()}: request 0x{pl.App.Uid:X} for the shell");
         PostShellEvent(ShellEvents.LaunchRequest, pl.App.Uid, pl.App.Uid);
         return pl;
@@ -200,13 +202,13 @@ public sealed class VitaSystem
     /// application): its entry with the flags and parameter, and shell event 6.</summary>
     public PendingLaunch RequestLaunchByName(Emulator caller, string titleId, string dir, int flags, string? param)
     {
-        var pl = AddPendingLaunch(caller, titleId, dir, flags, param);
+        PendingLaunch pl = AddPendingLaunch(caller, titleId, dir, flags, param);
         Log.Info($"Launch of {titleId} (0x{flags:X}) asked by {caller.Describe()}: application id 0x{pl.App.Uid:X} waits for the shell");
         PostShellEvent(ShellEvents.LaunchRequest, pl.App.Uid, pl.App.Uid);
         return pl;
     }
 
-    readonly ManualResetEventSlim _shellUp = new();
+    private readonly ManualResetEventSlim _shellUp = new();
 
     /// <summary>Set once the shell has started its first resident background service (sceAppMgrLaunchAppByName from
     /// the shell: NPXS10079 on FW 3.74), which it does after its boot screen and database update, with its home and lock
@@ -232,7 +234,7 @@ public sealed class VitaSystem
     {
         lock (_pendingLaunches)
         {
-            return _pendingLaunches.Remove(appId, out var pl) ? pl : null;
+            return _pendingLaunches.Remove(appId, out PendingLaunch? pl) ? pl : null;
         }
     }
 
@@ -272,9 +274,9 @@ public sealed class VitaSystem
         }
     }
 
-    static byte[] InitialAppMgrState()
+    private static byte[] InitialAppMgrState()
     {
-        var s = new byte[0x80];
+        byte[] s = new byte[0x80];
         BitConverter.TryWriteBytes(s.AsSpan(8), -1);
         return s;
     }
@@ -287,9 +289,9 @@ public sealed class VitaSystem
     // of its ime_plugin, notifications) is a plane the display blends over that process's frame with the shell frame's
     // alpha. The shell shows such frames only while it has something to overlay; a frame older than this many vblanks
     // is no longer on screen.
-    const long ShellOverlayVBlanks = 60;
-    Gpu.DisplayFrame? _shellOverlay;
-    long _shellOverlayVBlank;
+    private const long ShellOverlayVBlanks = 60;
+    private Gpu.DisplayFrame? _shellOverlay;
+    private long _shellOverlayVBlank;
 
     /// <summary>The shell showed <paramref name="frame"/> (null: no framebuffer) while not in front.</summary>
     public void SetShellOverlay(Gpu.DisplayFrame? frame, long vblank)
@@ -329,7 +331,7 @@ public sealed class VitaSystem
 
     // ---- the shell's touch regions (sceTouchSetRegion / ActivateRegion, regions above 0): while one is active over an
     // application in front, the contacts inside it are the shell's (its status bar, its on-screen keyboard)
-    readonly Dictionary<(int Port, int Region), (ushort X, ushort Y, ushort W, ushort H, bool Active, int Attr)> _shellTouchRegions = new();
+    private readonly Dictionary<(int Port, int Region), (ushort X, ushort Y, ushort W, ushort H, bool Active, int Attr)> _shellTouchRegions = new();
 
     /// <summary>The rectangle is (x, y, width, height) in panel coordinates: the status bar's region 1 grows from
     /// (0, 0, 1920, 1) to (0, 0, 1920, 64) with the bar, the keyboard's region 2 is (0, 594, 1920, 494).</summary>
@@ -337,7 +339,7 @@ public sealed class VitaSystem
     {
         lock (_shellTouchRegions)
         {
-            bool known = _shellTouchRegions.TryGetValue((port, region), out var r);
+            bool known = _shellTouchRegions.TryGetValue((port, region), out (ushort X, ushort Y, ushort W, ushort H, bool Active, int Attr) r);
             _shellTouchRegions[(port, region)] = (x, y, w, h, known && r.Active, known ? r.Attr : 0);
         }
     }
@@ -346,7 +348,7 @@ public sealed class VitaSystem
     {
         lock (_shellTouchRegions)
         {
-            var r = _shellTouchRegions.TryGetValue((port, region), out var old) ? old : default;
+            (ushort X, ushort Y, ushort W, ushort H, bool Active, int Attr) r = _shellTouchRegions.TryGetValue((port, region), out (ushort X, ushort Y, ushort W, ushort H, bool Active, int Attr) old) ? old : default;
             if (r.Active != enable || r.Attr != attr)
             {
                 Log.Info($"Shell touch region {port}/{region} {(enable ? "on" : "off")} attr {attr}: ({r.X}, {r.Y}) {r.W}x{r.H}");
@@ -376,7 +378,7 @@ public sealed class VitaSystem
 
         lock (_shellTouchRegions)
         {
-            foreach (var (key, r) in _shellTouchRegions)
+            foreach (((int Port, int Region) key, (ushort X, ushort Y, ushort W, ushort H, bool Active, int Attr) r) in _shellTouchRegions)
             {
                 if (key.Port == port && r.Active)
                 {
@@ -404,7 +406,7 @@ public sealed class VitaSystem
 
         lock (_shellTouchRegions)
         {
-            foreach (var (key, r) in _shellTouchRegions)
+            foreach (((int Port, int Region) key, (ushort X, ushort Y, ushort W, ushort H, bool Active, int Attr) r) in _shellTouchRegions)
             {
                 if (key.Port == port && r.Active && x >= r.X && x < r.X + r.W && y >= r.Y && y < r.Y + r.H)
                 {
@@ -430,7 +432,7 @@ public sealed class VitaSystem
 
         lock (_shellTouchRegions)
         {
-            foreach (var (key, r) in _shellTouchRegions)
+            foreach (((int Port, int Region) key, (ushort X, ushort Y, ushort W, ushort H, bool Active, int Attr) r) in _shellTouchRegions)
             {
                 if (key.Port == 0 && r.Active && r.H >= 256)
                 {
@@ -484,7 +486,7 @@ public sealed class VitaSystem
             all = _processes.ToArray();
             fg = _foreground;
         }
-        foreach (var p in all)
+        foreach (Emulator p in all)
         {
             if (!p.Suspended && p.BgmPriority > 0 && (best == null || p.BgmPriority > best.BgmPriority))
             {
@@ -523,12 +525,12 @@ public sealed class VitaSystem
     // ---- SceAppMgr's events for the shell (sceAppMgrReceiveShellEvent): 0x40-byte records, first word the event type
 
     public const int ShellEventSize = 0x40;
-    readonly Queue<byte[]> _shellEvents = new();
+    private readonly Queue<byte[]> _shellEvents = new();
 
     /// <summary>Queues a shell event: <paramref name="type"/> then the words from +4 (the kernel queue holds 180).</summary>
     public void PostShellEvent(int type, params ReadOnlySpan<int> words)
     {
-        var ev = new byte[ShellEventSize];
+        byte[] ev = new byte[ShellEventSize];
         BitConverter.TryWriteBytes(ev.AsSpan(0, 4), type);
         for (int i = 0; i < words.Length && 4 + i * 4 < ShellEventSize; i++)
         {
@@ -558,7 +560,7 @@ public sealed class VitaSystem
     /// </summary>
     public void OnPsButton()
     {
-        var fg = Foreground;
+        Emulator? fg = Foreground;
         if (fg == null || fg.IsShell || Shell == null)
         {
             return;
@@ -588,7 +590,7 @@ public sealed class VitaSystem
         w[4] = appId;
         w[5] = -1;
         w[6] = 0;
-        var name = System.Text.Encoding.ASCII.GetBytes(titleId);
+        byte[] name = System.Text.Encoding.ASCII.GetBytes(titleId);
         Span<byte> nb = stackalloc byte[0x20];
         nb.Clear(); // locals are not zeroed in this assembly
         name.AsSpan(0, Math.Min(name.Length, 0x1F)).CopyTo(nb);
@@ -611,7 +613,7 @@ public sealed class VitaSystem
     {
         lock (_shellEvents)
         {
-            return _shellEvents.TryDequeue(out var e) ? e : null;
+            return _shellEvents.TryDequeue(out byte[]? e) ? e : null;
         }
     }
 
@@ -651,7 +653,7 @@ public sealed class VitaSystem
         NotifyForeground(e);
     }
 
-    void NotifyForeground(Emulator e)
+    private void NotifyForeground(Emulator e)
     {
         e.OnForeground();
         ForegroundChanged?.Invoke(e);

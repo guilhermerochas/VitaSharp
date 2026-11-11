@@ -12,14 +12,14 @@ public abstract class MediaPlayerBase : IDisposable
     protected const int MaxVideoFrames = 12;
     protected const int MaxAudioChunks = 48;
 
-    protected readonly Queue<VideoFrame> _videoQueue = new();
-    protected readonly Queue<AudioChunk> _audioQueue = new();
-    protected readonly object _lock = new();
-    protected volatile bool _stop;
-    /// <summary>Pending seek target (µs), -1 = none; guarded by <see cref="_lock"/>.</summary>
-    protected long _seekRequestUs = -1;
-    /// <summary>The whole file was decoded (guarded by <see cref="_lock"/>).</summary>
-    protected bool _demuxDone;
+    protected readonly Queue<VideoFrame> VideoQueue = new();
+    protected readonly Queue<AudioChunk> AudioQueue = new();
+    protected readonly object SyncRoot = new();
+    protected volatile bool StopRequested;
+    /// <summary>Pending seek target (µs), -1 = none; guarded by <see cref="SyncRoot"/>.</summary>
+    protected long SeekRequestUs = -1;
+    /// <summary>The whole file was decoded (guarded by <see cref="SyncRoot"/>).</summary>
+    protected bool DemuxDone;
 
     public int Width { get; protected set; }
     public int Height { get; protected set; }
@@ -36,21 +36,21 @@ public abstract class MediaPlayerBase : IDisposable
     /// <summary>Next video frame with a timestamp at or before <paramref name="clockUs"/> (dropping late frames).</summary>
     public VideoFrame? TakeVideo(long clockUs)
     {
-        lock (_lock)
+        lock (SyncRoot)
         {
             VideoFrame? f = null;
-            while (_videoQueue.Count > 0 && _videoQueue.Peek().TimeUs <= clockUs)
+            while (VideoQueue.Count > 0 && VideoQueue.Peek().TimeUs <= clockUs)
             {
                 if (f != null)
                 {
-                    ReturnBuffer(_freeNv12, f.Nv12); // dropped late frame
+                    ReturnBuffer(FreeNv12, f.Nv12); // dropped late frame
                 }
 
-                f = _videoQueue.Dequeue();
+                f = VideoQueue.Dequeue();
             }
             if (f != null)
             {
-                Monitor.PulseAll(_lock);
+                Monitor.PulseAll(SyncRoot);
             }
 
             return f;
@@ -58,13 +58,13 @@ public abstract class MediaPlayerBase : IDisposable
     }
 
     // decoded planes/samples handed back by the consumer once copied out (no garbage per video frame or audio chunk);
-    // guarded by _lock, at most a few of each are kept
-    protected readonly Stack<byte[]> _freeNv12 = new();
-    protected readonly Stack<short[]> _freeSamples = new();
+    // guarded by SyncRoot, at most a few of each are kept
+    protected readonly Stack<byte[]> FreeNv12 = new();
+    protected readonly Stack<short[]> FreeSamples = new();
 
     protected T[] RentBuffer<T>(Stack<T[]> free, int length)
     {
-        lock (_lock)
+        lock (SyncRoot)
         {
             while (free.Count > 0)
             {
@@ -80,7 +80,7 @@ public abstract class MediaPlayerBase : IDisposable
 
     protected void ReturnBuffer<T>(Stack<T[]> free, T[] buffer)
     {
-        lock (_lock)
+        lock (SyncRoot)
         {
             if (free.Count < 4)
             {
@@ -90,22 +90,22 @@ public abstract class MediaPlayerBase : IDisposable
     }
 
     /// <summary>The frame's planes were copied out and are not read again: reuse them for a later frame.</summary>
-    public void Recycle(VideoFrame f) => ReturnBuffer(_freeNv12, f.Nv12);
+    public void Recycle(VideoFrame f) => ReturnBuffer(FreeNv12, f.Nv12);
 
     /// <summary>The chunk's samples were copied out and are not read again.</summary>
-    public void Recycle(AudioChunk c) => ReturnBuffer(_freeSamples, c.Samples);
+    public void Recycle(AudioChunk c) => ReturnBuffer(FreeSamples, c.Samples);
 
     public AudioChunk? TakeAudio()
     {
-        lock (_lock)
+        lock (SyncRoot)
         {
-            if (_audioQueue.Count == 0)
+            if (AudioQueue.Count == 0)
             {
                 return null;
             }
 
-            var c = _audioQueue.Dequeue();
-            Monitor.PulseAll(_lock);
+            AudioChunk c = AudioQueue.Dequeue();
+            Monitor.PulseAll(SyncRoot);
             return c;
         }
     }
@@ -113,9 +113,9 @@ public abstract class MediaPlayerBase : IDisposable
     /// <summary>Timestamp of the next queued video frame, or -1.</summary>
     public long PeekVideoTime()
     {
-        lock (_lock)
+        lock (SyncRoot)
         {
-            return _videoQueue.Count > 0 ? _videoQueue.Peek().TimeUs : -1;
+            return VideoQueue.Count > 0 ? VideoQueue.Peek().TimeUs : -1;
         }
     }
 
@@ -124,22 +124,22 @@ public abstract class MediaPlayerBase : IDisposable
     {
         get
         {
-            lock (_lock)
+            lock (SyncRoot)
             {
-                return _demuxDone && _videoQueue.Count == 0 && _audioQueue.Count == 0;
+                return DemuxDone && VideoQueue.Count == 0 && AudioQueue.Count == 0;
             }
         }
     }
 
     public void Seek(long timeUs)
     {
-        lock (_lock)
+        lock (SyncRoot)
         {
-            _seekRequestUs = Math.Max(0, timeUs);
-            _videoQueue.Clear();
-            _audioQueue.Clear();
-            _demuxDone = false;
-            Monitor.PulseAll(_lock);
+            SeekRequestUs = Math.Max(0, timeUs);
+            VideoQueue.Clear();
+            AudioQueue.Clear();
+            DemuxDone = false;
+            Monitor.PulseAll(SyncRoot);
         }
     }
 
@@ -148,12 +148,12 @@ public abstract class MediaPlayerBase : IDisposable
     /// <summary>Waits while both queues are full enough (or the file is done) and no seek or stop is pending.</summary>
     protected void WaitForRoom()
     {
-        lock (_lock)
+        lock (SyncRoot)
         {
-            while (!_stop && _seekRequestUs < 0 && (_demuxDone || (HasVideo ? _videoQueue.Count >= MaxVideoFrames : _audioQueue.Count >= MaxAudioChunks)
-                                                   || _audioQueue.Count >= MaxAudioChunks))
+            while (!StopRequested && SeekRequestUs < 0 && (DemuxDone || (HasVideo ? VideoQueue.Count >= MaxVideoFrames : AudioQueue.Count >= MaxAudioChunks)
+                                                   || AudioQueue.Count >= MaxAudioChunks))
             {
-                Monitor.Wait(_lock, 50);
+                Monitor.Wait(SyncRoot, 50);
             }
         }
     }
@@ -162,7 +162,7 @@ public abstract class MediaPlayerBase : IDisposable
     protected void PushPicture(DecodedPicture p, long timeUs)
     {
         int w = p.Width & ~1, h = p.Height & ~1, cw = (p.Width + 1) / 2;
-        var nv21 = RentBuffer(_freeNv12, w * h * 3 / 2);
+        byte[] nv21 = RentBuffer(FreeNv12, w * h * 3 / 2);
         for (int y = 0; y < h; y++)
         {
             p.Y.AsSpan(y * p.Width, w).CopyTo(nv21.AsSpan(y * w));
@@ -183,32 +183,32 @@ public abstract class MediaPlayerBase : IDisposable
 
     protected void Enqueue(VideoFrame vf)
     {
-        lock (_lock)
+        lock (SyncRoot)
         {
-            while (!_stop && _seekRequestUs < 0 && _videoQueue.Count >= MaxVideoFrames)
+            while (!StopRequested && SeekRequestUs < 0 && VideoQueue.Count >= MaxVideoFrames)
             {
-                Monitor.Wait(_lock, 50);
+                Monitor.Wait(SyncRoot, 50);
             }
 
-            if (_seekRequestUs < 0)
+            if (SeekRequestUs < 0)
             {
-                _videoQueue.Enqueue(vf);
+                VideoQueue.Enqueue(vf);
             }
         }
     }
 
     protected void Enqueue(AudioChunk chunk)
     {
-        lock (_lock)
+        lock (SyncRoot)
         {
-            while (!_stop && _seekRequestUs < 0 && _audioQueue.Count >= MaxAudioChunks)
+            while (!StopRequested && SeekRequestUs < 0 && AudioQueue.Count >= MaxAudioChunks)
             {
-                Monitor.Wait(_lock, 50);
+                Monitor.Wait(SyncRoot, 50);
             }
 
-            if (_seekRequestUs < 0)
+            if (SeekRequestUs < 0)
             {
-                _audioQueue.Enqueue(chunk);
+                AudioQueue.Enqueue(chunk);
             }
         }
     }

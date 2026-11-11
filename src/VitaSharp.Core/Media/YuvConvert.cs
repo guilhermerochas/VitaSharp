@@ -7,14 +7,14 @@ namespace VitaSharp.Core.Media;
 /// </summary>
 public static class YuvConvert
 {
-    const int One = 1 << 16, Half = 1 << 15;
+    private const int One = 1 << 16, Half = 1 << 15;
 
     // JFIF full range
-    const int JCrR = 91881, JCbG = 22554, JCrG = 46802, JCbB = 116130;
+    private const int JCrR = 91881, JCbG = 22554, JCrG = 46802, JCbB = 116130;
     // BT.601 limited range
-    const int LY = 76309, LCrR = 104597, LCbG = 25675, LCrG = 53279, LCbB = 132201;
+    private const int LY = 76309, LCrR = 104597, LCbG = 25675, LCrG = 53279, LCbB = 132201;
 
-    static byte Clamp(int v) => (byte)(v < 0 ? 0 : v > 255 ? 255 : v);
+    private static byte Clamp(int v) => (byte)(v < 0 ? 0 : v > 255 ? 255 : v);
 
     /// <summary>Converts <paramref name="width"/> x <paramref name="height"/> pixels. Chroma sample (x / hdiv, y / vdiv)
     /// covers each pixel. <paramref name="dstStride"/> is in pixels.</summary>
@@ -24,9 +24,9 @@ public static class YuvConvert
         int ri = bgra ? 2 : 0, bi = bgra ? 0 : 2;
         for (int row = 0; row < height; row++)
         {
-            var yr = y.Slice(row * yStride);
+            ReadOnlySpan<byte> yr = y.Slice(row * yStride);
             int crow = row / vdiv * cStride;
-            var o = dst.Slice(row * dstStride * 4, width * 4);
+            Span<byte> o = dst.Slice(row * dstStride * 4, width * 4);
             for (int x = 0; x < width; x++)
             {
                 int u = cb[crow + x / hdiv] - 128, v = cr[crow + x / hdiv] - 128;
@@ -58,8 +58,8 @@ public static class YuvConvert
     {
         for (int row = 0; row < height; row++)
         {
-            var yr = y.Slice(row * yStride);
-            var o = dst.Slice(row * dstStride * 4, width * 4);
+            ReadOnlySpan<byte> yr = y.Slice(row * yStride);
+            Span<byte> o = dst.Slice(row * dstStride * 4, width * 4);
             for (int x = 0; x < width; x++)
             {
                 byte l = bt601 ? Clamp(((yr[x] - 16) * LY + Half) >> 16) : yr[x];
@@ -77,8 +77,8 @@ public static class YuvConvert
         int ri = bgra ? 2 : 0, bi = bgra ? 0 : 2;
         for (int row = 0; row < height; row++)
         {
-            var s = src.Slice(row * srcStride * 4);
-            var o = y.Slice(row * yStride, width);
+            ReadOnlySpan<byte> s = src.Slice(row * srcStride * 4);
+            Span<byte> o = y.Slice(row * yStride, width);
             for (int x = 0; x < width; x++)
             {
                 o[x] = (byte)((19595 * s[x * 4 + ri] + 38470 * s[x * 4 + 1] + 7471 * s[x * 4 + bi] + Half) >> 16);

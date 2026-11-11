@@ -11,7 +11,7 @@ public sealed class TextEntry(string title, string initial, int maxLength, int t
     /// <summary>SceImeType: 0 default, 1 basic Latin, 2 URL, 3 mail, 4 number, 5 extended number.</summary>
     public const int TypeBasicLatin = 1, TypeUrl = 2, TypeMail = 3, TypeNumber = 4, TypeExtendedNumber = 5;
 
-    readonly StringBuilder _text = new(initial.Length > maxLength ? initial[..maxLength] : initial);
+    private readonly StringBuilder _text = new(initial.Length > maxLength ? initial[..maxLength] : initial);
     public string Title { get; } = title;
     public int MaxLength { get; } = Math.Max(1, maxLength);
     public int Type { get; } = type;

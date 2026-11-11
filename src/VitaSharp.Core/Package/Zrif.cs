@@ -12,18 +12,18 @@ namespace VitaSharp.Core.Package;
 public static class Zrif
 {
     public const int RifSize = 512;
-    const uint DictionaryId = 0x627D1D5D;
+    private const uint DictionaryId = 0x627D1D5D;
 
     // 880 zero bytes and this tail (pkg2zip's zrif_dict, 1024 bytes)
-    const string DictionaryTail =
+    private const string DictionaryTail =
         "303030303900000000000000000000003030303036303030303730303030380030303030333030303034303030303530" +
         "5F30302D414444434F4E5430303030322D5043534730303030303030303030312D504353453030302D50435346303030" +
         "2D504353433030302D504353443030302D504353413030302D504353423030300001000100010002EFCDAB8967452301";
 
-    static byte[] Dictionary()
+    private static byte[] Dictionary()
     {
-        var tail = Convert.FromHexString(DictionaryTail);
-        var d = new byte[1024];
+        byte[] tail = Convert.FromHexString(DictionaryTail);
+        byte[] d = new byte[1024];
         tail.CopyTo(d, d.Length - tail.Length);
         return d;
     }
@@ -39,7 +39,7 @@ public static class Zrif
 
         try
         {
-            var raw = Convert.FromBase64String(Pad(text));
+            byte[] raw = Convert.FromBase64String(Pad(text));
             return raw.Length > 6 && (raw[0] & 0xF) == 8 && ((raw[0] << 8) | raw[1]) % 31 == 0;
         }
         catch (FormatException)
@@ -48,7 +48,7 @@ public static class Zrif
         }
     }
 
-    static string Pad(string s) => s.Length % 4 == 0 ? s : s + new string('=', 4 - s.Length % 4);
+    private static string Pad(string s) => s.Length % 4 == 0 ? s : s + new string('=', 4 - s.Length % 4);
 
     /// <summary>Decodes a zRIF into the 512-byte .rif; throws <see cref="InvalidDataException"/> with a readable reason.</summary>
     public static byte[] Decode(string zrif)
@@ -122,7 +122,7 @@ public static class Zrif
         {
             throw new InvalidDataException("zRIF is corrupted (cannot decompress)");
         }
-        var rif = all.AsSpan(dict.Length).ToArray();
+        byte[] rif = all.AsSpan(dict.Length).ToArray();
 
         uint expected = (uint)(raw[^4] << 24 | raw[^3] << 16 | raw[^2] << 8 | raw[^1]);
         if (Adler32(rif) != expected)

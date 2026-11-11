@@ -31,7 +31,7 @@ public interface IInputBackend
     /// written; front-ends override it to avoid allocating a list on every poll (games poll touch every frame).</summary>
     int GetTouches(bool back, Span<TouchPoint> dest)
     {
-        var list = GetTouches(back);
+        IReadOnlyList<TouchPoint> list = GetTouches(back);
         int n = Math.Min(list.Count, dest.Length);
         for (int i = 0; i < n; i++)
         {
@@ -150,13 +150,14 @@ public sealed class HostServices : IDisposable
     public IMotionSource? Motion { get; set; }
 
     /// <summary>Camera streams the guest has started; survives a process exec so the new process can release them.</summary>
+    [System.Diagnostics.CodeAnalysis.SuppressMessage("Style", "IDE1006", Justification = "used by Hle/Modules/Camera.cs, which is still in build/format-pending.txt: renamed to _cameraStreams with the Hle conversion")]
     internal readonly List<ICameraStream> CameraStreams = new();
 
     public void Dispose()
     {
         lock (CameraStreams)
         {
-            foreach (var s in CameraStreams)
+            foreach (ICameraStream s in CameraStreams)
             {
                 s.Dispose();
             }

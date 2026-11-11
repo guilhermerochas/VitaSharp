@@ -5,21 +5,21 @@ namespace VitaSharp.Core.Media;
 /// <summary>Decodes individual compressed audio frames (MP3, AAC) with FFmpeg into interleaved S16.</summary>
 public sealed unsafe class FrameDecoder : IAudioFrameDecoder
 {
-    AVCodecContext* _ctx;
-    readonly AVPacket* _pkt;
-    readonly AVFrame* _frame;
-    readonly AVCodecID _id;
-    readonly int _rate, _channels;
-    readonly byte[]? _extradata;
+    private AVCodecContext* _ctx;
+    private readonly AVPacket* _pkt;
+    private readonly AVFrame* _frame;
+    private readonly AVCodecID _id;
+    private readonly int _rate, _channels;
+    private readonly byte[]? _extradata;
     /// <summary>Second decoder of the same stream that only measures raw frame lengths (see <see cref="RawFrameLength"/>).</summary>
-    AVCodecContext* _probe;
-    AVFrame* _probeFrame;
-    AVPacket* _probePkt;
+    private AVCodecContext* _probe;
+    private AVFrame* _probeFrame;
+    private AVPacket* _probePkt;
 
     public int Channels => _ctx->ch_layout.nb_channels;
     public int SampleRate => _ctx->sample_rate;
 
-    FrameDecoder(AVCodecContext* ctx, AVCodecID id, int rate, int channels, byte[]? extradata)
+    private FrameDecoder(AVCodecContext* ctx, AVCodecID id, int rate, int channels, byte[]? extradata)
     {
         _ctx = ctx;
         _id = id;
@@ -38,19 +38,19 @@ public sealed unsafe class FrameDecoder : IAudioFrameDecoder
             return null;
         }
 
-        var ctx = Open(id, sampleRate, channels, extradata);
+        AVCodecContext* ctx = Open(id, sampleRate, channels, extradata);
         return ctx == null ? null : new FrameDecoder(ctx, id, sampleRate, channels, extradata);
     }
 
-    static AVCodecContext* Open(AVCodecID id, int sampleRate, int channels, byte[]? extradata)
+    private static AVCodecContext* Open(AVCodecID id, int sampleRate, int channels, byte[]? extradata)
     {
-        var codec = ffmpeg.avcodec_find_decoder(id);
+        AVCodec* codec = ffmpeg.avcodec_find_decoder(id);
         if (codec == null)
         {
             return null;
         }
 
-        var ctx = ffmpeg.avcodec_alloc_context3(codec);
+        AVCodecContext* ctx = ffmpeg.avcodec_alloc_context3(codec);
         if (sampleRate > 0)
         {
             ctx->sample_rate = sampleRate;
@@ -132,10 +132,10 @@ public sealed unsafe class FrameDecoder : IAudioFrameDecoder
         return hi;
     }
 
-    bool ProbeDecodes(byte* data, int size)
+    private bool ProbeDecodes(byte* data, int size)
     {
         ffmpeg.avcodec_flush_buffers(_probe);
-        var buf = (byte*)ffmpeg.av_malloc((ulong)size + ffmpeg.AV_INPUT_BUFFER_PADDING_SIZE);
+        byte* buf = (byte*)ffmpeg.av_malloc((ulong)size + ffmpeg.AV_INPUT_BUFFER_PADDING_SIZE);
         Buffer.MemoryCopy(data, buf, size, size);
         new Span<byte>(buf + size, ffmpeg.AV_INPUT_BUFFER_PADDING_SIZE).Clear();
         if (ffmpeg.av_packet_from_data(_probePkt, buf, size) < 0)
@@ -167,7 +167,7 @@ public sealed unsafe class FrameDecoder : IAudioFrameDecoder
     /// <param name="outChannels">channel layout of <paramref name="pcmOut"/> (0 = the stream's): mono is duplicated, extra channels dropped</param>
     public int Decode(byte* data, int size, Span<short> pcmOut, int outChannels = 0)
     {
-        var buf = (byte*)ffmpeg.av_malloc((ulong)size + ffmpeg.AV_INPUT_BUFFER_PADDING_SIZE);
+        byte* buf = (byte*)ffmpeg.av_malloc((ulong)size + ffmpeg.AV_INPUT_BUFFER_PADDING_SIZE);
         Buffer.MemoryCopy(data, buf, size, size);
         new Span<byte>(buf + size, ffmpeg.AV_INPUT_BUFFER_PADDING_SIZE).Clear();
         if (ffmpeg.av_packet_from_data(_pkt, buf, size) < 0)
@@ -193,7 +193,7 @@ public sealed unsafe class FrameDecoder : IAudioFrameDecoder
         return total;
     }
 
-    static int Convert(AVFrame* f, Span<short> dst, int outCh)
+    private static int Convert(AVFrame* f, Span<short> dst, int outCh)
     {
         int ch = Math.Max(f->ch_layout.nb_channels, 1), n = Math.Min(f->nb_samples, dst.Length / Math.Max(outCh, 1));
         var fmt = (AVSampleFormat)f->format;
@@ -221,34 +221,34 @@ public sealed unsafe class FrameDecoder : IAudioFrameDecoder
 
     public void Dispose()
     {
-        var ctx = _ctx;
+        AVCodecContext* ctx = _ctx;
         if (ctx != null)
         {
             ffmpeg.avcodec_free_context(&ctx);
         }
 
         _ctx = null;
-        var p = _pkt;
+        AVPacket* p = _pkt;
         ffmpeg.av_packet_free(&p);
-        var f = _frame;
+        AVFrame* f = _frame;
         ffmpeg.av_frame_free(&f);
         if (_probe != null)
         {
-            var pc = _probe;
+            AVCodecContext* pc = _probe;
             ffmpeg.avcodec_free_context(&pc);
             _probe = null;
-            var pf = _probeFrame;
+            AVFrame* pf = _probeFrame;
             ffmpeg.av_frame_free(&pf);
-            var pp = _probePkt;
+            AVPacket* pp = _probePkt;
             ffmpeg.av_packet_free(&pp);
         }
     }
 
     // ------------------------------------------------------------------ frame sizes from headers
 
-    static readonly int[] Mp3BitrateV1 = [0, 32, 40, 48, 56, 64, 80, 96, 112, 128, 160, 192, 224, 256, 320, 0];
-    static readonly int[] Mp3BitrateV2 = [0, 8, 16, 24, 32, 40, 48, 56, 64, 80, 96, 112, 128, 144, 160, 0];
-    static readonly int[] Mp3RateV1 = [44100, 48000, 32000, 0];
+    private static readonly int[] s_mp3BitrateV1 = [0, 32, 40, 48, 56, 64, 80, 96, 112, 128, 160, 192, 224, 256, 320, 0];
+    private static readonly int[] s_mp3BitrateV2 = [0, 8, 16, 24, 32, 40, 48, 56, 64, 80, 96, 112, 128, 144, 160, 0];
+    private static readonly int[] s_mp3RateV1 = [44100, 48000, 32000, 0];
 
     /// <summary>Length in bytes of the MPEG audio layer III frame starting at <paramref name="p"/>, or 0.</summary>
     public static int Mp3FrameLength(ReadOnlySpan<byte> p)
@@ -266,8 +266,8 @@ public sealed unsafe class FrameDecoder : IAudioFrameDecoder
             return 0;
         }
 
-        int rate = Mp3RateV1[srIdx] >> (version == 3 ? 0 : version == 2 ? 1 : 2);
-        int bitrate = (version == 3 ? Mp3BitrateV1 : Mp3BitrateV2)[brIdx] * 1000;
+        int rate = s_mp3RateV1[srIdx] >> (version == 3 ? 0 : version == 2 ? 1 : 2);
+        int bitrate = (version == 3 ? s_mp3BitrateV1 : s_mp3BitrateV2)[brIdx] * 1000;
         if (bitrate == 0 || rate == 0)
         {
             return 0;

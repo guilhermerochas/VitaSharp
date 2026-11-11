@@ -13,7 +13,7 @@ public static class CaptureAudio
     /// length when the header was not completed.</summary>
     public static (short[] Stereo, int Rate) ReadWav(string path)
     {
-        var b = File.ReadAllBytes(path);
+        byte[] b = File.ReadAllBytes(path);
         if (b.Length < 44 || b[0] != 'R' || b[8] != 'W')
         {
             throw new InvalidDataException($"{Path.GetFileName(path)}: not a WAV file");
@@ -33,14 +33,14 @@ public static class CaptureAudio
         }
 
         int start = data + 8, bytes = Math.Max(0, b.Length - start) & ~(2 * ch - 1);
-        var mono = new short[bytes / 2];
+        short[] mono = new short[bytes / 2];
         Buffer.BlockCopy(b, start, mono, 0, bytes);
         if (ch == 2)
         {
             return (mono, rate);
         }
 
-        var st = new short[mono.Length * 2];
+        short[] st = new short[mono.Length * 2];
         for (int i = 0; i < mono.Length; i++)
         {
             st[2 * i] = st[2 * i + 1] = mono[i];
@@ -51,7 +51,7 @@ public static class CaptureAudio
 
     public static void WriteWav(string path, ReadOnlySpan<short> stereo, int rate)
     {
-        using var fs = File.Create(path);
+        using FileStream fs = File.Create(path);
         Span<byte> h = stackalloc byte[44];
         int bytes = stereo.Length * 2;
         "RIFF"u8.CopyTo(h);
@@ -84,14 +84,14 @@ public static class CaptureAudio
 
         var tracks = new List<(short[] S, int Rate, long Offset)>();
         long frames = 0;
-        foreach (var (file, startMs) in ports)
+        foreach ((string? file, double startMs) in ports)
         {
             if (!File.Exists(file))
             {
                 continue;
             }
 
-            var (s, rate) = ReadWav(file);
+            (short[]? s, int rate) = ReadWav(file);
             if (s.Length == 0 || rate <= 0)
             {
                 continue;
@@ -107,8 +107,8 @@ public static class CaptureAudio
             return;
         }
 
-        var acc = new float[frames * 2];
-        foreach (var (s, rate, off) in tracks)
+        float[] acc = new float[frames * 2];
+        foreach ((short[]? s, int rate, long off) in tracks)
         {
             long n = s.Length / 2;
             double step = rate / (double)MixRate;
@@ -126,7 +126,7 @@ public static class CaptureAudio
                 acc[2 * o + 1] += s[2 * i + 1] + (s[2 * i + 3] - s[2 * i + 1]) * t;
             }
         }
-        var outS = new short[acc.Length];
+        short[] outS = new short[acc.Length];
         for (int i = 0; i < acc.Length; i++)
         {
             outS[i] = (short)Math.Clamp(acc[i], short.MinValue, short.MaxValue);
@@ -140,7 +140,7 @@ public static class CaptureAudio
 
     public static Check Analyze(string path)
     {
-        var (s, rate) = ReadWav(path);
+        (short[]? s, int rate) = ReadWav(path);
         long n = s.Length / 2;
         double sum = 0;
         int peak = 0, clipped = 0, clicks = 0, gaps = 0;
@@ -216,7 +216,7 @@ public static class CapturePng
 {
     public static void Write(string path, ReadOnlySpan<byte> rgba, int w, int h)
     {
-        var raw = new byte[(w * 4 + 1) * h];
+        byte[] raw = new byte[(w * 4 + 1) * h];
         for (int y = 0; y < h; y++)
         {
             raw[y * (w * 4 + 1)] = 0;
@@ -228,7 +228,7 @@ public static class CapturePng
             zs.Write(raw);
         }
 
-        using var fs = File.Create(path);
+        using FileStream fs = File.Create(path);
         fs.Write([0x89, (byte)'P', (byte)'N', (byte)'G', 0x0D, 0x0A, 0x1A, 0x0A]);
         Span<byte> ihdr = stackalloc byte[13];
         BinaryPrimitives.WriteInt32BigEndian(ihdr, w);
@@ -243,7 +243,7 @@ public static class CapturePng
         Chunk(fs, "IEND"u8, []);
     }
 
-    static void Chunk(Stream s, ReadOnlySpan<byte> type, ReadOnlySpan<byte> data)
+    private static void Chunk(Stream s, ReadOnlySpan<byte> type, ReadOnlySpan<byte> data)
     {
         Span<byte> len = stackalloc byte[4];
         BinaryPrimitives.WriteInt32BigEndian(len, data.Length);

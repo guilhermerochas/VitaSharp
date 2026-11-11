@@ -22,7 +22,7 @@ public sealed class VirtualMotion
 {
     /// <summary>Sample spacing in microseconds.</summary>
     public const long StepUs = 4000;
-    const float StepS = StepUs / 1e6f;
+    private const float StepS = StepUs / 1e6f;
     /// <summary>Spring stiffness (rad/s) at speed 1: 95% of the target in ~0.4 s, peak rate ~130 degrees/s at 30.</summary>
     public const float BaseOmega = 12f;
     /// <summary>Mouse look: degrees per pixel at sensitivity 1.</summary>
@@ -31,21 +31,21 @@ public sealed class VirtualMotion
     public const float MouseMaxRate = 720f;
     /// <summary>Longest stretch of host time turned into samples at once; older time is skipped (the game did not
     /// poll for over a second).</summary>
-    const long MaxCatchUpUs = 1_000_000;
-    const float Deg = MathF.PI / 180f;
-    const float MaxPitch = 89.5f * Deg, MouseMaxPitch = 80f * Deg;
+    private const long MaxCatchUpUs = 1_000_000;
+    private const float Deg = MathF.PI / 180f;
+    private const float MaxPitch = 89.5f * Deg, MouseMaxPitch = 80f * Deg;
 
-    readonly object _lock = new();
-    TiltSettings _settings = new();
+    private readonly object _lock = new();
+    private TiltSettings _settings = new();
     // key-driven springs: angle (rad) and its rate (rad/s)
-    float _pitch, _pitchV, _roll, _rollV, _yaw, _yawV;
+    private float _pitch, _pitchV, _roll, _rollV, _yaw, _yawV;
     // targets as -1..1 activations
-    float _inPitch, _inRoll, _inYaw;
+    private float _inPitch, _inRoll, _inYaw;
     // mouse look: target (accumulated deltas) and current offsets (rad)
-    float _mousePitchTarget, _mouseYawTarget, _mousePitch, _mouseYaw;
-    bool _recenterHeld;
-    long _lastUs = -1;
-    Quaternion _pose = Quaternion.Identity;
+    private float _mousePitchTarget, _mouseYawTarget, _mousePitch, _mouseYaw;
+    private bool _recenterHeld;
+    private long _lastUs = -1;
+    private Quaternion _pose = Quaternion.Identity;
 
     public VirtualMotion(TiltSettings? settings = null)
     {
@@ -85,7 +85,7 @@ public sealed class VirtualMotion
             }
         }
     }
-    bool _used;
+    private bool _used;
 
     /// <summary>Current activations of the controls (0..1 each, as the input mapper gives them). Re-centre acts on its
     /// rising edge.</summary>
@@ -151,7 +151,7 @@ public sealed class VirtualMotion
         }
     }
 
-    void RecenterLocked()
+    private void RecenterLocked()
     {
         _mousePitchTarget = _mouseYawTarget = 0;
         // whole turns of yaw are the same pose: unwind the shortest way
@@ -235,7 +235,7 @@ public sealed class VirtualMotion
             {
                 Step((int)(steps - i));
                 _lastUs += StepUs;
-                var pose = Compose();
+                Quaternion pose = Compose();
                 // body-frame angular velocity: pose = previous * delta
                 var delta = Quaternion.Normalize(Quaternion.Conjugate(_pose) * pose);
                 if (delta.W < 0)
@@ -245,7 +245,7 @@ public sealed class VirtualMotion
 
                 var v = new Vector3(delta.X, delta.Y, delta.Z);
                 float s = v.Length();
-                var gyro = s > 1e-9f ? v / s * (2 * MathF.Atan2(s, delta.W) / StepS) : Vector3.Zero;
+                Vector3 gyro = s > 1e-9f ? v / s * (2 * MathF.Atan2(s, delta.W) / StepS) : Vector3.Zero;
                 _pose = pose;
                 dest[i] = new MotionSample((ulong)_lastUs, Gravity(pose), gyro);
             }
@@ -255,7 +255,7 @@ public sealed class VirtualMotion
 
     /// <summary>One step of the springs and of the mouse look; <paramref name="remaining"/> = steps left in this
     /// stretch, over which pending mouse movement is spread.</summary>
-    void Step(int remaining)
+    private void Step(int remaining)
     {
         float max = Math.Clamp(_settings.MaxAngle, 1f, 85f) * Deg;
         float w = BaseOmega * Math.Clamp(_settings.Speed, 0.1f, 8f);
@@ -275,7 +275,7 @@ public sealed class VirtualMotion
     }
 
     /// <summary>Critically damped spring towards <paramref name="target"/> (semi-implicit Euler, stable at 4 ms).</summary>
-    static void Spring(ref float x, ref float v, float target, float w)
+    private static void Spring(ref float x, ref float v, float target, float w)
     {
         v += (w * w * (target - x) - 2 * w * v) * StepS;
         x += v * StepS;
@@ -286,5 +286,5 @@ public sealed class VirtualMotion
         }
     }
 
-    Quaternion Compose() => PoseOf(Math.Clamp(_pitch + _mousePitch, -MaxPitch, MaxPitch), _roll, _yaw + _mouseYaw);
+    private Quaternion Compose() => PoseOf(Math.Clamp(_pitch + _mousePitch, -MaxPitch, MaxPitch), _roll, _yaw + _mouseYaw);
 }

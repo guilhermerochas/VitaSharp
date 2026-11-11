@@ -48,60 +48,60 @@ public static class FrameLedger
 
     public static readonly string[] Names = ["shTrans", "shaderc", "shPack", "pipeline", "texUpload", "fence", "writeback", "guestGpuWait", "fileIo", "jit", "gpuIdle", "pacing", "gc", "shWait", "bgPipeline", "bgShader"];
 
-    static readonly long[] Totals = new long[(int)Cat.Count];
-    const int Ring = 8192;
-    static long[]? _rows; // per frame deltas, Ring x Count
-    static readonly long[] Last = new long[(int)Cat.Count];
+    private static readonly long[] s_totals = new long[(int)Cat.Count];
+    private const int Ring = 8192;
+    private static long[]? s_rows; // per frame deltas, Ring x Count
+    private static readonly long[] s_last = new long[(int)Cat.Count];
     public static bool Enabled { get; private set; }
 
 
     public static void Enable()
     {
-        _rows ??= new long[Ring * (int)Cat.Count];
+        s_rows ??= new long[Ring * (int)Cat.Count];
         Enabled = true;
     }
 
     public static long Now() => Stopwatch.GetTimestamp();
 
-    public static void Add(Cat c, long ticks) => Interlocked.Add(ref Totals[(int)c], ticks);
+    public static void Add(Cat c, long ticks) => Interlocked.Add(ref s_totals[(int)c], ticks);
 
-    public static void AddSince(Cat c, long t0) => Interlocked.Add(ref Totals[(int)c], Stopwatch.GetTimestamp() - t0);
+    public static void AddSince(Cat c, long t0) => Interlocked.Add(ref s_totals[(int)c], Stopwatch.GetTimestamp() - t0);
 
     public readonly struct Scope(Cat c) : IDisposable
     {
-        readonly long _t0 = Stopwatch.GetTimestamp();
-        public void Dispose() => Interlocked.Add(ref Totals[(int)c], Stopwatch.GetTimestamp() - _t0);
+        private readonly long _t0 = Stopwatch.GetTimestamp();
+        public void Dispose() => Interlocked.Add(ref s_totals[(int)c], Stopwatch.GetTimestamp() - _t0);
     }
 
     public static Scope Time(Cat c) => new(c);
 
-    public static long Total(Cat c) => Interlocked.Read(ref Totals[(int)c]);
+    public static long Total(Cat c) => Interlocked.Read(ref s_totals[(int)c]);
 
     /// <summary>Called at each present (guest thread): stores the per-cause deltas of the frame that just ended.</summary>
     public static void OnPresent(long frame)
     {
-        var rows = _rows;
+        long[]? rows = s_rows;
         if (rows == null)
         {
             return;
         }
 
-        Totals[(int)Cat.GcPause] = GC.GetTotalPauseDuration().Ticks * Stopwatch.Frequency / TimeSpan.TicksPerSecond;
-        Totals[(int)Cat.PacingSleep] = Cpu.CpuCore.SleepStats[0].Actual + Cpu.CpuCore.SleepStats[1].Actual;
+        s_totals[(int)Cat.GcPause] = GC.GetTotalPauseDuration().Ticks * Stopwatch.Frequency / TimeSpan.TicksPerSecond;
+        s_totals[(int)Cat.PacingSleep] = Cpu.CpuCore.SleepStats[0].Actual + Cpu.CpuCore.SleepStats[1].Actual;
         int baseIdx = (int)(frame & (Ring - 1)) * (int)Cat.Count;
         for (int i = 0; i < (int)Cat.Count; i++)
         {
-            long t = Interlocked.Read(ref Totals[i]);
-            rows[baseIdx + i] = t - Last[i];
-            Last[i] = t;
+            long t = Interlocked.Read(ref s_totals[i]);
+            rows[baseIdx + i] = t - s_last[i];
+            s_last[i] = t;
         }
     }
 
     /// <summary>Milliseconds per cause for frames [from, to] (inclusive; must be within the last 8192 frames).</summary>
     public static double[] Window(long from, long to)
     {
-        var r = new double[(int)Cat.Count];
-        var rows = _rows;
+        double[] r = new double[(int)Cat.Count];
+        long[]? rows = s_rows;
         if (rows == null)
         {
             return r;

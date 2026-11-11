@@ -19,29 +19,29 @@ namespace VitaSharp.Core.Kernel;
 public sealed unsafe partial class GuestThread
 {
     /// <summary>Call depth at which the thread is parked at a block boundary; -1 while it is not parked.</summary>
-    volatile int _parkedDepth = -1;
+    private volatile int _parkedDepth = -1;
     /// <summary>Incremented on entering and on leaving an HLE call: odd while inside one.</summary>
-    volatile int _hleSeq;
+    private volatile int _hleSeq;
     /// <summary>The mutex lock count a condition wait released (given back to the thread when its wait is reissued).</summary>
-    internal int CondWaitCount;
+    internal int _condWaitCount;
     /// <summary>Set on a restored thread whose condition wait is reissued: the lock count it released before the save
     /// (the reissued wait takes it back after the signal without releasing the mutex again, which another thread may
     /// own by now).</summary>
-    internal int CondReissueCount;
+    internal int _condReissueCount;
     /// <summary>A restored thread that was blocked in a wait when the state was saved (it issues that wait again).</summary>
-    internal bool ReissuesWait;
+    internal bool _reissuesWait;
 
     /// <summary>A restored thread's reissued wait is queued on its object again (or the wait already returned, or the
     /// thread ended): signals sent from now on reach it, as they did in the saved session.</summary>
     internal bool WaitReissued => !IsLive || _hleSeq >= 2 || (_hleSeq == 1 && (Status == ThreadStatus.Waiting || BlockedInHost));
 
-    volatile bool _saveHold;
+    private volatile bool _saveHold;
 
     /// <summary>A save state is being taken: the thread parks at its next block boundary at call depth 0 while the
     /// emulation (and the guest clock) still runs, so threads inside guest callbacks and module service threads
     /// (the GXM display queue waits for vblanks in its callback) get to a safe point. Not the thread that has a GPU
     /// scene open: it runs on until the scene ends.</summary>
-    bool SaveHeld => _saveHold && _callDepth == 0 && !FinishingScene;
+    private bool SaveHeld => _saveHold && _callDepth == 0 && !FinishingScene;
 
     internal void HoldForSave(bool hold)
     {
@@ -94,7 +94,7 @@ public sealed unsafe partial class GuestThread
 
         if ((_hleSeq & 1) == 1 && (Status == ThreadStatus.Waiting || BlockedInHost))
         {
-            var f = _emu.Hle.GetFunction(Core.State->SvcImm);
+            HleFunction f = _emu.Hle.GetFunction(Core.State->SvcImm);
             // a condition wait that was signalled and now waits for its mutex: reissuing it would wait for a new signal
             if (CurrentWaitSync is Mutex && f.Name.Contains("Cond", StringComparison.Ordinal))
             {
@@ -112,7 +112,7 @@ public sealed unsafe partial class GuestThread
         return $"thread '{Name}' is running guest code";
     }
 
-    string InWhat() => (_hleSeq & 1) == 1 ? _emu.Hle.GetFunction(Core.State->SvcImm).Name : "guest code";
+    private string InWhat() => (_hleSeq & 1) == 1 ? _emu.Hle.GetFunction(Core.State->SvcImm).Name : "guest code";
 
     internal void WriteSnapshot(SnapshotWriter w, SafeKind kind)
     {
@@ -135,9 +135,9 @@ public sealed unsafe partial class GuestThread
         w.Write(OpenCount);
         w.Write(OwnerPid);
         // a reissued condition wait takes back the lock count it released (CondReissueCount)
-        var cond = kind == SafeKind.Reissue ? CurrentWaitSync as CondVar : null;
+        CondVar? cond = kind == SafeKind.Reissue ? CurrentWaitSync as CondVar : null;
         w.Write(cond?.Mutex.Uid ?? 0);
-        w.Write(cond != null ? CondWaitCount : 0);
+        w.Write(cond != null ? _condWaitCount : 0);
         WriteCpu(w, Core.State, kind == SafeKind.Reissue);
     }
 
@@ -202,7 +202,7 @@ public sealed unsafe partial class GuestThread
     }
 
     /// <summary>A thread recreated from a save state (its stack and TLS are restored guest memory).</summary>
-    GuestThread(Emulator emu, SnapshotReader r, out SafeKind kind, out int condMutex, out int condCount)
+    private GuestThread(Emulator emu, SnapshotReader r, out SafeKind kind, out int condMutex, out int condCount)
     {
         _emu = emu;
         Uid = r.ReadInt32();
@@ -230,7 +230,7 @@ public sealed unsafe partial class GuestThread
         Hle = new HleContext { Cpu = Core.State, Thread = this, Emu = emu };
         ReadCpu(r, Core.State);
         Status = kind is SafeKind.Dormant ? ThreadStatus.Dormant : ThreadStatus.Ready;
-        ReissuesWait = kind == SafeKind.Reissue;
+        _reissuesWait = kind == SafeKind.Reissue;
     }
 
     internal static GuestThread ReadSnapshot(Emulator emu, SnapshotReader r, out SafeKind kind, out int condMutex, out int condCount)

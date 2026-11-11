@@ -1,3 +1,4 @@
+using SQLitePCL;
 using System.Xml;
 using System.Xml.Linq;
 using VitaSharp.Core.Package;
@@ -40,17 +41,17 @@ public enum ShellSoundEffect
 public sealed class ShellAssets
 {
     public string FsRoot { get; }
-    readonly Dictionary<string, Rco?> _rcos = new(StringComparer.OrdinalIgnoreCase);
-    readonly Dictionary<string, RgbaImage?> _textures = new();
-    readonly Dictionary<ShellSoundEffect, PcmSound?> _sounds = new();
-    readonly object _lock = new();
+    private readonly Dictionary<string, Rco?> _rcos = new(StringComparer.OrdinalIgnoreCase);
+    private readonly Dictionary<string, RgbaImage?> _textures = new();
+    private readonly Dictionary<ShellSoundEffect, PcmSound?> _sounds = new();
+    private readonly object _lock = new();
 
     public ShellAssets(string fsRoot)
     {
         FsRoot = fsRoot;
     }
 
-    string Vs0(params string[] parts) => Path.Combine([FsRoot, "vs0", .. parts]);
+    private string Vs0(params string[] parts) => Path.Combine([FsRoot, "vs0", .. parts]);
 
     /// <summary>True when vs0 holds the shell (vsh/shell), i.e. firmware is installed.</summary>
     public bool HasFirmware => Directory.Exists(Vs0("vsh", "shell"));
@@ -74,13 +75,13 @@ public sealed class ShellAssets
     public List<ShellTheme> Themes(string language = "en")
     {
         var list = new List<ShellTheme>();
-        var home = Vs0("data", "internal", "theme", "defaultTheme_homeScreen.png");
+        string home = Vs0("data", "internal", "theme", "defaultTheme_homeScreen.png");
         if (File.Exists(home))
         {
             // the default theme's wallpaper is not an image: the shell renders its blue wave (vs0:data/internal/effects/
             // wave); the PNGs in data/internal/theme are the theme-settings previews
             var t = new ShellTheme { Id = ShellTheme.DefaultId, Title = "Padrão", PreviewImage = home };
-            var start = Vs0("data", "internal", "theme", "defaultTheme_startScreen.png");
+            string start = Vs0("data", "internal", "theme", "defaultTheme_startScreen.png");
             if (File.Exists(start))
             {
                 t.StartScreenImage = start;
@@ -89,10 +90,10 @@ public sealed class ShellAssets
             t.BgmPath = SystemBgm;
             list.Add(t);
         }
-        var themesDir = Path.Combine(FsRoot, "ux0", "theme");
+        string themesDir = Path.Combine(FsRoot, "ux0", "theme");
         if (Directory.Exists(themesDir))
         {
-            foreach (var dir in Directory.GetDirectories(themesDir).Order(StringComparer.OrdinalIgnoreCase))
+            foreach (string? dir in Directory.GetDirectories(themesDir).Order(StringComparer.OrdinalIgnoreCase))
             {
                 if (LoadTheme(dir, language) is { } t)
                 {
@@ -108,7 +109,7 @@ public sealed class ShellAssets
     {
         get
         {
-            var p = Path.Combine(FsRoot, "pd0", "data", "systembgm", "home.at9");
+            string p = Path.Combine(FsRoot, "pd0", "data", "systembgm", "home.at9");
             return File.Exists(p) ? p : null;
         }
     }
@@ -116,7 +117,7 @@ public sealed class ShellAssets
     /// <summary>A custom theme folder (theme.xml as written by the theme packages, the same fields Vita3K reads).</summary>
     public static ShellTheme? LoadTheme(string dir, string language = "en")
     {
-        var xmlPath = Io.Vfs.ResolveCaseInsensitive(dir, "theme.xml");
+        string xmlPath = Io.Vfs.ResolveCaseInsensitive(dir, "theme.xml");
         if (!File.Exists(xmlPath))
         {
             return null;
@@ -137,10 +138,10 @@ public sealed class ShellAssets
             return null;
         }
 
-        var info = root.Element("InfomationProperty");
-        var bar = root.Element("InfomationBarProperty");
-        var homeProp = root.Element("HomeProperty");
-        var startProp = root.Element("StartScreenProperty");
+        XElement? info = root.Element("InfomationProperty");
+        XElement? bar = root.Element("InfomationBarProperty");
+        XElement? homeProp = root.Element("HomeProperty");
+        XElement? startProp = root.Element("StartScreenProperty");
         string? Asset(string? rel)
         {
             if (string.IsNullOrWhiteSpace(rel))
@@ -148,7 +149,7 @@ public sealed class ShellAssets
                 return null;
             }
 
-            var p = Io.Vfs.ResolveCaseInsensitive(dir, rel.Trim().Replace('\\', '/'));
+            string p = Io.Vfs.ResolveCaseInsensitive(dir, rel.Trim().Replace('\\', '/'));
             return File.Exists(p) ? p : null;
         }
         var t = new ShellTheme
@@ -160,7 +161,7 @@ public sealed class ShellAssets
             StartScreenImage = Asset(startProp?.Element("m_filePath")?.Value),
             BarColor = Color(bar?.Element("m_barColor")?.Value),
         };
-        foreach (var bg in homeProp?.Element("m_bgParam")?.Descendants().Where(e => e.Element("m_imageFilePath") != null) ?? [])
+        foreach (XElement? bg in homeProp?.Element("m_bgParam")?.Descendants().Where(e => e.Element("m_imageFilePath") != null) ?? [])
         {
             if (Asset(bg.Element("m_imageFilePath")?.Value) is { } img)
             {
@@ -171,36 +172,36 @@ public sealed class ShellAssets
         return t.HomeBackgrounds.Count > 0 ? t : null;
     }
 
-    static string? Localized(XElement? e, string language)
+    private static string? Localized(XElement? e, string language)
     {
         if (e == null)
         {
             return null;
         }
 
-        var param = e.Element("m_param");
+        XElement? param = e.Element("m_param");
         if (param != null)
         {
             string key = "m_" + language.Replace('-', '_');
-            var match = param.Elements().FirstOrDefault(p => p.Name.LocalName.Equals(key, StringComparison.OrdinalIgnoreCase))
+            XElement? match = param.Elements().FirstOrDefault(p => p.Name.LocalName.Equals(key, StringComparison.OrdinalIgnoreCase))
                 ?? param.Elements().FirstOrDefault(p => p.Name.LocalName.Equals("m_" + language.Split('-')[0], StringComparison.OrdinalIgnoreCase));
             if (match != null && match.Value.Trim().Length > 0)
             {
                 return match.Value.Trim();
             }
         }
-        var def = e.Element("m_default")?.Value.Trim();
+        string? def = e.Element("m_default")?.Value.Trim();
         if (!string.IsNullOrEmpty(def))
         {
             return def;
         }
 
-        var own = string.Concat(e.Nodes().OfType<XText>().Select(n => n.Value)).Trim();
+        string own = string.Concat(e.Nodes().OfType<XText>().Select(n => n.Value)).Trim();
         return own.Length > 0 ? own : null;
     }
 
     /// <summary>Theme colours: "ff336699" (AARRGGBB) or "#336699".</summary>
-    static uint? Color(string? s)
+    private static uint? Color(string? s)
     {
         if (string.IsNullOrWhiteSpace(s))
         {
@@ -213,7 +214,7 @@ public sealed class ShellAssets
             s = s[2..];
         }
 
-        if (!uint.TryParse(s, System.Globalization.NumberStyles.HexNumber, null, out var v))
+        if (!uint.TryParse(s, System.Globalization.NumberStyles.HexNumber, null, out uint v))
         {
             return null;
         }
@@ -232,27 +233,27 @@ public sealed class ShellAssets
     public List<ShellSystemApp> SystemApps()
     {
         var list = new List<ShellSystemApp>();
-        var apps = Vs0("app");
+        string apps = Vs0("app");
         if (!Directory.Exists(apps))
         {
             return list;
         }
 
         var installed = Directory.GetDirectories(apps).Select(d => Path.GetFileName(d)).Order(StringComparer.Ordinal).ToList();
-        var ids = ShellDatabaseBubbles() is { } bubbles
+        List<string> ids = ShellDatabaseBubbles() is { } bubbles
             ? bubbles.Where(b => installed.Contains(b, StringComparer.OrdinalIgnoreCase)).ToList()
             : installed;
-        foreach (var id in ids)
+        foreach (string? id in ids)
         {
-            var dir = Vs0("app", id);
-            var icon = Io.Vfs.ResolveCaseInsensitive(dir, "sce_sys/icon0.png");
+            string dir = Vs0("app", id);
+            string icon = Io.Vfs.ResolveCaseInsensitive(dir, "sce_sys/icon0.png");
             if (!File.Exists(icon))
             {
                 continue;
             }
 
             string title = id;
-            var sfo = Io.Vfs.ResolveCaseInsensitive(dir, "sce_sys/param.sfo");
+            string sfo = Io.Vfs.ResolveCaseInsensitive(dir, "sce_sys/param.sfo");
             try
             {
                 if (File.Exists(sfo))
@@ -272,9 +273,9 @@ public sealed class ShellAssets
 
     /// <summary>The title IDs of the shell database's bubbles in page and position order, or null when the database
     /// is missing or unreadable.</summary>
-    List<string>? ShellDatabaseBubbles()
+    private List<string>? ShellDatabaseBubbles()
     {
-        var db = Path.Combine(FsRoot, "ur0", "shell", "db", "app.db");
+        string db = Path.Combine(FsRoot, "ur0", "shell", "db", "app.db");
         if (!File.Exists(db))
         {
             return null;
@@ -283,14 +284,14 @@ public sealed class ShellAssets
         SQLitePCL.Batteries_V2.Init();
         // read only and immutable: the file is the shell's (a running shell may hold it open)
         if (SQLitePCL.raw.sqlite3_open_v2(new Uri(Path.GetFullPath(db)).AbsoluteUri + "?immutable=1",
-                out var h, SQLitePCL.raw.SQLITE_OPEN_READONLY | SQLitePCL.raw.SQLITE_OPEN_URI, null) != SQLitePCL.raw.SQLITE_OK)
+                out sqlite3? h, SQLitePCL.raw.SQLITE_OPEN_READONLY | SQLitePCL.raw.SQLITE_OPEN_URI, null) != SQLitePCL.raw.SQLITE_OK)
         {
             h.Dispose();
             return null;
         }
         using (h)
         {
-            if (SQLitePCL.raw.sqlite3_prepare_v2(h, "SELECT titleId FROM tbl_appinfo_icon WHERE titleId IS NOT NULL ORDER BY pageId, pos", out var st) != SQLitePCL.raw.SQLITE_OK)
+            if (SQLitePCL.raw.sqlite3_prepare_v2(h, "SELECT titleId FROM tbl_appinfo_icon WHERE titleId IS NOT NULL ORDER BY pageId, pos", out sqlite3_stmt? st) != SQLitePCL.raw.SQLITE_OK)
             {
                 st.Dispose();
                 return null;
@@ -311,16 +312,16 @@ public sealed class ShellAssets
 
     // ------------------------------------------------------------------ RCO resources
 
-    Rco? RcoOf(string rel)
+    private Rco? RcoOf(string rel)
     {
         lock (_lock)
         {
-            if (_rcos.TryGetValue(rel, out var r))
+            if (_rcos.TryGetValue(rel, out Rco? r))
             {
                 return r;
             }
 
-            var path = Vs0(rel.Split('/'));
+            string path = Vs0(rel.Split('/'));
             try
             {
                 r = File.Exists(path) ? Rco.Load(path) : null;
@@ -341,19 +342,19 @@ public sealed class ShellAssets
         string key = rco + "|" + id;
         lock (_lock)
         {
-            if (_textures.TryGetValue(key, out var cached))
+            if (_textures.TryGetValue(key, out RgbaImage? cached))
             {
                 return cached;
             }
         }
 
         RgbaImage? img = null;
-        var r = RcoOf(rco);
+        Rco? r = RcoOf(rco);
         if (r?.Find("texturetable", id) is { } e)
         {
             try
             {
-                var data = r.ReadFile(e);
+                byte[] data = r.ReadFile(e);
                 if (Gim.IsGim(data))
                 {
                     img = Gim.Decode(data);
@@ -375,7 +376,7 @@ public sealed class ShellAssets
     /// <summary>The raw bytes of an RCO texture (PNG textures are returned as is), or null.</summary>
     public byte[]? TextureFile(string rco, string id)
     {
-        var r = RcoOf(rco);
+        Rco? r = RcoOf(rco);
         if (r?.Find("texturetable", id) is not { } e)
         {
             return null;
@@ -400,19 +401,19 @@ public sealed class ShellAssets
     {
         lock (_lock)
         {
-            if (_sounds.TryGetValue(effect, out var cached))
+            if (_sounds.TryGetValue(effect, out PcmSound? cached))
             {
                 return cached;
             }
         }
 
         PcmSound? pcm = null;
-        var r = RcoOf(CommonRco);
-        var index = r?.Root.Descendants().FirstOrDefault(e => e.Name == "soundindextable");
+        Rco? r = RcoOf(CommonRco);
+        RcoElement? index = r?.Root.Descendants().FirstOrDefault(e => e.Name == "soundindextable");
         if (r != null && (index != null || effect == ShellSoundEffect.Notice))
         {
-            var check = index?.Children.FirstOrDefault(c => c.Name == "sound_check_box");
-            var buttons = index?.Children.Where(c => c.Name == "sound_button").ToList() ?? [];
+            RcoElement? check = index?.Children.FirstOrDefault(c => c.Name == "sound_check_box");
+            List<RcoElement> buttons = index?.Children.Where(c => c.Name == "sound_button").ToList() ?? [];
             uint? id = effect switch
             {
                 ShellSoundEffect.Confirm => check?.Attribute("check")?.Hash ?? buttons.FirstOrDefault()?.Attribute("decide")?.Hash,

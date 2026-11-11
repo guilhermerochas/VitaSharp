@@ -31,10 +31,10 @@ public sealed class PfsPlan
     /// <summary>Chunk size used to decrypt and write files (a multiple of every power-of-two sector size up to it).</summary>
     public const int ChunkBytes = 4 << 20;
 
-    readonly Dictionary<string, PfsNode> _nodes;
-    readonly byte[] _drvKey;
-    readonly List<PfsTable> _unmatched;
-    Aes? _aes;
+    private readonly Dictionary<string, PfsNode> _nodes;
+    private readonly byte[] _drvKey;
+    private readonly List<PfsTable> _unmatched;
+    private Aes? _aes;
 
     public IReadOnlyList<PfsTable> Tables { get; }
     /// <summary>Sum of the logical sizes of the files in files.db.</summary>
@@ -72,7 +72,7 @@ public sealed class PfsPlan
         }
 
         uint sectors = SectorCount(size);
-        foreach (var t in _unmatched)
+        foreach (PfsTable t in _unmatched)
         {
             if (t.NumSectors != sectors)
             {
@@ -98,7 +98,7 @@ public sealed class PfsPlan
     }
 
     public PfsNode Node(string relPath) =>
-        _nodes.TryGetValue(relPath.ToUpperInvariant(), out var n) ? n : throw new InvalidDataException($"PFS: {relPath} is not listed in files.db");
+        _nodes.TryGetValue(relPath.ToUpperInvariant(), out PfsNode? n) ? n : throw new InvalidDataException($"PFS: {relPath} is not listed in files.db");
 
     public PfsSectorCipher Cipher(PfsTable t)
     {
@@ -114,9 +114,9 @@ public sealed class PfsPlan
 /// <summary>Sector decryption of one PFS file: AES-CBC per sector with an IV made from the sector offset and the table's tweak key.</summary>
 public sealed class PfsSectorCipher
 {
-    readonly Aes _aes;
-    readonly byte[] _tweakKey;
-    readonly uint _sector;
+    private readonly Aes _aes;
+    private readonly byte[] _tweakKey;
+    private readonly uint _sector;
 
     internal PfsSectorCipher(Aes aes, byte[] tweakKey, uint sectorSize)
     {
@@ -140,7 +140,7 @@ public sealed class PfsSectorCipher
         long sectorIndex = fileOffset / _sector;
         for (int pos = 0; pos < data.Length; pos += (int)_sector, sectorIndex++)
         {
-            var buf = data.Slice(pos, (int)Math.Min(_sector, data.Length - pos));
+            Span<byte> buf = data.Slice(pos, (int)Math.Min(_sector, data.Length - pos));
             ulong tweak = (ulong)_sector * (ulong)sectorIndex;
             BitConverter.TryWriteBytes(iv[..8], tweak);
             iv[8..].Clear();

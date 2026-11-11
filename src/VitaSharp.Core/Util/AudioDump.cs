@@ -7,12 +7,12 @@ namespace VitaSharp.Core.Util;
 /// </summary>
 public static class AudioDump
 {
-    static string? _dir;
-    static int _seq;
-    static long _enabledNs;
-    static readonly List<(Writer W, string File, long OpenedNs)> Opened = new();
+    private static string? s_dir;
+    private static int s_seq;
+    private static long s_enabledNs;
+    private static readonly List<(Writer W, string File, long OpenedNs)> s_opened = new();
 
-    public static bool Enabled => _dir != null;
+    public static bool Enabled => s_dir != null;
 
     /// <summary>Also write each NGS source voice to its own WAV (the session capture; VITASHARP_NGS_TRACE does it too).</summary>
     public static bool VoiceDumps;
@@ -23,13 +23,13 @@ public static class AudioDump
     public static void Enable(string dir)
     {
         Directory.CreateDirectory(dir);
-        lock (Opened)
+        lock (s_opened)
         {
-            Opened.Clear();
+            s_opened.Clear();
         }
 
-        _enabledNs = VitaSharp.Core.Capture.CaptureClock.NowNs;
-        _dir = dir;
+        s_enabledNs = VitaSharp.Core.Capture.CaptureClock.NowNs;
+        s_dir = dir;
         Generation++;
     }
 
@@ -37,17 +37,17 @@ public static class AudioDump
     /// no new file). Returns the files with the time each was opened, in ms after <see cref="Enable"/>.</summary>
     public static List<(string File, double StartMs)> Disable()
     {
-        _dir = null;
+        s_dir = null;
         Generation++;
         var list = new List<(string, double)>();
-        lock (Opened)
+        lock (s_opened)
         {
-            foreach (var (w, file, ns) in Opened)
+            foreach ((Writer? w, string? file, long ns) in s_opened)
             {
                 w.Dispose();
-                list.Add((file, (ns - _enabledNs) / 1e6));
+                list.Add((file, (ns - s_enabledNs) / 1e6));
             }
-            Opened.Clear();
+            s_opened.Clear();
         }
         return list;
     }
@@ -55,10 +55,10 @@ public static class AudioDump
 
     public sealed class Writer : IDisposable
     {
-        readonly FileStream _fs;
-        readonly int _rate;
-        long _bytes;
-        bool _closed;
+        private readonly FileStream _fs;
+        private readonly int _rate;
+        private long _bytes;
+        private bool _closed;
 
         internal Writer(string path, int rate)
         {
@@ -87,7 +87,7 @@ public static class AudioDump
             }
         }
 
-        void Header()
+        private void Header()
         {
             long at = _fs.Position;
             Span<byte> h = stackalloc byte[44];
@@ -128,7 +128,7 @@ public static class AudioDump
     /// <summary>A raw byte stream next to the WAVs (e.g. the ATRAC9 superframes an NGS voice decoded), or null when off.</summary>
     public static FileStream? OpenRaw(string name)
     {
-        if (_dir == null)
+        if (s_dir == null)
         {
             return null;
         }
@@ -136,7 +136,7 @@ public static class AudioDump
         string safe = string.Concat(name.Select(c => char.IsLetterOrDigit(c) || c == '.' ? c : '_'));
         try
         {
-            return new FileStream(Path.Combine(_dir, safe), FileMode.Create, FileAccess.Write, FileShare.Read);
+            return new FileStream(Path.Combine(s_dir, safe), FileMode.Create, FileAccess.Write, FileShare.Read);
         }
         catch (Exception e)
         {
@@ -148,20 +148,20 @@ public static class AudioDump
     /// <summary>A writer for a newly opened port, or null when dumping is off.</summary>
     public static Writer? Open(string name, int rate)
     {
-        if (_dir == null)
+        if (s_dir == null)
         {
             return null;
         }
 
-        int n = Interlocked.Increment(ref _seq);
+        int n = Interlocked.Increment(ref s_seq);
         string safe = string.Concat(name.Select(c => char.IsLetterOrDigit(c) ? c : '_'));
         try
         {
-            string file = Path.Combine(_dir, $"{n:D2}_{safe}_{rate}.wav");
+            string file = Path.Combine(s_dir, $"{n:D2}_{safe}_{rate}.wav");
             var w = new Writer(file, rate);
-            lock (Opened)
+            lock (s_opened)
             {
-                Opened.Add((w, file, VitaSharp.Core.Capture.CaptureClock.NowNs));
+                s_opened.Add((w, file, VitaSharp.Core.Capture.CaptureClock.NowNs));
             }
 
             return w;

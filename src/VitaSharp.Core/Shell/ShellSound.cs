@@ -17,7 +17,7 @@ public sealed record PcmSound(int SampleRate, int Channels, short[] Samples)
 /// </summary>
 public static class Vag
 {
-    static readonly int[,] Filters = { { 0, 0 }, { 60, 0 }, { 115, -52 }, { 98, -55 }, { 122, -60 } };
+    private static readonly int[,] s_filters = { { 0, 0 }, { 60, 0 }, { 115, -52 }, { 98, -55 }, { 122, -60 } };
 
     public static bool IsVag(ReadOnlySpan<byte> d) => d.Length >= 0x30 && d[0] == 'V' && d[1] == 'A' && d[2] == 'G' && d[3] == 'p';
 
@@ -52,7 +52,7 @@ public static class Vag
                 int b = d[p + 2 + i / 2];
                 int nib = (i & 1) == 0 ? b & 0xF : b >> 4;
                 int s = (short)(nib << 12) >> shift;
-                double v = s + (h1 * Filters[filter, 0] + h2 * Filters[filter, 1]) / 64.0;
+                double v = s + (h1 * s_filters[filter, 0] + h2 * s_filters[filter, 1]) / 64.0;
                 h2 = h1;
                 h1 = v;
                 outS.Add((short)Math.Clamp((int)Math.Round(v), short.MinValue, short.MaxValue));
@@ -68,15 +68,15 @@ public static class Vag
     /// <summary>A mono or stereo (left + right files) VAG sound as PCM.</summary>
     public static PcmSound Decode(byte[] left, byte[]? right = null)
     {
-        var (l, rate) = DecodeMono(left);
+        (short[]? l, int rate) = DecodeMono(left);
         if (right == null)
         {
             return new PcmSound(rate, 1, l);
         }
 
-        var (r, _) = DecodeMono(right);
+        (short[]? r, int _) = DecodeMono(right);
         int n = Math.Max(l.Length, r.Length);
-        var st = new short[n * 2];
+        short[] st = new short[n * 2];
         for (int i = 0; i < n; i++)
         {
             st[i * 2] = i < l.Length ? l[i] : (short)0;
@@ -93,14 +93,14 @@ public static class Vag
 /// </summary>
 public sealed class At9Reader
 {
-    readonly byte[] _file;
-    readonly At9Info _info;
-    Atrac9Decoder _decoder = new();
-    readonly short[][] _pcm;
-    readonly byte[] _superframe;
-    int _block;
-    long _emitted;
-    int _skip;
+    private readonly byte[] _file;
+    private readonly At9Info _info;
+    private Atrac9Decoder _decoder = new();
+    private readonly short[][] _pcm;
+    private readonly byte[] _superframe;
+    private int _block;
+    private long _emitted;
+    private int _skip;
 
     public int SampleRate => _info.SampleRate;
     public int Channels => _info.Channels;
@@ -115,7 +115,7 @@ public sealed class At9Reader
 
         _file = file;
         _decoder.Initialize(_info.Config);
-        var cfg = _decoder.Config;
+        Atrac9Config cfg = _decoder.Config;
         _pcm = new short[cfg.ChannelCount][];
         for (int i = 0; i < _pcm.Length; i++)
         {
@@ -141,7 +141,7 @@ public sealed class At9Reader
     public bool Read(List<short> into, out int frames)
     {
         frames = 0;
-        var cfg = _decoder.Config;
+        Atrac9Config cfg = _decoder.Config;
         while (true)
         {
             long off = _info.DataOffset + (long)_block * cfg.SuperframeBytes;

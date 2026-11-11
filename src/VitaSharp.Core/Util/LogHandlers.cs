@@ -1,3 +1,4 @@
+using System.Diagnostics.CodeAnalysis;
 using System.Runtime.CompilerServices;
 
 namespace VitaSharp.Core.Util;
@@ -9,7 +10,7 @@ namespace VitaSharp.Core.Util;
 [InterpolatedStringHandler]
 public ref struct DebugLogHandler
 {
-    LevelLogHandler _h;
+    private LevelLogHandler _h;
     public DebugLogHandler(int literalLength, int formattedCount, out bool enabled) => _h = new(literalLength, formattedCount, LogLevel.Debug, out enabled);
     public void AppendLiteral(string s) => _h.AppendLiteral(s);
     public void AppendFormatted<T>(T value) => _h.AppendFormatted(value);
@@ -25,7 +26,7 @@ public ref struct DebugLogHandler
 [InterpolatedStringHandler]
 public ref struct TraceLogHandler
 {
-    LevelLogHandler _h;
+    private LevelLogHandler _h;
     public TraceLogHandler(int literalLength, int formattedCount, out bool enabled) => _h = new(literalLength, formattedCount, LogLevel.Trace, out enabled);
     public void AppendLiteral(string s) => _h.AppendLiteral(s);
     public void AppendFormatted<T>(T value) => _h.AppendFormatted(value);
@@ -38,10 +39,10 @@ public ref struct TraceLogHandler
 }
 
 /// <summary>Shared implementation: formats into a <see cref="DefaultInterpolatedStringHandler"/> only when enabled.</summary>
-ref struct LevelLogHandler
+internal ref struct LevelLogHandler
 {
-    DefaultInterpolatedStringHandler _inner;
-    readonly bool _enabled;
+    private DefaultInterpolatedStringHandler _inner;
+    private readonly bool _enabled;
 
     public LevelLogHandler(int literalLength, int formattedCount, LogLevel level, out bool enabled)
     {
@@ -108,23 +109,24 @@ ref struct LevelLogHandler
 [InterpolatedStringHandler]
 public ref struct OnceKeyHandler
 {
-    [ThreadStatic] static char[]? _scratch;
-    char[] _buf;
-    int _pos;
+    [SuppressMessage("Style", "IDE1006", Justification = "[ThreadStatic]: t_camelCase; .editorconfig cannot select the attribute")]
+    [ThreadStatic] private static char[]? t_scratch;
+    private char[] _buf;
+    private int _pos;
 
     public OnceKeyHandler(int literalLength, int formattedCount)
     {
-        _buf = _scratch ??= new char[256];
+        _buf = t_scratch ??= new char[256];
         _pos = 0;
     }
 
     internal readonly ReadOnlySpan<char> Text => _buf.AsSpan(0, _pos);
 
-    void Grow(int need)
+    private void Grow(int need)
     {
-        var n = new char[Math.Max(_buf.Length * 2, _pos + need)];
+        char[] n = new char[Math.Max(_buf.Length * 2, _pos + need)];
         _buf.AsSpan(0, _pos).CopyTo(n);
-        _buf = _scratch = n;
+        _buf = t_scratch = n;
     }
 
     public void AppendLiteral(string s) => AppendFormatted(s.AsSpan());
@@ -198,7 +200,7 @@ public ref struct OnceKeyHandler
         }
     }
 
-    void Append<TF>(TF value, string? format) where TF : ISpanFormattable
+    private void Append<TF>(TF value, string? format) where TF : ISpanFormattable
     {
         int written;
         while (!value.TryFormat(_buf.AsSpan(_pos), out written, format, null))
@@ -214,12 +216,12 @@ public ref struct OnceKeyHandler
 [InterpolatedStringHandler]
 public ref struct OnceMessageHandler
 {
-    DefaultInterpolatedStringHandler _inner;
-    internal readonly bool Enabled;
+    private DefaultInterpolatedStringHandler _inner;
+    internal readonly bool _enabled;
 
     public OnceMessageHandler(int literalLength, int formattedCount, scoped ref OnceKeyHandler key, out bool enabled)
     {
-        enabled = Enabled = Log.TryAddOnce(key.Text);
+        enabled = _enabled = Log.TryAddOnce(key.Text);
         _inner = enabled ? new DefaultInterpolatedStringHandler(literalLength, formattedCount) : default;
     }
 

@@ -73,21 +73,21 @@ public static class UpdateFeed
     {
         using var doc = JsonDocument.Parse(json);
         var list = new List<UpdateRelease>();
-        foreach (var r in doc.RootElement.EnumerateArray())
+        foreach (JsonElement r in doc.RootElement.EnumerateArray())
         {
-            if (r.TryGetProperty("draft", out var draft) && draft.ValueKind == JsonValueKind.True)
+            if (r.TryGetProperty("draft", out JsonElement draft) && draft.ValueKind == JsonValueKind.True)
             {
                 continue;
             }
 
-            static string Str(JsonElement e, string name) => e.TryGetProperty(name, out var v) && v.ValueKind == JsonValueKind.String ? v.GetString() ?? "" : "";
+            static string Str(JsonElement e, string name) => e.TryGetProperty(name, out JsonElement v) && v.ValueKind == JsonValueKind.String ? v.GetString() ?? "" : "";
             var assets = new List<UpdateAsset>();
-            if (r.TryGetProperty("assets", out var arr) && arr.ValueKind == JsonValueKind.Array)
+            if (r.TryGetProperty("assets", out JsonElement arr) && arr.ValueKind == JsonValueKind.Array)
             {
-                foreach (var a in arr.EnumerateArray())
+                foreach (JsonElement a in arr.EnumerateArray())
                 {
                     assets.Add(new UpdateAsset(Str(a, "name"), Str(a, "browser_download_url"),
-                        a.TryGetProperty("size", out var size) && size.TryGetInt64(out long n) ? n : 0));
+                        a.TryGetProperty("size", out JsonElement size) && size.TryGetInt64(out long n) ? n : 0));
                 }
             }
 
@@ -98,8 +98,8 @@ public static class UpdateFeed
             }
 
             list.Add(new UpdateRelease(Str(r, "tag_name"), Str(r, "name"), Str(r, "body"),
-                DateTimeOffset.TryParse(published, CultureInfo.InvariantCulture, DateTimeStyles.AssumeUniversal, out var when) ? when : DateTimeOffset.MinValue,
-                r.TryGetProperty("prerelease", out var pre) && pre.ValueKind == JsonValueKind.True,
+                DateTimeOffset.TryParse(published, CultureInfo.InvariantCulture, DateTimeStyles.AssumeUniversal, out DateTimeOffset when) ? when : DateTimeOffset.MinValue,
+                r.TryGetProperty("prerelease", out JsonElement pre) && pre.ValueKind == JsonValueKind.True,
                 Str(r, "target_commitish"), assets));
         }
         return list;
@@ -115,15 +115,15 @@ public static class UpdateFeed
     {
         var candidates = releases.Where(r => channel == ChannelReleases ? r.IsVersion : r.IsBuild || r.IsVersion)
                                  .OrderByDescending(r => r.Published).ToList();
-        var latest = candidates.FirstOrDefault();
+        UpdateRelease? latest = candidates.FirstOrDefault();
         if (latest == null || (current.Commit.Length > 0 && latest.IsCommit(current.Commit)))
         {
             return null;
         }
 
-        var mine = current.Commit.Length > 0 ? releases.FirstOrDefault(r => r.IsCommit(current.Commit)) : null;
+        UpdateRelease? mine = current.Commit.Length > 0 ? releases.FirstOrDefault(r => r.IsCommit(current.Commit)) : null;
         // a minute of slack: the packages are built before their release is published
-        var since = mine?.Published ?? current.Built.AddMinutes(1);
+        DateTimeOffset since = mine?.Published ?? current.Built.AddMinutes(1);
         return latest.Published > since ? latest : null;
     }
 
@@ -152,9 +152,9 @@ public static class UpdateFeed
     /// <summary>The SHA-256 of <paramref name="file"/> in a <c>sha256sum</c> listing ("hash  name" or "hash *name").</summary>
     public static string? ExpectedHash(string sums, string file)
     {
-        foreach (var raw in sums.Split('\n'))
+        foreach (string raw in sums.Split('\n'))
         {
-            var line = raw.Trim();
+            string line = raw.Trim();
             int sp = line.IndexOf(' ');
             if (sp != 64)
             {
@@ -172,7 +172,7 @@ public static class UpdateFeed
 
     public static string Sha256(string file)
     {
-        using var s = File.OpenRead(file);
+        using FileStream s = File.OpenRead(file);
         return Convert.ToHexStringLower(SHA256.HashData(s));
     }
 
@@ -186,7 +186,7 @@ public static class UpdateFeed
             return File.OpenRead(uri.LocalPath);
         }
 
-        var response = await http.GetAsync(uri, HttpCompletionOption.ResponseHeadersRead, ct).ConfigureAwait(false);
+        HttpResponseMessage response = await http.GetAsync(uri, HttpCompletionOption.ResponseHeadersRead, ct).ConfigureAwait(false);
         response.EnsureSuccessStatusCode();
         return await response.Content.ReadAsStreamAsync(ct).ConfigureAwait(false);
     }
@@ -199,7 +199,7 @@ public static class UpdateFeed
             feed = new Uri(Path.Combine(feed.LocalPath, "releases.json"));
         }
 
-        using var s = await OpenAsync(http, feed, ct).ConfigureAwait(false);
+        using Stream s = await OpenAsync(http, feed, ct).ConfigureAwait(false);
         using var reader = new StreamReader(s);
         return Parse(await reader.ReadToEndAsync(ct).ConfigureAwait(false));
     }
@@ -218,10 +218,10 @@ public static class UpdateFeed
     {
         Directory.CreateDirectory(Path.GetDirectoryName(dest)!);
         string part = dest + ".part";
-        await using (var src = await OpenAsync(http, new Uri(asset.Url), ct).ConfigureAwait(false))
-        await using (var dst = File.Create(part))
+        await using (Stream src = await OpenAsync(http, new Uri(asset.Url), ct).ConfigureAwait(false))
+        await using (FileStream dst = File.Create(part))
         {
-            var buf = new byte[1 << 16];
+            byte[] buf = new byte[1 << 16];
             long done = 0;
             int n;
             while ((n = await src.ReadAsync(buf, ct).ConfigureAwait(false)) > 0)
@@ -242,10 +242,10 @@ public static class UpdateFeed
     /// <paramref name="name"/> there) against it; throws <see cref="InvalidDataException"/> when it is missing or differs.</summary>
     public static async Task VerifyAsync(HttpClient http, UpdateRelease release, string file, string name, CancellationToken ct)
     {
-        var sumsAsset = release.Assets.FirstOrDefault(a => a.Name == SumsFile)
+        UpdateAsset sumsAsset = release.Assets.FirstOrDefault(a => a.Name == SumsFile)
             ?? throw new InvalidDataException($"The release {release.Tag} has no {SumsFile}");
         string sums;
-        using (var s = await OpenAsync(http, new Uri(sumsAsset.Url), ct).ConfigureAwait(false))
+        using (Stream s = await OpenAsync(http, new Uri(sumsAsset.Url), ct).ConfigureAwait(false))
         using (var reader = new StreamReader(s))
         {
             sums = await reader.ReadToEndAsync(ct).ConfigureAwait(false);

@@ -17,13 +17,13 @@ namespace VitaSharp.Core.Util;
 public static unsafe class FastCopy
 {
     /// <summary>Copies at or above this size go to libc; smaller ones stay inline.</summary>
-    const int NativeThreshold = 128;
+    private const int NativeThreshold = 128;
 
     /// <summary>CoreCLR: copies at or above this size call libc with the GC transition (a collection may run meanwhile).</summary>
-    const int LongCopy = 256 * 1024;
+    private const int LongCopy = 256 * 1024;
 
-    static readonly delegate* unmanaged[SuppressGCTransition]<void*, void*, nuint, void*> Memmove;
-    static readonly delegate* unmanaged<void*, void*, nuint, void*> MemmoveLong;
+    private static readonly delegate* unmanaged[SuppressGCTransition]<void*, void*, nuint, void*> s_memmove;
+    private static readonly delegate* unmanaged<void*, void*, nuint, void*> s_memmoveLong;
 
     static FastCopy()
     {
@@ -45,13 +45,13 @@ public static unsafe class FastCopy
 
         try
         {
-            if (NativeLibrary.TryLoad("libc.so", out var libc) && NativeLibrary.TryGetExport(libc, "memmove", out var f))
+            if (NativeLibrary.TryLoad("libc.so", out nint libc) && NativeLibrary.TryGetExport(libc, "memmove", out nint f))
             {
-                Memmove = (delegate* unmanaged[SuppressGCTransition]<void*, void*, nuint, void*>)f;
+                s_memmove = (delegate* unmanaged[SuppressGCTransition]<void*, void*, nuint, void*>)f;
                 // Mono's hybrid suspend does not wait for a thread in a native call: no transition needed at any size
                 if (!mono)
                 {
-                    MemmoveLong = (delegate* unmanaged<void*, void*, nuint, void*>)f;
+                    s_memmoveLong = (delegate* unmanaged<void*, void*, nuint, void*>)f;
                 }
             }
         }
@@ -59,7 +59,7 @@ public static unsafe class FastCopy
     }
 
     /// <summary>Whether copies go to the C library.</summary>
-    public static bool Native => Memmove != null;
+    public static bool Native => s_memmove != null;
 
     [MethodImpl(MethodImplOptions.AggressiveInlining)]
     public static void Copy(ReadOnlySpan<byte> src, Span<byte> dst)
@@ -69,12 +69,12 @@ public static unsafe class FastCopy
             throw new ArgumentException("destination too short", nameof(dst));
         }
 
-        if (Memmove != null && src.Length >= NativeThreshold)
+        if (s_memmove != null && src.Length >= NativeThreshold)
         {
             fixed (byte* s = src)
             fixed (byte* d = dst)
             {
-                Memmove(d, s, (nuint)src.Length);
+                s_memmove(d, s, (nuint)src.Length);
             }
         }
         else

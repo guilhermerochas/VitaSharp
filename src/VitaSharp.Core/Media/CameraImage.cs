@@ -68,13 +68,13 @@ public static class CameraImage
         for (int y = 0; y < height; y++)
         {
             int sy = bottomUp ? height - 1 - y : y;
-            var o = dst.Slice(y * width * 4, width * 4);
+            Span<byte> o = dst.Slice(y * width * 4, width * 4);
             switch (f)
             {
                 case CameraHostFormat.Yuyv:
                 case CameraHostFormat.Uyvy:
                 {
-                    var row = src.Slice(sy * stride, stride);
+                    ReadOnlySpan<byte> row = src.Slice(sy * stride, stride);
                     bool uyvy = f == CameraHostFormat.Uyvy;
                     for (int x = 0; x + 1 < width; x += 2)
                     {
@@ -94,8 +94,8 @@ public static class CameraImage
                 case CameraHostFormat.Nv12:
                 case CameraHostFormat.Nv21:
                 {
-                    var yRow = src.Slice(sy * width, width);
-                    var uvRow = src.Slice(width * height + (sy / 2) * width);
+                    ReadOnlySpan<byte> yRow = src.Slice(sy * width, width);
+                    ReadOnlySpan<byte> uvRow = src.Slice(width * height + (sy / 2) * width);
                     bool nv21 = f == CameraHostFormat.Nv21;
                     for (int x = 0; x < width; x++)
                     {
@@ -107,7 +107,7 @@ public static class CameraImage
                 }
                 case CameraHostFormat.Bgr24:
                 {
-                    var row = src.Slice(sy * stride, width * 3);
+                    ReadOnlySpan<byte> row = src.Slice(sy * stride, width * 3);
                     for (int x = 0; x < width; x++)
                     {
                         o[x * 4] = row[x * 3 + 2];
@@ -119,7 +119,7 @@ public static class CameraImage
                 }
                 case CameraHostFormat.Bgra32:
                 {
-                    var row = src.Slice(sy * stride, width * 4);
+                    ReadOnlySpan<byte> row = src.Slice(sy * stride, width * 4);
                     for (int x = 0; x < width; x++)
                     {
                         o[x * 4] = row[x * 4 + 2];
@@ -136,7 +136,7 @@ public static class CameraImage
         }
     }
 
-    static void YuvToRgb(int y, int u, int v, Span<byte> o)
+    private static void YuvToRgb(int y, int u, int v, Span<byte> o)
     {
         int c = (y - 16) * 298, d = u - 128, e = v - 128;
         o[0] = Clamp((c + 409 * e + 128) >> 8);
@@ -145,7 +145,7 @@ public static class CameraImage
         o[3] = 255;
     }
 
-    static byte Clamp(int v) => (byte)(v < 0 ? 0 : v > 255 ? 255 : v);
+    private static byte Clamp(int v) => (byte)(v < 0 ? 0 : v > 255 ? 255 : v);
 
     // ------------------------------------------------------------------ resampling
 
@@ -200,10 +200,10 @@ public static class CameraImage
 
             int iy = Math.Min((int)fy, sh - 1);
             int wy = iy + 1 < sh ? (int)((fy - iy) * 256) : 0;
-            var r0 = src.Slice(iy * sw * 4, sw * 4);
-            var r1 = src.Slice(Math.Min(iy + 1, sh - 1) * sw * 4, sw * 4);
+            ReadOnlySpan<byte> r0 = src.Slice(iy * sw * 4, sw * 4);
+            ReadOnlySpan<byte> r1 = src.Slice(Math.Min(iy + 1, sh - 1) * sw * 4, sw * 4);
             int oy = flip ? dh - 1 - y : y;
-            var o = dst.Slice(oy * dw * 4, dw * 4);
+            Span<byte> o = dst.Slice(oy * dw * 4, dw * 4);
             for (int x = 0; x < dw; x++)
             {
                 int a = xi[x] * 4, b = Math.Min(xi[x] + 1, sw - 1) * 4, wx = xf[x];
@@ -259,8 +259,8 @@ public static class CameraImage
                         break;
                     }
 
-                    var s = rgba.Slice(y * width * 4, width * 4);
-                    var d = iPlane.Slice(off, width * 4);
+                    ReadOnlySpan<byte> s = rgba.Slice(y * width * 4, width * 4);
+                    Span<byte> d = iPlane.Slice(off, width * 4);
                     if (!argb)
                     {
                         s.CopyTo(d);
@@ -285,7 +285,7 @@ public static class CameraImage
                         break;
                     }
 
-                    var s = rgba.Slice(y * width * 4, width * 4);
+                    ReadOnlySpan<byte> s = rgba.Slice(y * width * 4, width * 4);
                     for (int x = 0; x < width; x++)
                     {
                         iPlane[off + x] = Luma(s[x * 4], s[x * 4 + 1], s[x * 4 + 2], fullRange);
@@ -301,7 +301,7 @@ public static class CameraImage
                         break;
                     }
 
-                    var s = rgba.Slice(y * width * 4, width * 4);
+                    ReadOnlySpan<byte> s = rgba.Slice(y * width * 4, width * 4);
                     for (int x = 0; x + 1 < width; x += 2)
                     {
                         int p = x * 4;
@@ -326,7 +326,7 @@ public static class CameraImage
                         break;
                     }
 
-                    var s = rgba.Slice(y * width * 4, width * 4);
+                    ReadOnlySpan<byte> s = rgba.Slice(y * width * 4, width * 4);
                     for (int x = 0; x < width; x++)
                     {
                         iPlane[off + x] = Luma(s[x * 4], s[x * 4 + 1], s[x * 4 + 2], fullRange);
@@ -343,8 +343,8 @@ public static class CameraImage
                     }
 
                     int y0 = is420 ? cy * 2 : cy, y1 = is420 ? Math.Min(cy * 2 + 1, height - 1) : cy;
-                    var s0 = rgba.Slice(y0 * width * 4, width * 4);
-                    var s1 = rgba.Slice(y1 * width * 4, width * 4);
+                    ReadOnlySpan<byte> s0 = rgba.Slice(y0 * width * 4, width * 4);
+                    ReadOnlySpan<byte> s1 = rgba.Slice(y1 * width * 4, width * 4);
                     for (int cx = 0; cx < cw; cx++)
                     {
                         int p = cx * 8;

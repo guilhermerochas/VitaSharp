@@ -16,7 +16,7 @@ public readonly record struct InstallProgress(long BytesDone, long BytesTotal, s
     /// <summary>"42% · 380 MB/s · 0:12 left" (just the percentage until the speed is known).</summary>
     public string Describe(string left = "left")
     {
-        var text = $"{Fraction:P0}";
+        string text = $"{Fraction:P0}";
         if (BytesPerSecond <= 0)
         {
             return text;
@@ -32,13 +32,13 @@ public readonly record struct InstallProgress(long BytesDone, long BytesTotal, s
     }
 }
 
-/// <summary>Reports <see cref="InstallProgress"/> at most every <see cref="Interval"/> (the UIs redraw on each report).</summary>
+/// <summary>Reports <see cref="InstallProgress"/> at most every <see cref="s_interval"/> (the UIs redraw on each report).</summary>
 internal sealed class InstallProgressReporter(Action<InstallProgress>? sink, long total)
 {
-    static readonly TimeSpan Interval = TimeSpan.FromMilliseconds(100);
-    readonly Stopwatch _clock = Stopwatch.StartNew();
-    TimeSpan? _last;
-    long _done;
+    private static readonly TimeSpan s_interval = TimeSpan.FromMilliseconds(100);
+    private readonly Stopwatch _clock = Stopwatch.StartNew();
+    private TimeSpan? _last;
+    private long _done;
 
     public long Done => Interlocked.Read(ref _done);
     public TimeSpan Elapsed => _clock.Elapsed;
@@ -51,8 +51,8 @@ internal sealed class InstallProgressReporter(Action<InstallProgress>? sink, lon
             return;
         }
 
-        var now = _clock.Elapsed;
-        if (_last is { } last && now - last < Interval)
+        TimeSpan now = _clock.Elapsed;
+        if (_last is { } last && now - last < s_interval)
         {
             return;
         }

@@ -14,7 +14,7 @@ namespace VitaSharp.Core.SaveState;
 /// </summary>
 public static class SaveStates
 {
-    const string SysSection = "system", FunctionsSection = "hle.functions", ObjectsSection = "kernel.objects",
+    private const string SysSection = "system", FunctionsSection = "hle.functions", ObjectsSection = "kernel.objects",
         BlocksSection = "memory.blocks", MemPrefix = "mem:", ModulePrefix = "hle:";
 
     /// <summary>Raised after a state was loaded (front-ends refresh what they show of the game).</summary>
@@ -27,7 +27,7 @@ public static class SaveStates
     public static string SlotPath(string dataRoot, string titleId, int slot) =>
         Path.Combine(Folder(dataRoot, titleId), slot == 0 ? "quick.vss" : $"slot{slot}.vss");
 
-    static void CheckSystem(Emulator emu)
+    private static void CheckSystem(Emulator emu)
     {
         if (emu.Parent != null || emu.Vita.Processes.Count != 1)
         {
@@ -56,7 +56,7 @@ public static class SaveStates
     /// </summary>
     public static SaveStateHeader Save(Emulator emu, string path, byte[]? thumbnailPng = null, int timeoutMs = 3000)
     {
-        lock (Gate)
+        lock (s_gate)
         {
             return SaveLocked(emu, path, thumbnailPng, timeoutMs);
         }
@@ -66,9 +66,9 @@ public static class SaveStates
     /// during a load (Tearaway in debug mode) resumed the emulation the load had paused, so the load failed half done
     /// ("the guest clock is restored only while the emulation is paused") and the pre-roll state was taken from
     /// threads being replaced.</summary>
-    static readonly object Gate = new();
+    private static readonly object s_gate = new();
 
-    static SaveStateHeader SaveLocked(Emulator emu, string path, byte[]? thumbnailPng, int timeoutMs)
+    private static SaveStateHeader SaveLocked(Emulator emu, string path, byte[]? thumbnailPng, int timeoutMs)
     {
         CheckSystem(emu);
         CheckModules(emu);
@@ -92,7 +92,7 @@ public static class SaveStates
                 }
 
                 EmulationPause.Pause("save state", @internal: true);
-                why = SafePointProblems(emu, out var kinds);
+                why = SafePointProblems(emu, out Dictionary<GuestThread, GuestThread.SafeKind>? kinds);
                 if (why == null)
                 {
                     emu.Gpu.WaitIdle();
@@ -109,7 +109,7 @@ public static class SaveStates
                     }
                     if (header != null)
                     {
-                        why = SafePointProblems(emu, out var after);
+                        why = SafePointProblems(emu, out Dictionary<GuestThread, GuestThread.SafeKind>? after);
                         if (why == null && seq.Any(p => p.Key.HleSequence != p.Value || after.GetValueOrDefault(p.Key) != kinds[p.Key]))
                         {
                             why = "a thread woke up while the state was taken";
@@ -124,17 +124,17 @@ public static class SaveStates
                                 EmulationPause.Resume("save state");
                             }
 
-                            foreach (var t in held)
+                            foreach (GuestThread t in held)
                             {
                                 t.HoldForSave(false);
                             }
 
                             held.Clear();
                             Directory.CreateDirectory(Path.GetDirectoryName(Path.GetFullPath(path))!);
-                            using (var f = File.Create(tmp))
+                            using (FileStream f = File.Create(tmp))
                             using (var w = new SaveStateWriter(f, header))
                             {
-                                foreach (var (name, data) in sections!)
+                                foreach ((string? name, byte[]? data) in sections!)
                                 {
                                     w.Section(name, data);
                                 }
@@ -172,7 +172,7 @@ public static class SaveStates
                 EmulationPause.Resume("save state");
             }
 
-            foreach (var t in held)
+            foreach (GuestThread t in held)
             {
                 t.HoldForSave(false);
             }
@@ -184,7 +184,7 @@ public static class SaveStates
     /// be waiting for held threads to finish it), and is released and tried again when a scene stays open. Returns
     /// null once every thread is at a safe point (with the emulation still running), else why not.
     /// </summary>
-    static string? HoldBetweenScenes(Emulator emu, List<GuestThread> held, Stopwatch sw, int timeoutMs)
+    private static string? HoldBetweenScenes(Emulator emu, List<GuestThread> held, Stopwatch sw, int timeoutMs)
     {
         string? why = null;
         while (sw.ElapsedMilliseconds < timeoutMs)
@@ -209,7 +209,7 @@ public static class SaveStates
                 continue;
             }
             // a scene stays open: let every thread run, then hold again between two scenes
-            foreach (var t in held)
+            foreach (GuestThread t in held)
             {
                 t.HoldForSave(false);
             }
@@ -227,7 +227,7 @@ public static class SaveStates
     /// </summary>
     public static string? ReplaceBackendBetweenScenes(Emulator emu, Func<Gpu.IGpuBackend?> factory, int timeoutMs = 3000)
     {
-        lock (Gate)
+        lock (s_gate)
         {
             bool wasPaused = EmulationPause.IsPaused;
             var held = new List<GuestThread>();
@@ -249,7 +249,7 @@ public static class SaveStates
                     return $"thread '{scene.Name}' is finishing a GPU scene";
                 }
 
-                var t0 = Stopwatch.GetTimestamp();
+                long t0 = Stopwatch.GetTimestamp();
                 emu.Gpu.WaitIdle();
                 emu.Gpu.ReplaceBackend(factory, sameTitle: true);
                 Log.Info($"GPU backend replaced while running in {Stopwatch.GetElapsedTime(t0).TotalMilliseconds:F0} ms");
@@ -266,7 +266,7 @@ public static class SaveStates
                     EmulationPause.Resume("GPU backend swap");
                 }
 
-                foreach (var t in held)
+                foreach (GuestThread t in held)
                 {
                     t.HoldForSave(false);
                 }
@@ -275,10 +275,10 @@ public static class SaveStates
     }
 
     /// <summary>Holds every guest thread of <paramref name="emu"/> at its next safe point (module service threads run on).</summary>
-    static List<GuestThread> Hold(Emulator emu)
+    private static List<GuestThread> Hold(Emulator emu)
     {
         var held = emu.Kernel.Threads.Where(t => t.HostBody == null).ToList();
-        foreach (var t in held)
+        foreach (GuestThread? t in held)
         {
             t.HoldForSave(true);
         }
@@ -287,10 +287,10 @@ public static class SaveStates
     }
 
     /// <summary>Refuses a save when a module the game used holds state that is not saved yet.</summary>
-    static void CheckModules(Emulator emu)
+    private static void CheckModules(Emulator emu)
     {
         var problems = new List<string>();
-        foreach (var m in emu.Hle.Modules)
+        foreach (HleModule m in emu.Hle.Modules)
         {
             string name = m.GetType().Name;
             if (m is ISnapshotState s)
@@ -311,9 +311,9 @@ public static class SaveStates
         }
     }
 
-    static string? WaitForSafePoint(Emulator emu, int ms, out Dictionary<GuestThread, GuestThread.SafeKind> kinds)
+    private static string? WaitForSafePoint(Emulator emu, int ms, out Dictionary<GuestThread, GuestThread.SafeKind> kinds)
     {
-        var until = Environment.TickCount64 + ms;
+        long until = Environment.TickCount64 + ms;
         while (true)
         {
             string? why = SafePointProblems(emu, out kinds);
@@ -326,7 +326,7 @@ public static class SaveStates
         }
     }
 
-    static string? SafePointProblems(Emulator emu, out Dictionary<GuestThread, GuestThread.SafeKind> kinds)
+    private static string? SafePointProblems(Emulator emu, out Dictionary<GuestThread, GuestThread.SafeKind> kinds)
     {
         kinds = new();
         if (emu.OpenSceneThread is { } scene)
@@ -334,9 +334,9 @@ public static class SaveStates
             return $"thread '{scene.Name}' is finishing a GPU scene";
         }
 
-        foreach (var t in emu.Kernel.Threads)
+        foreach (GuestThread t in emu.Kernel.Threads)
         {
-            if (t.SafePointProblem(out var k) is { } why)
+            if (t.SafePointProblem(out GuestThread.SafeKind k) is { } why)
             {
                 return why;
             }
@@ -347,7 +347,7 @@ public static class SaveStates
     }
 
     /// <summary>Takes the whole state into memory (the emulation is stopped); the file is written afterwards.</summary>
-    static (SaveStateHeader, List<(string, byte[])>) Capture(Emulator emu, Dictionary<GuestThread, GuestThread.SafeKind> kinds, byte[]? thumbnailPng)
+    private static (SaveStateHeader, List<(string, byte[])>) Capture(Emulator emu, Dictionary<GuestThread, GuestThread.SafeKind> kinds, byte[]? thumbnailPng)
     {
         var header = new SaveStateHeader
         {
@@ -379,7 +379,7 @@ public static class SaveStates
         list.Add((ObjectsSection, KernelSnapshot.Save(emu, kinds).Data.ToArray()));
 
         var used = new HashSet<string>();
-        foreach (var m in emu.Hle.Modules)
+        foreach (HleModule m in emu.Hle.Modules)
         {
             if (m is not ISnapshotState s)
             {
@@ -393,13 +393,13 @@ public static class SaveStates
         }
 
         long t0 = Stopwatch.GetTimestamp(), raw = 0;
-        var blocks = emu.Memory.SnapshotBlocks();
+        List<GuestMemory.Block> blocks = emu.Memory.SnapshotBlocks();
         var bt = new SnapshotWriter();
         GuestMemory.WriteBlockTable(bt, blocks);
         list.Add((BlocksSection, bt.Data.ToArray()));
-        foreach (var b in blocks)
+        foreach (GuestMemory.Block b in blocks)
         {
-            var data = emu.Memory.CopyContents(b);
+            byte[] data = emu.Memory.CopyContents(b);
             list.Add((MemPrefix + b.Address.ToString("X8"), data));
             raw += data.Length;
         }
@@ -408,7 +408,7 @@ public static class SaveStates
     }
 
     /// <summary>A module's section name: its type name (numbered when a type is registered more than once).</summary>
-    static string ModuleKey(HleModule m, HashSet<string> used)
+    private static string ModuleKey(HleModule m, HashSet<string> used)
     {
         string name = m.GetType().Name;
         for (int i = 2; !used.Add(name); i++)
@@ -447,9 +447,9 @@ public static class SaveStates
     {
         try
         {
-            using var file = File.OpenRead(path);
+            using FileStream file = File.OpenRead(path);
             using var reader = new SaveStateReader(file);
-            while (reader.Next(out var name, out _))
+            while (reader.Next(out string? name, out _))
             {
                 if (name != ObjectsSection)
                 {
@@ -467,7 +467,7 @@ public static class SaveStates
                     r.ReadStringNotNull();
                     r.ReadInt32();
                     r.ReadInt32();
-                    var b = r.ReadBlock();
+                    SnapshotReader b = r.ReadBlock();
                     if (kind == KernelSnapshot.Module && (first == null || uid < first.Value.Uid))
                     {
                         first = (uid, b.ReadStringNotNull());
@@ -510,7 +510,7 @@ public static class SaveStates
         Log.Info($"Load state: the state was saved in {program}, {emu.MainModule.Path} is running: LoadExec {program} first");
         status?.Invoke($"Abrindo {program[5..].TrimStart('/')} para carregar o estado...");
         emu.RequestExec(program, []);
-        var until = Environment.TickCount64 + timeoutMs;
+        long until = Environment.TickCount64 + timeoutMs;
         while (emu.ExecRequest != null || emu.Execing || !emu.Running || emu.MainModule == null)
         {
             if (Environment.TickCount64 > until)
@@ -542,7 +542,7 @@ public static class SaveStates
     /// </summary>
     public static void Load(Emulator emu, string path, Func<Gpu.IGpuBackend?>? backendFactory = null)
     {
-        lock (Gate)
+        lock (s_gate)
         {
             LoadLocked(emu, path, backendFactory);
         }
@@ -550,13 +550,13 @@ public static class SaveStates
         Loaded?.Invoke(emu);
     }
 
-    static void LoadLocked(Emulator emu, string path, Func<Gpu.IGpuBackend?>? backendFactory)
+    private static void LoadLocked(Emulator emu, string path, Func<Gpu.IGpuBackend?>? backendFactory)
     {
         CheckSystem(emu);
         var sw = Stopwatch.StartNew();
         SaveStateHeader header;
         var sections = new List<(string Name, byte[] Data)>();
-        using (var file = File.OpenRead(path))
+        using (FileStream file = File.OpenRead(path))
         using (var reader = new SaveStateReader(file))
         {
             header = reader.Header;
@@ -565,13 +565,13 @@ public static class SaveStates
                 throw new SaveStateIncompatibleException(why);
             }
             // decompressed while the game still runs
-            while (reader.Next(out var name, out _))
+            while (reader.Next(out string? name, out _))
             {
                 sections.Add((name, reader.ReadAll()));
             }
         }
         long readMs = sw.ElapsedMilliseconds;
-        foreach (var m in emu.Hle.Modules)
+        foreach (HleModule m in emu.Hle.Modules)
         {
             if (m is not ISnapshotState && SnapshotSchema.IsStateful(m.GetType()) && emu.Hle.WasUsed(m))
             {
@@ -610,7 +610,7 @@ public static class SaveStates
         }
         finally
         {
-            foreach (var t in held)
+            foreach (GuestThread t in held)
             {
                 t.HoldForSave(false);
             }
@@ -632,9 +632,9 @@ public static class SaveStates
     /// stays open: the thread that opened it may wait for a held thread to finish it (Tearaway's SandPit, whose scenes
     /// are fed by worker threads, kept one open for the whole 3 s and every load at that point was refused).
     /// </summary>
-    static void HoldForLoad(Emulator emu, List<GuestThread> held)
+    private static void HoldForLoad(Emulator emu, List<GuestThread> held)
     {
-        var until = Environment.TickCount64 + 3000;
+        long until = Environment.TickCount64 + 3000;
         while (true)
         {
             if (held.Count == 0)
@@ -647,11 +647,11 @@ public static class SaveStates
                 held.AddRange(Hold(emu));
             }
             string? busy = null;
-            var settle = Environment.TickCount64 + 300;
+            long settle = Environment.TickCount64 + 300;
             do
             {
                 busy = null;
-                foreach (var t in emu.Kernel.Threads)
+                foreach (GuestThread t in emu.Kernel.Threads)
                 {
                     if (t.HostBody != null && t.IsLive && t.SafePointProblem(out _) is { } p)
                     {
@@ -681,7 +681,7 @@ public static class SaveStates
                 continue;
             }
             // a scene stays open: let every thread run, then hold again between two scenes
-            foreach (var t in held)
+            foreach (GuestThread t in held)
             {
                 t.HoldForSave(false);
             }
@@ -691,16 +691,16 @@ public static class SaveStates
         }
     }
 
-    static void StopThreads(Emulator emu)
+    private static void StopThreads(Emulator emu)
     {
         var stopping = emu.Kernel.Threads.Where(t => t.HostBody == null && t.IsLive).ToList();
-        foreach (var t in stopping)
+        foreach (GuestThread? t in stopping)
         {
             t.RequestStop();
             t.WakeFromSuspend();
         }
-        var deadline = Environment.TickCount64 + 5000;
-        foreach (var t in stopping)
+        long deadline = Environment.TickCount64 + 5000;
+        foreach (GuestThread? t in stopping)
         {
             if (!t.WaitForExit((int)Math.Max(1, deadline - Environment.TickCount64)))
             {
@@ -715,20 +715,20 @@ public static class SaveStates
     /// none) must find them waiting. Started all at once, a running thread could signal first and the waiter then
     /// waited forever (Jak 1: main on DMAPut, GOAL on DMADone in 2 of 4 loads).
     /// </summary>
-    static void StartRestored(List<GuestThread> restored)
+    private static void StartRestored(List<GuestThread> restored)
     {
-        var waiting = restored.Where(t => t.ReissuesWait).ToList();
-        var running = restored.Where(t => !t.ReissuesWait).ToList();
+        var waiting = restored.Where(t => t._reissuesWait).ToList();
+        var running = restored.Where(t => !t._reissuesWait).ToList();
         bool order = waiting.Count > 0 && running.Count > 0;
         if (order)
         {
-            foreach (var t in running)
+            foreach (GuestThread? t in running)
             {
                 t.HoldForSave(true);
             }
         }
 
-        foreach (var t in restored)
+        foreach (GuestThread t in restored)
         {
             t.StartRestored();
         }
@@ -739,7 +739,7 @@ public static class SaveStates
         }
         // the emulation is paused here: let only the waiting threads run until their waits are queued
         EmulationPause.Resume("load state: reissuing waits");
-        var until = Environment.TickCount64 + 2000;
+        long until = Environment.TickCount64 + 2000;
         while (waiting.Any(t => !t.WaitReissued) && Environment.TickCount64 < until)
         {
             Thread.Sleep(1);
@@ -751,16 +751,16 @@ public static class SaveStates
         }
 
         EmulationPause.Pause("load state: reissuing waits", @internal: true);
-        foreach (var t in running)
+        foreach (GuestThread? t in running)
         {
             t.HoldForSave(false);
         }
     }
 
-    static List<GuestThread> LoadCore(Emulator emu, List<(string Name, byte[] Data)> list, Func<Gpu.IGpuBackend?>? backendFactory)
+    private static List<GuestThread> LoadCore(Emulator emu, List<(string Name, byte[] Data)> list, Func<Gpu.IGpuBackend?>? backendFactory)
     {
         emu.Gpu.WaitIdle();
-        var t0 = Stopwatch.GetTimestamp();
+        long t0 = Stopwatch.GetTimestamp();
         if (backendFactory != null)
         {
             emu.Gpu.ReplaceBackend(backendFactory, sameTitle: true);
@@ -772,7 +772,7 @@ public static class SaveStates
 
         var sections = new Dictionary<string, byte[]>(StringComparer.Ordinal);
         Dictionary<uint, GuestMemory.Block>? blocks = null;
-        foreach (var (name, data) in list)
+        foreach ((string? name, byte[]? data) in list)
         {
             if (name == BlocksSection)
             {
@@ -781,7 +781,7 @@ public static class SaveStates
             else if (name.StartsWith(MemPrefix, StringComparison.Ordinal))
             {
                 uint addr = Convert.ToUInt32(name[MemPrefix.Length..], 16);
-                if (blocks == null || !blocks.TryGetValue(addr, out var b))
+                if (blocks == null || !blocks.TryGetValue(addr, out GuestMemory.Block? b))
                 {
                     throw new SnapshotException($"memory block 0x{addr:X8} is missing from the block table");
                 }
@@ -820,12 +820,12 @@ public static class SaveStates
             int rebound = emu.Linker.RebindHleStubs(emu.Hle.ReplaceGuestCode());
             Log.Info($"Load state: {rebound} HLE import stubs bound to this build's routines");
         }
-        var restored = KernelSnapshot.Load(emu, new SnapshotReader(Need(ObjectsSection)));
+        List<GuestThread> restored = KernelSnapshot.Load(emu, new SnapshotReader(Need(ObjectsSection)));
         emu.Kernel.MainThread = emu.Kernel.Objects.Get<GuestThread>(mainUid);
         GuestClock.RestoreMicroseconds(clockUs);
 
         var used = new HashSet<string>();
-        foreach (var m in emu.Hle.Modules)
+        foreach (HleModule m in emu.Hle.Modules)
         {
             if (m is not ISnapshotState s)
             {
@@ -833,7 +833,7 @@ public static class SaveStates
             }
 
             string key = ModuleKey(m, used);
-            if (!sections.TryGetValue(ModulePrefix + key, out var data))
+            if (!sections.TryGetValue(ModulePrefix + key, out byte[]? data))
             {
                 throw new SnapshotException($"module {key} has no state in the save state");
             }

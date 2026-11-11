@@ -22,21 +22,21 @@ public static class GameWindowFocus
     }
 
     // windows every Win32 GUI thread owns besides its real window (input method, text services)
-    static readonly string[] HelperClasses = ["IME", "MSCTFIME UI", "Default IME"];
+    private static readonly string[] s_helperClasses = ["IME", "MSCTFIME UI", "Default IME"];
 
     /// <summary>The game window among the process's top-level windows (0 when there is none): an unowned window
     /// with a title that is not an input-method helper, the visible one first.</summary>
     public static nint Pick(IEnumerable<Candidate> windows)
     {
         nint hidden = 0;
-        foreach (var w in windows)
+        foreach (Candidate w in windows)
         {
             if (w.Handle == 0 || w.Owned || w.Title.Length == 0)
             {
                 continue;
             }
 
-            if (HelperClasses.Any(c => w.ClassName.Equals(c, StringComparison.OrdinalIgnoreCase)))
+            if (s_helperClasses.Any(c => w.ClassName.Equals(c, StringComparison.OrdinalIgnoreCase)))
             {
                 continue;
             }

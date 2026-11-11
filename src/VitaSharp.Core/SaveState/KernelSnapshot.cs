@@ -1,5 +1,6 @@
 using VitaSharp.Core.Hle.Modules;
 using VitaSharp.Core.Kernel;
+using VitaSharp.Core.Loader;
 using Mutex = VitaSharp.Core.Kernel.Mutex;
 using Semaphore = VitaSharp.Core.Kernel.Semaphore;
 
@@ -10,7 +11,7 @@ namespace VitaSharp.Core.SaveState;
 /// process, application and module records of the running session are kept (the loaded modules must be the saved
 /// ones, at the same addresses); every other object is recreated from the state.
 /// </summary>
-static class KernelSnapshot
+internal static class KernelSnapshot
 {
     internal const string Thread = "thread", Sema = "sema", Evf = "evf", Mtx = "mutex", Cond = "cond", Pipe = "msgpipe",
         Rw = "rwlock", Cb = "callback", Timer = "timer", SEvent = "simpleevent", ThEvent = "threadevent",
@@ -18,12 +19,12 @@ static class KernelSnapshot
 
     public static SnapshotWriter Save(Emulator emu, Dictionary<GuestThread, GuestThread.SafeKind> kinds)
     {
-        var table = emu.Kernel.Objects;
+        ObjectTable table = emu.Kernel.Objects;
         var w = new SnapshotWriter();
         w.Write(table.NextUid);
-        var all = table.Snapshot();
+        List<KernelObject> all = table.Snapshot();
         w.Write(all.Count);
-        foreach (var o in all)
+        foreach (KernelObject o in all)
         {
             string kind = o switch
             {
@@ -60,7 +61,7 @@ static class KernelSnapshot
                         throw new SnapshotException($"thread {t.Name} belongs to another process");
                     }
 
-                    t.WriteSnapshot(w, kinds.TryGetValue(t, out var k) ? k : GuestThread.SafeKind.Dormant);
+                    t.WriteSnapshot(w, kinds.TryGetValue(t, out GuestThread.SafeKind k) ? k : GuestThread.SafeKind.Dormant);
                     break;
                 case Semaphore s:
                     s.Save(w);
@@ -119,7 +120,7 @@ static class KernelSnapshot
                     break;
                 case ModuleObject mo:
                     w.Write(mo.Module.Path);
-                    w.Write(mo.Module.Segments.TryGetValue(0, out var seg) ? seg.Address : 0);
+                    w.Write(mo.Module.Segments.TryGetValue(0, out SegmentInfo seg) ? seg.Address : 0);
                     break;
             }
             w.EndBlock(at);
@@ -130,8 +131,8 @@ static class KernelSnapshot
     /// <summary>Replaces the object table; returns the restored live threads, to start once everything else is loaded.</summary>
     public static List<GuestThread> Load(Emulator emu, SnapshotReader r)
     {
-        var table = emu.Kernel.Objects;
-        var current = table.Snapshot();
+        ObjectTable table = emu.Kernel.Objects;
+        List<KernelObject> current = table.Snapshot();
         int next = r.ReadInt32();
         int n = r.ReadInt32();
         var objects = new List<KernelObject>(n);
@@ -145,17 +146,17 @@ static class KernelSnapshot
             int uid = r.ReadInt32();
             string name = r.ReadStringNotNull();
             int owner = r.ReadInt32(), open = r.ReadInt32();
-            var b = r.ReadBlock();
+            SnapshotReader b = r.ReadBlock();
             KernelObject o;
             switch (kind)
             {
                 case Thread:
                 {
-                    var t = GuestThread.ReadSnapshot(emu, b, out var k, out int cm, out int cc);
+                    var t = GuestThread.ReadSnapshot(emu, b, out GuestThread.SafeKind k, out int cm, out int cc);
                     if (k == GuestThread.SafeKind.HostBody)
                     {
                         // a module's service thread: the running session's own one carries on under the saved UID
-                        var host = current.OfType<GuestThread>().FirstOrDefault(x => x.HostBody != null && x.Name == t.Name && !hostKept.Contains(x))
+                        GuestThread host = current.OfType<GuestThread>().FirstOrDefault(x => x.HostBody != null && x.Name == t.Name && !hostKept.Contains(x))
                             ?? throw new SnapshotException($"the service thread '{t.Name}' does not exist in this session yet; let the game start further, then load the state");
                         t.Dispose();
                         hostKept.Add(host);
@@ -267,8 +268,8 @@ static class KernelSnapshot
                     // found by file and address, not by UID: a session that booted the program directly (or reached
                     // it through a LoadExec at another moment) numbered its objects differently; the module takes
                     // the saved UID, which the game's memory and the HLE state hold
-                    var mo = current.OfType<ModuleObject>().FirstOrDefault(x => !modulesSeen.Contains(x) && x.Module.Path == path
-                        && (x.Module.Segments.TryGetValue(0, out var s0) ? s0.Address : 0) == seg0)
+                    ModuleObject mo = current.OfType<ModuleObject>().FirstOrDefault(x => !modulesSeen.Contains(x) && x.Module.Path == path
+                        && (x.Module.Segments.TryGetValue(0, out SegmentInfo s0) ? s0.Address : 0) == seg0)
                         ?? throw new SnapshotException($"module {name} ({path}) is not loaded the same way in this session; restart the game and load the state again");
                     modulesSeen.Add(mo);
                     o = mo;
@@ -282,7 +283,7 @@ static class KernelSnapshot
             o.OpenCount = open;
             objects.Add(o);
         }
-        foreach (var mo in current.OfType<ModuleObject>())
+        foreach (ModuleObject mo in current.OfType<ModuleObject>())
         {
             if (!modulesSeen.Contains(mo))
             {
@@ -293,7 +294,7 @@ static class KernelSnapshot
         // the old threads ended; their records and every other old object go (a module may still hold an old thread
         // object, so their CPU state is not freed)
         table.Clear();
-        foreach (var o in objects)
+        foreach (KernelObject o in objects)
         {
             table.Put(o);
         }
@@ -301,12 +302,12 @@ static class KernelSnapshot
         table.NextUid = next;
         // the kernel's module list follows the UIDs the modules took
         emu.Kernel.Modules.Clear();
-        foreach (var mo in modulesSeen)
+        foreach (ModuleObject mo in modulesSeen)
         {
             mo.Module.Uid = mo.Uid;
             emu.Kernel.Modules[mo.Uid] = mo.Module;
         }
-        foreach (var o in objects)
+        foreach (KernelObject o in objects)
         {
             switch (o)
             {
@@ -325,9 +326,9 @@ static class KernelSnapshot
             }
         }
 
-        foreach (var (t, _, c) in condGiveBack)
+        foreach ((GuestThread? t, int _, int c) in condGiveBack)
         {
-            t.CondReissueCount = c;
+            t._condReissueCount = c;
         }
 
         return live;

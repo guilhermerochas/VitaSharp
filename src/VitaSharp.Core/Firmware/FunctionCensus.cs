@@ -15,8 +15,8 @@ namespace VitaSharp.Core.Firmware;
 public sealed class FunctionCensus
 {
     /// <summary>Syscall export: a kernel module library user code can call.</summary>
-    const ushort SyscallExport = 0x4000;
-    static ReadOnlySpan<byte> ElfMagic => [0x7F, (byte)'E', (byte)'L', (byte)'F'];
+    private const ushort SyscallExport = 0x4000;
+    private static ReadOnlySpan<byte> ElfMagic => [0x7F, (byte)'E', (byte)'L', (byte)'F'];
 
     /// <summary>Exported functions: NID → (library, module path).</summary>
     public Dictionary<uint, (string Library, string Module)> Exported { get; } = new();
@@ -31,7 +31,7 @@ public sealed class FunctionCensus
     public static FunctionCensus Scan(string fsRoot)
     {
         var c = new FunctionCensus();
-        foreach (var dev in new[] { "os0", "vs0" })
+        foreach (string? dev in new[] { "os0", "vs0" })
         {
             string root = Path.Combine(fsRoot, dev);
             if (!Directory.Exists(root))
@@ -39,7 +39,7 @@ public sealed class FunctionCensus
                 continue;
             }
 
-            foreach (var file in Directory.EnumerateFiles(root, "*", SearchOption.AllDirectories).Order(StringComparer.OrdinalIgnoreCase))
+            foreach (string? file in Directory.EnumerateFiles(root, "*", SearchOption.AllDirectories).Order(StringComparer.OrdinalIgnoreCase))
             {
                 string ext = Path.GetExtension(file).ToLowerInvariant();
                 if (ext is not (".suprx" or ".skprx" or ".self" or ".prx") && !Path.GetFileName(file).Equals("eboot.bin", StringComparison.OrdinalIgnoreCase))
@@ -96,23 +96,23 @@ public sealed class FunctionCensus
                     }
                     c.FirmwareModules++;
                     string where = k == 0 ? vita : $"{vita}/{img.Name}";
-                    foreach (var (lib, _, attr, funcs, _) in img.Exports)
+                    foreach ((string? lib, uint _, ushort attr, uint[]? funcs, uint[] _) in img.Exports)
                     {
                         if (lib.Length == 0 || (kernel && (attr & SyscallExport) == 0))
                         {
                             continue;
                         }
 
-                        foreach (var nid in funcs)
+                        foreach (uint nid in funcs)
                         {
                             c.Exported.TryAdd(nid, (lib, where));
                         }
                     }
                     if (!kernel)
                     {
-                        foreach (var (_, _, funcs) in img.Imports)
+                        foreach ((string _, uint _, uint[]? funcs) in img.Imports)
                         {
-                            foreach (var nid in funcs)
+                            foreach (uint nid in funcs)
                             {
                                 c.SystemImports.TryAdd(nid, where);
                             }
@@ -124,13 +124,13 @@ public sealed class FunctionCensus
         string apps = Path.Combine(fsRoot, "ux0", "app");
         if (Directory.Exists(apps))
         {
-            foreach (var appDir in Directory.EnumerateDirectories(apps).Order(StringComparer.OrdinalIgnoreCase))
+            foreach (string? appDir in Directory.EnumerateDirectories(apps).Order(StringComparer.OrdinalIgnoreCase))
             {
                 string title = Path.GetFileName(appDir);
                 byte[]? klic = TrophySignature.Klicensee(fsRoot, appDir);
                 var imports = new List<uint>();
                 bool any = false;
-                foreach (var file in Directory.EnumerateFiles(appDir, "*", SearchOption.AllDirectories).Order(StringComparer.OrdinalIgnoreCase))
+                foreach (string? file in Directory.EnumerateFiles(appDir, "*", SearchOption.AllDirectories).Order(StringComparer.OrdinalIgnoreCase))
                 {
                     string rel = Path.GetRelativePath(appDir, file).Replace('\\', '/');
                     if (rel.StartsWith("sce_sys/", StringComparison.OrdinalIgnoreCase))
@@ -148,7 +148,7 @@ public sealed class FunctionCensus
                     {
                         var img = ModuleImage.Read(SelfDecryptor.ToElf(File.ReadAllBytes(file), klic));
                         any = true;
-                        foreach (var (_, _, funcs) in img.Imports)
+                        foreach ((string _, uint _, uint[]? funcs) in img.Imports)
                         {
                             imports.AddRange(funcs);
                         }
@@ -163,7 +163,7 @@ public sealed class FunctionCensus
                     c.Games++;
                 }
 
-                foreach (var nid in imports)
+                foreach (uint nid in imports)
                 {
                     c.GameImports.TryAdd(nid, title);
                 }

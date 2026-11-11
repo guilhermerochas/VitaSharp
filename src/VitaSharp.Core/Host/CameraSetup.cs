@@ -21,7 +21,7 @@ public readonly record struct CameraSpec(CameraSpecKind Kind, string Value)
 
     public static CameraSpec Parse(string? value)
     {
-        var v = value?.Trim().Trim('"') ?? "";
+        string v = value?.Trim().Trim('"') ?? "";
         if (v.Length == 0)
         {
             return Default;
@@ -121,7 +121,7 @@ public readonly record struct CameraSpec(CameraSpecKind Kind, string Value)
 /// </summary>
 public sealed class FacingCameras : ICameraSource
 {
-    readonly ICameraSource?[] _sources;
+    private readonly ICameraSource?[] _sources;
 
     public FacingCameras(ICameraSource? front, ICameraSource? back) => _sources = [front, back];
 
@@ -132,7 +132,7 @@ public sealed class FacingCameras : ICameraSource
 
     public ICameraStream? Open(CameraFacing facing, int width, int height, int fps)
     {
-        var src = this[facing];
+        ICameraSource? src = this[facing];
         if (src == null)
         {
             Log.Info($"Camera: {facing} camera set to none, grey frames");
@@ -143,7 +143,7 @@ public sealed class FacingCameras : ICameraSource
 
     public void Dispose()
     {
-        foreach (var s in _sources.Where(s => s != null).Distinct())
+        foreach (ICameraSource? s in _sources.Where(s => s != null).Distinct())
         {
             s!.Dispose();
         }
@@ -153,9 +153,9 @@ public sealed class FacingCameras : ICameraSource
 /// <summary>A still picture as a Vita camera (tells the cameras apart, games without a webcam, repeatable tests).</summary>
 public sealed class StillImageCamera : ICameraSource
 {
-    readonly string _name;
-    readonly byte[] _rgba;
-    readonly int _w, _h;
+    private readonly string _name;
+    private readonly byte[] _rgba;
+    private readonly int _w, _h;
 
     public StillImageCamera(string name, byte[] rgba, int width, int height)
     {
@@ -173,7 +173,7 @@ public sealed class StillImageCamera : ICameraSource
     {
         try
         {
-            var (rgba, w, h) = Decode(File.ReadAllBytes(path), path);
+            (byte[]? rgba, int w, int h) = Decode(File.ReadAllBytes(path), path);
             return new StillImageCamera(Path.GetFileName(path), rgba, w, h);
         }
         catch (Exception e)
@@ -203,8 +203,8 @@ public sealed class StillImageCamera : ICameraSource
     public static (byte[] Rgba, int W, int H) JpegToRgba(JpegImage img)
     {
         int w = img.Info.Width, h = img.Info.Height;
-        var rgba = new byte[w * h * 4];
-        var y = img.Planes[0];
+        byte[] rgba = new byte[w * h * 4];
+        JpegPlane y = img.Planes[0];
         bool gray = img.Info.Gray || img.Planes.Length < 3;
         int hd = img.Info.HDiv, vd = img.Info.VDiv;
         for (int r = 0; r < h; r++)
@@ -219,8 +219,8 @@ public sealed class StillImageCamera : ICameraSource
                 }
                 else
                 {
-                    var cbP = img.Planes[1];
-                    var crP = img.Planes[2];
+                    JpegPlane cbP = img.Planes[1];
+                    JpegPlane crP = img.Planes[2];
                     int ci = r / vd * cbP.Stride + c / hd;
                     int cb = cbP.Data[ci] - 128, cr = crP.Data[ci] - 128;
                     rgba[o] = Clamp(Y + (91881 * cr >> 16));
@@ -250,7 +250,7 @@ public sealed class StillImageCamera : ICameraSource
     {
     }
 
-    sealed class Stream : ICameraStream
+    private sealed class Stream : ICameraStream
     {
         public CameraFrameBuffer Frames { get; } = new();
         public void Dispose()

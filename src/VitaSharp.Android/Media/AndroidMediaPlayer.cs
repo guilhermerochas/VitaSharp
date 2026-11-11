@@ -155,19 +155,19 @@ public sealed unsafe class AndroidMediaPlayer : MediaPlayerBase
     {
         try
         {
-            while (!_stop)
+            while (!StopRequested)
             {
-                lock (_lock)
+                lock (SyncRoot)
                 {
-                    while (!_stop && _seekRequestUs < 0 && (_demuxDone || (HasVideo ? _videoQueue.Count >= MaxVideoFrames : _audioQueue.Count >= MaxAudioChunks)
-                                                           || _audioQueue.Count >= MaxAudioChunks))
-                        Monitor.Wait(_lock, 50);
-                    if (_stop)
+                    while (!StopRequested && SeekRequestUs < 0 && (DemuxDone || (HasVideo ? VideoQueue.Count >= MaxVideoFrames : AudioQueue.Count >= MaxAudioChunks)
+                                                           || AudioQueue.Count >= MaxAudioChunks))
+                        Monitor.Wait(SyncRoot, 50);
+                    if (StopRequested)
                         break;
-                    if (_seekRequestUs >= 0)
+                    if (SeekRequestUs >= 0)
                     {
-                        Rewind(_seekRequestUs);
-                        _seekRequestUs = -1;
+                        Rewind(SeekRequestUs);
+                        SeekRequestUs = -1;
                     }
                 }
                 var ex = _extractor!;
@@ -183,8 +183,8 @@ public sealed unsafe class AndroidMediaPlayer : MediaPlayerBase
                         Rewind(0);
                         continue;
                     }
-                    lock (_lock)
-                        _demuxDone = true;
+                    lock (SyncRoot)
+                        DemuxDone = true;
                     continue;
                 }
                 int size = ReadSample(ex);
@@ -204,8 +204,8 @@ public sealed unsafe class AndroidMediaPlayer : MediaPlayerBase
         catch (Exception e)
         {
             Log.Error($"AvPlayer decoder: {e.Message}");
-            lock (_lock)
-                _demuxDone = true;
+            lock (SyncRoot)
+                DemuxDone = true;
         }
     }
 
@@ -314,7 +314,7 @@ public sealed unsafe class AndroidMediaPlayer : MediaPlayerBase
                     using var buf = c.GetOutputBuffer(idx)!;
                     // 16-bit PCM, the decoders' default output encoding
                     var pcm = new ReadOnlySpan<short>((byte*)buf.GetDirectBufferAddress() + _audioInfo.Offset, _audioInfo.Size / 2);
-                    var samples = RentBuffer(_freeSamples, pcm.Length);
+                    var samples = RentBuffer(FreeSamples, pcm.Length);
                     pcm.CopyTo(samples);
                     Enqueue(new AudioChunk(samples, _audioChannels, _audioRate, _audioInfo.PresentationTimeUs));
                 }
@@ -336,9 +336,9 @@ public sealed unsafe class AndroidMediaPlayer : MediaPlayerBase
     {
         if (Interlocked.Exchange(ref _disposed, 1) != 0)
             return;
-        _stop = true;
-        lock (_lock)
-            Monitor.PulseAll(_lock);
+        StopRequested = true;
+        lock (SyncRoot)
+            Monitor.PulseAll(SyncRoot);
         if (_thread.IsAlive && Thread.CurrentThread != _thread && !_thread.Join(10_000))
         {
             Log.Warn("AvPlayer decoder thread did not stop within 10 s; leaking its decoders");

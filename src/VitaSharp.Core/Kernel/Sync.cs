@@ -11,12 +11,12 @@ public static class Wait
     /// Cortex-A9): tens of microseconds. Host wake-ups take ~1 us, which makes job systems that measure their own
     /// synchronisation-heavy work (physics steps with per-step time budgets) behave differently; 0 disables.
     /// VITASHARP_SYSCALL_LATENCY_US overrides it (timing bisection).</summary>
-    public static int SyscallLatencyUs = int.TryParse(Environment.GetEnvironmentVariable(EnvVars.SyscallLatencyUs), out var lat) ? lat : 30;
+    public static int SyscallLatencyUs = int.TryParse(Environment.GetEnvironmentVariable(EnvVars.SyscallLatencyUs), out int lat) ? lat : 30;
 
     /// <summary>Statistics (PERF sched): host waits inside blocking syscalls, and wake-up latencies served.</summary>
     public static long BlockingWaits, Latencies;
 
-    static void Latency()
+    private static void Latency()
     {
         if (SyscallLatencyUs <= 0 || GuestClock.Turbo)
         {
@@ -47,9 +47,9 @@ public static class Wait
     public static int Until(object sync, Func<bool> ready, long? timeoutUs, Func<int>? abort = null, string what = "")
         => UntilCore(sync, (ready, abort), static s => s.ready(), default, timeoutUs, static s => s.abort?.Invoke() ?? 0, what);
 
-    static int UntilCore<T>(object sync, T state, Func<T, bool> ready, Ptr<uint> timeout, long? limitUs, Func<T, int>? abort, string what)
+    private static int UntilCore<T>(object sync, T state, Func<T, bool> ready, Ptr<uint> timeout, long? limitUs, Func<T, int>? abort, string what)
     {
-        var self = GuestThread.Current;
+        GuestThread? self = GuestThread.Current;
         if (self != null)
         {
             self.Status = ThreadStatus.Waiting;
@@ -159,9 +159,9 @@ public static class Wait
         }
     }
 
-    static long ElapsedUs(long startTicks) => (long)((GuestClock.Ticks - startTicks) * 1_000_000 / Stopwatch.Frequency * TimeScale.Wait);
+    private static long ElapsedUs(long startTicks) => (long)((GuestClock.Ticks - startTicks) * 1_000_000 / Stopwatch.Frequency * TimeScale.Wait);
 
-    static void WriteRemaining(Ptr<uint> timeout, long? limitUs, long startTicks)
+    private static void WriteRemaining(Ptr<uint> timeout, long? limitUs, long startTicks)
     {
         if (timeout.IsNull || !limitUs.HasValue)
         {
@@ -178,26 +178,26 @@ public static class Wait
     /// ~0.3 ms overshoot does not matter (the thread still resumes at the deadline in guest time, CpuCore.WokeAt). The
     /// spin then costs at most a tenth of a core. VITASHARP_DELAY_SPIN=1 spins on every delay (the old behaviour),
     /// =0 on none.</summary>
-    static readonly ulong DelaySpinMinUs = Environment.GetEnvironmentVariable(EnvVars.DelaySpin) switch { "1" => 0, "0" => ulong.MaxValue, _ => 5000 };
+    private static readonly ulong s_delaySpinMinUs = Environment.GetEnvironmentVariable(EnvVars.DelaySpin) switch { "1" => 0, "0" => ulong.MaxValue, _ => 5000 };
 
     /// <summary>Statistics (PERF delays): guest delays per thread name, by length (0, up to 100 us, up to 1 ms, up to
     /// 5 ms, longer).</summary>
     public static readonly System.Collections.Concurrent.ConcurrentDictionary<string, long[]> Delays = new();
 
-    static void CountDelay(GuestThread t, ulong us)
+    private static void CountDelay(GuestThread t, ulong us)
     {
-        var a = Delays.GetOrAdd(t.Name ?? "?", static _ => new long[8]);
+        long[] a = Delays.GetOrAdd(t.Name ?? "?", static _ => new long[8]);
         Interlocked.Increment(ref a[us == 0 ? 0 : us <= 100 ? 1 : us <= 1000 ? 2 : us <= 5000 ? 3 : 4]);
     }
 
     /// <summary>How far ahead of the clock a delay may start because of <see cref="GuestClock.ObservedFloor"/> (a paced
     /// thread runs up to ~1 ms ahead before it sleeps; the cap keeps a stray reading from stretching every delay).</summary>
-    static readonly long MaxObservedLead = Stopwatch.Frequency / 200; // 5 ms
+    private static readonly long s_maxObservedLead = Stopwatch.Frequency / 200; // 5 ms
 
     /// <summary>Plain sleep that stays responsive to emulator shutdown.</summary>
     public static void Sleep(ulong microseconds)
     {
-        var self = GuestThread.Current;
+        GuestThread? self = GuestThread.Current;
         if (self != null)
         {
             CountDelay(self, microseconds);
@@ -214,16 +214,16 @@ public static class Wait
             microseconds = (ulong)SyscallLatencyUs; // a delay cannot be shorter than a reschedule
         }
         // guest time: follows the test speed factor, and turbo mode skips the wait
-        var blocked = Scheduler.Block();
+        Scheduler.Blocked blocked = Scheduler.Block();
         try
         {
             // the delay starts where the thread's emulated CPU time is, and it resumes at the deadline however late the
             // host wakes it (CpuCore.WokeAt): pacing sleeps and timer wake-ups overshoot by fractions of a millisecond
             // nor before the process time the guest has already read (GuestClock.Observed runs ahead of real time by
             // up to a paced thread's lead): on the Vita the process time measured around a delay is never shorter
-            long start = Math.Max(self?.Core.BlockedAt ?? GuestClock.Ticks, Math.Min(GuestClock.ObservedFloor, GuestClock.Ticks + MaxObservedLead));
+            long start = Math.Max(self?.Core.BlockedAt ?? GuestClock.Ticks, Math.Min(GuestClock.ObservedFloor, GuestClock.Ticks + s_maxObservedLead));
             long end = start + GuestClock.FromSeconds(microseconds / 1e6 / TimeScale.Wait), slice = GuestClock.FromSeconds(0.05);
-            bool spin = microseconds >= DelaySpinMinUs, slept = false;
+            bool spin = microseconds >= s_delaySpinMinUs, slept = false;
             // sceKernelDelayThreadCB: callbacks notified during the delay run inside it, as they arrive, and the delay
             // goes on. Jak and Daxter's vblank-callback thread sits in DelayThreadCB(0xFFFFFFFF) and counts vblanks in
             // its callback: run only on return, its callback never ran and the game's vsync counter stood still.
@@ -267,7 +267,7 @@ public static class Wait
                 GuestClock.WaitUntil(Math.Min(end, GuestClock.Ticks + slice), spin);
                 slept = true;
             }
-            if (slept && self != null && Delays.TryGetValue(self.Name ?? "?", out var st))
+            if (slept && self != null && Delays.TryGetValue(self.Name ?? "?", out long[]? st))
             {
                 // statistics: delays that slept on the host, total requested and total overshoot past the deadline (us)
                 Interlocked.Increment(ref st[5]);
@@ -289,8 +289,8 @@ public sealed partial class Semaphore : KernelObject
     public uint Attr;
     public int InitCount, Count, MaxCount;
     public int Waiters;
-    bool _deleted;
-    int _cancelled;
+    private bool _deleted;
+    private int _cancelled;
 
     public int WaitSema(int need, Ptr<uint> timeout)
     {
@@ -380,10 +380,10 @@ public sealed partial class EventFlag : KernelObject
     public uint Attr;
     public uint InitPattern, Pattern;
     public int Waiters;
-    bool _deleted;
-    int _cancelled;
+    private bool _deleted;
+    private int _cancelled;
 
-    bool Matches(uint bits, uint mode) => (mode & WaitOr) != 0 ? (Pattern & bits) != 0 : (Pattern & bits) == bits;
+    private bool Matches(uint bits, uint mode) => (mode & WaitOr) != 0 ? (Pattern & bits) != 0 : (Pattern & bits) == bits;
 
     public int WaitFlag(uint bits, uint mode, Ptr<uint> outBits, Ptr<uint> timeout)
     {
@@ -420,7 +420,7 @@ public sealed partial class EventFlag : KernelObject
         }
     }
 
-    void Consume(uint bits, uint mode)
+    private void Consume(uint bits, uint mode)
     {
         if ((mode & WaitClear) != 0)
         {
@@ -505,22 +505,22 @@ public sealed partial class Mutex : KernelObject
     public const uint LwOwnerOffset = 0, LwCountOffset = 8, LwAttrOffset = 12, LwUidOffset = 16;
     public uint Attr;
     public int InitCount;
-    GuestThread? _owner;
-    int _lockCount;
+    private GuestThread? _owner;
+    private int _lockCount;
     public int Waiters;
     public uint WorkArea; // lightweight mutex work area (0 for normal mutexes)
     /// <summary>The kernel's objects (lightweight mutexes: the owner word holds a UID, resolved through this).</summary>
     public ObjectTable? Threads;
-    bool _deleted;
-    int _cancelled;
+    private bool _deleted;
+    private int _cancelled;
 
     public bool IsLight => WorkArea != 0;
 
     /// <summary>The owner word for stores (its page is marked written).</summary>
-    ref int OwnerWord => ref GuestMemory.Ref<int>(WorkArea + LwOwnerOffset);
+    private ref int OwnerWord => ref GuestMemory.Ref<int>(WorkArea + LwOwnerOffset);
     /// <summary>The owner word, read without marking its page written.</summary>
-    unsafe int OwnerWordValue => Volatile.Read(ref *(int*)GuestMemory.Ptr(WorkArea + LwOwnerOffset));
-    uint OwnerUidWord => (uint)OwnerWordValue & ~Contended;
+    private unsafe int OwnerWordValue => Volatile.Read(ref *(int*)GuestMemory.Ptr(WorkArea + LwOwnerOffset));
+    private uint OwnerUidWord => (uint)OwnerWordValue & ~Contended;
 
     /// <summary>The owning thread (a lightweight mutex: the UID in its work area).</summary>
     public GuestThread? Owner
@@ -572,15 +572,15 @@ public sealed partial class Mutex : KernelObject
         }
     }
 
-    int FailedToOwn => IsLight ? SceError.LW_MUTEX_FAILED_TO_OWN : SceError.MUTEX_FAILED_TO_OWN;
-    int Recursive => IsLight ? SceError.LW_MUTEX_RECURSIVE : SceError.MUTEX_RECURSIVE;
+    private int FailedToOwn => IsLight ? SceError.LW_MUTEX_FAILED_TO_OWN : SceError.MUTEX_FAILED_TO_OWN;
+    private int Recursive => IsLight ? SceError.LW_MUTEX_RECURSIVE : SceError.MUTEX_RECURSIVE;
 
     /// <summary>A lightweight mutex's owner word can be taken: free, or held by a thread that has ended.</summary>
-    bool LightFree(int w) => w == 0 || Threads?.Get<GuestThread>(w & (int)~Contended) is not { } o || o.Status == ThreadStatus.Dormant;
+    private bool LightFree(int w) => w == 0 || Threads?.Get<GuestThread>(w & (int)~Contended) is not { } o || o.Status == ThreadStatus.Dormant;
 
     /// <summary>Takes a lightweight mutex for <paramref name="self"/> if it is free (under this object's lock); keeps
     /// <see cref="Contended"/> when other threads still sleep on it.</summary>
-    bool LightTryAcquire(GuestThread self, int otherWaiters)
+    private bool LightTryAcquire(GuestThread self, int otherWaiters)
     {
         while (true)
         {
@@ -600,7 +600,7 @@ public sealed partial class Mutex : KernelObject
 
     /// <summary>Wait predicate of a lightweight lock: true once the mutex can be taken; otherwise marks it
     /// <see cref="Contended"/> (before the caller sleeps, under this object's lock) so the owner's unlock comes here.</summary>
-    bool LightReady()
+    private bool LightReady()
     {
         while (true)
         {
@@ -624,7 +624,7 @@ public sealed partial class Mutex : KernelObject
 
     /// <summary>Releases a lightweight mutex completely (count 0, owner word 0, which also clears <see cref="Contended"/>:
     /// sleepers set it again when they find it taken) and wakes the sleepers.</summary>
-    void LightRelease()
+    private void LightRelease()
     {
         LockCount = 0;
         Interlocked.Exchange(ref OwnerWord, 0);
@@ -857,10 +857,10 @@ public sealed partial class CondVar : KernelObject
     public Mutex Mutex = null!;
     public uint WorkArea;
     public int Waiters;
-    bool _deleted;
+    private bool _deleted;
     public const uint LwQueuedOffset = 8, LwSelfOffset = 12;
 
-    void PublishQueued(int n)
+    private void PublishQueued(int n)
     {
         if (WorkArea != 0)
         {
@@ -868,15 +868,15 @@ public sealed partial class CondVar : KernelObject
         }
     }
 
-    sealed class Waiter
+    private sealed class Waiter
     {
         public GuestThread Thread = null!;
         public bool Released;
     }
 
-    readonly LinkedList<Waiter> _queue = new();
+    private readonly LinkedList<Waiter> _queue = new();
     /// <summary>Queue nodes of finished waits, reused by later waits (guarded by this object's lock).</summary>
-    readonly Stack<LinkedListNode<Waiter>> _freeNodes = new();
+    private readonly Stack<LinkedListNode<Waiter>> _freeNodes = new();
 
     public int WaitCond(GuestThread self, Ptr<uint> timeout)
     {
@@ -885,17 +885,17 @@ public sealed partial class CondVar : KernelObject
         {
             PublishQueued(_queue.Count + 1); // this waiter, before its mutex goes
             // a wait reissued by a save state load released its mutex before the state was saved
-            count = self.CondReissueCount > 0 ? self.CondReissueCount : Mutex.ReleaseAll(self);
-            self.CondReissueCount = 0;
+            count = self._condReissueCount > 0 ? self._condReissueCount : Mutex.ReleaseAll(self);
+            self._condReissueCount = 0;
             if (count < 0)
             {
                 PublishQueued(_queue.Count);
                 return Mutex.IsLight ? SceError.LW_MUTEX_NOT_OWNED : SceError.MUTEX_NOT_OWNED;
             }
-            self.CondWaitCount = count; // save states: the lock count the reissued wait gives back
+            self._condWaitCount = count; // save states: the lock count the reissued wait gives back
             Waiters++;
-            var node = _freeNodes.Count > 0 ? _freeNodes.Pop() : new LinkedListNode<Waiter>(new Waiter());
-            var w = node.Value;
+            LinkedListNode<Waiter> node = _freeNodes.Count > 0 ? _freeNodes.Pop() : new LinkedListNode<Waiter>(new Waiter());
+            Waiter w = node.Value;
             w.Thread = self;
             w.Released = false;
             _queue.AddLast(node);
@@ -933,7 +933,7 @@ public sealed partial class CondVar : KernelObject
         }
     }
 
-    void Release(LinkedListNode<Waiter> node)
+    private void Release(LinkedListNode<Waiter> node)
     {
         node.Value.Released = true;
         _queue.Remove(node);
@@ -958,7 +958,7 @@ public sealed partial class CondVar : KernelObject
     {
         lock (this)
         {
-            for (var n = _queue.First; n != null; n = n.Next)
+            for (LinkedListNode<Waiter>? n = _queue.First; n != null; n = n.Next)
             {
                 if (n.Value.Thread != target)
                 {
@@ -1013,7 +1013,7 @@ public sealed partial class MsgPipe : KernelObject
     public int BufferSize;
     /// <summary>UID of the thread that created the pipe (sceKernelGetMsgPipeCreatorId).</summary>
     public int CreatorThreadUid;
-    readonly Queue<byte> _data = new();
+    private readonly Queue<byte> _data = new();
     public int SendWaiters, RecvWaiters;
     public int FreeSize
     {
@@ -1025,8 +1025,8 @@ public sealed partial class MsgPipe : KernelObject
             }
         }
     }
-    bool _deleted;
-    int _cancelled;
+    private bool _deleted;
+    private int _cancelled;
     /// <summary>Deleted while a handle opened by name was still open (<see cref="ObjectTable.Delete(MsgPipe)"/>).</summary>
     public bool IsDeleted
     {
@@ -1102,7 +1102,7 @@ public sealed partial class MsgPipe : KernelObject
                         int n = Math.Min(free, size - sent);
                         src.ForEach(sent, n, (a, len) =>
                         {
-                            foreach (var b in GuestMemory.Span(a, len))
+                            foreach (byte b in GuestMemory.Span(a, len))
                             {
                                 _data.Enqueue(b);
                             }
@@ -1172,7 +1172,7 @@ public sealed partial class MsgPipe : KernelObject
                         int n = Math.Min(_data.Count, size - got);
                         dst.ForEach(got, n, (a, len) =>
                         {
-                            var span = GuestMemory.Span(a, len);
+                            Span<byte> span = GuestMemory.Span(a, len);
                             for (int i = 0; i < len; i++)
                             {
                                 span[i] = _data.Dequeue();
@@ -1244,9 +1244,9 @@ public sealed partial class MsgPipe : KernelObject
     /// <summary>The message pipe's own "can receive" / "can send" bits: the web engine's IPC loop waits for 0x10218
     /// (received data | CLOSE | ERROR | DELETE).</summary>
     public const uint EventReceivable = 0x10000, EventSendable = 0x20000;
-    uint _latched;
+    private uint _latched;
 
-    uint Pattern => (_data.Count > 0 ? EventIn | EventReceivable : 0) | (_data.Count < BufferSize ? EventOut | EventSendable : 0)
+    private uint Pattern => (_data.Count > 0 ? EventIn | EventReceivable : 0) | (_data.Count < BufferSize ? EventOut | EventSendable : 0)
         | (_deleted ? EventBits.Delete : 0) | _latched;
 
     /// <summary>A handle to the pipe was opened or closed (<see cref="EventOpen"/>, <see cref="EventClose"/>).</summary>
@@ -1259,7 +1259,7 @@ public sealed partial class MsgPipe : KernelObject
         }
     }
 
-    int TakeEvent(uint waitPattern, Ptr<uint> result)
+    private int TakeEvent(uint waitPattern, Ptr<uint> result)
     {
         uint hit = Pattern & waitPattern;
         result.TrySet(hit);
@@ -1315,8 +1315,8 @@ public sealed partial class RwLock : KernelObject
     public GuestThread? Writer;
     public int WriteCount;
     public int ReadWaiters, WriteWaiters;
-    bool _deleted;
-    int _cancelled;
+    private bool _deleted;
+    private int _cancelled;
 
     public int LockRead(GuestThread self, Ptr<uint> timeout)
     {
@@ -1492,7 +1492,7 @@ public sealed partial class Callback : KernelObject
             Monitor.PulseAll(Owner.WaitLock);
         }
 
-        var s = Owner.CurrentWaitSync;
+        object? s = Owner.CurrentWaitSync;
         if (s != null)
         {
             lock (s)
@@ -1526,9 +1526,9 @@ public sealed partial class TimerObject : KernelObject
     public bool Started, Repeat, Pulse, EventSet;
     public ulong Base, StoppedCount, Interval;
     public ulong NextEvent = ulong.MaxValue;
-    readonly LinkedList<object> _waiters = new();
-    bool _deleted;
-    int _cancelled;
+    private readonly LinkedList<object> _waiters = new();
+    private bool _deleted;
+    private int _cancelled;
 
     public int NumWaiters
     {
@@ -1607,7 +1607,7 @@ public sealed partial class TimerObject : KernelObject
         }
     }
 
-    void Schedule()
+    private void Schedule()
     {
         NextEvent = Clock() + Interval;
         Monitor.PulseAll(this);
@@ -1634,7 +1634,7 @@ public sealed partial class TimerObject : KernelObject
         }
     }
 
-    void Advance(ulong now)
+    private void Advance(ulong now)
     {
         if (Repeat && Interval != 0)
         {
@@ -1646,7 +1646,7 @@ public sealed partial class TimerObject : KernelObject
         }
     }
 
-    int TryTake(Ptr<uint> result, Ptr<ulong> userData, ulong now)
+    private int TryTake(Ptr<uint> result, Ptr<ulong> userData, ulong now)
     {
         result.TrySet(0);
         userData.TrySet(0);
@@ -1691,7 +1691,7 @@ public sealed partial class TimerObject : KernelObject
         return SceError.OK;
     }
 
-    bool Fired(LinkedListNode<object> node, ulong now) => _waiters.First == node && (EventSet || now > NextEvent);
+    private bool Fired(LinkedListNode<object> node, ulong now) => _waiters.First == node && (EventSet || now > NextEvent);
 
     public int Wait(Ptr<uint> result, Ptr<ulong> userData, Ptr<uint> timeout)
     {
@@ -1704,7 +1704,7 @@ public sealed partial class TimerObject : KernelObject
                 return r;
             }
 
-            var node = _waiters.AddLast(new object());
+            LinkedListNode<object> node = _waiters.AddLast(new object());
             int gen = _cancelled;
             ulong start = now;
             long? limit = timeout.IsNull ? null : timeout.Value;
@@ -1757,7 +1757,7 @@ public sealed partial class TimerObject : KernelObject
         }
     }
 
-    void WriteBack(Ptr<uint> timeout, long? limit, ulong start)
+    private void WriteBack(Ptr<uint> timeout, long? limit, ulong start)
     {
         if (limit.HasValue)
         {
@@ -1800,9 +1800,9 @@ public sealed partial class SimpleEvent : KernelObject
     public uint Attr;
     public uint Pattern;
     public ulong LastUserData;
-    bool AutoReset => (Attr & EventBits.AttrAutoReset) != 0;
+    private bool AutoReset => (Attr & EventBits.AttrAutoReset) != 0;
 
-    sealed class Waiter
+    private sealed class Waiter
     {
         public uint WaitPattern;
         public Ptr<uint> Result;
@@ -1814,7 +1814,7 @@ public sealed partial class SimpleEvent : KernelObject
         public AddressSpace? Space;
     }
 
-    readonly LinkedList<Waiter> _waiters = new();
+    private readonly LinkedList<Waiter> _waiters = new();
     public int NumWaiters
     {
         get
@@ -1826,7 +1826,7 @@ public sealed partial class SimpleEvent : KernelObject
         }
     }
 
-    int TryTake(uint waitPattern, Ptr<uint> result, Ptr<ulong> userData)
+    private int TryTake(uint waitPattern, Ptr<uint> result, Ptr<ulong> userData)
     {
         if ((Pattern & waitPattern) == 0)
         {
@@ -1875,7 +1875,7 @@ public sealed partial class SimpleEvent : KernelObject
             LinkedListNode<Waiter> node;
             if ((Attr & EventBits.AttrThPrio) != 0)
             {
-                var at = _waiters.First;
+                LinkedListNode<Waiter>? at = _waiters.First;
                 while (at != null && at.Value.Priority <= w.Priority)
                 {
                     at = at.Next;
@@ -1920,10 +1920,10 @@ public sealed partial class SimpleEvent : KernelObject
             ulong oldData = LastUserData;
             Pattern |= setPattern;
             LastUserData = userData;
-            for (var n = _waiters.First; n != null;)
+            for (LinkedListNode<Waiter>? n = _waiters.First; n != null;)
             {
-                var next = n.Next;
-                var w = n.Value;
+                LinkedListNode<Waiter>? next = n.Next;
+                Waiter w = n.Value;
                 if ((Pattern & w.WaitPattern) != 0)
                 {
                     using (AddressSpace.Use(w.Space))
@@ -1978,7 +1978,7 @@ public sealed partial class SimpleEvent : KernelObject
         lock (this)
         {
             numWait.TrySet((uint)_waiters.Count);
-            foreach (var w in _waiters)
+            foreach (Waiter w in _waiters)
             {
                 w.Code = SceError.WAIT_CANCEL;
             }
@@ -1996,7 +1996,7 @@ public sealed partial class SimpleEvent : KernelObject
         lock (this)
         {
             numWait.TrySet((uint)_waiters.Count);
-            foreach (var w in _waiters)
+            foreach (Waiter w in _waiters)
             {
                 w.Code = SceError.WAIT_CANCEL;
             }
@@ -2012,7 +2012,7 @@ public sealed partial class SimpleEvent : KernelObject
         lock (this)
         {
             // waits that include the DELETE bit end successfully with it, the others with WAIT_DELETE
-            foreach (var w in _waiters)
+            foreach (Waiter w in _waiters)
             {
                 if ((w.WaitPattern & EventBits.Delete) != 0)
                 {

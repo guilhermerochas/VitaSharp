@@ -16,10 +16,10 @@ public static class AudioDiagnostics
 {
     public const double PeriodSeconds = 10;
     /// <summary>Underruns closer together than this belong to one burst.</summary>
-    const double BurstQuietSeconds = 1.0;
+    private const double BurstQuietSeconds = 1.0;
 
     /// <summary>Host time without the time the emulation spent paused: a pause is not a gap between outputs.</summary>
-    static double Now => EmulationPause.ActiveHostTicks / (double)Stopwatch.Frequency;
+    private static double Now => EmulationPause.ActiveHostTicks / (double)Stopwatch.Frequency;
 
     public sealed class PortStats
     {
@@ -34,18 +34,18 @@ public static class AudioDiagnostics
         public IAudioStream? Stream;
         public readonly double OpenedAt = Now;
         public double ClosedAt;
-        internal readonly object Lock = new();
+        internal readonly object _lock = new();
         // totals
         public long Outputs, Silent, Underruns, Gaps;
         public double GapSum, GapMax, LastOutput, LastGap;
-        internal int StreamUnderrunsSeen;
+        internal int _streamUnderrunsSeen;
         // current interval (periodic debug lines)
-        internal long IOutputs, ISilent, IUnderruns, IGaps;
-        internal double IGapSum, IGapMax, IAt = Now;
+        internal long _iOutputs, _iSilent, _iUnderruns, _iGaps;
+        internal double _iGapSum, _iGapMax, _iAt = Now;
         // underrun bursts
-        internal bool InBurst;
-        internal double BurstStart, BurstLast;
-        internal long BurstCount, BurstNumber;
+        internal bool _inBurst;
+        internal double _burstStart, _burstLast;
+        internal long _burstCount, _burstNumber;
         /// <summary>Outputs after an idle pause whose host queue had drained (not underruns).</summary>
         public long IdleResumes;
 
@@ -55,22 +55,22 @@ public static class AudioDiagnostics
             $"{Name} grain {Grain} {Freq} Hz {(Channels == 1 ? "mono" : "stereo")} volume {VolumeL:F2}/{VolumeR:F2}";
     }
 
-    static readonly ConcurrentDictionary<PortStats, byte> Open = new();
-    static readonly ConcurrentQueue<PortStats> Closed = new();
+    private static readonly ConcurrentDictionary<PortStats, byte> s_open = new();
+    private static readonly ConcurrentQueue<PortStats> s_closed = new();
     /// <summary>NGS systems and decoder streams (AvPlayer, Atrac, Audiodec): key -> description.</summary>
-    static readonly ConcurrentDictionary<string, string> Streams = new();
+    private static readonly ConcurrentDictionary<string, string> s_streams = new();
 
     /// <summary>Host output device description (backend, mixer rate, update size, buffering, latency).</summary>
     public static Func<string>? DeviceInfo { get; set; }
 
-    static string Frame => $"f{DebugMode.Frame}";
+    private static string Frame => $"f{DebugMode.Frame}";
 
     // ------------------------------------------------------------------ ports
 
     public static PortStats OpenPort(string name, int grain, int freq, int channels, IAudioStream? stream)
     {
         var p = new PortStats { Name = name, Grain = grain, Freq = freq, Channels = channels, Stream = stream };
-        Open[p] = 0;
+        s_open[p] = 0;
         if (DebugMode.Enabled)
         {
             Log.Info($"[dbg] {Frame} AUDIO open {p.Describe()}, expected {p.ExpectedPerSecond:F1} outputs/s{(stream == null ? ", no host stream (paced by the clock)" : "")}");
@@ -82,7 +82,7 @@ public static class AudioDiagnostics
     /// <summary>Grain, rate or channels changed (sceAudioOutSetConfig), possibly with a new host stream.</summary>
     public static void Reconfigure(PortStats p, int grain, int freq, int channels, IAudioStream? stream)
     {
-        lock (p.Lock)
+        lock (p._lock)
         {
             p.Grain = grain;
             p.Freq = freq;
@@ -90,7 +90,7 @@ public static class AudioDiagnostics
             if (!ReferenceEquals(p.Stream, stream))
             {
                 p.Stream = stream;
-                p.StreamUnderrunsSeen = 0;
+                p._streamUnderrunsSeen = 0;
             }
         }
         if (DebugMode.Enabled)
@@ -101,14 +101,14 @@ public static class AudioDiagnostics
 
     public static void ClosePort(PortStats p)
     {
-        if (!Open.TryRemove(p, out _))
+        if (!s_open.TryRemove(p, out _))
         {
             return;
         }
 
         p.ClosedAt = Now;
-        Closed.Enqueue(p);
-        while (Closed.Count > 64 && Closed.TryDequeue(out _))
+        s_closed.Enqueue(p);
+        while (s_closed.Count > 64 && s_closed.TryDequeue(out _))
         {
         }
         if (DebugMode.Enabled)
@@ -120,19 +120,19 @@ public static class AudioDiagnostics
     /// <summary>sceAppMgrLoadExec replaced the process: its ports count as released, its streams are gone.</summary>
     public static void ProcessEnded()
     {
-        foreach (var p in Open.Keys)
+        foreach (PortStats p in s_open.Keys)
         {
             ClosePort(p);
         }
 
-        Streams.Clear();
+        s_streams.Clear();
     }
 
     /// <summary>One guest output of a grain (called on entry to sceAudioOutOutput, before it blocks).</summary>
     public static void Output(PortStats p, bool silent)
     {
         double now = Now;
-        lock (p.Lock)
+        lock (p._lock)
         {
             if (p.LastOutput > 0)
             {
@@ -145,20 +145,20 @@ public static class AudioDiagnostics
                     p.GapMax = gap;
                 }
 
-                p.IGaps++;
-                p.IGapSum += gap;
-                if (gap > p.IGapMax)
+                p._iGaps++;
+                p._iGapSum += gap;
+                if (gap > p._iGapMax)
                 {
-                    p.IGapMax = gap;
+                    p._iGapMax = gap;
                 }
             }
             p.LastOutput = now;
             p.Outputs++;
-            p.IOutputs++;
+            p._iOutputs++;
             if (silent)
             {
                 p.Silent++;
-                p.ISilent++;
+                p._iSilent++;
             }
         }
     }
@@ -172,17 +172,17 @@ public static class AudioDiagnostics
         }
 
         int u = s.Underruns;
-        if (u == p.StreamUnderrunsSeen)
+        if (u == p._streamUnderrunsSeen)
         {
             return;
         }
 
         int n;
         bool idle;
-        lock (p.Lock)
+        lock (p._lock)
         {
-            n = u - p.StreamUnderrunsSeen;
-            p.StreamUnderrunsSeen = u;
+            n = u - p._streamUnderrunsSeen;
+            p._streamUnderrunsSeen = u;
             idle = ResumedAfterIdle(p);
         }
         if (n <= 0)
@@ -193,7 +193,7 @@ public static class AudioDiagnostics
         // between sounds: that is not a stall of the guest's output, so it is counted apart and not logged
         if (idle)
         {
-            lock (p.Lock)
+            lock (p._lock)
             {
                 p.IdleResumes++;
             }
@@ -209,35 +209,35 @@ public static class AudioDiagnostics
         p.LastGap > Math.Max(IdleGapSeconds, 4.0 * p.Grain / Math.Max(1, p.Freq));
 
     /// <summary>Gap between two outputs from which a port counts as having been idle (no sound to play).</summary>
-    const double IdleGapSeconds = 0.25;
+    private const double IdleGapSeconds = 0.25;
 
-    static void Underrun(PortStats p, int n)
+    private static void Underrun(PortStats p, int n)
     {
         double now = Now;
         bool start;
         double sincePrev;
         long burst;
-        lock (p.Lock)
+        lock (p._lock)
         {
             p.Underruns += n;
-            p.IUnderruns += n;
-            start = !p.InBurst || now - p.BurstLast > BurstQuietSeconds;
+            p._iUnderruns += n;
+            start = !p._inBurst || now - p._burstLast > BurstQuietSeconds;
             if (start)
             {
-                if (p.InBurst)
+                if (p._inBurst)
                 {
                     EndBurstLocked(p);
                 }
 
-                p.InBurst = true;
-                p.BurstStart = now;
-                p.BurstCount = 0;
-                p.BurstNumber++;
+                p._inBurst = true;
+                p._burstStart = now;
+                p._burstCount = 0;
+                p._burstNumber++;
             }
-            p.BurstCount += n;
-            p.BurstLast = now;
+            p._burstCount += n;
+            p._burstLast = now;
             sincePrev = p.LastGap;
-            burst = p.BurstNumber;
+            burst = p._burstNumber;
         }
         if (!start)
         {
@@ -251,16 +251,16 @@ public static class AudioDiagnostics
         }
     }
 
-    static void EndBurstLocked(PortStats p)
+    private static void EndBurstLocked(PortStats p)
     {
-        p.InBurst = false;
+        p._inBurst = false;
         if (DebugMode.Enabled)
         {
-            Log.Info($"[dbg] {Frame} AUDIO underrun burst #{p.BurstNumber} on {p.Name} ended: {p.BurstCount} underruns over {(p.BurstLast - p.BurstStart) * 1000:F0} ms");
+            Log.Info($"[dbg] {Frame} AUDIO underrun burst #{p._burstNumber} on {p.Name} ended: {p._burstCount} underruns over {(p._burstLast - p._burstStart) * 1000:F0} ms");
         }
     }
 
-    static int Pending(PortStats p)
+    private static int Pending(PortStats p)
     {
         try
         {
@@ -276,7 +276,7 @@ public static class AudioDiagnostics
 
     public static void StreamOpened(string key, string description)
     {
-        Streams[key] = description;
+        s_streams[key] = description;
         if (DebugMode.Enabled)
         {
             Log.Info($"[dbg] {Frame} AUDIO open {description}");
@@ -285,7 +285,7 @@ public static class AudioDiagnostics
 
     public static void StreamClosed(string key)
     {
-        if (Streams.TryRemove(key, out var d) && DebugMode.Enabled)
+        if (s_streams.TryRemove(key, out string? d) && DebugMode.Enabled)
         {
             Log.Info($"[dbg] {Frame} AUDIO release {d}");
         }
@@ -302,40 +302,40 @@ public static class AudioDiagnostics
         }
 
         double now = Now;
-        foreach (var p in Open.Keys)
+        foreach (PortStats p in s_open.Keys)
         {
-            lock (p.Lock)
+            lock (p._lock)
             {
-                p.IOutputs = p.ISilent = p.IUnderruns = p.IGaps = 0;
-                p.IGapSum = p.IGapMax = 0;
-                p.IAt = now;
+                p._iOutputs = p._iSilent = p._iUnderruns = p._iGaps = 0;
+                p._iGapSum = p._iGapMax = 0;
+                p._iAt = now;
             }
         }
 
-        if (Open.IsEmpty && Streams.IsEmpty)
+        if (s_open.IsEmpty && s_streams.IsEmpty)
         {
             return;
         }
 
-        foreach (var l in SnapshotLines())
+        foreach (string l in SnapshotLines())
         {
             Log.Info($"[dbg] {Frame} AUDIO snapshot: {l}");
         }
     }
 
-    static IEnumerable<string> SnapshotLines()
+    private static IEnumerable<string> SnapshotLines()
     {
         if (DeviceInfo?.Invoke() is { Length: > 0 } dev)
         {
             yield return "device " + dev;
         }
 
-        foreach (var p in Open.Keys.OrderBy(p => p.Name))
+        foreach (PortStats? p in s_open.Keys.OrderBy(p => p.Name))
         {
             yield return $"{p.Describe()}, host queue {Pending(p)} samples, {Totals(p)}";
         }
 
-        foreach (var s in Streams.OrderBy(k => k.Key))
+        foreach (KeyValuePair<string, string> s in s_streams.OrderBy(k => k.Key))
         {
             yield return s.Value;
         }
@@ -345,42 +345,42 @@ public static class AudioDiagnostics
     public static void Periodic()
     {
         double now = Now;
-        foreach (var p in Open.Keys.OrderBy(p => p.Name))
+        foreach (PortStats? p in s_open.Keys.OrderBy(p => p.Name))
         {
             string line;
-            lock (p.Lock)
+            lock (p._lock)
             {
-                if (p.InBurst && now - p.BurstLast > BurstQuietSeconds)
+                if (p._inBurst && now - p._burstLast > BurstQuietSeconds)
                 {
                     EndBurstLocked(p);
                 }
 
-                double secs = Math.Max(0.001, now - p.IAt);
-                line = $"[dbg] {Frame} AUDIO {p.Name}: {p.IOutputs / secs:F1} outputs/s (expected {p.ExpectedPerSecond:F1}), " +
-                       $"gap avg {(p.IGaps > 0 ? p.IGapSum / p.IGaps * 1000 : 0):F2} ms max {p.IGapMax * 1000:F1} ms (grain {p.Grain * 1000.0 / Math.Max(1, p.Freq):F2} ms), " +
-                       $"host queue {Pending(p)} samples, underruns {p.IUnderruns}, silent {p.ISilent}/{p.IOutputs} over {secs:F1} s";
-                p.IOutputs = p.ISilent = p.IUnderruns = p.IGaps = 0;
-                p.IGapSum = p.IGapMax = 0;
-                p.IAt = now;
+                double secs = Math.Max(0.001, now - p._iAt);
+                line = $"[dbg] {Frame} AUDIO {p.Name}: {p._iOutputs / secs:F1} outputs/s (expected {p.ExpectedPerSecond:F1}), " +
+                       $"gap avg {(p._iGaps > 0 ? p._iGapSum / p._iGaps * 1000 : 0):F2} ms max {p._iGapMax * 1000:F1} ms (grain {p.Grain * 1000.0 / Math.Max(1, p.Freq):F2} ms), " +
+                       $"host queue {Pending(p)} samples, underruns {p._iUnderruns}, silent {p._iSilent}/{p._iOutputs} over {secs:F1} s";
+                p._iOutputs = p._iSilent = p._iUnderruns = p._iGaps = 0;
+                p._iGapSum = p._iGapMax = 0;
+                p._iAt = now;
             }
             Log.Info(line);
         }
     }
 
-    static string Totals(PortStats p)
+    private static string Totals(PortStats p)
     {
         double secs = Math.Max(0.001, (p.ClosedAt > 0 ? p.ClosedAt : Now) - p.OpenedAt);
         double active = p.Gaps > 0 ? p.GapSum : 0;
         return $"{p.Outputs} outputs in {secs:F1} s ({(p.Gaps >= 10 && active > 0 ? $"{p.Gaps / active:F1}" : "-")}/s while active, expected {p.ExpectedPerSecond:F1}), " +
                $"gap avg {(p.Gaps > 0 ? p.GapSum / p.Gaps * 1000 : 0):F2} ms max {p.GapMax * 1000:F1} ms, " +
-               $"underruns {p.Underruns} ({p.Underruns / secs * 60:F1}/min) in {p.BurstNumber} bursts, silent {p.Silent}" +
+               $"underruns {p.Underruns} ({p.Underruns / secs * 60:F1}/min) in {p._burstNumber} bursts, silent {p.Silent}" +
                (p.IdleResumes > 0 ? $", {p.IdleResumes} starts after an idle pause (not underruns)" : "");
     }
 
     /// <summary>End of session (always): device and every port of the session.</summary>
     public static IEnumerable<string> SummaryLines()
     {
-        var all = Closed.Concat(Open.Keys).OrderBy(p => p.OpenedAt).ToList();
+        var all = s_closed.Concat(s_open.Keys).OrderBy(p => p.OpenedAt).ToList();
         if (all.Count == 0)
         {
             yield break;
@@ -391,17 +391,17 @@ public static class AudioDiagnostics
             yield return "AUDIO summary: device " + dev;
         }
 
-        foreach (var p in all)
+        foreach (PortStats? p in all)
         {
             yield return $"AUDIO summary: {p.Describe()}{(p.ClosedAt > 0 ? " (released)" : "")}: {Totals(p)}";
         }
     }
 
     /// <summary>The open ports, then the released ones still remembered (the last 64).</summary>
-    public static List<PortStats> AllPorts() => Open.Keys.OrderBy(p => p.OpenedAt).Concat(Closed).ToList();
+    public static List<PortStats> AllPorts() => s_open.Keys.OrderBy(p => p.OpenedAt).Concat(s_closed).ToList();
 
     /// <summary>The decoder and NGS streams that exist now (descriptions).</summary>
-    public static List<string> StreamDescriptions() => Streams.OrderBy(k => k.Key).Select(k => k.Value).ToList();
+    public static List<string> StreamDescriptions() => s_streams.OrderBy(k => k.Key).Select(k => k.Value).ToList();
 
     /// <summary>Seconds since the port's last output (host time without pauses), -1 when it never output.</summary>
     public static double SecondsSinceOutput(PortStats p) => p.LastOutput > 0 ? Now - p.LastOutput : -1;
@@ -413,19 +413,19 @@ public static class AudioDiagnostics
         sb.AppendLine($"guest frame {DebugMode.Frame}");
         sb.AppendLine("device: " + (DeviceInfo?.Invoke() ?? "(no host audio device: ports are paced by the clock)"));
         sb.AppendLine("open ports:");
-        foreach (var p in Open.Keys.OrderBy(p => p.Name))
+        foreach (PortStats? p in s_open.Keys.OrderBy(p => p.Name))
         {
             sb.AppendLine($"  {p.Describe()}, host queue {Pending(p)} samples, {(p.LastOutput > 0 ? $"last output {(Now - p.LastOutput) * 1000:F0} ms ago" : "no output yet")}; {Totals(p)}");
         }
 
         sb.AppendLine("released ports:");
-        foreach (var p in Closed)
+        foreach (PortStats p in s_closed)
         {
             sb.AppendLine($"  {p.Describe()}: {Totals(p)}");
         }
 
         sb.AppendLine("NGS systems and decoder streams:");
-        foreach (var s in Streams.OrderBy(k => k.Key))
+        foreach (KeyValuePair<string, string> s in s_streams.OrderBy(k => k.Key))
         {
             sb.AppendLine("  " + s.Value);
         }

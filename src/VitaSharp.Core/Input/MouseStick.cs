@@ -43,7 +43,7 @@ public sealed class MouseSettings
 
     /// <summary>The mode for a game: its own choice, else the profile's.</summary>
     public MouseMode ModeFor(string? titleId)
-        => titleId != null && Games.TryGetValue(titleId, out var s) && Enum.TryParse<MouseMode>(s, true, out var m) ? m : Mode;
+        => titleId != null && Games.TryGetValue(titleId, out string? s) && Enum.TryParse<MouseMode>(s, true, out MouseMode m) ? m : Mode;
 
     public static MouseMode Next(MouseMode m) => m switch
     {
@@ -85,9 +85,9 @@ public sealed class MouseSettings
 /// </summary>
 public sealed class MouseStick
 {
-    readonly object _lock = new();
-    float _ax, _ay, _x, _y;
-    long _last;
+    private readonly object _lock = new();
+    private float _ax, _ay, _x, _y;
+    private long _last;
 
     public MouseSettings Settings { get; set; }
 
@@ -126,13 +126,13 @@ public sealed class MouseStick
     /// modes), to combine with the keyboard and controllers (<see cref="InputMapper.Combine"/>).</summary>
     public MappedInput Mapped(MouseMode mode, long nowTicks = 0)
     {
-        var m = MappedInput.Neutral;
+        MappedInput m = MappedInput.Neutral;
         if (mode is not (MouseMode.RightStick or MouseMode.LeftStick))
         {
             return m;
         }
 
-        var (x, y) = Sample(nowTicks);
+        (float x, float y) = Sample(nowTicks);
         if (mode == MouseMode.RightStick)
         {
             m.Rx = x;
@@ -158,7 +158,7 @@ public sealed class MouseStick
             nowTicks = Stopwatch.GetTimestamp();
         }
 
-        var s = Settings;
+        MouseSettings s = Settings;
         lock (_lock)
         {
             double dt = _last == 0 ? 0 : Math.Max(0, (nowTicks - _last) / (double)Stopwatch.Frequency);

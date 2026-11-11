@@ -53,11 +53,11 @@ public static class AudioFrameDecoders
 /// </summary>
 public static class RawAudioFrameLengths
 {
-    const int MaxEntries = 4096;
-    static readonly Dictionary<ulong, List<(int Length, ulong Hash)>> _byPrefix = new();
-    static readonly Queue<ulong> _order = new();
+    private const int MaxEntries = 4096;
+    private static readonly Dictionary<ulong, List<(int Length, ulong Hash)>> s_byPrefix = new();
+    private static readonly Queue<ulong> s_order = new();
 
-    static ulong Prefix(ReadOnlySpan<byte> d) => d.Length >= 8 ? BitConverter.ToUInt64(d) : XxHash64.HashToUInt64(d) | 1UL << 63;
+    private static ulong Prefix(ReadOnlySpan<byte> d) => d.Length >= 8 ? BitConverter.ToUInt64(d) : XxHash64.HashToUInt64(d) | 1UL << 63;
 
     public static void Record(ReadOnlySpan<byte> frame)
     {
@@ -67,11 +67,11 @@ public static class RawAudioFrameLengths
         }
 
         ulong key = Prefix(frame[..Math.Min(8, frame.Length)]), hash = XxHash64.HashToUInt64(frame);
-        lock (_byPrefix)
+        lock (s_byPrefix)
         {
-            if (!_byPrefix.TryGetValue(key, out var list))
+            if (!s_byPrefix.TryGetValue(key, out List<(int Length, ulong Hash)>? list))
             {
-                _byPrefix[key] = list = [];
+                s_byPrefix[key] = list = [];
             }
 
             if (list.Contains((frame.Length, hash)))
@@ -80,13 +80,13 @@ public static class RawAudioFrameLengths
             }
 
             list.Add((frame.Length, hash));
-            _order.Enqueue(key);
-            while (_order.Count > MaxEntries && _order.Dequeue() is var old && _byPrefix.TryGetValue(old, out var l))
+            s_order.Enqueue(key);
+            while (s_order.Count > MaxEntries && s_order.Dequeue() is var old && s_byPrefix.TryGetValue(old, out List<(int Length, ulong Hash)>? l))
             {
                 l.RemoveAt(0);
                 if (l.Count == 0)
                 {
-                    _byPrefix.Remove(old);
+                    s_byPrefix.Remove(old);
                 }
             }
         }
@@ -95,19 +95,19 @@ public static class RawAudioFrameLengths
     /// <summary>The length of a recorded frame at the start of <paramref name="data"/>, or 0.</summary>
     public static int Find(ReadOnlySpan<byte> data)
     {
-        lock (_byPrefix)
+        lock (s_byPrefix)
         {
             // frames shorter than 8 bytes are keyed by their whole content, longer ones by their first 8 bytes; the
             // longest recorded frame that matches wins (a short frame may equal the start of a longer one)
             int best = 0;
             for (int n = Math.Min(8, data.Length); n >= 1 && best == 0; n--)
             {
-                if (!_byPrefix.TryGetValue(Prefix(data[..n]), out var list))
+                if (!s_byPrefix.TryGetValue(Prefix(data[..n]), out List<(int Length, ulong Hash)>? list))
                 {
                     continue;
                 }
 
-                foreach (var (len, hash) in list)
+                foreach ((int len, ulong hash) in list)
                 {
                     if (len > best && len <= data.Length && XxHash64.HashToUInt64(data[..len]) == hash)
                     {
@@ -121,10 +121,10 @@ public static class RawAudioFrameLengths
 
     public static void Clear()
     {
-        lock (_byPrefix)
+        lock (s_byPrefix)
         {
-            _byPrefix.Clear();
-            _order.Clear();
+            s_byPrefix.Clear();
+            s_order.Clear();
         }
     }
 }

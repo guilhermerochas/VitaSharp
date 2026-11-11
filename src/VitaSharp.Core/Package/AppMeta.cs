@@ -14,7 +14,7 @@ namespace VitaSharp.Core.Package;
 public static class AppMeta
 {
     /// <summary>The files of sce_sys the promoter keeps in appmeta (the LiveArea folder is copied as a whole).</summary>
-    static readonly string[] Files = ["param.sfo", "icon0.png", "pic0.png"];
+    private static readonly string[] s_files = ["param.sfo", "icon0.png", "pic0.png"];
 
     /// <summary>
     /// Brings ux0:appmeta in line with ux0:app: writes the metadata of every installed application that has none (or
@@ -29,7 +29,7 @@ public static class AppMeta
         int changed = 0;
         if (Directory.Exists(apps))
         {
-            foreach (var dir in Directory.EnumerateDirectories(apps))
+            foreach (string dir in Directory.EnumerateDirectories(apps))
             {
                 string id = Path.GetFileName(dir);
                 try
@@ -48,7 +48,7 @@ public static class AppMeta
         }
         if (Directory.Exists(metas))
         {
-            foreach (var dir in Directory.EnumerateDirectories(metas))
+            foreach (string dir in Directory.EnumerateDirectories(metas))
             {
                 string id = Path.GetFileName(dir);
                 if (Directory.Exists(Path.Combine(apps, id)) || !IsApplication(Path.Combine(dir, "param.sfo")))
@@ -103,9 +103,9 @@ public static class AppMeta
         string patchSys = Io.Vfs.ResolveCaseInsensitive(Path.Combine(ux0Root, "patch", titleId), "sce_sys");
         string? Source(string name)
         {
-            foreach (var sys in new[] { patchSys, appSys })
+            foreach (string? sys in new[] { patchSys, appSys })
             {
-                var p = Io.Vfs.ResolveCaseInsensitive(sys, name);
+                string p = Io.Vfs.ResolveCaseInsensitive(sys, name);
                 if (File.Exists(p) || Directory.Exists(p))
                 {
                     return p;
@@ -113,24 +113,24 @@ public static class AppMeta
             }
             return null;
         }
-        var sfo = Source("param.sfo");
+        string? sfo = Source("param.sfo");
         if (sfo == null || !File.Exists(Io.Vfs.ResolveCaseInsensitive(app, "eboot.bin")))
         {
             return false;
         }
 
         string meta = Path.Combine(ux0Root, "appmeta", titleId);
-        var dstSfo = Path.Combine(meta, "param.sfo");
+        string dstSfo = Path.Combine(meta, "param.sfo");
         if (!force && File.Exists(dstSfo) && SameFile(sfo, dstSfo))
         {
             return false;
         }
 
         Directory.CreateDirectory(meta);
-        foreach (var f in Files)
+        foreach (string f in s_files)
         {
-            var src = Source(f);
-            var dst = Path.Combine(meta, f);
+            string? src = Source(f);
+            string dst = Path.Combine(meta, f);
             if (src != null && File.Exists(src))
             {
                 File.Copy(src, dst, true);
@@ -140,7 +140,7 @@ public static class AppMeta
                 File.Delete(dst);
             }
         }
-        var liveDst = Path.Combine(meta, "livearea");
+        string liveDst = Path.Combine(meta, "livearea");
         if (Directory.Exists(liveDst))
         {
             Directory.Delete(liveDst, true);
@@ -158,7 +158,7 @@ public static class AppMeta
     /// shell then treats ux0 as a card it has not seen and rebuilds that part of its database from ux0:appmeta.</summary>
     internal static void InvalidateCardId(string ux0Root, Action<string>? log)
     {
-        var id = Path.Combine(ux0Root, "id.dat");
+        string id = Path.Combine(ux0Root, "id.dat");
         if (!File.Exists(id))
         {
             return;
@@ -175,7 +175,7 @@ public static class AppMeta
         }
     }
 
-    static bool SameFile(string a, string b)
+    private static bool SameFile(string a, string b)
     {
         var fa = new FileInfo(a);
         var fb = new FileInfo(b);
@@ -183,7 +183,7 @@ public static class AppMeta
     }
 
     /// <summary>A game/application entry (param.sfo CATEGORY gd, gdc, gp...), not some other kind of appmeta.</summary>
-    static bool IsApplication(string sfoPath)
+    private static bool IsApplication(string sfoPath)
     {
         try
         {
@@ -195,15 +195,15 @@ public static class AppMeta
         }
     }
 
-    static void CopyTree(string src, string dst)
+    private static void CopyTree(string src, string dst)
     {
         Directory.CreateDirectory(dst);
-        foreach (var f in Directory.EnumerateFiles(src))
+        foreach (string f in Directory.EnumerateFiles(src))
         {
             File.Copy(f, Path.Combine(dst, Path.GetFileName(f)), true);
         }
 
-        foreach (var d in Directory.EnumerateDirectories(src))
+        foreach (string d in Directory.EnumerateDirectories(src))
         {
             CopyTree(d, Path.Combine(dst, Path.GetFileName(d)));
         }

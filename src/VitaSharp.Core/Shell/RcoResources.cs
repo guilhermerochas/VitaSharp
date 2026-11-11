@@ -6,7 +6,7 @@ public static class RcoResources
     /// <summary>A file extension for an RCO file: from its magic bytes first, then its declared type.</summary>
     public static string Extension(RcoFile f)
     {
-        var d = f.Data;
+        byte[] d = f.Data;
         if (d.Length >= 8 && d[0] == 0x89 && d[1] == (byte)'P' && d[2] == (byte)'N' && d[3] == (byte)'G')
         {
             return ".png";

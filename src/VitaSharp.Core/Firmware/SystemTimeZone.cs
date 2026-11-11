@@ -10,7 +10,7 @@ namespace VitaSharp.Core.Firmware;
 public static class SystemTimeZone
 {
     /// <summary>(Vita time zone id, standard offset in minutes, IANA zone of the city the firmware names).</summary>
-    static readonly (int Id, int Minutes, string Iana)[] Zones =
+    private static readonly (int Id, int Minutes, string Iana)[] s_zones =
     [
         (0, -660, "Pacific/Pago_Pago"), (1, -660, "Pacific/Midway"), (2, -600, "Pacific/Honolulu"), (3, -540, "America/Anchorage"),
         (4, -480, "America/Los_Angeles"), (5, -480, "America/Tijuana"), (6, -420, "America/Denver"), (110, -420, "America/Phoenix"),
@@ -56,8 +56,8 @@ public static class SystemTimeZone
     public static int FromTimeZone(TimeZoneInfo tz)
     {
         string iana = tz.HasIanaId ? tz.Id
-            : TimeZoneInfo.TryConvertWindowsIdToIanaId(tz.Id, out var i) ? i : "";
-        foreach (var z in Zones)
+            : TimeZoneInfo.TryConvertWindowsIdToIanaId(tz.Id, out string? i) ? i : "";
+        foreach ((int Id, int Minutes, string Iana) z in s_zones)
         {
             if (string.Equals(z.Iana, iana, StringComparison.OrdinalIgnoreCase))
             {
@@ -66,13 +66,13 @@ public static class SystemTimeZone
         }
 
         int minutes = (int)tz.BaseUtcOffset.TotalMinutes;
-        return Zones.MinBy(z => Math.Abs(z.Minutes - minutes)).Id;
+        return s_zones.MinBy(z => Math.Abs(z.Minutes - minutes)).Id;
     }
 
     /// <summary>Standard offset in minutes of a Vita time zone id; null for an unknown id.</summary>
     public static int? OffsetMinutes(int id)
     {
-        foreach (var z in Zones)
+        foreach ((int Id, int Minutes, string Iana) z in s_zones)
         {
             if (z.Id == id)
             {

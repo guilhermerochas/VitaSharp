@@ -55,7 +55,7 @@ public readonly record struct InputCombo(InputBinding[] Parts)
             return false;
         }
 
-        var items = s.Split(Separator, StringSplitOptions.RemoveEmptyEntries | StringSplitOptions.TrimEntries);
+        string[] items = s.Split(Separator, StringSplitOptions.RemoveEmptyEntries | StringSplitOptions.TrimEntries);
         var parts = new InputBinding[items.Length];
         for (int i = 0; i < items.Length; i++)
         {
@@ -78,7 +78,7 @@ public readonly record struct InputCombo(InputBinding[] Parts)
     public float Value(PadSnapshot? pad, IReadOnlySet<string>? keys)
     {
         float v = 1f;
-        foreach (var p in Parts)
+        foreach (InputBinding p in Parts)
         {
             v = Math.Min(v, InputMapper.Value(p, pad, keys));
         }
@@ -106,16 +106,16 @@ public readonly record struct InputBinding(BindingKind Kind, int Index, int Dir 
     public bool IsGamepad => Kind is BindingKind.PadButton or BindingKind.PadAxis;
     public bool IsJoystick => Kind is BindingKind.JoyButton or BindingKind.JoyAxis or BindingKind.JoyHat;
 
-    static readonly string[] ButtonNames =
+    private static readonly string[] s_buttonNames =
         ["a", "b", "x", "y", "back", "guide", "start", "leftstick", "rightstick", "leftshoulder", "rightshoulder", "dpup", "dpdown", "dpleft", "dpright",
          "misc1", "paddle1", "paddle2", "paddle3", "paddle4", "touchpad"];
-    static readonly string[] AxisNames = ["leftx", "lefty", "rightx", "righty", "lefttrigger", "righttrigger"];
+    private static readonly string[] s_axisNames = ["leftx", "lefty", "rightx", "righty", "lefttrigger", "righttrigger"];
 
     public override string ToString() => Kind switch
     {
         BindingKind.Key => "key:" + Key,
-        BindingKind.PadButton => "pad:" + ButtonNames[Index],
-        BindingKind.PadAxis => "pad:" + AxisNames[Index] + (Index >= (int)PadAxis.LeftTrigger ? "" : Dir < 0 ? "-" : "+"),
+        BindingKind.PadButton => "pad:" + s_buttonNames[Index],
+        BindingKind.PadAxis => "pad:" + s_axisNames[Index] + (Index >= (int)PadAxis.LeftTrigger ? "" : Dir < 0 ? "-" : "+"),
         BindingKind.JoyButton => $"joy:b{Index}",
         BindingKind.JoyAxis => $"joy:a{Index}{(Dir == 2 ? "~" : Dir < 0 ? "-" : "+")}",
         BindingKind.JoyHat => $"joy:h{Index}.{Dir}",
@@ -138,7 +138,7 @@ public readonly record struct InputBinding(BindingKind Kind, int Index, int Dir 
         }
 
         string kind = s[..colon], v = s[(colon + 1)..];
-        var inv = CultureInfo.InvariantCulture;
+        CultureInfo inv = CultureInfo.InvariantCulture;
         switch (kind)
         {
             case "key":
@@ -146,7 +146,7 @@ public readonly record struct InputBinding(BindingKind Kind, int Index, int Dir 
                 return true;
             case "pad":
             {
-                int b = Array.IndexOf(ButtonNames, v);
+                int b = Array.IndexOf(s_buttonNames, v);
                 if (b >= 0)
                 {
                     binding = Of((PadButton)b);
@@ -162,7 +162,7 @@ public readonly record struct InputBinding(BindingKind Kind, int Index, int Dir 
                     v = v[..^1];
                     dir = -1;
                 }
-                int a = Array.IndexOf(AxisNames, v);
+                int a = Array.IndexOf(s_axisNames, v);
                 if (a < 0)
                 {
                     return false;
@@ -203,7 +203,7 @@ public readonly record struct InputBinding(BindingKind Kind, int Index, int Dir 
                 }
                 if (t == 'h')
                 {
-                    var p = rest.Split('.');
+                    string[] p = rest.Split('.');
                     if (p.Length != 2 || !int.TryParse(p[0], NumberStyles.None, inv, out int hi) || !int.TryParse(p[1], NumberStyles.None, inv, out int bit))
                     {
                         return false;

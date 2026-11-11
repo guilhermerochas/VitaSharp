@@ -11,7 +11,7 @@ public sealed class FlickerDetector(double threshold = 6, int grid = 4)
 {
     public readonly record struct Flag(long Frame, double Prev, double Next, double Around, int Cell, double Luma, double LumaPrev);
 
-    readonly (long Frame, byte[] Rgba, int W, int H)?[] _last = new (long, byte[], int, int)?[2];
+    private readonly (long Frame, byte[] Rgba, int W, int H)?[] _last = new (long, byte[], int, int)?[2];
     public readonly List<Flag> Flagged = new();
     public long Frames { get; private set; }
     public double Threshold => threshold;
@@ -44,7 +44,7 @@ public sealed class FlickerDetector(double threshold = 6, int grid = 4)
     }
 
     /// <summary>Mean absolute channel difference over the picture (cell -1) or one grid cell.</summary>
-    double Diff(byte[] x, byte[] y, int w, int h, int cell)
+    private double Diff(byte[] x, byte[] y, int w, int h, int cell)
     {
         int x0 = 0, y0 = 0, x1 = w, y1 = h;
         if (cell >= 0)

@@ -108,25 +108,25 @@ public sealed class FrameAnomalyDetector
     public const int FlickerMaxFrames = 3;
     public const int BrightFrames = 60, BlackFrames = 30, FrozenFrames = 600;
 
-    readonly List<Event> _events = new();
+    private readonly List<Event> _events = new();
     // recent per-frame hit masks (newest at index 0) for the spike windows
-    readonly FrameMetrics.Hit[] _recent = new FrameMetrics.Hit[SpikeWindow];
-    bool _magentaOn, _saturatedOn;
-    int _magentaQuiet, _saturatedQuiet;
-    int _brightRun, _brightMoving, _blackRun, _frozenRun;
-    bool _fed;
-    ulong _prevHash;
+    private readonly FrameMetrics.Hit[] _recent = new FrameMetrics.Hit[SpikeWindow];
+    private bool _magentaOn, _saturatedOn;
+    private int _magentaQuiet, _saturatedQuiet;
+    private int _brightRun, _brightMoving, _blackRun, _frozenRun;
+    private bool _fed;
+    private ulong _prevHash;
     // flicker: the last stable mean (not inside an excursion) and how long the current excursion lasts
-    float _baseline = -1;
-    bool _baselineBlack;
-    int _excursion;
-    float _excursionPeak;
-    long _excursionStart;
+    private float _baseline = -1;
+    private bool _baselineBlack;
+    private int _excursion;
+    private float _excursionPeak;
+    private long _excursionStart;
 
     public IReadOnlyList<Event> Feed(long present, in FrameMetrics m)
     {
         _events.Clear();
-        var hits = m.Hits;
+        FrameMetrics.Hit hits = m.Hits;
         for (int i = SpikeWindow - 1; i > 0; i--)
         {
             _recent[i] = _recent[i - 1];
@@ -151,10 +151,10 @@ public sealed class FrameAnomalyDetector
         return _events;
     }
 
-    void Spike(FrameMetrics.Hit kind, string name, ref bool on, ref int quiet, long present, string detail)
+    private void Spike(FrameMetrics.Hit kind, string name, ref bool on, ref int quiet, long present, string detail)
     {
         int n = 0;
-        foreach (var h in _recent)
+        foreach (FrameMetrics.Hit h in _recent)
         {
             if ((h & kind) != 0)
             {
@@ -187,7 +187,7 @@ public sealed class FrameAnomalyDetector
     /// Mania's SEGA screen: 81% pure white for two seconds) never fires, while a moving scene washed out to white (Gravity
     /// Rush's dream intro with a wrong exposure) does. The run ends at the first frame that is not bright.
     /// </summary>
-    void BrightRun(bool bright, bool changed, long present, in FrameMetrics m)
+    private void BrightRun(bool bright, bool changed, long present, in FrameMetrics m)
     {
         if (!bright)
         {
@@ -206,7 +206,7 @@ public sealed class FrameAnomalyDetector
         }
     }
 
-    void Run(bool hit, ref int run, int need, string name, bool capture, long present, string detail)
+    private void Run(bool hit, ref int run, int need, string name, bool capture, long present, string detail)
     {
         if (hit)
         {
@@ -225,7 +225,7 @@ public sealed class FrameAnomalyDetector
         run = 0;
     }
 
-    void Flicker(long present, in FrameMetrics m, bool black)
+    private void Flicker(long present, in FrameMetrics m, bool black)
     {
         if (_baseline < 0)
         {

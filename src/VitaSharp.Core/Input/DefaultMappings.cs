@@ -14,7 +14,7 @@ public static class DefaultMappings
         var p = new ControllerProfile { Id = ControllerProfile.KeyboardId, Name = "Keyboard", Kind = ControllerKind.Keyboard };
         void K(VitaControl c, params string[] keys)
         {
-            foreach (var k in keys)
+            foreach (string k in keys)
             {
                 p.Add(c, InputBinding.OfKey(k));
             }
@@ -85,14 +85,14 @@ public static class DefaultMappings
     public static void AddMotionKeys(ControllerProfile p)
     {
         var used = p.Bindings.Values.SelectMany(v => v).ToHashSet(StringComparer.Ordinal);
-        foreach (var (c, keys) in MotionKeys)
+        foreach ((VitaControl c, string[]? keys) in MotionKeys)
         {
             if (p.Get(c).Any())
             {
                 continue;
             }
 
-            foreach (var k in keys)
+            foreach (string k in keys)
             {
                 var b = InputBinding.OfKey(k);
                 if (!used.Contains(b.ToString()))
@@ -186,10 +186,10 @@ public static class DefaultMappings
         return p;
     }
 
-    static void Stick(ControllerProfile p, int ax, int ay, VitaControl first)
+    private static void Stick(ControllerProfile p, int ax, int ay, VitaControl first)
     {
         // first = the stick's ...Left control; the enum order is Up, Down, Left, Right
-        var up = first - 2;
+        VitaControl up = first - 2;
         p.Add(up, InputBinding.JoyAxis(ay, -1));
         p.Add(up + 1, InputBinding.JoyAxis(ay, 1));
         p.Add(first, InputBinding.JoyAxis(ax, -1));

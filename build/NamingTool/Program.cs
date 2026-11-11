@@ -60,6 +60,12 @@ internal static class NamingFixer
         if (targets.Count == 0)
         {
             targets.Add(Path.Combine(root, "VitaSharp.sln"));
+            // the Android app is not in the solution (it needs the Android workload) but uses Core's members
+            string android = Path.Combine(root, "src", "VitaSharp.Android", "VitaSharp.Android.csproj");
+            if (File.Exists(android))
+            {
+                targets.Add(android);
+            }
         }
 
         string[] pending = File.ReadAllLines(Path.Combine(root, "build", "format-pending.txt"))
@@ -81,7 +87,15 @@ internal static class NamingFixer
             }
             else
             {
-                await workspace.OpenProjectAsync(target);
+                try
+                {
+                    await workspace.OpenProjectAsync(target);
+                }
+                catch (Exception e) when (e is InvalidOperationException or IOException)
+                {
+                    // e.g. the Android project without the Android workload: its own symbols are not renamed
+                    Console.Error.WriteLine($"naming: {Path.GetFileName(target)} not loaded: {e.Message}");
+                }
             }
         }
 

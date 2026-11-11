@@ -16,10 +16,10 @@ public sealed class InputProfileStore
     /// game recompiles its profiles at once (<see cref="CheckChanged"/>).</summary>
     public int Revision => Volatile.Read(ref _revision);
 
-    int _revision;
-    DateTime _fileTime;
-    long _checkedAt;
-    readonly object _diskLock = new();
+    private int _revision;
+    private DateTime _fileTime;
+    private long _checkedAt;
+    private readonly object _diskLock = new();
 
     /// <summary>How often <see cref="CheckChanged"/> looks at the file's time stamp.</summary>
     public int DiskCheckIntervalMs { get; set; } = 500;
@@ -60,7 +60,7 @@ public sealed class InputProfileStore
             Directory.CreateDirectory(dir);
         }
 
-        var tmp = Path + ".tmp";
+        string tmp = Path + ".tmp";
         File.WriteAllText(tmp, Serialize(Config));
         File.Move(tmp, Path, true);
         lock (_diskLock)
@@ -112,13 +112,13 @@ public sealed class InputProfileStore
             _checkedAt = now;
             try
             {
-                var time = File.Exists(Path) ? File.GetLastWriteTimeUtc(Path) : default;
+                DateTime time = File.Exists(Path) ? File.GetLastWriteTimeUtc(Path) : default;
                 if (time == _fileTime)
                 {
                     return;
                 }
 
-                var config = time == default ? new InputConfig() : Deserialize(File.ReadAllText(Path));
+                InputConfig? config = time == default ? new InputConfig() : Deserialize(File.ReadAllText(Path));
                 if (config == null)
                 {
                     return;
@@ -148,7 +148,7 @@ public sealed class InputProfileStore
             return DefaultMappings.Keyboard();
         }
 
-        var p = Config.Keyboard.Clone();
+        ControllerProfile p = Config.Keyboard.Clone();
         if (Config.Version < 2)
         {
             DefaultMappings.AddMotionKeys(p);
@@ -174,7 +174,7 @@ public sealed class InputProfileStore
     /// <summary>Stores (or replaces) a profile; the keyboard profile has Id "keyboard".</summary>
     public void Put(ControllerProfile p)
     {
-        var copy = p.Clone();
+        ControllerProfile copy = p.Clone();
         if (p.Id == ControllerProfile.KeyboardId)
         {
             Config.Keyboard = copy;

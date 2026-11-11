@@ -1,5 +1,6 @@
 using System.Globalization;
 using System.Text;
+using VitaSharp.Core.Kernel;
 using VitaSharp.Core.Util;
 
 namespace VitaSharp.Core.Capture;
@@ -16,8 +17,8 @@ public static class CaptureContext
     /// <summary>One line: where the player is now.</summary>
     public static string Where(Emulator emu)
     {
-        var v = emu.Vita;
-        var fg = v.Foreground ?? emu;
+        VitaSystem v = emu.Vita;
+        Emulator fg = v.Foreground ?? emu;
         if (v.Shell != null && v.ShellImposesSystemUi)
         {
             return "lock screen (the shell's system screen is on top" + (fg.IsShell ? ")" : $"; {Name(fg)} behind it)");
@@ -33,24 +34,24 @@ public static class CaptureContext
         return $"{Kind(fg)} {Name(fg)} in front";
     }
 
-    static string Kind(Emulator e) => e.IsShell ? "shell" : e.IsGameProgram && !e.IsSystemProgram ? "game" : e.IsSystemProgram ? "system app" : "application";
+    private static string Kind(Emulator e) => e.IsShell ? "shell" : e.IsGameProgram && !e.IsSystemProgram ? "game" : e.IsSystemProgram ? "system app" : "application";
 
-    static string Name(Emulator e) => e.Title.Length > 0 ? $"{e.TitleId} '{e.Title}'" : e.TitleId.Length > 0 ? e.TitleId : $"process 0x{e.Pid:X}";
+    private static string Name(Emulator e) => e.Title.Length > 0 ? $"{e.TitleId} '{e.Title}'" : e.TitleId.Length > 0 ? e.TitleId : $"process 0x{e.Pid:X}";
 
     /// <summary>context.txt: the screen, the processes and the audio (ports, the BGM port, decoders).</summary>
     public static string Describe(Emulator emu, string when)
     {
-        var v = emu.Vita;
+        VitaSystem v = emu.Vita;
         var sb = new StringBuilder();
         sb.AppendLine($"[{when}]");
         sb.AppendLine($"where: {Where(emu)}");
-        var fg = v.Foreground ?? emu;
-        foreach (var p in v.Processes)
+        Emulator fg = v.Foreground ?? emu;
+        foreach (Emulator p in v.Processes)
         {
             string state = ReferenceEquals(p, fg) ? "in front" : p.Suspended ? "suspended (in the background)" : "running in the background";
             sb.AppendLine($"process: {Kind(p)} {Name(p)} pid 0x{p.Pid:X}: {state}");
         }
-        foreach (var l in AudioLines(emu))
+        foreach (string l in AudioLines(emu))
         {
             sb.AppendLine(l);
         }
@@ -61,10 +62,10 @@ public static class CaptureContext
     /// <summary>One line per audio port (open, or released while the capture ran), the BGM port and the decoders.</summary>
     public static List<string> AudioLines(Emulator emu)
     {
-        var v = emu.Vita;
+        VitaSystem v = emu.Vita;
         var lines = new List<string>();
-        var ports = AudioDiagnostics.AllPorts();
-        foreach (var p in ports)
+        List<AudioDiagnostics.PortStats> ports = AudioDiagnostics.AllPorts();
+        foreach (AudioDiagnostics.PortStats p in ports)
         {
             if (p.ClosedAt > 0)
             {
@@ -81,12 +82,12 @@ public static class CaptureContext
             lines.Add("audio: no audio port open");
         }
 
-        var holder = v.BgmHolder(out int prio);
+        Emulator? holder = v.BgmHolder(out int prio);
         lines.Add(holder == null ? "audio: BGM: no process (nothing to route it to)"
             : $"audio: BGM routed to {Name(holder)}{(holder.IsShell ? " (the shell's music player, SceShellMusicCore: the home screen / LiveArea music)" : "")}" +
               (prio == Kernel.VitaSystem.BgmNoPriority ? ", as the process in front (no BGM priority set)" : $", BGM priority 0x{prio:X}") +
               string.Concat(v.Processes.Where(p => p.BgmPriority > 0).Select(p => $"; {Name(p)} priority 0x{p.BgmPriority:X}{(p.Suspended ? " (suspended: not counted)" : "")}")));
-        foreach (var s in AudioDiagnostics.StreamDescriptions())
+        foreach (string s in AudioDiagnostics.StreamDescriptions())
         {
             lines.Add("audio: decoder/stream " + s);
         }

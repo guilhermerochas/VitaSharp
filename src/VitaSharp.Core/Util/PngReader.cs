@@ -16,7 +16,7 @@ public static class PngReader
         {
             int len = System.Buffers.Binary.BinaryPrimitives.ReadInt32BigEndian(data.AsSpan(p));
             string type = Encoding.ASCII.GetString(data, p + 4, 4);
-            var body = data.AsSpan(p + 8, len);
+            Span<byte> body = data.AsSpan(p + 8, len);
             if (type == "IHDR")
             {
                 w = System.Buffers.Binary.BinaryPrimitives.ReadInt32BigEndian(body);
@@ -40,19 +40,19 @@ public static class PngReader
             p += 12 + len;
         }
         int bpp = colorType == 6 ? 4 : 3, stride = w * bpp;
-        var raw = new byte[(stride + 1) * h];
+        byte[] raw = new byte[(stride + 1) * h];
         idat.Position = 0;
         using (var z = new System.IO.Compression.ZLibStream(idat, System.IO.Compression.CompressionMode.Decompress))
         {
             z.ReadExactly(raw);
         }
 
-        var img = new byte[stride * h];
+        byte[] img = new byte[stride * h];
         for (int y = 0; y < h; y++)
         {
             byte f = raw[y * (stride + 1)];
-            var src = raw.AsSpan(y * (stride + 1) + 1, stride);
-            var dst = img.AsSpan(y * stride, stride);
+            Span<byte> src = raw.AsSpan(y * (stride + 1) + 1, stride);
+            Span<byte> dst = img.AsSpan(y * stride, stride);
             for (int x = 0; x < stride; x++)
             {
                 int a = x >= bpp ? dst[x - bpp] : 0, b = y > 0 ? img[(y - 1) * stride + x] : 0, c = x >= bpp && y > 0 ? img[(y - 1) * stride + x - bpp] : 0;
@@ -73,7 +73,7 @@ public static class PngReader
             return (img, w, h);
         }
 
-        var rgba = new byte[w * h * 4];
+        byte[] rgba = new byte[w * h * 4];
         for (int i = 0, j = 0; i < img.Length; i += 3, j += 4)
         {
             rgba[j] = img[i];

@@ -7,11 +7,11 @@ namespace VitaSharp.Core.Util;
 /// </summary>
 public static class GpuBusy
 {
-    static long _nanos;
+    private static long s_nanos;
 
     /// <summary>Total GPU nanoseconds of the retired command buffers.</summary>
-    public static long Nanos => Volatile.Read(ref _nanos);
+    public static long Nanos => Volatile.Read(ref s_nanos);
 
     /// <summary>A command buffer retired after <paramref name="nanos"/> of GPU time (the renderer's GPU worker).</summary>
-    public static void Add(long nanos) => Interlocked.Add(ref _nanos, nanos);
+    public static void Add(long nanos) => Interlocked.Add(ref s_nanos, nanos);
 }

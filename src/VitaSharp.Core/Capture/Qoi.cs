@@ -7,9 +7,9 @@ namespace VitaSharp.Core.Capture;
 /// </summary>
 public static class Qoi
 {
-    const byte OpIndex = 0x00, OpDiff = 0x40, OpLuma = 0x80, OpRun = 0xC0, OpRgb = 0xFE, OpRgba = 0xFF;
+    private const byte OpIndex = 0x00, OpDiff = 0x40, OpLuma = 0x80, OpRun = 0xC0, OpRgb = 0xFE, OpRgba = 0xFF;
 
-    static int Hash(byte r, byte g, byte b, byte a) => (r * 3 + g * 5 + b * 7 + a * 11) & 63;
+    private static int Hash(byte r, byte g, byte b, byte a) => (r * 3 + g * 5 + b * 7 + a * 11) & 63;
 
     /// <summary>Worst-case encoded size of a <paramref name="w"/> x <paramref name="h"/> image.</summary>
     public static int MaxSize(int w, int h) => 14 + w * h * 4 + 8;
@@ -33,7 +33,7 @@ public static class Qoi
         Span<uint> index = stackalloc uint[64];
         index.Clear();
         byte pr = 0, pg = 0, pb = 0;
-        const byte pa = 255;
+        const byte PrevAlpha = 255;
         int run = 0, n = w * h;
         for (int i = 0; i < n; i++)
         {
@@ -54,8 +54,8 @@ public static class Qoi
                 dst[p++] = (byte)(OpRun | (run - 1));
                 run = 0;
             }
-            int h6 = Hash(r, g, b, pa);
-            uint packed = (uint)(r | g << 8 | b << 16 | pa << 24);
+            int h6 = Hash(r, g, b, PrevAlpha);
+            uint packed = (uint)(r | g << 8 | b << 16 | PrevAlpha << 24);
             if (index[h6] == packed)
             {
                 dst[p++] = (byte)(OpIndex | h6);
@@ -97,7 +97,7 @@ public static class Qoi
 
     public static byte[] Encode(ReadOnlySpan<byte> rgba, int w, int h)
     {
-        var buf = new byte[MaxSize(w, h)];
+        byte[] buf = new byte[MaxSize(w, h)];
         int n = Encode(rgba, w, h, buf);
         Array.Resize(ref buf, n);
         return buf;
@@ -117,7 +117,7 @@ public static class Qoi
             throw new InvalidDataException($"QOI size {w}x{h}");
         }
 
-        var dst = new byte[w * h * 4];
+        byte[] dst = new byte[w * h * 4];
         Span<uint> index = stackalloc uint[64];
         index.Clear();
         byte r = 0, g = 0, b = 0, a = 255;

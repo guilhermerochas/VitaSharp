@@ -5,6 +5,8 @@ using System.Globalization;
 using System.IO.Compression;
 using System.Text;
 using VitaSharp.Core.Gpu;
+using VitaSharp.Core.Host;
+using VitaSharp.Core.Kernel;
 using VitaSharp.Core.SaveState;
 using VitaSharp.Core.Util;
 
@@ -67,43 +69,43 @@ public sealed class SessionCaptureOptions
 /// </summary>
 public sealed class SessionCapture : IPresentTap, IRandomHook, IDisposable
 {
-    readonly Emulator _emu;
-    readonly SessionCaptureOptions _o;
-    readonly object _lock = new();
-    InputRecorder? _input;
-    BlockingCollection<Work>? _queue;
-    Thread? _encoder;
-    int _busy;
-    Recording? _rec;
-    bool _disposed;
+    private readonly Emulator _emu;
+    private readonly SessionCaptureOptions _o;
+    private readonly object _lock = new();
+    private InputRecorder? _input;
+    private BlockingCollection<Work>? _queue;
+    private Thread? _encoder;
+    private int _busy;
+    private Recording? _rec;
+    private bool _disposed;
 
     // pre-roll
-    double _preRollSeconds;
-    Thread? _stateThread;
-    readonly AutoResetEvent _stateWake = new(false);
-    readonly SemaphoreSlim _stateGate = new(1, 1);
-    readonly LinkedList<(PresentInfo Info, byte[] Data, byte Flags)> _ringFrames = new();
-    long _ringBytes;
-    readonly LinkedList<InputEvent> _ringInput = new();
-    readonly List<PreRollState> _states = new();
-    int _stateSeq;
-    bool _statesRefused;
-    long _droppedPictures;
+    private double _preRollSeconds;
+    private Thread? _stateThread;
+    private readonly AutoResetEvent _stateWake = new(false);
+    private readonly SemaphoreSlim _stateGate = new(1, 1);
+    private readonly LinkedList<(PresentInfo Info, byte[] Data, byte Flags)> _ringFrames = new();
+    private long _ringBytes;
+    private readonly LinkedList<InputEvent> _ringInput = new();
+    private readonly List<PreRollState> _states = new();
+    private int _stateSeq;
+    private bool _statesRefused;
+    private long _droppedPictures;
     // timing of the pre-roll's periodic states (game stopped) for the PERF line
-    readonly List<double> _stateStopMs = new();
+    private readonly List<double> _stateStopMs = new();
 
-    double StateInterval => Math.Max(_preRollSeconds, _o.PreRollStateInterval);
+    private double StateInterval => Math.Max(_preRollSeconds, _o.PreRollStateInterval);
 
-    sealed record PreRollState(string Path, long StartNs, long GuestUs, long Flip);
+    private sealed record PreRollState(string Path, long StartNs, long GuestUs, long Flip);
 
-    enum WorkKind
+    private enum WorkKind
     {
         Frame, FlushPreRoll, Close
     }
 
-    readonly record struct Work(WorkKind Kind, PresentInfo Info, byte[]? Pixels, int W, int H, Recording? Rec, ManualResetEventSlim? Done);
+    private readonly record struct Work(WorkKind Kind, PresentInfo Info, byte[]? Pixels, int W, int H, Recording? Rec, ManualResetEventSlim? Done);
 
-    sealed class Recording(string dir)
+    private sealed class Recording(string dir)
     {
         public readonly string Dir = dir;
         public readonly List<InputEvent> Input = new();
@@ -129,7 +131,7 @@ public sealed class SessionCapture : IPresentTap, IRandomHook, IDisposable
         public long PresentsSeen;
     }
 
-    string SafeWhere()
+    private string SafeWhere()
     {
         try
         {
@@ -141,7 +143,7 @@ public sealed class SessionCapture : IPresentTap, IRandomHook, IDisposable
         }
     }
 
-    string SafeDescribe(string when)
+    private string SafeDescribe(string when)
     {
         try
         {
@@ -167,8 +169,8 @@ public sealed class SessionCapture : IPresentTap, IRandomHook, IDisposable
     }
 
     /// <summary>The last pad and touch changes while no recording runs (input_before.tsv of the next recording).</summary>
-    readonly LinkedList<InputEvent> _recent = new();
-    const int RecentInputs = 32;
+    private readonly LinkedList<InputEvent> _recent = new();
+    private const int RecentInputs = 32;
 
     public SessionCaptureOptions Options => _o;
     public bool IsRecording => _rec != null;
@@ -186,11 +188,11 @@ public sealed class SessionCapture : IPresentTap, IRandomHook, IDisposable
     public int SavePercent => Volatile.Read(ref _savePercent);
     /// <summary>What the save is doing now ("frames", "analysis", "zip"...), null when nothing is being saved.</summary>
     public string? SaveStep => Volatile.Read(ref _saveStep);
-    int _savePercent = -1;
-    string? _saveStep;
-    string? _stopPending;
-    volatile bool _starting;
-    readonly CancellationTokenSource _hurry = new();
+    private int _savePercent = -1;
+    private string? _saveStep;
+    private string? _stopPending;
+    private volatile bool _starting;
+    private readonly CancellationTokenSource _hurry = new();
 
     /// <summary>The window is closing while a recording is saved: the optional steps (the analysis, report.txt) are
     /// skipped so the close waits only for the files themselves. Any thread.</summary>
@@ -205,7 +207,7 @@ public sealed class SessionCapture : IPresentTap, IRandomHook, IDisposable
         _hurry.Cancel();
     }
 
-    void SetProgress(string step, double pct)
+    private void SetProgress(string step, double pct)
     {
         Volatile.Write(ref _saveStep, step);
         Volatile.Write(ref _savePercent, (int)Math.Clamp(pct, 0, 99));
@@ -255,7 +257,7 @@ public sealed class SessionCapture : IPresentTap, IRandomHook, IDisposable
     }
 
     /// <summary>The tap, the input wrapper and the encoder thread: on while armed or recording.</summary>
-    void EnsureRunning()
+    private void EnsureRunning()
     {
         if (_queue == null)
         {
@@ -268,7 +270,7 @@ public sealed class SessionCapture : IPresentTap, IRandomHook, IDisposable
         _o.SetPresentTap(this);
     }
 
-    void StopRunning()
+    private void StopRunning()
     {
         _o.SetPresentTap(null);
         if (_disposed)
@@ -285,24 +287,24 @@ public sealed class SessionCapture : IPresentTap, IRandomHook, IDisposable
         _encoder = null;
     }
 
-    void InstallInput()
+    private void InstallInput()
     {
-        var host = _emu.Host;
+        HostServices host = _emu.Host;
         if (host.Input is InputRecorder && host.Motion is InputRecorder)
         {
             return;
         }
 
-        var inner = host.Input is InputRecorder r ? r.Inner : host.Input;
-        var innerMotion = host.Motion is InputRecorder rm ? rm.InnerMotion : host.Motion;
+        IInputBackend? inner = host.Input is InputRecorder r ? r.Inner : host.Input;
+        IMotionSource? innerMotion = host.Motion is InputRecorder rm ? rm.InnerMotion : host.Motion;
         _input = new InputRecorder(inner, innerMotion, AddInput);
         host.Input = _input;
         host.Motion = _input;
     }
 
-    void UninstallInput()
+    private void UninstallInput()
     {
-        var host = _emu.Host;
+        HostServices host = _emu.Host;
         if (host.Input is InputRecorder r && ReferenceEquals(r, _input))
         {
             host.Input = r.Inner;
@@ -316,12 +318,12 @@ public sealed class SessionCapture : IPresentTap, IRandomHook, IDisposable
         _input = null;
     }
 
-    void ClearRing()
+    private void ClearRing()
     {
         _ringFrames.Clear();
         _ringBytes = 0;
         _ringInput.Clear();
-        foreach (var s in _states)
+        foreach (PreRollState s in _states)
         {
             TryDelete(s.Path);
         }
@@ -329,11 +331,11 @@ public sealed class SessionCapture : IPresentTap, IRandomHook, IDisposable
         _states.Clear();
     }
 
-    string PreRollDir => Path.Combine(_o.Root, ".preroll");
+    private string PreRollDir => Path.Combine(_o.Root, ".preroll");
 
     /// <summary>A save state every pre-roll period while armed and not recording (the oldest two are kept, so the ring
     /// always starts at a state at least one period back).</summary>
-    void PreRollStateLoop()
+    private void PreRollStateLoop()
     {
         while (true)
         {
@@ -374,7 +376,7 @@ public sealed class SessionCapture : IPresentTap, IRandomHook, IDisposable
                 long ns = CaptureClock.NowNs, flip = Hle.Modules.Display.FramesPresented;
                 var sw = Stopwatch.StartNew();
                 AddInput(InputEvent.Now("mark", "preroll_state begin"));
-                var header = SaveStates.Save(_emu, path, null, 2000);
+                SaveStateHeader header = SaveStates.Save(_emu, path, null, 2000);
                 lock (_stateStopMs)
                 {
                     _stateStopMs.Add(sw.Elapsed.TotalMilliseconds);
@@ -418,7 +420,7 @@ public sealed class SessionCapture : IPresentTap, IRandomHook, IDisposable
 
     /// <summary>Drops pre-roll items older than the oldest kept state (or than twice the period without one), and the
     /// oldest frames over the memory limit. Under <see cref="_lock"/>.</summary>
-    void TrimRing()
+    private void TrimRing()
     {
         long now = CaptureClock.NowNs;
         long keepFrom = Math.Min(_states.Count > 0 ? _states[0].StartNs : long.MaxValue, now - (long)(1e9 * Math.Max(_preRollSeconds, _states.Count > 0 ? 0 : 2 * StateInterval)));
@@ -441,7 +443,7 @@ public sealed class SessionCapture : IPresentTap, IRandomHook, IDisposable
 
     // ------------------------------------------------------------------ data in
 
-    void AddInput(InputEvent e)
+    private void AddInput(InputEvent e)
     {
         lock (_lock)
         {
@@ -480,7 +482,7 @@ public sealed class SessionCapture : IPresentTap, IRandomHook, IDisposable
 
     public void OnPresent(in PresentInfo info, ReadOnlySpan<byte> rgba, int w, int h)
     {
-        var q = _queue;
+        BlockingCollection<Work>? q = _queue;
         if (q == null)
         {
             return;
@@ -538,7 +540,7 @@ public sealed class SessionCapture : IPresentTap, IRandomHook, IDisposable
 
     /// <summary>The length / size limit: the recording stops and saves by itself, with a notice (GPU worker: only the
     /// check runs here, the stop on a pool thread).</summary>
-    void CheckLimit(Recording r)
+    private void CheckLimit(Recording r)
     {
         double secs = (CaptureClock.NowNs - r.StartNs) / 1e9;
         bool time = _o.MaxSeconds > 0 && secs >= _o.MaxSeconds;
@@ -579,11 +581,11 @@ public sealed class SessionCapture : IPresentTap, IRandomHook, IDisposable
         AddInput(InputEvent.Now("rng", Convert.ToHexString(bytes)));
     }
 
-    void EncoderLoop()
+    private void EncoderLoop()
     {
-        var q = _queue!;
+        BlockingCollection<Work> q = _queue!;
         var enc = new FramesFile.Encoder();
-        foreach (var work in q.GetConsumingEnumerable())
+        foreach (Work work in q.GetConsumingEnumerable())
         {
             try
             {
@@ -633,7 +635,7 @@ public sealed class SessionCapture : IPresentTap, IRandomHook, IDisposable
                             enc.ForceKey();
                         }
 
-                        foreach (var (info, bytes, fl) in ring)
+                        foreach ((PresentInfo info, byte[]? bytes, byte fl) in ring)
                         {
                             WriteFrame(work.Rec!, info, (byte)(fl | FramesFile.FlagPreRoll), bytes);
                         }
@@ -657,7 +659,7 @@ public sealed class SessionCapture : IPresentTap, IRandomHook, IDisposable
         }
     }
 
-    static void WriteFrame(Recording r, in PresentInfo info, byte flags, byte[] data)
+    private static void WriteFrame(Recording r, in PresentInfo info, byte flags, byte[] data)
     {
         if (r.FramesFile == null)
         {
@@ -731,7 +733,7 @@ public sealed class SessionCapture : IPresentTap, IRandomHook, IDisposable
         return true;
     }
 
-    void StartCore(string reason, bool limit)
+    private void StartCore(string reason, bool limit)
     {
         string title = Safe(string.IsNullOrEmpty(_emu.TitleId) ? "NOTITLE" : _emu.TitleId);
         string baseName = $"{title}_{DateTime.Now:yyyyMMdd_HHmmss}_tudo";
@@ -762,7 +764,7 @@ public sealed class SessionCapture : IPresentTap, IRandomHook, IDisposable
             pre = _states.Count > 0 ? _states[0] : null;
             r.PreRoll = pre;
             long from = pre?.StartNs ?? long.MinValue;
-            foreach (var e in _ringInput)
+            foreach (InputEvent e in _ringInput)
             {
                 if (e.Ns >= from)
                 {
@@ -822,7 +824,7 @@ public sealed class SessionCapture : IPresentTap, IRandomHook, IDisposable
                     r.Input.Add(InputEvent.Now("mark", "state_start begin"));
                 }
 
-                var h = SaveStates.Save(_emu, Path.Combine(dir, "state_start.vss"), null, 3000);
+                SaveStateHeader h = SaveStates.Save(_emu, Path.Combine(dir, "state_start.vss"), null, 3000);
                 r.StartStateMs = sw.Elapsed.TotalMilliseconds;
                 r.StartState = ((long)(h.GuestSeconds * 1e6), ns, flip);
                 lock (_lock)
@@ -913,9 +915,9 @@ public sealed class SessionCapture : IPresentTap, IRandomHook, IDisposable
         Idle.Wait(timeoutMs);
     }
 
-    void StopCore(string reason)
+    private void StopCore(string reason)
     {
-        var r = _rec!;
+        Recording r = _rec!;
         r.StopNs = CaptureClock.NowNs;
         r.StopFlip = Hle.Modules.Display.FramesPresented;
         r.StopUs = GuestClock.Microseconds;
@@ -944,7 +946,7 @@ public sealed class SessionCapture : IPresentTap, IRandomHook, IDisposable
 
         Step(r, "threads_stop.txt", () => WriteText(r.Dir, "threads_stop.txt", _o.Threads));
         var closed = new ManualResetEventSlim();
-        var encoderQueue = _queue;
+        BlockingCollection<Work>? encoderQueue = _queue;
         lock (_lock)
         {
             r.Input.Add(InputEvent.Now("mark", $"stop {reason}"));
@@ -999,7 +1001,7 @@ public sealed class SessionCapture : IPresentTap, IRandomHook, IDisposable
         {
             using var w = new StreamWriter(Path.Combine(dir, "input.tsv"));
             w.WriteLine(InputEvent.Header);
-            foreach (var e in input)
+            foreach (InputEvent e in input)
             {
                 w.WriteLine(e.ToString());
             }
@@ -1008,7 +1010,7 @@ public sealed class SessionCapture : IPresentTap, IRandomHook, IDisposable
         {
             using var w = new StreamWriter(Path.Combine(dir, "input_before.tsv"));
             w.WriteLine(InputEvent.Header + "\t(the last button and touch changes before the recording started)");
-            foreach (var e in r.Before)
+            foreach (InputEvent e in r.Before)
             {
                 w.WriteLine(e.ToString());
             }
@@ -1078,7 +1080,7 @@ public sealed class SessionCapture : IPresentTap, IRandomHook, IDisposable
     }
 
     /// <summary>One step of the save: a failure is logged and becomes an "error:" line of session.txt; the rest goes on.</summary>
-    static void Step(Recording r, string what, Action a)
+    private static void Step(Recording r, string what, Action a)
     {
         try
         {
@@ -1094,7 +1096,7 @@ public sealed class SessionCapture : IPresentTap, IRandomHook, IDisposable
         }
     }
 
-    void WriteTimeline(Recording r)
+    private void WriteTimeline(Recording r)
     {
         List<(PresentInfo Info, byte Flags, int Bytes)> frames;
         lock (r.Frames)
@@ -1104,14 +1106,14 @@ public sealed class SessionCapture : IPresentTap, IRandomHook, IDisposable
 
         using var w = new StreamWriter(Path.Combine(r.Dir, "timeline.tsv"));
         w.WriteLine("# present\tflip\tvblank\tguestUs\tflipMs\tpresentMs\tintervalMs\tgpuMs\tdraws\tscenes\tnewShaders\tnewPipelines\thitch\thitchMs\tfb\tsize\tpreroll\tpictureBytes");
-        foreach (var (p, flags, bytes) in frames)
+        foreach ((PresentInfo p, byte flags, int bytes) in frames)
         {
             w.WriteLine(string.Create(CultureInfo.InvariantCulture,
                 $"{p.Present}\t{p.Flip}\t{p.VBlank}\t{p.GuestUs}\t{(p.FlipNs - r.StartNs) / 1e6:F3}\t{(p.PresentNs - r.StartNs) / 1e6:F3}\t{p.IntervalMs:F2}\t{p.GpuMs:F2}\t{p.Draws}\t{p.Scenes}\t{p.NewShaders}\t{p.NewPipelines}\t{(string.IsNullOrEmpty(p.Hitch) ? "-" : p.Hitch)}\t{p.HitchMs:F2}\t0x{p.Address:X8}\t{p.SrcW}x{p.SrcH}\t{((flags & FramesFile.FlagPreRoll) != 0 ? 1 : 0)}\t{bytes}"));
         }
     }
 
-    void WriteSession(Recording r, long cpuMs)
+    private void WriteSession(Recording r, long cpuMs)
     {
         var sb = new StringBuilder();
         double secs = (r.StopNs - r.StartNs) / 1e9;
@@ -1156,7 +1158,7 @@ public sealed class SessionCapture : IPresentTap, IRandomHook, IDisposable
         }
 
         sb.AppendLine(FormattableString.Invariant($"cost: process CPU {cpuMs / 1000.0:F1} s over {secs:F1} s ({cpuMs / 10.0 / Math.Max(secs, 0.001):F0}% of one core in all, the game included)"));
-        foreach (var n in r.Notes)
+        foreach (string n in r.Notes)
         {
             sb.AppendLine($"note: {n}");
         }
@@ -1184,13 +1186,13 @@ public sealed class SessionCapture : IPresentTap, IRandomHook, IDisposable
         File.WriteAllText(Path.Combine(r.Dir, "session.txt"), sb.ToString());
     }
 
-    static double Median(List<double> v)
+    private static double Median(List<double> v)
     {
         var s = v.OrderBy(x => x).ToList();
         return s.Count == 0 ? 0 : s[s.Count / 2];
     }
 
-    void CopyLog(string dest)
+    private void CopyLog(string dest)
     {
         try
         {
@@ -1200,7 +1202,7 @@ public sealed class SessionCapture : IPresentTap, IRandomHook, IDisposable
                 return;
             }
             using var input = new FileStream(src, FileMode.Open, FileAccess.Read, FileShare.ReadWrite | FileShare.Delete);
-            using var output = File.Create(dest);
+            using FileStream output = File.Create(dest);
             input.CopyTo(output);
         }
         catch (IOException e)
@@ -1217,15 +1219,15 @@ public sealed class SessionCapture : IPresentTap, IRandomHook, IDisposable
         sb.AppendLine($"guest frame {Hle.Modules.Display.FramesPresented}; GPU queue: submitted {emu.Gpu.Submitted}, completed {emu.Gpu.Completed}, executing {emu.Gpu.Executing?.GetType().Name ?? "nothing"}");
         try
         {
-            foreach (var t in emu.Kernel.Threads.ToArray())
+            foreach (GuestThread? t in emu.Kernel.Threads.ToArray())
             {
                 sb.AppendLine("thread " + t.Describe());
-                foreach (var call in t.RecentHleCalls(16))
+                foreach (string call in t.RecentHleCalls(16))
                 {
                     sb.AppendLine("    hle " + call);
                 }
             }
-            foreach (var m in emu.Kernel.Objects.All<Kernel.Mutex>().ToArray())
+            foreach (Kernel.Mutex? m in emu.Kernel.Objects.All<Kernel.Mutex>().ToArray())
             {
                 if (m.Owner != null && m.Waiters > 0)
                 {
@@ -1240,7 +1242,7 @@ public sealed class SessionCapture : IPresentTap, IRandomHook, IDisposable
         return sb.ToString();
     }
 
-    void WriteText(string dir, string name, Func<string>? text)
+    private void WriteText(string dir, string name, Func<string>? text)
     {
         try
         {
@@ -1264,17 +1266,17 @@ public sealed class SessionCapture : IPresentTap, IRandomHook, IDisposable
 
         var files = Directory.EnumerateFiles(dir, "*", SearchOption.AllDirectories).Select(f => new FileInfo(f)).ToList();
         double total = Math.Max(1, files.Sum(f => f.Length)), done = 0;
-        using var z = ZipFile.Open(zip, ZipArchiveMode.Create);
+        using ZipArchive z = ZipFile.Open(zip, ZipArchiveMode.Create);
         string baseName = Path.GetFileName(dir);
-        var buf = new byte[1 << 20];
-        foreach (var f in files)
+        byte[] buf = new byte[1 << 20];
+        foreach (FileInfo? f in files)
         {
             string ext = f.Extension.ToLowerInvariant();
-            var level = ext is ".vss" or ".vsgd" or ".vsfr" or ".png" or ".zip" ? CompressionLevel.NoCompression : CompressionLevel.Fastest;
-            var entry = z.CreateEntry(Path.Combine(baseName, Path.GetRelativePath(dir, f.FullName)).Replace('\\', '/'), level);
+            CompressionLevel level = ext is ".vss" or ".vsgd" or ".vsfr" or ".png" or ".zip" ? CompressionLevel.NoCompression : CompressionLevel.Fastest;
+            ZipArchiveEntry entry = z.CreateEntry(Path.Combine(baseName, Path.GetRelativePath(dir, f.FullName)).Replace('\\', '/'), level);
             entry.LastWriteTime = f.LastWriteTime;
             using var input = new FileStream(f.FullName, FileMode.Open, FileAccess.Read, FileShare.ReadWrite, 1 << 16);
-            using var output = entry.Open();
+            using Stream output = entry.Open();
             int n;
             while ((n = input.Read(buf, 0, buf.Length)) > 0)
             {
@@ -1285,7 +1287,7 @@ public sealed class SessionCapture : IPresentTap, IRandomHook, IDisposable
         }
     }
 
-    static void TryDelete(string path)
+    private static void TryDelete(string path)
     {
         try
         {
@@ -1295,7 +1297,7 @@ public sealed class SessionCapture : IPresentTap, IRandomHook, IDisposable
         catch (UnauthorizedAccessException) { }
     }
 
-    static string Safe(string s) => string.Concat(s.Select(c => char.IsLetterOrDigit(c) || c is '_' or '-' ? c : '_'));
+    private static string Safe(string s) => string.Concat(s.Select(c => char.IsLetterOrDigit(c) || c is '_' or '-' ? c : '_'));
 
     public void Dispose()
     {

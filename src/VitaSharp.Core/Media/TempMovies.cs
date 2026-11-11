@@ -10,12 +10,12 @@ namespace VitaSharp.Core.Media;
 /// </summary>
 public static class TempMovies
 {
-    static int _swept;
+    private static int s_swept;
 
     /// <summary>A new temp path "vitasharp-{kind}-{pid}-{suffix}.mp4".</summary>
     public static string NewPath(string kind, string suffix)
     {
-        if (Interlocked.Exchange(ref _swept, 1) == 0)
+        if (Interlocked.Exchange(ref s_swept, 1) == 0)
         {
             SweepStale();
         }
@@ -29,9 +29,9 @@ public static class TempMovies
         int deleted = 0;
         try
         {
-            foreach (var file in Directory.EnumerateFiles(Path.GetTempPath(), "vitasharp-*-*-*.mp4"))
+            foreach (string file in Directory.EnumerateFiles(Path.GetTempPath(), "vitasharp-*-*-*.mp4"))
             {
-                var parts = Path.GetFileNameWithoutExtension(file).Split('-');
+                string[] parts = Path.GetFileNameWithoutExtension(file).Split('-');
                 if (parts.Length < 4 || !int.TryParse(parts[2], out int pid) || Running(pid))
                 {
                     continue;
@@ -56,7 +56,7 @@ public static class TempMovies
         return deleted;
     }
 
-    static bool Running(int pid)
+    private static bool Running(int pid)
     {
         if (pid == Environment.ProcessId)
         {

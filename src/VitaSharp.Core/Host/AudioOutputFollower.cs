@@ -21,8 +21,8 @@ public sealed class AudioOutputFollower
     /// <summary>The chosen output is gone and the stream plays on the system default until it returns.</summary>
     public bool OnFallback { get; private set; }
 
-    readonly Func<string, bool> _isController;
-    string? _lastDefault;
+    private readonly Func<string, bool> _isController;
+    private string? _lastDefault;
 
     /// <param name="requested">The chosen output; null or empty = the system default.</param>
     /// <param name="isController">Whether an output belongs to a game controller (the host's device check,
@@ -33,7 +33,7 @@ public sealed class AudioOutputFollower
         _isController = isController ?? LooksLikeController;
     }
 
-    static readonly string[] ControllerMarkers =
+    private static readonly string[] s_controllerMarkers =
         ["wireless controller", "dualsense", "dualshock", "xbox controller", "xbox wireless adapter", "8bitdo", "gamepad", "game controller"];
 
     /// <summary>
@@ -42,11 +42,11 @@ public sealed class AudioOutputFollower
     /// "Xbox Controller" / "Xbox Wireless Adapter" (the output name is "&lt;kind&gt; (&lt;device&gt;)", e.g. "Fone de ouvido do
     /// headset (Wireless Controller)"). Headphones and headsets named after their maker do not match.
     /// </summary>
-    public static bool LooksLikeController(string name) => ControllerMarkers.Any(m => name.Contains(m, StringComparison.OrdinalIgnoreCase));
+    public static bool LooksLikeController(string name) => s_controllerMarkers.Any(m => name.Contains(m, StringComparison.OrdinalIgnoreCase));
 
     /// <summary>The empty container ID Windows gives devices it cannot group, and the one of the PC itself (built-in
     /// devices): neither identifies a game controller.</summary>
-    static readonly Guid NoContainer = Guid.Empty, ComputerContainer = new("00000000-0000-0000-ffff-ffffffffffff");
+    private static readonly Guid s_noContainer = Guid.Empty, s_computerContainer = new("00000000-0000-0000-ffff-ffffffffffff");
 
     /// <summary>
     /// The device rule: the outputs that belong to the same physical device (Windows container ID) as a game controller
@@ -57,9 +57,9 @@ public sealed class AudioOutputFollower
         IEnumerable<(Guid Container, IReadOnlyList<string> CompatibleIds, string Class, string Service)> devices)
     {
         var controllers = new HashSet<Guid>();
-        foreach (var d in devices)
+        foreach ((Guid Container, IReadOnlyList<string> CompatibleIds, string Class, string Service) d in devices)
         {
-            if (d.Container == NoContainer || d.Container == ComputerContainer)
+            if (d.Container == s_noContainer || d.Container == s_computerContainer)
             {
                 continue;
             }
@@ -84,11 +84,11 @@ public sealed class AudioOutputFollower
     public static string FriendlyName(string name) =>
         name.StartsWith("OpenAL Soft on ", StringComparison.Ordinal) ? name["OpenAL Soft on ".Length..] : name;
 
-    bool IsController(string name) => _isController(name) || _isController(FriendlyName(name));
+    private bool IsController(string name) => _isController(name) || _isController(FriendlyName(name));
 
     /// <summary>The system default unless it is a game controller's output, in which case the first other output ("" =
     /// the backend's default when nothing is known).</summary>
-    string DefaultChoice(IReadOnlyList<string> outputs, string? systemDefault)
+    private string DefaultChoice(IReadOnlyList<string> outputs, string? systemDefault)
     {
         if (systemDefault != null && IsController(systemDefault) && outputs.FirstOrDefault(n => !IsController(n)) is { } other)
         {
@@ -135,7 +135,7 @@ public sealed class AudioOutputFollower
         _lastDefault = systemDefault;
         if (Requested != null)
         {
-            var chosen = Match(outputs, Requested);
+            string? chosen = Match(outputs, Requested);
             if (!OnFallback)
             {
                 if (connected && chosen != null)

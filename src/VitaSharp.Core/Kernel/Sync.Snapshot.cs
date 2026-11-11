@@ -46,7 +46,7 @@ public sealed partial class EventFlag
 
 public sealed partial class Mutex
 {
-    internal int OwnerUid;
+    internal int _ownerUid;
     internal void Save(SnapshotWriter w)
     {
         w.Write(Attr);
@@ -60,7 +60,7 @@ public sealed partial class Mutex
     {
         Attr = r.ReadUInt32();
         InitCount = r.ReadInt32();
-        OwnerUid = r.ReadInt32();
+        _ownerUid = r.ReadInt32();
         LockCount = r.ReadInt32();
         WorkArea = r.ReadUInt32();
         _deleted = r.ReadBool();
@@ -74,13 +74,13 @@ public sealed partial class Mutex
             Threads = t;
         }
 
-        Owner = OwnerUid != 0 ? t.Get<GuestThread>(OwnerUid) : null;
+        Owner = _ownerUid != 0 ? t.Get<GuestThread>(_ownerUid) : null;
     }
 }
 
 public sealed partial class CondVar
 {
-    internal int MutexUid;
+    internal int _mutexUid;
     internal void Save(SnapshotWriter w)
     {
         w.Write(Attr);
@@ -91,11 +91,11 @@ public sealed partial class CondVar
     internal void Load(SnapshotReader r)
     {
         Attr = r.ReadUInt32();
-        MutexUid = r.ReadInt32();
+        _mutexUid = r.ReadInt32();
         WorkArea = r.ReadUInt32();
         _deleted = r.ReadBool();
     }
-    internal void Resolve(ObjectTable t) => Mutex = t.Get<Mutex>(MutexUid) ?? throw new SnapshotException($"condition variable {Name}: its mutex 0x{MutexUid:X} is missing");
+    internal void Resolve(ObjectTable t) => Mutex = t.Get<Mutex>(_mutexUid) ?? throw new SnapshotException($"condition variable {Name}: its mutex 0x{_mutexUid:X} is missing");
 }
 
 public sealed partial class MsgPipe
@@ -119,7 +119,7 @@ public sealed partial class MsgPipe
         CreatorThreadUid = r.ReadInt32();
         _deleted = r.ReadBool();
         _data.Clear();
-        foreach (var b in r.ReadBytes() ?? [])
+        foreach (byte b in r.ReadBytes() ?? [])
         {
             _data.Enqueue(b);
         }
@@ -128,7 +128,7 @@ public sealed partial class MsgPipe
 
 public sealed partial class RwLock
 {
-    internal int WriterUid;
+    internal int _writerUid;
     internal void Save(SnapshotWriter w)
     {
         w.Write(Attr);
@@ -141,16 +141,16 @@ public sealed partial class RwLock
     {
         Attr = r.ReadUInt32();
         Readers = r.ReadInt32();
-        WriterUid = r.ReadInt32();
+        _writerUid = r.ReadInt32();
         WriteCount = r.ReadInt32();
         _deleted = r.ReadBool();
     }
-    internal void Resolve(ObjectTable t) => Writer = WriterUid != 0 ? t.Get<GuestThread>(WriterUid) : null;
+    internal void Resolve(ObjectTable t) => Writer = _writerUid != 0 ? t.Get<GuestThread>(_writerUid) : null;
 }
 
 public sealed partial class Callback
 {
-    internal int OwnerUid;
+    internal int _ownerUid;
     internal void Save(SnapshotWriter w)
     {
         w.WriteKernelObject(Owner);
@@ -163,7 +163,7 @@ public sealed partial class Callback
     }
     internal void Load(SnapshotReader r)
     {
-        OwnerUid = r.ReadInt32();
+        _ownerUid = r.ReadInt32();
         Function = r.ReadUInt32();
         Arg = r.ReadUInt32();
         Attr = r.ReadUInt32();
@@ -171,7 +171,7 @@ public sealed partial class Callback
         NotifyArg = r.ReadInt32();
         NotifyId = r.ReadInt32();
     }
-    internal void Resolve(ObjectTable t) => Owner = t.Get<GuestThread>(OwnerUid) ?? throw new SnapshotException($"callback {Name}: its thread 0x{OwnerUid:X} is missing");
+    internal void Resolve(ObjectTable t) => Owner = t.Get<GuestThread>(_ownerUid) ?? throw new SnapshotException($"callback {Name}: its thread 0x{_ownerUid:X} is missing");
 }
 
 public sealed partial class TimerObject

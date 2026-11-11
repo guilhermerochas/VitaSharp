@@ -1,3 +1,4 @@
+using Microsoft.Win32.SafeHandles;
 using System.Security.Cryptography;
 using VitaSharp.Core.Crypto;
 using static VitaSharp.Core.Util.BinaryHelpers;
@@ -11,22 +12,22 @@ namespace VitaSharp.Core.Package.Pfs;
 /// </summary>
 public sealed class PfsDecryptor
 {
-    static readonly byte[] HmacKey0 = FromHex("E462258B1F3121560745DB62B1436723D2BF80FE");
-    static readonly byte[] HmacKey1 = FromHex("AFE656BB3C17256A3C809F6E9BF19FDD5A388543");
-    static readonly byte[] Iv0 = FromHex("74D20CC39881C213EE770B1010E4BEA7");
-    static readonly byte[] ContractKey0 = FromHex("E12213B48016B0E99AB81F8EC02AD4A2");
+    private static readonly byte[] s_hmacKey0 = FromHex("E462258B1F3121560745DB62B1436723D2BF80FE");
+    private static readonly byte[] s_hmacKey1 = FromHex("AFE656BB3C17256A3C809F6E9BF19FDD5A388543");
+    private static readonly byte[] s_iv0 = FromHex("74D20CC39881C213EE770B1010E4BEA7");
+    private static readonly byte[] s_contractKey0 = FromHex("E12213B48016B0E99AB81F8EC02AD4A2");
 
-    const ushort AttrNenc = 0x4000, AttrDir = 0x8000;
-    const int PageSize = 0x400;
+    private const ushort AttrNenc = 0x4000, AttrDir = 0x8000;
+    private const int PageSize = 0x400;
 
-    readonly string _root;
-    readonly byte[] _drvKey = new byte[16]; // klicensee as transformed by F00D key-ring 0
+    private readonly string _root;
+    private readonly byte[] _drvKey = new byte[16]; // klicensee as transformed by F00D key-ring 0
 
-    uint _filesSalt;
-    ushort _imageSpec;
+    private uint _filesSalt;
+    private ushort _imageSpec;
 
-    sealed record FileNode(string RelPath, ushort Type, uint Size);
-    sealed class Table
+    private sealed record FileNode(string RelPath, ushort Type, uint Size);
+    private sealed class Table
     {
         public uint Salt;
         public uint Version;
@@ -45,7 +46,7 @@ public sealed class PfsDecryptor
     public PfsDecryptor(string titleRoot, byte[] klicensee)
     {
         _root = titleRoot;
-        AesUtil.EcbDecrypt(ContractKey0, klicensee, _drvKey);
+        AesUtil.EcbDecrypt(s_contractKey0, klicensee, _drvKey);
     }
 
     public static bool HasPfs(string titleRoot) => File.Exists(Path.Combine(titleRoot, "sce_pfs", "files.db"));
@@ -53,9 +54,9 @@ public sealed class PfsDecryptor
     /// <summary>Decrypts the files of an extracted title in place (sce_pfs/ is read from disk and deleted at the end).</summary>
     public void DecryptInPlace(Action<long, long>? progress = null)
     {
-        var plan = Plan(File.ReadAllBytes(Path.Combine(_root, "sce_pfs", "files.db")),
+        PfsPlan plan = Plan(File.ReadAllBytes(Path.Combine(_root, "sce_pfs", "files.db")),
                         File.ReadAllBytes(Path.Combine(_root, "sce_pfs", "unicv.db")));
-        var realFiles = EnumerateRealFiles();
+        List<string> realFiles = EnumerateRealFiles();
 
         // Map unicv tables (salt) -> file by matching the first sector ICV, filtered by sector count.
         var remaining = realFiles.Where(p => new FileInfo(Path.Combine(_root, p)).Length > 0).ToList();
@@ -63,15 +64,15 @@ public sealed class PfsDecryptor
                                  .ToDictionary(g => g.Key, g => g.ToList());
 
         long done = 0;
-        foreach (var t in plan.Tables)
+        foreach (PfsTable t in plan.Tables)
         {
             string? match = null;
-            if (bySectors.TryGetValue(t.NumSectors, out var candidates))
+            if (bySectors.TryGetValue(t.NumSectors, out List<string>? candidates))
             {
-                foreach (var c in candidates)
+                foreach (string? c in candidates)
                 {
-                    using var fs = File.OpenRead(Path.Combine(_root, c));
-                    var head = new byte[(int)Math.Min(fs.Length, t.SectorSize)];
+                    using FileStream fs = File.OpenRead(Path.Combine(_root, c));
+                    byte[] head = new byte[(int)Math.Min(fs.Length, t.SectorSize)];
                     fs.ReadExactly(head);
                     if (t.Matches(head))
                     {
@@ -89,8 +90,8 @@ public sealed class PfsDecryptor
                 throw new InvalidDataException($"PFS: no file matches unicv table at page {t.Salt}");
             }
 
-            var node = plan.Node(match);
-            var path = Path.Combine(_root, match);
+            PfsNode node = plan.Node(match);
+            string path = Path.Combine(_root, match);
             if (node.Encrypted)
             {
                 Log?.Invoke($"decrypt {match}");
@@ -118,16 +119,16 @@ public sealed class PfsDecryptor
     }
 
     /// <summary>Decrypts one file in place, a few MB at a time.</summary>
-    static void DecryptFile(string path, PfsSectorCipher cipher)
+    private static void DecryptFile(string path, PfsSectorCipher cipher)
     {
-        using var handle = File.OpenHandle(path, FileMode.Open, FileAccess.ReadWrite, FileShare.None);
+        using SafeFileHandle handle = File.OpenHandle(path, FileMode.Open, FileAccess.ReadWrite, FileShare.None);
         long length = RandomAccess.GetLength(handle);
         int chunk = cipher.ChunkSize(PfsPlan.ChunkBytes);
-        var buf = new byte[(int)Math.Min(chunk, Math.Max(length, 1))];
+        byte[] buf = new byte[(int)Math.Min(chunk, Math.Max(length, 1))];
         for (long pos = 0; pos < length; pos += chunk)
         {
             int n = (int)Math.Min(chunk, length - pos);
-            var span = buf.AsSpan(0, n);
+            Span<byte> span = buf.AsSpan(0, n);
             int got = 0;
             while (got < n)
             {
@@ -150,14 +151,14 @@ public sealed class PfsDecryptor
     /// </summary>
     public PfsPlan Plan(byte[] filesDb, byte[] unicvDb)
     {
-        var files = ParseFilesDb(filesDb, out _);
+        List<FileNode> files = ParseFilesDb(filesDb, out _);
         if (_imageSpec != 1 && _imageSpec != 4)
         {
             throw new NotSupportedException($"PFS image spec {_imageSpec} (icv.db / savedata) is not supported for installs");
         }
 
         var tables = new List<PfsTable>();
-        foreach (var t in ParseUnicvDb(unicvDb))
+        foreach (Table t in ParseUnicvDb(unicvDb))
         {
             if (t.NumSectors == 0)
             {
@@ -169,7 +170,7 @@ public sealed class PfsDecryptor
                                     t.Blocks[0][0], MakeTweakKey(t)));
         }
         var nodes = new Dictionary<string, PfsNode>();
-        foreach (var f in files)
+        foreach (FileNode f in files)
         {
             nodes[f.RelPath.ToUpperInvariant()] = new PfsNode(f.RelPath, f.Size, (f.Type & AttrNenc) == 0);
         }
@@ -177,14 +178,14 @@ public sealed class PfsDecryptor
         return new PfsPlan(tables, nodes, files.Where(f => !IsDir(f.Type)).Sum(f => (long)f.Size), _drvKey);
     }
 
-    static bool IsDir(ushort type) => (type & AttrDir) != 0;
+    private static bool IsDir(ushort type) => (type & AttrDir) != 0;
 
-    List<string> EnumerateRealFiles()
+    private List<string> EnumerateRealFiles()
     {
         var list = new List<string>();
-        foreach (var f in Directory.EnumerateFiles(_root, "*", SearchOption.AllDirectories))
+        foreach (string f in Directory.EnumerateFiles(_root, "*", SearchOption.AllDirectories))
         {
-            var rel = Path.GetRelativePath(_root, f).Replace('\\', '/');
+            string rel = Path.GetRelativePath(_root, f).Replace('\\', '/');
             if (PfsPlan.IsCandidatePath(rel))
             {
                 list.Add(rel);
@@ -195,26 +196,26 @@ public sealed class PfsDecryptor
 
     // ---- key derivation -------------------------------------------------------------------
 
-    byte[] SaltBytes(uint icvSalt)
+    private byte[] SaltBytes(uint icvSalt)
     {
         if (_filesSalt == 0)
         {
             return BitConverter.GetBytes(icvSalt);
         }
 
-        var b = new byte[8];
+        byte[] b = new byte[8];
         BitConverter.TryWriteBytes(b.AsSpan(0, 4), _filesSalt);
         BitConverter.TryWriteBytes(b.AsSpan(4, 4), icvSalt);
         return b;
     }
 
     /// <summary>generate_secret_np: AES-CBC "with keygen" over HMAC(hmac_key1, salts).</summary>
-    byte[] MakeSecret(uint icvSalt)
+    private byte[] MakeSecret(uint icvSalt)
     {
-        byte[] combo = HMACSHA1.HashData(HmacKey1, SaltBytes(icvSalt));
-        var secret = new byte[20];
-        AesUtil.CbcEncrypt(_drvKey, Iv0, combo.AsSpan(0, 16), secret.AsSpan(0, 16));
-        var ks = new byte[16];
+        byte[] combo = HMACSHA1.HashData(s_hmacKey1, SaltBytes(icvSalt));
+        byte[] secret = new byte[20];
+        AesUtil.CbcEncrypt(_drvKey, s_iv0, combo.AsSpan(0, 16), secret.AsSpan(0, 16));
+        byte[] ks = new byte[16];
         AesUtil.EcbEncrypt(_drvKey, secret.AsSpan(0, 16), ks); // iv is now the last ciphertext block
         for (int i = 0; i < 4; i++)
         {
@@ -224,19 +225,19 @@ public sealed class PfsDecryptor
         return secret;
     }
 
-    byte[] MakeTweakKey(Table t)
+    private byte[] MakeTweakKey(Table t)
     {
         if (t.Version > 1) // has dbseed (SCEIFTBL_RO, icv version > 1)
         {
-            return HMACSHA1.HashData(HmacKey0, t.DbSeed)[..16];
+            return HMACSHA1.HashData(s_hmacKey0, t.DbSeed)[..16];
         }
 
-        return HMACSHA1.HashData(HmacKey0, SaltBytes(t.Salt))[..16];
+        return HMACSHA1.HashData(s_hmacKey0, SaltBytes(t.Salt))[..16];
     }
 
     // ---- files.db ---------------------------------------------------------------------------
 
-    List<FileNode> ParseFilesDb(byte[] db, out List<string> dirs)
+    private List<FileNode> ParseFilesDb(byte[] db, out List<string> dirs)
     {
         if (CString(db.AsSpan(0, 8)) != "SCENGPFS")
         {
@@ -251,7 +252,7 @@ public sealed class PfsDecryptor
         var names = new Dictionary<(uint idx, bool dir), (string name, uint parent, ushort type, uint size)>();
         for (int off = (int)pageSize; off + pageSize <= db.Length; off += (int)pageSize)
         {
-            var page = db.AsSpan(off, (int)pageSize);
+            Span<byte> page = db.AsSpan(off, (int)pageSize);
             uint nFiles = U32LE(page, 8);
             if (nFiles > 9)
             {
@@ -288,7 +289,7 @@ public sealed class PfsDecryptor
             int guard = 0;
             while (parent != 0 && guard++ < 256)
             {
-                var d = names[(parent, true)];
+                (string name, uint parent, ushort type, uint size) d = names[(parent, true)];
                 parts.Add(d.name);
                 parent = d.parent;
             }
@@ -298,9 +299,9 @@ public sealed class PfsDecryptor
 
         var files = new List<FileNode>();
         dirs = new List<string>();
-        foreach (var ((idx, isDir), v) in names)
+        foreach (((uint idx, bool isDir), (string name, uint parent, ushort type, uint size) v) in names)
         {
-            var p = PathOf(v.parent, v.name);
+            string p = PathOf(v.parent, v.name);
             if (isDir)
             {
                 dirs.Add(p);
@@ -315,7 +316,7 @@ public sealed class PfsDecryptor
 
     // ---- unicv.db ---------------------------------------------------------------------------
 
-    static List<Table> ParseUnicvDb(byte[] db)
+    private static List<Table> ParseUnicvDb(byte[] db)
     {
         if (CString(db.AsSpan(0, 8)) != "SCEIRODB")
         {
@@ -327,7 +328,7 @@ public sealed class PfsDecryptor
         int off = (int)blockSize;
         while (off + blockSize <= db.Length)
         {
-            var page = db.AsSpan(off, (int)blockSize);
+            Span<byte> page = db.AsSpan(off, (int)blockSize);
             if (IsZero(page))
             {
                 off += (int)blockSize;
@@ -351,9 +352,9 @@ public sealed class PfsDecryptor
             uint left = t.NumSectors;
             while (left > 0)
             {
-                var sp = db.AsSpan(off, (int)blockSize);
+                Span<byte> sp = db.AsSpan(off, (int)blockSize);
                 uint nSig = U32LE(sp, 8);
-                var sigs = new byte[nSig][];
+                byte[][] sigs = new byte[nSig][];
                 for (int i = 0; i < nSig; i++)
                 {
                     sigs[i] = sp.Slice(16 + i * 20, 20).ToArray();

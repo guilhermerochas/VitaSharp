@@ -9,7 +9,7 @@ public abstract class KernelObject
     /// <summary>Process that created the object (<see cref="ProcessScope.CurrentPid"/> at registration; 0 = the system).</summary>
     public int OwnerPid { get; internal set; }
 
-    string? _waitDescription;
+    private string? _waitDescription;
     /// <summary>"kind name" shown in thread states; built once so blocking waits do not allocate a string each time.</summary>
     public string WaitDescription => _waitDescription ??= $"{GetType().Name.ToLowerInvariant()} {Name}";
 
@@ -61,7 +61,7 @@ public static class KernelInfo
     {
         System.Buffers.Binary.BinaryPrimitives.WriteInt32LittleEndian(full, full.Length);
         System.Buffers.Binary.BinaryPrimitives.WriteInt32LittleEndian(full[4..], uid);
-        var bytes = System.Text.Encoding.UTF8.GetBytes(name);
+        byte[] bytes = System.Text.Encoding.UTF8.GetBytes(name);
         bytes.AsSpan(0, Math.Min(bytes.Length, 31)).CopyTo(full[8..]);
         System.Buffers.Binary.BinaryPrimitives.WriteUInt32LittleEndian(full[0x28..], attr);
     }
@@ -88,7 +88,7 @@ public static class KernelInfo
             return SceError.UID_NAME_TOO_LONG;
         }
 
-        var o = objects.All<T>().FirstOrDefault(x => x.Name == name && !x.Orphaned && (filter == null || filter(x)));
+        T? o = objects.All<T>().FirstOrDefault(x => x.Name == name && !x.Orphaned && (filter == null || filter(x)));
         if (o == null)
         {
             return SceError.UID_CANNOT_FIND_BY_NAME;
@@ -106,7 +106,7 @@ public static class KernelInfo
     /// <summary>sceKernelClose*: releases a handle; never deletes the object.</summary>
     public static int CloseHandle<T>(ObjectTable objects, int uid, int unknownError, Func<T, bool>? filter = null) where T : KernelObject
     {
-        var o = objects.Get<T>(uid);
+        T? o = objects.Get<T>(uid);
         if (o == null || (filter != null && !filter(o)))
         {
             return unknownError;
@@ -244,8 +244,8 @@ public static class SceError
 /// <summary>UID table shared by every kernel object kind (and by every process: <see cref="VitaSystem.Objects"/>).</summary>
 public sealed partial class ObjectTable
 {
-    readonly ConcurrentDictionary<int, KernelObject> _objects = new();
-    int _next = 0x4001_0001;
+    private readonly ConcurrentDictionary<int, KernelObject> _objects = new();
+    private int _next = 0x4001_0001;
 
     public int Register(KernelObject o)
     {
@@ -261,7 +261,7 @@ public sealed partial class ObjectTable
         return uid;
     }
 
-    public T? Get<T>(int uid) where T : KernelObject => _objects.TryGetValue(uid, out var o) ? o as T : null;
+    public T? Get<T>(int uid) where T : KernelObject => _objects.TryGetValue(uid, out KernelObject? o) ? o as T : null;
     public bool Remove(int uid) => _objects.TryRemove(uid, out _);
 
     /// <summary>Deletes a message pipe: its waiters wake with WAIT_DELETE. When handles opened by name are still open
@@ -295,7 +295,7 @@ public sealed partial class ObjectTable
     public int RemoveOwnedBy(int pid)
     {
         int n = 0;
-        foreach (var (uid, o) in _objects)
+        foreach ((int uid, KernelObject? o) in _objects)
         {
             if (o.OwnerPid != pid || o is ProcessObject or AppObject)
             {

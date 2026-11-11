@@ -18,21 +18,21 @@ public static class TitlePatches
             return;
         }
 
-        var file = Path.Combine(patchDir, titleId + ".txt");
+        string file = Path.Combine(patchDir, titleId + ".txt");
         if (!File.Exists(file))
         {
             return;
         }
 
-        foreach (var raw in File.ReadLines(file))
+        foreach (string raw in File.ReadLines(file))
         {
-            var line = raw.Split('#')[0].Trim();
+            string line = raw.Split('#')[0].Trim();
             if (line.Length == 0)
             {
                 continue;
             }
 
-            var parts = line.Split(':');
+            string[] parts = line.Split(':');
             if (parts.Length != 2)
             {
                 Log.Warn($"patch {file}: bad line '{raw}'");
@@ -50,7 +50,7 @@ public static class TitlePatches
         }
     }
 
-    static void Write(uint addr, uint value, int size, string source)
+    private static void Write(uint addr, uint value, int size, string source)
     {
         if (size == 2)
         {

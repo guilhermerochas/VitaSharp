@@ -13,8 +13,8 @@ public sealed class KeyStickSlew
     /// <summary>Time for a full deflection from the centre (and back).</summary>
     public const double TravelMs = 100;
 
-    float _lx, _ly, _rx, _ry;
-    long _last = -1;
+    private float _lx, _ly, _rx, _ry;
+    private long _last = -1;
 
     /// <summary>Moves the stick positions toward <paramref name="m"/>'s (keyboard input) and writes them back.</summary>
     public void Apply(ref MappedInput m, long nowTicks, long ticksPerSecond)
@@ -33,7 +33,7 @@ public sealed class KeyStickSlew
         m.State.Ry = StickMath.ToByte(_ry);
     }
 
-    static float Toward(float cur, float target, float step)
+    private static float Toward(float cur, float target, float step)
     {
         if (Math.Abs(target - cur) <= step)
         {

@@ -1,3 +1,4 @@
+using VitaSharp.Core.Crypto;
 using VitaSharp.Core.Package.Pfs;
 
 namespace VitaSharp.Core.Package;
@@ -29,8 +30,8 @@ public static class PkgInstaller
     public static PkgInfo Inspect(Stream pkgStream)
     {
         using var pkg = new PkgReader(pkgStream);
-        var kind = pkg.Kind;
-        var sfo = pkg.ParamSfo.Length > 0 ? new Sfo(pkg.ParamSfo) : kind.IsPspEmu() ? PspPkgInstaller.EbootSfo(pkg) : null;
+        PkgKind kind = pkg.Kind;
+        Sfo? sfo = pkg.ParamSfo.Length > 0 ? new Sfo(pkg.ParamSfo) : kind.IsPspEmu() ? PspPkgInstaller.EbootSfo(pkg) : null;
         string titleId = sfo?.TitleId is { Length: > 0 } t ? t : pkg.TitleId;
         return new PkgInfo(kind, pkg.ContentId, titleId, sfo?.Title is { Length: > 0 } title ? title : pkg.ContentId);
     }
@@ -68,7 +69,7 @@ public static class PkgInstaller
 
     public static byte[] ReadKlicensee(string licensePath)
     {
-        var rif = File.ReadAllBytes(licensePath);
+        byte[] rif = File.ReadAllBytes(licensePath);
         if (rif.Length < 0x60)
         {
             throw new InvalidDataException("License file is too small");
@@ -139,7 +140,7 @@ public static class PkgInstaller
             reader.Dispose();
             throw new InvalidDataException("License file is too small");
         }
-        using var pkg = reader;
+        using PkgReader pkg = reader;
         string licContent = Zrif.ContentId(license);
         if (licContent.Length == 36 && licContent != pkg.ContentId)
         {
@@ -147,7 +148,7 @@ public static class PkgInstaller
         }
 
         var sfo = new Sfo(pkg.ParamSfo);
-        var type = pkg.ContentType;
+        PkgContentType type = pkg.ContentType;
         if (type == PkgContentType.App && sfo.Category == "gp")
         {
             type = PkgContentType.Patch;
@@ -162,8 +163,8 @@ public static class PkgInstaller
             _ => Path.Combine(ux0Root, "theme", pkg.ContentId),
         };
 
-        var thread = Thread.CurrentThread;
-        var priority = thread.Priority;
+        Thread thread = Thread.CurrentThread;
+        ThreadPriority priority = thread.Priority;
         thread.Priority = ThreadPriority.BelowNormal; // the reader/decryptor; the writer thread is below normal too
         try
         {
@@ -193,7 +194,7 @@ public static class PkgInstaller
             thread.Priority = priority;
         }
 
-        var licDir = Path.Combine(ux0Root, "license", titleId);
+        string licDir = Path.Combine(ux0Root, "license", titleId);
         Directory.CreateDirectory(licDir);
         File.WriteAllBytes(Path.Combine(licDir, pkg.ContentId + ".rif"), license);
         Directory.CreateDirectory(Path.Combine(dest, "sce_sys", "package"));
@@ -206,24 +207,24 @@ public static class PkgInstaller
         return new InstalledTitle(titleId, sfo.Title, dest, type) { Kind = kind };
     }
 
-    static PkgEntry? FindEntry(PkgReader pkg, string name) =>
+    private static PkgEntry? FindEntry(PkgReader pkg, string name) =>
         pkg.Entries.FirstOrDefault(e => !e.IsDirectory && e.Name.Equals(name, StringComparison.OrdinalIgnoreCase));
 
-    static byte[] ReadEntry(PkgReader pkg, PkgEntry e)
+    private static byte[] ReadEntry(PkgReader pkg, PkgEntry e)
     {
         var ms = new MemoryStream((int)e.DataSize);
         pkg.Extract(e, ms);
         return ms.ToArray();
     }
 
-    static void Extract(PkgReader pkg, byte[] klicensee, string dest, Action<string>? log,
+    private static void Extract(PkgReader pkg, byte[] klicensee, string dest, Action<string>? log,
                         Action<InstallProgress>? progress, CancellationToken ct)
     {
         // The PFS image (sce_pfs/files.db + unicv.db) is read first, so the files can be decrypted as they are written.
         PfsPlan? pfs = null;
         if (FindEntry(pkg, "sce_pfs/files.db") is { } filesDb)
         {
-            var unicv = FindEntry(pkg, "sce_pfs/unicv.db")
+            PkgEntry unicv = FindEntry(pkg, "sce_pfs/unicv.db")
                 ?? throw new InvalidDataException("PFS: the package has sce_pfs/files.db but no sce_pfs/unicv.db");
             pfs = new PfsDecryptor(klicensee).Plan(ReadEntry(pkg, filesDb), ReadEntry(pkg, unicv));
         }
@@ -237,10 +238,10 @@ public static class PkgInstaller
 
         TimeSpan readTime = default, ctrTime = default, pfsTime = default;
         int decrypted = 0, plain = 0;
-        using var ctr = pkg.CreateCipher();
+        using AesUtil.Ctr ctr = pkg.CreateCipher();
         using (var writer = new FileWritePipeline(PfsPlan.ChunkBytes, 4, n => reporter.Add(n), ct))
         {
-            foreach (var e in pkg.Entries)
+            foreach (PkgEntry e in pkg.Entries)
             {
                 ct.ThrowIfCancellationRequested();
                 if (Skipped(e))
@@ -248,7 +249,7 @@ public static class PkgInstaller
                     continue;
                 }
 
-                var target = Path.Combine(dest, e.Name.Replace('/', Path.DirectorySeparatorChar));
+                string target = Path.Combine(dest, e.Name.Replace('/', Path.DirectorySeparatorChar));
                 if (e.IsDirectory)
                 {
                     Directory.CreateDirectory(target);
@@ -260,11 +261,11 @@ public static class PkgInstaller
                 PfsNode? node = null;
                 if (pfs != null && size > 0 && PfsPlan.IsCandidatePath(e.Name) && pfs.HeadBytes > 0)
                 {
-                    var head = writer.Rent();
+                    byte[] head = writer.Rent();
                     try
                     {
-                        var h = head.AsSpan(0, (int)Math.Min(size, Math.Min(pfs.HeadBytes, head.Length)));
-                        var (r, d) = pkg.ReadData(e, 0, h, ctr);
+                        Span<byte> h = head.AsSpan(0, (int)Math.Min(size, Math.Min(pfs.HeadBytes, head.Length)));
+                        (TimeSpan r, TimeSpan d) = pkg.ReadData(e, 0, h, ctr);
                         readTime += r;
                         ctrTime += d;
                         table = pfs.Match(size, h);
@@ -278,7 +279,7 @@ public static class PkgInstaller
                         node = pfs.Node(e.Name);
                     }
                 }
-                var cipher = table != null && node!.Encrypted ? pfs!.Cipher(table) : null;
+                PfsSectorCipher? cipher = table != null && node!.Encrypted ? pfs!.Cipher(table) : null;
                 if (cipher != null)
                 {
                     decrypted++;
@@ -302,9 +303,9 @@ public static class PkgInstaller
                 for (long pos = 0; pos < size; pos += chunk)
                 {
                     int n = (int)Math.Min(chunk, size - pos);
-                    var buf = writer.Rent();
-                    var span = buf.AsSpan(0, n);
-                    var (r, d) = pkg.ReadData(e, pos, span, ctr);
+                    byte[] buf = writer.Rent();
+                    Span<byte> span = buf.AsSpan(0, n);
+                    (TimeSpan r, TimeSpan d) = pkg.ReadData(e, pos, span, ctr);
                     readTime += r;
                     ctrTime += d;
                     if (cipher != null)

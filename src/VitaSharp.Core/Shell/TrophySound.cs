@@ -38,7 +38,7 @@ public static class TrophySound
     public static PcmSound Chime(int rate = 48000)
     {
         int n = (int)(rate * 0.7);
-        var mix = new double[n];
+        double[] mix = new double[n];
         void Note(double freq, double start, double gain)
         {
             int s0 = (int)(start * rate);
@@ -55,7 +55,7 @@ public static class TrophySound
         Note(1975.53, 0.11, 1.0);
         double peak = mix.Max(Math.Abs);
         double scale = peak > 0 ? 0.5 / peak : 0;
-        var samples = new short[n];
+        short[] samples = new short[n];
         // fade the last 20 ms so the tail never clicks
         int fade = rate / 50;
         for (int i = 0; i < n; i++)
@@ -79,7 +79,7 @@ public static class TrophySound
         double Frame(int i, int c) => inCh == 1 ? pcm.Samples[i] : channels == 1 ? (pcm.Samples[i * inCh] + pcm.Samples[i * inCh + 1]) / 2.0
             : pcm.Samples[i * inCh + Math.Min(c, inCh - 1)];
         long outFrames = (long)inFrames * rate / Math.Max(1, pcm.SampleRate);
-        var o = new short[outFrames * channels];
+        short[] o = new short[outFrames * channels];
         double step = pcm.SampleRate / (double)rate;
         for (long f = 0; f < outFrames; f++)
         {

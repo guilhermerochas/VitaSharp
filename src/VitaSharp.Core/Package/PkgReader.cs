@@ -70,16 +70,16 @@ public sealed record PkgEntry(string Name, ulong DataOffset, ulong DataSize, boo
 /// </summary>
 public sealed class PkgReader : IDisposable
 {
-    static readonly byte[] PkgPs3 = FromHex("2E7B71D7C9C9A14EA3221F188828B8F8");
-    static readonly byte[] PkgPsp = FromHex("07F2C68290B50D2C33818D709B60E62B");
-    static readonly byte[] PkgVita2 = FromHex("E31A70C9CE1DD72BF3C0622963F2ECCB");
-    static readonly byte[] PkgVita3 = FromHex("423ACA3A2BD5649F9686ABAD6FD8801F");
-    static readonly byte[] PkgVita4 = FromHex("AF07FD59652527BAF13389668B17D9EA");
+    private static readonly byte[] s_pkgPs3 = FromHex("2E7B71D7C9C9A14EA3221F188828B8F8");
+    private static readonly byte[] s_pkgPsp = FromHex("07F2C68290B50D2C33818D709B60E62B");
+    private static readonly byte[] s_pkgVita2 = FromHex("E31A70C9CE1DD72BF3C0622963F2ECCB");
+    private static readonly byte[] s_pkgVita3 = FromHex("423ACA3A2BD5649F9686ABAD6FD8801F");
+    private static readonly byte[] s_pkgVita4 = FromHex("AF07FD59652527BAF13389668B17D9EA");
 
-    readonly Stream _fs;
-    readonly byte[] _iv = new byte[16];
-    readonly byte[] _key = new byte[16];
-    readonly ulong _dataOffset;
+    private readonly Stream _fs;
+    private readonly byte[] _iv = new byte[16];
+    private readonly byte[] _key = new byte[16];
+    private readonly ulong _dataOffset;
 
     public string ContentId { get; }
     public string TitleId => ContentId.Length >= 16 ? ContentId.Substring(7, 9) : "";
@@ -126,19 +126,19 @@ public sealed class PkgReader : IDisposable
             switch (KeyType)
             {
                 case 0:
-                    PkgPs3.CopyTo(_key, 0);
+                    s_pkgPs3.CopyTo(_key, 0);
                     break;
                 case 1:
-                    PkgPsp.CopyTo(_key, 0);
+                    s_pkgPsp.CopyTo(_key, 0);
                     break; // PSP/PSone: the PSP key as is (the PS3 parts use PkgPs3)
                 case 2:
-                    AesUtil.EcbEncrypt(PkgVita2, _iv, _key);
+                    AesUtil.EcbEncrypt(s_pkgVita2, _iv, _key);
                     break;
                 case 3:
-                    AesUtil.EcbEncrypt(PkgVita3, _iv, _key);
+                    AesUtil.EcbEncrypt(s_pkgVita3, _iv, _key);
                     break;
                 case 4:
-                    AesUtil.EcbEncrypt(PkgVita4, _iv, _key);
+                    AesUtil.EcbEncrypt(s_pkgVita4, _iv, _key);
                     break;
                 default:
                     throw new NotSupportedException($"Unsupported PKG key type {KeyType} (a PS3 package?)");
@@ -161,7 +161,7 @@ public sealed class PkgReader : IDisposable
                     case 10 when size > 8:
                     {
                         // the PSP add-on's install folder: 8 bytes in, a NUL-terminated name (lusid1/pkg2zip)
-                        var dir = new byte[Math.Min(0x28, size - 8)];
+                        byte[] dir = new byte[Math.Min(0x28, size - 8)];
                         _fs.Position = off + 16;
                         _fs.ReadExactly(dir);
                         installDir = CString(dir);
@@ -180,7 +180,7 @@ public sealed class PkgReader : IDisposable
             InstallDirectory = installDir;
 
             var entries = new List<PkgEntry>((int)fileCount);
-            var raw = new byte[32];
+            byte[] raw = new byte[32];
             for (uint i = 0; i < fileCount; i++)
             {
                 ulong rel = itemsOffset + i * 32UL;
@@ -194,7 +194,7 @@ public sealed class PkgReader : IDisposable
                     throw new InvalidDataException("The PKG file is truncated or corrupted (an item lies past its end)");
                 }
 
-                var name = new byte[nameSize];
+                byte[] name = new byte[nameSize];
                 ReadDecrypted(nameOff, name, KeyFor(pspType));
                 entries.Add(new PkgEntry(System.Text.Encoding.UTF8.GetString(name), dataOff, dataSize, t == 4 || t == 18, pspType));
             }
@@ -224,7 +224,7 @@ public sealed class PkgReader : IDisposable
         }
     }
 
-    byte[] KeyFor(byte pspType) => KeyType == 1 && pspType != 0x90 ? PkgPs3 : _key;
+    private byte[] KeyFor(byte pspType) => KeyType == 1 && pspType != 0x90 ? s_pkgPs3 : _key;
 
     /// <summary>The kind of package (content type, PARAM.SFO category, install folder).</summary>
     public PkgKind Kind
@@ -266,11 +266,11 @@ public sealed class PkgReader : IDisposable
     };
 
     /// <summary>Reads and decrypts bytes at an offset relative to the encrypted data area (must be 16-aligned).</summary>
-    void ReadDecrypted(ulong rel, Span<byte> dst, byte[] key)
+    private void ReadDecrypted(ulong rel, Span<byte> dst, byte[] key)
     {
         ulong aligned = rel & ~15UL;
         int skip = (int)(rel - aligned);
-        var tmp = new byte[(skip + dst.Length + 15) & ~15];
+        byte[] tmp = new byte[(skip + dst.Length + 15) & ~15];
         _fs.Position = (long)(_dataOffset + aligned);
         _fs.ReadExactly(tmp);
         using var ctr = new AesUtil.Ctr(key);
@@ -326,9 +326,9 @@ public sealed class PkgReader : IDisposable
         }
 
         using var ctr = new AesUtil.Ctr(KeyFor(e.PspType));
-        var counter = AesUtil.CounterAt(_iv, e.DataOffset / 16);
+        byte[] counter = AesUtil.CounterAt(_iv, e.DataOffset / 16);
         _fs.Position = (long)(_dataOffset + e.DataOffset);
-        var buf = new byte[1 << 20];
+        byte[] buf = new byte[1 << 20];
         ulong left = e.DataSize;
         while (left > 0)
         {

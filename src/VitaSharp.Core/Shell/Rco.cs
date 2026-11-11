@@ -70,10 +70,10 @@ public sealed class RcoElement
 
     public IEnumerable<RcoElement> Descendants()
     {
-        foreach (var c in Children)
+        foreach (RcoElement c in Children)
         {
             yield return c;
-            foreach (var d in c.Descendants())
+            foreach (RcoElement d in c.Descendants())
             {
                 yield return d;
             }
@@ -101,10 +101,10 @@ public sealed class Rco
 
     public RcoElement Root { get; }
     public uint Version { get; }
-    readonly byte[] _data;
-    readonly int _fileTable, _fileTableSize;
+    private readonly byte[] _data;
+    private readonly int _fileTable, _fileTableSize;
 
-    Rco(byte[] data)
+    private Rco(byte[] data)
     {
         _data = data;
         if (data.Length < 0x50 || U32(0) != Magic)
@@ -139,15 +139,15 @@ public sealed class Rco
         Root = ReadElement(0, null, 0);
     }
 
-    readonly (int off, int size) _tree, _idStr, _idInt, _str, _wstr, _hash, _intArr, _floatArr;
+    private readonly (int off, int size) _tree, _idStr, _idInt, _str, _wstr, _hash, _intArr, _floatArr;
 
     public static Rco Load(string path) => new(File.ReadAllBytes(path));
     public static Rco Parse(byte[] data) => new(data);
 
-    uint U32(int off) => BinaryPrimitives.ReadUInt32LittleEndian(_data.AsSpan(off));
-    int I32(int off) => BinaryPrimitives.ReadInt32LittleEndian(_data.AsSpan(off));
+    private uint U32(int off) => BinaryPrimitives.ReadUInt32LittleEndian(_data.AsSpan(off));
+    private int I32(int off) => BinaryPrimitives.ReadInt32LittleEndian(_data.AsSpan(off));
 
-    RcoElement ReadElement(int offset, RcoElement? parent, int depth)
+    private RcoElement ReadElement(int offset, RcoElement? parent, int depth)
     {
         if (depth > 64)
         {
@@ -180,14 +180,14 @@ public sealed class Rco
                 throw new InvalidDataException("RCO sibling chain loops");
             }
 
-            var c = ReadElement(child, e, depth + 1);
+            RcoElement c = ReadElement(child, e, depth + 1);
             e.Children.Add(c);
             child = I32(_tree.off + child + 16); // next sibling
         }
         return e;
     }
 
-    RcoAttribute ReadAttribute(int p)
+    private RcoAttribute ReadAttribute(int p)
     {
         string name = CString(_str, I32(p));
         var type = (RcoAttributeType)I32(p + 4);
@@ -211,9 +211,9 @@ public sealed class Rco
         };
     }
 
-    static bool InTable((int off, int size) t, int at, int len) => at >= 0 && at + len <= t.size;
+    private static bool InTable((int off, int size) t, int at, int len) => at >= 0 && at + len <= t.size;
 
-    T[] Array<T>((int off, int size) t, int index, int count, Func<int, T> read)
+    private T[] Array<T>((int off, int size) t, int index, int count, Func<int, T> read)
     {
         // array attributes: (element index, count) in 4-byte units
         if (count <= 0 || !InTable(t, index * 4, count * 4))
@@ -230,7 +230,7 @@ public sealed class Rco
         return r;
     }
 
-    string CString((int off, int size) t, int at)
+    private string CString((int off, int size) t, int at)
     {
         if (at < 0 || at >= t.size)
         {
@@ -246,7 +246,7 @@ public sealed class Rco
         return Encoding.UTF8.GetString(_data, start, end - start);
     }
 
-    string Utf8((int off, int size) t, int at, int len)
+    private string Utf8((int off, int size) t, int at, int len)
     {
         if (!InTable(t, at, Math.Max(len, 0)))
         {
@@ -256,7 +256,7 @@ public sealed class Rco
         return Encoding.UTF8.GetString(_data, t.off + at, len).TrimEnd('\0');
     }
 
-    string Utf16((int off, int size) t, int at, int len)
+    private string Utf16((int off, int size) t, int at, int len)
     {
         // wide strings: offset in bytes, length in characters
         if (len <= 0 || !InTable(t, at, len * 2))
@@ -270,7 +270,7 @@ public sealed class Rco
     /// <summary>The bytes of a file attribute, inflated when its element says compress="on".</summary>
     public byte[] ReadFile(RcoElement element, string attribute = "src")
     {
-        var a = element.Attribute(attribute);
+        RcoAttribute? a = element.Attribute(attribute);
         if (a == null || a.Type != RcoAttributeType.File)
         {
             throw new InvalidDataException($"<{element.Name}> has no file attribute '{attribute}'");
@@ -281,7 +281,7 @@ public sealed class Rco
             throw new InvalidDataException("RCO file lies outside the file table");
         }
 
-        var raw = _data.AsSpan(_fileTable + a.FileOffset, a.FileSize);
+        Span<byte> raw = _data.AsSpan(_fileTable + a.FileOffset, a.FileSize);
         if (element.Text("compress") != "on")
         {
             return raw.ToArray();
@@ -298,9 +298,9 @@ public sealed class Rco
     /// "soundtable", ...), id and type ("texture/png", "texture/gim", "sound/vag"...). Files that fail to read are skipped.</summary>
     public IEnumerable<RcoFile> Files()
     {
-        foreach (var e in Root.Descendants())
+        foreach (RcoElement e in Root.Descendants())
         {
-            var src = e.Attributes.FirstOrDefault(a => a.Type == RcoAttributeType.File);
+            RcoAttribute? src = e.Attributes.FirstOrDefault(a => a.Type == RcoAttributeType.File);
             if (src == null)
             {
                 continue;
@@ -323,10 +323,10 @@ public sealed class Rco
     /// written "0x........" (firmware RCOs keep only hashes; other elements refer to resources by the same hash).</summary>
     public RcoElement? Find(string table, string id)
     {
-        uint? hash = id.StartsWith("0x", StringComparison.OrdinalIgnoreCase) && uint.TryParse(id[2..], System.Globalization.NumberStyles.HexNumber, null, out var h) ? h : null;
-        foreach (var t in Root.Descendants().Where(e => e.Name == table))
+        uint? hash = id.StartsWith("0x", StringComparison.OrdinalIgnoreCase) && uint.TryParse(id[2..], System.Globalization.NumberStyles.HexNumber, null, out uint h) ? h : null;
+        foreach (RcoElement? t in Root.Descendants().Where(e => e.Name == table))
         {
-            foreach (var e in t.Children)
+            foreach (RcoElement e in t.Children)
             {
                 if (e.Id == id || (hash != null && e.IdHash == hash))
                 {
@@ -345,7 +345,7 @@ public sealed class Rco
         void Walk(RcoElement e, int depth)
         {
             sb.Append(' ', depth * 2).Append(e).AppendLine();
-            foreach (var c in e.Children)
+            foreach (RcoElement c in e.Children)
             {
                 Walk(c, depth + 1);
             }

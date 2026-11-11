@@ -33,15 +33,15 @@ public static class Mp4Demuxers
 /// Annex B byte stream with SPS/PPS before every key frame, the format hardware decoders take.</summary>
 public sealed unsafe class Mp4Demuxer : IMp4Demuxer
 {
-    AVFormatContext* _fmt;
-    readonly AVPacket* _pkt;
-    readonly byte[][] _annexBHeaders;
-    readonly int[] _nalLengthSize;
+    private AVFormatContext* _fmt;
+    private readonly AVPacket* _pkt;
+    private readonly byte[][] _annexBHeaders;
+    private readonly int[] _nalLengthSize;
 
     public IReadOnlyList<DemuxedStream> Streams { get; }
     public long Duration90k { get; }
 
-    Mp4Demuxer(AVFormatContext* fmt)
+    private Mp4Demuxer(AVFormatContext* fmt)
     {
         _fmt = fmt;
         _pkt = ffmpeg.av_packet_alloc();
@@ -51,12 +51,12 @@ public sealed unsafe class Mp4Demuxer : IMp4Demuxer
         _nalLengthSize = new int[n];
         for (int i = 0; i < n; i++)
         {
-            var st = fmt->streams[i];
-            var par = st->codecpar;
+            AVStream* st = fmt->streams[i];
+            AVCodecParameters* par = st->codecpar;
             long dur = st->duration > 0 ? To90k(st->duration, st->time_base) : fmt->duration > 0 ? fmt->duration * 9 / 100 : 0;
-            var lang = ffmpeg.av_dict_get(st->metadata, "language", null, 0);
+            AVDictionaryEntry* lang = ffmpeg.av_dict_get(st->metadata, "language", null, 0);
             string language = lang != null ? new string((sbyte*)lang->value) : "und";
-            var fr = st->avg_frame_rate;
+            AVRational fr = st->avg_frame_rate;
             streams.Add(new DemuxedStream(par->codec_type == AVMediaType.AVMEDIA_TYPE_VIDEO, par->codec_id, par->width, par->height,
                 par->ch_layout.nb_channels, par->sample_rate, (int)par->bit_rate, dur, fr.den != 0 ? (double)fr.num / fr.den : 0, language));
             if (par->codec_id == AVCodecID.AV_CODEC_ID_H264 && par->extradata_size > 7 && par->extradata[0] == 1)
@@ -89,7 +89,7 @@ public sealed unsafe class Mp4Demuxer : IMp4Demuxer
         return new Mp4Demuxer(fmt);
     }
 
-    static long To90k(long ts, AVRational tb) => ts == ffmpeg.AV_NOPTS_VALUE ? 0 : ts * 90000L * tb.num / tb.den;
+    private static long To90k(long ts, AVRational tb) => ts == ffmpeg.AV_NOPTS_VALUE ? 0 : ts * 90000L * tb.num / tb.den;
 
     /// <summary>avcC: SPS/PPS as Annex B, plus the NAL length field size.</summary>
     internal static (byte[], int) ParseAvcC(ReadOnlySpan<byte> c)
@@ -133,7 +133,7 @@ public sealed unsafe class Mp4Demuxer : IMp4Demuxer
                     continue;
                 }
 
-                var tb = _fmt->streams[s]->time_base;
+                AVRational tb = _fmt->streams[s]->time_base;
                 var data = new ReadOnlySpan<byte>(_pkt->data, _pkt->size);
                 bool key = (_pkt->flags & ffmpeg.AV_PKT_FLAG_KEY) != 0;
                 byte[] bytes = _annexBHeaders[s] != null ? ToAnnexB(data, _nalLengthSize[s], key ? _annexBHeaders[s] : null) : data.ToArray();
@@ -183,7 +183,7 @@ public sealed unsafe class Mp4Demuxer : IMp4Demuxer
         return total;
     }
 
-    static byte[] ToAnnexB(ReadOnlySpan<byte> avcc, int lenSize, byte[]? header)
+    private static byte[] ToAnnexB(ReadOnlySpan<byte> avcc, int lenSize, byte[]? header)
     {
         // two passes (size, then copy): one exact-size array instead of a growing stream plus a copy
         int total = header?.Length ?? 0;
@@ -192,7 +192,7 @@ public sealed unsafe class Mp4Demuxer : IMp4Demuxer
             total += 4 + l;
         }
 
-        var result = new byte[total];
+        byte[] result = new byte[total];
         int o = 0;
         if (header != null)
         {
@@ -209,7 +209,7 @@ public sealed unsafe class Mp4Demuxer : IMp4Demuxer
     }
 
     /// <summary>Next length-prefixed NAL unit at <paramref name="p"/> (advanced past it); false at the end or on a bad length.</summary>
-    static bool Nal(ReadOnlySpan<byte> avcc, int lenSize, ref int p, out int start, out int length)
+    private static bool Nal(ReadOnlySpan<byte> avcc, int lenSize, ref int p, out int start, out int length)
     {
         start = length = 0;
         if (p + lenSize > avcc.Length)
@@ -242,9 +242,9 @@ public sealed unsafe class Mp4Demuxer : IMp4Demuxer
 
     public void Dispose()
     {
-        var p = _pkt;
+        AVPacket* p = _pkt;
         ffmpeg.av_packet_free(&p);
-        var f = _fmt;
+        AVFormatContext* f = _fmt;
         if (f != null)
         {
             ffmpeg.avformat_close_input(&f);

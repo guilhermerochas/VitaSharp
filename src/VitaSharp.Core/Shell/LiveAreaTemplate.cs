@@ -71,7 +71,7 @@ public sealed class LiveAreaTemplate
         {
             throw new InvalidDataException("template.xml is not valid XML: " + e.Message, e);
         }
-        var root = doc.Root;
+        XElement? root = doc.Root;
         if (root == null || root.Name.LocalName != "livearea")
         {
             throw new InvalidDataException("template.xml has no <livearea> root");
@@ -87,7 +87,7 @@ public sealed class LiveAreaTemplate
             t.Style = "a1";
         }
 
-        var lang = NormaliseLanguage(language);
+        string lang = NormaliseLanguage(language);
 
         if (root.Element("livearea-background") is { } bg && Choose(bg.Elements("image"), lang) is { } bgImage)
         {
@@ -99,9 +99,9 @@ public sealed class LiveAreaTemplate
             t.Gate = FileName(startup);
         }
 
-        foreach (var f in root.Elements("frame"))
+        foreach (XElement f in root.Elements("frame"))
         {
-            var id = ((string?)f.Attribute("id") ?? "").Trim();
+            string id = ((string?)f.Attribute("id") ?? "").Trim();
             if (id.Length == 0)
             {
                 continue;
@@ -118,9 +118,9 @@ public sealed class LiveAreaTemplate
             IEnumerable<XElement> chosen = frame.Multi == "o" || frame.AutoflipSeconds == 0
                 ? Choose(items, lang) is { } one ? [one] : []
                 : items.Where(i => Matches(i, lang) != false);
-            foreach (var li in chosen)
+            foreach (XElement li in chosen)
             {
-                var item = ParseItem(li);
+                LiveAreaItem item = ParseItem(li);
                 if (!item.IsEmpty)
                 {
                     frame.Items.Add(item);
@@ -138,10 +138,10 @@ public sealed class LiveAreaTemplate
     /// </summary>
     public static LiveAreaTemplate? Load(string appDir, string? fsRoot, string language = "en")
     {
-        foreach (var rel in new[] { "sce_sys/retail/livearea/contents", "sce_sys/livearea/contents" })
+        foreach (string? rel in new[] { "sce_sys/retail/livearea/contents", "sce_sys/livearea/contents" })
         {
-            var dir = Io.Vfs.ResolveCaseInsensitive(appDir, rel);
-            var t = TryLoad(dir, language);
+            string dir = Io.Vfs.ResolveCaseInsensitive(appDir, rel);
+            LiveAreaTemplate? t = TryLoad(dir, language);
             if (t != null)
             {
                 return t;
@@ -152,14 +152,14 @@ public sealed class LiveAreaTemplate
             return null;
         }
 
-        var def = TryLoad(Path.Combine(fsRoot, "vs0", "data", "internal", "livearea", "default", "sce_sys", "livearea", "contents"), language);
+        LiveAreaTemplate? def = TryLoad(Path.Combine(fsRoot, "vs0", "data", "internal", "livearea", "default", "sce_sys", "livearea", "contents"), language);
         def?.IsDefault = true;
         return def;
     }
 
-    static LiveAreaTemplate? TryLoad(string contentsDir, string language)
+    private static LiveAreaTemplate? TryLoad(string contentsDir, string language)
     {
-        var xml = Io.Vfs.ResolveCaseInsensitive(contentsDir, "template.xml");
+        string xml = Io.Vfs.ResolveCaseInsensitive(contentsDir, "template.xml");
         if (!File.Exists(xml))
         {
             return null;
@@ -167,7 +167,7 @@ public sealed class LiveAreaTemplate
 
         try
         {
-            var t = Parse(File.ReadAllText(xml), language);
+            LiveAreaTemplate t = Parse(File.ReadAllText(xml), language);
             t.ContentsDir = contentsDir;
             return t;
         }
@@ -186,11 +186,11 @@ public sealed class LiveAreaTemplate
             return null;
         }
 
-        var p = Io.Vfs.ResolveCaseInsensitive(ContentsDir, file.Replace('\\', '/'));
+        string p = Io.Vfs.ResolveCaseInsensitive(ContentsDir, file.Replace('\\', '/'));
         return File.Exists(p) ? p : null;
     }
 
-    static LiveAreaItem ParseItem(XElement li)
+    private static LiveAreaItem ParseItem(XElement li)
     {
         var item = new LiveAreaItem { Target = Direct(li.Element("target")) };
         if (li.Element("background") is { } b && FileName(b) is { Length: > 0 } bf)
@@ -211,10 +211,10 @@ public sealed class LiveAreaTemplate
         return item;
     }
 
-    static LiveAreaImage Image(XElement e, string file) => new(file,
+    private static LiveAreaImage Image(XElement e, string file) => new(file,
         Attr(e, "align"), Attr(e, "valign"), Attr(e, "origin"), Int(e.Attribute("x")), Int(e.Attribute("y")));
 
-    static LiveAreaText ParseText(XElement e)
+    private static LiveAreaText ParseText(XElement e)
     {
         var t = new LiveAreaText
         {
@@ -237,7 +237,7 @@ public sealed class LiveAreaTemplate
             WordScroll = Attr(e, "word-scroll") == "on",
             Ellipsis = Attr(e, "ellipsis") == "on",
         };
-        foreach (var s in e.Elements("str"))
+        foreach (XElement s in e.Elements("str"))
         {
             string text = string.Concat(s.Nodes().OfType<XText>().Select(n => n.Value)).Replace("\r\n", "\n");
             // indentation of the XML around the text is not part of it
@@ -257,7 +257,7 @@ public sealed class LiveAreaTemplate
             s = s[2..];
         }
 
-        if (!uint.TryParse(s, NumberStyles.HexNumber, CultureInfo.InvariantCulture, out var v))
+        if (!uint.TryParse(s, NumberStyles.HexNumber, CultureInfo.InvariantCulture, out uint v))
         {
             return 0xFFFFFFFF;
         }
@@ -267,7 +267,7 @@ public sealed class LiveAreaTemplate
 
     /// <summary>Picks one localised variant: a language match, else default="on", else the first that is not
     /// restricted to other languages, else the first.</summary>
-    static XElement? Choose(IEnumerable<XElement> variants, string lang)
+    private static XElement? Choose(IEnumerable<XElement> variants, string lang)
     {
         var list = variants.ToList();
         if (list.Count == 0)
@@ -283,7 +283,7 @@ public sealed class LiveAreaTemplate
 
     /// <summary>True when a variant names the language (&lt;lang&gt;en&lt;/lang&gt;, &lt;cntry lang="en"&gt;),
     /// false when it names only others, null when it is not language specific.</summary>
-    static bool? Matches(XElement v, string lang)
+    private static bool? Matches(XElement v, string lang)
     {
         var langs = v.Elements("lang").SelectMany(l => l.Value.Split([',', ' '], StringSplitOptions.RemoveEmptyEntries))
             .Concat(v.Elements("cntry").Select(c => (string?)c.Attribute("lang")).Where(l => !string.IsNullOrWhiteSpace(l))!)
@@ -297,18 +297,18 @@ public sealed class LiveAreaTemplate
         return langs.Contains(lang) || langs.Contains(baseLang);
     }
 
-    static string NormaliseLanguage(string l) => l.Trim().ToLowerInvariant().Replace('_', '-');
+    private static string NormaliseLanguage(string l) => l.Trim().ToLowerInvariant().Replace('_', '-');
 
     /// <summary>The element's own text (child elements such as &lt;lang&gt; and &lt;cntry&gt; excluded), trimmed.</summary>
-    static string Direct(XElement? e) => e == null ? "" : string.Concat(e.Nodes().OfType<XText>().Select(n => n.Value)).Trim();
+    private static string Direct(XElement? e) => e == null ? "" : string.Concat(e.Nodes().OfType<XText>().Select(n => n.Value)).Trim();
 
-    static string FileName(XElement e) => Direct(e).Replace('\\', '/');
+    private static string FileName(XElement e) => Direct(e).Replace('\\', '/');
 
-    static string Attr(XElement e, string name) => ((string?)e.Attribute(name) ?? "").Trim().ToLowerInvariant();
+    private static string Attr(XElement e, string name) => ((string?)e.Attribute(name) ?? "").Trim().ToLowerInvariant();
 
-    static int Int(XAttribute? a) => a != null && int.TryParse(a.Value.Trim(), NumberStyles.Integer, CultureInfo.InvariantCulture, out var v) ? v : 0;
+    private static int Int(XAttribute? a) => a != null && int.TryParse(a.Value.Trim(), NumberStyles.Integer, CultureInfo.InvariantCulture, out int v) ? v : 0;
 
-    static float Float(XAttribute? a) => a != null && float.TryParse(a.Value.Trim(), NumberStyles.Float, CultureInfo.InvariantCulture, out var v) ? v : 0;
+    private static float Float(XAttribute? a) => a != null && float.TryParse(a.Value.Trim(), NumberStyles.Float, CultureInfo.InvariantCulture, out float v) ? v : 0;
 
     /// <summary>The Vita language code for a .NET culture ("pt-BR" -> "pt-br", "zh-Hant" -> "zh-t").</summary>
     public static string VitaLanguage(CultureInfo c)
