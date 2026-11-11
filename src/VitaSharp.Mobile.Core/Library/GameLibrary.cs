@@ -1,7 +1,7 @@
-using VitaSharp.Core.Localization;
 using System.Globalization;
 using VitaSharp.Core.Hle.Np;
 using VitaSharp.Core.Io;
+using VitaSharp.Core.Localization;
 using VitaSharp.Core.Package;
 using VitaSharp.Mobile.Core.Settings;
 using VitaSharp.Mobile.Core.Storage;

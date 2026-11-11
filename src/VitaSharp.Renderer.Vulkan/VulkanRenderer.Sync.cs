@@ -1,5 +1,5 @@
-using System.Diagnostics;
 using Silk.NET.Vulkan;
+using System.Diagnostics;
 using VitaSharp.Core.Gpu;
 using VitaSharp.Core.Util;
 

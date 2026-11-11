@@ -132,7 +132,7 @@ public static partial class CameraTest
     }
 
     [LibraryImport("user32.dll")] private static partial nint CreatePopupMenu();
-    [LibraryImport("user32.dll")] [return: MarshalAs(UnmanagedType.Bool)] private static partial bool DestroyMenu(nint menu);
+    [LibraryImport("user32.dll")][return: MarshalAs(UnmanagedType.Bool)] private static partial bool DestroyMenu(nint menu);
     [LibraryImport("user32.dll")] private static partial uint GetGuiResources(nint process, uint flags);
     [LibraryImport("kernel32.dll")] private static partial nint GetCurrentProcess();
 }

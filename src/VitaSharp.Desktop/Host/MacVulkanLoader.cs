@@ -1,6 +1,6 @@
-using VitaSharp.Core.Util;
 using System.Diagnostics;
 using System.Runtime.InteropServices;
+using VitaSharp.Core.Util;
 
 namespace VitaSharp.Desktop;
 

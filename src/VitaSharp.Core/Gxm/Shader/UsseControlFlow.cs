@@ -89,9 +89,15 @@ public static class UsseControlFlow
         {
             case 0b00000: return (byte)((hi & ~0xFCFFFFFFu) >> 24);
             case 0b00001: case 0b00010: case 0b00011: return ExtVecToExt((byte)((hi & ~0xF8FFFFFFu) >> 24));
-            case 0b00100: case 0b00101:
+            case 0b00100:
+            case 0b00101:
                 return ((hi & ~0xFCFFFFFFu) >> 24) switch { 0 => (byte)0, 1 => (byte)1, 2 => (byte)5, 3 => (byte)7, _ => (byte)0 };
-            case 0b10000: case 0b10001: case 0b10010: case 0b10011: case 0b10100: case 0b10101:
+            case 0b10000:
+            case 0b10001:
+            case 0b10010:
+            case 0b10011:
+            case 0b10100:
+            case 0b10101:
                 return ShortToExt((byte)((hi & ~0xF9FFFFFFu) >> 25));
             case 0b11111:
             {

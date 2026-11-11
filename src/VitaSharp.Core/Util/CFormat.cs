@@ -48,7 +48,8 @@ public static class CFormat
             string body;
             switch (conv)
             {
-                case 'd': case 'i':
+                case 'd':
+                case 'i':
                 {
                     long v = wide ? (long)args.NextU64() : len == "h" ? (short)args.NextU32() : len == "hh" ? (sbyte)args.NextU32() : (int)args.NextU32();
                     body = Math.Abs((decimal)v).ToString(CultureInfo.InvariantCulture);
@@ -57,7 +58,10 @@ public static class CFormat
                     body = Pad(sign, body, width, left, zero && prec < 0);
                     break;
                 }
-                case 'u': case 'x': case 'X': case 'o':
+                case 'u':
+                case 'x':
+                case 'X':
+                case 'o':
                 {
                     ulong v = wide ? args.NextU64() : len == "h" ? (ushort)args.NextU32() : len == "hh" ? (byte)args.NextU32() : args.NextU32();
                     body = conv switch
@@ -88,7 +92,14 @@ public static class CFormat
                     body = Pad("", s, width, left, false);
                     break;
                 }
-                case 'f': case 'F': case 'e': case 'E': case 'g': case 'G': case 'a': case 'A':
+                case 'f':
+                case 'F':
+                case 'e':
+                case 'E':
+                case 'g':
+                case 'G':
+                case 'a':
+                case 'A':
                 {
                     double v = args.NextDouble();
                     int p = prec < 0 ? 6 : prec;

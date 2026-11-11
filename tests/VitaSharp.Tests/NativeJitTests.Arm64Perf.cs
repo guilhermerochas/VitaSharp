@@ -1,9 +1,9 @@
-using VitaSharp.Core.Util;
-using Decoder = VitaSharp.Core.Cpu.Decoder;
 using VitaSharp.Core.Cpu;
 using VitaSharp.Core.Cpu.Backends;
 using VitaSharp.Core.Cpu.Native;
 using VitaSharp.Core.Memory;
+using VitaSharp.Core.Util;
+using Decoder = VitaSharp.Core.Cpu.Decoder;
 
 namespace VitaSharp.Tests;
 

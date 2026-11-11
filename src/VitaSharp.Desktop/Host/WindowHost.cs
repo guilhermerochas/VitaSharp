@@ -1,13 +1,13 @@
-using VitaSharp.Core.Localization;
-using System.Runtime.InteropServices;
 using Silk.NET.Core.Native;
 using Silk.NET.Input;
 using Silk.NET.Maths;
 using Silk.NET.Vulkan;
 using Silk.NET.Windowing;
+using System.Runtime.InteropServices;
 using VitaSharp.Core;
 using VitaSharp.Core.Host;
 using VitaSharp.Core.Input;
+using VitaSharp.Core.Localization;
 using VitaSharp.Core.Util;
 using VitaSharp.Desktop.Input;
 using VitaSharp.Renderer.Vulkan;
@@ -345,8 +345,12 @@ public sealed unsafe class WindowHost : IPresentationSurface, IInputBackend, IDi
     /// <summary>The key name of a mouse button in the keyboard profile ("key:MouseRight"), null for the others.</summary>
     public static string? MouseKey(MouseButton b) => b switch
     {
-        MouseButton.Left => "MouseLeft", MouseButton.Right => "MouseRight", MouseButton.Middle => "MouseMiddle",
-        MouseButton.Button4 => "Mouse4", MouseButton.Button5 => "Mouse5", _ => null,
+        MouseButton.Left => "MouseLeft",
+        MouseButton.Right => "MouseRight",
+        MouseButton.Middle => "MouseMiddle",
+        MouseButton.Button4 => "Mouse4",
+        MouseButton.Button5 => "Mouse5",
+        _ => null,
     };
 
     /// <summary>Captures (hidden, raw unbounded motion) or releases the cursor. Window thread.</summary>
@@ -625,12 +629,21 @@ public sealed unsafe class WindowHost : IPresentationSurface, IInputBackend, IDi
             {
                 PadButton? pb = b.Name switch
                 {
-                    ButtonName.A => PadButton.South, ButtonName.B => PadButton.East, ButtonName.X => PadButton.West, ButtonName.Y => PadButton.North,
-                    ButtonName.LeftBumper => PadButton.LeftShoulder, ButtonName.RightBumper => PadButton.RightShoulder,
-                    ButtonName.Start => PadButton.Start, ButtonName.Back => PadButton.Back, ButtonName.Home => PadButton.Guide,
-                    ButtonName.DPadUp => PadButton.DpadUp, ButtonName.DPadDown => PadButton.DpadDown,
-                    ButtonName.DPadLeft => PadButton.DpadLeft, ButtonName.DPadRight => PadButton.DpadRight,
-                    ButtonName.LeftStick => PadButton.LeftStick, ButtonName.RightStick => PadButton.RightStick,
+                    ButtonName.A => PadButton.South,
+                    ButtonName.B => PadButton.East,
+                    ButtonName.X => PadButton.West,
+                    ButtonName.Y => PadButton.North,
+                    ButtonName.LeftBumper => PadButton.LeftShoulder,
+                    ButtonName.RightBumper => PadButton.RightShoulder,
+                    ButtonName.Start => PadButton.Start,
+                    ButtonName.Back => PadButton.Back,
+                    ButtonName.Home => PadButton.Guide,
+                    ButtonName.DPadUp => PadButton.DpadUp,
+                    ButtonName.DPadDown => PadButton.DpadDown,
+                    ButtonName.DPadLeft => PadButton.DpadLeft,
+                    ButtonName.DPadRight => PadButton.DpadRight,
+                    ButtonName.LeftStick => PadButton.LeftStick,
+                    ButtonName.RightStick => PadButton.RightStick,
                     _ => null,
                 };
                 if (pb is { } p) _fallbackPad.Buttons[(int)p] = b.Pressed;

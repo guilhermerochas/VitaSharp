@@ -1,14 +1,14 @@
-﻿using System.Runtime.InteropServices;
-using Avalonia;
+﻿using Avalonia;
 using Avalonia.Controls;
 using Avalonia.Controls.ApplicationLifetimes;
 using Avalonia.Controls.Documents;
-using Avalonia.Controls.Primitives;
 using Avalonia.Controls.Presenters;
+using Avalonia.Controls.Primitives;
 using Avalonia.Headless;
 using Avalonia.Media;
 using Avalonia.Styling;
 using Avalonia.Themes.Fluent;
+using System.Runtime.InteropServices;
 using VitaSharp.Desktop.Launcher.Ui;
 
 namespace VitaSharp.Desktop.Launcher;
@@ -67,7 +67,9 @@ public sealed class LauncherApp : Application
         FollowsSystem = uiTheme is not (LauncherSettings.ThemeDark or LauncherSettings.ThemeLight);
         app.RequestedThemeVariant = uiTheme switch
         {
-            LauncherSettings.ThemeDark => ThemeVariant.Dark, LauncherSettings.ThemeLight => ThemeVariant.Light, _ => ThemeVariant.Default,
+            LauncherSettings.ThemeDark => ThemeVariant.Dark,
+            LauncherSettings.ThemeLight => ThemeVariant.Light,
+            _ => ThemeVariant.Default,
         };
         SyncPalette();
     }

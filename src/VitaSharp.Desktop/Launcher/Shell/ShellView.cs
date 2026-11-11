@@ -1,6 +1,6 @@
 ﻿using Avalonia.Controls;
-using Avalonia.VisualTree;
 using Avalonia.Threading;
+using Avalonia.VisualTree;
 using VitaSharp.Core.Input;
 using VitaSharp.Core.Shell;
 using VitaSharp.Desktop.Input;

@@ -1,8 +1,8 @@
 using System.Diagnostics;
-using VitaSharp.Core.Util;
 using VitaSharp.Core.Cpu;
 using VitaSharp.Core.Cpu.Native;
 using VitaSharp.Core.Memory;
+using VitaSharp.Core.Util;
 
 namespace VitaSharp.Tests;
 

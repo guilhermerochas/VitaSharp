@@ -1,7 +1,7 @@
 using VitaSharp.Core;
+using VitaSharp.Core.Hle;
 using VitaSharp.Core.Kernel;
 using VitaSharp.Core.Util;
-using VitaSharp.Core.Hle;
 
 namespace VitaSharp.Desktop;
 
@@ -169,7 +169,7 @@ sealed class Sampler
         }
         Log.Info($"PROFILE hitch frames >50 ms: {hitches.Count} (>100 ms: {hitches.Count(h => h.Ms > 100)}, >250 ms: {hitches.Count(h => h.Ms > 250)}), excess over 33.3 ms: {excess:F0} ms; causes summed over [f-1,f]: {FrameLedger.Format(sum)}");
         // every hitch with its largest GPU-thread/guest cause (gpuIdle = the GPU thread had nothing to do: guest-bound)
-        string Top(long f)
+        static string Top(long f)
         {
             var w = FrameLedger.Window(f - 1, f);
             int best = 0;

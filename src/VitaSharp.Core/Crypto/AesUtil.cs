@@ -45,8 +45,8 @@ public static class AesUtil
     public sealed class Ctr : IDisposable
     {
         readonly Aes _aes;
-        byte[] _ks = new byte[0x10000];
-        byte[] _ctrs = new byte[0x10000];
+        readonly byte[] _ks = new byte[0x10000];
+        readonly byte[] _ctrs = new byte[0x10000];
 
         public Ctr(ReadOnlySpan<byte> key) => _aes = Create(key);
 

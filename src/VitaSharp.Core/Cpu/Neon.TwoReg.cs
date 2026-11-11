@@ -82,7 +82,10 @@ internal static unsafe partial class Neon
         {
             switch (a)
             {
-                case 0: case 1: case 2: case 3: // VSHR / VSRA / VRSHR / VRSRA
+                case 0:
+                case 1:
+                case 2:
+                case 3: // VSHR / VSRA / VRSHR / VRSRA
                 {
                     Int128 x = GetI(tm, i, esize, u);
                     bool round = (a & 2) != 0;
@@ -148,7 +151,9 @@ internal static unsafe partial class Neon
             case 0:
                 switch (op)
                 {
-                    case 0: case 1: case 2: // VREV64 / VREV32 / VREV16
+                    case 0:
+                    case 1:
+                    case 2: // VREV64 / VREV32 / VREV16
                     {
                         int group = op == 0 ? 64 : op == 1 ? 32 : 16;
                         int per = group / esize;
@@ -159,7 +164,10 @@ internal static unsafe partial class Neon
                         }
                         break;
                     }
-                    case 4: case 5: case 0xC: case 0xD: // VPADDL / VPADAL
+                    case 4:
+                    case 5:
+                    case 0xC:
+                    case 0xD: // VPADDL / VPADAL
                     {
                         bool uns = (op & 1) != 0;
                         bool acc = op >= 0xC;

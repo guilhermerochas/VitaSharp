@@ -1,12 +1,12 @@
-using VitaSharp.Core.Util;
 using System.Text;
-using UcArm = UnicornEngine.Const.Arm;
-using Decoder = VitaSharp.Core.Cpu.Decoder;
 using UnicornEngine;
 using VitaSharp.Core.Cpu;
 using VitaSharp.Core.Cpu.Backends;
 using VitaSharp.Core.Cpu.Native;
 using VitaSharp.Core.Memory;
+using VitaSharp.Core.Util;
+using Decoder = VitaSharp.Core.Cpu.Decoder;
+using UcArm = UnicornEngine.Const.Arm;
 
 namespace VitaSharp.Tests;
 

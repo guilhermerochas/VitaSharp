@@ -1,9 +1,9 @@
-using System.Runtime.InteropServices;
 using Silk.NET.Core;
 using Silk.NET.Core.Native;
 using Silk.NET.Vulkan;
 using Silk.NET.Vulkan.Extensions.EXT;
 using Silk.NET.Vulkan.Extensions.KHR;
+using System.Runtime.InteropServices;
 using VitaSharp.Core.Gpu;
 using VitaSharp.Core.Util;
 using Buffer = Silk.NET.Vulkan.Buffer;
@@ -453,10 +453,16 @@ public sealed unsafe class VkCore : IDisposable
         bool mirrorExt = !chain12 && SamplerMirrorClampToEdge && devExts.Contains(MirrorClampExtension);
         if (!chain12 && !mirrorExt) { SamplerMirrorClampToEdge = false; Formats.MirrorClampToEdgeSupported = false; }
         UsesDynamicRendering = chain13;
-        var f13 = new PhysicalDeviceVulkan13Features { SType = StructureType.PhysicalDeviceVulkan13Features, DynamicRendering = true, Synchronization2 = true,
-            PNext = RasterizationOrderColor ? &fRoaa : null };
-        var f12 = new PhysicalDeviceVulkan12Features { SType = StructureType.PhysicalDeviceVulkan12Features, PNext = chain13 ? &f13 : RasterizationOrderColor ? &fRoaa : null,
-            SamplerMirrorClampToEdge = SamplerMirrorClampToEdge };
+        var f13 = new PhysicalDeviceVulkan13Features
+        {
+            SType = StructureType.PhysicalDeviceVulkan13Features, DynamicRendering = true, Synchronization2 = true,
+            PNext = RasterizationOrderColor ? &fRoaa : null
+        };
+        var f12 = new PhysicalDeviceVulkan12Features
+        {
+            SType = StructureType.PhysicalDeviceVulkan12Features, PNext = chain13 ? &f13 : RasterizationOrderColor ? &fRoaa : null,
+            SamplerMirrorClampToEdge = SamplerMirrorClampToEdge
+        };
         void* featureChain = chain12 ? &f12 : chain13 ? &f13 : RasterizationOrderColor ? &fRoaa : null;
         // VK_KHR_portability_subset must be enabled when present, and each of its features must be enabled to be used:
         // enable whatever the device has, then degrade where the renderer depends on a missing one
@@ -1028,7 +1034,7 @@ public sealed unsafe class VkCore : IDisposable
         Vk.DeviceWaitIdle(Device);
         Vk.DestroyDevice(Device, null);
         if (Surface.Handle != 0) SurfaceExt?.DestroySurface(Instance, Surface, null);
-        if (_debugUtils != null) _debugUtils.DestroyDebugUtilsMessenger(Instance, _messenger, null);
+        _debugUtils?.DestroyDebugUtilsMessenger(Instance, _messenger, null);
         Vk.DestroyInstance(Instance, null);
     }
 }

@@ -99,7 +99,9 @@ public sealed partial class MainWindow
         r.Children.Add(thumb);
         var (label, color) = c.Kind switch
         {
-            CaptureRecording => (S.RecordingBadge, P.Accent), CaptureGpuDump => (S.GpuDumpBadge, P.Warn), _ => (S.DiagnosticBadge, P.Danger),
+            CaptureRecording => (S.RecordingBadge, P.Accent),
+            CaptureGpuDump => (S.GpuDumpBadge, P.Warn),
+            _ => (S.DiagnosticBadge, P.Danger),
         };
         var title = compact ? _k.HStack(8, _k.Badge(label, color), _k.Text(S.When(c.When), 13, FontWeight.SemiBold))
                             : _k.HStack(8, _k.Text(CaptureTitle(c.TitleId), 14, FontWeight.SemiBold), _k.Badge(label, color));

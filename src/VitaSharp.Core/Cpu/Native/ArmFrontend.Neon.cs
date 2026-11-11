@@ -99,8 +99,12 @@ public sealed unsafe partial class ArmFrontend
         if (q && ((vd | vn) & 1) != 0) return null;
         VecKind? k = a switch
         {
-            0 => VecKind.MlaIS, 4 => VecKind.MlsIS, 8 => VecKind.MulIS,
-            1 => VecKind.MlaFS, 5 => VecKind.MlsFS, 9 => VecKind.MulFS,
+            0 => VecKind.MlaIS,
+            4 => VecKind.MlsIS,
+            8 => VecKind.MulIS,
+            1 => VecKind.MlaFS,
+            5 => VecKind.MlsFS,
+            9 => VecKind.MulFS,
             _ => null,
         };
         if (k is not { } kind) return null;
@@ -127,7 +131,10 @@ public sealed unsafe partial class ArmFrontend
         bool oddQ = q && ((vd | vm) & 1) != 0;
         switch (a)
         {
-            case 0: case 1: case 2: case 3:
+            case 0:
+            case 1:
+            case 2:
+            case 3:
                 if (oddQ) return null;
                 return Vec(VecKind.ShrImm, q, size, vd, 0, vm,
                     uf | ((a & 2) != 0 ? VecFlags.Round : 0) | ((a & 1) != 0 ? VecFlags.Accumulate : 0), rshift);
@@ -137,7 +144,8 @@ public sealed unsafe partial class ArmFrontend
             case 5:
                 if (oddQ) return null;
                 return Vec(u ? VecKind.SliImm : VecKind.ShlImm, q, size, vd, 0, vm, 0, lshift);
-            case 8: case 9:
+            case 8:
+            case 9:
                 if (l || (vm & 1) != 0) return null;
                 var rf = q ? VecFlags.Round : 0;
                 if (a == 8 && !u) return Vec(VecKind.ShrnImm, false, size, vd, 0, vm, rf, rshift);
@@ -206,10 +214,13 @@ public sealed unsafe partial class ArmFrontend
                 switch (op)
                 {
                     case 0: return oddQ ? null : Vec(VecKind.Swp, q, size, vd, 0, vm);
-                    case 1: case 2: case 3:
+                    case 1:
+                    case 2:
+                    case 3:
                         if (oddQ || size == 3) return null;
                         return Vec(op == 1 ? VecKind.Trn : op == 2 ? VecKind.Uzp : VecKind.Zip, q, size, vd, 0, vm);
-                    case 4: case 5:
+                    case 4:
+                    case 5:
                         if (size == 3 || (vm & 1) != 0) return null;
                         // b = 8 VMOVN, 9 VQMOVUN (signed -> unsigned), 10 VQMOVN.S, 11 VQMOVN.U
                         if (b == 8) return Vec(VecKind.Movn, false, size, vd, 0, vm);

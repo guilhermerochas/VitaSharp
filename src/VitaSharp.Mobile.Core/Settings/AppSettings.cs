@@ -1,7 +1,7 @@
-using VitaSharp.Core.Localization;
 using VitaSharp.Core.Cpu;
 using VitaSharp.Core.Hle;
 using VitaSharp.Core.Hle.Np.Rpcn;
+using VitaSharp.Core.Localization;
 
 namespace VitaSharp.Mobile.Core.Settings;
 

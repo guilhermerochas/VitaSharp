@@ -29,6 +29,26 @@ jobs:
       - name: Every script has a Windows and a Linux/macOS version
         run: bash build/check-script-parity.sh
 
+  # C# code style (.editorconfig, the Ryujinx/Ryubing style): layout and the :warning rules, through build/format-check.sh
+  # (the same check developers run locally); folders in build/format-pending.txt are skipped until converted.
+  code-style:
+    name: Code style (dotnet format)
+    runs-on: ubuntu-latest
+    timeout-minutes: 20
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-dotnet@v4
+        with:
+          dotnet-version: '10.0.x'
+      - uses: actions/cache@v4
+        with:
+          path: third_party/ffmpeg
+          key: ffmpeg-${{ runner.os }}-${{ runner.arch }}-${{ hashFiles('build/FFmpeg.targets') }}
+      - name: Restore
+        run: dotnet restore VitaSharp.sln
+      - name: dotnet format --verify-no-changes
+        run: bash build/format-check.sh
+
   build-test:
     name: Build and test (${{ matrix.os }})
     strategy:

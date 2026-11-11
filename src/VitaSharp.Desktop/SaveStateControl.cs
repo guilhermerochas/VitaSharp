@@ -1,6 +1,6 @@
-using VitaSharp.Core.Localization;
 using VitaSharp.Core;
 using VitaSharp.Core.Gpu;
+using VitaSharp.Core.Localization;
 using VitaSharp.Core.SaveState;
 using VitaSharp.Core.Util;
 using VitaSharp.Renderer.Vulkan;
@@ -193,6 +193,7 @@ sealed class SaveStateControl(Emulator emu, VulkanRendererOptions ro, Func<IGpuB
                 }
                 Thread.Sleep(5);
             }
-        }) { IsBackground = true, Name = "save-state steps" }.Start();
+        })
+        { IsBackground = true, Name = "save-state steps" }.Start();
     }
 }

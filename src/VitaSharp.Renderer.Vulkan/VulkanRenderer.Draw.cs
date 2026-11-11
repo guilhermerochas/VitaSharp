@@ -1,5 +1,5 @@
-using System.Runtime.InteropServices;
 using Silk.NET.Vulkan;
+using System.Runtime.InteropServices;
 using VitaSharp.Core.Gpu;
 using VitaSharp.Core.Gxm;
 using VitaSharp.Core.Gxm.Shader;
@@ -474,9 +474,18 @@ public sealed unsafe partial class VulkanRenderer
 
     static Format RawAttributeFormat(int size, int count) => (size, count) switch
     {
-        (1, 1) => Format.R8Uint, (1, 2) => Format.R8G8Uint, (1, 3) => Format.R8G8B8Uint, (1, _) => Format.R8G8B8A8Uint,
-        (2, 1) => Format.R16Uint, (2, 2) => Format.R16G16Uint, (2, 3) => Format.R16G16B16Uint, (2, _) => Format.R16G16B16A16Uint,
-        (_, 1) => Format.R32Uint, (_, 2) => Format.R32G32Uint, (_, 3) => Format.R32G32B32Uint, _ => Format.R32G32B32A32Uint,
+        (1, 1) => Format.R8Uint,
+        (1, 2) => Format.R8G8Uint,
+        (1, 3) => Format.R8G8B8Uint,
+        (1, _) => Format.R8G8B8A8Uint,
+        (2, 1) => Format.R16Uint,
+        (2, 2) => Format.R16G16Uint,
+        (2, 3) => Format.R16G16B16Uint,
+        (2, _) => Format.R16G16B16A16Uint,
+        (_, 1) => Format.R32Uint,
+        (_, 2) => Format.R32G32Uint,
+        (_, 3) => Format.R32G32B32Uint,
+        _ => Format.R32G32B32A32Uint,
     };
 
     void BuildVertexInput(GxmVertexProgram vp, GeneratedShader gen, VsEntry e) => BuildVertexInput(vp.Attributes, vp.Streams, gen, e);
@@ -688,9 +697,12 @@ public sealed unsafe partial class VulkanRenderer
             // multisampled scenes and one-sample programmable-blending draws (VulkanRenderer.SingleFetch.cs) render in
             // render passes (input attachments for programmable blending)
             bool msPass = key.Samples != SampleCountFlags.Count1Bit || key.InputPass;
-            var cb = new PipelineColorBlendStateCreateInfo { SType = StructureType.PipelineColorBlendStateCreateInfo, AttachmentCount = colorCount, PAttachments = att,
+            var cb = new PipelineColorBlendStateCreateInfo
+            {
+                SType = StructureType.PipelineColorBlendStateCreateInfo, AttachmentCount = colorCount, PAttachments = att,
                 // those render passes declare rasterization-order colour access when the device has it
-                Flags = msPass && key.HasColor && _core.RasterizationOrderColor ? RoaaBlendFlag : 0 };
+                Flags = msPass && key.HasColor && _core.RasterizationOrderColor ? RoaaBlendFlag : 0
+            };
             // viewport, scissor, line width, depth bias, stencil masks/reference and (unless a driver quirk bakes them
             // into the pipeline) cull mode, front face, topology, depth/stencil test state and depth bias enable
             var dyn = stackalloc DynamicState[16];
@@ -1145,8 +1157,11 @@ public sealed unsafe partial class VulkanRenderer
     {
         float w = _sceneW, h = _sceneH;
         Viewport vpRect;
-        var pc = new PushConstants { ScreenWidth = w, ScreenHeight = h, ResMultiplier = SceneScale, ZOffset = 0, ZScale = 1, DrawId = _drawSerial,
-            FbSamples = _ms ? (_msSamples == SampleCountFlags.Count4Bit ? 4 : 2) : 1, FaceCull = st.CullMode != 0 ? 1 : 0 };
+        var pc = new PushConstants
+        {
+            ScreenWidth = w, ScreenHeight = h, ResMultiplier = SceneScale, ZOffset = 0, ZScale = 1, DrawId = _drawSerial,
+            FbSamples = _ms ? (_msSamples == SampleCountFlags.Count4Bit ? 4 : 2) : 1, FaceCull = st.CullMode != 0 ? 1 : 0
+        };
         if (st.ViewportEnabled)
         {
             float vw = Math.Abs(2 * st.VpScaleX), vh = 2 * st.VpScaleY;

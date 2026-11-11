@@ -1,5 +1,5 @@
-using VitaSharp.Core.Host;
 using VitaSharp.Core.Hle.Modules;
+using VitaSharp.Core.Host;
 using VitaSharp.Core.Memory;
 using static VitaSharp.Tests.HleHarness;
 

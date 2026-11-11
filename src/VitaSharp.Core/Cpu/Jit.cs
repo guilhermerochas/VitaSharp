@@ -1,6 +1,6 @@
-using VitaSharp.Core.Util;
 using System.Collections.Concurrent;
 using VitaSharp.Core.Cpu.Backends;
+using VitaSharp.Core.Util;
 
 namespace VitaSharp.Core.Cpu;
 

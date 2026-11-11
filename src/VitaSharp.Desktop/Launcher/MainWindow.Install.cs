@@ -79,7 +79,9 @@ public sealed partial class MainWindow
                 Refresh(rebuild: false);
                 SetStatus(job.State switch
                 {
-                    JobState.Done => job.Detail, JobState.Cancelled => S.InstallCancelledOf(job.Name), _ => S.InstallFailedOf(job.Name),
+                    JobState.Done => job.Detail,
+                    JobState.Cancelled => S.InstallCancelledOf(job.Name),
+                    _ => S.InstallFailedOf(job.Name),
                 });
                 JobsChanged();
                 if (job.State == JobState.Failed && _page != PageInstall) Navigate(PageInstall);
@@ -177,7 +179,9 @@ public sealed partial class MainWindow
         var game = j.TitleId != null ? _all.FirstOrDefault(g => g.TitleId == j.TitleId) : null;
         var (icon, color) = j.State switch
         {
-            JobState.Running => ("download", P.Accent), JobState.Waiting => ("clock", P.Muted), JobState.Done => ("check", P.Ok),
+            JobState.Running => ("download", P.Accent),
+            JobState.Waiting => ("clock", P.Muted),
+            JobState.Done => ("check", P.Ok),
             _ => ("x", P.Danger),
         };
         var r = new Grid { ColumnDefinitions = new ColumnDefinitions("Auto,*,Auto"), Margin = new Thickness(16, 12) };
@@ -397,7 +401,7 @@ public sealed partial class MainWindow
         void Fail(string message) { error.Text = message; error.IsVisible = true; }
         void Submit()
         {
-            string text = new string((zrif.Text ?? "").Where(c => !char.IsWhiteSpace(c)).ToArray());
+            string text = new((zrif.Text ?? "").Where(c => !char.IsWhiteSpace(c)).ToArray());
             if (text.Length == 0) { Fail(S.ZrifEmpty); return; }
             if (!Zrif.LooksLikeZrif(text)) { Fail(S.ZrifNot); return; }
             try { Zrif.Decode(text); }

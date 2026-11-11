@@ -135,22 +135,22 @@ public sealed class StillImageCamera : ICameraSource
         bool gray = img.Info.Gray || img.Planes.Length < 3;
         int hd = img.Info.HDiv, vd = img.Info.VDiv;
         for (int r = 0; r < h; r++)
-        for (int c = 0; c < w; c++)
-        {
-            int Y = y.Data[r * y.Stride + c];
-            int o = (r * w + c) * 4;
-            if (gray) { rgba[o] = rgba[o + 1] = rgba[o + 2] = (byte)Y; }
-            else
+            for (int c = 0; c < w; c++)
             {
-                var cbP = img.Planes[1]; var crP = img.Planes[2];
-                int ci = r / vd * cbP.Stride + c / hd;
-                int cb = cbP.Data[ci] - 128, cr = crP.Data[ci] - 128;
-                rgba[o] = Clamp(Y + (91881 * cr >> 16));
-                rgba[o + 1] = Clamp(Y - ((22554 * cb + 46802 * cr) >> 16));
-                rgba[o + 2] = Clamp(Y + (116130 * cb >> 16));
+                int Y = y.Data[r * y.Stride + c];
+                int o = (r * w + c) * 4;
+                if (gray) { rgba[o] = rgba[o + 1] = rgba[o + 2] = (byte)Y; }
+                else
+                {
+                    var cbP = img.Planes[1]; var crP = img.Planes[2];
+                    int ci = r / vd * cbP.Stride + c / hd;
+                    int cb = cbP.Data[ci] - 128, cr = crP.Data[ci] - 128;
+                    rgba[o] = Clamp(Y + (91881 * cr >> 16));
+                    rgba[o + 1] = Clamp(Y - ((22554 * cb + 46802 * cr) >> 16));
+                    rgba[o + 2] = Clamp(Y + (116130 * cb >> 16));
+                }
+                rgba[o + 3] = 255;
             }
-            rgba[o + 3] = 255;
-        }
         return (rgba, w, h);
 
         static byte Clamp(int v) => (byte)Math.Clamp(v, 0, 255);

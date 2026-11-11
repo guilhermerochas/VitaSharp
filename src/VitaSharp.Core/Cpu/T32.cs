@@ -88,11 +88,13 @@ internal static unsafe class T32
             case 0x0A: s->R[rd] = (rn == 15 ? (pc + 4) & ~3u : s->R[rn]) - imm12; break;   // SUBW / ADR
             case 0x04: s->R[rd] = (Bits(ins, 19, 16) << 12) | imm12; break;                 // MOVW
             case 0x0C: s->R[rd] = (s->R[rd] & 0xFFFF) | (((Bits(ins, 19, 16) << 12) | imm12) << 16); break; // MOVT
-            case 0x10: case 0x12: // SSAT / SSAT16
+            case 0x10:
+            case 0x12: // SSAT / SSAT16
                 if (op == 0x12 && imm3 == 0 && imm2 == 0) s->R[rd] = A32.Sat16Core(s, false, ins & 0xF, s->R[rn]);
                 else s->R[rd] = A32.SatCore(s, false, ins & 0x1F, s->R[rn], Bit(ins, 21), (imm3 << 2) | imm2);
                 break;
-            case 0x18: case 0x1A: // USAT / USAT16
+            case 0x18:
+            case 0x1A: // USAT / USAT16
                 if (op == 0x1A && imm3 == 0 && imm2 == 0) s->R[rd] = A32.Sat16Core(s, true, ins & 0xF, s->R[rn]);
                 else s->R[rd] = A32.SatCore(s, true, ins & 0x1F, s->R[rn], Bit(ins, 21), (imm3 << 2) | imm2);
                 break;

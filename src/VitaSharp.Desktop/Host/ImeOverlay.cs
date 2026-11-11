@@ -1,7 +1,7 @@
-using VitaSharp.Core.Localization;
 using Silk.NET.Input;
 using SkiaSharp;
 using VitaSharp.Core.Host;
+using VitaSharp.Core.Localization;
 using VitaSharp.Core.Util;
 
 namespace VitaSharp.Desktop.Host;

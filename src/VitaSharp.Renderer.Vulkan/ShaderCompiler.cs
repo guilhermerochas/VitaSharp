@@ -1,6 +1,6 @@
+using Silk.NET.Shaderc;
 using System.Runtime.InteropServices;
 using System.Text;
-using Silk.NET.Shaderc;
 using VitaSharp.Core.Util;
 
 namespace VitaSharp.Renderer.Vulkan;
@@ -69,7 +69,8 @@ public sealed unsafe class ShaderCompiler : IDisposable
                 Log.Info($"[gpu] shaderc warmed up in {System.Diagnostics.Stopwatch.GetElapsedTime(t0).TotalMilliseconds:F0} ms (background)");
             }
             catch (Exception e) { Log.WarnOnce("shaderc-warm", $"[gpu] shaderc warm-up failed: {e.Message}"); }
-        }) { IsBackground = true, Name = "shaderc warm-up", Priority = ThreadPriority.BelowNormal }.Start();
+        })
+        { IsBackground = true, Name = "shaderc warm-up", Priority = ThreadPriority.BelowNormal }.Start();
     }
 
     static int _warmStarted;

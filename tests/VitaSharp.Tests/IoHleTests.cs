@@ -2,8 +2,8 @@ using System.Reflection;
 using System.Runtime.CompilerServices;
 using VitaSharp.Core;
 using VitaSharp.Core.Hle;
-using VitaSharp.Core.Io;
 using VitaSharp.Core.Hle.Modules;
+using VitaSharp.Core.Io;
 using VitaSharp.Core.Kernel;
 using VitaSharp.Core.Memory;
 

@@ -1,7 +1,7 @@
-using VitaSharp.Core.Localization;
 using System.Collections;
 using VitaSharp.Core;
 using VitaSharp.Core.Gpu;
+using VitaSharp.Core.Localization;
 using VitaSharp.Core.Util;
 using VitaSharp.Renderer.Vulkan;
 
@@ -108,7 +108,8 @@ static class GpuDumpControl
         {
             while (renderer() == null || string.IsNullOrEmpty(emu.TitleId)) Thread.Sleep(5);
             Start(emu, renderer(), options, Path.GetFullPath(file ?? NewPath(emu)), f1 - 1, f2 - f1 + 1, null, null);
-        }) { IsBackground = true, Name = "gpu-dump-at" }.Start();
+        })
+        { IsBackground = true, Name = "gpu-dump-at" }.Start();
     }
 
     /// <summary>End of a session: completes a running recording (the GPU worker must still be running).</summary>

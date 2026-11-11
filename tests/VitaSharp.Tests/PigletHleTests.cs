@@ -646,7 +646,8 @@ sealed class PigletHarness : IDisposable
     readonly string _root;
     readonly Emulator _emu;
     public readonly Piglet Piglet;
-    uint _bump, _arena;
+    private uint _bump;
+    private readonly uint _arena;
     const uint ArenaSize = 8 << 20;
     public uint Window, Context;
 

@@ -258,8 +258,14 @@ public sealed unsafe partial class Arm64Emitter
         switch (kind)
         {
             // ---------------------------------------------------------- bitwise and integer three-same
-            case VecKind.And: case VecKind.Bic: case VecKind.Orr: case VecKind.Orn: case VecKind.Eor:
-            case VecKind.Bsl: case VecKind.Bit: case VecKind.Bif:
+            case VecKind.And:
+            case VecKind.Bic:
+            case VecKind.Orr:
+            case VecKind.Orn:
+            case VecKind.Eor:
+            case VecKind.Bsl:
+            case VecKind.Bit:
+            case VecKind.Bif:
             {
                 int k = kind - VecKind.And;            // U:size of the ASIMD logical group, in the guest's order
                 Load3(k >= 5);
@@ -267,10 +273,12 @@ public sealed unsafe partial class Arm64Emitter
                 Store();
                 return;
             }
-            case VecKind.AddI: case VecKind.SubI:
+            case VecKind.AddI:
+            case VecKind.SubI:
                 Load3(false); I3(0x10, kind == VecKind.SubI, size, q, r0, r1, r2); Store(); return;
             case VecKind.MulI: Load3(false); a.V3(0x13, false, size, q, r0, r1, r2); Store(); return;
-            case VecKind.MlaI: case VecKind.MlsI:
+            case VecKind.MlaI:
+            case VecKind.MlsI:
                 Load3(true); a.V3(0x12, kind == VecKind.MlsI, size, q, r0, r1, r2); Store(); return;
             case VecKind.CeqI: Load3(false); a.V3(0x11, true, size, q, r0, r1, r2); Store(); return;
             case VecKind.TstI: Load3(false); a.V3(0x11, false, size, q, r0, r1, r2); Store(); return;
@@ -283,12 +291,14 @@ public sealed unsafe partial class Arm64Emitter
             case VecKind.HaddI: Load3(false); a.V3(0x00, u, size, q, r0, r1, r2); Store(); return;
             case VecKind.RhaddI: Load3(false); a.V3(0x02, u, size, q, r0, r1, r2); Store(); return;
             case VecKind.HsubI: Load3(false); a.V3(0x04, u, size, q, r0, r1, r2); Store(); return;
-            case VecKind.QaddI: case VecKind.QsubI:
+            case VecKind.QaddI:
+            case VecKind.QsubI:
                 Load3(false); QcBegin(); I3(kind == VecKind.QaddI ? 0x01u : 0x05u, u, size, q, r0, r1, r2); Store(); QcEnd(); return;
             case VecKind.PaddI: Load3(false); a.V3(0x17, false, size, q, r0, r1, r2); Store(); return;
             case VecKind.PmaxI: Load3(false); a.V3(0x14, u, size, q, r0, r1, r2); Store(); return;
             case VecKind.PminI: Load3(false); a.V3(0x15, u, size, q, r0, r1, r2); Store(); return;
-            case VecKind.QdmulhI: case VecKind.QrdmulhI:
+            case VecKind.QdmulhI:
+            case VecKind.QrdmulhI:
                 Load3(false); QcBegin(); a.V3(0x16, kind == VecKind.QrdmulhI, size, q, r0, r1, r2); Store(); QcEnd(); return;
             case VecKind.ShlRegI:
                 // VSHL (register) Dd, Dm, Dn: the value is m, the signed shift amounts are the low bytes of n's lanes
@@ -298,7 +308,8 @@ public sealed unsafe partial class Arm64Emitter
             case VecKind.AddF: Load3(false); a.V3(0x1A, false, 0, q, r0, r1, r2); Store(); return;
             case VecKind.SubF: Load3(false); a.V3(0x1A, false, 2, q, r0, r1, r2); Store(); return;
             case VecKind.MulF: Load3(false); a.V3(0x1B, true, 0, q, r0, r1, r2); Store(); return;
-            case VecKind.MlaF: case VecKind.MlsF:
+            case VecKind.MlaF:
+            case VecKind.MlsF:
                 // AArch32 VMLA/VMLS.F32 round the product first (not fused)
                 Load3(true);
                 a.V3(0x1B, true, 0, q, V3, r1, r2);
@@ -317,7 +328,8 @@ public sealed unsafe partial class Arm64Emitter
             case VecKind.MinF: Load3(false); a.V3(0x1E, false, 2, q, r0, r1, r2); Store(); return;
             case VecKind.PmaxF: Load3(false); a.V3(0x1E, true, 0, q, r0, r1, r2); Store(); return;
             case VecKind.PminF: Load3(false); a.V3(0x1E, true, 2, q, r0, r1, r2); Store(); return;
-            case VecKind.RecpsF: case VecKind.RsqrtsF:
+            case VecKind.RecpsF:
+            case VecKind.RsqrtsF:
             {
                 // AArch32 FPRecipStep / FPRSqrtStep: 2 - n*m and (3 - n*m) / 2 with the product rounded (and flushed)
                 // first; infinity * zero (zero including flushed denormals) gives exactly 2 / 1.5
@@ -342,7 +354,9 @@ public sealed unsafe partial class Arm64Emitter
             }
 
             // ---------------------------------------------------------- by scalar (aux = byte offset of the element)
-            case VecKind.MulFS: case VecKind.MlaFS: case VecKind.MlsFS:
+            case VecKind.MulFS:
+            case VecKind.MlaFS:
+            case VecKind.MlsFS:
                 r1 = Src(V1, nOff, q);
                 VcFlushOverlap(aux, 4);
                 VMem(LsKind.LdrS, V2, OffD + aux);
@@ -356,7 +370,9 @@ public sealed unsafe partial class Arm64Emitter
                 }
                 Store();
                 return;
-            case VecKind.MulIS: case VecKind.MlaIS: case VecKind.MlsIS:
+            case VecKind.MulIS:
+            case VecKind.MlaIS:
+            case VecKind.MlsIS:
                 r1 = Src(V1, nOff, q);
                 VcFlushOverlap(aux, 4);
                 VMem(size == 1 ? LsKind.LdrH : LsKind.LdrS, V2, OffD + aux);
@@ -395,7 +411,8 @@ public sealed unsafe partial class Arm64Emitter
                 a.VShiftImm(round ? 0x11u : 0x10u, false, false, ShrImmField(size, aux), r0, r2);
                 Put(dOff, r0, false);
                 return;
-            case VecKind.QshrnImm: case VecKind.QshrunImm:
+            case VecKind.QshrnImm:
+            case VecKind.QshrunImm:
                 Load1(true);
                 QcBegin();
                 if (kind == VecKind.QshrunImm) a.VShiftImm(round ? 0x11u : 0x10u, true, false, ShrImmField(size, aux), r0, r2);
@@ -443,7 +460,9 @@ public sealed unsafe partial class Arm64Emitter
                 Put(mOff, rd, q); Put(dOff, rm, q);
                 return;
             }
-            case VecKind.Trn: case VecKind.Uzp: case VecKind.Zip:
+            case VecKind.Trn:
+            case VecKind.Uzp:
+            case VecKind.Zip:
             {
                 // new d = op1(d, m), new m = op2(d, m); stored m first, then d (like the handlers)
                 uint op1 = kind == VecKind.Uzp ? 1u : kind == VecKind.Trn ? 2u : 3u;

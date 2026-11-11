@@ -37,11 +37,23 @@ public static class GxmFormats
         uint swz = SwizzleOf(format);
         switch (BaseOf(format))
         {
-            case TexBase.U8: case TexBase.S8: case TexBase.U16: case TexBase.S16: case TexBase.F16:
-            case TexBase.U32: case TexBase.S32: case TexBase.F32: case TexBase.F32M:
+            case TexBase.U8:
+            case TexBase.S8:
+            case TexBase.U16:
+            case TexBase.S16:
+            case TexBase.F16:
+            case TexBase.U32:
+            case TexBase.S32:
+            case TexBase.F32:
+            case TexBase.F32M:
                 return swz == 0 ? 1 : 4;
-            case TexBase.U8U8: case TexBase.S8S8: case TexBase.U16U16: case TexBase.S16S16:
-            case TexBase.F16F16: case TexBase.U32U32: case TexBase.F32F32:
+            case TexBase.U8U8:
+            case TexBase.S8S8:
+            case TexBase.U16U16:
+            case TexBase.S16S16:
+            case TexBase.F16F16:
+            case TexBase.U32U32:
+            case TexBase.F32F32:
                 return swz == 0 ? 2 : 4;
             case TexBase.X8U24: return 1;
             default: return 4;

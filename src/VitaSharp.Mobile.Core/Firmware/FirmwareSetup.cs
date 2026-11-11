@@ -1,5 +1,5 @@
-using VitaSharp.Core.Localization;
 using VitaSharp.Core.Firmware;
+using VitaSharp.Core.Localization;
 
 namespace VitaSharp.Mobile.Core.Firmware;
 

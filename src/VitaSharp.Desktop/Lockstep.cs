@@ -74,7 +74,8 @@ static unsafe class Lockstep
                 Log.Info($"LOCKSTEP ALL done at frame {VitaSharp.Core.Hle.Modules.Display.FramesPresented}: {_done} blocks, {_mismatches} mismatches at {_perAddress.Count} addresses");
                 foreach (var (op, n) in _perOp.OrderByDescending(kv => kv.Value)) Log.Info($"LOCKSTEP ALL op {op}: {n}");
             }
-        }) { IsBackground = true, Name = "lockstep" }.Start();
+        })
+        { IsBackground = true, Name = "lockstep" }.Start();
     }
 
     static void W(int reg, ulong v) => uc_reg_write(_uc, reg, &v);
@@ -137,7 +138,14 @@ static unsafe class Lockstep
         bool n = (cpsr & 0x80000000) != 0, z = (cpsr & 0x40000000) != 0, c = (cpsr & 0x20000000) != 0, v = (cpsr & 0x10000000) != 0;
         bool r = (cond >> 1) switch
         {
-            0 => z, 1 => c, 2 => n, 3 => v, 4 => c && !z, 5 => n == v, 6 => n == v && !z, _ => true,
+            0 => z,
+            1 => c,
+            2 => n,
+            3 => v,
+            4 => c && !z,
+            5 => n == v,
+            6 => n == v && !z,
+            _ => true,
         };
         return (cond & 1) != 0 && cond != 15 ? !r : r;
     }

@@ -214,7 +214,8 @@ static class ReplayGpu
                     try { rc = Replay(path, header, ro, s, closing); }
                     catch (Exception e) { Log.Error($"[replay] failed: {e}"); }
                     if (!hold) window.Close();
-                }) { Name = "GPU replay", IsBackground = true }.Start();
+                })
+                { Name = "GPU replay", IsBackground = true }.Start();
             };
             window.Resized += () => _renderer?.NotifyResized();
             window.Run();

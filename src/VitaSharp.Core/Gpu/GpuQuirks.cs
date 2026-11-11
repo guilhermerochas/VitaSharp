@@ -200,9 +200,17 @@ public sealed class GpuCapabilities
 
     public static string VendorName(GpuVendor v) => v switch
     {
-        GpuVendor.Nvidia => "NVIDIA", GpuVendor.Amd => "AMD", GpuVendor.Intel => "Intel", GpuVendor.Qualcomm => "Qualcomm",
-        GpuVendor.Arm => "ARM", GpuVendor.Imagination => "Imagination", GpuVendor.Samsung => "Samsung", GpuVendor.Apple => "Apple",
-        GpuVendor.Broadcom => "Broadcom", GpuVendor.Software => "software", _ => "unknown",
+        GpuVendor.Nvidia => "NVIDIA",
+        GpuVendor.Amd => "AMD",
+        GpuVendor.Intel => "Intel",
+        GpuVendor.Qualcomm => "Qualcomm",
+        GpuVendor.Arm => "ARM",
+        GpuVendor.Imagination => "Imagination",
+        GpuVendor.Samsung => "Samsung",
+        GpuVendor.Apple => "Apple",
+        GpuVendor.Broadcom => "Broadcom",
+        GpuVendor.Software => "software",
+        _ => "unknown",
     };
 
     /// <summary>Human-readable driver version: Qualcomm proprietary "512.615", NVIDIA 10.8.8.6 bits, else Vulkan's 10.10.12.</summary>
@@ -263,10 +271,17 @@ public static class GpuQuirkTable
 
     public static GpuVendor VendorOf(uint vendorId) => vendorId switch
     {
-        VendorNvidia => GpuVendor.Nvidia, VendorAmd => GpuVendor.Amd, VendorIntel => GpuVendor.Intel,
-        VendorQualcomm => GpuVendor.Qualcomm, VendorArm => GpuVendor.Arm, VendorImagination => GpuVendor.Imagination,
-        VendorSamsung => GpuVendor.Samsung, VendorApple => GpuVendor.Apple, VendorBroadcom => GpuVendor.Broadcom,
-        VendorMesa => GpuVendor.Software, _ => GpuVendor.Unknown,
+        VendorNvidia => GpuVendor.Nvidia,
+        VendorAmd => GpuVendor.Amd,
+        VendorIntel => GpuVendor.Intel,
+        VendorQualcomm => GpuVendor.Qualcomm,
+        VendorArm => GpuVendor.Arm,
+        VendorImagination => GpuVendor.Imagination,
+        VendorSamsung => GpuVendor.Samsung,
+        VendorApple => GpuVendor.Apple,
+        VendorBroadcom => GpuVendor.Broadcom,
+        VendorMesa => GpuVendor.Software,
+        _ => GpuVendor.Unknown,
     };
 
     /// <summary>

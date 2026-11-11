@@ -201,7 +201,7 @@ public class ShellTests
     public void LayoutPlacesImages()
     {
         var frame = new LaRect(100, 100, 200, 100);
-        LiveAreaImage Img(string align = "", string valign = "", int x = 0, int y = 0) => new("i.png", align, valign, "", x, y);
+        static LiveAreaImage Img(string align = "", string valign = "", int x = 0, int y = 0) => new("i.png", align, valign, "", x, y);
         Assert.Equal(new LaRect(150, 125, 100, 50), LiveAreaLayout.PlaceImage(frame, 100, 50, Img()));
         Assert.Equal(new LaRect(100, 100, 100, 50), LiveAreaLayout.PlaceImage(frame, 100, 50, Img("left", "top")));
         Assert.Equal(new LaRect(200, 150, 100, 50), LiveAreaLayout.PlaceImage(frame, 100, 50, Img("right", "bottom")));

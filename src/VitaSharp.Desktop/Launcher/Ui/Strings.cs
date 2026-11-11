@@ -1,7 +1,7 @@
 using System.Globalization;
 using System.Runtime.CompilerServices;
-using VitaSharp.Core.Localization;
 using VitaSharp.Core.Hle.Np;
+using VitaSharp.Core.Localization;
 
 namespace VitaSharp.Desktop.Launcher.Ui;
 
@@ -106,7 +106,10 @@ public static class Strings
 
     public static string Grade(TrophyGrade g) => g switch
     {
-        TrophyGrade.Platinum => T("GradePlatinum"), TrophyGrade.Gold => T("GradeGold"), TrophyGrade.Silver => T("GradeSilver"), _ => T("GradeBronze"),
+        TrophyGrade.Platinum => T("GradePlatinum"),
+        TrophyGrade.Gold => T("GradeGold"),
+        TrophyGrade.Silver => T("GradeSilver"),
+        _ => T("GradeBronze"),
     };
 
     // ------------------------------------------------------------------ library

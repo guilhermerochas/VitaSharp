@@ -57,19 +57,24 @@ public static class StateLiveness
         {
             switch (x.Op)
             {
-                case IrOp.GetReg: case IrOp.GetFlag:
+                case IrOp.GetReg:
+                case IrOp.GetFlag:
                     readFirst |= Bit(x) & ~written;
                     break;
-                case IrOp.SetReg: case IrOp.SetFlag:
+                case IrOp.SetReg:
+                case IrOp.SetFlag:
                     if (depth == 0) written |= Bit(x); // a store inside a conditional region happens on one path only
                     break;
-                case IrOp.CondBranch: case IrOp.BranchIf:
+                case IrOp.CondBranch:
+                case IrOp.BranchIf:
                     depth = 1; openLabel = x.Imm2;
                     break;
                 case IrOp.Label:
                     if (depth > 0 && x.Imm == openLabel) depth = 0;
                     break;
-                case IrOp.Callout: case IrOp.ExitStatic: case IrOp.ExitDynamic:
+                case IrOp.Callout:
+                case IrOp.ExitStatic:
+                case IrOp.ExitDynamic:
                     readFirst |= ~written; // the handler or whatever runs next sees the state as it is
                     break;
             }
@@ -105,7 +110,8 @@ public static class StateLiveness
                 case IrOp.Label: atLabel[x.Imm] = live; break;
                 case IrOp.CondBranch: case IrOp.BranchIf: live |= atLabel[x.Imm2]; break;
                 case IrOp.GetReg: case IrOp.GetFlag: live |= Bit(x); break;
-                case IrOp.SetReg: case IrOp.SetFlag:
+                case IrOp.SetReg:
+                case IrOp.SetFlag:
                 {
                     int bit = Bit(x);
                     if (bit == 0) break;

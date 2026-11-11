@@ -1,6 +1,6 @@
-using VitaSharp.Core.Localization;
 using VitaSharp.Core.Host;
 using VitaSharp.Core.Input;
+using VitaSharp.Core.Localization;
 
 namespace VitaSharp.Mobile.Core.Input;
 
@@ -142,7 +142,7 @@ public sealed class OnScreenPad : IInputBackend
         // a finger outside the ring pushes the stick to its edge in that direction
         float len = MathF.Sqrt(dx * dx + dy * dy);
         if (len > 1) { dx /= len; dy /= len; }
-        byte Axis(float v) => (byte)Math.Clamp(128 + v * 127, 0, 255);
+        static byte Axis(float v) => (byte)Math.Clamp(128 + v * 127, 0, 255);
         bool left = c.Control is VitaControl.LStickUp or VitaControl.LStickDown or VitaControl.LStickLeft or VitaControl.LStickRight;
         if (left) { st.Lx = Axis(dx); st.Ly = Axis(dy); }
         else { st.Rx = Axis(dx); st.Ry = Axis(dy); }

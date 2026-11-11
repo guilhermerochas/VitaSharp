@@ -1,7 +1,7 @@
+using Iced.Intel;
 using System.Collections.Concurrent;
 using System.Runtime.InteropServices;
 using System.Runtime.Intrinsics.X86;
-using Iced.Intel;
 using static Iced.Intel.AssemblerRegisters;
 
 namespace VitaSharp.Core.Cpu.Native;
@@ -60,7 +60,10 @@ public sealed unsafe partial class X64Emitter
     AssemblerMemoryOperand K8(uint v) => K64((v & 0xFF) * 0x0101010101010101ul);
     AssemblerMemoryOperand KLane(uint size, ulong v) => size switch
     {
-        0 => K8((uint)v), 1 => K16((uint)v), 2 => K32((uint)v), _ => K64(v),
+        0 => K8((uint)v),
+        1 => K16((uint)v),
+        2 => K32((uint)v),
+        _ => K64(v),
     };
     AssemblerMemoryOperand KBytes(byte[] b16) => K(BitConverter.ToUInt64(b16, 0), BitConverter.ToUInt64(b16, 8));
 
@@ -731,8 +734,14 @@ public sealed unsafe partial class X64Emitter
         switch (kind)
         {
             // ---------------------------------------------------------- bitwise and integer three-same
-            case VecKind.And: case VecKind.Bic: case VecKind.Orr: case VecKind.Orn: case VecKind.Eor:
-            case VecKind.Bsl: case VecKind.Bit: case VecKind.Bif:
+            case VecKind.And:
+            case VecKind.Bic:
+            case VecKind.Orr:
+            case VecKind.Orn:
+            case VecKind.Eor:
+            case VecKind.Bsl:
+            case VecKind.Bit:
+            case VecKind.Bif:
                 LdV(X0, nOff, q); LdV(X1, mOff, q);
                 switch (kind)
                 {
@@ -747,12 +756,15 @@ public sealed unsafe partial class X64Emitter
                 }
                 StV(dOff, X0, q);
                 return;
-            case VecKind.AddI: case VecKind.SubI:
+            case VecKind.AddI:
+            case VecKind.SubI:
                 LdV(X0, nOff, q); LdV(X1, mOff, q);
                 if (kind == VecKind.AddI) PAdd(size, X0, X1); else PSub(size, X0, X1);
                 StV(dOff, X0, q);
                 return;
-            case VecKind.MulI: case VecKind.MlaI: case VecKind.MlsI:
+            case VecKind.MulI:
+            case VecKind.MlaI:
+            case VecKind.MlsI:
                 LdV(X0, nOff, q); LdV(X1, mOff, q);
                 PMul(size, X0, X1, X2, X3);
                 if (kind != VecKind.MulI)
@@ -776,7 +788,8 @@ public sealed unsafe partial class X64Emitter
                 Not(X0, X1);
                 StV(dOff, X0, q);
                 return;
-            case VecKind.CgtI: case VecKind.CgeI:
+            case VecKind.CgtI:
+            case VecKind.CgeI:
                 LdV(X0, nOff, q); LdV(X1, mOff, q);
                 if (u)
                 {
@@ -787,12 +800,14 @@ public sealed unsafe partial class X64Emitter
                 else { PCmpGt(size, X1, X0); Not(X1, X2); Mov(X0, X1); } // n >= m == !(m > n)
                 StV(dOff, X0, q);
                 return;
-            case VecKind.MaxI: case VecKind.MinI:
+            case VecKind.MaxI:
+            case VecKind.MinI:
                 LdV(X0, nOff, q); LdV(X1, mOff, q);
                 if (kind == VecKind.MaxI) PMax(size, u, X0, X1); else PMin(size, u, X0, X1);
                 StV(dOff, X0, q);
                 return;
-            case VecKind.AbdI: case VecKind.AbaI:
+            case VecKind.AbdI:
+            case VecKind.AbaI:
                 LdV(X0, nOff, q); LdV(X1, mOff, q);
                 Mov(X2, X0);
                 PMax(size, u, X0, X1);
@@ -835,10 +850,13 @@ public sealed unsafe partial class X64Emitter
                 PSub(size, X0, X2);
                 StV(dOff, X0, q);
                 return;
-            case VecKind.QaddI: case VecKind.QsubI:
+            case VecKind.QaddI:
+            case VecKind.QsubI:
                 SatAddSub(kind == VecKind.QsubI, size, u, q, dOff, nOff, mOff);
                 return;
-            case VecKind.PaddI: case VecKind.PmaxI: case VecKind.PminI:
+            case VecKind.PaddI:
+            case VecKind.PmaxI:
+            case VecKind.PminI:
                 LdPair(X0, X1, nOff, mOff);
                 Mov(X1, X0);
                 a.pshufb(X1, KBytes(PairMask(size, false)));
@@ -848,7 +866,8 @@ public sealed unsafe partial class X64Emitter
                 else PMin(size, u, X1, X0);
                 StV(dOff, X1, false);
                 return;
-            case VecKind.QdmulhI: case VecKind.QrdmulhI: // 16-bit lanes
+            case VecKind.QdmulhI:
+            case VecKind.QrdmulhI: // 16-bit lanes
                 LdV(X0, nOff, q); LdV(X1, mOff, q);
                 Mov(X2, X0); Mov(X3, X1);
                 if (kind == VecKind.QrdmulhI) a.pmulhrsw(X0, X1); // (x*y + 2^14) >> 15
@@ -885,7 +904,11 @@ public sealed unsafe partial class X64Emitter
                 return;
 
             // ---------------------------------------------------------- float three-same
-            case VecKind.AddF: case VecKind.SubF: case VecKind.MulF: case VecKind.MlaF: case VecKind.MlsF:
+            case VecKind.AddF:
+            case VecKind.SubF:
+            case VecKind.MulF:
+            case VecKind.MlaF:
+            case VecKind.MlsF:
             case VecKind.AbdF:
                 NeonFp();
                 LdV(X0, nOff, q); LdV(X1, mOff, q);
@@ -906,7 +929,8 @@ public sealed unsafe partial class X64Emitter
                 FRes(X0);
                 StV(dOff, X0, q);
                 return;
-            case VecKind.FmaF: case VecKind.FmsF:
+            case VecKind.FmaF:
+            case VecKind.FmsF:
                 NeonFp();
                 LdV(X0, nOff, q); LdV(X1, mOff, q); LdV(X2, dOff, q);
                 if (kind == VecKind.FmsF) a.pxor(X0, K32(0x80000000));
@@ -922,7 +946,11 @@ public sealed unsafe partial class X64Emitter
                 FRes(X0);
                 StV(dOff, X0, false);
                 return;
-            case VecKind.CeqF: case VecKind.CgeF: case VecKind.CgtF: case VecKind.AcgeF: case VecKind.AcgtF:
+            case VecKind.CeqF:
+            case VecKind.CgeF:
+            case VecKind.CgtF:
+            case VecKind.AcgeF:
+            case VecKind.AcgtF:
                 NeonFp();
                 LdV(X0, nOff, q); LdV(X1, mOff, q);
                 if (kind is VecKind.AcgeF or VecKind.AcgtF)
@@ -938,13 +966,15 @@ public sealed unsafe partial class X64Emitter
                 }
                 StV(dOff, X0, q);
                 return;
-            case VecKind.MaxF: case VecKind.MinF:
+            case VecKind.MaxF:
+            case VecKind.MinF:
                 NeonFp();
                 LdV(X0, nOff, q); LdV(X1, mOff, q);
                 MaxMinF(kind == VecKind.MaxF);
                 StV(dOff, X0, q);
                 return;
-            case VecKind.PmaxF: case VecKind.PminF: // D only
+            case VecKind.PmaxF:
+            case VecKind.PminF: // D only
                 NeonFp();
                 LdPair(X2, X1, nOff, mOff);   // [n0 n1 m0 m1]
                 Mov(X0, X2);
@@ -954,7 +984,8 @@ public sealed unsafe partial class X64Emitter
                 MaxMinF(kind == VecKind.PmaxF);
                 StV(dOff, X0, false);
                 return;
-            case VecKind.RecpsF: case VecKind.RsqrtsF:
+            case VecKind.RecpsF:
+            case VecKind.RsqrtsF:
             {
                 // 2 - n*m (VRECPS) / (3 - n*m) / 2 (VRSQRTS); infinity * zero gives exactly 2 / 1.5
                 bool rs = kind == VecKind.RsqrtsF;
@@ -978,7 +1009,9 @@ public sealed unsafe partial class X64Emitter
             }
 
             // ---------------------------------------------------------- by scalar
-            case VecKind.MulFS: case VecKind.MlaFS: case VecKind.MlsFS:
+            case VecKind.MulFS:
+            case VecKind.MlaFS:
+            case VecKind.MlsFS:
                 NeonFp();
                 LdV(X0, nOff, q);
                 Broadcast(X1, aux, 2);
@@ -993,7 +1026,9 @@ public sealed unsafe partial class X64Emitter
                 FRes(X0);
                 StV(dOff, X0, q);
                 return;
-            case VecKind.MulIS: case VecKind.MlaIS: case VecKind.MlsIS:
+            case VecKind.MulIS:
+            case VecKind.MlaIS:
+            case VecKind.MlsIS:
                 LdV(X0, nOff, q);
                 Broadcast(X1, aux, size);
                 PMul(size, X0, X1, X2, X3);
@@ -1018,7 +1053,8 @@ public sealed unsafe partial class X64Emitter
                 ShlI(X0, size, aux);
                 StV(dOff, X0, q);
                 return;
-            case VecKind.SriImm: case VecKind.SliImm:
+            case VecKind.SriImm:
+            case VecKind.SliImm:
             {
                 ulong mask = LaneMask(size);
                 ulong keep = kind == VecKind.SriImm
@@ -1041,7 +1077,8 @@ public sealed unsafe partial class X64Emitter
                 StV(dOff, X0, false);
                 return;
             }
-            case VecKind.QshrnImm: case VecKind.QshrunImm:
+            case VecKind.QshrnImm:
+            case VecKind.QshrunImm:
                 QNarrow(kind == VecKind.QshrunImm, u, size, round, aux, dOff, mOff);
                 return;
             case VecKind.ShllImm: // D source, Q result
@@ -1110,7 +1147,9 @@ public sealed unsafe partial class X64Emitter
                 LdV(X0, dOff, q); LdV(X1, mOff, q);
                 StV(mOff, X0, q); StV(dOff, X1, q);
                 return;
-            case VecKind.Trn: case VecKind.Uzp: case VecKind.Zip:
+            case VecKind.Trn:
+            case VecKind.Uzp:
+            case VecKind.Zip:
             {
                 // byte sources of the new d and new m: 0-15 = old d, 16-31 = old m (the handlers store m first, then d)
                 int eb = 1 << (int)size, bytes = q ? 16 : 8, count = bytes / eb;
@@ -1221,7 +1260,10 @@ public sealed unsafe partial class X64Emitter
                 StV(dOff, X2, q);
                 return;
             }
-            case VecKind.RecpeF: case VecKind.RsqrteF: case VecKind.RecpeU: case VecKind.RsqrteU:
+            case VecKind.RecpeF:
+            case VecKind.RsqrteF:
+            case VecKind.RecpeU:
+            case VecKind.RsqrteU:
             {
                 int lanes = q ? 4 : 2;
                 for (int i = 0; i < lanes; i++)

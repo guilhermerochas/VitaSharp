@@ -224,7 +224,7 @@ public sealed class AndroidCamera : ICameraSource
             try { granted = await _owner.EnsurePermissionAsync().WaitAsync(ct); }
             catch (OperationCanceledException) { return; }
             if (!granted) return; // grey frames
-            for (int attempt = 1; ; )
+            for (int attempt = 1; ;)
             {
                 if (_owner.Paused)
                 {

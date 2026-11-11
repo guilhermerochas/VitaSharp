@@ -1,6 +1,6 @@
+using Silk.NET.Vulkan;
 using System.Diagnostics;
 using System.IO.Hashing;
-using Silk.NET.Vulkan;
 using VitaSharp.Core.Gpu;
 using VitaSharp.Core.Gxm;
 using VitaSharp.Core.Util;
@@ -66,7 +66,11 @@ public static class AstcTranscoder
         var (r, g, b, a) = ChannelSwizzle(c);
         ComponentSwizzle Map(ComponentSwizzle s, ComponentSwizzle identity) => (s == ComponentSwizzle.Identity ? identity : s) switch
         {
-            ComponentSwizzle.R => r, ComponentSwizzle.G => g, ComponentSwizzle.B => b, ComponentSwizzle.A => a, var other => other,
+            ComponentSwizzle.R => r,
+            ComponentSwizzle.G => g,
+            ComponentSwizzle.B => b,
+            ComponentSwizzle.A => a,
+            var other => other,
         };
         return new ComponentMapping(Map(texture.R, ComponentSwizzle.R), Map(texture.G, ComponentSwizzle.G), Map(texture.B, ComponentSwizzle.B), Map(texture.A, ComponentSwizzle.A));
     }

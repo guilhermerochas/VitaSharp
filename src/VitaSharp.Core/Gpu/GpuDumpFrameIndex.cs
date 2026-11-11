@@ -63,7 +63,7 @@ public sealed class GpuDumpFrameIndex
                     break;
                 case DrawCommand:
                     draws++;
-                    if (cur != null) cur.Last = draws;
+                    cur?.Last = draws;
                     break;
                 case EndSceneCommand:
                     cur = null;

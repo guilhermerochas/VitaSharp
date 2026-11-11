@@ -1,5 +1,5 @@
-using System.Text;
 using Silk.NET.Vulkan;
+using System.Text;
 using VitaSharp.Core.Gpu;
 using VitaSharp.Core.Gxm.Shader;
 using VitaSharp.Core.Util;

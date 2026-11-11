@@ -27,9 +27,22 @@ static class KernelSnapshot
         {
             string kind = o switch
             {
-                GuestThread => Thread, Semaphore => Sema, EventFlag => Evf, Mutex => Mtx, CondVar => Cond, MsgPipe => Pipe,
-                RwLock => Rw, Callback => Cb, TimerObject => Timer, SimpleEvent => SEvent, ThreadEventHandler => ThEvent,
-                MemBlock => Block, IoAsyncOp => Async, ProcessObject => Process, AppObject => App, ModuleObject => Module,
+                GuestThread => Thread,
+                Semaphore => Sema,
+                EventFlag => Evf,
+                Mutex => Mtx,
+                CondVar => Cond,
+                MsgPipe => Pipe,
+                RwLock => Rw,
+                Callback => Cb,
+                TimerObject => Timer,
+                SimpleEvent => SEvent,
+                ThreadEventHandler => ThEvent,
+                MemBlock => Block,
+                IoAsyncOp => Async,
+                ProcessObject => Process,
+                AppObject => App,
+                ModuleObject => Module,
                 _ => throw new SnapshotException($"kernel object {o.Name} ({o.GetType().Name}) is not supported by save states yet"),
             };
             w.Write(kind);

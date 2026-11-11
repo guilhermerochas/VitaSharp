@@ -299,7 +299,7 @@ internal static unsafe class Arm
     public static bool StoreExclusive32(CpuState* s, uint addr, uint value)
     {
         if (!BeginExclusiveStore(s, addr)) return false;
-        ref uint target = ref Unsafe.AsRef<uint>(s->MemBase +addr);
+        ref uint target = ref Unsafe.AsRef<uint>(s->MemBase + addr);
         bool ok = Interlocked.CompareExchange(ref target, value, (uint)s->ExclusiveValue) == (uint)s->ExclusiveValue;
         if (WriteWatch.Enabled && ok && addr - WriteWatch.Lo + 3 < WriteWatch.Span + 3) WriteWatch.Hit(addr, 4, value);
         return EndExclusiveStore(s, addr, ok);
@@ -308,7 +308,7 @@ internal static unsafe class Arm
     public static bool StoreExclusive64(CpuState* s, uint addr, ulong value)
     {
         if (!BeginExclusiveStore(s, addr)) return false;
-        ref ulong target = ref Unsafe.AsRef<ulong>(s->MemBase +addr);
+        ref ulong target = ref Unsafe.AsRef<ulong>(s->MemBase + addr);
         bool ok = Interlocked.CompareExchange(ref target, value, s->ExclusiveValue) == s->ExclusiveValue;
         return EndExclusiveStore(s, addr, ok);
     }
@@ -319,7 +319,7 @@ internal static unsafe class Arm
         // CAS on the containing aligned word, only replacing our halfword.
         uint wa = addr & ~3u;
         int sh = (int)(addr & 2) * 8;
-        ref uint w = ref Unsafe.AsRef<uint>(s->MemBase +wa);
+        ref uint w = ref Unsafe.AsRef<uint>(s->MemBase + wa);
         while (true)
         {
             uint old = Volatile.Read(ref w);
@@ -334,7 +334,7 @@ internal static unsafe class Arm
         if (!BeginExclusiveStore(s, addr)) return false;
         uint wa = addr & ~3u;
         int sh = (int)(addr & 3) * 8;
-        ref uint w = ref Unsafe.AsRef<uint>(s->MemBase +wa);
+        ref uint w = ref Unsafe.AsRef<uint>(s->MemBase + wa);
         while (true)
         {
             uint old = Volatile.Read(ref w);

@@ -1,9 +1,9 @@
+using Microsoft.CodeAnalysis;
+using Microsoft.CodeAnalysis.CSharp.Syntax;
 using System.Collections.Generic;
 using System.Collections.Immutable;
 using System.Linq;
 using System.Text;
-using Microsoft.CodeAnalysis;
-using Microsoft.CodeAnalysis.CSharp.Syntax;
 
 namespace VitaSharp.Core.Generators;
 
@@ -243,10 +243,18 @@ public sealed class SnapshotGenerator : IIncrementalGenerator
 
     static string ReadPrim(ITypeSymbol t) => t.SpecialType switch
     {
-        SpecialType.System_Boolean => "ReadBool", SpecialType.System_Byte => "ReadByte", SpecialType.System_SByte => "ReadSByte",
-        SpecialType.System_Int16 => "ReadInt16", SpecialType.System_UInt16 => "ReadUInt16", SpecialType.System_Char => "ReadChar",
-        SpecialType.System_Int32 => "ReadInt32", SpecialType.System_UInt32 => "ReadUInt32", SpecialType.System_Int64 => "ReadInt64",
-        SpecialType.System_UInt64 => "ReadUInt64", SpecialType.System_Single => "ReadSingle", SpecialType.System_Double => "ReadDouble",
+        SpecialType.System_Boolean => "ReadBool",
+        SpecialType.System_Byte => "ReadByte",
+        SpecialType.System_SByte => "ReadSByte",
+        SpecialType.System_Int16 => "ReadInt16",
+        SpecialType.System_UInt16 => "ReadUInt16",
+        SpecialType.System_Char => "ReadChar",
+        SpecialType.System_Int32 => "ReadInt32",
+        SpecialType.System_UInt32 => "ReadUInt32",
+        SpecialType.System_Int64 => "ReadInt64",
+        SpecialType.System_UInt64 => "ReadUInt64",
+        SpecialType.System_Single => "ReadSingle",
+        SpecialType.System_Double => "ReadDouble",
         _ => "ReadIntPtr",
     };
 

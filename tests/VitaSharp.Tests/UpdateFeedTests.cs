@@ -56,7 +56,7 @@ public class UpdateFeedTests
         Assert.Equal("VitaSharp-0.1.0-build.g2222222-win-x64.zip", UpdateFeed.PickPackage(r, "win-x64", ".zip")?.Name);
         Assert.Equal("VitaSharp-0.1.0-build.g2222222-win-x64-setup.exe", UpdateFeed.PickPackage(r, "win-x64", "-setup.exe")?.Name);
         Assert.Null(UpdateFeed.PickPackage(r, "linux-x64", ".tar.gz"));
-        string hash = new string('a', 64);
+        string hash = new('a', 64);
         Assert.Equal(hash, UpdateFeed.ExpectedHash($"{new string('b', 64)}  other.zip\n{hash}  VitaSharp-x.zip\n", "VitaSharp-x.zip"));
         Assert.Equal(hash, UpdateFeed.ExpectedHash($"{hash} *VitaSharp-x.zip", "VitaSharp-x.zip"));
         Assert.Null(UpdateFeed.ExpectedHash($"{hash}  VitaSharp-x.zip", "VitaSharp-y.zip"));

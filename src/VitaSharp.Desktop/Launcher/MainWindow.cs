@@ -1,6 +1,4 @@
-﻿using VitaSharp.Core.Util;
-using System.Diagnostics;
-using Avalonia;
+﻿using Avalonia;
 using Avalonia.Controls;
 using Avalonia.Input;
 using Avalonia.Interactivity;
@@ -8,6 +6,8 @@ using Avalonia.Layout;
 using Avalonia.Media;
 using Avalonia.Media.Imaging;
 using Avalonia.Threading;
+using System.Diagnostics;
+using VitaSharp.Core.Util;
 using VitaSharp.Desktop.Launcher.Ui;
 using S = VitaSharp.Desktop.Launcher.Ui.Strings;
 

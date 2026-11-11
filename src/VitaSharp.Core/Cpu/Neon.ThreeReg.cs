@@ -377,7 +377,8 @@ internal static unsafe partial class Neon
                 case 3: Set(td, i, w, (ulong)SatS(s, GetS(td, i, w) + (Int128)SatS(s, 2 * GetS(tn, i, esize) * ys, w), w)); break;
                 case 7: Set(td, i, w, (ulong)SatS(s, GetS(td, i, w) - (Int128)SatS(s, 2 * GetS(tn, i, esize) * ys, w), w)); break;
                 case 11: Set(td, i, w, (ulong)SatS(s, 2 * GetS(tn, i, esize) * ys, w)); break;
-                case 12: case 13:
+                case 12:
+                case 13:
                 {
                     Int128 p = 2 * (Int128)GetS(tn, i, esize) * ys + (a == 13 ? (Int128.One << (esize - 1)) : 0);
                     Set(td, i, esize, (ulong)SatS(s, p >> esize, esize));

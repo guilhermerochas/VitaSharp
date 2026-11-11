@@ -1,6 +1,6 @@
-using VitaSharp.Core.Localization;
 using SkiaSharp;
 using VitaSharp.Core.Hle.Np;
+using VitaSharp.Core.Localization;
 using VitaSharp.Core.Util;
 
 namespace VitaSharp.Desktop.Host;
@@ -68,13 +68,18 @@ public sealed class TrophyToast : IDisposable
 
     static SKColor GradeColor(TrophyGrade g) => g switch
     {
-        TrophyGrade.Platinum => new SKColor(0xA9, 0xC4, 0xE8), TrophyGrade.Gold => new SKColor(0xE2, 0xB1, 0x3C),
-        TrophyGrade.Silver => new SKColor(0xC3, 0xC7, 0xCE), _ => new SKColor(0xC0, 0x7A, 0x44),
+        TrophyGrade.Platinum => new SKColor(0xA9, 0xC4, 0xE8),
+        TrophyGrade.Gold => new SKColor(0xE2, 0xB1, 0x3C),
+        TrophyGrade.Silver => new SKColor(0xC3, 0xC7, 0xCE),
+        _ => new SKColor(0xC0, 0x7A, 0x44),
     };
 
     public static string GradeName(TrophyGrade g) => g switch
     {
-        TrophyGrade.Platinum => Loc.Get("GradePlatinum"), TrophyGrade.Gold => Loc.Get("GradeGold"), TrophyGrade.Silver => Loc.Get("GradeSilver"), _ => Loc.Get("GradeBronze"),
+        TrophyGrade.Platinum => Loc.Get("GradePlatinum"),
+        TrophyGrade.Gold => Loc.Get("GradeGold"),
+        TrophyGrade.Silver => Loc.Get("GradeSilver"),
+        _ => Loc.Get("GradeBronze"),
     };
 
     /// <summary>The card as BGRA bytes (opaque).</summary>

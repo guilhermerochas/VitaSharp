@@ -1,9 +1,9 @@
-﻿using System.Globalization;
-using Avalonia;
+﻿using Avalonia;
 using Avalonia.Controls;
 using Avalonia.Layout;
 using Avalonia.Media;
 using Avalonia.Media.Imaging;
+using System.Globalization;
 using VitaSharp.Core.Hle.Np;
 
 namespace VitaSharp.Desktop.Launcher;

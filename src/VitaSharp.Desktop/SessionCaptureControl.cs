@@ -77,7 +77,8 @@ sealed class SessionCaptureControl : IDisposable
             while (Core.Hle.Modules.Display.FramesPresented < b) Thread.Sleep(5);
             // the start may still be running (save state); Stop is refused while it is
             for (int i = 0; i < 400 && !Capture.Stop("--capture-at"); i++) Thread.Sleep(25);
-        }) { IsBackground = true, Name = "capture-at" }.Start();
+        })
+        { IsBackground = true, Name = "capture-at" }.Start();
     }
 
     public void Dispose()
@@ -180,7 +181,8 @@ sealed class SessionCaptureControl : IDisposable
                     Console.WriteLine($"re-run capture: {control.Capture.Dir}");
                     Console.WriteLine(cmp);
                     pb.Done = true;
-                }) { IsBackground = true, Name = "rerun-end" }.Start();
+                })
+                { IsBackground = true, Name = "rerun-end" }.Start();
             };
             Log.Info($"[capture] re-run of {dir} from the {from} state (guest time {fromUs / 1e6:F3} s): {input.Events} recorded events");
             return pb;

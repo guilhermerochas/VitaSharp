@@ -1,9 +1,9 @@
-using VitaSharp.Core.Localization;
 using System.Diagnostics;
 using VitaSharp.Core;
 using VitaSharp.Core.Firmware;
 using VitaSharp.Core.Hle;
 using VitaSharp.Core.Host;
+using VitaSharp.Core.Localization;
 using VitaSharp.Core.Util;
 using VitaSharp.Desktop.Host;
 using VitaSharp.Renderer.Vulkan;
@@ -492,7 +492,8 @@ public static class Runner
                     Log.Info(FormattableString.Invariant($"[capture] closing: the recording was saved {sw.Elapsed.TotalSeconds:F1} s after the window was closed"));
                     Console.WriteLine(c.LastZip is { } z ? $"Recording saved: {z}" : "Recording saved (see the log)");
                     Volatile.Write(ref closeNow, 1);
-                }) { IsBackground = true, Name = "capture close" }.Start();
+                })
+                { IsBackground = true, Name = "capture close" }.Start();
             }
             ShowTitle();
             return true;
@@ -550,7 +551,8 @@ public static class Runner
                 }
                 Thread.Sleep(5);
             }
-        }) { IsBackground = true, Name = "debug-mode-at" }.Start();
+        })
+        { IsBackground = true, Name = "debug-mode-at" }.Start();
     }
 
     /// <summary>--diag-at=FRAME[,FRAME...]: the F10 capture, triggered when the guest frame is reached (tests).</summary>
@@ -569,7 +571,8 @@ public static class Runner
                 }
                 Thread.Sleep(5);
             }
-        }) { IsBackground = true, Name = "diag-at" }.Start();
+        })
+        { IsBackground = true, Name = "diag-at" }.Start();
     }
 
     /// <summary>Unhandled exceptions (any thread) and unobserved task failures go to the log, which is flushed. Every
@@ -629,7 +632,8 @@ public static class Runner
                 if (shell.Vfs.Resolve(root + app) is { } d && File.Exists(Path.Combine(d, "eboot.bin"))) { dir = d; break; }
             if (dir == null) { Log.Warn($"--launch-app={app}: not installed"); return; }
             shell.Vita.RequestLaunchByName(shell, app!, dir, flags, null);
-        }) { IsBackground = true, Name = "shell launch" };
+        })
+        { IsBackground = true, Name = "shell launch" };
         t.Start();
     }
 
@@ -898,7 +902,7 @@ public static class Runner
             prevHash = hash;
         }
         File.WriteAllText(Path.Combine(dir, "metrics.csv"), sb.ToString());
-        string Range(List<long> l) => l.Count == 0 ? "none" : $"{l.Count} frames ({l[0]}..{l[^1]})";
+        static string Range(List<long> l) => l.Count == 0 ? "none" : $"{l.Count} frames ({l[0]}..{l[^1]})";
         Log.Info($"METRICS blown-out (>35% saturated white or mean >0.85): {Range(over)}");
         Log.Info($"METRICS black (>97% black): {Range(black)}");
         Log.Info($"METRICS flicker (brightness swing >0.35 between dumps): {Range(flicker)}");
@@ -993,7 +997,8 @@ public static class Runner
             }
             Log.Info($"Watch {spec} resolved to 0x{a:X8}");
             apply(a);
-        }) { IsBackground = true }.Start();
+        })
+        { IsBackground = true }.Start();
     }
 
     /// <summary>--poke=ADDR:HEXVALUE@fN,...: writes a 32-bit value into guest memory when frame N is presented (experiments).</summary>
@@ -1008,7 +1013,8 @@ public static class Runner
                 VitaSharp.Core.Memory.GuestMemory.W32(p.Addr, p.Value);
                 Log.Info($"POKE f{p.Frame} {p.Addr:X8} <- {p.Value:X8}");
             }
-        }) { IsBackground = true }.Start();
+        })
+        { IsBackground = true }.Start();
     }
 
     /// <summary>--watch-read=ADDR:LEN[:FROM:TO] logs every 32/64-bit CPU load from the range.</summary>
@@ -1050,7 +1056,8 @@ public static class Runner
                 }
                 Thread.Sleep(5);
             }
-        }) { IsBackground = true, Name = "peek" }.Start();
+        })
+        { IsBackground = true, Name = "peek" }.Start();
     }
 
     static void StartMemoryDumps(string spec, string dir)
@@ -1076,7 +1083,8 @@ public static class Runner
                 }
                 Thread.Sleep(2);
             }
-        }) { IsBackground = true, Name = "memdump" }.Start();
+        })
+        { IsBackground = true, Name = "memdump" }.Start();
     }
 
     /// <summary>--probe=ADDR[?rC][:WORDS@rN],... logs (only when rC != 0) registers (and optionally memory at a register) when a block starts at ADDR.</summary>

@@ -29,7 +29,10 @@ public sealed class AndroidSensorTests
     }
 
     [Theory]
-    [InlineData(0)] [InlineData(1)] [InlineData(2)] [InlineData(3)]
+    [InlineData(0)]
+    [InlineData(1)]
+    [InlineData(2)]
+    [InlineData(3)]
     public void PhoneLyingFlatIsTheVitaLyingFlat(int rotation)
     {
         var s = AndroidMotionAxes.FromPhone(5, new Vector3(0, 0, G), new Vector3(0, 0, 0.5f), rotation);
@@ -262,7 +265,10 @@ public sealed class AndroidSensorTests
     }
 
     [Theory]
-    [InlineData(0)] [InlineData(90)] [InlineData(180)] [InlineData(270)]
+    [InlineData(0)]
+    [InlineData(90)]
+    [InlineData(180)]
+    [InlineData(270)]
     public void CameraRotationTurnsTheImageClockwise(int rotation)
     {
         const int w = 4, h = 2;

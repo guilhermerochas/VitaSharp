@@ -1,6 +1,6 @@
-using VitaSharp.Core.Util;
 using System.Runtime.InteropServices;
 using UnicornEngine;
+using VitaSharp.Core.Util;
 
 namespace VitaSharp.Tests;
 

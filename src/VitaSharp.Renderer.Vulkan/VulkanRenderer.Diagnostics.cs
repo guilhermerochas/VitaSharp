@@ -1,7 +1,7 @@
+using Silk.NET.Vulkan;
 using System.Diagnostics;
 using System.Runtime.InteropServices;
 using System.Text;
-using Silk.NET.Vulkan;
 using VitaSharp.Core.Gpu;
 using VitaSharp.Core.Gxm.Shader;
 using VitaSharp.Core.Util;

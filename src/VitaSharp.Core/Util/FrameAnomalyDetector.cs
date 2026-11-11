@@ -52,7 +52,7 @@ public struct FrameMetrics
         };
     }
 
-    public readonly override string ToString() =>
+    public override readonly string ToString() =>
         $"mean {Mean:F3} white {White:F3} black {Black:F3} magenta {Magenta:F3} green {Green:F3} blue {Blue:F3}";
 }
 

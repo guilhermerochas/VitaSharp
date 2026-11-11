@@ -1,8 +1,8 @@
-using System.Globalization;
 using Avalonia;
 using Avalonia.Controls;
 using Avalonia.Input;
 using Avalonia.Media;
+using System.Globalization;
 using VitaSharp.Core.Host;
 using VitaSharp.Core.Input;
 

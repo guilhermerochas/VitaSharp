@@ -1,6 +1,6 @@
-using VitaSharp.Core.Util;
 using System.Runtime.CompilerServices;
 using System.Runtime.Intrinsics;
+using VitaSharp.Core.Util;
 
 namespace VitaSharp.Core.Memory;
 

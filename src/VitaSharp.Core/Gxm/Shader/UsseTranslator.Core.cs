@@ -642,7 +642,15 @@ public sealed partial class UsseTranslator
 
     static Sw[] S4(string s) => s.Select(c => c switch
     {
-        'X' => Sw.X, 'Y' => Sw.Y, 'Z' => Sw.Z, 'W' => Sw.W, '0' => Sw.Zero, '1' => Sw.One, '2' => Sw.Two, 'H' => Sw.Half, _ => Sw.Undef,
+        'X' => Sw.X,
+        'Y' => Sw.Y,
+        'Z' => Sw.Z,
+        'W' => Sw.W,
+        '0' => Sw.Zero,
+        '1' => Sw.One,
+        '2' => Sw.Two,
+        'H' => Sw.Half,
+        _ => Sw.Undef,
     }).ToArray();
 
     static Sw[] To4(Sw[] s3) => s3.Length == 4 ? s3 : [s3[0], s3[1], s3[2], Sw.X];

@@ -162,7 +162,7 @@ static class UiRender
             try { proc.ProcessorAffinity = (nint)0xF0; proc.PriorityClass = System.Diagnostics.ProcessPriorityClass.BelowNormal; }
             catch (Exception e) when (e is InvalidOperationException or System.ComponentModel.Win32Exception) { }
         }
-        void Pump(int ms) { var until = DateTime.UtcNow.AddMilliseconds(ms); while (DateTime.UtcNow < until) { Dispatcher.UIThread.RunJobs(); Thread.Sleep(20); } }
+        static void Pump(int ms) { var until = DateTime.UtcNow.AddMilliseconds(ms); while (DateTime.UtcNow < until) { Dispatcher.UIThread.RunJobs(); Thread.Sleep(20); } }
         int failures = 0;
         nint hwnd = 0;
         var deadline = DateTime.UtcNow.AddSeconds(Math.Max(seconds, 30));

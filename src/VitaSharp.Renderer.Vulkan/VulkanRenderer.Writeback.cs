@@ -1,8 +1,8 @@
 using Silk.NET.Vulkan;
 using VitaSharp.Core.Gpu;
 using VitaSharp.Core.Gxm;
-using VitaSharp.Core.Util;
 using VitaSharp.Core.Memory;
+using VitaSharp.Core.Util;
 using Buffer = Silk.NET.Vulkan.Buffer;
 
 namespace VitaSharp.Renderer.Vulkan;

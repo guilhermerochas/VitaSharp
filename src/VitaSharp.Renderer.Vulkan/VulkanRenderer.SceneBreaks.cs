@@ -1,5 +1,5 @@
-using System.Runtime.CompilerServices;
 using Silk.NET.Vulkan;
+using System.Runtime.CompilerServices;
 using VitaSharp.Core.Util;
 
 namespace VitaSharp.Renderer.Vulkan;
@@ -125,7 +125,7 @@ public sealed unsafe partial class VulkanRenderer
 
     readonly struct OutsideScope(VulkanRenderer? owner) : IDisposable
     {
-        public void Dispose() { if (owner != null) owner._hoisting = false; }
+        public void Dispose() { owner?._hoisting = false; }
     }
 
     /// <summary>Commands are recorded into the primary between renderings: ended renderings waiting for a merge are

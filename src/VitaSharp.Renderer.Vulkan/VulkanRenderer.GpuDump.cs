@@ -1,5 +1,5 @@
-using System.Buffers.Binary;
 using Silk.NET.Vulkan;
+using System.Buffers.Binary;
 using VitaSharp.Core.Gpu;
 using VitaSharp.Core.Util;
 

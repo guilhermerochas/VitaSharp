@@ -87,8 +87,8 @@ public sealed unsafe partial class VulkanRenderer
         (_tw1Active, _tw1) = (s.Tw1Active, s.Tw1);
         _sceneRegions.Clear();
         _sceneRegions.AddRange(s.Regions);
-        if (_rt != null) _rt.LastTouchedFrame = FrameCount;
-        if (_depth != null) _depth.LastUsedFrame = _depth.LastTouchedFrame = FrameCount;
+        _rt?.LastTouchedFrame = FrameCount;
+        _depth?.LastUsedFrame = _depth.LastTouchedFrame = FrameCount;
     }
 
     /// <summary>A process ended (<see cref="ProcessEndedCommand"/>, already made current): the scene it left open ends.</summary>

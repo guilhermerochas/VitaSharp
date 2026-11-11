@@ -1,7 +1,7 @@
-using VitaSharp.Core.Localization;
 using System.Text.Json;
 using System.Text.Json.Serialization;
 using VitaSharp.Core.Cpu;
+using VitaSharp.Core.Localization;
 using VitaSharp.Core.Util;
 
 namespace VitaSharp.Mobile.Core.Settings;
