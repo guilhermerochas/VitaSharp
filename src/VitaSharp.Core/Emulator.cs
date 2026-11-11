@@ -124,13 +124,22 @@ public sealed class Emulator : IDisposable
         NetConfig.Current = options.Net;
         LocalPsn = new global::VitaSharp.Core.Hle.Np.LocalPsn(options.NpRoot ?? global::VitaSharp.Core.Hle.Np.LocalPsn.DefaultRoot(options.FsRoot));
         if (options.Net.Real)
+        {
             Log.Warn(options.Net.Allow == null
                 ? "Network: real internet (--net=real): game traffic leaves this PC; Sony's servers stay blocked"
                 : $"Network: real internet limited to {string.Join(", ", options.Net.Allow)} (--net-allow); everything else is blocked and logged");
+        }
+
         if (options.Rpcn is { } rpcn)
         {
-            if (!options.Net.Real) Log.Warn($"RPCN server {rpcn.Host} ignored: real internet is off (--net=real)");
-            else if (!options.Psn.SignedIn) Log.Warn($"RPCN server {rpcn.Host} ignored: the PSN account is signed out (--psn=on)");
+            if (!options.Net.Real)
+            {
+                Log.Warn($"RPCN server {rpcn.Host} ignored: real internet is off (--net=real)");
+            }
+            else if (!options.Psn.SignedIn)
+            {
+                Log.Warn($"RPCN server {rpcn.Host} ignored: the PSN account is signed out (--psn=on)");
+            }
             else
             {
                 LocalPsn.UseRpcn(new global::VitaSharp.Core.Hle.Np.Rpcn.RpcnClient(rpcn, options.Net));
@@ -190,7 +199,9 @@ public sealed class Emulator : IDisposable
         Kernel.Initialize();
         // every concrete HleModule of the core (generated table), in full type name order as before
         foreach (var m in HleBindings.Modules.OrderBy(m => m.Type.FullName))
+        {
             Hle.RegisterModule(m.Create());
+        }
     }
 
     // ------------------------------------------------------------------ process exec (sceAppMgrLoadExec)
@@ -216,7 +227,11 @@ public sealed class Emulator : IDisposable
     /// is restarted when that application exits (<see cref="SuspendedPrograms"/>).</summary>
     public void RequestLaunch(string appDir, string self, string[] args, bool suspendCurrent)
     {
-        if (suspendCurrent && MainModule != null) SuspendedPrograms.Push((AppPath, CurrentSelf));
+        if (suspendCurrent && MainModule != null)
+        {
+            SuspendedPrograms.Push((AppPath, CurrentSelf));
+        }
+
         QueueExec("app0:" + self, args, appDir);
     }
 
@@ -231,7 +246,11 @@ public sealed class Emulator : IDisposable
             Terminate($"exited (0x{status:X})");
             return true;
         }
-        if (SuspendedPrograms.Count == 0) return false;
+        if (SuspendedPrograms.Count == 0)
+        {
+            return false;
+        }
+
         var (dir, self) = SuspendedPrograms.Pop();
         Log.Info($"Process exited (0x{status:X}): resuming {dir} ({self})");
         QueueExec("app0:" + self, [], dir);
@@ -249,8 +268,15 @@ public sealed class Emulator : IDisposable
             // a process of a multi-process system re-executes on its own: the host front-end only drives the first
             Task.Run(() =>
             {
-                try { PerformExec(null); }
-                catch (Exception e) when (e is not OutOfMemoryException) { Log.Error($"{Describe()}: LoadExec failed: {e}"); Terminate("LoadExec failed"); }
+                try
+                {
+                    PerformExec(null);
+                }
+                catch (Exception e) when (e is not OutOfMemoryException)
+                {
+                    Log.Error($"{Describe()}: LoadExec failed: {e}");
+                    Terminate("LoadExec failed");
+                }
             });
             return;
         }
@@ -276,10 +302,18 @@ public sealed class Emulator : IDisposable
         var child = new Emulator(this, reservedApp) { _background = background };
         _children.Add(child);
         child.TitleId = Path.GetFileName(Path.TrimEndingDirectorySeparator(appDir));
-        if (!ReferenceEquals(child.Space, Space)) child.Space.Label = child.Describe();
+        if (!ReferenceEquals(child.Space, Space))
+        {
+            child.Space.Label = child.Describe();
+        }
+
         child.Running = true;
         // SceAppMgr tells the shell about the new application process: event 2 {pid, application id}
-        if (Vita.Shell != null) Vita.PostShellEvent(ShellEvents.AppCreated, child.Pid, child.AppId);
+        if (Vita.Shell != null)
+        {
+            Vita.PostShellEvent(ShellEvents.AppCreated, child.Pid, child.AppId);
+        }
+
         Task.Run(() =>
         {
             try
@@ -288,8 +322,16 @@ public sealed class Emulator : IDisposable
                 Log.Info($"Process {child.Describe()} started by {Describe()}");
                 child.Start(args);
                 // the launch finished: event 0xA {application id}; the shell then activates it
-                if (Vita.Shell != null && !background) Vita.PostShellEvent(ShellEvents.AppLaunched, child.AppId);
-                if (activate) Vita.SetForeground(child);
+                if (Vita.Shell != null && !background)
+                {
+                    Vita.PostShellEvent(ShellEvents.AppLaunched, child.AppId);
+                }
+
+                if (activate)
+                {
+                    Vita.SetForeground(child);
+                }
+
                 started?.Invoke(child);
             }
             catch (InvalidOperationException e) when (e.Message.Contains("cannot map fixed segment"))
@@ -297,13 +339,19 @@ public sealed class Emulator : IDisposable
                 Log.Warn($"{child.Describe()}: {e.Message}; it cannot run next to {Describe()}");
                 child.Terminate("could not be placed");
                 cannotPlace?.Invoke();
-                if (cannotPlace == null && Vita.Shell != null) Vita.PostShellEvent(ShellEvents.AppLaunched, -1);
+                if (cannotPlace == null && Vita.Shell != null)
+                {
+                    Vita.PostShellEvent(ShellEvents.AppLaunched, -1);
+                }
             }
             catch (Exception e) when (e is not OutOfMemoryException)
             {
                 Log.Error($"Process {child.Describe()} could not start: {e}");
                 child.Terminate("failed to start");
-                if (Vita.Shell != null) Vita.PostShellEvent(ShellEvents.AppLaunched, -1);
+                if (Vita.Shell != null)
+                {
+                    Vita.PostShellEvent(ShellEvents.AppLaunched, -1);
+                }
             }
         });
         return child;
@@ -317,23 +365,46 @@ public sealed class Emulator : IDisposable
     /// objects and gives the display back. The threads are joined on a host thread, so this can be called from one of them.</summary>
     public void Terminate(string why)
     {
-        if (Parent == null) { Stop(); return; }
-        if (Interlocked.Exchange(ref _terminated, 1) != 0) return;
+        if (Parent == null)
+        {
+            Stop();
+            return;
+        }
+        if (Interlocked.Exchange(ref _terminated, 1) != 0)
+        {
+            return;
+        }
+
         Log.Info($"Process {Describe()} {why}");
         Running = false;
         // the screen goes back to the parent (the shell) at once, not after the threads are gone (that can take seconds)
         _endedInFront = ReferenceEquals(Vita.Foreground, this);
-        if (Parent is { } parent && _endedInFront) Vita.SetForeground(parent);
+        if (Parent is { } parent && _endedInFront)
+        {
+            Vita.SetForeground(parent);
+        }
+
         Kernel.StopAllThreads();
-        foreach (var c in _children.ToArray()) c.Terminate("ended with its parent");
+        foreach (var c in _children.ToArray())
+        {
+            c.Terminate("ended with its parent");
+        }
+
         Task.Run(() =>
         {
             if (!Kernel.WaitAllThreadsExit(10_000))
             {
                 Log.Warn($"{Describe()}: some threads did not stop in time");
                 using (AddressSpace.Use(Space))
+                {
                     foreach (var t in Kernel.Threads.ToList())
-                        if (!t.WaitForExit(0)) Log.Warn($"  still running: {t.Describe()}");
+                    {
+                        if (!t.WaitForExit(0))
+                        {
+                            Log.Warn($"  still running: {t.Describe()}");
+                        }
+                    }
+                }
             }
             Release();
         });
@@ -345,13 +416,21 @@ public sealed class Emulator : IDisposable
         // SceAppMgr tells the shell the application is gone: event 4 {+4 pid, +0x14 application id}. Not for a background
         // service: NPXS10079 (daily checker) exits at once here, where on the Vita it stays resident, and the shell would
         // start it again on every end
-        if (Vita.Shell is { } shell && shell != this && !_background) Vita.PostAppEnded(Pid, AppId, _endedInFront ? 2 : 4, TitleId);
+        if (Vita.Shell is { } shell && shell != this && !_background)
+        {
+            Vita.PostAppEnded(Pid, AppId, _endedInFront ? 2 : 4, TitleId);
+        }
+
         Vita.Unregister(this);
         Parent?._children.Remove(this);
         Gpu.ReleaseScene(Pid);
         int objects = Vita.Objects.RemoveOwnedBy(Pid);
         // the GPU finishes the process's commands before its memory goes (bounded: a stuck GPU must not keep the space)
-        if (!Task.Run(Gpu.WaitIdle).Wait(5000)) Log.Warn($"{Describe()}: the GPU did not finish its work in time");
+        if (!Task.Run(Gpu.WaitIdle).Wait(5000))
+        {
+            Log.Warn($"{Describe()}: the GPU did not finish its work in time");
+        }
+
         long bytes = Memory.FreeOwnedBy(Pid);
         Code.Clear();
         Memory.ReleaseSpace(Space);
@@ -378,7 +457,10 @@ public sealed class Emulator : IDisposable
         {
             var old = Interlocked.Exchange(ref _openSceneThread, value);
             // the scene is closed during a pause: that thread parks at its next block boundary too
-            if (old != null && old != value && EmulationPause.IsPaused) old.Core.InterruptRequested = true;
+            if (old != null && old != value && EmulationPause.IsPaused)
+            {
+                old.Core.InterruptRequested = true;
+            }
         }
     }
     GuestThread? _openSceneThread;
@@ -387,24 +469,46 @@ public sealed class Emulator : IDisposable
     /// its own).</summary>
     void OnPauseChanged(bool paused)
     {
-        try { Host.Audio?.SetPaused(paused); }
-        catch (Exception e) { Log.Warn($"Audio: could not {(paused ? "pause" : "resume")} the output: {e.Message}"); }
+        try
+        {
+            Host.Audio?.SetPaused(paused);
+        }
+        catch (Exception e)
+        {
+            Log.Warn($"Audio: could not {(paused ? "pause" : "resume")} the output: {e.Message}");
+        }
     }
 
     /// <summary>Suspends the process (the shell took the screen back: the application waits in the background).</summary>
     public void Suspend()
     {
-        if (Suspended) return;
+        if (Suspended)
+        {
+            return;
+        }
+
         Suspended = true;
-        foreach (var t in Kernel.Threads) t.Core.InterruptRequested = true;
+        foreach (var t in Kernel.Threads)
+        {
+            t.Core.InterruptRequested = true;
+        }
+
         Log.Info($"Process {Describe()} suspended");
     }
 
     public void Resume()
     {
-        if (!Suspended) return;
+        if (!Suspended)
+        {
+            return;
+        }
+
         Suspended = false;
-        foreach (var t in Kernel.Threads) t.WakeFromSuspend();
+        foreach (var t in Kernel.Threads)
+        {
+            t.WakeFromSuspend();
+        }
+
         Log.Info($"Process {Describe()} resumed");
     }
 
@@ -416,7 +520,10 @@ public sealed class Emulator : IDisposable
     {
         // called on the thread that switched the foreground (the shell's): the frame is in this process's memory
         using var space = AddressSpace.Use(Space);
-        foreach (var d in Hle.Modules.OfType<Hle.Modules.Display>()) d.Represent();
+        foreach (var d in Hle.Modules.OfType<Hle.Modules.Display>())
+        {
+            d.Represent();
+        }
     }
 
     /// <summary>This process is the one on screen (or the only one): its frames are shown and it gets the input.</summary>
@@ -434,8 +541,14 @@ public sealed class Emulator : IDisposable
     {
         var (path, args, appDir) = ExecRequest ?? throw new InvalidOperationException("no exec pending");
         Execing = true;
-        try { ExecCore(backendFactory, path, args, appDir); }
-        finally { Execing = false; }
+        try
+        {
+            ExecCore(backendFactory, path, args, appDir);
+        }
+        finally
+        {
+            Execing = false;
+        }
     }
 
     /// <summary>A LoadExec is being performed: the old process has stopped (<see cref="Running"/> is false, and
@@ -450,12 +563,27 @@ public sealed class Emulator : IDisposable
         {
             Log.Warn("LoadExec: some threads did not stop in time");
             using (AddressSpace.Use(Space))
+            {
                 foreach (var t in Kernel.Threads.ToList())
-                    if (!t.WaitForExit(0)) Log.Warn($"  still running (core {t.HasCore}, blocked in host {t.BlockedInHost}, in guest code {t.InGuestCode}): {t.Describe()}");
+                {
+                    if (!t.WaitForExit(0))
+                    {
+                        Log.Warn($"  still running (core {t.HasCore}, blocked in host {t.BlockedInHost}, in guest code {t.InGuestCode}): {t.Describe()}");
+                    }
+                }
+            }
         }
         bool alone = Vita.Processes.Count == 1;
-        if (Parent == null) Gpu.ReplaceBackend(backendFactory); // the GPU is the system's: only the front-end's process replaces it
-        if (alone) VitaSharp.Core.Util.AudioDiagnostics.ProcessEnded(); // the old process's ports and decoder streams are gone
+        if (Parent == null)
+        {
+            Gpu.ReplaceBackend(backendFactory); // the GPU is the system's: only the front-end's process replaces it
+        }
+
+        if (alone)
+        {
+            VitaSharp.Core.Util.AudioDiagnostics.ProcessEnded(); // the old process's ports and decoder streams are gone
+        }
+
         Code.Clear();
         if (alone)
         {
@@ -463,7 +591,10 @@ public sealed class Emulator : IDisposable
             Vita.Objects.RemoveOwnedBy(0);
             VitaSharp.Core.Kernel.Scheduler.Reset();
         }
-        else Memory.FreeOwnedBy(Pid);
+        else
+        {
+            Memory.FreeOwnedBy(Pid);
+        }
         // the space now holds another executable: what was cached per use of it is stale (the HLE guest-code routines
         // placed by the old image: Jak and Daxter Collection's menu left them where Jak1.self's code now is, and its
         // sceGxm imports jumped into the middle of a Thumb function)
@@ -493,10 +624,17 @@ public sealed class Emulator : IDisposable
             TitleId = ParamSfo.TitleId;
             Title = ParamSfo.Title;
         }
-        else TitleId = Path.GetFileName(AppPath);
+        else
+        {
+            TitleId = Path.GetFileName(AppPath);
+        }
 
         var patch = Path.Combine(Options.FsRoot, "ux0", "patch", TitleId);
-        if (Directory.Exists(patch)) Vfs.AddApp0Overlay(patch);
+        if (Directory.Exists(patch))
+        {
+            Vfs.AddApp0Overlay(patch);
+        }
+
         var saveDir = Path.Combine(Options.FsRoot, "ux0", "user", "00", "savedata", TitleId);
         Vfs.Mount("savedata0", saveDir);
         Vfs.Mount("addcont0", Path.Combine(Options.FsRoot, "ux0", "addcont", TitleId));
@@ -510,10 +648,20 @@ public sealed class Emulator : IDisposable
         // the shell starting = the system software coming up with the memory card inserted: titles VitaSharp installed
         // (or that were copied into ux0:app) get the appmeta the Vita's installer leaves, for the shell's database
         if (RunsOnSystemCore)
+        {
             Package.AppMeta.Sync(Path.Combine(Options.FsRoot, "ux0"), Log.Info);
+        }
+
         Log.Info($"Loading {TitleId} \"{Title}\" from {AppPath}");
         // per-title shader/pipeline caches start warming up while the executable loads
-        try { Gpu.Backend?.BeginTitle(TitleId); } catch (Exception e) { Log.Warn($"GPU backend title setup failed: {e.Message}"); }
+        try
+        {
+            Gpu.Backend?.BeginTitle(TitleId);
+        }
+        catch (Exception e)
+        {
+            Log.Warn($"GPU backend title setup failed: {e.Message}");
+        }
 
         if (Vfs.Resolve("app0:" + self) is { } selfHost && File.Exists(selfHost))
         {
@@ -523,7 +671,11 @@ public sealed class Emulator : IDisposable
             ProgramAuthorityId = SelfDecryptor.ProgramAuthorityId(head);
         }
         MainModule = LoadModule("app0:" + self);
-        if (IsSystemProgram) Log.Info($"System program {MainModule.Name}, authority ID 0x{ProgramAuthorityId:X16}");
+        if (IsSystemProgram)
+        {
+            Log.Info($"System program {MainModule.Name}, authority ID 0x{ProgramAuthorityId:X16}");
+        }
+
         Loader.TitlePatches.Apply(TitleId, Options.PatchDir);
         if (MainModule.TlsInit != 0 || MainModule.TlsAreaSize != 0)
         {
@@ -539,11 +691,22 @@ public sealed class Emulator : IDisposable
         {
             // the HLE-modules option keeps these on HLE too (VITASHARP_HLE_MODULES=libc,libfios2: the C library and
             // FIOS2 of the HLE instead of the game's own copies)
-            if ((preloadDisabled & bit) != 0 || KeepOnHle(name)) continue;
+            if ((preloadDisabled & bit) != 0 || KeepOnHle(name))
+            {
+                continue;
+            }
+
             var host = Vfs.Resolve($"app0:sce_module/{name}.suprx");
-            if (host != null && File.Exists(host)) LoadModule($"app0:sce_module/{name}.suprx");
+            if (host != null && File.Exists(host))
+            {
+                LoadModule($"app0:sce_module/{name}.suprx");
+            }
         }
-        if (!IsSystemProgram) LoadPlugins();
+        if (!IsSystemProgram)
+        {
+            LoadPlugins();
+        }
+
         if (IsSystemProgram)
         {
             PreloadFirmwareModules(preloadDisabled);
@@ -556,27 +719,45 @@ public sealed class Emulator : IDisposable
         // from libpaf, SceCommonGuiDialog's class tables...) are bound when that module loads; only the others are missing
         var firmware = IsSystemProgram ? Firmware.FirmwareLibraries.For(Options.FsRoot) : null;
         int later = 0;
-        lock (_pendingVariables) _pendingVariables.Clear();
+        lock (_pendingVariables)
+        {
+            _pendingVariables.Clear();
+        }
+
         var waiting = new SortedSet<string>();
         foreach (uint nid in Linker.UnresolvedVariables())
         {
             string source = Linker.VariableImportSource(nid), lib = LibraryOf(source);
-            if (firmware?.Provider(lib) != null) { later++; continue; }
+            if (firmware?.Provider(lib) != null)
+            {
+                later++;
+                continue;
+            }
             // a library no loaded module exports yet: the program may load its provider itself (Unity's
             // UnityPlayer imports variables of app0:Media/Modules/Il2CppAssemblies.suprx, loaded ~0.6 s later);
             // LoadModule reports what is still missing once a module exporting that library has loaded
             if (!Kernel.Modules.Values.Any(m => m.Exports.Any(e => e.Library == lib)))
             {
-                lock (_pendingVariables) _pendingVariables.Add(nid);
+                lock (_pendingVariables)
+                {
+                    _pendingVariables.Add(nid);
+                }
+
                 waiting.Add(lib);
                 continue;
             }
             WarnUnresolvedVariable(nid, source);
         }
-        if (later > 0) Log.Info($"{later} variable imports wait for firmware modules the program loads itself (libpaf, common_gui_dialog...)");
+        if (later > 0)
+        {
+            Log.Info($"{later} variable imports wait for firmware modules the program loads itself (libpaf, common_gui_dialog...)");
+        }
+
         if (waiting.Count > 0)
+        {
             Log.Info($"{_pendingVariables.Count} variable imports wait for a module exporting {string.Join(", ", waiting)}: " +
                 string.Join(" ", _pendingVariables.Select(n => $"{n:X8}")));
+        }
     }
 
     /// <summary>Variable imports from libraries no module exported when the executable loaded (see LoadTitle).</summary>
@@ -593,18 +774,34 @@ public sealed class Emulator : IDisposable
     {
         lock (_pendingVariables)
         {
-            if (_pendingVariables.Count == 0) return;
+            if (_pendingVariables.Count == 0)
+            {
+                return;
+            }
+
             var unresolved = Linker.UnresolvedVariables().ToHashSet();
             int resolved = 0;
             foreach (uint nid in _pendingVariables.ToArray())
             {
                 string source = Linker.VariableImportSource(nid);
-                if (!unresolved.Contains(nid)) { _pendingVariables.Remove(nid); resolved++; continue; }
-                if (!m.Exports.Any(e => e.Library == LibraryOf(source))) continue;
+                if (!unresolved.Contains(nid))
+                {
+                    _pendingVariables.Remove(nid);
+                    resolved++;
+                    continue;
+                }
+                if (!m.Exports.Any(e => e.Library == LibraryOf(source)))
+                {
+                    continue;
+                }
+
                 _pendingVariables.Remove(nid);
                 WarnUnresolvedVariable(nid, source);
             }
-            if (resolved > 0) Log.Info($"{m.Name}: {resolved} waiting variable imports bound");
+            if (resolved > 0)
+            {
+                Log.Info($"{m.Name}: {resolved} waiting variable imports bound");
+            }
         }
     }
 
@@ -642,11 +839,23 @@ public sealed class Emulator : IDisposable
     {
         foreach (var (bit, name) in ProcessPreloads)
         {
-            if ((preloadDisabled & bit) != 0 || KeepOnHle(name)) continue;
+            if ((preloadDisabled & bit) != 0 || KeepOnHle(name))
+            {
+                continue;
+            }
+
             string path = $"vs0:sys/external/{name}.suprx";
-            if (Vfs.Resolve(path) is not { } host || !File.Exists(host)) continue;
+            if (Vfs.Resolve(path) is not { } host || !File.Exists(host))
+            {
+                continue;
+            }
+
             if (Kernel.Modules.Values.Any(m => string.Equals(m.Path, $"app0:sce_module/{name}.suprx", StringComparison.OrdinalIgnoreCase)
-                                                || string.Equals(m.Path, path, StringComparison.OrdinalIgnoreCase))) continue;
+                                                || string.Equals(m.Path, path, StringComparison.OrdinalIgnoreCase)))
+            {
+                continue;
+            }
+
             var m = LoadModule(path);
             _startFirst.AddRange(LoadFirmwareDependencies(m));
             _startFirst.Add(m);
@@ -696,7 +905,11 @@ public sealed class Emulator : IDisposable
         // on-request module, read from its image without loading it
         bool NeedsOnRequest(string vitaPath)
         {
-            if (needsOnRequest.TryGetValue(vitaPath, out bool known)) return known;
+            if (needsOnRequest.TryGetValue(vitaPath, out bool known))
+            {
+                return known;
+            }
+
             needsOnRequest[vitaPath] = false; // cycles
             bool result = false;
             try
@@ -706,14 +919,24 @@ public sealed class Emulator : IDisposable
                     var img = ModuleImage.Read(Loader.Self.SelfDecryptor.ToElf(File.ReadAllBytes(host), null));
                     foreach (var (lib, _, _) in img.Imports)
                     {
-                        if (index.Provider(lib) is not { } p || HleServesLibrary(lib)) continue;
+                        if (index.Provider(lib) is not { } p || HleServesLibrary(lib))
+                        {
+                            continue;
+                        }
+
                         if (OnRequestModules.Contains(Path.GetFileNameWithoutExtension(p.VitaPath))
                             || (!string.Equals(p.VitaPath, vitaPath, StringComparison.OrdinalIgnoreCase) && NeedsOnRequest(p.VitaPath)))
-                        { result = true; break; }
+                        {
+                            result = true;
+                            break;
+                        }
                     }
                 }
             }
-            catch (Exception e) when (e is not OutOfMemoryException) { result = true; }
+            catch (Exception e) when (e is not OutOfMemoryException)
+            {
+                result = true;
+            }
             return needsOnRequest[vitaPath] = result;
         }
 
@@ -721,10 +944,21 @@ public sealed class Emulator : IDisposable
         {
             foreach (var (lib, _, nids) in m.Imports)
             {
-                if (index.Provider(lib) is not { } provider) continue;
+                if (index.Provider(lib) is not { } provider)
+                {
+                    continue;
+                }
+
                 string file = Path.GetFileNameWithoutExtension(provider.VitaPath);
-                if (OnRequestModules.Contains(file) || KeepOnHle(lib) || KeepOnHle(file)) continue;
-                if (Kernel.Modules.Values.Any(x => string.Equals(x.Path, provider.VitaPath, StringComparison.OrdinalIgnoreCase))) continue;
+                if (OnRequestModules.Contains(file) || KeepOnHle(lib) || KeepOnHle(file))
+                {
+                    continue;
+                }
+
+                if (Kernel.Modules.Values.Any(x => string.Equals(x.Path, provider.VitaPath, StringComparison.OrdinalIgnoreCase)))
+                {
+                    continue;
+                }
                 // a library VitaSharp emulates in HLE (even partly: NP, AppUtil, Http...) stays on HLE, so every
                 // process sees the same emulated services; only libraries the HLE knows nothing of come from the firmware
                 // Except for a firmware module that uses only functions of such a library the HLE does not have (the
@@ -741,11 +975,26 @@ public sealed class Emulator : IDisposable
                 // libraries whose HLE is only a fallback of the firmware module (HleModule.FirmwareForEveryImporter):
                 // every importer gets the firmware module
                 bool lleProvided = provider.VitaPath.StartsWith("vs0:", StringComparison.OrdinalIgnoreCase) && Hle.FirmwareForEveryImporter(lib);
-                if ((hleServes && !firmwareNeedsInternals && !serviceClient && !lleProvided) || nids.All(n => Linker.TryGetFunctionExport(n, out _))) continue;
-                if (withoutOnRequest && NeedsOnRequest(provider.VitaPath)) continue;
-                if (!visiting.Add(provider.VitaPath)) continue;
+                if ((hleServes && !firmwareNeedsInternals && !serviceClient && !lleProvided) || nids.All(n => Linker.TryGetFunctionExport(n, out _)))
+                {
+                    continue;
+                }
+
+                if (withoutOnRequest && NeedsOnRequest(provider.VitaPath))
+                {
+                    continue;
+                }
+
+                if (!visiting.Add(provider.VitaPath))
+                {
+                    continue;
+                }
+
                 LoadedModule dep;
-                try { dep = LoadModule(provider.VitaPath); }
+                try
+                {
+                    dep = LoadModule(provider.VitaPath);
+                }
                 catch (Exception e) when (e is not OutOfMemoryException)
                 {
                     Log.Warn($"Firmware dependency {provider.VitaPath} (for {lib}) failed to load: {e.Message}");
@@ -763,9 +1012,17 @@ public sealed class Emulator : IDisposable
     uint ProcessParamField(int offset)
     {
         uint pp = Linker.ProcessParam;
-        if (pp == 0) return 0;
+        if (pp == 0)
+        {
+            return 0;
+        }
+
         uint size = GuestMemory.R32(pp);
-        if (offset + 4 > size) return 0;
+        if (offset + 4 > size)
+        {
+            return 0;
+        }
+
         return GuestMemory.R32(pp + (uint)offset);
     }
 
@@ -777,7 +1034,10 @@ public sealed class Emulator : IDisposable
                  }.Concat(Directory.Exists(Path.Combine(Options.FsRoot, "ux0", "license", TitleId))
                      ? Directory.GetFiles(Path.Combine(Options.FsRoot, "ux0", "license", TitleId), "*.rif") : []))
         {
-            if (File.Exists(p)) return PkgInstaller.ReadKlicensee(p);
+            if (File.Exists(p))
+            {
+                return PkgInstaller.ReadKlicensee(p);
+            }
         }
         return null;
     }
@@ -907,13 +1167,21 @@ public sealed class Emulator : IDisposable
     /// <summary>Runs library module_start functions, then starts the main thread at the eboot entry.</summary>
     public void Start(string[]? args = null)
     {
-        if (MainModule == null) throw new InvalidOperationException("No title loaded");
+        if (MainModule == null)
+        {
+            throw new InvalidOperationException("No title loaded");
+        }
+
         using var scope = ProcessScope.Enter(this);
         Running = true;
         int priority = (int)(ProcessParamPtrValue(0x14) ?? 0x10000100);
         uint stackSize = ProcessParamPtrValue(0x18) ?? 256 * 1024;
         int affinity = (int)(ProcessParamPtrValue(0x28) ?? 0);
-        if (affinity == 0) affinity = 0x70000;
+        if (affinity == 0)
+        {
+            affinity = 0x70000;
+        }
+
         string name = ProcessParamString(0x10) ?? "main";
 
         var main = Kernel.CreateThread(name, MainModule.StartEntry, priority, stackSize, 0, affinity);
@@ -923,7 +1191,9 @@ public sealed class Emulator : IDisposable
         // (firmware dependencies of a system program first, each after the modules it imports from)
         foreach (var m in _startFirst.Concat(Kernel.Modules.Values.Where(m => !_startFirst.Contains(m)).OrderBy(m => m.Uid))
                      .Where(m => m != MainModule && m.StartEntry != 0).ToList())
+        {
             RunOnNewThread($"start:{m.Name}", m.StartEntry);
+        }
         // the launch posts the application's PARAM_NOTIFY event (FW 3.74 kernel appmgr, its launch path at 0x8100EC52):
         // Settings and Friends wait for it to open their first page and then read the launch parameter, which a launch
         // without one (the shell starting an application from its bubble passes NULL) leaves empty: the first
@@ -933,7 +1203,10 @@ public sealed class Emulator : IDisposable
             var appMgr = Hle.Modules.OfType<VitaSharp.Core.Hle.Modules.AppMgr>().First();
             if (appMgr.LaunchParam == null && Environment.GetEnvironmentVariable(Util.EnvVars.AppParam) is { } ap
                 && ap.IndexOf(':') is > 0 and var colon && ap[..colon].Equals(TitleId, StringComparison.OrdinalIgnoreCase))
+            {
                 appMgr.LaunchParam = ap[(colon + 1)..];
+            }
+
             appMgr.LaunchParam ??= "";
             appMgr.PostEvent(VitaSharp.Core.Hle.Modules.AppMgr.EventParamNotify);
         }
@@ -945,14 +1218,20 @@ public sealed class Emulator : IDisposable
             bytes.CopyTo(GuestMemory.Span(argp, bytes.Length));
             main.Start((uint)bytes.Length, argp);
         }
-        else main.Start(0, 0);
+        else
+        {
+            main.Start(0, 0);
+        }
     }
 
     void RunOnNewThread(string name, uint entry)
     {
         var t = Kernel.CreateThread(name, entry, 0x10000100, 256 * 1024, 0, 0x70000);
         t.Start(0, 0);
-        if (!t.WaitForExit(30_000)) Log.Warn($"{name} did not finish in time");
+        if (!t.WaitForExit(30_000))
+        {
+            Log.Warn($"{name} did not finish in time");
+        }
     }
 
     uint? ProcessParamPtrValue(int offset)
@@ -974,8 +1253,16 @@ public sealed class Emulator : IDisposable
         if (Parent != null && Fatal == null)
         {
             var root = Parent;
-            while (root.Parent != null) root = root.Parent;
-            if (!root.Running || !Running) return; // the emulator is shutting down
+            while (root.Parent != null)
+            {
+                root = root.Parent;
+            }
+
+            if (!root.Running || !Running)
+            {
+                return; // the emulator is shutting down
+            }
+
             Log.Error($"Process {Describe()} crashed in thread '{t.Name}': {e.Message}");
             Terminate("crashed");
             return;
@@ -987,15 +1274,28 @@ public sealed class Emulator : IDisposable
     public void Stop()
     {
         Running = false;
-        foreach (var c in _children.ToArray()) c.Stop();
+        foreach (var c in _children.ToArray())
+        {
+            c.Stop();
+        }
+
         Kernel.StopAllThreads();
     }
 
     public void Dispose()
     {
         Stop();
-        if (Parent != null) return; // the GPU and host devices are the first process's
-        if (_jitBefore is { } jit) { Jit.Enabled = jit.Enabled; Jit.Select(jit.Mode); _jitBefore = null; }
+        if (Parent != null)
+        {
+            return; // the GPU and host devices are the first process's
+        }
+
+        if (_jitBefore is { } jit)
+        {
+            Jit.Enabled = jit.Enabled;
+            Jit.Select(jit.Mode);
+            _jitBefore = null;
+        }
         EmulationPause.Changed -= OnPauseChanged;
         Gpu.Dispose();
         Gpu.Backend?.Dispose();

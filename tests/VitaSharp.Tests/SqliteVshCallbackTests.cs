@@ -25,8 +25,13 @@ public sealed class SqliteVshCallbackTests(GuestMemoryFixture fx) : IDisposable
 
     uint HostStub(string name, Action<HleContext> body)
     {
-        if (_stubs == 0) _stubs = _next = _h.Emu.Memory.Alloc(0x1000, "sqlite cb stubs");
-        uint a = _next; _next += 16;
+        if (_stubs == 0)
+        {
+            _stubs = _next = _h.Emu.Memory.Alloc(0x1000, "sqlite cb stubs");
+        }
+
+        uint a = _next;
+        _next += 16;
         Linker.WriteHleStub(a, _h.Emu.Hle.RegisterHostFunction(name, body), 0);
         _h.Emu.Code.Invalidate(a, 16);
         return a;
@@ -103,8 +108,8 @@ public sealed class SqliteVshCallbackTests(GuestMemoryFixture fx) : IDisposable
         // compares the strings from their last character
         rev = HostStub("sqlitecb:rev", c =>
         {
-            string a = new string(GuestMemory.ReadCString(c.Gpr(2), (int)c.Gpr(1)).Reverse().ToArray());
-            string b = new string(GuestMemory.ReadCString(c.Gpr(4), (int)c.Gpr(3)).Reverse().ToArray());
+            string a = new(GuestMemory.ReadCString(c.Gpr(2), (int)c.Gpr(1)).Reverse().ToArray());
+            string b = new(GuestMemory.ReadCString(c.Gpr(4), (int)c.Gpr(3)).Reverse().ToArray());
             c.Return(string.CompareOrdinal(a, b));
         });
         _h.OnGuest(_ =>
@@ -123,7 +128,11 @@ public sealed class SqliteVshCallbackTests(GuestMemoryFixture fx) : IDisposable
             Assert.Equal(SQLITE_OK, Call(Sq, "Prepare", db, _h.Str("SELECT s FROM w ORDER BY s COLLATE rev"), -1, pp, 0u));
             uint st = GuestMemory.R32(pp);
             var order = new List<string>();
-            while (Call(Sq, "Step", st) == SQLITE_ROW) order.Add(GuestMemory.ReadCString(Convert.ToUInt32(Invoke(Sq, "ColumnText", st, 0))));
+            while (Call(Sq, "Step", st) == SQLITE_ROW)
+            {
+                order.Add(GuestMemory.ReadCString(Convert.ToUInt32(Invoke(Sq, "ColumnText", st, 0))));
+            }
+
             Assert.Equal(["ba", "ca", "ab"], order); // "ab", "ac", "ba" reversed
             Call(Sq, "StmtFinalize", st);
             Call(Sq, "Close", db);

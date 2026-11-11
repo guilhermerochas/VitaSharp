@@ -28,14 +28,23 @@ public sealed class LibcStdioTests : IDisposable
     public void Dispose()
     {
         Emu.Dispose();
-        try { Directory.Delete(_root, true); } catch (IOException) { }
+        try
+        {
+            Directory.Delete(_root, true);
+        }
+        catch (IOException) { }
     }
 
     uint Stub(string name)
     {
-        if (_at.TryGetValue(name, out uint a)) return a;
+        if (_at.TryGetValue(name, out uint a))
+        {
+            return a;
+        }
+
         uint nid = NidDatabase.LookupName(name).Single(n => n.Library == "SceLibc").Nid;
-        a = _next; _next += 16;
+        a = _next;
+        _next += 16;
         Linker.WriteHleStub(a, Emu.Hle.GetHleFunctionIndex(nid, 0, "SceLibc"), nid);
         Emu.Code.Invalidate(a, 16);
         return _at[name] = a;
@@ -43,7 +52,8 @@ public sealed class LibcStdioTests : IDisposable
 
     uint HostStub(string name, Action<HleContext> body)
     {
-        uint a = _next; _next += 16;
+        uint a = _next;
+        _next += 16;
         Linker.WriteHleStub(a, Emu.Hle.RegisterHostFunction(name, body), 0);
         Emu.Code.Invalidate(a, 16);
         return a;
@@ -54,17 +64,41 @@ public sealed class LibcStdioTests : IDisposable
         uint result = 0;
         Exception? failure = null;
         var th = Emu.Kernel.CreateThread("libc-io-test", 0, 0x10000100, 0x10000, 0, 0x70000);
-        th.HostBody = t => { try { result = t.CallGuest(fn, args); } catch (Exception e) { failure = e; } };
+        th.HostBody = t =>
+        {
+            try
+            {
+                result = t.CallGuest(fn, args);
+            }
+            catch (Exception e)
+            {
+                failure = e;
+            }
+        };
         th.Start(0, 0);
         Assert.True(th.WaitForExit(60_000), "test thread did not finish");
         Emu.Kernel.DeleteThread(th);
-        if (failure != null) throw new Xunit.Sdk.XunitException(failure.ToString());
+        if (failure != null)
+        {
+            throw new Xunit.Sdk.XunitException(failure.ToString());
+        }
+
         return result;
     }
 
     uint C(string name, params uint[] args) => Run(Stub(name), args);
-    uint Alloc(uint n) { uint p = Emu.Memory.Alloc(n, "libc io test"); GuestMemory.Fill(p, 0, n); return p; }
-    uint Str(string s) { uint p = Alloc((uint)s.Length + 1); GuestMemory.WriteCString(p, s); return p; }
+    uint Alloc(uint n)
+    {
+        uint p = Emu.Memory.Alloc(n, "libc io test");
+        GuestMemory.Fill(p, 0, n);
+        return p;
+    }
+    uint Str(string s)
+    {
+        uint p = Alloc((uint)s.Length + 1);
+        GuestMemory.WriteCString(p, s);
+        return p;
+    }
     void File(string name, string text) => System.IO.File.WriteAllText(Path.Combine(_root, "ux0", "data", name), text);
 
     [Fact]
@@ -194,7 +228,11 @@ public sealed class LibcStdioTests : IDisposable
         // pairs (key, tag): equal keys keep their order (the library's sort is a merge sort)
         int[][] items = [[5, 0], [1, 1], [5, 2], [3, 3], [1, 4], [9, 5]];
         uint arr = Alloc(8 * (uint)items.Length);
-        for (int i = 0; i < items.Length; i++) { GuestMemory.W32(arr + (uint)i * 8, (uint)items[i][0]); GuestMemory.W32(arr + (uint)i * 8 + 4, (uint)items[i][1]); }
+        for (int i = 0; i < items.Length; i++)
+        {
+            GuestMemory.W32(arr + (uint)i * 8, (uint)items[i][0]);
+            GuestMemory.W32(arr + (uint)i * 8 + 4, (uint)items[i][1]);
+        }
         C("qsort", arr, (uint)items.Length, 8, cmp);
         var sorted = Enumerable.Range(0, items.Length).Select(i => ((int)GuestMemory.R32(arr + (uint)i * 8), (int)GuestMemory.R32(arr + (uint)i * 8 + 4))).ToArray();
         Assert.Equal(new[] { (1, 1), (1, 4), (3, 3), (5, 0), (5, 2), (9, 5) }, sorted);

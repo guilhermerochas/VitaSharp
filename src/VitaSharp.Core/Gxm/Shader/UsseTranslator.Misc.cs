@@ -696,7 +696,11 @@ public sealed partial class UsseTranslator
         // "11111011s-11recb----npp---tffa--kkddggggggghhhhhhhiiiiiiijjjjjjj"
         var src0 = DecodeSrc0(0, i['h'], i['a'], i.Bit('r'), true, 7);
         // the depth feedback goes to the pixel's depth test: a vertex program has no fragment depth, nothing happens
-        if (_program.IsVertex) { Warnings.Add("DEPTHF in a vertex program (ignored)"); return; }
+        if (_program.IsVertex)
+        {
+            Warnings.Add("DEPTHF in a vertex program (ignored)");
+            return;
+        }
         UsesFragDepth = true;
         Line($"gl_FragDepth = {Load(src0, 1)};");
     }
