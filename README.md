@@ -234,6 +234,33 @@ Every script comes as a `.ps1` + `.sh` pair, and the CI checks it. Interface tex
 languages too (`README.md` + `README.pt-BR.md`, checked by `ExternalDocPairsTests`). To contribute system functions,
 see the specifications in [`docs/hle`](docs/hle/README.md).
 
+### Code style
+
+The C# style is the Ryujinx/Ryubing one, and [`.editorconfig`](.editorconfig) is the rule (what is enforced, what is
+off and why). `build/format-check.ps1` (Windows) / `build/format-check.sh` (Linux, macOS) runs
+`dotnet format whitespace` and `dotnet format style --severity warn` with `--verify-no-changes`, as the CI job
+"Code style" does; `-Fix` / `--fix` rewrites the files instead. Folders not converted yet are listed in
+[`build/format-pending.txt`](build/format-pending.txt) and skipped. `OneLineBlockTests` (in the test suite) rejects
+blocks written on one line (`if (x) { a; }`): every body goes on its own lines.
+
+Shell scripts follow the Google Shell Style Guide and must pass ShellCheck (CI job "ShellCheck"; the job
+"Scripts on macOS" also runs `build/check-scripts-help.sh` under the system bash 3.2). Install ShellCheck with
+`winget install koalaman.shellcheck` (Windows), `sudo apt install shellcheck` / `sudo dnf install ShellCheck`
+(Linux) or `brew install shellcheck` (macOS), then `shellcheck --severity=style build/*.sh build/package/*.sh`.
+
+### Developer tools
+
+- IL backend dump: `VITASHARP_IL_DUMP=<folder>` writes the compiled guest blocks as assemblies to read with ILSpy
+  (`dotnet tool install -g ilspycmd`, then `ilspycmd -il <file>.dll`); `DOTNET_JitDisasm=<method>` prints the
+  machine code RyuJIT generates. See [`docs/notes/il-jit.md`](docs/notes/il-jit.md).
+- Vulkan validation: `--validation` (`run`, `test`, `replay-gpu`) or `VITASHARP_VK_VALIDATION=1` (`=sync` adds
+  synchronization validation) needs the Khronos layer: the [Vulkan SDK](https://vulkan.lunarg.com/sdk/home)
+  (Windows, Linux, macOS), or on Linux the distribution package (`vulkan-validationlayers` / `vulkan-validation-layers`);
+  on macOS the SDK also brings MoltenVK. Frame captures: [RenderDoc](https://renderdoc.org) (Windows, Linux) and
+  GPU dumps (`replay-gpu`, [`docs/notes/gpu-dump.md`](docs/notes/gpu-dump.md)) on every OS.
+- Profiling: `dotnet-trace` / `dotnet-counters` (`dotnet tool install -g dotnet-trace`, every OS); on Windows also
+  PerfView and WPR/WPA (Windows Performance Toolkit).
+
 ## Releases
 
 - **Versions**: a `v*` tag (or **Actions > Release > Run workflow**) publishes a release with the Native AOT packages
