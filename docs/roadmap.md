@@ -389,6 +389,22 @@ Lista de itens futuros do VitaSharp. Marque `[x]` quando um item for concluído.
   Killzone; inclui o memmove de `CopyLateUniforms`, ~3% do worker): só cai sem copiar, ligando a memória do guest
   direto (mudança grande, em aberto). Uncharted quase não usa o caminho de cópia (4 blocos/quadro): A/B igual
   (worker 3,23 vs 3,17 ms/quadro)
+- [x] "Carregamento rápido" por jogo (feat/fast-loading, 10/11/2026): desde a ee53dd0 as leituras seguem a velocidade
+  do cartão de memória do Vita (`IoTiming`, 7 MB/s), que alguns jogos precisam. A opção tira o limite (sem latência nem
+  teto de vazão) só nos jogos escolhidos: na página do jogo (Padrão/Ligado/Desligado) sobre um padrão global em
+  Configurações/Ajustes (desligado), nos dois launchers, com o aviso "Mais rápido que o Vita; alguns jogos podem ter
+  erros de tempo". Linha de comando `--fast-loading[=on|off]` e `--io-speed=<MB/s>|vita|fast` (agora também com janela;
+  antes só o headless lia o `--io-speed`), variável `VITASHARP_IO_SPEED`; o log e o relatório mostram a velocidade, as
+  leituras e o tempo de dispositivo. Medido (`<scratchpad>\fastio_data\tests`, `kz_idle` headless, do toque que
+  começa a missão em f2550 até a primeira imagem da cena): Killzone desligado 70,6 s e 75,7 s, ligado 20,1 s e 20,1 s
+  (duas rodadas de cada, alternadas). Silent Hill: Book of Memories desligado passa logos, carregamento, criação do
+  personagem e chega ao quarto (f2950, sem 0x805B0006 nem BKPT, `shbom_off`); ligado ele aborta no boot (0x805B0006 em
+  f236 e BKPT na `main`, `shbom_on`), que é o caso que o aviso descreve. A mesma rodada corrigiu `--cpu-mhz` e
+  `--frame-rate` (o "Clock da CPU" e a "Taxa de quadros" do launcher), que também só eram lidos no headless
+- [ ] Carregamento do Killzone desligado mais longo do que o tempo de dispositivo explica (feat/fast-loading,
+  10/11/2026): a missão leva ~50 s a mais que com o carregamento rápido, mas o modelo cobra só 22-25 s de dispositivo na
+  sessão inteira (`storage:` no relatório). Falta medir quanto o carregamento do Vita de verdade leva (vídeo) e ver se a
+  espera bloqueada atrasa outras threads além da que lê
 
 ## Android
 
