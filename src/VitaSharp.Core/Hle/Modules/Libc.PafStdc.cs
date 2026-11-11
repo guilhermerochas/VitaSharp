@@ -504,4 +504,11 @@ public sealed partial class Libc
     internal uint PafHeapAlloc(uint size) => malloc(size);
     internal void PafHeapFree(uint p) => free(p);
     internal uint PafStatic(uint size, uint align) => StaticAlloc(size, align);
+
+    // ---- for other HLE libraries whose C allocator is this heap (SceLibMonoBridge's eglib)
+    internal uint HeapMalloc(uint size) => malloc(size);
+    internal uint HeapCalloc(uint n, uint size) => calloc(n, size);
+    internal uint HeapRealloc(uint p, uint size) => realloc(p, size);
+    internal void HeapFree(uint p) => free(p);
+    internal uint HeapUsableSize(uint p) => malloc_usable_size(p);
 }

@@ -535,6 +535,20 @@ public sealed partial class Libc
         return r;
     }
 
+    /// <summary>__aeabi_unwind_cpp_pr0/1/2(state, ucb, context): the compact-model personality routines (short frames,
+    /// 16-bit and 32-bit scopes) a guest unwinder calls through the exception table entry; the module's common routine.</summary>
+    [Hle("__aeabi_unwind_cpp_pr0")] int AeabiPr0(int state, uint ucb, uint context) => GuestPersonality(state, ucb, context, 0);
+    [Hle("__aeabi_unwind_cpp_pr1")] int AeabiPr1(int state, uint ucb, uint context) => GuestPersonality(state, ucb, context, 1);
+    [Hle("__aeabi_unwind_cpp_pr2")] int AeabiPr2(int state, uint ucb, uint context) => GuestPersonality(state, ucb, context, 2);
+
+    int GuestPersonality(int state, uint ucb, uint context, int model)
+    {
+        var v = Vrs.Load(context);
+        int r = CommonPersonality(state, ucb, v, model);
+        v.Store(context);
+        return r;
+    }
+
     uint _callUnexpectedStub;
     uint CxaCallUnexpectedStub => _callUnexpectedStub != 0 ? _callUnexpectedStub
         : _callUnexpectedStub = ExportStub(0x7C1A0217);

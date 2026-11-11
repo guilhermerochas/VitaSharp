@@ -71,6 +71,10 @@ public sealed class GpuQueue : IDisposable
 
     /// <summary>Pulsed whenever a notification value is written (guest waiters re-check).</summary>
     public static readonly object NotificationSync = new();
+
+    /// <summary>How many times the GPU signalled finished work (notification writes), under
+    /// <see cref="NotificationSync"/>: the SGX driver's signal counter that sceGpuSignalWait waits on.</summary>
+    public static uint SignalCount { get; private set; }
     public object NotificationLock => NotificationSync;
 
     /// <summary>Writes a notification value in <paramref name="space"/> (the submitting process's) and wakes guest
@@ -80,6 +84,7 @@ public sealed class GpuQueue : IDisposable
         lock (NotificationSync)
         {
             using (AddressSpace.Use(space ?? AddressSpace.Current)) GuestMemory.W32(address, value);
+            SignalCount++;
             Monitor.PulseAll(NotificationSync);
         }
     }
@@ -526,6 +531,7 @@ public sealed class GpuQueue : IDisposable
                     lock (NotificationLock)
                     {
                         foreach (var (addr, value) in end.Notifications) GuestMemory.W32(addr, value);
+                        SignalCount++;
                         Monitor.PulseAll(NotificationLock);
                     }
                 }

@@ -97,19 +97,20 @@ public sealed partial class Libc
     {
         uint ra = returnAddress - 2;
         GuestMemory.W32(ucb + UcbPr, 0);
-        var m = K.Modules.Values.FirstOrDefault(x => x.ExidxTop != 0 && x.Segments.Values.Any(s => ra - s.Address < s.Size));
+        var m = K.Modules.Values.FirstOrDefault(x => (x.ExidxTop != 0 || _exidxOverride.ContainsKey(x)) && x.Segments.Values.Any(s => ra - s.Address < s.Size));
         if (m == null) return URC_FAILURE;
-        uint lo = 0, n = (m.ExidxEnd - m.ExidxTop) / 8;
+        var (top, end) = _exidxOverride.TryGetValue(m, out var o) ? o : (m.ExidxTop, m.ExidxEnd);
+        uint lo = 0, n = (end - top) / 8;
         if (n == 0) return URC_FAILURE;
         uint hi = n;
         // the last entry whose function start is <= ra
-        if (Prel31(m.ExidxTop) > ra) return URC_FAILURE;
+        if (Prel31(top) > ra) return URC_FAILURE;
         while (hi - lo > 1)
         {
             uint mid = (lo + hi) / 2;
-            if (Prel31(m.ExidxTop + mid * 8) <= ra) lo = mid; else hi = mid;
+            if (Prel31(top + mid * 8) <= ra) lo = mid; else hi = mid;
         }
-        uint e = m.ExidxTop + lo * 8;
+        uint e = top + lo * 8;
         GuestMemory.W32(ucb + UcbFnStart, Prel31(e));
         uint content = GuestMemory.R32(e + 4);
         if (content == 1) return URC_END_OF_STACK; // EXIDX_CANTUNWIND

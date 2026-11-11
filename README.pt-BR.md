@@ -1,4 +1,4 @@
-<!-- pair: README.md sha256=50b0047f502ee09de7ee4efe2cd6dce465c76d7e8fb4bfd4a1373d7c02e4489b -->
+<!-- pair: README.md sha256=b27b484a8941edbff534a547a844e7bcc6b71feb220b333f48e58ebf4cca4cc6 -->
 <div align="center">
 
 [English](README.md) | **Português**
@@ -79,7 +79,10 @@ bibliotecas de syscall dos módulos do kernel) com implementação HLE, não de 
 "Games imports": as funções exportadas que os jogos de teste instalados importam; "system imports": as que só o
 software do sistema importa; VitaSDK: as funções de usuário da lista de NIDs do VitaSDK. "Default": funções
 implementadas que precisam de hardware ou serviço que o emulador não tem e devolvem o resultado do próprio firmware
-para esse caso (contam na porcentagem, mostradas à parte). Atualizado com `build/hle-status.ps1`.</sub>
+para esse caso (contam na porcentagem, mostradas à parte). "LLE": funções de bibliotecas que o emulador fornece
+carregando e rodando o módulo de verdade que o programa traz (a libsmart/libface do próprio jogo, a libshacccg.suprx que
+o usuário extrai do console, o módulo do firmware de uma biblioteca que o emulador carrega para todo importador; também contam, mostradas à parte; lista em [`docs/hle/progress.md`](docs/hle/progress.md)).
+Atualizado com `build/hle-status.ps1`.</sub>
 
 ## Jogos
 

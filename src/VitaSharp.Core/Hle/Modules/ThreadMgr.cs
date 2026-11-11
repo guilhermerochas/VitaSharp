@@ -1202,6 +1202,21 @@ public sealed partial class ThreadMgr : HleModule
     [Hle] int sceKernelSetEvent(int uid, uint setPattern, ulong userData) => Event(uid)?.SetOrPulse(setPattern, userData, false) ?? SceError.UNKNOWN_EVENT_ID;
     [Hle] int sceKernelPulseEvent(int uid, uint setPattern, ulong userData) => Event(uid)?.SetOrPulse(setPattern, userData, true) ?? SceError.UNKNOWN_EVENT_ID;
 
+    /// <summary>sceKernelSetEventWithNotifyCallback / PulseEventWithNotifyCallback(uid, pattern, userData, notifyArg):
+    /// the set (pulse) of sceKernelSetEvent, then the callbacks registered to the event are notified with notifyArg
+    /// (libkernel packs userData and notifyArg into a 16-byte block for the _sce* syscall). The emulator registers no
+    /// callbacks to events (sceKernelRegisterCallbackToEvent keeps none), so only the set happens.</summary>
+    [Hle] int sceKernelSetEventWithNotifyCallback(int uid, uint setPattern, ulong userData, int notifyArg) => sceKernelSetEvent(uid, setPattern, userData);
+    [Hle] int sceKernelPulseEventWithNotifyCallback(int uid, uint setPattern, ulong userData, int notifyArg) => sceKernelPulseEvent(uid, setPattern, userData);
+
+    [Hle]
+    int _sceKernelSetEventWithNotifyCallback(int uid, uint setPattern, uint param) =>
+        param == 0 ? SceError.ILLEGAL_ADDR : sceKernelSetEvent(uid, setPattern, GuestMemory.Read<ulong>(param));
+
+    [Hle]
+    int _sceKernelPulseEventWithNotifyCallback(int uid, uint setPattern, uint param) =>
+        param == 0 ? SceError.ILLEGAL_ADDR : sceKernelPulseEvent(uid, setPattern, GuestMemory.Read<ulong>(param));
+
     /// <summary>Keeps only the given bits; on a timer it clears the event state.</summary>
     [Hle]
     int sceKernelClearEvent(int uid, uint keepPattern)

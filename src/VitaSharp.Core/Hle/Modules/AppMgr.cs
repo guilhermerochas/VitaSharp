@@ -64,12 +64,12 @@ public sealed partial class AppMgr : HleModule
     // ------------------------------------------------------------------ mounts
 
     [Hle]
-    int sceAppMgrAppDataMount(int id, uint mountPoint)
+    internal int sceAppMgrAppDataMount(int id, uint mountPoint)
     {
         string? rel = id switch
         {
             100 => "ux0/picture", 101 => "ur0/user/00/psnfriend", 102 => "ur0/user/00/psnmsg", 103 => "ur0/user/00/near",
-            105 => "ux0/music", 108 => "ux0/calendar", 109 => "ux0/video", _ => null,
+            105 => "ux0/music", 108 => "ux0/calendar", 109 => "ux0/video", 112 => "ux0/book", _ => null,
         };
         if (rel == null) return ERR_PARAM;
         return MountAlias($"am{id}", rel, mountPoint);
@@ -175,7 +175,7 @@ public sealed partial class AppMgr : HleModule
     [Hle] int _sceAppMgrTrophyMountById(int id, uint titleId, uint mountPoint, uint opt) => sceAppMgrTrophyMountById(id, titleId, mountPoint);
 
     [Hle]
-    int sceAppMgrUmount(uint mountPoint)
+    internal int sceAppMgrUmount(uint mountPoint)
     {
         if (mountPoint == 0) return ERR_NULL_POINTER;
         string dev = GuestMemory.ReadCString(mountPoint, 16).TrimEnd(':');

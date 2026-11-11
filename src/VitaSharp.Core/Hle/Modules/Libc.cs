@@ -558,9 +558,13 @@ public sealed partial class Libc : HleModule
         Emu.Hle.RegisterVariable(0xDDF9BB09, () => StderrFile().Addr);
         Emu.Hle.RegisterVariable(0x9C449444, () => _badoff != 0 ? _badoff : _badoff = ConstWord(0xFFFFFFFF, 4));
         Emu.Hle.RegisterVariable(0xD9478DCF, () => _fpz != 0 ? _fpz : _fpz = ConstWord(0, 16));
+        // std::adopt_lock, std::defer_lock, std::try_to_lock: the empty tag objects (one zero byte each, word-aligned)
+        Emu.Hle.RegisterVariable(0xEFFB20F0, () => _adoptLock != 0 ? _adoptLock : _adoptLock = ConstWord(0, 4));
+        Emu.Hle.RegisterVariable(0x8EF0F4A8, () => _deferLock != 0 ? _deferLock : _deferLock = ConstWord(0, 4));
+        Emu.Hle.RegisterVariable(0xF3F04352, () => _tryToLock != 0 ? _tryToLock : _tryToLock = ConstWord(0, 4));
     }
 
-    uint _badoff, _fpz;
+    uint _badoff, _fpz, _adoptLock, _deferLock, _tryToLock;
 
     uint ConstWord(uint v, uint size)
     {

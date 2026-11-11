@@ -996,7 +996,7 @@ public sealed class CookieJar
     long _order;
     public int MaxNum = 300, MaxPerDomain = 50, MaxSize = 4096, TotalMaxSize = int.MaxValue;
 
-    public void Flush() => _list.Clear();
+    public void Flush() { _list.Clear(); PeakBytes = PeakCount = 0; }
     public int Count => _list.Count;
 
     static (string Host, string Path, bool Secure) UrlInfo(string url)
@@ -1043,16 +1043,28 @@ public sealed class CookieJar
         c.Order = _order++;
         _list.Add(c);
         Trim();
+        PeakCount = Math.Max(PeakCount, _list.Count);
+        PeakBytes = Math.Max(PeakBytes, Bytes);
         return true;
     }
 
     void Trim()
     {
         foreach (var g in _list.GroupBy(x => x.Domain).Where(g => g.Count() > MaxPerDomain).ToList())
-            foreach (var old in g.OrderBy(x => x.Order).Take(g.Count() - MaxPerDomain).ToList()) _list.Remove(old);
+            foreach (var old in g.OrderBy(x => x.Order).Take(g.Count() - MaxPerDomain).ToList()) { _list.Remove(old); Evicted++; }
         while (_list.Count > MaxNum || (_list.Count > 0 && _list.Sum(x => x.Name.Length + x.Value.Length) > TotalMaxSize))
+        {
             _list.Remove(_list.MinBy(x => x.Order)!);
+            Evicted++;
+        }
     }
+
+    /// <summary>The jar's statistics as libhttp keeps them (sceHttpGetCookieStats): bytes held (name, value, domain
+    /// and path of each cookie), cookies held, the peaks of both, and the cookies dropped to make room.</summary>
+    public int Bytes => _list.Sum(x => x.Name.Length + x.Value.Length + x.Domain.Length + x.Path.Length);
+    public int PeakBytes { get; private set; }
+    public int PeakCount { get; private set; }
+    public int Evicted { get; private set; }
 
     static bool DomainMatch(string host, Cookie c) => c.HostOnly ? host == c.Domain : host == c.Domain || host.EndsWith("." + c.Domain, StringComparison.Ordinal);
 
