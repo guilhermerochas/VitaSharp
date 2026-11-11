@@ -527,8 +527,13 @@ public static class Program
     {
         Log.Level = LogLevel.Warn;
         var impl = HleImplementedNids();
-        // libraries the emulator provides by running the real module the program brings (LleLibraries): covered, no HLE
-        var lle = LleLibraries.InstalledNids(FsRoot).Where(n => !impl.ContainsKey(n)).ToHashSet();
+        // functions the emulator provides by running a real installed module (LleLibraries: the games' own modules and the
+        // firmware modules the loader serves to every importer): covered, no HLE
+        HashSet<uint> lle;
+        using (var probe = new Emulator(new EmulatorOptions { FsRoot = FsRoot, EnableJit = false }))
+        {
+            lle = LleLibraries.InstalledNids(FsRoot, probe.Hle.FirmwareForEveryImporter).Where(n => !impl.ContainsKey(n)).ToHashSet();
+        }
         var c = VitaSharp.Core.Firmware.FunctionCensus.Scan(FsRoot);
         string Importer(uint nid) => c.GameImports.TryGetValue(nid, out var g) ? g : c.SystemImports.GetValueOrDefault(nid, "-");
         string Group(uint nid) => c.GameImports.ContainsKey(nid) ? "games" : c.SystemImports.ContainsKey(nid) ? "system" : "general";

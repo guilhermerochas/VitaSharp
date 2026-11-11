@@ -24,10 +24,16 @@ public sealed class LleLibrariesTests(GuestMemoryFixture fx, ITestOutputHelper o
         : Path.Combine(Environment.GetFolderPath(Environment.SpecialFolder.ApplicationData), "VitaSharp"), "fs");
 
     /// <summary>The module file and the key to decrypt it (null for a module that needs none).</summary>
-    internal static (string Path, byte[]? Klicensee)? Find(string library)
+    /// <summary>The first installed module that really exports <paramref name="library"/> (a game's app0:sce_module copy
+    /// or the firmware module), found the way the coverage scan finds them.</summary>
+    internal static (string Path, string VitaPath, byte[]? Klicensee)? Find(string library)
     {
-        var e = LleLibraries.All.Single(x => x.Library == library);
-        foreach (var m in LleLibraries.InstalledModules(FsRoot, e)) return m;
+        var modules = LleLibraries.GameModules(FsRoot).Concat(LleLibraries.FirmwareModules(FsRoot, l => l == library));
+        foreach (var (m, _, _) in LleLibraries.Exports(modules, (_, l) => l == library))
+        {
+            return (m.HostPath, m.VitaPath, m.Klicensee);
+        }
+
         return null;
     }
 
@@ -40,7 +46,7 @@ public sealed class LleLibrariesTests(GuestMemoryFixture fx, ITestOutputHelper o
         var found = Find(library);
         if (found == null)
         {
-            output.WriteLine($"{library}: {LleLibraries.All.Single(x => x.Library == library).Module} not installed under {FsRoot}; nothing to check");
+            output.WriteLine($"{library}: no installed module exporting it under {FsRoot}; nothing to check");
             return;
         }
         string root = Path.Combine(Path.GetTempPath(), "vitasharp-lle-" + Guid.NewGuid().ToString("N"));
@@ -49,7 +55,7 @@ public sealed class LleLibrariesTests(GuestMemoryFixture fx, ITestOutputHelper o
         {
             using var emu = new Emulator(new EmulatorOptions { FsRoot = root, Memory = fx.Memory, EnableJit = false, CpuBackend = "interp" });
             var elf = SelfDecryptor.ToElf(File.ReadAllBytes(found.Value.Path), found.Value.Klicensee);
-            var m = ModuleLoader.Load(elf, LleLibraries.All.Single(x => x.Library == library).Module, emu.Memory, emu.Linker, 0);
+            var m = ModuleLoader.Load(elf, found.Value.VitaPath, emu.Memory, emu.Linker, 0);
             emu.Code.Invalidate(0, uint.MaxValue);
             // every NID of the library the module exports is bound by the linker
             var nids = NidDatabase.All.Where(n => n.Library == library).ToList();
