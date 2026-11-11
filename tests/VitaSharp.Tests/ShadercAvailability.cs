@@ -1,5 +1,5 @@
-using System.Runtime.InteropServices;
 using Silk.NET.Shaderc;
+using System.Runtime.InteropServices;
 
 namespace VitaSharp.Tests;
 
