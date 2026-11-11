@@ -9,7 +9,7 @@ namespace VitaSharp.PerfTools.Commands;
 
 /// <summary><c>vitasharp-perf mali-cost &lt;dump.vsgd&gt;</c>: replays a GPU dump headless and estimates its frames'
 /// GPU time on a Mali GPU (<see cref="MaliCost"/>). See docs/notes/mobile-gpu.md ("Mali cost estimator").</summary>
-sealed class MaliCostCommand : IPerfCommand
+internal sealed class MaliCostCommand : IPerfCommand
 {
     public string Name => "mali-cost";
     public string Summary => "estimate a GPU dump's frame time on a Mali GPU with Arm's Mali Offline Compiler";
@@ -43,7 +43,7 @@ sealed class MaliCostCommand : IPerfCommand
         }
         string outDir = Path.GetFullPath(a.Get("--out") ?? Path.Combine(Path.GetDirectoryName(path)!, Path.GetFileNameWithoutExtension(path) + "_perf"));
         string cacheDir = Path.GetFullPath(a.Get("--shader-cache") ?? Path.Combine(outDir, "shadercache"));
-        var (first, last) = a.Range("--frames");
+        (long first, long last) = a.Range("--frames");
         var settings = new MaliCost.Settings(
             Core: a.Get("--gpu") ?? "Mali-G57",
             Malioc: MaliCost.FindMalioc(a.Get("--malioc")) ?? throw new PerfArgsException("malioc not found: install Arm Performance Studio (mali_offline_compiler) or pass --malioc / VITASHARP_MALIOC"),
@@ -57,9 +57,9 @@ sealed class MaliCostCommand : IPerfCommand
             header = r.Header;
         }
         // environment switches must be in place before the renderer and shader generator types initialise
-        var env = a.Has("--no-recorded-env") ? new Dictionary<string, string>() : GpuDumpPlayer.RecordedEnvironment(header);
+        Dictionary<string, string> env = a.Has("--no-recorded-env") ? new Dictionary<string, string>() : GpuDumpPlayer.RecordedEnvironment(header);
         env[EnvVars.GpuProfile] = a.Get("--gpu-profile") ?? "mali";
-        foreach (var e in Environment.GetCommandLineArgs().Where(x => x.StartsWith("--env=")).Select(x => x["--env=".Length..]).Append(a.Get("--env") ?? ""))
+        foreach (string? e in Environment.GetCommandLineArgs().Where(x => x.StartsWith("--env=")).Select(x => x["--env=".Length..]).Append(a.Get("--env") ?? ""))
         {
             if (e.IndexOf('=') is var eq and > 0)
             {
@@ -67,7 +67,7 @@ sealed class MaliCostCommand : IPerfCommand
             }
         }
 
-        foreach (var (k, v) in env)
+        foreach ((string? k, string? v) in env)
         {
             Environment.SetEnvironmentVariable(k, v);
         }
@@ -96,13 +96,13 @@ sealed class MaliCostCommand : IPerfCommand
                     renderer.BeginTitle(title);
                 }
 
-                var st = GpuDumpPlayer.Play(reader, renderer, presented: _ => renderer.PresentCount < last);
+                GpuDumpPlayStats st = GpuDumpPlayer.Play(reader, renderer, presented: _ => renderer.PresentCount < last);
                 renderer.Execute(new FinishCommand());
                 cost.Capture(renderer);
                 Console.WriteLine($"replayed {st.Frames} frames, {st.Draws} draws in {wall.Elapsed.TotalSeconds:F1} s");
                 if (renderer.Report() is { } rep)
                 {
-                    foreach (var line in rep.Split('\n').Where(l => l.StartsWith("PERF gpu")))
+                    foreach (string? line in rep.Split('\n').Where(l => l.StartsWith("PERF gpu")))
                     {
                         Console.WriteLine(line);
                     }

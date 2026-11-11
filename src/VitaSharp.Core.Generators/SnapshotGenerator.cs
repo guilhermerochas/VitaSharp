@@ -21,22 +21,22 @@ namespace VitaSharp.Core.Generators;
 [Generator(LanguageNames.CSharp)]
 public sealed class SnapshotGenerator : IIncrementalGenerator
 {
-    const string AttrName = "VitaSharp.Core.SaveState.GenerateSnapshotAttribute";
-    const string IgnoreName = "VitaSharp.Core.SaveState.SnapshotIgnoreAttribute";
-    const string IgnoreFieldsName = "VitaSharp.Core.SaveState.SnapshotIgnoreFieldsAttribute";
-    const string StateName = "VitaSharp.Core.SaveState.ISnapshotState";
-    const string KernelObjectName = "VitaSharp.Core.Kernel.KernelObject";
-    const string HleModuleName = "VitaSharp.Core.Hle.HleModule";
+    private const string AttrName = "VitaSharp.Core.SaveState.GenerateSnapshotAttribute";
+    private const string IgnoreName = "VitaSharp.Core.SaveState.SnapshotIgnoreAttribute";
+    private const string IgnoreFieldsName = "VitaSharp.Core.SaveState.SnapshotIgnoreFieldsAttribute";
+    private const string StateName = "VitaSharp.Core.SaveState.ISnapshotState";
+    private const string KernelObjectName = "VitaSharp.Core.Kernel.KernelObject";
+    private const string HleModuleName = "VitaSharp.Core.Hle.HleModule";
 
-    static readonly DiagnosticDescriptor Unsupported = new(
+    private static readonly DiagnosticDescriptor s_unsupported = new(
         "VSSNAP001", "Field not supported by the snapshot generator",
         "{0}.{1}: type {2} cannot be saved; mark the field [SnapshotIgnore] or write ISnapshotState by hand", "VitaSharp.SaveState", DiagnosticSeverity.Error, true);
-    static readonly DiagnosticDescriptor NotPartial = new(
+    private static readonly DiagnosticDescriptor s_notPartial = new(
         "VSSNAP002", "[GenerateSnapshot] type must be partial", "{0} must be partial (and so must its containing types)", "VitaSharp.SaveState", DiagnosticSeverity.Error, true);
 
     public void Initialize(IncrementalGeneratorInitializationContext context)
     {
-        var types = context.SyntaxProvider.CreateSyntaxProvider(
+        IncrementalValueProvider<ImmutableArray<INamedTypeSymbol?>> types = context.SyntaxProvider.CreateSyntaxProvider(
                 static (node, _) => node is TypeDeclarationSyntax,
                 static (ctx, ct) => ctx.SemanticModel.GetDeclaredSymbol(ctx.Node, ct) as INamedTypeSymbol)
             .Where(static t => t is not null)
@@ -44,7 +44,7 @@ public sealed class SnapshotGenerator : IIncrementalGenerator
         context.RegisterSourceOutput(types.Combine(context.CompilationProvider), static (spc, pair) => Emit(spc, pair.Left!, pair.Right));
     }
 
-    sealed class Ctx
+    private sealed class Ctx
     {
         public Compilation C = null!;
         public INamedTypeSymbol? State, KernelObject, Attr, Ignore, IgnoreFields;
@@ -52,18 +52,18 @@ public sealed class SnapshotGenerator : IIncrementalGenerator
         public int N;
     }
 
-    static bool HasAttr(ISymbol s, INamedTypeSymbol? a) => a != null && s.GetAttributes().Any(x => SymbolEqualityComparer.Default.Equals(x.AttributeClass, a));
+    private static bool HasAttr(ISymbol s, INamedTypeSymbol? a) => a != null && s.GetAttributes().Any(x => SymbolEqualityComparer.Default.Equals(x.AttributeClass, a));
 
-    static bool Implements(ITypeSymbol t, INamedTypeSymbol? i) => i != null && t.AllInterfaces.Any(x => SymbolEqualityComparer.Default.Equals(x, i));
+    private static bool Implements(ITypeSymbol t, INamedTypeSymbol? i) => i != null && t.AllInterfaces.Any(x => SymbolEqualityComparer.Default.Equals(x, i));
 
-    static bool Derives(ITypeSymbol t, INamedTypeSymbol? b)
+    private static bool Derives(ITypeSymbol t, INamedTypeSymbol? b)
     {
         if (b == null)
         {
             return false;
         }
 
-        for (var x = t.BaseType; x != null; x = x.BaseType)
+        for (INamedTypeSymbol? x = t.BaseType; x != null; x = x.BaseType)
         {
             if (SymbolEqualityComparer.Default.Equals(x, b))
             {
@@ -76,12 +76,12 @@ public sealed class SnapshotGenerator : IIncrementalGenerator
 
     /// <summary>The fields a snapshot covers: instance fields (auto-property backing fields by their property) declared
     /// in <paramref name="t"/>, without [SnapshotIgnore].</summary>
-    static IEnumerable<(string Name, ITypeSymbol Type, bool ReadOnly, ISymbol Symbol)> Fields(INamedTypeSymbol t, Ctx c)
+    private static IEnumerable<(string Name, ITypeSymbol Type, bool ReadOnly, ISymbol Symbol)> Fields(INamedTypeSymbol t, Ctx c)
     {
         var ignored = new HashSet<string>(t.GetAttributes().Where(a => SymbolEqualityComparer.Default.Equals(a.AttributeClass, c.IgnoreFields))
             .SelectMany(a => a.ConstructorArguments.SelectMany(x => x.Kind == TypedConstantKind.Array ? x.Values : ImmutableArray.Create(x)))
             .Select(x => x.Value as string).Where(x => x != null)!);
-        foreach (var m in t.GetMembers())
+        foreach (ISymbol m in t.GetMembers())
         {
             if (m is not IFieldSymbol f || f.IsStatic || f.IsConst)
             {
@@ -112,7 +112,7 @@ public sealed class SnapshotGenerator : IIncrementalGenerator
         }
     }
 
-    static void Emit(SourceProductionContext spc, ImmutableArray<INamedTypeSymbol?> candidates, Compilation compilation)
+    private static void Emit(SourceProductionContext spc, ImmutableArray<INamedTypeSymbol?> candidates, Compilation compilation)
     {
         var c = new Ctx
         {
@@ -131,11 +131,11 @@ public sealed class SnapshotGenerator : IIncrementalGenerator
         var all = candidates.Where(t => t != null).Select(t => t!).Distinct<INamedTypeSymbol>(SymbolEqualityComparer.Default)
             .OrderBy(t => t.ToDisplayString(), System.StringComparer.Ordinal).ToList();
         var schema = new StringBuilder();
-        foreach (var t in all.Where(t => HasAttr(t, c.Attr)))
+        foreach (INamedTypeSymbol? t in all.Where(t => HasAttr(t, c.Attr)))
         {
             if (!IsPartialChain(t))
             {
-                spc.ReportDiagnostic(Diagnostic.Create(NotPartial, t.Locations.FirstOrDefault(), t.Name));
+                spc.ReportDiagnostic(Diagnostic.Create(s_notPartial, t.Locations.FirstOrDefault(), t.Name));
                 continue;
             }
             string? src = EmitType(spc, t, c, schema);
@@ -149,9 +149,9 @@ public sealed class SnapshotGenerator : IIncrementalGenerator
             return;
         }
 
-        var moduleBase = compilation.GetTypeByMetadataName(HleModuleName);
+        INamedTypeSymbol? moduleBase = compilation.GetTypeByMetadataName(HleModuleName);
         var stateful = new List<string>();
-        foreach (var t in all)
+        foreach (INamedTypeSymbol? t in all)
         {
             if (t.IsAbstract || t.TypeKind != TypeKind.Class || !Derives(t, moduleBase) || Implements(t, c.State) || HasAttr(t, c.Attr))
             {
@@ -182,7 +182,7 @@ public sealed class SnapshotGenerator : IIncrementalGenerator
         sb.AppendLine($"    const string GeneratedHash = \"{hash:x16}\";");
         sb.AppendLine("    static readonly global::System.Collections.Generic.HashSet<global::System.Type> StatefulModules = new()");
         sb.AppendLine("    {");
-        foreach (var s in stateful)
+        foreach (string s in stateful)
         {
             sb.AppendLine($"        typeof({s}),");
         }
@@ -192,9 +192,9 @@ public sealed class SnapshotGenerator : IIncrementalGenerator
         spc.AddSource("SnapshotSchema.g.cs", sb.ToString());
     }
 
-    static bool IsPartialChain(INamedTypeSymbol t)
+    private static bool IsPartialChain(INamedTypeSymbol t)
     {
-        for (var x = t; x != null; x = x.ContainingType)
+        for (INamedTypeSymbol x = t; x != null; x = x.ContainingType)
         {
             if (!x.DeclaringSyntaxReferences.Any(r => r.GetSyntax() is TypeDeclarationSyntax d && d.Modifiers.Any(m => m.Text == "partial")))
             {
@@ -205,13 +205,13 @@ public sealed class SnapshotGenerator : IIncrementalGenerator
         return true;
     }
 
-    static string? EmitType(SourceProductionContext spc, INamedTypeSymbol t, Ctx c, StringBuilder schema)
+    private static string? EmitType(SourceProductionContext spc, INamedTypeSymbol t, Ctx c, StringBuilder schema)
     {
         var save = new StringBuilder();
         var load = new StringBuilder();
         bool ok = true;
         schema.Append(t.ToDisplayString()).Append('{');
-        foreach (var (name, type, ro, sym) in Fields(t, c))
+        foreach ((string? name, ITypeSymbol? type, bool ro, ISymbol? sym) in Fields(t, c))
         {
             string e = $"this.{name}";
             if (ro && !IsMutableInPlace(type, c))
@@ -221,7 +221,7 @@ public sealed class SnapshotGenerator : IIncrementalGenerator
 
             if (!Supported(type, c, 0))
             {
-                spc.ReportDiagnostic(Diagnostic.Create(Unsupported, sym.Locations.FirstOrDefault(), t.Name, name, type.ToDisplayString()));
+                spc.ReportDiagnostic(Diagnostic.Create(s_unsupported, sym.Locations.FirstOrDefault(), t.Name, name, type.ToDisplayString()));
                 ok = false;
                 continue;
             }
@@ -238,13 +238,13 @@ public sealed class SnapshotGenerator : IIncrementalGenerator
             }
         }
         // hand-written parts: their code (tokens, without comments and whitespace) is part of the layout
-        foreach (var hook in new[] { "SaveExtra", "LoadExtra", "BeforeSnapshotLoad", "AfterSnapshotLoad" })
+        foreach (string? hook in new[] { "SaveExtra", "LoadExtra", "BeforeSnapshotLoad", "AfterSnapshotLoad" })
         {
-            foreach (var m in t.GetMembers(hook).OfType<IMethodSymbol>())
+            foreach (IMethodSymbol m in t.GetMembers(hook).OfType<IMethodSymbol>())
             {
-                foreach (var r in m.DeclaringSyntaxReferences)
+                foreach (SyntaxReference r in m.DeclaringSyntaxReferences)
                 {
-                    foreach (var tok in r.GetSyntax().DescendantTokens())
+                    foreach (SyntaxToken tok in r.GetSyntax().DescendantTokens())
                     {
                         schema.Append(tok.Text).Append(' ');
                     }
@@ -289,12 +289,12 @@ public sealed class SnapshotGenerator : IIncrementalGenerator
         }
 
         var chain = new List<INamedTypeSymbol>();
-        for (var x = t; x != null; x = x.ContainingType)
+        for (INamedTypeSymbol x = t; x != null; x = x.ContainingType)
         {
             chain.Insert(0, x);
         }
 
-        foreach (var x in chain)
+        foreach (INamedTypeSymbol x in chain)
         {
             string kind = x.TypeKind == TypeKind.Struct ? (x.IsRecord ? "record struct" : "struct") : (x.IsRecord ? "record" : "class");
             string unsafeMod = x.DeclaringSyntaxReferences.Any(r => r.GetSyntax() is TypeDeclarationSyntax d && d.Modifiers.Any(m => m.Text == "unsafe")) ? "unsafe " : "";
@@ -310,7 +310,7 @@ public sealed class SnapshotGenerator : IIncrementalGenerator
         sb.AppendLine("    {");
         sb.Append(load);
         sb.AppendLine("    }");
-        foreach (var _ in chain)
+        foreach (INamedTypeSymbol _ in chain)
         {
             sb.AppendLine("}");
         }
@@ -318,16 +318,16 @@ public sealed class SnapshotGenerator : IIncrementalGenerator
         return sb.ToString();
     }
 
-    static string TypeParams(INamedTypeSymbol t) => t.TypeParameters.Length == 0 ? "" : "<" + string.Join(", ", t.TypeParameters.Select(p => p.Name)) + ">";
+    private static string TypeParams(INamedTypeSymbol t) => t.TypeParameters.Length == 0 ? "" : "<" + string.Join(", ", t.TypeParameters.Select(p => p.Name)) + ">";
 
-    static string Fq(ITypeSymbol t) => t.WithNullableAnnotation(NullableAnnotation.NotAnnotated).ToDisplayString(SymbolDisplayFormat.FullyQualifiedFormat);
+    private static string Fq(ITypeSymbol t) => t.WithNullableAnnotation(NullableAnnotation.NotAnnotated).ToDisplayString(SymbolDisplayFormat.FullyQualifiedFormat);
 
-    enum Coll
+    private enum Coll
     {
         None, List, Set, Queue, Dict
     }
 
-    static Coll CollectionKind(ITypeSymbol t, out ITypeSymbol[] args)
+    private static Coll CollectionKind(ITypeSymbol t, out ITypeSymbol[] args)
     {
         args = [];
         if (t is not INamedTypeSymbol n || !n.IsGenericType)
@@ -348,7 +348,7 @@ public sealed class SnapshotGenerator : IIncrementalGenerator
         };
     }
 
-    static bool IsNullableValue(ITypeSymbol t, out ITypeSymbol inner)
+    private static bool IsNullableValue(ITypeSymbol t, out ITypeSymbol inner)
     {
         inner = t;
         if (t is INamedTypeSymbol { IsGenericType: true } n && n.ConstructedFrom.SpecialType == SpecialType.System_Nullable_T)
@@ -359,11 +359,11 @@ public sealed class SnapshotGenerator : IIncrementalGenerator
         return false;
     }
 
-    static bool IsPrimitive(ITypeSymbol t) => t.SpecialType is SpecialType.System_Boolean or SpecialType.System_Byte or SpecialType.System_SByte
+    private static bool IsPrimitive(ITypeSymbol t) => t.SpecialType is SpecialType.System_Boolean or SpecialType.System_Byte or SpecialType.System_SByte
         or SpecialType.System_Int16 or SpecialType.System_UInt16 or SpecialType.System_Char or SpecialType.System_Int32 or SpecialType.System_UInt32
         or SpecialType.System_Int64 or SpecialType.System_UInt64 or SpecialType.System_Single or SpecialType.System_Double or SpecialType.System_IntPtr;
 
-    static string ReadPrim(ITypeSymbol t) => t.SpecialType switch
+    private static string ReadPrim(ITypeSymbol t) => t.SpecialType switch
     {
         SpecialType.System_Boolean => "ReadBool",
         SpecialType.System_Byte => "ReadByte",
@@ -380,13 +380,13 @@ public sealed class SnapshotGenerator : IIncrementalGenerator
         _ => "ReadIntPtr",
     };
 
-    static bool IsState(ITypeSymbol t, Ctx c) => t.TypeKind == TypeKind.Class && (Implements(t, c.State) || HasAttr(t, c.Attr));
+    private static bool IsState(ITypeSymbol t, Ctx c) => t.TypeKind == TypeKind.Class && (Implements(t, c.State) || HasAttr(t, c.Attr));
 
     /// <summary>Unmanaged structs without pointers or host handles, written as raw bytes.</summary>
-    static bool IsBlittableStruct(ITypeSymbol t) => t.TypeKind == TypeKind.Struct && t.IsUnmanagedType && !t.IsTupleType && !IsPrimitive(t)
+    private static bool IsBlittableStruct(ITypeSymbol t) => t.TypeKind == TypeKind.Struct && t.IsUnmanagedType && !t.IsTupleType && !IsPrimitive(t)
         && t.GetMembers().OfType<IFieldSymbol>().Where(f => !f.IsStatic).All(f => f.Type.TypeKind != TypeKind.Pointer && f.Type.SpecialType != SpecialType.System_IntPtr && (f.Type.TypeKind != TypeKind.Struct || IsPrimitive(f.Type) || f.Type.TypeKind == TypeKind.Enum || IsBlittableStruct(f.Type)));
 
-    static bool Supported(ITypeSymbol t, Ctx c, int depth)
+    private static bool Supported(ITypeSymbol t, Ctx c, int depth)
     {
         if (depth > 6)
         {
@@ -398,7 +398,7 @@ public sealed class SnapshotGenerator : IIncrementalGenerator
             return true;
         }
 
-        if (IsNullableValue(t, out var inner))
+        if (IsNullableValue(t, out ITypeSymbol? inner))
         {
             return Supported(inner, c, depth + 1);
         }
@@ -428,7 +428,7 @@ public sealed class SnapshotGenerator : IIncrementalGenerator
             return true;
         }
 
-        if (CollectionKind(t, out var args) != Coll.None)
+        if (CollectionKind(t, out ITypeSymbol[]? args) != Coll.None)
         {
             return args.All(x => Supported(x, c, depth + 1));
         }
@@ -437,9 +437,9 @@ public sealed class SnapshotGenerator : IIncrementalGenerator
     }
 
     /// <summary>Readonly fields that still carry state: collections and nested states (filled in place on load).</summary>
-    static bool IsMutableInPlace(ITypeSymbol t, Ctx c) => t is IArrayTypeSymbol || CollectionKind(t, out _) != Coll.None || IsState(t, c);
+    private static bool IsMutableInPlace(ITypeSymbol t, Ctx c) => t is IArrayTypeSymbol || CollectionKind(t, out _) != Coll.None || IsState(t, c);
 
-    static void EmitWrite(StringBuilder sb, ITypeSymbol t, string e, int d, Ctx c, string ind)
+    private static void EmitWrite(StringBuilder sb, ITypeSymbol t, string e, int d, Ctx c, string ind)
     {
         if (IsPrimitive(t) || t.SpecialType == SpecialType.System_String)
         {
@@ -451,7 +451,7 @@ public sealed class SnapshotGenerator : IIncrementalGenerator
             sb.AppendLine($"{ind}w.Write(({Fq(en.EnumUnderlyingType!)}){e});");
             return;
         }
-        if (IsNullableValue(t, out var inner))
+        if (IsNullableValue(t, out ITypeSymbol? inner))
         {
             sb.AppendLine($"{ind}w.Write({e}.HasValue);");
             sb.AppendLine($"{ind}if ({e}.HasValue) {{");
@@ -472,7 +472,7 @@ public sealed class SnapshotGenerator : IIncrementalGenerator
         if (t.IsTupleType && t is INamedTypeSymbol tt)
         {
             int i = 1;
-            foreach (var el in tt.TupleElements)
+            foreach (IFieldSymbol el in tt.TupleElements)
             {
                 EmitWrite(sb, el.Type, $"{e}.Item{i++}", d + 1, c, ind);
             }
@@ -498,7 +498,7 @@ public sealed class SnapshotGenerator : IIncrementalGenerator
             sb.AppendLine($"{ind}}}");
             return;
         }
-        var kind = CollectionKind(t, out var args);
+        Coll kind = CollectionKind(t, out ITypeSymbol[]? args);
         sb.AppendLine($"{ind}w.Write({e} == null ? -1 : {e}.Count);");
         sb.AppendLine($"{ind}if ({e} != null) foreach (var {x} in {e}) {{");
         if (kind == Coll.Dict)
@@ -516,7 +516,7 @@ public sealed class SnapshotGenerator : IIncrementalGenerator
 
     /// <summary>Appends statements that read a value of <paramref name="t"/> into a new variable; returns its name.
     /// <paramref name="existing"/> (a field) is reused for collections so their comparers stay.</summary>
-    static string EmitRead(StringBuilder sb, ITypeSymbol t, int d, Ctx c, string ind, string? existing = null)
+    private static string EmitRead(StringBuilder sb, ITypeSymbol t, int d, Ctx c, string ind, string? existing = null)
     {
         int id = c.N++;
         string v = $"v{id}";
@@ -536,7 +536,7 @@ public sealed class SnapshotGenerator : IIncrementalGenerator
             sb.AppendLine($"{ind}var {v} = ({ft})r.{ReadPrim(en.EnumUnderlyingType!)}();");
             return v;
         }
-        if (IsNullableValue(t, out var inner))
+        if (IsNullableValue(t, out ITypeSymbol? inner))
         {
             sb.AppendLine($"{ind}{Fq(inner)}? {v} = null;");
             sb.AppendLine($"{ind}if (r.ReadBool()) {{");
@@ -558,7 +558,7 @@ public sealed class SnapshotGenerator : IIncrementalGenerator
         if (t.IsTupleType && t is INamedTypeSymbol tt)
         {
             var parts = new List<string>();
-            foreach (var el in tt.TupleElements)
+            foreach (IFieldSymbol el in tt.TupleElements)
             {
                 parts.Add(EmitRead(sb, el.Type, d + 1, c, ind));
             }
@@ -591,7 +591,7 @@ public sealed class SnapshotGenerator : IIncrementalGenerator
             sb.AppendLine($"{ind}}}");
             return v;
         }
-        var kind = CollectionKind(t, out var args);
+        Coll kind = CollectionKind(t, out ITypeSymbol[]? args);
         sb.AppendLine($"{ind}{ft} {v} = null;");
         sb.AppendLine($"{ind}int {n} = r.ReadInt32();");
         sb.AppendLine($"{ind}if ({n} >= 0) {{");
@@ -614,9 +614,9 @@ public sealed class SnapshotGenerator : IIncrementalGenerator
     }
 
     /// <summary>"T[n]" for an array type, also for arrays of arrays ("T[n][]").</summary>
-    static string ArrayNew(IArrayTypeSymbol a, string n)
+    private static string ArrayNew(IArrayTypeSymbol a, string n)
     {
-        var e = a.ElementType;
+        ITypeSymbol e = a.ElementType;
         string suffix = "";
         while (e is IArrayTypeSymbol inner)
         {
@@ -627,7 +627,7 @@ public sealed class SnapshotGenerator : IIncrementalGenerator
     }
 
     /// <summary>Readonly collection / array / state fields: filled in place (their identity and comparers stay).</summary>
-    static void EmitReadInPlace(StringBuilder sb, ITypeSymbol t, string e, Ctx c, string ind)
+    private static void EmitReadInPlace(StringBuilder sb, ITypeSymbol t, string e, Ctx c, string ind)
     {
         if (IsState(t, c))
         {

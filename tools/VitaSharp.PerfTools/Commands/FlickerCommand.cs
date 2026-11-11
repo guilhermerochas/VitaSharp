@@ -10,7 +10,7 @@ namespace VitaSharp.PerfTools;
 /// flash or a stale frame, not motion. Writes flicker.txt; a flagged frame of a replay is bisected with
 /// <c>replay-gpu --draw-limit=N@F --trace-draws=F</c>. Exit code 1 when a frame is flagged.
 /// </summary>
-sealed class FlickerCommand : IPerfCommand
+internal sealed class FlickerCommand : IPerfCommand
 {
     public string Name => "flicker";
     public string Summary => "flag one-frame flashes and stale frames in a frame_N.png sequence";
@@ -30,7 +30,7 @@ sealed class FlickerCommand : IPerfCommand
 
         string dir = Path.GetFullPath(a.Positional[0]);
         double threshold = a.Double("--threshold", 6);
-        var files = Directory.GetFiles(dir, "frame_*.png")
+        (string Path, long N)[] files = Directory.GetFiles(dir, "frame_*.png")
             .Select(f => (Path: f, N: long.TryParse(Path.GetFileNameWithoutExtension(f)[6..], out long v) ? v : -1)).Where(x => x.N >= 0).OrderBy(x => x.N).ToArray();
         var sb = new StringBuilder("# frame prev-diff next-diff neighbours-diff\n");
         int flagged = 0;
@@ -59,7 +59,7 @@ sealed class FlickerCommand : IPerfCommand
         return flagged == 0 ? 0 : 1;
     }
 
-    static double Mean((byte[] Rgba, int W, int H) a, (byte[] Rgba, int W, int H) b)
+    private static double Mean((byte[] Rgba, int W, int H) a, (byte[] Rgba, int W, int H) b)
     {
         if (a.W != b.W || a.H != b.H)
         {

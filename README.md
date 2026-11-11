@@ -1,4 +1,4 @@
-<!-- pair: README.pt-BR.md sha256=44b2a412395ed0c7facbc1dd3a19c5194ac6f28479d0e5cb470cc8fce74012e2 -->
+<!-- pair: README.pt-BR.md sha256=86933af4022ec22685a59a9c65048036ffd9ed1e2e099a006cdf0efdac0fad43 -->
 <div align="center">
 
 **English** | [Português](README.pt-BR.md)
@@ -247,10 +247,13 @@ The C# style is the Ryujinx/Ryubing one, and [`.editorconfig`](.editorconfig) is
 off and why). `build/format-check.ps1` (Windows) / `build/format-check.sh` (Linux, macOS) runs
 `dotnet format whitespace` and `dotnet format style --severity warn` with `--verify-no-changes` over the tracked `.cs`
 files only (`git ls-files`: never `.claude/` with the agents' worktrees, nor untracked files), as the CI job
-"Code style" does, with the same exit code (2 when something differs); `-Fix` / `--fix` rewrites the files instead (also running `build/FormatTool`, which splits
-the blocks written on one line and keeps `{ get; set; }` on one line). Folders not converted yet are listed in
-[`build/format-pending.txt`](build/format-pending.txt) and skipped. `OneLineBlockTests` (in the test suite) rejects
-blocks written on one line (`if (x) { a; }`): every body goes on its own lines.
+"Code style" does, with the same exit code (2 when something differs); `-Fix` / `--fix` rewrites the files instead
+(also running `build/NamingTool`, which renames the symbols that break the naming rules with all their references,
+since `dotnet format` reports IDE1006 but cannot fix it, and `build/FormatTool`, which splits the blocks written on
+one line and keeps `{ get; set; }` on one line; the fix needs the NuGet packages of `build/NamingTool`, restored on
+its first run). Folders not converted yet are listed in [`build/format-pending.txt`](build/format-pending.txt) and
+skipped. `OneLineBlockTests` (in the test suite) rejects blocks written on one line (`if (x) { a; }`): every body
+goes on its own lines.
 
 Shell scripts follow the Google Shell Style Guide and must pass ShellCheck (CI job "ShellCheck"; the job
 "Scripts on macOS" also runs `build/check-scripts-help.sh` under the system bash 3.2). Install ShellCheck with

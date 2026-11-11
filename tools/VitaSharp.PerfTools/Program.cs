@@ -8,7 +8,7 @@ IPerfCommand[] commands = [new MaliCostCommand(), new FlickerCommand(), new Audi
 if (args.Length == 0 || args[0] is "-h" or "--help" or "help")
 {
     Console.WriteLine("vitasharp-perf <command> [arguments]   VitaSharp performance tools (not shipped with the emulator)");
-    foreach (var c in commands)
+    foreach (IPerfCommand c in commands)
     {
         Console.WriteLine($"  {c.Name,-12} {c.Summary}");
     }
@@ -16,7 +16,7 @@ if (args.Length == 0 || args[0] is "-h" or "--help" or "help")
     Console.WriteLine("vitasharp-perf <command> --help        the command's options");
     return 0;
 }
-var cmd = commands.FirstOrDefault(c => c.Name == args[0]);
+IPerfCommand? cmd = commands.FirstOrDefault(c => c.Name == args[0]);
 if (cmd == null)
 {
     Console.Error.WriteLine($"unknown command '{args[0]}' (vitasharp-perf --help)");

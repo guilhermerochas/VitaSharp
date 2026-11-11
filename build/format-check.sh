@@ -21,8 +21,9 @@ usage() {
   cat <<'EOF'
 Usage: build/format-check.sh [--fix] [--whitespace-only] [--help]
   (no option)        verify: exits 1 and lists the files that differ from .editorconfig
-  --fix              rewrite the files instead of verifying (dotnet format + build/FormatTool: one-line blocks
-                     split, accessor lists on one line); review the diff before committing
+  --fix              rewrite the files instead of verifying (dotnet format, build/NamingTool: names renamed to
+                     the naming rules, build/FormatTool: one-line blocks split, accessor lists on one line);
+                     review the diff before committing
   --whitespace-only  only the layout check (no project load, no restore needed)
 Only the tracked .cs files (git ls-files; never .claude/); folders in build/format-pending.txt are skipped.
 Same as build/format-check.ps1.
@@ -118,8 +119,16 @@ main() {
     echo "format-check: style (severity warn)"
     # shellcheck disable=SC2086
     dotnet format style VitaSharp.sln --severity warn ${verify} "${include}"
+    if [[ -z "${verify}" ]]; then
+      # a second pass: the fix-all of a rule applies one kind of its fixes per run (IDE0008 rewrites `var` of
+      # built-in types and of the other types as two kinds)
+      dotnet format style VitaSharp.sln --severity warn "${include}"
+    fi
   fi
   if [[ -z "${verify}" ]]; then
+    # the naming rules (IDE1006): dotnet format reports them but has no fix for them
+    echo "format-check: naming (build/NamingTool)"
+    dotnet run --project "${ROOT}/build/NamingTool" -c Release -v q -- "${ROOT}"
     # what dotnet format cannot do: split one-line statement blocks, keep { get; set; } on one line (the check is
     # tests/VitaSharp.Tests/OneLineBlockTests); then indent the split lines. FormatTool reads the same list.
     echo "format-check: layout (build/FormatTool)"

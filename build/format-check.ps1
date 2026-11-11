@@ -3,14 +3,15 @@
 # repository's tracked .cs files only (git ls-files: never .claude/ with the agents' worktrees, nor untracked files).
 # The folders listed in build/format-pending.txt are skipped until they are converted.
 # Usage: build/format-check.ps1 [-Fix] [-WhitespaceOnly] [-Help]   (same as build/format-check.sh)
-#   -Fix             rewrite the files instead of verifying (dotnet format + build/FormatTool: one-line blocks split,
-#                    accessor lists on one line); review the diff before committing
+#   -Fix             rewrite the files instead of verifying (dotnet format, build/NamingTool: names renamed to the
+#                    naming rules, build/FormatTool: one-line blocks split, accessor lists on one line); review the
+#                    diff before committing
 #   -WhitespaceOnly  only the layout check (no project load, no restore needed)
 param([switch]$Fix, [switch]$WhitespaceOnly, [switch]$Help)
 $ErrorActionPreference = 'Stop'
 
 if ($Help) {
-    Get-Content $PSCommandPath -TotalCount 8 | ForEach-Object { $_ -replace '^# ?', '' }
+    Get-Content $PSCommandPath -TotalCount 9 | ForEach-Object { $_ -replace '^# ?', '' }
     exit 0
 }
 
@@ -42,8 +43,18 @@ try {
         'format-check: style (severity warn)'
         dotnet format style VitaSharp.sln --severity warn @verify $include
         if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
+        if ($Fix) {
+            # a second pass: the fix-all of a rule applies one kind of its fixes per run (IDE0008 rewrites `var` of
+            # built-in types and of the other types as two kinds)
+            dotnet format style VitaSharp.sln --severity warn $include
+            if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
+        }
     }
     if ($Fix) {
+        # the naming rules (IDE1006): dotnet format reports them but has no fix for them
+        'format-check: naming (build/NamingTool)'
+        dotnet run --project (Join-Path $root 'build/NamingTool') -c Release -v q -- $root
+        if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
         # what dotnet format cannot do: split one-line statement blocks, keep { get; set; } on one line (the check is
         # tests/VitaSharp.Tests/OneLineBlockTests); then indent the split lines. FormatTool reads the same list.
         'format-check: layout (build/FormatTool)'

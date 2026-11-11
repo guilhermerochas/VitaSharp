@@ -3,7 +3,7 @@ using System.Globalization;
 namespace VitaSharp.PerfTools;
 
 /// <summary>One vitasharp-perf command (Commands/*.cs), registered in Program.cs.</summary>
-interface IPerfCommand
+internal interface IPerfCommand
 {
     string Name { get; }
     string Summary { get; }
@@ -11,13 +11,13 @@ interface IPerfCommand
     int Run(PerfArgs args);
 }
 
-sealed class PerfArgsException(string message) : Exception(message);
+internal sealed class PerfArgsException(string message) : Exception(message);
 
 /// <summary>Positional arguments and <c>--name value</c> / <c>--name=value</c> / <c>--flag</c> options.</summary>
-sealed class PerfArgs
+internal sealed class PerfArgs
 {
-    readonly List<string> _positional = new();
-    readonly Dictionary<string, string?> _options = new();
+    private readonly List<string> _positional = new();
+    private readonly Dictionary<string, string?> _options = new();
 
     public PerfArgs(string[] args)
     {
@@ -57,7 +57,7 @@ sealed class PerfArgs
             return def;
         }
 
-        return double.TryParse(v, NumberStyles.Float, CultureInfo.InvariantCulture, out var d) && d > 0 ? d : throw new PerfArgsException($"{name}: '{v}' is not a positive number");
+        return double.TryParse(v, NumberStyles.Float, CultureInfo.InvariantCulture, out double d) && d > 0 ? d : throw new PerfArgsException($"{name}: '{v}' is not a positive number");
     }
 
     /// <summary><c>a-b</c>, <c>a-</c> or <c>a</c> (present numbers, inclusive).</summary>
@@ -68,9 +68,9 @@ sealed class PerfArgs
             return (0, long.MaxValue);
         }
 
-        var parts = v.Split('-');
-        bool ok = long.TryParse(parts[0], out var a);
-        long b = parts.Length == 1 ? a : parts[1].Length == 0 ? long.MaxValue : long.TryParse(parts[1], out var bb) ? bb : -1;
+        string[] parts = v.Split('-');
+        bool ok = long.TryParse(parts[0], out long a);
+        long b = parts.Length == 1 ? a : parts[1].Length == 0 ? long.MaxValue : long.TryParse(parts[1], out long bb) ? bb : -1;
         if (!ok || parts.Length > 2 || b < a)
         {
             throw new PerfArgsException($"{name}: '{v}' is not a range a-b");

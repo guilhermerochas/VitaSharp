@@ -20,18 +20,18 @@ namespace VitaSharp.Core.Generators;
 [Generator(LanguageNames.CSharp)]
 public sealed class HleBinderGenerator : IIncrementalGenerator
 {
-    const string HleModuleName = "VitaSharp.Core.Hle.HleModule";
-    const string HleAttributeName = "VitaSharp.Core.Hle.HleAttribute";
-    const string HleContextName = "VitaSharp.Core.Hle.HleContext";
-    const string VarArgsName = "VitaSharp.Core.Hle.VarArgs";
-    const string PtrName = "VitaSharp.Core.Memory.Ptr<T>";
+    private const string HleModuleName = "VitaSharp.Core.Hle.HleModule";
+    private const string HleAttributeName = "VitaSharp.Core.Hle.HleAttribute";
+    private const string HleContextName = "VitaSharp.Core.Hle.HleContext";
+    private const string VarArgsName = "VitaSharp.Core.Hle.VarArgs";
+    private const string PtrName = "VitaSharp.Core.Memory.Ptr<T>";
 
-    static readonly DiagnosticDescriptor Unsupported = new(
+    private static readonly DiagnosticDescriptor s_unsupported = new(
         "VSHLE001", "Unsupported HLE signature", "HLE method {0}: {1}", "VitaSharp.Hle", DiagnosticSeverity.Error, true);
 
     public void Initialize(IncrementalGeneratorInitializationContext context)
     {
-        var modules = context.SyntaxProvider.CreateSyntaxProvider(
+        IncrementalValueProvider<ImmutableArray<INamedTypeSymbol?>> modules = context.SyntaxProvider.CreateSyntaxProvider(
                 static (node, _) => node is ClassDeclarationSyntax { BaseList: not null },
                 static (ctx, ct) => ctx.SemanticModel.GetDeclaredSymbol(ctx.Node, ct) as INamedTypeSymbol)
             .Where(static t => t is not null)
@@ -39,9 +39,9 @@ public sealed class HleBinderGenerator : IIncrementalGenerator
         context.RegisterSourceOutput(modules.Combine(context.CompilationProvider), static (spc, pair) => Emit(spc, pair.Left!, pair.Right));
     }
 
-    static bool DerivesFrom(INamedTypeSymbol t, INamedTypeSymbol baseType)
+    private static bool DerivesFrom(INamedTypeSymbol t, INamedTypeSymbol baseType)
     {
-        for (var b = t.BaseType; b != null; b = b.BaseType)
+        for (INamedTypeSymbol? b = t.BaseType; b != null; b = b.BaseType)
         {
             if (SymbolEqualityComparer.Default.Equals(b, baseType))
             {
@@ -52,10 +52,10 @@ public sealed class HleBinderGenerator : IIncrementalGenerator
         return false;
     }
 
-    static void Emit(SourceProductionContext spc, ImmutableArray<INamedTypeSymbol?> candidates, Compilation compilation)
+    private static void Emit(SourceProductionContext spc, ImmutableArray<INamedTypeSymbol?> candidates, Compilation compilation)
     {
-        var moduleBase = compilation.GetTypeByMetadataName(HleModuleName);
-        var hleAttr = compilation.GetTypeByMetadataName(HleAttributeName);
+        INamedTypeSymbol? moduleBase = compilation.GetTypeByMetadataName(HleModuleName);
+        INamedTypeSymbol? hleAttr = compilation.GetTypeByMetadataName(HleAttributeName);
         if (moduleBase == null || hleAttr == null)
         {
             return; // not the core assembly
@@ -92,7 +92,7 @@ public sealed class HleBinderGenerator : IIncrementalGenerator
         sb.AppendLine("    {");
         for (int i = 0; i < types.Count; i++)
         {
-            var t = types[i]!;
+            INamedTypeSymbol t = types[i]!;
             sb.AppendLine($"        new(typeof({Fq(t)}), static () => new {Fq(t)}(), M{i}),");
         }
         sb.AppendLine("    };");
@@ -101,13 +101,13 @@ public sealed class HleBinderGenerator : IIncrementalGenerator
         int accessorId = 0;
         for (int i = 0; i < types.Count; i++)
         {
-            var t = types[i]!;
+            INamedTypeSymbol t = types[i]!;
             sb.AppendLine();
             sb.AppendLine($"    // {t.ToDisplayString()}");
             sb.AppendLine($"    static global::VitaSharp.Core.Hle.HleBinding[] M{i}() => new global::VitaSharp.Core.Hle.HleBinding[]");
             sb.AppendLine("    {");
             // GetMembers keeps declaration order (partial parts in syntax tree order), like reflection's metadata order
-            foreach (var m in t.GetMembers().OfType<IMethodSymbol>())
+            foreach (IMethodSymbol m in t.GetMembers().OfType<IMethodSymbol>())
             {
                 if (m.IsStatic || m.MethodKind != MethodKind.Ordinary)
                 {
@@ -120,9 +120,9 @@ public sealed class HleBinderGenerator : IIncrementalGenerator
                     continue;
                 }
 
-                if (!TryBuild(m, compilation, out var layout, out var call, out string? error))
+                if (!TryBuild(m, compilation, out string? layout, out Call? call, out string? error))
                 {
-                    spc.ReportDiagnostic(Diagnostic.Create(Unsupported, m.Locations.FirstOrDefault(), $"{t.Name}.{m.Name}", error));
+                    spc.ReportDiagnostic(Diagnostic.Create(s_unsupported, m.Locations.FirstOrDefault(), $"{t.Name}.{m.Name}", error));
                     continue;
                 }
                 string target;
@@ -135,7 +135,7 @@ public sealed class HleBinderGenerator : IIncrementalGenerator
                     target = $"A{accessorId}";
                     accessors.AppendLine($"    [global::System.Runtime.CompilerServices.UnsafeAccessor(global::System.Runtime.CompilerServices.UnsafeAccessorKind.Method, Name = \"{m.Name}\")]");
                     accessors.Append($"    static extern {(m.ReturnsVoid ? "void" : Fq(m.ReturnType))} A{accessorId}({Fq(t)} self");
-                    foreach (var p in m.Parameters)
+                    foreach (IParameterSymbol p in m.Parameters)
                     {
                         accessors.Append($", {Fq(p.Type)} {Escape(p.Name)}");
                     }
@@ -143,14 +143,14 @@ public sealed class HleBinderGenerator : IIncrementalGenerator
                     accessors.AppendLine(");");
                     accessorId++;
                 }
-                foreach (var a in attrs)
+                foreach (AttributeData? a in attrs)
                 {
                     string? name = a.ConstructorArguments.Length > 0 ? a.ConstructorArguments[0].Value as string : null;
                     uint nid = 0;
                     string? library = null;
                     bool isDefault = false;
                     bool returnsValue = false;
-                    foreach (var na in a.NamedArguments)
+                    foreach (KeyValuePair<string, TypedConstant> na in a.NamedArguments)
                     {
                         if (na.Key == "Nid" && na.Value.Value is uint n)
                         {
@@ -185,7 +185,7 @@ public sealed class HleBinderGenerator : IIncrementalGenerator
         spc.AddSource("HleBindings.g.cs", sb.ToString());
     }
 
-    sealed class Call
+    private sealed class Call
     {
         public string Args = "";
         public string Return = ""; // "" = void, else normalized type keyword
@@ -199,7 +199,7 @@ public sealed class HleBinderGenerator : IIncrementalGenerator
     /// "spO" / "spO+8" = stack word(s) at byte offset O), each followed by "=" and the conversion, then "->" and the
     /// return conversion.
     /// </summary>
-    static bool TryBuild(IMethodSymbol m, Compilation c, out string layout, out Call call, out string? error)
+    private static bool TryBuild(IMethodSymbol m, Compilation c, out string layout, out Call call, out string? error)
     {
         call = new Call();
         error = null;
@@ -207,7 +207,7 @@ public sealed class HleBinderGenerator : IIncrementalGenerator
         var args = new List<string>();
         int gpr = 0, stack = 0, fpr = 0;
         const string Ctx = "global::VitaSharp.Core.Hle.HleContext";
-        foreach (var p in m.Parameters)
+        foreach (IParameterSymbol p in m.Parameters)
         {
             if (p.RefKind != RefKind.None)
             {
@@ -215,7 +215,7 @@ public sealed class HleBinderGenerator : IIncrementalGenerator
                 error = $"parameter {p.Name} is passed by reference";
                 return false;
             }
-            var t = p.Type;
+            ITypeSymbol t = p.Type;
             string token, raw, rawType;
             if (sbLayout.Length > 0)
             {
@@ -304,7 +304,7 @@ public sealed class HleBinderGenerator : IIncrementalGenerator
         }
         else
         {
-            var rt = m.ReturnType;
+            ITypeSymbol rt = m.ReturnType;
             if (!IsAccessible(rt))
             {
                 layout = "";
@@ -339,9 +339,9 @@ public sealed class HleBinderGenerator : IIncrementalGenerator
         return true;
     }
 
-    static bool IsPtr(ITypeSymbol t) => t is INamedTypeSymbol { IsGenericType: true } n && n.ConstructedFrom.ToDisplayString() == PtrName;
+    private static bool IsPtr(ITypeSymbol t) => t is INamedTypeSymbol { IsGenericType: true } n && n.ConstructedFrom.ToDisplayString() == PtrName;
 
-    static bool TryConvert(string raw, string rawType, ITypeSymbol t, out string expr, out string conv)
+    private static bool TryConvert(string raw, string rawType, ITypeSymbol t, out string expr, out string conv)
     {
         string name = Name(t);
         conv = name;
@@ -386,7 +386,7 @@ public sealed class HleBinderGenerator : IIncrementalGenerator
     }
 
     /// <summary>Same rules as the old binder: the HleContext.Return overload a return type maps to.</summary>
-    static string NormalizeReturn(ITypeSymbol t)
+    private static string NormalizeReturn(ITypeSymbol t)
     {
         switch (t.SpecialType)
         {
@@ -456,26 +456,26 @@ public sealed class HleBinderGenerator : IIncrementalGenerator
         return QualifiedName(t);
     }
 
-    static string QualifiedName(ITypeSymbol t)
+    private static string QualifiedName(ITypeSymbol t)
     {
         string n = t.Name;
-        for (var c = t.ContainingType; c != null; c = c.ContainingType)
+        for (INamedTypeSymbol c = t.ContainingType; c != null; c = c.ContainingType)
         {
             n = c.Name + "." + n;
         }
 
-        var ns = t.ContainingNamespace;
+        INamespaceSymbol ns = t.ContainingNamespace;
         return ns == null || ns.IsGlobalNamespace ? n : ns.ToDisplayString() + "." + n;
     }
 
-    static string Fq(ITypeSymbol t) => t.ToDisplayString(SymbolDisplayFormat.FullyQualifiedFormat);
+    private static string Fq(ITypeSymbol t) => t.ToDisplayString(SymbolDisplayFormat.FullyQualifiedFormat);
 
-    static string Str(string? s) => s == null ? "null" : "\"" + s.Replace("\\", "\\\\").Replace("\"", "\\\"") + "\"";
+    private static string Str(string? s) => s == null ? "null" : "\"" + s.Replace("\\", "\\\\").Replace("\"", "\\\"") + "\"";
 
-    static string Escape(string name) => Microsoft.CodeAnalysis.CSharp.SyntaxFacts.GetKeywordKind(name) != Microsoft.CodeAnalysis.CSharp.SyntaxKind.None ? "@" + name : name;
+    private static string Escape(string name) => Microsoft.CodeAnalysis.CSharp.SyntaxFacts.GetKeywordKind(name) != Microsoft.CodeAnalysis.CSharp.SyntaxKind.None ? "@" + name : name;
 
     /// <summary>Whether generated code elsewhere in the assembly can name the member (internal or wider all the way up).</summary>
-    static bool IsAccessible(ISymbol s)
+    private static bool IsAccessible(ISymbol s)
     {
         switch (s)
         {
@@ -486,7 +486,7 @@ public sealed class HleBinderGenerator : IIncrementalGenerator
             case ITypeParameterSymbol:
                 return false;
         }
-        for (var x = s; x != null && x is not INamespaceSymbol; x = x.ContainingSymbol)
+        for (ISymbol x = s; x != null && x is not INamespaceSymbol; x = x.ContainingSymbol)
         {
             if (x.DeclaredAccessibility is Accessibility.Private or Accessibility.Protected or Accessibility.ProtectedAndInternal)
             {
