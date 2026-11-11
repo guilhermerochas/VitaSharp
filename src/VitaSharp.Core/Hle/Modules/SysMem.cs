@@ -66,7 +66,7 @@ public sealed partial class SysMem : HleModule
 
     /// <summary>Executable blocks for JITs (Mono/PSM): size a multiple of 1 MiB, at most 16 MiB in all (Vita3K).</summary>
     [Hle]
-    int sceKernelAllocMemBlockForVM(string name, uint size)
+    internal int sceKernelAllocMemBlockForVM(string name, uint size)
     {
         if (size == 0 || (size & (VmBlockGranule - 1)) != 0) return SceError.ILLEGAL_MEMBLOCK_SIZE;
         long used = K.Objects.Owned<MemBlock>(Emu.Pid).Where(b => b.IsVm).Sum(b => (long)b.Size);
@@ -77,7 +77,7 @@ public sealed partial class SysMem : HleModule
     }
 
     [Hle]
-    int sceKernelFreeMemBlockForVM(int uid)
+    internal int sceKernelFreeMemBlockForVM(int uid)
     {
         var b = K.Objects.Get<MemBlock>(uid);
         if (b == null || !b.IsVm) return SceError.INVALID_ARGUMENT;
@@ -86,14 +86,14 @@ public sealed partial class SysMem : HleModule
 
     /// <summary>Makes the VM blocks writable (open) or executable again (close); nested calls fail with ENOSYS.</summary>
     [Hle]
-    int sceKernelOpenVMDomain()
+    internal int sceKernelOpenVMDomain()
     {
         lock (this) { if (_vmDomainOpen) return SceError.ERRNO_ENOSYS; _vmDomainOpen = true; }
         return 0;
     }
 
     [Hle]
-    int sceKernelCloseVMDomain()
+    internal int sceKernelCloseVMDomain()
     {
         lock (this) { if (!_vmDomainOpen) return SceError.ERRNO_ENOSYS; _vmDomainOpen = false; }
         return 0;
@@ -101,7 +101,7 @@ public sealed partial class SysMem : HleModule
 
     /// <summary>Instruction cache flush after writing JIT code: drops translated blocks of the range.</summary>
     [Hle]
-    int sceKernelSyncVMDomain(int uid, uint data, uint size)
+    internal int sceKernelSyncVMDomain(int uid, uint data, uint size)
     {
         var b = K.Objects.Get<MemBlock>(uid);
         if (b == null) return SceError.ILLEGAL_BLOCK_ID;
@@ -121,7 +121,7 @@ public sealed partial class SysMem : HleModule
     }
 
     [Hle]
-    int sceKernelGetMemBlockBase(int uid, Ptr<uint> basePtr)
+    internal int sceKernelGetMemBlockBase(int uid, Ptr<uint> basePtr)
     {
         var b = K.Objects.Get<MemBlock>(uid);
         if (b == null) return SceError.INVALID_UID;

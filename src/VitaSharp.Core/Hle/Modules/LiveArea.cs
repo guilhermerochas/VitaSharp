@@ -140,6 +140,13 @@ public sealed partial class LiveArea : HleModule
         }
     }
 
+    /// <summary>sceLiveAreaEnableBgAppMode (SceLiveAreaUtilBgApp): marks the process as the title's background
+    /// application; livearea_util.suprx passes the mark with every later update request (0).</summary>
+    [Hle("sceLiveAreaEnableBgAppMode", Library = "SceLiveAreaUtilBgApp")]
+    int sceLiveAreaEnableBgAppMode() { BgAppMode = true; return 0; }
+
+    internal bool BgAppMode { get; private set; }
+
     // ------------------------------------------------------------------ status
 
     [Hle]
