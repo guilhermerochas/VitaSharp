@@ -268,4 +268,18 @@ public sealed class NetHleTests(GuestMemoryFixture fx)
         Assert.Equal(NetAdhocMatching.ERR_INVALID_ID, Call(m, "sceNetAdhocMatchingDelete", id));
         Assert.Equal(0, Call(m, "sceNetAdhocMatchingTerm"));
     }
+
+    /// <summary>CA_LIST.cer: "#name" lines and blank lines between the PEM blocks are not part of a certificate; each
+    /// block runs from BEGIN through the CRLF after END (the byte ranges libssl 3.74 reads).</summary>
+    [Fact]
+    public void CaListBlocks()
+    {
+        var pem1 = "-----BEGIN CERTIFICATE-----\r\nAAAA\r\n-----END CERTIFICATE-----\r\n";
+        var pem2 = "-----BEGIN CERTIFICATE-----\r\nBBBBBB\r\n-----END CERTIFICATE-----";
+        var file = Encoding.ASCII.GetBytes("#Root A  \r\n" + pem1 + "\r\n##Group\r\n#Root B\r\n" + pem2);
+        var certs = Ssl.ParseCaList(file);
+        Assert.Equal(2, certs.Length);
+        Assert.Equal(pem1, Encoding.ASCII.GetString(certs[0]));
+        Assert.Equal(pem2, Encoding.ASCII.GetString(certs[1]));
+    }
 }

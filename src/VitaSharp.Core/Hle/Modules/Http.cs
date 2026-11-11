@@ -1159,11 +1159,7 @@ public sealed partial class Ssl : HleModule
         return 0;
     }
 
-    /// <summary>(int, int index, void *buf, uint size, ...): the WebKit process asks libssl for the certificate
-    /// authorities (size first with a NULL buffer, then the data). The real libssl serves them from
-    /// vs0:data/external/cert/CA_LIST.cer; that list is not decoded here, and with no TLS session ever made offline the
-    /// request ends with SceSsl's not-found error (the page then fails on the network, as it does anyway).</summary>
-    [Hle] int sceSslInternalGetCertificateAuthority(int a0, int index, uint buf, uint size) => ERR_NOT_FOUND;
+    // sceSslInternalGetCertificateAuthority: Ssl.Certificates.cs
 
     [Hle] uint sceSslGetSubjectName(uint cert) => 0;
     [Hle] uint sceSslGetIssuerName(uint cert) => 0;
