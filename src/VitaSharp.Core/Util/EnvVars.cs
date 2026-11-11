@@ -131,6 +131,9 @@ public static class EnvVars
     public const string Net = "VITASHARP_NET";
     /// <summary>Default of --net-allow=host,host: with real internet, only these hosts (names or addresses) are reachable.</summary>
     public const string NetAllow = "VITASHARP_NET_ALLOW";
+    /// <summary>=folder: the IL backend also writes the IL of every block it compiles to assemblies there
+    /// (il_blocks_NNN.dll, for ILSpy) plus index.tsv, hottest first (Cpu/Backends/IlDump.cs, docs/notes/il-jit.md).</summary>
+    public const string IlDump = "VITASHARP_IL_DUMP";
     /// <summary>File the native backends append every compiled block's instructions to (a corpus for the compile-cost
     /// benchmark NativeJitTests.CompileCostBenchmark, which reads it from <see cref="BenchCorpus"/>).</summary>
     public const string NativeCorpus = "VITASHARP_NATIVE_CORPUS";
@@ -141,6 +144,9 @@ public static class EnvVars
     /// executed blocks and guest instructions (the PERF cycles line's "K blocks") only with it (Arm64Emitter.A64Opt.NoBlockCounts).</summary>
     public const string NativeCounters = "VITASHARP_NATIVE_COUNTERS";
     public const string NativeDump = "VITASHARP_NATIVE_DUMP";
+    /// <summary>=0: VCVT between floating-point and fixed-point stays an interpreter callout in native code (A/B
+    /// switch of the inline form, ArmFrontend.VfpOther).</summary>
+    public const string NativeVcvtFixed = "VITASHARP_NATIVE_VCVT_FIXED";
     /// <summary>=file: the native backends write one line per generated block (host address, size, guest pc, code
     /// bytes) for attributing CPU-profiler samples in the code arena (Cpu/Native/NativeCodeMap).</summary>
     public const string NativeMap = "VITASHARP_NATIVE_MAP";

@@ -1336,6 +1336,9 @@ public sealed unsafe partial class ArmFrontend
         return false;
     }
 
+    /// <summary>VITASHARP_NATIVE_VCVT_FIXED=0 leaves VCVT fixed-point to the handler (A/B switch).</summary>
+    static readonly bool InlineFixedConversions = Environment.GetEnvironmentVariable(EnvVars.NativeVcvtFixed) != "0";
+
     bool? VfpOther(in DecodedInst d)
     {
         uint ins = d.Raw, opc2 = Bits(ins, 19, 16);
@@ -1393,7 +1396,15 @@ public sealed unsafe partial class ArmFrontend
                 B.FpOp(kind, O | (dbl ? FpFlags.Double : 0), sd, 0, dbl ? dm : sm, ins, d.Address);
                 return false;
             }
-            default: return null; // half-precision and fixed-point conversions
+            case 0xA: case 0xB: case 0xE: case 0xF:
+            {
+                // VCVT fixed-point <-> float, in place on Vd (a single register, or the low word / all of a double)
+                Vfp.FixedParams(ins, out bool toFixed, out _, out _, out int frac);
+                if (frac < 0 || !InlineFixedConversions) return null; // UNPREDICTABLE: the handler's result
+                B.FpOp(toFixed ? FpKind.CvtToFixed : FpKind.CvtFromFixed, O | (dbl ? FpFlags.Double : 0), dbl ? dd : sd, 0, dbl ? dd : sd, ins, d.Address);
+                return false;
+            }
+            default: return null; // the remaining encodings (opc2 6 and 9) stay with the handler
         }
     }
 

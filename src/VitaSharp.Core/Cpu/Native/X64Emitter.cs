@@ -930,6 +930,50 @@ public sealed unsafe partial class X64Emitter
                 a.jmp(done);
                 break;
             }
+            case FpKind.CvtToFixed:
+            {
+                // trunc(x * 2^frac) in double (exact: a power-of-two scale), saturated to the fixed-point size and
+                // sign- or zero-extended to the register; NaN, infinities and |x| >= 2^63 go to the handler
+                Vfp.FixedParams(x.Imm2, out _, out bool unsigned, out int size, out int frac);
+                if (dbl) a.movsd(xmm0, Dq(dOff)); else a.cvtss2sd(xmm0, S(dOff)); // DAZ flushes a denormal input, like InF
+                a.mov(rax, BitConverter.DoubleToUInt64Bits(Math.Pow(2, frac)));
+                a.movq(xmm1, rax);
+                a.mulsd(xmm0, xmm1);
+                a.cvttsd2si(rax, xmm0);
+                a.mov(rdx, 0x8000000000000000UL);
+                a.cmp(rax, rdx);
+                a.je(slowGuest);
+                long min = unsigned ? 0 : size == 32 ? int.MinValue : short.MinValue;
+                long max = unsigned ? (size == 32 ? uint.MaxValue : ushort.MaxValue) : size == 32 ? int.MaxValue : short.MaxValue;
+                a.mov(rdx, unchecked((ulong)min));
+                a.cmp(rax, rdx);
+                a.cmovl(rax, rdx);
+                a.mov(rdx, (ulong)max);
+                a.cmp(rax, rdx);
+                a.cmovg(rax, rdx);
+                a.ldmxcsr(State(OffMxcsrHost));
+                if (dbl) a.mov(Dq(dOff), rax); else a.mov(S(dOff), eax);
+                a.jmp(done);
+                break;
+            }
+            case FpKind.CvtFromFixed:
+            {
+                // the integer is exact in a double and so is the power-of-two scale: one rounding to single, as the
+                // handler's (float)(v / 2^frac); results are normal numbers or zero (|v| >= 2^-32)
+                Vfp.FixedParams(x.Imm2, out _, out bool unsigned, out int size, out int frac);
+                if (size == 32) { if (unsigned) a.mov(eax, S(dOff)); else a.movsxd(rax, S(dOff)); }
+                else if (unsigned) a.movzx(eax, __word_ptr[rbx + dOff]);
+                else a.movsx(rax, __word_ptr[rbx + dOff]);
+                a.cvtsi2sd(xmm0, rax);
+                a.mov(rax, BitConverter.DoubleToUInt64Bits(Math.Pow(2, -frac)));
+                a.movq(xmm1, rax);
+                a.mulsd(xmm0, xmm1);
+                if (!dbl) a.cvtsd2ss(xmm0, xmm0);
+                a.ldmxcsr(State(OffMxcsrHost));
+                if (dbl) a.movsd(Dq(dOff), xmm0); else a.movss(S(dOff), xmm0);
+                a.jmp(done);
+                break;
+            }
             default:
                 a.jmp(slowGuest);
                 break;

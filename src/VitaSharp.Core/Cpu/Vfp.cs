@@ -1,4 +1,4 @@
-﻿using System.Runtime.CompilerServices;
+using System.Runtime.CompilerServices;
 using static VitaSharp.Core.Cpu.Arm;
 
 namespace VitaSharp.Core.Cpu;
@@ -306,13 +306,23 @@ internal static unsafe class Vfp
         return ins | (dbl ? ((n & 0xF) << 16) | ((n >> 4) << 7) : ((n >> 1) << 16) | ((n & 1) << 7));
     }
 
-    /// <summary>VCVT between floating-point and fixed-point: op=bit18 (to fixed), U=bit16, sx=bit7, imm=imm4:i</summary>
+    /// <summary>
+    /// Operands of VCVT between floating-point and fixed-point: op=bit18 (to fixed), U=bit16 (unsigned), sx=bit7 (32-bit
+    /// fixed-point size, else 16), imm=imm4:i; the fraction bits are size - imm (negative for a 16-bit size with imm
+    /// &gt; 16: UNPREDICTABLE). Shared by the interpreter and the native backends.
+    /// </summary>
+    internal static void FixedParams(uint ins, out bool toFixed, out bool unsigned, out int size, out int frac)
+    {
+        toFixed = Bit(ins, 18) != 0;
+        unsigned = Bit(ins, 16) != 0;
+        size = Bit(ins, 7) != 0 ? 32 : 16;
+        frac = size - (int)(((ins & 0xF) << 1) | Bit(ins, 5));
+    }
+
+    /// <summary>VCVT between floating-point and fixed-point (see <see cref="FixedParams"/>).</summary>
     static void FixedConvert(CpuState* s, uint ins, bool dbl)
     {
-        bool toFixed = Bit(ins, 18) != 0, unsigned = Bit(ins, 16) != 0;
-        int size = Bit(ins, 7) != 0 ? 32 : 16;
-        int imm = (int)(((ins & 0xF) << 1) | Bit(ins, 5));
-        int frac = size - imm;
+        FixedParams(ins, out bool toFixed, out bool unsigned, out int size, out int frac);
         double scale = Math.Pow(2, frac);
         if (toFixed)
         {

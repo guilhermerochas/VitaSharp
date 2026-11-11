@@ -479,8 +479,9 @@ budget and are recompiled by the IL backend when it runs out (tier-up; native co
 `FpOp` runs natively only in the Vita's FPSCR mode (DN=1, FZ=1, round to nearest, LEN/STRIDE 0), checked at run
 time: SSE under FTZ+DAZ (MXCSR switched around the operation), NaN -> default NaN, VNMUL negates after the
 substitution. Results equal to +/- the smallest normal (ARM detects tininess before rounding, x86 after),
-x86 "indefinite" conversion results and every other FPSCR mode run the interpreter handler. VFMA (VFPv4) and
-half/fixed-point conversions are callouts.
+x86 "indefinite" conversion results and every other FPSCR mode run the interpreter handler. VFMA (VFPv4) is a
+callout. VCVT fixed point (perf/il-1): x * 2^frac in double (exact), cvttsd2si, saturated with cmov; fixed -> float as
+cvtsi2sd * 2^-frac (exact) and one rounding to single (VITASHARP_NATIVE_VCVT_FIXED=0: callout).
 
 ## Instruction coverage (inline in native code)
 - ARM: data processing (imm, imm-shift, reg-shift; all 16 opcodes; S; PC destinations), MOVW/MOVT, MUL/MLA/MLS/
@@ -496,15 +497,14 @@ half/fixed-point conversions are callouts.
   with the fast-path rules above.
 - Exclusives: LDREX/STREX word and LDREXD/STREXD (ARM, Thumb-2) with the interpreter's generation-counter monitor;
   CLREX.
-- VFP also VCVTB/VCVTT (F16C).
+- VFP also VCVTB/VCVTT (F16C) and VCVT fixed point.
 - NEON: see "perf/neon-jit" above (nearly all three-same, by-scalar, shift, misc, VEXT, VTBL forms), VDUP (scalar),
   VMOV/VMVN/VORR/VBIC (immediate), VLD1/VST1 (multiple 1-4 registers, single lane, all lanes).
 - Media (perf/jit-complete, ARM and Thumb): halfword, dual and most-significant-word multiplies (SMULxy/SMLAxy/SMULWy/
   SMLAWy/SMLALxy, SMUAD/SMUSD/SMLAD/SMLSD/SMLALD/SMLSLD, SMMUL/SMMLA/SMMLS with and without R), parallel add/subtract
   (S/Q/SH/U/UQ/UH ADD16/ASX/SAX/SUB16/ADD8/SUB8) with GE, SEL, QADD/QSUB/QDADD/QDSUB, SSAT/USAT/SSAT16/USAT16, PKH,
   USAD8/USADA8, UMAAL, SXTB16/UXTB16 (+accumulate), SDIV/UDIV in ARM state.
-- Callouts: the NEON forms listed under "Still callouts", byte/halfword exclusives, SWP, MRS/MSR, VFMA, half/fixed-point
-  VCVT, BKPT/UDF/YIELD/WFE/WFI, UNPREDICTABLE odd forms (e.g. PC destinations that do not end a block).
+- Callouts: the NEON forms listed under "Still callouts", byte/halfword exclusives, SWP, MRS/MSR, VFMA, BKPT/UDF/YIELD/WFE/WFI, UNPREDICTABLE odd forms (e.g. PC destinations that do not end a block).
 
 ## Verification
 - Unit tests: `NativeJitTests` (20 tests: random multi-instruction blocks native vs interpreter incl. a
@@ -608,7 +608,7 @@ into main, not pushed. The foundation for the Android port; also Apple silicon m
 - VFP (`FpOp`): fast path when FPSCR is in the Vita mode (same check as x64), else the handler. Add/Sub/Mul/NMul/Div,
   VMLA/VMLS/VNMLA/VNMLS (product rounded first: FMUL then FADD/FSUB), VSQRT, VCMP(E) (FCMP's NZCV are VCMP's, copied
   into FPSCR[31:28]), f32<->f64, int<->float (FCVTZS/FCVTZU saturate and map NaN to 0 like ARMv7; the R forms use
-  FCVTNS/FCVTNU), VCVTB/VCVTT (FCVT h<->s, AHP=0, FZ16=0).
+  FCVTNS/FCVTNU), VCVTB/VCVTT (FCVT h<->s, AHP=0, FZ16=0), VCVT fixed point (fixed-point FCVTZS/FCVTZU/SCVTF/UCVTF with #fbits; a 16-bit size clamps the 32-bit result).
 - LDREX/STREX(D): the interpreter's generation-counter protocol, as on x64: LDAR of the granule counter (YIELD spin
   while odd), then the read; STREX = LDAXR/STLXR CAS of the counter snap -> snap+1, LDAXR/STLXR CAS of the value
   against the LDREX value, STLR release of snap+2 / snap. ARMv8.0 only (no LSE). An unaligned address (an alignment

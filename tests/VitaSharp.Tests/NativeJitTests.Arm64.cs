@@ -253,6 +253,61 @@ public sealed unsafe partial class NativeJitTests
         Assert.True(failures.Count == 0, $"{failures.Count} kinds of differences (see output)");
     }
 
+    /// <summary>VCVT between floating-point and fixed-point on the ARM64 backend (fixed-point FCVTZS/FCVTZU/SCVTF/UCVTF).</summary>
+    [Arm64SandboxTheory]
+    [InlineData(false, 600, 2521)]
+    [InlineData(true, 600, 2522)]
+    public void Arm64FixedConversionsMatchInterpreter(bool thumb, int iterations, int seed)
+    {
+        EnsureGuestPages();
+        using var sb = Arm64Runner.Create();
+        var rng = new Random(seed);
+        var s = CpuState.Allocate();
+        var failures = new Dictionary<string, (int, string)>();
+        int compared = 0, detailed = 0;
+        try
+        {
+            for (int it = 0; it < iterations; it++)
+            {
+                var code = new List<byte>();
+                int n = rng.Next(1, 6);
+                for (int k = 0; k < n; k++)
+                {
+                    uint ins = RandomFixedConversion(rng);
+                    code.AddRange(!thumb ? BitConverter.GetBytes(ins) : [(byte)(ins >> 16), (byte)(ins >> 24), (byte)ins, (byte)(ins >> 8)]);
+                }
+                code.AddRange(thumb ? [0xFE, 0xE7] : [0xFE, 0xFF, 0xFF, 0xEA]);
+                code.ToArray().CopyTo(GuestMemory.Span(CodeBase, 0x1000));
+                var b = BlockBuilder.Build(CodeBase, thumb);
+                var st = new RandomState(rng);
+                for (int i = 0; i < 32; i++)
+                {
+                    uint lo = rng.Next(3) == 0 ? (uint)rng.NextInt64() : FixedSpecial[rng.Next(FixedSpecial.Length)];
+                    uint hi = rng.Next(3) == 0 ? (uint)rng.NextInt64() : FixedSpecial[rng.Next(FixedSpecial.Length)];
+                    st.D[i] = rng.Next(4) == 0 ? BitConverter.DoubleToUInt64Bits(rng.NextDouble() * Math.Pow(2, rng.Next(-40, 70)) * (rng.Next(2) * 2 - 1)) : lo | ((ulong)hi << 32);
+                }
+                st.Fpscr = rng.Next(5) != 0 ? 0x0300_0000u : (uint)rng.Next(16) << 22;
+                st.Apply(s, thumb);
+                var interp = Take(s, Guard(() => CpuCore.Interpret(s, b)));
+                var cb = NativeArm64Compiler.Instance.Compile(b, sb.Stubs)!;
+                st.Apply(s, thumb);
+                var native = Take(s, Guard(() => RunArm64(sb, s, cb.NativeEntry)));
+                compared++;
+                string diff = Diff(interp, native);
+                if (diff.Length > 0)
+                {
+                    if (detailed++ < 4) output.WriteLine($"--- fpscr {st.Fpscr:X8}{diff}\n{DescribeArm64(b, cb)}");
+                    Record(failures, $"arm64 fpscr {st.Fpscr:X8}", b, diff);
+                }
+            }
+        }
+        finally { CpuState.Free(s); }
+        output.WriteLine($"compared {compared} fixed-point conversion blocks on the ARM64 backend; failing kinds {failures.Count}");
+        foreach (var (k, (count, ex)) in failures.OrderByDescending(f => f.Value.Item1).Take(20))
+            output.WriteLine($"{k,-40} x{count,-5} {ex}");
+        Assert.True(failures.Count == 0, $"{failures.Count} kinds of differences (see output)");
+    }
+
     [Arm64SandboxTheory]
     [InlineData(false, NeonClass.ThreeSame, 150, 2601)]
     [InlineData(true, NeonClass.ThreeSame, 150, 2602)]
