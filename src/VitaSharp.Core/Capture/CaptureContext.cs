@@ -63,10 +63,11 @@ public static class CaptureContext
             lines.Add(FormattableString.Invariant($"audio: {p.Name} ({p.DumpName}.wav): {Role(p)}; opened by {(p.Owner is { } ow ? Name(ow) : "?")} thread '{p.OwnerThread}'; {p.Freq} Hz grain {p.Grain}; {activity}{muted}"));
         }
         if (lines.Count == 0) lines.Add("audio: no audio port open");
-        var holder = v.BgmPortOwner >= 0 ? v.ByAppId(v.BgmPortOwner) : null;
-        lines.Add(holder == null ? "audio: BGM port: no holder (no background music player)"
-            : $"audio: BGM port held by {Name(holder)}{(holder.IsShell ? " (the shell's music player, SceShellMusicCore: the home screen / LiveArea music)" : "")}" +
-              (v.BgmProxyApp >= 0 ? $", playing for application 0x{v.BgmProxyApp:X}" : ""));
+        var holder = v.BgmHolder(out int prio);
+        lines.Add(holder == null ? "audio: BGM: no process (nothing to route it to)"
+            : $"audio: BGM routed to {Name(holder)}{(holder.IsShell ? " (the shell's music player, SceShellMusicCore: the home screen / LiveArea music)" : "")}" +
+              (prio == Kernel.VitaSystem.BgmNoPriority ? ", as the process in front (no BGM priority set)" : $", BGM priority 0x{prio:X}") +
+              string.Concat(v.Processes.Where(p => p.BgmPriority > 0).Select(p => $"; {Name(p)} priority 0x{p.BgmPriority:X}{(p.Suspended ? " (suspended: not counted)" : "")}")));
         foreach (var s in AudioDiagnostics.StreamDescriptions()) lines.Add("audio: decoder/stream " + s);
         return lines;
     }

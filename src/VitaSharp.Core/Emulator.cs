@@ -365,6 +365,9 @@ public sealed class Emulator : IDisposable
     /// <summary>The process is suspended: its threads stop at their next safe point (see <see cref="GuestThread"/>).</summary>
     public volatile bool Suspended;
 
+    /// <summary>This process's BGM priority in the kernel's BGM routing (0 = none; <see cref="Kernel.VitaSystem.BgmHolder"/>).</summary>
+    public volatile int BgmPriority;
+
     /// <summary>The thread of this process that submitted a GPU BeginScene not yet followed by its EndScene (any thread
     /// of the process may end it). While the emulation is paused that thread runs on until the scene is closed, so the
     /// GPU finishes the frame (<see cref="EmulationPause"/>).</summary>

@@ -377,9 +377,16 @@ public sealed partial class AppMgr : HleModule
     /// composes the foreground process itself.</summary>
     [Hle] int sceAppMgrSetBackRenderPortOwner(int appId) => 0;
 
-    /// <summary>(int appId): the application that plays background music for another one (Sign Up for the shell); the
-    /// BGM of the port holder then keeps playing while that application is in front (<see cref="Audio"/>).</summary>
-    [Hle] int sceAppMgrSetBgmProxyApp(int appId) { Emu.Vita.BgmProxyApp = appId > 0 ? appId : -1; return 0; }
+    /// <summary>(int appId): the caller's BGM is played by another application (Sign Up hands it to the shell, which
+    /// plays signup.at9): when the kernel's routing picks the caller, the BGM goes to that application instead
+    /// (appmgr 0x81008050 / 0x81005A7C; <see cref="Kernel.VitaSystem.BgmHolder"/>); 0 or less clears it.</summary>
+    [Hle]
+    int sceAppMgrSetBgmProxyApp(int appId)
+    {
+        Emu.Vita.BgmProxyApp = appId > 0 ? appId : -1;
+        Emu.Vita.BgmProxyBy = appId > 0 ? Emu.AppId : -1;
+        return 0;
+    }
 
     /// <summary>(const char *appPath, SceAppMgrRifInfo *info 0x70, const void *opt 8): appmgr reads the license (rif)
     /// of the application at the path: its validity times at +0x50/+0x58 (0: no limit). System applications in vs0 have

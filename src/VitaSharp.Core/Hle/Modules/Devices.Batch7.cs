@@ -68,7 +68,7 @@ public sealed partial class AppMgrShell
     [Hle] int sceAppMgrReleaseSoundOutExclusive(int port) => sceAppMgrReleaseSoundOutExclusive2(port);
 
     /// <summary>(int priority): the music player takes the BGM port (the shell's playback).</summary>
-    [Hle] int sceAppMgrAcquireBgmPortForMusicPlayer(int priority) { Emu.Vita.BgmPortOwner = Emu.AppId; return 0; }
+    [Hle] int sceAppMgrAcquireBgmPortForMusicPlayer(int priority) { Emu.BgmPriority = 0x82; return 0; } // fixed 0x82 (appmgr 0x81007248)
 
     /// <summary>(int appId, int priority): BGM priority under a system chat (kept like SetBgmSubPriority).</summary>
     [Hle] int sceAppMgrSetBgmSubPriorityForSystemChat(int appId, int priority) => sceAppMgrSetBgmSubPriority(appId, priority);
