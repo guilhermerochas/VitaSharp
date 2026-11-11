@@ -1587,6 +1587,15 @@ Lista de itens futuros do VitaSharp. Marque `[x]` quando um item for concluído.
 
 ## Bugs em aberto
 
+- [ ] Texturas de inteiro de 32 bits (U32, S32, U32U32) amostradas por um sampler float (agente T2, test/apps-2,
+  11/11/2026): o renderer criava views R32_UINT/R32_SINT, mas o gerador de shader lê toda textura por um sampler float
+  e guarda a palavra como bits F32; no Vulkan isso é indefinido (camada de validação: VUID-vkCmdDrawIndexed-format-07753;
+  provável causa do crash no lavapipe). Agora são imagens R32(G32)_SFLOAT com os mesmos bits. `replay-gpu --compare` dos
+  8 dumps: todos os quadros idênticos (média 0,0000). O teste de texturas passa a desenhar cubemaps por um samplerCube
+  (antes um sampler2D, VUID-07752, erro do teste). **Passo em aberto:** repetir no lavapipe (WSL) os testes de renderer e
+  a camada de validação; espera a decisão do usuário sobre `maxCrashDumpCount` no `.wslconfig`, porque `ulimit -c 0` não
+  impede os dumps de ~6 GB que o WSL grava em `%TEMP%\wsl-crashes` (o core_pattern é um pipe e ignora o RLIMIT_CORE)
+
 - [x] Superfícies de cor que não são de 32 bits (F16x4, formatos de 16 bits) começavam pretas em vez de com o que a
   CPU escreveu na memória (agente T2, test/apps-2, 11/11/2026): `UploadSurfaceFromGuest` só carregava superfícies de
   4 bytes por pixel; as outras eram limpas. Achado porque a varredura de NaN/Inf do modo de depuração não acusava uma

@@ -34,8 +34,11 @@ public static class Formats
         TexBase.U16 => new(Format.R16Unorm, 16, 1, 1, 0, TexConvert.None),
         TexBase.S16 => new(Format.R16SNorm, 16, 1, 1, 0, TexConvert.None),
         TexBase.F16 => new(Format.R16Sfloat, 16, 1, 1, 0, TexConvert.None),
-        TexBase.U32 => new(Format.R32Uint, 32, 1, 1, 0, TexConvert.None),
-        TexBase.S32 => new(Format.R32Sint, 32, 1, 1, 0, TexConvert.None),
+        // 32-bit integer texels go to the shader registers as raw bits (the shader generator samples every texture
+        // through a float sampler and keeps the word as F32 bits): a float image holds them bit for bit, where an
+        // integer view under a float sampler is undefined in Vulkan (lavapipe crashed, VUID-vkCmdDrawIndexed-format-07753)
+        TexBase.U32 => new(Format.R32Sfloat, 32, 1, 1, 0, TexConvert.None),
+        TexBase.S32 => new(Format.R32Sfloat, 32, 1, 1, 0, TexConvert.None),
         TexBase.F32 or TexBase.F32M => new(Format.R32Sfloat, 32, 1, 1, 0, TexConvert.None),
         TexBase.X8U24 => new(Format.R32Sfloat, 32, 1, 1, 0, TexConvert.X8U24), // 24-bit depth, read normalised
         TexBase.U8U8 => new(Format.R8G8Unorm, 16, 1, 1, 0, TexConvert.None),
@@ -43,7 +46,7 @@ public static class Formats
         TexBase.U16U16 => new(Format.R16G16Unorm, 32, 1, 1, 0, TexConvert.None),
         TexBase.S16S16 => new(Format.R16G16SNorm, 32, 1, 1, 0, TexConvert.None),
         TexBase.F16F16 => new(Format.R16G16Sfloat, 32, 1, 1, 0, TexConvert.None),
-        TexBase.U32U32 => new(Format.R32G32Uint, 64, 1, 1, 0, TexConvert.None),
+        TexBase.U32U32 => new(Format.R32G32Sfloat, 64, 1, 1, 0, TexConvert.None),
         TexBase.F32F32 => new(Format.R32G32Sfloat, 64, 1, 1, 0, TexConvert.None),
         TexBase.U8U8U8U8 => new(Format.R8G8B8A8Unorm, 32, 1, 1, 0, TexConvert.None),
         TexBase.S8S8S8S8 => new(Format.R8G8B8A8SNorm, 32, 1, 1, 0, TexConvert.None),
