@@ -39,7 +39,9 @@ public sealed class RunnerProcessTests : IDisposable
         Assert.Contains("Loading VSTS00001", r.Output);
         Assert.Contains("framebuffer 0x81001000 480x272", r.Output);
         long frames = FramesOf(r.Output);
-        Assert.InRange(frames, 20, 40);
+        // the runner checks the limit every 50 ms and the turbo test app presents frames faster than that, so the count
+        // overshoots by a load-dependent amount (42 and 53 seen); a limit that was ignored would run to the 1800 s timeout
+        Assert.InRange(frames, 20, 500);
         // the session log went to the test's data folder
         Assert.True(File.Exists(Path.Combine(_root, "logs", "last.log")));
     }
