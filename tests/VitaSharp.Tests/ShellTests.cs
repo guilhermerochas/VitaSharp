@@ -496,7 +496,11 @@ public class ShellTests
             {
                 var sys = Path.Combine(root, "vs0", "app", id, "sce_sys");
                 Directory.CreateDirectory(sys);
-                if (id != "SYSA00004") File.WriteAllBytes(Path.Combine(sys, "icon0.png"), [0]); // no icon: no bubble
+                // SYSA00004 has no icon: no bubble
+                if (id != "SYSA00004")
+                {
+                    File.WriteAllBytes(Path.Combine(sys, "icon0.png"), [0]);
+                }
             }
             var assets = new ShellAssets(root);
             // no shell database (the shell never ran): every vs0:app title with an icon, in folder order
@@ -515,7 +519,10 @@ public class ShellTests
             }
             Assert.Equal(["SYSA00003", "SYSA00001"], assets.SystemApps().Select(a => a.TitleId));
         }
-        finally { Directory.Delete(root, true); }
+        finally
+        {
+            Directory.Delete(root, true);
+        }
     }
 
     [Fact]
