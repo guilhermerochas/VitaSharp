@@ -1,8 +1,9 @@
 #!/usr/bin/env bash
 #
-# Checks the C# code style of .editorconfig (the Ryujinx/Ryubing style): `dotnet format whitespace` (layout) over
-# every .cs file and `dotnet format style` (the rules set to :warning) over VitaSharp.sln, both with
-# --verify-no-changes. The folders listed in build/format-pending.txt are skipped until they are converted.
+# Checks the C# code style of .editorconfig (the Ryujinx/Ryubing style): `dotnet format whitespace` (layout) and
+# `dotnet format style` (the rules set to :warning, through VitaSharp.sln), both with --verify-no-changes, over the
+# repository's tracked .cs files only (git ls-files: never .claude/ with the agents' worktrees, nor untracked files).
+# The folders listed in build/format-pending.txt are skipped until they are converted.
 # Same as build/format-check.ps1.
 
 set -euo pipefail
@@ -23,7 +24,8 @@ Usage: build/format-check.sh [--fix] [--whitespace-only] [--help]
   --fix              rewrite the files instead of verifying (dotnet format + build/FormatTool: one-line blocks
                      split, accessor lists on one line); review the diff before committing
   --whitespace-only  only the layout check (no project load, no restore needed)
-Folders in build/format-pending.txt are skipped. Same as build/format-check.ps1.
+Only the tracked .cs files (git ls-files; never .claude/); folders in build/format-pending.txt are skipped.
+Same as build/format-check.ps1.
 EOF
 }
 
@@ -40,6 +42,25 @@ pending_folders() {
     line="${line%"${line##*[![:space:]]}"}"
     [[ -n "${line}" ]] && printf '%s\n' "${line}"
   done <"${PENDING_FILE}"
+}
+
+#######################################
+# Tells whether a repository-relative path lies in one of the given folders.
+# Arguments:
+#   The path, then the folders.
+# Returns:
+#   0 when it does, 1 otherwise.
+#######################################
+is_pending() {
+  local path="$1"
+  shift
+  local dir
+  for dir in "$@"; do
+    if [[ "${path}" == "${dir}/"* ]]; then
+      return 0
+    fi
+  done
+  return 1
 }
 
 main() {
@@ -62,33 +83,48 @@ main() {
     esac
   done
 
-  local -a exclude=()
+  local -a pending=()
   local folder
   while IFS= read -r folder; do
-    exclude+=("${folder}")
+    pending+=("${folder%/}")
   done < <(pending_folders)
+  # .claude/ holds the agents' worktrees (whole other checkouts): never part of this checkout's check
+  pending+=(".claude")
 
   cd "${ROOT}"
-  local -a exclude_args=()
-  if ((${#exclude[@]} > 0)); then
-    exclude_args=(--exclude "${exclude[@]}")
+  # the file list goes through a response file (one token per line), like build/format-check.ps1 does
+  # global, not local: the EXIT trap runs after main has returned
+  include_file="$(mktemp)"
+  trap 'rm -f "${include_file}"' EXIT
+  echo "--include" >"${include_file}"
+  local file count=0
+  while IFS= read -r file; do
+    if ! is_pending "${file}" "${pending[@]}"; then
+      echo "${file}" >>"${include_file}"
+      count=$((count + 1))
+    fi
+  done < <(git ls-files -- '*.cs')
+  if ((count == 0)); then
+    echo "format-check: git ls-files found no .cs files (run it from a git checkout)" >&2
+    return 2
   fi
+  local include="@${include_file}"
 
-  echo "format-check: whitespace (${#exclude[@]} folders pending)"
-  # ${verify} is either empty or one option; the array expansion is bash 3.2-safe when empty
+  echo "format-check: whitespace (${count} tracked files, $((${#pending[@]} - 1)) folders pending)"
+  # ${verify} is either empty or one option
   # shellcheck disable=SC2086
-  dotnet format whitespace --folder ${verify} ${exclude_args[@]+"${exclude_args[@]}"}
+  dotnet format whitespace --folder ${verify} "${include}"
   if ((whitespace_only == 0)); then
     echo "format-check: style (severity warn)"
     # shellcheck disable=SC2086
-    dotnet format style VitaSharp.sln --severity warn ${verify} ${exclude_args[@]+"${exclude_args[@]}"}
+    dotnet format style VitaSharp.sln --severity warn ${verify} "${include}"
   fi
   if [[ -z "${verify}" ]]; then
     # what dotnet format cannot do: split one-line statement blocks, keep { get; set; } on one line (the check is
-    # tests/VitaSharp.Tests/OneLineBlockTests); then indent the split lines
+    # tests/VitaSharp.Tests/OneLineBlockTests); then indent the split lines. FormatTool reads the same list.
     echo "format-check: layout (build/FormatTool)"
-    dotnet run --project "${ROOT}/build/FormatTool" -c Release -v q -- "${ROOT}"
-    dotnet format whitespace --folder ${exclude_args[@]+"${exclude_args[@]}"}
+    dotnet run --project "${ROOT}/build/FormatTool" -c Release -v q -- "${ROOT}" "${include_file}"
+    dotnet format whitespace --folder "${include}"
   fi
   echo "format-check: ok"
 }
