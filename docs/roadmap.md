@@ -1431,7 +1431,7 @@ Lista de itens futuros do VitaSharp. Marque `[x]` quando um item for concluído.
   chamado (travas, lwmutex), decodificador ATRAC9, cópia/swizzle de texturas. Script `build/bench.ps1`/`.sh`
   (multiplataforma) que roda um filtro e guarda o resultado em Markdown para comparar. Junto: `DOTNET_JitDisasm` nos
   métodos que o perfil mostrar quentes; ILSpy para conferir o IL gerado (ferramentas já instaladas).
-- [ ] Scripts `.sh` no Google Shell Style Guide (pedido do usuário, 10/11/2026):
+- [x] Scripts `.sh` no Google Shell Style Guide (pedido do usuário, 10/11/2026):
   https://google.github.io/styleguide/shellguide.html, junto com a regra de que todo `.sh` roda em Linux e macOS
   (bash 3.2, sem ferramentas só do GNU sem alternativa; ver `docs/agents/regras.md`). Passos: (1) adequar os 17
   scripts de `build/`: `#!/usr/bin/env bash` + `set -euo pipefail` onde couber, cabeçalho com o que o script faz,
@@ -1441,6 +1441,14 @@ Lista de itens futuros do VitaSharp. Marque `[x]` quando um item for concluído.
   em todos (`shellcheck build/*.sh`); (3) no CI: um passo de ShellCheck e a execução rápida dos scripts (`--help` ou
   modo de teste) também no `macos-latest`, para pegar o que só funciona no Linux. O par `.ps1` continua fazendo a mesma
   coisa (check-script-parity).
+  Feito (11/11/2026, refactor/style-2): os 19 `.sh` de `build/` no guia (cabeçalho, funções comentadas com `local`,
+  `main "$@"`, `${}`/`[[ ]]`, constantes `readonly`, erros no stderr, `--help` em todos), `shellcheck --severity=style`
+  sem avisos; CI: jobs "ShellCheck" e "Scripts on macOS" (`/bin/bash` 3.2 roda `build/check-scripts-help.sh`: todo
+  `.sh` faz parse e responde `--help`; o par `.ps1` só faz parse dos `.ps1`). Corrigido no caminho: a linha de erro do
+  `android-perf-run.sh` tinha tab/quebra literais e o cabeçalho e a linha normal do results.tsv tinham uma coluna a
+  menos que os dados (app_fps). Falta: linhas de 120 colunas como o resto do repositório (o guia pede 80; decidir com
+  o usuário). O awk do `android-perf-run.sh` (era do GNU: `asort`, `match` com vetor) passou a POSIX (`match` com
+  RSTART/RLENGTH, `split`, `sort -n`), mesma saída em dados de teste e aceito pelo `gawk --posix`.
 - [ ] Cobertura de código mínima de 70% em tudo (pedido do usuário, 10/11/2026). Base de hoje (`build/coverage.ps1` /
   `.sh`, coverlet + ReportGenerator, `Category!=Slow`): geral 59,4% linhas / 42,5% ramos; VitaSharp.Core 65,8%;
   Mobile.Core 85,4%; Renderer.Vulkan 1,3%. Meta: cada projeto e cada namespace com pelo menos 70% de linhas, e manter

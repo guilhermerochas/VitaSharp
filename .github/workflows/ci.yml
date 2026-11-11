@@ -49,6 +49,26 @@ jobs:
       - name: dotnet format --verify-no-changes
         run: bash build/format-check.sh
 
+  # Shell scripts: ShellCheck clean (Google Shell Style Guide, docs/agents/regras.md), and every build/*.sh at least
+  # parses and answers --help on macOS (bash 3.2 and the BSD tools, the platform most likely to break them).
+  shellcheck:
+    name: ShellCheck
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    steps:
+      - uses: actions/checkout@v4
+      - name: shellcheck
+        run: git ls-files -z '*.sh' | xargs -0 shellcheck --severity=style
+
+  scripts-macos:
+    name: Scripts on macOS (bash 3.2)
+    runs-on: macos-latest
+    timeout-minutes: 10
+    steps:
+      - uses: actions/checkout@v4
+      - name: Every script parses and prints its usage
+        run: /bin/bash build/check-scripts-help.sh   # the system bash 3.2, not a newer one on PATH
+
   build-test:
     name: Build and test (${{ matrix.os }})
     strategy:
