@@ -42,8 +42,9 @@ public static class PspPkgInstaller
         var kind = pkg.Kind;
         if (!kind.IsPspEmu()) throw new InvalidOperationException($"{pkg.ContentId} is a {kind.Describe()} package, not a PSP/PSone one");
         var sfo = pkg.ParamSfo.Length > 0 ? new Sfo(pkg.ParamSfo) : null;
-        var eboot = Find(pkg, Content + "EBOOT.PBP");
-        string title = sfo?.Title is { Length: > 0 } t ? t : pkg.ContentId;
+        string content = ContentFolder(pkg);
+        var eboot = Find(pkg, content + "EBOOT.PBP");
+        string title = sfo?.Title is { Length: > 0 } t ? t : eboot != null && EbootSfo(pkg, eboot)?.Title is { Length: > 0 } et ? et : pkg.ContentId;
 
         string id = kind switch
         {
@@ -66,16 +67,16 @@ public static class PspPkgInstaller
             if (kind == PkgKind.PspTheme)
             {
                 // the theme files (.PTF), wherever the package keeps them (USRDIR/CONTENT or the root)
-                if (e.Name.StartsWith(Content, StringComparison.OrdinalIgnoreCase) || !e.Name.Contains('/'))
+                if (e.Name.StartsWith(content, StringComparison.OrdinalIgnoreCase) || !e.Name.Contains('/'))
                 {
-                    string rel = e.Name.StartsWith(Content, StringComparison.OrdinalIgnoreCase) ? e.Name[Content.Length..] : e.Name;
+                    string rel = e.Name.StartsWith(content, StringComparison.OrdinalIgnoreCase) ? e.Name[content.Length..] : e.Name;
                     if (rel.Equals("PARAM.SFO", StringComparison.OrdinalIgnoreCase) || rel.EndsWith(".PNG", StringComparison.OrdinalIgnoreCase)) continue;
                     plan.Add((e, Combine(dest, rel)));
                 }
                 continue;
             }
-            if (!e.Name.StartsWith(Content, StringComparison.OrdinalIgnoreCase)) continue; // the PS3 wrapper (PARAM.SFO, ICON0...)
-            string relPath = e.Name[Content.Length..];
+            if (!e.Name.StartsWith(content, StringComparison.OrdinalIgnoreCase)) continue; // the PS3 wrapper (PARAM.SFO, ICON0...)
+            string relPath = e.Name[content.Length..];
             if (kind == PkgKind.Psx && relPath.Equals("texture.enc", StringComparison.OrdinalIgnoreCase))
                 plan.Add((e, Combine(Path.Combine(ux0Root, "ps1emu", id), "texture.enc")));
             else plan.Add((e, Combine(dest, relPath)));
@@ -184,15 +185,41 @@ public static class PspPkgInstaller
         return (U32LE(h, 8), U32LE(h, 0xC), U32LE(h, 0x24));
     }
 
-    /// <summary>The DISC_ID of the PARAM.SFO inside the EBOOT.PBP (the folder name the Vita gives the title), or "".</summary>
+    /// <summary>The folder of the package that holds the PSP content: USRDIR/CONTENT/ in a PSP-format package,
+    /// &lt;ID&gt;/ in a PS3-format PSone Classic (content type 1: "SLUS00000/EBOOT.PBP").</summary>
+    internal static string ContentFolder(PkgReader pkg) =>
+        pkg.Entries.FirstOrDefault(e => !e.IsDirectory && IsTopLevelEboot(e.Name)) is { } e ? e.Name[..^"EBOOT.PBP".Length] : Content;
+
+    /// <summary>"&lt;ID&gt;/EBOOT.PBP": the eboot of a PS3-format PSone package.</summary>
+    internal static bool IsTopLevelEboot(string name) =>
+        name.EndsWith("/EBOOT.PBP", StringComparison.OrdinalIgnoreCase) && name.IndexOf('/') == name.Length - "/EBOOT.PBP".Length
+        && !name.StartsWith("USRDIR", StringComparison.OrdinalIgnoreCase);
+
+    /// <summary>The PARAM.SFO inside the package's EBOOT.PBP, or null.</summary>
+    internal static Sfo? EbootSfo(PkgReader pkg, PkgEntry eboot)
+    {
+        try
+        {
+            var (sfoOff, icon0, _) = PbpHeader(pkg, eboot);
+            if (icon0 <= sfoOff || icon0 - sfoOff > 0x10000 || icon0 > eboot.DataSize) return null;
+            var sfo = new byte[icon0 - sfoOff];
+            pkg.ReadAt(eboot, sfoOff, sfo);
+            return new Sfo(sfo);
+        }
+        catch (Exception e) when (e is InvalidDataException or ArgumentException or IndexOutOfRangeException) { return null; }
+    }
+
+    /// <summary>The PARAM.SFO of the EBOOT.PBP of a PSP/PSone package (its title and DISC_ID), or null.</summary>
+    internal static Sfo? EbootSfo(PkgReader pkg) =>
+        pkg.Entries.FirstOrDefault(e => !e.IsDirectory && e.Name.Equals(ContentFolder(pkg) + "EBOOT.PBP", StringComparison.OrdinalIgnoreCase)) is { } eboot
+            ? EbootSfo(pkg, eboot) : null;
+
+    /// <summary>The DISC_ID of the PARAM.SFO inside the EBOOT.PBP (the folder name the Vita gives the title), or "".
+    /// A broken PBP header is an error (the eboot would not run).</summary>
     static string EbootDiscId(PkgReader pkg, PkgEntry eboot)
     {
-        var (sfoOff, icon0, _) = PbpHeader(pkg, eboot);
-        if (icon0 <= sfoOff || icon0 - sfoOff > 0x10000 || icon0 > eboot.DataSize) return "";
-        var sfo = new byte[icon0 - sfoOff];
-        pkg.ReadAt(eboot, sfoOff, sfo);
-        try { return new Sfo(sfo).GetString("DISC_ID"); }
-        catch (Exception e) when (e is InvalidDataException or ArgumentException or IndexOutOfRangeException) { return ""; }
+        PbpHeader(pkg, eboot);
+        return EbootSfo(pkg, eboot)?.GetString("DISC_ID") ?? "";
     }
 
     static bool IsUmdImage(PkgReader pkg, PkgEntry eboot)

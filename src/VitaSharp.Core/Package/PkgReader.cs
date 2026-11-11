@@ -81,7 +81,8 @@ public sealed class PkgReader : IDisposable
     public string ContentId { get; }
     public string TitleId => ContentId.Length >= 16 ? ContentId.Substring(7, 9) : "";
     public uint ContentTypeRaw { get; }
-    /// <summary>The key type (header 0xE7 &amp; 7): 1 PSP/PSone, 2-4 PS Vita.</summary>
+    /// <summary>The key type (header 0xE7 &amp; 7): 1 PSP/PSone, 2-4 PS Vita; 0 for a package in the PS3 format (header
+    /// type 1, as some PSone Classics are sold), whose items all use the PS3 key.</summary>
     public int KeyType { get; }
     /// <summary>The PARAM.SFO of the package (info block 14 for Vita, the PARAM.SFO item for PSP/PSone; empty if none).</summary>
     public byte[] ParamSfo { get; }
@@ -110,9 +111,12 @@ public sealed class PkgReader : IDisposable
             ContentId = CString(hdr.Slice(0x30, 0x30));
             hdr.Slice(0x70, 16).CopyTo(_iv);
 
-            KeyType = (int)(U32BE(hdr, 0xE4) & 7);
+            // a PS3-format package (header type 1) has its metadata where the PSP/Vita extended header would be, and all
+            // of it under the PS3 key (lusid1/pkg2zip)
+            KeyType = (U32BE(hdr, 4) & 0xFFFF) == 1 ? 0 : (int)(U32BE(hdr, 0xE4) & 7);
             switch (KeyType)
             {
+                case 0: PkgPs3.CopyTo(_key, 0); break;
                 case 1: PkgPsp.CopyTo(_key, 0); break; // PSP/PSone: the PSP key as is (the PS3 parts use PkgPs3)
                 case 2: AesUtil.EcbEncrypt(PkgVita2, _iv, _key); break;
                 case 3: AesUtil.EcbEncrypt(PkgVita3, _iv, _key); break;
@@ -198,6 +202,8 @@ public sealed class PkgReader : IDisposable
             return ContentTypeRaw switch
             {
                 6 => PkgKind.Psx,
+                // a PS3-format PSone Classic: "<ID>/EBOOT.PBP" (lusid1/pkg2zip); any other type-1 package is a PS3 one
+                1 when Entries.Any(e => !e.IsDirectory && PspPkgInstaller.IsTopLevelEboot(e.Name)) => PkgKind.Psx,
                 7 when InstallDirectory.Length > 0 => PkgKind.PspDlc,
                 7 when category == "HG" => PkgKind.PspPcEngine,
                 7 => PkgKind.Psp,

@@ -824,9 +824,20 @@ Lista de itens futuros do VitaSharp. Marque `[x]` quando um item for concluído.
     traz a do PS1). A ISO é a forma do Adrenaline/PPSSPP, mantida para referência e conferência (dá para desligar com
     `--no-iso`; dobra o espaço em disco). Validado: testes `PspPkgInstallTests` (pacotes sintéticos montados no
     teste, `PspPkgFixture`: detecção de cada tipo, layout, ISO decifrada bloco a bloco, KEYS.BIN, assinatura, DLC,
-    nomes que saem da pasta recusados, Vita sem licença recusado, CMAC pelos vetores da RFC 4493); nenhum `.pkg` real
-    de PSP/PS1 nos dados de teste, então a decifração não foi provada com um jogo de verdade (nem o LZRC com um bloco
-    comprimido de verdade).
+    nomes que saem da pasta recusados, Vita sem licença recusado, CMAC pelos vetores da RFC 4493, pacote PS1 no
+    formato PS3). Com pacotes reais do usuário (só leitura, instalados numa pasta de dados de teste): um jogo de PSP
+    (0,5 GB) instala em 36 s pelo CLI sem licença; a ISO decifrada é ISO 9660 válida (CD001, "PSP GAME", o volume de
+    287.968 setores bate com o tamanho do arquivo, UMD_DATA.BIN/PARAM.SFO/EBOOT.BIN dentro) e o EBOOT.PBP instalado
+    é o NPUMDIMG original; no `boot-shell` (shell de verdade, sem cabeça) a reconstrução do banco (dbrecovery) pôs a
+    bolha do jogo na tela inicial com o ícone e o nome. Um PSone Classic real veio no formato PS3 (cabeçalho tipo 1,
+    content type 1, arquivos em `<ID>/EBOOT.PBP`, tudo na chave PS3, sem PARAM.SFO próprio; lusid1/pkg2zip trata
+    igual): `PkgReader` reconhece esse formato; instala em 2 s (EBOOT.PBP com PSISOIMG, DOCUMENT.DAT, KEYS.BIN,
+    `__sce_ebootpbp`). Com os dois instalados, o shell mostra as duas bolhas na mesma página (nomes certos).
+    Diferenças a ver no trabalho do pspemu: (1) a bolha do PSone aparece sem ícone (bolha branca), embora o ICON0 do
+    EBOOT.PBP seja um PNG 144x80 RGB comum (a do PSP mostra o ícone); (2) tocar na bolha do PSone abre "Você deve
+    atualizar o software de sistema para a versão - ou posterior" (a versão vem vazia: o shell não achou a versão
+    exigida do título; o PARAM.SFO do eboot tem PSP_SYSTEM_VER 3.01). Os dois são do lado do shell/HLE ao abrir um
+    título de PSP, não da instalação.
 - [ ] Emular tudo o que for possível do Vita (diretriz do usuário, 10/11/2026): além dos jogos e do sistema, listar
   os recursos do aparelho ainda não emulados (ex.: PSP, PS Mobile/PSM, Remote Play/PS TV, Near, Party, Content
   Manager, câmera/AR, apps de vídeo/música/browser) e abrir um item por recurso com o caminho (LLE do módulo real +

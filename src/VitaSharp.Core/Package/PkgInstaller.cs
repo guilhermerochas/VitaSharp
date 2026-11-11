@@ -32,7 +32,7 @@ public static class PkgInstaller
     {
         using var pkg = new PkgReader(pkgStream);
         var kind = pkg.Kind;
-        var sfo = pkg.ParamSfo.Length > 0 ? new Sfo(pkg.ParamSfo) : null;
+        var sfo = pkg.ParamSfo.Length > 0 ? new Sfo(pkg.ParamSfo) : kind.IsPspEmu() ? PspPkgInstaller.EbootSfo(pkg) : null;
         string titleId = sfo?.TitleId is { Length: > 0 } t ? t : pkg.TitleId;
         return new PkgInfo(kind, pkg.ContentId, titleId, sfo?.Title is { Length: > 0 } title ? title : pkg.ContentId);
     }

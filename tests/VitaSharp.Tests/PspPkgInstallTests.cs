@@ -182,6 +182,34 @@ public class PspPkgInstallTests
     }
 
     [Fact]
+    public void InstallsPsoneClassicInThePs3PackageFormat()
+    {
+        var (psar, keys) = PspPkgFixture.PsoneImage();
+        var eboot = PspPkgFixture.Pbp("SCUS99998", "Fixture PS3 Format", psar, "ME");
+        // content type 1 with the files under <ID>/ and no PARAM.SFO of its own (lusid1/pkg2zip's "PS3" PSone packages)
+        var bytes = PspPkgFixture.Build(PsxContent, 1,
+        [
+            new Item("SCUS99998", null, 0x80),
+            new Item("SCUS99998/EBOOT.PBP", eboot, 0x80),
+            new Item("SCUS99998/DOCUMENT.DAT", [3, 3], 0x80),
+        ], ps3Format: true);
+        var (dir, pkg, ux0) = Write(bytes);
+        try
+        {
+            var info = PkgInstaller.Inspect(pkg);
+            Assert.Equal(PkgKind.Psx, info.Kind);
+            Assert.Equal("Fixture PS3 Format", info.Title);
+            var t = PkgInstaller.InstallWithoutLicense(pkg, ux0);
+            Assert.Equal("SCUS99998", t.TitleId);
+            Assert.Equal("Fixture PS3 Format", t.Title);
+            Assert.Equal(eboot, File.ReadAllBytes(Path.Combine(t.Path, "EBOOT.PBP")));
+            Assert.Equal([3, 3], File.ReadAllBytes(Path.Combine(t.Path, "DOCUMENT.DAT")));
+            Assert.Equal(keys, File.ReadAllBytes(Path.Combine(t.Path, "KEYS.BIN")));
+        }
+        finally { dir.Delete(true); }
+    }
+
+    [Fact]
     public void InstallsPspAddOnIntoItsGameFolder()
     {
         var bytes = PspPkgFixture.Build("UP0001-NPUZ00002_00-DLC0000000000001", 7,

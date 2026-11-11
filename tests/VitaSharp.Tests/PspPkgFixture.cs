@@ -26,7 +26,7 @@ public static class PspPkgFixture
 
     /// <summary>A key-type-1 package with content type <paramref name="contentType"/>; <paramref name="installDir"/>
     /// adds info block 10 (a PSP add-on).</summary>
-    public static byte[] Build(string contentId, uint contentType, IEnumerable<Item> items, string? installDir = null)
+    public static byte[] Build(string contentId, uint contentType, IEnumerable<Item> items, string? installDir = null, bool ps3Format = false)
     {
         var all = items.ToList();
         var area = new MemoryStream();
@@ -72,10 +72,10 @@ public static class PspPkgFixture
         var ps3 = Encrypted(PkgPs3);
         var enc = (byte[])ps3.Clone();
         void Take(byte[] src, long off, long len) => Array.Copy(src, off, enc, off, (len + 15) & ~15L);
-        Take(psp, 0, all.Count * 32);
+        Take(ps3Format ? ps3 : psp, 0, all.Count * 32);
         for (int i = 0; i < all.Count; i++)
         {
-            var src = all[i].PspType == 0x90 ? psp : ps3;
+            var src = all[i].PspType == 0x90 && !ps3Format ? psp : ps3;
             Take(src, names[i].Off, names[i].Len);
             if (all[i].Data != null) Take(src, datas[i], all[i].Data!.Length);
         }
@@ -112,7 +112,7 @@ public static class PspPkgFixture
         var pkg = new byte[dataOffset + enc.Length];
         var hdr = pkg.AsSpan();
         BinaryPrimitives.WriteUInt32BigEndian(hdr, 0x7F504B47);
-        BinaryPrimitives.WriteUInt32BigEndian(hdr[4..], 0x80000002);
+        BinaryPrimitives.WriteUInt32BigEndian(hdr[4..], ps3Format ? 0x80000001u : 0x80000002u);
         BinaryPrimitives.WriteUInt32BigEndian(hdr[8..], infoOffset);
         BinaryPrimitives.WriteUInt32BigEndian(hdr[0xC..], (uint)infoCount);
         BinaryPrimitives.WriteUInt32BigEndian(hdr[0x14..], (uint)all.Count);
@@ -120,7 +120,7 @@ public static class PspPkgFixture
         BinaryPrimitives.WriteUInt64BigEndian(hdr[0x28..], (ulong)enc.Length);
         Encoding.ASCII.GetBytes(contentId).CopyTo(hdr[0x30..]);
         iv.CopyTo(hdr[0x70..]);
-        BinaryPrimitives.WriteUInt32BigEndian(hdr[0xE4..], 1);
+        BinaryPrimitives.WriteUInt32BigEndian(hdr[0xE4..], ps3Format ? 4u : 1u); // a PS3-format header has other data here
         info.ToArray().CopyTo(pkg, infoOffset);
         enc.CopyTo(pkg, dataOffset);
         return pkg;
