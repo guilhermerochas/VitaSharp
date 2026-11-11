@@ -12,10 +12,10 @@ How many of the functions that the PS Vita firmware 3.74 exports to user code (t
 | Group | Covered | Real | Default | LLE | Total | % |
 |---|---:|---:|---:|---:|---:|---:|
 | Games imports | 1,594 | 1,594 | 0 | 0 | 1,594 | 100% |
-| System imports | 3,734 | 3,556 | 178 | 0 | 7,507 | 49.7% |
-| General | 3,746 | 3,557 | 189 | 0 | 10,305 | 36.3% |
-| All firmware 3.74 exports | 9,074 | 8,571 | 367 | 136 | 19,406 | 46.7% |
-| VitaSDK user functions | 6,800 | 6,166 | 400 | 234 | 7,006 | 97% |
+| System imports | 3,903 | 3,694 | 209 | 0 | 7,507 | 51.9% |
+| General | 3,902 | 3,712 | 190 | 0 | 10,305 | 37.8% |
+| All firmware 3.74 exports | 9,399 | 8,864 | 399 | 136 | 19,406 | 48.4% |
+| VitaSDK user functions | 6,806 | 6,170 | 402 | 234 | 7,006 | 97.1% |
 
 ## Libraries provided by LLE
 
@@ -90,7 +90,7 @@ How many of the functions that the PS Vita firmware 3.74 exports to user code (t
 | SceDbSetup | `vs0:vsh/common/dbsetup.suprx` | 0 / 1 | 0% | - | - | 0 / 1 |
 | SceDbg | `vs0:sys/external/libdbg.suprx` | 5 / 5 | 100% | - | 2 / 2 | - |
 | SceDbrecoveryUtility | `vs0:sys/external/dbrecovery_utility.suprx` | 0 / 1 | 0% | - | - | 0 / 1 |
-| SceDbutil | `vs0:sys/external/dbutil.suprx` | 3 / 214 | 1.4% | - | - | 0 / 100 |
+| SceDbutil | `vs0:sys/external/dbutil.suprx` | 9 / 214 | 4.2% | - | - | 4 / 100 |
 | SceDebugLed | `os0:kd/sysmem.skprx` | 4 / 4 | 100% | - | 1 / 1 | - |
 | SceDipsw | `os0:kd/sysmem.skprx` | 3 / 3 | 100% | - | - | 3 / 3 |
 | SceDisplay | `os0:kd/display.skprx` | 21 / 21 | 100% | - | 8 / 8 | 9 / 9 |
@@ -132,7 +132,7 @@ How many of the functions that the PS Vita firmware 3.74 exports to user code (t
 | SceIncomingDialog | `vs0:sys/external/incoming_dialog.suprx` | 6 / 6 | 100% | - | - | 2 / 2 |
 | SceIniFileProcessor | `vs0:sys/external/ini_file_processor.suprx` | 0 / 24 | 0% | - | - | 0 / 19 |
 | SceIofilemgr | `os0:kd/iofilemgr.skprx` | 59 / 59 | 100% | - | 6 / 6 | 40 / 40 |
-| SceIpmi | `vs0:sys/external/libshellsvc.suprx` | 0 / 83 | 0% | - | - | 0 / 42 |
+| SceIpmi | `vs0:sys/external/libshellsvc.suprx` | 1 / 83 | 1.2% | - | - | 1 / 42 |
 | SceIpmiNonGameApp | `vs0:sys/external/libipmi_nongame.suprx` | 0 / 26 | 0% | - | - | - |
 | SceJpegArm | `vs0:sys/external/libscejpegarm.suprx` | 6 / 6 | 100% | - | - | 1 / 1 |
 | SceJpegEncArm | `vs0:sys/external/libscejpegencarm.suprx` | 8 / 9 | 88.8% | - | - | 8 / 9 |
@@ -146,7 +146,7 @@ How many of the functions that the PS Vita firmware 3.74 exports to user code (t
 | SceLibFflVuMp4 | `vs0:vsh/common/libSenvuabsFFsdk.suprx` | 0 / 61 | 0% | - | - | 0 / 13 |
 | SceLibGcc | `os0:us/libkernel.suprx` | 20 / 20 | 100% | - | - | - |
 | SceLibJson | `vs0:sys/external/libSceJson.suprx` | 179 / 179 | 100% | - | 50 / 50 | 16 / 16 |
-| SceLibKernel | `os0:us/libkernel.suprx` | 306 / 341 | 89.7% | 8 | 99 / 99 | 60 / 83 |
+| SceLibKernel | `os0:us/libkernel.suprx` | 329 / 341 | 96.4% | 30 | 99 / 99 | 83 / 83 |
 | SceLibLocation | `vs0:sys/external/liblocation.suprx` | 22 / 33 | 66.6% | - | 5 / 5 | 14 / 25 |
 | SceLibLocationExtension | `vs0:sys/external/liblocation_extension.suprx` | 3 / 3 | 100% | - | - | 1 / 1 |
 | SceLibLocationFactory | `vs0:sys/external/liblocation_factory.suprx` | 0 / 1 | 0% | - | - | - |
@@ -174,7 +174,7 @@ How many of the functions that the PS Vita firmware 3.74 exports to user code (t
 | SceMgVideo | `os0:kd/mgvideo.skprx` | 0 / 29 | 0% | - | - | 0 / 20 |
 | SceMgVideoForMiniApp | `os0:kd/mgvideo.skprx` | 0 / 4 | 0% | - | - | - |
 | SceModulemgr | `os0:kd/modulemgr.skprx` | 16 / 16 | 100% | - | 1 / 1 | 15 / 15 |
-| SceMotion | `os0:us/driver_us.suprx` | 29 / 41 | 70.7% | - | 13 / 13 | 11 / 16 |
+| SceMotion | `os0:us/driver_us.suprx` | 33 / 41 | 80.4% | - | 13 / 13 | 15 / 16 |
 | SceMotionDev | `os0:kd/bootimage.skprx/SceMotionDev` | 32 / 32 | 100% | 5 | - | 26 / 26 |
 | SceMp3Promoter | `vs0:vsh/common/mms/Mp3Promoter.suprx` | 7 / 32 | 21.8% | - | - | - |
 | SceMp4 | `vs0:sys/external/libscemp4.suprx` | 21 / 21 | 100% | - | - | 20 / 20 |
@@ -201,7 +201,7 @@ How many of the functions that the PS Vita firmware 3.74 exports to user code (t
 | SceNpBasic | `vs0:sys/external/np_basic.suprx` | 31 / 41 | 75.6% | - | 19 / 19 | 3 / 5 |
 | SceNpCommerce2 | `vs0:sys/external/np_commerce2.suprx` | 432 / 502 | 86% | - | 31 / 31 | 397 / 397 |
 | SceNpCommon | `vs0:sys/external/np_common.suprx` | 48 / 71 | 67.6% | - | 11 / 11 | 36 / 53 |
-| SceNpCommonPs4 | `vs0:sys/external/np_common_ps4.suprx` | 40 / 713 | 5.6% | - | - | 36 / 246 |
+| SceNpCommonPs4 | `vs0:sys/external/np_common_ps4.suprx` | 68 / 713 | 9.5% | - | - | 37 / 246 |
 | SceNpDrm | `os0:kd/bootimage.skprx/SceNpDrm` | 8 / 8 | 100% | 7 | - | 8 / 8 |
 | SceNpDrmPackage | `os0:kd/bootimage.skprx/SceNpDrm` | 16 / 16 | 100% | 3 | - | 16 / 16 |
 | SceNpFriendPrivacyLevel | `vs0:sys/external/np_friend_privacylevel.suprx` | 0 / 16 | 0% | - | - | 0 / 8 |
@@ -226,16 +226,16 @@ How many of the functions that the PS Vita firmware 3.74 exports to user code (t
 | SceNpUtilityAvatarN | `vs0:sys/external/np_utility.suprx` | 0 / 2 | 0% | - | - | - |
 | SceNpWebApi | `vs0:sys/external/np_webapi.suprx` | 47 / 63 | 74.6% | - | 19 / 19 | 12 / 25 |
 | SceNpWebApiCommonDialog | `vs0:sys/external/libcdlg.suprx` | 10 / 10 | 100% | - | 8 / 8 | 2 / 2 |
-| ScePafCommon | `vs0:sys/external/libpaf.suprx` | 60 / 176 | 34% | - | - | 37 / 72 |
-| ScePafGraphics | `vs0:sys/external/libpaf.suprx` | 70 / 686 | 10.2% | - | - | 40 / 214 |
+| ScePafCommon | `vs0:sys/external/libpaf.suprx` | 64 / 176 | 36.3% | - | - | 37 / 72 |
+| ScePafGraphics | `vs0:sys/external/libpaf.suprx` | 98 / 686 | 14.2% | - | - | 51 / 214 |
 | ScePafLowlayer | `vs0:sys/external/libpaf.suprx` | 1 / 20 | 5% | - | - | 1 / 18 |
-| ScePafMisc | `vs0:sys/external/libpaf.suprx` | 366 / 1075 | 34% | - | - | 186 / 421 |
-| ScePafResource | `vs0:sys/external/libpaf.suprx` | 85 / 274 | 31% | - | - | 21 / 63 |
+| ScePafMisc | `vs0:sys/external/libpaf.suprx` | 407 / 1075 | 37.8% | - | - | 199 / 421 |
+| ScePafResource | `vs0:sys/external/libpaf.suprx` | 94 / 274 | 34.3% | - | - | 21 / 63 |
 | ScePafStdc | `vs0:sys/external/libpaf.suprx` | 144 / 163 | 88.3% | - | - | 100 / 100 |
 | ScePafThread | `vs0:sys/external/libpaf.suprx` | 67 / 95 | 70.5% | - | - | 44 / 61 |
 | ScePafToplevel | `vs0:sys/external/libpaf.suprx` | 11 / 202 | 5.4% | - | - | 10 / 65 |
 | ScePafWebMapView | `vs0:sys/external/libpaf_web_map_view.suprx` | 33 / 140 | 23.5% | - | - | 20 / 71 |
-| ScePafWidget | `vs0:sys/external/libpaf.suprx` | 336 / 2372 | 14.1% | - | - | 124 / 732 |
+| ScePafWidget | `vs0:sys/external/libpaf.suprx` | 408 / 2372 | 17.2% | - | - | 144 / 732 |
 | ScePartyMemberListPlugin | `vs0:sys/external/party_member_list.suprx` | 2 / 5 | 40% | - | - | 2 / 5 |
 | ScePerf | `vs0:sys/external/libperf.suprx` | 26 / 26 | 100% | - | 1 / 1 | 2 / 2 |
 | ScePerfInternal | `vs0:sys/external/libperf.suprx` | 0 / 6 | 0% | - | - | - |
@@ -246,7 +246,7 @@ How many of the functions that the PS Vita firmware 3.74 exports to user code (t
 | SceProcessmgr | `os0:kd/processmgr.skprx` | 31 / 31 | 100% | - | 12 / 12 | 17 / 17 |
 | ScePromoterUtil | `vs0:sys/external/libScePromoterUtil.suprx` | 16 / 26 | 61.5% | - | - | 14 / 21 |
 | ScePsmDrm | `os0:kd/bootimage.skprx/SceNpDrm` | 6 / 6 | 100% | 6 | - | 6 / 6 |
-| ScePsp2Compat | `vs0:data/external/webcore/ScePsp2Compat.suprx` | 98 / 1047 | 9.3% | - | - | 56 / 537 |
+| ScePsp2Compat | `vs0:data/external/webcore/ScePsp2Compat.suprx` | 160 / 1047 | 15.2% | - | - | 109 / 537 |
 | ScePspnetAdhoc | `vs0:sys/external/pspnet_adhoc.suprx` | 28 / 32 | 87.5% | - | 4 / 4 | 0 / 3 |
 | ScePvf | `vs0:sys/external/libpvf.suprx` | 43 / 43 | 100% | - | 18 / 18 | 6 / 6 |
 | SceRegMgr | `os0:kd/bootimage.skprx/SceRegistryMgr` | 18 / 22 | 81.8% | - | - | 16 / 20 |
@@ -274,9 +274,9 @@ How many of the functions that the PS Vita firmware 3.74 exports to user code (t
 | SceSensMe | `vs0:vsh/common/mms/SensMe.suprx` | 2 / 21 | 9.5% | - | - | 0 / 18 |
 | SceSharedFb | `os0:kd/bootimage.skprx/SceAppMgr` | 12 / 12 | 100% | - | 5 / 5 | 7 / 7 |
 | SceShell | `vs0:vsh/shell/shell.self` | 0 / 33 | 0% | - | - | 0 / 27 |
-| SceShellSvc | `vs0:sys/external/libshellsvc.suprx` | 4 / 10 | 40% | - | - | 4 / 9 |
-| SceShellUtil | `vs0:sys/external/libshellsvc.suprx` | 0 / 40 | 0% | - | - | 0 / 34 |
-| SceShellUtilLaunchApp | `vs0:sys/external/libshellsvc.suprx` | 0 / 1 | 0% | - | - | - |
+| SceShellSvc | `vs0:sys/external/libshellsvc.suprx` | 10 / 10 | 100% | 1 | - | 9 / 9 |
+| SceShellUtil | `vs0:sys/external/libshellsvc.suprx` | 40 / 40 | 100% | 8 | - | 34 / 34 |
+| SceShellUtilLaunchApp | `vs0:sys/external/libshellsvc.suprx` | 1 / 1 | 100% | 1 | - | - |
 | SceShellUtilUketorne | `vs0:sys/external/libshellsvc.suprx` | 0 / 7 | 0% | - | - | - |
 | SceShutterSound | `vs0:sys/external/libSceShutterSound.suprx` | 1 / 1 | 100% | - | 1 / 1 | - |
 | SceSqlite | `vs0:sys/external/libSceSqlite.suprx` | 171 / 171 | 100% | - | - | - |
