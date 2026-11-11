@@ -1,0 +1,22 @@
+# Minecraft (PCSE00491): autosave notice > Play > "not connected" dialog > Continue playing offline ("Connect to PSN"
+# returns to the menu, as with no network) > New World > Load > gameplay
+# run: VitaSharp.Desktop --data=<root> run PCSE00491 --headless --nav=tests/nav/minecraft_offline.nav
+wait 1500
+press cross
+wait 300
+press cross
+wait 200
+press down
+wait 20
+press cross
+wait 300
+press down
+wait 20
+press down
+wait 20
+press cross
+wait 300
+press cross
+wait 1500
+shot world
+quit

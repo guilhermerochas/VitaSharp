@@ -1,0 +1,10 @@
+# Sakatsuku (PCSG00198): title > START > NEW GAME (circle confirms, a Japanese game; cross does nothing here) >
+# secretary select
+# run: VitaSharp.Desktop --data=<root> run PCSG00198 --headless --nav=tests/nav/sakatsuku_newgame.nav
+wait 900
+press start
+wait 120
+press circle
+wait 200
+shot secretary
+quit

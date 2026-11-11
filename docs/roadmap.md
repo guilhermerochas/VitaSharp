@@ -1375,6 +1375,23 @@ Lista de itens futuros do VitaSharp. Marque `[x]` quando um item for concluído.
 
 ## Bugs em aberto
 
+- [ ] Dragon's Crown (PCSE00019): flicker e texturas erradas (relato do usuário, 10/11/2026, capturas
+  `PCSE00019_20261110_214605_tudo` e `..._214648_tudo`). Agente A4 (fix/bugs-a-4), duas causas:
+  (1) **corrigido em bf2f3b9**: o jogo lê o back buffer (960x544, pitch 1024) como uma textura 1024x1024 que também
+  alcança o segundo back buffer 3 MB adiante; com outro alvo dentro da memória da textura o renderizador lia a memória
+  do guest, que não tem nada de um alvo nunca gravado de volta: um bloco magenta (memória velha) em quadros alternados
+  no logo da Atlus e na criação de personagem. Replay da captura: magenta em 261/263/265, nenhum depois; rerun da
+  captura B (headless): 0 quadros magenta.
+  (2) a ordem dos quadros: sem esperar o display soltar o buffer, o jogo renderiza de novo um back buffer ainda na fila
+  e o display mostra o quadro novo antes e o velho depois (achados "picture-order", fades em pares A B A B). Com o
+  `VITASHARP_DISPLAY_SYNC` (a espera do fragment sync object no BeginScene, como no hardware) o rerun da captura B
+  caiu de 26 flashes + 5 trocas e 10 + 1 para 0 + 0 e 1 + 0 (dois reruns de cada), com fps mediano 38-39 contra 32-34.
+  Ligado por padrão em 758ad0a (`=0` desliga). A/B de 60 s headless (mediana de fps com/sem): Killzone 29,9/29,9,
+  Uncharted 59,5/19,1 (a rodada sem pegou o PC carregado), Persona 4 29,8/29,8, Jak 20,1/20,1, Sonic Mania
+  51,3/32,3, Gravity Rush 22,4/29,9 numa rodada com o PC carregado e um "still displayed after 250 ms", 29,9 cravados
+  numa segunda rodada com `=trace` (esperas de 0,1-27 ms, nenhuma de 250 ms). Falta: validar no celular (Killzone) e
+  numa janela; uma única espera de 250 ms apareceu no Killzone (no fim da execução) e no Gravity Rush (PC carregado).
+  Sobra 1 quadro preto isolado na criação de personagem (também sem a correção)
 - [x] Dead Space (port Android, DEADSPACE, so_loader + vitaGL): não rodava sem o kubridge (08/11/2026). Feito (agente C,
   fix/bugs-c-24): kubridge em HLE (aabf2d6), VFP short vectors no CPU (7501ec8: o motor do jogo usa FPSCR LEN=8),
   trampolim do taiHookFunctionOffsetForUser em endereço de meia palavra (907b204), taiHEN import/export hooks e
@@ -1438,6 +1455,28 @@ Lista de itens futuros do VitaSharp. Marque `[x]` quando um item for concluído.
   `config.ini` existente (o jogador do vídeo já tinha jogado) a aplicação da configuração acontece depois do 1º
   Present e cai na estrutura 1. Próximo passo: descobrir o formato do config.ini (o jogo lê com o FIOS) e testar com
   um; se for isso, o defeito também existe num Vita sem config e não é do emulador
+  Rodada 3 (agente A4, 10/11/2026, fix/bugs-a-4): **o config.ini não é a causa**. O jogo grava o config.ini ao sair de
+  Opções > Áudio ("Config: save done"); com ele presente ("Read config done") a 2ª chamada do setter continua antes do
+  1º Present e a alternância continua igual (luma 18,5 / 6,1 em quadros alternados, `<scratchpad>/bA4/out/s3/log.txt`). O motor
+  (eboot decifrado, só estudo): dois blocos por quadro de 0x6880 bytes (malloc + memset 0 em 0x81D8D8F0), índice em
+  device+0x5C trocado no Present (0x81D8DC30); o setter de viewport (0x81D8E0B2, chamado por uma tabela em 0x82207384)
+  só grava o bloco do índice atual; o scissor (0x81D8E0DA) e o rasterizer state (0x81D8DDD4) são chamados todo quadro,
+  e o "aplicar scissor" (0x81D8D08A) marca +0x158 para reaplicar o viewport do bloco: no bloco 1 os campos são zero, e
+  os desenhos seguintes (brilho e anéis do logo, a árvore da tela "o jogo salva...") saem com sceGxmSetViewport(0,0,0,
+  -0,...). Do quadro 1 ao 1384 (logos, aviso de salvamento, carga) o setter não é chamado nenhuma vez; do menu em diante
+  é chamado várias vezes por quadro. O libgxm do firmware (decompilado: sceGxmSetViewport 0x8100AA2C só guarda os seis
+  floats; sceGxmBeginScene chama sceGxmSetDefaultRegionClipAndViewport) não trata escala 0, e o Vita3K também não.
+  Vídeo do Vita real a 60 fps (5JSM07SCA1s, formato 298): logo branco sem nenhuma alternância quadro a quadro. Ou seja,
+  com o mesmo código o Vita desenha esses quadros com o viewport cheio: falta descobrir o que no hardware (ou no
+  libgxm, no caminho de emissão `FUN_8100e9b4` / estado em ctx+0x1C0) faz um viewport de escala zero não colapsar a
+  geometria. Próximo passo: ler a emissão do estado do viewport no libgxm até os registradores (flags 0x100 e o
+  ViewportEnable em ctx+0x214 bit 0x8000) e procurar no SDK/PowerVR o significado de escala 0
+  Lentidão de ~70 s ao sair da criação (quadros 1934-1977 da varredura): **não reproduz** (agente A4, 10/11/2026). Com o
+  roteiro da varredura (cross a cada 150 quadros; o START do sweep.ps1 nunca disparava: 400+150k nunca é múltiplo
+  de 600) e cache de shaders quente ou frio, 180 s a 28-30 fps, só uma queda curta a 15 fps na entrada da criação
+  (`<scratchpad>/bA4/out/s5`); com navegação guiada, Aventurar-se > Sim chega ao gameplay em ~40 s a 30 fps. A rodada
+  da varredura foi feita com o disco a 99% e o Storage Sense apagando arquivos do build (seção "Não rodados" do
+  documento da varredura): a lentidão era do PC, não do jogo
 - [x] Silent Hill 4 (SILH00004), visual (câmera; o relato não era de controles): não iniciado nesta rodada. Preparado: `<scratchpad>\c24\sh4.nav` e
   `ux0:data/sh4/env.txt` com `SH4_AUDIT_PAD=1` (o port loga `[audit-pad]` com os eixos e `[audit-pad-player]` com a
   rotação). Atenção: nos scripts NAV, `lstick x y` usa -1..1 (para frente = `lstick 0 -1`); agora aceita rampa

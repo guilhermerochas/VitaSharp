@@ -1,0 +1,17 @@
+# Stardew Valley (PCSE01235): the Vita version reads the front panel only as extra buttons (corner zones), its menus
+# are driven by the d-pad: title > New > character creation
+# run: VitaSharp.Desktop --data=<root> run PCSE01235 --headless --seconds=180 --nav=tests/nav/stardew_new.nav
+wait 1900
+shot title
+press down
+wait 30
+press left
+wait 20
+press cross
+wait 200
+shot create
+press right
+wait 30
+press cross
+wait 60
+shot create2

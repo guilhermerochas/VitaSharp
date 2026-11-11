@@ -10,6 +10,7 @@ namespace VitaSharp.Desktop;
 /// when the previous one finished, so a script waits for the screen instead of counting frames (system apps load at
 /// different speeds from run to run). Commands:
 ///   tap X Y [frames]                touch the front panel at normalised X, Y (default 8 frames)
+///   btap X Y [frames]               touch the rear touch pad at normalised X, Y (default 8 frames)
 ///   swipe X0 Y0 X1 Y1 [frames]      drag from X0, Y0 to X1, Y1 (default 30 frames)
 ///   press BUTTON [frames]           cross, circle, square, triangle, up, down, left, right, start, select, l1, r1,
 ///                                   ltrigger, rtrigger, psbutton (default 8 frames)
@@ -38,6 +39,7 @@ sealed class NavScript : IInputBackend
     VitaButtons _buttons, _held;
     byte _lx = 128, _ly = 128, _rx = 128, _ry = 128; // sticks held by lstick/rstick (0..255, 128 = centre)
     (float X0, float Y0, float X1, float Y1, long Start, long Frames)? _touch;
+    bool _touchBack; // the touch above is on the rear pad (btap)
     long _actionEnd = -1;
 
     // last frame picture (sink) and when it last changed
@@ -142,8 +144,8 @@ sealed class NavScript : IInputBackend
         long Len(int i, long def) => p.Length > i ? long.Parse(p[i], inv) : def;
         switch (p[0].ToLowerInvariant())
         {
-            case "tap":
-                Act(VitaButtons.None, (F(1), F(2), F(1), F(2)), Len(3, 8));
+            case "tap" or "btap":
+                Act(VitaButtons.None, (F(1), F(2), F(1), F(2)), Len(3, 8), back: p[0].Equals("btap", StringComparison.OrdinalIgnoreCase));
                 break;
             case "swipe":
                 Act(VitaButtons.None, (F(1), F(2), F(3), F(4)), Len(5, 30));
@@ -195,12 +197,13 @@ sealed class NavScript : IInputBackend
         }
     }
 
-    void Act(VitaButtons buttons, (float, float, float, float)? touch, long frames)
+    void Act(VitaButtons buttons, (float, float, float, float)? touch, long frames, bool back = false)
     {
         long start = Frames;
         lock (_lock)
         {
             _buttons = buttons;
+            _touchBack = back;
             _touch = touch is var (x0, y0, x1, y1) ? (x0, y0, x1, y1, start, Math.Max(1, frames)) : null;
             _actionEnd = start + Math.Max(1, frames);
         }
@@ -259,10 +262,10 @@ sealed class NavScript : IInputBackend
 
     public int GetTouches(bool back, Span<TouchPoint> dest)
     {
-        if (back || dest.Length == 0) return 0;
+        if (dest.Length == 0) return 0;
         lock (_lock)
         {
-            if (_touch is not { } t) return 0;
+            if (_touch is not { } t || back != _touchBack) return 0;
             float k = Math.Clamp((Frames - t.Start) / (float)t.Frames, 0, 1);
             dest[0] = new TouchPoint(1, t.X0 + (t.X1 - t.X0) * k, t.Y0 + (t.Y1 - t.Y0) * k);
             return 1;
