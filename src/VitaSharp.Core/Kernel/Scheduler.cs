@@ -40,10 +40,18 @@ public static class Scheduler
     /// <summary>Blocks until the calling thread may run guest code.</summary>
     public static void Acquire(GuestThread t)
     {
-        if (t.HasCore) return;
+        if (t.HasCore)
+        {
+            return;
+        }
+
         var p = PoolOf(t);
         int cores = CoresOf(p);
-        if (cores <= 0) return;
+        if (cores <= 0)
+        {
+            return;
+        }
+
         lock (p.L)
         {
             bool queued = false;
@@ -51,13 +59,21 @@ public static class Scheduler
             {
                 if (p.Running < cores && !HigherPriorityWaiting(p, t.Priority))
                 {
-                    if (queued) p.Waiting.Remove(t);
+                    if (queued)
+                    {
+                        p.Waiting.Remove(t);
+                    }
+
                     p.Running++;
                     t.HasCore = true;
                     t.Core.ResetThrottle();
                     return;
                 }
-                if (!queued) { p.Waiting.Add(t); queued = true; }
+                if (!queued)
+                {
+                    p.Waiting.Add(t);
+                    queued = true;
+                }
                 Monitor.Wait(p.L, 2);
             }
         }
@@ -65,8 +81,16 @@ public static class Scheduler
 
     public static void Release(GuestThread t)
     {
-        if (!t.HasCore) return;
-        if (t == GuestThread.Current) { t.Core.SettleThrottle(t.Core.PendingInstructions); t.Core.PendingInstructions = 0; }
+        if (!t.HasCore)
+        {
+            return;
+        }
+
+        if (t == GuestThread.Current)
+        {
+            t.Core.SettleThrottle(t.Core.PendingInstructions);
+            t.Core.PendingInstructions = 0;
+        }
         var p = PoolOf(t);
         lock (p.L)
         {
@@ -81,14 +105,25 @@ public static class Scheduler
     {
         var p = PoolOf(t);
         int cores = CoresOf(p);
-        if (cores <= 0 || p.Waiting.Count == 0) return false;
-        lock (p.L) return HigherPriorityWaiting(p, t.Priority) || (p.Running >= cores && SamePriorityWaiting(p, t.Priority));
+        if (cores <= 0 || p.Waiting.Count == 0)
+        {
+            return false;
+        }
+
+        lock (p.L)
+        {
+            return HigherPriorityWaiting(p, t.Priority) || (p.Running >= cores && SamePriorityWaiting(p, t.Priority));
+        }
     }
 
     /// <summary>Gives the core away (if anyone of higher or equal priority wants it) and takes one again.</summary>
     public static void Yield(GuestThread t)
     {
-        if (!ShouldYield(t)) return;
+        if (!ShouldYield(t))
+        {
+            return;
+        }
+
         Release(t);
         Thread.Yield();
         Acquire(t);
@@ -96,13 +131,27 @@ public static class Scheduler
 
     static bool HigherPriorityWaiting(Pool p, int priority)
     {
-        foreach (var w in p.Waiting) if (w.Priority < priority) return true;
+        foreach (var w in p.Waiting)
+        {
+            if (w.Priority < priority)
+            {
+                return true;
+            }
+        }
+
         return false;
     }
 
     static bool SamePriorityWaiting(Pool p, int priority)
     {
-        foreach (var w in p.Waiting) if (w.Priority == priority) return true;
+        foreach (var w in p.Waiting)
+        {
+            if (w.Priority == priority)
+            {
+                return true;
+            }
+        }
+
         return false;
     }
 
@@ -110,7 +159,14 @@ public static class Scheduler
     public static void Reset()
     {
         foreach (var p in new[] { App, Sys })
-            lock (p.L) { p.Running = 0; p.Waiting.Clear(); Monitor.PulseAll(p.L); }
+        {
+            lock (p.L)
+            {
+                p.Running = 0;
+                p.Waiting.Clear();
+                Monitor.PulseAll(p.L);
+            }
+        }
     }
 
     /// <summary>Releases the current thread's core for the duration of a blocking host wait.</summary>
@@ -119,7 +175,22 @@ public static class Scheduler
     public readonly struct Blocked : IDisposable
     {
         readonly GuestThread? _t;
-        public Blocked(GuestThread? t) { _t = t; if (t != null) { t.BlockedInHost = true; Release(t); } }
-        public void Dispose() { if (_t != null) { Acquire(_t); _t.BlockedInHost = false; } }
+        public Blocked(GuestThread? t)
+        {
+            _t = t;
+            if (t != null)
+            {
+                t.BlockedInHost = true;
+                Release(t);
+            }
+        }
+        public void Dispose()
+        {
+            if (_t != null)
+            {
+                Acquire(_t);
+                _t.BlockedInHost = false;
+            }
+        }
     }
 }

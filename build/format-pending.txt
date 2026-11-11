@@ -2,9 +2,3 @@
 # them. Remove a line once `build/format-check.sh --fix` (or .ps1 -Fix) has been run on that folder and the result
 # reviewed; the list only shrinks. One repository-relative path per line; # starts a comment.
 src/VitaSharp.Core/Hle
-src/VitaSharp.Core/Kernel
-src/VitaSharp.Core/Loader
-src/VitaSharp.Core/Package
-src/VitaSharp.Core/Shell
-src/VitaSharp.Core/Capture
-src/VitaSharp.Core/Firmware

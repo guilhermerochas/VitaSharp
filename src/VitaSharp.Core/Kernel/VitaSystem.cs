@@ -119,10 +119,28 @@ public sealed class VitaSystem
     /// <summary>Raised (off the lock) when another process takes the display and the input.</summary>
     public event Action<Emulator>? ForegroundChanged;
 
-    public IReadOnlyList<Emulator> Processes { get { lock (_lock) return _processes.ToArray(); } }
+    public IReadOnlyList<Emulator> Processes
+    {
+        get
+        {
+            lock (_lock)
+            {
+                return _processes.ToArray();
+            }
+        }
+    }
 
     /// <summary>The process on screen: its frames are displayed and it receives the buttons and touches.</summary>
-    public Emulator? Foreground { get { lock (_lock) return _foreground; } }
+    public Emulator? Foreground
+    {
+        get
+        {
+            lock (_lock)
+            {
+                return _foreground;
+            }
+        }
+    }
 
     public bool IsForeground(Emulator e) => ReferenceEquals(Volatile.Read(ref _foreground), e) || _foreground == null;
 
@@ -153,9 +171,17 @@ public sealed class VitaSystem
     {
         int uid;
         var app = new AppObject(null);
-        using (ProcessScope.Enter(caller)) uid = Objects.Register(app);
+        using (ProcessScope.Enter(caller))
+        {
+            uid = Objects.Register(app);
+        }
+
         var pl = new PendingLaunch { App = app, TitleId = titleId, Dir = dir, Flags = flags, Param = param };
-        lock (_pendingLaunches) _pendingLaunches[uid] = pl;
+        lock (_pendingLaunches)
+        {
+            _pendingLaunches[uid] = pl;
+        }
+
         return pl;
     }
 
@@ -193,12 +219,21 @@ public sealed class VitaSystem
     /// <summary>Waits up to <paramref name="timeoutMs"/> for <see cref="ShellUp"/>.</summary>
     public bool WaitShellUp(int timeoutMs) => _shellUp.Wait(timeoutMs);
 
-    public PendingLaunch? GetPendingLaunch(int appId) { lock (_pendingLaunches) return _pendingLaunches.GetValueOrDefault(appId); }
+    public PendingLaunch? GetPendingLaunch(int appId)
+    {
+        lock (_pendingLaunches)
+        {
+            return _pendingLaunches.GetValueOrDefault(appId);
+        }
+    }
 
     /// <summary>Takes a pending launch out (its second stage, or its cancellation).</summary>
     public PendingLaunch? TakePendingLaunch(int appId)
     {
-        lock (_pendingLaunches) return _pendingLaunches.Remove(appId, out var pl) ? pl : null;
+        lock (_pendingLaunches)
+        {
+            return _pendingLaunches.Remove(appId, out var pl) ? pl : null;
+        }
     }
 
     /// <summary>Gives a process the application record reserved for it.</summary>
@@ -228,7 +263,13 @@ public sealed class VitaSystem
     /// started behind its lock screen for a launch request).</summary>
     public bool ShellImposesSystemUi
     {
-        get { lock (AppMgrState) return BitConverter.ToInt32(AppMgrState, 0x14) != 0; }
+        get
+        {
+            lock (AppMgrState)
+            {
+                return BitConverter.ToInt32(AppMgrState, 0x14) != 0;
+            }
+        }
     }
 
     static byte[] InitialAppMgrState()
@@ -255,7 +296,11 @@ public sealed class VitaSystem
     {
         lock (_lock)
         {
-            if (_shellOverlay == null && frame != null) Log.Info($"Shell overlay plane on: 0x{frame.Value.Address:X8} {frame.Value.Width}x{frame.Value.Height}");
+            if (_shellOverlay == null && frame != null)
+            {
+                Log.Info($"Shell overlay plane on: 0x{frame.Value.Address:X8} {frame.Value.Width}x{frame.Value.Height}");
+            }
+
             _shellOverlay = frame;
             _shellOverlayVBlank = vblank;
         }
@@ -266,8 +311,16 @@ public sealed class VitaSystem
     {
         lock (_lock)
         {
-            if (_shellOverlay == null) return null;
-            if (vblank - _shellOverlayVBlank <= ShellOverlayVBlanks && _foreground is { IsShell: false }) return _shellOverlay;
+            if (_shellOverlay == null)
+            {
+                return null;
+            }
+
+            if (vblank - _shellOverlayVBlank <= ShellOverlayVBlanks && _foreground is { IsShell: false })
+            {
+                return _shellOverlay;
+            }
+
             _shellOverlay = null;
             Log.Info("Shell overlay plane off");
             return null;
@@ -295,8 +348,15 @@ public sealed class VitaSystem
         {
             var r = _shellTouchRegions.TryGetValue((port, region), out var old) ? old : default;
             if (r.Active != enable || r.Attr != attr)
+            {
                 Log.Info($"Shell touch region {port}/{region} {(enable ? "on" : "off")} attr {attr}: ({r.X}, {r.Y}) {r.W}x{r.H}");
-            _shellTouchRegions[(port, region)] = r with { Active = enable, Attr = attr };
+            }
+
+            _shellTouchRegions[(port, region)] = r with
+            {
+                Active = enable,
+                Attr = attr
+            };
         }
     }
 
@@ -304,11 +364,27 @@ public sealed class VitaSystem
     /// only the contacts inside one are the shell's (<see cref="ShellTouchRegionAt"/>).</summary>
     public bool TouchClaimedByShell(int port)
     {
-        if (Foreground is not { IsShell: false }) return false;
-        if (ShellImposesSystemUi) return true;
+        if (Foreground is not { IsShell: false })
+        {
+            return false;
+        }
+
+        if (ShellImposesSystemUi)
+        {
+            return true;
+        }
+
         lock (_shellTouchRegions)
+        {
             foreach (var (key, r) in _shellTouchRegions)
-                if (key.Port == port && r.Active) return true;
+            {
+                if (key.Port == port && r.Active)
+                {
+                    return true;
+                }
+            }
+        }
+
         return false;
     }
 
@@ -316,21 +392,53 @@ public sealed class VitaSystem
     /// region over an application in front.</summary>
     public bool ShellTouchRegionAt(int port, int x, int y)
     {
-        if (Foreground is not { IsShell: false }) return false;
-        if (ShellImposesSystemUi) return true;
+        if (Foreground is not { IsShell: false })
+        {
+            return false;
+        }
+
+        if (ShellImposesSystemUi)
+        {
+            return true;
+        }
+
         lock (_shellTouchRegions)
+        {
             foreach (var (key, r) in _shellTouchRegions)
-                if (key.Port == port && r.Active && x >= r.X && x < r.X + r.W && y >= r.Y && y < r.Y + r.H) return true;
+            {
+                if (key.Port == port && r.Active && x >= r.X && x < r.X + r.W && y >= r.Y && y < r.Y + r.H)
+                {
+                    return true;
+                }
+            }
+        }
+
         return false;
     }
     /// <summary>True when the shell's overlay takes the buttons from the application in front (its on-screen keyboard).</summary>
     public bool ButtonsClaimedByShell()
     {
-        if (Foreground is not { IsShell: false }) return false;
-        if (ShellImposesSystemUi) return true;
+        if (Foreground is not { IsShell: false })
+        {
+            return false;
+        }
+
+        if (ShellImposesSystemUi)
+        {
+            return true;
+        }
+
         lock (_shellTouchRegions)
+        {
             foreach (var (key, r) in _shellTouchRegions)
-                if (key.Port == 0 && r.Active && r.H >= 256) return true;
+            {
+                if (key.Port == 0 && r.Active && r.H >= 256)
+                {
+                    return true;
+                }
+            }
+        }
+
         return false;
     }
     /// <summary>While the trophy server bridge gives a trophy earned before (TrophyServerBridge), its unlock date
@@ -340,7 +448,10 @@ public sealed class VitaSystem
 
     /// <summary>The title whose LiveArea page the shell shows (null: its home screen, the bubble pages), for the
     /// diagnostics (Gravar tudo's context): see <see cref="NoteShellLiveArea"/>.</summary>
-    public ShellPage? ShellLiveArea { get; private set; }
+    public ShellPage? ShellLiveArea
+    {
+        get; private set;
+    }
 
     public sealed record ShellPage(string TitleId, string Title);
 
@@ -371,12 +482,33 @@ public sealed class VitaSystem
         priority = BgmNoPriority;
         Emulator[] all;
         Emulator? fg;
-        lock (_lock) { all = _processes.ToArray(); fg = _foreground; }
+        lock (_lock)
+        {
+            all = _processes.ToArray();
+            fg = _foreground;
+        }
         foreach (var p in all)
-            if (!p.Suspended && p.BgmPriority > 0 && (best == null || p.BgmPriority > best.BgmPriority)) best = p;
-        if (best != null) priority = best.BgmPriority;
-        else best = fg ?? all.FirstOrDefault();
-        if (best != null && BgmProxyBy >= 0 && best.AppId == BgmProxyBy && ByAppId(BgmProxyApp) is { } player) best = player;
+        {
+            if (!p.Suspended && p.BgmPriority > 0 && (best == null || p.BgmPriority > best.BgmPriority))
+            {
+                best = p;
+            }
+        }
+
+        if (best != null)
+        {
+            priority = best.BgmPriority;
+        }
+        else
+        {
+            best = fg ?? all.FirstOrDefault();
+        }
+
+        if (best != null && BgmProxyBy >= 0 && best.AppId == BgmProxyBy && ByAppId(BgmProxyApp) is { } player)
+        {
+            best = player;
+        }
+
         return best;
     }
 
@@ -401,10 +533,18 @@ public sealed class VitaSystem
     {
         var ev = new byte[ShellEventSize];
         BitConverter.TryWriteBytes(ev.AsSpan(0, 4), type);
-        for (int i = 0; i < words.Length && 4 + i * 4 < ShellEventSize; i++) BitConverter.TryWriteBytes(ev.AsSpan(4 + i * 4, 4), words[i]);
+        for (int i = 0; i < words.Length && 4 + i * 4 < ShellEventSize; i++)
+        {
+            BitConverter.TryWriteBytes(ev.AsSpan(4 + i * 4, 4), words[i]);
+        }
+
         lock (_shellEvents)
         {
-            if (_shellEvents.Count >= 180) return;
+            if (_shellEvents.Count >= 180)
+            {
+                return;
+            }
+
             _shellEvents.Enqueue(ev);
         }
         Log.Info($"Shell event {type} [{string.Join(", ", words.ToArray().Select(w => $"0x{w:X}"))}]");
@@ -422,7 +562,11 @@ public sealed class VitaSystem
     public void OnPsButton()
     {
         var fg = Foreground;
-        if (fg == null || fg.IsShell || Shell == null) return;
+        if (fg == null || fg.IsShell || Shell == null)
+        {
+            return;
+        }
+
         Log.Info($"PS button: {fg.Describe()} goes to its LiveArea");
         NoteShellLiveArea(fg.TitleId, fg.Title);
         PostShellEvent(ShellEvents.ShowLiveArea, fg.AppId);
@@ -440,7 +584,13 @@ public sealed class VitaSystem
     public void PostAppEnded(int pid, int appId, int state, string titleId)
     {
         Span<int> w = stackalloc int[15];
-        w[0] = pid; w[1] = state; w[2] = -1; w[3] = 0; w[4] = appId; w[5] = -1; w[6] = 0;
+        w[0] = pid;
+        w[1] = state;
+        w[2] = -1;
+        w[3] = 0;
+        w[4] = appId;
+        w[5] = -1;
+        w[6] = 0;
         var name = System.Text.Encoding.ASCII.GetBytes(titleId);
         Span<byte> nb = stackalloc byte[0x20];
         nb.Clear(); // locals are not zeroed in this assembly
@@ -449,9 +599,24 @@ public sealed class VitaSystem
         PostShellEvent(ShellEvents.AppEnded, w);
     }
 
-    public int ShellEventCount { get { lock (_shellEvents) return _shellEvents.Count; } }
+    public int ShellEventCount
+    {
+        get
+        {
+            lock (_shellEvents)
+            {
+                return _shellEvents.Count;
+            }
+        }
+    }
 
-    public byte[]? TakeShellEvent() { lock (_shellEvents) return _shellEvents.TryDequeue(out var e) ? e : null; }
+    public byte[]? TakeShellEvent()
+    {
+        lock (_shellEvents)
+        {
+            return _shellEvents.TryDequeue(out var e) ? e : null;
+        }
+    }
 
     internal void Unregister(Emulator e)
     {
@@ -467,7 +632,10 @@ public sealed class VitaSystem
         }
         Objects.Remove(e.Pid);
         Objects.Remove(e.AppId);
-        if (next != null) NotifyForeground(next);
+        if (next != null)
+        {
+            NotifyForeground(next);
+        }
     }
 
     /// <summary>Gives the display and the input to <paramref name="e"/>.</summary>
@@ -475,7 +643,11 @@ public sealed class VitaSystem
     {
         lock (_lock)
         {
-            if (ReferenceEquals(_foreground, e) || !_processes.Contains(e)) return;
+            if (ReferenceEquals(_foreground, e) || !_processes.Contains(e))
+            {
+                return;
+            }
+
             _foreground = e;
         }
         Log.Info($"Foreground process: {e.Describe()}");
