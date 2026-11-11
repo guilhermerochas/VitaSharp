@@ -27,7 +27,7 @@ IFS=',' read -r -a vs <<< "$variants"
 if [ -n "$(adb shell pidof $pkg:game | tr -d '\r')" ]; then echo "a game is running on the phone: not starting the bench" >&2; exit 1; fi
 adb shell mkdir -p "$remote/fixtures" "$remote/variants" "$remote/results"
 for f in "${fx[@]}"; do
-  local_size=$(stat -c %s "$bench/fixtures/$f.vsgd")
+  local_size=$(wc -c < "$bench/fixtures/$f.vsgd" | tr -d ' ')   # portable (GNU stat -c / BSD stat -f differ)
   remote_size=$(adb shell stat -c %s "$remote/fixtures/$f.vsgd" 2>/dev/null | tr -d '\r' || true)
   [ "$local_size" = "$remote_size" ] || adb push "$(lp "$bench/fixtures/$f.vsgd")" "$remote/fixtures/$f.vsgd" >/dev/null
 done
