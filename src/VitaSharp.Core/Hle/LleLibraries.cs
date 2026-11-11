@@ -2,10 +2,10 @@ namespace VitaSharp.Core.Hle;
 
 /// <summary>
 /// The functions the emulator provides by running a real module (LLE) instead of an HLE, for the coverage report: the
-/// libraries an installed module really exports, found by scanning (no fixed list). Two kinds of modules count, the two
-/// the loader runs for a program: the modules a game ships in app0:sce_module (decrypted with its work.bin or licence),
-/// and the firmware modules the loader gives every program that imports their library
-/// (<see cref="HleModule.FirmwareForEveryImporter"/>). Their functions are emulated, so the coverage counts them as
+/// libraries an installed module really exports, found by scanning (no fixed list). The modules the loader runs for a
+/// program count: the modules a game ships in app0:sce_module (decrypted with its work.bin or licence), the user
+/// modules programs load by path from the ur0:/ux0: data (<see cref="DataModules"/>), and the firmware modules the
+/// loader gives every program that imports their library (<see cref="HleModule.FirmwareForEveryImporter"/>). Their functions are emulated, so the coverage counts them as
 /// covered, shown apart as "LLE" (like "default"). The loader decides by its own rules; this only measures.
 /// </summary>
 public static class LleLibraries
@@ -37,6 +37,33 @@ public static class LleLibraries
             foreach (var file in Directory.GetFiles(dir, "*.suprx").Order(StringComparer.OrdinalIgnoreCase))
             {
                 yield return new InstalledModule(file, "app0:sce_module/" + Path.GetFileName(file), klicensee);
+            }
+        }
+    }
+
+    /// <summary>The user modules a program can load by path at run time (sceKernelLoadStartModule) from the memory card
+    /// and internal storage data: every *.suprx under ur0: and ux0: outside ux0:app (installed applications, see
+    /// <see cref="GameModules"/>). They are plain or fake-signed modules, so no key is needed.</summary>
+    public static IEnumerable<InstalledModule> DataModules(string fsRoot)
+    {
+        foreach (var device in new[] { "ur0", "ux0" })
+        {
+            var root = Path.Combine(fsRoot, device);
+            if (!Directory.Exists(root))
+            {
+                continue;
+            }
+
+            var options = new EnumerationOptions { RecurseSubdirectories = true, IgnoreInaccessible = true, MatchCasing = MatchCasing.CaseInsensitive };
+            var apps = Path.Combine(root, "app") + Path.DirectorySeparatorChar;
+            foreach (var file in Directory.EnumerateFiles(root, "*.suprx", options).Order(StringComparer.OrdinalIgnoreCase))
+            {
+                if (device == "ux0" && file.StartsWith(apps, StringComparison.OrdinalIgnoreCase))
+                {
+                    continue;
+                }
+
+                yield return new InstalledModule(file, device + ":" + Path.GetRelativePath(root, file).Replace(Path.DirectorySeparatorChar, '/'), null);
             }
         }
     }
@@ -88,13 +115,14 @@ public static class LleLibraries
 
     /// <summary>
     /// The NIDs installed modules really export (the union over the copies: games ship different versions of the same
-    /// library): every library of the games' own modules, and the libraries of firmware modules the loader serves to every
-    /// importer. The caller leaves out the NIDs the HLE implements (those count as HLE).
+    /// library): every library of the games' own modules and of the data folders' modules, and the libraries of
+    /// firmware modules the loader serves to every importer. The caller leaves out the NIDs the HLE implements (those
+    /// count as HLE).
     /// </summary>
     public static HashSet<uint> InstalledNids(string fsRoot, Func<string, bool> firmwareForEveryImporter)
     {
         var set = new HashSet<uint>();
-        var exports = Exports(GameModules(fsRoot), (_, _) => true)
+        var exports = Exports(GameModules(fsRoot).Concat(DataModules(fsRoot)), (_, _) => true)
             .Concat(Exports(FirmwareModules(fsRoot, firmwareForEveryImporter), (_, library) => firmwareForEveryImporter(library)));
         foreach (var (_, _, nids) in exports)
         {

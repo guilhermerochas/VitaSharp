@@ -28,7 +28,7 @@ public sealed class LleLibrariesTests(GuestMemoryFixture fx, ITestOutputHelper o
     /// or the firmware module), found the way the coverage scan finds them.</summary>
     internal static (string Path, string VitaPath, byte[]? Klicensee)? Find(string library)
     {
-        var modules = LleLibraries.GameModules(FsRoot).Concat(LleLibraries.FirmwareModules(FsRoot, l => l == library));
+        var modules = LleLibraries.GameModules(FsRoot).Concat(LleLibraries.DataModules(FsRoot)).Concat(LleLibraries.FirmwareModules(FsRoot, l => l == library));
         foreach (var (m, _, _) in LleLibraries.Exports(modules, (_, l) => l == library))
         {
             return (m.HostPath, m.VitaPath, m.Klicensee);
@@ -40,6 +40,7 @@ public sealed class LleLibrariesTests(GuestMemoryFixture fx, ITestOutputHelper o
     [Theory]
     [InlineData("SceSmart", "sceSmartRelease")]
     [InlineData("SceFace", "sceFaceDetectionGetWorkingMemorySize")]
+    [InlineData("SceShaccCg", "sceShaccCgGetVersionString")]
     [InlineData("SceLsdb", "sceLsdbAppDatabaseInit")]
     public void RealModuleLoadsAndRuns(string library, string export)
     {
@@ -79,6 +80,11 @@ public sealed class LleLibrariesTests(GuestMemoryFixture fx, ITestOutputHelper o
             emu.Kernel.DeleteThread(t);
             Assert.Null(failure);
             output.WriteLine($"{export} -> 0x{result:X8}");
+            if (export == "sceShaccCgGetVersionString")
+            {
+                Assert.False(string.IsNullOrEmpty(GuestMemory.ReadCString(result)));
+            }
+
             if (export == "sceLsdbAppDatabaseInit") { Assert.Equal(buf, result); Assert.NotEqual(0u, GuestMemory.R32(buf)); }
         }
         finally { try { Directory.Delete(root, true); } catch (IOException) { } }
