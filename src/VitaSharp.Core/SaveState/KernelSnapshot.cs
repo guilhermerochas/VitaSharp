@@ -14,7 +14,7 @@ static class KernelSnapshot
 {
     internal const string Thread = "thread", Sema = "sema", Evf = "evf", Mtx = "mutex", Cond = "cond", Pipe = "msgpipe",
         Rw = "rwlock", Cb = "callback", Timer = "timer", SEvent = "simpleevent", ThEvent = "threadevent",
-        Block = "memblock", Async = "ioasync", Process = "process", App = "app", Module = "module";
+        Block = "memblock", Async = "ioasync", Process = "process", App = "app", Module = "module", Data = "kerneldata";
 
     public static SnapshotWriter Save(Emulator emu, Dictionary<GuestThread, GuestThread.SafeKind> kinds)
     {
@@ -43,6 +43,7 @@ static class KernelSnapshot
                 ProcessObject => Process,
                 AppObject => App,
                 ModuleObject => Module,
+                KernelData => Data,
                 _ => throw new SnapshotException($"kernel object {o.Name} ({o.GetType().Name}) is not supported by save states yet"),
             };
             w.Write(kind);
@@ -96,6 +97,13 @@ static class KernelSnapshot
                     w.Write(b.Size);
                     w.Write(b.Type);
                     w.Write(b.IsVm);
+                    break;
+                case KernelData d:
+                    w.Write(d.Kind);
+                    w.Write(d.Address);
+                    w.Write(d.Size);
+                    w.Write(d.Aux);
+                    w.Write(d.References);
                     break;
                 case IoAsyncOp a:
                     if (!a.Done)
@@ -241,8 +249,12 @@ static class KernelSnapshot
                 case Block:
                     o = new MemBlock { Name = name, Address = b.ReadUInt32(), Size = b.ReadUInt32(), Type = b.ReadUInt32(), IsVm = b.ReadBool() };
                     break;
+                case Data:
+                    o = new KernelData { Name = name, Kind = b.ReadStringNotNull(), Address = b.ReadUInt32(), Size = b.ReadUInt32(), Aux = b.ReadUInt32(), References = b.ReadInt32() };
+                    break;
                 case Async:
-                    o = new IoAsyncOp { Name = name, Fd = b.ReadInt32(), Result = b.ReadInt64(), Done = true, Cancelled = b.ReadBool(), Pattern = b.ReadUInt32(), UserData = b.ReadUInt64() };
+                    o = new IoAsyncOp
+                    { Name = name, Fd = b.ReadInt32(), Result = b.ReadInt64(), Done = true, Cancelled = b.ReadBool(), Pattern = b.ReadUInt32(), UserData = b.ReadUInt64() };
                     break;
                 case Process or App:
                     o = current.FirstOrDefault(x => x.Uid == uid && (kind == Process ? x is ProcessObject : x is AppObject))

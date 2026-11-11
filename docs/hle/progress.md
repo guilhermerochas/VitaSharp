@@ -13,9 +13,9 @@ How many of the functions that the PS Vita firmware 3.74 exports to user code (t
 |---|---:|---:|---:|---:|---:|---:|
 | Games imports | 2,049 | 2,049 | 0 | 0 | 2,049 | 100% |
 | System imports | 3,785 | 3,576 | 209 | 0 | 7,373 | 51.3% |
-| General | 3,597 | 3,407 | 190 | 0 | 9,984 | 36% |
-| All firmware 3.74 exports | 9,431 | 8,894 | 399 | 138 | 19,406 | 48.5% |
-| VitaSDK user functions | 6,991 | 6,355 | 401 | 235 | 7,006 | 99.7% |
+| General | 3,601 | 3,411 | 190 | 0 | 9,984 | 36% |
+| All firmware 3.74 exports | 9,435 | 8,898 | 399 | 138 | 19,406 | 48.6% |
+| VitaSDK user functions | 6,958 | 6,355 | 401 | 202 | 7,006 | 99.3% |
 
 ## Libraries provided by LLE
 
@@ -24,7 +24,7 @@ How many of the functions that the PS Vita firmware 3.74 exports to user code (t
 | SceLibstdcxx | `vs0:sys/external/libc.suprx` | 2 |
 | SceLsdb | `vs0:vsh/shell/livespace_db.suprx` | 136 |
 
-VitaSDK user functions provided by LLE (the modules the installed games ship in app0:sce_module): 235.
+VitaSDK user functions provided by LLE (the modules the installed games ship in app0:sce_module): 202.
 
 ## Per library (308)
 
@@ -294,7 +294,7 @@ VitaSDK user functions provided by LLE (the modules the installed games ship in 
 | SceTelephonyUtil | `vs0:sys/external/libSceTelephonyUtil.suprx` | 0 / 3 | 0% | - | - | 0 / 2 |
 | SceTeleportClient | `vs0:sys/external/libSceTeleportClient.suprx` | 13 / 13 | 100% | - | - | 13 / 13 |
 | SceTeleportServer | `vs0:sys/external/libSceTeleportServer.suprx` | 1 / 1 | 100% | - | - | 1 / 1 |
-| SceThreadmgr | `os0:kd/threadmgr.skprx` | 176 / 184 | 95.6% | - | 52 / 52 | 103 / 104 |
+| SceThreadmgr | `os0:kd/threadmgr.skprx` | 180 / 184 | 97.8% | - | 52 / 52 | 103 / 104 |
 | SceTiffPromoter | `vs0:vsh/common/mms/tiff_promoter.suprx` | 2 / 3 | 66.6% | - | - | - |
 | SceTouch | `os0:kd/bootimage.skprx/SceTouch` | 27 / 27 | 100% | - | 7 / 7 | 12 / 12 |
 | SceTriggerUtil | `vs0:sys/external/trigger_util.suprx` | 12 / 19 | 63.1% | - | - | 9 / 12 |

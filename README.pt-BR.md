@@ -1,4 +1,5 @@
 <!-- pair: README.md sha256=3530f890e13a51b7a92f0bcd049ef115464e31998f85f24a2a79263d516a966c -->
+<!-- pair: README.md sha256=4be525a5a13bdf02b3bef895d3fac0d6868a9ae489f43238e24a6c097cfe8e23 -->
 <!-- pair: README.md sha256=6c31942f6969a1731dd1394ebd8a5ff8edd9da4b8e3486f644e4396c4f1ab909 -->
 <div align="center">
 
@@ -123,6 +124,14 @@ de comando: `install-firmware <PSVUPDAT.PUP>`.
 `shell.self` do firmware: configuração inicial na primeira vez, tela de bloqueio, tela inicial com os jogos
 instalados e LiveArea. Um jogo aberto pela LiveArea roda como um segundo processo; o botão PS (tecla Home) volta ao
 sistema e **Continuar** retoma o jogo. Detalhes e o que falta em [`docs/notes/system-apps.md`](docs/notes/system-apps.md).
+
+**Plugins.** O VitaSharp carrega os plugins do `fs/ur0/tai/config.txt` (copiados do seu Vita para `fs/ur0/tai`,
+listados como no Vita: `*KERNEL` para os plugins de kernel `.skprx`, `*ALL` / `*TITLEID` para os de usuário `.suprx`) e
+roda o código deles. O taiHEN (`taihen.skprx`) também carrega, mas não consegue iniciar: o início dele precisa de
+patches nas checagens de assinatura e de DRM do firmware, que o VitaSharp não faz funcionar. Por isso nada que precise
+do taiHEN roda, como num Vita sem ele: os plugins feitos sobre ele (kubridge, fd_fix) e os homebrews que o chamam ou
+precisam de um desses plugins, entre eles o **Dead Space** (pelo kubridge) e o **Sonic Mania**. Detalhes em
+[`docs/notes/plugins.pt-BR.md`](docs/notes/plugins.pt-BR.md).
 
 **Android.** Veja [Android](#android).
 

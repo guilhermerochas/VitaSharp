@@ -1,5 +1,5 @@
 # HLE status per firmware library, written by VitaSharp.Desktop hle-coverage --status (build/hle-status.ps1)
-# firmware=3.74 games=52 vitasdk=6991/7006 vitasdk_default=401 vitasdk_lle=235
+# firmware=3.74 games=52 vitasdk=6958/7006 vitasdk_default=401 vitasdk_lle=202
 library	module	total	impl	games	games_impl	system	system_impl	default	games_default	system_default	lle
 SceAACPromoter	vs0:vsh/common/mms/AACPromoter.suprx	4	1	0	0	0	0	0	0	0	0
 SceAVConfig	os0:kd/bootimage.skprx/SceAVConfig	34	34	0	0	31	31	0	0	0	0
@@ -265,7 +265,7 @@ SceSystemSettingsCore	vs0:app/NPXS10015/system_settings_core.suprx	93	1	0	0	71	1
 SceTelephonyUtil	vs0:sys/external/libSceTelephonyUtil.suprx	3	0	0	0	2	0	0	0	0	0
 SceTeleportClient	vs0:sys/external/libSceTeleportClient.suprx	13	13	0	0	13	13	0	0	0	0
 SceTeleportServer	vs0:sys/external/libSceTeleportServer.suprx	1	1	0	0	1	1	0	0	0	0
-SceThreadmgr	os0:kd/threadmgr.skprx	184	176	52	52	104	103	0	0	0	0
+SceThreadmgr	os0:kd/threadmgr.skprx	184	180	52	52	104	103	0	0	0	0
 SceTiffPromoter	vs0:vsh/common/mms/tiff_promoter.suprx	3	2	0	0	0	0	0	0	0	0
 SceTouch	os0:kd/bootimage.skprx/SceTouch	27	27	7	7	12	12	0	0	0	0
 SceTriggerUtil	vs0:sys/external/trigger_util.suprx	19	12	0	0	12	9	0	0	0	0

@@ -6,8 +6,3 @@ namespace VitaSharp.Core.Hle.Modules;
 public sealed partial class Security
 {
 }
-
-[GenerateSnapshot]
-public sealed partial class Taihen
-{
-}

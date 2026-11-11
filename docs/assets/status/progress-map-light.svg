@@ -2,7 +2,7 @@
 <rect width="1000" height="600" rx="8" fill="#ffffff"/>
 <g font-family="-apple-system,Segoe UI,Helvetica,Arial,sans-serif">
 <text x="12" y="27" font-size="17" font-weight="600" fill="#1f2328">HLE progress map</text>
-<text x="170" y="27" font-size="12" fill="#59636e">308 libraries of firmware 3.74, area = exported functions, 48.5% implemented</text>
+<text x="170" y="27" font-size="12" fill="#59636e">308 libraries of firmware 3.74, area = exported functions, 48.6% implemented</text>
 <text x="798" y="27" font-size="11" fill="#59636e">0%</text>
 <rect x="820" y="16" width="24" height="14" rx="2" fill="#d86464"/>
 <rect x="846" y="16" width="24" height="14" rx="2" fill="#d89e64"/>
@@ -33,7 +33,7 @@
 <g><title>ScebXCe: 29/194 (14.9%)</title><rect x="482.7" y="211.2" width="68.1" height="79.1" fill="#d88764" stroke="#ffffff" stroke-width="1"/><text x="485.7" y="222.9" font-size="9.7" fill="#1f2328">bXCe</text><text x="485.7" y="235.6" font-size="8.3" fill="#1f2328" fill-opacity=".8">14.9%</text></g>
 <g><title>SceAppMgr: 189/191 (98.9%)</title><rect x="482.7" y="290.3" width="68.1" height="77.9" fill="#66d864" stroke="#ffffff" stroke-width="1"/><text x="485.7" y="302" font-size="9.7" fill="#1f2328">AppMgr</text><text x="485.7" y="314.7" font-size="8.3" fill="#1f2328" fill-opacity=".8">98.9%</text></g>
 <g><title>SceLibXml: 186/186 (100%)</title><rect x="482.7" y="368.2" width="68.1" height="75.8" fill="#64d864" stroke="#ffffff" stroke-width="1"/><text x="485.7" y="379.9" font-size="9.7" fill="#1f2328">LibXml</text><text x="485.7" y="392.6" font-size="8.3" fill="#1f2328" fill-opacity=".8">100%</text></g>
-<g><title>SceThreadmgr: 176/184 (95.6%)</title><rect x="482.7" y="444" width="68.1" height="75" fill="#6ed864" stroke="#ffffff" stroke-width="1"/><text x="485.7" y="455.7" font-size="9.7" fill="#1f2328">Threadmgr</text><text x="485.7" y="468.5" font-size="8.3" fill="#1f2328" fill-opacity=".8">95.6%</text></g>
+<g><title>SceThreadmgr: 180/184 (97.8%)</title><rect x="482.7" y="444" width="68.1" height="75" fill="#69d864" stroke="#ffffff" stroke-width="1"/><text x="485.7" y="455.7" font-size="9.7" fill="#1f2328">Threadmgr</text><text x="485.7" y="468.5" font-size="8.3" fill="#1f2328" fill-opacity=".8">97.8%</text></g>
 <g><title>SceLibJson: 179/179 (100%)</title><rect x="482.7" y="519" width="68.1" height="73" fill="#64d864" stroke="#ffffff" stroke-width="1"/><text x="485.7" y="530.8" font-size="9.7" fill="#1f2328">LibJson</text><text x="485.7" y="543.5" font-size="8.3" fill="#1f2328" fill-opacity=".8">100%</text></g>
 <g><title>ScePafCommon: 64/176 (36.3%)</title><rect x="550.8" y="130" width="66.4" height="73.7" fill="#d8b964" stroke="#ffffff" stroke-width="1"/><text x="553.8" y="141.5" font-size="9.5" fill="#1f2328">PafCommon</text><text x="553.8" y="154" font-size="8.1" fill="#1f2328" fill-opacity=".8">36.3%</text></g>
 <g><title>SceSqlite: 171/171 (100%)</title><rect x="617.2" y="130" width="64.5" height="73.7" fill="#64d864" stroke="#ffffff" stroke-width="1"/><text x="620.2" y="141.2" font-size="9.2" fill="#1f2328">Sqlite</text><text x="620.2" y="153.5" font-size="7.8" fill="#1f2328" fill-opacity=".8">100%</text></g>

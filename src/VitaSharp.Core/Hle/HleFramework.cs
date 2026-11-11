@@ -43,9 +43,6 @@ public abstract class HleModule
     /// library, games included (the HLE has a few getters of it; the real module does the work).</summary>
     public virtual bool FirmwareForEveryImporter => false;
 
-    /// <summary>The kernel module whose user API this HLE module stands in for (its name as the module manager
-    /// reports it to a module search), or null. Nothing outside the module itself names it.</summary>
-    public virtual string? KernelModuleName => null;
 }
 
 /// <summary>Per-thread view used by HLE functions: argument access and the calling guest thread.</summary>

@@ -43,7 +43,8 @@ public sealed partial class SysMem : HleModule
         return AllocBlock(name, type, size, align, shareable);
     }
 
-    /// <summary>A block of <paramref name="type"/> after the argument checks (also kubridge's kernel allocations).</summary>
+    /// <summary>A block of <paramref name="type"/> after the argument checks.</summary>
+
     internal int AllocBlock(string name, uint type, uint size, uint align, bool shareable = false)
     {
         bool cdram = type == TypeUserCdramRw;

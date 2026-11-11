@@ -449,7 +449,10 @@ public sealed partial class Ctrl : HleModule
     const uint MaxSamples = 64;
 
     const Api Ext = Api.Ext, V2 = Api.Ext | Api.V2;
-    [Hle] int sceCtrlPeekBufferPositive(int port, uint data, uint count) => Peek(Port(port), data, count, false, Api.Standard);
+    [Hle]
+    [Hle("ksceCtrlPeekBufferPositive")]
+    int sceCtrlPeekBufferPositive(int port, uint data, uint count) => Peek(Port(port), data, count, false, Api.Standard);
+
     [Hle] int sceCtrlPeekBufferNegative(int port, uint data, uint count) => Peek(Port(port), data, count, true, Api.Standard);
     [Hle] int sceCtrlReadBufferPositive(int port, uint data, uint count) => Read(Port(port), data, count, false, Api.Standard);
     [Hle] int sceCtrlReadBufferNegative(int port, uint data, uint count) => Read(Port(port), data, count, true, Api.Standard);

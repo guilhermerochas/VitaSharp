@@ -33,6 +33,7 @@ public sealed partial class ThreadMgr : HleModule
     }
 
     [Hle]
+    [Hle("ksceKernelStartThread")]
     internal int sceKernelStartThread(int thid, uint argSize, uint argp)
     {
         var t = K.GetThread(thid);
@@ -55,6 +56,7 @@ public sealed partial class ThreadMgr : HleModule
 
     [Hle("sceKernelWaitThreadEnd")]
     [Hle("sceKernelWaitThreadEndCB")]
+    [Hle("ksceKernelWaitThreadEnd")]
     internal int sceKernelWaitThreadEnd(int thid, Ptr<int> stat, Ptr<uint> timeout)
     {
         var t = K.GetThread(thid);
@@ -156,7 +158,10 @@ public sealed partial class ThreadMgr : HleModule
 
     [Hle] int sceKernelGetCurrentThreadVfpException() => VfpExceptionWord(Self);
 
-    [Hle] int sceKernelGetProcessId() => Emu.Pid;
+    /// <summary>sceKernelGetProcessId (also ksceKernelGetProcessId, the same NID): the calling thread's process; a
+    /// kernel thread's is the kernel (<see cref="KernelSpace.KernelPid"/>).</summary>
+    [Hle]
+    int sceKernelGetProcessId() => Self.KernelMode ? KernelSpace.KernelPid : Emu.Pid;
 
     /// <summary>Class of the threadmgr object behind a UID (thread 1 ... simple event 13; see KernelObject.UidClass).</summary>
     [Hle]
@@ -554,6 +559,7 @@ public sealed partial class ThreadMgr : HleModule
     // ------------------------------------------------------------------ mutexes
 
     [Hle]
+    [Hle("ksceKernelCreateMutex")]
     int sceKernelCreateMutex(string name, uint attr, int initCount, uint opt)
     {
         var m = new Mutex { Name = name, Attr = attr, InitCount = initCount };
@@ -562,7 +568,21 @@ public sealed partial class ThreadMgr : HleModule
         return uid;
     }
 
-    [Hle] int sceKernelDeleteMutex(int uid) { var m = Obj<Mutex>(uid); if (m == null) return SceError.UNKNOWN_MUTEX_ID; m.Delete(); K.Objects.Delete(m); return 0; }
+    [Hle]
+    [Hle("ksceKernelDeleteMutex")]
+    int sceKernelDeleteMutex(int uid)
+    {
+        var m = Obj<Mutex>(uid);
+        if (m == null)
+        {
+            return SceError.UNKNOWN_MUTEX_ID;
+        }
+
+        m.Delete();
+        K.Objects.Delete(m);
+        return 0;
+    }
+
     [Hle]
     [Hle("sceKernelOpenMutex_089")]
     int sceKernelOpenMutex(uint name) => KernelInfo.OpenByName<Mutex>(K.Objects, name, static m => !m.IsLight);
@@ -595,10 +615,17 @@ public sealed partial class ThreadMgr : HleModule
 
     [Hle("sceKernelLockMutex")]
     [Hle("sceKernelLockMutexCB")]
+    [Hle("ksceKernelLockMutex")]
     int sceKernelLockMutex(int uid, int count, Ptr<uint> timeout) => Obj<Mutex>(uid)?.Lock(Self, count, timeout) ?? SceError.UNKNOWN_MUTEX_ID;
 
-    [Hle] int sceKernelTryLockMutex(int uid, int count) => Obj<Mutex>(uid)?.TryLock(Self, count) ?? SceError.UNKNOWN_MUTEX_ID;
-    [Hle] int sceKernelUnlockMutex(int uid, int count) => Obj<Mutex>(uid)?.Unlock(Self, count) ?? SceError.UNKNOWN_MUTEX_ID;
+    [Hle]
+    [Hle("ksceKernelTryLockMutex")]
+    int sceKernelTryLockMutex(int uid, int count) => Obj<Mutex>(uid)?.TryLock(Self, count) ?? SceError.UNKNOWN_MUTEX_ID;
+
+    [Hle]
+    [Hle("ksceKernelUnlockMutex")]
+    int sceKernelUnlockMutex(int uid, int count) => Obj<Mutex>(uid)?.Unlock(Self, count) ?? SceError.UNKNOWN_MUTEX_ID;
+
 
     /// <summary>psp2/kernel/threadmgr/mutex.h: int (SceUID mutexid, int newCount, int *numWaitThreads).</summary>
     [Hle]
