@@ -6,13 +6,13 @@ public sealed partial class UsseTranslator
 {
     // ===================================================================== tests
 
-    static readonly VOp[] TestF16 = [VOp.Invalid, VOp.Invalid, VOp.VAdd, VOp.VFrc, VOp.VRcp, VOp.VRsq, VOp.VLog, VOp.VExp, VOp.VDp, VOp.VMin, VOp.VMax, VOp.VDsx, VOp.VDsy, VOp.VMul, VOp.VSub, VOp.Invalid];
+    private static readonly VOp[] s_testF16 = [VOp.Invalid, VOp.Invalid, VOp.VAdd, VOp.VFrc, VOp.VRcp, VOp.VRsq, VOp.VLog, VOp.VExp, VOp.VDp, VOp.VMin, VOp.VMax, VOp.VDsx, VOp.VDsy, VOp.VMul, VOp.VSub, VOp.Invalid];
 
-    (VOp op, DataType dt, bool isSub) DecodeTest(uint aluSel, uint aluOp, uint prec)
+    private (VOp op, DataType dt, bool isSub) DecodeTest(uint aluSel, uint aluOp, uint prec)
     {
         if (aluSel == 0)
         {
-            return (TestF16[aluOp], prec == 0 ? DataType.F16 : DataType.F32, aluOp == 14);
+            return (s_testF16[aluOp], prec == 0 ? DataType.F16 : DataType.F32, aluOp == 14);
         }
 
         switch (aluSel)
@@ -63,13 +63,13 @@ public sealed partial class UsseTranslator
 
     /// <summary>Returns a bool/bvec expression for a test (port of vtst_impl); <paramref name="alu"/> is the ALU result the test
     /// compares with zero (the difference for the subtract forms).</summary>
-    Val TestImpl(VOp op, bool isSub, Operand src1, Operand src2, int zeroTest, int signTest, int loadMask) => TestImpl(op, isSub, src1, src2, zeroTest, signTest, loadMask, out _);
+    private Val TestImpl(VOp op, bool isSub, Operand src1, Operand src2, int zeroTest, int signTest, int loadMask) => TestImpl(op, isSub, src1, src2, zeroTest, signTest, loadMask, out _);
 
-    Val TestImpl(VOp op, bool isSub, Operand src1, Operand src2, int zeroTest, int signTest, int loadMask, out Val alu)
+    private Val TestImpl(VOp op, bool isSub, Operand src1, Operand src2, int zeroTest, int signTest, int loadMask, out Val alu)
     {
         bool has4 = BitOperations.PopCount((uint)loadMask) == 4;
         Val lhs, rhs;
-        var dt = src1.Type;
+        DataType dt = src1.Type;
         if (isSub)
         {
             lhs = Load(src1, loadMask);
@@ -132,10 +132,10 @@ public sealed partial class UsseTranslator
         return new Val($"{fn}({lhs}, {rhs})", 'b', lhs.N);
     }
 
-    void Vtst(UsseInst i)
+    private void Vtst(UsseInst i)
     {
         // "01001ppps-oydrceavttiizzmhhhnnbbkkffgggggggwlluuuujjjjjjjqqqqqqq"
-        var (op, dt, isSub) = DecodeTest(i['l'], i['u'], i['a']);
+        (VOp op, DataType dt, bool isSub) = DecodeTest(i['l'], i['u'], i['a']);
         if (op == VOp.Invalid)
         {
             Warnings.Add($"vtst op {i['l']}:{i['u']}");
@@ -150,10 +150,10 @@ public sealed partial class UsseTranslator
         int loadMask = 1 << (int)chan;
         bool dbl = i['l'] == 0;
         int bits = dbl ? 8 : 7;
-        var src1 = DecodeSrc12(1, i['j'], i['k'], i.Bit('c'), dbl, bits);
-        var src2 = DecodeSrc12(2, i['q'], i['f'], i.Bit('e'), dbl, bits);
+        Operand src1 = DecodeSrc12(1, i['j'], i['k'], i.Bit('c'), dbl, bits);
+        Operand src2 = DecodeSrc12(2, i['q'], i['f'], i.Bit('e'), dbl, bits);
         src1.Type = src2.Type = dt;
-        src2.Swizzle = i.Bit('v') && i['l'] == 0 ? S4("XXXX") : (Sw[])Default4.Clone();
+        src2.Swizzle = i.Bit('v') && i['l'] == 0 ? S4("XXXX") : (Sw[])s_default4.Clone();
         if (i.Bit('r'))
         {
             src1.Flags |= OpFlags.Neg;
@@ -162,7 +162,7 @@ public sealed partial class UsseTranslator
         var pred = Operand.Make(3);
         pred.Bank = Bank.Predicate;
         pred.Num = (int)i['n'];
-        var res = TestImpl(op, isSub, src1, src2, (int)i['z'], (int)i['i'], loadMask, out var alu);
+        Val res = TestImpl(op, isSub, src1, src2, (int)i['z'], (int)i['i'], loadMask, out Val alu);
         Store(pred, res.N == 1 ? res : new Val($"any({res})", 'b', 1), 1);
         // test_wben: the ALU result the test was made on is also written to the destination register (channel chan_cc),
         // in the test's data type. Vita3K ignores this; Skullgirls' sprite programs depend on it: VTST.F16
@@ -170,16 +170,16 @@ public sealed partial class UsseTranslator
         // the writeback r0 still held the F32 texel and its low half was read as an F16 (a near constant column).
         if (i.Bit('w'))
         {
-            var dest = DecodeDest(3, i['g'], i['b'], i.Bit('d'), dbl, bits);
+            Operand dest = DecodeDest(3, i['g'], i['b'], i.Bit('d'), dbl, bits);
             dest.Type = dt;
             Store(dest, alu, loadMask);
         }
     }
 
-    void Vtstmsk(UsseInst i)
+    private void Vtstmsk(UsseInst i)
     {
         // "01111ppps-oydtrcevuuiizzm-aa--bbnnkkfffffffwllgggghhhhhhhjjjjjjj"
-        var (op, dt, isSub) = DecodeTest(i['l'], i['g'], i['e']);
+        (VOp op, DataType dt, bool isSub) = DecodeTest(i['l'], i['g'], i['e']);
         if (op == VOp.Invalid)
         {
             Warnings.Add("vtstmsk op");
@@ -193,11 +193,11 @@ public sealed partial class UsseTranslator
 
         bool dbl = i['l'] == 0;
         int bits = dbl ? 8 : 7;
-        var src1 = DecodeSrc12(1, i['h'], i['n'], i.Bit('r'), dbl, bits);
-        var src2 = DecodeSrc12(2, i['j'], i['k'], i.Bit('c'), dbl, bits);
-        var dest = DecodeDest(3, i['f'], i['b'], i.Bit('d'), dbl, bits);
+        Operand src1 = DecodeSrc12(1, i['h'], i['n'], i.Bit('r'), dbl, bits);
+        Operand src2 = DecodeSrc12(2, i['j'], i['k'], i.Bit('c'), dbl, bits);
+        Operand dest = DecodeDest(3, i['f'], i['b'], i.Bit('d'), dbl, bits);
         src1.Type = src2.Type = dest.Type = dt;
-        src2.Swizzle = i['l'] == 0 && i.Bit('v') ? S4("XXXX") : (Sw[])Default4.Clone();
+        src2.Swizzle = i['l'] == 0 && i.Bit('v') ? S4("XXXX") : (Sw[])s_default4.Clone();
         if (i.Bit('t'))
         {
             src1.Flags |= OpFlags.Neg;
@@ -210,7 +210,7 @@ public sealed partial class UsseTranslator
         }
         bool isVdp = op == VOp.VDp;
         bool out4 = i['l'] == 0 && maskType == 2;
-        var res = Bind(TestImpl(op, isSub, src1, src2, (int)i['z'], (int)i['i'], (isVdp || out4) ? 0b1111 : 0b1));
+        Val res = Bind(TestImpl(op, isSub, src1, src2, (int)i['z'], (int)i['i'], (isVdp || out4) ? 0b1111 : 0b1));
         Val outV;
         switch (dt)
         {
@@ -240,7 +240,7 @@ public sealed partial class UsseTranslator
 
     // ===================================================================== bitwise
 
-    void Vbw(UsseInst i)
+    private void Vbw(UsseInst i)
     {
         // "01ooopppsnrydecxaaaaittttthhbwkkffggjjjjjjjlllllllmmmmmmmqqqqqqq"
         uint op1 = i['o'];
@@ -258,10 +258,10 @@ public sealed partial class UsseTranslator
             Warnings.Add($"vbw op1 {op1}");
             return;
         }
-        var src1 = DecodeSrc12(1, i['m'], i['f'], i.Bit('c'), false, 7);
-        var src2 = DecodeSrc12(2, i['q'], i['g'], i.Bit('x'), false, 7);
-        var dest = DecodeDest(3, i['j'], i['k'], i.Bit('d'), false, 7);
-        var dt = i.Bit('w') ? DataType.UInt16 : DataType.UInt32;
+        Operand src1 = DecodeSrc12(1, i['m'], i['f'], i.Bit('c'), false, 7);
+        Operand src2 = DecodeSrc12(2, i['q'], i['g'], i.Bit('x'), false, 7);
+        Operand dest = DecodeDest(3, i['j'], i['k'], i.Bit('d'), false, 7);
+        DataType dt = i.Bit('w') ? DataType.UInt16 : DataType.UInt32;
         src1.Type = src2.Type = dest.Type = dt;
         SetRepeatMultiplier(1, 1, 1, 1);
         int repeats = (int)i['a'] + 1;
@@ -318,7 +318,7 @@ public sealed partial class UsseTranslator
                     s2 = dt == DataType.UInt16 ? $"(~{s2} & 0xFFFFu)" : $"(~{s2})";
                 }
             }
-            var a = Load(src1, 1, RepeatOffset(src1, r, RepeatMode.Slmsi));
+            Val a = Load(src1, 1, RepeatOffset(src1, r, RepeatMode.Slmsi));
             string e = op switch
             {
                 VOp.And => $"({a} & {s2})",
@@ -342,7 +342,7 @@ public sealed partial class UsseTranslator
 
     // ===================================================================== SOP (colour combine)
 
-    static string BlendOp(int op, string l, string r) => op switch
+    private static string BlendOp(int op, string l, string r) => op switch
     {
         0 => $"({l} + {r})",
         1 => $"({l} - {r})",
@@ -350,12 +350,12 @@ public sealed partial class UsseTranslator
         _ => $"max({l}, {r})",
     };
 
-    void Sop2(UsseInst i)
+    private void Sop2(UsseInst i)
     {
         // "10000ppcsnaaderbmooofllggghhhittkkjjqqqqqqquvvwwxyzzzzzzzAAAAAAA"
-        var src1 = DecodeSrc12(1, i['z'], i['k'], i.Bit('r'), false, 7);
-        var src2 = DecodeSrc12(2, i['A'], i['j'], i.Bit('b'), false, 7);
-        var dest = DecodeDest(3, i['q'], i['t'], i.Bit('d'), false, 7);
+        Operand src1 = DecodeSrc12(1, i['z'], i['k'], i.Bit('r'), false, 7);
+        Operand src2 = DecodeSrc12(2, i['A'], i['j'], i.Bit('b'), false, 7);
+        Operand dest = DecodeDest(3, i['q'], i['t'], i.Bit('d'), false, 7);
         src1.Type = src2.Type = dest.Type = DataType.UInt8;
         uint csel1 = i['g'], csel2 = i['h'], asel1 = i['a'], asel2 = i['l'];
         if (csel1 > 4 || csel2 > 4 || asel1 > 2 || asel2 > 2)
@@ -368,10 +368,10 @@ public sealed partial class UsseTranslator
         for (int r = 0; r < repeats; r++)
         {
             int o1 = RepeatOffset(src1, r, RepeatMode.Slmsi), o2 = RepeatOffset(src2, r, RepeatMode.Slmsi);
-            var c1 = Bind(ToFloat(Load(src1, 0b0111, o1), DataType.UInt8, true));
-            var c2 = Bind(ToFloat(Load(src2, 0b0111, o2), DataType.UInt8, true));
-            var a1 = Bind(ToFloat(Load(src1, 0b1000, o1), DataType.UInt8, true));
-            var a2 = Bind(ToFloat(Load(src2, 0b1000, o2), DataType.UInt8, true));
+            Val c1 = Bind(ToFloat(Load(src1, 0b0111, o1), DataType.UInt8, true));
+            Val c2 = Bind(ToFloat(Load(src2, 0b0111, o2), DataType.UInt8, true));
+            Val a1 = Bind(ToFloat(Load(src1, 0b1000, o1), DataType.UInt8, true));
+            Val a2 = Bind(ToFloat(Load(src2, 0b1000, o2), DataType.UInt8, true));
             string sc1 = c1.E, sa1 = a1.E;
             if (i.Bit('u'))
             {
@@ -420,12 +420,12 @@ public sealed partial class UsseTranslator
         }
     }
 
-    void Sop2m(UsseInst i)
+    private void Sop2m(UsseInst i)
     {
         // "10010ppmsnccderbowwwwaalllfff-ttkkgguuuuuuu-------hhhhhhhiiiiiii"
-        var src1 = DecodeSrc12(1, i['h'], i['k'], i.Bit('r'), false, 7);
-        var src2 = DecodeSrc12(2, i['i'], i['g'], i.Bit('b'), false, 7);
-        var dest = DecodeDest(3, i['u'], i['t'], i.Bit('d'), false, 7);
+        Operand src1 = DecodeSrc12(1, i['h'], i['k'], i.Bit('r'), false, 7);
+        Operand src2 = DecodeSrc12(2, i['i'], i['g'], i.Bit('b'), false, 7);
+        Operand dest = DecodeDest(3, i['u'], i['t'], i.Bit('d'), false, 7);
         src1.Type = src2.Type = dest.Type = DataType.UInt8;
         uint sel1 = i['l'], sel2 = i['f'];
         static string? Sel(uint s, string a, string b) => s switch
@@ -437,10 +437,10 @@ public sealed partial class UsseTranslator
             7 => $"{b}.wwww",
             _ => null
         };
-        var s1 = Bind(ToFloat(Load(src1, 0b1111), DataType.UInt8, true));
-        var s2 = Bind(ToFloat(Load(src2, 0b1111), DataType.UInt8, true));
-        var op1 = Sel(sel1, s1.E, s2.E);
-        var op2 = Sel(sel2, s1.E, s2.E);
+        Val s1 = Bind(ToFloat(Load(src1, 0b1111), DataType.UInt8, true));
+        Val s2 = Bind(ToFloat(Load(src2, 0b1111), DataType.UInt8, true));
+        string? op1 = Sel(sel1, s1.E, s2.E);
+        string? op2 = Sel(sel2, s1.E, s2.E);
         if (op1 == null || op2 == null)
         {
             Warnings.Add("sop2m selector");
@@ -469,13 +469,13 @@ public sealed partial class UsseTranslator
         Store(dest, ToInt(new Val(res, 'f', 4), DataType.UInt8, true), wmask);
     }
 
-    void Sop3(UsseInst i)
+    private void Sop3(UsseInst i)
     {
         // "10001ppcsnooderbmallfgghhhiiikttjjqquuuuuuuvvvvvvvwwwwwwwxxxxxxx"
-        var src0 = DecodeSrc0(0, i['v'], i['k'], false, false, 7);
-        var src1 = DecodeSrc12(1, i['w'], i['j'], i.Bit('r'), false, 7);
-        var src2 = DecodeSrc12(2, i['x'], i['q'], i.Bit('b'), false, 7);
-        var dest = DecodeDest(3, i['u'], i['t'], i.Bit('d'), false, 7);
+        Operand src0 = DecodeSrc0(0, i['v'], i['k'], false, false, 7);
+        Operand src1 = DecodeSrc12(1, i['w'], i['j'], i.Bit('r'), false, 7);
+        Operand src2 = DecodeSrc12(2, i['x'], i['q'], i.Bit('b'), false, 7);
+        Operand dest = DecodeDest(3, i['u'], i['t'], i.Bit('d'), false, 7);
         src0.Type = src1.Type = src2.Type = dest.Type = DataType.UInt8;
         if (i.Bit('f'))
         {
@@ -483,12 +483,12 @@ public sealed partial class UsseTranslator
             return;
         }
         uint csel1 = i['h'], csel2 = i['i'], asel1 = i['l'];
-        var c0 = Bind(ToFloat(Load(src0, 0b0111), DataType.UInt8, true));
-        var c1 = Bind(ToFloat(Load(src1, 0b0111), DataType.UInt8, true));
-        var c2 = Bind(ToFloat(Load(src2, 0b0111), DataType.UInt8, true));
-        var a0 = Bind(ToFloat(Load(src0, 0b1000), DataType.UInt8, true));
-        var a1 = Bind(ToFloat(Load(src1, 0b1000), DataType.UInt8, true));
-        var a2 = Bind(ToFloat(Load(src2, 0b1000), DataType.UInt8, true));
+        Val c0 = Bind(ToFloat(Load(src0, 0b0111), DataType.UInt8, true));
+        Val c1 = Bind(ToFloat(Load(src1, 0b0111), DataType.UInt8, true));
+        Val c2 = Bind(ToFloat(Load(src2, 0b0111), DataType.UInt8, true));
+        Val a0 = Bind(ToFloat(Load(src0, 0b1000), DataType.UInt8, true));
+        Val a1 = Bind(ToFloat(Load(src1, 0b1000), DataType.UInt8, true));
+        Val a2 = Bind(ToFloat(Load(src2, 0b1000), DataType.UInt8, true));
         string? CSel(uint s) => s switch
         {
             0 => "vec3(0.0)",
@@ -515,10 +515,10 @@ public sealed partial class UsseTranslator
             6 or 7 => a2.E,
             _ => null
         };
-        var fl = CSel(csel1);
-        var fr = CSel(csel2);
-        var al = ASel1(asel1);
-        var ar = ASel2(csel2);
+        string? fl = CSel(csel1);
+        string? fr = CSel(csel2);
+        string al = ASel1(asel1);
+        string? ar = ASel2(csel2);
         if (fl == null || fr == null || ar == null)
         {
             Warnings.Add("sop3 selector");
@@ -548,13 +548,13 @@ public sealed partial class UsseTranslator
 
     // ===================================================================== integer multiply-add
 
-    void I8mad(UsseInst i)
+    private void I8mad(UsseInst i)
     {
         // "10011ppcsneedarbmtttuolfghijkqvvwwxxyyyyyyyzzzzzzzAAAAAAABBBBBBB"
-        var src0 = DecodeSrc0(0, i['z'], i['q'], false, false, 7);
-        var src1 = DecodeSrc12(1, i['A'], i['w'], i.Bit('r'), false, 7);
-        var src2 = DecodeSrc12(2, i['B'], i['x'], i.Bit('b'), false, 7);
-        var dest = DecodeDest(3, i['y'], i['v'], i.Bit('d'), false, 7);
+        Operand src0 = DecodeSrc0(0, i['z'], i['q'], false, false, 7);
+        Operand src1 = DecodeSrc12(1, i['A'], i['w'], i.Bit('r'), false, 7);
+        Operand src2 = DecodeSrc12(2, i['B'], i['x'], i.Bit('b'), false, 7);
+        Operand dest = DecodeDest(3, i['y'], i['v'], i.Bit('d'), false, 7);
         src0.Type = src1.Type = src2.Type = dest.Type = DataType.UInt8;
         if (i.Bit('i'))
         {
@@ -569,24 +569,24 @@ public sealed partial class UsseTranslator
         int repeats = (int)i['t'] + 1;
         for (int r = 0; r < repeats; r++)
         {
-            var m1 = Load(src1, 0b1111, RepeatOffset(src1, r, RepeatMode.Slmsi));
-            var m2 = Load(src2, 0b1111, RepeatOffset(src2, r, RepeatMode.Slmsi));
-            var add = Load(src0, 0b1111, RepeatOffset(src0, r, RepeatMode.Slmsi));
+            Val m1 = Load(src1, 0b1111, RepeatOffset(src1, r, RepeatMode.Slmsi));
+            Val m2 = Load(src2, 0b1111, RepeatOffset(src2, r, RepeatMode.Slmsi));
+            Val add = Load(src0, 0b1111, RepeatOffset(src0, r, RepeatMode.Slmsi));
             string e = i.Bit('k') ? $"({m1} * {m2} - {add})" : $"({m1} * {m2} + {add})";
             Store(dest, new Val(e, 'u', 4), 0b1111, RepeatOffset(dest, r, RepeatMode.Slmsi));
         }
     }
 
-    void I16mad(UsseInst i)
+    private void I16mad(UsseInst i)
     {
         // "10100ppasnredbck-tttmmffoolhhgiijjqquuuuuuuvvvvvvvwwwwwwwxxxxxxx"
         uint mode = i['m'];
-        var dt = mode <= 1 ? DataType.UInt16 : DataType.Int16;
+        DataType dt = mode <= 1 ? DataType.UInt16 : DataType.Int16;
         bool signed = mode >= 2;
-        var dest = DecodeDest(3, i['u'], i['i'], i.Bit('d'), false, 7);
-        var src0 = DecodeSrc0(0, i['v'], i['g'], false, false, 7);
-        var src1 = DecodeSrc12(1, i['w'], i['j'], i.Bit('c'), false, 7);
-        var src2 = DecodeSrc12(2, i['x'], i['q'], i.Bit('k'), false, 7);
+        Operand dest = DecodeDest(3, i['u'], i['i'], i.Bit('d'), false, 7);
+        Operand src0 = DecodeSrc0(0, i['v'], i['g'], false, false, 7);
+        Operand src1 = DecodeSrc12(1, i['w'], i['j'], i.Bit('c'), false, 7);
+        Operand src2 = DecodeSrc12(2, i['x'], i['q'], i.Bit('k'), false, 7);
         dest.Type = src0.Type = src1.Type = src2.Type = dt;
         int m1 = 1, m2 = 1;
         if (i['o'] != 0)
@@ -616,24 +616,24 @@ public sealed partial class UsseTranslator
         int repeats = (int)i['t'] + 1;
         for (int r = 0; r < repeats; r++)
         {
-            var a = Load(src0, 1, RepeatOffset(src0, r, RepeatMode.Slmsi));
-            var b = Load(src1, m1, RepeatOffset(src1, r, RepeatMode.Slmsi));
-            var c = Load(src2, m2, RepeatOffset(src2, r, RepeatMode.Slmsi));
+            Val a = Load(src0, 1, RepeatOffset(src0, r, RepeatMode.Slmsi));
+            Val b = Load(src1, m1, RepeatOffset(src1, r, RepeatMode.Slmsi));
+            Val c = Load(src2, m2, RepeatOffset(src2, r, RepeatMode.Slmsi));
             string e = signed ? $"(int({a}) * int({b}) + int({c}))" : $"(uint({a}) * uint({b}) + uint({c}))";
             Store(dest, new Val(e, signed ? 'i' : 'u', 1), 1, RepeatOffset(dest, r, RepeatMode.Slmsi));
         }
     }
 
-    void I32mad(UsseInst i)
+    private void I32mad(UsseInst i)
     {
         // "10101pps-nrcdeba0tttif00yy000kgghhjjlllllllmmmmmmmoooooooqqqqqqq"
         bool signed = i.Bit('i');
-        var dest = DecodeDest(3, i['l'], i['g'], i.Bit('d'), false, 7);
-        var src0 = DecodeSrc0(0, i['m'], i['k'], false, false, 7);
-        var src1 = DecodeSrc12(1, i['o'], i['h'], i.Bit('b'), false, 7);
-        var src2 = DecodeSrc12(2, i['q'], i['j'], i.Bit('a'), false, 7);
-        var dt32 = signed ? DataType.Int32 : DataType.UInt32;
-        var dt16 = signed ? DataType.Int16 : DataType.UInt16;
+        Operand dest = DecodeDest(3, i['l'], i['g'], i.Bit('d'), false, 7);
+        Operand src0 = DecodeSrc0(0, i['m'], i['k'], false, false, 7);
+        Operand src1 = DecodeSrc12(1, i['o'], i['h'], i.Bit('b'), false, 7);
+        Operand src2 = DecodeSrc12(2, i['q'], i['j'], i.Bit('a'), false, 7);
+        DataType dt32 = signed ? DataType.Int32 : DataType.UInt32;
+        DataType dt16 = signed ? DataType.Int16 : DataType.UInt16;
         dest.Type = dt32;
         src0.Type = dt16;
         src1.Type = dt16;
@@ -643,24 +643,24 @@ public sealed partial class UsseTranslator
         int repeats = (int)i['t'] + 1;
         for (int r = 0; r < repeats; r++)
         {
-            var a = Load(src0, m0, RepeatOffset(src0, r, RepeatMode.Slmsi));
-            var b = Load(src1, m1, RepeatOffset(src1, r, RepeatMode.Slmsi));
-            var c = Load(src2, m2, RepeatOffset(src2, r, RepeatMode.Slmsi));
+            Val a = Load(src0, m0, RepeatOffset(src0, r, RepeatMode.Slmsi));
+            Val b = Load(src1, m1, RepeatOffset(src1, r, RepeatMode.Slmsi));
+            Val c = Load(src2, m2, RepeatOffset(src2, r, RepeatMode.Slmsi));
             string e = signed ? $"(int({a}) * int({b}) + int({c}))" : $"(uint({a}) * uint({b}) + uint({c}))";
             Store(dest, new Val(e, signed ? 'i' : 'u', 1), 1, RepeatOffset(dest, r, RepeatMode.Slmsi));
         }
         ResetRepeatMultiplier();
     }
 
-    void I32mad2(UsseInst i)
+    private void I32mad2(UsseInst i)
     {
         // "11010ppp-nssdercbooo00iga0000kttffhhjjjjjjjlllllllmmmmmmmqqqqqqq"
         bool signed = i.Bit('i');
-        var dest = DecodeDest(3, i['j'], i['t'], i.Bit('d'), false, 7);
-        var src0 = DecodeSrc0(0, i['l'], i['k'], i.Bit('b'), false, 7);
-        var src1 = DecodeSrc12(1, i['m'], i['f'], i.Bit('r'), false, 7);
-        var src2 = DecodeSrc12(2, i['q'], i['h'], i.Bit('c'), false, 7);
-        var dt = signed ? DataType.Int32 : DataType.UInt32;
+        Operand dest = DecodeDest(3, i['j'], i['t'], i.Bit('d'), false, 7);
+        Operand src0 = DecodeSrc0(0, i['l'], i['k'], i.Bit('b'), false, 7);
+        Operand src1 = DecodeSrc12(1, i['m'], i['f'], i.Bit('r'), false, 7);
+        Operand src2 = DecodeSrc12(2, i['q'], i['h'], i.Bit('c'), false, 7);
+        DataType dt = signed ? DataType.Int32 : DataType.UInt32;
         dest.Type = src0.Type = src1.Type = src2.Type = dt;
         if (i.Bit('g'))
         {
@@ -676,14 +676,14 @@ public sealed partial class UsseTranslator
         int repeats = (int)i['o'] + 1;
         for (int r = 0; r < repeats; r++)
         {
-            var a = Load(src0, 1, RepeatOffset(src0, r, RepeatMode.Slmsi));
-            var b = Load(src1, 1, RepeatOffset(src1, r, RepeatMode.Slmsi));
-            var c = Load(src2, 1, RepeatOffset(src2, r, RepeatMode.Slmsi));
+            Val a = Load(src0, 1, RepeatOffset(src0, r, RepeatMode.Slmsi));
+            Val b = Load(src1, 1, RepeatOffset(src1, r, RepeatMode.Slmsi));
+            Val c = Load(src2, 1, RepeatOffset(src2, r, RepeatMode.Slmsi));
             // 32-bit x 16-bit + 32-bit: only the low half of src1 takes part. Shaders pack 16-bit coordinates into
             // registers whose upper half still holds unrelated bits and use them directly as src1 (row index * stride),
             // while src0 carries full 32-bit values (pixel index * bytes per pixel).
             string b16 = signed ? $"bitfieldExtract(int({b}), 0, 16)" : $"({b} & 0xFFFFu)";
-            var res = i['s'] == 0 ? new Val($"({a} * {b16} + {c})", a.K, 1) : c;
+            Val res = i['s'] == 0 ? new Val($"({a} * {b16} + {c})", a.K, 1) : c;
             Store(dest, res, 1, RepeatOffset(dest, r, RepeatMode.Slmsi));
         }
         ResetRepeatMultiplier();
@@ -691,10 +691,10 @@ public sealed partial class UsseTranslator
 
     // ===================================================================== special
 
-    void Depthf(UsseInst i)
+    private void Depthf(UsseInst i)
     {
         // "11111011s-11recb----npp---tffa--kkddggggggghhhhhhhiiiiiiijjjjjjj"
-        var src0 = DecodeSrc0(0, i['h'], i['a'], i.Bit('r'), true, 7);
+        Operand src0 = DecodeSrc0(0, i['h'], i['a'], i.Bit('r'), true, 7);
         // the depth feedback goes to the pixel's depth test: a vertex program has no fragment depth, nothing happens
         if (_program.IsVertex)
         {
@@ -705,7 +705,7 @@ public sealed partial class UsseTranslator
         Line($"gl_FragDepth = {Load(src0, 1)};");
     }
 
-    void Smlsi(UsseInst i)
+    private void Smlsi(UsseInst i)
     {
         // "11111010--01-n--ttttppppssssdrcieeeeeeeeaaaaaaaabbbbbbbbffffffff"
         void Parse(int idx, bool mode, uint value)
@@ -731,7 +731,7 @@ public sealed partial class UsseTranslator
         Parse(2, i.Bit('i'), i['f']);
     }
 
-    void Smbo(UsseInst i)
+    private void Smbo(UsseInst i)
     {
         // "11111011--01-n--ddddddddddddssssssssssssrrrrrrrrrrrrcccccccccccc"
         void Parse(int idx, uint off)

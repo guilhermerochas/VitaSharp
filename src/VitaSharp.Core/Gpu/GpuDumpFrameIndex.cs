@@ -30,14 +30,14 @@ public sealed class GpuDumpFrameIndex
         public long Lag => Mapped ? Present - ScenePresent - 1 : -1;
     }
 
-    sealed class Scene
+    private sealed class Scene
     {
         public uint Address;
         public long First, Last, BeginPresent;
     }
 
     public readonly List<Frame> Frames = new();
-    readonly Dictionary<long, Frame> _byPresent = new();
+    private readonly Dictionary<long, Frame> _byPresent = new();
     public long FirstPresent = -1, LastPresent = -1;
     public double Seconds;
 
@@ -87,7 +87,7 @@ public sealed class GpuDumpFrameIndex
         long prevEnd = 0;
         for (int i = 0; i < ix.Frames.Count; i++)
         {
-            var f = ix.Frames[i];
+            Frame f = ix.Frames[i];
             // the last scene with draws into the shown buffer, begun before the present (the game cannot draw into the
             // buffer again before it is shown; a later empty scene into it, a clear, does not move the frame)
             Scene? sc = null;
@@ -122,7 +122,7 @@ public sealed class GpuDumpFrameIndex
     public string Describe()
     {
         var sb = new StringBuilder("# present framebuffer draws(first-last,count) issued-between-presents lag | draws between the previous present and this one\n");
-        foreach (var f in Frames)
+        foreach (Frame f in Frames)
         {
             sb.Append(f.Mapped
                 ? $"#{f.Present} 0x{f.Address:X8} draws {f.FirstDraw}-{f.LastDraw} ({f.Draws}) between #{f.ScenePresent}-#{f.ScenePresent + 1} lag {f.Lag}"
@@ -137,7 +137,7 @@ public sealed class GpuDumpFrameIndex
     public string LagSummary()
     {
         var hist = new SortedDictionary<long, int>();
-        foreach (var f in Frames)
+        foreach (Frame f in Frames)
         {
             long k = f.Lag;
             hist[k] = hist.GetValueOrDefault(k) + 1;

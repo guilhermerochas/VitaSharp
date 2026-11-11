@@ -32,19 +32,19 @@ public static class DecoderOutputs
         public bool Fits(uint w, uint h) => (w == Width && h == Height) || (AltWidth != 0 && w == AltWidth && h == AltHeight);
     }
 
-    const int Depth = 2, MaxAddresses = 8;
-    static readonly object Lock = new();
+    private const int Depth = 2, MaxAddresses = 8;
+    private static readonly object s_lock = new();
     // per (address space id, address): newest last
-    static readonly Dictionary<(int, uint), List<Picture>> History = new();
-    static long _seq;
+    private static readonly Dictionary<(int, uint), List<Picture>> s_history = new();
+    private static long s_seq;
     // per address space and picture size (one movie's ring of buffers): the newest picture an upload took (its Seq)
-    static readonly Dictionary<(int, uint, uint), long> LastTaken = new();
-    static long _served;
+    private static readonly Dictionary<(int, uint, uint), long> s_lastTaken = new();
+    private static long s_served;
 
     /// <summary>Pictures served from the history instead of memory (diagnostics).</summary>
-    public static long Served => Interlocked.Read(ref _served);
+    public static long Served => Interlocked.Read(ref s_served);
 
-    static int SpaceOf(uint addr) => GuestMemory.IsSharedAddress(addr) ? 0 : AddressSpace.Current?.Id ?? 0;
+    private static int SpaceOf(uint addr) => GuestMemory.IsSharedAddress(addr) ? 0 : AddressSpace.Current?.Id ?? 0;
 
     /// <summary>Records the picture a decoder just wrote at <paramref name="addr"/> (call after the write).</summary>
     public static void Record(uint addr, uint width, uint height, ReadOnlySpan<byte> data, uint altWidth = 0, uint altHeight = 0)
@@ -54,18 +54,18 @@ public static class DecoderOutputs
             return;
         }
 
-        var key = (SpaceOf(addr), addr);
-        lock (Lock)
+        (int, uint addr) key = (SpaceOf(addr), addr);
+        lock (s_lock)
         {
-            if (!History.TryGetValue(key, out var list))
+            if (!s_history.TryGetValue(key, out List<Picture>? list))
             {
-                if (History.Count >= MaxAddresses)
+                if (s_history.Count >= MaxAddresses)
                 {
                     // drop the address written longest ago
-                    var oldest = History.MinBy(kv => kv.Value[^1].Seq).Key;
-                    History.Remove(oldest);
+                    (int, uint) oldest = s_history.MinBy(kv => kv.Value[^1].Seq).Key;
+                    s_history.Remove(oldest);
                 }
-                History[key] = list = new List<Picture>(Depth);
+                s_history[key] = list = new List<Picture>(Depth);
             }
             // reuse the array of the picture that falls out of the history
             byte[]? buf = null;
@@ -80,7 +80,7 @@ public static class DecoderOutputs
             }
 
             data.CopyTo(buf);
-            list.Add(new Picture { Address = addr, Width = width, Height = height, AltWidth = altWidth, AltHeight = altHeight, Data = buf, Seq = ++_seq });
+            list.Add(new Picture { Address = addr, Width = width, Height = height, AltWidth = altWidth, AltHeight = altHeight, Data = buf, Seq = ++s_seq });
         }
     }
 
@@ -101,9 +101,9 @@ public static class DecoderOutputs
         }
 
         Picture newest, match;
-        lock (Lock)
+        lock (s_lock)
         {
-            if (History.Count == 0 || !History.TryGetValue((SpaceOf(addr), addr), out var list))
+            if (s_history.Count == 0 || !s_history.TryGetValue((SpaceOf(addr), addr), out List<Picture>? list))
             {
                 return null;
             }
@@ -114,11 +114,11 @@ public static class DecoderOutputs
             // game: drawing it now would step back in time. Ninja Gaiden Sigma 2 Plus decodes its movie into a ring of three
             // buffers; one picture of one buffer was never sampled, and from then on that buffer always served its previous
             // picture (every third frame of the intro two frames back)
-            Picture? found = list.FirstOrDefault(p => !p.Taken && p.Fits(w, h) && p.Seq > LastTaken.GetValueOrDefault((space, p.Width, p.Height)));
+            Picture? found = list.FirstOrDefault(p => !p.Taken && p.Fits(w, h) && p.Seq > s_lastTaken.GetValueOrDefault((space, p.Width, p.Height)));
             if (found != null)
             {
                 // every picture before it was drawn or skipped
-                foreach (var p in list)
+                foreach (Picture p in list)
                 {
                     if (p == found)
                     {
@@ -128,7 +128,7 @@ public static class DecoderOutputs
                     p.Taken = true;
                 }
                 found.Taken = true;
-                LastTaken[(space, found.Width, found.Height)] = found.Seq;
+                s_lastTaken[(space, found.Width, found.Height)] = found.Seq;
                 if (found == newest)
                 {
                     return null;
@@ -162,7 +162,7 @@ public static class DecoderOutputs
             return null;
         }
 
-        Interlocked.Increment(ref _served);
+        Interlocked.Increment(ref s_served);
         return match;
     }
 }

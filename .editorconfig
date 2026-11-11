@@ -327,7 +327,7 @@ dotnet_diagnostic.IDE0055.severity = warning
 # Rules 5, 10, 12 and 13 (explicit accessibility, var, naming) are enforced folder by folder as each folder is converted
 # (build/format-check --fix applies them: dotnet format for IDE0040/IDE0007/IDE0008, build/NamingTool for IDE1006).
 # Once every folder complies these move to the [*.cs] section above.
-[{tools/**.cs,src/VitaSharp.Core.Generators/**.cs,src/VitaSharp.Core/Cpu/**.cs}]
+[{tools/**.cs,src/VitaSharp.Core.Generators/**.cs,src/VitaSharp.Core/Cpu/**.cs,src/VitaSharp.Core/Gpu/**.cs,src/VitaSharp.Core/Gxm/**.cs}]
 dotnet_style_require_accessibility_modifiers = for_non_interface_members:warning
 csharp_style_var_elsewhere = false:warning
 csharp_style_var_for_built_in_types = false:warning

@@ -59,8 +59,8 @@ public sealed class CfLoop : CfNode
 public static class UsseControlFlow
 {
     // ExtPredicate values: 0 NONE, 1 P0, 2 P1, 3 P2, 4 P3, 5 NEGP0, 6 NEGP1, 7 PN
-    static byte ExtVecToExt(byte p) => p switch { 0 => 0, 1 => 1, 2 => 2, 3 => 3, 4 => 5, 5 => 6, _ => 0 };
-    static byte ShortToExt(byte p) => p switch { 0 => 0, 1 => 1, 2 => 2, 3 => 5, _ => 0 };
+    private static byte ExtVecToExt(byte p) => p switch { 0 => 0, 1 => 1, 2 => 2, 3 => 3, 4 => 5, 5 => 6, _ => 0 };
+    private static byte ShortToExt(byte p) => p switch { 0 => 0, 1 => 1, 2 => 2, 3 => 5, _ => 0 };
 
     public static bool IsBranch(ulong inst, out byte pred, out int off)
     {
@@ -81,7 +81,7 @@ public static class UsseControlFlow
         return br;
     }
 
-    static bool IsReturn(ulong inst)
+    private static bool IsReturn(ulong inst)
     {
         uint high = (uint)(inst >> 32);
         return (high & ~0x07FFFFFFu) >> 27 == 0b11111 && ((high & ~0xFFCFFFFFu) >> 20) == 0 && (high & 0x00400000) == 0 && ((high & ~0xFFFFFE3Fu) >> 6) == 2;
@@ -168,8 +168,8 @@ public static class UsseControlFlow
         return (byte)((hi & ~0xF8FFFFFFu) >> 24);
     }
 
-    record struct Branch(uint Offset, uint Dest, byte Pred);
-    record struct Request(uint Begin, uint End, CfBlock Block);
+    private record struct Branch(uint Offset, uint Dest, byte Pred);
+    private record struct Request(uint Begin, uint End, CfBlock Block);
 
     public static CfBlock Analyze(Func<uint, ulong> read, uint endOffset)
     {
@@ -205,7 +205,7 @@ public static class UsseControlFlow
 
         var queue = new Queue<Request>();
         uint start = returnOffset;
-        foreach (var call in calls)
+        foreach (uint call in calls)
         {
             queue.Enqueue(new Request(start, call - 1, root));
             queue.Enqueue(new Request(0, returnOffset, root));
@@ -216,7 +216,7 @@ public static class UsseControlFlow
         int guard = 0;
         while (queue.Count > 0 && guard++ < 100000)
         {
-            var req = queue.Dequeue();
+            Request req = queue.Dequeue();
             var code = new CfCode { Offset = req.Begin };
             bool codePending = true;
             for (uint a = req.Begin; a <= req.End && a != uint.MaxValue; a++)
@@ -233,7 +233,7 @@ public static class UsseControlFlow
                     code.Condition = pred;
                 }
 
-                if (from.TryGetValue(a, out var br))
+                if (from.TryGetValue(a, out Branch br))
                 {
                     bool loopStmt = false;
                     CfNode? lp = req.Block;
@@ -276,7 +276,7 @@ public static class UsseControlFlow
                         {
                             bool elseExist = false;
                             uint elseEnd = 0;
-                            if (from.TryGetValue(br.Dest - 1, out var elseBr))
+                            if (from.TryGetValue(br.Dest - 1, out Branch elseBr))
                             {
                                 if (elseBr.Dest >= br.Dest)
                                 {
@@ -285,7 +285,7 @@ public static class UsseControlFlow
                                 }
                                 else
                                 {
-                                    foreach (var kv in from)
+                                    foreach (KeyValuePair<uint, Branch> kv in from)
                                     {
                                         if (kv.Key <= elseBr.Dest + 1)
                                         {
@@ -325,7 +325,7 @@ public static class UsseControlFlow
                 else if (back.Any(b => b.Dest == a) && req.Block.Start != a)
                 {
                     uint found = uint.MaxValue;
-                    foreach (var b in back)
+                    foreach (Branch b in back)
                     {
                         if (b.Dest == a && b.Pred == 0 && (found == uint.MaxValue || found < b.Offset))
                         {
@@ -336,7 +336,7 @@ public static class UsseControlFlow
                     if (found == uint.MaxValue)
                     {
                         // conditional back edge without an unconditional end: treat the last one as the loop end
-                        foreach (var b in back)
+                        foreach (Branch b in back)
                         {
                             if (b.Dest == a)
                             {
@@ -392,9 +392,9 @@ public static class UsseControlFlow
 
 public sealed partial class UsseTranslator
 {
-    ulong[] _code = [];
+    private ulong[] _code = [];
 
-    string Condition(byte pred, bool neg = false)
+    private string Condition(byte pred, bool neg = false)
     {
         int num = 0;
         bool doNeg = neg;
@@ -421,13 +421,13 @@ public sealed partial class UsseTranslator
             return;
         }
 
-        var root = UsseControlFlow.Analyze(a => a < code.Length ? code[a] : 0, (uint)code.Length - 1);
+        CfBlock root = UsseControlFlow.Analyze(a => a < code.Length ? code[a] : 0, (uint)code.Length - 1);
         EmitBlock(root);
     }
 
-    void EmitBlock(CfBlock b)
+    private void EmitBlock(CfBlock b)
     {
-        foreach (var n in b.Children)
+        foreach (CfNode n in b.Children)
         {
             switch (n)
             {
@@ -477,7 +477,7 @@ public sealed partial class UsseTranslator
         }
     }
 
-    void EmitCode(CfCode c)
+    private void EmitCode(CfCode c)
     {
         if (c.Size == 0)
         {
@@ -492,7 +492,7 @@ public sealed partial class UsseTranslator
 
         for (uint pc = c.Offset; pc < c.Offset + c.Size && pc < _code.Length; pc++)
         {
-            var ins = UsseDecoder.Decode(_code[pc]);
+            UsseInst ins = UsseDecoder.Decode(_code[pc]);
             Line($"// {pc}: {ins.Op} {_code[pc]:X16}");
             Translate(ins);
         }

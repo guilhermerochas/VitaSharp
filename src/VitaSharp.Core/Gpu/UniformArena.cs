@@ -14,18 +14,18 @@ public interface IUniformHeap
 /// <summary>A block of uniform memory shared by many queued draws (see <see cref="UniformArena"/>).</summary>
 public sealed unsafe class UniformChunk
 {
-    byte[]? _data;
-    volatile nint _ptr;
+    private byte[]? _data;
+    private volatile nint _ptr;
     public readonly int Size;
     /// <summary>The heap whose memory this chunk is (null: managed memory) and the chunk's id in it.</summary>
     public IUniformHeap? Heap { get; private set; }
     public readonly int HeapId;
     /// <summary>Owned by the backend's worker thread (e.g. the frame that last took a reference).</summary>
     public long BackendTag = -1;
-    internal int Used, Outstanding;
-    internal bool Retired, Dedicated;
+    internal int _used, _outstanding;
+    internal bool _retired, _dedicated;
     /// <summary>On the free stack (guards against a second recycle: see UniformArena.Release).</summary>
-    internal bool InFree;
+    internal bool _inFree;
 
     internal UniformChunk(int size)
     {
@@ -48,9 +48,9 @@ public sealed unsafe class UniformChunk
     // recycled: a draw's uniform slice must read zero where no buffer is copied, and clearing every slice whole (8 KB
     // per unknown-size buffer, most of it never written) was most of the guest thread's cost per draw (F1 2011 races,
     // ~1,200 draws a frame). Writers mark what they wrote, in 256-byte granules; a recycled chunk clears only those.
-    const int GranuleShift = 8;
-    readonly ulong[] _written;
-    static int WrittenWords(int size) => (((size + (1 << GranuleShift) - 1) >> GranuleShift) + 63) / 64;
+    private const int GranuleShift = 8;
+    private readonly ulong[] _written;
+    private static int WrittenWords(int size) => (((size + (1 << GranuleShift) - 1) >> GranuleShift) + 63) / 64;
 
     /// <summary>Marks <paramref name="length"/> bytes at <paramref name="offset"/> (chunk offset) as written: they are
     /// cleared when the chunk is recycled. Any thread.</summary>
@@ -77,7 +77,7 @@ public sealed unsafe class UniformChunk
     internal void ClearWritten()
     {
         long t0 = System.Diagnostics.Stopwatch.GetTimestamp();
-        var span = Span;
+        Span<byte> span = Span;
         for (int w = 0; w < _written.Length; w++)
         {
             ulong bits = _written[w];
@@ -145,13 +145,13 @@ public static class UniformArena
     // spare managed chunks kept after a burst of queued work (64 MB). Counted apart from the heap's chunks: with the
     // 48 heap chunks on the same stack the old bound of 16 kept none, so a game past the heap (Jak 1's title screen,
     // ~27 MB of uniforms a frame) allocated a new 1 MB array per chunk, ~20 MB a frame and a gen 2 GC almost every frame
-    const int MaxFreeChunks = 64;
-    static int _freeManaged;
-    static readonly object Lock = new();
-    static readonly Stack<UniformChunk> Free = new();
-    static readonly List<UniformChunk> HeapChunks = new();
-    static UniformChunk? _current;
-    static IUniformHeap? _heap;
+    private const int MaxFreeChunks = 64;
+    private static int s_freeManaged;
+    private static readonly object s_lock = new();
+    private static readonly Stack<UniformChunk> s_free = new();
+    private static readonly List<UniformChunk> s_heapChunks = new();
+    private static UniformChunk? s_current;
+    private static IUniformHeap? s_heap;
 
     /// <summary>Alignment of every slice (a power of two, at least 16): the renderer's dynamic offset alignment.</summary>
     public static int Alignment { get; private set; } = 16;
@@ -160,14 +160,14 @@ public static class UniformArena
 
     public static void Attach(IUniformHeap heap, int alignment)
     {
-        lock (Lock)
+        lock (s_lock)
         {
-            _heap = heap;
+            s_heap = heap;
             Alignment = Math.Max(16, (int)System.Numerics.BitOperations.RoundUpToPowerOf2((uint)alignment));
-            if (_current != null)
+            if (s_current != null)
             {
-                Retire(_current);
-                _current = null;
+                Retire(s_current);
+                s_current = null;
             }
         }
     }
@@ -175,14 +175,14 @@ public static class UniformArena
     /// <summary>The heap is destroyed: its chunks, free or still held by queued draws, move to managed memory.</summary>
     public static void Detach(IUniformHeap heap)
     {
-        lock (Lock)
+        lock (s_lock)
         {
-            if (_heap == heap)
+            if (s_heap == heap)
             {
-                _heap = null;
+                s_heap = null;
             }
 
-            foreach (var c in HeapChunks)
+            foreach (UniformChunk c in s_heapChunks)
             {
                 if (c.Heap == heap)
                 {
@@ -190,8 +190,8 @@ public static class UniformArena
                 }
             }
 
-            HeapChunks.RemoveAll(c => c.Heap == null);
-            _freeManaged = Free.Count(c => c.Heap == null);
+            s_heapChunks.RemoveAll(c => c.Heap == null);
+            s_freeManaged = s_free.Count(c => c.Heap == null);
         }
     }
 
@@ -202,29 +202,29 @@ public static class UniformArena
     public static UniformChunk Rent(int bytes, out int offset, bool clear = true)
     {
         UniformChunk c;
-        lock (Lock)
+        lock (s_lock)
         {
             if (bytes > ChunkSize / 4)
             {
                 // unusually large block: a chunk of its own, dropped once released
-                c = new UniformChunk(bytes) { Outstanding = 1, Dedicated = true, Retired = true };
+                c = new UniformChunk(bytes) { _outstanding = 1, _dedicated = true, _retired = true };
                 offset = 0;
                 return c;
             }
-            c = _current!;
-            if (c == null || Align(c.Used) + bytes > c.Size)
+            c = s_current!;
+            if (c == null || Align(c._used) + bytes > c.Size)
             {
                 if (c != null)
                 {
                     Retire(c);
                 }
-                c = _current = NewChunk();
-                c.Retired = false;
-                c.Used = 0;
+                c = s_current = NewChunk();
+                c._retired = false;
+                c._used = 0;
             }
-            offset = Align(c.Used);
-            c.Used = offset + bytes;
-            Interlocked.Increment(ref c.Outstanding);
+            offset = Align(c._used);
+            c._used = offset + bytes;
+            Interlocked.Increment(ref c._outstanding);
         }
         if (clear)
         {
@@ -234,23 +234,23 @@ public static class UniformArena
         return c;
     }
 
-    static UniformChunk NewChunk()
+    private static UniformChunk NewChunk()
     {
-        if (Free.Count > 0)
+        if (s_free.Count > 0)
         {
-            var f = Free.Pop();
-            f.InFree = false;
+            UniformChunk f = s_free.Pop();
+            f._inFree = false;
             if (f.Heap == null)
             {
-                _freeManaged--;
+                s_freeManaged--;
             }
 
             return f;
         }
-        if (_heap is { } h && h.Alloc(out int id) is var p and not 0)
+        if (s_heap is { } h && h.Alloc(out int id) is var p and not 0)
         {
             var hc = new UniformChunk(p, ChunkSize, h, id);
-            HeapChunks.Add(hc);
+            s_heapChunks.Add(hc);
             return hc;
         }
         return new UniformChunk(ChunkSize);
@@ -259,7 +259,7 @@ public static class UniformArena
     /// <summary>One more reference on the chunk (a recorded frame that reads it); given back with <see cref="Release"/>.</summary>
     public static void AddRef(UniformChunk c)
     {
-        Interlocked.Increment(ref c.Outstanding); // the chunk is live (held by the caller): no recycle can race this
+        Interlocked.Increment(ref c._outstanding); // the chunk is live (held by the caller): no recycle can race this
     }
 
     /// <summary>The GPU worker releases a slice per executed draw: only the release that frees a retired chunk takes the
@@ -267,14 +267,14 @@ public static class UniformArena
     /// after checking again that the chunk is retired, unreferenced and not already free.</summary>
     public static void Release(UniformChunk c)
     {
-        if (Interlocked.Decrement(ref c.Outstanding) != 0 || c.Dedicated || !Volatile.Read(ref c.Retired))
+        if (Interlocked.Decrement(ref c._outstanding) != 0 || c._dedicated || !Volatile.Read(ref c._retired))
         {
             return;
         }
 
-        lock (Lock)
+        lock (s_lock)
         {
-            if (Volatile.Read(ref c.Outstanding) == 0 && c.Retired)
+            if (Volatile.Read(ref c._outstanding) == 0 && c._retired)
             {
                 Recycle(c);
             }
@@ -282,19 +282,19 @@ public static class UniformArena
     }
 
     /// <summary>A full chunk is no longer rented from (under the lock): free now, or by its last <see cref="Release"/>.</summary>
-    static void Retire(UniformChunk c)
+    private static void Retire(UniformChunk c)
     {
-        Volatile.Write(ref c.Retired, true);
+        Volatile.Write(ref c._retired, true);
         Interlocked.MemoryBarrier(); // pairs with the full fence of Release's decrement: one of the two sees the other
-        if (Volatile.Read(ref c.Outstanding) == 0)
+        if (Volatile.Read(ref c._outstanding) == 0)
         {
             Recycle(c);
         }
     }
 
-    static void Recycle(UniformChunk c)
+    private static void Recycle(UniformChunk c)
     {
-        if (c.InFree)
+        if (c._inFree)
         {
             return;
         }
@@ -306,14 +306,14 @@ public static class UniformArena
         // heap chunks are bounded by the heap and always kept; managed ones up to MaxFreeChunks
         if (c.Heap != null)
         {
-            c.InFree = true;
-            Free.Push(c);
+            c._inFree = true;
+            s_free.Push(c);
         }
-        else if (_freeManaged < MaxFreeChunks)
+        else if (s_freeManaged < MaxFreeChunks)
         {
-            c.InFree = true;
-            Free.Push(c);
-            _freeManaged++;
+            c._inFree = true;
+            s_free.Push(c);
+            s_freeManaged++;
         }
     }
 }

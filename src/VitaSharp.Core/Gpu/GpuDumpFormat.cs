@@ -61,7 +61,7 @@ public enum GpuDumpRecord : byte
 /// <summary>Growable little-endian byte buffer (no allocation per record).</summary>
 public sealed class DumpBuffer
 {
-    byte[] _buf;
+    private byte[] _buf;
 
     public DumpBuffer(int capacity = 1 << 16) => _buf = new byte[Math.Max(capacity, 16)];
     /// <summary>Writes into <paramref name="buffer"/> (grown by copying when it is too small).</summary>
@@ -73,14 +73,14 @@ public sealed class DumpBuffer
     public void Clear() => Length = 0;
     public void Truncate(int length) => Length = Math.Min(Length, length);
 
-    Span<byte> Grow(int n)
+    private Span<byte> Grow(int n)
     {
         if (Length + n > _buf.Length)
         {
             Array.Resize(ref _buf, Math.Max(_buf.Length * 2, Length + n));
         }
 
-        var s = _buf.AsSpan(Length, n);
+        Span<byte> s = _buf.AsSpan(Length, n);
         Length += n;
         return s;
     }
@@ -120,14 +120,14 @@ public sealed class DumpCursor
     }
     public bool AtEnd => Position >= End;
 
-    ReadOnlySpan<byte> Take(int n)
+    private ReadOnlySpan<byte> Take(int n)
     {
         if (Position + n > End)
         {
             throw new InvalidDataException("GPU dump record truncated");
         }
 
-        var s = Data.AsSpan(Position, n);
+        Span<byte> s = Data.AsSpan(Position, n);
         Position += n;
         return s;
     }
@@ -178,7 +178,7 @@ public sealed class GpuDumpHeader
     {
         get
         {
-            foreach (var e in Entries)
+            foreach (KeyValuePair<string, string> e in Entries)
             {
                 if (e.Key == key)
                 {
@@ -211,7 +211,7 @@ public sealed class GpuDumpHeader
         get
         {
             var sb = new StringBuilder();
-            foreach (var (k, v) in Entries)
+            foreach ((string? k, string? v) in Entries)
             {
                 sb.Append(k).Append(": ").Append(v.Replace("\r", "").Replace("\n", " | ")).Append('\n');
             }
@@ -223,7 +223,7 @@ public sealed class GpuDumpHeader
     public static GpuDumpHeader Parse(string text)
     {
         var h = new GpuDumpHeader();
-        foreach (var line in text.Split('\n'))
+        foreach (string line in text.Split('\n'))
         {
             int c = line.IndexOf(": ", StringComparison.Ordinal);
             if (c > 0)
@@ -234,7 +234,7 @@ public sealed class GpuDumpHeader
         return h;
     }
 
-    public long Long(string key, long fallback = 0) => long.TryParse(this[key], out var v) ? v : fallback;
+    public long Long(string key, long fallback = 0) => long.TryParse(this[key], out long v) ? v : fallback;
 }
 
 /// <summary>
@@ -244,17 +244,17 @@ public sealed class GpuDumpHeader
 public sealed class GpuDumpCodec
 {
     // ---- writer state
-    readonly Dictionary<object, int> _ids = new(ReferenceEqualityComparer.Instance);
-    int _nextInfo, _nextVp, _nextFp;
+    private readonly Dictionary<object, int> _ids = new(ReferenceEqualityComparer.Instance);
+    private int _nextInfo, _nextVp, _nextFp;
 
     // ---- reader state
-    readonly List<GxmProgramInfo> _infos = new();
-    readonly List<GxmVertexProgram> _vps = new();
-    readonly List<GxmFragmentProgram> _fps = new();
+    private readonly List<GxmProgramInfo> _infos = new();
+    private readonly List<GxmVertexProgram> _vps = new();
+    private readonly List<GxmFragmentProgram> _fps = new();
 
     public int ProgramCount => _ids.Count + _infos.Count;
 
-    readonly UniformBlocks _uniforms = new();
+    private readonly UniformBlocks _uniforms = new();
     /// <summary>Uniform block statistics (writer): blocks written inline, as references, as deltas; bytes before/after.</summary>
     public (long Inline, long Refs, long Deltas, long RawBytes, long StoredBytes) UniformStats => _uniforms.Stats;
 
@@ -265,19 +265,19 @@ public sealed class GpuDumpCodec
     /// Every non-empty block that is not a reference gets the next id; both sides keep the last <see cref="Window"/>
     /// blocks. The delta base is the previous block of the same program and stage.
     /// </summary>
-    sealed class UniformBlocks
+    private sealed class UniformBlocks
     {
-        const int Window = 4096;
-        readonly byte[][] _ring = new byte[Window][];
-        readonly ulong[] _hash = new ulong[Window];
-        int _next;
-        readonly Dictionary<ulong, int> _byHash = new();
-        readonly Dictionary<int, int> _lastOfStream = new();
+        private const int Window = 4096;
+        private readonly byte[][] _ring = new byte[Window][];
+        private readonly ulong[] _hash = new ulong[Window];
+        private int _next;
+        private readonly Dictionary<ulong, int> _byHash = new();
+        private readonly Dictionary<int, int> _lastOfStream = new();
         public (long Inline, long Refs, long Deltas, long RawBytes, long StoredBytes) Stats;
 
-        bool Live(int id) => id >= 0 && _next - id <= Window && _next - id > 0;
+        private bool Live(int id) => id >= 0 && _next - id <= Window && _next - id > 0;
 
-        int Add(byte[] content, ulong hash)
+        private int Add(byte[] content, ulong hash)
         {
             int id = _next++;
             int slot = id % Window;
@@ -310,7 +310,7 @@ public sealed class GpuDumpCodec
             }
             else
             {
-                var content = data.ToArray();
+                byte[] content = data.ToArray();
                 if (_lastOfStream.TryGetValue(stream, out int baseId) && Live(baseId) && _ring[baseId % Window].Length == data.Length && TryDelta(w, _ring[baseId % Window], data, _next - baseId))
                 {
                     Stats.Deltas++;
@@ -328,9 +328,9 @@ public sealed class GpuDumpCodec
         }
 
         /// <summary>Writes a delta when it is smaller than half the block.</summary>
-        static bool TryDelta(DumpBuffer w, byte[] baseBlock, ReadOnlySpan<byte> data, int distance)
+        private static bool TryDelta(DumpBuffer w, byte[] baseBlock, ReadOnlySpan<byte> data, int distance)
         {
-            var b = baseBlock.AsSpan();
+            Span<byte> b = baseBlock.AsSpan();
             int start = w.Length;
             w.U8(2);
             w.Var((uint)distance);
@@ -342,8 +342,8 @@ public sealed class GpuDumpCodec
             int runs = 0, pos = 0, prevEnd = 0, budget = data.Length / 2;
             // compared in 8-byte words (uniform blocks are vectors of floats): a run is a stretch of differing words,
             // ended by two equal words in a row
-            var dw = System.Runtime.InteropServices.MemoryMarshal.Cast<byte, ulong>(data);
-            var bw = System.Runtime.InteropServices.MemoryMarshal.Cast<byte, ulong>(b[..data.Length]);
+            ReadOnlySpan<ulong> dw = System.Runtime.InteropServices.MemoryMarshal.Cast<byte, ulong>(data);
+            Span<ulong> bw = System.Runtime.InteropServices.MemoryMarshal.Cast<byte, ulong>(b[..data.Length]);
             int words = dw.Length;
             while (pos < data.Length)
             {
@@ -385,7 +385,7 @@ public sealed class GpuDumpCodec
                     return false;
                 }
             }
-            var span = w.Buffer.AsSpan(countAt, 3);
+            Span<byte> span = w.Buffer.AsSpan(countAt, 3);
             span[0] = (byte)(runs | 0x80);
             span[1] = (byte)((runs >> 7) | 0x80);
             span[2] = (byte)(runs >> 14);
@@ -405,7 +405,7 @@ public sealed class GpuDumpCodec
             {
                 case 0:
                 {
-                    var content = r.BytesSpan(len).ToArray();
+                    byte[] content = r.BytesSpan(len).ToArray();
                     Add(content, 0);
                     return content;
                 }
@@ -427,7 +427,7 @@ public sealed class GpuDumpCodec
                         throw new InvalidDataException("GPU dump: bad uniform delta base");
                     }
 
-                    var content = (byte[])_ring[id % Window].Clone();
+                    byte[] content = (byte[])_ring[id % Window].Clone();
                     int runs = r.VarInt(), pos = 0;
                     for (int i = 0; i < runs; i++)
                     {
@@ -446,7 +446,7 @@ public sealed class GpuDumpCodec
 
     // =========================================================== writing
 
-    int InfoId(GxmProgramInfo info, DumpBuffer w)
+    private int InfoId(GxmProgramInfo info, DumpBuffer w)
     {
         if (_ids.TryGetValue(info, out int id))
         {
@@ -462,7 +462,7 @@ public sealed class GpuDumpCodec
         return id;
     }
 
-    int VertexProgramId(GxmVertexProgram vp, DumpBuffer w)
+    private int VertexProgramId(GxmVertexProgram vp, DumpBuffer w)
     {
         if (_ids.TryGetValue(vp, out int id))
         {
@@ -476,7 +476,7 @@ public sealed class GpuDumpCodec
         w.Var((uint)info);
         w.U32(vp.Handle);
         w.Var((uint)vp.Attributes.Length);
-        foreach (var a in vp.Attributes)
+        foreach (GxmVertexAttribute a in vp.Attributes)
         {
             w.U16(a.StreamIndex);
             w.U16(a.Offset);
@@ -485,7 +485,7 @@ public sealed class GpuDumpCodec
             w.U16(a.RegIndex);
         }
         w.Var((uint)vp.Streams.Length);
-        foreach (var s in vp.Streams)
+        foreach (GxmVertexStream s in vp.Streams)
         {
             w.U16(s.Stride);
             w.U16(s.IndexSource);
@@ -493,7 +493,7 @@ public sealed class GpuDumpCodec
         return id;
     }
 
-    int FragmentProgramId(GxmFragmentProgram fp, DumpBuffer w)
+    private int FragmentProgramId(GxmFragmentProgram fp, DumpBuffer w)
     {
         if (_ids.TryGetValue(fp, out int id))
         {
@@ -575,7 +575,7 @@ public sealed class GpuDumpCodec
             case EndSceneCommand e:
                 w.U8((byte)GpuDumpRecord.EndScene);
                 w.Var((uint)e.Notifications.Length);
-                foreach (var (a, v) in e.Notifications)
+                foreach ((uint a, uint v) in e.Notifications)
                 {
                     w.U32(a);
                     w.U32(v);
@@ -616,7 +616,7 @@ public sealed class GpuDumpCodec
         w.Var((ulong)Math.Max(0, present));
     }
 
-    static void WriteSide(DumpBuffer w, in SideState s)
+    private static void WriteSide(DumpBuffer w, in SideState s)
     {
         w.U8(s.DepthFunc);
         w.Bool(s.DepthWrite);
@@ -635,7 +635,7 @@ public sealed class GpuDumpCodec
         w.Bool(s.LineFillLastPixel);
     }
 
-    static SideState ReadSide(DumpCursor r) => new()
+    private static SideState ReadSide(DumpCursor r) => new()
     {
         DepthFunc = r.U8(),
         DepthWrite = r.Bool(),
@@ -648,7 +648,7 @@ public sealed class GpuDumpCodec
         LineFillLastPixel = r.Bool(),
     };
 
-    static void WriteWords(DumpBuffer w, ReadOnlySpan<uint> words)
+    private static void WriteWords(DumpBuffer w, ReadOnlySpan<uint> words)
     {
         uint mask = 0;
         for (int i = 0; i < words.Length; i++)
@@ -669,7 +669,7 @@ public sealed class GpuDumpCodec
         }
     }
 
-    static void ReadWords(DumpCursor r, Span<uint> words)
+    private static void ReadWords(DumpCursor r, Span<uint> words)
     {
         uint mask = r.U16();
         for (int i = 0; i < words.Length; i++)
@@ -678,7 +678,7 @@ public sealed class GpuDumpCodec
         }
     }
 
-    static void WriteTextures(DumpBuffer w, GxmTextureDesc[] t)
+    private static void WriteTextures(DumpBuffer w, GxmTextureDesc[] t)
     {
         uint mask = 0;
         for (int i = 0; i < t.Length; i++)
@@ -702,7 +702,7 @@ public sealed class GpuDumpCodec
         }
     }
 
-    static void ReadTextures(DumpCursor r, GxmTextureDesc[] t)
+    private static void ReadTextures(DumpCursor r, GxmTextureDesc[] t)
     {
         uint mask = r.U16();
         for (int i = 0; i < t.Length; i++)
@@ -712,15 +712,15 @@ public sealed class GpuDumpCodec
     }
 
     /// <summary>A stage's uniform data as dumps hold it: the whole layout, the split slots' bytes put back in place.</summary>
-    static ReadOnlySpan<byte> RecordedUniforms(DrawCommand d, GxmProgramInfo info, ReadOnlySpan<byte> data, int stage)
+    private static ReadOnlySpan<byte> RecordedUniforms(DrawCommand d, GxmProgramInfo info, ReadOnlySpan<byte> data, int stage)
     {
         if (!info.HasSplit)
         {
             return data;
         }
 
-        var full = new byte[info.UniformBytes];
-        foreach (var s in info.UniformSlots)
+        byte[] full = new byte[info.UniformBytes];
+        foreach (UniformBufferSlot s in info.UniformSlots)
         {
             if (s.IsSplit)
             {
@@ -734,13 +734,13 @@ public sealed class GpuDumpCodec
         return full;
     }
 
-    void WriteDraw(DrawCommand d, DumpBuffer defs, DumpBuffer w)
+    private void WriteDraw(DrawCommand d, DumpBuffer defs, DumpBuffer w)
     {
         int vp = VertexProgramId(d.VertexProgram, defs), fp = FragmentProgramId(d.FragmentProgram, defs);
         w.U8((byte)GpuDumpRecord.Draw);
         w.Var((uint)vp);
         w.Var((uint)fp);
-        ref readonly var s = ref d.State;
+        ref readonly DrawState s = ref d.State;
         w.U8(s.CullMode);
         w.Bool(s.TwoSided);
         WriteSide(w, s.Front);
@@ -786,9 +786,9 @@ public sealed class GpuDumpCodec
             {
                 int id = r.VarInt();
                 uint address = r.U32();
-                var data = r.BytesSpan(r.VarInt()).ToArray();
+                byte[] data = r.BytesSpan(r.VarInt()).ToArray();
                 var p = new GxpProgram(data, address);
-                var (slots, bytes) = ShaderGenerator.UniformLayout(p);
+                (List<UniformBufferSlot>? slots, int bytes) = ShaderGenerator.UniformLayout(p);
                 Put(_infos, id, new GxmProgramInfo { Address = address, Program = p, UniformSlots = slots, UniformBytes = bytes, TexturesUsed = p.TexturesUsed(), CubeSamplers = p.CubeSamplers() });
                 break;
             }
@@ -832,7 +832,7 @@ public sealed class GpuDumpCodec
         }
     }
 
-    static void Put<T>(List<T> list, int id, T value)
+    private static void Put<T>(List<T> list, int id, T value)
     {
         if (id != list.Count)
         {
@@ -848,16 +848,16 @@ public sealed class GpuDumpCodec
     /// </summary>
     public GpuCommand ReadCommand(GpuDumpRecord kind, DumpCursor r, DrawCommand draw)
     {
-        var c = ReadCommandRecord(kind, r, draw);
+        GpuCommand c = ReadCommandRecord(kind, r, draw);
         c.Pid = ReadPid;
         return c;
     }
 
     /// <summary>The process of the commands written last / read next (<see cref="GpuDumpRecord.Process"/>).</summary>
-    int _writePid;
+    private int _writePid;
     public int ReadPid;
 
-    GpuCommand ReadCommandRecord(GpuDumpRecord kind, DumpCursor r, DrawCommand draw)
+    private GpuCommand ReadCommandRecord(GpuDumpRecord kind, DumpCursor r, DrawCommand draw)
     {
         switch (kind)
         {
@@ -904,7 +904,7 @@ public sealed class GpuDumpCodec
 
     public static (long Micros, long GuestFrame, long Present) ReadPresentInfo(DumpCursor r) => ((long)r.Var(), (long)r.Var(), (long)r.Var());
 
-    DrawCommand ReadDraw(DumpCursor r, DrawCommand d)
+    private DrawCommand ReadDraw(DumpCursor r, DrawCommand d)
     {
         d.Reset();
         d.VertexProgram = _vps[r.VarInt()];
@@ -1040,7 +1040,7 @@ public sealed class GpuDumpCodec
 
     public static void WriteFileHeader(Stream output, GpuDumpHeader header)
     {
-        var text = Encoding.UTF8.GetBytes(header.Text);
+        byte[] text = Encoding.UTF8.GetBytes(header.Text);
         output.Write(GpuDumpFormat.Magic);
         Span<byte> b = stackalloc byte[8];
         BinaryPrimitives.WriteUInt32LittleEndian(b, GpuDumpFormat.Version);
@@ -1064,7 +1064,7 @@ public sealed class GpuDumpCodec
         }
 
         int len = checked((int)BinaryPrimitives.ReadUInt32LittleEndian(b[12..]));
-        var text = new byte[len];
+        byte[] text = new byte[len];
         input.ReadExactly(text);
         return GpuDumpHeader.Parse(Encoding.UTF8.GetString(text));
     }

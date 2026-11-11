@@ -7,10 +7,10 @@ public sealed partial class UsseTranslator
     /// <summary>Byte layout of uniform buffers inside the per-stage storage buffer: (gxm index, base byte offset, size bytes).</summary>
     public readonly List<(int Index, int Base, int Size)> BufferLayout = new();
 
-    static readonly DataType[] SmpDestFmt = [DataType.Unk, DataType.Unk, DataType.F16, DataType.F32];
+    private static readonly DataType[] s_smpDestFmt = [DataType.Unk, DataType.Unk, DataType.F16, DataType.F32];
 
     /// <summary>GLSL for a texture fetch (port of do_fetch_texture).</summary>
-    Val FetchTexture(SamplerUse s, string coords, int dim, DataType destType, int lodMode, string? extra1 = null, string? extra2 = null, int gatherComp = -1)
+    private Val FetchTexture(SamplerUse s, string coords, int dim, DataType destType, int lodMode, string? extra1 = null, string? extra2 = null, int gatherComp = -1)
     {
         string e;
         // a reinterpreted render target above native: one texel at the native mapping (ShaderGenerator.RtFetchHelper)
@@ -46,14 +46,14 @@ public sealed partial class UsseTranslator
         return v;
     }
 
-    void Smp(UsseInst i)
+    private void Smp(UsseInst i)
     {
         // "11100pppsn-ymrceffaaddlltbbggkhhiijjoooooooqqqqqqquuuuuuuvvvvvvv"
-        var src0 = DecodeSrc0(0, i['q'], i['k'], i.Bit('r'), true, 8);
+        Operand src0 = DecodeSrc0(0, i['q'], i['k'], i.Bit('r'), true, 8);
         uint src0Type = i['g'];
         src0.Type = src0Type == 0 ? DataType.F32 : src0Type == 1 ? DataType.F16 : DataType.C10;
-        var src1 = DecodeSrc12(1, i['u'], i['i'], i.Bit('c'), true, 8);
-        src0.Swizzle = (Sw[])Default4.Clone();
+        Operand src1 = DecodeSrc12(1, i['u'], i['i'], i.Bit('c'), true, 8);
+        src0.Swizzle = (Sw[])s_default4.Clone();
         // the texture state normally sits in the dependent sampler's SA words; a program can also copy those words into
         // temporaries first and name the copy (Silent Hill: Book of Memories' blur passes); any other operand keeps its
         // register number as the SA offset
@@ -63,7 +63,7 @@ public sealed partial class UsseTranslator
             stateSa = src1.Num;
         }
 
-        if (!Samplers.TryGetValue(stateSa, out var sampler))
+        if (!Samplers.TryGetValue(stateSa, out SamplerUse? sampler))
         {
             Warnings.Add($"SMP: no sampler bound at SA {src1.Num} (texture buffer path not supported)");
             return;
@@ -73,7 +73,7 @@ public sealed partial class UsseTranslator
         bool usePa = i.Bit('t');
         dest.Bank = usePa ? (SecondProgram ? Bank.SecAttr : Bank.PrimAttr) : Bank.Temp;
         dest.Num = (int)i['o'];
-        dest.Type = SmpDestFmt[fconv];
+        dest.Type = s_smpDestFmt[fconv];
         if (dest.Type == DataType.Unk)
         {
             dest.Type = sampler.ComponentType;
@@ -83,7 +83,7 @@ public sealed partial class UsseTranslator
         int coordMask = dim == 3 ? 0b0111 : dim == 1 ? 0b0001 : 0b0011;
         uint sbMode = i['b'];
         int lodMode = (int)i['l'];
-        var coords = Load(src0, coordMask);
+        Val coords = Load(src0, coordMask);
         string c = coords.E;
         if (dim == 1)
         {
@@ -112,7 +112,7 @@ public sealed partial class UsseTranslator
         string? e1 = null, e2 = null;
         if (lodMode != 0)
         {
-            var src2 = DecodeSrc12(2, i['v'], i['j'], i.Bit('e'), true, 8);
+            Operand src2 = DecodeSrc12(2, i['v'], i['j'], i.Bit('e'), true, 8);
             src2.Type = src0.Type;
             switch (lodMode)
             {
@@ -137,7 +137,7 @@ public sealed partial class UsseTranslator
         int compCount = Math.Clamp(sampler.ComponentCount, 1, 4);
         if (sbMode == 0)
         {
-            var res = FetchTexture(sampler, c, dim, dest.Type, lodMode, e1, e2);
+            Val res = FetchTexture(sampler, c, dim, dest.Type, lodMode, e1, e2);
             Store(dest, res, (1 << compCount) - 1);
         }
         else
@@ -186,7 +186,7 @@ public sealed partial class UsseTranslator
 
     // ===================================================================== memory loads/stores
 
-    void Vldst(UsseInst i)
+    private void Vldst(UsseInst i)
     {
         // "111oopppsnmycrbakkkkddeetgffihjlqquuvvvvvvvwwwwwwwxxxxxxxzzzzzzz"
         uint op1 = i['o'];
@@ -196,7 +196,7 @@ public sealed partial class UsseTranslator
             return;
         }
         bool isStore = op1 == 2;
-        var type = i['f'] switch
+        DataType type = i['f'] switch
         {
             0 => DataType.F32,
             1 => DataType.Int16,
@@ -206,9 +206,9 @@ public sealed partial class UsseTranslator
         int maskCount = (int)i['k'];
         int total = maskCount + 1;
         int totalBytes = GxpProgram.TypeSize(type) * total;
-        var src0 = DecodeSrc0(0, i['w'], i['h'], i.Bit('r'), false, 7);
-        var src1 = DecodeSrc12(1, i['x'], i['q'], i.Bit('b'), false, 7);
-        var src2 = DecodeSrc12(2, i['z'], i['u'], i.Bit('a'), false, 7);
+        Operand src0 = DecodeSrc0(0, i['w'], i['h'], i.Bit('r'), false, 7);
+        Operand src1 = DecodeSrc12(1, i['x'], i['q'], i.Bit('b'), false, 7);
+        Operand src2 = DecodeSrc12(2, i['z'], i['u'], i.Bit('a'), false, 7);
         src0.Type = src1.Type = src2.Type = DataType.Int32;
         Operand toStore;
         if (isStore)
@@ -254,8 +254,8 @@ public sealed partial class UsseTranslator
             int storeOff = isStore ? RepeatOffset(src2, r, RepeatMode.Slmsi) : 0;
             int s0off = isStore ? RepeatOffset(src0, r, RepeatMode.Slmsi) : 0;
             int s1off = isStore ? RepeatOffset(Operand.Make(3), r, RepeatMode.Slmsi) : 0;
-            var b0 = Load(src0, 1, s0off);
-            var b1 = Load(src1, 1, s1off);
+            Val b0 = Load(src0, 1, s0off);
+            Val b1 = Load(src1, 1, s1off);
             string addr = $"int({b1})";
             int regIndexBase = thread ? 0x1000000 : 0x10000;
             if (src1.Bank != Bank.Immediate)

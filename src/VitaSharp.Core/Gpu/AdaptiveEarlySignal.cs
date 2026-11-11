@@ -33,9 +33,9 @@ public sealed class AdaptiveEarlySignal
         Off, ProbeOn, On, ProbeOff
     }
 
-    readonly double[] _intervals = new double[Window], _sorted = new double[Window];
-    int _n, _skip, _cooldown, _backoff = BackoffMin, _sinceCheck;
-    double _sum, _waitSum, _baseline;
+    private readonly double[] _intervals = new double[Window], _sorted = new double[Window];
+    private int _n, _skip, _cooldown, _backoff = BackoffMin, _sinceCheck;
+    private double _sum, _waitSum, _baseline;
 
     public Phase State { get; private set; }
     /// <summary>The flip callback runs at submit.</summary>
@@ -71,7 +71,7 @@ public sealed class AdaptiveEarlySignal
         bool locked = Locked();
         _n = 0;
         _sum = _waitSum = 0;
-        var before = State;
+        Phase before = State;
         switch (State)
         {
             case Phase.Off:
@@ -118,7 +118,7 @@ public sealed class AdaptiveEarlySignal
         return Early;
     }
 
-    void Go(Phase p, string why)
+    private void Go(Phase p, string why)
     {
         if (p != State)
         {
@@ -129,14 +129,14 @@ public sealed class AdaptiveEarlySignal
         LastDecision = why;
     }
 
-    void Back(string why)
+    private void Back(string why)
     {
         Go(Phase.Off, why);
         _cooldown = _backoff;
         _backoff = Math.Min(_backoff * 2, BackoffMax);
     }
 
-    bool Locked()
+    private bool Locked()
     {
         Array.Copy(_intervals, _sorted, Window);
         Array.Sort(_sorted);

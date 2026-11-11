@@ -13,28 +13,28 @@ public sealed record ShaderRecipe(ulong ProgramHash, ulong HintKey, bool Vertex,
 {
     // tag 3 = tag 2 + the output register format (written only when it is set, so other records stay byte-identical)
     // tag 4 = tag 2 + the output register format (0 when unset) + the varying mask (vertex shaders with a mask)
-    const byte Tag = 2, TagOutputFormat = 3, TagVaryingMask = 4;
+    private const byte Tag = 2, TagOutputFormat = 3, TagVaryingMask = 4;
 
     public byte[] Encode()
     {
-        var h = Hints;
+        ShaderHints h = Hints;
         bool mask = h.VaryingMask != 0, outFmt = h.OutputRegisterFormat != 0 || mask;
-        var buf = new byte[1 + 1 + 16 + 1 + h.TextureFormats.Length * 4 + 2 + h.Attributes.Length * 9 + 4 + 1 + (outFmt ? 4 : 0) + (mask ? 4 : 0)];
-        var s = buf.AsSpan();
+        byte[] buf = new byte[1 + 1 + 16 + 1 + h.TextureFormats.Length * 4 + 2 + h.Attributes.Length * 9 + 4 + 1 + (outFmt ? 4 : 0) + (mask ? 4 : 0)];
+        Span<byte> s = buf.AsSpan();
         s[0] = mask ? TagVaryingMask : outFmt ? TagOutputFormat : Tag;
         s[1] = Vertex ? (byte)1 : (byte)0;
         BinaryPrimitives.WriteUInt64LittleEndian(s[2..], ProgramHash);
         BinaryPrimitives.WriteUInt64LittleEndian(s[10..], HintKey);
         int o = 18;
         s[o++] = checked((byte)h.TextureFormats.Length);
-        foreach (var t in h.TextureFormats)
+        foreach (uint t in h.TextureFormats)
         {
             BinaryPrimitives.WriteUInt32LittleEndian(s[o..], t);
             o += 4;
         }
         BinaryPrimitives.WriteUInt16LittleEndian(s[o..], checked((ushort)h.Attributes.Length));
         o += 2;
-        foreach (var a in h.Attributes)
+        foreach ((uint RegIndex, int ComponentCount, byte Format) a in h.Attributes)
         {
             BinaryPrimitives.WriteUInt32LittleEndian(s[o..], a.RegIndex);
             BinaryPrimitives.WriteInt32LittleEndian(s[(o + 4)..], a.ComponentCount);
@@ -81,7 +81,7 @@ public sealed record ShaderRecipe(ulong ProgramHash, ulong HintKey, bool Vertex,
             return null;
         }
 
-        var tex = new uint[nt];
+        uint[] tex = new uint[nt];
         for (int i = 0; i < nt; i++)
         {
             tex[i] = BinaryPrimitives.ReadUInt32LittleEndian(s[o..]);
@@ -143,8 +143,8 @@ public sealed record PipelineRecipe(ulong VsHash, ulong VsHint, ulong FsHash, ul
 
     public byte[] Encode()
     {
-        var buf = new byte[HeadSize + Attributes.Length * 8 + Streams.Length * 4];
-        var s = buf.AsSpan();
+        byte[] buf = new byte[HeadSize + Attributes.Length * 8 + Streams.Length * 4];
+        Span<byte> s = buf.AsSpan();
         BinaryPrimitives.WriteUInt64LittleEndian(s, VsHash);
         BinaryPrimitives.WriteUInt64LittleEndian(s[8..], VsHint);
         BinaryPrimitives.WriteUInt64LittleEndian(s[16..], FsHash);
@@ -172,7 +172,7 @@ public sealed record PipelineRecipe(ulong VsHash, ulong VsHint, ulong FsHash, ul
         BinaryPrimitives.WriteUInt16LittleEndian(s[49..], checked((ushort)Attributes.Length));
         BinaryPrimitives.WriteUInt16LittleEndian(s[51..], checked((ushort)Streams.Length));
         int o = HeadSize;
-        foreach (var a in Attributes)
+        foreach (GxmVertexAttribute a in Attributes)
         {
             BinaryPrimitives.WriteUInt16LittleEndian(s[o..], a.StreamIndex);
             BinaryPrimitives.WriteUInt16LittleEndian(s[(o + 2)..], a.Offset);
@@ -181,7 +181,7 @@ public sealed record PipelineRecipe(ulong VsHash, ulong VsHint, ulong FsHash, ul
             BinaryPrimitives.WriteUInt16LittleEndian(s[(o + 6)..], a.RegIndex);
             o += 8;
         }
-        foreach (var st in Streams)
+        foreach (GxmVertexStream st in Streams)
         {
             BinaryPrimitives.WriteUInt16LittleEndian(s[o..], st.Stride);
             BinaryPrimitives.WriteUInt16LittleEndian(s[(o + 2)..], st.IndexSource);
@@ -242,12 +242,12 @@ public sealed class ShaderRecipeStore : IDisposable
 {
     /// <summary>Bump when the blob layout changes (the generator version is deliberately not part of it).</summary>
     public const uint FormatVersion = 1;
-    const uint FileVersion = 0x52430000 | FormatVersion; // "RC" + format
-    const byte ProgramTag = 1;
+    private const uint FileVersion = 0x52430000 | FormatVersion; // "RC" + format
+    private const byte ProgramTag = 1;
 
-    readonly BlobPack _pack;
+    private readonly BlobPack _pack;
 
-    ShaderRecipeStore(BlobPack pack)
+    private ShaderRecipeStore(BlobPack pack)
     {
         _pack = pack;
     }
@@ -257,10 +257,10 @@ public sealed class ShaderRecipeStore : IDisposable
 
     public static ShaderRecipeStore? Open(string path) => BlobPack.Open(path, FileVersion) is { } p ? new ShaderRecipeStore(p) : null;
 
-    static ulong ProgramKey(ulong programHash) => Mix(programHash, 0x50524F47); // "PROG"
-    static ulong RecipeKey(ulong programHash, ulong hintKey) => Mix(Mix(programHash, 0x52435045), hintKey); // "RCPE"
+    private static ulong ProgramKey(ulong programHash) => Mix(programHash, 0x50524F47); // "PROG"
+    private static ulong RecipeKey(ulong programHash, ulong hintKey) => Mix(Mix(programHash, 0x52435045), hintKey); // "RCPE"
 
-    static ulong Mix(ulong a, ulong b)
+    private static ulong Mix(ulong a, ulong b)
     {
         Span<ulong> k = stackalloc ulong[2] { a, b };
         return XxHash64.HashToUInt64(System.Runtime.InteropServices.MemoryMarshal.AsBytes(k));
@@ -274,7 +274,7 @@ public sealed class ShaderRecipeStore : IDisposable
         ulong pk = ProgramKey(program.Hash);
         if (!_pack.Contains(pk))
         {
-            var b = new byte[1 + program.Data.Length];
+            byte[] b = new byte[1 + program.Data.Length];
             b[0] = ProgramTag;
             program.Data.CopyTo(b, 1);
             _pack.Add(pk, b);
@@ -289,7 +289,7 @@ public sealed class ShaderRecipeStore : IDisposable
         corrupted = 0;
         foreach (ulong key in _pack.Keys())
         {
-            var data = _pack.TryRead(key);
+            byte[]? data = _pack.TryRead(key);
             if (data == null)
             {
                 corrupted++;
@@ -314,13 +314,13 @@ public sealed class ShaderRecipeStore : IDisposable
     /// <summary>The program's bytes, or null when missing or corrupted (verified against the hash).</summary>
     public byte[]? ProgramBytes(ulong programHash)
     {
-        var data = _pack.TryRead(ProgramKey(programHash));
+        byte[]? data = _pack.TryRead(ProgramKey(programHash));
         if (data == null || data.Length < 2 || data[0] != ProgramTag)
         {
             return null;
         }
 
-        var bytes = data.AsSpan(1);
+        Span<byte> bytes = data.AsSpan(1);
         return XxHash64.HashToUInt64(bytes) == programHash ? bytes.ToArray() : null;
     }
 

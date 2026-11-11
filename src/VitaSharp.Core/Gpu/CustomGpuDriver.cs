@@ -19,9 +19,9 @@ public sealed record CustomDriverMeta(int SchemaVersion, string Name, string Des
         try
         {
             using var doc = JsonDocument.Parse(json);
-            var r = doc.RootElement;
-            string S(string k) => r.TryGetProperty(k, out var v) && v.ValueKind == JsonValueKind.String ? v.GetString() ?? "" : "";
-            int I(string k) => r.TryGetProperty(k, out var v) && v.ValueKind == JsonValueKind.Number && v.TryGetInt32(out int n) ? n : 0;
+            JsonElement r = doc.RootElement;
+            string S(string k) => r.TryGetProperty(k, out JsonElement v) && v.ValueKind == JsonValueKind.String ? v.GetString() ?? "" : "";
+            int I(string k) => r.TryGetProperty(k, out JsonElement v) && v.ValueKind == JsonValueKind.Number && v.TryGetInt32(out int n) ? n : 0;
             var m = new CustomDriverMeta(I("schemaVersion"), S("name"), S("description"), S("author"), S("packageVersion"),
                 S("vendor"), S("driverVersion"), I("minApi"), S("libraryName"));
             if (m.SchemaVersion != 1)
@@ -71,7 +71,7 @@ public sealed class CustomDriverStore(string root)
 
     public static string IdOf(string name)
     {
-        var id = new string(name.Select(c => char.IsAsciiLetterOrDigit(c) || c is '-' or '_' or '.' ? c : '_').ToArray()).Trim('.');
+        string id = new string(name.Select(c => char.IsAsciiLetterOrDigit(c) || c is '-' or '_' or '.' ? c : '_').ToArray()).Trim('.');
         return id.Length == 0 ? "driver" : id;
     }
 
@@ -79,13 +79,13 @@ public sealed class CustomDriverStore(string root)
     /// reason when the package is not usable; an installed driver of the same name is replaced.</summary>
     public InstalledGpuDriver Install(string zipPath, int deviceApiLevel = int.MaxValue)
     {
-        using var zip = ZipFile.OpenRead(zipPath);
+        using ZipArchive zip = ZipFile.OpenRead(zipPath);
         // meta.json at the top, or inside the one folder the zip holds (packages zipped together with their folder)
-        var metaEntry = zip.GetEntry("meta.json");
+        ZipArchiveEntry? metaEntry = zip.GetEntry("meta.json");
         string prefix = "";
         if (metaEntry == null)
         {
-            var nested = zip.Entries.Where(e => e.FullName.EndsWith("/meta.json", StringComparison.Ordinal) && e.FullName.Count(c => c == '/') == 1).ToArray();
+            ZipArchiveEntry[] nested = zip.Entries.Where(e => e.FullName.EndsWith("/meta.json", StringComparison.Ordinal) && e.FullName.Count(c => c == '/') == 1).ToArray();
             if (nested.Length != 1)
             {
                 throw new InvalidDataException("no meta.json in the package");
@@ -100,7 +100,7 @@ public sealed class CustomDriverStore(string root)
             json = s.ReadToEnd();
         }
 
-        var meta = CustomDriverMeta.Parse(json, out var err) ?? throw new InvalidDataException($"meta.json: {err}");
+        CustomDriverMeta meta = CustomDriverMeta.Parse(json, out string? err) ?? throw new InvalidDataException($"meta.json: {err}");
         if (meta.MinApi > deviceApiLevel)
         {
             throw new InvalidDataException($"needs Android API {meta.MinApi}, the device has {deviceApiLevel}");
@@ -121,7 +121,7 @@ public sealed class CustomDriverStore(string root)
 
         System.IO.Directory.CreateDirectory(tmp);
         string fullTmp = Path.GetFullPath(tmp) + Path.DirectorySeparatorChar;
-        foreach (var e in zip.Entries)
+        foreach (ZipArchiveEntry e in zip.Entries)
         {
             if (e.FullName.EndsWith('/') || !e.FullName.StartsWith(prefix, StringComparison.Ordinal))
             {
@@ -164,14 +164,14 @@ public sealed class CustomDriverStore(string root)
             return list;
         }
 
-        foreach (var dir in System.IO.Directory.GetDirectories(Root).Order(StringComparer.Ordinal))
+        foreach (string? dir in System.IO.Directory.GetDirectories(Root).Order(StringComparer.Ordinal))
         {
             if (dir.EndsWith(".installing", StringComparison.Ordinal))
             {
                 continue;
             }
 
-            var metaPath = Path.Combine(dir, "meta.json");
+            string metaPath = Path.Combine(dir, "meta.json");
             if (!File.Exists(metaPath))
             {
                 continue;
@@ -228,11 +228,11 @@ public sealed class GpuDriverSettings
             }
 
             using var doc = JsonDocument.Parse(File.ReadAllText(path));
-            var r = doc.RootElement;
-            bool B(string k, bool d) => r.TryGetProperty(k, out var v) && v.ValueKind is JsonValueKind.True or JsonValueKind.False ? v.GetBoolean() : d;
+            JsonElement r = doc.RootElement;
+            bool B(string k, bool d) => r.TryGetProperty(k, out JsonElement v) && v.ValueKind is JsonValueKind.True or JsonValueKind.False ? v.GetBoolean() : d;
             return new GpuDriverSettings
             {
-                Driver = r.TryGetProperty("driver", out var dv) && dv.ValueKind == JsonValueKind.String ? dv.GetString() ?? "" : "",
+                Driver = r.TryGetProperty("driver", out JsonElement dv) && dv.ValueKind == JsonValueKind.String ? dv.GetString() ?? "" : "",
                 FileRedirect = B("fileRedirect", false),
                 Turbo = B("turbo", false),
                 PatchBcn = B("patchBcn", true),
@@ -247,7 +247,7 @@ public sealed class GpuDriverSettings
     public void Save(string path)
     {
         System.IO.Directory.CreateDirectory(Path.GetDirectoryName(Path.GetFullPath(path))!);
-        using var f = File.Create(path);
+        using FileStream f = File.Create(path);
         using var w = new Utf8JsonWriter(f, new JsonWriterOptions { Indented = true });
         w.WriteStartObject();
         w.WriteString("driver", Driver);

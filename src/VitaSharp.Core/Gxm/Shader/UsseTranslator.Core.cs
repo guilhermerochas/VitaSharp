@@ -60,10 +60,10 @@ public readonly record struct Val(string E, char K, int N)
 /// </summary>
 public sealed partial class UsseTranslator
 {
-    readonly GxpProgram _program;
-    readonly StringBuilder _sb = new();
-    int _indent = 1;
-    int _tmp;
+    private readonly GxpProgram _program;
+    private readonly StringBuilder _sb = new();
+    private int _indent = 1;
+    private int _tmp;
     public bool SecondProgram { get; set; }
     public int TextureBufferSaOffset { get; set; } = -1;
     public int LiteralBufferSaOffset { get; set; } = -1;
@@ -82,28 +82,28 @@ public sealed partial class UsseTranslator
     public readonly SortedSet<string> DynBanks = new(StringComparer.Ordinal);
 
     // repeat state (SMLSI / SMBO can modify the increment tables)
-    readonly int[,] _repeatIncrease = new int[4, 17];
-    readonly int[] _repeatMultiplier = new int[4];
+    private readonly int[,] _repeatIncrease = new int[4, 17];
+    private readonly int[] _repeatMultiplier = new int[4];
 
     public int MaxTemp, MaxPa, MaxSa, MaxOut, MaxFi;
 
     // data type of the last write to each register word (program order, statically addressed words only). Bit-copy
     // moves carry the source word's type, so a word VPCK'd to U8 stays U8 when moved to the output registers.
-    readonly Dictionary<(Bank, int), DataType> _wordType = new();
+    private readonly Dictionary<(Bank, int), DataType> _wordType = new();
 
     /// <summary>Type of the last translated write to a register word (null: never written or not statically known).</summary>
-    public DataType? WordType(Bank bank, int word) => _wordType.TryGetValue((bank, word), out var t) ? t : null;
+    public DataType? WordType(Bank bank, int word) => _wordType.TryGetValue((bank, word), out DataType t) ? t : null;
 
     // register words that hold an unmodified copy of a secondary-attribute word (program order, statically addressed
     // words only; any later write to the word drops it). A program can copy a dependent sampler's texture state out of
     // the SA bank into temporaries and name those in SMP instead of the SA words.
-    readonly Dictionary<(Bank, int), int> _saCopy = new();
+    private readonly Dictionary<(Bank, int), int> _saCopy = new();
 
     /// <summary>The SA word a register word is an unmodified copy of (the word itself for the SA bank), or -1.</summary>
-    int SaWordOf(Bank bank, int word) => bank == Bank.SecAttr ? word : _saCopy.TryGetValue((bank, word), out var sa) ? sa : -1;
+    private int SaWordOf(Bank bank, int word) => bank == Bank.SecAttr ? word : _saCopy.TryGetValue((bank, word), out int sa) ? sa : -1;
 
     /// <summary>Records that a register word now holds an unmodified copy of SA word <paramref name="saWord"/>.</summary>
-    void SetSaCopy(Bank bank, int word, int saWord)
+    private void SetSaCopy(Bank bank, int word, int saWord)
     {
         if (bank is Bank.Indexed1 or Bank.Indexed2 or Bank.FpInternal or Bank.SecAttr || saWord < 0)
         {
@@ -114,7 +114,7 @@ public sealed partial class UsseTranslator
     }
 
     /// <summary>Records the data a bit-copy move left in a register word (the source word's type).</summary>
-    void SetWordType(Bank bank, int word, DataType type)
+    private void SetWordType(Bank bank, int word, DataType type)
     {
         if (bank is Bank.Indexed1 or Bank.Indexed2 or Bank.FpInternal)
         {
@@ -147,14 +147,14 @@ public sealed partial class UsseTranslator
         ResetRepeatMultiplier();
     }
 
-    void ResetRepeatMultiplier()
+    private void ResetRepeatMultiplier()
     {
         for (int i = 0; i < 4; i++)
         {
             _repeatMultiplier[i] = 2;
         }
     }
-    void SetRepeatMultiplier(int a, int b, int c, int d)
+    private void SetRepeatMultiplier(int a, int b, int c, int d)
     {
         _repeatMultiplier[0] = a;
         _repeatMultiplier[1] = b;
@@ -174,7 +174,7 @@ public sealed partial class UsseTranslator
         _indent--;
         Line("}");
     }
-    string Tmp() => "t" + (_tmp++).ToString(CultureInfo.InvariantCulture);
+    private string Tmp() => "t" + (_tmp++).ToString(CultureInfo.InvariantCulture);
 
     public static string F(float f)
     {
@@ -199,7 +199,7 @@ public sealed partial class UsseTranslator
             return $"uintBitsToFloat(0x{BitConverter.SingleToUInt32Bits(f):X8}u)";
         }
 
-        var s = f.ToString("R", CultureInfo.InvariantCulture);
+        string s = f.ToString("R", CultureInfo.InvariantCulture);
         if (!s.Contains('.') && !s.Contains('E') && !s.Contains('e'))
         {
             s += ".0";
@@ -208,7 +208,7 @@ public sealed partial class UsseTranslator
         return s;
     }
 
-    Val Bind(Val v)
+    private Val Bind(Val v)
     {
         if (IsSimple(v.E))
         {
@@ -220,11 +220,11 @@ public sealed partial class UsseTranslator
         return v with { E = t };
     }
 
-    static bool IsSimple(string e) => e.Length < 24 && e.All(c => char.IsLetterOrDigit(c) || c is '_' or '.' or '[' or ']');
+    private static bool IsSimple(string e) => e.Length < 24 && e.All(c => char.IsLetterOrDigit(c) || c is '_' or '.' or '[' or ']');
 
     // ------------------------------------------------------------------ register banks
 
-    static string BankName(Bank b) => b switch
+    private static string BankName(Bank b) => b switch
     {
         Bank.Temp => "r",
         Bank.PrimAttr => "pa",
@@ -234,7 +234,7 @@ public sealed partial class UsseTranslator
         _ => "",
     };
 
-    void Track(Bank b, int word)
+    private void Track(Bank b, int word)
     {
         int v = word >> 2;
         switch (b)
@@ -257,17 +257,17 @@ public sealed partial class UsseTranslator
         }
     }
 
-    const string Comps = "xyzw";
+    private const string Comps = "xyzw";
 
     /// <summary>Expression for raw 32-bit word (as float) at constant word index.</summary>
-    string Word(Bank b, int w)
+    private string Word(Bank b, int w)
     {
         Track(b, w);
         return $"{BankName(b)}[{w >> 2}].{Comps[w & 3]}";
     }
 
     /// <summary>Expression for a raw word at a dynamic index.</summary>
-    string WordDyn(Bank b, string idx)
+    private string WordDyn(Bank b, string idx)
     {
         Track(b, 255);
         if (ShaderGenerator.LowerDynamicIndexing)
@@ -281,7 +281,7 @@ public sealed partial class UsseTranslator
 
     /// <summary>Statement writing <paramref name="value"/> to a word: an assignment, or with
     /// <see cref="ShaderGenerator.LowerDynamicIndexing"/> a dynamically indexed word goes through its switch helper.</summary>
-    void AssignWord(Bank b, string? dynBase, int baseWord, int rel, string value)
+    private void AssignWord(Bank b, string? dynBase, int baseWord, int rel, string value)
     {
         if (_saCopy.Count > 0)
         {
@@ -291,7 +291,7 @@ public sealed partial class UsseTranslator
             }
             else
             {
-                foreach (var k in _saCopy.Keys.Where(k => k.Item1 == b).ToList())
+                foreach ((Bank, int) k in _saCopy.Keys.Where(k => k.Item1 == b).ToList())
                 {
                     _saCopy.Remove(k);
                 }
@@ -307,11 +307,11 @@ public sealed partial class UsseTranslator
         Line($"{(dynBase == null ? Word(b, baseWord + rel) : WordDyn(b, $"{dynBase} + {rel}"))} = {value};");
     }
 
-    static int PackedCount(DataType t) => t == DataType.C10 ? 3 : 4 / GxpProgram.TypeSize(t);
+    private static int PackedCount(DataType t) => t == DataType.C10 ? 3 : 4 / GxpProgram.TypeSize(t);
 
-    static char KindOf(DataType t) => GxpProgram.IsSigned(t) ? 'i' : GxpProgram.IsUnsigned(t) ? 'u' : 'f';
+    private static char KindOf(DataType t) => GxpProgram.IsSigned(t) ? 'i' : GxpProgram.IsUnsigned(t) ? 'u' : 'f';
 
-    static string ConstOf(Sw sw, char kind)
+    private static string ConstOf(Sw sw, char kind)
     {
         float v = sw switch { Sw.Zero => 0, Sw.One => 1, Sw.Two => 2, Sw.Half => 0.5f, _ => 0 };
         return kind switch
@@ -322,7 +322,7 @@ public sealed partial class UsseTranslator
         };
     }
 
-    static Val Compose(List<string> comps, char kind)
+    private static Val Compose(List<string> comps, char kind)
     {
         if (comps.Count == 1)
         {
@@ -333,7 +333,7 @@ public sealed partial class UsseTranslator
         return new Val($"{t}{comps.Count}({string.Join(", ", comps)})", kind, comps.Count);
     }
 
-    Val ApplyModifiers(Val v, OpFlags f)
+    private Val ApplyModifiers(Val v, OpFlags f)
     {
         if ((f & OpFlags.Abs) != 0)
         {
@@ -372,7 +372,7 @@ public sealed partial class UsseTranslator
                     continue;
                 }
 
-                var sw = op.Swizzle[i];
+                Sw sw = op.Swizzle[i];
                 if (sw >= Sw.Zero)
                 {
                     cs.Add(ConstOf(sw, kind));
@@ -381,13 +381,13 @@ public sealed partial class UsseTranslator
                 int s = (int)sw;
                 if (op.Type is DataType.F32 or DataType.UInt32 or DataType.Int32)
                 {
-                    var table = s == 1 ? UsseConstants.F32Bank1 : UsseConstants.F32Bank0;
+                    uint[] table = s == 1 ? UsseConstants.F32Bank1 : UsseConstants.F32Bank0;
                     uint raw = op.Num < table.Length ? table[op.Num] : 0;
                     cs.Add(kind == 'f' ? $"uintBitsToFloat({raw}u)" : kind == 'u' ? $"{raw}u" : $"int({raw}u)");
                 }
                 else
                 {
-                    var table = s switch { 1 => UsseConstants.F16Bank1, 2 => UsseConstants.F16Bank2, 3 => UsseConstants.F16Bank3, _ => UsseConstants.F16Bank0 };
+                    float[] table = s switch { 1 => UsseConstants.F16Bank1, 2 => UsseConstants.F16Bank2, 3 => UsseConstants.F16Bank3, _ => UsseConstants.F16Bank0 };
                     float fv = op.Num < table.Length ? table[op.Num] : 0;
                     if (kind == 'f')
                     {
@@ -515,7 +515,7 @@ public sealed partial class UsseTranslator
                 continue;
             }
 
-            var sw = op.Swizzle[i];
+            Sw sw = op.Swizzle[i];
             if (sw >= Sw.Zero)
             {
                 comps.Add(ConstOf(sw, kind));
@@ -565,8 +565,8 @@ public sealed partial class UsseTranslator
         return ApplyModifiers(Compose(comps, kind), op.Flags);
     }
 
-    static string Comp(Val v, int i) => v.N == 1 ? v.E : $"{Paren(v.E)}.{Comps[Math.Min(i, v.N - 1)]}";
-    static string Paren(string e) => IsSimple(e) ? e : $"({e})";
+    private static string Comp(Val v, int i) => v.N == 1 ? v.E : $"{Paren(v.E)}.{Comps[Math.Min(i, v.N - 1)]}";
+    private static string Paren(string e) => IsSimple(e) ? e : $"({e})";
 
     /// <summary>Port of Vita3K utils::store.</summary>
     public void Store(Operand dest, Val v, int destMask, int off = 0)
@@ -735,7 +735,7 @@ public sealed partial class UsseTranslator
 
     // ------------------------------------------------------------------ conversions
 
-    static float IntNormRange(DataType t) => t switch
+    private static float IntNormRange(DataType t) => t switch
     {
         DataType.UInt8 => 255f,
         DataType.Int8 => 127f,
@@ -747,7 +747,7 @@ public sealed partial class UsseTranslator
         _ => 1f,
     };
 
-    static string Splat(string scalar, int n, char k) => n == 1 ? scalar : $"{(k == 'f' ? "vec" : k == 'i' ? "ivec" : "uvec")}{n}({scalar})";
+    private static string Splat(string scalar, int n, char k) => n == 1 ? scalar : $"{(k == 'f' ? "vec" : k == 'i' ? "ivec" : "uvec")}{n}({scalar})";
 
     public Val ToFloat(Val v, DataType type, bool normalize)
     {
@@ -791,7 +791,7 @@ public sealed partial class UsseTranslator
 
     // ------------------------------------------------------------------ operand decoding (usse_decode_helpers)
 
-    static void CheckRegInternal(ref Operand r, bool dbl, int regBits)
+    private static void CheckRegInternal(ref Operand r, bool dbl, int regBits)
     {
         int temps = dbl ? 8 : 4;
         int max = 1 << regBits;
@@ -808,7 +808,7 @@ public sealed partial class UsseTranslator
         }
     }
 
-    void FinalizeRegister(ref Operand r, bool dbl, int regBits)
+    private void FinalizeRegister(ref Operand r, bool dbl, int regBits)
     {
         CheckRegInternal(ref r, dbl, regBits);
         if (r.Bank == Bank.Special)
@@ -829,7 +829,7 @@ public sealed partial class UsseTranslator
         }
     }
 
-    static void DoubleReg(ref int num, Bank b)
+    private static void DoubleReg(ref int num, Bank b)
     {
         if (b != Bank.Special && b != Bank.Immediate)
         {
@@ -837,7 +837,7 @@ public sealed partial class UsseTranslator
         }
     }
 
-    Operand DecodeDest(int index, uint n, uint bank, bool ext, bool dbl, int regBits)
+    private Operand DecodeDest(int index, uint n, uint bank, bool ext, bool dbl, int regBits)
     {
         var o = Operand.Make(index);
         o.Num = (int)n;
@@ -853,7 +853,7 @@ public sealed partial class UsseTranslator
         return o;
     }
 
-    Operand DecodeSrc12(int index, uint n, uint bank, bool ext, bool dbl, int regBits)
+    private Operand DecodeSrc12(int index, uint n, uint bank, bool ext, bool dbl, int regBits)
     {
         var o = Operand.Make(index);
         o.Num = (int)n;
@@ -869,7 +869,7 @@ public sealed partial class UsseTranslator
         return o;
     }
 
-    Operand DecodeSrc0(int index, uint n, uint bank, bool ext, bool dbl, int regBits)
+    private Operand DecodeSrc0(int index, uint n, uint bank, bool ext, bool dbl, int regBits)
     {
         var o = Operand.Make(index);
         o.Num = (int)n;
@@ -883,7 +883,7 @@ public sealed partial class UsseTranslator
         return o;
     }
 
-    static int DecodeWriteMask(Bank destBank, int mask, bool f16)
+    private static int DecodeWriteMask(Bank destBank, int mask, bool f16)
     {
         bool f16CanNormal = destBank is not (Bank.PrimAttr or Bank.SecAttr or Bank.Output or Bank.FpInternal or Bank.Temp);
         if (destBank == Bank.FpInternal || (f16 && f16CanNormal))
@@ -912,7 +912,7 @@ public sealed partial class UsseTranslator
         return nm;
     }
 
-    static OpFlags DecodeModifier(uint mod) => mod switch
+    private static OpFlags DecodeModifier(uint mod) => mod switch
     {
         1 => OpFlags.Neg,
         2 => OpFlags.Abs,
@@ -920,7 +920,7 @@ public sealed partial class UsseTranslator
         _ => OpFlags.None,
     };
 
-    static Sw[] S4(string s) => s.Select(c => c switch
+    private static Sw[] S4(string s) => s.Select(c => c switch
     {
         'X' => Sw.X,
         'Y' => Sw.Y,
@@ -933,42 +933,42 @@ public sealed partial class UsseTranslator
         _ => Sw.Undef,
     }).ToArray();
 
-    static Sw[] To4(Sw[] s3) => s3.Length == 4 ? s3 : [s3[0], s3[1], s3[2], Sw.X];
+    private static Sw[] To4(Sw[] s3) => s3.Length == 4 ? s3 : [s3[0], s3[1], s3[2], Sw.X];
 
-    static readonly string[] V4Std = ["XXXX", "YYYY", "ZZZZ", "WWWW", "XYZW", "YZWW", "XYZZ", "XXYZ", "XYXY", "XYWZ", "ZXYW", "ZWZW", "YZXZ", "XXYY", "XZWW", "XYZ1"];
-    static readonly string[] V4Ext = ["YZXW", "ZWXY", "XZWY", "YYWW", "WYZW", "WZWZ", "XYZX", "ZZWW", "XWZX", "YYYX", "YYYZ", "XZYW", "XXXY", "ZYXW", "YYZZ", "ZZZY"];
-    static readonly string[] V3Std = ["XXX", "YYY", "ZZZ", "WWW", "XYZ", "YZW", "XXY", "XYX", "YYX", "YYZ", "ZXY", "XZY", "YZX", "ZYX", "ZZY", "XY1"];
-    static readonly string[] V3Ext = ["XYY", "YXY", "XXZ", "YXX", "XY0", "X10", "000", "111", "HHH", "222", "X00", "???", "???", "???", "???", "???"];
-    static readonly string[] ScalarStd = ["XXXX", "YYYY", "ZZZZ", "WWWW", "0000", "1111", "2222", "HHHH", "????", "????", "????", "????", "????", "????", "????", "????"];
+    private static readonly string[] s_v4Std = ["XXXX", "YYYY", "ZZZZ", "WWWW", "XYZW", "YZWW", "XYZZ", "XXYZ", "XYXY", "XYWZ", "ZXYW", "ZWZW", "YZXZ", "XXYY", "XZWW", "XYZ1"];
+    private static readonly string[] s_v4Ext = ["YZXW", "ZWXY", "XZWY", "YYWW", "WYZW", "WZWZ", "XYZX", "ZZWW", "XWZX", "YYYX", "YYYZ", "XZYW", "XXXY", "ZYXW", "YYZZ", "ZZZY"];
+    private static readonly string[] s_v3Std = ["XXX", "YYY", "ZZZ", "WWW", "XYZ", "YZW", "XXY", "XYX", "YYX", "YYZ", "ZXY", "XZY", "YZX", "ZYX", "ZZY", "XY1"];
+    private static readonly string[] s_v3Ext = ["XYY", "YXY", "XXZ", "YXX", "XY0", "X10", "000", "111", "HHH", "222", "X00", "???", "???", "???", "???", "???"];
+    private static readonly string[] s_scalarStd = ["XXXX", "YYYY", "ZZZZ", "WWWW", "0000", "1111", "2222", "HHHH", "????", "????", "????", "????", "????", "????", "????", "????"];
 
-    static Sw[] DecodeVec34Swizzle(uint swz, bool ext, int type) => type switch
+    private static Sw[] DecodeVec34Swizzle(uint swz, bool ext, int type) => type switch
     {
-        0 => ext ? S4("????") : S4(ScalarStd[swz]),
-        1 => To4(S4(ext ? V3Ext[swz] : V3Std[swz])),
-        2 => S4(ext ? V4Ext[swz] : V4Std[swz]),
+        0 => ext ? S4("????") : S4(s_scalarStd[swz]),
+        1 => To4(S4(ext ? s_v3Ext[swz] : s_v3Std[swz])),
+        2 => S4(ext ? s_v4Ext[swz] : s_v4Std[swz]),
         _ => S4("????"),
     };
 
-    static readonly string[] DualV4Std = ["XXXX", "YYYY", "ZZZZ", "WWWW", "XYZW", "YZWW", "XYZZ", "XXYZ", "XYXY", "XYWZ", "ZXYW", "ZWZW", "0000", "HHHH", "1111", "2222"];
-    static readonly string[] DualV4Ext = ["YZXW", "ZWXY", "XZWY", "YYWW", "WYZW", "WZWZ", "XYZX", "ZZWW", "XWZX", "YYYX", "YYYZ", "ZWZW", "YZXZ", "XXYY", "XZWW", "XYZ1"];
-    static readonly string[] DualV3Std = ["XXX", "YYY", "ZZZ", "WWW", "XYZ", "YZW", "XXY", "XYX", "YYX", "YYZ", "ZXY", "XZY", "000", "HHH", "111", "222"];
-    static readonly string[] DualV3Ext = ["XYY", "YXY", "XXZ", "YXX", "XY0", "X10", "XZY", "YZX", "ZYX", "ZZY", "XY1", "???", "???", "???", "???", "???"];
+    private static readonly string[] s_dualV4Std = ["XXXX", "YYYY", "ZZZZ", "WWWW", "XYZW", "YZWW", "XYZZ", "XXYZ", "XYXY", "XYWZ", "ZXYW", "ZWZW", "0000", "HHHH", "1111", "2222"];
+    private static readonly string[] s_dualV4Ext = ["YZXW", "ZWXY", "XZWY", "YYWW", "WYZW", "WZWZ", "XYZX", "ZZWW", "XWZX", "YYYX", "YYYZ", "ZWZW", "YZXZ", "XXYY", "XZWW", "XYZ1"];
+    private static readonly string[] s_dualV3Std = ["XXX", "YYY", "ZZZ", "WWW", "XYZ", "YZW", "XXY", "XYX", "YYX", "YYZ", "ZXY", "XZY", "000", "HHH", "111", "222"];
+    private static readonly string[] s_dualV3Ext = ["XYY", "YXY", "XXZ", "YXX", "XY0", "X10", "XZY", "YZX", "ZYX", "ZZY", "XY1", "???", "???", "???", "???", "???"];
 
-    static Sw[] DecodeDualSwizzle(uint swz, bool ext, bool vec4)
-        => vec4 ? S4(ext ? DualV4Ext[swz] : DualV4Std[swz]) : To4(S4(ext ? DualV3Ext[swz] : DualV3Std[swz]));
+    private static Sw[] DecodeDualSwizzle(uint swz, bool ext, bool vec4)
+        => vec4 ? S4(ext ? s_dualV4Ext[swz] : s_dualV4Std[swz]) : To4(S4(ext ? s_dualV3Ext[swz] : s_dualV3Std[swz]));
 
-    static Sw[] DecodeSwizzle4(uint enc) =>
+    private static Sw[] DecodeSwizzle4(uint enc) =>
     [
         (Sw)(enc & 7), (Sw)((enc >> 3) & 7), (Sw)((enc >> 6) & 7), (Sw)((enc >> 9) & 7),
     ];
 
-    static readonly Sw[] Default4 = [Sw.X, Sw.Y, Sw.Z, Sw.W];
+    private static readonly Sw[] s_default4 = [Sw.X, Sw.Y, Sw.Z, Sw.W];
 
     // ------------------------------------------------------------------ repeat offsets
 
-    enum RepeatMode { External, Internal, Both, Slmsi }
+    private enum RepeatMode { External, Internal, Both, Slmsi }
 
-    int RepeatOffset(in Operand op, int idx, RepeatMode mode)
+    private int RepeatOffset(in Operand op, int idx, RepeatMode mode)
     {
         if (mode is RepeatMode.Internal or RepeatMode.Both)
         {

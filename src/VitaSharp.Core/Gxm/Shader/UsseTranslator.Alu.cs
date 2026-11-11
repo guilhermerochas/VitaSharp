@@ -4,9 +4,9 @@ namespace VitaSharp.Core.Gxm.Shader;
 
 public sealed partial class UsseTranslator
 {
-    enum VOp { VMul, VAdd, VFrc, VDsx, VDsy, VMin, VMax, VDp, VRcp, VRsq, VLog, VExp, VSub, And, Or, Xor, Shl, Shr, Asr, Rol, ISub, Invalid }
+    private enum VOp { VMul, VAdd, VFrc, VDsx, VDsy, VMin, VMax, VDp, VRcp, VRsq, VLog, VExp, VSub, And, Or, Xor, Shl, Shr, Asr, Rol, ISub, Invalid }
 
-    static string Splat(float f, int n) => n == 1 ? F(f) : $"vec{n}({F(f)})";
+    private static string Splat(float f, int n) => n == 1 ? F(f) : $"vec{n}({F(f)})";
 
     public bool Translate(UsseInst ins)
     {
@@ -102,12 +102,12 @@ public sealed partial class UsseTranslator
 
     // ===================================================================== vector multiply-add
 
-    void Vmad(UsseInst i)
+    private void Vmad(UsseInst i)
     {
         // "00011pppsg1oderaaittnwwwwcbfhzkkjjllmmmmmmqqqquuuuvvxyAAAABBBBBB"
         int type = i['o'] == 0 ? 1 : 2;
-        var src1 = DecodeSrc12(1, i['B'], i['j'], i.Bit('r'), true, 7);
-        var dest = DecodeDest(3, i['m'], i['k'], i.Bit('d'), true, 7);
+        Operand src1 = DecodeSrc12(1, i['B'], i['j'], i.Bit('r'), true, 7);
+        Operand dest = DecodeDest(3, i['m'], i['k'], i.Bit('d'), true, 7);
         var src0 = Operand.Make(0);
         src0.Bank = Bank.FpInternal;
         src0.Flags = OpFlags.Gpi;
@@ -160,32 +160,32 @@ public sealed partial class UsseTranslator
         int repeats = (int)i['t'] + 1;
         for (int r = 0; r < repeats; r++)
         {
-            var a = Load(src0, mask, RepeatOffset(src0, r, mode));
-            var b = Load(src1, mask, RepeatOffset(src1, r, mode));
-            var c = Load(src2, mask, RepeatOffset(src2, r, mode));
+            Val a = Load(src0, mask, RepeatOffset(src0, r, mode));
+            Val b = Load(src1, mask, RepeatOffset(src1, r, mode));
+            Val c = Load(src2, mask, RepeatOffset(src2, r, mode));
             Store(dest, new Val($"fma({a}, {b}, {c})", 'f', a.N), mask, RepeatOffset(dest, r, mode));
         }
         ResetRepeatMultiplier();
     }
 
-    static readonly Sw[][] Vmad2Src0 = [S4("XXXX"), S4("YYYY"), S4("ZZZZ"), S4("WWWW"), S4("XYZW"), S4("YZXW"), S4("XYWW"), S4("ZWXY")];
-    static readonly Sw[][] Vmad2Src1 = [S4("XXXX"), S4("YYYY"), S4("ZZZZ"), S4("WWWW"), S4("XYZW"), S4("XYYZ"), S4("YYWW"), S4("WYZW")];
-    static readonly Sw[][] Vmad2Src2 = [S4("XXXX"), S4("YYYY"), S4("ZZZZ"), S4("WWWW"), S4("XYZW"), S4("XZWW"), S4("XXYZ"), S4("XYZZ")];
+    private static readonly Sw[][] s_vmad2Src0 = [S4("XXXX"), S4("YYYY"), S4("ZZZZ"), S4("WWWW"), S4("XYZW"), S4("YZXW"), S4("XYWW"), S4("ZWXY")];
+    private static readonly Sw[][] s_vmad2Src1 = [S4("XXXX"), S4("YYYY"), S4("ZZZZ"), S4("WWWW"), S4("XYZW"), S4("XYYZ"), S4("YYWW"), S4("WYZW")];
+    private static readonly Sw[][] s_vmad2Src2 = [S4("XXXX"), S4("YYYY"), S4("ZZZZ"), S4("WWWW"), S4("XYZW"), S4("XZWW"), S4("XXYZ"), S4("XYZZ")];
 
-    void Vmad2(UsseInst i)
+    private void Vmad2(UsseInst i)
     {
         // "00000dpps-ry-cbawwwineeeemmookttffgghhhhhhzzjjllllllqqqqqquuuuuu"
         bool f16 = i.Bit('d');
-        var dt = f16 ? DataType.F16 : DataType.F32;
-        var dest = DecodeDest(3, i['h'], i['t'], false, true, 7);
-        var src0 = DecodeSrc0(0, i['l'], i['k'], false, true, 7);
-        var src1 = DecodeSrc12(1, i['q'], i['f'], i.Bit('b'), true, 7);
-        var src2 = DecodeSrc12(2, i['u'], i['g'], i.Bit('a'), true, 7);
+        DataType dt = f16 ? DataType.F16 : DataType.F32;
+        Operand dest = DecodeDest(3, i['h'], i['t'], false, true, 7);
+        Operand src0 = DecodeSrc0(0, i['l'], i['k'], false, true, 7);
+        Operand src1 = DecodeSrc12(1, i['q'], i['f'], i.Bit('b'), true, 7);
+        Operand src2 = DecodeSrc12(2, i['u'], i['g'], i.Bit('a'), true, 7);
         int mask = DecodeWriteMask(dest.Bank, (int)i['e'], f16);
         dest.Type = src0.Type = src1.Type = src2.Type = dt;
-        src0.Swizzle = Vmad2Src0[i['j'] | (i['r'] << 2)];
-        src1.Swizzle = Vmad2Src1[i['z'] | (i['i'] << 2)];
-        src2.Swizzle = Vmad2Src2[i['w']];
+        src0.Swizzle = s_vmad2Src0[i['j'] | (i['r'] << 2)];
+        src1.Swizzle = s_vmad2Src1[i['z'] | (i['i'] << 2)];
+        src2.Swizzle = s_vmad2Src2[i['w']];
         if (i.Bit('c'))
         {
             src0.Flags |= OpFlags.Abs;
@@ -193,18 +193,18 @@ public sealed partial class UsseTranslator
 
         src1.Flags = DecodeModifier(i['m']);
         src2.Flags = DecodeModifier(i['o']);
-        var a = Load(src0, mask);
-        var b = Load(src1, mask);
-        var c = Load(src2, mask);
+        Val a = Load(src0, mask);
+        Val b = Load(src1, mask);
+        Val c = Load(src2, mask);
         Store(dest, new Val($"fma({a}, {b}, {c})", 'f', a.N), mask);
     }
 
-    void Vdp(UsseInst i)
+    private void Vdp(UsseInst i)
     {
         // "00011pppsc0oderaagttnwwwwbflllkkhhiijjjjjjzzzzmmmqqqyyyxxxuuuuuu"
         int type = i['o'] == 0 ? 1 : 2;
-        var src1 = DecodeSrc12(1, i['u'], i['h'], i.Bit('r'), true, 7);
-        var dest = DecodeDest(3, i['j'], i['k'], i.Bit('d'), true, 7);
+        Operand src1 = DecodeSrc12(1, i['u'], i['h'], i.Bit('r'), true, 7);
+        Operand dest = DecodeDest(3, i['j'], i['k'], i.Bit('d'), true, 7);
         var src2 = Operand.Make(2);
         src2.Bank = Bank.FpInternal;
         src2.Flags = OpFlags.Gpi;
@@ -233,8 +233,8 @@ public sealed partial class UsseTranslator
         int lm = type == 1 ? 0b0111 : 0b1111;
         for (int r = 0; r < repeats; r++)
         {
-            var lhs = Load(src1, lm, RepeatOffset(src1, r, mode));
-            var rhs = Load(src2, lm, RepeatOffset(src2, r, mode));
+            Val lhs = Load(src1, lm, RepeatOffset(src1, r, mode));
+            Val rhs = Load(src2, lm, RepeatOffset(src2, r, mode));
             int n = BitOperations.PopCount((uint)writeMask);
             string dot = $"dot({lhs}, {rhs})";
             Store(dest, new Val(n == 1 ? dot : $"vec{n}({dot})", 'f', n), writeMask);
@@ -242,10 +242,10 @@ public sealed partial class UsseTranslator
         }
     }
 
-    Val DoAluOp(VOp op, Operand s1, Operand s2, int srcMask, int possibleDestMask)
+    private Val DoAluOp(VOp op, Operand s1, Operand s2, int srcMask, int possibleDestMask)
     {
-        var a = Load(s1, srcMask);
-        var b = Load(s2, srcMask);
+        Val a = Load(s1, srcMask);
+        Val b = Load(s2, srcMask);
         switch (op)
         {
             case VOp.And:
@@ -294,52 +294,52 @@ public sealed partial class UsseTranslator
         }
     }
 
-    static readonly VOp[] NmadOps = [VOp.VMul, VOp.VAdd, VOp.VFrc, VOp.VDsx, VOp.VDsy, VOp.VMin, VOp.VMax, VOp.VDp];
+    private static readonly VOp[] s_nmadOps = [VOp.VMul, VOp.VAdd, VOp.VFrc, VOp.VDsx, VOp.VDsy, VOp.VMin, VOp.VMax, VOp.VDp];
 
-    void Vnmad(UsseInst i)
+    private void Vnmad(UsseInst i)
     {
         // "0000Xpppsrrydcbawwwwneeeemmoiittkkllffffffzzzzzzzggghhhhhhjjjjjj"
         bool is32 = ((i.Raw >> 59) & 1) != 0;
-        var op = NmadOps[i['g']];
-        var dest = DecodeDest(3, i['f'], i['t'], i.Bit('d'), true, 7);
-        var src1 = DecodeSrc12(1, i['h'], i['k'], i.Bit('b'), true, 7);
+        VOp op = s_nmadOps[i['g']];
+        Operand dest = DecodeDest(3, i['f'], i['t'], i.Bit('d'), true, 7);
+        Operand src1 = DecodeSrc12(1, i['h'], i['k'], i.Bit('b'), true, 7);
         src1.Flags = DecodeModifier(i['m']);
-        var src2 = DecodeSrc12(2, i['j'], i['l'], i.Bit('a'), true, 7);
+        Operand src2 = DecodeSrc12(2, i['j'], i['l'], i.Bit('a'), true, 7);
         if (i['o'] == 1)
         {
             src2.Flags = OpFlags.Abs;
         }
 
-        var dt = is32 ? DataType.F32 : DataType.F16;
+        DataType dt = is32 ? DataType.F32 : DataType.F16;
         dest.Type = src1.Type = src2.Type = dt;
         uint swz = i['z'] | (i['i'] << 7) | (i['c'] << 9) | (i['r'] << 10);
         src1.Swizzle = DecodeSwizzle4(swz);
         src2.Swizzle = DecodeVec34Swizzle(i['w'], false, 2);
         int destMask = (int)i['e'];
         int srcMask = op == VOp.VDp ? 0b1111 : destMask;
-        var r = DoAluOp(op, src1, src2, srcMask, destMask);
+        Val r = DoAluOp(op, src1, src2, srcMask, destMask);
         Store(dest, r, destMask);
     }
 
-    static readonly VOp[] VcompOps = [VOp.VRcp, VOp.VRsq, VOp.VLog, VOp.VExp];
-    static readonly DataType[] VcompTypes = [DataType.F32, DataType.F16, DataType.C10, DataType.Unk];
+    private static readonly VOp[] s_vcompOps = [VOp.VRcp, VOp.VRsq, VOp.VLog, VOp.VExp];
+    private static readonly DataType[] s_vcompTypes = [DataType.F32, DataType.F16, DataType.C10, DataType.Unk];
 
-    void Vcomp(UsseInst i)
+    private void Vcomp(UsseInst i)
     {
         // "00110pppsddyenr-aaaaobbccmmff-ttkk--ggggggg-------hhhhhhh---wwww"
-        var dest = DecodeDest(3, i['g'], i['t'], i.Bit('e'), true, 8);
-        var src1 = DecodeSrc12(1, i['h'], i['k'], i.Bit('r'), true, 8);
+        Operand dest = DecodeDest(3, i['g'], i['t'], i.Bit('e'), true, 8);
+        Operand src1 = DecodeSrc12(1, i['h'], i['k'], i.Bit('r'), true, 8);
         src1.Flags = DecodeModifier(i['m']);
-        var op = VcompOps[i['b']];
-        src1.Type = VcompTypes[i['c']];
-        dest.Type = VcompTypes[i['d']];
+        VOp op = s_vcompOps[i['b']];
+        src1.Type = s_vcompTypes[i['c']];
+        dest.Type = s_vcompTypes[i['d']];
         int srcMask = 1 << (int)i['f'];
         int writeMask = (int)i['w'];
         int nb = 32 - BitOperations.LeadingZeroCount((uint)writeMask);
         int repeats = (int)i['a'] + 1;
         for (int r = 0; r < repeats; r++)
         {
-            var v = Load(src1, srcMask, RepeatOffset(src1, r, RepeatMode.Slmsi));
+            Val v = Load(src1, srcMask, RepeatOffset(src1, r, RepeatMode.Slmsi));
             string e = op switch
             {
                 VOp.VRcp => $"(1.0 / {v})",
@@ -354,9 +354,9 @@ public sealed partial class UsseTranslator
 
     // ===================================================================== dual issue
 
-    enum DualSrc { I0, I1, I2, U, None }
+    private enum DualSrc { I0, I1, I2, U, None }
 
-    static DualSrc[]? DualOp1Layout(int count, uint cfg) => count switch
+    private static DualSrc[]? DualOp1Layout(int count, uint cfg) => count switch
     {
         1 => cfg switch { 0 => [DualSrc.U], 1 => [DualSrc.I0], 2 => [DualSrc.I1], 3 => [DualSrc.I2], _ => null },
         2 => cfg switch { 0 => [DualSrc.U, DualSrc.I1], 1 => [DualSrc.I0, DualSrc.U], 2 => [DualSrc.I0, DualSrc.I1], _ => null },
@@ -371,7 +371,7 @@ public sealed partial class UsseTranslator
         _ => null,
     };
 
-    static DualSrc[]? DualOp2Layout(int c1, int c2, uint cfg) => (c1, c2) switch
+    private static DualSrc[]? DualOp2Layout(int c1, int c2, uint cfg) => (c1, c2) switch
     {
         (1, 1) => cfg == 0 ? [DualSrc.I0] : [DualSrc.U],
         (1, 2) => cfg switch { 0 => [DualSrc.I0, DualSrc.I1], 1 => [DualSrc.U, DualSrc.I1], 2 => [DualSrc.I0, DualSrc.U], _ => [DualSrc.I1, DualSrc.U] },
@@ -388,12 +388,12 @@ public sealed partial class UsseTranslator
         _ => null,
     };
 
-    enum DOp { VMad, VDp, VSsq, VMul, VAdd, VMov, FRsq, FRcp, FMad, FAdd, FMul, FSubFlr, FExp, FLog, Invalid }
+    private enum DOp { VMad, VDp, VSsq, VMul, VAdd, VMov, FRsq, FRcp, FMad, FAdd, FMul, FSubFlr, FExp, FLog, Invalid }
 
-    static readonly DOp[] DualOp1Codes = [DOp.VMad, DOp.VDp, DOp.VSsq, DOp.VMul, DOp.VAdd, DOp.VMov, DOp.FRsq, DOp.FRcp, DOp.FMad, DOp.FAdd, DOp.FMul, DOp.FSubFlr, DOp.FExp, DOp.FLog, DOp.Invalid, DOp.Invalid];
-    static readonly DOp[] DualOp2Codes = [DOp.Invalid, DOp.VDp, DOp.VSsq, DOp.VMul, DOp.VAdd, DOp.VMov, DOp.FRsq, DOp.FRcp, DOp.FMad, DOp.FAdd, DOp.FMul, DOp.FSubFlr, DOp.FExp, DOp.FLog, DOp.Invalid, DOp.Invalid];
+    private static readonly DOp[] s_dualOp1Codes = [DOp.VMad, DOp.VDp, DOp.VSsq, DOp.VMul, DOp.VAdd, DOp.VMov, DOp.FRsq, DOp.FRcp, DOp.FMad, DOp.FAdd, DOp.FMul, DOp.FSubFlr, DOp.FExp, DOp.FLog, DOp.Invalid, DOp.Invalid];
+    private static readonly DOp[] s_dualOp2Codes = [DOp.Invalid, DOp.VDp, DOp.VSsq, DOp.VMul, DOp.VAdd, DOp.VMov, DOp.FRsq, DOp.FRcp, DOp.FMad, DOp.FAdd, DOp.FMul, DOp.FSubFlr, DOp.FExp, DOp.FLog, DOp.Invalid, DOp.Invalid];
 
-    static (int srcCount, bool vecLoad, bool vecStore) DualInfo(DOp op) => op switch
+    private static (int srcCount, bool vecLoad, bool vecStore) DualInfo(DOp op) => op switch
     {
         DOp.VMad => (3, true, true),
         DOp.VDp => (2, true, false),
@@ -412,32 +412,32 @@ public sealed partial class UsseTranslator
         _ => (0, false, false),
     };
 
-    void Vdual(UsseInst i)
+    private void Vdual(UsseInst i)
     {
         // "0010cgsskdtpuuuunaaalriiiiwwwwmmffeebbbbbbbooohhjqvvxxyyyzzzzzzz"
         bool compCountType = i.Bit('c');
         bool hasW = i.Bit('d');
         bool f16 = i.Bit('t');
         bool primUstore = i.Bit('r');
-        var op1 = DualOp1Codes[((!compCountType && hasW) ? 8 : 0) | (int)i['a']];
-        var op2 = DualOp2Codes[(i['l'] << 3) | i['o']];
+        DOp op1 = s_dualOp1Codes[((!compCountType && hasW) ? 8 : 0) | (int)i['a']];
+        DOp op2 = s_dualOp2Codes[(i['l'] << 3) | i['o']];
         if (op1 == DOp.Invalid || op2 == DOp.Invalid)
         {
             Warnings.Add("invalid vdual");
             return;
         }
-        var info1 = DualInfo(op1);
-        var info2 = DualInfo(op2);
+        (int srcCount, bool vecLoad, bool vecStore) info1 = DualInfo(op1);
+        (int srcCount, bool vecLoad, bool vecStore) info2 = DualInfo(op2);
         bool unifiedVec = (primUstore && info1.vecStore) || (!primUstore && info2.vecStore);
-        var unifiedDest = DecodeDest(3, i['b'], i['m'], false, unifiedVec, unifiedVec ? 8 : 7);
+        Operand unifiedDest = DecodeDest(3, i['b'], i['m'], false, unifiedVec, unifiedVec ? 8 : 7);
         unifiedDest.Type = f16 ? DataType.F16 : DataType.F32;
         var internalDest = Operand.Make(3);
         internalDest.Bank = Bank.FpInternal;
         internalDest.Num = (int)i['e'];
-        var dest1 = primUstore ? unifiedDest : internalDest;
-        var dest2 = primUstore ? internalDest : unifiedDest;
-        var l1 = DualOp1Layout(info1.srcCount, i['h']);
-        var l2 = DualOp2Layout(info1.srcCount, info2.srcCount, i['h']);
+        Operand dest1 = primUstore ? unifiedDest : internalDest;
+        Operand dest2 = primUstore ? internalDest : unifiedDest;
+        DualSrc[]? l1 = DualOp1Layout(info1.srcCount, i['h']);
+        DualSrc[]? l2 = DualOp2Layout(info1.srcCount, info2.srcCount, i['h']);
         if (l1 == null || l2 == null)
         {
             Warnings.Add("vdual layout");
@@ -465,7 +465,7 @@ public sealed partial class UsseTranslator
         List<Operand> Srcs(DualSrc[] layout, (int, bool vecLoad, bool) info)
         {
             var list = new List<Operand>();
-            foreach (var id in layout)
+            foreach (DualSrc id in layout)
             {
                 Operand op;
                 switch (id)
@@ -525,82 +525,82 @@ public sealed partial class UsseTranslator
                 case DOp.FAdd:
                 case DOp.VAdd:
                 {
-                    var a = Load(ops[0], srcMask);
-                    var b = Load(ops[1], srcMask);
+                    Val a = Load(ops[0], srcMask);
+                    Val b = Load(ops[1], srcMask);
                     return new Val($"({a} + {b})", 'f', a.N);
                 }
                 case DOp.FMul:
                 case DOp.VMul:
                 {
-                    var a = Load(ops[0], srcMask);
-                    var b = Load(ops[1], srcMask);
+                    Val a = Load(ops[0], srcMask);
+                    Val b = Load(ops[1], srcMask);
                     return new Val($"({a} * {b})", 'f', a.N);
                 }
                 case DOp.FRcp:
                 {
-                    var a = Load(ops[0], srcMask);
+                    Val a = Load(ops[0], srcMask);
                     return new Val($"(1.0 / {a})", 'f', a.N);
                 }
                 case DOp.FRsq:
                 {
-                    var a = Load(ops[0], srcMask);
+                    Val a = Load(ops[0], srcMask);
                     return new Val($"inversesqrt({a})", 'f', a.N);
                 }
                 case DOp.VDp:
                 {
-                    var a = Load(ops[0], srcMask);
-                    var b = Load(ops[1], srcMask);
+                    Val a = Load(ops[0], srcMask);
+                    Val b = Load(ops[1], srcMask);
                     return new Val(a.N > 1 ? $"dot({a}, {b})" : $"({a} * {b})", 'f', 1);
                 }
                 case DOp.FExp:
                 {
-                    var a = Bind(Load(ops[0], srcMask));
+                    Val a = Bind(Load(ops[0], srcMask));
                     return new Val($"mix(exp2({a}), {Splat(1f, a.N)}, isnan(exp2({a})))", 'f', a.N);
                 }
                 case DOp.FLog:
                 {
-                    var a = Load(ops[0], srcMask);
+                    Val a = Load(ops[0], srcMask);
                     return new Val($"log2({a})", 'f', a.N);
                 }
                 case DOp.VSsq:
                 {
-                    var a = Bind(Load(ops[0], srcMask));
+                    Val a = Bind(Load(ops[0], srcMask));
                     return new Val(a.N > 1 ? $"dot({a}, {a})" : $"({a} * {a})", 'f', 1);
                 }
                 case DOp.FMad:
                 case DOp.VMad:
                 {
-                    var a = Load(ops[0], srcMask);
-                    var b = Load(ops[1], srcMask);
-                    var c = Load(ops[2], srcMask);
+                    Val a = Load(ops[0], srcMask);
+                    Val b = Load(ops[1], srcMask);
+                    Val c = Load(ops[2], srcMask);
                     return new Val($"({a} * {b} + {c})", 'f', a.N);
                 }
                 case DOp.FSubFlr:
                 {
-                    var a = Load(ops[0], srcMask);
+                    Val a = Load(ops[0], srcMask);
                     if (ops[0].IsSame(ops[1], srcMask))
                     {
                         return new Val($"fract({a})", 'f', a.N);
                     }
 
-                    var b = Load(ops[1], srcMask);
+                    Val b = Load(ops[1], srcMask);
                     return new Val($"({a} - floor({b}))", 'f', a.N);
                 }
             }
             return new Val("0.0", 'f', 1);
         }
 
-        var r1 = Bind(DoOp(op1, Srcs(l1, info1), mask1, info1));
-        var r2 = Bind(DoOp(op2, Srcs(l2, info2), mask2, info2));
+        Val r1 = Bind(DoOp(op1, Srcs(l1, info1), mask1, info1));
+        Val r2 = Bind(DoOp(op2, Srcs(l2, info2), mask2, info2));
         Store(dest1, r1, mask1);
         Store(dest2, r2, mask2);
     }
 
     // ===================================================================== moves / packs
 
-    static readonly DataType[] MovTypes = [DataType.Int8, DataType.Int16, DataType.Int32, DataType.C10, DataType.F16, DataType.F32, DataType.UInt8, DataType.UInt16, DataType.UInt32, DataType.O8];
+    private static readonly DataType[] s_movTypes = [DataType.Int8, DataType.Int16, DataType.Int32, DataType.C10, DataType.F16, DataType.F32, DataType.UInt8, DataType.UInt16, DataType.UInt32, DataType.O8];
 
-    void Vmov(UsseInst i)
+    private void Vmov(UsseInst i)
     {
         // "00111pppstrydecbmmaanoooiwwwwkllffgghhhhjjjjjjqqqqqquuuuuuvvvvvv"
         uint moveType = i['m'];
@@ -609,13 +609,13 @@ public sealed partial class UsseTranslator
             Warnings.Add("vmov invalid move type");
             return;
         }
-        var dt = i['o'] < MovTypes.Length ? MovTypes[i['o']] : DataType.Unk;
+        DataType dt = i['o'] < s_movTypes.Length ? s_movTypes[i['o']] : DataType.Unk;
         bool dbl = dt is DataType.C10 or DataType.F16 or DataType.F32;
         bool conditional = moveType != 0;
         bool u8cond = moveType == 2;
         int regBits = dbl ? 7 : 6;
-        var dest = DecodeDest(3, i['j'], i['l'], i.Bit('d'), dbl, regBits);
-        var src1 = DecodeSrc12(1, i['u'], i['f'], i.Bit('c'), dbl, regBits);
+        Operand dest = DecodeDest(3, i['j'], i['l'], i.Bit('d'), dbl, regBits);
+        Operand src1 = DecodeSrc12(1, i['u'], i['f'], i.Bit('c'), dbl, regBits);
         int mask = (int)i['h'];
         if (dt is DataType.F16 or DataType.F32)
         {
@@ -626,9 +626,9 @@ public sealed partial class UsseTranslator
             mask = 1;
         }
 
-        src1.Swizzle = dbl ? DecodeVec34Swizzle(i['w'], false, 2) : (Sw[])Default4.Clone();
+        src1.Swizzle = dbl ? DecodeVec34Swizzle(i['w'], false, 2) : (Sw[])s_default4.Clone();
         src1.Type = dest.Type = dt;
-        var testType = u8cond ? DataType.UInt8 : dt;
+        DataType testType = u8cond ? DataType.UInt8 : dt;
         Operand src0 = default, src2 = default;
         int cmp = 0;
         if (conditional)
@@ -699,12 +699,12 @@ public sealed partial class UsseTranslator
                     }
                 }
             }
-            var s1 = Load(src1, mask, RepeatOffset(src1, r, RepeatMode.Slmsi));
+            Val s1 = Load(src1, mask, RepeatOffset(src1, r, RepeatMode.Slmsi));
             Val result;
             if (conditional)
             {
-                var c = Bind(Load(src0, mask, RepeatOffset(src0, r, RepeatMode.Slmsi)));
-                var s2 = Load(src2, mask, RepeatOffset(src2, r, RepeatMode.Slmsi));
+                Val c = Bind(Load(src0, mask, RepeatOffset(src0, r, RepeatMode.Slmsi)));
+                Val s2 = Load(src2, mask, RepeatOffset(src2, r, RepeatMode.Slmsi));
                 string zero = c.K switch { 'f' => c.N == 1 ? "0.0" : $"vec{c.N}(0.0)", 'i' => c.N == 1 ? "0" : $"ivec{c.N}(0)", _ => c.N == 1 ? "0u" : $"uvec{c.N}(0u)" };
                 string cond;
                 if (c.N == 1)
@@ -733,7 +733,7 @@ public sealed partial class UsseTranslator
             Store(dest, result, mask, RepeatOffset(dest, r, RepeatMode.Slmsi));
             if (copied != null)
             {
-                foreach (var (w, t) in copied)
+                foreach ((int w, DataType? t) in copied)
                 {
                     SetWordType(dest.Bank, w, t ?? dt);
                 }
@@ -742,14 +742,14 @@ public sealed partial class UsseTranslator
         ResetRepeatMultiplier();
     }
 
-    static readonly DataType[] PckTypes = [DataType.UInt8, DataType.Int8, DataType.O8, DataType.UInt16, DataType.Int16, DataType.F16, DataType.F32, DataType.C10];
+    private static readonly DataType[] s_pckTypes = [DataType.UInt8, DataType.Int8, DataType.O8, DataType.UInt16, DataType.Int16, DataType.F16, DataType.F32, DataType.C10];
 
-    void Vpck(UsseInst i)
+    private void Vpck(UsseInst i)
     {
         // "01000pppsnuydercaaaaffftttmmmmbbkkllgggggggoohiijjqqqqqqvwwwwwwx"
-        var destType = PckTypes[i['t']];
-        var srcType = PckTypes[i['f']];
-        var dest = DecodeDest(3, i['g'], i['b'], i.Bit('d'), false, 7);
+        DataType destType = s_pckTypes[i['t']];
+        DataType srcType = s_pckTypes[i['f']];
+        Operand dest = DecodeDest(3, i['g'], i['b'], i.Bit('d'), false, 7);
         dest.Type = destType;
         uint src1n = i['q'];
         bool src1Dreg = true;
@@ -758,9 +758,9 @@ public sealed partial class UsseTranslator
             src1n = i['v'] | (src1n << 1);
             src1Dreg = false;
         }
-        var src1 = DecodeSrc12(1, src1n, i['k'], i.Bit('r'), src1Dreg, 7);
+        Operand src1 = DecodeSrc12(1, src1n, i['k'], i.Bit('r'), src1Dreg, 7);
         src1.Type = srcType;
-        var src2 = DecodeSrc12(2, i['w'], i['l'], i.Bit('c'), true, 7);
+        Operand src2 = DecodeSrc12(2, i['w'], i['l'], i.Bit('c'), true, 7);
         if (dest.Bank == Bank.Special || src1.Bank == Bank.Special || src2.Bank == Bank.Special)
         {
             Warnings.Add("vpck special");
@@ -820,12 +820,12 @@ public sealed partial class UsseTranslator
             Val source;
             if (useSrc2)
             {
-                var a = src1;
-                a.Swizzle = (Sw[])Default4.Clone();
-                var b = src2;
-                b.Swizzle = (Sw[])Default4.Clone();
-                var s1 = Bind(Load(a, 0b11, o1));
-                var s2 = Bind(Load(b, 0b11, RepeatOffset(src2, r, RepeatMode.Slmsi)));
+                Operand a = src1;
+                a.Swizzle = (Sw[])s_default4.Clone();
+                Operand b = src2;
+                b.Swizzle = (Sw[])s_default4.Clone();
+                Val s1 = Bind(Load(a, 0b11, o1));
+                Val s2 = Bind(Load(b, 0b11, RepeatOffset(src2, r, RepeatMode.Slmsi)));
                 var comps = new List<string>();
                 for (int k = 0; k < 4; k++)
                 {
@@ -834,7 +834,7 @@ public sealed partial class UsseTranslator
                         continue;
                     }
 
-                    var sw = src1.Swizzle[k];
+                    Sw sw = src1.Swizzle[k];
                     comps.Add(sw switch { Sw.X => $"{s1}.x", Sw.Y => $"{s1}.y", Sw.Z => $"{s2}.x", Sw.W => $"{s2}.y", _ => ConstOf(sw, 'f') });
                 }
                 source = Compose(comps, 'f');
@@ -860,13 +860,13 @@ public sealed partial class UsseTranslator
     }
 
     /// <summary>Banks whose registers hold raw 32-bit words (a typed move between them is a bit copy).</summary>
-    static bool IsBitRegister(Bank b) => b is Bank.Temp or Bank.PrimAttr or Bank.SecAttr or Bank.Output or Bank.Indexed1 or Bank.Indexed2;
+    private static bool IsBitRegister(Bank b) => b is Bank.Temp or Bank.PrimAttr or Bank.SecAttr or Bank.Output or Bank.Indexed1 or Bank.Indexed2;
 
-    void Limm(UsseInst i)
+    private void Limm(UsseInst i)
     {
         // "11111100sn10deiiiiiipppmmmmm--tt----uuuuuuuvvvvvvvvvvvvvvvvvvvvv"
         uint imm = i['v'] | (i['m'] << 21) | (i['i'] << 26);
-        var dest = DecodeDest(3, i['u'], i['t'], i.Bit('d'), false, 7);
+        Operand dest = DecodeDest(3, i['u'], i['t'], i.Bit('d'), false, 7);
         dest.Type = DataType.UInt32;
         Store(dest, new Val($"{imm}u", 'u', 1), 1);
     }
