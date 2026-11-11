@@ -243,23 +243,27 @@ main() {
     perf=$(awk -v ws="$ws" -v we="$we" -v main="${mainname:-?}" '
       function num(s) { gsub(",", ".", s); return s + 0 }
       /PERF periodic summary: frame/ { t=substr($1,2,8); inw=(t>=ws && t<=we); if (inw) { n++; f[n]=num($NF) } }
-      inw && /PERF gpu: / { match($0, /\(([0-9]+) submits, ([0-9,]+) ms each/, m); g[n]=num(m[1])*num(m[2]) }
-      inw && /PERF cpu [0-9]/ { match($0, /PERF cpu ([0-9,]+) s/, m); c[n]=num(m[1]) }
-      inw && /PERF thread GPU worker: / { match($0, /: ([0-9,]+) s cpu/, m); w[n]=num(m[1]) }
-      inw && index($0, "PERF thread " main ": ") { match($0, /: ([0-9,]+) s cpu/, m); gt[n]=num(m[1]) }
+      # the n-th space-separated word of the part of $0 that matches re ("" when it does not match)
+      function word(re, k,   a) { if (!match($0, re)) return ""; split(substr($0, RSTART, RLENGTH), a, " "); return a[k] }
+      inw && /PERF gpu: / { g[n]=num(substr(word("[(][0-9]+ submits, [0-9,]+ ms each", 1), 2))*num(word("[(][0-9]+ submits, [0-9,]+ ms each", 3)) }
+      inw && /PERF cpu [0-9]/ { c[n]=num(word("PERF cpu [0-9,]+ s", 3)) }
+      inw && /PERF thread GPU worker: / { w[n]=num(word(": [0-9,]+ s cpu", 2)) }
+      inw && index($0, "PERF thread " main ": ") { gt[n]=num(word(": [0-9,]+ s cpu", 2)) }
       END { if (n < 2 || f[n] <= f[1]) { print "- - - -"; exit }
         d=f[n]-f[1]; printf "%.1f %.1f %.1f %.1f", (g[n]-g[1])/d, (gt[n]-gt[1])*1000/d, (w[n]-w[1])*1000/d, (c[n]-c[1])*1000/d }' "$rd/last.log")
     read -r gpu game worker proc <<< "$perf"
     # the app's own presented-frame rate over the window ([perf] lines every 30 s): the display median can overstate
     # bursty output (queued frames shown back to back after a stall); this and the mean are the throughput
     appfps=$(awk -v ws="$ws" -v we="$we" '/\[perf\] [0-9,]+ fps over/ { t = substr($1, 2, 8); if (t >= ws && t <= we || t > we && !late) { v = $0; sub(/.*\[perf\] /, "", v); sub(/ fps over.*/, "", v); gsub(",", ".", v); s += v; n++; if (t > we) late = 1 } } END { if (n) printf "%.1f", s / n; else print "-" }' "$rd/last.log")
-    clk=$(awk '{b[NR]=$1/1000; l[NR]=$2/1000} END {n=asort(b); asort(l); if (n) printf "%d %d", b[int((n+1)/2)], l[int((n+1)/2)]; else print "- -"}' "$rd/clocks.txt")
-    read -r big little <<< "$clk"
+    big=$(awk '{print $1/1000}' "$rd/clocks.txt" | sort -n | awk '{a[NR]=$1} END {if (NR) printf "%d", a[int((NR+1)/2)]; else print "-"}')
+    little=$(awk '{print $2/1000}' "$rd/clocks.txt" | sort -n | awk '{a[NR]=$1} END {if (NR) printf "%d", a[int((NR+1)/2)]; else print "-"}')
     # time-weighted clocks from the trace: the GPU PLL (MediaTek mfg_pll_ck) and the two fastest cores (6, 7)
     freq=$(awk '
-      { if (!match($0, / ([0-9]+\.[0-9]+): /, m)) next; t = m[1] + 0; if (!t0) t0 = t; t1 = t }
-      match($0, /clk_set_rate: mfg_pll_ck ([0-9]+)/, g) { if (gl) { gs += gf * (t - gl); gw += t - gl }; gf = g[1] / 1e6; gl = t }
-      match($0, /cpu_frequency: state=([0-9]+) cpu_id=([67])$/, c) { id = c[2]; if (cl[id]) { cs += cf[id] * (t - cl[id]); cw += t - cl[id] }; cf[id] = c[1] / 1000; cl[id] = t }
+      { if (!match($0, / [0-9]+\.[0-9]+: /)) next; t = substr($0, RSTART + 1, RLENGTH - 3) + 0; if (!t0) t0 = t; t1 = t }
+      match($0, /clk_set_rate: mfg_pll_ck [0-9]+/) { v = substr($0, RSTART, RLENGTH); sub(/.* /, "", v)
+        if (gl) { gs += gf * (t - gl); gw += t - gl }; gf = v / 1e6; gl = t }
+      match($0, /cpu_frequency: state=[0-9]+ cpu_id=[67]$/) { split(substr($0, RSTART, RLENGTH), p, /[ =]/); id = p[5]
+        if (cl[id]) { cs += cf[id] * (t - cl[id]); cw += t - cl[id] }; cf[id] = p[3] / 1000; cl[id] = t }
       END { if (gl) { gs += gf * (t1 - gl); gw += t1 - gl }; for (id in cl) { cs += cf[id] * (t1 - cl[id]); cw += t1 - cl[id] }
         printf "%s %s", (gw > 1 ? sprintf("%.0f", gs / gw) : "-"), (cw > 1 ? sprintf("%.0f", cs / cw) : "-") }' "$rd/atrace.txt" 2>/dev/null)
     read -r gpumhz bigavg <<< "${freq:-- -}"
@@ -277,7 +281,8 @@ main() {
   printf "%-12s %4s %9s %7s %9s %8s %7s %7s %7s %7s %7s\n" variant runs median_ms p90_ms median_fps mean_fps gpu_ms game_ms worker big_mhz gpu_mhz
   for name in "${names[@]}"; do
     awk -F'\t' -v v="$name" '
-      function med(col,   k, n, x) { n=0; for (k=1; k<=cnt; k++) if (val[k,col] != "-" && val[k,col] != "") x[++n]=val[k,col]+0; if (!n) return "-"; asort(x); return x[int((n+1)/2)] }
+      function med(col,   k, n, x, i, j, y) { n=0; for (k=1; k<=cnt; k++) if (val[k,col] != "-" && val[k,col] != "") x[++n]=val[k,col]+0; if (!n) return "-"
+        for (i=2; i<=n; i++) { y=x[i]; for (j=i-1; j>=1 && x[j]>y; j--) x[j+1]=x[j]; x[j+1]=y }; return x[int((n+1)/2)] }
       NR>1 && $1==v && $3==1 { cnt++; for (c=4; c<=20; c++) val[cnt,c]=$c }
       END { printf "%-12s %4d %9s %7s %9s %8s %7s %7s %7s %7s %7s\n", v, cnt, med(5), med(6), med(7), med(8), med(9), med(10), med(11), med(13), med(15) }' "$out/results.tsv"
   done | tee "$out/summary.txt"

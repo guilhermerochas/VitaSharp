@@ -1447,7 +1447,8 @@ Lista de itens futuros do VitaSharp. Marque `[x]` quando um item for concluído.
   `.sh` faz parse e responde `--help`; o par `.ps1` só faz parse dos `.ps1`). Corrigido no caminho: a linha de erro do
   `android-perf-run.sh` tinha tab/quebra literais e o cabeçalho e a linha normal do results.tsv tinham uma coluna a
   menos que os dados (app_fps). Falta: linhas de 120 colunas como o resto do repositório (o guia pede 80; decidir com
-  o usuário) e o `android-perf-run.sh` ainda usa awk do GNU (`asort`, `match` com vetor): no macOS precisa do `gawk`.
+  o usuário). O awk do `android-perf-run.sh` (era do GNU: `asort`, `match` com vetor) passou a POSIX (`match` com
+  RSTART/RLENGTH, `split`, `sort -n`), mesma saída em dados de teste e aceito pelo `gawk --posix`.
 - [ ] Cobertura de código mínima de 70% em tudo (pedido do usuário, 10/11/2026). Base de hoje (`build/coverage.ps1` /
   `.sh`, coverlet + ReportGenerator, `Category!=Slow`): geral 59,4% linhas / 42,5% ramos; VitaSharp.Core 65,8%;
   Mobile.Core 85,4%; Renderer.Vulkan 1,3%. Meta: cada projeto e cada namespace com pelo menos 70% de linhas, e manter
