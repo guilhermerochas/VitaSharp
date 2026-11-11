@@ -843,29 +843,21 @@ Lista de itens futuros do VitaSharp. Marque `[x]` quando um item for concluído.
 
 ## Firmware e sistema
 
-- [ ] taiHEN: hooks e injeção em modo usuário (pedido do usuário, 11/11/2026). Hoje o `config.txt` (ux0:/ur0:tai)
-  carrega os plugins `.suprx` de `*ALL`/`*TITLEID` e a API de consulta do taiHEN (taiGetModuleInfo, símbolos) é HLE,
-  mas `taiHookFunctionExport/Import/Offset`, `taiHookRelease`, `taiInjectData/Abs/Release` não fazem nada. Fazer: hooks
-  de verdade no código ARM do guest (trampolim que o JIT/interpretador respeita, invalidando blocos traduzidos;
-  cadeia de hooks com `TAI_CONTINUE` como o substitute do taiHEN), injeção de dados com restauração, mesma semântica
-  e códigos de erro do taiHEN. Validar com plugins de usuário reais (tradução por redirecionamento, mostradores,
-  cheats de memória) e um teste por API.
-- [ ] taiHEN: ambiente de kernel para plugins `.skprx` (pedido do usuário, 11/11/2026), depois do item acima. Rodar o
-  código do plugin no processador emulado num "modo kernel" do VitaSharp e implementar em HLE as exportações de kernel
-  que os plugins importam (ksceIo*, ksceKernelAllocMemBlock/memória, ksceKernel* de threads e módulos, SceSysmemForKernel,
-  SceModulemgrForKernel, e as de kernel do taiHEN: taiHookFunctionExportForKernel/ImportForKernel/OffsetForKernel,
-  taiInjectDataForKernel...), com os hooks aplicados no código do jogo e dos módulos. Entra: plugins que trabalham
-  por cima das funções do sistema (redirecionar arquivos como rePatch/ioPlus/traduções, interceptar entrada, mudar
-  comportamento de uma função), de interface/informação (fps, bateria) e também os que mexem no hardware
-  (diretriz do usuário, 11/11/2026: "eu quero tudo, todos os plugins, quero que a emulação seja completa"): emular a
-  camada de hardware/kernel que eles tocam e ligá-la ao que o VitaSharp já emula: clock (kscePower*/registradores ->
-  o clock emulado), controles Bluetooth/USB (ksceBt*, ksceUsb*, HID -> controles do host), armazenamento USB/SD2Vita
-  (montagens -> pastas do host), tela/brilho/áudio. Meta: todo plugin de kernel público funcionando como no console.
-  O ambiente é genérico e não bloqueia plugin nenhum (decisão do usuário, 11/11/2026): ele roda o código que o
-  usuário instalar, como o console. O projeto não implementa, não testa e não ajusta nada voltado a contornar DRM
-  (licença falsa, descriptografia sem a licença do usuário); os jogos comprados rodam pela licença real do usuário
-  (.rif/act.dat do console). Validar com uma lista dos plugins públicos mais usados (um teste
-  por exportação e cada plugin rodando).
+- [ ] Plugins de usuário: hooks e injeção completos (pedido do usuário, 11/11/2026). Hoje os plugins `.suprx` do
+  arquivo de configuração de plugins carregam no processo, e parte dos hooks/injeções já existe (ver Dead Space e
+  libshacccg); completar todas as formas de hook (export/import/offset, cadeia de hooks com continuação, liberação) e
+  de injeção de dados com restauração, com a mesma semântica e os mesmos códigos de erro do console, respeitados pelo
+  JIT e pelo interpretador (invalidando blocos traduzidos). Validar com plugins de usuário reais e um teste por API.
+- [ ] Plugins de kernel `.skprx` (pedido do usuário, 11/11/2026: "eu quero tudo, todos os plugins, quero que a emulação
+  seja completa"), depois do item acima. Rodar o código do plugin no processador emulado num "modo kernel" do VitaSharp
+  e implementar em HLE as exportações de kernel que os plugins importam (ksceIo*, memória, ksceKernel* de threads e
+  módulos, SceSysmemForKernel, SceModulemgrForKernel e as de hook/injeção de kernel), com os hooks aplicados no
+  código do jogo e dos módulos. Inclui os plugins que mexem no hardware, ligando a camada que eles tocam ao que o
+  VitaSharp emula: clock -> clock emulado, controles Bluetooth/USB/HID -> controles do host, armazenamento USB/SD2Vita
+  -> pastas do host, tela/brilho/áudio. O ambiente é genérico e não bloqueia plugin nenhum (decisão do usuário): roda
+  o código que o usuário instalar, como o console. O projeto não implementa, não testa e não ajusta nada voltado a
+  contornar DRM; os jogos comprados rodam pela licença real do usuário. Validar com uma lista dos plugins públicos mais
+  usados (um teste por exportação e cada plugin rodando).
 - [ ] Temas do Vita (pedido do usuário, 10/11/2026): instalar e usar temas como no aparelho. (1) Instalação: `.pkg` de
   tema da loja (content type de tema; o agente de PKG já detecta o tipo) com a licença, extraído para `ux0:theme/<id>`
   com o `theme.xml` e as imagens/sons, e registrado como o firmware faz (banco do shell / app.db, lista de temas das
@@ -1699,7 +1691,7 @@ Lista de itens futuros do VitaSharp. Marque `[x]` quando um item for concluído.
   Sobra 1 quadro preto isolado na criação de personagem (também sem a correção)
 - [x] Dead Space (port Android, DEADSPACE, so_loader + vitaGL): não rodava sem o kubridge (08/11/2026). Feito (agente C,
   fix/bugs-c-24): kubridge em HLE (aabf2d6), VFP short vectors no CPU (7501ec8: o motor do jogo usa FPSCR LEN=8),
-  trampolim do taiHookFunctionOffsetForUser em endereço de meia palavra (907b204), taiHEN import/export hooks e
+  trampolim do hook por offset em endereço de meia palavra (907b204), hooks de import/export e
   plugins do config.txt (805af91). Validado headless até o gameplay (logo da EA, menu de dificuldade, cinemática,
   Isaac no corredor). **Relatos do usuário de 09/11 (00:2x)**: (1) "o andar para frente do teclado não funciona": o
   port transforma o analógico esquerdo num toque no joystick da tela, e um analógico que pula do centro para a borda
@@ -2330,7 +2322,7 @@ on-existing PPS 0 e nenhum quadro). Ainda aberto: depois da carga no meio do fil
   Fechado (08/11/2026): roda até o gameplay (9bc0d66); a imagem "zuada" e os controles seguem num item próprio se o usuário detalhar
 - [x] SILH00004 (homebrew, port de Silent Hill 4 com vitaGL): não rodava (relato do usuário, 08/11/2026). Feito
   (agente C): módulo ausente devolve o erro do Vita em vez de exceção do host (bf378ec, aviso no log de como extrair o
-  libshacccg.suprx com o ShaRKF00D); taiInjectDataForUser/taiInjectAbs e taiHookFunctionOffsetForUser em Thumb
+  libshacccg.suprx com o ShaRKF00D); injeção de dados (relativa e absoluta) e hook por offset em Thumb
   (26a9556): o SceShaccCgExt aplica os patches no libshacccg. **Aberto**: a tela continua preta em 900 quadros; o log do
   próprio port (`ux0:data/sh4/sh4log.txt`) mostra o heap newlib de 24 MB (tamanho escolhido pelo port) cheio
   ("malloc 1024 KB failed ... texture skipped") e o vitaGL sobre esse heap. Falta referência do Vita real
