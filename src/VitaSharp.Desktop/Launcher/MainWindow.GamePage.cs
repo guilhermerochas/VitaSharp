@@ -327,6 +327,7 @@ public sealed partial class MainWindow
         s.Children.Add(head);
         var res = GameOptions.ResScales;
         var rates = GameOptions.FrameRates;
+        var fast = GameOptions.FastLoadings(_settings.FastLoading);
         s.Children.Add(_k.Group(
             _k.Row("monitor", S.InternalResolution, S.InternalResolutionDetail,
                 _k.Dropdown(res.Select(c => c.Label).ToArray(), Math.Max(0, Array.FindIndex(res, c => c.Factor == opts.ResScale)), i => { opts.ResScale = res[i].Factor; Store(); }, 176),
@@ -334,6 +335,9 @@ public sealed partial class MainWindow
             _k.Row("gauge", S.FrameRate, S.FrameRateDetail,
                 _k.Dropdown(rates.Select(c => c.Label).ToArray(), Math.Max(0, Array.FindIndex(rates, c => c.Value == opts.FrameRate)), i => { opts.FrameRate = rates[i].Value; Store(); }, 176),
                 tip: S.FrameRateTip),
+            _k.Row("zap", S.FastLoading, S.FastLoadingDetail,
+                _k.Dropdown(fast.Select(c => c.Label).ToArray(), Math.Max(0, Array.FindIndex(fast, c => c.Value == opts.FastLoading)), i => { opts.FastLoading = fast[i].Value; Store(); }, 176),
+                tip: S.FastLoadingTip),
             _k.Row("gamepad", S.Controls, S.ControlsDetail, open: () => { Navigate(PageSettings); _settingsPage?.ShowSection(SettingsPage.SectionControls); })));
         s.Children.Add(_k.Text(_runningGame?.TitleId == g.TitleId ? S.AppliesNextStart : S.AppliesOnStart, 12, color: P.Muted).Also(t => t.Margin = new Thickness(6, 10, 0, 0)));
         return s;

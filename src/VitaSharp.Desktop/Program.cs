@@ -677,6 +677,8 @@ public static class Program
         Console.WriteLine("               --env=KEY=VALUE  set an environment switch for this run (repeatable; e.g. --env=VITASHARP_RES_SCALE=2)");
         Console.WriteLine("               --msaa=native|ss|off  MSAA scenes: real multisampling (default), 2x supersampling or off (F3 cycles them in game)");
         Console.WriteLine("               --frame-rate=native|30|60|unlimited  vblanks per flip: the game's own (default), fixed 30/60, or no display waits");
+        Console.WriteLine("               --fast-loading[=on|off]  no storage read speed limit (default off: the Vita memory card's 7 MB/s; some games need the real timing)");
+        Console.WriteLine("               --io-speed=<MB/s>|vita|fast  storage read speed (default VITASHARP_IO_SPEED, else vita = 7 MB/s; 0 or fast = no limit)");
         Console.WriteLine("               --psn=on|off  emulated PSN account signed in (default off: no network, NP signed out)");
         Console.WriteLine("               --psn-id=<online id>  online ID of the emulated account (default " + VitaSharp.Core.Hle.PsnAccount.DefaultOnlineId + ")");
         Console.WriteLine("               --psn-local=on|off  local PSN services: TUS/Cross-Save, rankings, tickets, matching in <data>/np");

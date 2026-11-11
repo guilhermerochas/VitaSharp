@@ -45,6 +45,9 @@ public static class SessionReport
         foreach (var m in emu.Kernel.Objects.All<VitaSharp.Core.Kernel.Mutex>())
             if (m.Owner != null && m.Waiters > 0)
                 yield return $"  mutex '{m.Name}' held by '{m.Owner.Name}' ({m.Owner.Status}) count {m.LockCount}, {m.Waiters} waiting";
+        yield return IoTiming.FastLoading
+            ? "  storage: fast loading (no read speed limit)"
+            : $"  storage: {IoTiming.BytesPerSecond / 1e6:0.#} MB/s, {IoTiming.TimedReads} device reads, {IoTiming.DeviceTicks / (double)System.Diagnostics.Stopwatch.Frequency:0.0} s of device time";
         foreach (var l in GpuLines(emu)) yield return l;
         foreach (var l in AudioDiagnostics.SummaryLines()) yield return l; // always: ports, outputs/s, underruns per minute
         foreach (var l in VitaSharp.Core.Hle.Modules.Ngs.PerfLines()) yield return l;

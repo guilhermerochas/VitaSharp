@@ -336,6 +336,10 @@ public static class EnvVars
     /// <summary>Frame rate mode: native (default), 30, 60 or unlimited (Hle/Modules/Display.cs FrameRate; desktop
     /// --frame-rate=, the launcher's "Taxa de quadros" per game).</summary>
     public const string FrameRate = "VITASHARP_FRAME_RATE";
+    /// <summary>Storage read speed in MB/s (Util/IoTiming.cs): "vita" (the memory card's 7 MB/s, the default), "fast"
+    /// or 0 (no speed limit: the launchers' "Carregamento rapido", desktop --fast-loading), or a number (desktop
+    /// --io-speed=).</summary>
+    public const string IoSpeed = "VITASHARP_IO_SPEED";
     /// <summary>0: textures always read a decoder's output buffer as it is now, never an earlier picture of the
     /// decoder that matches their size (Gpu/DecoderOutputs.cs). Default on.</summary>
     public const string DecoderHistory = "VITASHARP_DECODER_HISTORY";

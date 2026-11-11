@@ -194,6 +194,10 @@ public static class Strings
     public static string FrameRate => T();
     public static string FrameRateDetail => T();
     public static string FrameRateTip => T();
+    public static string FastLoading => T();
+    public static string FastLoadingDetail => T();
+    public static string FastLoadingGlobalDetail => T();
+    public static string FastLoadingTip => T();
     public static string ControlsDetail => T();
     public static string AppliesOnStart => T();
     public static string AppliesNextStart => T();

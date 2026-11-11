@@ -2982,4 +2982,19 @@
   <data name="AudioOutputDefault" xml:space="preserve">
     <value>Padrão do sistema</value>
   </data>
+  <data name="MOn" xml:space="preserve">
+    <value>Ligado</value>
+  </data>
+  <data name="FastLoading" xml:space="preserve">
+    <value>Carregamento rápido</value>
+  </data>
+  <data name="FastLoadingDetail" xml:space="preserve">
+    <value>Mais rápido que o Vita; alguns jogos podem ter erros de tempo</value>
+  </data>
+  <data name="FastLoadingGlobalDetail" xml:space="preserve">
+    <value>Padrão de todos os jogos (cada jogo pode ter o seu na página dele). Mais rápido que o Vita; alguns jogos podem ter erros de tempo</value>
+  </data>
+  <data name="FastLoadingTip" xml:space="preserve">
+    <value>Desligado (padrão): os jogos leem os dados na velocidade do cartão de memória do Vita (cerca de 7 MB/s), como no console. Ligado: sem limite de velocidade, as telas de carregamento ficam bem mais curtas. Alguns jogos só funcionam com o tempo real de carregamento (ex.: Silent Hill: Book of Memories para no primeiro carregamento); se um jogo travar ou fechar carregando, desligue.</value>
+  </data>
 </root>

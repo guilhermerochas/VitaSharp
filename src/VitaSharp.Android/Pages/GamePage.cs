@@ -110,10 +110,13 @@ public sealed class GamePage : Screen<GameState, GameProps>
                         ToggleRow("VSync", eff.VSync, v => Save(x => x.VSync = v == app.VSync ? null : v)),
                         Divider(),
                         ToggleRow(Loc.Get("MShowFps"), eff.ShowFps, v => Save(x => x.ShowFps = v == app.ShowFps ? null : v)),
+                        Divider(),
+                        ToggleRow(Loc.Get("FastLoading"), eff.FastLoading, v => Save(x => x.FastLoading = v == app.FastLoading ? null : v),
+                            detail: Loc.Get("FastLoadingDetail")),
                         s.HasOverrides ? Divider() : null,
                         s.HasOverrides ? Row(Loc.Get("MResetToDefaults"), null, () => Save(x =>
                         {
-                            x.CpuBackend = null; x.CpuMhz = null; x.GpuProfile = null; x.VSync = null; x.ShowFps = null; x.ResScale = null; x.Msaa = null;
+                            x.CpuBackend = null; x.CpuMhz = null; x.GpuProfile = null; x.VSync = null; x.ShowFps = null; x.ResScale = null; x.Msaa = null; x.FastLoading = null;
                         })) : null
                     ),
                     SectionTitle(Loc.Get("MSaves")),
