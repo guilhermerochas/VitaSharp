@@ -492,6 +492,11 @@ public static class Program
     /// <summary>Every NID with an [Hle] entry point; Default when every entry point of it is a documented firmware
     /// default (<see cref="HleAttribute.Default"/>), not a real implementation.</summary>
     static SortedDictionary<uint, (string Name, string Module, bool Default)> HleImplementedNids()
+        => HleImplementedNids(out _);
+
+    /// <summary>The same, also giving the HLE's "the firmware module serves every importer" test, from the one emulator
+    /// the scan makes (only one guest memory can exist per process).</summary>
+    static SortedDictionary<uint, (string Name, string Module, bool Default)> HleImplementedNids(out Func<string, bool> firmwareForEveryImporter)
     {
         var byNid = new SortedDictionary<uint, (string Name, string Module, bool Default)>();
         foreach (var m in HleBindings.Modules)
@@ -510,6 +515,8 @@ public static class Program
         try
         {
             using var emu = new Emulator(new EmulatorOptions { FsRoot = tmp, EnableJit = false });
+            var hle = emu.Hle;
+            firmwareForEveryImporter = hle.FirmwareForEveryImporter;
             foreach (var nid in emu.Hle.VariableNids)
                 byNid.TryAdd(nid, (NidDatabase.NameOf(nid), "data", false));
         }
@@ -526,14 +533,10 @@ public static class Program
     static int HleCoverage(string? outTsv, string? vitasdkTsv = null, string? statusRoot = null)
     {
         Log.Level = LogLevel.Warn;
-        var impl = HleImplementedNids();
+        var impl = HleImplementedNids(out var firmwareForEveryImporter);
         // functions the emulator provides by running a real installed module (LleLibraries: the games' own modules and the
         // firmware modules the loader serves to every importer): covered, no HLE
-        HashSet<uint> lle;
-        using (var probe = new Emulator(new EmulatorOptions { FsRoot = FsRoot, EnableJit = false }))
-        {
-            lle = LleLibraries.InstalledNids(FsRoot, probe.Hle.FirmwareForEveryImporter).Where(n => !impl.ContainsKey(n)).ToHashSet();
-        }
+        HashSet<uint> lle = LleLibraries.InstalledNids(FsRoot, firmwareForEveryImporter).Where(n => !impl.ContainsKey(n)).ToHashSet();
         var c = VitaSharp.Core.Firmware.FunctionCensus.Scan(FsRoot);
         string Importer(uint nid) => c.GameImports.TryGetValue(nid, out var g) ? g : c.SystemImports.GetValueOrDefault(nid, "-");
         string Group(uint nid) => c.GameImports.ContainsKey(nid) ? "games" : c.SystemImports.ContainsKey(nid) ? "system" : "general";

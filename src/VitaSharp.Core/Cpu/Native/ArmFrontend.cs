@@ -1396,7 +1396,10 @@ public sealed unsafe partial class ArmFrontend
                 B.FpOp(kind, O | (dbl ? FpFlags.Double : 0), sd, 0, dbl ? dm : sm, ins, d.Address);
                 return false;
             }
-            case 0xA: case 0xB: case 0xE: case 0xF:
+            case 0xA:
+            case 0xB:
+            case 0xE:
+            case 0xF:
             {
                 // VCVT fixed-point <-> float, in place on Vd (a single register, or the low word / all of a double)
                 Vfp.FixedParams(ins, out bool toFixed, out _, out _, out int frac);
