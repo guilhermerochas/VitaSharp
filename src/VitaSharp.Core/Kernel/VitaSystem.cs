@@ -348,19 +348,42 @@ public sealed class VitaSystem
 
     public void NoteShellHome() => ShellLiveArea = null;
 
-    /// <summary>The application holding the BGM port (sceAppMgrAcquireBgmPort*), -1 for none.</summary>
-    public int BgmPortOwner = -1;
-    /// <summary>The application the BGM port holder plays for (sceAppMgrSetBgmProxyApp), -1 for none.</summary>
-    public int BgmProxyApp = -1;
+    /// <summary>sceAppMgrSetBgmProxyApp: the application that plays the BGM (-1 none) for the one that asked
+    /// (<see cref="BgmProxyBy"/>).</summary>
+    public int BgmProxyApp = -1, BgmProxyBy = -1;
+
+    /// <summary>The BGM priority value meaning "no candidate: the BGM goes to the application in front".</summary>
+    public const int BgmNoPriority = 0xFFFF;
 
     /// <summary>
-    /// The BGM ports of <paramref name="e"/> are silent: it holds the BGM port (the shell's music core for the home
-    /// screen music) but another process is in front and the holder plays for no application (no proxy). On the
-    /// Vita the system music stops while an application runs and comes back on the home screen (the shell then calls
-    /// sceAppMgrRestoreBgmSettingForShell); the shell itself makes no audio call when an application opens.
+    /// The process whose BGM ports are heard, as the FW 3.74 kernel appmgr routes them (0x81005EF8, run on every
+    /// acquire/release and every activation change): every application keeps a BGM priority
+    /// (sceAppMgrAcquireBgmPort 0x100, ...ForMusicPlayer 0x82, ...WithPriority(p) p, sceAppMgrReleaseBgmPort 0); among
+    /// the active ones (in front or running, not suspended by the PS button) the highest positive priority gets the
+    /// BGM; with none, the BGM goes to the process in front (the shell on the home screen and the LiveArea). A process
+    /// another one plays for (sceAppMgrSetBgmProxyApp) hands it to that player. <paramref name="priority"/> is the
+    /// holder's priority, <see cref="BgmNoPriority"/> when it is the one in front by default. The other processes'
+    /// BGM ports are muted by the kernel (SceAudioForDriver), which <see cref="BgmMuted"/> applies.
     /// </summary>
-    public bool BgmMuted(Emulator e) =>
-        BgmPortOwner >= 0 && BgmPortOwner == e.AppId && BgmProxyApp < 0 && Volatile.Read(ref _foreground) is { } fg && !ReferenceEquals(fg, e);
+    public Emulator? BgmHolder(out int priority)
+    {
+        Emulator? best = null;
+        priority = BgmNoPriority;
+        Emulator[] all;
+        Emulator? fg;
+        lock (_lock) { all = _processes.ToArray(); fg = _foreground; }
+        foreach (var p in all)
+            if (!p.Suspended && p.BgmPriority > 0 && (best == null || p.BgmPriority > best.BgmPriority)) best = p;
+        if (best != null) priority = best.BgmPriority;
+        else best = fg ?? all.FirstOrDefault();
+        if (best != null && BgmProxyBy >= 0 && best.AppId == BgmProxyBy && ByAppId(BgmProxyApp) is { } player) best = player;
+        return best;
+    }
+
+    /// <summary>The BGM ports of <paramref name="e"/> are silent: another process holds the BGM
+    /// (<see cref="BgmHolder"/>). On the Vita the system music stops while an application runs and comes back on the
+    /// home screen; the shell's music player itself makes no audio call when an application opens.</summary>
+    public bool BgmMuted(Emulator e) => !ReferenceEquals(BgmHolder(out _), e);
     /// <summary>The process holding the audio output alone (sceAppMgrAcquireSoundOutExclusive2/3), -1 none.</summary>
     public int SoundOutExclusiveOwner = -1;
     /// <summary>The process holding the input devices (sceAppMgrAcquireBtrm), -1 none.</summary>

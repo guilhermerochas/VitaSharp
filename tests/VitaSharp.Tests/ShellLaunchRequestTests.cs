@@ -29,6 +29,25 @@ public sealed class ShellLaunchRequestTests(GuestMemoryFixture fx) : IDisposable
     static (int Type, int W1, int W2) Event(byte[] e) =>
         (BitConverter.ToInt32(e, 0), BitConverter.ToInt32(e, 4), BitConverter.ToInt32(e, 8));
 
+    /// <summary>The kernel's BGM routing: with no BGM priority the BGM goes to the process in front; a positive priority
+    /// is a candidate only while the process is not suspended (FW 3.74 appmgr 0x81005EF8).</summary>
+    [Fact]
+    public void BgmGoesToTheProcessInFrontUnlessAnActiveOneHasAPriority()
+    {
+        var emu = Emu();
+        Assert.Same(emu, emu.Vita.BgmHolder(out int prio));
+        Assert.Equal(VitaSystem.BgmNoPriority, prio);
+        Assert.False(emu.Vita.BgmMuted(emu));
+        emu.BgmPriority = 0x100;
+        Assert.Same(emu, emu.Vita.BgmHolder(out prio));
+        Assert.Equal(0x100, prio);
+        emu.Suspended = true;
+        emu.Vita.BgmHolder(out prio);
+        Assert.Equal(VitaSystem.BgmNoPriority, prio); // a suspended application's priority does not count
+        emu.Suspended = false;
+        emu.BgmPriority = 0;
+    }
+
     [Fact]
     public void ByNameReservesTheApplicationAndPostsEvent6()
     {

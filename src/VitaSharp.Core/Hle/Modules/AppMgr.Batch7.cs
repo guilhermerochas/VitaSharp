@@ -312,7 +312,7 @@ public sealed partial class AppMgrShell
     [Hle]
     int _sceAppMgrGetCurrentBgmState(uint pid, uint state)
     {
-        var owner = Emu.Vita.BgmPortOwner >= 0 ? Emu.Vita.ByAppId(Emu.Vita.BgmPortOwner) : null;
+        var owner = Emu.Vita.BgmHolder(out _);
         if (pid != 0) GuestMemory.W32(pid, (uint)(owner?.Pid ?? -1));
         if (state != 0) GuestMemory.W32(state, owner != null ? 1u : 0u);
         return 0;

@@ -19,7 +19,7 @@ public sealed partial class AppMgrShell : HleModule
     /// SceAppMgrAppStatus (0x80) as the kernel fills it (FW 3.74 appmgr, the function shared by GetStatusByAppId and
     /// GetStatusByName): +0x0C the application name (title id, 0x20), +0x30 application id, +0x34 process id, +0x38
     /// "in the foreground" (the entry's state is 2), +0x3C running, +0x44 the application id again (the shell stores this
-    /// one and compares it with later statuses), +0x48/+0x49/+0x4A the info bar (AppMgr.Infobar), +0x50 the title id again, +0x71 the application
+    /// one and compares it with later statuses), +0x48/+0x49/+0x4A the info bar (AppMgr.Infobar), +0x50 the name of the application that plays its BGM (empty: none), +0x71 the application
     /// type byte and +0x74 its flags. libipmi only lets a process create an IPC server when +0x74 bit 0 is set or
     /// the type is 2: the shell's.
     /// </summary>
@@ -41,7 +41,12 @@ public sealed partial class AppMgrShell : HleModule
             GuestMemory.Write(st + 0x49, color);
             GuestMemory.Write(st + 0x4A, transparency);
         }
-        GuestMemory.WriteCString(st + 0x50, p.TitleId, 0x20);
+        // +0x50: the application its BGM is played by (sceAppMgrSetBgmProxyApp; appmgr 0x810070D4 copies that entry's
+        // name), empty for none. The shell's music core follows this name to decide which of its players goes with the
+        // application in front; with the title id itself here, opening the Browser after a game switched the home
+        // screen music player off and nothing switched it back on
+        if (p.AppId == p.Vita.BgmProxyBy && p.Vita.ByAppId(p.Vita.BgmProxyApp) is { } player)
+            GuestMemory.WriteCString(st + 0x50, player.TitleId, 0x20);
         if (p.IsShell)
         {
             GuestMemory.Write(st + 0x71, (byte)2);
@@ -90,7 +95,6 @@ public sealed partial class AppMgrShell : HleModule
             GuestMemory.W32(status + 0x30, (uint)appId);
             GuestMemory.W32(status + 0x34, unchecked((uint)-1));
             GuestMemory.W32(status + 0x44, (uint)appId);
-            GuestMemory.WriteCString(status + 0x50, pl.TitleId, 0x20);
             return 0;
         }
         // the kernel's pseudo ids (as in GetAppIdByAppId): -2 the caller's own application, -4 the one in front. The
@@ -194,22 +198,32 @@ public sealed partial class AppMgrShell : HleModule
         return p?.AppId ?? -1;
     }
 
-    /// <summary>(SceAppMgrBgmState *state, 0x20 bytes; FW 3.74 appmgr 0x81007844): +0 the application holding the BGM
-    /// port, +4/+8 its port settings, +0xC that application's process (both -1 when no application holds it).</summary>
+    /// <summary>(SceAppMgrBgmState *state, 0x20 bytes; FW 3.74 appmgr 0x81007844, from the kernel's BGM routing):
+    /// +0 the process whose BGM is heard (-1 none), +4 its BGM priority (0xFFFF: it has none and gets the BGM as the
+    /// process in front), +8 the highest BGM sub-priority set (sceAppMgrSetBgmSubPriority; 0 none), +0xC that
+    /// process's application id. The shell's music player compares +8 with the priority it asks for before it plays.</summary>
     [Hle]
     [Hle("_sceAppMgrGetCurrentBgmState2")]
     int sceAppMgrGetCurrentBgmState2(uint state)
     {
         if (state == 0) return ERR_NULL;
         GuestMemory.Fill(state, 0, 0x20);
-        var owner = Emu.Vita.BgmPortOwner >= 0 ? Emu.Vita.ByAppId(Emu.Vita.BgmPortOwner) : null;
-        GuestMemory.W32(state, (uint)(owner?.AppId ?? -1));
-        GuestMemory.W32(state + 0xC, (uint)(owner?.Pid ?? -1));
+        var holder = Emu.Vita.BgmHolder(out int priority);
+        GuestMemory.W32(state, (uint)(holder?.Pid ?? -1));
+        GuestMemory.W32(state + 4, (uint)priority);
+        GuestMemory.W32(state + 0xC, (uint)(holder?.AppId ?? -1));
         return 0;
     }
 
-    /// <summary>(int priority, ...): the shell's music player takes the BGM port; 0 = granted (nothing else plays BGM).</summary>
-    [Hle] int sceAppMgrAcquireBgmPortWithPriority(int priority) { Emu.Vita.BgmPortOwner = Emu.AppId; return 0; }
+    /// <summary>(int priority): a system program sets its BGM priority (appmgr 0x81007450; negative: 0x8080201A).
+    /// The shell's music player asks 0x80 at boot and 0 once its home screen is up.</summary>
+    [Hle]
+    int sceAppMgrAcquireBgmPortWithPriority(int priority)
+    {
+        if (priority < 0) return unchecked((int)0x8080201A);
+        Emu.BgmPriority = priority;
+        return 0;
+    }
 
     /// <summary>The shell restores its own BGM settings after an application gave the port back.</summary>
     [Hle] int sceAppMgrRestoreBgmSettingForShell() => 0;

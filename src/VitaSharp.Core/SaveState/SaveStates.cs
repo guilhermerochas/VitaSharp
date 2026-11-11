@@ -245,7 +245,7 @@ public static class SaveStates
         sys.Write(emu.AppId);
         sys.WriteKernelObject(emu.Kernel.MainThread);
         sys.Write(emu.Vita.AppMgrState);
-        sys.Write(emu.Vita.BgmPortOwner);
+        sys.Write(emu.BgmPriority); // the BGM priority of the process (was the BGM port owner: same slot)
         list.Add((SysSection, sys.Data.ToArray()));
 
         var fn = new SnapshotWriter();
@@ -528,7 +528,7 @@ public static class SaveStates
         if (pid != emu.Pid || appId != emu.AppId) throw new SnapshotException($"the process ids differ (saved 0x{pid:X}/0x{appId:X}, here 0x{emu.Pid:X}/0x{emu.AppId:X})");
         int mainUid = sys.ReadInt32();
         (sys.ReadBytes() ?? []).CopyTo(emu.Vita.AppMgrState, 0);
-        emu.Vita.BgmPortOwner = sys.ReadInt32();
+        emu.BgmPriority = Math.Max(0, sys.ReadInt32());
 
         emu.Hle.LoadState(new SnapshotReader(Need(FunctionsSection)));
         // this build's guest-code routines and SVCs, not the saving build's (Hle/HleGuestCode)
