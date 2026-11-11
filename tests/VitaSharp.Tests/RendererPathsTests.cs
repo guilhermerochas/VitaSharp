@@ -57,12 +57,13 @@ public sealed class RendererPathsTests(GuestMemoryFixture fx)
             WithRenderer("vkmsaa", renderer, h =>
             {
                 var w = new RendererTextureTests.Workload(h, multisample, scaleMode: multisample != 0 ? 1u : 0u);
-                // a surface holding a pattern, and one triangle over its lower-left half (the workload's fragment
-                // program has no code: it writes black)
+                // a surface holding a pattern, and one triangle over its lower-left half sampling an RGBA8 texture
                 for (uint i = 0; i < W * H; i++) GuestMemory.W32(w.Data + i * 4, 0xFF000000u | (i * 2654435761u >> 8));
-                float[] v = [-1, -1, 0.5f, 1, -1, 0.5f, -1, 1, 0.5f];
+                float[] v = [-1, -1, 0.5f, 1, 1, -1, 0.5f, 1, -1, 1, 0.5f, 1];
                 for (int i = 0; i < v.Length; i++) GuestMemory.Write(w.Verts + (uint)i * 4, v[i]);
-                w.Textures.RemoveRange(1, w.Textures.Count - 1);
+                uint rgba = w.Textures[w.TextureFormats.IndexOf(VitaSharp.Core.Gxm.TexBase.U8U8U8U8)];
+                w.Textures.Clear();
+                w.Textures.Add(rgba);
                 Assert.Equal(1, w.Run(1));
                 h.Emu.Gpu.WaitIdle();
                 m = renderer.MsaaMode;
@@ -84,16 +85,19 @@ public sealed class RendererPathsTests(GuestMemoryFixture fx)
     public void MsaaDownscaleScenesResolveToTheOneSampleImageInEveryMode()
     {
         using var driver = SoftwareVulkan.Use();
-        // the scene loads the surface into every sample and resolves it back: away from the triangle's diagonal edge
-        // (where the samples of a pixel differ) every mode gives the one-sample image, black inside and the pattern
-        // outside; along the edge only a band of a pixel or two may differ
+        // the scene loads the surface into every sample, draws the textured triangle and resolves: away from the
+        // triangle's diagonal edge (where the samples of a pixel differ) every mode gives the one-sample image, the
+        // texture inside and the pattern outside; along the edge only a band of a pixel or two may differ
         var single = MsaaScene(null, 0, out _);
         static (byte, byte, byte) At(byte[] img, int x, int y) => (img[(y * W + x) * 3], img[(y * W + x) * 3 + 1], img[(y * W + x) * 3 + 2]);
-        // y grows downwards: the triangle covers the lower-left half (x + (H - 1 - y) < W); the surface was loaded and
-        // stored again
-        uint p = unchecked((uint)(3 * W + 60) * 2654435761u) >> 8; // the pattern word of pixel (60, 3), outside the triangle
-        Assert.Equal(((byte)p, (byte)(p >> 8), (byte)(p >> 16)), At(single, 60, 3));
-        Assert.True(single.Distinct().Count() > 64, "the pattern stays outside the triangle");
+        static (byte, byte, byte) Pattern(int x, int y) { uint p = unchecked((uint)(y * W + x) * 2654435761u) >> 8; return ((byte)p, (byte)(p >> 8), (byte)(p >> 16)); }
+        // y grows downwards: the triangle covers the lower-left half (x < y)
+        Assert.Equal(Pattern(60, 3), At(single, 60, 3));
+        int drawn = 0;
+        for (int y = 0; y < H; y++)
+            for (int x = 0; x < y - 2; x++)
+                if (At(single, x, y) != Pattern(x, y)) drawn++;
+        Assert.True(drawn > (W - 3) * (H - 3) / 2 * 9 / 10, $"the triangle drew {drawn} pixels");
         foreach (var (mode, samples) in new[] { ("native", (ushort)2), ("native", (ushort)1), ("ss", (ushort)2), ("off", (ushort)2) })
         {
             var img = MsaaScene(mode, samples, out var shown);
@@ -207,35 +211,55 @@ public sealed class RendererPathsTests(GuestMemoryFixture fx)
         }
     }
 
+    /// <summary>The anomalies a debug-mode session raised and its NaN scan count, after four frames on an
+    /// F16F16F16F16 colour surface whose memory the CPU filled with <paramref name="half"/> before the first scene.</summary>
+    (List<string> Anomalies, long Scans) F16Session(ushort half)
+    {
+        var r = NewRenderer();
+        var anomalies = new List<string>();
+        r.AnomalyDetected += (kind, detail, present) => { lock (anomalies) anomalies.Add(kind + ": " + detail); };
+        long scans = 0;
+        WithRenderer("vknan", r, h =>
+        {
+            var w = new RendererTextureTests.Workload(h, colorFormat: 0x01000000);
+            for (uint i = 0; i < W * H * 4; i++) GuestMemory.Write(w.Data + i * 2, half);
+            // the draw covers the lower-left half: the rest of the surface keeps what the CPU wrote
+            float[] v = [-1, -1, 0.5f, 1, 1, -1, 0.5f, 1, -1, 1, 0.5f, 1];
+            for (int i = 0; i < v.Length; i++) GuestMemory.Write(w.Verts + (uint)i * 4, v[i]);
+            w.Textures.RemoveRange(1, w.Textures.Count - 1);
+            for (int i = 0; i < 4; i++) { w.Run(1); h.Emu.Gpu.WaitIdle(); }
+            w.Terminate();
+            h.Emu.Gpu.WaitIdle();
+            scans = (long)typeof(VulkanRenderer).GetField("_nanScans", BindingFlags.Instance | BindingFlags.NonPublic)!.GetValue(r)!;
+        });
+        // the anomaly handler runs on the thread pool
+        for (int i = 0; i < 40; i++) { lock (anomalies) if (anomalies.Count > 0) break; Thread.Sleep(50); }
+        lock (anomalies) return (anomalies.ToList(), scans);
+    }
+
     /// <summary>
-    /// Debug mode's NaN/Inf scan of float colour surfaces: every scene on an F16F16F16F16 surface is scanned at its end,
-    /// and a clean surface raises no anomaly. (A surface filled with NaN halves by the CPU was not reported in this
-    /// workload; open item in docs/roadmap.md.)
+    /// Debug mode's NaN/Inf scan of float colour surfaces: every scene on an F16F16F16F16 surface is scanned at its
+    /// end; a surface the CPU filled with NaN halves (the scene loads the surface's memory, as the tiles do) raises the
+    /// "nan" anomaly naming the target, and a clean one raises none.
     /// </summary>
     [SoftwareVulkanFact]
-    public void FloatColourSurfacesAreScannedAndACleanOneRaisesNoAnomaly()
+    public void NanInAFloatColourSurfaceRaisesTheAnomalyAndACleanOneDoesNot()
     {
         using var driver = SoftwareVulkan.Use();
         bool wasOn = DebugMode.Enabled;
         DebugMode.Enable();
         try
         {
-            var r = NewRenderer();
-            var anomalies = new List<string>();
-            r.AnomalyDetected += (kind, detail, present) => { lock (anomalies) anomalies.Add(kind + ": " + detail); };
-            long scans = 0;
-            WithRenderer("vknan", r, h =>
-            {
-                var w = new RendererTextureTests.Workload(h, colorFormat: 0x01000000);
-                w.Textures.RemoveRange(1, w.Textures.Count - 1);
-                for (int i = 0; i < 4; i++) { w.Run(1); h.Emu.Gpu.WaitIdle(); }
-                w.Terminate();
-                h.Emu.Gpu.WaitIdle();
-                scans = (long)typeof(VulkanRenderer).GetField("_nanScans", BindingFlags.Instance | BindingFlags.NonPublic)!.GetValue(r)!;
-            });
-            Assert.True(scans >= 4, $"{scans} scans");
-            Thread.Sleep(200);
-            lock (anomalies) Assert.Empty(anomalies);
+            var (nan, nanScans) = F16Session(0x7E00);
+            Assert.True(nanScans >= 4, $"{nanScans} scans");
+            var hit = Assert.Single(nan);
+            Assert.StartsWith(VulkanRenderer.NanAnomalyKind + ": rt 0x", hit);
+            Assert.Contains("F16x4", hit);
+            Assert.Contains("NaN", hit);
+
+            var (clean, cleanScans) = F16Session(0x3C00); // 1.0
+            Assert.True(cleanScans >= 4, $"{cleanScans} scans");
+            Assert.Empty(clean);
         }
         finally { if (!wasOn) DebugMode.Disable(); }
     }

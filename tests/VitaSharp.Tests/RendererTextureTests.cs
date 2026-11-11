@@ -57,13 +57,14 @@ public sealed class RendererTextureTests(GuestMemoryFixture fx)
             Call(_g, "sceGxmShaderPatcherRegisterProgram", patcher, VertexProgram(h), new Ptr<uint>(vid));
             Call(_g, "sceGxmShaderPatcherRegisterProgram", patcher, SamplingFragmentProgram(h), new Ptr<uint>(fid));
             uint attr = h.Alloc(8), stream = h.Alloc(4), vp = h.Word(0), fp = h.Word(0);
-            GuestMemory.Write(attr + 5, (byte)3);
-            GuestMemory.Write(stream, (ushort)12);
+            GuestMemory.Write(attr + 4, (byte)9); // F32
+            GuestMemory.Write(attr + 5, (byte)4); // x, y, z, w
+            GuestMemory.Write(stream, (ushort)16);
             Assert.Equal(0, Call(_g, "sceGxmShaderPatcherCreateVertexProgram", patcher, GuestMemory.R32(vid), attr, 1u, stream, 1u, new Ptr<uint>(vp)));
             Assert.Equal(0, Call(_g, "sceGxmShaderPatcherCreateFragmentProgram", patcher, GuestMemory.R32(fid), 0u, 0u, 0u, GuestMemory.R32(vp), new Ptr<uint>(fp)));
             Vp = GuestMemory.R32(vp); Fp = GuestMemory.R32(fp);
-            Verts = h.Alloc(36); Idx = h.Alloc(8);
-            float[] v = [-1, -1, 0.5f, 3, -1, 0.5f, -1, 3, 0.5f];
+            Verts = h.Alloc(48); Idx = h.Alloc(8);
+            float[] v = [-1, -1, 0.5f, 1, 3, -1, 0.5f, 1, -1, 3, 0.5f, 1]; // a triangle over the whole surface
             for (int i = 0; i < v.Length; i++) GuestMemory.Write(Verts + (uint)i * 4, v[i]);
             GuestMemory.Write(Idx + 2, (ushort)1); GuestMemory.Write(Idx + 4, (ushort)2);
 
@@ -116,33 +117,65 @@ public sealed class RendererTextureTests(GuestMemoryFixture fx)
         public void Terminate() => Call(_g, "sceGxmTerminate");
     }
 
-    internal static uint VertexProgram(HleHarness h)
+    /// <summary>The vertex program's code: o0-o3 (position) and o4-o7 (texture coordinate 0) = pa0-pa3, the vertex.</summary>
+    internal static readonly ulong[] VertexCode = [UsseEncoding.MovF32OutputFromPa(0, 0), UsseEncoding.MovF32OutputFromPa(4, 0)];
+
+    /// <summary>The vertex program's GXP: position and texture coordinate 0 (four components) out, <see cref="VertexCode"/>.</summary>
+    internal static byte[] VertexGxp()
     {
-        ulong[] code = [0x6081000460600003, 0x50C9000A20200180];
-        uint size = 0x100 + (uint)code.Length * 8, p = h.Alloc(size);
-        GuestMemory.W32(p, 0x00505847);
-        GuestMemory.W32(p + 8, size);
-        GuestMemory.W32(p + 0x3C, (uint)code.Length);
-        GuestMemory.W32(p + 0x40, 0x100 - 0x40);
-        for (int i = 0; i < code.Length; i++) { GuestMemory.W32(p + 0x100 + (uint)i * 8, (uint)code[i]); GuestMemory.W32(p + 0x104 + (uint)i * 8, (uint)(code[i] >> 32)); }
+        var d = new byte[0x100 + VertexCode.Length * 8];
+        void W32(int o, uint v) => System.Buffers.Binary.BinaryPrimitives.WriteUInt32LittleEndian(d.AsSpan(o), v);
+        W32(0, 0x00505847);
+        W32(8, (uint)d.Length);
+        W32(0x2C, 0x60 - 0x2C);     // varyings at 0x60
+        W32(0x60 + 20, 7);          // vertex outputs 2: texture coordinate 0, four components
+        // one parameter: the attribute "pos", F32x4 in pa0 (the patcher binds attribute register 0 to it)
+        W32(0x24, 1);
+        W32(0x28, 0x80 - 0x28);     // parameters at 0x80
+        W32(0x80, 0x90 - 0x80);     // its name at 0x90
+        d[0x84] = 0;                // attribute, F32
+        d[0x85] = 4;                // four components, container 0
+        W32(0x88, 1);               // array size
+        W32(0x8C, 0);               // resource index: pa0
+        "pos"u8.CopyTo(d.AsSpan(0x90));
+        W32(0x3C, (uint)VertexCode.Length);
+        W32(0x40, 0x100 - 0x40);    // primary program
+        for (int i = 0; i < VertexCode.Length; i++) { W32(0x100 + i * 8, (uint)VertexCode[i]); W32(0x104 + i * 8, (uint)(VertexCode[i] >> 32)); }
+        return d;
+    }
+
+    /// <summary>A fragment program without code: its only input is a non-dependent texture read of texture coordinate 0
+    /// through unit 3 (a fragment varying descriptor, as stripped programs have), stored as F32 in pa0-pa3, and its
+    /// output is pa0-pa3 as F32x4: the draw shows the texture.</summary>
+    internal static byte[] SamplingFragmentGxp()
+    {
+        var d = new byte[0x200];
+        void W32(int o, uint v) => System.Buffers.Binary.BinaryPrimitives.WriteUInt32LittleEndian(d.AsSpan(o), v);
+        W32(0, 0x00505847);
+        W32(8, (uint)d.Length);
+        W32(0x14, GxpProgram.FlagFragment);
+        W32(0x2C, 0x100 - 0x2C);    // varyings at 0x100
+        d[0x100 + 10] = (byte)ParamType.F32;
+        d[0x100 + 11] = 4;          // output: F32x4 from pa0
+        d[0x100 + 12] = 1;          // one varying descriptor
+        W32(0x110, 0x20);           // descriptors at 0x130
+        W32(0x130, 0xF000);         // no attribute input, texture coordinate 0
+        W32(0x134, 3);              // texture unit 3
+        W32(0x138, 3 << 6);         // four registers
+        W32(0x13C, 3 << 4);         // stored as F32
+        return d;
+    }
+
+    static uint Copy(HleHarness h, byte[] gxp)
+    {
+        uint p = h.Alloc((uint)gxp.Length);
+        gxp.CopyTo(GuestMemory.Span(p, gxp.Length));
         return p;
     }
 
-    /// <summary>A fragment program whose only input is a non-dependent texture read of texcoord 0 through unit 3 (a
-    /// fragment varying descriptor, as stripped programs have).</summary>
-    internal static uint SamplingFragmentProgram(HleHarness h)
-    {
-        uint p = h.Alloc(0x200);
-        GuestMemory.W32(p, 0x00505847);
-        GuestMemory.W32(p + 8, 0x200);
-        GuestMemory.W32(p + 0x14, GxpProgram.FlagFragment);
-        GuestMemory.W32(p + 0x2C, 0x100 - 0x2C);
-        GuestMemory.Write(p + 0x100 + 12, (byte)1);
-        GuestMemory.W32(p + 0x110, 0x20);
-        GuestMemory.W32(p + 0x130, 0xF000);
-        GuestMemory.W32(p + 0x134, 3);
-        return p;
-    }
+    internal static uint VertexProgram(HleHarness h) => Copy(h, VertexGxp());
+
+    internal static uint SamplingFragmentProgram(HleHarness h) => Copy(h, SamplingFragmentGxp());
 
     static VulkanRenderer NewRenderer(string frames) => new(new VulkanRendererOptions
     {
