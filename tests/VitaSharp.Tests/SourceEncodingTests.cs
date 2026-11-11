@@ -13,11 +13,11 @@ public partial class SourceEncodingTests
 
     // The test output may live outside the repository (builds go to a temporary folder with -o), so the search also
     // starts from this source file's own path.
-    static string? RepoRoot([System.Runtime.CompilerServices.CallerFilePath] string source = "")
+    private static string? RepoRoot([System.Runtime.CompilerServices.CallerFilePath] string source = "")
     {
-        foreach (var start in new[] { AppContext.BaseDirectory, Path.GetDirectoryName(source) ?? "" })
+        foreach (string? start in new[] { AppContext.BaseDirectory, Path.GetDirectoryName(source) ?? "" })
         {
-            for (var d = start.Length > 0 ? new DirectoryInfo(start) : null; d != null; d = d.Parent)
+            for (DirectoryInfo? d = start.Length > 0 ? new DirectoryInfo(start) : null; d != null; d = d.Parent)
             {
                 if (File.Exists(Path.Combine(d.FullName, "VitaSharp.sln")))
                 {
@@ -32,28 +32,28 @@ public partial class SourceEncodingTests
     [Fact]
     public void NoDoubleEncodedUtf8InSources()
     {
-        var root = RepoRoot();
+        string? root = RepoRoot();
         Assert.NotNull(root);
         string[] exts = [".cs", ".xml", ".axaml", ".xaml", ".json", ".csproj", ".props", ".targets"];
         var bad = new List<string>();
-        foreach (var top in new[] { "src", "tests", "build" })
+        foreach (string? top in new[] { "src", "tests", "build" })
         {
-            var dir = Path.Combine(root!, top);
+            string dir = Path.Combine(root!, top);
             if (!Directory.Exists(dir))
             {
                 continue;
             }
 
-            foreach (var f in Directory.EnumerateFiles(dir, "*", SearchOption.AllDirectories))
+            foreach (string f in Directory.EnumerateFiles(dir, "*", SearchOption.AllDirectories))
             {
-                var rel = Path.GetRelativePath(root!, f);
+                string rel = Path.GetRelativePath(root!, f);
                 if (!exts.Contains(Path.GetExtension(f)) || rel.Contains($"{Path.DirectorySeparatorChar}bin{Path.DirectorySeparatorChar}")
                     || rel.Contains($"{Path.DirectorySeparatorChar}obj{Path.DirectorySeparatorChar}") || f.EndsWith(nameof(SourceEncodingTests) + ".cs"))
                 {
                     continue;
                 }
 
-                var lines = File.ReadAllLines(f);
+                string[] lines = File.ReadAllLines(f);
                 for (int i = 0; i < lines.Length; i++)
                 {
                     if (DoubleEncoded().IsMatch(lines[i]))

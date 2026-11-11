@@ -9,9 +9,9 @@ namespace VitaSharp.Tests;
 /// <summary>System utilities (G2 section 4): registry, LiveArea, notification, incoming dialog, clipboard, game update,
 /// trigger util and media export.</summary>
 [Collection("guest")]
-public sealed class SystemUtilHleTests(GuestMemoryFixture fx) : IDisposable
+public sealed class SystemUtilHleTests(GuestMemoryFixture fixture) : IDisposable
 {
-    readonly string _root = Path.Combine(Path.GetTempPath(), $"vs_sysutil_{Guid.NewGuid():N}");
+    private readonly string _root = Path.Combine(Path.GetTempPath(), $"vs_sysutil_{Guid.NewGuid():N}");
 
     public void Dispose()
     {
@@ -22,27 +22,27 @@ public sealed class SystemUtilHleTests(GuestMemoryFixture fx) : IDisposable
         catch (IOException) { }
     }
 
-    static object? Invoke<T>(T module, string name, params object[] args) =>
+    private static object? Invoke<T>(T module, string name, params object[] args) =>
         typeof(T).GetMethod(name, BindingFlags.Instance | BindingFlags.NonPublic | BindingFlags.Public)!.Invoke(module, args);
-    static int Call<T>(T module, string name, params object[] args) => (int)Invoke(module, name, args)!;
+    private static int Call<T>(T module, string name, params object[] args) => (int)Invoke(module, name, args)!;
 
-    uint Str(string s)
+    private uint Str(string s)
     {
-        var bytes = Encoding.UTF8.GetByteCount(s) + 1;
-        uint p = fx.Memory.Alloc((uint)Math.Max(bytes, 16), "str");
+        int bytes = Encoding.UTF8.GetByteCount(s) + 1;
+        uint p = fixture.Memory.Alloc((uint)Math.Max(bytes, 16), "str");
         GuestMemory.WriteCString(p, s);
         return p;
     }
 
     // ------------------------------------------------------------------ SceRegMgr
 
-    RegMgr NewRegMgr() => new() { FsRootOverride = _root };
+    private RegMgr NewRegMgr() => new() { FsRootOverride = _root };
 
     [Fact]
     public void RegMgrReadsDefaultsConsistentWithAppUtil()
     {
-        var r = NewRegMgr();
-        uint buf = fx.Memory.Alloc(0x1000, "reg");
+        RegMgr r = NewRegMgr();
+        uint buf = fixture.Memory.Alloc(0x1000, "reg");
         Assert.Equal(0, Call(r, "sceRegMgrSystemParamGetInt", 0x00037502u, buf));
         Assert.Equal((uint)AppUtil.SystemParamInt(1), GuestMemory.R32(buf));
         Assert.Equal(0, Call(r, "sceRegMgrSystemParamGetInt", 0x00229142u, buf));
@@ -74,8 +74,8 @@ public sealed class SystemUtilHleTests(GuestMemoryFixture fx) : IDisposable
         Assert.True(reg.SetInt("/CONFIG/DATE/", "time_zone", 104)); // UTC+09:00 Tokyo
         Assert.Equal(other, AppUtil.SystemParamInt(1, reg));
         Assert.Equal(540, AppUtil.SystemParamInt(6, reg));
-        uint buf = fx.Memory.Alloc(0x10, "reg");
-        var r = NewRegMgr();
+        uint buf = fixture.Memory.Alloc(0x10, "reg");
+        RegMgr r = NewRegMgr();
         Assert.Equal(0, Call(r, "sceRegMgrSystemParamGetInt", 0x00037502u, buf));
         Assert.Equal((uint)other, GuestMemory.R32(buf));
         Assert.Equal(0, Call(r, "sceRegMgrSystemParamGetInt", 0x00100591u, buf));
@@ -84,8 +84,8 @@ public sealed class SystemUtilHleTests(GuestMemoryFixture fx) : IDisposable
     [Fact]
     public void RegMgrErrors()
     {
-        var r = NewRegMgr();
-        uint buf = fx.Memory.Alloc(0x100, "reg");
+        RegMgr r = NewRegMgr();
+        uint buf = fixture.Memory.Alloc(0x100, "reg");
         Assert.Equal(RegMgr.ERR_INVALID, Call(r, "sceRegMgrSystemParamGetInt", 0x12345678u, buf));
         Assert.Equal(RegMgr.ERR_INVALID, Call(r, "sceRegMgrSystemParamGetInt", 0x00037502u, 0u));
         Assert.Equal(RegMgr.ERR_INVALID, Call(r, "sceRegMgrSystemParamGetInt", 0x00598438u, buf)); // string key
@@ -110,7 +110,7 @@ public sealed class SystemUtilHleTests(GuestMemoryFixture fx) : IDisposable
         uint[] writable = [0x0081649F, 0x00068303, 0x001B2292, 0x00872621, 0x00612B3E, 0x005F6737, 0x0091F34F,
             0x008D89EB, 0x004E7A16, 0x00987180, 0x000504E4, 0x004F7E60, 0x0094E320, 0x008C3860];
         Assert.Equal(writable.OrderBy(x => x), RegMgr.Table.Values.Where(k => k.Writable).Select(k => k.Id).OrderBy(x => x));
-        foreach (var k in RegMgr.Table.Values)
+        foreach (RegMgr.Key k in RegMgr.Table.Values)
         {
             Assert.IsType(k.Type == RegMgr.KeyType.Int ? typeof(int) : typeof(byte[]), k.Default());
         }
@@ -119,8 +119,8 @@ public sealed class SystemUtilHleTests(GuestMemoryFixture fx) : IDisposable
     [Fact]
     public void RegMgrWritablePersists()
     {
-        var r = NewRegMgr();
-        uint buf = fx.Memory.Alloc(0x100, "reg");
+        RegMgr r = NewRegMgr();
+        uint buf = fixture.Memory.Alloc(0x100, "reg");
         Assert.Equal(0, Call(r, "sceRegMgrSystemParamSetInt", 0x00612B3Eu, 1));
         Assert.Equal(0, Call(r, "sceRegMgrSystemParamGetInt", 0x00612B3Eu, buf));
         Assert.Equal(1u, GuestMemory.R32(buf));
@@ -132,8 +132,8 @@ public sealed class SystemUtilHleTests(GuestMemoryFixture fx) : IDisposable
         Assert.True(File.Exists(r.StorePath));
         Assert.StartsWith(_root, r.StorePath);
 
-        var r2 = NewRegMgr(); // reloads from the JSON file
-        uint out_ = fx.Memory.Alloc(0x100, "reg2");
+        RegMgr r2 = NewRegMgr(); // reloads from the JSON file
+        uint out_ = fixture.Memory.Alloc(0x100, "reg2");
         Assert.Equal(0, Call(r2, "sceRegMgrSystemParamGetInt", 0x00612B3Eu, out_));
         Assert.Equal(1u, GuestMemory.R32(out_));
         Assert.Equal(0, Call(r2, "sceRegMgrSystemParamGetStr", 0x005F6737u, out_, 64));
@@ -145,7 +145,7 @@ public sealed class SystemUtilHleTests(GuestMemoryFixture fx) : IDisposable
 
     // ------------------------------------------------------------------ SceLiveAreaUtil
 
-    LiveArea NewLiveArea(out string app)
+    private LiveArea NewLiveArea(out string app)
     {
         var vfs = new Vfs(_root);
         app = Path.Combine(_root, "app");
@@ -173,7 +173,7 @@ public sealed class SystemUtilHleTests(GuestMemoryFixture fx) : IDisposable
     [Fact]
     public void LiveAreaReplaceAllSyncValidation()
     {
-        var la = NewLiveArea(out var app);
+        LiveArea la = NewLiveArea(out string? app);
         Directory.CreateDirectory(Path.Combine(app, "la"));
         Assert.Equal(LiveArea.ERR_INVALID_ARG, Call(la, "sceLiveAreaReplaceAllSync", 0u));
         Assert.Equal(LiveArea.ERR_INVALID_ARG, Call(la, "sceLiveAreaReplaceAllSync", Str("app0:" + new string('a', 251))));
@@ -182,7 +182,7 @@ public sealed class SystemUtilHleTests(GuestMemoryFixture fx) : IDisposable
         Assert.Equal(0, Call(la, "sceLiveAreaReplaceAllSync", Str("app0:la")));
         Assert.Equal(0, Call(la, "sceLiveAreaReplaceAllSync", Str("app0:sce_sys/livearea/contents")));
         // ForTitle bypasses the prefix rule but still resolves the directory
-        uint tick = fx.Memory.Alloc(8, "tick");
+        uint tick = fixture.Memory.Alloc(8, "tick");
         Assert.Equal(0, Call(la, "sceLiveAreaReplaceAllForTitleSync", Str("ux0:"), Str("PCSA00000"), tick));
         Assert.Equal(LiveArea.ERR_PATH_NOT_RESOLVED, Call(la, "sceLiveAreaReplaceAllForTitleSync", Str("ux0:nothere"), 0u, 0u));
     }
@@ -190,7 +190,7 @@ public sealed class SystemUtilHleTests(GuestMemoryFixture fx) : IDisposable
     [Fact]
     public void LiveAreaAsyncStatusModel()
     {
-        var la = NewLiveArea(out _);
+        LiveArea la = NewLiveArea(out _);
         Assert.Equal(LiveArea.ERR_PENDING, Call(la, "sceLiveAreaGetStatus"));
         Assert.Equal(0, Call(la, "sceLiveAreaReplaceAllAsync", Str("app0:sce_sys/livearea/contents")));
         Assert.Equal(LiveArea.ERR_PENDING, Call(la, "sceLiveAreaReplaceAllAsync", Str("app0:sce_sys/livearea/contents"))); // busy
@@ -207,8 +207,8 @@ public sealed class SystemUtilHleTests(GuestMemoryFixture fx) : IDisposable
     [Fact]
     public void LiveAreaFramesAndRevisions()
     {
-        var la = NewLiveArea(out _);
-        uint rev = fx.Memory.Alloc(0x400, "rev");
+        LiveArea la = NewLiveArea(out _);
+        uint rev = fixture.Memory.Alloc(0x400, "rev");
         Assert.Equal(0, Call(la, "sceLiveAreaGetRevision", rev));
         Assert.Equal(3ul, GuestMemory.Read<ulong>(rev)); // content-rev of the template
         Assert.Equal(LiveArea.ERR_INVALID_ARG, Call(la, "sceLiveAreaGetRevision", 0u));
@@ -244,13 +244,13 @@ public sealed class SystemUtilHleTests(GuestMemoryFixture fx) : IDisposable
     [Fact]
     public void LiveAreaUpdateFramesForTitle()
     {
-        var la = NewLiveArea(out _);
+        LiveArea la = NewLiveArea(out _);
         uint ver = Str("01.00"), path = Str("ux0:data");
-        uint arr = fx.Memory.Alloc(16, "arr");
+        uint arr = fixture.Memory.Alloc(16, "arr");
         GuestMemory.W32(arr, Str("""<frame id="frame3"/>"""));
         GuestMemory.W32(arr + 4, Str("""<frame id="frame4"><user-data>x</user-data></frame>"""));
         Assert.Equal(0, Call(la, "sceLiveAreaUpdateFramesForTitleSync", ver, arr, 2u, path, 0, 0u));
-        uint rev = fx.Memory.Alloc(16, "rev");
+        uint rev = fixture.Memory.Alloc(16, "rev");
         Assert.Equal(0, Call(la, "sceLiveAreaGetFrameRevision", Str("frame4"), rev));
         Assert.Equal(LiveArea.ERR_INVALID_ARG, Call(la, "sceLiveAreaUpdateFramesForTitleSync", ver, arr, 0u, path, 0, 0u));
         GuestMemory.W32(arr + 8, 0);
@@ -263,9 +263,9 @@ public sealed class SystemUtilHleTests(GuestMemoryFixture fx) : IDisposable
 
     // ------------------------------------------------------------------ notification / incoming dialog / clipboard
 
-    uint Utf16(string s)
+    private uint Utf16(string s)
     {
-        uint p = fx.Memory.Alloc((uint)(s.Length * 2 + 2), "u16");
+        uint p = fixture.Memory.Alloc((uint)(s.Length * 2 + 2), "u16");
         CommonDialog.WriteUtf16(p, s, s.Length);
         return p;
     }
@@ -279,7 +279,7 @@ public sealed class SystemUtilHleTests(GuestMemoryFixture fx) : IDisposable
         Assert.Equal("Trophy!", u.LastNotification);
         Assert.Equal(0, Call(u, "sceNotificationUtilCleanHistory"));
 
-        uint param = fx.Memory.Alloc(0x25C, "incoming");
+        uint param = fixture.Memory.Alloc(0x25C, "incoming");
         GuestMemory.Fill(param, 0, 0x25C);
         Assert.Equal(SystemUtil.INCOMINGDIALOG_ERROR_INVALID_ARG, Call(u, "sceIncomingDialogOpen", param)); // not initialized
         Assert.Equal(SystemUtil.INCOMINGDIALOG_ERROR_INVALID_ARG, Call(u, "sceIncomingDialogInitialize", 0));
@@ -293,7 +293,7 @@ public sealed class SystemUtilHleTests(GuestMemoryFixture fx) : IDisposable
         Assert.Equal(0, Call(u, "sceIncomingDialogFinish"));
         Assert.Equal(0, Call(u, "sceIncomingDialogGetStatus"));
 
-        uint buf = fx.Memory.Alloc(64, "clip");
+        uint buf = fixture.Memory.Alloc(64, "clip");
         Assert.Equal(0, Call(u, "sceClipboardGetText", buf, 64u));
         Assert.Equal("", GuestMemory.ReadCString(buf));
         Assert.Equal(0, Call(u, "sceClipboardSetText", Str("hello world"), 5u));
@@ -312,11 +312,11 @@ public sealed class SystemUtilHleTests(GuestMemoryFixture fx) : IDisposable
 
     // ------------------------------------------------------------------ SceTriggerUtil
 
-    TriggerUtil NewTrigger() => new() { FsRootOverride = _root, TitleIdOverride = "PCSA00001", TitleOverride = "Test Game" };
+    private TriggerUtil NewTrigger() => new() { FsRootOverride = _root, TitleIdOverride = "PCSA00001", TitleOverride = "Test Game" };
 
-    uint DailyParam(ushort days, int time)
+    private uint DailyParam(ushort days, int time)
     {
-        uint p = fx.Memory.Alloc(TriggerUtil.DailyParamSize, "daily");
+        uint p = fixture.Memory.Alloc(TriggerUtil.DailyParamSize, "daily");
         GuestMemory.Fill(p, 0, TriggerUtil.DailyParamSize);
         GuestMemory.W32(p, 0x3200000);
         GuestMemory.Write<short>(p + 4, 1);
@@ -328,18 +328,18 @@ public sealed class SystemUtilHleTests(GuestMemoryFixture fx) : IDisposable
     [Fact]
     public void TriggerUtilRegistrationBookkeeping()
     {
-        var t = NewTrigger();
+        TriggerUtil t = NewTrigger();
         uint daily = DailyParam(0x41, 1234);
         Assert.Equal(TriggerUtil.ERR_INVALID_ARG, Call(t, "sceTriggerUtilRegisterDailyEvent", 0u, 0u, 1, 0, 0));
         Assert.Equal(TriggerUtil.ERR_INVALID_ARG, Call(t, "sceTriggerUtilRegisterDailyEvent", 0u, DailyParam(0, 1), 1, 0, 0));
         Assert.Equal(0, Call(t, "sceTriggerUtilRegisterDailyEvent", 0u, daily, 1, 0, 0));
 
-        uint one = fx.Memory.Alloc(TriggerUtil.OneTimeParamSize, "onetime");
+        uint one = fixture.Memory.Alloc(TriggerUtil.OneTimeParamSize, "onetime");
         GuestMemory.Fill(one, 0, TriggerUtil.OneTimeParamSize);
         GuestMemory.Write(one + 8, 0x00DCBFFEFF2BC000ul);
         Assert.Equal(0, Call(t, "sceTriggerUtilRegisterOneTimeEvent", Str("PCSA00001"), one, 2, 0, 0));
 
-        uint outp = fx.Memory.Alloc(0x100, "out");
+        uint outp = fixture.Memory.Alloc(0x100, "out");
         Assert.Equal(0, Call(t, "sceTriggerUtilGetDailyEventInfo", 1, outp, 0, 0));
         Assert.Equal(GuestMemory.Span(daily, TriggerUtil.DailyParamSize).ToArray(), GuestMemory.Span(outp, TriggerUtil.DailyParamSize).ToArray());
         Assert.Equal(0, Call(t, "sceTriggerUtilGetOneTimeEventInfo", 2, outp, 0, 0));
@@ -366,7 +366,7 @@ public sealed class SystemUtilHleTests(GuestMemoryFixture fx) : IDisposable
 
         // persisted per title under FsRoot
         Assert.StartsWith(_root, t.StorePath);
-        var t2 = NewTrigger();
+        TriggerUtil t2 = NewTrigger();
         Assert.Equal(6, t2.Events.Count);
         Assert.Equal(0, Call(t2, "sceTriggerUtilUnregisterDailyEvent", 1, 0, 0));
         Assert.Equal(TriggerUtil.ERR_NOT_REGISTERED, Call(t2, "sceTriggerUtilUnregisterDailyEvent", 1, 0, 0));
@@ -376,8 +376,8 @@ public sealed class SystemUtilHleTests(GuestMemoryFixture fx) : IDisposable
     [Fact]
     public void TriggerUtilAppInfo()
     {
-        var t = NewTrigger();
-        uint info = fx.Memory.Alloc(TriggerUtil.UserAppInfoSize, "info");
+        TriggerUtil t = NewTrigger();
+        uint info = fixture.Memory.Alloc(TriggerUtil.UserAppInfoSize, "info");
         Assert.Equal(0, Call(t, "sceTriggerUtilGetAutoStartStatus", info, 0, 0));
         Assert.Equal(0u, GuestMemory.R32(info));
         Assert.Equal(TriggerUtil.ERR_INVALID_ARG, Call(t, "sceTriggerUtilGetAutoStartStatus", 0u, 0, 0));
@@ -392,28 +392,28 @@ public sealed class SystemUtilHleTests(GuestMemoryFixture fx) : IDisposable
 
     // ------------------------------------------------------------------ media export
 
-    MediaExport NewExport(out Vfs vfs)
+    private MediaExport NewExport(out Vfs vfs)
     {
         vfs = new Vfs(_root);
         vfs.Mount("app0", Path.Combine(_root, "app"));
         return new MediaExport { VfsOverride = vfs, TitleIdOverride = "PCSA00002", NowOverride = () => new DateTime(2026, 1, 2, 3, 4, 5) };
     }
 
-    static readonly byte[] Png = [0x89, 0x50, 0x4E, 0x47, 0x0D, 0x0A, 0x1A, 0x0A, 0, 0, 0, 0];
-    static readonly byte[] Jpeg = [0xFF, 0xD8, 0xFF, 0xE0, 0, 0x10];
+    private static readonly byte[] s_png = [0x89, 0x50, 0x4E, 0x47, 0x0D, 0x0A, 0x1A, 0x0A, 0, 0, 0, 0];
+    private static readonly byte[] s_jpeg = [0xFF, 0xD8, 0xFF, 0xE0, 0, 0x10];
 
     [Fact]
     public void PhotoExportFromDataNamingAndValidation()
     {
-        var m = NewExport(out _);
-        Assert.Equal(".png", MediaExport.ImageExtension(Png));
-        Assert.Equal(".jpg", MediaExport.ImageExtension(Jpeg));
+        MediaExport m = NewExport(out _);
+        Assert.Equal(".png", MediaExport.ImageExtension(s_png));
+        Assert.Equal(".jpg", MediaExport.ImageExtension(s_jpeg));
         Assert.Null(MediaExport.ImageExtension([1, 2, 3]));
 
-        uint data = fx.Memory.Alloc(0x100, "img"), param = fx.Memory.Alloc(0x30, "pparam"), outp = fx.Memory.Alloc(0x100, "out");
+        uint data = fixture.Memory.Alloc(0x100, "img"), param = fixture.Memory.Alloc(0x30, "pparam"), outp = fixture.Memory.Alloc(0x100, "out");
         GuestMemory.Fill(param, 0, 0x30);
-        Jpeg.CopyTo(GuestMemory.Span(data, Jpeg.Length));
-        uint n = (uint)Jpeg.Length;
+        s_jpeg.CopyTo(GuestMemory.Span(data, s_jpeg.Length));
+        uint n = (uint)s_jpeg.Length;
         Assert.Equal(MediaExport.ERR_INVALID, Call(m, "scePhotoExportFromData", 0u, n, param, 0u, 0u, 0u, outp, 0x100u));
         Assert.Equal(MediaExport.ERR_INVALID, Call(m, "scePhotoExportFromData", data, n, 0u, 0u, 0u, 0u, outp, 0x100u));
         Assert.Equal(MediaExport.ERR_INVALID, Call(m, "scePhotoExportFromData", data, 0u, param, 0u, 0u, 0u, outp, 0x100u));
@@ -432,28 +432,28 @@ public sealed class SystemUtilHleTests(GuestMemoryFixture fx) : IDisposable
     [Fact]
     public void PhotoVideoMusicExportFromFile()
     {
-        var m = NewExport(out _);
+        MediaExport m = NewExport(out _);
         string app = Path.Combine(_root, "app");
         Directory.CreateDirectory(app);
-        File.WriteAllBytes(Path.Combine(app, "shot.png"), Png);
+        File.WriteAllBytes(Path.Combine(app, "shot.png"), s_png);
         File.WriteAllBytes(Path.Combine(app, "notes.txt"), [1, 2, 3, 4, 5, 6, 7, 8]);
         File.WriteAllBytes(Path.Combine(app, "clip.mp4"), [0, 0, 0, 0x18, 0x66, 0x74, 0x79, 0x70]);
         File.WriteAllBytes(Path.Combine(app, "song.mp3"), [0x49, 0x44, 0x33]);
-        uint param = fx.Memory.Alloc(0x80, "param"), outp = fx.Memory.Alloc(0x100, "out");
+        uint param = fixture.Memory.Alloc(0x80, "param"), outp = fixture.Memory.Alloc(0x100, "out");
         GuestMemory.Fill(param, 0, 0x80);
 
         Assert.Equal(0, Call(m, "scePhotoExportFromFile", Str("app0:shot.png"), param, 0u, 0u, 0u, outp, 0x100u));
         Assert.Equal("photo0:/PCSA00002/shot.png", GuestMemory.ReadCString(outp));
         Assert.Equal(0, Call(m, "scePhotoExportFromFile", Str("app0:shot.png"), param, 0u, 0u, 0u, outp, 0x100u));
         Assert.Equal("photo0:/PCSA00002/shot_1.png", GuestMemory.ReadCString(outp));
-        Assert.Equal(Png, File.ReadAllBytes(Path.Combine(_root, "ux0", "picture", "PCSA00002", "shot_1.png")));
+        Assert.Equal(s_png, File.ReadAllBytes(Path.Combine(_root, "ux0", "picture", "PCSA00002", "shot_1.png")));
         Assert.Equal(MediaExport.ERR_NOENT, Call(m, "scePhotoExportFromFile", Str("app0:none.png"), param, 0u, 0u, 0u, outp, 0x100u));
         Assert.Equal(MediaExport.ERR_INVALID, Call(m, "scePhotoExportFromFile", Str("app0:notes.txt"), param, 0u, 0u, 0u, outp, 0x100u));
         Assert.Equal(MediaExport.ERR_INVALID, Call(m, "scePhotoExportFromFile", 0u, param, 0u, 0u, 0u, outp, 0x100u));
         Assert.Equal(0, Call(m, "scePhotoExportIsAvailableFromFile", Str("app0:shot.png")));
         Assert.Equal(MediaExport.ERR_NOENT, Call(m, "scePhotoExportIsAvailableFromFile", Str("app0:none.png")));
 
-        uint inP = fx.Memory.Alloc(MediaExport.VideoInSize, "vin"), outP = fx.Memory.Alloc(MediaExport.VideoOutSize, "vout");
+        uint inP = fixture.Memory.Alloc(MediaExport.VideoInSize, "vin"), outP = fixture.Memory.Alloc(MediaExport.VideoOutSize, "vout");
         GuestMemory.Fill(inP, 0, MediaExport.VideoInSize);
         GuestMemory.WriteCString(inP, "app0:clip.mp4");
         Assert.Equal(0, Call(m, "sceVideoExportFromFile", inP, 0, 0u, 0u, 0u, 0u, 0, outP));

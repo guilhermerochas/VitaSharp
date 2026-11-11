@@ -12,9 +12,9 @@ namespace VitaSharp.Tests;
 [Collection("shadergen")]
 public sealed class ShaderFuzzTests
 {
-    static GxpProgram Program(ulong[] code, bool fragment)
+    private static GxpProgram Program(ulong[] code, bool fragment)
     {
-        var d = new byte[0x100 + code.Length * 8];
+        byte[] d = new byte[0x100 + code.Length * 8];
         void W32(int o, uint v) => BinaryPrimitives.WriteUInt32LittleEndian(d.AsSpan(o), v);
         if (fragment)
         {
@@ -33,7 +33,7 @@ public sealed class ShaderFuzzTests
 
     /// <summary>12 programs per opcode (bits 59-63) and stage, from a fixed seed: (name, instruction word, GLSL or the
     /// exception the translation threw).</summary>
-    static IEnumerable<(string Name, ulong Word, bool Fragment, string? Glsl, Exception? Error)> Programs()
+    private static IEnumerable<(string Name, ulong Word, bool Fragment, string? Glsl, Exception? Error)> Programs()
     {
         var rng = new Random(20261110);
         for (uint opcode = 0; opcode < 32; opcode++)
@@ -70,7 +70,7 @@ public sealed class ShaderFuzzTests
         Assert.True(throws.Count == 0, $"{throws.Count} of {all.Count} translations threw: " + string.Join(" | ", throws.Take(15)));
     }
 
-    static GeneratedShader Translate(ulong word, bool fragment) =>
+    private static GeneratedShader Translate(ulong word, bool fragment) =>
         ShaderGenerator.Generate(Program(fragment ? [word] : [word, 0x6081000460600003, 0x50C9000A20200180], fragment),
             new ShaderHints([], [], 0x00000000, false, 0));
 
@@ -80,14 +80,14 @@ public sealed class ShaderFuzzTests
     [Fact]
     public void StageAndRegisterLimitsFollowTheHardware()
     {
-        const ulong dsx = 0x0DBA30DF384131F5, depthf = 0xFB7092E470237659, index = 0x1A3B247670E1028A;
-        Assert.DoesNotContain("dFd", Translate(dsx, false).Glsl);
-        Assert.Contains("dFd", Translate(dsx, true).Glsl);
-        var v = Translate(depthf, false);
+        const ulong Dsx = 0x0DBA30DF384131F5, Depthf = 0xFB7092E470237659, Index = 0x1A3B247670E1028A;
+        Assert.DoesNotContain("dFd", Translate(Dsx, false).Glsl);
+        Assert.Contains("dFd", Translate(Dsx, true).Glsl);
+        GeneratedShader v = Translate(Depthf, false);
         Assert.DoesNotContain("gl_FragDepth", v.Glsl);
         Assert.Contains("DEPTHF in a vertex program (ignored)", v.Warnings);
-        Assert.Contains("gl_FragDepth", Translate(depthf, true).Glsl);
-        var i = Translate(index, true);
+        Assert.Contains("gl_FragDepth", Translate(Depthf, true).Glsl);
+        GeneratedShader i = Translate(Index, true);
         Assert.Contains(i.Warnings, w => w.StartsWith("write to index register", StringComparison.Ordinal));
         Assert.DoesNotContain("idx[5]", i.Glsl);
     }
@@ -98,7 +98,7 @@ public sealed class ShaderFuzzTests
         using var compiler = new ShaderCompiler(null);
         var all = Programs().Where(p => p.Glsl != null).ToList();
         var errors = new List<string>();
-        foreach (var p in all)
+        foreach ((string Name, ulong Word, bool Fragment, string? Glsl, Exception? Error) p in all)
         {
             if (compiler.Compile(p.Glsl!, !p.Fragment, out string? error) == null)
             {

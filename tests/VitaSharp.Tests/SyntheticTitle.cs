@@ -1,4 +1,5 @@
 using System.Buffers.Binary;
+using System.IO.Compression;
 using System.Text;
 
 namespace VitaSharp.Tests;
@@ -18,10 +19,10 @@ public static class SyntheticTitle
     /// <summary>The colours as R, G, B (the guest writes them as A8B8G8R8 words).</summary>
     public static readonly (byte R, byte G, byte B) Idle = (0xC0, 0x40, 0x20), Pressed = (0x20, 0xA0, 0xE0);
 
-    const uint InfoOff = 0x0, ImportsOff = 0x60, StringsOff = 0x100, TablesOff = 0x140, StubsOff = 0x180, CodeOff = 0x200;
-    const uint ParamOff = 0x400, CtrlOff = 0x420, FbOff = 0x1000;
+    private const uint InfoOff = 0x0, ImportsOff = 0x60, StringsOff = 0x100, TablesOff = 0x140, StubsOff = 0x180, CodeOff = 0x200;
+    private const uint ParamOff = 0x400, CtrlOff = 0x420, FbOff = 0x1000;
 
-    static uint Abgr((byte R, byte G, byte B) c) => 0xFF000000u | (uint)c.B << 16 | (uint)c.G << 8 | c.R;
+    private static uint Abgr((byte R, byte G, byte B) c) => 0xFF000000u | (uint)c.B << 16 | (uint)c.G << 8 | c.R;
 
     public const string Title = "Synthetic Test";
 
@@ -38,10 +39,10 @@ public static class SyntheticTitle
     /// <summary>The title as a VPK (a zip of the app folder).</summary>
     public static void WriteVpk(string path, string titleId = "VSTS00001")
     {
-        using var zip = System.IO.Compression.ZipFile.Open(path, System.IO.Compression.ZipArchiveMode.Create);
+        using ZipArchive zip = System.IO.Compression.ZipFile.Open(path, System.IO.Compression.ZipArchiveMode.Create);
         void Add(string name, byte[] data)
         {
-            using var s = zip.CreateEntry(name).Open();
+            using Stream s = zip.CreateEntry(name).Open();
             s.Write(data);
         }
         Add("eboot.bin", Elf());
@@ -58,12 +59,12 @@ public static class SyntheticTitle
         ];
         var keys = new MemoryStream();
         var data = new MemoryStream();
-        var index = new List<(int KeyOff, int DataOff, int Len, int Max)>();
-        foreach (var (k, v) in entries)
+        var index = new List<(int KeyOff, int DataOffset, int Len, int Max)>();
+        foreach ((string? k, string? v) in entries)
         {
             int ko = (int)keys.Length;
             keys.Write(Encoding.ASCII.GetBytes(k + "\0"));
-            var bytes = Encoding.UTF8.GetBytes(v + "\0");
+            byte[] bytes = Encoding.UTF8.GetBytes(v + "\0");
             int max = (bytes.Length + 3) & ~3;
             index.Add((ko, (int)data.Length, bytes.Length, max));
             data.Write(bytes);
@@ -83,7 +84,7 @@ public static class SyntheticTitle
             w.Write(keyStart);
             w.Write(dataStart);
             w.Write(index.Count);
-            foreach (var (ko, doff, len, max) in index)
+            foreach ((int ko, int doff, int len, int max) in index)
             {
                 w.Write((ushort)ko);
                 w.Write((ushort)0x0204);
@@ -100,7 +101,7 @@ public static class SyntheticTitle
     /// <summary>The executable.</summary>
     public static byte[] Elf()
     {
-        var seg = new byte[ParamOff + 0x40];
+        byte[] seg = new byte[ParamOff + 0x40];
         void W32(uint off, uint v) => BinaryPrimitives.WriteUInt32LittleEndian(seg.AsSpan((int)off), v);
         void W16(uint off, ushort v) => BinaryPrimitives.WriteUInt16LittleEndian(seg.AsSpan((int)off), v);
 
@@ -174,7 +175,7 @@ public static class SyntheticTitle
         a.Bl(Base + StubsOff + 16);                // sceDisplaySetFrameBuf
         a.Bl(Base + StubsOff + 32);                // sceDisplayWaitVblankStart
         a.Branch("loop", 0xE);
-        var code = a.Assemble();
+        byte[] code = a.Assemble();
         if (CodeOff + code.Length > ParamOff)
         {
             throw new InvalidOperationException("code too long");
@@ -183,9 +184,9 @@ public static class SyntheticTitle
         code.CopyTo(seg, (int)CodeOff);
 
         // ELF header + one PT_LOAD (the framebuffer is the zero-filled rest of the segment)
-        const int phoff = 0x34, dataOff = 0x100;
-        var elf = new byte[dataOff + seg.Length];
-        var e = elf.AsSpan();
+        const int ProgramHeaderOffset = 0x34, DataOffset = 0x100;
+        byte[] elf = new byte[DataOffset + seg.Length];
+        Span<byte> e = elf.AsSpan();
         BinaryPrimitives.WriteUInt32LittleEndian(e, 0x464C457F);
         e[4] = 1;
         e[5] = 1;
@@ -194,29 +195,29 @@ public static class SyntheticTitle
         BinaryPrimitives.WriteUInt16LittleEndian(e[18..], 40);      // ARM
         BinaryPrimitives.WriteUInt32LittleEndian(e[20..], 1);
         BinaryPrimitives.WriteUInt32LittleEndian(e[24..], InfoOff); // segment 0, module_info offset
-        BinaryPrimitives.WriteUInt32LittleEndian(e[28..], phoff);
+        BinaryPrimitives.WriteUInt32LittleEndian(e[28..], ProgramHeaderOffset);
         BinaryPrimitives.WriteUInt16LittleEndian(e[40..], 0x34);
         BinaryPrimitives.WriteUInt16LittleEndian(e[42..], 32);
         BinaryPrimitives.WriteUInt16LittleEndian(e[44..], 1);
-        var ph = e.Slice(phoff, 32);
+        Span<byte> ph = e.Slice(ProgramHeaderOffset, 32);
         BinaryPrimitives.WriteUInt32LittleEndian(ph, 1);                          // PT_LOAD
-        BinaryPrimitives.WriteUInt32LittleEndian(ph[4..], dataOff);
+        BinaryPrimitives.WriteUInt32LittleEndian(ph[4..], DataOffset);
         BinaryPrimitives.WriteUInt32LittleEndian(ph[8..], Base);
         BinaryPrimitives.WriteUInt32LittleEndian(ph[12..], Base);
         BinaryPrimitives.WriteUInt32LittleEndian(ph[16..], (uint)seg.Length);
         BinaryPrimitives.WriteUInt32LittleEndian(ph[20..], FbOff + Width * Height * 4);
         BinaryPrimitives.WriteUInt32LittleEndian(ph[24..], 7);                    // RWX
         BinaryPrimitives.WriteUInt32LittleEndian(ph[28..], 0x1000);
-        seg.CopyTo(elf, dataOff);
+        seg.CopyTo(elf, DataOffset);
         return elf;
     }
 
     /// <summary>A few ARM (A32) instructions with labels and a literal pool after the code.</summary>
-    sealed class ArmCode(uint origin)
+    private sealed class ArmCode(uint origin)
     {
-        readonly List<Func<uint, uint>> _words = [];
-        readonly Dictionary<string, int> _labels = [];
-        readonly List<uint> _literals = [];
+        private readonly List<Func<uint, uint>> _words = [];
+        private readonly Dictionary<string, int> _labels = [];
+        private readonly List<uint> _literals = [];
 
         public void Label(string name) => _labels[name] = _words.Count;
         public void Emit(uint word) => _words.Add(_ => word);
@@ -244,7 +245,7 @@ public static class SyntheticTitle
 
         public byte[] Assemble()
         {
-            var bytes = new byte[(_words.Count + _literals.Count) * 4];
+            byte[] bytes = new byte[(_words.Count + _literals.Count) * 4];
             for (int i = 0; i < _words.Count; i++)
             {
                 BinaryPrimitives.WriteUInt32LittleEndian(bytes.AsSpan(i * 4), _words[i](origin + (uint)i * 4));

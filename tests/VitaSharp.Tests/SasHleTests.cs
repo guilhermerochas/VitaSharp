@@ -8,47 +8,47 @@ namespace VitaSharp.Tests;
 
 /// <summary>SceSas: ADPCM block decoding, envelope curves, pitch resampling, mixing and the API's error codes.</summary>
 [Collection("guest")]
-public sealed class SasHleTests(GuestMemoryFixture fx)
+public sealed class SasHleTests(GuestMemoryFixture fixture)
 {
-    static object? Invoke<T>(T module, string name, params object[] args) =>
+    private static object? Invoke<T>(T module, string name, params object[] args) =>
         typeof(T).GetMethod(name, BindingFlags.Instance | BindingFlags.NonPublic | BindingFlags.Public)!.Invoke(module, args);
-    static int Call<T>(T module, string name, params object[] args) => (int)Invoke(module, name, args)!;
-    static Ptr<T> P<T>(uint a) where T : unmanaged => new(a);
+    private static int Call<T>(T module, string name, params object[] args) => (int)Invoke(module, name, args)!;
+    private static Ptr<T> P<T>(uint a) where T : unmanaged => new(a);
 
-    uint Str(string s)
+    private uint Str(string s)
     {
-        uint p = fx.Memory.Alloc(0x100, "sascfg");
-        var b = Encoding.ASCII.GetBytes(s + "\0");
+        uint p = fixture.Memory.Alloc(0x100, "sascfg");
+        byte[] b = Encoding.ASCII.GetBytes(s + "\0");
         b.CopyTo(GuestMemory.Span(p, b.Length));
         return p;
     }
 
-    Sas Init(string config = "numGrains=256 numVoices=8 numReverbs=1")
+    private Sas Init(string config = "numGrains=256 numVoices=8 numReverbs=1")
     {
         var s = new Sas();
-        Assert.Equal(0, Call(s, "sceSasInit", Str(config), fx.Memory.Alloc(0x10000, "saswork"), 0x10000u));
+        Assert.Equal(0, Call(s, "sceSasInit", Str(config), fixture.Memory.Alloc(0x10000, "saswork"), 0x10000u));
         return s;
     }
 
-    short[] Core(Sas s, int grain = 256)
+    private short[] Core(Sas s, int grain = 256)
     {
-        uint o = fx.Memory.Alloc((uint)(grain * 4), "sasout");
+        uint o = fixture.Memory.Alloc((uint)(grain * 4), "sasout");
         Assert.Equal(0, Call(s, "sceSasCore", o));
         return GuestMemory.Span<short>(o, grain * 2).ToArray();
     }
 
-    static short[] Left(short[] interleaved) => interleaved.Where((_, i) => i % 2 == 0).ToArray();
+    private static short[] Left(short[] interleaved) => interleaved.Where((_, i) => i % 2 == 0).ToArray();
 
-    uint Pcm(short[] samples)
+    private uint Pcm(short[] samples)
     {
-        uint p = fx.Memory.Alloc((uint)(samples.Length * 2 + 16), "saspcm");
+        uint p = fixture.Memory.Alloc((uint)(samples.Length * 2 + 16), "saspcm");
         samples.CopyTo(GuestMemory.Span<short>(p, samples.Length));
         return p;
     }
 
-    static byte[] VagBlock(int predictor, int shift, int flags, params int[] nibbles)
+    private static byte[] VagBlock(int predictor, int shift, int flags, params int[] nibbles)
     {
-        var b = new byte[16];
+        byte[] b = new byte[16];
         b[0] = (byte)(predictor << 4 | shift);
         b[1] = (byte)flags;
         for (int i = 0; i < nibbles.Length; i++)
@@ -62,8 +62,8 @@ public sealed class SasHleTests(GuestMemoryFixture fx)
     [Fact]
     public void AdpcmDecodesKnownBlocks()
     {
-        var hist = new int[4];
-        var o = new short[28];
+        int[] hist = new int[4];
+        short[] o = new short[28];
         Adpcm.DecodeBlock(VagBlock(1, 0, 0, 1, 2), hist, o);
         // classic filter 1: s = nibble << 12 + h1 * 60 / 64
         Assert.Equal(new short[] { 4096, 12032, 11280, 10575 }, o[..4]);
@@ -84,7 +84,7 @@ public sealed class SasHleTests(GuestMemoryFixture fx)
         Array.Clear(hist);
         hist[0] = 8192;
         hist[1] = 8192;
-        var hb = VagBlock(0, 12, 0x10);
+        byte[] hb = VagBlock(0, 12, 0x10);
         Adpcm.DecodeBlock(hb, hist, o);
         Assert.Equal((short)((8192 * 910 + 8192 * -7680 >> 5) >> 8), o[0]);
         Assert.Equal(0, Adpcm.Flags(hb));
@@ -93,13 +93,13 @@ public sealed class SasHleTests(GuestMemoryFixture fx)
     [Fact]
     public void VagVoicePlaysToEndAtUnityPitch()
     {
-        var s = Init();
+        Sas s = Init();
         byte[] b0 = VagBlock(1, 0, 0, 1, 2, 3, 4, 5, 6, 7), b1 = VagBlock(0, 2, Adpcm.FlagLoopEnd, 1, 1, 1, 1);
-        uint vag = fx.Memory.Alloc(0x100, "vag");
+        uint vag = fixture.Memory.Alloc(0x100, "vag");
         b0.CopyTo(GuestMemory.Span(vag, 16));
         b1.CopyTo(GuestMemory.Span(vag + 16, 16));
-        var expected = new short[56];
-        var h = new int[4];
+        short[] expected = new short[56];
+        int[] h = new int[4];
         Adpcm.DecodeBlock(b0, h, expected.AsSpan(0, 28));
         Adpcm.DecodeBlock(b1, h, expected.AsSpan(28, 28));
 
@@ -107,7 +107,7 @@ public sealed class SasHleTests(GuestMemoryFixture fx)
         Assert.Equal(0, Call(s, "sceSasSetVoice", 0, vag, 32u, 0u));
         Assert.Equal(0, Call(s, "sceSasSetKeyOn", 0));
         Assert.Equal(0, Call(s, "sceSasGetEndState", 0));
-        var outp = Core(s);
+        short[] outp = Core(s);
         Assert.Equal(expected, Left(outp)[..56]);
         Assert.All(Left(outp)[56..], x => Assert.Equal(0, x));
         Assert.Equal(outp[0], outp[1]); // same on both sides at default volumes
@@ -117,14 +117,14 @@ public sealed class SasHleTests(GuestMemoryFixture fx)
     [Fact]
     public void VagLoopFlagsRepeat()
     {
-        var s = Init();
-        uint vag = fx.Memory.Alloc(0x100, "vagloop");
+        Sas s = Init();
+        uint vag = fixture.Memory.Alloc(0x100, "vagloop");
         VagBlock(0, 4, 0, 1).CopyTo(GuestMemory.Span(vag, 16));
         VagBlock(0, 4, Adpcm.FlagLoopStart | Adpcm.FlagRepeat, 2).CopyTo(GuestMemory.Span(vag + 16, 16));
         VagBlock(0, 4, Adpcm.FlagLoopEnd | Adpcm.FlagRepeat, 3).CopyTo(GuestMemory.Span(vag + 32, 16));
         Assert.Equal(0, Call(s, "sceSasSetVoice", 0, vag, 48u, 1u));
         Assert.Equal(0, Call(s, "sceSasSetKeyOn", 0));
-        var l = Left(Core(s));
+        short[] l = Left(Core(s));
         int[] starts = [0, 28, 56, 84, 112, 140];
         short[] want = [256, 512, 768, 512, 768, 512];
         for (int i = 0; i < starts.Length; i++)
@@ -138,13 +138,13 @@ public sealed class SasHleTests(GuestMemoryFixture fx)
     [Fact]
     public void PitchResamples()
     {
-        var src = Enumerable.Range(0, 600).Select(i => (short)(i * 10)).ToArray();
+        short[] src = Enumerable.Range(0, 600).Select(i => (short)(i * 10)).ToArray();
         uint p = Pcm(src);
-        var s = Init();
+        Sas s = Init();
         Assert.Equal(0, Call(s, "sceSasSetVoicePCM", 0, p, 600, 0));
         Assert.Equal(0, Call(s, "sceSasSetPitch", 0, 0x2000));
         Assert.Equal(0, Call(s, "sceSasSetKeyOn", 0));
-        var l = Left(Core(s));
+        short[] l = Left(Core(s));
         Assert.Equal(Enumerable.Range(0, 256).Select(i => (short)(i * 20)).ToArray(), l);
 
         Assert.Equal(0, Call(s, "sceSasSetPitch", 0, 0x800));
@@ -159,13 +159,13 @@ public sealed class SasHleTests(GuestMemoryFixture fx)
     [Fact]
     public void PcmLoopAndVolumes()
     {
-        var src = Enumerable.Range(0, 100).Select(i => (short)(i * 100)).ToArray();
+        short[] src = Enumerable.Range(0, 100).Select(i => (short)(i * 100)).ToArray();
         uint p = Pcm(src);
-        var s = Init();
+        Sas s = Init();
         Assert.Equal(0, Call(s, "sceSasSetVoicePCM", 1, p, 100, 10));
         Assert.Equal(0, Call(s, "sceSasSetVolume", 1, 0x800, -0x1000, 0, 0));
         Assert.Equal(0, Call(s, "sceSasSetKeyOn", 1));
-        var o = Core(s);
+        short[] o = Core(s);
         for (int i = 0; i < 256; i++)
         {
             int srcIdx = i < 100 ? i : 90 + (i - 100) % 10;
@@ -178,7 +178,7 @@ public sealed class SasHleTests(GuestMemoryFixture fx)
 
         // CoreWithMix: existing content scaled by lvol/rvol plus the new grain
         Assert.Equal(0, Call(s, "sceSasSetVolume", 1, 0, 0, 0, 0));
-        uint buf = fx.Memory.Alloc(0x400, "mix");
+        uint buf = fixture.Memory.Alloc(0x400, "mix");
         GuestMemory.Span<short>(buf, 512).Fill(1000);
         Assert.Equal(0, Call(s, "sceSasCoreWithMix", buf, 0x800, 0x1000));
         Assert.Equal(500, GuestMemory.Read<short>(buf));
@@ -253,13 +253,13 @@ public sealed class SasHleTests(GuestMemoryFixture fx)
     [Fact]
     public void EnvelopeShapesVoiceOutput()
     {
-        var src = Enumerable.Repeat((short)0x4000, 1000).ToArray();
-        var s = Init();
+        short[] src = Enumerable.Repeat((short)0x4000, 1000).ToArray();
+        Sas s = Init();
         uint p = Pcm(src);
         Assert.Equal(0, Call(s, "sceSasSetVoicePCM", 0, p, 1000, 0));
         Assert.Equal(0, Call(s, "sceSasSetADSR", 0, 0xFu, (uint)(SasEnvelope.Max / 4), 0u, 0u, (uint)(SasEnvelope.Max / 2)));
         Assert.Equal(0, Call(s, "sceSasSetKeyOn", 0));
-        var l = Left(Core(s));
+        short[] l = Left(Core(s));
         Assert.Equal(new short[] { 0x1000, 0x2000, 0x3000, 0x4000, 0x4000 }, l[..5]);
         Assert.Equal(SasEnvelope.Max, Call(s, "sceSasGetEnvelope", 0));
         Assert.Equal(0, Call(s, "sceSasSetKeyOff", 0));
@@ -279,8 +279,8 @@ public sealed class SasHleTests(GuestMemoryFixture fx)
     [Fact]
     public void PauseHoldsPosition()
     {
-        var src = Enumerable.Range(0, 1000).Select(i => (short)i).ToArray();
-        var s = Init();
+        short[] src = Enumerable.Range(0, 1000).Select(i => (short)i).ToArray();
+        Sas s = Init();
         Assert.Equal(0, Call(s, "sceSasSetVoicePCM", 0, Pcm(src), 1000, 0));
         Assert.Equal(0, Call(s, "sceSasSetKeyOn", 0));
         Core(s);
@@ -295,11 +295,11 @@ public sealed class SasHleTests(GuestMemoryFixture fx)
     [Fact]
     public void NoiseAndEcho()
     {
-        var s = Init();
+        Sas s = Init();
         Assert.Equal(Sas.ERR_INVALID_NOISE_FREQ, Call(s, "sceSasSetNoise", 2, 64u));
         Assert.Equal(0, Call(s, "sceSasSetNoise", 2, 40u));
         Assert.Equal(0, Call(s, "sceSasSetKeyOn", 2));
-        var o = Core(s);
+        short[] o = Core(s);
         Assert.Contains(o, x => x > 0);
         Assert.Contains(o, x => x < 0);
         Assert.Equal(0, Call(s, "sceSasSetKeyOff", 2));
@@ -312,10 +312,10 @@ public sealed class SasHleTests(GuestMemoryFixture fx)
         Assert.Equal(0, Call(s, "sceSasSetEffectParam", 1u, 0u));
         Assert.Equal(0, Call(s, "sceSasSetEffect", 0, 1));
         Assert.Equal(0, Call(s, "sceSasSetKeyOn", 0));
-        var l = Left(Core(s));
+        short[] l = Left(Core(s));
         Assert.Equal(1234, l[192]);
         Assert.Equal(1, l.Count(x => x != 0));
-        uint pk = fx.Memory.Alloc(0x10, "peak");
+        uint pk = fixture.Memory.Alloc(0x10, "peak");
         Assert.Equal(0, Call(s, "sceSasGetWetPeak", P<int>(pk), P<int>(pk + 4)));
         Assert.Equal(1234, (int)GuestMemory.R32(pk));
         Assert.Equal(0, Call(s, "sceSasGetDryPeak", P<int>(pk), P<int>(pk + 4)));
@@ -332,7 +332,7 @@ public sealed class SasHleTests(GuestMemoryFixture fx)
     public void InitGrainAndErrors()
     {
         var s = new Sas();
-        uint work = fx.Memory.Alloc(0x10000, "saswork2"), sz = fx.Memory.Alloc(0x10, "sz");
+        uint work = fixture.Memory.Alloc(0x10000, "saswork2"), sz = fixture.Memory.Alloc(0x10, "sz");
         Assert.Equal(Sas.ERR_NOT_INIT, Call(s, "sceSasCore", work));
         Assert.Equal(Sas.ERR_NOT_INIT, Call(s, "sceSasGetGrain"));
         Assert.Equal(Sas.ERR_NOT_INIT, Call(s, "sceSasExit", P<uint>(0), P<uint>(0)));
@@ -345,7 +345,7 @@ public sealed class SasHleTests(GuestMemoryFixture fx)
         Assert.Equal(0, Call(s, "sceSasInitWithGrain", Str("numGrains=512 numVoices=4"), 128u, work, 0x10000u));
         Assert.Equal(Sas.ERR_ALREADY_INIT, Call(s, "sceSasInit", Str("numVoices=4"), work, 0x10000u));
         Assert.Equal(128, Call(s, "sceSasGetGrain"));
-        uint o = fx.Memory.Alloc(0x1000, "o");
+        uint o = fixture.Memory.Alloc(0x1000, "o");
         GuestMemory.Fill(o, 0x55, 0x1000);
         Assert.Equal(0, Call(s, "sceSasCore", o));
         Assert.Equal(0u, GuestMemory.R32(o + 128 * 4 - 4));
@@ -361,7 +361,7 @@ public sealed class SasHleTests(GuestMemoryFixture fx)
         Assert.Equal(0, Call(s, "sceSasSetOutputmode", 1u));
         Assert.Equal(1, Call(s, "sceSasGetOutputmode"));
         Assert.Equal(Sas.ERR_INVALID_OUTPUT_MODE, Call(s, "sceSasSetOutputmode", 2u));
-        uint eb = fx.Memory.Alloc(0x10, "eb");
+        uint eb = fixture.Memory.Alloc(0x10, "eb");
         Assert.Equal(0, Call(s, "sceSasExit", P<uint>(eb), P<uint>(eb + 4)));
         Assert.Equal(work, GuestMemory.R32(eb));
         Assert.Equal(0x10000u, GuestMemory.R32(eb + 4));

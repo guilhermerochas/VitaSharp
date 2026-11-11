@@ -8,19 +8,19 @@ namespace VitaSharp.Tests;
 /// stop without a recording does nothing, and the pre-roll can be armed and disarmed.
 /// </summary>
 [Collection("guest")]
-public sealed class SessionCaptureFlowTests(GuestMemoryFixture fx) : IDisposable
+public sealed class SessionCaptureFlowTests(GuestMemoryFixture fixture) : IDisposable
 {
-    readonly HleHarness _h = new(fx, "capture");
+    private readonly HleHarness _harness = new(fixture, "capture");
 
-    public void Dispose() => _h.Dispose();
+    public void Dispose() => _harness.Dispose();
 
     [Fact]
     public void RecordingWritesAFolderAndItsZip()
     {
-        string root = Path.Combine(_h.Root, "captures");
+        string root = Path.Combine(_harness.Root, "captures");
         IPresentTap? tap = null;
         var status = new List<string>();
-        var cap = new SessionCapture(_h.Emu, new SessionCaptureOptions
+        var cap = new SessionCapture(_harness.Emu, new SessionCaptureOptions
         {
             Root = root,
             SetPresentTap = t => tap = t,
@@ -42,8 +42,8 @@ public sealed class SessionCaptureFlowTests(GuestMemoryFixture fx) : IDisposable
         Assert.True(cap.Start("test"));
         HleHarness.Until(() => cap.IsRecording && tap != null, "the recording to start");
         Assert.False(cap.Start("again")); // one at a time
-        const int W = 32, H = 16;
-        var px = new byte[W * H * 4];
+        const int Width = 32, Height = 16;
+        byte[] px = new byte[Width * Height * 4];
         for (int f = 0; f < 5; f++)
         {
             for (int i = 0; i < px.Length; i++)
@@ -52,7 +52,7 @@ public sealed class SessionCaptureFlowTests(GuestMemoryFixture fx) : IDisposable
             }
 
             var info = new PresentInfo { Present = f + 1, Flip = f, VBlank = f * 2, PresentNs = CaptureClock.NowNs, IntervalMs = 16.7f, Hitch = "" };
-            tap!.OnPresent(info, px, W, H);
+            tap!.OnPresent(info, px, Width, Height);
         }
         cap.NoteKey("F8");
         Assert.True(cap.RecordingSeconds >= 0);

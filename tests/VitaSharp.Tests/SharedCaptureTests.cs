@@ -5,7 +5,7 @@ namespace VitaSharp.Tests;
 /// <summary>One host capture shared by both Vita cameras: reuse across sensor switches, linger, mode changes, stop order.</summary>
 public sealed class SharedCaptureTests
 {
-    sealed class FakeCapture(Task after, List<string> events, string name) : IHostCapture
+    private sealed class FakeCapture(Task after, List<string> events, string name) : IHostCapture
     {
         public CameraFrameBuffer Frames { get; } = new();
         public readonly Task After = after;
@@ -24,10 +24,10 @@ public sealed class SharedCaptureTests
         }
     }
 
-    readonly List<string> _events = new();
-    readonly List<FakeCapture> _made = new();
+    private readonly List<string> _events = new();
+    private readonly List<FakeCapture> _made = new();
 
-    Func<Task, IHostCapture> Factory(string name) => after =>
+    private Func<Task, IHostCapture> Factory(string name) => after =>
     {
         lock (_events)
         {
@@ -43,10 +43,10 @@ public sealed class SharedCaptureTests
     public void SensorSwitchReusesTheRunningCapture()
     {
         using var shared = new SharedCapture(TimeSpan.FromSeconds(30));
-        var back = shared.Acquire("640x480", Factory("a"), out bool r1)!;
+        ICameraStream back = shared.Acquire("640x480", Factory("a"), out bool r1)!;
         Assert.False(r1);
         back.Dispose(); // sceCameraStop(back) ...
-        var front = shared.Acquire("640x480", Factory("b"), out bool r2)!; // ... sceCameraStart(front)
+        ICameraStream front = shared.Acquire("640x480", Factory("b"), out bool r2)!; // ... sceCameraStart(front)
         Assert.True(r2);
         Assert.Equal(1, shared.Created);
         Assert.Same(_made[0].Frames, front.Frames);
@@ -59,12 +59,12 @@ public sealed class SharedCaptureTests
     public async Task IdleCaptureStopsAfterTheLinger()
     {
         using var shared = new SharedCapture(TimeSpan.FromMilliseconds(50));
-        var s = shared.Acquire("m", Factory("a"), out _)!;
+        ICameraStream s = shared.Acquire("m", Factory("a"), out _)!;
         s.Dispose();
         s.Dispose(); // idempotent
         await _made[0].Stopped.Task.WaitAsync(TimeSpan.FromSeconds(5));
         // the next start opens a new capture, which waits for the previous stop
-        var s2 = shared.Acquire("m", Factory("b"), out bool reused)!;
+        ICameraStream s2 = shared.Acquire("m", Factory("b"), out bool reused)!;
         Assert.False(reused);
         await _made[1].After.WaitAsync(TimeSpan.FromSeconds(5));
         s2.Dispose();
@@ -74,8 +74,8 @@ public sealed class SharedCaptureTests
     public async Task LiveLeaseKeepsTheCaptureRunning()
     {
         using var shared = new SharedCapture(TimeSpan.Zero);
-        var a = shared.Acquire("m", Factory("a"), out _)!;
-        var b = shared.Acquire("other mode", Factory("b"), out bool reused)!; // in use: shared even in another mode
+        ICameraStream a = shared.Acquire("m", Factory("a"), out _)!;
+        ICameraStream b = shared.Acquire("other mode", Factory("b"), out bool reused)!; // in use: shared even in another mode
         Assert.True(reused);
         a.Dispose();
         Assert.False(_made[0].Stopped.Task.IsCompleted);
@@ -88,7 +88,7 @@ public sealed class SharedCaptureTests
     {
         using var shared = new SharedCapture(TimeSpan.FromSeconds(30));
         shared.Acquire("640x480", Factory("a"), out _)!.Dispose();
-        var s = shared.Acquire("320x240", Factory("b"), out bool reused)!;
+        ICameraStream s = shared.Acquire("320x240", Factory("b"), out bool reused)!;
         Assert.False(reused);
         await _made[1].After.WaitAsync(TimeSpan.FromSeconds(5));
         Assert.True(_made[0].Stopped.Task.IsCompleted); // opened only after the old capture released the device
@@ -99,7 +99,7 @@ public sealed class SharedCaptureTests
     public void DisposeStopsEvenWithLiveStreams()
     {
         var shared = new SharedCapture(TimeSpan.FromSeconds(30));
-        var s = shared.Acquire("m", Factory("a"), out _)!;
+        ICameraStream s = shared.Acquire("m", Factory("a"), out _)!;
         shared.Dispose();
         Assert.True(_made[0].Stopped.Task.IsCompleted);
         s.Dispose(); // late release after the source is gone: harmless

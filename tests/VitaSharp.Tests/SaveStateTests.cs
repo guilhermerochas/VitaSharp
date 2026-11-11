@@ -37,8 +37,8 @@ public sealed partial class SnapshotProbe
     public readonly int Config = 7;
     public int Extra;
 
-    void SaveExtra(SnapshotWriter w) => w.Write(Extra * 2);
-    void LoadExtra(SnapshotReader r) => Extra = r.ReadInt32() / 2;
+    private void SaveExtra(SnapshotWriter w) => w.Write(Extra * 2);
+    private void LoadExtra(SnapshotReader r) => Extra = r.ReadInt32() / 2;
 }
 
 [GenerateSnapshot]
@@ -50,7 +50,7 @@ public sealed partial class SnapshotChild
 
 public sealed class SaveStateFormatTests
 {
-    static SaveStateHeader Header(string title = "PCSE01444") => new()
+    private static SaveStateHeader Header(string title = "PCSE01444") => new()
     {
         FormatVersion = SaveStateFile.FormatVersion,
         EmulatorVersion = "test",
@@ -63,12 +63,12 @@ public sealed class SaveStateFormatTests
         Thumbnail = [1, 2, 3],
     };
 
-    static byte[] File(SaveStateHeader h, params (string, byte[])[] sections)
+    private static byte[] File(SaveStateHeader h, params (string, byte[])[] sections)
     {
         var ms = new MemoryStream();
         using (var w = new SaveStateWriter(ms, h))
         {
-            foreach (var (n, d) in sections)
+            foreach ((string? n, byte[]? d) in sections)
             {
                 w.Section(n, d);
             }
@@ -80,10 +80,10 @@ public sealed class SaveStateFormatTests
     [Fact]
     public void HeaderAndSectionsRoundTrip()
     {
-        var big = new byte[300_000];
+        byte[] big = new byte[300_000];
         new Random(1).NextBytes(big);
-        var bytes = File(Header(), ("a", [9, 8, 7]), ("empty", []), ("big", big));
-        var h = SaveStateFile.ReadHeader(new MemoryStream(bytes));
+        byte[] bytes = File(Header(), ("a", [9, 8, 7]), ("empty", []), ("big", big));
+        SaveStateHeader h = SaveStateFile.ReadHeader(new MemoryStream(bytes));
         Assert.Equal("PCSE01444", h.TitleId);
         Assert.Equal("01.00", h.AppVersion);
         Assert.Equal(12.5, h.GuestSeconds);
@@ -91,7 +91,7 @@ public sealed class SaveStateFormatTests
         Assert.Null(SaveStateFile.Incompatibility(h, "pcse01444"));
         using var r = new SaveStateReader(new MemoryStream(bytes));
         var got = new Dictionary<string, byte[]>();
-        while (r.Next(out var n, out _))
+        while (r.Next(out string? n, out _))
         {
             got[n] = r.ReadAll();
         }
@@ -104,7 +104,7 @@ public sealed class SaveStateFormatTests
     [Fact]
     public void IncompatibleStatesAreRefusedWithAMessage()
     {
-        var h = Header();
+        SaveStateHeader h = Header();
         Assert.Equal(VitaSharp.Core.Localization.Loc.Format("StateOtherGame", h.TitleId, h.Title, "PCSA00029"), SaveStateFile.Incompatibility(h, "PCSA00029"));
         h.Schema = "0-0";
         h.EmulatorVersion = "1.0.0+60d6517ede5e64570ae60683e2389471dd150a6f";
@@ -112,14 +112,14 @@ public sealed class SaveStateFormatTests
         h = Header();
         h.FormatVersion = SaveStateFile.FormatVersion + 1;
         Assert.Contains((SaveStateFile.FormatVersion + 1).ToString(System.Globalization.CultureInfo.InvariantCulture), SaveStateFile.Incompatibility(h, "PCSE01444"));
-        var e = Assert.Throws<SnapshotException>(() => SaveStateFile.ReadHeader(new MemoryStream("not a state at all"u8.ToArray())));
+        SnapshotException e = Assert.Throws<SnapshotException>(() => SaveStateFile.ReadHeader(new MemoryStream("not a state at all"u8.ToArray())));
         Assert.Contains("not a VitaSharp save state", e.Message);
     }
 
     [Fact]
     public void TruncatedFileIsReported()
     {
-        var bytes = File(Header(), ("x", new byte[100_000]));
+        byte[] bytes = File(Header(), ("x", new byte[100_000]));
         using var r = new SaveStateReader(new MemoryStream(bytes[..(bytes.Length - 20)]));
         Assert.Throws<SnapshotException>(() =>
         {
@@ -222,13 +222,13 @@ public sealed class SaveStateFormatTests
 }
 
 [Collection("guest")]
-public sealed unsafe class SaveStateGuestTests(GuestMemoryFixture fx)
+public sealed unsafe class SaveStateGuestTests(GuestMemoryFixture fixture)
 {
     [Fact]
     public void CpuStateRoundTripsAndDropsTheReservation()
     {
-        var a = CpuState.Allocate();
-        var b = CpuState.Allocate();
+        CpuState* a = CpuState.Allocate();
+        CpuState* b = CpuState.Allocate();
         try
         {
             for (int i = 0; i < 16; i++)
@@ -281,28 +281,28 @@ public sealed unsafe class SaveStateGuestTests(GuestMemoryFixture fx)
     [Fact]
     public void MemoryBlockContentsRoundTrip()
     {
-        uint addr = fx.Memory.Alloc(0x10000, "savestate test");
+        uint addr = fixture.Memory.Alloc(0x10000, "savestate test");
         try
         {
             GuestMemory.Fill(addr, 0, 0x10000);
             GuestMemory.W32(addr + 0x10, 0x12345678);
             GuestMemory.W32(addr + 0xF000, 0xCAFEBABE);
-            var block = fx.Memory.FindBlock(addr)!;
-            var data = fx.Memory.CopyContents(block);
+            GuestMemory.Block block = fixture.Memory.FindBlock(addr)!;
+            byte[] data = fixture.Memory.CopyContents(block);
             Assert.Equal(2 + 2 * (int)GuestMemory.PageSize, data.Length); // bitmap + the two non-zero pages
             GuestMemory.Fill(addr, 0xEE, 0x10000);
-            fx.Memory.RestoreContents(block, data);
+            fixture.Memory.RestoreContents(block, data);
             Assert.Equal(0x12345678u, GuestMemory.R32(addr + 0x10));
             Assert.Equal(0xCAFEBABEu, GuestMemory.R32(addr + 0xF000));
             Assert.Equal(0u, GuestMemory.R32(addr + 0x5000));
             var bt = new SnapshotWriter();
             GuestMemory.WriteBlockTable(bt, [block]);
-            var back = Assert.Single(GuestMemory.ReadBlockTable(new SnapshotReader(bt.Data.ToArray())));
+            GuestMemory.Block back = Assert.Single(GuestMemory.ReadBlockTable(new SnapshotReader(bt.Data.ToArray())));
             Assert.Equal((block.Address, block.Size, block.Name, block.Region), (back.Address, back.Size, back.Name, back.Region));
         }
         finally
         {
-            fx.Memory.Free(addr);
+            fixture.Memory.Free(addr);
         }
     }
 
@@ -320,7 +320,7 @@ public sealed unsafe class SaveStateGuestTests(GuestMemoryFixture fx)
         table.Register(mtx);
         table.Register(cond);
         table.Register(pipe);
-        uint buf = fx.Memory.Alloc(0x1000, "pipe data");
+        uint buf = fixture.Memory.Alloc(0x1000, "pipe data");
         try
         {
             "abc"u8.CopyTo(GuestMemory.Span(buf, 3));
@@ -356,7 +356,7 @@ public sealed unsafe class SaveStateGuestTests(GuestMemoryFixture fx)
         }
         finally
         {
-            fx.Memory.Free(buf);
+            fixture.Memory.Free(buf);
         }
     }
 }

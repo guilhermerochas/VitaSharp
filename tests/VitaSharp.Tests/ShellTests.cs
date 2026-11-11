@@ -1,3 +1,4 @@
+using SQLitePCL;
 using System.Buffers.Binary;
 using System.IO.Compression;
 using System.Text;
@@ -10,7 +11,7 @@ public class ShellTests
 {
     // ------------------------------------------------------------------ template.xml
 
-    const string GowTemplate = """
+    private const string GowTemplate = """
         <?xml version="1.0" encoding="utf-8"?>
         <livearea style="a4" format-ver="01.03" content-rev="1">
           <livearea-background>
@@ -44,18 +45,18 @@ public class ShellTests
         Assert.Equal("gates/startup_english.png", LiveAreaTemplate.Parse(GowTemplate, "ja").Gate);
         Assert.Equal(["frame1", "frame5"], t.Frames.Select(f => f.Id));
         Assert.Empty(t.Frames[0].Items);
-        var text = Assert.Single(t.Frames[1].Items).Text!;
+        LiveAreaText text = Assert.Single(t.Frames[1].Items).Text!;
         Assert.Equal("Sony Computer Entertainment", text.PlainText);
         Assert.Equal(("center", "bottom", "right", "bottom", "frame"), (text.Align, text.Valign, text.TextAlign, text.TextValign, text.Origin));
         Assert.Equal((840, 70, 30, 80), (text.Width, text.Height, text.MarginBottom, text.MarginRight));
-        var s = Assert.Single(text.Strings);
+        LiveAreaString s = Assert.Single(text.Strings);
         Assert.Equal((0xFFFFFFFFu, 18f, true, false), (s.Color, s.Size, s.Bold, s.Italic));
     }
 
     [Fact]
     public void TemplateKeepsItemsWithContentAndTargets()
     {
-        const string xml = """
+        const string Xml = """
             <livearea style="A2" format-ver="01.03">
               <livearea-background><image>pic1.png</image></livearea-background>
               <gate><startup-image>gate.png</startup-image></gate>
@@ -72,11 +73,11 @@ public class ShellTests
               <frame id="frame4"><liveitem><text><str color="#ffffff">   </str></text></liveitem></frame>
             </livearea>
             """;
-        var t = LiveAreaTemplate.Parse(xml);
+        var t = LiveAreaTemplate.Parse(Xml);
         Assert.Equal("a2", t.Style);
         Assert.Equal(4, t.Frames.Count);
         Assert.Equal("psts:browse?category=X", t.Frames[0].Items[0].Target);
-        var item = t.Frames[1].Items[0];
+        LiveAreaItem item = t.Frames[1].Items[0];
         Assert.Equal("http://example.com/", item.Target);
         Assert.Equal(new LiveAreaImage("frame2.png", "left", "top", "", 4, -2), item.Image);
         Assert.Equal("line one\nline two", item.Text!.PlainText);
@@ -88,7 +89,7 @@ public class ShellTests
     [Fact]
     public void TemplateAutoflipKeepsEveryMatchingItem()
     {
-        const string xml = """
+        const string Xml = """
             <livearea style="a1">
               <frame id="frame3" multi="a" autoflip="5">
                 <liveitem><image>a.png</image></liveitem>
@@ -97,10 +98,10 @@ public class ShellTests
               </frame>
             </livearea>
             """;
-        var f = LiveAreaTemplate.Parse(xml, "en").Frames.Single();
+        LiveAreaFrame f = LiveAreaTemplate.Parse(Xml, "en").Frames.Single();
         Assert.Equal(5, f.AutoflipSeconds);
         Assert.Equal(["a.png", "b.png"], f.Items.Select(i => i.Image!.File));
-        Assert.Equal(3, LiveAreaTemplate.Parse(xml, "ja").Frames.Single().Items.Count);
+        Assert.Equal(3, LiveAreaTemplate.Parse(Xml, "ja").Frames.Single().Items.Count);
     }
 
     [Fact]
@@ -113,21 +114,21 @@ public class ShellTests
     [Fact]
     public void TemplateLoadFallsBackToTheFirmwareDefault()
     {
-        var root = Directory.CreateTempSubdirectory("vitasharp-livearea").FullName;
+        string root = Directory.CreateTempSubdirectory("vitasharp-livearea").FullName;
         try
         {
-            var app = Path.Combine(root, "ux0", "app", "ABCD00001");
+            string app = Path.Combine(root, "ux0", "app", "ABCD00001");
             Directory.CreateDirectory(Path.Combine(app, "sce_sys"));
             Assert.Null(LiveAreaTemplate.Load(app, root));
-            var def = Path.Combine(root, "vs0", "data", "internal", "livearea", "default", "sce_sys", "livearea", "contents");
+            string def = Path.Combine(root, "vs0", "data", "internal", "livearea", "default", "sce_sys", "livearea", "contents");
             Directory.CreateDirectory(def);
             File.WriteAllText(Path.Combine(def, "template.xml"), "<livearea style='a1'><livearea-background><image>BG0.PNG</image></livearea-background></livearea>");
             File.WriteAllBytes(Path.Combine(def, "bg0.png"), [1]);
-            var t = LiveAreaTemplate.Load(app, root)!;
+            LiveAreaTemplate t = LiveAreaTemplate.Load(app, root)!;
             Assert.True(t.IsDefault);
             Assert.Equal(Path.Combine(def, "bg0.png"), t.Resolve(t.Background), ignoreCase: true); // case-insensitive file names
             // the game's own LiveArea wins
-            var own = Path.Combine(app, "sce_sys", "livearea", "contents");
+            string own = Path.Combine(app, "sce_sys", "livearea", "contents");
             Directory.CreateDirectory(own);
             File.WriteAllText(Path.Combine(own, "template.xml"), "<livearea style='a3'/>");
             Assert.Equal("a3", LiveAreaTemplate.Load(app, root)!.Style);
@@ -194,7 +195,7 @@ public class ShellTests
         Assert.Equal(LiveAreaLayout.Gate("a1"), LiveAreaLayout.Gate("unknown")); // unknown styles use a1
         Assert.Equal(new LaRect(60, 44, 840, 500), LiveAreaLayout.BackgroundRect);
         // every frame of every style lies inside the background area
-        foreach (var style in LiveAreaLayout.KnownStyles)
+        foreach (string style in LiveAreaLayout.KnownStyles)
         {
             for (int i = 1; i <= 10; i++)
             {
@@ -225,23 +226,23 @@ public class ShellTests
     [Fact]
     public void LayoutPlacesTextBoxesAndLines()
     {
-        var t = LiveAreaTemplate.Parse(GowTemplate).Frames[1].Items[0].Text!;
-        var frame = LiveAreaLayout.Frame("a4", "frame5")!.Value;
-        var p = LiveAreaLayout.PlaceText(frame, null, null, t);
+        LiveAreaText t = LiveAreaTemplate.Parse(GowTemplate).Frames[1].Items[0].Text!;
+        LaRect frame = LiveAreaLayout.Frame("a4", "frame5")!.Value;
+        LaTextPlacement p = LiveAreaLayout.PlaceText(frame, null, null, t);
         // the 840x70 box is the frame; margins bottom 30 and right 80 inside it; lines bottom-right
         Assert.Equal(new LaRect(60, 470, 760, 40), p.Box);
         Assert.Equal((LaAlign.End, LaAlign.End), (p.Horizontal, p.Vertical));
 
         var plain = new LiveAreaText();
         var bg = new LaRect(70, 140, 100, 100);
-        var q = LiveAreaLayout.PlaceText(new LaRect(60, 130, 260, 260), bg, null, plain);
+        LaTextPlacement q = LiveAreaLayout.PlaceText(new LaRect(60, 130, 260, 260), bg, null, plain);
         Assert.Equal(bg, q.Box); // origin defaults to the background image
         Assert.Equal((LaAlign.Center, LaAlign.Center), (q.Horizontal, q.Vertical));
-        var right = LiveAreaLayout.PlaceText(new LaRect(0, 0, 300, 100), null, new LaRect(0, 0, 100, 100), new LiveAreaText { Origin = "image", Align = "outside-right" });
+        LaTextPlacement right = LiveAreaLayout.PlaceText(new LaRect(0, 0, 300, 100), null, new LaRect(0, 0, 100, 100), new LiveAreaText { Origin = "image", Align = "outside-right" });
         Assert.Equal(new LaRect(100, 0, 200, 100), right.Box);
         Assert.Equal(LaAlign.Start, right.Horizontal);
         // a y offset with valign="top" is measured from the centre
-        var up = LiveAreaLayout.PlaceText(new LaRect(0, 0, 200, 200), null, null, new LiveAreaText { Valign = "top", Y = 40 });
+        LaTextPlacement up = LiveAreaLayout.PlaceText(new LaRect(0, 0, 200, 200), null, null, new LiveAreaText { Valign = "top", Y = 40 });
         Assert.Equal((-40.0, LaAlign.Center), (up.Box.Y, up.Vertical));
     }
 
@@ -249,19 +250,19 @@ public class ShellTests
 
     /// <summary>Builds an RCOF file: root &lt;resource&gt; with a &lt;texturetable&gt; holding one compressed and one
     /// plain file, plus every attribute type.</summary>
-    static byte[] BuildRco(byte[] fileA, byte[] fileB)
+    private static byte[] BuildRco(byte[] fileA, byte[] fileB)
     {
         var strings = new MemoryStream();
         var offsets = new Dictionary<string, int>();
         int S(string s)
         {
-            if (offsets.TryGetValue(s, out var o))
+            if (offsets.TryGetValue(s, out int o))
             {
                 return o;
             }
 
             o = (int)strings.Length;
-            var b = Encoding.UTF8.GetBytes(s);
+            byte[] b = Encoding.UTF8.GetBytes(s);
             strings.Write(b);
             strings.WriteByte(0);
             offsets[s] = o;
@@ -288,22 +289,22 @@ public class ShellTests
         files.Write(fileB);
 
         // id hashes {element offset, hash}, hashes, int and float arrays
-        var idInt = new byte[24];
+        byte[] idInt = new byte[24];
         BinaryPrimitives.WriteUInt32LittleEndian(idInt.AsSpan(4), 0x11111111);
         BinaryPrimitives.WriteUInt32LittleEndian(idInt.AsSpan(12), 0xAABBCCDD);
         BinaryPrimitives.WriteUInt32LittleEndian(idInt.AsSpan(20), 0x12345678);
-        var hashes = new byte[8];
+        byte[] hashes = new byte[8];
         BinaryPrimitives.WriteUInt32LittleEndian(hashes.AsSpan(4), 0xCAFEBABE);
-        var ints = new byte[12];
+        byte[] ints = new byte[12];
         for (int i = 0; i < 3; i++)
         {
             BinaryPrimitives.WriteInt32LittleEndian(ints.AsSpan(i * 4), (i + 1) * 10);
         }
 
-        var floats = new byte[8];
+        byte[] floats = new byte[8];
         BinaryPrimitives.WriteSingleLittleEndian(floats, 0.5f);
         BinaryPrimitives.WriteSingleLittleEndian(floats.AsSpan(4), -2f);
-        var wide = Encoding.Unicode.GetBytes("Olá");
+        byte[] wide = Encoding.Unicode.GetBytes("Olá");
 
         // tree: element = {name, attr count, parent, prev, next, first child, last child} + attrs {name, type, a, b}
         var tree = new MemoryStream();
@@ -317,7 +318,7 @@ public class ShellTests
             w.Write(next);
             w.Write(first);
             w.Write(last);
-            foreach (var (n, type, a, b) in attrs)
+            foreach ((string? n, int type, int a, int b) in attrs)
             {
                 w.Write(S(n));
                 w.Write(type);
@@ -344,13 +345,13 @@ public class ShellTests
         hw.Write(0x464F4352u);
         hw.Write(0x110u);
         int pos = 0x50;
-        foreach (var t in tables)
+        foreach (byte[] t in tables)
         {
             hw.Write(pos);
             hw.Write(t.Length);
             pos += (t.Length + 15) / 16 * 16;
         }
-        foreach (var t in tables)
+        foreach (byte[] t in tables)
         {
             hw.Write(t);
             while (outS.Length % 16 != 0)
@@ -370,9 +371,9 @@ public class ShellTests
         Assert.Equal("resource", rco.Root.Name);
         Assert.Equal(0.1f, rco.Root.Attribute("version")!.Float);
         Assert.Equal("0x11111111", rco.Root.Id);
-        var table = Assert.Single(rco.Root.Children);
+        RcoElement table = Assert.Single(rco.Root.Children);
         Assert.Equal(["texture", "texture"], table.Children.Select(c => c.Name));
-        var tb = table.Children[1];
+        RcoElement tb = table.Children[1];
         Assert.Same(table, tb.Parent);
         Assert.Equal(0x12345678u, tb.IdHash);
         Assert.Equal("texture/png", tb.Text("type"));
@@ -395,8 +396,8 @@ public class ShellTests
     public void RcoRejectsBadFiles()
     {
         Assert.Throws<InvalidDataException>(() => Rco.Parse(new byte[0x50]));
-        var good = BuildRco([1], [2]);
-        var bad = (byte[])good.Clone();
+        byte[] good = BuildRco([1], [2]);
+        byte[] bad = (byte[])good.Clone();
         BinaryPrimitives.WriteInt32LittleEndian(bad.AsSpan(0x0C), int.MaxValue / 2); // tree size past the end
         Assert.Throws<InvalidDataException>(() => Rco.Parse(bad));
         bad = (byte[])good.Clone();
@@ -407,17 +408,17 @@ public class ShellTests
     // ------------------------------------------------------------------ GIM
 
     /// <summary>A GIM: file block {picture {image, palette?}}.</summary>
-    static byte[] BuildGim(int format, int order, int w, int h, int bpp, int pitchAlign, byte[] pixels, (int Format, byte[] Data, int Count)? palette = null)
+    private static byte[] BuildGim(int format, int order, int w, int h, int bpp, int pitchAlign, byte[] pixels, (int Format, byte[] Data, int Count)? palette = null)
     {
         byte[] Section(int type, int fmt, int ord, int sw, int sh, int sbpp, int align, byte[] data)
         {
-            var hdr = new byte[0x40];
+            byte[] hdr = new byte[0x40];
             BinaryPrimitives.WriteUInt16LittleEndian(hdr, (ushort)type);
             int size = 0x10 + 0x30 + data.Length;
             BinaryPrimitives.WriteInt32LittleEndian(hdr.AsSpan(4), size);
             BinaryPrimitives.WriteInt32LittleEndian(hdr.AsSpan(8), size);
             BinaryPrimitives.WriteInt32LittleEndian(hdr.AsSpan(12), 0x10);
-            var s = hdr.AsSpan(0x10);
+            Span<byte> s = hdr.AsSpan(0x10);
             BinaryPrimitives.WriteUInt16LittleEndian(s, 0x30);
             BinaryPrimitives.WriteUInt16LittleEndian(s[4..], (ushort)fmt);
             BinaryPrimitives.WriteUInt16LittleEndian(s[6..], (ushort)ord);
@@ -430,11 +431,11 @@ public class ShellTests
             BinaryPrimitives.WriteInt32LittleEndian(s[0x20..], 0x30 + data.Length);
             return [.. hdr, .. data];
         }
-        var image = Section(4, format, order, w, h, bpp, pitchAlign, pixels);
-        var pal = palette is { } p ? Section(5, p.Format, 0, p.Count, 1, 32, 16, p.Data) : [];
+        byte[] image = Section(4, format, order, w, h, bpp, pitchAlign, pixels);
+        byte[] pal = palette is { } p ? Section(5, p.Format, 0, p.Count, 1, 32, 16, p.Data) : [];
         byte[] Block(int type, byte[] body)
         {
-            var hdr = new byte[16];
+            byte[] hdr = new byte[16];
             BinaryPrimitives.WriteUInt16LittleEndian(hdr, (ushort)type);
             BinaryPrimitives.WriteInt32LittleEndian(hdr.AsSpan(4), 16 + body.Length);
             BinaryPrimitives.WriteInt32LittleEndian(hdr.AsSpan(8), 16);
@@ -448,26 +449,26 @@ public class ShellTests
     public void GimDecodesDirectColour()
     {
         // 2x2 RGBA8888, rows padded to 16 bytes
-        var px = new byte[32];
+        byte[] px = new byte[32];
         byte[][] colours = [[255, 0, 0, 255], [0, 255, 0, 128], [0, 0, 255, 255], [10, 20, 30, 0]];
         for (int i = 0; i < 4; i++)
         {
             colours[i].CopyTo(px, (i / 2) * 16 + (i % 2) * 4);
         }
 
-        var img = Gim.Decode(BuildGim(3, 0, 2, 2, 32, 16, px));
+        RgbaImage img = Gim.Decode(BuildGim(3, 0, 2, 2, 32, 16, px));
         Assert.Equal((2, 2), (img.Width, img.Height));
         Assert.Equal(colours.SelectMany(c => c), img.Pixels);
 
         // RGBA5650: pure red, green, blue, white
-        var p16 = new byte[32];
+        byte[] p16 = new byte[32];
         ushort[] v = [0x001F, 0x07E0, 0xF800, 0xFFFF];
         for (int i = 0; i < 4; i++)
         {
             BinaryPrimitives.WriteUInt16LittleEndian(p16.AsSpan((i / 2) * 16 + (i % 2) * 2), v[i]);
         }
 
-        var img16 = Gim.Decode(BuildGim(0, 0, 2, 2, 16, 16, p16));
+        RgbaImage img16 = Gim.Decode(BuildGim(0, 0, 2, 2, 16, 16, p16));
         Assert.Equal(new byte[] { 255, 0, 0, 255, 0, 255, 0, 255, 0, 0, 255, 255, 255, 255, 255, 255 }, img16.Pixels);
     }
 
@@ -475,15 +476,15 @@ public class ShellTests
     public void GimDecodesIndexedAndSwizzled()
     {
         // 32x8 INDEX8 in the "faster" order: two 16x8 tiles, tile 0 all index 1, tile 1 all index 2
-        var px = new byte[256];
+        byte[] px = new byte[256];
         for (int i = 0; i < 128; i++)
         {
             px[i] = 1;
             px[128 + i] = 2;
         }
-        var pal = new byte[16];
+        byte[] pal = new byte[16];
         new byte[] { 0, 0, 0, 0, 255, 0, 0, 255, 0, 0, 255, 255 }.CopyTo(pal, 0);
-        var img = Gim.Decode(BuildGim(5, 1, 32, 8, 8, 16, px, (3, pal, 4)));
+        RgbaImage img = Gim.Decode(BuildGim(5, 1, 32, 8, 8, 16, px, (3, pal, 4)));
         Assert.Equal((32, 8), (img.Width, img.Height));
         for (int y = 0; y < 8; y++)
         {
@@ -491,9 +492,9 @@ public class ShellTests
             Assert.Equal(new byte[] { 0, 0, 255, 255 }, img.Pixels.AsSpan((y * 32 + 20) * 4, 4).ToArray());
         }
         // INDEX4: low nibble first
-        var p4 = new byte[16];
+        byte[] p4 = new byte[16];
         p4[0] = 0x21;
-        var img4 = Gim.Decode(BuildGim(4, 0, 2, 1, 4, 16, p4, (3, pal, 4)));
+        RgbaImage img4 = Gim.Decode(BuildGim(4, 0, 2, 1, 4, 16, p4, (3, pal, 4)));
         Assert.Equal(new byte[] { 255, 0, 0, 255, 0, 0, 255, 255 }, img4.Pixels);
     }
 
@@ -502,17 +503,17 @@ public class ShellTests
     {
         Assert.False(Gim.IsGim("PNG..."u8));
         Assert.Throws<InvalidDataException>(() => Gim.Decode(new byte[32]));
-        var px = new byte[16];
-        var gim = BuildGim(3, 0, 2, 2, 32, 16, px);
+        byte[] px = new byte[16];
+        byte[] gim = BuildGim(3, 0, 2, 2, 32, 16, px);
         BinaryPrimitives.WriteInt32LittleEndian(gim.AsSpan(16 + 32 + 16 + 0x20), 0x10000); // pixels end past the block
         Assert.Throws<InvalidDataException>(() => Gim.Decode(gim));
     }
 
     // ------------------------------------------------------------------ VAG
 
-    static byte[] Vag(int rate, params byte[][] frames)
+    private static byte[] Vag(int rate, params byte[][] frames)
     {
-        var hdr = new byte[0x30];
+        byte[] hdr = new byte[0x30];
         "VAGp"u8.CopyTo(hdr);
         BinaryPrimitives.WriteUInt32BigEndian(hdr.AsSpan(4), 0x20);
         BinaryPrimitives.WriteUInt32BigEndian(hdr.AsSpan(0x0C), (uint)(frames.Length * 16));
@@ -524,26 +525,26 @@ public class ShellTests
     public void VagDecodesAdpcmFrames()
     {
         // filter 0, shift 12: each nibble n is the sample (n << 12) >> 12, i.e. its signed 4-bit value
-        var f0 = new byte[16];
+        byte[] f0 = new byte[16];
         f0[0] = 12;
         f0[2] = 0x71; // samples 1, 7
         f0[3] = 0x8F; // samples -1, -8
         // filter 1 (60/64 of the previous sample), shift 12, all zero nibbles, last frame
-        var f1 = new byte[16];
+        byte[] f1 = new byte[16];
         f1[0] = 0x1C;
         f1[1] = 1;
-        var (s, rate) = VitaSharp.Core.Shell.Vag.DecodeMono(Vag(22050, f0, f1));
+        (short[]? s, int rate) = VitaSharp.Core.Shell.Vag.DecodeMono(Vag(22050, f0, f1));
         Assert.Equal(22050, rate);
         Assert.Equal(56, s.Length);
         Assert.Equal(new short[] { 1, 7, -1, -8 }, s[..4]);
         Assert.Equal(0, s[27]);
         Assert.Equal(0, s[28]);
         // the end marker frame (flags 7) stops decoding
-        var end = new byte[16];
+        byte[] end = new byte[16];
         end[1] = 7;
         Assert.Equal(28, VitaSharp.Core.Shell.Vag.DecodeMono(Vag(48000, f0, end)).Samples.Length);
         // stereo from a left and a right file
-        var st = VitaSharp.Core.Shell.Vag.Decode(Vag(48000, f0), Vag(48000, f1));
+        PcmSound st = VitaSharp.Core.Shell.Vag.Decode(Vag(48000, f0), Vag(48000, f1));
         Assert.Equal((2, 56), (st.Channels, st.Samples.Length));
         Assert.Equal((short)7, st.Samples[2]);
         Assert.Throws<InvalidDataException>(() => VitaSharp.Core.Shell.Vag.DecodeMono(new byte[64]));
@@ -554,12 +555,12 @@ public class ShellTests
     [Fact]
     public void SystemAppBubblesComeFromTheShellDatabase()
     {
-        var root = Directory.CreateTempSubdirectory("vitasharp-sysapps").FullName;
+        string root = Directory.CreateTempSubdirectory("vitasharp-sysapps").FullName;
         try
         {
-            foreach (var id in new[] { "SYSA00001", "SYSA00002", "SYSA00003", "SYSA00004" })
+            foreach (string? id in new[] { "SYSA00001", "SYSA00002", "SYSA00003", "SYSA00004" })
             {
-                var sys = Path.Combine(root, "vs0", "app", id, "sce_sys");
+                string sys = Path.Combine(root, "vs0", "app", id, "sce_sys");
                 Directory.CreateDirectory(sys);
                 // SYSA00004 has no icon: no bubble
                 if (id != "SYSA00004")
@@ -572,10 +573,10 @@ public class ShellTests
             Assert.Equal(["SYSA00001", "SYSA00002", "SYSA00003"], assets.SystemApps().Select(a => a.TitleId));
 
             // the shell's database: its bubbles in page and position order, only those of vs0:app
-            var dbDir = Path.Combine(root, "ur0", "shell", "db");
+            string dbDir = Path.Combine(root, "ur0", "shell", "db");
             Directory.CreateDirectory(dbDir);
             SQLitePCL.Batteries_V2.Init();
-            Assert.Equal(SQLitePCL.raw.SQLITE_OK, SQLitePCL.raw.sqlite3_open(Path.Combine(dbDir, "app.db"), out var db));
+            Assert.Equal(SQLitePCL.raw.SQLITE_OK, SQLitePCL.raw.sqlite3_open(Path.Combine(dbDir, "app.db"), out sqlite3? db));
             using (db)
             {
                 Assert.Equal(SQLitePCL.raw.SQLITE_OK, SQLitePCL.raw.sqlite3_exec(db,
@@ -593,7 +594,7 @@ public class ShellTests
     [Fact]
     public void ThemesComeFromTheFirmwareAndUx0()
     {
-        var root = Directory.CreateTempSubdirectory("vitasharp-theme").FullName;
+        string root = Directory.CreateTempSubdirectory("vitasharp-theme").FullName;
         try
         {
             var assets = new ShellAssets(root);
@@ -603,10 +604,10 @@ public class ShellTests
             Assert.Null(assets.Texture(ShellAssets.TopMenuRco, ShellAssets.Textures.PageDot));
             Assert.Null(assets.Sound(ShellSoundEffect.Confirm));
 
-            var themeDir = Path.Combine(root, "vs0", "data", "internal", "theme");
+            string themeDir = Path.Combine(root, "vs0", "data", "internal", "theme");
             Directory.CreateDirectory(themeDir);
             File.WriteAllBytes(Path.Combine(themeDir, "defaultTheme_homeScreen.png"), [0]);
-            var custom = Path.Combine(root, "ux0", "theme", "MYTHEME");
+            string custom = Path.Combine(root, "ux0", "theme", "MYTHEME");
             Directory.CreateDirectory(custom);
             File.WriteAllText(Path.Combine(custom, "theme.xml"), """
                 <theme format-ver="01.00">
@@ -623,10 +624,10 @@ public class ShellTests
                 """);
             Directory.CreateDirectory(Path.Combine(custom, "home"));
             File.WriteAllBytes(Path.Combine(custom, "home", "BG1.png"), [0]);
-            var themes = assets.Themes("pt-br");
+            List<ShellTheme> themes = assets.Themes("pt-br");
             Assert.Equal([ShellTheme.DefaultId, "UP0000-THEME0001_00-0000000000000000"], themes.Select(t => t.Id));
             Assert.Empty(themes[0].HomeBackgrounds); // the default theme's wave is drawn, not loaded
-            var night = themes[1];
+            ShellTheme night = themes[1];
             Assert.Equal("Noite", night.Title);
             Assert.Equal("Night", assets.Themes("en")[1].Title);
             Assert.Single(night.HomeBackgrounds);

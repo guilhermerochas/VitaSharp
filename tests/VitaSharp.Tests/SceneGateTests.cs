@@ -5,9 +5,9 @@ namespace VitaSharp.Tests;
 /// <summary>The GPU worker holds a draw of an open scene (its bound uniform buffers are read late) until the scene ends,
 /// unless a guest waits for that draw.</summary>
 [Collection("guest")]
-public sealed class SceneGateTests(GuestMemoryFixture fx)
+public sealed class SceneGateTests(GuestMemoryFixture fixture)
 {
-    sealed class CountingBackend : IGpuBackend
+    private sealed class CountingBackend : IGpuBackend
     {
         public int Draws;
         public long PresentCount => 0;
@@ -27,7 +27,7 @@ public sealed class SceneGateTests(GuestMemoryFixture fx)
     [Fact]
     public void DrawWaitsForItsSceneToEnd()
     {
-        _ = fx;
+        _ = fixture;
         using var queue = new GpuQueue();
         var backend = new CountingBackend();
         queue.Backend = backend;
@@ -44,7 +44,7 @@ public sealed class SceneGateTests(GuestMemoryFixture fx)
     [Fact]
     public void GuestWaitingForTheDrawReleasesTheGate()
     {
-        _ = fx;
+        _ = fixture;
         using var queue = new GpuQueue();
         var backend = new CountingBackend();
         queue.Backend = backend;
