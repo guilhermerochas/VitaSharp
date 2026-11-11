@@ -57,7 +57,11 @@ public sealed class HomeScreenView : ShellCanvas
     public void Select(string titleId)
     {
         int i = _apps.ToList().FindIndex(a => a.TitleId == titleId);
-        if (i < 0) return;
+        if (i < 0)
+        {
+            return;
+        }
+
         _selected = i;
         GoToPage(i / PerPage, animate: false);
     }
@@ -66,11 +70,20 @@ public sealed class HomeScreenView : ShellCanvas
     {
         page = Math.Clamp(page, 0, Pages - 1);
         _page = page;
-        if (!animate) { _scroll = page; InvalidateVisual(); return; }
+        if (!animate)
+        {
+            _scroll = page;
+            InvalidateVisual();
+            return;
+        }
         Animate(() =>
         {
             double d = _page - _scroll;
-            if (Math.Abs(d) < 0.002) { _scroll = _page; return false; }
+            if (Math.Abs(d) < 0.002)
+            {
+                _scroll = _page;
+                return false;
+            }
             _scroll += d * 0.22;
             return true;
         });
@@ -98,7 +111,11 @@ public sealed class HomeScreenView : ShellCanvas
             for (int slot = 0; slot < PerPage; slot++)
             {
                 int i = p * PerPage + slot;
-                if (i >= _apps.Count) break;
+                if (i >= _apps.Count)
+                {
+                    break;
+                }
+
                 var c = SlotCenter(slot) + new Point(0, dy);
                 DrawBubble(ctx, _apps[i], c, (NavigationMode && i == _selected) || i == _hover, i == _selected, fontBrush);
             }
@@ -120,7 +137,10 @@ public sealed class HomeScreenView : ShellCanvas
         var rect = new Rect(c.X - r, c.Y - r, 2 * r, 2 * r);
         using (ctx.PushGeometryClip(new EllipseGeometry(rect)))
         {
-            if (Visuals.File(app.IconPath) is { } icon) DrawImageFit(ctx, icon, rect, fill: true);
+            if (Visuals.File(app.IconPath) is { } icon)
+            {
+                DrawImageFit(ctx, icon, rect, fill: true);
+            }
             else
             {
                 ctx.FillRectangle(new SolidColorBrush(Color.Parse("#3A4A63")), rect);
@@ -130,13 +150,17 @@ public sealed class HomeScreenView : ShellCanvas
             // glossy top light, like the bubbles' lacquer
             ctx.DrawEllipse(new LinearGradientBrush
             {
-                StartPoint = new RelativePoint(0.5, 0, RelativeUnit.Relative), EndPoint = new RelativePoint(0.5, 1, RelativeUnit.Relative),
+                StartPoint = new RelativePoint(0.5, 0, RelativeUnit.Relative),
+                EndPoint = new RelativePoint(0.5, 1, RelativeUnit.Relative),
                 GradientStops = { new GradientStop(Color.FromArgb(70, 255, 255, 255), 0), new GradientStop(Color.FromArgb(0, 255, 255, 255), 0.55) },
             }, null, c, r, r);
         }
         ctx.DrawEllipse(null, new Pen(new SolidColorBrush(Color.FromArgb(150, 255, 255, 255)), 2), c, r, r);
         if (highlight)
+        {
             ctx.DrawEllipse(null, new Pen(new SolidColorBrush(Color.FromArgb(230, 120, 200, 255)), 4), c, r + 4, r + 4);
+        }
+
         if (app.IsSystem)
         {
             // system apps (run from vs0:app on the firmware's libraries) are marked with a small badge
@@ -151,7 +175,11 @@ public sealed class HomeScreenView : ShellCanvas
     void DrawPageDots(DrawingContext ctx)
     {
         int n = Pages;
-        if (n <= 1) return;
+        if (n <= 1)
+        {
+            return;
+        }
+
         double spacing = 22, top = (H + StatusBarHeight) / 2 - (n - 1) * spacing / 2;
         var dot = Visuals.Texture(ShellAssets.TopMenuRco, ShellAssets.Textures.PageDot);
         for (int i = 0; i < n; i++)
@@ -160,8 +188,14 @@ public sealed class HomeScreenView : ShellCanvas
             double a = i == _page ? 1 : 0.4;
             using (ctx.PushOpacity(a))
             {
-                if (dot != null) ctx.DrawImage(dot, new Rect(c.X - 8, c.Y - 8, 16, 16));
-                else ctx.DrawEllipse(Brushes.White, null, c, i == _page ? 6 : 4.5, i == _page ? 6 : 4.5);
+                if (dot != null)
+                {
+                    ctx.DrawImage(dot, new Rect(c.X - 8, c.Y - 8, 16, 16));
+                }
+                else
+                {
+                    ctx.DrawEllipse(Brushes.White, null, c, i == _page ? 6 : 4.5, i == _page ? 6 : 4.5);
+                }
             }
         }
     }
@@ -173,10 +207,17 @@ public sealed class HomeScreenView : ShellCanvas
         for (int slot = 0; slot < PerPage; slot++)
         {
             int i = _page * PerPage + slot;
-            if (i >= _apps.Count) break;
+            if (i >= _apps.Count)
+            {
+                break;
+            }
+
             var c = SlotCenter(slot) + new Point(0, (_page - _scroll) * H);
             var d = screen - c;
-            if (d.X * d.X + d.Y * d.Y <= Radius * Radius) return i;
+            if (d.X * d.X + d.Y * d.Y <= Radius * Radius)
+            {
+                return i;
+            }
         }
         return -1;
     }
@@ -185,7 +226,11 @@ public sealed class HomeScreenView : ShellCanvas
     {
         base.OnPointerPressed(e);
         Focus();
-        if (!e.GetCurrentPoint(this).Properties.IsLeftButtonPressed) return;
+        if (!e.GetCurrentPoint(this).Properties.IsLeftButtonPressed)
+        {
+            return;
+        }
+
         _dragStart = ToScreen(e.GetPosition(this));
         _dragScroll = _scroll;
         _dragged = false;
@@ -199,7 +244,11 @@ public sealed class HomeScreenView : ShellCanvas
         if (_dragStart is { } s)
         {
             double dy = p.Y - s.Y;
-            if (Math.Abs(dy) > 8) _dragged = true;
+            if (Math.Abs(dy) > 8)
+            {
+                _dragged = true;
+            }
+
             if (_dragged)
             {
                 _scroll = Math.Clamp(_dragScroll - dy / H, -0.3, Pages - 0.7);
@@ -209,19 +258,31 @@ public sealed class HomeScreenView : ShellCanvas
         }
         NavigationMode = false;
         int h = HitTest(p);
-        if (h != _hover) { _hover = h; InvalidateVisual(); }
+        if (h != _hover)
+        {
+            _hover = h;
+            InvalidateVisual();
+        }
     }
 
     protected override void OnPointerExited(PointerEventArgs e)
     {
         base.OnPointerExited(e);
-        if (_hover >= 0) { _hover = -1; InvalidateVisual(); }
+        if (_hover >= 0)
+        {
+            _hover = -1;
+            InvalidateVisual();
+        }
     }
 
     protected override void OnPointerReleased(PointerReleasedEventArgs e)
     {
         base.OnPointerReleased(e);
-        if (_dragStart is not { } s) return;
+        if (_dragStart is not { } s)
+        {
+            return;
+        }
+
         _dragStart = null;
         e.Pointer.Capture(null);
         var p = ToScreen(e.GetPosition(this));
@@ -244,7 +305,11 @@ public sealed class HomeScreenView : ShellCanvas
     protected override void OnPointerWheelChanged(PointerWheelEventArgs e)
     {
         base.OnPointerWheelChanged(e);
-        if (Math.Abs(e.Delta.Y) < 0.01) return;
+        if (Math.Abs(e.Delta.Y) < 0.01)
+        {
+            return;
+        }
+
         ChangePage(_page + (e.Delta.Y < 0 ? 1 : -1));
         e.Handled = true;
     }
@@ -265,7 +330,11 @@ public sealed class HomeScreenView : ShellCanvas
     /// <summary>Directional navigation (keyboard arrows, D-pad, stick).</summary>
     public void Move(int dx, int dy)
     {
-        if (_apps.Count == 0) return;
+        if (_apps.Count == 0)
+        {
+            return;
+        }
+
         NavigationMode = true;
         int old = _selected;
         int page = _selected / PerPage, slot = _selected % PerPage;
@@ -277,29 +346,72 @@ public sealed class HomeScreenView : ShellCanvas
         {
             int row = RowOf(slot) + dy;
             int targetPage = page;
-            if (row < 0) { if (page == 0) return; targetPage--; row = 2; }
-            else if (row > 2) { if (page >= Pages - 1) return; targetPage++; row = 0; }
+            if (row < 0)
+            {
+                if (page == 0)
+                {
+                    return;
+                }
+
+                targetPage--;
+                row = 2;
+            }
+            else if (row > 2)
+            {
+                if (page >= Pages - 1)
+                {
+                    return;
+                }
+
+                targetPage++;
+                row = 0;
+            }
             double x = SlotCenter(slot).X;
             int best = -1;
             double bestD = double.MaxValue;
             for (int k = 0; k < RowCount[row]; k++)
             {
                 int s = RowStart[row] + k, i = targetPage * PerPage + s;
-                if (i >= _apps.Count) break;
+                if (i >= _apps.Count)
+                {
+                    break;
+                }
+
                 double d = Math.Abs(SlotCenter(s).X - x);
-                if (d < bestD) { bestD = d; best = i; }
+                if (d < bestD)
+                {
+                    bestD = d;
+                    best = i;
+                }
             }
             if (best < 0)
             {
                 // the row below is empty: next page's first bubble, else the last bubble
-                if (dy > 0 && targetPage == page && page < Pages - 1) best = (page + 1) * PerPage;
-                else if (dy > 0) best = _apps.Count - 1;
-                else return;
+                if (dy > 0 && targetPage == page && page < Pages - 1)
+                {
+                    best = (page + 1) * PerPage;
+                }
+                else if (dy > 0)
+                {
+                    best = _apps.Count - 1;
+                }
+                else
+                {
+                    return;
+                }
             }
             _selected = Math.Min(best, _apps.Count - 1);
         }
-        if (_selected != old) SelectionMoved?.Invoke();
-        if (_selected / PerPage != _page) GoToPage(_selected / PerPage);
+        if (_selected != old)
+        {
+            SelectionMoved?.Invoke();
+        }
+
+        if (_selected / PerPage != _page)
+        {
+            GoToPage(_selected / PerPage);
+        }
+
         InvalidateVisual();
     }
 
@@ -307,7 +419,10 @@ public sealed class HomeScreenView : ShellCanvas
 
     public void Activate()
     {
-        if (Selected is { } a) Opened?.Invoke(a);
+        if (Selected is { } a)
+        {
+            Opened?.Invoke(a);
+        }
     }
 
     protected override void OnKeyDown(KeyEventArgs e)
@@ -315,18 +430,41 @@ public sealed class HomeScreenView : ShellCanvas
         base.OnKeyDown(e);
         switch (e.Key)
         {
-            case Key.Left: Move(-1, 0); break;
-            case Key.Right: Move(1, 0); break;
-            case Key.Up: Move(0, -1); break;
-            case Key.Down: Move(0, 1); break;
-            case Key.PageUp: PageBy(-1); break;
-            case Key.PageDown: PageBy(1); break;
-            case Key.Enter or Key.Space: Activate(); break;
-            default: return;
+            case Key.Left:
+                Move(-1, 0);
+                break;
+            case Key.Right:
+                Move(1, 0);
+                break;
+            case Key.Up:
+                Move(0, -1);
+                break;
+            case Key.Down:
+                Move(0, 1);
+                break;
+            case Key.PageUp:
+                PageBy(-1);
+                break;
+            case Key.PageDown:
+                PageBy(1);
+                break;
+            case Key.Enter or Key.Space:
+                Activate();
+                break;
+            default:
+                return;
         }
         e.Handled = true;
     }
 
-    protected override void OnGotFocus(GotFocusEventArgs e) { base.OnGotFocus(e); InvalidateVisual(); }
-    protected override void OnLostFocus(Avalonia.Interactivity.RoutedEventArgs e) { base.OnLostFocus(e); InvalidateVisual(); }
+    protected override void OnGotFocus(GotFocusEventArgs e)
+    {
+        base.OnGotFocus(e);
+        InvalidateVisual();
+    }
+    protected override void OnLostFocus(Avalonia.Interactivity.RoutedEventArgs e)
+    {
+        base.OnLostFocus(e);
+        InvalidateVisual();
+    }
 }

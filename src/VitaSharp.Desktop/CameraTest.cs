@@ -32,14 +32,30 @@ public static partial class CameraTest
         string prefix = args.Length > 1 ? args[1] : Path.Combine(Environment.CurrentDirectory, "camera-test");
         var devices = FlashCapCamera.ListDevices();
         Console.WriteLine($"{devices.Count} capture device(s):");
-        for (int i = 0; i < devices.Count; i++) Console.WriteLine($"  [{i}] {devices[i].Name} ({devices[i].DeviceType})");
+        for (int i = 0; i < devices.Count; i++)
+        {
+            Console.WriteLine($"  [{i}] {devices[i].Name} ({devices[i].DeviceType})");
+        }
+
         using var source = FlashCapCamera.CreateForVita(selection, selection);
-        if (source == null) { Console.WriteLine("camera disabled"); return 1; }
+        if (source == null)
+        {
+            Console.WriteLine("camera disabled");
+            return 1;
+        }
         var sw = Stopwatch.StartNew();
         using var stream = source.Open(CameraFacing.Front, 640, 480, 30);
-        if (stream == null) { Console.WriteLine("no camera available"); return 1; }
+        if (stream == null)
+        {
+            Console.WriteLine("no camera available");
+            return 1;
+        }
         // skip the first frames (auto exposure settles: about 2 s at 30 fps)
-        while (stream.Frames.Sequence < 60 && sw.Elapsed < TimeSpan.FromSeconds(15)) Thread.Sleep(20);
+        while (stream.Frames.Sequence < 60 && sw.Elapsed < TimeSpan.FromSeconds(15))
+        {
+            Thread.Sleep(20);
+        }
+
         byte[] host = [];
         if (!stream.Frames.CopyLatest(ref host, out int w, out int h, out long seq))
         {
@@ -48,7 +64,11 @@ public static partial class CameraTest
         }
         Console.WriteLine($"frame #{seq} {w}x{h} after {sw.Elapsed.TotalSeconds:F1} s ({seq / Math.Max(0.1, sw.Elapsed.TotalSeconds):F0} fps)");
         long sum = 0;
-        for (int i = 0; i + 2 < host.Length; i += 4) sum += (host[i] * 77 + host[i + 1] * 150 + host[i + 2] * 29) >> 8;
+        for (int i = 0; i + 2 < host.Length; i += 4)
+        {
+            sum += (host[i] * 77 + host[i + 1] * 150 + host[i + 2] * 29) >> 8;
+        }
+
         double luma = sum / Math.Max(1.0, host.Length / 4.0);
         Console.WriteLine($"mean brightness {luma:F0}/255{(luma < 24 ? " (very dark: lens covered, privacy shutter closed or a dark room?)" : "")}");
         Png.Write(prefix + "-host.png", host, w, h);
@@ -69,7 +89,11 @@ public static partial class CameraTest
     static int Cycles(string? selection, int cycles)
     {
         var source = FlashCapCamera.CreateForVita(selection, selection);
-        if (source == null) { Console.WriteLine("camera disabled"); return 1; }
+        if (source == null)
+        {
+            Console.WriteLine("camera disabled");
+            return 1;
+        }
         Console.WriteLine($"devices: {string.Join(", ", source.DeviceNames)}"); // enumerate before the first sample
         var (user0, gdi0) = GuiObjects();
         Console.WriteLine($"before: USER {user0} GDI {gdi0}");
@@ -78,18 +102,35 @@ public static partial class CameraTest
         {
             var sw = Stopwatch.StartNew();
             var stream = source.Open(i % 2 == 0 ? CameraFacing.Back : CameraFacing.Front, 640, 480, 30);
-            if (stream == null) { Console.WriteLine("no camera available"); source.Dispose(); return 1; }
+            if (stream == null)
+            {
+                Console.WriteLine("no camera available");
+                source.Dispose();
+                return 1;
+            }
             // a few new frames per start, like a game that switches sensors quickly
             long first = stream.Frames.Sequence;
-            while (stream.Frames.Sequence < first + 10 && sw.Elapsed < TimeSpan.FromSeconds(5)) Thread.Sleep(10);
+            while (stream.Frames.Sequence < first + 10 && sw.Elapsed < TimeSpan.FromSeconds(5))
+            {
+                Thread.Sleep(10);
+            }
+
             long frames = stream.Frames.Sequence - first;
             var (userOn, gdiOn) = GuiObjects();
             stream.Dispose();
             // every third cycle the camera stays off past the linger time: the device really closes and reopens
             bool full = i % 3 == 2;
-            if (full) Thread.Sleep(3500);
+            if (full)
+            {
+                Thread.Sleep(3500);
+            }
+
             var (user, gdi) = GuiObjects();
-            if (frames == 0) failures++;
+            if (frames == 0)
+            {
+                failures++;
+            }
+
             Console.WriteLine($"cycle {i + 1}: {frames} frames in {sw.Elapsed.TotalSeconds:F1} s, USER {userOn}/{user} GDI {gdiOn}/{gdi} (running/{(full ? "closed" : "released")})");
         }
         source.Dispose();
@@ -103,29 +144,57 @@ public static partial class CameraTest
     /// <summary>USER and GDI objects of this process (0, 0 off Windows).</summary>
     static (int User, int Gdi) GuiObjects()
     {
-        if (!OperatingSystem.IsWindows()) return (0, 0);
+        if (!OperatingSystem.IsWindows())
+        {
+            return (0, 0);
+        }
+
         nint self = GetCurrentProcess();
         return ((int)GetGuiResources(self, 1), (int)GetGuiResources(self, 0));
     }
 
     static int Retry(string? selection)
     {
-        if (!OperatingSystem.IsWindows()) { Console.WriteLine("--retry needs Windows"); return 1; }
+        if (!OperatingSystem.IsWindows())
+        {
+            Console.WriteLine("--retry needs Windows");
+            return 1;
+        }
         using var source = FlashCapCamera.CreateForVita(selection, selection);
-        if (source == null) { Console.WriteLine("camera disabled"); return 1; }
+        if (source == null)
+        {
+            Console.WriteLine("camera disabled");
+            return 1;
+        }
         _ = source.DeviceNames;
         // empty popup menus are USER objects: allocate them until the per-process quota (10000 by default) is reached
         var menus = new List<nint>();
-        for (nint m; menus.Count < 20000 && (m = CreatePopupMenu()) != 0;) menus.Add(m);
+        for (nint m; menus.Count < 20000 && (m = CreatePopupMenu()) != 0;)
+        {
+            menus.Add(m);
+        }
+
         Console.WriteLine($"USER quota filled: {menus.Count} menus, USER {GuiObjects().User}");
         var sw = Stopwatch.StartNew();
         using var stream = source.Open(CameraFacing.Back, 640, 480, 30);
-        if (stream == null) { Console.WriteLine("no camera available"); return 1; }
+        if (stream == null)
+        {
+            Console.WriteLine("no camera available");
+            return 1;
+        }
         Thread.Sleep(1500); // the start fails meanwhile (logged), and the capture waits to retry
         long during = stream.Frames.Sequence;
-        foreach (var m in menus) DestroyMenu(m);
+        foreach (var m in menus)
+        {
+            DestroyMenu(m);
+        }
+
         Console.WriteLine($"{during} frames while the quota was full; menus freed at {sw.Elapsed.TotalSeconds:F1} s, USER {GuiObjects().User}");
-        while (stream.Frames.Sequence < 10 && sw.Elapsed < TimeSpan.FromSeconds(20)) Thread.Sleep(20);
+        while (stream.Frames.Sequence < 10 && sw.Elapsed < TimeSpan.FromSeconds(20))
+        {
+            Thread.Sleep(20);
+        }
+
         long after = stream.Frames.Sequence;
         Console.WriteLine(after > 0 ? $"recovered: {after} frames after {sw.Elapsed.TotalSeconds:F1} s" : "not recovered: no frames after 20 s");
         return during == 0 && after > 0 ? 0 : 1;

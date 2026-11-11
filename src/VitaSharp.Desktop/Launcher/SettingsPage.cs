@@ -71,7 +71,11 @@ public sealed class SettingsPage : UserControl
     /// <summary>Shows a section: scrolls the list to it, or opens the controller page.</summary>
     public void ShowSection(string section)
     {
-        if (section == SectionSystem) { OpenSystem?.Invoke(); return; }
+        if (section == SectionSystem)
+        {
+            OpenSystem?.Invoke();
+            return;
+        }
         _section = section;
         BuildNav();
         if (section == SectionControls)
@@ -80,19 +84,34 @@ public sealed class SettingsPage : UserControl
             _body.Child = Controls;
             return;
         }
-        if (_body.Child != _scroll) _body.Child = _scroll;
+        if (_body.Child != _scroll)
+        {
+            _body.Child = _scroll;
+        }
+
         if (_anchors.TryGetValue(section, out var anchor))
+        {
             Avalonia.Threading.Dispatcher.UIThread.Post(() =>
             {
-                if (section == SectionGeneral) _scroll.Offset = default;
-                else anchor.BringIntoView(new Rect(0, 0, 1, _scroll.Viewport.Height));
+                if (section == SectionGeneral)
+                {
+                    _scroll.Offset = default;
+                }
+                else
+                {
+                    anchor.BringIntoView(new Rect(0, 0, 1, _scroll.Viewport.Height));
+                }
             }, Avalonia.Threading.DispatcherPriority.Loaded);
+        }
     }
 
     /// <summary>Saves controller mappings edited on the controller page.</summary>
     public void SaveControls()
     {
-        if (Controls?.HasChanges == true) Controls.Save();
+        if (Controls?.HasChanges == true)
+        {
+            Controls.Save();
+        }
     }
 
     void BuildNav()
@@ -111,7 +130,10 @@ public sealed class SettingsPage : UserControl
             g.VerticalAlignment = VerticalAlignment.Center;
             _nav.Children.Add(Kit.Click(new Border
             {
-                Height = 40, Padding = new Thickness(12, 0), CornerRadius = new CornerRadius(11), Child = g,
+                Height = 40,
+                Padding = new Thickness(12, 0),
+                CornerRadius = new CornerRadius(11),
+                Child = g,
                 Background = sel ? Kit.B(P.Highlight) : Brushes.Transparent,
             }, () => ShowSection(key)));
         }
@@ -141,7 +163,22 @@ public sealed class SettingsPage : UserControl
         ComboBox? box = null;
         box = _k.Dropdown(labels, index, i =>
         {
-            if (i < pick) { index = i; Set(() => { if (back) _settings.CameraBack = values[i]; else _settings.CameraFront = values[i]; }); return; }
+            if (i < pick)
+            {
+                index = i;
+                Set(() =>
+                {
+                    if (back)
+                    {
+                        _settings.CameraBack = values[i];
+                    }
+                    else
+                    {
+                        _settings.CameraFront = values[i];
+                    }
+                });
+                return;
+            }
             _ = PickPicture();
         }, 300);
 
@@ -155,8 +192,22 @@ public sealed class SettingsPage : UserControl
                 FileTypeFilter = [new FilePickerFileType(S.CameraPictureFileType) { Patterns = ["*.png", "*.jpg", "*.jpeg"] }],
             });
             var path = files.Count > 0 ? files[0].TryGetLocalPath() : null;
-            if (path == null || !VitaSharp.Core.Host.CameraSpec.IsImagePath(path)) { box!.SelectedIndex = index; return; }
-            Set(() => { if (back) _settings.CameraBack = path; else _settings.CameraFront = path; });
+            if (path == null || !VitaSharp.Core.Host.CameraSpec.IsImagePath(path))
+            {
+                box!.SelectedIndex = index;
+                return;
+            }
+            Set(() =>
+            {
+                if (back)
+                {
+                    _settings.CameraBack = path;
+                }
+                else
+                {
+                    _settings.CameraFront = path;
+                }
+            });
             var offset = _scroll.Offset;
             _scroll.Content = BuildList();
             Avalonia.Threading.Dispatcher.UIThread.Post(() => _scroll.Offset = offset, Avalonia.Threading.DispatcherPriority.Loaded);
@@ -171,7 +222,11 @@ public sealed class SettingsPage : UserControl
     {
         var values = new List<string> { "", "none" };
         var labels = new List<string> { back ? S.CameraBackDefault : S.CameraDefault, S.CameraNone };
-        foreach (var w in webcams) { values.Add(w); labels.Add(w); }
+        foreach (var w in webcams)
+        {
+            values.Add(w);
+            labels.Add(w);
+        }
         if (!values.Contains(current, StringComparer.OrdinalIgnoreCase))
         {
             values.Add(current);
@@ -186,7 +241,11 @@ public sealed class SettingsPage : UserControl
     {
         var values = new List<string> { "" };
         var labels = new List<string> { S.AudioOutputDefault };
-        foreach (var o in outputs) { values.Add(o); labels.Add(VitaSharp.Core.Host.AudioOutputFollower.FriendlyName(o)); }
+        foreach (var o in outputs)
+        {
+            values.Add(o);
+            labels.Add(VitaSharp.Core.Host.AudioOutputFollower.FriendlyName(o));
+        }
         if (current.Length > 0 && !values.Contains(current, StringComparer.OrdinalIgnoreCase))
         {
             values.Add(current);
@@ -212,16 +271,31 @@ public sealed class SettingsPage : UserControl
                     (S.PlayDirectly, null, null), (S.OpenLiveArea, null, null))),
             _k.Row("terminal", S.VitaShortcut, S.VitaShortcutDetail, _k.Kbd("Ctrl + H"))));
         s.Children.Add(_k.GroupTitle(S.Appearance));
-        int theme = _settings.UiTheme switch { LauncherSettings.ThemeDark => 1, LauncherSettings.ThemeLight => 2, _ => 0 };
+        int theme = _settings.UiTheme switch
+        {
+            LauncherSettings.ThemeDark => 1,
+            LauncherSettings.ThemeLight => 2,
+            _ => 0
+        };
         s.Children.Add(_k.Group(
             _k.Row(P.Dark ? "moon" : "sun", S.Theme, S.ThemeDetail,
                 _k.Segmented(theme, i =>
                 {
-                    var t = i switch { 1 => LauncherSettings.ThemeDark, 2 => LauncherSettings.ThemeLight, _ => LauncherSettings.ThemeSystem };
+                    var t = i switch
+                    {
+                        1 => LauncherSettings.ThemeDark,
+                        2 => LauncherSettings.ThemeLight,
+                        _ => LauncherSettings.ThemeSystem
+                    };
                     Set(() => _settings.UiTheme = t);
                     ThemeChanged?.Invoke(t);
                 }, (S.ThemeSystem, null, null), (S.ThemeDark, "moon", null), (S.ThemeLight, "sun", null)))));
-        int lang = _settings.Language switch { Loc.English => 1, Loc.Portuguese => 2, _ => 0 };
+        int lang = _settings.Language switch
+        {
+            Loc.English => 1,
+            Loc.Portuguese => 2,
+            _ => 0
+        };
         s.Children.Add(_k.Group(
             _k.Row("globe", S.Language, S.LanguageDetail,
                 _k.Segmented(lang, i =>
@@ -290,9 +364,16 @@ public sealed class SettingsPage : UserControl
         var psnId = _k.Field(_settings.PsnOnlineId, text =>
         {
             string id = text.Trim();
-            if (id.Length == 0) id = VitaSharp.Core.Hle.PsnAccount.DefaultOnlineId;
+            if (id.Length == 0)
+            {
+                id = VitaSharp.Core.Hle.PsnAccount.DefaultOnlineId;
+            }
+
             psnIdError.IsVisible = !VitaSharp.Core.Hle.PsnAccount.IsValidOnlineId(id);
-            if (!psnIdError.IsVisible) Set(() => _settings.PsnOnlineId = id);
+            if (!psnIdError.IsVisible)
+            {
+                Set(() => _settings.PsnOnlineId = id);
+            }
         }, 220, VitaSharp.Core.Hle.PsnAccount.DefaultOnlineId);
         psnId.MaxLength = 16;
         var rpcnServer = _k.Field(_settings.RpcnServer, t => Set(() => _settings.RpcnServer = t.Trim()), 260, S.RpcnServerWatermark);
@@ -336,7 +417,10 @@ public sealed class SettingsPage : UserControl
             }, 36)),
             _k.Row("hdd", S.DataFolder, Program.DataRoot, _k.Secondary(S.Open, null, () =>
             {
-                try { System.Diagnostics.Process.Start(new System.Diagnostics.ProcessStartInfo(Program.DataRoot) { UseShellExecute = true }); }
+                try
+                {
+                    System.Diagnostics.Process.Start(new System.Diagnostics.ProcessStartInfo(Program.DataRoot) { UseShellExecute = true });
+                }
                 catch (Exception) { }
             }, 36))));
         s.Children.Add(_k.GroupTitle(S.Shortcuts));

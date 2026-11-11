@@ -39,10 +39,24 @@ public sealed class ShellVisuals
     /// <summary>An image file (PNG/JPEG), cached; null when missing or not decodable.</summary>
     public Bitmap? File(string? path)
     {
-        if (string.IsNullOrEmpty(path)) return null;
-        if (_files.TryGetValue(path, out var b)) return b;
-        try { b = System.IO.File.Exists(path) ? new Bitmap(path) : null; }
-        catch (Exception) { b = null; }
+        if (string.IsNullOrEmpty(path))
+        {
+            return null;
+        }
+
+        if (_files.TryGetValue(path, out var b))
+        {
+            return b;
+        }
+
+        try
+        {
+            b = System.IO.File.Exists(path) ? new Bitmap(path) : null;
+        }
+        catch (Exception)
+        {
+            b = null;
+        }
         _files[path] = b;
         return b;
     }
@@ -51,7 +65,11 @@ public sealed class ShellVisuals
     public Bitmap? Texture(string rco, string id)
     {
         string key = rco + "|" + id;
-        if (_textures.TryGetValue(key, out var b)) return b;
+        if (_textures.TryGetValue(key, out var b))
+        {
+            return b;
+        }
+
         b = Assets.Texture(rco, id) is { } img ? ToBitmap(img) : null;
         _textures[key] = b;
         return b;
@@ -62,7 +80,10 @@ public sealed class ShellVisuals
         var wb = new WriteableBitmap(new PixelSize(img.Width, img.Height), new Vector(96, 96), PixelFormat.Rgba8888, AlphaFormat.Unpremul);
         using var fb = wb.Lock();
         for (int y = 0; y < img.Height; y++)
+        {
             Marshal.Copy(img.Pixels, y * img.Width * 4, fb.Address + y * fb.RowBytes, img.Width * 4);
+        }
+
         return wb;
     }
 

@@ -54,8 +54,17 @@ public sealed class LauncherApp : Application
         Styles.Add(new Style(x => x.OfType<Button>().Class("flat").Class(":pressed")) { Setters = { new Setter(Visual.OpacityProperty, 0.7) } });
         // the VitaSharp logo on every launcher window (library, dialogs)
         if (VitaSharp.Desktop.Host.AppIcon.ForAvalonia() is { } icon)
+        {
             Styles.Add(new Style(x => x.Is<Window>()) { Setters = { new Setter(Window.IconProperty, icon) } });
-        ActualThemeVariantChanged += (_, _) => { if (FollowsSystem) SyncPalette(); };
+        }
+
+        ActualThemeVariantChanged += (_, _) =>
+        {
+            if (FollowsSystem)
+            {
+                SyncPalette();
+            }
+        };
     }
 
     static bool FollowsSystem;
@@ -63,7 +72,11 @@ public sealed class LauncherApp : Application
     /// <summary>Applies "system", "dark" or "light" (<see cref="LauncherSettings.UiTheme"/>) and updates <see cref="Palette.Current"/>.</summary>
     public static void ApplyTheme(string uiTheme)
     {
-        if (Current is not { } app) return;
+        if (Current is not { } app)
+        {
+            return;
+        }
+
         FollowsSystem = uiTheme is not (LauncherSettings.ThemeDark or LauncherSettings.ThemeLight);
         app.RequestedThemeVariant = uiTheme switch
         {
@@ -81,7 +94,11 @@ public sealed class LauncherApp : Application
     {
         var dark = Current?.ActualThemeVariant != ThemeVariant.Light;
         var p = dark ? Palette.DarkSet : Palette.LightSet;
-        if (p == Palette.Current) return;
+        if (p == Palette.Current)
+        {
+            return;
+        }
+
         Palette.Current = p;
         PaletteChanged?.Invoke();
     }
@@ -92,13 +109,27 @@ public sealed class LauncherApp : Application
     public override void OnFrameworkInitializationCompleted()
     {
         if (ApplicationLifetime is IClassicDesktopStyleApplicationLifetime desktop)
-            if (StartupOverride != null) StartupOverride(desktop); else desktop.MainWindow = new MainWindow();
+        {
+            if (StartupOverride != null)
+            {
+                StartupOverride(desktop);
+            }
+            else
+            {
+                desktop.MainWindow = new MainWindow();
+            }
+        }
+
         base.OnFrameworkInitializationCompleted();
     }
 
     public static int Run(string[] args)
     {
-        if (StartupOverride == null) HideOwnConsole();
+        if (StartupOverride == null)
+        {
+            HideOwnConsole();
+        }
+
         return AppBuilder.Configure<LauncherApp>()
             .UsePlatformDetect()
             .LogToTrace()
@@ -115,9 +146,16 @@ public sealed class LauncherApp : Application
     /// <summary>When started from Explorer, Windows opens a console just for us; the launcher does not need it.</summary>
     static void HideOwnConsole()
     {
-        if (!OperatingSystem.IsWindows()) return;
+        if (!OperatingSystem.IsWindows())
+        {
+            return;
+        }
+
         var pids = new uint[2];
-        if (GetConsoleProcessList(pids, 2) == 1) FreeConsole();
+        if (GetConsoleProcessList(pids, 2) == 1)
+        {
+            FreeConsole();
+        }
     }
 
     [DllImport("kernel32.dll")] static extern uint GetConsoleProcessList(uint[] list, uint count);

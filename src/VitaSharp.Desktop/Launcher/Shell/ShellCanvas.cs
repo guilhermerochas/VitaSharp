@@ -51,7 +51,11 @@ public abstract class ShellCanvas : Control
     protected (double Scale, double X, double Y) Fit()
     {
         double s = Math.Min(Bounds.Width / W, Bounds.Height / H);
-        if (s <= 0 || double.IsNaN(s)) s = 1;
+        if (s <= 0 || double.IsNaN(s))
+        {
+            s = 1;
+        }
+
         return (s, (Bounds.Width - W * s) / 2, (Bounds.Height - H * s) / 2);
     }
 
@@ -69,7 +73,11 @@ public abstract class ShellCanvas : Control
         _anim = new DispatcherTimer { Interval = TimeSpan.FromMilliseconds(16) };
         _anim.Tick += (_, _) =>
         {
-            if (!step()) _anim!.Stop();
+            if (!step())
+            {
+                _anim!.Stop();
+            }
+
             InvalidateVisual();
         };
         _anim.Start();
@@ -83,7 +91,10 @@ public abstract class ShellCanvas : Control
         var (s, x, y) = Fit();
         using (ctx.PushTransform(Matrix.CreateScale(s, s) * Matrix.CreateTranslation(x, y)))
         {
-            using (ctx.PushClip(new Rect(0, 0, W, H))) RenderScreen(ctx);
+            using (ctx.PushClip(new Rect(0, 0, W, H)))
+            {
+                RenderScreen(ctx);
+            }
         }
     }
 
@@ -99,8 +110,15 @@ public abstract class ShellCanvas : Control
             double w = wp.Size.Width * s, h = wp.Size.Height * s;
             ctx.DrawImage(wp, new Rect(wp.Size), new Rect((full.Width - w) / 2, (full.Height - h) / 2, w, h));
         }
-        else DrawDefaultWave(ctx, full);
-        if (dim > 0) ctx.FillRectangle(new SolidColorBrush(Color.FromArgb((byte)(dim * 255), 0, 0, 0)), full);
+        else
+        {
+            DrawDefaultWave(ctx, full);
+        }
+
+        if (dim > 0)
+        {
+            ctx.FillRectangle(new SolidColorBrush(Color.FromArgb((byte)(dim * 255), 0, 0, 0)), full);
+        }
     }
 
     /// <summary>
@@ -124,19 +142,23 @@ public abstract class ShellCanvas : Control
         }
         ctx.DrawGeometry(new LinearGradientBrush
         {
-            StartPoint = new RelativePoint(0, 0, RelativeUnit.Relative), EndPoint = new RelativePoint(1, 1, RelativeUnit.Relative),
+            StartPoint = new RelativePoint(0, 0, RelativeUnit.Relative),
+            EndPoint = new RelativePoint(1, 1, RelativeUnit.Relative),
             GradientStops = { new GradientStop(Color.FromArgb(150, 40, 110, 235), 0), new GradientStop(Color.FromArgb(200, 70, 170, 245), 1) },
         }, null, Wave(0.78, 0.86, 0.35, 0.28));
         ctx.DrawGeometry(new LinearGradientBrush
         {
-            StartPoint = new RelativePoint(0, 0, RelativeUnit.Relative), EndPoint = new RelativePoint(1, 1, RelativeUnit.Relative),
+            StartPoint = new RelativePoint(0, 0, RelativeUnit.Relative),
+            EndPoint = new RelativePoint(1, 1, RelativeUnit.Relative),
             GradientStops = { new GradientStop(Color.FromArgb(120, 60, 150, 245), 0), new GradientStop(Color.FromArgb(230, 95, 195, 250), 1) },
         }, null, Wave(0.95, 0.98, 0.55, 0.42));
         // a soft light along the crest
         var glow = new RadialGradientBrush
         {
-            Center = new RelativePoint(0.8, 0.35, RelativeUnit.Relative), GradientOrigin = new RelativePoint(0.8, 0.35, RelativeUnit.Relative),
-            RadiusX = new RelativeScalar(0.5, RelativeUnit.Relative), RadiusY = new RelativeScalar(0.4, RelativeUnit.Relative),
+            Center = new RelativePoint(0.8, 0.35, RelativeUnit.Relative),
+            GradientOrigin = new RelativePoint(0.8, 0.35, RelativeUnit.Relative),
+            RadiusX = new RelativeScalar(0.5, RelativeUnit.Relative),
+            RadiusY = new RelativeScalar(0.4, RelativeUnit.Relative),
             GradientStops = { new GradientStop(Color.FromArgb(70, 200, 235, 255), 0), new GradientStop(Color.FromArgb(0, 200, 235, 255), 1) },
         };
         ctx.FillRectangle(glow, r);
@@ -151,7 +173,8 @@ public abstract class ShellCanvas : Control
         var barColor = Visuals.Theme?.BarColor is { } bc ? ShellVisuals.ToColor(bc) : Color.FromArgb(110, 0, 0, 0);
         ctx.FillRectangle(new LinearGradientBrush
         {
-            StartPoint = new RelativePoint(0, 0, RelativeUnit.Relative), EndPoint = new RelativePoint(0, 1, RelativeUnit.Relative),
+            StartPoint = new RelativePoint(0, 0, RelativeUnit.Relative),
+            EndPoint = new RelativePoint(0, 1, RelativeUnit.Relative),
             GradientStops = { new GradientStop(barColor, 0), new GradientStop(Color.FromArgb((byte)(barColor.A / 2), barColor.R, barColor.G, barColor.B), 1) },
         }, new Rect(0, 0, W, StatusBarHeight));
         var now = ClockOverride ?? DateTime.Now;
@@ -188,7 +211,9 @@ public abstract class ShellCanvas : Control
             var o = new Point(x + 4, 23);
             ctx.DrawEllipse(Brushes.White, null, o, 2, 2);
             foreach (var rad in new[] { 7.0, 12.0, 17.0 })
+            {
                 ctx.DrawGeometry(null, pen, Arc(o, rad));
+            }
         }
         if (!string.IsNullOrEmpty(left))
         {
@@ -210,9 +235,17 @@ public abstract class ShellCanvas : Control
     protected static FormattedText Text(string s, double size, IBrush brush, Typeface? face = null, double maxWidth = 0, TextAlignment align = TextAlignment.Left, int maxLines = 1)
     {
         var ft = new FormattedText(s, CultureInfo.CurrentUICulture, FlowDirection.LeftToRight, face ?? Ui, size, brush);
-        if (maxWidth > 0) { ft.MaxTextWidth = maxWidth; ft.Trimming = TextTrimming.CharacterEllipsis; }
+        if (maxWidth > 0)
+        {
+            ft.MaxTextWidth = maxWidth;
+            ft.Trimming = TextTrimming.CharacterEllipsis;
+        }
         ft.TextAlignment = align;
-        if (maxLines > 0) ft.MaxLineCount = maxLines;
+        if (maxLines > 0)
+        {
+            ft.MaxLineCount = maxLines;
+        }
+
         return ft;
     }
 
@@ -222,7 +255,10 @@ public abstract class ShellCanvas : Control
         using (ctx.PushOpacity(alpha))
         {
             var geo = ft.BuildGeometry(at + new Point(0, 1.2));
-            if (geo != null) ctx.DrawGeometry(Brushes.Black, new Pen(Brushes.Black, 2.5, lineJoin: PenLineJoin.Round), geo);
+            if (geo != null)
+            {
+                ctx.DrawGeometry(Brushes.Black, new Pen(Brushes.Black, 2.5, lineJoin: PenLineJoin.Round), geo);
+            }
         }
         ctx.DrawText(ft, at);
     }

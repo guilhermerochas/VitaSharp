@@ -92,8 +92,16 @@ public static class Strings
     public static string When(DateTime local)
     {
         var today = DateTime.Today;
-        if (local.Date == today) return F(T("WhenToday"), local);
-        if (local.Date == today.AddDays(-1)) return F(T("WhenYesterday"), local);
+        if (local.Date == today)
+        {
+            return F(T("WhenToday"), local);
+        }
+
+        if (local.Date == today.AddDays(-1))
+        {
+            return F(T("WhenYesterday"), local);
+        }
+
         return F(T("WhenDate"), local);
     }
 

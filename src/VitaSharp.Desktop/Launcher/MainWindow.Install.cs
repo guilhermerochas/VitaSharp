@@ -12,7 +12,10 @@ using S = VitaSharp.Desktop.Launcher.Ui.Strings;
 
 namespace VitaSharp.Desktop.Launcher;
 
-public enum JobState { Waiting, Running, Done, Failed, Cancelled }
+public enum JobState
+{
+    Waiting, Running, Done, Failed, Cancelled
+}
 
 /// <summary>One item of the install queue: a VPK/zip, a PKG with its license or a game folder.</summary>
 public sealed class InstallJob
@@ -38,7 +41,10 @@ public sealed partial class MainWindow
     {
         _jobs.Add(job);
         JobsChanged();
-        if (!_queueRunning) _ = RunQueue();
+        if (!_queueRunning)
+        {
+            _ = RunQueue();
+        }
     }
 
     async Task RunQueue()
@@ -84,10 +90,16 @@ public sealed partial class MainWindow
                     _ => S.InstallFailedOf(job.Name),
                 });
                 JobsChanged();
-                if (job.State == JobState.Failed && _page != PageInstall) Navigate(PageInstall);
+                if (job.State == JobState.Failed && _page != PageInstall)
+                {
+                    Navigate(PageInstall);
+                }
             }
         }
-        finally { _queueRunning = false; }
+        finally
+        {
+            _queueRunning = false;
+        }
     }
 
     bool _jobsDirty;
@@ -95,14 +107,24 @@ public sealed partial class MainWindow
     /// <summary>Redraws the sidebar card and the install page, at most a few times per second.</summary>
     void JobsChanged()
     {
-        if (_jobsDirty) return;
+        if (_jobsDirty)
+        {
+            return;
+        }
+
         _jobsDirty = true;
         DispatcherTimer.RunOnce(() =>
         {
             _jobsDirty = false;
             RebuildSidebar();
-            if (_page == PageInstall) ShowPage();
-            else if (_page == PageLibrary && _all.Count > 0 && _contentHost.Child is ScrollViewer) ShowPage(); // the first-run page becomes the library
+            if (_page == PageInstall)
+            {
+                ShowPage();
+            }
+            else if (_page == PageLibrary && _all.Count > 0 && _contentHost.Child is ScrollViewer)
+            {
+                ShowPage(); // the first-run page becomes the library
+            }
         }, TimeSpan.FromMilliseconds(200));
     }
 
@@ -110,7 +132,11 @@ public sealed partial class MainWindow
     {
         Dispatcher.UIThread.Post(() =>
         {
-            if (job.State != JobState.Running) return; // a late report after the install finished
+            if (job.State != JobState.Running)
+            {
+                return; // a late report after the install finished
+            }
+
             job.Progress = p.Fraction;
             job.Detail = p.Describe();
             SetStatus($"{S.Installing} {job.Name}\u2026 {job.Detail}");
@@ -121,7 +147,11 @@ public sealed partial class MainWindow
     Control? InstallCard()
     {
         var job = _jobs.FirstOrDefault(j => j.State == JobState.Running);
-        if (job == null) return null;
+        if (job == null)
+        {
+            return null;
+        }
+
         int waiting = _jobs.Count(j => j.State == JobState.Waiting);
         var head = new Grid { ColumnDefinitions = new ColumnDefinitions("Auto,*,Auto") };
         head.Children.Add(new Border { Margin = new Thickness(0, 0, 8, 0), Child = _k.Icon("download", 16, P.Accent) });
@@ -130,8 +160,12 @@ public sealed partial class MainWindow
         var body = _k.VStack(8, head, _k.Text(job.Name, 13.5, FontWeight.Medium), _k.Bar(job.Progress, 5), _k.Text(job.Detail, 11.5, color: P.Muted));
         return Kit.Click(new Border
         {
-            Background = Kit.B(P.Surface), BorderBrush = Kit.B(P.Border), BorderThickness = new Thickness(1),
-            CornerRadius = new CornerRadius(16), Padding = new Thickness(14, 12), Child = body,
+            Background = Kit.B(P.Surface),
+            BorderBrush = Kit.B(P.Border),
+            BorderThickness = new Thickness(1),
+            CornerRadius = new CornerRadius(16),
+            Padding = new Thickness(14, 12),
+            Child = body,
         }, () => Navigate(PageInstall));
     }
 
@@ -154,19 +188,29 @@ public sealed partial class MainWindow
         var head = new Grid { ColumnDefinitions = new ColumnDefinitions("*,Auto"), Margin = new Thickness(0, 26, 0, 12) };
         head.Children.Add(_k.Text(S.Queue, 17, FontWeight.SemiBold));
         if (_jobs.Any(j => j.State is JobState.Done or JobState.Failed or JobState.Cancelled))
+        {
             head.Children.Add(Kit.At(Kit.Click(_k.Text(S.ClearFinished, 13, FontWeight.SemiBold, P.Accent), () =>
             {
                 _jobs.RemoveAll(j => j.State is JobState.Done or JobState.Failed or JobState.Cancelled);
                 JobsChanged();
             }), col: 1));
+        }
+
         page.Children.Add(head);
-        if (_jobs.Count == 0) page.Children.Add(_k.Card(_k.Wrap(S.QueueEmpty, 13.5), 18, new Thickness(20)));
+        if (_jobs.Count == 0)
+        {
+            page.Children.Add(_k.Card(_k.Wrap(S.QueueEmpty, 13.5), 18, new Thickness(20)));
+        }
         else
         {
             var rows = new StackPanel();
             foreach (var j in _jobs.AsEnumerable().Reverse())
             {
-                if (rows.Children.Count > 0) rows.Children.Add(_k.Divider(16));
+                if (rows.Children.Count > 0)
+                {
+                    rows.Children.Add(_k.Divider(16));
+                }
+
                 rows.Children.Add(JobRow(j));
             }
             page.Children.Add(_k.Card(rows, 18, new Thickness(0, 4)));
@@ -197,7 +241,11 @@ public sealed partial class MainWindow
         };
         var t = _k.VStack(5, _k.HStack(8, _k.Text(game?.Title ?? j.Name, 14, FontWeight.SemiBold), j.State == JobState.Done ? _k.Icon("check", 15, P.Ok, 2.4) : null),
             _k.Wrap(detail, 12.5, j.State == JobState.Failed ? P.Danger : P.Muted));
-        if (j.State == JobState.Running) t.Children.Add(new Border { Width = 520, HorizontalAlignment = HorizontalAlignment.Left, Child = _k.Bar(j.Progress, 5) });
+        if (j.State == JobState.Running)
+        {
+            t.Children.Add(new Border { Width = 520, HorizontalAlignment = HorizontalAlignment.Left, Child = _k.Bar(j.Progress, 5) });
+        }
+
         t.Margin = new Thickness(14, 0, 16, 0);
         t.VerticalAlignment = VerticalAlignment.Center;
         r.Children.Add(Kit.At(t, col: 1));
@@ -224,7 +272,12 @@ public sealed partial class MainWindow
             FileTypeFilter = [new FilePickerFileType(S.VpkFileType) { Patterns = ["*.vpk", "*.zip"] }, FilePickerFileTypes.All],
         });
         foreach (var f in files)
-            if (f.TryGetLocalPath() is { } path) EnqueueVpk(path);
+        {
+            if (f.TryGetLocalPath() is { } path)
+            {
+                EnqueueVpk(path);
+            }
+        }
     }
 
     async Task InstallPkg()
@@ -235,14 +288,20 @@ public sealed partial class MainWindow
             FileTypeFilter = [new FilePickerFileType(S.PkgFileType) { Patterns = ["*.pkg"] }],
         });
         var pkg = pkgs.FirstOrDefault()?.TryGetLocalPath();
-        if (pkg != null) await AskLicenseAndQueue(pkg);
+        if (pkg != null)
+        {
+            await AskLicenseAndQueue(pkg);
+        }
     }
 
     async Task AddFolder()
     {
         var dirs = await StorageProvider.OpenFolderPickerAsync(new FolderPickerOpenOptions { Title = S.PickFolderTitle });
         var dir = dirs.FirstOrDefault()?.TryGetLocalPath();
-        if (dir != null) await EnqueueFolder(dir);
+        if (dir != null)
+        {
+            await EnqueueFolder(dir);
+        }
     }
 
     async void OnDrop(object? sender, DragEventArgs e)
@@ -251,9 +310,24 @@ public sealed partial class MainWindow
         var pkg = items.FirstOrDefault(p => p.EndsWith(".pkg", StringComparison.OrdinalIgnoreCase));
         var lic = items.FirstOrDefault(p => p.EndsWith(".bin", StringComparison.OrdinalIgnoreCase) || p.EndsWith(".rif", StringComparison.OrdinalIgnoreCase));
         var archives = items.Where(p => File.Exists(p) && (p.EndsWith(".vpk", StringComparison.OrdinalIgnoreCase) || p.EndsWith(".zip", StringComparison.OrdinalIgnoreCase))).ToList();
-        if (archives.Count > 0) foreach (var a in archives) EnqueueVpk(a);
-        else if (pkg != null) await QueuePkg(pkg, lic, items.FirstOrDefault(p => Path.GetFileName(p).Equals("act.dat", StringComparison.OrdinalIgnoreCase)));
-        else foreach (var dir in items.Where(Directory.Exists)) await EnqueueFolder(dir);
+        if (archives.Count > 0)
+        {
+            foreach (var a in archives)
+            {
+                EnqueueVpk(a);
+            }
+        }
+        else if (pkg != null)
+        {
+            await QueuePkg(pkg, lic, items.FirstOrDefault(p => Path.GetFileName(p).Equals("act.dat", StringComparison.OrdinalIgnoreCase)));
+        }
+        else
+        {
+            foreach (var dir in items.Where(Directory.Exists))
+            {
+                await EnqueueFolder(dir);
+            }
+        }
     }
 
     // ------------------------------------------------------------------ the installers
@@ -270,7 +344,11 @@ public sealed partial class MainWindow
                 Progress = p =>
                 {
                     int permille = (int)(p.Fraction * 1000);
-                    if (permille == lastPermille) return;
+                    if (permille == lastPermille)
+                    {
+                        return;
+                    }
+
                     lastPermille = permille;
                     Report(job, p);
                 },
@@ -283,10 +361,17 @@ public sealed partial class MainWindow
                 })).GetAwaiter().GetResult(),
             }, ct), ct);
             foreach (var r in results)
+            {
                 AppendLog(r.Installed ? $"Installed {r.TitleId} \"{r.Content.Title}\" ({r.Content.Kind}) -> {r.InstallPath}"
                                       : $"Skipped {r.TitleId} ({r.Content.Kind}): already installed");
+            }
+
             var installed = results.Where(r => r.Installed).ToList();
-            if (installed.Count == 0) { job.Detail = S.NothingInstalled(job.Name); return null; }
+            if (installed.Count == 0)
+            {
+                job.Detail = S.NothingInstalled(job.Name);
+                return null;
+            }
             var app = installed.FirstOrDefault(r => r.Content.Kind == VpkContentKind.App) ?? installed[0];
             job.Detail = string.Join("  ", installed.Select(r => r.Content.Kind switch
             {
@@ -331,7 +416,10 @@ public sealed partial class MainWindow
     async Task<bool> QueuePkg(string pkg, string? lic, string? act = null)
     {
         PkgInfo info;
-        try { info = await Task.Run(() => PkgInstaller.Inspect(pkg)); }
+        try
+        {
+            info = await Task.Run(() => PkgInstaller.Inspect(pkg));
+        }
         catch (Exception e) when (e is InvalidDataException or NotSupportedException or IOException or UnauthorizedAccessException)
         {
             SetStatus(S.PkgUnreadable(e.Message));
@@ -346,7 +434,11 @@ public sealed partial class MainWindow
             return true;
         }
         lic ??= await AskPkgLicense(pkg, info);
-        if (lic == null) return false;
+        if (lic == null)
+        {
+            return false;
+        }
+
         EnqueuePkg(pkg, lic);
         return true;
     }
@@ -354,14 +446,22 @@ public sealed partial class MainWindow
     async Task EnqueueFolder(string dir)
     {
         var entry = GameLibrary.Read(dir);
-        if (entry == null) { SetStatus(S.NotAGameFolder); return; }
+        if (entry == null)
+        {
+            SetStatus(S.NotAGameFolder);
+            return;
+        }
         var dest = Path.Combine(Program.Ux0, "app", entry.TitleId);
         if (Path.GetFullPath(dir).TrimEnd('\\', '/').Equals(Path.GetFullPath(dest).TrimEnd('\\', '/'), StringComparison.OrdinalIgnoreCase))
         {
             Refresh();
             return;
         }
-        if (Directory.Exists(dest) && !await Confirm(S.ReplaceFolder(entry.TitleId))) return;
+        if (Directory.Exists(dest) && !await Confirm(S.ReplaceFolder(entry.TitleId)))
+        {
+            return;
+        }
+
         Enqueue(new InstallJob
         {
             Name = entry.Title,
@@ -370,7 +470,11 @@ public sealed partial class MainWindow
                 job.Detail = S.Copying;
                 await Task.Run(() =>
                 {
-                    if (Directory.Exists(dest)) Directory.Delete(dest, true);
+                    if (Directory.Exists(dest))
+                    {
+                        Directory.Delete(dest, true);
+                    }
+
                     CopyDirectory(dir, dest, ct);
                 }, ct);
                 job.Detail = S.Added(entry.Title);
@@ -387,7 +491,10 @@ public sealed partial class MainWindow
             ct.ThrowIfCancellationRequested();
             File.Copy(f, Path.Combine(dst, Path.GetFileName(f)), true);
         }
-        foreach (var d in Directory.GetDirectories(src)) CopyDirectory(d, Path.Combine(dst, Path.GetFileName(d)), ct);
+        foreach (var d in Directory.GetDirectories(src))
+        {
+            CopyDirectory(d, Path.Combine(dst, Path.GetFileName(d)), ct);
+        }
     }
 
     /// <summary>The license of a package: a work.bin/.rif file chosen with the picker, or a zRIF pasted in the text
@@ -398,14 +505,33 @@ public sealed partial class MainWindow
         Window? dlg = null;
         var zrif = new TextBox { Watermark = S.ZrifWatermark, AcceptsReturn = false, TextWrapping = TextWrapping.Wrap, MinHeight = 60, CornerRadius = new CornerRadius(12) };
         var error = _k.Wrap("", 12.5, P.Danger).Also(t => t.IsVisible = false);
-        void Fail(string message) { error.Text = message; error.IsVisible = true; }
+        void Fail(string message)
+        {
+            error.Text = message;
+            error.IsVisible = true;
+        }
         void Submit()
         {
             string text = new((zrif.Text ?? "").Where(c => !char.IsWhiteSpace(c)).ToArray());
-            if (text.Length == 0) { Fail(S.ZrifEmpty); return; }
-            if (!Zrif.LooksLikeZrif(text)) { Fail(S.ZrifNot); return; }
-            try { Zrif.Decode(text); }
-            catch (Exception e) { Fail(S.ZrifUnreadable(e.Message)); return; }
+            if (text.Length == 0)
+            {
+                Fail(S.ZrifEmpty);
+                return;
+            }
+            if (!Zrif.LooksLikeZrif(text))
+            {
+                Fail(S.ZrifNot);
+                return;
+            }
+            try
+            {
+                Zrif.Decode(text);
+            }
+            catch (Exception e)
+            {
+                Fail(S.ZrifUnreadable(e.Message));
+                return;
+            }
             result = text;
             dlg?.Close();
         }
@@ -417,7 +543,11 @@ public sealed partial class MainWindow
                 Title = S.PickLicenseTitle,
                 FileTypeFilter = [new FilePickerFileType(S.LicenseFileType) { Patterns = ["*.bin", "*.rif"] }, FilePickerFileTypes.All],
             });
-            if (lics.FirstOrDefault()?.TryGetLocalPath() is { } path) { result = path; dlg.Close(); }
+            if (lics.FirstOrDefault()?.TryGetLocalPath() is { } path)
+            {
+                result = path;
+                dlg.Close();
+            }
         }, 40);
         var cancel = _k.Secondary(S.Cancel, null, () => dlg?.Close(), 40);
         var buttons = _k.HStack(8, cancel, install);
@@ -427,7 +557,11 @@ public sealed partial class MainWindow
             _k.Wrap(S.LicenseText, 13.5, P.TextSoft), zrif, file.Also(f => f.HorizontalAlignment = HorizontalAlignment.Left), error, buttons);
         panel.Margin = new Thickness(24);
         dlg = Dialog(panel, 500);
-        if (LicenseDialogForTests is { } hook) dlg.Opened += (_, _) => hook(dlg, zrif, Submit);
+        if (LicenseDialogForTests is { } hook)
+        {
+            dlg.Opened += (_, _) => hook(dlg, zrif, Submit);
+        }
+
         await dlg.ShowDialog(this);
         return result;
     }
@@ -444,15 +578,26 @@ public sealed partial class MainWindow
 
     async Task Uninstall(GameEntry g)
     {
-        if (!await Confirm(S.ConfirmUninstall(g.Title, g.TitleId), S.Uninstall, danger: true)) return;
+        if (!await Confirm(S.ConfirmUninstall(g.Title, g.TitleId), S.Uninstall, danger: true))
+        {
+            return;
+        }
+
         try
         {
             await Task.Run(() => Directory.Delete(g.Path, true));
             Kit.ForgetImages(g.Path);
             SetStatus(S.Uninstalled(g.Title));
         }
-        catch (Exception e) { SetStatus(S.UninstallFailed(e.Message)); }
-        if (_page == PageGame) _page = PageLibrary;
+        catch (Exception e)
+        {
+            SetStatus(S.UninstallFailed(e.Message));
+        }
+        if (_page == PageGame)
+        {
+            _page = PageLibrary;
+        }
+
         Refresh();
     }
 }

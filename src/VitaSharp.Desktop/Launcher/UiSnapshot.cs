@@ -33,7 +33,11 @@ static class UiSnapshot
                         : args.Any(a => a == "--home" || a.StartsWith("--livearea")) ? await HomeScript(outDir, args)
                         : await Script(outDir);
                 }
-                catch (Exception e) { Console.WriteLine("ui-snapshot failed: " + e); rc = 1; }
+                catch (Exception e)
+                {
+                    Console.WriteLine("ui-snapshot failed: " + e);
+                    rc = 1;
+                }
                 desktop.Shutdown(rc);
             });
         };
@@ -47,16 +51,33 @@ static class UiSnapshot
         foreach (var pk in Enum.GetValues<PhysicalKey>())
         {
             var name = KeyNames.FromAvalonia(pk, Key.None);
-            if (name != null && !Enum.TryParse<Silk.NET.Input.Key>(name, out _)) { Console.WriteLine($"  key name {pk} -> {name} is not a Silk.NET key"); bad++; }
+            if (name != null && !Enum.TryParse<Silk.NET.Input.Key>(name, out _))
+            {
+                Console.WriteLine($"  key name {pk} -> {name} is not a Silk.NET key");
+                bad++;
+            }
         }
         foreach (var k in Enum.GetValues<Key>())
         {
             var name = KeyNames.FromAvalonia(PhysicalKey.None, k);
-            if (name != null && !Enum.TryParse<Silk.NET.Input.Key>(name, out _)) { Console.WriteLine($"  key name {k} -> {name} is not a Silk.NET key"); bad++; }
+            if (name != null && !Enum.TryParse<Silk.NET.Input.Key>(name, out _))
+            {
+                Console.WriteLine($"  key name {k} -> {name} is not a Silk.NET key");
+                bad++;
+            }
         }
         foreach (var c in VitaControls.All)
+        {
             foreach (var b in DefaultMappings.Keyboard().Get(c))
-                if (!Enum.TryParse<Silk.NET.Input.Key>(b.Key, out _)) { Console.WriteLine($"  default key {b.Key} is not a Silk.NET key"); bad++; }
+            {
+                if (!Enum.TryParse<Silk.NET.Input.Key>(b.Key, out _))
+                {
+                    Console.WriteLine($"  default key {b.Key} is not a Silk.NET key");
+                    bad++;
+                }
+            }
+        }
+
         Console.WriteLine(bad == 0 ? "key names: ok" : $"key names: {bad} problem(s)");
         return bad;
     }
@@ -79,7 +100,11 @@ static class UiSnapshot
         main.Show();
         await Shot(main, "library");
         var game = GameLibrary.Scan(Program.Ux0).FirstOrDefault(g => TrophySetView.ForGame(g.Path, Program.FsRoot, 1).Count > 0);
-        if (game == null) { Console.WriteLine("no game with trophies"); return 1; }
+        if (game == null)
+        {
+            Console.WriteLine("no game with trophies");
+            return 1;
+        }
         main.Navigate(MainWindow.PageTrophies);
         await Shot(main, "trophies");
         main.Close();
@@ -108,7 +133,11 @@ static class UiSnapshot
             Console.WriteLine($"  wrote {path}");
         }
         var shell = main.ShellView;
-        if (shell == null) { Console.WriteLine("home view missing"); return 1; }
+        if (shell == null)
+        {
+            Console.WriteLine("home view missing");
+            return 1;
+        }
         var assets = shell.Visuals.Assets;
         Console.WriteLine($"firmware: {(assets.HasFirmware ? "yes" : "no")}, theme: {shell.Visuals.Theme?.Title ?? "(default look)"}, " +
                           $"wallpaper: {(shell.Visuals.Wallpaper != null ? "yes" : "no")}, apps: {shell.Home.Apps.Count}, pages: {shell.Home.Pages}");
@@ -116,7 +145,14 @@ static class UiSnapshot
         {
             foreach (var (rco, id) in new[] { (Core.Shell.ShellAssets.TopMenuRco, Core.Shell.ShellAssets.Textures.PageDot), (Core.Shell.ShellAssets.IndicatorRco, Core.Shell.ShellAssets.Textures.Battery),
                          (Core.Shell.ShellAssets.IndicatorRco, Core.Shell.ShellAssets.Textures.Wifi) })
-                if (assets.Texture(rco, id) == null) { Console.WriteLine($"  texture {id} of {rco}: MISSING"); failures++; }
+            {
+                if (assets.Texture(rco, id) == null)
+                {
+                    Console.WriteLine($"  texture {id} of {rco}: MISSING");
+                    failures++;
+                }
+            }
+
             foreach (var e in Enum.GetValues<Core.Shell.ShellSoundEffect>())
             {
                 var s = assets.Sound(e);
@@ -128,10 +164,15 @@ static class UiSnapshot
                 // decode the first seconds (not played) to check the ATRAC9 path
                 var reader = Core.Shell.At9Reader.Open(bgm);
                 var pcm = new List<short>();
-                while (pcm.Count < reader.SampleRate * reader.Channels * 3 && reader.Read(pcm, out _)) { }
+                while (pcm.Count < reader.SampleRate * reader.Channels * 3 && reader.Read(pcm, out _))
+                {
+                }
                 int peak = pcm.Count == 0 ? 0 : pcm.Max(s => Math.Abs((int)s));
                 Console.WriteLine($"  BGM decode: {reader.SampleRate} Hz, {reader.Channels} ch, {reader.TotalSamples / (double)reader.SampleRate:F1} s, first 3 s peak {peak}");
-                if (peak == 0) failures++;
+                if (peak == 0)
+                {
+                    failures++;
+                }
             }
         }
         await Shot("home_page1", 900);
@@ -205,14 +246,21 @@ static class UiSnapshot
 
         void Key(Key k, PhysicalKey pk, bool down) => dlg.RaiseEvent(new KeyEventArgs
         {
-            RoutedEvent = down ? InputElement.KeyDownEvent : InputElement.KeyUpEvent, Key = k, PhysicalKey = pk, Source = dlg,
+            RoutedEvent = down ? InputElement.KeyDownEvent : InputElement.KeyUpEvent,
+            Key = k,
+            PhysicalKey = pk,
+            Source = dlg,
         });
 
         await Snap("keyboard_idle");
 
         // hot-plug: a simulated DualSense appears and is selected automatically
         var v = pads.AttachVirtual("DualSense Wireless Controller", ControllerClassifier.VendorSony, 0x0CE6);
-        if (v == null) { Console.WriteLine("SDL virtual controller unavailable"); return 1; }
+        if (v == null)
+        {
+            Console.WriteLine("SDL virtual controller unavailable");
+            return 1;
+        }
         await Snap("dualsense_connected");
 
         // buttons light up, sticks move (left outside the deadzone, right inside it), R2 presses R
@@ -261,7 +309,11 @@ static class UiSnapshot
         panel.Pump();
 
         // the keyboard with the same UI: arrows + Space + WASD, and a key bound to the front touch point
-        if (!panel.SelectDevice(ControllerProfile.KeyboardId)) { Console.WriteLine("keyboard not selectable"); failures++; }
+        if (!panel.SelectDevice(ControllerProfile.KeyboardId))
+        {
+            Console.WriteLine("keyboard not selectable");
+            failures++;
+        }
         panel.BeginListen(VitaControl.TouchFront);
         Key(Avalonia.Input.Key.T, PhysicalKey.T, true);
         Key(Avalonia.Input.Key.T, PhysicalKey.T, false);
@@ -274,7 +326,9 @@ static class UiSnapshot
         await Snap("keyboard_pressed");
         foreach (var (k, pk) in new[] { (Avalonia.Input.Key.Space, PhysicalKey.Space), (Avalonia.Input.Key.Right, PhysicalKey.ArrowRight), (Avalonia.Input.Key.W, PhysicalKey.W),
                      (Avalonia.Input.Key.D, PhysicalKey.D), (Avalonia.Input.Key.L, PhysicalKey.L), (Avalonia.Input.Key.T, PhysicalKey.T) })
+        {
             Key(k, pk, false);
+        }
 
         // virtual motion: keypad 8 + 6 held tilt the Vita forward and right (live readout), then the tilt rows
         Key(Avalonia.Input.Key.NumPad8, PhysicalKey.NumPad8, true);
@@ -289,13 +343,21 @@ static class UiSnapshot
         foreach (var (c, keys) in DefaultMappings.MotionKeys)
         {
             var bound = DefaultMappings.Keyboard().Get(c).Select(b => b.Key).ToArray();
-            if (!keys.SequenceEqual(bound)) { Console.WriteLine($"  {c}: default keys {string.Join("/", bound)}"); failures++; }
+            if (!keys.SequenceEqual(bound))
+            {
+                Console.WriteLine($"  {c}: default keys {string.Join("/", bound)}");
+                failures++;
+            }
         }
         // emulator hotkeys: "Pausar emulacao" on its default key
         panel.ShowHotkeys();
         await Snap("keyboard_hotkeys");
         var pauseKeys = DefaultMappings.Keyboard().Get(VitaControl.PauseEmulation).Select(b => b.Key).ToArray();
-        if (!pauseKeys.SequenceEqual([DefaultMappings.PauseKey])) { Console.WriteLine($"  PauseEmulation: default keys {string.Join("/", pauseKeys)}"); failures++; }
+        if (!pauseKeys.SequenceEqual([DefaultMappings.PauseKey]))
+        {
+            Console.WriteLine($"  PauseEmulation: default keys {string.Join("/", pauseKeys)}");
+            failures++;
+        }
 
         // back to the controller, then unplug it: the list falls back to the keyboard
         panel.SelectDevice(pads.Devices.FirstOrDefault(d => d.IsVirtual)?.Guid ?? "");
@@ -317,21 +379,36 @@ static class UiSnapshot
         var json = File.ReadAllText(HostInput.ConfigPath(Program.DataRoot));
         bool saved = json.Contains("\"Triangle\"") && json.Contains("pad:back") && json.Contains("key:T");
         Console.WriteLine($"input.json saved ({json.Length} bytes): {(saved ? "ok" : "MISSING BINDINGS")}");
-        if (!saved) failures++;
+        if (!saved)
+        {
+            failures++;
+        }
+
         pads.DetachVirtual(v);
         await Snap("dualsense_unplugged");
 
         // the saved profile is loaded again for the same controller
         var store = InputProfileStore.Load(HostInput.ConfigPath(Program.DataRoot));
-        var info = new { Guid = store.Config.Controllers.FirstOrDefault()?.Id ?? "" };
+        var info = new
+        {
+            Guid = store.Config.Controllers.FirstOrDefault()?.Id ?? ""
+        };
         var reloaded = store.ProfileFor(info.Guid, "DualSense Wireless Controller", ControllerKind.PlayStation, true);
         bool roundTrip = reloaded.Get(VitaControl.Triangle).SequenceEqual([InputBinding.Of(PadButton.Back)]);
         Console.WriteLine($"profile reload: {(roundTrip ? "ok" : "FAILED")}");
-        if (!roundTrip) failures++;
+        if (!roundTrip)
+        {
+            failures++;
+        }
+
         var combos = reloaded.GetCombos(VitaControl.PauseEmulation).Select(k => k.ToString()).ToList();
         bool comboOk = combos.SequenceEqual(["pad:back&pad:start"]);
         Console.WriteLine($"pause combination: {(comboOk ? "ok" : $"FAILED ({string.Join(", ", combos)})")}");
-        if (!comboOk) failures++;
+        if (!comboOk)
+        {
+            failures++;
+        }
+
         page.ShowSection(SettingsPage.SectionGeneral);
         await Snap("general_tab");
         page.ShowSection(SettingsPage.SectionNetwork);

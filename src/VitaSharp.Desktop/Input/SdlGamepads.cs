@@ -64,7 +64,16 @@ public sealed unsafe class SdlGamepads : IDisposable
     public bool Available { get; private set; }
     public string? Error { get; private set; }
 
-    public IReadOnlyList<PadInfo> Devices { get { lock (_lock) return _infos; } }
+    public IReadOnlyList<PadInfo> Devices
+    {
+        get
+        {
+            lock (_lock)
+            {
+                return _infos;
+            }
+        }
+    }
 
     public const string MappingFileName = "gamecontrollerdb.txt";
 
@@ -74,7 +83,10 @@ public sealed unsafe class SdlGamepads : IDisposable
         if (dataRoot != null)
         {
             var f = Path.Combine(dataRoot, MappingFileName);
-            if (File.Exists(f)) _mappingFile = f;
+            if (File.Exists(f))
+            {
+                _mappingFile = f;
+            }
         }
         _thread = new Thread(Run) { IsBackground = true, Name = "SDL input" };
         _thread.Start();
@@ -99,14 +111,23 @@ public sealed unsafe class SdlGamepads : IDisposable
             // ~40 s and anything needing a window failed (DirectShow camera starts: ERROR_NO_MORE_USER_HANDLES).
             // SDL's own joystick thread owns that window and runs a message loop for it.
             _sdl.SetHint("SDL_JOYSTICK_THREAD", "1");
-            if (_mappingFile != null) _sdl.SetHint("SDL_GAMECONTROLLERCONFIG_FILE", _mappingFile);
+            if (_mappingFile != null)
+            {
+                _sdl.SetHint("SDL_GAMECONTROLLERCONFIG_FILE", _mappingFile);
+            }
+
             if (_sdl.Init(InitJoystick | InitGameController) != 0)
+            {
                 throw new InvalidOperationException(_sdl.GetErrorS());
+            }
             // states are polled; SDL's event queue is not used (nothing would drain it)
             _sdl.JoystickEventState(0);
             _sdl.GameControllerEventState(0);
             Available = true;
-            if (_mappingFile != null) Log.Info($"Input: extra controller mappings from {_mappingFile}");
+            if (_mappingFile != null)
+            {
+                Log.Info($"Input: extra controller mappings from {_mappingFile}");
+            }
         }
         catch (Exception e) // SDL2 missing, wrong architecture, init failure...: the game window falls back to GLFW gamepads
         {
@@ -121,7 +142,14 @@ public sealed unsafe class SdlGamepads : IDisposable
         {
             while (_commands.TryDequeue(out var cmd))
             {
-                try { cmd(); } catch (Exception e) { Log.Warn($"Input: {e.Message}"); }
+                try
+                {
+                    cmd();
+                }
+                catch (Exception e)
+                {
+                    Log.Warn($"Input: {e.Message}");
+                }
             }
             _sdl.JoystickUpdate();
             bool changed = SyncDevices();
@@ -130,15 +158,27 @@ public sealed unsafe class SdlGamepads : IDisposable
                 foreach (var d in _devices.Values)
                 {
                     Sample(d);
-                    if (!_states.TryGetValue(d.Info.InstanceId, out var pub)) _states[d.Info.InstanceId] = pub = new PadSnapshot();
+                    if (!_states.TryGetValue(d.Info.InstanceId, out var pub))
+                    {
+                        _states[d.Info.InstanceId] = pub = new PadSnapshot();
+                    }
+
                     d.State.CopyTo(pub);
                 }
             }
-            if (changed) DevicesChanged?.Invoke();
+            if (changed)
+            {
+                DevicesChanged?.Invoke();
+            }
+
             PreciseSleep.Microseconds(4000);
         }
 
-        foreach (var d in _devices.Values) Close(d);
+        foreach (var d in _devices.Values)
+        {
+            Close(d);
+        }
+
         _devices.Clear();
         _sdl.QuitSubSystem(InitJoystick | InitGameController);
     }
@@ -154,26 +194,45 @@ public sealed unsafe class SdlGamepads : IDisposable
         {
             int id = sdl.JoystickGetDeviceInstanceID(i);
             present[i] = id;
-            if (id < 0 || _devices.ContainsKey(id)) continue;
+            if (id < 0 || _devices.ContainsKey(id))
+            {
+                continue;
+            }
+
             var d = Open(i, id);
-            if (d == null) continue;
+            if (d == null)
+            {
+                continue;
+            }
+
             _devices[id] = d;
             changed = true;
             Log.Info($"Input: controller connected: {d.Info.Name} [{d.Info.Model}, {(d.Info.IsGamepad ? "mapped" : "raw joystick")}{(d.Info.HasTouchpad ? ", touch pad" : "")}{(d.Info.HasMotion ? ", gyro + accelerometer" : "")}] guid {d.Info.Guid}");
         }
         foreach (var id in _devices.Keys.ToArray())
         {
-            if (present[..n].Contains(id)) continue;
+            if (present[..n].Contains(id))
+            {
+                continue;
+            }
+
             Log.Info($"Input: controller disconnected: {_devices[id].Info.Name}");
             Close(_devices[id]);
             _devices.Remove(id);
-            lock (_lock) _states.Remove(id);
+            lock (_lock)
+            {
+                _states.Remove(id);
+            }
+
             changed = true;
         }
         if (changed)
         {
             var infos = _devices.Values.Select(d => d.Info).OrderBy(i => i.InstanceId).ToArray();
-            lock (_lock) _infos = infos;
+            lock (_lock)
+            {
+                _infos = infos;
+            }
         }
         return changed;
     }
@@ -187,10 +246,16 @@ public sealed unsafe class SdlGamepads : IDisposable
         if (isGamepad)
         {
             gc = sdl.GameControllerOpen(index);
-            if (gc == null) isGamepad = false;
+            if (gc == null)
+            {
+                isGamepad = false;
+            }
         }
         js = gc != null ? sdl.GameControllerGetJoystick(gc) : sdl.JoystickOpen(index);
-        if (js == null) return null;
+        if (js == null)
+        {
+            return null;
+        }
 
         var guidBytes = stackalloc byte[33];
         sdl.JoystickGetGUIDString(sdl.JoystickGetGUID(js), guidBytes, 33);
@@ -230,14 +295,22 @@ public sealed unsafe class SdlGamepads : IDisposable
         return new Device
         {
             Info = new PadInfo(id, guid, name, kind, isGamepad, touch, model, sdl.JoystickIsVirtual(index) == SdlBool.True, motion),
-            Controller = gc, Joystick = js,
+            Controller = gc,
+            Joystick = js,
         };
     }
 
     void Close(Device d)
     {
-        if (d.Controller != null) _sdl!.GameControllerClose(d.Controller);
-        else if (d.Joystick != null) _sdl!.JoystickClose(d.Joystick);
+        if (d.Controller != null)
+        {
+            _sdl!.GameControllerClose(d.Controller);
+        }
+        else if (d.Joystick != null)
+        {
+            _sdl!.JoystickClose(d.Joystick);
+        }
+
         d.Controller = null;
         d.Joystick = null;
     }
@@ -250,9 +323,21 @@ public sealed unsafe class SdlGamepads : IDisposable
         if (d.Controller != null)
         {
             var gc = d.Controller;
-            for (int i = 0; i < s.Buttons.Length; i++) s.Buttons[i] = sdl.GameControllerGetButton(gc, (GameControllerButton)i) != 0;
-            for (int i = 0; i < 4; i++) s.Axes[i] = Math.Max(-1f, sdl.GameControllerGetAxis(gc, (GameControllerAxis)i) / 32767f);
-            for (int i = 4; i < 6; i++) s.Axes[i] = Math.Clamp(sdl.GameControllerGetAxis(gc, (GameControllerAxis)i) / 32767f, 0f, 1f);
+            for (int i = 0; i < s.Buttons.Length; i++)
+            {
+                s.Buttons[i] = sdl.GameControllerGetButton(gc, (GameControllerButton)i) != 0;
+            }
+
+            for (int i = 0; i < 4; i++)
+            {
+                s.Axes[i] = Math.Max(-1f, sdl.GameControllerGetAxis(gc, (GameControllerAxis)i) / 32767f);
+            }
+
+            for (int i = 4; i < 6; i++)
+            {
+                s.Axes[i] = Math.Clamp(sdl.GameControllerGetAxis(gc, (GameControllerAxis)i) / 32767f, 0f, 1f);
+            }
+
             s.HasTouchpad = d.Info.HasTouchpad;
             if (s.HasTouchpad)
             {
@@ -261,21 +346,39 @@ public sealed unsafe class SdlGamepads : IDisposable
                 {
                     byte down = 0;
                     float x = 0, y = 0, pressure = 0;
-                    if (f < fingers) sdl.GameControllerGetTouchpadFinger(gc, 0, f, &down, &x, &y, &pressure);
+                    if (f < fingers)
+                    {
+                        sdl.GameControllerGetTouchpadFinger(gc, 0, f, &down, &x, &y, &pressure);
+                    }
+
                     s.FingerDown[f] = down != 0;
                     s.FingerX[f] = x;
                     s.FingerY[f] = y;
                 }
             }
-            if (d.Info.HasMotion) SampleMotion(d, gc);
+            if (d.Info.HasMotion)
+            {
+                SampleMotion(d, gc);
+            }
         }
         var js = d.Joystick;
         s.JoyAxisCount = Math.Min(PadSnapshot.MaxJoyAxes, Math.Max(0, sdl.JoystickNumAxes(js)));
         s.JoyButtonCount = Math.Min(PadSnapshot.MaxJoyButtons, Math.Max(0, sdl.JoystickNumButtons(js)));
         s.JoyHatCount = Math.Min(PadSnapshot.MaxJoyHats, Math.Max(0, sdl.JoystickNumHats(js)));
-        for (int i = 0; i < s.JoyAxisCount; i++) s.JoyAxes[i] = Math.Max(-1f, sdl.JoystickGetAxis(js, i) / 32767f);
-        for (int i = 0; i < s.JoyButtonCount; i++) s.JoyButtons[i] = sdl.JoystickGetButton(js, i) != 0;
-        for (int i = 0; i < s.JoyHatCount; i++) s.JoyHats[i] = sdl.JoystickGetHat(js, i);
+        for (int i = 0; i < s.JoyAxisCount; i++)
+        {
+            s.JoyAxes[i] = Math.Max(-1f, sdl.JoystickGetAxis(js, i) / 32767f);
+        }
+
+        for (int i = 0; i < s.JoyButtonCount; i++)
+        {
+            s.JoyButtons[i] = sdl.JoystickGetButton(js, i) != 0;
+        }
+
+        for (int i = 0; i < s.JoyHatCount; i++)
+        {
+            s.JoyHats[i] = sdl.JoystickGetHat(js, i);
+        }
     }
 
     void SampleMotion(Device d, GameController* gc)
@@ -287,19 +390,36 @@ public sealed unsafe class SdlGamepads : IDisposable
         ulong ta = 0, tg = 0;
         if (sdl.GameControllerGetSensorDataWithTimestamp(gc, SensorType.Accel, &ta, a, 3) != 0
             || sdl.GameControllerGetSensorDataWithTimestamp(gc, SensorType.Gyro, &tg, g, 3) != 0)
+        {
             return;
+        }
+
         s.HasMotion = true;
         s.Accel = new Vector3(a[0], a[1], a[2]);
         s.Gyro = new Vector3(g[0], g[1], g[2]);
-        if (ta == 0 && tg == 0 && s.Accel == Vector3.Zero && s.Gyro == Vector3.Zero) return; // no report received yet
+        if (ta == 0 && tg == 0 && s.Accel == Vector3.Zero && s.Gyro == Vector3.Zero)
+        {
+            return; // no report received yet
+        }
         // sensor timestamps (us) when the driver provides them, else the time of this poll
         ulong ts = Math.Max(ta, tg);
-        if (ts == 0) ts = (ulong)(Stopwatch.GetTimestamp() / (double)Stopwatch.Frequency * 1e6);
-        if (ts == d.LastMotionUs) return; // no new report since the last poll
+        if (ts == 0)
+        {
+            ts = (ulong)(Stopwatch.GetTimestamp() / (double)Stopwatch.Frequency * 1e6);
+        }
+
+        if (ts == d.LastMotionUs)
+        {
+            return; // no new report since the last poll
+        }
+
         d.LastMotionUs = ts;
         d.Motion[d.MotionHead] = new PadMotionSample(ts, s.Accel, s.Gyro);
         d.MotionHead = (d.MotionHead + 1) % MotionCapacity;
-        if (d.MotionCount < MotionCapacity) d.MotionCount++;
+        if (d.MotionCount < MotionCapacity)
+        {
+            d.MotionCount++;
+        }
     }
 
     /// <summary>
@@ -310,18 +430,33 @@ public sealed unsafe class SdlGamepads : IDisposable
     {
         lock (_lock)
         {
-            if (!_devices.TryGetValue(instanceId, out var d) || d.MotionCount == 0) return 0;
+            if (!_devices.TryGetValue(instanceId, out var d) || d.MotionCount == 0)
+            {
+                return 0;
+            }
+
             int newer = 0;
             for (int i = 0; i < d.MotionCount; i++)
             {
                 var m = d.Motion[(d.MotionHead + MotionCapacity - 1 - i) % MotionCapacity];
-                if (m.TimestampUs <= afterUs) break;
+                if (m.TimestampUs <= afterUs)
+                {
+                    break;
+                }
+
                 newer++;
             }
             int n = Math.Min(newer, dest.Length);
             for (int i = 0; i < n; i++)
+            {
                 dest[i] = d.Motion[(d.MotionHead + MotionCapacity - n + i) % MotionCapacity];
-            if (n > 0) afterUs = dest[n - 1].TimestampUs;
+            }
+
+            if (n > 0)
+            {
+                afterUs = dest[n - 1].TimestampUs;
+            }
+
             return n;
         }
     }
@@ -331,7 +466,11 @@ public sealed unsafe class SdlGamepads : IDisposable
     {
         lock (_lock)
         {
-            if (!_states.TryGetValue(instanceId, out var s)) return false;
+            if (!_states.TryGetValue(instanceId, out var s))
+            {
+                return false;
+            }
+
             s.CopyTo(into);
             return true;
         }
@@ -346,7 +485,11 @@ public sealed unsafe class SdlGamepads : IDisposable
     /// </summary>
     public VirtualPad? AttachVirtual(string name, ushort vendor = 0, ushort product = 0)
     {
-        if (!Available) return null;
+        if (!Available)
+        {
+            return null;
+        }
+
         var done = new TaskCompletionSource<VirtualPad?>();
         _commands.Enqueue(() =>
         {
@@ -354,11 +497,22 @@ public sealed unsafe class SdlGamepads : IDisposable
             var nameBytes = (byte*)Marshal.StringToHGlobalAnsi(name);
             var desc = new VirtualJoystickDesc
             {
-                Version = 1, Type = (ushort)JoystickType.Gamecontroller, Naxes = 6, Nbuttons = 15, Nhats = 0,
-                VendorId = vendor, ProductId = product, Name = nameBytes,
+                Version = 1,
+                Type = (ushort)JoystickType.Gamecontroller,
+                Naxes = 6,
+                Nbuttons = 15,
+                Nhats = 0,
+                VendorId = vendor,
+                ProductId = product,
+                Name = nameBytes,
             };
             int index = sdl.JoystickAttachVirtualEx(&desc);
-            if (index < 0) { Marshal.FreeHGlobal((nint)nameBytes); done.SetResult(null); return; }
+            if (index < 0)
+            {
+                Marshal.FreeHGlobal((nint)nameBytes);
+                done.SetResult(null);
+                return;
+            }
             var js = sdl.JoystickOpen(index); // keeps a reference for SetVirtual*
             done.SetResult(new VirtualPad(this, index, (nint)js, (nint)nameBytes));
         });
@@ -379,7 +533,11 @@ public sealed unsafe class SdlGamepads : IDisposable
         _commands.Enqueue(() =>
         {
             var js = (Joystick*)pad.Joystick;
-            if (button is { } b) _sdl!.JoystickSetVirtualButton(js, (int)b, (byte)(pressed ? 1 : 0));
+            if (button is { } b)
+            {
+                _sdl!.JoystickSetVirtualButton(js, (int)b, (byte)(pressed ? 1 : 0));
+            }
+
             if (axis is { } a)
             {
                 // SDL virtual triggers use the full -32768..32767 range (released = -32768)
@@ -399,11 +557,14 @@ public sealed unsafe class SdlGamepads : IDisposable
             sdl.JoystickClose((Joystick*)pad.Joystick);
             int n = sdl.NumJoysticks();
             for (int i = 0; i < n; i++)
+            {
                 if (sdl.JoystickIsVirtual(i) == SdlBool.True && sdl.JoystickGetDeviceInstanceID(i) == id)
                 {
                     sdl.JoystickDetachVirtual(i);
                     break;
                 }
+            }
+
             Marshal.FreeHGlobal(pad.Name);
         });
     }
@@ -411,7 +572,11 @@ public sealed unsafe class SdlGamepads : IDisposable
     /// <summary>Waits until the SDL thread has run every queued command and sampled the devices once more.</summary>
     public void Flush()
     {
-        if (!Available) return;
+        if (!Available)
+        {
+            return;
+        }
+
         for (int pass = 0; pass < 2; pass++)
         {
             var done = new ManualResetEventSlim();
@@ -423,6 +588,9 @@ public sealed unsafe class SdlGamepads : IDisposable
     public void Dispose()
     {
         _stop = true;
-        if (_thread.IsAlive) _thread.Join(TimeSpan.FromSeconds(2));
+        if (_thread.IsAlive)
+        {
+            _thread.Join(TimeSpan.FromSeconds(2));
+        }
     }
 }

@@ -35,7 +35,9 @@ public sealed class TrophyImportPanel : StackPanel
         Children.Add(_result);
         Children.Add(new TextBlock
         {
-            Foreground = LauncherTheme.Muted, TextWrapping = TextWrapping.Wrap, FontSize = 12,
+            Foreground = LauncherTheme.Muted,
+            TextWrapping = TextWrapping.Wrap,
+            FontSize = 12,
             Text = Loc.Get("TiAbout"),
         });
     }
@@ -43,14 +45,21 @@ public sealed class TrophyImportPanel : StackPanel
     async Task PickAndImport()
     {
         var top = TopLevel.GetTopLevel(this);
-        if (top == null) return;
+        if (top == null)
+        {
+            return;
+        }
+
         var dirs = await top.StorageProvider.OpenFolderPickerAsync(new FolderPickerOpenOptions
         {
             Title = Loc.Get("TiPickTitle"),
             AllowMultiple = false,
         });
         var path = dirs.Count > 0 ? dirs[0].TryGetLocalPath() : null;
-        if (path != null) await Import(path);
+        if (path != null)
+        {
+            await Import(path);
+        }
     }
 
     async Task Import(string source)

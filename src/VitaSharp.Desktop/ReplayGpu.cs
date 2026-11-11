@@ -40,10 +40,22 @@ static class ReplayGpu
 
     public static int Run(string path, string[] options)
     {
-        if (!File.Exists(path)) { Console.Error.WriteLine($"GPU dump {path} not found"); return 1; }
+        if (!File.Exists(path))
+        {
+            Console.Error.WriteLine($"GPU dump {path} not found");
+            return 1;
+        }
         GpuDumpHeader header;
-        using (var r = new GpuDumpReader(path)) header = r.Header;
-        if (options.Contains("--info")) return Info(path);
+        using (var r = new GpuDumpReader(path))
+        {
+            header = r.Header;
+        }
+
+        if (options.Contains("--info"))
+        {
+            return Info(path);
+        }
+
         if (Opt(options, "--recompress") is { } recompressed)
         {
             int q = int.TryParse(Opt(options, "--quality"), out var qq) ? Math.Clamp(qq, 0, 11) : 9;
@@ -61,22 +73,51 @@ static class ReplayGpu
     static void ApplyEnvironment(GpuDumpHeader header, string[] options)
     {
         var set = options.Contains("--no-recorded-env") ? new Dictionary<string, string>() : GpuDumpPlayer.RecordedEnvironment(header);
-        if (Opt(options, "--msaa") is { } msaa) set[EnvVars.Msaa] = msaa;
-        if (Opt(options, "--gpu-profile") is { } gp) set[EnvVars.GpuProfile] = gp;
-        if (Opt(options, "--debug-fs") is { } dfs) set[EnvVars.DebugFs] = dfs;
-        if (Opt(options, "--debug-tex0") is { } dt) set[EnvVars.DebugTex0] = dt;
+        if (Opt(options, "--msaa") is { } msaa)
+        {
+            set[EnvVars.Msaa] = msaa;
+        }
+
+        if (Opt(options, "--gpu-profile") is { } gp)
+        {
+            set[EnvVars.GpuProfile] = gp;
+        }
+
+        if (Opt(options, "--debug-fs") is { } dfs)
+        {
+            set[EnvVars.DebugFs] = dfs;
+        }
+
+        if (Opt(options, "--debug-tex0") is { } dt)
+        {
+            set[EnvVars.DebugTex0] = dt;
+        }
         // --env= is first-match-wins like every other option (and wins over the recorded switches)
         var given = new HashSet<string>();
         foreach (var e in options.Where(o => o.StartsWith("--env=")))
         {
             var kv = e["--env=".Length..];
             int eq = kv.IndexOf('=');
-            if (eq > 0 && given.Add(kv[..eq])) set[kv[..eq]] = kv[(eq + 1)..];
+            if (eq > 0 && given.Add(kv[..eq]))
+            {
+                set[kv[..eq]] = kv[(eq + 1)..];
+            }
         }
         // --res-scale= as in run/test, where the option also wins over VITASHARP_RES_SCALE
-        if (Opt(options, "--res-scale") is { } rs) set[EnvVars.ResScale] = rs;
-        foreach (var (k, v) in set) Environment.SetEnvironmentVariable(k, v);
-        if (set.Count > 0) Console.WriteLine("Environment: " + string.Join(' ', set.Select(kv => $"{kv.Key}={kv.Value}")));
+        if (Opt(options, "--res-scale") is { } rs)
+        {
+            set[EnvVars.ResScale] = rs;
+        }
+
+        foreach (var (k, v) in set)
+        {
+            Environment.SetEnvironmentVariable(k, v);
+        }
+
+        if (set.Count > 0)
+        {
+            Console.WriteLine("Environment: " + string.Join(' ', set.Select(kv => $"{kv.Key}={kv.Value}")));
+        }
     }
 
     static int Info(string path)
@@ -95,42 +136,74 @@ static class ReplayGpu
             switch (r.Kind)
             {
                 case GpuDumpRecord.Memory:
-                    mem++; memBytes += r.Data.Length;
+                    mem++;
+                    memBytes += r.Data.Length;
                     var g = regions.GetValueOrDefault(r.Address >> 20);
                     regions[r.Address >> 20] = (g.Updates + 1, g.Bytes + r.Data.Length);
                     break;
-                case GpuDumpRecord.Idle: idles++; break;
-                case GpuDumpRecord.BackendState: Console.WriteLine($"backend state (render targets at the start): {r.Data.Length / 1048576.0:F1} MB"); break;
+                case GpuDumpRecord.Idle:
+                    idles++;
+                    break;
+                case GpuDumpRecord.BackendState:
+                    Console.WriteLine($"backend state (render targets at the start): {r.Data.Length / 1048576.0:F1} MB");
+                    break;
                 default:
                     cmds++;
                     if (r.Command is DrawCommand d)
                     {
                         draws++;
-                        vub += d.VertexUniformsLength; fub += d.FragmentUniformsLength;
+                        vub += d.VertexUniformsLength;
+                        fub += d.FragmentUniformsLength;
                         uniq.Add(System.IO.Hashing.XxHash3.HashToUInt64(d.VertexUniformSpan));
                         uniqF.Add(System.IO.Hashing.XxHash3.HashToUInt64(d.FragmentUniformSpan));
                     }
                     if (r.Kind == GpuDumpRecord.Present)
                     {
                         frames++;
-                        if (firstMicros < 0) firstMicros = r.PresentInfo.Micros;
+                        if (firstMicros < 0)
+                        {
+                            firstMicros = r.PresentInfo.Micros;
+                        }
+
                         lastMicros = r.PresentInfo.Micros;
                         // compressed bytes read so far (chunks end at presents): the first frame carries the initial state
-                        if (frames == 1) firstFrameBytes = r.CompressedBytesRead;
+                        if (frames == 1)
+                        {
+                            firstFrameBytes = r.CompressedBytesRead;
+                        }
                     }
                     break;
             }
         }
         Console.WriteLine($"records: {frames} frames, {cmds} commands ({draws} draws), {idles} idle points, {mem} memory updates ({memBytes / 1048576.0:F1} MB)");
-        if (frames > 1) Console.WriteLine($"recorded time {lastMicros / 1e6:F2} s, {frames / Math.Max(lastMicros / 1e6, 1e-6):F1} fps; {new FileInfo(path).Length / 1048576.0 / Math.Max(lastMicros / 1e6, 1e-6):F1} MB per second of gameplay");
+        if (frames > 1)
+        {
+            Console.WriteLine($"recorded time {lastMicros / 1e6:F2} s, {frames / Math.Max(lastMicros / 1e6, 1e-6):F1} fps; {new FileInfo(path).Length / 1048576.0 / Math.Max(lastMicros / 1e6, 1e-6):F1} MB per second of gameplay");
+        }
+
         long fileBytes = new FileInfo(path).Length;
-        if (frames > 1) Console.WriteLine($"on disk: first frame (with the initial state) {firstFrameBytes / 1048576.0:F1} MB, then {(fileBytes - firstFrameBytes) / 1048576.0 / (frames - 1):F2} MB/frame " +
+        if (frames > 1)
+        {
+            Console.WriteLine($"on disk: first frame (with the initial state) {firstFrameBytes / 1048576.0:F1} MB, then {(fileBytes - firstFrameBytes) / 1048576.0 / (frames - 1):F2} MB/frame " +
                                           $"({(fileBytes - firstFrameBytes) / 1048576.0 / Math.Max((lastMicros - firstMicros) / 1e6, 1e-6):F1} MB per recorded second)");
+        }
+
         Console.WriteLine($"draw uniforms: vertex {vub / 1048576.0:F1} MB ({uniq.Count} distinct blocks), fragment {fub / 1048576.0:F1} MB ({uniqF.Count} distinct)");
         Console.WriteLine("guest memory read by the GPU, per MB of address space (updates, KB):");
-        foreach (var (mb, v) in regions) Console.WriteLine($"  0x{mb << 20:X8}  {v.Updates,7} {v.Bytes / 1024.0,10:F0}");
-        if (r.Summary != null) Console.Write("summary:\n" + r.Summary.Text);
-        else Console.WriteLine("summary: missing (the recording was cut short)");
+        foreach (var (mb, v) in regions)
+        {
+            Console.WriteLine($"  0x{mb << 20:X8}  {v.Updates,7} {v.Bytes / 1024.0,10:F0}");
+        }
+
+        if (r.Summary != null)
+        {
+            Console.Write("summary:\n" + r.Summary.Text);
+        }
+        else
+        {
+            Console.WriteLine("summary: missing (the recording was cut short)");
+        }
+
         return 0;
     }
 
@@ -154,20 +227,44 @@ static class ReplayGpu
             ImportState = !options.Contains("--no-targets"),
             Speed = options.Contains("--fast") ? 0 : double.TryParse(Opt(options, "--speed"), System.Globalization.NumberStyles.Float, System.Globalization.CultureInfo.InvariantCulture, out var sp) ? sp : 1,
         };
-        if (long.TryParse(Opt(options, "--frame"), out var fr)) s.StopFrame = fr;
-        if (long.TryParse(Opt(options, "--trace-draws"), out var tf)) s.TraceFrame = tf;
+        if (long.TryParse(Opt(options, "--frame"), out var fr))
+        {
+            s.StopFrame = fr;
+        }
+
+        if (long.TryParse(Opt(options, "--trace-draws"), out var tf))
+        {
+            s.TraceFrame = tf;
+        }
+
         if (Opt(options, "--draw-limit") is { } dl)
         {
             var p = dl.Split('@');
             s.DrawLimit = long.Parse(p[0]);
             s.LimitFrame = p.Length > 1 ? long.Parse(p[1]) : s.StopFrame != long.MaxValue ? s.StopFrame : -1;
-            if (s.LimitFrame < 0) { Console.Error.WriteLine("--draw-limit needs a frame: --draw-limit=N@F or --frame=F"); return 1; }
+            if (s.LimitFrame < 0)
+            {
+                Console.Error.WriteLine("--draw-limit needs a frame: --draw-limit=N@F or --frame=F");
+                return 1;
+            }
         }
         Directory.CreateDirectory(s.Out);
-        foreach (var f in Directory.GetFiles(s.Out, "frame_*.png")) File.Delete(f);
-        foreach (var f in Directory.GetFiles(s.Out, "diff_*.png")) File.Delete(f);
+        foreach (var f in Directory.GetFiles(s.Out, "frame_*.png"))
+        {
+            File.Delete(f);
+        }
+
+        foreach (var f in Directory.GetFiles(s.Out, "diff_*.png"))
+        {
+            File.Delete(f);
+        }
+
         Log.OpenFile(Path.Combine(s.Out, "log.txt"));
-        if (options.Contains("--debug-mode")) DebugMode.Enable();
+        if (options.Contains("--debug-mode"))
+        {
+            DebugMode.Enable();
+        }
+
         long firstPresent = header.Long("first-present");
         Log.Info($"[replay] {path}: {header["title-id"]} {header["title"]}, recorded with {header["build"]} on {header["gpu"]}, presents after #{firstPresent}");
         if (s.TraceFrame >= 0 || s.DrawLimit >= 0)
@@ -211,11 +308,23 @@ static class ReplayGpu
                 ro.VSync = true;
                 new Thread(() =>
                 {
-                    try { rc = Replay(path, header, ro, s, closing); }
-                    catch (Exception e) { Log.Error($"[replay] failed: {e}"); }
-                    if (!hold) window.Close();
+                    try
+                    {
+                        rc = Replay(path, header, ro, s, closing);
+                    }
+                    catch (Exception e)
+                    {
+                        Log.Error($"[replay] failed: {e}");
+                    }
+                    if (!hold)
+                    {
+                        window.Close();
+                    }
                 })
-                { Name = "GPU replay", IsBackground = true }.Start();
+                {
+                    Name = "GPU replay",
+                    IsBackground = true
+                }.Start();
             };
             window.Resized += () => _renderer?.NotifyResized();
             window.Run();
@@ -226,8 +335,16 @@ static class ReplayGpu
             s.Speed = 0;
             rc = Replay(path, header, ro, s, null);
         }
-        if (thumbs.Count > 0) Runner.WriteContactSheet(s.Out, thumbs);
-        if (Opt(options, "--compare") is { } cmp) Compare(s.Out, cmp);
+        if (thumbs.Count > 0)
+        {
+            Runner.WriteContactSheet(s.Out, thumbs);
+        }
+
+        if (Opt(options, "--compare") is { } cmp)
+        {
+            Compare(s.Out, cmp);
+        }
+
         Log.Flush();
         Console.WriteLine($"Results in {s.Out}");
         return rc;
@@ -242,7 +359,11 @@ static class ReplayGpu
         var renderer = _renderer = new VulkanRenderer(ro);
         try
         {
-            if (header["title-id"] is { Length: > 0 } title) renderer.BeginTitle(title);
+            if (header["title-id"] is { Length: > 0 } title)
+            {
+                renderer.BeginTitle(title);
+            }
+
             var wall = Stopwatch.StartNew();
             long firstMicros = -1;
             Task<DiagnosticCaptureResult>? trace = null;
@@ -254,61 +375,117 @@ static class ReplayGpu
             bool tracing = false;
             void BeginTrace()
             {
-                if (traced == null || tracing || trace != null) return;
+                if (traced == null || tracing || trace != null)
+                {
+                    return;
+                }
+
                 var tcs = new TaskCompletionSource<DiagnosticCaptureResult>(TaskCreationOptions.RunContinuationsAsynchronously);
                 string where = traced.Mapped ? $"issued between presents #{traced.ScenePresent} and #{traced.ScenePresent + 1}" : $"between presents #{s.TraceFrame - 1} and #{s.TraceFrame}";
                 string title = $"the {traced.Draws} draws behind present #{s.TraceFrame} (draws {traced.FirstDraw}-{traced.LastDraw} of the dump, {where})";
                 tracing = renderer.BeginDrawTrace(Path.Combine(s.Out, $"trace_{s.TraceFrame}"), title, s.TraceFrame, r => tcs.TrySetResult(r));
-                if (tracing) trace = tcs.Task;
+                if (tracing)
+                {
+                    trace = tcs.Task;
+                }
             }
             void EndTrace()
             {
-                if (!tracing) return;
+                if (!tracing)
+                {
+                    return;
+                }
+
                 renderer.EndDrawTrace();
                 tracing = false;
             }
             var st = GpuDumpPlayer.Play(reader, renderer, s.Idle, s.ImportState,
                 executeDraw: (draw, _) =>
                 {
-                    if (traced != null && draw == traced.FirstDraw) BeginTrace(); // no scene begin before it (dump cut)
+                    if (traced != null && draw == traced.FirstDraw)
+                    {
+                        BeginTrace(); // no scene begin before it (dump cut)
+                    }
+
                     return draw < skipFrom || draw > skipTo;
                 },
                 beforeCommand: (cmd, draws) =>
                 {
-                    if (traced != null && cmd is BeginSceneCommand && draws + 1 == traced.FirstDraw) BeginTrace();
+                    if (traced != null && cmd is BeginSceneCommand && draws + 1 == traced.FirstDraw)
+                    {
+                        BeginTrace();
+                    }
                 },
                 afterCommand: (cmd, draws) =>
                 {
-                    if (tracing && traced != null && draws >= traced.LastDraw && cmd is EndSceneCommand or PresentCommand or FinishCommand) EndTrace();
+                    if (tracing && traced != null && draws >= traced.LastDraw && cmd is EndSceneCommand or PresentCommand or FinishCommand)
+                    {
+                        EndTrace();
+                    }
                 },
                 presented: frameDraws =>
             {
                 if (s.Speed > 0)
                 {
                     // recorded pace: present N at its recorded time (relative to the first present)
-                    if (firstMicros < 0) { firstMicros = reader.PresentInfo.Micros; wall.Restart(); }
+                    if (firstMicros < 0)
+                    {
+                        firstMicros = reader.PresentInfo.Micros;
+                        wall.Restart();
+                    }
                     double due = (reader.PresentInfo.Micros - firstMicros) / 1e6 / s.Speed;
                     double ahead = due - wall.Elapsed.TotalSeconds;
-                    if (ahead > 0.001) Thread.Sleep(TimeSpan.FromSeconds(Math.Min(ahead, 1)));
+                    if (ahead > 0.001)
+                    {
+                        Thread.Sleep(TimeSpan.FromSeconds(Math.Min(ahead, 1)));
+                    }
                 }
-                if (renderer.PresentCount >= s.StopFrame) return false;
+                if (renderer.PresentCount >= s.StopFrame)
+                {
+                    return false;
+                }
+
                 return true;
             }, cancel: () => closing?.IsSet == true);
             long frames = st.Frames;
             EndTrace(); // a trace still open (the dump ends inside the traced scene)
             // retire every frame in flight: the last dumps are written when their frame completes
             renderer.Execute(new FinishCommand());
-            if (limit != null) Log.Info($"[replay] present #{s.LimitFrame}: executed {Math.Min(limit.Draws, s.DrawLimit)} of {limit.Draws} draws behind it (--draw-limit: {st.Skipped} skipped)");
+            if (limit != null)
+            {
+                Log.Info($"[replay] present #{s.LimitFrame}: executed {Math.Min(limit.Draws, s.DrawLimit)} of {limit.Draws} draws behind it (--draw-limit: {st.Skipped} skipped)");
+            }
+
             if (trace != null)
             {
-                if (trace.Wait(120000)) Log.Info($"[replay] traced present #{s.TraceFrame}: {trace.Result.Draws} draws, {trace.Result.Targets} targets, {trace.Result.Textures} textures -> {trace.Result.Dir}");
-                else Log.Warn("[replay] the trace did not complete");
+                if (trace.Wait(120000))
+                {
+                    Log.Info($"[replay] traced present #{s.TraceFrame}: {trace.Result.Draws} draws, {trace.Result.Targets} targets, {trace.Result.Textures} textures -> {trace.Result.Dir}");
+                }
+                else
+                {
+                    Log.Warn("[replay] the trace did not complete");
+                }
             }
-            else if (s.TraceFrame >= 0) Log.Warn($"[replay] present #{s.TraceFrame} was not traced (its draws {traced?.FirstDraw}-{traced?.LastDraw} were not replayed: --frame too low, or not in the dump)");
+            else if (s.TraceFrame >= 0)
+            {
+                Log.Warn($"[replay] present #{s.TraceFrame} was not traced (its draws {traced?.FirstDraw}-{traced?.LastDraw} were not replayed: --frame too low, or not in the dump)");
+            }
+
             double sec = wall.Elapsed.TotalSeconds;
             Log.Info($"[replay] done: {frames} frames (presents {ro.FirstPresent + 1}-{renderer.PresentCount}), {st.Commands} commands, {st.Draws} draws ({st.Skipped} skipped), " +
                      $"{st.MemoryBytes / 1048576.0:F1} MB guest memory written, {sec:F1} s ({frames / Math.Max(sec, 1e-3):F1} fps)");
-            if (renderer.Report() is { } rep) foreach (var line in rep.Split('\n')) if (line.Length > 0) Log.Info(line);
+            if (renderer.Report() is { } rep)
+            {
+                foreach (var line in rep.Split('\n'))
+                {
+                    if (line.Length > 0)
+                    {
+                        Log.Info(line);
+                    }
+                }
+            }
+
             return 0;
         }
         finally
@@ -353,11 +530,19 @@ static class ReplayGpu
         foreach (var f in Directory.GetFiles(outDir, pattern).Order())
         {
             string name = Path.GetFileName(f), other = Path.Combine(refDir, name);
-            if (!File.Exists(other)) continue;
+            if (!File.Exists(other))
+            {
+                continue;
+            }
+
             var (a, aw, ah) = PngReader.Read(f);
             var (b, bw, bh) = PngReader.Read(other);
             n++;
-            if (aw != bw || ah != bh) { sb.AppendLine($"{name} size {aw}x{ah} vs {bw}x{bh}"); continue; }
+            if (aw != bw || ah != bh)
+            {
+                sb.AppendLine($"{name} size {aw}x{ah} vs {bw}x{bh}");
+                continue;
+            }
             long same = 0, off = 0, sum = 0;
             int max = 0;
             var diff = new byte[a.Length];
@@ -372,15 +557,34 @@ static class ReplayGpu
                     diff[i + c] = (byte)Math.Min(255, x * 8);
                 }
                 diff[i + 3] = 255;
-                if (d == 0) same++;
-                if (d > 8) off++;
+                if (d == 0)
+                {
+                    same++;
+                }
+
+                if (d > 8)
+                {
+                    off++;
+                }
+
                 max = Math.Max(max, d);
             }
             long px = a.Length / 4;
             double mean = sum / (3.0 * px);
-            if (same == px) identical++;
-            else Png.Write(Path.Combine(outDir, "diff_" + (name.StartsWith("frame_") ? name[6..] : name)), diff, aw, ah);
-            if (mean > worstMean) { worstMean = mean; worst = name; }
+            if (same == px)
+            {
+                identical++;
+            }
+            else
+            {
+                Png.Write(Path.Combine(outDir, "diff_" + (name.StartsWith("frame_") ? name[6..] : name)), diff, aw, ah);
+            }
+
+            if (mean > worstMean)
+            {
+                worstMean = mean;
+                worst = name;
+            }
             sb.AppendLine($"{name} {100.0 * same / px:F3} {100.0 * off / px:F3} {mean:F4} {max}");
         }
         string summary = $"COMPARE {n} frames against {refDir}: {identical} pixel-identical, worst mean difference {worstMean:F4} ({worst})";

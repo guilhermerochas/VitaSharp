@@ -38,9 +38,17 @@ static class AppIcon
         foreach (int n in Sizes)
         {
             using var s = Open($"icon-{n}.png");
-            if (s == null) continue;
+            if (s == null)
+            {
+                continue;
+            }
+
             using var bmp = SKBitmap.Decode(s, new SKImageInfo(n, n, SKColorType.Rgba8888, SKAlphaType.Unpremul));
-            if (bmp == null) continue;
+            if (bmp == null)
+            {
+                continue;
+            }
+
             list.Add(new Silk.NET.Core.RawImage(bmp.Width, bmp.Height, bmp.Bytes));
         }
         return list.ToArray();

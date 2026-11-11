@@ -28,10 +28,20 @@ public static class Program
             DataFromCommandLine = true;
         }
         // the update swap runs from the downloaded package and touches nothing else (no Vulkan, no window)
-        if (args.Length > 0 && args[0] == "apply-update") return Updater.ApplyCli(args.Skip(1).ToArray());
-        if (OperatingSystem.IsMacOS() && MacVulkanLoader.RelaunchIfNeeded(args) is { } rc) return rc;
+        if (args.Length > 0 && args[0] == "apply-update")
+        {
+            return Updater.ApplyCli(args.Skip(1).ToArray());
+        }
 
-        if (args.Length == 0 || args[0] == "gui") return Launcher.LauncherApp.Run(args);
+        if (OperatingSystem.IsMacOS() && MacVulkanLoader.RelaunchIfNeeded(args) is { } rc)
+        {
+            return rc;
+        }
+
+        if (args.Length == 0 || args[0] == "gui")
+        {
+            return Launcher.LauncherApp.Run(args);
+        }
 
         switch (args[0])
         {
@@ -42,7 +52,11 @@ public static class Program
             case "run" when args.Length >= 2 && IsArchive(args[1]) && File.Exists(args[1]):
             {
                 var app = InstallVpkForRun(args[1], args.Skip(2).ToArray());
-                if (app == null) return 1;
+                if (app == null)
+                {
+                    return 1;
+                }
+
                 return Runner.Run(app, args.Skip(2).Where(a => a != "--reinstall" && !a.StartsWith("--license=")).ToArray());
             }
             case "install-firmware" when args.Length >= 2:
@@ -152,7 +166,11 @@ public static class Program
                 // audio-devices [--audio-device=<name>]: the outputs OpenAL lists, the system default and the one a game
                 // would open now (silent: no sound is played)
                 var (outs, def) = Host.OpenAlAudio.ListOutputs();
-                foreach (var o in outs) Console.WriteLine($"{(o == def ? "* " : "  ")}{o}");
+                foreach (var o in outs)
+                {
+                    Console.WriteLine($"{(o == def ? "* " : "  ")}{o}");
+                }
+
                 using var a = Host.OpenAlAudio.TryCreate(OptValue(args, "--audio-device"));
                 Console.WriteLine(a == null ? "no output opened" : $"opened: {a.DeviceName}");
                 return a == null ? 1 : 0;
@@ -181,11 +199,20 @@ public static class Program
                 Log.Level = LogLevel.Warn;
                 using var emu = new Emulator(new EmulatorOptions { FsRoot = FsRoot, EnableJit = false });
                 var selfArg = args.FirstOrDefault(a => a.StartsWith("--self="))?["--self=".Length..];
-                if (selfArg != null) emu.LoadTitle(ResolveApp(args[1]), selfArg); else emu.LoadTitle(ResolveApp(args[1]));
+                if (selfArg != null)
+                {
+                    emu.LoadTitle(ResolveApp(args[1]), selfArg);
+                }
+                else
+                {
+                    emu.LoadTitle(ResolveApp(args[1]));
+                }
                 // --load=vs0:sys/external/libpaf.suprx,...: also load these modules (firmware code a system program
                 // loads at run time), each printed with its base so addresses like ScePaf+1E011E can be found
                 foreach (var mod in args.FirstOrDefault(a => a.StartsWith("--load="))?["--load=".Length..].Split(',') ?? [])
+                {
                     Console.WriteLine($"{mod}: base 0x{emu.LoadModule(mod).Segments.Values.Min(s => s.Address):X8}");
+                }
                 // --raw=<file>: write COUNT bytes from ADDR of the loaded image instead (for an external disassembler)
                 var rawOut = args.FirstOrDefault(a => a.StartsWith("--raw="))?["--raw=".Length..];
                 args = args.Where(a => !a.StartsWith("--")).ToArray();
@@ -194,7 +221,11 @@ public static class Program
                 if (rawOut != null)
                 {
                     var bytes = new byte[count];
-                    for (int i = 0; i < count; i++) bytes[i] = VitaSharp.Core.Memory.GuestMemory.Read<byte>(addr + (uint)i);
+                    for (int i = 0; i < count; i++)
+                    {
+                        bytes[i] = VitaSharp.Core.Memory.GuestMemory.Read<byte>(addr + (uint)i);
+                    }
+
                     File.WriteAllBytes(rawOut, bytes);
                     return 0;
                 }
@@ -203,8 +234,14 @@ public static class Program
                     uint hw = VitaSharp.Core.Memory.GuestMemory.Read<ushort>(addr);
                     VitaSharp.Core.Cpu.DecodedInst d;
                     if ((hw & 0xE000) == 0xE000 && (hw & 0x1800) != 0)
+                    {
                         d = VitaSharp.Core.Cpu.Decoder.DecodeThumb32((hw << 16) | VitaSharp.Core.Memory.GuestMemory.Read<ushort>(addr + 2), addr, false, 0);
-                    else d = VitaSharp.Core.Cpu.Decoder.DecodeThumb16(hw, addr, false, 0);
+                    }
+                    else
+                    {
+                        d = VitaSharp.Core.Cpu.Decoder.DecodeThumb16(hw, addr, false, 0);
+                    }
+
                     Console.WriteLine($"{addr:X8}: {(d.Size == 4 ? $"{d.Raw:X8}" : $"    {d.Raw & 0xFFFF:X4}")}  {d.Op}");
                     addr += d.Size;
                 }
@@ -216,7 +253,11 @@ public static class Program
                 using var emu = new Emulator(new EmulatorOptions { FsRoot = FsRoot, EnableJit = false });
                 emu.LoadTitle(ResolveApp(args[1]));
                 uint addr = Convert.ToUInt32(args[2], 16) & ~3u;
-                for (uint a = addr; a < addr + 16; a += 4) Console.WriteLine($"{a:X8}: {VitaSharp.Core.Memory.GuestMemory.R32(a):X8}");
+                for (uint a = addr; a < addr + 16; a += 4)
+                {
+                    Console.WriteLine($"{a:X8}: {VitaSharp.Core.Memory.GuestMemory.R32(a):X8}");
+                }
+
                 uint nid = VitaSharp.Core.Memory.GuestMemory.R32(addr + 8);
                 Console.WriteLine($"NID {nid:X8} = {NidDatabase.NameOf(nid)}; svc index -> {emu.Hle.GetFunction(VitaSharp.Core.Memory.GuestMemory.R32(addr) & 0xFFFFFF).Name}");
                 return 0;
@@ -242,7 +283,10 @@ public static class Program
                 // a system application (vs0:app/NPXS*) runs under the shell, as on the Vita: the shell boots and opens it
                 // (as when an application asks it to); --no-shell runs it alone (its libshellsvc then finds no shell to talk to)
                 if (SystemAppTitle(app) is { } tid && !opts.Contains("--no-shell") && Runner.Opt(opts, "--self") == null && Runner.Opt(opts, "--load-state") == null)
+                {
                     return Runner.Run(ResolveApp("vs0:vsh/shell"), opts.Append("--self=shell.self").Append($"--launch-app={tid}").ToArray());
+                }
+
                 return Runner.Run(app, opts);
             }
             default:
@@ -261,15 +305,28 @@ public static class Program
 
     public static string ResolveApp(string arg)
     {
-        if (Directory.Exists(arg)) return arg;
+        if (Directory.Exists(arg))
+        {
+            return arg;
+        }
         // a folder of the virtual file system: vs0:vsh/shell (the shell, with --self=shell.self)
         if (arg.Length > 4 && arg.IndexOf(':') is > 1 and var colon && Path.Combine(FsRoot, arg[..colon], arg[(colon + 1)..].TrimStart('/')) is var dev && Directory.Exists(dev))
+        {
             return dev;
+        }
+
         var p = Path.Combine(Ux0, "app", arg);
-        if (Directory.Exists(p)) return p;
+        if (Directory.Exists(p))
+        {
+            return p;
+        }
         // system applications of the installed firmware (vs0:app/NPXS*)
         var sys = Path.Combine(FsRoot, "vs0", "app", arg);
-        if (Directory.Exists(sys)) return sys;
+        if (Directory.Exists(sys))
+        {
+            return sys;
+        }
+
         throw new DirectoryNotFoundException($"Title {arg} not found (looked in {p} and {sys})");
     }
 
@@ -286,10 +343,22 @@ public static class Program
     {
         using var w = new BinaryWriter(File.Create(path));
         int bytes = pcm.Samples.Length * 2;
-        w.Write("RIFF"u8); w.Write(36 + bytes); w.Write("WAVEfmt "u8); w.Write(16); w.Write((short)1); w.Write((short)pcm.Channels);
-        w.Write(pcm.SampleRate); w.Write(pcm.SampleRate * pcm.Channels * 2); w.Write((short)(pcm.Channels * 2)); w.Write((short)16);
-        w.Write("data"u8); w.Write(bytes);
-        foreach (var s in pcm.Samples) w.Write(s);
+        w.Write("RIFF"u8);
+        w.Write(36 + bytes);
+        w.Write("WAVEfmt "u8);
+        w.Write(16);
+        w.Write((short)1);
+        w.Write((short)pcm.Channels);
+        w.Write(pcm.SampleRate);
+        w.Write(pcm.SampleRate * pcm.Channels * 2);
+        w.Write((short)(pcm.Channels * 2));
+        w.Write((short)16);
+        w.Write("data"u8);
+        w.Write(bytes);
+        foreach (var s in pcm.Samples)
+        {
+            w.Write(s);
+        }
     }
 
     /// <summary>install &lt;game.pkg&gt; [&lt;work.bin|.rif|zRIF&gt;]: a PS Vita package needs its license; a
@@ -297,10 +366,17 @@ public static class Program
     /// installed when given).</summary>
     static int InstallPkgCli(string pkg, string[] rest)
     {
-        if (!File.Exists(pkg)) { Console.Error.WriteLine($"Package not found: {pkg}"); return 1; }
+        if (!File.Exists(pkg))
+        {
+            Console.Error.WriteLine($"Package not found: {pkg}");
+            return 1;
+        }
         string? license = rest.FirstOrDefault(a => !a.StartsWith("--"));
         PkgInfo info;
-        try { info = PkgInstaller.Inspect(pkg); }
+        try
+        {
+            info = PkgInstaller.Inspect(pkg);
+        }
         catch (Exception e) when (e is InvalidDataException or NotSupportedException or IOException)
         {
             Console.Error.WriteLine($"Not an installable package: {e.Message}");
@@ -314,8 +390,16 @@ public static class Program
             {
                 // optional: the user's own license (.rif from their console) and activation data (--act=act.dat)
                 string? act = OptValue(rest, "--act");
-                if (license != null && !File.Exists(license)) { Console.Error.WriteLine($"License file not found: {license}"); return 1; }
-                if (act != null && !File.Exists(act)) { Console.Error.WriteLine($"act.dat not found: {act}"); return 1; }
+                if (license != null && !File.Exists(license))
+                {
+                    Console.Error.WriteLine($"License file not found: {license}");
+                    return 1;
+                }
+                if (act != null && !File.Exists(act))
+                {
+                    Console.Error.WriteLine($"act.dat not found: {act}");
+                    return 1;
+                }
                 var options = new PspInstallOptions
                 {
                     License = license != null ? File.ReadAllBytes(license) : null,
@@ -328,7 +412,11 @@ public static class Program
                 Console.Error.WriteLine($"A {info.Description} package needs its license: install <game.pkg> <work.bin|.rif|zRIF>");
                 return 1;
             }
-            else t = PkgInstaller.Install(pkg, license, Ux0, Console.WriteLine);
+            else
+            {
+                t = PkgInstaller.Install(pkg, license, Ux0, Console.WriteLine);
+            }
+
             Console.WriteLine($"Installed {t.TitleId} \"{t.Title}\" ({t.Kind?.Describe() ?? t.Type.ToString()}) -> {t.Path}");
             return 0;
         }
@@ -360,15 +448,22 @@ public static class Program
                 Progress = p =>
                 {
                     int pct = (int)(p.Fraction * 100);
-                    if (pct / 10 == lastPercent / 10 && pct != 100) return;
+                    if (pct / 10 == lastPercent / 10 && pct != 100)
+                    {
+                        return;
+                    }
+
                     lastPercent = pct;
                     Console.WriteLine($"  {pct,3}%");
                 },
             });
             foreach (var r in results)
+            {
                 Console.WriteLine(r.Installed
                     ? $"{(r.Replaced ? "Updated" : "Installed")} {r.TitleId} \"{r.Content.Title}\" ({r.Content.Kind}, category {r.Content.Category}) -> {r.InstallPath}"
                     : $"Skipped {r.TitleId} ({r.Content.Kind}): already installed (use --force to replace)");
+            }
+
             return 0;
         }
         catch (Exception e) when (e is InvalidDataException or VpkLicenseException or IOException or UnauthorizedAccessException)
@@ -398,10 +493,17 @@ public static class Program
                 LicensePath = OptValue(options, "--license"),
                 ConfirmOverwrite = c => reinstall || c.Kind != VpkContentKind.App,
             });
-            if (app != null) return app.DestinationPath;
+            if (app != null)
+            {
+                return app.DestinationPath;
+            }
             // a patch/add-on archive: boot the base game it belongs to, when installed
             var baseApp = Path.Combine(Ux0, "app", contents[0].TitleId);
-            if (Directory.Exists(baseApp)) return baseApp;
+            if (Directory.Exists(baseApp))
+            {
+                return baseApp;
+            }
+
             Console.Error.WriteLine($"Installed {contents[0].TitleId} ({contents[0].Kind}), but its base game is not installed, so there is nothing to boot.");
             return null;
         }
@@ -418,15 +520,26 @@ public static class Program
         if (source == "--vita3k")
         {
             var v3k = VitaSharp.Core.Hle.Np.TrophyImport.FindVita3K();
-            if (v3k == null) { Console.Error.WriteLine("No Vita3K trophy data found."); return 1; }
+            if (v3k == null)
+            {
+                Console.Error.WriteLine("No Vita3K trophy data found.");
+                return 1;
+            }
             source = v3k;
         }
-        if (!Directory.Exists(source)) { Console.Error.WriteLine($"{source}: no such folder"); return 1; }
+        if (!Directory.Exists(source))
+        {
+            Console.Error.WriteLine($"{source}: no such folder");
+            return 1;
+        }
         try
         {
             var r = VitaSharp.Core.Hle.Np.TrophyImport.Import(source, FsRoot);
             foreach (var t in r.Titles)
+            {
                 Console.WriteLine(r.Kind == VitaSharp.Core.Hle.Np.TrophyImport.SourceKind.Vita3K ? $"  {t.CommId}: {t.Total} unlocked, {t.Imported} new" : $"  {t.CommId}");
+            }
+
             Console.WriteLine(r.Message);
             return r.Kind is VitaSharp.Core.Hle.Np.TrophyImport.SourceKind.Vita3K or VitaSharp.Core.Hle.Np.TrophyImport.SourceKind.VitaDecrypted ? 0 : 1;
         }
@@ -439,7 +552,11 @@ public static class Program
 
     static bool AskYesNo(string question)
     {
-        if (Console.IsInputRedirected) return false;
+        if (Console.IsInputRedirected)
+        {
+            return false;
+        }
+
         Console.Write(question + " [y/N] ");
         var answer = Console.ReadLine()?.Trim();
         return answer != null && (answer.Equals("y", StringComparison.OrdinalIgnoreCase) || answer.Equals("yes", StringComparison.OrdinalIgnoreCase));
@@ -456,10 +573,24 @@ public static class Program
         foreach (var file in Directory.EnumerateFiles(appDir, "*.suprx", SearchOption.AllDirectories).Order())
         {
             string rel = "app0:" + Path.GetRelativePath(appDir, file).Replace('\\', '/');
-            if (rel.StartsWith("app0:sce_sys/", StringComparison.OrdinalIgnoreCase)) continue; // system plugins (manual, about)
-            if (emu.Kernel.Modules.Values.Any(m => string.Equals(m.Path, rel, StringComparison.OrdinalIgnoreCase))) continue;
-            try { emu.LoadModule(rel); }
-            catch (Exception e) { Console.WriteLine($"(could not load {rel}: {e.Message})"); }
+            if (rel.StartsWith("app0:sce_sys/", StringComparison.OrdinalIgnoreCase))
+            {
+                continue; // system plugins (manual, about)
+            }
+
+            if (emu.Kernel.Modules.Values.Any(m => string.Equals(m.Path, rel, StringComparison.OrdinalIgnoreCase)))
+            {
+                continue;
+            }
+
+            try
+            {
+                emu.LoadModule(rel);
+            }
+            catch (Exception e)
+            {
+                Console.WriteLine($"(could not load {rel}: {e.Message})");
+            }
         }
         int total = 0, hle = 0, lle = 0;
         foreach (var m in emu.Kernel.Modules.Values.OrderBy(m => m.Uid))
@@ -471,15 +602,35 @@ public static class Program
                 foreach (var nid in nids)
                 {
                     total++;
-                    if (emu.Linker.TryGetFunctionExport(nid, out _)) lle++;
-                    else if (emu.Hle.IsImplemented(nid)) hle++;
-                    else missing.Add(NidDatabase.NameOf(nid));
+                    if (emu.Linker.TryGetFunctionExport(nid, out _))
+                    {
+                        lle++;
+                    }
+                    else if (emu.Hle.IsImplemented(nid))
+                    {
+                        hle++;
+                    }
+                    else
+                    {
+                        missing.Add(NidDatabase.NameOf(nid));
+                    }
                 }
                 Console.WriteLine($"  {lib,-28} {nids.Length,4} imports, {missing.Count,4} missing");
-                foreach (var n in missing) Console.WriteLine($"      - {n}");
+                foreach (var n in missing)
+                {
+                    Console.WriteLine($"      - {n}");
+                }
+
                 if (namePrefixes.Any(p => lib.StartsWith(p, StringComparison.OrdinalIgnoreCase)))
+                {
                     foreach (var nid in nids)
-                        if (!missing.Contains(NidDatabase.NameOf(nid))) Console.WriteLine($"      . {NidDatabase.NameOf(nid)}");
+                    {
+                        if (!missing.Contains(NidDatabase.NameOf(nid)))
+                        {
+                            Console.WriteLine($"      . {NidDatabase.NameOf(nid)}");
+                        }
+                    }
+                }
             }
         }
         Console.WriteLine($"Total {total}: LLE {lle}, HLE {hle}, missing {total - lle - hle}");
@@ -495,15 +646,22 @@ public static class Program
     {
         var byNid = new SortedDictionary<uint, (string Name, string Module, bool Default)>();
         foreach (var m in HleBindings.Modules)
+        {
             foreach (var b in m.Bindings())
             {
                 string name = b.Name ?? b.Method;
                 var nids = b.Nid != 0 ? [b.Nid]
                     : NidDatabase.LookupName(name).Where(i => b.Library == null || i.Library == b.Library).Select(i => i.Nid).ToArray();
                 foreach (var nid in nids)
-                    byNid[nid] = byNid.TryGetValue(nid, out var had) ? had with { Default = had.Default && b.Default }
+                {
+                    byNid[nid] = byNid.TryGetValue(nid, out var had) ? had with
+                    {
+                        Default = had.Default && b.Default
+                    }
                         : (NidDatabase.Lookup(nid)?.Name ?? name, m.Type.Name, b.Default);
+                }
             }
+        }
         // data exports (variables) the HLE hands to importers: the modules register them when the emulator is made
         string tmp = Path.Combine(Path.GetTempPath(), "vitasharp-hle-vars-" + Environment.ProcessId);
         Directory.CreateDirectory(tmp);
@@ -511,9 +669,20 @@ public static class Program
         {
             using var emu = new Emulator(new EmulatorOptions { FsRoot = tmp, EnableJit = false });
             foreach (var nid in emu.Hle.VariableNids)
+            {
                 byNid.TryAdd(nid, (NidDatabase.NameOf(nid), "data", false));
+            }
         }
-        finally { try { Directory.Delete(tmp, true); } catch (IOException) { } }
+        finally
+        {
+            try
+            {
+                Directory.Delete(tmp, true);
+            }
+            catch (IOException)
+            {
+            }
+        }
         return byNid;
     }
 
@@ -547,7 +716,10 @@ public static class Program
             Console.WriteLine($"{label,-10} {n,6} / {l.Count,6}  {(l.Count == 0 ? 0 : 100.0 * n / l.Count),6:F1}%  (real {n - d - ll}, default {d}, LLE {ll})");
         }
         Line("overall", rows);
-        foreach (var g in new[] { "games", "system", "general" }) Line(g, rows.Where(r => r.Group == g));
+        foreach (var g in new[] { "games", "system", "general" })
+        {
+            Line(g, rows.Where(r => r.Group == g));
+        }
         // the VitaSDK column: every user function of the VitaSDK NID list (docs/hle/data/vitasdk-user-functions.tsv), exported
         // by the installed firmware or not
         vitasdkTsv ??= Path.Combine(AppContext.BaseDirectory, "vitasdk-user-functions.tsv") is var d && File.Exists(d) ? d : null;
@@ -562,7 +734,11 @@ public static class Program
         }
         if (statusRoot != null)
         {
-            if (sdkTotal == 0) { Console.Error.WriteLine("--status needs --vitasdk=<vitasdk-user-functions.tsv>"); return 1; }
+            if (sdkTotal == 0)
+            {
+                Console.Error.WriteLine("--status needs --vitasdk=<vitasdk-user-functions.tsv>");
+                return 1;
+            }
             var status = VitaSharp.Core.Firmware.HleStatusReport.Build(VitaSharp.Core.Firmware.FirmwareInfo.Read(FsRoot)?.Version ?? "?", c.Games, sdkTotal, sdkImpl,
                 rows.Select(r => (r.Library, r.Module, r.Group, r.Impl, r.Default, r.Lle)), sdkDefault, sdkLle);
             var files = new Dictionary<string, string>(VitaSharp.Core.Firmware.HleStatusReport.Render(status))
@@ -581,10 +757,13 @@ public static class Program
         int extra = c.GameImports.Keys.Concat(c.SystemImports.Keys).Distinct().Count(n => !c.Exported.ContainsKey(n));
         Console.WriteLine($"({extra} imported NIDs are not exported by any installed firmware module; not counted)");
         if (outTsv != null)
+        {
             File.WriteAllLines(outTsv, rows.OrderBy(r => r.Library, StringComparer.Ordinal).ThenBy(r => NidDatabase.NameOf(r.Nid), StringComparer.Ordinal)
                 .Select(r => $"0x{r.Nid:X8}	{NidDatabase.NameOf(r.Nid)}	{r.Library}	{r.Module}	{r.Group}	{(r.Default ? "default" : r.Lle ? "lle" : r.Impl ? "impl" : "-")}	{Importer(r.Nid)}")
                 .Concat(c.GameImports.Concat(c.SystemImports).Where(e => !c.Exported.ContainsKey(e.Key)).DistinctBy(e => e.Key)
                     .Select(e => $"0x{e.Key:X8}	{NidDatabase.NameOf(e.Key)}	{NidDatabase.Lookup(e.Key)?.Library ?? "-"}	{e.Value}	not-exported	{(impl.TryGetValue(e.Key, out var v) ? v.Default ? "default" : "impl" : lle.Contains(e.Key) ? "lle" : "-")}	{Importer(e.Key)}")));
+        }
+
         return 0;
     }
 
@@ -592,11 +771,22 @@ public static class Program
     {
         var vitasdk = new HashSet<uint>();
         if (vitasdkTsv != null)
+        {
             foreach (var line in File.ReadLines(vitasdkTsv))
-                if (line.StartsWith("0x") && uint.TryParse(line.AsSpan(2, 8), System.Globalization.NumberStyles.HexNumber, null, out var n)) vitasdk.Add(n);
+            {
+                if (line.StartsWith("0x") && uint.TryParse(line.AsSpan(2, 8), System.Globalization.NumberStyles.HexNumber, null, out var n))
+                {
+                    vitasdk.Add(n);
+                }
+            }
+        }
+
         var byNid = HleImplementedNids();
         foreach (var (nid, (name, module, isDefault)) in byNid.OrderBy(e => NidDatabase.Lookup(e.Key)?.Library ?? "~", StringComparer.Ordinal).ThenBy(e => e.Value.Name, StringComparer.Ordinal))
+        {
             Console.WriteLine($"0x{nid:X8}	{name}	{module}	{NidDatabase.Lookup(nid)?.Library ?? "-"}	{(vitasdk.Contains(nid) ? "vh" : "-")}{(isDefault ? "	default" : "")}");
+        }
+
         Console.Error.WriteLine($"{byNid.Count} implemented NIDs ({byNid.Keys.Count(vitasdk.Contains)} in the VitaSDK list, {byNid.Values.Count(v => v.Default)} default)");
         return 0;
     }
@@ -606,7 +796,11 @@ public static class Program
     {
         var rco = VitaSharp.Core.Shell.Rco.Load(path);
         Console.Write(rco.Dump());
-        if (extractDir == null) return 0;
+        if (extractDir == null)
+        {
+            return 0;
+        }
+
         Directory.CreateDirectory(extractDir);
         int n = 0;
         foreach (var f in rco.Files())
@@ -614,7 +808,11 @@ public static class Program
             string name = string.Concat((f.Id.Length > 0 ? f.Id : $"{f.Table}_{n}").Select(c => Path.GetInvalidFileNameChars().Contains(c) ? '_' : c));
             File.WriteAllBytes(Path.Combine(extractDir, name + VitaSharp.Core.Shell.RcoResources.Extension(f)), f.Data);
             n++;
-            if (!VitaSharp.Core.Shell.Gim.IsGim(f.Data)) continue;
+            if (!VitaSharp.Core.Shell.Gim.IsGim(f.Data))
+            {
+                continue;
+            }
+
             try
             {
                 var img = VitaSharp.Core.Shell.Gim.Decode(f.Data);
@@ -623,7 +821,10 @@ public static class Program
                 using var png = File.Create(Path.Combine(extractDir, name + ".png"));
                 bmp.Encode(png, SkiaSharp.SKEncodedImageFormat.Png, 100);
             }
-            catch (InvalidDataException e) { Console.WriteLine($"  {name}: {e.Message}"); }
+            catch (InvalidDataException e)
+            {
+                Console.WriteLine($"  {name}: {e.Message}");
+            }
         }
         Console.WriteLine($"extracted {n} file(s) to {extractDir}");
         return 0;

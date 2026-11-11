@@ -67,7 +67,11 @@ sealed class NavScript : IInputBackend
         lock (_lock)
         {
             _sinkFrames++;
-            if (_lastPicture != null && Similar(_lastPicture, px)) return;
+            if (_lastPicture != null && Similar(_lastPicture, px))
+            {
+                return;
+            }
+
             _lastPicture = (byte[])px.Clone();
             _lastChange = DateTime.UtcNow;
         }
@@ -77,10 +81,20 @@ sealed class NavScript : IInputBackend
     /// change; video noise does not exist in system apps).</summary>
     static bool Similar(byte[] a, byte[] b)
     {
-        if (a.Length != b.Length) return false;
+        if (a.Length != b.Length)
+        {
+            return false;
+        }
+
         int diff = 0;
         for (int i = 0; i < a.Length; i += 4)
-            if (Math.Abs(a[i] - b[i]) + Math.Abs(a[i + 1] - b[i + 1]) + Math.Abs(a[i + 2] - b[i + 2]) > 24) diff++;
+        {
+            if (Math.Abs(a[i] - b[i]) + Math.Abs(a[i + 1] - b[i + 1]) + Math.Abs(a[i + 2] - b[i + 2]) > 24)
+            {
+                diff++;
+            }
+        }
+
         return diff <= 2;
     }
 
@@ -112,7 +126,11 @@ sealed class NavScript : IInputBackend
             }
             if (!_live)
             {
-                if (pending.Trim().Length > 0) yield return pending.Trim();
+                if (pending.Trim().Length > 0)
+                {
+                    yield return pending.Trim();
+                }
+
                 yield break;
             }
             Thread.Sleep(200);
@@ -125,15 +143,35 @@ sealed class NavScript : IInputBackend
         {
             foreach (var line in Lines())
             {
-                if (Quit) return;
-                if (line.Length == 0 || line.StartsWith('#')) continue;
+                if (Quit)
+                {
+                    return;
+                }
+
+                if (line.Length == 0 || line.StartsWith('#'))
+                {
+                    continue;
+                }
+
                 Log.Info($"NAV f{Frames}: {line}");
                 Execute(line);
             }
-            if (!_live) Log.Info($"NAV f{Frames}: end of script");
+            if (!_live)
+            {
+                Log.Info($"NAV f{Frames}: end of script");
+            }
         }
-        catch (Exception e) { Log.Error($"NAV script failed: {e.Message}"); }
-        finally { if (!_live) Quit = true; }
+        catch (Exception e)
+        {
+            Log.Error($"NAV script failed: {e.Message}");
+        }
+        finally
+        {
+            if (!_live)
+            {
+                Quit = true;
+            }
+        }
     }
 
     void Execute(string line)
@@ -154,7 +192,11 @@ sealed class NavScript : IInputBackend
                 Act(Enum.Parse<VitaButtons>(p[1], true), null, Len(2, 8));
                 break;
             case "hold":
-                lock (_lock) _held = p.Length < 2 || p[1].Equals("none", StringComparison.OrdinalIgnoreCase) ? VitaButtons.None : Enum.Parse<VitaButtons>(p[1], true);
+                lock (_lock)
+                {
+                    _held = p.Length < 2 || p[1].Equals("none", StringComparison.OrdinalIgnoreCase) ? VitaButtons.None : Enum.Parse<VitaButtons>(p[1], true);
+                }
+
                 break;
             case "lstick" or "rstick":
             {
@@ -166,12 +208,35 @@ sealed class NavScript : IInputBackend
                 for (long i = 1; i < ramp; i++)
                 {
                     byte rx = Axis(F(1) * i / ramp), ry = Axis(F(2) * i / ramp);
-                    lock (_lock) { if (left) (_lx, _ly) = (rx, ry); else (_rx, _ry) = (rx, ry); }
+                    lock (_lock)
+                    {
+                        if (left)
+                        {
+                            (_lx, _ly) = (rx, ry);
+                        }
+                        else
+                        {
+                            (_rx, _ry) = (rx, ry);
+                        }
+                    }
                     WaitFrames(Frames + 1);
                 }
-                lock (_lock) { if (left) (_lx, _ly) = (x, y); else (_rx, _ry) = (x, y); }
+                lock (_lock)
+                {
+                    if (left)
+                    {
+                        (_lx, _ly) = (x, y);
+                    }
+                    else
+                    {
+                        (_rx, _ry) = (x, y);
+                    }
+                }
                 Act(VitaButtons.None, null, Len(3, 30));
-                lock (_lock) { _lx = _ly = _rx = _ry = 128; }
+                lock (_lock)
+                {
+                    _lx = _ly = _rx = _ry = 128;
+                }
                 break;
             }
             case "wait":
@@ -208,7 +273,11 @@ sealed class NavScript : IInputBackend
             _actionEnd = start + Math.Max(1, frames);
         }
         WaitFrames(_actionEnd);
-        lock (_lock) { _buttons = VitaButtons.None; _touch = null; }
+        lock (_lock)
+        {
+            _buttons = VitaButtons.None;
+            _touch = null;
+        }
         WaitFrames(Frames + 2); // a release the guest can see before the next press
     }
 
@@ -217,8 +286,15 @@ sealed class NavScript : IInputBackend
     void WaitFrames(long target)
     {
         var deadline = DateTime.UtcNow.AddSeconds(120); // a guest that stopped presenting must not stall the script
-        while (Frames < target && !Quit && DateTime.UtcNow < deadline) Thread.Sleep(5);
-        if (Frames < target && !Quit) Log.Warn($"NAV no frames presented for 120 s (waiting for frame {target}, at {Frames})");
+        while (Frames < target && !Quit && DateTime.UtcNow < deadline)
+        {
+            Thread.Sleep(5);
+        }
+
+        if (Frames < target && !Quit)
+        {
+            Log.Warn($"NAV no frames presented for 120 s (waiting for frame {target}, at {Frames})");
+        }
     }
 
     void Stable(double seconds, double timeout)
@@ -228,10 +304,22 @@ sealed class NavScript : IInputBackend
         while (!Quit)
         {
             DateTime changed;
-            lock (_lock) changed = _lastChange;
+            lock (_lock)
+            {
+                changed = _lastChange;
+            }
+
             var now = DateTime.UtcNow;
-            if ((now - changed).TotalSeconds >= seconds && (now - start).TotalSeconds >= seconds) return;
-            if ((now - start).TotalSeconds > timeout) { Log.Warn($"NAV f{Frames}: screen still changing after {timeout} s"); return; }
+            if ((now - changed).TotalSeconds >= seconds && (now - start).TotalSeconds >= seconds)
+            {
+                return;
+            }
+
+            if ((now - start).TotalSeconds > timeout)
+            {
+                Log.Warn($"NAV f{Frames}: screen still changing after {timeout} s");
+                return;
+            }
             Thread.Sleep(50);
         }
     }
@@ -239,18 +327,36 @@ sealed class NavScript : IInputBackend
     void Shot(string name)
     {
         string path = Path.Combine(_outDir, name + ".png");
-        try { File.Delete(path); } catch (IOException) { }
+        try
+        {
+            File.Delete(path);
+        }
+        catch (IOException) { }
         _ro.ShotPath = path;
         var deadline = DateTime.UtcNow.AddSeconds(30);
-        while (!File.Exists(path) && DateTime.UtcNow < deadline && !Quit) Thread.Sleep(20);
+        while (!File.Exists(path) && DateTime.UtcNow < deadline && !Quit)
+        {
+            Thread.Sleep(20);
+        }
+
         Thread.Sleep(50); // the PNG is written in one go; let it close
-        if (!File.Exists(path)) Log.Warn($"NAV shot {name}: no frame presented");
+        if (!File.Exists(path))
+        {
+            Log.Warn($"NAV shot {name}: no frame presented");
+        }
     }
 
     public ControllerState GetController(int port)
     {
         var st = ControllerState.Neutral;
-        lock (_lock) { st.Buttons = _buttons | _held; st.Lx = _lx; st.Ly = _ly; st.Rx = _rx; st.Ry = _ry; }
+        lock (_lock)
+        {
+            st.Buttons = _buttons | _held;
+            st.Lx = _lx;
+            st.Ly = _ly;
+            st.Rx = _rx;
+            st.Ry = _ry;
+        }
         return st;
     }
 
@@ -262,10 +368,18 @@ sealed class NavScript : IInputBackend
 
     public int GetTouches(bool back, Span<TouchPoint> dest)
     {
-        if (dest.Length == 0) return 0;
+        if (dest.Length == 0)
+        {
+            return 0;
+        }
+
         lock (_lock)
         {
-            if (_touch is not { } t || back != _touchBack) return 0;
+            if (_touch is not { } t || back != _touchBack)
+            {
+                return 0;
+            }
+
             float k = Math.Clamp((Frames - t.Start) / (float)t.Frames, 0, 1);
             dest[0] = new TouchPoint(1, t.X0 + (t.X1 - t.X0) * k, t.Y0 + (t.Y1 - t.Y0) * k);
             return 1;

@@ -30,26 +30,45 @@ static class MemDiff
         int nans = 0;
         foreach (var (addr, a) in after)
         {
-            if (!before.TryGetValue(addr, out var b) || b.Length != a.Length) continue;
+            if (!before.TryGetValue(addr, out var b) || b.Length != a.Length)
+            {
+                continue;
+            }
+
             for (int i = 0; i + 4 <= a.Length; i += 4)
             {
                 uint av = BitConverter.ToUInt32(a, i), bv = BitConverter.ToUInt32(b, i);
                 bool bad = av is 0x7FC00000 or 0x7F800000 or 0xFF800000;
-                if (bad && av != bv && nans++ < 200) Console.WriteLine($"NAN {addr + (uint)i:X8}: {bv:X8} ({BitConverter.UInt32BitsToSingle(bv)}) -> {av:X8}");
+                if (bad && av != bv && nans++ < 200)
+                {
+                    Console.WriteLine($"NAN {addr + (uint)i:X8}: {bv:X8} ({BitConverter.UInt32BitsToSingle(bv)}) -> {av:X8}");
+                }
             }
         }
         Console.WriteLine($"{nans} values became NaN/Inf");
         var cands = new List<(uint Addr, float[] B, float[] A)>();
         foreach (var (addr, a) in after)
         {
-            if (!before.TryGetValue(addr, out var b) || b.Length != a.Length) continue;
+            if (!before.TryGetValue(addr, out var b) || b.Length != a.Length)
+            {
+                continue;
+            }
+
             for (int i = 0; i + 12 <= a.Length; i += 4)
             {
                 float ax = BitConverter.ToSingle(a, i), ay = BitConverter.ToSingle(a, i + 4), az = BitConverter.ToSingle(a, i + 8);
                 float bx = BitConverter.ToSingle(b, i), by = BitConverter.ToSingle(b, i + 4), bz = BitConverter.ToSingle(b, i + 8);
-                if (!Plausible(ax, ay, az) || !Plausible(bx, by, bz)) continue;
+                if (!Plausible(ax, ay, az) || !Plausible(bx, by, bz))
+                {
+                    continue;
+                }
+
                 float d = MathF.Sqrt((ax - bx) * (ax - bx) + (ay - by) * (ay - by) + (az - bz) * (az - bz));
-                if (d < minJump) continue;
+                if (d < minJump)
+                {
+                    continue;
+                }
+
                 cands.Add((addr + (uint)i, [bx, by, bz], [ax, ay, az]));
                 i += 8; // do not report overlapping windows of the same vector
             }
@@ -58,13 +77,22 @@ static class MemDiff
 
         // where did the new values come from? look for each new triple anywhere in the before snapshot
         var wanted = new Dictionary<(uint, uint, uint), List<uint>>();
-        foreach (var c in cands) wanted.TryAdd(Key(c.A), new List<uint>());
+        foreach (var c in cands)
+        {
+            wanted.TryAdd(Key(c.A), new List<uint>());
+        }
+
         foreach (var (addr, b) in before)
+        {
             for (int i = 0; i + 12 <= b.Length; i += 4)
             {
                 var k = (BitConverter.ToUInt32(b, i), BitConverter.ToUInt32(b, i + 4), BitConverter.ToUInt32(b, i + 8));
-                if (wanted.TryGetValue(k, out var list) && list.Count < 8) list.Add(addr + (uint)i);
+                if (wanted.TryGetValue(k, out var list) && list.Count < 8)
+                {
+                    list.Add(addr + (uint)i);
+                }
             }
+        }
 
         foreach (var c in cands.OrderByDescending(c => wanted[Key(c.A)].Count > 0).ThenBy(c => c.Addr))
         {

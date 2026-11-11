@@ -45,7 +45,8 @@ public sealed class ImeOverlay : IImeDialogBackend, ITextInputBackend, ITextCapt
         {
             _entry = new TextEntry(request.Title, request.InitialText, request.MaxLength, request.Type, request.Multiline, request.Password);
             _done = done;
-            _changed = null; _enter = _close = null;
+            _changed = null;
+            _enter = _close = null;
             _padArmed = false;
         }
         Log.Info($"IME overlay: \"{request.Title}\" (max {request.MaxLength}, type {request.Type}{(request.Multiline ? ", multiline" : "")}{(request.Password ? ", password" : "")})");
@@ -63,7 +64,9 @@ public sealed class ImeOverlay : IImeDialogBackend, ITextInputBackend, ITextCapt
         {
             _entry = new TextEntry("", initial, maxLength, type, multiline, false);
             _done = null;
-            _changed = onTextChanged; _enter = onEnter; _close = onClose;
+            _changed = onTextChanged;
+            _enter = onEnter;
+            _close = onClose;
             _padArmed = false;
         }
         _window.TextCapture = this;
@@ -72,7 +75,11 @@ public sealed class ImeOverlay : IImeDialogBackend, ITextInputBackend, ITextCapt
 
     public void SetText(string text, int caret)
     {
-        lock (_lock) _entry?.Set(text, caret);
+        lock (_lock)
+        {
+            _entry?.Set(text, caret);
+        }
+
         Redraw();
     }
 
@@ -82,7 +89,11 @@ public sealed class ImeOverlay : IImeDialogBackend, ITextInputBackend, ITextCapt
 
     public void OnChar(char c)
     {
-        if (_window.IsControlDown) return; // Ctrl+letter shortcuts are keys, not text
+        if (_window.IsControlDown)
+        {
+            return; // Ctrl+letter shortcuts are keys, not text
+        }
+
         Edit(e => e.Insert(c.ToString()));
     }
 
@@ -92,20 +103,49 @@ public sealed class ImeOverlay : IImeDialogBackend, ITextInputBackend, ITextCapt
         {
             case Key.Enter or Key.KeypadEnter:
                 bool newline;
-                lock (_lock) newline = _entry?.Multiline == true && _window.IsShiftDown;
-                if (newline) Edit(e => e.Insert("\n"));
-                else Confirm();
+                lock (_lock)
+                {
+                    newline = _entry?.Multiline == true && _window.IsShiftDown;
+                }
+
+                if (newline)
+                {
+                    Edit(e => e.Insert("\n"));
+                }
+                else
+                {
+                    Confirm();
+                }
+
                 break;
-            case Key.Escape: Cancel(); break;
-            case Key.Backspace: Edit(e => e.Backspace()); break;
-            case Key.Delete: Edit(e => e.Delete()); break;
-            case Key.Left: Edit(e => e.Move(-1), caretOnly: true); break;
-            case Key.Right: Edit(e => e.Move(1), caretOnly: true); break;
-            case Key.Home: Edit(e => e.MoveTo(0), caretOnly: true); break;
-            case Key.End: Edit(e => e.MoveTo(e.Text.Length), caretOnly: true); break;
+            case Key.Escape:
+                Cancel();
+                break;
+            case Key.Backspace:
+                Edit(e => e.Backspace());
+                break;
+            case Key.Delete:
+                Edit(e => e.Delete());
+                break;
+            case Key.Left:
+                Edit(e => e.Move(-1), caretOnly: true);
+                break;
+            case Key.Right:
+                Edit(e => e.Move(1), caretOnly: true);
+                break;
+            case Key.Home:
+                Edit(e => e.MoveTo(0), caretOnly: true);
+                break;
+            case Key.End:
+                Edit(e => e.MoveTo(e.Text.Length), caretOnly: true);
+                break;
             case Key.V when _window.IsControlDown:
                 string clip = _window.ClipboardText;
-                if (clip.Length > 0) Edit(e => e.Insert(clip));
+                if (clip.Length > 0)
+                {
+                    Edit(e => e.Insert(clip));
+                }
+
                 break;
         }
     }
@@ -114,56 +154,109 @@ public sealed class ImeOverlay : IImeDialogBackend, ITextInputBackend, ITextCapt
     /// press that opened the dialog does not answer it).</summary>
     void PollGamepad()
     {
-        if (_window.TextCapture != this) return;
+        if (_window.TextCapture != this)
+        {
+            return;
+        }
+
         var b = _pad().Buttons & (VitaButtons.Cross | VitaButtons.Circle | VitaButtons.Start);
         VitaButtons pressed;
         lock (_lock)
         {
-            if (!_padArmed) { _padArmed = b == VitaButtons.None; _prevPad = b; return; }
+            if (!_padArmed)
+            {
+                _padArmed = b == VitaButtons.None;
+                _prevPad = b;
+                return;
+            }
             pressed = b & ~_prevPad;
             _prevPad = b;
         }
-        if ((pressed & (VitaButtons.Cross | VitaButtons.Start)) != 0) Confirm();
-        else if ((pressed & VitaButtons.Circle) != 0) Cancel();
+        if ((pressed & (VitaButtons.Cross | VitaButtons.Start)) != 0)
+        {
+            Confirm();
+        }
+        else if ((pressed & VitaButtons.Circle) != 0)
+        {
+            Cancel();
+        }
     }
 
     void Edit(Func<TextEntry, bool> edit, bool caretOnly = false)
     {
         Action<string, int>? changed;
-        string text; int caret;
+        string text;
+        int caret;
         lock (_lock)
         {
-            if (_entry is not { } e || !edit(e)) return;
+            if (_entry is not { } e || !edit(e))
+            {
+                return;
+            }
+
             changed = _changed;
-            text = e.Text; caret = e.Caret;
+            text = e.Text;
+            caret = e.Caret;
         }
         // SceIme reports text edits; a caret move alone is not echoed (UPDATE_CARET comes from the game's own SetCaret)
-        if (!caretOnly) changed?.Invoke(text, caret);
+        if (!caretOnly)
+        {
+            changed?.Invoke(text, caret);
+        }
+
         Redraw();
     }
 
     void Confirm()
     {
-        Action<string?>? done; Action? enter; string text;
+        Action<string?>? done;
+        Action? enter;
+        string text;
         lock (_lock)
         {
-            if (_entry == null) return;
-            done = _done; enter = _enter; text = _entry.Text;
+            if (_entry == null)
+            {
+                return;
+            }
+
+            done = _done;
+            enter = _enter;
+            text = _entry.Text;
         }
-        if (done != null) { Hide(); done(text); }
-        else enter?.Invoke(); // SceIme: the game decides when to close (sceImeClose)
+        if (done != null)
+        {
+            Hide();
+            done(text);
+        }
+        else
+        {
+            enter?.Invoke(); // SceIme: the game decides when to close (sceImeClose)
+        }
     }
 
     void Cancel()
     {
-        Action<string?>? done; Action? close;
+        Action<string?>? done;
+        Action? close;
         lock (_lock)
         {
-            if (_entry == null) return;
-            done = _done; close = _close;
+            if (_entry == null)
+            {
+                return;
+            }
+
+            done = _done;
+            close = _close;
         }
-        if (done != null) { Hide(); done(null); }
-        else close?.Invoke();
+        if (done != null)
+        {
+            Hide();
+            done(null);
+        }
+        else
+        {
+            close?.Invoke();
+        }
     }
 
     void Hide()
@@ -171,17 +264,31 @@ public sealed class ImeOverlay : IImeDialogBackend, ITextInputBackend, ITextCapt
         lock (_lock)
         {
             _entry = null;
-            _done = null; _changed = null; _enter = _close = null;
+            _done = null;
+            _changed = null;
+            _enter = _close = null;
         }
-        if (_window.TextCapture == this) _window.TextCapture = null;
+        if (_window.TextCapture == this)
+        {
+            _window.TextCapture = null;
+        }
+
         _show(null, 0, 0);
     }
 
     void Redraw()
     {
         TextEntry? e;
-        lock (_lock) e = _entry;
-        if (e == null) return;
+        lock (_lock)
+        {
+            e = _entry;
+        }
+
+        if (e == null)
+        {
+            return;
+        }
+
         try
         {
             float scale = Math.Clamp(_window.FramebufferSize.Height / 544f, 1f, 3f);
@@ -204,7 +311,15 @@ public sealed class ImeOverlay : IImeDialogBackend, ITextInputBackend, ITextCapt
         // the caret's line and column
         int caretLine = 0, caretCol = e.Caret;
         for (int i = 0, start = 0; i < lines.Length; start += lines[i].Length + 1, i++)
-            if (e.Caret <= start + lines[i].Length) { caretLine = i; caretCol = e.Caret - start; break; }
+        {
+            if (e.Caret <= start + lines[i].Length)
+            {
+                caretLine = i;
+                caretCol = e.Caret - start;
+                break;
+            }
+        }
+
         const int MaxLines = 5;
         int first = Math.Clamp(caretLine - MaxLines + 1, 0, Math.Max(0, lines.Length - 1));
         int visible = Math.Min(MaxLines, lines.Length - first);
@@ -218,7 +333,11 @@ public sealed class ImeOverlay : IImeDialogBackend, ITextInputBackend, ITextCapt
         using (var c = new SKCanvas(bmp))
         {
             c.Clear(new SKColor(0x1B, 0x1F, 0x27));
-            using (var accent = new SKPaint { Color = new SKColor(0x3D, 0x8B, 0xFD) }) c.DrawRect(0, 0, w, 4 * scale, accent);
+            using (var accent = new SKPaint { Color = new SKColor(0x3D, 0x8B, 0xFD) })
+            {
+                c.DrawRect(0, 0, w, 4 * scale, accent);
+            }
+
             using var titleFont = new SKFont(SKTypeface.FromFamilyName(null, SKFontStyle.Bold), 16 * scale);
             using var textFont = new SKFont(SKTypeface.Default, 17 * scale);
             using var small = new SKFont(SKTypeface.Default, 12 * scale);
@@ -243,7 +362,10 @@ public sealed class ImeOverlay : IImeDialogBackend, ITextInputBackend, ITextCapt
                 c.ClipRect(new SKRect(textLeft, boxTop, textLeft + textWidth, boxTop + boxH));
                 c.DrawText(line, textLeft - shift, baseline, textFont, white);
                 if (first + i == caretLine)
+                {
                     c.DrawRect(textLeft - shift + caretX, baseline - 16 * scale, 2 * scale, 20 * scale, caretPaint);
+                }
+
                 c.Restore();
             }
             float footY = boxTop + boxH + 8 * scale + 14 * scale;
@@ -256,8 +378,16 @@ public sealed class ImeOverlay : IImeDialogBackend, ITextInputBackend, ITextCapt
 
     static string Fit(string s, SKFont font, float width)
     {
-        if (Measure(font, s) <= width) return s;
-        while (s.Length > 1 && Measure(font, s + "\u2026") > width) s = s[..^1];
+        if (Measure(font, s) <= width)
+        {
+            return s;
+        }
+
+        while (s.Length > 1 && Measure(font, s + "\u2026") > width)
+        {
+            s = s[..^1];
+        }
+
         return s + "\u2026";
     }
 

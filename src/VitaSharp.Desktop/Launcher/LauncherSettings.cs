@@ -132,7 +132,11 @@ public sealed class LauncherSettings
             if (File.Exists(FilePath) && JsonSerializer.Deserialize(File.ReadAllText(FilePath), LauncherJson.Default.LauncherSettings) is { } s)
             {
                 // the old launcher's home view switch: keep offering it
-                if (s.View == ViewHome) s.RecreatedHome = true;
+                if (s.View == ViewHome)
+                {
+                    s.RecreatedHome = true;
+                }
+
                 s.MigrateCamera();
                 return s;
             }
@@ -145,9 +149,21 @@ public sealed class LauncherSettings
     /// <summary>The old single camera setting becomes the setting of both cameras.</summary>
     public void MigrateCamera()
     {
-        if (string.IsNullOrWhiteSpace(Camera)) return;
-        if (CameraFront.Length == 0) CameraFront = Camera;
-        if (CameraBack.Length == 0) CameraBack = Camera;
+        if (string.IsNullOrWhiteSpace(Camera))
+        {
+            return;
+        }
+
+        if (CameraFront.Length == 0)
+        {
+            CameraFront = Camera;
+        }
+
+        if (CameraBack.Length == 0)
+        {
+            CameraBack = Camera;
+        }
+
         Camera = "";
     }
 
@@ -162,34 +178,98 @@ public sealed class LauncherSettings
     {
         GameOptions? game = null;
         if (titleId != null && Games.TryGetValue(titleId, out game))
-            foreach (var o in game.RunOptions()) yield return o;
-        if (game?.FastLoading ?? FastLoading) yield return "--fast-loading";
-        if (Fullscreen) yield return "--fullscreen";
-        if (Scale > 1) yield return $"--scale={Scale}";
-        if (!VSync) yield return "--no-vsync";
-        if (Validation) yield return "--validation";
-        if (!string.IsNullOrWhiteSpace(CameraFront)) yield return $"--camera-front={CameraFront}";
-        if (!string.IsNullOrWhiteSpace(CameraBack)) yield return $"--camera-back={CameraBack}";
-        if (!string.IsNullOrWhiteSpace(AudioDevice)) yield return $"--audio-device={AudioDevice}";
-        if (!string.IsNullOrWhiteSpace(CpuBackend)) yield return $"--cpu={CpuBackend}";
-        if (CpuMhz > 0) yield return $"--cpu-mhz={CpuMhz}";
+        {
+            foreach (var o in game.RunOptions())
+            {
+                yield return o;
+            }
+        }
+
+        if (game?.FastLoading ?? FastLoading)
+        {
+            yield return "--fast-loading";
+        }
+
+        if (Fullscreen)
+        {
+            yield return "--fullscreen";
+        }
+
+        if (Scale > 1)
+        {
+            yield return $"--scale={Scale}";
+        }
+
+        if (!VSync)
+        {
+            yield return "--no-vsync";
+        }
+
+        if (Validation)
+        {
+            yield return "--validation";
+        }
+
+        if (!string.IsNullOrWhiteSpace(CameraFront))
+        {
+            yield return $"--camera-front={CameraFront}";
+        }
+
+        if (!string.IsNullOrWhiteSpace(CameraBack))
+        {
+            yield return $"--camera-back={CameraBack}";
+        }
+
+        if (!string.IsNullOrWhiteSpace(AudioDevice))
+        {
+            yield return $"--audio-device={AudioDevice}";
+        }
+
+        if (!string.IsNullOrWhiteSpace(CpuBackend))
+        {
+            yield return $"--cpu={CpuBackend}";
+        }
+
+        if (CpuMhz > 0)
+        {
+            yield return $"--cpu-mhz={CpuMhz}";
+        }
+
         yield return FastShaderCompile ? "--shaderc-opt=zero" : "--shaderc-opt=perf";
         yield return BackgroundShaderCompile ? "--async-shaders=on" : "--async-shaders=off";
-        if (DebugMode) yield return "--debug-mode";
-        if (CapturePreRoll) yield return "--capture-preroll";
+        if (DebugMode)
+        {
+            yield return "--debug-mode";
+        }
+
+        if (CapturePreRoll)
+        {
+            yield return "--capture-preroll";
+        }
+
         yield return TrophySound ? "--trophy-sound=on" : "--trophy-sound=off";
         yield return PsnSignedIn ? "--psn=on" : "--psn=off";
-        if (VitaSharp.Core.Hle.PsnAccount.IsValidOnlineId(PsnOnlineId)) yield return $"--psn-id={PsnOnlineId}";
+        if (VitaSharp.Core.Hle.PsnAccount.IsValidOnlineId(PsnOnlineId))
+        {
+            yield return $"--psn-id={PsnOnlineId}";
+        }
+
         yield return PsnLocalServices ? "--psn-local=on" : "--psn-local=off";
         yield return RealInternet ? "--net=real" : "--net=off";
         if (RealInternet && UsesRpcn)
         {
             yield return $"--rpcn={RpcnServer.Trim()}";
             yield return $"--rpcn-user={RpcnUser.Trim()}";
-            if (!string.IsNullOrWhiteSpace(RpcnToken)) yield return $"--rpcn-token={RpcnToken.Trim()}";
+            if (!string.IsNullOrWhiteSpace(RpcnToken))
+            {
+                yield return $"--rpcn-token={RpcnToken.Trim()}";
+            }
         }
         var hle = string.Join(",", HleModules.Split([',', ';', ' '], StringSplitOptions.RemoveEmptyEntries | StringSplitOptions.TrimEntries));
-        if (hle.Length > 0) yield return $"--hle-modules={hle}";
+        if (hle.Length > 0)
+        {
+            yield return $"--hle-modules={hle}";
+        }
     }
 }
 
@@ -224,8 +304,15 @@ public sealed class GameOptions
 
     public IEnumerable<string> RunOptions()
     {
-        if (ResScale is >= 2 and <= 4) yield return $"--res-scale={ResScale}";
-        if (FrameRate is "30" or "60" or "unlimited") yield return $"--frame-rate={FrameRate}";
+        if (ResScale is >= 2 and <= 4)
+        {
+            yield return $"--res-scale={ResScale}";
+        }
+
+        if (FrameRate is "30" or "60" or "unlimited")
+        {
+            yield return $"--frame-rate={FrameRate}";
+        }
     }
 
     /// <summary>Every option at its default: the entry can be dropped.</summary>
@@ -255,7 +342,10 @@ public static class PlayHistory
     {
         try
         {
-            if (File.Exists(FilePath)) return JsonSerializer.Deserialize(File.ReadAllText(FilePath), LauncherJson.Default.DictionaryStringPlayRecord) ?? new();
+            if (File.Exists(FilePath))
+            {
+                return JsonSerializer.Deserialize(File.ReadAllText(FilePath), LauncherJson.Default.DictionaryStringPlayRecord) ?? new();
+            }
         }
         catch (JsonException) { }
         catch (IOException) { }
@@ -266,7 +356,11 @@ public static class PlayHistory
     public static Dictionary<string, PlayRecord> Add(string titleId, DateTime startUtc)
     {
         var all = Load();
-        if (!all.TryGetValue(titleId, out var r)) all[titleId] = r = new PlayRecord();
+        if (!all.TryGetValue(titleId, out var r))
+        {
+            all[titleId] = r = new PlayRecord();
+        }
+
         r.Seconds += Math.Max(0, (long)(DateTime.UtcNow - startUtc).TotalSeconds);
         r.LastPlayedUtc = DateTime.UtcNow;
         try

@@ -20,20 +20,40 @@ static class TestScenario
         foreach (var line in File.ReadAllLines(file))
         {
             var l = line.Trim();
-            if (l.Length == 0 || l.StartsWith('#')) continue;
+            if (l.Length == 0 || l.StartsWith('#'))
+            {
+                continue;
+            }
+
             int eq = l.IndexOf('=');
             // %APPDATA%, %USERPROFILE% and other environment variables are expanded: scenarios never name a user's folder
-            if (eq > 0) values[l[..eq].Trim()] = Environment.ExpandEnvironmentVariables(l[(eq + 1)..].Trim());
+            if (eq > 0)
+            {
+                values[l[..eq].Trim()] = Environment.ExpandEnvironmentVariables(l[(eq + 1)..].Trim());
+            }
         }
-        if (!values.TryGetValue("title", out var title)) { Console.Error.WriteLine("scenario needs title="); return 1; }
+        if (!values.TryGetValue("title", out var title))
+        {
+            Console.Error.WriteLine("scenario needs title=");
+            return 1;
+        }
         // --data=<folder> on the command line wins over the scenario's data= (scenarios name Windows folders; on
         // another OS, or to run against a copy of the data, pass --data); a data= folder that does not exist on this
         // machine is ignored as well
         if (values.TryGetValue("data", out var data))
         {
-            if (Program.DataFromCommandLine) Console.WriteLine($"Scenario data={data} overridden by --data={Program.DataRoot}");
-            else if (!Path.IsPathFullyQualified(data) || !Directory.Exists(data)) Console.WriteLine($"Scenario data={data} not found here, using {Program.DataRoot}");
-            else Environment.SetEnvironmentVariable(EnvVars.Data, data);
+            if (Program.DataFromCommandLine)
+            {
+                Console.WriteLine($"Scenario data={data} overridden by --data={Program.DataRoot}");
+            }
+            else if (!Path.IsPathFullyQualified(data) || !Directory.Exists(data))
+            {
+                Console.WriteLine($"Scenario data={data} not found here, using {Program.DataRoot}");
+            }
+            else
+            {
+                Environment.SetEnvironmentVariable(EnvVars.Data, data);
+            }
         }
 
         string name = Path.GetFileNameWithoutExtension(file);
@@ -41,13 +61,27 @@ static class TestScenario
         Directory.CreateDirectory(outDir);
         // options are looked up first-match-wins: command-line options go first so they override the scenario's
         var args = (extraArgs ?? []).Concat(SplitArgs(values.GetValueOrDefault("args", ""))).ToList();
-        if (!args.Any(a => a.StartsWith("--dump-frames"))) args.Add("--dump-frames=" + outDir);
-        if (!args.Contains("--headless")) args.Add("--headless");
+        if (!args.Any(a => a.StartsWith("--dump-frames")))
+        {
+            args.Add("--dump-frames=" + outDir);
+        }
+
+        if (!args.Contains("--headless"))
+        {
+            args.Add("--headless");
+        }
         // every scenario reports one-frame flashes and stale frames (FLICKER lines in report.txt); --flicker-check=off disables it
-        if (!args.Any(a => a.StartsWith("--flicker-check"))) args.Add("--flicker-check");
+        if (!args.Any(a => a.StartsWith("--flicker-check")))
+        {
+            args.Add("--flicker-check");
+        }
+
         args.Remove("--flicker-check=off");
         string log = Path.Combine(outDir, "log.txt");
-        if (!args.Any(a => a.StartsWith("--log="))) args.Add("--log=" + log);
+        if (!args.Any(a => a.StartsWith("--log=")))
+        {
+            args.Add("--log=" + log);
+        }
 
         int rc = Runner.Run(Program.ResolveApp(title), args.ToArray());
         VitaSharp.Core.Util.Log.Flush(); // the log is buffered (250 ms): the report must see its last lines
@@ -62,17 +96,36 @@ static class TestScenario
         bool quoted = false;
         foreach (char c in s)
         {
-            if (c == '"') { quoted = !quoted; continue; }
-            if (char.IsWhiteSpace(c) && !quoted) { if (cur.Length > 0) { yield return cur.ToString(); cur.Clear(); } continue; }
+            if (c == '"')
+            {
+                quoted = !quoted;
+                continue;
+            }
+            if (char.IsWhiteSpace(c) && !quoted)
+            {
+                if (cur.Length > 0)
+                {
+                    yield return cur.ToString();
+                    cur.Clear();
+                }
+                continue;
+            }
             cur.Append(c);
         }
-        if (cur.Length > 0) yield return cur.ToString();
+        if (cur.Length > 0)
+        {
+            yield return cur.ToString();
+        }
     }
 
     /// <summary>Distinct warnings/errors (timestamps stripped) plus the summary lines.</summary>
     static void WriteReport(string log, string report)
     {
-        if (!File.Exists(log)) return;
+        if (!File.Exists(log))
+        {
+            return;
+        }
+
         var seen = new HashSet<string>();
         var sb = new StringBuilder();
         using var reader = new StreamReader(new FileStream(log, FileMode.Open, FileAccess.Read, FileShare.ReadWrite | FileShare.Delete));
@@ -84,7 +137,10 @@ static class TestScenario
                                || body.Contains("Run finished") || body.Contains("FLICKER") ||
  body.Contains("FPS per") || body.Contains("Contact sheet")
                                || body.Contains("  thread '") || body.Contains("METRICS") || body.Contains("AUDIO") || body.Contains("PERF ") || body.Contains("ALLOC frames") || body.Contains("CPU backend") || body.Contains("SUSPECT") || body.Contains("Applied patch") || body.Contains("LoadExec") || body.Contains("[shadercache]");
-            if (interesting && seen.Add(body)) sb.AppendLine(body);
+            if (interesting && seen.Add(body))
+            {
+                sb.AppendLine(body);
+            }
         }
         File.WriteAllText(report, sb.ToString());
     }

@@ -39,20 +39,42 @@ sealed class SessionCaptureControl : IDisposable
             sb.AppendLine($"runtime: .NET {Environment.Version}, {System.Runtime.InteropServices.RuntimeInformation.OSDescription} {System.Runtime.InteropServices.RuntimeInformation.OSArchitecture}, {Environment.ProcessorCount} logical CPUs");
             sb.AppendLine($"cpu: {Core.Cpu.Jit.Describe()}, {Core.Cpu.CpuCore.InstructionsPerSecond / 1_000_000} MHz pacing (0 = unpaced)");
             sb.AppendLine($"debug-mode: {(DebugMode.Enabled ? "on" : "off")}");
-            if (hostInfo?.Invoke() is { Length: > 0 } h) sb.AppendLine($"host: {h}");
-            if (renderer() is { } r) foreach (var line in r.DescribeForDiagnostics().Split('\n')) sb.AppendLine($"renderer: {line.TrimEnd('\r')}");
+            if (hostInfo?.Invoke() is { Length: > 0 } h)
+            {
+                sb.AppendLine($"host: {h}");
+            }
+
+            if (renderer() is { } r)
+            {
+                foreach (var line in r.DescribeForDiagnostics().Split('\n'))
+                {
+                    sb.AppendLine($"renderer: {line.TrimEnd('\r')}");
+                }
+            }
+
             return sb.ToString();
         };
         // the longest recording (default 60 s; 0 = no limit): --capture-max=SECONDS or VITASHARP_CAPTURE_MAX_SECONDS
         if ((Runner.Opt(options, "--capture-max") ?? Environment.GetEnvironmentVariable(EnvVars.CaptureMaxSeconds)) is { } max
             && double.TryParse(max, NumberStyles.Float, CultureInfo.InvariantCulture, out var maxS))
+        {
             o.MaxSeconds = Math.Max(0, maxS);
+        }
+
         Capture = new SessionCapture(emu, o);
         string? spec = options.FirstOrDefault(x => x == "--capture-preroll" || x.StartsWith("--capture-preroll="))
             is { } opt ? (opt.Contains('=') ? opt[(opt.IndexOf('=') + 1)..] : DefaultPreRoll.ToString(CultureInfo.InvariantCulture))
             : Environment.GetEnvironmentVariable(EnvVars.CapturePreRoll);
-        if (spec != null && double.TryParse(spec, NumberStyles.Float, CultureInfo.InvariantCulture, out var s)) _explicitPreRoll = Math.Max(0, s);
-        if (overrides != null) _explicitPreRoll = 0; // a re-run's own recording has no pre-roll
+        if (spec != null && double.TryParse(spec, NumberStyles.Float, CultureInfo.InvariantCulture, out var s))
+        {
+            _explicitPreRoll = Math.Max(0, s);
+        }
+
+        if (overrides != null)
+        {
+            _explicitPreRoll = 0; // a re-run's own recording has no pre-roll
+        }
+
         UpdatePreRoll();
     }
 
@@ -63,7 +85,11 @@ sealed class SessionCaptureControl : IDisposable
     public void StartScheduled(string[] options)
     {
         string? spec = Runner.Opt(options, "--capture-at") ?? Environment.GetEnvironmentVariable(EnvVars.CaptureAt);
-        if (spec == null) return;
+        if (spec == null)
+        {
+            return;
+        }
+
         var p = spec.Split(':');
         if (p.Length != 2 || !long.TryParse(p[0].TrimStart('f'), out long a) || !long.TryParse(p[1].TrimStart('f'), out long b) || b <= a)
         {
@@ -72,13 +98,26 @@ sealed class SessionCaptureControl : IDisposable
         }
         new Thread(() =>
         {
-            while (Core.Hle.Modules.Display.FramesPresented < a) Thread.Sleep(5);
+            while (Core.Hle.Modules.Display.FramesPresented < a)
+            {
+                Thread.Sleep(5);
+            }
+
             Capture.Start("--capture-at", limit: false);
-            while (Core.Hle.Modules.Display.FramesPresented < b) Thread.Sleep(5);
+            while (Core.Hle.Modules.Display.FramesPresented < b)
+            {
+                Thread.Sleep(5);
+            }
             // the start may still be running (save state); Stop is refused while it is
-            for (int i = 0; i < 400 && !Capture.Stop("--capture-at"); i++) Thread.Sleep(25);
+            for (int i = 0; i < 400 && !Capture.Stop("--capture-at"); i++)
+            {
+                Thread.Sleep(25);
+            }
         })
-        { IsBackground = true, Name = "capture-at" }.Start();
+        {
+            IsBackground = true,
+            Name = "capture-at"
+        }.Start();
     }
 
     public void Dispose()
@@ -99,15 +138,33 @@ sealed class SessionCaptureControl : IDisposable
     {
         dir = Path.GetFullPath(dir);
         var session = ReadSession(Path.Combine(dir, "session.txt"));
-        if (session.Count == 0) { Console.Error.WriteLine($"{dir}: no session.txt (not a Gravar tudo capture)"); return 1; }
+        if (session.Count == 0)
+        {
+            Console.Error.WriteLine($"{dir}: no session.txt (not a Gravar tudo capture)");
+            return 1;
+        }
         string from = Runner.Opt(extra, "--from") ?? (File.Exists(Path.Combine(dir, "state_preroll.vss")) ? "preroll" : "start");
         string state = Path.Combine(dir, from == "preroll" ? "state_preroll.vss" : "state_start.vss");
-        if (!File.Exists(state)) { Console.Error.WriteLine($"{state} not found: this capture has no {from} save state"); return 1; }
+        if (!File.Exists(state))
+        {
+            Console.Error.WriteLine($"{state} not found: this capture has no {from} save state");
+            return 1;
+        }
         string titleId = session.GetValueOrDefault("title-id", "");
         string app;
-        try { app = Program.ResolveApp(titleId); }
-        catch (DirectoryNotFoundException) { app = session.GetValueOrDefault("app-path", ""); }
-        if (!Directory.Exists(app)) { Console.Error.WriteLine($"game {titleId} not installed (and {app} not found)"); return 1; }
+        try
+        {
+            app = Program.ResolveApp(titleId);
+        }
+        catch (DirectoryNotFoundException)
+        {
+            app = session.GetValueOrDefault("app-path", "");
+        }
+        if (!Directory.Exists(app))
+        {
+            Console.Error.WriteLine($"game {titleId} not installed (and {app} not found)");
+            return 1;
+        }
         string[] drop = ["--capture", "--load-state", "--save-state", "--gpu-dump-at", "--diag-at", "--input=", "--nav", "--seconds", "--frames", "--fullscreen", "--headless", "--start-paused", "--debug-mode-at"];
         var original = session.GetValueOrDefault("options", "").Split('\t', StringSplitOptions.RemoveEmptyEntries).Where(o => !drop.Any(o.StartsWith));
         bool window = extra.Contains("--window");
@@ -116,7 +173,15 @@ sealed class SessionCaptureControl : IDisposable
             .Append($"--load-state={state}")
             .Append($"--capture-playback={dir}@{from}")
             .ToList();
-        if (!window) { opts.Add("--headless"); opts.Add("--vulkan"); if (!extra.Any(e => e.StartsWith("--seconds="))) opts.Add("--seconds=3600"); }
+        if (!window)
+        {
+            opts.Add("--headless");
+            opts.Add("--vulkan");
+            if (!extra.Any(e => e.StartsWith("--seconds=")))
+            {
+                opts.Add("--seconds=3600");
+            }
+        }
         Console.WriteLine($"re-run of {Path.GetFileName(dir)} from {Path.GetFileName(state)}: run {app} {string.Join(' ', opts)}");
         return Runner.Run(app, opts.ToArray());
     }
@@ -124,11 +189,18 @@ sealed class SessionCaptureControl : IDisposable
     static Dictionary<string, string> ReadSession(string path)
     {
         var d = new Dictionary<string, string>();
-        if (!File.Exists(path)) return d;
+        if (!File.Exists(path))
+        {
+            return d;
+        }
+
         foreach (var line in File.ReadLines(path))
         {
             int c = line.IndexOf(": ", StringComparison.Ordinal);
-            if (c > 0 && !line.StartsWith(' ')) d.TryAdd(line[..c], line[(c + 2)..]);
+            if (c > 0 && !line.StartsWith(' '))
+            {
+                d.TryAdd(line[..c], line[(c + 2)..]);
+            }
         }
         return d;
     }
@@ -142,11 +214,20 @@ sealed class SessionCaptureControl : IDisposable
         readonly string _dir;
         public volatile bool Done;
 
-        Playback(string dir, InputPlayback input, long fromUs) { _dir = dir; Input = input; _fromUs = fromUs; }
+        Playback(string dir, InputPlayback input, long fromUs)
+        {
+            _dir = dir;
+            Input = input;
+            _fromUs = fromUs;
+        }
 
         public static Playback? Install(Emulator emu, VulkanRendererOptions ro, Func<VulkanRenderer?> renderer, string[] options)
         {
-            if (Runner.Opt(options, "--capture-playback") is not { } spec) return null;
+            if (Runner.Opt(options, "--capture-playback") is not { } spec)
+            {
+                return null;
+            }
+
             int at = spec.LastIndexOf('@');
             string dir = at > 1 ? spec[..at] : spec, from = at > 1 ? spec[(at + 1)..] : "preroll";
             var session = ReadSession(Path.Combine(dir, "session.txt"));
@@ -173,8 +254,16 @@ sealed class SessionCaptureControl : IDisposable
                 control.Capture.Start("re-run", limit: false);
                 new Thread(() =>
                 {
-                    while (GuestClock.Microseconds < input.LastUs + 2_000_000 && emu.Running) Thread.Sleep(20);
-                    for (int i = 0; i < 400 && !control.Capture.Stop("re-run end"); i++) Thread.Sleep(25);
+                    while (GuestClock.Microseconds < input.LastUs + 2_000_000 && emu.Running)
+                    {
+                        Thread.Sleep(20);
+                    }
+
+                    for (int i = 0; i < 400 && !control.Capture.Stop("re-run end"); i++)
+                    {
+                        Thread.Sleep(25);
+                    }
+
                     control.Capture.Idle.Wait(180000);
                     string cmp = control.Capture.Dir is { } rd ? CaptureAnalyzer.Compare(pb._dir, rd) : "no re-run capture";
                     Log.Info($"[capture] re-run recorded: {control.Capture.Dir} (report.txt there; compare.txt against the original); {cmp}");
@@ -182,7 +271,10 @@ sealed class SessionCaptureControl : IDisposable
                     Console.WriteLine(cmp);
                     pb.Done = true;
                 })
-                { IsBackground = true, Name = "rerun-end" }.Start();
+                {
+                    IsBackground = true,
+                    Name = "rerun-end"
+                }.Start();
             };
             Log.Info($"[capture] re-run of {dir} from the {from} state (guest time {fromUs / 1e6:F3} s): {input.Events} recorded events");
             return pb;

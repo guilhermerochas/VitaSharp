@@ -43,7 +43,10 @@ public sealed partial class MainWindow
             return page;
         }
         var selected = games.FirstOrDefault(x => x.Game.TitleId == _trophyGame);
-        if (selected.Game == null) selected = games[0];
+        if (selected.Game == null)
+        {
+            selected = games[0];
+        }
 
         var cols = new Grid { ColumnDefinitions = new ColumnDefinitions("390,24,*") };
         var list = new StackPanel { Spacing = 6, Margin = new Thickness(0, 0, 0, 24) };
@@ -74,8 +77,12 @@ public sealed partial class MainWindow
             r.Children.Add(Kit.At(_k.Text($"{got}/{total}", 12.5, FontWeight.Medium, P.Muted), col: 2));
             list.Children.Add(Kit.Click(new Border
             {
-                Padding = new Thickness(10, 8), CornerRadius = new CornerRadius(14), Child = r,
-                Background = Kit.B(sel ? P.Highlight : P.Surface), BorderBrush = Kit.B(sel ? P.HighlightBorder : P.Border), BorderThickness = new Thickness(1),
+                Padding = new Thickness(10, 8),
+                CornerRadius = new CornerRadius(14),
+                Child = r,
+                Background = Kit.B(sel ? P.Highlight : P.Surface),
+                BorderBrush = Kit.B(sel ? P.HighlightBorder : P.Border),
+                BorderThickness = new Thickness(1),
             }, () => { _trophyGame = g.TitleId; ShowPage(); }));
         }
     }
@@ -94,7 +101,11 @@ public sealed partial class MainWindow
         foreach (var grade in new[] { TrophyGrade.Platinum, TrophyGrade.Gold, TrophyGrade.Silver, TrophyGrade.Bronze })
         {
             int all = trophies.Count(t => t.Trophy.Grade == grade);
-            if (all == 0) continue;
+            if (all == 0)
+            {
+                continue;
+            }
+
             int have = trophies.Count(t => t.Trophy.Grade == grade && t.Set.Unlocked.ContainsKey(t.Trophy.Id));
             dots.Children.Add(_k.HStack(6, _k.Dot(GradeColor(grade), 9), _k.Text($"{have}/{all}", 12.5, FontWeight.Medium, P.TextSoft)).Also(x => ToolTip.SetTip(x, S.Grade(grade))));
         }
@@ -131,7 +142,11 @@ public sealed partial class MainWindow
                 _k.Text(when is { } w ? S.When(w) : unlocked ? S.Unlocked : S.Locked, 12, color: unlocked ? P.Muted : P.Faint).Also(x => x.HorizontalAlignment = HorizontalAlignment.Right));
             meta.VerticalAlignment = VerticalAlignment.Center;
             r.Children.Add(Kit.At(meta, col: 2));
-            if (i > 0) body.Children.Add(_k.Divider(20));
+            if (i > 0)
+            {
+                body.Children.Add(_k.Divider(20));
+            }
+
             body.Children.Add(r);
         }
         return _k.Card(body, 18, new Thickness(0, 0, 0, 8));

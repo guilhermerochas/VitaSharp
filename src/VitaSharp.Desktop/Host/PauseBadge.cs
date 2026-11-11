@@ -25,7 +25,11 @@ public static class PauseBadge
             using var font = new SKFont(SKTypeface.FromFamilyName(null, SKFontStyle.Bold), 15 * scale);
             using var white = new SKPaint { Color = SKColors.White, IsAntialias = true };
             float textW;
-            using (var measure = new SKPaint { Typeface = font.Typeface, TextSize = font.Size }) textW = measure.MeasureText(text);
+            using (var measure = new SKPaint { Typeface = font.Typeface, TextSize = font.Size })
+            {
+                textW = measure.MeasureText(text);
+            }
+
             bool sign = pauseSign || recDot;
             float pad = 10 * scale, bar = sign ? 14 * scale : 0, gap = sign ? 9 * scale : 0;
             int w = (int)Math.Ceiling(pad + bar + gap + textW + pad), h = (int)Math.Ceiling(34 * scale);

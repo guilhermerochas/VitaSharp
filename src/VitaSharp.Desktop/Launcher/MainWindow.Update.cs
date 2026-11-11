@@ -19,25 +19,59 @@ public sealed partial class MainWindow
     /// (<paramref name="manual"/> false) a skipped version and every error stay quiet.</summary>
     internal async Task CheckForUpdates(bool manual)
     {
-        if (_checkingUpdates) return;
+        if (_checkingUpdates)
+        {
+            return;
+        }
+
         var feed = Updater.Feed();
-        if (feed == null) { if (manual) SetStatus(S.NoUpdateFeed); return; }
+        if (feed == null)
+        {
+            if (manual)
+            {
+                SetStatus(S.NoUpdateFeed);
+            }
+
+            return;
+        }
         _checkingUpdates = true;
-        if (manual) SetStatus(S.Checking);
+        if (manual)
+        {
+            SetStatus(S.Checking);
+        }
+
         try
         {
             string channel = _settings.UpdateChannel == UpdateFeed.ChannelReleases ? UpdateFeed.ChannelReleases : UpdateFeed.ChannelBuilds;
             var release = await Task.Run(() => Updater.CheckAsync(channel, feed));
-            if (release == null) { if (manual) SetStatus(S.UpToDate(Updater.Current.Display)); return; }
-            if (!manual && release.Tag == _settings.SkippedUpdate) return;
+            if (release == null)
+            {
+                if (manual)
+                {
+                    SetStatus(S.UpToDate(Updater.Current.Display));
+                }
+
+                return;
+            }
+            if (!manual && release.Tag == _settings.SkippedUpdate)
+            {
+                return;
+            }
+
             await ShowUpdateDialog(release);
         }
         catch (Exception e) when (e is HttpRequestException or IOException or InvalidDataException or System.Text.Json.JsonException or TaskCanceledException)
         {
             AppendLog($"Update check failed: {e.Message}");
-            if (manual) SetStatus(S.UpdateCheckFailed(e.Message));
+            if (manual)
+            {
+                SetStatus(S.UpdateCheckFailed(e.Message));
+            }
         }
-        finally { _checkingUpdates = false; }
+        finally
+        {
+            _checkingUpdates = false;
+        }
     }
 
     /// <summary>The update dialog: version in use -> new one, date, the release notes, and Pular esta versao / Lembrar
@@ -50,22 +84,42 @@ public sealed partial class MainWindow
         var progress = new Border { IsVisible = false, Child = _k.Bar(0, 6) };
         var notes = new ScrollViewer
         {
-            MaxHeight = 280, Content = _k.Wrap(ReleaseNotes(release.Body), 12.5, P.TextSoft),
+            MaxHeight = 280,
+            Content = _k.Wrap(ReleaseNotes(release.Body), 12.5, P.TextSoft),
             HorizontalScrollBarVisibility = Avalonia.Controls.Primitives.ScrollBarVisibility.Disabled,
         };
         var skip = _k.Secondary(S.SkipVersion, null, () =>
         {
-            if (busy) return;
+            if (busy)
+            {
+                return;
+            }
+
             _settings.SkippedUpdate = release.Tag;
             SaveSettings();
             dlg?.Close();
         }, 40);
-        var later = _k.Secondary(S.RemindLater, null, () => { if (!busy) dlg?.Close(); }, 40);
+        var later = _k.Secondary(S.RemindLater, null, () =>
+        {
+            if (!busy)
+            {
+                dlg?.Close();
+            }
+        }, 40);
         Button? now = null;
         now = _k.Primary(S.UpdateNow, "download", async () =>
         {
-            if (busy) return;
-            if (IsRunning) { status.Text = S.UpdateCloseGame; status.Foreground = Kit.B(P.Danger); return; }
+            if (busy)
+            {
+                return;
+            }
+
+            if (IsRunning)
+            {
+                status.Text = S.UpdateCloseGame;
+                status.Foreground = Kit.B(P.Danger);
+                return;
+            }
             busy = true;
             now!.IsEnabled = skip.IsEnabled = later.IsEnabled = false;
             progress.IsVisible = true;
@@ -80,8 +134,14 @@ public sealed partial class MainWindow
                 // the new package's updater waits for this process to exit, copies itself over it and starts it again
                 DispatcherTimer.RunOnce(() =>
                 {
-                    if (Application.Current?.ApplicationLifetime is IClassicDesktopStyleApplicationLifetime life) life.Shutdown();
-                    else Environment.Exit(0);
+                    if (Application.Current?.ApplicationLifetime is IClassicDesktopStyleApplicationLifetime life)
+                    {
+                        life.Shutdown();
+                    }
+                    else
+                    {
+                        Environment.Exit(0);
+                    }
                 }, TimeSpan.FromMilliseconds(600));
             }
             catch (Exception e) when (e is HttpRequestException or IOException or InvalidDataException or InvalidOperationException or TaskCanceledException or UnauthorizedAccessException or System.ComponentModel.Win32Exception)
@@ -106,13 +166,23 @@ public sealed partial class MainWindow
             _k.Text(S.UpdateNotes, 13.5, FontWeight.SemiBold).Also(t => t.Margin = new Thickness(0, 6, 0, 0)),
             new Border
             {
-                Background = Kit.B(P.Background), CornerRadius = new CornerRadius(12), Padding = new Thickness(14, 10),
-                BorderBrush = Kit.B(P.Border), BorderThickness = new Thickness(1), Child = notes,
+                Background = Kit.B(P.Background),
+                CornerRadius = new CornerRadius(12),
+                Padding = new Thickness(14, 10),
+                BorderBrush = Kit.B(P.Border),
+                BorderThickness = new Thickness(1),
+                Child = notes,
             },
             progress, status, buttons);
         panel.Margin = new Thickness(24);
         dlg = Dialog(panel, 620);
-        dlg.Closing += (_, e) => { if (busy) e.Cancel = true; };
+        dlg.Closing += (_, e) =>
+        {
+            if (busy)
+            {
+                e.Cancel = true;
+            }
+        };
         return dlg;
     }
 
@@ -124,7 +194,11 @@ public sealed partial class MainWindow
         var lines = body.Replace("\r", "").Split('\n').Select(l =>
         {
             l = l.TrimEnd();
-            if (l.StartsWith('#')) l = l.TrimStart('#', ' ');
+            if (l.StartsWith('#'))
+            {
+                l = l.TrimStart('#', ' ');
+            }
+
             l = System.Text.RegularExpressions.Regex.Replace(l, @"\[([^\]]*)\]\([^)]*\)", "$1").Replace("**", "").Replace("`", "");
             return l.StartsWith("- ") ? "\u2022  " + l[2..] : l;
         });

@@ -49,7 +49,9 @@ public sealed class FirmwarePanel : StackPanel
         Children.Add(_detail);
         Children.Add(new TextBlock
         {
-            Foreground = LauncherTheme.Muted, TextWrapping = TextWrapping.Wrap, FontSize = 12,
+            Foreground = LauncherTheme.Muted,
+            TextWrapping = TextWrapping.Wrap,
+            FontSize = 12,
             Text = Loc.Get("FwAbout"),
         });
         _install.Click += async (_, _) => await PickAndInstall();
@@ -62,7 +64,10 @@ public sealed class FirmwarePanel : StackPanel
     void Refresh()
     {
         FirmwareInfo? info = null;
-        try { info = FirmwareInfo.Read(Program.FsRoot); }
+        try
+        {
+            info = FirmwareInfo.Read(Program.FsRoot);
+        }
         catch (Exception e) when (e is IOException or UnauthorizedAccessException) { }
         // fonts count on their own: sa0 may have been filled without a firmware install (copied by hand)
         bool fonts = FirmwareInfo.HasSystemFonts(Program.FsRoot);
@@ -75,7 +80,11 @@ public sealed class FirmwarePanel : StackPanel
     async Task PickAndInstall()
     {
         var top = TopLevel.GetTopLevel(this);
-        if (top == null) return;
+        if (top == null)
+        {
+            return;
+        }
+
         var files = await top.StorageProvider.OpenFilePickerAsync(new FilePickerOpenOptions
         {
             Title = Loc.Get("FwPickTitle"),
@@ -83,7 +92,11 @@ public sealed class FirmwarePanel : StackPanel
             FileTypeFilter = [new FilePickerFileType(Loc.Get("FwPupFileType")) { Patterns = ["*.PUP", "*.pup"] }, FilePickerFileTypes.All],
         });
         var path = files.Count > 0 ? files[0].TryGetLocalPath() : null;
-        if (path == null) return;
+        if (path == null)
+        {
+            return;
+        }
+
         await Run(Loc.Format("FwInstalling", Path.GetFileName(path)), (p, ct) =>
         {
             var info = FirmwareInstaller.Install(path, Program.FsRoot, p, ct);
@@ -94,7 +107,11 @@ public sealed class FirmwarePanel : StackPanel
 
     async Task Run(string title, Func<IProgress<FirmwareProgress>, CancellationToken, FirmwareInfo> job)
     {
-        if (_cts != null) return;
+        if (_cts != null)
+        {
+            return;
+        }
+
         _cts = new CancellationTokenSource();
         _install.IsEnabled = _vita3k.IsEnabled = false;
         _cancel.IsVisible = _cancel.IsEnabled = true;
@@ -115,7 +132,10 @@ public sealed class FirmwarePanel : StackPanel
             var token = _cts.Token;
             result = await Task.Run(() => job(progress, token));
         }
-        catch (OperationCanceledException) { error = Loc.Get("FwCancelled"); }
+        catch (OperationCanceledException)
+        {
+            error = Loc.Get("FwCancelled");
+        }
         catch (Exception e) when (e is InvalidDataException or IOException or UnauthorizedAccessException or InvalidOperationException)
         {
             error = Loc.Format("FwFailed", e.Message);
@@ -136,7 +156,11 @@ public sealed class FirmwarePanel : StackPanel
             _detail.Text = error;
             _detail.Foreground = Brushes.IndianRed;
         }
-        else _detail.Text = Loc.Format("FwInstalledIn", result!.Display, Program.FsRoot);
+        else
+        {
+            _detail.Text = Loc.Format("FwInstalledIn", result!.Display, Program.FsRoot);
+        }
+
         Finished?.Invoke();
     }
 
