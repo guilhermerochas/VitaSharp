@@ -276,8 +276,12 @@ public sealed class Compat : HleModule
 
     // ---- system information
 
-    /// <summary>The PSP system software the emulator runs: 6.61 (0x295).</summary>
-    [Hle] int sceCompatGetPspSystemSoftwareVersion() => Allowed ? 0x295 : ERR_PERM;
+    /// <summary>The PSP system software the emulator runs: 6.61 (0x295). The shell asks it through SceCompatForVsh before
+    /// it starts a PSP/PSone title (the title's PARAM.SFO PSP_SYSTEM_VER must not be newer; without the export it showed
+    /// "update the system software to version -").</summary>
+    [Hle]
+    [Hle("SceCompatForVsh_9C107CC9", Nid = 0x9C107CC9, Library = "SceCompatForVsh")]
+    int sceCompatGetPspSystemSoftwareVersion() => Allowed ? 0x295 : ERR_PERM;
 
     /// <summary>(int which): 1 the headphone remote (none), 2 battery percent, 3 battery minutes, 4 a suspend request.</summary>
     [Hle]
@@ -347,6 +351,7 @@ public sealed class Compat : HleModule
     /// <summary>(void *buf, int size 100): the title list the shell left for the emulator in
     /// ur0:emu_list/title_list.bin (read once: a valid list, 95 characters, is deleted after).</summary>
     [Hle]
+    [Hle("SceCompatForVsh_4915DEE7", Nid = 0x4915DEE7, Library = "SceCompatForVsh")]
     int sceCompatGetTitleList(uint buf, int size)
     {
         if (!Allowed) return ERR_PERM;
@@ -405,6 +410,7 @@ public sealed class Compat : HleModule
     /// <summary>(const char titleId[10]): whether a PSP title works with the PocketStation; the module checks a hashed
     /// list of title ids it carries. The list is not part of the HLE: no title is in it.</summary>
     [Hle(Default = true)]
+    [Hle("SceCompatForVsh_70997F92", Nid = 0x70997F92, Library = "SceCompatForVsh", Default = true)]
     int sceCompatIsPocketStationTitle(uint titleId)
     {
         if (!Allowed) return ERR_PERM;
