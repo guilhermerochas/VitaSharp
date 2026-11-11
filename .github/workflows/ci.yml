@@ -78,6 +78,32 @@ jobs:
           name: test-results-${{ matrix.os }}
           path: test-results
 
+  # Line coverage of the Category!=Slow suite (build/coverage.ps1) against the minimums in build/coverage-gate.txt: the
+  # job fails when the overall coverage or an assembly's drops below its minimum. Windows, where the measured values
+  # come from: the runner's Microsoft Edge ships SwiftShader, the software Vulkan device the renderer tests use.
+  coverage:
+    name: Coverage gate
+    runs-on: windows-latest
+    timeout-minutes: 90
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-dotnet@v4
+        with:
+          dotnet-version: '10.0.x'
+      - uses: actions/cache@v4
+        with:
+          path: third_party/ffmpeg
+          key: ffmpeg-${{ runner.os }}-${{ runner.arch }}-${{ hashFiles('build/FFmpeg.targets') }}
+      - name: Coverage and gate
+        shell: pwsh
+        run: ./build/coverage.ps1 coverage --gate
+      - name: Upload coverage report
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: coverage-report
+          path: coverage/report
+
   # The packages: Native AOT only, for win-x64, linux-x64 and osx-arm64 (ReadyToRun builds and the other platforms are
   # still available locally through build/publish.sh / build/publish.ps1). Native AOT cannot cross-compile between
   # operating systems, so every platform is built on its own runner: MSVC (preinstalled on windows-latest), clang +

@@ -1,0 +1,207 @@
+using VitaSharp.Core.Gpu;
+using VitaSharp.Core.Gxm;
+using VitaSharp.Core.Gxm.Shader;
+using VitaSharp.Core.Hle.Modules;
+using VitaSharp.Core.Memory;
+using VitaSharp.Renderer.Vulkan;
+using static VitaSharp.Tests.HleHarness;
+
+namespace VitaSharp.Tests;
+
+/// <summary>
+/// Every GXM texture format in every memory layout (linear, swizzled, tiled, linear strided, cube) sampled by a draw on
+/// the software Vulkan device, then the same frames recorded as a GPU dump and replayed on a fresh renderer
+/// (<see cref="GpuDumpPlayer"/>, what <c>replay-gpu --compare</c> runs): the replay presents the same pixels.
+/// </summary>
+[Collection("guest")]
+public sealed class RendererTextureTests(GuestMemoryFixture fx)
+{
+    const int W = 64, H = 64;
+
+    static readonly TexBase[] Formats = Enum.GetValues<TexBase>();
+
+    /// <summary>The GXM side of the workload, on whatever backend the emulator's GPU queue has.</summary>
+    sealed class Workload
+    {
+        readonly HleHarness _h;
+        readonly Gxm _g;
+        public uint Ctx, Rt, Color, Data, Vp, Fp, Verts, Idx;
+        public readonly List<uint> Textures = [];
+
+        public Workload(HleHarness h)
+        {
+            _h = h;
+            _g = h.Module<Gxm>();
+            uint ip = h.Alloc(0x14), o = h.Word(0);
+            GuestMemory.W32(ip + 4, 2);
+            Assert.Equal(0, Call(_g, "sceGxmInitialize", ip));
+            uint cp = h.Alloc(0x24);
+            GuestMemory.W32(cp + 8, h.Alloc(0x1000)); GuestMemory.W32(cp + 12, 0x1000);
+            GuestMemory.W32(cp + 16, h.Alloc(0x10000)); GuestMemory.W32(cp + 20, 0x10000);
+            GuestMemory.W32(cp + 24, h.Alloc(0x10000)); GuestMemory.W32(cp + 28, 0x10000);
+            Assert.Equal(0, Call(_g, "sceGxmCreateContext", cp, new Ptr<uint>(o)));
+            Ctx = GuestMemory.R32(o);
+            uint rp = h.Alloc(0x14);
+            GuestMemory.Write(rp + 4, (ushort)W); GuestMemory.Write(rp + 6, (ushort)H); GuestMemory.Write(rp + 8, (ushort)1);
+            Assert.Equal(0, Call(_g, "sceGxmCreateRenderTarget", rp, new Ptr<uint>(o)));
+            Rt = GuestMemory.R32(o);
+            Data = h.Alloc(W * H * 4);
+            Color = h.Alloc(0x40);
+            Assert.Equal(0, Call(_g, "sceGxmColorSurfaceInit", Color, 0u, 0u, 0u, 0u, (uint)W, (uint)H, (uint)W, Data));
+
+            uint pp = h.Alloc(0x40);
+            Assert.Equal(0, Call(_g, "sceGxmShaderPatcherCreate", pp, new Ptr<uint>(o)));
+            uint patcher = GuestMemory.R32(o), vid = h.Word(0), fid = h.Word(0);
+            Call(_g, "sceGxmShaderPatcherRegisterProgram", patcher, VertexProgram(h), new Ptr<uint>(vid));
+            Call(_g, "sceGxmShaderPatcherRegisterProgram", patcher, SamplingFragmentProgram(h), new Ptr<uint>(fid));
+            uint attr = h.Alloc(8), stream = h.Alloc(4), vp = h.Word(0), fp = h.Word(0);
+            GuestMemory.Write(attr + 5, (byte)3);
+            GuestMemory.Write(stream, (ushort)12);
+            Assert.Equal(0, Call(_g, "sceGxmShaderPatcherCreateVertexProgram", patcher, GuestMemory.R32(vid), attr, 1u, stream, 1u, new Ptr<uint>(vp)));
+            Assert.Equal(0, Call(_g, "sceGxmShaderPatcherCreateFragmentProgram", patcher, GuestMemory.R32(fid), 0u, 0u, 0u, GuestMemory.R32(vp), new Ptr<uint>(fp)));
+            Vp = GuestMemory.R32(vp); Fp = GuestMemory.R32(fp);
+            Verts = h.Alloc(36); Idx = h.Alloc(8);
+            float[] v = [-1, -1, 0.5f, 3, -1, 0.5f, -1, 3, 0.5f];
+            for (int i = 0; i < v.Length; i++) GuestMemory.Write(Verts + (uint)i * 4, v[i]);
+            GuestMemory.Write(Idx + 2, (ushort)1); GuestMemory.Write(Idx + 4, (ushort)2);
+
+            // one texture per format and layout over the same pseudo-random texels (and a palette)
+            uint texels = h.Alloc(W * H * 16 * 6), palette = h.Alloc(256 * 4 + 64) + 63 & ~63u;
+            var rng = new Random(7);
+            for (uint i = 0; i < W * H * 16 * 6; i += 4) GuestMemory.W32(texels + i, (uint)rng.Next());
+            for (uint i = 0; i < 256; i++) GuestMemory.W32(palette + i * 4, 0xFF000000u | (i * 0x010203u));
+            foreach (var f in Formats)
+                foreach (var init in new[] { "sceGxmTextureInitLinear", "sceGxmTextureInitSwizzled", "sceGxmTextureInitTiled", "sceGxmTextureInitCube", "strided" })
+                {
+                    uint t = h.Alloc(16);
+                    int r = init == "strided"
+                        ? Call(_g, "sceGxmTextureInitLinearStrided", t, texels, (uint)f, (uint)W, (uint)H, (uint)W * 8)
+                        : Call(_g, init, t, texels, (uint)f, (uint)W, (uint)H, 1u);
+                    if (r != 0) continue;
+                    if (f is TexBase.P4 or TexBase.P8) Call(_g, "sceGxmTextureSetPalette", t, palette);
+                    Call(_g, "sceGxmTextureSetMinFilter", t, 1u);
+                    Call(_g, "sceGxmTextureSetMagFilter", t, 1u);
+                    Textures.Add(t);
+                }
+        }
+
+        /// <summary>One scene per group of textures, each drawn once, and a present after each scene.</summary>
+        public int Run(int group)
+        {
+            int frames = 0;
+            for (int start = 0; start < Textures.Count; start += group)
+            {
+                Assert.Equal(0, Call(_g, "sceGxmBeginScene", Ctx, 0u, Rt, 0u, 0u, 0u, Color, 0u));
+                Invoke(_g, "sceGxmSetVertexProgram", Ctx, Vp);
+                Invoke(_g, "sceGxmSetFragmentProgram", Ctx, Fp);
+                Assert.Equal(0, Call(_g, "sceGxmSetVertexStream", Ctx, 0u, Verts));
+                foreach (var t in Textures.Skip(start).Take(group))
+                {
+                    Assert.Equal(0, Call(_g, "sceGxmSetFragmentTexture", Ctx, 3u, t));
+                    Assert.Equal(0, Call(_g, "sceGxmDraw", Ctx, 0u, 0u, Idx, 3u));
+                }
+                Assert.Equal(0, Call(_g, "sceGxmEndScene", Ctx, 0u, 0u));
+                _h.Emu.Gpu.Submit(new PresentCommand { Frame = new DisplayFrame(Data, W, W, H, DisplayPixelFormat.A8B8G8R8) });
+                frames++;
+            }
+            Assert.Equal(0, Call(_g, "sceGxmFinish", Ctx));
+            return frames;
+        }
+
+        public void Terminate() => Call(_g, "sceGxmTerminate");
+    }
+
+    static uint VertexProgram(HleHarness h)
+    {
+        ulong[] code = [0x6081000460600003, 0x50C9000A20200180];
+        uint size = 0x100 + (uint)code.Length * 8, p = h.Alloc(size);
+        GuestMemory.W32(p, 0x00505847);
+        GuestMemory.W32(p + 8, size);
+        GuestMemory.W32(p + 0x3C, (uint)code.Length);
+        GuestMemory.W32(p + 0x40, 0x100 - 0x40);
+        for (int i = 0; i < code.Length; i++) { GuestMemory.W32(p + 0x100 + (uint)i * 8, (uint)code[i]); GuestMemory.W32(p + 0x104 + (uint)i * 8, (uint)(code[i] >> 32)); }
+        return p;
+    }
+
+    /// <summary>A fragment program whose only input is a non-dependent texture read of texcoord 0 through unit 3 (a
+    /// fragment varying descriptor, as stripped programs have).</summary>
+    static uint SamplingFragmentProgram(HleHarness h)
+    {
+        uint p = h.Alloc(0x200);
+        GuestMemory.W32(p, 0x00505847);
+        GuestMemory.W32(p + 8, 0x200);
+        GuestMemory.W32(p + 0x14, GxpProgram.FlagFragment);
+        GuestMemory.W32(p + 0x2C, 0x100 - 0x2C);
+        GuestMemory.Write(p + 0x100 + 12, (byte)1);
+        GuestMemory.W32(p + 0x110, 0x20);
+        GuestMemory.W32(p + 0x130, 0xF000);
+        GuestMemory.W32(p + 0x134, 3);
+        return p;
+    }
+
+    static VulkanRenderer NewRenderer(string frames) => new(new VulkanRendererOptions
+    {
+        VSync = false, AsyncShaders = false, AsyncPipelines = false, DumpFramesDir = frames, DumpEvery = 1,
+    });
+
+    [SoftwareVulkanFact]
+    public void EveryTextureFormatAndLayoutSamplesAndTheDumpReplaysTheSame()
+    {
+        using var driver = SoftwareVulkan.Use();
+        using var h = new HleHarness(fx, "vktex");
+        string live = Path.Combine(h.Root, "live"), replay = Path.Combine(h.Root, "replay"), dump = Path.Combine(h.Root, "tex.vsgd");
+        Directory.CreateDirectory(live); Directory.CreateDirectory(replay);
+        var w = new Workload(h);
+        Assert.True(w.Textures.Count > Formats.Length * 3, $"only {w.Textures.Count} textures were accepted");
+
+        var renderer = NewRenderer(live);
+        int frames;
+        try
+        {
+            h.Emu.Gpu.Backend = renderer;
+            // a first frame before the recording: the recorder starts at the next present
+            w.Run(w.Textures.Count);
+            var done = new ManualResetEventSlim();
+            var rec = GpuDumpRecorder.Start(new GpuDumpOptions { Path = dump, MaxFrames = 0, Header = new GpuDumpHeader { ["title-id"] = "PCSA00000" }, Finished = _ => done.Set() });
+            Assert.NotNull(rec);
+            // the recording starts at this present: every scene after it is in the dump
+            h.Emu.Gpu.Submit(new PresentCommand { Frame = new DisplayFrame(w.Data, W, W, H, DisplayPixelFormat.A8B8G8R8) });
+            frames = w.Run(24);
+            rec!.Stop();
+            h.Emu.Gpu.Submit(new PresentCommand { Frame = new DisplayFrame(w.Data, W, W, H, DisplayPixelFormat.A8B8G8R8) });
+            h.Emu.Gpu.WaitIdle();
+            Assert.True(done.Wait(30_000), "the dump was not finished");
+            w.Terminate();
+        }
+        finally
+        {
+            h.Emu.Gpu.WaitIdle();
+            h.Emu.Gpu.Backend = null;
+            renderer.Dispose();
+        }
+        Assert.True(frames > 5);
+        Assert.True(new FileInfo(dump).Length > 0);
+
+        // the replay, on a fresh renderer and an empty guest memory: the same frames come out
+        var second = NewRenderer(replay);
+        GpuDumpPlayStats stats;
+        try
+        {
+            using var reader = new GpuDumpReader(dump);
+            Assert.Equal("PCSA00000", reader.Header["title-id"]);
+            stats = GpuDumpPlayer.Play(reader, second);
+            second.Execute(new FinishCommand());
+        }
+        finally { second.Dispose(); }
+        Assert.True(stats.Draws >= w.Textures.Count, $"{stats.Draws} draws replayed of {w.Textures.Count}");
+        Assert.True(stats.Frames >= frames);
+        var liveFrames = Directory.GetFiles(live, "*.png").Order().ToArray();
+        var replayFrames = Directory.GetFiles(replay, "*.png").Order().ToArray();
+        Assert.NotEmpty(replayFrames);
+        Assert.NotEmpty(liveFrames);
+        // replay-gpu --compare: every replayed frame is one the game showed, pixel for pixel
+        static string Hash(string f) => Convert.ToHexString(System.Security.Cryptography.SHA256.HashData(File.ReadAllBytes(f)));
+        var shown = liveFrames.Select(Hash).ToHashSet();
+        Assert.All(replayFrames, f => Assert.Contains(Hash(f), shown));
+    }
+}

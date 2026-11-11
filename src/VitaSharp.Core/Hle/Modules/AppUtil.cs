@@ -196,14 +196,26 @@ public sealed partial class AppUtil : HleModule
         }
     }
 
+    /// <summary>apputil.suprx 3.74 maps the kernel's 0x80801000 (outside the area) and 0x80801001 (NULL buffer) to
+    /// SCE_APPUTIL_ERROR_PARAMETER.</summary>
     [Hle]
     internal int sceAppUtilLoadSafeMemory(uint buf, uint size, long offset)
     {
-        if (buf == 0 || offset + size > SafeMemorySize) return ERR_PARAMETER;
+        int r = LoadSafeMemoryKernel(buf, size, offset);
+        return r == unchecked((int)0x80801000) || r == unchecked((int)0x80801001) ? ERR_PARAMETER : r;
+    }
+
+    /// <summary>The kernel side (SceAppMgr 0xFAF3DAAA, what sceAppMgrLoadSafeMemory returns): a copy out of the
+    /// process's safe memory area, so an area never written reads as zeros and the result is the size copied either
+    /// way; NULL buffer 0x80801001, outside the area 0x80801000.</summary>
+    internal int LoadSafeMemoryKernel(uint buf, uint size, long offset)
+    {
+        if (buf == 0) return unchecked((int)0x80801001);
+        if (offset < 0 || offset + size > SafeMemorySize) return unchecked((int)0x80801000);
         lock (_safeMemLock)
         {
             var data = SafeMemory(out var p);
-            if (!File.Exists(p)) { GuestMemory.Fill(buf, 0, size); return 0; }
+            if (!File.Exists(p)) { GuestMemory.Fill(buf, 0, size); return (int)size; }
             data.AsSpan((int)offset, (int)size).CopyTo(GuestMemory.Span(buf, (int)size));
         }
         return (int)size;
