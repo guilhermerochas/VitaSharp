@@ -47,13 +47,22 @@ public sealed unsafe partial class VulkanRenderer
         var c = _presentCmd;
         return new VitaSharp.Core.Capture.PresentInfo
         {
-            Present = _presentCount, Flip = c?.Flip ?? -1, VBlank = c?.VBlank ?? 0, GuestUs = c?.GuestUs ?? 0,
+            Present = _presentCount,
+            Flip = c?.Flip ?? -1,
+            VBlank = c?.VBlank ?? 0,
+            GuestUs = c?.GuestUs ?? 0,
             FlipNs = c != null ? VitaSharp.Core.Capture.CaptureClock.FromTicks(c.HostTicks) : 0,
             PresentNs = VitaSharp.Core.Capture.CaptureClock.FromTicks(now),
-            IntervalMs = s.IntervalMs, HitchMs = s.TopCause >= 0 && s.TopCauseMs >= 0.05f ? s.TopCauseMs : 0,
+            IntervalMs = s.IntervalMs,
+            HitchMs = s.TopCause >= 0 && s.TopCauseMs >= 0.05f ? s.TopCauseMs : 0,
             Hitch = s.TopCause >= 0 && s.TopCauseMs >= 0.05f ? FrameLedger.Names[s.TopCause] : "",
-            Draws = s.Draws, Scenes = s.Scenes, NewShaders = s.NewShaders, NewPipelines = s.NewPipelines,
-            Address = s.Address, SrcW = srcW, SrcH = srcH,
+            Draws = s.Draws,
+            Scenes = s.Scenes,
+            NewShaders = s.NewShaders,
+            NewPipelines = s.NewPipelines,
+            Address = s.Address,
+            SrcW = srcW,
+            SrcH = srcH,
         };
     }
 
@@ -100,7 +109,11 @@ public sealed unsafe partial class VulkanRenderer
     /// </summary>
     static (string, long, int)? ParseInject(string? s)
     {
-        if (string.IsNullOrWhiteSpace(s)) return null;
+        if (string.IsNullOrWhiteSpace(s))
+        {
+            return null;
+        }
+
         var p = s.Split('@');
         string kind = p[0].Trim().ToLowerInvariant();
         long from = 0;
@@ -108,27 +121,44 @@ public sealed unsafe partial class VulkanRenderer
         if (p.Length > 1)
         {
             var q = p[1].Split(':');
-            if (long.TryParse(q[0].Trim().TrimStart('f', 'p'), out var f)) from = f;
-            if (q.Length > 1 && int.TryParse(q[1].Trim(), out var c)) count = Math.Max(1, c);
+            if (long.TryParse(q[0].Trim().TrimStart('f', 'p'), out var f))
+            {
+                from = f;
+            }
+
+            if (q.Length > 1 && int.TryParse(q[1].Trim(), out var c))
+            {
+                count = Math.Max(1, c);
+            }
         }
         return (kind, from, count);
     }
 
     ReplayRing? CreateReplay()
     {
-        if (_replayFailed) return null;
+        if (_replayFailed)
+        {
+            return null;
+        }
+
         var ring = new ReplayRing();
         try
         {
             var (buf, mem, ptr) = _core.CreateHostBuffer((ulong)ReplaySlots * ReplaySlotBytes, BufferUsageFlags.TransferDstBit, MemCat.DebugRing);
-            ring.Buf = buf; ring.Mem = mem; ring.Ptr = (byte*)ptr;
+            ring.Buf = buf;
+            ring.Mem = mem;
+            ring.Ptr = (byte*)ptr;
             (ring.Image, ring.View, ring.ImageMem) = CreateImage(MemCat.DebugRing, ReplayW, ReplayH, Format.R8G8B8A8Unorm,
                 ImageUsageFlags.TransferSrcBit | ImageUsageFlags.TransferDstBit, ImageAspectFlags.ColorBit);
         }
         catch (Exception e)
         {
             _replayFailed = true;
-            if (ring.Buf.Handle != 0) _core.DestroyBuffer(ring.Buf, ring.Mem);
+            if (ring.Buf.Handle != 0)
+            {
+                _core.DestroyBuffer(ring.Buf, ring.Mem);
+            }
+
             Log.Warn($"[dbg] replay ring unavailable ({e.Message}): anomaly checks and replay captures are off");
             return null;
         }
@@ -141,9 +171,16 @@ public sealed unsafe partial class VulkanRenderer
     void ReleaseReplay()
     {
         var ring = _replay;
-        if (ring == null) return;
+        if (ring == null)
+        {
+            return;
+        }
+
         _replay = null;
-        foreach (var f in _frames) f.ReplaySlot = -1;
+        foreach (var f in _frames)
+        {
+            f.ReplaySlot = -1;
+        }
         // the current frame's deferred list runs after its fence, and frames retire in submission order
         F.Deferred.Add(() => DestroyReplayRing(ring));
         Log.Info($"[dbg] replay ring released at present #{_presentCount}");
@@ -151,7 +188,11 @@ public sealed unsafe partial class VulkanRenderer
 
     void DestroyReplay()
     {
-        if (_replay is { } ring) DestroyReplayRing(ring);
+        if (_replay is { } ring)
+        {
+            DestroyReplayRing(ring);
+        }
+
         _replay = null;
     }
 
@@ -167,22 +208,45 @@ public sealed unsafe partial class VulkanRenderer
     void DebugPresent(RenderTarget src, DisplayFrame frame)
     {
         // texture inspection (TEXTURE SUSPECT): one upload every 8 presents
-        if (DebugMode.Enabled && _presentCount % 8 == 0) _inspectBudget = 1;
+        if (DebugMode.Enabled && _presentCount % 8 == 0)
+        {
+            _inspectBudget = 1;
+        }
+
         var f = F;
-        if (f.ReplaySlot >= 0) return;
+        if (f.ReplaySlot >= 0)
+        {
+            return;
+        }
+
         if (src.Format != _replayFormatChecked)
         {
             _replayFormatChecked = src.Format;
             // blits cannot convert integer formats; the presented surface is a colour format in practice
             string name = src.Format.ToString();
             _replayFormatOk = !name.Contains("int", StringComparison.Ordinal);
-            if (!_replayFormatOk && _dbgSeen.Add($"noreplay{src.Format}")) Dbg($"replay/anomaly checks skipped: presented surface is {src.Format}");
+            if (!_replayFormatOk && _dbgSeen.Add($"noreplay{src.Format}"))
+            {
+                Dbg($"replay/anomaly checks skipped: presented surface is {src.Format}");
+            }
         }
-        if (!_replayFormatOk) return;
+        if (!_replayFormatOk)
+        {
+            return;
+        }
+
         var ring = _replay ??= CreateReplay();
-        if (ring == null) return;
+        if (ring == null)
+        {
+            return;
+        }
+
         uint w = Math.Min(frame.Width, src.Width), h = Math.Min(frame.Height, src.Height);
-        if (w == 0 || h == 0) return;
+        if (w == 0 || h == 0)
+        {
+            return;
+        }
+
         float scale = Math.Min(1f, Math.Min(ReplayW / (float)w, ReplayH / (float)h));
         uint dw = Math.Clamp((uint)MathF.Round(w * scale), 1, ReplayW), dh = Math.Clamp((uint)MathF.Round(h * scale), 1, ReplayH);
 
@@ -191,7 +255,13 @@ public sealed unsafe partial class VulkanRenderer
         ring.Written++;
         ring.Entries[slot] = new ReplayEntry
         {
-            Present = _presentCount, GuestFrame = DebugMode.Frame, Ticks = t0, W = dw, H = dh, SrcW = w, SrcH = h,
+            Present = _presentCount,
+            GuestFrame = DebugMode.Frame,
+            Ticks = t0,
+            W = dw,
+            H = dh,
+            SrcW = w,
+            SrcH = h,
             Info = _opt.PresentTap != null ? TapInfo(w, h, t0) : default,
         };
         // the previous copy out of the staging image must be done before the blit overwrites it
@@ -219,7 +289,11 @@ public sealed unsafe partial class VulkanRenderer
     {
         int slot = f.ReplaySlot;
         f.ReplaySlot = -1;
-        if (_replay is not { } ring) return;
+        if (_replay is not { } ring)
+        {
+            return;
+        }
+
         ref var e = ref ring.Entries[slot];
         long t0 = Stopwatch.GetTimestamp();
         byte* px = ring.Ptr + (long)slot * ReplaySlotBytes;
@@ -233,32 +307,62 @@ public sealed unsafe partial class VulkanRenderer
         if (_opt.PresentTap is { } tap)
         {
             var info = e.Info;
-            if (info.Present == 0) info = TapInfo(e.SrcW, e.SrcH, e.Ticks);
+            if (info.Present == 0)
+            {
+                info = TapInfo(e.SrcW, e.SrcH, e.Ticks);
+            }
             // the first tapped frame (or one after a gap) has no previous one: the last command buffer's time
             info.GpuMs = (float)(e.Present == _tapLastPresent + 1 ? (_gpuNs - _tapGpuNs) / 1e6 : _lastGpuMs);
             _tapGpuNs = _gpuNs;
             _tapLastPresent = e.Present;
-            try { tap.OnPresent(info, new ReadOnlySpan<byte>(px, (int)(e.W * e.H * 4)), (int)e.W, (int)e.H); }
-            catch (Exception x) { Log.WarnOnce("presenttap", $"[capture] present tap failed: {x.Message}"); }
+            try
+            {
+                tap.OnPresent(info, new ReadOnlySpan<byte>(px, (int)(e.W * e.H * 4)), (int)e.W, (int)e.H);
+            }
+            catch (Exception x)
+            {
+                Log.WarnOnce("presenttap", $"[capture] present tap failed: {x.Message}");
+            }
         }
         // the metrics and the anomaly rules are debug mode's (the capture's analyzer measures offline)
-        if (!DebugMode.Enabled) return;
+        if (!DebugMode.Enabled)
+        {
+            return;
+        }
+
         var m = FrameMetrics.Measure(px, (int)e.W, (int)e.H, MeasureStep);
         e.Metrics = m;
         e.Hits = m.Hits;
         e.Ready = true;
         _replayMeasured++;
-        if (e.Present % 300 == 0) Log.Info($"[frame-metrics] p{e.Present} {m}");
+        if (e.Present % 300 == 0)
+        {
+            Log.Info($"[frame-metrics] p{e.Present} {m}");
+        }
 
         foreach (var ev in _detector.Feed(e.Present, m))
         {
             _recentEvents.Enqueue(ev);
-            while (_recentEvents.Count > 64) _recentEvents.Dequeue();
+            while (_recentEvents.Count > 64)
+            {
+                _recentEvents.Dequeue();
+            }
+
             Log.Info($"[anomaly] p{ev.Present} f{e.GuestFrame} {ev.Kind}{(ev.Detail == "cleared" ? " cleared" : ": " + ev.Detail)}");
             if (ev.Capture && AnomalyDetected is { } handler)
             {
                 var (kind, detail, present) = (ev.Kind, ev.Detail, ev.Present);
-                ThreadPool.QueueUserWorkItem(_ => { try { handler(kind, detail, present); } catch (Exception x) { Log.Warn($"[anomaly] handler failed: {x.Message}"); } });
+                ThreadPool.QueueUserWorkItem(_ =>
+                {
+                    try
+                    {
+                        handler(kind, detail, present);
+                    }
+                    catch (Exception x)
+                    {
+                        Log.Warn($"[anomaly] handler failed: {x.Message}");
+                    }
+                });
             }
         }
         _replayMeasureTicks += Stopwatch.GetTimestamp() - t0;
@@ -278,7 +382,13 @@ public sealed unsafe partial class VulkanRenderer
         for (int y = 0; y < rows; y++)
         {
             byte* q = px + (long)y * w * 4;
-            for (int x = 0; x < w; x++, q += 4) { q[0] = c.r; q[1] = c.g; q[2] = c.b; q[3] = 255; }
+            for (int x = 0; x < w; x++, q += 4)
+            {
+                q[0] = c.r;
+                q[1] = c.g;
+                q[2] = c.b;
+                q[3] = 255;
+            }
         }
     }
 
@@ -290,17 +400,35 @@ public sealed unsafe partial class VulkanRenderer
     /// </summary>
     Task<int>? SaveReplay(string dir, long trigger)
     {
-        if (_replay == null) return null;
+        if (_replay == null)
+        {
+            return null;
+        }
+
         foreach (var o in _frames)
-            if (o.Submitted && !o.Retired) RetireFrame(o, RetireCause.Finish);
-        if (_replay is not { } ring) return null;
+        {
+            if (o.Submitted && !o.Retired)
+            {
+                RetireFrame(o, RetireCause.Finish);
+            }
+        }
+
+        if (_replay is not { } ring)
+        {
+            return null;
+        }
+
         long now = Stopwatch.GetTimestamp();
         DateTime wallNow = DateTime.Now;
         var shots = new List<ReplayShot>(ReplaySlots);
         for (long k = Math.Max(0, ring.Written - ReplaySlots); k < ring.Written; k++)
         {
             ref var e = ref ring.Entries[(int)(k % ReplaySlots)];
-            if (!e.Ready) continue;
+            if (!e.Ready)
+            {
+                continue;
+            }
+
             var pixels = new byte[e.W * e.H * 4];
             new ReadOnlySpan<byte>(ring.Ptr + (k % ReplaySlots) * ReplaySlotBytes, pixels.Length).CopyTo(pixels);
             var time = wallNow - TimeSpan.FromSeconds((now - e.Ticks) / (double)Stopwatch.Frequency);
@@ -332,13 +460,25 @@ public sealed unsafe partial class VulkanRenderer
         }
         sb.AppendLine();
         sb.AppendLine("# recent anomaly events (debug mode, newest last)");
-        foreach (var e in events) sb.AppendLine($"p{e.Present} {e.Kind}{(e.Capture ? " [capture]" : "")}: {e.Detail}");
-        if (events.Length == 0) sb.AppendLine("(none)");
+        foreach (var e in events)
+        {
+            sb.AppendLine($"p{e.Present} {e.Kind}{(e.Capture ? " [capture]" : "")}: {e.Detail}");
+        }
+
+        if (events.Length == 0)
+        {
+            sb.AppendLine("(none)");
+        }
+
         File.WriteAllText(Path.Combine(dir, "replay.txt"), sb.ToString());
 
         foreach (var s in shots)
         {
-            for (int i = 3; i < s.Pixels.Length; i += 4) s.Pixels[i] = 255; // the display ignores alpha
+            for (int i = 3; i < s.Pixels.Length; i += 4)
+            {
+                s.Pixels[i] = 255; // the display ignores alpha
+            }
+
             Png.Write(Path.Combine(dir, $"frame_{s.Present:D6}.png"), s.Pixels, (int)s.W, (int)s.H);
         }
 
@@ -354,9 +494,18 @@ public sealed unsafe partial class VulkanRenderer
                 var cell = Thumbnail(s.Pixels, (int)s.W, (int)s.H, SheetCellW, SheetCellH);
                 int cx = j % SheetCols * SheetCellW, cy = j / SheetCols * SheetCellH;
                 for (int y = 0; y < SheetCellH; y++)
+                {
                     cell.AsSpan(y * SheetCellW * 4, SheetCellW * 4).CopyTo(sheet.AsSpan(((cy + y) * sw + cx) * 4));
-                if (s.Present == trigger) Border(sheet, sw, cx, cy, 255, 0, 0);
-                else if ((s.Hits & ~FrameMetrics.Hit.Black) != 0) Border(sheet, sw, cx, cy, 255, 220, 0);
+                }
+
+                if (s.Present == trigger)
+                {
+                    Border(sheet, sw, cx, cy, 255, 0, 0);
+                }
+                else if ((s.Hits & ~FrameMetrics.Hit.Black) != 0)
+                {
+                    Border(sheet, sw, cx, cy, 255, 220, 0);
+                }
             }
             Png.Write(Path.Combine(dir, $"sheet_{shots[i].Present:D6}-{shots[i + n - 1].Present:D6}.png"), sheet, sw, sh);
         }
@@ -367,13 +516,22 @@ public sealed unsafe partial class VulkanRenderer
     static void Border(byte[] img, int stride, int x0, int y0, byte r, byte g, byte b)
     {
         for (int y = y0; y < y0 + SheetCellH; y++)
+        {
             for (int x = x0; x < x0 + SheetCellW; x++)
             {
                 bool edge = y - y0 < 3 || y0 + SheetCellH - y <= 3 || x - x0 < 3 || x0 + SheetCellW - x <= 3;
-                if (!edge) continue;
+                if (!edge)
+                {
+                    continue;
+                }
+
                 int o = (y * stride + x) * 4;
-                img[o] = r; img[o + 1] = g; img[o + 2] = b; img[o + 3] = 255;
+                img[o] = r;
+                img[o + 1] = g;
+                img[o + 2] = b;
+                img[o + 3] = 255;
             }
+        }
     }
 
     static string HitString(FrameMetrics.Hit h) => h == 0 ? "-" :

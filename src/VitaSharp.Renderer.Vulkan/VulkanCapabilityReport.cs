@@ -20,11 +20,21 @@ static unsafe class VulkanCapabilityReport
         object boxed = features;
         foreach (var f in typeof(T).GetFields())
         {
-            if (f.FieldType != typeof(Bool32)) continue;
+            if (f.FieldType != typeof(Bool32))
+            {
+                continue;
+            }
+
             bool on = ((Bool32)f.GetValue(boxed)!).Value != 0;
             string name = char.ToLowerInvariant(f.Name[0]) + f.Name[1..];
-            if (!on) missing.Add(name);
-            else have?.Add(name);
+            if (!on)
+            {
+                missing.Add(name);
+            }
+            else
+            {
+                have?.Add(name);
+            }
         }
         return missing;
     }
@@ -38,7 +48,11 @@ static unsafe class VulkanCapabilityReport
             r.Add($"Vulkan 1.1 features missing: {Join(Missing(f11))}");
             r.Add($"Vulkan 1.2 features missing: {Join(Missing(f12))}");
         }
-        if (api >= Vk.Version13) r.Add($"Vulkan 1.3 features missing: {Join(Missing(f13))}");
+        if (api >= Vk.Version13)
+        {
+            r.Add($"Vulkan 1.3 features missing: {Join(Missing(f13))}");
+        }
+
         var l = props.Limits;
         r.Add($"Vulkan limits: maxClipDistances {l.MaxClipDistances}, vertex outputs {l.MaxVertexOutputComponents}, fragment inputs {l.MaxFragmentInputComponents}, " +
                      $"colour attachments {l.MaxColorAttachments}, viewport {l.MaxViewportDimensions[0]}x{l.MaxViewportDimensions[1]}, max 2D {l.MaxImageDimension2D}, " +
@@ -51,7 +65,10 @@ static unsafe class VulkanCapabilityReport
             Format.A2B10G10R10UnormPack32, Format.R5G6B5UnormPack16, Format.BC1RgbaUnormBlock, Format.Astc4x4UnormBlock, Format.Etc2R8G8B8A8UnormBlock,
         }.Select(x => $"{x} {format(x)}")));
         if (vertex != null)
+        {
             r.Add($"Vulkan vertex formats missing (of the GXM attribute formats): {Join(Formats.AllAttributeFormats().Where(x => !vertex(x)).Select(x => x.ToString()).ToList())}");
+        }
+
         r.Add($"Vulkan device extensions ({exts.Count}): {string.Join(" ", exts.Order(StringComparer.Ordinal))}");
         return r;
     }

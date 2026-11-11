@@ -124,8 +124,17 @@ public sealed unsafe partial class VulkanRenderer
         var r = _drawRing!;
         long t0 = 0;
         r.Timing = (_drawSerial & 7) == 0;
-        if (r.Timing) t0 = Stopwatch.GetTimestamp();
-        if (r.DrawsWritten - r.FrameDrawStart >= MaxDrawsPerFrame) { r.FrameDroppedDraws++; r.Cur = -1; return; }
+        if (r.Timing)
+        {
+            t0 = Stopwatch.GetTimestamp();
+        }
+
+        if (r.DrawsWritten - r.FrameDrawStart >= MaxDrawsPerFrame)
+        {
+            r.FrameDroppedDraws++;
+            r.Cur = -1;
+            return;
+        }
         long abs = r.DrawsWritten++;
         ref var e = ref r.Draws[abs & (DrawPool - 1)];
         e.Id = _drawSerial;
@@ -155,31 +164,50 @@ public sealed unsafe partial class VulkanRenderer
         e.State = d.State;
         e.TexStart = r.TexWritten;
         r.Cur = abs;
-        if (r.Timing) { r.TimedTicks += Stopwatch.GetTimestamp() - t0; r.TimedDraws++; }
+        if (r.Timing)
+        {
+            r.TimedTicks += Stopwatch.GetTimestamp() - t0;
+            r.TimedDraws++;
+        }
     }
 
     /// <summary>BuildTextureSet, per bound texture of the current draw (after ResolveTexture set _texSrc).</summary>
     void DrawRingTexture(bool vertex, int unit, GxmTextureDesc desc, bool failed)
     {
         var r = _drawRing!;
-        if (r.Cur < 0) return;
+        if (r.Cur < 0)
+        {
+            return;
+        }
+
         long t0 = r.Timing ? Stopwatch.GetTimestamp() : 0;
         ref var e = ref r.Draws[r.Cur & (DrawPool - 1)];
-        if (e.TexCount >= MaxTexPerDraw || r.TexWritten - r.FrameTexStart >= MaxTexPerFrame) { r.FrameDroppedTex++; return; }
+        if (e.TexCount >= MaxTexPerDraw || r.TexWritten - r.FrameTexStart >= MaxTexPerFrame)
+        {
+            r.FrameDroppedTex++;
+            return;
+        }
         ref var t = ref r.Texs[r.TexWritten++ & (TexPool - 1)];
         t.Desc = desc;
         t.SrcAddr = _texSrcAddr;
         t.Unit = (byte)(unit | (vertex ? 0x80 : 0));
         t.Src = _texSrc | (failed ? TexSource.Failed : 0);
         e.TexCount++;
-        if (r.Timing) r.TimedTicks += Stopwatch.GetTimestamp() - t0;
+        if (r.Timing)
+        {
+            r.TimedTicks += Stopwatch.GetTimestamp() - t0;
+        }
     }
 
     /// <summary>BeginScene, after the MSAA path was chosen.</summary>
     void DrawRingScene(BeginSceneCommand b)
     {
         var r = _drawRing!;
-        if (r.ScenesWritten - r.FrameSceneStart >= MaxScenesPerFrame) { r.FrameDroppedScenes++; return; }
+        if (r.ScenesWritten - r.FrameSceneStart >= MaxScenesPerFrame)
+        {
+            r.FrameDroppedScenes++;
+            return;
+        }
         ref var s = ref r.Scenes[r.ScenesWritten++ & (ScenePool - 1)];
         var rt = _rt;
         s.FirstDrawId = _drawSerial + 1;
@@ -207,7 +235,11 @@ public sealed unsafe partial class VulkanRenderer
     {
         if (!DebugMode.Enabled)
         {
-            if (_drawRing != null) { _drawRing = null; Log.Info($"[dbg] draw ring released at present #{_presentCount}"); }
+            if (_drawRing != null)
+            {
+                _drawRing = null;
+                Log.Info($"[dbg] draw ring released at present #{_presentCount}");
+            }
             return;
         }
         var r = _drawRing;
@@ -223,15 +255,28 @@ public sealed unsafe partial class VulkanRenderer
         ref var f = ref r.Frames[r.FramesWritten++ % DrawRingFrames];
         f = new DrFrame
         {
-            Present = _presentCount + 1, GuestFrame = DebugMode.Frame, TotalDraws = _drawSerial, Fb = frame.Address,
-            DrawStart = r.FrameDrawStart, Draws = (int)(r.DrawsWritten - r.FrameDrawStart),
-            TexStart = r.FrameTexStart, Texs = (int)(r.TexWritten - r.FrameTexStart),
-            SceneStart = r.FrameSceneStart, Scenes = (int)(r.ScenesWritten - r.FrameSceneStart),
-            DroppedDraws = r.FrameDroppedDraws, DroppedTex = r.FrameDroppedTex, DroppedScenes = r.FrameDroppedScenes,
+            Present = _presentCount + 1,
+            GuestFrame = DebugMode.Frame,
+            TotalDraws = _drawSerial,
+            Fb = frame.Address,
+            DrawStart = r.FrameDrawStart,
+            Draws = (int)(r.DrawsWritten - r.FrameDrawStart),
+            TexStart = r.FrameTexStart,
+            Texs = (int)(r.TexWritten - r.FrameTexStart),
+            SceneStart = r.FrameSceneStart,
+            Scenes = (int)(r.ScenesWritten - r.FrameSceneStart),
+            DroppedDraws = r.FrameDroppedDraws,
+            DroppedTex = r.FrameDroppedTex,
+            DroppedScenes = r.FrameDroppedScenes,
         };
         _drawRingFramesTotal++;
         _drawRingDrawsTotal += f.Draws;
-        if (r.TimedDraws > 0) { _drawRingTicksEst += r.TimedTicks * (double)f.Draws / r.TimedDraws; r.TimedTicks = 0; r.TimedDraws = 0; }
+        if (r.TimedDraws > 0)
+        {
+            _drawRingTicksEst += r.TimedTicks * (double)f.Draws / r.TimedDraws;
+            r.TimedTicks = 0;
+            r.TimedDraws = 0;
+        }
         r.FrameDrawStart = r.DrawsWritten;
         r.FrameTexStart = r.TexWritten;
         r.FrameSceneStart = r.ScenesWritten;
@@ -259,24 +304,54 @@ public sealed unsafe partial class VulkanRenderer
     /// </summary>
     Task<int>? SaveDrawRing(string dir, long trigger)
     {
-        if (_drawRing is not { } r) return null;
+        if (_drawRing is not { } r)
+        {
+            return null;
+        }
+
         var shots = new List<DrFrameShot>(DrawRingFrames);
         int evicted = 0;
         Dictionary<long, (FrameMetrics, FrameMetrics.Hit)>? replay = null;
         if (_replay is { } ring)
         {
             replay = new Dictionary<long, (FrameMetrics, FrameMetrics.Hit)>(ReplaySlots);
-            foreach (var e in ring.Entries) if (e.Ready) replay[e.Present] = (e.Metrics, e.Hits);
+            foreach (var e in ring.Entries)
+            {
+                if (e.Ready)
+                {
+                    replay[e.Present] = (e.Metrics, e.Hits);
+                }
+            }
         }
         for (long k = Math.Max(0, r.FramesWritten - DrawRingFrames); k < r.FramesWritten; k++)
         {
             var f = r.Frames[k % DrawRingFrames];
-            if (f.DrawStart < r.DrawsWritten - DrawPool || f.TexStart < r.TexWritten - TexPool || f.SceneStart < r.ScenesWritten - ScenePool) { evicted++; continue; }
+            if (f.DrawStart < r.DrawsWritten - DrawPool || f.TexStart < r.TexWritten - TexPool || f.SceneStart < r.ScenesWritten - ScenePool)
+            {
+                evicted++;
+                continue;
+            }
             var s = new DrFrameShot { Frame = f, Draws = new DrDraw[f.Draws], Texs = new DrTex[f.Texs], Scenes = new DrScene[f.Scenes] };
-            for (int i = 0; i < f.Draws; i++) s.Draws[i] = r.Draws[(f.DrawStart + i) & (DrawPool - 1)];
-            for (int i = 0; i < f.Texs; i++) s.Texs[i] = r.Texs[(f.TexStart + i) & (TexPool - 1)];
-            for (int i = 0; i < f.Scenes; i++) s.Scenes[i] = r.Scenes[(f.SceneStart + i) & (ScenePool - 1)];
-            if (replay != null && replay.TryGetValue(f.Present, out var m)) { s.HasReplay = true; (s.Metrics, s.Hits) = m; }
+            for (int i = 0; i < f.Draws; i++)
+            {
+                s.Draws[i] = r.Draws[(f.DrawStart + i) & (DrawPool - 1)];
+            }
+
+            for (int i = 0; i < f.Texs; i++)
+            {
+                s.Texs[i] = r.Texs[(f.TexStart + i) & (TexPool - 1)];
+            }
+
+            for (int i = 0; i < f.Scenes; i++)
+            {
+                s.Scenes[i] = r.Scenes[(f.SceneStart + i) & (ScenePool - 1)];
+            }
+
+            if (replay != null && replay.TryGetValue(f.Present, out var m))
+            {
+                s.HasReplay = true;
+                (s.Metrics, s.Hits) = m;
+            }
             shots.Add(s);
         }
         Log.Info($"[diag] draw ring: {shots.Count} frames (presents #{(shots.Count > 0 ? shots[0].Frame.Present : 0)}-#{(shots.Count > 0 ? shots[^1].Frame.Present : 0)}){(evicted > 0 ? $", {evicted} overwritten" : "")}, writing in the background");
@@ -300,7 +375,13 @@ public sealed unsafe partial class VulkanRenderer
         var info = new DrFrameInfo();
         var seenRt = new HashSet<(uint, uint)>();
         foreach (var sc in s.Scenes)
-            if ((sc.Flags & DrScColor) != 0 && seenRt.Add((sc.RtAddr, sc.RtFormat))) info.Targets.Add((sc.RtAddr, sc.RtFormat, sc.RtW, sc.RtH));
+        {
+            if ((sc.Flags & DrScColor) != 0 && seenRt.Add((sc.RtAddr, sc.RtFormat)))
+            {
+                info.Targets.Add((sc.RtAddr, sc.RtFormat, sc.RtW, sc.RtH));
+            }
+        }
+
         long texBase = s.Frame.TexStart;
         foreach (var d in s.Draws)
         {
@@ -310,7 +391,11 @@ public sealed unsafe partial class VulkanRenderer
             for (int i = 0; i < d.TexCount; i++)
             {
                 long ti = d.TexStart - texBase + i;
-                if (ti < 0 || ti >= s.Texs.Length) break;
+                if (ti < 0 || ti >= s.Texs.Length)
+                {
+                    break;
+                }
+
                 var t = s.Texs[ti];
                 info.TexSrc.TryAdd((t.Desc.DataAddress, t.Desc.Format), (t.Src & ~TexSource.Failed, t.SrcAddr, d.Id));
             }
@@ -334,15 +419,24 @@ public sealed unsafe partial class VulkanRenderer
         var removedRt = prev.Targets.Where(t => t.Addr != fbA && t.Addr != fbB && !cur.Targets.Any(p => p.Addr == t.Addr && p.Fmt == t.Fmt)).ToList();
         var switched = new List<string>();
         foreach (var (key, c) in cur.TexSrc)
+        {
             if (prev.TexSrc.TryGetValue(key, out var p) && (p.Src != c.Src || p.SrcAddr != c.SrcAddr))
+            {
                 switched.Add($"0x{key.Addr:X8}:{key.Fmt:X8} {SrcName(p.Src, p.SrcAddr)} -> {SrcName(c.Src, c.SrcAddr)} (first draw id={c.Draw})");
+            }
+        }
+
         int texNew = cur.TexSrc.Keys.Count(k => !prev.TexSrc.ContainsKey(k)), texGone = prev.TexSrc.Keys.Count(k => !cur.TexSrc.ContainsKey(k));
         structural = addedFs.Count + removedFs.Count + addedVs.Count + removedVs.Count + addedRt.Count + removedRt.Count + switched.Count > 0;
 
         lines.Add($"draws {curShot.Draws.Length} ({dd:+0;-0;=}), scenes {curShot.Scenes.Length} ({ds:+0;-0;=}), textures {cur.TexSrc.Count} (+{texNew} -{texGone}), framebuffer 0x{fbA:X8}{(fbA != fbB ? $" (was 0x{fbB:X8})" : "")}");
         void Programs(string what, List<ulong> list, DrFrameInfo inFrame, bool fs)
         {
-            if (list.Count == 0) return;
+            if (list.Count == 0)
+            {
+                return;
+            }
+
             lines.Add($"{what}: " + string.Join(", ", list.Take(12).Select(h => $"{h:X16}({inFrame.Pairs.Where(kv => (fs ? kv.Key.Fs : kv.Key.Vs) == h).Sum(kv => kv.Value)} draws)"))
                 + (list.Count > 12 ? $", +{list.Count - 12} more" : ""));
         }
@@ -354,10 +448,26 @@ public sealed unsafe partial class VulkanRenderer
         var changed = cur.Pairs.Select(kv => (kv.Key, Delta: kv.Value - prev.Pairs.GetValueOrDefault(kv.Key)))
             .Concat(prev.Pairs.Where(kv => !cur.Pairs.ContainsKey(kv.Key)).Select(kv => (kv.Key, Delta: -kv.Value)))
             .Where(x => x.Delta != 0).OrderByDescending(x => Math.Abs(x.Delta)).Take(6).ToList();
-        if (changed.Count > 0) lines.Add("draw count by program: " + string.Join(", ", changed.Select(x => $"fs {x.Key.Fs:X16}/vs {x.Key.Vs:X16} {x.Delta:+0;-0}")));
-        if (addedRt.Count > 0) lines.Add("targets added: " + string.Join(", ", addedRt.Select(t => $"0x{t.Addr:X8}:{t.Fmt:X8} {t.W}x{t.H}")));
-        if (removedRt.Count > 0) lines.Add("targets removed: " + string.Join(", ", removedRt.Select(t => $"0x{t.Addr:X8}:{t.Fmt:X8} {t.W}x{t.H}")));
-        if (switched.Count > 0) lines.Add($"textures switched source ({switched.Count}): " + string.Join("; ", switched.Take(16)) + (switched.Count > 16 ? $"; +{switched.Count - 16} more" : ""));
+        if (changed.Count > 0)
+        {
+            lines.Add("draw count by program: " + string.Join(", ", changed.Select(x => $"fs {x.Key.Fs:X16}/vs {x.Key.Vs:X16} {x.Delta:+0;-0}")));
+        }
+
+        if (addedRt.Count > 0)
+        {
+            lines.Add("targets added: " + string.Join(", ", addedRt.Select(t => $"0x{t.Addr:X8}:{t.Fmt:X8} {t.W}x{t.H}")));
+        }
+
+        if (removedRt.Count > 0)
+        {
+            lines.Add("targets removed: " + string.Join(", ", removedRt.Select(t => $"0x{t.Addr:X8}:{t.Fmt:X8} {t.W}x{t.H}")));
+        }
+
+        if (switched.Count > 0)
+        {
+            lines.Add($"textures switched source ({switched.Count}): " + string.Join("; ", switched.Take(16)) + (switched.Count > 16 ? $"; +{switched.Count - 16} more" : ""));
+        }
+
         return lines;
     }
 
@@ -374,10 +484,26 @@ public sealed unsafe partial class VulkanRenderer
             TexSource.RtMipmapped => "rtmip",
             _ => "none",
         };
-        if (addr != 0) kind += $"@0x{addr:X8}";
-        if ((src & TexSource.SceneStart) != 0) kind += "+scenestart";
-        if ((src & TexSource.LodLowered) != 0) kind += "+lodmin";
-        if ((src & TexSource.Failed) != 0) kind += "+FAILED";
+        if (addr != 0)
+        {
+            kind += $"@0x{addr:X8}";
+        }
+
+        if ((src & TexSource.SceneStart) != 0)
+        {
+            kind += "+scenestart";
+        }
+
+        if ((src & TexSource.LodLowered) != 0)
+        {
+            kind += "+lodmin";
+        }
+
+        if ((src & TexSource.Failed) != 0)
+        {
+            kind += "+FAILED";
+        }
+
         return kind;
     }
 
@@ -391,19 +517,29 @@ public sealed unsafe partial class VulkanRenderer
         var diffs = new List<string>[shots.Count];
         var structural = new bool[shots.Count];
         for (int i = 0; i < shots.Count; i++)
+        {
             diffs[i] = i == 0 ? ["(first frame in the ring)"] : Diff(shots[i - 1], infos[i - 1], shots[i], infos[i], out structural[i]);
+        }
         // transient: differs from both neighbours while they match each other (a one-frame glitch stands out), and
         // also from the frames two away, so double-buffered A/B/A/B framebuffers or alternating passes do not count
         var transient = new bool[shots.Count];
         bool Differs(int a, int b)
         {
-            if (a < 0 || b < 0 || a >= shots.Count || b >= shots.Count) return true;
+            if (a < 0 || b < 0 || a >= shots.Count || b >= shots.Count)
+            {
+                return true;
+            }
+
             Diff(shots[a], infos[a], shots[b], infos[b], out bool d);
             return d;
         }
         for (int i = 1; i + 1 < shots.Count; i++)
         {
-            if (!structural[i] || !structural[i + 1] || Differs(i - 1, i + 1)) continue;
+            if (!structural[i] || !structural[i + 1] || Differs(i - 1, i + 1))
+            {
+                continue;
+            }
+
             transient[i] = Differs(i - 2, i) && Differs(i, i + 2);
         }
 
@@ -426,7 +562,10 @@ public sealed unsafe partial class VulkanRenderer
             {
                 var prev = infos[i - 1];
                 var nf = info.Fs.Where(h => !prev.Fs.Contains(h)).Select(h => $"fs:{h:X16}").Concat(info.Vs.Where(h => !prev.Vs.Contains(h)).Select(h => $"vs:{h:X16}")).ToList();
-                if (nf.Count > 0) news = string.Join(",", nf.Take(8)) + (nf.Count > 8 ? $",+{nf.Count - 8}" : "");
+                if (nf.Count > 0)
+                {
+                    news = string.Join(",", nf.Take(8)) + (nf.Count > 8 ? $",+{nf.Count - 8}" : "");
+                }
             }
             string rts = info.Targets.Count == 0 ? "-" : string.Join(",", info.Targets.Take(16).Select(t => $"0x{t.Addr:X8}")) + (info.Targets.Count > 16 ? $",+{info.Targets.Count - 16}" : "");
             string rep = s.HasReplay ? string.Create(inv, $"mean={s.Metrics.Mean:F3} hits={HitString(s.Hits)}") : "-";
@@ -443,7 +582,10 @@ public sealed unsafe partial class VulkanRenderer
         {
             var f = shots[i].Frame;
             diff.AppendLine($"p{f.Present} f{f.GuestFrame}{(i > 0 ? $" vs p{shots[i - 1].Frame.Present}" : "")}{(transient[i] ? "  TRANSIENT" : "")}{(f.Present == trigger ? "  <== trigger" : "")}{(i > 0 && !structural[i] ? "  (same programs, targets and texture sources)" : "")}");
-            foreach (var l in diffs[i]) diff.AppendLine("  " + l);
+            foreach (var l in diffs[i])
+            {
+                diff.AppendLine("  " + l);
+            }
         }
         File.WriteAllText(Path.Combine(dir, "diff.txt"), diff.ToString());
 
@@ -458,16 +600,28 @@ public sealed unsafe partial class VulkanRenderer
             sb.AppendLine("# same format as draws.txt minus vertex data and uniforms (a[], st[], v0/v1, vu/fu, vuf/fuh); extra fields: vh/fh = hint keys (shaders/<hash>_<hint>),");
             sb.AppendLine("# scene = scene index in this file, tN/vtN ...:Z<swizzle>:K<source> (see diff.txt), rtsize; [scene] adds fmt, rtsize, st, dsfmt, store, bgStencil, gamma, path");
             sb.AppendLine($"# diff vs previous frame{(i > 0 ? $" (p{shots[i - 1].Frame.Present})" : "")}:");
-            foreach (var l in diffs[i]) sb.AppendLine("#   " + l);
+            foreach (var l in diffs[i])
+            {
+                sb.AppendLine("#   " + l);
+            }
+
             int sc = 0;
             long texBase = f.TexStart;
             foreach (var d in s.Draws)
             {
                 // the scenes that began before this draw
-                while (sc < s.Scenes.Length && s.Scenes[sc].FirstDrawId <= d.Id) AppendScene(sb, inv, s.Scenes[sc++], f.Present - 1);
+                while (sc < s.Scenes.Length && s.Scenes[sc].FirstDrawId <= d.Id)
+                {
+                    AppendScene(sb, inv, s.Scenes[sc++], f.Present - 1);
+                }
+
                 AppendDraw(sb, inv, d, s, texBase, f.Present - 1);
             }
-            while (sc < s.Scenes.Length) AppendScene(sb, inv, s.Scenes[sc++], f.Present - 1);
+            while (sc < s.Scenes.Length)
+            {
+                AppendScene(sb, inv, s.Scenes[sc++], f.Present - 1);
+            }
+
             File.WriteAllText(Path.Combine(dir, $"frame_{f.Present:D6}.txt"), sb.ToString());
         }
         Log.Info($"[diag] draw ring written: {shots.Count} frames into {dir}");
@@ -492,13 +646,21 @@ public sealed unsafe partial class VulkanRenderer
         for (int i = 0; i < d.TexCount; i++)
         {
             long ti = d.TexStart - texBase + i;
-            if (ti < 0 || ti >= s.Texs.Length) break;
+            if (ti < 0 || ti >= s.Texs.Length)
+            {
+                break;
+            }
+
             var t = s.Texs[ti];
             var x = t.Desc;
             sb.Append(inv, $" {((t.Unit & 0x80) != 0 ? "vt" : "t")}{t.Unit & 0x7F}=0x{x.DataAddress:X8}:{x.Format:X8}:{x.Width}x{x.Height}:T{x.TextureType >> 29}:S{x.StrideBytes}:G{x.GammaMode}:F{x.MagFilter}{x.MinFilter}{x.MipFilter}:B{x.LodBias}:L{x.LodMin}:M{x.MipCount}:A{x.UAddr}{x.VAddr}:W0={x.W0:X8}:Z{x.Swizzle}:K{SrcName(t.Src, t.SrcAddr)}");
         }
         sb.Append(inv, $" vh={d.VsHint:X16} fh={d.FsHint:X16} scene={(d.Scene == 0xFFFF ? "-" : d.Scene.ToString(inv))} rtsize={d.RtW}x{d.RtH}");
-        if ((d.Flags & (DrVsFailed | DrFsFailed)) != 0) sb.Append($" FAILED={((d.Flags & DrVsFailed) != 0 ? "vs" : "")}{((d.Flags & DrFsFailed) != 0 ? "fs" : "")}");
+        if ((d.Flags & (DrVsFailed | DrFsFailed)) != 0)
+        {
+            sb.Append($" FAILED={((d.Flags & DrVsFailed) != 0 ? "vs" : "")}{((d.Flags & DrFsFailed) != 0 ? "fs" : "")}");
+        }
+
         sb.Append(inv, $" msaa={MsaaName(d.Msaa)}\n");
     }
 }

@@ -26,11 +26,19 @@ public sealed unsafe partial class VulkanRenderer
     /// <summary><paramref name="src"/> in guest memory byte order: itself unless it is a logical-order surface.</summary>
     RenderTarget PresentSource(RenderTarget src)
     {
-        if (src.Format != Format.R8G8B8A8Unorm || Formats.LogicalOrderSwizzle(src.ColorFormat) == 0) return src;
+        if (src.Format != Format.R8G8B8A8Unorm || Formats.LogicalOrderSwizzle(src.ColorFormat) == 0)
+        {
+            return src;
+        }
+
         if (!_memoryOrderCopies.TryGetValue(src, out var c) || c.Target.Width != src.Width || c.Target.Height != src.Height || c.Target.Scale != src.Scale
             || c.SourceImage.Handle != src.Image.Handle || c.ColorFormat != src.ColorFormat)
         {
-            if (c != null) ReleaseMemoryOrderCopy(c);
+            if (c != null)
+            {
+                ReleaseMemoryOrderCopy(c);
+            }
+
             var (img, view, mem) = CreateImage(MemCat.RenderTarget, src.ImgW, src.ImgH, Format.R8G8B8A8Unorm,
                 ImageUsageFlags.ColorAttachmentBit | ImageUsageFlags.SampledBit | ImageUsageFlags.TransferSrcBit, ImageAspectFlags.ColorBit);
             c = new MemoryOrderCopy
@@ -62,7 +70,10 @@ public sealed unsafe partial class VulkanRenderer
     /// <summary>Drops the copies of surfaces that no longer exist (called when a target is released).</summary>
     void ForgetMemoryOrderCopy(RenderTarget rt)
     {
-        if (_memoryOrderCopies.Remove(rt, out var c)) ReleaseMemoryOrderCopy(c);
+        if (_memoryOrderCopies.Remove(rt, out var c))
+        {
+            ReleaseMemoryOrderCopy(c);
+        }
     }
 
     void RecordMemoryOrderCopy(RenderTarget src, MemoryOrderCopy c)
@@ -79,7 +90,9 @@ public sealed unsafe partial class VulkanRenderer
         var area = new Extent2D(dst.ImgW, dst.ImgH);
         var rbi = new RenderPassBeginInfo
         {
-            SType = StructureType.RenderPassBeginInfo, RenderPass = pass, Framebuffer = TransientFramebuffer(pass, area, dst.View),
+            SType = StructureType.RenderPassBeginInfo,
+            RenderPass = pass,
+            Framebuffer = TransientFramebuffer(pass, area, dst.View),
             RenderArea = new Rect2D(new Offset2D(0, 0), area),
         };
         var set = AllocSet(EnsureLoadLayout());
@@ -108,7 +121,11 @@ public sealed unsafe partial class VulkanRenderer
 
     RenderPass MemoryOrderPass()
     {
-        if (_memoryOrderPass.Handle != 0) return _memoryOrderPass;
+        if (_memoryOrderPass.Handle != 0)
+        {
+            return _memoryOrderPass;
+        }
+
         var att = new AttachmentDescription(0, Format.R8G8B8A8Unorm, SampleCountFlags.Count1Bit, AttachmentLoadOp.DontCare, AttachmentStoreOp.Store,
             AttachmentLoadOp.DontCare, AttachmentStoreOp.DontCare, ImageLayout.General, ImageLayout.General);
         var colorRef = new AttachmentReference(0, ImageLayout.General);
@@ -120,7 +137,11 @@ public sealed unsafe partial class VulkanRenderer
 
     Pipeline MemoryOrderPipeline()
     {
-        if (_memoryOrderPipeline.Handle != 0) return _memoryOrderPipeline;
+        if (_memoryOrderPipeline.Handle != 0)
+        {
+            return _memoryOrderPipeline;
+        }
+
         EnsureLoadLayout();
         var entry = stackalloc byte[5] { (byte)'m', (byte)'a', (byte)'i', (byte)'n', 0 };
         var stages = stackalloc PipelineShaderStageCreateInfo[2];
@@ -138,9 +159,20 @@ public sealed unsafe partial class VulkanRenderer
         var dsi = new PipelineDynamicStateCreateInfo { SType = StructureType.PipelineDynamicStateCreateInfo, DynamicStateCount = 2, PDynamicStates = dyn };
         var gci = new GraphicsPipelineCreateInfo
         {
-            SType = StructureType.GraphicsPipelineCreateInfo, RenderPass = MemoryOrderPass(), Subpass = 0, StageCount = 2, PStages = stages,
-            PVertexInputState = &vi, PInputAssemblyState = &ia, PViewportState = &vps, PRasterizationState = &rs, PMultisampleState = &ms,
-            PDepthStencilState = &dss, PColorBlendState = &cb, PDynamicState = &dsi, Layout = _msLoadLayout,
+            SType = StructureType.GraphicsPipelineCreateInfo,
+            RenderPass = MemoryOrderPass(),
+            Subpass = 0,
+            StageCount = 2,
+            PStages = stages,
+            PVertexInputState = &vi,
+            PInputAssemblyState = &ia,
+            PViewportState = &vps,
+            PRasterizationState = &rs,
+            PMultisampleState = &ms,
+            PDepthStencilState = &dss,
+            PColorBlendState = &cb,
+            PDynamicState = &dsi,
+            Layout = _msLoadLayout,
         };
         _vk.CreateGraphicsPipelines(_dev, _vkPipelineCache, 1, in gci, null, out _memoryOrderPipeline).Ok("memory order pipeline");
         return _memoryOrderPipeline;

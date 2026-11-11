@@ -40,7 +40,11 @@ public sealed unsafe partial class VulkanRenderer
     DescriptorSet BuildSingleInputFetchSet()
     {
         var view = SingleFetchView();
-        if (_singleInputSet.Handle != 0 && _singleInputSetView.Handle == view.Handle && _singleInputSetFrame == _frameSerial) return _singleInputSet;
+        if (_singleInputSet.Handle != 0 && _singleInputSetView.Handle == view.Handle && _singleInputSetFrame == _frameSerial)
+        {
+            return _singleInputSet;
+        }
+
         var set = AllocSet(_fbLayout);
         (_singleInputSet, _singleInputSetView, _singleInputSetFrame) = (set, view, _frameSerial);
         var info = stackalloc DescriptorImageInfo[3]
@@ -51,11 +55,18 @@ public sealed unsafe partial class VulkanRenderer
         };
         var w = stackalloc WriteDescriptorSet[3];
         for (int i = 0; i < 3; i++)
+        {
             w[i] = new WriteDescriptorSet
             {
-                SType = StructureType.WriteDescriptorSet, DstSet = set, DstBinding = (uint)i, DescriptorCount = 1,
-                DescriptorType = i == 2 ? DescriptorType.InputAttachment : DescriptorType.CombinedImageSampler, PImageInfo = &info[i],
+                SType = StructureType.WriteDescriptorSet,
+                DstSet = set,
+                DstBinding = (uint)i,
+                DescriptorCount = 1,
+                DescriptorType = i == 2 ? DescriptorType.InputAttachment : DescriptorType.CombinedImageSampler,
+                PImageInfo = &info[i],
             };
+        }
+
         _vk.UpdateDescriptorSets(_dev, 3, w, 0, null);
         return set;
     }
@@ -67,7 +78,11 @@ public sealed unsafe partial class VulkanRenderer
         // (a supersampled scene's samples are filtered into the surface when rendering pauses for something else)
         EndRendering(resolve: !_ss);
         // a pending depth clear (no rendering yet in this scene) happens in an empty rendering first
-        if (_depthNeedsClear) { BeginRendering(); EndRendering(resolve: !_ss); }
+        if (_depthNeedsClear)
+        {
+            BeginRendering();
+            EndRendering(resolve: !_ss);
+        }
         // the scene-break bookkeeping (VulkanRenderer.SceneBreaks.cs) sees this pass as a rendering of its own
         _renderingSerial++;
         _statRenderings++;
@@ -95,7 +110,9 @@ public sealed unsafe partial class VulkanRenderer
             RenderPass = pass,
             AttachmentCount = 2,
             PAttachments = views,
-            Width = w, Height = h, Layers = 1,
+            Width = w,
+            Height = h,
+            Layers = 1,
         };
         _vk.CreateFramebuffer(_dev, in fci, null, out var fb).Ok("single-fetch framebuffer");
         // the views may die with their surface: the framebuffer lives only as long as this frame's commands
@@ -113,12 +130,20 @@ public sealed unsafe partial class VulkanRenderer
         DevStampOp(cmd, depthReadOnly ? "fetch-pass-depthro" : "fetch-pass");
         _vk.CmdBeginRenderPass(cmd, in rbi, SubpassContents.Inline);
         _boundPipeline = default;
-        rt.Dirty = true; rt.Version++; rt.LastTouchedFrame = FrameCount;
+        rt.Dirty = true;
+        rt.Version++;
+        rt.LastTouchedFrame = FrameCount;
         depth.Version++;
         if (_statSingleFetchDraws++ == 0)
+        {
             Log.Info($"[gpu] programmable blending in one-sample scenes: small draws render in a render pass that reads the surface as an input attachment (render target 0x{rt.Address:X8})");
+        }
+
         if (_ss && _singleFetchSsLogged.Add(rt.Address))
+        {
             Log.Info($"[gpu] programmable blending in supersampled scene 0x{rt.Address:X8}: small draws render in a render pass that reads the {w}x{h} sample image as an input attachment");
+        }
+
         _fetchPassOpen = true;
         _fetchPassDepthRo = depthReadOnly;
         (_fetchPassRt, _fetchPassDepth, _fetchPassFormat, _fetchPassScene, _fetchPassImage) = (rt, depth, format, _sceneSerial, image);
@@ -156,7 +181,9 @@ public sealed unsafe partial class VulkanRenderer
     {
         _statFetchPassMerged++;
         var rt = _fetchPassRt!;
-        rt.Dirty = true; rt.Version++; rt.LastTouchedFrame = FrameCount;
+        rt.Dirty = true;
+        rt.Version++;
+        rt.LastTouchedFrame = FrameCount;
         _fetchPassDepth!.Version++;
     }
 
@@ -213,12 +240,22 @@ public sealed unsafe partial class VulkanRenderer
     /// null when this draw cannot (see <see cref="_feedbackAllowed"/>).</summary>
     ImageView? DepthFeedbackView(DepthTarget dt, uint w, uint h)
     {
-        if (!_feedbackAllowed || dt != _depth || dt.Samples != SampleCountFlags.Count1Bit || !dt.Sampleable || w != dt.Width || h != dt.Height) return null;
+        if (!_feedbackAllowed || dt != _depth || dt.Samples != SampleCountFlags.Count1Bit || !dt.Sampleable || w != dt.Width || h != dt.Height)
+        {
+            return null;
+        }
+
         if (dt.FeedbackView.Handle == 0)
+        {
             dt.FeedbackView = CreateView(dt.Image, _core.DepthFormat, ImageAspectFlags.DepthBit, 1, 1, false,
                 new ComponentMapping(ComponentSwizzle.R, ComponentSwizzle.R, ComponentSwizzle.R, ComponentSwizzle.R));
+        }
+
         if (_statDepthFeedback++ == 0)
+        {
             Log.Info($"[gpu] depth 0x{dt.Address:X8} {dt.Width}x{dt.Height} sampled by draws that test against it: read in place in a read-only depth fetch pass");
+        }
+
         _feedbackUsed = true;
         return dt.FeedbackView;
     }
@@ -232,7 +269,10 @@ public sealed unsafe partial class VulkanRenderer
         var depthLayout = _fetchPassDepthRo ? ImageLayout.DepthReadOnlyStencilAttachmentOptimal : ImageLayout.DepthStencilAttachmentOptimal;
         _fetchPassDepthRo = false;
         // the samples of a supersampled scene now hold rendering that is not filtered into the surface yet
-        if (_ss) _ssUnresolved = true;
+        if (_ss)
+        {
+            _ssUnresolved = true;
+        }
         // the next rendering (or a copy / sampling of the surface) comes after this pass's writes
         Barrier(_fetchPassImage, ImageLayout.General, ImageLayout.General, ImageAspectFlags.ColorBit,
             PipelineStageFlags.ColorAttachmentOutputBit,

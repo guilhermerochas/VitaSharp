@@ -29,7 +29,11 @@ public sealed unsafe partial class VulkanRenderer
     DepthTarget? DepthTextureSource(uint addr, GxmTextureDesc d)
     {
         var b = GxmFormats.BaseOf(d.Format);
-        if (b is not (TexBase.X8U24 or TexBase.F32 or TexBase.F32M or TexBase.U16)) return null;
+        if (b is not (TexBase.X8U24 or TexBase.F32 or TexBase.F32M or TexBase.U16))
+        {
+            return null;
+        }
+
         return StoredDepthSource(addr, stencil: false, unpack: true);
     }
 
@@ -48,12 +52,27 @@ public sealed unsafe partial class VulkanRenderer
         DepthTarget? best = null, stored = null;
         foreach (var dt in _depthTargets.Values)
         {
-            if ((stencil ? dt.StencilAddress : dt.Address) != addr) continue;
-            if (best == null || dt.LastScene > best.LastScene) best = dt;
+            if ((stencil ? dt.StencilAddress : dt.Address) != addr)
+            {
+                continue;
+            }
+
+            if (best == null || dt.LastScene > best.LastScene)
+            {
+                best = dt;
+            }
+
             bool samplesStored = dt.Samples == SampleCountFlags.Count1Bit || (unpack && !stencil && dt.ForceStored);
-            if (samplesStored && (stored == null || dt.LastScene > stored.LastScene)) stored = dt;
+            if (samplesStored && (stored == null || dt.LastScene > stored.LastScene))
+            {
+                stored = dt;
+            }
         }
-        if (best == null) return null;
+        if (best == null)
+        {
+            return null;
+        }
+
         if (stored != null && stored != best && !(best.Samples != SampleCountFlags.Count1Bit && best.ForceStored))
         {
             best.EverRead = true;
@@ -65,9 +84,21 @@ public sealed unsafe partial class VulkanRenderer
     (ImageView, ImageLayout) DepthTexture(DepthTarget dt, uint w, uint h)
     {
         dt.LastTouchedFrame = FrameCount; // the copy below may allocate: the source must survive a reclaim
-        if (dt.Samples != SampleCountFlags.Count1Bit) return UnpackedDepthTexture(dt, w, h);
-        if (DepthFeedbackView(dt, w, h) is { } inPlace) return (inPlace, ImageLayout.DepthReadOnlyStencilAttachmentOptimal);
-        if (dt.Scale != 1f) { w = ScaleDim(w, dt.Scale); h = ScaleDim(h, dt.Scale); } // image pixels (VulkanRenderer.ResScale.cs)
+        if (dt.Samples != SampleCountFlags.Count1Bit)
+        {
+            return UnpackedDepthTexture(dt, w, h);
+        }
+
+        if (DepthFeedbackView(dt, w, h) is { } inPlace)
+        {
+            return (inPlace, ImageLayout.DepthReadOnlyStencilAttachmentOptimal);
+        }
+
+        if (dt.Scale != 1f)
+        {
+            w = ScaleDim(w, dt.Scale);
+            h = ScaleDim(h, dt.Scale);
+        } // image pixels (VulkanRenderer.ResScale.cs)
         w = Math.Min(w, dt.Width);
         h = Math.Min(h, dt.Height);
         if (!_depthTextures.TryGetValue(dt, out var t) || t.W != w || t.H != h)
@@ -93,7 +124,11 @@ public sealed unsafe partial class VulkanRenderer
                 PipelineStageFlags.TopOfPipeBit, PipelineStageFlags.FragmentShaderBit, 0, AccessFlags.ShaderReadBit);
         }
         t.LastUsedFrame = dt.LastTouchedFrame = FrameCount;
-        if (t.Version == dt.Version) return (t.View, ImageLayout.DepthStencilReadOnlyOptimal);
+        if (t.Version == dt.Version)
+        {
+            return (t.View, ImageLayout.DepthStencilReadOnlyOptimal);
+        }
+
         t.Version = dt.Version;
 
         // another scene's depth is copied before the open rendering; the scene's own depth ends it
@@ -138,7 +173,11 @@ public sealed unsafe partial class VulkanRenderer
     void DestroyDepthTex(DepthTex t)
     {
         _vk.DestroyImageView(_dev, t.View, null);
-        if (t.AttachView.Handle != 0) _vk.DestroyImageView(_dev, t.AttachView, null);
+        if (t.AttachView.Handle != 0)
+        {
+            _vk.DestroyImageView(_dev, t.AttachView, null);
+        }
+
         _vk.DestroyImage(_dev, t.Image, null);
         _imagePool.Free(t.Mem);
     }
@@ -149,7 +188,11 @@ public sealed unsafe partial class VulkanRenderer
         // the single-sampled depth texture (VulkanRenderer.ResScale.cs). Unpacked at the guest size, texel (x, y) read
         // pixel (x/2, y/2) of the scaled image, the top-left quarter of the scene, and LittleBigPlanet's depth of field
         // blurred the whole planet in its pod menus at 2x
-        if (dt.Scale != 1f) { w = ScaleDim(w, dt.Scale); h = ScaleDim(h, dt.Scale); }
+        if (dt.Scale != 1f)
+        {
+            w = ScaleDim(w, dt.Scale);
+            h = ScaleDim(h, dt.Scale);
+        }
         int layout = UnpackLayout(dt);
         w = Math.Min(w, layout == 0 ? dt.Width * 2 : dt.Width);
         h = Math.Min(h, dt.Height * 2);
@@ -173,7 +216,11 @@ public sealed unsafe partial class VulkanRenderer
             Log.Info($"[gpu] depth surface 0x{dt.Address:X8} of a {(layout == 0 ? "4X" : "2X")} multisampled scene (forced store) is read as a {w}x{h} texture: the samples are unpacked");
         }
         t.LastUsedFrame = FrameCount;
-        if (t.Version == dt.Version) return (t.View, ImageLayout.DepthStencilReadOnlyOptimal);
+        if (t.Version == dt.Version)
+        {
+            return (t.View, ImageLayout.DepthStencilReadOnlyOptimal);
+        }
+
         t.Version = dt.Version;
 
         EndRendering();
@@ -192,13 +239,19 @@ public sealed unsafe partial class VulkanRenderer
         _vk.UpdateDescriptorSets(_dev, 1, &wr, 0, null);
         var att = new RenderingAttachmentInfo
         {
-            SType = StructureType.RenderingAttachmentInfo, ImageView = t.AttachView, ImageLayout = ImageLayout.DepthStencilAttachmentOptimal,
-            LoadOp = AttachmentLoadOp.DontCare, StoreOp = AttachmentStoreOp.Store,
+            SType = StructureType.RenderingAttachmentInfo,
+            ImageView = t.AttachView,
+            ImageLayout = ImageLayout.DepthStencilAttachmentOptimal,
+            LoadOp = AttachmentLoadOp.DontCare,
+            StoreOp = AttachmentStoreOp.Store,
         };
         var ri = new RenderingInfo
         {
-            SType = StructureType.RenderingInfo, RenderArea = new Rect2D(new Offset2D(0, 0), new Extent2D(w, h)), LayerCount = 1,
-            PDepthAttachment = &att, PStencilAttachment = &att,
+            SType = StructureType.RenderingInfo,
+            RenderArea = new Rect2D(new Offset2D(0, 0), new Extent2D(w, h)),
+            LayerCount = 1,
+            PDepthAttachment = &att,
+            PStencilAttachment = &att,
         };
         if (UseRenderPasses)
         {
@@ -206,12 +259,18 @@ public sealed unsafe partial class VulkanRenderer
             var pass = DepthUnpackPass();
             var rbi = new RenderPassBeginInfo
             {
-                SType = StructureType.RenderPassBeginInfo, RenderPass = pass, Framebuffer = TransientFramebuffer(pass, new Extent2D(w, h), t.AttachView),
+                SType = StructureType.RenderPassBeginInfo,
+                RenderPass = pass,
+                Framebuffer = TransientFramebuffer(pass, new Extent2D(w, h), t.AttachView),
                 RenderArea = new Rect2D(new Offset2D(0, 0), new Extent2D(w, h)),
             };
             _vk.CmdBeginRenderPass(cmd, in rbi, SubpassContents.Inline);
         }
-        else _vk.CmdBeginRendering(cmd, in ri);
+        else
+        {
+            _vk.CmdBeginRendering(cmd, in ri);
+        }
+
         _vk.CmdBindPipeline(cmd, PipelineBindPoint.Graphics, DepthUnpackPipeline(layout));
         _vk.CmdBindDescriptorSets(cmd, PipelineBindPoint.Graphics, _msLoadLayout, 0, 1, &set, 0, null);
         var vp = new Viewport(0, 0, w, h, 0, 1);
@@ -219,8 +278,15 @@ public sealed unsafe partial class VulkanRenderer
         _vk.CmdSetViewport(cmd, 0, 1, in vp);
         _vk.CmdSetScissor(cmd, 0, 1, in sc);
         _vk.CmdDraw(cmd, 3, 1, 0, 0);
-        if (UseRenderPasses) _vk.CmdEndRenderPass(cmd);
-        else _vk.CmdEndRendering(cmd);
+        if (UseRenderPasses)
+        {
+            _vk.CmdEndRenderPass(cmd);
+        }
+        else
+        {
+            _vk.CmdEndRendering(cmd);
+        }
+
         _boundPipeline = default;
 
         Barrier(dt.Image, ImageLayout.DepthStencilReadOnlyOptimal, ImageLayout.DepthStencilAttachmentOptimal, ds,
@@ -263,7 +329,11 @@ void main() {
 
     Pipeline DepthUnpackPipeline(int layout)
     {
-        if (_depthUnpackPipelines[layout].Handle != 0) return _depthUnpackPipelines[layout];
+        if (_depthUnpackPipelines[layout].Handle != 0)
+        {
+            return _depthUnpackPipelines[layout];
+        }
+
         EnsureLoadLayout();
         var fs = _depthUnpackFs[layout] = CompileBuiltin(DepthUnpackFs(layout), false);
         var entry = stackalloc byte[5] { (byte)'m', (byte)'a', (byte)'i', (byte)'n', 0 };
@@ -281,14 +351,26 @@ void main() {
         var dsi = new PipelineDynamicStateCreateInfo { SType = StructureType.PipelineDynamicStateCreateInfo, DynamicStateCount = 2, PDynamicStates = dyn };
         var rendering = new PipelineRenderingCreateInfo
         {
-            SType = StructureType.PipelineRenderingCreateInfo, DepthAttachmentFormat = _core.DepthFormat, StencilAttachmentFormat = _core.DepthFormat,
+            SType = StructureType.PipelineRenderingCreateInfo,
+            DepthAttachmentFormat = _core.DepthFormat,
+            StencilAttachmentFormat = _core.DepthFormat,
         };
         var gci = new GraphicsPipelineCreateInfo
         {
-            SType = StructureType.GraphicsPipelineCreateInfo, PNext = UseRenderPasses ? null : &rendering,
-            RenderPass = UseRenderPasses ? DepthUnpackPass() : default, StageCount = 2, PStages = stages,
-            PVertexInputState = &vi, PInputAssemblyState = &ia, PViewportState = &vps, PRasterizationState = &rs, PMultisampleState = &ms,
-            PDepthStencilState = &dss, PColorBlendState = &cb, PDynamicState = &dsi, Layout = _msLoadLayout,
+            SType = StructureType.GraphicsPipelineCreateInfo,
+            PNext = UseRenderPasses ? null : &rendering,
+            RenderPass = UseRenderPasses ? DepthUnpackPass() : default,
+            StageCount = 2,
+            PStages = stages,
+            PVertexInputState = &vi,
+            PInputAssemblyState = &ia,
+            PViewportState = &vps,
+            PRasterizationState = &rs,
+            PMultisampleState = &ms,
+            PDepthStencilState = &dss,
+            PColorBlendState = &cb,
+            PDynamicState = &dsi,
+            Layout = _msLoadLayout,
         };
         _vk.CreateGraphicsPipelines(_dev, _vkPipelineCache, 1, in gci, null, out _depthUnpackPipelines[layout]).Ok("depth unpack pipeline");
         return _depthUnpackPipelines[layout];
@@ -315,7 +397,11 @@ void main() {
     /// </summary>
     DepthTarget? StencilTextureSource(uint addr, GxmTextureDesc d)
     {
-        if (GxmFormats.BaseOf(d.Format) != TexBase.U8 || addr is < GuestMemory.CdramStart or >= GuestMemory.CdramEnd) return null;
+        if (GxmFormats.BaseOf(d.Format) != TexBase.U8 || addr is < GuestMemory.CdramStart or >= GuestMemory.CdramEnd)
+        {
+            return null;
+        }
+
         return StoredDepthSource(addr, stencil: true, unpack: false);
     }
 
@@ -323,7 +409,11 @@ void main() {
     {
         dt.LastTouchedFrame = FrameCount;
         uint w = Math.Min(d.Width, Math.Min(dt.Width, dt.StencilStrideBytes)), h = Math.Min(d.Height, dt.Height);
-        if (dt.Scale != 1f) { w = Math.Min(ScaleDim(d.Width, dt.Scale), dt.Width); h = Math.Min(ScaleDim(d.Height, dt.Scale), dt.Height); } // VulkanRenderer.ResScale.cs
+        if (dt.Scale != 1f)
+        {
+            w = Math.Min(ScaleDim(d.Width, dt.Scale), dt.Width);
+            h = Math.Min(ScaleDim(d.Height, dt.Scale), dt.Height);
+        } // VulkanRenderer.ResScale.cs
         uint swz = d.Format & GxmFormats.TextureSwizzleMask;
         if (!_stencilTextures.TryGetValue(dt, out var t) || t.W != w || t.H != h || t.Swizzle != swz)
         {
@@ -342,14 +432,26 @@ void main() {
                 PipelineStageFlags.TopOfPipeBit, PipelineStageFlags.FragmentShaderBit, 0, AccessFlags.ShaderReadBit);
         }
         t.LastUsedFrame = dt.LastTouchedFrame = FrameCount;
-        if (t.Version == dt.Version) return (t.View, ImageLayout.ShaderReadOnlyOptimal);
+        if (t.Version == dt.Version)
+        {
+            return (t.View, ImageLayout.ShaderReadOnlyOptimal);
+        }
+
         t.Version = dt.Version;
         // above native the scaled plane is larger than the guest's stencil surface: it goes through a buffer of its own
-        if (dt.Scale > 1f) { CopyScaledStencil(dt, t, w, h); return (t.View, ImageLayout.ShaderReadOnlyOptimal); }
+        if (dt.Scale > 1f)
+        {
+            CopyScaledStencil(dt, t, w, h);
+            return (t.View, ImageLayout.ShaderReadOnlyOptimal);
+        }
         // stencil aspect -> CDRAM mirror (guest layout, one byte per pixel) -> R8 image
         EnsureMirror();
         _mirroredDepth.Remove((dt, true));
-        if (!MirrorDepthTarget(dt, true)) return (t.View, ImageLayout.ShaderReadOnlyOptimal);
+        if (!MirrorDepthTarget(dt, true))
+        {
+            return (t.View, ImageLayout.ShaderReadOnlyOptimal);
+        }
+
         EndRendering();
         Barrier(t.Image, ImageLayout.ShaderReadOnlyOptimal, ImageLayout.TransferDstOptimal, ImageAspectFlags.ColorBit,
             PipelineStageFlags.FragmentShaderBit | PipelineStageFlags.VertexShaderBit, PipelineStageFlags.TransferBit,
@@ -425,7 +527,11 @@ void main() {
 
     void DestroyStencilScratch()
     {
-        if (_stencilScratch.Handle != 0) _core.DestroyBuffer(_stencilScratch, _stencilScratchMem);
+        if (_stencilScratch.Handle != 0)
+        {
+            _core.DestroyBuffer(_stencilScratch, _stencilScratchMem);
+        }
+
         _stencilScratch = default;
         _stencilScratchBytes = 0;
     }

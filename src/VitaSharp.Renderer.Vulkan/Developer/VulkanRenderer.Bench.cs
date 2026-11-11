@@ -27,13 +27,25 @@ public sealed unsafe partial class VulkanRenderer
 
     void DevSceneBegin(BeginSceneCommand b)
     {
-        if (!GpuBenchState.Timing || !TimestampsOk()) return;
+        if (!GpuBenchState.Timing || !TimestampsOk())
+        {
+            return;
+        }
+
         if (_devPool.Handle == 0)
         {
             var ci = new QueryPoolCreateInfo { SType = StructureType.QueryPoolCreateInfo, QueryType = QueryType.Timestamp, QueryCount = DevQueries };
-            if (_vk.CreateQueryPool(_dev, in ci, null, out _devPool) != Result.Success) { _devPool = default; return; }
+            if (_vk.CreateQueryPool(_dev, in ci, null, out _devPool) != Result.Success)
+            {
+                _devPool = default;
+                return;
+            }
         }
-        if (_devUsed + 2 > DevQueries) return;
+        if (_devUsed + 2 > DevQueries)
+        {
+            return;
+        }
+
         uint q = _devUsed;
         _devUsed += 2;
         // bottom of pipe at both ends: a scene's time runs from the end of the work before it to its own end (tilers
@@ -52,8 +64,16 @@ public sealed unsafe partial class VulkanRenderer
 
     partial void DevStampOp(CommandBuffer cb, string label)
     {
-        if (!GpuBenchState.Stamps || _devOpen < 0 || _devUsed + 1 > DevQueries) return;
-        if (cb.Handle == 0) cb = Cmd;
+        if (!GpuBenchState.Stamps || _devOpen < 0 || _devUsed + 1 > DevQueries)
+        {
+            return;
+        }
+
+        if (cb.Handle == 0)
+        {
+            cb = Cmd;
+        }
+
         uint q = _devUsed++;
         _vk.CmdResetQueryPool(cb, _devPool, q, 1);
         _vk.CmdWriteTimestamp(cb, PipelineStageFlags.BottomOfPipeBit, _devPool, q);
@@ -62,7 +82,11 @@ public sealed unsafe partial class VulkanRenderer
 
     void DevSceneEnd()
     {
-        if (_devOpen < 0) return;
+        if (_devOpen < 0)
+        {
+            return;
+        }
+
         _vk.CmdWriteTimestamp(F.Cmd, PipelineStageFlags.BottomOfPipeBit, _devPool, _devScenes[_devOpen].Query + 1);
         _devOpen = -1;
     }
@@ -75,28 +99,43 @@ public sealed unsafe partial class VulkanRenderer
         {
             var t = new ulong[_devUsed];
             fixed (ulong* p = t)
+            {
                 if (_vk.GetQueryPoolResults(_dev, _devPool, 0, _devUsed, (nuint)(t.Length * 8), p, 8, QueryResultFlags.Result64Bit | QueryResultFlags.ResultWaitBit) == Result.Success)
+                {
                     for (int i = 0; i < _devScenes.Count; i++)
                     {
                         var s = _devScenes[i];
                         ulong a = t[s.Query], b = t[s.Query + 1];
                         res.Add(new BenchScene(s.Present, i, s.W, s.H, s.Rt, b >= a ? (b - a) * _timePeriodNs / 1e6 : double.NaN));
                     }
+                }
+            }
+
             DevStampTimes.Clear();
             if (_devStamps.Count > 0 && res.Count == _devScenes.Count)
+            {
                 for (int i = 0; i < _devScenes.Count; i++)
                 {
                     var own = _devStamps.Where(x => x.Scene == i).ToList();
-                    if (own.Count == 0) continue;
+                    if (own.Count == 0)
+                    {
+                        continue;
+                    }
+
                     ulong prev = t[_devScenes[i].Query];
                     string label = "start";
                     for (int k = 0; k <= own.Count; k++)
                     {
                         ulong at = k < own.Count ? t[own[k].Query] : t[_devScenes[i].Query + 1];
                         DevStampTimes.Add((i, k, label, at >= prev ? (at - prev) * _timePeriodNs / 1e6 : double.NaN));
-                        if (k < own.Count) { prev = at; label = own[k].Label; }
+                        if (k < own.Count)
+                        {
+                            prev = at;
+                            label = own[k].Label;
+                        }
                     }
                 }
+            }
         }
         _devStamps.Clear();
         _devScenes.Clear();
@@ -113,7 +152,11 @@ public sealed unsafe partial class VulkanRenderer
     ModuleEntry? DevShaderOverride(GxpProgram program, ulong hintKey, Func<DrawCommand, uint, ShaderHints> hints, DrawCommand d, uint colorFormat)
     {
         var key = (program.Hash, hintKey);
-        if (_devShaders.TryGetValue(key, out var e)) return e;
+        if (_devShaders.TryGetValue(key, out var e))
+        {
+            return e;
+        }
+
         string ext = program.IsVertex ? "vert" : "frag";
         if (GpuBenchState.FragmentDiscard && !program.IsVertex)
         {
@@ -126,17 +169,40 @@ public sealed unsafe partial class VulkanRenderer
 
         foreach (var name in new[] { $"{program.Hash:X16}_{hintKey:X16}.{ext}", $"{program.Hash:X16}.{ext}" })
         {
-            if (File.Exists(Path.Combine(dir, name + ".spv"))) { file = Path.Combine(dir, name + ".spv"); break; }
-            if (File.Exists(Path.Combine(dir, name))) { file = Path.Combine(dir, name); break; }
+            if (File.Exists(Path.Combine(dir, name + ".spv")))
+            {
+                file = Path.Combine(dir, name + ".spv");
+                break;
+            }
+            if (File.Exists(Path.Combine(dir, name)))
+            {
+                file = Path.Combine(dir, name);
+                break;
+            }
         }
-        if (file == null) { _devShaders[key] = null; return null; }
+        if (file == null)
+        {
+            _devShaders[key] = null;
+            return null;
+        }
         // the translator's interface data (bindings, outputs) stays; only the code changes
         var gen = ShaderGenerator.Generate(program, hints(d, colorFormat));
         byte[]? spv;
         string? err = null;
-        if (file.EndsWith(".spv", StringComparison.Ordinal)) spv = File.ReadAllBytes(file);
-        else spv = _compiler.Compile(File.ReadAllText(file), program.IsVertex, out err);
-        if (spv == null) throw new InvalidOperationException($"bench shader {file}: {err}");
+        if (file.EndsWith(".spv", StringComparison.Ordinal))
+        {
+            spv = File.ReadAllBytes(file);
+        }
+        else
+        {
+            spv = _compiler.Compile(File.ReadAllText(file), program.IsVertex, out err);
+        }
+
+        if (spv == null)
+        {
+            throw new InvalidOperationException($"bench shader {file}: {err}");
+        }
+
         e = new ModuleEntry(CreateShaderModule(spv), gen);
         Log.Info($"[bench] shader {Path.GetFileName(file)} replaces {program.Hash:X16}/{hintKey:X16}");
         _devShaders[key] = e;
@@ -149,25 +215,39 @@ public sealed unsafe partial class VulkanRenderer
         Directory.CreateDirectory(dir);
         int n = 0;
         foreach (var (k, m) in _modules)
+        {
             if (m.Gen is { Glsl.Length: > 0 } g)
             {
                 File.WriteAllText(Path.Combine(dir, $"{k.Item1:X16}_{k.Item2:X16}.{(g.IsVertex ? "vert" : "frag")}"), g.Glsl);
                 n++;
             }
+        }
+
         return n;
     }
 
     /// <summary>The bench's depth load/store overrides for one tiled rendering (FlushChain).</summary>
     static void DevRenderingOps(ref AttachmentLoadOp depthLoad, ref AttachmentStoreOp depthStore)
     {
-        if (GpuBenchState.DepthLoad is { } l && depthLoad != AttachmentLoadOp.Load) depthLoad = l; // a loaded depth stays loaded
-        if (GpuBenchState.DepthStore is { } s) depthStore = s;
+        if (GpuBenchState.DepthLoad is { } l && depthLoad != AttachmentLoadOp.Load)
+        {
+            depthLoad = l; // a loaded depth stays loaded
+        }
+
+        if (GpuBenchState.DepthStore is { } s)
+        {
+            depthStore = s;
+        }
     }
 
     /// <summary>bench barrier=full: a full memory barrier after every tiled rendering (what a barrier costs).</summary>
     void DevAfterRendering(CommandBuffer cmd)
     {
-        if (!GpuBenchState.FullBarriers) return;
+        if (!GpuBenchState.FullBarriers)
+        {
+            return;
+        }
+
         var mb = new MemoryBarrier { SType = StructureType.MemoryBarrier, SrcAccessMask = AccessFlags.MemoryWriteBit, DstAccessMask = AccessFlags.MemoryReadBit | AccessFlags.MemoryWriteBit };
         _vk.CmdPipelineBarrier(cmd, PipelineStageFlags.AllCommandsBit, PipelineStageFlags.AllCommandsBit, 0, 1, &mb, 0, null, 0, null);
     }
@@ -176,9 +256,19 @@ public sealed unsafe partial class VulkanRenderer
 
     {
         foreach (var e in _devShaders.Values)
-            if (e != null) _vk.DestroyShaderModule(_dev, e.Module, null);
+        {
+            if (e != null)
+            {
+                _vk.DestroyShaderModule(_dev, e.Module, null);
+            }
+        }
+
         _devShaders.Clear();
-        if (_devPool.Handle != 0) _vk.DestroyQueryPool(_dev, _devPool, null);
+        if (_devPool.Handle != 0)
+        {
+            _vk.DestroyQueryPool(_dev, _devPool, null);
+        }
+
         _devPool = default;
     }
 }

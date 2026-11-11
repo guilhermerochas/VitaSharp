@@ -71,7 +71,11 @@ public sealed unsafe partial class VulkanRenderer
 
     bool SupportsSupersample(Format f)
     {
-        if (_ssFormatOk.TryGetValue(f, out var ok)) return ok;
+        if (_ssFormatOk.TryGetValue(f, out var ok))
+        {
+            return ok;
+        }
+
         _core.Vk.GetPhysicalDeviceFormatProperties(_core.Physical, f, out var props);
         const FormatFeatureFlags need = FormatFeatureFlags.BlitSrcBit | FormatFeatureFlags.BlitDstBit | FormatFeatureFlags.SampledImageFilterLinearBit
             | FormatFeatureFlags.ColorAttachmentBlendBit;
@@ -80,7 +84,11 @@ public sealed unsafe partial class VulkanRenderer
 
     SupersampleImage GetSupersampleImage(RenderTarget rt)
     {
-        if (_ssImages.TryGetValue(rt, out var ss)) return ss;
+        if (_ssImages.TryGetValue(rt, out var ss))
+        {
+            return ss;
+        }
+
         ss = new SupersampleImage { Width = rt.ImgW * 2, Height = rt.ImgH * 2 };
         // input attachment: small programmable-blending draws read it in a render pass (VulkanRenderer.SingleFetch.cs)
         (ss.Image, ss.View, ss.Mem) = CreateImage(MemCat.Msaa, ss.Width, ss.Height, rt.Format,
@@ -88,7 +96,10 @@ public sealed unsafe partial class VulkanRenderer
             ImageAspectFlags.ColorBit, mutable: true);
         var srgb = Formats.Srgb(rt.Format);
         if (srgb != rt.Format && _core.SupportsColorAttachment(srgb))
+        {
             ss.SrgbView = CreateView(ss.Image, srgb, ImageAspectFlags.ColorBit, 1, 1, false, default);
+        }
+
         _ssImages[rt] = ss;
         Log.Info($"[gpu] render target 0x{rt.Address:X8} {rt.Width}x{rt.Height} fmt 0x{rt.ColorFormat:X8}: MSAA downscale scene, rendering 2x supersampled");
         return ss;
@@ -102,12 +113,24 @@ public sealed unsafe partial class VulkanRenderer
 
     void DestroySupersampleLater(RenderTarget rt, bool now = false)
     {
-        if (!_ssImages.Remove(rt, out var ss)) return;
+        if (!_ssImages.Remove(rt, out var ss))
+        {
+            return;
+        }
+
         Release(() =>
         {
             _vk.DestroyImageView(_dev, ss.View, null);
-            if (ss.SrgbView.Handle != 0) _vk.DestroyImageView(_dev, ss.SrgbView, null);
-            if (ss.RawView.Handle != 0) _vk.DestroyImageView(_dev, ss.RawView, null);
+            if (ss.SrgbView.Handle != 0)
+            {
+                _vk.DestroyImageView(_dev, ss.SrgbView, null);
+            }
+
+            if (ss.RawView.Handle != 0)
+            {
+                _vk.DestroyImageView(_dev, ss.RawView, null);
+            }
+
             _vk.DestroyImage(_dev, ss.Image, null);
             _imagePool.Free(ss.Mem);
         }, now);

@@ -78,9 +78,11 @@ public static class AstcTranscoder
     public static string Summary()
     {
         lock (Lock)
+        {
             return $"ASTC 4x4 transcoding: {Encoded} levels encoded ({EncodedTexels / 1e6:F1} M texels, {EncodeTicks * 1000.0 / Stopwatch.Frequency:F0} ms, " +
                    $"{(EncodeTicks > 0 ? EncodedTexels / (EncodeTicks / (double)Stopwatch.Frequency) / 1e6 : 0):F1} M texels/s), {MemoryHits} from memory, {DiskHits} from disk" +
                    (Disk != null ? $" ({Disk.Summary()})" : " (no disk cache)");
+        }
     }
 
     static ulong Key(ReadOnlySpan<byte> source, TexBase f, uint w, uint h) =>
@@ -120,7 +122,10 @@ public static class AstcTranscoder
         long t0 = Stopwatch.GetTimestamp();
         var outBlocks = new byte[length];
         using (var rgba = decode(source, f, w, h))
+        {
             AstcEncoder.EncodeParallel(rgba.Span, (int)w, (int)h, outBlocks, channels, Threads);
+        }
+
         long dt = Stopwatch.GetTimestamp() - t0;
         lock (Lock)
         {
@@ -142,10 +147,18 @@ public static class AstcTranscoder
 
     static void Remember(ulong key, byte[] data)
     {
-        if (data.Length > MemoryBudget / 8) return;
+        if (data.Length > MemoryBudget / 8)
+        {
+            return;
+        }
+
         lock (Lock)
         {
-            if (Map.ContainsKey(key)) return;
+            if (Map.ContainsKey(key))
+            {
+                return;
+            }
+
             Map[key] = Lru.AddFirst((key, data));
             _bytes += data.Length;
             while (_bytes > MemoryBudget && Lru.Last is { } last)
@@ -159,6 +172,12 @@ public static class AstcTranscoder
 
     public static void Reset()
     {
-        lock (Lock) { Map.Clear(); Lru.Clear(); _bytes = 0; Encoded = EncodedTexels = EncodeTicks = MemoryHits = DiskHits = 0; }
+        lock (Lock)
+        {
+            Map.Clear();
+            Lru.Clear();
+            _bytes = 0;
+            Encoded = EncodedTexels = EncodeTicks = MemoryHits = DiskHits = 0;
+        }
     }
 }

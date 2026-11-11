@@ -57,7 +57,11 @@ public sealed unsafe partial class VulkanRenderer
 
     CostFrame CostOf(Frame f)
     {
-        if (f.Cost != null) return f.Cost;
+        if (f.Cost != null)
+        {
+            return f.Cost;
+        }
+
         var ci = new QueryPoolCreateInfo { SType = StructureType.QueryPoolCreateInfo, QueryType = QueryType.Occlusion, QueryCount = CostQueriesPerFrame };
         var c = new CostFrame();
         _vk.CreateQueryPool(_dev, in ci, null, out c.Pool);
@@ -67,7 +71,11 @@ public sealed unsafe partial class VulkanRenderer
 
     void ResetCost(Frame f)
     {
-        if (!CostOn) return;
+        if (!CostOn)
+        {
+            return;
+        }
+
         var c = CostOf(f);
         _vk.CmdResetQueryPool(f.Cmd, c.Pool, 0, CostQueriesPerFrame);
         c.Used = 0;
@@ -78,23 +86,45 @@ public sealed unsafe partial class VulkanRenderer
     /// <summary>Before the draw commands of one piece of a draw (inside its rendering).</summary>
     void BeginCostQuery(CommandBuffer cmd, DrawCommand d)
     {
-        if (!CostOn || d.VisAddress != 0) return; // a visibility query is begun instead (one occlusion query at a time)
+        if (!CostOn || d.VisAddress != 0)
+        {
+            return; // a visibility query is begun instead (one occlusion query at a time)
+        }
+
         var c = CostOf(F);
-        if (c.Used >= CostQueriesPerFrame) { Log.WarnOnce("costq-full", "[cost] occlusion queries per frame exhausted"); return; }
+        if (c.Used >= CostQueriesPerFrame)
+        {
+            Log.WarnOnce("costq-full", "[cost] occlusion queries per frame exhausted");
+            return;
+        }
         _costOpen = c.Used++;
-        if (_costDrawFirst < 0) _costDrawFirst = (int)_costOpen;
+        if (_costDrawFirst < 0)
+        {
+            _costDrawFirst = (int)_costOpen;
+        }
+
         _costDrawCount++;
         _vk.CmdBeginQuery(cmd, c.Pool, _costOpen, _core.OcclusionQueryPrecise ? QueryControlFlags.PreciseBit : 0);
     }
 
     void EndCostQuery(CommandBuffer cmd)
     {
-        if (_costOpen == uint.MaxValue) return;
+        if (_costOpen == uint.MaxValue)
+        {
+            return;
+        }
+
         _vk.CmdEndQuery(cmd, CostOf(F).Pool, _costOpen);
         _costOpen = uint.MaxValue;
     }
 
-    void CostNoteVisQuery(uint query) { if (CostOn) _costVis = (int)query; }
+    void CostNoteVisQuery(uint query)
+    {
+        if (CostOn)
+        {
+            _costVis = (int)query;
+        }
+    }
 
     /// <summary>After the draw was recorded: its record (the shaders are the variants it was drawn with).</summary>
     void CostNoteDraw(DrawCommand d, VsEntry vs, FsEntry fs)
@@ -102,33 +132,80 @@ public sealed unsafe partial class VulkanRenderer
         var c = CostOf(F);
         c.Draws.Add(new DrawCostRecord
         {
-            Present = _presentCount + 1, Serial = _drawSerial,
-            VsHash = vs.ProgramHash, VsHint = vs.HintKey, FsHash = fs.ProgramHash, FsHint = fs.HintKey,
+            Present = _presentCount + 1,
+            Serial = _drawSerial,
+            VsHash = vs.ProgramHash,
+            VsHint = vs.HintKey,
+            FsHash = fs.ProgramHash,
+            FsHint = fs.HintKey,
             Vertices = (long)d.IndexCount * Math.Max(1u, d.InstanceCount),
-            Samples = -1, SampleCount = (int)SceneSamples, RtW = _rt?.Width ?? _depth?.Width ?? 0, RtH = _rt?.Height ?? _depth?.Height ?? 0,
+            Samples = -1,
+            SampleCount = (int)SceneSamples,
+            RtW = _rt?.Width ?? _depth?.Width ?? 0,
+            RtH = _rt?.Height ?? _depth?.Height ?? 0,
         });
         c.Queries.Add((_costDrawFirst, _costDrawCount, _costVis));
-        _costDrawFirst = -1; _costDrawCount = 0; _costVis = -1;
+        _costDrawFirst = -1;
+        _costDrawCount = 0;
+        _costVis = -1;
         if (!_costGlsl.ContainsKey((vs.ProgramHash, vs.HintKey, true)))
+        {
             _costGlsl[(vs.ProgramHash, vs.HintKey, true)] = !string.IsNullOrEmpty(vs.Gen?.Glsl) ? vs.Gen!.Glsl : TryGenerate(d.VertexProgram.Info.Program, () => VertexHints(d, VertexVaryingMask(d)));
+        }
+
         if (!_costGlsl.ContainsKey((fs.ProgramHash, fs.HintKey, false)))
+        {
             _costGlsl[(fs.ProgramHash, fs.HintKey, false)] = !string.IsNullOrEmpty(fs.Gen?.Glsl) ? fs.Gen!.Glsl : TryGenerate(d.FragmentProgram.Info.Program, () => FragmentHints(d, _rt?.ColorFormat ?? 0));
+        }
     }
 
     static string TryGenerate(GxpProgram program, Func<ShaderHints> hints)
     {
-        try { return ShaderGenerator.Generate(program, hints()).Glsl; }
-        catch (Exception e) { Log.WarnOnce($"cost-gen-{program.Hash:x16}", $"[cost] GLSL of {program.Hash:x16} not regenerated: {e.Message}"); return ""; }
+        try
+        {
+            return ShaderGenerator.Generate(program, hints()).Glsl;
+        }
+        catch (Exception e)
+        {
+            Log.WarnOnce($"cost-gen-{program.Hash:x16}", $"[cost] GLSL of {program.Hash:x16} not regenerated: {e.Message}");
+            return "";
+        }
     }
 
     /// <summary>Tile bytes of one scene rendering (called with the load/store counters).</summary>
     void CostNoteOps(bool color, AttachmentLoadOp colorLoad, AttachmentStoreOp colorStore, bool depth, AttachmentLoadOp depthLoad, AttachmentStoreOp depthStore, Extent2D area)
     {
-        if (!CostOn) return;
+        if (!CostOn)
+        {
+            return;
+        }
+
         long px = area.Width != 0 ? (long)area.Width * area.Height : (long)(_rt?.Width ?? _depth?.Width ?? 0) * (_rt?.Height ?? _depth?.Height ?? 0);
         long load = 0, store = 0;
-        if (color) { if (colorLoad == AttachmentLoadOp.Load) load += px * 4; if (colorStore == AttachmentStoreOp.Store) store += px * 4; }
-        if (depth) { if (depthLoad == AttachmentLoadOp.Load) load += px * 4; if (depthStore == AttachmentStoreOp.Store) store += px * 4; }
+        if (color)
+        {
+            if (colorLoad == AttachmentLoadOp.Load)
+            {
+                load += px * 4;
+            }
+
+            if (colorStore == AttachmentStoreOp.Store)
+            {
+                store += px * 4;
+            }
+        }
+        if (depth)
+        {
+            if (depthLoad == AttachmentLoadOp.Load)
+            {
+                load += px * 4;
+            }
+
+            if (depthStore == AttachmentStoreOp.Store)
+            {
+                store += px * 4;
+            }
+        }
         var cur = _costTileBytes.GetValueOrDefault(_presentCount + 1);
         _costTileBytes[_presentCount + 1] = (cur.LoadBytes + load, cur.StoreBytes + store);
     }
@@ -137,21 +214,41 @@ public sealed unsafe partial class VulkanRenderer
     void CompleteCost(Frame f)
     {
         var c = f.Cost;
-        if (c == null || _costSink == null || c.Draws.Count == 0) return;
-        if (c.Results.Length < c.Used) c.Results = new ulong[CostQueriesPerFrame];
+        if (c == null || _costSink == null || c.Draws.Count == 0)
+        {
+            return;
+        }
+
+        if (c.Results.Length < c.Used)
+        {
+            c.Results = new ulong[CostQueriesPerFrame];
+        }
+
         if (c.Used > 0)
+        {
             fixed (ulong* p = c.Results)
+            {
                 _vk.GetQueryPoolResults(_dev, c.Pool, 0, c.Used, (nuint)(c.Used * 8), p, 8, QueryResultFlags.Result64Bit | QueryResultFlags.ResultWaitBit);
+            }
+        }
+
         var vis = f.Visibility?.Results;
         var span = System.Runtime.InteropServices.CollectionsMarshal.AsSpan(c.Draws);
         for (int i = 0; i < span.Length; i++)
         {
             var (first, count, v) = c.Queries[i];
-            if (v >= 0) span[i].Samples = vis != null && v < vis.Length ? vis[v] : -1;
+            if (v >= 0)
+            {
+                span[i].Samples = vis != null && v < vis.Length ? vis[v] : -1;
+            }
             else if (count > 0)
             {
                 ulong s = 0;
-                for (int q = first; q < first + count; q++) s += c.Results[q];
+                for (int q = first; q < first + count; q++)
+                {
+                    s += c.Results[q];
+                }
+
                 span[i].Samples = (long)s;
             }
         }
@@ -163,7 +260,11 @@ public sealed unsafe partial class VulkanRenderer
 
     void DestroyCost(Frame f)
     {
-        if (f.Cost is { } c) _vk.DestroyQueryPool(_dev, c.Pool, null);
+        if (f.Cost is { } c)
+        {
+            _vk.DestroyQueryPool(_dev, c.Pool, null);
+        }
+
         f.Cost = null;
     }
 }

@@ -52,14 +52,42 @@ public sealed unsafe partial class VulkanRenderer
     /// <summary>Why the current scene cannot keep the word (null: it can).</summary>
     string? TileWord1Unsupported()
     {
-        if (_rt == null) return "no colour surface";
-        if (Formats.ColorBytesPerPixel(_rt.ColorFormat) != 4) return "not a 32-bit colour surface";
-        if (_ss) return "supersampled scene";
-        if (TiledRenderings) return "tile-based renderings";
-        if (_ms && !MsaaInputFetch) return "multisampled framebuffer fetch through copies";
+        if (_rt == null)
+        {
+            return "no colour surface";
+        }
+
+        if (Formats.ColorBytesPerPixel(_rt.ColorFormat) != 4)
+        {
+            return "not a 32-bit colour surface";
+        }
+
+        if (_ss)
+        {
+            return "supersampled scene";
+        }
+
+        if (TiledRenderings)
+        {
+            return "tile-based renderings";
+        }
+
+        if (_ms && !MsaaInputFetch)
+        {
+            return "multisampled framebuffer fetch through copies";
+        }
+
         var samples = SceneSamples;
-        if (!_core.SupportsUnblendedColorAttachment(TileWord1Format)) return $"{TileWord1Format} is not a colour attachment format";
-        if ((_core.ImageSampleCounts(TileWord1Format, TileWord1Usage) & samples) == 0) return $"{TileWord1Format} cannot have {samples}";
+        if (!_core.SupportsUnblendedColorAttachment(TileWord1Format))
+        {
+            return $"{TileWord1Format} is not a colour attachment format";
+        }
+
+        if ((_core.ImageSampleCounts(TileWord1Format, TileWord1Usage) & samples) == 0)
+        {
+            return $"{TileWord1Format} cannot have {samples}";
+        }
+
         return null;
     }
 
@@ -68,7 +96,11 @@ public sealed unsafe partial class VulkanRenderer
     {
         if (TileWord1Unsupported() is { } why)
         {
-            if (_tw1Logged.Add(why)) Log.Warn($"[gpu] a native-colour program keeps data in its output register beyond the colour, which the scene cannot keep ({why}): the data is lost");
+            if (_tw1Logged.Add(why))
+            {
+                Log.Warn($"[gpu] a native-colour program keeps data in its output register beyond the colour, which the scene cannot keep ({why}): the data is lost");
+            }
+
             return;
         }
         var rt = _rt!;
@@ -101,7 +133,9 @@ public sealed unsafe partial class VulkanRenderer
         _tw1Active = true;
         _statTw1Scenes++;
         if (_tw1Logged.Add($"rt{rt.Address:X8}"))
+        {
             Log.Info($"[gpu] render target 0x{rt.Address:X8} {rt.Width}x{rt.Height}: a native-colour program keeps data in the second output register word, the scene keeps it in a {samples} {TileWord1Format} attachment");
+        }
     }
 
     /// <summary>Scene start/end: the word does not outlive its scene.</summary>
@@ -128,7 +162,11 @@ public sealed unsafe partial class VulkanRenderer
             (_tw1CopyW, _tw1CopyH) = (w, h);
             Barrier(_tw1Copy, ImageLayout.Undefined, ImageLayout.General, ImageAspectFlags.ColorBit, PipelineStageFlags.TopOfPipeBit, PipelineStageFlags.TransferBit, 0, AccessFlags.TransferWriteBit);
         }
-        if (FetchRegion(SceneScale, w, h) is not (var offset, var extent)) return _tw1CopyView;
+        if (FetchRegion(SceneScale, w, h) is not (var offset, var extent))
+        {
+            return _tw1CopyView;
+        }
+
         Barrier(src.Image, ImageLayout.General, ImageLayout.General, ImageAspectFlags.ColorBit,
             PipelineStageFlags.ColorAttachmentOutputBit, PipelineStageFlags.TransferBit, AccessFlags.ColorAttachmentWriteBit, AccessFlags.TransferReadBit);
         Barrier(_tw1Copy, ImageLayout.General, ImageLayout.General, ImageAspectFlags.ColorBit, PipelineStageFlags.FragmentShaderBit, PipelineStageFlags.TransferBit,
@@ -137,7 +175,9 @@ public sealed unsafe partial class VulkanRenderer
         {
             SrcSubresource = new ImageSubresourceLayers(ImageAspectFlags.ColorBit, 0, 0, 1),
             DstSubresource = new ImageSubresourceLayers(ImageAspectFlags.ColorBit, 0, 0, 1),
-            SrcOffset = offset, DstOffset = offset, Extent = extent,
+            SrcOffset = offset,
+            DstOffset = offset,
+            Extent = extent,
         };
         _vk.CmdCopyImage(Cmd, src.Image, ImageLayout.General, _tw1Copy, ImageLayout.General, 1, in copy);
         Barrier(_tw1Copy, ImageLayout.General, ImageLayout.General, ImageAspectFlags.ColorBit, PipelineStageFlags.TransferBit, PipelineStageFlags.FragmentShaderBit,
@@ -159,9 +199,18 @@ public sealed unsafe partial class VulkanRenderer
 
     void DestroyTileWord1()
     {
-        foreach (var img in _tw1Images.Values) { _vk.DestroyImageView(_dev, img.View, null); _vk.DestroyImage(_dev, img.Image, null); }
+        foreach (var img in _tw1Images.Values)
+        {
+            _vk.DestroyImageView(_dev, img.View, null);
+            _vk.DestroyImage(_dev, img.Image, null);
+        }
         _tw1Images.Clear();
-        if (_tw1Copy.Handle != 0) { _vk.DestroyImageView(_dev, _tw1CopyView, null); _vk.DestroyImage(_dev, _tw1Copy, null); _tw1Copy = default; }
+        if (_tw1Copy.Handle != 0)
+        {
+            _vk.DestroyImageView(_dev, _tw1CopyView, null);
+            _vk.DestroyImage(_dev, _tw1Copy, null);
+            _tw1Copy = default;
+        }
         _tw1 = null;
         _tw1Active = false;
     }

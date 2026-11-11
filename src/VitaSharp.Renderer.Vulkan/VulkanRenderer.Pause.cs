@@ -19,18 +19,32 @@ public sealed unsafe partial class VulkanRenderer
 
     void PresentWhilePaused()
     {
-        if (_deviceLost || _inScene || _lastPresented is not { } last) return;
+        if (_deviceLost || _inScene || _lastPresented is not { } last)
+        {
+            return;
+        }
+
         var (src, frame) = last;
         // the surface may have been destroyed since it was presented (the pause came after a reallocation)
-        if (src != _cpuFramebuffer && !_renderTargets.ContainsValue(src)) return;
+        if (src != _cpuFramebuffer && !_renderTargets.ContainsValue(src))
+        {
+            return;
+        }
+
         bool capture = _diagRequest != null && _diagActive == null;
         bool overlays = !ReferenceEquals(_overlay, _pausedOverlay) || !ReferenceEquals(_centerOverlay, _pausedCenterOverlay)
                         || !ReferenceEquals(_statusOverlay, _pausedStatusOverlay);
         long now = Stopwatch.GetTimestamp();
         bool periodic = now - _pausedPresentAt > Stopwatch.Frequency;
-        if (!capture && (_swapchain.Handle == 0 || !(overlays || _swapchainDirty || periodic))) return;
+        if (!capture && (_swapchain.Handle == 0 || !(overlays || _swapchainDirty || periodic)))
+        {
+            return;
+        }
+
         _pausedPresentAt = now;
-        _pausedOverlay = _overlay; _pausedCenterOverlay = _centerOverlay; _pausedStatusOverlay = _statusOverlay;
+        _pausedOverlay = _overlay;
+        _pausedCenterOverlay = _centerOverlay;
+        _pausedStatusOverlay = _statusOverlay;
 
         BeginFrameIfNeeded();
         EndRendering();

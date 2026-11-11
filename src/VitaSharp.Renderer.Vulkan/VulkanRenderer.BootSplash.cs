@@ -34,9 +34,16 @@ public sealed unsafe partial class VulkanRenderer
     {
         get
         {
-            if (_splashDone || _splashPixels == null) return false;
+            if (_splashDone || _splashPixels == null)
+            {
+                return false;
+            }
+
             long now = Stopwatch.GetTimestamp();
-            if (_splashFirstGuest == 0) _splashFirstGuest = now;
+            if (_splashFirstGuest == 0)
+            {
+                _splashFirstGuest = now;
+            }
             else if (Stopwatch.GetElapsedTime(_splashFirstGuest, now).TotalSeconds > SplashMaxSeconds)
             {
                 EndSplash($"after {SplashMaxSeconds:F0} s of black frames");
@@ -49,30 +56,52 @@ public sealed unsafe partial class VulkanRenderer
     /// <summary>GPU worker (readback of a frame presented under the picture): ends the picture when the frame has content.</summary>
     void CheckSplashFrame(int present, nint pixels, uint w, uint h)
     {
-        if (_splashDone) return;
+        if (_splashDone)
+        {
+            return;
+        }
+
         byte* p = (byte*)pixels;
         long n = (long)w * h * 4;
         for (long i = 0; i < n; i += 4)
+        {
             if (p[i] > SplashBlackMax || p[i + 1] > SplashBlackMax || p[i + 2] > SplashBlackMax)
             {
                 EndSplash($"until the game's first frame that is not black (present {present})");
                 return;
             }
+        }
     }
 
     void EndSplash(string why)
     {
-        if (_splashDone) return;
+        if (_splashDone)
+        {
+            return;
+        }
+
         _splashDone = true;
-        if (_splashSince != 0) Core.Util.Log.Info($"Boot picture: shown for {Stopwatch.GetElapsedTime(_splashSince).TotalSeconds:F1} s, {why}");
+        if (_splashSince != 0)
+        {
+            Core.Util.Log.Info($"Boot picture: shown for {Stopwatch.GetElapsedTime(_splashSince).TotalSeconds:F1} s, {why}");
+        }
+
         _splashPixels = null;
-        if (_splashRt != null) { DestroyLater(_splashRt); _splashRt = null; }
+        if (_splashRt != null)
+        {
+            DestroyLater(_splashRt);
+            _splashRt = null;
+        }
     }
 
     /// <summary>The picture's image, made and uploaded in the current command buffer the first time.</summary>
     (RenderTarget Rt, DisplayFrame Frame)? SplashImage()
     {
-        if (_splashPixels is not { } px) return null;
+        if (_splashPixels is not { } px)
+        {
+            return null;
+        }
+
         if (_splashRt == null)
         {
             uint w = (uint)px.Width, h = (uint)px.Height;
@@ -100,12 +129,23 @@ public sealed unsafe partial class VulkanRenderer
     /// <summary>Idle GPU worker: shows the picture (again on a resize or about twice a second) while it is up.</summary>
     void PresentBootSplash()
     {
-        if (_splashDone || _splashPixels == null || _swapchain.Handle == 0 || _deviceLost || _inScene) return;
+        if (_splashDone || _splashPixels == null || _swapchain.Handle == 0 || _deviceLost || _inScene)
+        {
+            return;
+        }
+
         long now = Stopwatch.GetTimestamp();
-        if (_splashRt != null && !_swapchainDirty && now - _splashAt < Stopwatch.Frequency / 2) return;
+        if (_splashRt != null && !_swapchainDirty && now - _splashAt < Stopwatch.Frequency / 2)
+        {
+            return;
+        }
+
         _splashAt = now;
         BeginFrameIfNeeded();
         EndRendering();
-        if (SplashImage() is { } s) PresentOut(s.Rt, s.Frame);
+        if (SplashImage() is { } s)
+        {
+            PresentOut(s.Rt, s.Frame);
+        }
     }
 }

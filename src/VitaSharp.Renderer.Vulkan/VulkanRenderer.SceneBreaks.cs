@@ -48,7 +48,10 @@ public sealed unsafe partial class VulkanRenderer
     /// if one ends before the draw is recorded, in the next one: the stamp is the later of the two.</summary>
     void NoteSampled(ImageView view)
     {
-        if (view.Handle != 0) _sampledIn[view.Handle] = _renderingSerial + 1;
+        if (view.Handle != 0)
+        {
+            _sampledIn[view.Handle] = _renderingSerial + 1;
+        }
     }
 
     /// <summary>A draw of the open rendering, or of an ended one that will be begun together with it (merge, see
@@ -72,28 +75,58 @@ public sealed unsafe partial class VulkanRenderer
     /// <summary>A draw into the scene's surface was recorded in the open rendering.</summary>
     void NoteDrawn()
     {
-        if (_drawnAll) return;
-        if (_drawMinX <= 0 && _drawMinY <= 0 && _drawMaxX == int.MaxValue && _drawMaxY == int.MaxValue) { _drawnAll = true; return; }
+        if (_drawnAll)
+        {
+            return;
+        }
+
+        if (_drawMinX <= 0 && _drawMinY <= 0 && _drawMaxX == int.MaxValue && _drawMaxY == int.MaxValue)
+        {
+            _drawnAll = true;
+            return;
+        }
         var r = (_drawMinX, _drawMinY, _drawMaxX, _drawMaxY);
-        if (_drawnRects.Count > 0 && _drawnRects[^1] == r) return;
-        if (_drawnRects.Count >= 64) { _drawnAll = true; return; }
+        if (_drawnRects.Count > 0 && _drawnRects[^1] == r)
+        {
+            return;
+        }
+
+        if (_drawnRects.Count >= 64)
+        {
+            _drawnAll = true;
+            return;
+        }
         _drawnRects.Add(r);
     }
 
     /// <summary>The surface rectangle may hold pixels drawn by the open rendering (or the renderings merged with it).</summary>
     bool DrawnInOpen(uint x, uint y, uint w, uint h)
     {
-        if (_drawnAll) return true;
+        if (_drawnAll)
+        {
+            return true;
+        }
+
         long x1 = (long)x + w - 1, y1 = (long)y + h - 1;
         foreach (var r in _drawnRects)
-            if (r.X0 <= x1 && r.X1 >= x && r.Y0 <= y1 && r.Y1 >= y) return true;
+        {
+            if (r.X0 <= x1 && r.X1 >= x && r.Y0 <= y1 && r.Y1 >= y)
+            {
+                return true;
+            }
+        }
+
         return false;
     }
 
     /// <summary>Counted for the PERF gpu line: why renderings were ended before their scene did.</summary>
     void NoteBreak(string caller)
     {
-        if (!_rendering) return;
+        if (!_rendering)
+        {
+            return;
+        }
+
         _breakReasons[caller] = _breakReasons.GetValueOrDefault(caller) + 1;
     }
 
@@ -108,7 +141,11 @@ public sealed unsafe partial class VulkanRenderer
     OutsideScope BeginOutside(ImageView writes = default, RenderTarget? reads = null, bool readsDepth = false, (uint X, uint Y, uint W, uint H)? readRect = null,
         [CallerMemberName] string caller = "")
     {
-        if (_hoisting) return default; // nested: already in the primary
+        if (_hoisting)
+        {
+            return default; // nested: already in the primary
+        }
+
         bool readsOwn = reads != null && reads == _rt
             && !(readRect is { } rr && !_ms && !_ss && !_msaaNoDownscale && _tileCmd.Handle != 0 && !DrawnInOpen(rr.X, rr.Y, rr.W, rr.H));
         if (_rendering && !StrictSceneBreaks && (_tileCmd.Handle != 0 || _msCmd.Handle != 0)
@@ -125,7 +162,10 @@ public sealed unsafe partial class VulkanRenderer
 
     readonly struct OutsideScope(VulkanRenderer? owner) : IDisposable
     {
-        public void Dispose() { owner?._hoisting = false; }
+        public void Dispose()
+        {
+            owner?._hoisting = false;
+        }
     }
 
     /// <summary>Commands are recorded into the primary between renderings: ended renderings waiting for a merge are
@@ -143,7 +183,11 @@ public sealed unsafe partial class VulkanRenderer
             BeginFrameIfNeeded();
         }
         // ended renderings waiting to be merged with the next one are begun before anything else goes in
-        if (_chain.Count > 0) FlushChain(false);
+        if (_chain.Count > 0)
+        {
+            FlushChain(false);
+        }
+
         return F.Cmd;
     }
 

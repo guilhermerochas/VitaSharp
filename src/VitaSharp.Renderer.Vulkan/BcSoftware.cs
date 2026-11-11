@@ -32,7 +32,10 @@ public static class BcSoftware
 
     public static string Summary()
     {
-        lock (Lock) return $"{Decodes} levels decoded, {CacheHits} from the cache ({Map.Count} entries, {_bytes / 1048576.0:F1} MB)";
+        lock (Lock)
+        {
+            return $"{Decodes} levels decoded, {CacheHits} from the cache ({Map.Count} entries, {_bytes / 1048576.0:F1} MB)";
+        }
     }
 
     /// <summary>Decodes one level (blocks in row order, ((w+3)/4)*((h+3)/4) blocks) into w*h RGBA8 texels.</summary>
@@ -76,7 +79,12 @@ public static class BcSoftware
 
     public static void ClearCache()
     {
-        lock (Lock) { Map.Clear(); Lru.Clear(); _bytes = 0; }
+        lock (Lock)
+        {
+            Map.Clear();
+            Lru.Clear();
+            _bytes = 0;
+        }
     }
 
     static Texels DecodeUncached(TexBase f, ReadOnlySpan<byte> src, uint w, uint h) => f switch
@@ -104,13 +112,28 @@ public static class BcSoftware
         Span<byte> c = stackalloc byte[16];
         Span<byte> alpha = stackalloc byte[16];
         for (uint by = 0; by < bh; by++)
+        {
             for (uint bx = 0; bx < bw; bx++)
             {
                 int o = (int)((by * bw + bx) * blockBytes);
-                if (o + blockBytes > src.Length) return dstT;
+                if (o + blockBytes > src.Length)
+                {
+                    return dstT;
+                }
+
                 var block = src.Slice(o, blockBytes);
-                if (bc2) for (int i = 0; i < 16; i++) alpha[i] = (byte)(((block[i / 2] >> ((i & 1) * 4)) & 15) * 17);
-                else if (bc3) UnsignedBlock(block[..8], alpha);
+                if (bc2)
+                {
+                    for (int i = 0; i < 16; i++)
+                    {
+                        alpha[i] = (byte)(((block[i / 2] >> ((i & 1) * 4)) & 15) * 17);
+                    }
+                }
+                else if (bc3)
+                {
+                    UnsignedBlock(block[..8], alpha);
+                }
+
                 var col = bc2 || bc3 ? block[8..] : block;
                 int c0 = col[0] | col[1] << 8, c1 = col[2] | col[3] << 8;
                 Expand565(c0, c, 0);
@@ -127,12 +150,20 @@ public static class BcSoftware
                 for (int i = 0; i < 16; i++)
                 {
                     uint x = bx * 4 + (uint)(i & 3), y = by * 4 + (uint)(i >> 2);
-                    if (x >= w || y >= h) continue;
+                    if (x >= w || y >= h)
+                    {
+                        continue;
+                    }
+
                     int ci = (int)((idx >> (2 * i)) & 3) * 4, p = (int)((y * w + x) * 4);
-                    dst[p] = c[ci]; dst[p + 1] = c[ci + 1]; dst[p + 2] = c[ci + 2];
+                    dst[p] = c[ci];
+                    dst[p + 1] = c[ci + 1];
+                    dst[p + 2] = c[ci + 2];
                     dst[p + 3] = bc2 || bc3 ? alpha[i] : c[ci + 3];
                 }
             }
+        }
+
         return dstT;
     }
 
@@ -153,31 +184,58 @@ public static class BcSoftware
         var dstT = Texels.Rent(w * h * 4L);
         var dst = dstT.Array;
         byte one = signed ? (byte)127 : (byte)255;
-        for (int i = 3; i < w * h * 4; i += 4) dst[i] = one;
+        for (int i = 3; i < w * h * 4; i += 4)
+        {
+            dst[i] = one;
+        }
+
         Span<byte> ch = stackalloc byte[16];
         for (uint by = 0; by < bh; by++)
+        {
             for (uint bx = 0; bx < bw; bx++)
             {
                 int o = (int)((by * bw + bx) * blockBytes);
-                if (o + blockBytes > src.Length) return dstT;
+                if (o + blockBytes > src.Length)
+                {
+                    return dstT;
+                }
+
                 for (int c = 0; c < (two ? 2 : 1); c++)
                 {
-                    if (signed) SignedBlock(src.Slice(o + c * 8, 8), ch); else UnsignedBlock(src.Slice(o + c * 8, 8), ch);
+                    if (signed)
+                    {
+                        SignedBlock(src.Slice(o + c * 8, 8), ch);
+                    }
+                    else
+                    {
+                        UnsignedBlock(src.Slice(o + c * 8, 8), ch);
+                    }
+
                     for (int i = 0; i < 16; i++)
                     {
                         uint x = bx * 4 + (uint)(i & 3), y = by * 4 + (uint)(i >> 2);
-                        if (x >= w || y >= h) continue;
+                        if (x >= w || y >= h)
+                        {
+                            continue;
+                        }
+
                         dst[(int)((y * w + x) * 4) + c] = ch[i];
                     }
                 }
             }
+        }
+
         return dstT;
     }
 
     static ulong Indices(ReadOnlySpan<byte> b)
     {
         ulong bits = 0;
-        for (int i = 0; i < 6; i++) bits |= (ulong)b[2 + i] << (8 * i);
+        for (int i = 0; i < 6; i++)
+        {
+            bits |= (ulong)b[2 + i] << (8 * i);
+        }
+
         return bits;
     }
 

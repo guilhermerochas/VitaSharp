@@ -31,21 +31,34 @@ public sealed unsafe partial class VulkanRenderer
 
     public bool DeferCallback(CallbackCommand cb)
     {
-        if (!TransferDefer) return false;
+        if (!TransferDefer)
+        {
+            return false;
+        }
+
         Frame? target = _xferDeferFrame is { Retired: false } d && (d.Recording || d.Submitted) ? d : null;
         if (target == null)
         {
-            if (cb.ReadSize == 0) return false;
+            if (cb.ReadSize == 0)
+            {
+                return false;
+            }
             // a source written back now: its copy is recorded into this frame, which then publishes it
             WriteBackTransferSource(cb);
             target = PendingWritebackFrame(cb.ReadAddress, (ulong)cb.ReadAddress + cb.ReadSize);
-            if (target == null) return false;
+            if (target == null)
+            {
+                return false;
+            }
         }
         else if (target != F && F.Recording && cb.ReadSize > 0)
         {
             // behind the queued transfers, and after a source written back now (which lands with the current frame)
             WriteBackTransferSource(cb);
-            if (PendingWritebackFrame(cb.ReadAddress, (ulong)cb.ReadAddress + cb.ReadSize) == F) target = F;
+            if (PendingWritebackFrame(cb.ReadAddress, (ulong)cb.ReadAddress + cb.ReadSize) == F)
+            {
+                target = F;
+            }
         }
         var space = AddressSpace.Current;
         var frame = target;
@@ -53,23 +66,47 @@ public sealed unsafe partial class VulkanRenderer
         {
             using (AddressSpace.Use(space))
             {
-                try { cb.Action(); }
-                catch (Exception e) { Log.Error($"GPU callback failed: {e}"); }
+                try
+                {
+                    cb.Action();
+                }
+                catch (Exception e)
+                {
+                    Log.Error($"GPU callback failed: {e}");
+                }
             }
-            if (cb.WriteSize > 0) _xferInvalidations.Add((cb.WriteAddress, cb.WriteSize));
+            if (cb.WriteSize > 0)
+            {
+                _xferInvalidations.Add((cb.WriteAddress, cb.WriteSize));
+            }
+
             _xferPendingDst.RemoveAll(p => p.Frame == frame);
-            if (_xferDeferFrame == frame) _xferDeferFrame = null;
+            if (_xferDeferFrame == frame)
+            {
+                _xferDeferFrame = null;
+            }
         });
-        if (cb.WriteSize > 0) _xferPendingDst.Add((cb.WriteAddress, cb.WriteSize, frame));
+        if (cb.WriteSize > 0)
+        {
+            _xferPendingDst.Add((cb.WriteAddress, cb.WriteSize, frame));
+        }
+
         _xferDeferFrame = frame;
         if (_statXferDeferred++ < 20 || TraceSync)
+        {
             Log.Info($"[gpu] transfer 0x{cb.ReadAddress:X8} -> 0x{cb.WriteAddress:X8} deferred to the {(frame == F && frame.Recording ? "recording" : "submitted")} frame's retirement (present {_presentCount})");
+        }
+
         return true;
     }
 
     void DrainTransferInvalidations()
     {
-        foreach (var (a, s) in _xferInvalidations) InvalidateTextures(a, s);
+        foreach (var (a, s) in _xferInvalidations)
+        {
+            InvalidateTextures(a, s);
+        }
+
         _xferInvalidations.Clear();
     }
 
@@ -80,21 +117,50 @@ public sealed unsafe partial class VulkanRenderer
     /// frame (with 8 frames in flight: 7-10 vblank stalls).</summary>
     void WaitPendingTransferInto(uint addr, uint size)
     {
-        if (_xferPendingDst.Count == 0) return;
+        if (_xferPendingDst.Count == 0)
+        {
+            return;
+        }
+
         bool overlaps = false;
         foreach (var (a, s, _) in _xferPendingDst)
-            if (a < addr + size && addr < a + s) { overlaps = true; break; }
-        if (!overlaps) return;
+        {
+            if (a < addr + size && addr < a + s)
+            {
+                overlaps = true;
+                break;
+            }
+        }
+
+        if (!overlaps)
+        {
+            return;
+        }
+
         PollRetire();
         foreach (var (a, s, f) in _xferPendingDst)
         {
-            if (a >= addr + size || addr >= a + s) continue;
+            if (a >= addr + size || addr >= a + s)
+            {
+                continue;
+            }
+
             if (_statXferLateReads++ < 20 || TraceSync)
+            {
                 Log.Info($"[gpu] texture 0x{addr:X8} reads transfer destination 0x{a:X8} before its deferred transfer ran ({(f.Recording ? "frame being recorded" : "frame on the GPU")}): read as it is now (present {_presentCount})");
+            }
         }
         // only the texture cache now (a surface reload records commands: left to the command boundary)
         foreach (var (a, s) in _xferInvalidations)
+        {
             foreach (var t in _textures.Values)
-                if (t.DataStart < a + s && a < t.DataStart + t.DataSize) { t.CheckedFrame = -1; t.ForceCheck = true; }
+            {
+                if (t.DataStart < a + s && a < t.DataStart + t.DataSize)
+                {
+                    t.CheckedFrame = -1;
+                    t.ForceCheck = true;
+                }
+            }
+        }
     }
 }

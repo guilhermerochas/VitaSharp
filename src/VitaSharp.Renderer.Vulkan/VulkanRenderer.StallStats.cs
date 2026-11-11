@@ -35,15 +35,50 @@ public sealed unsafe partial class VulkanRenderer
     {
         var st = d.State;
         var c = StallClass.None;
-        if (d.VisAddress != 0) c |= StallClass.Visibility;
-        if (_depth != null && WritesStencil(st)) c |= StallClass.StencilWrite;
-        if (_depth != null && st.Front.DepthWrite) c |= StallClass.DepthWrite;
-        if (_rt != null && colorMask != 0) c |= StallClass.Color;
-        if (tw1Key == 2) c |= StallClass.TileWord1Write;
-        if (fetch) c |= StallClass.FramebufferFetch;
-        if (_ms) c |= StallClass.Multisampled;
-        if (_rt != null && (ulong)_rt.Width * _rt.Height <= WritebackMaxPixels) c |= StallClass.WritebackSized;
-        if (_stalls.Count < 100_000) _stalls.Add(new StallRecord(_presentCount, _rt?.Address ?? 0, c, ticks));
+        if (d.VisAddress != 0)
+        {
+            c |= StallClass.Visibility;
+        }
+
+        if (_depth != null && WritesStencil(st))
+        {
+            c |= StallClass.StencilWrite;
+        }
+
+        if (_depth != null && st.Front.DepthWrite)
+        {
+            c |= StallClass.DepthWrite;
+        }
+
+        if (_rt != null && colorMask != 0)
+        {
+            c |= StallClass.Color;
+        }
+
+        if (tw1Key == 2)
+        {
+            c |= StallClass.TileWord1Write;
+        }
+
+        if (fetch)
+        {
+            c |= StallClass.FramebufferFetch;
+        }
+
+        if (_ms)
+        {
+            c |= StallClass.Multisampled;
+        }
+
+        if (_rt != null && (ulong)_rt.Width * _rt.Height <= WritebackMaxPixels)
+        {
+            c |= StallClass.WritebackSized;
+        }
+
+        if (_stalls.Count < 100_000)
+        {
+            _stalls.Add(new StallRecord(_presentCount, _rt?.Address ?? 0, c, ticks));
+        }
     }
 
     static bool WritesStencil(in DrawState st)
@@ -59,7 +94,11 @@ public sealed unsafe partial class VulkanRenderer
 
     string StallReport()
     {
-        if (_stalls.Count == 0) return "PERF stalls: no draw stalled on shader/pipeline work";
+        if (_stalls.Count == 0)
+        {
+            return "PERF stalls: no draw stalled on shader/pipeline work";
+        }
+
         long total = 0, cand = 0, vis = 0, stencil = 0, tw1 = 0, offscreen = 0, offscreenSmall = 0, noColor = 0, ms = 0, depth = 0, fetch = 0;
         int nCand = 0, nVis = 0, nStencil = 0, nTw1 = 0, nOff = 0, nOffSmall = 0, nNoColor = 0;
         var perFrame = new Dictionary<long, (long All, long Safe)>();
@@ -69,19 +108,52 @@ public sealed unsafe partial class VulkanRenderer
             bool safe = SkipCandidate(r);
             if (safe)
             {
-                cand += r.Ticks; nCand++;
-                if ((r.Class & StallClass.Multisampled) != 0) ms += r.Ticks;
-                if ((r.Class & StallClass.DepthWrite) != 0) depth += r.Ticks;
-                if ((r.Class & StallClass.FramebufferFetch) != 0) fetch += r.Ticks;
+                cand += r.Ticks;
+                nCand++;
+                if ((r.Class & StallClass.Multisampled) != 0)
+                {
+                    ms += r.Ticks;
+                }
+
+                if ((r.Class & StallClass.DepthWrite) != 0)
+                {
+                    depth += r.Ticks;
+                }
+
+                if ((r.Class & StallClass.FramebufferFetch) != 0)
+                {
+                    fetch += r.Ticks;
+                }
             }
-            if ((r.Class & StallClass.Visibility) != 0) { vis += r.Ticks; nVis++; }
-            if ((r.Class & StallClass.StencilWrite) != 0) { stencil += r.Ticks; nStencil++; }
-            if ((r.Class & StallClass.TileWord1Write) != 0) { tw1 += r.Ticks; nTw1++; }
-            if ((r.Class & StallClass.Color) == 0) { noColor += r.Ticks; nNoColor++; }
+            if ((r.Class & StallClass.Visibility) != 0)
+            {
+                vis += r.Ticks;
+                nVis++;
+            }
+            if ((r.Class & StallClass.StencilWrite) != 0)
+            {
+                stencil += r.Ticks;
+                nStencil++;
+            }
+            if ((r.Class & StallClass.TileWord1Write) != 0)
+            {
+                tw1 += r.Ticks;
+                nTw1++;
+            }
+            if ((r.Class & StallClass.Color) == 0)
+            {
+                noColor += r.Ticks;
+                nNoColor++;
+            }
             else if (!_presentedAddresses.Contains(r.Target))
             {
-                offscreen += r.Ticks; nOff++;
-                if ((r.Class & StallClass.WritebackSized) != 0) { offscreenSmall += r.Ticks; nOffSmall++; }
+                offscreen += r.Ticks;
+                nOff++;
+                if ((r.Class & StallClass.WritebackSized) != 0)
+                {
+                    offscreenSmall += r.Ticks;
+                    nOffSmall++;
+                }
             }
             var f = perFrame.GetValueOrDefault(r.Present);
             perFrame[r.Present] = (f.All + r.Ticks, f.Safe + (safe ? r.Ticks : 0));
@@ -89,10 +161,25 @@ public sealed unsafe partial class VulkanRenderer
         int hitch = 0, longHitch = 0, hitchAfter = 0, longAfter = 0;
         foreach (var (all, safe) in perFrame.Values)
         {
-            if (Ms(all) >= HitchMs) hitch++;
-            if (Ms(all) >= LongHitchMs) longHitch++;
-            if (Ms(all - safe) >= HitchMs) hitchAfter++;
-            if (Ms(all - safe) >= LongHitchMs) longAfter++;
+            if (Ms(all) >= HitchMs)
+            {
+                hitch++;
+            }
+
+            if (Ms(all) >= LongHitchMs)
+            {
+                longHitch++;
+            }
+
+            if (Ms(all - safe) >= HitchMs)
+            {
+                hitchAfter++;
+            }
+
+            if (Ms(all - safe) >= LongHitchMs)
+            {
+                longAfter++;
+            }
         }
         return $"PERF stalls: {_stalls.Count} draws stalled {Ms(total):F0} ms on shader/pipeline work in {perFrame.Count} frames;"
             + $" skip candidates (colour into a presented surface, no visibility/stencil/tile-word write) {nCand} draws {Ms(cand):F0} ms"

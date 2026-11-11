@@ -1,8 +1,8 @@
 #if VITASHARP_DEVELOPER
+using Silk.NET.Vulkan;
 using System.Diagnostics;
 using System.Globalization;
 using System.Text;
-using Silk.NET.Vulkan;
 using VitaSharp.Core.Gpu;
 using VitaSharp.Core.Memory;
 using VitaSharp.Core.Util;
@@ -40,18 +40,40 @@ public sealed class GpuBenchSpec
             string k = eq > 0 ? part[..eq].Trim() : part, v = eq > 0 ? part[(eq + 1)..].Trim() : "1";
             switch (k.ToLowerInvariant())
             {
-                case "fixture": s.Fixture = v; break;
-                case "variant": s.Variant = v; break;
-                case "reps": s.Reps = int.Parse(v, CultureInfo.InvariantCulture); break;
-                case "warm": s.Warm = int.Parse(v, CultureInfo.InvariantCulture); break;
-                case "draw": s.Draw = int.Parse(v, CultureInfo.InvariantCulture); break;
-                case "drawmode": s.DrawMode = v; break;
-                case "run": s.Run = v; break;
-                case "root": s.Root = v; break;
-                default: s.Params[k] = v; break;
+                case "fixture":
+                    s.Fixture = v;
+                    break;
+                case "variant":
+                    s.Variant = v;
+                    break;
+                case "reps":
+                    s.Reps = int.Parse(v, CultureInfo.InvariantCulture);
+                    break;
+                case "warm":
+                    s.Warm = int.Parse(v, CultureInfo.InvariantCulture);
+                    break;
+                case "draw":
+                    s.Draw = int.Parse(v, CultureInfo.InvariantCulture);
+                    break;
+                case "drawmode":
+                    s.DrawMode = v;
+                    break;
+                case "run":
+                    s.Run = v;
+                    break;
+                case "root":
+                    s.Root = v;
+                    break;
+                default:
+                    s.Params[k] = v;
+                    break;
             }
         }
-        if (s.Fixture.Length == 0) throw new ArgumentException("bench: fixture=NAME missing");
+        if (s.Fixture.Length == 0)
+        {
+            throw new ArgumentException("bench: fixture=NAME missing");
+        }
+
         return s;
     }
 
@@ -89,15 +111,25 @@ public static class GpuBench
     /// <summary>Bench parameters that are renderer environment switches (one process per run).</summary>
     static readonly Dictionary<string, string> EnvParams = new(StringComparer.OrdinalIgnoreCase)
     {
-        ["msaa"] = EnvVars.Msaa, ["fetchmerge"] = EnvVars.FetchPassMerge, ["fetchsplit"] = EnvVars.FetchSplit,
-        ["msaafetch"] = EnvVars.MsaaFetch, ["scenebreaks"] = EnvVars.SceneBreaks, ["gpuquirks"] = EnvVars.GpuQuirks,
+        ["msaa"] = EnvVars.Msaa,
+        ["fetchmerge"] = EnvVars.FetchPassMerge,
+        ["fetchsplit"] = EnvVars.FetchSplit,
+        ["msaafetch"] = EnvVars.MsaaFetch,
+        ["scenebreaks"] = EnvVars.SceneBreaks,
+        ["gpuquirks"] = EnvVars.GpuQuirks,
     };
 
     /// <summary>A run of the spec's mode: mode=flicker (<see cref="Flicker"/>), else the timing bench (<see cref="Run"/>).</summary>
     public static void Execute(GpuBenchSpec spec, Action<string> log)
     {
-        if (spec.Params.GetValueOrDefault("mode") == "flicker") Flicker(spec, log);
-        else Run(spec, log);
+        if (spec.Params.GetValueOrDefault("mode") == "flicker")
+        {
+            Flicker(spec, log);
+        }
+        else
+        {
+            Run(spec, log);
+        }
     }
 
     /// <param name="done">called with the renderer after the last repetition, before it is disposed</param>
@@ -113,17 +145,38 @@ public static class GpuBench
         int pw = 0, ph = 0;
         ro.FrameSink = (_, px, w, h) => { picture = px; pw = w; ph = h; };
         long target = header.Long(KeyFrame, -1);
-        if (target < 0) using (var r = new GpuDumpReader(path)) { while (r.Next()) if (r.Kind == GpuDumpRecord.Present) target++; }
+        if (target < 0)
+        {
+            using (var r = new GpuDumpReader(path))
+            {
+                while (r.Next())
+                {
+                    if (r.Kind == GpuDumpRecord.Present)
+                    {
+                        target++;
+                    }
+                }
+            }
+        }
+
         var res = new Result { Fixture = spec.FixtureName, Variant = spec.Variant };
         using var memory = new GuestMemory();
         var renderer = new VulkanRenderer(ro);
         try
         {
-            if (header["title-id"] is { Length: > 0 } title) renderer.BeginTitle(title);
+            if (header["title-id"] is { Length: > 0 } title)
+            {
+                renderer.BeginTitle(title);
+            }
+
             var sceneOfDraw = new List<int>();
             // stamps=1: (scene, ordinal, label) -> the op's ms in each timed rep
             var stamps = new SortedDictionary<(int, int), (string Label, List<double> Ms)>();
-            if (spec.Draw > 0) spec.Warm = Math.Max(1, spec.Warm); // the first pass maps draws to scenes
+            if (spec.Draw > 0)
+            {
+                spec.Warm = Math.Max(1, spec.Warm); // the first pass maps draws to scenes
+            }
+
             int total = spec.Warm + spec.Reps * (spec.Draw > 0 ? 2 : 1);
 
             for (int rep = 0; rep < total; rep++)
@@ -143,12 +196,23 @@ public static class GpuBench
                         int first = sceneOfDraw.IndexOf(s.Index) + 1, count = sceneOfDraw.Count(x => x == s.Index);
                         res.Scenes.Add($"s{s.Index} {s.Width}x{s.Height} rt 0x{s.RenderTarget:X8} draws {(count > 0 ? $"{first}-{first + count - 1}" : "-")}");
                     }
-                    foreach (var line in res.Scenes) log($"[bench]   {line}");
+                    foreach (var line in res.Scenes)
+                    {
+                        log($"[bench]   {line}");
+                    }
                 }
-                if (!timed) continue;
+                if (!timed)
+                {
+                    continue;
+                }
+
                 foreach (var (sc, ord, label, sms) in renderer.DevStampTimes)
                 {
-                    if (!stamps.TryGetValue((sc, ord), out var e)) stamps[(sc, ord)] = e = (label, new List<double>());
+                    if (!stamps.TryGetValue((sc, ord), out var e))
+                    {
+                        stamps[(sc, ord)] = e = (label, new List<double>());
+                    }
+
                     e.Ms.Add(sms);
                 }
                 var ms = scenes.Select(s => s.Ms).ToArray();
@@ -172,9 +236,17 @@ public static class GpuBench
             done?.Invoke(renderer);
 
         }
-        finally { renderer.Dispose(); GpuBenchState.Reset(); }
+        finally
+        {
+            renderer.Dispose();
+            GpuBenchState.Reset();
+        }
         res.WallSeconds = wall.Elapsed.TotalSeconds;
-        if (picture != null) res.ImageDiff = ComparePicture(spec, picture, pw, ph, log);
+        if (picture != null)
+        {
+            res.ImageDiff = ComparePicture(spec, picture, pw, ph, log);
+        }
+
         WriteResults(spec, res);
         log($"[bench] {spec.FixtureName} {spec.Variant}: {res.Reps.Count} timed reps in {res.WallSeconds:F1} s");
         return res;
@@ -200,23 +272,39 @@ public static class GpuBench
                     reader.Data.CopyTo(GuestMemory.Span(reader.Address, reader.Data.Length));
                     continue;
                 case GpuDumpRecord.Idle:
-                    if (first || frame == target) renderer.Idle();
+                    if (first || frame == target)
+                    {
+                        renderer.Idle();
+                    }
+
                     continue;
                 case GpuDumpRecord.BackendState:
-                    if (first) renderer.ImportDumpState(reader.Data);
+                    if (first)
+                    {
+                        renderer.ImportDumpState(reader.Data);
+                    }
+
                     continue;
             }
             var cmd = reader.Command!;
             bool inTarget = frame == target;
             if (!first && !inTarget)
             {
-                if (cmd is PresentCommand && ++frame == target) GpuBenchState.Timing = true;
+                if (cmd is PresentCommand && ++frame == target)
+                {
+                    GpuBenchState.Timing = true;
+                }
+
                 continue;
             }
             switch (cmd)
             {
                 case BeginSceneCommand:
-                    if (inTarget) scene++;
+                    if (inTarget)
+                    {
+                        scene++;
+                    }
+
                     renderer.Execute(cmd);
                     break;
                 case DrawCommand:
@@ -224,20 +312,39 @@ public static class GpuBench
                     {
                         draws++;
                         sceneOfDraw?.Add(scene);
-                        if (keep != null && !keep(draws, scene)) continue;
-                        if (select != null && !select((DrawCommand)cmd, draws, scene)) continue;
+                        if (keep != null && !keep(draws, scene))
+                        {
+                            continue;
+                        }
+
+                        if (select != null && !select((DrawCommand)cmd, draws, scene))
+                        {
+                            continue;
+                        }
                     }
                     renderer.Execute(cmd);
                     break;
                 case SignalCommand sig:
-                    if (!renderer.DeferSignal(sig.Signal)) sig.Signal();
+                    if (!renderer.DeferSignal(sig.Signal))
+                    {
+                        sig.Signal();
+                    }
+
                     break;
                 default:
                     renderer.Execute(cmd);
                     break;
             }
-            if (cmd is not PresentCommand) continue;
-            if (inTarget) break;
+            if (cmd is not PresentCommand)
+            {
+                continue;
+            }
+
+            if (inTarget)
+            {
+                break;
+            }
+
             if (++frame == target)
             {
                 renderer.Execute(new FinishCommand()); // the frames before are not part of the measurement
@@ -255,29 +362,66 @@ public static class GpuBench
     static Dictionary<string, string> Prepare(GpuBenchSpec spec, Action<string> log, out GpuDumpHeader header, out VulkanRendererOptions ro, bool async = false)
     {
         string path = spec.FixturePath;
-        if (!File.Exists(path)) throw new FileNotFoundException($"bench fixture {path} not found");
+        if (!File.Exists(path))
+        {
+            throw new FileNotFoundException($"bench fixture {path} not found");
+        }
         // the variant's params.txt, then the run's own parameters
         var p = new Dictionary<string, string>(StringComparer.OrdinalIgnoreCase);
         string paramsFile = Path.Combine(spec.VariantDir, "params.txt");
         if (File.Exists(paramsFile))
+        {
             foreach (var line in File.ReadAllLines(paramsFile))
-                if (line.Trim() is { Length: > 0 } l && !l.StartsWith('#') && l.IndexOf('=') is var eq and > 0) p[l[..eq].Trim()] = l[(eq + 1)..].Trim();
-        foreach (var (k, v) in spec.Params) p[k] = v;
+            {
+                if (line.Trim() is { Length: > 0 } l && !l.StartsWith('#') && l.IndexOf('=') is var eq and > 0)
+                {
+                    p[l[..eq].Trim()] = l[(eq + 1)..].Trim();
+                }
+            }
+        }
 
-        using (var r = new GpuDumpReader(path)) header = r.Header;
+        foreach (var (k, v) in spec.Params)
+        {
+            p[k] = v;
+        }
+
+        using (var r = new GpuDumpReader(path))
+        {
+            header = r.Header;
+        }
+
         var env = GpuDumpPlayer.RecordedEnvironment(header);
         env[EnvVars.GpuProfile] = p.GetValueOrDefault("gpuprofile") ?? Environment.GetEnvironmentVariable(EnvVars.GpuProfile) ?? env.GetValueOrDefault(EnvVars.GpuProfile) ?? "";
         foreach (var (k, v) in p)
         {
-            if (EnvParams.TryGetValue(k, out var name)) env[name] = v;
-            else if (k.StartsWith("env.", StringComparison.OrdinalIgnoreCase)) env[k[4..]] = v;
+            if (EnvParams.TryGetValue(k, out var name))
+            {
+                env[name] = v;
+            }
+            else if (k.StartsWith("env.", StringComparison.OrdinalIgnoreCase))
+            {
+                env[k[4..]] = v;
+            }
         }
-        foreach (var (k, v) in env) Environment.SetEnvironmentVariable(k, v.Length == 0 ? null : v);
+        foreach (var (k, v) in env)
+        {
+            Environment.SetEnvironmentVariable(k, v.Length == 0 ? null : v);
+        }
 
         GpuBenchState.Reset();
         GpuBenchState.ShaderDir = Directory.Exists(spec.VariantDir) && Directory.EnumerateFiles(spec.VariantDir).Any(f => !f.EndsWith(".txt")) ? spec.VariantDir : null;
-        GpuBenchState.DepthLoad = p.GetValueOrDefault("depthload") switch { "clear" => AttachmentLoadOp.Clear, "dontcare" => AttachmentLoadOp.DontCare, _ => null };
-        GpuBenchState.DepthStore = p.GetValueOrDefault("depthstore") switch { "store" => AttachmentStoreOp.Store, "dontcare" => AttachmentStoreOp.DontCare, _ => null };
+        GpuBenchState.DepthLoad = p.GetValueOrDefault("depthload") switch
+        {
+            "clear" => AttachmentLoadOp.Clear,
+            "dontcare" => AttachmentLoadOp.DontCare,
+            _ => null
+        };
+        GpuBenchState.DepthStore = p.GetValueOrDefault("depthstore") switch
+        {
+            "store" => AttachmentStoreOp.Store,
+            "dontcare" => AttachmentStoreOp.DontCare,
+            _ => null
+        };
         GpuBenchState.FullBarriers = p.GetValueOrDefault("barrier") == "full";
         GpuBenchState.Stamps = p.GetValueOrDefault("stamps") == "1";
         log($"[bench] {spec.FixtureName} variant {spec.Variant}: " + string.Join(' ', p.Select(kv => $"{kv.Key}={kv.Value}"))
@@ -319,19 +463,38 @@ public static class GpuBench
         ro.FrameSink = (frame, rgba, w, h) =>
         {
             recent.Enqueue((frame, rgba));
-            if (recent.Count > 3) recent.Dequeue();
-            if (det.Add(frame, rgba, w, h) is not { } flag) return;
+            if (recent.Count > 3)
+            {
+                recent.Dequeue();
+            }
+
+            if (det.Add(frame, rgba, w, h) is not { } flag)
+            {
+                return;
+            }
+
             log($"[bench] {det.Describe(flag)}");
-            if (saved++ >= 12) return;
+            if (saved++ >= 12)
+            {
+                return;
+            }
+
             Directory.CreateDirectory(saveDir);
-            foreach (var (n, px) in recent) Png.Write(Path.Combine(saveDir, $"f{flag.Frame}_{n}.png"), px, w, h);
+            foreach (var (n, px) in recent)
+            {
+                Png.Write(Path.Combine(saveDir, $"f{flag.Frame}_{n}.png"), px, w, h);
+            }
         };
         long frames = 0;
         using var memory = new GuestMemory();
         var renderer = new VulkanRenderer(ro);
         try
         {
-            if (header["title-id"] is { Length: > 0 } title) renderer.BeginTitle(title);
+            if (header["title-id"] is { Length: > 0 } title)
+            {
+                renderer.BeginTitle(title);
+            }
+
             for (int loop = 0; loop < loops; loop++)
             {
                 using var reader = new GpuDumpReader(path);
@@ -342,35 +505,72 @@ public static class GpuBench
                 {
                     switch (reader.Kind)
                     {
-                        case GpuDumpRecord.Memory: reader.Data.CopyTo(GuestMemory.Span(reader.Address, reader.Data.Length)); continue;
-                        case GpuDumpRecord.Idle: renderer.Idle(); continue;
-                        case GpuDumpRecord.BackendState: if (loop == 0) renderer.ImportDumpState(reader.Data); continue;
+                        case GpuDumpRecord.Memory:
+                            reader.Data.CopyTo(GuestMemory.Span(reader.Address, reader.Data.Length));
+                            continue;
+                        case GpuDumpRecord.Idle:
+                            renderer.Idle();
+                            continue;
+                        case GpuDumpRecord.BackendState:
+                            if (loop == 0)
+                            {
+                                renderer.ImportDumpState(reader.Data);
+                            }
+
+                            continue;
                     }
                     var cmd = reader.Command!;
                     switch (cmd)
                     {
-                        case BeginSceneCommand: scene++; break;
+                        case BeginSceneCommand:
+                            scene++;
+                            break;
                         case DrawCommand:
                             draws++;
-                            if (scene == skipScene || (drawLimit > 0 && draws > drawLimit)) continue;
+                            if (scene == skipScene || (drawLimit > 0 && draws > drawLimit))
+                            {
+                                continue;
+                            }
+
                             break;
                         case SignalCommand sig:
-                            if (!renderer.DeferSignal(sig.Signal)) sig.Signal();
+                            if (!renderer.DeferSignal(sig.Signal))
+                            {
+                                sig.Signal();
+                            }
+
                             continue;
                         case PresentCommand when real:
                             long us = reader.PresentInfo.Micros;
-                            if (t0 < 0) t0 = us;
+                            if (t0 < 0)
+                            {
+                                t0 = us;
+                            }
+
                             long ahead = (us - t0) - (long)(clock.Elapsed.TotalMilliseconds * 1000);
-                            if (ahead > 1000) Thread.Sleep((int)(ahead / 1000));
+                            if (ahead > 1000)
+                            {
+                                Thread.Sleep((int)(ahead / 1000));
+                            }
+
                             break;
                     }
                     renderer.Execute(cmd);
-                    if (cmd is PresentCommand) { frames++; draws = 0; scene = -1; }
+                    if (cmd is PresentCommand)
+                    {
+                        frames++;
+                        draws = 0;
+                        scene = -1;
+                    }
                 }
             }
             renderer.Execute(new FinishCommand());
         }
-        finally { renderer.Dispose(); GpuBenchState.Reset(); }
+        finally
+        {
+            renderer.Dispose();
+            GpuBenchState.Reset();
+        }
         double fps = frames / wall.Elapsed.TotalSeconds;
         log(FormattableString.Invariant($"BENCH {spec.FixtureName} {spec.Variant} flicker: {det.Summary}; {frames} frames at {fps:F1} fps ({(real ? "recorded pace" : "max speed")})"));
         Directory.CreateDirectory(Path.Combine(spec.Root, "results"));
@@ -389,15 +589,36 @@ public static class GpuBench
     {
         var sel = new Dictionary<string, string>(StringComparer.OrdinalIgnoreCase);
         foreach (var part in (header["bench.select"] ?? "").Split(';', StringSplitOptions.RemoveEmptyEntries))
-            if (part.IndexOf('=') is var eq and > 0) sel[part[..eq].Trim()] = part[(eq + 1)..].Trim();
+        {
+            if (part.IndexOf('=') is var eq and > 0)
+            {
+                sel[part[..eq].Trim()] = part[(eq + 1)..].Trim();
+            }
+        }
+
         foreach (var k in new[] { "scenes", "draws", "vs", "fs" })
-            if (p.TryGetValue(k, out var v)) sel[k] = v;
+        {
+            if (p.TryGetValue(k, out var v))
+            {
+                sel[k] = v;
+            }
+        }
+
         GpuBenchState.FragmentDiscard = p.GetValueOrDefault("fragment") == "discard";
-        if (sel.Count == 0) return null;
+        if (sel.Count == 0)
+        {
+            return null;
+        }
+
         log("[bench] selection: " + string.Join(' ', sel.Select(kv => $"{kv.Key}={kv.Value}")));
         HashSet<int>? scenes = sel.TryGetValue("scenes", out var sc) ? sc.Split(',').Select(int.Parse).ToHashSet() : null;
         int d0 = 1, d1 = int.MaxValue;
-        if (sel.TryGetValue("draws", out var dr)) { var a = dr.Split('-'); d0 = int.Parse(a[0]); d1 = a.Length > 1 && a[1].Length > 0 ? int.Parse(a[1]) : d0; }
+        if (sel.TryGetValue("draws", out var dr))
+        {
+            var a = dr.Split('-');
+            d0 = int.Parse(a[0]);
+            d1 = a.Length > 1 && a[1].Length > 0 ? int.Parse(a[1]) : d0;
+        }
         string[]? vs = sel.TryGetValue("vs", out var v1) ? v1.Split('|') : null, fs = sel.TryGetValue("fs", out var f1) ? f1.Split('|') : null;
         static bool Match(string[]? prefixes, ulong hash) => prefixes == null || prefixes.Any(x => hash.ToString("X16").StartsWith(x, StringComparison.OrdinalIgnoreCase));
         return (d, n, scene) => (scenes == null || scenes.Contains(scene)) && n >= d0 && n <= d1
@@ -413,14 +634,28 @@ public static class GpuBench
         string own = Path.Combine(dir, $"{spec.FixtureName}_{spec.Variant}.png"), basePic = Path.Combine(dir, $"{spec.FixtureName}_base.png");
         Png.Write(own, px, w, h);
         File.WriteAllBytes(Path.ChangeExtension(own, ".rgba"), px);
-        if (spec.Variant == "base") return 0;
+        if (spec.Variant == "base")
+        {
+            return 0;
+        }
+
         string baseRaw = Path.ChangeExtension(basePic, ".rgba");
-        if (!File.Exists(baseRaw)) return -1;
+        if (!File.Exists(baseRaw))
+        {
+            return -1;
+        }
+
         var b = File.ReadAllBytes(baseRaw);
-        if (b.Length != px.Length) return 255;
+        if (b.Length != px.Length)
+        {
+            return 255;
+        }
+
         long sum = 0;
         for (int i = 0; i < px.Length; i += 4)
+        {
             sum += Math.Abs(px[i] - b[i]) + Math.Abs(px[i + 1] - b[i + 1]) + Math.Abs(px[i + 2] - b[i + 2]);
+        }
 
         double diff = sum / (px.Length / 4 * 3.0);
         log(FormattableString.Invariant($"[bench] {spec.FixtureName} {spec.Variant}: picture differs from base by {diff:F2} (mean channel difference)"));
@@ -436,7 +671,10 @@ public static class GpuBench
         Directory.CreateDirectory(dir);
         var sb = new StringBuilder();
         foreach (var r in res.Reps)
+        {
             sb.Append(CultureInfo.InvariantCulture, $"{res.Fixture}\t{res.Variant}\t{r.Config}\t{r.Index}\t{r.FrameMs:F4}\t{string.Join(',', r.SceneMs.Select(m => m.ToString("F4", CultureInfo.InvariantCulture)))}\t{res.ImageDiff:F3}\n");
+        }
+
         File.AppendAllText(Path.Combine(dir, spec.Run + ".tsv"), sb.ToString());
     }
 
@@ -450,15 +688,31 @@ public static class GpuBench
     {
         long end = -1, presents = 0;
         using (var r = new GpuDumpReader(dump))
+        {
             while (r.Next())
-                if (r.Kind == GpuDumpRecord.Present && presents++ == frame) { end = r.CompressedBytesRead; break; }
-        if (end < 0) throw new ArgumentException($"{dump} has {presents} frames, not {frame + 1}");
+            {
+                if (r.Kind == GpuDumpRecord.Present && presents++ == frame)
+                {
+                    end = r.CompressedBytesRead;
+                    break;
+                }
+            }
+        }
+
+        if (end < 0)
+        {
+            throw new ArgumentException($"{dump} has {presents} frames, not {frame + 1}");
+        }
+
         using var inp = new FileStream(dump, FileMode.Open, FileAccess.Read, FileShare.Read, 1 << 20);
         var header = GpuDumpCodec.ReadFileHeader(inp, out _);
         header[KeyFrame] = frame.ToString(CultureInfo.InvariantCulture);
         header[KeyName] = name;
         header["bench.source"] = Path.GetFileName(dump);
-        if (select is { Length: > 0 }) header["bench.select"] = select;
+        if (select is { Length: > 0 })
+        {
+            header["bench.select"] = select;
+        }
 
         Directory.CreateDirectory(Path.GetDirectoryName(Path.GetFullPath(output))!);
         using var outp = new FileStream(output, FileMode.Create, FileAccess.Write, FileShare.None, 1 << 20);
@@ -467,7 +721,11 @@ public static class GpuBench
         for (long left = end - inp.Position; left > 0;)
         {
             int n = inp.Read(buf, 0, (int)Math.Min(buf.Length, left));
-            if (n <= 0) break;
+            if (n <= 0)
+            {
+                break;
+            }
+
             outp.Write(buf, 0, n);
             left -= n;
         }

@@ -26,7 +26,13 @@ public static class GpuDumpPlayer
     {
         var set = new Dictionary<string, string>();
         foreach (var (k, v) in header.Entries)
-            if (k.StartsWith("env.") && !NotReplayedEnv.Contains(k[4..]) && Environment.GetEnvironmentVariable(k[4..]) == null) set[k[4..]] = v;
+        {
+            if (k.StartsWith("env.") && !NotReplayedEnv.Contains(k[4..]) && Environment.GetEnvironmentVariable(k[4..]) == null)
+            {
+                set[k[4..]] = v;
+            }
+        }
+
         return set;
     }
 
@@ -44,7 +50,11 @@ public static class GpuDumpPlayer
         long frameDraws = 0;
         while (reader.Next())
         {
-            if (cancel?.Invoke() == true) break;
+            if (cancel?.Invoke() == true)
+            {
+                break;
+            }
+
             switch (reader.Kind)
             {
                 case GpuDumpRecord.Memory:
@@ -52,10 +62,18 @@ public static class GpuDumpPlayer
                     st.MemoryBytes += reader.Data.Length;
                     continue;
                 case GpuDumpRecord.Idle:
-                    if (idle) renderer.Idle();
+                    if (idle)
+                    {
+                        renderer.Idle();
+                    }
+
                     continue;
                 case GpuDumpRecord.BackendState:
-                    if (importState) renderer.ImportDumpState(reader.Data);
+                    if (importState)
+                    {
+                        renderer.ImportDumpState(reader.Data);
+                    }
+
                     continue;
             }
             var cmd = reader.Command!;
@@ -65,12 +83,20 @@ public static class GpuDumpPlayer
                 case DrawCommand:
                     frameDraws++;
                     st.Draws++;
-                    if (executeDraw?.Invoke(st.Draws, frameDraws) == false) { st.Skipped++; continue; }
+                    if (executeDraw?.Invoke(st.Draws, frameDraws) == false)
+                    {
+                        st.Skipped++;
+                        continue;
+                    }
                     renderer.Execute(cmd);
                     break;
                 case SignalCommand sig:
                     beforeCommand?.Invoke(cmd, st.Draws);
-                    if (!renderer.DeferSignal(sig.Signal)) sig.Signal();
+                    if (!renderer.DeferSignal(sig.Signal))
+                    {
+                        sig.Signal();
+                    }
+
                     afterCommand?.Invoke(cmd, st.Draws);
                     break;
                 default:
@@ -79,11 +105,18 @@ public static class GpuDumpPlayer
                     afterCommand?.Invoke(cmd, st.Draws);
                     break;
             }
-            if (cmd is not PresentCommand) continue;
+            if (cmd is not PresentCommand)
+            {
+                continue;
+            }
+
             st.Frames++;
             long n = frameDraws;
             frameDraws = 0;
-            if (presented?.Invoke(n) == false) break;
+            if (presented?.Invoke(n) == false)
+            {
+                break;
+            }
         }
         return st;
     }

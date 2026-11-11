@@ -28,16 +28,31 @@ public sealed unsafe partial class VulkanRenderer
     /// <summary>The draw's fixed-function state that a static-state pipeline bakes in (0 without the quirk).</summary>
     ulong StaticStateKey(in DrawState st, PrimitiveTopology topology)
     {
-        if (!StaticEds) return 0;
+        if (!StaticEds)
+        {
+            return 0;
+        }
+
         var front = st.Front;
         var back = st.TwoSided ? st.Back : st.Front;
         ulong k = StaticPresent | (ulong)(st.CullMode & 3u) | ((ulong)(uint)topology & 15) << 2;
         bool depthTest = !(front.DepthFunc == 7 && !front.DepthWrite);
-        if (depthTest) k |= 1ul << 6;
-        if (front.DepthWrite) k |= 1ul << 7;
+        if (depthTest)
+        {
+            k |= 1ul << 6;
+        }
+
+        if (front.DepthWrite)
+        {
+            k |= 1ul << 7;
+        }
+
         k |= (ulong)(front.DepthFunc & 7u) << 8;
         if (!(IsTrivial(front.Stencil) && IsTrivial(back.Stencil)))
+        {
             k |= 1ul << 11 | StencilBits(front.Stencil) << 12 | StencilBits(back.Stencil) << 24;
+        }
+
         return k;
     }
 
@@ -46,15 +61,29 @@ public sealed unsafe partial class VulkanRenderer
 
     static StencilOpState StencilFrom(ulong bits) => new()
     {
-        FailOp = (StencilOp)(bits & 7), PassOp = (StencilOp)((bits >> 3) & 7), DepthFailOp = (StencilOp)((bits >> 6) & 7),
-        CompareOp = (CompareOp)((bits >> 9) & 7), CompareMask = 0xFF, WriteMask = 0xFF, Reference = 0, // masks/reference stay dynamic
+        FailOp = (StencilOp)(bits & 7),
+        PassOp = (StencilOp)((bits >> 3) & 7),
+        DepthFailOp = (StencilOp)((bits >> 6) & 7),
+        CompareOp = (CompareOp)((bits >> 9) & 7),
+        CompareMask = 0xFF,
+        WriteMask = 0xFF,
+        Reference = 0, // masks/reference stay dynamic
     };
 
     /// <summary>Bakes a static state key into the pipeline create infos.</summary>
     static void ApplyStaticState(ulong k, ref PipelineInputAssemblyStateCreateInfo ia, ref PipelineRasterizationStateCreateInfo rs, ref PipelineDepthStencilStateCreateInfo ds)
     {
-        if (k == 0) return;
-        rs.CullMode = (k & 3) switch { 1 => CullModeFlags.BackBit, 2 => CullModeFlags.FrontBit, _ => CullModeFlags.None };
+        if (k == 0)
+        {
+            return;
+        }
+
+        rs.CullMode = (k & 3) switch
+        {
+            1 => CullModeFlags.BackBit,
+            2 => CullModeFlags.FrontBit,
+            _ => CullModeFlags.None
+        };
         rs.FrontFace = FrontFace.CounterClockwise;
         ia.Topology = (PrimitiveTopology)((k >> 2) & 15);
         ds.DepthTestEnable = (k & (1ul << 6)) != 0;
@@ -90,7 +119,11 @@ public sealed unsafe partial class VulkanRenderer
             dyn[n++] = DynamicState.StencilTestEnable;
             dyn[n++] = DynamicState.StencilOp;
         }
-        if (!StaticBias) dyn[n++] = DynamicState.DepthBiasEnable;
+        if (!StaticBias)
+        {
+            dyn[n++] = DynamicState.DepthBiasEnable;
+        }
+
         return n;
     }
 }

@@ -43,11 +43,21 @@ public sealed unsafe partial class VulkanRenderer
     void SwitchSceneProcess(GpuCommand c)
     {
         int pid = c.Pid;
-        if (pid == 0 || pid == _scenePid) return;
+        if (pid == 0 || pid == _scenePid)
+        {
+            return;
+        }
         // a scene begun before processes were told apart (pid 0) stays the current one's
-        if (_scenePid != 0 && _inScene) SuspendScene(_scenePid);
+        if (_scenePid != 0 && _inScene)
+        {
+            SuspendScene(_scenePid);
+        }
+
         _scenePid = pid;
-        if (_suspendedScenes.Remove(pid, out var s)) ResumeScene(s);
+        if (_suspendedScenes.Remove(pid, out var s))
+        {
+            ResumeScene(s);
+        }
     }
 
     void SuspendScene(int pid)
@@ -58,10 +68,26 @@ public sealed unsafe partial class VulkanRenderer
         FlushChain(false);
         _suspendedScenes[pid] = new SuspendedScene
         {
-            Scene = _scene, Rt = _rt, RtAttachFormat = _rtAttachFormat, RtGamma = _rtGamma, DepthNeedsClear = _depthNeedsClear,
-            Depth = _depth, SceneW = _sceneW, SceneH = _sceneH, SceneSerial = _sceneSerial,
-            Ss = _ss, SsUnresolved = _ssUnresolved, Ms = _ms, MsNeedsLoad = _msNeedsLoad, MsUnresolved = _msUnresolved, MsSceneRaw = _msSceneRaw,
-            MsaaNoDownscale = _msaaNoDownscale, MsSamples = _msSamples, Tw1Active = _tw1Active, Tw1 = _tw1, Regions = [.. _sceneRegions],
+            Scene = _scene,
+            Rt = _rt,
+            RtAttachFormat = _rtAttachFormat,
+            RtGamma = _rtGamma,
+            DepthNeedsClear = _depthNeedsClear,
+            Depth = _depth,
+            SceneW = _sceneW,
+            SceneH = _sceneH,
+            SceneSerial = _sceneSerial,
+            Ss = _ss,
+            SsUnresolved = _ssUnresolved,
+            Ms = _ms,
+            MsNeedsLoad = _msNeedsLoad,
+            MsUnresolved = _msUnresolved,
+            MsSceneRaw = _msSceneRaw,
+            MsaaNoDownscale = _msaaNoDownscale,
+            MsSamples = _msSamples,
+            Tw1Active = _tw1Active,
+            Tw1 = _tw1,
+            Regions = [.. _sceneRegions],
         };
         _inScene = false;
         _scene = null;
@@ -71,7 +97,9 @@ public sealed unsafe partial class VulkanRenderer
         _sceneRegions.Clear();
         EndTileWord1();
         if ((++_statSceneSwitches & (_statSceneSwitches - 1)) == 0)
+        {
             Log.Info($"[gpu] scenes of several processes interleaved: {_statSceneSwitches} open scenes suspended for another process's work");
+        }
     }
 
     void ResumeScene(SuspendedScene s)
@@ -94,20 +122,38 @@ public sealed unsafe partial class VulkanRenderer
     /// <summary>A process ended (<see cref="ProcessEndedCommand"/>, already made current): the scene it left open ends.</summary>
     void EndProcessScene(ProcessEndedCommand c)
     {
-        if (_inScene) EndScene(new EndSceneCommand { Space = c.Space, Pid = c.Pid });
+        if (_inScene)
+        {
+            EndScene(new EndSceneCommand { Space = c.Space, Pid = c.Pid });
+        }
+
         _scenePid = 0;
     }
 
     /// <summary>A surface a suspended scene renders into (never evicted).</summary>
     bool InSuspendedScene(RenderTarget rt)
     {
-        foreach (var s in _suspendedScenes.Values) if (s.Rt == rt) return true;
+        foreach (var s in _suspendedScenes.Values)
+        {
+            if (s.Rt == rt)
+            {
+                return true;
+            }
+        }
+
         return false;
     }
 
     bool InSuspendedScene(DepthTarget dt)
     {
-        foreach (var s in _suspendedScenes.Values) if (s.Depth == dt) return true;
+        foreach (var s in _suspendedScenes.Values)
+        {
+            if (s.Depth == dt)
+            {
+                return true;
+            }
+        }
+
         return false;
     }
 }

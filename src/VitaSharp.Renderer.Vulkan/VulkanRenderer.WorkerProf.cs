@@ -37,7 +37,11 @@ public sealed unsafe partial class VulkanRenderer
     [Conditional("VITASHARP_DEVELOPER")]
     void ProfUnit(TexSource src)
     {
-        if (!WorkerProf) return;
+        if (!WorkerProf)
+        {
+            return;
+        }
+
         var kind = src & TexSource.KindMask;
         int i = (src & TexSource.Memo) != 0 ? 3 : kind is TexSource.Memory or TexSource.MemoryCube ? 0 : kind is TexSource.RenderTarget or TexSource.Region or TexSource.Reinterpret or TexSource.RtMipmapped ? 1 : 2;
         _profUnits[i]++;
@@ -51,13 +55,23 @@ public sealed unsafe partial class VulkanRenderer
     static readonly int ProfWarmup = int.TryParse(Environment.GetEnvironmentVariable(Core.Util.EnvVars.WorkerProfFrom), out int pf) && pf > 0 ? pf : 30;
 
     [Conditional("VITASHARP_DEVELOPER")]
-    void ProfStart() { if (WorkerProf) _profT = Stopwatch.GetTimestamp(); }
+    void ProfStart()
+    {
+        if (WorkerProf)
+        {
+            _profT = Stopwatch.GetTimestamp();
+        }
+    }
 
     /// <summary>Charges the time since the last mark to <paramref name="p"/>.</summary>
     [Conditional("VITASHARP_DEVELOPER")]
     void ProfMark(ProfPhase p)
     {
-        if (!WorkerProf) return;
+        if (!WorkerProf)
+        {
+            return;
+        }
+
         long now = Stopwatch.GetTimestamp();
         _profTicks[(int)p] += now - _profT;
         _profT = now;
@@ -70,26 +84,52 @@ public sealed unsafe partial class VulkanRenderer
         ExecuteCommand(command);
         long dt = Stopwatch.GetTimestamp() - t0 - (Core.Util.FrameLedger.Total(Core.Util.FrameLedger.Cat.FenceWait) - fence0);
         _profExecTicks += dt;
-        if (command is DrawCommand) _profDrawTicks += dt;
+        if (command is DrawCommand)
+        {
+            _profDrawTicks += dt;
+        }
         else
         {
             var type = command.GetType();
             _profByType[type] = _profByType.GetValueOrDefault(type) + dt;
         }
         // the first frames compile shaders and pipelines: the steady state is measured after them
-        if (command is PresentCommand && _workFrames == ProfWarmup) { _profExecTicks = _profDrawTicks = 0; Array.Clear(_profTicks); Array.Clear(_profUnits); _profByType.Clear(); _profQueueSubmitTicks = _profQueuePresentTicks = 0; }
+        if (command is PresentCommand && _workFrames == ProfWarmup)
+        {
+            _profExecTicks = _profDrawTicks = 0;
+            Array.Clear(_profTicks);
+            Array.Clear(_profUnits);
+            _profByType.Clear();
+            _profQueueSubmitTicks = _profQueuePresentTicks = 0;
+        }
     }
 
     string WorkerProfReport()
     {
-        if (!WorkerProf) return "";
+        if (!WorkerProf)
+        {
+            return "";
+        }
+
         double f = Math.Max(1, _workFrames - ProfWarmup);
         var sb = new System.Text.StringBuilder($"\nPERF worker: {Ms(_profExecTicks) / f:F3} ms/frame in Execute without fence waits (after {ProfWarmup} frames), draws {Ms(_profDrawTicks) / f:F3} (");
-        for (int i = 0; i < (int)ProfPhase.Record + 1; i++) sb.Append($"{(i > 0 ? " " : "")}{(ProfPhase)i} {Ms(_profTicks[i]) / f:F3}");
+        for (int i = 0; i < (int)ProfPhase.Record + 1; i++)
+        {
+            sb.Append($"{(i > 0 ? " " : "")}{(ProfPhase)i} {Ms(_profTicks[i]) / f:F3}");
+        }
+
         sb.Append("); other commands:");
-        foreach (var (t, ticks) in _profByType.OrderByDescending(kv => kv.Value)) sb.Append($" {t.Name.Replace("Command", "")} {Ms(ticks) / f:F3}");
+        foreach (var (t, ticks) in _profByType.OrderByDescending(kv => kv.Value))
+        {
+            sb.Append($" {t.Name.Replace("Command", "")} {Ms(ticks) / f:F3}");
+        }
+
         sb.Append("; sub-phases:");
-        for (int i = (int)ProfPhase.Record + 1; i < (int)ProfPhase.Count; i++) sb.Append($" {(ProfPhase)i} {Ms(_profTicks[i]) / f:F3}");
+        for (int i = (int)ProfPhase.Record + 1; i < (int)ProfPhase.Count; i++)
+        {
+            sb.Append($" {(ProfPhase)i} {Ms(_profTicks[i]) / f:F3}");
+        }
+
         sb.Append($" vkQueueSubmit {Ms(_profQueueSubmitTicks) / f:F3} vkQueuePresent {Ms(_profQueuePresentTicks) / f:F3}");
         sb.Append($"; units/frame mem {_profUnits[0] / f:F0} rt {_profUnits[1] / f:F0} other {_profUnits[2] / f:F0} memo {_profUnits[3] / f:F0}");
         return sb.ToString();

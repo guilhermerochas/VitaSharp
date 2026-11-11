@@ -43,7 +43,11 @@ public sealed unsafe partial class VulkanRenderer
     {
         lock (_singlePasses)
         {
-            if (_singlePasses.TryGetValue(k, out var rp)) return rp;
+            if (_singlePasses.TryGetValue(k, out var rp))
+            {
+                return rp;
+            }
+
             var att = stackalloc AttachmentDescription[3];
             uint n = 0;
             bool color = k.Color != Format.Undefined;
@@ -52,8 +56,10 @@ public sealed unsafe partial class VulkanRenderer
                 att[n++] = new AttachmentDescription(0, k.Color, SampleCountFlags.Count1Bit, AttachmentLoadOp.Load, k.ColorStore,
                     AttachmentLoadOp.DontCare, AttachmentStoreOp.DontCare, ImageLayout.General, ImageLayout.General);
                 if (k.Word)
+                {
                     att[n++] = new AttachmentDescription(0, TileWord1Format, SampleCountFlags.Count1Bit, AttachmentLoadOp.Load, AttachmentStoreOp.Store,
                         AttachmentLoadOp.DontCare, AttachmentStoreOp.DontCare, ImageLayout.General, ImageLayout.General);
+                }
             }
             uint depthIndex = n;
             att[n++] = new AttachmentDescription(0, _core.DepthFormat, SampleCountFlags.Count1Bit, k.DepthLoad, k.DepthStore, k.DepthLoad, k.DepthStore,
@@ -63,7 +69,8 @@ public sealed unsafe partial class VulkanRenderer
             var sub = new SubpassDescription
             {
                 PipelineBindPoint = PipelineBindPoint.Graphics,
-                ColorAttachmentCount = depthIndex, PColorAttachments = colors,
+                ColorAttachmentCount = depthIndex,
+                PColorAttachments = colors,
                 PDepthStencilAttachment = &depth,
             };
             var ci = new RenderPassCreateInfo { SType = StructureType.RenderPassCreateInfo, AttachmentCount = n, PAttachments = att, SubpassCount = 1, PSubpasses = &sub };
@@ -80,8 +87,13 @@ public sealed unsafe partial class VulkanRenderer
         uint n = a2.Handle != 0 ? 3u : a1.Handle != 0 ? 2u : 1u;
         var ci = new FramebufferCreateInfo
         {
-            SType = StructureType.FramebufferCreateInfo, RenderPass = pass, AttachmentCount = n, PAttachments = views,
-            Width = Math.Max(area.Width, 1), Height = Math.Max(area.Height, 1), Layers = 1,
+            SType = StructureType.FramebufferCreateInfo,
+            RenderPass = pass,
+            AttachmentCount = n,
+            PAttachments = views,
+            Width = Math.Max(area.Width, 1),
+            Height = Math.Max(area.Height, 1),
+            Layers = 1,
         };
         _vk.CreateFramebuffer(_dev, in ci, null, out var fb).Ok("vkCreateFramebuffer");
         _statFramebuffers++;
@@ -102,8 +114,12 @@ public sealed unsafe partial class VulkanRenderer
         var clears = stackalloc ClearValue[3] { p.DepthClear, p.DepthClear, p.DepthClear };
         var rbi = new RenderPassBeginInfo
         {
-            SType = StructureType.RenderPassBeginInfo, RenderPass = pass, Framebuffer = fb,
-            RenderArea = area, ClearValueCount = 3, PClearValues = clears,
+            SType = StructureType.RenderPassBeginInfo,
+            RenderPass = pass,
+            Framebuffer = fb,
+            RenderArea = area,
+            ClearValueCount = 3,
+            PClearValues = clears,
         };
         DevStampOp(cmd, word ? "pass+word" : p.HasColor ? "pass" : "pass-depth");
         _vk.CmdBeginRenderPass(cmd, in rbi, SubpassContents.SecondaryCommandBuffers);
