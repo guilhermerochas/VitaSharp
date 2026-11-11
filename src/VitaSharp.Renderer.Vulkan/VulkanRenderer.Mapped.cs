@@ -17,18 +17,18 @@ namespace VitaSharp.Renderer.Vulkan;
 /// </summary>
 public sealed unsafe partial class VulkanRenderer
 {
-    const uint CdramBytes = GuestMemory.CdramEnd - GuestMemory.CdramStart;
-    const uint ScratchBytes = 32 << 20;
-    const int MappedWindowBytes = 1 << 20;
+    private const uint CdramBytes = GuestMemory.CdramEnd - GuestMemory.CdramStart;
+    private const uint ScratchBytes = 32 << 20;
+    private const int MappedWindowBytes = 1 << 20;
 
-    Buffer _mirror;
-    DeviceMemory _mirrorMem;
-    uint _scratchUsed;
-    long _scratchFrame = -1;
-    readonly Dictionary<RenderTarget, long> _mirroredRt = new();
-    readonly Dictionary<(DepthTarget, bool Stencil), long> _mirroredDepth = new();
+    private Buffer _mirror;
+    private DeviceMemory _mirrorMem;
+    private uint _scratchUsed;
+    private long _scratchFrame = -1;
+    private readonly Dictionary<RenderTarget, long> _mirroredRt = new();
+    private readonly Dictionary<(DepthTarget, bool Stencil), long> _mirroredDepth = new();
 
-    void EnsureMirror()
+    private void EnsureMirror()
     {
         if (_mirror.Handle != 0)
         {
@@ -46,7 +46,7 @@ public sealed unsafe partial class VulkanRenderer
 
     /// <summary>Fills the header of every mapped slot in <paramref name="data"/> and returns the stage's mapped-memory binding.
     /// <paramref name="writes"/>: the program stores through its mapped slots (<see cref="GeneratedShader.WritesMemory"/>).</summary>
-    DescriptorBufferInfo ResolveMappedSlots(List<UniformBufferSlot> slots, Span<byte> data, uint[] addrs, bool writes = false)
+    private DescriptorBufferInfo ResolveMappedSlots(List<UniformBufferSlot> slots, Span<byte> data, uint[] addrs, bool writes = false)
     {
         var dummy = new DescriptorBufferInfo(_dummyBuffer, 0, 256);
         if (data.Length == 0 || addrs.Length == 0)
@@ -55,7 +55,7 @@ public sealed unsafe partial class VulkanRenderer
         }
 
         bool anyMapped = false;
-        foreach (var s in slots)
+        foreach (UniformBufferSlot s in slots)
         {
             if (s.Mapped)
             {
@@ -81,7 +81,7 @@ public sealed unsafe partial class VulkanRenderer
             AwaitMirrorWrites(PipelineStageFlags.VertexShaderBit | PipelineStageFlags.FragmentShaderBit, AccessFlags.ShaderReadBit);
         }
 
-        foreach (var s in slots)
+        foreach (UniformBufferSlot s in slots)
         {
             if (!s.Mapped)
             {
@@ -109,11 +109,11 @@ public sealed unsafe partial class VulkanRenderer
     /// meshes this way: point draws whose vertex program stores the transformed vertices, then the draws of the meshes
     /// with those vertices as a stream.
     /// </summary>
-    readonly SortedList<uint, (uint End, uint Stamp)> _gpuWritten = new();
+    private readonly SortedList<uint, (uint End, uint Stamp)> _gpuWritten = new();
     /// <summary>Shader writes into the mirror not yet made visible to later reads (barrier pending).</summary>
-    bool _mirrorWritesPending, _gpuWrittenStreamLogged;
+    private bool _mirrorWritesPending, _gpuWrittenStreamLogged;
 
-    void AwaitMirrorWrites(PipelineStageFlags dstStage, AccessFlags dstAccess)
+    private void AwaitMirrorWrites(PipelineStageFlags dstStage, AccessFlags dstAccess)
     {
         if (!_mirrorWritesPending)
         {
@@ -140,7 +140,7 @@ public sealed unsafe partial class VulkanRenderer
     /// windows next to each other (the stored ranges of two frames merge into one), and a CPU write in the window of the
     /// other frame dropped the volume this frame had just extruded, so every other frame was dark for seconds.
     /// </summary>
-    void ExpireGpuWritten(uint start, uint end, bool innerPages = false)
+    private void ExpireGpuWritten(uint start, uint end, bool innerPages = false)
     {
         if (_gpuWritten.Count == 0)
         {
@@ -148,11 +148,11 @@ public sealed unsafe partial class VulkanRenderer
         }
 
         SweepDirtyPages();
-        const uint page = 1u << DirtyPages.PageShift;
+        const uint Page = 1u << DirtyPages.PageShift;
         for (int i = _gpuWritten.Count - 1; i >= 0; i--)
         {
             uint s = _gpuWritten.Keys[i];
-            var (e, stamp) = _gpuWritten.Values[i];
+            (uint e, uint stamp) = _gpuWritten.Values[i];
             if (e <= start || s >= end)
             {
                 continue;
@@ -161,8 +161,8 @@ public sealed unsafe partial class VulkanRenderer
             uint os = Math.Max(s, start), oe = Math.Min(e, end);
             if (innerPages)
             {
-                os = (os + page - 1 & ~(page - 1)) + page;
-                oe &= ~(page - 1);
+                os = (os + Page - 1 & ~(Page - 1)) + Page;
+                oe &= ~(Page - 1);
             }
             if (oe > os && DirtyPages.WrittenBetween(os, oe - os, stamp, GpuQueue.ReadBound))
             {
@@ -174,9 +174,9 @@ public sealed unsafe partial class VulkanRenderer
                 _gpuWritten.RemoveAt(i);
                 // only the pages the CPU wrote: the rest of the range keeps what the GPU stored there
                 uint keep = s;
-                for (uint p = os & ~(page - 1); p < oe; p += page)
+                for (uint p = os & ~(Page - 1); p < oe; p += Page)
                 {
-                    uint ps = Math.Max(p, os), pe = Math.Min(p + page, oe);
+                    uint ps = Math.Max(p, os), pe = Math.Min(p + Page, oe);
                     if (!DirtyPages.WrittenBetween(ps, pe - ps, stamp, GpuQueue.ReadBound))
                     {
                         continue;
@@ -203,7 +203,7 @@ public sealed unsafe partial class VulkanRenderer
     }
 
     /// <summary>Records [start, end) as written by a shader (merged with the ranges it touches).</summary>
-    void NoteGpuWritten(uint start, uint end)
+    private void NoteGpuWritten(uint start, uint end)
     {
         if (_gpuWritten.Count >= 4096)
         {
@@ -211,7 +211,7 @@ public sealed unsafe partial class VulkanRenderer
         }
         // the merged range gets a new stamp: the CPU writes since the older ranges were stored count first
         uint lo = start, hi = end;
-        foreach (var (s, (e, _)) in _gpuWritten)
+        foreach ((uint s, (uint e, uint _)) in _gpuWritten)
         {
             if (e >= start && s <= end)
             {
@@ -251,7 +251,7 @@ public sealed unsafe partial class VulkanRenderer
     }
 
     /// <summary>The mirror offset of a vertex stream that lies in shader-written memory, else -1 (read from guest memory).</summary>
-    long GpuWrittenStream(uint addr, uint length)
+    private long GpuWrittenStream(uint addr, uint length)
     {
         if (_gpuWritten.Count == 0 || addr < GuestMemory.CdramStart || (ulong)addr + length > GuestMemory.CdramEnd)
         {
@@ -259,7 +259,7 @@ public sealed unsafe partial class VulkanRenderer
         }
 
         ExpireGpuWritten(addr, addr + length, innerPages: length >= 3u << DirtyPages.PageShift);
-        foreach (var (s, (e, _)) in _gpuWritten)
+        foreach ((uint s, (uint e, uint _)) in _gpuWritten)
         {
             if (s > addr)
             {
@@ -279,7 +279,7 @@ public sealed unsafe partial class VulkanRenderer
         }
         if (_diagActive != null)
         {
-            foreach (var (s, (e, _)) in _gpuWritten)
+            foreach ((uint s, (uint e, uint _)) in _gpuWritten)
             {
                 if (s < addr + length && addr < e)
                 {
@@ -292,11 +292,11 @@ public sealed unsafe partial class VulkanRenderer
     }
 
     /// <summary>Copies [addr, addr + size) of guest CDRAM into the mirror except the parts shaders wrote.</summary>
-    void CopyGuestToMirrorExceptGpuWritten(uint addr, uint size)
+    private void CopyGuestToMirrorExceptGpuWritten(uint addr, uint size)
     {
         uint end = addr + size, at = addr;
         ExpireGpuWritten(addr, end);
-        foreach (var (s, (e, _)) in _gpuWritten)
+        foreach ((uint s, (uint e, uint _)) in _gpuWritten)
         {
             if (e <= at)
             {
@@ -326,7 +326,7 @@ public sealed unsafe partial class VulkanRenderer
     }
 
     /// <summary>Makes the data at <paramref name="addr"/> current in the mirror; returns its offset in the mirror buffer.</summary>
-    uint PrepareMapped(uint addr, int declaredBytes, bool writes = false)
+    private uint PrepareMapped(uint addr, int declaredBytes, bool writes = false)
     {
         if (addr is >= GuestMemory.CdramStart and < GuestMemory.CdramEnd)
         {
@@ -367,9 +367,9 @@ public sealed unsafe partial class VulkanRenderer
         return off;
     }
 
-    void CopyGuestToMirror(uint addr, uint size, uint mirrorOffset)
+    private void CopyGuestToMirror(uint addr, uint size, uint mirrorOffset)
     {
-        var (src, srcOff) = UploadSpan(GuestMemory.ReadSpan(addr, (int)size), 16);
+        (Buffer src, ulong srcOff) = UploadSpan(GuestMemory.ReadSpan(addr, (int)size), 16);
         _statMirrorCopyBytes += size;
         EndRendering();
         // shader stores into the mirror (other ranges) and the reads of earlier draws come before the copy
@@ -381,7 +381,7 @@ public sealed unsafe partial class VulkanRenderer
             AccessFlags.TransferWriteBit, AccessFlags.ShaderReadBit | AccessFlags.ShaderWriteBit);
     }
 
-    static void WriteHeader(Span<byte> data, UniformBufferSlot s, uint offset)
+    private static void WriteHeader(Span<byte> data, UniformBufferSlot s, uint offset)
     {
         if (s.DataOffset + 4 <= data.Length)
         {
@@ -389,12 +389,12 @@ public sealed unsafe partial class VulkanRenderer
         }
     }
 
-    RenderTarget? RenderTargetContaining(uint addr)
+    private RenderTarget? RenderTargetContaining(uint addr)
     {
         RenderTarget? best = null;
-        if (TexLookupOld)
+        if (s_texLookupOld)
         {
-            foreach (var rt in _renderTargets.Values)
+            foreach (RenderTarget rt in _renderTargets.Values)
             {
                 uint bytes = rt.Stride * (uint)Formats.ColorBytesPerPixel(rt.ColorFormat) * rt.Height;
                 if (addr < rt.Address || addr >= rt.Address + bytes)
@@ -409,7 +409,7 @@ public sealed unsafe partial class VulkanRenderer
             }
             return best;
         }
-        foreach (ref readonly var r in RtRanges())
+        foreach (ref readonly RtRange r in RtRanges())
         {
             if (addr < r.Lo || addr >= r.Hi)
             {
@@ -427,7 +427,7 @@ public sealed unsafe partial class VulkanRenderer
     /// <summary>The colour targets' memory ranges in <see cref="_renderTargets"/> order, rebuilt after the dictionary
     /// changes: the texture lookups of every draw test each target, and a dictionary walk with the size computed per
     /// target was a measurable part of the GPU worker on the phone.</summary>
-    ReadOnlySpan<RtRange> RtRanges()
+    private ReadOnlySpan<RtRange> RtRanges()
     {
         if (_rtRangesValid)
         {
@@ -440,7 +440,7 @@ public sealed unsafe partial class VulkanRenderer
         }
 
         int n = 0;
-        foreach (var rt in _renderTargets.Values)
+        foreach (RenderTarget rt in _renderTargets.Values)
         {
             _rtRanges[n++] = new RtRange(rt.Address, rt.Address + rt.Stride * (uint)Formats.ColorBytesPerPixel(rt.ColorFormat) * rt.Height, rt);
         }
@@ -450,17 +450,17 @@ public sealed unsafe partial class VulkanRenderer
         return _rtRanges.AsSpan(0, n);
     }
 
-    readonly record struct RtRange(uint Lo, uint Hi, RenderTarget Rt);
-    RtRange[] _rtRanges = [];
-    int _rtRangeCount;
+    private readonly record struct RtRange(uint Lo, uint Hi, RenderTarget Rt);
+    private RtRange[] _rtRanges = [];
+    private int _rtRangeCount;
     /// <summary>Cleared wherever <see cref="_renderTargets"/> changes.</summary>
-    bool _rtRangesValid;
+    private bool _rtRangesValid;
 
-    DepthTarget? DepthTargetContaining(uint addr, out bool stencil)
+    private DepthTarget? DepthTargetContaining(uint addr, out bool stencil)
     {
         DepthTarget? best = null;
         stencil = false;
-        foreach (var dt in _depthTargets.Values)
+        foreach (DepthTarget dt in _depthTargets.Values)
         {
             bool inDepth = dt.Address != 0 && addr >= dt.Address && addr < dt.Address + dt.StrideBytes * dt.Height;
             bool inStencil = dt.StencilAddress != 0 && addr >= dt.StencilAddress && addr < dt.StencilAddress + dt.StencilStrideBytes * dt.Height;
@@ -485,7 +485,7 @@ public sealed unsafe partial class VulkanRenderer
         return best != null && MultisampledDepthRead(best, stencil) ? null : best;
     }
 
-    static int HostBytesPerPixel(Format f) => f switch
+    private static int HostBytesPerPixel(Format f) => f switch
     {
         Format.R8Unorm or Format.R8SNorm => 1,
         Format.R8G8Unorm or Format.R8G8SNorm or Format.R16Unorm or Format.R16SNorm or Format.R16Sfloat
@@ -495,7 +495,7 @@ public sealed unsafe partial class VulkanRenderer
     };
 
     /// <summary>Copies a render target into the mirror (guest layout) when it changed. False when the layouts differ.</summary>
-    bool MirrorRenderTarget(RenderTarget rt)
+    private bool MirrorRenderTarget(RenderTarget rt)
     {
         int guestBpp = Formats.ColorBytesPerPixel(rt.ColorFormat);
         if (rt.Format == Format.B8G8R8A8Unorm || HostBytesPerPixel(rt.Format) != guestBpp)
@@ -504,7 +504,7 @@ public sealed unsafe partial class VulkanRenderer
             return false;
         }
         rt.LastTouchedFrame = FrameCount;
-        if (_mirroredRt.TryGetValue(rt, out var v) && v == rt.Version)
+        if (_mirroredRt.TryGetValue(rt, out long v) && v == rt.Version)
         {
             return true;
         }
@@ -535,7 +535,7 @@ public sealed unsafe partial class VulkanRenderer
     /// Copies a depth or stencil plane into the mirror. With D24S8 the depth aspect lands as X8U24 words and the
     /// stencil aspect as one byte per sample: the layouts of the Vita's S8D24 depth and S8 stencil surfaces.
     /// </summary>
-    bool MirrorDepthTarget(DepthTarget dt, bool stencil)
+    private bool MirrorDepthTarget(DepthTarget dt, bool stencil)
     {
         if (!stencil && _core.DepthFormat != Format.D24UnormS8Uint)
         {
@@ -543,15 +543,15 @@ public sealed unsafe partial class VulkanRenderer
             return false;
         }
         dt.LastTouchedFrame = FrameCount;
-        if (_mirroredDepth.TryGetValue((dt, stencil), out var v) && v == dt.Version)
+        if (_mirroredDepth.TryGetValue((dt, stencil), out long v) && v == dt.Version)
         {
             return true;
         }
 
         _mirroredDepth[(dt, stencil)] = dt.Version;
         EndRendering();
-        const ImageAspectFlags ds = ImageAspectFlags.DepthBit | ImageAspectFlags.StencilBit;
-        Barrier(dt.Image, ImageLayout.DepthStencilAttachmentOptimal, ImageLayout.TransferSrcOptimal, ds,
+        const ImageAspectFlags DepthStencilAspect = ImageAspectFlags.DepthBit | ImageAspectFlags.StencilBit;
+        Barrier(dt.Image, ImageLayout.DepthStencilAttachmentOptimal, ImageLayout.TransferSrcOptimal, DepthStencilAspect,
             PipelineStageFlags.EarlyFragmentTestsBit | PipelineStageFlags.LateFragmentTestsBit, PipelineStageFlags.TransferBit,
             AccessFlags.DepthStencilAttachmentWriteBit, AccessFlags.TransferReadBit);
         BufferBarrier(_mirror, PipelineStageFlags.VertexShaderBit | PipelineStageFlags.FragmentShaderBit, PipelineStageFlags.TransferBit,
@@ -566,7 +566,7 @@ public sealed unsafe partial class VulkanRenderer
         };
         DevStampOp();
         _vk.CmdCopyImageToBuffer(Cmd, dt.Image, ImageLayout.TransferSrcOptimal, _mirror, 1, in region);
-        Barrier(dt.Image, ImageLayout.TransferSrcOptimal, ImageLayout.DepthStencilAttachmentOptimal, ds,
+        Barrier(dt.Image, ImageLayout.TransferSrcOptimal, ImageLayout.DepthStencilAttachmentOptimal, DepthStencilAspect,
             PipelineStageFlags.TransferBit, PipelineStageFlags.EarlyFragmentTestsBit | PipelineStageFlags.LateFragmentTestsBit,
             AccessFlags.TransferReadBit, AccessFlags.DepthStencilAttachmentReadBit | AccessFlags.DepthStencilAttachmentWriteBit);
         BufferBarrier(_mirror, PipelineStageFlags.TransferBit, PipelineStageFlags.VertexShaderBit | PipelineStageFlags.FragmentShaderBit,
@@ -574,7 +574,7 @@ public sealed unsafe partial class VulkanRenderer
         return true;
     }
 
-    void BufferBarrier(Buffer b, PipelineStageFlags src, PipelineStageFlags dst, AccessFlags srcAccess, AccessFlags dstAccess)
+    private void BufferBarrier(Buffer b, PipelineStageFlags src, PipelineStageFlags dst, AccessFlags srcAccess, AccessFlags dstAccess)
     {
         var bb = new BufferMemoryBarrier
         {
@@ -590,7 +590,7 @@ public sealed unsafe partial class VulkanRenderer
         _vk.CmdPipelineBarrier(Cmd, src, dst, 0, 0, null, 1, in bb, 0, null);
     }
 
-    void DestroyMirror()
+    private void DestroyMirror()
     {
         if (_mirror.Handle != 0)
         {

@@ -28,36 +28,36 @@ public sealed unsafe partial class VulkanRenderer
 #if VITASHARP_DEVELOPER
     static readonly bool WorkerProf = Environment.GetEnvironmentVariable("VITASHARP_WORKER_PROF") == "1";
 #else
-    static readonly bool WorkerProf = false;
+    private static readonly bool s_workerProf = false;
 #endif
-    readonly long[] _profTicks = new long[(int)ProfPhase.Count];
+    private readonly long[] _profTicks = new long[(int)ProfPhase.Count];
     /// <summary>Texture units resolved: memory, colour target, other.</summary>
-    readonly long[] _profUnits = new long[4];
+    private readonly long[] _profUnits = new long[4];
 
     [Conditional("VITASHARP_DEVELOPER")]
-    void ProfUnit(TexSource src)
+    private void ProfUnit(TexSource src)
     {
-        if (!WorkerProf)
+        if (!s_workerProf)
         {
             return;
         }
 
-        var kind = src & TexSource.KindMask;
+        TexSource kind = src & TexSource.KindMask;
         int i = (src & TexSource.Memo) != 0 ? 3 : kind is TexSource.Memory or TexSource.MemoryCube ? 0 : kind is TexSource.RenderTarget or TexSource.Region or TexSource.Reinterpret or TexSource.RtMipmapped ? 1 : 2;
         _profUnits[i]++;
         ProfMark(i == 3 ? ProfPhase.TexUnitMemo : i == 0 ? ProfPhase.TexUnitMem : i == 1 ? ProfPhase.TexUnitRt : ProfPhase.TexUnitOther);
     }
-    long _profT, _profExecTicks, _profDrawTicks;
-    readonly Dictionary<Type, long> _profByType = new();
-    long _profQueueSubmitTicks, _profQueuePresentTicks;
+    private long _profT, _profExecTicks, _profDrawTicks;
+    private readonly Dictionary<Type, long> _profByType = new();
+    private long _profQueueSubmitTicks, _profQueuePresentTicks;
     /// <summary>Frames before the measurement starts (VITASHARP_WORKER_PROF_FROM, default 30): a later start leaves the
     /// loading screens' texture uploads out of a gameplay measurement.</summary>
-    static readonly int ProfWarmup = int.TryParse(Environment.GetEnvironmentVariable(Core.Util.EnvVars.WorkerProfFrom), out int pf) && pf > 0 ? pf : 30;
+    private static readonly int s_profWarmup = int.TryParse(Environment.GetEnvironmentVariable(Core.Util.EnvVars.WorkerProfFrom), out int pf) && pf > 0 ? pf : 30;
 
     [Conditional("VITASHARP_DEVELOPER")]
-    void ProfStart()
+    private void ProfStart()
     {
-        if (WorkerProf)
+        if (s_workerProf)
         {
             _profT = Stopwatch.GetTimestamp();
         }
@@ -65,9 +65,9 @@ public sealed unsafe partial class VulkanRenderer
 
     /// <summary>Charges the time since the last mark to <paramref name="p"/>.</summary>
     [Conditional("VITASHARP_DEVELOPER")]
-    void ProfMark(ProfPhase p)
+    private void ProfMark(ProfPhase p)
     {
-        if (!WorkerProf)
+        if (!s_workerProf)
         {
             return;
         }
@@ -77,7 +77,7 @@ public sealed unsafe partial class VulkanRenderer
         _profT = now;
     }
 
-    void ExecuteProfiled(GpuCommand command)
+    private void ExecuteProfiled(GpuCommand command)
     {
         long t0 = Stopwatch.GetTimestamp();
         long fence0 = Core.Util.FrameLedger.Total(Core.Util.FrameLedger.Cat.FenceWait);
@@ -90,11 +90,11 @@ public sealed unsafe partial class VulkanRenderer
         }
         else
         {
-            var type = command.GetType();
+            Type type = command.GetType();
             _profByType[type] = _profByType.GetValueOrDefault(type) + dt;
         }
         // the first frames compile shaders and pipelines: the steady state is measured after them
-        if (command is PresentCommand && _workFrames == ProfWarmup)
+        if (command is PresentCommand && _workFrames == s_profWarmup)
         {
             _profExecTicks = _profDrawTicks = 0;
             Array.Clear(_profTicks);
@@ -104,22 +104,22 @@ public sealed unsafe partial class VulkanRenderer
         }
     }
 
-    string WorkerProfReport()
+    private string WorkerProfReport()
     {
-        if (!WorkerProf)
+        if (!s_workerProf)
         {
             return "";
         }
 
-        double f = Math.Max(1, _workFrames - ProfWarmup);
-        var sb = new System.Text.StringBuilder($"\nPERF worker: {Ms(_profExecTicks) / f:F3} ms/frame in Execute without fence waits (after {ProfWarmup} frames), draws {Ms(_profDrawTicks) / f:F3} (");
+        double f = Math.Max(1, _workFrames - s_profWarmup);
+        var sb = new System.Text.StringBuilder($"\nPERF worker: {Ms(_profExecTicks) / f:F3} ms/frame in Execute without fence waits (after {s_profWarmup} frames), draws {Ms(_profDrawTicks) / f:F3} (");
         for (int i = 0; i < (int)ProfPhase.Record + 1; i++)
         {
             sb.Append($"{(i > 0 ? " " : "")}{(ProfPhase)i} {Ms(_profTicks[i]) / f:F3}");
         }
 
         sb.Append("); other commands:");
-        foreach (var (t, ticks) in _profByType.OrderByDescending(kv => kv.Value))
+        foreach ((Type? t, long ticks) in _profByType.OrderByDescending(kv => kv.Value))
         {
             sb.Append($" {t.Name.Replace("Command", "")} {Ms(ticks) / f:F3}");
         }

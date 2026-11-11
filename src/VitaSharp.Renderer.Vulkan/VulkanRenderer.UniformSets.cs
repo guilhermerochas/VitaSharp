@@ -11,22 +11,22 @@ namespace VitaSharp.Renderer.Vulkan;
 /// </summary>
 public sealed unsafe partial class VulkanRenderer
 {
-    readonly record struct UniformSetKey(ulong B0, ulong R0, ulong B1, ulong R1, ulong B2, ulong B3, ulong S0, ulong S1, ulong S2, ulong S3);
+    private readonly record struct UniformSetKey(ulong B0, ulong R0, ulong B1, ulong R1, ulong B2, ulong B3, ulong S0, ulong S1, ulong S2, ulong S3);
 
     /// <summary>Dynamic storage buffers of set 0: the uniform data of both stages, and the four split slots when on.</summary>
-    static int DynamicUniformBindings => ShaderGenerator.SplitUniformSlots ? 6 : 2;
+    private static int DynamicUniformBindings => ShaderGenerator.SplitUniformSlots ? 6 : 2;
 
     /// <summary>Buffer handle and range of a split slot binding in one key word (ranges are slot sizes, below 2^20).</summary>
-    static ulong SplitKey(in DescriptorBufferInfo b) => b.Buffer.Handle * 0x100000 ^ b.Range;
+    private static ulong SplitKey(in DescriptorBufferInfo b) => b.Buffer.Handle * 0x100000 ^ b.Range;
 
-    readonly Dictionary<UniformSetKey, DescriptorSet> _uniformSets = new();
-    long _uniformSetsSerial = -1;
-    UniformSetKey _lastUniformKey;
-    DescriptorSet _lastUniformSet;
+    private readonly Dictionary<UniformSetKey, DescriptorSet> _uniformSets = new();
+    private long _uniformSetsSerial = -1;
+    private UniformSetKey _lastUniformKey;
+    private DescriptorSet _lastUniformSet;
 
     /// <summary>The set for these four bindings (0/1 dynamic: written at offset 0, bound with the offsets of
     /// <paramref name="infos"/>).</summary>
-    DescriptorSet UniformSet(DescriptorBufferInfo* infos)
+    private DescriptorSet UniformSet(DescriptorBufferInfo* infos)
     {
         bool split = ShaderGenerator.SplitUniformSlots;
         var key = new UniformSetKey(infos[0].Buffer.Handle, infos[0].Range, infos[1].Buffer.Handle, infos[1].Range, infos[2].Buffer.Handle, infos[3].Buffer.Handle,
@@ -42,11 +42,11 @@ public sealed unsafe partial class VulkanRenderer
             return _lastUniformSet;
         }
 
-        if (!_uniformSets.TryGetValue(key, out var set))
+        if (!_uniformSets.TryGetValue(key, out DescriptorSet set))
         {
             set = AllocSet(_uboLayout);
-            var bi = stackalloc DescriptorBufferInfo[8];
-            var writes = stackalloc WriteDescriptorSet[8];
+            DescriptorBufferInfo* bi = stackalloc DescriptorBufferInfo[8];
+            WriteDescriptorSet* writes = stackalloc WriteDescriptorSet[8];
             // the dummy buffer stands for a buffer the stage's shader does not declare (no uniforms, no mapped slots): not written
             uint nw = 0;
             for (int i = 0; i < (split ? 8 : 4); i++)

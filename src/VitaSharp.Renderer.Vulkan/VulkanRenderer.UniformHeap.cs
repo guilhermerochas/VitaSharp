@@ -13,13 +13,13 @@ namespace VitaSharp.Renderer.Vulkan;
 /// </summary>
 public sealed unsafe partial class VulkanRenderer
 {
-    const int UniformHeapChunks = 48;
+    private const int UniformHeapChunks = 48;
 
-    sealed class UniformHeap(Buffer buffer, DeviceMemory memory, nint ptr) : IUniformHeap
+    private sealed class UniformHeap(Buffer buffer, DeviceMemory memory, nint ptr) : IUniformHeap
     {
         public readonly Buffer Buffer = buffer;
         public readonly DeviceMemory Memory = memory;
-        int _next;
+        private int _next;
 
         public nint Alloc(out int id)
         {
@@ -34,18 +34,18 @@ public sealed unsafe partial class VulkanRenderer
         }
     }
 
-    UniformHeap? _uniformHeap;
+    private UniformHeap? _uniformHeap;
     /// <summary>Statistics (PERF sync): draws whose uniform blocks were bound in the heap / copied into the ring.</summary>
-    long _statUniformInHeap, _statUniformCopied;
+    private long _statUniformInHeap, _statUniformCopied;
 
-    void CreateUniformHeap()
+    private void CreateUniformHeap()
     {
-        var (b, m, p) = _core.CreateHostBuffer((ulong)UniformHeapChunks * UniformArena.ChunkSize, BufferUsageFlags.StorageBufferBit, MemCat.UploadRing);
+        (Buffer b, DeviceMemory m, nint p) = _core.CreateHostBuffer((ulong)UniformHeapChunks * UniformArena.ChunkSize, BufferUsageFlags.StorageBufferBit, MemCat.UploadRing);
         _uniformHeap = new UniformHeap(b, m, p);
         UniformArena.Attach(_uniformHeap, (int)Math.Max(_core.Properties.Limits.MinStorageBufferOffsetAlignment, 16));
     }
 
-    void DestroyUniformHeap()
+    private void DestroyUniformHeap()
     {
         if (_uniformHeap is not { } h)
         {
@@ -58,7 +58,7 @@ public sealed unsafe partial class VulkanRenderer
     }
 
     /// <summary>The draw's uniform bindings 0/1: in place in the uniform heap, else copied into the upload ring.</summary>
-    void DrawUniformInfos(DrawCommand d, DescriptorBufferInfo* infos)
+    private void DrawUniformInfos(DrawCommand d, DescriptorBufferInfo* infos)
     {
         if (ShaderGenerator.SplitUniformSlots)
         {
@@ -84,7 +84,7 @@ public sealed unsafe partial class VulkanRenderer
     }
 
     /// <summary>The frame reads the heap chunk until its fence retires (Deferred runs then).</summary>
-    void HoldForFrame(UniformChunk c)
+    private void HoldForFrame(UniformChunk c)
     {
         if (c.BackendTag == _frameSerial)
         {
@@ -98,7 +98,7 @@ public sealed unsafe partial class VulkanRenderer
 
     /// <summary>Bindings 5-8 (<paramref name="infos"/> 0-3): the draw's split uniform slots, in place in the heap (several
     /// draws may share one), else copied into the upload ring; the dummy buffer where the stage has none.</summary>
-    void SplitInfos(DrawCommand d, DescriptorBufferInfo* infos)
+    private void SplitInfos(DrawCommand d, DescriptorBufferInfo* infos)
     {
         for (int i = 0; i < 4; i++)
         {

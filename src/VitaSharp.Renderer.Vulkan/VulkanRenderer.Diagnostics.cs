@@ -3,6 +3,7 @@ using System.Diagnostics;
 using System.Runtime.InteropServices;
 using System.Text;
 using VitaSharp.Core.Gpu;
+using VitaSharp.Core.Gxm;
 using VitaSharp.Core.Gxm.Shader;
 using VitaSharp.Core.Util;
 
@@ -34,7 +35,7 @@ public sealed unsafe partial class VulkanRenderer
 {
     // ================================================================ capture
 
-    sealed class DiagRequest
+    private sealed class DiagRequest
     {
         public required string Dir;
         public required Action<DiagnosticCaptureResult> Done;
@@ -68,22 +69,22 @@ public sealed unsafe partial class VulkanRenderer
         }
     }
 
-    DiagRequest? _diagRequest;
-    DiagRequest? _diagActive;
+    private DiagRequest? _diagRequest;
+    private DiagRequest? _diagActive;
     /// <summary>Draws issued while <c>_presentCount == _traceFrame</c> are traced; the targets are dumped at the present
     /// that makes <c>_presentCount == _traceDumpFrame</c>. --trace-draws=N sets both to N (historic behaviour: the targets
     /// of the frame before the traced draws); a capture traces one frame and dumps the targets at its end.</summary>
-    long _traceFrame = -1, _traceDumpFrame = -1;
-    string? _traceDir;
+    private long _traceFrame = -1, _traceDumpFrame = -1;
+    private string? _traceDir;
     /// <summary>A trace begun by <see cref="BeginDrawTrace"/>: every draw is traced until <see cref="EndDrawTrace"/>,
     /// across presents (replay-gpu traces the draws that produce one presented frame, which a game that runs ahead
     /// of its display queue issues one or two presents earlier).</summary>
-    bool _traceManual;
+    private bool _traceManual;
     /// <summary>Draw number within a manual trace (the N of --draw-limit=N@F); <see cref="_drawSerial"/> otherwise.</summary>
-    int _traceDrawId;
-    int NextDrawId => (_traceManual ? _traceDrawId : _drawSerial) + 1;
+    private int _traceDrawId;
+    private int NextDrawId => (_traceManual ? _traceDrawId : _drawSerial) + 1;
 
-    void InitTrace()
+    private void InitTrace()
     {
         _traceFrame = _traceDumpFrame = _opt.TraceDrawsFrame;
         _traceDir = _opt.TraceDrawsFrame >= 0 && _opt.ShaderCacheDir != null ? Path.Combine(_opt.ShaderCacheDir, "trace") : null;
@@ -157,7 +158,7 @@ public sealed unsafe partial class VulkanRenderer
     /// confirmed). Raised on a thread-pool thread.</summary>
     public event Action<string, string, long>? AnomalyDetected;
 
-    void TraceLine(string line)
+    private void TraceLine(string line)
     {
         if (_diagActive is { } capture)
         {
@@ -169,7 +170,7 @@ public sealed unsafe partial class VulkanRenderer
         }
     }
 
-    void ArmCapture(DiagRequest req)
+    private void ArmCapture(DiagRequest req)
     {
         // a concurrent CancelDiagnosticCapture may have withdrawn it
         if (Interlocked.CompareExchange(ref _diagRequest, null, req) != req)
@@ -205,7 +206,7 @@ public sealed unsafe partial class VulkanRenderer
         Log.Info($"[diag] capture armed at present #{_presentCount}: tracing the next frame into {req.Dir}");
     }
 
-    void CompleteCapture(DiagRequest dc, RenderTarget? src, DisplayFrame frame)
+    private void CompleteCapture(DiagRequest dc, RenderTarget? src, DisplayFrame frame)
     {
         var res = new DiagnosticCaptureResult { Dir = dc.Dir, Present = dc.Present, FrameWidth = frame.Width, FrameHeight = frame.Height };
         try
@@ -278,7 +279,7 @@ public sealed unsafe partial class VulkanRenderer
 
     // ================================================================ rolling per-frame summaries
 
-    struct FrameSummary
+    private struct FrameSummary
     {
         public long Present, GuestFrame;
         public int Draws, Scenes, NewShaders, NewPipelines, NewTargets, NewTextures;
@@ -287,16 +288,16 @@ public sealed unsafe partial class VulkanRenderer
         public uint Address, Width, Height;
     }
 
-    const int FrameRingSize = 120;
-    readonly FrameSummary[] _frameRing = new FrameSummary[FrameRingSize];
-    int _frameRingCount;
-    int _fScenes, _fNewShaders, _fNewPipelines, _fNewTargets, _fNewTextures;
-    long _lastPresentTicks;
-    readonly long[] _ledgerPrev = new long[(int)FrameLedger.Cat.Count];
-    uint _lastFrameW, _lastFrameH;
+    private const int FrameRingSize = 120;
+    private readonly FrameSummary[] _frameRing = new FrameSummary[FrameRingSize];
+    private int _frameRingCount;
+    private int _fScenes, _fNewShaders, _fNewPipelines, _fNewTargets, _fNewTextures;
+    private long _lastPresentTicks;
+    private readonly long[] _ledgerPrev = new long[(int)FrameLedger.Cat.Count];
+    private uint _lastFrameW, _lastFrameH;
 
     // causes that stall the GPU thread or the guest within a frame (background work and idle time excluded)
-    static readonly FrameLedger.Cat[] HitchCauses =
+    private static readonly FrameLedger.Cat[] s_hitchCauses =
     [
         FrameLedger.Cat.ShaderTranslate, FrameLedger.Cat.ShaderCompile, FrameLedger.Cat.ShaderPackLoad, FrameLedger.Cat.PipelineCreate,
         FrameLedger.Cat.TextureUpload, FrameLedger.Cat.FenceWait, FrameLedger.Cat.Writeback, FrameLedger.Cat.GuestGpuWait,
@@ -304,12 +305,12 @@ public sealed unsafe partial class VulkanRenderer
     ];
 
     /// <summary>At each present (always on: a few field writes and ten counter reads per frame).</summary>
-    void RecordFrameSummary(DisplayFrame frame)
+    private void RecordFrameSummary(DisplayFrame frame)
     {
         long now = Stopwatch.GetTimestamp();
         int top = -1;
         long topTicks = 0;
-        foreach (var c in HitchCauses)
+        foreach (FrameLedger.Cat c in s_hitchCauses)
         {
             long t = FrameLedger.Total(c), d = t - _ledgerPrev[(int)c];
             _ledgerPrev[(int)c] = t;
@@ -319,7 +320,7 @@ public sealed unsafe partial class VulkanRenderer
                 top = (int)c;
             }
         }
-        ref var s = ref _frameRing[_frameRingCount++ % FrameRingSize];
+        ref FrameSummary s = ref _frameRing[_frameRingCount++ % FrameRingSize];
         s = new FrameSummary
         {
             Present = _presentCount + 1,
@@ -351,7 +352,7 @@ public sealed unsafe partial class VulkanRenderer
         int n = Math.Min(Math.Min(count, FrameRingSize), _frameRingCount);
         for (int i = _frameRingCount - n; i < _frameRingCount; i++)
         {
-            var s = _frameRing[i % FrameRingSize];
+            FrameSummary s = _frameRing[i % FrameRingSize];
             string cause = s.TopCause >= 0 && s.TopCauseMs >= 0.05f ? $"{FrameLedger.Names[s.TopCause]}({s.TopCauseMs:F1})" : "-";
             sb.Append($"p{s.Present} f{s.GuestFrame} {s.IntervalMs:F1}ms draws={s.Draws} scenes={s.Scenes} newSh={s.NewShaders} newPipe={s.NewPipelines} newRT={s.NewTargets} newTex={s.NewTextures} hitch={cause} fb=0x{s.Address:X8} {s.Width}x{s.Height}\n");
         }
@@ -363,12 +364,12 @@ public sealed unsafe partial class VulkanRenderer
     /// <summary>GPU, driver and renderer settings for info.txt / renderer.txt.</summary>
     public string DescribeForDiagnostics()
     {
-        var p = _core.Properties;
+        PhysicalDeviceProperties p = _core.Properties;
         var sb = new StringBuilder();
         sb.AppendLine($"GPU: {_core.DeviceName} (vendor 0x{p.VendorID:X4}, device 0x{p.DeviceID:X4}, type {p.DeviceType})");
         sb.AppendLine($"Vulkan API: {p.ApiVersion >> 22}.{(p.ApiVersion >> 12) & 0x3FF}.{p.ApiVersion & 0xFFF}");
         sb.AppendLine($"Driver: {DriverDescription()}");
-        sb.AppendLine($"MSAA: {MsaaSetting} (VITASHARP_MSAA), programmable blending in MSAA scenes: {(MsaaInputFetch ? "input attachment" : "copy")} (VITASHARP_MSAA_FETCH), sample-rate shading {_core.SampleRateShading}");
+        sb.AppendLine($"MSAA: {_msaaSetting} (VITASHARP_MSAA), programmable blending in MSAA scenes: {(s_msaaInputFetch ? "input attachment" : "copy")} (VITASHARP_MSAA_FETCH), sample-rate shading {_core.SampleRateShading}");
         sb.AppendLine($"Shaders: shaderc {_compiler.OptLevel} (setting {_opt.ShaderOptimization ?? "default"}), async shaders {_asyncShaders}, async pipelines {_asyncPipelines}, workers setting {_opt.ShaderWorkers}, generator v{ShaderGenerator.GeneratorVersion}, debug overrides {ShaderGenerator.DebugOverridesActive}");
         sb.AppendLine($"Shader cache: {_opt.ShaderCacheDir ?? "(none)"}, title {_titleId ?? "-"}, pack {(_shaderPack != null ? "in use" : "not used")}");
         sb.AppendLine($"VSync {_opt.VSync}, validation {_opt.Validation}, presented frame {_lastFrameW}x{_lastFrameH}, swapchain {(_swapchain.Handle != 0 ? "yes" : "no (headless)")}");
@@ -379,9 +380,9 @@ public sealed unsafe partial class VulkanRenderer
         return sb.ToString().TrimEnd();
     }
 
-    string DriverDescription()
+    private string DriverDescription()
     {
-        var p = _core.Properties;
+        PhysicalDeviceProperties p = _core.Properties;
         uint v = p.DriverVersion;
         // NVIDIA packs 10.8.8.6 bits; Intel on Windows 18.14; the others follow the Vulkan version encoding
         string ver = p.VendorID switch
@@ -409,22 +410,22 @@ public sealed unsafe partial class VulkanRenderer
     public string DebugState()
     {
         var sb = new StringBuilder();
-        sb.Append($"renderer: present #{_presentCount}, GPU frames {FrameCount}, frame slot {_frameIndex}, in scene {_inScene}, rt 0x{_rt?.Address ?? 0:X8}, draws this frame {_drawSerial}, device lost {_deviceLost}, shader jobs in flight {_inflight.Count}");
+        sb.Append($"renderer: present #{_presentCount}, GPU frames {FrameCount}, frame slot {_frameIndex}, in scene {_inScene}, rt 0x{_renderTarget?.Address ?? 0:X8}, draws this frame {_drawSerial}, device lost {_deviceLost}, shader jobs in flight {_inflight.Count}");
         for (int i = 0; i < _frames.Length; i++)
         {
-            var f = _frames[i];
+            Frame f = _frames[i];
             sb.Append($"\n  frame slot {i}: recording {f.Recording}, submitted {f.Submitted} (seq {f.SubmitSeq}), retired {f.Retired}, writebacks {f.Writebacks.Count}, signals {f.Signals.Count}");
         }
         return sb.ToString();
     }
 
-    bool _deviceLostReported;
+    private bool _deviceLostReported;
 
     /// <summary>Raised once when the GPU driver reports VK_ERROR_DEVICE_LOST (a driver reset, TDR): the front end tells
     /// the user; the renderer keeps returning instead of crashing, but draws nothing more. Argument: the Vulkan call.</summary>
     public event Action<string>? DeviceLost;
 
-    void ReportDeviceLost(string where)
+    private void ReportDeviceLost(string where)
     {
         if (_deviceLostReported)
         {
@@ -446,14 +447,14 @@ public sealed unsafe partial class VulkanRenderer
 
     // ================================================================ debug mode: first-use logging
 
-    readonly HashSet<string> _dbgSeen = new();
-    readonly HashSet<(uint, uint, int)> _dbgOverlapSeen = new();
+    private readonly HashSet<string> _dbgSeen = new();
+    private readonly HashSet<(uint, uint, int)> _dbgOverlapSeen = new();
 
-    void Dbg(string msg) => Log.Info($"[dbg] f{DebugMode.Frame} p{_presentCount} {msg}");
+    private void Dbg(string msg) => Log.Info($"[dbg] f{DebugMode.Frame} p{_presentCount} {msg}");
 
-    string MsaaPath => _ms ? $"native {(int)_msSamples}x" : _ss ? "supersampled 2x" : "off";
+    private string MsaaPath => _multisampled ? $"native {(int)_msSamples}x" : _supersampled ? "supersampled 2x" : "off";
 
-    void DbgVertexShader(VsEntry e, DrawCommand d)
+    private void DbgVertexShader(VsEntry e, DrawCommand d)
     {
         if (!_dbgSeen.Add($"vs{e.ProgramHash:X16}{e.HintKey:X16}"))
         {
@@ -464,38 +465,38 @@ public sealed unsafe partial class VulkanRenderer
             $"{(e.Failed ? "FAILED" : string.IsNullOrEmpty(e.Gen?.Glsl) ? "from the shader pack" : "translated")}{(e.Gen?.AttributeFallback == true ? ", attribute fallback" : "")}");
     }
 
-    void DbgFragmentShader(FsEntry e, DrawCommand d, bool fetchInput)
+    private void DbgFragmentShader(FsEntry e, DrawCommand d, bool fetchInput)
     {
         if (!_dbgSeen.Add($"fs{e.ProgramHash:X16}{e.HintKey:X16}"))
         {
             return;
         }
 
-        var fp = d.FragmentProgram;
-        var prog = fp.Info.Program;
+        GxmFragmentProgram fp = d.FragmentProgram;
+        GxpProgram prog = fp.Info.Program;
         Dbg($"new fragment shader {e.ProgramHash:X16} hint {e.HintKey:X16}: output fmt 0x{fp.OutputFormat:X} param {prog.OutputParamType}x{prog.OutputCompCount} start {prog.FragmentOutputStart}, " +
             $"program msaa mode {fp.MultisampleMode}, raw colour bits {e.Gen?.RawColorBits ?? 0}, framebuffer fetch {e.Gen?.UsesFragColor ?? false}{(fetchInput ? " (input attachment)" : "")}, " +
-            $"writes depth {e.Gen?.WritesDepth ?? false}, textures 0x{fp.Info.TexturesUsed:X}, rt 0x{_rt?.Address ?? 0:X8} fmt 0x{_rt?.ColorFormat ?? 0:X8} ({_rt?.Format}), scene msaa {MsaaPath}, " +
+            $"writes depth {e.Gen?.WritesDepth ?? false}, textures 0x{fp.Info.TexturesUsed:X}, rt 0x{_renderTarget?.Address ?? 0:X8} fmt 0x{_renderTarget?.ColorFormat ?? 0:X8} ({_renderTarget?.Format}), scene msaa {MsaaPath}, " +
             $"{(e.Failed ? "FAILED" : string.IsNullOrEmpty(e.Gen?.Glsl) ? "from the shader pack" : "translated")}");
     }
 
-    void DbgPipeline(in PipelineKey k, VsEntry vs, FsEntry fs, PrimitiveTopology topology)
+    private void DbgPipeline(in PipelineKey k, VsEntry vs, FsEntry fs, PrimitiveTopology topology)
     {
         // GXP program hashes (the key's Vs/Fs are shader module handles, meaningless in a log)
         Dbg($"new pipeline vs {vs.ProgramHash:X16} fs {fs.ProgramHash:X16} {topology} colour {(k.HasColor ? k.ColorFormat.ToString() : "none")} samples {k.Samples} " +
             $"blend {(k.Blend ? $"{k.ColorFunc}/{k.ColorSrc}/{k.ColorDst} a {k.AlphaFunc}/{k.AlphaSrc}/{k.AlphaDst}" : "off")} mask 0x{k.Mask:X} polygon {k.Polygon} layout {k.VertexLayout:X16}");
     }
 
-    void DbgRenderTarget(RenderTarget rt, Format format, List<KeyValuePair<(uint, uint, uint, uint), RenderTarget>> replaced)
+    private void DbgRenderTarget(RenderTarget rt, Format format, List<KeyValuePair<(uint, uint, uint, uint), RenderTarget>> replaced)
     {
         var sb = new StringBuilder($"new render target 0x{rt.Address:X8} {rt.Width}x{rt.Height} stride {rt.Stride} fmt 0x{rt.ColorFormat:X8} -> {format}");
-        foreach (var (_, old) in replaced)
+        foreach (((uint, uint, uint, uint) _, RenderTarget? old) in replaced)
         {
             sb.Append($"; replaces 0x{old.Address:X8} {old.Width}x{old.Height} fmt 0x{old.ColorFormat:X8} ({old.Format})");
         }
 
         uint bytes = rt.Stride * (uint)Formats.ColorBytesPerPixel(rt.ColorFormat) * rt.Height;
-        foreach (var o in _renderTargets.Values)
+        foreach (RenderTarget o in _renderTargets.Values)
         {
             if (o == rt)
             {
@@ -511,18 +512,18 @@ public sealed unsafe partial class VulkanRenderer
         Dbg(sb.ToString());
     }
 
-    void DbgScene(BeginSceneCommand b)
+    private void DbgScene(BeginSceneCommand b)
     {
-        if (!_dbgSeen.Add($"sc{_rt?.Address ?? 0:X8}{_rt?.ColorFormat ?? 0:X8}{b.Width}x{b.Height}{b.Multisample}{b.Color?.Downscale}{b.Depth?.DepthData ?? 0:X8}{MsaaPath}"))
+        if (!_dbgSeen.Add($"sc{_renderTarget?.Address ?? 0:X8}{_renderTarget?.ColorFormat ?? 0:X8}{b.Width}x{b.Height}{b.Multisample}{b.Color?.Downscale}{b.Depth?.DepthData ?? 0:X8}{MsaaPath}"))
         {
             return;
         }
 
-        Dbg($"new scene setup: rt 0x{_rt?.Address ?? 0:X8} {_rt?.Width}x{_rt?.Height} fmt 0x{_rt?.ColorFormat ?? 0:X8} ({_rt?.Format}) scene {b.Width}x{b.Height} gxm msaa {b.Multisample} downscale {b.Color?.Downscale} -> {MsaaPath}" +
+        Dbg($"new scene setup: rt 0x{_renderTarget?.Address ?? 0:X8} {_renderTarget?.Width}x{_renderTarget?.Height} fmt 0x{_renderTarget?.ColorFormat ?? 0:X8} ({_renderTarget?.Format}) scene {b.Width}x{b.Height} gxm msaa {b.Multisample} downscale {b.Color?.Downscale} -> {MsaaPath}" +
             $", depth 0x{b.Depth?.DepthData ?? 0:X8} stencil 0x{b.Depth?.StencilData ?? 0:X8} fmt 0x{b.Depth?.Format ?? 0:X8}, gamma {b.Color?.GammaMode}");
     }
 
-    void DbgTextureFormat(GxmTextureDesc d, uint w, uint h)
+    private void DbgTextureFormat(GxmTextureDesc d, uint w, uint h)
     {
         if (!_dbgSeen.Add($"tf{d.Format:X8}{d.TextureType:X8}"))
         {
@@ -533,10 +534,10 @@ public sealed unsafe partial class VulkanRenderer
     }
 
     /// <summary>Several colour targets contain a sampled address: which ones (the first compatible one in this order is used).</summary>
-    void DbgTextureOverlap(GxmTextureDesc d)
+    private void DbgTextureOverlap(GxmTextureDesc d)
     {
         uint addr = d.DataAddress;
-        var candidates = TargetsContaining(addr);
+        List<RenderTarget> candidates = TargetsContaining(addr);
         int n = candidates.Count;
         if (n < 2 || !_dbgOverlapSeen.Add((addr, d.Format, n)))
         {
@@ -544,7 +545,7 @@ public sealed unsafe partial class VulkanRenderer
         }
 
         var sb = new StringBuilder();
-        foreach (var rt in candidates)
+        foreach (RenderTarget rt in candidates)
         {
             sb.Append($" [0x{rt.Address:X8} {rt.Width}x{rt.Height} fmt 0x{rt.ColorFormat:X8} lastScene {rt.LastScene}]");
         }
@@ -553,13 +554,13 @@ public sealed unsafe partial class VulkanRenderer
         Dbg($"texture 0x{addr:X8} fmt 0x{d.Format:X8} {d.Width}x{d.Height} lies in {n} render targets, tried in this order:{set}");
     }
 
-    void DbgDepthOverlap(uint addr, DepthTarget chosen, bool stencil)
+    private void DbgDepthOverlap(uint addr, DepthTarget chosen, bool stencil)
     {
         int n = 0;
         for (int pass = 0; pass < 2; pass++)
         {
-            var sb = pass == 1 ? new StringBuilder() : null;
-            foreach (var dt in _depthTargets.Values)
+            StringBuilder? sb = pass == 1 ? new StringBuilder() : null;
+            foreach (DepthTarget dt in _depthTargets.Values)
             {
                 bool inDepth = dt.Address != 0 && addr >= dt.Address && addr < dt.Address + dt.StrideBytes * dt.Height;
                 bool inStencil = dt.StencilAddress != 0 && addr >= dt.StencilAddress && addr < dt.StencilAddress + dt.StencilStrideBytes * dt.Height;

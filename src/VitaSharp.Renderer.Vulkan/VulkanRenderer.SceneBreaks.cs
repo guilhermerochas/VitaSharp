@@ -28,25 +28,25 @@ namespace VitaSharp.Renderer.Vulkan;
 public sealed unsafe partial class VulkanRenderer
 {
     /// <summary>VITASHARP_SCENE_BREAKS=strict: no hoisting, and desktop GPUs begin single-sampled renderings directly.</summary>
-    static readonly bool StrictSceneBreaks = string.Equals(Environment.GetEnvironmentVariable(EnvVars.SceneBreaks)?.Trim(), "strict", StringComparison.OrdinalIgnoreCase);
+    private static readonly bool s_strictSceneBreaks = string.Equals(Environment.GetEnvironmentVariable(EnvVars.SceneBreaks)?.Trim(), "strict", StringComparison.OrdinalIgnoreCase);
 
     /// <summary>Single-sampled renderings are recorded into secondaries and begun when they end.</summary>
-    bool DeferredRenderings => TiledRenderings || UseRenderPasses || !StrictSceneBreaks;
+    private bool DeferredRenderings => TiledRenderings || UseRenderPasses || !s_strictSceneBreaks;
 
     /// <summary>Work is being recorded into the primary, before the open (deferred) rendering.</summary>
-    bool _hoisting;
+    private bool _hoisting;
     /// <summary>Serial of the open rendering (bumped when one begins).</summary>
-    long _renderingSerial;
+    private long _renderingSerial;
     /// <summary>Image view -> serial of the latest rendering a draw binds it in (an upper bound: the next serial
     /// when no rendering is open, see <see cref="NoteSampled"/>).</summary>
-    readonly Dictionary<ulong, long> _sampledIn = new();
+    private readonly Dictionary<ulong, long> _sampledIn = new();
 
-    long _statRenderings, _statScenes, _statHoisted;
-    readonly Dictionary<string, long> _breakReasons = new(), _hoistReasons = new();
+    private long _statRenderings, _statScenes, _statHoisted;
+    private readonly Dictionary<string, long> _breakReasons = new(), _hoistReasons = new();
 
     /// <summary>A draw is about to bind <paramref name="view"/> for sampling. The draw lands in the open rendering or,
     /// if one ends before the draw is recorded, in the next one: the stamp is the later of the two.</summary>
-    void NoteSampled(ImageView view)
+    private void NoteSampled(ImageView view)
     {
         if (view.Handle != 0)
         {
@@ -56,24 +56,24 @@ public sealed unsafe partial class VulkanRenderer
 
     /// <summary>A draw of the open rendering, or of an ended one that will be begun together with it (merge, see
     /// VulkanRenderer.Tiler.cs), samples <paramref name="view"/>.</summary>
-    bool SampledByOpenRendering(ImageView view) =>
+    private bool SampledByOpenRendering(ImageView view) =>
         view.Handle != 0 && _sampledIn.TryGetValue(view.Handle, out long s) && s >= (_chain.Count > 0 ? _chainStartSerial : _renderingSerial);
 
     /// <summary>Pixel rectangles (inclusive) the draws of the open rendering, and of the ended ones waiting to be
     /// begun with it, may have written (their region clips): a copy of another part of the scene's own surface sees
     /// the same pixels before them as after them (post-processing atlases: Killzone draws pass after pass into regions
     /// of one surface, each reading the previous region).</summary>
-    readonly List<(int X0, int Y0, int X1, int Y1)> _drawnRects = new();
-    bool _drawnAll;
+    private readonly List<(int X0, int Y0, int X1, int Y1)> _drawnRects = new();
+    private bool _drawnAll;
 
-    void ResetDrawn()
+    private void ResetDrawn()
     {
         _drawnRects.Clear();
         _drawnAll = false;
     }
 
     /// <summary>A draw into the scene's surface was recorded in the open rendering.</summary>
-    void NoteDrawn()
+    private void NoteDrawn()
     {
         if (_drawnAll)
         {
@@ -85,7 +85,7 @@ public sealed unsafe partial class VulkanRenderer
             _drawnAll = true;
             return;
         }
-        var r = (_drawMinX, _drawMinY, _drawMaxX, _drawMaxY);
+        (int _drawMinX, int _drawMinY, int _drawMaxX, int _drawMaxY) r = (_drawMinX, _drawMinY, _drawMaxX, _drawMaxY);
         if (_drawnRects.Count > 0 && _drawnRects[^1] == r)
         {
             return;
@@ -100,7 +100,7 @@ public sealed unsafe partial class VulkanRenderer
     }
 
     /// <summary>The surface rectangle may hold pixels drawn by the open rendering (or the renderings merged with it).</summary>
-    bool DrawnInOpen(uint x, uint y, uint w, uint h)
+    private bool DrawnInOpen(uint x, uint y, uint w, uint h)
     {
         if (_drawnAll)
         {
@@ -108,7 +108,7 @@ public sealed unsafe partial class VulkanRenderer
         }
 
         long x1 = (long)x + w - 1, y1 = (long)y + h - 1;
-        foreach (var r in _drawnRects)
+        foreach ((int X0, int Y0, int X1, int Y1) r in _drawnRects)
         {
             if (r.X0 <= x1 && r.X1 >= x && r.Y0 <= y1 && r.Y1 >= y)
             {
@@ -120,7 +120,7 @@ public sealed unsafe partial class VulkanRenderer
     }
 
     /// <summary>Counted for the PERF gpu line: why renderings were ended before their scene did.</summary>
-    void NoteBreak(string caller)
+    private void NoteBreak(string caller)
     {
         if (!_rendering)
         {
@@ -138,7 +138,7 @@ public sealed unsafe partial class VulkanRenderer
     /// </summary>
     /// <param name="readRect">the part of <paramref name="reads"/> that is read: when it is the scene's own surface and
     /// no draw of the open rendering touched that part, the work is still hoisted (plain single-sampled scenes only)</param>
-    OutsideScope BeginOutside(ImageView writes = default, RenderTarget? reads = null, bool readsDepth = false, (uint X, uint Y, uint W, uint H)? readRect = null,
+    private OutsideScope BeginOutside(ImageView writes = default, RenderTarget? reads = null, bool readsDepth = false, (uint X, uint Y, uint W, uint H)? readRect = null,
         [CallerMemberName] string caller = "")
     {
         if (_hoisting)
@@ -146,9 +146,9 @@ public sealed unsafe partial class VulkanRenderer
             return default; // nested: already in the primary
         }
 
-        bool readsOwn = reads != null && reads == _rt
-            && !(readRect is { } rr && !_ms && !_ss && !_msaaNoDownscale && _tileCmd.Handle != 0 && !DrawnInOpen(rr.X, rr.Y, rr.W, rr.H));
-        if (_rendering && !StrictSceneBreaks && (_tileCmd.Handle != 0 || _msCmd.Handle != 0)
+        bool readsOwn = reads != null && reads == _renderTarget
+            && !(readRect is { } rr && !_multisampled && !_supersampled && !_msaaNoDownscale && _tileCmd.Handle != 0 && !DrawnInOpen(rr.X, rr.Y, rr.W, rr.H));
+        if (_rendering && !s_strictSceneBreaks && (_tileCmd.Handle != 0 || _msCmd.Handle != 0)
             && !readsOwn && !readsDepth && !SampledByOpenRendering(writes))
         {
             _hoisting = true;
@@ -160,7 +160,7 @@ public sealed unsafe partial class VulkanRenderer
         return default;
     }
 
-    readonly struct OutsideScope(VulkanRenderer? owner) : IDisposable
+    private readonly struct OutsideScope(VulkanRenderer? owner) : IDisposable
     {
         public void Dispose()
         {
@@ -170,7 +170,7 @@ public sealed unsafe partial class VulkanRenderer
 
     /// <summary>Commands are recorded into the primary between renderings: ended renderings waiting for a merge are
     /// begun first.</summary>
-    CommandBuffer PrimaryTouched()
+    private CommandBuffer PrimaryTouched()
     {
         _primaryTouches++;
         // a command for a frame that was submitted in between (a sync point submits the frame early; per-scene
@@ -191,21 +191,21 @@ public sealed unsafe partial class VulkanRenderer
         return F.Cmd;
     }
 
-    long _primaryTouches;
+    private long _primaryTouches;
 
     /// <summary>The two callers of PrimaryTouched, from the stack trace text (StackFrame.GetMethod is not trim-safe).</summary>
-    static string CallerChain()
+    private static string CallerChain()
     {
-        var lines = new System.Diagnostics.StackTrace(2, false).ToString()
+        string[] lines = new System.Diagnostics.StackTrace(2, false).ToString()
             .Split('\n', StringSplitOptions.RemoveEmptyEntries | StringSplitOptions.TrimEntries);
         return lines.Length == 0 ? "?" : string.Join(" <- ", lines.Take(2).Select(l => l.StartsWith("at ") ? l[3..] : l));
     }
 
-    static string TopReasons(Dictionary<string, long> d) =>
+    private static string TopReasons(Dictionary<string, long> d) =>
         d.Count == 0 ? "none" : string.Join(", ", d.OrderByDescending(kv => kv.Value).Take(6).Select(kv => $"{kv.Key} {kv.Value}"));
 
     /// <summary>"renderings: N in M scenes (R per scene), hoisted H (...), breaks (...)" for the PERF gpu line.</summary>
-    string SceneBreakReport() =>
-        $"renderings {_statRenderings - _statMerged} in {_statScenes} scenes ({(double)(_statRenderings - _statMerged) / Math.Max(1, _statScenes):F2} per scene{(StrictSceneBreaks ? ", strict" : "")}; " +
+    private string SceneBreakReport() =>
+        $"renderings {_statRenderings - _statMerged} in {_statScenes} scenes ({(double)(_statRenderings - _statMerged) / Math.Max(1, _statScenes):F2} per scene{(s_strictSceneBreaks ? ", strict" : "")}; " +
         $"{_statMerged} more merged into the previous one), hoisted {_statHoisted} ({TopReasons(_hoistReasons)}), mid-scene breaks: {TopReasons(_breakReasons)}";
 }

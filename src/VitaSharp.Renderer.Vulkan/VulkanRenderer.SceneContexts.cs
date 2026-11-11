@@ -15,7 +15,7 @@ namespace VitaSharp.Renderer.Vulkan;
 /// </summary>
 public sealed unsafe partial class VulkanRenderer
 {
-    sealed class SuspendedScene
+    private sealed class SuspendedScene
     {
         public BeginSceneCommand? Scene;
         public RenderTarget? Rt;
@@ -32,15 +32,15 @@ public sealed unsafe partial class VulkanRenderer
     }
 
     /// <summary>The process whose scene state is current (0: none named yet).</summary>
-    int _scenePid;
-    readonly Dictionary<int, SuspendedScene> _suspendedScenes = new();
-    long _statSceneSwitches;
+    private int _scenePid;
+    private readonly Dictionary<int, SuspendedScene> _suspendedScenes = new();
+    private long _statSceneSwitches;
     /// <summary>Allocates <see cref="_sceneSerial"/>: a resumed scene keeps its serial, so new scenes cannot count on
     /// the current one's.</summary>
-    long _sceneSerialNext;
+    private long _sceneSerialNext;
 
     /// <summary>Makes <paramref name="c"/>'s process the current scene context (see the class comment).</summary>
-    void SwitchSceneProcess(GpuCommand c)
+    private void SwitchSceneProcess(GpuCommand c)
     {
         int pid = c.Pid;
         if (pid == 0 || pid == _scenePid)
@@ -54,22 +54,22 @@ public sealed unsafe partial class VulkanRenderer
         }
 
         _scenePid = pid;
-        if (_suspendedScenes.Remove(pid, out var s))
+        if (_suspendedScenes.Remove(pid, out SuspendedScene? s))
         {
             ResumeScene(s);
         }
     }
 
-    void SuspendScene(int pid)
+    private void SuspendScene(int pid)
     {
         // a mid-scene break: the rendering ends with its attachments stored (multisampled samples kept unresolved) and
         // the renderings waiting to be merged are begun now, before the other process's work is recorded
-        EndRendering(resolve: !_ms);
+        EndRendering(resolve: !_multisampled);
         FlushChain(false);
         _suspendedScenes[pid] = new SuspendedScene
         {
             Scene = _scene,
-            Rt = _rt,
+            Rt = _renderTarget,
             RtAttachFormat = _rtAttachFormat,
             RtGamma = _rtGamma,
             DepthNeedsClear = _depthNeedsClear,
@@ -77,23 +77,23 @@ public sealed unsafe partial class VulkanRenderer
             SceneW = _sceneW,
             SceneH = _sceneH,
             SceneSerial = _sceneSerial,
-            Ss = _ss,
+            Ss = _supersampled,
             SsUnresolved = _ssUnresolved,
-            Ms = _ms,
+            Ms = _multisampled,
             MsNeedsLoad = _msNeedsLoad,
             MsUnresolved = _msUnresolved,
             MsSceneRaw = _msSceneRaw,
             MsaaNoDownscale = _msaaNoDownscale,
             MsSamples = _msSamples,
             Tw1Active = _tw1Active,
-            Tw1 = _tw1,
+            Tw1 = _tileWord1,
             Regions = [.. _sceneRegions],
         };
         _inScene = false;
         _scene = null;
-        _rt = null;
+        _renderTarget = null;
         _depth = null;
-        _ss = _ssUnresolved = _ms = _msUnresolved = _msaaNoDownscale = false;
+        _supersampled = _ssUnresolved = _multisampled = _msUnresolved = _msaaNoDownscale = false;
         _sceneRegions.Clear();
         EndTileWord1();
         if ((++_statSceneSwitches & (_statSceneSwitches - 1)) == 0)
@@ -102,25 +102,25 @@ public sealed unsafe partial class VulkanRenderer
         }
     }
 
-    void ResumeScene(SuspendedScene s)
+    private void ResumeScene(SuspendedScene s)
     {
         // the current context has no open rendering (its scene ended, or it never had one)
         EndRendering();
         FlushChain(false);
         _inScene = true;
-        (_scene, _rt, _rtAttachFormat, _rtGamma, _depthNeedsClear, _depth, _sceneW, _sceneH, _sceneSerial) =
+        (_scene, _renderTarget, _rtAttachFormat, _rtGamma, _depthNeedsClear, _depth, _sceneW, _sceneH, _sceneSerial) =
             (s.Scene, s.Rt, s.RtAttachFormat, s.RtGamma, s.DepthNeedsClear, s.Depth, s.SceneW, s.SceneH, s.SceneSerial);
-        (_ss, _ssUnresolved, _ms, _msNeedsLoad, _msUnresolved, _msSceneRaw, _msaaNoDownscale, _msSamples) =
+        (_supersampled, _ssUnresolved, _multisampled, _msNeedsLoad, _msUnresolved, _msSceneRaw, _msaaNoDownscale, _msSamples) =
             (s.Ss, s.SsUnresolved, s.Ms, s.MsNeedsLoad, s.MsUnresolved, s.MsSceneRaw, s.MsaaNoDownscale, s.MsSamples);
-        (_tw1Active, _tw1) = (s.Tw1Active, s.Tw1);
+        (_tw1Active, _tileWord1) = (s.Tw1Active, s.Tw1);
         _sceneRegions.Clear();
         _sceneRegions.AddRange(s.Regions);
-        _rt?.LastTouchedFrame = FrameCount;
+        _renderTarget?.LastTouchedFrame = FrameCount;
         _depth?.LastUsedFrame = _depth.LastTouchedFrame = FrameCount;
     }
 
     /// <summary>A process ended (<see cref="ProcessEndedCommand"/>, already made current): the scene it left open ends.</summary>
-    void EndProcessScene(ProcessEndedCommand c)
+    private void EndProcessScene(ProcessEndedCommand c)
     {
         if (_inScene)
         {
@@ -131,9 +131,9 @@ public sealed unsafe partial class VulkanRenderer
     }
 
     /// <summary>A surface a suspended scene renders into (never evicted).</summary>
-    bool InSuspendedScene(RenderTarget rt)
+    private bool InSuspendedScene(RenderTarget rt)
     {
-        foreach (var s in _suspendedScenes.Values)
+        foreach (SuspendedScene s in _suspendedScenes.Values)
         {
             if (s.Rt == rt)
             {
@@ -144,9 +144,9 @@ public sealed unsafe partial class VulkanRenderer
         return false;
     }
 
-    bool InSuspendedScene(DepthTarget dt)
+    private bool InSuspendedScene(DepthTarget dt)
     {
-        foreach (var s in _suspendedScenes.Values)
+        foreach (SuspendedScene s in _suspendedScenes.Values)
         {
             if (s.Depth == dt)
             {

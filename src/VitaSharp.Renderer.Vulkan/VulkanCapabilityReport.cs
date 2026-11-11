@@ -1,6 +1,7 @@
 using Silk.NET.Core;
 using Silk.NET.Vulkan;
 using System.Diagnostics.CodeAnalysis;
+using System.Reflection;
 using System.Text;
 
 namespace VitaSharp.Renderer.Vulkan;
@@ -11,14 +12,14 @@ namespace VitaSharp.Renderer.Vulkan;
 /// 1.0-1.3 feature the device lacks, the limits the renderer depends on, the formats it prefers, and the extension list.
 /// <see cref="Core.Gpu.GpuCapabilities.Describe"/> is the renderer's interpretation of it (features used, quirks).
 /// </summary>
-static unsafe class VulkanCapabilityReport
+internal static unsafe class VulkanCapabilityReport
 {
     /// <summary>Names of the Bool32 fields of a feature struct that are false (true ones go to <paramref name="have"/> when given).</summary>
     public static List<string> Missing<[DynamicallyAccessedMembers(DynamicallyAccessedMemberTypes.PublicFields)] T>(in T features, List<string>? have = null) where T : struct
     {
         var missing = new List<string>();
         object boxed = features;
-        foreach (var f in typeof(T).GetFields())
+        foreach (FieldInfo f in typeof(T).GetFields())
         {
             if (f.FieldType != typeof(Bool32))
             {
@@ -53,7 +54,7 @@ static unsafe class VulkanCapabilityReport
             r.Add($"Vulkan 1.3 features missing: {Join(Missing(f13))}");
         }
 
-        var l = props.Limits;
+        PhysicalDeviceLimits l = props.Limits;
         r.Add($"Vulkan limits: maxClipDistances {l.MaxClipDistances}, vertex outputs {l.MaxVertexOutputComponents}, fragment inputs {l.MaxFragmentInputComponents}, " +
                      $"colour attachments {l.MaxColorAttachments}, viewport {l.MaxViewportDimensions[0]}x{l.MaxViewportDimensions[1]}, max 2D {l.MaxImageDimension2D}, " +
                      $"LOD bias {l.MaxSamplerLodBias}, anisotropy {l.MaxSamplerAnisotropy}, line width {l.LineWidthRange[0]}-{l.LineWidthRange[1]}, " +
@@ -73,5 +74,5 @@ static unsafe class VulkanCapabilityReport
         return r;
     }
 
-    static string Join(List<string> names) => names.Count == 0 ? "none" : string.Join(" ", names);
+    private static string Join(List<string> names) => names.Count == 0 ? "none" : string.Join(" ", names);
 }

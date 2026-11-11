@@ -99,8 +99,8 @@ public sealed unsafe class VkCore : IDisposable
     public PhysicalDeviceMemoryProperties MemoryProperties;
     public Format DepthFormat;
     public string DeviceName = "";
-    ExtDebugUtils? _debugUtils;
-    DebugUtilsMessengerEXT _messenger;
+    private ExtDebugUtils? _debugUtils;
+    private DebugUtilsMessengerEXT _messenger;
 
     /// <summary>Effective capabilities and driver quirks (built in <see cref="CreateDevice"/>; see Core/Gpu/GpuQuirks.cs).</summary>
     public GpuCapabilities Caps = null!;
@@ -120,7 +120,7 @@ public sealed unsafe class VkCore : IDisposable
         DepthFormat = PickDepthFormat();
     }
 
-    void CreateInstance(IPresentationSurface? surface, bool validation)
+    private void CreateInstance(IPresentationSurface? surface, bool validation)
     {
         var exts = new List<string>(surface?.RequiredInstanceExtensions ?? []);
         var layers = new List<string>();
@@ -134,7 +134,7 @@ public sealed unsafe class VkCore : IDisposable
                 Vk.EnumerateInstanceLayerProperties(ref lc, p);
             }
 
-            foreach (var l in props)
+            foreach (LayerProperties l in props)
             {
                 if (Marshal.PtrToStringAnsi((nint)l.LayerName) == "VK_LAYER_KHRONOS_validation")
                 {
@@ -156,19 +156,19 @@ public sealed unsafe class VkCore : IDisposable
         }
         // MoltenVK (macOS) and other non-conformant implementations are only enumerated by loaders >= 1.3.216 when
         // the application opts in with VK_KHR_portability_enumeration
-        var available = InstanceExtensions();
-        var flags = InstanceCreateFlags.None;
+        HashSet<string> available = InstanceExtensions();
+        InstanceCreateFlags flags = InstanceCreateFlags.None;
         if (available.Contains(PortabilityEnumeration))
         {
             exts.Add(PortabilityEnumeration);
             flags |= InstanceCreateFlags.EnumeratePortabilityBitKhr;
         }
-        foreach (var e in exts.Where(e => !available.Contains(e)).ToList())
+        foreach (string? e in exts.Where(e => !available.Contains(e)).ToList())
         {
             Log.Warn($"Vulkan instance extension {e} is not available ({VulkanLoader.InstallHint()})");
         }
 
-        var appName = (byte*)SilkMarshal.StringToPtr("VitaSharp");
+        byte* appName = (byte*)SilkMarshal.StringToPtr("VitaSharp");
         var app = new ApplicationInfo
         {
             SType = StructureType.ApplicationInfo,
@@ -178,8 +178,8 @@ public sealed unsafe class VkCore : IDisposable
             EngineVersion = new Version32(0, 1, 0),
             ApiVersion = Vk.Version13,
         };
-        var extPtrs = (byte**)SilkMarshal.StringArrayToPtr(exts);
-        var layerPtrs = (byte**)SilkMarshal.StringArrayToPtr(layers);
+        byte** extPtrs = (byte**)SilkMarshal.StringArrayToPtr(exts);
+        byte** layerPtrs = (byte**)SilkMarshal.StringArrayToPtr(layers);
         var ci = new InstanceCreateInfo
         {
             SType = StructureType.InstanceCreateInfo,
@@ -192,12 +192,12 @@ public sealed unsafe class VkCore : IDisposable
         };
         // VITASHARP_VK_VALIDATION=sync: synchronization validation too (VK_EXT_layer_settings, implemented by the layer;
         // Android has no vk_layer_settings.txt or environment for it)
-        var layerName = (byte*)SilkMarshal.StringToPtr("VK_LAYER_KHRONOS_validation");
-        var syncName = (byte*)SilkMarshal.StringToPtr("validate_sync");
+        byte* layerName = (byte*)SilkMarshal.StringToPtr("VK_LAYER_KHRONOS_validation");
+        byte* syncName = (byte*)SilkMarshal.StringToPtr("validate_sync");
         // no per-VUID limit: every hazard of one VUID (SYNC-HAZARD-WRITE-AFTER-READ) is reported, the log keeps one per kind
-        var limitName = (byte*)SilkMarshal.StringToPtr("enable_message_limit");
+        byte* limitName = (byte*)SilkMarshal.StringToPtr("enable_message_limit");
         uint on = 1, off = 0;
-        var setting = stackalloc LayerSettingEXT[2]
+        LayerSettingEXT* setting = stackalloc LayerSettingEXT[2]
         {
             new() { PLayerName = layerName, PSettingName = syncName, Type = LayerSettingTypeEXT.Bool32Ext, ValueCount = 1, PValues = &on },
             new() { PLayerName = layerName, PSettingName = limitName, Type = LayerSettingTypeEXT.Bool32Ext, ValueCount = 1, PValues = &off },
@@ -238,10 +238,10 @@ public sealed unsafe class VkCore : IDisposable
         : OperatingSystem.IsLinux() ? "Install the validation layers package (e.g. `sudo apt install vulkan-validationlayers`) or the LunarG Vulkan SDK."
         : "Install the LunarG Vulkan SDK (https://vulkan.lunarg.com/sdk/home), or unpack a Vulkan-ValidationLayers release (https://github.com/KhronosGroup/Vulkan-ValidationLayers/releases) and set VK_ADD_LAYER_PATH to the folder with VkLayer_khronos_validation.json.";
 
-    const string PortabilityEnumeration = "VK_KHR_portability_enumeration";
-    const string PortabilitySubset = "VK_KHR_portability_subset";
+    private const string PortabilityEnumeration = "VK_KHR_portability_enumeration";
+    private const string PortabilitySubset = "VK_KHR_portability_subset";
 
-    HashSet<string> InstanceExtensions()
+    private HashSet<string> InstanceExtensions()
     {
         uint n = 0;
         Vk.EnumerateInstanceExtensionProperties((byte*)null, ref n, null);
@@ -252,7 +252,7 @@ public sealed unsafe class VkCore : IDisposable
         }
 
         var set = new HashSet<string>();
-        foreach (var e in props)
+        foreach (ExtensionProperties e in props)
         {
             set.Add(Marshal.PtrToStringAnsi((nint)e.ExtensionName) ?? "");
         }
@@ -260,7 +260,7 @@ public sealed unsafe class VkCore : IDisposable
         return set;
     }
 
-    HashSet<string> DeviceExtensions(PhysicalDevice d)
+    private HashSet<string> DeviceExtensions(PhysicalDevice d)
     {
         uint n = 0;
         Vk.EnumerateDeviceExtensionProperties(d, (byte*)null, ref n, null);
@@ -271,7 +271,7 @@ public sealed unsafe class VkCore : IDisposable
         }
 
         var set = new HashSet<string>();
-        foreach (var e in props)
+        foreach (ExtensionProperties e in props)
         {
             set.Add(Marshal.PtrToStringAnsi((nint)e.ExtensionName) ?? "");
         }
@@ -279,17 +279,17 @@ public sealed unsafe class VkCore : IDisposable
         return set;
     }
 
-    static uint DebugCallback(DebugUtilsMessageSeverityFlagsEXT severity, DebugUtilsMessageTypeFlagsEXT type, DebugUtilsMessengerCallbackDataEXT* data, void* user)
+    private static uint DebugCallback(DebugUtilsMessageSeverityFlagsEXT severity, DebugUtilsMessageTypeFlagsEXT type, DebugUtilsMessengerCallbackDataEXT* data, void* user)
     {
-        var msg = Marshal.PtrToStringAnsi((nint)data->PMessage) ?? "";
+        string msg = Marshal.PtrToStringAnsi((nint)data->PMessage) ?? "";
         // once per kind of message: handles stripped (they differ per frame and command buffer), the rest kept
         // (a synchronization hazard names the conflicting command after the first 120 characters)
-        var kind = System.Text.RegularExpressions.Regex.Replace(msg, "0x[0-9a-fA-F]+", "#");
+        string kind = System.Text.RegularExpressions.Regex.Replace(msg, "0x[0-9a-fA-F]+", "#");
         Log.WarnOnce("vk:" + kind[..Math.Min(kind.Length, 400)], $"[Vulkan] {msg}");
         return Vk.False;
     }
 
-    void PickDevice()
+    private void PickDevice()
     {
         uint count = 0;
         Vk.EnumeratePhysicalDevices(Instance, ref count, null);
@@ -307,9 +307,9 @@ public sealed unsafe class VkCore : IDisposable
         PhysicalDevice best = default;
         int bestScore = int.MinValue;
         var rejected = new List<string>();
-        foreach (var d in devices)
+        foreach (PhysicalDevice d in devices)
         {
-            Vk.GetPhysicalDeviceProperties(d, out var props);
+            Vk.GetPhysicalDeviceProperties(d, out PhysicalDeviceProperties props);
             // Vulkan 1.1 is the minimum: older devices render with render passes and static pipeline state
             // (GpuQuirk.RenderPasses); 1.3 devices are preferred within a device type
             if (props.ApiVersion < Vk.Version11)
@@ -324,7 +324,7 @@ public sealed unsafe class VkCore : IDisposable
                 _ => 1000,
             } + (props.ApiVersion >= Vk.Version13 ? 100 : 0);
             // VITASHARP_GPU_DEVICE=<index or name part>: pick a specific device (an integrated GPU with ASTC, say)
-            if (DeviceFilter is { } want && !(int.TryParse(want, out int wi) ? wi == Array.IndexOf(devices, d)
+            if (s_deviceFilter is { } want && !(int.TryParse(want, out int wi) ? wi == Array.IndexOf(devices, d)
                     : (Marshal.PtrToStringAnsi((nint)props.DeviceName) ?? "").Contains(want, StringComparison.OrdinalIgnoreCase)))
             {
                 score -= 10000;
@@ -353,15 +353,15 @@ public sealed unsafe class VkCore : IDisposable
         Log.Info($"Vulkan device: {DeviceName} (API {Properties.ApiVersion >> 22}.{(Properties.ApiVersion >> 12) & 0x3FF})");
     }
 
-    const string RoaaExt = "VK_EXT_rasterization_order_attachment_access", RoaaArm = "VK_ARM_rasterization_order_attachment_access";
-    const string PushDescriptorExt = "VK_KHR_push_descriptor", CustomBorderColorExt = "VK_EXT_custom_border_color";
+    private const string RoaaExt = "VK_EXT_rasterization_order_attachment_access", RoaaArm = "VK_ARM_rasterization_order_attachment_access";
+    private const string PushDescriptorExt = "VK_KHR_push_descriptor", CustomBorderColorExt = "VK_EXT_custom_border_color";
 
     /// <summary>VK_EXT/ARM_rasterization_order_attachment_access is enabled: framebuffer-fetch reads of the colour
     /// attachment are ordered against earlier fragments without per-draw barriers (Adreno, Mali).</summary>
     public bool RasterizationOrderColor;
 
     /// <summary>The driver's identity and what it supports, for <see cref="GpuQuirkTable.Select"/>.</summary>
-    GpuDeviceInfo DescribeDevice(in PhysicalDeviceFeatures f, in PhysicalDeviceVulkan11Features f11, in PhysicalDeviceVulkan12Features f12,
+    private GpuDeviceInfo DescribeDevice(in PhysicalDeviceFeatures f, in PhysicalDeviceVulkan11Features f11, in PhysicalDeviceVulkan12Features f12,
         HashSet<string> exts, bool roaa, uint timestampBits, bool bcPatched, bool dynamicRendering)
     {
         uint driverId = 0;
@@ -375,7 +375,7 @@ public sealed unsafe class VkCore : IDisposable
             driverName = Marshal.PtrToStringAnsi((nint)drv.DriverName) ?? "";
             driverInfo = Marshal.PtrToStringAnsi((nint)drv.DriverInfo) ?? "";
         }
-        var feats = GpuFeature.None;
+        GpuFeature feats = GpuFeature.None;
         void Set(bool on, GpuFeature g)
         {
             if (on)
@@ -408,11 +408,11 @@ public sealed unsafe class VkCore : IDisposable
         Set(dynamicRendering, GpuFeature.DynamicRendering);
         Set(Properties.ApiVersion >= Vk.Version13, GpuFeature.ExtendedDynamicState);
         Set(f.ShaderClipDistance, GpuFeature.ShaderClipDistance);
-        var l = Properties.Limits;
+        PhysicalDeviceLimits l = Properties.Limits;
         bool unified = true;
         for (int i = 0; i < MemoryProperties.MemoryTypeCount; i++)
         {
-            var t = MemoryProperties.MemoryTypes[i].PropertyFlags;
+            MemoryPropertyFlags t = MemoryProperties.MemoryTypes[i].PropertyFlags;
             if ((t & MemoryPropertyFlags.DeviceLocalBit) != 0 && (t & MemoryPropertyFlags.HostVisibleBit) == 0)
             {
                 unified = false;
@@ -449,7 +449,7 @@ public sealed unsafe class VkCore : IDisposable
     /// <summary>Driver identity strings (name, info, version) for <see cref="GpuQuirk.PipelineCachePerDriverBuild"/>.</summary>
     public string DriverBuildId => $"{Caps.Device.DriverId}:{Caps.Device.DriverName}:{Caps.Device.DriverInfo}:{Caps.Device.DriverVersion:X8}";
 
-    void CreateDevice(bool present, GpuProfile profile)
+    private void CreateDevice(bool present, GpuProfile profile)
     {
         uint qc = 0;
         Vk.GetPhysicalDeviceQueueFamilyProperties(Physical, ref qc, null);
@@ -469,7 +469,7 @@ public sealed unsafe class VkCore : IDisposable
 
             if (present)
             {
-                SurfaceExt!.GetPhysicalDeviceSurfaceSupport(Physical, i, Surface, out var supported);
+                SurfaceExt!.GetPhysicalDeviceSurfaceSupport(Physical, i, Surface, out Bool32 supported);
                 if (!supported)
                 {
                     continue;
@@ -486,7 +486,7 @@ public sealed unsafe class VkCore : IDisposable
         float prio = 1.0f;
         var qci = new DeviceQueueCreateInfo { SType = StructureType.DeviceQueueCreateInfo, QueueFamilyIndex = QueueFamily, QueueCount = 1, PQueuePriorities = &prio };
 
-        var devExts = DeviceExtensions(Physical);
+        HashSet<string> devExts = DeviceExtensions(Physical);
         bool portability = devExts.Contains(PortabilitySubset);
 
         // what the device supports (1.1/1.2/1.3 feature structs, rasterization-order attachment access, plus the
@@ -516,7 +516,7 @@ public sealed unsafe class VkCore : IDisposable
         }
         bool dynamicRendering = api >= Vk.Version13 && has13.DynamicRendering && has13.Synchronization2;
         // the raw device capabilities, before anything can fail (phones have no vulkaninfo)
-        foreach (var line in VulkanCapabilityReport.Lines(Properties, supported2.Features, has11, has12, has13, api, devExts, FormatSupport, SupportsVertexFormat))
+        foreach (string line in VulkanCapabilityReport.Lines(Properties, supported2.Features, has11, has12, has13, api, devExts, FormatSupport, SupportsVertexFormat))
         {
             Log.Info(line);
         }
@@ -526,7 +526,7 @@ public sealed unsafe class VkCore : IDisposable
         bool bcPatched = false;
         if (!supported2.Features.TextureCompressionBC && VulkanLoader.DriverProvider is { } provider)
         {
-            var fn = Vk.GetInstanceProcAddr(Instance, "vkGetPhysicalDeviceFormatProperties");
+            PfnVoidFunction fn = Vk.GetInstanceProcAddr(Instance, "vkGetPhysicalDeviceFormatProperties");
             try
             {
                 bcPatched = fn != 0 && provider.TryEnableBcn(Properties.VendorID, Properties.DriverVersion, fn);
@@ -586,7 +586,7 @@ public sealed unsafe class VkCore : IDisposable
         void* featureChain = chain12 ? &f12 : chain13 ? &f13 : RasterizationOrderColor ? &fRoaa : null;
         // VK_KHR_portability_subset must be enabled when present, and each of its features must be enabled to be used:
         // enable whatever the device has, then degrade where the renderer depends on a missing one
-        var fPortability = hasPortability with
+        PhysicalDevicePortabilitySubsetFeaturesKHR fPortability = hasPortability with
         {
             PNext = featureChain
         };
@@ -671,7 +671,7 @@ public sealed unsafe class VkCore : IDisposable
             Log.Info($"[afbc] {CompressionControlExtension} not supported: compression cannot be queried");
         }
 
-        var extPtrs = (byte**)SilkMarshal.StringArrayToPtr(exts);
+        byte** extPtrs = (byte**)SilkMarshal.StringArrayToPtr(exts);
         var dci = new DeviceCreateInfo
         {
             SType = StructureType.DeviceCreateInfo,
@@ -691,7 +691,7 @@ public sealed unsafe class VkCore : IDisposable
             SwapchainExt = sw;
         }
         // capabilities and active quirks, once at startup (also in the F10 capture's info.txt)
-        foreach (var line in Caps.Describe().Split('\n'))
+        foreach (string line in Caps.Describe().Split('\n'))
         {
             Log.Info(line);
         }
@@ -707,13 +707,13 @@ public sealed unsafe class VkCore : IDisposable
     public bool SampleRateShading;
     /// <summary>Timestamp queries on the graphics queue (PERF gpu line).</summary>
     public bool Timestamps;
-    SampleCountFlags _sampleCountMask = (SampleCountFlags)0x7F;
+    private SampleCountFlags _sampleCountMask = (SampleCountFlags)0x7F;
 
     /// <summary>Sample counts usable for an attachment of <paramref name="format"/> with <paramref name="usage"/>
     /// (image format properties, mutable views allowed).</summary>
     public SampleCountFlags ImageSampleCounts(Format format, ImageUsageFlags usage, ImageCreateFlags flags = ImageCreateFlags.CreateMutableFormatBit)
     {
-        var r = Vk.GetPhysicalDeviceImageFormatProperties(Physical, format, ImageType.Type2D, ImageTiling.Optimal, usage, flags, out var props);
+        Result r = Vk.GetPhysicalDeviceImageFormatProperties(Physical, format, ImageType.Type2D, ImageTiling.Optimal, usage, flags, out ImageFormatProperties props);
         return r == Result.Success ? props.SampleCounts & _sampleCountMask : SampleCountFlags.Count1Bit;
     }
     /// <summary>Whether pipelines enable depthClamp. Off: GXM clips at the near plane like the hardware clip does. Until
@@ -738,7 +738,7 @@ public sealed unsafe class VkCore : IDisposable
     ///  - triangleFans, separateStencilMaskRef, constantAlphaColorBlendFactors: logged (no fallback yet).
     /// Geometry/tessellation shaders and 64-bit floats are not used by the renderer.
     /// </summary>
-    void ApplyPortabilityLimits(in PhysicalDevicePortabilitySubsetFeaturesKHR p, ref PhysicalDeviceFeatures feats)
+    private void ApplyPortabilityLimits(in PhysicalDevicePortabilitySubsetFeaturesKHR p, ref PhysicalDeviceFeatures feats)
     {
         var missing = new List<string>();
         if (!p.SamplerMipLodBias)
@@ -785,14 +785,14 @@ public sealed unsafe class VkCore : IDisposable
         Log.Info($"Vulkan portability subset (MoltenVK) on {DeviceName}; missing: {(missing.Count == 0 ? "nothing" : string.Join(", ", missing))}");
     }
 
-    Format PickDepthFormat()
+    private Format PickDepthFormat()
     {
         // D24S8 matches the Vita's S8D24 surfaces bit for bit, so depth can be copied back into guest layout
-        foreach (var f in new[] { Format.D24UnormS8Uint, Format.D32SfloatS8Uint })
+        foreach (Format f in new[] { Format.D24UnormS8Uint, Format.D32SfloatS8Uint })
         {
-            Vk.GetPhysicalDeviceFormatProperties(Physical, f, out var props);
-            const FormatFeatureFlags need = FormatFeatureFlags.DepthStencilAttachmentBit | FormatFeatureFlags.TransferSrcBit;
-            if ((props.OptimalTilingFeatures & need) == need)
+            Vk.GetPhysicalDeviceFormatProperties(Physical, f, out FormatProperties props);
+            const FormatFeatureFlags Need = FormatFeatureFlags.DepthStencilAttachmentBit | FormatFeatureFlags.TransferSrcBit;
+            if ((props.OptimalTilingFeatures & Need) == Need)
             {
                 return f;
             }
@@ -802,37 +802,37 @@ public sealed unsafe class VkCore : IDisposable
 
     /// <summary>Optimal-tiling support of a format for the capability report: S sampled, C colour attachment, B blend,
     /// D depth/stencil attachment, "-" none.</summary>
-    string FormatSupport(Format f)
+    private string FormatSupport(Format f)
     {
-        Vk.GetPhysicalDeviceFormatProperties(Physical, f, out var props);
-        var t = props.OptimalTilingFeatures;
-        var s = ((t & FormatFeatureFlags.SampledImageBit) != 0 ? "S" : "") + ((t & FormatFeatureFlags.ColorAttachmentBit) != 0 ? "C" : "")
+        Vk.GetPhysicalDeviceFormatProperties(Physical, f, out FormatProperties props);
+        FormatFeatureFlags t = props.OptimalTilingFeatures;
+        string s = ((t & FormatFeatureFlags.SampledImageBit) != 0 ? "S" : "") + ((t & FormatFeatureFlags.ColorAttachmentBit) != 0 ? "C" : "")
                 + ((t & FormatFeatureFlags.ColorAttachmentBlendBit) != 0 ? "B" : "") + ((t & FormatFeatureFlags.DepthStencilAttachmentBit) != 0 ? "D" : "");
         return s.Length == 0 ? "-" : s;
     }
 
     public bool SupportsVertexFormat(Format f)
     {
-        Vk.GetPhysicalDeviceFormatProperties(Physical, f, out var props);
+        Vk.GetPhysicalDeviceFormatProperties(Physical, f, out FormatProperties props);
         return (props.BufferFeatures & FormatFeatureFlags.VertexBufferBit) != 0;
     }
 
     public bool SupportsSampled(Format f)
     {
-        Vk.GetPhysicalDeviceFormatProperties(Physical, f, out var props);
+        Vk.GetPhysicalDeviceFormatProperties(Physical, f, out FormatProperties props);
         return (props.OptimalTilingFeatures & FormatFeatureFlags.SampledImageBit) != 0;
     }
 
     public bool SupportsColorAttachment(Format f)
     {
-        Vk.GetPhysicalDeviceFormatProperties(Physical, f, out var props);
+        Vk.GetPhysicalDeviceFormatProperties(Physical, f, out FormatProperties props);
         return (props.OptimalTilingFeatures & FormatFeatureFlags.ColorAttachmentBlendBit) != 0;
     }
 
     /// <summary>Colour attachment without blending (integer formats never blend).</summary>
     public bool SupportsUnblendedColorAttachment(Format f)
     {
-        Vk.GetPhysicalDeviceFormatProperties(Physical, f, out var props);
+        Vk.GetPhysicalDeviceFormatProperties(Physical, f, out FormatProperties props);
         return (props.OptimalTilingFeatures & FormatFeatureFlags.ColorAttachmentBit) != 0;
     }
 
@@ -858,10 +858,10 @@ public sealed unsafe class VkCore : IDisposable
     public (Buffer Buffer, DeviceMemory Memory, nint Mapped) CreateReadbackBuffer(ulong size, BufferUsageFlags usage, MemCat category, out bool coherent)
     {
         var bci = new BufferCreateInfo { SType = StructureType.BufferCreateInfo, Size = size, Usage = usage, SharingMode = SharingMode.Exclusive };
-        Vk.CreateBuffer(Device, in bci, null, out var buf).Ok("vkCreateBuffer");
+        Vk.CreateBuffer(Device, in bci, null, out Buffer buf).Ok("vkCreateBuffer");
         try
         {
-            Vk.GetBufferMemoryRequirements(Device, buf, out var req);
+            Vk.GetBufferMemoryRequirements(Device, buf, out MemoryRequirements req);
             uint type;
             const MemoryPropertyFlags Visible = MemoryPropertyFlags.HostVisibleBit, Coherent = MemoryPropertyFlags.HostCoherentBit, Cached = MemoryPropertyFlags.HostCachedBit;
             if (TryFindMemoryType(req.MemoryTypeBits, Visible | Coherent | Cached, out type))
@@ -882,10 +882,10 @@ public sealed unsafe class VkCore : IDisposable
                 _readbackTypeLogged = true;
                 Log.Info($"Readback buffers: memory type {type} ({MemoryProperties.MemoryTypes[(int)type].PropertyFlags})");
             }
-            var mem = AllocateMemory(req.Size, type, category, "vkAllocateMemory(readback buffer)");
+            DeviceMemory mem = AllocateMemory(req.Size, type, category, "vkAllocateMemory(readback buffer)");
             Vk.BindBufferMemory(Device, buf, mem, 0);
             void* p;
-            var r = Vk.MapMemory(Device, mem, 0, size, 0, &p);
+            Result r = Vk.MapMemory(Device, mem, 0, size, 0, &p);
             if (r != Result.Success)
             {
                 FreeMemory(mem);
@@ -900,7 +900,7 @@ public sealed unsafe class VkCore : IDisposable
         }
     }
 
-    bool _readbackTypeLogged;
+    private bool _readbackTypeLogged;
 
     /// <summary>Makes GPU writes to non-coherent mapped memory visible to the CPU (after the fence that covers them).</summary>
     public void InvalidateMapped(DeviceMemory memory)
@@ -909,7 +909,7 @@ public sealed unsafe class VkCore : IDisposable
         Vk.InvalidateMappedMemoryRanges(Device, 1, in range);
     }
 
-    bool TryFindMemoryType(uint typeBits, MemoryPropertyFlags flags, out uint type)
+    private bool TryFindMemoryType(uint typeBits, MemoryPropertyFlags flags, out uint type)
     {
         for (int i = 0; i < MemoryProperties.MemoryTypeCount; i++)
         {
@@ -927,10 +927,10 @@ public sealed unsafe class VkCore : IDisposable
     public (Buffer Buffer, DeviceMemory Memory, nint Mapped) CreateHostBuffer(ulong size, BufferUsageFlags usage, MemCat category)
     {
         var bci = new BufferCreateInfo { SType = StructureType.BufferCreateInfo, Size = size, Usage = usage, SharingMode = SharingMode.Exclusive };
-        Vk.CreateBuffer(Device, in bci, null, out var buf).Ok("vkCreateBuffer");
+        Vk.CreateBuffer(Device, in bci, null, out Buffer buf).Ok("vkCreateBuffer");
         try
         {
-            Vk.GetBufferMemoryRequirements(Device, buf, out var req);
+            Vk.GetBufferMemoryRequirements(Device, buf, out MemoryRequirements req);
             uint type;
             try
             {
@@ -940,10 +940,10 @@ public sealed unsafe class VkCore : IDisposable
             {
                 type = FindMemoryType(req.MemoryTypeBits, MemoryPropertyFlags.HostVisibleBit | MemoryPropertyFlags.HostCoherentBit);
             }
-            var mem = AllocateMemory(req.Size, type, category, "vkAllocateMemory(host buffer)");
+            DeviceMemory mem = AllocateMemory(req.Size, type, category, "vkAllocateMemory(host buffer)");
             Vk.BindBufferMemory(Device, buf, mem, 0);
             void* p;
-            var r = Vk.MapMemory(Device, mem, 0, size, 0, &p);
+            Result r = Vk.MapMemory(Device, mem, 0, size, 0, &p);
             if (r != Result.Success)
             {
                 FreeMemory(mem);
@@ -961,11 +961,11 @@ public sealed unsafe class VkCore : IDisposable
     public (Buffer Buffer, DeviceMemory Memory) CreateDeviceBuffer(ulong size, BufferUsageFlags usage, MemCat category)
     {
         var bci = new BufferCreateInfo { SType = StructureType.BufferCreateInfo, Size = size, Usage = usage, SharingMode = SharingMode.Exclusive };
-        Vk.CreateBuffer(Device, in bci, null, out var buf).Ok("vkCreateBuffer");
+        Vk.CreateBuffer(Device, in bci, null, out Buffer buf).Ok("vkCreateBuffer");
         try
         {
-            Vk.GetBufferMemoryRequirements(Device, buf, out var req);
-            var mem = AllocateMemory(req.Size, FindMemoryType(req.MemoryTypeBits, MemoryPropertyFlags.DeviceLocalBit), category, "vkAllocateMemory(device buffer)");
+            Vk.GetBufferMemoryRequirements(Device, buf, out MemoryRequirements req);
+            DeviceMemory mem = AllocateMemory(req.Size, FindMemoryType(req.MemoryTypeBits, MemoryPropertyFlags.DeviceLocalBit), category, "vkAllocateMemory(device buffer)");
             Vk.BindBufferMemory(Device, buf, mem, 0);
             return (buf, mem);
         }
@@ -984,8 +984,8 @@ public sealed unsafe class VkCore : IDisposable
 
     // =================================================================== memory accounting and budget
 
-    const string MemoryBudgetExtension = "VK_EXT_memory_budget";
-    const string CompressionControlExtension = "VK_EXT_image_compression_control";
+    private const string MemoryBudgetExtension = "VK_EXT_memory_budget";
+    private const string CompressionControlExtension = "VK_EXT_image_compression_control";
 
     /// <summary>VK_KHR/EXT_load_store_op_none is enabled (AttachmentLoadOp/StoreOp NONE).</summary>
     public bool LoadStoreOpNone;
@@ -1007,9 +1007,9 @@ public sealed unsafe class VkCore : IDisposable
         ext.GetImageSubresourceLayout2(Device, image, &sub, &layout);
         return $"{cp.ImageCompressionFlags} fixed-rate {cp.ImageCompressionFixedRateFlags}";
     }
-    const string MirrorClampExtension = "VK_KHR_sampler_mirror_clamp_to_edge";
+    private const string MirrorClampExtension = "VK_KHR_sampler_mirror_clamp_to_edge";
     /// <summary>VITASHARP_GPU_DEVICE: index or part of the name of the physical device to use (default: the best one).</summary>
-    static readonly string? DeviceFilter = Environment.GetEnvironmentVariable(EnvVars.GpuDevice) is { Length: > 0 } s ? s.Trim() : null;
+    private static readonly string? s_deviceFilter = Environment.GetEnvironmentVariable(EnvVars.GpuDevice) is { Length: > 0 } s ? s.Trim() : null;
     /// <summary>VK_EXT_memory_budget is enabled: <see cref="Heaps"/> reports per-heap budgets and this process's usage.</summary>
     public bool MemoryBudgetSupported;
 
@@ -1020,14 +1020,14 @@ public sealed unsafe class VkCore : IDisposable
     /// </summary>
     public readonly ulong BudgetCap = ParseBudgetCap(Environment.GetEnvironmentVariable(EnvVars.VramBudgetMb));
 
-    static ulong ParseBudgetCap(string? s) => ulong.TryParse(s?.Trim(), out var mb) && mb > 0 ? mb << 20 : 0;
+    private static ulong ParseBudgetCap(string? s) => ulong.TryParse(s?.Trim(), out ulong mb) && mb > 0 ? mb << 20 : 0;
 
     public const int MemCats = (int)MemCat.Other + 1;
-    readonly long[] _poolUsed = new long[MemCats];      // image pool sub-allocations (device-local)
-    readonly long[] _directDevice = new long[MemCats];  // whole allocations in device-local heaps
-    readonly long[] _directHost = new long[MemCats];    // whole allocations in host heaps
-    long _poolPages, _peakDevice, _peakHost, _failures, _capRefusals;
-    readonly Dictionary<ulong, (ulong Size, MemCat Cat, bool Device, bool Pooled)> _allocations = new();
+    private readonly long[] _poolUsed = new long[MemCats];      // image pool sub-allocations (device-local)
+    private readonly long[] _directDevice = new long[MemCats];  // whole allocations in device-local heaps
+    private readonly long[] _directHost = new long[MemCats];    // whole allocations in host heaps
+    private long _poolPages, _peakDevice, _peakHost, _failures, _capRefusals;
+    private readonly Dictionary<ulong, (ulong Size, MemCat Cat, bool Device, bool Pooled)> _allocations = new();
 
     /// <summary>
     /// Called when an allocation failed with an out-of-memory error: frees memory the renderer can recreate (level 0:
@@ -1093,7 +1093,7 @@ public sealed unsafe class VkCore : IDisposable
             return Result.ErrorOutOfDeviceMemory;
         }
         var mai = new MemoryAllocateInfo { SType = StructureType.MemoryAllocateInfo, AllocationSize = size, MemoryTypeIndex = type };
-        var r = Vk.AllocateMemory(Device, in mai, null, out mem);
+        Result r = Vk.AllocateMemory(Device, in mai, null, out mem);
         if (r != Result.Success)
         {
             return r;
@@ -1140,7 +1140,7 @@ public sealed unsafe class VkCore : IDisposable
     /// throws <see cref="VkOutOfMemoryException"/> when nothing helped.</summary>
     public DeviceMemory AllocateMemory(ulong size, uint type, MemCat cat, string what)
     {
-        var r = TryAllocateMemory(size, type, cat, false, out var mem);
+        Result r = TryAllocateMemory(size, type, cat, false, out DeviceMemory mem);
         if (r == Result.Success)
         {
             return mem;
@@ -1168,8 +1168,8 @@ public sealed unsafe class VkCore : IDisposable
         throw OutOfMemory(r, what, size, cat);
     }
 
-    ulong _hopelessSize = ulong.MaxValue;
-    long _hopelessUntil;
+    private ulong _hopelessSize = ulong.MaxValue;
+    private long _hopelessUntil;
 
     /// <summary>
     /// An allocation at least this large failed even after every reclaim level less than 2 s ago: retrying the
@@ -1248,7 +1248,7 @@ public sealed unsafe class VkCore : IDisposable
 
         for (int i = 0; i < n; i++)
         {
-            var h = MemoryProperties.MemoryHeaps[i];
+            MemoryHeap h = MemoryProperties.MemoryHeaps[i];
             heaps[i] = new HeapInfo(i, h.Size, (h.Flags & MemoryHeapFlags.DeviceLocalBit) != 0,
                 MemoryBudgetSupported ? budget.HeapBudget[i] : 0, MemoryBudgetSupported ? budget.HeapUsage[i] : 0);
         }
@@ -1270,7 +1270,7 @@ public sealed unsafe class VkCore : IDisposable
 
         double worst = 0;
         ulong largest = 0;
-        foreach (var h in Heaps())
+        foreach (HeapInfo h in Heaps())
         {
             if (!h.DeviceLocal)
             {
@@ -1291,13 +1291,13 @@ public sealed unsafe class VkCore : IDisposable
         return largest == 0 ? 0 : DeviceBytes / (largest * Caps.FallbackBudgetFraction);
     }
 
-    static string Mb(double bytes) => $"{bytes / 1048576.0:F0} MB";
+    private static string Mb(double bytes) => $"{bytes / 1048576.0:F0} MB";
 
     /// <summary>"heap 0 device-local 3.9 GB: budget 3.4 GB, usage 1.2 GB (35%); heap 1 ..." (sizes only without the extension).</summary>
     public string HeapSummary()
     {
         var sb = new System.Text.StringBuilder();
-        foreach (var h in Heaps())
+        foreach (HeapInfo h in Heaps())
         {
             if (sb.Length > 0)
             {
@@ -1334,7 +1334,7 @@ public sealed unsafe class VkCore : IDisposable
         sb.Append($" + {Mb(HostBytes)} host:");
         for (int i = 0; i < MemCats; i++)
         {
-            var (d, h) = CategoryBytes((MemCat)i);
+            (long d, long h) = CategoryBytes((MemCat)i);
             string extra = detail?.Invoke((MemCat)i) ?? "";
             if (d == 0 && h == 0 && extra.Length == 0)
             {
@@ -1399,7 +1399,7 @@ public sealed unsafe class VkCore : IDisposable
         }
 
         Surface = surface.CreateSurface(Vk, Instance);
-        SurfaceExt!.GetPhysicalDeviceSurfaceSupport(Physical, QueueFamily, Surface, out var supported);
+        SurfaceExt!.GetPhysicalDeviceSurfaceSupport(Physical, QueueFamily, Surface, out Bool32 supported);
         if (!supported)
         {
             Log.Warn("The new presentation surface is not supported by the renderer's queue family");
@@ -1428,12 +1428,12 @@ public sealed unsafe class VkCore : IDisposable
 /// </summary>
 public sealed unsafe class ImageMemoryPool : IDisposable
 {
-    const ulong PageSize = 128ul << 20;
+    private const ulong PageSize = 128ul << 20;
     /// <summary>Page size tried when a full page cannot be allocated (memory pressure or the budget cap).</summary>
-    const ulong SmallPageSize = 16ul << 20;
-    readonly VkCore _vk;
+    private const ulong SmallPageSize = 16ul << 20;
+    private readonly VkCore _vk;
 
-    sealed class Page
+    private sealed class Page
     {
         public DeviceMemory Memory;
         public ulong Size;
@@ -1442,8 +1442,8 @@ public sealed unsafe class ImageMemoryPool : IDisposable
         public readonly SortedList<ulong, ulong> Free = new(); // offset -> size
     }
 
-    readonly List<Page> _pages = new();
-    long _pagesFreed;
+    private readonly List<Page> _pages = new();
+    private long _pagesFreed;
 
     public ImageMemoryPool(VkCore vk) => _vk = vk;
 
@@ -1458,7 +1458,7 @@ public sealed unsafe class ImageMemoryPool : IDisposable
         get
         {
             ulong free = 0;
-            foreach (var p in _pages)
+            foreach (Page p in _pages)
             {
                 free += p.Size - p.Used;
             }
@@ -1471,14 +1471,14 @@ public sealed unsafe class ImageMemoryPool : IDisposable
     {
         uint type = _vk.FindMemoryType(req.MemoryTypeBits, MemoryPropertyFlags.DeviceLocalBit);
         ulong align = Math.Max(req.Alignment, 256);
-        if (TryExisting(type, req.Size, align, cat, out var a))
+        if (TryExisting(type, req.Size, align, cat, out Allocation a))
         {
             return a;
         }
 
         ulong need = (req.Size + align - 1) & ~(align - 1);
         ulong full = Math.Max(PageSize, need), small = Math.Max(SmallPageSize, need);
-        var r = TryNewPage(full, type, req.Size, align, cat, out a);
+        Result r = TryNewPage(full, type, req.Size, align, cat, out a);
         if (r == Result.Success)
         {
             return a;
@@ -1520,16 +1520,16 @@ public sealed unsafe class ImageMemoryPool : IDisposable
         throw _vk.OutOfMemory(r, "vkAllocateMemory(image page)", req.Size, cat);
     }
 
-    bool TryExisting(uint type, ulong size, ulong align, MemCat cat, out Allocation a)
+    private bool TryExisting(uint type, ulong size, ulong align, MemCat cat, out Allocation a)
     {
-        foreach (var p in _pages)
+        foreach (Page p in _pages)
         {
             if (p.Type != type || p.Size - p.Used < size)
             {
                 continue;
             }
 
-            if (TryTake(p, size, align, out var off))
+            if (TryTake(p, size, align, out ulong off))
             {
                 a = Take(p, off, size, cat);
                 return true;
@@ -1539,10 +1539,10 @@ public sealed unsafe class ImageMemoryPool : IDisposable
         return false;
     }
 
-    Result TryNewPage(ulong pageSize, uint type, ulong size, ulong align, MemCat cat, out Allocation a)
+    private Result TryNewPage(ulong pageSize, uint type, ulong size, ulong align, MemCat cat, out Allocation a)
     {
         a = default;
-        var r = _vk.TryAllocateMemory(pageSize, type, MemCat.Other, true, out var mem);
+        Result r = _vk.TryAllocateMemory(pageSize, type, MemCat.Other, true, out DeviceMemory mem);
         if (r != Result.Success)
         {
             return r;
@@ -1551,19 +1551,19 @@ public sealed unsafe class ImageMemoryPool : IDisposable
         var page = new Page { Memory = mem, Size = pageSize, Type = type };
         page.Free.Add(0, page.Size);
         _pages.Add(page);
-        TryTake(page, size, align, out var off);
+        TryTake(page, size, align, out ulong off);
         a = Take(page, off, size, cat);
         return r;
     }
 
-    Allocation Take(Page p, ulong offset, ulong size, MemCat cat)
+    private Allocation Take(Page p, ulong offset, ulong size, MemCat cat)
     {
         p.Used += size;
         _vk.PoolAccount(cat, (long)size);
         return new Allocation(p.Memory, offset, size, p, cat);
     }
 
-    static bool TryTake(Page p, ulong size, ulong align, out ulong offset)
+    private static bool TryTake(Page p, ulong size, ulong align, out ulong offset)
     {
         for (int i = 0; i < p.Free.Count; i++)
         {
@@ -1631,7 +1631,7 @@ public sealed unsafe class ImageMemoryPool : IDisposable
         _pages.Sort((x, y) => y.Size.CompareTo(x.Size));
         for (int i = 0; i < _pages.Count;)
         {
-            var p = _pages[i];
+            Page p = _pages[i];
             if (p.Used != 0 || spare++ < keepSpare)
             {
                 i++;
@@ -1647,7 +1647,7 @@ public sealed unsafe class ImageMemoryPool : IDisposable
 
     public void Dispose()
     {
-        foreach (var p in _pages)
+        foreach (Page p in _pages)
         {
             _vk.FreeMemory(p.Memory);
         }

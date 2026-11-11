@@ -11,7 +11,7 @@ namespace VitaSharp.Renderer.Vulkan;
 /// </summary>
 public sealed unsafe partial class VulkanRenderer
 {
-    sealed class MemoryOrderCopy
+    private sealed class MemoryOrderCopy
     {
         public RenderTarget Target = null!;
         public ImageView SourceView;
@@ -19,19 +19,19 @@ public sealed unsafe partial class VulkanRenderer
         public uint ColorFormat;
     }
 
-    readonly Dictionary<RenderTarget, MemoryOrderCopy> _memoryOrderCopies = new();
-    RenderPass _memoryOrderPass;
-    Pipeline _memoryOrderPipeline;
+    private readonly Dictionary<RenderTarget, MemoryOrderCopy> _memoryOrderCopies = new();
+    private RenderPass _memoryOrderPass;
+    private Pipeline _memoryOrderPipeline;
 
     /// <summary><paramref name="src"/> in guest memory byte order: itself unless it is a logical-order surface.</summary>
-    RenderTarget PresentSource(RenderTarget src)
+    private RenderTarget PresentSource(RenderTarget src)
     {
         if (src.Format != Format.R8G8B8A8Unorm || Formats.LogicalOrderSwizzle(src.ColorFormat) == 0)
         {
             return src;
         }
 
-        if (!_memoryOrderCopies.TryGetValue(src, out var c) || c.Target.Width != src.Width || c.Target.Height != src.Height || c.Target.Scale != src.Scale
+        if (!_memoryOrderCopies.TryGetValue(src, out MemoryOrderCopy? c) || c.Target.Width != src.Width || c.Target.Height != src.Height || c.Target.Scale != src.Scale
             || c.SourceImage.Handle != src.Image.Handle || c.ColorFormat != src.ColorFormat)
         {
             if (c != null)
@@ -39,7 +39,7 @@ public sealed unsafe partial class VulkanRenderer
                 ReleaseMemoryOrderCopy(c);
             }
 
-            var (img, view, mem) = CreateImage(MemCat.RenderTarget, src.ImgW, src.ImgH, Format.R8G8B8A8Unorm,
+            (Image img, ImageView view, ImageMemoryPool.Allocation mem) = CreateImage(MemCat.RenderTarget, src.ImgW, src.ImgH, Format.R8G8B8A8Unorm,
                 ImageUsageFlags.ColorAttachmentBit | ImageUsageFlags.SampledBit | ImageUsageFlags.TransferSrcBit, ImageAspectFlags.ColorBit);
             c = new MemoryOrderCopy
             {
@@ -55,9 +55,9 @@ public sealed unsafe partial class VulkanRenderer
         return c.Target;
     }
 
-    void ReleaseMemoryOrderCopy(MemoryOrderCopy c)
+    private void ReleaseMemoryOrderCopy(MemoryOrderCopy c)
     {
-        var (img, view, mem, srcView) = (c.Target.Image, c.Target.View, c.Target.Mem, c.SourceView);
+        (Image img, ImageView view, ImageMemoryPool.Allocation mem, ImageView srcView) = (c.Target.Image, c.Target.View, c.Target.Mem, c.SourceView);
         DestroyAfterGpu(() =>
         {
             _vk.DestroyImageView(_dev, srcView, null);
@@ -68,25 +68,25 @@ public sealed unsafe partial class VulkanRenderer
     }
 
     /// <summary>Drops the copies of surfaces that no longer exist (called when a target is released).</summary>
-    void ForgetMemoryOrderCopy(RenderTarget rt)
+    private void ForgetMemoryOrderCopy(RenderTarget rt)
     {
-        if (_memoryOrderCopies.Remove(rt, out var c))
+        if (_memoryOrderCopies.Remove(rt, out MemoryOrderCopy? c))
         {
             ReleaseMemoryOrderCopy(c);
         }
     }
 
-    void RecordMemoryOrderCopy(RenderTarget src, MemoryOrderCopy c)
+    private void RecordMemoryOrderCopy(RenderTarget src, MemoryOrderCopy c)
     {
         EndRendering();
-        var cmd = Cmd;
-        var dst = c.Target;
+        CommandBuffer cmd = Cmd;
+        RenderTarget dst = c.Target;
         Barrier(src.Image, ImageLayout.General, ImageLayout.General, ImageAspectFlags.ColorBit,
             PipelineStageFlags.ColorAttachmentOutputBit | PipelineStageFlags.TransferBit, PipelineStageFlags.FragmentShaderBit,
             AccessFlags.ColorAttachmentWriteBit | AccessFlags.TransferWriteBit, AccessFlags.ShaderReadBit);
         Barrier(dst.Image, ImageLayout.Undefined, ImageLayout.General, ImageAspectFlags.ColorBit,
             PipelineStageFlags.TransferBit, PipelineStageFlags.ColorAttachmentOutputBit, 0, AccessFlags.ColorAttachmentWriteBit);
-        var pass = MemoryOrderPass();
+        RenderPass pass = MemoryOrderPass();
         var area = new Extent2D(dst.ImgW, dst.ImgH);
         var rbi = new RenderPassBeginInfo
         {
@@ -95,7 +95,7 @@ public sealed unsafe partial class VulkanRenderer
             Framebuffer = TransientFramebuffer(pass, area, dst.View),
             RenderArea = new Rect2D(new Offset2D(0, 0), area),
         };
-        var set = AllocSet(EnsureLoadLayout());
+        DescriptorSet set = AllocSet(EnsureLoadLayout());
         var info = new DescriptorImageInfo(_dummySampler, c.SourceView, ImageLayout.General);
         var wr = new WriteDescriptorSet { SType = StructureType.WriteDescriptorSet, DstSet = set, DstBinding = 0, DescriptorCount = 1, DescriptorType = DescriptorType.CombinedImageSampler, PImageInfo = &info };
         _vk.UpdateDescriptorSets(_dev, 1, &wr, 0, null);
@@ -119,7 +119,7 @@ public sealed unsafe partial class VulkanRenderer
             AccessFlags.ShaderReadBit, AccessFlags.ColorAttachmentReadBit | AccessFlags.ColorAttachmentWriteBit | AccessFlags.TransferWriteBit);
     }
 
-    RenderPass MemoryOrderPass()
+    private RenderPass MemoryOrderPass()
     {
         if (_memoryOrderPass.Handle != 0)
         {
@@ -135,7 +135,7 @@ public sealed unsafe partial class VulkanRenderer
         return _memoryOrderPass;
     }
 
-    Pipeline MemoryOrderPipeline()
+    private Pipeline MemoryOrderPipeline()
     {
         if (_memoryOrderPipeline.Handle != 0)
         {
@@ -143,8 +143,8 @@ public sealed unsafe partial class VulkanRenderer
         }
 
         EnsureLoadLayout();
-        var entry = stackalloc byte[5] { (byte)'m', (byte)'a', (byte)'i', (byte)'n', 0 };
-        var stages = stackalloc PipelineShaderStageCreateInfo[2];
+        byte* entry = stackalloc byte[5] { (byte)'m', (byte)'a', (byte)'i', (byte)'n', 0 };
+        PipelineShaderStageCreateInfo* stages = stackalloc PipelineShaderStageCreateInfo[2];
         stages[0] = new PipelineShaderStageCreateInfo { SType = StructureType.PipelineShaderStageCreateInfo, Stage = ShaderStageFlags.VertexBit, Module = _msLoadVs, PName = entry };
         stages[1] = new PipelineShaderStageCreateInfo { SType = StructureType.PipelineShaderStageCreateInfo, Stage = ShaderStageFlags.FragmentBit, Module = _msLoadFsFloat, PName = entry };
         var vi = new PipelineVertexInputStateCreateInfo { SType = StructureType.PipelineVertexInputStateCreateInfo };
@@ -155,7 +155,7 @@ public sealed unsafe partial class VulkanRenderer
         var dss = new PipelineDepthStencilStateCreateInfo { SType = StructureType.PipelineDepthStencilStateCreateInfo };
         var blend = new PipelineColorBlendAttachmentState { ColorWriteMask = ColorComponentFlags.RBit | ColorComponentFlags.GBit | ColorComponentFlags.BBit | ColorComponentFlags.ABit };
         var cb = new PipelineColorBlendStateCreateInfo { SType = StructureType.PipelineColorBlendStateCreateInfo, AttachmentCount = 1, PAttachments = &blend };
-        var dyn = stackalloc DynamicState[] { DynamicState.Viewport, DynamicState.Scissor };
+        DynamicState* dyn = stackalloc DynamicState[] { DynamicState.Viewport, DynamicState.Scissor };
         var dsi = new PipelineDynamicStateCreateInfo { SType = StructureType.PipelineDynamicStateCreateInfo, DynamicStateCount = 2, PDynamicStates = dyn };
         var gci = new GraphicsPipelineCreateInfo
         {

@@ -24,9 +24,9 @@ namespace VitaSharp.Renderer.Vulkan;
 public sealed unsafe partial class VulkanRenderer
 {
     /// <summary>Tile-based GPU: depth/stencil store ops of scene renderings can be DONT_CARE at the scene end.</summary>
-    bool TiledRenderings => _core.Caps.Has(GpuQuirk.TileBased);
+    private bool TiledRenderings => _core.Caps.Has(GpuQuirk.TileBased);
 
-    struct TilePass
+    private struct TilePass
     {
         public ImageView Color, Depth;
         /// <summary>The scene's tile-word attachment (colour attachment 1), default = none.</summary>
@@ -40,21 +40,21 @@ public sealed unsafe partial class VulkanRenderer
         public bool HasColor;
     }
 
-    CommandBuffer _tileCmd;
-    TilePass _tilePass;
+    private CommandBuffer _tileCmd;
+    private TilePass _tilePass;
 
     // counters (scene renderings): [0] load, [1] clear, [2] dont care / [0] store, [1] dont care
-    readonly long[] _colorLoads = new long[3], _depthLoads = new long[3], _colorStores = new long[2], _depthStores = new long[2];
-    long _tileDeferred;
+    private readonly long[] _colorLoads = new long[3], _depthLoads = new long[3], _colorStores = new long[2], _depthStores = new long[2];
+    private long _tileDeferred;
 
     /// <summary>Developer builds: a GPU timestamp before a pass or copy of a timed bench frame (bench stamps=1,
     /// Developer/VulkanRenderer.Bench.cs); <paramref name="cb"/> default = <see cref="Cmd"/>, which the caller records
     /// into next anyway. Without VITASHARP_DEVELOPER the calls compile to nothing.</summary>
     partial void DevStampOp(CommandBuffer cb = default, [System.Runtime.CompilerServices.CallerMemberName] string label = "");
 
-    static int LoadIndex(AttachmentLoadOp op) => op switch { AttachmentLoadOp.Load => 0, AttachmentLoadOp.Clear => 1, _ => 2 };
+    private static int LoadIndex(AttachmentLoadOp op) => op switch { AttachmentLoadOp.Load => 0, AttachmentLoadOp.Clear => 1, _ => 2 };
 
-    void CountOps(bool color, AttachmentLoadOp colorLoad, AttachmentStoreOp colorStore, bool depth, AttachmentLoadOp depthLoad, AttachmentStoreOp depthStore, Extent2D area = default)
+    private void CountOps(bool color, AttachmentLoadOp colorLoad, AttachmentStoreOp colorStore, bool depth, AttachmentLoadOp depthLoad, AttachmentStoreOp depthStore, Extent2D area = default)
     {
         CostNoteOps(color, colorLoad, colorStore, depth, depthLoad, depthStore, area);
         if (color)
@@ -70,21 +70,21 @@ public sealed unsafe partial class VulkanRenderer
     }
 
     /// <summary>"load/store: colour L/C/D a/b/c S/D d/e, depth ..." for the PERF gpu line.</summary>
-    string LoadStoreReport() =>
+    private string LoadStoreReport() =>
         $"load/store ops{(TiledRenderings ? " (tile-based" : " (desktop")}, {_tileDeferred} deferred single-sampled renderings{(RenderAreaTrim ? $", {_statTrimmed} begun over {100 * _statTrimFraction / Math.Max(1, _statTrimmed):F0}% of their surface on average" : "")}): colour load {_colorLoads[0]}/clear {_colorLoads[1]}/dont-care {_colorLoads[2]}, store {_colorStores[0]}/dont-care {_colorStores[1]}; " +
         $"depth load {_depthLoads[0]}/clear {_depthLoads[1]}/dont-care {_depthLoads[2]}, store {_depthStores[0]}/dont-care {_depthStores[1]}" +
         (DepthOpsNone ? $" (NONE: {_statDepthNone} untouched, {_statDepthReadOnly} read-only)" : "") + $"; region copies {_statRegionOwn} of the scene's surface, {_statRegionOther} of others; {SceneBreakReport()}; region copies reused {_statRegionReused}";
 
     /// <summary>Opens a single-sampled scene rendering in a secondary command buffer.</summary>
     /// <param name="wordView">the scene's tile-word attachment (colour attachment 1), default = none</param>
-    void BeginTiledRendering(ImageView colorView, ImageView wordView, Format colorFormat, AttachmentLoadOp depthLoad, ClearValue depthClear)
+    private void BeginTiledRendering(ImageView colorView, ImageView wordView, Format colorFormat, AttachmentLoadOp depthLoad, ClearValue depthClear)
     {
         _tilePass = new TilePass
         {
             Color = colorView,
             Word = wordView,
             ColorFormat = colorFormat,
-            HasColor = _rt != null,
+            HasColor = _renderTarget != null,
             Depth = _depth!.View,
             DepthLoad = depthLoad,
             DepthClear = depthClear,
@@ -107,8 +107,8 @@ public sealed unsafe partial class VulkanRenderer
             ResetDrawn();
             _chainDepthUse = _chainDepthWrite = false;
         }
-        var cb = AllocSecondary();
-        var fmt = stackalloc Format[2] { colorFormat, TileWord1Format };
+        CommandBuffer cb = AllocSecondary();
+        Format* fmt = stackalloc Format[2] { colorFormat, TileWord1Format };
         var rii = new CommandBufferInheritanceRenderingInfo
         {
             SType = StructureType.CommandBufferInheritanceRenderingInfo,
@@ -119,7 +119,7 @@ public sealed unsafe partial class VulkanRenderer
             RasterizationSamples = SampleCountFlags.Count1Bit,
         };
         // render-pass path (VulkanRenderer.RenderPasses.cs): the secondary inherits the compatible pass instead
-        var ii = UseRenderPasses
+        CommandBufferInheritanceInfo ii = UseRenderPasses
             ? new CommandBufferInheritanceInfo { SType = StructureType.CommandBufferInheritanceInfo, RenderPass = SingleCompatPass(_tilePass.HasColor ? colorFormat : Format.Undefined, wordView.Handle != 0), Subpass = 0 }
             : new CommandBufferInheritanceInfo { SType = StructureType.CommandBufferInheritanceInfo, PNext = &rii };
         var bi = new CommandBufferBeginInfo
@@ -135,9 +135,9 @@ public sealed unsafe partial class VulkanRenderer
     }
 
     /// <param name="final">the scene ends here: depth/stencil are discarded unless the scene forces the store</param>
-    void EndTiledRendering(bool final)
+    private void EndTiledRendering(bool final)
     {
-        var cb = _tileCmd;
+        CommandBuffer cb = _tileCmd;
         _vk.EndCommandBuffer(cb).Ok("vkEndCommandBuffer(tiled secondary)");
         _tileCmd = default;
         _boundPipeline = default;
@@ -148,24 +148,24 @@ public sealed unsafe partial class VulkanRenderer
         }
         _chain.Add(cb);
         // not begun yet: the next rendering may continue it (merge) unless something is recorded into the primary first
-        if (final || StrictSceneBreaks)
+        if (final || s_strictSceneBreaks)
         {
             FlushChain(final);
         }
     }
 
     /// <summary>Ended renderings not yet begun in the primary (same attachments; the first one's load ops).</summary>
-    readonly List<CommandBuffer> _chain = new();
-    TilePass _chainPass;
-    long _chainScene, _chainStartSerial, _statMerged;
+    private readonly List<CommandBuffer> _chain = new();
+    private TilePass _chainPass;
+    private long _chainScene, _chainStartSerial, _statMerged;
 
-    static bool SameAttachments(in TilePass a, in TilePass b) =>
+    private static bool SameAttachments(in TilePass a, in TilePass b) =>
         a.Color.Handle == b.Color.Handle && a.Word.Handle == b.Word.Handle && a.Depth.Handle == b.Depth.Handle && a.ColorFormat == b.ColorFormat
         && a.HasColor == b.HasColor && a.Area.Width == b.Area.Width && a.Area.Height == b.Area.Height;
 
     /// <summary>Begins the pending renderings in the primary as one rendering executing their secondaries.</summary>
     /// <param name="final">the scene ends with them: depth/stencil are discarded unless the scene forces the store</param>
-    void FlushChain(bool final)
+    private void FlushChain(bool final)
     {
         if (_fetchPassOpen)
         {
@@ -177,10 +177,10 @@ public sealed unsafe partial class VulkanRenderer
             return;
         }
 
-        var p = _chainPass;
+        TilePass p = _chainPass;
         // desktop GPUs store depth/stencil as before (no tile memory to save)
         bool keepDepth = !TiledRenderings || !final || _scene?.Depth is { ForceStore: true } || _depth is { EverRead: true };
-        var colors = stackalloc RenderingAttachmentInfo[2];
+        RenderingAttachmentInfo* colors = stackalloc RenderingAttachmentInfo[2];
         colors[0] = new RenderingAttachmentInfo
         {
             SType = StructureType.RenderingAttachmentInfo,
@@ -197,7 +197,7 @@ public sealed unsafe partial class VulkanRenderer
             LoadOp = AttachmentLoadOp.Load,
             StoreOp = AttachmentStoreOp.Store,
         };
-        var depthStore = keepDepth ? AttachmentStoreOp.Store : AttachmentStoreOp.DontCare;
+        AttachmentStoreOp depthStore = keepDepth ? AttachmentStoreOp.Store : AttachmentStoreOp.DontCare;
         // VITASHARP_DEPTH_OPS_NONE: depth/stencil that no draw of these renderings tests or writes is neither loaded nor
         // stored (NONE keeps the image's memory as it is); one that is only tested is loaded but not stored. Post-processing
         // passes over a surface (Killzone: ~25 per frame) loaded and stored the whole depth/stencil buffer each time.
@@ -219,7 +219,7 @@ public sealed unsafe partial class VulkanRenderer
 #if VITASHARP_DEVELOPER
         DevRenderingOps(ref p.DepthLoad, ref depthStore);
 #endif
-        var area = ChainRenderArea(in p);
+        Rect2D area = ChainRenderArea(in p);
         var depth = new RenderingAttachmentInfo
         {
             SType = StructureType.RenderingAttachmentInfo,
@@ -241,8 +241,8 @@ public sealed unsafe partial class VulkanRenderer
             PStencilAttachment = &depth,
         };
         CountOps(p.HasColor, AttachmentLoadOp.Load, AttachmentStoreOp.Store, true, p.DepthLoad, depthStore, area.Extent);
-        var cmd = F.Cmd;
-        var cbs = stackalloc CommandBuffer[_chain.Count];
+        CommandBuffer cmd = F.Cmd;
+        CommandBuffer* cbs = stackalloc CommandBuffer[_chain.Count];
         for (int i = 0; i < _chain.Count; i++)
         {
             cbs[i] = _chain[i];
@@ -263,7 +263,7 @@ public sealed unsafe partial class VulkanRenderer
             _vk.CmdExecuteCommands(cmd, n, cbs);
             _vk.CmdEndRendering(cmd);
         }
-        if (Poison && depthStore == AttachmentStoreOp.DontCare && _depth != null)
+        if (s_poison && depthStore == AttachmentStoreOp.DontCare && _depth != null)
         {
             PoisonDepth(cmd, _depth.Image);
         }
@@ -274,22 +274,22 @@ public sealed unsafe partial class VulkanRenderer
 
 
     /// <summary>VITASHARP_DEPTH_OPS_NONE=1 (A/B): see <see cref="FlushChain"/>.</summary>
-    static readonly bool? DepthOpsNoneEnv = Environment.GetEnvironmentVariable(Core.Util.EnvVars.DepthOpsNone)?.Trim() switch { "1" => true, "0" => false, _ => null };
+    private static readonly bool? s_depthOpsNoneEnv = Environment.GetEnvironmentVariable(Core.Util.EnvVars.DepthOpsNone)?.Trim() switch { "1" => true, "0" => false, _ => null };
     /// <summary>On by default on tile-based GPUs with the extension (pixel-identical on 9 dumps, 5,782 frames).</summary>
-    bool DepthOpsNone => DepthOpsNoneEnv ?? TiledRenderings;
-    const AttachmentLoadOp LoadOpNone = (AttachmentLoadOp)1000400000;
-    const AttachmentStoreOp StoreOpNone = (AttachmentStoreOp)1000301000;
+    private bool DepthOpsNone => s_depthOpsNoneEnv ?? TiledRenderings;
+    private const AttachmentLoadOp LoadOpNone = (AttachmentLoadOp)1000400000;
+    private const AttachmentStoreOp StoreOpNone = (AttachmentStoreOp)1000301000;
     /// <summary>A draw of the pending renderings tests (or writes) depth/stencil (set in SetDynamicState).</summary>
-    bool _chainDepthUse, _chainDepthWrite;
-    long _statDepthNone, _statDepthReadOnly;
+    private bool _chainDepthUse, _chainDepthWrite;
+    private long _statDepthNone, _statDepthReadOnly;
 
     /// <summary>VITASHARP_RENDER_AREA_TRIM=1: see <see cref="ChainRenderArea"/>.</summary>
-    static readonly bool? RenderAreaTrimEnv = Environment.GetEnvironmentVariable(Core.Util.EnvVars.RenderAreaTrim)?.Trim() switch { "1" => true, "0" => false, _ => null };
+    private static readonly bool? s_renderAreaTrimEnv = Environment.GetEnvironmentVariable(Core.Util.EnvVars.RenderAreaTrim)?.Trim() switch { "1" => true, "0" => false, _ => null };
     /// <summary>On by default on tile-based GPUs (Mali bench of the Killzone frame: 49.7 -> 45.3 ms GPU, same picture).</summary>
-    bool RenderAreaTrim => RenderAreaTrimEnv ?? TiledRenderings;
+    private bool RenderAreaTrim => s_renderAreaTrimEnv ?? TiledRenderings;
 
-    long _statTrimmed;
-    double _statTrimFraction;
+    private long _statTrimmed;
+    private double _statTrimFraction;
 
     /// <summary>
     /// The render area of the pending renderings: the whole surface, or (VITASHARP_RENDER_AREA_TRIM=1) the tiles their
@@ -302,7 +302,7 @@ public sealed unsafe partial class VulkanRenderer
     /// only, and later renderings of the scene load the rest). The rectangle is grown to 32-pixel tiles plus one tile of
     /// margin (points and wide lines may rasterize a little outside the viewport).
     /// </summary>
-    Rect2D ChainRenderArea(in TilePass p)
+    private Rect2D ChainRenderArea(in TilePass p)
     {
         var full = new Rect2D(new Offset2D(0, 0), p.Area);
         if (!RenderAreaTrim || _drawnAll || _drawnRects.Count == 0 || !p.HasColor || p.DepthLoad is not (AttachmentLoadOp.Load or LoadOpNone))
@@ -311,7 +311,7 @@ public sealed unsafe partial class VulkanRenderer
         }
 
         long x0 = long.MaxValue, y0 = long.MaxValue, x1 = long.MinValue, y1 = long.MinValue;
-        foreach (var r in _drawnRects)
+        foreach ((int X0, int Y0, int X1, int Y1) r in _drawnRects)
         {
             x0 = Math.Min(x0, r.X0);
             y0 = Math.Min(y0, r.Y0);
@@ -323,11 +323,11 @@ public sealed unsafe partial class VulkanRenderer
         y0 = ScaledLo(y0, p.Scale);
         x1 = ScaledHi(x1 + 1, p.Scale) - 1;
         y1 = ScaledHi(y1 + 1, p.Scale) - 1;
-        const long tile = 32;
-        x0 = Math.Max(0, (x0 - tile) / tile * tile);
-        y0 = Math.Max(0, (y0 - tile) / tile * tile);
-        x1 = Math.Min(p.Area.Width, (x1 + 1 + 2 * tile - 1) / tile * tile);
-        y1 = Math.Min(p.Area.Height, (y1 + 1 + 2 * tile - 1) / tile * tile);
+        const long Tile = 32;
+        x0 = Math.Max(0, (x0 - Tile) / Tile * Tile);
+        y0 = Math.Max(0, (y0 - Tile) / Tile * Tile);
+        x1 = Math.Min(p.Area.Width, (x1 + 1 + 2 * Tile - 1) / Tile * Tile);
+        y1 = Math.Min(p.Area.Height, (y1 + 1 + 2 * Tile - 1) / Tile * Tile);
         if (x1 <= x0 || y1 <= y0)
         {
             return full;
@@ -351,17 +351,17 @@ public sealed unsafe partial class VulkanRenderer
     /// targets the guest never wrote start magenta, and a depth/stencil buffer discarded at a scene's end (DONT_CARE
     /// store) is cleared to depth 0 / stencil 0xFF: a later scene that loads it draws nothing where it depended on it.
     /// </summary>
-    static readonly bool Poison = Environment.GetEnvironmentVariable(Core.Util.EnvVars.GpuPoison) == "1";
+    private static readonly bool s_poison = Environment.GetEnvironmentVariable(Core.Util.EnvVars.GpuPoison) == "1";
 
-    void PoisonDepth(CommandBuffer cmd, Image image)
+    private void PoisonDepth(CommandBuffer cmd, Image image)
     {
-        const ImageAspectFlags aspect = ImageAspectFlags.DepthBit | ImageAspectFlags.StencilBit;
-        var all = PipelineStageFlags.AllCommandsBit;
-        var rw = AccessFlags.MemoryReadBit | AccessFlags.MemoryWriteBit;
-        Barrier(image, ImageLayout.DepthStencilAttachmentOptimal, ImageLayout.TransferDstOptimal, aspect, all, PipelineStageFlags.TransferBit, rw, AccessFlags.TransferWriteBit);
+        const ImageAspectFlags Aspect = ImageAspectFlags.DepthBit | ImageAspectFlags.StencilBit;
+        PipelineStageFlags all = PipelineStageFlags.AllCommandsBit;
+        AccessFlags rw = AccessFlags.MemoryReadBit | AccessFlags.MemoryWriteBit;
+        Barrier(image, ImageLayout.DepthStencilAttachmentOptimal, ImageLayout.TransferDstOptimal, Aspect, all, PipelineStageFlags.TransferBit, rw, AccessFlags.TransferWriteBit);
         var clear = new ClearDepthStencilValue(0f, 0xFF);
-        var range = new ImageSubresourceRange(aspect, 0, 1, 0, 1);
+        var range = new ImageSubresourceRange(Aspect, 0, 1, 0, 1);
         _vk.CmdClearDepthStencilImage(cmd, image, ImageLayout.TransferDstOptimal, in clear, 1, in range);
-        Barrier(image, ImageLayout.TransferDstOptimal, ImageLayout.DepthStencilAttachmentOptimal, aspect, PipelineStageFlags.TransferBit, all, AccessFlags.TransferWriteBit, rw);
+        Barrier(image, ImageLayout.TransferDstOptimal, ImageLayout.DepthStencilAttachmentOptimal, Aspect, PipelineStageFlags.TransferBit, all, AccessFlags.TransferWriteBit, rw);
     }
 }

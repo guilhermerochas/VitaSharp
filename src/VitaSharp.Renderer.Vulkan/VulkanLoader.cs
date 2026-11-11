@@ -42,11 +42,11 @@ public static class VulkanLoader
                 LoadedFrom = provider.Description;
                 CustomDriverLoaded = true;
                 Log.Info($"Vulkan driver: {provider.Description} (custom)");
-                return new Vk(new LamdaNativeContext(name => NativeLibrary.TryGetExport(handle, name, out var p) ? p : 0));
+                return new Vk(new LamdaNativeContext(name => NativeLibrary.TryGetExport(handle, name, out nint p) ? p : 0));
             }
             Log.Warn($"Custom GPU driver {provider.Description} unavailable: using the system Vulkan driver");
         }
-        var forced = Environment.GetEnvironmentVariable(EnvVars.VulkanLib);
+        string? forced = Environment.GetEnvironmentVariable(EnvVars.VulkanLib);
         if (!string.IsNullOrEmpty(forced))
         {
             LoadedFrom = forced;
@@ -62,9 +62,9 @@ public static class VulkanLoader
         {
             first = e;
         }
-        foreach (var path in Candidates())
+        foreach (string path in Candidates())
         {
-            if (!File.Exists(path) || !NativeLibrary.TryLoad(path, out var h))
+            if (!File.Exists(path) || !NativeLibrary.TryLoad(path, out nint h))
             {
                 continue;
             }
@@ -88,8 +88,8 @@ public static class VulkanLoader
         string exeDir = AppContext.BaseDirectory;
         if (OperatingSystem.IsMacOS())
         {
-            var sdk = Environment.GetEnvironmentVariable("VULKAN_SDK");
-            foreach (var dir in new[]
+            string? sdk = Environment.GetEnvironmentVariable("VULKAN_SDK");
+            foreach (string? dir in new[]
                      {
                          exeDir, Path.Combine(exeDir, "..", "Frameworks"), // bundled next to the executable / in an .app
                          string.IsNullOrEmpty(sdk) ? "" : Path.Combine(sdk, "lib"),
@@ -105,7 +105,7 @@ public static class VulkanLoader
                 yield return Path.Combine(dir, "libvulkan.dylib");
             }
             // MoltenVK without the loader: no layers, but enough to run
-            foreach (var dir in new[] { exeDir, Path.Combine(exeDir, "..", "Frameworks"), string.IsNullOrEmpty(sdk) ? "" : Path.Combine(sdk, "lib"), "/opt/homebrew/lib", "/usr/local/lib" })
+            foreach (string? dir in new[] { exeDir, Path.Combine(exeDir, "..", "Frameworks"), string.IsNullOrEmpty(sdk) ? "" : Path.Combine(sdk, "lib"), "/opt/homebrew/lib", "/usr/local/lib" })
             {
                 if (dir.Length > 0)
                 {
@@ -116,7 +116,7 @@ public static class VulkanLoader
         else if (OperatingSystem.IsLinux() || OperatingSystem.IsAndroid())
         {
             yield return Path.Combine(exeDir, "libvulkan.so.1");
-            foreach (var dir in new[] { "/usr/lib/x86_64-linux-gnu", "/usr/lib/aarch64-linux-gnu", "/usr/lib64", "/usr/lib", "/usr/local/lib" })
+            foreach (string? dir in new[] { "/usr/lib/x86_64-linux-gnu", "/usr/lib/aarch64-linux-gnu", "/usr/lib64", "/usr/lib", "/usr/local/lib" })
             {
                 yield return Path.Combine(dir, "libvulkan.so.1");
                 yield return Path.Combine(dir, "libvulkan.so");

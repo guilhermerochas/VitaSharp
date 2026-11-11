@@ -6,23 +6,23 @@ namespace VitaSharp.Renderer.Vulkan;
 
 public sealed unsafe partial class VulkanRenderer
 {
-    SwapchainKHR _swapchain;
-    Image[] _swapImages = [];
+    private SwapchainKHR _swapchain;
+    private Image[] _swapImages = [];
     /// <summary>Render-done semaphores, one per swapchain image index (kept across swapchain recreation).</summary>
-    readonly List<Silk.NET.Vulkan.Semaphore> _swapDone = new();
-    Extent2D _swapExtent;
-    Format _swapFormat;
-    bool _swapchainDirty;
+    private readonly List<Silk.NET.Vulkan.Semaphore> _swapDone = new();
+    private Extent2D _swapExtent;
+    private Format _swapFormat;
+    private bool _swapchainDirty;
     /// <summary>The swapchain's preTransform is not the surface's currentTransform (on purpose: IDENTITY on a rotated
     /// Android display). Android then returns VK_SUBOPTIMAL_KHR from every acquire and present; recreating the
     /// swapchain would not change that, so SUBOPTIMAL is ignored (OUT_OF_DATE and resizes still recreate it).</summary>
-    bool _suboptimalExpected;
+    private bool _suboptimalExpected;
 
-    void CreateSwapchain()
+    private void CreateSwapchain()
     {
-        var se = _core.SurfaceExt!;
-        var sw = _core.SwapchainExt!;
-        se.GetPhysicalDeviceSurfaceCapabilities(_core.Physical, _core.Surface, out var caps);
+        KhrSurface se = _core.SurfaceExt!;
+        KhrSwapchain sw = _core.SwapchainExt!;
+        se.GetPhysicalDeviceSurfaceCapabilities(_core.Physical, _core.Surface, out SurfaceCapabilitiesKHR caps);
         uint fc = 0;
         se.GetPhysicalDeviceSurfaceFormats(_core.Physical, _core.Surface, ref fc, null);
         var formats = new SurfaceFormatKHR[fc];
@@ -31,7 +31,7 @@ public sealed unsafe partial class VulkanRenderer
             se.GetPhysicalDeviceSurfaceFormats(_core.Physical, _core.Surface, ref fc, p);
         }
 
-        var chosen = formats.FirstOrDefault(f => f.Format == Format.B8G8R8A8Unorm, formats[0]);
+        SurfaceFormatKHR chosen = formats.FirstOrDefault(f => f.Format == Format.B8G8R8A8Unorm, formats[0]);
         if (formats.Any(f => f.Format == Format.R8G8B8A8Unorm) && !formats.Any(f => f.Format == Format.B8G8R8A8Unorm))
         {
             chosen = formats.First(f => f.Format == Format.R8G8B8A8Unorm);
@@ -45,18 +45,18 @@ public sealed unsafe partial class VulkanRenderer
             se.GetPhysicalDeviceSurfacePresentModes(_core.Physical, _core.Surface, ref pc, p);
         }
 
-        var mode = _opt.VSync ? PresentModeKHR.FifoKhr : modes.Contains(PresentModeKHR.MailboxKhr) ? PresentModeKHR.MailboxKhr
+        PresentModeKHR mode = _opt.VSync ? PresentModeKHR.FifoKhr : modes.Contains(PresentModeKHR.MailboxKhr) ? PresentModeKHR.MailboxKhr
             : modes.Contains(PresentModeKHR.ImmediateKhr) ? PresentModeKHR.ImmediateKhr : PresentModeKHR.FifoKhr;
 
-        var (w, h) = _opt.Surface!.FramebufferSize;
-        var extent = caps.CurrentExtent.Width != uint.MaxValue ? caps.CurrentExtent
+        (int w, int h) = _opt.Surface!.FramebufferSize;
+        Extent2D extent = caps.CurrentExtent.Width != uint.MaxValue ? caps.CurrentExtent
             : new Extent2D((uint)Math.Clamp(w, (int)caps.MinImageExtent.Width, (int)caps.MaxImageExtent.Width),
                            (uint)Math.Clamp(h, (int)caps.MinImageExtent.Height, (int)caps.MaxImageExtent.Height));
         // Android reports the display's rotation as currentTransform (ROTATE_90 for a landscape app on a portrait
         // phone), with currentExtent possibly in the display's native orientation. The blit is not pre-rotated, so the
         // swapchain asks for IDENTITY (the compositor rotates) with the extent in the window's orientation (the
         // front-end's FramebufferSize). Desktop surfaces are always IDENTITY: nothing changes there.
-        var transform = caps.CurrentTransform;
+        SurfaceTransformFlagsKHR transform = caps.CurrentTransform;
         _suboptimalExpected = false;
         if (transform != SurfaceTransformFlagsKHR.IdentityBitKhr && (caps.SupportedTransforms & SurfaceTransformFlagsKHR.IdentityBitKhr) != 0)
         {
@@ -82,7 +82,7 @@ public sealed unsafe partial class VulkanRenderer
             count = Math.Min(count, caps.MaxImageCount);
         }
 
-        var old = _swapchain;
+        SwapchainKHR old = _swapchain;
         var ci = new SwapchainCreateInfoKHR
         {
             SType = StructureType.SwapchainCreateInfoKhr,
@@ -122,7 +122,7 @@ public sealed unsafe partial class VulkanRenderer
         var sci = new SemaphoreCreateInfo { SType = StructureType.SemaphoreCreateInfo };
         while (_swapDone.Count < ic)
         {
-            _vk.CreateSemaphore(_dev, in sci, null, out var s).Ok("vkCreateSemaphore");
+            _vk.CreateSemaphore(_dev, in sci, null, out Silk.NET.Vulkan.Semaphore s).Ok("vkCreateSemaphore");
             _swapDone.Add(s);
         }
         _swapExtent = extent;
@@ -134,7 +134,7 @@ public sealed unsafe partial class VulkanRenderer
 
     public void NotifyResized() => _swapchainDirty = true;
 
-    readonly object _presentLock = new();
+    private readonly object _presentLock = new();
 
     /// <summary>
     /// The window surface went away while the renderer lives on (Android: SurfaceView.surfaceDestroyed when the
@@ -180,7 +180,7 @@ public sealed unsafe partial class VulkanRenderer
         }
     }
 
-    bool AcquireSwapchain(out uint index)
+    private bool AcquireSwapchain(out uint index)
     {
         index = 0;
         DrainPresent(); // the swapchain is not used by the present thread and this acquire at once
@@ -194,7 +194,7 @@ public sealed unsafe partial class VulkanRenderer
                 return false;
             }
         }
-        var r = _core.SwapchainExt!.AcquireNextImage(_dev, _swapchain, 1_000_000_000, F.Acquire, default, ref index);
+        Result r = _core.SwapchainExt!.AcquireNextImage(_dev, _swapchain, 1_000_000_000, F.Acquire, default, ref index);
         if (r is Result.ErrorOutOfDateKhr)
         {
             _swapchainDirty = true;
@@ -213,9 +213,9 @@ public sealed unsafe partial class VulkanRenderer
         return true;
     }
 
-    void BlitToSwapchain(RenderTarget src, uint w, uint h, uint index)
+    private void BlitToSwapchain(RenderTarget src, uint w, uint h, uint index)
     {
-        var dst = _swapImages[index];
+        Image dst = _swapImages[index];
         Barrier(dst, ImageLayout.Undefined, ImageLayout.TransferDstOptimal, ImageAspectFlags.ColorBit,
             PipelineStageFlags.TransferBit, PipelineStageFlags.TransferBit, 0, AccessFlags.TransferWriteBit);
         var clear = new ClearColorValue(0, 0, 0, 1);
@@ -255,9 +255,9 @@ public sealed unsafe partial class VulkanRenderer
             PipelineStageFlags.TransferBit, PipelineStageFlags.BottomOfPipeBit, AccessFlags.TransferWriteBit, 0);
     }
 
-    void PresentSwapchain(uint index, Silk.NET.Vulkan.Semaphore wait)
+    private void PresentSwapchain(uint index, Silk.NET.Vulkan.Semaphore wait)
     {
-        if (PresentThreadOn)
+        if (s_presentThreadOn)
         {
             QueuePresentAsync(index, wait); // VulkanRenderer.PresentThread.cs
         }
@@ -268,7 +268,7 @@ public sealed unsafe partial class VulkanRenderer
     }
 
     /// <summary>vkQueuePresentKHR (the GPU worker, or the present thread with VITASHARP_PRESENT_THREAD=1).</summary>
-    void PresentNow(SwapchainKHR sc, uint index, Silk.NET.Vulkan.Semaphore wait)
+    private void PresentNow(SwapchainKHR sc, uint index, Silk.NET.Vulkan.Semaphore wait)
     {
         var pi = new PresentInfoKHR
         {
@@ -291,7 +291,7 @@ public sealed unsafe partial class VulkanRenderer
         }
     }
 
-    void DestroySwapchain()
+    private void DestroySwapchain()
     {
         if (_swapchain.Handle != 0)
         {

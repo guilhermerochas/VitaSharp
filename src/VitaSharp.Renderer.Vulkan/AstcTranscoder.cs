@@ -34,10 +34,10 @@ public static class AstcTranscoder
     /// <summary>Encoder threads for one large level (the renderer's GPU thread waits for them).</summary>
     public static int Threads = Math.Clamp(Environment.ProcessorCount / 2, 1, 4);
 
-    static readonly object Lock = new();
-    static readonly Dictionary<ulong, LinkedListNode<(ulong Key, byte[] Data)>> Map = new();
-    static readonly LinkedList<(ulong Key, byte[] Data)> Lru = new();
-    static long _bytes;
+    private static readonly object s_lock = new();
+    private static readonly Dictionary<ulong, LinkedListNode<(ulong Key, byte[] Data)>> s_map = new();
+    private static readonly LinkedList<(ulong Key, byte[] Data)> s_lru = new();
+    private static long s_bytes;
     public static long Encoded, EncodedTexels, EncodeTicks, MemoryHits, DiskHits;
 
     public static Format FormatFor(bool gamma) => gamma ? Format.Astc4x4SrgbBlock : Format.Astc4x4UnormBlock;
@@ -63,7 +63,7 @@ public static class AstcTranscoder
     /// <summary>The texture's own swizzle applied on top of <see cref="ChannelSwizzle"/>.</summary>
     public static ComponentMapping Compose(ComponentMapping texture, AstcChannels c)
     {
-        var (r, g, b, a) = ChannelSwizzle(c);
+        (ComponentSwizzle r, ComponentSwizzle g, ComponentSwizzle b, ComponentSwizzle a) = ChannelSwizzle(c);
         ComponentSwizzle Map(ComponentSwizzle s, ComponentSwizzle identity) => (s == ComponentSwizzle.Identity ? identity : s) switch
         {
             ComponentSwizzle.R => r,
@@ -77,7 +77,7 @@ public static class AstcTranscoder
 
     public static string Summary()
     {
-        lock (Lock)
+        lock (s_lock)
         {
             return $"ASTC 4x4 transcoding: {Encoded} levels encoded ({EncodedTexels / 1e6:F1} M texels, {EncodeTicks * 1000.0 / Stopwatch.Frequency:F0} ms, " +
                    $"{(EncodeTicks > 0 ? EncodedTexels / (EncodeTicks / (double)Stopwatch.Frequency) / 1e6 : 0):F1} M texels/s), {MemoryHits} from memory, {DiskHits} from disk" +
@@ -85,10 +85,10 @@ public static class AstcTranscoder
         }
     }
 
-    static ulong Key(ReadOnlySpan<byte> source, TexBase f, uint w, uint h) =>
+    private static ulong Key(ReadOnlySpan<byte> source, TexBase f, uint w, uint h) =>
         XxHash3.HashToUInt64(source, (long)(((ulong)f * 0x9E3779B97F4A7C15ul) ^ ((ulong)w << 32 | h) ^ ((ulong)EncoderVersion << 56)));
 
-    static ulong Tag(TexBase f, uint w, uint h) => (ulong)(uint)f << 40 ^ (ulong)w << 20 ^ h;
+    private static ulong Tag(TexBase f, uint w, uint h) => (ulong)(uint)f << 40 ^ (ulong)w << 20 ^ h;
 
     /// <summary>One level of BC blocks (row order) to ASTC 4x4 blocks.</summary>
     public static Texels FromBc(TexBase f, ReadOnlySpan<byte> blocks, uint w, uint h, AstcChannels channels) =>
@@ -98,17 +98,17 @@ public static class AstcTranscoder
     public static Texels FromPvrtc(TexBase f, ReadOnlySpan<byte> data, uint w, uint h, bool twoBpp, bool ii) =>
         Transcode(Key(data, f, w, h), Tag(f, w, h), w, h, AstcChannels.Rgba, data, (src, _, sw, sh) => Pvrtc.Decode(src, sw, sh, twoBpp, ii), f);
 
-    delegate Texels DecodeFn(ReadOnlySpan<byte> src, TexBase f, uint w, uint h);
+    private delegate Texels DecodeFn(ReadOnlySpan<byte> src, TexBase f, uint w, uint h);
 
-    static Texels Transcode(ulong key, ulong tag, uint w, uint h, AstcChannels channels, ReadOnlySpan<byte> source, DecodeFn decode, TexBase f)
+    private static Texels Transcode(ulong key, ulong tag, uint w, uint h, AstcChannels channels, ReadOnlySpan<byte> source, DecodeFn decode, TexBase f)
     {
         int length = (int)(((w + 3) / 4) * ((h + 3) / 4) * AstcEncoder.BlockBytes);
-        lock (Lock)
+        lock (s_lock)
         {
-            if (Map.TryGetValue(key, out var node) && node.Value.Data.Length == length)
+            if (s_map.TryGetValue(key, out LinkedListNode<(ulong Key, byte[] Data)>? node) && node.Value.Data.Length == length)
             {
-                Lru.Remove(node);
-                Lru.AddFirst(node);
+                s_lru.Remove(node);
+                s_lru.AddFirst(node);
                 MemoryHits++;
                 return Copy(node.Value.Data);
             }
@@ -120,14 +120,14 @@ public static class AstcTranscoder
             return Copy(cached);
         }
         long t0 = Stopwatch.GetTimestamp();
-        var outBlocks = new byte[length];
-        using (var rgba = decode(source, f, w, h))
+        byte[] outBlocks = new byte[length];
+        using (Texels rgba = decode(source, f, w, h))
         {
             AstcEncoder.EncodeParallel(rgba.Span, (int)w, (int)h, outBlocks, channels, Threads);
         }
 
         long dt = Stopwatch.GetTimestamp() - t0;
-        lock (Lock)
+        lock (s_lock)
         {
             Encoded++;
             EncodedTexels += (long)w * h;
@@ -138,45 +138,45 @@ public static class AstcTranscoder
         return Copy(outBlocks);
     }
 
-    static Texels Copy(byte[] data)
+    private static Texels Copy(byte[] data)
     {
         var t = Texels.Rent(data.Length);
         data.CopyTo(t.Array, 0);
         return t;
     }
 
-    static void Remember(ulong key, byte[] data)
+    private static void Remember(ulong key, byte[] data)
     {
         if (data.Length > MemoryBudget / 8)
         {
             return;
         }
 
-        lock (Lock)
+        lock (s_lock)
         {
-            if (Map.ContainsKey(key))
+            if (s_map.ContainsKey(key))
             {
                 return;
             }
 
-            Map[key] = Lru.AddFirst((key, data));
-            _bytes += data.Length;
-            while (_bytes > MemoryBudget && Lru.Last is { } last)
+            s_map[key] = s_lru.AddFirst((key, data));
+            s_bytes += data.Length;
+            while (s_bytes > MemoryBudget && s_lru.Last is { } last)
             {
-                Lru.RemoveLast();
-                Map.Remove(last.Value.Key);
-                _bytes -= last.Value.Data.Length;
+                s_lru.RemoveLast();
+                s_map.Remove(last.Value.Key);
+                s_bytes -= last.Value.Data.Length;
             }
         }
     }
 
     public static void Reset()
     {
-        lock (Lock)
+        lock (s_lock)
         {
-            Map.Clear();
-            Lru.Clear();
-            _bytes = 0;
+            s_map.Clear();
+            s_lru.Clear();
+            s_bytes = 0;
             Encoded = EncodedTexels = EncodeTicks = MemoryHits = DiskHits = 0;
         }
     }

@@ -13,12 +13,12 @@ namespace VitaSharp.Renderer.Vulkan;
 /// </summary>
 public sealed unsafe partial class VulkanRenderer
 {
-    const uint DumpStateVersion = 1;
+    private const uint DumpStateVersion = 1;
 
     /// <summary>Reads back every colour render target (GPU worker, at a frame boundary; waits for the GPU).</summary>
     public byte[]? ExportDumpState()
     {
-        if (ResScale != 1f)
+        if (_resScale != 1f)
         {
             Log.Warn("[gpudump] render targets are not carried in dumps taken at a resolution scale (VITASHARP_RES_SCALE)");
             return null;
@@ -35,10 +35,10 @@ public sealed unsafe partial class VulkanRenderer
         w.U32(DumpStateVersion);
         w.U32((uint)targets.Count);
         var pci = new CommandPoolCreateInfo { SType = StructureType.CommandPoolCreateInfo, QueueFamilyIndex = _core.QueueFamily };
-        _vk.CreateCommandPool(_dev, in pci, null, out var pool);
+        _vk.CreateCommandPool(_dev, in pci, null, out CommandPool pool);
         try
         {
-            foreach (var rt in targets)
+            foreach (RenderTarget? rt in targets)
             {
                 uint bpp = (uint)HostBytesPerPixel(rt.Format), bytes = rt.Width * rt.Height * bpp;
                 w.U32(rt.Address);
@@ -48,7 +48,7 @@ public sealed unsafe partial class VulkanRenderer
                 w.U32(rt.Stride);
                 w.I32((int)rt.Format);
                 w.U32(bpp);
-                var (buf, mem, ptr) = _core.CreateHostBuffer(bytes, BufferUsageFlags.TransferDstBit, MemCat.GpuDump);
+                (Silk.NET.Vulkan.Buffer buf, DeviceMemory mem, nint ptr) = _core.CreateHostBuffer(bytes, BufferUsageFlags.TransferDstBit, MemCat.GpuDump);
                 var ai = new CommandBufferAllocateInfo { SType = StructureType.CommandBufferAllocateInfo, CommandPool = pool, Level = CommandBufferLevel.Primary, CommandBufferCount = 1 };
                 CommandBuffer cmd = default;
                 try
@@ -86,7 +86,7 @@ public sealed unsafe partial class VulkanRenderer
     /// <summary>Recreates the recorded render targets with their contents (replay, before the first command).</summary>
     public void ImportDumpState(ReadOnlySpan<byte> state)
     {
-        var buffer = state.ToArray();
+        byte[] buffer = state.ToArray();
         var r = new DumpCursor();
         r.Reset(buffer, buffer.Length);
         uint version = r.U32();
@@ -102,7 +102,7 @@ public sealed unsafe partial class VulkanRenderer
             var format = (Format)r.I32();
             uint bpp = r.U32();
             int offset = r.Skip((int)(w * h * bpp));
-            var rt = GetRenderTarget(new ColorSurfaceInfo(addr, w, h, stride, colorFormat, 0, false, 0));
+            RenderTarget rt = GetRenderTarget(new ColorSurfaceInfo(addr, w, h, stride, colorFormat, 0, false, 0));
             rt.LastScene = _sceneSerial = ++_sceneSerialNext; // the recorded order: the newest target wins where targets overlap
             rt.LastUsedFrame = FrameCount;
             if (rt.Format != format || (uint)HostBytesPerPixel(rt.Format) != bpp)
@@ -112,7 +112,7 @@ public sealed unsafe partial class VulkanRenderer
             }
             BeginFrameIfNeeded();
             EndRendering();
-            var (buf, off) = UploadSpan(buffer.AsSpan(offset, (int)(w * h * bpp)), 16);
+            (Silk.NET.Vulkan.Buffer buf, ulong off) = UploadSpan(buffer.AsSpan(offset, (int)(w * h * bpp)), 16);
             Barrier(rt.Image, ImageLayout.General, ImageLayout.General, ImageAspectFlags.ColorBit,
                 PipelineStageFlags.AllCommandsBit, PipelineStageFlags.TransferBit, AccessFlags.MemoryWriteBit, AccessFlags.TransferWriteBit);
             var region = new BufferImageCopy

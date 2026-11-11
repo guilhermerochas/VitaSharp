@@ -17,33 +17,33 @@ namespace VitaSharp.Renderer.Vulkan;
 /// </summary>
 public sealed unsafe partial class VulkanRenderer
 {
-    GpuQueue? _queue;
+    private GpuQueue? _queue;
 
     public void Attach(GpuQueue queue) => _queue = queue;
 
     /// <summary>Why a frame is retired (fence wait + publication of its results).</summary>
-    enum RetireCause
+    private enum RetireCause
     {
         Slot, Idle, Present, Finish, Older, Dispose, Poll, Memory
     }
 
-    const int RetireCauses = 8;
-    readonly long[] _retireCount = new long[RetireCauses];
-    readonly long[] _retireBlocked = new long[RetireCauses];   // retirements whose fence had not signalled yet
-    readonly long[] _retireWaitTicks = new long[RetireCauses];
-    long _idleWaitTicks, _idleYields;
-    long _wbCount, _wbBytes, _wbTicks;
+    private const int RetireCauses = 8;
+    private readonly long[] _retireCount = new long[RetireCauses];
+    private readonly long[] _retireBlocked = new long[RetireCauses];   // retirements whose fence had not signalled yet
+    private readonly long[] _retireWaitTicks = new long[RetireCauses];
+    private long _idleWaitTicks, _idleYields;
+    private long _wbCount, _wbBytes, _wbTicks;
     /// <summary>Bytes copied into upload rings (geometry, uniforms, textures).</summary>
-    long _uploadBytes, _statOverflowBytes, _statOverflowChunks;
+    private long _uploadBytes, _statOverflowBytes, _statOverflowChunks;
     /// <summary>Work counters (PERF sync line): deterministic for a replayed GPU dump, so a change that cuts per-draw
     /// work shows here before it is timed on a phone.</summary>
-    long _statDraws, _statPipelineBinds, _statSets, _statDescWrites, _workFrames;
+    private long _statDraws, _statPipelineBinds, _statSets, _statDescWrites, _workFrames;
 
-    static readonly bool TraceSync = Environment.GetEnvironmentVariable(EnvVars.TraceSync) == "1";
-    (RetireCause Cause, double Ms)? _longWait;
+    private static readonly bool s_traceSync = Environment.GetEnvironmentVariable(EnvVars.TraceSync) == "1";
+    private (RetireCause Cause, double Ms)? _longWait;
 
     /// <summary>Waits for the frame's fence, counting the time spent blocked.</summary>
-    void WaitFrameFence(Frame f, RetireCause cause)
+    private void WaitFrameFence(Frame f, RetireCause cause)
     {
         int c = (int)cause;
         _retireCount[c]++;
@@ -62,12 +62,12 @@ public sealed unsafe partial class VulkanRenderer
         _retireBlocked[c]++;
         long dt = Stopwatch.GetTimestamp() - t0;
         _retireWaitTicks[c] += dt;
-        if (TraceSync && Ms(dt) >= 20)
+        if (s_traceSync && Ms(dt) >= 20)
         {
             _longWait = (cause, Ms(dt));
         }
 
-        if (SyncCallers)
+        if (s_syncCallers)
         {
             NoteBlockedCaller(cause, dt);
         }
@@ -75,27 +75,27 @@ public sealed unsafe partial class VulkanRenderer
 
     /// <summary>VITASHARP_SYNC_CALLERS=1: every blocking fence wait is attributed to its callers (3 frames of the stack),
     /// summed in the PERF sync line: which code makes the GPU worker wait for the GPU.</summary>
-    static readonly bool SyncCallers = Environment.GetEnvironmentVariable(EnvVars.SyncCallers) == "1";
-    readonly Dictionary<string, (long Count, long Ticks)> _blockedCallers = new();
+    private static readonly bool s_syncCallers = Environment.GetEnvironmentVariable(EnvVars.SyncCallers) == "1";
+    private readonly Dictionary<string, (long Count, long Ticks)> _blockedCallers = new();
 
-    void NoteBlockedCaller(RetireCause cause, long ticks)
+    private void NoteBlockedCaller(RetireCause cause, long ticks)
     {
-        var names = new StackTrace(2, false).GetFrames().Select(f => DiagnosticMethodInfo.Create(f)?.Name ?? "?")
+        IEnumerable<string> names = new StackTrace(2, false).GetFrames().Select(f => DiagnosticMethodInfo.Create(f)?.Name ?? "?")
             .Where(n => n is not ("RetireFrame" or "WaitFrameFence")).Take(3);
         string key = $"{cause}:{string.Join("<", names)}";
-        var (n, t) = _blockedCallers.GetValueOrDefault(key);
+        (long n, long t) = _blockedCallers.GetValueOrDefault(key);
         _blockedCallers[key] = (n + 1, t + ticks);
     }
 
-    string BlockedCallersReport() => !SyncCallers || _blockedCallers.Count == 0 ? "" :
+    private string BlockedCallersReport() => !s_syncCallers || _blockedCallers.Count == 0 ? "" :
         "; blocked by " + string.Join(", ", _blockedCallers.OrderByDescending(kv => kv.Value.Ticks).Take(8)
             .Select(kv => $"{kv.Key} {kv.Value.Count}x {Ms(kv.Value.Ticks):F0} ms"));
 
     /// <summary>The oldest submitted frame that has not been retired (frames retire in submission order).</summary>
-    Frame? OldestInFlight()
+    private Frame? OldestInFlight()
     {
         Frame? oldest = null;
-        foreach (var f in _frames)
+        foreach (Frame f in _frames)
         {
             if (f.Submitted && !f.Retired && (oldest == null || f.SubmitSeq < oldest.SubmitSeq))
             {
@@ -106,9 +106,9 @@ public sealed unsafe partial class VulkanRenderer
         return oldest;
     }
 
-    bool InFlightResults()
+    private bool InFlightResults()
     {
-        foreach (var f in _frames)
+        foreach (Frame f in _frames)
         {
             if (f.Submitted && !f.Retired && HasPendingResults(f))
             {
@@ -120,7 +120,7 @@ public sealed unsafe partial class VulkanRenderer
     }
 
     /// <summary>Publishes the results of every frame the GPU has already finished, oldest first, without waiting.</summary>
-    void PollRetire()
+    private void PollRetire()
     {
         while (OldestInFlight() is { } f && _vk.GetFenceStatus(_dev, f.Fence) == Result.Success)
         {
@@ -148,9 +148,9 @@ public sealed unsafe partial class VulkanRenderer
         bool resultsRecorded = F.Recording && HasPendingResults(F);
         if (F.Recording && (!_inScene || resultsRecorded) && (_drawsSinceSubmit > 0 || resultsRecorded))
         {
-            if (TraceVis)
+            if (s_traceVis)
             {
-                Log.Info($"[vis] idle submit inScene={_inScene} rt=0x{_rt?.Address ?? 0:X8} present={_presentCount} draws={_drawSerial}");
+                Log.Info($"[vis] idle submit inScene={_inScene} rt=0x{_renderTarget?.Address ?? 0:X8} present={_presentCount} draws={_drawSerial}");
             }
 
             SubmitFrame(false, 0);
@@ -167,8 +167,8 @@ public sealed unsafe partial class VulkanRenderer
                     _idleYields++;
                     return;
                 }
-                var f = OldestInFlight()!;
-                var r = _vk.WaitForFences(_dev, 1, in f.Fence, true, 1_000_000);
+                Frame f = OldestInFlight()!;
+                Result r = _vk.WaitForFences(_dev, 1, in f.Fence, true, 1_000_000);
                 if (r == Result.Success)
                 {
                     RetireFrame(f, RetireCause.Idle);
@@ -196,7 +196,7 @@ public sealed unsafe partial class VulkanRenderer
     /// memory by the next flip at the latest (games read luminance and picking buffers a frame later without
     /// waiting); sync points after the flip are deferred signals and wait for them anyway.
     /// </summary>
-    void RetireFlippedFrame()
+    private void RetireFlippedFrame()
     {
         PollRetire();
         if (_flipSeq is long seq)
@@ -207,13 +207,13 @@ public sealed unsafe partial class VulkanRenderer
             }
         }
 
-        var just = _frames[(_frameIndex + FramesInFlight - 1) % FramesInFlight];
+        Frame just = _frames[(_frameIndex + s_framesInFlight - 1) % s_framesInFlight];
         _flipSeq = just.Submitted && !just.Retired && HasPendingResults(just) ? just.SubmitSeq : null;
     }
 
-    long? _flipSeq;
+    private long? _flipSeq;
 
-    string SyncReport()
+    private string SyncReport()
     {
         double frames = Math.Max(1, _presentCount);
         var sb = new System.Text.StringBuilder("PERF sync: blocking fence waits (blocked/retired, ms)");

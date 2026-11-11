@@ -13,7 +13,7 @@ namespace VitaSharp.Renderer.Vulkan;
 /// </summary>
 public sealed unsafe partial class VulkanRenderer
 {
-    sealed class SceneStartCopy
+    private sealed class SceneStartCopy
     {
         public RenderTarget Shadow = null!;
         public ImageMemoryPool.Allocation Mem;
@@ -22,12 +22,12 @@ public sealed unsafe partial class VulkanRenderer
         public readonly Dictionary<Format, ImageView> Views = new();
     }
 
-    readonly Dictionary<RenderTarget, SceneStartCopy> _sceneStartCopies = new();
+    private readonly Dictionary<RenderTarget, SceneStartCopy> _sceneStartCopies = new();
 
     /// <summary>Pixel rectangle the current draw can write (region clip, else the whole scene).</summary>
-    int _drawMinX, _drawMinY, _drawMaxX = int.MaxValue, _drawMaxY = int.MaxValue;
+    private int _drawMinX, _drawMinY, _drawMaxX = int.MaxValue, _drawMaxY = int.MaxValue;
 
-    void SetDrawArea(in Core.Gpu.DrawState st)
+    private void SetDrawArea(in Core.Gpu.DrawState st)
     {
         if (st.RegionClipMode == 2)
         {
@@ -63,13 +63,13 @@ public sealed unsafe partial class VulkanRenderer
     /// surface may already have been stored by tiles that finished (post-processing atlases chain passes through
     /// different regions of one scene), so only the overlapping case reads the scene-start content.
     /// </summary>
-    bool SamplesOwnTiles(uint x0, uint y0, uint w, uint h) =>
+    private bool SamplesOwnTiles(uint x0, uint y0, uint w, uint h) =>
         (int)x0 <= _drawMaxX && (int)(x0 + w - 1) >= _drawMinX && (int)y0 <= _drawMaxY && (int)(y0 + h - 1) >= _drawMinY;
 
     /// <summary>The scene-start copy of the current surface (created the first time a draw samples it).</summary>
-    RenderTarget SceneStartSource(RenderTarget rt)
+    private RenderTarget SceneStartSource(RenderTarget rt)
     {
-        if (_sceneStartCopies.TryGetValue(rt, out var c))
+        if (_sceneStartCopies.TryGetValue(rt, out SceneStartCopy? c))
         {
             return c.Valid ? c.Shadow : rt;
         }
@@ -81,7 +81,7 @@ public sealed unsafe partial class VulkanRenderer
     }
 
     /// <summary>Multisampled scenes always keep a scene-start copy: their first rendering loads the samples from it.</summary>
-    void EnsureSceneStartCopy(RenderTarget rt)
+    private void EnsureSceneStartCopy(RenderTarget rt)
     {
         if (!_sceneStartCopies.ContainsKey(rt))
         {
@@ -90,15 +90,15 @@ public sealed unsafe partial class VulkanRenderer
     }
 
     /// <summary>The scene-start copy viewed as <paramref name="format"/> (same texel size as the surface).</summary>
-    ImageView SceneStartCopyView(RenderTarget rt, Format format)
+    private ImageView SceneStartCopyView(RenderTarget rt, Format format)
     {
-        var c = _sceneStartCopies[rt];
+        SceneStartCopy c = _sceneStartCopies[rt];
         if (format == c.Shadow.Format)
         {
             return c.Shadow.View;
         }
 
-        if (c.Views.TryGetValue(format, out var v))
+        if (c.Views.TryGetValue(format, out ImageView v))
         {
             return v;
         }
@@ -106,16 +106,16 @@ public sealed unsafe partial class VulkanRenderer
         return c.Views[format] = CreateView(c.Shadow.Image, format, ImageAspectFlags.ColorBit, 1, 1, false, default);
     }
 
-    void DestroySceneStartCopyLater(RenderTarget rt, bool now = false)
+    private void DestroySceneStartCopyLater(RenderTarget rt, bool now = false)
     {
-        if (!_sceneStartCopies.Remove(rt, out var c))
+        if (!_sceneStartCopies.Remove(rt, out SceneStartCopy? c))
         {
             return;
         }
 
         Release(() =>
         {
-            foreach (var v in c.Views.Values)
+            foreach (ImageView v in c.Views.Values)
             {
                 _vk.DestroyImageView(_dev, v, null);
             }
@@ -126,9 +126,9 @@ public sealed unsafe partial class VulkanRenderer
         }, now);
     }
 
-    void CreateSceneStartCopy(RenderTarget rt)
+    private void CreateSceneStartCopy(RenderTarget rt)
     {
-        var (img, view, mem) = CreateImage(MemCat.Region, rt.ImgW, rt.ImgH, rt.Format, ImageUsageFlags.SampledBit | ImageUsageFlags.TransferDstBit | ImageUsageFlags.TransferSrcBit,
+        (Image img, ImageView view, ImageMemoryPool.Allocation mem) = CreateImage(MemCat.Region, rt.ImgW, rt.ImgH, rt.Format, ImageUsageFlags.SampledBit | ImageUsageFlags.TransferDstBit | ImageUsageFlags.TransferSrcBit,
             ImageAspectFlags.ColorBit, mutable: true);
         var shadow = new RenderTarget
         {
@@ -147,14 +147,14 @@ public sealed unsafe partial class VulkanRenderer
     }
 
     /// <summary>Called when a scene begins: refreshes the copy of a surface that its own draws sample.</summary>
-    void CaptureSceneStart(RenderTarget rt)
+    private void CaptureSceneStart(RenderTarget rt)
     {
-        if (!_sceneStartCopies.TryGetValue(rt, out var c))
+        if (!_sceneStartCopies.TryGetValue(rt, out SceneStartCopy? c))
         {
             return;
         }
 
-        var s = c.Shadow;
+        RenderTarget s = c.Shadow;
         EndRendering();
         rt.Dirty = true;
         SyncRenderTargetForRead(rt);

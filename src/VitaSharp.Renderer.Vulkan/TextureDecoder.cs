@@ -1,4 +1,5 @@
 using System.Buffers;
+using System.Diagnostics.CodeAnalysis;
 using System.Numerics;
 using VitaSharp.Core.Gpu;
 using VitaSharp.Core.Gxm;
@@ -15,9 +16,9 @@ public readonly struct Texels : IDisposable
 {
     public readonly byte[] Array;
     public readonly int Length;
-    readonly bool _pooled;
+    private readonly bool _pooled;
 
-    Texels(byte[] array, int length, bool pooled)
+    private Texels(byte[] array, int length, bool pooled)
     {
         Array = array;
         Length = length;
@@ -30,7 +31,7 @@ public readonly struct Texels : IDisposable
     public static Texels Rent(long length)
     {
         int n = checked((int)length);
-        var a = ArrayPool<byte>.Shared.Rent(n);
+        byte[] a = ArrayPool<byte>.Shared.Rent(n);
         System.Array.Clear(a, 0, n);
         return new Texels(a, n, true);
     }
@@ -53,8 +54,10 @@ public readonly struct Texels : IDisposable
 /// <summary>Turns guest texture memory (any GXM layout) into tightly packed rows ready for vkCmdCopyBufferToImage.</summary>
 public static class TextureDecoder
 {
-    [ThreadStatic] static uint t_srcAddr;
-    [ThreadStatic] static byte[]? t_srcData;
+    [SuppressMessage("Style", "IDE1006", Justification = "[ThreadStatic]: t_camelCase; .editorconfig cannot select the attribute")]
+    [ThreadStatic] private static uint t_srcAddr;
+    [SuppressMessage("Style", "IDE1006", Justification = "[ThreadStatic]: t_camelCase; .editorconfig cannot select the attribute")]
+    [ThreadStatic] private static byte[]? t_srcData;
 
     /// <summary>Until disposed, reads of [addr, addr + data.Length) on this thread come from <paramref name="data"/>
     /// instead of guest memory (an earlier decoder picture, Gpu/DecoderOutputs.cs).</summary>
@@ -70,7 +73,7 @@ public static class TextureDecoder
         public void Dispose() => t_srcData = null;
     }
 
-    static ReadOnlySpan<byte> Mem(uint addr, int length)
+    private static ReadOnlySpan<byte> Mem(uint addr, int length)
     {
         if (t_srcData is { } d && addr - t_srcAddr <= (uint)d.Length && (ulong)(addr - t_srcAddr) + (uint)length <= (uint)d.Length)
         {
@@ -80,7 +83,7 @@ public static class TextureDecoder
         return GuestMemory.ReadSpan(addr, length);
     }
 
-    static byte Mem8(uint addr) => t_srcData is { } d && addr - t_srcAddr < (uint)d.Length ? d[addr - t_srcAddr] : GuestMemory.Read<byte>(addr);
+    private static byte Mem8(uint addr) => t_srcData is { } d && addr - t_srcAddr < (uint)d.Length ? d[addr - t_srcAddr] : GuestMemory.Read<byte>(addr);
 
     /// <summary>Decodes one level. The result is pooled: dispose it once its bytes were copied.</summary>
     public static Texels Decode(GxmTextureDesc d, TexFormatInfo info, uint addr, uint w, uint h, uint rowPitch, out uint outW, out uint outH)
@@ -95,7 +98,7 @@ public static class TextureDecoder
         {
             if (info.Convert == TexConvert.Pvrtc)
             {
-                var bf = GxmFormats.BaseOf(d.Format);
+                TexBase bf = GxmFormats.BaseOf(d.Format);
                 bool two = bf is TexBase.PVRT2BPP or TexBase.PVRTII2BPP, ii = bf is TexBase.PVRTII2BPP or TexBase.PVRTII4BPP;
                 uint nx = BitOperations.RoundUpToPowerOf2(Math.Max((w + (two ? 7u : 3u)) / (two ? 8u : 4u), 2)), ny = BitOperations.RoundUpToPowerOf2(Math.Max((h + 3) / 4, 2));
                 return Pvrtc.Decode(Mem(addr, (int)(nx * ny * 8)), w, h, two, ii);
@@ -103,7 +106,7 @@ public static class TextureDecoder
             if (info.Convert == TexConvert.AstcFromPvrtc)
             {
                 // GPUs without BCn but with ASTC: PVRTC decoded, then encoded as ASTC 4x4 (AstcTranscoder)
-                var bf = GxmFormats.BaseOf(d.Format);
+                TexBase bf = GxmFormats.BaseOf(d.Format);
                 bool two = bf is TexBase.PVRT2BPP or TexBase.PVRTII2BPP, ii = bf is TexBase.PVRTII2BPP or TexBase.PVRTII4BPP;
                 uint nx = BitOperations.RoundUpToPowerOf2(Math.Max((w + (two ? 7u : 3u)) / (two ? 8u : 4u), 2)), ny = BitOperations.RoundUpToPowerOf2(Math.Max((h + 3) / 4, 2));
                 return AstcTranscoder.FromPvrtc(bf, Mem(addr, (int)(nx * ny * 8)), w, h, two, ii);
@@ -111,7 +114,7 @@ public static class TextureDecoder
             uint bw = (w + 3) / 4, bh = (h + 3) / 4;
             int bb = info.BlockBytes;
             var outBuf = Texels.Rent(bw * bh * bb);
-            var o = outBuf.Span;
+            Span<byte> o = outBuf.Span;
             if (!swizzled)
             {
                 for (uint y = 0; y < bh; y++)
@@ -140,7 +143,7 @@ public static class TextureDecoder
             }
             if (info.Convert == TexConvert.AstcFromBc)
             {
-                var bf = GxmFormats.BaseOf(d.Format);
+                TexBase bf = GxmFormats.BaseOf(d.Format);
                 using (outBuf)
                 {
                     return AstcTranscoder.FromBc(bf, outBuf.Span, w, h, AstcTranscoder.ChannelsFor(bf, false) ?? AstcChannels.Rgba);
@@ -162,12 +165,12 @@ public static class TextureDecoder
         if (bits < 8)
         {
             // P4: 2 texels per byte
-            using var raw = Gather(addr, w, h, rowPitch, 1, swizzled, tiled, halfBytes: true);
+            using Texels raw = Gather(addr, w, h, rowPitch, 1, swizzled, tiled, halfBytes: true);
             return ExpandPalette(raw.Span, d.PaletteAddress, w * h, true);
         }
 
         int bpp = bits / 8;
-        var linear = Gather(addr, w, h, rowPitch, bpp, swizzled, tiled, halfBytes: false);
+        Texels linear = Gather(addr, w, h, rowPitch, bpp, swizzled, tiled, halfBytes: false);
         if (info.Convert is TexConvert.None)
         {
             if (IsU5U5U5U1(d.Format))
@@ -179,7 +182,7 @@ public static class TextureDecoder
         }
         using (linear)
         {
-            var src = linear.Span;
+            Span<byte> src = linear.Span;
             return info.Convert switch
             {
                 TexConvert.Palette8 => ExpandPalette(src, d.PaletteAddress, w * h, false),
@@ -199,16 +202,16 @@ public static class TextureDecoder
         GxmFormats.BaseOf(format) == TexBase.U1U5U5U5 && (GxmFormats.SwizzleOf(format) >> 12) is 2 or 3 or 6 or 7;
 
     /// <summary>Moves the 1-bit field from bit 0 to bit 15 so the texels fit A1R5G5B5 (the 5-bit fields keep their order).</summary>
-    static void U5U5U5U1ToU1U5U5U5(Span<byte> texels)
+    private static void U5U5U5U1ToU1U5U5U5(Span<byte> texels)
     {
-        var px = System.Runtime.InteropServices.MemoryMarshal.Cast<byte, ushort>(texels);
+        Span<ushort> px = System.Runtime.InteropServices.MemoryMarshal.Cast<byte, ushort>(texels);
         for (int i = 0; i < px.Length; i++)
         {
             px[i] = (ushort)((px[i] >> 1) | (px[i] << 15));
         }
     }
 
-    static Texels Unhandled(TexFormatInfo info, ReadOnlySpan<byte> data)
+    private static Texels Unhandled(TexFormatInfo info, ReadOnlySpan<byte> data)
     {
         Log.WarnOnce("texconv" + info.Convert, $"[gpu] texture conversion {info.Convert} is not implemented: texels passed through raw");
         var copy = Texels.Rent(data.Length);
@@ -217,10 +220,10 @@ public static class TextureDecoder
     }
 
     /// <summary>Reads texels into row-major order. For P4 (halfBytes) the result has one byte per texel.</summary>
-    static Texels Gather(uint addr, uint w, uint h, uint rowPitch, int bpp, bool swizzled, bool tiled, bool halfBytes)
+    private static Texels Gather(uint addr, uint w, uint h, uint rowPitch, int bpp, bool swizzled, bool tiled, bool halfBytes)
     {
         var result = Texels.Rent((long)w * h * bpp);
-        var dst = result.Span;
+        Span<byte> dst = result.Span;
         if (halfBytes)
         {
             for (uint y = 0; y < h; y++)
@@ -269,7 +272,7 @@ public static class TextureDecoder
         return result;
     }
 
-    static Texels ExpandPalette(ReadOnlySpan<byte> indices, uint palette, uint count, bool p4)
+    private static Texels ExpandPalette(ReadOnlySpan<byte> indices, uint palette, uint count, bool p4)
     {
         var result = Texels.Rent(count * 4L);
         if (palette == 0)
@@ -277,8 +280,8 @@ public static class TextureDecoder
             return result;
         }
 
-        var dst = result.Span;
-        var pal = GuestMemory.ReadSpan<uint>(palette, p4 ? 16 : 256);
+        Span<byte> dst = result.Span;
+        ReadOnlySpan<uint> pal = GuestMemory.ReadSpan<uint>(palette, p4 ? 16 : 256);
         for (int i = 0; i < count; i++)
         {
             BitConverter.TryWriteBytes(dst[(i * 4)..], pal[indices[i] & (p4 ? 0xF : 0xFF)]);
@@ -287,10 +290,10 @@ public static class TextureDecoder
         return result;
     }
 
-    static Texels Rgb8ToRgba8(ReadOnlySpan<byte> src, uint count, byte alpha)
+    private static Texels Rgb8ToRgba8(ReadOnlySpan<byte> src, uint count, byte alpha)
     {
         var result = Texels.Rent(count * 4L);
-        var dst = result.Span;
+        Span<byte> dst = result.Span;
         for (int i = 0; i < count; i++)
         {
             dst[i * 4] = src[i * 3];
@@ -301,10 +304,10 @@ public static class TextureDecoder
         return result;
     }
 
-    static Texels U8U3U3U2(ReadOnlySpan<byte> src, uint count)
+    private static Texels U8U3U3U2(ReadOnlySpan<byte> src, uint count)
     {
         var result = Texels.Rent(count * 4L);
-        var dst = result.Span;
+        Span<byte> dst = result.Span;
         for (int i = 0; i < count; i++)
         {
             ushort v = BitConverter.ToUInt16(src[(i * 2)..]);
@@ -318,10 +321,10 @@ public static class TextureDecoder
     }
 
     /// <summary>X8U24 depth: low 24 bits, normalised to 0..1 (the fetch result on the Vita).</summary>
-    static Texels X8U24(ReadOnlySpan<byte> src, uint count)
+    private static Texels X8U24(ReadOnlySpan<byte> src, uint count)
     {
         var result = Texels.Rent(count * 4L);
-        var dst = result.Span;
+        Span<byte> dst = result.Span;
         for (int i = 0; i < count; i++)
         {
             BitConverter.TryWriteBytes(dst[(i * 4)..], (BitConverter.ToUInt32(src[(i * 4)..]) & 0xFFFFFF) / 16777215f);
@@ -330,10 +333,10 @@ public static class TextureDecoder
         return result;
     }
 
-    static Texels S5S5U6(ReadOnlySpan<byte> src, uint count)
+    private static Texels S5S5U6(ReadOnlySpan<byte> src, uint count)
     {
         var result = Texels.Rent(count * 4L);
-        var dst = result.Span;
+        Span<byte> dst = result.Span;
         for (int i = 0; i < count; i++)
         {
             ushort v = BitConverter.ToUInt16(src[(i * 2)..]);
@@ -346,17 +349,17 @@ public static class TextureDecoder
         return result;
     }
 
-    static ushort F10ToHalf(uint v)
+    private static ushort F10ToHalf(uint v)
     {
         // 5-bit exponent, 5-bit mantissa, no sign: same exponent bias as half
         uint e = (v >> 5) & 0x1F, m = v & 0x1F;
         return (ushort)((e << 10) | (m << 5));
     }
 
-    static Texels U2F10F10F10(ReadOnlySpan<byte> src, uint count)
+    private static Texels U2F10F10F10(ReadOnlySpan<byte> src, uint count)
     {
         var result = Texels.Rent(count * 8L);
-        var dst = result.Span;
+        Span<byte> dst = result.Span;
         for (int i = 0; i < count; i++)
         {
             uint v = BitConverter.ToUInt32(src[(i * 4)..]);
@@ -369,7 +372,7 @@ public static class TextureDecoder
     }
 
     /// <summary>BT.601: CSC0 is studio range (Y 16..235), CSC1 full range (the hardware's two colour-space modes).</summary>
-    static void YuvToRgb(int y, int u, int v, Span<byte> o, bool fullRange = false)
+    private static void YuvToRgb(int y, int u, int v, Span<byte> o, bool fullRange = false)
     {
         int d = u - 128, e = v - 128;
         if (fullRange)
@@ -389,11 +392,11 @@ public static class TextureDecoder
     }
 
     /// <summary>swizzle: bit 0 = YVU order (V before U), bit 1 = CSC1 (full range).</summary>
-    static Texels Yuv420(uint addr, uint w, uint h, uint pitch, bool threePlane, uint swizzle)
+    private static Texels Yuv420(uint addr, uint w, uint h, uint pitch, bool threePlane, uint swizzle)
     {
         bool yvu = (swizzle & 1) != 0, full = (swizzle & 2) != 0;
         var result = Texels.Rent(w * h * 4L);
-        var dst = result.Span;
+        Span<byte> dst = result.Span;
         uint ySize = pitch * h;
         for (uint y = 0; y < h; y++)
         {
@@ -420,10 +423,10 @@ public static class TextureDecoder
         return result;
     }
 
-    static Texels Yuv422(uint addr, uint w, uint h, uint pitch)
+    private static Texels Yuv422(uint addr, uint w, uint h, uint pitch)
     {
         var result = Texels.Rent(w * h * 4L);
-        var dst = result.Span;
+        Span<byte> dst = result.Span;
         if (pitch == 0)
         {
             pitch = w * 2;
@@ -450,7 +453,7 @@ public static class TextureDecoder
 /// <summary>Minimal PNG writer (RGBA8) for frame dumps.</summary>
 public static class Png
 {
-    static readonly uint[] Crc = Enumerable.Range(0, 256).Select(n =>
+    private static readonly uint[] s_crc = Enumerable.Range(0, 256).Select(n =>
     {
         uint c = (uint)n;
         for (int k = 0; k < 8; k++)
@@ -461,17 +464,17 @@ public static class Png
         return c;
     }).ToArray();
 
-    static uint Crc32(ReadOnlySpan<byte> data, uint crc = 0xFFFFFFFF)
+    private static uint Crc32(ReadOnlySpan<byte> data, uint crc = 0xFFFFFFFF)
     {
-        foreach (var b in data)
+        foreach (byte b in data)
         {
-            crc = Crc[(crc ^ b) & 0xFF] ^ (crc >> 8);
+            crc = s_crc[(crc ^ b) & 0xFF] ^ (crc >> 8);
         }
 
         return crc;
     }
 
-    static void Chunk(Stream s, string type, ReadOnlySpan<byte> data)
+    private static void Chunk(Stream s, string type, ReadOnlySpan<byte> data)
     {
         Span<byte> len = stackalloc byte[4];
         System.Buffers.Binary.BinaryPrimitives.WriteInt32BigEndian(len, data.Length);
@@ -486,11 +489,12 @@ public static class Png
     }
 
     /// <summary>Compressed image data buffer reused across writes on the same thread (frame dumps write one PNG every few frames).</summary>
-    [ThreadStatic] static MemoryStream? _idat;
+    [SuppressMessage("Style", "IDE1006", Justification = "[ThreadStatic]: t_camelCase; .editorconfig cannot select the attribute")]
+    [ThreadStatic] private static MemoryStream? t_idat;
 
     public static void Write(string path, ReadOnlySpan<byte> rgba, int w, int h)
     {
-        using var fs = File.Create(path);
+        using FileStream fs = File.Create(path);
         fs.Write([0x89, 0x50, 0x4E, 0x47, 0x0D, 0x0A, 0x1A, 0x0A]);
         Span<byte> ihdr = stackalloc byte[13];
         ihdr.Clear();
@@ -499,7 +503,7 @@ public static class Png
         ihdr[8] = 8;
         ihdr[9] = 6;
         Chunk(fs, "IHDR", ihdr);
-        var ms = _idat ??= new MemoryStream();
+        MemoryStream ms = t_idat ??= new MemoryStream();
         ms.SetLength(0);
         using (var z = new System.IO.Compression.ZLibStream(ms, System.IO.Compression.CompressionLevel.Fastest, true))
         {

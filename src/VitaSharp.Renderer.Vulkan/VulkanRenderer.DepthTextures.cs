@@ -13,7 +13,7 @@ namespace VitaSharp.Renderer.Vulkan;
 /// </summary>
 public sealed unsafe partial class VulkanRenderer
 {
-    sealed class DepthTex
+    private sealed class DepthTex
     {
         public Image Image;
         public ImageView View;
@@ -24,11 +24,11 @@ public sealed unsafe partial class VulkanRenderer
         public long LastUsedFrame;
     }
 
-    readonly Dictionary<DepthTarget, DepthTex> _depthTextures = new();
+    private readonly Dictionary<DepthTarget, DepthTex> _depthTextures = new();
 
-    DepthTarget? DepthTextureSource(uint addr, GxmTextureDesc d)
+    private DepthTarget? DepthTextureSource(uint addr, GxmTextureDesc d)
     {
-        var b = GxmFormats.BaseOf(d.Format);
+        TexBase b = GxmFormats.BaseOf(d.Format);
         if (b is not (TexBase.X8U24 or TexBase.F32 or TexBase.F32M or TexBase.U16))
         {
             return null;
@@ -47,10 +47,10 @@ public sealed unsafe partial class VulkanRenderer
     /// the fog/colour pass painted red and blue wedges over the plane interior). Only when no such target exists is
     /// the multisampled read reported and guest memory used (<see cref="MultisampledDepthRead"/>).
     /// </summary>
-    DepthTarget? StoredDepthSource(uint addr, bool stencil, bool unpack)
+    private DepthTarget? StoredDepthSource(uint addr, bool stencil, bool unpack)
     {
         DepthTarget? best = null, stored = null;
-        foreach (var dt in _depthTargets.Values)
+        foreach (DepthTarget dt in _depthTargets.Values)
         {
             if ((stencil ? dt.StencilAddress : dt.Address) != addr)
             {
@@ -81,7 +81,7 @@ public sealed unsafe partial class VulkanRenderer
         return MultisampledDepthRead(best, stencil, unpack) ? null : best;
     }
 
-    (ImageView, ImageLayout) DepthTexture(DepthTarget dt, uint w, uint h)
+    private (ImageView, ImageLayout) DepthTexture(DepthTarget dt, uint w, uint h)
     {
         dt.LastTouchedFrame = FrameCount; // the copy below may allocate: the source must survive a reclaim
         if (dt.Samples != SampleCountFlags.Count1Bit)
@@ -101,11 +101,11 @@ public sealed unsafe partial class VulkanRenderer
         } // image pixels (VulkanRenderer.ResScale.cs)
         w = Math.Min(w, dt.Width);
         h = Math.Min(h, dt.Height);
-        if (!_depthTextures.TryGetValue(dt, out var t) || t.W != w || t.H != h)
+        if (!_depthTextures.TryGetValue(dt, out DepthTex? t) || t.W != w || t.H != h)
         {
             if (t != null)
             {
-                var old = t;
+                DepthTex old = t;
                 DestroyAfterGpu(() => DestroyDepthTex(old));
             }
             t = new DepthTex { W = w, H = h };
@@ -119,7 +119,7 @@ public sealed unsafe partial class VulkanRenderer
                 new ComponentMapping(ComponentSwizzle.R, ComponentSwizzle.R, ComponentSwizzle.R, ComponentSwizzle.R));
             _depthTextures[dt] = t;
             BeginFrameIfNeeded();
-            using var init = BeginOutside(t.View);
+            using OutsideScope init = BeginOutside(t.View);
             Barrier(t.Image, ImageLayout.Undefined, ImageLayout.DepthStencilReadOnlyOptimal, ImageAspectFlags.DepthBit | ImageAspectFlags.StencilBit,
                 PipelineStageFlags.TopOfPipeBit, PipelineStageFlags.FragmentShaderBit, 0, AccessFlags.ShaderReadBit);
         }
@@ -132,26 +132,26 @@ public sealed unsafe partial class VulkanRenderer
         t.Version = dt.Version;
 
         // another scene's depth is copied before the open rendering; the scene's own depth ends it
-        using var outside = BeginOutside(t.View, readsDepth: dt == _depth);
-        const ImageAspectFlags ds = ImageAspectFlags.DepthBit | ImageAspectFlags.StencilBit;
-        Barrier(dt.Image, ImageLayout.DepthStencilAttachmentOptimal, ImageLayout.TransferSrcOptimal, ds,
+        using OutsideScope outside = BeginOutside(t.View, readsDepth: dt == _depth);
+        const ImageAspectFlags DepthStencilAspect = ImageAspectFlags.DepthBit | ImageAspectFlags.StencilBit;
+        Barrier(dt.Image, ImageLayout.DepthStencilAttachmentOptimal, ImageLayout.TransferSrcOptimal, DepthStencilAspect,
             PipelineStageFlags.EarlyFragmentTestsBit | PipelineStageFlags.LateFragmentTestsBit, PipelineStageFlags.TransferBit,
             AccessFlags.DepthStencilAttachmentWriteBit, AccessFlags.TransferReadBit);
-        Barrier(t.Image, ImageLayout.DepthStencilReadOnlyOptimal, ImageLayout.TransferDstOptimal, ds,
+        Barrier(t.Image, ImageLayout.DepthStencilReadOnlyOptimal, ImageLayout.TransferDstOptimal, DepthStencilAspect,
             PipelineStageFlags.FragmentShaderBit | PipelineStageFlags.VertexShaderBit, PipelineStageFlags.TransferBit,
             AccessFlags.ShaderReadBit, AccessFlags.TransferWriteBit);
         var copy = new ImageCopy
         {
-            SrcSubresource = new ImageSubresourceLayers(ds, 0, 0, 1),
-            DstSubresource = new ImageSubresourceLayers(ds, 0, 0, 1),
+            SrcSubresource = new ImageSubresourceLayers(DepthStencilAspect, 0, 0, 1),
+            DstSubresource = new ImageSubresourceLayers(DepthStencilAspect, 0, 0, 1),
             Extent = new Extent3D(w, h, 1),
         };
         DevStampOp();
         _vk.CmdCopyImage(Cmd, dt.Image, ImageLayout.TransferSrcOptimal, t.Image, ImageLayout.TransferDstOptimal, 1, in copy);
-        Barrier(dt.Image, ImageLayout.TransferSrcOptimal, ImageLayout.DepthStencilAttachmentOptimal, ds,
+        Barrier(dt.Image, ImageLayout.TransferSrcOptimal, ImageLayout.DepthStencilAttachmentOptimal, DepthStencilAspect,
             PipelineStageFlags.TransferBit, PipelineStageFlags.EarlyFragmentTestsBit | PipelineStageFlags.LateFragmentTestsBit,
             AccessFlags.TransferReadBit, AccessFlags.DepthStencilAttachmentReadBit | AccessFlags.DepthStencilAttachmentWriteBit);
-        Barrier(t.Image, ImageLayout.TransferDstOptimal, ImageLayout.DepthStencilReadOnlyOptimal, ds,
+        Barrier(t.Image, ImageLayout.TransferDstOptimal, ImageLayout.DepthStencilReadOnlyOptimal, DepthStencilAspect,
             PipelineStageFlags.TransferBit, PipelineStageFlags.FragmentShaderBit | PipelineStageFlags.VertexShaderBit,
             AccessFlags.TransferWriteBit, AccessFlags.ShaderReadBit);
         return (t.View, ImageLayout.DepthStencilReadOnlyOptimal);
@@ -170,7 +170,7 @@ public sealed unsafe partial class VulkanRenderer
     /// (x, y) is the upper (y even) or lower sample of pixel (x, y/2). Without that the read saw guest memory, the blur
     /// factor came out "far" everywhere and the cutscenes were blurred over the subject in focus.
     /// </summary>
-    void DestroyDepthTex(DepthTex t)
+    private void DestroyDepthTex(DepthTex t)
     {
         _vk.DestroyImageView(_dev, t.View, null);
         if (t.AttachView.Handle != 0)
@@ -182,7 +182,7 @@ public sealed unsafe partial class VulkanRenderer
         _imagePool.Free(t.Mem);
     }
 
-    (ImageView, ImageLayout) UnpackedDepthTexture(DepthTarget dt, uint w, uint h)
+    private (ImageView, ImageLayout) UnpackedDepthTexture(DepthTarget dt, uint w, uint h)
     {
         // above native the multisampled image is scaled too: every sample of it is unpacked, at the scaled size, like
         // the single-sampled depth texture (VulkanRenderer.ResScale.cs). Unpacked at the guest size, texel (x, y) read
@@ -196,22 +196,22 @@ public sealed unsafe partial class VulkanRenderer
         int layout = UnpackLayout(dt);
         w = Math.Min(w, layout == 0 ? dt.Width * 2 : dt.Width);
         h = Math.Min(h, dt.Height * 2);
-        const ImageAspectFlags ds = ImageAspectFlags.DepthBit | ImageAspectFlags.StencilBit;
-        if (!_depthTextures.TryGetValue(dt, out var t) || t.W != w || t.H != h)
+        const ImageAspectFlags DepthStencilAspect = ImageAspectFlags.DepthBit | ImageAspectFlags.StencilBit;
+        if (!_depthTextures.TryGetValue(dt, out DepthTex? t) || t.W != w || t.H != h)
         {
             if (t != null)
             {
-                var old = t;
+                DepthTex old = t;
                 DestroyAfterGpu(() => DestroyDepthTex(old));
             }
             t = new DepthTex { W = w, H = h };
-            (t.Image, t.AttachView, t.Mem) = CreateImage(MemCat.Region, w, h, _core.DepthFormat, ImageUsageFlags.SampledBit | ImageUsageFlags.DepthStencilAttachmentBit, ds);
+            (t.Image, t.AttachView, t.Mem) = CreateImage(MemCat.Region, w, h, _core.DepthFormat, ImageUsageFlags.SampledBit | ImageUsageFlags.DepthStencilAttachmentBit, DepthStencilAspect);
             t.View = CreateView(t.Image, _core.DepthFormat, ImageAspectFlags.DepthBit, 1, 1, false,
                 new ComponentMapping(ComponentSwizzle.R, ComponentSwizzle.R, ComponentSwizzle.R, ComponentSwizzle.R));
             _depthTextures[dt] = t;
             BeginFrameIfNeeded();
             EndRendering();
-            Barrier(t.Image, ImageLayout.Undefined, ImageLayout.DepthStencilReadOnlyOptimal, ds,
+            Barrier(t.Image, ImageLayout.Undefined, ImageLayout.DepthStencilReadOnlyOptimal, DepthStencilAspect,
                 PipelineStageFlags.TopOfPipeBit, PipelineStageFlags.FragmentShaderBit, 0, AccessFlags.ShaderReadBit);
             Log.Info($"[gpu] depth surface 0x{dt.Address:X8} of a {(layout == 0 ? "4X" : "2X")} multisampled scene (forced store) is read as a {w}x{h} texture: the samples are unpacked");
         }
@@ -225,15 +225,15 @@ public sealed unsafe partial class VulkanRenderer
 
         EndRendering();
         dt.SampledView = dt.SampledView.Handle != 0 ? dt.SampledView : CreateView(dt.Image, _core.DepthFormat, ImageAspectFlags.DepthBit, 1, 1, false, default);
-        Barrier(dt.Image, ImageLayout.DepthStencilAttachmentOptimal, ImageLayout.DepthStencilReadOnlyOptimal, ds,
+        Barrier(dt.Image, ImageLayout.DepthStencilAttachmentOptimal, ImageLayout.DepthStencilReadOnlyOptimal, DepthStencilAspect,
             PipelineStageFlags.EarlyFragmentTestsBit | PipelineStageFlags.LateFragmentTestsBit, PipelineStageFlags.FragmentShaderBit,
             AccessFlags.DepthStencilAttachmentWriteBit, AccessFlags.ShaderReadBit);
-        Barrier(t.Image, ImageLayout.DepthStencilReadOnlyOptimal, ImageLayout.DepthStencilAttachmentOptimal, ds,
+        Barrier(t.Image, ImageLayout.DepthStencilReadOnlyOptimal, ImageLayout.DepthStencilAttachmentOptimal, DepthStencilAspect,
             PipelineStageFlags.FragmentShaderBit | PipelineStageFlags.VertexShaderBit, PipelineStageFlags.EarlyFragmentTestsBit | PipelineStageFlags.LateFragmentTestsBit,
             AccessFlags.ShaderReadBit, AccessFlags.DepthStencilAttachmentWriteBit);
 
-        var cmd = Cmd;
-        var set = AllocSet(_msLoadSetLayout.Handle != 0 ? _msLoadSetLayout : EnsureLoadLayout());
+        CommandBuffer cmd = Cmd;
+        DescriptorSet set = AllocSet(_msLoadSetLayout.Handle != 0 ? _msLoadSetLayout : EnsureLoadLayout());
         var info = new DescriptorImageInfo(_dummySampler, dt.SampledView, ImageLayout.DepthStencilReadOnlyOptimal);
         var wr = new WriteDescriptorSet { SType = StructureType.WriteDescriptorSet, DstSet = set, DstBinding = 0, DescriptorCount = 1, DescriptorType = DescriptorType.CombinedImageSampler, PImageInfo = &info };
         _vk.UpdateDescriptorSets(_dev, 1, &wr, 0, null);
@@ -256,7 +256,7 @@ public sealed unsafe partial class VulkanRenderer
         if (UseRenderPasses)
         {
             // Vulkan 1.1 path (VulkanRenderer.RenderPasses.cs)
-            var pass = DepthUnpackPass();
+            RenderPass pass = DepthUnpackPass();
             var rbi = new RenderPassBeginInfo
             {
                 SType = StructureType.RenderPassBeginInfo,
@@ -289,10 +289,10 @@ public sealed unsafe partial class VulkanRenderer
 
         _boundPipeline = default;
 
-        Barrier(dt.Image, ImageLayout.DepthStencilReadOnlyOptimal, ImageLayout.DepthStencilAttachmentOptimal, ds,
+        Barrier(dt.Image, ImageLayout.DepthStencilReadOnlyOptimal, ImageLayout.DepthStencilAttachmentOptimal, DepthStencilAspect,
             PipelineStageFlags.FragmentShaderBit, PipelineStageFlags.EarlyFragmentTestsBit | PipelineStageFlags.LateFragmentTestsBit,
             AccessFlags.ShaderReadBit, AccessFlags.DepthStencilAttachmentReadBit | AccessFlags.DepthStencilAttachmentWriteBit);
-        Barrier(t.Image, ImageLayout.DepthStencilAttachmentOptimal, ImageLayout.DepthStencilReadOnlyOptimal, ds,
+        Barrier(t.Image, ImageLayout.DepthStencilAttachmentOptimal, ImageLayout.DepthStencilReadOnlyOptimal, DepthStencilAspect,
             PipelineStageFlags.EarlyFragmentTestsBit | PipelineStageFlags.LateFragmentTestsBit, PipelineStageFlags.FragmentShaderBit | PipelineStageFlags.VertexShaderBit,
             AccessFlags.DepthStencilAttachmentWriteBit, AccessFlags.ShaderReadBit);
         return (t.View, ImageLayout.DepthStencilReadOnlyOptimal);
@@ -302,12 +302,12 @@ public sealed unsafe partial class VulkanRenderer
     /// How the samples of <paramref name="dt"/> sit in the guest's sample-sized surface: 0 = 4X (2x2 per pixel),
     /// 1 = 2X in a 2-sample image, 2 = 2X in a 4-sample image (Msaa2xAs4x).
     /// </summary>
-    static int UnpackLayout(DepthTarget dt) => dt.TwoXAsFour ? 2 : dt.Samples == SampleCountFlags.Count2Bit ? 1 : 0;
+    private static int UnpackLayout(DepthTarget dt) => dt.TwoXAsFour ? 2 : dt.Samples == SampleCountFlags.Count2Bit ? 1 : 0;
 
     // 4X: Vulkan's standard 4x positions (0 top left, 1 top right, 2 bottom left, 3 bottom right). 2X: Vulkan's 2x
     // positions put sample 1 at (0.25, 0.25) above sample 0 at (0.75, 0.75); in a 4-sample image the 2X scene's upper
     // and lower samples are 0 (0.375, 0.125) and 3 (0.625, 0.875)
-    static readonly string[] DepthUnpackFetch =
+    private static readonly string[] s_depthUnpackFetch =
     [
         "texelFetch(src, p >> 1, (p.y & 1) * 2 + (p.x & 1))",
         "texelFetch(src, ivec2(p.x, p.y >> 1), 1 - (p.y & 1))",
@@ -320,14 +320,14 @@ public sealed unsafe partial class VulkanRenderer
 layout(set = 0, binding = 0) uniform sampler2DMS src;
 void main() {
     ivec2 p = ivec2(gl_FragCoord.xy);
-    gl_FragDepth = {{DepthUnpackFetch[layout]}}.r;
+    gl_FragDepth = {{s_depthUnpackFetch[layout]}}.r;
 }
 """;
 
-    readonly Pipeline[] _depthUnpackPipelines = new Pipeline[3];
-    readonly ShaderModule[] _depthUnpackFs = new ShaderModule[3];
+    private readonly Pipeline[] _depthUnpackPipelines = new Pipeline[3];
+    private readonly ShaderModule[] _depthUnpackFs = new ShaderModule[3];
 
-    Pipeline DepthUnpackPipeline(int layout)
+    private Pipeline DepthUnpackPipeline(int layout)
     {
         if (_depthUnpackPipelines[layout].Handle != 0)
         {
@@ -335,9 +335,9 @@ void main() {
         }
 
         EnsureLoadLayout();
-        var fs = _depthUnpackFs[layout] = CompileBuiltin(DepthUnpackFs(layout), false);
-        var entry = stackalloc byte[5] { (byte)'m', (byte)'a', (byte)'i', (byte)'n', 0 };
-        var stages = stackalloc PipelineShaderStageCreateInfo[2];
+        ShaderModule fs = _depthUnpackFs[layout] = CompileBuiltin(DepthUnpackFs(layout), false);
+        byte* entry = stackalloc byte[5] { (byte)'m', (byte)'a', (byte)'i', (byte)'n', 0 };
+        PipelineShaderStageCreateInfo* stages = stackalloc PipelineShaderStageCreateInfo[2];
         stages[0] = new PipelineShaderStageCreateInfo { SType = StructureType.PipelineShaderStageCreateInfo, Stage = ShaderStageFlags.VertexBit, Module = _msLoadVs, PName = entry };
         stages[1] = new PipelineShaderStageCreateInfo { SType = StructureType.PipelineShaderStageCreateInfo, Stage = ShaderStageFlags.FragmentBit, Module = fs, PName = entry };
         var vi = new PipelineVertexInputStateCreateInfo { SType = StructureType.PipelineVertexInputStateCreateInfo };
@@ -347,7 +347,7 @@ void main() {
         var ms = new PipelineMultisampleStateCreateInfo { SType = StructureType.PipelineMultisampleStateCreateInfo, RasterizationSamples = SampleCountFlags.Count1Bit };
         var dss = new PipelineDepthStencilStateCreateInfo { SType = StructureType.PipelineDepthStencilStateCreateInfo, DepthTestEnable = true, DepthWriteEnable = true, DepthCompareOp = CompareOp.Always };
         var cb = new PipelineColorBlendStateCreateInfo { SType = StructureType.PipelineColorBlendStateCreateInfo };
-        var dyn = stackalloc DynamicState[] { DynamicState.Viewport, DynamicState.Scissor };
+        DynamicState* dyn = stackalloc DynamicState[] { DynamicState.Viewport, DynamicState.Scissor };
         var dsi = new PipelineDynamicStateCreateInfo { SType = StructureType.PipelineDynamicStateCreateInfo, DynamicStateCount = 2, PDynamicStates = dyn };
         var rendering = new PipelineRenderingCreateInfo
         {
@@ -378,7 +378,7 @@ void main() {
 
     // ------------------------------------------------------------------ stencil planes sampled as U8 textures
 
-    sealed class StencilTex
+    private sealed class StencilTex
     {
         public Image Image;
         public ImageView View;
@@ -388,14 +388,14 @@ void main() {
         public long LastUsedFrame;
     }
 
-    readonly Dictionary<DepthTarget, StencilTex> _stencilTextures = new();
+    private readonly Dictionary<DepthTarget, StencilTex> _stencilTextures = new();
 
     /// <summary>
     /// A separate S8 stencil plane (DF32_S8, DF32M_S8, S8) read as a U8 texture: games use the stencil they rendered
     /// as a mask in post-processing (Gravity Rush's tone-mapping composite reads it to tell the characters from the
     /// background). The plane only exists on the GPU, so the texture is built from the stencil aspect.
     /// </summary>
-    DepthTarget? StencilTextureSource(uint addr, GxmTextureDesc d)
+    private DepthTarget? StencilTextureSource(uint addr, GxmTextureDesc d)
     {
         if (GxmFormats.BaseOf(d.Format) != TexBase.U8 || addr is < GuestMemory.CdramStart or >= GuestMemory.CdramEnd)
         {
@@ -405,7 +405,7 @@ void main() {
         return StoredDepthSource(addr, stencil: true, unpack: false);
     }
 
-    (ImageView, ImageLayout) StencilTexture(DepthTarget dt, GxmTextureDesc d)
+    private (ImageView, ImageLayout) StencilTexture(DepthTarget dt, GxmTextureDesc d)
     {
         dt.LastTouchedFrame = FrameCount;
         uint w = Math.Min(d.Width, Math.Min(dt.Width, dt.StencilStrideBytes)), h = Math.Min(d.Height, dt.Height);
@@ -415,11 +415,11 @@ void main() {
             h = Math.Min(ScaleDim(d.Height, dt.Scale), dt.Height);
         } // VulkanRenderer.ResScale.cs
         uint swz = d.Format & GxmFormats.TextureSwizzleMask;
-        if (!_stencilTextures.TryGetValue(dt, out var t) || t.W != w || t.H != h || t.Swizzle != swz)
+        if (!_stencilTextures.TryGetValue(dt, out StencilTex? t) || t.W != w || t.H != h || t.Swizzle != swz)
         {
             if (t != null)
             {
-                var old = t;
+                StencilTex old = t;
                 DestroyAfterGpu(() => { _vk.DestroyImageView(_dev, old.View, null); _vk.DestroyImage(_dev, old.Image, null); _imagePool.Free(old.Mem); });
             }
             t = new StencilTex { W = w, H = h, Swizzle = swz };
@@ -475,31 +475,31 @@ void main() {
         return (t.View, ImageLayout.ShaderReadOnlyOptimal);
     }
 
-    Silk.NET.Vulkan.Buffer _stencilScratch;
-    DeviceMemory _stencilScratchMem;
-    ulong _stencilScratchBytes;
+    private Silk.NET.Vulkan.Buffer _stencilScratch;
+    private DeviceMemory _stencilScratchMem;
+    private ulong _stencilScratchBytes;
 
     /// <summary>
     /// Stencil texture of a target above native resolution (VulkanRenderer.ResScale.cs): the stencil aspect is copied
     /// at the internal resolution through a scratch buffer into the R8 image, so the texture keeps the scaled detail and
     /// nothing is written past the guest's stencil surface in the CDRAM mirror.
     /// </summary>
-    void CopyScaledStencil(DepthTarget dt, StencilTex t, uint w, uint h)
+    private void CopyScaledStencil(DepthTarget dt, StencilTex t, uint w, uint h)
     {
         ulong bytes = (ulong)w * h;
         if (_stencilScratchBytes < bytes)
         {
             if (_stencilScratch.Handle != 0)
             {
-                var (ob, om) = (_stencilScratch, _stencilScratchMem);
+                (Silk.NET.Vulkan.Buffer ob, DeviceMemory om) = (_stencilScratch, _stencilScratchMem);
                 DestroyAfterGpu(() => _core.DestroyBuffer(ob, om));
             }
             (_stencilScratch, _stencilScratchMem) = _core.CreateDeviceBuffer(bytes, BufferUsageFlags.TransferDstBit | BufferUsageFlags.TransferSrcBit, MemCat.Region);
             _stencilScratchBytes = bytes;
         }
         EndRendering();
-        const ImageAspectFlags ds = ImageAspectFlags.DepthBit | ImageAspectFlags.StencilBit;
-        Barrier(dt.Image, ImageLayout.DepthStencilAttachmentOptimal, ImageLayout.TransferSrcOptimal, ds,
+        const ImageAspectFlags DepthStencilAspect = ImageAspectFlags.DepthBit | ImageAspectFlags.StencilBit;
+        Barrier(dt.Image, ImageLayout.DepthStencilAttachmentOptimal, ImageLayout.TransferSrcOptimal, DepthStencilAspect,
             PipelineStageFlags.EarlyFragmentTestsBit | PipelineStageFlags.LateFragmentTestsBit, PipelineStageFlags.TransferBit,
             AccessFlags.DepthStencilAttachmentWriteBit, AccessFlags.TransferReadBit);
         BufferBarrier(_stencilScratch, PipelineStageFlags.TransferBit, PipelineStageFlags.TransferBit, AccessFlags.TransferReadBit, AccessFlags.TransferWriteBit);
@@ -511,7 +511,7 @@ void main() {
             ImageExtent = new Extent3D(w, h, 1),
         };
         _vk.CmdCopyImageToBuffer(Cmd, dt.Image, ImageLayout.TransferSrcOptimal, _stencilScratch, 1, in region);
-        Barrier(dt.Image, ImageLayout.TransferSrcOptimal, ImageLayout.DepthStencilAttachmentOptimal, ds,
+        Barrier(dt.Image, ImageLayout.TransferSrcOptimal, ImageLayout.DepthStencilAttachmentOptimal, DepthStencilAspect,
             PipelineStageFlags.TransferBit, PipelineStageFlags.EarlyFragmentTestsBit | PipelineStageFlags.LateFragmentTestsBit,
             AccessFlags.TransferReadBit, AccessFlags.DepthStencilAttachmentReadBit | AccessFlags.DepthStencilAttachmentWriteBit);
         BufferBarrier(_stencilScratch, PipelineStageFlags.TransferBit, PipelineStageFlags.TransferBit, AccessFlags.TransferWriteBit, AccessFlags.TransferReadBit);
@@ -525,7 +525,7 @@ void main() {
             AccessFlags.TransferWriteBit, AccessFlags.ShaderReadBit);
     }
 
-    void DestroyStencilScratch()
+    private void DestroyStencilScratch()
     {
         if (_stencilScratch.Handle != 0)
         {

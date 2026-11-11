@@ -12,14 +12,14 @@ namespace VitaSharp.Renderer.Vulkan;
 /// </summary>
 public sealed unsafe partial class VulkanRenderer
 {
-    RenderTarget? _overlayComposite;
-    readonly Dictionary<Format, (RenderPass Pass, Pipeline Pipeline)> _overlayPipelines = new();
+    private RenderTarget? _overlayComposite;
+    private readonly Dictionary<Format, (RenderPass Pass, Pipeline Pipeline)> _overlayPipelines = new();
 
     /// <summary><paramref name="src"/> with the shell frame <paramref name="overlay"/> blended over it, or src itself
     /// when that frame is not a rendered surface of the same size.</summary>
-    RenderTarget ComposeShellOverlay(RenderTarget src, DisplayFrame overlay)
+    private RenderTarget ComposeShellOverlay(RenderTarget src, DisplayFrame overlay)
     {
-        var o = FindRenderTargetByAddress(overlay.Address);
+        RenderTarget? o = FindRenderTargetByAddress(overlay.Address);
         if (o == null || o == src || src.Format is not (Format.R8G8B8A8Unorm or Format.B8G8R8A8Unorm))
         {
             Log.WarnOnce($"overlay{overlay.Address:X}", $"[gpu] shell overlay 0x{overlay.Address:X8}: {(o == null ? "not a rendered surface" : "not composable")}, not shown");
@@ -34,7 +34,7 @@ public sealed unsafe partial class VulkanRenderer
             return src;
         }
 
-        var c = _overlayComposite;
+        RenderTarget? c = _overlayComposite;
         if (c == null || c.ImgW != src.ImgW || c.ImgH != src.ImgH || c.Format != src.Format || c.Scale != src.Scale || c.Width != src.Width)
         {
             if (c != null)
@@ -42,7 +42,7 @@ public sealed unsafe partial class VulkanRenderer
                 DestroyLater(c);
             }
 
-            var (img, view, mem) = CreateImage(MemCat.RenderTarget, src.ImgW, src.ImgH, src.Format,
+            (Image img, ImageView view, ImageMemoryPool.Allocation mem) = CreateImage(MemCat.RenderTarget, src.ImgW, src.ImgH, src.Format,
                 ImageUsageFlags.ColorAttachmentBit | ImageUsageFlags.SampledBit | ImageUsageFlags.TransferSrcBit | ImageUsageFlags.TransferDstBit, ImageAspectFlags.ColorBit);
             c = _overlayComposite = new RenderTarget { Width = src.Width, Height = src.Height, Stride = src.Stride, Image = img, View = view, Mem = mem, Format = src.Format, Scale = src.Scale };
         }
@@ -51,7 +51,7 @@ public sealed unsafe partial class VulkanRenderer
         c.LastUsedFrame = c.LastTouchedFrame = FrameCount;
 
         EndRendering();
-        var cmd = Cmd;
+        CommandBuffer cmd = Cmd;
         // the application's frame -> the composite
         Barrier(src.Image, ImageLayout.General, ImageLayout.General, ImageAspectFlags.ColorBit,
             PipelineStageFlags.ColorAttachmentOutputBit | PipelineStageFlags.TransferBit, PipelineStageFlags.TransferBit,
@@ -69,7 +69,7 @@ public sealed unsafe partial class VulkanRenderer
             AccessFlags.ColorAttachmentWriteBit | AccessFlags.TransferWriteBit, AccessFlags.ShaderReadBit);
 
         // the shell's frame over it, blended with its alpha
-        var (pass, pipeline) = OverlayPipeline(c.Format);
+        (RenderPass pass, Pipeline pipeline) = OverlayPipeline(c.Format);
         var area = new Extent2D(c.ImgW, c.ImgH);
         var rbi = new RenderPassBeginInfo
         {
@@ -78,7 +78,7 @@ public sealed unsafe partial class VulkanRenderer
             Framebuffer = TransientFramebuffer(pass, area, c.View),
             RenderArea = new Rect2D(new Offset2D(0, 0), area),
         };
-        var set = AllocSet(EnsureLoadLayout());
+        DescriptorSet set = AllocSet(EnsureLoadLayout());
         var info = new DescriptorImageInfo(_dummySampler, o.View, ImageLayout.General);
         var wr = new WriteDescriptorSet { SType = StructureType.WriteDescriptorSet, DstSet = set, DstBinding = 0, DescriptorCount = 1, DescriptorType = DescriptorType.CombinedImageSampler, PImageInfo = &info };
         _vk.UpdateDescriptorSets(_dev, 1, &wr, 0, null);
@@ -105,9 +105,9 @@ public sealed unsafe partial class VulkanRenderer
         return c;
     }
 
-    (RenderPass, Pipeline) OverlayPipeline(Format format)
+    private (RenderPass, Pipeline) OverlayPipeline(Format format)
     {
-        if (_overlayPipelines.TryGetValue(format, out var p))
+        if (_overlayPipelines.TryGetValue(format, out (RenderPass Pass, Pipeline Pipeline) p))
         {
             return p;
         }
@@ -117,11 +117,11 @@ public sealed unsafe partial class VulkanRenderer
         var colorRef = new AttachmentReference(0, ImageLayout.General);
         var subpass = new SubpassDescription { PipelineBindPoint = PipelineBindPoint.Graphics, ColorAttachmentCount = 1, PColorAttachments = &colorRef };
         var rci = new RenderPassCreateInfo { SType = StructureType.RenderPassCreateInfo, AttachmentCount = 1, PAttachments = &att, SubpassCount = 1, PSubpasses = &subpass };
-        _vk.CreateRenderPass(_dev, in rci, null, out var pass).Ok("shell overlay render pass");
+        _vk.CreateRenderPass(_dev, in rci, null, out RenderPass pass).Ok("shell overlay render pass");
 
         EnsureLoadLayout();
-        var entry = stackalloc byte[5] { (byte)'m', (byte)'a', (byte)'i', (byte)'n', 0 };
-        var stages = stackalloc PipelineShaderStageCreateInfo[2];
+        byte* entry = stackalloc byte[5] { (byte)'m', (byte)'a', (byte)'i', (byte)'n', 0 };
+        PipelineShaderStageCreateInfo* stages = stackalloc PipelineShaderStageCreateInfo[2];
         stages[0] = new PipelineShaderStageCreateInfo { SType = StructureType.PipelineShaderStageCreateInfo, Stage = ShaderStageFlags.VertexBit, Module = _msLoadVs, PName = entry };
         stages[1] = new PipelineShaderStageCreateInfo { SType = StructureType.PipelineShaderStageCreateInfo, Stage = ShaderStageFlags.FragmentBit, Module = _msLoadFsFloat, PName = entry };
         var vi = new PipelineVertexInputStateCreateInfo { SType = StructureType.PipelineVertexInputStateCreateInfo };
@@ -142,7 +142,7 @@ public sealed unsafe partial class VulkanRenderer
             ColorWriteMask = ColorComponentFlags.RBit | ColorComponentFlags.GBit | ColorComponentFlags.BBit | ColorComponentFlags.ABit,
         };
         var cb = new PipelineColorBlendStateCreateInfo { SType = StructureType.PipelineColorBlendStateCreateInfo, AttachmentCount = 1, PAttachments = &blend };
-        var dyn = stackalloc DynamicState[] { DynamicState.Viewport, DynamicState.Scissor };
+        DynamicState* dyn = stackalloc DynamicState[] { DynamicState.Viewport, DynamicState.Scissor };
         var dsi = new PipelineDynamicStateCreateInfo { SType = StructureType.PipelineDynamicStateCreateInfo, DynamicStateCount = 2, PDynamicStates = dyn };
         var gci = new GraphicsPipelineCreateInfo
         {
@@ -161,7 +161,7 @@ public sealed unsafe partial class VulkanRenderer
             PDynamicState = &dsi,
             Layout = _msLoadLayout,
         };
-        _vk.CreateGraphicsPipelines(_dev, _vkPipelineCache, 1, in gci, null, out var pipeline).Ok("shell overlay pipeline");
+        _vk.CreateGraphicsPipelines(_dev, _vkPipelineCache, 1, in gci, null, out Pipeline pipeline).Ok("shell overlay pipeline");
         return _overlayPipelines[format] = (pass, pipeline);
     }
 }

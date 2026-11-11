@@ -14,16 +14,16 @@ namespace VitaSharp.Renderer.Vulkan;
 /// </summary>
 public sealed unsafe partial class VulkanRenderer
 {
-    readonly HashSet<TexKey> _tracedTextures = new();
-    StringBuilder? _traceTextureStats;
-    long _traceTextureFrame = -1;
+    private readonly HashSet<TexKey> _tracedTextures = new();
+    private StringBuilder? _traceTextureStats;
+    private long _traceTextureFrame = -1;
 
-    bool TracingThisFrame => _traceDir != null && (_traceManual || _traceFrame == _presentCount);
+    private bool TracingThisFrame => _traceDir != null && (_traceManual || _traceFrame == _presentCount);
     /// <summary>Scene begins and mid-scene flushes are logged for the traced frame and the one after it (a frame's
     /// post-processing often runs after the previous frame was presented).</summary>
-    bool TracingScenes => _traceDir != null && (_traceManual || (_traceFrame >= 0 && _presentCount >= _traceFrame && _presentCount <= _traceFrame + 1));
+    private bool TracingScenes => _traceDir != null && (_traceManual || (_traceFrame >= 0 && _presentCount >= _traceFrame && _presentCount <= _traceFrame + 1));
 
-    void TraceTexture(TexKey key, GxmTextureDesc d, TexFormatInfo info, uint w, uint h)
+    private void TraceTexture(TexKey key, GxmTextureDesc d, TexFormatInfo info, uint w, uint h)
     {
         if (_traceTextureFrame != _presentCount && !_traceManual)
         {
@@ -38,7 +38,7 @@ public sealed unsafe partial class VulkanRenderer
 
         string dir = Path.Combine(_traceDir!, "textures");
         Directory.CreateDirectory(dir);
-        var sb = _traceTextureStats!;
+        StringBuilder sb = _traceTextureStats!;
         sb.Append($"tex 0x{d.DataAddress:X8} fmt 0x{d.Format:X8} ({GxmFormats.BaseOf(d.Format)}) type 0x{d.TextureType:X8} {w}x{h} mips {d.MipCount} lodMin {d.LodMin} gamma {d.GammaMode}");
         try
         {
@@ -51,7 +51,7 @@ public sealed unsafe partial class VulkanRenderer
             {
                 sb.Append($" resident {iw}x{ih} ").Append(Inspect(rgba, (int)iw, (int)ih)).AppendLine();
                 sb.Append(MipCheck(d, info, w, h, rgba, (int)iw, (int)ih));
-                var opaque = (byte[])rgba.Clone();
+                byte[] opaque = (byte[])rgba.Clone();
                 for (int i = 3; i < opaque.Length; i += 4)
                 {
                     opaque[i] = 255;
@@ -87,24 +87,24 @@ public sealed unsafe partial class VulkanRenderer
         File.WriteAllText(Path.Combine(dir, "textures.txt"), sb.ToString());
     }
 
-    int _suspectTextures;
+    private int _suspectTextures;
 
     // Test-run inspection cost control. Decoding and scanning every upload on the GPU thread took half of its time in
     // Killzone's streaming-heavy stretches (BC/PVRTC decode of each new texture), which made test runs GPU-thread bound
     // where the game itself is not. Each distinct content (hash, format, size) is inspected once; at most
     // InspectBudgetMs per frame inline, the rest on a background thread. Deferring them to the GPU thread's idle time
     // instead still cost hitches: one large decode there delays the next frame's commands.
-    const double InspectBudgetMs = 1.5;
-    readonly HashSet<ulong> _inspected = new();
-    readonly System.Collections.Concurrent.ConcurrentQueue<(GxmTextureDesc D, TexFormatInfo Info, uint W, uint H, ulong Hash, uint Addr, int Len)> _inspectQueue = new();
-    readonly SemaphoreSlim _inspectSignal = new(0);
-    Thread? _inspectWorker;
-    long _inspectTicks, _inspectFrameTicks, _inspectFrame = -1;
-    long _inspectDone, _inspectDuplicate, _inspectDeferred, _inspectStale, _inspectBackground;
+    private const double InspectBudgetMs = 1.5;
+    private readonly HashSet<ulong> _inspected = new();
+    private readonly System.Collections.Concurrent.ConcurrentQueue<(GxmTextureDesc D, TexFormatInfo Info, uint W, uint H, ulong Hash, uint Addr, int Len)> _inspectQueue = new();
+    private readonly SemaphoreSlim _inspectSignal = new(0);
+    private Thread? _inspectWorker;
+    private long _inspectTicks, _inspectFrameTicks, _inspectFrame = -1;
+    private long _inspectDone, _inspectDuplicate, _inspectDeferred, _inspectStale, _inspectBackground;
 
-    static ulong InspectKey(GxmTextureDesc d, uint w, uint h, ulong hash) => hash ^ ((ulong)d.Format * 0x9E3779B97F4A7C15UL) ^ ((ulong)w << 32 | h) * 0xC2B2AE3D27D4EB4FUL;
+    private static ulong InspectKey(GxmTextureDesc d, uint w, uint h, ulong hash) => hash ^ ((ulong)d.Format * 0x9E3779B97F4A7C15UL) ^ ((ulong)w << 32 | h) * 0xC2B2AE3D27D4EB4FUL;
 
-    void InspectUploadedTextureBudgeted(GxmTextureDesc d, TexFormatInfo info, uint w, uint h, ulong hash, uint addr, int len, bool requeue)
+    private void InspectUploadedTextureBudgeted(GxmTextureDesc d, TexFormatInfo info, uint w, uint h, ulong hash, uint addr, int len, bool requeue)
     {
         if (_inspectFrame != FrameCount)
         {
@@ -138,14 +138,14 @@ public sealed unsafe partial class VulkanRenderer
 
     /// <summary>Inspects deferred uploads off the GPU thread. The guest may rewrite a texture meanwhile, so its data is
     /// hashed before and after the decode and the result is dropped if it changed.</summary>
-    Thread StartInspectWorker()
+    private Thread StartInspectWorker()
     {
         var t = new Thread(() =>
         {
             while (true)
             {
                 _inspectSignal.Wait();
-                if (!_inspectQueue.TryDequeue(out var q))
+                if (!_inspectQueue.TryDequeue(out (GxmTextureDesc D, TexFormatInfo Info, uint W, uint H, ulong Hash, uint Addr, int Len) q))
                 {
                     continue;
                 }
@@ -186,9 +186,9 @@ public sealed unsafe partial class VulkanRenderer
     /// Test-run inspection of a texture that was just uploaded: logs a warning (once per address/format) when its
     /// contents look like garbage, so broken decoders or unloaded memory show up in the report without screenshots.
     /// </summary>
-    void InspectUploadedTexture(GxmTextureDesc d, TexFormatInfo info, uint w, uint h) => ReportInspection(d, w, h, InspectStats(d, info, w, h));
+    private void InspectUploadedTexture(GxmTextureDesc d, TexFormatInfo info, uint w, uint h) => ReportInspection(d, w, h, InspectStats(d, info, w, h));
 
-    void ReportInspection(GxmTextureDesc d, uint w, uint h, string? stats)
+    private void ReportInspection(GxmTextureDesc d, uint w, uint h, string? stats)
     {
         if (stats == null || !stats.Contains("SUSPECT"))
         {
@@ -200,12 +200,12 @@ public sealed unsafe partial class VulkanRenderer
     }
 
     /// <summary>Noise/seam statistics of the texture's first sampled level, or null when it is not inspected.</summary>
-    static string? InspectStats(GxmTextureDesc d, TexFormatInfo info, uint w, uint h)
+    private static string? InspectStats(GxmTextureDesc d, TexFormatInfo info, uint w, uint h)
     {
         try
         {
             // pooled decode: every upload of a test run is inspected (video textures every frame)
-            using var rgba = DecodeForInspectionPooled(d, info, w, h, out uint iw, out uint ih);
+            using Texels rgba = DecodeForInspectionPooled(d, info, w, h, out uint iw, out uint ih);
             if (rgba.Array == null || iw * ih < 256)
             {
                 return null;
@@ -221,24 +221,24 @@ public sealed unsafe partial class VulkanRenderer
     }
 
     /// <summary>Mip 0 of face 0 as RGBA8 for formats the CPU decodes; BC formats are expanded here too.</summary>
-    static byte[]? DecodeForInspection(GxmTextureDesc d, TexFormatInfo info, uint w, uint h, out uint iw, out uint ih, int level = -1, uint face = 0)
+    private static byte[]? DecodeForInspection(GxmTextureDesc d, TexFormatInfo info, uint w, uint h, out uint iw, out uint ih, int level = -1, uint face = 0)
     {
-        using var t = DecodeForInspectionPooled(d, info, w, h, out iw, out ih, level, face);
+        using Texels t = DecodeForInspectionPooled(d, info, w, h, out iw, out ih, level, face);
         return t.Array == null ? null : t.ToArray();
     }
 
     /// <summary><see cref="DecodeForInspection"/> with a pooled result (default when the format is not inspected).</summary>
-    static Texels DecodeForInspectionPooled(GxmTextureDesc d, TexFormatInfo info, uint w, uint h, out uint iw, out uint ih, int level = -1, uint face = 0)
+    private static Texels DecodeForInspectionPooled(GxmTextureDesc d, TexFormatInfo info, uint w, uint h, out uint iw, out uint ih, int level = -1, uint face = 0)
     {
         // inspect the first resident level (LOD min), the one the GPU samples at full detail (or a given level)
         uint mips = Math.Min(d.MipCount, (uint)System.Numerics.BitOperations.Log2(Math.Max(w, h)) + 1);
         uint lodMin = level >= 0 ? (uint)Math.Min(level, (int)mips - 1) : Math.Min(d.LodMin, mips - 1);
         // the face stride depends on the whole chain, so lay out every level when a later cube face is wanted
-        var layout = ComputeLayout(d, info, w, h, face > 0 ? mips : lodMin + 1, face + 1);
-        var lv = layout.Levels[(int)lodMin];
+        TexLayout layout = ComputeLayout(d, info, w, h, face > 0 ? mips : lodMin + 1, face + 1);
+        MipLayout lv = layout.Levels[(int)lodMin];
         w = lv.Width;
         h = lv.Height;
-        var texels = TextureDecoder.Decode(d, info, d.DataAddress + face * layout.FaceStride + lv.Offset, lv.Width, lv.Height, lv.RowPitch, out _, out _);
+        Texels texels = TextureDecoder.Decode(d, info, d.DataAddress + face * layout.FaceStride + lv.Offset, lv.Width, lv.Height, lv.RowPitch, out _, out _);
         iw = w;
         ih = h;
         if (!(info.Compressed && info.Convert == TexConvert.None) && info.Format is Format.R8G8B8A8Unorm or Format.R8G8B8A8Srgb)
@@ -286,7 +286,7 @@ public sealed unsafe partial class VulkanRenderer
     /// closely (mean abs diff a few %); a wrong mip layout shows unrelated data. Distant surfaces sample these levels, so
     /// a broken chain looks like flat or wrong colours only far from the camera.
     /// </summary>
-    static string MipCheck(GxmTextureDesc d, TexFormatInfo info, uint w, uint h, byte[] top, int tw, int th)
+    private static string MipCheck(GxmTextureDesc d, TexFormatInfo info, uint w, uint h, byte[] top, int tw, int th)
     {
         uint mips = Math.Min(d.MipCount, (uint)System.Numerics.BitOperations.Log2(Math.Max(w, h)) + 1);
         int baseLevel = (int)Math.Min(d.LodMin, mips - 1);
@@ -299,7 +299,7 @@ public sealed unsafe partial class VulkanRenderer
         bool bad = false;
         for (int lvl = baseLevel + 1; lvl < Math.Min((int)mips, baseLevel + 6); lvl++)
         {
-            var m = DecodeForInspection(d, info, w, h, out uint mw, out uint mh, lvl);
+            byte[]? m = DecodeForInspection(d, info, w, h, out uint mw, out uint mh, lvl);
             if (m == null || mw < 2 || mh < 2)
             {
                 break;
@@ -342,22 +342,22 @@ public sealed unsafe partial class VulkanRenderer
         return sb.Append(bad ? " SUSPECT-MIPS" : "").AppendLine().ToString();
     }
 
-    static byte ToByte(float v) => (byte)Math.Clamp((int)(v * 255f + 0.5f), 0, 255);
+    private static byte ToByte(float v) => (byte)Math.Clamp((int)(v * 255f + 0.5f), 0, 255);
 
     /// <summary>Transcoded ASTC blocks back to RGBA8 (inspection and traces; the luminance layouts show as grey).</summary>
-    static byte[] AstcToRgba(byte[] blocks, uint w, uint h)
+    private static byte[] AstcToRgba(byte[] blocks, uint w, uint h)
     {
-        var rgba = new byte[w * h * 4];
+        byte[] rgba = new byte[w * h * 4];
         AstcDecoder.Decode(blocks, (int)w, (int)h, rgba);
         return rgba;
     }
 
-    static byte[] Expand(byte[] src, uint count, int bpp, Func<byte[], int, (byte, byte, byte, byte)> f)
+    private static byte[] Expand(byte[] src, uint count, int bpp, Func<byte[], int, (byte, byte, byte, byte)> f)
     {
-        var dst = new byte[count * 4];
+        byte[] dst = new byte[count * 4];
         for (int i = 0; i < count && (i + 1) * bpp <= src.Length; i++)
         {
-            var (r, g, b, a) = f(src, i * bpp);
+            (byte r, byte g, byte b, byte a) = f(src, i * bpp);
             dst[i * 4] = r;
             dst[i * 4 + 1] = g;
             dst[i * 4 + 2] = b;
@@ -371,7 +371,7 @@ public sealed unsafe partial class VulkanRenderer
     /// around 0.02-0.15, random data around 0.33. seams: neighbour difference across 4-pixel block boundaries divided
     /// by the difference inside blocks; a correctly decoded block format stays near 1, a broken one jumps well above.
     /// </summary>
-    static string Inspect(ReadOnlySpan<byte> px, int w, int h)
+    private static string Inspect(ReadOnlySpan<byte> px, int w, int h)
     {
         double sum = 0, sumA = 0, diffIn = 0, diffEdge = 0;
         long nIn = 0, nEdge = 0;
@@ -408,7 +408,7 @@ public sealed unsafe partial class VulkanRenderer
 }
 
 /// <summary>CPU BC1/2/3 decoding for inspection only (the GPU samples the compressed data directly).</summary>
-static class BcDecode
+internal static class BcDecode
 {
     public static Texels Bc1(byte[] src, uint w, uint h) => Decode(src, w, h, 8, false, false);
     public static Texels Bc2(byte[] src, uint w, uint h) => Decode(src, w, h, 16, true, false);
@@ -426,12 +426,12 @@ static class BcDecode
     };
 
     /// <summary>BC4 (one 8-byte alpha-style block = R) and BC5 (two blocks = R, G).</summary>
-    static Texels Bc45(byte[] src, uint w, uint h, bool two)
+    private static Texels Bc45(byte[] src, uint w, uint h, bool two)
     {
         uint bw = (w + 3) / 4, bh = (h + 3) / 4;
         int blockBytes = two ? 16 : 8;
         var dstT = Texels.Rent(w * h * 4L); // pooled: dispose once used
-        var dst = dstT.Array;
+        byte[] dst = dstT.Array;
         Span<byte> ch = stackalloc byte[16];
         for (uint by = 0; by < bh; by++)
         {
@@ -478,7 +478,7 @@ static class BcDecode
         return dstT;
     }
 
-    static void DecodeAlphaBlock(byte[] src, int o, Span<byte> alpha)
+    private static void DecodeAlphaBlock(byte[] src, int o, Span<byte> alpha)
     {
         int a0 = src[o], a1 = src[o + 1];
         ulong bits = 0;
@@ -502,11 +502,11 @@ static class BcDecode
         }
     }
 
-    static Texels Decode(byte[] src, uint w, uint h, int blockBytes, bool bc2, bool bc3)
+    private static Texels Decode(byte[] src, uint w, uint h, int blockBytes, bool bc2, bool bc3)
     {
         uint bw = (w + 3) / 4, bh = (h + 3) / 4;
         var dstT = Texels.Rent(w * h * 4L); // pooled: dispose once used
-        var dst = dstT.Array;
+        byte[] dst = dstT.Array;
         Span<byte> c = stackalloc byte[16];
         Span<byte> alpha = stackalloc byte[16];
         for (uint by = 0; by < bh; by++)
@@ -583,7 +583,7 @@ static class BcDecode
         return dstT;
     }
 
-    static void Rgb565(int v, Span<byte> c, int o)
+    private static void Rgb565(int v, Span<byte> c, int o)
     {
         c[o] = (byte)(((v >> 11) & 31) * 255 / 31);
         c[o + 1] = (byte)(((v >> 5) & 63) * 255 / 63);
@@ -600,25 +600,25 @@ static class BcDecode
 public sealed unsafe partial class VulkanRenderer
 {
     /// <summary>VITASHARP_TRACE_RT=ADDR,ADDR: log every draw into these colour surfaces in any frame (draw trace format).</summary>
-    static readonly HashSet<uint> TraceRtAddrs = (Environment.GetEnvironmentVariable(EnvVars.TraceRt) ?? "").Split(',', StringSplitOptions.RemoveEmptyEntries)
+    private static readonly HashSet<uint> s_traceRtAddrs = (Environment.GetEnvironmentVariable(EnvVars.TraceRt) ?? "").Split(',', StringSplitOptions.RemoveEmptyEntries)
         .Select(s => Convert.ToUInt32(s, 16)).ToHashSet();
 
-    static readonly string[] TraceSnapSpec = (Environment.GetEnvironmentVariable(EnvVars.TraceSnap) ?? "").Split(',', StringSplitOptions.RemoveEmptyEntries);
-    static readonly HashSet<int> TraceSnapIds = TraceSnapSpec.Select(s => int.TryParse(s, out var v) ? v : -1).ToHashSet();
+    private static readonly string[] s_traceSnapSpec = (Environment.GetEnvironmentVariable(EnvVars.TraceSnap) ?? "").Split(',', StringSplitOptions.RemoveEmptyEntries);
+    private static readonly HashSet<int> s_traceSnapIds = s_traceSnapSpec.Select(s => int.TryParse(s, out int v) ? v : -1).ToHashSet();
     /// <summary>"rt:ADDR" entries: snapshot before every draw into that colour surface.</summary>
-    static readonly HashSet<uint> TraceSnapTargets = TraceSnapSpec.Where(s => s.StartsWith("rt:"))
+    private static readonly HashSet<uint> s_traceSnapTargets = s_traceSnapSpec.Where(s => s.StartsWith("rt:"))
         .Select(s => Convert.ToUInt32(s[3..], 16)).ToHashSet();
 
-    readonly List<(int Id, RenderTarget Rt, Silk.NET.Vulkan.Buffer Buf, DeviceMemory Mem, nint Ptr)> _traceSnaps = new();
-    readonly List<(int Id, uint W, uint H, Silk.NET.Vulkan.Buffer Buf, DeviceMemory Mem, nint Ptr)> _depthSnaps = new();
+    private readonly List<(int Id, RenderTarget Rt, Silk.NET.Vulkan.Buffer Buf, DeviceMemory Mem, nint Ptr)> _traceSnaps = new();
+    private readonly List<(int Id, uint W, uint H, Silk.NET.Vulkan.Buffer Buf, DeviceMemory Mem, nint Ptr)> _depthSnaps = new();
 
     /// <summary>"src:ADDR" entries: snapshot that surface whenever a draw samples it (id = draw id + 10000).</summary>
-    static readonly HashSet<uint> TraceSnapSampled = TraceSnapSpec.Where(s => s.StartsWith("src:"))
+    private static readonly HashSet<uint> s_traceSnapSampled = s_traceSnapSpec.Where(s => s.StartsWith("src:"))
         .Select(s => Convert.ToUInt32(s[4..], 16)).ToHashSet();
 
-    void TraceSampledSnapshot(RenderTarget rt)
+    private void TraceSampledSnapshot(RenderTarget rt)
     {
-        if (!TracingThisFrame || !TraceSnapSampled.Contains(rt.Address))
+        if (!TracingThisFrame || !s_traceSnapSampled.Contains(rt.Address))
         {
             return;
         }
@@ -629,7 +629,7 @@ public sealed unsafe partial class VulkanRenderer
             return;
         }
 
-        var (buf, mem, ptr) = _core.CreateHostBuffer(rt.Width * rt.Height * (uint)bpp, BufferUsageFlags.TransferDstBit, MemCat.Readback);
+        (Silk.NET.Vulkan.Buffer buf, DeviceMemory mem, nint ptr) = _core.CreateHostBuffer(rt.Width * rt.Height * (uint)bpp, BufferUsageFlags.TransferDstBit, MemCat.Readback);
         EndRendering();
         var region = new BufferImageCopy { ImageSubresource = new ImageSubresourceLayers(ImageAspectFlags.ColorBit, 0, 0, 1), ImageExtent = new Extent3D(rt.Width, rt.Height, 1) };
         _vk.CmdCopyImageToBuffer(Cmd, NativeImageOf(rt), ImageLayout.General, buf, 1, in region);
@@ -638,24 +638,24 @@ public sealed unsafe partial class VulkanRenderer
 
     /// <summary>Debug: VITASHARP_SNAP_FS=FSHASH:FROM:TO snapshots colour and depth before every draw of that fragment
     /// program in presented frames FROM..TO (files f{frame}_snap_*), e.g. to see what a mesh is drawn over.</summary>
-    static readonly (ulong Hash, long From, long To)? SnapFs = Environment.GetEnvironmentVariable(EnvVars.SnapFs)?.Split(':') is { Length: 3 } sf
+    private static readonly (ulong Hash, long From, long To)? s_snapFs = Environment.GetEnvironmentVariable(EnvVars.SnapFs)?.Split(':') is { Length: 3 } sf
         ? (Convert.ToUInt64(sf[0], 16), long.Parse(sf[1]), long.Parse(sf[2])) : null;
 
-    void TraceSnapshot(DrawCommand d)
+    private void TraceSnapshot(DrawCommand d)
     {
-        bool snapFs = SnapFs is { } sf && d.FragmentProgram.Info.Program.Hash == sf.Hash && _presentCount >= sf.From && _presentCount <= sf.To;
-        if (snapFs && _rt is { } srt)
+        bool snapFs = s_snapFs is { } sf && d.FragmentProgram.Info.Program.Hash == sf.Hash && _presentCount >= sf.From && _presentCount <= sf.To;
+        if (snapFs && _renderTarget is { } srt)
         {
             TakeSnapshot(srt);
             return;
         }
         // snapshots are taken in the logged frame (draw ids match the draw trace) and written when it is presented
-        if (TraceSnapSpec.Length == 0 || _opt.ShaderCacheDir == null || !TracingThisFrame || _rt is not { } rt)
+        if (s_traceSnapSpec.Length == 0 || _opt.ShaderCacheDir == null || !TracingThisFrame || _renderTarget is not { } rt)
         {
             return;
         }
 
-        if (!TraceSnapIds.Contains(_drawSerial) && !TraceSnapTargets.Contains(rt.Address))
+        if (!s_traceSnapIds.Contains(_drawSerial) && !s_traceSnapTargets.Contains(rt.Address))
         {
             return;
         }
@@ -663,7 +663,7 @@ public sealed unsafe partial class VulkanRenderer
         TakeSnapshot(rt);
     }
 
-    void TakeSnapshot(RenderTarget rt)
+    private void TakeSnapshot(RenderTarget rt)
     {
         int bpp = HostBytesPerPixel(rt.Format);
         if (bpp != 4 && bpp != 8)
@@ -671,7 +671,7 @@ public sealed unsafe partial class VulkanRenderer
             return;
         }
 
-        var (buf, mem, ptr) = _core.CreateHostBuffer(rt.Width * rt.Height * (uint)bpp, BufferUsageFlags.TransferDstBit, MemCat.Readback);
+        (Silk.NET.Vulkan.Buffer buf, DeviceMemory mem, nint ptr) = _core.CreateHostBuffer(rt.Width * rt.Height * (uint)bpp, BufferUsageFlags.TransferDstBit, MemCat.Readback);
         rt.Dirty = true;
         SyncRenderTargetForRead(rt);
         var region = new BufferImageCopy { ImageSubresource = new ImageSubresourceLayers(ImageAspectFlags.ColorBit, 0, 0, 1), ImageExtent = new Extent3D(rt.Width, rt.Height, 1) };
@@ -679,27 +679,27 @@ public sealed unsafe partial class VulkanRenderer
         _traceSnaps.Add((_drawSerial, rt, buf, mem, ptr));
         if (_depth != null && _core.DepthFormat == Format.D24UnormS8Uint)
         {
-            var dt = _depth;
-            var (dbuf, dmem, dptr) = _core.CreateHostBuffer(dt.Width * dt.Height * 4, BufferUsageFlags.TransferDstBit, MemCat.Readback);
-            const ImageAspectFlags ds = ImageAspectFlags.DepthBit | ImageAspectFlags.StencilBit;
-            Barrier(dt.Image, ImageLayout.DepthStencilAttachmentOptimal, ImageLayout.TransferSrcOptimal, ds, PipelineStageFlags.EarlyFragmentTestsBit | PipelineStageFlags.LateFragmentTestsBit, PipelineStageFlags.TransferBit, AccessFlags.DepthStencilAttachmentWriteBit, AccessFlags.TransferReadBit);
+            DepthTarget dt = _depth;
+            (Silk.NET.Vulkan.Buffer dbuf, DeviceMemory dmem, nint dptr) = _core.CreateHostBuffer(dt.Width * dt.Height * 4, BufferUsageFlags.TransferDstBit, MemCat.Readback);
+            const ImageAspectFlags DepthStencilAspect = ImageAspectFlags.DepthBit | ImageAspectFlags.StencilBit;
+            Barrier(dt.Image, ImageLayout.DepthStencilAttachmentOptimal, ImageLayout.TransferSrcOptimal, DepthStencilAspect, PipelineStageFlags.EarlyFragmentTestsBit | PipelineStageFlags.LateFragmentTestsBit, PipelineStageFlags.TransferBit, AccessFlags.DepthStencilAttachmentWriteBit, AccessFlags.TransferReadBit);
             var dregion = new BufferImageCopy { ImageSubresource = new ImageSubresourceLayers(ImageAspectFlags.DepthBit, 0, 0, 1), ImageExtent = new Extent3D(dt.Width, dt.Height, 1) };
             _vk.CmdCopyImageToBuffer(Cmd, dt.Image, ImageLayout.TransferSrcOptimal, dbuf, 1, in dregion);
-            Barrier(dt.Image, ImageLayout.TransferSrcOptimal, ImageLayout.DepthStencilAttachmentOptimal, ds, PipelineStageFlags.TransferBit, PipelineStageFlags.EarlyFragmentTestsBit | PipelineStageFlags.LateFragmentTestsBit, AccessFlags.TransferReadBit, AccessFlags.DepthStencilAttachmentReadBit | AccessFlags.DepthStencilAttachmentWriteBit);
+            Barrier(dt.Image, ImageLayout.TransferSrcOptimal, ImageLayout.DepthStencilAttachmentOptimal, DepthStencilAspect, PipelineStageFlags.TransferBit, PipelineStageFlags.EarlyFragmentTestsBit | PipelineStageFlags.LateFragmentTestsBit, AccessFlags.TransferReadBit, AccessFlags.DepthStencilAttachmentReadBit | AccessFlags.DepthStencilAttachmentWriteBit);
             _depthSnaps.Add((_drawSerial, dt.Width, dt.Height, dbuf, dmem, dptr));
         }
     }
 
     /// <summary>Writes the snapshots (called after the traced frame completed on the GPU).</summary>
-    void WriteTraceSnapshots(string dir)
+    private void WriteTraceSnapshots(string dir)
     {
         Directory.CreateDirectory(dir);
-        string prefix = SnapFs != null ? $"f{_presentCount}_" : "";
-        foreach (var (id, rt, buf, mem, ptr) in _traceSnaps)
+        string prefix = s_snapFs != null ? $"f{_presentCount}_" : "";
+        foreach ((int id, RenderTarget? rt, Silk.NET.Vulkan.Buffer buf, DeviceMemory mem, nint ptr) in _traceSnaps)
         {
             int n = (int)(rt.Width * rt.Height);
-            var rgb = new byte[n * 4];
-            var alpha = new byte[n * 4];
+            byte[] rgb = new byte[n * 4];
+            byte[] alpha = new byte[n * 4];
             bool half = HostBytesPerPixel(rt.Format) == 8;
             for (int i = 0; i < n; i++)
             {
@@ -723,7 +723,7 @@ public sealed unsafe partial class VulkanRenderer
                 rgb[i * 4 + 3] = alpha[i * 4 + 3] = 255;
             }
             Png.Write(Path.Combine(dir, $"{prefix}snap_{id:D4}_rt_{rt.Address:X8}.png"), rgb, (int)rt.Width, (int)rt.Height);
-            if (SnapFs == null)
+            if (s_snapFs == null)
             {
                 Png.Write(Path.Combine(dir, $"snap_{id:D4}_rt_{rt.Address:X8}_alpha.png"), alpha, (int)rt.Width, (int)rt.Height);
             }
@@ -731,10 +731,10 @@ public sealed unsafe partial class VulkanRenderer
             _core.DestroyBuffer(buf, mem);
         }
         _traceSnaps.Clear();
-        foreach (var (id, w, h, buf, mem, ptr) in _depthSnaps)
+        foreach ((int id, uint w, uint h, Silk.NET.Vulkan.Buffer buf, DeviceMemory mem, nint ptr) in _depthSnaps)
         {
             int n = (int)(w * h);
-            var img = new byte[n * 4];
+            byte[] img = new byte[n * 4];
             for (int i = 0; i < n; i++)
             {
                 uint v = ((uint*)ptr)[i] & 0xFFFFFF;

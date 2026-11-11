@@ -15,26 +15,26 @@ namespace VitaSharp.Renderer.Vulkan;
 /// </summary>
 public sealed unsafe partial class VulkanRenderer
 {
-    bool StaticEds => _core.Caps.Has(GpuQuirk.StaticExtendedDynamicState);
-    bool StaticBias => _core.Caps.Has(GpuQuirk.StaticDepthBiasEnable);
-    long _statPipelinesStatic;
+    private bool StaticEds => _core.Caps.Has(GpuQuirk.StaticExtendedDynamicState);
+    private bool StaticBias => _core.Caps.Has(GpuQuirk.StaticDepthBiasEnable);
+    private long _statPipelinesStatic;
 
     /// <summary>Set in every non-zero static state key.</summary>
-    const ulong StaticPresent = 1ul << 63;
+    private const ulong StaticPresent = 1ul << 63;
 
     /// <summary>VK_PIPELINE_COLOR_BLEND_STATE_CREATE_RASTERIZATION_ORDER_ATTACHMENT_ACCESS_BIT_EXT (0x1; not named in Silk.NET 2.23).</summary>
-    const PipelineColorBlendStateCreateFlags RoaaBlendFlag = (PipelineColorBlendStateCreateFlags)1;
+    private const PipelineColorBlendStateCreateFlags RoaaBlendFlag = (PipelineColorBlendStateCreateFlags)1;
 
     /// <summary>The draw's fixed-function state that a static-state pipeline bakes in (0 without the quirk).</summary>
-    ulong StaticStateKey(in DrawState st, PrimitiveTopology topology)
+    private ulong StaticStateKey(in DrawState st, PrimitiveTopology topology)
     {
         if (!StaticEds)
         {
             return 0;
         }
 
-        var front = st.Front;
-        var back = st.TwoSided ? st.Back : st.Front;
+        SideState front = st.Front;
+        SideState back = st.TwoSided ? st.Back : st.Front;
         ulong k = StaticPresent | (ulong)(st.CullMode & 3u) | ((ulong)(uint)topology & 15) << 2;
         bool depthTest = !(front.DepthFunc == 7 && !front.DepthWrite);
         if (depthTest)
@@ -56,10 +56,10 @@ public sealed unsafe partial class VulkanRenderer
         return k;
     }
 
-    static ulong StencilBits(in StencilState s) =>
+    private static ulong StencilBits(in StencilState s) =>
         (s.StencilFail & 7u) | (s.DepthPass & 7u) << 3 | (s.DepthFail & 7u) << 6 | (s.Func & 7u) << 9;
 
-    static StencilOpState StencilFrom(ulong bits) => new()
+    private static StencilOpState StencilFrom(ulong bits) => new()
     {
         FailOp = (StencilOp)(bits & 7),
         PassOp = (StencilOp)((bits >> 3) & 7),
@@ -71,7 +71,7 @@ public sealed unsafe partial class VulkanRenderer
     };
 
     /// <summary>Bakes a static state key into the pipeline create infos.</summary>
-    static void ApplyStaticState(ulong k, ref PipelineInputAssemblyStateCreateInfo ia, ref PipelineRasterizationStateCreateInfo rs, ref PipelineDepthStencilStateCreateInfo ds)
+    private static void ApplyStaticState(ulong k, ref PipelineInputAssemblyStateCreateInfo ia, ref PipelineRasterizationStateCreateInfo rs, ref PipelineDepthStencilStateCreateInfo ds)
     {
         if (k == 0)
         {
@@ -98,7 +98,7 @@ public sealed unsafe partial class VulkanRenderer
     }
 
     /// <summary>Dynamic states of a draw pipeline: all of core 1.3's unless a quirk bakes them in.</summary>
-    int DrawDynamicStates(DynamicState* dyn, bool staticState)
+    private int DrawDynamicStates(DynamicState* dyn, bool staticState)
     {
         int n = 0;
         dyn[n++] = DynamicState.Viewport;

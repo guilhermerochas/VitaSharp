@@ -18,13 +18,13 @@ public readonly record struct TexFormatInfo(Format Format, int BitsPerPixel, int
 
 public static class Formats
 {
-    static ComponentMapping M(ComponentSwizzle r, ComponentSwizzle g, ComponentSwizzle b, ComponentSwizzle a) => new(r, g, b, a);
-    const ComponentSwizzle R = ComponentSwizzle.R, G = ComponentSwizzle.G, B = ComponentSwizzle.B, A = ComponentSwizzle.A,
+    private static ComponentMapping M(ComponentSwizzle r, ComponentSwizzle g, ComponentSwizzle b, ComponentSwizzle a) => new(r, g, b, a);
+    private const ComponentSwizzle R = ComponentSwizzle.R, G = ComponentSwizzle.G, B = ComponentSwizzle.B, A = ComponentSwizzle.A,
         Z = ComponentSwizzle.Zero, O = ComponentSwizzle.One, I = ComponentSwizzle.Identity;
 
-    static readonly ComponentMapping Identity = M(I, I, I, I);
+    private static readonly ComponentMapping s_identity = M(I, I, I, I);
 
-    static TexFormatInfo Unknown(TexBase b)
+    private static TexFormatInfo Unknown(TexBase b)
     {
         VitaSharp.Core.Util.Log.WarnOnce("texfmt" + b, $"[gpu] texture base format {b} (0x{(uint)b:X8}) is not supported: treated as RGBA8");
         return new(Format.R8G8B8A8Unorm, 32, 1, 1, 0, TexConvert.None);
@@ -85,11 +85,11 @@ public static class Formats
         _ => Unknown(b),
     };
 
-    static readonly bool Swizzle1Legacy = Environment.GetEnvironmentVariable(EnvVars.Swz1) != "B"; // RGBA-order reading opt-in until verified
+    private static readonly bool s_swizzle1Legacy = Environment.GetEnvironmentVariable(EnvVars.Swz1) != "B"; // RGBA-order reading opt-in until verified
 
     public static ComponentMapping TextureSwizzle(uint format)
     {
-        var b = GxmFormats.BaseOf(format);
+        TexBase b = GxmFormats.BaseOf(format);
         uint s = GxmFormats.SwizzleOf(format) >> 12;
         switch (b)
         {
@@ -106,7 +106,7 @@ public static class Formats
             case TexBase.SBC4:
                 // SCE_GXM_TEXTURE_SWIZZLE1_{R,000R,111R,RRRR,0RRR,1RRR,R000,R111}: names list the result in RGBA order
                 // (R111 = (R,1,1,1)); the legacy ABGR-order reading is kept behind VITASHARP_SWZ1=A for comparison
-                if (Swizzle1Legacy)
+                if (s_swizzle1Legacy)
                 {
                     return s switch
                     {
@@ -149,10 +149,10 @@ public static class Formats
                     3 => M(G, G, G, R),
                     4 => M(R, G, R, G),
                     5 => M(G, R, Z, Z),
-                    _ => Identity,
+                    _ => s_identity,
                 };
             case TexBase.X8U24:
-                return Identity;
+                return s_identity;
             case TexBase.U8U8U8:
             case TexBase.S8S8S8:
             case TexBase.F11F11F10:
@@ -167,7 +167,7 @@ public static class Formats
                     1 => M(G, B, A, R),
                     2 => M(R, G, B, A),
                     3 => M(B, G, R, A),
-                    _ => Identity
+                    _ => s_identity
                 };
             case TexBase.U1U5U5U5:
                 // uploaded as A1R5G5B5 (A in bit 15, then 5-bit fields from the top). GXM names the fields from the most
@@ -184,7 +184,7 @@ public static class Formats
             case TexBase.YUV420P2:
             case TexBase.YUV420P3:
             case TexBase.YUV422:
-                return Identity;
+                return s_identity;
             default:
                 return s switch
                 {
@@ -265,7 +265,7 @@ public static class Formats
     {
         2 => M(A, B, G, R),
         3 => M(A, R, G, B),
-        _ => Identity,
+        _ => s_identity,
     };
 
     /// <summary>The view mapping that applies <paramref name="outer"/> to the image as seen through <paramref name="inner"/>.</summary>
@@ -296,7 +296,7 @@ public static class Formats
                     2 => M(A, B, G, R),
                     _ => M(G, B, A, R)
                 },
-            _ => Identity,
+            _ => s_identity,
         };
     }
 
@@ -321,7 +321,7 @@ public static class Formats
             {
                 for (int c = 1; c <= 4; c++)
                 {
-                    var f = Attribute(g, c, k).Format;
+                    Format f = Attribute(g, c, k).Format;
                     if (!all.Contains(f))
                     {
                         all.Add(f);

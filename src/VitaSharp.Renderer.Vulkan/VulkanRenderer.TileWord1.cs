@@ -22,11 +22,11 @@ namespace VitaSharp.Renderer.Vulkan;
 /// </summary>
 public sealed unsafe partial class VulkanRenderer
 {
-    const Format TileWord1Format = Format.R32Uint;
-    const ImageUsageFlags TileWord1Usage = ImageUsageFlags.ColorAttachmentBit | ImageUsageFlags.InputAttachmentBit
+    private const Format TileWord1Format = Format.R32Uint;
+    private const ImageUsageFlags TileWord1Usage = ImageUsageFlags.ColorAttachmentBit | ImageUsageFlags.InputAttachmentBit
         | ImageUsageFlags.TransferSrcBit | ImageUsageFlags.TransferDstBit;
 
-    sealed class TileWordImage
+    private sealed class TileWordImage
     {
         public Image Image;
         public ImageView View;
@@ -36,33 +36,33 @@ public sealed unsafe partial class VulkanRenderer
     }
 
     /// <summary>Tile-word images per size and sample count (their content lives for one scene).</summary>
-    readonly Dictionary<(uint, uint, SampleCountFlags), TileWordImage> _tw1Images = new();
-    /// <summary>The current scene keeps the second output register word in <see cref="_tw1"/>.</summary>
-    bool _tw1Active;
-    TileWordImage? _tw1;
-    readonly HashSet<string> _tw1Logged = new();
-    long _statTw1Scenes;
+    private readonly Dictionary<(uint, uint, SampleCountFlags), TileWordImage> _tw1Images = new();
+    /// <summary>The current scene keeps the second output register word in <see cref="_tileWord1"/>.</summary>
+    private bool _tw1Active;
+    private TileWordImage? _tileWord1;
+    private readonly HashSet<string> _tw1Logged = new();
+    private long _statTw1Scenes;
 
     // single-sampled copy read by the TileWord1 variants outside render passes (binding 4)
-    Image _tw1Copy;
-    ImageView _tw1CopyView;
-    ImageMemoryPool.Allocation _tw1CopyMem;
-    uint _tw1CopyW, _tw1CopyH;
+    private Image _tw1Copy;
+    private ImageView _tw1CopyView;
+    private ImageMemoryPool.Allocation _tw1CopyMem;
+    private uint _tw1CopyW, _tw1CopyH;
 
     /// <summary>Why the current scene cannot keep the word (null: it can).</summary>
-    string? TileWord1Unsupported()
+    private string? TileWord1Unsupported()
     {
-        if (_rt == null)
+        if (_renderTarget == null)
         {
             return "no colour surface";
         }
 
-        if (Formats.ColorBytesPerPixel(_rt.ColorFormat) != 4)
+        if (Formats.ColorBytesPerPixel(_renderTarget.ColorFormat) != 4)
         {
             return "not a 32-bit colour surface";
         }
 
-        if (_ss)
+        if (_supersampled)
         {
             return "supersampled scene";
         }
@@ -72,12 +72,12 @@ public sealed unsafe partial class VulkanRenderer
             return "tile-based renderings";
         }
 
-        if (_ms && !MsaaInputFetch)
+        if (_multisampled && !s_msaaInputFetch)
         {
             return "multisampled framebuffer fetch through copies";
         }
 
-        var samples = SceneSamples;
+        SampleCountFlags samples = SceneSamples;
         if (!_core.SupportsUnblendedColorAttachment(TileWord1Format))
         {
             return $"{TileWord1Format} is not a colour attachment format";
@@ -92,7 +92,7 @@ public sealed unsafe partial class VulkanRenderer
     }
 
     /// <summary>A program writes the second output register word: the rest of the scene keeps it in an attachment.</summary>
-    void ActivateTileWord1()
+    private void ActivateTileWord1()
     {
         if (TileWord1Unsupported() is { } why)
         {
@@ -103,12 +103,12 @@ public sealed unsafe partial class VulkanRenderer
 
             return;
         }
-        var rt = _rt!;
-        var samples = SceneSamples;
+        RenderTarget rt = _renderTarget!;
+        SampleCountFlags samples = SceneSamples;
         // the scene's render area in attachment pixels (scenes without downscale render at 2x into the sample surface)
         uint w = rt.ImgW, h = rt.ImgH;
         EndRendering(resolve: false); // the next rendering has the attachment
-        if (!_tw1Images.TryGetValue((w, h, samples), out var img))
+        if (!_tw1Images.TryGetValue((w, h, samples), out TileWordImage? img))
         {
             img = new TileWordImage { Width = w, Height = h, Samples = samples };
             (img.Image, img.View, img.Mem) = CreateImage(MemCat.Msaa, w, h, TileWord1Format, TileWord1Usage, ImageAspectFlags.ColorBit, samples: samples);
@@ -129,7 +129,7 @@ public sealed unsafe partial class VulkanRenderer
         Barrier(img.Image, ImageLayout.General, ImageLayout.General, ImageAspectFlags.ColorBit, PipelineStageFlags.TransferBit,
             PipelineStageFlags.ColorAttachmentOutputBit | PipelineStageFlags.FragmentShaderBit,
             AccessFlags.TransferWriteBit, AccessFlags.ColorAttachmentReadBit | AccessFlags.ColorAttachmentWriteBit | AccessFlags.InputAttachmentReadBit);
-        _tw1 = img;
+        _tileWord1 = img;
         _tw1Active = true;
         _statTw1Scenes++;
         if (_tw1Logged.Add($"rt{rt.Address:X8}"))
@@ -139,23 +139,23 @@ public sealed unsafe partial class VulkanRenderer
     }
 
     /// <summary>Scene start/end: the word does not outlive its scene.</summary>
-    void EndTileWord1()
+    private void EndTileWord1()
     {
         _tw1Active = false;
-        _tw1 = null;
+        _tileWord1 = null;
     }
 
     /// <summary>The TileWord1 variants outside render passes read a copy of the word (binding 4), like programmable
     /// blending reads a copy of the colour; returns its view.</summary>
-    ImageView CopyTileWord1()
+    private ImageView CopyTileWord1()
     {
-        var src = _tw1!;
+        TileWordImage src = _tileWord1!;
         uint w = src.Width, h = src.Height;
         if (_tw1Copy.Handle == 0 || _tw1CopyW != w || _tw1CopyH != h)
         {
             if (_tw1Copy.Handle != 0)
             {
-                var (oi, ov, om) = (_tw1Copy, _tw1CopyView, _tw1CopyMem);
+                (Image oi, ImageView ov, ImageMemoryPool.Allocation om) = (_tw1Copy, _tw1CopyView, _tw1CopyMem);
                 DestroyAfterGpu(() => { _vk.DestroyImageView(_dev, ov, null); _vk.DestroyImage(_dev, oi, null); _imagePool.Free(om); });
             }
             (_tw1Copy, _tw1CopyView, _tw1CopyMem) = CreateImage(MemCat.Region, w, h, TileWord1Format, ImageUsageFlags.SampledBit | ImageUsageFlags.TransferDstBit, ImageAspectFlags.ColorBit);
@@ -188,18 +188,18 @@ public sealed unsafe partial class VulkanRenderer
     }
 
     /// <summary>Adds the tile-word copy (binding 4) to a framebuffer-fetch set.</summary>
-    void WriteTileWord1Copy(DescriptorSet set, ImageView view)
+    private void WriteTileWord1Copy(DescriptorSet set, ImageView view)
     {
         var info = new DescriptorImageInfo(_dummySampler, view, ImageLayout.General);
         var w = new WriteDescriptorSet { SType = StructureType.WriteDescriptorSet, DstSet = set, DstBinding = 4, DescriptorCount = 1, DescriptorType = DescriptorType.CombinedImageSampler, PImageInfo = &info };
         _vk.UpdateDescriptorSets(_dev, 1, &w, 0, null);
     }
 
-    string TileWord1Report() => $"tile-word attachment: {_statTw1Scenes} scenes";
+    private string TileWord1Report() => $"tile-word attachment: {_statTw1Scenes} scenes";
 
-    void DestroyTileWord1()
+    private void DestroyTileWord1()
     {
-        foreach (var img in _tw1Images.Values)
+        foreach (TileWordImage img in _tw1Images.Values)
         {
             _vk.DestroyImageView(_dev, img.View, null);
             _vk.DestroyImage(_dev, img.Image, null);
@@ -211,7 +211,7 @@ public sealed unsafe partial class VulkanRenderer
             _vk.DestroyImage(_dev, _tw1Copy, null);
             _tw1Copy = default;
         }
-        _tw1 = null;
+        _tileWord1 = null;
         _tw1Active = false;
     }
 }

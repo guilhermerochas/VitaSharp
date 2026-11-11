@@ -33,16 +33,16 @@ public sealed unsafe partial class VulkanRenderer
     /// <summary>Anomaly kind raised when NaN/Inf appears in a render target.</summary>
     public const string NanAnomalyKind = "nan";
 
-    const int NanScanSlots = 64, NanScanWords = 8;
-    const int NanScanBytes = NanScanSlots * NanScanWords * 4;            // 2 KB
-    const int NanDrawBytes = ShaderGenerator.NanDrawSlots * 4 * 4;       // 64 KB (draws mode only)
+    private const int NanScanSlots = 64, NanScanWords = 8;
+    private const int NanScanBytes = NanScanSlots * NanScanWords * 4;            // 2 KB
+    private const int NanDrawBytes = ShaderGenerator.NanDrawSlots * 4 * 4;       // 64 KB (draws mode only)
     /// <summary>Lines of one target: a new episode is logged at most every this many presents (others are counted),
     /// an ongoing one repeats every <see cref="NanStillEvery"/>; NaN gone for <see cref="NanClearAfter"/> presents = clean.</summary>
-    const int NanEpisodeEvery = 30, NanStillEvery = 300, NanClearAfter = 3;
+    private const int NanEpisodeEvery = 30, NanStillEvery = 300, NanClearAfter = 3;
     /// <summary>At most one "nan" anomaly (automatic capture request) every this many presents.</summary>
-    const int NanAnomalyEvery = 300;
+    private const int NanAnomalyEvery = 300;
 
-    sealed class NanFrame
+    private sealed class NanFrame
     {
         public Buffer Buf;
         public DeviceMemory Mem;
@@ -53,7 +53,7 @@ public sealed unsafe partial class VulkanRenderer
         public readonly List<Core.Gpu.GxmTextureDesc> Textures = new();
     }
 
-    struct NanScan
+    private struct NanScan
     {
         public uint Address, W, H, ColorFormat;
         public Format Format;
@@ -61,7 +61,7 @@ public sealed unsafe partial class VulkanRenderer
         public int Scene, FirstDraw, LastDraw;
     }
 
-    struct NanDrawInfo
+    private struct NanDrawInfo
     {
         public int Id, Scene, TexStart;
         public long Present, GuestFrame;
@@ -71,7 +71,7 @@ public sealed unsafe partial class VulkanRenderer
         public string Msaa;
     }
 
-    sealed class NanTargetHistory
+    private sealed class NanTargetHistory
     {
         public uint Address, W, H, ColorFormat;
         public bool Bad, EpisodeLogged;
@@ -82,7 +82,7 @@ public sealed unsafe partial class VulkanRenderer
         public readonly List<(long From, long To, long MaxNan)> History = new();
     }
 
-    sealed class NanDrawHistory
+    private sealed class NanDrawHistory
     {
         public ulong Vs, Fs, FsHint;
         public uint Rt;
@@ -91,27 +91,27 @@ public sealed unsafe partial class VulkanRenderer
         public string Example = "";
     }
 
-    DescriptorSetLayout _nanSetLayout;
-    PipelineLayout _nanPipelineLayout;
-    Pipeline _nanPipeline;
-    ShaderModule _nanModule;
-    Sampler _nanSampler;
-    bool _nanFailed, _nanReady;
-    readonly Dictionary<(uint, uint, uint, uint), NanTargetHistory> _nanTargets = new();
-    readonly Dictionary<(ulong, ulong, ulong, uint), NanDrawHistory> _nanDraws = new();
-    long _nanLastAnomaly = long.MinValue / 2, _nanLastDrawSummary = long.MinValue / 2;
-    long _nanSceneEndPresent = -1;
-    int _nanSceneEndDraw;
+    private DescriptorSetLayout _nanSetLayout;
+    private PipelineLayout _nanPipelineLayout;
+    private Pipeline _nanPipeline;
+    private ShaderModule _nanModule;
+    private Sampler _nanSampler;
+    private bool _nanFailed, _nanReady;
+    private readonly Dictionary<(uint, uint, uint, uint), NanTargetHistory> _nanTargets = new();
+    private readonly Dictionary<(ulong, ulong, ulong, uint), NanDrawHistory> _nanDraws = new();
+    private long _nanLastAnomaly = long.MinValue / 2, _nanLastDrawSummary = long.MinValue / 2;
+    private long _nanSceneEndPresent = -1;
+    private int _nanSceneEndDraw;
     // cost accounting
-    long _nanScans, _nanScanTicks, _nanRetireTicks, _nanRetired, _nanDropped, _nanDrawFrames, _nanDrawHits;
+    private long _nanScans, _nanScanTicks, _nanRetireTicks, _nanRetired, _nanDropped, _nanDrawFrames, _nanDrawHits;
 
     [System.Runtime.InteropServices.StructLayout(System.Runtime.InteropServices.LayoutKind.Sequential)]
-    struct NanPush
+    private struct NanPush
     {
         public uint Slot, W, H; public float Huge;
     }
 
-    const string NanScanGlsl = """
+    private const string NanScanGlsl = """
 #version 450
 layout(local_size_x = 16, local_size_y = 16) in;
 layout(set = 0, binding = 0) uniform sampler2D img;
@@ -145,14 +145,14 @@ void main() {
 }
 """;
 
-    static bool NanScannable(Format f) => f is Format.R16G16B16A16Sfloat or Format.R16G16Sfloat or Format.R16Sfloat
+    private static bool NanScannable(Format f) => f is Format.R16G16B16A16Sfloat or Format.R16G16Sfloat or Format.R16Sfloat
         or Format.R32Sfloat or Format.R32G32Sfloat or Format.B10G11R11UfloatPack32 or Format.E5B9G9R9UfloatPack32;
 
     /// <summary>Guest formats that cannot hold negative values (a negative value in the host image is an emulation
     /// difference: the hardware stores 0).</summary>
-    static bool NanUnsignedGuest(uint colorFormat) => (colorFormat & 0xF1800000) is 0x41000000 or 0x21000000 or 0x31000000;
+    private static bool NanUnsignedGuest(uint colorFormat) => (colorFormat & 0xF1800000) is 0x41000000 or 0x21000000 or 0x31000000;
 
-    static string NanFormatName(uint colorFormat) => (colorFormat & 0xF1800000) switch
+    private static string NanFormatName(uint colorFormat) => (colorFormat & 0xF1800000) switch
     {
         0x01000000 => "F16x4",
         0x41000000 => "U2F10F10F10",
@@ -165,7 +165,7 @@ void main() {
         _ => $"fmt 0x{colorFormat:X8}",
     };
 
-    bool EnsureNanPipeline()
+    private bool EnsureNanPipeline()
     {
         if (_nanReady)
         {
@@ -179,18 +179,18 @@ void main() {
 
         try
         {
-            var b = stackalloc DescriptorSetLayoutBinding[2];
+            DescriptorSetLayoutBinding* b = stackalloc DescriptorSetLayoutBinding[2];
             b[0] = new DescriptorSetLayoutBinding(0, DescriptorType.CombinedImageSampler, 1, ShaderStageFlags.ComputeBit);
             b[1] = new DescriptorSetLayoutBinding(1, DescriptorType.StorageBuffer, 1, ShaderStageFlags.ComputeBit);
             var ci = new DescriptorSetLayoutCreateInfo { SType = StructureType.DescriptorSetLayoutCreateInfo, BindingCount = 2, PBindings = b };
             _vk.CreateDescriptorSetLayout(_dev, in ci, null, out _nanSetLayout).Ok("nan set layout");
-            var layout = _nanSetLayout;
+            DescriptorSetLayout layout = _nanSetLayout;
             var pcr = new PushConstantRange(ShaderStageFlags.ComputeBit, 0, (uint)sizeof(NanPush));
             var pli = new PipelineLayoutCreateInfo { SType = StructureType.PipelineLayoutCreateInfo, SetLayoutCount = 1, PSetLayouts = &layout, PushConstantRangeCount = 1, PPushConstantRanges = &pcr };
             _vk.CreatePipelineLayout(_dev, in pli, null, out _nanPipelineLayout).Ok("nan pipeline layout");
-            var spv = _compiler.Compile(NanScanGlsl, ShaderKind.ComputeShader, out var err) ?? throw new InvalidOperationException($"NaN scan shader: {err}");
+            byte[] spv = _compiler.Compile(NanScanGlsl, ShaderKind.ComputeShader, out string? err) ?? throw new InvalidOperationException($"NaN scan shader: {err}");
             _nanModule = CreateShaderModule(spv);
-            var entry = stackalloc byte[5] { (byte)'m', (byte)'a', (byte)'i', (byte)'n', 0 };
+            byte* entry = stackalloc byte[5] { (byte)'m', (byte)'a', (byte)'i', (byte)'n', 0 };
             var cpi = new ComputePipelineCreateInfo
             {
                 SType = StructureType.ComputePipelineCreateInfo,
@@ -222,7 +222,7 @@ void main() {
         }
     }
 
-    NanFrame EnsureNanFrame(Frame f)
+    private NanFrame EnsureNanFrame(Frame f)
     {
         if (f.Nan is { } n)
         {
@@ -230,13 +230,13 @@ void main() {
         }
 
         ulong size = NanScanBytes + (ShaderGenerator.NanDraws ? (ulong)NanDrawBytes : 0);
-        var (buf, mem, ptr) = _core.CreateHostBuffer(size, BufferUsageFlags.StorageBufferBit, MemCat.DebugRing);
+        (Buffer buf, DeviceMemory mem, nint ptr) = _core.CreateHostBuffer(size, BufferUsageFlags.StorageBufferBit, MemCat.DebugRing);
         new Span<byte>((void*)ptr, (int)size).Clear();
         return f.Nan = new NanFrame { Buf = buf, Mem = mem, Ptr = (uint*)ptr };
     }
 
     /// <summary>Debug mode, end of a scene: queue the NaN/Inf scan of its colour surface (no wait).</summary>
-    void NanScanScene(RenderTarget rt)
+    private void NanScanScene(RenderTarget rt)
     {
         int lastDraw = _drawSerial;
         int firstDraw = _nanSceneEndPresent == _presentCount ? _nanSceneEndDraw + 1 : 1;
@@ -260,22 +260,22 @@ void main() {
         long t0 = Stopwatch.GetTimestamp();
         // the frame may have been submitted mid-scene (Idle with results pending): record into the next one
         BeginFrameIfNeeded();
-        var f = F;
-        var nf = EnsureNanFrame(f);
+        Frame f = F;
+        NanFrame nf = EnsureNanFrame(f);
         if (nf.Scans.Count >= NanScanSlots)
         {
             _nanDropped++;
             return;
         }
         int slot = nf.Scans.Count;
-        var cmd = f.Cmd;
+        CommandBuffer cmd = f.Cmd;
         // the scene's colour writes (and resolves) before the compute reads
         var mb = new MemoryBarrier { SType = StructureType.MemoryBarrier, SrcAccessMask = AccessFlags.ColorAttachmentWriteBit | AccessFlags.TransferWriteBit, DstAccessMask = AccessFlags.ShaderReadBit };
         _vk.CmdPipelineBarrier(cmd, PipelineStageFlags.ColorAttachmentOutputBit | PipelineStageFlags.TransferBit, PipelineStageFlags.ComputeShaderBit, 0, 1, in mb, 0, null, 0, null);
-        var set = AllocSet(_nanSetLayout);
+        DescriptorSet set = AllocSet(_nanSetLayout);
         var ii = new DescriptorImageInfo(_nanSampler, rt.View, ImageLayout.General);
         var bi = new DescriptorBufferInfo(nf.Buf, 0, NanScanBytes);
-        var w = stackalloc WriteDescriptorSet[2];
+        WriteDescriptorSet* w = stackalloc WriteDescriptorSet[2];
         w[0] = new WriteDescriptorSet { SType = StructureType.WriteDescriptorSet, DstSet = set, DstBinding = 0, DescriptorCount = 1, DescriptorType = DescriptorType.CombinedImageSampler, PImageInfo = &ii };
         w[1] = new WriteDescriptorSet { SType = StructureType.WriteDescriptorSet, DstSet = set, DstBinding = 1, DescriptorCount = 1, DescriptorType = DescriptorType.StorageBuffer, PBufferInfo = &bi };
         _vk.UpdateDescriptorSets(_dev, 2, w, 0, null);
@@ -307,18 +307,18 @@ void main() {
     }
 
     /// <summary>Draws mode: set 0 binding 4 of a draw = this frame's NaN draw table.</summary>
-    void NanBindDrawBuffer(DescriptorSet uSet)
+    private void NanBindDrawBuffer(DescriptorSet uSet)
     {
-        var nf = EnsureNanFrame(F);
+        NanFrame nf = EnsureNanFrame(F);
         var bi = new DescriptorBufferInfo(nf.Buf, NanScanBytes, NanDrawBytes);
         var w = new WriteDescriptorSet { SType = StructureType.WriteDescriptorSet, DstSet = uSet, DstBinding = (uint)ShaderGenerator.NanDrawBinding, DescriptorCount = 1, DescriptorType = DescriptorType.StorageBuffer, PBufferInfo = &bi };
         _vk.UpdateDescriptorSets(_dev, 1, in w, 0, null);
     }
 
     /// <summary>Draws mode: what the draw log needs to name a draw that produced NaN (recorded per draw).</summary>
-    void NanNoteDraw(DrawCommand d, VsEntry vs, FsEntry fs)
+    private void NanNoteDraw(DrawCommand d, VsEntry vs, FsEntry fs)
     {
-        var nf = EnsureNanFrame(F);
+        NanFrame nf = EnsureNanFrame(F);
         uint used = d.FragmentProgram.Info.TexturesUsed;
         int start = nf.Textures.Count;
         for (int i = 0; i < 16; i++)
@@ -340,10 +340,10 @@ void main() {
             Fs = fs.ProgramHash,
             VsHint = vs.HintKey,
             FsHint = fs.HintKey,
-            Rt = _rt?.Address ?? 0,
-            RtFormat = _rt?.ColorFormat ?? 0,
-            RtW = _rt?.Width ?? 0,
-            RtH = _rt?.Height ?? 0,
+            Rt = _renderTarget?.Address ?? 0,
+            RtFormat = _renderTarget?.ColorFormat ?? 0,
+            RtW = _renderTarget?.Width ?? 0,
+            RtH = _renderTarget?.Height ?? 0,
             TexMask = used,
             IndexCount = d.IndexCount,
             Instances = d.InstanceCount,
@@ -354,16 +354,16 @@ void main() {
     }
 
     /// <summary>Before the frame's command buffer ends: shader writes into the result buffer become host-visible.</summary>
-    void NanBeforeSubmit(Frame f)
+    private void NanBeforeSubmit(Frame f)
     {
         var mb = new MemoryBarrier { SType = StructureType.MemoryBarrier, SrcAccessMask = AccessFlags.ShaderWriteBit, DstAccessMask = AccessFlags.HostReadBit };
         _vk.CmdPipelineBarrier(f.Cmd, PipelineStageFlags.ComputeShaderBit | PipelineStageFlags.FragmentShaderBit, PipelineStageFlags.HostBit, 0, 1, in mb, 0, null, 0, null);
     }
 
     /// <summary>The frame retired: read its scan results and draw hits, update the histories, reset the buffer.</summary>
-    void CompleteNanFrame(Frame f)
+    private void CompleteNanFrame(Frame f)
     {
-        var nf = f.Nan!;
+        NanFrame nf = f.Nan!;
         long t0 = Stopwatch.GetTimestamp();
         for (int i = 0; i < nf.Scans.Count; i++)
         {
@@ -386,12 +386,12 @@ void main() {
         _nanRetireTicks += Stopwatch.GetTimestamp() - t0;
     }
 
-    static string NanAt(uint inv) => inv == 0 ? "?" : $"{(0xFFFFFFFFu - inv) & 0xFFFF},{(0xFFFFFFFFu - inv) >> 16}";
+    private static string NanAt(uint inv) => inv == 0 ? "?" : $"{(0xFFFFFFFFu - inv) & 0xFFFF},{(0xFFFFFFFFu - inv) >> 16}";
 
-    void NanScanResult(in NanScan s, uint nan, uint inf, uint huge, uint neg, uint firstInv, uint firstHugeInv)
+    private void NanScanResult(in NanScan s, uint nan, uint inf, uint huge, uint neg, uint firstInv, uint firstHugeInv)
     {
-        var key = (s.Address, s.W, s.H, s.ColorFormat);
-        if (!_nanTargets.TryGetValue(key, out var h))
+        (uint Address, uint W, uint H, uint ColorFormat) key = (s.Address, s.W, s.H, s.ColorFormat);
+        if (!_nanTargets.TryGetValue(key, out NanTargetHistory? h))
         {
             _nanTargets[key] = h = new NanTargetHistory { Address = s.Address, W = s.W, H = s.H, ColorFormat = s.ColorFormat };
         }
@@ -470,7 +470,7 @@ void main() {
         }
     }
 
-    void NanAnomaly(long present, string detail)
+    private void NanAnomaly(long present, string detail)
     {
         if (!DebugMode.Enabled || present - _nanLastAnomaly < NanAnomalyEvery)
         {
@@ -501,7 +501,7 @@ void main() {
         }
     }
 
-    void NanDrawResults(NanFrame nf)
+    private void NanDrawResults(NanFrame nf)
     {
         uint* t = nf.Ptr + NanScanBytes / 4;
         int hits = 0, lines = 0;
@@ -526,9 +526,9 @@ void main() {
                 Log.Info($"[nan-draw] p{present} draw id={id}{(id == ShaderGenerator.NanDrawSlots - 1 ? "+ (ids above the table share the last slot)" : "")}: {frags} fragments {what} (first at {NanAt(firstInv)}), draw not recorded");
                 continue;
             }
-            var di = nf.Draws[idx];
-            var key = (di.Vs, di.Fs, di.FsHint, di.Rt);
-            if (!_nanDraws.TryGetValue(key, out var h))
+            NanDrawInfo di = nf.Draws[idx];
+            (ulong Vs, ulong Fs, ulong FsHint, uint Rt) key = (di.Vs, di.Fs, di.FsHint, di.Rt);
+            if (!_nanDraws.TryGetValue(key, out NanDrawHistory? h))
             {
                 _nanDraws[key] = h = new NanDrawHistory { Vs = di.Vs, Fs = di.Fs, FsHint = di.FsHint, Rt = di.Rt, First = di.Present };
             }
@@ -552,7 +552,7 @@ void main() {
                     continue;
                 }
 
-                var tx = nf.Textures[k++];
+                GxmTextureDesc tx = nf.Textures[k++];
                 sb.Append($" t{u}=0x{tx.DataAddress:X8}:{tx.Format:X8}:{tx.Width}x{tx.Height}");
             }
             string line = sb.ToString();
@@ -586,7 +586,7 @@ void main() {
         }
     }
 
-    static int NanFindDraw(List<NanDrawInfo> draws, int id)
+    private static int NanFindDraw(List<NanDrawInfo> draws, int id)
     {
         int lo = 0, hi = draws.Count - 1;
         while (lo <= hi)
@@ -611,7 +611,7 @@ void main() {
     }
 
     /// <summary>"\nPERF nan: ..." when the scan or the draws mode ran this session, else empty.</summary>
-    string NanReport()
+    private string NanReport()
     {
         if (_nanScans == 0 && _nanDrawFrames == 0 && !ShaderGenerator.NanDraws)
         {
@@ -632,7 +632,7 @@ void main() {
         sb.AppendLine("# VitaSharp NaN/Inf history of this session (debug mode scans float render targets at every scene end; see docs/notes/debug-mode.md)");
         sb.AppendLine($"# scans {_nanScans}, debug mode {(DebugMode.Enabled ? "on" : "off")}, draws mode (VITASHARP_DEBUG_NAN=draws) {(ShaderGenerator.NanDraws ? "on" : "off")}");
         sb.AppendLine("# target: scans, bad presents, episodes, first/last bad present, max NaN (at present), max Inf/huge/negative; then the last scan and the episodes (present ranges)");
-        foreach (var h in _nanTargets.Values.OrderByDescending(h => h.BadPresents).ThenBy(h => h.Address))
+        foreach (NanTargetHistory? h in _nanTargets.Values.OrderByDescending(h => h.BadPresents).ThenBy(h => h.Address))
         {
             sb.AppendLine($"rt 0x{h.Address:X8} {h.W}x{h.H} {NanFormatName(h.ColorFormat)}: {h.Scans} scans, {h.BadPresents} bad presents, {h.Episodes} episodes" +
                           (h.FirstBad >= 0 ? $", first p{h.FirstBad} last p{h.LastBad}, max {h.MaxNan} NaN{(h.MaxNan > 0 ? $" (p{h.MaxAt})" : "")} {h.MaxInf} Inf {h.MaxHuge} huge {h.MaxNeg} negative{(h.Bad ? ", BAD NOW" : "")}" : ""));
@@ -646,7 +646,7 @@ void main() {
         {
             sb.AppendLine();
             sb.AppendLine("# draws mode: vertex/fragment program + render target combinations whose fragment output had NaN/Inf");
-            foreach (var d in _nanDraws.Values.OrderByDescending(d => d.Fragments))
+            foreach (NanDrawHistory? d in _nanDraws.Values.OrderByDescending(d => d.Fragments))
             {
                 sb.AppendLine($"vs {d.Vs:X16} fs {d.Fs:X16} (hint {d.FsHint:X16}) rt 0x{d.Rt:X8}: {d.Presents} presents, {d.Fragments} fragments, p{d.First}-p{d.Last}\n    e.g. {d.Example}");
             }
@@ -659,9 +659,9 @@ void main() {
         return sb.ToString();
     }
 
-    void DestroyNan()
+    private void DestroyNan()
     {
-        foreach (var f in _frames)
+        foreach (Frame f in _frames)
         {
             if (f.Nan is { } nf)
             {

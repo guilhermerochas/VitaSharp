@@ -13,18 +13,18 @@ namespace VitaSharp.Renderer.Vulkan;
 /// </summary>
 public sealed unsafe partial class VulkanRenderer
 {
-    (RenderTarget Src, DisplayFrame Frame)? _lastPresented;
-    long _pausedPresentAt;
-    OverlayImage? _pausedOverlay, _pausedCenterOverlay, _pausedStatusOverlay;
+    private (RenderTarget Src, DisplayFrame Frame)? _lastPresented;
+    private long _pausedPresentAt;
+    private OverlayImage? _pausedOverlay, _pausedCenterOverlay, _pausedStatusOverlay;
 
-    void PresentWhilePaused()
+    private void PresentWhilePaused()
     {
         if (_deviceLost || _inScene || _lastPresented is not { } last)
         {
             return;
         }
 
-        var (src, frame) = last;
+        (RenderTarget? src, DisplayFrame frame) = last;
         // the surface may have been destroyed since it was presented (the pause came after a reallocation)
         if (src != _cpuFramebuffer && !_renderTargets.ContainsValue(src))
         {
