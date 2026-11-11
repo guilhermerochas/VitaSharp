@@ -48,9 +48,53 @@ public sealed class FlashCapCamera : ICameraSource
         static string? DeviceSel(CameraSpec s) => s.Kind == CameraSpecKind.Device ? s.Value : null;
     }
 
-    /// <summary>Video capture devices, one entry per physical camera (DirectShow preferred over Media Foundation
-    /// on Windows; Video for Windows only when nothing else exists). Never throws.</summary>
+    static readonly object EnumerationLock = new();
+    static Task<List<CaptureDeviceDescriptor>>? _enumeration;
+    static bool _enumerationUnread;
+
+    /// <summary>How long <see cref="ListDevices"/> waits for the device list.</summary>
+    internal static readonly TimeSpan EnumerationWait = TimeSpan.FromSeconds(3);
+
+    /// <summary>
+    /// Video capture devices, one entry per physical camera (DirectShow preferred over Media Foundation on Windows;
+    /// Video for Windows only when nothing else exists). Never throws and never blocks for more than
+    /// <see cref="EnumerationWait"/>: on macOS the enumeration first asks for camera access and waits for the answer
+    /// (FlashCap's AVFoundation backend, with no timeout), which never comes without someone to answer the system's
+    /// prompt (a headless run, a CI runner). The enumeration then keeps running in the background and the list is empty
+    /// until it finishes; the next call takes its result.
+    /// </summary>
     public static List<CaptureDeviceDescriptor> ListDevices()
+    {
+        Task<List<CaptureDeviceDescriptor>> enumeration;
+        lock (EnumerationLock)
+        {
+            // one enumeration at a time: a call while one still waits for the camera access answer shares it, and the
+            // first call after it finished takes its list; otherwise every call enumerates again (hot-plugged webcams)
+            if (_enumeration == null || (_enumeration.IsCompleted && !_enumerationUnread))
+            {
+                _enumeration = Task.Factory.StartNew(EnumerateNow, CancellationToken.None, TaskCreationOptions.LongRunning, TaskScheduler.Default);
+            }
+
+            enumeration = _enumeration;
+            _enumerationUnread = false;
+        }
+
+        if (enumeration.Wait(EnumerationWait))
+        {
+            return enumeration.Result;
+        }
+
+        lock (EnumerationLock)
+        {
+            _enumerationUnread = true;
+        }
+
+        Log.WarnOnce("camera-enumeration-wait", $"Camera: the device list did not answer in {EnumerationWait.TotalSeconds:0} s " +
+            "(on macOS: waiting for camera access to be allowed); no webcam is listed until it does");
+        return [];
+    }
+
+    static List<CaptureDeviceDescriptor> EnumerateNow()
     {
         try
         {
