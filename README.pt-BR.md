@@ -1,4 +1,4 @@
-<!-- pair: README.md sha256=281ffbbe144ecbfe3bcda9ef30e05ef7115c98fae1a42b0fcb76e69bb6cacf40 -->
+<!-- pair: README.md sha256=3f7cc1fd0a8502d405d654f389ff66bd0b1597a31db2839c090f4aa42b910887 -->
 <!-- pair: README.md sha256=6c31942f6969a1731dd1394ebd8a5ff8edd9da4b8e3486f644e4396c4f1ab909 -->
 <div align="center">
 
@@ -123,6 +123,12 @@ de comando: `install-firmware <PSVUPDAT.PUP>`.
 `shell.self` do firmware: configuração inicial na primeira vez, tela de bloqueio, tela inicial com os jogos
 instalados e LiveArea. Um jogo aberto pela LiveArea roda como um segundo processo; o botão PS (tecla Home) volta ao
 sistema e **Continuar** retoma o jogo. Detalhes e o que falta em [`docs/notes/system-apps.md`](docs/notes/system-apps.md).
+
+**Plugins.** Um homebrew que precisa de plugin (os ports de Android com so_loader, como o Dead Space, precisam do
+`kubridge.skprx`) roda com o plugin de verdade: copie os plugins do seu Vita para `fs/ur0/tai` na pasta de dados e
+liste-os em `fs/ur0/tai/config.txt` como no Vita (`*KERNEL` para os plugins de kernel `.skprx`, `*ALL` / `*TITLEID` para
+os de usuário `.suprx`). Sem esse arquivo nenhum plugin é carregado. Detalhes em
+[`docs/notes/plugins.pt-BR.md`](docs/notes/plugins.pt-BR.md).
 
 **Android.** Veja [Android](#android).
 

@@ -23,7 +23,8 @@ public sealed partial class Taihen : HleModule
     {
         if (namePtr == 0) return Emu.MainModule;
         string name = GuestMemory.ReadCString(namePtr);
-        return K.Modules.Values.OrderBy(m => m.Uid).FirstOrDefault(m => m.Name == name);
+        return K.Modules.Values.Where(m => !m.IsKernel).OrderBy(m => m.Uid).FirstOrDefault(m => m.Name == name);
+
     }
 
     /// <summary>taiGetModuleInfo(module, tai_module_info_t*): size, modid, module_nid, name[27], exports/imports ranges (0x38 bytes).</summary>
@@ -287,7 +288,7 @@ public sealed partial class Taihen : HleModule
         if ((hw & 0xF800) == 0xE000) return true;                                       // B
         if ((hw & 0xF500) == 0xB100) return true;                                       // CBZ/CBNZ
         if ((hw & 0xFF78) == 0x4478 || (hw & 0xFF78) == 0x4678) return true;            // ADD/MOV Rd, PC
-        if ((hw & 0xFF00) == 0x4700) return true;                                       // BX/BLX
+        if ((hw & 0xFF00) == 0x4700 && ((hw >> 3) & 0xF) == 15) return true;           // BX/BLX PC
         return false;
     }
     // injections: uid -> (address, the bytes that were there before)
@@ -329,11 +330,17 @@ public sealed partial class Taihen : HleModule
         return Inject(dest, src, size);
     }
 
-    int Inject(uint dest, uint src, uint size)
+    int Inject(uint dest, uint src, uint size) => Inject(dest, GuestMemory.ReadSpan(src, (int)size).ToArray());
+
+    /// <summary>Writes <paramref name="data"/> over <paramref name="dest"/> (in the calling thread's address space),
+    /// keeping the bytes that were there for taiInjectRelease; returns the injection id.</summary>
+    int Inject(uint dest, byte[] data)
     {
+        uint size = (uint)data.Length;
         var original = GuestMemory.Span(dest, (int)size).ToArray();
-        GuestMemory.Span(src, (int)size).CopyTo(GuestMemory.Span(dest, (int)size));
+        data.CopyTo(GuestMemory.Span(dest, (int)size));
         Emu.Code.Invalidate(dest, size);
+
         lock (_injections)
         {
             int uid = _nextInjection++;
@@ -369,97 +376,86 @@ public sealed partial class Taihen : HleModule
 
     // ------------------------------------------------------------------ taihenUnsafe
 
-    // kernel plugins "loaded" through taiLoadKernelModule: uid -> path. Their kernel code does not run here; the user
-    // API of the one homebrew relies on, kubridge, is HLE (Kubridge).
-    readonly Dictionary<int, string> _kernelModules = new();
+    ModulemgrKernel KernelModules => Emu.Hle.Modules.OfType<ModulemgrKernel>().First();
 
-    int LoadKernelModule(string path)
+    SysmemKernel KernelMemory => Emu.Hle.Modules.OfType<SysmemKernel>().First();
+
+    /// <summary>The args and argp of a tai_module_args_t { size, pid, args, argp, flags } (0 and 0 without one).</summary>
+    static (uint Args, uint Argp) ModuleArgs(uint args)
     {
-        if (Emu.Vfs.Resolve(path) is not { } host || !File.Exists(host))
+        if (args == 0 || GuestMemory.R32(args) < 0x10)
         {
-            Log.Warn($"taiLoadKernelModule: {path} not found");
-            return SCE_KERNEL_ERROR_MODULEMGR_NO_MOD_FILE;
+            return (0, 0);
         }
-        lock (_kernelModules)
-        {
-            int uid = 0x7F000001 + _kernelModules.Count * 2;
-            _kernelModules[uid] = path;
-            Log.Warn($"taiLoadKernelModule: {path} accepted; its kernel code is not run (uid 0x{uid:X})");
-            return uid;
-        }
+
+        return (GuestMemory.R32(args + 8), GuestMemory.R32(args + 12));
     }
 
-    const int SCE_KERNEL_ERROR_MODULEMGR_NO_MOD_FILE = unchecked((int)0x8002D01C);
+    /// <summary>taiLoadKernelModule(path, flags, opt): a kernel module (.skprx) through the kernel module manager, not
+    /// started yet.</summary>
+    [Hle]
+    int taiLoadKernelModule(string path, int flags, uint opt) => KernelModules.ksceKernelLoadModule(path, flags, 0);
 
-    /// <summary>taiLoadKernelModule(path, flags, opt): a kernel plugin (.skprx).</summary>
-    [Hle] int taiLoadKernelModule(string path, int flags, uint opt) => LoadKernelModule(path);
-
-    /// <summary>taiStartKernelModuleForUser(modid, args, opt, int *res): module_start reports SCE_KERNEL_START_SUCCESS.</summary>
+    /// <summary>taiStartKernelModuleForUser(modid, tai_module_args_t *args, opt, int *res): module_start of a kernel
+    /// module with the args of <paramref name="args"/>; *res is what it returned.</summary>
     [Hle]
     int taiStartKernelModuleForUser(int modid, uint args, uint opt, Ptr<int> res)
     {
-        lock (_kernelModules) if (!_kernelModules.ContainsKey(modid)) return SceError.INVALID_UID;
-        res.TrySet(0);
-        return 0;
+        var (a, p) = ModuleArgs(args);
+        return KernelModules.ksceKernelStartModule(modid, a, p, 0, 0, res.Address);
     }
 
-    /// <summary>taiLoadStartKernelModuleForUser(path, tai_module_args_t *args).</summary>
-    [Hle] int taiLoadStartKernelModuleForUser(string path, uint args) => LoadKernelModule(path);
+    /// <summary>taiLoadStartKernelModuleForUser(path, tai_module_args_t *args): load and start a kernel module.</summary>
+    [Hle]
+    int taiLoadStartKernelModuleForUser(string path, uint args)
+    {
+        var (a, p) = ModuleArgs(args);
+        return KernelModules.ksceKernelLoadStartModule(path, a, p, 0, 0, 0);
+    }
 
-    /// <summary>taiLoadStartModuleForPidForUser(path, tai_module_args_t *args): a user module loaded into the process
-    /// (args = { size, pid, args, argp, flags }); module_start runs with args/argp.</summary>
+    /// <summary>taiLoadStartModuleForPidForUser(path, tai_module_args_t *args): a user module loaded into process
+    /// args->pid (0: the caller) and started with args/argp.</summary>
     [Hle]
     int taiLoadStartModuleForPidForUser(string path, uint args)
     {
-        uint argc = 0, argp = 0;
-        if (args != 0 && GuestMemory.R32(args) >= 0x10) { argc = GuestMemory.R32(args + 8); argp = GuestMemory.R32(args + 12); }
-        try
-        {
-            var m = Emu.LoadModule(path);
-            if (m.StartEntry != 0) GuestThread.Current!.CallGuest(m.StartEntry, argc, argp);
-            return m.Uid;
-        }
-        catch (FileNotFoundException)
-        {
-            Log.Warn($"taiLoadStartModuleForPidForUser: {path} not found");
-            return SCE_KERNEL_ERROR_MODULEMGR_NO_MOD_FILE;
-        }
+        var (a, p) = ModuleArgs(args);
+        int pid = args != 0 && GuestMemory.R32(args) >= 8 ? (int)GuestMemory.R32(args + 4) : 0;
+        return KernelModules.ksceKernelLoadStartModuleForPid(pid, path, a, p, 0, 0, 0);
     }
 
+    /// <summary>taiStopKernelModuleForUser(modid, tai_module_args_t *args, opt, int *res).</summary>
     [Hle]
     int taiStopKernelModuleForUser(int modid, uint args, uint opt, Ptr<int> res)
     {
-        lock (_kernelModules) if (!_kernelModules.ContainsKey(modid)) return SceError.INVALID_UID;
-        res.TrySet(0);
-        return 0;
+        var (a, p) = ModuleArgs(args);
+        return KernelModules.ksceKernelStopModule(modid, a, p, 0, 0, res.Address);
     }
 
+    /// <summary>taiUnloadKernelModule(modid, flags, opt).</summary>
     [Hle]
-    int taiUnloadKernelModule(int modid, int flags, uint opt)
-    {
-        lock (_kernelModules) return _kernelModules.Remove(modid) ? 0 : SceError.INVALID_UID;
-    }
+    int taiUnloadKernelModule(int modid, int flags, uint opt) => KernelModules.ksceKernelUnloadModule(modid, flags, 0);
 
+    /// <summary>taiStopUnloadKernelModuleForUser(modid, tai_module_args_t *args, opt, int *res).</summary>
     [Hle]
     int taiStopUnloadKernelModuleForUser(int modid, uint args, uint opt, Ptr<int> res)
     {
-        res.TrySet(0);
-        lock (_kernelModules) return _kernelModules.Remove(modid) ? 0 : SceError.INVALID_UID;
+        var (a, p) = ModuleArgs(args);
+        return KernelModules.ksceKernelStopUnloadModule(modid, a, p, 0, 0, res.Address);
     }
 
-    /// <summary>taiMemcpyUserToKernel / taiMemcpyKernelToUser(dst, src, len): one address space here.</summary>
-    [Hle] int taiMemcpyUserToKernel(uint dst, uint src, uint len) => Memcpy(dst, src, len);
-    [Hle] int taiMemcpyKernelToUser(uint dst, uint src, uint len) => Memcpy(dst, src, len);
+    /// <summary>taiMemcpyUserToKernel(kernel_dst, user_src, len): ksceKernelMemcpyUserToKernel (the user range must be
+    /// the caller's user memory).</summary>
+    [Hle]
+    int taiMemcpyUserToKernel(uint dst, uint src, uint len) => KernelMemory.ksceKernelMemcpyUserToKernel(dst, src, len);
 
-    static int Memcpy(uint dst, uint src, uint len)
-    {
-        if (dst == 0 || src == 0) return TAI_ERROR_INVALID_ARGS;
-        if (len != 0) GuestMemory.Span(src, (int)len).CopyTo(GuestMemory.Span(dst, (int)len));
-        return 0;
-    }
+    /// <summary>taiMemcpyKernelToUser(user_dst, kernel_src, len): ksceKernelMemcpyKernelToUser.</summary>
+    [Hle]
+    int taiMemcpyKernelToUser(uint dst, uint src, uint len) => KernelMemory.ksceKernelMemcpyKernelToUser(dst, src, len);
 
-    /// <summary>taiReloadConfig(): taiHEN re-reads its config.txt; plugins are only loaded at boot here.</summary>
-    [Hle] int taiReloadConfig() => 0;
+    /// <summary>taiReloadConfig(): taiHEN re-reads its configuration; VitaSharp reads it on every load, so nothing is
+    /// cached to drop.</summary>
+    [Hle]
+    int taiReloadConfig() => 0;
 
     /// <summary>taiInjectRelease(uid): puts the original bytes back.</summary>
     [Hle]

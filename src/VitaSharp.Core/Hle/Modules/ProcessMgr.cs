@@ -344,6 +344,7 @@ public sealed partial class ProcessMgr : HleModule
     }
 
     [Hle]
+    [Hle("ksnprintf")]
     int sceClibSnprintf(uint buf, uint size, string fmt, VarArgs va)
     {
         string s = CFormat.Format(fmt, va);
@@ -363,9 +364,17 @@ public sealed partial class ProcessMgr : HleModule
     [Hle("sceClibMemcpy")]
     [Hle("sceClibMemcpy_safe")]
     [Hle("sceClibMemmove")]
+    [Hle("kmemcpy")]
     uint sceClibMemcpy(uint dst, uint src, uint len) { GuestMemory.Copy(dst, src, len); Kernel.GuestThread.Current!.Core.ChargeInstructions(len / 4); return dst; }
 
-    [Hle] uint sceClibMemset(uint dst, int ch, uint len) { GuestMemory.Fill(dst, (byte)ch, len); Kernel.GuestThread.Current!.Core.ChargeInstructions(len / 8); return dst; }
+    [Hle]
+    [Hle("kmemset")]
+    uint sceClibMemset(uint dst, int ch, uint len)
+    {
+        GuestMemory.Fill(dst, (byte)ch, len);
+        Kernel.GuestThread.Current!.Core.ChargeInstructions(len / 8);
+        return dst;
+    }
 
     /// <summary>SceDmacmgr: a copy / fill by the DMA controller, synchronous for the caller; returns the destination.
     /// The CPU does not do the work, so no instructions are charged.</summary>
@@ -387,7 +396,27 @@ public sealed partial class ProcessMgr : HleModule
     }
 
     [Hle] int sceClibStrcmp(string a, string b) => string.CompareOrdinal(a, b);
-    [Hle] int sceClibStrncmp(uint a, uint b, uint n) { for (uint i = 0; i < n; i++) { int ca = GuestMemory.Read<byte>(a + i), cb = GuestMemory.Read<byte>(b + i); if (ca != cb) return ca - cb; if (ca == 0) return 0; } return 0; }
+    [Hle]
+    [Hle("kstrncmp")]
+    int sceClibStrncmp(uint a, uint b, uint n)
+    {
+        for (uint i = 0; i < n; i++)
+        {
+            int ca = GuestMemory.Read<byte>(a + i), cb = GuestMemory.Read<byte>(b + i);
+            if (ca != cb)
+            {
+                return ca - cb;
+            }
+
+            if (ca == 0)
+            {
+                return 0;
+            }
+        }
+
+        return 0;
+    }
+
 
     /// <summary>Minimal context exposing a va_list pointer as the argument stack.</summary>
     sealed class StackVaContext : IVaSource

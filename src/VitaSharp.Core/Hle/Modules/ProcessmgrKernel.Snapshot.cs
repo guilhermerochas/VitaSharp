@@ -3,6 +3,6 @@ using VitaSharp.Core.SaveState;
 namespace VitaSharp.Core.Hle.Modules;
 
 [GenerateSnapshot]
-public sealed partial class Kubridge
+public sealed partial class ProcessmgrKernel
 {
 }

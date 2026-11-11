@@ -46,6 +46,12 @@ public sealed unsafe partial class GuestThread : KernelObject, IDisposable, Cpu.
     public bool OnSystemCore { get; }
     /// <summary>Blocked inside host-side HLE work (audio device, GPU queue, display queue): not waiting for a core.</summary>
     public volatile bool BlockedInHost;
+    /// <summary>
+    /// A kernel thread (created by kernel code with ksceKernelCreateThread, or running a kernel module's
+    /// module_start): it works for the kernel process (<see cref="KernelSpace.KernelPid"/>), so what it allocates is
+    /// the kernel's and ksceKernelGetProcessId reports the kernel. Set before the thread starts.
+    /// </summary>
+    public bool KernelMode { get; set; }
     public uint StackAddr { get; }
     public uint StackSize { get; }
     public uint TlsBase { get; }
@@ -191,6 +197,8 @@ public sealed unsafe partial class GuestThread : KernelObject, IDisposable, Cpu.
         Live[this] = 0;
         // the HLE calls of this thread (and the tasks they start) work in its process's address space
         Memory.AddressSpace.Enter(_emu.Space);
+        // a kernel thread's objects and memory are the kernel's (0: the thread's own process, as before)
+        using var kernelScope = ProcessScope.Enter(KernelMode ? KernelSpace.KernelPid : 0);
         Util.NativeThread.Register(Name, Util.NativeThread.Role.Guest);
         Util.HostThreads.Apply(Util.HostThreads.Role.Guest);
         int status = 0;

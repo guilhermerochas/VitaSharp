@@ -13,10 +13,8 @@ public sealed partial class VshBridge
     int _vshSblGetSystemSwVersion(uint data) => SystemMisc.WriteSystemSwVersion(data);
 
     /// <summary>
-    /// _vshKernelSearchModuleByName(name, int buf[2]): the uid of a loaded module (user or kernel) by name, else
-    /// SCE_KERNEL_ERROR_MODULEMGR_NO_MOD. The kernel modules whose user API an HLE module provides
-    /// (<see cref="Hle.HleModule.KernelModuleName"/>) count as loaded, as they would be on a unit set up for the
-    /// program that asks.
+    /// _vshKernelSearchModuleByName(name, int buf[2]): the uid of a loaded module (user or kernel, such as a kernel
+    /// plugin of the plugin configuration) by name, else SCE_KERNEL_ERROR_MODULEMGR_NO_MOD.
     /// </summary>
     [Hle]
     int _vshKernelSearchModuleByName(uint namePtr, uint buf)
@@ -24,11 +22,12 @@ public sealed partial class VshBridge
         if (namePtr == 0) return SceError.ILLEGAL_ADDR;
         string name = GuestMemory.ReadCString(namePtr, 0x100);
         var m = K.Modules.Values.OrderBy(x => x.Uid).FirstOrDefault(x => x.Name == name);
-        if (m != null) return m.Uid;
-        if (Emu.Hle.Modules.Any(x => x.KernelModuleName == name)) return HleKernelModuleUid;
+        if (m != null)
+        {
+            return m.Uid;
+        }
+
         return SceError.MODULEMGR_NO_MOD;
     }
 
-    /// <summary>The uid reported for a kernel module emulated at HLE level (an odd value, as kernel UIDs are).</summary>
-    const int HleKernelModuleUid = 0x7F100001;
 }

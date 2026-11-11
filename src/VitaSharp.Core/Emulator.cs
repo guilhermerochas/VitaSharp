@@ -424,7 +424,14 @@ public sealed class Emulator : IDisposable
         Vita.Unregister(this);
         Parent?._children.Remove(this);
         Gpu.ReleaseScene(Pid);
+        // the kernel modules loaded for this process go with it (VitaSharp's kernel lives in each process's emulator)
+        foreach (var m in Kernel.Modules.Values.Where(m => m.IsKernel).ToList())
+        {
+            UnloadModule(m);
+        }
+
         int objects = Vita.Objects.RemoveOwnedBy(Pid);
+
         // the GPU finishes the process's commands before its memory goes (bounded: a stuck GPU must not keep the space)
         if (!Task.Run(Gpu.WaitIdle).Wait(5000))
         {
@@ -1042,18 +1049,57 @@ public sealed class Emulator : IDisposable
         return null;
     }
 
-    public LoadedModule LoadModule(string vitaPath)
+    public LoadedModule LoadModule(string vitaPath) => LoadModule(vitaPath, kernel: false);
+
+    /// <summary>
+    /// Loads a module from a file. A kernel module (<paramref name="kernel"/>: the kernel module manager's loads and
+    /// the <c>*KERNEL</c> plugins) goes to the kernel region and belongs to the kernel process
+    /// (<see cref="KernelSpace.KernelPid"/>), as on the Vita, where the kernel and its modules outlive every process.
+    /// </summary>
+    public LoadedModule LoadModule(string vitaPath, bool kernel)
     {
         // a missing file or folder is the guest's error (the callers return it), never a host exception that ends the thread
         var host = Vfs.Resolve(vitaPath) is { } h && File.Exists(h) ? h : throw new FileNotFoundException(vitaPath);
         var elf = SelfDecryptor.ToElf(File.ReadAllBytes(host), Klicensee);
-        var m = ModuleLoader.Load(elf, vitaPath, Memory, Linker, 0);
-        m.Uid = Kernel.Objects.Register(new ModuleObject(m));
+        LoadedModule m;
+        using (ProcessScope.Enter(kernel ? KernelSpace.KernelPid : ProcessScope.CurrentPid))
+        {
+            m = ModuleLoader.Load(elf, vitaPath, Memory, Linker, 0, kernel);
+            m.Uid = Kernel.Objects.Register(new ModuleObject(m));
+        }
+
         Kernel.Modules[m.Uid] = m;
         Code.Invalidate(0, uint.MaxValue);
-        Log.Info($"Loaded module {m.Name} ({vitaPath}) start=0x{m.StartEntry:X8} imports={m.Imports.Sum(i => i.FuncNids.Length)}");
+        Log.Info($"Loaded {(kernel ? "kernel " : "")}module {m.Name} ({vitaPath}) start=0x{m.StartEntry:X8} imports={m.Imports.Sum(i => i.FuncNids.Length)}");
         CheckPendingVariables(m);
         return m;
+    }
+
+    /// <summary>SCE_KERNEL_START_SUCCESS, _NO_RESIDENT and _FAILED: what module_start returns.</summary>
+    public const int ModuleStartSuccess = 0, ModuleStartNoResident = 1, ModuleStartFailed = 2;
+
+    /// <summary>
+    /// Runs a kernel module's module_start(args, argp) on a new kernel thread of this process and waits for it (as the
+    /// kernel module manager runs it before its load call returns). Returns what module_start returned.
+    /// </summary>
+    public int StartKernelModule(LoadedModule m, uint args, uint argp)
+    {
+        m.Started = true;
+        if (m.StartEntry == 0)
+        {
+            return ModuleStartSuccess;
+        }
+
+        var t = Kernel.CreateThread($"start:{m.Name}", m.StartEntry, 0x40, 0x4000, 0, 0x70000);
+        t.KernelMode = true;
+        t.Start(args, argp);
+        if (!t.WaitForExit(30_000))
+        {
+            Log.Warn($"module_start of kernel module {m.Name} did not finish in time");
+            return ModuleStartFailed;
+        }
+
+        return t.ExitStatus;
     }
 
     /// <summary>Removes a loaded module (sceKernelUnloadModule): imports that pointed at its exports go back to the next
@@ -1082,7 +1128,18 @@ public sealed class Emulator : IDisposable
     /// </summary>
     internal List<string> LoadPlugins()
     {
-        var results = new List<string>();
+        // kernel modules first (each started as it loads, as the plugin loader of the homebrew environment starts
+        // them): the user modules may import what they export
+        var results = LoadKernelPlugins();
+        results.AddRange(LoadUserPlugins(TitleId, startNow: false));
+        return results;
+    }
+
+    /// <summary>The plugin configuration (ux0:tai/config.txt, else ur0:tai/config.txt) as (section, module path) in
+    /// file order; empty without one.</summary>
+    List<(string Section, string Path)> ReadPluginConfig()
+    {
+        var entries = new List<(string, string)>();
         string? config = null;
         foreach (var path in new[] { "ux0:tai/config.txt", "ur0:tai/config.txt" })
         {
@@ -1095,12 +1152,10 @@ public sealed class Emulator : IDisposable
 
         if (config == null)
         {
-            return results;
+            return entries;
         }
 
         string section = "";
-        var kernel = new List<string>();
-        var user = new List<string>();
         foreach (var raw in File.ReadAllLines(config))
         {
             string line = raw.Trim();
@@ -1115,20 +1170,57 @@ public sealed class Emulator : IDisposable
                 continue;
             }
 
-            if (section == "KERNEL")
-            {
-                kernel.Add(line);
-            }
-            else if (section == "ALL" || string.Equals(section, TitleId, StringComparison.OrdinalIgnoreCase))
-            {
-                user.Add(line);
-            }
+            entries.Add((section, line));
         }
 
-        // kernel modules first: the user modules may import what they export
-        foreach (var path in kernel.Concat(user))
+        return entries;
+    }
+
+    /// <summary>The <c>*KERNEL</c> modules of the plugin configuration that are not loaded yet: loaded into the kernel
+    /// and started. Returns what happened to each.</summary>
+    internal List<string> LoadKernelPlugins()
+    {
+        var results = new List<string>();
+        foreach (var (section, path) in ReadPluginConfig())
         {
-            string result = LoadPlugin(path);
+            if (section != "KERNEL" || Kernel.Modules.Values.Any(m => m.IsKernel && string.Equals(m.Path, path, StringComparison.OrdinalIgnoreCase)))
+            {
+                continue;
+            }
+
+            string result = LoadPlugin(path, kernel: true);
+            Log.Info($"kernel plugin {path}: {result}");
+            results.Add($"{path}: {result}");
+        }
+
+        return results;
+    }
+
+    /// <summary>
+    /// The user modules of the plugin configuration for <paramref name="titleId"/> (<c>*ALL</c> and <c>*TITLEID</c>):
+    /// loaded into this process; they start with the process, or at once with <paramref name="startNow"/> (a plugin
+    /// load asked for by kernel code while the process runs). Returns what happened to each.
+    /// </summary>
+    internal List<string> LoadUserPlugins(string titleId, bool startNow)
+    {
+        var results = new List<string>();
+        foreach (var (section, path) in ReadPluginConfig())
+        {
+            if (section != "ALL" && !string.Equals(section, titleId, StringComparison.OrdinalIgnoreCase))
+            {
+                continue;
+            }
+
+            string result = LoadPlugin(path, kernel: false);
+            if (startNow && Kernel.Modules.Values.FirstOrDefault(m => !m.IsKernel && m.Path == path && !m.Started) is { } loaded)
+            {
+                loaded.Started = true;
+                if (loaded.StartEntry != 0)
+                {
+                    RunOnNewThread($"start:{loaded.Name}", loaded.StartEntry);
+                }
+            }
+
             Log.Info($"plugin {path}: {result}");
             results.Add($"{path}: {result}");
         }
@@ -1136,14 +1228,18 @@ public sealed class Emulator : IDisposable
         return results;
     }
 
-    /// <summary>Loads one plugin module; it stays (and starts with the process) only when every library it imports is
-    /// provided by a loaded module or the HLE.</summary>
-    string LoadPlugin(string path)
+
+    /// <summary>
+    /// Loads one plugin module; it stays only when every library it imports is provided by a loaded module it may see
+    /// or by the HLE. A kernel module is started at once on a kernel thread and stays only when its module_start
+    /// reports success; a user module starts with the process.
+    /// </summary>
+    string LoadPlugin(string path, bool kernel)
     {
         LoadedModule m;
         try
         {
-            m = LoadModule(path);
+            m = LoadModule(path, kernel);
         }
         catch (Exception e) when (e is not OutOfMemoryException)
         {
@@ -1151,7 +1247,7 @@ public sealed class Emulator : IDisposable
         }
 
         var missing = m.Imports
-            .Where(i => !i.FuncNids.Any(n => Linker.TryGetFunctionExport(n, out _) || Hle.Implements(n)))
+            .Where(i => !i.FuncNids.Any(n => Linker.TryGetVisibleExport(n, i.LibNid, kernel, out _) || Hle.Implements(n)))
             .Select(i => i.Library)
             .Distinct(StringComparer.Ordinal)
             .ToList();
@@ -1161,7 +1257,21 @@ public sealed class Emulator : IDisposable
             return $"not started: no module provides {string.Join(", ", missing)}";
         }
 
-        return $"loaded ({m.Name})";
+        if (!kernel)
+        {
+            return $"loaded ({m.Name})";
+        }
+
+        int status = StartKernelModule(m, 0, 0);
+        if (status != ModuleStartSuccess)
+        {
+            // NO_RESIDENT: the module did its work and asks to go; FAILED (or a crash): it is unloaded too
+            UnloadModule(m);
+            return status == ModuleStartNoResident ? $"started and unloaded ({m.Name}: module_start asked not to stay)"
+                : $"not started: module_start of {m.Name} returned 0x{status:X}";
+        }
+
+        return $"loaded and started ({m.Name})";
     }
 
     /// <summary>Runs library module_start functions, then starts the main thread at the eboot entry.</summary>
@@ -1190,8 +1300,9 @@ public sealed class Emulator : IDisposable
         // Library module_start functions run (in load order) before the main thread.
         // (firmware dependencies of a system program first, each after the modules it imports from)
         foreach (var m in _startFirst.Concat(Kernel.Modules.Values.Where(m => !_startFirst.Contains(m)).OrderBy(m => m.Uid))
-                     .Where(m => m != MainModule && m.StartEntry != 0).ToList())
+                     .Where(m => m != MainModule && m.StartEntry != 0 && !m.Started && !m.IsKernel).ToList())
         {
+            m.Started = true;
             RunOnNewThread($"start:{m.Name}", m.StartEntry);
         }
         // the launch posts the application's PARAM_NOTIFY event (FW 3.74 kernel appmgr, its launch path at 0x8100EC52):

@@ -7,8 +7,8 @@ using static VitaSharp.Tests.HleHarness;
 namespace VitaSharp.Tests;
 
 /// <summary>
-/// taiHEN's user API as homebrew uses it (injections that put the original bytes back on release, kernel plugins that
-/// are accepted without running, the user/kernel copies, TAI_ERROR_* 0x9001000x) and SceSblDmac5Mgr's hash commands
+/// taiHEN's user API as homebrew uses it (injections that put the original bytes back on release, kernel plugins
+/// loaded by the kernel loader, the user/kernel copies, TAI_ERROR_* 0x9001000x) and SceSblDmac5Mgr's hash commands
 /// checked against the published SHA-1/SHA-256 and HMAC test vectors (FIPS 180, RFC 2202, RFC 4231), plus
 /// sceKernelGetRandomNumber's 64-byte limit.
 /// </summary>
@@ -73,30 +73,25 @@ public sealed class TaihenSecurityTests(GuestMemoryFixture fx) : IDisposable
         Assert.Equal(0, Call(T, "taiMemcpyUserToKernel", dst, src, 4u));
         Assert.Equal(new byte[] { 9, 8, 7, 6 }, GuestMemory.ReadSpan(dst, 4).ToArray());
         Assert.Equal(0, Call(T, "taiMemcpyKernelToUser", dst + 4, src, 0u));
-        Assert.Equal(INVALID_ARGS, Call(T, "taiMemcpyKernelToUser", 0u, src, 4u));
+        Assert.Equal(KernelSpace.UserCopyFault, Call(T, "taiMemcpyKernelToUser", 0u, src, 4u)); // not user memory
         Assert.Equal(0, Call(T, "taiReloadConfig"));
     }
 
     [Fact]
-    public void KernelPluginsAreAcceptedWithoutRunning()
+    public void KernelPluginsGoThroughTheKernelLoader()
     {
         Assert.Equal(NO_MOD_FILE, Call(T, "taiLoadKernelModule", "ur0:tai/missing.skprx", 0, 0u));
         Assert.Equal(NO_MOD_FILE, Call(T, "taiLoadStartKernelModuleForUser", "ur0:tai/missing.skprx", 0u));
         Directory.CreateDirectory(Path.Combine(_h.Root, "ur0", "tai"));
+        // a file that is not a module is refused by the loader (KernelModulemgrTaihenTests runs real ones)
         File.WriteAllBytes(Path.Combine(_h.Root, "ur0", "tai", "plugin.skprx"), [0x7F, (byte)'E', (byte)'L', (byte)'F']);
-        int uid = Call(T, "taiLoadKernelModule", "ur0:tai/plugin.skprx", 0, 0u);
-        Assert.True(uid > 0);
+        Assert.Equal(SceError.ILLEGAL_ELF_HEADER, Call(T, "taiLoadKernelModule", "ur0:tai/plugin.skprx", 0, 0u));
+        File.WriteAllBytes(Path.Combine(_h.Root, "ur0", "tai", "plugin.skprx"), [1, 2, 3, 4]);
+        Assert.Equal(SceError.ILLEGAL_SELF_HEADER, Call(T, "taiLoadKernelModule", "ur0:tai/plugin.skprx", 0, 0u));
         uint res = _h.Word(9);
-        Assert.Equal(0, Call(T, "taiStartKernelModuleForUser", uid, 0u, 0u, new Ptr<int>(res)));
-        Assert.Equal(0u, GuestMemory.R32(res)); // SCE_KERNEL_START_SUCCESS
-        Assert.Equal(0, Call(T, "taiStopKernelModuleForUser", uid, 0u, 0u, new Ptr<int>(res)));
-        Assert.Equal(0, Call(T, "taiUnloadKernelModule", uid, 0, 0u));
-        Assert.Equal(SceError.INVALID_UID, Call(T, "taiUnloadKernelModule", uid, 0, 0u));
-        Assert.Equal(SceError.INVALID_UID, Call(T, "taiStartKernelModuleForUser", uid, 0u, 0u, new Ptr<int>(res)));
-        Assert.Equal(SceError.INVALID_UID, Call(T, "taiStopKernelModuleForUser", uid, 0u, 0u, new Ptr<int>(res)));
-        int uid2 = Call(T, "taiLoadStartKernelModuleForUser", "ur0:tai/plugin.skprx", 0u);
-        Assert.Equal(0, Call(T, "taiStopUnloadKernelModuleForUser", uid2, 0u, 0u, new Ptr<int>(res)));
-        Assert.Equal(SceError.INVALID_UID, Call(T, "taiStopUnloadKernelModuleForUser", uid2, 0u, 0u, new Ptr<int>(res)));
+        Assert.Equal(SceError.MODULEMGR_NO_MOD, Call(T, "taiStartKernelModuleForUser", 0x7FFFFF01, 0u, 0u, new Ptr<int>(res)));
+        Assert.Equal(SceError.MODULEMGR_NO_MOD, Call(T, "taiStopKernelModuleForUser", 0x7FFFFF01, 0u, 0u, new Ptr<int>(res)));
+        Assert.Equal(SceError.MODULEMGR_NO_MOD, Call(T, "taiUnloadKernelModule", 0x7FFFFF01, 0, 0u));
         _h.OnGuest(_ => Assert.Equal(NO_MOD_FILE, Call(T, "taiLoadStartModuleForPidForUser", "ux0:data/missing.suprx", 0u)));
     }
 

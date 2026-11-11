@@ -71,6 +71,7 @@ public sealed partial class IoFileMgr : HleModule
     }
 
     [Hle("sceIoOpen")]
+    [Hle("ksceIoOpen")]
     internal int sceIoOpen(string path, int flags, int mode)
     {
         // the libc opens tty0:/tty1: as stdin/stdout/stderr; on retail the open succeeds and output is discarded
@@ -125,6 +126,7 @@ public sealed partial class IoFileMgr : HleModule
 
     [Hle]
     [Hle("sceIoClose2")] // SceLibKernel "v2" wrapper: no header, assumed to take the same argument
+    [Hle("ksceIoClose")]
     internal int sceIoClose(int fd)
     {
         if (fd is >= 0x10 and <= 0x12) return 0;
@@ -135,6 +137,7 @@ public sealed partial class IoFileMgr : HleModule
 
     [Hle]
     [Hle("sceIoRead2")] // SceLibKernel "v2" wrapper: no header, assumed to take the same arguments
+    [Hle("ksceIoRead")]
     internal int sceIoRead(int fd, uint buf, uint size)
     {
         if (fd is >= 0x10 and <= 0x12) return 0; // no console input: EOF
@@ -177,7 +180,9 @@ public sealed partial class IoFileMgr : HleModule
     }
 
     [Hle]
-    internal long sceIoLseek(int fd, long offset, int whence)
+    [Hle("ksceIoLseek")]
+    internal long sceIoLseek(
+int fd, long offset, int whence)
     {
         if (!_files.TryGetValue(fd, out var f) || f.Stream == null) return SceError.IO_EBADF;
         lock (f) return f.Stream.Seek(offset, (SeekOrigin)whence);

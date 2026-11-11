@@ -937,12 +937,59 @@ internal static unsafe partial class A32
         {
             s->TpidrUrw = s->R[rt];
         }
+
         // c7 cache maintenance / barriers (CP15DMB etc.)
         if (crn == 7)
         {
             Interlocked.MemoryBarrier();
+            if (IsInstructionCacheInvalidate(ins))
+            {
+                InvalidateInstructionCache(ins, s->R[rt]);
+            }
         }
     }
+
+    /// <summary>True for the CP15 c7 instruction cache invalidations: ICIALLUIS (c7, c1, 0), ICIALLU (c7, c5, 0) and
+    /// ICIMVAU (c7, c5, 1). The native backend runs these through the interpreter (a callout).</summary>
+    public static bool IsInstructionCacheInvalidate(uint ins)
+    {
+        uint crn = Bits(ins, 19, 16), crm = ins & 0xF, opc1 = Bits(ins, 23, 21), opc2 = Bits(ins, 7, 5), coproc = Bits(ins, 11, 8);
+        if (coproc != 15 || crn != 7 || opc1 != 0)
+        {
+            return false;
+        }
+
+        return (crm == 1 && opc2 == 0) || (crm == 5 && opc2 is 0 or 1);
+    }
+
+    /// <summary>Size of a Cortex-A9 instruction cache line (ICIMVAU invalidates one).</summary>
+    const uint IcacheLine = 32;
+
+    /// <summary>
+    /// An instruction cache invalidation run by guest code (kernel code that rewrote instructions, as ARMv7 requires
+    /// before the new code may run): the translated blocks of the line (ICIMVAU, <paramref name="mva"/>) or of the
+    /// whole process (ICIALLU, ICIALLUIS) are dropped, in every backend, so the rewritten code runs as written. Like the
+    /// reference ARM recompilers (Dynarmic's and Ryujinx's cache-maintenance exits), stores alone do not drop code: on
+    /// the hardware the instruction side sees new code only after this maintenance.
+    /// </summary>
+    static void InvalidateInstructionCache(uint ins, uint mva)
+    {
+        if (Kernel.GuestThread.Current?.Process.Code is not { } code)
+        {
+            return;
+        }
+
+        bool line = (ins & 0xF) == 5 && Bits(ins, 7, 5) == 1;
+        if (line)
+        {
+            code.Invalidate(mva & ~(IcacheLine - 1), IcacheLine);
+        }
+        else
+        {
+            code.Invalidate(0, uint.MaxValue);
+        }
+    }
+
 
     // ================================================================ load / store
 

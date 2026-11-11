@@ -1,4 +1,4 @@
-<!-- pair: README.pt-BR.md sha256=382b1d3faa073163758faafe8d43e496211f07ad98f4b8be812e141a60c99192 -->
+<!-- pair: README.pt-BR.md sha256=c329574464c95afde6b0a4f0895998811751c653ca0f8fb39162b5f19ad6d75d -->
 <!-- pair: README.pt-BR.md sha256=d84170c76f0ce78a59188fbba28020ba043c7e4e6e0f6e8e366473773e923507 -->
 <div align="center">
 
@@ -122,6 +122,11 @@ Vita3K's firmware** (copies `os0`/`vs0`/`sa0`/`pd0` from a Vita3K installation).
 runs the firmware's `shell.self`: initial setup the first time, lock screen, home screen with the installed games and
 LiveArea. A game opened from the LiveArea runs as a second process; the PS button (Home key) goes back to the system
 and **Continue** resumes the game. Details and what is missing in [`docs/notes/system-apps.md`](docs/notes/system-apps.md).
+
+**Plugins.** Homebrew that needs a plugin (the so_loader Android ports, such as Dead Space, need `kubridge.skprx`)
+runs with the real one: copy the plugins from your Vita to `fs/ur0/tai` in the data folder and list them in
+`fs/ur0/tai/config.txt` as on the Vita (`*KERNEL` for `.skprx` kernel plugins, `*ALL` / `*TITLEID` for `.suprx` user
+plugins). Without that file no plugin is loaded. Details in [`docs/notes/plugins.md`](docs/notes/plugins.md).
 
 **Android.** See [Android](#android).
 

@@ -20,6 +20,11 @@ public sealed class LoadedModule
     public Dictionary<int, (uint Flags, uint MemSz, uint FileSz)> SegmentFlags = new();
     public List<(string Library, uint LibNid, uint[] FuncNids)> Imports = new();
     public List<(string Library, uint LibNid, uint[] FuncNids, uint[] VarNids)> Exports = new();
+    /// <summary>A kernel module: loaded in the kernel region by the kernel loader (<see cref="ModuleLoader.Load"/> with
+    /// kernel set). Only its syscall-exported libraries are visible to user modules; it imports only kernel exports.</summary>
+    public bool IsKernel;
+    /// <summary>module_start already ran (a kernel module starts when it is loaded, before the process).</summary>
+    public bool Started;
 
     public override string ToString() => $"{Name} uid={Uid:X} start={StartEntry:X8}";
 }
@@ -36,20 +41,79 @@ public interface IImportResolver
     uint GetHleGuestCode(uint nid) => 0;
 }
 
+/// <summary>Who may import a library a module exports.</summary>
+public enum ExportScope : byte
+{
+    /// <summary>A user module's library: user modules only (the kernel never links against user code).</summary>
+    User,
+    /// <summary>A kernel module's library: kernel modules only.</summary>
+    Kernel,
+    /// <summary>A kernel module's library marked as a syscall export: user modules call it (the kernel's user API) and
+    /// kernel modules may import it too.</summary>
+    Syscall,
+}
+
 /// <summary>
 /// Cross-module symbol table. Function imports are bound through 16-byte stubs that are rewritten
-/// whenever a module exporting the NID (LLE) is loaded; until then they trap into HLE via SVC.
+/// whenever a module exporting the NID (LLE) is loaded; until then they trap into HLE via SVC. Kernel and user modules
+/// see each other's exports only as the firmware allows (<see cref="ExportScope"/>).
 /// </summary>
 public sealed class Linker(IImportResolver hle)
 {
     const uint NidModuleStop = 0x79F8E492, NidModuleExit = 0x913482A9, NidModuleStart = 0x935CD196;
     const uint NidModuleInfo = 0x6C2224BA, NidSyslib = 0x936C8A78, NidProcessParam = 0x70FBA1E7;
 
+    /// <summary>The export entry attribute bit of a library user code reaches through syscalls
+    /// (SCE_LIBRARY_ATTR_SYSCALL_EXPORT).</summary>
+    public const ushort SyscallExportAttr = 0x4000;
+
     readonly object _lock = new();
     readonly Dictionary<uint, uint> _funcExports = new();
+    readonly Dictionary<uint, ExportScope> _funcExportScopes = new();
     readonly Dictionary<(uint lib, uint nid), uint> _funcExportsByLib = new();
+    readonly Dictionary<(uint lib, uint nid), ExportScope> _funcExportScopesByLib = new();
     readonly Dictionary<uint, uint> _varExports = new();
-    readonly List<(uint nid, uint libNid, string libName, uint stub)> _funcBindings = new();
+    readonly List<(uint nid, uint libNid, string libName, uint stub, bool kernel)> _funcBindings = new();
+
+    /// <summary>True when an importer (kernel or user) may bind to an export of <paramref name="scope"/>.</summary>
+    static bool Visible(ExportScope scope, bool kernelImporter)
+    {
+        return kernelImporter ? scope != ExportScope.User : scope != ExportScope.Kernel;
+    }
+
+    /// <summary>The export an import of <paramref name="nid"/> from <paramref name="libNid"/> binds to: the library's
+    /// own export first, then the same function exported by any library, both only when visible to the importer.</summary>
+    bool TryFindExport(uint nid, uint libNid, bool kernelImporter, out uint target)
+    {
+        if (_funcExportsByLib.TryGetValue((libNid, nid), out target) && Visible(_funcExportScopesByLib[(libNid, nid)], kernelImporter))
+        {
+            return true;
+        }
+
+        if (!_funcExports.TryGetValue(nid, out target))
+        {
+            // no loaded module exports the function at all (the common case of an HLE import)
+            return false;
+        }
+
+        if (Visible(_funcExportScopes[nid], kernelImporter))
+        {
+            return true;
+        }
+
+        foreach (var (key, addr) in _funcExportsByLib)
+
+        {
+            if (key.nid == nid && Visible(_funcExportScopesByLib[key], kernelImporter))
+            {
+                target = addr;
+                return true;
+            }
+        }
+
+        target = 0;
+        return false;
+    }
     readonly List<(uint nid, byte[] relocs, Dictionary<int, SegmentInfo> segs)> _varBindings = new();
     readonly Dictionary<uint, string> _varSources = new(); // variable import NID -> "library (importing module)", for the log
 
@@ -98,6 +162,26 @@ public sealed class Linker(IImportResolver hle)
         }
     }
 
+    /// <summary>Import stubs bound to function <paramref name="nid"/> by kernel importers (<paramref name="kernel"/>) or
+    /// by user importers.</summary>
+    public List<uint> BoundStubs(uint nid, uint? libNid, bool kernel)
+    {
+        lock (_lock)
+        {
+            return _funcBindings.Where(b => b.nid == nid && (libNid == null || b.libNid == libNid) && b.kernel == kernel).Select(b => b.stub).ToList();
+        }
+    }
+
+    /// <summary>The export an import of <paramref name="nid"/> from library <paramref name="libNid"/> by a kernel
+    /// (<paramref name="kernelImporter"/>) or user module binds to, when a loaded module provides one it may see.</summary>
+    public bool TryGetVisibleExport(uint nid, uint libNid, bool kernelImporter, out uint addr)
+    {
+        lock (_lock)
+        {
+            return TryFindExport(nid, libNid, kernelImporter, out addr);
+        }
+    }
+
     /// <summary>The function <paramref name="nid"/> of library <paramref name="libNid"/> a loaded module exports.</summary>
     public bool TryGetFunctionExport(uint libNid, uint nid, out uint addr)
     {
@@ -139,9 +223,9 @@ public sealed class Linker(IImportResolver hle)
         int n = 0;
         lock (_lock)
         {
-            foreach (var (nid, libNid, libName, stub) in _funcBindings)
+            foreach (var (nid, libNid, libName, stub, kernel) in _funcBindings)
             {
-                if (_funcExportsByLib.ContainsKey((libNid, nid)) || _funcExports.ContainsKey(nid) || Kept(stub))
+                if (TryFindExport(nid, libNid, kernel, out _) || Kept(stub))
                 {
                     continue;
                 }
@@ -171,12 +255,13 @@ public sealed class Linker(IImportResolver hle)
         GuestMemory.W32(stub + 8, 0xE12FFF1C);                                                             // bx r12
     }
 
-    internal void BindFunctionImport(uint nid, uint libNid, string libName, uint stub, Dictionary<int, SegmentInfo> segs)
+    /// <summary>Binds one function import stub: to a loaded module's export the importer may see (a kernel importer
+    /// when <paramref name="kernel"/>), else to the HLE.</summary>
+    internal void BindFunctionImport(uint nid, uint libNid, string libName, uint stub, Dictionary<int, SegmentInfo> segs, bool kernel = false)
     {
         lock (_lock)
         {
-            uint target;
-            if (_funcExportsByLib.TryGetValue((libNid, nid), out target) || _funcExports.TryGetValue(nid, out target))
+            if (TryFindExport(nid, libNid, kernel, out uint target))
             {
                 WriteJumpStub(stub, target);
             }
@@ -185,7 +270,7 @@ public sealed class Linker(IImportResolver hle)
                 BindHle(stub, nid, libNid, libName);
             }
 
-            _funcBindings.Add((nid, libNid, libName, stub));
+            _funcBindings.Add((nid, libNid, libName, stub, kernel));
         }
         // reftable: relocations applied against the stub address
         uint reftable = GuestMemory.R32(stub + 12);
@@ -242,7 +327,8 @@ public sealed class Linker(IImportResolver hle)
         }
     }
 
-    internal void RegisterExports(LoadedModule m, uint libNid, uint[] nids, uint[] entries, int funcCount)
+    /// <summary>Registers one exported library of <paramref name="m"/> and rebinds the import stubs that may see it.</summary>
+    internal void RegisterExports(LoadedModule m, uint libNid, uint[] nids, uint[] entries, int funcCount, ExportScope scope = ExportScope.User)
     {
         lock (_lock)
         {
@@ -263,11 +349,16 @@ public sealed class Linker(IImportResolver hle)
                             m.ExitEntry = addr;
                             continue;
                     }
-                    _funcExports.TryAdd(nid, addr);
-                    _funcExportsByLib[(libNid, nid)] = addr;
-                    foreach (var (bnid, blib, _, stub) in _funcBindings)
+                    if (_funcExports.TryAdd(nid, addr))
                     {
-                        if (bnid != nid || blib != libNid || Kept(stub))
+                        _funcExportScopes[nid] = scope;
+                    }
+
+                    _funcExportsByLib[(libNid, nid)] = addr;
+                    _funcExportScopesByLib[(libNid, nid)] = scope;
+                    foreach (var (bnid, blib, _, stub, kernel) in _funcBindings)
+                    {
+                        if (bnid != nid || blib != libNid || Kept(stub) || !Visible(scope, kernel))
                         {
                             continue;
                         }
@@ -337,22 +428,25 @@ public sealed class Linker(IImportResolver hle)
             foreach (var key in _funcExportsByLib.Where(kv => InModule(m, kv.Value)).Select(kv => kv.Key).ToArray())
             {
                 _funcExportsByLib.Remove(key);
+                _funcExportScopesByLib.Remove(key);
             }
 
             foreach (var nid in _funcExports.Where(kv => InModule(m, kv.Value)).Select(kv => kv.Key).ToArray())
             {
                 _funcExports.Remove(nid);
+                _funcExportScopes.Remove(nid);
                 foreach (var kv in _funcExportsByLib)
                 {
                     if (kv.Key.nid == nid)
                     {
                         _funcExports[nid] = kv.Value;
+                        _funcExportScopes[nid] = _funcExportScopesByLib[kv.Key];
                         break;
                     }
                 }
             }
 
-            foreach (var (nid, libNid, libName, stub) in _funcBindings)
+            foreach (var (nid, libNid, libName, stub, kernel) in _funcBindings)
             {
                 // only stubs that jumped into the unloaded module change
                 uint w0 = GuestMemory.R32(stub), w1 = GuestMemory.R32(stub + 4);
@@ -367,7 +461,7 @@ public sealed class Linker(IImportResolver hle)
                     continue;
                 }
 
-                if (_funcExportsByLib.TryGetValue((libNid, nid), out uint next) || _funcExports.TryGetValue(nid, out next))
+                if (TryFindExport(nid, libNid, kernel, out uint next))
                 {
                     WriteJumpStub(stub, next);
                 }
@@ -417,7 +511,13 @@ public static class ModuleLoader
     const uint PT_LOAD = 1, PT_SCE_RELA = 0x60000000;
     const ushort ET_SCE_EXEC = 0xFE00, ET_SCE_RELEXEC = 0xFE04;
 
-    public static LoadedModule Load(byte[] elf, string path, GuestMemory mem, Linker linker, int uid)
+    /// <summary>
+    /// Loads a module: segments, relocations, module info, exports and imports. A kernel module
+    /// (<paramref name="kernel"/>) goes to the kernel region, which every address space maps, at any free address (the
+    /// kernel loader relocates its modules); its exports are kernel exports except the libraries marked as syscall
+    /// exports, and its imports bind only to kernel exports.
+    /// </summary>
+    public static LoadedModule Load(byte[] elf, string path, GuestMemory mem, Linker linker, int uid, bool kernel = false)
     {
         ReadOnlySpan<byte> e = elf;
         if (U32LE(e, 0) != 0x464C457F)
@@ -435,7 +535,12 @@ public static class ModuleLoader
         ushort phnum = U16LE(e, 44);
         bool relocatable = type == ET_SCE_RELEXEC;
 
-        var m = new LoadedModule { Uid = uid, Path = path };
+        if (kernel && !relocatable)
+        {
+            throw new NotSupportedException($"{path}: a kernel module must be relocatable");
+        }
+
+        var m = new LoadedModule { Uid = uid, Path = path, IsKernel = kernel };
         var relas = new List<byte[]>();
         for (int i = 0; i < phnum; i++)
         {
@@ -447,7 +552,16 @@ public static class ModuleLoader
                 // a fixed segment only needs its range free in this process's address space (another process may use
                 // the same addresses in its own); a relocatable module takes its preferred address only when no process
                 // uses it, else any free range
-                uint addr = vaddr != 0 ? mem.TryAllocAt(vaddr, memsz, name, exclusive: relocatable) : 0;
+                uint addr;
+                if (kernel)
+                {
+                    addr = mem.Alloc(memsz, name, MemoryRegion.Kernel, 0x1000);
+                }
+                else
+                {
+                    addr = vaddr != 0 ? mem.TryAllocAt(vaddr, memsz, name, exclusive: relocatable) : 0;
+                }
+
                 if (addr == 0)
                 {
                     if (!relocatable)
@@ -520,6 +634,7 @@ public static class ModuleLoader
         {
             var ex = GuestMemory.Span(p, 0x20);
             ushort size = U16LE(ex, 0);
+            ushort attr = U16LE(ex, 4);
             ushort nfunc = U16LE(ex, 6);
             uint nvar = U32LE(ex, 8);
             uint libNid = U32LE(ex, 0x10), libName = U32LE(ex, 0x14), nidTable = U32LE(ex, 0x18), entryTable = U32LE(ex, 0x1C);
@@ -527,7 +642,8 @@ public static class ModuleLoader
             var nids = GuestMemory.Span<uint>(nidTable, total).ToArray();
             var entries = GuestMemory.Span<uint>(entryTable, total).ToArray();
             m.Exports.Add((GuestMemory.ReadCString(libName), libNid, nids[..nfunc], nids[nfunc..]));
-            linker.RegisterExports(m, libNid, nids, entries, nfunc);
+            var scope = !kernel ? ExportScope.User : (attr & Linker.SyscallExportAttr) != 0 ? ExportScope.Syscall : ExportScope.Kernel;
+            linker.RegisterExports(m, libNid, nids, entries, nfunc, scope);
             if (size == 0)
             {
                 break;
@@ -565,7 +681,7 @@ public static class ModuleLoader
             var fe = nfunc > 0 ? GuestMemory.Span<uint>(funcEntries, nfunc).ToArray() : [];
             for (int i = 0; i < nfunc; i++)
             {
-                linker.BindFunctionImport(fn[i], libNid, lib, fe[i], m.Segments);
+                linker.BindFunctionImport(fn[i], libNid, lib, fe[i], m.Segments, kernel);
             }
 
             if (nvar > 0)

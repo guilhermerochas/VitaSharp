@@ -217,6 +217,13 @@ public static class SceError
     public const int UNKNOWN_EVENT_ID = unchecked((int)0x80028201);
     public const int EVENT_COND = unchecked((int)0x80028202);
     public const int MODULEMGR_NO_MOD = unchecked((int)0x8002D011);
+    public const int MODULEMGR_INVALID_PROCESS_UID = unchecked((int)0x8002D017);
+    public const int ILLEGAL_ELF_HEADER = unchecked((int)0x80025001);
+    public const int ILLEGAL_SELF_HEADER = unchecked((int)0x80025002);
+    public const int INVALID_UID_CLASS = unchecked((int)0x80024508);
+    public const int ILLEGAL_HEAP_ID = unchecked((int)0x80024901);
+    public const int INVALID_PID = unchecked((int)0x80029001);
+    public const int NO_PROCESS_DATA = unchecked((int)0x8002900B);
     public const int MODULEMGR_NOENT = unchecked((int)0x8002D01C);
     public const int LIBRARYDB_NO_MOD = unchecked((int)0x8002D082);
     public const int ERRNO_ENOSYS = unchecked((int)0x80010058);

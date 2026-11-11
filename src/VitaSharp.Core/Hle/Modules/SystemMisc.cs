@@ -459,7 +459,7 @@ public sealed partial class SystemMisc : HleModule
     [Hle]
     int sceKernelGetModuleInfoByAddr(uint addr, uint info)
     {
-        foreach (var m in K.Modules.Values)
+        foreach (var m in UserModules)
         {
             foreach (var s in m.Segments.Values)
             {
@@ -473,12 +473,20 @@ public sealed partial class SystemMisc : HleModule
     [Hle]
     int sceKernelGetModuleInfo(int uid, uint info)
     {
-        if (!K.Modules.TryGetValue(uid, out var m)) return unchecked((int)0x8002D011);
+        if (!K.Modules.TryGetValue(uid, out var m) || m.IsKernel)
+        {
+            return unchecked((int)0x8002D011);
+        }
+
         return WriteModuleInfo(m, info);
     }
 
+    /// <summary>The process's own modules: user code does not see the kernel's (its module calls are syscalls into the
+    /// process's module list).</summary>
+    IEnumerable<Loader.LoadedModule> UserModules => K.Modules.Values.Where(m => !m.IsKernel);
+
     /// <summary>SceKernelModuleInfo (0x1B8 bytes).</summary>
-    static int WriteModuleInfo(Loader.LoadedModule m, uint info)
+    internal static int WriteModuleInfo(Loader.LoadedModule m, uint info)
     {
         GuestMemory.Span(info + 4, 0x1B4).Clear();
         GuestMemory.W32(info + 0x00, 0x1B8);
@@ -516,7 +524,7 @@ public sealed partial class SystemMisc : HleModule
     [Hle]
     int sceKernelGetModuleList(int flags, uint uids, Ptr<uint> count)
     {
-        var list = K.Modules.Keys.OrderBy(k => k).ToArray();
+        var list = UserModules.Select(m => m.Uid).OrderBy(k => k).ToArray();
         int n = (int)Math.Min((uint)list.Length, count.Value);
         for (int i = 0; i < n; i++) GuestMemory.W32(uids + (uint)i * 4, (uint)list[i]);
         count.Value = (uint)n;
@@ -526,7 +534,8 @@ public sealed partial class SystemMisc : HleModule
     [Hle]
     int sceKernelGetModuleIdByAddr(uint addr)
     {
-        foreach (var m in K.Modules.Values)
+        foreach (var m in UserModules)
+
             foreach (var s in m.Segments.Values)
                 if (addr >= s.Address && addr < s.Address + s.Size) return m.Uid;
         return unchecked((int)0x8002D082);
@@ -688,7 +697,8 @@ public sealed partial class SystemMisc : HleModule
     [Hle] int scePowerRequestDisplayOff() => 0;
 
     // Virtual battery telemetry: fixed values chosen for a full 3.7 V Li-ion pack on AC (not measured).
-    const int POWER_ERROR_INVALID_VALUE = unchecked((int)0x802B0000);
+    internal const int POWER_ERROR_INVALID_VALUE = unchecked((int)0x802B0000);
+
     [Hle] int scePowerGetBatteryTemp() => 3000;              // degrees C x 100
     [Hle] int scePowerGetBatteryVolt() => 4150;              // mV
     [Hle] int scePowerGetBatterySOH() => 100;                // %
