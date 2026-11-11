@@ -524,7 +524,7 @@ public sealed class Emulator : IDisposable
         }
         MainModule = LoadModule("app0:" + self);
         if (IsSystemProgram) Log.Info($"System program {MainModule.Name}, authority ID 0x{ProgramAuthorityId:X16}");
-        Loader.TitlePatches.Apply(TitleId, MainModule.Name, Options.PatchDir);
+        Loader.TitlePatches.Apply(TitleId, Options.PatchDir);
         if (MainModule.TlsInit != 0 || MainModule.TlsAreaSize != 0)
         {
             Kernel.TlsInit = MainModule.TlsInit;
