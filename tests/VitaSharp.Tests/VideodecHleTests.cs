@@ -117,7 +117,7 @@ public sealed class VideodecHleTests(GuestMemoryFixture fx) : IDisposable
         return got;
     }
 
-    [Fact]
+    [FFmpegFact]
     public void DecodesIntoPlanarYuv420()
     {
         const uint pitch = 80; // wider than the picture: the planes keep the pitch
@@ -137,7 +137,7 @@ public sealed class VideodecHleTests(GuestMemoryFixture fx) : IDisposable
         }
     }
 
-    [Fact]
+    [FFmpegFact]
     public void DecodesIntoPackedYvu420WithMacroblockPadding()
     {
         // a buffer taller than the picture (80 rows for 64): only up to the next macroblock row is padded, so here none
@@ -155,7 +155,7 @@ public sealed class VideodecHleTests(GuestMemoryFixture fx) : IDisposable
         }
     }
 
-    [Fact]
+    [FFmpegFact]
     public void DecodesIntoRgbaAndBgra()
     {
         var s = VideoDecoderTests.Stream(1)[0];
@@ -221,5 +221,18 @@ public sealed class VideodecHleTests(GuestMemoryFixture fx) : IDisposable
         Assert.Equal(0, Call(ce, "sceCodecEngineUser_9AD7E66F"));
         Assert.Equal(0, Call(ce, "sceCodecEngineCloseUnmapMemBlock", uid));
         Assert.Equal(ERR, Call(ce, "sceCodecEngineCloseUnmapMemBlock", uid));
+    }
+}
+
+/// <summary>[Fact] skipped when the FFmpeg libraries are not there (macOS uses the system FFmpeg, which a machine may
+/// not have): the pictures are decoded by FFmpeg.</summary>
+public sealed class FFmpegFactAttribute : FactAttribute
+{
+    public FFmpegFactAttribute()
+    {
+        if (!VitaSharp.Core.Media.FFmpegLoader.Available)
+        {
+            Skip = "FFmpeg not available";
+        }
     }
 }

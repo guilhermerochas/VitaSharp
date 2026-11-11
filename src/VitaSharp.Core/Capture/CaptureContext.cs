@@ -27,7 +27,7 @@ public static class CaptureContext
         return $"{Kind(fg)} {Name(fg)} in front";
     }
 
-    static string Kind(Emulator e) => e.IsShell ? "shell" : e.IsGameProgram && !e.IsSystemProgram ? "game" : e.TitleId.StartsWith("NPXS", StringComparison.Ordinal) ? "system app" : "application";
+    static string Kind(Emulator e) => e.IsShell ? "shell" : e.IsGameProgram && !e.IsSystemProgram ? "game" : e.IsSystemProgram ? "system app" : "application";
 
     static string Name(Emulator e) => e.Title.Length > 0 ? $"{e.TitleId} '{e.Title}'" : e.TitleId.Length > 0 ? e.TitleId : $"process 0x{e.Pid:X}";
 
@@ -76,7 +76,7 @@ public static class CaptureContext
     public static string Role(AudioDiagnostics.PortStats p)
     {
         bool shell = p.Owner?.IsShell == true;
-        bool system = shell || p.Owner?.TitleId.StartsWith("NPXS", StringComparison.Ordinal) == true;
+        bool system = shell || p.Owner?.IsSystemProgram == true; // the system software: run from vs0:
         return (p.Type, shell, system) switch
         {
             (1, true, _) => "background music (the shell's BGM)",

@@ -442,8 +442,9 @@ public static class Runner
             // state loads and LoadExec make a new renderer for this window: on this thread, like the first one
             emu.Gpu.ReplaceOn = window.RunOnWindowThread;
             emu.LoadTitle(appPath, BootSelf(options));
-            // the system's start-up picture (the app's sce_sys/pic0.png) until the game's first frame; system apps have none
-            if (!emu.TitleId.StartsWith("NPXS", StringComparison.Ordinal)) ShowBootSplash(renderer, emu.AppPath);
+            // the system's start-up picture (the app's sce_sys/pic0.png) until the game's first frame; the system
+            // software (run from vs0:) has none
+            if (!emu.IsSystemProgram) ShowBootSplash(renderer, emu.AppPath);
             window.TitleId = emu.TitleId; // its saved mouse mode (input.json)
             emu.Start();
             StartShellLaunch(emu, options);

@@ -253,16 +253,15 @@ public sealed partial class SystemMisc : HleModule
     /// preload already brought: a second libc started again on its main thread and ended it there).
     /// Each such load counts a reference that an unload drops (the module stays for the others).</summary>
     /// <summary>
-    /// A module the game loads from a file that is not there. ur0:data/libshacccg.suprx is the PSM runtime's Cg
-    /// compiler, which vitaGL homebrew compiles its shaders with: it is not part of the firmware and each user extracts
-    /// it from their own console (Vita3K requires it the same way), so the log says how to get it.
+    /// A module the program loads from a file that is not there. Outside vs0: and app0: it is a file the user puts in
+    /// the data folder (a module copied from their own console, such as a runtime library a homebrew needs), so the log
+    /// says where the emulator looked for it.
     /// </summary>
-    static void WarnMissingModule(string path)
+    void WarnMissingModule(string path)
     {
-        if (path.EndsWith("libshacccg.suprx", StringComparison.OrdinalIgnoreCase))
-            Log.WarnOnce("libshacccg-missing", $"{path} is missing: this homebrew (vitaGL) needs the runtime shader compiler libshacccg.suprx. " +
-                "Extract it from your own PS Vita with ShaRKF00D (it takes it from the PSM runtime) and copy it to ur0:data/libshacccg.suprx " +
-                "in the emulator's data folder (fs/ur0/data).");
+        if (path.StartsWith("vs0:", StringComparison.OrdinalIgnoreCase) || path.StartsWith("app0:", StringComparison.OrdinalIgnoreCase)) return;
+        Log.WarnOnce("missing-module:" + path, $"{path} is missing: the program loads a module that is not in the emulator's data folder " +
+            $"({Emu.Vfs.Resolve(path) ?? path}). A module that is not part of the firmware is copied there from your own PS Vita.");
     }
 
     Loader.LoadedModule? LoadedSystemModule(string path)

@@ -524,7 +524,7 @@ public sealed class Emulator : IDisposable
         }
         MainModule = LoadModule("app0:" + self);
         if (IsSystemProgram) Log.Info($"System program {MainModule.Name}, authority ID 0x{ProgramAuthorityId:X16}");
-        Loader.TitlePatches.Apply(TitleId, MainModule.Name, Options.PatchDir);
+        Loader.TitlePatches.Apply(TitleId, Options.PatchDir);
         if (MainModule.TlsInit != 0 || MainModule.TlsAreaSize != 0)
         {
             Kernel.TlsInit = MainModule.TlsInit;
@@ -738,8 +738,9 @@ public sealed class Emulator : IDisposable
                 // a game keeps every library the HLE has anything of, firmware fallbacks included (its own libc and FIOS2
                 // or the HLE ones): only libraries the HLE knows nothing of come from the firmware
                 bool hleServes = IsSystemProgram ? HleServesLibrary(lib) : Hle.KnowsLibrary(lib);
-                // libraries VitaSharp provides by running their firmware module (LleLibraries): every importer gets it
-                bool lleProvided = VitaSharp.Core.Hle.LleLibraries.FromFirmware(lib, provider.VitaPath);
+                // libraries whose HLE is only a fallback of the firmware module (HleModule.FirmwareForEveryImporter):
+                // every importer gets the firmware module
+                bool lleProvided = provider.VitaPath.StartsWith("vs0:", StringComparison.OrdinalIgnoreCase) && Hle.FirmwareForEveryImporter(lib);
                 if ((hleServes && !firmwareNeedsInternals && !serviceClient && !lleProvided) || nids.All(n => Linker.TryGetFunctionExport(n, out _))) continue;
                 if (withoutOnRequest && NeedsOnRequest(provider.VitaPath)) continue;
                 if (!visiting.Add(provider.VitaPath)) continue;

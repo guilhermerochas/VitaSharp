@@ -487,6 +487,45 @@ public class ShellTests
     // ------------------------------------------------------------------ themes and firmware assets
 
     [Fact]
+    public void SystemAppBubblesComeFromTheShellDatabase()
+    {
+        var root = Directory.CreateTempSubdirectory("vitasharp-sysapps").FullName;
+        try
+        {
+            foreach (var id in new[] { "SYSA00001", "SYSA00002", "SYSA00003", "SYSA00004" })
+            {
+                var sys = Path.Combine(root, "vs0", "app", id, "sce_sys");
+                Directory.CreateDirectory(sys);
+                // SYSA00004 has no icon: no bubble
+                if (id != "SYSA00004")
+                {
+                    File.WriteAllBytes(Path.Combine(sys, "icon0.png"), [0]);
+                }
+            }
+            var assets = new ShellAssets(root);
+            // no shell database (the shell never ran): every vs0:app title with an icon, in folder order
+            Assert.Equal(["SYSA00001", "SYSA00002", "SYSA00003"], assets.SystemApps().Select(a => a.TitleId));
+
+            // the shell's database: its bubbles in page and position order, only those of vs0:app
+            var dbDir = Path.Combine(root, "ur0", "shell", "db");
+            Directory.CreateDirectory(dbDir);
+            SQLitePCL.Batteries_V2.Init();
+            Assert.Equal(SQLitePCL.raw.SQLITE_OK, SQLitePCL.raw.sqlite3_open(Path.Combine(dbDir, "app.db"), out var db));
+            using (db)
+            {
+                Assert.Equal(SQLitePCL.raw.SQLITE_OK, SQLitePCL.raw.sqlite3_exec(db,
+                    "CREATE TABLE tbl_appinfo_icon (pageId INTEGER, pos INTEGER, titleId TEXT);" +
+                    "INSERT INTO tbl_appinfo_icon VALUES (3, 1, 'SYSA00001'), (2, 5, 'GAME00001'), (2, 7, 'SYSA00003'), (3, 0, 'SYSA00004'), (4, 0, NULL);"));
+            }
+            Assert.Equal(["SYSA00003", "SYSA00001"], assets.SystemApps().Select(a => a.TitleId));
+        }
+        finally
+        {
+            Directory.Delete(root, true);
+        }
+    }
+
+    [Fact]
     public void ThemesComeFromTheFirmwareAndUx0()
     {
         var root = Directory.CreateTempSubdirectory("vitasharp-theme").FullName;

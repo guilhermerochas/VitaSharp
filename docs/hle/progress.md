@@ -23,7 +23,6 @@ How many of the functions that the PS Vita firmware 3.74 exports to user code (t
 |---|---|---|
 | SceSmart | `app0:sce_module/libsmart.suprx` | shipped by the games that use it (loaded with sceSysmoduleLoadModule(SCE_SYSMODULE_SMART)) |
 | SceFace | `app0:sce_module/libface.suprx` | shipped by the games that use it (loaded with sceSysmoduleLoadModule(SCE_SYSMODULE_FACE)) |
-| SceShaccCg | `ur0:data/libshacccg.suprx` | the PSM runtime's Cg compiler, extracted by the user from their own console (vitaGL homebrew loads it) |
 | SceLsdb | `vs0:vsh/shell/livespace_db.suprx` | the firmware's LiveArea database module: the emulator loads it for every program that imports the library (the HLE keeps only a fallback for its getters) |
 
 ## Per library (308)

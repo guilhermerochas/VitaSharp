@@ -14,6 +14,7 @@ namespace VitaSharp.Core.Hle.Modules;
 public sealed partial class Lsdb : HleModule
 {
     public override bool FirmwareFallbackOnly => true;
+    public override bool FirmwareForEveryImporter => true;
 
     uint _empty;
     /// <summary>The shell's content rating callback (sceLsdbSetContentRatingCallback).</summary>

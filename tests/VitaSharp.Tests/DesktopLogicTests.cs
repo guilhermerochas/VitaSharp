@@ -90,7 +90,7 @@ public sealed class DesktopLogicTests : IDisposable
         foreach (var d in new[] { game, homebrew, broken }) Directory.CreateDirectory(Path.Combine(d, "sce_sys"));
         File.WriteAllBytes(Path.Combine(game, "eboot.bin"), new byte[2048]);
         File.WriteAllBytes(Path.Combine(homebrew, "eboot.bin"), new byte[16]);
-        WriteSfo(Path.Combine(game, "sce_sys", "param.sfo"), ("APP_VER", "01.05"), ("CATEGORY", "gd"), ("TITLE", "Zeta\nGame"), ("TITLE_ID", "PCSB00123"));
+        WriteSfo(Path.Combine(game, "sce_sys", "param.sfo"), ("APP_VER", "01.05"), ("CATEGORY", "gd"), ("TITLE", "Zeta\nGame"), ("TITLE_ID", "PCSB00123"), ("CONTENT_ID", "EP0000-PCSB00123_00-0000000000000000"));
         var list = GameLibrary.Scan(ux0);
         Assert.Equal(2, list.Count); // a folder without eboot.bin is no title
         var g = list.Single(e => e.TitleId == "PCSB00123");
@@ -104,7 +104,8 @@ public sealed class DesktopLogicTests : IDisposable
         Assert.Null(g.Pic0Path);
         var h = list.Single(e => e.TitleId == "VSHB00001"); // no param.sfo: the folder name
         Assert.Equal("VSHB00001", h.Title);
-        Assert.NotEqual(g.Region, h.Region); // Europe vs homebrew
+        Assert.Equal(VitaSharp.Desktop.Launcher.Ui.Strings.RegionEurope, g.Region); // the content ID's region letter
+        Assert.Equal(VitaSharp.Desktop.Launcher.Ui.Strings.RegionHomebrew, h.Region); // no content ID
         Assert.EndsWith("KB", new GameEntry("X", "X", "", "gp", "", null, 4096).SizeText);
         Assert.EndsWith("MB", new GameEntry("X", "X", "", "ac", "", null, 5L << 20).SizeText);
         Assert.EndsWith("GB", new GameEntry("X", "X", "", "gd", "", null, 3L << 30).SizeText);
