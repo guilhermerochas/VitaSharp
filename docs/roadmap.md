@@ -843,6 +843,22 @@ Lista de itens futuros do VitaSharp. Marque `[x]` quando um item for concluído.
 
 ## Firmware e sistema
 
+- [ ] taiHEN: hooks e injeção em modo usuário (pedido do usuário, 11/11/2026). Hoje o `config.txt` (ux0:/ur0:tai)
+  carrega os plugins `.suprx` de `*ALL`/`*TITLEID` e a API de consulta do taiHEN (taiGetModuleInfo, símbolos) é HLE,
+  mas `taiHookFunctionExport/Import/Offset`, `taiHookRelease`, `taiInjectData/Abs/Release` não fazem nada. Fazer: hooks
+  de verdade no código ARM do guest (trampolim que o JIT/interpretador respeita, invalidando blocos traduzidos;
+  cadeia de hooks com `TAI_CONTINUE` como o substitute do taiHEN), injeção de dados com restauração, mesma semântica
+  e códigos de erro do taiHEN. Validar com plugins de usuário reais (tradução por redirecionamento, mostradores,
+  cheats de memória) e um teste por API.
+- [ ] taiHEN: ambiente de kernel para plugins `.skprx` (pedido do usuário, 11/11/2026), depois do item acima. Rodar o
+  código do plugin no processador emulado num "modo kernel" do VitaSharp e implementar em HLE as exportações de kernel
+  que os plugins importam (ksceIo*, ksceKernelAllocMemBlock/memória, ksceKernel* de threads e módulos, SceSysmemForKernel,
+  SceModulemgrForKernel, e as de kernel do taiHEN: taiHookFunctionExportForKernel/ImportForKernel/OffsetForKernel,
+  taiInjectDataForKernel...), com os hooks aplicados no código do jogo e dos módulos. Entra: plugins que trabalham
+  por cima das funções do sistema (redirecionar arquivos como rePatch/ioPlus/traduções, interceptar entrada, mudar
+  comportamento de uma função) e de interface/informação (fps, bateria). Fica de fora: plugins que mexem direto no
+  hardware (clock, Bluetooth, USB; o clock já é opção do VitaSharp) e qualquer plugin de DRM (licença falsa,
+  descriptografia), pelo mesmo motivo do act.dat falso. Validar com plugins reais e um teste por exportação.
 - [ ] Temas do Vita (pedido do usuário, 10/11/2026): instalar e usar temas como no aparelho. (1) Instalação: `.pkg` de
   tema da loja (content type de tema; o agente de PKG já detecta o tipo) com a licença, extraído para `ux0:theme/<id>`
   com o `theme.xml` e as imagens/sons, e registrado como o firmware faz (banco do shell / app.db, lista de temas das
