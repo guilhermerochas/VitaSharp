@@ -25,7 +25,7 @@ public static class GpuDumpPlayer
     public static Dictionary<string, string> RecordedEnvironment(GpuDumpHeader header)
     {
         var set = new Dictionary<string, string>();
-        foreach (var (k, v) in header.Entries)
+        foreach ((string? k, string? v) in header.Entries)
         {
             if (k.StartsWith("env.") && !NotReplayedEnv.Contains(k[4..]) && Environment.GetEnvironmentVariable(k[4..]) == null)
             {
@@ -76,7 +76,7 @@ public static class GpuDumpPlayer
 
                     continue;
             }
-            var cmd = reader.Command!;
+            GpuCommand cmd = reader.Command!;
             st.Commands++;
             switch (cmd)
             {

@@ -8,24 +8,24 @@ public sealed unsafe partial class VulkanRenderer
     // those are reset when their frame slot is reused, which frees every set allocated from them. A cached set from
     // a frame pool is then a dangling handle: NVIDIA's driver happens to tolerate it, Mesa (lavapipe, RADV, ANV)
     // crashes inside vkCmdBindDescriptorSets / the draw.
-    DescriptorPool _persistentPool;
+    private DescriptorPool _persistentPool;
 
-    DescriptorSet AllocPersistentSet(DescriptorSetLayout layout)
+    private DescriptorSet AllocPersistentSet(DescriptorSetLayout layout)
     {
         if (_persistentPool.Handle == 0)
         {
-            var sizes = stackalloc DescriptorPoolSize[2];
+            DescriptorPoolSize* sizes = stackalloc DescriptorPoolSize[2];
             sizes[0] = new DescriptorPoolSize(DescriptorType.CombinedImageSampler, 64);
             sizes[1] = new DescriptorPoolSize(DescriptorType.InputAttachment, 32); // framebuffer-fetch sets (set 3 bindings 2 and 3)
             var pci = new DescriptorPoolCreateInfo { SType = StructureType.DescriptorPoolCreateInfo, MaxSets = 16, PoolSizeCount = 2, PPoolSizes = sizes };
             _vk.CreateDescriptorPool(_dev, in pci, null, out _persistentPool).Ok("persistent descriptor pool");
         }
         var ai = new DescriptorSetAllocateInfo { SType = StructureType.DescriptorSetAllocateInfo, DescriptorPool = _persistentPool, DescriptorSetCount = 1, PSetLayouts = &layout };
-        _vk.AllocateDescriptorSets(_dev, in ai, out var set).Ok("persistent descriptor set");
+        _vk.AllocateDescriptorSets(_dev, in ai, out DescriptorSet set).Ok("persistent descriptor set");
         return set;
     }
 
-    void DestroyPersistentSets()
+    private void DestroyPersistentSets()
     {
         if (_persistentPool.Handle != 0)
         {

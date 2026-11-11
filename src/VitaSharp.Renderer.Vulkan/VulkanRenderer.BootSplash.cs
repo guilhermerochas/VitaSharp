@@ -15,14 +15,14 @@ namespace VitaSharp.Renderer.Vulkan;
 public sealed unsafe partial class VulkanRenderer
 {
     /// <summary>Longest the picture stays once the guest presents frames, all of them black.</summary>
-    const double SplashMaxSeconds = 60;
+    private const double SplashMaxSeconds = 60;
     /// <summary>A channel above this (0-255) anywhere in a presented frame ends the picture.</summary>
-    const int SplashBlackMax = 16;
+    private const int SplashBlackMax = 16;
 
-    (byte[] Rgba, int Width, int Height)? _splashPixels;
-    RenderTarget? _splashRt;
-    long _splashAt, _splashSince, _splashFirstGuest;
-    volatile bool _splashDone;
+    private (byte[] Rgba, int Width, int Height)? _splashPixels;
+    private RenderTarget? _splashRt;
+    private long _splashAt, _splashSince, _splashFirstGuest;
+    private volatile bool _splashDone;
 
     /// <summary>RGBA pixels shown until the guest presents a frame that is not black (null: none). Any thread, before
     /// the first present.</summary>
@@ -30,7 +30,7 @@ public sealed unsafe partial class VulkanRenderer
         _splashPixels = rgba != null && width > 0 && height > 0 && rgba.Length >= width * height * 4 ? (rgba, width, height) : null;
 
     /// <summary>The picture is still up: guest frames are read back and checked instead of shown.</summary>
-    bool SplashWaiting
+    private bool SplashWaiting
     {
         get
         {
@@ -54,7 +54,7 @@ public sealed unsafe partial class VulkanRenderer
     }
 
     /// <summary>GPU worker (readback of a frame presented under the picture): ends the picture when the frame has content.</summary>
-    void CheckSplashFrame(int present, nint pixels, uint w, uint h)
+    private void CheckSplashFrame(int present, nint pixels, uint w, uint h)
     {
         if (_splashDone)
         {
@@ -73,7 +73,7 @@ public sealed unsafe partial class VulkanRenderer
         }
     }
 
-    void EndSplash(string why)
+    private void EndSplash(string why)
     {
         if (_splashDone)
         {
@@ -95,7 +95,7 @@ public sealed unsafe partial class VulkanRenderer
     }
 
     /// <summary>The picture's image, made and uploaded in the current command buffer the first time.</summary>
-    (RenderTarget Rt, DisplayFrame Frame)? SplashImage()
+    private (RenderTarget Rt, DisplayFrame Frame)? SplashImage()
     {
         if (_splashPixels is not { } px)
         {
@@ -105,14 +105,14 @@ public sealed unsafe partial class VulkanRenderer
         if (_splashRt == null)
         {
             uint w = (uint)px.Width, h = (uint)px.Height;
-            var (img, view, mem) = CreateImage(MemCat.RenderTarget, w, h, Format.R8G8B8A8Unorm,
+            (Image img, ImageView view, ImageMemoryPool.Allocation mem) = CreateImage(MemCat.RenderTarget, w, h, Format.R8G8B8A8Unorm,
                 ImageUsageFlags.SampledBit | ImageUsageFlags.TransferSrcBit | ImageUsageFlags.TransferDstBit, ImageAspectFlags.ColorBit);
             _splashSince = Stopwatch.GetTimestamp();
             Core.Util.Log.Info($"Boot picture: {w}x{h} shown until the game's first frame that is not black");
             _splashRt = new RenderTarget { Width = w, Height = h, Stride = w, Image = img, View = view, Mem = mem, Format = Format.R8G8B8A8Unorm };
             Barrier(img, ImageLayout.Undefined, ImageLayout.General, ImageAspectFlags.ColorBit,
                 PipelineStageFlags.TopOfPipeBit, PipelineStageFlags.TransferBit, 0, AccessFlags.TransferWriteBit);
-            var (buf, off) = UploadSpan(px.Rgba.AsSpan(0, px.Width * px.Height * 4), 16);
+            (Silk.NET.Vulkan.Buffer buf, ulong off) = UploadSpan(px.Rgba.AsSpan(0, px.Width * px.Height * 4), 16);
             var region = new BufferImageCopy
             {
                 BufferOffset = off,
@@ -127,7 +127,7 @@ public sealed unsafe partial class VulkanRenderer
     }
 
     /// <summary>Idle GPU worker: shows the picture (again on a resize or about twice a second) while it is up.</summary>
-    void PresentBootSplash()
+    private void PresentBootSplash()
     {
         if (_splashDone || _splashPixels == null || _swapchain.Handle == 0 || _deviceLost || _inScene)
         {

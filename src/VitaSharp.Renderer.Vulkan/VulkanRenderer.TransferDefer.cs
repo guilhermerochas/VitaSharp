@@ -18,20 +18,20 @@ public sealed unsafe partial class VulkanRenderer
 {
     /// <summary>On by default on Android (the worker waiting for the GPU there costs a frame), off on desktop;
     /// VITASHARP_TRANSFER_DEFER=0/1 overrides.</summary>
-    static readonly bool TransferDefer = Environment.GetEnvironmentVariable(EnvVars.TransferDefer)?.Trim() is { Length: > 0 } v ? v == "1" : OperatingSystem.IsAndroid();
+    private static readonly bool s_transferDefer = Environment.GetEnvironmentVariable(EnvVars.TransferDefer)?.Trim() is { Length: > 0 } v ? v == "1" : OperatingSystem.IsAndroid();
 
     /// <summary>Frame the last deferred transfer runs at (later ones queue behind it until it retired).</summary>
-    Frame? _xferDeferFrame;
+    private Frame? _xferDeferFrame;
     /// <summary>Destinations of deferred transfers not run yet, with the frame they run at.</summary>
-    readonly List<(uint Address, uint Size, Frame Frame)> _xferPendingDst = new();
+    private readonly List<(uint Address, uint Size, Frame Frame)> _xferPendingDst = new();
     /// <summary>Destinations of deferred transfers that ran: their cached textures and surfaces are refreshed at the
     /// next command boundary (a retirement can happen in the middle of a draw).</summary>
-    readonly List<(uint Address, uint Size)> _xferInvalidations = new();
-    long _statXferDeferred, _statXferLateReads;
+    private readonly List<(uint Address, uint Size)> _xferInvalidations = new();
+    private long _statXferDeferred, _statXferLateReads;
 
     public bool DeferCallback(CallbackCommand cb)
     {
-        if (!TransferDefer)
+        if (!s_transferDefer)
         {
             return false;
         }
@@ -60,8 +60,8 @@ public sealed unsafe partial class VulkanRenderer
                 target = F;
             }
         }
-        var space = AddressSpace.Current;
-        var frame = target;
+        AddressSpace? space = AddressSpace.Current;
+        Frame frame = target;
         frame.Signals.Add(() =>
         {
             using (AddressSpace.Use(space))
@@ -92,7 +92,7 @@ public sealed unsafe partial class VulkanRenderer
         }
 
         _xferDeferFrame = frame;
-        if (_statXferDeferred++ < 20 || TraceSync)
+        if (_statXferDeferred++ < 20 || s_traceSync)
         {
             Log.Info($"[gpu] transfer 0x{cb.ReadAddress:X8} -> 0x{cb.WriteAddress:X8} deferred to the {(frame == F && frame.Recording ? "recording" : "submitted")} frame's retirement (present {_presentCount})");
         }
@@ -100,9 +100,9 @@ public sealed unsafe partial class VulkanRenderer
         return true;
     }
 
-    void DrainTransferInvalidations()
+    private void DrainTransferInvalidations()
     {
-        foreach (var (a, s) in _xferInvalidations)
+        foreach ((uint a, uint s) in _xferInvalidations)
         {
             InvalidateTextures(a, s);
         }
@@ -115,7 +115,7 @@ public sealed unsafe partial class VulkanRenderer
     /// GPU or being recorded is not waited for, the texture reads the destination as it is now (the previous run of that
     /// transfer: Killzone's mips of its 384x192 reflection target one frame late). Waiting there was a full GPU drain per
     /// frame (with 8 frames in flight: 7-10 vblank stalls).</summary>
-    void WaitPendingTransferInto(uint addr, uint size)
+    private void WaitPendingTransferInto(uint addr, uint size)
     {
         if (_xferPendingDst.Count == 0)
         {
@@ -123,7 +123,7 @@ public sealed unsafe partial class VulkanRenderer
         }
 
         bool overlaps = false;
-        foreach (var (a, s, _) in _xferPendingDst)
+        foreach ((uint a, uint s, Frame _) in _xferPendingDst)
         {
             if (a < addr + size && addr < a + s)
             {
@@ -138,22 +138,22 @@ public sealed unsafe partial class VulkanRenderer
         }
 
         PollRetire();
-        foreach (var (a, s, f) in _xferPendingDst)
+        foreach ((uint a, uint s, Frame? f) in _xferPendingDst)
         {
             if (a >= addr + size || addr >= a + s)
             {
                 continue;
             }
 
-            if (_statXferLateReads++ < 20 || TraceSync)
+            if (_statXferLateReads++ < 20 || s_traceSync)
             {
                 Log.Info($"[gpu] texture 0x{addr:X8} reads transfer destination 0x{a:X8} before its deferred transfer ran ({(f.Recording ? "frame being recorded" : "frame on the GPU")}): read as it is now (present {_presentCount})");
             }
         }
         // only the texture cache now (a surface reload records commands: left to the command boundary)
-        foreach (var (a, s) in _xferInvalidations)
+        foreach ((uint a, uint s) in _xferInvalidations)
         {
-            foreach (var t in _textures.Values)
+            foreach (Texture t in _textures.Values)
             {
                 if (t.DataStart < a + s && a < t.DataStart + t.DataSize)
                 {

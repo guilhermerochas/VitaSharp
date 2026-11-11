@@ -12,19 +12,19 @@ namespace VitaSharp.Renderer.Vulkan;
 /// </summary>
 public sealed unsafe partial class VulkanRenderer
 {
-    static readonly bool PresentThreadOn = Environment.GetEnvironmentVariable(EnvVars.PresentThread) == "1";
+    private static readonly bool s_presentThreadOn = Environment.GetEnvironmentVariable(EnvVars.PresentThread) == "1";
 
     /// <summary>The queue's external synchronization (vkQueueSubmit on the worker, vkQueuePresentKHR on the present thread).</summary>
-    readonly object _queueLock = new();
-    readonly object _presentSlot = new();
-    Thread? _presentThread;
-    bool _presentPending, _presentQuit;
-    SwapchainKHR _pendingSwapchain;
-    uint _pendingIndex;
-    Silk.NET.Vulkan.Semaphore _pendingWait;
+    private readonly object _queueLock = new();
+    private readonly object _presentSlot = new();
+    private Thread? _presentThread;
+    private bool _presentPending, _presentQuit;
+    private SwapchainKHR _pendingSwapchain;
+    private uint _pendingIndex;
+    private Silk.NET.Vulkan.Semaphore _pendingWait;
 
     /// <summary>Hands the present to the present thread (starting it the first time); the caller holds _presentLock.</summary>
-    void QueuePresentAsync(uint index, Silk.NET.Vulkan.Semaphore wait)
+    private void QueuePresentAsync(uint index, Silk.NET.Vulkan.Semaphore wait)
     {
         if (_presentThread == null)
         {
@@ -48,7 +48,7 @@ public sealed unsafe partial class VulkanRenderer
     }
 
     /// <summary>Waits until no present is in flight (before an acquire, a swapchain change, vkDeviceWaitIdle, the end).</summary>
-    void DrainPresent()
+    private void DrainPresent()
     {
         if (_presentThread == null)
         {
@@ -64,7 +64,7 @@ public sealed unsafe partial class VulkanRenderer
         }
     }
 
-    void PresentLoop()
+    private void PresentLoop()
     {
         while (true)
         {
@@ -103,7 +103,7 @@ public sealed unsafe partial class VulkanRenderer
         }
     }
 
-    void StopPresentThread()
+    private void StopPresentThread()
     {
         if (_presentThread == null)
         {

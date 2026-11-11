@@ -9,7 +9,7 @@ namespace VitaSharp.Renderer.Vulkan;
 
 public sealed unsafe partial class VulkanRenderer
 {
-    sealed class Texture
+    private sealed class Texture
     {
         public Image Image;
         public ImageView View;
@@ -31,18 +31,18 @@ public sealed unsafe partial class VulkanRenderer
     }
 
     /// <summary>The id the texture cache keeps for data at <paramref name="addr"/> read now (see <see cref="Texture.SpaceId"/>).</summary>
-    static int SpaceIdOf(uint addr) => GuestMemory.IsSharedAddress(addr) ? 0 : AddressSpace.Current?.Id ?? 0;
+    private static int SpaceIdOf(uint addr) => GuestMemory.IsSharedAddress(addr) ? 0 : AddressSpace.Current?.Id ?? 0;
 
     /// <summary>Texture cache counters (PERF texcache line).</summary>
-    long _texChecks, _texSkipped, _texHashed, _texHashedBytes, _texHashTicks, _texUploads, _texMissed;
+    private long _texChecks, _texSkipped, _texHashed, _texHashedBytes, _texHashTicks, _texUploads, _texMissed;
     /// <summary>Time in texture uploads (decode, transcode, staging), and uploads of a content uploaded before.</summary>
-    long _texUploadTicks, _texUploadRepeats;
-    readonly HashSet<ulong> _uploadedContents = new();
-    long _sweptFrame = -1;
-    long _sweepTicks;
+    private long _texUploadTicks, _texUploadRepeats;
+    private readonly HashSet<ulong> _uploadedContents = new();
+    private long _sweptFrame = -1;
+    private long _sweepTicks;
 
     /// <summary>Folds the CPU/HLE page dirty table into page versions, once per frame (GPU worker thread).</summary>
-    void SweepDirtyPages()
+    private void SweepDirtyPages()
     {
         if (_sweptFrame == FrameCount)
         {
@@ -69,17 +69,17 @@ public sealed unsafe partial class VulkanRenderer
                + (_opt.InspectTextures ? $"; test inspection {_inspectTicks / f / frames:F3} ms/frame ({_inspectDone} inspected, {_inspectDuplicate} repeated contents skipped, {_inspectDeferred} over the frame budget: {_inspectBackground} inspected in the background, {_inspectStale} changed before their turn, {_inspectQueue.Count} still queued)" : "");
     }
 
-    readonly record struct TexKey(uint Data, uint Format, uint Width, uint Height, uint Type, uint Mips, uint Stride, uint Palette, bool Gamma);
+    private readonly record struct TexKey(uint Data, uint Format, uint Width, uint Height, uint Type, uint Mips, uint Stride, uint Palette, bool Gamma);
 
-    readonly Dictionary<TexKey, Texture> _textures = new();
-    readonly Dictionary<(uint, uint), Sampler> _samplers = new();
-    Image _dummyImage;
-    ImageView _dummyView, _dummyCubeView;
-    ImageMemoryPool.Allocation _dummyMem;
-    Sampler _dummySampler;
-    DescriptorSet? _emptyFbSet;
+    private readonly Dictionary<TexKey, Texture> _textures = new();
+    private readonly Dictionary<(uint, uint), Sampler> _samplers = new();
+    private Image _dummyImage;
+    private ImageView _dummyView, _dummyCubeView;
+    private ImageMemoryPool.Allocation _dummyMem;
+    private Sampler _dummySampler;
+    private DescriptorSet? _emptyFbSet;
 
-    void CreateDummyTexture()
+    private void CreateDummyTexture()
     {
         BeginFrameIfNeeded();
         (_dummyImage, _dummyView, _dummyMem) = CreateImage(MemCat.Other, 1, 1, Format.R8G8B8A8Unorm, ImageUsageFlags.SampledBit | ImageUsageFlags.TransferDstBit,
@@ -101,13 +101,13 @@ public sealed unsafe partial class VulkanRenderer
     // =================================================================== samplers
 
     /// <summary>SceGxmTextureFilter: POINT = 0, LINEAR = 1, MIPMAP_LINEAR = 2, MIPMAP_POINT = 3.</summary>
-    static Filter GxmFilter(uint f) => f is 1 or 2 ? Filter.Linear : Filter.Nearest;
+    private static Filter GxmFilter(uint f) => f is 1 or 2 ? Filter.Linear : Filter.Nearest;
 
-    Sampler GetSampler(uint w0, uint type)
+    private Sampler GetSampler(uint w0, uint type)
     {
         bool strided = type == GxmTextureDesc.TypeLinearStrided;
         uint key = strided ? (w0 & 0x000031F8u) | 0x80000000u : w0 & 0x07FE3FF8u;
-        if (_samplers.TryGetValue((key, type), out var s))
+        if (_samplers.TryGetValue((key, type), out Sampler s))
         {
             return s;
         }
@@ -151,7 +151,7 @@ public sealed unsafe partial class VulkanRenderer
     /// <summary>The last texture set built for each stage: consecutive draws that bind the same views and samplers reuse it
     /// (a set allocation and up to 16 descriptor writes per stage and draw were a large part of the GPU worker's time on
     /// a Mali phone). Valid until a frame's descriptor pools are reset (<see cref="_frameSerial"/>).</summary>
-    sealed class TexSetCache
+    private sealed class TexSetCache
     {
         public readonly DescriptorImageInfo[] Infos = new DescriptorImageInfo[16];
         public DescriptorSet Set;
@@ -161,13 +161,13 @@ public sealed unsafe partial class VulkanRenderer
         /// <summary>The set came from the persistent texture-set pool (VITASHARP_TEXSET_PERSIST): it may be kept across submits.</summary>
         public bool Kept;
     }
-    readonly TexSetCache _texSetV = new(), _texSetF = new();
+    private readonly TexSetCache _texSetV = new(), _texSetF = new();
 
     /// <summary>The texture's view, or none when there is no GPU memory for it even after eviction (the draw samples the
     /// dummy texture instead). Kept out of <see cref="BuildTextureSet"/>: a handler inside its loop forced the loop's
     /// locals to memory.</summary>
     [System.Runtime.CompilerServices.MethodImpl(System.Runtime.CompilerServices.MethodImplOptions.NoInlining)]
-    (ImageView, ImageLayout) ResolveTextureOrSkip(GxmTextureDesc desc, bool asCube)
+    private (ImageView, ImageLayout) ResolveTextureOrSkip(GxmTextureDesc desc, bool asCube)
     {
         try
         {
@@ -182,14 +182,14 @@ public sealed unsafe partial class VulkanRenderer
     }
 
     /// <summary>VITASHARP_TEXLOOKUP=old: the texture lookups of main b29e26a, for A/B runs on the phone.</summary>
-    internal static readonly bool TexLookupOld = Environment.GetEnvironmentVariable(EnvVars.TexLookup)?.Trim() == "old";
+    internal static readonly bool s_texLookupOld = Environment.GetEnvironmentVariable(EnvVars.TexLookup)?.Trim() == "old";
 
     /// <summary>The b29e26a loop (every unit visited, the handler inside the loop), kept for A/B runs.</summary>
-    void FillTextureInfosOld(DescriptorImageInfo* infos, GxmTextureDesc[] textures, uint used, uint cubeSamplers, int units, bool vertexStage)
+    private void FillTextureInfosOld(DescriptorImageInfo* infos, GxmTextureDesc[] textures, uint used, uint cubeSamplers, int units, bool vertexStage)
     {
         for (int i = 0; i < units; i++)
         {
-            var desc = textures[i];
+            GxmTextureDesc desc = textures[i];
             ImageView view = _dummyView;
             Sampler sampler = _dummySampler;
             ImageLayout layout2 = ImageLayout.ShaderReadOnlyOptimal;
@@ -249,11 +249,11 @@ public sealed unsafe partial class VulkanRenderer
     /// are the ones it was made in; colour-target sources are never memoised (their barriers and versions are per use).
     /// VITASHARP_UNIT_MEMO=0 turns it off (A/B).
     /// </summary>
-    readonly struct UnitMemo(GxmTextureDesc desc, bool asCube, long frame, long epoch, long targetGen, int space, ImageView view, Sampler sampler, Texture tex)
+    private readonly struct UnitMemo(GxmTextureDesc desc, bool asCube, long frame, long epoch, long targetGen, int space, ImageView view, Sampler sampler, Texture tex)
     {
-        readonly GxmTextureDesc _desc = desc;
-        readonly bool _asCube = asCube;
-        readonly long _frame = frame, _epoch = epoch, _targetGen = targetGen;
+        private readonly GxmTextureDesc _desc = desc;
+        private readonly bool _asCube = asCube;
+        private readonly long _frame = frame, _epoch = epoch, _targetGen = targetGen;
         public readonly int Space = space;
         public readonly ImageView View = view;
         public readonly Sampler Sampler = sampler;
@@ -262,36 +262,36 @@ public sealed unsafe partial class VulkanRenderer
             _frame == frame && _epoch == epoch && _targetGen == targetGen && _asCube == asCube && _desc == d && Tex != null;
     }
 
-    static readonly bool UnitMemoOn = Environment.GetEnvironmentVariable(EnvVars.UnitMemo) != "0";
-    readonly UnitMemo[] _unitMemo = new UnitMemo[1024];
-    long _statUnitMemoHits;
+    private static readonly bool s_unitMemoOn = Environment.GetEnvironmentVariable(EnvVars.UnitMemo) != "0";
+    private readonly UnitMemo[] _unitMemo = new UnitMemo[1024];
+    private long _statUnitMemoHits;
     /// <summary>Bumped whenever a colour or depth target is added or removed (texture sources may change).</summary>
-    long _targetGen;
+    private long _targetGen;
 
-    static int UnitMemoSlot(in GxmTextureDesc d, bool asCube) =>
+    private static int UnitMemoSlot(in GxmTextureDesc d, bool asCube) =>
         (int)((d.W2 >> 4 ^ d.W2 >> 13 ^ d.W0 ^ d.W1 >> 7 ^ (asCube ? 0x55u : 0)) & 1023);
 
-    DescriptorSet BuildTextureSet(DescriptorSetLayout layout, GxmTextureDesc[] textures, uint used, uint cubeSamplers)
+    private DescriptorSet BuildTextureSet(DescriptorSetLayout layout, GxmTextureDesc[] textures, uint used, uint cubeSamplers)
     {
         ProfMark(ProfPhase.TexPre);
         bool vertexStage = layout.Handle == _texLayoutV.Handle;
         int units = vertexStage ? _texUnitsV : _texUnitsF;
-        var infos = stackalloc DescriptorImageInfo[16];
-        var writes = stackalloc WriteDescriptorSet[16];
+        DescriptorImageInfo* infos = stackalloc DescriptorImageInfo[16];
+        WriteDescriptorSet* writes = stackalloc WriteDescriptorSet[16];
         // only the units the program samples are resolved and written: the others are never read by its shader (a set
         // from a frame pool may leave them undefined). Visiting all 16 units per stage and draw (a descriptor built for
         // each, in a loop the exception handler kept out of registers) was the GPU worker's largest own cost in F1 2011
         // races on the phone.
         uint mask = units >= 32 ? used : used & ((1u << units) - 1);
-        if (TexSetReuse && !TexLookupOld && _drawRing == null && ReusedTextureSet(vertexStage, textures, mask, cubeSamplers, units) is { } reused)
+        if (s_texSetReuse && !s_texLookupOld && _drawRing == null && ReusedTextureSet(vertexStage, textures, mask, cubeSamplers, units) is { } reused)
         {
             ProfMark(ProfPhase.TexHit);
             return reused;
         }
-        _reuseOk = TexSetReuse && !TexLookupOld && _drawRing == null;
+        _reuseOk = s_texSetReuse && !s_texLookupOld && _drawRing == null;
         _reuseDeps = 0;
         _reuseMem = 0;
-        if (TexLookupOld)
+        if (s_texLookupOld)
         {
             FillTextureInfosOld(infos, textures, used, cubeSamplers, units, vertexStage);
         }
@@ -300,7 +300,7 @@ public sealed unsafe partial class VulkanRenderer
             for (uint m = mask; m != 0; m &= m - 1)
             {
                 int i = System.Numerics.BitOperations.TrailingZeroCount(m);
-                var desc = textures[i];
+                GxmTextureDesc desc = textures[i];
                 bool cubeType = desc.TextureType is GxmTextureDesc.TypeCube or GxmTextureDesc.TypeCubeArbitrary;
                 // a 2D texture bound to a samplerCube (Resistance's window reflections): binding the 2D view there is
                 // undefined in Vulkan (NVIDIA returned saturated red), so the texture is read as a cube whose six faces
@@ -311,7 +311,7 @@ public sealed unsafe partial class VulkanRenderer
                     cubeType = true;
                 }
 
-                ref var info = ref infos[i];
+                ref DescriptorImageInfo info = ref infos[i];
                 info.Sampler = _dummySampler;
                 info.ImageView = cubeType ? _dummyCubeView : _dummyView;
                 info.ImageLayout = ImageLayout.ShaderReadOnlyOptimal;
@@ -323,8 +323,8 @@ public sealed unsafe partial class VulkanRenderer
                 ProfMark(ProfPhase.TexResolve);
                 ImageView v;
                 ImageLayout l;
-                ref var memo = ref _unitMemo[UnitMemoSlot(desc, asCube)];
-                if (UnitMemoOn && memo.Hit(desc, asCube, FrameCount, _texEpoch, _targetGen) && memo.Space == SpaceIdOf(desc.DataAddress) && _drawRing == null)
+                ref UnitMemo memo = ref _unitMemo[UnitMemoSlot(desc, asCube)];
+                if (s_unitMemoOn && memo.Hit(desc, asCube, FrameCount, _texEpoch, _targetGen) && memo.Space == SpaceIdOf(desc.DataAddress) && _drawRing == null)
                 {
                     // the same guest-memory texture as a unit resolved earlier this frame: nothing it depends on changed
                     v = memo.View;
@@ -351,7 +351,7 @@ public sealed unsafe partial class VulkanRenderer
                         info.ImageLayout = l;
                         info.Sampler = GetSampler(desc.W0, desc.TextureType);
                         NoteSampled(v);
-                        if (UnitMemoOn && _texSrc == TexSource.Memory && _texSrcTex is { } t && t.View.Handle == v.Handle && !TracingThisFrame)
+                        if (s_unitMemoOn && _texSrc == TexSource.Memory && _texSrcTex is { } t && t.View.Handle == v.Handle && !TracingThisFrame)
                         {
                             memo = new UnitMemo(desc, asCube, FrameCount, _texEpoch, _targetGen, SpaceIdOf(desc.DataAddress), v, info.Sampler, t);
                         }
@@ -372,7 +372,7 @@ public sealed unsafe partial class VulkanRenderer
         }
 
         ProfMark(ProfPhase.TexResolve);
-        var cache = vertexStage ? _texSetV : _texSetF;
+        TexSetCache cache = vertexStage ? _texSetV : _texSetF;
         if (cache.Serial == _frameSerial && cache.Units == units && cache.Mask == mask && cache.Set.Handle != 0)
         {
             bool same = true;
@@ -383,12 +383,12 @@ public sealed unsafe partial class VulkanRenderer
                     continue;
                 }
 
-                ref var c = ref cache.Infos[i];
+                ref DescriptorImageInfo c = ref cache.Infos[i];
                 same = c.Sampler.Handle == infos[i].Sampler.Handle && c.ImageView.Handle == infos[i].ImageView.Handle && c.ImageLayout == infos[i].ImageLayout;
             }
             if (same)
             {
-                if (TexSetPersist && !cache.Kept)
+                if (s_texSetPersist && !cache.Kept)
                 {
                     _reuseOk = false; // a frame-pool set: gone at the next pool reset
                 }
@@ -398,8 +398,8 @@ public sealed unsafe partial class VulkanRenderer
             }
         }
         // a set that will be kept across submits comes from the persistent texture-set pool (VulkanRenderer.TexSetReuse.cs)
-        bool kept = TexSetPersist && _reuseOk;
-        var set = kept ? AllocKeptTexSet(layout) : AllocSet(layout);
+        bool kept = s_texSetPersist && _reuseOk;
+        DescriptorSet set = kept ? AllocKeptTexSet(layout) : AllocSet(layout);
         uint n = 0;
         for (int i = 0; i < units; i++)
         {
@@ -436,16 +436,16 @@ public sealed unsafe partial class VulkanRenderer
     }
 
     // cached in _emptyFbSet for the renderer's lifetime: allocated from the persistent pool, not a frame pool
-    DescriptorSet BuildEmptyFbSet() => BuildFetchSet(_dummyView, ImageLayout.ShaderReadOnlyOptimal, DummyMsView(), ImageLayout.General, persistent: true);
+    private DescriptorSet BuildEmptyFbSet() => BuildFetchSet(_dummyView, ImageLayout.ShaderReadOnlyOptimal, DummyMsView(), ImageLayout.General, persistent: true);
 
-    DescriptorSet BuildSingleTextureSet(ImageView view, ImageLayout layout) => BuildFetchSet(view, layout, DummyMsView(), ImageLayout.General);
+    private DescriptorSet BuildSingleTextureSet(ImageView view, ImageLayout layout) => BuildFetchSet(view, layout, DummyMsView(), ImageLayout.General);
 
     /// <summary>Framebuffer-fetch set: <paramref name="view"/> single-sampled, <paramref name="msView"/> multisampled.</summary>
-    DescriptorSet BuildFetchSet(ImageView view, ImageLayout layout, ImageView msView, ImageLayout msLayout, bool persistent = false)
+    private DescriptorSet BuildFetchSet(ImageView view, ImageLayout layout, ImageView msView, ImageLayout msLayout, bool persistent = false)
     {
-        var set = persistent ? AllocPersistentSet(_fbLayout) : AllocSet(_fbLayout);
-        var info = stackalloc DescriptorImageInfo[2] { new(_dummySampler, view, layout), new(_dummySampler, msView, msLayout) };
-        var w = stackalloc WriteDescriptorSet[2];
+        DescriptorSet set = persistent ? AllocPersistentSet(_fbLayout) : AllocSet(_fbLayout);
+        DescriptorImageInfo* info = stackalloc DescriptorImageInfo[2] { new(_dummySampler, view, layout), new(_dummySampler, msView, msLayout) };
+        WriteDescriptorSet* w = stackalloc WriteDescriptorSet[2];
         for (int i = 0; i < 2; i++)
         {
             w[i] = new WriteDescriptorSet { SType = StructureType.WriteDescriptorSet, DstSet = set, DstBinding = (uint)i, DescriptorCount = 1, DescriptorType = DescriptorType.CombinedImageSampler, PImageInfo = &info[i] };
@@ -456,21 +456,21 @@ public sealed unsafe partial class VulkanRenderer
     }
 
     // programmable blending: shaders read a copy of the current colour target
-    Image _fbCopy;
-    ImageView _fbCopyView;
-    ImageMemoryPool.Allocation _fbCopyMem;
-    uint _fbCopyW, _fbCopyH;
-    Format _fbCopyFormat;
+    private Image _fbCopy;
+    private ImageView _fbCopyView;
+    private ImageMemoryPool.Allocation _fbCopyMem;
+    private uint _fbCopyW, _fbCopyH;
+    private Format _fbCopyFormat;
     /// <summary>Framebuffer-fetch copies of other sizes/formats, kept for reuse (all in GENERAL layout).</summary>
-    readonly Dictionary<(uint W, uint H, Format F), (Image Image, ImageView View, ImageMemoryPool.Allocation Mem)> _fbCopies = new();
-    long _fbCopiesPixels;
-    readonly HashSet<uint> _ssFetchLogged = new();
+    private readonly Dictionary<(uint W, uint H, Format F), (Image Image, ImageView View, ImageMemoryPool.Allocation Mem)> _fbCopies = new();
+    private long _fbCopiesPixels;
+    private readonly HashSet<uint> _ssFetchLogged = new();
 
     /// <param name="tileWord1">the shader also reads the scene's tile-word attachment (a copy of it, binding 4)</param>
-    DescriptorSet BuildFramebufferFetchSet(bool tileWord1)
+    private DescriptorSet BuildFramebufferFetchSet(bool tileWord1)
     {
-        var set = BuildFramebufferFetchSet();
-        if (tileWord1 && _tw1 != null && _rt != null && !_ms) // (never the persistent empty set: there is a target)
+        DescriptorSet set = BuildFramebufferFetchSet();
+        if (tileWord1 && _tileWord1 != null && _renderTarget != null && !_multisampled) // (never the persistent empty set: there is a target)
         {
             EndRendering(resolve: false);
             WriteTileWord1Copy(set, CopyTileWord1());
@@ -478,14 +478,14 @@ public sealed unsafe partial class VulkanRenderer
         return set;
     }
 
-    DescriptorSet BuildFramebufferFetchSet()
+    private DescriptorSet BuildFramebufferFetchSet()
     {
-        if (_rt == null)
+        if (_renderTarget == null)
         {
             return _emptyFbSet ??= BuildEmptyFbSet();
         }
 
-        if (_ms)
+        if (_multisampled)
         {
             return BuildMsaaFetchSet();
         }
@@ -493,21 +493,21 @@ public sealed unsafe partial class VulkanRenderer
         // must read the sample image, not the 1x surface (reading the surface put a half-size copy of the scene into
         // the top-left quarter of every programmable-blending pass). Each sample reads its own value, as on hardware;
         // the samples are box-filtered into the surface when rendering pauses for something else.
-        EndRendering(resolve: !_ss);
-        var ss = _ss ? GetSupersampleImage(_rt) : null;
-        if (ss != null && _ssFetchLogged.Add(_rt.Address))
+        EndRendering(resolve: !_supersampled);
+        SupersampleImage? ss = _supersampled ? GetSupersampleImage(_renderTarget) : null;
+        if (ss != null && _ssFetchLogged.Add(_renderTarget.Address))
         {
-            Log.Info($"[gpu] programmable blending in supersampled scene 0x{_rt.Address:X8}: shaders read the {ss.Width}x{ss.Height} sample image");
+            Log.Info($"[gpu] programmable blending in supersampled scene 0x{_renderTarget.Address:X8}: shaders read the {ss.Width}x{ss.Height} sample image");
         }
 
-        uint w = ss?.Width ?? _rt.ImgW, h = ss?.Height ?? _rt.ImgH;
+        uint w = ss?.Width ?? _renderTarget.ImgW, h = ss?.Height ?? _renderTarget.ImgH;
         if (_fbCopy.Handle == 0 || _fbCopyW != w || _fbCopyH != h || _fbCopyFormat != _rtAttachFormat)
         {
             // games alternate between targets of different sizes: keep the copies per size/format instead of recreating
             // one (image, memory, deferred destroy closure) on every switch
             if (_fbCopy.Handle != 0)
             {
-                var old = (_fbCopy, _fbCopyView, _fbCopyMem);
+                (Image _fbCopy, ImageView _fbCopyView, ImageMemoryPool.Allocation _fbCopyMem) old = (_fbCopy, _fbCopyView, _fbCopyMem);
                 // bounded: at most 32 spare copies and 4 M pixels (16 MB at 4 bytes per pixel)
                 if (_fbCopies.Count < 32 && _fbCopiesPixels + (long)_fbCopyW * _fbCopyH <= 4L << 20)
                 {
@@ -516,11 +516,11 @@ public sealed unsafe partial class VulkanRenderer
                 }
                 else
                 {
-                    var (oi, ov, om) = old;
+                    (Image oi, ImageView ov, ImageMemoryPool.Allocation om) = old;
                     DestroyAfterGpu(() => { _vk.DestroyImageView(_dev, ov, null); _vk.DestroyImage(_dev, oi, null); _imagePool.Free(om); });
                 }
             }
-            if (_fbCopies.Remove((w, h, _rtAttachFormat), out var cached))
+            if (_fbCopies.Remove((w, h, _rtAttachFormat), out (Image Image, ImageView View, ImageMemoryPool.Allocation Mem) cached))
             {
                 _fbCopiesPixels -= (long)w * h;
                 (_fbCopy, _fbCopyView, _fbCopyMem) = cached; // already in GENERAL layout
@@ -538,7 +538,7 @@ public sealed unsafe partial class VulkanRenderer
                 Barrier(_fbCopy, ImageLayout.Undefined, ImageLayout.General, ImageAspectFlags.ColorBit, PipelineStageFlags.TopOfPipeBit, PipelineStageFlags.TransferBit, 0, AccessFlags.TransferWriteBit);
             }
         }
-        var src = _rt.Image;
+        Image src = _renderTarget.Image;
         if (ss != null)
         {
             src = ss.Image;
@@ -548,8 +548,8 @@ public sealed unsafe partial class VulkanRenderer
         }
         else
         {
-            _rt.Dirty = true;
-            SyncRenderTargetForRead(_rt);
+            _renderTarget.Dirty = true;
+            SyncRenderTargetForRead(_renderTarget);
         }
         // only the draw's region clip is read (shaders fetch at their own fragment)
         if (FetchRegion(SceneScale, w, h) is not (var offset, var extent))
@@ -579,12 +579,12 @@ public sealed unsafe partial class VulkanRenderer
 
     // =================================================================== texture resolution
 
-    (ImageView, ImageLayout) ResolveTexture(GxmTextureDesc d, bool asCube = false)
+    private (ImageView, ImageLayout) ResolveTexture(GxmTextureDesc d, bool asCube = false)
     {
         uint addr = d.DataAddress;
         uint w = d.Width, h = d.Height;
         bool gamma = d.GammaMode != 0;
-        if (TraceTexAddr != 0 && addr - TraceTexAddr < 0x100000)
+        if (s_traceTexAddr != 0 && addr - s_traceTexAddr < 0x100000)
         {
             Log.Info($"[trace-tex] resolve-entry 0x{addr:X8} {w}x{h} type 0x{d.TextureType:X8} rt={RenderTargetContaining(addr) != null}");
         }
@@ -608,7 +608,7 @@ public sealed unsafe partial class VulkanRenderer
         if (d.LodMin > 0 && d.MipCount > 1 && d.TextureType is not (GxmTextureDesc.TypeCube or GxmTextureDesc.TypeCubeArbitrary)
             && RenderTargetContaining(addr) != null && BaseLevelView(d) is { } lowered)
         {
-            var res = ResolveTexture(lowered);
+            (ImageView, ImageLayout) res = ResolveTexture(lowered);
             _texSrc |= TexSource.LodLowered;
             return res;
         }
@@ -617,7 +617,7 @@ public sealed unsafe partial class VulkanRenderer
         if (DepthTextureSource(addr, d) is { } depthSrc)
         {
             bool newerColor = false;
-            foreach (var rt in _renderTargets.Values)
+            foreach (RenderTarget rt in _renderTargets.Values)
             {
                 if (rt.LastScene > depthSrc.LastScene && addr >= rt.Address && addr < rt.Address + rt.Stride * (uint)Formats.ColorBytesPerPixel(rt.ColorFormat) * rt.Height)
                 {
@@ -646,9 +646,9 @@ public sealed unsafe partial class VulkanRenderer
             DbgTextureOverlap(d);
         }
         // rendered surfaces are used directly (or a region of them is copied out)
-        foreach (var target in TargetsContaining(addr))
+        foreach (RenderTarget target in TargetsContaining(addr))
         {
-            var rt = target;
+            RenderTarget rt = target;
             // in use from here on: an allocation below (region, alias, mip chain, mirror) that runs out of memory must not evict it
             target.LastTouchedFrame = FrameCount;
             int bpp = Formats.ColorBytesPerPixel(rt.ColorFormat);
@@ -662,20 +662,20 @@ public sealed unsafe partial class VulkanRenderer
             uint texRow = d.TextureType == GxmTextureDesc.TypeLinearStrided ? d.StrideBytes : Align(w, 8) * (uint)bpp;
             uint off = addr - rt.Address;
             uint x0 = off % rowBytes / (uint)bpp, y0 = off / rowBytes;
-            if (target != _rt && OverwrittenSinceRendered(target, addr, TextureBytes(d, w, h)))
+            if (target != _renderTarget && OverwrittenSinceRendered(target, addr, TextureBytes(d, w, h)))
             {
                 continue;
             }
             // the surface being rendered, read where the draw itself renders: those tiles are still on chip, so the
             // texture sees the memory, i.e. the content from the start of the scene (or the last mid-scene flush)
-            if (target == _rt && _inScene && SamplesOwnTiles(x0, y0, w, h))
+            if (target == _renderTarget && _inScene && SamplesOwnTiles(x0, y0, w, h))
             {
                 rt = SceneStartSource(target);
             }
 
             _texSrcAddr = target.Address;
             _texSrcRt = target;
-            var sceneStart = rt != target ? TexSource.SceneStart : 0;
+            TexSource sceneStart = rt != target ? TexSource.SceneStart : 0;
             if (linear && ReinterpretRenderTarget(rt, d, gamma) is { } alias)
             {
                 _texSrc = TexSource.Reinterpret | sceneStart;
@@ -711,22 +711,22 @@ public sealed unsafe partial class VulkanRenderer
             }
             SyncRenderTargetForRead(rt);
             TraceSampledSnapshot(rt);
-            var sw = RtSwizzle(rt, d.Format);
+            ComponentMapping sw = RtSwizzle(rt, d.Format);
             if (rt.SampledView.Handle == 0 || !SameSwizzle(rt.SampledSwizzle, sw) || rt.SampledGamma != gamma)
             {
                 if (rt.SampledView.Handle != 0)
                 {
-                    var old = rt.SampledView;
+                    ImageView old = rt.SampledView;
                     BumpTexEpoch(1);
                     DestroyAfterGpu(() => _vk.DestroyImageView(_dev, old, null));
                 }
-                var viewFormat = rt.Format is Format.B8G8R8A8Unorm ? Format.R8G8B8A8Unorm : rt.Format;
+                Format viewFormat = rt.Format is Format.B8G8R8A8Unorm ? Format.R8G8B8A8Unorm : rt.Format;
                 if (gamma)
                 {
                     viewFormat = Formats.Srgb(viewFormat);
                 }
 
-                var viewSw = sw;
+                ComponentMapping viewSw = sw;
                 if (!rt.CanView(viewFormat))
                 {
                     // a target with a short format list (VITASHARP_RT_FORMAT_LIST): the RGBA reading of a BGRA image is a swizzle
@@ -760,7 +760,7 @@ public sealed unsafe partial class VulkanRenderer
     /// the stale surface instead drew every car black. Only pages inside the surface count (a texture that overhangs
     /// it may cover other data), and surfaces the renderer writes back are skipped (the writeback dirties their pages).
     /// </summary>
-    bool OverwrittenSinceRendered(RenderTarget rt, uint addr, ulong bytes)
+    private bool OverwrittenSinceRendered(RenderTarget rt, uint addr, ulong bytes)
     {
         if (!DirtyPages.Enabled || rt.MemStamp == 0)
         {
@@ -774,17 +774,17 @@ public sealed unsafe partial class VulkanRenderer
         // a write near a page's end also marks the following page (DirtyPages). Such writes say nothing about the
         // surface's own memory; taking them as "overwritten" sampled the stale memory instead of the surface, now and
         // then, depending on when the game's write landed (dark title frames on the phone)
-        const ulong page = 1UL << DirtyPages.PageShift;
-        start = (start + page - 1 & ~(page - 1)) + page;
-        end &= ~(page - 1);
+        const ulong Page = 1UL << DirtyPages.PageShift;
+        start = (start + Page - 1 & ~(Page - 1)) + Page;
+        end &= ~(Page - 1);
         if (end <= start)
         {
             // a surface too small to own a whole page: the whole pages of the texture past the surface's last page (and
             // the one after it) tell instead; the renderer's writebacks of the surface never touch them. 99Vidas (Unity)
             // renders an 8x8 surface (written back) early on and later loads its partner logo, a 128x128 texture, into
             // the same memory; read from the stale surface, the logo was invisible
-            start = (rtEnd + page - 1 & ~(page - 1)) + page;
-            end = addr + bytes & ~(page - 1);
+            start = (rtEnd + Page - 1 & ~(Page - 1)) + Page;
+            end = addr + bytes & ~(Page - 1);
             if (end <= start)
             {
                 return false;
@@ -810,7 +810,7 @@ public sealed unsafe partial class VulkanRenderer
     }
 
     /// <summary>Bytes of a texture's base level (enough to tell which surface memory it reads).</summary>
-    static ulong TextureBytes(GxmTextureDesc d, uint w, uint h)
+    private static ulong TextureBytes(GxmTextureDesc d, uint w, uint h)
     {
         if (d.TextureType == GxmTextureDesc.TypeLinearStrided)
         {
@@ -826,20 +826,20 @@ public sealed unsafe partial class VulkanRenderer
         return Math.Max(1, (ulong)w * h * (uint)Math.Max(bits, 1) / 8);
     }
 
-    readonly List<RenderTarget> _rtCandidates = new();
-    static readonly Comparison<RenderTarget> NewestSceneFirst = (a, b) => b.LastScene.CompareTo(a.LastScene);
+    private readonly List<RenderTarget> _rtCandidates = new();
+    private static readonly Comparison<RenderTarget> s_newestSceneFirst = (a, b) => b.LastScene.CompareTo(a.LastScene);
 
     /// <summary>
     /// Colour targets whose memory contains <paramref name="addr"/>, the most recently rendered first. Memory reused by
     /// several surfaces (a 240x136 target inside a stale 960x544 one, Killzone's quarter-res passes) holds what was
     /// rendered last; in dictionary order a long-unused surface could be picked and its stale content sampled.
     /// </summary>
-    List<RenderTarget> TargetsContaining(uint addr)
+    private List<RenderTarget> TargetsContaining(uint addr)
     {
         _rtCandidates.Clear();
-        if (TexLookupOld)
+        if (s_texLookupOld)
         {
-            foreach (var rt in _renderTargets.Values)
+            foreach (RenderTarget rt in _renderTargets.Values)
             {
                 if (addr >= rt.Address && addr < rt.Address + rt.Stride * (uint)Formats.ColorBytesPerPixel(rt.ColorFormat) * rt.Height)
                 {
@@ -849,7 +849,7 @@ public sealed unsafe partial class VulkanRenderer
         }
         else
         {
-            foreach (ref readonly var r in RtRanges())
+            foreach (ref readonly RtRange r in RtRanges())
             {
                 if (addr >= r.Lo && addr < r.Hi)
                 {
@@ -860,7 +860,7 @@ public sealed unsafe partial class VulkanRenderer
 
         if (_rtCandidates.Count > 1)
         {
-            _rtCandidates.Sort(NewestSceneFirst);
+            _rtCandidates.Sort(s_newestSceneFirst);
         }
 
         return _rtCandidates;
@@ -868,7 +868,7 @@ public sealed unsafe partial class VulkanRenderer
 
     /// <summary>A texture read from guest memory (cached, re-uploaded when its memory changes). <paramref name="asCube"/>:
     /// a 2D texture uploaded into all six faces of a cube image.</summary>
-    (ImageView, ImageLayout) ResolveMemoryTexture(GxmTextureDesc d, uint addr, uint w, uint h, bool gamma, bool asCube)
+    private (ImageView, ImageLayout) ResolveMemoryTexture(GxmTextureDesc d, uint addr, uint w, uint h, bool gamma, bool asCube)
     {
         var key = new TexKey(addr, d.Format, w, h, d.TextureType | (asCube ? 1u : 0u), d.MipCount | (d.LodMin << 8), d.TextureType == GxmTextureDesc.TypeLinearStrided ? d.StrideBytes : 0, d.PaletteAddress, gamma);
         if (_xferPendingDst.Count > 0)
@@ -876,9 +876,9 @@ public sealed unsafe partial class VulkanRenderer
             WaitPendingTransferInto(addr, Math.Max(w * h * 4, 1)); // VITASHARP_TRANSFER_DEFER
         }
 
-        _textures.TryGetValue(key, out var tex);
+        _textures.TryGetValue(key, out Texture? tex);
         _texSrcTex = tex;
-        if (TraceTexAddr != 0 && addr - TraceTexAddr < 0x100000)
+        if (s_traceTexAddr != 0 && addr - s_traceTexAddr < 0x100000)
         {
             Log.Info($"[trace-tex] t={System.Diagnostics.Stopwatch.GetTimestamp() / (System.Diagnostics.Stopwatch.Frequency / 10000) / 10.0:F1}ms resolve 0x{addr:X8} {w}x{h} frame {FrameCount} cached={tex != null} checked={tex?.CheckedFrame == FrameCount} hash {System.IO.Hashing.XxHash32.HashToUInt32(GuestMemory.ReadSpan(addr, (int)Math.Min(w * 4, 4096u))):X8}");
         }
@@ -895,12 +895,12 @@ public sealed unsafe partial class VulkanRenderer
         }
         ProfMark(ProfPhase.TexMemLookup); // everything up to here: the unit's lookups
 
-        var info = Formats.Texture(GxmFormats.BaseOf(d.Format));
+        TexFormatInfo info = Formats.Texture(GxmFormats.BaseOf(d.Format));
         bool cube = asCube || d.TextureType is GxmTextureDesc.TypeCube or GxmTextureDesc.TypeCubeArbitrary;
         uint faces = cube ? 6u : 1u;
         uint mips = Math.Min(d.MipCount, (uint)BitOperations.Log2(Math.Max(w, h)) + 1);
         // as a cube, every face reads the same memory
-        var layout = asCube ? ComputeLayout(d, info, w, h, mips, 1) with
+        TexLayout layout = asCube ? ComputeLayout(d, info, w, h, mips, 1) with
         {
             FaceStride = 0
         } : ComputeLayout(d, info, w, h, mips, faces);
@@ -938,7 +938,7 @@ public sealed unsafe partial class VulkanRenderer
             return (tex.View, ImageLayout.ShaderReadOnlyOptimal);
         }
         long h0 = System.Diagnostics.Stopwatch.GetTimestamp();
-        var src = GuestMemory.ReadSpan(addr + residentOffset, (int)(total - residentOffset));
+        ReadOnlySpan<byte> src = GuestMemory.ReadSpan(addr + residentOffset, (int)(total - residentOffset));
         ulong hash = System.IO.Hashing.XxHash3.HashToUInt64(src);
         if (paletted)
         {
@@ -966,7 +966,7 @@ public sealed unsafe partial class VulkanRenderer
         // GPUs without BC support (most Android devices): transcoded to ASTC 4x4 where the GPU samples ASTC
         // (AstcTranscoder), else decoded on the CPU into RGBA8; PVRTC (always decoded on the CPU) likewise on such GPUs
         // (desktop GPUs keep their RGBA8 PVRTC, as before)
-        var baseFormat = GxmFormats.BaseOf(d.Format);
+        TexBase baseFormat = GxmFormats.BaseOf(d.Format);
         AstcChannels? astc = null;
         if (!_core.TextureCompressionBC && ((info.Compressed && info.Convert == TexConvert.None) || info.Convert == TexConvert.Pvrtc))
         {
@@ -988,7 +988,7 @@ public sealed unsafe partial class VulkanRenderer
                 };
             }
         }
-        var format = info.Format;
+        Format format = info.Format;
         // texture gamma: the colour channels are sRGB-encoded and must be linearised when sampled
         if (gamma && Formats.Srgb(format) is var srgb && srgb != format && _core.SupportsSampled(srgb))
         {
@@ -1002,7 +1002,7 @@ public sealed unsafe partial class VulkanRenderer
             return (default, default);
         }
 
-        var texSwizzle = Formats.TextureSwizzle(d.Format);
+        ComponentMapping texSwizzle = Formats.TextureSwizzle(d.Format);
         // BC4/BC5 as ASTC luminance(+alpha): the channels come from L (and A)
         if (astc is { } ch)
         {
@@ -1014,10 +1014,10 @@ public sealed unsafe partial class VulkanRenderer
                 mips - lodMin, faces, cube: cube, swizzle: texSwizzle);
         // a decoder output read with the size of the picture before the newest: the GPU would have read that picture,
         // before the CPU decoded the next one over it (Gpu/DecoderOutputs.cs). Checked again on its next use.
-        var earlier = VitaSharp.Core.Gpu.DecoderOutputs.EarlierFor(addr, w, h);
+        DecoderOutputs.Picture? earlier = VitaSharp.Core.Gpu.DecoderOutputs.EarlierFor(addr, w, h);
         // contents this texture (or another one with the same key layout) had before: take that image back, no upload
         bool fromCache = false;
-        if (ContentCacheOn && earlier == null && hash != 0)
+        if (s_contentCacheOn && earlier == null && hash != 0)
         {
             ulong oldHash = tex?.Hash ?? 0; // what the current image holds (a forced re-check does not change that)
             if (TakeCachedContent(key, hash) is { } cached)
@@ -1089,14 +1089,14 @@ public sealed unsafe partial class VulkanRenderer
         {
             tex.Hash = 0;
             tex.ForceCheck = true;
-            if (TraceTexAddr != 0 && addr == TraceTexAddr)
+            if (s_traceTexAddr != 0 && addr == s_traceTexAddr)
             {
                 Log.Info($"[trace-tex] 0x{addr:X8} {w}x{h} read from decoder picture {earlier.Seq}");
             }
         }
         try
         {
-            using var source = earlier != null ? TextureDecoder.UseSource(addr, earlier.Data) : default;
+            using TextureDecoder.SourceScope source = earlier != null ? TextureDecoder.UseSource(addr, earlier.Data) : default;
             long u0 = System.Diagnostics.Stopwatch.GetTimestamp();
             ProfMark(ProfPhase.TexMemHash); // hashing the changed memory, a new image
             UploadTexture(tex, d, info, layout, w, h, mips, faces, format, lodMin);
@@ -1136,9 +1136,9 @@ public sealed unsafe partial class VulkanRenderer
     /// The texture as seen from its first sampled level (min(LOD min, last level)): a descriptor whose base level is
     /// that level's data, with the remaining mips and no LOD min. Null when the format has no simple level layout.
     /// </summary>
-    static GxmTextureDesc? BaseLevelView(GxmTextureDesc d)
+    private static GxmTextureDesc? BaseLevelView(GxmTextureDesc d)
     {
-        var info = Formats.Texture(GxmFormats.BaseOf(d.Format));
+        TexFormatInfo info = Formats.Texture(GxmFormats.BaseOf(d.Format));
         if (info.Convert is TexConvert.Yuv420P2 or TexConvert.Yuv420P3 or TexConvert.Yuv422)
         {
             return null;
@@ -1152,8 +1152,8 @@ public sealed unsafe partial class VulkanRenderer
             return null;
         }
 
-        var levelLayout = ComputeLayout(d, info, w, h, mips, 1);
-        var lv = levelLayout.Levels[(int)level];
+        TexLayout levelLayout = ComputeLayout(d, info, w, h, mips, 1);
+        MipLayout lv = levelLayout.Levels[(int)level];
         bool pow2 = d.TextureType is GxmTextureDesc.TypeSwizzled or GxmTextureDesc.TypeCube;
         uint w1 = pow2
             ? (d.W1 & ~0x000F000Fu) | ((uint)BitOperations.Log2(lv.Width) << 16) | (uint)BitOperations.Log2(lv.Height)
@@ -1169,9 +1169,9 @@ public sealed unsafe partial class VulkanRenderer
     /// other surfaces are stored with logical channels (packed formats may have been widened), so they read as-is.
     /// </summary>
     /// <summary>Field comparison (ComponentMapping.Equals(object) boxes both values on every texture lookup).</summary>
-    static bool SameSwizzle(in ComponentMapping a, in ComponentMapping b) => a.R == b.R && a.G == b.G && a.B == b.B && a.A == b.A;
+    private static bool SameSwizzle(in ComponentMapping a, in ComponentMapping b) => a.R == b.R && a.G == b.G && a.B == b.B && a.A == b.A;
 
-    static ComponentMapping RtSwizzle(RenderTarget rt, uint texFormat)
+    private static ComponentMapping RtSwizzle(RenderTarget rt, uint texFormat)
     {
         bool is8888 = rt.Format is Format.R8G8B8A8Unorm or Format.B8G8R8A8Unorm && (rt.ColorFormat & 0xF1800000) == 0;
         if (!is8888 || GxmFormats.BaseOf(texFormat) != TexBase.U8U8U8U8)
@@ -1181,11 +1181,11 @@ public sealed unsafe partial class VulkanRenderer
         // the texture swizzle is defined on memory; RGBA/BGRA surfaces hold logical components, seen here in memory
         // order first (Gal Gunvolt renders its playfield into RGBA surfaces, samples them as RGBA textures and alpha
         // tests .w: read reversed, the alpha test discarded the whole background)
-        var tex = Formats.TextureSwizzle(texFormat);
+        ComponentMapping tex = Formats.TextureSwizzle(texFormat);
         return Formats.LogicalOrderSwizzle(rt.ColorFormat) != 0 ? Formats.Compose(Formats.SurfaceMemoryOrder(rt.ColorFormat), tex) : tex;
     }
 
-    sealed class RtRegion
+    private sealed class RtRegion
     {
         public Image Image;
         public ImageView View;
@@ -1194,33 +1194,33 @@ public sealed unsafe partial class VulkanRenderer
         public long LastUsedFrame;
     }
 
-    readonly Dictionary<(RenderTarget, uint, uint, uint, uint, uint, bool), RtRegion> _rtRegions = new();    static readonly bool RegionCopySkip = Environment.GetEnvironmentVariable(EnvVars.RegionCopySkip) == "1";
+    private readonly Dictionary<(RenderTarget, uint, uint, uint, uint, uint, bool), RtRegion> _rtRegions = new();    private static readonly bool s_regionCopySkip = Environment.GetEnvironmentVariable(EnvVars.RegionCopySkip) == "1";
     /// <summary>Region copies whose source is the scene's own colour surface / another surface (PERF gpu).</summary>
-    long _statRegionOwn, _statRegionOther;
+    private long _statRegionOwn, _statRegionOther;
 
     /// <summary>VITASHARP_REGION_COPY_REUSE=0 copies a region again after every change of its surface (A/B).</summary>
-    static readonly bool RegionCopyReuse = Environment.GetEnvironmentVariable(EnvVars.RegionCopyReuse)?.Trim() != "0";
-    long _statRegionReused;
+    private static readonly bool s_regionCopyReuse = Environment.GetEnvironmentVariable(EnvVars.RegionCopyReuse)?.Trim() != "0";
+    private long _statRegionReused;
 
     /// <summary>A draw into <paramref name="rt"/> was recorded (its <see cref="RenderTarget.Version"/> already bumped):
     /// logs the rectangle it can write, its region clip and viewport (<see cref="SetDrawArea"/>) grown by a margin for
     /// wide points and lines. A draw without such bounds is not logged, so no region copy outlives it.</summary>
-    void LogDraw(RenderTarget rt)
+    private void LogDraw(RenderTarget rt)
     {
         if (_drawMinX <= 0 && _drawMinY <= 0 && _drawMaxX == int.MaxValue && _drawMaxY == int.MaxValue)
         {
             return;
         }
 
-        const int margin = 4;
-        rt.DrawLog[rt.DrawLogNext] = (rt.Version, _drawMinX - margin, _drawMinY - margin,
-            _drawMaxX >= int.MaxValue - margin ? int.MaxValue : _drawMaxX + margin, _drawMaxY >= int.MaxValue - margin ? int.MaxValue : _drawMaxY + margin);
+        const int Margin = 4;
+        rt.DrawLog[rt.DrawLogNext] = (rt.Version, _drawMinX - Margin, _drawMinY - Margin,
+            _drawMaxX >= int.MaxValue - Margin ? int.MaxValue : _drawMaxX + Margin, _drawMaxY >= int.MaxValue - Margin ? int.MaxValue : _drawMaxY + Margin);
         rt.DrawLogNext = (rt.DrawLogNext + 1) % rt.DrawLog.Length;
     }
 
     /// <summary>A version bump that changes no pixel (a rendering begun with the colour loaded): logged with an empty
     /// rectangle, so a mid-scene break between two draws does not invalidate the region copies.</summary>
-    static void LogUnchanged(RenderTarget rt)
+    private static void LogUnchanged(RenderTarget rt)
     {
         rt.DrawLog[rt.DrawLogNext] = (rt.Version, 0, 0, -1, -1);
         rt.DrawLogNext = (rt.DrawLogNext + 1) % rt.DrawLog.Length;
@@ -1229,7 +1229,7 @@ public sealed unsafe partial class VulkanRenderer
     /// <summary>Every change of <paramref name="rt"/> after version <paramref name="since"/> was a logged draw outside
     /// the rectangle (guest pixels). Any other change (clear, upload, resolve, programmable-blending pass, a draw
     /// without bounds) bumps the version without a log entry, so the counts differ and the region is copied again.</summary>
-    static bool RegionUntouchedSince(RenderTarget rt, long since, uint x, uint y, uint w, uint h)
+    private static bool RegionUntouchedSince(RenderTarget rt, long since, uint x, uint y, uint w, uint h)
     {
         long changes = rt.Version - since;
         if (changes <= 0 || changes > rt.DrawLog.Length)
@@ -1239,7 +1239,7 @@ public sealed unsafe partial class VulkanRenderer
 
         long x1 = (long)x + w - 1, y1 = (long)y + h - 1;
         int logged = 0;
-        foreach (var e in rt.DrawLog)
+        foreach ((long V, int X0, int Y0, int X1, int Y1) e in rt.DrawLog)
         {
             if (e.V <= since || e.V > rt.Version)
             {
@@ -1256,10 +1256,10 @@ public sealed unsafe partial class VulkanRenderer
         return logged == changes;
     }
     /// <summary>True when <paramref name="rt"/> is the only colour target whose memory intersects [addr, addr + bytes).</summary>
-    bool OnlyTargetIn(RenderTarget rt, uint addr, uint bytes)
+    private bool OnlyTargetIn(RenderTarget rt, uint addr, uint bytes)
     {
         ulong end = (ulong)addr + bytes;
-        foreach (var other in _renderTargets.Values)
+        foreach (RenderTarget other in _renderTargets.Values)
         {
             if (other == rt)
             {
@@ -1277,13 +1277,13 @@ public sealed unsafe partial class VulkanRenderer
 
     /// <summary>Copies a sub-rectangle of a render target into its own image (textures that point inside a surface).
     /// The part of a texture that extends past the surface's right or bottom edge reads as transparent black.</summary>
-    ImageView RenderTargetRegion(RenderTarget rt, uint x, uint y, uint w, uint h, uint texFormat, bool gamma)
+    private ImageView RenderTargetRegion(RenderTarget rt, uint x, uint y, uint w, uint h, uint texFormat, bool gamma)
     {
-        var key = (rt, x, y, w, h, texFormat, gamma);
-        if (!_rtRegions.TryGetValue(key, out var r))
+        (RenderTarget rt, uint x, uint y, uint w, uint h, uint texFormat, bool gamma) key = (rt, x, y, w, h, texFormat, gamma);
+        if (!_rtRegions.TryGetValue(key, out RtRegion? r))
         {
             r = new RtRegion();
-            var viewFormat = rt.Format is Format.B8G8R8A8Unorm ? Format.R8G8B8A8Unorm : rt.Format;
+            Format viewFormat = rt.Format is Format.B8G8R8A8Unorm ? Format.R8G8B8A8Unorm : rt.Format;
             if (gamma)
             {
                 viewFormat = Formats.Srgb(viewFormat);
@@ -1295,7 +1295,7 @@ public sealed unsafe partial class VulkanRenderer
             r.View = CreateView(r.Image, viewFormat, ImageAspectFlags.ColorBit, 1, 1, false, RtSwizzle(rt, texFormat));
             _rtRegions[key] = r;
             BeginFrameIfNeeded();
-            using var clearOutside = BeginOutside(r.View);
+            using OutsideScope clearOutside = BeginOutside(r.View);
             Barrier(r.Image, ImageLayout.Undefined, ImageLayout.TransferDstOptimal, ImageAspectFlags.ColorBit,
                 PipelineStageFlags.TopOfPipeBit, PipelineStageFlags.TransferBit, 0, AccessFlags.TransferWriteBit);
             var clear = new ClearColorValue(0f, 0f, 0f, 0f);
@@ -1311,7 +1311,7 @@ public sealed unsafe partial class VulkanRenderer
         }
         // only draws elsewhere in the surface since the copy (an atlas of post-processing passes, each drawing into its
         // own part and reading another): the copy is still current
-        if (r.Version >= 0 && RegionCopyReuse && RegionUntouchedSince(rt, r.Version, x, y, w, h))
+        if (r.Version >= 0 && s_regionCopyReuse && RegionUntouchedSince(rt, r.Version, x, y, w, h))
         {
             r.Version = rt.Version;
             _statRegionReused++;
@@ -1319,12 +1319,12 @@ public sealed unsafe partial class VulkanRenderer
         }
         // VITASHARP_REGION_COPY_SKIP=1 (measurement only, wrong picture): an existing region is not refreshed, to bound what
         // the copies cost on a tiler
-        if (RegionCopySkip && r.Version >= 0)
+        if (s_regionCopySkip && r.Version >= 0)
         {
             return r.View;
         }
 
-        if (rt == _rt)
+        if (rt == _renderTarget)
         {
             _statRegionOwn++;
         }
@@ -1336,7 +1336,7 @@ public sealed unsafe partial class VulkanRenderer
         r.Version = rt.Version;
         // another surface's region is copied before the open rendering; a region of the scene's own surface too when
         // the rendering has not drawn there, else it ends the rendering
-        using var outside = BeginOutside(r.View, rt, readRect: (x, y, Math.Min(w, rt.Width - x), Math.Min(h, rt.Height - y)));
+        using OutsideScope outside = BeginOutside(r.View, rt, readRect: (x, y, Math.Min(w, rt.Width - x), Math.Min(h, rt.Height - y)));
         rt.Dirty = true;
         SyncRenderTargetForRead(rt);
         Barrier(r.Image, ImageLayout.ShaderReadOnlyOptimal, ImageLayout.TransferDstOptimal, ImageAspectFlags.ColorBit,
@@ -1363,7 +1363,7 @@ public sealed unsafe partial class VulkanRenderer
         return r.View;
     }
 
-    sealed class RtAlias
+    private sealed class RtAlias
     {
         public Image Image;
         public ImageView View;
@@ -1374,7 +1374,7 @@ public sealed unsafe partial class VulkanRenderer
         public uint W, H;
     }
 
-    readonly Dictionary<(uint Addr, uint Format, uint W, uint H, uint Row, bool Gamma), RtAlias> _rtAliases = new();
+    private readonly Dictionary<(uint Addr, uint Format, uint W, uint H, uint Row, bool Gamma), RtAlias> _rtAliases = new();
 
     /// <summary>
     /// A linear texture that reads a render target's memory with a different texel size, e.g. Uncharted's 720x408
@@ -1383,10 +1383,10 @@ public sealed unsafe partial class VulkanRenderer
     /// mirror (render target copied in guest layout) and copied into an image of the texture's format, which
     /// reinterprets them exactly like the hardware does. Null when this is not such a case.
     /// </summary>
-    ImageView? ReinterpretRenderTarget(RenderTarget rt, GxmTextureDesc d, bool gamma)
+    private ImageView? ReinterpretRenderTarget(RenderTarget rt, GxmTextureDesc d, bool gamma)
     {
         int rtBpp = Formats.ColorBytesPerPixel(rt.ColorFormat);
-        var info = Formats.Texture(GxmFormats.BaseOf(d.Format));
+        TexFormatInfo info = Formats.Texture(GxmFormats.BaseOf(d.Format));
         if (info.Compressed || info.Convert != TexConvert.None || info.BitsPerPixel < 8 || info.BitsPerPixel % 8 != 0)
         {
             return null;
@@ -1410,7 +1410,7 @@ public sealed unsafe partial class VulkanRenderer
             return null;
         }
 
-        var format = info.Format;
+        Format format = info.Format;
         if (gamma && Formats.Srgb(format) is var srgb && srgb != format && _core.SupportsSampled(srgb))
         {
             format = srgb;
@@ -1424,9 +1424,9 @@ public sealed unsafe partial class VulkanRenderer
         EnsureMirror();
         // a scaled target is reinterpreted at its internal resolution: its image goes into the mirror with packed
         // scaled rows and the texture reads the matching scaled rectangle (VulkanRenderer.ResScale.cs)
-        var geo = ScaledReinterpretGeometry(rt, addr, w, h, texRow, (uint)rtBpp, texBpp);
+        ReinterpretGeo? geo = ScaledReinterpretGeometry(rt, addr, w, h, texRow, (uint)rtBpp, texBpp);
         // above native the scaled rows are in the target's own buffer, else in the mirror
-        var src = _mirror;
+        Silk.NET.Vulkan.Buffer src = _mirror;
         if (geo is { Own: true } && ScaledRowsCopyable(rt) && ScaledRowsOf(rt) is { Handle: not 0 } own)
         {
             src = own;
@@ -1443,15 +1443,15 @@ public sealed unsafe partial class VulkanRenderer
 
         uint aw = geo?.W ?? w, ah = geo?.H ?? h;
 
-        var key = (addr, d.Format, w, h, texRow, gamma);
-        if (_rtAliases.TryGetValue(key, out var stale) && (stale.W != aw || stale.H != ah))
+        (uint addr, uint Format, uint w, uint h, uint texRow, bool gamma) key = (addr, d.Format, w, h, texRow, gamma);
+        if (_rtAliases.TryGetValue(key, out RtAlias? stale) && (stale.W != aw || stale.H != ah))
         {
             _rtAliases.Remove(key);
             BumpTexEpoch(2);
-            var (si, sv, sm) = (stale.Image, stale.View, stale.Mem);
+            (Image si, ImageView sv, ImageMemoryPool.Allocation sm) = (stale.Image, stale.View, stale.Mem);
             DestroyAfterGpu(() => { _vk.DestroyImageView(_dev, sv, null); _vk.DestroyImage(_dev, si, null); _imagePool.Free(sm); });
         }
-        if (!_rtAliases.TryGetValue(key, out var a))
+        if (!_rtAliases.TryGetValue(key, out RtAlias? a))
         {
             a = new RtAlias { W = aw, H = ah };
             (a.Image, a.View, a.Mem) = CreateImage(MemCat.Region, aw, ah, format, ImageUsageFlags.SampledBit | ImageUsageFlags.TransferDstBit, ImageAspectFlags.ColorBit,
@@ -1491,19 +1491,19 @@ public sealed unsafe partial class VulkanRenderer
         return a.View;
     }
 
-    readonly record struct MipLayout(uint Offset, uint Width, uint Height, uint RowPitch, uint Bytes);
+    private readonly record struct MipLayout(uint Offset, uint Width, uint Height, uint RowPitch, uint Bytes);
     /// <summary>Per-level layout stored inline (at most 16 levels): computed for every texture check, so no array per call.</summary>
     [System.Runtime.CompilerServices.InlineArray(16)]
-    struct MipChain
+    private struct MipChain
     {
-        MipLayout _level;
+        private MipLayout _level;
     }
 
-    readonly record struct TexLayout(MipChain Levels, uint FaceStride, uint TotalBytes);
+    private readonly record struct TexLayout(MipChain Levels, uint FaceStride, uint TotalBytes);
 
-    static uint Align(uint v, uint a) => (v + a - 1) / a * a;
+    private static uint Align(uint v, uint a) => (v + a - 1) / a * a;
 
-    static TexLayout ComputeLayout(GxmTextureDesc d, TexFormatInfo info, uint w, uint h, uint mips, uint faces)
+    private static TexLayout ComputeLayout(GxmTextureDesc d, TexFormatInfo info, uint w, uint h, uint mips, uint faces)
     {
         var levels = new MipChain();
         uint type = d.TextureType;
@@ -1594,17 +1594,17 @@ public sealed unsafe partial class VulkanRenderer
     }
 
     /// <summary>VITASHARP_TRACE_TEX=&lt;hex address&gt;: logs each upload of the texture at that address (timing studies).</summary>
-    static readonly uint TraceTexAddr = Convert.ToUInt32(Environment.GetEnvironmentVariable(VitaSharp.Core.Util.EnvVars.TraceTex) is { Length: > 0 } tt ? tt : "0", 16);
+    private static readonly uint s_traceTexAddr = Convert.ToUInt32(Environment.GetEnvironmentVariable(VitaSharp.Core.Util.EnvVars.TraceTex) is { Length: > 0 } tt ? tt : "0", 16);
 
-    void UploadTexture(Texture tex, GxmTextureDesc d, TexFormatInfo info, TexLayout layout, uint w, uint h, uint mips, uint faces, Format format, uint baseLevel = 0)
+    private void UploadTexture(Texture tex, GxmTextureDesc d, TexFormatInfo info, TexLayout layout, uint w, uint h, uint mips, uint faces, Format format, uint baseLevel = 0)
     {
-        using var ledger = FrameLedger.Time(FrameLedger.Cat.TextureUpload);
-        if (TraceTexAddr != 0 && d.DataAddress == TraceTexAddr)
+        using FrameLedger.Scope ledger = FrameLedger.Time(FrameLedger.Cat.TextureUpload);
+        if (s_traceTexAddr != 0 && d.DataAddress == s_traceTexAddr)
         {
             Log.Info($"[trace-tex] t={System.Diagnostics.Stopwatch.GetTimestamp() / (System.Diagnostics.Stopwatch.Frequency / 10000) / 10.0:F1}ms upload 0x{d.DataAddress:X8} {w}x{h} stride {d.StrideBytes} hash {System.IO.Hashing.XxHash32.HashToUInt32(GuestMemory.ReadSpan(d.DataAddress, (int)Math.Min(w * 4, 4096u))):X8}");
         }
         // reads guest memory only: recorded before the open rendering unless a draw of it already samples the texture
-        using var outside = BeginOutside(tex.View);
+        using OutsideScope outside = BeginOutside(tex.View);
         Barrier(tex.Image, ImageLayout.Undefined, ImageLayout.TransferDstOptimal, ImageAspectFlags.ColorBit,
             PipelineStageFlags.FragmentShaderBit | PipelineStageFlags.VertexShaderBit, PipelineStageFlags.TransferBit, AccessFlags.ShaderReadBit, AccessFlags.TransferWriteBit);
 
@@ -1612,10 +1612,10 @@ public sealed unsafe partial class VulkanRenderer
         {
             for (uint m = baseLevel; m < mips; m++)
             {
-                var lv = layout.Levels[(int)m];
+                MipLayout lv = layout.Levels[(int)m];
                 uint baseAddr = d.DataAddress + face * layout.FaceStride + lv.Offset;
-                using var linear = TextureDecoder.Decode(d, info, baseAddr, lv.Width, lv.Height, lv.RowPitch, out uint outW, out uint outH);
-                var (buf, off) = UploadSpan(linear.Span, 16);
+                using Texels linear = TextureDecoder.Decode(d, info, baseAddr, lv.Width, lv.Height, lv.RowPitch, out uint outW, out uint outH);
+                (Silk.NET.Vulkan.Buffer buf, ulong off) = UploadSpan(linear.Span, 16);
                 var r = new BufferImageCopy
                 {
                     BufferOffset = off,
@@ -1633,9 +1633,9 @@ public sealed unsafe partial class VulkanRenderer
             PipelineStageFlags.TransferBit, PipelineStageFlags.FragmentShaderBit | PipelineStageFlags.VertexShaderBit, AccessFlags.TransferWriteBit, AccessFlags.ShaderReadBit);
     }
 
-    void InvalidateTextures(uint addr, uint size)
+    private void InvalidateTextures(uint addr, uint size)
     {
-        foreach (var t in _textures.Values)
+        foreach (Texture t in _textures.Values)
         {
             if (t.DataStart < addr + size && addr < t.DataStart + t.DataSize)
             {
@@ -1644,7 +1644,7 @@ public sealed unsafe partial class VulkanRenderer
             }
         }
         // a CPU transfer into a render target's memory: reload it
-        foreach (var rt in _renderTargets.Values)
+        foreach (RenderTarget rt in _renderTargets.Values)
         {
             if (rt.Address < addr + size && addr < rt.Address + rt.Stride * rt.Height * 4)
             {
@@ -1653,15 +1653,15 @@ public sealed unsafe partial class VulkanRenderer
         }
     }
 
-    void DestroyTextures()
+    private void DestroyTextures()
     {
         FlushContentCache(now: true);
-        foreach (var t in _textures.Values)
+        foreach (Texture t in _textures.Values)
         {
             _vk.DestroyImageView(_dev, t.View, null);
             _vk.DestroyImage(_dev, t.Image, null);
         }
-        foreach (var s in _samplers.Values)
+        foreach (Sampler s in _samplers.Values)
         {
             _vk.DestroySampler(_dev, s, null);
         }
@@ -1674,7 +1674,7 @@ public sealed unsafe partial class VulkanRenderer
             _vk.DestroyImageView(_dev, _fbCopyView, null);
             _vk.DestroyImage(_dev, _fbCopy, null);
         }
-        foreach (var (img, view, _) in _fbCopies.Values)
+        foreach ((Image img, ImageView view, ImageMemoryPool.Allocation _) in _fbCopies.Values)
         {
             _vk.DestroyImageView(_dev, view, null);
             _vk.DestroyImage(_dev, img, null);

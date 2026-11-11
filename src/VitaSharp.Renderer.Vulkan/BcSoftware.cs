@@ -20,10 +20,10 @@ public static class BcSoftware
 {
 
     public static long CacheBudget = 64L << 20;
-    static readonly object Lock = new();
-    static readonly Dictionary<(ulong, TexBase, uint, uint), LinkedListNode<(ulong Hash, TexBase F, uint W, uint H, byte[] Data)>> Map = new();
-    static readonly LinkedList<(ulong Hash, TexBase F, uint W, uint H, byte[] Data)> Lru = new();
-    static long _bytes;
+    private static readonly object s_lock = new();
+    private static readonly Dictionary<(ulong, TexBase, uint, uint), LinkedListNode<(ulong Hash, TexBase F, uint W, uint H, byte[] Data)>> s_map = new();
+    private static readonly LinkedList<(ulong Hash, TexBase F, uint W, uint H, byte[] Data)> s_lru = new();
+    private static long s_bytes;
     public static long Decodes, CacheHits;
 
     /// <summary>Signed BC4/BC5 decode to SNORM texels; everything else to UNORM.</summary>
@@ -32,44 +32,44 @@ public static class BcSoftware
 
     public static string Summary()
     {
-        lock (Lock)
+        lock (s_lock)
         {
-            return $"{Decodes} levels decoded, {CacheHits} from the cache ({Map.Count} entries, {_bytes / 1048576.0:F1} MB)";
+            return $"{Decodes} levels decoded, {CacheHits} from the cache ({s_map.Count} entries, {s_bytes / 1048576.0:F1} MB)";
         }
     }
 
     /// <summary>Decodes one level (blocks in row order, ((w+3)/4)*((h+3)/4) blocks) into w*h RGBA8 texels.</summary>
     public static Texels Decode(TexBase f, ReadOnlySpan<byte> blocks, uint w, uint h)
     {
-        var key = (XxHash3.HashToUInt64(blocks), f, w, h);
-        lock (Lock)
+        (ulong, TexBase f, uint w, uint h) key = (XxHash3.HashToUInt64(blocks), f, w, h);
+        lock (s_lock)
         {
-            if (Map.TryGetValue(key, out var node))
+            if (s_map.TryGetValue(key, out LinkedListNode<(ulong Hash, TexBase F, uint W, uint H, byte[] Data)>? node))
             {
-                Lru.Remove(node);
-                Lru.AddFirst(node);
+                s_lru.Remove(node);
+                s_lru.AddFirst(node);
                 CacheHits++;
                 var hit = Texels.Rent(node.Value.Data.Length);
                 node.Value.Data.CopyTo(hit.Array, 0);
                 return hit;
             }
         }
-        var t = DecodeUncached(f, blocks, w, h);
+        Texels t = DecodeUncached(f, blocks, w, h);
         Interlocked.Increment(ref Decodes);
         if (t.Length <= CacheBudget / 8)
         {
-            var copy = t.Span.ToArray();
-            lock (Lock)
+            byte[] copy = t.Span.ToArray();
+            lock (s_lock)
             {
-                if (!Map.ContainsKey(key))
+                if (!s_map.ContainsKey(key))
                 {
-                    Map[key] = Lru.AddFirst((key.Item1, f, w, h, copy));
-                    _bytes += copy.Length;
-                    while (_bytes > CacheBudget && Lru.Last is { } last)
+                    s_map[key] = s_lru.AddFirst((key.Item1, f, w, h, copy));
+                    s_bytes += copy.Length;
+                    while (s_bytes > CacheBudget && s_lru.Last is { } last)
                     {
-                        Lru.RemoveLast();
-                        Map.Remove((last.Value.Hash, last.Value.F, last.Value.W, last.Value.H));
-                        _bytes -= last.Value.Data.Length;
+                        s_lru.RemoveLast();
+                        s_map.Remove((last.Value.Hash, last.Value.F, last.Value.W, last.Value.H));
+                        s_bytes -= last.Value.Data.Length;
                     }
                 }
             }
@@ -79,15 +79,15 @@ public static class BcSoftware
 
     public static void ClearCache()
     {
-        lock (Lock)
+        lock (s_lock)
         {
-            Map.Clear();
-            Lru.Clear();
-            _bytes = 0;
+            s_map.Clear();
+            s_lru.Clear();
+            s_bytes = 0;
         }
     }
 
-    static Texels DecodeUncached(TexBase f, ReadOnlySpan<byte> src, uint w, uint h) => f switch
+    private static Texels DecodeUncached(TexBase f, ReadOnlySpan<byte> src, uint w, uint h) => f switch
     {
         TexBase.UBC4 => Rgtc(src, w, h, false, false),
         TexBase.SBC4 => Rgtc(src, w, h, false, true),
@@ -104,11 +104,11 @@ public static class BcSoftware
     /// colours rounded ((2a + b + 1) / 3), BC1's three-colour mode with transparent black, BC2's 4-bit alpha x 17 and
     /// BC3's alpha block rounded like BC4 (<see cref="UnsignedBlock"/>).
     /// </summary>
-    static Texels Bc13(ReadOnlySpan<byte> src, uint w, uint h, int blockBytes, bool bc2, bool bc3)
+    private static Texels Bc13(ReadOnlySpan<byte> src, uint w, uint h, int blockBytes, bool bc2, bool bc3)
     {
         uint bw = (w + 3) / 4, bh = (h + 3) / 4;
         var dstT = Texels.Rent(w * h * 4L);
-        var dst = dstT.Array;
+        byte[] dst = dstT.Array;
         Span<byte> c = stackalloc byte[16];
         Span<byte> alpha = stackalloc byte[16];
         for (uint by = 0; by < bh; by++)
@@ -121,7 +121,7 @@ public static class BcSoftware
                     return dstT;
                 }
 
-                var block = src.Slice(o, blockBytes);
+                ReadOnlySpan<byte> block = src.Slice(o, blockBytes);
                 if (bc2)
                 {
                     for (int i = 0; i < 16; i++)
@@ -134,7 +134,7 @@ public static class BcSoftware
                     UnsignedBlock(block[..8], alpha);
                 }
 
-                var col = bc2 || bc3 ? block[8..] : block;
+                ReadOnlySpan<byte> col = bc2 || bc3 ? block[8..] : block;
                 int c0 = col[0] | col[1] << 8, c1 = col[2] | col[3] << 8;
                 Expand565(c0, c, 0);
                 Expand565(c1, c, 4);
@@ -167,7 +167,7 @@ public static class BcSoftware
         return dstT;
     }
 
-    static void Expand565(int v, Span<byte> c, int o)
+    private static void Expand565(int v, Span<byte> c, int o)
     {
         int r = (v >> 11) & 31, g = (v >> 5) & 63, b = v & 31;
         c[o] = (byte)(r << 3 | r >> 2);
@@ -177,12 +177,12 @@ public static class BcSoftware
     }
 
     /// <summary>BC4 (one channel) / BC5 (two channels): R(,G) from the blocks, B = 0, A = 1 (255 UNORM, 127 SNORM).</summary>
-    static Texels Rgtc(ReadOnlySpan<byte> src, uint w, uint h, bool two, bool signed)
+    private static Texels Rgtc(ReadOnlySpan<byte> src, uint w, uint h, bool two, bool signed)
     {
         uint bw = (w + 3) / 4, bh = (h + 3) / 4;
         int blockBytes = two ? 16 : 8;
         var dstT = Texels.Rent(w * h * 4L);
-        var dst = dstT.Array;
+        byte[] dst = dstT.Array;
         byte one = signed ? (byte)127 : (byte)255;
         for (int i = 3; i < w * h * 4; i += 4)
         {
@@ -228,7 +228,7 @@ public static class BcSoftware
         return dstT;
     }
 
-    static ulong Indices(ReadOnlySpan<byte> b)
+    private static ulong Indices(ReadOnlySpan<byte> b)
     {
         ulong bits = 0;
         for (int i = 0; i < 6; i++)

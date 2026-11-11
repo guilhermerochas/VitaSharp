@@ -16,7 +16,7 @@ namespace VitaSharp.Renderer.Vulkan;
 /// </summary>
 public sealed unsafe partial class VulkanRenderer
 {
-    sealed class RtMipTexture
+    private sealed class RtMipTexture
     {
         public Image Image;
         public ImageView View;
@@ -28,9 +28,9 @@ public sealed unsafe partial class VulkanRenderer
         public uint Stamp; // dirty-page epoch the upper levels were last hashed at
     }
 
-    readonly Dictionary<(RenderTarget, uint X, uint Y, uint Format, uint W, uint H, uint Mips, bool Gamma), RtMipTexture> _rtMipTextures = new();
+    private readonly Dictionary<(RenderTarget, uint X, uint Y, uint Format, uint W, uint H, uint Mips, bool Gamma), RtMipTexture> _rtMipTextures = new();
 
-    ImageView? RenderTargetMipmapped(RenderTarget rt, GxmTextureDesc d, uint x0, uint y0, bool gamma)
+    private ImageView? RenderTargetMipmapped(RenderTarget rt, GxmTextureDesc d, uint x0, uint y0, bool gamma)
     {
         uint w = d.Width, h = d.Height;
         uint mips = Math.Min(d.MipCount, (uint)BitOperations.Log2(Math.Max(w, h)) + 1);
@@ -39,23 +39,23 @@ public sealed unsafe partial class VulkanRenderer
             return null;
         }
 
-        var info = Formats.Texture(GxmFormats.BaseOf(d.Format));
+        TexFormatInfo info = Formats.Texture(GxmFormats.BaseOf(d.Format));
         // level 0 is copied from the surface image, the other levels are uploaded: both need the surface's layout
-        var hostFormat = rt.Format is Format.B8G8R8A8Unorm ? Format.Undefined : rt.Format;
+        Format hostFormat = rt.Format is Format.B8G8R8A8Unorm ? Format.Undefined : rt.Format;
         if (info.Compressed || info.Convert != TexConvert.None || info.Format != hostFormat
             || HostBytesPerPixel(rt.Format) != Formats.ColorBytesPerPixel(rt.ColorFormat))
         {
             return null;
         }
 
-        var viewFormat = gamma ? Formats.Srgb(rt.Format) : rt.Format;
+        Format viewFormat = gamma ? Formats.Srgb(rt.Format) : rt.Format;
         if (!_core.SupportsSampled(viewFormat))
         {
             return null;
         }
 
-        var key = (rt, x0, y0, d.Format, w, h, mips, gamma);
-        if (!_rtMipTextures.TryGetValue(key, out var t))
+        (RenderTarget rt, uint x0, uint y0, uint Format, uint w, uint h, uint mips, bool gamma) key = (rt, x0, y0, d.Format, w, h, mips, gamma);
+        if (!_rtMipTextures.TryGetValue(key, out RtMipTexture? t))
         {
             t = new RtMipTexture();
             (t.Image, t.View, t.Mem) = CreateImage(MemCat.Region, w, h, rt.Format, ImageUsageFlags.SampledBit | ImageUsageFlags.TransferDstBit, ImageAspectFlags.ColorBit,
@@ -65,14 +65,14 @@ public sealed unsafe partial class VulkanRenderer
             _rtMipTextures[key] = t;
             Log.WarnOnce($"rtmips-{d.DataAddress:X8}", $"[gpu] texture 0x{d.DataAddress:X8} {w}x{h} with {mips} levels: level 0 is render target 0x{rt.Address:X8}, the rest comes from memory");
             BeginFrameIfNeeded();
-            using var init = BeginOutside(t.View);
+            using OutsideScope init = BeginOutside(t.View);
             Barrier(t.Image, ImageLayout.Undefined, ImageLayout.ShaderReadOnlyOptimal, ImageAspectFlags.ColorBit,
                 PipelineStageFlags.TopOfPipeBit, PipelineStageFlags.FragmentShaderBit, 0, AccessFlags.ShaderReadBit);
         }
 
         t.LastUsedFrame = FrameCount;
         // the levels after the surface live in guest memory: re-upload them when that memory changes
-        var layout = ComputeLayout(d, info, w, h, mips, 1);
+        TexLayout layout = ComputeLayout(d, info, w, h, mips, 1);
         uint upperStart = layout.Levels[1].Offset;
         bool uploadUpper = false;
         if (t.CheckedFrame != FrameCount)
@@ -94,7 +94,7 @@ public sealed unsafe partial class VulkanRenderer
         }
 
         // another surface (and the levels from memory) go before the open rendering; the scene's own surface ends it
-        using var outside = BeginOutside(t.View, rt);
+        using OutsideScope outside = BeginOutside(t.View, rt);
         if (copyBase)
         {
             rt.Dirty = true;
@@ -119,9 +119,9 @@ public sealed unsafe partial class VulkanRenderer
         {
             for (uint m = 1; m < mips; m++)
             {
-                var lv = layout.Levels[(int)m];
-                using var data = TextureDecoder.Decode(d, info, d.DataAddress + lv.Offset, lv.Width, lv.Height, lv.RowPitch, out uint outW, out uint outH);
-                var (buf, off) = UploadSpan(data.Span, 16);
+                MipLayout lv = layout.Levels[(int)m];
+                using Texels data = TextureDecoder.Decode(d, info, d.DataAddress + lv.Offset, lv.Width, lv.Height, lv.RowPitch, out uint outW, out uint outH);
+                (Silk.NET.Vulkan.Buffer buf, ulong off) = UploadSpan(data.Span, 16);
                 var region = new BufferImageCopy
                 {
                     BufferOffset = off,

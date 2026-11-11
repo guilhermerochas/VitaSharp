@@ -14,13 +14,13 @@ public sealed unsafe partial class VulkanRenderer
 {
     /// <summary>Texture units bound per stage (GXM has 16). Devices with fewer per-stage samplers / sampled images
     /// (Mali Bifrost: 16, of which the fragment stage also needs 2 for framebuffer fetch) bind fewer.</summary>
-    int _texUnitsV = 16, _texUnitsF = 16;
-    long _statUnitSkips;
+    private int _texUnitsV = 16, _texUnitsF = 16;
+    private long _statUnitSkips;
 
     /// <summary>Picks the per-stage texture unit counts from the descriptor limits.</summary>
-    void ChooseTextureUnits()
+    private void ChooseTextureUnits()
     {
-        var l = _core.Caps.Limits;
+        GpuLimits l = _core.Caps.Limits;
         int perStage = (int)Math.Min(l.MaxPerStageDescriptorSamplers, l.MaxPerStageDescriptorSampledImages);
         // fragment stage: framebuffer-fetch set 3 adds two combined image samplers
         _texUnitsF = Math.Clamp(perStage - 2, 1, 16);
@@ -39,7 +39,7 @@ public sealed unsafe partial class VulkanRenderer
     }
 
     /// <summary>A program samples a texture unit the layout does not have (devices with small descriptor limits).</summary>
-    bool UsesMissingTextureUnit(uint used, int units, ulong programHash)
+    private bool UsesMissingTextureUnit(uint used, int units, ulong programHash)
     {
         if (units >= 16 || (used >> units) == 0)
         {
@@ -51,12 +51,12 @@ public sealed unsafe partial class VulkanRenderer
         return true;
     }
 
-    static string BcCacheSummary() => BcSoftware.Summary();
+    private static string BcCacheSummary() => BcSoftware.Summary();
 
     /// <summary>"PERF mobile" line when a quirk or a profile is active (nothing on desktop GPUs: their report is unchanged).</summary>
-    string MobileReport()
+    private string MobileReport()
     {
-        var c = _core.Caps;
+        GpuCapabilities c = _core.Caps;
         if (c.Quirks == GpuQuirk.None && c.Profile == GpuProfile.Native && c.Has(GpuFeature.TextureCompressionBC) && AstcTranscoder.Encoded == 0)
         {
             return "";
@@ -66,9 +66,9 @@ public sealed unsafe partial class VulkanRenderer
     }
 
     /// <summary>The fallbacks in use (info.txt "Mobile paths" line).</summary>
-    string MobilePathsSummary()
+    private string MobilePathsSummary()
     {
-        var c = _core.Caps;
+        GpuCapabilities c = _core.Caps;
         var sb = new StringBuilder();
         void Add(string s)
         {

@@ -16,33 +16,33 @@ namespace VitaSharp.Renderer.Vulkan;
 internal sealed unsafe class VkCmd
 {
     /// <summary>VITASHARP_VK_DIRECT=1: the direct function pointers (A/B against Silk.NET on the phone).</summary>
-    internal static readonly bool DirectRequested = Environment.GetEnvironmentVariable(EnvVars.VkDirect)?.Trim() == "1";
+    internal static readonly bool s_directRequested = Environment.GetEnvironmentVariable(EnvVars.VkDirect)?.Trim() == "1";
 
-    readonly Vk _vk;
-    readonly bool _direct;
+    private readonly Vk _vk;
+    private readonly bool _direct;
 
-    readonly delegate* unmanaged[SuppressGCTransition]<CommandBuffer, PipelineBindPoint, Pipeline, void> _bindPipeline;
-    readonly delegate* unmanaged[SuppressGCTransition]<CommandBuffer, PipelineBindPoint, PipelineLayout, uint, uint, DescriptorSet*, uint, uint*, void> _bindDescriptorSets;
-    readonly delegate* unmanaged[SuppressGCTransition]<CommandBuffer, uint, uint, Buffer*, ulong*, void> _bindVertexBuffers;
-    readonly delegate* unmanaged[SuppressGCTransition]<CommandBuffer, Buffer, ulong, IndexType, void> _bindIndexBuffer;
-    readonly delegate* unmanaged[SuppressGCTransition]<CommandBuffer, uint, uint, uint, int, uint, void> _drawIndexed;
-    readonly delegate* unmanaged[SuppressGCTransition]<CommandBuffer, PipelineLayout, ShaderStageFlags, uint, uint, void*, void> _pushConstants;
-    readonly delegate* unmanaged[SuppressGCTransition]<CommandBuffer, uint, uint, Viewport*, void> _setViewport;
-    readonly delegate* unmanaged[SuppressGCTransition]<CommandBuffer, uint, uint, Rect2D*, void> _setScissor;
-    readonly delegate* unmanaged[SuppressGCTransition]<CommandBuffer, PrimitiveTopology, void> _setPrimitiveTopology;
-    readonly delegate* unmanaged[SuppressGCTransition]<CommandBuffer, CullModeFlags, void> _setCullMode;
-    readonly delegate* unmanaged[SuppressGCTransition]<CommandBuffer, FrontFace, void> _setFrontFace;
-    readonly delegate* unmanaged[SuppressGCTransition]<CommandBuffer, float, void> _setLineWidth;
-    readonly delegate* unmanaged[SuppressGCTransition]<CommandBuffer, Bool32, void> _setDepthTestEnable, _setDepthWriteEnable, _setStencilTestEnable, _setDepthBiasEnable;
-    readonly delegate* unmanaged[SuppressGCTransition]<CommandBuffer, CompareOp, void> _setDepthCompareOp;
-    readonly delegate* unmanaged[SuppressGCTransition]<CommandBuffer, float, float, float, void> _setDepthBias;
-    readonly delegate* unmanaged[SuppressGCTransition]<CommandBuffer, StencilFaceFlags, StencilOp, StencilOp, StencilOp, CompareOp, void> _setStencilOp;
-    readonly delegate* unmanaged[SuppressGCTransition]<CommandBuffer, StencilFaceFlags, uint, void> _setStencilCompareMask, _setStencilWriteMask, _setStencilReference;
+    private readonly delegate* unmanaged[SuppressGCTransition]<CommandBuffer, PipelineBindPoint, Pipeline, void> _bindPipeline;
+    private readonly delegate* unmanaged[SuppressGCTransition]<CommandBuffer, PipelineBindPoint, PipelineLayout, uint, uint, DescriptorSet*, uint, uint*, void> _bindDescriptorSets;
+    private readonly delegate* unmanaged[SuppressGCTransition]<CommandBuffer, uint, uint, Buffer*, ulong*, void> _bindVertexBuffers;
+    private readonly delegate* unmanaged[SuppressGCTransition]<CommandBuffer, Buffer, ulong, IndexType, void> _bindIndexBuffer;
+    private readonly delegate* unmanaged[SuppressGCTransition]<CommandBuffer, uint, uint, uint, int, uint, void> _drawIndexed;
+    private readonly delegate* unmanaged[SuppressGCTransition]<CommandBuffer, PipelineLayout, ShaderStageFlags, uint, uint, void*, void> _pushConstants;
+    private readonly delegate* unmanaged[SuppressGCTransition]<CommandBuffer, uint, uint, Viewport*, void> _setViewport;
+    private readonly delegate* unmanaged[SuppressGCTransition]<CommandBuffer, uint, uint, Rect2D*, void> _setScissor;
+    private readonly delegate* unmanaged[SuppressGCTransition]<CommandBuffer, PrimitiveTopology, void> _setPrimitiveTopology;
+    private readonly delegate* unmanaged[SuppressGCTransition]<CommandBuffer, CullModeFlags, void> _setCullMode;
+    private readonly delegate* unmanaged[SuppressGCTransition]<CommandBuffer, FrontFace, void> _setFrontFace;
+    private readonly delegate* unmanaged[SuppressGCTransition]<CommandBuffer, float, void> _setLineWidth;
+    private readonly delegate* unmanaged[SuppressGCTransition]<CommandBuffer, Bool32, void> _setDepthTestEnable, _setDepthWriteEnable, _setStencilTestEnable, _setDepthBiasEnable;
+    private readonly delegate* unmanaged[SuppressGCTransition]<CommandBuffer, CompareOp, void> _setDepthCompareOp;
+    private readonly delegate* unmanaged[SuppressGCTransition]<CommandBuffer, float, float, float, void> _setDepthBias;
+    private readonly delegate* unmanaged[SuppressGCTransition]<CommandBuffer, StencilFaceFlags, StencilOp, StencilOp, StencilOp, CompareOp, void> _setStencilOp;
+    private readonly delegate* unmanaged[SuppressGCTransition]<CommandBuffer, StencilFaceFlags, uint, void> _setStencilCompareMask, _setStencilWriteMask, _setStencilReference;
 
     public VkCmd(Vk vk, Device dev)
     {
         _vk = vk;
-        if (!DirectRequested)
+        if (!s_directRequested)
         {
             return;
         }

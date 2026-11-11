@@ -1,6 +1,7 @@
 using Silk.NET.Vulkan;
 using System.Diagnostics;
 using System.Text;
+using VitaSharp.Core.Capture;
 using VitaSharp.Core.Gpu;
 using VitaSharp.Core.Util;
 using Buffer = Silk.NET.Vulkan.Buffer;
@@ -20,11 +21,11 @@ public sealed unsafe partial class VulkanRenderer
     /// <summary>128 slots: 4.3 s at 30 fps, 2.1 s at 60 fps. 480x272 RGBA8 = 510 KB per slot, 64 MB host memory in all
     /// (full 960x544 would be 255 MB for the same time), plus one 510 KB device-local staging image.</summary>
     public const int ReplaySlots = 128, ReplayW = 480, ReplayH = 272;
-    const int ReplaySlotBytes = ReplayW * ReplayH * 4;
+    private const int ReplaySlotBytes = ReplayW * ReplayH * 4;
     /// <summary>Auto captures keep collecting this many presents after the anomaly (about 1 s at 30 fps).</summary>
     public const int ReplayPostFrames = 30;
 
-    struct ReplayEntry
+    private struct ReplayEntry
     {
         public long Present, GuestFrame, Ticks;
         public uint W, H, SrcW, SrcH;
@@ -36,15 +37,15 @@ public sealed unsafe partial class VulkanRenderer
     }
 
     /// <summary>The PresentCommand being executed (its guest flip, vblank and times), null otherwise.</summary>
-    PresentCommand? _presentCmd;
-    double _tapGpuNs;
-    long _tapLastPresent = -2;
+    private PresentCommand? _presentCmd;
+    private double _tapGpuNs;
+    private long _tapLastPresent = -2;
 
     /// <summary>Session capture: the present's numbers and the frame's timing, from the command and the frame summary.</summary>
-    VitaSharp.Core.Capture.PresentInfo TapInfo(uint srcW, uint srcH, long now)
+    private VitaSharp.Core.Capture.PresentInfo TapInfo(uint srcW, uint srcH, long now)
     {
-        var s = _frameRing[(_frameRingCount - 1 + FrameRingSize) % FrameRingSize];
-        var c = _presentCmd;
+        FrameSummary s = _frameRing[(_frameRingCount - 1 + FrameRingSize) % FrameRingSize];
+        PresentCommand? c = _presentCmd;
         return new VitaSharp.Core.Capture.PresentInfo
         {
             Present = _presentCount,
@@ -66,7 +67,7 @@ public sealed unsafe partial class VulkanRenderer
         };
     }
 
-    sealed class ReplayRing
+    private sealed class ReplayRing
     {
         public Buffer Buf;
         public DeviceMemory Mem;
@@ -79,27 +80,27 @@ public sealed unsafe partial class VulkanRenderer
         public readonly ReplayEntry[] Entries = new ReplayEntry[ReplaySlots];
     }
 
-    ReplayRing? _replay;
-    bool _replayFailed;
-    FrameAnomalyDetector _detector = new();
-    readonly Queue<FrameAnomalyDetector.Event> _recentEvents = new();
-    int _inspectBudget;
+    private ReplayRing? _replay;
+    private bool _replayFailed;
+    private FrameAnomalyDetector _detector = new();
+    private readonly Queue<FrameAnomalyDetector.Event> _recentEvents = new();
+    private int _inspectBudget;
     // cost accounting (debug mode only): GPU-worker time recording the copies and measuring the retired frames
-    long _replayRecordTicks, _replayMeasureTicks, _replayRecorded, _replayMeasured;
+    private long _replayRecordTicks, _replayMeasureTicks, _replayRecorded, _replayMeasured;
 
     /// <summary>"\nPERF replay: ..." when the ring ran this session, else empty.</summary>
-    string ReplayReport() => _replayRecorded == 0 ? "" :
+    private string ReplayReport() => _replayRecorded == 0 ? "" :
         $"\nPERF replay: {_replayRecorded} frames copied ({_replayRecordTicks * 1e6 / Stopwatch.Frequency / _replayRecorded:F1} us/frame recording on the GPU worker), " +
         $"{_replayMeasured} measured ({_replayMeasureTicks * 1e6 / Stopwatch.Frequency / Math.Max(1, _replayMeasured):F1} us/frame metrics + rules)";
 
     /// <summary>Metrics sample every 4th pixel of every 4th row of the ring frame (a 120x68 grid for 960x544, ~8K
     /// samples): ~60 us per frame on the GPU worker, where every 2nd pixel/row cost ~190 us. A glitch over the 5-8%
     /// thresholds still covers hundreds of samples.</summary>
-    const int MeasureStep = 4;
-    Format _replayFormatChecked = Format.Undefined;
-    bool _replayFormatOk;
+    private const int MeasureStep = 4;
+    private Format _replayFormatChecked = Format.Undefined;
+    private bool _replayFormatOk;
 
-    static readonly (string Kind, long From, int Count)? Inject = ParseInject(Environment.GetEnvironmentVariable(EnvVars.DebugInject));
+    private static readonly (string Kind, long From, int Count)? s_inject = ParseInject(Environment.GetEnvironmentVariable(EnvVars.DebugInject));
 
     /// <summary>
     /// Test switch VITASHARP_DEBUG_INJECT=KIND@PRESENT[:COUNT] (KIND = green, blue, magenta, black, white; COUNT frames,
@@ -107,26 +108,26 @@ public sealed unsafe partial class VulkanRenderer
     /// over all of it) before they are measured, so the detector and the saved replay both see it. The rendered frame
     /// itself is untouched.
     /// </summary>
-    static (string, long, int)? ParseInject(string? s)
+    private static (string, long, int)? ParseInject(string? s)
     {
         if (string.IsNullOrWhiteSpace(s))
         {
             return null;
         }
 
-        var p = s.Split('@');
+        string[] p = s.Split('@');
         string kind = p[0].Trim().ToLowerInvariant();
         long from = 0;
         int count = 4;
         if (p.Length > 1)
         {
-            var q = p[1].Split(':');
-            if (long.TryParse(q[0].Trim().TrimStart('f', 'p'), out var f))
+            string[] q = p[1].Split(':');
+            if (long.TryParse(q[0].Trim().TrimStart('f', 'p'), out long f))
             {
                 from = f;
             }
 
-            if (q.Length > 1 && int.TryParse(q[1].Trim(), out var c))
+            if (q.Length > 1 && int.TryParse(q[1].Trim(), out int c))
             {
                 count = Math.Max(1, c);
             }
@@ -134,7 +135,7 @@ public sealed unsafe partial class VulkanRenderer
         return (kind, from, count);
     }
 
-    ReplayRing? CreateReplay()
+    private ReplayRing? CreateReplay()
     {
         if (_replayFailed)
         {
@@ -144,7 +145,7 @@ public sealed unsafe partial class VulkanRenderer
         var ring = new ReplayRing();
         try
         {
-            var (buf, mem, ptr) = _core.CreateHostBuffer((ulong)ReplaySlots * ReplaySlotBytes, BufferUsageFlags.TransferDstBit, MemCat.DebugRing);
+            (Buffer buf, DeviceMemory mem, nint ptr) = _core.CreateHostBuffer((ulong)ReplaySlots * ReplaySlotBytes, BufferUsageFlags.TransferDstBit, MemCat.DebugRing);
             ring.Buf = buf;
             ring.Mem = mem;
             ring.Ptr = (byte*)ptr;
@@ -168,16 +169,16 @@ public sealed unsafe partial class VulkanRenderer
     }
 
     /// <summary>Debug mode turned off (F9): the ring is freed once the frames recording into it have completed.</summary>
-    void ReleaseReplay()
+    private void ReleaseReplay()
     {
-        var ring = _replay;
+        ReplayRing? ring = _replay;
         if (ring == null)
         {
             return;
         }
 
         _replay = null;
-        foreach (var f in _frames)
+        foreach (Frame f in _frames)
         {
             f.ReplaySlot = -1;
         }
@@ -186,7 +187,7 @@ public sealed unsafe partial class VulkanRenderer
         Log.Info($"[dbg] replay ring released at present #{_presentCount}");
     }
 
-    void DestroyReplay()
+    private void DestroyReplay()
     {
         if (_replay is { } ring)
         {
@@ -196,7 +197,7 @@ public sealed unsafe partial class VulkanRenderer
         _replay = null;
     }
 
-    void DestroyReplayRing(ReplayRing ring)
+    private void DestroyReplayRing(ReplayRing ring)
     {
         _core.DestroyBuffer(ring.Buf, ring.Mem);
         _vk.DestroyImageView(_dev, ring.View, null);
@@ -205,7 +206,7 @@ public sealed unsafe partial class VulkanRenderer
     }
 
     /// <summary>Debug mode, every present (after EndRendering): records the replay copy into the frame's command buffer.</summary>
-    void DebugPresent(RenderTarget src, DisplayFrame frame)
+    private void DebugPresent(RenderTarget src, DisplayFrame frame)
     {
         // texture inspection (TEXTURE SUSPECT): one upload every 8 presents
         if (DebugMode.Enabled && _presentCount % 8 == 0)
@@ -213,7 +214,7 @@ public sealed unsafe partial class VulkanRenderer
             _inspectBudget = 1;
         }
 
-        var f = F;
+        Frame f = F;
         if (f.ReplaySlot >= 0)
         {
             return;
@@ -235,7 +236,7 @@ public sealed unsafe partial class VulkanRenderer
             return;
         }
 
-        var ring = _replay ??= CreateReplay();
+        ReplayRing? ring = _replay ??= CreateReplay();
         if (ring == null)
         {
             return;
@@ -285,7 +286,7 @@ public sealed unsafe partial class VulkanRenderer
     }
 
     /// <summary>The frame retired: its replay slot is complete. Measure it and run the anomaly rules.</summary>
-    void CompleteReplayFrame(Frame f)
+    private void CompleteReplayFrame(Frame f)
     {
         int slot = f.ReplaySlot;
         f.ReplaySlot = -1;
@@ -294,10 +295,10 @@ public sealed unsafe partial class VulkanRenderer
             return;
         }
 
-        ref var e = ref ring.Entries[slot];
+        ref ReplayEntry e = ref ring.Entries[slot];
         long t0 = Stopwatch.GetTimestamp();
         byte* px = ring.Ptr + (long)slot * ReplaySlotBytes;
-        if (Inject is { } inj && e.Present >= inj.From && e.Present < inj.From + inj.Count)
+        if (s_inject is { } inj && e.Present >= inj.From && e.Present < inj.From + inj.Count)
         {
             InjectColour(px, (int)e.W, (int)e.H, inj.Kind);
             Log.Info($"[anomaly] test injection ({inj.Kind}) into present #{e.Present}");
@@ -306,7 +307,7 @@ public sealed unsafe partial class VulkanRenderer
         // previous tapped frame)
         if (_opt.PresentTap is { } tap)
         {
-            var info = e.Info;
+            PresentInfo info = e.Info;
             if (info.Present == 0)
             {
                 info = TapInfo(e.SrcW, e.SrcH, e.Ticks);
@@ -340,7 +341,7 @@ public sealed unsafe partial class VulkanRenderer
             Log.Info($"[frame-metrics] p{e.Present} {m}");
         }
 
-        foreach (var ev in _detector.Feed(e.Present, m))
+        foreach (FrameAnomalyDetector.Event ev in _detector.Feed(e.Present, m))
         {
             _recentEvents.Enqueue(ev);
             while (_recentEvents.Count > 64)
@@ -351,7 +352,7 @@ public sealed unsafe partial class VulkanRenderer
             Log.Info($"[anomaly] p{ev.Present} f{e.GuestFrame} {ev.Kind}{(ev.Detail == "cleared" ? " cleared" : ": " + ev.Detail)}");
             if (ev.Capture && AnomalyDetected is { } handler)
             {
-                var (kind, detail, present) = (ev.Kind, ev.Detail, ev.Present);
+                (string? kind, string? detail, long present) = (ev.Kind, ev.Detail, ev.Present);
                 ThreadPool.QueueUserWorkItem(_ =>
                 {
                     try
@@ -368,7 +369,7 @@ public sealed unsafe partial class VulkanRenderer
         _replayMeasureTicks += Stopwatch.GetTimestamp() - t0;
     }
 
-    static void InjectColour(byte* px, int w, int h, string kind)
+    private static void InjectColour(byte* px, int w, int h, string kind)
     {
         (byte r, byte g, byte b, bool all) c = kind switch
         {
@@ -392,20 +393,20 @@ public sealed unsafe partial class VulkanRenderer
         }
     }
 
-    sealed record ReplayShot(long Present, long GuestFrame, DateTime Time, uint W, uint H, uint SrcW, uint SrcH, FrameMetrics Metrics, FrameMetrics.Hit Hits, byte[] Pixels);
+    private sealed record ReplayShot(long Present, long GuestFrame, DateTime Time, uint W, uint H, uint SrcW, uint SrcH, FrameMetrics Metrics, FrameMetrics.Hit Hits, byte[] Pixels);
 
     /// <summary>
     /// Capture armed: retires the frames in flight (so every slot recorded so far is complete), copies the ready slots
     /// out of the ring and writes them into <paramref name="dir"/>/replay/ on a worker thread. Null when the ring is off.
     /// </summary>
-    Task<int>? SaveReplay(string dir, long trigger)
+    private Task<int>? SaveReplay(string dir, long trigger)
     {
         if (_replay == null)
         {
             return null;
         }
 
-        foreach (var o in _frames)
+        foreach (Frame o in _frames)
         {
             if (o.Submitted && !o.Retired)
             {
@@ -423,26 +424,26 @@ public sealed unsafe partial class VulkanRenderer
         var shots = new List<ReplayShot>(ReplaySlots);
         for (long k = Math.Max(0, ring.Written - ReplaySlots); k < ring.Written; k++)
         {
-            ref var e = ref ring.Entries[(int)(k % ReplaySlots)];
+            ref ReplayEntry e = ref ring.Entries[(int)(k % ReplaySlots)];
             if (!e.Ready)
             {
                 continue;
             }
 
-            var pixels = new byte[e.W * e.H * 4];
+            byte[] pixels = new byte[e.W * e.H * 4];
             new ReadOnlySpan<byte>(ring.Ptr + (k % ReplaySlots) * ReplaySlotBytes, pixels.Length).CopyTo(pixels);
-            var time = wallNow - TimeSpan.FromSeconds((now - e.Ticks) / (double)Stopwatch.Frequency);
+            DateTime time = wallNow - TimeSpan.FromSeconds((now - e.Ticks) / (double)Stopwatch.Frequency);
             shots.Add(new ReplayShot(e.Present, e.GuestFrame, time, e.W, e.H, e.SrcW, e.SrcH, e.Metrics, e.Hits, pixels));
         }
-        var events = _recentEvents.ToArray();
+        FrameAnomalyDetector.Event[] events = _recentEvents.ToArray();
         long armed = _presentCount;
         Log.Info($"[diag] replay: {shots.Count} frames (presents #{(shots.Count > 0 ? shots[0].Present : 0)}-#{(shots.Count > 0 ? shots[^1].Present : 0)}), trigger #{trigger}, writing in the background");
         return Task.Run(() => WriteReplay(Path.Combine(dir, "replay"), shots, events, trigger, armed));
     }
 
-    const int SheetCols = 6, SheetRows = 5, SheetCellW = 240, SheetCellH = 136;
+    private const int SheetCols = 6, SheetRows = 5, SheetCellW = 240, SheetCellH = 136;
 
-    static int WriteReplay(string dir, List<ReplayShot> shots, FrameAnomalyDetector.Event[] events, long trigger, long armed)
+    private static int WriteReplay(string dir, List<ReplayShot> shots, FrameAnomalyDetector.Event[] events, long trigger, long armed)
     {
         Directory.CreateDirectory(dir);
         var sb = new StringBuilder();
@@ -452,15 +453,15 @@ public sealed unsafe partial class VulkanRenderer
         sb.AppendLine("# hits: M = magenta > 5%, S = saturated green+blue > 8%, B = blown-out (white > 35% or mean > 0.85), K = black > 97%");
         sb.AppendLine("# present guestFrame time(local) dt_to_trigger_ms size(src) mean white black magenta green blue hits");
         DateTime? triggerTime = shots.LastOrDefault(s => s.Present <= trigger)?.Time;
-        foreach (var s in shots)
+        foreach (ReplayShot s in shots)
         {
-            var m = s.Metrics;
+            FrameMetrics m = s.Metrics;
             string dt = triggerTime is { } tt ? $"{(s.Time - tt).TotalMilliseconds:+0;-0;0}" : "-";
             sb.AppendLine(FormattableString.Invariant($"p{s.Present} f{s.GuestFrame} {s.Time:HH:mm:ss.fff} {dt} {s.W}x{s.H}({s.SrcW}x{s.SrcH}) {m.Mean:F3} {m.White:F3} {m.Black:F3} {m.Magenta:F3} {m.Green:F3} {m.Blue:F3} {HitString(s.Hits)}{(s.Present == trigger ? "  <== trigger" : "")}"));
         }
         sb.AppendLine();
         sb.AppendLine("# recent anomaly events (debug mode, newest last)");
-        foreach (var e in events)
+        foreach (FrameAnomalyDetector.Event e in events)
         {
             sb.AppendLine($"p{e.Present} {e.Kind}{(e.Capture ? " [capture]" : "")}: {e.Detail}");
         }
@@ -472,7 +473,7 @@ public sealed unsafe partial class VulkanRenderer
 
         File.WriteAllText(Path.Combine(dir, "replay.txt"), sb.ToString());
 
-        foreach (var s in shots)
+        foreach (ReplayShot s in shots)
         {
             for (int i = 3; i < s.Pixels.Length; i += 4)
             {
@@ -487,11 +488,11 @@ public sealed unsafe partial class VulkanRenderer
         {
             int n = Math.Min(per, shots.Count - i);
             int sw = SheetCols * SheetCellW, sh = ((n + SheetCols - 1) / SheetCols) * SheetCellH;
-            var sheet = new byte[sw * sh * 4];
+            byte[] sheet = new byte[sw * sh * 4];
             for (int j = 0; j < n; j++)
             {
-                var s = shots[i + j];
-                var cell = Thumbnail(s.Pixels, (int)s.W, (int)s.H, SheetCellW, SheetCellH);
+                ReplayShot s = shots[i + j];
+                byte[] cell = Thumbnail(s.Pixels, (int)s.W, (int)s.H, SheetCellW, SheetCellH);
                 int cx = j % SheetCols * SheetCellW, cy = j / SheetCols * SheetCellH;
                 for (int y = 0; y < SheetCellH; y++)
                 {
@@ -513,7 +514,7 @@ public sealed unsafe partial class VulkanRenderer
         return shots.Count;
     }
 
-    static void Border(byte[] img, int stride, int x0, int y0, byte r, byte g, byte b)
+    private static void Border(byte[] img, int stride, int x0, int y0, byte r, byte g, byte b)
     {
         for (int y = y0; y < y0 + SheetCellH; y++)
         {
@@ -534,6 +535,6 @@ public sealed unsafe partial class VulkanRenderer
         }
     }
 
-    static string HitString(FrameMetrics.Hit h) => h == 0 ? "-" :
+    private static string HitString(FrameMetrics.Hit h) => h == 0 ? "-" :
         $"{(h.HasFlag(FrameMetrics.Hit.Magenta) ? "M" : "")}{(h.HasFlag(FrameMetrics.Hit.Saturated) ? "S" : "")}{(h.HasFlag(FrameMetrics.Hit.Bright) ? "B" : "")}{(h.HasFlag(FrameMetrics.Hit.Black) ? "K" : "")}";
 }

@@ -15,7 +15,7 @@ namespace VitaSharp.Renderer.Vulkan;
 /// </summary>
 public sealed unsafe partial class VulkanRenderer
 {
-    sealed class CachedRange
+    private sealed class CachedRange
     {
         public Buffer Buffer;
         public DeviceMemory Memory;
@@ -27,21 +27,21 @@ public sealed unsafe partial class VulkanRenderer
         public bool Volatile => Buffer.Handle == 0;
     }
 
-    const int VolatileRewrites = 2;
+    private const int VolatileRewrites = 2;
 
-    const uint MinBytes = 16 * 1024;
-    const long MaxCachedBytes = 96L << 20;
-    static readonly bool VertexCacheOn = DirtyPages.Enabled
+    private const uint MinBytes = 16 * 1024;
+    private const long MaxCachedBytes = 96L << 20;
+    private static readonly bool s_vertexCacheOn = DirtyPages.Enabled
         && Environment.GetEnvironmentVariable(Core.Util.EnvVars.VertexCache) != "0";
-    readonly Dictionary<(uint Addr, uint Length, int Space), CachedRange> _rangeCache = new();
-    long _rangeCacheBytes, _statRangeVolatile, _statRangeVolatileBytes, _statRangeHits, _statRangeHitBytes, _statRangeMisses, _rangeSweepFrame;
+    private readonly Dictionary<(uint Addr, uint Length, int Space), CachedRange> _rangeCache = new();
+    private long _rangeCacheBytes, _statRangeVolatile, _statRangeVolatileBytes, _statRangeHits, _statRangeHitBytes, _statRangeMisses, _rangeSweepFrame;
 
     /// <summary>The guest range as a vertex/index buffer: a cached copy when it is unchanged, else the upload ring.</summary>
-    (Buffer Buffer, ulong Offset) UploadRange(uint addr, uint length, ulong align = 4)
+    private (Buffer Buffer, ulong Offset) UploadRange(uint addr, uint length, ulong align = 4)
     {
-        if (!VertexCacheOn || length < MinBytes)
+        if (!s_vertexCacheOn || length < MinBytes)
         {
-            if (SmallCacheOn && VertexCacheOn && length >= SmallMinBytes)
+            if (s_smallCacheOn && s_vertexCacheOn && length >= s_smallMinBytes)
             {
                 return UploadSmallRange(addr, length, align);
             }
@@ -50,8 +50,8 @@ public sealed unsafe partial class VulkanRenderer
             return UploadSpan(GuestMemory.ReadSpan(addr, (int)length), align);
         }
         SweepDirtyPages();
-        var key = (addr, length, SpaceIdOf(addr));
-        if (_rangeCache.TryGetValue(key, out var e) && e.Volatile)
+        (uint addr, uint length, int) key = (addr, length, SpaceIdOf(addr));
+        if (_rangeCache.TryGetValue(key, out CachedRange? e) && e.Volatile)
         {
             // a new buffer per rewrite costs a vkAllocateMemory/vkFreeMemory pair: the ring is a copy
             e.LastUsedFrame = FrameCount;
@@ -93,7 +93,7 @@ public sealed unsafe partial class VulkanRenderer
             _rangeCache[key] = e;
             _rangeCacheBytes += length;
         }
-        var (b, m, p) = _core.CreateHostBuffer(length, BufferUsageFlags.VertexBufferBit | BufferUsageFlags.IndexBufferBit, MemCat.UploadRing);
+        (Buffer b, DeviceMemory m, nint p) = _core.CreateHostBuffer(length, BufferUsageFlags.VertexBufferBit | BufferUsageFlags.IndexBufferBit, MemCat.UploadRing);
         Core.Util.FastCopy.Copy(GuestMemory.ReadSpan(addr, (int)length), new Span<byte>((void*)p, (int)length));
         _uploadBytes += length;
         (e.Buffer, e.Memory, e.Stamp, e.LastUsedFrame) = (b, m, DirtyPages.Epoch, FrameCount);
@@ -114,29 +114,29 @@ public sealed unsafe partial class VulkanRenderer
     /// through the upload ring from then on. When the arena is full every small entry is dropped and the chunks are
     /// freed once the frame retires (frames in flight finish with them first).
     /// </summary>
-    static readonly bool SmallCacheOn = Environment.GetEnvironmentVariable(Core.Util.EnvVars.VertexCacheSmall) == "1";
-    static readonly uint SmallMinBytes = uint.TryParse(Environment.GetEnvironmentVariable(Core.Util.EnvVars.VertexCacheSmallMin), out var smin) ? Math.Max(16u, smin) : 512u;
-    const uint SmallChunkBytes = 4u << 20;
-    const int SmallMaxChunks = 12;
+    private static readonly bool s_smallCacheOn = Environment.GetEnvironmentVariable(Core.Util.EnvVars.VertexCacheSmall) == "1";
+    private static readonly uint s_smallMinBytes = uint.TryParse(Environment.GetEnvironmentVariable(Core.Util.EnvVars.VertexCacheSmallMin), out uint smin) ? Math.Max(16u, smin) : 512u;
+    private const uint SmallChunkBytes = 4u << 20;
+    private const int SmallMaxChunks = 12;
 
-    sealed class SmallRange
+    private sealed class SmallRange
     {
         public int Chunk;
         public uint Offset, Stamp, Generation;
         public byte Misses;
     }
 
-    readonly Dictionary<(uint Addr, uint Length, int Space), SmallRange> _smallCache = new();
-    readonly List<(Buffer Buffer, DeviceMemory Memory, nint Ptr)> _smallChunks = new();
-    uint _smallUsed, _smallGeneration;
-    long _statUniformBytes, _statMirrorCopyBytes;
-    long _statSmallHitBytes, _statSmallCopyBytes, _statSmallUploadBytes, _statSmallResets;
+    private readonly Dictionary<(uint Addr, uint Length, int Space), SmallRange> _smallCache = new();
+    private readonly List<(Buffer Buffer, DeviceMemory Memory, nint Ptr)> _smallChunks = new();
+    private uint _smallUsed, _smallGeneration;
+    private long _statUniformBytes, _statMirrorCopyBytes;
+    private long _statSmallHitBytes, _statSmallCopyBytes, _statSmallUploadBytes, _statSmallResets;
 
-    (Buffer Buffer, ulong Offset) UploadSmallRange(uint addr, uint length, ulong align)
+    private (Buffer Buffer, ulong Offset) UploadSmallRange(uint addr, uint length, ulong align)
     {
         SweepDirtyPages();
-        var key = (addr, length, SpaceIdOf(addr));
-        if (_smallCache.TryGetValue(key, out var e))
+        (uint addr, uint length, int) key = (addr, length, SpaceIdOf(addr));
+        if (_smallCache.TryGetValue(key, out SmallRange? e))
         {
             bool written = DirtyPages.WrittenSince(addr, length, e.Stamp) || DirtyPages.MarkedNow(addr, length);
             if (!written && e.Generation == _smallGeneration && e.Chunk >= 0)
@@ -172,7 +172,7 @@ public sealed unsafe partial class VulkanRenderer
                 ResetSmallCache();
             }
 
-            var (b, m, p) = _core.CreateHostBuffer(SmallChunkBytes, BufferUsageFlags.VertexBufferBit | BufferUsageFlags.IndexBufferBit, MemCat.UploadRing);
+            (Buffer b, DeviceMemory m, nint p) = _core.CreateHostBuffer(SmallChunkBytes, BufferUsageFlags.VertexBufferBit | BufferUsageFlags.IndexBufferBit, MemCat.UploadRing);
             _smallChunks.Add((b, m, p));
             off = 0;
         }
@@ -186,9 +186,9 @@ public sealed unsafe partial class VulkanRenderer
     }
 
     /// <summary>The arena is full: every entry is invalidated (their volatility kept) and the chunks freed after the frame.</summary>
-    void ResetSmallCache()
+    private void ResetSmallCache()
     {
-        foreach (var (b, m, _) in _smallChunks)
+        foreach ((Buffer b, DeviceMemory m, nint _) in _smallChunks)
         {
             F.Overflow.Add((b, m));
         }
@@ -203,9 +203,9 @@ public sealed unsafe partial class VulkanRenderer
         }
     }
 
-    void DestroySmallCache()
+    private void DestroySmallCache()
     {
-        foreach (var (b, m, _) in _smallChunks)
+        foreach ((Buffer b, DeviceMemory m, nint _) in _smallChunks)
         {
             _core.DestroyBuffer(b, m);
         }
@@ -215,10 +215,10 @@ public sealed unsafe partial class VulkanRenderer
     }
 
     /// <summary>Frees ranges unused for 300 frames (all unused ones this frame when <paramref name="force"/>).</summary>
-    void EvictRanges(bool force)
+    private void EvictRanges(bool force)
     {
         _rangeSweepFrame = FrameCount;
-        foreach (var (k, e) in _rangeCache.ToList())
+        foreach (((uint Addr, uint Length, int Space) k, CachedRange? e) in _rangeCache.ToList())
         {
             if (e.LastUsedFrame >= FrameCount - (force ? 0 : 300))
             {
@@ -236,9 +236,9 @@ public sealed unsafe partial class VulkanRenderer
         }
     }
 
-    void DestroyRangeCache()
+    private void DestroyRangeCache()
     {
-        foreach (var e in _rangeCache.Values)
+        foreach (CachedRange e in _rangeCache.Values)
         {
             if (!e.Volatile)
             {
@@ -251,9 +251,9 @@ public sealed unsafe partial class VulkanRenderer
         DestroySmallCache();
     }
 
-    string RangeCacheReport()
+    private string RangeCacheReport()
     {
-        if (!VertexCacheOn)
+        if (!s_vertexCacheOn)
         {
             return "";
         }
@@ -261,6 +261,6 @@ public sealed unsafe partial class VulkanRenderer
         double f = Math.Max(1.0, _workFrames);
         return $"; vertex/index cache: {_statRangeHits / f:F0} hits/frame ({_statRangeHitBytes / f / 1024:F0} KB/frame not uploaded), {_statRangeMisses / f:F0} copies/frame, {_rangeCache.Count} ranges ({_rangeCacheBytes >> 20} MB), {_statRangeVolatile} volatile ({_statRangeVolatileBytes / f / 1024:F0} KB/frame through the ring)"
             + $"; small ranges: {_statSmallUploadBytes / f / 1024:F0} KB/frame through the ring"
-            + (SmallCacheOn ? $", cached (VITASHARP_VERTEX_CACHE_SMALL) {_statSmallHitBytes / f / 1024:F0} KB/frame reused, {_statSmallCopyBytes / f / 1024:F0} KB/frame copied, {_smallCache.Count} entries, {_smallChunks.Count} chunks, {_statSmallResets} resets" : "");
+            + (s_smallCacheOn ? $", cached (VITASHARP_VERTEX_CACHE_SMALL) {_statSmallHitBytes / f / 1024:F0} KB/frame reused, {_statSmallCopyBytes / f / 1024:F0} KB/frame copied, {_smallCache.Count} entries, {_smallChunks.Count} chunks, {_statSmallResets} resets" : "");
     }
 }

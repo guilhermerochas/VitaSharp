@@ -1,3 +1,5 @@
+using System.Diagnostics.CodeAnalysis;
+
 namespace VitaSharp.Renderer.Vulkan;
 
 /// <summary>
@@ -8,7 +10,7 @@ namespace VitaSharp.Renderer.Vulkan;
 /// </summary>
 public static class Pvrtc
 {
-    struct C
+    private struct C
     {
         public int R, G, B, A; public C(int r, int g, int b, int a)
         {
@@ -20,9 +22,10 @@ public static class Pvrtc
     }
 
     /// <summary>Per-thread block scratch (texture decoding runs on the GPU worker; no garbage per texture).</summary>
-    [ThreadStatic] static Scratch? _scratch;
+    [SuppressMessage("Style", "IDE1006", Justification = "[ThreadStatic]: t_camelCase; .editorconfig cannot select the attribute")]
+    [ThreadStatic] private static Scratch? t_scratch;
 
-    sealed class Scratch
+    private sealed class Scratch
     {
         public readonly C[] Block = new C[32];
         public readonly int[,] ModVals = new int[16, 8];
@@ -40,9 +43,9 @@ public static class Pvrtc
         tw = nx * ww;
         th = ny * wh;
         var fullT = Texels.Rent((long)tw * th * 4);
-        var full = fullT.Array;
-        var wordsArr = System.Buffers.ArrayPool<uint>.Shared.Rent(nx * ny * 2);
-        var words = wordsArr.AsSpan(0, nx * ny * 2);
+        byte[] full = fullT.Array;
+        uint[] wordsArr = System.Buffers.ArrayPool<uint>.Shared.Rent(nx * ny * 2);
+        Span<uint> words = wordsArr.AsSpan(0, nx * ny * 2);
         words.Clear();
         try
         {
@@ -62,8 +65,8 @@ public static class Pvrtc
                 }
             }
 
-            var sc = _scratch ??= new Scratch();
-            var block = sc.Block;
+            Scratch sc = t_scratch ??= new Scratch();
+            C[] block = sc.Block;
             System.Array.Clear(block);
             System.Array.Clear(sc.UpA);
             System.Array.Clear(sc.UpB); // fresh state per texture, as before
@@ -110,9 +113,9 @@ public static class Pvrtc
         }
     }
 
-    static (uint, uint) W(ReadOnlySpan<uint> words, int nx, int x, int y) => (words[(y * nx + x) * 2], words[(y * nx + x) * 2 + 1]);
+    private static (uint, uint) W(ReadOnlySpan<uint> words, int nx, int x, int y) => (words[(y * nx + x) * 2], words[(y * nx + x) * 2 + 1]);
 
-    static void Put(byte[] full, int tw, int x, int y, C c)
+    private static void Put(byte[] full, int tw, int x, int y, C c)
     {
         int o = (y * tw + x) * 4;
         full[o] = (byte)c.R;
@@ -121,9 +124,9 @@ public static class Pvrtc
         full[o + 3] = (byte)c.A;
     }
 
-    static int Wrap(int n, int i) => (i + n) % n;
+    private static int Wrap(int n, int i) => (i + n) % n;
 
-    static uint Twiddle(uint xSize, uint ySize, uint x, uint y)
+    private static uint Twiddle(uint xSize, uint ySize, uint x, uint y)
     {
         uint minDim = xSize, maxVal = y, result = 0, src = 1, dst = 1;
         int shift = 0;
@@ -152,7 +155,7 @@ public static class Pvrtc
     }
 
     // 5-bit colour, 4-bit alpha (as in the reference decoder)
-    static C ColorA(uint c, bool ii)
+    private static C ColorA(uint c, bool ii)
     {
         if ((c & (ii ? 0x80000000u : 0x8000u)) != 0)
         {
@@ -163,7 +166,7 @@ public static class Pvrtc
                    (int)(((c & 0xe) << 1) | ((c & 0xe) >> 2)), (int)((c & 0x7000) >> 11));
     }
 
-    static C ColorB(uint c, bool ii)
+    private static C ColorB(uint c, bool ii)
     {
         if ((c & 0x80000000u) != 0)
         {
@@ -175,7 +178,7 @@ public static class Pvrtc
     }
 
     /// <summary>A word's colour expanded to 8 bits the same way the bilinear path does (for non-interpolated texels).</summary>
-    static C Expand(C c, bool twoBpp)
+    private static C Expand(C c, bool twoBpp)
     {
         int ww = twoBpp ? 8 : 4;
         int r = c.R * ww * 4, g = c.G * ww * 4, b = c.B * ww * 4, a = c.A * ww * 4;
@@ -184,7 +187,7 @@ public static class Pvrtc
             : new((r >> 6) + (r >> 1), (g >> 6) + (g >> 1), (b >> 6) + (b >> 1), (a >> 4) + a);
     }
 
-    static void Interpolate(C p, C q, C r, C s, C[] o, bool twoBpp)
+    private static void Interpolate(C p, C q, C r, C s, C[] o, bool twoBpp)
     {
         int ww = twoBpp ? 8 : 4, wh = 4;
         C qp = new(q.R - p.R, q.G - p.G, q.B - p.B, q.A - p.A), sr = new(s.R - r.R, s.G - r.G, s.B - r.B, s.A - r.A);
@@ -239,7 +242,7 @@ public static class Pvrtc
 
     // modulation value encodings: 0..8 weights; +10 punch-through alpha; +20 hard (non-interpolated colours);
     // +30 local palette index (PVRTC-II 4bpp)
-    static void UnpackModulations((uint Mod, uint Col) w, bool hard, int ox, int oy, int[,] vals, int[,] modes, bool twoBpp, bool ii)
+    private static void UnpackModulations((uint Mod, uint Col) w, bool hard, int ox, int oy, int[,] vals, int[,] modes, bool twoBpp, bool ii)
     {
         uint mode = w.Col & 1, bits = w.Mod;
         if (twoBpp)
@@ -346,11 +349,11 @@ public static class Pvrtc
     }
 
     // the texels of the decoded block nearest the boundary between the four words
-    static bool InHardRegion(int x, int y, int ww) => y >= 2 && y <= 5 && x >= ww - 2 && x <= ww + 1;
+    private static bool InHardRegion(int x, int y, int ww) => y >= 2 && y <= 5 && x >= ww - 2 && x <= ww + 1;
 
-    static readonly int[] RepVals = [0, 3, 5, 8];
+    private static readonly int[] s_repVals = [0, 3, 5, 8];
 
-    static int ModulationAt(int[,] vals, int[,] modes, int x, int y, bool twoBpp)
+    private static int ModulationAt(int[,] vals, int[,] modes, int x, int y, bool twoBpp)
     {
         if (!twoBpp)
         {
@@ -366,25 +369,25 @@ public static class Pvrtc
         int v;
         if (mode == 0 || ((x ^ y) & 1) == 0)
         {
-            v = RepVals[vals[x, y]];
+            v = s_repVals[vals[x, y]];
         }
         else if (mode == 1)
         {
-            v = (RepVals[vals[x, y - 1]] + RepVals[vals[x, y + 1]] + RepVals[vals[x - 1, y]] + RepVals[vals[x + 1, y]] + 2) / 4;
+            v = (s_repVals[vals[x, y - 1]] + s_repVals[vals[x, y + 1]] + s_repVals[vals[x - 1, y]] + s_repVals[vals[x + 1, y]] + 2) / 4;
         }
         else if (mode == 2)
         {
-            v = (RepVals[vals[x - 1, y]] + RepVals[vals[x + 1, y]] + 1) / 2;
+            v = (s_repVals[vals[x - 1, y]] + s_repVals[vals[x + 1, y]] + 1) / 2;
         }
         else
         {
-            v = (RepVals[vals[x, y - 1]] + RepVals[vals[x, y + 1]] + 1) / 2;
+            v = (s_repVals[vals[x, y - 1]] + s_repVals[vals[x, y + 1]] + 1) / 2;
         }
 
         return v + extra;
     }
 
-    static void DecodeBlock((uint Mod, uint Col) p, (uint Mod, uint Col) q, (uint Mod, uint Col) r, (uint Mod, uint Col) s,
+    private static void DecodeBlock((uint Mod, uint Col) p, (uint Mod, uint Col) q, (uint Mod, uint Col) r, (uint Mod, uint Col) s,
                             C[] outBlock, int[,] vals, int[,] modes, C[] upA, C[] upB, bool twoBpp, bool ii)
     {
         int ww = twoBpp ? 8 : 4, wh = 4;
@@ -422,7 +425,7 @@ public static class Pvrtc
                         // transposed (x walks rows, y walks columns: see the output store below and Interpolate),
                         // so its top-right quadrant is Q, not R (Vita3K pvrt-dec.cpp pvrtcGetDecompressedPixels).
                         bool left = twoBpp ? x < ww / 2 : y < wh / 2, top = twoBpp ? y < wh / 2 : x < ww / 2;
-                        var w = top ? (left ? p : q) : (left ? r : s);
+                        (uint Mod, uint Col) w = top ? (left ? p : q) : (left ? r : s);
                         a = Expand(ColorA(w.Col, ii), twoBpp);
                         b = Expand(ColorB(w.Col, ii), twoBpp);
                         mod -= 20;
@@ -448,7 +451,7 @@ public static class Pvrtc
     }
 
     /// <summary>PVRTC-II 4bpp local palette mode: each texel position picks from the colours of the four words.</summary>
-    static C[] LocalPalette((uint Mod, uint Col) p, (uint Mod, uint Col) q, (uint Mod, uint Col) r, (uint Mod, uint Col) s, bool twoBpp)
+    private static C[] LocalPalette((uint Mod, uint Col) p, (uint Mod, uint Col) q, (uint Mod, uint Col) r, (uint Mod, uint Col) s, bool twoBpp)
     {
         C ap = Expand(ColorA(p.Col, true), twoBpp), bp = Expand(ColorB(p.Col, true), twoBpp);
         C aq = Expand(ColorA(q.Col, true), twoBpp), bq = Expand(ColorB(q.Col, true), twoBpp);

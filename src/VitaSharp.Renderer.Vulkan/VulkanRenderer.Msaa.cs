@@ -18,7 +18,7 @@ namespace VitaSharp.Renderer.Vulkan;
 /// </summary>
 public sealed unsafe partial class VulkanRenderer
 {
-    sealed class SupersampleImage
+    private sealed class SupersampleImage
     {
         public Image Image;
         public ImageView View, SrgbView;
@@ -27,13 +27,13 @@ public sealed unsafe partial class VulkanRenderer
         public uint Width, Height;
     }
 
-    readonly Dictionary<RenderTarget, SupersampleImage> _ssImages = new();
+    private readonly Dictionary<RenderTarget, SupersampleImage> _ssImages = new();
 
     /// <summary>The current scene renders 2x supersampled (MSAA downscale surface).</summary>
-    bool _ss;
+    private bool _supersampled;
     /// <summary>The sample image holds rendering that was not box-filtered into the surface yet.</summary>
-    bool _ssUnresolved;
-    uint SsScale => _ss ? 2u : 1u;
+    private bool _ssUnresolved;
+    private uint SsScale => _supersampled ? 2u : 1u;
 
     /// <summary>
     /// The current scene uses MSAA without downscale: the colour surface stores every sample as a pixel of its own, so
@@ -43,48 +43,48 @@ public sealed unsafe partial class VulkanRenderer
     /// at twice the target's size; each surface pixel is then one sample, and the depth/stencil surface (sample-sized
     /// as well) lines up with it.
     /// </summary>
-    bool _msaaNoDownscale;
-    readonly HashSet<uint> _msaaNoDownscaleLogged = new();
+    private bool _msaaNoDownscale;
+    private readonly HashSet<uint> _msaaNoDownscaleLogged = new();
 
     /// <summary>Render-area scale of the current scene: supersampled and MSAA-without-downscale scenes render at 2x.</summary>
     /// Scaled targets multiply it by their scale (VulkanRenderer.ResScale.cs).
-    float SceneScale => (_ss || _msaaNoDownscale ? 2f : 1f) * RtScale;
+    private float SceneScale => (_supersampled || _msaaNoDownscale ? 2f : 1f) * RtScale;
 
     /// <summary>The scene's render area in attachment pixels (<see cref="_sceneW"/> x <see cref="_sceneH"/> at <see cref="SceneScale"/>).</summary>
-    Extent2D SceneArea
+    private Extent2D SceneArea
     {
         get
         {
             float s = SceneScale;
             uint w = ScaledLen(_sceneW, s), h = ScaledLen(_sceneH, s);
-            if (_rt != null && _rt.Scale != 1f)
+            if (_renderTarget != null && _renderTarget.Scale != 1f)
             {
-                uint k = _ss ? 2u : 1u;
-                w = Math.Min(w, _rt.ImgW * k);
-                h = Math.Min(h, _rt.ImgH * k);
+                uint k = _supersampled ? 2u : 1u;
+                w = Math.Min(w, _renderTarget.ImgW * k);
+                h = Math.Min(h, _renderTarget.ImgH * k);
             }
             return new Extent2D(w, h);
         }
     }
 
-    readonly Dictionary<Format, bool> _ssFormatOk = new();
+    private readonly Dictionary<Format, bool> _ssFormatOk = new();
 
-    bool SupportsSupersample(Format f)
+    private bool SupportsSupersample(Format f)
     {
-        if (_ssFormatOk.TryGetValue(f, out var ok))
+        if (_ssFormatOk.TryGetValue(f, out bool ok))
         {
             return ok;
         }
 
-        _core.Vk.GetPhysicalDeviceFormatProperties(_core.Physical, f, out var props);
-        const FormatFeatureFlags need = FormatFeatureFlags.BlitSrcBit | FormatFeatureFlags.BlitDstBit | FormatFeatureFlags.SampledImageFilterLinearBit
+        _core.Vk.GetPhysicalDeviceFormatProperties(_core.Physical, f, out FormatProperties props);
+        const FormatFeatureFlags Need = FormatFeatureFlags.BlitSrcBit | FormatFeatureFlags.BlitDstBit | FormatFeatureFlags.SampledImageFilterLinearBit
             | FormatFeatureFlags.ColorAttachmentBlendBit;
-        return _ssFormatOk[f] = (props.OptimalTilingFeatures & need) == need;
+        return _ssFormatOk[f] = (props.OptimalTilingFeatures & Need) == Need;
     }
 
-    SupersampleImage GetSupersampleImage(RenderTarget rt)
+    private SupersampleImage GetSupersampleImage(RenderTarget rt)
     {
-        if (_ssImages.TryGetValue(rt, out var ss))
+        if (_ssImages.TryGetValue(rt, out SupersampleImage? ss))
         {
             return ss;
         }
@@ -94,7 +94,7 @@ public sealed unsafe partial class VulkanRenderer
         (ss.Image, ss.View, ss.Mem) = CreateImage(MemCat.Msaa, ss.Width, ss.Height, rt.Format,
             ImageUsageFlags.ColorAttachmentBit | ImageUsageFlags.TransferSrcBit | ImageUsageFlags.TransferDstBit | ImageUsageFlags.InputAttachmentBit,
             ImageAspectFlags.ColorBit, mutable: true);
-        var srgb = Formats.Srgb(rt.Format);
+        Format srgb = Formats.Srgb(rt.Format);
         if (srgb != rt.Format && _core.SupportsColorAttachment(srgb))
         {
             ss.SrgbView = CreateView(ss.Image, srgb, ImageAspectFlags.ColorBit, 1, 1, false, default);
@@ -105,15 +105,15 @@ public sealed unsafe partial class VulkanRenderer
         return ss;
     }
 
-    ImageView SupersampleView(RenderTarget rt)
+    private ImageView SupersampleView(RenderTarget rt)
     {
-        var ss = GetSupersampleImage(rt);
+        SupersampleImage ss = GetSupersampleImage(rt);
         return _rtGamma && ss.SrgbView.Handle != 0 ? ss.SrgbView : ss.View;
     }
 
-    void DestroySupersampleLater(RenderTarget rt, bool now = false)
+    private void DestroySupersampleLater(RenderTarget rt, bool now = false)
     {
-        if (!_ssImages.Remove(rt, out var ss))
+        if (!_ssImages.Remove(rt, out SupersampleImage? ss))
         {
             return;
         }
@@ -137,9 +137,9 @@ public sealed unsafe partial class VulkanRenderer
     }
 
     /// <summary>Scene start: every sample takes the surface's pixel (the hardware loads the surface into all samples).</summary>
-    void LoadSupersample(RenderTarget rt)
+    private void LoadSupersample(RenderTarget rt)
     {
-        var ss = GetSupersampleImage(rt);
+        SupersampleImage ss = GetSupersampleImage(rt);
         EndRendering();
         Barrier(rt.Image, ImageLayout.General, ImageLayout.General, ImageAspectFlags.ColorBit,
             PipelineStageFlags.ColorAttachmentOutputBit | PipelineStageFlags.TransferBit, PipelineStageFlags.TransferBit,
@@ -154,9 +154,9 @@ public sealed unsafe partial class VulkanRenderer
     }
 
     /// <summary>Downscale: each surface pixel becomes the average of its 2x2 samples.</summary>
-    void ResolveSupersample(RenderTarget rt)
+    private void ResolveSupersample(RenderTarget rt)
     {
-        var ss = GetSupersampleImage(rt);
+        SupersampleImage ss = GetSupersampleImage(rt);
         Barrier(ss.Image, ImageLayout.General, ImageLayout.General, ImageAspectFlags.ColorBit,
             PipelineStageFlags.ColorAttachmentOutputBit, PipelineStageFlags.TransferBit, AccessFlags.ColorAttachmentWriteBit, AccessFlags.TransferReadBit);
         Barrier(rt.Image, ImageLayout.General, ImageLayout.General, ImageAspectFlags.ColorBit,
@@ -170,7 +170,7 @@ public sealed unsafe partial class VulkanRenderer
             PipelineStageFlags.TransferBit, PipelineStageFlags.ColorAttachmentOutputBit, AccessFlags.TransferReadBit, AccessFlags.ColorAttachmentReadBit | AccessFlags.ColorAttachmentWriteBit);
     }
 
-    void Blit(Image src, uint sw, uint sh, Image dst, uint dw, uint dh, Filter filter)
+    private void Blit(Image src, uint sw, uint sh, Image dst, uint dw, uint dh, Filter filter)
     {
         var blit = new ImageBlit
         {

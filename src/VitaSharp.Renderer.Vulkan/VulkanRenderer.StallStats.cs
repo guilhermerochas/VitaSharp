@@ -13,7 +13,7 @@ namespace VitaSharp.Renderer.Vulkan;
 public sealed unsafe partial class VulkanRenderer
 {
     [Flags]
-    enum StallClass : ushort
+    private enum StallClass : ushort
     {
         None = 0,
         Visibility = 1,
@@ -26,15 +26,15 @@ public sealed unsafe partial class VulkanRenderer
         WritebackSized = 128,
     }
 
-    readonly record struct StallRecord(long Present, uint Target, StallClass Class, long Ticks);
+    private readonly record struct StallRecord(long Present, uint Target, StallClass Class, long Ticks);
 
-    readonly List<StallRecord> _stalls = new();
-    readonly HashSet<uint> _presentedAddresses = new();
+    private readonly List<StallRecord> _stalls = new();
+    private readonly HashSet<uint> _presentedAddresses = new();
 
-    void NoteDrawStall(DrawCommand d, byte colorMask, byte tw1Key, bool fetch, long ticks)
+    private void NoteDrawStall(DrawCommand d, byte colorMask, byte tw1Key, bool fetch, long ticks)
     {
-        var st = d.State;
-        var c = StallClass.None;
+        DrawState st = d.State;
+        StallClass c = StallClass.None;
         if (d.VisAddress != 0)
         {
             c |= StallClass.Visibility;
@@ -50,7 +50,7 @@ public sealed unsafe partial class VulkanRenderer
             c |= StallClass.DepthWrite;
         }
 
-        if (_rt != null && colorMask != 0)
+        if (_renderTarget != null && colorMask != 0)
         {
             c |= StallClass.Color;
         }
@@ -65,34 +65,34 @@ public sealed unsafe partial class VulkanRenderer
             c |= StallClass.FramebufferFetch;
         }
 
-        if (_ms)
+        if (_multisampled)
         {
             c |= StallClass.Multisampled;
         }
 
-        if (_rt != null && (ulong)_rt.Width * _rt.Height <= WritebackMaxPixels)
+        if (_renderTarget != null && (ulong)_renderTarget.Width * _renderTarget.Height <= s_writebackMaxPixels)
         {
             c |= StallClass.WritebackSized;
         }
 
         if (_stalls.Count < 100_000)
         {
-            _stalls.Add(new StallRecord(_presentCount, _rt?.Address ?? 0, c, ticks));
+            _stalls.Add(new StallRecord(_presentCount, _renderTarget?.Address ?? 0, c, ticks));
         }
     }
 
-    static bool WritesStencil(in DrawState st)
+    private static bool WritesStencil(in DrawState st)
     {
         static bool Writes(in StencilState s) => s.WriteMask != 0 && (s.StencilFail != 0 || s.DepthFail != 0 || s.DepthPass != 0);
         return !(IsTrivial(st.Front.Stencil) && IsTrivial(st.Back.Stencil)) && (Writes(st.Front.Stencil) || (st.TwoSided && Writes(st.Back.Stencil)));
     }
 
     /// <summary>A draw that could be skipped without side effects beyond the presented image.</summary>
-    bool SkipCandidate(in StallRecord r) =>
+    private bool SkipCandidate(in StallRecord r) =>
         (r.Class & (StallClass.Visibility | StallClass.StencilWrite | StallClass.TileWord1Write)) == 0
         && (r.Class & StallClass.Color) != 0 && _presentedAddresses.Contains(r.Target);
 
-    string StallReport()
+    private string StallReport()
     {
         if (_stalls.Count == 0)
         {
@@ -102,7 +102,7 @@ public sealed unsafe partial class VulkanRenderer
         long total = 0, cand = 0, vis = 0, stencil = 0, tw1 = 0, offscreen = 0, offscreenSmall = 0, noColor = 0, ms = 0, depth = 0, fetch = 0;
         int nCand = 0, nVis = 0, nStencil = 0, nTw1 = 0, nOff = 0, nOffSmall = 0, nNoColor = 0;
         var perFrame = new Dictionary<long, (long All, long Safe)>();
-        foreach (var r in _stalls)
+        foreach (StallRecord r in _stalls)
         {
             total += r.Ticks;
             bool safe = SkipCandidate(r);
@@ -155,11 +155,11 @@ public sealed unsafe partial class VulkanRenderer
                     nOffSmall++;
                 }
             }
-            var f = perFrame.GetValueOrDefault(r.Present);
+            (long All, long Safe) f = perFrame.GetValueOrDefault(r.Present);
             perFrame[r.Present] = (f.All + r.Ticks, f.Safe + (safe ? r.Ticks : 0));
         }
         int hitch = 0, longHitch = 0, hitchAfter = 0, longAfter = 0;
-        foreach (var (all, safe) in perFrame.Values)
+        foreach ((long all, long safe) in perFrame.Values)
         {
             if (Ms(all) >= HitchMs)
             {

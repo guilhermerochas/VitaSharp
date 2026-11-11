@@ -37,31 +37,31 @@ namespace VitaSharp.Renderer.Vulkan;
 public sealed unsafe partial class VulkanRenderer
 {
     /// <summary>Usage over the budget (or test cap) at which caches are trimmed at frame boundaries.</summary>
-    const double PressureHigh = 0.90;
+    private const double PressureHigh = 0.90;
     /// <summary>Free pool space kept under pressure, as a fraction of the budget (cap) and at least this many bytes.</summary>
-    const double PressureReserve = 0.08;
-    const ulong MinReserve = 48ul << 20;
+    private const double PressureReserve = 0.08;
+    private const ulong MinReserve = 48ul << 20;
     /// <summary>Caches unused for this many GPU frames (about 3-4 presents) may be trimmed under pressure.</summary>
-    const long TrimMinAge = 8;
+    private const long TrimMinAge = 8;
     /// <summary>Caches unused this long (GPU frames, ~1.5 min at 30 fps with 2 submits per present) expire.</summary>
-    const long ExpiryFrames = 6000;
+    private const long ExpiryFrames = 6000;
     /// <summary>Render targets whose content is in guest memory may be evicted once unused this long (GPU frames).</summary>
-    const long RtIdleFrames = 120;
+    private const long RtIdleFrames = 120;
     /// <summary>Render targets or depth targets whose content would be lost: only as the last resort, unused this long.</summary>
-    const long RtLostIdleFrames = 600;
+    private const long RtLostIdleFrames = 600;
 
-    long _evTextures, _evTextureBytes, _evViews, _evViewBytes, _evTargets, _evTargetBytes, _evDepth, _evDepthBytes;
-    long _reclaims, _reclaimsLevel1, _reclaimTicks, _pressureTrims, _expirySweeps;
-    long _oomDraws, _oomScenes, _oomTextures, _oomOther;
-    bool _reclaiming;
+    private long _evTextures, _evTextureBytes, _evViews, _evViewBytes, _evTargets, _evTargetBytes, _evDepth, _evDepthBytes;
+    private long _reclaims, _reclaimsLevel1, _reclaimTicks, _pressureTrims, _expirySweeps;
+    private long _oomDraws, _oomScenes, _oomTextures, _oomOther;
+    private bool _reclaiming;
     /// <summary>Multisampled images with 2 samples (the rest have 4); a counter so other threads need not enumerate.</summary>
-    int _ms2xImages;
-    long _lastOomLog, _oomSinceLog;
-    int _pressureLogged;
+    private int _ms2xImages;
+    private long _lastOomLog, _oomSinceLog;
+    private int _pressureLogged;
     /// <summary>Destroys waiting for a submitted frame (SubmitSeq) to complete (see <see cref="DestroyAfterGpu"/>).</summary>
-    readonly List<(long Seq, Action Destroy)> _afterGpu = new();
+    private readonly List<(long Seq, Action Destroy)> _afterGpu = new();
 
-    void InitMemory()
+    private void InitMemory()
     {
         _core.Reclaim = Reclaim;
         _core.DescribeMemory = () => VramSummary();
@@ -75,7 +75,7 @@ public sealed unsafe partial class VulkanRenderer
     /// <summary>Heap budgets/usage plus what the renderer holds by category (with counts).</summary>
     public string VramSummary() => _core.MemorySummary(VramDetail);
 
-    string VramDetail(MemCat c)
+    private string VramDetail(MemCat c)
     {
         // read on other threads too (watchdog, captures): counts may be slightly stale
         try
@@ -114,7 +114,7 @@ public sealed unsafe partial class VulkanRenderer
 
                     return string.Join(", ", parts);
                 case MemCat.UploadRing:
-                    return $"{FramesInFlight} x {RingSize >> 20} MB";
+                    return $"{s_framesInFlight} x {s_ringSize >> 20} MB";
                 default:
                     return "";
             }
@@ -126,7 +126,7 @@ public sealed unsafe partial class VulkanRenderer
     }
 
     /// <summary>"PERF vram: ..." (end of run, renderer.txt): the summary plus eviction and failure counters.</summary>
-    string VramReport() =>
+    private string VramReport() =>
         $"PERF vram: {VramSummary()}; pool {_imagePool.PageCount} pages ({_imagePool.PagesFreed} returned to the driver); " +
         $"evicted {_evTextures} textures ({_evTextureBytes >> 20} MB; {_evOverlap} replaced in memory by another texture), {_evViews} render-target views ({_evViewBytes >> 20} MB), " +
         $"{_evTargets} render targets ({_evTargetBytes >> 20} MB), {_evDepth} depth targets ({_evDepthBytes >> 20} MB); " +
@@ -137,7 +137,7 @@ public sealed unsafe partial class VulkanRenderer
     // =================================================================== deferred destruction
 
     /// <summary>Runs <paramref name="destroy"/> once the GPU no longer uses what the recorded/submitted frames use.</summary>
-    void DestroyAfterGpu(Action destroy)
+    private void DestroyAfterGpu(Action destroy)
     {
         if (F.Recording)
         {
@@ -146,7 +146,7 @@ public sealed unsafe partial class VulkanRenderer
         }
         // between frames: the newest submitted frame may still use it
         long seq = 0;
-        foreach (var f in _frames)
+        foreach (Frame f in _frames)
         {
             if (f.Submitted && !f.Retired)
             {
@@ -164,7 +164,7 @@ public sealed unsafe partial class VulkanRenderer
         }
     }
 
-    void Release(Action destroy, bool now, [System.Runtime.CompilerServices.CallerMemberName] string site = "")
+    private void Release(Action destroy, bool now, [System.Runtime.CompilerServices.CallerMemberName] string site = "")
     {
         BumpTexEpoch(0);
         _releaseSites[site] = _releaseSites.GetValueOrDefault(site) + 1;
@@ -179,7 +179,7 @@ public sealed unsafe partial class VulkanRenderer
     }
 
     /// <summary>A frame retired: destroys that waited for it (RetireFrame).</summary>
-    void RunAfterGpu(long retiredSeq)
+    private void RunAfterGpu(long retiredSeq)
     {
         if (_afterGpu.Count == 0)
         {
@@ -190,7 +190,7 @@ public sealed unsafe partial class VulkanRenderer
         {
             if (_afterGpu[i].Seq <= retiredSeq)
             {
-                var a = _afterGpu[i].Destroy;
+                Action a = _afterGpu[i].Destroy;
                 _afterGpu.RemoveAt(i);
                 a();
             }
@@ -203,7 +203,7 @@ public sealed unsafe partial class VulkanRenderer
 
     // =================================================================== releasing cached objects
 
-    void ReleaseTexture(TexKey key, Texture t, bool now)
+    private void ReleaseTexture(TexKey key, Texture t, bool now)
     {
         _textures.Remove(key);
         _evTextures++;
@@ -211,7 +211,7 @@ public sealed unsafe partial class VulkanRenderer
         Release(() => { _vk.DestroyImageView(_dev, t.View, null); _vk.DestroyImage(_dev, t.Image, null); _imagePool.Free(t.Mem); }, now);
     }
 
-    void ReleaseImage(Image image, ImageView view, ImageMemoryPool.Allocation mem, bool now)
+    private void ReleaseImage(Image image, ImageView view, ImageMemoryPool.Allocation mem, bool now)
     {
         _evViews++;
         _evViewBytes += (long)mem.Size;
@@ -219,7 +219,7 @@ public sealed unsafe partial class VulkanRenderer
     }
 
     /// <summary>A depth texture (copied, or unpacked from multisampled depth with its attachment view).</summary>
-    void ReleaseDepthTex(DepthTex t, bool now)
+    private void ReleaseDepthTex(DepthTex t, bool now)
     {
         _evViews++;
         _evViewBytes += (long)t.Mem.Size;
@@ -227,7 +227,7 @@ public sealed unsafe partial class VulkanRenderer
     }
 
     /// <summary>Destroys a render target and everything derived from it (also used when a surface is replaced).</summary>
-    void ReleaseRenderTarget(RenderTarget rt, bool now)
+    private void ReleaseRenderTarget(RenderTarget rt, bool now)
     {
         DestroySupersampleLater(rt, now);
         DestroyMsaaLater(rt, now);
@@ -259,15 +259,15 @@ public sealed unsafe partial class VulkanRenderer
         }, now);
     }
 
-    readonly List<(RenderTarget, uint, uint, uint, uint, uint, bool)> _regionKeys = new();
-    readonly List<(RenderTarget, uint X, uint Y, uint Format, uint W, uint H, uint Mips, bool Gamma)> _mipKeys = new();
+    private readonly List<(RenderTarget, uint, uint, uint, uint, uint, bool)> _regionKeys = new();
+    private readonly List<(RenderTarget, uint X, uint Y, uint Format, uint W, uint H, uint Mips, bool Gamma)> _mipKeys = new();
 
     /// <summary>Regions and mip-chained textures made from <paramref name="rt"/> (keyed by the target object: they
     /// leaked whenever a surface was replaced).</summary>
-    void ForgetRenderTargetViews(RenderTarget rt, bool now)
+    private void ForgetRenderTargetViews(RenderTarget rt, bool now)
     {
         _regionKeys.Clear();
-        foreach (var k in _rtRegions.Keys)
+        foreach ((RenderTarget, uint, uint, uint, uint, uint, bool) k in _rtRegions.Keys)
         {
             if (k.Item1 == rt)
             {
@@ -275,13 +275,13 @@ public sealed unsafe partial class VulkanRenderer
             }
         }
 
-        foreach (var k in _regionKeys)
+        foreach ((RenderTarget, uint, uint, uint, uint, uint, bool) k in _regionKeys)
         {
-            _rtRegions.Remove(k, out var r);
+            _rtRegions.Remove(k, out RtRegion? r);
             ReleaseImage(r!.Image, r.View, r.Mem, now);
         }
         _mipKeys.Clear();
-        foreach (var k in _rtMipTextures.Keys)
+        foreach ((RenderTarget, uint X, uint Y, uint Format, uint W, uint H, uint Mips, bool Gamma) k in _rtMipTextures.Keys)
         {
             if (k.Item1 == rt)
             {
@@ -289,12 +289,12 @@ public sealed unsafe partial class VulkanRenderer
             }
         }
 
-        foreach (var k in _mipKeys)
+        foreach ((RenderTarget, uint X, uint Y, uint Format, uint W, uint H, uint Mips, bool Gamma) k in _mipKeys)
         {
-            _rtMipTextures.Remove(k, out var t);
+            _rtMipTextures.Remove(k, out RtMipTexture? t);
             ReleaseImage(t!.Image, t.View, t.Mem, now);
         }
-        foreach (var a in _rtAliases.Values)
+        foreach (RtAlias a in _rtAliases.Values)
         {
             if (a.Source == rt)
             {
@@ -303,18 +303,18 @@ public sealed unsafe partial class VulkanRenderer
         }
     }
 
-    void ReleaseDepthTarget((uint, uint, uint, SampleCountFlags) key, DepthTarget dt, bool now)
+    private void ReleaseDepthTarget((uint, uint, uint, SampleCountFlags) key, DepthTarget dt, bool now)
     {
         _depthTargets.Remove(key);
         _targetGen++;
         _evDepth++;
         _evDepthBytes += (long)dt.Mem.Size;
-        if (_depthTextures.Remove(dt, out var t))
+        if (_depthTextures.Remove(dt, out DepthTex? t))
         {
             ReleaseDepthTex(t, now);
         }
 
-        if (_stencilTextures.Remove(dt, out var s))
+        if (_stencilTextures.Remove(dt, out StencilTex? s))
         {
             ReleaseImage(s.Image, s.View, s.Mem, now);
         }
@@ -322,11 +322,11 @@ public sealed unsafe partial class VulkanRenderer
         _mirroredDepth.Remove((dt, false));
         _mirroredDepth.Remove((dt, true));
         // multisampled framebuffers that attach its view
-        var view = dt.View;
-        foreach (var m in _msImages.Values)
+        ImageView view = dt.View;
+        foreach (MsaaImage m in _msImages.Values)
         {
             List<(ulong, ulong, ulong, ulong)>? dead = null;
-            foreach (var (k, _) in m.Framebuffers)
+            foreach (((ulong, ulong, ulong, ulong) k, Framebuffer _) in m.Framebuffers)
             {
                 if (k.Item2 == view.Handle)
                 {
@@ -339,9 +339,9 @@ public sealed unsafe partial class VulkanRenderer
                 continue;
             }
 
-            foreach (var k in dead)
+            foreach ((ulong, ulong, ulong, ulong) k in dead)
             {
-                m.Framebuffers.Remove(k, out var fb);
+                m.Framebuffers.Remove(k, out Framebuffer fb);
                 Release(() => _vk.DestroyFramebuffer(_dev, fb, null), now);
             }
         }
@@ -363,25 +363,25 @@ public sealed unsafe partial class VulkanRenderer
 
     // =================================================================== eviction
 
-    readonly List<TexKey> _overlapKeys = new();
-    long _evOverlap;
+    private readonly List<TexKey> _overlapKeys = new();
+    private long _evOverlap;
 
     /// <summary>Test switch VITASHARP_VRAM_EVICT=0: no expiry, overlap or pressure eviction (the cache behaves as
     /// before this existed, to measure its growth); out-of-memory reclaim still runs.</summary>
-    static readonly bool ProactiveEviction = Environment.GetEnvironmentVariable(EnvVars.VramEvict)?.Trim() != "0";
+    private static readonly bool s_proactiveEviction = Environment.GetEnvironmentVariable(EnvVars.VramEvict)?.Trim() != "0";
 
     /// <summary>A new texture is created over [addr, addr + bytes): cached textures of that memory that were not used
     /// for <see cref="TrimMinAge"/> frames describe what it held before and are dropped.</summary>
-    void EvictOverlappingTextures(uint addr, uint bytes)
+    private void EvictOverlappingTextures(uint addr, uint bytes)
     {
-        if (!ProactiveEviction)
+        if (!s_proactiveEviction)
         {
             return;
         }
 
         ulong end = (ulong)addr + bytes;
         _overlapKeys.Clear();
-        foreach (var (k, t) in _textures)
+        foreach ((TexKey k, Texture? t) in _textures)
         {
             if (t.DataStart < end && addr < (ulong)t.DataStart + t.DataSize && FrameCount - t.LastUsedFrame >= TrimMinAge)
             {
@@ -389,12 +389,12 @@ public sealed unsafe partial class VulkanRenderer
             }
         }
 
-        foreach (var k in _overlapKeys)
+        foreach (TexKey k in _overlapKeys)
         {
             _evOverlap++;
-            var t = _textures[k];
+            Texture t = _textures[k];
             // streaming games bring such textures back: the image is kept for its content (VulkanRenderer.TexContentCache.cs)
-            if (ContentCacheOn && t.Hash != 0 && t.DataSize <= ContentCacheMaxTexture) // Hash: what the image holds (0 when unknown)
+            if (s_contentCacheOn && t.Hash != 0 && t.DataSize <= ContentCacheMaxTexture) // Hash: what the image holds (0 when unknown)
             {
                 _textures.Remove(k);
                 _evTextures++;
@@ -411,9 +411,9 @@ public sealed unsafe partial class VulkanRenderer
 
     /// <summary>Whether a render target is still needed as is: in use by the current scene/presentation, or its
     /// content exists only on the GPU (unless it has been idle for <paramref name="lostIdle"/> frames).</summary>
-    bool RenderTargetEvictable(RenderTarget rt, long minAge, long lostIdle)
+    private bool RenderTargetEvictable(RenderTarget rt, long minAge, long lostIdle)
     {
-        if (rt == _rt || rt == _cpuFramebuffer || InSuspendedScene(rt))
+        if (rt == _renderTarget || rt == _cpuFramebuffer || InSuspendedScene(rt))
         {
             return false;
         }
@@ -428,20 +428,20 @@ public sealed unsafe partial class VulkanRenderer
         return inMemory || age >= lostIdle;
     }
 
-    readonly record struct Candidate(long LastUsed, ulong Bytes, int Kind, object Key, object Value);
+    private readonly record struct Candidate(long LastUsed, ulong Bytes, int Kind, object Key, object Value);
 
-    readonly List<Candidate> _candidates = new();
+    private readonly List<Candidate> _candidates = new();
 
     /// <summary>
     /// Evicts least recently used caches unused for at least <paramref name="minAge"/> GPU frames until
     /// <paramref name="target"/> bytes were freed. <paramref name="now"/>: destroyed at once (every submitted frame
     /// has completed), else once the GPU is done with them.
     /// </summary>
-    ulong Evict(ulong target, long minAge, long rtIdle, long lostIdle, bool now)
+    private ulong Evict(ulong target, long minAge, long rtIdle, long lostIdle, bool now)
     {
-        var c = _candidates;
+        List<Candidate> c = _candidates;
         c.Clear();
-        foreach (var (k, t) in _textures)
+        foreach ((TexKey k, Texture? t) in _textures)
         {
             if (FrameCount - t.LastUsedFrame >= minAge)
             {
@@ -449,7 +449,7 @@ public sealed unsafe partial class VulkanRenderer
             }
         }
 
-        foreach (var (k, r) in _rtRegions)
+        foreach (((RenderTarget, uint, uint, uint, uint, uint, bool) k, RtRegion? r) in _rtRegions)
         {
             if (FrameCount - r.LastUsedFrame >= minAge)
             {
@@ -457,7 +457,7 @@ public sealed unsafe partial class VulkanRenderer
             }
         }
 
-        foreach (var (k, a) in _rtAliases)
+        foreach (((uint Addr, uint Format, uint W, uint H, uint Row, bool Gamma) k, RtAlias? a) in _rtAliases)
         {
             if (FrameCount - a.LastUsedFrame >= minAge)
             {
@@ -465,7 +465,7 @@ public sealed unsafe partial class VulkanRenderer
             }
         }
 
-        foreach (var (k, m) in _rtMipTextures)
+        foreach (((RenderTarget, uint X, uint Y, uint Format, uint W, uint H, uint Mips, bool Gamma) k, RtMipTexture? m) in _rtMipTextures)
         {
             if (FrameCount - m.LastUsedFrame >= minAge)
             {
@@ -473,7 +473,7 @@ public sealed unsafe partial class VulkanRenderer
             }
         }
 
-        foreach (var (k, d) in _depthTextures)
+        foreach ((DepthTarget? k, DepthTex? d) in _depthTextures)
         {
             if (FrameCount - d.LastUsedFrame >= minAge)
             {
@@ -481,7 +481,7 @@ public sealed unsafe partial class VulkanRenderer
             }
         }
 
-        foreach (var (k, s) in _stencilTextures)
+        foreach ((DepthTarget? k, StencilTex? s) in _stencilTextures)
         {
             if (FrameCount - s.LastUsedFrame >= minAge)
             {
@@ -491,7 +491,7 @@ public sealed unsafe partial class VulkanRenderer
 
         if (rtIdle < long.MaxValue)
         {
-            foreach (var (k, rt) in _renderTargets)
+            foreach (((uint, uint, uint, uint) k, RenderTarget? rt) in _renderTargets)
             {
                 if (RenderTargetEvictable(rt, Math.Max(minAge, rtIdle), lostIdle))
                 {
@@ -499,7 +499,7 @@ public sealed unsafe partial class VulkanRenderer
                 }
             }
 
-            foreach (var (k, dt) in _depthTargets)
+            foreach (((uint, uint, uint, SampleCountFlags) k, DepthTarget? dt) in _depthTargets)
             {
                 if (dt != _depth && !InSuspendedScene(dt) && FrameCount - dt.LastTouchedFrame >= Math.Max(minAge, lostIdle))
                 {
@@ -514,7 +514,7 @@ public sealed unsafe partial class VulkanRenderer
 
         c.Sort((a, b) => a.LastUsed.CompareTo(b.LastUsed));
         ulong freed = 0;
-        foreach (var e in c)
+        foreach (Candidate e in c)
         {
             if (freed >= target)
             {
@@ -610,20 +610,20 @@ public sealed unsafe partial class VulkanRenderer
     }
 
     /// <summary>Device memory a render target and its derived images hold.</summary>
-    ulong RenderTargetBytes(RenderTarget rt)
+    private ulong RenderTargetBytes(RenderTarget rt)
     {
         ulong b = rt.Mem.Size;
-        if (_msImages.TryGetValue(rt, out var m))
+        if (_msImages.TryGetValue(rt, out MsaaImage? m))
         {
             b += m.Mem.Size;
         }
 
-        if (_ssImages.TryGetValue(rt, out var ss))
+        if (_ssImages.TryGetValue(rt, out SupersampleImage? ss))
         {
             b += ss.Mem.Size;
         }
 
-        if (_sceneStartCopies.TryGetValue(rt, out var sc))
+        if (_sceneStartCopies.TryGetValue(rt, out SceneStartCopy? sc))
         {
             b += sc.Mem.Size;
         }
@@ -636,7 +636,7 @@ public sealed unsafe partial class VulkanRenderer
     /// error. Waits for the frames in flight so their deferred destroys and anything not used by the recording frame
     /// can be destroyed immediately, evicts, returns empty pages and reports whether the allocation is worth retrying.
     /// </summary>
-    bool Reclaim(ulong need, bool device, int level)
+    private bool Reclaim(ulong need, bool device, int level)
     {
         if (_reclaiming)
         {
@@ -663,7 +663,7 @@ public sealed unsafe partial class VulkanRenderer
 
             RunAfterGpu(long.MaxValue);
             int deferred = 0;
-            foreach (var f in _frames)
+            foreach (Frame f in _frames)
             {
                 if (f.Recording)
                 {
@@ -671,13 +671,13 @@ public sealed unsafe partial class VulkanRenderer
                 }
 
                 deferred += f.Deferred.Count + f.Overflow.Count;
-                foreach (var a in f.Deferred)
+                foreach (Action a in f.Deferred)
                 {
                     a();
                 }
 
                 f.Deferred.Clear();
-                foreach (var (b, m) in f.Overflow)
+                foreach ((Silk.NET.Vulkan.Buffer b, DeviceMemory m) in f.Overflow)
                 {
                     _core.DestroyBuffer(b, m);
                 }
@@ -716,9 +716,9 @@ public sealed unsafe partial class VulkanRenderer
     /// so the pool keeps a reserve of free space; every 256 presents, expires long-unused caches and returns spare
     /// empty pages.
     /// </summary>
-    void TrimAtFrameBoundary()
+    private void TrimAtFrameBoundary()
     {
-        if (ProactiveEviction && _presentCount % 256 == 0)
+        if (s_proactiveEviction && _presentCount % 256 == 0)
         {
             _expirySweeps++;
             Evict(ulong.MaxValue, minAge: ExpiryFrames, rtIdle: long.MaxValue, lostIdle: long.MaxValue, now: false);
@@ -736,7 +736,7 @@ public sealed unsafe partial class VulkanRenderer
         }
     }
 
-    void TrimForPressure()
+    private void TrimForPressure()
     {
         double p = _core.DevicePressure();
         // log crossings of 75% / 90% (with hysteresis) in normal play too
@@ -751,7 +751,7 @@ public sealed unsafe partial class VulkanRenderer
             _pressureLogged = level;
         }
 
-        if (p < PressureHigh || !ProactiveEviction)
+        if (p < PressureHigh || !s_proactiveEviction)
         {
             return;
         }
@@ -759,7 +759,7 @@ public sealed unsafe partial class VulkanRenderer
         ulong budget = _core.BudgetCap;
         if (budget == 0)
         {
-            foreach (var h in _core.Heaps())
+            foreach (VkCore.HeapInfo h in _core.Heaps())
             {
                 if (h.DeviceLocal)
                 {
@@ -789,7 +789,7 @@ public sealed unsafe partial class VulkanRenderer
     // =================================================================== failures
 
     /// <summary>Rate-limited out-of-memory messages: the first few in full, then one per 10 s with the count.</summary>
-    void LogOom(string message, bool force = false)
+    private void LogOom(string message, bool force = false)
     {
         long now = Stopwatch.GetTimestamp();
         _oomSinceLog++;
@@ -804,7 +804,7 @@ public sealed unsafe partial class VulkanRenderer
     }
 
     /// <summary>A command could not get the memory it needs: skip it and keep the renderer consistent.</summary>
-    void OnOutOfMemory(Core.Gpu.GpuCommand command, VkOutOfMemoryException e)
+    private void OnOutOfMemory(Core.Gpu.GpuCommand command, VkOutOfMemoryException e)
     {
         string what;
         switch (command)
@@ -820,8 +820,8 @@ public sealed unsafe partial class VulkanRenderer
                 EndRendering();
                 _inScene = false;
                 _scene = null;
-                _rt = null;
-                _ss = _ms = _msaaNoDownscale = false;
+                _renderTarget = null;
+                _supersampled = _multisampled = _msaaNoDownscale = false;
                 EndTileWord1();
                 break;
             default:

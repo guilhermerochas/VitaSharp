@@ -15,14 +15,14 @@ namespace VitaSharp.Renderer.Vulkan;
 /// </summary>
 public sealed unsafe partial class VulkanRenderer
 {
-    static readonly bool ContentCacheOn = Environment.GetEnvironmentVariable(EnvVars.TexContentCache) != "0";
-    const ulong ContentCacheBudget = 48ul << 20;
+    private static readonly bool s_contentCacheOn = Environment.GetEnvironmentVariable(EnvVars.TexContentCache) != "0";
+    private const ulong ContentCacheBudget = 48ul << 20;
     /// <summary>Larger textures are uploaded in place as before (one image would take much of the budget).</summary>
-    const uint ContentCacheMaxTexture = 4u << 20;
+    private const uint ContentCacheMaxTexture = 4u << 20;
 
-    readonly record struct ContentKey(ulong Hash, uint Format, uint Width, uint Height, uint Type, uint Mips, uint Stride, uint Palette, bool Gamma);
+    private readonly record struct ContentKey(ulong Hash, uint Format, uint Width, uint Height, uint Type, uint Mips, uint Stride, uint Palette, bool Gamma);
 
-    sealed class KeptImage
+    private sealed class KeptImage
     {
         public Image Image;
         public ImageView View;
@@ -30,16 +30,16 @@ public sealed unsafe partial class VulkanRenderer
         public long Order;
     }
 
-    readonly Dictionary<ContentKey, KeptImage> _contentCache = new();
-    ulong _contentCacheBytes;
-    long _contentOrder, _texContentHits;
+    private readonly Dictionary<ContentKey, KeptImage> _contentCache = new();
+    private ulong _contentCacheBytes;
+    private long _contentOrder, _texContentHits;
 
-    static ContentKey ContentKeyOf(TexKey k, ulong hash) => new(hash, k.Format, k.Width, k.Height, k.Type, k.Mips, k.Stride, k.Palette, k.Gamma);
+    private static ContentKey ContentKeyOf(TexKey k, ulong hash) => new(hash, k.Format, k.Width, k.Height, k.Type, k.Mips, k.Stride, k.Palette, k.Gamma);
 
     /// <summary>The kept image of <paramref name="hash"/> for this key's layout, removed from the cache (now the caller's).</summary>
-    (Image, ImageView, ImageMemoryPool.Allocation)? TakeCachedContent(TexKey key, ulong hash)
+    private (Image, ImageView, ImageMemoryPool.Allocation)? TakeCachedContent(TexKey key, ulong hash)
     {
-        if (_contentCache.Count == 0 || !_contentCache.Remove(ContentKeyOf(key, hash), out var k))
+        if (_contentCache.Count == 0 || !_contentCache.Remove(ContentKeyOf(key, hash), out KeptImage? k))
         {
             return null;
         }
@@ -50,9 +50,9 @@ public sealed unsafe partial class VulkanRenderer
 
     /// <summary>Keeps an image the texture stops showing under its content <paramref name="hash"/> (0: unknown content,
     /// the image goes); evicts the oldest kept images over the budget.</summary>
-    void KeepContent(TexKey key, ulong hash, Image image, ImageView view, ImageMemoryPool.Allocation mem, uint bytes)
+    private void KeepContent(TexKey key, ulong hash, Image image, ImageView view, ImageMemoryPool.Allocation mem, uint bytes)
     {
-        var ck = ContentKeyOf(key, hash);
+        ContentKey ck = ContentKeyOf(key, hash);
         if (hash == 0 || bytes > ContentCacheMaxTexture || _contentCache.ContainsKey(ck))
         {
             ReleaseImage(image, view, mem, now: false);
@@ -63,7 +63,7 @@ public sealed unsafe partial class VulkanRenderer
         while (_contentCacheBytes > ContentCacheBudget && _contentCache.Count > 0)
         {
             var oldest = default(KeyValuePair<ContentKey, KeptImage>);
-            foreach (var kv in _contentCache)
+            foreach (KeyValuePair<ContentKey, KeptImage> kv in _contentCache)
             {
                 if (oldest.Value == null || kv.Value.Order < oldest.Value.Order)
                 {
@@ -78,10 +78,10 @@ public sealed unsafe partial class VulkanRenderer
     }
 
     /// <summary>Releases every kept image (out of GPU memory, renderer shutdown); returns the bytes freed.</summary>
-    ulong FlushContentCache(bool now)
+    private ulong FlushContentCache(bool now)
     {
         ulong freed = _contentCacheBytes;
-        foreach (var k in _contentCache.Values)
+        foreach (KeptImage k in _contentCache.Values)
         {
             ReleaseImage(k.Image, k.View, k.Mem, now);
         }

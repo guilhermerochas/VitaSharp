@@ -9,14 +9,14 @@ namespace VitaSharp.Renderer.Vulkan;
 /// </summary>
 public sealed unsafe partial class VulkanRenderer
 {
-    QueryPool _timePool;
-    bool _timeChecked, _timeOk;
-    double _timePeriodNs;
-    double _gpuNs;
-    double _lastGpuMs;
-    long _gpuSubmits;
+    private QueryPool _timePool;
+    private bool _timeChecked, _timeOk;
+    private double _timePeriodNs;
+    private double _gpuNs;
+    private double _lastGpuMs;
+    private long _gpuSubmits;
 
-    bool TimestampsOk()
+    private bool TimestampsOk()
     {
         if (_timeChecked)
         {
@@ -38,13 +38,13 @@ public sealed unsafe partial class VulkanRenderer
         }
 
         _timePeriodNs = _core.Properties.Limits.TimestampPeriod;
-        var ci = new QueryPoolCreateInfo { SType = StructureType.QueryPoolCreateInfo, QueryType = QueryType.Timestamp, QueryCount = (uint)FramesInFlight * 2 };
+        var ci = new QueryPoolCreateInfo { SType = StructureType.QueryPoolCreateInfo, QueryType = QueryType.Timestamp, QueryCount = (uint)s_framesInFlight * 2 };
         _timeOk = _vk.CreateQueryPool(_dev, in ci, null, out _timePool) == Result.Success;
         return _timeOk;
     }
 
     /// <summary>Start of a frame's command buffer (outside any rendering).</summary>
-    void BeginGpuTime(Frame f)
+    private void BeginGpuTime(Frame f)
     {
         if (!TimestampsOk())
         {
@@ -58,7 +58,7 @@ public sealed unsafe partial class VulkanRenderer
     }
 
     /// <summary>End of a frame's command buffer, just before it is closed.</summary>
-    void EndGpuTime(Frame f)
+    private void EndGpuTime(Frame f)
     {
         if (f.TimeQuery < 0)
         {
@@ -70,7 +70,7 @@ public sealed unsafe partial class VulkanRenderer
     }
 
     /// <summary>The frame's fence signalled: add its GPU time.</summary>
-    void CompleteGpuTime(Frame f)
+    private void CompleteGpuTime(Frame f)
     {
         if (!f.TimePending)
         {
@@ -78,7 +78,7 @@ public sealed unsafe partial class VulkanRenderer
         }
 
         f.TimePending = false;
-        var t = stackalloc ulong[2];
+        ulong* t = stackalloc ulong[2];
         if (_vk.GetQueryPoolResults(_dev, _timePool, (uint)f.TimeQuery, 2, 16, t, 8, QueryResultFlags.Result64Bit) == Result.Success && t[1] >= t[0])
         {
             _lastGpuMs = (t[1] - t[0]) * _timePeriodNs / 1e6;
@@ -90,7 +90,7 @@ public sealed unsafe partial class VulkanRenderer
         f.TimeQuery = -1;
     }
 
-    string GpuTimeReport()
+    private string GpuTimeReport()
     {
         if (!_timeOk || _presentCount == 0)
         {
@@ -100,7 +100,7 @@ public sealed unsafe partial class VulkanRenderer
         return $"PERF gpu: {_gpuNs / 1e6 / _presentCount:F3} ms GPU time per presented frame ({_gpuSubmits} submits, {_gpuNs / 1e6 / Math.Max(1, _gpuSubmits):F3} ms each), MSAA {MsaaReport()}; {LoadStoreReport()}" + (_statTw1Scenes > 0 ? $"; {TileWord1Report()}" : "");
     }
 
-    void DestroyGpuTime()
+    private void DestroyGpuTime()
     {
         if (_timePool.Handle != 0)
         {

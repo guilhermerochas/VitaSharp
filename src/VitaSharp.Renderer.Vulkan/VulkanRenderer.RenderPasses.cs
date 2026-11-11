@@ -27,28 +27,28 @@ namespace VitaSharp.Renderer.Vulkan;
 public sealed unsafe partial class VulkanRenderer
 {
     /// <summary>Renderings are render passes instead of dynamic rendering.</summary>
-    bool UseRenderPasses => !_core.UsesDynamicRendering;
+    private bool UseRenderPasses => !_core.UsesDynamicRendering;
 
     /// <param name="Color">colour attachment format, Undefined = depth/stencil only</param>
-    readonly record struct SinglePassKey(Format Color, bool Word, AttachmentLoadOp DepthLoad, AttachmentStoreOp DepthStore, AttachmentStoreOp ColorStore = AttachmentStoreOp.Store);
+    private readonly record struct SinglePassKey(Format Color, bool Word, AttachmentLoadOp DepthLoad, AttachmentStoreOp DepthStore, AttachmentStoreOp ColorStore = AttachmentStoreOp.Store);
 
-    readonly Dictionary<SinglePassKey, RenderPass> _singlePasses = new();
-    long _statRenderPasses, _statFramebuffers;
+    private readonly Dictionary<SinglePassKey, RenderPass> _singlePasses = new();
+    private long _statRenderPasses, _statFramebuffers;
 
     /// <summary>The pass pipelines and secondaries of single-sampled renderings are created against.</summary>
-    RenderPass SingleCompatPass(Format color, bool word) =>
+    private RenderPass SingleCompatPass(Format color, bool word) =>
         SinglePass(new SinglePassKey(color, word && color != Format.Undefined, AttachmentLoadOp.Load, AttachmentStoreOp.Store));
 
-    RenderPass SinglePass(SinglePassKey k)
+    private RenderPass SinglePass(SinglePassKey k)
     {
         lock (_singlePasses)
         {
-            if (_singlePasses.TryGetValue(k, out var rp))
+            if (_singlePasses.TryGetValue(k, out RenderPass rp))
             {
                 return rp;
             }
 
-            var att = stackalloc AttachmentDescription[3];
+            AttachmentDescription* att = stackalloc AttachmentDescription[3];
             uint n = 0;
             bool color = k.Color != Format.Undefined;
             if (color)
@@ -64,7 +64,7 @@ public sealed unsafe partial class VulkanRenderer
             uint depthIndex = n;
             att[n++] = new AttachmentDescription(0, _core.DepthFormat, SampleCountFlags.Count1Bit, k.DepthLoad, k.DepthStore, k.DepthLoad, k.DepthStore,
                 ImageLayout.DepthStencilAttachmentOptimal, ImageLayout.DepthStencilAttachmentOptimal);
-            var colors = stackalloc AttachmentReference[2] { new(0, ImageLayout.General), new(1, ImageLayout.General) };
+            AttachmentReference* colors = stackalloc AttachmentReference[2] { new(0, ImageLayout.General), new(1, ImageLayout.General) };
             var depth = new AttachmentReference(depthIndex, ImageLayout.DepthStencilAttachmentOptimal);
             var sub = new SubpassDescription
             {
@@ -81,9 +81,9 @@ public sealed unsafe partial class VulkanRenderer
     }
 
     /// <summary>A framebuffer for one rendering, destroyed once the frame that uses it retires.</summary>
-    Framebuffer TransientFramebuffer(RenderPass pass, Extent2D area, ImageView a0, ImageView a1 = default, ImageView a2 = default)
+    private Framebuffer TransientFramebuffer(RenderPass pass, Extent2D area, ImageView a0, ImageView a1 = default, ImageView a2 = default)
     {
-        var views = stackalloc ImageView[3] { a0, a1, a2 };
+        ImageView* views = stackalloc ImageView[3] { a0, a1, a2 };
         uint n = a2.Handle != 0 ? 3u : a1.Handle != 0 ? 2u : 1u;
         var ci = new FramebufferCreateInfo
         {
@@ -95,23 +95,23 @@ public sealed unsafe partial class VulkanRenderer
             Height = Math.Max(area.Height, 1),
             Layers = 1,
         };
-        _vk.CreateFramebuffer(_dev, in ci, null, out var fb).Ok("vkCreateFramebuffer");
+        _vk.CreateFramebuffer(_dev, in ci, null, out Framebuffer fb).Ok("vkCreateFramebuffer");
         _statFramebuffers++;
         DestroyAfterGpu(() => _vk.DestroyFramebuffer(_dev, fb, null));
         return fb;
     }
 
     /// <summary>Begins a scene rendering as a render pass in the primary (its draws are in secondaries).</summary>
-    void BeginSingleRenderPass(CommandBuffer cmd, in TilePass p, AttachmentStoreOp depthStore, Rect2D area)
+    private void BeginSingleRenderPass(CommandBuffer cmd, in TilePass p, AttachmentStoreOp depthStore, Rect2D area)
     {
-        var colorFormat = p.HasColor ? p.ColorFormat : Format.Undefined;
+        Format colorFormat = p.HasColor ? p.ColorFormat : Format.Undefined;
         bool word = p.HasColor && p.Word.Handle != 0;
-        var pass = SinglePass(new SinglePassKey(colorFormat, word, p.DepthLoad, depthStore));
-        var fb = !p.HasColor ? TransientFramebuffer(pass, p.Area, p.Depth)
+        RenderPass pass = SinglePass(new SinglePassKey(colorFormat, word, p.DepthLoad, depthStore));
+        Framebuffer fb = !p.HasColor ? TransientFramebuffer(pass, p.Area, p.Depth)
             : word ? TransientFramebuffer(pass, p.Area, p.Color, p.Word, p.Depth)
             : TransientFramebuffer(pass, p.Area, p.Color, p.Depth);
         // clear values are indexed by attachment: depth/stencil is the last one
-        var clears = stackalloc ClearValue[3] { p.DepthClear, p.DepthClear, p.DepthClear };
+        ClearValue* clears = stackalloc ClearValue[3] { p.DepthClear, p.DepthClear, p.DepthClear };
         var rbi = new RenderPassBeginInfo
         {
             SType = StructureType.RenderPassBeginInfo,
@@ -126,7 +126,7 @@ public sealed unsafe partial class VulkanRenderer
     }
 
     /// <summary>Depth-only pass with the depth unpack's ops (DONT_CARE load, STORE).</summary>
-    RenderPass DepthUnpackPass() => SinglePass(new SinglePassKey(Format.Undefined, false, AttachmentLoadOp.DontCare, AttachmentStoreOp.Store));
+    private RenderPass DepthUnpackPass() => SinglePass(new SinglePassKey(Format.Undefined, false, AttachmentLoadOp.DontCare, AttachmentStoreOp.Store));
 
-    string RenderPassReport() => UseRenderPasses ? $"render passes (no dynamic rendering): {_singlePasses.Count} single-sampled passes, {_statFramebuffers} framebuffers" : "dynamic rendering";
+    private string RenderPassReport() => UseRenderPasses ? $"render passes (no dynamic rendering): {_singlePasses.Count} single-sampled passes, {_statFramebuffers} framebuffers" : "dynamic rendering";
 }

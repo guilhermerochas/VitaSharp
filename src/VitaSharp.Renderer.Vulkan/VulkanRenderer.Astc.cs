@@ -8,20 +8,20 @@ namespace VitaSharp.Renderer.Vulkan;
 public sealed unsafe partial class VulkanRenderer
 {
     /// <summary>VITASHARP_ASTC=0: BC/PVRTC fall back to RGBA8 even when the GPU samples ASTC.</summary>
-    static readonly bool AstcAllowed = Environment.GetEnvironmentVariable(EnvVars.Astc)?.Trim() != "0";
+    private static readonly bool s_astcAllowed = Environment.GetEnvironmentVariable(EnvVars.Astc)?.Trim() != "0";
     /// <summary>VITASHARP_ASTC_CACHE_MB: size limit of a title's ASTC disk cache (default 512 MB).</summary>
-    static readonly long AstcCacheBytes = (long.TryParse(Environment.GetEnvironmentVariable(EnvVars.AstcCacheMb), out var mb) && mb > 0 ? mb : 512) << 20;
+    private static readonly long s_astcCacheBytes = (long.TryParse(Environment.GetEnvironmentVariable(EnvVars.AstcCacheMb), out long mb) && mb > 0 ? mb : 512) << 20;
 
-    bool? _astcUsable;
+    private bool? _astcUsable;
 
     /// <summary>textureCompressionASTC_LDR is enabled and the 4x4 formats can be sampled with linear filtering.</summary>
-    bool AstcUsable => _astcUsable ??= AstcAllowed && _core.Caps.Has(GpuFeature.TextureCompressionAstc)
+    private bool AstcUsable => _astcUsable ??= s_astcAllowed && _core.Caps.Has(GpuFeature.TextureCompressionAstc)
         && _core.SupportsSampled(Format.Astc4x4UnormBlock) && _core.SupportsSampled(Format.Astc4x4SrgbBlock);
 
-    static bool IsAstc(in TexFormatInfo info) => info.Convert is TexConvert.AstcFromBc or TexConvert.AstcFromPvrtc;
+    private static bool IsAstc(in TexFormatInfo info) => info.Convert is TexConvert.AstcFromBc or TexConvert.AstcFromPvrtc;
 
     /// <summary>Title start: the ASTC disk cache goes into the title's shader cache folder.</summary>
-    void OpenAstcCache(string titleDir)
+    private void OpenAstcCache(string titleDir)
     {
         // a GPU that samples BCn natively never transcodes (desktop GPUs, the Android emulator's host GPU)
         if (!AstcUsable || _core.TextureCompressionBC)
@@ -29,7 +29,7 @@ public sealed unsafe partial class VulkanRenderer
             return;
         }
 
-        AstcTranscoder.Disk = new TranscodeDiskCache(Path.Combine(titleDir, "astc"), AstcCacheBytes);
-        Log.Info($"[texcache] BC/PVRTC textures are transcoded to ASTC 4x4; disk cache {AstcTranscoder.Disk.Directory} (limit {AstcCacheBytes >> 20} MB, {AstcTranscoder.Disk.Bytes >> 20} MB used)");
+        AstcTranscoder.Disk = new TranscodeDiskCache(Path.Combine(titleDir, "astc"), s_astcCacheBytes);
+        Log.Info($"[texcache] BC/PVRTC textures are transcoded to ASTC 4x4; disk cache {AstcTranscoder.Disk.Directory} (limit {s_astcCacheBytes >> 20} MB, {AstcTranscoder.Disk.Bytes >> 20} MB used)");
     }
 }

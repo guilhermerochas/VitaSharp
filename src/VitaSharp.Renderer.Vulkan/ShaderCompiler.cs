@@ -8,10 +8,10 @@ namespace VitaSharp.Renderer.Vulkan;
 /// <summary>GLSL → SPIR-V through shaderc, with an on-disk cache keyed by the source hash.</summary>
 public sealed unsafe class ShaderCompiler : IDisposable
 {
-    readonly Shaderc _sc = Shaderc.GetApi();
+    private readonly Shaderc _shaderc = Shaderc.GetApi();
     // one shaderc compiler per thread: the GPU thread and the shader workers compile concurrently
-    readonly ThreadLocal<nint> _compilers;
-    readonly string? _cacheDir;
+    private readonly ThreadLocal<nint> _compilers;
+    private readonly string? _cacheDir;
 
     /// <summary>shaderc optimisation level (default Zero = the launcher's "Compilação rápida de shaders"; --shaderc-opt=,
     /// and VITASHARP_SHADERC_OPT overrides both). spirv-opt was ~85% of the GLSL to SPIR-V time (Killzone: 44 ms -> 7 ms
@@ -38,7 +38,7 @@ public sealed unsafe class ShaderCompiler : IDisposable
     public ShaderCompiler(string? cacheDir, OptimizationLevel optLevel = OptimizationLevel.Zero)
     {
         OptLevel = optLevel;
-        _compilers = new(() => (nint)_sc.CompilerInitialize(), trackAllValues: true);
+        _compilers = new(() => (nint)_shaderc.CompilerInitialize(), trackAllValues: true);
         _cacheDir = cacheDir;
         if (cacheDir != null)
         {
@@ -60,7 +60,7 @@ public sealed unsafe class ShaderCompiler : IDisposable
             return;
         }
 
-        if (Interlocked.Exchange(ref _warmStarted, 1) != 0)
+        if (Interlocked.Exchange(ref s_warmStarted, 1) != 0)
         {
             return;
         }
@@ -73,7 +73,7 @@ public sealed unsafe class ShaderCompiler : IDisposable
                 long t0 = System.Diagnostics.Stopwatch.GetTimestamp();
                 // never released: glslang counts its users and frees the tables when the last compiler goes away (a
                 // released warm-up compiler made the next shader pay the whole initialisation again)
-                var compiler = sc.CompilerInitialize();
+                Compiler* compiler = sc.CompilerInitialize();
                 WarmCompiler = (nint)compiler;
                 WarmCompile(sc, compiler, "#version 450\nvoid main() { gl_Position = vec4(0.0); }\n", ShaderKind.VertexShader);
                 WarmCompile(sc, compiler, "#version 450\nlayout(location = 0) out vec4 c;\nvoid main() { c = vec4(0.0); }\n", ShaderKind.FragmentShader);
@@ -91,16 +91,16 @@ public sealed unsafe class ShaderCompiler : IDisposable
         }.Start();
     }
 
-    static int _warmStarted;
+    private static int s_warmStarted;
     /// <summary>The warm-up's compiler, kept for the process so glslang stays initialised.</summary>
     internal static nint WarmCompiler { get; private set; }
 
-    static void WarmCompile(Shaderc sc, Compiler* compiler, string glsl, ShaderKind kind)
+    private static void WarmCompile(Shaderc sc, Compiler* compiler, string glsl, ShaderKind kind)
     {
         byte[] src = Encoding.UTF8.GetBytes(glsl);
         byte[] name = Encoding.ASCII.GetBytes((kind == ShaderKind.VertexShader ? "warm.vert" : "warm.frag") + "\0");
         byte[] entry = "main\0"u8.ToArray();
-        var opts = sc.CompileOptionsInitialize();
+        CompileOptions* opts = sc.CompileOptionsInitialize();
         sc.CompileOptionsSetTargetEnv(opts, TargetEnv.Vulkan, (uint)EnvVersion.Vulkan10);
         CompilationResult* res;
         fixed (byte* s = src)
@@ -135,7 +135,7 @@ public sealed unsafe class ShaderCompiler : IDisposable
         {
             try
             {
-                var cached = File.ReadAllBytes(cachePath);
+                byte[] cached = File.ReadAllBytes(cachePath);
                 Interlocked.Increment(ref DiskHits);
                 return cached;
             }
@@ -151,33 +151,33 @@ public sealed unsafe class ShaderCompiler : IDisposable
         } + "\0");
         byte[] entry = "main\0"u8.ToArray();
         CompilationResult* res;
-        Compiler* compiler = (Compiler*)_compilers.Value;
+        var compiler = (Compiler*)_compilers.Value;
         {
-            var opts = _sc.CompileOptionsInitialize();
-            _sc.CompileOptionsSetTargetEnv(opts, TargetEnv.Vulkan, (uint)EnvVersion.Vulkan10);
-            _sc.CompileOptionsSetOptimizationLevel(opts, OptLevel);
+            CompileOptions* opts = _shaderc.CompileOptionsInitialize();
+            _shaderc.CompileOptionsSetTargetEnv(opts, TargetEnv.Vulkan, (uint)EnvVersion.Vulkan10);
+            _shaderc.CompileOptionsSetOptimizationLevel(opts, OptLevel);
             long t0 = System.Diagnostics.Stopwatch.GetTimestamp();
             fixed (byte* s = src)
             fixed (byte* n = name)
             fixed (byte* e = entry)
             {
-                res = _sc.CompileIntoSpv(compiler, s, (nuint)src.Length, kind, n, e, opts);
+                res = _shaderc.CompileIntoSpv(compiler, s, (nuint)src.Length, kind, n, e, opts);
             }
 
             Interlocked.Add(ref CompileTicks, System.Diagnostics.Stopwatch.GetTimestamp() - t0);
             Interlocked.Increment(ref Compiled);
-            _sc.CompileOptionsRelease(opts);
+            _shaderc.CompileOptionsRelease(opts);
         }
         try
         {
-            if (_sc.ResultGetCompilationStatus(res) != CompilationStatus.Success)
+            if (_shaderc.ResultGetCompilationStatus(res) != CompilationStatus.Success)
             {
-                error = Marshal.PtrToStringAnsi((nint)_sc.ResultGetErrorMessage(res));
+                error = Marshal.PtrToStringAnsi((nint)_shaderc.ResultGetErrorMessage(res));
                 return null;
             }
-            var len = (int)_sc.ResultGetLength(res);
-            var bytes = new byte[len];
-            new ReadOnlySpan<byte>(_sc.ResultGetBytes(res), len).CopyTo(bytes);
+            int len = (int)_shaderc.ResultGetLength(res);
+            byte[] bytes = new byte[len];
+            new ReadOnlySpan<byte>(_shaderc.ResultGetBytes(res), len).CopyTo(bytes);
             if (cachePath != null)
             {
                 // several threads may compile the same GLSL at once (shader workers and the GPU thread, or two hint keys
@@ -206,19 +206,19 @@ public sealed unsafe class ShaderCompiler : IDisposable
         }
         finally
         {
-            _sc.ResultRelease(res);
+            _shaderc.ResultRelease(res);
         }
     }
 
     public void Dispose()
     {
-        foreach (var c in _compilers.Values)
+        foreach (nint c in _compilers.Values)
         {
-            _sc.CompilerRelease((Compiler*)c);
+            _shaderc.CompilerRelease((Compiler*)c);
         }
 
         _compilers.Dispose();
-        // The shaderc library is deliberately not unloaded (no _sc.Dispose()): it registers a process-exit handler
+        // The shaderc library is deliberately not unloaded (no _shaderc.Dispose()): it registers a process-exit handler
         // that stays behind after dlclose, so on Linux exit() jumped into the unmapped library (SIGSEGV after every
         // clean run). Keeping it mapped until the process ends costs nothing; a new renderer reuses it.
     }
