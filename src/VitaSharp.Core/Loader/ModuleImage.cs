@@ -16,6 +16,7 @@ public sealed class ModuleImage
     public List<(string Library, uint LibNid, uint[] FuncNids)> Imports { get; } = new();
 
     const uint PT_LOAD = 1, PT_SCE_RELA = 0x60000000;
+    const ushort ET_SCE_EXEC = 0xFE00;
 
     public static unsafe ModuleImage Read(byte[] elf)
     {
@@ -65,8 +66,12 @@ public sealed class ModuleImage
         uint exportTop = U32LE(m, mi + 0x24), exportEnd = U32LE(m, mi + 0x28);
         uint importTop = U32LE(m, mi + 0x2C), importEnd = U32LE(m, mi + 0x30);
 
-        string Str(uint p) => p != 0 && p < image.Length ? CString(image.AsSpan((int)p)) : "";
-        uint[] Nids(uint p, int n) => n > 0 && p + (uint)n * 4 <= image.Length ? MemoryMarshal.Cast<byte, uint>(image.AsSpan((int)p, n * 4)).ToArray() : [];
+        // a fixed-address executable (ET_SCE_EXEC) is not relocated: its pointers are link addresses, laid out here at
+        // (vaddr - lowest vaddr)
+        uint bias = U16LE(e, 16) == ET_SCE_EXEC && !overlapping ? low : 0;
+        string Str(uint p) => p != 0 && p >= bias && p - bias < image.Length ? CString(image.AsSpan((int)(p - bias))) : "";
+        uint[] Nids(uint p, int n) => n > 0 && p >= bias && (ulong)(p - bias) + (uint)n * 4 <= (ulong)image.Length
+            ? MemoryMarshal.Cast<byte, uint>(image.AsSpan((int)(p - bias), n * 4)).ToArray() : [];
 
         for (uint p = infoBase + exportTop; p + 0x20 <= infoBase + exportEnd;)
         {
