@@ -19,6 +19,16 @@ Lista de itens futuros do VitaSharp. Marque `[x]` quando um item for concluído.
 
 ## Diagnóstico
 
+- [x] Gravar tudo (F8) diz o contexto no próprio report.txt (pedido do usuário, 10/11/2026; agente snd1,
+  fix/shell-audio): seção "Where" com onde o jogador está no começo e cada mudança durante a gravação (app/jogo na
+  frente com título; no shell: tela de bloqueio, tela inicial ou a página de LiveArea de qual título, pela abertura
+  dos arquivos `livearea/contents` do título e pelo botão PS; eventos `ctx` no input.tsv), os processos (na frente,
+  suspensos), uma folha de contatos `frames.png` (12 quadros ao longo da gravação, com os tempos no relatório), e as
+  últimas entradas antes da gravação (`input_before.tsv`, sempre guardadas: as últimas 32 mudanças de botão/toque).
+  Áudio: cada WAV de porta com dono e papel (processo e thread que abriu: música do shell, sons da interface, jogo),
+  tempo com som, a linha "no continuous audio stream (music)" / "continuous sound on <porta>", quem tem a porta BGM e
+  os decodificadores; `context.txt` com tudo isso no começo e no fim. Testes em SessionCaptureTests
+
 - [x] Teclas para alternar opções gráficas com o jogo rodando (MSAA real / antigo / desligado e outras)
   Feito em parte (07/11/2026, perf/desktop-11): `F1` / `Shift+F1` passam para a resolução interna seguinte / anterior
   (1x, 2x, 3x, 4x) e `F2` / `Shift+F2` para a taxa de quadros seguinte / anterior (nativa, fixa em 30, fixa em 60, sem

@@ -120,13 +120,36 @@ public sealed class SessionCapture : IPresentTap, IRandomHook, IDisposable
         public volatile bool LimitReached;
         public double StartStateMs;
         public long ProcessCpuMs0;
+        /// <summary>The last pad/touch changes before the start (input_before.tsv); the last "where" line written.</summary>
+        public List<InputEvent> Before = new();
+        public string LastWhere = "";
+        public long PresentsSeen;
+    }
+
+    string SafeWhere()
+    {
+        try { return CaptureContext.Where(_emu); }
+        catch (Exception e) { return $"(unknown: {e.GetType().Name})"; }
+    }
+
+    string SafeDescribe(string when)
+    {
+        try { return CaptureContext.Describe(_emu, when); }
+        catch (Exception e) { return $"[{when}]\n(context unavailable: {e.Message})\n"; }
     }
 
     public SessionCapture(Emulator emu, SessionCaptureOptions options)
     {
         _emu = emu;
         _o = options;
+        // the last button and touch changes are always kept (a compare per poll): the report says what the player did
+        // just before pressing F8 even without the pre-roll
+        lock (_lock) { InstallInput(); _input!.RecordMotion = false; }
     }
+
+    /// <summary>The last pad and touch changes while no recording runs (input_before.tsv of the next recording).</summary>
+    readonly LinkedList<InputEvent> _recent = new();
+    const int RecentInputs = 32;
 
     public SessionCaptureOptions Options => _o;
     public bool IsRecording => _rec != null;
@@ -207,13 +230,15 @@ public sealed class SessionCapture : IPresentTap, IRandomHook, IDisposable
             _encoder.Start();
         }
         InstallInput();
+        _input!.RecordMotion = true;
         _o.SetPresentTap(this);
     }
 
     void StopRunning()
     {
         _o.SetPresentTap(null);
-        UninstallInput();
+        if (_disposed) UninstallInput();
+        else if (_input != null) _input.RecordMotion = false;
         _queue?.CompleteAdding();
         _queue = null;
         _encoder = null;
@@ -319,8 +344,13 @@ public sealed class SessionCapture : IPresentTap, IRandomHook, IDisposable
     {
         lock (_lock)
         {
-            if (_rec is { } r) r.Input.Add(e);
-            else if (_preRollSeconds > 0)
+            if (_rec is { } r) { r.Input.Add(e); return; }
+            if (e.Kind is "pad" or "touch")
+            {
+                _recent.AddLast(e);
+                if (_recent.Count > RecentInputs) _recent.RemoveFirst();
+            }
+            if (_preRollSeconds > 0)
             {
                 _ringInput.AddLast(e);
                 if (_ringInput.Count % 256 == 0) TrimRing();
@@ -342,6 +372,12 @@ public sealed class SessionCapture : IPresentTap, IRandomHook, IDisposable
         lock (_lock) dest = _rec;
         if (dest == null && _preRollSeconds <= 0) return;
         if (dest != null && !dest.LimitReached) CheckLimit(dest);
+        // screen / application changes during the recording (input.tsv kind ctx): checked every 15th present
+        if (dest != null && ++dest.PresentsSeen % 15 == 0)
+        {
+            string where = SafeWhere();
+            if (where != dest.LastWhere) { dest.LastWhere = where; AddInput(InputEvent.Now("ctx", where)); }
+        }
         byte[]? px = null;
         // the encoder fell behind (slow device): keep the timing, drop the picture
         if (q.Count < _o.EncoderQueueFrames && rgba.Length >= w * h * 4)
@@ -497,6 +533,7 @@ public sealed class SessionCapture : IPresentTap, IRandomHook, IDisposable
         FramesFile.WriteHeader(r.FramesFile);
         Dir = dir;
         PreRollState? pre;
+        string where = SafeWhere();
         lock (_lock)
         {
             EnsureRunning();
@@ -505,7 +542,11 @@ public sealed class SessionCapture : IPresentTap, IRandomHook, IDisposable
             long from = pre?.StartNs ?? long.MinValue;
             foreach (var e in _ringInput) if (e.Ns >= from) r.Input.Add(e);
             _ringInput.Clear();
+            r.Before = _recent.ToList();
+            _recent.Clear();
             r.Input.Add(InputEvent.Now("mark", $"start {reason}"));
+            r.Input.Add(InputEvent.Now("ctx", where));
+            r.LastWhere = where;
             _rec = r;
             _queue!.Add(new Work(WorkKind.FlushPreRoll, default, null, 0, 0, r, null));
         }
@@ -527,6 +568,7 @@ public sealed class SessionCapture : IPresentTap, IRandomHook, IDisposable
         DebugMode.CollectHleErrors = true;
         CaptureHooks.Random ??= this;
         WriteText(dir, "threads_start.txt", _o.Threads);
+        WriteText(dir, "context.txt", () => SafeDescribe("start of the recording"));
 
         if (_o.StartState)
         {
@@ -612,6 +654,7 @@ public sealed class SessionCapture : IPresentTap, IRandomHook, IDisposable
         // the GPU dump ends at the game's next present when one comes soon; it never waits on the guest for long (a
         // hung game presents nothing): after 2 s the worker completes the file from the commands it already received
         r.Dump?.Stop();
+        Step(r, "context.txt", () => File.AppendAllText(Path.Combine(r.Dir, "context.txt"), Environment.NewLine + SafeDescribe("stop of the recording")));
         List<(string File, double StartMs)> wavs = [];
         Step(r, "audio dump", () => { if (r.OwnsAudio) { wavs = AudioDump.Disable(); AudioDump.VoiceDumps = false; } });
         DebugMode.CollectHleErrors = false;
@@ -652,6 +695,12 @@ public sealed class SessionCapture : IPresentTap, IRandomHook, IDisposable
             using var w = new StreamWriter(Path.Combine(dir, "input.tsv"));
             w.WriteLine(InputEvent.Header);
             foreach (var e in input) w.WriteLine(e.ToString());
+        });
+        Step(r, "input_before.tsv", () =>
+        {
+            using var w = new StreamWriter(Path.Combine(dir, "input_before.tsv"));
+            w.WriteLine(InputEvent.Header + "\t(the last button and touch changes before the recording started)");
+            foreach (var e in r.Before) w.WriteLine(e.ToString());
         });
         Step(r, "timeline.tsv", () => WriteTimeline(r));
         Step(r, "hle_errors.txt", () => File.WriteAllLines(Path.Combine(dir, "hle_errors.txt"), DebugMode.HleSummary().DefaultIfEmpty("(no HLE error returns or unimplemented calls recorded)")));
@@ -754,6 +803,9 @@ public sealed class SessionCapture : IPresentTap, IRandomHook, IDisposable
         sb.AppendLine($"  gpu{GpuDumpFormat.Extension}              GPU dump from the start (replay-gpu)");
         sb.AppendLine("  audio/, audio_mix.wav guest audio ports and NGS voices as WAVs (files.txt: start times), and their mix");
         sb.AppendLine("  threads_*.txt         guest threads at the start and stop; hle_errors.txt; log.txt");
+        sb.AppendLine("  context.txt           where the player is (screen, application in front, processes) and the audio ports with");
+        sb.AppendLine("                        their owners, at the start and the stop; frames.png: a contact sheet of the recording");
+        sb.AppendLine("  input_before.tsv      the last button and touch changes before the recording started");
         sb.AppendLine("Re-run (desktop): VitaSharp.Desktop rerun <this folder> [--from=preroll|start] [--window]");
         sb.AppendLine("Analyze again: vitasharp-perf capture <this folder>");
         File.WriteAllText(Path.Combine(r.Dir, "session.txt"), sb.ToString());

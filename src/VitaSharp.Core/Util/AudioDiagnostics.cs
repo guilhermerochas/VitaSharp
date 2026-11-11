@@ -25,6 +25,11 @@ public static class AudioDiagnostics
     {
         public required string Name;
         public int Grain, Freq, Channels;
+        /// <summary>The process that opened the port (its title says whose sound it is), the guest thread that opened
+        /// it, the port type (0 MAIN, 1 BGM, 2 VOICE; -1 unknown) and its WAV name in a dump (portN_TYPE).</summary>
+        public Emulator? Owner;
+        public string OwnerThread = "", DumpName = "";
+        public int Type = -1;
         public float VolumeL = 1, VolumeR = 1;
         public IAudioStream? Stream;
         public readonly double OpenedAt = Now;
@@ -252,6 +257,15 @@ public static class AudioDiagnostics
         if (DeviceInfo?.Invoke() is { Length: > 0 } dev) yield return "AUDIO summary: device " + dev;
         foreach (var p in all) yield return $"AUDIO summary: {p.Describe()}{(p.ClosedAt > 0 ? " (released)" : "")}: {Totals(p)}";
     }
+
+    /// <summary>The open ports, then the released ones still remembered (the last 64).</summary>
+    public static List<PortStats> AllPorts() => Open.Keys.OrderBy(p => p.OpenedAt).Concat(Closed).ToList();
+
+    /// <summary>The decoder and NGS streams that exist now (descriptions).</summary>
+    public static List<string> StreamDescriptions() => Streams.OrderBy(k => k.Key).Select(k => k.Value).ToList();
+
+    /// <summary>Seconds since the port's last output (host time without pauses), -1 when it never output.</summary>
+    public static double SecondsSinceOutput(PortStats p) => p.LastOutput > 0 ? Now - p.LastOutput : -1;
 
     /// <summary>audio.txt of a diagnostic capture.</summary>
     public static string Describe()

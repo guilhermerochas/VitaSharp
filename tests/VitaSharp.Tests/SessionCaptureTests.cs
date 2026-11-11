@@ -228,6 +228,55 @@ public sealed class SessionCaptureTests : IDisposable
         Assert.True(File.Exists(Path.Combine(dir, "report.txt")));
     }
 
+    /// <summary>The report says where the player is (context.txt and the ctx events of input.tsv), draws a contact
+    /// sheet, lists the input before the recording, names each port's owner and says whether music was playing.</summary>
+    [Fact]
+    public void Analyzer_reports_the_context_contact_sheet_input_before_and_audio_owners()
+    {
+        string dir = SimpleCapture("context", 120);
+        File.WriteAllText(Path.Combine(dir, "session.txt"), "title-id: shell\ntitle: \nstart-ns: 0\nrecorded: 2.0 s, 120 guest frames (60.0 fps)\n");
+        File.WriteAllLines(Path.Combine(dir, "timeline.tsv"), Enumerable.Range(0, 120).Select(i => $"{i + 1}\t{i}").Prepend("# present\tflip"));
+        File.WriteAllLines(Path.Combine(dir, "input.tsv"),
+        [
+            InputEvent.Header,
+            new InputEvent("mark", 0, 1, 0, "start hotkey").ToString(),
+            new InputEvent("ctx", 0, 1, 0, "shell: LiveArea page of PCSA00017 'LittleBigPlanet'").ToString(),
+            new InputEvent("ctx", 1_500_000_000, 2, 90, "game PCSA00017 'LittleBigPlanet' in front").ToString(),
+        ]);
+        File.WriteAllLines(Path.Combine(dir, "input_before.tsv"),
+            [InputEvent.Header, new InputEvent("pad", -3_000_000_000, 0, -180, "0 00004000 128 128 128 128").ToString()]);
+        File.WriteAllText(Path.Combine(dir, "context.txt"),
+            "[start of the recording]\nwhere: shell: LiveArea page of PCSA00017 'LittleBigPlanet'\nprocess: shell shell pid 0x40010003: in front\n" +
+            "audio: port 1 MAIN (port1_MAIN.wav): system sounds (the shell's UI sounds); opened by shell thread 'SceWaveMain'; 48000 Hz grain 1024; idle (last output 3.0 s ago)\n" +
+            "audio: port 2 BGM (port2_BGM.wav): background music (the shell's BGM); opened by shell thread 'SceShellMusicCoreAudioOutput'; 48000 Hz grain 2048; outputting now\n" +
+            "\n[stop of the recording]\nwhere: game PCSA00017 'LittleBigPlanet' in front\n" +
+            "audio: BGM port held by shell (the shell's music player, SceShellMusicCore: the home screen / LiveArea music)\n");
+        Directory.CreateDirectory(Path.Combine(dir, "audio"));
+        var music = new short[48000 * 2 * 2];
+        for (int i = 0; i < music.Length / 2; i++) music[2 * i] = music[2 * i + 1] = (short)(6000 * Math.Sin(i * 0.03));
+        CaptureAudio.WriteWav(Path.Combine(dir, "audio", "02_port2_BGM_48000.wav"), music, 48000);
+        var click = new short[48000 / 5 * 2];
+        for (int i = 0; i < click.Length / 2; i++) click[2 * i] = click[2 * i + 1] = (short)(6000 * Math.Sin(i * 0.2));
+        CaptureAudio.WriteWav(Path.Combine(dir, "audio", "01_port1_MAIN_48000.wav"), click, 48000);
+
+        string report = CaptureAnalyzer.Analyze(dir, quiet: true);
+        Assert.Contains("Where:", report);
+        Assert.Contains("+0.0 s: shell: LiveArea page of PCSA00017 'LittleBigPlanet'", report);
+        Assert.Contains("+1.5 s: game PCSA00017 'LittleBigPlanet' in front", report);
+        Assert.Contains("at the stop: game PCSA00017", report);
+        Assert.Contains("contact sheet: frames.png (12 frames", report);
+        Assert.True(File.Exists(Path.Combine(dir, "frames.png")));
+        Assert.Contains("-3.0 s: pad port 0 buttons [Cross]", report);
+        Assert.Contains("02_port2_BGM_48000.wav", report);
+        Assert.Contains("[background music (the shell's BGM), opened by shell thread 'SceShellMusicCoreAudioOutput']", report);
+        Assert.Contains("continuous sound (music or a stream) on 02_port2_BGM_48000.wav", report);
+        Assert.Contains("BGM port held by shell", report);
+
+        // the same capture with only the short UI sound: no music
+        File.Delete(Path.Combine(dir, "audio", "02_port2_BGM_48000.wav"));
+        Assert.Contains("no continuous audio stream (music) during the recording", CaptureAnalyzer.Analyze(dir, quiet: true));
+    }
+
     /// <summary>A port that is simply idle between short sounds (the shell's UI sounds) drains its host queue: that
     /// is not an underrun; a port that keeps outputting grains on time and still runs dry is.</summary>
     [Fact]

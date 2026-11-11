@@ -44,6 +44,10 @@ public static class CaptureAnalyzer
         if (session.GetValueOrDefault("recorded") is { } rec) sb.AppendLine($"recorded: {rec}");
         var findings = new List<Finding>();
         var stats = new List<FrameStat>();
+        // the contact sheet: SheetCells frames spread over the recording, picked by index from the frame count
+        int total = CountFrames(dir, expectedFrames);
+        var sheetAt = SheetIndices(total, SheetCells);
+        var sheet = new SortedDictionary<int, byte[]>();
         if (File.Exists(framesPath))
         {
             foreach (var (f, pic) in FramesFile.ReadAll(framesPath))
@@ -57,6 +61,7 @@ public static class CaptureAnalyzer
                     st.Hash = XxHash64.HashToUInt64(px);
                     (st.Luma, st.Dark) = Brightness(px);
                     st.Thumb = Downscale(px, w, h, TW, TH);
+                    if (sheetAt.Contains(stats.Count)) sheet[stats.Count] = Downscale(px, w, h, SheetW, SheetH);
                 }
                 stats.Add(st);
             }
@@ -106,6 +111,10 @@ public static class CaptureAnalyzer
             sb.AppendLine(FpsLine(stats));
         }
 
+        // where the player is, what the screen showed, what they did just before
+        sb.AppendLine();
+        foreach (var l in ContextLines(dir, input, startNs, stats, sheet)) sb.AppendLine(l);
+
         sb.AppendLine();
         sb.AppendLine($"Findings ({findings.Count}):");
         if (findings.Count == 0) sb.AppendLine("  none in the presented frames");
@@ -147,12 +156,18 @@ public static class CaptureAnalyzer
         if (File.Exists(Path.Combine(dir, "audio_mix.wav"))) wavs.Insert(0, Path.Combine(dir, "audio_mix.wav"));
         sb.AppendLine();
         sb.AppendLine($"Audio ({wavs.Count} files):");
+        var owners = PortOwners(dir);
+        var portSound = new List<(string File, double Seconds, double SoundSeconds)>();
         foreach (var w in wavs.Take(64))
         {
             try
             {
                 var c = CaptureAudio.Analyze(w);
-                sb.Append(FormattableString.Invariant($"  {c.File}: {c.Seconds:F1} s at {c.Rate} Hz, peak {c.PeakDb:F1} dBFS, rms {c.RmsDb:F1} dBFS"));
+                string name = Path.GetFileName(w);
+                bool port = name.Contains("_port", StringComparison.Ordinal) && !name.Contains("ngs_voice", StringComparison.Ordinal);
+                if (port) portSound.Add((c.File, c.Seconds, c.SoundSeconds));
+                sb.Append(FormattableString.Invariant($"  {c.File}: {c.Seconds:F1} s at {c.Rate} Hz, sound {c.SoundSeconds:F1} s, peak {c.PeakDb:F1} dBFS, rms {c.RmsDb:F1} dBFS"));
+                if (owners.FirstOrDefault(o => name.Contains("_" + o.Key + "_", StringComparison.Ordinal)).Value is { } who) sb.Append($" [{who}]");
                 if (c.ClippedPct > 0.01) sb.Append(FormattableString.Invariant($", CLIPPED {c.ClippedPct:F2}%"));
                 if (c.Gaps > 0) sb.Append(FormattableString.Invariant($", {c.Gaps} silent gaps inside the sound (longest {c.LongestGapMs:F0} ms; at {string.Join(" ", c.GapTimesS.Take(8).Select(t => t.ToString("F2", CultureInfo.InvariantCulture)))} s)"));
                 if (c.Clicks > 0) sb.Append(FormattableString.Invariant($", {c.Clicks} clicks (at {string.Join(" ", c.ClickTimesS.Take(8).Select(t => t.ToString("F2", CultureInfo.InvariantCulture)))} s)"));
@@ -161,6 +176,14 @@ public static class CaptureAnalyzer
             }
             catch (Exception e) when (e is IOException or InvalidDataException) { sb.AppendLine($"  {Path.GetFileName(w)}: {e.Message}"); }
         }
+        // session.txt is written after the analysis of a new recording: the frames' span then gives the length
+        double recorded = ParseSeconds(session.GetValueOrDefault("recorded"));
+        if (recorded <= 0 && stats.Count > 1) recorded = (stats[^1].F.Info.PresentNs - stats[0].F.Info.PresentNs) / 1e9;
+        sb.AppendLine("  " + CaptureContext.StreamVerdict(portSound, recorded));
+        var ctxStop = ContextSection(dir, stop: true);
+        if (ctxStop.Count > 0) sb.AppendLine("  at the stop of the recording (context.txt):");
+        foreach (var l in ctxStop.Where(l => l.StartsWith("audio: ", StringComparison.Ordinal)))
+            sb.AppendLine("    " + l["audio: ".Length..]);
 
         sb.AppendLine();
         sb.AppendLine("Re-run (desktop, headless): VitaSharp.Desktop rerun \"" + dir + "\"" +
@@ -399,6 +422,114 @@ public static class CaptureAnalyzer
         if (p.Length < 6 || !uint.TryParse(p[1], NumberStyles.HexNumber, null, out uint btn)) return e.Data;
         var names = Enum.GetValues<Host.VitaButtons>().Where(v => v != 0 && ((uint)v & ((uint)v - 1)) == 0 && (btn & (uint)v) != 0).Select(v => v.ToString()).Distinct();
         return $"port {p[0]} buttons [{string.Join(' ', names)}] sticks {p[2]},{p[3]} {p[4]},{p[5]}";
+    }
+
+    // ------------------------------------------------------------------ context (where, contact sheet, input before)
+
+    const int SheetCells = 12, SheetCols = 4, SheetW = 240, SheetH = 136;
+
+    /// <summary>The frames in the capture: timeline.tsv's lines (written before the analysis), else the caller's count.</summary>
+    static int CountFrames(string dir, int expected)
+    {
+        string t = Path.Combine(dir, "timeline.tsv");
+        if (!File.Exists(t)) return expected;
+        try { return File.ReadLines(t).Count(l => l.Length > 0 && l[0] != '#'); }
+        catch (IOException) { return expected; }
+    }
+
+    /// <summary><paramref name="cells"/> frame indices spread evenly from the first to the last frame.</summary>
+    internal static HashSet<int> SheetIndices(int total, int cells)
+    {
+        var s = new HashSet<int>();
+        if (total <= 0) return s;
+        for (int i = 0; i < cells; i++) s.Add((int)Math.Round(i * (total - 1) / (double)Math.Max(1, cells - 1)));
+        return s;
+    }
+
+    /// <summary>context.txt's lines of the start or the stop section ("[start of the recording]" / "[stop ...]").</summary>
+    internal static List<string> ContextSection(string dir, bool stop)
+    {
+        string p = Path.Combine(dir, "context.txt");
+        var lines = new List<string>();
+        if (!File.Exists(p)) return lines;
+        bool inside = false;
+        foreach (var l in File.ReadLines(p))
+        {
+            if (l.StartsWith('[')) { inside = l.StartsWith(stop ? "[stop" : "[start", StringComparison.Ordinal); continue; }
+            if (inside && l.Length > 0) lines.Add(l);
+        }
+        return lines;
+    }
+
+    /// <summary>Port WAV name (portN_TYPE) -> "role, opened by X thread 'Y'" from context.txt (both sections; a
+    /// handle used by two processes lists both).</summary>
+    static Dictionary<string, string> PortOwners(string dir)
+    {
+        var d = new Dictionary<string, string>();
+        foreach (var l in ContextSection(dir, false).Concat(ContextSection(dir, true)))
+        {
+            // audio: port 1 MAIN (port1_MAIN.wav): role; opened by X thread 'Y'; ...
+            int a = l.IndexOf(" (port", StringComparison.Ordinal), b = l.IndexOf(".wav): ", StringComparison.Ordinal);
+            if (!l.StartsWith("audio: port", StringComparison.Ordinal) || a < 0 || b < a) continue;
+            string key = l[(a + 2)..b];
+            var parts = l[(b + 7)..].Split("; ");
+            string who = parts.Length >= 2 ? $"{parts[0]}, {parts[1]}" : parts[0];
+            d[key] = d.TryGetValue(key, out var old) && old != who ? $"{old} / {who}" : who;
+        }
+        return d;
+    }
+
+    static double ParseSeconds(string? recorded) =>
+        recorded != null && double.TryParse(recorded.Split(' ')[0], NumberStyles.Float, CultureInfo.InvariantCulture, out var s) ? s : 0;
+
+    /// <summary>The report's "Where" part: the screen at the start and every change (input.tsv kind ctx), the
+    /// processes, the contact sheet (frames.png) and the last input before the recording (input_before.tsv).</summary>
+    static List<string> ContextLines(string dir, List<InputEvent> input, long startNs, List<FrameStat> stats, SortedDictionary<int, byte[]> sheet)
+    {
+        var o = new List<string>();
+        // times from the recording's start mark (start-ns of session.txt is the capture clock's origin)
+        if (input.FirstOrDefault(e => e.Kind == "mark" && e.Data.StartsWith("start", StringComparison.Ordinal)) is { Kind: not null } m) startNs = m.Ns;
+        var start = ContextSection(dir, false);
+        var ctx = input.Where(e => e.Kind == "ctx").ToList();
+        o.Add("Where:");
+        if (start.Count == 0 && ctx.Count == 0) o.Add("  (no context.txt: a capture from an older build)");
+        foreach (var e in ctx)
+            o.Add(FormattableString.Invariant($"  {(e.Ns - startNs) / 1e9:+0.0;-0.0} s: {e.Data}"));
+        foreach (var l in start.Where(l => l.StartsWith("process: ", StringComparison.Ordinal))) o.Add("  " + l);
+        var stopWhere = ContextSection(dir, true).FirstOrDefault(l => l.StartsWith("where: ", StringComparison.Ordinal));
+        if (stopWhere != null) o.Add($"  at the stop: {stopWhere["where: ".Length..]}");
+
+        if (sheet.Count > 0)
+        {
+            int rows = (sheet.Count + SheetCols - 1) / SheetCols;
+            var img = new byte[SheetW * SheetCols * SheetH * rows * 4];
+            int k = 0;
+            var times = new List<string>();
+            foreach (var (idx, cell) in sheet)
+            {
+                int cx = k % SheetCols, cy = k / SheetCols;
+                for (int y = 0; y < SheetH; y++)
+                    cell.AsSpan(y * SheetW * 4, SheetW * 4).CopyTo(img.AsSpan(((cy * SheetH + y) * SheetW * SheetCols + cx * SheetW) * 4));
+                times.Add(FormattableString.Invariant($"{(stats[idx].F.Info.PresentNs - startNs) / 1e9:+0.0;-0.0}"));
+                k++;
+            }
+            try
+            {
+                CapturePng.Write(Path.Combine(dir, "frames.png"), img, SheetW * SheetCols, SheetH * rows);
+                o.Add($"  contact sheet: frames.png ({sheet.Count} frames across the recording, left to right then down, at {string.Join(" ", times)} s)");
+            }
+            catch (IOException e) { o.Add($"  contact sheet not written: {e.Message}"); }
+        }
+
+        string before = Path.Combine(dir, "input_before.tsv");
+        if (File.Exists(before))
+        {
+            var ev = File.ReadLines(before).Select(InputEvent.Parse).OfType<InputEvent>().ToList();
+            o.Add(ev.Count == 0 ? "  input before the recording: none (no button or touch change since the game started)" : "  input before the recording (the last changes, input_before.tsv):");
+            foreach (var e in ev.TakeLast(8))
+                o.Add(FormattableString.Invariant($"    {(e.Ns - startNs) / 1e9:+0.0;-0.0} s: {e.Kind} {DescribeInput(e)}"));
+        }
+        return o;
     }
 
     /// <summary>Each finding's frame with two before and two after, side by side (240x136 each), the finding in the

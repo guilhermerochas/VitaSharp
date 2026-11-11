@@ -338,6 +338,16 @@ public sealed class VitaSystem
     /// trophy was earned. 0 = none.</summary>
     public long TrophyUnlockTick;
 
+    /// <summary>The title whose LiveArea page the shell shows (null: its home screen, the bubble pages), for the
+    /// diagnostics (Gravar tudo's context): see <see cref="NoteShellLiveArea"/>.</summary>
+    public ShellPage? ShellLiveArea { get; private set; }
+
+    public sealed record ShellPage(string TitleId, string Title);
+
+    public void NoteShellLiveArea(string titleId, string title) => ShellLiveArea = new ShellPage(titleId, title);
+
+    public void NoteShellHome() => ShellLiveArea = null;
+
     /// <summary>The application holding the BGM port (sceAppMgrAcquireBgmPort*), -1 for none.</summary>
     public int BgmPortOwner = -1;
     /// <summary>The application the BGM port holder plays for (sceAppMgrSetBgmProxyApp), -1 for none.</summary>
@@ -391,6 +401,7 @@ public sealed class VitaSystem
         var fg = Foreground;
         if (fg == null || fg.IsShell || Shell == null) return;
         Log.Info($"PS button: {fg.Describe()} goes to its LiveArea");
+        NoteShellLiveArea(fg.TitleId, fg.Title);
         PostShellEvent(ShellEvents.ShowLiveArea, fg.AppId);
     }
 

@@ -69,6 +69,10 @@ public sealed partial class Audio : HleModule
             var p = new Port { Type = type, Grain = len, Freq = freq <= 0 ? 48000 : freq, Channels = mode == 0 ? 1 : 2 };
             try { p.Stream = Emu.Host.Audio?.OpenStream(p.Freq, 2, len); } catch { p.Stream = null; }
             p.Stats = AudioDiagnostics.OpenPort($"port {id} {TypeName(type)}{(ext ? " (ext)" : "")}", p.Grain, p.Freq, p.Channels, p.Stream);
+            p.Stats.Owner = Emu;
+            p.Stats.OwnerThread = GuestThread.Current?.Name ?? "";
+            p.Stats.Type = type;
+            p.Stats.DumpName = $"port{id}_{TypeName(type)}";
             p.DumpName = $"port{id}_{TypeName(type)}";
             p.Dump = AudioDump.Open(p.DumpName, p.Freq);
             p.DumpGen = AudioDump.Generation;

@@ -93,7 +93,7 @@ public static class CaptureAudio
     }
 
     /// <summary>One file's checks: level, clipping, silent stretches inside sound, sample jumps (clicks).</summary>
-    public sealed record Check(string File, int Rate, double Seconds, double PeakDb, double RmsDb, double ClippedPct, int Gaps, double LongestGapMs, int Clicks, List<double> GapTimesS, List<double> ClickTimesS);
+    public sealed record Check(string File, int Rate, double Seconds, double PeakDb, double RmsDb, double ClippedPct, int Gaps, double LongestGapMs, int Clicks, List<double> GapTimesS, List<double> ClickTimesS, double SoundSeconds = 0);
 
     public static Check Analyze(string path)
     {
@@ -107,9 +107,18 @@ public static class CaptureAudio
         // silent stretches between sound: 50 ms or more of exact zeros after sound and before more sound
         long zeroRun = 0, lastSound = -1;
         int minGap = rate / 20;
+        // time with audible sound: 20 ms windows above -60 dBFS RMS
+        int win = Math.Max(1, rate / 50), soundWindows = 0;
+        double winSum = 0;
         for (long i = 0; i < n; i++)
         {
             int l = s[2 * i], r = s[2 * i + 1];
+            winSum += (double)l * l + (double)r * r;
+            if ((i + 1) % win == 0)
+            {
+                if (winSum / (2.0 * win) > 32.768 * 32.768) soundWindows++; // RMS above -60 dBFS (32.8 of 32768)
+                winSum = 0;
+            }
             int a = Math.Max(Math.Abs(l), Math.Abs(r));
             peak = Math.Max(peak, a);
             if (a >= 32767) clipped++;
@@ -133,7 +142,7 @@ public static class CaptureAudio
         }
         double rms = Math.Sqrt(sum / Math.Max(1, 2 * n));
         static double Db(double v) => v <= 0 ? -120 : 20 * Math.Log10(v / 32768.0);
-        return new Check(Path.GetFileName(path), rate, n / (double)rate, Db(peak), Db(rms), 100.0 * clipped / Math.Max(1, n), gaps, longest, clicks, gapTimes, clickTimes);
+        return new Check(Path.GetFileName(path), rate, n / (double)rate, Db(peak), Db(rms), 100.0 * clipped / Math.Max(1, n), gaps, longest, clicks, gapTimes, clickTimes, soundWindows * (double)win / rate);
     }
 }
 
