@@ -153,7 +153,7 @@ public static class ShaderGenerator
     /// Version of the translator output. Persistent shader caches are keyed by it: bump it whenever a change to the
     /// USSE translation or to this generator alters the GLSL (or its metadata) produced for an existing program.
     /// </summary>
-    public const int GeneratorVersion = 25;
+    public const int GeneratorVersion = 26;
 
     /// <summary>Clip distances the generated vertex shaders may write (index 0 the far plane, 1-7 the GXM user clip
     /// planes 0-6): the Vulkan minimum of maxClipDistances.</summary>
@@ -677,12 +677,14 @@ float packC10(vec3 c) {
         foreach (var s in samplerVars.Values)
             if (s.RtFetch != null) sb.Append(RtFetchHelper(s.RtFetch, s.GlslName, hints.TextureFormats[s.Index]));
         sb.Append(decl);
-        int Size(int max, int min) => Math.Max(Math.Min(max + 1, 64), min);
+        // every register an instruction names with a constant index is in its array (a GLSL constant index past the
+        // array does not compile: the whole draw was lost); a dynamic index (Track(255)) covers 64 registers
+        int Size(int max, int min) => Math.Max(max + 1, min);
         sb.AppendLine($"vec4 pa[{Size(t.MaxPa, 8)}];");
         sb.AppendLine($"vec4 sa[{Size(t.MaxSa, 8)}];");
         sb.AppendLine($"vec4 r[{Size(t.MaxTemp, 8)}];");
         sb.AppendLine($"vec4 o[{Size(t.MaxOut, vertex ? 16 : 8)}];");
-        sb.AppendLine("vec4 fi[8];");
+        sb.AppendLine($"vec4 fi[{Size(t.MaxFi, 8)}];");
         sb.AppendLine("bool p[4];");
         sb.AppendLine("int idx[2];");
         if (t.DynBanks.Count > 0) sb.Append(DynHelpers(t.DynBanks));
