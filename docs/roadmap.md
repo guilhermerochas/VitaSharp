@@ -1306,6 +1306,13 @@ Lista de itens futuros do VitaSharp. Marque `[x]` quando um item for concluído.
 
 ## Código
 
+- [ ] Projeto de benchmark à parte (pedido do usuário, 11/11/2026): `tests/VitaSharp.Benchmarks` com BenchmarkDotNet
+  (`[MemoryDiagnoser]` + `[DisassemblyDiagnoser]`), fora da suíte de testes e do build normal, para medir os caminhos
+  quentes isolados antes e depois de cada otimização: execução do worker da GPU (dump curto do Killzone), cópia e
+  liberação dos dados de shader, tradução de shaders USSE, tradutor ARM->IL e despacho do backend nativo, HLE mais
+  chamado (travas, lwmutex), decodificador ATRAC9, cópia/swizzle de texturas. Script `build/bench.ps1`/`.sh`
+  (multiplataforma) que roda um filtro e guarda o resultado em Markdown para comparar. Junto: `DOTNET_JitDisasm` nos
+  métodos que o perfil mostrar quentes; ILSpy para conferir o IL gerado (ferramentas já instaladas).
 - [ ] Scripts `.sh` no Google Shell Style Guide (pedido do usuário, 10/11/2026):
   https://google.github.io/styleguide/shellguide.html, junto com a regra de que todo `.sh` roda em Linux e macOS
   (bash 3.2, sem ferramentas só do GNU sem alternativa; ver `docs/agents/regras.md`). Passos: (1) adequar os 17
