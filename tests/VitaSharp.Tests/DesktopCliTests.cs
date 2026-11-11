@@ -151,9 +151,13 @@ public sealed class DesktopCliTests : IDisposable
         r = Run("firmware-info");
         Assert.Equal(1, r.ExitCode);
         Assert.Contains("No firmware installed", r.Output);
+        // it reports what is missing and fails with 1, it does not crash (an unhandled exception without vs0:sys/external
+        // took more than 2 minutes on macOS: the crash dump the test run's blame collector asks every child for)
         r = Run("firmware-verify");
-        Assert.NotEqual(0, r.ExitCode);
+        Assert.True(r.ExitCode == 1, Tail(r.Output));
         Assert.Contains("MISSING  vs0/sys/external/libc.suprx", r.Output);
+        Assert.Contains("vs0:sys/external: 0/0 modules decrypt", r.Output);
+        Assert.DoesNotContain("Unhandled exception", r.Output);
 
         // memdiff: a float3 that jumped (its new value existed elsewhere before) and a value that became NaN
         static void Dump(string path, float[] floats)

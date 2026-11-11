@@ -150,8 +150,11 @@ public static class FirmwareCli
             }
         }
         // every module in vs0:sys/external must decrypt
+        // (a data folder without a firmware has no such folder: none, not a crash)
         int mods = 0, modFail = 0;
-        foreach (var f in Directory.EnumerateFiles(Path.Combine(root, "vs0", "sys", "external"), "*.suprx"))
+        string external = Path.Combine(root, "vs0", "sys", "external");
+        var modules = Directory.Exists(external) ? Directory.EnumerateFiles(external, "*.suprx") : [];
+        foreach (var f in modules)
         {
             mods++;
             try
