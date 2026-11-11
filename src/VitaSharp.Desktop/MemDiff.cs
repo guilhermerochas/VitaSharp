@@ -35,7 +35,7 @@ static class MemDiff
             {
                 uint av = BitConverter.ToUInt32(a, i), bv = BitConverter.ToUInt32(b, i);
                 bool bad = av is 0x7FC00000 or 0x7F800000 or 0xFF800000;
-                if (bad && av != bv && nans++ < 200) Console.WriteLine($"NAN {addr + (uint)i:X8}: {bv:X8} ({BitConverter.UInt32BitsToSingle(bv)}) -> {av:X8}");
+                if (bad && av != bv && nans++ < 200) Console.WriteLine(FormattableString.Invariant($"NAN {addr + (uint)i:X8}: {bv:X8} ({BitConverter.UInt32BitsToSingle(bv)}) -> {av:X8}"));
             }
         }
         Console.WriteLine($"{nans} values became NaN/Inf");
@@ -54,7 +54,7 @@ static class MemDiff
                 i += 8; // do not report overlapping windows of the same vector
             }
         }
-        Console.WriteLine($"{cands.Count} jumped float3 values (>= {minJump})");
+        Console.WriteLine(FormattableString.Invariant($"{cands.Count} jumped float3 values (>= {minJump})"));
 
         // where did the new values come from? look for each new triple anywhere in the before snapshot
         var wanted = new Dictionary<(uint, uint, uint), List<uint>>();
@@ -69,7 +69,7 @@ static class MemDiff
         foreach (var c in cands.OrderByDescending(c => wanted[Key(c.A)].Count > 0).ThenBy(c => c.Addr))
         {
             var src = wanted[Key(c.A)];
-            Console.WriteLine($"{c.Addr:X8}: ({c.B[0]:F2}, {c.B[1]:F2}, {c.B[2]:F2}) -> ({c.A[0]:F2}, {c.A[1]:F2}, {c.A[2]:F2})"
+            Console.WriteLine(FormattableString.Invariant($"{c.Addr:X8}: ({c.B[0]:F2}, {c.B[1]:F2}, {c.B[2]:F2}) -> ({c.A[0]:F2}, {c.A[1]:F2}, {c.A[2]:F2})")
                               + (src.Count > 0 ? "   new value existed before at " + string.Join(" ", src.Select(s => s.ToString("X8"))) : ""));
         }
         return 0;

@@ -380,9 +380,9 @@ static class ReplayGpu
             if (same == px) identical++;
             else Png.Write(Path.Combine(outDir, "diff_" + (name.StartsWith("frame_") ? name[6..] : name)), diff, aw, ah);
             if (mean > worstMean) { worstMean = mean; worst = name; }
-            sb.AppendLine($"{name} {100.0 * same / px:F3} {100.0 * off / px:F3} {mean:F4} {max}");
+            sb.AppendLine(FormattableString.Invariant($"{name} {100.0 * same / px:F3} {100.0 * off / px:F3} {mean:F4} {max}"));
         }
-        string summary = $"COMPARE {n} frames against {refDir}: {identical} pixel-identical, worst mean difference {worstMean:F4} ({worst})";
+        string summary = FormattableString.Invariant($"COMPARE {n} frames against {refDir}: {identical} pixel-identical, worst mean difference {worstMean:F4} ({worst})");
         sb.Insert(0, "# " + summary + "\n");
         File.WriteAllText(Path.Combine(outDir, "compare.txt"), sb.ToString());
         Log.Info(summary);
