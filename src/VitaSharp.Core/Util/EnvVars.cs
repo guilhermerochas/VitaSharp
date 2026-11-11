@@ -142,6 +142,15 @@ public static class EnvVars
     public const string NativeCorpus = "VITASHARP_NATIVE_CORPUS";
     /// <summary>Tests: the block corpus (recorded with <see cref="NativeCorpus"/>) the compile-cost benchmark compiles.</summary>
     public const string BenchCorpus = "VITASHARP_BENCH_CORPUS";
+    /// <summary>tests/VitaSharp.Benchmarks: the GPU dump (.vsgd) the GPU worker and shader translation benchmarks replay
+    /// (a short dump of a game, never in git; build/bench.* -Dump / --dump).</summary>
+    public const string BenchDump = "VITASHARP_BENCH_DUMP";
+    /// <summary>tests/VitaSharp.Benchmarks: an .at9 file the ATRAC9 benchmark decodes (without it, generated
+    /// superframes that the decoder accepts).</summary>
+    public const string BenchAt9 = "VITASHARP_BENCH_AT9";
+    /// <summary>tests/VitaSharp.Benchmarks: variants of the GPU worker benchmark besides "base", '|'-separated, each a
+    /// ','-separated list of KEY=VALUE switches (build/bench.* --variants), measured in one run on the same build.</summary>
+    public const string BenchVariants = "VITASHARP_BENCH_VARIANTS";
 
     /// <summary>=1: x64 native blocks count the VFP/NEON ops and conditional branches they execute (profiling of
     /// register pinning / compare-branch fusion; reported on the PERF cycles lines). ARM64 native blocks count the
