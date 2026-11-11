@@ -34,6 +34,7 @@ public sealed unsafe class UniformChunk
         Span.Clear(); // heap memory comes uninitialised: the zero invariant below starts here
     }
 
+    // With UniformArena.ZeroOnRecycle (VITASHARP_UB_ZERO=recycle; by default the renter writes every byte instead):
     // A chunk the arena hands out is all zero except what was written into it since, and is zero again when it is
     // recycled: a draw's uniform slice must read zero where no buffer is copied, and clearing every slice whole (8 KB
     // per unknown-size buffer, most of it never written) was most of the guest thread's cost per draw (F1 2011 races,
@@ -46,7 +47,7 @@ public sealed unsafe class UniformChunk
     /// cleared when the chunk is recycled. Any thread.</summary>
     public void MarkWritten(int offset, int length)
     {
-        if (length <= 0) return;
+        if (length <= 0 || !UniformArena.ZeroOnRecycle) return;
         int g0 = offset >> GranuleShift, g1 = (offset + length - 1) >> GranuleShift;
         for (int w = g0 >> 6; w <= g1 >> 6; w++)
         {
@@ -102,6 +103,11 @@ public sealed unsafe class UniformChunk
 public static class UniformArena
 {
     public const int ChunkSize = 1 << 20;
+    /// <summary>VITASHARP_UB_ZERO=recycle (A/B): the old invariant, a chunk is zero except what was written since it was
+    /// handed out and the written granules are cleared when it is recycled. Default: no clearing; whoever rents a slice
+    /// writes every byte the backend binds (Gxm.WriteSlot zeroes what a slot does not copy). Killzone cleared ~6.5 MB a
+    /// frame on recycle (0.9 ms of the PC's GPU worker) for ~0.3 MB of slot tails.</summary>
+    public static readonly bool ZeroOnRecycle = Environment.GetEnvironmentVariable(Util.EnvVars.UbZero) == "recycle";
     /// <summary>Statistics (PERF uniforms, under the arena lock): bytes zeroed when chunks were recycled, and the time.</summary>
     public static long ClearedBytes, ClearTicks;
     // spare managed chunks kept after a burst of queued work (64 MB). Counted apart from the heap's chunks: with the
@@ -142,9 +148,10 @@ public static class UniformArena
         }
     }
 
-    /// <summary>A zero-filled slice of <paramref name="bytes"/> bytes at <paramref name="offset"/> in the returned chunk.
-    /// <paramref name="clear"/> false: the caller marks what it writes (<see cref="UniformChunk.MarkWritten"/>); true: the
-    /// whole slice counts as written.</summary>
+    /// <summary>A slice of <paramref name="bytes"/> bytes at <paramref name="offset"/> in the returned chunk. The caller
+    /// writes every byte of it that a reader uses: its contents are whatever an earlier slice left, unless
+    /// <see cref="ZeroOnRecycle"/>, where it is zero-filled and <paramref name="clear"/> false means the caller marks
+    /// what it writes (<see cref="UniformChunk.MarkWritten"/>), true that the whole slice counts as written.</summary>
     public static UniformChunk Rent(int bytes, out int offset, bool clear = true)
     {
         UniformChunk c;
@@ -212,7 +219,7 @@ public static class UniformArena
     static void Recycle(UniformChunk c)
     {
         if (c.InFree) return;
-        c.ClearWritten();
+        if (ZeroOnRecycle) c.ClearWritten();
         // heap chunks are bounded by the heap and always kept; managed ones up to MaxFreeChunks
         if (c.Heap != null) { c.InFree = true; Free.Push(c); }
         else if (_freeManaged < MaxFreeChunks) { c.InFree = true; Free.Push(c); _freeManaged++; }

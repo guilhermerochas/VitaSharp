@@ -77,8 +77,19 @@ public sealed record VertexInputInfo(uint RegIndex, int Location, char Kind, int
 /// A <see cref="Mapped"/> slot is too large to copy per draw (games point such buffers at whole render targets and
 /// read pixels with memory loads). It occupies one 16-byte header in the uniform data whose first word the renderer
 /// fills with <see cref="ShaderGenerator.MappedFlag"/> | offset of the data in the stage's mapped-memory buffer.
+/// A slot with <see cref="Split"/> 0 or 1 (a large bound buffer: bone palettes and other arrays) is read from a binding
+/// of its own when <see cref="ShaderGenerator.SplitUniformSlots"/> is on, so draws that bind the same buffer can share
+/// one copy of it; its bytes in the uniform data are then not read.
 /// </remarks>
-public sealed record UniformBufferSlot(uint GuestIndex, int ByteOffset, int ByteSize, bool Mapped = false, int DeclaredBytes = 0);
+public sealed record UniformBufferSlot(uint GuestIndex, int ByteOffset, int ByteSize, bool Mapped = false, int DeclaredBytes = 0, int Split = -1)
+{
+    /// <summary>Offset in the uniform data without the split slots (<see cref="ShaderGenerator.SplitUniformSlots"/>).</summary>
+    public int CompactOffset { get; init; }
+    /// <summary>Read from a binding of its own (split slots on).</summary>
+    public bool IsSplit => Split >= 0 && ShaderGenerator.SplitUniformSlots;
+    /// <summary>Offset of the slot in the per-draw uniform data as the shaders read it (meaningless when <see cref="IsSplit"/>).</summary>
+    public int DataOffset => ShaderGenerator.SplitUniformSlots ? CompactOffset : ByteOffset;
+}
 
 public sealed class GeneratedShader
 {
@@ -142,7 +153,7 @@ public static class ShaderGenerator
     /// Version of the translator output. Persistent shader caches are keyed by it: bump it whenever a change to the
     /// USSE translation or to this generator alters the GLSL (or its metadata) produced for an existing program.
     /// </summary>
-    public const int GeneratorVersion = 24;
+    public const int GeneratorVersion = 25;
 
     /// <summary>Clip distances the generated vertex shaders may write (index 0 the far plane, 1-7 the GXM user clip
     /// planes 0-6): the Vulkan minimum of maxClipDistances.</summary>
@@ -278,6 +289,17 @@ public static class ShaderGenerator
     /// Mali bench of the Killzone frame with every check removed: -6 ms. Part of the cache key.</summary>
     public static bool UncheckedUniformLoads;
 
+    /// <summary>VITASHARP_UB_SHARE (default on where the device allows it; 0 = off; set by the renderer): the slots with
+    /// <see cref="UniformBufferSlot.Split"/> are read from bindings of their own (<see cref="SplitBinding"/>), the
+    /// address flag <see cref="SplitFlag"/>(k) routing memory loads there. Part of the cache key.</summary>
+    public static bool SplitUniformSlots;
+    /// <summary>Bound buffers at least this large get a split binding (two per stage at most).</summary>
+    public const int SplitSlotMinBytes = 4096;
+    public const int SplitSlotsPerStage = 2;
+    /// <summary>Set-0 binding of split slot <paramref name="k"/> of a stage (5/6 vertex, 7/8 fragment).</summary>
+    public static int SplitBinding(bool vertex, int k) => (vertex ? 5 : 7) + k;
+    public static uint SplitFlag(int k) => 0x10000000u << k;
+
     /// <summary>mediump on the values the GXP holds in half registers: the temporaries the translator unpacks them into,
     /// the varyings the GXP loads as F16 (every use a copy into such a temporary) and a half/8-bit colour output.
     /// Used by the generator with <see cref="RelaxHalfPrecision"/> and by the Mali cost what-if.</summary>
@@ -357,6 +379,15 @@ float packC10(vec3 c) {
 
     public static (List<UniformBufferSlot> Slots, int Bytes) UniformLayout(GxpProgram program) => UniformLayout(ProgramInput.From(program));
 
+    /// <summary>Bytes of the per-draw uniform data of a stage with these slots, without the split slots when
+    /// <see cref="SplitUniformSlots"/> (else the whole layout).</summary>
+    public static int DataBytes(List<UniformBufferSlot> slots)
+    {
+        int n = 0;
+        foreach (var s in slots) if (!s.IsSplit) n = Math.Max(n, s.DataOffset + s.ByteSize);
+        return n;
+    }
+
     static (List<UniformBufferSlot> Slots, int Bytes) UniformLayout(ProgramInput input)
     {
         var sizes = new SortedDictionary<int, (uint Size, uint Guest)>();
@@ -366,18 +397,21 @@ float packC10(vec3 c) {
             sizes[HostIndex(b.Index)] = ((b.Size + 3) / 4, b.Index);
         }
         var slots = new List<UniformBufferSlot>();
-        int lastBase = 0;
+        int lastBase = 0, splits = 0, compact = 0;
         foreach (var (_, (sz, guest)) in sizes)
         {
             long bytes = (long)sz * 16;
             if (bytes > MappedSlotThreshold)
             {
-                slots.Add(new UniformBufferSlot(guest, lastBase, 16, true, (int)Math.Min(bytes, int.MaxValue)));
+                slots.Add(new UniformBufferSlot(guest, lastBase, 16, true, (int)Math.Min(bytes, int.MaxValue)) { CompactOffset = compact });
                 lastBase += 16;
+                compact += 16;
                 continue;
             }
-            slots.Add(new UniformBufferSlot(guest, lastBase, (int)bytes));
+            int split = guest < 14 && bytes >= SplitSlotMinBytes && splits < SplitSlotsPerStage ? splits++ : -1;
+            slots.Add(new UniformBufferSlot(guest, lastBase, (int)bytes, Split: split) { CompactOffset = split >= 0 ? -1 : compact });
             lastBase += (int)bytes;
+            if (split < 0) compact += (int)bytes;
         }
         return (slots, lastBase);
     }
@@ -394,22 +428,32 @@ float packC10(vec3 c) {
 
         // ---- uniform buffers packed into one SSBO
         var (slots, lastBase) = UniformLayout(input);
-        var bufferBase = slots.ToDictionary(s => HostIndex(s.GuestIndex), s => (Base: s.ByteOffset, Guest: s.GuestIndex, s.Mapped));
+        var bufferBase = slots.ToDictionary(s => HostIndex(s.GuestIndex), s => (Base: s.DataOffset, Guest: s.GuestIndex, s.Mapped, Split: s.IsSplit ? s.Split : -1, Size: s.ByteSize));
+        var splitSlots = slots.Where(s => s.IsSplit).ToList();
         result.UniformBuffers.AddRange(slots);
+        int fullBytes = lastBase;
+        if (SplitUniformSlots) lastBase = DataBytes(slots);
         result.UniformBytes = lastBase;
-        bool hasUb = lastBase > 0;
+        bool hasUb = fullBytes > 0;
         bool hasMapped = slots.Any(s => s.Mapped);
         if (hasUb)
         {
             decl.AppendLine($"layout(std430, set = 0, binding = {(vertex ? 0 : 1)}) readonly restrict buffer UniformData {{ uint ub[]; }};");
+            // split slots: their own bindings, bound to the slot's bytes (the renderer binds exactly the slot's size)
+            var split = new StringBuilder();
+            foreach (var ss in splitSlots)
+            {
+                decl.AppendLine($"layout(std430, set = 0, binding = {SplitBinding(vertex, ss.Split)}) readonly restrict buffer SplitData{ss.Split} {{ uint us{ss.Split}[]; }};");
+                split.Append($"if ((addr & 0x{SplitFlag(ss.Split):X}) != 0) {{ uint j = uint(addr & 0x{SplitFlag(0) - 1:X}) >> 2; return j < uint(us{ss.Split}.length()) ? uintBitsToFloat(us{ss.Split}[j]) : 0.0; }} ");
+            }
             if (hasMapped)
             {
                 decl.AppendLine($"layout(std430, set = 0, binding = {(vertex ? 2 : 3)}) readonly restrict buffer MappedData {{ uint mem[]; }};");
-                decl.AppendLine($"float fetchMemory(int addr) {{ if ((addr & 0x{MappedFlag:X}) != 0) {{ uint j = uint(addr & 0x{MappedFlag - 1:X}) >> 2; " +
+                decl.AppendLine($"float fetchMemory(int addr) {{ {split}if ((addr & 0x{MappedFlag:X}) != 0) {{ uint j = uint(addr & 0x{MappedFlag - 1:X}) >> 2; " +
                                 "return j < uint(mem.length()) ? uintBitsToFloat(mem[j]) : 0.0; } " +
                                 "uint i = uint(addr) >> 2; return i < uint(ub.length()) ? uintBitsToFloat(ub[i]) : 0.0; }");
             }
-            else decl.AppendLine("float fetchMemory(int addr) { uint i = uint(addr) >> 2; return i < uint(ub.length()) ? uintBitsToFloat(ub[i]) : 0.0; }");
+            else decl.AppendLine($"float fetchMemory(int addr) {{ {split}uint i = uint(addr) >> 2; return i < uint(ub.length()) ? uintBitsToFloat(ub[i]) : 0.0; }}");
         }
         else decl.AppendLine("float fetchMemory(int addr) { return 0.0; }");
 
@@ -447,7 +491,16 @@ float packC10(vec3 c) {
             // one statement per word: the loop's dynamic sa index kept the whole array in memory on Mali (stack
             // spills per fragment); constant indices let the compiler keep the words in registers and drop the unused
             // ones. Uncharted's gameplay lighting pass: 25 -> 15 ms on the Mali-G57 (bench, three programs).
-            if (UniformLoop)
+            if (bb.Split >= 0)
+            {
+                // a split slot's words come from its own binding (bound to the slot's size: in range up to there)
+                long splitBase = SplitFlag(bb.Split);
+                bool uncheckedSplit = UncheckedUniformLoads && count * 4 <= bb.Size;
+                for (int k = 0; k < count; k += 4)
+                    t.Line(string.Join(" ", Enumerable.Range(k, Math.Min(4, count - k)).Select(j => $"sa[{(start + j) >> 2}].{"xyzw"[(start + j) & 3]} = " +
+                        (uncheckedSplit ? $"uintBitsToFloat(us{bb.Split}[{j}]);" : $"fetchMemory({splitBase + j * 4});"))));
+            }
+            else if (UniformLoop)
                 t.Line($"for (int k = 0; k < {count}; k++) {{ int w = {start} + k; sa[w >> 2][w & 3] = fetchMemory({bb.Base} + k * 4); }}");
             else
             {
@@ -483,6 +536,12 @@ float packC10(vec3 c) {
                         {
                             // runtime base (flag | offset in the mapped-memory buffer) written into the slot header by the renderer
                             t.Store(reg, new Val($"(int(ub[{bb.Base / 4}]) + {(int)u.Base})", 'i', 1), 1);
+                        }
+                        else if (found && bb.Split >= 0)
+                        {
+                            // a split slot: its own binding, selected by the address flag
+                            long baseAddr = SplitFlag(bb.Split) + u.Base;
+                            t.Store(reg, new Val(baseAddr.ToString(), 'i', 1), 1);
                         }
                         else
                         {

@@ -45,6 +45,9 @@ public sealed class GpuDumpReader : IDisposable
     /// them in place); the slice is given back when the next draw is read.</summary>
     static void MoveUniformsToArena(DrawCommand d)
     {
+        // dumps hold each stage's whole uniform layout; split slots (ShaderGenerator.SplitUniformSlots) are bound apart
+        if (d.VertexProgram.Info.HasSplit) SplitRecorded(d, d.VertexProgram.Info, ref d.VertexUniforms, ref d.VertexUniformsOffset, ref d.VertexUniformsLength, 0);
+        if (d.FragmentProgram.Info is { HasSplit: true } fi) SplitRecorded(d, fi, ref d.FragmentUniforms, ref d.FragmentUniformsOffset, ref d.FragmentUniformsLength, 2);
         int v = d.VertexUniformsLength, f = d.FragmentUniformsLength, va = UniformArena.Align(v);
         if (v + f == 0) return;
         byte[] vu = d.VertexUniforms, fu = d.FragmentUniforms;
@@ -53,6 +56,30 @@ public sealed class GpuDumpReader : IDisposable
         fu.AsSpan(d.FragmentUniformsOffset, f).CopyTo(c.Span.Slice(off + va));
         d.VertexUniformsOffset = off;
         d.FragmentUniformsOffset = off + va;
+    }
+
+    /// <summary>A recorded stage's uniform data (the whole layout) becomes the compact data plus the split slots' slices.</summary>
+    static void SplitRecorded(DrawCommand d, Gxm.GxmProgramInfo info, ref byte[] data, ref int offset, ref int length, int stage)
+    {
+        var src = data.AsSpan(offset, length);
+        var compact = new byte[info.DataBytes];
+        foreach (var s in info.UniformSlots)
+        {
+            int n = Math.Max(0, Math.Min(s.ByteSize, src.Length - s.ByteOffset));
+            if (s.IsSplit)
+            {
+                var c = UniformArena.Rent(s.ByteSize, out int off, clear: false);
+                var dst = c.Span.Slice(off, s.ByteSize);
+                dst.Clear();
+                if (n > 0) src.Slice(s.ByteOffset, n).CopyTo(dst);
+                d.SetSplit(stage + s.Split, c, off, s.ByteSize);
+                UniformArena.Release(c);
+            }
+            else if (n > 0 && s.DataOffset < compact.Length) src.Slice(s.ByteOffset, Math.Min(n, compact.Length - s.DataOffset)).CopyTo(compact.AsSpan(s.DataOffset));
+        }
+        data = compact;
+        offset = 0;
+        length = compact.Length;
     }
 
     public bool Next()

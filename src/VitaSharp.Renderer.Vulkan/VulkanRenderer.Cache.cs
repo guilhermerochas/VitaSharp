@@ -199,7 +199,8 @@ public sealed unsafe partial class VulkanRenderer
         // and the far-plane clip without shaderClipDistance (Mali)
         ulong gen = (uint)ShaderGenerator.CacheVersion | (ShaderGenerator.PerSampleFramebufferFetch ? 0 : 1ul << 32) | (ShaderGenerator.LowerDynamicIndexing ? 1ul << 33 : 0)
                     | (ulong)ShaderGenerator.FarPlane << 34 | (ShaderGenerator.VertexStores ? 0 : 1ul << 36) | (ShaderGenerator.FragmentStores ? 0 : 1ul << 37)
-                    | (ShaderGenerator.RelaxHalfPrecision ? 1ul << 38 : 0) | (ShaderGenerator.UncheckedUniformLoads ? 1ul << 39 : 0);
+                    | (ShaderGenerator.RelaxHalfPrecision ? 1ul << 38 : 0) | (ShaderGenerator.UncheckedUniformLoads ? 1ul << 39 : 0)
+                    | (ShaderGenerator.SplitUniformSlots ? 1ul << 40 : 0);
         Span<ulong> k = stackalloc ulong[3] { programHash, hintKey, gen };
         return XxHash64.HashToUInt64(MemoryMarshal.AsBytes(k));
     }

@@ -389,6 +389,35 @@ Lista de itens futuros do VitaSharp. Marque `[x]` quando um item for concluído.
   Killzone; inclui o memmove de `CopyLateUniforms`, ~3% do worker): só cai sem copiar, ligando a memória do guest
   direto (mudança grande, em aberto). Uncharted quase não usa o caminho de cópia (4 blocos/quadro): A/B igual
   (worker 3,23 vs 3,17 ms/quadro)
+- [x] Rodada 21 de desempenho (perf/desktop-21, 10/11/2026): **cópias de uniforms do worker da GPU**. Medido com a
+  nova linha `PERF ubstats` (`VITASHARP_UB_STATS=1`, a partir de `VITASHARP_WORKER_PROF_FROM`): no Killzone (escada,
+  quadro 4400+) o worker copiava 12,9 MB/quadro de uniforms (856 cópias, quase todas de slots de 16 KB: buffers que
+  terminam em array, lidos até o próximo buffer), 8,5 MB deles repetidos no mesmo quadro (o mesmo endereço e conteúdo
+  ligado por vários desenhos); no F1 2011 (corrida) 19,7 MB/quadro, 17 MB repetidos; Uncharted 0,4 MB; Mania 0;
+  conteúdo igual ao do quadro anterior: ~0 (as paletas mudam todo quadro, então um cache entre quadros com
+  rastreamento de escrita não ajudaria). Duas mudanças, sem mudar a imagem: (1) a arena de uniforms não zera mais os
+  chunks reciclados; quem aluga a fatia escreve todos os bytes (cópia + zeros só no resto do slot, ~0,1 MB/quadro no
+  Killzone contra 6,5 MB zerados antes); (2) os dois maiores buffers ligados (>= 4 KB) de cada estágio viram "slots
+  separados" (`UniformBufferSlot.Split`): o shader os lê de bindings próprios (5/6 vértice, 7/8 fragmento, dinâmicos
+  como 0/1, endereço com flag 0x10000000/0x20000000 no `fetchMemory`) e os desenhos de uma cena já encerrada que ligam
+  o mesmo buffer leem uma cópia só (`Gxm.CopySplit`; o hardware lê os buffers quando executa a cena, então todos os
+  desenhos dela veem a memória daquele momento). Dumps continuam com o layout inteiro (o gravador remonta, o leitor
+  separa). `VITASHARP_UB_SHARE=0` volta aos slots no bloco por desenho; `VITASHARP_UB_ZERO=recycle` volta a zerar na
+  reciclagem; `=check` preenche as fatias com um marcador e conta palavras não escritas (Killzone 0 de 1,57 milhão,
+  F1 0 de 4,86 milhões; atenção: 0xDEADBEEF aparece de verdade na memória do Killzone, o marcador agora é um NaN).
+  Resultado (PC, CPU do worker da GPU por quadro em regime, máquina dividida com outros agentes, pares A/B na mesma
+  build): Killzone 9,20/8,27/8,23 contra 10,25/11,06/10,65 ms (~-2 ms, -20%); F1 corrida 6,39/7,19/6,62 contra
+  9,28/10,12/7,93 ms (~-2,4 ms); copiados por quadro Killzone 6,5 -> 2,3 MB, F1 9,6 -> 0,9-1,3 MB; zerados 6,5/9,6 MB
+  -> 0. `replay-gpu --compare` nos 9 dumps (5.782 quadros): todos pixel-idênticos. Estudado e não feito: ligar a
+  memória do guest direto na GPU como o Vita3K (`map_memory` no `sceGxmMapMemory`, métodos ExternalHost
+  (VK_EXT_external_memory_host), PageTable/NativeBuffer no Android e endereço de dispositivo por bloco) eliminaria
+  até a cópia única, mas a GPU passaria a ler a memória no momento da execução (o worker hoje copia logo depois do fim
+  da cena, e o quadro executa depois; jogos que reescrevem o buffer entre esses pontos mudariam), o Mali não garante
+  o ExternalHost e o JIT usa a memória do guest num endereço fixo (aliasing de memória do Vulkan nesse endereço é
+  inviável no Windows); com 2/3 das cópias já compartilhadas o ganho restante é ~2,3 MB/quadro no Killzone. Fases de
+  ~1 fps e pausas de 30 s nas medidas do F1 apareceram com e sem a mudança (b-f1 em 2,5 fps, c-f1 com pausa de 31 s
+  no boot): eram a máquina (disco C: a 98%, outros agentes, o Storage Sense apagando as junctions no meio das
+  corridas), não o código
 
 ## Android
 
