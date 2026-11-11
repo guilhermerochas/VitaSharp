@@ -96,7 +96,10 @@ public sealed class SessionCapture : IPresentTap, IRandomHook, IDisposable
 
     sealed record PreRollState(string Path, long StartNs, long GuestUs, long Flip);
 
-    enum WorkKind { Frame, FlushPreRoll, Close }
+    enum WorkKind
+    {
+        Frame, FlushPreRoll, Close
+    }
 
     readonly record struct Work(WorkKind Kind, PresentInfo Info, byte[]? Pixels, int W, int H, Recording? Rec, ManualResetEventSlim? Done);
 
@@ -128,13 +131,19 @@ public sealed class SessionCapture : IPresentTap, IRandomHook, IDisposable
 
     string SafeWhere()
     {
-        try { return CaptureContext.Where(_emu); }
+        try
+        {
+            return CaptureContext.Where(_emu);
+        }
         catch (Exception e) { return $"(unknown: {e.GetType().Name})"; }
     }
 
     string SafeDescribe(string when)
     {
-        try { return CaptureContext.Describe(_emu, when); }
+        try
+        {
+            return CaptureContext.Describe(_emu, when);
+        }
         catch (Exception e) { return $"[{when}]\n(context unavailable: {e.Message})\n"; }
     }
 
@@ -144,7 +153,11 @@ public sealed class SessionCapture : IPresentTap, IRandomHook, IDisposable
         _o = options;
         // the last button and touch changes are always kept (a compare per poll): the report says what the player did
         // just before pressing F8 even without the pre-roll
-        lock (_lock) { InstallInput(); _input!.RecordMotion = false; }
+        lock (_lock)
+        {
+            InstallInput();
+            _input!.RecordMotion = false;
+        }
     }
 
     /// <summary>The last pad and touch changes while no recording runs (input_before.tsv of the next recording).</summary>
@@ -156,9 +169,15 @@ public sealed class SessionCapture : IPresentTap, IRandomHook, IDisposable
     public bool Armed => _preRollSeconds > 0;
     public double PreRollSeconds => _preRollSeconds;
     /// <summary>The folder of the running recording, or of the last one.</summary>
-    public string? Dir { get; private set; }
+    public string? Dir
+    {
+        get; private set;
+    }
     /// <summary>The zip of the last completed recording.</summary>
-    public string? LastZip { get; private set; }
+    public string? LastZip
+    {
+        get; private set;
+    }
     /// <summary>Set when the last recording was completely written (tests, scripted runs wait on it).</summary>
     public readonly ManualResetEventSlim Idle = new(true);
     /// <summary>Seconds since the running recording started (0 when none runs): the REC badge.</summary>
@@ -177,7 +196,11 @@ public sealed class SessionCapture : IPresentTap, IRandomHook, IDisposable
     /// skipped so the close waits only for the files themselves. Any thread.</summary>
     public void Hurry()
     {
-        if (_hurry.IsCancellationRequested) return;
+        if (_hurry.IsCancellationRequested)
+        {
+            return;
+        }
+
         Log.Info("[capture] hurry: the window is closing, the analysis (report.txt) is skipped");
         _hurry.Cancel();
     }
@@ -196,9 +219,17 @@ public sealed class SessionCapture : IPresentTap, IRandomHook, IDisposable
     {
         lock (_lock)
         {
-            if (_disposed) return;
+            if (_disposed)
+            {
+                return;
+            }
+
             seconds = Math.Clamp(seconds, 0, 60);
-            if (seconds == _preRollSeconds) return;
+            if (seconds == _preRollSeconds)
+            {
+                return;
+            }
+
             _preRollSeconds = seconds;
             if (seconds > 0)
             {
@@ -214,7 +245,10 @@ public sealed class SessionCapture : IPresentTap, IRandomHook, IDisposable
             {
                 ClearRing();
                 Log.Info("[capture] pre-roll off");
-                if (_rec == null) StopRunning();
+                if (_rec == null)
+                {
+                    StopRunning();
+                }
             }
         }
         _stateWake.Set();
@@ -237,8 +271,15 @@ public sealed class SessionCapture : IPresentTap, IRandomHook, IDisposable
     void StopRunning()
     {
         _o.SetPresentTap(null);
-        if (_disposed) UninstallInput();
-        else if (_input != null) _input.RecordMotion = false;
+        if (_disposed)
+        {
+            UninstallInput();
+        }
+        else
+        {
+            _input?.RecordMotion = false;
+        }
+
         _queue?.CompleteAdding();
         _queue = null;
         _encoder = null;
@@ -247,7 +288,11 @@ public sealed class SessionCapture : IPresentTap, IRandomHook, IDisposable
     void InstallInput()
     {
         var host = _emu.Host;
-        if (host.Input is InputRecorder && host.Motion is InputRecorder) return;
+        if (host.Input is InputRecorder && host.Motion is InputRecorder)
+        {
+            return;
+        }
+
         var inner = host.Input is InputRecorder r ? r.Inner : host.Input;
         var innerMotion = host.Motion is InputRecorder rm ? rm.InnerMotion : host.Motion;
         _input = new InputRecorder(inner, innerMotion, AddInput);
@@ -258,8 +303,16 @@ public sealed class SessionCapture : IPresentTap, IRandomHook, IDisposable
     void UninstallInput()
     {
         var host = _emu.Host;
-        if (host.Input is InputRecorder r && ReferenceEquals(r, _input)) host.Input = r.Inner;
-        if (host.Motion is InputRecorder m && ReferenceEquals(m, _input)) host.Motion = m.InnerMotion;
+        if (host.Input is InputRecorder r && ReferenceEquals(r, _input))
+        {
+            host.Input = r.Inner;
+        }
+
+        if (host.Motion is InputRecorder m && ReferenceEquals(m, _input))
+        {
+            host.Motion = m.InnerMotion;
+        }
+
         _input = null;
     }
 
@@ -268,7 +321,11 @@ public sealed class SessionCapture : IPresentTap, IRandomHook, IDisposable
         _ringFrames.Clear();
         _ringBytes = 0;
         _ringInput.Clear();
-        foreach (var s in _states) TryDelete(s.Path);
+        foreach (var s in _states)
+        {
+            TryDelete(s.Path);
+        }
+
         _states.Clear();
     }
 
@@ -281,11 +338,35 @@ public sealed class SessionCapture : IPresentTap, IRandomHook, IDisposable
         while (true)
         {
             double secs;
-            lock (_lock) { if (_disposed || _preRollSeconds <= 0) { _stateThread = null; return; } secs = _preRollSeconds; }
+            lock (_lock)
+            {
+                if (_disposed || _preRollSeconds <= 0)
+                {
+                    _stateThread = null;
+                    return;
+                }
+                secs = _preRollSeconds;
+            }
             _stateWake.WaitOne(TimeSpan.FromSeconds(_states.Count == 0 ? 2 : StateInterval));
-            lock (_lock) if (_disposed || _preRollSeconds <= 0) { _stateThread = null; return; }
-            if (_rec != null || _statesRefused || EmulationPause.IsPaused || !_emu.Running || _emu.MainModule == null) continue;
-            if (!_stateGate.Wait(0)) continue;
+            lock (_lock)
+            {
+                if (_disposed || _preRollSeconds <= 0)
+                {
+                    _stateThread = null;
+                    return;
+                }
+            }
+
+            if (_rec != null || _statesRefused || EmulationPause.IsPaused || !_emu.Running || _emu.MainModule == null)
+            {
+                continue;
+            }
+
+            if (!_stateGate.Wait(0))
+            {
+                continue;
+            }
+
             try
             {
                 Directory.CreateDirectory(PreRollDir);
@@ -294,12 +375,20 @@ public sealed class SessionCapture : IPresentTap, IRandomHook, IDisposable
                 var sw = Stopwatch.StartNew();
                 AddInput(InputEvent.Now("mark", "preroll_state begin"));
                 var header = SaveStates.Save(_emu, path, null, 2000);
-                lock (_stateStopMs) _stateStopMs.Add(sw.Elapsed.TotalMilliseconds);
+                lock (_stateStopMs)
+                {
+                    _stateStopMs.Add(sw.Elapsed.TotalMilliseconds);
+                }
+
                 AddInput(InputEvent.Now("mark", "preroll_state"));
                 lock (_lock)
                 {
                     _states.Add(new PreRollState(path, ns, (long)(header.GuestSeconds * 1e6), flip));
-                    while (_states.Count > 2) { TryDelete(_states[0].Path); _states.RemoveAt(0); }
+                    while (_states.Count > 2)
+                    {
+                        TryDelete(_states[0].Path);
+                        _states.RemoveAt(0);
+                    }
                     TrimRing();
                 }
             }
@@ -311,7 +400,10 @@ public sealed class SessionCapture : IPresentTap, IRandomHook, IDisposable
                     _statesRefused = true;
                     Log.Warn($"[capture] pre-roll: no save states in this session ({e.Message}); frames, timing and input are still kept");
                 }
-                else Log.Info($"[capture] pre-roll save state skipped: {e.Message}");
+                else
+                {
+                    Log.Info($"[capture] pre-roll save state skipped: {e.Message}");
+                }
             }
             catch (Exception e) when (e is IOException or UnauthorizedAccessException) { Log.Warn($"[capture] pre-roll save state: {e.Message}"); }
             finally { _stateGate.Release(); }
@@ -335,7 +427,10 @@ public sealed class SessionCapture : IPresentTap, IRandomHook, IDisposable
             _ringBytes -= d.Value.Data.Length;
             _ringFrames.RemoveFirst();
         }
-        while (_ringInput.First is { } i && i.Value.Ns < keepFrom) _ringInput.RemoveFirst();
+        while (_ringInput.First is { } i && i.Value.Ns < keepFrom)
+        {
+            _ringInput.RemoveFirst();
+        }
     }
 
     // ------------------------------------------------------------------ data in
@@ -344,16 +439,26 @@ public sealed class SessionCapture : IPresentTap, IRandomHook, IDisposable
     {
         lock (_lock)
         {
-            if (_rec is { } r) { r.Input.Add(e); return; }
+            if (_rec is { } r)
+            {
+                r.Input.Add(e);
+                return;
+            }
             if (e.Kind is "pad" or "touch")
             {
                 _recent.AddLast(e);
-                if (_recent.Count > RecentInputs) _recent.RemoveFirst();
+                if (_recent.Count > RecentInputs)
+                {
+                    _recent.RemoveFirst();
+                }
             }
             if (_preRollSeconds > 0)
             {
                 _ringInput.AddLast(e);
-                if (_ringInput.Count % 256 == 0) TrimRing();
+                if (_ringInput.Count % 256 == 0)
+                {
+                    TrimRing();
+                }
             }
         }
     }
@@ -361,22 +466,44 @@ public sealed class SessionCapture : IPresentTap, IRandomHook, IDisposable
     /// <summary>An emulator hotkey or another front-end event, in input.tsv (kind key).</summary>
     public void NoteKey(string name)
     {
-        if (_rec != null || _preRollSeconds > 0) AddInput(InputEvent.Now("key", name));
+        if (_rec != null || _preRollSeconds > 0)
+        {
+            AddInput(InputEvent.Now("key", name));
+        }
     }
 
     public void OnPresent(in PresentInfo info, ReadOnlySpan<byte> rgba, int w, int h)
     {
         var q = _queue;
-        if (q == null) return;
+        if (q == null)
+        {
+            return;
+        }
+
         Recording? dest;
-        lock (_lock) dest = _rec;
-        if (dest == null && _preRollSeconds <= 0) return;
-        if (dest != null && !dest.LimitReached) CheckLimit(dest);
+        lock (_lock)
+        {
+            dest = _rec;
+        }
+
+        if (dest == null && _preRollSeconds <= 0)
+        {
+            return;
+        }
+
+        if (dest != null && !dest.LimitReached)
+        {
+            CheckLimit(dest);
+        }
         // screen / application changes during the recording (input.tsv kind ctx): checked every 15th present
         if (dest != null && ++dest.PresentsSeen % 15 == 0)
         {
             string where = SafeWhere();
-            if (where != dest.LastWhere) { dest.LastWhere = where; AddInput(InputEvent.Now("ctx", where)); }
+            if (where != dest.LastWhere)
+            {
+                dest.LastWhere = where;
+                AddInput(InputEvent.Now("ctx", where));
+            }
         }
         byte[]? px = null;
         // the encoder fell behind (slow device): keep the timing, drop the picture
@@ -385,9 +512,22 @@ public sealed class SessionCapture : IPresentTap, IRandomHook, IDisposable
             px = ArrayPool<byte>.Shared.Rent(w * h * 4);
             rgba[..(w * h * 4)].CopyTo(px);
         }
-        else Interlocked.Increment(ref _droppedPictures);
-        try { q.Add(new Work(WorkKind.Frame, info, px, w, h, dest, null)); }
-        catch (InvalidOperationException) { if (px != null) ArrayPool<byte>.Shared.Return(px); }
+        else
+        {
+            Interlocked.Increment(ref _droppedPictures);
+        }
+
+        try
+        {
+            q.Add(new Work(WorkKind.Frame, info, px, w, h, dest, null));
+        }
+        catch (InvalidOperationException)
+        {
+            if (px != null)
+            {
+                ArrayPool<byte>.Shared.Return(px);
+            }
+        }
     }
 
     /// <summary>The length / size limit: the recording stops and saves by itself, with a notice (GPU worker: only the
@@ -397,15 +537,26 @@ public sealed class SessionCapture : IPresentTap, IRandomHook, IDisposable
         double secs = (CaptureClock.NowNs - r.StartNs) / 1e9;
         bool time = _o.MaxSeconds > 0 && secs >= _o.MaxSeconds;
         bool size = _o.MaxBytes > 0 && Interlocked.Read(ref r.FrameBytes) >= _o.MaxBytes;
-        if (!time && !size) return;
+        if (!time && !size)
+        {
+            return;
+        }
+
         r.LimitReached = true;
         string why = time ? FormattableString.Invariant($"{_o.MaxSeconds:F0} s") : $"{_o.MaxBytes >> 20} MB";
         Log.Info($"[capture] limit reached ({why}): the recording stops and saves by itself");
-        lock (r.Notes) r.Notes.Add($"stopped by the limit ({why}; VITASHARP_CAPTURE_MAX_SECONDS / --capture-max=SECONDS change it, 0 = none)");
+        lock (r.Notes)
+        {
+            r.Notes.Add($"stopped by the limit ({why}; VITASHARP_CAPTURE_MAX_SECONDS / --capture-max=SECONDS change it, 0 = none)");
+        }
+
         _o.Status?.Invoke(Localization.Loc.Format("CaptureLimit", why));
         Task.Run(() =>
         {
-            for (int i = 0; i < 400 && _rec == r && !Stop("limit"); i++) Thread.Sleep(25);
+            for (int i = 0; i < 400 && _rec == r && !Stop("limit"); i++)
+            {
+                Thread.Sleep(25);
+            }
         });
     }
 
@@ -413,7 +564,11 @@ public sealed class SessionCapture : IPresentTap, IRandomHook, IDisposable
 
     void IRandomHook.Recorded(ReadOnlySpan<byte> bytes)
     {
-        if (_rec is not { } r) return;
+        if (_rec is not { } r)
+        {
+            return;
+        }
+
         Interlocked.Increment(ref r.RandomCalls);
         AddInput(InputEvent.Now("rng", Convert.ToHexString(bytes)));
     }
@@ -436,24 +591,47 @@ public sealed class SessionCapture : IPresentTap, IRandomHook, IDisposable
                             (data, flags) = enc.Encode(work.Pixels.AsSpan(0, work.W * work.H * 4), work.W, work.H);
                             ArrayPool<byte>.Shared.Return(work.Pixels);
                         }
-                        if (work.Rec is { } r) WriteFrame(r, work.Info, flags, data);
+                        if (work.Rec is { } r)
+                        {
+                            WriteFrame(r, work.Info, flags, data);
+                        }
                         else
+                        {
                             lock (_lock)
                             {
-                                if (_preRollSeconds <= 0) { enc.ForceKey(); break; }
+                                if (_preRollSeconds <= 0)
+                                {
+                                    enc.ForceKey();
+                                    break;
+                                }
                                 _ringFrames.AddLast((work.Info, data, flags));
                                 _ringBytes += data.Length;
                                 TrimRing();
                             }
+                        }
+
                         break;
                     case WorkKind.FlushPreRoll:
                     {
                         List<(PresentInfo Info, byte[] Data, byte Flags)> ring;
-                        lock (_lock) { ring = _ringFrames.ToList(); _ringFrames.Clear(); _ringBytes = 0; }
+                        lock (_lock)
+                        {
+                            ring = _ringFrames.ToList();
+                            _ringFrames.Clear();
+                            _ringBytes = 0;
+                        }
                         // the ring starts at a key picture and ends with the encoder's last picture: the recording
                         // continues its chain; without a ring it starts with a key picture
-                        if (ring.Count == 0) enc.ForceKey();
-                        foreach (var (info, bytes, fl) in ring) WriteFrame(work.Rec!, info, (byte)(fl | FramesFile.FlagPreRoll), bytes);
+                        if (ring.Count == 0)
+                        {
+                            enc.ForceKey();
+                        }
+
+                        foreach (var (info, bytes, fl) in ring)
+                        {
+                            WriteFrame(work.Rec!, info, (byte)(fl | FramesFile.FlagPreRoll), bytes);
+                        }
+
                         break;
                     }
                     case WorkKind.Close:
@@ -470,11 +648,22 @@ public sealed class SessionCapture : IPresentTap, IRandomHook, IDisposable
 
     static void WriteFrame(Recording r, in PresentInfo info, byte flags, byte[] data)
     {
-        if (r.FramesFile == null) return;
-        if (data.Length == 0) flags |= FramesFile.FlagNoPicture;
+        if (r.FramesFile == null)
+        {
+            return;
+        }
+
+        if (data.Length == 0)
+        {
+            flags |= FramesFile.FlagNoPicture;
+        }
+
         FramesFile.WriteRecord(r.FramesFile, info, flags, data);
         r.FrameBytes += data.Length;
-        lock (r.Frames) r.Frames.Add((info, flags, data.Length));
+        lock (r.Frames)
+        {
+            r.Frames.Add((info, flags, data.Length));
+        }
     }
 
     // ------------------------------------------------------------------ start / stop
@@ -493,13 +682,24 @@ public sealed class SessionCapture : IPresentTap, IRandomHook, IDisposable
     /// records exactly what it asked for).</summary>
     public bool Start(string reason = "hotkey", bool limit = true)
     {
-        if (Interlocked.CompareExchange(ref _busy, 1, 0) != 0) { _o.Status?.Invoke(Localization.Loc.Get("CaptureWait")); return false; }
-        if (_rec != null) { Volatile.Write(ref _busy, 0); return false; }
+        if (Interlocked.CompareExchange(ref _busy, 1, 0) != 0)
+        {
+            _o.Status?.Invoke(Localization.Loc.Get("CaptureWait"));
+            return false;
+        }
+        if (_rec != null)
+        {
+            Volatile.Write(ref _busy, 0);
+            return false;
+        }
         Idle.Reset();
         _starting = true;
         Task.Run(() =>
         {
-            try { StartCore(reason, limit); }
+            try
+            {
+                StartCore(reason, limit);
+            }
             catch (Exception e)
             {
                 Log.Warn($"[capture] start failed: {e}");
@@ -511,7 +711,10 @@ public sealed class SessionCapture : IPresentTap, IRandomHook, IDisposable
                 _starting = false;
                 Volatile.Write(ref _busy, 0);
                 // a stop pressed while the recording was starting (start save state): done now
-                if (Interlocked.Exchange(ref _stopPending, null) is { } why && _rec != null) Stop(why);
+                if (Interlocked.Exchange(ref _stopPending, null) is { } why && _rec != null)
+                {
+                    Stop(why);
+                }
             }
         });
         return true;
@@ -522,7 +725,11 @@ public sealed class SessionCapture : IPresentTap, IRandomHook, IDisposable
         string title = Safe(string.IsNullOrEmpty(_emu.TitleId) ? "NOTITLE" : _emu.TitleId);
         string baseName = $"{title}_{DateTime.Now:yyyyMMdd_HHmmss}_tudo";
         string dir = Path.Combine(_o.Root, baseName);
-        for (int i = 2; Directory.Exists(dir) || File.Exists(dir + ".zip"); i++) dir = Path.Combine(_o.Root, $"{baseName}_{i}");
+        for (int i = 2; Directory.Exists(dir) || File.Exists(dir + ".zip"); i++)
+        {
+            dir = Path.Combine(_o.Root, $"{baseName}_{i}");
+        }
+
         Directory.CreateDirectory(dir);
         var r = new Recording(dir)
         {
@@ -540,7 +747,14 @@ public sealed class SessionCapture : IPresentTap, IRandomHook, IDisposable
             pre = _states.Count > 0 ? _states[0] : null;
             r.PreRoll = pre;
             long from = pre?.StartNs ?? long.MinValue;
-            foreach (var e in _ringInput) if (e.Ns >= from) r.Input.Add(e);
+            foreach (var e in _ringInput)
+            {
+                if (e.Ns >= from)
+                {
+                    r.Input.Add(e);
+                }
+            }
+
             _ringInput.Clear();
             r.Before = _recent.ToList();
             _recent.Clear();
@@ -555,7 +769,10 @@ public sealed class SessionCapture : IPresentTap, IRandomHook, IDisposable
         _o.Status?.Invoke(Localization.Loc.Format("CaptureRecording", _o.StopHint));
         if (pre != null)
         {
-            try { File.Copy(pre.Path, Path.Combine(dir, "state_preroll.vss")); }
+            try
+            {
+                File.Copy(pre.Path, Path.Combine(dir, "state_preroll.vss"));
+            }
             catch (IOException e) { r.Notes.Add($"pre-roll state not copied: {e.Message}"); r.PreRoll = null; }
         }
         if (!AudioDump.Enabled)
@@ -564,7 +781,11 @@ public sealed class SessionCapture : IPresentTap, IRandomHook, IDisposable
             AudioDump.VoiceDumps = true;
             r.OwnsAudio = true;
         }
-        else r.Notes.Add("audio: --audio-dump / VITASHARP_AUDIO_DUMP was already recording the ports elsewhere; no audio/ in this capture");
+        else
+        {
+            r.Notes.Add("audio: --audio-dump / VITASHARP_AUDIO_DUMP was already recording the ports elsewhere; no audio/ in this capture");
+        }
+
         DebugMode.CollectHleErrors = true;
         CaptureHooks.Random ??= this;
         WriteText(dir, "threads_start.txt", _o.Threads);
@@ -577,11 +798,18 @@ public sealed class SessionCapture : IPresentTap, IRandomHook, IDisposable
             {
                 var sw = Stopwatch.StartNew();
                 long ns = CaptureClock.NowNs, flip = Hle.Modules.Display.FramesPresented;
-                lock (_lock) r.Input.Add(InputEvent.Now("mark", "state_start begin"));
+                lock (_lock)
+                {
+                    r.Input.Add(InputEvent.Now("mark", "state_start begin"));
+                }
+
                 var h = SaveStates.Save(_emu, Path.Combine(dir, "state_start.vss"), null, 3000);
                 r.StartStateMs = sw.Elapsed.TotalMilliseconds;
                 r.StartState = ((long)(h.GuestSeconds * 1e6), ns, flip);
-                lock (_lock) r.Input.Add(InputEvent.Now("mark", "state_start"));
+                lock (_lock)
+                {
+                    r.Input.Add(InputEvent.Now("mark", "state_start"));
+                }
             }
             catch (SnapshotException e) { r.Notes.Add($"no start save state: {e.Message}"); Log.Info($"[capture] start save state: {e.Message}"); }
             finally { _stateGate.Release(); }
@@ -597,7 +825,11 @@ public sealed class SessionCapture : IPresentTap, IRandomHook, IDisposable
                 MaxFrames = _o.DumpMaxFrames,
                 Finished = res => { r.DumpResult = res; r.DumpDone.Set(); },
             });
-            if (r.Dump == null) { r.DumpDone.Set(); r.Notes.Add("no GPU dump: another GPU dump (Ctrl+F8) was recording"); }
+            if (r.Dump == null)
+            {
+                r.DumpDone.Set();
+                r.Notes.Add("no GPU dump: another GPU dump (Ctrl+F8) was recording");
+            }
         }
     }
 
@@ -616,11 +848,18 @@ public sealed class SessionCapture : IPresentTap, IRandomHook, IDisposable
             }
             return false;
         }
-        if (_rec == null) { Volatile.Write(ref _busy, 0); return false; }
+        if (_rec == null)
+        {
+            Volatile.Write(ref _busy, 0);
+            return false;
+        }
         SetProgress("frames", 0);
         Task.Run(() =>
         {
-            try { StopCore(reason); }
+            try
+            {
+                StopCore(reason);
+            }
             catch (Exception e)
             {
                 Log.Warn($"[capture] stop failed: {e}");
@@ -640,14 +879,21 @@ public sealed class SessionCapture : IPresentTap, IRandomHook, IDisposable
     /// <summary>End of the session: a running recording is completed (waits for it).</summary>
     public void StopAndWait(int timeoutMs = 300000)
     {
-        if (_rec != null) Stop("session end");
+        if (_rec != null)
+        {
+            Stop("session end");
+        }
+
         Idle.Wait(timeoutMs);
     }
 
     void StopCore(string reason)
     {
         var r = _rec!;
-        r.StopNs = CaptureClock.NowNs; r.StopFlip = Hle.Modules.Display.FramesPresented; r.StopUs = GuestClock.Microseconds; r.StopTime = DateTime.Now;
+        r.StopNs = CaptureClock.NowNs;
+        r.StopFlip = Hle.Modules.Display.FramesPresented;
+        r.StopUs = GuestClock.Microseconds;
+        r.StopTime = DateTime.Now;
         long cpuMs = (long)Process.GetCurrentProcess().TotalProcessorTime.TotalMilliseconds - r.ProcessCpuMs0;
         Log.Info($"[capture] stopping ({reason}) at guest frame {r.StopFlip}");
         _o.Status?.Invoke(Localization.Loc.Get("CaptureSaving"));
@@ -658,7 +904,11 @@ public sealed class SessionCapture : IPresentTap, IRandomHook, IDisposable
         List<(string File, double StartMs)> wavs = [];
         Step(r, "audio dump", () => { if (r.OwnsAudio) { wavs = AudioDump.Disable(); AudioDump.VoiceDumps = false; } });
         DebugMode.CollectHleErrors = false;
-        if (ReferenceEquals(CaptureHooks.Random, this)) CaptureHooks.Random = null;
+        if (ReferenceEquals(CaptureHooks.Random, this))
+        {
+            CaptureHooks.Random = null;
+        }
+
         Step(r, "threads_stop.txt", () => WriteText(r.Dir, "threads_stop.txt", _o.Threads));
         var closed = new ManualResetEventSlim();
         var encoderQueue = _queue;
@@ -667,7 +917,10 @@ public sealed class SessionCapture : IPresentTap, IRandomHook, IDisposable
             r.Input.Add(InputEvent.Now("mark", $"stop {reason}"));
             _rec = null;
             _queue?.Add(new Work(WorkKind.Close, default, null, 0, 0, r, closed));
-            if (_preRollSeconds <= 0) StopRunning();
+            if (_preRollSeconds <= 0)
+            {
+                StopRunning();
+            }
         }
         _o.RecordingChanged?.Invoke(false);
         var saveClock = Stopwatch.StartNew();
@@ -676,31 +929,56 @@ public sealed class SessionCapture : IPresentTap, IRandomHook, IDisposable
         while (!closed.Wait(100))
         {
             SetProgress("frames", 10.0 * (1 - Math.Min(1.0, (encoderQueue?.Count ?? 0) / (double)backlog)));
-            if (saveClock.ElapsedMilliseconds > 30000) { r.Notes.Add("error: the frame encoder did not finish in 30 s: frames.vsfr may be incomplete"); break; }
+            if (saveClock.ElapsedMilliseconds > 30000)
+            {
+                r.Notes.Add("error: the frame encoder did not finish in 30 s: frames.vsfr may be incomplete");
+                break;
+            }
         }
         SetProgress("gpu dump", 10);
         Step(r, "gpu dump", () =>
         {
-            if (r.Dump == null || r.DumpDone.Wait(2000)) return;
-            if (r.Dump.StopNow(15000) is { } res) { r.DumpResult ??= res; r.Notes.Add("the GPU dump ended without a present (the game presented no frame in 2 s): it has the commands received until the stop"); }
-            else r.Notes.Add("error: the GPU dump did not finish in 15 s");
+            if (r.Dump == null || r.DumpDone.Wait(2000))
+            {
+                return;
+            }
+
+            if (r.Dump.StopNow(15000) is { } res)
+            {
+                r.DumpResult ??= res;
+                r.Notes.Add("the GPU dump ended without a present (the game presented no frame in 2 s): it has the commands received until the stop");
+            }
+            else
+            {
+                r.Notes.Add("error: the GPU dump did not finish in 15 s");
+            }
         });
 
         SetProgress("files", 15);
         string dir = r.Dir;
         List<InputEvent> input;
-        lock (_lock) input = r.Input.ToList();
+        lock (_lock)
+        {
+            input = r.Input.ToList();
+        }
+
         Step(r, "input.tsv", () =>
         {
             using var w = new StreamWriter(Path.Combine(dir, "input.tsv"));
             w.WriteLine(InputEvent.Header);
-            foreach (var e in input) w.WriteLine(e.ToString());
+            foreach (var e in input)
+            {
+                w.WriteLine(e.ToString());
+            }
         });
         Step(r, "input_before.tsv", () =>
         {
             using var w = new StreamWriter(Path.Combine(dir, "input_before.tsv"));
             w.WriteLine(InputEvent.Header + "\t(the last button and touch changes before the recording started)");
-            foreach (var e in r.Before) w.WriteLine(e.ToString());
+            foreach (var e in r.Before)
+            {
+                w.WriteLine(e.ToString());
+            }
         });
         Step(r, "timeline.tsv", () => WriteTimeline(r));
         Step(r, "hle_errors.txt", () => File.WriteAllLines(Path.Combine(dir, "hle_errors.txt"), DebugMode.HleSummary().DefaultIfEmpty("(no HLE error returns or unimplemented calls recorded)")));
@@ -716,17 +994,33 @@ public sealed class SessionCapture : IPresentTap, IRandomHook, IDisposable
         // the analysis is optional (vitasharp-perf capture DIR writes it again): skipped when the window is closing
         double zipFrom = _o.Zip ? 60 : 99;
         var analysisClock = Stopwatch.StartNew();
-        if (_hurry.IsCancellationRequested) lock (r.Notes) r.Notes.Add("analysis skipped: the window was closed while saving (vitasharp-perf capture <this folder> writes report.txt)");
+        if (_hurry.IsCancellationRequested)
+        {
+            lock (r.Notes)
+            {
+                r.Notes.Add("analysis skipped: the window was closed while saving (vitasharp-perf capture <this folder> writes report.txt)");
+            }
+        }
         else
+        {
             Step(r, "report.txt (analysis)", () =>
             {
-                try { CaptureAnalyzer.Analyze(dir, quiet: true, progress: p => SetProgress("analysis", 20 + p * (zipFrom - 20)), cancel: _hurry.Token, expectedFrames: r.Frames.Count); }
+                try
+                {
+                    CaptureAnalyzer.Analyze(dir, quiet: true, progress: p => SetProgress("analysis", 20 + p * (zipFrom - 20)), cancel: _hurry.Token, expectedFrames: r.Frames.Count);
+                }
                 catch (OperationCanceledException)
                 {
-                    lock (r.Notes) r.Notes.Add("analysis stopped: the window was closed while saving (vitasharp-perf capture <this folder> writes report.txt)");
+                    lock (r.Notes)
+                    {
+                        r.Notes.Add("analysis stopped: the window was closed while saving (vitasharp-perf capture <this folder> writes report.txt)");
+                    }
+
                     Log.Info("[capture] analysis stopped (the window is closing)");
                 }
             });
+        }
+
         double analysisS = analysisClock.Elapsed.TotalSeconds;
         // last before the zip, so it lists every step that failed
         Step(r, "session.txt", () => WriteSession(r, cpuMs));
@@ -735,7 +1029,11 @@ public sealed class SessionCapture : IPresentTap, IRandomHook, IDisposable
         {
             zip = dir + ".zip";
             SetProgress("zip", zipFrom);
-            try { ZipFolder(dir, zip, p => SetProgress("zip", zipFrom + p * (100 - zipFrom))); LastZip = zip; }
+            try
+            {
+                ZipFolder(dir, zip, p => SetProgress("zip", zipFrom + p * (100 - zipFrom)));
+                LastZip = zip;
+            }
             catch (Exception e) { Log.Warn($"[capture] zip failed: {e.Message}"); zip = null; }
         }
         Log.Info(FormattableString.Invariant($"[capture] saved {zip ?? dir} in {saveClock.Elapsed.TotalSeconds:F1} s (analysis {analysisS:F1} s{(_hurry.IsCancellationRequested ? ", hurried: the window is closing" : "")})"));
@@ -745,23 +1043,35 @@ public sealed class SessionCapture : IPresentTap, IRandomHook, IDisposable
     /// <summary>One step of the save: a failure is logged and becomes an "error:" line of session.txt; the rest goes on.</summary>
     static void Step(Recording r, string what, Action a)
     {
-        try { a(); }
+        try
+        {
+            a();
+        }
         catch (Exception e)
         {
             Log.Warn($"[capture] {what} failed: {e}");
-            lock (r.Notes) r.Notes.Add($"error: {what}: {e.GetType().Name}: {e.Message}");
+            lock (r.Notes)
+            {
+                r.Notes.Add($"error: {what}: {e.GetType().Name}: {e.Message}");
+            }
         }
     }
 
     void WriteTimeline(Recording r)
     {
         List<(PresentInfo Info, byte Flags, int Bytes)> frames;
-        lock (r.Frames) frames = r.Frames.ToList();
+        lock (r.Frames)
+        {
+            frames = r.Frames.ToList();
+        }
+
         using var w = new StreamWriter(Path.Combine(r.Dir, "timeline.tsv"));
         w.WriteLine("# present\tflip\tvblank\tguestUs\tflipMs\tpresentMs\tintervalMs\tgpuMs\tdraws\tscenes\tnewShaders\tnewPipelines\thitch\thitchMs\tfb\tsize\tpreroll\tpictureBytes");
         foreach (var (p, flags, bytes) in frames)
+        {
             w.WriteLine(string.Create(CultureInfo.InvariantCulture,
                 $"{p.Present}\t{p.Flip}\t{p.VBlank}\t{p.GuestUs}\t{(p.FlipNs - r.StartNs) / 1e6:F3}\t{(p.PresentNs - r.StartNs) / 1e6:F3}\t{p.IntervalMs:F2}\t{p.GpuMs:F2}\t{p.Draws}\t{p.Scenes}\t{p.NewShaders}\t{p.NewPipelines}\t{(string.IsNullOrEmpty(p.Hitch) ? "-" : p.Hitch)}\t{p.HitchMs:F2}\t0x{p.Address:X8}\t{p.SrcW}x{p.SrcH}\t{((flags & FramesFile.FlagPreRoll) != 0 ? 1 : 0)}\t{bytes}"));
+        }
     }
 
     void WriteSession(Recording r, long cpuMs)
@@ -779,20 +1089,46 @@ public sealed class SessionCapture : IPresentTap, IRandomHook, IDisposable
         sb.AppendLine(FormattableString.Invariant($"recorded: {secs:F1} s, {r.StopFlip - r.StartFlip} guest frames ({(r.StopFlip - r.StartFlip) / Math.Max(secs, 0.001):F1} fps)"));
         sb.AppendLine($"start-ns: {r.StartNs}");
         if (r.PreRoll is { } p)
+        {
             sb.AppendLine(FormattableString.Invariant($"preroll-state: state_preroll.vss guest-us {p.GuestUs} flip {p.Flip} ns {p.StartNs} ({(r.StartNs - p.StartNs) / 1e9:F1} s before the start)"));
-        else sb.AppendLine(_preRollSeconds > 0 ? "preroll-state: none yet (the first one is taken 2 s after the pre-roll is armed)" : "preroll-state: none (pre-roll off)");
+        }
+        else
+        {
+            sb.AppendLine(_preRollSeconds > 0 ? "preroll-state: none yet (the first one is taken 2 s after the pre-roll is armed)" : "preroll-state: none (pre-roll off)");
+        }
+
         if (r.StartState is { } s)
+        {
             sb.AppendLine(FormattableString.Invariant($"start-state: state_start.vss guest-us {s.GuestUs} flip {s.Flip} ns {s.Ns} ({r.StartStateMs:F0} ms to save)"));
-        else sb.AppendLine("start-state: none");
+        }
+        else
+        {
+            sb.AppendLine("start-state: none");
+        }
+
         sb.AppendLine(r.DumpResult is { } d ? $"gpu-dump: gpu{GpuDumpFormat.Extension} {d}" : "gpu-dump: none");
         int pre = r.Frames.Count(f => (f.Flags & FramesFile.FlagPreRoll) != 0);
         sb.AppendLine(FormattableString.Invariant($"frames: {r.Frames.Count} presented ({pre} from the pre-roll), {r.FrameBytes / 1048576.0:F1} MB of pictures (QOI key pictures + deltas), {r.Frames.Count(f => (f.Flags & FramesFile.FlagNoPicture) != 0)} without a picture (the encoder fell behind)"));
         sb.AppendLine($"input: {r.Input.Count} events, {r.RandomCalls} random-number results");
         lock (_stateStopMs)
-            if (_stateStopMs.Count > 0) sb.AppendLine(FormattableString.Invariant($"preroll-states: {_stateStopMs.Count} taken this session, median {Median(_stateStopMs):F0} ms, max {_stateStopMs.Max():F0} ms to save each (the game stops for part of it: the 'Save state:' lines of log.txt)"));
+        {
+            if (_stateStopMs.Count > 0)
+            {
+                sb.AppendLine(FormattableString.Invariant($"preroll-states: {_stateStopMs.Count} taken this session, median {Median(_stateStopMs):F0} ms, max {_stateStopMs.Max():F0} ms to save each (the game stops for part of it: the 'Save state:' lines of log.txt)"));
+            }
+        }
+
         sb.AppendLine(FormattableString.Invariant($"cost: process CPU {cpuMs / 1000.0:F1} s over {secs:F1} s ({cpuMs / 10.0 / Math.Max(secs, 0.001):F0}% of one core in all, the game included)"));
-        foreach (var n in r.Notes) sb.AppendLine($"note: {n}");
-        if (_o.Info?.Invoke() is { Length: > 0 } info) sb.AppendLine(info.TrimEnd());
+        foreach (var n in r.Notes)
+        {
+            sb.AppendLine($"note: {n}");
+        }
+
+        if (_o.Info?.Invoke() is { Length: > 0 } info)
+        {
+            sb.AppendLine(info.TrimEnd());
+        }
+
         sb.AppendLine();
         sb.AppendLine("Files:");
         sb.AppendLine("  report.txt            the analyzer's findings (black frames, flashes, repeated / out-of-order presents, stalls, audio)");
@@ -821,7 +1157,11 @@ public sealed class SessionCapture : IPresentTap, IRandomHook, IDisposable
     {
         try
         {
-            if (_o.LogFile?.Invoke() is not { } src || !File.Exists(src)) { File.WriteAllText(dest, "(no log file)\n"); return; }
+            if (_o.LogFile?.Invoke() is not { } src || !File.Exists(src))
+            {
+                File.WriteAllText(dest, "(no log file)\n");
+                return;
+            }
             using var input = new FileStream(src, FileMode.Open, FileAccess.Read, FileShare.ReadWrite | FileShare.Delete);
             using var output = File.Create(dest);
             input.CopyTo(output);
@@ -840,11 +1180,18 @@ public sealed class SessionCapture : IPresentTap, IRandomHook, IDisposable
             foreach (var t in emu.Kernel.Threads.ToArray())
             {
                 sb.AppendLine("thread " + t.Describe());
-                foreach (var call in t.RecentHleCalls(16)) sb.AppendLine("    hle " + call);
+                foreach (var call in t.RecentHleCalls(16))
+                {
+                    sb.AppendLine("    hle " + call);
+                }
             }
             foreach (var m in emu.Kernel.Objects.All<Kernel.Mutex>().ToArray())
+            {
                 if (m.Owner != null && m.Waiters > 0)
+                {
                     sb.AppendLine($"mutex '{m.Name}' held by '{m.Owner.Name}' ({m.Owner.Status}) count {m.LockCount}, {m.Waiters} waiting");
+                }
+            }
         }
         catch (Exception e) { sb.AppendLine($"(thread list changed while reading: {e.Message})"); }
         return sb.ToString();
@@ -852,7 +1199,10 @@ public sealed class SessionCapture : IPresentTap, IRandomHook, IDisposable
 
     void WriteText(string dir, string name, Func<string>? text)
     {
-        try { File.WriteAllText(Path.Combine(dir, name), text?.Invoke() ?? DescribeThreads(_emu)); }
+        try
+        {
+            File.WriteAllText(Path.Combine(dir, name), text?.Invoke() ?? DescribeThreads(_emu));
+        }
         catch (Exception e) { Log.Warn($"[capture] {name}: {e.Message}"); }
     }
 
@@ -861,7 +1211,11 @@ public sealed class SessionCapture : IPresentTap, IRandomHook, IDisposable
     /// pictures of frames.vsfr) are stored. <paramref name="progress"/> gets the fraction of bytes written (0-1).</summary>
     internal static void ZipFolder(string dir, string zip, Action<double>? progress = null)
     {
-        if (File.Exists(zip)) File.Delete(zip);
+        if (File.Exists(zip))
+        {
+            File.Delete(zip);
+        }
+
         var files = Directory.EnumerateFiles(dir, "*", SearchOption.AllDirectories).Select(f => new FileInfo(f)).ToList();
         double total = Math.Max(1, files.Sum(f => f.Length)), done = 0;
         using var z = ZipFile.Open(zip, ZipArchiveMode.Create);
@@ -885,7 +1239,15 @@ public sealed class SessionCapture : IPresentTap, IRandomHook, IDisposable
         }
     }
 
-    static void TryDelete(string path) { try { File.Delete(path); } catch (IOException) { } catch (UnauthorizedAccessException) { } }
+    static void TryDelete(string path)
+    {
+        try
+        {
+            File.Delete(path);
+        }
+        catch (IOException) { }
+        catch (UnauthorizedAccessException) { }
+    }
 
     static string Safe(string s) => string.Concat(s.Select(c => char.IsLetterOrDigit(c) || c is '_' or '-' ? c : '_'));
 
@@ -893,13 +1255,27 @@ public sealed class SessionCapture : IPresentTap, IRandomHook, IDisposable
     {
         lock (_lock)
         {
-            if (_disposed) return;
+            if (_disposed)
+            {
+                return;
+            }
+
             _disposed = true;
             _preRollSeconds = 0;
             ClearRing();
-            if (_rec == null) StopRunning();
+            if (_rec == null)
+            {
+                StopRunning();
+            }
         }
         _stateWake.Set();
-        try { if (Directory.Exists(PreRollDir) && !Directory.EnumerateFileSystemEntries(PreRollDir).Any()) Directory.Delete(PreRollDir); } catch (IOException) { }
+        try
+        {
+            if (Directory.Exists(PreRollDir) && !Directory.EnumerateFileSystemEntries(PreRollDir).Any())
+            {
+                Directory.Delete(PreRollDir);
+            }
+        }
+        catch (IOException) { }
     }
 }

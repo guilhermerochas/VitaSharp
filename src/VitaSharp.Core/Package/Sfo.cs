@@ -11,7 +11,10 @@ public sealed class Sfo
     public Sfo(ReadOnlySpan<byte> data)
     {
         if (data.Length < 0x14 || U32LE(data, 0) != 0x46535000)
+        {
             throw new InvalidDataException("Not a PARAM.SFO");
+        }
+
         uint keyTable = U32LE(data, 8), dataTable = U32LE(data, 12), count = U32LE(data, 16);
         for (int i = 0; i < count; i++)
         {

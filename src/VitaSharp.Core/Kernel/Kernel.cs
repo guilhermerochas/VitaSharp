@@ -17,12 +17,30 @@ public sealed class Kernel
     ObjectTable? _standalone;
     public ConcurrentDictionary<int, LoadedModule> Modules { get; } = new();
 
-    public uint ThreadExitTrap { get; private set; }
-    public uint TlsInit { get; set; }
-    public uint TlsInitSize { get; set; }
-    public uint TlsAreaSize { get; set; }
-    public uint ProcessParam { get; set; }
-    public GuestThread? MainThread { get; set; }
+    public uint ThreadExitTrap
+    {
+        get; private set;
+    }
+    public uint TlsInit
+    {
+        get; set;
+    }
+    public uint TlsInitSize
+    {
+        get; set;
+    }
+    public uint TlsAreaSize
+    {
+        get; set;
+    }
+    public uint ProcessParam
+    {
+        get; set;
+    }
+    public GuestThread? MainThread
+    {
+        get; set;
+    }
     public readonly DateTime BootTime = DateTime.UtcNow;
 
     public Kernel(Emulator emu) => _emu = emu;
@@ -67,9 +85,16 @@ public sealed class Kernel
     {
         uint a = addr & ~1u;
         foreach (var m in Modules.Values)
+        {
             foreach (var (idx, s) in m.Segments)
+            {
                 if (a >= s.Address && a - s.Address < s.Size)
+                {
                     return $"{a:X8}({m.Name}+{(idx == 0 ? "" : $"s{idx}:")}{a - s.Address:X})";
+                }
+            }
+        }
+
         return $"{a:X8}";
     }
 
@@ -80,7 +105,10 @@ public sealed class Kernel
 
     public void StopAllThreads()
     {
-        foreach (var t in Threads) t.RequestStop();
+        foreach (var t in Threads)
+        {
+            t.RequestStop();
+        }
     }
 
     /// <summary>Waits for every guest thread to leave its host thread (after StopAllThreads).</summary>
@@ -89,8 +117,15 @@ public sealed class Kernel
         var deadline = Environment.TickCount64 + timeoutMs;
         foreach (var t in Threads.ToList())
         {
-            if (t == GuestThread.Current) continue;
-            if (!t.WaitForExit((int)Math.Max(1, deadline - Environment.TickCount64))) return false;
+            if (t == GuestThread.Current)
+            {
+                continue;
+            }
+
+            if (!t.WaitForExit((int)Math.Max(1, deadline - Environment.TickCount64)))
+            {
+                return false;
+            }
         }
         return true;
     }

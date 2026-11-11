@@ -64,7 +64,10 @@ public static class HleStatusReport
         b.Append(Inv, $"# firmware={s.Firmware} games={s.GameTitles} vitasdk={s.VitaSdkImpl}/{s.VitaSdk} vitasdk_default={s.VitaSdkDefault} vitasdk_lle={s.VitaSdkLle}\n");
         b.Append("library\tmodule\ttotal\timpl\tgames\tgames_impl\tsystem\tsystem_impl\tdefault\tgames_default\tsystem_default\tlle\n");
         foreach (var l in s.Libraries)
+        {
             b.Append(Inv, $"{l.Name}\t{l.Module}\t{l.Total}\t{l.Impl}\t{l.Games}\t{l.GamesImpl}\t{l.System}\t{l.SystemImpl}\t{l.Default}\t{l.GamesDefault}\t{l.SystemDefault}\t{l.Lle}\n");
+        }
+
         return b.ToString();
     }
 
@@ -75,22 +78,51 @@ public static class HleStatusReport
         var libs = new List<Library>();
         foreach (var raw in tsv.Replace("\r\n", "\n").Split('\n'))
         {
-            if (raw.Length == 0) continue;
+            if (raw.Length == 0)
+            {
+                continue;
+            }
+
             if (raw.StartsWith("# firmware=", StringComparison.Ordinal))
             {
                 foreach (var kv in raw[2..].Split(' '))
                 {
                     var p = kv.Split('=');
-                    if (p.Length != 2) continue;
-                    if (p[0] == "firmware") firmware = p[1];
-                    else if (p[0] == "games") games = int.Parse(p[1], Inv);
-                    else if (p[0] == "vitasdk") { var f = p[1].Split('/'); sdkImpl = int.Parse(f[0], Inv); sdk = int.Parse(f[1], Inv); }
-                    else if (p[0] == "vitasdk_default") sdkDefault = int.Parse(p[1], Inv);
-                    else if (p[0] == "vitasdk_lle") sdkLle = int.Parse(p[1], Inv);
+                    if (p.Length != 2)
+                    {
+                        continue;
+                    }
+
+                    if (p[0] == "firmware")
+                    {
+                        firmware = p[1];
+                    }
+                    else if (p[0] == "games")
+                    {
+                        games = int.Parse(p[1], Inv);
+                    }
+                    else if (p[0] == "vitasdk")
+                    {
+                        var f = p[1].Split('/');
+                        sdkImpl = int.Parse(f[0], Inv);
+                        sdk = int.Parse(f[1], Inv);
+                    }
+                    else if (p[0] == "vitasdk_default")
+                    {
+                        sdkDefault = int.Parse(p[1], Inv);
+                    }
+                    else if (p[0] == "vitasdk_lle")
+                    {
+                        sdkLle = int.Parse(p[1], Inv);
+                    }
                 }
                 continue;
             }
-            if (raw[0] == '#' || raw.StartsWith("library\t", StringComparison.Ordinal)) continue;
+            if (raw[0] == '#' || raw.StartsWith("library\t", StringComparison.Ordinal))
+            {
+                continue;
+            }
+
             var c = raw.Split('\t');
             libs.Add(new Library(c[0], c[1], I(c[2]), I(c[3]), I(c[4]), I(c[5]), I(c[6]), I(c[7]),
                 c.Length > 10 ? I(c[8]) : 0, c.Length > 10 ? I(c[9]) : 0, c.Length > 10 ? I(c[10]) : 0, c.Length > 11 ? I(c[11]) : 0));
@@ -115,7 +147,10 @@ public static class HleStatusReport
     {
         var files = new SortedDictionary<string, string>(StringComparer.Ordinal);
         foreach (var (id, label, n, total, d, lle) in BadgesWithParts(s))
+        {
             files[$"{AssetDir}/badge-{id}.svg"] = Badge(label, $"{PctText(n, total)} ({Count(n)}/{Count(total)}{(d > 0 ? $", {Count(d)} default" : "")}{(lle > 0 ? $", {Count(lle)} LLE" : "")})", BadgeColor(Pct(n, total)));
+        }
+
         files[$"{AssetDir}/progress-map.svg"] = Map(s, dark: true);
         files[$"{AssetDir}/progress-map-light.svg"] = Map(s, dark: false);
         files[ProgressPath] = ProgressPage(s);
@@ -145,6 +180,7 @@ public static class HleStatusReport
     {
         double w = 0;
         foreach (char ch in t)
+        {
             w += ch switch
             {
                 'i' or 'l' or 'j' or '.' or ',' or ':' or '\'' or '|' or '!' => 3.4,
@@ -154,6 +190,8 @@ public static class HleStatusReport
                 >= '0' and <= '9' => 7.0,
                 _ => 6.6,
             };
+        }
+
         return w * size / 11;
     }
 
@@ -211,20 +249,38 @@ public static class HleStatusReport
             {
                 double s = rowSum + items[j].A, max = items[i].A, min = items[j].A;
                 double worst = Math.Max(side * side * max / (s * s), s * s / (side * side * min));
-                if (j > i && worst > best) break;
-                rowSum = s; best = worst; j++;
+                if (j > i && worst > best)
+                {
+                    break;
+                }
+
+                rowSum = s;
+                best = worst;
+                j++;
             }
             if (w >= h)
             {
                 double rw = rowSum / h, cy = y;
-                for (int k = i; k < j; k++) { double rh = items[k].A / rw; cells.Add((items[k].L, x, cy, rw, rh)); cy += rh; }
-                x += rw; w -= rw;
+                for (int k = i; k < j; k++)
+                {
+                    double rh = items[k].A / rw;
+                    cells.Add((items[k].L, x, cy, rw, rh));
+                    cy += rh;
+                }
+                x += rw;
+                w -= rw;
             }
             else
             {
                 double rh = rowSum / w, cx = x;
-                for (int k = i; k < j; k++) { double rw = items[k].A / rh; cells.Add((items[k].L, cx, y, rw, rh)); cx += rw; }
-                y += rh; h -= rh;
+                for (int k = i; k < j; k++)
+                {
+                    double rw = items[k].A / rh;
+                    cells.Add((items[k].L, cx, y, rw, rh));
+                    cx += rw;
+                }
+                y += rh;
+                h -= rh;
             }
             i = j;
         }
@@ -247,7 +303,10 @@ public static class HleStatusReport
         double lx = W - Pad - 4 - 5 * 26 - 60;
         b.Append(Inv, $"<text x=\"{F(lx)}\" y=\"27\" font-size=\"11\" fill=\"{muted}\">0%</text>\n");
         for (int k = 0; k <= 4; k++)
+        {
             b.Append(Inv, $"<rect x=\"{F(lx + 22 + k * 26)}\" y=\"16\" width=\"24\" height=\"14\" rx=\"2\" fill=\"{CellColor(k * 25, dark)}\"/>\n");
+        }
+
         b.Append(Inv, $"<text x=\"{F(lx + 22 + 5 * 26 + 2)}\" y=\"27\" font-size=\"11\" fill=\"{muted}\">100%</text>\n");
         foreach (var (l, x, y, w, h) in Treemap(libs, Pad, Top, W - 2 * Pad, H - Top - Pad))
         {
@@ -260,7 +319,9 @@ public static class HleStatusReport
             {
                 b.Append(Inv, $"<text x=\"{F(x + 3)}\" y=\"{F(y + size + 2)}\" font-size=\"{F(size)}\" fill=\"{label}\">{Esc(name)}</text>");
                 if (h >= 2 * size + 8)
+                {
                     b.Append(Inv, $"<text x=\"{F(x + 3)}\" y=\"{F(y + 2 * size + 5)}\" font-size=\"{F(size * 0.85)}\" fill=\"{label}\" fill-opacity=\".8\">{PctText(l.Impl, l.Total)}</text>");
+                }
             }
             b.Append("</g>\n");
         }
@@ -284,14 +345,23 @@ public static class HleStatusReport
         foreach (var (label, n, d, l, total) in new[] { ("Games imports", s.GamesImpl, s.GamesDefault, 0, s.Games), ("System imports", s.SystemImpl, s.SystemDefault, 0, s.System),
                      ("General", s.Impl - s.GamesImpl - s.SystemImpl, s.Default - s.GamesDefault - s.SystemDefault, 0, s.Total - s.Games - s.System),
                      ($"All firmware {s.Firmware} exports", s.Impl, s.Default, s.Lle, s.Total), ("VitaSDK user functions", s.VitaSdkImpl, s.VitaSdkDefault, s.VitaSdkLle, s.VitaSdk) })
+        {
             b.Append(Inv, $"| {label} | {Count(n)} | {Count(n - d - l)} | {Count(d)} | {Count(l)} | {Count(total)} | {PctText(n, total)} |\n");
+        }
+
         b.Append("\n## Libraries provided by LLE\n\n| Library | Module | Source |\n|---|---|---|\n");
         foreach (var e in Hle.LleLibraries.All)
+        {
             b.Append(Inv, $"| {e.Library} | `{e.Module}` | {e.Source} |\n");
+        }
+
         b.Append(Inv, $"\n## Per library ({s.Libraries.Count})\n\n");
         b.Append("| Library | Module | Implemented / total | % | Default | Games | System |\n|---|---|---:|---:|---:|---:|---:|\n");
         foreach (var l in s.Libraries)
+        {
             b.Append(Inv, $"| {l.Name} | `{l.Module}` | {l.Impl} / {l.Total} | {PctText(l.Impl, l.Total)} | {(l.Default == 0 ? "-" : Count(l.Default))} | {(l.Games == 0 ? "-" : $"{l.GamesImpl} / {l.Games}")} | {(l.System == 0 ? "-" : $"{l.SystemImpl} / {l.System}")} |\n");
+        }
+
         return b.ToString();
     }
 }

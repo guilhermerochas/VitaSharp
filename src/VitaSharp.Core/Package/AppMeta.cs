@@ -34,7 +34,11 @@ public static class AppMeta
                 string id = Path.GetFileName(dir);
                 try
                 {
-                    if (Write(ux0Root, id, force: false)) { changed++; log?.Invoke($"appmeta: {id} registered"); }
+                    if (Write(ux0Root, id, force: false))
+                    {
+                        changed++;
+                        log?.Invoke($"appmeta: {id} registered");
+                    }
                 }
                 catch (Exception e) when (e is IOException or UnauthorizedAccessException or InvalidDataException)
                 {
@@ -47,7 +51,11 @@ public static class AppMeta
             foreach (var dir in Directory.EnumerateDirectories(metas))
             {
                 string id = Path.GetFileName(dir);
-                if (Directory.Exists(Path.Combine(apps, id)) || !IsApplication(Path.Combine(dir, "param.sfo"))) continue;
+                if (Directory.Exists(Path.Combine(apps, id)) || !IsApplication(Path.Combine(dir, "param.sfo")))
+                {
+                    continue;
+                }
+
                 try
                 {
                     Directory.Delete(dir, true);
@@ -57,7 +65,11 @@ public static class AppMeta
                 catch (Exception e) when (e is IOException or UnauthorizedAccessException) { log?.Invoke($"appmeta: {id} not removed ({e.Message})"); }
             }
         }
-        if (changed > 0) InvalidateCardId(ux0Root, log);
+        if (changed > 0)
+        {
+            InvalidateCardId(ux0Root, log);
+        }
+
         return changed;
     }
 
@@ -67,7 +79,10 @@ public static class AppMeta
     {
         try
         {
-            if (Write(ux0Root, titleId, force: true)) InvalidateCardId(ux0Root, log);
+            if (Write(ux0Root, titleId, force: true))
+            {
+                InvalidateCardId(ux0Root, log);
+            }
         }
         catch (Exception e) when (e is IOException or UnauthorizedAccessException or InvalidDataException)
         {
@@ -88,28 +103,51 @@ public static class AppMeta
             foreach (var sys in new[] { patchSys, appSys })
             {
                 var p = Io.Vfs.ResolveCaseInsensitive(sys, name);
-                if (File.Exists(p) || Directory.Exists(p)) return p;
+                if (File.Exists(p) || Directory.Exists(p))
+                {
+                    return p;
+                }
             }
             return null;
         }
         var sfo = Source("param.sfo");
-        if (sfo == null || !File.Exists(Io.Vfs.ResolveCaseInsensitive(app, "eboot.bin"))) return false;
+        if (sfo == null || !File.Exists(Io.Vfs.ResolveCaseInsensitive(app, "eboot.bin")))
+        {
+            return false;
+        }
 
         string meta = Path.Combine(ux0Root, "appmeta", titleId);
         var dstSfo = Path.Combine(meta, "param.sfo");
-        if (!force && File.Exists(dstSfo) && SameFile(sfo, dstSfo)) return false;
+        if (!force && File.Exists(dstSfo) && SameFile(sfo, dstSfo))
+        {
+            return false;
+        }
 
         Directory.CreateDirectory(meta);
         foreach (var f in Files)
         {
             var src = Source(f);
             var dst = Path.Combine(meta, f);
-            if (src != null && File.Exists(src)) File.Copy(src, dst, true);
-            else if (File.Exists(dst)) File.Delete(dst);
+            if (src != null && File.Exists(src))
+            {
+                File.Copy(src, dst, true);
+            }
+            else if (File.Exists(dst))
+            {
+                File.Delete(dst);
+            }
         }
         var liveDst = Path.Combine(meta, "livearea");
-        if (Directory.Exists(liveDst)) Directory.Delete(liveDst, true);
-        if (Source("livearea") is { } live && Directory.Exists(live)) CopyTree(live, liveDst);
+        if (Directory.Exists(liveDst))
+        {
+            Directory.Delete(liveDst, true);
+        }
+
+        if (Source("livearea") is { } live && Directory.Exists(live))
+        {
+            CopyTree(live, liveDst);
+        }
+
         return true;
     }
 
@@ -118,7 +156,11 @@ public static class AppMeta
     internal static void InvalidateCardId(string ux0Root, Action<string>? log)
     {
         var id = Path.Combine(ux0Root, "id.dat");
-        if (!File.Exists(id)) return;
+        if (!File.Exists(id))
+        {
+            return;
+        }
+
         try
         {
             File.Delete(id);
@@ -137,14 +179,24 @@ public static class AppMeta
     /// <summary>A game/application entry (param.sfo CATEGORY gd, gdc, gp...), not some other kind of appmeta.</summary>
     static bool IsApplication(string sfoPath)
     {
-        try { return File.Exists(sfoPath) && Sfo.Load(sfoPath).Category.StartsWith('g'); }
+        try
+        {
+            return File.Exists(sfoPath) && Sfo.Load(sfoPath).Category.StartsWith('g');
+        }
         catch (Exception e) when (e is IOException or InvalidDataException or ArgumentException or IndexOutOfRangeException) { return false; }
     }
 
     static void CopyTree(string src, string dst)
     {
         Directory.CreateDirectory(dst);
-        foreach (var f in Directory.EnumerateFiles(src)) File.Copy(f, Path.Combine(dst, Path.GetFileName(f)), true);
-        foreach (var d in Directory.EnumerateDirectories(src)) CopyTree(d, Path.Combine(dst, Path.GetFileName(d)));
+        foreach (var f in Directory.EnumerateFiles(src))
+        {
+            File.Copy(f, Path.Combine(dst, Path.GetFileName(f)), true);
+        }
+
+        foreach (var d in Directory.EnumerateDirectories(src))
+        {
+            CopyTree(d, Path.Combine(dst, Path.GetFileName(d)));
+        }
     }
 }

@@ -50,7 +50,10 @@ public sealed unsafe partial class GuestThread
             _saveHold = hold;
             Monitor.PulseAll(_suspendLock);
         }
-        if (hold) Core.InterruptRequested = true;
+        if (hold)
+        {
+            Core.InterruptRequested = true;
+        }
     }
 
     /// <summary>The host thread is running (started and not ended).</summary>
@@ -59,31 +62,53 @@ public sealed unsafe partial class GuestThread
     internal int HleSequence => _hleSeq;
 
     /// <summary>How this thread is saved.</summary>
-    internal enum SafeKind { Dormant, Parked, Reissue, HostBody }
+    internal enum SafeKind
+    {
+        Dormant, Parked, Reissue, HostBody
+    }
 
     /// <summary>Null when the thread is at a safe point (<paramref name="kind"/> says which), else why not.</summary>
     internal string? SafePointProblem(out SafeKind kind)
     {
         kind = SafeKind.Dormant;
-        if (!IsLive) return null;
+        if (!IsLive)
+        {
+            return null;
+        }
+
         if (HostBody != null)
         {
             kind = SafeKind.HostBody;
             return BlockedInHost && _callDepth == 0 ? null : $"thread '{Name}' (host) is busy (depth {_callDepth}, parked {_parkedDepth}, {Status}, in {InWhat()})";
         }
         int parked = _parkedDepth;
-        if (parked == 0) { kind = SafeKind.Parked; return null; }
-        if (parked > 0 || _callDepth > 0) return $"thread '{Name}' is inside a guest callback";
+        if (parked == 0)
+        {
+            kind = SafeKind.Parked;
+            return null;
+        }
+        if (parked > 0 || _callDepth > 0)
+        {
+            return $"thread '{Name}' is inside a guest callback";
+        }
+
         if ((_hleSeq & 1) == 1 && (Status == ThreadStatus.Waiting || BlockedInHost))
         {
             var f = _emu.Hle.GetFunction(Core.State->SvcImm);
             // a condition wait that was signalled and now waits for its mutex: reissuing it would wait for a new signal
             if (CurrentWaitSync is Mutex && f.Name.Contains("Cond", StringComparison.Ordinal))
+            {
                 return $"thread '{Name}' is taking back a mutex in {f.Name}";
+            }
+
             kind = SafeKind.Reissue;
             return null;
         }
-        if ((_hleSeq & 1) == 1) return $"thread '{Name}' is busy in {_emu.Hle.GetFunction(Core.State->SvcImm).Name}";
+        if ((_hleSeq & 1) == 1)
+        {
+            return $"thread '{Name}' is busy in {_emu.Hle.GetFunction(Core.State->SvcImm).Name}";
+        }
+
         return $"thread '{Name}' is running guest code";
     }
 
@@ -118,26 +143,61 @@ public sealed unsafe partial class GuestThread
 
     internal static void WriteCpu(SnapshotWriter w, CpuState* s, bool reissue)
     {
-        for (int i = 0; i < 15; i++) w.Write(s->R[i]);
+        for (int i = 0; i < 15; i++)
+        {
+            w.Write(s->R[i]);
+        }
+
         w.Write(reissue ? s->SvcPc : s->R[15]);
-        w.Write(s->N); w.Write(s->Z); w.Write(s->C); w.Write(s->V);
-        w.Write(s->Q); w.Write(s->GE); w.Write(s->Thumb); w.Write(s->ITState);
-        w.Write(s->Fpscr); w.Write(s->TpidrUro); w.Write(s->TpidrUrw);
-        w.Write(s->ExclusiveAddr); w.Write(s->ExclusiveValue); w.Write(s->ExclusiveValid); w.Write(s->ExclusiveGen);
-        for (int i = 0; i < 32; i++) w.Write(s->D[i]);
+        w.Write(s->N);
+        w.Write(s->Z);
+        w.Write(s->C);
+        w.Write(s->V);
+        w.Write(s->Q);
+        w.Write(s->GE);
+        w.Write(s->Thumb);
+        w.Write(s->ITState);
+        w.Write(s->Fpscr);
+        w.Write(s->TpidrUro);
+        w.Write(s->TpidrUrw);
+        w.Write(s->ExclusiveAddr);
+        w.Write(s->ExclusiveValue);
+        w.Write(s->ExclusiveValid);
+        w.Write(s->ExclusiveGen);
+        for (int i = 0; i < 32; i++)
+        {
+            w.Write(s->D[i]);
+        }
     }
 
     internal static void ReadCpu(SnapshotReader r, CpuState* s)
     {
-        for (int i = 0; i < 16; i++) s->R[i] = r.ReadUInt32();
-        s->N = r.ReadUInt32(); s->Z = r.ReadUInt32(); s->C = r.ReadUInt32(); s->V = r.ReadUInt32();
-        s->Q = r.ReadUInt32(); s->GE = r.ReadUInt32(); s->Thumb = r.ReadUInt32(); s->ITState = r.ReadUInt32();
-        s->Fpscr = r.ReadUInt32(); s->TpidrUro = r.ReadUInt32(); s->TpidrUrw = r.ReadUInt32();
-        s->ExclusiveAddr = r.ReadUInt32(); s->ExclusiveValue = r.ReadUInt64();
+        for (int i = 0; i < 16; i++)
+        {
+            s->R[i] = r.ReadUInt32();
+        }
+
+        s->N = r.ReadUInt32();
+        s->Z = r.ReadUInt32();
+        s->C = r.ReadUInt32();
+        s->V = r.ReadUInt32();
+        s->Q = r.ReadUInt32();
+        s->GE = r.ReadUInt32();
+        s->Thumb = r.ReadUInt32();
+        s->ITState = r.ReadUInt32();
+        s->Fpscr = r.ReadUInt32();
+        s->TpidrUro = r.ReadUInt32();
+        s->TpidrUrw = r.ReadUInt32();
+        s->ExclusiveAddr = r.ReadUInt32();
+        s->ExclusiveValue = r.ReadUInt64();
         r.ReadUInt32(); // valid: a reservation does not survive the load (a spurious STREX failure is architecturally allowed)
         s->ExclusiveValid = 0;
         s->ExclusiveGen = r.ReadUInt32();
-        for (int i = 0; i < 32; i++) s->D[i] = r.ReadUInt64();
+        for (int i = 0; i < 32; i++)
+        {
+            s->D[i] = r.ReadUInt64();
+        }
+
         s->Exit = ExitReason.None;
     }
 

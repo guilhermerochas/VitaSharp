@@ -15,7 +15,11 @@ public abstract class FsImage
     protected readonly Stream Img;
     protected readonly long Base;
 
-    protected FsImage(Stream img, long baseOffset) { Img = img; Base = baseOffset; }
+    protected FsImage(Stream img, long baseOffset)
+    {
+        Img = img;
+        Base = baseOffset;
+    }
 
     /// <summary>Every entry, parents before children.</summary>
     public abstract IEnumerable<FsImageEntry> Enumerate();
@@ -30,9 +34,20 @@ public abstract class FsImage
         foreach (long baseOff in CandidateOffsets(img))
         {
             img.Position = baseOff;
-            if (img.ReadAtLeast(bs, 512, throwOnEndOfStream: false) < 512) continue;
-            if (bs.Slice(3, 8).SequenceEqual("EXFAT   "u8)) return new ExFatImage(img, baseOff, bs);
-            if (FatImage.LooksLikeFat(bs)) return new FatImage(img, baseOff, bs);
+            if (img.ReadAtLeast(bs, 512, throwOnEndOfStream: false) < 512)
+            {
+                continue;
+            }
+
+            if (bs.Slice(3, 8).SequenceEqual("EXFAT   "u8))
+            {
+                return new ExFatImage(img, baseOff, bs);
+            }
+
+            if (FatImage.LooksLikeFat(bs))
+            {
+                return new FatImage(img, baseOff, bs);
+            }
         }
         throw new InvalidDataException("Unknown partition image format (no FAT or exFAT boot sector)");
     }
@@ -46,7 +61,10 @@ public abstract class FsImage
         if (img.ReadAtLeast(mbr, 512, throwOnEndOfStream: false) == 512 && mbr[510] == 0x55 && mbr[511] == 0xAA)
         {
             uint lba = BinaryPrimitives.ReadUInt32LittleEndian(mbr.AsSpan(0x1BE + 8));
-            if (lba != 0 && lba * 512L < img.Length) yield return lba * 512L;
+            if (lba != 0 && lba * 512L < img.Length)
+            {
+                yield return lba * 512L;
+            }
         }
     }
 
@@ -54,8 +72,16 @@ public abstract class FsImage
     protected static string? SafeName(string name)
     {
         name = name.TrimEnd('\0');
-        if (name.Length == 0 || name == "." || name == "..") return null;
-        if (name.IndexOfAny(['/', '\\', ':']) >= 0 || name.Any(c => c < 0x20)) return null;
+        if (name.Length == 0 || name == "." || name == "..")
+        {
+            return null;
+        }
+
+        if (name.IndexOfAny(['/', '\\', ':']) >= 0 || name.Any(c => c < 0x20))
+        {
+            return null;
+        }
+
         return name;
     }
 
@@ -64,7 +90,11 @@ public abstract class FsImage
         var buf = new byte[count];
         Img.Position = Base + offset;
         int n = Img.ReadAtLeast(buf, count, throwOnEndOfStream: false);
-        if (n < count) Array.Clear(buf, n, count - n);
+        if (n < count)
+        {
+            Array.Clear(buf, n, count - n);
+        }
+
         return buf;
     }
 }
@@ -82,7 +112,11 @@ public sealed class FatImage : FsImage
 
     internal static bool LooksLikeFat(ReadOnlySpan<byte> bs)
     {
-        if (bs[510] != 0x55 || bs[511] != 0xAA) return false;
+        if (bs[510] != 0x55 || bs[511] != 0xAA)
+        {
+            return false;
+        }
+
         int bps = BinaryPrimitives.ReadUInt16LittleEndian(bs[11..]);
         int spc = bs[13];
         int fats = bs[16];
@@ -98,9 +132,17 @@ public sealed class FatImage : FsImage
         int fats = bs[16];
         _rootEntries = BinaryPrimitives.ReadUInt16LittleEndian(bs[17..]);
         uint totalSectors = BinaryPrimitives.ReadUInt16LittleEndian(bs[19..]);
-        if (totalSectors == 0) totalSectors = BinaryPrimitives.ReadUInt32LittleEndian(bs[32..]);
+        if (totalSectors == 0)
+        {
+            totalSectors = BinaryPrimitives.ReadUInt32LittleEndian(bs[32..]);
+        }
+
         uint fatSize = BinaryPrimitives.ReadUInt16LittleEndian(bs[22..]);
-        if (fatSize == 0) fatSize = BinaryPrimitives.ReadUInt32LittleEndian(bs[36..]);
+        if (fatSize == 0)
+        {
+            fatSize = BinaryPrimitives.ReadUInt32LittleEndian(bs[36..]);
+        }
+
         long rootDirSectors = (_rootEntries * 32L + _bytesPerSector - 1) / _bytesPerSector;
         long dataSectors = totalSectors - (reserved + fats * (long)fatSize + rootDirSectors);
         _clusterCount = (uint)Math.Max(0, dataSectors / _sectorsPerCluster);
@@ -111,7 +153,11 @@ public sealed class FatImage : FsImage
         _rootCluster = _fatBits == 32 ? BinaryPrimitives.ReadUInt32LittleEndian(bs[44..]) : 0;
 
         long fatBytes = (long)fatSize * _bytesPerSector;
-        if (fatBytes > 64 << 20) throw new InvalidDataException("FAT too large");
+        if (fatBytes > 64 << 20)
+        {
+            throw new InvalidDataException("FAT too large");
+        }
+
         var raw = ReadAt(_fatOffset, (int)fatBytes);
         uint n = _clusterCount + 2;
         _fat = new uint[n];
@@ -139,7 +185,11 @@ public sealed class FatImage : FsImage
         {
             yield return c;
             uint next = _fat[c];
-            if (IsEnd(next)) yield break;
+            if (IsEnd(next))
+            {
+                yield break;
+            }
+
             c = next;
         }
     }
@@ -148,12 +198,19 @@ public sealed class FatImage : FsImage
 
     byte[] ReadDirectory(uint firstCluster)
     {
-        if (firstCluster == 0 && _fatBits != 32) return ReadAt(_rootDirOffset, _rootEntries * 32);
+        if (firstCluster == 0 && _fatBits != 32)
+        {
+            return ReadAt(_rootDirOffset, _rootEntries * 32);
+        }
+
         using var ms = new MemoryStream();
         foreach (var c in Chain(firstCluster == 0 ? _rootCluster : firstCluster))
         {
             ms.Write(ReadAt(ClusterOffset(c), ClusterSize));
-            if (ms.Length > 64 << 20) break;
+            if (ms.Length > 64 << 20)
+            {
+                break;
+            }
         }
         return ms.ToArray();
     }
@@ -169,16 +226,29 @@ public sealed class FatImage : FsImage
             var subdirs = new List<(uint, string)>();
             foreach (var (name, attr, first, size) in ParseDirectory(ReadDirectory(cluster)))
             {
-                if ((attr & 0x08) != 0) continue; // volume label
+                if ((attr & 0x08) != 0)
+                {
+                    continue; // volume label
+                }
+
                 string path = dirPath.Length == 0 ? name : dirPath + "/" + name;
                 if ((attr & 0x10) != 0)
                 {
                     yield return new FsImageEntry(path, true, 0, first, false);
-                    if (first >= 2 && depth < 64 && visited.Add(first)) subdirs.Add((first, path));
+                    if (first >= 2 && depth < 64 && visited.Add(first))
+                    {
+                        subdirs.Add((first, path));
+                    }
                 }
-                else yield return new FsImageEntry(path, false, size, first, false);
+                else
+                {
+                    yield return new FsImageEntry(path, false, size, first, false);
+                }
             }
-            for (int i = subdirs.Count - 1; i >= 0; i--) stack.Push((subdirs[i].Item1, subdirs[i].Item2, depth + 1));
+            for (int i = subdirs.Count - 1; i >= 0; i--)
+            {
+                stack.Push((subdirs[i].Item1, subdirs[i].Item2, depth + 1));
+            }
         }
     }
 
@@ -191,31 +261,64 @@ public sealed class FatImage : FsImage
         for (int o = 0; o + 32 <= dir.Length; o += 32)
         {
             var e = dir.AsSpan(o, 32);
-            if (e[0] == 0x00) break;
-            if (e[0] == 0xE5) { lfnLen = 0; continue; }
+            if (e[0] == 0x00)
+            {
+                break;
+            }
+
+            if (e[0] == 0xE5)
+            {
+                lfnLen = 0;
+                continue;
+            }
             byte attr = e[11];
             if ((attr & 0x3F) == 0x0F)
             {
                 int ord = e[0] & 0x1F;
-                if (ord == 0 || ord > 20) { lfnLen = 0; continue; }
-                if ((e[0] & 0x40) != 0) { lfnLen = ord * 13; lfnSum = e[13]; Array.Fill(lfn, '￿', 0, lfnLen); }
-                else if (lfnLen == 0 || e[13] != lfnSum) { lfnLen = 0; continue; }
+                if (ord == 0 || ord > 20)
+                {
+                    lfnLen = 0;
+                    continue;
+                }
+                if ((e[0] & 0x40) != 0)
+                {
+                    lfnLen = ord * 13;
+                    lfnSum = e[13];
+                    Array.Fill(lfn, '￿', 0, lfnLen);
+                }
+                else if (lfnLen == 0 || e[13] != lfnSum)
+                {
+                    lfnLen = 0;
+                    continue;
+                }
                 int at = (ord - 1) * 13;
                 ReadOnlySpan<int> offs = [1, 3, 5, 7, 9, 14, 16, 18, 20, 22, 24, 28, 30];
-                for (int k = 0; k < 13 && at + k < lfnLen; k++) lfn[at + k] = (char)BinaryPrimitives.ReadUInt16LittleEndian(e[offs[k]..]);
+                for (int k = 0; k < 13 && at + k < lfnLen; k++)
+                {
+                    lfn[at + k] = (char)BinaryPrimitives.ReadUInt16LittleEndian(e[offs[k]..]);
+                }
+
                 continue;
             }
             string? name = null;
             if (lfnLen > 0 && Checksum(e[..11]) == lfnSum)
             {
                 int len = 0;
-                while (len < lfnLen && lfn[len] != '\0' && lfn[len] != '￿') len++;
+                while (len < lfnLen && lfn[len] != '\0' && lfn[len] != '￿')
+                {
+                    len++;
+                }
+
                 name = new string(lfn, 0, len);
             }
             lfnLen = 0;
             name ??= ShortName(e);
             var safe = SafeName(name);
-            if (safe == null) continue;
+            if (safe == null)
+            {
+                continue;
+            }
+
             uint first = (uint)(BinaryPrimitives.ReadUInt16LittleEndian(e[20..]) << 16 | BinaryPrimitives.ReadUInt16LittleEndian(e[26..]));
             result.Add((safe, attr, first, BinaryPrimitives.ReadUInt32LittleEndian(e[28..])));
         }
@@ -225,33 +328,56 @@ public sealed class FatImage : FsImage
     static byte Checksum(ReadOnlySpan<byte> shortName)
     {
         byte sum = 0;
-        foreach (var b in shortName) sum = (byte)((((sum & 1) << 7) | (sum >> 1)) + b);
+        foreach (var b in shortName)
+        {
+            sum = (byte)((((sum & 1) << 7) | (sum >> 1)) + b);
+        }
+
         return sum;
     }
 
     static string ShortName(ReadOnlySpan<byte> e)
     {
         var b = e[..11].ToArray();
-        if (b[0] == 0x05) b[0] = 0xE5;
+        if (b[0] == 0x05)
+        {
+            b[0] = 0xE5;
+        }
+
         string baseName = Encoding.Latin1.GetString(b, 0, 8).TrimEnd(' ');
         string ext = Encoding.Latin1.GetString(b, 8, 3).TrimEnd(' ');
         byte nt = e[12];
-        if ((nt & 0x08) != 0) baseName = baseName.ToLowerInvariant();
-        if ((nt & 0x10) != 0) ext = ext.ToLowerInvariant();
+        if ((nt & 0x08) != 0)
+        {
+            baseName = baseName.ToLowerInvariant();
+        }
+
+        if ((nt & 0x10) != 0)
+        {
+            ext = ext.ToLowerInvariant();
+        }
+
         return ext.Length > 0 ? baseName + "." + ext : baseName;
     }
 
     public override void CopyTo(FsImageEntry file, Stream dst, CancellationToken ct = default)
     {
         long left = file.Size;
-        if (left == 0) return;
+        if (left == 0)
+        {
+            return;
+        }
+
         foreach (var c in Chain(file.FirstCluster))
         {
             ct.ThrowIfCancellationRequested();
             int n = (int)Math.Min(left, ClusterSize);
             dst.Write(ReadAt(ClusterOffset(c), n));
             left -= n;
-            if (left == 0) return;
+            if (left == 0)
+            {
+                return;
+            }
         }
         throw new InvalidDataException($"{file.Path}: cluster chain ends {left} bytes early");
     }
@@ -271,17 +397,28 @@ public sealed class ExFatImage : FsImage
     {
         _sectorBits = bs[0x6C];
         _clusterBits = _sectorBits + bs[0x6D];
-        if (_sectorBits is < 9 or > 12 || _clusterBits > 25) throw new InvalidDataException("exFAT boot sector is invalid");
+        if (_sectorBits is < 9 or > 12 || _clusterBits > 25)
+        {
+            throw new InvalidDataException("exFAT boot sector is invalid");
+        }
+
         _fatOffset = (long)BinaryPrimitives.ReadUInt32LittleEndian(bs[0x50..]) << _sectorBits;
         uint fatSectors = BinaryPrimitives.ReadUInt32LittleEndian(bs[0x54..]);
         _heapOffset = (long)BinaryPrimitives.ReadUInt32LittleEndian(bs[0x58..]) << _sectorBits;
         _clusterCount = BinaryPrimitives.ReadUInt32LittleEndian(bs[0x5C..]);
         _rootCluster = BinaryPrimitives.ReadUInt32LittleEndian(bs[0x60..]);
         long fatBytes = Math.Min((long)fatSectors << _sectorBits, (_clusterCount + 2L) * 4);
-        if (fatBytes > 64 << 20) throw new InvalidDataException("exFAT FAT too large");
+        if (fatBytes > 64 << 20)
+        {
+            throw new InvalidDataException("exFAT FAT too large");
+        }
+
         var raw = ReadAt(_fatOffset, (int)fatBytes);
         _fat = new uint[raw.Length / 4];
-        for (int i = 0; i < _fat.Length; i++) _fat[i] = BinaryPrimitives.ReadUInt32LittleEndian(raw.AsSpan(i * 4));
+        for (int i = 0; i < _fat.Length; i++)
+        {
+            _fat[i] = BinaryPrimitives.ReadUInt32LittleEndian(raw.AsSpan(i * 4));
+        }
     }
 
     long ClusterOffset(uint c) => _heapOffset + (c - 2L) * ClusterSize;
@@ -289,7 +426,11 @@ public sealed class ExFatImage : FsImage
     /// <summary>Cluster runs holding <paramref name="length"/> bytes from <paramref name="first"/>.</summary>
     IEnumerable<(long offset, long count)> Runs(uint first, long length, bool contiguous)
     {
-        if (length <= 0 || first < 2) yield break;
+        if (length <= 0 || first < 2)
+        {
+            yield break;
+        }
+
         if (contiguous)
         {
             yield return (ClusterOffset(first), length);
@@ -302,16 +443,28 @@ public sealed class ExFatImage : FsImage
             long n = Math.Min(left, ClusterSize);
             yield return (ClusterOffset(c), n);
             left -= n;
-            if (c >= _fat.Length) yield break;
+            if (c >= _fat.Length)
+            {
+                yield break;
+            }
+
             c = _fat[c];
         }
     }
 
     byte[] ReadRuns(uint first, long length, bool contiguous)
     {
-        if (length > 64 << 20) length = 64 << 20;
+        if (length > 64 << 20)
+        {
+            length = 64 << 20;
+        }
+
         using var ms = new MemoryStream();
-        foreach (var (off, n) in Runs(first, length, contiguous)) ms.Write(ReadAt(off, (int)n));
+        foreach (var (off, n) in Runs(first, length, contiguous))
+        {
+            ms.Write(ReadAt(off, (int)n));
+        }
+
         return ms.ToArray();
     }
 
@@ -323,7 +476,11 @@ public sealed class ExFatImage : FsImage
         for (uint c = _rootCluster; c >= 2 && c < _clusterCount + 2 && seen.Add(c) && ms.Length < 64 << 20;)
         {
             ms.Write(ReadAt(ClusterOffset(c), (int)ClusterSize));
-            if (c >= _fat.Length) break;
+            if (c >= _fat.Length)
+            {
+                break;
+            }
+
             c = _fat[c];
         }
         return ms.ToArray();
@@ -340,9 +497,15 @@ public sealed class ExFatImage : FsImage
             foreach (var e in ParseDirectory(dir, dirPath))
             {
                 yield return e;
-                if (e.IsDirectory && depth < 64) subdirs.Add((ReadRuns(e.FirstCluster, e.Size, e.Contiguous), e.Path));
+                if (e.IsDirectory && depth < 64)
+                {
+                    subdirs.Add((ReadRuns(e.FirstCluster, e.Size, e.Contiguous), e.Path));
+                }
             }
-            for (int i = subdirs.Count - 1; i >= 0; i--) stack.Push((subdirs[i].Item1, subdirs[i].Item2, depth + 1));
+            for (int i = subdirs.Count - 1; i >= 0; i--)
+            {
+                stack.Push((subdirs[i].Item1, subdirs[i].Item2, depth + 1));
+            }
         }
     }
 
@@ -352,13 +515,29 @@ public sealed class ExFatImage : FsImage
         for (int o = 0; o + 32 <= dir.Length; o += 32)
         {
             byte type = dir[o];
-            if (type == 0x00) break;
-            if (type != 0x85) continue; // bitmap, up-case table, label, GUID, deleted or stray secondary entries
+            if (type == 0x00)
+            {
+                break;
+            }
+
+            if (type != 0x85)
+            {
+                continue; // bitmap, up-case table, label, GUID, deleted or stray secondary entries
+            }
+
             int secondary = dir[o + 1];
             ushort attr = BinaryPrimitives.ReadUInt16LittleEndian(dir.AsSpan(o + 4));
-            if (secondary < 2 || o + 32 * (secondary + 1) > dir.Length) continue;
+            if (secondary < 2 || o + 32 * (secondary + 1) > dir.Length)
+            {
+                continue;
+            }
+
             int s = o + 32;
-            if (dir[s] != 0xC0) continue;
+            if (dir[s] != 0xC0)
+            {
+                continue;
+            }
+
             byte flags = dir[s + 1];
             int nameLength = dir[s + 3];
             uint first = BinaryPrimitives.ReadUInt32LittleEndian(dir.AsSpan(s + 20));
@@ -367,13 +546,23 @@ public sealed class ExFatImage : FsImage
             for (int k = 2; k <= secondary && name.Length < nameLength; k++)
             {
                 int n = o + 32 * k;
-                if (dir[n] != 0xC1) break;
+                if (dir[n] != 0xC1)
+                {
+                    break;
+                }
+
                 for (int c = 0; c < 15 && name.Length < nameLength; c++)
+                {
                     name.Append((char)BinaryPrimitives.ReadUInt16LittleEndian(dir.AsSpan(n + 2 + c * 2)));
+                }
             }
             o += 32 * secondary;
             var safe = SafeName(name.ToString());
-            if (safe == null) continue;
+            if (safe == null)
+            {
+                continue;
+            }
+
             string path = dirPath.Length == 0 ? safe : dirPath + "/" + safe;
             result.Add(new FsImageEntry(path, (attr & 0x10) != 0, size, first, (flags & 0x02) != 0));
         }
@@ -393,6 +582,9 @@ public sealed class ExFatImage : FsImage
                 done += chunk;
             }
         }
-        if (done != file.Size) throw new InvalidDataException($"{file.Path}: cluster chain ends {file.Size - done} bytes early");
+        if (done != file.Size)
+        {
+            throw new InvalidDataException($"{file.Path}: cluster chain ends {file.Size - done} bytes early");
+        }
     }
 }

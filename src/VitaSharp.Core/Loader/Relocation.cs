@@ -23,7 +23,10 @@ public static unsafe class Relocation
     public static void RelocateImage(ReadOnlySpan<byte> data, IReadOnlyDictionary<int, SegmentInfo> segs, byte* image)
     {
         _imageBase = image;
-        try { Relocate(data, segs); }
+        try
+        {
+            Relocate(data, segs);
+        }
         finally { _imageBase = null; }
     }
 
@@ -32,11 +35,24 @@ public static unsafe class Relocation
         byte* ptr = At(p);
         switch (code)
         {
-            case None: case V4BX: case RBase: return;
-            case Abs32: case Target1: *(uint*)ptr = s + a; return;
-            case Abs8: *ptr = (byte)(s + a); return;
-            case Rel32: case Target2: *(uint*)ptr = s + a - p; return;
-            case Prel31: *(uint*)ptr = (s + a - p) & 0x7FFFFFFF; return;
+            case None:
+            case V4BX:
+            case RBase:
+                return;
+            case Abs32:
+            case Target1:
+                *(uint*)ptr = s + a;
+                return;
+            case Abs8:
+                *ptr = (byte)(s + a);
+                return;
+            case Rel32:
+            case Target2:
+                *(uint*)ptr = s + a - p;
+                return;
+            case Prel31:
+                *(uint*)ptr = (s + a - p) & 0x7FFFFFFF;
+                return;
             case ThumbCall:
             {
                 uint v = s + a - p;
@@ -48,16 +64,25 @@ public static unsafe class Relocation
                 hw[1] = (ushort)(((uint)hw[1] & 0xD000u) | (j1 << 13) | (j2 << 11) | ((v >> 1) & 0x7FF));
                 return;
             }
-            case Call: case Jump24:
+            case Call:
+            case Jump24:
             {
                 uint v = (s + a - p) >> 2;
                 *(uint*)ptr = (*(uint*)ptr & 0xFF000000) | (v & 0xFFFFFF);
                 return;
             }
-            case MovwAbsNc: WriteMovAbs(ptr, (ushort)(s + a)); return;
-            case MovtAbs: WriteMovAbs(ptr, (ushort)((s + a) >> 16)); return;
-            case ThumbMovwAbsNc: WriteThumbMovAbs(ptr, (ushort)(s + a)); return;
-            case ThumbMovtAbs: WriteThumbMovAbs(ptr, (ushort)((s + a) >> 16)); return;
+            case MovwAbsNc:
+                WriteMovAbs(ptr, (ushort)(s + a));
+                return;
+            case MovtAbs:
+                WriteMovAbs(ptr, (ushort)((s + a) >> 16));
+                return;
+            case ThumbMovwAbsNc:
+                WriteThumbMovAbs(ptr, (ushort)(s + a));
+                return;
+            case ThumbMovtAbs:
+                WriteThumbMovAbs(ptr, (ushort)((s + a) >> 16));
+                return;
         }
     }
 
@@ -98,8 +123,18 @@ public static unsafe class Relocation
                     uint s = symSeg == 0xF ? 0 : SegAddr(symSeg);
                     uint p = SegAddr(patchSeg) + offset;
                     Apply(p, code, s, addend);
-                    if (code2 != 0) Apply(p + dist2 * 2, code2, s, addend);
-                    gAddr = SegAddr(patchSeg); gOffset = offset; gPatchSeg = patchSeg; gSaddr = s; gAddend = addend; gType = code; gType2 = code2;
+                    if (code2 != 0)
+                    {
+                        Apply(p + dist2 * 2, code2, s, addend);
+                    }
+
+                    gAddr = SegAddr(patchSeg);
+                    gOffset = offset;
+                    gPatchSeg = patchSeg;
+                    gSaddr = s;
+                    gAddend = addend;
+                    gType = code;
+                    gType2 = code2;
                     pos += 12;
                     break;
                 }
@@ -114,7 +149,13 @@ public static unsafe class Relocation
                         uint s = symSeg == 0xF ? 0 : SegAddr(symSeg);
                         uint p = SegAddr(patchSeg) + offset;
                         Apply(p, code, s, addend);
-                        gAddr = SegAddr(patchSeg); gOffset = offset; gPatchSeg = patchSeg; gSaddr = s; gAddend = addend; gType = code; gType2 = 0;
+                        gAddr = SegAddr(patchSeg);
+                        gOffset = offset;
+                        gPatchSeg = patchSeg;
+                        gSaddr = s;
+                        gAddend = addend;
+                        gType = code;
+                        gType2 = 0;
                     }
                     else
                     {
@@ -124,7 +165,13 @@ public static unsafe class Relocation
                         {
                             uint p = SegAddr(patchSeg) + offset;
                             Apply(p, code, explicitSymval, addend);
-                            gAddr = SegAddr(patchSeg); gOffset = offset; gPatchSeg = patchSeg; gSaddr = explicitSymval; gAddend = addend; gType = code; gType2 = 0;
+                            gAddr = SegAddr(patchSeg);
+                            gOffset = offset;
+                            gPatchSeg = patchSeg;
+                            gSaddr = explicitSymval;
+                            gAddend = addend;
+                            gType = code;
+                            gType2 = 0;
                         }
                     }
                     pos += 8;
@@ -152,7 +199,13 @@ public static unsafe class Relocation
                         {
                             uint p = SegAddr(patchSeg) + offset;
                             Apply(p, code, explicitSymval, addend);
-                            gAddr = SegAddr(patchSeg); gOffset = offset; gPatchSeg = patchSeg; gSaddr = explicitSymval; gAddend = addend; gType = code; gType2 = 0;
+                            gAddr = SegAddr(patchSeg);
+                            gOffset = offset;
+                            gPatchSeg = patchSeg;
+                            gSaddr = explicitSymval;
+                            gAddend = addend;
+                            gType = code;
+                            gType2 = 0;
                         }
                         pos += 12;
                     }
@@ -203,11 +256,14 @@ public static unsafe class Relocation
                 {
                     gOffset += w0 >> 4;
                     RelocateAbsFromOriginal(segs, gPatchSeg, gAddr, gOffset, ref gSaddr);
-                    gType = Abs32; gType2 = 0;
+                    gType = Abs32;
+                    gType2 = 0;
                     pos += 4;
                     break;
                 }
-                case 7: case 8: case 9:
+                case 7:
+                case 8:
+                case 9:
                 {
                     uint offsets = w0 >> 4;
                     int bitsize = format == 7 ? 7 : format == 8 ? 4 : 2;
@@ -217,7 +273,8 @@ public static unsafe class Relocation
                         gOffset += (offsets & mask) * 4;
                         RelocateAbsFromOriginal(segs, gPatchSeg, gAddr, gOffset, ref gSaddr);
                     } while ((offsets >>= bitsize) != 0);
-                    gType = Abs32; gType2 = 0;
+                    gType = Abs32;
+                    gType2 = 0;
                     pos += 4;
                     break;
                 }

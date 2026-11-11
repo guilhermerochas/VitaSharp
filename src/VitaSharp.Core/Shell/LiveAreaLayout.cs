@@ -9,7 +9,10 @@ public readonly record struct LaRect(double X, double Y, double W, double H)
 }
 
 /// <summary>Horizontal / vertical placement of a text inside its box.</summary>
-public enum LaAlign { Start, Center, End }
+public enum LaAlign
+{
+    Start, Center, End
+}
 
 /// <summary>Where a liveitem text goes: its box and the alignment of the lines in it.</summary>
 public readonly record struct LaTextPlacement(LaRect Box, LaAlign Horizontal, LaAlign Vertical, bool Wrap);
@@ -64,7 +67,13 @@ public static class LiveAreaLayout
     public static LaRect? Frame(string style, string frameId)
     {
         foreach (var f in StyleOf(style).Frames)
-            if (string.Equals(f.Id, frameId, StringComparison.OrdinalIgnoreCase)) return new(ScreenW - f.X, ScreenH - f.Y, f.W, f.H);
+        {
+            if (string.Equals(f.Id, frameId, StringComparison.OrdinalIgnoreCase))
+            {
+                return new(ScreenW - f.X, ScreenH - f.Y, f.W, f.H);
+            }
+        }
+
         return null;
     }
 
@@ -75,9 +84,14 @@ public static class LiveAreaLayout
     /// </summary>
     public static LaRect PlaceImage(LaRect frame, double w, double h, LiveAreaImage img)
     {
-        if (w <= 0 || h <= 0) return frame;
+        if (w <= 0 || h <= 0)
+        {
+            return frame;
+        }
+
         double scale = Math.Min(1, Math.Min(frame.W / w, frame.H / h));
-        w *= scale; h *= scale;
+        w *= scale;
+        h *= scale;
         double x = img.Align switch
         {
             "left" when img.X >= 0 => 0,
@@ -120,7 +134,10 @@ public static class LiveAreaLayout
             "outside-right" => box.Right,
             _ => box.X + (box.W - w) / 2,
         };
-        if (t.Align == "outside-right" && t.Width <= 0) w = Math.Max(0, frame.Right - x); // up to the frame edge
+        if (t.Align == "outside-right" && t.Width <= 0)
+        {
+            w = Math.Max(0, frame.Right - x); // up to the frame edge
+        }
         // with a y offset, top/bottom are measured from the centre (as the shell draws e.g. Silent Hill's
         // valign="top" y="47" caption on its frame image)
         string valign = t.Y != 0 && t.Valign is "top" or "bottom" ? "center" : t.Valign;
@@ -134,13 +151,25 @@ public static class LiveAreaLayout
         x += t.X;
         y -= t.Y;
         // margins are inside the box
-        x += t.MarginLeft; w -= t.MarginLeft + t.MarginRight;
-        y += t.MarginTop; h -= t.MarginTop + t.MarginBottom;
+        x += t.MarginLeft;
+        w -= t.MarginLeft + t.MarginRight;
+        y += t.MarginTop;
+        h -= t.MarginTop + t.MarginBottom;
         // lines in the box: text-align / text-valign, else line-align, else the box alignment, else centred
         string ha = t.TextAlign.Length > 0 ? t.TextAlign : t.LineAlign.Length > 0 ? t.LineAlign : t.Align;
         string va = t.TextValign.Length > 0 ? t.TextValign : valign;
-        var horizontal = ha switch { "left" or "outside-right" => LaAlign.Start, "right" => LaAlign.End, _ => LaAlign.Center };
-        var vertical = va switch { "top" => LaAlign.Start, "bottom" or "outside-top" => LaAlign.End, _ => LaAlign.Center };
+        var horizontal = ha switch
+        {
+            "left" or "outside-right" => LaAlign.Start,
+            "right" => LaAlign.End,
+            _ => LaAlign.Center
+        };
+        var vertical = va switch
+        {
+            "top" => LaAlign.Start,
+            "bottom" or "outside-top" => LaAlign.End,
+            _ => LaAlign.Center
+        };
         return new(new LaRect(x, y, Math.Max(0, w), Math.Max(0, h)), horizontal, vertical, t.WordWrap);
     }
 }

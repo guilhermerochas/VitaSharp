@@ -5,7 +5,10 @@ namespace VitaSharp.Core.Package;
 public sealed record InstalledTitle(string TitleId, string Title, string Path, PkgContentType Type)
 {
     /// <summary>The kind of package installed (null for VPKs).</summary>
-    public PkgKind? Kind { get; init; }
+    public PkgKind? Kind
+    {
+        get; init;
+    }
 }
 
 /// <summary>What a .pkg is, read from its header before installing (the UIs ask for a license only when it needs one).</summary>
@@ -49,7 +52,10 @@ public static class PkgInstaller
     {
         var pkg = new PkgReader(pkgStream);
         PkgKind kind;
-        try { kind = pkg.Kind; }
+        try
+        {
+            kind = pkg.Kind;
+        }
         catch { pkg.Dispose(); throw; }
         if (kind.NeedsLicense())
         {
@@ -62,15 +68,27 @@ public static class PkgInstaller
     public static byte[] ReadKlicensee(string licensePath)
     {
         var rif = File.ReadAllBytes(licensePath);
-        if (rif.Length < 0x60) throw new InvalidDataException("License file is too small");
+        if (rif.Length < 0x60)
+        {
+            throw new InvalidDataException("License file is too small");
+        }
+
         return rif.AsSpan(0x50, 16).ToArray();
     }
 
     /// <summary>Reads a license given as a .rif/work.bin path or as a zRIF string.</summary>
     public static byte[] ReadLicense(string licenseOrZrif)
     {
-        if (File.Exists(licenseOrZrif)) return File.ReadAllBytes(licenseOrZrif);
-        if (Zrif.LooksLikeZrif(licenseOrZrif)) return Zrif.Decode(licenseOrZrif);
+        if (File.Exists(licenseOrZrif))
+        {
+            return File.ReadAllBytes(licenseOrZrif);
+        }
+
+        if (Zrif.LooksLikeZrif(licenseOrZrif))
+        {
+            return Zrif.Decode(licenseOrZrif);
+        }
+
         throw new FileNotFoundException($"License not found (not a file nor a zRIF): {licenseOrZrif}");
     }
 
@@ -96,22 +114,39 @@ public static class PkgInstaller
     {
         var reader = new PkgReader(pkgStream);
         PkgKind kind;
-        try { kind = reader.Kind; }
+        try
+        {
+            kind = reader.Kind;
+        }
         catch { reader.Dispose(); throw; }
         if (kind.IsPspEmu())
         {
             log?.Invoke($"{kind.Describe()} package: it needs no license, the one given is not used");
             return PspPkgInstaller.Install(reader, ux0Root, null, log, progress, cancellationToken);
         }
-        if (kind == PkgKind.VitaPsm) { reader.Dispose(); throw new NotSupportedException("PlayStation Mobile packages are not supported yet"); }
-        if (license.Length < 0x60) { reader.Dispose(); throw new InvalidDataException("License file is too small"); }
+        if (kind == PkgKind.VitaPsm)
+        {
+            reader.Dispose();
+            throw new NotSupportedException("PlayStation Mobile packages are not supported yet");
+        }
+        if (license.Length < 0x60)
+        {
+            reader.Dispose();
+            throw new InvalidDataException("License file is too small");
+        }
         using var pkg = reader;
         string licContent = Zrif.ContentId(license);
         if (licContent.Length == 36 && licContent != pkg.ContentId)
+        {
             throw new InvalidDataException($"The license is for {licContent}, the package is {pkg.ContentId}");
+        }
+
         var sfo = new Sfo(pkg.ParamSfo);
         var type = pkg.ContentType;
-        if (type == PkgContentType.App && sfo.Category == "gp") type = PkgContentType.Patch;
+        if (type == PkgContentType.App && sfo.Category == "gp")
+        {
+            type = PkgContentType.Patch;
+        }
 
         string titleId = sfo.TitleId.Length > 0 ? sfo.TitleId : pkg.TitleId;
         string dest = type switch
@@ -127,7 +162,11 @@ public static class PkgInstaller
         thread.Priority = ThreadPriority.BelowNormal; // the reader/decryptor; the writer thread is below normal too
         try
         {
-            if (Directory.Exists(dest)) Directory.Delete(dest, true);
+            if (Directory.Exists(dest))
+            {
+                Directory.Delete(dest, true);
+            }
+
             Directory.CreateDirectory(dest);
             try
             {
@@ -135,7 +174,12 @@ public static class PkgInstaller
             }
             catch
             {
-                try { Directory.Delete(dest, true); } catch (IOException) { } catch (UnauthorizedAccessException) { }
+                try
+                {
+                    Directory.Delete(dest, true);
+                }
+                catch (IOException) { }
+                catch (UnauthorizedAccessException) { }
                 throw;
             }
         }
@@ -146,7 +190,11 @@ public static class PkgInstaller
         File.WriteAllBytes(Path.Combine(licDir, pkg.ContentId + ".rif"), license);
         Directory.CreateDirectory(Path.Combine(dest, "sce_sys", "package"));
         File.WriteAllBytes(Path.Combine(dest, "sce_sys", "package", "work.bin"), license);
-        if (type is PkgContentType.App or PkgContentType.Patch) AppMeta.Installed(ux0Root, titleId, log);
+        if (type is PkgContentType.App or PkgContentType.Patch)
+        {
+            AppMeta.Installed(ux0Root, titleId, log);
+        }
+
         return new InstalledTitle(titleId, sfo.Title, dest, type) { Kind = kind };
     }
 
@@ -187,9 +235,17 @@ public static class PkgInstaller
             foreach (var e in pkg.Entries)
             {
                 ct.ThrowIfCancellationRequested();
-                if (Skipped(e)) continue;
+                if (Skipped(e))
+                {
+                    continue;
+                }
+
                 var target = Path.Combine(dest, e.Name.Replace('/', Path.DirectorySeparatorChar));
-                if (e.IsDirectory) { Directory.CreateDirectory(target); continue; }
+                if (e.IsDirectory)
+                {
+                    Directory.CreateDirectory(target);
+                    continue;
+                }
 
                 long size = (long)e.DataSize;
                 PfsTable? table = null;
@@ -201,28 +257,45 @@ public static class PkgInstaller
                     {
                         var h = head.AsSpan(0, (int)Math.Min(size, Math.Min(pfs.HeadBytes, head.Length)));
                         var (r, d) = pkg.ReadData(e, 0, h, ctr);
-                        readTime += r; ctrTime += d;
+                        readTime += r;
+                        ctrTime += d;
                         table = pfs.Match(size, h);
                     }
                     finally { writer.Return(head); }
-                    if (table != null) node = pfs.Node(e.Name);
+                    if (table != null)
+                    {
+                        node = pfs.Node(e.Name);
+                    }
                 }
                 var cipher = table != null && node!.Encrypted ? pfs!.Cipher(table) : null;
-                if (cipher != null) { decrypted++; log?.Invoke($"decrypt {e.Name}"); }
-                else if (table != null) { plain++; log?.Invoke($"plain   {e.Name}"); }
+                if (cipher != null)
+                {
+                    decrypted++;
+                    log?.Invoke($"decrypt {e.Name}");
+                }
+                else if (table != null)
+                {
+                    plain++;
+                    log?.Invoke($"plain   {e.Name}");
+                }
 
                 // Trim the sector padding of PFS files back to their logical size (files.db).
                 long keep = node != null ? Math.Min(size, node.Size) : size;
                 writer.Open(target, keep);
                 int chunk = cipher?.ChunkSize(writer.BufferSize) ?? writer.BufferSize;
-                if (chunk > writer.BufferSize) throw new NotSupportedException($"PFS sector size {table!.SectorSize} is too large");
+                if (chunk > writer.BufferSize)
+                {
+                    throw new NotSupportedException($"PFS sector size {table!.SectorSize} is too large");
+                }
+
                 for (long pos = 0; pos < size; pos += chunk)
                 {
                     int n = (int)Math.Min(chunk, size - pos);
                     var buf = writer.Rent();
                     var span = buf.AsSpan(0, n);
                     var (r, d) = pkg.ReadData(e, pos, span, ctr);
-                    readTime += r; ctrTime += d;
+                    readTime += r;
+                    ctrTime += d;
                     if (cipher != null)
                     {
                         long t0 = System.Diagnostics.Stopwatch.GetTimestamp();
@@ -230,11 +303,18 @@ public static class PkgInstaller
                         pfsTime += System.Diagnostics.Stopwatch.GetElapsedTime(t0);
                     }
                     int write = (int)Math.Clamp(keep - pos, 0, n);
-                    if (write > 0) writer.Write(buf, write);
-                    else writer.Return(buf);
+                    if (write > 0)
+                    {
+                        writer.Write(buf, write);
+                    }
+                    else
+                    {
+                        writer.Return(buf);
+                    }
+
                     ct.ThrowIfCancellationRequested();
                 }
-                writer.Close(node != null ? node.Size : null);
+                writer.Close(node?.Size);
             }
             pfs?.EnsureAllMatched();
             writer.Complete();

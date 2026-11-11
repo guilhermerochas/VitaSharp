@@ -35,7 +35,10 @@ public sealed class LiveAreaItem
 /// the items rotate.</summary>
 public sealed class LiveAreaFrame
 {
-    public required string Id { get; init; }
+    public required string Id
+    {
+        get; init;
+    }
     public string Multi = "";
     public int AutoflipSeconds;
     public List<LiveAreaItem> Items { get; } = new();
@@ -53,37 +56,66 @@ public sealed class LiveAreaTemplate
     public string FormatVersion { get; private set; } = "";
     /// <summary>Folder the file names are relative to (the contents folder), or "" when parsed from a string.</summary>
     public string ContentsDir { get; private set; } = "";
-    public string? Background { get; private set; }
-    public string? Gate { get; private set; }
+    public string? Background
+    {
+        get; private set;
+    }
+    public string? Gate
+    {
+        get; private set;
+    }
     public List<LiveAreaFrame> Frames { get; } = new();
     /// <summary>True when this is the firmware's default LiveArea (the game ships none).</summary>
-    public bool IsDefault { get; private set; }
+    public bool IsDefault
+    {
+        get; private set;
+    }
 
     /// <summary>Parses template.xml text. <paramref name="language"/> is a Vita language code ("en", "pt-br", "ja"...).</summary>
     public static LiveAreaTemplate Parse(string xml, string language = "en")
     {
         XDocument doc;
-        try { doc = XDocument.Parse(xml, LoadOptions.None); }
+        try
+        {
+            doc = XDocument.Parse(xml, LoadOptions.None);
+        }
         catch (XmlException e) { throw new InvalidDataException("template.xml is not valid XML: " + e.Message, e); }
         var root = doc.Root;
-        if (root == null || root.Name.LocalName != "livearea") throw new InvalidDataException("template.xml has no <livearea> root");
+        if (root == null || root.Name.LocalName != "livearea")
+        {
+            throw new InvalidDataException("template.xml has no <livearea> root");
+        }
+
         var t = new LiveAreaTemplate
         {
             Style = ((string?)root.Attribute("style") ?? "a1").Trim().ToLowerInvariant(),
             FormatVersion = (string?)root.Attribute("format-ver") ?? "",
         };
-        if (t.Style.Length == 0) t.Style = "a1";
+        if (t.Style.Length == 0)
+        {
+            t.Style = "a1";
+        }
+
         var lang = NormaliseLanguage(language);
 
         if (root.Element("livearea-background") is { } bg && Choose(bg.Elements("image"), lang) is { } bgImage)
+        {
             t.Background = FileName(bgImage);
+        }
+
         if (root.Element("gate") is { } gate && Choose(gate.Elements("startup-image"), lang) is { } startup)
+        {
             t.Gate = FileName(startup);
+        }
 
         foreach (var f in root.Elements("frame"))
         {
             var id = ((string?)f.Attribute("id") ?? "").Trim();
-            if (id.Length == 0) continue;
+            if (id.Length == 0)
+            {
+                continue;
+            }
+
             var frame = new LiveAreaFrame
             {
                 Id = id,
@@ -98,7 +130,10 @@ public sealed class LiveAreaTemplate
             foreach (var li in chosen)
             {
                 var item = ParseItem(li);
-                if (!item.IsEmpty) frame.Items.Add(item);
+                if (!item.IsEmpty)
+                {
+                    frame.Items.Add(item);
+                }
             }
             t.Frames.Add(frame);
         }
@@ -116,18 +151,29 @@ public sealed class LiveAreaTemplate
         {
             var dir = Io.Vfs.ResolveCaseInsensitive(appDir, rel);
             var t = TryLoad(dir, language);
-            if (t != null) return t;
+            if (t != null)
+            {
+                return t;
+            }
         }
-        if (fsRoot == null) return null;
+        if (fsRoot == null)
+        {
+            return null;
+        }
+
         var def = TryLoad(Path.Combine(fsRoot, "vs0", "data", "internal", "livearea", "default", "sce_sys", "livearea", "contents"), language);
-        if (def != null) def.IsDefault = true;
+        def?.IsDefault = true;
         return def;
     }
 
     static LiveAreaTemplate? TryLoad(string contentsDir, string language)
     {
         var xml = Io.Vfs.ResolveCaseInsensitive(contentsDir, "template.xml");
-        if (!File.Exists(xml)) return null;
+        if (!File.Exists(xml))
+        {
+            return null;
+        }
+
         try
         {
             var t = Parse(File.ReadAllText(xml), language);
@@ -144,7 +190,11 @@ public sealed class LiveAreaTemplate
     /// <summary>Full path of a file named in the template (case-insensitive, '\' accepted), or null when missing.</summary>
     public string? Resolve(string? file)
     {
-        if (string.IsNullOrEmpty(file) || ContentsDir.Length == 0) return null;
+        if (string.IsNullOrEmpty(file) || ContentsDir.Length == 0)
+        {
+            return null;
+        }
+
         var p = Io.Vfs.ResolveCaseInsensitive(ContentsDir, file.Replace('\\', '/'));
         return File.Exists(p) ? p : null;
     }
@@ -152,9 +202,21 @@ public sealed class LiveAreaTemplate
     static LiveAreaItem ParseItem(XElement li)
     {
         var item = new LiveAreaItem { Target = Direct(li.Element("target")) };
-        if (li.Element("background") is { } b && FileName(b) is { Length: > 0 } bf) item.Background = Image(b, bf);
-        if (li.Element("image") is { } i && FileName(i) is { Length: > 0 } imf) item.Image = Image(i, imf);
-        if (li.Element("text") is { } tx) item.Text = ParseText(tx);
+        if (li.Element("background") is { } b && FileName(b) is { Length: > 0 } bf)
+        {
+            item.Background = Image(b, bf);
+        }
+
+        if (li.Element("image") is { } i && FileName(i) is { Length: > 0 } imf)
+        {
+            item.Image = Image(i, imf);
+        }
+
+        if (li.Element("text") is { } tx)
+        {
+            item.Text = ParseText(tx);
+        }
+
         return item;
     }
 
@@ -188,8 +250,16 @@ public sealed class LiveAreaTemplate
     public static uint ParseColor(string s)
     {
         s = s.Trim().TrimStart('#');
-        if (s.StartsWith("0x", StringComparison.OrdinalIgnoreCase)) s = s[2..];
-        if (!uint.TryParse(s, NumberStyles.HexNumber, CultureInfo.InvariantCulture, out var v)) return 0xFFFFFFFF;
+        if (s.StartsWith("0x", StringComparison.OrdinalIgnoreCase))
+        {
+            s = s[2..];
+        }
+
+        if (!uint.TryParse(s, NumberStyles.HexNumber, CultureInfo.InvariantCulture, out var v))
+        {
+            return 0xFFFFFFFF;
+        }
+
         return s.Length <= 6 ? 0xFF000000 | v : v;
     }
 
@@ -198,7 +268,11 @@ public sealed class LiveAreaTemplate
     static XElement? Choose(IEnumerable<XElement> variants, string lang)
     {
         var list = variants.ToList();
-        if (list.Count == 0) return null;
+        if (list.Count == 0)
+        {
+            return null;
+        }
+
         return list.FirstOrDefault(v => Matches(v, lang) == true)
             ?? list.FirstOrDefault(v => Attr(v, "default") == "on")
             ?? list.FirstOrDefault(v => Matches(v, lang) == null)
@@ -212,7 +286,11 @@ public sealed class LiveAreaTemplate
         var langs = v.Elements("lang").SelectMany(l => l.Value.Split([',', ' '], StringSplitOptions.RemoveEmptyEntries))
             .Concat(v.Elements("cntry").Select(c => (string?)c.Attribute("lang")).Where(l => !string.IsNullOrWhiteSpace(l))!)
             .Select(l => NormaliseLanguage(l!)).ToList();
-        if (langs.Count == 0) return null;
+        if (langs.Count == 0)
+        {
+            return null;
+        }
+
         string baseLang = lang.Split('-')[0];
         return langs.Contains(lang) || langs.Contains(baseLang);
     }
@@ -234,8 +312,16 @@ public sealed class LiveAreaTemplate
     public static string VitaLanguage(CultureInfo c)
     {
         string name = c.Name.ToLowerInvariant();
-        if (name.StartsWith("zh")) return name.Contains("hant") || name.EndsWith("tw") || name.EndsWith("hk") ? "zh-t" : "zh-s";
-        if (name is "pt-br" or "en-gb") return name;
+        if (name.StartsWith("zh"))
+        {
+            return name.Contains("hant") || name.EndsWith("tw") || name.EndsWith("hk") ? "zh-t" : "zh-s";
+        }
+
+        if (name is "pt-br" or "en-gb")
+        {
+            return name;
+        }
+
         string two = c.TwoLetterISOLanguageName.ToLowerInvariant();
         return two is "ja" or "en" or "fr" or "es" or "de" or "it" or "nl" or "pt" or "ru" or "ko" or "fi" or "sv" or "da" or "no" or "nb" or "pl" or "tr"
             ? (two == "nb" ? "no" : two) : "en";

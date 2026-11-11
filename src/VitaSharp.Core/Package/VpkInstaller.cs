@@ -35,12 +35,24 @@ public sealed class VpkInstallOptions
     /// Called (on the installing thread) when the destination already exists. Return true to replace it,
     /// false to skip this content. When null, existing content is replaced.
     /// </summary>
-    public Func<VpkContentInfo, bool>? ConfirmOverwrite { get; init; }
+    public Func<VpkContentInfo, bool>? ConfirmOverwrite
+    {
+        get; init;
+    }
     /// <summary>Called on the installing threads, at most every 100 ms.</summary>
-    public Action<InstallProgress>? Progress { get; init; }
-    public Action<string>? Log { get; init; }
+    public Action<InstallProgress>? Progress
+    {
+        get; init;
+    }
+    public Action<string>? Log
+    {
+        get; init;
+    }
     /// <summary>Optional NoNpDrm license (work.bin / .rif) for encrypted content that does not ship sce_sys/package/work.bin.</summary>
-    public string? LicensePath { get; init; }
+    public string? LicensePath
+    {
+        get; init;
+    }
 }
 
 /// <summary>The archive (or one of its contents) is encrypted and no license to decrypt it was found.</summary>
@@ -78,9 +90,16 @@ public static class VpkInstaller
         foreach (var (entry, prefix) in sfoEntries)
         {
             // a param.sfo nested inside content we already picked belongs to that content
-            if (contents.Any(c => prefix.StartsWith(c.ArchivePrefix, StringComparison.OrdinalIgnoreCase))) continue;
+            if (contents.Any(c => prefix.StartsWith(c.ArchivePrefix, StringComparison.OrdinalIgnoreCase)))
+            {
+                continue;
+            }
+
             Sfo sfo;
-            try { sfo = new Sfo(ReadAll(entry)); }
+            try
+            {
+                sfo = new Sfo(ReadAll(entry));
+            }
             catch (Exception e) when (e is InvalidDataException or ArgumentOutOfRangeException or IndexOutOfRangeException)
             {
                 throw new InvalidDataException($"{entry.FullName} is not a valid PARAM.SFO", e);
@@ -88,18 +107,29 @@ public static class VpkInstaller
             contents.Add(Describe(sfo, prefix, ux0Root));
         }
         if (contents.Count == 0)
+        {
             throw new InvalidDataException("No sce_sys/param.sfo found in the archive: this is not a PS Vita VPK/content zip");
+        }
 
         foreach (var c in contents.Where(c => c.Kind == VpkContentKind.App))
+        {
             if (!zip.Entries.Any(e => Normalize(e.FullName).Equals(c.ArchivePrefix + "eboot.bin", StringComparison.OrdinalIgnoreCase)))
+            {
                 throw new InvalidDataException($"{c.TitleId}: the application has no eboot.bin");
+            }
+        }
+
         return contents;
     }
 
     static VpkContentInfo Describe(Sfo sfo, string prefix, string ux0Root)
     {
         string titleId = sfo.TitleId.Trim();
-        if (!IsSafeName(titleId)) throw new InvalidDataException($"param.sfo has an invalid TITLE_ID \"{titleId}\"");
+        if (!IsSafeName(titleId))
+        {
+            throw new InvalidDataException($"param.sfo has an invalid TITLE_ID \"{titleId}\"");
+        }
+
         string category = sfo.Category.Trim();
         var kind = category.Contains("gp", StringComparison.OrdinalIgnoreCase) ? VpkContentKind.Patch
                  : category.Contains("ac", StringComparison.OrdinalIgnoreCase) ? VpkContentKind.AddCont
@@ -118,10 +148,18 @@ public static class VpkInstaller
     static string AddContDir(Sfo sfo, string prefix)
     {
         var cid = sfo.ContentId.Trim();
-        if (cid.Length > 20 && IsSafeName(cid[20..])) return cid[20..];
+        if (cid.Length > 20 && IsSafeName(cid[20..]))
+        {
+            return cid[20..];
+        }
+
         var folder = prefix.TrimEnd('/');
         folder = folder[(folder.LastIndexOf('/') + 1)..];
-        if (IsSafeName(folder)) return folder;
+        if (IsSafeName(folder))
+        {
+            return folder;
+        }
+
         throw new InvalidDataException($"Add-on content has no usable CONTENT_ID (\"{cid}\")");
     }
 
@@ -137,13 +175,19 @@ public static class VpkInstaller
             var raw = e.FullName.Replace('\\', '/');
             if (raw.StartsWith('/') || raw.Contains(':') || raw.Contains('\0')
                 || raw.Split('/').Any(seg => seg == ".."))
+            {
                 throw new InvalidDataException($"Unsafe path in archive: \"{e.FullName}\"");
+            }
         }
     }
 
     static byte[] ReadAll(ZipArchiveEntry e)
     {
-        if (e.Length > 16 << 20) throw new InvalidDataException($"{e.FullName} is too large");
+        if (e.Length > 16 << 20)
+        {
+            throw new InvalidDataException($"{e.FullName} is too large");
+        }
+
         using var s = e.Open();
         using var ms = new MemoryStream((int)e.Length);
         s.CopyTo(ms);
@@ -215,7 +259,11 @@ public static class VpkInstaller
                 PrepareLicense(info, tmp, ux0Root, options);
                 cancellationToken.ThrowIfCancellationRequested();
                 MoveIntoPlace(tmp, info.DestinationPath, tmpRoot, options.Log);
-                if (info.Kind != VpkContentKind.AddCont) AppMeta.Installed(ux0Root, info.TitleId, options.Log);
+                if (info.Kind != VpkContentKind.AddCont)
+                {
+                    AppMeta.Installed(ux0Root, info.TitleId, options.Log);
+                }
+
                 results.Add(new VpkInstallResult(info, true, replace));
             }
             finally
@@ -245,7 +293,10 @@ public static class VpkInstaller
             var rel = Normalize(e.FullName)[prefix.Length..];
             var target = Path.GetFullPath(Path.Combine(root, rel.Replace('/', Path.DirectorySeparatorChar)));
             if (!target.StartsWith(root, StringComparison.OrdinalIgnoreCase))
+            {
                 throw new InvalidDataException($"Unsafe path in archive: \"{e.FullName}\"");
+            }
+
             if (rel.EndsWith('/'))
             {
                 Directory.CreateDirectory(target);
@@ -259,9 +310,19 @@ public static class VpkInstaller
                     ct.ThrowIfCancellationRequested();
                     var buf = writer.Rent();
                     int n = input.ReadAtLeast(buf, buf.Length, throwOnEndOfStream: false);
-                    if (n > 0) writer.Write(buf, n);
-                    else writer.Return(buf);
-                    if (n < buf.Length) break;
+                    if (n > 0)
+                    {
+                        writer.Write(buf, n);
+                    }
+                    else
+                    {
+                        writer.Return(buf);
+                    }
+
+                    if (n < buf.Length)
+                    {
+                        break;
+                    }
                 }
             }
             writer.Close(lastWrite: e.LastWriteTime.Year > 1980 ? e.LastWriteTime.DateTime : null);
@@ -282,11 +343,15 @@ public static class VpkInstaller
         if (PfsDecryptor.HasPfs(dir))
         {
             if (File.Exists(eboot) && !LooksEncrypted(eboot))
+            {
                 options.Log?.Invoke($"{info.TitleId}: sce_pfs present but files are already decrypted");
+            }
             else if (license == null)
+            {
                 throw new VpkLicenseException(
                     $"{info.TitleId} is PFS-encrypted and no license was found. Include sce_sys/package/work.bin in the VPK " +
                     "(NoNpDrm dump) or provide the work.bin/.rif license (--license=<file>).");
+            }
             else
             {
                 options.Log?.Invoke($"{info.TitleId}: decrypting PFS with {Path.GetFileName(license)}");
@@ -298,7 +363,11 @@ public static class VpkInstaller
         {
             string msg = $"{info.TitleId}: eboot.bin is an encrypted NPDRM executable and no license was found. " +
                          "Use a NoNpDrm dump that includes sce_sys/package/work.bin, or provide the work.bin/.rif license (--license=<file>).";
-            if (info.Kind == VpkContentKind.App) throw new VpkLicenseException(msg);
+            if (info.Kind == VpkContentKind.App)
+            {
+                throw new VpkLicenseException(msg);
+            }
+
             options.Log?.Invoke("Warning: " + msg + " The base game's license will be used when it is installed.");
         }
 
@@ -315,14 +384,25 @@ public static class VpkInstaller
     {
         if (userLicense != null)
         {
-            if (!File.Exists(userLicense)) throw new FileNotFoundException("License file not found", userLicense);
+            if (!File.Exists(userLicense))
+            {
+                throw new FileNotFoundException("License file not found", userLicense);
+            }
+
             return userLicense;
         }
         var candidates = new List<string> { Io.Vfs.ResolveCaseInsensitive(dir, "sce_sys/package/work.bin") };
         if (info.Kind != VpkContentKind.App)
+        {
             candidates.Add(Io.Vfs.ResolveCaseInsensitive(Path.Combine(ux0Root, "app", info.TitleId), "sce_sys/package/work.bin"));
+        }
+
         var licDir = Path.Combine(ux0Root, "license", info.TitleId);
-        if (Directory.Exists(licDir)) candidates.AddRange(Directory.GetFiles(licDir, "*.rif"));
+        if (Directory.Exists(licDir))
+        {
+            candidates.AddRange(Directory.GetFiles(licDir, "*.rif"));
+        }
+
         return candidates.FirstOrDefault(p => File.Exists(p) && new FileInfo(p).Length >= 0x60);
     }
 
@@ -353,20 +433,34 @@ public static class VpkInstaller
             backup = Path.Combine(tmpRoot, Guid.NewGuid().ToString("N") + "-old");
             Directory.Move(dest, backup);
         }
-        try { Directory.Move(tmp, dest); }
+        try
+        {
+            Directory.Move(tmp, dest);
+        }
         catch
         {
-            if (backup != null) Directory.Move(backup, dest);
+            if (backup != null)
+            {
+                Directory.Move(backup, dest);
+            }
+
             throw;
         }
-        if (backup != null && !TryDelete(backup)) log?.Invoke($"Could not remove the previous version at {backup}");
+        if (backup != null && !TryDelete(backup))
+        {
+            log?.Invoke($"Could not remove the previous version at {backup}");
+        }
     }
 
     static bool TryDelete(string dir)
     {
         try
         {
-            if (Directory.Exists(dir)) Directory.Delete(dir, true);
+            if (Directory.Exists(dir))
+            {
+                Directory.Delete(dir, true);
+            }
+
             return true;
         }
         catch (IOException) { return false; }
@@ -375,7 +469,13 @@ public static class VpkInstaller
 
     static void TryDeleteIfEmpty(string dir)
     {
-        try { if (Directory.Exists(dir) && !Directory.EnumerateFileSystemEntries(dir).Any()) Directory.Delete(dir); }
+        try
+        {
+            if (Directory.Exists(dir) && !Directory.EnumerateFileSystemEntries(dir).Any())
+            {
+                Directory.Delete(dir);
+            }
+        }
         catch (IOException) { }
         catch (UnauthorizedAccessException) { }
     }

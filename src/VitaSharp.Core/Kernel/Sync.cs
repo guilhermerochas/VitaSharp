@@ -1,6 +1,6 @@
-﻿using VitaSharp.Core.Util;
-using System.Diagnostics;
+﻿using System.Diagnostics;
 using VitaSharp.Core.Memory;
+using VitaSharp.Core.Util;
 
 namespace VitaSharp.Core.Kernel;
 
@@ -18,7 +18,11 @@ public static class Wait
 
     static void Latency()
     {
-        if (SyscallLatencyUs <= 0 || GuestClock.Turbo) return;
+        if (SyscallLatencyUs <= 0 || GuestClock.Turbo)
+        {
+            return;
+        }
+
         Interlocked.Increment(ref Latencies);
         PreciseSleep.Until(System.Diagnostics.Stopwatch.GetTimestamp() + SyscallLatencyUs * System.Diagnostics.Stopwatch.Frequency / 1_000_000);
     }
@@ -46,7 +50,12 @@ public static class Wait
     static int UntilCore<T>(object sync, T state, Func<T, bool> ready, Ptr<uint> timeout, long? limitUs, Func<T, int>? abort, string what)
     {
         var self = GuestThread.Current;
-        if (self != null) { self.Status = ThreadStatus.Waiting; self.WaitingOn = what; self.CurrentWaitSync = sync; }
+        if (self != null)
+        {
+            self.Status = ThreadStatus.Waiting;
+            self.WaitingOn = what;
+            self.CurrentWaitSync = sync;
+        }
         try
         {
             long start = GuestClock.Ticks; // timeouts run on guest time
@@ -56,20 +65,41 @@ public static class Wait
                 if (abort != null)
                 {
                     int a = abort(state);
-                    if (a != 0) return a;
+                    if (a != 0)
+                    {
+                        return a;
+                    }
                 }
-                if (ready(state)) { if (waited) Latency(); WriteRemaining(timeout, limitUs, start); return SceError.OK; }
-                if (self != null && self.Core.StopRequested) throw new GuestThreadExitException(0, false);
+                if (ready(state))
+                {
+                    if (waited)
+                    {
+                        Latency();
+                    }
+
+                    WriteRemaining(timeout, limitUs, start);
+                    return SceError.OK;
+                }
+                if (self != null && self.Core.StopRequested)
+                {
+                    throw new GuestThreadExitException(0, false);
+                }
+
                 if (self != null && self.CanRunCallbacks && Volatile.Read(ref self.PendingCallbacks) > 0 && GuestThread.CallbackProcessor != null)
                 {
                     Monitor.Exit(sync);
-                    try { GuestThread.CallbackProcessor(self); }
+                    try
+                    {
+                        GuestThread.CallbackProcessor(self);
+                    }
                     finally
                     {
                         Monitor.Enter(sync);
                         // the callback ran as Running (and a wait inside it ended as Running): this wait goes on, so
                         // thread dumps and the watchdog show it waiting on its object again, not "Running"
-                        self.Status = ThreadStatus.Waiting; self.WaitingOn = what; self.CurrentWaitSync = sync;
+                        self.Status = ThreadStatus.Waiting;
+                        self.WaitingOn = what;
+                        self.CurrentWaitSync = sync;
                     }
                     continue;
                 }
@@ -77,32 +107,52 @@ public static class Wait
                 if (limitUs.HasValue)
                 {
                     long leftUs = limitUs.Value - ElapsedUs(start);
-                    if (leftUs <= 0) { timeout.TrySet(0); return SceError.WAIT_TIMEOUT; }
+                    if (leftUs <= 0)
+                    {
+                        timeout.TrySet(0);
+                        return SceError.WAIT_TIMEOUT;
+                    }
                     sliceMs = (int)Math.Clamp((leftUs / GuestClock.Speed + 999) / 1000, 1, 50);
                     if (GuestClock.Turbo)
                     {
                         // turbo: give the event a moment, then jump guest time to the timeout instead of waiting it out
-                        if (!Monitor.Wait(sync, 1)) GuestClock.WaitUntil(start + GuestClock.FromSeconds(limitUs.Value / 1e6));
+                        if (!Monitor.Wait(sync, 1))
+                        {
+                            GuestClock.WaitUntil(start + GuestClock.FromSeconds(limitUs.Value / 1e6));
+                        }
+
                         continue;
                     }
                 }
                 // blocked: give the emulated core away; take one back before touching guest state again (never while
                 // holding sync, or a core-holding signaller could deadlock against us)
-                if (self != null) Scheduler.Release(self);
+                if (self != null)
+                {
+                    Scheduler.Release(self);
+                }
+
                 Interlocked.Increment(ref BlockingWaits);
                 Monitor.Wait(sync, sliceMs);
                 waited = true;
                 if (self != null && !self.HasCore)
                 {
                     Monitor.Exit(sync);
-                    try { Scheduler.Acquire(self); }
+                    try
+                    {
+                        Scheduler.Acquire(self);
+                    }
                     finally { Monitor.Enter(sync); }
                 }
             }
         }
         finally
         {
-            if (self != null) { self.Status = ThreadStatus.Running; self.WaitingOn = ""; self.CurrentWaitSync = null; }
+            if (self != null)
+            {
+                self.Status = ThreadStatus.Running;
+                self.WaitingOn = "";
+                self.CurrentWaitSync = null;
+            }
         }
     }
 
@@ -110,7 +160,11 @@ public static class Wait
 
     static void WriteRemaining(Ptr<uint> timeout, long? limitUs, long startTicks)
     {
-        if (timeout.IsNull || !limitUs.HasValue) return;
+        if (timeout.IsNull || !limitUs.HasValue)
+        {
+            return;
+        }
+
         long left = limitUs.Value - ElapsedUs(startTicks);
         timeout.Value = (uint)Math.Max(0, left);
     }
@@ -137,9 +191,21 @@ public static class Wait
     public static void Sleep(ulong microseconds)
     {
         var self = GuestThread.Current;
-        if (self != null) CountDelay(self, microseconds);
-        if (microseconds == 0) { Thread.Yield(); Latency(); return; }
-        if (microseconds < (ulong)SyscallLatencyUs) microseconds = (ulong)SyscallLatencyUs; // a delay cannot be shorter than a reschedule
+        if (self != null)
+        {
+            CountDelay(self, microseconds);
+        }
+
+        if (microseconds == 0)
+        {
+            Thread.Yield();
+            Latency();
+            return;
+        }
+        if (microseconds < (ulong)SyscallLatencyUs)
+        {
+            microseconds = (ulong)SyscallLatencyUs; // a delay cannot be shorter than a reschedule
+        }
         // guest time: follows the test speed factor, and turbo mode skips the wait
         var blocked = Scheduler.Block();
         try
@@ -154,13 +220,20 @@ public static class Wait
             bool callbacks = self != null && self.CanRunCallbacks && GuestThread.CallbackProcessor != null;
             while (GuestClock.Ticks < end)
             {
-                if (self != null && self.Core.StopRequested) throw new GuestThreadExitException(0, false);
+                if (self != null && self.Core.StopRequested)
+                {
+                    throw new GuestThreadExitException(0, false);
+                }
+
                 if (callbacks)
                 {
                     if (Volatile.Read(ref self!.PendingCallbacks) > 0)
                     {
                         blocked.Dispose(); // the callback is guest code: it runs holding an emulated core
-                        try { GuestThread.CallbackProcessor!(self); }
+                        try
+                        {
+                            GuestThread.CallbackProcessor!(self);
+                        }
                         finally { blocked = Scheduler.Block(); }
                         continue;
                     }
@@ -168,7 +241,13 @@ public static class Wait
                     long left = Math.Min(end, GuestClock.Ticks + slice) - GuestClock.Ticks;
                     int ms = (int)Math.Clamp(left * 1000.0 / System.Diagnostics.Stopwatch.Frequency / GuestClock.Speed + 1, 1, 50);
                     lock (self.WaitLock)
-                        if (Volatile.Read(ref self.PendingCallbacks) == 0) Monitor.Wait(self.WaitLock, ms);
+                    {
+                        if (Volatile.Read(ref self.PendingCallbacks) == 0)
+                        {
+                            Monitor.Wait(self.WaitLock, ms);
+                        }
+                    }
+
                     continue;
                 }
                 // sleep in slices so a stop request is noticed; short delays really sleep instead of spinning a host core
@@ -199,7 +278,11 @@ public sealed partial class Semaphore : KernelObject
 
     public int WaitSema(int need, Ptr<uint> timeout)
     {
-        if (need <= 0 || need > MaxCount) return SceError.INVALID_ARGUMENT;
+        if (need <= 0 || need > MaxCount)
+        {
+            return SceError.INVALID_ARGUMENT;
+        }
+
         lock (this)
         {
             Waiters++;
@@ -208,7 +291,11 @@ public sealed partial class Semaphore : KernelObject
             {
                 int r = Wait.Until(this, (s: this, need, gen), static t => t.s.Count >= t.need, timeout,
                     static t => t.s._deleted ? SceError.WAIT_DELETE : t.s._cancelled != t.gen ? SceError.WAIT_CANCEL : 0, WaitDescription);
-                if (r == SceError.OK) Count -= need;
+                if (r == SceError.OK)
+                {
+                    Count -= need;
+                }
+
                 return r;
             }
             finally { Waiters--; }
@@ -219,7 +306,11 @@ public sealed partial class Semaphore : KernelObject
     {
         lock (this)
         {
-            if (Count < need) return SceError.SEMA_ZERO;
+            if (Count < need)
+            {
+                return SceError.SEMA_ZERO;
+            }
+
             Count -= need;
             return SceError.OK;
         }
@@ -229,7 +320,11 @@ public sealed partial class Semaphore : KernelObject
     {
         lock (this)
         {
-            if (Count + n > MaxCount) return SceError.SEMA_OVF;
+            if (Count + n > MaxCount)
+            {
+                return SceError.SEMA_OVF;
+            }
+
             Count += n;
             Monitor.PulseAll(this);
             return SceError.OK;
@@ -250,7 +345,11 @@ public sealed partial class Semaphore : KernelObject
 
     public void Delete()
     {
-        lock (this) { _deleted = true; Monitor.PulseAll(this); }
+        lock (this)
+        {
+            _deleted = true;
+            Monitor.PulseAll(this);
+        }
     }
 }
 
@@ -269,10 +368,18 @@ public sealed partial class EventFlag : KernelObject
 
     public int WaitFlag(uint bits, uint mode, Ptr<uint> outBits, Ptr<uint> timeout)
     {
-        if (bits == 0) return SceError.INVALID_ARGUMENT;
+        if (bits == 0)
+        {
+            return SceError.INVALID_ARGUMENT;
+        }
+
         lock (this)
         {
-            if ((Attr & AttrMulti) == 0 && Waiters > 0) return SceError.EVF_MULTI;
+            if ((Attr & AttrMulti) == 0 && Waiters > 0)
+            {
+                return SceError.EVF_MULTI;
+            }
+
             Waiters++;
             int gen = _cancelled;
             try
@@ -280,7 +387,11 @@ public sealed partial class EventFlag : KernelObject
                 int r = Wait.Until(this, (e: this, bits, mode, gen), static t => t.e.Matches(t.bits, t.mode), timeout,
                     static t => t.e._deleted ? SceError.WAIT_DELETE : t.e._cancelled != t.gen ? SceError.WAIT_CANCEL : 0, WaitDescription);
                 outBits.TrySet(Pattern);
-                if (r == SceError.OK) Consume(bits, mode);
+                if (r == SceError.OK)
+                {
+                    Consume(bits, mode);
+                }
+
                 return r;
             }
             finally { Waiters--; }
@@ -289,8 +400,14 @@ public sealed partial class EventFlag : KernelObject
 
     void Consume(uint bits, uint mode)
     {
-        if ((mode & WaitClear) != 0) Pattern = 0;
-        else if ((mode & WaitClearPat) != 0) Pattern &= ~bits;
+        if ((mode & WaitClear) != 0)
+        {
+            Pattern = 0;
+        }
+        else if ((mode & WaitClearPat) != 0)
+        {
+            Pattern &= ~bits;
+        }
     }
 
     public int Poll(uint bits, uint mode, Ptr<uint> outBits)
@@ -298,7 +415,11 @@ public sealed partial class EventFlag : KernelObject
         lock (this)
         {
             outBits.TrySet(Pattern);
-            if (!Matches(bits, mode)) return SceError.EVF_COND;
+            if (!Matches(bits, mode))
+            {
+                return SceError.EVF_COND;
+            }
+
             Consume(bits, mode);
             return SceError.OK;
         }
@@ -306,12 +427,19 @@ public sealed partial class EventFlag : KernelObject
 
     public void Set(uint bits)
     {
-        lock (this) { Pattern |= bits; Monitor.PulseAll(this); }
+        lock (this)
+        {
+            Pattern |= bits;
+            Monitor.PulseAll(this);
+        }
     }
 
     public void Clear(uint bits)
     {
-        lock (this) Pattern &= bits;
+        lock (this)
+        {
+            Pattern &= bits;
+        }
     }
 
     public int Cancel(uint setPattern, Ptr<int> numWait)
@@ -328,7 +456,11 @@ public sealed partial class EventFlag : KernelObject
 
     public void Delete()
     {
-        lock (this) { _deleted = true; Monitor.PulseAll(this); }
+        lock (this)
+        {
+            _deleted = true;
+            Monitor.PulseAll(this);
+        }
     }
 }
 
@@ -372,21 +504,49 @@ public sealed partial class Mutex : KernelObject
     public GuestThread? Owner
     {
         get => IsLight ? (OwnerUidWord is var u and not 0 ? Threads?.Get<GuestThread>((int)u) : null) : _owner;
-        set { if (IsLight) Volatile.Write(ref OwnerWord, value?.Uid ?? 0); else _owner = value; }
+        set
+        {
+            if (IsLight)
+            {
+                Volatile.Write(ref OwnerWord, value?.Uid ?? 0);
+            }
+            else
+            {
+                _owner = value;
+            }
+        }
     }
 
     public int LockCount
     {
         get => IsLight ? (int)GuestMemory.R32(WorkArea + LwCountOffset) : _lockCount;
-        set { if (IsLight) GuestMemory.W32(WorkArea + LwCountOffset, (uint)value); else _lockCount = value; }
+        set
+        {
+            if (IsLight)
+            {
+                GuestMemory.W32(WorkArea + LwCountOffset, (uint)value);
+            }
+            else
+            {
+                _lockCount = value;
+            }
+        }
     }
 
     public void InitOwner(GuestThread? t, int count)
     {
         lock (this)
         {
-            if (count > 0) { Owner = t; LockCount = count; }
-            else if (IsLight) { Owner = null; LockCount = 0; }
+            if (count > 0)
+            {
+                Owner = t;
+                LockCount = count;
+            }
+            else if (IsLight)
+            {
+                Owner = null;
+                LockCount = 0;
+            }
         }
     }
 
@@ -403,9 +563,16 @@ public sealed partial class Mutex : KernelObject
         while (true)
         {
             int w = OwnerWordValue;
-            if (!LightFree(w)) return false;
+            if (!LightFree(w))
+            {
+                return false;
+            }
+
             int mine = self.Uid | (otherWaiters > 0 ? unchecked((int)Contended) : 0);
-            if (Interlocked.CompareExchange(ref OwnerWord, mine, w) == w) return true;
+            if (Interlocked.CompareExchange(ref OwnerWord, mine, w) == w)
+            {
+                return true;
+            }
         }
     }
 
@@ -416,9 +583,20 @@ public sealed partial class Mutex : KernelObject
         while (true)
         {
             int w = OwnerWordValue;
-            if (LightFree(w)) return true;
-            if ((w & unchecked((int)Contended)) != 0) return false;
-            if (Interlocked.CompareExchange(ref OwnerWord, w | unchecked((int)Contended), w) == w) return false;
+            if (LightFree(w))
+            {
+                return true;
+            }
+
+            if ((w & unchecked((int)Contended)) != 0)
+            {
+                return false;
+            }
+
+            if (Interlocked.CompareExchange(ref OwnerWord, w | unchecked((int)Contended), w) == w)
+            {
+                return false;
+            }
         }
     }
 
@@ -439,21 +617,37 @@ public sealed partial class Mutex : KernelObject
             {
                 if (OwnerUidWord == (uint)self.Uid)
                 {
-                    if ((Attr & AttrRecursive) == 0) return Recursive;
+                    if ((Attr & AttrRecursive) == 0)
+                    {
+                        return Recursive;
+                    }
+
                     LockCount += count;
                     return SceError.OK;
                 }
-                if (!LightTryAcquire(self, Waiters)) return FailedToOwn;
+                if (!LightTryAcquire(self, Waiters))
+                {
+                    return FailedToOwn;
+                }
+
                 LockCount = count;
                 return SceError.OK;
             }
             if (Owner == self)
             {
-                if ((Attr & AttrRecursive) == 0) return Recursive;
+                if ((Attr & AttrRecursive) == 0)
+                {
+                    return Recursive;
+                }
+
                 LockCount += count;
                 return SceError.OK;
             }
-            if (Owner != null) return FailedToOwn;
+            if (Owner != null)
+            {
+                return FailedToOwn;
+            }
+
             Owner = self;
             LockCount = count;
             return SceError.OK;
@@ -462,16 +656,28 @@ public sealed partial class Mutex : KernelObject
 
     public int Lock(GuestThread self, int count, Ptr<uint> timeout)
     {
-        if (count <= 0) return SceError.INVALID_ARGUMENT;
+        if (count <= 0)
+        {
+            return SceError.INVALID_ARGUMENT;
+        }
+
         lock (this)
         {
             if (IsLight ? OwnerUidWord == (uint)self.Uid : Owner == self)
             {
-                if ((Attr & AttrRecursive) == 0) return Recursive;
+                if ((Attr & AttrRecursive) == 0)
+                {
+                    return Recursive;
+                }
+
                 LockCount += count;
                 return SceError.OK;
             }
-            if (IsLight && LightTryAcquire(self, Waiters)) { LockCount = count; return SceError.OK; }
+            if (IsLight && LightTryAcquire(self, Waiters))
+            {
+                LockCount = count;
+                return SceError.OK;
+            }
             Waiters++;
             int gen = _cancelled;
             try
@@ -483,10 +689,21 @@ public sealed partial class Mutex : KernelObject
                             static t => t.m._deleted ? SceError.WAIT_DELETE : t.m._cancelled != t.gen ? SceError.WAIT_CANCEL : 0, WaitDescription)
                         : Wait.Until(this, (m: this, gen), static t => t.m._owner == null || t.m._owner.Status == ThreadStatus.Dormant, timeout,
                             static t => t.m._deleted ? SceError.WAIT_DELETE : t.m._cancelled != t.gen ? SceError.WAIT_CANCEL : 0, WaitDescription);
-                    if (r != SceError.OK) return r;
+                    if (r != SceError.OK)
+                    {
+                        return r;
+                    }
                     // a lightweight mutex can be taken by guest code between the wake-up and here: wait again
-                    if (IsLight && !LightTryAcquire(self, Waiters - 1)) continue;
-                    if (!IsLight) Owner = self;
+                    if (IsLight && !LightTryAcquire(self, Waiters - 1))
+                    {
+                        continue;
+                    }
+
+                    if (!IsLight)
+                    {
+                        Owner = self;
+                    }
+
                     LockCount = count;
                     return SceError.OK;
                 }
@@ -499,17 +716,36 @@ public sealed partial class Mutex : KernelObject
     {
         lock (this)
         {
-            if (IsLight ? OwnerUidWord != (uint)self.Uid : Owner != self) return IsLight ? SceError.LW_MUTEX_NOT_OWNED : SceError.MUTEX_NOT_OWNED;
-            if (count > LockCount) return IsLight ? SceError.LW_MUTEX_UNLOCK_UDF : SceError.MUTEX_UNLOCK_UDF;
+            if (IsLight ? OwnerUidWord != (uint)self.Uid : Owner != self)
+            {
+                return IsLight ? SceError.LW_MUTEX_NOT_OWNED : SceError.MUTEX_NOT_OWNED;
+            }
+
+            if (count > LockCount)
+            {
+                return IsLight ? SceError.LW_MUTEX_UNLOCK_UDF : SceError.MUTEX_UNLOCK_UDF;
+            }
+
             int left = LockCount - count;
             if (IsLight)
             {
-                if (left != 0) LockCount = left;
-                else LightRelease();
+                if (left != 0)
+                {
+                    LockCount = left;
+                }
+                else
+                {
+                    LightRelease();
+                }
+
                 return SceError.OK;
             }
             LockCount = left;
-            if (left == 0) Owner = null;
+            if (left == 0)
+            {
+                Owner = null;
+            }
+
             Monitor.PulseAll(this);
             return SceError.OK;
         }
@@ -520,9 +756,17 @@ public sealed partial class Mutex : KernelObject
     {
         lock (this)
         {
-            if (IsLight ? OwnerUidWord != (uint)self.Uid : Owner != self) return -1;
+            if (IsLight ? OwnerUidWord != (uint)self.Uid : Owner != self)
+            {
+                return -1;
+            }
+
             int c = LockCount;
-            if (IsLight) { LightRelease(); return c; }
+            if (IsLight)
+            {
+                LightRelease();
+                return c;
+            }
             LockCount = 0;
             Owner = null;
             Monitor.PulseAll(this);
@@ -536,8 +780,16 @@ public sealed partial class Mutex : KernelObject
     {
         lock (this)
         {
-            if (newCount == -1) newCount = InitCount;
-            if (newCount < 0 || (newCount > 1 && (Attr & AttrRecursive) == 0)) return SceError.ILLEGAL_COUNT;
+            if (newCount == -1)
+            {
+                newCount = InitCount;
+            }
+
+            if (newCount < 0 || (newCount > 1 && (Attr & AttrRecursive) == 0))
+            {
+                return SceError.ILLEGAL_COUNT;
+            }
+
             numWait.TrySet(Waiters);
             _cancelled++;
             LockCount = newCount;
@@ -555,7 +807,11 @@ public sealed partial class Mutex : KernelObject
             LockCount = 0;
             Owner = null;
             // the guest fast paths check the UID word: a deleted mutex's calls come to the kernel (UNKNOWN_LW_MUTEX_ID)
-            if (IsLight) GuestMemory.W32(WorkArea + LwUidOffset, 0);
+            if (IsLight)
+            {
+                GuestMemory.W32(WorkArea + LwUidOffset, 0);
+            }
+
             Monitor.PulseAll(this);
         }
     }
@@ -579,7 +835,13 @@ public sealed partial class CondVar : KernelObject
     bool _deleted;
     public const uint LwQueuedOffset = 8, LwSelfOffset = 12;
 
-    void PublishQueued(int n) { if (WorkArea != 0) GuestMemory.W32(WorkArea + LwQueuedOffset, (uint)n); }
+    void PublishQueued(int n)
+    {
+        if (WorkArea != 0)
+        {
+            GuestMemory.W32(WorkArea + LwQueuedOffset, (uint)n);
+        }
+    }
 
     sealed class Waiter
     {
@@ -600,7 +862,11 @@ public sealed partial class CondVar : KernelObject
             // a wait reissued by a save state load released its mutex before the state was saved
             count = self.CondReissueCount > 0 ? self.CondReissueCount : Mutex.ReleaseAll(self);
             self.CondReissueCount = 0;
-            if (count < 0) { PublishQueued(_queue.Count); return Mutex.IsLight ? SceError.LW_MUTEX_NOT_OWNED : SceError.MUTEX_NOT_OWNED; }
+            if (count < 0)
+            {
+                PublishQueued(_queue.Count);
+                return Mutex.IsLight ? SceError.LW_MUTEX_NOT_OWNED : SceError.MUTEX_NOT_OWNED;
+            }
             self.CondWaitCount = count; // save states: the lock count the reissued wait gives back
             Waiters++;
             var node = _freeNodes.Count > 0 ? _freeNodes.Pop() : new LinkedListNode<Waiter>(new Waiter());
@@ -617,13 +883,23 @@ public sealed partial class CondVar : KernelObject
             finally
             {
                 Waiters--;
-                if (!w.Released) { _queue.Remove(node); PublishQueued(_queue.Count); }
+                if (!w.Released)
+                {
+                    _queue.Remove(node);
+                    PublishQueued(_queue.Count);
+                }
                 w.Thread = null!;
-                if (_freeNodes.Count < 64) _freeNodes.Push(node);
+                if (_freeNodes.Count < 64)
+                {
+                    _freeNodes.Push(node);
+                }
             }
             // reacquire outside our lock to avoid lock-order inversion with the mutex
             Monitor.Exit(this);
-            try { Mutex.Lock(self, count, default); }
+            try
+            {
+                Mutex.Lock(self, count, default);
+            }
             finally { Monitor.Enter(this); }
             return r;
         }
@@ -640,7 +916,11 @@ public sealed partial class CondVar : KernelObject
     {
         lock (this)
         {
-            if (_queue.First is { } first) Release(first);
+            if (_queue.First is { } first)
+            {
+                Release(first);
+            }
+
             Monitor.PulseAll(this);
         }
     }
@@ -652,7 +932,11 @@ public sealed partial class CondVar : KernelObject
         {
             for (var n = _queue.First; n != null; n = n.Next)
             {
-                if (n.Value.Thread != target) continue;
+                if (n.Value.Thread != target)
+                {
+                    continue;
+                }
+
                 Release(n);
                 Monitor.PulseAll(this);
                 return true;
@@ -665,7 +949,11 @@ public sealed partial class CondVar : KernelObject
     {
         lock (this)
         {
-            while (_queue.First is { } first) Release(first);
+            while (_queue.First is { } first)
+            {
+                Release(first);
+            }
+
             Monitor.PulseAll(this);
         }
     }
@@ -676,7 +964,11 @@ public sealed partial class CondVar : KernelObject
         {
             _deleted = true;
             // the guest fast paths check the UID word: a deleted cond's signals come to the kernel (UNKNOWN_LW_COND_ID)
-            if (WorkArea != 0) GuestMemory.W32(WorkArea, 0);
+            if (WorkArea != 0)
+            {
+                GuestMemory.W32(WorkArea, 0);
+            }
+
             Monitor.PulseAll(this);
         }
     }
@@ -695,11 +987,29 @@ public sealed partial class MsgPipe : KernelObject
     public int CreatorThreadUid;
     readonly Queue<byte> _data = new();
     public int SendWaiters, RecvWaiters;
-    public int FreeSize { get { lock (this) return BufferSize - _data.Count; } }
+    public int FreeSize
+    {
+        get
+        {
+            lock (this)
+            {
+                return BufferSize - _data.Count;
+            }
+        }
+    }
     bool _deleted;
     int _cancelled;
     /// <summary>Deleted while a handle opened by name was still open (<see cref="ObjectTable.Delete(MsgPipe)"/>).</summary>
-    public bool IsDeleted { get { lock (this) return _deleted; } }
+    public bool IsDeleted
+    {
+        get
+        {
+            lock (this)
+            {
+                return _deleted;
+            }
+        }
+    }
 
     /// <summary>Guest buffers taken as one contiguous byte range in order (MsgPipeVector entries {base, size}).</summary>
     public readonly struct Segments(uint[] addrs, int[] sizes)
@@ -714,7 +1024,11 @@ public sealed partial class MsgPipe : KernelObject
         {
             for (int i = 0; i < Addrs.Length && count > 0; i++)
             {
-                if (offset >= Sizes[i]) { offset -= Sizes[i]; continue; }
+                if (offset >= Sizes[i])
+                {
+                    offset -= Sizes[i];
+                    continue;
+                }
                 int n = Math.Min(Sizes[i] - offset, count);
                 f(Addrs[i] + (uint)offset, n);
                 count -= n;
@@ -731,7 +1045,11 @@ public sealed partial class MsgPipe : KernelObject
         int size = src.Total;
         lock (this)
         {
-            if (_deleted) { result.TrySet(0); return SceError.MPP_DELETED; }
+            if (_deleted)
+            {
+                result.TrySet(0);
+                return SceError.MPP_DELETED;
+            }
             int gen = _cancelled;
             int sent = 0;
             bool asap = (mode & WaitAll) == 0;
@@ -745,22 +1063,42 @@ public sealed partial class MsgPipe : KernelObject
                     if (free > 0)
                     {
                         int n = Math.Min(free, size - sent);
-                        src.ForEach(sent, n, (a, len) => { foreach (var b in GuestMemory.Span(a, len)) _data.Enqueue(b); });
+                        src.ForEach(sent, n, (a, len) => { foreach (var b in GuestMemory.Span(a, len)) { _data.Enqueue(b); } });
                         sent += n;
                         Monitor.PulseAll(this);
-                        if (asap) break;
+                        if (asap)
+                        {
+                            break;
+                        }
+
                         continue;
                     }
-                    if (poll) break;
+                    if (poll)
+                    {
+                        break;
+                    }
+
                     int r = Wait.Until(this, (p: this, gen), static t => t.p._data.Count < t.p.BufferSize, timeout,
                         static t => t.p._deleted ? SceError.WAIT_DELETE : t.p._cancelled != t.gen ? SceError.WAIT_CANCEL : 0, WaitDescription);
-                    if (r != SceError.OK) { result.TrySet((uint)sent); return r; }
+                    if (r != SceError.OK)
+                    {
+                        result.TrySet((uint)sent);
+                        return r;
+                    }
                 }
             }
             finally { SendWaiters--; }
             result.TrySet((uint)sent);
-            if (sent == 0 && size > 0) return SceError.MPP_FULL;
-            if (!asap && sent < size) return SceError.MPP_FULL;
+            if (sent == 0 && size > 0)
+            {
+                return SceError.MPP_FULL;
+            }
+
+            if (!asap && sent < size)
+            {
+                return SceError.MPP_FULL;
+            }
+
             return SceError.OK;
         }
     }
@@ -773,7 +1111,11 @@ public sealed partial class MsgPipe : KernelObject
         int size = dst.Total;
         lock (this)
         {
-            if (_deleted) { result.TrySet(0); return SceError.MPP_DELETED; }
+            if (_deleted)
+            {
+                result.TrySet(0);
+                return SceError.MPP_DELETED;
+            }
             int gen = _cancelled;
             int got = 0;
             bool asap = (mode & WaitAll) == 0;
@@ -786,21 +1128,37 @@ public sealed partial class MsgPipe : KernelObject
                     if (_data.Count > 0)
                     {
                         int n = Math.Min(_data.Count, size - got);
-                        dst.ForEach(got, n, (a, len) => { var span = GuestMemory.Span(a, len); for (int i = 0; i < len; i++) span[i] = _data.Dequeue(); });
+                        dst.ForEach(got, n, (a, len) => { var span = GuestMemory.Span(a, len); for (int i = 0; i < len; i++) { span[i] = _data.Dequeue(); } });
                         got += n;
                         Monitor.PulseAll(this);
-                        if (asap) break;
+                        if (asap)
+                        {
+                            break;
+                        }
+
                         continue;
                     }
-                    if (poll) break;
+                    if (poll)
+                    {
+                        break;
+                    }
+
                     int r = Wait.Until(this, (p: this, gen), static t => t.p._data.Count > 0, timeout,
                         static t => t.p._deleted ? SceError.WAIT_DELETE : t.p._cancelled != t.gen ? SceError.WAIT_CANCEL : 0, WaitDescription);
-                    if (r != SceError.OK) { result.TrySet((uint)got); return r; }
+                    if (r != SceError.OK)
+                    {
+                        result.TrySet((uint)got);
+                        return r;
+                    }
                 }
             }
             finally { RecvWaiters--; }
             result.TrySet((uint)got);
-            if (got == 0 && size > 0) return SceError.MPP_EMPTY;
+            if (got == 0 && size > 0)
+            {
+                return SceError.MPP_EMPTY;
+            }
+
             return SceError.OK;
         }
     }
@@ -819,7 +1177,11 @@ public sealed partial class MsgPipe : KernelObject
 
     public void Delete()
     {
-        lock (this) { _deleted = true; Monitor.PulseAll(this); }
+        lock (this)
+        {
+            _deleted = true;
+            Monitor.PulseAll(this);
+        }
     }
 
     // ---- sceKernelWaitEvent / PollEvent on a message pipe (SCE_KERNEL_EVENT_*): IN while data can be received, OUT
@@ -838,33 +1200,56 @@ public sealed partial class MsgPipe : KernelObject
     /// <summary>A handle to the pipe was opened or closed (<see cref="EventOpen"/>, <see cref="EventClose"/>).</summary>
     public void Signal(uint ev)
     {
-        lock (this) { _latched |= ev; Monitor.PulseAll(this); }
+        lock (this)
+        {
+            _latched |= ev;
+            Monitor.PulseAll(this);
+        }
     }
 
     int TakeEvent(uint waitPattern, Ptr<uint> result)
     {
         uint hit = Pattern & waitPattern;
         result.TrySet(hit);
-        if (hit == 0) return SceError.EVENT_COND;
+        if (hit == 0)
+        {
+            return SceError.EVENT_COND;
+        }
+
         _latched &= ~hit;
         return SceError.OK;
     }
 
     public int PollEvent(uint waitPattern, Ptr<uint> result)
     {
-        if (waitPattern == 0) return SceError.INVALID_ARGUMENT;
-        lock (this) return TakeEvent(waitPattern, result);
+        if (waitPattern == 0)
+        {
+            return SceError.INVALID_ARGUMENT;
+        }
+
+        lock (this)
+        {
+            return TakeEvent(waitPattern, result);
+        }
     }
 
     public int WaitEvent(uint waitPattern, Ptr<uint> result, Ptr<uint> timeout)
     {
-        if (waitPattern == 0) return SceError.INVALID_ARGUMENT;
+        if (waitPattern == 0)
+        {
+            return SceError.INVALID_ARGUMENT;
+        }
+
         lock (this)
         {
             int gen = _cancelled;
             int r = Wait.Until(this, (p: this, waitPattern, gen), static t => (t.p.Pattern & t.waitPattern) != 0, timeout,
                 static t => t.p._cancelled != t.gen ? SceError.WAIT_CANCEL : 0, WaitDescription);
-            if (r != SceError.OK) { result.TrySet(r == SceError.WAIT_TIMEOUT ? 0 : EventBits.Error); return r; }
+            if (r != SceError.OK)
+            {
+                result.TrySet(r == SceError.WAIT_TIMEOUT ? 0 : EventBits.Error);
+                return r;
+            }
             return TakeEvent(waitPattern, result);
         }
     }
@@ -891,7 +1276,11 @@ public sealed partial class RwLock : KernelObject
             {
                 int r = Wait.Until(this, (l: this, self, gen), static t => t.l.Writer == null || t.l.Writer == t.self, timeout,
                     static t => t.l._deleted ? SceError.WAIT_DELETE : t.l._cancelled != t.gen ? SceError.WAIT_CANCEL : 0, WaitDescription);
-                if (r == SceError.OK) Readers++;
+                if (r == SceError.OK)
+                {
+                    Readers++;
+                }
+
                 return r;
             }
             finally { ReadWaiters--; }
@@ -902,7 +1291,11 @@ public sealed partial class RwLock : KernelObject
     {
         lock (this)
         {
-            if (Writer != null && Writer != self) return SceError.RW_LOCK_FAILED_TO_LOCK;
+            if (Writer != null && Writer != self)
+            {
+                return SceError.RW_LOCK_FAILED_TO_LOCK;
+            }
+
             Readers++;
             return SceError.OK;
         }
@@ -912,7 +1305,11 @@ public sealed partial class RwLock : KernelObject
     {
         lock (this)
         {
-            if (Readers == 0) return SceError.RW_LOCK_UNLOCK_UDF;
+            if (Readers == 0)
+            {
+                return SceError.RW_LOCK_UNLOCK_UDF;
+            }
+
             Readers--;
             Monitor.PulseAll(this);
             return SceError.OK;
@@ -923,14 +1320,22 @@ public sealed partial class RwLock : KernelObject
     {
         lock (this)
         {
-            if (Writer == self) { WriteCount++; return SceError.OK; }
+            if (Writer == self)
+            {
+                WriteCount++;
+                return SceError.OK;
+            }
             WriteWaiters++;
             int gen = _cancelled;
             try
             {
                 int r = Wait.Until(this, (l: this, gen), static t => t.l.Writer == null && t.l.Readers == 0, timeout,
                     static t => t.l._deleted ? SceError.WAIT_DELETE : t.l._cancelled != t.gen ? SceError.WAIT_CANCEL : 0, WaitDescription);
-                if (r == SceError.OK) { Writer = self; WriteCount = 1; }
+                if (r == SceError.OK)
+                {
+                    Writer = self;
+                    WriteCount = 1;
+                }
                 return r;
             }
             finally { WriteWaiters--; }
@@ -941,8 +1346,16 @@ public sealed partial class RwLock : KernelObject
     {
         lock (this)
         {
-            if (Writer == self) { WriteCount++; return SceError.OK; }
-            if (Writer != null || Readers > 0) return SceError.RW_LOCK_FAILED_TO_LOCK;
+            if (Writer == self)
+            {
+                WriteCount++;
+                return SceError.OK;
+            }
+            if (Writer != null || Readers > 0)
+            {
+                return SceError.RW_LOCK_FAILED_TO_LOCK;
+            }
+
             Writer = self;
             WriteCount = 1;
             return SceError.OK;
@@ -953,8 +1366,16 @@ public sealed partial class RwLock : KernelObject
     {
         lock (this)
         {
-            if (Writer != self) return SceError.RW_LOCK_NOT_OWNED;
-            if (--WriteCount == 0) Writer = null;
+            if (Writer != self)
+            {
+                return SceError.RW_LOCK_NOT_OWNED;
+            }
+
+            if (--WriteCount == 0)
+            {
+                Writer = null;
+            }
+
             Monitor.PulseAll(this);
             return SceError.OK;
         }
@@ -979,7 +1400,11 @@ public sealed partial class RwLock : KernelObject
 
     public void Delete()
     {
-        lock (this) { _deleted = true; Monitor.PulseAll(this); }
+        lock (this)
+        {
+            _deleted = true;
+            Monitor.PulseAll(this);
+        }
     }
 }
 
@@ -1004,9 +1429,19 @@ public sealed partial class Callback : KernelObject
             NotifyId = GuestThread.Current?.Uid ?? 0;
         }
         Interlocked.Increment(ref Owner.PendingCallbacks);
-        lock (Owner.WaitLock) Monitor.PulseAll(Owner.WaitLock);
+        lock (Owner.WaitLock)
+        {
+            Monitor.PulseAll(Owner.WaitLock);
+        }
+
         var s = Owner.CurrentWaitSync;
-        if (s != null) lock (s) Monitor.PulseAll(s);
+        if (s != null)
+        {
+            lock (s)
+            {
+                Monitor.PulseAll(s);
+            }
+        }
     }
 }
 
@@ -1037,19 +1472,42 @@ public sealed partial class TimerObject : KernelObject
     bool _deleted;
     int _cancelled;
 
-    public int NumWaiters { get { lock (this) return _waiters.Count; } }
+    public int NumWaiters
+    {
+        get
+        {
+            lock (this)
+            {
+                return _waiters.Count;
+            }
+        }
+    }
 
-    public ulong Count() { lock (this) return Started ? Clock() - Base : StoppedCount; }
+    public ulong Count()
+    {
+        lock (this)
+        {
+            return Started ? Clock() - Base : StoppedCount;
+        }
+    }
 
     /// <summary>Returns 1 when it was already running, else 0.</summary>
     public int Start()
     {
         lock (this)
         {
-            if (Started) return 1;
+            if (Started)
+            {
+                return 1;
+            }
+
             Started = true;
             Base = Clock() - StoppedCount;
-            if (Interval != 0) Schedule();
+            if (Interval != 0)
+            {
+                Schedule();
+            }
+
             return 0;
         }
     }
@@ -1059,7 +1517,11 @@ public sealed partial class TimerObject : KernelObject
     {
         lock (this)
         {
-            if (!Started) return 0;
+            if (!Started)
+            {
+                return 0;
+            }
+
             StoppedCount = Clock() - Base;
             Started = false;
             NextEvent = ulong.MaxValue;
@@ -1074,8 +1536,15 @@ public sealed partial class TimerObject : KernelObject
         {
             ulong now = Clock();
             ulong old = Started ? now - Base : StoppedCount;
-            if (Started) Base = now - value;
-            else StoppedCount = value;
+            if (Started)
+            {
+                Base = now - value;
+            }
+            else
+            {
+                StoppedCount = value;
+            }
+
             return old;
         }
     }
@@ -1088,21 +1557,35 @@ public sealed partial class TimerObject : KernelObject
 
     public int SetEvent(int type, ulong interval, bool repeat)
     {
-        if (type is not (0 or 1)) return SceError.ILLEGAL_TYPE;
+        if (type is not (0 or 1))
+        {
+            return SceError.ILLEGAL_TYPE;
+        }
+
         lock (this)
         {
             Pulse = type == 1;
             Repeat = repeat;
             Interval = interval;
-            if (Started) Schedule();
+            if (Started)
+            {
+                Schedule();
+            }
+
             return SceError.OK;
         }
     }
 
     void Advance(ulong now)
     {
-        if (Repeat && Interval != 0) NextEvent += ((now - NextEvent - 1) / Interval + 1) * Interval;
-        else NextEvent = ulong.MaxValue;
+        if (Repeat && Interval != 0)
+        {
+            NextEvent += ((now - NextEvent - 1) / Interval + 1) * Interval;
+        }
+        else
+        {
+            NextEvent = ulong.MaxValue;
+        }
     }
 
     int TryTake(Ptr<uint> result, Ptr<ulong> userData, ulong now)
@@ -1111,18 +1594,44 @@ public sealed partial class TimerObject : KernelObject
         userData.TrySet(0);
         if (NextEvent < now)
         {
-            if (!Pulse) EventSet = true; // a pulse is only seen by waiters
+            if (!Pulse)
+            {
+                EventSet = true; // a pulse is only seen by waiters
+            }
+
             Advance(now);
         }
-        if (!EventSet) return SceError.EVENT_COND;
+        if (!EventSet)
+        {
+            return SceError.EVENT_COND;
+        }
+
         result.TrySet(EventBits.Timer);
-        if ((Attr & EventBits.AttrAutoReset) != 0) EventSet = false;
+        if ((Attr & EventBits.AttrAutoReset) != 0)
+        {
+            EventSet = false;
+        }
+
         return SceError.OK;
     }
 
-    public int Poll(Ptr<uint> result, Ptr<ulong> userData) { lock (this) return TryTake(result, userData, Clock()); }
+    public int Poll(Ptr<uint> result, Ptr<ulong> userData)
+    {
+        lock (this)
+        {
+            return TryTake(result, userData, Clock());
+        }
+    }
 
-    public int Clear() { lock (this) EventSet = false; return SceError.OK; }
+    public int Clear()
+    {
+        lock (this)
+        {
+            EventSet = false;
+        }
+
+        return SceError.OK;
+    }
 
     bool Fired(LinkedListNode<object> node, ulong now) => _waiters.First == node && (EventSet || now > NextEvent);
 
@@ -1132,7 +1641,11 @@ public sealed partial class TimerObject : KernelObject
         {
             ulong now = Clock();
             int r = TryTake(result, userData, now);
-            if (r != SceError.EVENT_COND) return r;
+            if (r != SceError.EVENT_COND)
+            {
+                return r;
+            }
+
             var node = _waiters.AddLast(new object());
             int gen = _cancelled;
             ulong start = now;
@@ -1141,11 +1654,27 @@ public sealed partial class TimerObject : KernelObject
             {
                 while (true)
                 {
-                    if (_deleted) { WriteBack(timeout, limit, start); return SceError.WAIT_DELETE; }
-                    if (_cancelled != gen) { WriteBack(timeout, limit, start); return SceError.WAIT_CANCEL; }
-                    if (Fired(node, now)) break;
+                    if (_deleted)
+                    {
+                        WriteBack(timeout, limit, start);
+                        return SceError.WAIT_DELETE;
+                    }
+                    if (_cancelled != gen)
+                    {
+                        WriteBack(timeout, limit, start);
+                        return SceError.WAIT_CANCEL;
+                    }
+                    if (Fired(node, now))
+                    {
+                        break;
+                    }
+
                     long? slice = limit.HasValue ? limit.Value - (long)(now - start) : null;
-                    if (slice is <= 0) { timeout.TrySet(0); return SceError.WAIT_TIMEOUT; }
+                    if (slice is <= 0)
+                    {
+                        timeout.TrySet(0);
+                        return SceError.WAIT_TIMEOUT;
+                    }
                     if (_waiters.First == node && NextEvent != ulong.MaxValue)
                     {
                         long toEvent = NextEvent >= now ? (long)(NextEvent - now) + 1 : 1;
@@ -1172,7 +1701,10 @@ public sealed partial class TimerObject : KernelObject
 
     void WriteBack(Ptr<uint> timeout, long? limit, ulong start)
     {
-        if (limit.HasValue) timeout.TrySet((uint)Math.Max(0, limit.Value - (long)(Clock() - start)));
+        if (limit.HasValue)
+        {
+            timeout.TrySet((uint)Math.Max(0, limit.Value - (long)(Clock() - start)));
+        }
     }
 
     public int Cancel(Ptr<uint> numWait)
@@ -1191,7 +1723,11 @@ public sealed partial class TimerObject : KernelObject
 
     public void Delete()
     {
-        lock (this) { _deleted = true; Monitor.PulseAll(this); }
+        lock (this)
+        {
+            _deleted = true;
+            Monitor.PulseAll(this);
+        }
     }
 }
 
@@ -1221,42 +1757,89 @@ public sealed partial class SimpleEvent : KernelObject
     }
 
     readonly LinkedList<Waiter> _waiters = new();
-    public int NumWaiters { get { lock (this) return _waiters.Count; } }
+    public int NumWaiters
+    {
+        get
+        {
+            lock (this)
+            {
+                return _waiters.Count;
+            }
+        }
+    }
 
     int TryTake(uint waitPattern, Ptr<uint> result, Ptr<ulong> userData)
     {
-        if ((Pattern & waitPattern) == 0) { result.TrySet(0); return SceError.EVENT_COND; }
+        if ((Pattern & waitPattern) == 0)
+        {
+            result.TrySet(0);
+            return SceError.EVENT_COND;
+        }
         result.TrySet(Pattern & waitPattern);
-        if (AutoReset) Pattern &= ~waitPattern;
+        if (AutoReset)
+        {
+            Pattern &= ~waitPattern;
+        }
+
         userData.TrySet(LastUserData);
         return SceError.OK;
     }
 
     public int Poll(uint waitPattern, Ptr<uint> result, Ptr<ulong> userData)
     {
-        if (waitPattern == 0) return SceError.INVALID_ARGUMENT;
-        lock (this) return TryTake(waitPattern, result, userData);
+        if (waitPattern == 0)
+        {
+            return SceError.INVALID_ARGUMENT;
+        }
+
+        lock (this)
+        {
+            return TryTake(waitPattern, result, userData);
+        }
     }
 
     public int Wait(GuestThread? self, uint waitPattern, Ptr<uint> result, Ptr<ulong> userData, Ptr<uint> timeout)
     {
-        if (waitPattern == 0) return SceError.INVALID_ARGUMENT;
+        if (waitPattern == 0)
+        {
+            return SceError.INVALID_ARGUMENT;
+        }
+
         lock (this)
         {
             int r = TryTake(waitPattern, result, userData);
-            if (r != SceError.EVENT_COND) return r;
+            if (r != SceError.EVENT_COND)
+            {
+                return r;
+            }
+
             var w = new Waiter { WaitPattern = waitPattern, Result = result, UserData = userData, Priority = self?.Priority ?? 0, Space = AddressSpace.Current };
             LinkedListNode<Waiter> node;
             if ((Attr & EventBits.AttrThPrio) != 0)
             {
                 var at = _waiters.First;
-                while (at != null && at.Value.Priority <= w.Priority) at = at.Next;
+                while (at != null && at.Value.Priority <= w.Priority)
+                {
+                    at = at.Next;
+                }
+
                 node = at == null ? _waiters.AddLast(w) : _waiters.AddBefore(at, w);
             }
-            else node = _waiters.AddLast(w);
+            else
+            {
+                node = _waiters.AddLast(w);
+            }
+
             r = global::VitaSharp.Core.Kernel.Wait.Until(this, w, static w => w.Code.HasValue, timeout, null, WaitDescription);
-            if (w.Code is { } code) r = code;
-            else _waiters.Remove(node);
+            if (w.Code is { } code)
+            {
+                r = code;
+            }
+            else
+            {
+                _waiters.Remove(node);
+            }
+
             if (r < 0 && r != SceError.WAIT_TIMEOUT)
             {
                 result.TrySet(EventBits.Error);
@@ -1268,7 +1851,11 @@ public sealed partial class SimpleEvent : KernelObject
 
     public int SetOrPulse(uint setPattern, ulong userData, bool pulse)
     {
-        if ((setPattern & ~EventBits.UserMask) != 0) return SceError.ILLEGAL_PATTERN;
+        if ((setPattern & ~EventBits.UserMask) != 0)
+        {
+            return SceError.ILLEGAL_PATTERN;
+        }
+
         lock (this)
         {
             uint oldPattern = Pattern;
@@ -1286,13 +1873,21 @@ public sealed partial class SimpleEvent : KernelObject
                         w.Result.TrySet(Pattern & w.WaitPattern);
                         w.UserData.TrySet(LastUserData);
                     }
-                    if (AutoReset) Pattern &= ~w.WaitPattern;
+                    if (AutoReset)
+                    {
+                        Pattern &= ~w.WaitPattern;
+                    }
+
                     w.Code = SceError.OK;
                     _waiters.Remove(n);
                 }
                 n = next;
             }
-            if (pulse) { Pattern = oldPattern & ~setPattern; LastUserData = oldData; }
+            if (pulse)
+            {
+                Pattern = oldPattern & ~setPattern;
+                LastUserData = oldData;
+            }
             Monitor.PulseAll(this);
             return SceError.OK;
         }
@@ -1301,19 +1896,35 @@ public sealed partial class SimpleEvent : KernelObject
     /// <summary>Keeps only the bits of <paramref name="keepPattern"/> (Vita3K: only user bits may be passed).</summary>
     public int Clear(uint keepPattern)
     {
-        if ((keepPattern & ~EventBits.UserMask) != 0) return SceError.ILLEGAL_PATTERN;
-        lock (this) Pattern &= keepPattern;
+        if ((keepPattern & ~EventBits.UserMask) != 0)
+        {
+            return SceError.ILLEGAL_PATTERN;
+        }
+
+        lock (this)
+        {
+            Pattern &= keepPattern;
+        }
+
         return SceError.OK;
     }
 
     /// <summary>Cancels every wait (WAIT_CANCEL) and replaces the whole pattern (the create bit too) and the user data.</summary>
     public int CancelWithSetPattern(uint setPattern, ulong userData, Ptr<uint> numWait)
     {
-        if ((setPattern & ~EventBits.UserMask) != 0) return SceError.ILLEGAL_PATTERN;
+        if ((setPattern & ~EventBits.UserMask) != 0)
+        {
+            return SceError.ILLEGAL_PATTERN;
+        }
+
         lock (this)
         {
             numWait.TrySet((uint)_waiters.Count);
-            foreach (var w in _waiters) w.Code = SceError.WAIT_CANCEL;
+            foreach (var w in _waiters)
+            {
+                w.Code = SceError.WAIT_CANCEL;
+            }
+
             _waiters.Clear();
             Pattern = setPattern;
             LastUserData = userData;
@@ -1327,7 +1938,11 @@ public sealed partial class SimpleEvent : KernelObject
         lock (this)
         {
             numWait.TrySet((uint)_waiters.Count);
-            foreach (var w in _waiters) w.Code = SceError.WAIT_CANCEL;
+            foreach (var w in _waiters)
+            {
+                w.Code = SceError.WAIT_CANCEL;
+            }
+
             _waiters.Clear();
             Monitor.PulseAll(this);
             return SceError.OK;
@@ -1350,7 +1965,10 @@ public sealed partial class SimpleEvent : KernelObject
                     }
                     w.Code = SceError.OK;
                 }
-                else w.Code = SceError.WAIT_DELETE;
+                else
+                {
+                    w.Code = SceError.WAIT_DELETE;
+                }
             }
             _waiters.Clear();
             Monitor.PulseAll(this);

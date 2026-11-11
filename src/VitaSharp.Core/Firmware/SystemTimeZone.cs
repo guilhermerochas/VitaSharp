@@ -58,7 +58,13 @@ public static class SystemTimeZone
         string iana = tz.HasIanaId ? tz.Id
             : TimeZoneInfo.TryConvertWindowsIdToIanaId(tz.Id, out var i) ? i : "";
         foreach (var z in Zones)
-            if (string.Equals(z.Iana, iana, StringComparison.OrdinalIgnoreCase)) return z.Id;
+        {
+            if (string.Equals(z.Iana, iana, StringComparison.OrdinalIgnoreCase))
+            {
+                return z.Id;
+            }
+        }
+
         int minutes = (int)tz.BaseUtcOffset.TotalMinutes;
         return Zones.MinBy(z => Math.Abs(z.Minutes - minutes)).Id;
     }
@@ -67,7 +73,13 @@ public static class SystemTimeZone
     public static int? OffsetMinutes(int id)
     {
         foreach (var z in Zones)
-            if (z.Id == id) return z.Minutes;
+        {
+            if (z.Id == id)
+            {
+                return z.Minutes;
+            }
+        }
+
         return null;
     }
 }

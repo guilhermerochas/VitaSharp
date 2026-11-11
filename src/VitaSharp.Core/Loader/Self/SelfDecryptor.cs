@@ -4,9 +4,18 @@ using static VitaSharp.Core.Util.BinaryHelpers;
 
 namespace VitaSharp.Core.Loader.Self;
 
-internal enum KeyType { METADATA = 0, NPDRM = 1 }
-internal enum SceType { SELF = 1, SRVK = 2, SPKG = 3, DEV = 0xC0 }
-internal enum SelfType { NONE = 0, KERNEL = 7, APP = 8, BOOT = 9, SECURE = 0xB, USER = 0xD }
+internal enum KeyType
+{
+    METADATA = 0, NPDRM = 1
+}
+internal enum SceType
+{
+    SELF = 1, SRVK = 2, SPKG = 3, DEV = 0xC0
+}
+internal enum SelfType
+{
+    NONE = 0, KERNEL = 7, APP = 8, BOOT = 9, SECURE = 0xB, USER = 0xD
+}
 
 internal sealed record KeyEntry(KeyType KeyType, SceType SceType, int KeyRev, string Key, string Iv, ulong MinVer, ulong MaxVer, SelfType SelfType);
 
@@ -35,18 +44,37 @@ public static class SelfDecryptor
     /// </summary>
     public static bool RequiresKlicensee(ReadOnlySpan<byte> header)
     {
-        if (!IsSelf(header) || header.Length < 32 + 80) return false;
+        if (!IsSelf(header) || header.Length < 32 + 80)
+        {
+            return false;
+        }
+
         const int sh = 32;
         long appinfoOff = (long)U64LE(header, sh + 24), elfOff = (long)U64LE(header, sh + 32);
         long phdrOff = (long)U64LE(header, sh + 40), segInfoOff = (long)U64LE(header, sh + 56);
-        if (appinfoOff + 16 > header.Length || elfOff + 52 > header.Length) return false;
-        if ((SelfType)U32LE(header, (int)appinfoOff + 12) != SelfType.APP) return false;
+        if (appinfoOff + 16 > header.Length || elfOff + 52 > header.Length)
+        {
+            return false;
+        }
+
+        if ((SelfType)U32LE(header, (int)appinfoOff + 12) != SelfType.APP)
+        {
+            return false;
+        }
+
         ushort phnum = U16LE(header, (int)elfOff + 44);
         for (int i = 0; i < phnum; i++)
         {
             long s = segInfoOff + i * 32;
-            if (s + 32 > header.Length || phdrOff + (i + 1) * 32 > header.Length) return false;
-            if (U32LE(header, (int)s + 24) != 2) return true; // not plaintext
+            if (s + 32 > header.Length || phdrOff + (i + 1) * 32 > header.Length)
+            {
+                return false;
+            }
+
+            if (U32LE(header, (int)s + 24) != 2)
+            {
+                return true; // not plaintext
+            }
         }
         return false;
     }
@@ -55,7 +83,11 @@ public static class SelfDecryptor
     /// for games, 0x2800... / 0x2100... for the system software. 0 for a plain ELF.</summary>
     public static ulong ProgramAuthorityId(ReadOnlySpan<byte> file)
     {
-        if (!IsSelf(file) || file.Length < 32 + 80) return 0;
+        if (!IsSelf(file) || file.Length < 32 + 80)
+        {
+            return 0;
+        }
+
         long appinfoOff = (long)U64LE(file, 32 + 24);
         return appinfoOff + 8 <= file.Length ? U64LE(file, (int)appinfoOff) : 0;
     }
@@ -63,8 +95,15 @@ public static class SelfDecryptor
     /// <summary>Returns a plain ELF. Input may already be an ELF.</summary>
     public static byte[] ToElf(byte[] file, byte[]? klicensee)
     {
-        if (IsElf(file)) return file;
-        if (!IsSelf(file)) throw new InvalidDataException("Not a SELF/ELF file");
+        if (IsElf(file))
+        {
+            return file;
+        }
+
+        if (!IsSelf(file))
+        {
+            throw new InvalidDataException("Not a SELF/ELF file");
+        }
 
         ReadOnlySpan<byte> f = file;
         int keyRev = f[9];
@@ -90,8 +129,16 @@ public static class SelfDecryptor
             {
                 uint type = U32LE(f, off), size = U32LE(f, off + 4);
                 ulong more = U64LE(f, off + 8);
-                if (type == 5) npdrmType = (int)U32LE(f, off + 16 + 8);
-                if (more == 0 || size == 0) break;
+                if (type == 5)
+                {
+                    npdrmType = (int)U32LE(f, off + 16 + 8);
+                }
+
+                if (more == 0 || size == 0)
+                {
+                    break;
+                }
+
                 off += (int)size;
             }
         }
@@ -108,14 +155,20 @@ public static class SelfDecryptor
             phdrs[i] = (U32LE(p, 0), U32LE(p, 4), U32LE(p, 8), U32LE(p, 16), U32LE(p, 20), U32LE(p, 24), U32LE(p, 28));
             var s = f.Slice((int)segInfoOff + i * 32, 32);
             segs[i] = (U64LE(s, 0), U64LE(s, 8), U32LE(s, 16) == 2, U32LE(s, 24) == 2);
-            if (!segs[i].plaintext) encrypted = true;
+            if (!segs[i].plaintext)
+            {
+                encrypted = true;
+            }
         }
 
         var segKeys = new Dictionary<int, (byte[] key, byte[] iv)>();
         if (encrypted)
         {
             if (selfType == SelfType.APP && (klicensee == null || IsZero(klicensee)))
+            {
                 throw new InvalidOperationException("Encrypted application SELF needs a klicensee (license)");
+            }
+
             Exception? last = null;
             foreach (var set in new[] { SelfKeys.Set0, SelfKeys.Set1 })
             {
@@ -126,7 +179,10 @@ public static class SelfDecryptor
                 }
                 catch (Exception e) { last = e; }
             }
-            if (segKeys.Count == 0) throw new InvalidDataException("Unable to decrypt SELF metadata", last);
+            if (segKeys.Count == 0)
+            {
+                throw new InvalidDataException("Unable to decrypt SELF metadata", last);
+            }
         }
 
         // Build ELF: header, phdrs, then each segment at its p_offset.
@@ -143,7 +199,11 @@ public static class SelfDecryptor
         var bodies = new byte[phnum][];
         for (int i = 0; i < phnum; i++)
         {
-            if (phdrs[i].filesz == 0) { bodies[i] = []; continue; }
+            if (phdrs[i].filesz == 0)
+            {
+                bodies[i] = [];
+                continue;
+            }
             var raw = f.Slice((int)segs[i].offset, (int)segs[i].size).ToArray();
             if (!segs[i].plaintext)
             {
@@ -185,7 +245,11 @@ public static class SelfDecryptor
         }
         for (int i = 0; i < phnum; i++)
         {
-            while (ms.Length < newOffsets[i]) ms.WriteByte(0);
+            while (ms.Length < newOffsets[i])
+            {
+                ms.WriteByte(0);
+            }
+
             ms.Write(bodies[i]);
         }
         return ms.ToArray();
@@ -196,7 +260,13 @@ public static class SelfDecryptor
     {
         var result = new Dictionary<int, (byte[], byte[])>();
         foreach (var s in DecryptSections(f, set, sceType, keyRev, metadataOffset, headerLength, sysver, selfType, klic))
-            if (s.Encryption == 3) result[s.SegmentIndex] = (s.Key, s.Iv);
+        {
+            if (s.Encryption == 3)
+            {
+                result[s.SegmentIndex] = (s.Key, s.Iv);
+            }
+        }
+
         return result;
     }
 
@@ -211,7 +281,10 @@ public static class SelfDecryptor
         Exception? last = null;
         foreach (var set in new[] { SelfKeys.Set0, SelfKeys.Set1 })
         {
-            try { return DecryptSections(f, set, sceType, keyRev, metadataOffset, headerLength, sysver, selfType, klic); }
+            try
+            {
+                return DecryptSections(f, set, sceType, keyRev, metadataOffset, headerLength, sysver, selfType, klic);
+            }
             catch (Exception e) when (e is KeyNotFoundException or InvalidDataException or System.Security.Cryptography.CryptographicException) { last = e; }
         }
         throw new InvalidDataException("Unable to decrypt SCE metadata", last);
@@ -224,7 +297,11 @@ public static class SelfDecryptor
                    ?? throw new KeyNotFoundException($"No metadata key for {sceType}/{selfType} rev {keyRev} sysver 0x{sysver:X}");
 
         int datOff = (int)metadataOffset + 48;
-        if ((long)headerLength > f.Length || datOff + 64 > (long)headerLength) throw new InvalidDataException("SCE metadata out of range");
+        if ((long)headerLength > f.Length || datOff + 64 > (long)headerLength)
+        {
+            throw new InvalidDataException("SCE metadata out of range");
+        }
+
         var dat = f.Slice(datOff, (int)headerLength - datOff).ToArray();
         var info = new byte[64];
 
@@ -239,12 +316,18 @@ public static class SelfDecryptor
             AesUtil.CbcDecrypt(npKey, npIv, klic!, predec);
             AesUtil.CbcDecrypt(predec, npIv, dat.AsSpan(0, 64), info);
         }
-        else dat.AsSpan(0, 64).CopyTo(info);
+        else
+        {
+            dat.AsSpan(0, 64).CopyTo(info);
+        }
 
         var dec = new byte[64];
         AesUtil.CbcDecrypt(FromHex(meta.Key), FromHex(meta.Iv), info, dec);
         if (!IsZero(dec.AsSpan(16, 16)) || !IsZero(dec.AsSpan(48, 16)))
+        {
             throw new InvalidDataException("SELF metadata info padding mismatch (wrong key)");
+        }
+
         var mKey = dec.AsSpan(0, 16).ToArray();
         var mIv = dec.AsSpan(32, 16).ToArray();
 
@@ -255,10 +338,16 @@ public static class SelfDecryptor
         uint sectionCount = U32LE(rest, 12);
         uint keyCount = U32LE(rest, 16);
         if (sectionCount > 4096 || keyCount > 4096 || 32L + sectionCount * 48 + 16L * keyCount > rest.Length)
+        {
             throw new InvalidDataException("SCE metadata header out of range (wrong key)");
+        }
+
         int start = 32 + (int)sectionCount * 48;
         var vault = new byte[keyCount][];
-        for (int i = 0; i < keyCount; i++) vault[i] = rest.AsSpan(start + 16 * i, 16).ToArray();
+        for (int i = 0; i < keyCount; i++)
+        {
+            vault[i] = rest.AsSpan(start + 16 * i, 16).ToArray();
+        }
 
         var result = new List<MetadataSection>((int)sectionCount);
         for (int i = 0; i < sectionCount; i++)
@@ -269,7 +358,11 @@ public static class SelfDecryptor
             byte[] key = [], iv = [];
             if (enc == 3)
             {
-                if ((uint)keyIdx >= keyCount || (uint)ivIdx >= keyCount) throw new InvalidDataException("SCE metadata key index out of range");
+                if ((uint)keyIdx >= keyCount || (uint)ivIdx >= keyCount)
+                {
+                    throw new InvalidDataException("SCE metadata key index out of range");
+                }
+
                 key = vault[keyIdx];
                 iv = vault[ivIdx];
             }

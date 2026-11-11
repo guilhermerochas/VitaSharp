@@ -19,11 +19,29 @@ public static class SystemLanguage
     /// English (US) for any other.</summary>
     public static int FromCulture(CultureInfo c) => c.Name switch
     {
-        "pt-BR" => 17, "en-GB" => 18, "zh-TW" or "zh-HK" or "zh-MO" or "zh-Hant" => 10, "zh-CN" or "zh-SG" or "zh-Hans" => 11,
+        "pt-BR" => 17,
+        "en-GB" => 18,
+        "zh-TW" or "zh-HK" or "zh-MO" or "zh-Hant" => 10,
+        "zh-CN" or "zh-SG" or "zh-Hans" => 11,
         _ => c.TwoLetterISOLanguageName switch
         {
-            "ja" => 0, "en" => 1, "fr" => 2, "es" => 3, "de" => 4, "it" => 5, "nl" => 6, "pt" => 7, "ru" => 8, "ko" => 9,
-            "fi" => 12, "sv" => 13, "da" => 14, "nb" or "nn" or "no" => 15, "pl" => 16, "tr" => 19, _ => EnglishUs,
+            "ja" => 0,
+            "en" => 1,
+            "fr" => 2,
+            "es" => 3,
+            "de" => 4,
+            "it" => 5,
+            "nl" => 6,
+            "pt" => 7,
+            "ru" => 8,
+            "ko" => 9,
+            "fi" => 12,
+            "sv" => 13,
+            "da" => 14,
+            "nb" or "nn" or "no" => 15,
+            "pl" => 16,
+            "tr" => 19,
+            _ => EnglishUs,
         },
     };
 }

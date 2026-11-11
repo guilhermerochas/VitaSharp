@@ -4,10 +4,16 @@ namespace VitaSharp.Core.Kernel;
 
 public abstract class KernelObject
 {
-    public int Uid { get; internal set; }
+    public int Uid
+    {
+        get; internal set;
+    }
     public string Name { get; init; } = "";
     /// <summary>Process that created the object (<see cref="ProcessScope.CurrentPid"/> at registration; 0 = the system).</summary>
-    public int OwnerPid { get; internal set; }
+    public int OwnerPid
+    {
+        get; internal set;
+    }
 
     string? _waitDescription;
     /// <summary>"kind name" shown in thread states; built once so blocking waits do not allocate a string each time.</summary>
@@ -36,11 +42,23 @@ public static class KernelInfo
     /// </summary>
     public static int Write(uint info, ReadOnlySpan<byte> full, int nullError = SceError.ILLEGAL_ADDR)
     {
-        if (info == 0) return nullError;
+        if (info == 0)
+        {
+            return nullError;
+        }
+
         uint size = Memory.GuestMemory.R32(info);
-        if (size > (uint)full.Length) return SceError.NO_MEMORY;
+        if (size > (uint)full.Length)
+        {
+            return SceError.NO_MEMORY;
+        }
+
         full[..(int)size].CopyTo(Memory.GuestMemory.Span(info, (int)size));
-        if (size >= 4) Memory.GuestMemory.W32(info, size);
+        if (size >= 4)
+        {
+            Memory.GuestMemory.W32(info, size);
+        }
+
         return SceError.OK;
     }
 
@@ -65,13 +83,29 @@ public static class KernelInfo
     /// </summary>
     public static int OpenByName<T>(ObjectTable objects, uint namePtr, Func<T, bool>? filter = null) where T : KernelObject
     {
-        if (namePtr == 0) return SceError.ILLEGAL_ADDR;
+        if (namePtr == 0)
+        {
+            return SceError.ILLEGAL_ADDR;
+        }
+
         string name = Memory.GuestMemory.ReadCString(namePtr, 256);
-        if (System.Text.Encoding.UTF8.GetByteCount(name) > 31) return SceError.UID_NAME_TOO_LONG;
+        if (System.Text.Encoding.UTF8.GetByteCount(name) > 31)
+        {
+            return SceError.UID_NAME_TOO_LONG;
+        }
+
         var o = objects.All<T>().FirstOrDefault(x => x.Name == name && !x.Orphaned && (filter == null || filter(x)));
-        if (o == null) return SceError.UID_CANNOT_FIND_BY_NAME;
+        if (o == null)
+        {
+            return SceError.UID_CANNOT_FIND_BY_NAME;
+        }
+
         Interlocked.Increment(ref o.OpenCount);
-        if (o is MsgPipe pipe) pipe.Signal(MsgPipe.EventOpen);
+        if (o is MsgPipe pipe)
+        {
+            pipe.Signal(MsgPipe.EventOpen);
+        }
+
         return o.Uid;
     }
 
@@ -79,13 +113,29 @@ public static class KernelInfo
     public static int CloseHandle<T>(ObjectTable objects, int uid, int unknownError, Func<T, bool>? filter = null) where T : KernelObject
     {
         var o = objects.Get<T>(uid);
-        if (o == null || (filter != null && !filter(o))) return unknownError;
+        if (o == null || (filter != null && !filter(o)))
+        {
+            return unknownError;
+        }
+
         int c;
-        while ((c = Volatile.Read(ref o.OpenCount)) > 0 && Interlocked.CompareExchange(ref o.OpenCount, c - 1, c) != c) { }
-        if (o is MsgPipe closed) closed.Signal(MsgPipe.EventClose);
+        while ((c = Volatile.Read(ref o.OpenCount)) > 0 && Interlocked.CompareExchange(ref o.OpenCount, c - 1, c) != c)
+        {
+        }
+        if (o is MsgPipe closed)
+        {
+            closed.Signal(MsgPipe.EventClose);
+        }
         // the last handle to a deleted pipe: the object goes away now
-        if (o is MsgPipe { IsDeleted: true } && Volatile.Read(ref o.OpenCount) == 0) objects.Remove(uid);
-        else if (o.Orphaned && Volatile.Read(ref o.OpenCount) == 0) objects.Remove(uid);
+        if (o is MsgPipe { IsDeleted: true } && Volatile.Read(ref o.OpenCount) == 0)
+        {
+            objects.Remove(uid);
+        }
+        else if (o.Orphaned && Volatile.Read(ref o.OpenCount) == 0)
+        {
+            objects.Remove(uid);
+        }
+
         return SceError.OK;
     }
 }
@@ -200,7 +250,12 @@ public sealed partial class ObjectTable
     {
         int uid = Interlocked.Add(ref _next, 2);
         o.Uid = uid;
-        o.OwnerPid = o switch { ProcessObject => uid, GuestThread t => t.Pid, _ => ProcessScope.CurrentPid };
+        o.OwnerPid = o switch
+        {
+            ProcessObject => uid,
+            GuestThread t => t.Pid,
+            _ => ProcessScope.CurrentPid
+        };
         _objects[uid] = o;
         return uid;
     }
@@ -213,14 +268,22 @@ public sealed partial class ObjectTable
     public bool Delete(MsgPipe pipe)
     {
         pipe.Delete();
-        if (Volatile.Read(ref pipe.OpenCount) > 0) return true;
+        if (Volatile.Read(ref pipe.OpenCount) > 0)
+        {
+            return true;
+        }
+
         _objects.TryRemove(pipe.Uid, out _);
         return false;
     }
     /// <summary>sceKernelDelete* of a semaphore, event flag or mutex: gone now, or orphaned while opened handles remain.</summary>
     public void Delete(KernelObject o)
     {
-        if (Volatile.Read(ref o.OpenCount) > 0) { o.Orphaned = true; return; }
+        if (Volatile.Read(ref o.OpenCount) > 0)
+        {
+            o.Orphaned = true;
+            return;
+        }
         _objects.TryRemove(o.Uid, out _);
     }
     public IEnumerable<T> All<T>() where T : KernelObject => _objects.Values.OfType<T>();
@@ -233,12 +296,30 @@ public sealed partial class ObjectTable
         int n = 0;
         foreach (var (uid, o) in _objects)
         {
-            if (o.OwnerPid != pid || o is ProcessObject or AppObject) continue;
+            if (o.OwnerPid != pid || o is ProcessObject or AppObject)
+            {
+                continue;
+            }
             // a message pipe another process still holds a handle to stays until that handle is closed: its
             // operations fail with MPP_DELETED (a libipmi server sees its client gone)
-            if (o is MsgPipe pipe) { if (!Delete(pipe)) n++; continue; }
-            if (Volatile.Read(ref o.OpenCount) > 0) { o.Orphaned = true; continue; }
-            if (_objects.TryRemove(uid, out _)) n++;
+            if (o is MsgPipe pipe)
+            {
+                if (!Delete(pipe))
+                {
+                    n++;
+                }
+
+                continue;
+            }
+            if (Volatile.Read(ref o.OpenCount) > 0)
+            {
+                o.Orphaned = true;
+                continue;
+            }
+            if (_objects.TryRemove(uid, out _))
+            {
+                n++;
+            }
         }
         return n;
     }

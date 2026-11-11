@@ -31,7 +31,11 @@ public static class PspEbootSignature
     /// <paramref name="path"/>, or -1 when it does not verify.</summary>
     public static int Verify(string path, ReadOnlySpan<byte> sig)
     {
-        if (sig.Length < Size || !sig[..8].SequenceEqual("NPUMDSIG"u8)) return -1;
+        if (sig.Length < Size || !sig[..8].SequenceEqual("NPUMDSIG"u8))
+        {
+            return -1;
+        }
+
         var expect = Create(path, sig.Slice(0x30, sig[8] == KindMultiDisc ? 0x100 : 0x20), sig[8]);
         return sig.Slice(0x10, 0x20).SequenceEqual(expect.AsSpan(0x10, 0x20)) ? sig[8] : -1;
     }
