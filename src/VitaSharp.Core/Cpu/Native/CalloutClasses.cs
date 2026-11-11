@@ -202,7 +202,7 @@ public static class CalloutClasses
     /// <summary>The hottest classes, "name count" (counts in thousands).</summary>
     public static IEnumerable<string> Top(int count)
     {
-        var h = Hits;
+        long[] h = Hits;
         return Enumerable.Range(0, h.Length).Where(i => h[i] > 0).OrderByDescending(i => h[i]).Take(count)
             .Select(i => $"{Describe(i / Sub, i % Sub)} {h[i] / 1000}K");
     }

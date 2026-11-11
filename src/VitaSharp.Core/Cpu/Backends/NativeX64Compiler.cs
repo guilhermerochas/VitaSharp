@@ -1,4 +1,5 @@
 using System.Diagnostics;
+using System.Diagnostics.CodeAnalysis;
 using System.Runtime.InteropServices;
 using VitaSharp.Core.Cpu.Native;
 using VitaSharp.Core.Util;
@@ -21,9 +22,11 @@ public sealed unsafe class NativeX64Compiler : IBlockCompiler
 {
     public static readonly NativeX64Compiler Instance = new();
 
-    [ThreadStatic] static X64Emitter? _emitter;
-    [ThreadStatic] static ArmFrontend? _frontend;
-    static readonly bool[] NeonOp = Enumerable.Range(0, (int)Op.Count).Select(i => ((Op)i).ToString().StartsWith("Neon_", StringComparison.Ordinal)).ToArray();
+    [SuppressMessage("Style", "IDE1006", Justification = "[ThreadStatic]: t_camelCase; .editorconfig cannot select the attribute")]
+    [ThreadStatic] private static X64Emitter? t_emitter;
+    [SuppressMessage("Style", "IDE1006", Justification = "[ThreadStatic]: t_camelCase; .editorconfig cannot select the attribute")]
+    [ThreadStatic] private static ArmFrontend? t_frontend;
+    private static readonly bool[] s_neonOp = Enumerable.Range(0, (int)Op.Count).Select(i => ((Op)i).ToString().StartsWith("Neon_", StringComparison.Ordinal)).ToArray();
 
     public string Name => "native";
     public bool IsSupported => RuntimeInformation.ProcessArchitecture == Architecture.X64 && !WriteWatch.Enabled;
@@ -42,7 +45,7 @@ public sealed unsafe class NativeX64Compiler : IBlockCompiler
     {
         long t0 = Stopwatch.GetTimestamp();
         // per compile thread, reusing its IR buffers: the IR is consumed before this thread translates another block
-        var ir = (_frontend ??= new ArmFrontend(X64Emitter.SupportsVec, tinyCheck: true, reuseIr: true)).Translate(b);
+        IrBlock ir = (t_frontend ??= new ArmFrontend(X64Emitter.SupportsVec, tinyCheck: true, reuseIr: true)).Translate(b);
         long t1 = Stopwatch.GetTimestamp();
         IrPasses.DeadCode(ir);
         if (ValidateIr)
@@ -51,9 +54,9 @@ public sealed unsafe class NativeX64Compiler : IBlockCompiler
         }
 
         long t2 = Stopwatch.GetTimestamp();
-        var rt = NativeRuntime.Instance;
+        NativeRuntime rt = NativeRuntime.Instance;
         int exits = 0;
-        foreach (var x in ir.Insts)
+        foreach (IrInst x in ir.Insts)
         {
             if (x.Op == IrOp.ExitStatic)
             {
@@ -62,16 +65,16 @@ public sealed unsafe class NativeX64Compiler : IBlockCompiler
         }
 
         nint* slots = rt.AllocateSlots(exits);
-        var em = _emitter ??= new X64Emitter(); // per compile thread: the Iced assembler and buffers are reused
+        X64Emitter em = t_emitter ??= new X64Emitter(); // per compile thread: the Iced assembler and buffers are reused
         // Blocks dominated by NEON callouts run better in the IL backend once hot (it inlines the handlers, a callout
         // is a call plus two GC transitions): give them an execution budget after which they are recompiled there.
         nint tierUp = 0;
         if (TierUp && Jit.Chain.Contains(IlJitCompiler.Instance))
         {
             int simd = 0;
-            foreach (var x in ir.Insts)
+            foreach (IrInst x in ir.Insts)
             {
-                if (x.Op == IrOp.Callout && NeonOp[x.Imm])
+                if (x.Op == IrOp.Callout && s_neonOp[x.Imm])
                 {
                     simd++;
                 }
@@ -91,7 +94,7 @@ public sealed unsafe class NativeX64Compiler : IBlockCompiler
         long t3 = Stopwatch.GetTimestamp();
         int size = 0;
         long encode = 0;
-        byte* code = rt.Code.Place(rip => { long e0 = Stopwatch.GetTimestamp(); var bytes = em.Assemble(rip); encode = Stopwatch.GetTimestamp() - e0; size = bytes.Length; return bytes; });
+        byte* code = rt.Code.Place(rip => { long e0 = Stopwatch.GetTimestamp(); byte[] bytes = em.Assemble(rip); encode = Stopwatch.GetTimestamp() - e0; size = bytes.Length; return bytes; });
         Interlocked.Add(ref CodeBytes, size);
         rt.Register((nint)code, size, b);
         Stats.Phases!.Add(t1 - t0, t2 - t1, em.AllocTicks, t3 - t2 - em.AllocTicks, encode, Stopwatch.GetTimestamp() - t3 - encode);
@@ -102,7 +105,7 @@ public sealed unsafe class NativeX64Compiler : IBlockCompiler
         }
 
         bool unlogged = false; // callouts that may store to memory: the verifier cannot undo them
-        foreach (var x in ir.Insts)
+        foreach (IrInst x in ir.Insts)
         {
             if (x.Op is IrOp.StrEx or IrOp.StoreD || (x.Op == IrOp.Callout && NativeVerifier.MayStore((Op)x.Imm)))
             {
@@ -123,11 +126,11 @@ public sealed unsafe class NativeX64Compiler : IBlockCompiler
     public static string Report()
     {
         long inl = ArmFrontend.InlineCount.Sum(), call = ArmFrontend.CalloutCount.Sum();
-        var top = Enumerable.Range(0, (int)Op.Count).Where(i => ArmFrontend.CalloutCount[i] > 0)
+        IEnumerable<string> top = Enumerable.Range(0, (int)Op.Count).Where(i => ArmFrontend.CalloutCount[i] > 0)
             .OrderByDescending(i => ArmFrontend.CalloutCount[i]).Take(10)
             .Select(i => $"{(Op)i} {ArmFrontend.CalloutCount[i]}");
-        var hits = NativeRuntime.CalloutHits;
-        var hot = Enumerable.Range(0, (int)Op.Count).Where(i => hits[i] > 0).OrderByDescending(i => hits[i]).Take(10)
+        long[] hits = NativeRuntime.CalloutHits;
+        IEnumerable<string> hot = Enumerable.Range(0, (int)Op.Count).Where(i => hits[i] > 0).OrderByDescending(i => hits[i]).Take(10)
             .Select(i => $"{(Op)i} {hits[i] / 1000}K");
         return $"Native backend: {CodeBytes / 1024} KB code, {NativeRuntime.Links} links ({NativeRuntime.Unlinks} undone), {NativeRuntime.TieredUp} blocks tiered up to IL, " +
                $"static instructions inline {inl} / callout {call} ({100.0 * inl / Math.Max(1, inl + call):F1}% inline); top callouts: {string.Join(", ", top)}; " +

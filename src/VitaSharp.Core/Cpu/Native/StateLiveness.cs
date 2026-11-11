@@ -1,3 +1,4 @@
+using System.Diagnostics.CodeAnalysis;
 using VitaSharp.Core.Cpu.Backends;
 
 namespace VitaSharp.Core.Cpu.Native;
@@ -17,23 +18,25 @@ namespace VitaSharp.Core.Cpu.Native;
 /// </summary>
 public static class StateLiveness
 {
-    /// <summary><see cref="Block.DeadIn"/> before it is computed.</summary>
+    /// <summary><see cref="Block._deadIn"/> before it is computed.</summary>
     public const int Unknown = int.MinValue;
     /// <summary>The slots that can be dead: R0-R14 (bits 0-14; R15 and Thumb are what the dispatcher reads) and N Z C V
     /// (bits 16-19, <see cref="IrBuilder.SlotFlag0"/>).</summary>
     public const int Trackable = 0x7FFF | 0xF << IrBuilder.SlotFlag0;
 
-    [ThreadStatic] static ArmFrontend? _frontend; // its own IR buffers: the compiler's frontend holds the block being compiled
-    [ThreadStatic] static int[]? _liveAtLabel;
+    [SuppressMessage("Style", "IDE1006", Justification = "[ThreadStatic]: t_camelCase; .editorconfig cannot select the attribute")]
+    [ThreadStatic] private static ArmFrontend? t_frontend; // its own IR buffers: the compiler's frontend holds the block being compiled
+    [SuppressMessage("Style", "IDE1006", Justification = "[ThreadStatic]: t_camelCase; .editorconfig cannot select the attribute")]
+    [ThreadStatic] private static int[]? t_liveAtLabel;
 
     /// <summary>R15 in the masks of <see cref="DropDeadStores"/>: dead at a static exit marked <see cref="ColdPc"/>.</summary>
-    const int Pc = 1 << 15;
+    private const int Pc = 1 << 15;
 
     /// <summary>Imm3 of an <see cref="IrOp.ExitStatic"/>: the emitter stores R15 (the exit's target) itself, only on the
     /// paths that return to the dispatcher (<see cref="Arm64Emitter"/>'s patched exits): a linked exit never needs it.</summary>
     public const uint ColdPc = 1;
 
-    static int Bit(in IrInst x) => x.Op switch
+    private static int Bit(in IrInst x) => x.Op switch
     {
         IrOp.GetReg or IrOp.SetReg => 1 << (int)x.Imm,
         IrOp.GetFlag or IrOp.SetFlag => 1 << (IrBuilder.SlotFlag0 + (int)x.Imm),
@@ -46,22 +49,22 @@ public static class StateLiveness
     /// </summary>
     public static int DeadIn(Block b, ArmFrontend? like = null)
     {
-        int cached = b.DeadIn;
+        int cached = b._deadIn;
         if (cached != Unknown)
         {
             return cached;
         }
 
-        var fe = _frontend ??= NativeArm64Compiler.NewFrontend(reuseIr: true);
+        ArmFrontend fe = t_frontend ??= NativeArm64Compiler.NewFrontend(reuseIr: true);
         if (like != null)
         {
             fe.HleCallouts = like.HleCallouts;
             fe.DeferRegions = like.DeferRegions;
         }
-        var ir = fe.Translate(b);
+        IrBlock ir = fe.Translate(b);
         int written = 0, readFirst = 0, depth = 0;
         uint openLabel = 0;
-        foreach (ref readonly var x in System.Runtime.InteropServices.CollectionsMarshal.AsSpan(ir.Insts))
+        foreach (ref readonly IrInst x in System.Runtime.InteropServices.CollectionsMarshal.AsSpan(ir.Insts))
         {
             switch (x.Op)
             {
@@ -101,7 +104,7 @@ public static class StateLiveness
             }
         }
         int dead = ~readFirst & Trackable;
-        b.DeadIn = dead;
+        b._deadIn = dead;
         return dead;
     }
 
@@ -113,8 +116,8 @@ public static class StateLiveness
     /// </summary>
     public static int DropDeadStores(IrBlock ir, Func<uint, bool, int> deadAt)
     {
-        var insts = System.Runtime.InteropServices.CollectionsMarshal.AsSpan(ir.Insts);
-        foreach (ref readonly var x in insts)
+        Span<IrInst> insts = System.Runtime.InteropServices.CollectionsMarshal.AsSpan(ir.Insts);
+        foreach (ref readonly IrInst x in insts)
         {
             if (x.Op == IrOp.Callout)
             {
@@ -123,12 +126,12 @@ public static class StateLiveness
         }
 
         const int All = Trackable | Pc;
-        var atLabel = _liveAtLabel is { } l && l.Length >= ir.Labels ? l : (_liveAtLabel = new int[Math.Max(16, ir.Labels * 2)]);
+        int[] atLabel = t_liveAtLabel is { } l && l.Length >= ir.Labels ? l : (t_liveAtLabel = new int[Math.Max(16, ir.Labels * 2)]);
         Array.Fill(atLabel, All, 0, ir.Labels);
         int live = All, removed = 0;
         for (int i = insts.Length - 1; i >= 0; i--)
         {
-            ref var x = ref insts[i];
+            ref IrInst x = ref insts[i];
             switch (x.Op)
             {
                 case IrOp.ExitStatic:

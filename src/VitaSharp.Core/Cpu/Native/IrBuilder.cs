@@ -17,18 +17,18 @@ public sealed unsafe class IrBuilder
 
     // cached guest state: 0..15 = R0..R15, 16..19 = N Z C V, 20 = Thumb
     public const int SlotThumb = 20, SlotFlag0 = 16, Slots = 21;
-    readonly int[] _val = new int[Slots];
-    readonly bool[] _dirty = new bool[Slots];
+    private readonly int[] _val = new int[Slots];
+    private readonly bool[] _dirty = new bool[Slots];
 
     // conditional region
-    int _regionLabel = -1;
-    readonly int[] _snapshot = new int[Slots];
-    readonly bool[] _written = new bool[Slots];
+    private int _regionLabel = -1;
+    private readonly int[] _snapshot = new int[Slots];
+    private readonly bool[] _written = new bool[Slots];
     // deferred region (BeginCond with defer): the dirty bits before it and the index of its CondBranch
-    readonly bool[] _dirtySnapshot = new bool[Slots];
-    int _deferBranch = -1;
+    private readonly bool[] _dirtySnapshot = new bool[Slots];
+    private int _deferBranch = -1;
 
-    static readonly uint ThumbOffset = (uint)StateLayout.Of(nameof(CpuState.Thumb));
+    private static readonly uint s_thumbOffset = (uint)StateLayout.Of(nameof(CpuState.Thumb));
 
     public IrBuilder(uint startPc, bool thumb) => Reset(startPc, thumb);
 
@@ -53,7 +53,7 @@ public sealed unsafe class IrBuilder
     /// <summary>Indirect exits carry the target pc (A) and Thumb state (B) temps when cached (ARM64 backend).</summary>
     public bool DynamicExitOperands;
 
-    int Emit(IrInst i)
+    private int Emit(IrInst i)
     {
         Block.Insts.Add(i);
         return Block.Insts.Count - 1;
@@ -61,7 +61,7 @@ public sealed unsafe class IrBuilder
 
     public int Const(uint v) => Block.NewConst(v);
     public bool IsConst(int t, out uint v) => Block.TryConst(t, out v);
-    public bool IsConst(int t, uint value) => Block.TryConst(t, out var v) && v == value;
+    public bool IsConst(int t, uint value) => Block.TryConst(t, out uint v) && v == value;
 
     // ------------------------------------------------------------------ guest state
 
@@ -85,7 +85,7 @@ public sealed unsafe class IrBuilder
         return _val[slot] >= 0 && IsConst(_val[slot], out v);
     }
 
-    int Read(int slot)
+    private int Read(int slot)
     {
         if (_val[slot] >= 0)
         {
@@ -93,10 +93,10 @@ public sealed unsafe class IrBuilder
         }
 
         int t = Block.NewTemp();
-        var i = slot switch
+        IrInst i = slot switch
         {
             < 16 => new IrInst(IrOp.GetReg) { D = t, Imm = (uint)slot },
-            SlotThumb => new IrInst(IrOp.LoadState) { D = t, Imm = ThumbOffset },
+            SlotThumb => new IrInst(IrOp.LoadState) { D = t, Imm = s_thumbOffset },
             _ => new IrInst(IrOp.GetFlag) { D = t, Imm = (uint)(slot - SlotFlag0) },
         };
         Emit(i);
@@ -105,7 +105,7 @@ public sealed unsafe class IrBuilder
         return t;
     }
 
-    void Write(int slot, int v)
+    private void Write(int slot, int v)
     {
         _val[slot] = v;
         _dirty[slot] = true;
@@ -238,7 +238,7 @@ public sealed unsafe class IrBuilder
         Enter(label);
     }
 
-    void Enter(int label)
+    private void Enter(int label)
     {
         _regionLabel = label;
         Array.Copy(_val, _snapshot, Slots);
@@ -277,7 +277,7 @@ public sealed unsafe class IrBuilder
     }
 
     /// <summary>Closes a deferred region (<see cref="BeginCond"/> with defer).</summary>
-    void EndDeferred(bool terminated)
+    private void EndDeferred(bool terminated)
     {
         int label = _regionLabel, branch = _deferBranch;
         _regionLabel = -1;
@@ -312,10 +312,10 @@ public sealed unsafe class IrBuilder
         Emit(new IrInst(IrOp.Label) { Imm = (uint)label });
     }
 
-    static IrInst Store(int s, int v) => s switch
+    private static IrInst Store(int s, int v) => s switch
     {
         < 16 => new IrInst(IrOp.SetReg) { A = v, Imm = (uint)s },
-        SlotThumb => new IrInst(IrOp.StoreState) { A = v, Imm = ThumbOffset },
+        SlotThumb => new IrInst(IrOp.StoreState) { A = v, Imm = s_thumbOffset },
         _ => new IrInst(IrOp.SetFlag) { A = v, Imm = (uint)(s - SlotFlag0) },
     };
 
@@ -378,7 +378,7 @@ public sealed unsafe class IrBuilder
 
     // ------------------------------------------------------------------ ALU with folding
 
-    int Op2(IrOp op, int a, int b)
+    private int Op2(IrOp op, int a, int b)
     {
         if (IsConst(a, out uint x) && IsConst(b, out uint y))
         {
@@ -434,7 +434,7 @@ public sealed unsafe class IrBuilder
         return t;
     }
 
-    int Op1(IrOp op, int a, uint imm = 0)
+    private int Op1(IrOp op, int a, uint imm = 0)
     {
         if (IsConst(a, out uint x))
         {

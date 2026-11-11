@@ -1,3 +1,5 @@
+using System.Diagnostics.CodeAnalysis;
+
 namespace VitaSharp.Core.Cpu.Native;
 
 /// <summary>Backend-neutral IR clean-up run before emission.</summary>
@@ -8,16 +10,17 @@ public static class IrPasses
     /// results superseded before the next flush, the high half of an unused product, ...). This is what makes flags
     /// lazy: a CMP whose N/C/V are overwritten before anything reads or stores them only produces Z.
     /// </summary>
-    [ThreadStatic] static bool[]? _used;
+    [SuppressMessage("Style", "IDE1006", Justification = "[ThreadStatic]: t_camelCase; .editorconfig cannot select the attribute")]
+    [ThreadStatic] private static bool[]? t_used;
 
     public static void DeadCode(IrBlock b)
     {
-        var used = _used is { } u0 && u0.Length >= b.TempCount ? u0 : (_used = new bool[Math.Max(256, b.TempCount * 2)]);
+        bool[] used = t_used is { } u0 && u0.Length >= b.TempCount ? u0 : (t_used = new bool[Math.Max(256, b.TempCount * 2)]);
         Array.Clear(used, 0, b.TempCount);
-        var insts = System.Runtime.InteropServices.CollectionsMarshal.AsSpan(b.Insts);
+        Span<IrInst> insts = System.Runtime.InteropServices.CollectionsMarshal.AsSpan(b.Insts);
         for (int i = insts.Length - 1; i >= 0; i--)
         {
-            ref var x = ref insts[i];
+            ref IrInst x = ref insts[i];
             if (x.Op == IrOp.Nop)
             {
                 continue;
@@ -71,12 +74,12 @@ public static class IrPasses
     /// </summary>
     public static int MergeFences(IrBlock b)
     {
-        var insts = System.Runtime.InteropServices.CollectionsMarshal.AsSpan(b.Insts);
+        Span<IrInst> insts = System.Runtime.InteropServices.CollectionsMarshal.AsSpan(b.Insts);
         bool fenced = false;
         int removed = 0;
         for (int i = 0; i < insts.Length; i++)
         {
-            ref var x = ref insts[i];
+            ref IrInst x = ref insts[i];
             switch (x.Op)
             {
                 case IrOp.Fence:
@@ -121,16 +124,16 @@ public static class IrPasses
     /// </summary>
     public static void Validate(IrBlock b)
     {
-        var defAt = new int[b.TempCount];
+        int[] defAt = new int[b.TempCount];
         Array.Fill(defAt, -1);
         var regionOfLabel = new Dictionary<uint, int>();
         int openStart = -1;
         uint openLabel = 0;
         var regions = new List<(int Start, int End)>();
-        var insts = b.Insts;
+        List<IrInst> insts = b.Insts;
         for (int i = 0; i < insts.Count; i++)
         {
-            var x = insts[i];
+            IrInst x = insts[i];
             if (x.Op is IrOp.CondBranch or IrOp.BranchIf)
             {
                 openStart = i;
@@ -156,7 +159,7 @@ public static class IrPasses
         }
         for (int i = 0; i < insts.Count; i++)
         {
-            var x = insts[i];
+            IrInst x = insts[i];
             foreach (int u in new[] { x.A, x.B, x.C, x.E })
             {
                 if (u < 0 || b.IsConst[u])

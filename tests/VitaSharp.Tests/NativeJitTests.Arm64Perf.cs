@@ -1016,7 +1016,7 @@ public sealed unsafe partial class NativeJitTests
                     }
                 }));
                 var cb = NativeArm64Compiler.Instance.Compile(a, sb.Stubs, successors: Succ)!;
-                if (a.Deps != null)
+                if (a._deps != null)
                 {
                     chained++;
                 }

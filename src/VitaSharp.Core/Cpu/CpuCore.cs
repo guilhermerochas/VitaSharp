@@ -7,13 +7,13 @@ namespace VitaSharp.Core.Cpu;
 public sealed unsafe class CpuCore : IDisposable
 {
     public CpuState* State { get; }
-    readonly BlockCache _cache;
+    private readonly BlockCache _cache;
 
     // Small per-thread direct-mapped lookup in front of the shared dictionary.
-    const int FastSize = 4096;
-    readonly Block?[] _fast = new Block?[FastSize];
+    private const int FastSize = 4096;
+    private readonly Block?[] _fast = new Block?[FastSize];
 
-    volatile bool _stop, _interrupt;
+    private volatile bool _stop, _interrupt;
     public bool StopRequested
     {
         get => _stop;
@@ -57,11 +57,11 @@ public sealed unsafe class CpuCore : IDisposable
         HandlerTable.EnsureInitialized();
     }
 
-    readonly byte* _memBase;
+    private readonly byte* _memBase;
 
     /// <summary>Points a (re)initialised state at the process's address space and indirect-exit table.</summary>
     [MethodImpl(MethodImplOptions.AggressiveInlining)]
-    void Bind(CpuState* s)
+    private void Bind(CpuState* s)
     {
         if (s->MemBase == null)
         {
@@ -70,10 +70,10 @@ public sealed unsafe class CpuCore : IDisposable
     }
 
     [MethodImpl(MethodImplOptions.AggressiveInlining)]
-    Block Lookup(uint pc, bool thumb)
+    private Block Lookup(uint pc, bool thumb)
     {
         int slot = (int)((pc >> 1) & (FastSize - 1));
-        var b = _fast[slot];
+        Block? b = _fast[slot];
         if (b != null && b.Start == pc && b.Thumb == thumb && !b.Invalidated)
         {
             return b; // invalidated: guest rewrote the code
@@ -87,7 +87,7 @@ public sealed unsafe class CpuCore : IDisposable
     public void FlushFastCache() => Array.Clear(_fast);
 
     /// <summary>A native static exit returned through an empty link slot: point the slot at the next block if it is native.</summary>
-    void LinkExit(CpuState* s)
+    private void LinkExit(CpuState* s)
     {
         nint slot = s->LastExitSlot;
         if (*(nint*)slot != 0)
@@ -95,7 +95,7 @@ public sealed unsafe class CpuCore : IDisposable
             return; // linked already (the exit returned for pacing or an interrupt)
         }
 
-        var next = Lookup(s->R[15], s->Thumb != 0);
+        Block next = Lookup(s->R[15], s->Thumb != 0);
         if (next.NativeEntry != 0)
         {
             Native.NativeRuntime.Link(slot, next);
@@ -125,8 +125,8 @@ public sealed unsafe class CpuCore : IDisposable
     /// </para>
     /// </summary>
     public const long DefaultClockHz = 333_000_000;
-    public static long InstructionsPerSecond = long.TryParse(Environment.GetEnvironmentVariable(EnvVars.CpuMhz), out var mhz) ? mhz * 1_000_000 : DefaultClockHz;
-    long _throttleInstrs, _throttleStart = -1;
+    public static long InstructionsPerSecond = long.TryParse(Environment.GetEnvironmentVariable(EnvVars.CpuMhz), out long mhz) ? mhz * 1_000_000 : DefaultClockHz;
+    private long _throttleInstrs, _throttleStart = -1;
     /// <summary>True while the thread sleeps off CPU pacing (profiling).</summary>
     public volatile bool InThrottle;
     public struct SleepStat
@@ -134,14 +134,14 @@ public sealed unsafe class CpuCore : IDisposable
         public long Count, Requested, Actual;
     }
     public static readonly SleepStat[] SleepStats = new SleepStat[2];
-    static void Stat(ref SleepStat s, long t0, long expected)
+    private static void Stat(ref SleepStat s, long t0, long expected)
     {
         Interlocked.Increment(ref s.Count);
         Interlocked.Add(ref s.Requested, expected - t0);
         Interlocked.Add(ref s.Actual, Util.GuestClock.Ticks - t0);
     }
 
-    void Throttle()
+    private void Throttle()
     {
         long rate = InstructionsPerSecond;
         if (rate <= 0 || Util.GuestClock.Turbo)
@@ -171,14 +171,14 @@ public sealed unsafe class CpuCore : IDisposable
     }
 
     /// <summary>How late host sleeps wake up, on average (ticks; shared: it is a property of the host's timers).</summary>
-    static long _wakeLate;
+    private static long s_wakeLate;
 
     /// <summary>
     /// Sleeps off pacing until <paramref name="expected"/>. Host sleeps wake 0.3-0.7 ms late (more under load), and the
     /// thread can only make that up at the host's speed margin over the emulated CPU, which for CPU-heavy games is
     /// small: aiming early by the average lateness makes the wake-ups land on the deadline on average instead.
     /// </summary>
-    void PaceSleep(long expected, ref SleepStat stat)
+    private void PaceSleep(long expected, ref SleepStat stat)
     {
         // paused emulation: the guest clock stands still, there is nothing to pace against (the thread parks at its
         // next safe point, or it is the one finishing a GPU scene)
@@ -188,12 +188,12 @@ public sealed unsafe class CpuCore : IDisposable
         }
 
         InThrottle = true;
-        long t0 = Util.GuestClock.Ticks, target = Math.Max(t0, expected - Volatile.Read(ref _wakeLate));
+        long t0 = Util.GuestClock.Ticks, target = Math.Max(t0, expected - Volatile.Read(ref s_wakeLate));
         Util.GuestClock.WaitUntil(target, allowSpin: false);
         if (target > t0)
         {
-            long late = Math.Clamp(Util.GuestClock.Ticks - target, 0, MaxWakeCredit), avg = Volatile.Read(ref _wakeLate);
-            Volatile.Write(ref _wakeLate, avg + (late - avg) / 16); // racy by design: a lost update only slows the average
+            long late = Math.Clamp(Util.GuestClock.Ticks - target, 0, s_maxWakeCredit), avg = Volatile.Read(ref s_wakeLate);
+            Volatile.Write(ref s_wakeLate, avg + (late - avg) / 16); // racy by design: a lost update only slows the average
         }
         InThrottle = false;
         Stat(ref stat, t0, expected);
@@ -220,11 +220,11 @@ public sealed unsafe class CpuCore : IDisposable
         long start = now;
         if (_wakeDeadline != 0)
         {
-            start = Math.Max(_wakeDeadline, now - MaxWakeCredit); // timed wait: resume at its deadline
+            start = Math.Max(_wakeDeadline, now - s_maxWakeCredit); // timed wait: resume at its deadline
         }
         else if (_blockedAt != 0)
         {
-            start = Math.Max(now, Math.Min(_blockedAt, now + MaxWakeCredit)); // event: max(P, signal)
+            start = Math.Max(now, Math.Min(_blockedAt, now + s_maxWakeCredit)); // event: max(P, signal)
         }
 
         _throttleStart = start;
@@ -233,13 +233,13 @@ public sealed unsafe class CpuCore : IDisposable
     }
 
     /// <summary>Most wake-up lateness a timed wait may recover (ticks); bounds the effect of a stalled host.</summary>
-    static readonly long MaxWakeCredit = System.Diagnostics.Stopwatch.Frequency / 500; // 2 ms
-    long _blockedAt, _wakeDeadline;
+    private static readonly long s_maxWakeCredit = System.Diagnostics.Stopwatch.Frequency / 500; // 2 ms
+    private long _blockedAt, _wakeDeadline;
 
     /// <summary>The thread's emulated position when it last blocked (guest clock ticks), or real time when unpaced/
     /// unknown. Timed waits measure their delay from here: on hardware the delay starts where the thread is, and a
     /// thread still catching up after a late pacing wake-up (bounded) would have reached the call earlier.</summary>
-    public long BlockedAt => _blockedAt != 0 ? Math.Max(_blockedAt, Util.GuestClock.Ticks - MaxWakeCredit) : Util.GuestClock.Ticks;
+    public long BlockedAt => _blockedAt != 0 ? Math.Max(_blockedAt, Util.GuestClock.Ticks - s_maxWakeCredit) : Util.GuestClock.Ticks;
 
     /// <summary>A timed wait (delay, vblank) ended: on hardware the thread resumes at <paramref name="deadline"/> (or
     /// where it blocked, if that was later), however late the host woke it.</summary>
@@ -320,7 +320,7 @@ public sealed unsafe class CpuCore : IDisposable
     /// included), IL blocks, and the interpreter (cold blocks, verification, VFP vector mode). Flushed into
     /// <see cref="TierTotals"/> whenever <see cref="Run"/> returns.</summary>
     public long NativeInstructions, IlInstructions, InterpInstructions;
-    long _flushedNative, _flushedIl, _flushedInterp;
+    private long _flushedNative, _flushedIl, _flushedInterp;
 
     /// <summary>Process-wide totals of <see cref="NativeInstructions"/>, <see cref="IlInstructions"/> and
     /// <see cref="InterpInstructions"/> (all guest threads, also the ones that ended): [native, il, interp].</summary>
@@ -336,7 +336,7 @@ public sealed unsafe class CpuCore : IDisposable
     {
         long n = Volatile.Read(ref TierTotals[0]), il = Volatile.Read(ref TierTotals[1]), it = Volatile.Read(ref TierTotals[2]);
         long all = Math.Max(1, n + il + it), callouts = Native.NativeRuntime.CalloutHits.Sum();
-        var st = InterpByJitState;
+        long[] st = InterpByJitState;
         double si = Math.Max(1, st.Sum()) / 100.0;
         return $"CPU tiers: executed guest instructions {all / 1_000_000} M: native {100.0 * n / all:F2}% " +
                $"(of which {100.0 * callouts / all:F2}% in interpreter callouts), il {100.0 * il / all:F2}%, interpreter {100.0 * it / all:F2}% " +
@@ -344,7 +344,7 @@ public sealed unsafe class CpuCore : IDisposable
                $"rejected {st[3] / si:F1}%; verification and VFP vector mode not included)";
     }
 
-    void FlushTierCounts()
+    private void FlushTierCounts()
     {
         Interlocked.Add(ref TierTotals[0], NativeInstructions - _flushedNative);
         _flushedNative = NativeInstructions;
@@ -380,8 +380,8 @@ public sealed unsafe class CpuCore : IDisposable
     /// <summary>Profiling: one native entry in <see cref="NativeTimingSample"/> is timed (twice a clock read per entry
     /// was a few percent of a phone core when HLE calls enter and leave native code hundreds of thousands of times a
     /// second); <see cref="NativeTicks"/> is scaled back.</summary>
-    const int NativeTimingSample = 16;
-    int _nativeEntries;
+    private const int NativeTimingSample = 16;
+    private int _nativeEntries;
 
     public ExitReason Run()
     {
@@ -395,9 +395,9 @@ public sealed unsafe class CpuCore : IDisposable
         }
     }
 
-    ExitReason RunBlocks()
+    private ExitReason RunBlocks()
     {
-        var s = State;
+        CpuState* s = State;
         Bind(s);
         s->Exit = ExitReason.None;
         // every ~20 us of guest CPU time when throttling (a physics step of a few ms must be paced from inside), else ~0.5 ms
@@ -533,7 +533,7 @@ public sealed unsafe class CpuCore : IDisposable
             else
             {
                 b ??= Lookup(s->R[15], s->Thumb != 0); // always looked up above (only a resume skips it, and it runs native code)
-                var fn = b.Compiled;
+                JitBlockFn? fn = b.Compiled;
                 if (BlockHook != null && BlockHook(this, s, b))
                 {
                 } // the hook executed the block itself
@@ -619,21 +619,21 @@ public sealed unsafe class CpuCore : IDisposable
     /// <summary>Single-block step (debugging / tests).</summary>
     public ExitReason Step()
     {
-        var s = State;
+        CpuState* s = State;
         Bind(s);
         s->Exit = ExitReason.None;
-        var b = Lookup(s->R[15], s->Thumb != 0);
+        Block b = Lookup(s->R[15], s->Thumb != 0);
         Interpret(s, b);
         return s->Exit;
     }
 
     public static void Interpret(CpuState* s, Block b)
     {
-        var insts = b.Insts;
-        var ptrs = HandlerTable.Pointers;
+        DecodedInst[] insts = b.Insts;
+        delegate*<CpuState*, uint, uint, void>[] ptrs = HandlerTable.Pointers;
         for (int i = 0; i < insts.Length; i++)
         {
-            ref var d = ref insts[i];
+            ref DecodedInst d = ref insts[i];
             if (d.EndsBlock || i == insts.Length - 1)
             {
                 s->R[15] = d.Address + d.Size;
@@ -648,21 +648,21 @@ public sealed unsafe class CpuCore : IDisposable
         }
     }
 
-    static bool _vectorModeSeen;
+    private static bool s_vectorModeSeen;
 
     /// <summary><see cref="Interpret"/> in VFP short-vector mode: the vector-capable VFP instructions run as vectors.</summary>
-    static void InterpretVector(CpuState* s, Block b)
+    private static void InterpretVector(CpuState* s, Block b)
     {
-        if (!_vectorModeSeen)
+        if (!s_vectorModeSeen)
         {
-            _vectorModeSeen = true;
+            s_vectorModeSeen = true;
             Util.Log.Info($"VFP short-vector mode in use (FPSCR 0x{s->Fpscr:X8}, block 0x{b.Start:X8})");
         }
-        var insts = b.Insts;
-        var ptrs = HandlerTable.Pointers;
+        DecodedInst[] insts = b.Insts;
+        delegate*<CpuState*, uint, uint, void>[] ptrs = HandlerTable.Pointers;
         for (int i = 0; i < insts.Length; i++)
         {
-            ref var d = ref insts[i];
+            ref DecodedInst d = ref insts[i];
             if (d.EndsBlock || i == insts.Length - 1)
             {
                 s->R[15] = d.Address + d.Size;

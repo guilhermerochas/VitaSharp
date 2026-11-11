@@ -1,3 +1,4 @@
+using System.Diagnostics.CodeAnalysis;
 using System.Runtime.CompilerServices;
 using System.Runtime.ExceptionServices;
 using System.Runtime.InteropServices;
@@ -18,40 +19,40 @@ namespace VitaSharp.Core.Cpu.Native;
 /// </summary>
 public sealed unsafe partial class NativeRuntime
 {
-    static NativeRuntime? _instance;
-    static readonly object InitLock = new();
+    private static NativeRuntime? s_instance;
+    private static readonly object s_initLock = new();
 
     public static NativeRuntime Instance
     {
         get
         {
-            if (_instance != null)
+            if (s_instance != null)
             {
-                return _instance;
+                return s_instance;
             }
 
-            lock (InitLock)
+            lock (s_initLock)
             {
-                return _instance ??= new NativeRuntime();
+                return s_instance ??= new NativeRuntime();
             }
         }
     }
 
     public readonly ExecutableMemory Code = new();
-    readonly delegate* unmanaged<CpuState*, nint, void> _enter;
+    private readonly delegate* unmanaged<CpuState*, nint, void> _enter;
     /// <summary>Runtime entry points for x64 code (x64 hosts only).</summary>
     public readonly X64Emitter.Runtime Stubs;
     /// <summary>Runtime entry points for ARM64 code (ARM64 hosts only).</summary>
     public readonly Arm64Emitter.Runtime Arm64Stubs;
 
-    NativeRuntime()
+    private NativeRuntime()
     {
         if (GuestMemory.Base == null)
         {
             throw new InvalidOperationException("native backend needs the guest address space");
         }
         // generated code addresses CpuState fields by their marshalled offsets: they must be the managed layout
-        var probe = CpuState.Allocate();
+        CpuState* probe = CpuState.Allocate();
         bool layoutOk = StateLayout.Of(nameof(CpuState.N)) == (int)((byte*)&probe->N - (byte*)probe)
                         && StateLayout.Of(nameof(CpuState.CycleAcc)) == (int)((byte*)&probe->CycleAcc - (byte*)probe)
                         && StateLayout.Of(nameof(CpuState.LinkBreak)) == (int)((byte*)&probe->LinkBreak - (byte*)probe);
@@ -71,7 +72,7 @@ public sealed unsafe partial class NativeRuntime
             bool noCounts = pinned && (Arm64Emitter.Opts & Arm64Emitter.A64Opt.NoBlockCounts) != 0
                 && Environment.GetEnvironmentVariable(Util.EnvVars.NativeCounters) != "1";
             int trampSize = 0;
-            byte* entry64 = Code.Place(_ => { var t = Arm64Emitter.EmitTrampoline(out epi, pinned, blockCounts: !noCounts); trampSize = t.Length; return t; });
+            byte* entry64 = Code.Place(_ => { byte[] t = Arm64Emitter.EmitTrampoline(out epi, pinned, blockCounts: !noCounts); trampSize = t.Length; return t; });
             if (NativeCodeMap.Enabled)
             {
                 NativeCodeMap.Add((nint)entry64, trampSize, 0, false, "trampoline");
@@ -84,7 +85,7 @@ public sealed unsafe partial class NativeRuntime
                 ResumeEntry = (nint)Code.Place(_ => Arm64Emitter.EmitDispatchEntry(epilogue, TwoWay ? (ulong)Code.ExecBase : 0));
             }
 
-            if (SkipGcTransition)
+            if (s_skipGcTransition)
             {
                 _enterFast = (delegate* unmanaged[SuppressGCTransition]<CpuState*, nint, void>)entry64;
                 Util.Log.Info("Native backend: entered without the GC transition (Mono)");
@@ -164,7 +165,7 @@ public sealed unsafe partial class NativeRuntime
     /// unlinked B to the slot path when it is 0. A B replaced by another B is one of the instructions the architecture
     /// allows to be modified while other cores execute it; a target out of B range keeps the slot path.
     /// </summary>
-    void PatchSite(nint slot, nint target)
+    private void PatchSite(nint slot, nint target)
     {
         nint site = ((nint*)slot)[1];
         if (site == 0)
@@ -183,16 +184,17 @@ public sealed unsafe partial class NativeRuntime
     /// (<see cref="Arm64Emitter.EmitDispatchEntry"/>); 0 elsewhere.</summary>
     public readonly nint ResumeEntry;
 
-    static readonly bool SkipGcTransition = Type.GetType("Mono.RuntimeStructs") != null
+    private static readonly bool s_skipGcTransition = Type.GetType("Mono.RuntimeStructs") != null
         && Environment.GetEnvironmentVariable(EnvVars.NativeGcTransition) is not ("on" or "1");
-    readonly delegate* unmanaged[SuppressGCTransition]<CpuState*, nint, void> _enterFast;
+    private readonly delegate* unmanaged[SuppressGCTransition]<CpuState*, nint, void> _enterFast;
 
     // ------------------------------------------------------------------ callouts
 
     /// <summary>Address of the callout bridge (tests that run generated code under an emulator call it themselves).</summary>
     public static nint CalloutAddress => (nint)(delegate* unmanaged<CpuState*, int, uint, uint, int>)&Callout;
 
-    [ThreadStatic] static ExceptionDispatchInfo? _fault;
+    [SuppressMessage("Style", "IDE1006", Justification = "[ThreadStatic]: t_camelCase; .editorconfig cannot select the attribute")]
+    [ThreadStatic] private static ExceptionDispatchInfo? t_fault;
 
     /// <summary>Executed callouts per guest op (diagnostics: what to translate inline next).</summary>
     public static readonly long[] CalloutHits = new long[(int)Op.Count];
@@ -204,7 +206,7 @@ public sealed unsafe partial class NativeRuntime
     /// to the dispatcher instead of chaining while Exit is set.
     /// </summary>
     [UnmanagedCallersOnly]
-    static int Callout(CpuState* s, int op, uint ins, uint pc)
+    private static int Callout(CpuState* s, int op, uint ins, uint pc)
     {
         try
         {
@@ -220,7 +222,7 @@ public sealed unsafe partial class NativeRuntime
         }
         catch (Exception e)
         {
-            _fault = ExceptionDispatchInfo.Capture(e);
+            t_fault = ExceptionDispatchInfo.Capture(e);
             s->CalloutFault = 1;
             return 1;
         }
@@ -234,7 +236,7 @@ public sealed unsafe partial class NativeRuntime
     /// on at the pc it set. What the dispatcher must handle (the return trap, callback waits, no handler) is left to it
     /// by raising the SVC exit, which the block's indirect exit sees. A throwing call is caught by the caller.
     /// </summary>
-    static int HleCall(CpuState* s)
+    private static int HleCall(CpuState* s)
     {
         HleCallouts++;
         if (CpuCore.CurrentSvcHandler is not { } h || !h.TryHandleSvcNative(s))
@@ -248,8 +250,8 @@ public sealed unsafe partial class NativeRuntime
     public static void ThrowPendingFault(CpuState* s)
     {
         s->CalloutFault = 0;
-        var f = _fault;
-        _fault = null;
+        ExceptionDispatchInfo? f = t_fault;
+        t_fault = null;
         f?.Throw();
     }
 
@@ -292,13 +294,13 @@ public sealed unsafe partial class NativeRuntime
 
     public static void FreeDispatchTable(nint table) => NativeMemory.AlignedFree((void*)table);
 
-    void InitDispatch()
+    private void InitDispatch()
     {
     }
 
-    static uint KeyOf(Block b) => b.Start | (b.Thumb ? 1u : 0u);
+    private static uint KeyOf(Block b) => b.Start | (b.Thumb ? 1u : 0u);
     /// <summary>The block's entry, or with <see cref="TwoWay"/> the first entry of its two-entry set.</summary>
-    DispatchEntry* EntryOf(Block b) =>
+    private DispatchEntry* EntryOf(Block b) =>
         (b.Owner != null ? (DispatchEntry*)b.Owner.DispatchTable : Dispatch) + ((b.Start >> 1) & ((1u << DispatchBits) - 1) & (TwoWay ? ~1u : ~0u));
 
     /// <summary>ARM64 (<see cref="Arm64Emitter.A64Opt.AssocDispatch"/>): the table is two-way set associative (entries
@@ -306,7 +308,7 @@ public sealed unsafe partial class NativeRuntime
     /// map to the same entry stop evicting each other on every jump (each miss is a round trip through the dispatcher).</summary>
     public bool TwoWay { get; private set; }
 
-    void Write(DispatchEntry* e, uint key, nint code)
+    private void Write(DispatchEntry* e, uint key, nint code)
     {
         Volatile.Write(ref *(ulong*)e, NoKey);
         Volatile.Write(ref e->Code, code);
@@ -321,7 +323,7 @@ public sealed unsafe partial class NativeRuntime
             return;
         }
 
-        var e = EntryOf(b);
+        DispatchEntry* e = EntryOf(b);
         uint key = KeyOf(b);
         lock (_dispatchLock)
         {
@@ -347,21 +349,21 @@ public sealed unsafe partial class NativeRuntime
     /// </summary>
     public void Republish(Block b)
     {
-        var e = EntryOf(b);
+        DispatchEntry* e = EntryOf(b);
         if (Volatile.Read(ref e->Key) != KeyOf(b) && (!TwoWay || Volatile.Read(ref e[1].Key) != KeyOf(b)))
         {
             Publish(b);
         }
     }
 
-    readonly object _dispatchLock = new();
+    private readonly object _dispatchLock = new();
 
     // ------------------------------------------------------------------ link slots
 
-    const int SlotChunk = 8192;
-    nint* _slotChunk;
-    int _slotUsed = SlotChunk;
-    readonly object _slotLock = new();
+    private const int SlotChunk = 8192;
+    private nint* _slotChunk;
+    private int _slotUsed = SlotChunk;
+    private readonly object _slotLock = new();
 
     /// <summary>Zeroed link slots for the static exits of one block (never freed: slots are tiny).</summary>
     public nint* AllocateSlots(int count)
@@ -378,7 +380,7 @@ public sealed unsafe partial class NativeRuntime
                 _slotChunk = (nint*)NativeMemory.AllocZeroed((nuint)(SlotChunk * sizeof(nint)));
                 _slotUsed = 0;
             }
-            var p = _slotChunk + _slotUsed;
+            nint* p = _slotChunk + _slotUsed;
             _slotUsed += count;
             return p;
         }
@@ -399,9 +401,9 @@ public sealed unsafe partial class NativeRuntime
                 return;
             }
 
-            (target.LinkedFrom ??= new List<nint>()).Add(slot);
+            (target._linkedFrom ??= new List<nint>()).Add(slot);
             Volatile.Write(ref *(nint*)slot, target.NativeEntry);
-            if (_instance is { PatchLinks: true } rt)
+            if (s_instance is { PatchLinks: true } rt)
             {
                 rt.PatchSite(slot, target.NativeEntry);
             }
@@ -441,14 +443,14 @@ public sealed unsafe partial class NativeRuntime
 
     public static long TieredUp;
 
-    static void DetachNative(Block b, nint entry)
+    private static void DetachNative(Block b, nint entry)
     {
-        if (_instance != null)
+        if (s_instance != null)
         {
-            var e = _instance.EntryOf(b);
-            lock (_instance._dispatchLock)
+            DispatchEntry* e = s_instance.EntryOf(b);
+            lock (s_instance._dispatchLock)
             {
-                for (int w = 0; w < (_instance.TwoWay ? 2 : 1); w++)
+                for (int w = 0; w < (s_instance.TwoWay ? 2 : 1); w++)
                 {
                     if (e[w].Key == KeyOf(b) && e[w].Code == entry)
                     {
@@ -457,30 +459,30 @@ public sealed unsafe partial class NativeRuntime
                 }
             }
         }
-        if (b.LinkedFrom == null)
+        if (b._linkedFrom == null)
         {
             return;
         }
 
-        foreach (var slot in b.LinkedFrom)
+        foreach (nint slot in b._linkedFrom)
         {
             if (*(nint*)slot == entry)
             {
                 Volatile.Write(ref *(nint*)slot, 0);
-                if (_instance is { PatchLinks: true } rt)
+                if (s_instance is { PatchLinks: true } rt)
                 {
                     rt.PatchSite(slot, 0);
                 }
             }
         }
 
-        Interlocked.Add(ref Unlinks, b.LinkedFrom.Count);
-        b.LinkedFrom = null;
+        Interlocked.Add(ref Unlinks, b._linkedFrom.Count);
+        b._linkedFrom = null;
     }
 
     // ------------------------------------------------------------------ crash diagnostics
 
-    readonly List<(nint Entry, int Size, Block Block)> _blocks = new();
+    private readonly List<(nint Entry, int Size, Block Block)> _blocks = new();
 
     /// <summary>Remembers which guest block owns a code range (crash reports).</summary>
     public void Register(nint entry, int size, Block b)
@@ -494,24 +496,24 @@ public sealed unsafe partial class NativeRuntime
     [LibraryImport("kernel32.dll")]
     private static partial nint AddVectoredExceptionHandler(uint first, void* handler);
 
-    static int _reported;
+    private static int s_reported;
 
     /// <summary>
     /// Access violations inside generated code that the lazy-commit handler will not fix (address outside guest
     /// memory): log the instruction, the registers and the guest block, then let the process fail as before.
     /// </summary>
     [UnmanagedCallersOnly]
-    static int OnFault(void* pointers)
+    private static int OnFault(void* pointers)
     {
-        var rec = *(byte**)pointers;
-        var ctx = ((byte**)pointers)[1];
-        if (*(uint*)rec != 0xC0000005 || _instance == null)
+        byte* rec = *(byte**)pointers;
+        byte* ctx = ((byte**)pointers)[1];
+        if (*(uint*)rec != 0xC0000005 || s_instance == null)
         {
             return 0;
         }
 
         ulong rip = *(ulong*)(ctx + 0xF8);
-        var code = _instance.Code;
+        ExecutableMemory code = s_instance.Code;
         if (rip < (ulong)code.ExecBase || rip >= (ulong)code.ExecBase + ExecutableMemory.ReserveSize)
         {
             return 0;
@@ -524,7 +526,7 @@ public sealed unsafe partial class NativeRuntime
         }
 
         ulong gb = (ulong)GuestMemory.Base;
-        if (Interlocked.Exchange(ref _reported, 1) != 0)
+        if (Interlocked.Exchange(ref s_reported, 1) != 0)
         {
             return 0;
         }
@@ -532,15 +534,15 @@ public sealed unsafe partial class NativeRuntime
         try
         {
             string[] names = ["rax", "rcx", "rdx", "rbx", "rsp", "rbp", "rsi", "rdi", "r8", "r9", "r10", "r11", "r12", "r13", "r14", "r15"];
-            var regs = string.Join(" ", names.Select((n, i) => $"{n}={*(ulong*)(ctx + 0x78 + 8 * i):X}"));
+            string regs = string.Join(" ", names.Select((n, i) => $"{n}={*(ulong*)(ctx + 0x78 + 8 * i):X}"));
             string where = "?";
-            lock (_instance._blocks)
+            lock (s_instance._blocks)
             {
-                foreach (var (e, size, b) in _instance._blocks)
+                foreach ((nint e, int size, Block? b) in s_instance._blocks)
                 {
                     if (rip >= (ulong)e && rip < (ulong)e + (ulong)size)
                     {
-                        var ir = new ArmFrontend().Translate(b);
+                        IrBlock ir = new ArmFrontend().Translate(b);
                         IrPasses.DeadCode(ir);
                         where = $"{b} at +0x{rip - (ulong)e:X}\n  {string.Join(" ", b.Insts.Select(i => $"{i.Address:X8}:{i.Raw:X8}:{i.Op}"))}\nIR:\n{ir}\nx64:\n{X64Disassembler.Disassemble(e, size)}";
                         break;
@@ -548,7 +550,7 @@ public sealed unsafe partial class NativeRuntime
                 }
             }
 
-            var msg = $"NATIVE FAULT: access violation at rip={rip:X} (arena +0x{rip - (ulong)code.ExecBase:X}) address={addr:X} (guest base {gb:X})\n  {regs}\n  {where}";
+            string msg = $"NATIVE FAULT: access violation at rip={rip:X} (arena +0x{rip - (ulong)code.ExecBase:X}) address={addr:X} (guest base {gb:X})\n  {regs}\n  {where}";
             Console.Error.WriteLine(msg);
             Console.Error.Flush();
             File.AppendAllText(Path.Combine(Path.GetTempPath(), "vitasharp-native-fault.txt"), msg + "\n");

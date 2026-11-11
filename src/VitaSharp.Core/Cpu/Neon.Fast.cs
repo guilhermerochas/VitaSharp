@@ -14,16 +14,16 @@ namespace VitaSharp.Core.Cpu;
 internal static unsafe partial class Neon
 {
     [MethodImpl(MethodImplOptions.AggressiveInlining)]
-    static Vector128<byte> LoadD(CpuState* s, uint r) => Vector128.Create(*(ulong*)Reg(s, r), 0UL).AsByte();
+    private static Vector128<byte> LoadD(CpuState* s, uint r) => Vector128.Create(*(ulong*)Reg(s, r), 0UL).AsByte();
 
     [MethodImpl(MethodImplOptions.AggressiveInlining)]
-    static Vector128<byte> LoadQ(CpuState* s, uint r) => Vector128.Load(Reg(s, r));
+    private static Vector128<byte> LoadQ(CpuState* s, uint r) => Vector128.Load(Reg(s, r));
 
     [MethodImpl(MethodImplOptions.AggressiveInlining)]
-    static Vector128<byte> LoadV(CpuState* s, uint r, bool q) => q ? LoadQ(s, r) : LoadD(s, r);
+    private static Vector128<byte> LoadV(CpuState* s, uint r, bool q) => q ? LoadQ(s, r) : LoadD(s, r);
 
     [MethodImpl(MethodImplOptions.AggressiveInlining)]
-    static void StoreV(CpuState* s, uint r, Vector128<byte> v, bool q)
+    private static void StoreV(CpuState* s, uint r, Vector128<byte> v, bool q)
     {
         if (q)
         {
@@ -37,7 +37,7 @@ internal static unsafe partial class Neon
 
     // ------------------------------------------------------------------ three registers, same length
 
-    static bool ThreeSameFast(CpuState* s, uint ins)
+    private static bool ThreeSameFast(CpuState* s, uint ins)
     {
         uint a = Bits(ins, 11, 8);
         bool b = Bit(ins, 4) != 0, u = Bit(ins, 24) != 0, q = Bit(ins, 6) != 0;
@@ -58,8 +58,8 @@ internal static unsafe partial class Neon
             return false;
         }
 
-        var x = LoadV(s, n, q);
-        var y = LoadV(s, m, q);
+        Vector128<byte> x = LoadV(s, n, q);
+        Vector128<byte> y = LoadV(s, m, q);
         Vector128<byte> r;
         switch (a)
         {
@@ -110,7 +110,7 @@ internal static unsafe partial class Neon
                 break;                          // VMAX / VMIN
             case 0x7:                                                               // VABD / VABA
             {
-                var diff = AbsDiff(x, y, size, u);
+                Vector128<byte> diff = AbsDiff(x, y, size, u);
                 r = b ? AddSub(LoadV(s, d, q), diff, size, false) : diff;
                 break;
             }
@@ -122,8 +122,8 @@ internal static unsafe partial class Neon
                 break;
             case 0x9 when !b:                                                       // VMLA / VMLS
             {
-                var acc = LoadV(s, d, q);
-                var prod = Mul(x, y, size);
+                Vector128<byte> acc = LoadV(s, d, q);
+                Vector128<byte> prod = Mul(x, y, size);
                 r = AddSub(acc, prod, size, u);
                 break;
             }
@@ -138,10 +138,10 @@ internal static unsafe partial class Neon
     }
 
     [MethodImpl(MethodImplOptions.AggressiveInlining)]
-    static bool LanesEqual(Vector128<byte> a, Vector128<byte> b, bool q)
+    private static bool LanesEqual(Vector128<byte> a, Vector128<byte> b, bool q)
         => q ? Vector128.EqualsAll(a, b) : a.AsUInt64().GetElement(0) == b.AsUInt64().GetElement(0);
 
-    static Vector128<byte> AddSub(Vector128<byte> x, Vector128<byte> y, uint size, bool sub) => size switch
+    private static Vector128<byte> AddSub(Vector128<byte> x, Vector128<byte> y, uint size, bool sub) => size switch
     {
         0 => sub ? x - y : x + y,
         1 => (sub ? x.AsUInt16() - y.AsUInt16() : x.AsUInt16() + y.AsUInt16()).AsByte(),
@@ -149,21 +149,21 @@ internal static unsafe partial class Neon
         _ => (sub ? x.AsUInt64() - y.AsUInt64() : x.AsUInt64() + y.AsUInt64()).AsByte(),
     };
 
-    static Vector128<byte> Mul(Vector128<byte> x, Vector128<byte> y, uint size) => size switch
+    private static Vector128<byte> Mul(Vector128<byte> x, Vector128<byte> y, uint size) => size switch
     {
         0 => x * y,
         1 => (x.AsUInt16() * y.AsUInt16()).AsByte(),
         _ => (x.AsUInt32() * y.AsUInt32()).AsByte(),
     };
 
-    static Vector128<byte> Equal(Vector128<byte> x, Vector128<byte> y, uint size) => size switch
+    private static Vector128<byte> Equal(Vector128<byte> x, Vector128<byte> y, uint size) => size switch
     {
         0 => Vector128.Equals(x, y),
         1 => Vector128.Equals(x.AsUInt16(), y.AsUInt16()).AsByte(),
         _ => Vector128.Equals(x.AsUInt32(), y.AsUInt32()).AsByte(),
     };
 
-    static Vector128<byte> Compare(Vector128<byte> x, Vector128<byte> y, uint size, bool u, bool orEqual)
+    private static Vector128<byte> Compare(Vector128<byte> x, Vector128<byte> y, uint size, bool u, bool orEqual)
     {
         if (u)
         {
@@ -183,7 +183,7 @@ internal static unsafe partial class Neon
         };
     }
 
-    static Vector128<byte> MaxMin(Vector128<byte> x, Vector128<byte> y, uint size, bool u, bool min)
+    private static Vector128<byte> MaxMin(Vector128<byte> x, Vector128<byte> y, uint size, bool u, bool min)
     {
         if (u)
         {
@@ -204,33 +204,33 @@ internal static unsafe partial class Neon
     }
 
     /// <summary>|x - y| per lane as the unsigned lane width: max - min in the operand's own domain wraps to the magnitude.</summary>
-    static Vector128<byte> AbsDiff(Vector128<byte> x, Vector128<byte> y, uint size, bool u)
+    private static Vector128<byte> AbsDiff(Vector128<byte> x, Vector128<byte> y, uint size, bool u)
         => AddSub(MaxMin(x, y, size, u, false), MaxMin(x, y, size, u, true), size, true);
 
     /// <summary>(x + y) >> 1 (rounding: (x + y + 1) >> 1) without the intermediate overflow: (x &amp; y) + ((x ^ y) >> 1), or (x | y) - ((x ^ y) >> 1).</summary>
-    static Vector128<byte> HalvingAdd(Vector128<byte> x, Vector128<byte> y, uint size, bool u, bool round)
+    private static Vector128<byte> HalvingAdd(Vector128<byte> x, Vector128<byte> y, uint size, bool u, bool round)
     {
-        var xor = x ^ y;
-        var half = ShiftRight1(xor, size, u);
+        Vector128<byte> xor = x ^ y;
+        Vector128<byte> half = ShiftRight1(xor, size, u);
         return round ? AddSub(x | y, half, size, true) : AddSub(x & y, half, size, false);
     }
 
     /// <summary>(x - y) >> 1 = (x >> 1) - (y >> 1) - (~x &amp; y &amp; 1).</summary>
-    static Vector128<byte> HalvingSub(Vector128<byte> x, Vector128<byte> y, uint size, bool u)
+    private static Vector128<byte> HalvingSub(Vector128<byte> x, Vector128<byte> y, uint size, bool u)
     {
-        var one = size switch
+        Vector128<byte> one = size switch
         {
             0 => Vector128.Create((byte)1),
             1 => Vector128.Create((ushort)1).AsByte(),
             _ => Vector128.Create(1u).AsByte()
         };
-        var borrow = ~x & y & one;
+        Vector128<byte> borrow = ~x & y & one;
         return AddSub(AddSub(ShiftRight1(x, size, u), ShiftRight1(y, size, u), size, true), borrow, size, true);
     }
 
-    static Vector128<byte> ShiftRight1(Vector128<byte> v, uint size, bool u) => ShiftRightN(v, size, u, 1);
+    private static Vector128<byte> ShiftRight1(Vector128<byte> v, uint size, bool u) => ShiftRightN(v, size, u, 1);
 
-    static Vector128<byte> ShiftRightN(Vector128<byte> v, uint size, bool u, int n)
+    private static Vector128<byte> ShiftRightN(Vector128<byte> v, uint size, bool u, int n)
     {
         if (u)
         {
@@ -252,7 +252,7 @@ internal static unsafe partial class Neon
         };
     }
 
-    static Vector128<byte> ShiftLeftN(Vector128<byte> v, uint size, int n) => size switch
+    private static Vector128<byte> ShiftLeftN(Vector128<byte> v, uint size, int n) => size switch
     {
         0 => Vector128.ShiftLeft(v, n),
         1 => Vector128.ShiftLeft(v.AsUInt16(), n).AsByte(),
@@ -260,7 +260,7 @@ internal static unsafe partial class Neon
         _ => Vector128.ShiftLeft(v.AsUInt64(), n).AsByte(),
     };
 
-    static Vector128<byte> LaneOnes(uint size) => size switch
+    private static Vector128<byte> LaneOnes(uint size) => size switch
     {
         0 => Vector128.Create((byte)1),
         1 => Vector128.Create((ushort)1).AsByte(),
@@ -270,7 +270,7 @@ internal static unsafe partial class Neon
 
     // ------------------------------------------------------------------ shifts by immediate
 
-    static bool ShiftFast(CpuState* s, uint ins)
+    private static bool ShiftFast(CpuState* s, uint ins)
     {
         uint a = Bits(ins, 11, 8);
         bool u = Bit(ins, 24) != 0, l = Bit(ins, 7) != 0, q = Bit(ins, 6) != 0;
@@ -288,7 +288,7 @@ internal static unsafe partial class Neon
                 return false;
             }
 
-            var x = LoadV(s, m, q);
+            Vector128<byte> x = LoadV(s, m, q);
             bool round = (a & 2) != 0, accumulate = (a & 1) != 0;
             Vector128<byte> r;
             if (rshift >= esize)
@@ -333,7 +333,7 @@ internal static unsafe partial class Neon
                 return false;
             }
 
-            var x = LoadD(s, m);
+            Vector128<byte> x = LoadD(s, m);
             Vector128<byte> wide = size switch
             {
                 0 => (u ? Vector128.WidenLower(x).AsByte() : Vector128.WidenLower(x.AsSByte()).AsByte()),
@@ -358,7 +358,7 @@ internal static unsafe partial class Neon
             uint wsize = size + 1; // source lane size
             bool round = q;
             bool srcUnsigned = a == 9 && u;
-            var x = LoadQ(s, m);
+            Vector128<byte> x = LoadQ(s, m);
             // the shifted value, kept at the wide lane size
             Vector128<byte> sh;
             if (rshift >= 2 * esize)
@@ -372,7 +372,7 @@ internal static unsafe partial class Neon
 
             if (round)
             {
-                var bit = rshift >= 2 * esize ? ShiftRightN(x, wsize, true, 2 * esize - 1) & LaneOnes(wsize) : ShiftRightN(x, wsize, true, rshift - 1) & LaneOnes(wsize);
+                Vector128<byte> bit = rshift >= 2 * esize ? ShiftRightN(x, wsize, true, 2 * esize - 1) & LaneOnes(wsize) : ShiftRightN(x, wsize, true, rshift - 1) & LaneOnes(wsize);
                 sh = AddSub(sh, bit, wsize, false);
             }
             Vector128<byte> narrow;
@@ -393,7 +393,7 @@ internal static unsafe partial class Neon
                 {
                     if (wsize == 1)
                     {
-                        var p = Sse2.PackUnsignedSaturate(sh.AsInt16(), sh.AsInt16());
+                        Vector128<byte> p = Sse2.PackUnsignedSaturate(sh.AsInt16(), sh.AsInt16());
                         narrow = p;
                         back = Vector128.WidenLower(p).AsByte();
                     }
@@ -404,7 +404,7 @@ internal static unsafe partial class Neon
                             return false;
                         }
 
-                        var p = Sse41.PackUnsignedSaturate(sh.AsInt32(), sh.AsInt32());
+                        Vector128<ushort> p = Sse41.PackUnsignedSaturate(sh.AsInt32(), sh.AsInt32());
                         narrow = p.AsByte();
                         back = Vector128.WidenLower(p).AsByte();
                     }
@@ -413,13 +413,13 @@ internal static unsafe partial class Neon
                 {
                     if (wsize == 1)
                     {
-                        var p = Sse2.PackSignedSaturate(sh.AsInt16(), sh.AsInt16());
+                        Vector128<sbyte> p = Sse2.PackSignedSaturate(sh.AsInt16(), sh.AsInt16());
                         narrow = p.AsByte();
                         back = Vector128.WidenLower(p).AsByte();
                     }
                     else
                     {
-                        var p = Sse2.PackSignedSaturate(sh.AsInt32(), sh.AsInt32());
+                        Vector128<short> p = Sse2.PackSignedSaturate(sh.AsInt32(), sh.AsInt32());
                         narrow = p.AsByte();
                         back = Vector128.WidenLower(p).AsByte();
                     }
@@ -452,7 +452,7 @@ internal static unsafe partial class Neon
 
     // ------------------------------------------------------------------ three registers, different lengths
 
-    static bool ThreeDiffFast(CpuState* s, uint ins)
+    private static bool ThreeDiffFast(CpuState* s, uint ins)
     {
         uint a = Bits(ins, 11, 8);
         bool u = Bit(ins, 24) != 0;
@@ -480,8 +480,8 @@ internal static unsafe partial class Neon
         }
 
         uint wsize = size + 1;
-        var xn = wideN ? LoadQ(s, n) : Widen(LoadD(s, n), size, u);
-        var ym = Widen(LoadD(s, m), size, u);
+        Vector128<byte> xn = wideN ? LoadQ(s, n) : Widen(LoadD(s, n), size, u);
+        Vector128<byte> ym = Widen(LoadD(s, m), size, u);
         Vector128<byte> r;
         switch (a)
         {
@@ -515,14 +515,14 @@ internal static unsafe partial class Neon
         return true;
     }
 
-    static Vector128<byte> Widen(Vector128<byte> x, uint size, bool u) => size switch
+    private static Vector128<byte> Widen(Vector128<byte> x, uint size, bool u) => size switch
     {
         0 => u ? Vector128.WidenLower(x).AsByte() : Vector128.WidenLower(x.AsSByte()).AsByte(),
         1 => u ? Vector128.WidenLower(x.AsUInt16()).AsByte() : Vector128.WidenLower(x.AsInt16()).AsByte(),
         _ => u ? Vector128.WidenLower(x.AsUInt32()).AsByte() : Vector128.WidenLower(x.AsInt32()).AsByte(),
     };
 
-    static Vector128<byte> MulWide(Vector128<byte> x, Vector128<byte> y, uint wsize) => wsize switch
+    private static Vector128<byte> MulWide(Vector128<byte> x, Vector128<byte> y, uint wsize) => wsize switch
     {
         1 => (x.AsUInt16() * y.AsUInt16()).AsByte(),
         2 => (x.AsUInt32() * y.AsUInt32()).AsByte(),

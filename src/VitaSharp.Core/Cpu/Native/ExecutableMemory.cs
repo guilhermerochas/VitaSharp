@@ -23,16 +23,16 @@ namespace VitaSharp.Core.Cpu.Native;
 public sealed unsafe partial class ExecutableMemory : IDisposable
 {
     public const int ReserveSize = 256 << 20;    // 256 MiB of address space
-    const int CommitGranule = 1 << 20;            // committed (made usable) in 1 MiB steps
+    private const int CommitGranule = 1 << 20;            // committed (made usable) in 1 MiB steps
 
-    readonly object _lock = new();
-    byte* _exec;       // execute view
-    byte* _write;      // write view (== _exec on macOS)
-    int _used, _committed;
-    nint _section;     // Windows section handle / Linux memfd
-    readonly Mode _mode;
+    private readonly object _lock = new();
+    private byte* _exec;       // execute view
+    private byte* _write;      // write view (== _exec on macOS)
+    private int _used, _committed;
+    private nint _section;     // Windows section handle / Linux memfd
+    private readonly Mode _mode;
 
-    enum Mode
+    private enum Mode
     {
         DualMapped, AppleJit, Rwx
     }
@@ -124,7 +124,7 @@ public sealed unsafe partial class ExecutableMemory : IDisposable
         lock (_lock)
         {
             int start = (_used + 15) & ~15;
-            var code = assemble((ulong)(_exec + start));
+            byte[] code = assemble((ulong)(_exec + start));
             if (start + code.Length > ReserveSize)
             {
                 throw new OutOfMemoryException("JIT code arena full");
@@ -207,7 +207,7 @@ public sealed unsafe partial class ExecutableMemory : IDisposable
         }
     }
 
-    void CommitMore()
+    private void CommitMore()
     {
         int next = Math.Min(_committed + CommitGranule, ReserveSize);
         if (OperatingSystem.IsWindows())
@@ -221,7 +221,7 @@ public sealed unsafe partial class ExecutableMemory : IDisposable
         _committed = next;
     }
 
-    void FlushInstructionCache(byte* addr, int len)
+    private void FlushInstructionCache(byte* addr, int len)
     {
         if (OperatingSystem.IsWindows())
         {
@@ -238,26 +238,26 @@ public sealed unsafe partial class ExecutableMemory : IDisposable
         // x64 keeps instruction fetch coherent with stores
     }
 
-    static delegate* unmanaged<void*, nuint, void> _clearCache;
-    static readonly object ClearCacheLock = new();
+    private static delegate* unmanaged<void*, nuint, void> s_clearCache;
+    private static readonly object s_clearCacheLock = new();
 
     /// <summary>
     /// Linux/Android ARM64: __clear_cache has no libc export, so the backend generates it
     /// (<see cref="Arm64Emitter.EmitCacheFlush"/>) into a page of its own, made executable with mprotect before its
     /// first use (the kernel synchronizes the caches when a page becomes executable).
     /// </summary>
-    static void ClearCache(byte* addr, int len)
+    private static void ClearCache(byte* addr, int len)
     {
-        var f = _clearCache;
+        delegate* unmanaged<void*, nuint, void> f = s_clearCache;
         if (f == null)
         {
-            lock (ClearCacheLock)
+            lock (s_clearCacheLock)
             {
-                if (_clearCache == null)
+                if (s_clearCache == null)
                 {
-                    var code = Arm64Emitter.EmitCacheFlush();
+                    byte[] code = Arm64Emitter.EmitCacheFlush();
                     nuint page = (nuint)Environment.SystemPageSize;
-                    var p = mmap(null, page, PROT_READ | PROT_WRITE, MAP_PRIVATE | MAP_ANON_LINUX, -1, 0);
+                    void* p = mmap(null, page, PROT_READ | PROT_WRITE, MAP_PRIVATE | MAP_ANON_LINUX, -1, 0);
                     if (p == (void*)-1)
                     {
                         throw new InvalidOperationException("mmap for the cache flush helper failed");
@@ -269,9 +269,9 @@ public sealed unsafe partial class ExecutableMemory : IDisposable
                         throw new InvalidOperationException("mprotect for the cache flush helper failed");
                     }
 
-                    _clearCache = (delegate* unmanaged<void*, nuint, void>)p;
+                    s_clearCache = (delegate* unmanaged<void*, nuint, void>)p;
                 }
-                f = _clearCache;
+                f = s_clearCache;
             }
         }
         f(addr, (nuint)len);
@@ -279,10 +279,10 @@ public sealed unsafe partial class ExecutableMemory : IDisposable
 
     // ------------------------------------------------------------------ Windows
 
-    const uint MEM_COMMIT = 0x1000, MEM_RESERVE = 0x2000, PAGE_READWRITE = 4, PAGE_EXECUTE_READWRITE = 0x40, PAGE_EXECUTE_READ = 0x20;
-    const uint SEC_RESERVE = 0x4000000, FILE_MAP_WRITE = 2, FILE_MAP_READ = 4, FILE_MAP_EXECUTE = 0x20;
+    private const uint MEM_COMMIT = 0x1000, MEM_RESERVE = 0x2000, PAGE_READWRITE = 4, PAGE_EXECUTE_READWRITE = 0x40, PAGE_EXECUTE_READ = 0x20;
+    private const uint SEC_RESERVE = 0x4000000, FILE_MAP_WRITE = 2, FILE_MAP_READ = 4, FILE_MAP_EXECUTE = 0x20;
 
-    void CreateWindows()
+    private void CreateWindows()
     {
         _section = CreateFileMappingW(-1, null, PAGE_EXECUTE_READWRITE | SEC_RESERVE, 0, ReserveSize, null);
         if (_section == 0)
@@ -318,8 +318,8 @@ public sealed unsafe partial class ExecutableMemory : IDisposable
 
     // ------------------------------------------------------------------ POSIX
 
-    const int PROT_NONE = 0, PROT_READ = 1, PROT_WRITE = 2, PROT_EXEC = 4;
-    const int MAP_SHARED = 1, MAP_PRIVATE = 2, MAP_ANON_LINUX = 0x20, MAP_ANON_MAC = 0x1000, MAP_JIT = 0x800;
+    private const int PROT_NONE = 0, PROT_READ = 1, PROT_WRITE = 2, PROT_EXEC = 4;
+    private const int MAP_SHARED = 1, MAP_PRIVATE = 2, MAP_ANON_LINUX = 0x20, MAP_ANON_MAC = 0x1000, MAP_JIT = 0x800;
 
     [LibraryImport("libc", SetLastError = true)]
     private static partial void* mmap(void* addr, nuint len, int prot, int flags, int fd, nint off);
@@ -340,7 +340,7 @@ public sealed unsafe partial class ExecutableMemory : IDisposable
     [LibraryImport("libandroid", StringMarshalling = StringMarshalling.Utf8)]
     private static partial int ASharedMemory_create(string name, nuint size);
 
-    bool TryCreateLinux()
+    private bool TryCreateLinux()
     {
         int fd = -1;
         try
@@ -367,8 +367,8 @@ public sealed unsafe partial class ExecutableMemory : IDisposable
             return false;
         }
 
-        var w = mmap(null, ReserveSize, PROT_READ | PROT_WRITE, MAP_SHARED, fd, 0);
-        var x = mmap(null, ReserveSize, PROT_READ | PROT_EXEC, MAP_SHARED, fd, 0);
+        void* w = mmap(null, ReserveSize, PROT_READ | PROT_WRITE, MAP_SHARED, fd, 0);
+        void* x = mmap(null, ReserveSize, PROT_READ | PROT_EXEC, MAP_SHARED, fd, 0);
         if (w == (void*)-1 || x == (void*)-1)
         {
             if (w != (void*)-1)
@@ -390,9 +390,9 @@ public sealed unsafe partial class ExecutableMemory : IDisposable
         return true;
     }
 
-    void CreateApple()
+    private void CreateApple()
     {
-        var p = mmap(null, ReserveSize, PROT_READ | PROT_WRITE | PROT_EXEC, MAP_PRIVATE | MAP_ANON_MAC | MAP_JIT, -1, 0);
+        void* p = mmap(null, ReserveSize, PROT_READ | PROT_WRITE | PROT_EXEC, MAP_PRIVATE | MAP_ANON_MAC | MAP_JIT, -1, 0);
         if (p == (void*)-1)
         {
             throw new InvalidOperationException("mmap(MAP_JIT) failed");
@@ -401,9 +401,9 @@ public sealed unsafe partial class ExecutableMemory : IDisposable
         _exec = _write = (byte*)p;
     }
 
-    void CreateRwx()
+    private void CreateRwx()
     {
-        var p = mmap(null, ReserveSize, PROT_READ | PROT_WRITE | PROT_EXEC, MAP_PRIVATE | MAP_ANON_LINUX, -1, 0);
+        void* p = mmap(null, ReserveSize, PROT_READ | PROT_WRITE | PROT_EXEC, MAP_PRIVATE | MAP_ANON_LINUX, -1, 0);
         if (p == (void*)-1)
         {
             throw new InvalidOperationException("mmap(RWX) failed");
@@ -412,7 +412,7 @@ public sealed unsafe partial class ExecutableMemory : IDisposable
         _exec = _write = (byte*)p;
     }
 
-    static void AppleWriteProtect(bool enable)
+    private static void AppleWriteProtect(bool enable)
     {
         // only Apple silicon enforces per-thread JIT write protection; Intel Macs map MAP_JIT memory RWX
         if (RuntimeInformation.ProcessArchitecture == Architecture.Arm64)

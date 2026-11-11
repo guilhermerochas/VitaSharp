@@ -20,14 +20,14 @@ public static unsafe class Jit
     /// <summary>Active backends in the order blocks are offered to them.</summary>
     public static IBlockCompiler[] Chain
     {
-        get => _chain;
+        get => s_chain;
         private set
         {
-            _chain = value;
+            s_chain = value;
             InitialThreshold = value.Length > 0 ? value[0].HotInstructions : long.MaxValue;
         }
     }
-    static IBlockCompiler[] _chain = [];
+    private static IBlockCompiler[] s_chain = [];
 
     /// <summary>Threshold of the first backend: new blocks start with it (<see cref="Block.HotAt"/>).</summary>
     public static long InitialThreshold { get; private set; } = long.MaxValue;
@@ -54,7 +54,7 @@ public static unsafe class Jit
     /// <summary>A block is never compiled before this many executions (whatever its length).</summary>
     public const int MinExecutions = 64;
 
-    static IBlockCompiler[] DefaultChain() => All.Where(b => b.IsSupported).ToArray();
+    private static IBlockCompiler[] DefaultChain() => All.Where(b => b.IsSupported).ToArray();
 
     /// <summary>
     /// Selects the backend: "native", "il" or "interp" (null/""/"auto" = best supported). A backend falls back to the
@@ -117,7 +117,7 @@ public static unsafe class Jit
     /// <summary>Why <see cref="Select"/> rejected <paramref name="name"/> (for the fallback log line).</summary>
     public static string WhyUnavailable(string? name)
     {
-        foreach (var b in All)
+        foreach (IBlockCompiler b in All)
         {
             if (b.Name.Equals(name, StringComparison.OrdinalIgnoreCase))
             {
@@ -131,23 +131,23 @@ public static unsafe class Jit
     /// <summary>Instructions the block must have executed before the next backend in the chain takes it.</summary>
     public static long NextThreshold(Block b)
     {
-        var chain = Chain;
+        IBlockCompiler[] chain = Chain;
         return b.Tier < chain.Length ? chain[b.Tier].HotInstructions : long.MaxValue;
     }
 
     /// <summary>Legacy totals (all backends).</summary>
     public static long CompiledBlocks => Chain.Sum(c => c.Stats.Blocks);
 
-    static readonly BlockingCollection<Block> Queue = new(new ConcurrentQueue<Block>());
-    static int _workersStarted;
-    static int _inFlight; // queued or compiling
+    private static readonly BlockingCollection<Block> s_queue = new(new ConcurrentQueue<Block>());
+    private static int s_workersStarted;
+    private static int s_inFlight; // queued or compiling
 
     /// <summary>
     /// Waits until every queued block has been compiled (or rejected); false on timeout. Compilation is asynchronous,
     /// so callers that need a deterministic state - tests comparing backends, diagnostics - wait here instead of
     /// sleeping for a guessed time.
     /// </summary>
-    public static bool WaitIdle(TimeSpan timeout) => SpinWait.SpinUntil(() => Volatile.Read(ref _inFlight) == 0, timeout);
+    public static bool WaitIdle(TimeSpan timeout) => SpinWait.SpinUntil(() => Volatile.Read(ref s_inFlight) == 0, timeout);
 
     public static void Enqueue(Block b)
     {
@@ -156,14 +156,14 @@ public static unsafe class Jit
             return;
         }
 
-        Interlocked.Increment(ref _inFlight);
+        Interlocked.Increment(ref s_inFlight);
         EnsureWorkers();
-        Queue.Add(b);
+        s_queue.Add(b);
     }
 
-    static void EnsureWorkers()
+    private static void EnsureWorkers()
     {
-        if (Interlocked.Exchange(ref _workersStarted, 1) != 0)
+        if (Interlocked.Exchange(ref s_workersStarted, 1) != 0)
         {
             return;
         }
@@ -174,7 +174,7 @@ public static unsafe class Jit
             var t = new Thread(() =>
             {
                 Util.NativeThread.Register("JIT worker", Util.NativeThread.Role.JitWorker);
-                foreach (var b in Queue.GetConsumingEnumerable())
+                foreach (Block b in s_queue.GetConsumingEnumerable())
                 {
                     try
                     {
@@ -187,7 +187,7 @@ public static unsafe class Jit
                     }
                     finally
                     {
-                        Interlocked.Decrement(ref _inFlight);
+                        Interlocked.Decrement(ref s_inFlight);
                     }
                 }
             })
@@ -203,13 +203,13 @@ public static unsafe class Jit
     /// <summary>Offers the block to the backend at its tier; on rejection it moves to the next tier.</summary>
     public static void Compile(Block b)
     {
-        var chain = Chain;
+        IBlockCompiler[] chain = Chain;
         if (b.Tier >= chain.Length)
         {
             b.JitState = 3;
             return;
         }
-        var backend = chain[b.Tier];
+        IBlockCompiler backend = chain[b.Tier];
         long t0 = System.Diagnostics.Stopwatch.GetTimestamp();
         BackendStats.RejectReason = null;
 #if VITASHARP_DEVELOPER
@@ -217,11 +217,11 @@ public static unsafe class Jit
         var cb = backend.Compile(b);
         Util.Developer.DevTrace.End();
 #else
-        var cb = backend.Compile(b);
+        CompiledBlock? cb = backend.Compile(b);
 #endif
 
         long dt = System.Diagnostics.Stopwatch.GetTimestamp() - t0;
-        var st = backend.Stats;
+        BackendStats st = backend.Stats;
         Interlocked.Add(ref st.Ticks, dt);
         Util.FrameLedger.Add(Util.FrameLedger.Cat.JitCompile, dt);
         if (cb == null)
@@ -238,7 +238,7 @@ public static unsafe class Jit
         Interlocked.Add(ref st.Instructions, b.Insts.Length);
     }
 
-    static void Install(Block b, CompiledBlock cb)
+    private static void Install(Block b, CompiledBlock cb)
     {
         b.Code = cb;
         if (cb.Managed != null)
@@ -266,7 +266,7 @@ public static unsafe class Jit
     /// </summary>
     public static void TierUp(Block b)
     {
-        var chain = Chain;
+        IBlockCompiler[] chain = Chain;
         int il = Array.IndexOf(chain, IlJitCompiler.Instance);
         if (il <= b.Tier || b.NativeEntry == 0 || b.JitState == 1)
         {

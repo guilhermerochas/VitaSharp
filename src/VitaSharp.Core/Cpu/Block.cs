@@ -27,15 +27,15 @@ public sealed unsafe class Block
     /// <summary>Set when the block was dropped from the cache (guest code rewritten): exits must not link to it.</summary>
     public volatile bool Invalidated;
     /// <summary>Exit link slots that jump into this block's native code (cleared on invalidation).</summary>
-    internal List<nint>? LinkedFrom;
+    internal List<nint>? _linkedFrom;
     /// <summary>The cache (process) the block belongs to: its indirect-exit table is the process's.</summary>
     public BlockCache? Owner;
     /// <summary>Guest state slots the block overwrites before reading them (<see cref="Native.StateLiveness"/>: bits 0-14
     /// R0-R14, 16-19 N Z C V), <see cref="Native.StateLiveness.Unknown"/> until computed.</summary>
-    internal int DeadIn = Native.StateLiveness.Unknown;
+    internal int _deadIn = Native.StateLiveness.Unknown;
     /// <summary>Guest code ranges [start, end) other than the block's own that its compiled code depends on (the
-    /// successors whose <see cref="DeadIn"/> let it drop state stores): rewriting them drops this block too.</summary>
-    internal uint[]? Deps;
+    /// successors whose <see cref="_deadIn"/> let it drop state stores): rewriting them drops this block too.</summary>
+    internal uint[]? _deps;
 
     /// <summary>Whether the block's code or a range it depends on overlaps [addr, addr + size).</summary>
     internal bool Overlaps(uint addr, uint size)
@@ -45,7 +45,7 @@ public sealed unsafe class Block
             return true;
         }
 
-        if (Deps is { } d)
+        if (_deps is { } d)
         {
             for (int i = 0; i + 1 < d.Length; i += 2)
             {
@@ -71,9 +71,9 @@ public static unsafe class BlockBuilder
     /// raises a prefetch abort and the kernel kills the thread; here the block ends in a permanently undefined
     /// instruction at that address, which the thread reports as a prefetch abort (Vita3K stops the thread too).
     /// </summary>
-    static DecodedInst FetchFault(uint addr, bool thumb)
+    private static DecodedInst FetchFault(uint addr, bool thumb)
     {
-        var d = thumb ? Decoder.DecodeThumb16(0xDE00, addr, false, 14) : Decoder.DecodeArm(0xE7F000F0, addr);
+        DecodedInst d = thumb ? Decoder.DecodeThumb16(0xDE00, addr, false, 14) : Decoder.DecodeArm(0xE7F000F0, addr);
         d.Flags |= InstFlags.EndsBlock;
         return d;
     }
@@ -96,7 +96,7 @@ public static unsafe class BlockBuilder
                     list.Add(FetchFault(addr, false));
                     break;
                 }
-                var d = Decoder.DecodeArm(GuestMemory.Read<uint>(addr), addr); // the building thread's (its process's) space
+                DecodedInst d = Decoder.DecodeArm(GuestMemory.Read<uint>(addr), addr); // the building thread's (its process's) space
                 list.Add(d);
                 addr += 4;
                 if (d.EndsBlock || list.Count >= MaxInstructions || d.Op == Op.Vfp_Vmsr)
@@ -157,9 +157,9 @@ public static unsafe class BlockBuilder
                 }
             }
         }
-        var insts = list.ToArray();
+        DecodedInst[] insts = list.ToArray();
         long quarters = 0;
-        foreach (ref var d in insts.AsSpan())
+        foreach (ref DecodedInst d in insts.AsSpan())
         {
             quarters += CycleCost(in d);
         }
@@ -250,19 +250,19 @@ public static unsafe class BlockBuilder
 /// </summary>
 public sealed unsafe class BlockCache
 {
-    readonly ConcurrentDictionary<ulong, Block> _blocks = new();
-    nint _dispatch;
+    private readonly ConcurrentDictionary<ulong, Block> _blocks = new();
+    private nint _dispatch;
 
     /// <summary>The process's address space: where blocks are decoded from by threads outside it (the JIT workers,
     /// <see cref="GetFromAnyThread"/>). Null: the calling thread's.</summary>
     public AddressSpace? Space;
 
-    static ulong Key(uint pc, bool thumb) => pc | (thumb ? 1ul << 32 : 0);
+    private static ulong Key(uint pc, bool thumb) => pc | (thumb ? 1ul << 32 : 0);
 
     public Block Get(uint pc, bool thumb)
     {
-        var key = Key(pc, thumb);
-        if (_blocks.TryGetValue(key, out var b))
+        ulong key = Key(pc, thumb);
+        if (_blocks.TryGetValue(key, out Block? b))
         {
             return b;
         }
@@ -283,7 +283,7 @@ public sealed unsafe class BlockCache
                 return _dispatch;
             }
 
-            var t = Native.NativeRuntime.AllocateDispatchTable();
+            nint t = Native.NativeRuntime.AllocateDispatchTable();
             if (Interlocked.CompareExchange(ref _dispatch, t, 0) != 0)
             {
                 Native.NativeRuntime.FreeDispatchTable(t);
@@ -307,7 +307,7 @@ public sealed unsafe class BlockCache
     /// targets of the block it compiles): decodes in <see cref="Space"/>.</summary>
     public Block GetFromAnyThread(uint pc, bool thumb)
     {
-        if (_blocks.TryGetValue(Key(pc, thumb), out var b))
+        if (_blocks.TryGetValue(Key(pc, thumb), out Block? b))
         {
             return b;
         }
@@ -321,9 +321,9 @@ public sealed unsafe class BlockCache
     /// <summary>Drop every block overlapping [addr, addr+size) (code was rewritten, e.g. module load/unload).</summary>
     public void Invalidate(uint addr, uint size)
     {
-        foreach (var kv in _blocks)
+        foreach (KeyValuePair<ulong, Block> kv in _blocks)
         {
-            var b = kv.Value;
+            Block b = kv.Value;
             if (b.Overlaps(addr, size) && _blocks.TryRemove(kv.Key, out _))
             {
                 Retire(b);
@@ -333,7 +333,7 @@ public sealed unsafe class BlockCache
 
     public void Clear()
     {
-        foreach (var kv in _blocks)
+        foreach (KeyValuePair<ulong, Block> kv in _blocks)
         {
             Retire(kv.Value);
         }
@@ -342,7 +342,7 @@ public sealed unsafe class BlockCache
     }
 
     /// <summary>A block left the cache: native exits linked to it must go back through the dispatcher.</summary>
-    static void Retire(Block b)
+    private static void Retire(Block b)
     {
         if (b.NativeEntry != 0)
         {

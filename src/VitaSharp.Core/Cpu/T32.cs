@@ -8,7 +8,7 @@ namespace VitaSharp.Core.Cpu;
 internal static unsafe class T32
 {
     [MethodImpl(MethodImplOptions.AggressiveInlining)]
-    static uint Rg(CpuState* s, uint n, uint pc) => n == 15 ? pc + 4 : s->R[n];
+    private static uint Rg(CpuState* s, uint n, uint pc) => n == 15 ? pc + 4 : s->R[n];
 
     // ---------------------------------------------------------------- data processing
 
@@ -17,7 +17,7 @@ internal static unsafe class T32
     /// Rd==15 with S means the compare/test form (TST/TEQ/CMN/CMP).
     /// </summary>
     [MethodImpl(MethodImplOptions.AggressiveInlining)]
-    static void DataProc(CpuState* s, uint op, bool S, uint rd, uint a, uint b, uint carry)
+    private static void DataProc(CpuState* s, uint op, bool S, uint rd, uint a, uint b, uint carry)
     {
         uint r, c = 0, v = 0;
         bool arith;
@@ -407,7 +407,7 @@ internal static unsafe class T32
     }
 
     [MethodImpl(MethodImplOptions.AggressiveInlining)]
-    static uint BranchImm24(uint ins)
+    private static uint BranchImm24(uint ins)
     {
         uint S = Bit(ins, 26), j1 = Bit(ins, 13), j2 = Bit(ins, 11);
         uint i1 = ~(j1 ^ S) & 1, i2 = ~(j2 ^ S) & 1;

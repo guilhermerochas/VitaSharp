@@ -10,13 +10,13 @@ namespace VitaSharp.Core.Cpu;
 /// </summary>
 internal static unsafe class T16
 {
-    const uint InItBit = 0x8000_0000;
+    private const uint InItBit = 0x8000_0000;
 
     [MethodImpl(MethodImplOptions.AggressiveInlining)]
-    static bool SetFlags(uint ins) => (ins & InItBit) == 0;
+    private static bool SetFlags(uint ins) => (ins & InItBit) == 0;
 
     [MethodImpl(MethodImplOptions.AggressiveInlining)]
-    static uint Rg(CpuState* s, uint n, uint pc) => n == 15 ? pc + 4 : s->R[n];
+    private static uint Rg(CpuState* s, uint n, uint pc) => n == 15 ? pc + 4 : s->R[n];
 
     /// <summary>LSL/LSR/ASR (immediate): 000 op imm5 Rm Rd</summary>
     [MethodImpl(MethodImplOptions.AggressiveInlining)]

@@ -177,7 +177,7 @@ internal static class NamingFixer
                 }
 
                 string newName = CompliantName(symbol, XElement.Parse(style));
-                if (newName != symbol.Name && SyntaxFacts.IsValidIdentifier(newName))
+                if ((newName != symbol.Name || IsThreadStatic(symbol)) && SyntaxFacts.IsValidIdentifier(newName))
                 {
                     result.Add((symbol, newName, diagnostic.Location));
                 }
@@ -192,13 +192,18 @@ internal static class NamingFixer
         return result;
     }
 
+    private static bool IsThreadStatic(ISymbol symbol)
+    {
+        return symbol is IFieldSymbol { IsStatic: true } field && field.GetAttributes().Any(a => a.AttributeClass?.Name == "ThreadStaticAttribute");
+    }
+
     private static string CompliantName(ISymbol symbol, XElement style)
     {
         string prefix = (string?)style.Attribute("Prefix") ?? "";
         string suffix = (string?)style.Attribute("Suffix") ?? "";
         string scheme = (string?)style.Attribute("CapitalizationScheme") ?? "";
         bool pascal = scheme == "PascalCase";
-        if (symbol is IFieldSymbol { IsStatic: true } field && field.GetAttributes().Any(a => a.AttributeClass?.Name == "ThreadStaticAttribute"))
+        if (IsThreadStatic(symbol))
         {
             prefix = "t_";
             pascal = false;
@@ -262,6 +267,17 @@ internal static class NamingFixer
         Dictionary<string, List<(TextSpan Span, string OldName, string NewName)>> edits = new(StringComparer.OrdinalIgnoreCase);
         foreach ((ISymbol symbol, string newName, _) in renames)
         {
+            if (IsThreadStatic(symbol))
+            {
+                // the s_ rule matches every private static field, so a [ThreadStatic] t_ field carries the suppression
+                AddThreadStaticSuppression(symbol, edits, pending);
+            }
+
+            if (newName == symbol.Name)
+            {
+                continue;
+            }
+
             if (Conflicts(symbol, newName))
             {
                 Console.Error.WriteLine($"naming: {symbol.ToDisplayString()} -> {newName} skipped: the name is already used there");
@@ -322,7 +338,9 @@ internal static class NamingFixer
                 // the span must still hold the old name (a verbatim @name or a stale tree is left alone)
                 if (span.End <= text.Length && text.AsSpan(span.Start, span.Length).SequenceEqual(oldName))
                 {
-                    result.Remove(span.Start, span.Length).Insert(span.Start, newName);
+                    // the inserted lines are written with the file's own line ends
+                    string replacement = span.Length == 0 && !text.Contains("\r\n", StringComparison.Ordinal) ? newName.Replace("\r\n", "\n") : newName;
+                    result.Remove(span.Start, span.Length).Insert(span.Start, replacement);
                 }
             }
 
@@ -335,6 +353,43 @@ internal static class NamingFixer
         }
 
         return files;
+    }
+
+    private const string SuppressionUsing = "using System.Diagnostics.CodeAnalysis;";
+
+    private static void AddThreadStaticSuppression(ISymbol symbol, Dictionary<string, List<(TextSpan, string, string)>> edits, string[] pending)
+    {
+        SyntaxReference? reference = symbol.DeclaringSyntaxReferences.FirstOrDefault();
+        SyntaxNode? field = reference?.GetSyntax().Ancestors().FirstOrDefault(n => n is Microsoft.CodeAnalysis.CSharp.Syntax.FieldDeclarationSyntax);
+        string path = reference?.SyntaxTree.FilePath ?? "";
+        if (field == null || Skipped(path, pending) || field.ToFullString().Contains("IDE1006", StringComparison.Ordinal))
+        {
+            return;
+        }
+
+        SourceText text = field.SyntaxTree.GetText();
+        TextLine line = text.Lines.GetLineFromPosition(field.SpanStart);
+        string indent = text.ToString(TextSpan.FromBounds(line.Start, field.SpanStart));
+        if (!edits.TryGetValue(path, out List<(TextSpan, string, string)>? list))
+        {
+            edits[path] = list = [];
+        }
+
+        list.Add((new TextSpan(line.Start, 0), "", indent + "[SuppressMessage(\"Style\", \"IDE1006\", Justification = \"[ThreadStatic]: t_camelCase; .editorconfig cannot select the attribute\")]\r\n"));
+        SyntaxNode root = field.SyntaxTree.GetRoot();
+        if (!text.ToString().Contains(SuppressionUsing, StringComparison.Ordinal))
+        {
+            // in order among the file's using directives (they are sorted, System ones not first)
+            List<Microsoft.CodeAnalysis.CSharp.Syntax.UsingDirectiveSyntax> usings = [.. root.DescendantNodes().OfType<Microsoft.CodeAnalysis.CSharp.Syntax.UsingDirectiveSyntax>()];
+            Microsoft.CodeAnalysis.CSharp.Syntax.UsingDirectiveSyntax? after = usings.FirstOrDefault(u => u.Alias == null && u.StaticKeyword.Span.IsEmpty && string.Compare(u.Name?.ToString(), "System.Diagnostics.CodeAnalysis", StringComparison.OrdinalIgnoreCase) > 0);
+            int at = after != null ? text.Lines.GetLineFromPosition(after.SpanStart).Start
+                : usings.Count > 0 ? text.Lines.GetLineFromPosition(usings[^1].SpanStart).EndIncludingLineBreak : 0;
+            string usingLine = SuppressionUsing + "\r\n" + (usings.Count == 0 ? "\r\n" : "");
+            if (!list.Contains((new TextSpan(at, 0), "", usingLine)))
+            {
+                list.Add((new TextSpan(at, 0), "", usingLine));
+            }
+        }
     }
 
     // a member of the same name in the type (or its bases), or a symbol of that name in scope of a local function

@@ -3,8 +3,8 @@ namespace VitaSharp.Core.Cpu;
 /// <summary>Decoder for VFP (coprocessors 10/11) and Advanced SIMD encodings.</summary>
 public static class SimdDecoder
 {
-    static uint B(uint v, int n) => (v >> n) & 1;
-    static uint Bs(uint v, int hi, int lo) => (v >> lo) & (uint)((1L << (hi - lo + 1)) - 1);
+    private static uint B(uint v, int n) => (v >> n) & 1;
+    private static uint Bs(uint v, int hi, int lo) => (v >> lo) & (uint)((1L << (hi - lo + 1)) - 1);
 
     public static Op DecodeVfp(uint ins, out bool writesPc, bool thumb = false)
     {
