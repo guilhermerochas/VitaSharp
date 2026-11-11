@@ -1,5 +1,5 @@
 # HLE status per firmware library, written by VitaSharp.Desktop hle-coverage --status (build/hle-status.ps1)
-# firmware=3.74 games=52 vitasdk=6957/7006 vitasdk_default=401 vitasdk_lle=201
+# firmware=3.74 games=52 vitasdk=6991/7006 vitasdk_default=401 vitasdk_lle=235
 library	module	total	impl	games	games_impl	system	system_impl	default	games_default	system_default	lle
 SceAACPromoter	vs0:vsh/common/mms/AACPromoter.suprx	4	1	0	0	0	0	0	0	0	0
 SceAVConfig	os0:kd/bootimage.skprx/SceAVConfig	34	34	0	0	31	31	0	0	0	0
@@ -135,7 +135,7 @@ SceLibVitaJSExtObj	vs0:data/external/webcore/vita_jsextobj.suprx	10	0	0	0	7	0	0	
 SceLibXml	vs0:sys/external/libSceXml.suprx	186	186	0	0	19	19	0	0	0	0
 SceLibc	vs0:sys/external/libc.suprx	350	350	191	191	4	4	0	0	0	0
 SceLibm	vs0:sys/external/libc.suprx	201	201	64	64	7	7	0	0	0	0
-SceLibstdcxx	vs0:sys/external/libc.suprx	522	520	85	85	3	3	0	0	0	0
+SceLibstdcxx	vs0:sys/external/libc.suprx	522	522	85	85	3	3	0	0	0	2
 SceLiveAreaUtil	vs0:sys/external/livearea_util.suprx	14	14	6	6	6	6	0	0	0	0
 SceLiveAreaUtilBgApp	vs0:sys/external/livearea_util.suprx	1	1	0	0	0	0	0	0	0	0
 SceLsdb	vs0:vsh/shell/livespace_db.suprx	199	199	0	0	162	162	0	0	0	136

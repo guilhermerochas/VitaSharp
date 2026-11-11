@@ -13,17 +13,18 @@ How many of the functions that the PS Vita firmware 3.74 exports to user code (t
 |---|---:|---:|---:|---:|---:|---:|
 | Games imports | 2,048 | 2,048 | 0 | 0 | 2,049 | 99.9% |
 | System imports | 3,785 | 3,576 | 209 | 0 | 7,373 | 51.3% |
-| General | 3,595 | 3,405 | 190 | 0 | 9,984 | 36% |
-| All firmware 3.74 exports | 9,428 | 8,893 | 399 | 136 | 19,406 | 48.5% |
-| VitaSDK user functions | 6,957 | 6,355 | 401 | 201 | 7,006 | 99.3% |
+| General | 3,597 | 3,407 | 190 | 0 | 9,984 | 36% |
+| All firmware 3.74 exports | 9,430 | 8,893 | 399 | 138 | 19,406 | 48.5% |
+| VitaSDK user functions | 6,991 | 6,355 | 401 | 235 | 7,006 | 99.7% |
 
 ## Libraries provided by LLE
 
 | Library | Module | LLE functions |
 |---|---|---:|
+| SceLibstdcxx | `vs0:sys/external/libc.suprx` | 2 |
 | SceLsdb | `vs0:vsh/shell/livespace_db.suprx` | 136 |
 
-VitaSDK user functions provided by LLE (the modules the installed games ship in app0:sce_module): 234.
+VitaSDK user functions provided by LLE (the modules the installed games ship in app0:sce_module): 235.
 
 ## Per library (308)
 
@@ -163,7 +164,7 @@ VitaSDK user functions provided by LLE (the modules the installed games ship in 
 | SceLibXml | `vs0:sys/external/libSceXml.suprx` | 186 / 186 | 100% | - | - | 19 / 19 |
 | SceLibc | `vs0:sys/external/libc.suprx` | 350 / 350 | 100% | - | 191 / 191 | 4 / 4 |
 | SceLibm | `vs0:sys/external/libc.suprx` | 201 / 201 | 100% | - | 64 / 64 | 7 / 7 |
-| SceLibstdcxx | `vs0:sys/external/libc.suprx` | 520 / 522 | 99.6% | - | 85 / 85 | 3 / 3 |
+| SceLibstdcxx | `vs0:sys/external/libc.suprx` | 522 / 522 | 100% | - | 85 / 85 | 3 / 3 |
 | SceLiveAreaUtil | `vs0:sys/external/livearea_util.suprx` | 14 / 14 | 100% | - | 6 / 6 | 6 / 6 |
 | SceLiveAreaUtilBgApp | `vs0:sys/external/livearea_util.suprx` | 1 / 1 | 100% | - | - | - |
 | SceLsdb | `vs0:vsh/shell/livespace_db.suprx` | 199 / 199 | 100% | - | - | 162 / 162 |
