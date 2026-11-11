@@ -209,12 +209,13 @@ public static class SoftwareVulkan
     }
 }
 
-/// <summary>[Fact] skipped when no software Vulkan driver is installed.</summary>
+/// <summary>[Fact] skipped when no software Vulkan driver is installed, or shaderc (which the renderer compiles every
+/// shader with) cannot be loaded.</summary>
 public sealed class SoftwareVulkanFactAttribute : FactAttribute
 {
     public SoftwareVulkanFactAttribute()
     {
-        if (SoftwareVulkan.SkipReason is { } r)
+        if ((SoftwareVulkan.SkipReason ?? ShadercAvailability.SkipReason) is { } r)
         {
             Skip = r;
         }
