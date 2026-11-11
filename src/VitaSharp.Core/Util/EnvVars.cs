@@ -325,8 +325,8 @@ public static class EnvVars
     /// times (Gpu/AdaptiveEarlySignal.cs: tried while the game misses its cadence and waits on the display queue, kept
     /// only when frames got faster). Default 0.</summary>
     public const string DisplayEarlySignal = "VITASHARP_DISPLAY_EARLY_SIGNAL";
-    /// <summary>1 (A/B): a scene's GPU work waits until the display released its colour buffer (fragment sync object);
-    /// trace also logs the waits. Default off.</summary>
+    /// <summary>0 (A/B) turns off the wait of a scene's GPU work until the display released its colour buffer (fragment
+    /// sync object), as on the hardware; trace also logs the waits. Default on.</summary>
     public const string DisplaySync = "VITASHARP_DISPLAY_SYNC";
     /// <summary>1 (A/B): sceGxmDisplayQueueAddEntry keeps at most displayQueueMaxPendingCount entries queued or flipping.</summary>
     public const string DisplayQueueStrict = "VITASHARP_DISPLAY_QUEUE_STRICT";
