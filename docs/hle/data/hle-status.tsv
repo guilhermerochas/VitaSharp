@@ -1,12 +1,12 @@
 # HLE status per firmware library, written by VitaSharp.Desktop hle-coverage --status (build/hle-status.ps1)
-# firmware=3.74 games=52 vitasdk=6988/7006 vitasdk_default=402 vitasdk_lle=234
+# firmware=3.74 games=52 vitasdk=6990/7006 vitasdk_default=402 vitasdk_lle=234
 library	module	total	impl	games	games_impl	system	system_impl	default	games_default	system_default	lle
 SceAACPromoter	vs0:vsh/common/mms/AACPromoter.suprx	4	1	0	0	0	0	0	0	0	0
 SceAVConfig	os0:kd/bootimage.skprx/SceAVConfig	34	34	0	0	31	31	0	0	0	0
 SceAacenc	vs0:sys/external/libnaac.suprx	12	0	0	0	0	0	0	0	0	0
 SceAacencInternal	vs0:sys/external/libnaac.suprx	12	0	0	0	6	0	0	0	0	0
 SceActivityDb	vs0:sys/external/activity_db.suprx	78	0	0	0	57	0	0	0	0	0
-SceAppMgr	os0:kd/bootimage.skprx/SceAppMgr	191	187	3	3	174	174	0	0	0	0
+SceAppMgr	os0:kd/bootimage.skprx/SceAppMgr	191	189	3	3	174	174	0	0	0	0
 SceAppMgrUser	os0:us/driver_us.suprx	128	128	5	5	103	103	0	0	0	0
 SceAppSettings	vs0:vsh/common/app_settings.suprx	24	3	0	0	15	3	0	0	0	0
 SceAppUtil	vs0:sys/external/apputil.suprx	56	46	32	32	9	1	0	0	0	0

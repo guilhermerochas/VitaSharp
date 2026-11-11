@@ -13,9 +13,9 @@ How many of the functions that the PS Vita firmware 3.74 exports to user code (t
 |---|---:|---:|---:|---:|---:|---:|
 | Games imports | 1,594 | 1,594 | 0 | 0 | 1,594 | 100% |
 | System imports | 3,906 | 3,696 | 210 | 0 | 7,507 | 52% |
-| General | 3,902 | 3,712 | 190 | 0 | 10,305 | 37.8% |
-| All firmware 3.74 exports | 9,402 | 8,866 | 400 | 136 | 19,406 | 48.4% |
-| VitaSDK user functions | 6,988 | 6,352 | 402 | 234 | 7,006 | 99.7% |
+| General | 3,904 | 3,714 | 190 | 0 | 10,305 | 37.8% |
+| All firmware 3.74 exports | 9,404 | 8,868 | 400 | 136 | 19,406 | 48.4% |
+| VitaSDK user functions | 6,990 | 6,354 | 402 | 234 | 7,006 | 99.7% |
 
 ## Libraries provided by LLE
 
@@ -35,7 +35,7 @@ How many of the functions that the PS Vita firmware 3.74 exports to user code (t
 | SceAacenc | `vs0:sys/external/libnaac.suprx` | 0 / 12 | 0% | - | - | - |
 | SceAacencInternal | `vs0:sys/external/libnaac.suprx` | 0 / 12 | 0% | - | - | 0 / 6 |
 | SceActivityDb | `vs0:sys/external/activity_db.suprx` | 0 / 78 | 0% | - | - | 0 / 57 |
-| SceAppMgr | `os0:kd/bootimage.skprx/SceAppMgr` | 187 / 191 | 97.9% | - | 3 / 3 | 174 / 174 |
+| SceAppMgr | `os0:kd/bootimage.skprx/SceAppMgr` | 189 / 191 | 98.9% | - | 3 / 3 | 174 / 174 |
 | SceAppMgrUser | `os0:us/driver_us.suprx` | 128 / 128 | 100% | - | 5 / 5 | 103 / 103 |
 | SceAppSettings | `vs0:vsh/common/app_settings.suprx` | 3 / 24 | 12.5% | - | - | 3 / 15 |
 | SceAppUtil | `vs0:sys/external/apputil.suprx` | 46 / 56 | 82.1% | - | 32 / 32 | 1 / 9 |
