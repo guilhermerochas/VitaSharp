@@ -1,4 +1,4 @@
-<!-- pair: README.md sha256=b27b484a8941edbff534a547a844e7bcc6b71feb220b333f48e58ebf4cca4cc6 -->
+<!-- pair: README.md sha256=6c31942f6969a1731dd1394ebd8a5ff8edd9da4b8e3486f644e4396c4f1ab909 -->
 <div align="center">
 
 [English](README.md) | **Português**
@@ -235,6 +235,28 @@ Todo script vem em par `.ps1` + `.sh`, e o CI confere isso. Os textos da interfa
 `src/VitaSharp.Core/Localization` (`Texts.resx` em inglês, `Texts.pt-BR.resx`); a documentação externa também vem nos
 dois idiomas (`README.md` + `README.pt-BR.md`, conferidos pelo `ExternalDocPairsTests`). Para contribuir com funções do
 sistema, veja as especificações em [`docs/hle`](docs/hle/README.md).
+
+### Requisitos dos testes
+
+O que o `dotnet test tests/VitaSharp.Tests` precisa em cada sistema; um teste sem o seu requisito é pulado e diz o porquê.
+
+| | Windows | Linux | macOS |
+|---|---|---|---|
+| SDK | .NET 10 SDK | .NET 10 SDK | .NET 10 SDK |
+| Dispositivo Vulkan (testes do renderizador, dos dumps da GPU e dos jogos rodando) | o SwiftShader que vem com o Microsoft Edge ou o Google Chrome (achado sozinho) | o lavapipe do Mesa: `sudo apt install mesa-vulkan-drivers libvulkan1` (Fedora: `mesa-vulkan-drivers vulkan-loader`) | o MoltenVK: o Vulkan SDK da LunarG, ou `brew install molten-vk vulkan-loader` |
+| FFmpeg (testes de decodificação de vídeo e áudio) | baixado pelo primeiro build | baixado pelo primeiro build | o do sistema: `brew install ffmpeg` |
+
+- Qualquer sistema: `VK_DRIVER_FILES` (ou `VK_ICD_FILENAMES`) com o manifesto ICD de um SwiftShader ou Mesa baixado é
+  usado no lugar.
+- Firmware: sem ele os testes dos módulos reais do firmware (`libSceJson`, `libSceXml`, `libpaf`, a instalação do
+  arquivo de atualização) são pulados. `VITASHARP_FIRMWARE_PUP` aponta um `PSVUPDAT.PUP`, `VITASHARP_FIRMWARE_DIR` uma
+  pasta `vs0` ou de dados do Vita3K; os testes do compilador do Piglet precisam do `libshacccg.suprx` em `ur0:data`.
+- Os testes nunca usam a sua pasta de dados: cada um cria uma pasta temporária (`VITASHARP_DATA` nos processos filhos);
+  os testes de jogo rodando iniciam um executável pequeno que os próprios testes escrevem.
+- Opcional: as camadas de validação do Vulkan SDK da LunarG rodam as cargas do renderizador sob validação com
+  `dotnet test tests/VitaSharp.Tests --filter Category=Slow` (`RendererValidationTests`; pulado sem a camada).
+- O teste de janela abre uma janela oculta (`VITASHARP_HIDDEN_WINDOW=1`): no Linux precisa de um display (`DISPLAY`), no
+  Windows do carregador Vulkan do sistema (`vulkan-1.dll`, instalado com qualquer driver de GPU).
 
 ## Releases
 

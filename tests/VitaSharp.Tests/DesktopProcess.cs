@@ -31,12 +31,8 @@ public static class DesktopProcess
         // no window on screen, no audio device, no network, nothing from the user's own configuration
         psi.Environment[VitaSharp.Core.Util.EnvVars.HiddenWindow] = "1";
         psi.Environment.Remove(VitaSharp.Core.Util.EnvVars.Data);
-        if (softwareVulkan && SoftwareVulkan.Driver is { } driver)
-        {
-            if (OperatingSystem.IsWindows() && !systemLoader) psi.Environment[VitaSharp.Core.Util.EnvVars.VulkanLib] = driver;
-            else if (OperatingSystem.IsWindows()) { string icd = Path.ChangeExtension(driver, null) + "_icd.json"; psi.Environment["VK_DRIVER_FILES"] = icd; psi.Environment["VK_ICD_FILENAMES"] = icd; }
-            else { psi.Environment["VK_DRIVER_FILES"] = driver; psi.Environment["VK_ICD_FILENAMES"] = driver; }
-        }
+        if (softwareVulkan)
+            foreach (var (name, value) in SoftwareVulkan.ChildEnvironment(systemLoader)) psi.Environment[name] = value;
         if (env != null) foreach (var (k, v) in env) psi.Environment[k] = v;
         using var p = Process.Start(psi)!;
         var output = new System.Text.StringBuilder();

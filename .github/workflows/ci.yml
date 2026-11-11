@@ -50,6 +50,15 @@ jobs:
           path: third_party/ffmpeg
           key: ffmpeg-${{ runner.os }}-${{ runner.arch }}-${{ hashFiles('build/FFmpeg.targets') }}
 
+      # a Vulkan device for the renderer tests (tests/VitaSharp.Tests/SoftwareVulkan.cs): Mesa's lavapipe on Linux,
+      # MoltenVK on macOS; the Windows runner's Microsoft Edge ships SwiftShader
+      - name: Install a software Vulkan device (Linux)
+        if: runner.os == 'Linux'
+        run: sudo apt-get update && sudo apt-get install -y mesa-vulkan-drivers libvulkan1
+      - name: Install MoltenVK (macOS)
+        if: runner.os == 'macOS'
+        run: brew install molten-vk vulkan-loader
+
       - name: Restore
         run: dotnet restore VitaSharp.sln
 
