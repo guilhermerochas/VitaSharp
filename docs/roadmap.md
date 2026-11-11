@@ -1587,6 +1587,13 @@ Lista de itens futuros do VitaSharp. Marque `[x]` quando um item for concluído.
 
 ## Bugs em aberto
 
+- [ ] Varredura de NaN/Inf do modo de depuração não acusa uma superfície F16x4 cheia de NaN escrita pela CPU (agente T2,
+  test/apps-2, 11/11/2026): no teste `RendererPathsTests` (SwiftShader), uma superfície F16F16F16F16 preenchida com
+  meias-palavras 0x7E00 (marcadas sujas) e uma cena com um desenho não gera nenhuma linha `[nan]` nem a anomalia "nan";
+  as varreduras rodam (`_nanScans` > 0). Ver se a cena carrega a superfície da memória na imagem do alvo antes da
+  varredura (sem desenho visível do workload de teste: o programa de fragmento dele não tem código) ou se a conversão
+  perde o NaN. O teste atual só cobre a varredura de uma superfície limpa
+
 - [x] Música da LiveArea / tela inicial para "do nada" (relato do usuário, 10/11/2026, captura
   `shell_20261110_223155_tudo`, na LiveArea do LittleBigPlanet): o que o Vita toca ali é a música de fundo do sistema,
   `pd0:data/systembgm/home.at9` (registro `/CONFIG/SHELL/bgm` = 1; 162 s, em laço), pelo player do shell

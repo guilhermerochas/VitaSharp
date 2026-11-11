@@ -27,8 +27,10 @@ public sealed class RendererTextureTests(GuestMemoryFixture fx)
         readonly Gxm _g;
         public uint Ctx, Rt, Color, Data, Vp, Fp, Verts, Idx;
         public readonly List<uint> Textures = [];
+        /// <summary>The format of each of <see cref="Textures"/>.</summary>
+        public readonly List<TexBase> TextureFormats = [];
 
-        public Workload(HleHarness h, ushort multisample = 0)
+        public Workload(HleHarness h, ushort multisample = 0, uint colorFormat = 0, uint scaleMode = 0)
         {
             _h = h;
             _g = h.Module<Gxm>();
@@ -45,9 +47,9 @@ public sealed class RendererTextureTests(GuestMemoryFixture fx)
             GuestMemory.Write(rp + 4, (ushort)W); GuestMemory.Write(rp + 6, (ushort)H); GuestMemory.Write(rp + 8, (ushort)1); GuestMemory.Write(rp + 10, multisample);
             Assert.Equal(0, Call(_g, "sceGxmCreateRenderTarget", rp, new Ptr<uint>(o)));
             Rt = GuestMemory.R32(o);
-            Data = h.Alloc(W * H * 4);
+            Data = h.Alloc(W * H * 8); // room for 64-bit colour formats
             Color = h.Alloc(0x40);
-            Assert.Equal(0, Call(_g, "sceGxmColorSurfaceInit", Color, 0u, 0u, 0u, 0u, (uint)W, (uint)H, (uint)W, Data));
+            Assert.Equal(0, Call(_g, "sceGxmColorSurfaceInit", Color, colorFormat, 0u, scaleMode, 0u, (uint)W, (uint)H, (uint)W, Data));
 
             uint pp = h.Alloc(0x40);
             Assert.Equal(0, Call(_g, "sceGxmShaderPatcherCreate", pp, new Ptr<uint>(o)));
@@ -82,6 +84,7 @@ public sealed class RendererTextureTests(GuestMemoryFixture fx)
                     Call(_g, "sceGxmTextureSetMinFilter", t, 1u);
                     Call(_g, "sceGxmTextureSetMagFilter", t, 1u);
                     Textures.Add(t);
+                    TextureFormats.Add(f);
                 }
         }
 
@@ -94,6 +97,8 @@ public sealed class RendererTextureTests(GuestMemoryFixture fx)
                 Assert.Equal(0, Call(_g, "sceGxmBeginScene", Ctx, 0u, Rt, 0u, 0u, 0u, Color, 0u));
                 Invoke(_g, "sceGxmSetVertexProgram", Ctx, Vp);
                 Invoke(_g, "sceGxmSetFragmentProgram", Ctx, Fp);
+                Invoke(_g, "sceGxmSetFrontDepthFunc", Ctx, 0x00E00000u); // ALWAYS
+                Invoke(_g, "sceGxmSetCullMode", Ctx, 0u);
                 Assert.Equal(0, Call(_g, "sceGxmSetVertexStream", Ctx, 0u, Verts));
                 foreach (var t in Textures.Skip(start).Take(group))
                 {
