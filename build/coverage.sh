@@ -7,8 +7,9 @@
 #   --gate: fail (exit 3) when the overall line coverage or an assembly's is below its minimum in build/coverage-gate.txt
 #           (the CI coverage job). Raise the minimums when a measurement passes them; never lower them.
 #   env: REPORTGENERATOR (a reportgenerator executable to use; otherwise installed with --tool-path under <out>/tools).
-# Measured: the src projects the test project references (Core, Mobile.Core, Renderer.Vulkan). Desktop and Android
-# are not referenced by the tests, so they are not in the report. The renderer's tests need a software Vulkan device
+# Measured: the src projects the test project references (Core, Mobile.Core, Renderer.Vulkan, Desktop), without the
+# code third-party source generators write (System.Text.Json, LibraryImport). Android needs its workload and is not
+# built by the tests, so it is not in the report. The renderer's tests need a software Vulkan device
 # (SwiftShader from Edge/Chrome, or Mesa lavapipe) and are skipped without one.
 set -uo pipefail
 root="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
@@ -27,7 +28,8 @@ dotnet test "$root/tests/VitaSharp.Tests" -c Release --filter 'Category!=Slow&Ca
   -- RunConfiguration.MaxCpuCount=2 \
   'DataCollectionRunSettings.DataCollectors.DataCollector.Configuration.Format=cobertura' \
   'DataCollectionRunSettings.DataCollectors.DataCollector.Configuration.Include=[VitaSharp.*]*' \
-  'DataCollectionRunSettings.DataCollectors.DataCollector.Configuration.Exclude=[VitaSharp.Tests]*'
+  'DataCollectionRunSettings.DataCollectors.DataCollector.Configuration.Exclude=[VitaSharp.Tests]*' \
+  'DataCollectionRunSettings.DataCollectors.DataCollector.Configuration.ExcludeByFile=**/System.Text.Json.SourceGeneration/**/*.cs,**/Microsoft.Interop.LibraryImportGenerator/**/*.cs'
 test_exit=$?
 
 set -e

@@ -3,6 +3,8 @@
   <ItemGroup>
     <ProjectReference Include="..\VitaSharp.Core\VitaSharp.Core.csproj" />
     <ProjectReference Include="..\VitaSharp.Renderer.Vulkan\VitaSharp.Renderer.Vulkan.csproj" />
+    <!-- tests/VitaSharp.Tests: the front-end logic outside the UI (scripted input, launcher settings) -->
+    <InternalsVisibleTo Include="VitaSharp.Tests" />
   </ItemGroup>
 
   <ItemGroup>

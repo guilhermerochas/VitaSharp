@@ -1375,6 +1375,16 @@ Lista de itens futuros do VitaSharp. Marque `[x]` quando um item for concluído.
 
 ## Bugs em aberto
 
+- [ ] Tradutor de shaders: GLSL que não compila em dois casos (agente de testes, 11/11/2026; vai para o dia de melhorias:
+  mexe em todo shader, precisa subir a versão do gerador e replay-gpu --compare em todos os dumps). Achado pelo
+  ShaderFuzzTests (os 32 opcodes USSE com operandos pseudoaleatórios, vertex e fragment, compilados com shaderc): 35 de
+  768 programas. (1) dFdx/dFdy emitidos num vertex shader ("no matching overloaded function"): vs 0x0DBA30DF384131F5,
+  0x0D3182821B81332C, 0x11946D4F2B33455D, 0x10149DB94DB5476E, 0x141042446720CD6D. Conferir no hardware o que o USSE
+  faz com derivada num vertex program (provavelmente 0) e emitir isso. (2) índice constante além do array de
+  registradores declarado ("array index out of range"): 0x0868574A028E3EB4 (índice 19), 0x1A3B247670E1028A (5),
+  0x31AC7E864902C658 (143), 0x3C5942B26370B3DD (27), 0x42CA9BAA3693FE7A (51), em vs e fs. O array deve ter o tamanho do
+  maior índice que alguma instrução pode endereçar, incluindo as formas indexadas/relativas; hoje o draw inteiro cai.
+  Teste: ShaderFuzzTests.EveryTranslationCompiles (Skip até a correção; tirar o Skip junto).
 - [ ] Tempo de processo menor que um delay em volta dele (agente de testes, 10/11/2026): dois sceKernelGetProcessTimeWide
   em volta de sceKernelDelayThread(2000) num thread guest mediram 1839 us; no Vita é sempre >= 2 ms. Suspeita:
   GuestClock.Observed é monotônico entre threads (_lastObserved) e um thread com ritmo de CPU (que corre até ~1 ms à
