@@ -1131,7 +1131,7 @@ public sealed class Emulator : IDisposable
         // kernel modules first (each started as it loads, as the plugin loader of the homebrew environment starts
         // them): the user modules may import what they export
         var results = LoadKernelPlugins();
-        results.AddRange(LoadUserPlugins(TitleId, startNow: false));
+        results.AddRange(LoadUserPlugins(TitleId));
         return results;
     }
 
@@ -1198,10 +1198,10 @@ public sealed class Emulator : IDisposable
 
     /// <summary>
     /// The user modules of the plugin configuration for <paramref name="titleId"/> (<c>*ALL</c> and <c>*TITLEID</c>):
-    /// loaded into this process; they start with the process, or at once with <paramref name="startNow"/> (a plugin
-    /// load asked for by kernel code while the process runs). Returns what happened to each.
+    /// loaded into this process; they start with the process. Returns what happened to each.
+
     /// </summary>
-    internal List<string> LoadUserPlugins(string titleId, bool startNow)
+    internal List<string> LoadUserPlugins(string titleId)
     {
         var results = new List<string>();
         foreach (var (section, path) in ReadPluginConfig())
@@ -1212,14 +1212,6 @@ public sealed class Emulator : IDisposable
             }
 
             string result = LoadPlugin(path, kernel: false);
-            if (startNow && Kernel.Modules.Values.FirstOrDefault(m => !m.IsKernel && m.Path == path && !m.Started) is { } loaded)
-            {
-                loaded.Started = true;
-                if (loaded.StartEntry != 0)
-                {
-                    RunOnNewThread($"start:{loaded.Name}", loaded.StartEntry);
-                }
-            }
 
             Log.Info($"plugin {path}: {result}");
             results.Add($"{path}: {result}");
@@ -1268,7 +1260,8 @@ public sealed class Emulator : IDisposable
             // NO_RESIDENT: the module did its work and asks to go; FAILED (or a crash): it is unloaded too
             UnloadModule(m);
             return status == ModuleStartNoResident ? $"started and unloaded ({m.Name}: module_start asked not to stay)"
-                : $"not started: module_start of {m.Name} returned 0x{status:X}";
+                : $"not started: module_start of {m.Name} returned 0x{status:X}, unloaded";
+
         }
 
         return $"loaded and started ({m.Name})";

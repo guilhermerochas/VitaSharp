@@ -1,4 +1,4 @@
-<!-- pair: compatibility.md sha256=d18c5d2f26e76d8e6c8744be7670ad54e1ca3f5351978f62bcf7df1e0ecc463c -->
+<!-- pair: compatibility.md sha256=c35b030a77f0e92c172a4aef0f037d749c14831f5abeccd50c0496309787a198 -->
 # Compatibilidade
 
 [English](compatibility.md) | **Português**
@@ -10,7 +10,6 @@ Jogos com que o VitaSharp foi testado; de volta ao [README](../README.pt-BR.md).
 <table>
 <tr>
 <td><img src="assets/screenshots/lbp.webp" alt="LittleBigPlanet PS Vita" width="300"><br><sub><b>LittleBigPlanet</b>, introdução do caderno</sub></td>
-<td><img src="assets/screenshots/sonic-mania.webp" alt="Sonic Mania" width="300"><br><sub><b>Sonic Mania</b> (port homebrew), gameplay</sub></td>
 <td><img src="assets/screenshots/ninja-gaiden-sigma.webp" alt="Ninja Gaiden Sigma Plus" width="300"><br><sub><b>Ninja Gaiden Σ Plus</b>, gameplay</sub></td>
 </tr>
 <tr>
@@ -46,6 +45,7 @@ uma promessa, e o ponto mais distante a que um cenário chega não é o fim do j
 | **No jogo** | Gameplay alcançado e desenhado certo na parte testada |
 | **Menus** | Tela de título, menus ou abertura funcionam; o cenário ainda não chega ao gameplay |
 | **Trava** | Para antes da primeira tela |
+| **Não roda** | Precisa de algo que o VitaSharp não fornece (veja as notas) |
 
 | Jogo | Title ID | Estado | Notas | Cenário |
 | --- | --- | --- | --- | --- |
@@ -80,7 +80,7 @@ uma promessa, e o ponto mais distante a que um cenário chega não é o fim do j
 | Silent Hill: Book of Memories | PCSE00011 | No jogo | Criação de personagem e cena de introdução | `shbom_boot` |
 | Silverio Vendetta -Verse of Orpheus- | PCSG00845 | No jogo | Visual novel: título, prólogo e texto da história (precisa das fontes do firmware) | `verse_orpheus_boot` |
 | Skullgirls 2nd Encore | PCSE00606 | No jogo | Lutas | `skullgirls_boot` |
-| Sonic Mania (port homebrew) | MANIA0001 | No jogo | Gameplay a 60 fps; menus a 50-54 fps | `mania_boot` |
+| Sonic Mania (port homebrew) | MANIA0001 | Não roda | Precisa do taiHEN, que não consegue iniciar no VitaSharp (o início dele precisa de patches nas checagens de assinatura e de DRM do firmware): veja [plugins](notes/plugins.pt-BR.md). Chegava ao gameplay a 60 fps enquanto o emulador tinha um substituto próprio do taiHEN, removido para só rodarem módulos de verdade | — |
 | The Deer God | PCSB01070 | Menus | Menus e o texto de introdução; quadros sem ritmo (214-348 fps) | `deergod` |
 | Tearaway (Trial & Unlock) | PCSF00476 | No jogo | Perfil novo até o primeiro tutorial de papel | `tearaway_tutorial` |
 | Unit 13 | PCSF00034 | No jogo | Primeira missão com HUD | `unit13_boot` |

@@ -859,8 +859,8 @@ Lista de itens futuros do VitaSharp. Marque `[x]` quando um item for concluído.
   contornar DRM; os jogos comprados rodam pela licença real do usuário. Validar com uma lista dos plugins públicos mais
   usados (um teste por exportação e cada plugin rodando).
   Parte feita (11/11/2026, kern1): o ambiente de kernel (plugins `*KERNEL` com o código original, exportações de
-  kernel do firmware em HLE, separação kernel/usuário no linker); kubridge e fd_fix rodando, Dead Space no gameplay com o
-  kubridge real. Detalhes, limites e o plano do resto no item "O emulador é genérico" abaixo e em `docs/notes/plugins.md`.
+  kernel do firmware em HLE, separação kernel/usuário no linker); o taiHEN real carrega e falha sozinho (hooks de DRM),
+  então os plugins que dependem dele (kubridge, fd_fix) não iniciam. Detalhes, limites e o plano do resto no item "O emulador é genérico" abaixo e em `docs/notes/plugins.md`.
 - [ ] Temas do Vita (pedido do usuário, 10/11/2026): instalar e usar temas como no aparelho. (1) Instalação: `.pkg` de
   tema da loja (content type de tema; o agente de PKG já detecta o tipo) com a licença, extraído para `ux0:theme/<id>`
   com o `theme.xml` e as imagens/sons, e registrado como o firmware faz (banco do shell / app.db, lista de temas das
@@ -1472,8 +1472,8 @@ Lista de itens futuros do VitaSharp. Marque `[x]` quando um item for concluído.
   - feito: `Hle/LleLibraries.cs` sem tabela fixa: conta como LLE o que um módulo instalado realmente exporta, achado
     varrendo os `app0:sce_module/*.suprx` dos jogos instalados e os módulos do firmware que o carregador dá a todo
     importador (`HleModule.FirmwareForEveryImporter`); a tabela do `docs/hle/progress.md` sai do TSV medido.
-  - feito (11/11/2026, kern1, feat/kernel-env): ambiente de kernel genérico para os `.skprx` reais (kubridge e fd_fix
-    rodam com o código original; ver `docs/notes/plugins.md`). Importações lidas das tabelas dos módulos: taihen.skprx 60,
+  - feito (11/11/2026, kern1, feat/kernel-env): ambiente de kernel genérico para os `.skprx` reais (carregados e
+    iniciados com o código original; ver `docs/notes/plugins.md`). Importações lidas das tabelas dos módulos: taihen.skprx 60,
     kubridge.skprx 33, fd_fix.skprx 2. (M1) o carregador acima. (M2) HLE das exportações de kernel do firmware que eles
     importam, com a semântica e os códigos de erro do firmware (tabela de erros do SDK; SceSysmem 3.74 decompilado só
     para estudo): `SysmemKernel` (memblocks de kernel e de usuário com vbase/alinhamento/pid, heaps, classes e objetos
@@ -1482,7 +1482,7 @@ Lista de itens futuros do VitaSharp. Marque `[x]` quando um item for concluído.
     outro processo, handlers de eventos de processo, cadeia de handlers de exceção, threads de kernel, RunWithStack,
     ACMgr, clock), `ModulemgrKernel` (load/start/stop/unload de kernel e ForPid, info/lista/bloco de controle dos
     módulos) e os apelidos de kernel das funções de usuário (mutex, threads, Sysclib, Io, Ctrl); um teste por exportação
-    (`KernelHleTests`, `KernelModulemgrTaihenTests`). Região de kernel: os módulos de kernel vão para 0x40000000-0x50000000
+    (`KernelExportsTests`, `KernelModulemgrTests`). Região de kernel: os módulos de kernel vão para 0x40000000-0x50000000
     (mapeada em todo espaço de endereço), donos do processo do kernel (0x10005); threads de kernel no escalonador comum
     (`GuestThread.KernelMode`: o que alocam é do kernel, `ksceKernelGetProcessId` devolve o kernel). Interrupções:
     só estado (não há controlador de interrupções); exceções: os handlers ficam registrados, nenhuma é entregue (a falha
@@ -1494,40 +1494,38 @@ Lista de itens futuros do VitaSharp. Marque `[x]` quando um item for concluído.
     traduzidos no interpretador e no backend nativo (este chama o interpretador para essas instruções), como os
     recompiladores de referência (Dynarmic, Ryujinx) fazem; as escritas sozinhas não derrubam código (no hardware o lado
     de instrução só vê o código novo depois da manutenção), e os caminhos de HLE que escrevem código já invalidam
-    (`ksceKernelCpuIcache*`, `sceKernelSyncVMDomain`, injeções e hooks do taiHEN, cópia para código de usuário, carga de
-    módulo). Teste: `SelfModifyingCodeTests` (patch sintético + execução, interpretador e nativo). Detecção de escrita em
+    (`ksceKernelCpuIcache*`, `sceKernelSyncVMDomain`, cópia para código de usuário, carga de módulo). Teste: `SelfModifyingCodeTests` (patch sintético + execução, interpretador e nativo). Detecção de escrita em
     página de código (proteção de página, estilo Dolphin) não feita: custo em todo store e nenhum caso conhecido que
     precise; plano se aparecer um: marcar as páginas com código traduzido e usar o byte de página suja que todo store já
     escreve (`DirtyPages`) para derrubar os blocos dessas páginas na primeira escrita. (M5) o taiHEN de verdade NÃO roda: o `module_start` dele (fonte aberta, `hen.c`
     `hen_add_patches`) só dá certo depois de 11 hooks nos módulos do firmware, vários deles contorno de DRM/assinatura
     (SceNpDrm rif_check, SceSblAIMgr package_check, SceSblAuthMgr parse/decrypt), que não fazemos funcionar nem fingimos
-    (decisão do lead). Listado no `config.txt`, ele carrega, o início falha (0x2) e é descarregado. Por isso
-    `Hle/Modules/Taihen.cs` (+ `Taihen.Kernel.cs`, que agora também serve `taihenForKernel` e `taihenModuleUtils`, e as
-    cargas de kernel da API de usuário pelo carregador de kernel de verdade) fica como a única HLE de módulo que não é do
-    firmware, com esse motivo. `Hle/Modules/Kubridge.cs` saiu: o Dead Space chega ao gameplay com o kubridge.skprx real
-    (headless, pasta de teste com o config.txt `*KERNEL ur0:tai/kubridge.skprx, ur0:tai/fd_fix.skprx`: logo da EA,
-    menu, perfil 1, dica de carregamento, Isaac no corredor; `<scratchpad>/kern1/data/tests/deadspace_boot/sheet.png`)
-    e o Sonic Mania até Green Hill com a API do taiHEN (`.../tests/mania_boot/sheet.png`). **O usuário precisa criar
-    `fs/ur0/tai/config.txt` listando o kubridge** (a pasta de dados dele não tem um) para o Dead Space continuar rodando.
+    (decisão do lead). **Decisão final do usuário (11/11/2026): emulador totalmente genérico, nenhuma HLE de módulo de
+    terceiro.** `Hle/Modules/Kubridge.cs` e `Hle/Modules/Taihen.cs` (+ `Taihen.Snapshot.cs`) saíram; o `Security`
+    (SceSblDmac5Mgr/RNG, do firmware) que morava no `Taihen.cs` foi para `Security.cs`. O taihen.skprx real continua
+    reconhecido e carregado pelo caminho genérico (config.txt, região de kernel, importações ligadas às exportações de
+    kernel do firmware, o `module_start` dele roda) e termina com o próprio START_FAILED, logado como
+    `module_start of taihen returned 0x2, unloaded` (`PluginLoaderTests.RealTaihenRunsItsModuleStartAndFailsOnItsOwn`,
+    pulado sem o arquivo). Consequência aceita: tudo o que precisa do taiHEN não roda, como num Vita sem ele: kubridge e
+    fd_fix ficam em `not started: no module provides taihenForKernel`, e com isso **o Dead Space (kubridge) e o Sonic
+    Mania (API de usuário do taiHEN) não rodam mais** (a lista de compatibilidade marca o Sonic Mania como "não roda").
+    Validado antes da remoção do taiHEN em HLE: o kubridge real sobre o ambiente de kernel levava o Dead Space ao
+    gameplay (`<scratchpad>/kern1/data/tests/deadspace_boot/sheet.png`), o que mostra que o ambiente de kernel serve o
+    plugin; volta a rodar se um dia o taiHEN puder iniciar sem os hooks de DRM.
     Falta (próximos passos, plano):
     - kernel único do sistema: hoje os módulos de kernel vivem no emulador do processo para o qual foram carregados e saem
       com ele (sem eventos de processo entregues); o certo é um processo de kernel do `VitaSystem` que carrega o
       `*KERNEL` uma vez no boot e manda create/exit/kill aos handlers de `ksceKernelRegisterProcEventHandler`.
-    - **[ ] aberto (regressão conhecida, exportações de kernel genéricas):** desde que o `Kubridge.cs` saiu, o kubridge.skprx
-      real atende `kuKernelMemProtect`/`kuKernelMemReserve`/`kuKernelMemCommit`/`kuKernelMemDecommit` pulando para
+    - **[ ] aberto (exportações de kernel genéricas):** quando o kubridge.skprx real roda (hoje não roda: precisa do
+      taiHEN), ele atende `kuKernelMemProtect`/`kuKernelMemReserve`/`kuKernelMemCommit`/`kuKernelMemDecommit` pulando para
       ponteiros internos do SceSysmem 3.60/3.65 que ele acha por deslocamento (`module_get_offset` no SceSysmem) e que não
-      existem no VitaSharp: um homebrew que use essas funções para de rodar (o Dead Space não usa; o HLE antigo as atendia).
+      existem no VitaSharp: um homebrew que use essas funções para de rodar (o Dead Space não usa; o HLE antigo do
+      kubridge as atendia).
       Caminho genérico a estudar: o SceSysmem do firmware em LLE ou um "SceSysmem" com as funções internas que o kubridge
       chama (AddressSpaceFindMemBlockCBByAddr, MapVirPageCore...) servidas por HLE nos deslocamentos do firmware
       instalado; validar com um homebrew que chame kuKernelMemProtect.
-    - as partes do kubridge que corrigem o SceSysmem por deslocamento (`kuKernelMemProtect`/`MemReserve`/`MemCommit`/
-      `MemDecommit`: ponteiros para funções internas do SceSysmem 3.60/3.65 e patches nas tabelas de página) param o
-      programa (pulam por ponteiros nulos), como num firmware cujos deslocamentos o plugin não conhece; o Dead Space não as
-      usa, mas outros ports do so_loader podem usar: exigiria o SceSysmem do firmware em LLE (o gerenciador de memória
-      inteiro), fora do alcance enquanto a memória é HLE. Avisar se algum homebrew instalado chamar essas funções.
     - entrega de exceções aos handlers de kernel (data/prefetch abort, instrução indefinida) a partir da CPU emulada.
     - heaps de kernel: cada alocação ocupa páginas inteiras (correto, mas gasta memória com muitos objetos pequenos).
-    - o hook do fd_fix (`ksceVopLookup`, VFS do SceIofilemgr) não pega nada: o VFS é HLE.
   Listas de nomes de módulos **do firmware** (conhecimento do firmware, não de um programa; ficam):
   `Emulator.cs:538,637` (preloads do processo pelos bits do process param), `Emulator.cs:668` `OnRequestModules`
   (libpaf só sob pedido), `Emulator.cs:675` `FirmwareServiceClients` (ScePhotoExport é cliente IPC do serviço),

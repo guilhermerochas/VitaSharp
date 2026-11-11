@@ -254,7 +254,7 @@ static class KernelSnapshot
                     break;
                 case Async:
                     o = new IoAsyncOp
- { Name = name, Fd = b.ReadInt32(), Result = b.ReadInt64(), Done = true, Cancelled = b.ReadBool(), Pattern = b.ReadUInt32(), UserData = b.ReadUInt64() };
+                    { Name = name, Fd = b.ReadInt32(), Result = b.ReadInt64(), Done = true, Cancelled = b.ReadBool(), Pattern = b.ReadUInt32(), UserData = b.ReadUInt64() };
                     break;
                 case Process or App:
                     o = current.FirstOrDefault(x => x.Uid == uid && (kind == Process ? x is ProcessObject : x is AppObject))

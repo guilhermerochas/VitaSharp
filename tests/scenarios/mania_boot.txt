@@ -1,4 +1,5 @@
-# Sonic Mania (homebrew RSDKv5 port, Game.suprx via libdl): SEGA logo, title, autosave notice, menus, gameplay
+# Sonic Mania (homebrew RSDKv5 port, Game.suprx via libdl): SEGA logo, title, autosave notice, menus, gameplay.
+# Needs taiHEN (its user API), which cannot start in VitaSharp (docs/notes/plugins.md): the port does not run now.
 # The game data lives in ux0:data/Mania (Data.rsdk, Settings.ini, SaveData.bin): a scratch --data root needs a copy of
 # that folder too, or every frame is black and the music silent.
 title=MANIA0001

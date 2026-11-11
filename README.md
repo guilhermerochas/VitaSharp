@@ -1,4 +1,4 @@
-<!-- pair: README.pt-BR.md sha256=c329574464c95afde6b0a4f0895998811751c653ca0f8fb39162b5f19ad6d75d -->
+<!-- pair: README.pt-BR.md sha256=aa4540c0ad318448648c5eb6095e6d662178f5faabe3e7414de670efc1b802c1 -->
 <!-- pair: README.pt-BR.md sha256=d84170c76f0ce78a59188fbba28020ba043c7e4e6e0f6e8e366473773e923507 -->
 <div align="center">
 
@@ -123,10 +123,12 @@ runs the firmware's `shell.self`: initial setup the first time, lock screen, hom
 LiveArea. A game opened from the LiveArea runs as a second process; the PS button (Home key) goes back to the system
 and **Continue** resumes the game. Details and what is missing in [`docs/notes/system-apps.md`](docs/notes/system-apps.md).
 
-**Plugins.** Homebrew that needs a plugin (the so_loader Android ports, such as Dead Space, need `kubridge.skprx`)
-runs with the real one: copy the plugins from your Vita to `fs/ur0/tai` in the data folder and list them in
-`fs/ur0/tai/config.txt` as on the Vita (`*KERNEL` for `.skprx` kernel plugins, `*ALL` / `*TITLEID` for `.suprx` user
-plugins). Without that file no plugin is loaded. Details in [`docs/notes/plugins.md`](docs/notes/plugins.md).
+**Plugins.** VitaSharp loads the plugins of `fs/ur0/tai/config.txt` (copied from your Vita to `fs/ur0/tai`, listed as
+on the Vita: `*KERNEL` for `.skprx` kernel plugins, `*ALL` / `*TITLEID` for `.suprx` user plugins) and runs their own
+code. taiHEN (`taihen.skprx`) loads too, but it cannot start: its start needs patches to the firmware's signature and
+DRM checks, which VitaSharp does not make work. So everything that needs taiHEN does not run, as on a Vita without
+it: plugins built on it (kubridge, fd_fix) and homebrew that calls it or needs such a plugin, among them **Dead Space**
+(through kubridge) and **Sonic Mania**. Details in [`docs/notes/plugins.md`](docs/notes/plugins.md).
 
 **Android.** See [Android](#android).
 

@@ -83,7 +83,7 @@ public sealed class KernelModuleLoaderTests(GuestMemoryFixture fx) : IDisposable
         string noResident = Write("noresident.skprx", Provider(startStatus: 1));
         Config($"*KERNEL\n{failed}\n{noResident}\n");
         var results = _h.Emu.LoadPlugins();
-        Assert.Equal($"{failed}: not started: module_start of TestKernelProvider returned 0x2", results[0]);
+        Assert.Equal($"{failed}: not started: module_start of TestKernelProvider returned 0x2, unloaded", results[0]);
         Assert.StartsWith($"{noResident}: started and unloaded", results[1]);
         Assert.DoesNotContain(_h.Emu.Kernel.Modules.Values, m => m.IsKernel);
         // the exports went with them

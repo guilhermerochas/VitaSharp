@@ -152,18 +152,8 @@ public sealed class Linker(IImportResolver hle)
         }
     }
 
-    /// <summary>Import stubs bound to function <paramref name="nid"/> (any library when <paramref name="libNid"/> is null),
-    /// in binding order (taiHEN import and export hooks patch them).</summary>
-    public List<uint> BoundStubs(uint nid, uint? libNid = null)
-    {
-        lock (_lock)
-        {
-            return _funcBindings.Where(b => b.nid == nid && (libNid == null || b.libNid == libNid)).Select(b => b.stub).ToList();
-        }
-    }
-
-    /// <summary>Import stubs bound to function <paramref name="nid"/> by kernel importers (<paramref name="kernel"/>) or
-    /// by user importers.</summary>
+    /// <summary>Import stubs bound to function <paramref name="nid"/> (any library when <paramref name="libNid"/> is
+    /// null) by kernel importers (<paramref name="kernel"/>) or by user importers, in binding order.</summary>
     public List<uint> BoundStubs(uint nid, uint? libNid, bool kernel)
     {
         lock (_lock)
@@ -215,7 +205,8 @@ public sealed class Linker(IImportResolver hle)
     /// After a save state load: binds again every import stub that is still one of ours for an HLE function (an SVC
     /// stub for its NID, or a jump into <paramref name="isOldGuestCode"/>, the guest-code routines of the saved session),
     /// so the loaded session runs this build's routines (Hle/HleGuestCode) and its SVCs, not the ones of the build that
-    /// saved it. Stubs bound to a module's export and stubs someone else patched (taiHEN hooks) are left alone.
+    /// saved it. Stubs bound to a module's export and stubs guest code patched (hooks) are left alone.
+
     /// Returns the number of stubs rewritten.
     /// </summary>
     public int RebindHleStubs(Func<uint, bool> isOldGuestCode)

@@ -324,7 +324,7 @@ public sealed partial class ModulemgrKernel : HleModule
 
     /// <summary>
     /// ksceKernelGetModuleCB (ksceKernelGetModuleInternal)(modid, void **cb): the module manager's control block of a
-    /// module, in kernel memory. Only the fields kernel plugins read (FW 3.60 layout, as taiHEN reads it) are filled:
+    /// module, in kernel memory. Only the fields kernel plugins read (FW 3.60 layout, as kernel plugins read it) are filled:
     /// +0xC the module's kernel UID, +0x10 its process UID (the same here), +0x1C a pointer to its name, +0x20/+0x24
     /// the export table range, +0x28/+0x2C the import table range, +0x30 the module NID.
     /// </summary>
