@@ -1057,6 +1057,13 @@ public sealed partial class MsgPipe : KernelObject
                 result.TrySet(0);
                 return SceError.MPP_DELETED;
             }
+
+            // threadmgr refuses a message larger than the pipe's buffer, in either mode
+            if (size > BufferSize)
+            {
+                return SceError.ILLEGAL_SIZE;
+            }
+
             int gen = _cancelled;
             int sent = 0;
             bool asap = (mode & WaitAll) == 0;
@@ -1066,8 +1073,10 @@ public sealed partial class MsgPipe : KernelObject
             {
                 while (sent < size)
                 {
+                    // ASAP moves what fits; FULL goes into the buffer only whole (threadmgr copies the rest of a FULL
+                    // message only when all of it fits, and the Try form fails with MPP_FULL without sending any)
                     int free = BufferSize - _data.Count;
-                    if (free > 0)
+                    if (asap ? free > 0 : free >= size - sent)
                     {
                         int n = Math.Min(free, size - sent);
                         src.ForEach(sent, n, (a, len) => { foreach (var b in GuestMemory.Span(a, len)) { _data.Enqueue(b); } });
@@ -1085,7 +1094,8 @@ public sealed partial class MsgPipe : KernelObject
                         break;
                     }
 
-                    int r = Wait.Until(this, (p: this, gen), static t => t.p._data.Count < t.p.BufferSize, timeout,
+                    int need = asap ? 1 : size - sent;
+                    int r = Wait.Until(this, (p: this, gen, need), static t => t.p.BufferSize - t.p._data.Count >= t.need, timeout,
                         static t => t.p._deleted ? SceError.WAIT_DELETE : t.p._cancelled != t.gen ? SceError.WAIT_CANCEL : 0, WaitDescription);
                     if (r != SceError.OK)
                     {
@@ -1096,12 +1106,7 @@ public sealed partial class MsgPipe : KernelObject
             }
             finally { SendWaiters--; }
             result.TrySet((uint)sent);
-            if (sent == 0 && size > 0)
-            {
-                return SceError.MPP_FULL;
-            }
-
-            if (!asap && sent < size)
+            if (asap ? sent == 0 && size > 0 : sent < size)
             {
                 return SceError.MPP_FULL;
             }

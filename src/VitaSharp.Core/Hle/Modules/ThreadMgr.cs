@@ -774,7 +774,12 @@ public sealed partial class ThreadMgr : HleModule
 
     [Hle]
     int sceKernelCreateMsgPipe(string name, uint type, uint attr, uint bufSize, uint opt)
-        => K.Objects.Register(new MsgPipe { Name = name, Attr = attr, BufferSize = (int)Math.Max(bufSize, 1), CreatorThreadUid = Self.Uid });
+        => K.Objects.Register(new MsgPipe { Name = name, Attr = attr, BufferSize = MsgPipeCapacity(bufSize), CreatorThreadUid = Self.Uid });
+
+    /// <summary>threadmgr backs a message pipe with a memory block of the size rounded up to whole 4 KB pages and uses
+    /// all of it as the buffer (its capacity field is the rounded size). Size 0 (no buffer: on the Vita data goes
+    /// straight to a waiting receiver) keeps a 1-byte buffer here.</summary>
+    internal static int MsgPipeCapacity(uint bufSize) => bufSize == 0 ? 1 : (int)Math.Min((bufSize + 0xFFFul) & ~0xFFFul, int.MaxValue & ~0xFFF);
 
     /// <summary>Same arguments as sceKernelCreateMsgPipe; the "LR" (caller address kept for debugging) is not used.</summary>
     [Hle] int sceKernelCreateMsgPipeWithLR(string name, uint type, uint attr, uint bufSize, uint opt) => sceKernelCreateMsgPipe(name, type, attr, bufSize, opt);

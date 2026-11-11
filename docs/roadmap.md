@@ -1748,6 +1748,19 @@ Lista de itens futuros do VitaSharp. Marque `[x]` quando um item for concluído.
   tempo que algum thread leu (`GuestClock.ObservedFloor`, limitado a 5 ms à frente do relógio). Teste sem Skip:
   ThreadMgrHleTests.ProcessTimeAroundADelayIsAtLeastTheDelay (agora simula a vantagem de 1 ms de outro thread a cada
   medida). Correção feita, ainda não validada com jogo (limitadores de quadro que medem o próprio sleep).
+- [x] MsgPipe: envio FULL e tamanho do buffer como o threadmgr (agente de testes T1, 11/11/2026; decompilação do
+  threadmgr 3.74, só estudo: envio 0x81013DFC, TrySend 0x4CF1BE58, criação 0x81015D10). (1) Uma mensagem maior que o
+  buffer é recusada com 0x8002000B (ILLEGAL_SIZE) nos dois modos. (2) FULL só entra no buffer inteira: o Try falha com
+  MPP_FULL sem mandar nada (antes mandava a parte que cabia e devolvia MPP_FULL) e o bloqueante espera caber tudo. (3) O
+  buffer é o tamanho pedido arredondado para páginas de 4 KB (o bloco de memória que o threadmgr aloca; o campo de
+  capacidade guarda o arredondado). Testes: ThreadMgrHleTests.MsgPipeSendReceiveModes,
+  MsgPipeFullSendWaitsForRoomForTheWholeMessage. Correção feita, ainda não validada com jogo.
+- [ ] MsgPipe: DONT_WAIT (0x10) nas formas bloqueantes (sceKernelSendMsgPipe/ReceiveMsgPipe e Vector) não é "falhar em
+  vez de esperar" no firmware: o threadmgr copia o vetor, enfileira o pedido para os threads "SceKernelMsgPipeAsync"
+  (até 0x100 pedidos por processo, depois 0x80028225) e volta na hora; o envio/recebimento acontece depois nesse thread
+  (decompilação 0x81015004 / 0x8101533C, só estudo). O HLE trata 0x10 como Try. Também não há entrega direta a um
+  receptor que espera (o firmware passa os dados ao receptor antes do buffer) nem pipe sem buffer (tamanho 0). Conferir
+  com um jogo que use 0x10 antes de mudar.
 - [x] Dragon's Crown (PCSE00019): flicker e texturas erradas (relato do usuário, 10/11/2026, capturas
   `PCSE00019_20261110_214605_tudo` e `..._214648_tudo`). Agente A4 (fix/bugs-a-4), duas causas:
   (1) **corrigido em bf2f3b9**: o jogo lê o back buffer (960x544, pitch 1024) como uma textura 1024x1024 que também
