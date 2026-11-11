@@ -158,7 +158,8 @@ public sealed class AstcTests(ITestOutputHelper output)
         Assert.True(psnr >= minPsnr, $"{name}: PSNR {psnr:F2} dB < {minPsnr}");
     }
 
-    [Fact]
+    // a speed floor: coverage instrumentation slows the encoder below it (build/coverage.* leaves Timing tests out)
+    [Fact, Trait("Category", "Timing")]
     public void EncoderSpeed()
     {
         const int w = 256, h = 256;

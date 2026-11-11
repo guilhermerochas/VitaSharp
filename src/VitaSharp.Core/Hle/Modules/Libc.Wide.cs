@@ -502,23 +502,92 @@ public sealed partial class Libc
     [Hle]
     int wcstombs_s(uint retval, uint dst, uint dmax, uint src, uint len)
     {
-        if (retval == 0 || src == 0 || (dst != 0 && BadSize(dmax))) return Constraint("wcstombs_s: bad argument");
-        uint r = wcstombs(dst, src, dst != 0 ? Math.Min(len, dmax - 1) : len);
-        if (r == MbInvalid) { if (dst != 0) GuestMemory.Write(dst, (byte)0); GuestMemory.W32(retval, r); return EILSEQ; }
-        if (dst != 0) GuestMemory.Write(dst + r, (byte)0);
-        GuestMemory.W32(retval, r);
+        // as libc.suprx 3.74 does it: len counts wide characters; each one is converted only when its bytes fit in
+        // what is left of dmax, otherwise the conversion is a constraint violation (dst emptied, *retval -1), not a
+        // silent truncation; the terminator is added when there is room, and *retval set only then (or at the NUL)
+        if (retval == 0 || src == 0 || (dst == 0 && dmax != 0) || (dst != 0 && (BadSize(dmax) || len > int.MaxValue)))
+        {
+            if (retval != 0) GuestMemory.W32(retval, MbInvalid);
+            if (dst != 0 && !BadSize(dmax)) GuestMemory.Write(dst, (byte)0);
+            return Constraint("wcstombs_s: bad argument");
+        }
+        uint written = 0;
+        for (uint i = 0; i < len; i++)
+        {
+            int wc = W(src + i * 2);
+            if (!ValidWide(wc)) { GuestMemory.W32(retval, MbInvalid); return EILSEQ; }
+            byte[] bytes = wc == 0 ? [0] : Utf8Of(wc);
+            if (dst != 0)
+            {
+                if (dmax - written < (uint)bytes.Length)
+                {
+                    GuestMemory.Write(dst, (byte)0);
+                    GuestMemory.W32(retval, MbInvalid);
+                    return Constraint("wcstombs_s: buffer overflow");
+                }
+                bytes.CopyTo(GuestMemory.Span(dst + written, bytes.Length));
+            }
+            written += (uint)bytes.Length;
+            if (wc == 0) { GuestMemory.W32(retval, written - 1); return 0; }
+        }
+        if (written < dmax)
+        {
+            GuestMemory.W32(retval, written);
+            if (dst != 0) GuestMemory.Write(dst + written, (byte)0);
+        }
         return 0;
     }
 
     [Hle]
     int wcsrtombs_s(uint retval, uint dst, uint dmax, uint srcPtr, uint len, uint state)
     {
-        if (retval == 0 || srcPtr == 0 || GuestMemory.R32(srcPtr) == 0 || (dst != 0 && BadSize(dmax))) return Constraint("wcsrtombs_s: bad argument");
-        uint r = wcsrtombs(dst, srcPtr, dst != 0 ? Math.Min(len, dmax - 1) : len, state);
-        if (r == MbInvalid) { if (dst != 0) GuestMemory.Write(dst, (byte)0); GuestMemory.W32(retval, r); return EILSEQ; }
-        if (dst != 0) GuestMemory.Write(dst + r, (byte)0);
-        GuestMemory.W32(retval, r);
-        return 0;
+        // as libc.suprx 3.74 does it: here len counts bytes; a character whose bytes do not fit in len or in what is
+        // left of dmax is a constraint violation ("buffer too small": *retval -1, a NUL where the conversion stopped,
+        // *src at that character); a converted NUL ends it (*src NULL, *retval the bytes before it); without a
+        // destination it only counts up to the NUL
+        if (retval == 0 || srcPtr == 0 || GuestMemory.R32(srcPtr) == 0 || state == 0 || (dst == 0 && dmax != 0)
+            || (dst != 0 && (BadSize(dmax) || len > int.MaxValue)))
+        {
+            if (dst != 0 && !BadSize(dmax)) GuestMemory.Write(dst, (byte)0);
+            if (retval != 0) GuestMemory.W32(retval, MbInvalid);
+            return Constraint("wcsrtombs_s: bad argument");
+        }
+        uint p = GuestMemory.R32(srcPtr), written = 0;
+        while (true)
+        {
+            if (dst != 0 && (len == 0 || dmax - written == 0))
+            {
+                GuestMemory.W32(srcPtr, p);
+                if (dmax - written != 0) { GuestMemory.Write(dst + written, (byte)0); GuestMemory.W32(retval, written); return 0; }
+                // as SceLibc_8316C7E0 (FW 3.74): this NUL lands one byte past the buffer, at dst + dmax
+                GuestMemory.Write(dst + dmax, (byte)0);
+                GuestMemory.W32(retval, MbInvalid);
+                return Constraint("wcstombs_s: buffer too small");
+            }
+            int wc = W(p);
+            if (!ValidWide(wc)) { GuestMemory.W32(retval, MbInvalid); return EILSEQ; }
+            byte[] bytes = wc == 0 ? [0] : Utf8Of(wc);
+            if (dst != 0)
+            {
+                if ((uint)bytes.Length > len || (uint)bytes.Length > dmax - written)
+                {
+                    GuestMemory.W32(srcPtr, p);
+                    GuestMemory.Write(dst + written, (byte)0);
+                    GuestMemory.W32(retval, MbInvalid);
+                    return Constraint("wcstombs_s: buffer too small");
+                }
+                bytes.CopyTo(GuestMemory.Span(dst + written, bytes.Length));
+                len -= (uint)bytes.Length;
+            }
+            written += (uint)bytes.Length;
+            if (wc == 0)
+            {
+                if (dst != 0) GuestMemory.W32(srcPtr, 0);
+                GuestMemory.W32(retval, written - 1);
+                return 0;
+            }
+            p += 2;
+        }
     }
 
     // char16_t / char32_t (C11 uchar.h)

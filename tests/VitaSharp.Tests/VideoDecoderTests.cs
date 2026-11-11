@@ -11,7 +11,7 @@ namespace VitaSharp.Tests;
 /// </summary>
 public sealed class VideoDecoderTests(ITestOutputHelper output)
 {
-    const int W = 64, H = 64;
+    internal const int W = 64, H = 64;
 
     sealed class Bits
     {
@@ -100,7 +100,7 @@ public sealed class VideoDecoderTests(ITestOutputHelper output)
         return idr ? [.. Sps(), .. Pps(), .. slice] : slice;
     }
 
-    static List<(byte[] Au, byte[] Y, byte[] U, byte[] V)> Stream(int pictures)
+    internal static List<(byte[] Au, byte[] Y, byte[] U, byte[] V)> Stream(int pictures)
     {
         var list = new List<(byte[], byte[], byte[], byte[])>();
         for (int i = 0; i < pictures; i++) list.Add((Picture(i, out var y, out var u, out var v), y, u, v));

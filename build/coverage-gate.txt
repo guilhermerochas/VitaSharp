@@ -1,0 +1,9 @@
+# Minimum line coverage (%) of the Category!=Slow suite, checked by build/coverage.ps1 / build/coverage.sh --gate
+# (the CI coverage job, on windows-latest). "Overall" is the whole measurement; the others are assemblies as
+# ReportGenerator names them. The target is 70 for each. Raise a minimum when a measurement passes it by a point or
+# more (the gate says so); never lower one. Each is set half a point under the measurement it came from, so the
+# run-to-run noise of timing-dependent paths does not fail the build.
+Overall 67.7
+VitaSharp.Core 70.8
+VitaSharp.Mobile.Core 84.8
+VitaSharp.Renderer.Vulkan 36.2

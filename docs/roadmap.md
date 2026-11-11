@@ -1375,6 +1375,12 @@ Lista de itens futuros do VitaSharp. Marque `[x]` quando um item for concluído.
 
 ## Bugs em aberto
 
+- [ ] Tempo de processo menor que um delay em volta dele (agente de testes, 10/11/2026): dois sceKernelGetProcessTimeWide
+  em volta de sceKernelDelayThread(2000) num thread guest mediram 1839 us; no Vita é sempre >= 2 ms. Suspeita:
+  GuestClock.Observed é monotônico entre threads (_lastObserved) e um thread com ritmo de CPU (que corre até ~1 ms à
+  frente do tempo real) deixa o relógio adiantado; a leitura antes do delay já sai adiantada e a diferença encolhe. Pode
+  afetar limitadores de quadro que medem o próprio sleep. Teste: ThreadMgrHleTests.ProcessTimeAroundADelayIsAtLeastTheDelay
+  (Skip até a correção; tirar o Skip junto).
 - [x] Dead Space (port Android, DEADSPACE, so_loader + vitaGL): não rodava sem o kubridge (08/11/2026). Feito (agente C,
   fix/bugs-c-24): kubridge em HLE (aabf2d6), VFP short vectors no CPU (7501ec8: o motor do jogo usa FPSCR LEN=8),
   trampolim do taiHookFunctionOffsetForUser em endereço de meia palavra (907b204), taiHEN import/export hooks e
