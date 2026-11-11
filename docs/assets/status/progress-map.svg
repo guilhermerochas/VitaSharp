@@ -201,7 +201,7 @@
 <g><title>SceUsbAudioIn: 8/9 (88.8%), 8 default</title><rect x="872.2" y="519.1" width="15.6" height="16" fill="#408e29" stroke="#0d1117" stroke-width="1"/></g>
 <g><title>SceG729: 8/8 (100%)</title><rect x="872.2" y="535.1" width="15.6" height="14.2" fill="#298e29" stroke="#0d1117" stroke-width="1"/></g>
 <g><title>SceNearProfile: 0/8 (0%)</title><rect x="872.2" y="549.3" width="15.6" height="14.2" fill="#8e2929" stroke="#0d1117" stroke-width="1"/></g>
-<g><title>SceNpDrm: 8/8 (100%), 7 default</title><rect x="872.2" y="563.6" width="15.6" height="14.2" fill="#298e29" stroke="#0d1117" stroke-width="1"/></g>
+<g><title>SceNpDrm: 8/8 (100%), 6 default</title><rect x="872.2" y="563.6" width="15.6" height="14.2" fill="#298e29" stroke="#0d1117" stroke-width="1"/></g>
 <g><title>SceSblLicMgr: 8/8 (100%), 8 default</title><rect x="872.2" y="577.8" width="15.6" height="14.2" fill="#298e29" stroke="#0d1117" stroke-width="1"/></g>
 <g><title>SceSysmodule: 8/8 (100%)</title><rect x="887.9" y="487.1" width="15.4" height="14.4" fill="#298e29" stroke="#0d1117" stroke-width="1"/></g>
 <g><title>SceUdcd: 7/8 (87.5%)</title><rect x="903.3" y="487.1" width="15.4" height="14.4" fill="#438e29" stroke="#0d1117" stroke-width="1"/></g>
