@@ -1,0 +1,10 @@
+# Tearaway (PCSF00476): user's save, menu > tap Continue > The Standing Stones, walk forward
+# run: VitaSharp.Desktop --data=<root> run PCSF00476 --headless --seconds=180 --nav=tests/nav/tearaway_continue.nav
+wait 1500
+shot menu
+tap 0.84 0.68 10
+sleep 40
+shot game
+lstick 0 -1 120
+wait 60
+shot walk

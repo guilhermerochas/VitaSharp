@@ -1,0 +1,18 @@
+# Zero Time Dilemma (PCSE00781): user's save, title > Load Game > slot 1 > "Load save?" (the game's own dialog, NO is
+# preselected: left, then cross) > story text
+# run: VitaSharp.Desktop --data=<root> run PCSE00781 --headless --nav=tests/nav/ztd_load.nav
+wait 600
+press cross
+wait 900
+shot title
+press cross
+wait 300
+press cross
+wait 120
+shot dialog
+press left
+wait 30
+press cross
+wait 1200
+shot story
+quit

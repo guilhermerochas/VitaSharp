@@ -79,3 +79,31 @@ PCSE00781, PCSE00914, PCSE01023, PCSE01235, PCSF00024, PCSF00034, PCSF00476, PCS
 PCSG00952, SILH00004: a limpeza de arquivos temporários do Windows (Storage Sense, disco a 99%) apagou as DLLs do build
 da varredura às 15:37 e às 16:17, e essas rodadas não iniciaram (o "crash" do Gravity Rush era a StbTrueTypeSharp.dll
 apagada). Ficam para a próxima rodada.
+
+## Terceira rodada: paradas por entrada (agente A4, fix/bugs-a-4)
+
+Os jogos que a varredura deixou parados numa tela, rodados de novo com navegação guiada (`--nav`, headless Vulkan).
+Nenhum era defeito de entrada ou de diálogo do emulador; o botão de confirmar do sistema (cross, o padrão de um console
+ocidental, ou o `button_assign` gravado no registro) chega certo aos jogos que o leem (o Minecraft mostra "X Selecionar").
+
+| ID | Jogo | O que parava | Causa | Roteiro |
+|---|---|---|---|---|
+| PCSE00781 | Zero Time Dilemma | "Load save?" | diálogo do próprio jogo com NO pré-selecionado: o cross escolhia NO | `tests/nav/ztd_load.nav` (esquerda + cross): história |
+| PCSE00491 | Minecraft | menu principal | o cross entra em Jogar; no aviso "não conectado", "Conectar-se à PSN" volta ao menu (NetCheckDialog sem rede = cancelado) | `tests/nav/minecraft_offline.nav` (baixo + cross = jogar offline): gameplay |
+| PCSG00198 | Sakatsuku | título | o START de 8 quadros passa; no menu o jogo (japonês) confirma com círculo e não lê o parâmetro do sistema | `tests/nav/sakatsuku_newgame.nav`: seleção da secretária |
+| PCSE01023 | Salt and Sanctuary | lentidão ao sair da criação | não reproduz (180 s a 28-30 fps, cache quente e frio); a rodada anterior teve o disco a 99% | |
+
+Observação: o roteiro da varredura (`sweep.ps1`) nunca apertava START (os quadros 400+150k nunca são múltiplos de 600):
+era só cross.
+
+### Paradas por toque (180 s cada, `--nav` com `tap`/`btap`)
+
+O roteiro de navegação ganhou `btap X Y [quadros]` (toque no painel traseiro; `tap` já tocava o da frente). Rodadas de
+180 s headless depois das telas de toque, com a build desta branch:
+
+| ID | Jogo | Roteiro | Chegou a | fps | Notas |
+|---|---|---|---|---|---|
+| PCSE00213 | Jetpack Joyride | `tests/nav/jetpack_rear.nav` (`btap` no título, toques longos para voar) | uma corrida (169 m) e a tela de resultado | 54,9 médio | a "foto" da morte na tela de resultado sai preta: conferir |
+| PCSE01235 | Stardew Valley | `tests/nav/stardew_new.nav` | criação de personagem (New) | 57-60 | não é parada por toque: a versão do Vita só lê o painel como botões extras nos cantos; o menu anda pelo direcional. O save do usuário não tem jogo salvo (Load: "No Saved Games Found") |
+| PCSF00024 | Gravity Rush | `tests/nav/gravityrush_continue.nav` (`tap` em CONTINUE) | gameplay (túnel do começo), andando | 28,0 médio | |
+| PCSF00476 | Tearaway | `tests/nav/tearaway_continue.nav` (`tap` em Continue) | The Standing Stones, andando | 28,5 médio | numa rodada com a suíte de testes rodando junto caiu a 0,3 fps (PC sem CPU); sozinho, 30 fps. Uma vez (build anterior desta branch, cache de shaders compartilhado) deu VULKAN DEVICE LOST ao entrar no gameplay; não repetiu em 4 rodadas |

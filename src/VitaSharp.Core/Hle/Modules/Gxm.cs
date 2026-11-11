@@ -675,8 +675,10 @@ public sealed partial class Gxm : HleModule
         return 0;
     }
 
-    /// <summary>VITASHARP_DISPLAY_SYNC=0 turns off the fragment sync object wait below (A/B).</summary>
-    static readonly bool DisplaySync = Environment.GetEnvironmentVariable(EnvVars.DisplaySync) is "1" or "trace"; // "trace" also logs the waits
+    /// <summary>VITASHARP_DISPLAY_SYNC=0 turns off the fragment sync object wait below (A/B; on by default since
+    /// 10/11/2026: without it Dragon's Crown re-rendered a back buffer still queued for display, and the display showed
+    /// the newer picture early and the older one again after it, a flicker in every fade).</summary>
+    static readonly bool DisplaySync = Environment.GetEnvironmentVariable(EnvVars.DisplaySync) != "0"; // "trace" also logs the waits
 
     /// <summary>
     /// The fragment sync object of sceGxmBeginScene: on the hardware the GPU does not render a scene into a colour

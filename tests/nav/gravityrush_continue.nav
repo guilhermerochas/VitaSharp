@@ -1,0 +1,10 @@
+# Gravity Rush (PCSF00024): user's save, title > tap CONTINUE > gameplay, walk forward
+# run: VitaSharp.Desktop --data=<root> run PCSF00024 --headless --seconds=180 --nav=tests/nav/gravityrush_continue.nav
+wait 1500
+shot title
+tap 0.22 0.60 10
+wait 900
+shot game
+lstick 0 -1 120
+wait 60
+shot walk

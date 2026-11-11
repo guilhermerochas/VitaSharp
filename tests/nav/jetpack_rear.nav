@@ -1,0 +1,29 @@
+# Jetpack Joyride (PCSE00213): title "Tap rear touch pad to play" > rear tap > a run, flying with long rear-pad touches
+# run: VitaSharp.Desktop --data=<root> run PCSE00213 --headless --seconds=180 --nav=tests/nav/jetpack_rear.nav
+wait 900
+shot title
+btap 0.5 0.5
+wait 120
+btap 0.5 0.5 45
+wait 60
+btap 0.5 0.5 45
+wait 60
+btap 0.5 0.5 45
+wait 60
+btap 0.5 0.5 45
+wait 60
+btap 0.5 0.5 45
+wait 60
+btap 0.5 0.5 45
+wait 60
+btap 0.5 0.5 45
+wait 60
+btap 0.5 0.5 45
+wait 60
+btap 0.5 0.5 45
+wait 60
+btap 0.5 0.5 45
+wait 60
+shot run
+wait 900
+shot later
