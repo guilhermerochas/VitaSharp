@@ -842,11 +842,17 @@ Lista de itens futuros do VitaSharp. Marque `[x]` quando um item for concluído.
     content type 1, arquivos em `<ID>/EBOOT.PBP`, tudo na chave PS3, sem PARAM.SFO próprio; lusid1/pkg2zip trata
     igual): `PkgReader` reconhece esse formato; instala em 2 s (EBOOT.PBP com PSISOIMG, DOCUMENT.DAT, KEYS.BIN,
     `__sce_ebootpbp`). Com os dois instalados, o shell mostra as duas bolhas na mesma página (nomes certos).
-    Diferenças a ver no trabalho do pspemu: (1) a bolha do PSone aparece sem ícone (bolha branca), embora o ICON0 do
-    EBOOT.PBP seja um PNG 144x80 RGB comum (a do PSP mostra o ícone); (2) tocar na bolha do PSone abre "Você deve
-    atualizar o software de sistema para a versão - ou posterior" (a versão vem vazia: o shell não achou a versão
-    exigida do título; o PARAM.SFO do eboot tem PSP_SYSTEM_VER 3.01). Os dois são do lado do shell/HLE ao abrir um
-    título de PSP, não da instalação.
+    As duas diferenças vistas no shell (11/11/2026):
+    - "Você deve atualizar o software de sistema para a versão - ou posterior" ao tocar na bolha do PSone: o shell
+      pergunta a versão do PSP do emulador por SceCompatForVsh (NID 0x9C107CC9 = sceCompatGetPspSystemSoftwareVersion,
+      6.61 = 0x295; o mesmo código do SceCompat no bootimage) e o HLE só exportava o nome do SceCompat. Corrigido
+      (mais os outros dois exports do SceCompatForVsh: 0x4915DEE7 GetTitleList, 0x70997F92 IsPocketStationTitle).
+      Agora a bolha abre a LiveArea do jogo (com "Iniciar") e "Iniciar" para em "Não é possível iniciar esse
+      aplicativo... (C0-11136-2)": a checagem de licença do título, que não tem rif (o passo do pspemu abaixo).
+    - A bolha do PSone sem ícone é o firmware: o shell monta o ícone da bolha (ICON0 sobre vs0:vsh/game/psp_icon_base.raw,
+      gravado em ur0:appmeta/<ID>/icon0.dds) e, para a categoria ME (PSone), recusa um ICON0 com mais de 80 pixels de
+      largura (erro 0x80101134; PSP: até 144); o ICON0 desse eboot é 144x80, então o firmware não gera o ícone. Não é
+      um defeito do emulador nem da instalação (não mexemos nos arquivos do jogo).
 - [ ] Emular tudo o que for possível do Vita (diretriz do usuário, 10/11/2026): além dos jogos e do sistema, listar
   os recursos do aparelho ainda não emulados (ex.: PSP, PS Mobile/PSM, Remote Play/PS TV, Near, Party, Content
   Manager, câmera/AR, apps de vídeo/música/browser) e abrir um item por recurso com o caminho (LLE do módulo real +

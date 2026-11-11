@@ -142,4 +142,12 @@ public sealed class HleBatch11Tests(GuestMemoryFixture fx) : IDisposable
         Assert.Equal(unchecked((int)0x80010058), Call(c, "sceCompatAllocCdramWithHole", 0u));
         Assert.Equal(0, Call(c, "sceCompatAvailableColorSpaceSetting"));
     }
+
+    /// <summary>The shell reaches the PSP emulator's version, title list and PocketStation check through SceCompatForVsh
+    /// (the same code under other NIDs): without them a PSP/PSone LiveArea asked for a system update.</summary>
+    [Theory]
+    [InlineData(0x9C107CC9u)] // sceCompatGetPspSystemSoftwareVersion
+    [InlineData(0x4915DEE7u)] // sceCompatGetTitleList
+    [InlineData(0x70997F92u)] // sceCompatIsPocketStationTitle
+    public void CompatForVshExportsAreImplemented(uint nid) => Assert.True(Emu().Hle.IsImplemented(nid));
 }
