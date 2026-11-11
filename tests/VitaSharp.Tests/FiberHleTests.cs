@@ -53,11 +53,11 @@ public sealed unsafe class FiberHleTests(GuestMemoryFixture fixture)
         SetBacking(core, "State", Pointer.Box(s, typeof(CpuState*)));
         var t = (GuestThread)RuntimeHelpers.GetUninitializedObject(typeof(GuestThread));
         SetBacking(t, "Core", core);
-        typeof(GuestThread).GetField("_current", BindingFlags.Static | BindingFlags.NonPublic)!.SetValue(null, t);
+        typeof(GuestThread).GetField("t_current", BindingFlags.Static | BindingFlags.NonPublic)!.SetValue(null, t);
         return s;
     }
 
-    private static void LeaveFakeThread() => typeof(GuestThread).GetField("_current", BindingFlags.Static | BindingFlags.NonPublic)!.SetValue(null, null);
+    private static void LeaveFakeThread() => typeof(GuestThread).GetField("t_current", BindingFlags.Static | BindingFlags.NonPublic)!.SetValue(null, null);
 
     /// <summary>Simulates the guest calling an HLE function from <paramref name="pc"/> (returning to pc+4 in Thumb).</summary>
     private static void CallFrom(CpuState* s, uint pc, uint sp)

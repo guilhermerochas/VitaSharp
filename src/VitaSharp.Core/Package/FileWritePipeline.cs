@@ -10,17 +10,17 @@ namespace VitaSharp.Core.Package;
 /// </summary>
 internal sealed class FileWritePipeline : IDisposable
 {
-    abstract record Cmd;
-    sealed record OpenCmd(string Path, long Preallocate) : Cmd;
-    sealed record WriteCmd(byte[] Buffer, int Count) : Cmd;
-    sealed record CloseCmd(long? Length, DateTime? LastWrite) : Cmd;
+    private abstract record Cmd;
+    private sealed record OpenCmd(string Path, long Preallocate) : Cmd;
+    private sealed record WriteCmd(byte[] Buffer, int Count) : Cmd;
+    private sealed record CloseCmd(long? Length, DateTime? LastWrite) : Cmd;
 
-    readonly BlockingCollection<byte[]> _free = new();
-    readonly BlockingCollection<Cmd> _queue = new();
-    readonly CancellationTokenSource _cts;
-    readonly Thread _thread;
-    readonly Action<long>? _written;
-    Exception? _error;
+    private readonly BlockingCollection<byte[]> _free = new();
+    private readonly BlockingCollection<Cmd> _queue = new();
+    private readonly CancellationTokenSource _cts;
+    private readonly Thread _thread;
+    private readonly Action<long>? _written;
+    private Exception? _error;
 
     public int BufferSize { get; }
     /// <summary>Time the writer thread spent in file system calls, and the bytes it wrote.</summary>
@@ -64,13 +64,13 @@ internal sealed class FileWritePipeline : IDisposable
     /// <summary>Gives a rented buffer back without writing it.</summary>
     public void Return(byte[] buffer) => _free.Add(buffer);
 
-    void Post(Cmd c)
+    private void Post(Cmd c)
     {
         ThrowIfFailed();
         _queue.Add(c, _cts.Token);
     }
 
-    void ThrowIfFailed()
+    private void ThrowIfFailed()
     {
         if (_error != null)
         {
@@ -87,13 +87,13 @@ internal sealed class FileWritePipeline : IDisposable
         _cts.Token.ThrowIfCancellationRequested();
     }
 
-    void Run()
+    private void Run()
     {
         FileStream? fs = null;
         var sw = new Stopwatch();
         try
         {
-            foreach (var c in _queue.GetConsumingEnumerable(_cts.Token))
+            foreach (Cmd c in _queue.GetConsumingEnumerable(_cts.Token))
             {
                 sw.Start();
                 switch (c)
@@ -120,7 +120,7 @@ internal sealed class FileWritePipeline : IDisposable
                             fs.SetLength(len);
                         }
 
-                        var path = fs!.Name;
+                        string path = fs!.Name;
                         fs.Dispose();
                         fs = null;
                         if (cl.LastWrite is { } t)

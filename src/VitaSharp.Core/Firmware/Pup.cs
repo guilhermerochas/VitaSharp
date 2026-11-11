@@ -9,7 +9,7 @@ namespace VitaSharp.Core.Firmware;
 public sealed record PupEntry(ulong Type, long Offset, long Length, ulong Flags, byte[]? Digest)
 {
     /// <summary>The name of the well-known plain files (version.txt, license.xml, the updater SELFs), else null.</summary>
-    public string? KnownName => Pup.KnownNames.GetValueOrDefault(Type);
+    public string? KnownName => Pup.s_knownNames.GetValueOrDefault(Type);
 }
 
 /// <summary>
@@ -29,9 +29,9 @@ public sealed record PupEntry(ulong Type, long Offset, long Length, ulong Flags,
 public sealed class Pup : IDisposable
 {
     public const int HeaderSize = 0x80, EntrySize = 0x20, DigestEntrySize = 0x40;
-    static ReadOnlySpan<byte> Magic => "SCEUF"u8;
+    private static ReadOnlySpan<byte> Magic => "SCEUF"u8;
 
-    internal static readonly Dictionary<ulong, string> KnownNames = new()
+    internal static readonly Dictionary<ulong, string> s_knownNames = new()
     {
         [0x100] = "version.txt",
         [0x101] = "license.xml",
@@ -43,8 +43,8 @@ public sealed class Pup : IDisposable
         [0x2006] = "UpdaterES2.CpUp",
     };
 
-    readonly Stream _stream;
-    readonly bool _ownsStream;
+    private readonly Stream _stream;
+    private readonly bool _ownsStream;
 
     public ulong PackageVersion { get; }
     /// <summary>Firmware version as stored in the header, e.g. 0x03740000 for 3.74.</summary>
@@ -82,7 +82,7 @@ public sealed class Pup : IDisposable
             throw new InvalidDataException($"PUP file table is invalid ({count} files)");
         }
 
-        var table = new byte[(int)count * EntrySize];
+        byte[] table = new byte[(int)count * EntrySize];
         stream.ReadExactly(table);
         // digest table right after the file table (absent in synthetic/truncated headers)
         byte[]? digests = null;
@@ -96,7 +96,7 @@ public sealed class Pup : IDisposable
         var entries = new List<PupEntry>((int)count);
         for (int i = 0; i < (int)count; i++)
         {
-            var r = table.AsSpan(i * EntrySize, EntrySize);
+            Span<byte> r = table.AsSpan(i * EntrySize, EntrySize);
             ulong type = BinaryPrimitives.ReadUInt64LittleEndian(r);
             long off = (long)BinaryPrimitives.ReadUInt64LittleEndian(r[8..]);
             long len = (long)BinaryPrimitives.ReadUInt64LittleEndian(r[16..]);
@@ -109,7 +109,7 @@ public sealed class Pup : IDisposable
             byte[]? digest = null;
             if (digests != null)
             {
-                var d = digests.AsSpan(i * DigestEntrySize, DigestEntrySize);
+                Span<byte> d = digests.AsSpan(i * DigestEntrySize, DigestEntrySize);
                 if (BinaryPrimitives.ReadUInt64LittleEndian(d) == (ulong)i)
                 {
                     digest = d.Slice(8, 32).ToArray();
@@ -129,7 +129,7 @@ public sealed class Pup : IDisposable
             throw new InvalidDataException("PUP entry too large");
         }
 
-        var buf = new byte[e.Length];
+        byte[] buf = new byte[e.Length];
         lock (_stream)
         {
             _stream.Position = e.Offset;
@@ -141,14 +141,14 @@ public sealed class Pup : IDisposable
     /// <summary>The first line of version.txt (e.g. "3.74"), or null when the package has none.</summary>
     public string? ReadVersionText()
     {
-        var e = Entries.FirstOrDefault(x => x.Type == 0x100);
+        PupEntry? e = Entries.FirstOrDefault(x => x.Type == 0x100);
         if (e == null)
         {
             return null;
         }
 
-        var text = System.Text.Encoding.ASCII.GetString(Read(e)).TrimEnd('\0');
-        var line = text.Split('\n', 2)[0].Trim();
+        string text = System.Text.Encoding.ASCII.GetString(Read(e)).TrimEnd('\0');
+        string line = text.Split('\n', 2)[0].Trim();
         return line.Length > 0 ? line : null;
     }
 
@@ -176,7 +176,7 @@ public enum SpkgType
 /// </summary>
 public static class Spkg
 {
-    const uint SceMagic = 0x00454353;
+    private const uint SceMagic = 0x00454353;
 
     /// <param name="Target">Console model the part is for, the byte at +0x2C (seen in 3.74: 0 = every model, 1 = the
     /// handheld PS Vita, 2 = PS TV ("dolce"), on the per-model vs0 tar patches).</param>
@@ -202,7 +202,7 @@ public static class Spkg
             return false;
         }
 
-        var s = file.Slice((int)hl, 0x80);
+        ReadOnlySpan<byte> s = file.Slice((int)hl, 0x80);
         header = new Header((SpkgType)BinaryPrimitives.ReadUInt32LittleEndian(s[4..]), BinaryPrimitives.ReadUInt64LittleEndian(s[0x10..]),
             BinaryPrimitives.ReadUInt64LittleEndian(s[0x60..]), BinaryPrimitives.ReadUInt64LittleEndian(s[0x68..]), s[0x2C]);
         return true;
@@ -211,7 +211,7 @@ public static class Spkg
     /// <summary>Decrypts (and inflates) the payload of an SPKG. Several encrypted sections are concatenated in order.</summary>
     public static byte[] Decrypt(byte[] file)
     {
-        if (!TryReadHeader(file, out var hdr))
+        if (!TryReadHeader(file, out Header hdr))
         {
             throw new InvalidDataException("Not an SPKG container");
         }
@@ -219,10 +219,10 @@ public static class Spkg
         int keyRev = file[9];
         uint metadataOffset = BinaryPrimitives.ReadUInt32LittleEndian(file.AsSpan(12));
         ulong headerLength = BinaryPrimitives.ReadUInt64LittleEndian(file.AsSpan(16));
-        var sections = SelfDecryptor.DecryptSections(file, SceType.SPKG, keyRev, metadataOffset, headerLength,
+        List<SelfDecryptor.MetadataSection> sections = SelfDecryptor.DecryptSections(file, SceType.SPKG, keyRev, metadataOffset, headerLength,
             hdr.UpdateVersion << 16, SelfType.NONE, null);
         using var output = new MemoryStream();
-        foreach (var s in sections)
+        foreach (SelfDecryptor.MetadataSection s in sections)
         {
             if (s.Encryption != 3)
             {
@@ -234,7 +234,7 @@ public static class Spkg
                 throw new InvalidDataException("SPKG section lies outside the container");
             }
 
-            var raw = file.AsSpan((int)s.Offset, (int)s.Size).ToArray();
+            byte[] raw = file.AsSpan((int)s.Offset, (int)s.Size).ToArray();
             using (var ctr = new AesUtil.Ctr(s.Key))
             {
                 ctr.Transform(raw, s.Iv.ToArray());

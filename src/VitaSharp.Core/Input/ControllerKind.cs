@@ -23,12 +23,12 @@ public static class ControllerClassifier
             return null;
         }
         // SDL 2 layout: bus16 crc16 vendor16 zero16 product16 zero16 version16 driver8 info8 (little-endian fields)
-        if (!TryHex16(guid, 8, out var vendor) || !TryHex16(guid, 16, out var product))
+        if (!TryHex16(guid, 8, out ushort vendor) || !TryHex16(guid, 16, out ushort product))
         {
             return null;
         }
 
-        if (!TryHex16(guid, 12, out var z1) || z1 != 0 || !TryHex16(guid, 20, out var z2) || z2 != 0)
+        if (!TryHex16(guid, 12, out ushort z1) || z1 != 0 || !TryHex16(guid, 20, out ushort z2) || z2 != 0)
         {
             return null;
         }
@@ -41,13 +41,13 @@ public static class ControllerClassifier
         return (vendor, product);
     }
 
-    static bool IsXInput(string guid) => guid.StartsWith("78696e707574", StringComparison.OrdinalIgnoreCase); // "xinput"
+    private static bool IsXInput(string guid) => guid.StartsWith("78696e707574", StringComparison.OrdinalIgnoreCase); // "xinput"
 
-    static bool TryHex16(string s, int pos, out ushort value)
+    private static bool TryHex16(string s, int pos, out ushort value)
     {
         value = 0;
-        if (!byte.TryParse(s.AsSpan(pos, 2), NumberStyles.HexNumber, CultureInfo.InvariantCulture, out var lo)
-            || !byte.TryParse(s.AsSpan(pos + 2, 2), NumberStyles.HexNumber, CultureInfo.InvariantCulture, out var hi))
+        if (!byte.TryParse(s.AsSpan(pos, 2), NumberStyles.HexNumber, CultureInfo.InvariantCulture, out byte lo)
+            || !byte.TryParse(s.AsSpan(pos + 2, 2), NumberStyles.HexNumber, CultureInfo.InvariantCulture, out byte hi))
         {
             return false;
         }
@@ -75,7 +75,7 @@ public static class ControllerClassifier
                     return ControllerKind.Nintendo;
             }
         }
-        var n = (name ?? "").ToLowerInvariant();
+        string n = (name ?? "").ToLowerInvariant();
         if (n.Contains("xbox") || n.Contains("xinput") || n.Contains("x-box"))
         {
             return ControllerKind.Xbox;

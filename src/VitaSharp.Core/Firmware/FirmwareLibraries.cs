@@ -21,26 +21,26 @@ public sealed class FirmwareLibraries
 
     public sealed record Module(string VitaPath, string Name, IReadOnlyList<(string Library, uint LibNid)> Libraries);
 
-    readonly Dictionary<string, Module> _byLibrary = new(StringComparer.Ordinal);
+    private readonly Dictionary<string, Module> _byLibrary = new(StringComparer.Ordinal);
     public IReadOnlyList<Module> Modules { get; }
 
-    static readonly ConcurrentDictionary<string, FirmwareLibraries> Cache = new(StringComparer.OrdinalIgnoreCase);
+    private static readonly ConcurrentDictionary<string, FirmwareLibraries> s_cache = new(StringComparer.OrdinalIgnoreCase);
 
     /// <summary>The index of the firmware installed in <paramref name="fsRoot"/> (empty when there is none).</summary>
-    public static FirmwareLibraries For(string fsRoot) => Cache.GetOrAdd(Path.GetFullPath(fsRoot), r => new FirmwareLibraries(r));
+    public static FirmwareLibraries For(string fsRoot) => s_cache.GetOrAdd(Path.GetFullPath(fsRoot), r => new FirmwareLibraries(r));
 
     /// <summary>The module exporting <paramref name="library"/> (first one in <see cref="ModuleFolders"/> order).</summary>
     public Module? Provider(string library) => _byLibrary.GetValueOrDefault(library);
 
-    FirmwareLibraries(string fsRoot)
+    private FirmwareLibraries(string fsRoot)
     {
         string cacheFile = Path.Combine(fsRoot, "firmware-libraries.txt");
-        var cached = ReadCache(cacheFile);
+        Dictionary<string, (string Stamp, Module Module)> cached = ReadCache(cacheFile);
         var modules = new List<Module>();
         var lines = new List<string>();
         bool changed = false;
         var sw = System.Diagnostics.Stopwatch.StartNew();
-        foreach (var folder in ModuleFolders)
+        foreach (string folder in ModuleFolders)
         {
             string dir = Path.Combine(fsRoot, "vs0", folder.Replace('/', Path.DirectorySeparatorChar));
             if (!Directory.Exists(dir))
@@ -48,13 +48,13 @@ public sealed class FirmwareLibraries
                 continue;
             }
 
-            foreach (var file in Directory.EnumerateFiles(dir, "*.suprx").Order(StringComparer.OrdinalIgnoreCase))
+            foreach (string? file in Directory.EnumerateFiles(dir, "*.suprx").Order(StringComparer.OrdinalIgnoreCase))
             {
                 string vita = $"vs0:{folder}/{Path.GetFileName(file)}";
                 var fi = new FileInfo(file);
                 string stamp = $"{fi.Length}\t{fi.LastWriteTimeUtc.Ticks}";
                 Module? m = null;
-                if (cached.TryGetValue(vita, out var c) && c.Stamp == stamp)
+                if (cached.TryGetValue(vita, out (string Stamp, Module Module) c) && c.Stamp == stamp)
                 {
                     m = c.Module;
                 }
@@ -74,7 +74,7 @@ public sealed class FirmwareLibraries
                 }
                 modules.Add(m);
                 lines.Add($"{vita}\t{stamp}\t{m.Name}\t{string.Join(',', m.Libraries.Select(l => $"{l.Library}:{l.LibNid:X8}"))}");
-                foreach (var (lib, _) in m.Libraries)
+                foreach ((string? lib, uint _) in m.Libraries)
                 {
                     _byLibrary.TryAdd(lib, m);
                 }
@@ -95,7 +95,7 @@ public sealed class FirmwareLibraries
         }
     }
 
-    static Dictionary<string, (string Stamp, Module Module)> ReadCache(string file)
+    private static Dictionary<string, (string Stamp, Module Module)> ReadCache(string file)
     {
         var d = new Dictionary<string, (string, Module)>(StringComparer.OrdinalIgnoreCase);
         if (!File.Exists(file))
@@ -105,15 +105,15 @@ public sealed class FirmwareLibraries
 
         try
         {
-            foreach (var line in File.ReadLines(file))
+            foreach (string line in File.ReadLines(file))
             {
-                var f = line.Split('\t');
+                string[] f = line.Split('\t');
                 if (f.Length != 5)
                 {
                     continue;
                 }
 
-                var libs = f[4].Split(',', StringSplitOptions.RemoveEmptyEntries).Select(x =>
+                (string, uint)[] libs = f[4].Split(',', StringSplitOptions.RemoveEmptyEntries).Select(x =>
                 {
                     int c = x.LastIndexOf(':');
                     return (x[..c], Convert.ToUInt32(x[(c + 1)..], 16));

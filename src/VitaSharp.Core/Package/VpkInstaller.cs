@@ -54,12 +54,12 @@ public sealed class VpkLicenseException(string message) : Exception(message);
 /// </summary>
 public static class VpkInstaller
 {
-    const string SfoSuffix = "sce_sys/param.sfo";
+    private const string SfoSuffix = "sce_sys/param.sfo";
 
     /// <summary>Lists the contents of an archive and where they would be installed, without extracting anything.</summary>
     public static IReadOnlyList<VpkContentInfo> Inspect(string archivePath, string ux0Root)
     {
-        using var zip = ZipFile.OpenRead(archivePath);
+        using ZipArchive zip = ZipFile.OpenRead(archivePath);
         return Inspect(zip, ux0Root);
     }
 
@@ -75,7 +75,7 @@ public static class VpkInstaller
             .ToList();
 
         var contents = new List<VpkContentInfo>();
-        foreach (var (entry, prefix) in sfoEntries)
+        foreach ((ZipArchiveEntry? entry, string? prefix) in sfoEntries)
         {
             // a param.sfo nested inside content we already picked belongs to that content
             if (contents.Any(c => prefix.StartsWith(c.ArchivePrefix, StringComparison.OrdinalIgnoreCase)))
@@ -99,7 +99,7 @@ public static class VpkInstaller
             throw new InvalidDataException("No sce_sys/param.sfo found in the archive: this is not a PS Vita VPK/content zip");
         }
 
-        foreach (var c in contents.Where(c => c.Kind == VpkContentKind.App))
+        foreach (VpkContentInfo? c in contents.Where(c => c.Kind == VpkContentKind.App))
         {
             if (!zip.Entries.Any(e => Normalize(e.FullName).Equals(c.ArchivePrefix + "eboot.bin", StringComparison.OrdinalIgnoreCase)))
             {
@@ -110,7 +110,7 @@ public static class VpkInstaller
         return contents;
     }
 
-    static VpkContentInfo Describe(Sfo sfo, string prefix, string ux0Root)
+    private static VpkContentInfo Describe(Sfo sfo, string prefix, string ux0Root)
     {
         string titleId = sfo.TitleId.Trim();
         if (!IsSafeName(titleId))
@@ -119,7 +119,7 @@ public static class VpkInstaller
         }
 
         string category = sfo.Category.Trim();
-        var kind = category.Contains("gp", StringComparison.OrdinalIgnoreCase) ? VpkContentKind.Patch
+        VpkContentKind kind = category.Contains("gp", StringComparison.OrdinalIgnoreCase) ? VpkContentKind.Patch
                  : category.Contains("ac", StringComparison.OrdinalIgnoreCase) ? VpkContentKind.AddCont
                  : VpkContentKind.App;
         string dest = kind switch
@@ -133,15 +133,15 @@ public static class VpkInstaller
     }
 
     /// <summary>Add-on content lives in a folder named after the content label (CONTENT_ID minus "XXYYYY-TITLEID_00-").</summary>
-    static string AddContDir(Sfo sfo, string prefix)
+    private static string AddContDir(Sfo sfo, string prefix)
     {
-        var cid = sfo.ContentId.Trim();
+        string cid = sfo.ContentId.Trim();
         if (cid.Length > 20 && IsSafeName(cid[20..]))
         {
             return cid[20..];
         }
 
-        var folder = prefix.TrimEnd('/');
+        string folder = prefix.TrimEnd('/');
         folder = folder[(folder.LastIndexOf('/') + 1)..];
         if (IsSafeName(folder))
         {
@@ -151,16 +151,16 @@ public static class VpkInstaller
         throw new InvalidDataException($"Add-on content has no usable CONTENT_ID (\"{cid}\")");
     }
 
-    static bool IsSafeName(string s) => s.Length is > 0 and <= 64 && s.All(c => char.IsAsciiLetterOrDigit(c) || c is '_' or '-');
+    private static bool IsSafeName(string s) => s.Length is > 0 and <= 64 && s.All(c => char.IsAsciiLetterOrDigit(c) || c is '_' or '-');
 
-    static string Normalize(string zipName) => zipName.Replace('\\', '/').TrimStart('/');
+    private static string Normalize(string zipName) => zipName.Replace('\\', '/').TrimStart('/');
 
     /// <summary>Rejects the whole archive when any entry would escape its target folder (zip-slip).</summary>
-    static void ValidateEntryNames(ZipArchive zip)
+    private static void ValidateEntryNames(ZipArchive zip)
     {
-        foreach (var e in zip.Entries)
+        foreach (ZipArchiveEntry e in zip.Entries)
         {
-            var raw = e.FullName.Replace('\\', '/');
+            string raw = e.FullName.Replace('\\', '/');
             if (raw.StartsWith('/') || raw.Contains(':') || raw.Contains('\0')
                 || raw.Split('/').Any(seg => seg == ".."))
             {
@@ -169,14 +169,14 @@ public static class VpkInstaller
         }
     }
 
-    static byte[] ReadAll(ZipArchiveEntry e)
+    private static byte[] ReadAll(ZipArchiveEntry e)
     {
         if (e.Length > 16 << 20)
         {
             throw new InvalidDataException($"{e.FullName} is too large");
         }
 
-        using var s = e.Open();
+        using Stream s = e.Open();
         using var ms = new MemoryStream((int)e.Length);
         s.CopyTo(ms);
         return ms.ToArray();
@@ -197,12 +197,12 @@ public static class VpkInstaller
         options ??= new VpkInstallOptions();
         ux0Root = Path.GetFullPath(ux0Root);
         using var zip = new ZipArchive(archive, ZipArchiveMode.Read, leaveOpen: true);
-        var contents = Inspect(zip, ux0Root);
+        IReadOnlyList<VpkContentInfo> contents = Inspect(zip, ux0Root);
 
         // decide what to install before touching the disk
         var plan = new List<(VpkContentInfo info, bool replace)>();
         var results = new List<VpkInstallResult>();
-        foreach (var c in contents)
+        foreach (VpkContentInfo c in contents)
         {
             cancellationToken.ThrowIfCancellationRequested();
             bool exists = c.AlreadyInstalled;
@@ -219,8 +219,8 @@ public static class VpkInstaller
         var reporter = new InstallProgressReporter(options.Progress, total);
         reporter.Flush();
 
-        var thread = Thread.CurrentThread;
-        var priority = thread.Priority;
+        Thread thread = Thread.CurrentThread;
+        ThreadPriority priority = thread.Priority;
         thread.Priority = ThreadPriority.BelowNormal; // inflating; the writer thread is below normal too
         try
         {
@@ -234,14 +234,14 @@ public static class VpkInstaller
         return results;
     }
 
-    static void InstallPlan(List<(VpkContentInfo info, bool replace)> plan, Dictionary<VpkContentInfo, List<ZipArchiveEntry>> entriesOf,
+    private static void InstallPlan(List<(VpkContentInfo info, bool replace)> plan, Dictionary<VpkContentInfo, List<ZipArchiveEntry>> entriesOf,
                             string ux0Root, VpkInstallOptions options, InstallProgressReporter reporter,
                             List<VpkInstallResult> results, CancellationToken cancellationToken)
     {
-        foreach (var (info, replace) in plan)
+        foreach ((VpkContentInfo? info, bool replace) in plan)
         {
-            var tmpRoot = Path.Combine(ux0Root, ".vpk-tmp");
-            var tmp = Path.Combine(tmpRoot, Guid.NewGuid().ToString("N"));
+            string tmpRoot = Path.Combine(ux0Root, ".vpk-tmp");
+            string tmp = Path.Combine(tmpRoot, Guid.NewGuid().ToString("N"));
             Directory.CreateDirectory(tmp);
             try
             {
@@ -265,24 +265,24 @@ public static class VpkInstaller
         }
     }
 
-    static List<ZipArchiveEntry> EntriesUnder(ZipArchive zip, string prefix)
+    private static List<ZipArchiveEntry> EntriesUnder(ZipArchive zip, string prefix)
         => zip.Entries.Where(e =>
         {
-            var n = Normalize(e.FullName);
+            string n = Normalize(e.FullName);
             return n.Length > prefix.Length && n.StartsWith(prefix, StringComparison.OrdinalIgnoreCase);
         }).ToList();
 
     /// <summary>Inflates the entries into <paramref name="dest"/>; the files are written on a second thread meanwhile.</summary>
-    static void Extract(List<ZipArchiveEntry> entries, string prefix, string dest, InstallProgressReporter reporter,
+    private static void Extract(List<ZipArchiveEntry> entries, string prefix, string dest, InstallProgressReporter reporter,
                         CancellationToken ct)
     {
-        var root = Path.GetFullPath(dest) + Path.DirectorySeparatorChar;
+        string root = Path.GetFullPath(dest) + Path.DirectorySeparatorChar;
         using var writer = new FileWritePipeline(1 << 20, 4, n => reporter.Add(n), ct);
-        foreach (var e in entries)
+        foreach (ZipArchiveEntry e in entries)
         {
             ct.ThrowIfCancellationRequested();
-            var rel = Normalize(e.FullName)[prefix.Length..];
-            var target = Path.GetFullPath(Path.Combine(root, rel.Replace('/', Path.DirectorySeparatorChar)));
+            string rel = Normalize(e.FullName)[prefix.Length..];
+            string target = Path.GetFullPath(Path.Combine(root, rel.Replace('/', Path.DirectorySeparatorChar)));
             if (!target.StartsWith(root, StringComparison.OrdinalIgnoreCase))
             {
                 throw new InvalidDataException($"Unsafe path in archive: \"{e.FullName}\"");
@@ -294,12 +294,12 @@ public static class VpkInstaller
                 continue;
             }
             writer.Open(target, e.Length);
-            using (var input = e.Open())
+            using (Stream input = e.Open())
             {
                 while (true)
                 {
                     ct.ThrowIfCancellationRequested();
-                    var buf = writer.Rent();
+                    byte[] buf = writer.Rent();
                     int n = input.ReadAtLeast(buf, buf.Length, throwOnEndOfStream: false);
                     if (n > 0)
                     {
@@ -325,12 +325,12 @@ public static class VpkInstaller
     /// Makes sure encrypted content can be used: PFS-encrypted files are decrypted with the license, and an
     /// encrypted NPDRM eboot.bin needs a license the emulator can find. Throws <see cref="VpkLicenseException"/> if none.
     /// </summary>
-    static void PrepareLicense(VpkContentInfo info, string dir, string ux0Root, VpkInstallOptions options)
+    private static void PrepareLicense(VpkContentInfo info, string dir, string ux0Root, VpkInstallOptions options)
     {
         string workBin = Io.Vfs.ResolveCaseInsensitive(dir, "sce_sys/package/work.bin");
         string? license = FindLicense(info, dir, ux0Root, options.LicensePath);
 
-        var eboot = Path.Combine(dir, "eboot.bin");
+        string eboot = Path.Combine(dir, "eboot.bin");
         if (PfsDecryptor.HasPfs(dir))
         {
             if (File.Exists(eboot) && !LooksEncrypted(eboot))
@@ -371,7 +371,7 @@ public static class VpkInstaller
         }
     }
 
-    static string? FindLicense(VpkContentInfo info, string dir, string ux0Root, string? userLicense)
+    private static string? FindLicense(VpkContentInfo info, string dir, string ux0Root, string? userLicense)
     {
         if (userLicense != null)
         {
@@ -388,7 +388,7 @@ public static class VpkInstaller
             candidates.Add(Io.Vfs.ResolveCaseInsensitive(Path.Combine(ux0Root, "app", info.TitleId), "sce_sys/package/work.bin"));
         }
 
-        var licDir = Path.Combine(ux0Root, "license", info.TitleId);
+        string licDir = Path.Combine(ux0Root, "license", info.TitleId);
         if (Directory.Exists(licDir))
         {
             candidates.AddRange(Directory.GetFiles(licDir, "*.rif"));
@@ -397,25 +397,25 @@ public static class VpkInstaller
         return candidates.FirstOrDefault(p => File.Exists(p) && new FileInfo(p).Length >= 0x60);
     }
 
-    static byte[] ReadHead(string path, int max)
+    private static byte[] ReadHead(string path, int max)
     {
-        using var fs = File.OpenRead(path);
-        var buf = new byte[(int)Math.Min(max, fs.Length)];
+        using FileStream fs = File.OpenRead(path);
+        byte[] buf = new byte[(int)Math.Min(max, fs.Length)];
         fs.ReadExactly(buf);
         return buf;
     }
 
     /// <summary>A PFS-encrypted eboot.bin is neither a SELF nor an ELF.</summary>
-    static bool LooksEncrypted(string eboot)
+    private static bool LooksEncrypted(string eboot)
     {
-        var h = ReadHead(eboot, 16);
+        byte[] h = ReadHead(eboot, 16);
         return !SelfDecryptor.IsSelf(h) && !SelfDecryptor.IsElf(h);
     }
 
-    static bool EbootNeedsLicense(string eboot) => SelfDecryptor.RequiresKlicensee(ReadHead(eboot, 0x10000));
+    private static bool EbootNeedsLicense(string eboot) => SelfDecryptor.RequiresKlicensee(ReadHead(eboot, 0x10000));
 
     /// <summary>Swaps the freshly extracted folder in; the previous install is kept until the move succeeded.</summary>
-    static void MoveIntoPlace(string tmp, string dest, string tmpRoot, Action<string>? log)
+    private static void MoveIntoPlace(string tmp, string dest, string tmpRoot, Action<string>? log)
     {
         Directory.CreateDirectory(Path.GetDirectoryName(dest)!);
         string? backup = null;
@@ -443,7 +443,7 @@ public static class VpkInstaller
         }
     }
 
-    static bool TryDelete(string dir)
+    private static bool TryDelete(string dir)
     {
         try
         {
@@ -464,7 +464,7 @@ public static class VpkInstaller
         }
     }
 
-    static void TryDeleteIfEmpty(string dir)
+    private static void TryDeleteIfEmpty(string dir)
     {
         try
         {

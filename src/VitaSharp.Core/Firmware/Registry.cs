@@ -1,5 +1,6 @@
 using System.Collections.Concurrent;
 using System.Text;
+using System.Text.RegularExpressions;
 using VitaSharp.Core.Util;
 
 namespace VitaSharp.Core.Firmware;
@@ -25,21 +26,21 @@ public sealed class Registry
         public string Path => Category + Name;
     }
 
-    static readonly byte[] XorKey = [0x89, 0xFA, 0x95, 0x48, 0xCB, 0x6D, 0x77, 0x9D, 0xA2, 0x25, 0x34, 0xFD, 0xA9, 0x35, 0x59, 0x6E];
-    const int TemplateHeaderSize = 138;
+    private static readonly byte[] s_xorKey = [0x89, 0xFA, 0x95, 0x48, 0xCB, 0x6D, 0x77, 0x9D, 0xA2, 0x25, 0x34, 0xFD, 0xA9, 0x35, 0x59, 0x6E];
+    private const int TemplateHeaderSize = 138;
 
-    static readonly ConcurrentDictionary<string, Registry> Instances = new(StringComparer.OrdinalIgnoreCase);
+    private static readonly ConcurrentDictionary<string, Registry> s_instances = new(StringComparer.OrdinalIgnoreCase);
 
-    public static Registry For(string fsRoot) => Instances.GetOrAdd(System.IO.Path.GetFullPath(fsRoot), r => new Registry(r));
+    public static Registry For(string fsRoot) => s_instances.GetOrAdd(System.IO.Path.GetFullPath(fsRoot), r => new Registry(r));
 
     /// <summary>A fresh, uncached instance (tests: reading back what an earlier instance saved).</summary>
     internal static Registry Open(string fsRoot) => new(System.IO.Path.GetFullPath(fsRoot));
 
-    readonly object _lock = new();
-    readonly Dictionary<string, Key> _keys = new(StringComparer.Ordinal);
-    readonly Dictionary<string, byte[]> _written = new(StringComparer.Ordinal);
+    private readonly object _lock = new();
+    private readonly Dictionary<string, Key> _keys = new(StringComparer.Ordinal);
+    private readonly Dictionary<string, byte[]> _written = new(StringComparer.Ordinal);
     /// <summary>Defaults that follow the emulator's options (language, button assignment...) instead of the template.</summary>
-    readonly Dictionary<string, Func<int>> _dynamicDefaults = new(StringComparer.Ordinal);
+    private readonly Dictionary<string, Func<int>> _dynamicDefaults = new(StringComparer.Ordinal);
     public string StorePath { get; }
 
     /// <summary>Called after a value changes (path), e.g. to notify registry callbacks.</summary>
@@ -47,7 +48,7 @@ public sealed class Registry
 
     public IReadOnlyCollection<Key> Keys => _keys.Values;
 
-    Registry(string fsRoot)
+    private Registry(string fsRoot)
     {
         StorePath = System.IO.Path.Combine(fsRoot, "vd0", "registry", "vitasharp-registry.txt");
         string template = System.IO.Path.Combine(fsRoot, "os0", "kd", "registry.db0");
@@ -80,7 +81,7 @@ public sealed class Registry
         var sb = new StringBuilder(data.Length - TemplateHeaderSize);
         for (int i = 0; i < data.Length - TemplateHeaderSize; i++)
         {
-            sb.Append((char)(data[i + TemplateHeaderSize] ^ XorKey[i & 0xF]));
+            sb.Append((char)(data[i + TemplateHeaderSize] ^ s_xorKey[i & 0xF]));
         }
 
         return sb.ToString();
@@ -88,11 +89,11 @@ public sealed class Registry
 
     /// <summary>[BASE...] maps numbers to path components; [REG-BAS] lists "n/n/n=type:size:...:default" entries
     /// (a component "NN-MM" expands to one category per number). The other sections are per-model overrides.</summary>
-    void ParseTemplate(string text)
+    private void ParseTemplate(string text)
     {
         var names = new Dictionary<int, string>();
         string section = "";
-        foreach (var raw in text.Split('\n'))
+        foreach (string raw in text.Split('\n'))
         {
             string line = raw.TrimEnd('\r');
             if (line.Length == 0)
@@ -122,15 +123,15 @@ public sealed class Registry
             else if (section == "[REG-BAS")
             {
                 var path = new StringBuilder("/");
-                foreach (var part in left.Split('/', StringSplitOptions.RemoveEmptyEntries))
+                foreach (string part in left.Split('/', StringSplitOptions.RemoveEmptyEntries))
                 {
-                    path.Append(int.TryParse(part, out int n) && names.TryGetValue(n, out var s) ? s : part);
+                    path.Append(int.TryParse(part, out int n) && names.TryGetValue(n, out string? s) ? s : part);
                 }
 
                 string full = path.ToString();
                 int slash = full.LastIndexOf('/') + 1;
                 string category = full[..slash], name = full[slash..];
-                var values = right.Split(':', StringSplitOptions.RemoveEmptyEntries);
+                string[] values = right.Split(':', StringSplitOptions.RemoveEmptyEntries);
                 if (values.Length < 2 || !int.TryParse(values[0], out int type) || !int.TryParse(values[1], out int size))
                 {
                     continue;
@@ -147,7 +148,7 @@ public sealed class Registry
                     Encoding.UTF8.GetBytes(def).AsSpan(0, Math.Min(def.Length, init.Length)).CopyTo(init);
                 }
 
-                foreach (var cat in ExpandRange(category))
+                foreach (string cat in ExpandRange(category))
                 {
                     _keys.TryAdd(cat + name, new Key(cat, name, (KeyType)type, size, init));
                 }
@@ -155,9 +156,9 @@ public sealed class Registry
         }
     }
 
-    static IEnumerable<string> ExpandRange(string category)
+    private static IEnumerable<string> ExpandRange(string category)
     {
-        var m = System.Text.RegularExpressions.Regex.Match(category, @"^(.*/)(\d{2})-(\d{2})(/.*)$");
+        Match m = System.Text.RegularExpressions.Regex.Match(category, @"^(.*/)(\d{2})-(\d{2})(/.*)$");
         if (!m.Success)
         {
             yield return category;
@@ -170,7 +171,7 @@ public sealed class Registry
         }
     }
 
-    static string Normalize(string category, string name)
+    private static string Normalize(string category, string name)
     {
         if (!category.StartsWith('/'))
         {
@@ -212,17 +213,17 @@ public sealed class Registry
     {
         lock (_lock)
         {
-            if (_written.TryGetValue(path, out var w))
+            if (_written.TryGetValue(path, out byte[]? w))
             {
                 return w;
             }
 
-            if (_dynamicDefaults.TryGetValue(path, out var d))
+            if (_dynamicDefaults.TryGetValue(path, out Func<int>? d))
             {
                 return BitConverter.GetBytes(d());
             }
 
-            return _keys.TryGetValue(path, out var k) ? k.Default : null;
+            return _keys.TryGetValue(path, out Key? k) ? k.Default : null;
         }
     }
 
@@ -233,7 +234,7 @@ public sealed class Registry
     {
         lock (_lock)
         {
-            bool ok = _written.TryGetValue(path, out var w) && w.Length >= 4;
+            bool ok = _written.TryGetValue(path, out byte[]? w) && w.Length >= 4;
             value = ok ? BitConverter.ToInt32(w!) : 0;
             return ok;
         }
@@ -260,12 +261,12 @@ public sealed class Registry
         string path = Normalize(category, name);
         lock (_lock)
         {
-            if (!_keys.TryGetValue(path, out var k))
+            if (!_keys.TryGetValue(path, out Key? k))
             {
                 return false;
             }
 
-            var stored = new byte[k.Type == KeyType.Int ? 4 : Math.Max(k.Size, value.Length)];
+            byte[] stored = new byte[k.Type == KeyType.Int ? 4 : Math.Max(k.Size, value.Length)];
             value[..Math.Min(value.Length, stored.Length)].CopyTo(stored);
             _written[path] = stored;
             Save();
@@ -276,7 +277,7 @@ public sealed class Registry
 
     public bool SetInt(string category, string name, int value) => Set(category, name, BitConverter.GetBytes(value));
 
-    void Load()
+    private void Load()
     {
         if (!File.Exists(StorePath))
         {
@@ -285,10 +286,10 @@ public sealed class Registry
 
         try
         {
-            foreach (var line in File.ReadAllLines(StorePath))
+            foreach (string line in File.ReadAllLines(StorePath))
             {
-                var f = line.Split('\t');
-                if (f.Length != 3 || !_keys.TryGetValue(f[0], out var k))
+                string[] f = line.Split('\t');
+                if (f.Length != 3 || !_keys.TryGetValue(f[0], out Key? k))
                 {
                     continue;
                 }
@@ -302,14 +303,14 @@ public sealed class Registry
         }
     }
 
-    void Save()
+    private void Save()
     {
         try
         {
             Directory.CreateDirectory(System.IO.Path.GetDirectoryName(StorePath)!);
             File.WriteAllLines(StorePath, _written.OrderBy(kv => kv.Key, StringComparer.Ordinal).Select(kv =>
             {
-                var k = _keys[kv.Key];
+                Key k = _keys[kv.Key];
                 return $"{kv.Key}\t{k.Type}\t{(k.Type == KeyType.Int ? BitConverter.ToInt32(kv.Value).ToString() : Convert.ToHexString(kv.Value))}";
             }), new UTF8Encoding(false));
         }

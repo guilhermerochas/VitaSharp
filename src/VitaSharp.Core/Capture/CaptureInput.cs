@@ -25,7 +25,7 @@ public readonly record struct InputEvent(string Kind, long Ns, long GuestUs, lon
             return null;
         }
 
-        var p = line.Split('\t', 5);
+        string[] p = line.Split('\t', 5);
         if (p.Length < 5 || !long.TryParse(p[1], out long ns) || !long.TryParse(p[2], out long us) || !long.TryParse(p[3], out long flip))
         {
             return null;
@@ -47,19 +47,19 @@ public sealed class InputRecorder(IInputBackend? inner, IMotionSource? innerMoti
 {
     public IInputBackend? Inner { get; } = inner;
     public IMotionSource? InnerMotion { get; } = innerMotion;
-    readonly ControllerState[] _last = new ControllerState[8];
-    readonly bool[] _seen = new bool[8];
-    readonly TouchPoint[][] _lastTouch = [new TouchPoint[8], new TouchPoint[8]];
-    readonly int[] _lastTouchCount = new int[2];
+    private readonly ControllerState[] _last = new ControllerState[8];
+    private readonly bool[] _seen = new bool[8];
+    private readonly TouchPoint[][] _lastTouch = [new TouchPoint[8], new TouchPoint[8]];
+    private readonly int[] _lastTouchCount = new int[2];
 
     public ControllerState GetController(int port)
     {
-        var s = Inner?.GetController(port) ?? ControllerState.Neutral;
+        ControllerState s = Inner?.GetController(port) ?? ControllerState.Neutral;
         if ((uint)port < _last.Length)
         {
             lock (_last)
             {
-                ref var l = ref _last[port];
+                ref ControllerState l = ref _last[port];
                 if (!_seen[port] || l.Buttons != s.Buttons || l.Lx != s.Lx || l.Ly != s.Ly || l.Rx != s.Rx || l.Ry != s.Ry)
                 {
                     _seen[port] = true;
@@ -87,7 +87,7 @@ public sealed class InputRecorder(IInputBackend? inner, IMotionSource? innerMoti
         int side = back ? 1 : 0;
         lock (_lastTouch)
         {
-            var last = _lastTouch[side];
+            TouchPoint[] last = _lastTouch[side];
             bool same = n == _lastTouchCount[side];
             for (int i = 0; same && i < n && i < last.Length; i++)
             {
@@ -127,7 +127,7 @@ public sealed class InputRecorder(IInputBackend? inner, IMotionSource? innerMoti
 
         for (int i = 0; i < n; i++)
         {
-            var m = dest[i];
+            MotionSample m = dest[i];
             sink(InputEvent.Now("motion", string.Create(CultureInfo.InvariantCulture,
                 $"{m.TimestampUs} {m.Acceleration.X:F5} {m.Acceleration.Y:F5} {m.Acceleration.Z:F5} {m.AngularVelocity.X:F5} {m.AngularVelocity.Y:F5} {m.AngularVelocity.Z:F5}")));
         }
@@ -143,13 +143,13 @@ public sealed class InputRecorder(IInputBackend? inner, IMotionSource? innerMoti
 /// </summary>
 public sealed class InputPlayback : IInputBackend, IMotionSource, IRandomHook
 {
-    readonly List<(long Us, ControllerState S)>[] _pad = [new(), new(), new(), new(), new()];
-    readonly List<(long Us, TouchPoint[] T)>[] _touch = [new(), new()];
-    readonly List<(long Us, MotionSample M)> _motion = new();
-    readonly Queue<byte[]> _random = new();
-    readonly List<(long Us, byte[] B)> _randomAll = new();
-    long _motionReadUs = long.MinValue;
-    int _motionIndex;
+    private readonly List<(long Us, ControllerState S)>[] _pad = [new(), new(), new(), new(), new()];
+    private readonly List<(long Us, TouchPoint[] T)>[] _touch = [new(), new()];
+    private readonly List<(long Us, MotionSample M)> _motion = new();
+    private readonly Queue<byte[]> _random = new();
+    private readonly List<(long Us, byte[] B)> _randomAll = new();
+    private long _motionReadUs = long.MinValue;
+    private int _motionIndex;
 
     public bool Active { get; private set; }
     /// <summary>Guest time of the last recorded event (the re-run's natural end).</summary>
@@ -158,9 +158,9 @@ public sealed class InputPlayback : IInputBackend, IMotionSource, IRandomHook
 
     public InputPlayback(IEnumerable<InputEvent> events)
     {
-        foreach (var e in events.OrderBy(e => e.GuestUs))
+        foreach (InputEvent e in events.OrderBy(e => e.GuestUs))
         {
-            var p = e.Data.Split(' ', StringSplitOptions.RemoveEmptyEntries);
+            string[] p = e.Data.Split(' ', StringSplitOptions.RemoveEmptyEntries);
             try
             {
                 switch (e.Kind)
@@ -178,7 +178,7 @@ public sealed class InputPlayback : IInputBackend, IMotionSource, IRandomHook
                     case "touch" when p.Length >= 1:
                         _touch[p[0] == "back" ? 1 : 0].Add((e.GuestUs, p.Skip(1).Select(t =>
                         {
-                            var q = t.Split(':');
+                            string[] q = t.Split(':');
                             return new TouchPoint(int.Parse(q[0]), float.Parse(q[1], CultureInfo.InvariantCulture), float.Parse(q[2], CultureInfo.InvariantCulture));
                         }).ToArray()));
                         break;
@@ -208,7 +208,7 @@ public sealed class InputPlayback : IInputBackend, IMotionSource, IRandomHook
         lock (_random)
         {
             _random.Clear();
-            foreach (var (us, b) in _randomAll)
+            foreach ((long us, byte[]? b) in _randomAll)
             {
                 if (us >= fromUs)
                 {
@@ -222,7 +222,7 @@ public sealed class InputPlayback : IInputBackend, IMotionSource, IRandomHook
         Log.Info($"[capture] re-run: input playback from guest time {fromUs / 1e6:F3} s ({Events} events, last at {LastUs / 1e6:F3} s, {_random.Count} random results)");
     }
 
-    static int Find<T>(List<(long Us, T V)> list, long us)
+    private static int Find<T>(List<(long Us, T V)> list, long us)
     {
         int lo = 0, hi = list.Count - 1, r = -1;
         while (lo <= hi)
@@ -259,7 +259,7 @@ public sealed class InputPlayback : IInputBackend, IMotionSource, IRandomHook
             return [];
         }
 
-        var list = _touch[back ? 1 : 0];
+        List<(long Us, TouchPoint[] T)> list = _touch[back ? 1 : 0];
         int i = Find(list, GuestClock.Microseconds);
         return i >= 0 ? list[i].T : [];
     }
@@ -301,7 +301,7 @@ public sealed class InputPlayback : IInputBackend, IMotionSource, IRandomHook
 
         lock (_random)
         {
-            if (!_random.TryDequeue(out var b) || b.Length != dst.Length)
+            if (!_random.TryDequeue(out byte[]? b) || b.Length != dst.Length)
             {
                 return false;
             }

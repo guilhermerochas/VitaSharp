@@ -7,8 +7,8 @@ namespace VitaSharp.Core.Util;
 /// </summary>
 public sealed class BoundedQueue<T>(int capacity)
 {
-    readonly Queue<T> _items = new(capacity);
-    bool _completed;
+    private readonly Queue<T> _items = new(capacity);
+    private bool _completed;
 
     public int Count
     {
@@ -79,7 +79,7 @@ public sealed class BoundedQueue<T>(int capacity)
 
                 Monitor.Wait(_items);
             }
-            var item = _items.Dequeue();
+            T? item = _items.Dequeue();
             Monitor.PulseAll(_items);
             return item;
         }

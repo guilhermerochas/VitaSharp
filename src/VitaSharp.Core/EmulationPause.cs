@@ -20,17 +20,17 @@ namespace VitaSharp.Core;
 /// </summary>
 public static class EmulationPause
 {
-    static readonly object Lock = new();
-    static volatile bool _paused;
+    private static readonly object s_lock = new();
+    private static volatile bool s_paused;
     /// <summary>The pause is the emulator's own (a save state being taken or loaded), not the player's.</summary>
-    static volatile bool _internal;
-    static long _pausedSince, _pausedTotal; // host Stopwatch ticks
-    static long _guestAtPause, _framesAtPause;
+    private static volatile bool s_internal;
+    private static long s_pausedSince, s_pausedTotal; // host Stopwatch ticks
+    private static long s_guestAtPause, s_framesAtPause;
 
-    public static bool IsPaused => _paused;
+    public static bool IsPaused => s_paused;
     /// <summary>Paused by the player (pause key, menu, --start-paused): the front-ends show the "Pausado" badge only
     /// then, not while a save state stops the game for a moment.</summary>
-    public static bool IsUserPaused => _paused && !_internal;
+    public static bool IsUserPaused => s_paused && !s_internal;
 
     /// <summary>Raised after every change (true = paused), on the thread that made it. Handlers must not block.</summary>
     public static event Action<bool>? Changed;
@@ -40,13 +40,13 @@ public static class EmulationPause
     public static bool Pause(string reason = "", bool @internal = false)
     {
         bool promoted = false;
-        lock (Lock)
+        lock (s_lock)
         {
-            if (_paused)
+            if (s_paused)
             {
-                if (!@internal && _internal)
+                if (!@internal && s_internal)
                 {
-                    _internal = false;
+                    s_internal = false;
                     promoted = true;
                 }
                 if (!promoted)
@@ -60,19 +60,19 @@ public static class EmulationPause
             Raise(true);
             return false;
         }
-        lock (Lock)
+        lock (s_lock)
         {
-            if (_paused)
+            if (s_paused)
             {
                 return false;
             }
 
-            _internal = @internal;
+            s_internal = @internal;
             GuestClock.Freeze();
-            _pausedSince = Stopwatch.GetTimestamp();
-            _guestAtPause = GuestClock.Ticks;
-            _framesAtPause = Hle.Modules.Display.FramesPresented;
-            _paused = true;
+            s_pausedSince = Stopwatch.GetTimestamp();
+            s_guestAtPause = GuestClock.Ticks;
+            s_framesAtPause = Hle.Modules.Display.FramesPresented;
+            s_paused = true;
         }
         GuestThread.InterruptAll();
         Log.Info($"Emulation paused{Why(reason)} at guest frame {Hle.Modules.Display.FramesPresented}, guest time {GuestClock.Seconds:F3} s");
@@ -85,23 +85,23 @@ public static class EmulationPause
     {
         double seconds, guestMs;
         long frames;
-        lock (Lock)
+        lock (s_lock)
         {
-            if (!_paused)
+            if (!s_paused)
             {
                 return false;
             }
 
-            long d = Stopwatch.GetTimestamp() - _pausedSince;
-            _pausedTotal += d;
+            long d = Stopwatch.GetTimestamp() - s_pausedSince;
+            s_pausedTotal += d;
             seconds = d / (double)Stopwatch.Frequency;
             // what the guest saw of the pause: nothing, but frames of a scene being finished (normally 0)
-            guestMs = (GuestClock.Ticks - _guestAtPause) * 1000.0 / Stopwatch.Frequency;
-            frames = Hle.Modules.Display.FramesPresented - _framesAtPause;
+            guestMs = (GuestClock.Ticks - s_guestAtPause) * 1000.0 / Stopwatch.Frequency;
+            frames = Hle.Modules.Display.FramesPresented - s_framesAtPause;
             GuestClock.Thaw();
-            _paused = false;
-            _internal = false;
-            Monitor.PulseAll(Lock);
+            s_paused = false;
+            s_internal = false;
+            Monitor.PulseAll(s_lock);
         }
         GuestThread.WakeAll();
         Log.Info($"Emulation resumed{Why(reason)} after {seconds:F1} s paused (guest clock +{guestMs:F3} ms, frames +{frames} meanwhile), at guest frame {Hle.Modules.Display.FramesPresented}, guest time {GuestClock.Seconds:F3} s");
@@ -117,7 +117,7 @@ public static class EmulationPause
             Resume(reason);
         }
 
-        return _paused;
+        return s_paused;
     }
 
     /// <summary>Host time spent paused so far (Stopwatch ticks), the current pause included.</summary>
@@ -125,9 +125,9 @@ public static class EmulationPause
     {
         get
         {
-            lock (Lock)
+            lock (s_lock)
             {
-                return _pausedTotal + (_paused ? Stopwatch.GetTimestamp() - _pausedSince : 0);
+                return s_pausedTotal + (s_paused ? Stopwatch.GetTimestamp() - s_pausedSince : 0);
             }
         }
     }
@@ -144,12 +144,12 @@ public static class EmulationPause
     /// </summary>
     public static bool WaitWhilePaused()
     {
-        if (!_paused)
+        if (!s_paused)
         {
             return false;
         }
 
-        var self = GuestThread.Current;
+        GuestThread? self = GuestThread.Current;
         if (self != null && (self.FinishingScene || self.Core.StopRequested))
         {
             return true;
@@ -163,11 +163,11 @@ public static class EmulationPause
 
         try
         {
-            lock (Lock)
+            lock (s_lock)
             {
-                while (_paused && self?.Core.StopRequested != true)
+                while (s_paused && self?.Core.StopRequested != true)
                 {
-                    Monitor.Wait(Lock, 50);
+                    Monitor.Wait(s_lock, 50);
                 }
             }
         }
@@ -178,19 +178,19 @@ public static class EmulationPause
                 Scheduler.Acquire(self!);
             }
         }
-        return _paused;
+        return s_paused;
     }
 
-    static string Why(string reason) => reason.Length > 0 ? $" ({reason})" : "";
+    private static string Why(string reason) => reason.Length > 0 ? $" ({reason})" : "";
 
-    static void Raise(bool paused)
+    private static void Raise(bool paused)
     {
         if (Changed is not { } handlers)
         {
             return;
         }
 
-        foreach (var h in handlers.GetInvocationList())
+        foreach (Delegate h in handlers.GetInvocationList())
         {
             try
             {

@@ -1,4 +1,5 @@
 using System.Diagnostics;
+using System.Diagnostics.CodeAnalysis;
 using System.Runtime.InteropServices;
 
 namespace VitaSharp.Core.Util;
@@ -11,9 +12,10 @@ namespace VitaSharp.Core.Util;
 /// </summary>
 public static class PreciseSleep
 {
-    [ThreadStatic] static nint _timer;
-    static readonly bool Windows = OperatingSystem.IsWindows();
-    static bool _posixFailed;
+    [SuppressMessage("Style", "IDE1006", Justification = "[ThreadStatic]: t_camelCase; .editorconfig cannot select the attribute")]
+    [ThreadStatic] private static nint t_timer;
+    private static readonly bool s_windows = OperatingSystem.IsWindows();
+    private static bool s_posixFailed;
 
     public static void Microseconds(long us)
     {
@@ -22,14 +24,14 @@ public static class PreciseSleep
             return;
         }
 
-        if (Windows)
+        if (s_windows)
         {
             if (TryWindows(us))
             {
                 return;
             }
         }
-        else if (!_posixFailed && TryPosix(us))
+        else if (!s_posixFailed && TryPosix(us))
         {
             return;
         }
@@ -73,35 +75,35 @@ public static class PreciseSleep
         }
     }
 
-    static bool TryWindows(long us)
+    private static bool TryWindows(long us)
     {
-        if (_timer == 0)
+        if (t_timer == 0)
         {
-            _timer = CreateWaitableTimerExW(0, null, CREATE_WAITABLE_TIMER_HIGH_RESOLUTION, TIMER_ALL_ACCESS);
-            if (_timer == 0)
+            t_timer = CreateWaitableTimerExW(0, null, CREATE_WAITABLE_TIMER_HIGH_RESOLUTION, TIMER_ALL_ACCESS);
+            if (t_timer == 0)
             {
                 return false;
             }
         }
         long due = -us * 10; // relative, 100 ns units
-        if (!SetWaitableTimerEx(_timer, ref due, 0, 0, 0, 0, 0))
+        if (!SetWaitableTimerEx(t_timer, ref due, 0, 0, 0, 0, 0))
         {
             return false;
         }
 
-        WaitForSingleObject(_timer, 0xFFFFFFFF);
+        WaitForSingleObject(t_timer, 0xFFFFFFFF);
         return true;
     }
 
-    const int EINTR = 4; // same value on Linux, macOS and Android
+    private const int EINTR = 4; // same value on Linux, macOS and Android
 
-    static unsafe bool TryPosix(long us)
+    private static unsafe bool TryPosix(long us)
     {
         try
         {
             // struct timespec { time_t tv_sec; long tv_nsec; }: both are pointer-sized on every supported ABI
-            var req = stackalloc nint[2];
-            var rem = stackalloc nint[2];
+            nint* req = stackalloc nint[2];
+            nint* rem = stackalloc nint[2];
             req[0] = (nint)(us / 1_000_000);
             req[1] = (nint)(us % 1_000_000 * 1000);
             while (nanosleep(req, rem) != 0)
@@ -118,22 +120,22 @@ public static class PreciseSleep
         }
         catch (Exception e) when (e is DllNotFoundException or EntryPointNotFoundException)
         {
-            _posixFailed = true;
+            s_posixFailed = true;
             return false;
         }
     }
 
-    const uint CREATE_WAITABLE_TIMER_HIGH_RESOLUTION = 0x2, TIMER_ALL_ACCESS = 0x1F0003;
+    private const uint CREATE_WAITABLE_TIMER_HIGH_RESOLUTION = 0x2, TIMER_ALL_ACCESS = 0x1F0003;
 
     [DllImport("kernel32.dll", CharSet = CharSet.Unicode)]
-    static extern nint CreateWaitableTimerExW(nint attributes, string? name, uint flags, uint access);
+    private static extern nint CreateWaitableTimerExW(nint attributes, string? name, uint flags, uint access);
 
     [DllImport("kernel32.dll")]
-    static extern bool SetWaitableTimerEx(nint timer, ref long dueTime, int period, nint completion, nint arg, nint wakeContext, uint tolerableDelay);
+    private static extern bool SetWaitableTimerEx(nint timer, ref long dueTime, int period, nint completion, nint arg, nint wakeContext, uint tolerableDelay);
 
     [DllImport("kernel32.dll")]
-    static extern uint WaitForSingleObject(nint handle, uint ms);
+    private static extern uint WaitForSingleObject(nint handle, uint ms);
 
     [DllImport("libc", SetLastError = true)]
-    static extern unsafe int nanosleep(nint* req, nint* rem);
+    private static extern unsafe int nanosleep(nint* req, nint* rem);
 }

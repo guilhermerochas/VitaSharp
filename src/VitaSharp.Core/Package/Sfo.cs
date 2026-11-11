@@ -24,13 +24,13 @@ public sealed class Sfo
             uint len = U32LE(data, e + 4);
             uint dataOff = U32LE(data, e + 12);
             string key = CString(data[(int)(keyTable + keyOff)..]);
-            var v = data.Slice((int)(dataTable + dataOff), (int)len);
+            ReadOnlySpan<byte> v = data.Slice((int)(dataTable + dataOff), (int)len);
             Values[key] = fmt == 0x0404 ? U32LE(v, 0) : CString(v);
         }
     }
 
-    public string GetString(string key, string def = "") => Values.TryGetValue(key, out var v) && v is string s ? s : def;
-    public uint GetUInt(string key, uint def = 0) => Values.TryGetValue(key, out var v) && v is uint u ? u : def;
+    public string GetString(string key, string def = "") => Values.TryGetValue(key, out object? v) && v is string s ? s : def;
+    public uint GetUInt(string key, uint def = 0) => Values.TryGetValue(key, out object? v) && v is uint u ? u : def;
 
     public string TitleId => GetString("TITLE_ID");
     public string Title => GetString("TITLE");

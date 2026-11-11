@@ -34,10 +34,10 @@ public interface ICameraStream : IDisposable
 /// </summary>
 public sealed class CameraFrameBuffer
 {
-    readonly object _lock = new();
-    byte[] _rgba = [];
-    int _width, _height;
-    long _sequence;
+    private readonly object _lock = new();
+    private byte[] _rgba = [];
+    private int _width, _height;
+    private long _sequence;
 
     /// <summary>Number of frames published so far (0 = none yet).</summary>
     public long Sequence => Interlocked.Read(ref _sequence);

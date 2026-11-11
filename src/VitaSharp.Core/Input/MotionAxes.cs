@@ -32,7 +32,7 @@ public static class MotionAxes
     public static MotionSample FromGamepad(ulong timestampUs, Vector3 accelMs2, Vector3 gyroRads, MotionOrientation orientation = MotionOrientation.Natural)
         => new(timestampUs, Map(accelMs2, orientation) / -StandardGravity, Map(gyroRads, orientation));
 
-    static Vector3 Map(Vector3 v, MotionOrientation o) => o switch
+    private static Vector3 Map(Vector3 v, MotionOrientation o) => o switch
     {
         // rotate +90 degrees about x: controller face up -> screen up
         MotionOrientation.Natural => new Vector3(v.X, -v.Z, v.Y),
@@ -54,7 +54,7 @@ public static class MotionAxes
     /// </summary>
     public static Vector3 TiltGravity(float pitch, float roll)
     {
-        var deviceToFlat = Quaternion.CreateFromAxisAngle(Vector3.UnitX, pitch) * Quaternion.CreateFromAxisAngle(Vector3.UnitY, roll);
+        Quaternion deviceToFlat = Quaternion.CreateFromAxisAngle(Vector3.UnitX, pitch) * Quaternion.CreateFromAxisAngle(Vector3.UnitY, roll);
         return Vector3.Transform(new Vector3(0, 0, -1), Quaternion.Conjugate(deviceToFlat));
     }
 }

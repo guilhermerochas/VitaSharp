@@ -52,11 +52,11 @@ public abstract class FsImage
         throw new InvalidDataException("Unknown partition image format (no FAT or exFAT boot sector)");
     }
 
-    static IEnumerable<long> CandidateOffsets(Stream img)
+    private static IEnumerable<long> CandidateOffsets(Stream img)
     {
         yield return 0;
         // MBR: first partition entry at 0x1BE (+8 = LBA start)
-        var mbr = new byte[512];
+        byte[] mbr = new byte[512];
         img.Position = 0;
         if (img.ReadAtLeast(mbr, 512, throwOnEndOfStream: false) == 512 && mbr[510] == 0x55 && mbr[511] == 0xAA)
         {
@@ -87,7 +87,7 @@ public abstract class FsImage
 
     protected byte[] ReadAt(long offset, int count)
     {
-        var buf = new byte[count];
+        byte[] buf = new byte[count];
         Img.Position = Base + offset;
         int n = Img.ReadAtLeast(buf, count, throwOnEndOfStream: false);
         if (n < count)
@@ -102,13 +102,13 @@ public abstract class FsImage
 /// <summary>FAT12/16/32 with long file names (VFAT) and the NT lower-case flags for short names.</summary>
 public sealed class FatImage : FsImage
 {
-    readonly int _bytesPerSector, _sectorsPerCluster, _fatBits;
-    readonly long _fatOffset, _rootDirOffset, _dataOffset;
-    readonly int _rootEntries;
-    readonly uint _rootCluster, _clusterCount;
-    readonly uint[] _fat;
+    private readonly int _bytesPerSector, _sectorsPerCluster, _fatBits;
+    private readonly long _fatOffset, _rootDirOffset, _dataOffset;
+    private readonly int _rootEntries;
+    private readonly uint _rootCluster, _clusterCount;
+    private readonly uint[] _fat;
 
-    int ClusterSize => _bytesPerSector * _sectorsPerCluster;
+    private int ClusterSize => _bytesPerSector * _sectorsPerCluster;
 
     internal static bool LooksLikeFat(ReadOnlySpan<byte> bs)
     {
@@ -158,7 +158,7 @@ public sealed class FatImage : FsImage
             throw new InvalidDataException("FAT too large");
         }
 
-        var raw = ReadAt(_fatOffset, (int)fatBytes);
+        byte[] raw = ReadAt(_fatOffset, (int)fatBytes);
         uint n = _clusterCount + 2;
         _fat = new uint[n];
         for (uint c = 0; c < n; c++)
@@ -176,9 +176,9 @@ public sealed class FatImage : FsImage
 
     public int FatBits => _fatBits;
 
-    bool IsEnd(uint next) => next < 2 || next >= _clusterCount + 2 || _fatBits switch { 12 => next >= 0xFF7, 16 => next >= 0xFFF7, _ => next >= 0x0FFFFFF7 };
+    private bool IsEnd(uint next) => next < 2 || next >= _clusterCount + 2 || _fatBits switch { 12 => next >= 0xFF7, 16 => next >= 0xFFF7, _ => next >= 0x0FFFFFF7 };
 
-    IEnumerable<uint> Chain(uint first)
+    private IEnumerable<uint> Chain(uint first)
     {
         var seen = new HashSet<uint>();
         for (uint c = first; c >= 2 && c < _clusterCount + 2 && seen.Add(c);)
@@ -194,9 +194,9 @@ public sealed class FatImage : FsImage
         }
     }
 
-    long ClusterOffset(uint c) => _dataOffset + (c - 2L) * ClusterSize;
+    private long ClusterOffset(uint c) => _dataOffset + (c - 2L) * ClusterSize;
 
-    byte[] ReadDirectory(uint firstCluster)
+    private byte[] ReadDirectory(uint firstCluster)
     {
         if (firstCluster == 0 && _fatBits != 32)
         {
@@ -204,7 +204,7 @@ public sealed class FatImage : FsImage
         }
 
         using var ms = new MemoryStream();
-        foreach (var c in Chain(firstCluster == 0 ? _rootCluster : firstCluster))
+        foreach (uint c in Chain(firstCluster == 0 ? _rootCluster : firstCluster))
         {
             ms.Write(ReadAt(ClusterOffset(c), ClusterSize));
             if (ms.Length > 64 << 20)
@@ -222,9 +222,9 @@ public sealed class FatImage : FsImage
         var visited = new HashSet<uint>();
         while (stack.Count > 0)
         {
-            var (cluster, dirPath, depth) = stack.Pop();
+            (uint cluster, string? dirPath, int depth) = stack.Pop();
             var subdirs = new List<(uint, string)>();
-            foreach (var (name, attr, first, size) in ParseDirectory(ReadDirectory(cluster)))
+            foreach ((string? name, byte attr, uint first, uint size) in ParseDirectory(ReadDirectory(cluster)))
             {
                 if ((attr & 0x08) != 0)
                 {
@@ -252,15 +252,15 @@ public sealed class FatImage : FsImage
         }
     }
 
-    static IEnumerable<(string name, byte attr, uint first, uint size)> ParseDirectory(byte[] dir)
+    private static IEnumerable<(string name, byte attr, uint first, uint size)> ParseDirectory(byte[] dir)
     {
-        var lfn = new char[260];
+        char[] lfn = new char[260];
         int lfnLen = 0;
         byte lfnSum = 0;
         var result = new List<(string, byte, uint, uint)>();
         for (int o = 0; o + 32 <= dir.Length; o += 32)
         {
-            var e = dir.AsSpan(o, 32);
+            Span<byte> e = dir.AsSpan(o, 32);
             if (e[0] == 0x00)
             {
                 break;
@@ -313,7 +313,7 @@ public sealed class FatImage : FsImage
             }
             lfnLen = 0;
             name ??= ShortName(e);
-            var safe = SafeName(name);
+            string? safe = SafeName(name);
             if (safe == null)
             {
                 continue;
@@ -325,10 +325,10 @@ public sealed class FatImage : FsImage
         return result;
     }
 
-    static byte Checksum(ReadOnlySpan<byte> shortName)
+    private static byte Checksum(ReadOnlySpan<byte> shortName)
     {
         byte sum = 0;
-        foreach (var b in shortName)
+        foreach (byte b in shortName)
         {
             sum = (byte)((((sum & 1) << 7) | (sum >> 1)) + b);
         }
@@ -336,9 +336,9 @@ public sealed class FatImage : FsImage
         return sum;
     }
 
-    static string ShortName(ReadOnlySpan<byte> e)
+    private static string ShortName(ReadOnlySpan<byte> e)
     {
-        var b = e[..11].ToArray();
+        byte[] b = e[..11].ToArray();
         if (b[0] == 0x05)
         {
             b[0] = 0xE5;
@@ -368,7 +368,7 @@ public sealed class FatImage : FsImage
             return;
         }
 
-        foreach (var c in Chain(file.FirstCluster))
+        foreach (uint c in Chain(file.FirstCluster))
         {
             ct.ThrowIfCancellationRequested();
             int n = (int)Math.Min(left, ClusterSize);
@@ -386,12 +386,12 @@ public sealed class FatImage : FsImage
 /// <summary>exFAT (the pd0 partition): file/stream/name entry sets, FAT chains and the NoFatChain (contiguous) flag.</summary>
 public sealed class ExFatImage : FsImage
 {
-    readonly int _sectorBits, _clusterBits;
-    readonly long _fatOffset, _heapOffset;
-    readonly uint _clusterCount, _rootCluster;
-    readonly uint[] _fat;
+    private readonly int _sectorBits, _clusterBits;
+    private readonly long _fatOffset, _heapOffset;
+    private readonly uint _clusterCount, _rootCluster;
+    private readonly uint[] _fat;
 
-    long ClusterSize => 1L << _clusterBits;
+    private long ClusterSize => 1L << _clusterBits;
 
     internal ExFatImage(Stream img, long baseOffset, ReadOnlySpan<byte> bs) : base(img, baseOffset)
     {
@@ -413,7 +413,7 @@ public sealed class ExFatImage : FsImage
             throw new InvalidDataException("exFAT FAT too large");
         }
 
-        var raw = ReadAt(_fatOffset, (int)fatBytes);
+        byte[] raw = ReadAt(_fatOffset, (int)fatBytes);
         _fat = new uint[raw.Length / 4];
         for (int i = 0; i < _fat.Length; i++)
         {
@@ -421,10 +421,10 @@ public sealed class ExFatImage : FsImage
         }
     }
 
-    long ClusterOffset(uint c) => _heapOffset + (c - 2L) * ClusterSize;
+    private long ClusterOffset(uint c) => _heapOffset + (c - 2L) * ClusterSize;
 
     /// <summary>Cluster runs holding <paramref name="length"/> bytes from <paramref name="first"/>.</summary>
-    IEnumerable<(long offset, long count)> Runs(uint first, long length, bool contiguous)
+    private IEnumerable<(long offset, long count)> Runs(uint first, long length, bool contiguous)
     {
         if (length <= 0 || first < 2)
         {
@@ -452,7 +452,7 @@ public sealed class ExFatImage : FsImage
         }
     }
 
-    byte[] ReadRuns(uint first, long length, bool contiguous)
+    private byte[] ReadRuns(uint first, long length, bool contiguous)
     {
         if (length > 64 << 20)
         {
@@ -460,7 +460,7 @@ public sealed class ExFatImage : FsImage
         }
 
         using var ms = new MemoryStream();
-        foreach (var (off, n) in Runs(first, length, contiguous))
+        foreach ((long off, long n) in Runs(first, length, contiguous))
         {
             ms.Write(ReadAt(off, (int)n));
         }
@@ -468,7 +468,7 @@ public sealed class ExFatImage : FsImage
         return ms.ToArray();
     }
 
-    byte[] ReadRootDirectory()
+    private byte[] ReadRootDirectory()
     {
         // the root's size is not recorded: follow its chain to the end
         using var ms = new MemoryStream();
@@ -492,9 +492,9 @@ public sealed class ExFatImage : FsImage
         stack.Push((ReadRootDirectory(), "", 0));
         while (stack.Count > 0)
         {
-            var (dir, dirPath, depth) = stack.Pop();
+            (byte[]? dir, string? dirPath, int depth) = stack.Pop();
             var subdirs = new List<(byte[], string)>();
-            foreach (var e in ParseDirectory(dir, dirPath))
+            foreach (FsImageEntry e in ParseDirectory(dir, dirPath))
             {
                 yield return e;
                 if (e.IsDirectory && depth < 64)
@@ -509,7 +509,7 @@ public sealed class ExFatImage : FsImage
         }
     }
 
-    static List<FsImageEntry> ParseDirectory(byte[] dir, string dirPath)
+    private static List<FsImageEntry> ParseDirectory(byte[] dir, string dirPath)
     {
         var result = new List<FsImageEntry>();
         for (int o = 0; o + 32 <= dir.Length; o += 32)
@@ -557,7 +557,7 @@ public sealed class ExFatImage : FsImage
                 }
             }
             o += 32 * secondary;
-            var safe = SafeName(name.ToString());
+            string? safe = SafeName(name.ToString());
             if (safe == null)
             {
                 continue;
@@ -572,7 +572,7 @@ public sealed class ExFatImage : FsImage
     public override void CopyTo(FsImageEntry file, Stream dst, CancellationToken ct = default)
     {
         long done = 0;
-        foreach (var (off, n) in Runs(file.FirstCluster, file.Size, file.Contiguous))
+        foreach ((long off, long n) in Runs(file.FirstCluster, file.Size, file.Contiguous))
         {
             for (long p = 0; p < n; p += 1 << 20)
             {

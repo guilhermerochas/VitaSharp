@@ -1,3 +1,5 @@
+using VitaSharp.Core.Kernel;
+
 namespace VitaSharp.Core.Util;
 
 /// <summary>
@@ -50,7 +52,7 @@ public static class IoTiming
             null or "" => null,
             "vita" or "real" or "default" => VitaBytesPerSecond,
             "fast" or "unlimited" or "instant" => 0,
-            _ => double.TryParse(s, System.Globalization.NumberStyles.Float, System.Globalization.CultureInfo.InvariantCulture, out var mb) && mb >= 0 && double.IsFinite(mb)
+            _ => double.TryParse(s, System.Globalization.NumberStyles.Float, System.Globalization.CultureInfo.InvariantCulture, out double mb) && mb >= 0 && double.IsFinite(mb)
                 ? mb * 1e6 : null,
         };
     }
@@ -63,15 +65,15 @@ public static class IoTiming
     /// <summary>Bytes of a file a missing read leaves cached after its own range; 0 = no read-ahead.</summary>
     public static long ReadAheadBytes { get; set; } = 64 * 1024;
 
-    static long _deviceFreeAt; // guest clock ticks
-    static readonly object Lock = new();
+    private static long s_deviceFreeAt; // guest clock ticks
+    private static readonly object s_lock = new();
 
-    /// <summary>The file range the last device read of a file brought in (guarded by <see cref="Lock"/>).</summary>
-    sealed class Window
+    /// <summary>The file range the last device read of a file brought in (guarded by <see cref="s_lock"/>).</summary>
+    private sealed class Window
     {
         public long Start = -1, End = -1;
     }
-    static readonly System.Runtime.CompilerServices.ConditionalWeakTable<object, Window> Windows = new();
+    private static readonly System.Runtime.CompilerServices.ConditionalWeakTable<object, Window> s_windows = new();
 
     /// <summary>Blocks the calling thread until a read of <paramref name="bytes"/> issued now would have completed.</summary>
     public static void Read(long bytes) => Read(null, 0, bytes);
@@ -86,11 +88,11 @@ public static class IoTiming
         }
 
         long done;
-        lock (Lock)
+        lock (s_lock)
         {
             if (file != null && ReadAheadBytes > 0)
             {
-                var w = Windows.GetOrCreateValue(file);
+                Window w = s_windows.GetOrCreateValue(file);
                 if (offset >= w.Start && offset + bytes <= w.End)
                 {
                     return;
@@ -100,9 +102,9 @@ public static class IoTiming
                 w.End = offset + Math.Max(bytes, ReadAheadBytes);
             }
             long now = GuestClock.Ticks;
-            long start = Math.Max(now, _deviceFreeAt);
+            long start = Math.Max(now, s_deviceFreeAt);
             done = start + GuestClock.FromSeconds(LatencySeconds + bytes / BytesPerSecond);
-            _deviceFreeAt = done;
+            s_deviceFreeAt = done;
             TimedReads++;
             DeviceTicks += done - start;
         }
@@ -110,17 +112,17 @@ public static class IoTiming
         long woke = t0;
         if (t0 < done)
         {
-            var blocked = Kernel.Scheduler.Block();
+            Scheduler.Blocked blocked = Kernel.Scheduler.Block();
             GuestClock.WaitUntil(done);
             woke = GuestClock.Ticks;
             blocked.Dispose();
         }
         long waited = GuestClock.Ticks - t0, regain = GuestClock.Ticks - woke;
         string who = (Kernel.GuestThread.Current?.Name ?? "host") + (InAsyncRequest ? " (async)" : "");
-        lock (Lock)
+        lock (s_lock)
         {
-            var s = WaitsByThread.GetValueOrDefault(who);
-            WaitsByThread[who] = (s.Reads + 1, s.Ticks + waited, s.Bytes + bytes, s.Regain + regain);
+            (long Reads, long Ticks, long Bytes, long Regain) s = s_waitsByThread.GetValueOrDefault(who);
+            s_waitsByThread[who] = (s.Reads + 1, s.Ticks + waited, s.Bytes + bytes, s.Regain + regain);
         }
     }
 
@@ -128,18 +130,18 @@ public static class IoTiming
     [ThreadStatic] public static bool InAsyncRequest;
 
     /// <summary>Per guest thread: device reads, guest time spent blocked in them, bytes (session report).</summary>
-    static readonly Dictionary<string, (long Reads, long Ticks, long Bytes, long Regain)> WaitsByThread = new();
+    private static readonly Dictionary<string, (long Reads, long Ticks, long Bytes, long Regain)> s_waitsByThread = new();
 
     /// <summary>The threads that waited longest for the device, longest first (session report).</summary>
     public static IEnumerable<string> WaitLines(int max = 6)
     {
         List<KeyValuePair<string, (long Reads, long Ticks, long Bytes, long Regain)>> all;
-        lock (Lock)
+        lock (s_lock)
         {
-            all = WaitsByThread.ToList();
+            all = s_waitsByThread.ToList();
         }
 
-        foreach (var (name, s) in all.OrderByDescending(e => e.Value.Ticks).Take(max))
+        foreach ((string? name, (long Reads, long Ticks, long Bytes, long Regain) s) in all.OrderByDescending(e => e.Value.Ticks).Take(max))
         {
             yield return $"    {name}: {s.Ticks / (double)System.Diagnostics.Stopwatch.Frequency:0.0} s waiting, {s.Reads} reads, {s.Bytes / 1e6:0.0} MB, {s.Regain / (double)System.Diagnostics.Stopwatch.Frequency:0.0} s of it getting a core back";
         }

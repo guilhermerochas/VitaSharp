@@ -1,3 +1,4 @@
+using System.Diagnostics.CodeAnalysis;
 using System.Runtime.CompilerServices;
 using System.Text;
 using VitaSharp.Core.Util;
@@ -39,11 +40,12 @@ public sealed unsafe partial class GuestMemory : IDisposable
     /// The page dirty table (<see cref="DirtyPages"/>) sits right below guest address 0, inside the same reservation,
     /// so native code reaches it from the guest base register with a 32-bit displacement.
     /// </summary>
-    const ulong DirtyTableBytes = DirtyPages.TableBytes;
+    private const ulong DirtyTableBytes = DirtyPages.TableBytes;
 
     // the current thread's space base (null = the first process's): read by every static accessor
+    [SuppressMessage("Style", "IDE1006", Justification = "[ThreadStatic]: t_camelCase; .editorconfig cannot select the attribute")]
     [ThreadStatic] internal static byte* t_base;
-    static byte* s_primaryBase;
+    private static byte* s_primaryBase;
 
     /// <summary>Host address of guest address 0 in the calling thread's address space.</summary>
     public static byte* Base
@@ -62,7 +64,7 @@ public sealed unsafe partial class GuestMemory : IDisposable
     }
 
     // true until a second address space exists: then every thread's space is the first one, whatever it set
-    static bool s_onePrimarySpace;
+    private static bool s_onePrimarySpace;
 
     /// <summary>The first process's address space (also the only one when <see cref="SeparateSpaces"/> is false).</summary>
     public AddressSpace Primary { get; }
@@ -71,16 +73,16 @@ public sealed unsafe partial class GuestMemory : IDisposable
     /// map shared memory twice or VITASHARP_SHARED_ADDRESS_SPACE=1: then all processes share <see cref="Primary"/>.</summary>
     public bool SeparateSpaces { get; }
 
-    readonly object _lock = new();
-    readonly nint _kernelMemory, _cdramMemory;
-    readonly Dictionary<uint, Block> _shared = new();   // CDRAM and kernel blocks (in every space)
-    readonly SortedList<uint, uint> _freeUser = new();   // start -> size: ranges no space uses
-    readonly SortedList<uint, uint> _freeCdram = new();
-    readonly SortedList<uint, uint> _freeKernel = new();
-    readonly List<AddressSpace> _spaces = new();
-    readonly Stack<AddressSpace> _idle = new();
-    AddressSpace[] _spaceSnapshot = [];
-    readonly ulong[] _sharedMapped = new ulong[(1 << 20) / 64];
+    private readonly object _lock = new();
+    private readonly nint _kernelMemory, _cdramMemory;
+    private readonly Dictionary<uint, Block> _shared = new();   // CDRAM and kernel blocks (in every space)
+    private readonly SortedList<uint, uint> _freeUser = new();   // start -> size: ranges no space uses
+    private readonly SortedList<uint, uint> _freeCdram = new();
+    private readonly SortedList<uint, uint> _freeKernel = new();
+    private readonly List<AddressSpace> _spaces = new();
+    private readonly Stack<AddressSpace> _idle = new();
+    private AddressSpace[] _spaceSnapshot = [];
+    private readonly ulong[] _sharedMapped = new ulong[(1 << 20) / 64];
 
     /// <summary>An allocated range; <paramref name="Owner"/> is the process that allocated it (0 = the system),
     /// <paramref name="Space"/> the address space of a private block (null: CDRAM and kernel blocks are in all).</summary>
@@ -110,7 +112,7 @@ public sealed unsafe partial class GuestMemory : IDisposable
             _cdramMemory = HostVirtualMemory.CreateSharedMemory(CdramEnd - CdramStart, "cdram");
             separate = _kernelMemory != 0 && _cdramMemory != 0;
         }
-        var primary = separate ? NewSpace(true) : null;
+        AddressSpace? primary = separate ? NewSpace(true) : null;
         if (primary == null)
         {
             separate = false;
@@ -133,7 +135,7 @@ public sealed unsafe partial class GuestMemory : IDisposable
 
     /// <summary>Reserves a new space; with <paramref name="views"/> the shared regions are views of the system's memory.
     /// Null when that mapping fails.</summary>
-    AddressSpace? NewSpace(bool views)
+    private AddressSpace? NewSpace(bool views)
     {
         nuint total = unchecked((nuint)(ReserveSize + DirtyTableBytes));
         byte* reservation;
@@ -183,7 +185,7 @@ public sealed unsafe partial class GuestMemory : IDisposable
 
         lock (_lock)
         {
-            if (_idle.TryPop(out var s))
+            if (_idle.TryPop(out AddressSpace? s))
             {
                 s.Renew();
             }
@@ -210,9 +212,9 @@ public sealed unsafe partial class GuestMemory : IDisposable
 
         lock (_lock)
         {
-            if (space.Blocks.Count > 0)
+            if (space._blocks.Count > 0)
             {
-                Log.Warn($"Guest memory: {space} still has {space.Blocks.Count} blocks; it is not reused");
+                Log.Warn($"Guest memory: {space} still has {space._blocks.Count} blocks; it is not reused");
                 return;
             }
             space.Label = "";
@@ -229,7 +231,7 @@ public sealed unsafe partial class GuestMemory : IDisposable
     /// <summary>The space a host address belongs to, or null.</summary>
     public AddressSpace? SpaceOfHost(ulong hostAddress)
     {
-        foreach (var s in Spaces)
+        foreach (AddressSpace s in Spaces)
         {
             if (s.ContainsHost(hostAddress))
             {
@@ -240,7 +242,7 @@ public sealed unsafe partial class GuestMemory : IDisposable
         return null;
     }
 
-    static AddressSpace CurrentOf(GuestMemory m) => AddressSpace.Current ?? m.Primary;
+    private static AddressSpace CurrentOf(GuestMemory m) => AddressSpace.Current ?? m.Primary;
 
     // ---------------- raw access (the calling thread's space)
 
@@ -314,7 +316,7 @@ public sealed unsafe partial class GuestMemory : IDisposable
             return "";
         }
 
-        var p = Base + addr;
+        byte* p = Base + addr;
         int n = 0;
         while (n < max && p[n] != 0)
         {
@@ -359,14 +361,14 @@ public sealed unsafe partial class GuestMemory : IDisposable
 
     // ---------------- allocation
 
-    SortedList<uint, uint> FreeList(MemoryRegion r) => r switch
+    private SortedList<uint, uint> FreeList(MemoryRegion r) => r switch
     {
         MemoryRegion.Cdram => _freeCdram,
         MemoryRegion.Kernel => _freeKernel,
         _ => _freeUser,
     };
 
-    static bool IsSharedRegion(MemoryRegion r) => r is MemoryRegion.Cdram or MemoryRegion.Kernel;
+    private static bool IsSharedRegion(MemoryRegion r) => r is MemoryRegion.Cdram or MemoryRegion.Kernel;
 
     /// <summary>Allocates in <paramref name="region"/>: user memory in the calling thread's address space (a range no
     /// other space uses either), CDRAM and kernel memory in all of them.</summary>
@@ -381,7 +383,7 @@ public sealed unsafe partial class GuestMemory : IDisposable
         align = Math.Max(align, PageSize);
         lock (_lock)
         {
-            var free = FreeList(region);
+            SortedList<uint, uint> free = FreeList(region);
             for (int i = 0; i < free.Count; i++)
             {
                 uint start = free.Keys[i], len = free.Values[i];
@@ -409,9 +411,9 @@ public sealed unsafe partial class GuestMemory : IDisposable
         uint end = AlignUp(addr + size, PageSize);
         lock (_lock)
         {
-            foreach (var region in new[] { MemoryRegion.User, MemoryRegion.Cdram, MemoryRegion.Kernel })
+            foreach (MemoryRegion region in new[] { MemoryRegion.User, MemoryRegion.Cdram, MemoryRegion.Kernel })
             {
-                var free = FreeList(region);
+                SortedList<uint, uint> free = FreeList(region);
                 for (int i = 0; i < free.Count; i++)
                 {
                     uint fs = free.Keys[i], fl = free.Values[i];
@@ -428,8 +430,8 @@ public sealed unsafe partial class GuestMemory : IDisposable
                 return 0;
             }
             // the range is used by other processes: it is free when this space has nothing there
-            var space = CurrentOf(this);
-            foreach (var b in space.Blocks.Values)
+            AddressSpace space = CurrentOf(this);
+            foreach (Block b in space._blocks.Values)
             {
                 if (start < b.Address + b.Size && b.Address < end)
                 {
@@ -467,8 +469,8 @@ public sealed unsafe partial class GuestMemory : IDisposable
 
         lock (_lock)
         {
-            var space = CurrentOf(this);
-            foreach (var b in space.Blocks.Values)
+            AddressSpace space = CurrentOf(this);
+            foreach (Block b in space._blocks.Values)
             {
                 if (Overlaps(start, end, b.Address, b.Address + b.Size))
                 {
@@ -481,7 +483,7 @@ public sealed unsafe partial class GuestMemory : IDisposable
         return true;
     }
 
-    static void Carve(SortedList<uint, uint> free, uint fs, uint fl, uint start, uint size)
+    private static void Carve(SortedList<uint, uint> free, uint fs, uint fl, uint start, uint size)
     {
         free.Remove(fs);
         if (start > fs)
@@ -496,12 +498,12 @@ public sealed unsafe partial class GuestMemory : IDisposable
         }
     }
 
-    uint Commit(AddressSpace space, uint addr, uint size, string name, MemoryRegion region)
+    private uint Commit(AddressSpace space, uint addr, uint size, string name, MemoryRegion region)
     {
         bool shared = IsSharedRegion(region);
         byte* host = space.Base + addr; // a shared region is the same memory in every space
         HostVirtualMemory.Commit(host, size);
-        SetMapped(shared ? _sharedMapped : space.MappedPages, addr, size, true);
+        SetMapped(shared ? _sharedMapped : space._mappedPages, addr, size, true);
         new Span<byte>(host, (int)size).Clear();
         DirtyPages.MarkRange(space.Base, addr, size);
         var block = new Block(addr, size, name, region, Kernel.ProcessScope.CurrentPid, shared ? null : space);
@@ -511,7 +513,7 @@ public sealed unsafe partial class GuestMemory : IDisposable
         }
         else
         {
-            space.Blocks[addr] = block;
+            space._blocks[addr] = block;
         }
 
         CommittedBytes += size;
@@ -527,7 +529,7 @@ public sealed unsafe partial class GuestMemory : IDisposable
             all = AllBlocks().ToArray();
         }
 
-        foreach (var b in all)
+        foreach (Block b in all)
         {
             Free(b);
         }
@@ -542,7 +544,7 @@ public sealed unsafe partial class GuestMemory : IDisposable
             owned = AllBlocks().Where(b => b.Owner == pid).ToArray();
         }
 
-        foreach (var b in owned)
+        foreach (Block b in owned)
         {
             Free(b);
         }
@@ -550,16 +552,16 @@ public sealed unsafe partial class GuestMemory : IDisposable
         return owned.Sum(b => (long)b.Size);
     }
 
-    IEnumerable<Block> AllBlocks()
+    private IEnumerable<Block> AllBlocks()
     {
-        foreach (var b in _shared.Values)
+        foreach (Block b in _shared.Values)
         {
             yield return b;
         }
 
-        foreach (var s in _spaces)
+        foreach (AddressSpace s in _spaces)
         {
-            foreach (var b in s.Blocks.Values)
+            foreach (Block b in s._blocks.Values)
             {
                 yield return b;
             }
@@ -572,7 +574,7 @@ public sealed unsafe partial class GuestMemory : IDisposable
         Block? b;
         lock (_lock)
         {
-            if (!CurrentOf(this).Blocks.TryGetValue(addr, out b) && !_shared.TryGetValue(addr, out b))
+            if (!CurrentOf(this)._blocks.TryGetValue(addr, out b) && !_shared.TryGetValue(addr, out b))
             {
                 return;
             }
@@ -581,18 +583,18 @@ public sealed unsafe partial class GuestMemory : IDisposable
         Free(b);
     }
 
-    void Free(Block b)
+    private void Free(Block b)
     {
         lock (_lock)
         {
             bool shared = b.Space == null;
-            if (shared ? !_shared.Remove(b.Address) : !b.Space!.Blocks.Remove(b.Address))
+            if (shared ? !_shared.Remove(b.Address) : !b.Space!._blocks.Remove(b.Address))
             {
                 return;
             }
 
             CommittedBytes -= b.Size;
-            var space = b.Space ?? Primary;
+            AddressSpace space = b.Space ?? Primary;
             byte* host = space.Base + b.Address;
             if (shared && SeparateSpaces)
             {
@@ -603,7 +605,7 @@ public sealed unsafe partial class GuestMemory : IDisposable
                 HostVirtualMemory.Decommit(host, b.Size);
             }
 
-            SetMapped(shared ? _sharedMapped : space.MappedPages, b.Address, b.Size, false);
+            SetMapped(shared ? _sharedMapped : space._mappedPages, b.Address, b.Size, false);
             DirtyPages.MarkRange(space.Base, b.Address, b.Size);
             if (b.Region == MemoryRegion.Fixed)
             {
@@ -622,13 +624,13 @@ public sealed unsafe partial class GuestMemory : IDisposable
     }
 
     /// <summary>A private user block was freed: the parts of its range no other space uses become free again.</summary>
-    void ReturnUserRange(uint start, uint size)
+    private void ReturnUserRange(uint start, uint size)
     {
         ulong end = (ulong)start + size;
         List<(uint S, ulong E)>? used = null;
-        foreach (var s in _spaces)
+        foreach (AddressSpace s in _spaces)
         {
-            foreach (var b in s.Blocks.Values)
+            foreach (Block b in s._blocks.Values)
             {
                 if (b.Region == MemoryRegion.User && b.Address < end && (ulong)b.Address + b.Size > start)
                 {
@@ -644,7 +646,7 @@ public sealed unsafe partial class GuestMemory : IDisposable
         }
         used.Sort();
         ulong at = start;
-        foreach (var (s, e) in used)
+        foreach ((uint s, ulong e) in used)
         {
             if (s > at)
             {
@@ -663,7 +665,7 @@ public sealed unsafe partial class GuestMemory : IDisposable
         }
     }
 
-    static void AddFree(SortedList<uint, uint> free, uint start, uint size)
+    private static void AddFree(SortedList<uint, uint> free, uint start, uint size)
     {
         if (size == 0)
         {
@@ -696,7 +698,7 @@ public sealed unsafe partial class GuestMemory : IDisposable
     {
         lock (_lock)
         {
-            foreach (var b in CurrentOf(this).Blocks.Values)
+            foreach (Block b in CurrentOf(this)._blocks.Values)
             {
                 if (addr >= b.Address && addr - b.Address < b.Size)
                 {
@@ -704,7 +706,7 @@ public sealed unsafe partial class GuestMemory : IDisposable
                 }
             }
 
-            foreach (var b in _shared.Values)
+            foreach (Block b in _shared.Values)
             {
                 if (addr >= b.Address && addr - b.Address < b.Size)
                 {
@@ -728,7 +730,7 @@ public sealed unsafe partial class GuestMemory : IDisposable
     // succeed (lazy commit reads zeros), but instruction fetches check it so a jump to a bad address faults instead
     // of sliding through gigabytes of zero words ("andeq r0, r0, r0") and translating each 192-instruction block.
     // The shared regions have one bitmap, every space its own for the rest.
-    static void SetMapped(ulong[] bits, uint addr, uint size, bool mapped)
+    private static void SetMapped(ulong[] bits, uint addr, uint size, bool mapped)
     {
         for (ulong p = addr / PageSize, end = ((ulong)addr + size + PageSize - 1) / PageSize; p < end; p++)
         {
@@ -744,7 +746,7 @@ public sealed unsafe partial class GuestMemory : IDisposable
         }
     }
 
-    static bool InSharedRegion(uint addr) => addr - KernelStart < KernelEnd - KernelStart || addr - CdramStart < CdramEnd - CdramStart;
+    private static bool InSharedRegion(uint addr) => addr - KernelStart < KernelEnd - KernelStart || addr - CdramStart < CdramEnd - CdramStart;
 
     /// <summary>True for CDRAM and kernel addresses: the same memory in every address space.</summary>
     public static bool IsSharedAddress(uint addr) => InSharedRegion(addr);
@@ -753,13 +755,13 @@ public sealed unsafe partial class GuestMemory : IDisposable
     /// calling thread's space.</summary>
     public static bool IsMapped(uint addr)
     {
-        var m = Instance;
+        GuestMemory? m = Instance;
         if (m == null)
         {
             return false;
         }
 
-        var bits = InSharedRegion(addr) ? m._sharedMapped : CurrentOf(m).MappedPages;
+        ulong[] bits = InSharedRegion(addr) ? m._sharedMapped : CurrentOf(m)._mappedPages;
         return (Volatile.Read(ref bits[addr >> 18]) & (1UL << (int)((addr >> 12) & 63))) != 0;
     }
 
@@ -774,9 +776,9 @@ public sealed unsafe partial class GuestMemory : IDisposable
 
         lock (_lock)
         {
-            foreach (var s in _spaces)
+            foreach (AddressSpace s in _spaces)
             {
-                HostVirtualMemory.ReleaseWithViews(s.Parts);
+                HostVirtualMemory.ReleaseWithViews(s._parts);
             }
 
             _spaces.Clear();

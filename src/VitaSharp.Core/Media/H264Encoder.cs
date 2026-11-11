@@ -11,17 +11,17 @@ namespace VitaSharp.Core.Media;
 /// </summary>
 public sealed unsafe class H264Encoder : IDisposable
 {
-    AVCodecContext* _ctx;
-    AVFrame* _frame;
-    AVPacket* _pkt;
-    long _pts;
+    private AVCodecContext* _ctx;
+    private AVFrame* _frame;
+    private AVPacket* _pkt;
+    private long _pts;
 
     public int Width { get; }
     public int Height { get; }
     public int FrameRate { get; }
     public string Name { get; }
 
-    H264Encoder(AVCodecContext* ctx, int w, int h, int fps, string name)
+    private H264Encoder(AVCodecContext* ctx, int w, int h, int fps, string name)
     {
         _ctx = ctx;
         Width = w;
@@ -44,15 +44,15 @@ public sealed unsafe class H264Encoder : IDisposable
         }
 
         fps = Math.Clamp(fps, 1, 120);
-        foreach (var name in new[] { "libopenh264", "" })
+        foreach (string? name in new[] { "libopenh264", "" })
         {
-            var codec = name.Length > 0 ? ffmpeg.avcodec_find_encoder_by_name(name) : ffmpeg.avcodec_find_encoder(AVCodecID.AV_CODEC_ID_H264);
+            AVCodec* codec = name.Length > 0 ? ffmpeg.avcodec_find_encoder_by_name(name) : ffmpeg.avcodec_find_encoder(AVCodecID.AV_CODEC_ID_H264);
             if (codec == null)
             {
                 continue;
             }
 
-            var ctx = ffmpeg.avcodec_alloc_context3(codec);
+            AVCodecContext* ctx = ffmpeg.avcodec_alloc_context3(codec);
             ctx->width = width;
             ctx->height = height;
             ctx->pix_fmt = AVPixelFormat.AV_PIX_FMT_YUV420P;
@@ -108,11 +108,11 @@ public sealed unsafe class H264Encoder : IDisposable
         return list;
     }
 
-    void Drain(List<(byte[], bool)> list)
+    private void Drain(List<(byte[], bool)> list)
     {
         while (ffmpeg.avcodec_receive_packet(_ctx, _pkt) >= 0)
         {
-            var au = new ReadOnlySpan<byte>(_pkt->data, _pkt->size).ToArray();
+            byte[] au = new ReadOnlySpan<byte>(_pkt->data, _pkt->size).ToArray();
             bool key = (_pkt->flags & ffmpeg.AV_PKT_FLAG_KEY) != 0;
             // with the global header the encoder may leave the parameter sets out of the stream: keep them in band
             // before each key picture, as without it
@@ -126,7 +126,7 @@ public sealed unsafe class H264Encoder : IDisposable
         }
     }
 
-    static void Copy(ReadOnlySpan<byte> src, int srcPitch, byte* dst, int dstPitch, int w, int h)
+    private static void Copy(ReadOnlySpan<byte> src, int srcPitch, byte* dst, int dstPitch, int w, int h)
     {
         for (int row = 0; row < h; row++)
         {
@@ -170,7 +170,7 @@ public sealed unsafe class H264Encoder : IDisposable
                         return null;
                     }
 
-                    var nal = extra.Slice(p, len).ToArray();
+                    byte[] nal = extra.Slice(p, len).ToArray();
                     p += len;
                     if (pass == 0)
                     {
@@ -185,7 +185,7 @@ public sealed unsafe class H264Encoder : IDisposable
         }
         else
         {
-            foreach (var (off, len) in SplitNals(extra))
+            foreach ((int off, int len) in SplitNals(extra))
             {
                 switch (extra[off] & 0x1F)
                 {
@@ -239,13 +239,13 @@ public sealed unsafe class H264Encoder : IDisposable
             return;
         }
 
-        var c = _ctx;
+        AVCodecContext* c = _ctx;
         ffmpeg.avcodec_free_context(&c);
         _ctx = null;
-        var f = _frame;
+        AVFrame* f = _frame;
         ffmpeg.av_frame_free(&f);
         _frame = null;
-        var p = _pkt;
+        AVPacket* p = _pkt;
         ffmpeg.av_packet_free(&p);
         _pkt = null;
     }

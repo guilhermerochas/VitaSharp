@@ -17,7 +17,7 @@ public static class Gim
 {
     public static bool IsGim(ReadOnlySpan<byte> d) => d.Length >= 16 && d[0] == 'M' && d[1] == 'I' && d[2] == 'G' && d[3] == '.';
 
-    sealed class Section
+    private sealed class Section
     {
         public int Format, Order, Width, Height, Bpp, PitchAlign, HeightAlign;
         public int PixelOffset, PixelEnd;
@@ -40,7 +40,7 @@ public static class Gim
         return DecodeImage(data, image, palette);
     }
 
-    static void Walk(byte[] d, int start, int end, ref Section? image, ref Section? palette, int depth)
+    private static void Walk(byte[] d, int start, int end, ref Section? image, ref Section? palette, int depth)
     {
         if (depth > 8)
         {
@@ -74,7 +74,7 @@ public static class Gim
         }
     }
 
-    static Section ReadSection(byte[] d, int h, int blockEnd)
+    private static Section ReadSection(byte[] d, int h, int blockEnd)
     {
         if (h + 0x30 > d.Length)
         {
@@ -103,7 +103,7 @@ public static class Gim
         return s;
     }
 
-    static int BitsOf(int format) => format switch
+    private static int BitsOf(int format) => format switch
     {
         0 or 1 or 2 => 16,
         3 => 32,
@@ -116,7 +116,7 @@ public static class Gim
         _ => throw new InvalidDataException($"GIM pixel format {format} is not supported"),
     };
 
-    static RgbaImage DecodeImage(byte[] d, Section s, Section? pal)
+    private static RgbaImage DecodeImage(byte[] d, Section s, Section? pal)
     {
         int w = s.Width, h = s.Height;
         if (w <= 0 || h <= 0 || w > 4096 || h > 4096)
@@ -124,7 +124,7 @@ public static class Gim
             throw new InvalidDataException($"GIM size {w}x{h} is not valid");
         }
 
-        var outPx = new byte[w * h * 4];
+        byte[] outPx = new byte[w * h * 4];
         if (s.Format is 8 or 9 or 10)
         {
             DecodeDxt(d.AsSpan(s.PixelOffset, s.PixelEnd - s.PixelOffset), s.Format, w, h, outPx);
@@ -133,7 +133,7 @@ public static class Gim
         int bpp = BitsOf(s.Format);
         int pitch = Align((w * bpp + 7) / 8, s.PitchAlign);
         int rows = Align(h, s.HeightAlign);
-        var src = d.AsSpan(s.PixelOffset, s.PixelEnd - s.PixelOffset);
+        Span<byte> src = d.AsSpan(s.PixelOffset, s.PixelEnd - s.PixelOffset);
         byte[] lin = new byte[pitch * rows];
         if (s.Order == 1)
         {
@@ -154,7 +154,7 @@ public static class Gim
 
             int n = pal.Width * Math.Max(pal.Height, 1);
             palette = new uint[n];
-            var ps = d.AsSpan(pal.PixelOffset, pal.PixelEnd - pal.PixelOffset);
+            Span<byte> ps = d.AsSpan(pal.PixelOffset, pal.PixelEnd - pal.PixelOffset);
             int pb = BitsOf(pal.Format) / 8;
             for (int i = 0; i < n && (i + 1) * pb <= ps.Length; i++)
             {
@@ -200,12 +200,12 @@ public static class Gim
         return new RgbaImage(w, h, outPx);
     }
 
-    static uint Index(uint[] palette, int i) => (uint)i < (uint)palette.Length ? palette[i] : 0;
+    private static uint Index(uint[] palette, int i) => (uint)i < (uint)palette.Length ? palette[i] : 0;
 
-    static int Align(int v, int a) => (v + a - 1) / a * a;
+    private static int Align(int v, int a) => (v + a - 1) / a * a;
 
     /// <summary>PSP/Vita "faster" pixel order: the image is stored as 16-byte wide, 8-row tall tiles, row major.</summary>
-    static void Unswizzle(ReadOnlySpan<byte> src, byte[] dst, int pitch, int rows)
+    private static void Unswizzle(ReadOnlySpan<byte> src, byte[] dst, int pitch, int rows)
     {
         int tilesPerRow = Math.Max(pitch / 16, 1);
         for (int y = 0; y < rows; y++)
@@ -223,7 +223,7 @@ public static class Gim
     }
 
     /// <summary>A direct-colour pixel as 0xAABBGGRR.</summary>
-    static uint Color(int format, ReadOnlySpan<byte> p)
+    private static uint Color(int format, ReadOnlySpan<byte> p)
     {
         switch (format)
         {
@@ -247,12 +247,12 @@ public static class Gim
         }
     }
 
-    static int Expand(int v, int bits) => (v << (8 - bits)) | (v >> (2 * bits - 8));
-    static uint Pack(int r, int g, int b, int a) => (uint)(r | g << 8 | b << 16 | a << 24);
+    private static int Expand(int v, int bits) => (v << (8 - bits)) | (v >> (2 * bits - 8));
+    private static uint Pack(int r, int g, int b, int a) => (uint)(r | g << 8 | b << 16 | a << 24);
 
     /// <summary>DXT1/3/5 blocks in raster block order. The PSP family stores each block's colour part as
     /// {u32 indices, u16 c0, u16 c1} (indices first) and DXT3/5 alpha after the colour part.</summary>
-    static void DecodeDxt(ReadOnlySpan<byte> src, int format, int w, int h, byte[] dst)
+    private static void DecodeDxt(ReadOnlySpan<byte> src, int format, int w, int h, byte[] dst)
     {
         int blockBytes = format == 8 ? 8 : 16;
         int bw = (w + 3) / 4, bh = (h + 3) / 4;
@@ -269,8 +269,8 @@ public static class Gim
                     return;
                 }
 
-                var blk = src.Slice(o, blockBytes);
-                var col = blk[..8];
+                ReadOnlySpan<byte> blk = src.Slice(o, blockBytes);
+                ReadOnlySpan<byte> col = blk[..8];
                 uint idx = BinaryPrimitives.ReadUInt32LittleEndian(col);
                 int c0 = BinaryPrimitives.ReadUInt16LittleEndian(col[4..]), c1 = BinaryPrimitives.ReadUInt16LittleEndian(col[6..]);
                 colors[0] = Color(0, col[4..]);
@@ -288,7 +288,7 @@ public static class Gim
                 else if (format == 10)
                 {
                     // {u16 alpha indices low.., a0, a1} in the PSP order: 6 index bytes then a0, a1
-                    var ab = blk[8..];
+                    ReadOnlySpan<byte> ab = blk[8..];
                     int a0 = ab[6], a1 = ab[7];
                     ulong bits = 0;
                     for (int i = 0; i < 6; i++)
@@ -344,7 +344,7 @@ public static class Gim
         }
     }
 
-    static void Lerp(Span<uint> c, bool fourColor)
+    private static void Lerp(Span<uint> c, bool fourColor)
     {
         static int Ch(uint v, int s) => (int)((v >> s) & 255);
         if (fourColor)

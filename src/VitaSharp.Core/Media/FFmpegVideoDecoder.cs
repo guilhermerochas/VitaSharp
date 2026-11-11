@@ -28,21 +28,21 @@ public sealed class FFmpegVideoBackend : IVideoDecoderBackend
     /// <summary>Hardware device type asked for by VITASHARP_VIDEO_HW (hw: the platform's), or none (software).</summary>
     public AVHWDeviceType ForcedDevice { get; set; } = ParseEnvironmentDevice();
 
-    static HardwareDecode ParseEnvironment(out string? value)
+    private static HardwareDecode ParseEnvironment(out string? value)
     {
         value = Environment.GetEnvironmentVariable(EnvVars.VideoHw)?.Trim().ToLowerInvariant();
         return IsOff(value) ? HardwareDecode.Off : HardwareDecode.Auto;
     }
 
-    static bool IsOff(string? v) => v is "off" or "0" or "sw" or "software" or "false";
+    private static bool IsOff(string? v) => v is "off" or "0" or "sw" or "software" or "false";
 
-    static AVHWDeviceType ParseEnvironmentDevice()
+    private static AVHWDeviceType ParseEnvironmentDevice()
     {
-        ParseEnvironment(out var v);
+        ParseEnvironment(out string? v);
         return ParseDevice(v, EnvVars.VideoHw);
     }
 
-    static AVHWDeviceType ParseDevice(string? v, string source)
+    private static AVHWDeviceType ParseDevice(string? v, string source)
     {
         if (string.IsNullOrEmpty(v) || v == "auto" || IsOff(v))
         {
@@ -59,7 +59,7 @@ public sealed class FFmpegVideoBackend : IVideoDecoderBackend
             return AVHWDeviceType.AV_HWDEVICE_TYPE_NONE;
         }
 
-        var t = ffmpeg.av_hwdevice_find_type_by_name(v);
+        AVHWDeviceType t = ffmpeg.av_hwdevice_find_type_by_name(v);
         if (t == AVHWDeviceType.AV_HWDEVICE_TYPE_NONE)
         {
             Log.Warn($"{source}={v}: unknown FFmpeg hardware device type, using the platform default");
@@ -72,7 +72,7 @@ public sealed class FFmpegVideoBackend : IVideoDecoderBackend
     /// FFmpeg hwaccel device type name.</summary>
     public void Configure(string setting)
     {
-        var v = setting.Trim().ToLowerInvariant();
+        string v = setting.Trim().ToLowerInvariant();
         Hardware = IsOff(v) ? HardwareDecode.Off : HardwareDecode.Auto;
         ForcedDevice = ParseDevice(v, "--video-decoder");
     }
@@ -91,7 +91,7 @@ public sealed class FFmpegVideoBackend : IVideoDecoderBackend
             return null;
         }
         // auto: software (see the class remarks); a hardware decoder only when one was asked for
-        var device = Hardware == HardwareDecode.Off ? AVHWDeviceType.AV_HWDEVICE_TYPE_NONE : ForcedDevice;
+        AVHWDeviceType device = Hardware == HardwareDecode.Off ? AVHWDeviceType.AV_HWDEVICE_TYPE_NONE : ForcedDevice;
         return FFmpegVideoDecoder.Create(AVCodecID.AV_CODEC_ID_H264, device);
     }
 }
@@ -103,22 +103,22 @@ public sealed class FFmpegVideoBackend : IVideoDecoderBackend
 /// </summary>
 public sealed unsafe class FFmpegVideoDecoder : IVideoDecoder
 {
-    AVCodecContext* _ctx;
-    readonly AVCodecID _codecId;
-    readonly AVPacket* _pkt;
-    readonly AVFrame* _frame, _swFrame;
-    readonly Queue<DecodedPicture> _ready = new();
-    AVHWDeviceType _device;
-    AVPixelFormat _hwFormat = AVPixelFormat.AV_PIX_FMT_NONE;
+    private AVCodecContext* _ctx;
+    private readonly AVCodecID _codecId;
+    private readonly AVPacket* _pkt;
+    private readonly AVFrame* _frame, _swFrame;
+    private readonly Queue<DecodedPicture> _ready = new();
+    private AVHWDeviceType _device;
+    private AVPixelFormat _hwFormat = AVPixelFormat.AV_PIX_FMT_NONE;
     // access units since the last IDR picture, kept while decoding in hardware so a fallback can replay them
-    static readonly bool LowDelay = Environment.GetEnvironmentVariable(Util.EnvVars.VideoLowDelay) == "1";
+    private static readonly bool s_lowDelay = Environment.GetEnvironmentVariable(Util.EnvVars.VideoLowDelay) == "1";
 
-    readonly List<(byte[] Data, long Pts)> _sinceIdr = new();
-    long _sinceIdrBytes;
-    const long MaxReplayBytes = 16 << 20;
-    bool _replayable = true;
+    private readonly List<(byte[] Data, long Pts)> _sinceIdr = new();
+    private long _sinceIdrBytes;
+    private const long MaxReplayBytes = 16 << 20;
+    private bool _replayable = true;
     // pictures output since the last IDR (a replay after a fallback skips that many, so none is shown twice)
-    int _producedSinceIdr, _skip;
+    private int _producedSinceIdr, _skip;
 
     public string Name => _device == AVHWDeviceType.AV_HWDEVICE_TYPE_NONE ? "ffmpeg-sw" : "ffmpeg-" + ffmpeg.av_hwdevice_get_type_name(_device);
     public bool IsHardware => _device != AVHWDeviceType.AV_HWDEVICE_TYPE_NONE;
@@ -128,7 +128,7 @@ public sealed unsafe class FFmpegVideoDecoder : IVideoDecoder
     /// <summary>Host time spent decoding (send + receive + surface download), in Stopwatch ticks, all decoders.</summary>
     public static long DecodeTicks;
 
-    FFmpegVideoDecoder(AVCodecID codecId)
+    private FFmpegVideoDecoder(AVCodecID codecId)
     {
         _codecId = codecId;
         _pkt = ffmpeg.av_packet_alloc();
@@ -162,11 +162,11 @@ public sealed unsafe class FFmpegVideoDecoder : IVideoDecoder
         return null;
     }
 
-    static readonly HashSet<AVHWDeviceType> _reportedUnavailable = new(), _reportedOpened = new();
+    private static readonly HashSet<AVHWDeviceType> s_reportedUnavailable = new(), s_reportedOpened = new();
 
-    bool Open(AVHWDeviceType device)
+    private bool Open(AVHWDeviceType device)
     {
-        var codec = ffmpeg.avcodec_find_decoder(_codecId);
+        AVCodec* codec = ffmpeg.avcodec_find_decoder(_codecId);
         if (codec == null)
         {
             return false;
@@ -177,7 +177,7 @@ public sealed unsafe class FFmpegVideoDecoder : IVideoDecoder
         {
             for (int i = 0; ; i++)
             {
-                var cfg = ffmpeg.avcodec_get_hw_config(codec, i);
+                AVCodecHWConfig* cfg = ffmpeg.avcodec_get_hw_config(codec, i);
                 if (cfg == null)
                 {
                     break;
@@ -195,12 +195,12 @@ public sealed unsafe class FFmpegVideoDecoder : IVideoDecoder
                 return false;
             }
         }
-        var ctx = ffmpeg.avcodec_alloc_context3(codec);
+        AVCodecContext* ctx = ffmpeg.avcodec_alloc_context3(codec);
         // pictures come out in display order, as from the Vita's decoder and Vita3K's (no low-delay flag): with
         // AV_CODEC_FLAG_LOW_DELAY FFmpeg hands each picture out as soon as it is decoded, so a stream with B-frames
         // came out in decode order and a game that shows the pictures as they arrive (Ninja Gaiden Sigma 2 Plus's
         // intro, every third picture two frames back) jumped back and forth. VITASHARP_VIDEO_LOW_DELAY=1: the old way
-        if (LowDelay)
+        if (s_lowDelay)
         {
             ctx->flags |= ffmpeg.AV_CODEC_FLAG_LOW_DELAY;
         }
@@ -239,9 +239,9 @@ public sealed unsafe class FFmpegVideoDecoder : IVideoDecoder
         _ctx = ctx;
         _device = device;
         _hwFormat = hwFormat;
-        lock (_reportedOpened)
+        lock (s_reportedOpened)
         {
-            if (_reportedOpened.Add(device))
+            if (s_reportedOpened.Add(device))
             {
                 Log.Info($"Video decoder: H.264 via {Name}");
             }
@@ -256,66 +256,66 @@ public sealed unsafe class FFmpegVideoDecoder : IVideoDecoder
     /// ("implib-gen: libva-drm.so.2: failed to load library", then an assertion) instead of failing device creation.
     /// So those device types are only tried when their libraries load.
     /// </summary>
-    static readonly Dictionary<AVHWDeviceType, string[]> LinuxDeviceLibraries = new()
+    private static readonly Dictionary<AVHWDeviceType, string[]> s_linuxDeviceLibraries = new()
     {
         [AVHWDeviceType.AV_HWDEVICE_TYPE_VAAPI] = ["libva.so.2", "libva-drm.so.2", "libva-x11.so.2", "libdrm.so.2"],
         [AVHWDeviceType.AV_HWDEVICE_TYPE_DRM] = ["libdrm.so.2"],
         [AVHWDeviceType.AV_HWDEVICE_TYPE_VULKAN] = ["libvulkan.so.1"],
     };
 
-    static readonly Dictionary<AVHWDeviceType, string?> _missingLibrary = new();
+    private static readonly Dictionary<AVHWDeviceType, string?> s_missingLibrary = new();
 
     /// <summary>A shared library <paramref name="device"/> needs that cannot be loaded, or null.</summary>
-    static string? MissingDeviceLibrary(AVHWDeviceType device)
+    private static string? MissingDeviceLibrary(AVHWDeviceType device)
     {
-        if (!OperatingSystem.IsLinux() || !LinuxDeviceLibraries.TryGetValue(device, out var libs))
+        if (!OperatingSystem.IsLinux() || !s_linuxDeviceLibraries.TryGetValue(device, out string[]? libs))
         {
             return null;
         }
 
-        lock (_missingLibrary)
+        lock (s_missingLibrary)
         {
-            if (_missingLibrary.TryGetValue(device, out var known))
+            if (s_missingLibrary.TryGetValue(device, out string? known))
             {
                 return known;
             }
 
             string? missing = null;
-            foreach (var lib in libs)
+            foreach (string lib in libs)
             {
-                if (!System.Runtime.InteropServices.NativeLibrary.TryLoad(lib, out var h))
+                if (!System.Runtime.InteropServices.NativeLibrary.TryLoad(lib, out nint h))
                 {
                     missing = lib;
                     break;
                 }
                 System.Runtime.InteropServices.NativeLibrary.Free(h);
             }
-            _missingLibrary[device] = missing;
+            s_missingLibrary[device] = missing;
             return missing;
         }
     }
 
-    static void ReportUnavailable(AVHWDeviceType device, string why)
+    private static void ReportUnavailable(AVHWDeviceType device, string why)
     {
-        lock (_reportedUnavailable)
+        lock (s_reportedUnavailable)
         {
-            if (_reportedUnavailable.Add(device))
+            if (s_reportedUnavailable.Add(device))
             {
                 Log.Info($"Video decoder: hardware decoding ({ffmpeg.av_hwdevice_get_type_name(device)}) unavailable: {why}; using software");
             }
         }
     }
 
-    static string Error(int code)
+    private static string Error(int code)
     {
-        var buf = stackalloc byte[256];
+        byte* buf = stackalloc byte[256];
         ffmpeg.av_strerror(code, buf, 256);
         return new string((sbyte*)buf);
     }
 
-    void Close()
+    private void Close()
     {
-        var c = _ctx;
+        AVCodecContext* c = _ctx;
         if (c != null)
         {
             ffmpeg.avcodec_free_context(&c);
@@ -325,7 +325,7 @@ public sealed unsafe class FFmpegVideoDecoder : IVideoDecoder
     }
 
     /// <summary>The hardware decoder failed: continue in software from the last IDR picture.</summary>
-    void FallBackToSoftware(string why)
+    private void FallBackToSoftware(string why)
     {
         Interlocked.Increment(ref Fallbacks);
         Log.Warn($"Video decoder: {Name} failed ({why}); switching to software decoding");
@@ -336,12 +336,12 @@ public sealed unsafe class FFmpegVideoDecoder : IVideoDecoder
             return;
         }
         // pictures already output (taken or still queued) come out of the replay again: skip them
-        var replay = _replayable ? _sinceIdr.ToArray() : [];
+        (byte[] Data, long Pts)[] replay = _replayable ? _sinceIdr.ToArray() : [];
         _skip = replay.Length > 0 ? _producedSinceIdr : 0;
         _producedSinceIdr = 0;
         _sinceIdr.Clear();
         _sinceIdrBytes = 0;
-        foreach (var (data, pts) in replay)
+        foreach ((byte[]? data, long pts) in replay)
         {
             SendPacket(data, pts);
         }
@@ -413,9 +413,9 @@ public sealed unsafe class FFmpegVideoDecoder : IVideoDecoder
         Interlocked.Add(ref DecodeTicks, System.Diagnostics.Stopwatch.GetTimestamp() - t0);
     }
 
-    void SendPacket(ReadOnlySpan<byte> au, long pts)
+    private void SendPacket(ReadOnlySpan<byte> au, long pts)
     {
-        var buf = (byte*)ffmpeg.av_malloc((ulong)au.Length + ffmpeg.AV_INPUT_BUFFER_PADDING_SIZE);
+        byte* buf = (byte*)ffmpeg.av_malloc((ulong)au.Length + ffmpeg.AV_INPUT_BUFFER_PADDING_SIZE);
         au.CopyTo(new Span<byte>(buf, au.Length));
         new Span<byte>(buf + au.Length, ffmpeg.AV_INPUT_BUFFER_PADDING_SIZE).Clear();
         if (ffmpeg.av_packet_from_data(_pkt, buf, au.Length) < 0)
@@ -472,7 +472,7 @@ public sealed unsafe class FFmpegVideoDecoder : IVideoDecoder
     public DecodedPicture? Take() => _ready.Count > 0 ? _ready.Dequeue() : null;
 
     /// <summary>Pictures the caller is done with; their planes are reused by later frames of the same size.</summary>
-    readonly Stack<DecodedPicture> _free = new();
+    private readonly Stack<DecodedPicture> _free = new();
 
     public void Recycle(DecodedPicture p)
     {
@@ -482,11 +482,11 @@ public sealed unsafe class FFmpegVideoDecoder : IVideoDecoder
         }
     }
 
-    DecodedPicture RentPicture(int w, int h, int cw, int ch)
+    private DecodedPicture RentPicture(int w, int h, int cw, int ch)
     {
         while (_free.Count > 0)
         {
-            var p = _free.Pop();
+            DecodedPicture p = _free.Pop();
             if (p.Y.Length == w * h && p.U.Length == cw * ch)
             {
                 return p; // other sizes are dropped
@@ -495,7 +495,7 @@ public sealed unsafe class FFmpegVideoDecoder : IVideoDecoder
         return new DecodedPicture { Y = new byte[w * h], U = new byte[cw * ch], V = new byte[cw * ch] };
     }
 
-    void Receive()
+    private void Receive()
     {
         while (true)
         {
@@ -553,7 +553,7 @@ public sealed unsafe class FFmpegVideoDecoder : IVideoDecoder
             }
             _producedSinceIdr++;
             int w = _frame->width, h = _frame->height, cw = (w + 1) / 2, ch = (h + 1) / 2;
-            var p = RentPicture(w, h, cw, ch);
+            DecodedPicture p = RentPicture(w, h, cw, ch);
             p.Width = w;
             p.Height = h;
             p.Pts = _frame->pts;
@@ -571,7 +571,7 @@ public sealed unsafe class FFmpegVideoDecoder : IVideoDecoder
         }
     }
 
-    static void CopyPlanes(AVFrame* f, DecodedPicture p, int w, int h, int cw, int ch)
+    private static void CopyPlanes(AVFrame* f, DecodedPicture p, int w, int h, int cw, int ch)
     {
         Copy(f->data[0], f->linesize[0], p.Y, w, h);
         var fmt = (AVPixelFormat)f->format;
@@ -600,7 +600,7 @@ public sealed unsafe class FFmpegVideoDecoder : IVideoDecoder
         }
     }
 
-    static void Copy(byte* src, int stride, byte[] dst, int w, int h)
+    private static void Copy(byte* src, int stride, byte[] dst, int w, int h)
     {
         fixed (byte* d = dst)
         {
@@ -614,11 +614,11 @@ public sealed unsafe class FFmpegVideoDecoder : IVideoDecoder
     public void Dispose()
     {
         Close();
-        var p = _pkt;
+        AVPacket* p = _pkt;
         ffmpeg.av_packet_free(&p);
-        var f = _frame;
+        AVFrame* f = _frame;
         ffmpeg.av_frame_free(&f);
-        var s = _swFrame;
+        AVFrame* s = _swFrame;
         ffmpeg.av_frame_free(&s);
     }
 }

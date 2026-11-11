@@ -17,7 +17,7 @@ public static class CaptureAnalyzer
 {
     public sealed record Finding(string Kind, int Index, int Count, string Detail);
 
-    sealed class FrameStat
+    private sealed class FrameStat
     {
         public FramesFile.Frame F = null!;
         public double Luma, Dark;
@@ -25,8 +25,8 @@ public static class CaptureAnalyzer
         public byte[]? Thumb; // 96x54 RGBA
     }
 
-    const int TW = VulkanThumbW, TH = VulkanThumbH;
-    const int VulkanThumbW = 96, VulkanThumbH = 54;
+    private const int TW = VulkanThumbW, TH = VulkanThumbH;
+    private const int VulkanThumbW = 96, VulkanThumbH = 54;
 
     /// <param name="progress">fraction done (0-1) while it runs (the "saving NN%" badge)</param>
     /// <param name="cancel">stops it (OperationCanceledException): the window closes while a recording is saved</param>
@@ -36,8 +36,8 @@ public static class CaptureAnalyzer
     {
         dir = Path.GetFullPath(dir);
         string framesPath = Path.Combine(dir, "frames.vsfr");
-        var session = ReadSession(Path.Combine(dir, "session.txt"));
-        long startNs = long.TryParse(session.GetValueOrDefault("start-ns"), out var sn) ? sn : 0;
+        Dictionary<string, string> session = ReadSession(Path.Combine(dir, "session.txt"));
+        long startNs = long.TryParse(session.GetValueOrDefault("start-ns"), out long sn) ? sn : 0;
         var sb = new StringBuilder();
         sb.AppendLine($"VitaSharp capture report: {Path.GetFileName(dir)}");
         sb.AppendLine($"title: {session.GetValueOrDefault("title-id", "?")} {session.GetValueOrDefault("title", "")}");
@@ -50,11 +50,11 @@ public static class CaptureAnalyzer
         var stats = new List<FrameStat>();
         // the contact sheet: SheetCells frames spread over the recording, picked by index from the frame count
         int total = CountFrames(dir, expectedFrames);
-        var sheetAt = SheetIndices(total, SheetCells);
+        HashSet<int> sheetAt = SheetIndices(total, SheetCells);
         var sheet = new SortedDictionary<int, byte[]>();
         if (File.Exists(framesPath))
         {
-            foreach (var (f, pic) in FramesFile.ReadAll(framesPath))
+            foreach ((FramesFile.Frame? f, (byte[] Rgba, int W, int H)? pic) in FramesFile.ReadAll(framesPath))
             {
                 cancel.ThrowIfCancellationRequested();
                 if (expectedFrames > 0 && (stats.Count & 63) == 0)
@@ -65,7 +65,7 @@ public static class CaptureAnalyzer
                 var st = new FrameStat { F = f };
                 if (pic is { } pv)
                 {
-                    var (px, w, h) = pv;
+                    (byte[]? px, int w, int h) = pv;
                     st.Hash = XxHash64.HashToUInt64(px);
                     (st.Luma, st.Dark) = Brightness(px);
                     st.Thumb = Downscale(px, w, h, TW, TH);
@@ -113,7 +113,7 @@ public static class CaptureAnalyzer
             }
         }
 
-        var input = ReadInput(dir);
+        List<InputEvent> input = ReadInput(dir);
 
 
         // overview
@@ -135,7 +135,7 @@ public static class CaptureAnalyzer
 
         // where the player is, what the screen showed, what they did just before
         sb.AppendLine();
-        foreach (var l in ContextLines(dir, input, startNs, stats, sheet))
+        foreach (string l in ContextLines(dir, input, startNs, stats, sheet))
         {
             sb.AppendLine(l);
         }
@@ -150,17 +150,17 @@ public static class CaptureAnalyzer
         string findDir = Path.Combine(dir, "findings");
         if (Directory.Exists(findDir))
         {
-            foreach (var old in Directory.GetFiles(findDir, "*.png"))
+            foreach (string old in Directory.GetFiles(findDir, "*.png"))
             {
                 File.Delete(old);
             }
         }
 
         var strips = new List<(Finding F, string Path)>();
-        foreach (var f in findings.OrderBy(f => f.Index))
+        foreach (Finding? f in findings.OrderBy(f => f.Index))
         {
-            var s = stats[f.Index];
-            var p = s.F.Info;
+            FrameStat s = stats[f.Index];
+            PresentInfo p = s.F.Info;
             double atS = (p.PresentNs - startNs) / 1e9;
             // present numbers restart with a new renderer (LoadExec, state load): pre-roll frames never match the dump
             string where = !s.F.PreRoll && dumpPresents.TryGetValue(p.Present, out int dk) ? $"GPU dump frame {dk} (replay-gpu --frame={dk})"
@@ -198,7 +198,7 @@ public static class CaptureAnalyzer
 
         // audio
         string audioDir = Path.Combine(dir, "audio");
-        var wavs = Directory.Exists(audioDir) ? Directory.GetFiles(audioDir, "*.wav").OrderBy(x => x).ToList() : new List<string>();
+        List<string> wavs = Directory.Exists(audioDir) ? Directory.GetFiles(audioDir, "*.wav").OrderBy(x => x).ToList() : new List<string>();
         if (File.Exists(Path.Combine(dir, "audio_mix.wav")))
         {
             wavs.Insert(0, Path.Combine(dir, "audio_mix.wav"));
@@ -206,13 +206,13 @@ public static class CaptureAnalyzer
 
         sb.AppendLine();
         sb.AppendLine($"Audio ({wavs.Count} files):");
-        var owners = PortOwners(dir);
+        Dictionary<string, string> owners = PortOwners(dir);
         var portSound = new List<(string File, double Seconds, double SoundSeconds)>();
-        foreach (var w in wavs.Take(64))
+        foreach (string? w in wavs.Take(64))
         {
             try
             {
-                var c = CaptureAudio.Analyze(w);
+                CaptureAudio.Check c = CaptureAudio.Analyze(w);
                 string name = Path.GetFileName(w);
                 bool port = name.Contains("_port", StringComparison.Ordinal) && !name.Contains("ngs_voice", StringComparison.Ordinal);
                 if (port)
@@ -261,13 +261,13 @@ public static class CaptureAnalyzer
         }
 
         sb.AppendLine("  " + CaptureContext.StreamVerdict(portSound, recorded));
-        var ctxStop = ContextSection(dir, stop: true);
+        List<string> ctxStop = ContextSection(dir, stop: true);
         if (ctxStop.Count > 0)
         {
             sb.AppendLine("  at the stop of the recording (context.txt):");
         }
 
-        foreach (var l in ctxStop.Where(l => l.StartsWith("audio: ", StringComparison.Ordinal)))
+        foreach (string? l in ctxStop.Where(l => l.StartsWith("audio: ", StringComparison.Ordinal)))
         {
             sb.AppendLine("    " + l["audio: ".Length..]);
         }
@@ -302,8 +302,8 @@ public static class CaptureAnalyzer
                 .Where(x => x.Picture != null && x.Frame.Info.Flip >= 0)
                 .Select(x => (x.Frame.Info.GuestUs, x.Frame.Info.Present, Downscale(x.Picture!.Value.Rgba, x.Picture.Value.W, x.Picture.Value.H, TW, TH)))
                 .ToList();
-        var a = Load(original);
-        var b = Load(rerun);
+        List<(long Us, long Present, byte[] T)> a = Load(original);
+        List<(long Us, long Present, byte[] T)> b = Load(rerun);
         var sb = new StringBuilder("# originalPresent rerunPresent guestTimeS dtMs diff\n");
         if (a.Count == 0 || b.Count == 0)
         {
@@ -315,7 +315,7 @@ public static class CaptureAnalyzer
         double firstDiverge = double.NaN;
         var diffs = new List<double>();
         int j = 0;
-        foreach (var (us, present, t) in a)
+        foreach ((long us, long present, byte[]? t) in a)
         {
             if (us < from || us > to)
             {
@@ -350,11 +350,11 @@ public static class CaptureAnalyzer
         return summary;
     }
 
-    static List<InputEvent> ReadInput(string dir) => File.Exists(Path.Combine(dir, "input.tsv"))
+    private static List<InputEvent> ReadInput(string dir) => File.Exists(Path.Combine(dir, "input.tsv"))
         ? File.ReadLines(Path.Combine(dir, "input.tsv")).Select(InputEvent.Parse).Where(e => e != null).Select(e => e!.Value).ToList()
         : new List<InputEvent>();
 
-    static Dictionary<string, string> ReadSession(string path)
+    private static Dictionary<string, string> ReadSession(string path)
     {
         var d = new Dictionary<string, string>();
         if (!File.Exists(path))
@@ -362,7 +362,7 @@ public static class CaptureAnalyzer
             return d;
         }
 
-        foreach (var line in File.ReadLines(path))
+        foreach (string line in File.ReadLines(path))
         {
             int c = line.IndexOf(": ", StringComparison.Ordinal);
             if (c > 0 && !line.StartsWith(' '))
@@ -374,7 +374,7 @@ public static class CaptureAnalyzer
     }
 
     /// <summary>Mean luma (0-255) and the fraction of pixels darker than 16.</summary>
-    static (double Luma, double Dark) Brightness(byte[] px)
+    private static (double Luma, double Dark) Brightness(byte[] px)
     {
         long sum = 0, dark = 0, n = 0;
         for (int i = 0; i < px.Length; i += 8) // every other pixel
@@ -391,9 +391,9 @@ public static class CaptureAnalyzer
         return (n == 0 ? 0 : sum / (double)n, n == 0 ? 0 : dark / (double)n);
     }
 
-    static byte[] Downscale(byte[] src, int w, int h, int tw, int th)
+    private static byte[] Downscale(byte[] src, int w, int h, int tw, int th)
     {
-        var dst = new byte[tw * th * 4];
+        byte[] dst = new byte[tw * th * 4];
         for (int y = 0; y < th; y++)
         {
             for (int x = 0; x < tw; x++)
@@ -423,7 +423,7 @@ public static class CaptureAnalyzer
         return dst;
     }
 
-    static double Diff(byte[]? a, byte[]? b)
+    private static double Diff(byte[]? a, byte[]? b)
     {
         if (a == null || b == null || a.Length != b.Length)
         {
@@ -439,9 +439,9 @@ public static class CaptureAnalyzer
         return s / (3.0 * a.Length / 4);
     }
 
-    static bool IsBlack(FrameStat s) => s.Thumb != null && s.Luma < 10 && s.Dark > 0.97;
+    private static bool IsBlack(FrameStat s) => s.Thumb != null && s.Luma < 10 && s.Dark > 0.97;
 
-    static void FindFrames(List<FrameStat> st, List<Finding> findings, double threshold, List<InputEvent> input)
+    private static void FindFrames(List<FrameStat> st, List<Finding> findings, double threshold, List<InputEvent> input)
     {
         int n = st.Count;
         // black frames: a run of 1-3 between normal frames is a black flash, a longer run a black screen
@@ -501,8 +501,8 @@ public static class CaptureAnalyzer
         // presentation order: guest flip numbers going back, a flip presented twice, flips the renderer skipped
         for (int i = 1; i < n; i++)
         {
-            var a = st[i - 1].F.Info;
-            var b = st[i].F.Info;
+            PresentInfo a = st[i - 1].F.Info;
+            PresentInfo b = st[i].F.Info;
             if (a.Flip < 0 || b.Flip < 0)
             {
                 continue;
@@ -578,7 +578,7 @@ public static class CaptureAnalyzer
                 continue;
             }
 
-            var p = st[i].F.Info;
+            PresentInfo p = st[i].F.Info;
             bool restarted = p.Present < st[i - 1].F.Info.Present;
             // a cause longer than the interval is a ledger total carried over a renderer change, not this frame's
             string cause = restarted ? "the renderer was replaced here (LoadExec or a state load): boot of the new process or the load itself"
@@ -589,7 +589,7 @@ public static class CaptureAnalyzer
         }
     }
 
-    static string FpsLine(List<FrameStat> st)
+    private static string FpsLine(List<FrameStat> st)
     {
         // frames presented in each second (the dips)
         long t0 = st[0].F.Info.PresentNs;
@@ -607,10 +607,10 @@ public static class CaptureAnalyzer
         return $"fps per second: min {perSecond.Min()}, median {perSecond.OrderBy(x => x).ElementAt(perSecond.Count / 2)}, max {perSecond.Max()}: {string.Join(' ', perSecond.Take(120))}";
     }
 
-    static string? NearInput(List<InputEvent> input, long ns)
+    private static string? NearInput(List<InputEvent> input, long ns)
     {
         InputEvent? best = null;
-        foreach (var e in input)
+        foreach (InputEvent e in input)
         {
             if (e.Kind is "motion" or "rng")
             {
@@ -635,29 +635,29 @@ public static class CaptureAnalyzer
         return FormattableString.Invariant($"{(ns - b.Ns) / 1e6:F0} ms after {b.Kind} {DescribeInput(b)} (guest frame {b.Flip})");
     }
 
-    static string DescribeInput(InputEvent e)
+    private static string DescribeInput(InputEvent e)
     {
         if (e.Kind != "pad")
         {
             return e.Data;
         }
 
-        var p = e.Data.Split(' ');
+        string[] p = e.Data.Split(' ');
         if (p.Length < 6 || !uint.TryParse(p[1], NumberStyles.HexNumber, null, out uint btn))
         {
             return e.Data;
         }
 
-        var names = Enum.GetValues<Host.VitaButtons>().Where(v => v != 0 && ((uint)v & ((uint)v - 1)) == 0 && (btn & (uint)v) != 0).Select(v => v.ToString()).Distinct();
+        IEnumerable<string> names = Enum.GetValues<Host.VitaButtons>().Where(v => v != 0 && ((uint)v & ((uint)v - 1)) == 0 && (btn & (uint)v) != 0).Select(v => v.ToString()).Distinct();
         return $"port {p[0]} buttons [{string.Join(' ', names)}] sticks {p[2]},{p[3]} {p[4]},{p[5]}";
     }
 
     // ------------------------------------------------------------------ context (where, contact sheet, input before)
 
-    const int SheetCells = 12, SheetCols = 4, SheetW = 240, SheetH = 136;
+    private const int SheetCells = 12, SheetCols = 4, SheetW = 240, SheetH = 136;
 
     /// <summary>The frames in the capture: timeline.tsv's lines (written before the analysis), else the caller's count.</summary>
-    static int CountFrames(string dir, int expected)
+    private static int CountFrames(string dir, int expected)
     {
         string t = Path.Combine(dir, "timeline.tsv");
         if (!File.Exists(t))
@@ -703,7 +703,7 @@ public static class CaptureAnalyzer
         }
 
         bool inside = false;
-        foreach (var l in File.ReadLines(p))
+        foreach (string l in File.ReadLines(p))
         {
             if (l.StartsWith('['))
             {
@@ -720,10 +720,10 @@ public static class CaptureAnalyzer
 
     /// <summary>Port WAV name (portN_TYPE) -> "role, opened by X thread 'Y'" from context.txt (both sections; a
     /// handle used by two processes lists both).</summary>
-    static Dictionary<string, string> PortOwners(string dir)
+    private static Dictionary<string, string> PortOwners(string dir)
     {
         var d = new Dictionary<string, string>();
-        foreach (var l in ContextSection(dir, false).Concat(ContextSection(dir, true)))
+        foreach (string? l in ContextSection(dir, false).Concat(ContextSection(dir, true)))
         {
             // audio: port 1 MAIN (port1_MAIN.wav): role; opened by X thread 'Y'; ...
             int a = l.IndexOf(" (port", StringComparison.Ordinal), b = l.IndexOf(".wav): ", StringComparison.Ordinal);
@@ -733,19 +733,19 @@ public static class CaptureAnalyzer
             }
 
             string key = l[(a + 2)..b];
-            var parts = l[(b + 7)..].Split("; ");
+            string[] parts = l[(b + 7)..].Split("; ");
             string who = parts.Length >= 2 ? $"{parts[0]}, {parts[1]}" : parts[0];
-            d[key] = d.TryGetValue(key, out var old) && old != who ? $"{old} / {who}" : who;
+            d[key] = d.TryGetValue(key, out string? old) && old != who ? $"{old} / {who}" : who;
         }
         return d;
     }
 
-    static double ParseSeconds(string? recorded) =>
-        recorded != null && double.TryParse(recorded.Split(' ')[0], NumberStyles.Float, CultureInfo.InvariantCulture, out var s) ? s : 0;
+    private static double ParseSeconds(string? recorded) =>
+        recorded != null && double.TryParse(recorded.Split(' ')[0], NumberStyles.Float, CultureInfo.InvariantCulture, out double s) ? s : 0;
 
     /// <summary>The report's "Where" part: the screen at the start and every change (input.tsv kind ctx), the
     /// processes, the contact sheet (frames.png) and the last input before the recording (input_before.tsv).</summary>
-    static List<string> ContextLines(string dir, List<InputEvent> input, long startNs, List<FrameStat> stats, SortedDictionary<int, byte[]> sheet)
+    private static List<string> ContextLines(string dir, List<InputEvent> input, long startNs, List<FrameStat> stats, SortedDictionary<int, byte[]> sheet)
     {
         var o = new List<string>();
         // times from the recording's start mark (start-ns of session.txt is the capture clock's origin)
@@ -754,7 +754,7 @@ public static class CaptureAnalyzer
             startNs = m.Ns;
         }
 
-        var start = ContextSection(dir, false);
+        List<string> start = ContextSection(dir, false);
         var ctx = input.Where(e => e.Kind == "ctx").ToList();
         o.Add("Where:");
         if (start.Count == 0 && ctx.Count == 0)
@@ -762,17 +762,17 @@ public static class CaptureAnalyzer
             o.Add("  (no context.txt: a capture from an older build)");
         }
 
-        foreach (var e in ctx)
+        foreach (InputEvent e in ctx)
         {
             o.Add(FormattableString.Invariant($"  {(e.Ns - startNs) / 1e9:+0.0;-0.0} s: {e.Data}"));
         }
 
-        foreach (var l in start.Where(l => l.StartsWith("process: ", StringComparison.Ordinal)))
+        foreach (string? l in start.Where(l => l.StartsWith("process: ", StringComparison.Ordinal)))
         {
             o.Add("  " + l);
         }
 
-        var stopWhere = ContextSection(dir, true).FirstOrDefault(l => l.StartsWith("where: ", StringComparison.Ordinal));
+        string? stopWhere = ContextSection(dir, true).FirstOrDefault(l => l.StartsWith("where: ", StringComparison.Ordinal));
         if (stopWhere != null)
         {
             o.Add($"  at the stop: {stopWhere["where: ".Length..]}");
@@ -781,10 +781,10 @@ public static class CaptureAnalyzer
         if (sheet.Count > 0)
         {
             int rows = (sheet.Count + SheetCols - 1) / SheetCols;
-            var img = new byte[SheetW * SheetCols * SheetH * rows * 4];
+            byte[] img = new byte[SheetW * SheetCols * SheetH * rows * 4];
             int k = 0;
             var times = new List<string>();
-            foreach (var (idx, cell) in sheet)
+            foreach ((int idx, byte[]? cell) in sheet)
             {
                 int cx = k % SheetCols, cy = k / SheetCols;
                 for (int y = 0; y < SheetH; y++)
@@ -811,7 +811,7 @@ public static class CaptureAnalyzer
         {
             var ev = File.ReadLines(before).Select(InputEvent.Parse).OfType<InputEvent>().ToList();
             o.Add(ev.Count == 0 ? "  input before the recording: none (no button or touch change since the game started)" : "  input before the recording (the last changes, input_before.tsv):");
-            foreach (var e in ev.TakeLast(8))
+            foreach (InputEvent e in ev.TakeLast(8))
             {
                 o.Add(FormattableString.Invariant($"    {(e.Ns - startNs) / 1e9:+0.0;-0.0} s: {e.Kind} {DescribeInput(e)}"));
             }
@@ -821,14 +821,14 @@ public static class CaptureAnalyzer
 
     /// <summary>Each finding's frame with two before and two after, side by side (240x136 each), the finding in the
     /// middle with a red border. One pass over the file decodes the pictures needed.</summary>
-    static void WriteStrips(string framesPath, List<(Finding F, string Path)> strips, CancellationToken cancel)
+    private static void WriteStrips(string framesPath, List<(Finding F, string Path)> strips, CancellationToken cancel)
     {
-        const int cw = 240, ch = 136, cols = 5;
-        var need = new HashSet<int>(strips.SelectMany(s => Enumerable.Range(s.F.Index - 2, cols)));
+        const int CellWidth = 240, CellHeight = 136, Columns = 5;
+        var need = new HashSet<int>(strips.SelectMany(s => Enumerable.Range(s.F.Index - 2, Columns)));
         var cells = new Dictionary<int, byte[]>();
         int i = 0;
         int last = need.Max();
-        foreach (var (_, pic) in FramesFile.ReadAll(framesPath))
+        foreach ((FramesFile.Frame _, (byte[] Rgba, int W, int H)? pic) in FramesFile.ReadAll(framesPath))
         {
             cancel.ThrowIfCancellationRequested();
             if (i > last)
@@ -838,35 +838,35 @@ public static class CaptureAnalyzer
 
             if (need.Contains(i) && pic is { } p)
             {
-                cells[i] = Downscale(p.Rgba, p.W, p.H, cw, ch);
+                cells[i] = Downscale(p.Rgba, p.W, p.H, CellWidth, CellHeight);
             }
 
             i++;
         }
-        foreach (var (f, path) in strips)
+        foreach ((Finding? f, string? path) in strips)
         {
-            var img = new byte[cw * cols * ch * 4];
-            for (int c = 0; c < cols; c++)
+            byte[] img = new byte[CellWidth * Columns * CellHeight * 4];
+            for (int c = 0; c < Columns; c++)
             {
-                if (!cells.TryGetValue(f.Index - 2 + c, out var cell))
+                if (!cells.TryGetValue(f.Index - 2 + c, out byte[]? cell))
                 {
                     continue;
                 }
 
-                for (int y = 0; y < ch; y++)
+                for (int y = 0; y < CellHeight; y++)
                 {
-                    cell.AsSpan(y * cw * 4, cw * 4).CopyTo(img.AsSpan((y * cw * cols + c * cw) * 4));
+                    cell.AsSpan(y * CellWidth * 4, CellWidth * 4).CopyTo(img.AsSpan((y * CellWidth * Columns + c * CellWidth) * 4));
                 }
 
                 if (c == 2)
                 {
-                    for (int y = 0; y < ch; y++)
+                    for (int y = 0; y < CellHeight; y++)
                     {
-                        for (int x = 0; x < cw; x++)
+                        for (int x = 0; x < CellWidth; x++)
                         {
-                            if (y < 3 || y >= ch - 3 || x < 3 || x >= cw - 3)
+                            if (y < 3 || y >= CellHeight - 3 || x < 3 || x >= CellWidth - 3)
                             {
-                                int o = (y * cw * cols + c * cw + x) * 4;
+                                int o = (y * CellWidth * Columns + c * CellWidth + x) * 4;
                                 img[o] = 255;
                                 img[o + 1] = 0;
                                 img[o + 2] = 0;
@@ -875,7 +875,7 @@ public static class CaptureAnalyzer
                     }
                 }
             }
-            CapturePng.Write(path, img, cw * cols, ch);
+            CapturePng.Write(path, img, CellWidth * Columns, CellHeight);
         }
     }
 }

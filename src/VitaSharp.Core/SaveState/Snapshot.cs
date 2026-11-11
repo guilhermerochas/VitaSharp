@@ -53,20 +53,20 @@ public sealed class SnapshotRetryException(string message) : SnapshotException(m
 /// <summary>Little-endian binary writer of snapshot data (a growable buffer; sections are length-prefixed).</summary>
 public sealed class SnapshotWriter
 {
-    byte[] _buf = new byte[4096];
-    int _len;
+    private byte[] _buf = new byte[4096];
+    private int _len;
 
     public int Length => _len;
     public ReadOnlySpan<byte> Data => _buf.AsSpan(0, _len);
 
-    Span<byte> Grow(int n)
+    private Span<byte> Grow(int n)
     {
         if (_len + n > _buf.Length)
         {
             Array.Resize(ref _buf, Math.Max(_buf.Length * 2, _len + n));
         }
 
-        var s = _buf.AsSpan(_len, n);
+        Span<byte> s = _buf.AsSpan(_len, n);
         _len += n;
         return s;
     }
@@ -157,9 +157,9 @@ public sealed class SnapshotWriter
 /// <summary>Reader matching <see cref="SnapshotWriter"/>. Reading past the end throws <see cref="SnapshotException"/>.</summary>
 public sealed class SnapshotReader(byte[] data, int offset = 0, int length = -1)
 {
-    readonly byte[] _buf = data;
-    int _pos = offset;
-    readonly int _end = length < 0 ? data.Length : offset + length;
+    private readonly byte[] _buf = data;
+    private int _pos = offset;
+    private readonly int _end = length < 0 ? data.Length : offset + length;
 
     /// <summary>Resolves kernel object UIDs while loading (the restored object table).</summary>
     public Kernel.ObjectTable? Objects { get; init; }
@@ -167,14 +167,14 @@ public sealed class SnapshotReader(byte[] data, int offset = 0, int length = -1)
     public bool AtEnd => _pos >= _end;
     public int Remaining => _end - _pos;
 
-    ReadOnlySpan<byte> Take(int n)
+    private ReadOnlySpan<byte> Take(int n)
     {
         if (n < 0 || _pos + n > _end)
         {
             throw new SnapshotException("the save state is truncated or corrupt");
         }
 
-        var s = _buf.AsSpan(_pos, n);
+        Span<byte> s = _buf.AsSpan(_pos, n);
         _pos += n;
         return s;
     }
@@ -233,7 +233,7 @@ public sealed class SnapshotReader(byte[] data, int offset = 0, int length = -1)
             return false;
         }
 
-        var sub = ReadBlock();
+        SnapshotReader sub = ReadBlock();
         target.LoadState(sub);
         return true;
     }
@@ -246,8 +246,8 @@ public sealed class SnapshotReader(byte[] data, int offset = 0, int length = -1)
             return null;
         }
 
-        var sub = ReadBlock();
-        var o = create();
+        SnapshotReader sub = ReadBlock();
+        T o = create();
         o.LoadState(sub);
         return o;
     }

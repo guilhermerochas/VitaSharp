@@ -6,8 +6,8 @@ namespace VitaSharp.Core.Memory;
 /// <summary>OS virtual memory primitives (Windows + POSIX so the core stays portable to Android).</summary>
 internal static unsafe partial class HostVirtualMemory
 {
-    const uint MEM_COMMIT = 0x1000, MEM_RESERVE = 0x2000, MEM_RELEASE = 0x8000, MEM_DECOMMIT = 0x4000;
-    const uint PAGE_NOACCESS = 1, PAGE_READWRITE = 4, PAGE_EXECUTE_READWRITE = 0x40;
+    private const uint MEM_COMMIT = 0x1000, MEM_RESERVE = 0x2000, MEM_RELEASE = 0x8000, MEM_DECOMMIT = 0x4000;
+    private const uint PAGE_NOACCESS = 1, PAGE_READWRITE = 4, PAGE_EXECUTE_READWRITE = 0x40;
 
     [LibraryImport("kernel32.dll", SetLastError = true)]
     private static partial void* VirtualAlloc(void* addr, nuint size, uint type, uint protect);
@@ -42,8 +42,8 @@ internal static unsafe partial class HostVirtualMemory
     [LibraryImport("libc", SetLastError = true)]
     private static partial int mprotect(void* addr, nuint len, int prot);
 
-    const int PROT_NONE = 0, PROT_READ = 1, PROT_WRITE = 2;
-    const int MAP_PRIVATE = 2, MAP_ANONYMOUS_LINUX = 0x20, MAP_NORESERVE_LINUX = 0x4000, MAP_ANON_MAC = 0x1000;
+    private const int PROT_NONE = 0, PROT_READ = 1, PROT_WRITE = 2;
+    private const int MAP_PRIVATE = 2, MAP_ANONYMOUS_LINUX = 0x20, MAP_NORESERVE_LINUX = 0x4000, MAP_ANON_MAC = 0x1000;
 
     /// <summary>Reserve address space. On POSIX it is mapped read/write with NORESERVE (lazy backing).</summary>
     public static byte* Reserve(nuint size, out bool lazyCommitted)
@@ -51,7 +51,7 @@ internal static unsafe partial class HostVirtualMemory
         if (OperatingSystem.IsWindows())
         {
             lazyCommitted = false;
-            var p = VirtualAlloc(null, size, MEM_RESERVE, PAGE_NOACCESS);
+            void* p = VirtualAlloc(null, size, MEM_RESERVE, PAGE_NOACCESS);
             if (p == null)
             {
                 throw new OutOfMemoryException($"VirtualAlloc reserve failed ({Marshal.GetLastPInvokeError()})");
@@ -61,7 +61,7 @@ internal static unsafe partial class HostVirtualMemory
         }
         lazyCommitted = true;
         int flags = MAP_PRIVATE | (OperatingSystem.IsMacOS() ? MAP_ANON_MAC : MAP_ANONYMOUS_LINUX | MAP_NORESERVE_LINUX);
-        var m = mmap(null, size, PROT_READ | PROT_WRITE, flags, -1, 0);
+        void* m = mmap(null, size, PROT_READ | PROT_WRITE, flags, -1, 0);
         if (m == (void*)-1)
         {
             throw new OutOfMemoryException("mmap reserve failed");
@@ -127,7 +127,7 @@ internal static unsafe partial class HostVirtualMemory
         }
     }
 
-    static void Clear(nuint from, nuint to)
+    private static void Clear(nuint from, nuint to)
     {
         if (to > from)
         {
@@ -149,8 +149,8 @@ internal static unsafe partial class HostVirtualMemory
 
     // ------------------------------------------------------------------ shared regions (several views of one memory)
 
-    const uint MEM_RESERVE_PLACEHOLDER = 0x00040000, MEM_REPLACE_PLACEHOLDER = 0x00004000, MEM_PRESERVE_PLACEHOLDER = 0x2;
-    const uint SEC_RESERVE = 0x04000000;
+    private const uint MEM_RESERVE_PLACEHOLDER = 0x00040000, MEM_REPLACE_PLACEHOLDER = 0x00004000, MEM_PRESERVE_PLACEHOLDER = 0x2;
+    private const uint SEC_RESERVE = 0x04000000;
 
     [LibraryImport("kernelbase.dll", SetLastError = true)]
     private static partial void* VirtualAlloc2(nint process, void* baseAddress, nuint size, uint allocationType, uint pageProtection, void* extendedParameters, uint parameterCount);
@@ -178,7 +178,7 @@ internal static unsafe partial class HostVirtualMemory
     [LibraryImport("libc", SetLastError = true)]
     private static partial int close(int fd);
 
-    const int MAP_SHARED = 1, MAP_FIXED = 0x10;
+    private const int MAP_SHARED = 1, MAP_FIXED = 0x10;
 
     /// <summary>
     /// Memory that several reservations map at once (<see cref="ReserveWithViews"/>): a pagefile-backed section whose pages
@@ -248,9 +248,9 @@ internal static unsafe partial class HostVirtualMemory
             }
 
             byte* p = Reserve(size, out lazyCommitted);
-            foreach (var v in views)
+            foreach (View v in views)
             {
-                var m = mmap(p + v.Offset, v.Size, PROT_READ | PROT_WRITE, MAP_SHARED | MAP_FIXED, (int)v.Memory - 1, 0);
+                void* m = mmap(p + v.Offset, v.Size, PROT_READ | PROT_WRITE, MAP_SHARED | MAP_FIXED, (int)v.Memory - 1, 0);
                 if (m == (void*)-1)
                 {
                     munmap(p, size);
@@ -266,7 +266,7 @@ internal static unsafe partial class HostVirtualMemory
         }
     }
 
-    static byte* ReserveWithViewsWindows(nuint size, ReadOnlySpan<View> views, out (nint Address, nuint Size, bool View)[] parts)
+    private static byte* ReserveWithViewsWindows(nuint size, ReadOnlySpan<View> views, out (nint Address, nuint Size, bool View)[] parts)
     {
         parts = [];
         nint proc = GetCurrentProcess();
@@ -279,7 +279,7 @@ internal static unsafe partial class HostVirtualMemory
         var list = new List<(nint, nuint, bool)>();
         nuint at = 0;
         bool ok = true;
-        foreach (var v in views)
+        foreach (View v in views)
         {
             // split the placeholder that holds the view's range off, and map the shared memory in its place
             if (!VirtualFree(p + v.Offset, v.Size, MEM_RELEASE | MEM_PRESERVE_PLACEHOLDER)
@@ -301,7 +301,7 @@ internal static unsafe partial class HostVirtualMemory
             list.Add(((nint)(p + at), size - at, false));
         }
         // the remaining placeholders become ordinary reserved memory (committed by VirtualAlloc and the lazy handler)
-        foreach (var (a, len, view) in list)
+        foreach ((nint a, nuint len, bool view) in list)
         {
             if (ok && !view && VirtualAlloc2(proc, (void*)a, len, MEM_RESERVE | MEM_REPLACE_PLACEHOLDER, PAGE_NOACCESS, null, 0) == null)
             {
@@ -323,7 +323,7 @@ internal static unsafe partial class HostVirtualMemory
     /// <summary>Releases a reservation made by <see cref="ReserveWithViews"/>.</summary>
     public static void ReleaseWithViews((nint Address, nuint Size, bool View)[] parts)
     {
-        foreach (var (a, len, view) in parts)
+        foreach ((nint a, nuint len, bool view) in parts)
         {
             if (OperatingSystem.IsWindows())
             {
@@ -390,7 +390,7 @@ internal static unsafe partial class HostVirtualMemory
                 return false;
             }
 
-            var handler = Cpu.Native.Arm64Emitter.EmitLazyCommitHandler((ulong)@base, size, (ulong)vaArm);
+            byte[] handler = Cpu.Native.Arm64Emitter.EmitLazyCommitHandler((ulong)@base, size, (ulong)vaArm);
             byte* execArm = AllocExecutable(handler.Length);
             if (execArm == null)
             {
@@ -449,7 +449,7 @@ internal static unsafe partial class HostVirtualMemory
         B(0x48, 0x83, 0xC4, 0x28);                         // add rsp, 40
         B(0xC3);                                           // ret
 
-        var arr = code.ToArray();
+        byte[] arr = code.ToArray();
         foreach (int at in new[] { jne1, jae, jz })
         {
             BitConverter.GetBytes(notours - (at + 6)).CopyTo(arr, at + 2);

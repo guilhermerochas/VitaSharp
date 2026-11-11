@@ -14,7 +14,7 @@ public static class Loc
 {
     public const string System = "system", English = "en", Portuguese = "pt-BR";
 
-    static readonly ResourceManager Resources = new("VitaSharp.Core.Localization.Texts", typeof(Loc).Assembly);
+    private static readonly ResourceManager s_resources = new("VitaSharp.Core.Localization.Texts", typeof(Loc).Assembly);
 
     /// <summary>The culture of the texts (also used to format numbers and dates in them).</summary>
     public static CultureInfo Culture { get; private set; } = Pick(Environment.GetEnvironmentVariable(EnvVars.Language));
@@ -38,7 +38,7 @@ public static class Loc
 
     /// <summary>The text of <paramref name="key"/> in the current language (English when it has none; the key itself
     /// when no language has it, which the tests catch).</summary>
-    public static string Get(string key) => Resources.GetString(key, Culture) ?? key;
+    public static string Get(string key) => s_resources.GetString(key, Culture) ?? key;
 
     /// <summary>The format text of <paramref name="key"/> with <paramref name="args"/>.</summary>
     public static string Format(string key, params object?[] args) => string.Format(Culture, Get(key), args);
@@ -46,7 +46,7 @@ public static class Loc
     /// <summary>Every key and text of one language file only (no fallback): tests.</summary>
     public static IReadOnlyDictionary<string, string> Table(CultureInfo culture)
     {
-        var set = Resources.GetResourceSet(culture, createIfNotExists: true, tryParents: false);
+        ResourceSet? set = s_resources.GetResourceSet(culture, createIfNotExists: true, tryParents: false);
         var table = new Dictionary<string, string>();
         if (set == null)
         {

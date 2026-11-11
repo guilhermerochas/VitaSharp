@@ -1,3 +1,4 @@
+using System.Diagnostics.CodeAnalysis;
 using System.Runtime.InteropServices;
 using VitaSharp.Core.Cpu;
 using VitaSharp.Core.Hle;
@@ -29,7 +30,7 @@ public sealed unsafe partial class GuestThread : KernelObject, IDisposable, Cpu.
     public const int TlsThreadId = 1, TlsSpTop = 2, TlsSpBottom = 3, TlsVfpException = 4, TlsReserved6 = 6,
         TlsStackCheckGuard = 7, TlsCurrentPriority = 8, TlsAffinity = 9;
 
-    readonly Emulator _emu;
+    private readonly Emulator _emu;
     /// <summary>The process the thread belongs to.</summary>
     public Emulator Process => _emu;
     public int Pid => _emu?.Pid ?? 0; // 0: a thread object made without a process (unit tests)
@@ -81,12 +82,13 @@ public sealed unsafe partial class GuestThread : KernelObject, IDisposable, Cpu.
     public volatile object? CurrentWaitSync;
     public static Func<GuestThread, int>? CallbackProcessor;
 
-    Thread? _host;
-    readonly ManualResetEventSlim _finished = new(true);
-    int _callDepth;
+    private Thread? _host;
+    private readonly ManualResetEventSlim _finished = new(true);
+    private int _callDepth;
 
-    [ThreadStatic] static GuestThread? _current;
-    public static GuestThread? Current => _current;
+    [SuppressMessage("Style", "IDE1006", Justification = "[ThreadStatic]: t_camelCase; .editorconfig cannot select the attribute")]
+    [ThreadStatic] private static GuestThread? t_current;
+    public static GuestThread? Current => t_current;
 
     /// <summary>Set by an HLE function that loaded a whole new register context (e.g. a fiber switch): the dispatcher
     /// then resumes at the loaded PC instead of returning to LR.</summary>
@@ -105,7 +107,7 @@ public sealed unsafe partial class GuestThread : KernelObject, IDisposable, Cpu.
         Hle = new HleContext { Cpu = Core.State, Thread = this, Emu = emu };
 
         StackSize = GuestMemory.AlignUp(Math.Max(stackSize, 0x4000u), 0x1000);
-        using var scope = ProcessScope.Enter(emu); // the stack and TLS belong to the thread's process
+        using ProcessScope.Scope scope = ProcessScope.Enter(emu); // the stack and TLS belong to the thread's process
         StackAddr = emu.Memory.Alloc(StackSize, $"stack:{name}");
         GuestMemory.Fill(StackAddr, 0xCC, StackSize);
 
@@ -120,7 +122,7 @@ public sealed unsafe partial class GuestThread : KernelObject, IDisposable, Cpu.
     /// </summary>
     internal void InitTls()
     {
-        var tls = GuestMemory.Span<int>(TlsBase, (int)(KernelTlsSize / 4));
+        Span<int> tls = GuestMemory.Span<int>(TlsBase, (int)(KernelTlsSize / 4));
         tls.Clear();
         tls[TlsThreadId] = Uid;
         tls[TlsSpTop] = (int)(StackAddr + StackSize);
@@ -129,7 +131,7 @@ public sealed unsafe partial class GuestThread : KernelObject, IDisposable, Cpu.
         tls[TlsStackCheckGuard] = unchecked((int)0xC325C2A7);
         tls[TlsCurrentPriority] = Priority;
         tls[TlsAffinity] = Affinity;
-        var k = _emu.Kernel;
+        Kernel k = _emu.Kernel;
         if (k.TlsInit != 0 && k.TlsInitSize > 0)
         {
             GuestMemory.Copy(UserTls, k.TlsInit, k.TlsInitSize);
@@ -148,7 +150,7 @@ public sealed unsafe partial class GuestThread : KernelObject, IDisposable, Cpu.
                 return SceError.NOT_DORMANT;
             }
 
-            var s = Core.State;
+            CpuState* s = Core.State;
             new Span<byte>(s, sizeof(CpuState)).Clear();
             s->Fpscr = 0x0300_0000;
             // r2-r12 are not zero at thread entry: like Vita3K (initial_context) fill them with a marker, so code
@@ -160,7 +162,7 @@ public sealed unsafe partial class GuestThread : KernelObject, IDisposable, Cpu.
                 s->R[r] = InitialRegisterFill;
             }
 
-            var tls = GuestMemory.Span<int>(TlsBase, (int)(KernelTlsSize / 4));
+            Span<int> tls = GuestMemory.Span<int>(TlsBase, (int)(KernelTlsSize / 4));
             tls[TlsCurrentPriority] = Priority;
             tls[TlsAffinity] = Affinity;
             s->TpidrUro = UserTls;
@@ -191,14 +193,14 @@ public sealed unsafe partial class GuestThread : KernelObject, IDisposable, Cpu.
         }
     }
 
-    void HostMain()
+    private void HostMain()
     {
-        _current = this;
-        Live[this] = 0;
+        t_current = this;
+        s_live[this] = 0;
         // the HLE calls of this thread (and the tasks they start) work in its process's address space
         Memory.AddressSpace.Enter(_emu.Space);
         // a kernel thread's objects and memory are the kernel's (0: the thread's own process, as before)
-        using var kernelScope = ProcessScope.Enter(KernelMode ? KernelSpace.KernelPid : 0);
+        using ProcessScope.PidScope kernelScope = ProcessScope.Enter(KernelMode ? KernelSpace.KernelPid : 0);
         Util.NativeThread.Register(Name, Util.NativeThread.Role.Guest);
         Util.HostThreads.Apply(Util.HostThreads.Role.Guest);
         int status = 0;
@@ -237,7 +239,7 @@ public sealed unsafe partial class GuestThread : KernelObject, IDisposable, Cpu.
                 Status = ThreadStatus.Dormant;
                 Monitor.PulseAll(WaitLock);
             }
-            Live.TryRemove(this, out _);
+            s_live.TryRemove(this, out _);
             if (FinishingScene)
             {
                 _emu.OpenSceneThread = null;
@@ -250,14 +252,14 @@ public sealed unsafe partial class GuestThread : KernelObject, IDisposable, Cpu.
                 _emu.Kernel.DeleteThread(this);
             }
 
-            _current = null;
+            t_current = null;
         }
     }
 
     /// <summary>Runs guest code until the return trap fires at the current call depth. Returns R0.</summary>
-    uint RunUntilTrap()
+    private uint RunUntilTrap()
     {
-        var s = Core.State;
+        CpuState* s = Core.State;
         uint trap = _emu.Kernel.ThreadExitTrap;
         int depth = _callDepth;
         while (true)
@@ -326,12 +328,12 @@ public sealed unsafe partial class GuestThread : KernelObject, IDisposable, Cpu.
         }
     }
 
-    bool TraceHleCall(HleFunction f, CpuState* s)
+    private bool TraceHleCall(HleFunction f, CpuState* s)
     {
         if (_emu.TraceHleThreads is { } names)
         {
             bool match = false;
-            foreach (var n in names)
+            foreach (string n in names)
             {
                 if (Name.Contains(n, StringComparison.Ordinal))
                 {
@@ -349,7 +351,7 @@ public sealed unsafe partial class GuestThread : KernelObject, IDisposable, Cpu.
         bool trace = _emu.TraceHle && _emu.TraceHleOnly == null;
         if (!trace && _emu.TraceHleOnly is { } only)
         {
-            foreach (var p in only)
+            foreach (string p in only)
             {
                 if (f.Name.StartsWith(p, StringComparison.Ordinal))
                 {
@@ -365,7 +367,7 @@ public sealed unsafe partial class GuestThread : KernelObject, IDisposable, Cpu.
             if (fr >= win.From && fr < win.To)
             {
                 trace = true;
-                foreach (var p in _emu.TraceHleExclude)
+                foreach (string p in _emu.TraceHleExclude)
                 {
                     if (f.Name.StartsWith(p, StringComparison.Ordinal))
                     {
@@ -391,7 +393,7 @@ public sealed unsafe partial class GuestThread : KernelObject, IDisposable, Cpu.
     /// host waits with it.</summary>
     public volatile HleFunction? CurrentHle;
 
-    void InvokeTimed(HleFunction f, uint index)
+    private void InvokeTimed(HleFunction f, uint index)
     {
         long t0 = System.Diagnostics.Stopwatch.GetTimestamp();
         ulong c0 = Util.NativeThread.CycleTime();
@@ -402,7 +404,7 @@ public sealed unsafe partial class GuestThread : KernelObject, IDisposable, Cpu.
         finally
         {
             long cyc = (long)(Util.NativeThread.CycleTime() - c0), ticks = System.Diagnostics.Stopwatch.GetTimestamp() - t0;
-            var p = HleProfile;
+            long[] p = HleProfile;
             int i = (int)index * 3;
             if (i + 3 > p.Length)
             {
@@ -416,7 +418,7 @@ public sealed unsafe partial class GuestThread : KernelObject, IDisposable, Cpu.
     }
 
     [System.Runtime.CompilerServices.MethodImpl(System.Runtime.CompilerServices.MethodImplOptions.AggressiveInlining)]
-    void Invoke(HleFunction f, uint index)
+    private void Invoke(HleFunction f, uint index)
     {
         if (!HleFunction.Track)
         {
@@ -426,10 +428,10 @@ public sealed unsafe partial class GuestThread : KernelObject, IDisposable, Cpu.
         InvokeTracked(f, index);
     }
 
-    void InvokeTracked(HleFunction f, uint index)
+    private void InvokeTracked(HleFunction f, uint index)
     {
         // no try/finally: a throwing HLE call (thread exit) leaves a stale name, which the next call replaces
-        var outer = CurrentHle;
+        HleFunction? outer = CurrentHle;
         CurrentHle = f;
         if (HleFunction.Profile)
         {
@@ -495,10 +497,10 @@ public sealed unsafe partial class GuestThread : KernelObject, IDisposable, Cpu.
     }
 #endif
 
-    void DispatchHle(CpuState* s)
+    private void DispatchHle(CpuState* s)
     {
         _hleSeq++; // odd while inside an HLE call (save states: a thread that returns meanwhile is seen)
-        var f = _emu.Hle.GetFunction(s->SvcImm);
+        HleFunction f = _emu.Hle.GetFunction(s->SvcImm);
         f.CallCount++;
         long charged0 = Core.ChargedCycles;
         Core.ChargeInstructions(f.Cost);
@@ -601,7 +603,7 @@ public sealed unsafe partial class GuestThread : KernelObject, IDisposable, Cpu.
     /// stack once per function and the call fails with SCE_KERNEL_ERROR_ERROR, as a firmware function refusing the
     /// arguments would. Guest exits, faults and the other exceptions keep their meaning.
     /// </summary>
-    void InvokeGuarded(HleFunction f, CpuState* s)
+    private void InvokeGuarded(HleFunction f, CpuState* s)
     {
         try
         {
@@ -629,7 +631,7 @@ public sealed unsafe partial class GuestThread : KernelObject, IDisposable, Cpu.
     /// <summary>Like <see cref="CallGuest"/>, with sp set to <paramref name="stackTop"/> (0 = just below the current sp).</summary>
     public uint CallGuestOnStack(uint addr, uint stackTop, params ReadOnlySpan<uint> args)
     {
-        var s = Core.State;
+        CpuState* s = Core.State;
         CpuState saved = *s;
         try
         {
@@ -672,9 +674,9 @@ public sealed unsafe partial class GuestThread : KernelObject, IDisposable, Cpu.
 
     // ---- VM suspension (sceKernelSuspendThreadForVM / ForMono)
     public volatile int SuspendCount;
-    volatile bool _inGuest;
+    private volatile bool _inGuest;
     internal bool InGuestCode => _inGuest;
-    readonly object _suspendLock = new();
+    private readonly object _suspendLock = new();
 
     public void SuspendForVm()
     {
@@ -708,18 +710,18 @@ public sealed unsafe partial class GuestThread : KernelObject, IDisposable, Cpu.
 
     /// <summary>The thread's process is suspended (an application sent to the background by the shell), and the thread
     /// may stop here: not while its process has a GPU scene open, which the other processes would wait for.</summary>
-    bool ProcessSuspended => _emu.Suspended && !_emu.Gpu.HasOpenScene(_emu.Pid);
+    private bool ProcessSuspended => _emu.Suspended && !_emu.Gpu.HasOpenScene(_emu.Pid);
 
     /// <summary>The emulation is paused (<see cref="EmulationPause"/>) and the thread may stop here: every thread but the
     /// one that has a GPU scene open, which goes on until it ends the scene so the GPU completes the frame.</summary>
-    bool PausedHere => EmulationPause.IsPaused && !FinishingScene;
+    private bool PausedHere => EmulationPause.IsPaused && !FinishingScene;
 
     /// <summary>The thread submitted a BeginScene whose EndScene is still to come (<see cref="Emulator.OpenSceneThread"/>).</summary>
     public bool FinishingScene => ReferenceEquals(_emu.OpenSceneThread, this);
 
-    void ParkWhileSuspended()
+    private void ParkWhileSuspended()
     {
-        using var blocked = Scheduler.Block();
+        using Scheduler.Blocked blocked = Scheduler.Block();
         lock (_suspendLock)
         {
             _parkedDepth = _callDepth; // save states: parked at a block boundary at this call depth
@@ -747,13 +749,13 @@ public sealed unsafe partial class GuestThread : KernelObject, IDisposable, Cpu.
     }
 
     /// <summary>Guest threads whose host thread is running, in every process (<see cref="EmulationPause"/>).</summary>
-    static readonly System.Collections.Concurrent.ConcurrentDictionary<GuestThread, byte> Live = new();
+    private static readonly System.Collections.Concurrent.ConcurrentDictionary<GuestThread, byte> s_live = new();
 
     /// <summary>The emulation was paused: every running guest thread leaves its guest code at the next block boundary
     /// and parks (threads blocked in HLE park when they return to guest code).</summary>
     internal static void InterruptAll()
     {
-        foreach (var t in Live.Keys)
+        foreach (GuestThread t in s_live.Keys)
         {
             t.Core.InterruptRequested = true;
         }
@@ -762,14 +764,14 @@ public sealed unsafe partial class GuestThread : KernelObject, IDisposable, Cpu.
     /// <summary>The emulation resumed: parked threads go on at once instead of at their next 50 ms check.</summary>
     internal static void WakeAll()
     {
-        foreach (var t in Live.Keys)
+        foreach (GuestThread t in s_live.Keys)
         {
             t.WakeFromSuspend();
         }
     }
 
     /// <summary>--trace-hle: the arguments that point at a printable C string (paths, object names), quoted.</summary>
-    static string TraceStrings(CpuState* s)
+    private static string TraceStrings(CpuState* s)
     {
         System.Text.StringBuilder? sb = null;
         for (int r = 0; r < 4; r++)
@@ -828,26 +830,26 @@ public sealed unsafe partial class GuestThread : KernelObject, IDisposable, Cpu.
     }
 
     // ---- debug mode: the last HLE calls of this thread (watchdog / hang reports)
-    const int HleRingSize = 16;
-    struct HleRecord
+    private const int HleRingSize = 16;
+    private struct HleRecord
     {
         public HleFunction F; public uint A0, A1, A2, A3, Lr, Ret; public bool Returned; public long Frame;
     }
-    HleRecord[]? _hleRing;
-    int _hleRingPos;
+    private HleRecord[]? _hleRing;
+    private int _hleRingPos;
 
-    void RecordHle(HleFunction f, uint a0, uint a1, uint a2, uint a3, uint lr)
+    private void RecordHle(HleFunction f, uint a0, uint a1, uint a2, uint a3, uint lr)
     {
-        var ring = _hleRing ??= new HleRecord[HleRingSize];
+        HleRecord[] ring = _hleRing ??= new HleRecord[HleRingSize];
         ring[_hleRingPos++ % HleRingSize] = new HleRecord { F = f, A0 = a0, A1 = a1, A2 = a2, A3 = a3, Lr = lr, Frame = VitaSharp.Core.Hle.Modules.Display.FramesPresented };
     }
 
-    void DebugHleReturn(HleFunction f, uint ret, uint a0, uint a1, uint a2, uint a3, uint lr)
+    private void DebugHleReturn(HleFunction f, uint ret, uint a0, uint a1, uint a2, uint a3, uint lr)
     {
         // the call may have re-entered guest code (callbacks): only complete the record if it is still the newest one
         if (_hleRing is { } ring && _hleRingPos > 0 && ring[(_hleRingPos - 1) % HleRingSize].F == f)
         {
-            ref var r = ref ring[(_hleRingPos - 1) % HleRingSize];
+            ref HleRecord r = ref ring[(_hleRingPos - 1) % HleRingSize];
             r.Ret = ret;
             r.Returned = true;
         }
@@ -869,7 +871,7 @@ public sealed unsafe partial class GuestThread : KernelObject, IDisposable, Cpu.
         int n = Math.Min(Math.Min(_hleRingPos, HleRingSize), max);
         for (int i = _hleRingPos - n; i < _hleRingPos; i++)
         {
-            var r = ring[i % HleRingSize];
+            HleRecord r = ring[i % HleRingSize];
             if (r.F == null)
             {
                 continue;
@@ -881,7 +883,7 @@ public sealed unsafe partial class GuestThread : KernelObject, IDisposable, Cpu.
 
     public string Describe()
     {
-        var s = Core.State;
+        CpuState* s = Core.State;
         string bt = Status == ThreadStatus.Dormant ? "" : " bt:" + Backtrace(s);
         return $"'{Name}' uid=0x{Uid:X} {Status} wait=[{WaitingOn}] pc=0x{s->R[15]:X8} lr=0x{s->R[14]:X8} sp=0x{s->R[13]:X8}{bt}";
     }
@@ -897,7 +899,7 @@ public sealed unsafe partial class GuestThread : KernelObject, IDisposable, Cpu.
 
     public void DumpState()
     {
-        var s = Core.State;
+        CpuState* s = Core.State;
         var sb = new System.Text.StringBuilder();
         sb.AppendLine($"Thread '{Name}' state:");
         for (int i = 0; i < 16; i++)
@@ -908,7 +910,7 @@ public sealed unsafe partial class GuestThread : KernelObject, IDisposable, Cpu.
         sb.AppendLine($" CPSR={s->Cpsr:X8} FPSCR={s->Fpscr:X8} T={s->Thumb}");
         sb.AppendLine($" pc {_emu.Kernel.Symbolize(s->R[15])}, lr {_emu.Kernel.Symbolize(s->R[14])}");
         sb.Append(" backtrace:");
-        foreach (var a in Backtrace(s).Split(' ', StringSplitOptions.RemoveEmptyEntries))
+        foreach (string a in Backtrace(s).Split(' ', StringSplitOptions.RemoveEmptyEntries))
         {
             sb.Append(' ').Append(_emu.Kernel.Symbolize(Convert.ToUInt32(a, 16)));
         }

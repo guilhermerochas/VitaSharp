@@ -38,8 +38,8 @@ public interface IPresentTap
 /// <summary>The capture's host clock: nanoseconds from an origin shared by every file of one capture.</summary>
 public static class CaptureClock
 {
-    static readonly long Origin = System.Diagnostics.Stopwatch.GetTimestamp();
-    public static long FromTicks(long ticks) => (long)((ticks - Origin) * (1e9 / System.Diagnostics.Stopwatch.Frequency));
+    private static readonly long s_origin = System.Diagnostics.Stopwatch.GetTimestamp();
+    public static long FromTicks(long ticks) => (long)((ticks - s_origin) * (1e9 / System.Diagnostics.Stopwatch.Frequency));
     public static long NowNs => FromTicks(System.Diagnostics.Stopwatch.GetTimestamp());
 }
 
@@ -69,9 +69,9 @@ public static class FramesFile
     /// Not thread-safe (the capture's encoder thread).</summary>
     public sealed class Encoder
     {
-        byte[]? _prev;
-        int _prevW, _prevH, _sinceKey;
-        byte[] _qoi = [], _delta = [];
+        private byte[]? _prev;
+        private int _prevW, _prevH, _sinceKey;
+        private byte[] _qoi = [], _delta = [];
 
         /// <summary>The next picture starts a new chain (a gap, or a new stream).</summary>
         public void ForceKey() => _prev = null;
@@ -100,7 +100,7 @@ public static class FramesFile
                     _delta = new byte[bytes];
                 }
 
-                var prev = _prev!;
+                byte[] prev = _prev!;
                 for (int i = 0; i < bytes; i++)
                 {
                     _delta[i] = (byte)(rgba[i] - prev[i]);
@@ -130,7 +130,7 @@ public static class FramesFile
     /// <summary>Decodes the pictures of a frames file in order (a delta needs the picture before it).</summary>
     public sealed class Decoder
     {
-        byte[]? _prev;
+        private byte[]? _prev;
 
         public (byte[] Rgba, int W, int H)? Decode(Frame f, ReadOnlySpan<byte> data)
         {
@@ -141,7 +141,7 @@ public static class FramesFile
 
             if ((f.Flags & FlagDelta) == 0)
             {
-                var k = Qoi.Decode(data);
+                (byte[] Rgba, int W, int H) k = Qoi.Decode(data);
                 _prev = k.Rgba;
                 return (k.Rgba.ToArray(), k.W, k.H);
             }
@@ -153,13 +153,13 @@ public static class FramesFile
             using var z = new BrotliStream(new MemoryStream(data.ToArray()), CompressionMode.Decompress);
             using var raw = new MemoryStream();
             z.CopyTo(raw);
-            var d = Qoi.Decode(raw.GetBuffer().AsSpan(0, (int)raw.Length));
+            (byte[] Rgba, int W, int H) d = Qoi.Decode(raw.GetBuffer().AsSpan(0, (int)raw.Length));
             if (d.Rgba.Length != _prev.Length)
             {
                 return null;
             }
 
-            var px = d.Rgba;
+            byte[] px = d.Rgba;
             for (int i = 0; i < px.Length; i++)
             {
                 px[i] = (byte)(px[i] + _prev[i]);
@@ -178,11 +178,11 @@ public static class FramesFile
     /// <summary>Every picture of the file in order (null for a frame without one).</summary>
     public static IEnumerable<(Frame Frame, (byte[] Rgba, int W, int H)? Picture)> ReadAll(string path)
     {
-        var index = ReadIndex(path);
+        List<Frame> index = ReadIndex(path);
         var dec = new Decoder();
-        using var s = File.OpenRead(path);
-        var buf = Array.Empty<byte>();
-        foreach (var f in index)
+        using FileStream s = File.OpenRead(path);
+        byte[] buf = Array.Empty<byte>();
+        foreach (Frame f in index)
         {
             if (!f.HasPicture)
             {
@@ -210,14 +210,14 @@ public static class FramesFile
 
     public static void WriteRecord(Stream s, in PresentInfo p, byte flags, ReadOnlySpan<byte> qoi)
     {
-        var hitch = Encoding.UTF8.GetBytes(p.Hitch ?? "");
+        byte[] hitch = Encoding.UTF8.GetBytes(p.Hitch ?? "");
         if (hitch.Length > 255)
         {
             Array.Resize(ref hitch, 255);
         }
 
         int len = 6 * 8 + 3 * 4 + 4 * 4 + 3 * 4 + 1 + 1 + hitch.Length + 4 + qoi.Length;
-        var b = new byte[4 + len - qoi.Length];
+        byte[] b = new byte[4 + len - qoi.Length];
         int o = 0;
         void I32(int v)
         {
@@ -275,14 +275,14 @@ public static class FramesFile
     public static List<Frame> ReadIndex(string path)
     {
         var list = new List<Frame>();
-        using var s = File.OpenRead(path);
+        using FileStream s = File.OpenRead(path);
         Span<byte> head = stackalloc byte[12];
         if (s.Read(head) < 12 || !head[..8].SequenceEqual(Magic))
         {
             throw new InvalidDataException($"{path}: not a VitaSharp frames file");
         }
 
-        var lenBuf = new byte[4];
+        byte[] lenBuf = new byte[4];
         while (s.Position + 4 <= s.Length)
         {
             long at = s.Position;
@@ -294,7 +294,7 @@ public static class FramesFile
             }
 
             int fixedLen = Math.Min(len, 6 * 8 + 3 * 4 + 4 * 4 + 3 * 4 + 2 + 255 + 4);
-            var b = new byte[fixedLen];
+            byte[] b = new byte[fixedLen];
             s.ReadExactly(b);
             int o = 0;
             int I32()
@@ -367,17 +367,17 @@ public static class FramesFile
         }
 
         var dec = new Decoder();
-        using var s = File.OpenRead(path);
+        using FileStream s = File.OpenRead(path);
         (byte[], int, int)? last = null;
         for (int j = k; j <= i; j++)
         {
-            var f = index[j];
+            Frame f = index[j];
             if (!f.HasPicture)
             {
                 continue;
             }
 
-            var buf = new byte[f.QoiLength];
+            byte[] buf = new byte[f.QoiLength];
             s.Position = f.QoiOffset;
             s.ReadExactly(buf);
             last = dec.Decode(f, buf);

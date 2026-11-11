@@ -1,3 +1,4 @@
+using System.Diagnostics.CodeAnalysis;
 using VitaSharp.Core.Memory;
 
 namespace VitaSharp.Core.Loader;
@@ -10,30 +11,31 @@ public readonly record struct SegmentInfo(uint Address, uint OriginalVaddr, uint
 /// </summary>
 public static unsafe class Relocation
 {
-    const uint None = 0, Abs32 = 2, Rel32 = 3, Abs8 = 8, ThumbCall = 10, Call = 28, Jump24 = 29, Target1 = 38,
+    private const uint None = 0, Abs32 = 2, Rel32 = 3, Abs8 = 8, ThumbCall = 10, Call = 28, Jump24 = 29, Target1 = 38,
         V4BX = 40, Target2 = 41, Prel31 = 42, MovwAbsNc = 43, MovtAbs = 44, ThumbMovwAbsNc = 47, ThumbMovtAbs = 48, RBase = 255;
 
     /// <summary>When set (<see cref="RelocateImage"/>), relocations patch this host buffer instead of guest memory.</summary>
-    [ThreadStatic] static byte* _imageBase;
+    [SuppressMessage("Style", "IDE1006", Justification = "[ThreadStatic]: t_camelCase; .editorconfig cannot select the attribute")]
+    [ThreadStatic] private static byte* t_imageBase;
 
-    static byte* At(uint p) => _imageBase != null ? _imageBase + p : GuestMemory.Ptr(p);
+    private static byte* At(uint p) => t_imageBase != null ? t_imageBase + p : GuestMemory.Ptr(p);
 
     /// <summary>Applies a relocation stream to a module image in a host buffer (segments laid out at the offsets in
     /// <paramref name="segs"/>), for reading a module's tables without loading it.</summary>
     public static void RelocateImage(ReadOnlySpan<byte> data, IReadOnlyDictionary<int, SegmentInfo> segs, byte* image)
     {
-        _imageBase = image;
+        t_imageBase = image;
         try
         {
             Relocate(data, segs);
         }
         finally
         {
-            _imageBase = null;
+            t_imageBase = null;
         }
     }
 
-    static void Apply(uint p, uint code, uint s, uint a)
+    private static void Apply(uint p, uint code, uint s, uint a)
     {
         byte* ptr = At(p);
         switch (code)
@@ -89,14 +91,14 @@ public static unsafe class Relocation
         }
     }
 
-    static void WriteMovAbs(byte* p, ushort v)
+    private static void WriteMovAbs(byte* p, ushort v)
     {
         uint ins = *(uint*)p;
         ins = (ins & 0xFFF0F000) | (v & 0xFFFu) | ((uint)(v >> 12) << 16);
         *(uint*)p = ins;
     }
 
-    static void WriteThumbMovAbs(byte* p, ushort v)
+    private static void WriteThumbMovAbs(byte* p, ushort v)
     {
         ushort* hw = (ushort*)p;
         hw[0] = (ushort)((hw[0] & 0xFBF0) | ((v >> 12) & 0xF) | (((v >> 11) & 1) << 10));
@@ -111,7 +113,7 @@ public static unsafe class Relocation
     {
         uint gAddr = 0, gOffset = 0, gPatchSeg = 0, gSaddr = 0, gAddend = 0, gType = 0, gType2 = 0;
         int pos = 0;
-        uint SegAddr(uint idx) => segs.TryGetValue((int)idx, out var si) ? si.Address : 0;
+        uint SegAddr(uint idx) => segs.TryGetValue((int)idx, out SegmentInfo si) ? si.Address : 0;
 
         while (pos + 4 <= data.Length)
         {
@@ -288,12 +290,12 @@ public static unsafe class Relocation
     }
 
     /// <summary>Formats 6-9: the patched word holds an unrelocated address; rebase it into whichever segment it pointed to.</summary>
-    static void RelocateAbsFromOriginal(IReadOnlyDictionary<int, SegmentInfo> segs, uint patchSeg, uint gAddr, uint gOffset, ref uint gSaddr)
+    private static void RelocateAbsFromOriginal(IReadOnlyDictionary<int, SegmentInfo> segs, uint patchSeg, uint gAddr, uint gOffset, ref uint gSaddr)
     {
-        uint patchStart = segs.TryGetValue((int)patchSeg, out var ps) ? ps.Address : 0;
+        uint patchStart = segs.TryGetValue((int)patchSeg, out SegmentInfo ps) ? ps.Address : 0;
         uint orig = *(uint*)At(patchStart + gOffset);
         uint segbase = 0;
-        foreach (var seg in segs.Values)
+        foreach (SegmentInfo seg in segs.Values)
         {
             if (orig >= seg.OriginalVaddr && orig < seg.OriginalVaddr + seg.Size)
             {

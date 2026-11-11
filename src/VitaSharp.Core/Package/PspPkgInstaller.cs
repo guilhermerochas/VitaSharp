@@ -35,24 +35,24 @@ public sealed record PspInstallOptions
 /// </summary>
 public static class PspPkgInstaller
 {
-    const string Content = "USRDIR/CONTENT/";
+    private const string Content = "USRDIR/CONTENT/";
 
     /// <summary>Installs <paramref name="pkg"/> (a PSP/PSone package; disposed here).</summary>
     public static InstalledTitle Install(PkgReader pkg, string ux0Root, PspInstallOptions? options = null,
                                          Action<string>? log = null, Action<InstallProgress>? progress = null,
                                          CancellationToken cancellationToken = default)
     {
-        using var _ = pkg;
+        using PkgReader _ = pkg;
         options ??= new PspInstallOptions();
-        var kind = pkg.Kind;
+        PkgKind kind = pkg.Kind;
         if (!kind.IsPspEmu())
         {
             throw new InvalidOperationException($"{pkg.ContentId} is a {kind.Describe()} package, not a PSP/PSone one");
         }
 
-        var sfo = pkg.ParamSfo.Length > 0 ? new Sfo(pkg.ParamSfo) : null;
+        Sfo? sfo = pkg.ParamSfo.Length > 0 ? new Sfo(pkg.ParamSfo) : null;
         string content = ContentFolder(pkg);
-        var eboot = Find(pkg, content + "EBOOT.PBP");
+        PkgEntry? eboot = Find(pkg, content + "EBOOT.PBP");
         string title = sfo?.Title is { Length: > 0 } t ? t : eboot != null && EbootSfo(pkg, eboot)?.Title is { Length: > 0 } et ? et : pkg.ContentId;
 
         string id = kind switch
@@ -88,7 +88,7 @@ public static class PspPkgInstaller
 
         // what goes where: (entry, path relative to ux0)
         var plan = new List<(PkgEntry Entry, string Target)>();
-        foreach (var e in pkg.Entries)
+        foreach (PkgEntry e in pkg.Entries)
         {
             if (e.IsDirectory)
             {
@@ -130,20 +130,20 @@ public static class PspPkgInstaller
         var reporter = new InstallProgressReporter(progress, total);
         reporter.Flush();
 
-        var thread = Thread.CurrentThread;
-        var priority = thread.Priority;
+        Thread thread = Thread.CurrentThread;
+        ThreadPriority priority = thread.Priority;
         thread.Priority = ThreadPriority.BelowNormal;
         var written = new List<string>();
         try
         {
             byte[]? ebootHash = null;
-            foreach (var (e, target) in plan)
+            foreach ((PkgEntry? e, string? target) in plan)
             {
                 cancellationToken.ThrowIfCancellationRequested();
                 Directory.CreateDirectory(Path.GetDirectoryName(target)!);
                 written.Add(target);
                 using var outFile = new FileStream(target, FileMode.Create, FileAccess.Write, FileShare.None, 1 << 20);
-                using var sha = e == eboot ? IncrementalHash.CreateHash(HashAlgorithmName.SHA256) : null;
+                using IncrementalHash? sha = e == eboot ? IncrementalHash.CreateHash(HashAlgorithmName.SHA256) : null;
                 pkg.Extract(e, new ProgressStream(outFile, sha, n => { reporter.Add(n, e.Name); cancellationToken.ThrowIfCancellationRequested(); }));
                 if (sha != null)
                 {
@@ -156,7 +156,7 @@ public static class PspPkgInstaller
             if (eboot != null && ebootHash != null && kind is not (PkgKind.PspDlc or PkgKind.PspTheme))
             {
                 int sigKind = kind == PkgKind.Psx ? PspEbootSignature.KindPs1 : PspEbootSignature.KindPsp;
-                var sigPath = Path.Combine(dest, "__sce_ebootpbp");
+                string sigPath = Path.Combine(dest, "__sce_ebootpbp");
                 written.Add(sigPath);
                 File.WriteAllBytes(sigPath, PspEbootSignature.Create("EBOOT.PBP", ebootHash, sigKind));
                 log?.Invoke($"wrote {Path.GetRelativePath(ux0Root, sigPath)} (eboot signature)");
@@ -165,7 +165,7 @@ public static class PspPkgInstaller
             // it starts the title), which can differ from the package's
             if (options.License is { } rif && kind != PkgKind.PspTheme)
             {
-                var rifPath = Path.Combine(pspemu, "PSP", "LICENSE", licenseId + ".rif");
+                string rifPath = Path.Combine(pspemu, "PSP", "LICENSE", licenseId + ".rif");
                 Directory.CreateDirectory(Path.GetDirectoryName(rifPath)!);
                 written.Add(rifPath);
                 File.WriteAllBytes(rifPath, rif);
@@ -174,7 +174,7 @@ public static class PspPkgInstaller
             if (options.ActDat is { } act)
             {
                 // the console's activation data: tm0:npdrm/act.dat (next to ux0 in the virtual file system)
-                var actPath = Path.Combine(Path.GetDirectoryName(Path.GetFullPath(ux0Root).TrimEnd(Path.DirectorySeparatorChar))!, "tm0", "npdrm", "act.dat");
+                string actPath = Path.Combine(Path.GetDirectoryName(Path.GetFullPath(ux0Root).TrimEnd(Path.DirectorySeparatorChar))!, "tm0", "npdrm", "act.dat");
                 Directory.CreateDirectory(Path.GetDirectoryName(actPath)!);
                 File.WriteAllBytes(actPath, act);
                 log?.Invoke("wrote tm0:npdrm/act.dat (the user's activation data)");
@@ -187,7 +187,7 @@ public static class PspPkgInstaller
         }
         catch
         {
-            foreach (var f in written)
+            foreach (string f in written)
             {
                 try
                 {
@@ -210,7 +210,7 @@ public static class PspPkgInstaller
             AppMeta.InvalidateCardId(ux0Root, log);
         }
 
-        var type = kind switch
+        PkgContentType type = kind switch
         {
             PkgKind.Psx => PkgContentType.Psx,
             PkgKind.PspDlc => PkgContentType.PspDlc,
@@ -220,13 +220,13 @@ public static class PspPkgInstaller
         return new InstalledTitle(id, title, dest, type) { Kind = kind };
     }
 
-    static PkgEntry? Find(PkgReader pkg, string name) =>
+    private static PkgEntry? Find(PkgReader pkg, string name) =>
         pkg.Entries.FirstOrDefault(e => !e.IsDirectory && e.Name.Equals(name, StringComparison.OrdinalIgnoreCase));
 
     /// <summary>A path under <paramref name="root"/> from a package item name; names that leave it are refused.</summary>
-    static string Combine(string root, string rel)
+    private static string Combine(string root, string rel)
     {
-        var parts = rel.Split('/', StringSplitOptions.RemoveEmptyEntries);
+        string[] parts = rel.Split('/', StringSplitOptions.RemoveEmptyEntries);
         if (parts.Length == 0 || parts.Any(p => p is "." or ".." || p.IndexOfAny(Path.GetInvalidFileNameChars()) >= 0 || p.Contains(':')))
         {
             throw new InvalidDataException($"The package has an invalid file name: {rel}");
@@ -236,14 +236,14 @@ public static class PspPkgInstaller
     }
 
     /// <summary>A title ID usable as a folder name (letters and digits, 4-16 chars), or null.</summary>
-    static string? SafeId(string id)
+    private static string? SafeId(string id)
     {
         id = id.Trim();
         return id.Length is >= 4 and <= 16 && id.All(char.IsAsciiLetterOrDigit) ? id.ToUpperInvariant() : null;
     }
 
     /// <summary>The PBP header of an EBOOT.PBP: (PARAM.SFO offset, ICON0 offset, DATA.PSAR offset).</summary>
-    static (uint Sfo, uint Icon0, uint Psar) PbpHeader(PkgReader pkg, PkgEntry eboot)
+    private static (uint Sfo, uint Icon0, uint Psar) PbpHeader(PkgReader pkg, PkgEntry eboot)
     {
         if (eboot.DataSize < 0x28)
         {
@@ -275,13 +275,13 @@ public static class PspPkgInstaller
     {
         try
         {
-            var (sfoOff, icon0, _) = PbpHeader(pkg, eboot);
+            (uint sfoOff, uint icon0, uint _) = PbpHeader(pkg, eboot);
             if (icon0 <= sfoOff || icon0 - sfoOff > 0x10000 || icon0 > eboot.DataSize)
             {
                 return null;
             }
 
-            var sfo = new byte[icon0 - sfoOff];
+            byte[] sfo = new byte[icon0 - sfoOff];
             pkg.ReadAt(eboot, sfoOff, sfo);
             return new Sfo(sfo);
         }
@@ -298,14 +298,14 @@ public static class PspPkgInstaller
 
     /// <summary>The DISC_ID of the PARAM.SFO inside the EBOOT.PBP (the folder name the Vita gives the title), or "".
     /// A broken PBP header is an error (the eboot would not run).</summary>
-    static string EbootDiscId(PkgReader pkg, PkgEntry eboot)
+    private static string EbootDiscId(PkgReader pkg, PkgEntry eboot)
     {
         PbpHeader(pkg, eboot);
         return EbootSfo(pkg, eboot)?.GetString("DISC_ID") ?? "";
     }
 
     /// <summary>The content id an NPDRM eboot carries at DATA.PSP + 0x560 (PSP and PSone alike), or null.</summary>
-    static string? EbootContentId(PkgReader pkg, PkgEntry eboot)
+    private static string? EbootContentId(PkgReader pkg, PkgEntry eboot)
     {
         if (eboot.DataSize < 0x28)
         {
@@ -320,14 +320,14 @@ public static class PspPkgInstaller
             return null;
         }
 
-        var id = new byte[0x30];
+        byte[] id = new byte[0x30];
         pkg.ReadAt(eboot, dataPsp + 0x560, id);
         string s = CString(id);
         return s.Length == 36 && s.All(c => char.IsAsciiLetterOrDigit(c) || c is '-' or '_') ? s : null;
     }
 
     /// <summary>A write-through stream that hashes and counts what passes.</summary>
-    sealed class ProgressStream(Stream inner, IncrementalHash? hash, Action<long> written) : Stream
+    private sealed class ProgressStream(Stream inner, IncrementalHash? hash, Action<long> written) : Stream
     {
         public override bool CanRead => false;
         public override bool CanSeek => false;

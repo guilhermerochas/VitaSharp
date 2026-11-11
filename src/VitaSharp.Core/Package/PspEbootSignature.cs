@@ -18,10 +18,10 @@ public static class PspEbootSignature
     /// __sce_discinfo for <see cref="KindMultiDisc"/>) is <paramref name="hash"/>.</summary>
     public static byte[] Create(string path, ReadOnlySpan<byte> hash, int kind)
     {
-        var sig = new byte[Size];
+        byte[] sig = new byte[Size];
         "NPUMDSIG"u8.CopyTo(sig);
         sig[8] = (byte)kind;
-        var h = SHA256.HashData([.. System.Text.Encoding.UTF8.GetBytes(Path.GetFileName(path)), .. hash]);
+        byte[] h = SHA256.HashData([.. System.Text.Encoding.UTF8.GetBytes(Path.GetFileName(path)), .. hash]);
         h.CopyTo(sig, 0x10);
         hash.CopyTo(sig.AsSpan(0x30));
         return sig;
@@ -36,7 +36,7 @@ public static class PspEbootSignature
             return -1;
         }
 
-        var expect = Create(path, sig.Slice(0x30, sig[8] == KindMultiDisc ? 0x100 : 0x20), sig[8]);
+        byte[] expect = Create(path, sig.Slice(0x30, sig[8] == KindMultiDisc ? 0x100 : 0x20), sig[8]);
         return sig.Slice(0x10, 0x20).SequenceEqual(expect.AsSpan(0x10, 0x20)) ? sig[8] : -1;
     }
 }

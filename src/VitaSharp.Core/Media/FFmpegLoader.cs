@@ -11,21 +11,21 @@ namespace VitaSharp.Core.Media;
 /// </summary>
 public static class FFmpegLoader
 {
-    static readonly object Lock = new();
-    static bool? _available;
+    private static readonly object s_lock = new();
+    private static bool? s_available;
 
     public static bool Available
     {
         get
         {
-            lock (Lock)
+            lock (s_lock)
             {
-                return _available ??= Init();
+                return s_available ??= Init();
             }
         }
     }
 
-    static bool Init()
+    private static bool Init()
     {
         string[] candidates =
         [
@@ -35,7 +35,7 @@ public static class FFmpegLoader
             .. OperatingSystem.IsMacOS() ? new[] { "/opt/homebrew/lib", "/usr/local/lib" } : [],
         ];
         // "avcodec-62.dll" on Windows, "libavcodec.so.62" on Linux, "libavcodec.62.dylib" on macOS
-        foreach (var dir in candidates.Where(d => d.Length > 0 && HasAvcodec(d)))
+        foreach (string? dir in candidates.Where(d => d.Length > 0 && HasAvcodec(d)))
         {
             if (TryLoad(dir))
             {
@@ -54,7 +54,7 @@ public static class FFmpegLoader
 
     /// <summary>Whether <paramref name="dir"/> holds an avcodec library. A folder the process may not list counts as none:
     /// under Native AOT on Android the base directory is the app_process folder (/system/bin), which an app cannot read.</summary>
-    static bool HasAvcodec(string dir)
+    private static bool HasAvcodec(string dir)
     {
         try
         {
@@ -66,7 +66,7 @@ public static class FFmpegLoader
         }
     }
 
-    static bool TryLoad(string dir)
+    private static bool TryLoad(string dir)
     {
         try
         {

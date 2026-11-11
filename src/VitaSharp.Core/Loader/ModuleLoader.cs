@@ -60,30 +60,30 @@ public enum ExportScope : byte
 /// </summary>
 public sealed class Linker(IImportResolver hle)
 {
-    const uint NidModuleStop = 0x79F8E492, NidModuleExit = 0x913482A9, NidModuleStart = 0x935CD196;
-    const uint NidModuleInfo = 0x6C2224BA, NidSyslib = 0x936C8A78, NidProcessParam = 0x70FBA1E7;
+    private const uint NidModuleStop = 0x79F8E492, NidModuleExit = 0x913482A9, NidModuleStart = 0x935CD196;
+    private const uint NidModuleInfo = 0x6C2224BA, NidSyslib = 0x936C8A78, NidProcessParam = 0x70FBA1E7;
 
     /// <summary>The export entry attribute bit of a library user code reaches through syscalls
     /// (SCE_LIBRARY_ATTR_SYSCALL_EXPORT).</summary>
     public const ushort SyscallExportAttr = 0x4000;
 
-    readonly object _lock = new();
-    readonly Dictionary<uint, uint> _funcExports = new();
-    readonly Dictionary<uint, ExportScope> _funcExportScopes = new();
-    readonly Dictionary<(uint lib, uint nid), uint> _funcExportsByLib = new();
-    readonly Dictionary<(uint lib, uint nid), ExportScope> _funcExportScopesByLib = new();
-    readonly Dictionary<uint, uint> _varExports = new();
-    readonly List<(uint nid, uint libNid, string libName, uint stub, bool kernel)> _funcBindings = new();
+    private readonly object _lock = new();
+    private readonly Dictionary<uint, uint> _funcExports = new();
+    private readonly Dictionary<uint, ExportScope> _funcExportScopes = new();
+    private readonly Dictionary<(uint lib, uint nid), uint> _funcExportsByLib = new();
+    private readonly Dictionary<(uint lib, uint nid), ExportScope> _funcExportScopesByLib = new();
+    private readonly Dictionary<uint, uint> _varExports = new();
+    private readonly List<(uint nid, uint libNid, string libName, uint stub, bool kernel)> _funcBindings = new();
 
     /// <summary>True when an importer (kernel or user) may bind to an export of <paramref name="scope"/>.</summary>
-    static bool Visible(ExportScope scope, bool kernelImporter)
+    private static bool Visible(ExportScope scope, bool kernelImporter)
     {
         return kernelImporter ? scope != ExportScope.User : scope != ExportScope.Kernel;
     }
 
     /// <summary>The export an import of <paramref name="nid"/> from <paramref name="libNid"/> binds to: the library's
     /// own export first, then the same function exported by any library, both only when visible to the importer.</summary>
-    bool TryFindExport(uint nid, uint libNid, bool kernelImporter, out uint target)
+    private bool TryFindExport(uint nid, uint libNid, bool kernelImporter, out uint target)
     {
         if (_funcExportsByLib.TryGetValue((libNid, nid), out target) && Visible(_funcExportScopesByLib[(libNid, nid)], kernelImporter))
         {
@@ -101,7 +101,7 @@ public sealed class Linker(IImportResolver hle)
             return true;
         }
 
-        foreach (var (key, addr) in _funcExportsByLib)
+        foreach (((uint lib, uint nid) key, uint addr) in _funcExportsByLib)
 
         {
             if (key.nid == nid && Visible(_funcExportScopesByLib[key], kernelImporter))
@@ -114,8 +114,8 @@ public sealed class Linker(IImportResolver hle)
         target = 0;
         return false;
     }
-    readonly List<(uint nid, byte[] relocs, Dictionary<int, SegmentInfo> segs)> _varBindings = new();
-    readonly Dictionary<uint, string> _varSources = new(); // variable import NID -> "library (importing module)", for the log
+    private readonly List<(uint nid, byte[] relocs, Dictionary<int, SegmentInfo> segs)> _varBindings = new();
+    private readonly Dictionary<uint, string> _varSources = new(); // variable import NID -> "library (importing module)", for the log
 
     public uint ProcessParam { get; private set; }
 
@@ -123,14 +123,14 @@ public sealed class Linker(IImportResolver hle)
     /// emulator's own use must not take over the program's imports); null = none.</summary>
     public List<(uint Start, uint Size)>? KeepBindingsIn { get; set; }
 
-    bool Kept(uint stub)
+    private bool Kept(uint stub)
     {
         if (KeepBindingsIn is not { } ranges)
         {
             return false;
         }
 
-        foreach (var (s, n) in ranges)
+        foreach ((uint s, uint n) in ranges)
         {
             if (stub - s < n)
             {
@@ -188,7 +188,7 @@ public sealed class Linker(IImportResolver hle)
         GuestMemory.W32(stub + 8, nid);
     }
 
-    void BindHle(uint stub, uint nid, uint libNid, string libName)
+    private void BindHle(uint stub, uint nid, uint libNid, string libName)
     {
         uint code = hle.GetHleGuestCode(nid);
         if (code != 0)
@@ -214,7 +214,7 @@ public sealed class Linker(IImportResolver hle)
         int n = 0;
         lock (_lock)
         {
-            foreach (var (nid, libNid, libName, stub, kernel) in _funcBindings)
+            foreach ((uint nid, uint libNid, string? libName, uint stub, bool kernel) in _funcBindings)
             {
                 if (TryFindExport(nid, libNid, kernel, out _) || Kept(stub))
                 {
@@ -347,7 +347,7 @@ public sealed class Linker(IImportResolver hle)
 
                     _funcExportsByLib[(libNid, nid)] = addr;
                     _funcExportScopesByLib[(libNid, nid)] = scope;
-                    foreach (var (bnid, blib, _, stub, kernel) in _funcBindings)
+                    foreach ((uint bnid, uint blib, string _, uint stub, bool kernel) in _funcBindings)
                     {
                         if (bnid != nid || blib != libNid || Kept(stub) || !Visible(scope, kernel))
                         {
@@ -375,7 +375,7 @@ public sealed class Linker(IImportResolver hle)
                     }
 
                     _varExports[nid] = addr;
-                    foreach (var (bnid, relocs, segs) in _varBindings)
+                    foreach ((uint bnid, byte[]? relocs, Dictionary<int, SegmentInfo>? segs) in _varBindings)
                     {
                         if (bnid == nid && relocs.Length > 0)
                         {
@@ -387,10 +387,10 @@ public sealed class Linker(IImportResolver hle)
         }
     }
 
-    static bool InModule(LoadedModule m, uint addr)
+    private static bool InModule(LoadedModule m, uint addr)
     {
         addr &= ~1u; // Thumb entry points
-        foreach (var s in m.Segments.Values)
+        foreach (SegmentInfo s in m.Segments.Values)
         {
             if (addr >= s.Address && addr - s.Address < s.Size)
             {
@@ -416,17 +416,17 @@ public sealed class Linker(IImportResolver hle)
             _funcBindings.RemoveAll(b => InModule(m, b.stub));
             _varBindings.RemoveAll(b => ReferenceEquals(b.segs, m.Segments));
 
-            foreach (var key in _funcExportsByLib.Where(kv => InModule(m, kv.Value)).Select(kv => kv.Key).ToArray())
+            foreach ((uint lib, uint nid) key in _funcExportsByLib.Where(kv => InModule(m, kv.Value)).Select(kv => kv.Key).ToArray())
             {
                 _funcExportsByLib.Remove(key);
                 _funcExportScopesByLib.Remove(key);
             }
 
-            foreach (var nid in _funcExports.Where(kv => InModule(m, kv.Value)).Select(kv => kv.Key).ToArray())
+            foreach (uint nid in _funcExports.Where(kv => InModule(m, kv.Value)).Select(kv => kv.Key).ToArray())
             {
                 _funcExports.Remove(nid);
                 _funcExportScopes.Remove(nid);
-                foreach (var kv in _funcExportsByLib)
+                foreach (KeyValuePair<(uint lib, uint nid), uint> kv in _funcExportsByLib)
                 {
                     if (kv.Key.nid == nid)
                     {
@@ -437,7 +437,7 @@ public sealed class Linker(IImportResolver hle)
                 }
             }
 
-            foreach (var (nid, libNid, libName, stub, kernel) in _funcBindings)
+            foreach ((uint nid, uint libNid, string? libName, uint stub, bool kernel) in _funcBindings)
             {
                 // only stubs that jumped into the unloaded module change
                 uint w0 = GuestMemory.R32(stub), w1 = GuestMemory.R32(stub + 4);
@@ -466,12 +466,12 @@ public sealed class Linker(IImportResolver hle)
             }
 
             var removedVars = _varExports.Where(kv => InModule(m, kv.Value)).Select(kv => kv.Key).ToHashSet();
-            foreach (var nid in removedVars)
+            foreach (uint nid in removedVars)
             {
                 _varExports.Remove(nid);
             }
 
-            foreach (var (bnid, relocs, segs) in _varBindings)
+            foreach ((uint bnid, byte[]? relocs, Dictionary<int, SegmentInfo>? segs) in _varBindings)
             {
                 if (!removedVars.Contains(bnid) || relocs.Length == 0)
                 {
@@ -499,8 +499,8 @@ public sealed class Linker(IImportResolver hle)
 
 public static class ModuleLoader
 {
-    const uint PT_LOAD = 1, PT_SCE_RELA = 0x60000000;
-    const ushort ET_SCE_EXEC = 0xFE00, ET_SCE_RELEXEC = 0xFE04;
+    private const uint PT_LOAD = 1, PT_SCE_RELA = 0x60000000;
+    private const ushort ET_SCE_EXEC = 0xFE00, ET_SCE_RELEXEC = 0xFE04;
 
     /// <summary>
     /// Loads a module: segments, relocations, module info, exports and imports. A kernel module
@@ -535,7 +535,7 @@ public static class ModuleLoader
         var relas = new List<byte[]>();
         for (int i = 0; i < phnum; i++)
         {
-            var ph = e.Slice((int)phoff + i * 32, 32);
+            ReadOnlySpan<byte> ph = e.Slice((int)phoff + i * 32, 32);
             uint ptype = U32LE(ph, 0), off = U32LE(ph, 4), vaddr = U32LE(ph, 8), filesz = U32LE(ph, 16), memsz = U32LE(ph, 20), flags = U32LE(ph, 24);
             if (ptype == PT_LOAD && memsz != 0)
             {
@@ -571,7 +571,7 @@ public static class ModuleLoader
                 relas.Add(e.Slice((int)off, (int)filesz).ToArray());
             }
         }
-        foreach (var r in relas)
+        foreach (byte[] r in relas)
         {
             Relocation.Relocate(r, m.Segments);
         }
@@ -581,7 +581,7 @@ public static class ModuleLoader
         uint infoBase = m.Segments[infoSeg].Address;
         uint mi = infoBase + (entry & 0x3FFFFFFF);
         m.ModuleInfoAddr = mi;
-        var info = GuestMemory.Span(mi, 0x5C);
+        Span<byte> info = GuestMemory.Span(mi, 0x5C);
         m.Attributes = U16LE(info, 0);
         m.Version = U16LE(info, 2);
         m.Name = CString(info.Slice(4, 27));
@@ -623,17 +623,17 @@ public static class ModuleLoader
         // exports first (so a module can resolve against itself), then imports
         for (uint p = infoBase + exportTop; p < infoBase + exportEnd;)
         {
-            var ex = GuestMemory.Span(p, 0x20);
+            Span<byte> ex = GuestMemory.Span(p, 0x20);
             ushort size = U16LE(ex, 0);
             ushort attr = U16LE(ex, 4);
             ushort nfunc = U16LE(ex, 6);
             uint nvar = U32LE(ex, 8);
             uint libNid = U32LE(ex, 0x10), libName = U32LE(ex, 0x14), nidTable = U32LE(ex, 0x18), entryTable = U32LE(ex, 0x1C);
             int total = nfunc + (int)nvar;
-            var nids = GuestMemory.Span<uint>(nidTable, total).ToArray();
-            var entries = GuestMemory.Span<uint>(entryTable, total).ToArray();
+            uint[] nids = GuestMemory.Span<uint>(nidTable, total).ToArray();
+            uint[] entries = GuestMemory.Span<uint>(entryTable, total).ToArray();
             m.Exports.Add((GuestMemory.ReadCString(libName), libNid, nids[..nfunc], nids[nfunc..]));
-            var scope = !kernel ? ExportScope.User : (attr & Linker.SyscallExportAttr) != 0 ? ExportScope.Syscall : ExportScope.Kernel;
+            ExportScope scope = !kernel ? ExportScope.User : (attr & Linker.SyscallExportAttr) != 0 ? ExportScope.Syscall : ExportScope.Kernel;
             linker.RegisterExports(m, libNid, nids, entries, nfunc, scope);
             if (size == 0)
             {
@@ -645,7 +645,7 @@ public static class ModuleLoader
 
         for (uint p = infoBase + importTop; p < infoBase + importEnd;)
         {
-            var im = GuestMemory.Span(p, 0x34);
+            Span<byte> im = GuestMemory.Span(p, 0x34);
             ushort size = U16LE(im, 0);
             ushort nfunc = U16LE(im, 6), nvar = U16LE(im, 8);
             uint libNid, libName, funcNids, funcEntries, varNids, varEntries;
@@ -668,8 +668,8 @@ public static class ModuleLoader
                 varEntries = U32LE(im, 0x28);
             }
             string lib = GuestMemory.ReadCString(libName);
-            var fn = nfunc > 0 ? GuestMemory.Span<uint>(funcNids, nfunc).ToArray() : [];
-            var fe = nfunc > 0 ? GuestMemory.Span<uint>(funcEntries, nfunc).ToArray() : [];
+            uint[] fn = nfunc > 0 ? GuestMemory.Span<uint>(funcNids, nfunc).ToArray() : [];
+            uint[] fe = nfunc > 0 ? GuestMemory.Span<uint>(funcEntries, nfunc).ToArray() : [];
             for (int i = 0; i < nfunc; i++)
             {
                 linker.BindFunctionImport(fn[i], libNid, lib, fe[i], m.Segments, kernel);
@@ -677,8 +677,8 @@ public static class ModuleLoader
 
             if (nvar > 0)
             {
-                var vn = GuestMemory.Span<uint>(varNids, nvar).ToArray();
-                var ve = GuestMemory.Span<uint>(varEntries, nvar).ToArray();
+                uint[] vn = GuestMemory.Span<uint>(varNids, nvar).ToArray();
+                uint[] ve = GuestMemory.Span<uint>(varEntries, nvar).ToArray();
                 for (int i = 0; i < nvar; i++)
                 {
                     linker.BindVariableImport(vn[i], ve[i], m.Segments, $"{lib} (imported by {m.Name})");

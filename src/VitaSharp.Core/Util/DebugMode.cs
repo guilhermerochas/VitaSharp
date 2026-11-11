@@ -38,8 +38,8 @@ public static class DebugMode
     /// <summary>Guest frame number for log lines (frames presented by the display).</summary>
     public static long Frame => Hle.Modules.Display.FramesPresented;
 
-    static readonly ConcurrentDictionary<(string, uint), int> HleErrors = new();
-    static readonly ConcurrentDictionary<string, int> Unimplemented = new();
+    private static readonly ConcurrentDictionary<(string, uint), int> s_hleErrors = new();
+    private static readonly ConcurrentDictionary<string, int> s_unimplemented = new();
 
     /// <summary>The n-th occurrence of something repetitive is logged when n is 1-3 or a power of ten.</summary>
     public static bool ShouldLog(int n) => n <= 3 || n is 10 or 100 or 1000 or 10000 or 100000 or 1000000;
@@ -51,7 +51,7 @@ public static class DebugMode
     /// </summary>
     public static void HleError(string thread, string function, uint ret, uint a0, uint a1, uint a2, uint a3, uint lr)
     {
-        int n = HleErrors.AddOrUpdate((function, ret), 1, (_, c) => c + 1);
+        int n = s_hleErrors.AddOrUpdate((function, ret), 1, (_, c) => c + 1);
         if (ShouldLog(n))
         {
             Log.Info($"[dbg] f{Frame} HLE-ERR [{thread}] {function}(0x{a0:X}, 0x{a1:X}, 0x{a2:X}, 0x{a3:X}) = 0x{ret:X8} lr=0x{lr:X8}{(n > 1 ? $" (#{n})" : "")}");
@@ -60,7 +60,7 @@ public static class DebugMode
 
     public static void HleUnimplemented(string thread, string library, string function, uint nid, uint lr)
     {
-        int n = Unimplemented.AddOrUpdate(function, 1, (_, c) => c + 1);
+        int n = s_unimplemented.AddOrUpdate(function, 1, (_, c) => c + 1);
         if (ShouldLog(n))
         {
             Log.Info($"[dbg] f{Frame} HLE-UNIMPL [{thread}] {library}::{function} (NID 0x{nid:X8}) lr=0x{lr:X8} (#{n})");
@@ -70,12 +70,12 @@ public static class DebugMode
     /// <summary>Summary lines: HLE error returns and unimplemented calls by count.</summary>
     public static IEnumerable<string> HleSummary()
     {
-        foreach (var kv in HleErrors.OrderByDescending(k => k.Value).Take(40))
+        foreach (KeyValuePair<(string, uint), int> kv in s_hleErrors.OrderByDescending(k => k.Value).Take(40))
         {
             yield return $"[dbg] HLE-ERR summary: {kv.Key.Item1} = 0x{kv.Key.Item2:X8} x{kv.Value}";
         }
 
-        foreach (var kv in Unimplemented.OrderByDescending(k => k.Value).Take(40))
+        foreach (KeyValuePair<string, int> kv in s_unimplemented.OrderByDescending(k => k.Value).Take(40))
         {
             yield return $"[dbg] HLE-UNIMPL summary: {kv.Key} x{kv.Value}";
         }

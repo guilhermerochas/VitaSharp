@@ -1,4 +1,5 @@
 using System.Buffers.Binary;
+using System.Numerics;
 using System.Runtime.InteropServices;
 using System.Security.Cryptography;
 
@@ -7,7 +8,7 @@ namespace VitaSharp.Core.Crypto;
 /// <summary>Thin wrappers over System.Security.Cryptography for the AES modes the Vita formats need.</summary>
 public static class AesUtil
 {
-    static Aes Create(ReadOnlySpan<byte> key)
+    private static Aes Create(ReadOnlySpan<byte> key)
     {
         var aes = Aes.Create();
         aes.Key = key.ToArray();
@@ -16,25 +17,25 @@ public static class AesUtil
 
     public static void EcbEncrypt(ReadOnlySpan<byte> key, ReadOnlySpan<byte> src, Span<byte> dst)
     {
-        using var aes = Create(key);
+        using Aes aes = Create(key);
         aes.EncryptEcb(src, dst, PaddingMode.None);
     }
 
     public static void EcbDecrypt(ReadOnlySpan<byte> key, ReadOnlySpan<byte> src, Span<byte> dst)
     {
-        using var aes = Create(key);
+        using Aes aes = Create(key);
         aes.DecryptEcb(src, dst, PaddingMode.None);
     }
 
     public static void CbcEncrypt(ReadOnlySpan<byte> key, ReadOnlySpan<byte> iv, ReadOnlySpan<byte> src, Span<byte> dst)
     {
-        using var aes = Create(key);
+        using Aes aes = Create(key);
         aes.EncryptCbc(src, iv, dst, PaddingMode.None);
     }
 
     public static void CbcDecrypt(ReadOnlySpan<byte> key, ReadOnlySpan<byte> iv, ReadOnlySpan<byte> src, Span<byte> dst)
     {
-        using var aes = Create(key);
+        using Aes aes = Create(key);
         aes.DecryptCbc(src, iv, dst, PaddingMode.None);
     }
 
@@ -44,9 +45,9 @@ public static class AesUtil
     /// </summary>
     public sealed class Ctr : IDisposable
     {
-        readonly Aes _aes;
-        readonly byte[] _ks = new byte[0x10000];
-        readonly byte[] _ctrs = new byte[0x10000];
+        private readonly Aes _aes;
+        private readonly byte[] _ks = new byte[0x10000];
+        private readonly byte[] _ctrs = new byte[0x10000];
 
         public Ctr(ReadOnlySpan<byte> key) => _aes = Create(key);
 
@@ -54,7 +55,7 @@ public static class AesUtil
         {
             // the 128-bit big-endian counter as two 64-bit halves: one add per block instead of a byte loop
             ulong hi = BinaryPrimitives.ReadUInt64BigEndian(counter), lo = BinaryPrimitives.ReadUInt64BigEndian(counter[8..]);
-            var ctrs = MemoryMarshal.Cast<byte, ulong>(_ctrs.AsSpan());
+            Span<ulong> ctrs = MemoryMarshal.Cast<byte, ulong>(_ctrs.AsSpan());
             ulong hiBe = BitConverter.IsLittleEndian ? BinaryPrimitives.ReverseEndianness(hi) : hi;
             while (data.Length > 0)
             {
@@ -84,8 +85,8 @@ public static class AesUtil
     public static void XorInPlace(Span<byte> data, ReadOnlySpan<byte> key)
     {
         int i = 0;
-        var vd = System.Runtime.InteropServices.MemoryMarshal.Cast<byte, System.Numerics.Vector<byte>>(data);
-        var vk = System.Runtime.InteropServices.MemoryMarshal.Cast<byte, System.Numerics.Vector<byte>>(key);
+        Span<Vector<byte>> vd = System.Runtime.InteropServices.MemoryMarshal.Cast<byte, System.Numerics.Vector<byte>>(data);
+        ReadOnlySpan<Vector<byte>> vk = System.Runtime.InteropServices.MemoryMarshal.Cast<byte, System.Numerics.Vector<byte>>(key);
         for (; i < vd.Length; i++)
         {
             vd[i] ^= vk[i];
@@ -100,7 +101,7 @@ public static class AesUtil
     /// <summary>counter = iv + blockIndex (128-bit big-endian add).</summary>
     public static byte[] CounterAt(ReadOnlySpan<byte> iv, ulong blockIndex)
     {
-        var c = new byte[16];
+        byte[] c = new byte[16];
         ulong n = blockIndex;
         for (int i = 15; i >= 0; i--)
         {

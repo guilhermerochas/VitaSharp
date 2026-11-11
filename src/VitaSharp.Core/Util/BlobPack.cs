@@ -20,19 +20,19 @@ namespace VitaSharp.Core.Util;
 /// </summary>
 public sealed class BlobPack : IDisposable
 {
-    const uint FileMagic = 0x50535356; // "VSSP"
-    const uint RecordMagic = 0x31434552; // "REC1"
-    const int FileHeaderSize = 16, RecordHeaderSize = 24;
-    const int MaxBlob = 16 << 20;
+    private const uint FileMagic = 0x50535356; // "VSSP"
+    private const uint RecordMagic = 0x31434552; // "REC1"
+    private const int FileHeaderSize = 16, RecordHeaderSize = 24;
+    private const int MaxBlob = 16 << 20;
 
-    readonly FileStream _fs;
-    readonly FileStream? _owner; // the exclusive lock on "<pack>.lock" (null: read-only view)
-    readonly SafeFileHandle _h;
-    readonly Dictionary<ulong, (long Offset, int Length)> _index = new();
-    readonly List<ulong> _order = new();
-    readonly object _lock = new();
-    long _end;
-    bool _disposed;
+    private readonly FileStream _fs;
+    private readonly FileStream? _owner; // the exclusive lock on "<pack>.lock" (null: read-only view)
+    private readonly SafeFileHandle _h;
+    private readonly Dictionary<ulong, (long Offset, int Length)> _index = new();
+    private readonly List<ulong> _order = new();
+    private readonly object _lock = new();
+    private long _end;
+    private bool _disposed;
 
     public string Path { get; }
     public int Count
@@ -48,7 +48,7 @@ public sealed class BlobPack : IDisposable
     /// <summary>Another session owns the pack for writing: this view only reads.</summary>
     public bool IsReadOnly => _owner == null;
 
-    BlobPack(string path, FileStream fs, FileStream? owner)
+    private BlobPack(string path, FileStream fs, FileStream? owner)
     {
         Path = path;
         _fs = fs;
@@ -133,7 +133,7 @@ public sealed class BlobPack : IDisposable
 
     /// <summary>A read-only view of a pack another session owns (which may not have created the file yet: it then
     /// reads as empty).</summary>
-    static FileStream OpenReadOnly(string path) =>
+    private static FileStream OpenReadOnly(string path) =>
         new(path, FileMode.OpenOrCreate, FileAccess.Read, FileShare.ReadWrite, 1, FileOptions.RandomAccess);
 
     /// <summary>The version a pack file was written with, or null (missing, unreadable, not a pack). Never modifies it.</summary>
@@ -161,7 +161,7 @@ public sealed class BlobPack : IDisposable
         }
     }
 
-    void Load(uint version)
+    private void Load(uint version)
     {
         long len = RandomAccess.GetLength(_h);
         Span<byte> hdr = stackalloc byte[RecordHeaderSize];
@@ -219,7 +219,7 @@ public sealed class BlobPack : IDisposable
         _end = pos;
     }
 
-    void Reset(uint version)
+    private void Reset(uint version)
     {
         _index.Clear();
         _order.Clear();
@@ -256,7 +256,7 @@ public sealed class BlobPack : IDisposable
         int length;
         lock (_lock)
         {
-            if (_disposed || !_index.TryGetValue(key, out var e))
+            if (_disposed || !_index.TryGetValue(key, out (long Offset, int Length) e))
             {
                 return null;
             }
@@ -271,7 +271,7 @@ public sealed class BlobPack : IDisposable
                 return null;
             }
 
-            var data = new byte[length];
+            byte[] data = new byte[length];
             if (RandomAccess.Read(_h, data, offset) != length)
             {
                 return null;

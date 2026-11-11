@@ -24,14 +24,14 @@ public interface IHostCapture
 /// </summary>
 public sealed class SharedCapture : IDisposable
 {
-    readonly object _gate = new();
-    readonly TimeSpan _linger;
-    IHostCapture? _capture;
-    object? _mode;
-    int _leases;
-    long _generation;
-    Task _lastStop = Task.CompletedTask;
-    bool _disposed;
+    private readonly object _gate = new();
+    private readonly TimeSpan _linger;
+    private IHostCapture? _capture;
+    private object? _mode;
+    private int _leases;
+    private long _generation;
+    private Task _lastStop = Task.CompletedTask;
+    private bool _disposed;
 
     public SharedCapture(TimeSpan linger) => _linger = linger;
 
@@ -81,14 +81,14 @@ public sealed class SharedCapture : IDisposable
     }
 
     /// <summary>Starts stopping the current capture; the caller holds <see cref="_gate"/>.</summary>
-    void StopLocked()
+    private void StopLocked()
     {
-        var c = _capture!;
+        IHostCapture c = _capture!;
         _capture = null;
         _mode = null;
         _leases = 0;
         _generation++;
-        var prev = _lastStop;
+        Task prev = _lastStop;
         // stops are chained: a device is never opened while an earlier capture of it is still closing
         _lastStop = Task.Run(async () =>
         {
@@ -108,7 +108,7 @@ public sealed class SharedCapture : IDisposable
         });
     }
 
-    void Release(IHostCapture c)
+    private void Release(IHostCapture c)
     {
         long gen;
         lock (_gate)
@@ -133,7 +133,7 @@ public sealed class SharedCapture : IDisposable
         _ = Task.Delay(_linger).ContinueWith(_ => StopIfIdle(c, gen), TaskScheduler.Default);
     }
 
-    void StopIfIdle(IHostCapture c, long gen)
+    private void StopIfIdle(IHostCapture c, long gen)
     {
         lock (_gate)
         {
@@ -207,9 +207,9 @@ public sealed class SharedCapture : IDisposable
         }
     }
 
-    sealed class Lease(SharedCapture owner, IHostCapture capture) : ICameraStream
+    private sealed class Lease(SharedCapture owner, IHostCapture capture) : ICameraStream
     {
-        int _disposed;
+        private int _disposed;
         public CameraFrameBuffer Frames => capture.Frames;
         public void Dispose()
         {

@@ -22,7 +22,7 @@ public static class HostThreads
     /// <summary>Set by the front end from <c>--host-prio=on|off</c> before the emulator starts threads.</summary>
     public static bool Enabled = true;
 
-    static bool On => Environment.GetEnvironmentVariable(EnvVars.HostPrio) switch
+    private static bool On => Environment.GetEnvironmentVariable(EnvVars.HostPrio) switch
     {
         "0" or "off" or "false" or "no" => false,
         "1" or "on" or "true" or "yes" => true,
@@ -55,6 +55,6 @@ public static class HostThreads
         }
     }
 
-    const uint QOS_CLASS_USER_INTERACTIVE = 0x21;
-    [DllImport("libc")] static extern int pthread_set_qos_class_self_np(uint qosClass, int relativePriority);
+    private const uint QOS_CLASS_USER_INTERACTIVE = 0x21;
+    [DllImport("libc")] private static extern int pthread_set_qos_class_self_np(uint qosClass, int relativePriority);
 }

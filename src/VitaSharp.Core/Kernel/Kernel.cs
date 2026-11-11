@@ -10,11 +10,11 @@ public sealed class Kernel
 {
     public const uint TrapSvc = 0xFFFFFF;
 
-    readonly Emulator _emu;
+    private readonly Emulator _emu;
     /// <summary>The system-wide object table (one UID space and namespace for every process).</summary>
     public ObjectTable Objects => _emu.Vita?.Objects ?? (_standalone ??= new ObjectTable());
     /// <summary>A kernel built without a system (unit tests construct emulators field by field) keeps its own table.</summary>
-    ObjectTable? _standalone;
+    private ObjectTable? _standalone;
     public ConcurrentDictionary<int, LoadedModule> Modules { get; } = new();
 
     public uint ThreadExitTrap { get; private set; }
@@ -66,9 +66,9 @@ public sealed class Kernel
     public string Symbolize(uint addr)
     {
         uint a = addr & ~1u;
-        foreach (var m in Modules.Values)
+        foreach (LoadedModule m in Modules.Values)
         {
-            foreach (var (idx, s) in m.Segments)
+            foreach ((int idx, SegmentInfo s) in m.Segments)
             {
                 if (a >= s.Address && a - s.Address < s.Size)
                 {
@@ -87,7 +87,7 @@ public sealed class Kernel
 
     public void StopAllThreads()
     {
-        foreach (var t in Threads)
+        foreach (GuestThread t in Threads)
         {
             t.RequestStop();
         }
@@ -96,8 +96,8 @@ public sealed class Kernel
     /// <summary>Waits for every guest thread to leave its host thread (after StopAllThreads).</summary>
     public bool WaitAllThreadsExit(int timeoutMs)
     {
-        var deadline = Environment.TickCount64 + timeoutMs;
-        foreach (var t in Threads.ToList())
+        long deadline = Environment.TickCount64 + timeoutMs;
+        foreach (GuestThread? t in Threads.ToList())
         {
             if (t == GuestThread.Current)
             {

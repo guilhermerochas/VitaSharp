@@ -43,13 +43,13 @@ public static class JpegDecoder
 
     public static JpegImage Decode(ReadOnlySpan<byte> data)
     {
-        var p = new Parser(data.ToArray()).Run(headerOnly: false);
+        Parser p = new Parser(data.ToArray()).Run(headerOnly: false);
         return p.BuildImage();
     }
 
-    static JpegFormatException Fail(JpegError e, string m) => new(e, m);
+    private static JpegFormatException Fail(JpegError e, string m) => new(e, m);
 
-    sealed class Huffman
+    private sealed class Huffman
     {
         // fast path: 9-bit prefix -> (length << 8) | symbol, length 0 = longer code
         public readonly ushort[] Fast = new ushort[1 << FastBits];
@@ -89,7 +89,7 @@ public static class JpegDecoder
         }
     }
 
-    sealed class Component
+    private sealed class Component
     {
         public int Id, H, V, Tq;
         public int BlocksX, BlocksY;         // MCU padded
@@ -99,22 +99,22 @@ public static class JpegDecoder
         public int DcPred, DcTable, AcTable;
     }
 
-    sealed class Parser(byte[] d)
+    private sealed class Parser(byte[] d)
     {
-        readonly byte[] _d = d;
-        int _pos;
-        readonly ushort[]?[] _quant = new ushort[4][];
-        readonly Huffman?[] _dc = new Huffman[4], _ac = new Huffman[4];
-        Component[] _comps = [];
-        int _hmax = 1, _vmax = 1, _mcusX, _mcusY, _restart;
-        bool _sof, _anyScan;
+        private readonly byte[] _d = d;
+        private int _pos;
+        private readonly ushort[]?[] _quant = new ushort[4][];
+        private readonly Huffman?[] _dc = new Huffman[4], _ac = new Huffman[4];
+        private Component[] _comps = [];
+        private int _hmax = 1, _vmax = 1, _mcusX, _mcusY, _restart;
+        private bool _sof, _anyScan;
         public JpegInfo? Info;
 
         // entropy decoder state
-        uint _bits;
-        int _nbits;
-        bool _marker;
-        int _eobrun;
+        private uint _bits;
+        private int _nbits;
+        private bool _marker;
+        private int _eobrun;
 
         public Parser Run(bool headerOnly)
         {
@@ -161,7 +161,7 @@ public static class JpegDecoder
                         break;
                     case 0xDD:
                     {
-                        var s = Segment();
+                        ReadOnlySpan<byte> s = Segment();
                         if (s.Length != 2)
                         {
                             throw Fail(JpegError.BadDriMarker, "DRI length");
@@ -191,7 +191,7 @@ public static class JpegDecoder
                             return this;
                         }
 
-                        var s = Segment();
+                        ReadOnlySpan<byte> s = Segment();
                         ReadScan(s);
                         break;
                     }
@@ -207,7 +207,7 @@ public static class JpegDecoder
         }
 
         /// <summary>Next marker code at or after the current position (skipping garbage and fill bytes), or -1 at the end.</summary>
-        int NextMarker()
+        private int NextMarker()
         {
             while (_pos + 1 < _d.Length)
             {
@@ -234,7 +234,7 @@ public static class JpegDecoder
             return -1;
         }
 
-        ReadOnlySpan<byte> Segment()
+        private ReadOnlySpan<byte> Segment()
         {
             if (_pos + 2 > _d.Length)
             {
@@ -252,7 +252,7 @@ public static class JpegDecoder
             return s;
         }
 
-        void ReadDqt(ReadOnlySpan<byte> s)
+        private void ReadDqt(ReadOnlySpan<byte> s)
         {
             while (s.Length > 0)
             {
@@ -273,7 +273,7 @@ public static class JpegDecoder
                     throw Fail(JpegError.BadDqtMarker, "DQT length");
                 }
 
-                var q = new ushort[64];
+                ushort[] q = new ushort[64];
                 for (int i = 0; i < 64; i++)
                 {
                     q[JpegTables.ZigZag[i]] = pq == 0 ? s[1 + i] : (ushort)((s[1 + 2 * i] << 8) | s[2 + 2 * i]);
@@ -284,7 +284,7 @@ public static class JpegDecoder
             }
         }
 
-        void ReadDht(ReadOnlySpan<byte> s)
+        private void ReadDht(ReadOnlySpan<byte> s)
         {
             while (s.Length > 0)
             {
@@ -321,7 +321,7 @@ public static class JpegDecoder
             }
         }
 
-        void ReadSof(ReadOnlySpan<byte> s, bool progressive)
+        private void ReadSof(ReadOnlySpan<byte> s, bool progressive)
         {
             if (_sof)
             {
@@ -385,9 +385,9 @@ public static class JpegDecoder
             }
             else
             {
-                var y = comps[0];
-                var cb = comps[1];
-                var cr = comps[2];
+                Component y = comps[0];
+                Component cb = comps[1];
+                Component cr = comps[2];
                 // luma must carry the largest factors and both chroma components the same ones
                 // (2x2,2x2,2x2 is 4:4:4)
                 if (cb.H != cr.H || cb.V != cr.V || y.H % cb.H != 0 || y.V % cb.V != 0)
@@ -413,7 +413,7 @@ public static class JpegDecoder
 
             _mcusX = (w + 8 * _hmax - 1) / (8 * _hmax);
             _mcusY = (h + 8 * _vmax - 1) / (8 * _vmax);
-            foreach (var c in comps)
+            foreach (Component c in comps)
             {
                 c.Width = (w * c.H + _hmax - 1) / _hmax;
                 c.Height = (h * c.V + _vmax - 1) / _vmax;
@@ -427,7 +427,7 @@ public static class JpegDecoder
             Info = info;
         }
 
-        void ReadScan(ReadOnlySpan<byte> s)
+        private void ReadScan(ReadOnlySpan<byte> s)
         {
             if (s.Length < 1)
             {
@@ -444,7 +444,7 @@ public static class JpegDecoder
             for (int i = 0; i < ns; i++)
             {
                 int id = s[1 + 2 * i], t = s[2 + 2 * i];
-                var c = Array.Find(_comps, x => x.Id == id) ?? throw Fail(JpegError.BadComponentId, $"scan component {id}");
+                Component c = Array.Find(_comps, x => x.Id == id) ?? throw Fail(JpegError.BadComponentId, $"scan component {id}");
                 if (Array.IndexOf(sc, c) >= 0)
                 {
                     throw Fail(JpegError.BadComponentId, "component twice in a scan");
@@ -478,7 +478,7 @@ public static class JpegDecoder
             if (ns > 1)
             {
                 int blocks = 0;
-                foreach (var c in sc)
+                foreach (Component c in sc)
                 {
                     blocks += c.H * c.V;
                 }
@@ -488,7 +488,7 @@ public static class JpegDecoder
                     throw Fail(JpegError.BadMcuSize, "more than 10 blocks per MCU");
                 }
             }
-            foreach (var c in sc)
+            foreach (Component c in sc)
             {
                 if (c.Coefs.Length == 0)
                 {
@@ -530,14 +530,14 @@ public static class JpegDecoder
                 sinceRestart++;
                 if (ns == 1)
                 {
-                    var c = sc[0];
+                    Component c = sc[0];
                     int bx = mcu % c.CodedBlocksX, by = mcu / c.CodedBlocksX;
                     DecodeBlock(c, by * c.BlocksX + bx, ss, se, ah, al, progressive);
                 }
                 else
                 {
                     int mx = mcu % _mcusX, my = mcu / _mcusX;
-                    foreach (var c in sc)
+                    foreach (Component c in sc)
                     {
                         for (int v = 0; v < c.V; v++)
                         {
@@ -553,7 +553,7 @@ public static class JpegDecoder
             _anyScan = true;
         }
 
-        void EnsureTable(Huffman?[] set, int index, bool dc)
+        private void EnsureTable(Huffman?[] set, int index, bool dc)
         {
             if (set[index] != null)
             {
@@ -570,7 +570,7 @@ public static class JpegDecoder
                 : index == 0 ? new Huffman(JpegTables.AcLumaBits, JpegTables.AcLumaVals) : new Huffman(JpegTables.AcChromaBits, JpegTables.AcChromaVals);
         }
 
-        void Restart(Component[] sc)
+        private void Restart(Component[] sc)
         {
             _bits = 0;
             _nbits = 0;
@@ -598,7 +598,7 @@ public static class JpegDecoder
 
             _marker = false;
             _eobrun = 0;
-            foreach (var c in sc)
+            foreach (Component c in sc)
             {
                 c.DcPred = 0;
             }
@@ -606,7 +606,7 @@ public static class JpegDecoder
 
         // ---------------------------------------------------------------- bit reader
 
-        void Fill()
+        private void Fill()
         {
             while (_nbits <= 24)
             {
@@ -637,7 +637,7 @@ public static class JpegDecoder
             }
         }
 
-        int Bits(int n)
+        private int Bits(int n)
         {
             if (n == 0)
             {
@@ -655,13 +655,13 @@ public static class JpegDecoder
             return v;
         }
 
-        int Bit() => Bits(1);
+        private int Bit() => Bits(1);
 
-        static int Extend(int v, int n) => v < 1 << (n - 1) ? v - (1 << n) + 1 : v;
+        private static int Extend(int v, int n) => v < 1 << (n - 1) ? v - (1 << n) + 1 : v;
 
-        int Receive(int n) => n == 0 ? 0 : Extend(Bits(n), n);
+        private int Receive(int n) => n == 0 ? 0 : Extend(Bits(n), n);
 
-        int DecodeSymbol(Huffman h)
+        private int DecodeSymbol(Huffman h)
         {
             if (_nbits < 16)
             {
@@ -697,9 +697,9 @@ public static class JpegDecoder
 
         // ---------------------------------------------------------------- blocks
 
-        void DecodeBlock(Component c, int block, int ss, int se, int ah, int al, bool progressive)
+        private void DecodeBlock(Component c, int block, int ss, int se, int ah, int al, bool progressive)
         {
-            var blk = c.Coefs.AsSpan(block * 64, 64);
+            Span<int> blk = c.Coefs.AsSpan(block * 64, 64);
             if (!progressive)
             {
                 int t = DecodeSymbol(_dc[c.DcTable]!);
@@ -710,7 +710,7 @@ public static class JpegDecoder
 
                 c.DcPred += Receive(t);
                 blk[0] = c.DcPred;
-                var ac = _ac[c.AcTable]!;
+                Huffman ac = _ac[c.AcTable]!;
                 for (int k = 1; k < 64;)
                 {
                     int rs = DecodeSymbol(ac), r = rs >> 4, s = rs & 15;
@@ -757,7 +757,7 @@ public static class JpegDecoder
                 return;
             }
 
-            var h = _ac[c.AcTable]!;
+            Huffman h = _ac[c.AcTable]!;
             if (ah == 0)
             {
                 if (_eobrun > 0)
@@ -867,15 +867,15 @@ public static class JpegDecoder
 
         public JpegImage BuildImage()
         {
-            var info = Info!;
+            JpegInfo info = Info!;
             var planes = new JpegPlane[_comps.Length];
             Span<int> tmp = stackalloc int[64];
             for (int ci = 0; ci < _comps.Length; ci++)
             {
-                var c = _comps[ci];
-                var q = _quant[c.Tq] ?? throw Fail(JpegError.NoQuantTable, $"missing quant table {c.Tq}");
+                Component c = _comps[ci];
+                ushort[] q = _quant[c.Tq] ?? throw Fail(JpegError.NoQuantTable, $"missing quant table {c.Tq}");
                 int stride = c.BlocksX * 8, rows = c.BlocksY * 8;
-                var data = new byte[stride * rows];
+                byte[] data = new byte[stride * rows];
                 if (c.Coefs.Length == 0)
                 {
                     c.Coefs = new int[c.BlocksX * c.BlocksY * 64]; // never scanned: mid grey
@@ -885,7 +885,7 @@ public static class JpegDecoder
                 {
                     for (int bx = 0; bx < c.BlocksX; bx++)
                     {
-                        var blk = c.Coefs.AsSpan((by * c.BlocksX + bx) * 64, 64);
+                        Span<int> blk = c.Coefs.AsSpan((by * c.BlocksX + bx) * 64, 64);
                         for (int i = 0; i < 64; i++)
                         {
                             tmp[i] = blk[i] * q[i];

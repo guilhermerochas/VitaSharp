@@ -46,11 +46,11 @@ public static unsafe class DirtyPages
     /// address 0. Every address space has its own (<see cref="AddressSpace"/>); the sweep folds them all.</summary>
     public static byte* Table => GuestMemory.Base - TableBytes;
 
-    static readonly uint[] _version = new uint[Pages];
-    static uint _epoch;
+    private static readonly uint[] s_version = new uint[Pages];
+    private static uint s_epoch;
 
     /// <summary>Number of sweeps so far: the stamp to remember for data validated now.</summary>
-    public static uint Epoch => _epoch;
+    public static uint Epoch => s_epoch;
 
     [MethodImpl(MethodImplOptions.AggressiveInlining)]
     public static void Mark(uint addr) => Mark(GuestMemory.Base, addr);
@@ -101,15 +101,15 @@ public static unsafe class DirtyPages
     public static uint Sweep()
     {
         // the GPU worker sweeps, and a submitting guest thread at a scene's end (SceneGate.SweepEpoch)
-        lock (_sweepLock)
+        lock (s_sweepLock)
         {
-            uint e = ++_epoch;
+            uint e = ++s_epoch;
             if (!Enabled || GuestMemory.Instance is not { } mem)
             {
                 return e;
             }
 
-            foreach (var space in mem.Spaces)
+            foreach (AddressSpace space in mem.Spaces)
             {
                 SweepTable(space.Base - TableBytes, e);
             }
@@ -117,15 +117,15 @@ public static unsafe class DirtyPages
             return e;
         }
     }
-    static readonly object _sweepLock = new();
+    private static readonly object s_sweepLock = new();
 
-    static void SweepTable(byte* t, uint e)
+    private static void SweepTable(byte* t, uint e)
     {
-        fixed (uint* ver = _version)
+        fixed (uint* ver = s_version)
         {
             for (uint i = 0; i < Pages; i += 64)
             {
-                var v = Vector128.Load(t + i) | Vector128.Load(t + i + 16) | Vector128.Load(t + i + 32) | Vector128.Load(t + i + 48);
+                Vector128<byte> v = Vector128.Load(t + i) | Vector128.Load(t + i + 16) | Vector128.Load(t + i + 32) | Vector128.Load(t + i + 48);
                 if (v == Vector128<byte>.Zero)
                 {
                     continue;
@@ -196,7 +196,7 @@ public static unsafe class DirtyPages
 
         ulong last = Math.Min((ulong)addr + length - 1, uint.MaxValue);
         int first = (int)(addr >> PageShift), count = (int)(last >> PageShift) - first + 1;
-        return _version.AsSpan(first, count).IndexOfAnyInRange(stamp, upto) >= 0;
+        return s_version.AsSpan(first, count).IndexOfAnyInRange(stamp, upto) >= 0;
     }
 
     public static bool WrittenSince(uint addr, uint length, uint stamp)
@@ -214,6 +214,6 @@ public static unsafe class DirtyPages
         ulong last = Math.Min((ulong)addr + length - 1, uint.MaxValue);
         int first = (int)(addr >> PageShift), count = (int)(last >> PageShift) - first + 1;
         // any version >= stamp, i.e. outside [0, stamp - 1]
-        return stamp == 0 || _version.AsSpan(first, count).IndexOfAnyExceptInRange(0u, stamp - 1) >= 0;
+        return stamp == 0 || s_version.AsSpan(first, count).IndexOfAnyExceptInRange(0u, stamp - 1) >= 0;
     }
 }

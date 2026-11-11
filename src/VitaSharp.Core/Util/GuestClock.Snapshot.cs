@@ -5,7 +5,7 @@ namespace VitaSharp.Core.Util;
 public static partial class GuestClock
 {
     /// <summary>Save states: the guest time in microseconds (host tick rates differ between devices).</summary>
-    internal static long SnapshotMicroseconds => ToMicroseconds(Math.Max(Ticks, Volatile.Read(ref _lastObserved)));
+    internal static long SnapshotMicroseconds => ToMicroseconds(Math.Max(Ticks, Volatile.Read(ref s_lastObserved)));
 
     /// <summary>Save state load, while the emulation is paused: the frozen clock reads the saved time and resumes from
     /// it, so guest time continues from where the state was saved (also the observed-time floor).</summary>
@@ -17,7 +17,7 @@ public static partial class GuestClock
         }
 
         long ticks = (long)(us * (Stopwatch.Frequency / 1_000_000.0));
-        Volatile.Write(ref _frozen, ticks);
-        Volatile.Write(ref _lastObserved, ticks);
+        Volatile.Write(ref s_frozen, ticks);
+        Volatile.Write(ref s_lastObserved, ticks);
     }
 }

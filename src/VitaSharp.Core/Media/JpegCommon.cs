@@ -79,11 +79,11 @@ public static class JpegTables
     ];
 
     /// <summary>Basis c[x*8+u] = C(u)/2 * cos((2x+1)u*pi/16), C(0) = 1/sqrt(2).</summary>
-    static readonly float[] Basis = BuildBasis();
+    private static readonly float[] s_basis = BuildBasis();
 
-    static float[] BuildBasis()
+    private static float[] BuildBasis()
     {
-        var b = new float[64];
+        float[] b = new float[64];
         for (int x = 0; x < 8; x++)
         {
             for (int u = 0; u < 8; u++)
@@ -99,11 +99,11 @@ public static class JpegTables
     public static void Idct(ReadOnlySpan<int> coef, Span<byte> dst, int stride)
     {
         Span<float> g = stackalloc float[64];
-        var c = Basis;
+        float[] c = s_basis;
         // rows: g[v][x] = sum_u c[x][u] F[v][u]
         for (int v = 0; v < 8; v++)
         {
-            var row = coef.Slice(v * 8, 8);
+            ReadOnlySpan<int> row = coef.Slice(v * 8, 8);
             bool acZero = row[1] == 0 && row[2] == 0 && row[3] == 0 && row[4] == 0 && row[5] == 0 && row[6] == 0 && row[7] == 0;
             if (acZero)
             {
@@ -129,7 +129,7 @@ public static class JpegTables
         // columns: f[y][x] = sum_v c[y][v] g[v][x]
         for (int y = 0; y < 8; y++)
         {
-            var o = dst.Slice(y * stride, 8);
+            Span<byte> o = dst.Slice(y * stride, 8);
             for (int x = 0; x < 8; x++)
             {
                 float s = 0;
@@ -148,7 +148,7 @@ public static class JpegTables
     public static void Fdct(ReadOnlySpan<float> src, Span<float> dst)
     {
         Span<float> g = stackalloc float[64];
-        var c = Basis;
+        float[] c = s_basis;
         // rows: g[y][u] = sum_x c[x][u] f[y][x]
         for (int y = 0; y < 8; y++)
         {

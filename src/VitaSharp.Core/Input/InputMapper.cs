@@ -79,7 +79,7 @@ public sealed class PadSnapshot
 [System.Runtime.CompilerServices.InlineArray(4)]
 public struct TouchContacts
 {
-    TouchPoint _first;
+    private TouchPoint _first;
 }
 
 /// <summary>Result of mapping one device: the Vita pad state plus the touches it produces.</summary>
@@ -157,22 +157,22 @@ public static class StickMath
 public sealed class CompiledProfile
 {
     public ControllerProfile Profile { get; }
-    readonly InputBinding[][] _bindings = new InputBinding[VitaControls.Count][];
+    private readonly InputBinding[][] _bindings = new InputBinding[VitaControls.Count][];
 
-    readonly InputCombo[] _pauseCombos;
+    private readonly InputCombo[] _pauseCombos;
 
     public CompiledProfile(ControllerProfile p)
     {
         Profile = p;
-        foreach (var c in VitaControls.All)
+        foreach (VitaControl c in VitaControls.All)
         {
             _bindings[(int)c] = p.Get(c).ToArray();
         }
 
         _pauseCombos = p.GetCombos(VitaControl.PauseEmulation).ToArray();
-        RearModifier = InputBinding.TryParse(p.TouchpadRearModifier, out var rm) ? rm : null;
-        BothModifier = InputBinding.TryParse(p.TouchpadBothModifier, out var bm) ? bm : null;
-        foreach (var c in VitaControls.All)
+        RearModifier = InputBinding.TryParse(p.TouchpadRearModifier, out InputBinding rm) ? rm : null;
+        BothModifier = InputBinding.TryParse(p.TouchpadBothModifier, out InputBinding bm) ? bm : null;
+        foreach (VitaControl c in VitaControls.All)
         {
             if (VitaControls.IsMotion(c) && _bindings[(int)c].Length > 0)
             {
@@ -243,7 +243,7 @@ public static class InputMapper
             return true;
         }
 
-        foreach (ref readonly var combo in p.Combos(c))
+        foreach (ref readonly InputCombo combo in p.Combos(c))
         {
             if (combo.Value(pad, keys) >= threshold)
             {
@@ -256,10 +256,10 @@ public static class InputMapper
 
     /// <summary>Activation of a control, ignoring the bindings <paramref name="skipA"/>/<paramref name="skipB"/>
     /// (touch pad layer modifiers that are in use).</summary>
-    static float Value(CompiledProfile p, VitaControl c, PadSnapshot? pad, IReadOnlySet<string>? keys, InputBinding? skipA, InputBinding? skipB)
+    private static float Value(CompiledProfile p, VitaControl c, PadSnapshot? pad, IReadOnlySet<string>? keys, InputBinding? skipA, InputBinding? skipB)
     {
         float v = 0;
-        foreach (ref readonly var b in p[c])
+        foreach (ref readonly InputBinding b in p[c])
         {
             if (b == skipA || b == skipB)
             {
@@ -274,8 +274,8 @@ public static class InputMapper
     /// <summary>Maps a device's current state through its profile.</summary>
     public static MappedInput Map(CompiledProfile cp, PadSnapshot? pad, IReadOnlySet<string>? keys)
     {
-        var p = cp.Profile;
-        var r = MappedInput.Neutral;
+        ControllerProfile p = cp.Profile;
+        MappedInput r = MappedInput.Neutral;
         float threshold = p.ButtonThreshold is > 0 and <= 1 ? p.ButtonThreshold : 0.5f;
 
         // touch pad (DualShock 4 / DualSense...): fingers touch the front screen; holding the rear modifier (L2)
@@ -386,7 +386,7 @@ public static class InputMapper
     /// takes the value further from the centre.</summary>
     public static MappedInput Combine(in MappedInput a, in MappedInput b, int idOffset = 100)
     {
-        var r = a;
+        MappedInput r = a;
         r.State.Buttons |= b.State.Buttons;
         r.State.Lx = Further(a.State.Lx, b.State.Lx);
         r.State.Ly = Further(a.State.Ly, b.State.Ly);
@@ -431,7 +431,7 @@ public static class InputMapper
         return r;
     }
 
-    static byte Further(byte a, byte b) => Math.Abs(b - 128) > Math.Abs(a - 128) ? b : a;
+    private static byte Further(byte a, byte b) => Math.Abs(b - 128) > Math.Abs(a - 128) ? b : a;
 }
 
 /// <summary>

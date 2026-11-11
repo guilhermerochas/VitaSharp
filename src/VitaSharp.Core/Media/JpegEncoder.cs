@@ -15,9 +15,9 @@ public static class JpegEncoder
         return (Scale(JpegTables.StdLumaQuant, scale), Scale(JpegTables.StdChromaQuant, scale));
     }
 
-    static byte[] Scale(byte[] t, int scale)
+    private static byte[] Scale(byte[] t, int scale)
     {
-        var o = new byte[64];
+        byte[] o = new byte[64];
         for (int i = 0; i < 64; i++)
         {
             o[i] = (byte)Math.Clamp((t[i] * scale + 4) / 8, 1, 255);
@@ -26,7 +26,7 @@ public static class JpegEncoder
         return o;
     }
 
-    sealed class HuffCode
+    private sealed class HuffCode
     {
         public readonly ushort[] Code = new ushort[256];
         public readonly byte[] Size = new byte[256];
@@ -46,16 +46,16 @@ public static class JpegEncoder
         }
     }
 
-    static readonly HuffCode DcY = new(JpegTables.DcLumaBits, JpegTables.DcLumaVals),
-        AcY = new(JpegTables.AcLumaBits, JpegTables.AcLumaVals),
-        DcC = new(JpegTables.DcChromaBits, JpegTables.DcChromaVals),
-        AcC = new(JpegTables.AcChromaBits, JpegTables.AcChromaVals);
+    private static readonly HuffCode s_dcY = new(JpegTables.DcLumaBits, JpegTables.DcLumaVals),
+        s_acY = new(JpegTables.AcLumaBits, JpegTables.AcLumaVals),
+        s_dcC = new(JpegTables.DcChromaBits, JpegTables.DcChromaVals),
+        s_acC = new(JpegTables.AcChromaBits, JpegTables.AcChromaVals);
 
-    sealed class Writer
+    private sealed class Writer
     {
         public readonly MemoryStream Out = new();
-        ulong _acc;
-        int _n;
+        private ulong _acc;
+        private int _n;
 
         public void Byte(int b) => Out.WriteByte((byte)b);
         public void Word(int w)
@@ -185,12 +185,12 @@ public static class JpegEncoder
                 w.Word(0xFFC4);
                 w.Word(2 + 17 + vals.Length);
                 w.Byte(cls);
-                foreach (var b in bits)
+                foreach (byte b in bits)
                 {
                     w.Byte(b);
                 }
 
-                foreach (var v in vals)
+                foreach (byte v in vals)
                 {
                     w.Byte(v);
                 }
@@ -242,7 +242,7 @@ public static class JpegEncoder
                     for (int h = 0; h < hdiv; h++)
                     {
                         Load(y, yStride, width, height, (mx * hdiv + h) * 8, (my * vdiv + v) * 8, samples);
-                        Block(w, samples, coefs, lumaQuant, ref predY, DcY, AcY);
+                        Block(w, samples, coefs, lumaQuant, ref predY, s_dcY, s_acY);
                     }
                 }
 
@@ -252,9 +252,9 @@ public static class JpegEncoder
                 }
 
                 Load(cb, cStride, cw, ch, mx * 8, my * 8, samples);
-                Block(w, samples, coefs, chromaQuant, ref predCb, DcC, AcC);
+                Block(w, samples, coefs, chromaQuant, ref predCb, s_dcC, s_acC);
                 Load(cr, cStride, cw, ch, mx * 8, my * 8, samples);
-                Block(w, samples, coefs, chromaQuant, ref predCr, DcC, AcC);
+                Block(w, samples, coefs, chromaQuant, ref predCr, s_dcC, s_acC);
             }
         }
 
@@ -263,7 +263,7 @@ public static class JpegEncoder
         return w.Out.ToArray();
     }
 
-    static void Load(ReadOnlySpan<byte> p, int stride, int pw, int ph, int x0, int y0, Span<float> dst)
+    private static void Load(ReadOnlySpan<byte> p, int stride, int pw, int ph, int x0, int y0, Span<float> dst)
     {
         for (int yy = 0; yy < 8; yy++)
         {
@@ -275,7 +275,7 @@ public static class JpegEncoder
         }
     }
 
-    static int Category(int v)
+    private static int Category(int v)
     {
         v = Math.Abs(v);
         int n = 0;
@@ -287,7 +287,7 @@ public static class JpegEncoder
         return n;
     }
 
-    static void Block(Writer w, Span<float> samples, Span<float> coefs, byte[] q, ref int pred, HuffCode dc, HuffCode ac)
+    private static void Block(Writer w, Span<float> samples, Span<float> coefs, byte[] q, ref int pred, HuffCode dc, HuffCode ac)
     {
         JpegTables.Fdct(samples, coefs);
         Span<int> zz = stackalloc int[64];

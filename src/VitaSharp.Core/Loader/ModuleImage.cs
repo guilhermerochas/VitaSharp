@@ -15,8 +15,8 @@ public sealed class ModuleImage
     public List<(string Library, uint LibNid, ushort Attributes, uint[] FuncNids, uint[] VarNids)> Exports { get; } = new();
     public List<(string Library, uint LibNid, uint[] FuncNids)> Imports { get; } = new();
 
-    const uint PT_LOAD = 1, PT_SCE_RELA = 0x60000000;
-    const ushort ET_SCE_EXEC = 0xFE00;
+    private const uint PT_LOAD = 1, PT_SCE_RELA = 0x60000000;
+    private const ushort ET_SCE_EXEC = 0xFE00;
 
     public static unsafe ModuleImage Read(byte[] elf)
     {
@@ -34,7 +34,7 @@ public sealed class ModuleImage
         var relas = new List<(uint Off, uint Size)>();
         for (int i = 0; i < phnum; i++)
         {
-            var ph = e.Slice((int)phoff + i * 32, 32);
+            ReadOnlySpan<byte> ph = e.Slice((int)phoff + i * 32, 32);
             uint type = U32LE(ph, 0);
             if (type == PT_LOAD && U32LE(ph, 20) != 0)
             {
@@ -55,7 +55,7 @@ public sealed class ModuleImage
         var segs = new Dictionary<int, SegmentInfo>();
         uint cursor = 0;
         bool overlapping = loads.Select(l => l.Vaddr).Distinct().Count() != loads.Count;
-        foreach (var l in loads)
+        foreach ((int Index, uint Off, uint Vaddr, uint FileSz, uint MemSz) l in loads)
         {
             uint at = overlapping ? cursor : l.Vaddr - low;
             segs[l.Index] = new SegmentInfo(at, l.Vaddr, l.MemSz);
@@ -68,14 +68,14 @@ public sealed class ModuleImage
         }
 
         byte[] image = new byte[total];
-        foreach (var l in loads)
+        foreach ((int Index, uint Off, uint Vaddr, uint FileSz, uint MemSz) l in loads)
         {
             e.Slice((int)l.Off, (int)l.FileSz).CopyTo(image.AsSpan((int)segs[l.Index].Address));
         }
 
         fixed (byte* img = image)
         {
-            foreach (var (off, size) in relas)
+            foreach ((uint off, uint size) in relas)
             {
                 Relocation.RelocateImage(e.Slice((int)off, (int)size), segs, img);
             }
@@ -102,7 +102,7 @@ public sealed class ModuleImage
             ushort attr = U16LE(m, (int)p + 4), nfunc = U16LE(m, (int)p + 6);
             uint nvar = U32LE(m, (int)p + 8);
             uint libNid = U32LE(m, (int)p + 0x10), libName = U32LE(m, (int)p + 0x14), nidTable = U32LE(m, (int)p + 0x18);
-            var nids = Nids(nidTable, nfunc + (int)nvar);
+            uint[] nids = Nids(nidTable, nfunc + (int)nvar);
             if (nids.Length == nfunc + (int)nvar)
             {
                 result.Exports.Add((Str(libName), libNid, attr, nids[..nfunc], nids[nfunc..]));

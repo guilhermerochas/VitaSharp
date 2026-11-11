@@ -21,21 +21,21 @@ public static class Scheduler
     /// <summary>Cores of the system software (the shell process). 0 = unlimited.</summary>
     public static int SystemCores = 1;
 
-    sealed class Pool
+    private sealed class Pool
     {
         public readonly object L = new();
         public int Running;
         public readonly List<GuestThread> Waiting = new();
     }
 
-    static readonly Pool App = new(), Sys = new();
+    private static readonly Pool s_app = new(), s_sys = new();
 
     /// <summary>Statistics (PERF sched): acquires that had to wait for a core, and waits repeated after a wake-up that
     /// did not get one (another thread took it, or a timeout poll).</summary>
     public static long AcquireBlocked, AcquireRewaits;
 
-    static Pool PoolOf(GuestThread t) => t.OnSystemCore ? Sys : App;
-    static int CoresOf(Pool p) => p == Sys ? SystemCores : Cores;
+    private static Pool PoolOf(GuestThread t) => t.OnSystemCore ? s_sys : s_app;
+    private static int CoresOf(Pool p) => p == s_sys ? SystemCores : Cores;
 
     /// <summary>Blocks until the calling thread may run guest code.</summary>
     public static void Acquire(GuestThread t)
@@ -45,7 +45,7 @@ public static class Scheduler
             return;
         }
 
-        var p = PoolOf(t);
+        Pool p = PoolOf(t);
         int cores = CoresOf(p);
         if (cores <= 0)
         {
@@ -91,7 +91,7 @@ public static class Scheduler
             t.Core.SettleThrottle(t.Core.PendingInstructions);
             t.Core.PendingInstructions = 0;
         }
-        var p = PoolOf(t);
+        Pool p = PoolOf(t);
         lock (p.L)
         {
             p.Running--;
@@ -103,7 +103,7 @@ public static class Scheduler
     /// <summary>Called periodically by a running thread: a higher-priority thread is waiting for its core.</summary>
     public static bool ShouldYield(GuestThread t)
     {
-        var p = PoolOf(t);
+        Pool p = PoolOf(t);
         int cores = CoresOf(p);
         if (cores <= 0 || p.Waiting.Count == 0)
         {
@@ -129,9 +129,9 @@ public static class Scheduler
         Acquire(t);
     }
 
-    static bool HigherPriorityWaiting(Pool p, int priority)
+    private static bool HigherPriorityWaiting(Pool p, int priority)
     {
-        foreach (var w in p.Waiting)
+        foreach (GuestThread w in p.Waiting)
         {
             if (w.Priority < priority)
             {
@@ -142,9 +142,9 @@ public static class Scheduler
         return false;
     }
 
-    static bool SamePriorityWaiting(Pool p, int priority)
+    private static bool SamePriorityWaiting(Pool p, int priority)
     {
-        foreach (var w in p.Waiting)
+        foreach (GuestThread w in p.Waiting)
         {
             if (w.Priority == priority)
             {
@@ -158,7 +158,7 @@ public static class Scheduler
     /// <summary>Forgets all core bookkeeping (process exec after every thread has exited).</summary>
     public static void Reset()
     {
-        foreach (var p in new[] { App, Sys })
+        foreach (Pool? p in new[] { s_app, s_sys })
         {
             lock (p.L)
             {
@@ -174,7 +174,7 @@ public static class Scheduler
 
     public readonly struct Blocked : IDisposable
     {
-        readonly GuestThread? _t;
+        private readonly GuestThread? _t;
         public Blocked(GuestThread? t)
         {
             _t = t;

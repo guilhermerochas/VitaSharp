@@ -15,7 +15,7 @@ public static class NativeThread
     public static readonly ConcurrentDictionary<int, string> Names = new();
 
     // SYS_gettid differs per architecture
-    static readonly long GettidSyscall = RuntimeInformation.ProcessArchitecture switch
+    private static readonly long s_gettidSyscall = RuntimeInformation.ProcessArchitecture switch
     {
         Architecture.X64 => 186,
         Architecture.Arm64 => 178,
@@ -32,9 +32,9 @@ public static class NativeThread
                 return (int)GetCurrentThreadId();
             }
 
-            if ((OperatingSystem.IsLinux() || OperatingSystem.IsAndroid()) && GettidSyscall >= 0)
+            if ((OperatingSystem.IsLinux() || OperatingSystem.IsAndroid()) && s_gettidSyscall >= 0)
             {
-                return (int)syscall(GettidSyscall);
+                return (int)syscall(s_gettidSyscall);
             }
 
             if (OperatingSystem.IsMacOS() && pthread_threadid_np(0, out ulong tid) == 0)
@@ -82,12 +82,12 @@ public static class NativeThread
     /// <summary>Raised on the registering thread itself (Android: per-thread timer slack, immediate placement).</summary>
     public static Action<int, Role>? Registered;
 
-    static bool _noCycleTime = !OperatingSystem.IsWindows();
+    private static bool s_noCycleTime = !OperatingSystem.IsWindows();
     /// <summary>CPU cycles the calling thread has consumed (Windows QueryThreadCycleTime; 0 elsewhere): the host CPU
     /// cost of a region without the time the thread was blocked (profiling).</summary>
     public static ulong CycleTime()
     {
-        if (_noCycleTime)
+        if (s_noCycleTime)
         {
             return 0;
         }
@@ -98,14 +98,14 @@ public static class NativeThread
         } // -2: GetCurrentThread() pseudo-handle
         catch (Exception e) when (e is DllNotFoundException or EntryPointNotFoundException)
         {
-            _noCycleTime = true;
+            s_noCycleTime = true;
             return 0;
         }
     }
 
-    [DllImport("kernel32.dll")][return: MarshalAs(UnmanagedType.Bool)] static extern bool QueryThreadCycleTime(nint thread, out ulong cycles);
+    [DllImport("kernel32.dll")][return: MarshalAs(UnmanagedType.Bool)] private static extern bool QueryThreadCycleTime(nint thread, out ulong cycles);
 
-    [DllImport("kernel32.dll")] static extern uint GetCurrentThreadId();
-    [DllImport("libc", SetLastError = true)] static extern long syscall(long number);
-    [DllImport("libc")] static extern int pthread_threadid_np(nint thread, out ulong id);
+    [DllImport("kernel32.dll")] private static extern uint GetCurrentThreadId();
+    [DllImport("libc", SetLastError = true)] private static extern long syscall(long number);
+    [DllImport("libc")] private static extern int pthread_threadid_np(nint thread, out ulong id);
 }

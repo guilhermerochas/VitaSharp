@@ -1,3 +1,5 @@
+using System.Diagnostics.CodeAnalysis;
+
 namespace VitaSharp.Core.Memory;
 
 /// <summary>
@@ -20,7 +22,7 @@ namespace VitaSharp.Core.Memory;
 /// </summary>
 public sealed unsafe class AddressSpace
 {
-    static int s_nextId;
+    private static int s_nextId;
 
     /// <summary>Identifies the space's current use: a new id each time the space is handed to a process (caches keyed by
     /// guest address compare it, since the same address holds other data in another space).</summary>
@@ -35,18 +37,18 @@ public sealed unsafe class AddressSpace
     /// <summary>True when the shared regions are mapped views of the system's shared memory (per-process spaces).</summary>
     public bool HasSharedViews { get; }
 
-    internal readonly (nint Address, nuint Size, bool View)[] Parts;
+    internal readonly (nint Address, nuint Size, bool View)[] _parts;
 
     /// <summary>The space's private blocks (user memory, fixed ranges), by address.</summary>
-    internal readonly Dictionary<uint, GuestMemory.Block> Blocks = new();
+    internal readonly Dictionary<uint, GuestMemory.Block> _blocks = new();
 
     /// <summary>One bit per 4 KB page of the private regions: set while the page belongs to a block of this space.</summary>
-    internal readonly ulong[] MappedPages = new ulong[(1 << 20) / 64];
+    internal readonly ulong[] _mappedPages = new ulong[(1 << 20) / 64];
 
     internal AddressSpace(byte* @base, (nint, nuint, bool)[] parts, bool sharedViews)
     {
         Base = @base;
-        Parts = parts;
+        _parts = parts;
         HasSharedViews = sharedViews;
         Renew();
     }
@@ -60,12 +62,13 @@ public sealed unsafe class AddressSpace
 
     // ------------------------------------------------------------------ the space of the current host thread
 
-    [ThreadStatic] static AddressSpace? t_current;
+    [SuppressMessage("Style", "IDE1006", Justification = "[ThreadStatic]: t_camelCase; .editorconfig cannot select the attribute")]
+    [ThreadStatic] private static AddressSpace? t_current;
 
     /// <summary>The space the calling host thread works in (the first process's when it chose none).</summary>
     public static AddressSpace? Current => t_current ?? GuestMemory.Instance?.Primary;
 
-    static void SetThread(AddressSpace? s)
+    private static void SetThread(AddressSpace? s)
     {
         t_current = s;
         GuestMemory.t_base = s == null ? null : s.Base;
@@ -78,7 +81,7 @@ public sealed unsafe class AddressSpace
     /// </summary>
     public static Activation Use(AddressSpace? space)
     {
-        var prev = t_current;
+        AddressSpace? prev = t_current;
         if (!ReferenceEquals(prev, space))
         {
             SetThread(space);
@@ -109,12 +112,12 @@ public sealed unsafe class AddressSpace
 
     // the space also flows with the execution context: tasks and host threads started by a process's code (async I/O,
     // decoders, HTTP exchanges) work in that process's memory
-    static readonly AsyncLocal<AddressSpace?> s_flow = new(static a => SetThread(a.CurrentValue));
+    private static readonly AsyncLocal<AddressSpace?> s_flow = new(static a => SetThread(a.CurrentValue));
 
     /// <summary>Makes <paramref name="space"/> current for the calling thread and everything it starts, until disposed.</summary>
     public static FlowScope Enter(AddressSpace? space)
     {
-        var prev = s_flow.Value;
+        AddressSpace? prev = s_flow.Value;
         s_flow.Value = space;
         SetThread(space); // also when the flowing value did not change but the thread had picked another one with Use
         return new FlowScope(prev);

@@ -29,7 +29,7 @@ public static class UpdateInstaller
             ZipFile.ExtractToDirectory(package, stagingDir, overwriteFiles: true);
         }
 
-        var dirs = Directory.GetDirectories(stagingDir);
+        string[] dirs = Directory.GetDirectories(stagingDir);
         return dirs.Length == 1 && Directory.GetFiles(stagingDir).Length == 0 ? dirs[0] : stagingDir;
     }
 
@@ -53,12 +53,12 @@ public static class UpdateInstaller
         }
 
         int written = 0;
-        foreach (var file in Directory.EnumerateFiles(source, "*", SearchOption.AllDirectories))
+        foreach (string file in Directory.EnumerateFiles(source, "*", SearchOption.AllDirectories))
         {
             string rel = Path.GetRelativePath(source, file);
             string dest = Path.Combine(target, rel);
             Directory.CreateDirectory(Path.GetDirectoryName(dest)!);
-            var deadline = DateTime.UtcNow + lockTimeout;
+            DateTime deadline = DateTime.UtcNow + lockTimeout;
             while (true)
             {
                 try
@@ -86,10 +86,10 @@ public static class UpdateInstaller
         return written;
     }
 
-    static bool IsInside(string path, string folder)
+    private static bool IsInside(string path, string folder)
     {
         string f = folder.TrimEnd(Path.DirectorySeparatorChar, Path.AltDirectorySeparatorChar) + Path.DirectorySeparatorChar;
-        var cmp = OperatingSystem.IsWindows() || OperatingSystem.IsMacOS() ? StringComparison.OrdinalIgnoreCase : StringComparison.Ordinal;
+        StringComparison cmp = OperatingSystem.IsWindows() || OperatingSystem.IsMacOS() ? StringComparison.OrdinalIgnoreCase : StringComparison.Ordinal;
         return (path.TrimEnd(Path.DirectorySeparatorChar, Path.AltDirectorySeparatorChar) + Path.DirectorySeparatorChar).StartsWith(f, cmp);
     }
 }

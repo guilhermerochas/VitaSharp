@@ -32,7 +32,7 @@ internal static partial class SelfKeys
 /// </summary>
 public static class SelfDecryptor
 {
-    const uint SceMagic = 0x00454353;
+    private const uint SceMagic = 0x00454353;
 
     public static bool IsSelf(ReadOnlySpan<byte> data) => data.Length >= 4 && U32LE(data, 0) == SceMagic;
     public static bool IsElf(ReadOnlySpan<byte> data) => data.Length >= 4 && U32LE(data, 0) == 0x464C457F;
@@ -49,9 +49,9 @@ public static class SelfDecryptor
             return false;
         }
 
-        const int sh = 32;
-        long appinfoOff = (long)U64LE(header, sh + 24), elfOff = (long)U64LE(header, sh + 32);
-        long phdrOff = (long)U64LE(header, sh + 40), segInfoOff = (long)U64LE(header, sh + 56);
+        const int SelfHeaderOffset = 32;
+        long appinfoOff = (long)U64LE(header, SelfHeaderOffset + 24), elfOff = (long)U64LE(header, SelfHeaderOffset + 32);
+        long phdrOff = (long)U64LE(header, SelfHeaderOffset + 40), segInfoOff = (long)U64LE(header, SelfHeaderOffset + 56);
         if (appinfoOff + 16 > header.Length || elfOff + 52 > header.Length)
         {
             return false;
@@ -111,12 +111,12 @@ public static class SelfDecryptor
         uint metadataOffset = U32LE(f, 12);
         ulong headerLength = U64LE(f, 16);
 
-        const int sh = 32;
-        long appinfoOff = (long)U64LE(f, sh + 24);
-        long elfOff = (long)U64LE(f, sh + 32);
-        long phdrOff = (long)U64LE(f, sh + 40);
-        long segInfoOff = (long)U64LE(f, sh + 56);
-        long ctrlOff = (long)U64LE(f, sh + 72);
+        const int SelfHeaderOffset = 32;
+        long appinfoOff = (long)U64LE(f, SelfHeaderOffset + 24);
+        long elfOff = (long)U64LE(f, SelfHeaderOffset + 32);
+        long phdrOff = (long)U64LE(f, SelfHeaderOffset + 40);
+        long segInfoOff = (long)U64LE(f, SelfHeaderOffset + 56);
+        long ctrlOff = (long)U64LE(f, SelfHeaderOffset + 72);
 
         var selfType = (SelfType)U32LE(f, (int)appinfoOff + 12);
         ulong sysver = U64LE(f, (int)appinfoOff + 16);
@@ -144,16 +144,16 @@ public static class SelfDecryptor
         }
 
         // ELF header + phdrs
-        var ehdr = f.Slice((int)elfOff, 52);
+        ReadOnlySpan<byte> ehdr = f.Slice((int)elfOff, 52);
         ushort phnum = U16LE(ehdr, 44);
         var phdrs = new (uint type, uint offset, uint vaddr, uint filesz, uint memsz, uint flags, uint align)[phnum];
         var segs = new (ulong offset, ulong size, bool compressed, bool plaintext)[phnum];
         bool encrypted = false;
         for (int i = 0; i < phnum; i++)
         {
-            var p = f.Slice((int)phdrOff + i * 32, 32);
+            ReadOnlySpan<byte> p = f.Slice((int)phdrOff + i * 32, 32);
             phdrs[i] = (U32LE(p, 0), U32LE(p, 4), U32LE(p, 8), U32LE(p, 16), U32LE(p, 20), U32LE(p, 24), U32LE(p, 28));
-            var s = f.Slice((int)segInfoOff + i * 32, 32);
+            ReadOnlySpan<byte> s = f.Slice((int)segInfoOff + i * 32, 32);
             segs[i] = (U64LE(s, 0), U64LE(s, 8), U32LE(s, 16) == 2, U32LE(s, 24) == 2);
             if (!segs[i].plaintext)
             {
@@ -170,7 +170,7 @@ public static class SelfDecryptor
             }
 
             Exception? last = null;
-            foreach (var set in new[] { SelfKeys.Set0, SelfKeys.Set1 })
+            foreach (KeyEntry[]? set in new[] { SelfKeys.Set0, SelfKeys.Set1 })
             {
                 try
                 {
@@ -190,7 +190,7 @@ public static class SelfDecryptor
 
         // Build ELF: header, phdrs, then each segment at its p_offset.
         using var ms = new MemoryStream();
-        var outHdr = ehdr.ToArray();
+        byte[] outHdr = ehdr.ToArray();
         BitConverter.TryWriteBytes(outHdr.AsSpan(28), 52u);  // e_phoff
         BitConverter.TryWriteBytes(outHdr.AsSpan(32), 0u);   // e_shoff
         BitConverter.TryWriteBytes(outHdr.AsSpan(46), (ushort)0); // e_shentsize
@@ -199,7 +199,7 @@ public static class SelfDecryptor
         ms.Write(outHdr);
 
         // Recompute offsets: segments are laid out sequentially after the phdr table.
-        var bodies = new byte[phnum][];
+        byte[][] bodies = new byte[phnum][];
         for (int i = 0; i < phnum; i++)
         {
             if (phdrs[i].filesz == 0)
@@ -207,10 +207,10 @@ public static class SelfDecryptor
                 bodies[i] = [];
                 continue;
             }
-            var raw = f.Slice((int)segs[i].offset, (int)segs[i].size).ToArray();
+            byte[] raw = f.Slice((int)segs[i].offset, (int)segs[i].size).ToArray();
             if (!segs[i].plaintext)
             {
-                var (key, iv) = segKeys[i];
+                (byte[]? key, byte[]? iv) = segKeys[i];
                 using var ctr = new AesUtil.Ctr(key);
                 ctr.Transform(raw, iv.ToArray());
             }
@@ -225,7 +225,7 @@ public static class SelfDecryptor
         }
 
         uint cursor = (uint)(52 + phnum * 32);
-        var newOffsets = new uint[phnum];
+        uint[] newOffsets = new uint[phnum];
         for (int i = 0; i < phnum; i++)
         {
             cursor = (cursor + 15u) & ~15u;
@@ -234,8 +234,8 @@ public static class SelfDecryptor
         }
         for (int i = 0; i < phnum; i++)
         {
-            var p = new byte[32];
-            var ph = phdrs[i];
+            byte[] p = new byte[32];
+            (uint type, uint offset, uint vaddr, uint filesz, uint memsz, uint flags, uint align) ph = phdrs[i];
             BitConverter.TryWriteBytes(p.AsSpan(0), ph.type);
             BitConverter.TryWriteBytes(p.AsSpan(4), newOffsets[i]);
             BitConverter.TryWriteBytes(p.AsSpan(8), ph.vaddr);
@@ -258,11 +258,11 @@ public static class SelfDecryptor
         return ms.ToArray();
     }
 
-    static Dictionary<int, (byte[] key, byte[] iv)> DecryptMetadata(ReadOnlySpan<byte> f, KeyEntry[] set, SceType sceType, int keyRev,
+    private static Dictionary<int, (byte[] key, byte[] iv)> DecryptMetadata(ReadOnlySpan<byte> f, KeyEntry[] set, SceType sceType, int keyRev,
         uint metadataOffset, ulong headerLength, ulong sysver, SelfType selfType, int npdrmType, byte[]? klic)
     {
         var result = new Dictionary<int, (byte[], byte[])>();
-        foreach (var s in DecryptSections(f, set, sceType, keyRev, metadataOffset, headerLength, sysver, selfType, klic))
+        foreach (MetadataSection s in DecryptSections(f, set, sceType, keyRev, metadataOffset, headerLength, sysver, selfType, klic))
         {
             if (s.Encryption == 3)
             {
@@ -282,7 +282,7 @@ public static class SelfDecryptor
         ulong headerLength, ulong sysver, SelfType selfType, byte[]? klic)
     {
         Exception? last = null;
-        foreach (var set in new[] { SelfKeys.Set0, SelfKeys.Set1 })
+        foreach (KeyEntry[]? set in new[] { SelfKeys.Set0, SelfKeys.Set1 })
         {
             try
             {
@@ -296,10 +296,10 @@ public static class SelfDecryptor
         throw new InvalidDataException("Unable to decrypt SCE metadata", last);
     }
 
-    static List<MetadataSection> DecryptSections(ReadOnlySpan<byte> f, KeyEntry[] set, SceType sceType, int keyRev,
+    private static List<MetadataSection> DecryptSections(ReadOnlySpan<byte> f, KeyEntry[] set, SceType sceType, int keyRev,
         uint metadataOffset, ulong headerLength, ulong sysver, SelfType selfType, byte[]? klic)
     {
-        var meta = SelfKeys.Find(set, KeyType.METADATA, sceType, sysver, keyRev, selfType)
+        KeyEntry meta = SelfKeys.Find(set, KeyType.METADATA, sceType, sysver, keyRev, selfType)
                    ?? throw new KeyNotFoundException($"No metadata key for {sceType}/{selfType} rev {keyRev} sysver 0x{sysver:X}");
 
         int datOff = (int)metadataOffset + 48;
@@ -308,17 +308,17 @@ public static class SelfDecryptor
             throw new InvalidDataException("SCE metadata out of range");
         }
 
-        var dat = f.Slice(datOff, (int)headerLength - datOff).ToArray();
-        var info = new byte[64];
+        byte[] dat = f.Slice(datOff, (int)headerLength - datOff).ToArray();
+        byte[] info = new byte[64];
 
         if (selfType == SelfType.APP)
         {
             int kt = keyRev >= 2 ? 1 : 0;
-            var np = SelfKeys.Find(set, KeyType.NPDRM, sceType, sysver, kt, selfType)
+            KeyEntry np = SelfKeys.Find(set, KeyType.NPDRM, sceType, sysver, kt, selfType)
                      ?? throw new KeyNotFoundException("No NPDRM key");
-            var npKey = FromHex(np.Key);
-            var npIv = FromHex(np.Iv);
-            var predec = new byte[16];
+            byte[] npKey = FromHex(np.Key);
+            byte[] npIv = FromHex(np.Iv);
+            byte[] predec = new byte[16];
             AesUtil.CbcDecrypt(npKey, npIv, klic!, predec);
             AesUtil.CbcDecrypt(predec, npIv, dat.AsSpan(0, 64), info);
         }
@@ -327,18 +327,18 @@ public static class SelfDecryptor
             dat.AsSpan(0, 64).CopyTo(info);
         }
 
-        var dec = new byte[64];
+        byte[] dec = new byte[64];
         AesUtil.CbcDecrypt(FromHex(meta.Key), FromHex(meta.Iv), info, dec);
         if (!IsZero(dec.AsSpan(16, 16)) || !IsZero(dec.AsSpan(48, 16)))
         {
             throw new InvalidDataException("SELF metadata info padding mismatch (wrong key)");
         }
 
-        var mKey = dec.AsSpan(0, 16).ToArray();
-        var mIv = dec.AsSpan(32, 16).ToArray();
+        byte[] mKey = dec.AsSpan(0, 16).ToArray();
+        byte[] mIv = dec.AsSpan(32, 16).ToArray();
 
         int restLen = (dat.Length - 64) & ~15;
-        var rest = new byte[restLen];
+        byte[] rest = new byte[restLen];
         AesUtil.CbcDecrypt(mKey, mIv, dat.AsSpan(64, restLen), rest);
 
         uint sectionCount = U32LE(rest, 12);
@@ -349,7 +349,7 @@ public static class SelfDecryptor
         }
 
         int start = 32 + (int)sectionCount * 48;
-        var vault = new byte[keyCount][];
+        byte[][] vault = new byte[keyCount][];
         for (int i = 0; i < keyCount; i++)
         {
             vault[i] = rest.AsSpan(start + 16 * i, 16).ToArray();
@@ -358,7 +358,7 @@ public static class SelfDecryptor
         var result = new List<MetadataSection>((int)sectionCount);
         for (int i = 0; i < sectionCount; i++)
         {
-            var s = rest.AsSpan(32 + i * 48, 48);
+            Span<byte> s = rest.AsSpan(32 + i * 48, 48);
             uint enc = U32LE(s, 32);
             int keyIdx = (int)U32LE(s, 36), ivIdx = (int)U32LE(s, 40);
             byte[] key = [], iv = [];

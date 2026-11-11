@@ -27,9 +27,9 @@ public static class Log
     /// <summary>False stops the console copy (Android, where the sink already reaches logcat and stdout would
     /// duplicate every line under another tag).</summary>
     public static bool ConsoleEnabled { get; set; } = true;
-    static StreamWriter? _file;
-    static readonly object Lock = new();
-    static readonly ConcurrentDictionary<string, int> Once = new();
+    private static StreamWriter? s_file;
+    private static readonly object s_lock = new();
+    private static readonly ConcurrentDictionary<string, int> s_once = new();
 
     /// <summary>Path of the open log file (null when logging to the console only).</summary>
     public static string? FilePath { get; private set; }
@@ -43,36 +43,36 @@ public static class Log
     /// <summary>Above this many characters written, Info/Debug lines are dropped (warnings and errors still go out),
     /// so a runaway log cannot fill the disk.</summary>
     public static long MaxFileChars { get; set; } = 256L << 20;
-    static long _written;
-    static bool _capNoted;
-    static readonly ConcurrentDictionary<string, int> WarnCounts = new();
+    private static long s_written;
+    private static bool s_capNoted;
+    private static readonly ConcurrentDictionary<string, int> s_warnCounts = new();
 
     public static void OpenFile(string path)
     {
-        lock (Lock)
+        lock (s_lock)
         {
-            _file?.Dispose();
+            s_file?.Dispose();
             FilePath = Path.GetFullPath(path);
-            _written = 0;
+            s_written = 0;
             Directory.CreateDirectory(Path.GetDirectoryName(FilePath)!);
             // buffered: a flush per line costs a syscall on every message; warnings/errors flush immediately and a
             // timer flushes the rest so a crash loses at most a quarter second of log. FileShare.ReadWrite: diagnostic
             // captures copy the file while it is open
-            _file = new StreamWriter(new FileStream(path, FileMode.Create, FileAccess.Write, FileShare.ReadWrite), System.Text.Encoding.UTF8, 1 << 16);
-            _flushTimer ??= new Timer(_ => Flush(), null, 250, 250);
+            s_file = new StreamWriter(new FileStream(path, FileMode.Create, FileAccess.Write, FileShare.ReadWrite), System.Text.Encoding.UTF8, 1 << 16);
+            s_flushTimer ??= new Timer(_ => Flush(), null, 250, 250);
             AppDomain.CurrentDomain.ProcessExit += (_, _) => Flush();
         }
     }
 
-    static Timer? _flushTimer;
+    private static Timer? s_flushTimer;
 
     public static void Flush()
     {
-        lock (Lock)
+        lock (s_lock)
         {
             try
             {
-                _file?.Flush();
+                s_file?.Flush();
             }
             catch (ObjectDisposedException) { }
         }
@@ -84,7 +84,7 @@ public static class Log
     /// periodic statistics that only the file needs.</summary>
     public static void InfoFileOnly(string m) => Write(LogLevel.Info, m, toSink: false);
 
-    static void Write(LogLevel level, string msg, bool toSink)
+    private static void Write(LogLevel level, string msg, bool toSink)
     {
         if (level < Level)
         {
@@ -93,7 +93,7 @@ public static class Log
 
         if (level == LogLevel.Warn && DedupeWarnings)
         {
-            int n = WarnCounts.AddOrUpdate(MaskNumbers(msg), 1, (_, c) => c + 1);
+            int n = s_warnCounts.AddOrUpdate(MaskNumbers(msg), 1, (_, c) => c + 1);
             if (n > 3 && n is not (10 or 100 or 1000 or 10000 or 100000 or 1000000))
             {
                 return;
@@ -105,8 +105,8 @@ public static class Log
             }
         }
         string thread = Thread.CurrentThread.Name ?? Environment.CurrentManagedThreadId.ToString();
-        var line = $"[{DateTime.Now:HH:mm:ss.fff}] [{level,-5}] [{thread}] {msg}";
-        lock (Lock)
+        string line = $"[{DateTime.Now:HH:mm:ss.fff}] [{level,-5}] [{thread}] {msg}";
+        lock (s_lock)
         {
             if (ConsoleEnabled)
             {
@@ -126,21 +126,21 @@ public static class Log
                 Sink?.Write(level, thread, msg);
             }
 
-            if (_file != null)
+            if (s_file != null)
             {
-                _written += line.Length + 2;
-                if (_written <= MaxFileChars || level >= LogLevel.Warn)
+                s_written += line.Length + 2;
+                if (s_written <= MaxFileChars || level >= LogLevel.Warn)
                 {
-                    _file.WriteLine(line);
+                    s_file.WriteLine(line);
                 }
-                else if (!_capNoted)
+                else if (!s_capNoted)
                 {
-                    _capNoted = true;
-                    _file.WriteLine($"[log] {MaxFileChars >> 20} M characters written: info/debug lines are dropped from now on");
+                    s_capNoted = true;
+                    s_file.WriteLine($"[log] {MaxFileChars >> 20} M characters written: info/debug lines are dropped from now on");
                 }
                 if (level >= LogLevel.Warn)
                 {
-                    _file.Flush();
+                    s_file.Flush();
                 }
             }
         }
@@ -148,11 +148,11 @@ public static class Log
 
     /// <summary>Warnings with their numbers masked (# = any number), most frequent first (debug mode).</summary>
     public static IEnumerable<string> WarningSummary(int max = 60) =>
-        WarnCounts.OrderByDescending(k => k.Value).Take(max).Select(k => $"[dbg] WARN x{k.Value}: {k.Key}");
+        s_warnCounts.OrderByDescending(k => k.Value).Take(max).Select(k => $"[dbg] WARN x{k.Value}: {k.Key}");
 
     /// <summary>Message text with numbers (decimal, or hexadecimal runs containing a digit) replaced by '#': the dedup
     /// key of a warning.</summary>
-    static string MaskNumbers(string m)
+    private static string MaskNumbers(string m)
     {
         var sb = new System.Text.StringBuilder(m.Length);
         int i = 0;
@@ -218,7 +218,7 @@ public static class Log
     /// <summary>Logs a message only the first time a given key is seen.</summary>
     public static void WarnOnce(string key, string m)
     {
-        if (Once.TryAdd(key, 0))
+        if (s_once.TryAdd(key, 0))
         {
             Warn(m);
         }
@@ -228,21 +228,21 @@ public static class Log
     /// message is only formatted the first time.</summary>
     public static void WarnOnce(ref OnceKeyHandler key, [System.Runtime.CompilerServices.InterpolatedStringHandlerArgument("key")] ref OnceMessageHandler m)
     {
-        if (m.Enabled)
+        if (m._enabled)
         {
             Warn(m.ToStringAndClear());
         }
     }
 
-    static readonly ConcurrentDictionary<string, int>.AlternateLookup<ReadOnlySpan<char>> OnceBySpan = Once.GetAlternateLookup<ReadOnlySpan<char>>();
+    private static readonly ConcurrentDictionary<string, int>.AlternateLookup<ReadOnlySpan<char>> s_onceBySpan = s_once.GetAlternateLookup<ReadOnlySpan<char>>();
 
     /// <summary>True the first time <paramref name="key"/> is seen (shared with the string-keyed WarnOnce).</summary>
-    internal static bool TryAddOnce(ReadOnlySpan<char> key) => !OnceBySpan.ContainsKey(key) && OnceBySpan.TryAdd(key, 0);
+    internal static bool TryAddOnce(ReadOnlySpan<char> key) => !s_onceBySpan.ContainsKey(key) && s_onceBySpan.TryAdd(key, 0);
 
     /// <summary>Debug-level message logged only the first time a given key is seen.</summary>
     public static void DebugOnce(string key, string m)
     {
-        if (Level <= LogLevel.Debug && Once.TryAdd(key, 0))
+        if (Level <= LogLevel.Debug && s_once.TryAdd(key, 0))
         {
             Debug(m);
         }
@@ -251,7 +251,7 @@ public static class Log
     /// <summary><see cref="DebugOnce(string, string)"/> whose key and message are only formatted when debug logging is on.</summary>
     public static void DebugOnce(ref DebugLogHandler key, ref DebugLogHandler m)
     {
-        if (Level <= LogLevel.Debug && Once.TryAdd(key.ToStringAndClear(), 0))
+        if (Level <= LogLevel.Debug && s_once.TryAdd(key.ToStringAndClear(), 0))
         {
             Debug(m.ToStringAndClear());
         }
@@ -259,7 +259,7 @@ public static class Log
 
     public static void DebugOnce(string key, ref DebugLogHandler m)
     {
-        if (Level <= LogLevel.Debug && Once.TryAdd(key, 0))
+        if (Level <= LogLevel.Debug && s_once.TryAdd(key, 0))
         {
             Debug(m.ToStringAndClear());
         }

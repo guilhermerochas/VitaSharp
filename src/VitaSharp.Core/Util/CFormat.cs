@@ -200,7 +200,7 @@ public static class CFormat
         return sb.ToString();
     }
 
-    static string ReadWide(uint p)
+    private static string ReadWide(uint p)
     {
         var sb = new StringBuilder();
         for (; ; p += 2)
@@ -216,7 +216,7 @@ public static class CFormat
         return sb.ToString();
     }
 
-    static string Pad(string prefix, string body, int width, bool left, bool zero)
+    private static string Pad(string prefix, string body, int width, bool left, bool zero)
     {
         int total = prefix.Length + body.Length;
         if (width <= total)

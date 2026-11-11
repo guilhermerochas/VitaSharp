@@ -99,14 +99,14 @@ public sealed class ControllerProfile
 
     public IEnumerable<InputBinding> Get(VitaControl c)
     {
-        if (!Bindings.TryGetValue(c.ToString(), out var list))
+        if (!Bindings.TryGetValue(c.ToString(), out List<string>? list))
         {
             yield break;
         }
 
-        foreach (var s in list)
+        foreach (string s in list)
         {
-            if (InputBinding.TryParse(s, out var b))
+            if (InputBinding.TryParse(s, out InputBinding b))
             {
                 yield return b;
             }
@@ -128,13 +128,13 @@ public sealed class ControllerProfile
 
     public void Add(VitaControl c, InputBinding b)
     {
-        var key = c.ToString();
-        if (!Bindings.TryGetValue(key, out var list))
+        string key = c.ToString();
+        if (!Bindings.TryGetValue(key, out List<string>? list))
         {
             Bindings[key] = list = new();
         }
 
-        var s = b.ToString();
+        string s = b.ToString();
         if (!list.Contains(s))
         {
             list.Add(s);
@@ -143,26 +143,26 @@ public sealed class ControllerProfile
 
     public void Remove(VitaControl c, InputBinding b)
     {
-        var key = c.ToString();
-        if (Bindings.TryGetValue(key, out var list) && list.Remove(b.ToString()) && list.Count == 0)
+        string key = c.ToString();
+        if (Bindings.TryGetValue(key, out List<string>? list) && list.Remove(b.ToString()) && list.Count == 0)
         {
             Bindings.Remove(key);
         }
     }
 
-    public bool Has(VitaControl c, InputBinding b) => Bindings.TryGetValue(c.ToString(), out var list) && list.Contains(b.ToString());
+    public bool Has(VitaControl c, InputBinding b) => Bindings.TryGetValue(c.ToString(), out List<string>? list) && list.Contains(b.ToString());
 
     /// <summary>The button combinations bound to <paramref name="c"/> (<see cref="InputCombo"/>; hotkeys).</summary>
     public IEnumerable<InputCombo> GetCombos(VitaControl c)
     {
-        if (!Bindings.TryGetValue(c.ToString(), out var list))
+        if (!Bindings.TryGetValue(c.ToString(), out List<string>? list))
         {
             yield break;
         }
 
-        foreach (var s in list)
+        foreach (string s in list)
         {
-            if (InputCombo.TryParse(s, out var combo))
+            if (InputCombo.TryParse(s, out InputCombo combo))
             {
                 yield return combo;
             }
@@ -172,13 +172,13 @@ public sealed class ControllerProfile
     /// <summary>Adds a combination to <paramref name="c"/>, or replaces every binding with it.</summary>
     public void AddCombo(VitaControl c, InputCombo combo, bool replace = false)
     {
-        var key = c.ToString();
-        if (replace || !Bindings.TryGetValue(key, out var list))
+        string key = c.ToString();
+        if (replace || !Bindings.TryGetValue(key, out List<string>? list))
         {
             Bindings[key] = list = new();
         }
 
-        var s = combo.ToString();
+        string s = combo.ToString();
         if (!list.Contains(s))
         {
             list.Add(s);

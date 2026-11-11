@@ -32,9 +32,9 @@ public static class LiveAreaLayout
     /// <summary>The background image area (840x500 at the bottom centre).</summary>
     public static readonly LaRect BackgroundRect = new(ScreenW - 900, ScreenH - 500, 840, 500);
 
-    sealed record Style((double X, double Y) Gate, (string Id, double X, double Y, double W, double H)[] Frames);
+    private sealed record Style((double X, double Y) Gate, (string Id, double X, double Y, double W, double H)[] Frames);
 
-    static readonly Dictionary<string, Style> Styles = new()
+    private static readonly Dictionary<string, Style> s_styles = new()
     {
         ["a1"] = new((620, 361), [("frame1", 900, 414, 260, 260), ("frame2", 320, 414, 260, 260), ("frame3", 900, 154, 840, 150)]),
         ["a2"] = new((620, 395), [("frame1", 900, 404, 260, 400), ("frame2", 320, 404, 260, 400), ("frame3", 640, 204, 320, 200)]),
@@ -53,20 +53,20 @@ public static class LiveAreaLayout
     };
 
     /// <summary>Styles this layout knows ("a1".."a5", "browser", "content_manager", "psmobile").</summary>
-    public static IEnumerable<string> KnownStyles => Styles.Keys;
+    public static IEnumerable<string> KnownStyles => s_styles.Keys;
 
-    static Style StyleOf(string style) => Styles.TryGetValue(style.ToLowerInvariant(), out var s) ? s : Styles["a1"];
+    private static Style StyleOf(string style) => s_styles.TryGetValue(style.ToLowerInvariant(), out Style? s) ? s : s_styles["a1"];
 
     public static LaRect Gate(string style)
     {
-        var g = StyleOf(style).Gate;
+        (double X, double Y) g = StyleOf(style).Gate;
         return new(ScreenW - g.X, ScreenH - g.Y, GateW, GateH);
     }
 
     /// <summary>The rectangle of a frame id in a style, or null when the style has no such frame.</summary>
     public static LaRect? Frame(string style, string frameId)
     {
-        foreach (var f in StyleOf(style).Frames)
+        foreach ((string Id, double X, double Y, double W, double H) f in StyleOf(style).Frames)
         {
             if (string.Equals(f.Id, frameId, StringComparison.OrdinalIgnoreCase))
             {
@@ -158,13 +158,13 @@ public static class LiveAreaLayout
         // lines in the box: text-align / text-valign, else line-align, else the box alignment, else centred
         string ha = t.TextAlign.Length > 0 ? t.TextAlign : t.LineAlign.Length > 0 ? t.LineAlign : t.Align;
         string va = t.TextValign.Length > 0 ? t.TextValign : valign;
-        var horizontal = ha switch
+        LaAlign horizontal = ha switch
         {
             "left" or "outside-right" => LaAlign.Start,
             "right" => LaAlign.End,
             _ => LaAlign.Center
         };
-        var vertical = va switch
+        LaAlign vertical = va switch
         {
             "top" => LaAlign.Start,
             "bottom" or "outside-top" => LaAlign.End,
