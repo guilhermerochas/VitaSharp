@@ -53,7 +53,10 @@ public sealed unsafe class MediaPlayer : MediaPlayerBase
         {
             var par = fmt->streams[_videoStream]->codecpar;
             if (par->extradata_size > 7 && par->extradata[0] == 1)
+            {
                 (_annexBHeader, _nalLengthSize) = Mp4Demuxer.ParseAvcC(new ReadOnlySpan<byte>(par->extradata, par->extradata_size));
+            }
+
             _videoDecoder = dec;
             var v = _video;
             ffmpeg.avcodec_free_context(&v);
@@ -65,9 +68,17 @@ public sealed unsafe class MediaPlayer : MediaPlayerBase
 
     public static MediaPlayer? Open(string path)
     {
-        if (!FFmpegLoader.Available || !File.Exists(path)) return null;
+        if (!FFmpegLoader.Available || !File.Exists(path))
+        {
+            return null;
+        }
+
         AVFormatContext* fmt = null;
-        if (ffmpeg.avformat_open_input(&fmt, path, null, null) < 0) return null;
+        if (ffmpeg.avformat_open_input(&fmt, path, null, null) < 0)
+        {
+            return null;
+        }
+
         if (ffmpeg.avformat_find_stream_info(fmt, null) < 0)
         {
             ffmpeg.avformat_close_input(&fmt);
@@ -88,7 +99,11 @@ public sealed unsafe class MediaPlayer : MediaPlayerBase
         tb = default;
         AVCodec* codec = null;
         int index = ffmpeg.av_find_best_stream(_fmt, type, -1, -1, &codec, 0);
-        if (index < 0 || codec == null) return -1;
+        if (index < 0 || codec == null)
+        {
+            return -1;
+        }
+
         var c = ffmpeg.avcodec_alloc_context3(codec);
         if (ffmpeg.avcodec_parameters_to_context(c, _fmt->streams[index]->codecpar) < 0 || ffmpeg.avcodec_open2(c, codec, null) < 0)
         {
@@ -112,14 +127,29 @@ public sealed unsafe class MediaPlayer : MediaPlayerBase
                 {
                     while (!_stop && _seekRequestUs < 0 && (_demuxDone || (HasVideo ? _videoQueue.Count >= MaxVideoFrames : _audioQueue.Count >= MaxAudioChunks)
                                                            || _audioQueue.Count >= MaxAudioChunks))
+                    {
                         Monitor.Wait(_lock, 50);
-                    if (_stop) break;
+                    }
+
+                    if (_stop)
+                    {
+                        break;
+                    }
+
                     if (_seekRequestUs >= 0)
                     {
                         ffmpeg.av_seek_frame(_fmt, -1, _seekRequestUs, ffmpeg.AVSEEK_FLAG_BACKWARD);
-                        if (_video != null) ffmpeg.avcodec_flush_buffers(_video);
+                        if (_video != null)
+                        {
+                            ffmpeg.avcodec_flush_buffers(_video);
+                        }
+
                         _videoDecoder?.Reset();
-                        if (_audio != null) ffmpeg.avcodec_flush_buffers(_audio);
+                        if (_audio != null)
+                        {
+                            ffmpeg.avcodec_flush_buffers(_audio);
+                        }
+
                         _seekRequestUs = -1;
                     }
                 }
@@ -134,23 +164,52 @@ public sealed unsafe class MediaPlayer : MediaPlayerBase
                     if (Loop)
                     {
                         ffmpeg.av_seek_frame(_fmt, -1, 0, ffmpeg.AVSEEK_FLAG_BACKWARD);
-                        if (_video != null) ffmpeg.avcodec_flush_buffers(_video);
+                        if (_video != null)
+                        {
+                            ffmpeg.avcodec_flush_buffers(_video);
+                        }
+
                         _videoDecoder?.Reset();
-                        if (_audio != null) ffmpeg.avcodec_flush_buffers(_audio);
+                        if (_audio != null)
+                        {
+                            ffmpeg.avcodec_flush_buffers(_audio);
+                        }
+
                         continue;
                     }
-                    lock (_lock) _demuxDone = true;
+                    lock (_lock)
+                    {
+                        _demuxDone = true;
+                    }
+
                     continue;
                 }
-                if (pkt->stream_index == _videoStream) { if (_videoDecoder != null) DecodeH264(pkt); else Decode(_video, pkt, frame, true); }
-                else if (pkt->stream_index == _audioStream) Decode(_audio, pkt, frame, false);
+                if (pkt->stream_index == _videoStream)
+                {
+                    if (_videoDecoder != null)
+                    {
+                        DecodeH264(pkt);
+                    }
+                    else
+                    {
+                        Decode(_video, pkt, frame, true);
+                    }
+                }
+                else if (pkt->stream_index == _audioStream)
+                {
+                    Decode(_audio, pkt, frame, false);
+                }
+
                 ffmpeg.av_packet_unref(pkt);
             }
         }
         catch (Exception e)
         {
             Log.Error($"AvPlayer decoder: {e.Message}");
-            lock (_lock) _demuxDone = true;
+            lock (_lock)
+            {
+                _demuxDone = true;
+            }
         }
         finally
         {
@@ -161,21 +220,45 @@ public sealed unsafe class MediaPlayer : MediaPlayerBase
 
     void Decode(AVCodecContext* ctx, AVPacket* pkt, AVFrame* frame, bool video)
     {
-        if (ffmpeg.avcodec_send_packet(ctx, pkt) < 0) return;
+        if (ffmpeg.avcodec_send_packet(ctx, pkt) < 0)
+        {
+            return;
+        }
+
         while (ffmpeg.avcodec_receive_frame(ctx, frame) == 0)
         {
-            if (video) PushVideo(frame); else PushAudio(frame);
+            if (video)
+            {
+                PushVideo(frame);
+            }
+            else
+            {
+                PushAudio(frame);
+            }
+
             ffmpeg.av_frame_unref(frame);
         }
     }
 
     void Drain(AVCodecContext* ctx, AVFrame* frame, bool video)
     {
-        if (ctx == null) return;
+        if (ctx == null)
+        {
+            return;
+        }
+
         ffmpeg.avcodec_send_packet(ctx, null);
         while (ffmpeg.avcodec_receive_frame(ctx, frame) == 0)
         {
-            if (video) PushVideo(frame); else PushAudio(frame);
+            if (video)
+            {
+                PushVideo(frame);
+            }
+            else
+            {
+                PushAudio(frame);
+            }
+
             ffmpeg.av_frame_unref(frame);
         }
         ffmpeg.avcodec_flush_buffers(ctx);
@@ -194,13 +277,21 @@ public sealed unsafe class MediaPlayer : MediaPlayerBase
             int n = Mp4Demuxer.ToAnnexB(data, _nalLengthSize, key ? _annexBHeader : null, ref _annexB);
             _videoDecoder!.Send(_annexB.AsSpan(0, n), pts);
         }
-        else _videoDecoder!.Send(data, pts);
+        else
+        {
+            _videoDecoder!.Send(data, pts);
+        }
+
         PushDecoded();
     }
 
     void DrainDecoder()
     {
-        if (_videoDecoder == null) return;
+        if (_videoDecoder == null)
+        {
+            return;
+        }
+
         _videoDecoder.Flush();
         PushDecoded();
     }
@@ -223,7 +314,11 @@ public sealed unsafe class MediaPlayer : MediaPlayerBase
         var fmt = (AVPixelFormat)f->format;
         fixed (byte* dst = nv12)
         {
-            for (int y = 0; y < h; y++) Buffer.MemoryCopy(f->data[0] + y * f->linesize[0], dst + y * w, w, w);
+            for (int y = 0; y < h; y++)
+            {
+                Buffer.MemoryCopy(f->data[0] + y * f->linesize[0], dst + y * w, w, w);
+            }
+
             byte* uv = dst + w * h;
             if (fmt == AVPixelFormat.AV_PIX_FMT_NV12)
             {
@@ -231,7 +326,11 @@ public sealed unsafe class MediaPlayer : MediaPlayerBase
                 {
                     byte* s = f->data[1] + y * f->linesize[1];
                     byte* d = uv + y * w;
-                    for (int x = 0; x < w / 2; x++) { d[2 * x] = s[2 * x + 1]; d[2 * x + 1] = s[2 * x]; }
+                    for (int x = 0; x < w / 2; x++)
+                    {
+                        d[2 * x] = s[2 * x + 1];
+                        d[2 * x + 1] = s[2 * x];
+                    }
                 }
             }
             else if (fmt is AVPixelFormat.AV_PIX_FMT_YUV420P or AVPixelFormat.AV_PIX_FMT_YUVJ420P)
@@ -240,7 +339,11 @@ public sealed unsafe class MediaPlayer : MediaPlayerBase
                 {
                     byte* su = f->data[1] + y * f->linesize[1], sv = f->data[2] + y * f->linesize[2];
                     byte* d = uv + y * w;
-                    for (int x = 0; x < w / 2; x++) { d[2 * x] = sv[x]; d[2 * x + 1] = su[x]; }
+                    for (int x = 0; x < w / 2; x++)
+                    {
+                        d[2 * x] = sv[x];
+                        d[2 * x + 1] = su[x];
+                    }
                 }
             }
             else
@@ -255,7 +358,11 @@ public sealed unsafe class MediaPlayer : MediaPlayerBase
     void PushAudio(AVFrame* f)
     {
         int ch = f->ch_layout.nb_channels, n = f->nb_samples;
-        if (ch <= 0 || n <= 0) return;
+        if (ch <= 0 || n <= 0)
+        {
+            return;
+        }
+
         var outS = RentBuffer(_freeSamples, n * ch);
         var fmt = (AVSampleFormat)f->format;
         bool planar = ffmpeg.av_sample_fmt_is_planar(fmt) != 0;
@@ -289,9 +396,17 @@ public sealed unsafe class MediaPlayer : MediaPlayerBase
     /// </summary>
     public override void Dispose()
     {
-        if (Interlocked.Exchange(ref _disposed, 1) != 0) return;
+        if (Interlocked.Exchange(ref _disposed, 1) != 0)
+        {
+            return;
+        }
+
         _stop = true;
-        lock (_lock) Monitor.PulseAll(_lock);
+        lock (_lock)
+        {
+            Monitor.PulseAll(_lock);
+        }
+
         if (_thread.IsAlive && Thread.CurrentThread != _thread && !_thread.Join(10_000))
         {
             // freeing the codec contexts under a decoder still using them corrupts the native heap: leak them instead
@@ -300,10 +415,24 @@ public sealed unsafe class MediaPlayer : MediaPlayerBase
         }
         _videoDecoder?.Dispose();
         _videoDecoder = null;
-        var v = _video; var a = _audio; var fmt = _fmt;
-        if (v != null) ffmpeg.avcodec_free_context(&v);
-        if (a != null) ffmpeg.avcodec_free_context(&a);
-        if (fmt != null) ffmpeg.avformat_close_input(&fmt);
+        var v = _video;
+        var a = _audio;
+        var fmt = _fmt;
+        if (v != null)
+        {
+            ffmpeg.avcodec_free_context(&v);
+        }
+
+        if (a != null)
+        {
+            ffmpeg.avcodec_free_context(&a);
+        }
+
+        if (fmt != null)
+        {
+            ffmpeg.avformat_close_input(&fmt);
+        }
+
         _video = _audio = null;
         _fmt = null;
     }

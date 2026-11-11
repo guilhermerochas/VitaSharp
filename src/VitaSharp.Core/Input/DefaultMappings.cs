@@ -12,13 +12,34 @@ public static class DefaultMappings
     public static ControllerProfile Keyboard()
     {
         var p = new ControllerProfile { Id = ControllerProfile.KeyboardId, Name = "Keyboard", Kind = ControllerKind.Keyboard };
-        void K(VitaControl c, params string[] keys) { foreach (var k in keys) p.Add(c, InputBinding.OfKey(k)); }
-        K(VitaControl.Up, "Up"); K(VitaControl.Down, "Down"); K(VitaControl.Left, "Left"); K(VitaControl.Right, "Right");
-        K(VitaControl.Cross, "X", "Space"); K(VitaControl.Circle, "C"); K(VitaControl.Square, "Z"); K(VitaControl.Triangle, "V");
-        K(VitaControl.L, "Q"); K(VitaControl.R, "E"); K(VitaControl.Start, "Enter"); K(VitaControl.Select, "Backspace", "ShiftRight");
+        void K(VitaControl c, params string[] keys)
+        {
+            foreach (var k in keys)
+            {
+                p.Add(c, InputBinding.OfKey(k));
+            }
+        }
+        K(VitaControl.Up, "Up");
+        K(VitaControl.Down, "Down");
+        K(VitaControl.Left, "Left");
+        K(VitaControl.Right, "Right");
+        K(VitaControl.Cross, "X", "Space");
+        K(VitaControl.Circle, "C");
+        K(VitaControl.Square, "Z");
+        K(VitaControl.Triangle, "V");
+        K(VitaControl.L, "Q");
+        K(VitaControl.R, "E");
+        K(VitaControl.Start, "Enter");
+        K(VitaControl.Select, "Backspace", "ShiftRight");
         K(VitaControl.PS, "Home");
-        K(VitaControl.LStickUp, "W"); K(VitaControl.LStickDown, "S"); K(VitaControl.LStickLeft, "A"); K(VitaControl.LStickRight, "D");
-        K(VitaControl.RStickUp, "I"); K(VitaControl.RStickDown, "K"); K(VitaControl.RStickLeft, "J"); K(VitaControl.RStickRight, "L");
+        K(VitaControl.LStickUp, "W");
+        K(VitaControl.LStickDown, "S");
+        K(VitaControl.LStickLeft, "A");
+        K(VitaControl.LStickRight, "D");
+        K(VitaControl.RStickUp, "I");
+        K(VitaControl.RStickDown, "K");
+        K(VitaControl.RStickLeft, "J");
+        K(VitaControl.RStickRight, "L");
         // keys are digital: no deadzone needed
         p.LeftStick.Deadzone = p.RightStick.Deadzone = 0;
         AddMotionKeys(p);
@@ -34,9 +55,16 @@ public static class DefaultMappings
     /// profile being upgraded).</summary>
     public static void AddHotkeys(ControllerProfile p)
     {
-        if (p.Get(VitaControl.PauseEmulation).Any() || p.GetCombos(VitaControl.PauseEmulation).Any()) return;
+        if (p.Get(VitaControl.PauseEmulation).Any() || p.GetCombos(VitaControl.PauseEmulation).Any())
+        {
+            return;
+        }
+
         var b = InputBinding.OfKey(PauseKey);
-        if (!p.Bindings.Values.SelectMany(v => v).Contains(b.ToString())) p.Add(VitaControl.PauseEmulation, b);
+        if (!p.Bindings.Values.SelectMany(v => v).Contains(b.ToString()))
+        {
+            p.Add(VitaControl.PauseEmulation, b);
+        }
     }
 
     /// <summary>
@@ -59,11 +87,18 @@ public static class DefaultMappings
         var used = p.Bindings.Values.SelectMany(v => v).ToHashSet(StringComparer.Ordinal);
         foreach (var (c, keys) in MotionKeys)
         {
-            if (p.Get(c).Any()) continue;
+            if (p.Get(c).Any())
+            {
+                continue;
+            }
+
             foreach (var k in keys)
             {
                 var b = InputBinding.OfKey(k);
-                if (!used.Contains(b.ToString())) p.Add(c, b);
+                if (!used.Contains(b.ToString()))
+                {
+                    p.Add(c, b);
+                }
             }
         }
     }
@@ -113,18 +148,36 @@ public static class DefaultMappings
         void B(VitaControl c, int i) => p.Add(c, InputBinding.JoyButton(i));
         if (kind == ControllerKind.PlayStation)
         {
-            B(VitaControl.Square, 0); B(VitaControl.Cross, 1); B(VitaControl.Circle, 2); B(VitaControl.Triangle, 3);
-            B(VitaControl.L, 4); B(VitaControl.R, 5); B(VitaControl.L, 6); B(VitaControl.R, 7);
-            B(VitaControl.Select, 8); B(VitaControl.Start, 9); B(VitaControl.L3, 10); B(VitaControl.R3, 11);
+            B(VitaControl.Square, 0);
+            B(VitaControl.Cross, 1);
+            B(VitaControl.Circle, 2);
+            B(VitaControl.Triangle, 3);
+            B(VitaControl.L, 4);
+            B(VitaControl.R, 5);
+            B(VitaControl.L, 6);
+            B(VitaControl.R, 7);
+            B(VitaControl.Select, 8);
+            B(VitaControl.Start, 9);
+            B(VitaControl.L3, 10);
+            B(VitaControl.R3, 11);
             B(VitaControl.PS, 12);
-            Stick(p, 0, 1, VitaControl.LStickLeft); Stick(p, 2, 5, VitaControl.RStickLeft);
+            Stick(p, 0, 1, VitaControl.LStickLeft);
+            Stick(p, 2, 5, VitaControl.RStickLeft);
         }
         else
         {
-            B(VitaControl.Cross, 0); B(VitaControl.Circle, 1); B(VitaControl.Square, 2); B(VitaControl.Triangle, 3);
-            B(VitaControl.L, 4); B(VitaControl.R, 5); B(VitaControl.Select, 6); B(VitaControl.Start, 7);
-            B(VitaControl.L3, 8); B(VitaControl.R3, 9);
-            Stick(p, 0, 1, VitaControl.LStickLeft); Stick(p, 2, 3, VitaControl.RStickLeft);
+            B(VitaControl.Cross, 0);
+            B(VitaControl.Circle, 1);
+            B(VitaControl.Square, 2);
+            B(VitaControl.Triangle, 3);
+            B(VitaControl.L, 4);
+            B(VitaControl.R, 5);
+            B(VitaControl.Select, 6);
+            B(VitaControl.Start, 7);
+            B(VitaControl.L3, 8);
+            B(VitaControl.R3, 9);
+            Stick(p, 0, 1, VitaControl.LStickLeft);
+            Stick(p, 2, 3, VitaControl.RStickLeft);
         }
         p.Add(VitaControl.Up, InputBinding.JoyHat(0, 1));
         p.Add(VitaControl.Right, InputBinding.JoyHat(0, 2));
@@ -152,8 +205,16 @@ public static class DefaultMappings
     {
         var lt = InputBinding.Of(PadAxis.LeftTrigger);
         var rt = InputBinding.Of(PadAxis.RightTrigger);
-        if (on) { p.Add(VitaControl.L, lt); p.Add(VitaControl.R, rt); }
-        else { p.Remove(VitaControl.L, lt); p.Remove(VitaControl.R, rt); }
+        if (on)
+        {
+            p.Add(VitaControl.L, lt);
+            p.Add(VitaControl.R, rt);
+        }
+        else
+        {
+            p.Remove(VitaControl.L, lt);
+            p.Remove(VitaControl.R, rt);
+        }
     }
 
     public static bool TriggersAsShoulders(ControllerProfile p)

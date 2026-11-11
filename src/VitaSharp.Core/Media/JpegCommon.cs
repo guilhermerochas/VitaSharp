@@ -85,8 +85,13 @@ public static class JpegTables
     {
         var b = new float[64];
         for (int x = 0; x < 8; x++)
+        {
             for (int u = 0; u < 8; u++)
+            {
                 b[x * 8 + u] = (float)((u == 0 ? 1 / Math.Sqrt(2) : 1.0) / 2 * Math.Cos((2 * x + 1) * u * Math.PI / 16));
+            }
+        }
+
         return b;
     }
 
@@ -103,13 +108,21 @@ public static class JpegTables
             if (acZero)
             {
                 float d = row[0] * c[0];
-                for (int x = 0; x < 8; x++) g[v * 8 + x] = d;
+                for (int x = 0; x < 8; x++)
+                {
+                    g[v * 8 + x] = d;
+                }
+
                 continue;
             }
             for (int x = 0; x < 8; x++)
             {
                 float s = 0;
-                for (int u = 0; u < 8; u++) s += c[x * 8 + u] * row[u];
+                for (int u = 0; u < 8; u++)
+                {
+                    s += c[x * 8 + u] * row[u];
+                }
+
                 g[v * 8 + x] = s;
             }
         }
@@ -120,7 +133,11 @@ public static class JpegTables
             for (int x = 0; x < 8; x++)
             {
                 float s = 0;
-                for (int v = 0; v < 8; v++) s += c[y * 8 + v] * g[v * 8 + x];
+                for (int v = 0; v < 8; v++)
+                {
+                    s += c[y * 8 + v] * g[v * 8 + x];
+                }
+
                 int p = (int)MathF.Round(s) + 128;
                 o[x] = (byte)(p < 0 ? 0 : p > 255 ? 255 : p);
             }
@@ -134,19 +151,31 @@ public static class JpegTables
         var c = Basis;
         // rows: g[y][u] = sum_x c[x][u] f[y][x]
         for (int y = 0; y < 8; y++)
+        {
             for (int u = 0; u < 8; u++)
             {
                 float s = 0;
-                for (int x = 0; x < 8; x++) s += c[x * 8 + u] * src[y * 8 + x];
+                for (int x = 0; x < 8; x++)
+                {
+                    s += c[x * 8 + u] * src[y * 8 + x];
+                }
+
                 g[y * 8 + u] = s;
             }
+        }
         // columns: F[v][u] = sum_y c[y][v] g[y][u]
         for (int v = 0; v < 8; v++)
+        {
             for (int u = 0; u < 8; u++)
             {
                 float s = 0;
-                for (int y = 0; y < 8; y++) s += c[y * 8 + v] * g[y * 8 + u];
+                for (int y = 0; y < 8; y++)
+                {
+                    s += c[y * 8 + v] * g[y * 8 + u];
+                }
+
                 dst[v * 8 + u] = s;
             }
+        }
     }
 }

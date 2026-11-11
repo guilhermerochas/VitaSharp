@@ -28,16 +28,31 @@ public static unsafe class FastCopy
     static FastCopy()
     {
         bool mono = Type.GetType("Mono.RuntimeStructs") != null;
-        if (!OperatingSystem.IsLinux() && !OperatingSystem.IsAndroid()) return;
-        if (!mono && RuntimeInformation.ProcessArchitecture != Architecture.Arm64) return;
-        if (Environment.GetEnvironmentVariable(EnvVars.NativeMemmove) is "off" or "0") return;
+        if (!OperatingSystem.IsLinux() && !OperatingSystem.IsAndroid())
+        {
+            return;
+        }
+
+        if (!mono && RuntimeInformation.ProcessArchitecture != Architecture.Arm64)
+        {
+            return;
+        }
+
+        if (Environment.GetEnvironmentVariable(EnvVars.NativeMemmove) is "off" or "0")
+        {
+            return;
+        }
+
         try
         {
             if (NativeLibrary.TryLoad("libc.so", out var libc) && NativeLibrary.TryGetExport(libc, "memmove", out var f))
             {
                 Memmove = (delegate* unmanaged[SuppressGCTransition]<void*, void*, nuint, void*>)f;
                 // Mono's hybrid suspend does not wait for a thread in a native call: no transition needed at any size
-                if (!mono) MemmoveLong = (delegate* unmanaged<void*, void*, nuint, void*>)f;
+                if (!mono)
+                {
+                    MemmoveLong = (delegate* unmanaged<void*, void*, nuint, void*>)f;
+                }
             }
         }
         catch (Exception) { }
@@ -49,11 +64,22 @@ public static unsafe class FastCopy
     [MethodImpl(MethodImplOptions.AggressiveInlining)]
     public static void Copy(ReadOnlySpan<byte> src, Span<byte> dst)
     {
-        if (src.Length > dst.Length) throw new ArgumentException("destination too short", nameof(dst));
+        if (src.Length > dst.Length)
+        {
+            throw new ArgumentException("destination too short", nameof(dst));
+        }
+
         if (Memmove != null && src.Length >= NativeThreshold)
+        {
             fixed (byte* s = src)
             fixed (byte* d = dst)
+            {
                 Memmove(d, s, (nuint)src.Length);
-        else src.CopyTo(dst);
+            }
+        }
+        else
+        {
+            src.CopyTo(dst);
+        }
     }
 }

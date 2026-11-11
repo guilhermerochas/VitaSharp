@@ -54,23 +54,60 @@ static class KernelSnapshot
             switch (o)
             {
                 case GuestThread t:
-                    if (t.Process != emu) throw new SnapshotException($"thread {t.Name} belongs to another process");
+                    if (t.Process != emu)
+                    {
+                        throw new SnapshotException($"thread {t.Name} belongs to another process");
+                    }
+
                     t.WriteSnapshot(w, kinds.TryGetValue(t, out var k) ? k : GuestThread.SafeKind.Dormant);
                     break;
-                case Semaphore s: s.Save(w); break;
-                case EventFlag e: e.Save(w); break;
-                case Mutex m: m.Save(w); break;
-                case CondVar c: c.Save(w); break;
-                case MsgPipe p: p.Save(w); break;
-                case RwLock l: l.Save(w); break;
-                case Callback c: c.Save(w); break;
-                case TimerObject t: t.Save(w); break;
-                case SimpleEvent e: e.Save(w); break;
-                case ThreadEventHandler h: h.Save(w); break;
-                case MemBlock b: w.Write(b.Address); w.Write(b.Size); w.Write(b.Type); w.Write(b.IsVm); break;
+                case Semaphore s:
+                    s.Save(w);
+                    break;
+                case EventFlag e:
+                    e.Save(w);
+                    break;
+                case Mutex m:
+                    m.Save(w);
+                    break;
+                case CondVar c:
+                    c.Save(w);
+                    break;
+                case MsgPipe p:
+                    p.Save(w);
+                    break;
+                case RwLock l:
+                    l.Save(w);
+                    break;
+                case Callback c:
+                    c.Save(w);
+                    break;
+                case TimerObject t:
+                    t.Save(w);
+                    break;
+                case SimpleEvent e:
+                    e.Save(w);
+                    break;
+                case ThreadEventHandler h:
+                    h.Save(w);
+                    break;
+                case MemBlock b:
+                    w.Write(b.Address);
+                    w.Write(b.Size);
+                    w.Write(b.Type);
+                    w.Write(b.IsVm);
+                    break;
                 case IoAsyncOp a:
-                    if (!a.Done) throw new SnapshotException("an asynchronous I/O request is in flight");
-                    w.Write(a.Fd); w.Write(a.Result); w.Write(a.Cancelled); w.Write(a.Pattern); w.Write(a.UserData);
+                    if (!a.Done)
+                    {
+                        throw new SnapshotException("an asynchronous I/O request is in flight");
+                    }
+
+                    w.Write(a.Fd);
+                    w.Write(a.Result);
+                    w.Write(a.Cancelled);
+                    w.Write(a.Pattern);
+                    w.Write(a.UserData);
                     break;
                 case ModuleObject mo:
                     w.Write(mo.Module.Path);
@@ -118,23 +155,95 @@ static class KernelSnapshot
                         o = host;
                         break;
                     }
-                    if (k is GuestThread.SafeKind.Parked or GuestThread.SafeKind.Reissue) live.Add(t);
-                    if (cm != 0) condGiveBack.Add((t, cm, cc));
+                    if (k is GuestThread.SafeKind.Parked or GuestThread.SafeKind.Reissue)
+                    {
+                        live.Add(t);
+                    }
+
+                    if (cm != 0)
+                    {
+                        condGiveBack.Add((t, cm, cc));
+                    }
+
                     o = t;
                     break;
                 }
-                case Sema: { var s = new Semaphore { Name = name }; s.Load(b); o = s; break; }
-                case Evf: { var e = new EventFlag { Name = name }; e.Load(b); o = e; break; }
-                case Mtx: { var m = new Mutex { Name = name }; m.Load(b); o = m; break; }
-                case Cond: { var c = new CondVar { Name = name }; c.Load(b); o = c; break; }
-                case Pipe: { var p = new MsgPipe { Name = name }; p.Load(b); o = p; break; }
-                case Rw: { var l = new RwLock { Name = name }; l.Load(b); o = l; break; }
-                case Cb: { var c = new Callback { Name = name }; c.Load(b); o = c; break; }
-                case Timer: { var t = new TimerObject { Name = name, Clock = () => emu.Kernel.ProcessTimeUs }; t.Load(b); o = t; break; }
-                case SEvent: { var e = new SimpleEvent { Name = name }; e.Load(b); o = e; break; }
-                case ThEvent: { var h = new ThreadEventHandler { Name = name }; h.Load(b); o = h; break; }
-                case Block: o = new MemBlock { Name = name, Address = b.ReadUInt32(), Size = b.ReadUInt32(), Type = b.ReadUInt32(), IsVm = b.ReadBool() }; break;
-                case Async: o = new IoAsyncOp { Name = name, Fd = b.ReadInt32(), Result = b.ReadInt64(), Done = true, Cancelled = b.ReadBool(), Pattern = b.ReadUInt32(), UserData = b.ReadUInt64() }; break;
+                case Sema:
+                {
+                    var s = new Semaphore { Name = name };
+                    s.Load(b);
+                    o = s;
+                    break;
+                }
+                case Evf:
+                {
+                    var e = new EventFlag { Name = name };
+                    e.Load(b);
+                    o = e;
+                    break;
+                }
+                case Mtx:
+                {
+                    var m = new Mutex { Name = name };
+                    m.Load(b);
+                    o = m;
+                    break;
+                }
+                case Cond:
+                {
+                    var c = new CondVar { Name = name };
+                    c.Load(b);
+                    o = c;
+                    break;
+                }
+                case Pipe:
+                {
+                    var p = new MsgPipe { Name = name };
+                    p.Load(b);
+                    o = p;
+                    break;
+                }
+                case Rw:
+                {
+                    var l = new RwLock { Name = name };
+                    l.Load(b);
+                    o = l;
+                    break;
+                }
+                case Cb:
+                {
+                    var c = new Callback { Name = name };
+                    c.Load(b);
+                    o = c;
+                    break;
+                }
+                case Timer:
+                {
+                    var t = new TimerObject { Name = name, Clock = () => emu.Kernel.ProcessTimeUs };
+                    t.Load(b);
+                    o = t;
+                    break;
+                }
+                case SEvent:
+                {
+                    var e = new SimpleEvent { Name = name };
+                    e.Load(b);
+                    o = e;
+                    break;
+                }
+                case ThEvent:
+                {
+                    var h = new ThreadEventHandler { Name = name };
+                    h.Load(b);
+                    o = h;
+                    break;
+                }
+                case Block:
+                    o = new MemBlock { Name = name, Address = b.ReadUInt32(), Size = b.ReadUInt32(), Type = b.ReadUInt32(), IsVm = b.ReadBool() };
+                    break;
+                case Async:
+                    o = new IoAsyncOp { Name = name, Fd = b.ReadInt32(), Result = b.ReadInt64(), Done = true, Cancelled = b.ReadBool(), Pattern = b.ReadUInt32(), UserData = b.ReadUInt64() };
+                    break;
                 case Process or App:
                     o = current.FirstOrDefault(x => x.Uid == uid && (kind == Process ? x is ProcessObject : x is AppObject))
                         ?? throw new SnapshotException($"the {kind} record 0x{uid:X} differs from this session's");
@@ -153,7 +262,8 @@ static class KernelSnapshot
                     o = mo;
                     break;
                 }
-                default: throw new SnapshotException($"unknown kernel object kind {kind}");
+                default:
+                    throw new SnapshotException($"unknown kernel object kind {kind}");
             }
             o.Uid = uid;
             o.OwnerPid = owner;
@@ -161,13 +271,21 @@ static class KernelSnapshot
             objects.Add(o);
         }
         foreach (var mo in current.OfType<ModuleObject>())
+        {
             if (!modulesSeen.Contains(mo))
+            {
                 throw new SnapshotException($"module {mo.Module.Name} was loaded in this session after the state was saved; restart the game and load the state again");
+            }
+        }
 
         // the old threads ended; their records and every other old object go (a module may still hold an old thread
         // object, so their CPU state is not freed)
         table.Clear();
-        foreach (var o in objects) table.Put(o);
+        foreach (var o in objects)
+        {
+            table.Put(o);
+        }
+
         table.NextUid = next;
         // the kernel's module list follows the UIDs the modules took
         emu.Kernel.Modules.Clear();
@@ -177,14 +295,29 @@ static class KernelSnapshot
             emu.Kernel.Modules[mo.Uid] = mo.Module;
         }
         foreach (var o in objects)
+        {
             switch (o)
             {
-                case Mutex m: m.Resolve(table); break;
-                case CondVar c: c.Resolve(table); break;
-                case RwLock l: l.Resolve(table); break;
-                case Callback c: c.Resolve(table); break;
+                case Mutex m:
+                    m.Resolve(table);
+                    break;
+                case CondVar c:
+                    c.Resolve(table);
+                    break;
+                case RwLock l:
+                    l.Resolve(table);
+                    break;
+                case Callback c:
+                    c.Resolve(table);
+                    break;
             }
-        foreach (var (t, _, c) in condGiveBack) t.CondReissueCount = c;
+        }
+
+        foreach (var (t, _, c) in condGiveBack)
+        {
+            t.CondReissueCount = c;
+        }
+
         return live;
     }
 }

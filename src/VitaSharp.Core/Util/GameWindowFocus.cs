@@ -31,10 +31,25 @@ public static class GameWindowFocus
         nint hidden = 0;
         foreach (var w in windows)
         {
-            if (w.Handle == 0 || w.Owned || w.Title.Length == 0) continue;
-            if (HelperClasses.Any(c => w.ClassName.Equals(c, StringComparison.OrdinalIgnoreCase))) continue;
-            if (w.Visible) return w.Handle;
-            if (hidden == 0) hidden = w.Handle;
+            if (w.Handle == 0 || w.Owned || w.Title.Length == 0)
+            {
+                continue;
+            }
+
+            if (HelperClasses.Any(c => w.ClassName.Equals(c, StringComparison.OrdinalIgnoreCase)))
+            {
+                continue;
+            }
+
+            if (w.Visible)
+            {
+                return w.Handle;
+            }
+
+            if (hidden == 0)
+            {
+                hidden = w.Handle;
+            }
         }
         return hidden;
     }
@@ -47,9 +62,16 @@ public static class GameWindowFocus
     /// or macOS (System Events); null elsewhere (Windows uses the Win32 calls).</summary>
     public static (string File, string[] Args)? ActivateCommand(int pid, bool linux, bool macOS)
     {
-        if (linux) return ("xdotool", ["search", "--onlyvisible", "--pid", pid.ToString(System.Globalization.CultureInfo.InvariantCulture), "windowactivate"]);
+        if (linux)
+        {
+            return ("xdotool", ["search", "--onlyvisible", "--pid", pid.ToString(System.Globalization.CultureInfo.InvariantCulture), "windowactivate"]);
+        }
+
         if (macOS)
+        {
             return ("osascript", ["-e", $"tell application \"System Events\" to set frontmost of (first process whose unix id is {pid.ToString(System.Globalization.CultureInfo.InvariantCulture)}) to true"]);
+        }
+
         return null;
     }
 }

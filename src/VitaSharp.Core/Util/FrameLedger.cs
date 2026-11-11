@@ -81,7 +81,11 @@ public static class FrameLedger
     public static void OnPresent(long frame)
     {
         var rows = _rows;
-        if (rows == null) return;
+        if (rows == null)
+        {
+            return;
+        }
+
         Totals[(int)Cat.GcPause] = GC.GetTotalPauseDuration().Ticks * Stopwatch.Frequency / TimeSpan.TicksPerSecond;
         Totals[(int)Cat.PacingSleep] = Cpu.CpuCore.SleepStats[0].Actual + Cpu.CpuCore.SleepStats[1].Actual;
         int baseIdx = (int)(frame & (Ring - 1)) * (int)Cat.Count;
@@ -98,11 +102,18 @@ public static class FrameLedger
     {
         var r = new double[(int)Cat.Count];
         var rows = _rows;
-        if (rows == null) return r;
+        if (rows == null)
+        {
+            return r;
+        }
+
         for (long f = from; f <= to; f++)
         {
             int b = (int)(f & (Ring - 1)) * (int)Cat.Count;
-            for (int i = 0; i < r.Length; i++) r[i] += rows[b + i] * 1000.0 / Stopwatch.Frequency;
+            for (int i = 0; i < r.Length; i++)
+            {
+                r[i] += rows[b + i] * 1000.0 / Stopwatch.Frequency;
+            }
         }
         return r;
     }

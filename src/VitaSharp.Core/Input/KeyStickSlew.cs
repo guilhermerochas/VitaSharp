@@ -22,16 +22,24 @@ public sealed class KeyStickSlew
         float step = _last < 0 ? 0f : (float)((nowTicks - _last) * 1000.0 / ticksPerSecond / TravelMs);
         _last = nowTicks;
         step = Math.Clamp(step, 0f, 2f);
-        _lx = Toward(_lx, m.Lx, step); _ly = Toward(_ly, m.Ly, step);
-        _rx = Toward(_rx, m.Rx, step); _ry = Toward(_ry, m.Ry, step);
+        _lx = Toward(_lx, m.Lx, step);
+        _ly = Toward(_ly, m.Ly, step);
+        _rx = Toward(_rx, m.Rx, step);
+        _ry = Toward(_ry, m.Ry, step);
         (m.Lx, m.Ly, m.Rx, m.Ry) = (_lx, _ly, _rx, _ry);
-        m.State.Lx = StickMath.ToByte(_lx); m.State.Ly = StickMath.ToByte(_ly);
-        m.State.Rx = StickMath.ToByte(_rx); m.State.Ry = StickMath.ToByte(_ry);
+        m.State.Lx = StickMath.ToByte(_lx);
+        m.State.Ly = StickMath.ToByte(_ly);
+        m.State.Rx = StickMath.ToByte(_rx);
+        m.State.Ry = StickMath.ToByte(_ry);
     }
 
     static float Toward(float cur, float target, float step)
     {
-        if (Math.Abs(target - cur) <= step) return target;
+        if (Math.Abs(target - cur) <= step)
+        {
+            return target;
+        }
+
         return cur + MathF.Sign(target - cur) * step;
     }
 }

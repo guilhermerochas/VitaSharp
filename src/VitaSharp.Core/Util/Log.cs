@@ -2,7 +2,10 @@ using System.Collections.Concurrent;
 
 namespace VitaSharp.Core.Util;
 
-public enum LogLevel { Trace, Debug, Info, Warn, Error }
+public enum LogLevel
+{
+    Trace, Debug, Info, Warn, Error
+}
 
 /// <summary>
 /// An extra destination for log lines (the Android front-end's logcat). <see cref="Write"/> is called under the log
@@ -65,7 +68,14 @@ public static class Log
 
     public static void Flush()
     {
-        lock (Lock) { try { _file?.Flush(); } catch (ObjectDisposedException) { } }
+        lock (Lock)
+        {
+            try
+            {
+                _file?.Flush();
+            }
+            catch (ObjectDisposedException) { }
+        }
     }
 
     public static void Write(LogLevel level, string msg) => Write(level, msg, toSink: true);
@@ -76,12 +86,23 @@ public static class Log
 
     static void Write(LogLevel level, string msg, bool toSink)
     {
-        if (level < Level) return;
+        if (level < Level)
+        {
+            return;
+        }
+
         if (level == LogLevel.Warn && DedupeWarnings)
         {
             int n = WarnCounts.AddOrUpdate(MaskNumbers(msg), 1, (_, c) => c + 1);
-            if (n > 3 && n is not (10 or 100 or 1000 or 10000 or 100000 or 1000000)) return;
-            if (n > 3) msg += $" (repeated {n} times)";
+            if (n > 3 && n is not (10 or 100 or 1000 or 10000 or 100000 or 1000000))
+            {
+                return;
+            }
+
+            if (n > 3)
+            {
+                msg += $" (repeated {n} times)";
+            }
         }
         string thread = Thread.CurrentThread.Name ?? Environment.CurrentManagedThreadId.ToString();
         var line = $"[{DateTime.Now:HH:mm:ss.fff}] [{level,-5}] [{thread}] {msg}";
@@ -89,17 +110,38 @@ public static class Log
         {
             if (ConsoleEnabled)
             {
-                if (level >= LogLevel.Warn) Console.ForegroundColor = level == LogLevel.Error ? ConsoleColor.Red : ConsoleColor.Yellow;
+                if (level >= LogLevel.Warn)
+                {
+                    Console.ForegroundColor = level == LogLevel.Error ? ConsoleColor.Red : ConsoleColor.Yellow;
+                }
+
                 Console.WriteLine(line);
-                if (level >= LogLevel.Warn) Console.ResetColor();
+                if (level >= LogLevel.Warn)
+                {
+                    Console.ResetColor();
+                }
             }
-            if (toSink) Sink?.Write(level, thread, msg);
+            if (toSink)
+            {
+                Sink?.Write(level, thread, msg);
+            }
+
             if (_file != null)
             {
                 _written += line.Length + 2;
-                if (_written <= MaxFileChars || level >= LogLevel.Warn) _file.WriteLine(line);
-                else if (!_capNoted) { _capNoted = true; _file.WriteLine($"[log] {MaxFileChars >> 20} M characters written: info/debug lines are dropped from now on"); }
-                if (level >= LogLevel.Warn) _file.Flush();
+                if (_written <= MaxFileChars || level >= LogLevel.Warn)
+                {
+                    _file.WriteLine(line);
+                }
+                else if (!_capNoted)
+                {
+                    _capNoted = true;
+                    _file.WriteLine($"[log] {MaxFileChars >> 20} M characters written: info/debug lines are dropped from now on");
+                }
+                if (level >= LogLevel.Warn)
+                {
+                    _file.Flush();
+                }
             }
         }
     }
@@ -120,7 +162,11 @@ public static class Log
             {
                 int j = i;
                 bool digit = false;
-                while (j < m.Length && char.IsAsciiHexDigit(m[j])) { digit |= char.IsAsciiDigit(m[j]); j++; }
+                while (j < m.Length && char.IsAsciiHexDigit(m[j]))
+                {
+                    digit |= char.IsAsciiDigit(m[j]);
+                    j++;
+                }
                 if (digit && (j >= m.Length || !char.IsAsciiLetter(m[j]) || m[j] == 'x'))
                 {
                     sb.Append('#');
@@ -136,11 +182,35 @@ public static class Log
         return sb.ToString();
     }
 
-    public static void Trace(string m) { if (Level <= LogLevel.Trace) Write(LogLevel.Trace, m); }
-    public static void Debug(string m) { if (Level <= LogLevel.Debug) Write(LogLevel.Debug, m); }
+    public static void Trace(string m)
+    {
+        if (Level <= LogLevel.Trace)
+        {
+            Write(LogLevel.Trace, m);
+        }
+    }
+    public static void Debug(string m)
+    {
+        if (Level <= LogLevel.Debug)
+        {
+            Write(LogLevel.Debug, m);
+        }
+    }
     /// <summary>Interpolated messages are only formatted when the level is enabled (no allocation otherwise).</summary>
-    public static void Trace(ref TraceLogHandler m) { if (Level <= LogLevel.Trace) Write(LogLevel.Trace, m.ToStringAndClear()); }
-    public static void Debug(ref DebugLogHandler m) { if (Level <= LogLevel.Debug) Write(LogLevel.Debug, m.ToStringAndClear()); }
+    public static void Trace(ref TraceLogHandler m)
+    {
+        if (Level <= LogLevel.Trace)
+        {
+            Write(LogLevel.Trace, m.ToStringAndClear());
+        }
+    }
+    public static void Debug(ref DebugLogHandler m)
+    {
+        if (Level <= LogLevel.Debug)
+        {
+            Write(LogLevel.Debug, m.ToStringAndClear());
+        }
+    }
     public static void Info(string m) => Write(LogLevel.Info, m);
     public static void Warn(string m) => Write(LogLevel.Warn, m);
     public static void Error(string m) => Write(LogLevel.Error, m);
@@ -148,14 +218,20 @@ public static class Log
     /// <summary>Logs a message only the first time a given key is seen.</summary>
     public static void WarnOnce(string key, string m)
     {
-        if (Once.TryAdd(key, 0)) Warn(m);
+        if (Once.TryAdd(key, 0))
+        {
+            Warn(m);
+        }
     }
 
     /// <summary><see cref="WarnOnce(string, string)"/> for interpolated keys: a key seen before costs no allocation and the
     /// message is only formatted the first time.</summary>
     public static void WarnOnce(ref OnceKeyHandler key, [System.Runtime.CompilerServices.InterpolatedStringHandlerArgument("key")] ref OnceMessageHandler m)
     {
-        if (m.Enabled) Warn(m.ToStringAndClear());
+        if (m.Enabled)
+        {
+            Warn(m.ToStringAndClear());
+        }
     }
 
     static readonly ConcurrentDictionary<string, int>.AlternateLookup<ReadOnlySpan<char>> OnceBySpan = Once.GetAlternateLookup<ReadOnlySpan<char>>();
@@ -166,17 +242,26 @@ public static class Log
     /// <summary>Debug-level message logged only the first time a given key is seen.</summary>
     public static void DebugOnce(string key, string m)
     {
-        if (Level <= LogLevel.Debug && Once.TryAdd(key, 0)) Debug(m);
+        if (Level <= LogLevel.Debug && Once.TryAdd(key, 0))
+        {
+            Debug(m);
+        }
     }
 
     /// <summary><see cref="DebugOnce(string, string)"/> whose key and message are only formatted when debug logging is on.</summary>
     public static void DebugOnce(ref DebugLogHandler key, ref DebugLogHandler m)
     {
-        if (Level <= LogLevel.Debug && Once.TryAdd(key.ToStringAndClear(), 0)) Debug(m.ToStringAndClear());
+        if (Level <= LogLevel.Debug && Once.TryAdd(key.ToStringAndClear(), 0))
+        {
+            Debug(m.ToStringAndClear());
+        }
     }
 
     public static void DebugOnce(string key, ref DebugLogHandler m)
     {
-        if (Level <= LogLevel.Debug && Once.TryAdd(key, 0)) Debug(m.ToStringAndClear());
+        if (Level <= LogLevel.Debug && Once.TryAdd(key, 0))
+        {
+            Debug(m.ToStringAndClear());
+        }
     }
 }

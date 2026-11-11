@@ -59,11 +59,18 @@ public sealed class AudioOutputFollower
         var controllers = new HashSet<Guid>();
         foreach (var d in devices)
         {
-            if (d.Container == NoContainer || d.Container == ComputerContainer) continue;
+            if (d.Container == NoContainer || d.Container == ComputerContainer)
+            {
+                continue;
+            }
+
             bool game = d.CompatibleIds.Any(id => id.Equals("HID_DEVICE_SYSTEM_GAME", StringComparison.OrdinalIgnoreCase))
                         || d.Class.Equals("XnaComposite", StringComparison.OrdinalIgnoreCase) || d.Class.Equals("XboxComposite", StringComparison.OrdinalIgnoreCase)
                         || d.Service.Equals("xusb22", StringComparison.OrdinalIgnoreCase) || d.Service.Equals("dc1-controller", StringComparison.OrdinalIgnoreCase);
-            if (game) controllers.Add(d.Container);
+            if (game)
+            {
+                controllers.Add(d.Container);
+            }
         }
         return outputs.Where(o => controllers.Contains(o.Container)).Select(o => o.Name).ToHashSet(StringComparer.OrdinalIgnoreCase);
     }
@@ -83,7 +90,11 @@ public sealed class AudioOutputFollower
     /// the backend's default when nothing is known).</summary>
     string DefaultChoice(IReadOnlyList<string> outputs, string? systemDefault)
     {
-        if (systemDefault != null && IsController(systemDefault) && outputs.FirstOrDefault(n => !IsController(n)) is { } other) return other;
+        if (systemDefault != null && IsController(systemDefault) && outputs.FirstOrDefault(n => !IsController(n)) is { } other)
+        {
+            return other;
+        }
+
         return systemDefault ?? "";
     }
 
@@ -129,7 +140,11 @@ public sealed class AudioOutputFollower
             {
                 if (connected && chosen != null)
                 {
-                    if (defaultChanged) message = $"Audio: system default changed to '{systemDefault ?? "?"}'; staying on the chosen output '{Current}'";
+                    if (defaultChanged)
+                    {
+                        message = $"Audio: system default changed to '{systemDefault ?? "?"}'; staying on the chosen output '{Current}'";
+                    }
+
                     return null;
                 }
                 OnFallback = true;
@@ -146,13 +161,20 @@ public sealed class AudioOutputFollower
             if (!connected || defaultChanged)
             {
                 string to = DefaultChoice(outputs, systemDefault);
-                if (to == Current && connected) return null;
+                if (to == Current && connected)
+                {
+                    return null;
+                }
+
                 message = $"Audio: the chosen output '{Requested}' is still missing; system default now '{to}'";
                 return Current = to;
             }
             return null;
         }
-        if (!defaultChanged && connected) return null;
+        if (!defaultChanged && connected)
+        {
+            return null;
+        }
         // the system default never takes the stream to a game controller's output on its own: stay where it plays
         if (connected && systemDefault != null && IsController(systemDefault))
         {
@@ -163,7 +185,11 @@ public sealed class AudioOutputFollower
         message = defaultChanged
             ? $"Audio: system default changed: '{oldDefault ?? "?"}' -> '{systemDefault ?? "?"}'" + (next != (systemDefault ?? "") ? $" (a game controller's output; using '{next}')" : "")
             : $"Audio: output '{Current}' disconnected; reopening the system default '{next}'";
-        if (next == Current && connected) return null;
+        if (next == Current && connected)
+        {
+            return null;
+        }
+
         return Current = next;
     }
 }

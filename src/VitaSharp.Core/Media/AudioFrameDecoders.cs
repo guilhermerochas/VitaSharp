@@ -36,7 +36,11 @@ public static class AudioFrameDecoders
     /// MPEG-2/2.5, what FFmpeg returns per frame), or 0 when it is not one.</summary>
     public static int Mp3FrameSamples(ReadOnlySpan<byte> p)
     {
-        if (FrameDecoder.Mp3FrameLength(p) == 0) return 0;
+        if (FrameDecoder.Mp3FrameLength(p) == 0)
+        {
+            return 0;
+        }
+
         return ((p[1] >> 3) & 3) == 3 ? 1152 : 576;
     }
 }
@@ -57,18 +61,33 @@ public static class RawAudioFrameLengths
 
     public static void Record(ReadOnlySpan<byte> frame)
     {
-        if (frame.Length == 0) return;
+        if (frame.Length == 0)
+        {
+            return;
+        }
+
         ulong key = Prefix(frame[..Math.Min(8, frame.Length)]), hash = XxHash64.HashToUInt64(frame);
         lock (_byPrefix)
         {
-            if (!_byPrefix.TryGetValue(key, out var list)) _byPrefix[key] = list = [];
-            if (list.Contains((frame.Length, hash))) return;
+            if (!_byPrefix.TryGetValue(key, out var list))
+            {
+                _byPrefix[key] = list = [];
+            }
+
+            if (list.Contains((frame.Length, hash)))
+            {
+                return;
+            }
+
             list.Add((frame.Length, hash));
             _order.Enqueue(key);
             while (_order.Count > MaxEntries && _order.Dequeue() is var old && _byPrefix.TryGetValue(old, out var l))
             {
                 l.RemoveAt(0);
-                if (l.Count == 0) _byPrefix.Remove(old);
+                if (l.Count == 0)
+                {
+                    _byPrefix.Remove(old);
+                }
             }
         }
     }
@@ -83,13 +102,29 @@ public static class RawAudioFrameLengths
             int best = 0;
             for (int n = Math.Min(8, data.Length); n >= 1 && best == 0; n--)
             {
-                if (!_byPrefix.TryGetValue(Prefix(data[..n]), out var list)) continue;
+                if (!_byPrefix.TryGetValue(Prefix(data[..n]), out var list))
+                {
+                    continue;
+                }
+
                 foreach (var (len, hash) in list)
-                    if (len > best && len <= data.Length && XxHash64.HashToUInt64(data[..len]) == hash) best = len;
+                {
+                    if (len > best && len <= data.Length && XxHash64.HashToUInt64(data[..len]) == hash)
+                    {
+                        best = len;
+                    }
+                }
             }
             return best;
         }
     }
 
-    public static void Clear() { lock (_byPrefix) { _byPrefix.Clear(); _order.Clear(); } }
+    public static void Clear()
+    {
+        lock (_byPrefix)
+        {
+            _byPrefix.Clear();
+            _order.Clear();
+        }
+    }
 }

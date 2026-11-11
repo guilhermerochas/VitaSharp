@@ -1,7 +1,10 @@
 namespace VitaSharp.Core.Host;
 
 /// <summary>Which Vita camera the guest opened (SCE_CAMERA_DEVICE_FRONT / BACK).</summary>
-public enum CameraFacing { Front = 0, Back = 1 }
+public enum CameraFacing
+{
+    Front = 0, Back = 1
+}
 
 /// <summary>
 /// Host camera provider (desktop webcam, Android camera...). The core asks for a stream when the guest starts a
@@ -45,7 +48,11 @@ public sealed class CameraFrameBuffer
         lock (_lock)
         {
             int n = width * height * 4;
-            if (_rgba.Length != n) _rgba = new byte[n];
+            if (_rgba.Length != n)
+            {
+                _rgba = new byte[n];
+            }
+
             fill(_rgba);
             _width = width;
             _height = height;
@@ -59,7 +66,11 @@ public sealed class CameraFrameBuffer
         lock (_lock)
         {
             int n = width * height * 4;
-            if (_rgba.Length != n) _rgba = new byte[n];
+            if (_rgba.Length != n)
+            {
+                _rgba = new byte[n];
+            }
+
             rgba[..n].CopyTo(_rgba);
             _width = width;
             _height = height;
@@ -72,9 +83,19 @@ public sealed class CameraFrameBuffer
     {
         lock (_lock)
         {
-            width = _width; height = _height; sequence = _sequence;
-            if (sequence == 0) return false;
-            if (dst.Length != _rgba.Length) dst = new byte[_rgba.Length];
+            width = _width;
+            height = _height;
+            sequence = _sequence;
+            if (sequence == 0)
+            {
+                return false;
+            }
+
+            if (dst.Length != _rgba.Length)
+            {
+                dst = new byte[_rgba.Length];
+            }
+
             _rgba.CopyTo(dst, 0);
             return true;
         }

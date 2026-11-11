@@ -33,26 +33,45 @@ public sealed class PadSnapshot
     public void CopyTo(PadSnapshot d)
     {
         d.IsGamepad = IsGamepad;
-        d.HasMotion = HasMotion; d.Accel = Accel; d.Gyro = Gyro;
+        d.HasMotion = HasMotion;
+        d.Accel = Accel;
+        d.Gyro = Gyro;
         d.HasTouchpad = HasTouchpad;
-        FingerDown.CopyTo(d.FingerDown, 0); FingerX.CopyTo(d.FingerX, 0); FingerY.CopyTo(d.FingerY, 0);
+        FingerDown.CopyTo(d.FingerDown, 0);
+        FingerX.CopyTo(d.FingerX, 0);
+        FingerY.CopyTo(d.FingerY, 0);
         Buttons.CopyTo(d.Buttons, 0);
         Axes.CopyTo(d.Axes, 0);
         JoyAxes.CopyTo(d.JoyAxes, 0);
         JoyButtons.CopyTo(d.JoyButtons, 0);
         JoyHats.CopyTo(d.JoyHats, 0);
-        d.JoyAxisCount = JoyAxisCount; d.JoyButtonCount = JoyButtonCount; d.JoyHatCount = JoyHatCount;
+        d.JoyAxisCount = JoyAxisCount;
+        d.JoyButtonCount = JoyButtonCount;
+        d.JoyHatCount = JoyHatCount;
     }
 
-    public PadSnapshot Clone() { var c = new PadSnapshot(); CopyTo(c); return c; }
+    public PadSnapshot Clone()
+    {
+        var c = new PadSnapshot();
+        CopyTo(c);
+        return c;
+    }
 
     public void Clear()
     {
-        Array.Clear(Buttons); Array.Clear(Axes); Array.Clear(JoyAxes); Array.Clear(JoyButtons); Array.Clear(JoyHats);
+        Array.Clear(Buttons);
+        Array.Clear(Axes);
+        Array.Clear(JoyAxes);
+        Array.Clear(JoyButtons);
+        Array.Clear(JoyHats);
         JoyAxisCount = JoyButtonCount = JoyHatCount = 0;
         HasTouchpad = false;
-        HasMotion = false; Accel = default; Gyro = default;
-        Array.Clear(FingerDown); Array.Clear(FingerX); Array.Clear(FingerY);
+        HasMotion = false;
+        Accel = default;
+        Gyro = default;
+        Array.Clear(FingerDown);
+        Array.Clear(FingerX);
+        Array.Clear(FingerY);
     }
 }
 
@@ -81,14 +100,27 @@ public struct MappedInput
 
     public void AddTouch(bool back, TouchPoint t)
     {
-        if (back) { if (BackCount < MaxContacts) Back[BackCount++] = t; }
-        else if (FrontCount < MaxContacts) Front[FrontCount++] = t;
+        if (back)
+        {
+            if (BackCount < MaxContacts)
+            {
+                Back[BackCount++] = t;
+            }
+        }
+        else if (FrontCount < MaxContacts)
+        {
+            Front[FrontCount++] = t;
+        }
     }
 
     public readonly int CopyTouches(bool back, Span<TouchPoint> dest)
     {
         int n = Math.Min(back ? BackCount : FrontCount, dest.Length);
-        for (int i = 0; i < n; i++) dest[i] = back ? Back[i] : Front[i];
+        for (int i = 0; i < n; i++)
+        {
+            dest[i] = back ? Back[i] : Front[i];
+        }
+
         return n;
     }
 }
@@ -100,10 +132,18 @@ public static class StickMath
     /// Y inversion. The output keeps the input direction; each component is clamped to -1..1.</summary>
     public static (float X, float Y) Apply(float x, float y, StickSettings s)
     {
-        if (s.InvertY) y = -y;
+        if (s.InvertY)
+        {
+            y = -y;
+        }
+
         float mag = MathF.Sqrt(x * x + y * y);
         float dz = Math.Clamp(s.Deadzone, 0f, 0.95f);
-        if (mag <= dz || mag == 0) return (0, 0);
+        if (mag <= dz || mag == 0)
+        {
+            return (0, 0);
+        }
+
         float scaled = (mag - dz) / (1f - dz) * Math.Max(0f, s.Sensitivity);
         float k = scaled / mag;
         return (Math.Clamp(x * k, -1f, 1f), Math.Clamp(y * k, -1f, 1f));
@@ -124,12 +164,21 @@ public sealed class CompiledProfile
     public CompiledProfile(ControllerProfile p)
     {
         Profile = p;
-        foreach (var c in VitaControls.All) _bindings[(int)c] = p.Get(c).ToArray();
+        foreach (var c in VitaControls.All)
+        {
+            _bindings[(int)c] = p.Get(c).ToArray();
+        }
+
         _pauseCombos = p.GetCombos(VitaControl.PauseEmulation).ToArray();
         RearModifier = InputBinding.TryParse(p.TouchpadRearModifier, out var rm) ? rm : null;
         BothModifier = InputBinding.TryParse(p.TouchpadBothModifier, out var bm) ? bm : null;
         foreach (var c in VitaControls.All)
-            if (VitaControls.IsMotion(c) && _bindings[(int)c].Length > 0) HasMotionBindings = true;
+        {
+            if (VitaControls.IsMotion(c) && _bindings[(int)c].Length > 0)
+            {
+                HasMotionBindings = true;
+            }
+        }
     }
 
     /// <summary>Some virtual motion control (tilt, twist, re-centre) is bound.</summary>
@@ -156,13 +205,21 @@ public static class InputMapper
             case BindingKind.PadButton:
                 return pad is { IsGamepad: true } && (uint)b.Index < (uint)pad.Buttons.Length && pad.Buttons[b.Index] ? 1f : 0f;
             case BindingKind.PadAxis:
-                if (pad is not { IsGamepad: true } || (uint)b.Index >= 6) return 0f;
+                if (pad is not { IsGamepad: true } || (uint)b.Index >= 6)
+                {
+                    return 0f;
+                }
+
                 return b.Index >= (int)PadAxis.LeftTrigger ? Math.Clamp(pad.Axes[b.Index], 0f, 1f) : Math.Max(0f, pad.Axes[b.Index] * b.Dir);
             case BindingKind.JoyButton:
                 return pad != null && b.Index >= 0 && b.Index < pad.JoyButtonCount && pad.JoyButtons[b.Index] ? 1f : 0f;
             case BindingKind.JoyAxis:
             {
-                if (pad == null || b.Index < 0 || b.Index >= pad.JoyAxisCount) return 0f;
+                if (pad == null || b.Index < 0 || b.Index >= pad.JoyAxisCount)
+                {
+                    return 0f;
+                }
+
                 float v = pad.JoyAxes[b.Index];
                 return b.Dir == 2 ? Math.Clamp((v + 1f) * 0.5f, 0f, 1f) : Math.Clamp(v * b.Dir, 0f, 1f);
             }
@@ -181,9 +238,19 @@ public static class InputMapper
     public static bool HotkeyHeld(CompiledProfile p, VitaControl c, PadSnapshot? pad, IReadOnlySet<string>? keys)
     {
         float threshold = p.Profile.ButtonThreshold is > 0 and <= 1 ? p.Profile.ButtonThreshold : 0.5f;
-        if (Value(p, c, pad, keys) >= threshold) return true;
+        if (Value(p, c, pad, keys) >= threshold)
+        {
+            return true;
+        }
+
         foreach (ref readonly var combo in p.Combos(c))
-            if (combo.Value(pad, keys) >= threshold) return true;
+        {
+            if (combo.Value(pad, keys) >= threshold)
+            {
+                return true;
+            }
+        }
+
         return false;
     }
 
@@ -194,7 +261,11 @@ public static class InputMapper
         float v = 0;
         foreach (ref readonly var b in p[c])
         {
-            if (b == skipA || b == skipB) continue;
+            if (b == skipA || b == skipB)
+            {
+                continue;
+            }
+
             v = Math.Max(v, Value(b, pad, keys));
         }
         return v;
@@ -214,19 +285,42 @@ public static class InputMapper
         if (p.TouchpadEnabled && pad is { HasTouchpad: true })
         {
             bool any = false;
-            for (int f = 0; f < PadSnapshot.MaxFingers; f++) any |= pad.FingerDown[f];
+            for (int f = 0; f < PadSnapshot.MaxFingers; f++)
+            {
+                any |= pad.FingerDown[f];
+            }
+
             if (any)
             {
                 bool rear = cp.RearModifier is { } rm && Value(rm, pad, keys) >= threshold;
                 bool both = cp.BothModifier is { } bm && Value(bm, pad, keys) >= threshold;
-                if (rear) usedRear = cp.RearModifier;
-                if (both) usedBoth = cp.BothModifier;
+                if (rear)
+                {
+                    usedRear = cp.RearModifier;
+                }
+
+                if (both)
+                {
+                    usedBoth = cp.BothModifier;
+                }
+
                 for (int f = 0; f < PadSnapshot.MaxFingers; f++)
                 {
-                    if (!pad.FingerDown[f]) continue;
+                    if (!pad.FingerDown[f])
+                    {
+                        continue;
+                    }
+
                     var t = new TouchPoint(MappedInput.FingerId + f, Math.Clamp(pad.FingerX[f], 0f, 1f), Math.Clamp(pad.FingerY[f], 0f, 1f));
-                    if (both || !rear) r.AddTouch(false, t);
-                    if (both || rear) r.AddTouch(true, t);
+                    if (both || !rear)
+                    {
+                        r.AddTouch(false, t);
+                    }
+
+                    if (both || rear)
+                    {
+                        r.AddTouch(true, t);
+                    }
                 }
             }
         }
@@ -235,9 +329,16 @@ public static class InputMapper
         for (int i = 0; i <= (int)VitaControl.R3; i++)
         {
             var c = (VitaControl)i;
-            if (Value(cp, c, pad, keys, usedRear, usedBoth) >= threshold) buttons |= VitaControls.Button(c);
+            if (Value(cp, c, pad, keys, usedRear, usedBoth) >= threshold)
+            {
+                buttons |= VitaControls.Button(c);
+            }
         }
-        if (p.SwapConfirm) buttons = SwapCrossCircle(buttons);
+        if (p.SwapConfirm)
+        {
+            buttons = SwapCrossCircle(buttons);
+        }
+
         r.State.Buttons = buttons;
 
         (r.Lx, r.Ly) = StickMath.Apply(
@@ -246,11 +347,21 @@ public static class InputMapper
         (r.Rx, r.Ry) = StickMath.Apply(
             Value(cp, VitaControl.RStickRight, pad, keys) - Value(cp, VitaControl.RStickLeft, pad, keys),
             Value(cp, VitaControl.RStickDown, pad, keys) - Value(cp, VitaControl.RStickUp, pad, keys), p.RightStick);
-        r.State.Lx = StickMath.ToByte(r.Lx); r.State.Ly = StickMath.ToByte(r.Ly);
-        r.State.Rx = StickMath.ToByte(r.Rx); r.State.Ry = StickMath.ToByte(r.Ry);
+        r.State.Lx = StickMath.ToByte(r.Lx);
+        r.State.Ly = StickMath.ToByte(r.Ly);
+        r.State.Rx = StickMath.ToByte(r.Rx);
+        r.State.Ry = StickMath.ToByte(r.Ry);
 
-        if (Value(cp, VitaControl.TouchFront, pad, keys) >= threshold) r.AddTouch(false, new TouchPoint(MappedInput.PointId, p.TouchFrontX, p.TouchFrontY));
-        if (Value(cp, VitaControl.TouchBack, pad, keys) >= threshold) r.AddTouch(true, new TouchPoint(MappedInput.PointId + 1, p.TouchBackX, p.TouchBackY));
+        if (Value(cp, VitaControl.TouchFront, pad, keys) >= threshold)
+        {
+            r.AddTouch(false, new TouchPoint(MappedInput.PointId, p.TouchFrontX, p.TouchFrontY));
+        }
+
+        if (Value(cp, VitaControl.TouchBack, pad, keys) >= threshold)
+        {
+            r.AddTouch(true, new TouchPoint(MappedInput.PointId + 1, p.TouchBackX, p.TouchBackY));
+        }
+
         return r;
     }
 
@@ -258,8 +369,16 @@ public static class InputMapper
     {
         bool cross = (b & VitaButtons.Cross) != 0, circle = (b & VitaButtons.Circle) != 0;
         b &= ~(VitaButtons.Cross | VitaButtons.Circle);
-        if (cross) b |= VitaButtons.Circle;
-        if (circle) b |= VitaButtons.Cross;
+        if (cross)
+        {
+            b |= VitaButtons.Circle;
+        }
+
+        if (circle)
+        {
+            b |= VitaButtons.Cross;
+        }
+
         return b;
     }
 
@@ -269,15 +388,46 @@ public static class InputMapper
     {
         var r = a;
         r.State.Buttons |= b.State.Buttons;
-        r.State.Lx = Further(a.State.Lx, b.State.Lx); r.State.Ly = Further(a.State.Ly, b.State.Ly);
-        r.State.Rx = Further(a.State.Rx, b.State.Rx); r.State.Ry = Further(a.State.Ry, b.State.Ry);
-        if (Math.Abs(b.Lx) > Math.Abs(r.Lx)) r.Lx = b.Lx;
-        if (Math.Abs(b.Ly) > Math.Abs(r.Ly)) r.Ly = b.Ly;
-        if (Math.Abs(b.Rx) > Math.Abs(r.Rx)) r.Rx = b.Rx;
-        if (Math.Abs(b.Ry) > Math.Abs(r.Ry)) r.Ry = b.Ry;
+        r.State.Lx = Further(a.State.Lx, b.State.Lx);
+        r.State.Ly = Further(a.State.Ly, b.State.Ly);
+        r.State.Rx = Further(a.State.Rx, b.State.Rx);
+        r.State.Ry = Further(a.State.Ry, b.State.Ry);
+        if (Math.Abs(b.Lx) > Math.Abs(r.Lx))
+        {
+            r.Lx = b.Lx;
+        }
+
+        if (Math.Abs(b.Ly) > Math.Abs(r.Ly))
+        {
+            r.Ly = b.Ly;
+        }
+
+        if (Math.Abs(b.Rx) > Math.Abs(r.Rx))
+        {
+            r.Rx = b.Rx;
+        }
+
+        if (Math.Abs(b.Ry) > Math.Abs(r.Ry))
+        {
+            r.Ry = b.Ry;
+        }
         // contacts of the second device get distinct host ids so the two never merge into one finger
-        for (int i = 0; i < b.FrontCount; i++) r.AddTouch(false, b.Front[i] with { Id = b.Front[i].Id + idOffset });
-        for (int i = 0; i < b.BackCount; i++) r.AddTouch(true, b.Back[i] with { Id = b.Back[i].Id + idOffset });
+        for (int i = 0; i < b.FrontCount; i++)
+        {
+            r.AddTouch(false, b.Front[i] with
+            {
+                Id = b.Front[i].Id + idOffset
+            });
+        }
+
+        for (int i = 0; i < b.BackCount; i++)
+        {
+            r.AddTouch(true, b.Back[i] with
+            {
+                Id = b.Back[i].Id + idOffset
+            });
+        }
+
         return r;
     }
 
@@ -300,18 +450,41 @@ public static class InputCapture
         if (now.IsGamepad)
         {
             for (int i = 0; i < now.Buttons.Length; i++)
-                if (now.Buttons[i] && !baseline.Buttons[i]) held.Add(InputBinding.Of((PadButton)i));
+            {
+                if (now.Buttons[i] && !baseline.Buttons[i])
+                {
+                    held.Add(InputBinding.Of((PadButton)i));
+                }
+            }
+
             for (int i = (int)PadAxis.LeftTrigger; i <= (int)PadAxis.RightTrigger; i++)
-                if (now.Axes[i] >= AxisThreshold && baseline.Axes[i] < AxisThreshold) held.Add(InputBinding.Of((PadAxis)i));
+            {
+                if (now.Axes[i] >= AxisThreshold && baseline.Axes[i] < AxisThreshold)
+                {
+                    held.Add(InputBinding.Of((PadAxis)i));
+                }
+            }
+
             return held;
         }
         for (int i = 0; i < now.JoyButtonCount; i++)
-            if (now.JoyButtons[i] && !baseline.JoyButtons[i]) held.Add(InputBinding.JoyButton(i));
+        {
+            if (now.JoyButtons[i] && !baseline.JoyButtons[i])
+            {
+                held.Add(InputBinding.JoyButton(i));
+            }
+        }
+
         for (int i = 0; i < now.JoyHatCount; i++)
         {
             int fresh = now.JoyHats[i] & ~baseline.JoyHats[i];
             for (int bit = 1; bit <= 8; bit <<= 1)
-                if ((fresh & bit) != 0) held.Add(InputBinding.JoyHat(i, bit));
+            {
+                if ((fresh & bit) != 0)
+                {
+                    held.Add(InputBinding.JoyHat(i, bit));
+                }
+            }
         }
         return held;
     }
@@ -321,32 +494,62 @@ public static class InputCapture
         if (now.IsGamepad)
         {
             for (int i = 0; i < now.Buttons.Length; i++)
-                if (now.Buttons[i] && !baseline.Buttons[i]) return InputBinding.Of((PadButton)i);
+            {
+                if (now.Buttons[i] && !baseline.Buttons[i])
+                {
+                    return InputBinding.Of((PadButton)i);
+                }
+            }
+
             for (int i = 0; i < now.Axes.Length; i++)
             {
                 float v = now.Axes[i], d = v - baseline.Axes[i];
                 if (i >= (int)PadAxis.LeftTrigger)
                 {
-                    if (v >= AxisThreshold && d >= 0.4f) return InputBinding.Of((PadAxis)i);
+                    if (v >= AxisThreshold && d >= 0.4f)
+                    {
+                        return InputBinding.Of((PadAxis)i);
+                    }
                 }
-                else if (MathF.Abs(v) >= AxisThreshold && MathF.Abs(d) >= 0.4f) return InputBinding.Of((PadAxis)i, v < 0 ? -1 : 1);
+                else if (MathF.Abs(v) >= AxisThreshold && MathF.Abs(d) >= 0.4f)
+                {
+                    return InputBinding.Of((PadAxis)i, v < 0 ? -1 : 1);
+                }
             }
             return null;
         }
         for (int i = 0; i < now.JoyButtonCount; i++)
-            if (now.JoyButtons[i] && !baseline.JoyButtons[i]) return InputBinding.JoyButton(i);
+        {
+            if (now.JoyButtons[i] && !baseline.JoyButtons[i])
+            {
+                return InputBinding.JoyButton(i);
+            }
+        }
+
         for (int i = 0; i < now.JoyHatCount; i++)
         {
             int fresh = now.JoyHats[i] & ~baseline.JoyHats[i];
             for (int bit = 1; bit <= 8; bit <<= 1)
-                if ((fresh & bit) != 0) return InputBinding.JoyHat(i, bit);
+            {
+                if ((fresh & bit) != 0)
+                {
+                    return InputBinding.JoyHat(i, bit);
+                }
+            }
         }
         for (int i = 0; i < now.JoyAxisCount; i++)
         {
             float v = now.JoyAxes[i], b = baseline.JoyAxes[i], d = v - b;
             // an axis resting at one end (a trigger at -1) is bound over its full range
-            if (b <= -0.8f && v >= 0.2f) return InputBinding.JoyAxis(i, 2);
-            if (MathF.Abs(v) >= AxisThreshold && MathF.Abs(d) >= 0.4f) return InputBinding.JoyAxis(i, v < 0 ? -1 : 1);
+            if (b <= -0.8f && v >= 0.2f)
+            {
+                return InputBinding.JoyAxis(i, 2);
+            }
+
+            if (MathF.Abs(v) >= AxisThreshold && MathF.Abs(d) >= 0.4f)
+            {
+                return InputBinding.JoyAxis(i, v < 0 ? -1 : 1);
+            }
         }
         return null;
     }

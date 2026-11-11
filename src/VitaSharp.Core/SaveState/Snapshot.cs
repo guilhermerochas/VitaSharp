@@ -61,7 +61,11 @@ public sealed class SnapshotWriter
 
     Span<byte> Grow(int n)
     {
-        if (_len + n > _buf.Length) Array.Resize(ref _buf, Math.Max(_buf.Length * 2, _len + n));
+        if (_len + n > _buf.Length)
+        {
+            Array.Resize(ref _buf, Math.Max(_buf.Length * 2, _len + n));
+        }
+
         var s = _buf.AsSpan(_len, n);
         _len += n;
         return s;
@@ -83,7 +87,11 @@ public sealed class SnapshotWriter
 
     public void Write(string? s)
     {
-        if (s == null) { Write(-1); return; }
+        if (s == null)
+        {
+            Write(-1);
+            return;
+        }
         int n = Encoding.UTF8.GetByteCount(s);
         Write(n);
         Encoding.UTF8.GetBytes(s, Grow(n));
@@ -91,7 +99,11 @@ public sealed class SnapshotWriter
 
     public void Write(byte[]? b)
     {
-        if (b == null) { Write(-1); return; }
+        if (b == null)
+        {
+            Write(-1);
+            return;
+        }
         Write(b.Length);
         b.CopyTo(Grow(b.Length));
     }
@@ -102,7 +114,11 @@ public sealed class SnapshotWriter
     /// <summary>An array of unmanaged values with a length prefix (-1 = null).</summary>
     public void WriteArray<T>(T[]? a) where T : unmanaged
     {
-        if (a == null) { Write(-1); return; }
+        if (a == null)
+        {
+            Write(-1);
+            return;
+        }
         Write(a.Length);
         WriteRaw(System.Runtime.InteropServices.MemoryMarshal.AsBytes(a.AsSpan()));
     }
@@ -113,7 +129,11 @@ public sealed class SnapshotWriter
     /// <summary>A nested state, length-prefixed so a reader can skip or bound it.</summary>
     public void Write(ISnapshotState? s)
     {
-        if (s == null) { Write(false); return; }
+        if (s == null)
+        {
+            Write(false);
+            return;
+        }
         Write(true);
         int at = _len;
         Write(0);
@@ -149,7 +169,11 @@ public sealed class SnapshotReader(byte[] data, int offset = 0, int length = -1)
 
     ReadOnlySpan<byte> Take(int n)
     {
-        if (n < 0 || _pos + n > _end) throw new SnapshotException("the save state is truncated or corrupt");
+        if (n < 0 || _pos + n > _end)
+        {
+            throw new SnapshotException("the save state is truncated or corrupt");
+        }
+
         var s = _buf.AsSpan(_pos, n);
         _pos += n;
         return s;
@@ -188,7 +212,11 @@ public sealed class SnapshotReader(byte[] data, int offset = 0, int length = -1)
     public T[]? ReadArray<T>() where T : unmanaged
     {
         int n = ReadInt32();
-        if (n < 0) return null;
+        if (n < 0)
+        {
+            return null;
+        }
+
         int size = System.Runtime.CompilerServices.Unsafe.SizeOf<T>();
         return System.Runtime.InteropServices.MemoryMarshal.Cast<byte, T>(Take(checked(n * size))).ToArray();
     }
@@ -200,7 +228,11 @@ public sealed class SnapshotReader(byte[] data, int offset = 0, int length = -1)
     /// <paramref name="target"/>; false when it was null.</summary>
     public bool ReadInto(ISnapshotState target)
     {
-        if (!ReadBool()) return false;
+        if (!ReadBool())
+        {
+            return false;
+        }
+
         var sub = ReadBlock();
         target.LoadState(sub);
         return true;
@@ -209,7 +241,11 @@ public sealed class SnapshotReader(byte[] data, int offset = 0, int length = -1)
     /// <summary>A nested state: null when it was written as null, else created with <paramref name="create"/>.</summary>
     public T? ReadState<T>(Func<T> create) where T : class, ISnapshotState
     {
-        if (!ReadBool()) return null;
+        if (!ReadBool())
+        {
+            return null;
+        }
+
         var sub = ReadBlock();
         var o = create();
         o.LoadState(sub);
@@ -220,7 +256,11 @@ public sealed class SnapshotReader(byte[] data, int offset = 0, int length = -1)
     public SnapshotReader ReadBlock()
     {
         int n = ReadInt32();
-        if (n < 0 || _pos + n > _end) throw new SnapshotException("the save state is truncated or corrupt");
+        if (n < 0 || _pos + n > _end)
+        {
+            throw new SnapshotException("the save state is truncated or corrupt");
+        }
+
         var r = new SnapshotReader(_buf, _pos, n) { Objects = Objects };
         _pos += n;
         return r;

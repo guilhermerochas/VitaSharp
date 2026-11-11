@@ -15,7 +15,10 @@ public sealed unsafe partial class GuestMemory
         lock (_lock)
         {
             if (_spaces.Any(s => !ReferenceEquals(s, Primary) && s.Blocks.Count > 0))
+            {
                 throw new SnapshotException("save states support one process only (another address space is in use)");
+            }
+
             return AllBlocks().OrderBy(b => b.Address).ToList();
         }
     }
@@ -25,7 +28,11 @@ public sealed unsafe partial class GuestMemory
         w.Write(blocks.Count);
         foreach (var b in blocks)
         {
-            w.Write(b.Address); w.Write(b.Size); w.Write(b.Name); w.Write((int)b.Region); w.Write(b.Owner);
+            w.Write(b.Address);
+            w.Write(b.Size);
+            w.Write(b.Name);
+            w.Write((int)b.Region);
+            w.Write(b.Owner);
         }
     }
 
@@ -34,7 +41,10 @@ public sealed unsafe partial class GuestMemory
         int n = r.ReadInt32();
         var list = new List<Block>(n);
         for (int i = 0; i < n; i++)
+        {
             list.Add(new Block(r.ReadUInt32(), r.ReadUInt32(), r.ReadStringNotNull(), (MemoryRegion)r.ReadInt32(), r.ReadInt32()));
+        }
+
         return list;
     }
 
@@ -50,7 +60,11 @@ public sealed unsafe partial class GuestMemory
         long n = 0;
         for (uint i = 0; i < pages; i++)
         {
-            if (new ReadOnlySpan<byte>(p + (long)i * PageSize, (int)PageSize).IndexOfAnyExcept((byte)0) < 0) continue;
+            if (new ReadOnlySpan<byte>(p + (long)i * PageSize, (int)PageSize).IndexOfAnyExcept((byte)0) < 0)
+            {
+                continue;
+            }
+
             bitmap[i >> 3] |= (byte)(1 << (int)(i & 7));
             n++;
         }
@@ -59,7 +73,11 @@ public sealed unsafe partial class GuestMemory
         long at = bitmapLen;
         for (uint i = 0; i < pages; i++)
         {
-            if ((bitmap[i >> 3] & (1 << (int)(i & 7))) == 0) continue;
+            if ((bitmap[i >> 3] & (1 << (int)(i & 7))) == 0)
+            {
+                continue;
+            }
+
             new ReadOnlySpan<byte>(p + (long)i * PageSize, (int)PageSize).CopyTo(data.AsSpan((int)at));
             at += PageSize;
         }
@@ -70,14 +88,26 @@ public sealed unsafe partial class GuestMemory
     {
         uint pages = b.Size / PageSize;
         int bitmapLen = (int)((pages + 7) / 8);
-        if (data.Length < bitmapLen) throw new SnapshotException($"memory block 0x{b.Address:X8} is corrupt");
+        if (data.Length < bitmapLen)
+        {
+            throw new SnapshotException($"memory block 0x{b.Address:X8} is corrupt");
+        }
+
         byte* p = HostOf(b);
         long at = bitmapLen;
         for (uint i = 0; i < pages; i++)
         {
             var page = new Span<byte>(p + (long)i * PageSize, (int)PageSize);
-            if ((data[i >> 3] & (1 << (int)(i & 7))) == 0) { page.Clear(); continue; }
-            if (at + PageSize > data.Length) throw new SnapshotException($"memory block 0x{b.Address:X8} is corrupt");
+            if ((data[i >> 3] & (1 << (int)(i & 7))) == 0)
+            {
+                page.Clear();
+                continue;
+            }
+            if (at + PageSize > data.Length)
+            {
+                throw new SnapshotException($"memory block 0x{b.Address:X8} is corrupt");
+            }
+
             data.AsSpan((int)at, (int)PageSize).CopyTo(page);
             at += PageSize;
         }
@@ -95,8 +125,13 @@ public sealed unsafe partial class GuestMemory
         {
             var want = saved.ToDictionary(b => b.Address);
             foreach (var b in AllBlocks().ToList())
+            {
                 if (!want.TryGetValue(b.Address, out var s) || s.Size != b.Size || s.Region != b.Region || (b.Space != null && !ReferenceEquals(b.Space, Primary)))
+                {
                     Free(b);
+                }
+            }
+
             var result = new List<Block>(saved.Count);
             foreach (var s in saved)
             {
@@ -104,26 +139,45 @@ public sealed unsafe partial class GuestMemory
                 var dict = shared ? _shared : Primary.Blocks;
                 if (dict.TryGetValue(s.Address, out var cur))
                 {
-                    var keep = cur with { Name = s.Name, Owner = s.Owner };
+                    var keep = cur with
+                    {
+                        Name = s.Name,
+                        Owner = s.Owner
+                    };
                     dict[s.Address] = keep;
                     result.Add(keep);
                     continue;
                 }
-                using (Kernel.ProcessScope.Enter(s.Owner)) Commit(Primary, s.Address, s.Size, s.Name, s.Region);
+                using (Kernel.ProcessScope.Enter(s.Owner))
+                {
+                    Commit(Primary, s.Address, s.Size, s.Name, s.Region);
+                }
+
                 result.Add(dict[s.Address]);
             }
             // the free lists: each region whole, minus every block in it
-            _freeUser.Clear(); _freeUser.Add(UserStart, UserEnd - UserStart);
-            _freeCdram.Clear(); _freeCdram.Add(CdramStart, CdramEnd - CdramStart);
-            _freeKernel.Clear(); _freeKernel.Add(KernelStart, KernelEnd - KernelStart);
+            _freeUser.Clear();
+            _freeUser.Add(UserStart, UserEnd - UserStart);
+            _freeCdram.Clear();
+            _freeCdram.Add(CdramStart, CdramEnd - CdramStart);
+            _freeKernel.Clear();
+            _freeKernel.Add(KernelStart, KernelEnd - KernelStart);
             foreach (var b in result)
             {
-                if (b.Region == MemoryRegion.Fixed) continue;
+                if (b.Region == MemoryRegion.Fixed)
+                {
+                    continue;
+                }
+
                 var free = FreeList(b.Region);
                 for (int i = 0; i < free.Count; i++)
                 {
                     uint fs = free.Keys[i], fl = free.Values[i];
-                    if (b.Address >= fs && (ulong)b.Address + b.Size <= (ulong)fs + fl) { Carve(free, fs, fl, b.Address, b.Size); break; }
+                    if (b.Address >= fs && (ulong)b.Address + b.Size <= (ulong)fs + fl)
+                    {
+                        Carve(free, fs, fl, b.Address, b.Size);
+                        break;
+                    }
                 }
             }
             return result;

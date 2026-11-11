@@ -59,9 +59,16 @@ public static unsafe class DirtyPages
     [MethodImpl(MethodImplOptions.AggressiveInlining)]
     public static void Mark(byte* spaceBase, uint addr)
     {
-        if (!Enabled) return;
+        if (!Enabled)
+        {
+            return;
+        }
+
         byte* p = spaceBase - TableBytes + (addr >> PageShift);
-        if (*p == 0) *p = 1;
+        if (*p == 0)
+        {
+            *p = 1;
+        }
     }
 
     public static void MarkRange(uint addr, uint length) => MarkRange(GuestMemory.Base, addr, length);
@@ -69,11 +76,20 @@ public static unsafe class DirtyPages
     /// <inheritdoc cref="Mark(byte*, uint)"/>
     public static void MarkRange(byte* spaceBase, uint addr, uint length)
     {
-        if (!Enabled || length == 0 || spaceBase == null) return;
+        if (!Enabled || length == 0 || spaceBase == null)
+        {
+            return;
+        }
+
         byte* t = spaceBase - TableBytes;
         ulong last = Math.Min((ulong)addr + length - 1, uint.MaxValue);
         for (ulong p = addr >> PageShift; p <= last >> PageShift; p++)
-            if (t[p] == 0) t[p] = 1;
+        {
+            if (t[p] == 0)
+            {
+                t[p] = 1;
+            }
+        }
     }
 
     /// <summary>
@@ -88,8 +104,16 @@ public static unsafe class DirtyPages
         lock (_sweepLock)
         {
             uint e = ++_epoch;
-            if (!Enabled || GuestMemory.Instance is not { } mem) return e;
-            foreach (var space in mem.Spaces) SweepTable(space.Base - TableBytes, e);
+            if (!Enabled || GuestMemory.Instance is not { } mem)
+            {
+                return e;
+            }
+
+            foreach (var space in mem.Spaces)
+            {
+                SweepTable(space.Base - TableBytes, e);
+            }
+
             return e;
         }
     }
@@ -102,13 +126,24 @@ public static unsafe class DirtyPages
             for (uint i = 0; i < Pages; i += 64)
             {
                 var v = Vector128.Load(t + i) | Vector128.Load(t + i + 16) | Vector128.Load(t + i + 32) | Vector128.Load(t + i + 48);
-                if (v == Vector128<byte>.Zero) continue;
+                if (v == Vector128<byte>.Zero)
+                {
+                    continue;
+                }
+
                 for (uint j = i; j < i + 64; j++)
                 {
-                    if (t[j] == 0) continue;
+                    if (t[j] == 0)
+                    {
+                        continue;
+                    }
+
                     t[j] = 0;
                     ver[j] = e;
-                    if (j + 1 < Pages) ver[j + 1] = e;
+                    if (j + 1 < Pages)
+                    {
+                        ver[j + 1] = e;
+                    }
                 }
             }
         }
@@ -118,8 +153,16 @@ public static unsafe class DirtyPages
     /// the last <see cref="Sweep"/>, which <see cref="WrittenSince"/> does not see yet).</summary>
     public static bool MarkedNow(uint addr, uint length)
     {
-        if (!Enabled) return true;
-        if (length == 0) return false;
+        if (!Enabled)
+        {
+            return true;
+        }
+
+        if (length == 0)
+        {
+            return false;
+        }
+
         ulong last = Math.Min((ulong)addr + length - 1, uint.MaxValue);
         uint first = addr >> PageShift;
         return new ReadOnlySpan<byte>(Table + first, (int)((last >> PageShift) - first + 1)).IndexOfAnyExcept((byte)0) >= 0;
@@ -136,9 +179,21 @@ public static unsafe class DirtyPages
     /// </summary>
     public static bool WrittenBetween(uint addr, uint length, uint stamp, uint upto)
     {
-        if (upto == uint.MaxValue) return WrittenSince(addr, length, stamp);
-        if (!Enabled || stamp == 0) return true;
-        if (length == 0 || upto < stamp) return false;
+        if (upto == uint.MaxValue)
+        {
+            return WrittenSince(addr, length, stamp);
+        }
+
+        if (!Enabled || stamp == 0)
+        {
+            return true;
+        }
+
+        if (length == 0 || upto < stamp)
+        {
+            return false;
+        }
+
         ulong last = Math.Min((ulong)addr + length - 1, uint.MaxValue);
         int first = (int)(addr >> PageShift), count = (int)(last >> PageShift) - first + 1;
         return _version.AsSpan(first, count).IndexOfAnyInRange(stamp, upto) >= 0;
@@ -146,8 +201,16 @@ public static unsafe class DirtyPages
 
     public static bool WrittenSince(uint addr, uint length, uint stamp)
     {
-        if (!Enabled) return true;
-        if (length == 0) return false;
+        if (!Enabled)
+        {
+            return true;
+        }
+
+        if (length == 0)
+        {
+            return false;
+        }
+
         ulong last = Math.Min((ulong)addr + length - 1, uint.MaxValue);
         int first = (int)(addr >> PageShift), count = (int)(last >> PageShift) - first + 1;
         // any version >= stamp, i.e. outside [0, stamp - 1]

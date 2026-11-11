@@ -27,19 +27,40 @@ public static class NativeThread
     {
         try
         {
-            if (OperatingSystem.IsWindows()) return (int)GetCurrentThreadId();
-            if ((OperatingSystem.IsLinux() || OperatingSystem.IsAndroid()) && GettidSyscall >= 0) return (int)syscall(GettidSyscall);
-            if (OperatingSystem.IsMacOS() && pthread_threadid_np(0, out ulong tid) == 0) return (int)tid;
+            if (OperatingSystem.IsWindows())
+            {
+                return (int)GetCurrentThreadId();
+            }
+
+            if ((OperatingSystem.IsLinux() || OperatingSystem.IsAndroid()) && GettidSyscall >= 0)
+            {
+                return (int)syscall(GettidSyscall);
+            }
+
+            if (OperatingSystem.IsMacOS() && pthread_threadid_np(0, out ulong tid) == 0)
+            {
+                return (int)tid;
+            }
         }
         catch (Exception e) when (e is DllNotFoundException or EntryPointNotFoundException) { }
         return Environment.CurrentManagedThreadId;
     }
 
-    public static void Register(string name) { try { Names[CurrentId()] = name; } catch { } }
+    public static void Register(string name)
+    {
+        try
+        {
+            Names[CurrentId()] = name;
+        }
+        catch { }
+    }
 
     /// <summary>What an emulator thread does, for host-side thread placement (the Android app pins the hot ones to the
     /// fast cores: docs/android/README.md, "CPU cores and ADPF").</summary>
-    public enum Role { Other, Guest, Gpu, JitWorker }
+    public enum Role
+    {
+        Other, Guest, Gpu, JitWorker
+    }
 
     /// <summary>OS thread id to role, for the threads registered with <see cref="Register(string, Role)"/>. Entries
     /// are never removed: users check that the thread still exists.</summary>
@@ -66,9 +87,20 @@ public static class NativeThread
     /// cost of a region without the time the thread was blocked (profiling).</summary>
     public static ulong CycleTime()
     {
-        if (_noCycleTime) return 0;
-        try { return QueryThreadCycleTime(-2, out ulong c) ? c : 0; } // -2: GetCurrentThread() pseudo-handle
-        catch (Exception e) when (e is DllNotFoundException or EntryPointNotFoundException) { _noCycleTime = true; return 0; }
+        if (_noCycleTime)
+        {
+            return 0;
+        }
+
+        try
+        {
+            return QueryThreadCycleTime(-2, out ulong c) ? c : 0;
+        } // -2: GetCurrentThread() pseudo-handle
+        catch (Exception e) when (e is DllNotFoundException or EntryPointNotFoundException)
+        {
+            _noCycleTime = true;
+            return 0;
+        }
     }
 
     [DllImport("kernel32.dll")][return: MarshalAs(UnmanagedType.Bool)] static extern bool QueryThreadCycleTime(nint thread, out ulong cycles);

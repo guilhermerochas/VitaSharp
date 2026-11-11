@@ -19,7 +19,10 @@ public static class DebugMode
         bool was = Enabled;
         Enabled = true;
         Log.DedupeWarnings = true;
-        if (!was) AudioDiagnostics.OnDebugModeChanged(true); // snapshot of the ports and streams opened before
+        if (!was)
+        {
+            AudioDiagnostics.OnDebugModeChanged(true); // snapshot of the ports and streams opened before
+        }
     }
 
     public static void Disable()
@@ -50,22 +53,31 @@ public static class DebugMode
     {
         int n = HleErrors.AddOrUpdate((function, ret), 1, (_, c) => c + 1);
         if (ShouldLog(n))
+        {
             Log.Info($"[dbg] f{Frame} HLE-ERR [{thread}] {function}(0x{a0:X}, 0x{a1:X}, 0x{a2:X}, 0x{a3:X}) = 0x{ret:X8} lr=0x{lr:X8}{(n > 1 ? $" (#{n})" : "")}");
+        }
     }
 
     public static void HleUnimplemented(string thread, string library, string function, uint nid, uint lr)
     {
         int n = Unimplemented.AddOrUpdate(function, 1, (_, c) => c + 1);
         if (ShouldLog(n))
+        {
             Log.Info($"[dbg] f{Frame} HLE-UNIMPL [{thread}] {library}::{function} (NID 0x{nid:X8}) lr=0x{lr:X8} (#{n})");
+        }
     }
 
     /// <summary>Summary lines: HLE error returns and unimplemented calls by count.</summary>
     public static IEnumerable<string> HleSummary()
     {
         foreach (var kv in HleErrors.OrderByDescending(k => k.Value).Take(40))
+        {
             yield return $"[dbg] HLE-ERR summary: {kv.Key.Item1} = 0x{kv.Key.Item2:X8} x{kv.Value}";
+        }
+
         foreach (var kv in Unimplemented.OrderByDescending(k => k.Value).Take(40))
+        {
             yield return $"[dbg] HLE-UNIMPL summary: {kv.Key} x{kv.Value}";
+        }
     }
 }

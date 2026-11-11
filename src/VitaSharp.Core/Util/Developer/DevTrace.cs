@@ -34,24 +34,58 @@ public static unsafe class DevTrace
         return p;
     });
 
-    public static void Begin(string name) { if (On) BeginSection(Name(name)); }
-    public static void End() { if (On) EndSection(); }
-    public static void Counter(string name, long value) { if (On) SetCounter(Name(name), value); }
+    public static void Begin(string name)
+    {
+        if (On)
+        {
+            BeginSection(Name(name));
+        }
+    }
+    public static void End()
+    {
+        if (On)
+        {
+            EndSection();
+        }
+    }
+    public static void Counter(string name, long value)
+    {
+        if (On)
+        {
+            SetCounter(Name(name), value);
+        }
+    }
 
     /// <summary>sceDisplaySetFrameBuf: one guest frame.</summary>
     public static void GuestFrame()
     {
-        if (!On) return;
+        if (!On)
+        {
+            return;
+        }
+
         long f = Interlocked.Increment(ref _guestFrames);
-        fixed (byte* c = "guest frame\0"u8) SetCounter(c, f);
-        fixed (byte* s = "guest flip\0"u8) BeginSection(s);
+        fixed (byte* c = "guest frame\0"u8)
+        {
+            SetCounter(c, f);
+        }
+
+        fixed (byte* s = "guest flip\0"u8)
+        {
+            BeginSection(s);
+        }
+
         EndSection();
     }
 
     /// <summary>True when this HLE call is one of the sampled ones (its slice is begun; end it with <see cref="End"/>).</summary>
     public static bool BeginHle(string function)
     {
-        if (!On || (Interlocked.Increment(ref _hleCount) & HleMask) != 0) return false;
+        if (!On || (Interlocked.Increment(ref _hleCount) & HleMask) != 0)
+        {
+            return false;
+        }
+
         BeginSection(Name("hle " + function));
         return true;
     }
@@ -62,18 +96,42 @@ public static unsafe class DevTrace
 
     public static void GpuCommand(bool present)
     {
-        if (!On) return;
-        if (!_gpuFrameOpen) { fixed (byte* s = "gpu record frame\0"u8) BeginSection(s); _gpuFrameOpen = true; }
+        if (!On)
+        {
+            return;
+        }
+
+        if (!_gpuFrameOpen)
+        {
+            fixed (byte* s = "gpu record frame\0"u8)
+            {
+                BeginSection(s);
+            }
+
+            _gpuFrameOpen = true;
+        }
         _gpuCommands++;
-        if (!present) return;
-        fixed (byte* c = "gpu commands/frame\0"u8) SetCounter(c, _gpuCommands);
+        if (!present)
+        {
+            return;
+        }
+
+        fixed (byte* c = "gpu commands/frame\0"u8)
+        {
+            SetCounter(c, _gpuCommands);
+        }
+
         _gpuCommands = 0;
     }
 
     /// <summary>After the present command executed: the frame's slice ends.</summary>
     public static void GpuPresented()
     {
-        if (!On || !_gpuFrameOpen) return;
+        if (!On || !_gpuFrameOpen)
+        {
+            return;
+        }
+
         EndSection();
         _gpuFrameOpen = false;
     }

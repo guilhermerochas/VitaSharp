@@ -33,7 +33,11 @@ public interface IInputBackend
     {
         var list = GetTouches(back);
         int n = Math.Min(list.Count, dest.Length);
-        for (int i = 0; i < n; i++) dest[i] = list[i];
+        for (int i = 0; i < n; i++)
+        {
+            dest[i] = list[i];
+        }
+
         return n;
     }
 }
@@ -56,7 +60,9 @@ public interface IAudioBackend : IDisposable
 
     /// <summary>The emulation was paused (true) or resumed (<see cref="EmulationPause"/>): the device stops playing the
     /// queued grains, without counting it as underruns, and goes on where it stopped. Any thread.</summary>
-    void SetPaused(bool paused) { }
+    void SetPaused(bool paused)
+    {
+    }
 }
 
 /// <summary>
@@ -119,7 +125,9 @@ public interface IMessageDialogBackend
 {
     void Open(MessageDialogRequest request, Action<int> done);
     /// <summary>The progress bar of the open dialog moved (0..100) or its text changed (null keeps it). Any thread.</summary>
-    void SetProgress(int percent, string? message) { }
+    void SetProgress(int percent, string? message)
+    {
+    }
     void Close();
 }
 
@@ -148,7 +156,11 @@ public sealed class HostServices : IDisposable
     {
         lock (CameraStreams)
         {
-            foreach (var s in CameraStreams) s.Dispose();
+            foreach (var s in CameraStreams)
+            {
+                s.Dispose();
+            }
+
             CameraStreams.Clear();
         }
         Audio?.Dispose();

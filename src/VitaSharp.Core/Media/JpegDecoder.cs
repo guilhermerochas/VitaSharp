@@ -71,11 +71,18 @@ public static class JpegDecoder
                     if (len <= FastBits)
                     {
                         int shift = FastBits - len;
-                        for (int j = 0; j < 1 << shift; j++) Fast[(code << shift) | j] = (ushort)((len << 8) | Values[k]);
+                        for (int j = 0; j < 1 << shift; j++)
+                        {
+                            Fast[(code << shift) | j] = (ushort)((len << 8) | Values[k]);
+                        }
                     }
                 }
                 MaxCode[len] = n > 0 ? code - 1 : -1;
-                if (code > 1 << len) throw Fail(JpegError.BadDhtCounts, "DHT: code space overflow");
+                if (code > 1 << len)
+                {
+                    throw Fail(JpegError.BadDhtCounts, "DHT: code space overflow");
+                }
+
                 code <<= 1;
             }
             MaxCode[17] = int.MaxValue;
@@ -111,8 +118,16 @@ public static class JpegDecoder
 
         public Parser Run(bool headerOnly)
         {
-            if (_d.Length < 2) throw Fail(JpegError.ImageEmpty, "empty stream");
-            if (_d[0] != 0xFF || _d[1] != 0xD8) throw Fail(JpegError.NoSoi, "no SOI");
+            if (_d.Length < 2)
+            {
+                throw Fail(JpegError.ImageEmpty, "empty stream");
+            }
+
+            if (_d[0] != 0xFF || _d[1] != 0xD8)
+            {
+                throw Fail(JpegError.NoSoi, "no SOI");
+            }
+
             _pos = 2;
             while (true)
             {
@@ -120,39 +135,73 @@ public static class JpegDecoder
                 if (m < 0)
                 {
                     // truncated stream without EOI: accept what was decoded
-                    if (_anyScan || (headerOnly && _sof)) return this;
+                    if (_anyScan || (headerOnly && _sof))
+                    {
+                        return this;
+                    }
+
                     throw Fail(_sof ? JpegError.DecodeError : JpegError.BadSofMarker, "stream ended before the first scan");
                 }
                 switch (m)
                 {
-                    case 0xD8: throw Fail(JpegError.UnexpectedMarker, "SOI inside the stream");
+                    case 0xD8:
+                        throw Fail(JpegError.UnexpectedMarker, "SOI inside the stream");
                     case 0xD9:
-                        if (!_anyScan) throw Fail(JpegError.DecodeError, "EOI before the first scan");
+                        if (!_anyScan)
+                        {
+                            throw Fail(JpegError.DecodeError, "EOI before the first scan");
+                        }
+
                         return this;
-                    case 0xC4: ReadDht(Segment()); break;
-                    case 0xDB: ReadDqt(Segment()); break;
+                    case 0xC4:
+                        ReadDht(Segment());
+                        break;
+                    case 0xDB:
+                        ReadDqt(Segment());
+                        break;
                     case 0xDD:
                     {
                         var s = Segment();
-                        if (s.Length != 2) throw Fail(JpegError.BadDriMarker, "DRI length");
+                        if (s.Length != 2)
+                        {
+                            throw Fail(JpegError.BadDriMarker, "DRI length");
+                        }
+
                         _restart = (s[0] << 8) | s[1];
                         break;
                     }
-                    case 0xC0 or 0xC1 or 0xC2: ReadSof(Segment(), m == 0xC2); break;
-                    case 0xC3 or 0xC7 or 0xCB or 0xCF: throw Fail(JpegError.NoLosslessSupport, "lossless JPEG");
-                    case 0xC9 or 0xCA or 0xCD or 0xCE or 0xCC: throw Fail(JpegError.NoArithSupport, "arithmetic coding");
-                    case 0xC5 or 0xC6: throw Fail(JpegError.NoLosslessSupport, "hierarchical JPEG");
+                    case 0xC0 or 0xC1 or 0xC2:
+                        ReadSof(Segment(), m == 0xC2);
+                        break;
+                    case 0xC3 or 0xC7 or 0xCB or 0xCF:
+                        throw Fail(JpegError.NoLosslessSupport, "lossless JPEG");
+                    case 0xC9 or 0xCA or 0xCD or 0xCE or 0xCC:
+                        throw Fail(JpegError.NoArithSupport, "arithmetic coding");
+                    case 0xC5 or 0xC6:
+                        throw Fail(JpegError.NoLosslessSupport, "hierarchical JPEG");
                     case 0xDA:
                     {
-                        if (!_sof) throw Fail(JpegError.BadSosMarker, "SOS before SOF");
-                        if (headerOnly) return this;
+                        if (!_sof)
+                        {
+                            throw Fail(JpegError.BadSosMarker, "SOS before SOF");
+                        }
+
+                        if (headerOnly)
+                        {
+                            return this;
+                        }
+
                         var s = Segment();
                         ReadScan(s);
                         break;
                     }
-                    case (>= 0xD0 and <= 0xD7) or 0x01: break; // stray restart marker / TEM: no payload
-                    case 0xDC or 0xFE or (>= 0xE0 and <= 0xEF) or 0xF0 or (>= 0xF1 and <= 0xFD): Segment(); break;
-                    default: throw Fail(JpegError.UnknownMarker, $"marker 0x{m:X2}");
+                    case (>= 0xD0 and <= 0xD7) or 0x01:
+                        break; // stray restart marker / TEM: no payload
+                    case 0xDC or 0xFE or (>= 0xE0 and <= 0xEF) or 0xF0 or (>= 0xF1 and <= 0xFD):
+                        Segment();
+                        break;
+                    default:
+                        throw Fail(JpegError.UnknownMarker, $"marker 0x{m:X2}");
                 }
             }
         }
@@ -162,10 +211,22 @@ public static class JpegDecoder
         {
             while (_pos + 1 < _d.Length)
             {
-                if (_d[_pos] != 0xFF) { _pos++; continue; }
+                if (_d[_pos] != 0xFF)
+                {
+                    _pos++;
+                    continue;
+                }
                 int c = _d[_pos + 1];
-                if (c == 0xFF) { _pos++; continue; }
-                if (c == 0x00) { _pos += 2; continue; }
+                if (c == 0xFF)
+                {
+                    _pos++;
+                    continue;
+                }
+                if (c == 0x00)
+                {
+                    _pos += 2;
+                    continue;
+                }
                 _pos += 2;
                 return c;
             }
@@ -175,9 +236,17 @@ public static class JpegDecoder
 
         ReadOnlySpan<byte> Segment()
         {
-            if (_pos + 2 > _d.Length) throw Fail(JpegError.BadMarkerLength, "truncated segment");
+            if (_pos + 2 > _d.Length)
+            {
+                throw Fail(JpegError.BadMarkerLength, "truncated segment");
+            }
+
             int len = (_d[_pos] << 8) | _d[_pos + 1];
-            if (len < 2 || _pos + len > _d.Length) throw Fail(JpegError.BadMarkerLength, "bad segment length");
+            if (len < 2 || _pos + len > _d.Length)
+            {
+                throw Fail(JpegError.BadMarkerLength, "bad segment length");
+            }
+
             var s = new ReadOnlySpan<byte>(_d, _pos + 2, len - 2);
             _pos += len;
             return s;
@@ -188,13 +257,28 @@ public static class JpegDecoder
             while (s.Length > 0)
             {
                 int pq = s[0] >> 4, tq = s[0] & 15;
-                if (tq > 3) throw Fail(JpegError.BadDqtIndex, "DQT index");
-                if (pq > 1) throw Fail(JpegError.BadDqtMarker, "DQT precision");
+                if (tq > 3)
+                {
+                    throw Fail(JpegError.BadDqtIndex, "DQT index");
+                }
+
+                if (pq > 1)
+                {
+                    throw Fail(JpegError.BadDqtMarker, "DQT precision");
+                }
+
                 int need = 1 + 64 * (pq + 1);
-                if (s.Length < need) throw Fail(JpegError.BadDqtMarker, "DQT length");
+                if (s.Length < need)
+                {
+                    throw Fail(JpegError.BadDqtMarker, "DQT length");
+                }
+
                 var q = new ushort[64];
                 for (int i = 0; i < 64; i++)
+                {
                     q[JpegTables.ZigZag[i]] = pq == 0 ? s[1 + i] : (ushort)((s[1 + 2 * i] << 8) | s[2 + 2 * i]);
+                }
+
                 _quant[tq] = q;
                 s = s[need..];
             }
@@ -204,13 +288,33 @@ public static class JpegDecoder
         {
             while (s.Length > 0)
             {
-                if (s.Length < 17) throw Fail(JpegError.BadDhtMarker, "DHT length");
+                if (s.Length < 17)
+                {
+                    throw Fail(JpegError.BadDhtMarker, "DHT length");
+                }
+
                 int tc = s[0] >> 4, th = s[0] & 15;
-                if (tc > 1 || th > 3) throw Fail(JpegError.BadDhtIndex, "DHT index");
+                if (tc > 1 || th > 3)
+                {
+                    throw Fail(JpegError.BadDhtIndex, "DHT index");
+                }
+
                 int total = 0;
-                for (int i = 0; i < 16; i++) total += s[1 + i];
-                if (total > 256) throw Fail(JpegError.BadDhtCounts, "DHT counts");
-                if (s.Length < 17 + total) throw Fail(JpegError.BadDhtMarker, "DHT length");
+                for (int i = 0; i < 16; i++)
+                {
+                    total += s[1 + i];
+                }
+
+                if (total > 256)
+                {
+                    throw Fail(JpegError.BadDhtCounts, "DHT counts");
+                }
+
+                if (s.Length < 17 + total)
+                {
+                    throw Fail(JpegError.BadDhtMarker, "DHT length");
+                }
+
                 var h = new Huffman(s.Slice(1, 16), s.Slice(17, total));
                 (tc == 0 ? _dc : _ac)[th] = h;
                 s = s[(17 + total)..];
@@ -219,24 +323,66 @@ public static class JpegDecoder
 
         void ReadSof(ReadOnlySpan<byte> s, bool progressive)
         {
-            if (_sof) throw Fail(JpegError.SofDuplicate, "second SOF");
-            if (s.Length < 6) throw Fail(JpegError.BadSofMarker, "SOF length");
-            if (s[0] != 8) throw Fail(JpegError.BadPrecision, $"{s[0]}-bit samples");
+            if (_sof)
+            {
+                throw Fail(JpegError.SofDuplicate, "second SOF");
+            }
+
+            if (s.Length < 6)
+            {
+                throw Fail(JpegError.BadSofMarker, "SOF length");
+            }
+
+            if (s[0] != 8)
+            {
+                throw Fail(JpegError.BadPrecision, $"{s[0]}-bit samples");
+            }
+
             int h = (s[1] << 8) | s[2], w = (s[3] << 8) | s[4], nf = s[5];
-            if (s.Length != 6 + 3 * nf) throw Fail(JpegError.BadSofMarker, "SOF length");
-            if (nf != 1 && nf != 3) throw Fail(JpegError.ComponentCount, $"{nf} components");
-            if (w == 0 || h == 0) throw Fail(JpegError.ImageEmpty, "zero image size (DNL unsupported)");
+            if (s.Length != 6 + 3 * nf)
+            {
+                throw Fail(JpegError.BadSofMarker, "SOF length");
+            }
+
+            if (nf != 1 && nf != 3)
+            {
+                throw Fail(JpegError.ComponentCount, $"{nf} components");
+            }
+
+            if (w == 0 || h == 0)
+            {
+                throw Fail(JpegError.ImageEmpty, "zero image size (DNL unsupported)");
+            }
+
             var comps = new Component[nf];
             for (int i = 0; i < nf; i++)
             {
                 var c = new Component { Id = s[6 + 3 * i], H = s[7 + 3 * i] >> 4, V = s[7 + 3 * i] & 15, Tq = s[8 + 3 * i] };
-                if (c.H is < 1 or > 4 || c.V is < 1 or > 4) throw Fail(JpegError.BadMcuSize, "sampling factor");
-                if (c.Tq > 3) throw Fail(JpegError.BadDqtIndex, "component quant table");
-                for (int j = 0; j < i; j++) if (comps[j].Id == c.Id) throw Fail(JpegError.BadComponentId, "duplicate component id");
+                if (c.H is < 1 or > 4 || c.V is < 1 or > 4)
+                {
+                    throw Fail(JpegError.BadMcuSize, "sampling factor");
+                }
+
+                if (c.Tq > 3)
+                {
+                    throw Fail(JpegError.BadDqtIndex, "component quant table");
+                }
+
+                for (int j = 0; j < i; j++)
+                {
+                    if (comps[j].Id == c.Id)
+                    {
+                        throw Fail(JpegError.BadComponentId, "duplicate component id");
+                    }
+                }
+
                 comps[i] = c;
             }
             var info = new JpegInfo { Width = w, Height = h, Progressive = progressive, Gray = nf == 1 };
-            if (nf == 1) comps[0].H = comps[0].V = 1; // factors are meaningless for a single component
+            if (nf == 1)
+            {
+                comps[0].H = comps[0].V = 1; // factors are meaningless for a single component
+            }
             else
             {
                 var y = comps[0];
@@ -245,16 +391,26 @@ public static class JpegDecoder
                 // luma must carry the largest factors and both chroma components the same ones
                 // (2x2,2x2,2x2 is 4:4:4)
                 if (cb.H != cr.H || cb.V != cr.V || y.H % cb.H != 0 || y.V % cb.V != 0)
+                {
                     throw Fail(JpegError.UnsupportedSampling, "unsupported subsampling");
+                }
+
                 int hs = y.H / cb.H, vs = y.V / cb.V;
                 if ((hs, vs) is not ((1, 1) or (1, 2) or (1, 4) or (2, 1) or (2, 2) or (4, 1)))
+                {
                     throw Fail(JpegError.UnsupportedSampling, $"subsampling {hs}x{vs}");
+                }
+
                 info.HDiv = hs;
                 info.VDiv = vs;
             }
             _hmax = comps.Max(c => c.H);
             _vmax = comps.Max(c => c.V);
-            if (nf == 3 && (comps[0].H != _hmax || comps[0].V != _vmax)) throw Fail(JpegError.UnsupportedSampling, "luma is not the largest component");
+            if (nf == 3 && (comps[0].H != _hmax || comps[0].V != _vmax))
+            {
+                throw Fail(JpegError.UnsupportedSampling, "luma is not the largest component");
+            }
+
             _mcusX = (w + 8 * _hmax - 1) / (8 * _hmax);
             _mcusY = (h + 8 * _vmax - 1) / (8 * _vmax);
             foreach (var c in comps)
@@ -273,18 +429,34 @@ public static class JpegDecoder
 
         void ReadScan(ReadOnlySpan<byte> s)
         {
-            if (s.Length < 1) throw Fail(JpegError.BadSosMarker, "SOS length");
+            if (s.Length < 1)
+            {
+                throw Fail(JpegError.BadSosMarker, "SOS length");
+            }
+
             int ns = s[0];
-            if (ns < 1 || ns > 4 || s.Length != 4 + 2 * ns) throw Fail(JpegError.BadSosMarker, "SOS length");
+            if (ns < 1 || ns > 4 || s.Length != 4 + 2 * ns)
+            {
+                throw Fail(JpegError.BadSosMarker, "SOS length");
+            }
+
             var sc = new Component[ns];
             for (int i = 0; i < ns; i++)
             {
                 int id = s[1 + 2 * i], t = s[2 + 2 * i];
                 var c = Array.Find(_comps, x => x.Id == id) ?? throw Fail(JpegError.BadComponentId, $"scan component {id}");
-                if (Array.IndexOf(sc, c) >= 0) throw Fail(JpegError.BadComponentId, "component twice in a scan");
+                if (Array.IndexOf(sc, c) >= 0)
+                {
+                    throw Fail(JpegError.BadComponentId, "component twice in a scan");
+                }
+
                 c.DcTable = t >> 4;
                 c.AcTable = t & 15;
-                if (c.DcTable > 3 || c.AcTable > 3) throw Fail(JpegError.BadDhtIndex, "scan table index");
+                if (c.DcTable > 3 || c.AcTable > 3)
+                {
+                    throw Fail(JpegError.BadDhtIndex, "scan table index");
+                }
+
                 sc[i] = c;
             }
             int ss = s[1 + 2 * ns], se = s[2 + 2 * ns], ah = s[3 + 2 * ns] >> 4, al = s[3 + 2 * ns] & 15;
@@ -292,26 +464,60 @@ public static class JpegDecoder
             if (progressive)
             {
                 bool ok = ss == 0 ? se == 0 : se >= ss && se <= 63 && ns == 1;
-                if (!ok || al > 13 || (ah != 0 && ah != al + 1)) throw Fail(JpegError.BadProgressiveParam, "progressive scan parameters");
+                if (!ok || al > 13 || (ah != 0 && ah != al + 1))
+                {
+                    throw Fail(JpegError.BadProgressiveParam, "progressive scan parameters");
+                }
             }
-            else { ss = 0; se = 63; ah = al = 0; }
+            else
+            {
+                ss = 0;
+                se = 63;
+                ah = al = 0;
+            }
             if (ns > 1)
             {
                 int blocks = 0;
-                foreach (var c in sc) blocks += c.H * c.V;
-                if (blocks > 10) throw Fail(JpegError.BadMcuSize, "more than 10 blocks per MCU");
+                foreach (var c in sc)
+                {
+                    blocks += c.H * c.V;
+                }
+
+                if (blocks > 10)
+                {
+                    throw Fail(JpegError.BadMcuSize, "more than 10 blocks per MCU");
+                }
             }
             foreach (var c in sc)
             {
-                if (c.Coefs.Length == 0) c.Coefs = new int[c.BlocksX * c.BlocksY * 64];
+                if (c.Coefs.Length == 0)
+                {
+                    c.Coefs = new int[c.BlocksX * c.BlocksY * 64];
+                }
+
                 bool needDc = ss == 0 && ah == 0, needAc = se > 0;
-                if (!progressive) { needDc = true; needAc = true; }
-                if (needDc) EnsureTable(_dc, c.DcTable, true);
-                if (needAc) EnsureTable(_ac, c.AcTable, false);
+                if (!progressive)
+                {
+                    needDc = true;
+                    needAc = true;
+                }
+                if (needDc)
+                {
+                    EnsureTable(_dc, c.DcTable, true);
+                }
+
+                if (needAc)
+                {
+                    EnsureTable(_ac, c.AcTable, false);
+                }
+
                 c.DcPred = 0;
             }
 
-            _bits = 0; _nbits = 0; _marker = false; _eobrun = 0;
+            _bits = 0;
+            _nbits = 0;
+            _marker = false;
+            _eobrun = 0;
             int mcuCount = ns == 1 ? sc[0].CodedBlocksX * sc[0].CodedBlocksY : _mcusX * _mcusY;
             int sinceRestart = 0;
             for (int mcu = 0; mcu < mcuCount; mcu++)
@@ -332,9 +538,15 @@ public static class JpegDecoder
                 {
                     int mx = mcu % _mcusX, my = mcu / _mcusX;
                     foreach (var c in sc)
+                    {
                         for (int v = 0; v < c.V; v++)
+                        {
                             for (int h = 0; h < c.H; h++)
+                            {
                                 DecodeBlock(c, (my * c.V + v) * c.BlocksX + mx * c.H + h, ss, se, ah, al, progressive);
+                            }
+                        }
+                    }
                 }
             }
             // the bit reader never moves past a marker: NextMarker() skips the rest of the entropy data
@@ -343,9 +555,16 @@ public static class JpegDecoder
 
         void EnsureTable(Huffman?[] set, int index, bool dc)
         {
-            if (set[index] != null) return;
+            if (set[index] != null)
+            {
+                return;
+            }
             // MJPEG streams omit DHT: tables 0/1 default to the typical luminance/chrominance tables
-            if (index > 1) throw Fail(JpegError.NoHuffTable, $"missing Huffman table {index}");
+            if (index > 1)
+            {
+                throw Fail(JpegError.NoHuffTable, $"missing Huffman table {index}");
+            }
+
             set[index] = dc
                 ? index == 0 ? new Huffman(JpegTables.DcLumaBits, JpegTables.DcLumaVals) : new Huffman(JpegTables.DcChromaBits, JpegTables.DcChromaVals)
                 : index == 0 ? new Huffman(JpegTables.AcLumaBits, JpegTables.AcLumaVals) : new Huffman(JpegTables.AcChromaBits, JpegTables.AcChromaVals);
@@ -353,18 +572,36 @@ public static class JpegDecoder
 
         void Restart(Component[] sc)
         {
-            _bits = 0; _nbits = 0;
+            _bits = 0;
+            _nbits = 0;
             if (!_marker)
             {
                 // skip to the next marker
-                while (_pos + 1 < _d.Length && !(_d[_pos] == 0xFF && _d[_pos + 1] != 0 && _d[_pos + 1] != 0xFF)) _pos++;
+                while (_pos + 1 < _d.Length && !(_d[_pos] == 0xFF && _d[_pos + 1] != 0 && _d[_pos + 1] != 0xFF))
+                {
+                    _pos++;
+                }
             }
-            while (_pos + 1 < _d.Length && _d[_pos] == 0xFF && _d[_pos + 1] == 0xFF) _pos++;
-            if (_pos + 1 < _d.Length && _d[_pos] == 0xFF && _d[_pos + 1] is >= 0xD0 and <= 0xD7) _pos += 2;
-            else if (_pos + 1 < _d.Length) throw Fail(JpegError.BadRestartMarker, "expected RSTn");
+            while (_pos + 1 < _d.Length && _d[_pos] == 0xFF && _d[_pos + 1] == 0xFF)
+            {
+                _pos++;
+            }
+
+            if (_pos + 1 < _d.Length && _d[_pos] == 0xFF && _d[_pos + 1] is >= 0xD0 and <= 0xD7)
+            {
+                _pos += 2;
+            }
+            else if (_pos + 1 < _d.Length)
+            {
+                throw Fail(JpegError.BadRestartMarker, "expected RSTn");
+            }
+
             _marker = false;
             _eobrun = 0;
-            foreach (var c in sc) c.DcPred = 0;
+            foreach (var c in sc)
+            {
+                c.DcPred = 0;
+            }
         }
 
         // ---------------------------------------------------------------- bit reader
@@ -380,10 +617,20 @@ public static class JpegDecoder
                     if (b == 0xFF)
                     {
                         int n = _pos + 1 < _d.Length ? _d[_pos + 1] : 0xD9;
-                        if (n == 0) _pos += 2;
-                        else { _marker = true; b = 0; }
+                        if (n == 0)
+                        {
+                            _pos += 2;
+                        }
+                        else
+                        {
+                            _marker = true;
+                            b = 0;
+                        }
                     }
-                    else _pos++;
+                    else
+                    {
+                        _pos++;
+                    }
                 }
                 _bits |= (uint)b << (24 - _nbits);
                 _nbits += 8;
@@ -392,8 +639,16 @@ public static class JpegDecoder
 
         int Bits(int n)
         {
-            if (n == 0) return 0;
-            if (_nbits < n) Fill();
+            if (n == 0)
+            {
+                return 0;
+            }
+
+            if (_nbits < n)
+            {
+                Fill();
+            }
+
             int v = (int)(_bits >> (32 - n));
             _bits <<= n;
             _nbits -= n;
@@ -408,7 +663,11 @@ public static class JpegDecoder
 
         int DecodeSymbol(Huffman h)
         {
-            if (_nbits < 16) Fill();
+            if (_nbits < 16)
+            {
+                Fill();
+            }
+
             int e = h.Fast[_bits >> (32 - Huffman.FastBits)];
             if (e != 0)
             {
@@ -425,7 +684,11 @@ public static class JpegDecoder
                     _bits <<= len;
                     _nbits -= len;
                     int idx = code + h.ValOffset[len];
-                    if ((uint)idx >= (uint)h.Values.Length) throw Fail(JpegError.DecodeError, "bad Huffman code");
+                    if ((uint)idx >= (uint)h.Values.Length)
+                    {
+                        throw Fail(JpegError.DecodeError, "bad Huffman code");
+                    }
+
                     return h.Values[idx];
                 }
             }
@@ -440,7 +703,11 @@ public static class JpegDecoder
             if (!progressive)
             {
                 int t = DecodeSymbol(_dc[c.DcTable]!);
-                if (t > 16) throw Fail(JpegError.DecodeError, "DC magnitude");
+                if (t > 16)
+                {
+                    throw Fail(JpegError.DecodeError, "DC magnitude");
+                }
+
                 c.DcPred += Receive(t);
                 blk[0] = c.DcPred;
                 var ac = _ac[c.AcTable]!;
@@ -449,12 +716,20 @@ public static class JpegDecoder
                     int rs = DecodeSymbol(ac), r = rs >> 4, s = rs & 15;
                     if (s == 0)
                     {
-                        if (r != 15) break;
+                        if (r != 15)
+                        {
+                            break;
+                        }
+
                         k += 16;
                         continue;
                     }
                     k += r;
-                    if (k > 63) throw Fail(JpegError.DecodeError, "AC index past 63");
+                    if (k > 63)
+                    {
+                        throw Fail(JpegError.DecodeError, "AC index past 63");
+                    }
+
                     blk[JpegTables.ZigZag[k]] = Receive(s);
                     k++;
                 }
@@ -466,18 +741,30 @@ public static class JpegDecoder
                 if (ah == 0)
                 {
                     int t = DecodeSymbol(_dc[c.DcTable]!);
-                    if (t > 16) throw Fail(JpegError.DecodeError, "DC magnitude");
+                    if (t > 16)
+                    {
+                        throw Fail(JpegError.DecodeError, "DC magnitude");
+                    }
+
                     c.DcPred += Receive(t);
                     blk[0] = c.DcPred * (1 << al);
                 }
-                else if (Bit() != 0) blk[0] |= 1 << al;
+                else if (Bit() != 0)
+                {
+                    blk[0] |= 1 << al;
+                }
+
                 return;
             }
 
             var h = _ac[c.AcTable]!;
             if (ah == 0)
             {
-                if (_eobrun > 0) { _eobrun--; return; }
+                if (_eobrun > 0)
+                {
+                    _eobrun--;
+                    return;
+                }
                 for (int k = ss; k <= se; k++)
                 {
                     int rs = DecodeSymbol(h), r = rs >> 4, s = rs & 15;
@@ -486,14 +773,22 @@ public static class JpegDecoder
                         if (r < 15)
                         {
                             _eobrun = (1 << r) - 1;
-                            if (r > 0) _eobrun += Bits(r);
+                            if (r > 0)
+                            {
+                                _eobrun += Bits(r);
+                            }
+
                             break;
                         }
                         k += 15;
                         continue;
                     }
                     k += r;
-                    if (k > 63) throw Fail(JpegError.DecodeError, "AC index past 63");
+                    if (k > 63)
+                    {
+                        throw Fail(JpegError.DecodeError, "AC index past 63");
+                    }
+
                     blk[JpegTables.ZigZag[k]] = Receive(s) * (1 << al);
                 }
                 return;
@@ -510,13 +805,21 @@ public static class JpegDecoder
                     int val = 0;
                     if (s != 0)
                     {
-                        if (s != 1) throw Fail(JpegError.DecodeError, "refinement magnitude");
+                        if (s != 1)
+                        {
+                            throw Fail(JpegError.DecodeError, "refinement magnitude");
+                        }
+
                         val = Bit() != 0 ? p1 : m1;
                     }
                     else if (r != 15)
                     {
                         _eobrun = 1 << r;
-                        if (r > 0) _eobrun += Bits(r);
+                        if (r > 0)
+                        {
+                            _eobrun += Bits(r);
+                        }
+
                         break;
                     }
                     while (kk <= se)
@@ -524,16 +827,26 @@ public static class JpegDecoder
                         int z = JpegTables.ZigZag[kk];
                         if (blk[z] != 0)
                         {
-                            if (Bit() != 0 && (blk[z] & p1) == 0) blk[z] += blk[z] >= 0 ? p1 : m1;
+                            if (Bit() != 0 && (blk[z] & p1) == 0)
+                            {
+                                blk[z] += blk[z] >= 0 ? p1 : m1;
+                            }
                         }
                         else
                         {
-                            if (r == 0) break;
+                            if (r == 0)
+                            {
+                                break;
+                            }
+
                             r--;
                         }
                         kk++;
                     }
-                    if (val != 0 && kk <= se) blk[JpegTables.ZigZag[kk]] = val;
+                    if (val != 0 && kk <= se)
+                    {
+                        blk[JpegTables.ZigZag[kk]] = val;
+                    }
                 }
             }
             if (_eobrun > 0)
@@ -541,7 +854,10 @@ public static class JpegDecoder
                 for (; kk <= se; kk++)
                 {
                     int z = JpegTables.ZigZag[kk];
-                    if (blk[z] != 0 && Bit() != 0 && (blk[z] & p1) == 0) blk[z] += blk[z] >= 0 ? p1 : m1;
+                    if (blk[z] != 0 && Bit() != 0 && (blk[z] & p1) == 0)
+                    {
+                        blk[z] += blk[z] >= 0 ? p1 : m1;
+                    }
                 }
                 _eobrun--;
             }
@@ -560,14 +876,25 @@ public static class JpegDecoder
                 var q = _quant[c.Tq] ?? throw Fail(JpegError.NoQuantTable, $"missing quant table {c.Tq}");
                 int stride = c.BlocksX * 8, rows = c.BlocksY * 8;
                 var data = new byte[stride * rows];
-                if (c.Coefs.Length == 0) c.Coefs = new int[c.BlocksX * c.BlocksY * 64]; // never scanned: mid grey
+                if (c.Coefs.Length == 0)
+                {
+                    c.Coefs = new int[c.BlocksX * c.BlocksY * 64]; // never scanned: mid grey
+                }
+
                 for (int by = 0; by < c.BlocksY; by++)
+                {
                     for (int bx = 0; bx < c.BlocksX; bx++)
                     {
                         var blk = c.Coefs.AsSpan((by * c.BlocksX + bx) * 64, 64);
-                        for (int i = 0; i < 64; i++) tmp[i] = blk[i] * q[i];
+                        for (int i = 0; i < 64; i++)
+                        {
+                            tmp[i] = blk[i] * q[i];
+                        }
+
                         JpegTables.Idct(tmp, data.AsSpan(by * 8 * stride + bx * 8), stride);
                     }
+                }
+
                 planes[ci] = new JpegPlane { Data = data, Stride = stride, Rows = rows, Width = c.Width, Height = c.Height };
             }
             return new JpegImage { Info = info, Planes = planes };

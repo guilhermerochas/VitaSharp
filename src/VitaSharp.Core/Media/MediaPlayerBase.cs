@@ -41,10 +41,18 @@ public abstract class MediaPlayerBase : IDisposable
             VideoFrame? f = null;
             while (_videoQueue.Count > 0 && _videoQueue.Peek().TimeUs <= clockUs)
             {
-                if (f != null) ReturnBuffer(_freeNv12, f.Nv12); // dropped late frame
+                if (f != null)
+                {
+                    ReturnBuffer(_freeNv12, f.Nv12); // dropped late frame
+                }
+
                 f = _videoQueue.Dequeue();
             }
-            if (f != null) Monitor.PulseAll(_lock);
+            if (f != null)
+            {
+                Monitor.PulseAll(_lock);
+            }
+
             return f;
         }
     }
@@ -57,14 +65,28 @@ public abstract class MediaPlayerBase : IDisposable
     protected T[] RentBuffer<T>(Stack<T[]> free, int length)
     {
         lock (_lock)
+        {
             while (free.Count > 0)
-                if (free.Pop() is var a && a.Length == length) return a; // buffers of another size are dropped
+            {
+                if (free.Pop() is var a && a.Length == length)
+                {
+                    return a; // buffers of another size are dropped
+                }
+            }
+        }
+
         return new T[length];
     }
 
     protected void ReturnBuffer<T>(Stack<T[]> free, T[] buffer)
     {
-        lock (_lock) if (free.Count < 4) free.Push(buffer);
+        lock (_lock)
+        {
+            if (free.Count < 4)
+            {
+                free.Push(buffer);
+            }
+        }
     }
 
     /// <summary>The frame's planes were copied out and are not read again: reuse them for a later frame.</summary>
@@ -77,7 +99,11 @@ public abstract class MediaPlayerBase : IDisposable
     {
         lock (_lock)
         {
-            if (_audioQueue.Count == 0) return null;
+            if (_audioQueue.Count == 0)
+            {
+                return null;
+            }
+
             var c = _audioQueue.Dequeue();
             Monitor.PulseAll(_lock);
             return c;
@@ -87,13 +113,22 @@ public abstract class MediaPlayerBase : IDisposable
     /// <summary>Timestamp of the next queued video frame, or -1.</summary>
     public long PeekVideoTime()
     {
-        lock (_lock) return _videoQueue.Count > 0 ? _videoQueue.Peek().TimeUs : -1;
+        lock (_lock)
+        {
+            return _videoQueue.Count > 0 ? _videoQueue.Peek().TimeUs : -1;
+        }
     }
 
     /// <summary>True once the file has been fully decoded and every queued frame consumed.</summary>
     public bool Finished
     {
-        get { lock (_lock) return _demuxDone && _videoQueue.Count == 0 && _audioQueue.Count == 0; }
+        get
+        {
+            lock (_lock)
+            {
+                return _demuxDone && _videoQueue.Count == 0 && _audioQueue.Count == 0;
+            }
+        }
     }
 
     public void Seek(long timeUs)
@@ -114,9 +149,13 @@ public abstract class MediaPlayerBase : IDisposable
     protected void WaitForRoom()
     {
         lock (_lock)
+        {
             while (!_stop && _seekRequestUs < 0 && (_demuxDone || (HasVideo ? _videoQueue.Count >= MaxVideoFrames : _audioQueue.Count >= MaxAudioChunks)
                                                    || _audioQueue.Count >= MaxAudioChunks))
+            {
                 Monitor.Wait(_lock, 50);
+            }
+        }
     }
 
     /// <summary>Planar YUV 4:2:0 from a decoder into the NV21 frame layout the guest receives.</summary>
@@ -124,12 +163,20 @@ public abstract class MediaPlayerBase : IDisposable
     {
         int w = p.Width & ~1, h = p.Height & ~1, cw = (p.Width + 1) / 2;
         var nv21 = RentBuffer(_freeNv12, w * h * 3 / 2);
-        for (int y = 0; y < h; y++) p.Y.AsSpan(y * p.Width, w).CopyTo(nv21.AsSpan(y * w));
+        for (int y = 0; y < h; y++)
+        {
+            p.Y.AsSpan(y * p.Width, w).CopyTo(nv21.AsSpan(y * w));
+        }
+
         int uvBase = w * h;
         for (int y = 0; y < h / 2; y++)
         {
             int s = y * cw, d = uvBase + y * w;
-            for (int x = 0; x < w / 2; x++) { nv21[d + 2 * x] = p.V[s + x]; nv21[d + 2 * x + 1] = p.U[s + x]; }
+            for (int x = 0; x < w / 2; x++)
+            {
+                nv21[d + 2 * x] = p.V[s + x];
+                nv21[d + 2 * x + 1] = p.U[s + x];
+            }
         }
         Enqueue(new VideoFrame(nv21, w, h, timeUs));
     }
@@ -138,8 +185,15 @@ public abstract class MediaPlayerBase : IDisposable
     {
         lock (_lock)
         {
-            while (!_stop && _seekRequestUs < 0 && _videoQueue.Count >= MaxVideoFrames) Monitor.Wait(_lock, 50);
-            if (_seekRequestUs < 0) _videoQueue.Enqueue(vf);
+            while (!_stop && _seekRequestUs < 0 && _videoQueue.Count >= MaxVideoFrames)
+            {
+                Monitor.Wait(_lock, 50);
+            }
+
+            if (_seekRequestUs < 0)
+            {
+                _videoQueue.Enqueue(vf);
+            }
         }
     }
 
@@ -147,8 +201,15 @@ public abstract class MediaPlayerBase : IDisposable
     {
         lock (_lock)
         {
-            while (!_stop && _seekRequestUs < 0 && _audioQueue.Count >= MaxAudioChunks) Monitor.Wait(_lock, 50);
-            if (_seekRequestUs < 0) _audioQueue.Enqueue(chunk);
+            while (!_stop && _seekRequestUs < 0 && _audioQueue.Count >= MaxAudioChunks)
+            {
+                Monitor.Wait(_lock, 50);
+            }
+
+            if (_seekRequestUs < 0)
+            {
+                _audioQueue.Enqueue(chunk);
+            }
         }
     }
 

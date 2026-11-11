@@ -17,9 +17,23 @@ public static class PreciseSleep
 
     public static void Microseconds(long us)
     {
-        if (us <= 0) return;
-        if (Windows) { if (TryWindows(us)) return; }
-        else if (!_posixFailed && TryPosix(us)) return;
+        if (us <= 0)
+        {
+            return;
+        }
+
+        if (Windows)
+        {
+            if (TryWindows(us))
+            {
+                return;
+            }
+        }
+        else if (!_posixFailed && TryPosix(us))
+        {
+            return;
+        }
+
         Thread.Sleep(TimeSpan.FromTicks(us * 10));
     }
 
@@ -29,15 +43,33 @@ public static class PreciseSleep
     /// spinning off everywhere.</param>
     public static void Until(long deadlineTicks, bool allowSpin = true)
     {
-        if (HostTuning.AvoidBusyWaits) allowSpin = false;
+        if (HostTuning.AvoidBusyWaits)
+        {
+            allowSpin = false;
+        }
+
         while (true)
         {
             long left = deadlineTicks - Stopwatch.GetTimestamp();
-            if (left <= 0) return;
+            if (left <= 0)
+            {
+                return;
+            }
+
             long us = left * 1_000_000 / Stopwatch.Frequency;
-            if (!allowSpin) { Microseconds(us); return; }
-            if (us > 600) Microseconds(us - 500);
-            else Thread.SpinWait(64);
+            if (!allowSpin)
+            {
+                Microseconds(us);
+                return;
+            }
+            if (us > 600)
+            {
+                Microseconds(us - 500);
+            }
+            else
+            {
+                Thread.SpinWait(64);
+            }
         }
     }
 
@@ -46,10 +78,17 @@ public static class PreciseSleep
         if (_timer == 0)
         {
             _timer = CreateWaitableTimerExW(0, null, CREATE_WAITABLE_TIMER_HIGH_RESOLUTION, TIMER_ALL_ACCESS);
-            if (_timer == 0) return false;
+            if (_timer == 0)
+            {
+                return false;
+            }
         }
         long due = -us * 10; // relative, 100 ns units
-        if (!SetWaitableTimerEx(_timer, ref due, 0, 0, 0, 0, 0)) return false;
+        if (!SetWaitableTimerEx(_timer, ref due, 0, 0, 0, 0, 0))
+        {
+            return false;
+        }
+
         WaitForSingleObject(_timer, 0xFFFFFFFF);
         return true;
     }
@@ -67,8 +106,13 @@ public static class PreciseSleep
             req[1] = (nint)(us % 1_000_000 * 1000);
             while (nanosleep(req, rem) != 0)
             {
-                if (Marshal.GetLastPInvokeError() != EINTR) return false;
-                req[0] = rem[0]; req[1] = rem[1]; // interrupted by a signal: sleep the remainder
+                if (Marshal.GetLastPInvokeError() != EINTR)
+                {
+                    return false;
+                }
+
+                req[0] = rem[0];
+                req[1] = rem[1]; // interrupted by a signal: sleep the remainder
             }
             return true;
         }

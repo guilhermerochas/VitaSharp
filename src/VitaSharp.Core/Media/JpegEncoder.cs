@@ -18,7 +18,11 @@ public static class JpegEncoder
     static byte[] Scale(byte[] t, int scale)
     {
         var o = new byte[64];
-        for (int i = 0; i < 64; i++) o[i] = (byte)Math.Clamp((t[i] * scale + 4) / 8, 1, 255);
+        for (int i = 0; i < 64; i++)
+        {
+            o[i] = (byte)Math.Clamp((t[i] * scale + 4) / 8, 1, 255);
+        }
+
         return o;
     }
 
@@ -54,18 +58,30 @@ public static class JpegEncoder
         int _n;
 
         public void Byte(int b) => Out.WriteByte((byte)b);
-        public void Word(int w) { Byte(w >> 8); Byte(w & 0xFF); }
+        public void Word(int w)
+        {
+            Byte(w >> 8);
+            Byte(w & 0xFF);
+        }
 
         public void Bits(int value, int count)
         {
-            if (count == 0) return;
+            if (count == 0)
+            {
+                return;
+            }
+
             _acc = (_acc << count) | ((uint)value & ((1u << count) - 1));
             _n += count;
             while (_n >= 8)
             {
                 int b = (int)(_acc >> (_n - 8)) & 0xFF;
                 Out.WriteByte((byte)b);
-                if (b == 0xFF) Out.WriteByte(0);
+                if (b == 0xFF)
+                {
+                    Out.WriteByte(0);
+                }
+
                 _n -= 8;
             }
         }
@@ -73,7 +89,11 @@ public static class JpegEncoder
         /// <summary>Pads the last byte with 1 bits.</summary>
         public void Flush()
         {
-            if (_n > 0) Bits(0x7F, 8 - _n);
+            if (_n > 0)
+            {
+                Bits(0x7F, 8 - _n);
+            }
+
             _acc = 0;
             _n = 0;
         }
@@ -86,41 +106,94 @@ public static class JpegEncoder
         int width, int height, int hdiv, int vdiv, byte[] lumaQuant, byte[] chromaQuant, bool writeHuffmanTables = true,
         int restartInterval = 0)
     {
-        if (width is < 1 or > 65535 || height is < 1 or > 65535) throw new ArgumentOutOfRangeException(nameof(width));
+        if (width is < 1 or > 65535 || height is < 1 or > 65535)
+        {
+            throw new ArgumentOutOfRangeException(nameof(width));
+        }
+
         bool gray = cb.IsEmpty;
-        if (gray) hdiv = vdiv = 1;
+        if (gray)
+        {
+            hdiv = vdiv = 1;
+        }
+
         var w = new Writer();
         w.Word(0xFFD8);
         if (writeHuffmanTables)
         {
-            w.Word(0xFFE0); w.Word(16);
-            foreach (char l in "JFIF") w.Byte(l);
-            w.Byte(0); w.Byte(1); w.Byte(1); w.Byte(0); w.Word(1); w.Word(1); w.Byte(0); w.Byte(0);
+            w.Word(0xFFE0);
+            w.Word(16);
+            foreach (char l in "JFIF")
+            {
+                w.Byte(l);
+            }
+
+            w.Byte(0);
+            w.Byte(1);
+            w.Byte(1);
+            w.Byte(0);
+            w.Word(1);
+            w.Word(1);
+            w.Byte(0);
+            w.Byte(0);
         }
-        w.Word(0xFFDB); w.Word(2 + 65 * (gray ? 1 : 2));
+        w.Word(0xFFDB);
+        w.Word(2 + 65 * (gray ? 1 : 2));
         w.Byte(0x00);
-        for (int i = 0; i < 64; i++) w.Byte(lumaQuant[JpegTables.ZigZag[i]]);
+        for (int i = 0; i < 64; i++)
+        {
+            w.Byte(lumaQuant[JpegTables.ZigZag[i]]);
+        }
+
         if (!gray)
         {
             w.Byte(0x01);
-            for (int i = 0; i < 64; i++) w.Byte(chromaQuant[JpegTables.ZigZag[i]]);
+            for (int i = 0; i < 64; i++)
+            {
+                w.Byte(chromaQuant[JpegTables.ZigZag[i]]);
+            }
         }
         int nc = gray ? 1 : 3;
-        w.Word(0xFFC0); w.Word(8 + 3 * nc); w.Byte(8); w.Word(height); w.Word(width); w.Byte(nc);
-        w.Byte(1); w.Byte((hdiv << 4) | vdiv); w.Byte(0);
+        w.Word(0xFFC0);
+        w.Word(8 + 3 * nc);
+        w.Byte(8);
+        w.Word(height);
+        w.Word(width);
+        w.Byte(nc);
+        w.Byte(1);
+        w.Byte((hdiv << 4) | vdiv);
+        w.Byte(0);
         if (!gray)
         {
-            w.Byte(2); w.Byte(0x11); w.Byte(1);
-            w.Byte(3); w.Byte(0x11); w.Byte(1);
+            w.Byte(2);
+            w.Byte(0x11);
+            w.Byte(1);
+            w.Byte(3);
+            w.Byte(0x11);
+            w.Byte(1);
         }
-        if (restartInterval > 0) { w.Word(0xFFDD); w.Word(4); w.Word(restartInterval); }
+        if (restartInterval > 0)
+        {
+            w.Word(0xFFDD);
+            w.Word(4);
+            w.Word(restartInterval);
+        }
         if (writeHuffmanTables)
         {
             void Dht(int cls, byte[] bits, byte[] vals)
             {
-                w.Word(0xFFC4); w.Word(2 + 17 + vals.Length); w.Byte(cls);
-                foreach (var b in bits) w.Byte(b);
-                foreach (var v in vals) w.Byte(v);
+                w.Word(0xFFC4);
+                w.Word(2 + 17 + vals.Length);
+                w.Byte(cls);
+                foreach (var b in bits)
+                {
+                    w.Byte(b);
+                }
+
+                foreach (var v in vals)
+                {
+                    w.Byte(v);
+                }
             }
             Dht(0x00, JpegTables.DcLumaBits, JpegTables.DcLumaVals);
             Dht(0x10, JpegTables.AcLumaBits, JpegTables.AcLumaVals);
@@ -130,10 +203,21 @@ public static class JpegEncoder
                 Dht(0x11, JpegTables.AcChromaBits, JpegTables.AcChromaVals);
             }
         }
-        w.Word(0xFFDA); w.Word(6 + 2 * nc); w.Byte(nc);
-        w.Byte(1); w.Byte(0x00);
-        if (!gray) { w.Byte(2); w.Byte(0x11); w.Byte(3); w.Byte(0x11); }
-        w.Byte(0); w.Byte(63); w.Byte(0);
+        w.Word(0xFFDA);
+        w.Word(6 + 2 * nc);
+        w.Byte(nc);
+        w.Byte(1);
+        w.Byte(0x00);
+        if (!gray)
+        {
+            w.Byte(2);
+            w.Byte(0x11);
+            w.Byte(3);
+            w.Byte(0x11);
+        }
+        w.Byte(0);
+        w.Byte(63);
+        w.Byte(0);
 
         int mcuW = 8 * hdiv, mcuH = 8 * vdiv;
         int mcusX = (width + mcuW - 1) / mcuW, mcusY = (height + mcuH - 1) / mcuH;
@@ -142,6 +226,7 @@ public static class JpegEncoder
         Span<float> samples = stackalloc float[64];
         Span<float> coefs = stackalloc float[64];
         for (int my = 0; my < mcusY; my++)
+        {
             for (int mx = 0; mx < mcusX; mx++)
             {
                 if (restartInterval > 0 && sinceRestart == restartInterval)
@@ -153,17 +238,26 @@ public static class JpegEncoder
                 }
                 sinceRestart++;
                 for (int v = 0; v < vdiv; v++)
+                {
                     for (int h = 0; h < hdiv; h++)
                     {
                         Load(y, yStride, width, height, (mx * hdiv + h) * 8, (my * vdiv + v) * 8, samples);
                         Block(w, samples, coefs, lumaQuant, ref predY, DcY, AcY);
                     }
-                if (gray) continue;
+                }
+
+                if (gray)
+                {
+                    continue;
+                }
+
                 Load(cb, cStride, cw, ch, mx * 8, my * 8, samples);
                 Block(w, samples, coefs, chromaQuant, ref predCb, DcC, AcC);
                 Load(cr, cStride, cw, ch, mx * 8, my * 8, samples);
                 Block(w, samples, coefs, chromaQuant, ref predCr, DcC, AcC);
             }
+        }
+
         w.Flush();
         w.Word(0xFFD9);
         return w.Out.ToArray();
@@ -174,7 +268,10 @@ public static class JpegEncoder
         for (int yy = 0; yy < 8; yy++)
         {
             int sy = Math.Min(y0 + yy, ph - 1) * stride;
-            for (int xx = 0; xx < 8; xx++) dst[yy * 8 + xx] = p[sy + Math.Min(x0 + xx, pw - 1)] - 128f;
+            for (int xx = 0; xx < 8; xx++)
+            {
+                dst[yy * 8 + xx] = p[sy + Math.Min(x0 + xx, pw - 1)] - 128f;
+            }
         }
     }
 
@@ -182,7 +279,11 @@ public static class JpegEncoder
     {
         v = Math.Abs(v);
         int n = 0;
-        while (v != 0) { n++; v >>= 1; }
+        while (v != 0)
+        {
+            n++;
+            v >>= 1;
+        }
         return n;
     }
 
@@ -205,13 +306,24 @@ public static class JpegEncoder
         for (int k = 1; k < 64; k++)
         {
             int c = Math.Clamp(zz[k], -1023, 1023);
-            if (c == 0) { run++; continue; }
-            while (run > 15) { w.Bits(ac.Code[0xF0], ac.Size[0xF0]); run -= 16; }
+            if (c == 0)
+            {
+                run++;
+                continue;
+            }
+            while (run > 15)
+            {
+                w.Bits(ac.Code[0xF0], ac.Size[0xF0]);
+                run -= 16;
+            }
             int s = Category(c), sym = (run << 4) | s;
             w.Bits(ac.Code[sym], ac.Size[sym]);
             w.Bits(c < 0 ? c - 1 : c, s);
             run = 0;
         }
-        if (run > 0) w.Bits(ac.Code[0x00], ac.Size[0x00]);
+        if (run > 0)
+        {
+            w.Bits(ac.Code[0x00], ac.Size[0x00]);
+        }
     }
 }

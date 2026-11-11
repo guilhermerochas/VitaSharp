@@ -29,9 +29,14 @@ public sealed class FlickerDetector(double threshold = 6, int grid = 4)
             {
                 double prev = Diff(a.Rgba, b.Rgba, w, h, c), next = Diff(b.Rgba, rgba, w, h, c), around = Diff(a.Rgba, rgba, w, h, c);
                 if (prev > threshold && next > threshold && around < threshold / 3)
+                {
                     flag = new Flag(b.Frame, prev, next, around, c, Luma(b.Rgba), Luma(a.Rgba));
+                }
             }
-            if (flag is { } f) Flagged.Add(f);
+            if (flag is { } f)
+            {
+                Flagged.Add(f);
+            }
         }
         _last[0] = _last[1];
         _last[1] = (frame, rgba, w, h);
@@ -44,24 +49,33 @@ public sealed class FlickerDetector(double threshold = 6, int grid = 4)
         int x0 = 0, y0 = 0, x1 = w, y1 = h;
         if (cell >= 0)
         {
-            x0 = cell % grid * w / grid; x1 = (cell % grid + 1) * w / grid;
-            y0 = cell / grid * h / grid; y1 = (cell / grid + 1) * h / grid;
+            x0 = cell % grid * w / grid;
+            x1 = (cell % grid + 1) * w / grid;
+            y0 = cell / grid * h / grid;
+            y1 = (cell / grid + 1) * h / grid;
         }
         long sum = 0, n = 0;
         for (int yy = y0; yy < y1; yy++)
+        {
             for (int xx = x0; xx < x1; xx++)
             {
                 int o = (yy * w + xx) * 4;
                 sum += Math.Abs(x[o] - y[o]) + Math.Abs(x[o + 1] - y[o + 1]) + Math.Abs(x[o + 2] - y[o + 2]);
                 n += 3;
             }
+        }
+
         return n == 0 ? 0 : sum / (double)n;
     }
 
     public static double Luma(byte[] rgba)
     {
         double s = 0;
-        for (int i = 0; i < rgba.Length; i += 4) s += 0.299 * rgba[i] + 0.587 * rgba[i + 1] + 0.114 * rgba[i + 2];
+        for (int i = 0; i < rgba.Length; i += 4)
+        {
+            s += 0.299 * rgba[i] + 0.587 * rgba[i + 1] + 0.114 * rgba[i + 2];
+        }
+
         return rgba.Length == 0 ? 0 : s / (rgba.Length / 4);
     }
 
