@@ -51,7 +51,8 @@ public sealed class AllocationTests
         for (int i = 0; i < 4000; i++)
         {
             var c = UniformArena.Rent(1000, out int off);
-            Assert.All(c.Span.Slice(off, 1000).ToArray(), b => Assert.Equal(0, b));
+            // zero only with the old invariant (VITASHARP_UB_ZERO=recycle); by default the renter writes every byte
+            if (UniformArena.ZeroOnRecycle) Assert.All(c.Span.Slice(off, 1000).ToArray(), b => Assert.Equal(0, b));
             c.Span.Slice(off, 1000).Fill(0xAB);
             chunks.Add((c, off));
         }
@@ -82,7 +83,7 @@ public sealed class AllocationTests
                 int len = 16 + rng.Next(20000);
                 var c = UniformArena.Rent(len, out int off, clear: false);
                 var slice = c.Span.Slice(off, len);
-                Assert.True(slice.IndexOfAnyExcept((byte)0) < 0, $"round {round} slice {i} not zero");
+                if (UniformArena.ZeroOnRecycle) Assert.True(slice.IndexOfAnyExcept((byte)0) < 0, $"round {round} slice {i} not zero");
                 // a few writes of random size and place, each marked
                 for (int k = 0; k < 3; k++)
                 {

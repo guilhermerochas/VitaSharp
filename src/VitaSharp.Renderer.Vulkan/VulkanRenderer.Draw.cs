@@ -30,7 +30,7 @@ public sealed unsafe partial class VulkanRenderer
     void CreateLayouts()
     {
         // 0/1: vertex/fragment uniform data, 2/3: vertex/fragment mapped memory (large buffers read in place)
-        var ssbo = stackalloc DescriptorSetLayoutBinding[5];
+        var ssbo = stackalloc DescriptorSetLayoutBinding[9];
         // 0/1 are dynamic: the uniform data of every draw is at its own offset of the upload ring, and one set (per
         // buffer and data length) serves every draw of the frame (VulkanRenderer.UniformSets.cs)
         ssbo[0] = new DescriptorSetLayoutBinding(0, DescriptorType.StorageBufferDynamic, 1, ShaderStageFlags.VertexBit);
@@ -39,7 +39,13 @@ public sealed unsafe partial class VulkanRenderer
         ssbo[3] = new DescriptorSetLayoutBinding(3, DescriptorType.StorageBuffer, 1, ShaderStageFlags.FragmentBit);
         // 4: VITASHARP_DEBUG_NAN=draws only, the NaN draw buffer the instrumented fragment shaders write (NanCheck.cs)
         ssbo[4] = new DescriptorSetLayoutBinding((uint)ShaderGenerator.NanDrawBinding, DescriptorType.StorageBuffer, 1, ShaderStageFlags.FragmentBit);
-        var ci = new DescriptorSetLayoutCreateInfo { SType = StructureType.DescriptorSetLayoutCreateInfo, BindingCount = ShaderGenerator.NanDraws ? 5u : 4u, PBindings = ssbo };
+        uint nb = ShaderGenerator.NanDraws ? 5u : 4u;
+        // 5/6 vertex, 7/8 fragment: the split uniform slots (large bound buffers read from slices of their own, often one
+        // copy shared by the draws of a scene; Hle/Modules/Gxm.CopySplit), dynamic like 0/1
+        if (ShaderGenerator.SplitUniformSlots)
+            for (int k = 0; k < 4; k++)
+                ssbo[nb++] = new DescriptorSetLayoutBinding((uint)ShaderGenerator.SplitBinding(k < 2, k & 1), DescriptorType.StorageBufferDynamic, 1, k < 2 ? ShaderStageFlags.VertexBit : ShaderStageFlags.FragmentBit);
+        var ci = new DescriptorSetLayoutCreateInfo { SType = StructureType.DescriptorSetLayoutCreateInfo, BindingCount = nb, PBindings = ssbo };
         _vk.CreateDescriptorSetLayout(_dev, in ci, null, out _uboLayout).Ok("set layout");
 
         ChooseTextureUnits();
@@ -106,7 +112,7 @@ public sealed unsafe partial class VulkanRenderer
                 sizes[0] = new DescriptorPoolSize(DescriptorType.StorageBuffer, 5 * 8192);
                 sizes[1] = new DescriptorPoolSize(DescriptorType.CombinedImageSampler, 65536);
                 sizes[2] = new DescriptorPoolSize(DescriptorType.InputAttachment, 16384); // two per framebuffer-fetch set
-                sizes[3] = new DescriptorPoolSize(DescriptorType.StorageBufferDynamic, 2 * 8192);
+                sizes[3] = new DescriptorPoolSize(DescriptorType.StorageBufferDynamic, (uint)DynamicUniformBindings * 8192);
                 var pci = new DescriptorPoolCreateInfo { SType = StructureType.DescriptorPoolCreateInfo, MaxSets = 8192, PoolSizeCount = 4, PPoolSizes = sizes };
                 _vk.CreateDescriptorPool(_dev, in pci, null, out var pool).Ok("descriptor pool");
                 f.DescPools.Add(pool);
@@ -1000,11 +1006,12 @@ public sealed unsafe partial class VulkanRenderer
 
         ProfMark(ProfPhase.Geometry);
         // ---- uniforms
-        var bufInfos = stackalloc DescriptorBufferInfo[4];
+        var bufInfos = stackalloc DescriptorBufferInfo[8];
         bufInfos[2] = ResolveMappedSlots(d.VertexProgram.Info.UniformSlots, d.VertexUniformSpan, d.VertexUniformAddrs, vs.Gen?.WritesMemory == true);
         bufInfos[3] = ResolveMappedSlots(d.FragmentProgram.Info.UniformSlots, d.FragmentUniformSpan, d.FragmentUniformAddrs, fs.Gen?.WritesMemory == true);
         DrawUniformInfos(d, bufInfos);
-        var dynOffsets = stackalloc uint[2] { (uint)bufInfos[0].Offset, (uint)bufInfos[1].Offset };
+        // dynamic offsets in binding order: 0, 1, then the split slots 5-8 (bufInfos 4-7)
+        var dynOffsets = stackalloc uint[6] { (uint)bufInfos[0].Offset, (uint)bufInfos[1].Offset, (uint)bufInfos[4].Offset, (uint)bufInfos[5].Offset, (uint)bufInfos[6].Offset, (uint)bufInfos[7].Offset };
         var uSet = UniformSet(bufInfos);
 
         ProfMark(ProfPhase.Uniform);
@@ -1051,7 +1058,7 @@ public sealed unsafe partial class VulkanRenderer
             uint setCount = 1;
             for (uint i = 3; i >= 1; i--)
                 if (!_dyn.SetsBound || sets[i].Handle != _dyn.Sets[(int)i]) { setCount = i + 1; break; }
-            _cmd.CmdBindDescriptorSets(cmd, PipelineBindPoint.Graphics, _pipelineLayout, 0, setCount, sets, 2, dynOffsets);
+            _cmd.CmdBindDescriptorSets(cmd, PipelineBindPoint.Graphics, _pipelineLayout, 0, setCount, sets, (uint)DynamicUniformBindings, dynOffsets);
             for (int i = 1; i < 4; i++) _dyn.Sets[i] = sets[i].Handle;
             _dyn.SetsBound = true;
             // one call for every stream (the bindings between them get the dummy buffer): each vkCmd* costs driver CPU

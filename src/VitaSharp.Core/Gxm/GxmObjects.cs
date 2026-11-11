@@ -12,6 +12,12 @@ public sealed class GxmProgramInfo
     public required GxpProgram Program;
     public required List<UniformBufferSlot> UniformSlots;
     public required int UniformBytes;
+    int _dataBytes = -1;
+    /// <summary>Bytes of the per-draw uniform data: <see cref="UniformBytes"/> without the split slots when
+    /// <see cref="ShaderGenerator.SplitUniformSlots"/> (they are bound apart, see <see cref="UniformBufferSlot.Split"/>).</summary>
+    public int DataBytes => !ShaderGenerator.SplitUniformSlots ? UniformBytes : _dataBytes >= 0 ? _dataBytes : _dataBytes = ShaderGenerator.DataBytes(UniformSlots);
+    /// <summary>The program has slots read from split bindings.</summary>
+    public bool HasSplit => ShaderGenerator.SplitUniformSlots && UniformSlots.Exists(s => s.Split >= 0);
     public required uint TexturesUsed;
     /// <summary>Texture units the program samples as cube maps (samplerCube parameters).</summary>
     public uint CubeSamplers;

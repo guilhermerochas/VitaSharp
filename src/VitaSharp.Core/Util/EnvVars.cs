@@ -275,9 +275,18 @@ public static class EnvVars
     /// =audit (combinable): samples draws and re-hashes their vertex uniform buffers at the scene's end, at the frame's
     /// flip and at the next flip, per vertex program (does the game write them after sceGxmEndScene?).</summary>
     public const string UbSceneEnd = "VITASHARP_UB_SCENE_END";
-    /// <summary>=full: every draw's uniform slice is cleared whole when it is rented (the old cost; A/B against the
-    /// arena clearing only what was written, Gpu/UniformArena).</summary>
+    /// <summary>Default: the arena's chunks are not cleared; each uniform slot is written whole (the buffer's bytes, zeros
+    /// for the rest). =recycle (A/B): the arena clears what was written when a chunk is recycled and slots write only
+    /// their copies (the old invariant). =full: every draw's uniform slice is cleared whole when it is rented (the older
+    /// cost). =check: slices start filled with a marker and a draw that still has one when it executes is logged.</summary>
     public const string UbZero = "VITASHARP_UB_ZERO";
+    /// <summary>=1 (diagnostic): PERF ubstats, what the GPU worker's late uniform copies are (repeats in a frame, data
+    /// equal to an earlier frame's), from VITASHARP_WORKER_PROF_FROM on.</summary>
+    public const string UbStats = "VITASHARP_UB_STATS";
+    /// <summary>=0 (A/B): every draw copies its large bound uniform buffers (bone palettes, arrays) itself; default: they
+    /// are read from bindings of their own (split slots) and the draws of an ended scene that bind the same buffer
+    /// share one copy (Hle/Modules/Gxm.CopySplit).</summary>
+    public const string UbShare = "VITASHARP_UB_SHARE";
     /// <summary>=all (A/B): a uniform buffer's copy stops at any bound buffer address after it, also at indices the
     /// program does not read (default: only the program's own buffers bound the copy).</summary>
     public const string UbClamp = "VITASHARP_UB_CLAMP";

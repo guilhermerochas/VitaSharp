@@ -246,8 +246,8 @@ public sealed unsafe partial class VulkanRenderer
 
     static void WriteHeader(Span<byte> data, UniformBufferSlot s, uint offset)
     {
-        if (s.ByteOffset + 4 <= data.Length)
-            BitConverter.TryWriteBytes(data[s.ByteOffset..], ShaderGenerator.MappedFlag | offset);
+        if (s.DataOffset + 4 <= data.Length)
+            BitConverter.TryWriteBytes(data[s.DataOffset..], ShaderGenerator.MappedFlag | offset);
     }
 
     RenderTarget? RenderTargetContaining(uint addr)

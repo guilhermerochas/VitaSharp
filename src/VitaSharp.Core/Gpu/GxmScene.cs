@@ -246,10 +246,27 @@ public sealed class DrawCommand : GpuCommand
     public Span<byte> VertexUniformSpan => UniformChunk is { } c ? c.Span.Slice(VertexUniformsOffset, VertexUniformsLength) : VertexUniforms.AsSpan(VertexUniformsOffset, VertexUniformsLength);
     public Span<byte> FragmentUniformSpan => UniformChunk is { } c ? c.Span.Slice(FragmentUniformsOffset, FragmentUniformsLength) : FragmentUniforms.AsSpan(FragmentUniformsOffset, FragmentUniformsLength);
 
+    /// <summary>The bytes of the split uniform slots (UniformBufferSlot.Split): vertex 0/1,
+    /// fragment 0/1. Each is a slot-sized arena slice the draw holds a reference on, often shared by the draws of a scene
+    /// that bind the same buffer (null: the stage has no such slot).</summary>
+    public readonly UniformChunk?[] SplitChunks = new UniformChunk?[4];
+    public readonly int[] SplitOffsets = new int[4], SplitSizes = new int[4];
+
+    /// <summary>Holds <paramref name="chunk"/> (one more reference) as the bytes of split slot <paramref name="i"/>.</summary>
+    public void SetSplit(int i, UniformChunk chunk, int offset, int size)
+    {
+        UniformArena.AddRef(chunk);
+        if (SplitChunks[i] is { } old) UniformArena.Release(old);
+        SplitChunks[i] = chunk; SplitOffsets[i] = offset; SplitSizes[i] = size;
+    }
+
+    public Span<byte> SplitSpan(int i) => SplitChunks[i] is { } c ? c.Span.Slice(SplitOffsets[i], SplitSizes[i]) : default;
+
     /// <summary>Gives the uniform slice back to the arena (GPU worker, after the backend executed the draw).</summary>
     public void ReleaseUniforms()
     {
         if (UniformChunk is { } c) { UniformChunk = null; UniformArena.Release(c); }
+        for (int i = 0; i < 4; i++) if (SplitChunks[i] is { } s) { SplitChunks[i] = null; UniformArena.Release(s); }
         VertexUniforms = FragmentUniforms = [];
         VertexUniformsOffset = FragmentUniformsOffset = 0;
     }

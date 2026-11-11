@@ -501,6 +501,19 @@ public sealed class GpuDumpCodec
         for (int i = 0; i < t.Length; i++) t[i] = (mask & (1u << i)) != 0 ? new GxmTextureDesc(r.U32(), r.U32(), r.U32(), r.U32()) : default;
     }
 
+    /// <summary>A stage's uniform data as dumps hold it: the whole layout, the split slots' bytes put back in place.</summary>
+    static ReadOnlySpan<byte> RecordedUniforms(DrawCommand d, GxmProgramInfo info, ReadOnlySpan<byte> data, int stage)
+    {
+        if (!info.HasSplit) return data;
+        var full = new byte[info.UniformBytes];
+        foreach (var s in info.UniformSlots)
+        {
+            if (s.IsSplit) d.SplitSpan(stage + s.Split).CopyTo(full.AsSpan(s.ByteOffset));
+            else if (s.DataOffset < data.Length) data.Slice(s.DataOffset, Math.Min(s.ByteSize, data.Length - s.DataOffset)).CopyTo(full.AsSpan(s.ByteOffset));
+        }
+        return full;
+    }
+
     void WriteDraw(DrawCommand d, DumpBuffer defs, DumpBuffer w)
     {
         int vp = VertexProgramId(d.VertexProgram, defs), fp = FragmentProgramId(d.FragmentProgram, defs);
@@ -514,8 +527,8 @@ public sealed class GpuDumpCodec
         w.F32(s.VpOffX); w.F32(s.VpOffY); w.F32(s.VpOffZ); w.F32(s.VpScaleX); w.F32(s.VpScaleY); w.F32(s.VpScaleZ);
         w.U8(s.RegionClipMode); w.I32(s.ClipMinX); w.I32(s.ClipMinY); w.I32(s.ClipMaxX); w.I32(s.ClipMaxY);
         w.Bool(s.WBuffer); w.Bool(s.WClampEnabled); w.F32(s.WClampValue);
-        _uniforms.Write(w, d.VertexUniformSpan, vp * 2);
-        _uniforms.Write(w, d.FragmentUniformSpan, fp * 2 + 1);
+        _uniforms.Write(w, RecordedUniforms(d, d.VertexProgram.Info, d.VertexUniformSpan, 0), vp * 2);
+        _uniforms.Write(w, d.FragmentProgram.Info is { } fi ? RecordedUniforms(d, fi, d.FragmentUniformSpan, 2) : d.FragmentUniformSpan, fp * 2 + 1);
         WriteWords(w, d.VertexUniformAddrs);
         WriteWords(w, d.FragmentUniformAddrs);
         WriteTextures(w, d.VertexTextures);
