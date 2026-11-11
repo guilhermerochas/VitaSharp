@@ -788,9 +788,14 @@ public sealed unsafe partial class VulkanRenderer : IGpuBackend
         int bpp = Formats.ColorBytesPerPixel(rt.ColorFormat);
         Barrier(rt.Image, ImageLayout.Undefined, ImageLayout.General, ImageAspectFlags.ColorBit,
             PipelineStageFlags.TopOfPipeBit, PipelineStageFlags.TransferBit, 0, AccessFlags.TransferWriteBit);
-        if (bpp == 4 && rt.Address != 0)
+        // 32-bit surfaces, and the others whose host format holds the guest bytes as they are (F16x4, 16-bit formats:
+        // the same raw layout the writeback copies out): a surface the CPU filled starts with that content, as the
+        // tiles load it on the Vita. Before, only 32-bit surfaces were loaded and the rest started black.
+        bool raw = bpp != 4 && bpp > 0 && HostBytesPerPixel(rt.Format) == bpp
+            && WritebackConversion(rt.ColorFormat, rt.Format, bpp, bpp) == WritebackConvert.None;
+        if ((bpp == 4 || raw) && rt.Address != 0)
         {
-            uint rowBytes = rt.Stride * 4;
+            uint rowBytes = rt.Stride * (uint)bpp;
             var mem = GuestMemory.ReadSpan(rt.Address, (int)(rowBytes * rt.Height));
             uint logical = rt.Format == Format.R8G8B8A8Unorm ? Formats.LogicalOrderSwizzle(rt.ColorFormat) : 0;
             byte[]? reordered = null;
