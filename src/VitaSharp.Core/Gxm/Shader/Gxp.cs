@@ -81,7 +81,7 @@ public sealed class GxpProgram
     public int LiteralBufferData => Rel(0x68);
 
     // varyings
-    int Varyings => Rel(0x2C);
+    private int Varyings => Rel(0x2C);
     public ulong UntypedPaRegs => U64(Varyings + 8);
     public byte FragmentOutputStart => Data[Varyings + 8];
     public ParamType OutputParamType => (ParamType)Data[Varyings + 10];
@@ -186,7 +186,7 @@ public sealed class GxpProgram
     public uint TexturesUsed()
     {
         uint m = 0;
-        foreach (var p in Parameters)
+        foreach (GxpParameter p in Parameters)
         {
             if (p.Category == ParamCategory.Sampler && p.ResourceIndex < 16)
             {
@@ -197,7 +197,7 @@ public sealed class GxpProgram
         // descriptor (gxp::get_textures_used in Vita3K; ShaderGenerator samples these units too)
         if (IsFragment)
         {
-            foreach (var d in FragmentAttributeDescriptors())
+            foreach (GxpAttributeDescriptor d in FragmentAttributeDescriptors())
             {
                 if ((d.AttributeInfo & 0x40F) != 0xF && d.ResourceIndex < 16)
                 {
@@ -206,7 +206,7 @@ public sealed class GxpProgram
             }
         }
 
-        foreach (var d in DependentSamplers)
+        foreach (GxpDependentSampler d in DependentSamplers)
         {
             m |= 1u << (d.ResourceIndexLayoutOffset / 4);
         }
@@ -218,7 +218,7 @@ public sealed class GxpProgram
     public uint CubeSamplers()
     {
         uint m = 0;
-        foreach (var p in Parameters)
+        foreach (GxpParameter p in Parameters)
         {
             if (p.Category == ParamCategory.Sampler && p.ResourceIndex < 16 && p.IsSamplerCube)
             {
@@ -286,13 +286,13 @@ public sealed class GxpProgram
     }
 
     // ---- raw access helpers (offsets are relative to the field position for *_offset fields)
-    int Rel(int field) => field + (int)U32(field);
+    private int Rel(int field) => field + (int)U32(field);
     // out-of-range reads give 0, so a damaged program parses (Validate reports what is wrong with it)
     public uint U32(int o) => o >= 0 && o + 4 <= Data.Length ? BinaryPrimitives.ReadUInt32LittleEndian(Data.AsSpan(o)) : 0;
     public ushort U16(int o) => o >= 0 && o + 2 <= Data.Length ? BinaryPrimitives.ReadUInt16LittleEndian(Data.AsSpan(o)) : (ushort)0;
     public ulong U64(int o) => o >= 0 && o + 8 <= Data.Length ? BinaryPrimitives.ReadUInt64LittleEndian(Data.AsSpan(o)) : 0;
-    byte U8(int o) => o >= 0 && o < Data.Length ? Data[o] : (byte)0;
-    float F32(int o) => BitConverter.UInt32BitsToSingle(U32(o));
+    private byte U8(int o) => o >= 0 && o < Data.Length ? Data[o] : (byte)0;
+    private float F32(int o) => BitConverter.UInt32BitsToSingle(U32(o));
 
     /// <summary>
     /// Checks that the header's tables (parameters, containers, literals, uniform buffers, dependent samplers) and the
@@ -303,10 +303,10 @@ public sealed class GxpProgram
     /// </summary>
     public static string? Validate(ReadOnlySpan<byte> data)
     {
-        const int header = 0x98;
-        if (data.Length < header)
+        const int Header = 0x98;
+        if (data.Length < Header)
         {
-            return $"size 0x{data.Length:X} is smaller than the 0x{header:X}-byte header";
+            return $"size 0x{data.Length:X} is smaller than the 0x{Header:X}-byte header";
         }
 
         return Table(data, "parameter", 0x24, 0x28, 16) ?? Table(data, "container", 0x90, 0x94, 8) ?? Table(data, "literal", 0x70, 0x74, 8)
@@ -315,7 +315,7 @@ public sealed class GxpProgram
     }
 
     /// <summary>The secondary program runs from the offset at 0x48 to the one at 0x4C (each relative to its field).</summary>
-    static string? Secondary(ReadOnlySpan<byte> d)
+    private static string? Secondary(ReadOnlySpan<byte> d)
     {
         long start = 0x48 + (long)BinaryPrimitives.ReadInt32LittleEndian(d[0x48..]), end = 0x4C + (long)BinaryPrimitives.ReadInt32LittleEndian(d[0x4C..]);
         if (end <= start)
@@ -326,7 +326,7 @@ public sealed class GxpProgram
         return start < 0 || end > d.Length ? $"secondary program (0x{start:X}..0x{end:X}) is outside the 0x{d.Length:X}-byte program" : null;
     }
 
-    static string? Table(ReadOnlySpan<byte> d, string what, int countField, int offsetField, int entrySize)
+    private static string? Table(ReadOnlySpan<byte> d, string what, int countField, int offsetField, int entrySize)
     {
         uint count = BinaryPrimitives.ReadUInt32LittleEndian(d[countField..]);
         if (count == 0)
@@ -338,7 +338,7 @@ public sealed class GxpProgram
         return start < 0 || end > d.Length ? $"{what} table ({count} x {entrySize} bytes at 0x{start:X}) is outside the 0x{d.Length:X}-byte program" : null;
     }
 
-    string CString(int o)
+    private string CString(int o)
     {
         if (o < 0 || o >= Data.Length)
         {
@@ -414,8 +414,8 @@ public sealed class ProgramInput
     /// (or nothing) and the skinned vertices were stretched across the screen.</summary>
     public const uint MaxUbArrayInFloat = 4096;
     /// <summary>Debug (VITASHARP_UB_UNBOUNDED=1): size every indexed uniform buffer as unbounded (read up to the next buffer).</summary>
-    static readonly bool UnboundedUbs = Environment.GetEnvironmentVariable(EnvVars.UbUnbounded) == "1";
-    public static bool UnboundedUbsActive => UnboundedUbs;
+    private static readonly bool s_unboundedUbs = Environment.GetEnvironmentVariable(EnvVars.UbUnbounded) == "1";
+    public static bool UnboundedUbsActive => s_unboundedUbs;
 
     public List<ProgramInputItem> Inputs { get; } = new();
     public List<SamplerDesc> Samplers { get; } = new();
@@ -429,7 +429,7 @@ public sealed class ProgramInput
         uint investigated = 0;
         bool symbolsStripped = program.PrimaryRegCount == 0;
 
-        foreach (var p in program.Parameters)
+        foreach (GxpParameter p in program.Parameters)
         {
             switch (p.Category)
             {
@@ -437,14 +437,14 @@ public sealed class ProgramInput
                 case ParamCategory.Attribute:
                 {
                     bool isUniform = p.Category == ParamCategory.Uniform;
-                    var container = program.ContainerByIndex(p.ContainerIndex);
+                    GxpContainer? container = program.ContainerByIndex(p.ContainerIndex);
                     uint offset = p.ResourceIndex;
                     if (container != null && isUniform)
                     {
                         offset = container.BaseSaOffset + p.ResourceIndex;
                     }
 
-                    var storeType = GxpProgram.StoreType(p.Type);
+                    DataType storeType = GxpProgram.StoreType(p.Type);
                     if (!isUniform)
                     {
                         bool regformat = (program.UntypedPaRegs & (1ul << (int)p.ResourceIndex)) != 0;
@@ -462,7 +462,7 @@ public sealed class ProgramInput
                         uint paramSizeF32 = (p.ArraySize * vecSize + 3) / 4;
                         investigated |= 1u << p.ContainerIndex;
                         uint ci = (uint)p.ContainerIndex;
-                        if (!ubs.TryGetValue(ci, out var b))
+                        if (!ubs.TryGetValue(ci, out UniformBufferDesc? b))
                         {
                             b = new UniformBufferDesc
                             {
@@ -499,7 +499,7 @@ public sealed class ProgramInput
                     pi.Samplers.Add(new SamplerDesc(p.Name, p.ResourceIndex, p.IsSamplerCube));
                     break;
                 case ParamCategory.UniformBuffer:
-                    if (!ubs.TryGetValue(p.ResourceIndex, out var ub))
+                    if (!ubs.TryGetValue(p.ResourceIndex, out UniformBufferDesc? ub))
                     {
                         ubs[p.ResourceIndex] = new UniformBufferDesc { Index = p.ResourceIndex, Size = (p.ArraySize + 3) / 4 };
                     }
@@ -518,7 +518,7 @@ public sealed class ProgramInput
         // (container 4: SA 0, one word) and read SA 0 without any load; left unset, SA 0 held whatever the host
         // register contained, the light table was indexed with garbage and the HDR scene got blocks of +-65504.
         // Vita3K's get_program_input leaves these with reg_block_size 0 as well.
-        foreach (var (idx, b) in ubs)
+        foreach ((uint idx, UniformBufferDesc? b) in ubs)
         {
             if (b.RegBlockSize != 0 || idx >= TextureBuffer)
             {
@@ -533,13 +533,13 @@ public sealed class ProgramInput
             }
         }
 
-        foreach (var (idx, b) in ubs)
+        foreach ((uint idx, UniformBufferDesc? b) in ubs)
         {
             if ((((investigated & (1u << (int)idx)) == 0) && symbolsStripped) || b.Size == 1024)
             {
                 b.Size = MaxUbInFloat;
             }
-            else if ((UnboundedUbs || b.EndsWithArray) && idx < DefaultUniformBuffer)
+            else if ((s_unboundedUbs || b.EndsWithArray) && idx < DefaultUniformBuffer)
             {
                 b.Size = Math.Max(b.Size, MaxUbArrayInFloat);
             }
@@ -554,9 +554,9 @@ public sealed class ProgramInput
             ubs[DefaultUniformBuffer] = b;
         }
 
-        var c19 = program.ContainerByIndex(19);
+        GxpContainer? c19 = program.ContainerByIndex(19);
         uint baseOffset = c19?.BaseSaOffset ?? 0;
-        foreach (var info in program.UniformBuffers)
+        foreach (GxpUniformBufferInfo info in program.UniformBuffers)
         {
             uint offset = baseOffset + info.LdstBaseOffset;
             if (info.ResideBuffer >= 15)
@@ -577,7 +577,7 @@ public sealed class ProgramInput
                 pi.UniformBuffers.Add(b);
                 ubs[info.ResideBuffer] = b;
             }
-            if (ubs.TryGetValue(info.ResideBuffer, out var found))
+            if (ubs.TryGetValue(info.ResideBuffer, out UniformBufferDesc? found))
             {
                 pi.Inputs.Add(new ProgramInputItem(InputBank.SecAttr, DataType.UInt32, offset, 1, 1, new UniformBufferInputSource((uint)info.LdstBaseValue, found.Index)));
             }
@@ -585,10 +585,10 @@ public sealed class ProgramInput
 
         if (c19 != null)
         {
-            foreach (var ds in program.DependentSamplers)
+            foreach (GxpDependentSampler ds in program.DependentSamplers)
             {
                 uint rsc = ds.ResourceIndexLayoutOffset / 4u;
-                var s = pi.Samplers.FirstOrDefault(x => x.Index == rsc);
+                SamplerDesc? s = pi.Samplers.FirstOrDefault(x => x.Index == rsc);
                 string name;
                 if (s == null)
                 {
@@ -605,10 +605,10 @@ public sealed class ProgramInput
             }
         }
 
-        var lc = program.ContainerByIndex(16) ?? c19;
+        GxpContainer? lc = program.ContainerByIndex(16) ?? c19;
         if (lc != null)
         {
-            foreach (var l in program.Literals)
+            foreach (GxpLiteral l in program.Literals)
             {
                 pi.Inputs.Add(new ProgramInputItem(InputBank.SecAttr, DataType.F32, lc.BaseSaOffset + l.Offset, 1, 1, new LiteralInputSource(l.Data)));
             }

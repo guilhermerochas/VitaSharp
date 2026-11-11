@@ -12,7 +12,7 @@ public sealed class GxmProgramInfo
     public required GxpProgram Program;
     public required List<UniformBufferSlot> UniformSlots;
     public required int UniformBytes;
-    int _dataBytes = -1;
+    private int _dataBytes = -1;
     /// <summary>Bytes of the per-draw uniform data: <see cref="UniformBytes"/> without the split slots when
     /// <see cref="ShaderGenerator.SplitUniformSlots"/> (they are bound apart, see <see cref="UniformBufferSlot.Split"/>).</summary>
     public int DataBytes => !ShaderGenerator.SplitUniformSlots ? UniformBytes : _dataBytes >= 0 ? _dataBytes : _dataBytes = ShaderGenerator.DataBytes(UniformSlots);
@@ -22,11 +22,11 @@ public sealed class GxmProgramInfo
     /// <summary>Texture units the program samples as cube maps (samplerCube parameters).</summary>
     public uint CubeSamplers;
 
-    static readonly ConcurrentDictionary<uint, GxmProgramInfo> Cache = new();
+    private static readonly ConcurrentDictionary<uint, GxmProgramInfo> s_cache = new();
 
     public static GxmProgramInfo Get(uint address)
     {
-        if (Cache.TryGetValue(address, out var info))
+        if (s_cache.TryGetValue(address, out GxmProgramInfo? info))
         {
             // programs can be unloaded and another one loaded at the same address: verify the size/flags quickly
             if (GuestMemory.R32(address + 8) == (uint)info.Program.Data.Length && GuestMemory.R32(address + 0x14) == info.Program.Flags)
@@ -35,9 +35,9 @@ public sealed class GxmProgramInfo
             }
         }
         var p = GxpProgram.FromGuest(address);
-        var (slots, bytes) = ShaderGenerator.UniformLayout(p);
+        (List<UniformBufferSlot>? slots, int bytes) = ShaderGenerator.UniformLayout(p);
         info = new GxmProgramInfo { Address = address, Program = p, UniformSlots = slots, UniformBytes = bytes, TexturesUsed = p.TexturesUsed(), CubeSamplers = p.CubeSamplers() };
-        Cache[address] = info;
+        s_cache[address] = info;
         return info;
     }
 }
@@ -171,9 +171,9 @@ public sealed class GxmContext
     /// <summary>Resolve a program handle the guest stored (Gxm's registered programs; null = unknown, as the setters did).</summary>
     public Func<uint, GxmVertexProgram?>? ResolveVertexProgram;
     public Func<uint, GxmFragmentProgram?>? ResolveFragmentProgram;
-    uint _syncedVp, _syncedFp;
+    private uint _syncedVp, _syncedFp;
 
-    static void ReadStencil(uint a, ref StencilState s)
+    private static void ReadStencil(uint a, ref StencilState s)
     {
         ulong v = GuestMemory.Read<ulong>(a);
         s.Func = (byte)v;
@@ -185,7 +185,7 @@ public sealed class GxmContext
         s.Ref = (byte)(v >> 48);
     }
 
-    static void WriteStencil(uint a, in StencilState s)
+    private static void WriteStencil(uint a, in StencilState s)
     {
         GuestMemory.Write(a, s.Func);
         GuestMemory.Write(a + 1, s.StencilFail);

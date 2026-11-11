@@ -60,12 +60,12 @@ public static class FetchSplit
         return pieces.Count > 1;
     }
 
-    static uint At(ReadOnlySpan<byte> s, bool index32, int i) => index32
+    private static uint At(ReadOnlySpan<byte> s, bool index32, int i) => index32
         ? BinaryPrimitives.ReadUInt32LittleEndian(s[(i * 4)..])
         : BinaryPrimitives.ReadUInt16LittleEndian(s[(i * 2)..]);
 
     /// <summary>The triangle of indices i, i+1, i+2 repeats a vertex (it covers no pixel).</summary>
-    static bool Degenerate(ReadOnlySpan<byte> s, bool index32, int i)
+    private static bool Degenerate(ReadOnlySpan<byte> s, bool index32, int i)
     {
         uint a = At(s, index32, i), b = At(s, index32, i + 1), c = At(s, index32, i + 2);
         return a == b || b == c || a == c;

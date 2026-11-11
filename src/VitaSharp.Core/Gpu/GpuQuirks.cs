@@ -245,18 +245,18 @@ public sealed class GpuCapabilities
 
         sb.AppendLine();
         sb.AppendLine($"GPU class: {VendorName(Vendor)}, driver {Driver} {FormatDriverVersion(Vendor, Driver, DriverVersion)}{(Has(GpuQuirk.TileBased) ? ", tile-based" : "")}{(Device.UnifiedMemory ? ", unified memory" : "")}");
-        var all = Enum.GetValues<GpuFeature>().Where(f => f != GpuFeature.None).ToArray();
+        GpuFeature[] all = Enum.GetValues<GpuFeature>().Where(f => f != GpuFeature.None).ToArray();
         sb.AppendLine($"GPU features: {string.Join(" ", all.Where(Has).Select(f => f.ToString()))}");
         sb.AppendLine($"GPU missing: {string.Join(" ", all.Where(f => !Has(f)).Select(f => f.ToString() + ((Masked & f) != 0 ? "(profile)" : "")))}");
-        var l = Limits;
+        GpuLimits l = Limits;
         sb.AppendLine($"GPU limits: pushConstants {l.MaxPushConstantsSize}, sets {l.MaxBoundDescriptorSets}, per-stage samplers {l.MaxPerStageDescriptorSamplers}/sampled images {l.MaxPerStageDescriptorSampledImages}/storage buffers {l.MaxPerStageDescriptorStorageBuffers}/input attachments {l.MaxPerStageDescriptorInputAttachments}/resources {l.MaxPerStageResources}, set samplers {l.MaxDescriptorSetSamplers}, framebuffer samples {SampleCounts(l.FramebufferSampleCounts)}, max 2D {l.MaxImageDimension2D}");
         sb.Append($"GPU quirks: {(Quirks == GpuQuirk.None ? "none" : string.Join(" ", Enum.GetValues<GpuQuirk>().Where(q => q != GpuQuirk.None && Has(q))))}");
-        foreach (var r in QuirkReasons)
+        foreach (string r in QuirkReasons)
         {
             sb.Append($"\n  {r}");
         }
 
-        foreach (var u in UnknownOverrides)
+        foreach (string u in UnknownOverrides)
         {
             sb.Append($"\n  {Util.EnvVars.GpuQuirks}: '{u}' is not a quirk or feature name (ignored)");
         }
@@ -264,7 +264,7 @@ public sealed class GpuCapabilities
         return sb.ToString();
     }
 
-    static string SampleCounts(uint bits)
+    private static string SampleCounts(uint bits)
     {
         var s = new List<string>();
         for (int i = 0; i < 7; i++)
@@ -355,7 +355,7 @@ public static class GpuQuirkTable
     /// Xclipse is RDNA (immediate mode) and is not listed.</summary>
     public static bool IsTileBased(GpuVendor v) => v is GpuVendor.Qualcomm or GpuVendor.Arm or GpuVendor.Imagination or GpuVendor.Apple or GpuVendor.Broadcom;
 
-    static bool MobileProprietary(GpuDriver d) => d is GpuDriver.QualcommProprietary or GpuDriver.ArmProprietary or GpuDriver.ImaginationProprietary;
+    private static bool MobileProprietary(GpuDriver d) => d is GpuDriver.QualcommProprietary or GpuDriver.ArmProprietary or GpuDriver.ImaginationProprietary;
 
     /// <summary>One row of the table: a quirk, when it applies, and where the knowledge comes from.</summary>
     public sealed record Entry(GpuQuirk Quirk, string Applies, string Source, Func<GpuVendor, GpuDriver, uint, bool> When);
@@ -463,15 +463,15 @@ public static class GpuQuirkTable
     /// </summary>
     public static GpuCapabilities Select(GpuDeviceInfo dev, GpuProfile profile = GpuProfile.Native, string? overrides = null)
     {
-        var (vendor, driver, version) = ProfileIdentity(profile, dev);
-        var mask = ProfileMask(profile);
-        var features = dev.Features & ~mask;
-        var limits = ProfileLimits(profile, dev.Limits);
-        var quirks = GpuQuirk.None;
+        (GpuVendor vendor, GpuDriver driver, uint version) = ProfileIdentity(profile, dev);
+        GpuFeature mask = ProfileMask(profile);
+        GpuFeature features = dev.Features & ~mask;
+        GpuLimits limits = ProfileLimits(profile, dev.Limits);
+        GpuQuirk quirks = GpuQuirk.None;
         var reasons = new List<string>();
         if (profile != GpuProfile.Desktop)
         {
-            foreach (var e in Table)
+            foreach (Entry e in Table)
             {
                 if (!e.When(vendor, driver, version))
                 {
@@ -505,11 +505,11 @@ public static class GpuQuirkTable
         }
 
         var unknown = new List<string>();
-        foreach (var raw in (overrides ?? "").Split(',', StringSplitOptions.RemoveEmptyEntries | StringSplitOptions.TrimEntries))
+        foreach (string raw in (overrides ?? "").Split(',', StringSplitOptions.RemoveEmptyEntries | StringSplitOptions.TrimEntries))
         {
             bool off = raw.StartsWith('-');
             string name = raw.TrimStart('+', '-');
-            if (Enum.TryParse<GpuQuirk>(name, true, out var q) && q != GpuQuirk.None && Enum.IsDefined(q))
+            if (Enum.TryParse<GpuQuirk>(name, true, out GpuQuirk q) && q != GpuQuirk.None && Enum.IsDefined(q))
             {
                 if (off)
                 {
@@ -522,7 +522,7 @@ public static class GpuQuirkTable
 
                 reasons.Add($"{q}: forced {(off ? "off" : "on")} by {Util.EnvVars.GpuQuirks}");
             }
-            else if (Enum.TryParse<GpuFeature>(name, true, out var f) && f != GpuFeature.None && Enum.IsDefined(f) && off)
+            else if (Enum.TryParse<GpuFeature>(name, true, out GpuFeature f) && f != GpuFeature.None && Enum.IsDefined(f) && off)
             {
                 features &= ~f;
                 mask |= f & dev.Features;
@@ -540,7 +540,7 @@ public static class GpuQuirkTable
         }
         if ((features & GpuFeature.ExtendedDynamicState) == 0)
         {
-            foreach (var q in new[] { GpuQuirk.StaticExtendedDynamicState, GpuQuirk.StaticDepthBiasEnable })
+            foreach (GpuQuirk q in new[] { GpuQuirk.StaticExtendedDynamicState, GpuQuirk.StaticDepthBiasEnable })
             {
                 if ((quirks & q) != 0)
                 {
@@ -562,7 +562,7 @@ public static class GpuQuirkTable
             reasons.Add($"{GpuFeature.ShaderClipDistance} missing: depth clamp off, the hardware clips the far and the near plane (no fragment discard)");
         }
         // a quirk forced off must not leave its reason line behind
-        reasons.RemoveAll(r => !r.Contains(" forced ") && Enum.TryParse<GpuQuirk>(r[..r.IndexOf(':')], out var q) && (quirks & q) == 0);
+        reasons.RemoveAll(r => !r.Contains(" forced ") && Enum.TryParse<GpuQuirk>(r[..r.IndexOf(':')], out GpuQuirk q) && (quirks & q) == 0);
         return new GpuCapabilities
         {
             Device = dev,

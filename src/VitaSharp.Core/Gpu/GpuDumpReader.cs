@@ -1,3 +1,5 @@
+using VitaSharp.Core.Gxm.Shader;
+
 namespace VitaSharp.Core.Gpu;
 
 /// <summary>
@@ -6,12 +8,12 @@ namespace VitaSharp.Core.Gpu;
 /// </summary>
 public sealed class GpuDumpReader : IDisposable
 {
-    readonly Stream _input;
-    readonly GpuDumpCodec _codec = new();
-    readonly DumpCursor _cur = new();
-    readonly DrawCommand _draw = new();
-    byte[] _chunk = new byte[1 << 20];
-    byte[]? _scratch;
+    private readonly Stream _input;
+    private readonly GpuDumpCodec _codec = new();
+    private readonly DumpCursor _cur = new();
+    private readonly DrawCommand _draw = new();
+    private byte[] _chunk = new byte[1 << 20];
+    private byte[]? _scratch;
 
     public GpuDumpHeader Header { get; }
     public uint Version { get; }
@@ -22,7 +24,7 @@ public sealed class GpuDumpReader : IDisposable
     /// <summary>Memory: guest address and bytes.</summary>
     public uint Address { get; private set; }
     public ReadOnlySpan<byte> Data => _cur.Data.AsSpan(_dataOffset, _dataLength);
-    int _dataOffset, _dataLength;
+    private int _dataOffset, _dataLength;
     /// <summary>Command records: the command (draws are reused between records).</summary>
     public GpuCommand? Command { get; private set; }
     /// <summary>Present records: host microseconds since the dump started, guest frame, renderer present number.</summary>
@@ -36,14 +38,14 @@ public sealed class GpuDumpReader : IDisposable
     public GpuDumpReader(Stream input)
     {
         _input = input;
-        Header = GpuDumpCodec.ReadFileHeader(input, out var v);
+        Header = GpuDumpCodec.ReadFileHeader(input, out uint v);
         Version = v;
     }
 
     /// <summary>False at the end of the dump.</summary>
     /// <summary>The draw's uniform blocks go into a <see cref="UniformArena"/> slice, as a live draw's (a renderer binds
     /// them in place); the slice is given back when the next draw is read.</summary>
-    static void MoveUniformsToArena(DrawCommand d)
+    private static void MoveUniformsToArena(DrawCommand d)
     {
         // dumps hold each stage's whole uniform layout; split slots (ShaderGenerator.SplitUniformSlots) are bound apart
         if (d.VertexProgram.Info.HasSplit)
@@ -63,7 +65,7 @@ public sealed class GpuDumpReader : IDisposable
         }
 
         byte[] vu = d.VertexUniforms, fu = d.FragmentUniforms;
-        var c = d.UniformChunk = UniformArena.Rent(va + f, out int off);
+        UniformChunk c = d.UniformChunk = UniformArena.Rent(va + f, out int off);
         vu.AsSpan(d.VertexUniformsOffset, v).CopyTo(c.Span.Slice(off));
         fu.AsSpan(d.FragmentUniformsOffset, f).CopyTo(c.Span.Slice(off + va));
         d.VertexUniformsOffset = off;
@@ -71,17 +73,17 @@ public sealed class GpuDumpReader : IDisposable
     }
 
     /// <summary>A recorded stage's uniform data (the whole layout) becomes the compact data plus the split slots' slices.</summary>
-    static void SplitRecorded(DrawCommand d, Gxm.GxmProgramInfo info, ref byte[] data, ref int offset, ref int length, int stage)
+    private static void SplitRecorded(DrawCommand d, Gxm.GxmProgramInfo info, ref byte[] data, ref int offset, ref int length, int stage)
     {
-        var src = data.AsSpan(offset, length);
-        var compact = new byte[info.DataBytes];
-        foreach (var s in info.UniformSlots)
+        Span<byte> src = data.AsSpan(offset, length);
+        byte[] compact = new byte[info.DataBytes];
+        foreach (UniformBufferSlot s in info.UniformSlots)
         {
             int n = Math.Max(0, Math.Min(s.ByteSize, src.Length - s.ByteOffset));
             if (s.IsSplit)
             {
-                var c = UniformArena.Rent(s.ByteSize, out int off, clear: false);
-                var dst = c.Span.Slice(off, s.ByteSize);
+                UniformChunk c = UniformArena.Rent(s.ByteSize, out int off, clear: false);
+                Span<byte> dst = c.Span.Slice(off, s.ByteSize);
                 dst.Clear();
                 if (n > 0)
                 {
@@ -180,7 +182,7 @@ public sealed class GpuDumpReader : IDisposable
     public static (int Chunks, long RawBytes, double Seconds) Recompress(string input, string output, int quality)
     {
         using var inp = new FileStream(input, FileMode.Open, FileAccess.Read, FileShare.Read, 1 << 20);
-        var header = GpuDumpCodec.ReadFileHeader(inp, out _);
+        GpuDumpHeader header = GpuDumpCodec.ReadFileHeader(inp, out _);
         using var outp = new FileStream(output, FileMode.Create, FileAccess.Write, FileShare.None, 1 << 20);
         GpuDumpCodec.WriteFileHeader(outp, header);
         byte[] buf = new byte[1 << 20];

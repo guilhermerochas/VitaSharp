@@ -12,13 +12,13 @@ namespace VitaSharp.Core.Gpu;
 /// </summary>
 public sealed class TranscodeDiskCache
 {
-    const uint Magic = 0x54415356; // "VSAT"
-    const int HeaderSize = 24;
+    private const uint Magic = 0x54415356; // "VSAT"
+    private const int HeaderSize = 24;
 
-    readonly string _dir;
-    readonly long _limit;
-    readonly object _lock = new();
-    long _bytes = -1;
+    private readonly string _dir;
+    private readonly long _limit;
+    private readonly object _lock = new();
+    private long _bytes = -1;
     public long Hits, Misses, Writes, Evictions;
 
     public string Directory => _dir;
@@ -30,7 +30,7 @@ public sealed class TranscodeDiskCache
         _limit = Math.Max(limitBytes, 1 << 20);
     }
 
-    string PathOf(ulong key) => Path.Combine(_dir, $"{key:x16}.astc");
+    private string PathOf(ulong key) => Path.Combine(_dir, $"{key:x16}.astc");
 
     /// <summary>The cached payload of <paramref name="key"/> when it exists, has the expected <paramref name="tag"/>
     /// (format and size of what was transcoded) and length; null otherwise.</summary>
@@ -87,7 +87,7 @@ public sealed class TranscodeDiskCache
 
     public void Put(ulong key, ulong tag, ReadOnlySpan<byte> payload)
     {
-        var data = new byte[HeaderSize + payload.Length];
+        byte[] data = new byte[HeaderSize + payload.Length];
         BinaryPrimitives.WriteUInt32LittleEndian(data, Magic);
         BinaryPrimitives.WriteUInt32LittleEndian(data.AsSpan(4), (uint)payload.Length);
         BinaryPrimitives.WriteUInt64LittleEndian(data.AsSpan(8), key);
@@ -125,10 +125,10 @@ public sealed class TranscodeDiskCache
         }
     }
 
-    long Measure()
+    private long Measure()
     {
         long n = 0;
-        foreach (var f in new DirectoryInfo(_dir).EnumerateFiles("*.astc"))
+        foreach (FileInfo f in new DirectoryInfo(_dir).EnumerateFiles("*.astc"))
         {
             n += f.Length;
         }
@@ -137,12 +137,12 @@ public sealed class TranscodeDiskCache
     }
 
     /// <summary>Deletes the least recently used entries down to 90% of the limit.</summary>
-    void Trim()
+    private void Trim()
     {
         var files = new DirectoryInfo(_dir).GetFiles("*.astc").OrderBy(f => f.LastWriteTimeUtc).ToList();
         long total = files.Sum(f => f.Length);
         long target = _limit * 9 / 10;
-        foreach (var f in files)
+        foreach (FileInfo? f in files)
         {
             if (total <= target)
             {

@@ -5,7 +5,7 @@ namespace VitaSharp.Core.Gxm;
 /// <summary>Address computations for GXM surface layouts (linear, 32x32 tiled, morton swizzled).</summary>
 public static class TextureLayout
 {
-    static uint Part1By1(uint x)
+    private static uint Part1By1(uint x)
     {
         x &= 0x0000FFFF;
         x = (x ^ (x << 8)) & 0x00FF00FF;
@@ -15,7 +15,7 @@ public static class TextureLayout
         return x;
     }
 
-    static uint Compact1By1(uint x)
+    private static uint Compact1By1(uint x)
     {
         x &= 0x55555555;
         x = (x ^ (x >> 1)) & 0x33333333;
@@ -127,5 +127,5 @@ public static class TextureLayout
         return Align(size, large ? 2048u : 4u);
     }
 
-    static uint Align(uint v, uint a) => (v + a - 1) / a * a;
+    private static uint Align(uint v, uint a) => (v + a - 1) / a * a;
 }

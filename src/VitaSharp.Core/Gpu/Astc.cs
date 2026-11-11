@@ -78,7 +78,7 @@ public static class AstcEncoder
             Encode(rgba, w, h, blocks, channels);
             return;
         }
-        var src = rgba.ToArray();
+        byte[] src = rgba.ToArray();
         int bw = (w + 3) / 4;
         Parallel.For(0, bh, new ParallelOptions { MaxDegreeOfParallelism = maxThreads }, by =>
         {
@@ -103,7 +103,7 @@ public static class AstcEncoder
 
     /// <param name="Cem">colour endpoint mode: 0 L, 4 LA, 8 RGB, 12 RGBA (all direct)</param>
     /// <param name="Ccs">dual plane: the component on the second plane (0-3), -1 = one plane</param>
-    sealed class Config
+    private sealed class Config
     {
         public readonly int Cem, WeightLevels, Ccs, Nc, PlaneChannel, WeightBits, EndpointLevels;
         public readonly bool Dual;
@@ -132,12 +132,12 @@ public static class AstcEncoder
     }
 
     // tried in this order; the first that is good enough wins (GoodEnough)
-    static readonly Config[] RgbConfigs = [new(8, 8, -1), new(8, 16, -1), new(8, 4, -1)];
-    static readonly Config[] RgbaConfigs = [new(12, 8, -1), new(12, 4, 3), new(12, 4, -1)];
-    static readonly Config[] LConfigs = [new(0, 16, -1)];
-    static readonly Config[] LaConfigs = [new(4, 4, 3), new(4, 8, -1), new(4, 8, 3)];
+    private static readonly Config[] s_rgbConfigs = [new(8, 8, -1), new(8, 16, -1), new(8, 4, -1)];
+    private static readonly Config[] s_rgbaConfigs = [new(12, 8, -1), new(12, 4, 3), new(12, 4, -1)];
+    private static readonly Config[] s_lConfigs = [new(0, 16, -1)];
+    private static readonly Config[] s_laConfigs = [new(4, 4, 3), new(4, 8, -1), new(4, 8, 3)];
     /// <summary>Average squared error per texel and channel below which no further configuration is tried (~46 dB).</summary>
-    const float GoodEnough = 1.5f;
+    private const float GoodEnough = 1.5f;
 
     /// <summary>Encodes one block of 16 RGBA8 texels (row order).</summary>
     public static void EncodeBlock(ReadOnlySpan<byte> texels, Span<byte> block, AstcChannels channels)
@@ -155,7 +155,7 @@ public static class AstcEncoder
                     v[i] = texels[i * 4];
                 }
 
-                configs = LConfigs;
+                configs = s_lConfigs;
                 break;
             case AstcChannels.Rg:
                 nc = 2;
@@ -164,7 +164,7 @@ public static class AstcEncoder
                     v[i * 2] = texels[i * 4];
                     v[i * 2 + 1] = texels[i * 4 + 1];
                 }
-                configs = LaConfigs;
+                configs = s_laConfigs;
                 break;
             default:
             {
@@ -183,7 +183,7 @@ public static class AstcEncoder
                     }
                 }
 
-                configs = opaque ? RgbConfigs : RgbaConfigs;
+                configs = opaque ? s_rgbConfigs : s_rgbaConfigs;
                 break;
             }
         }
@@ -198,10 +198,10 @@ public static class AstcEncoder
         Span<float> axis = stackalloc float[16];
         int axisFor0 = int.MinValue, axisFor1 = int.MinValue;
         float bestErr = float.MaxValue;
-        foreach (var cfg in configs)
+        foreach (Config cfg in configs)
         {
             int slot = axisFor0 == cfg.PlaneChannel ? 0 : axisFor1 == cfg.PlaneChannel ? 1 : axisFor0 == int.MinValue ? 0 : 1;
-            var e = axis.Slice(slot * 8, 8);
+            Span<float> e = axis.Slice(slot * 8, 8);
             if ((slot == 0 ? axisFor0 : axisFor1) != cfg.PlaneChannel)
             {
                 FitAxis(v, nc, cfg.PlaneChannel, e[..4], e[4..]);
@@ -233,7 +233,7 @@ public static class AstcEncoder
         best.CopyTo(block);
     }
 
-    static bool IsUniform(ReadOnlySpan<float> v, int nc)
+    private static bool IsUniform(ReadOnlySpan<float> v, int nc)
     {
         for (int i = 1; i < 16; i++)
         {
@@ -249,7 +249,7 @@ public static class AstcEncoder
         return true;
     }
 
-    static void WriteVoidExtent(Span<byte> block, AstcChannels channels, ReadOnlySpan<byte> t)
+    private static void WriteVoidExtent(Span<byte> block, AstcChannels channels, ReadOnlySpan<byte> t)
     {
         // block mode 0x1FC, LDR, reserved bits 11, all extent coordinates 1s; colour as UNORM16
         ulong lo = 0xDFCul | (0xFFFFFFFFFFFFFul << 12);
@@ -270,7 +270,7 @@ public static class AstcEncoder
     }
 
     /// <summary>Encodes the block with one configuration into <paramref name="block"/>; returns the squared error.</summary>
-    static float EncodeConfig(ReadOnlySpan<float> v, int nc, Config cfg, ReadOnlySpan<float> axis0, ReadOnlySpan<float> axis1, Span<byte> block)
+    private static float EncodeConfig(ReadOnlySpan<float> v, int nc, Config cfg, ReadOnlySpan<float> axis0, ReadOnlySpan<float> axis1, Span<byte> block)
     {
         bool dual = cfg.Dual;
         int planeChannel = cfg.PlaneChannel;
@@ -281,12 +281,12 @@ public static class AstcEncoder
             return float.MaxValue;
         }
 
-        var eq = cfg.Eq;
+        Ise.EndpointTable eq = cfg.Eq;
 
         Span<float> e0 = stackalloc float[4], e1 = stackalloc float[4];
         Span<int> q0 = stackalloc int[4], q1 = stackalloc int[4];
         Span<int> w = stackalloc int[32];
-        var wu = cfg.Wu;
+        int[] wu = cfg.Wu;
         float bestErr = float.MaxValue;
         Span<byte> trial = stackalloc byte[16];
         // pass 0: principal-axis endpoints; pass 1: least-squares endpoints for the pass-0 weights
@@ -335,10 +335,10 @@ public static class AstcEncoder
         return bestErr;
     }
 
-    static int ClampByte(float f) => f <= 0 ? 0 : f >= 255 ? 255 : (int)(f + 0.5f);
+    private static int ClampByte(float f) => f <= 0 ? 0 : f >= 255 ? 255 : (int)(f + 0.5f);
 
     /// <summary>Endpoints along the principal axis of the channels other than <paramref name="skip"/>.</summary>
-    static void FitAxis(ReadOnlySpan<float> v, int nc, int skip, Span<float> e0, Span<float> e1)
+    private static void FitAxis(ReadOnlySpan<float> v, int nc, int skip, Span<float> e0, Span<float> e1)
     {
         // (the assembly skips locals init: accumulators are cleared explicitly)
         Span<float> mean = stackalloc float[4];
@@ -465,7 +465,7 @@ public static class AstcEncoder
     }
 
     /// <summary>The second plane's channel: its own minimum and maximum.</summary>
-    static void FitSingle(ReadOnlySpan<float> v, int nc, int c, Span<float> e0, Span<float> e1)
+    private static void FitSingle(ReadOnlySpan<float> v, int nc, int c, Span<float> e0, Span<float> e1)
     {
         float lo = float.MaxValue, hi = float.MinValue;
         for (int i = 0; i < 16; i++)
@@ -478,7 +478,7 @@ public static class AstcEncoder
     }
 
     /// <summary>Least-squares endpoints for fixed weights, per channel. False when degenerate.</summary>
-    static bool Refine(ReadOnlySpan<float> v, int nc, int planeChannel, ReadOnlySpan<int> w, ReadOnlySpan<int> wu, Span<float> e0, Span<float> e1)
+    private static bool Refine(ReadOnlySpan<float> v, int nc, int planeChannel, ReadOnlySpan<int> w, ReadOnlySpan<int> wu, Span<float> e0, Span<float> e1)
     {
         bool any = false;
         Span<float> ax = stackalloc float[4], bx = stackalloc float[4];
@@ -527,7 +527,7 @@ public static class AstcEncoder
     }
 
     /// <summary>Best weight per texel (and plane) for the quantized endpoints; returns the squared error.</summary>
-    static float ChooseWeights(ReadOnlySpan<float> v, int nc, int planeChannel, ReadOnlySpan<int> q0, ReadOnlySpan<int> q1,
+    private static float ChooseWeights(ReadOnlySpan<float> v, int nc, int planeChannel, ReadOnlySpan<int> q0, ReadOnlySpan<int> q1,
         ReadOnlySpan<int> unq, ReadOnlySpan<int> wu, Span<int> w)
     {
         int planes = planeChannel >= 0 ? 2 : 1;
@@ -587,10 +587,10 @@ public static class AstcEncoder
         return total;
     }
 
-    static void Pack(Span<byte> block, Config cfg, int nc, bool dual, int weightBits, int endpointLevels, ReadOnlySpan<int> q0, ReadOnlySpan<int> q1, ReadOnlySpan<int> w)
+    private static void Pack(Span<byte> block, Config cfg, int nc, bool dual, int weightBits, int endpointLevels, ReadOnlySpan<int> q0, ReadOnlySpan<int> q1, ReadOnlySpan<int> w)
     {
         var bits = new Bits128();
-        var (r, hBit) = Ise.WeightRangeCode(cfg.WeightLevels);
+        (int r, int hBit) = Ise.WeightRangeCode(cfg.WeightLevels);
         // 4x4 weight grid: block mode layout "B+4 x A+2" with A = 2, B = 0
         uint mode = (uint)((r >> 1) & 3) | (uint)((r & 1) << 4) | (2u << 5) | (uint)(hBit << 9) | (dual ? 1u << 10 : 0);
         bits.Write(0, 11, mode);
@@ -617,7 +617,7 @@ public static class AstcEncoder
 }
 
 /// <summary>128-bit little-endian bit buffer.</summary>
-struct Bits128
+internal struct Bits128
 {
     public ulong Lo, Hi;
 
@@ -654,7 +654,7 @@ struct Bits128
         return (uint)(v & (n >= 32 ? 0xFFFFFFFFul : (1ul << n) - 1));
     }
 
-    static ulong Reverse(ulong x)
+    private static ulong Reverse(ulong x)
     {
         // swap ever larger groups: bits, pairs, nibbles, then the byte order
         x = ((x >> 1) & 0x5555555555555555ul) | ((x & 0x5555555555555555ul) << 1);
@@ -682,10 +682,10 @@ struct Bits128
 }
 
 /// <summary>Bounded integer sequence encoding (ASTC specification C.2.12) and the quantization tables.</summary>
-static class Ise
+internal static class Ise
 {
     /// <summary>All ranges, largest first: (levels, bits, trit, quint).</summary>
-    static readonly (int Levels, int Bits, bool Trit, bool Quint)[] Ranges =
+    private static readonly (int Levels, int Bits, bool Trit, bool Quint)[] s_ranges =
     [
         (256, 8, false, false), (192, 6, true, false), (160, 5, false, true), (128, 7, false, false), (96, 5, true, false),
         (80, 4, false, true), (64, 6, false, false), (48, 4, true, false), (40, 3, false, true), (32, 5, false, false),
@@ -693,9 +693,9 @@ static class Ise
         (8, 3, false, false), (6, 1, true, false), (5, 0, false, true), (4, 2, false, false), (3, 0, true, false), (2, 1, false, false),
     ];
 
-    static (int Bits, bool Trit, bool Quint) Info(int levels)
+    private static (int Bits, bool Trit, bool Quint) Info(int levels)
     {
-        foreach (var r in Ranges)
+        foreach ((int Levels, int Bits, bool Trit, bool Quint) r in s_ranges)
         {
             if (r.Levels == levels)
             {
@@ -708,14 +708,14 @@ static class Ise
 
     public static int BitCount(int count, int levels)
     {
-        var (b, t, q) = Info(levels);
+        (int b, bool t, bool q) = Info(levels);
         return count * b + (t ? (count * 8 + 4) / 5 : q ? (count * 7 + 2) / 3 : 0);
     }
 
     /// <summary>The endpoint range a decoder derives from the bits left for <paramref name="values"/> values.</summary>
     public static int ColorLevels(int bits, int values)
     {
-        foreach (var r in Ranges)
+        foreach ((int Levels, int Bits, bool Trit, bool Quint) r in s_ranges)
         {
             if (BitCount(values, r.Levels) <= bits)
             {
@@ -761,20 +761,20 @@ static class Ise
         _ => 0,
     };
 
-    static readonly Dictionary<int, int[]> WeightTables = new();
+    private static readonly Dictionary<int, int[]> s_weightTables = new();
 
     /// <summary>Weight index -> 0..64 for the binary weight ranges the encoder uses (bit replication to 6 bits, then
     /// values above 32 plus one).</summary>
     public static int[] WeightUnquant(int levels)
     {
-        lock (WeightTables)
+        lock (s_weightTables)
         {
-            if (WeightTables.TryGetValue(levels, out var t))
+            if (s_weightTables.TryGetValue(levels, out int[]? t))
             {
                 return t;
             }
 
-            var (bits, trit, quint) = Info(levels);
+            (int bits, bool trit, bool quint) = Info(levels);
             if (trit || quint)
             {
                 throw new NotSupportedException($"weight range {levels} (trit/quint weights are not used)");
@@ -792,30 +792,30 @@ static class Ise
                 u >>= filled - 6;
                 t[i] = u > 32 ? u + 1 : u;
             }
-            return WeightTables[levels] = t;
+            return s_weightTables[levels] = t;
         }
     }
 
     public sealed record EndpointTable(int[] Unquant, int[] Quantize);
-    static readonly Dictionary<int, EndpointTable> EndpointTables = new();
+    private static readonly Dictionary<int, EndpointTable> s_endpointTables = new();
 
     /// <summary>Endpoint quantization of a range: index -> 0..255, and 0..255 -> nearest index.</summary>
     public static EndpointTable Endpoint(int levels)
     {
-        lock (EndpointTables)
+        lock (s_endpointTables)
         {
-            if (EndpointTables.TryGetValue(levels, out var e))
+            if (s_endpointTables.TryGetValue(levels, out EndpointTable? e))
             {
                 return e;
             }
 
-            var unq = new int[levels];
+            int[] unq = new int[levels];
             for (int i = 0; i < levels; i++)
             {
                 unq[i] = UnquantEndpoint(i, levels);
             }
 
-            var q = new int[256];
+            int[] q = new int[256];
             for (int x = 0; x < 256; x++)
             {
                 int best = 0, bestD = int.MaxValue;
@@ -830,14 +830,14 @@ static class Ise
                 }
                 q[x] = best;
             }
-            return EndpointTables[levels] = new EndpointTable(unq, q);
+            return s_endpointTables[levels] = new EndpointTable(unq, q);
         }
     }
 
     /// <summary>Colour endpoint unquantization (specification C.2.13).</summary>
     public static int UnquantEndpoint(int v, int levels)
     {
-        var (bits, trit, quint) = Info(levels);
+        (int bits, bool trit, bool quint) = Info(levels);
         if (!trit && !quint)
         {
             int u = 0, filled = 0;
@@ -902,10 +902,10 @@ static class Ise
 
     // trit/quint packing: decode tables from the specification, encode tables by search (with the bits a short last
     // group omits kept zero, as the decoder assumes)
-    static readonly int[,] TritOf = new int[256, 5];
-    static readonly int[,] QuintOf = new int[128, 3];
-    static readonly Dictionary<int, int>[] TritEnc = new Dictionary<int, int>[6], QuintEnc = new Dictionary<int, int>[4];
-    static readonly int[] TritBitsPresent = [0, 2, 4, 5, 7, 8], QuintBitsPresent = [0, 3, 5, 7];
+    private static readonly int[,] s_tritOf = new int[256, 5];
+    private static readonly int[,] s_quintOf = new int[128, 3];
+    private static readonly Dictionary<int, int>[] s_tritEnc = new Dictionary<int, int>[6], s_quintEnc = new Dictionary<int, int>[4];
+    private static readonly int[] s_tritBitsPresent = [0, 2, 4, 5, 7, 8], s_quintBitsPresent = [0, 3, 5, 7];
 
     static Ise()
     {
@@ -950,11 +950,11 @@ static class Ise
                 t1 = (C >> 2) & 3;
                 t0 = (((C >> 1) & 1) << 1) | ((C & 1) & ~((C >> 1) & 1) & 1);
             }
-            TritOf[T, 0] = t0;
-            TritOf[T, 1] = t1;
-            TritOf[T, 2] = t2;
-            TritOf[T, 3] = t3;
-            TritOf[T, 4] = t4;
+            s_tritOf[T, 0] = t0;
+            s_tritOf[T, 1] = t1;
+            s_tritOf[T, 2] = t2;
+            s_tritOf[T, 3] = t3;
+            s_tritOf[T, 4] = t4;
         }
         for (int Q = 0; Q < 128; Q++)
         {
@@ -990,16 +990,16 @@ static class Ise
                     q0 = C & 7;
                 }
             }
-            QuintOf[Q, 0] = q0;
-            QuintOf[Q, 1] = q1;
-            QuintOf[Q, 2] = q2;
+            s_quintOf[Q, 0] = q0;
+            s_quintOf[Q, 1] = q1;
+            s_quintOf[Q, 2] = q2;
         }
         for (int k = 1; k <= 5; k++)
         {
-            var d = TritEnc[k] = new Dictionary<int, int>();
+            Dictionary<int, int> d = s_tritEnc[k] = new Dictionary<int, int>();
             for (int T = 0; T < 256; T++)
             {
-                if ((T >> TritBitsPresent[k]) != 0)
+                if ((T >> s_tritBitsPresent[k]) != 0)
                 {
                     continue;
                 }
@@ -1007,7 +1007,7 @@ static class Ise
                 int key = 0;
                 for (int j = k - 1; j >= 0; j--)
                 {
-                    key = key * 3 + TritOf[T, j];
+                    key = key * 3 + s_tritOf[T, j];
                 }
 
                 d.TryAdd(key, T);
@@ -1015,10 +1015,10 @@ static class Ise
         }
         for (int k = 1; k <= 3; k++)
         {
-            var d = QuintEnc[k] = new Dictionary<int, int>();
+            Dictionary<int, int> d = s_quintEnc[k] = new Dictionary<int, int>();
             for (int Q = 0; Q < 128; Q++)
             {
-                if ((Q >> QuintBitsPresent[k]) != 0)
+                if ((Q >> s_quintBitsPresent[k]) != 0)
                 {
                     continue;
                 }
@@ -1026,7 +1026,7 @@ static class Ise
                 int key = 0;
                 for (int j = k - 1; j >= 0; j--)
                 {
-                    key = key * 5 + QuintOf[Q, j];
+                    key = key * 5 + s_quintOf[Q, j];
                 }
 
                 d.TryAdd(key, Q);
@@ -1035,12 +1035,12 @@ static class Ise
     }
 
     // bit positions of the trit/quint packed value after each value's low bits
-    static readonly (int From, int Count)[] TritChunks = [(0, 2), (2, 2), (4, 1), (5, 2), (7, 1)];
-    static readonly (int From, int Count)[] QuintChunks = [(0, 3), (3, 2), (5, 2)];
+    private static readonly (int From, int Count)[] s_tritChunks = [(0, 2), (2, 2), (4, 1), (5, 2), (7, 1)];
+    private static readonly (int From, int Count)[] s_quintChunks = [(0, 3), (3, 2), (5, 2)];
 
     public static void Encode(ref Bits128 bits, int pos, ReadOnlySpan<int> values, int levels)
     {
-        var (b, trit, quint) = Info(levels);
+        (int b, bool trit, bool quint) = Info(levels);
         uint mask = (1u << b) - 1;
         if (!trit && !quint)
         {
@@ -1052,7 +1052,7 @@ static class Ise
             return;
         }
         int group = trit ? 5 : 3;
-        var chunks = trit ? TritChunks : QuintChunks;
+        (int From, int Count)[] chunks = trit ? s_tritChunks : s_quintChunks;
         for (int g = 0; g < values.Length; g += group)
         {
             int k = Math.Min(group, values.Length - g);
@@ -1062,12 +1062,12 @@ static class Ise
                 key = key * radix + (values[g + j] >> b);
             }
 
-            int packed = trit ? TritEnc[k][key] : QuintEnc[k][key];
+            int packed = trit ? s_tritEnc[k][key] : s_quintEnc[k][key];
             for (int j = 0; j < k; j++)
             {
                 bits.Write(pos, b, (uint)values[g + j] & mask);
                 pos += b;
-                var (from, count) = chunks[j];
+                (int from, int count) = chunks[j];
                 bits.Write(pos, count, (uint)(packed >> from));
                 pos += count;
             }
@@ -1076,7 +1076,7 @@ static class Ise
 
     public static void Decode(in Bits128 bits, int pos, Span<int> values, int levels)
     {
-        var (b, trit, quint) = Info(levels);
+        (int b, bool trit, bool quint) = Info(levels);
         if (!trit && !quint)
         {
             for (int i = 0; i < values.Length; i++)
@@ -1087,7 +1087,7 @@ static class Ise
             return;
         }
         int group = trit ? 5 : 3;
-        var chunks = trit ? TritChunks : QuintChunks;
+        (int From, int Count)[] chunks = trit ? s_tritChunks : s_quintChunks;
         Span<int> low = stackalloc int[5];
         for (int g = 0; g < values.Length; g += group)
         {
@@ -1097,13 +1097,13 @@ static class Ise
             {
                 low[j] = (int)bits.Read(pos, b);
                 pos += b;
-                var (from, count) = chunks[j];
+                (int from, int count) = chunks[j];
                 packed |= (int)bits.Read(pos, count) << from;
                 pos += count;
             }
             for (int j = 0; j < k; j++)
             {
-                values[g + j] = ((trit ? TritOf[packed, j] : QuintOf[packed, j]) << b) | low[j];
+                values[g + j] = ((trit ? s_tritOf[packed, j] : s_quintOf[packed, j]) << b) | low[j];
             }
         }
     }
@@ -1193,7 +1193,7 @@ public static class AstcDecoder
         int endpointLevels = Ise.ColorLevels(colorBits, nc * 2);
         Span<int> vals = stackalloc int[8];
         Ise.Decode(bits, 17, vals[..(nc * 2)], endpointLevels);
-        var eq = Ise.Endpoint(endpointLevels);
+        Ise.EndpointTable eq = Ise.Endpoint(endpointLevels);
         for (int i = 0; i < nc * 2; i++)
         {
             vals[i] = eq.Unquant[vals[i]];
@@ -1202,7 +1202,7 @@ public static class AstcDecoder
         int ccs = dual ? (int)bits.Read(128 - weightBits - 2, 2) : -1;
         Span<int> wv = stackalloc int[32];
         Ise.Decode(bits.Reversed(), 0, wv[..weightCount], levels);
-        var wu = Ise.WeightUnquant(levels);
+        int[] wu = Ise.WeightUnquant(levels);
 
         Span<int> e0 = stackalloc int[4], e1 = stackalloc int[4];
         switch (cem)
@@ -1260,7 +1260,7 @@ public static class AstcDecoder
         }
     }
 
-    static void Magenta(Span<byte> texels)
+    private static void Magenta(Span<byte> texels)
     {
         for (int i = 0; i < 16; i++)
         {

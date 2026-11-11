@@ -11,7 +11,7 @@ public readonly struct UsseInst(UsseOp op, ulong raw, UssePattern? pattern)
 {
     public UsseOp Op { get; } = op;
     public ulong Raw { get; } = raw;
-    readonly UssePattern? _pattern = pattern;
+    private readonly UssePattern? _pattern = pattern;
 
     /// <summary>Value of the field identified by <paramref name="letter"/> in the instruction's bit pattern.</summary>
     public uint this[char letter] => _pattern?.Field(Raw, letter) ?? 0;
@@ -23,7 +23,7 @@ public sealed class UssePattern
     public UsseOp Op { get; }
     public ulong Mask { get; }
     public ulong Expected { get; }
-    readonly int[][] _fieldBits = new int[128][];
+    private readonly int[][] _fieldBits = new int[128][];
 
     public UssePattern(UsseOp op, string bits)
     {
@@ -48,7 +48,7 @@ public sealed class UssePattern
             }
             else if (c != '-')
             {
-                if (!positions.TryGetValue(c, out var l))
+                if (!positions.TryGetValue(c, out List<int>? l))
                 {
                     positions[c] = l = new List<int>();
                 }
@@ -56,7 +56,7 @@ public sealed class UssePattern
                 l.Add(bit);
             }
         }
-        foreach (var (c, l) in positions)
+        foreach ((char c, List<int>? l) in positions)
         {
             _fieldBits[c] = l.ToArray();
         }
@@ -66,7 +66,7 @@ public sealed class UssePattern
 
     public uint Field(ulong raw, char letter)
     {
-        var bits = _fieldBits[letter];
+        int[] bits = _fieldBits[letter];
         if (bits == null)
         {
             return 0;
@@ -85,7 +85,7 @@ public sealed class UssePattern
 /// <summary>USSE instruction table (bit patterns from Vita3K's usse_translator_entry.cpp).</summary>
 public static class UsseDecoder
 {
-    static readonly UssePattern[] Table =
+    private static readonly UssePattern[] s_table =
     [
         new(UsseOp.VMAD2, "00000dpps-ry-cbawwwineeeemmookttffgghhhhhhzzjjllllllqqqqqquuuuuu"),
         new(UsseOp.V32NMAD, "00001pppsrrydcbawwwwneeeemmoiittkkllffffffzzzzzzzggghhhhhhjjjjjj"),
@@ -126,7 +126,7 @@ public static class UsseDecoder
 
     public static UsseInst Decode(ulong raw)
     {
-        foreach (var p in Table)
+        foreach (UssePattern p in s_table)
         {
             if (p.Matches(raw))
             {

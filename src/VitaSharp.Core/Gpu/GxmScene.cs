@@ -184,7 +184,7 @@ public readonly record struct GxmTextureDesc(uint W0, uint W1, uint W2, uint W3)
 /// </summary>
 public sealed class SceneGate
 {
-    volatile bool _ended, _sceneEnded;
+    private volatile bool _ended, _sceneEnded;
     public bool Ended => _ended;
     /// <summary>The guest ended (or flushed) the scene. With VITASHARP_UB_SCENE_END=frame the gate stays closed until the
     /// frame's display-queue entry (<see cref="End"/>), the latest the hardware would have executed the scene.</summary>

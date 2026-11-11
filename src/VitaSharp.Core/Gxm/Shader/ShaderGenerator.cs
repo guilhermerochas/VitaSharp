@@ -49,12 +49,12 @@ public sealed record ShaderHints(uint[] TextureFormats, (uint RegIndex, int Comp
     public ulong Key()
     {
         ulong h = Fnv.Offset;
-        foreach (var t in TextureFormats)
+        foreach (uint t in TextureFormats)
         {
             h = Fnv.Mix(h, t);
         }
 
-        foreach (var a in Attributes)
+        foreach ((uint RegIndex, int ComponentCount, byte Format) a in Attributes)
         {
             h = Fnv.Mix(h, a.RegIndex);
             h = Fnv.Mix(h, (uint)a.ComponentCount);
@@ -186,14 +186,14 @@ public static class ShaderGenerator
 
     /// <summary>Clip distances the generated vertex shaders may write (index 0 the far plane, 1-7 the GXM user clip
     /// planes 0-6): the Vulkan minimum of maxClipDistances.</summary>
-    const int MaxClipDistances = 8;
+    private const int MaxClipDistances = 8;
 
     /// <summary>
     /// Test-only: VITASHARP_GENERATOR_VERSION_SALT=N (1-999) makes every version-keyed cache (shader pack, loose .spv
     /// files) behave as if <see cref="GeneratorVersion"/> had been bumped N times and every GLSL had changed, without
     /// changing the generated code. Used to measure the first session after an emulator update.
     /// </summary>
-    public static readonly int VersionSalt = int.TryParse(Environment.GetEnvironmentVariable(EnvVars.GeneratorVersionSalt), out var s) && s is > 0 and < 1000 ? s : 0;
+    public static readonly int VersionSalt = int.TryParse(Environment.GetEnvironmentVariable(EnvVars.GeneratorVersionSalt), out int s) && s is > 0 and < 1000 ? s : 0;
 
     /// <summary>The version persistent caches are keyed by (<see cref="GeneratorVersion"/> + <see cref="VersionSalt"/>).</summary>
     public static int CacheVersion => GeneratorVersion + VersionSalt;
@@ -340,7 +340,7 @@ public static class ShaderGenerator
     /// Used by the generator with <see cref="RelaxHalfPrecision"/> and by the Mali cost what-if.</summary>
     public static string RelaxHalf(string glsl)
     {
-        var s = Regex.Replace(glsl, @"(^|[\s;{(])(vec[234]|float) (\w+) = unpackHalf2x16", "$1mediump $2 $3 = unpackHalf2x16", RegexOptions.Multiline);
+        string s = Regex.Replace(glsl, @"(^|[\s;{(])(vec[234]|float) (\w+) = unpackHalf2x16", "$1mediump $2 $3 = unpackHalf2x16", RegexOptions.Multiline);
         s = Regex.Replace(s, @"(^|[\s;{(])(vec[234]|float) (\w+) = (vec[234])\(unpackHalf2x16", "$1mediump $2 $3 = $4(unpackHalf2x16", RegexOptions.Multiline);
         var halfTemps = Regex.Matches(s, @"mediump vec2 (\w+) = unpackHalf2x16").Select(m => m.Groups[1].Value).ToHashSet();
         foreach (Match m in Regex.Matches(s, @"^(layout\([^)]*\) (?:centroid |flat |noperspective )*)in (vec[234]|float) (\w+);", RegexOptions.Multiline).Cast<Match>().ToList())
@@ -363,10 +363,10 @@ public static class ShaderGenerator
 
 
     /// <summary>Read/write helpers of the dynamically indexed banks (<see cref="LowerDynamicIndexing"/>).</summary>
-    static string DynHelpers(IEnumerable<string> banks)
+    private static string DynHelpers(IEnumerable<string> banks)
     {
         var sb = new StringBuilder();
-        foreach (var b in banks)
+        foreach (string b in banks)
         {
             sb.AppendLine($"float dynR_{b}(int w) {{ vec4 v = {b}[w >> 2]; switch (w & 3) {{ case 0: return v.x; case 1: return v.y; case 2: return v.z; default: return v.w; }} }}");
             sb.AppendLine($"void dynW_{b}(int w, float x) {{ int i = w >> 2; switch (w & 3) {{ case 0: {b}[i].x = x; break; case 1: {b}[i].y = x; break; case 2: {b}[i].z = x; break; default: {b}[i].w = x; break; }} }}");
@@ -378,13 +378,13 @@ public static class ShaderGenerator
     /// A debug environment variable (VITASHARP_DEBUG_TEX0 / VITASHARP_DEBUG_FS) changes the generated code: the
     /// output must not be read from or written to persistent shader caches.
     /// </summary>
-    public static bool DebugOverridesActive => DebugTex0 || DebugId || DebugHash || DebugFs != null || NanDraws || ProgramInput.UnboundedUbsActive || UniformLoop;
+    public static bool DebugOverridesActive => s_debugTex0 || s_debugId || s_debugHash || s_debugFs != null || NanDraws || ProgramInput.UnboundedUbsActive || s_uniformLoop;
 
     /// <summary>VITASHARP_SHADER_UNIFORM_LOOP=1: register-resident uniforms are copied into SA by a loop (generator v19
     /// output, for A/B runs; bypasses the persistent caches like the debug overrides).</summary>
-    static readonly bool UniformLoop = Environment.GetEnvironmentVariable(EnvVars.ShaderUniformLoop) == "1";
+    private static readonly bool s_uniformLoop = Environment.GetEnvironmentVariable(EnvVars.ShaderUniformLoop) == "1";
 
-    const string PushConstants = """
+    private const string PushConstants = """
 layout(push_constant) uniform RenderInfo {
     float viewport_flag;
     float screen_width;
@@ -398,7 +398,7 @@ layout(push_constant) uniform RenderInfo {
 } rinfo;
 """;
 
-    const string Helpers = """
+    private const string Helpers = """
 vec3 unpackC10(float f) {
     int v = floatBitsToInt(f);
     return vec3(ivec3(bitfieldExtract(v, 0, 10), bitfieldExtract(v, 10, 10), bitfieldExtract(v, 20, 10))) / 255.0;
@@ -410,7 +410,7 @@ float packC10(vec3 c) {
 }
 """;
 
-    static int HostIndex(uint guestIndex) => guestIndex < 14 ? (int)guestIndex + 1 : DefaultUniformHostIndex;
+    private static int HostIndex(uint guestIndex) => guestIndex < 14 ? (int)guestIndex + 1 : DefaultUniformHostIndex;
 
     /// <summary>Where each guest uniform buffer lives inside the stage's storage buffer (independent of hints).</summary>
     /// <summary>Uniform buffers larger than this are read in place (see <see cref="UniformBufferSlot.Mapped"/>).</summary>
@@ -425,7 +425,7 @@ float packC10(vec3 c) {
     public static int DataBytes(List<UniformBufferSlot> slots)
     {
         int n = 0;
-        foreach (var s in slots)
+        foreach (UniformBufferSlot s in slots)
         {
             if (!s.IsSplit)
             {
@@ -436,10 +436,10 @@ float packC10(vec3 c) {
         return n;
     }
 
-    static (List<UniformBufferSlot> Slots, int Bytes) UniformLayout(ProgramInput input)
+    private static (List<UniformBufferSlot> Slots, int Bytes) UniformLayout(ProgramInput input)
     {
         var sizes = new SortedDictionary<int, (uint Size, uint Guest)>();
-        foreach (var b in input.UniformBuffers)
+        foreach (UniformBufferDesc b in input.UniformBuffers)
         {
             if (b.Index >= 15)
             {
@@ -450,7 +450,7 @@ float packC10(vec3 c) {
         }
         var slots = new List<UniformBufferSlot>();
         int lastBase = 0, splits = 0, compact = 0;
-        foreach (var (_, (sz, guest)) in sizes)
+        foreach ((int _, (uint sz, uint guest)) in sizes)
         {
             long bytes = (long)sz * 16;
             if (bytes > MappedSlotThreshold)
@@ -482,7 +482,7 @@ float packC10(vec3 c) {
         int texSet = vertex ? 1 : 2;
 
         // ---- uniform buffers packed into one SSBO
-        var (slots, lastBase) = UniformLayout(input);
+        (List<UniformBufferSlot>? slots, int lastBase) = UniformLayout(input);
         var bufferBase = slots.ToDictionary(s => HostIndex(s.GuestIndex), s => (Base: s.DataOffset, Guest: s.GuestIndex, s.Mapped, Split: s.IsSplit ? s.Split : -1, Size: s.ByteSize));
         var splitSlots = slots.Where(s => s.IsSplit).ToList();
         result.UniformBuffers.AddRange(slots);
@@ -500,7 +500,7 @@ float packC10(vec3 c) {
             decl.AppendLine($"layout(std430, set = 0, binding = {(vertex ? 0 : 1)}) readonly restrict buffer UniformData {{ uint ub[]; }};");
             // split slots: their own bindings, bound to the slot's bytes (the renderer binds exactly the slot's size)
             var split = new StringBuilder();
-            foreach (var ss in splitSlots)
+            foreach (UniformBufferSlot? ss in splitSlots)
             {
                 decl.AppendLine($"layout(std430, set = 0, binding = {SplitBinding(vertex, ss.Split)}) readonly restrict buffer SplitData{ss.Split} {{ uint us{ss.Split}[]; }};");
                 split.Append($"if ((addr & 0x{SplitFlag(ss.Split):X}) != 0) {{ uint j = uint(addr & 0x{SplitFlag(0) - 1:X}) >> 2; return j < uint(us{ss.Split}.length()) ? uintBitsToFloat(us{ss.Split}[j]) : 0.0; }} ");
@@ -526,7 +526,7 @@ float packC10(vec3 c) {
         var samplerVars = new Dictionary<uint, UsseTranslator.SamplerUse>();
         UsseTranslator.SamplerUse SamplerFor(uint unit, bool cube)
         {
-            if (samplerVars.TryGetValue(unit, out var s))
+            if (samplerVars.TryGetValue(unit, out UsseTranslator.SamplerUse? s))
             {
                 return s;
             }
@@ -538,7 +538,7 @@ float packC10(vec3 c) {
             result.Textures.Add((unit, cube));
             return s;
         }
-        foreach (var s in input.Samplers)
+        foreach (SamplerDesc s in input.Samplers)
         {
             SamplerFor(s.Index, s.IsCube);
         }
@@ -551,7 +551,7 @@ float packC10(vec3 c) {
         }
 
         // ---- copy register-resident uniform blocks into SA
-        foreach (var b in input.UniformBuffers)
+        foreach (UniformBufferDesc b in input.UniformBuffers)
         {
             if (b.Index >= 15 || b.RegBlockSize == 0)
             {
@@ -559,7 +559,7 @@ float packC10(vec3 c) {
             }
 
             int host = HostIndex(b.Index);
-            if (!bufferBase.TryGetValue(host, out var bb))
+            if (!bufferBase.TryGetValue(host, out (int Base, uint Guest, bool Mapped, int Split, int Size) bb))
             {
                 continue;
             }
@@ -586,7 +586,7 @@ float packC10(vec3 c) {
                         (uncheckedSplit ? $"uintBitsToFloat(us{bb.Split}[{j}]);" : $"fetchMemory({splitBase + j * 4});"))));
                 }
             }
-            else if (UniformLoop)
+            else if (s_uniformLoop)
             {
                 t.Line($"for (int k = 0; k < {count}; k++) {{ int w = {start} + k; sa[w >> 2][w & 3] = fetchMemory({bb.Base} + k * 4); }}");
             }
@@ -606,7 +606,7 @@ float packC10(vec3 c) {
         // ---- program inputs
         int inAllocated = 0;
         var literals = new List<(uint Offset, float Value)>();
-        foreach (var inp in input.Inputs)
+        foreach (ProgramInputItem inp in input.Inputs)
         {
             switch (inp.Source)
             {
@@ -632,7 +632,7 @@ float packC10(vec3 c) {
                     else
                     {
                         int host = HostIndex(u.Index);
-                        bool found = bufferBase.TryGetValue(host, out var bb);
+                        bool found = bufferBase.TryGetValue(host, out (int Base, uint Guest, bool Mapped, int Split, int Size) bb);
                         var reg = Operand.Make(3);
                         reg.Bank = Bank.SecAttr;
                         reg.Num = (int)inp.Offset;
@@ -657,7 +657,7 @@ float packC10(vec3 c) {
                     break;
                 case DependentSamplerInputSource ds:
                 {
-                    var s = SamplerFor(ds.Index, input.Samplers.FirstOrDefault(x => x.Index == ds.Index)?.IsCube ?? false);
+                    UsseTranslator.SamplerUse s = SamplerFor(ds.Index, input.Samplers.FirstOrDefault(x => x.Index == ds.Index)?.IsCube ?? false);
                     t.Samplers[(int)inp.Offset] = s;
                     break;
                 }
@@ -693,7 +693,7 @@ float packC10(vec3 c) {
                         inAllocated += (comps + 3) / 4 * 4;
                         break;
                     }
-                    var hint = hints.Attributes.FirstOrDefault(h => h.RegIndex == inp.Offset);
+                    (uint RegIndex, int ComponentCount, byte Format) hint = hints.Attributes.FirstOrDefault(h => h.RegIndex == inp.Offset);
                     if (hint.Format == AttributeFormatUntyped && hint.ComponentCount > 0)
                     {
                         EmitUntypedAttribute(t, decl, result, reg, a.Index, location, hint.ComponentCount);
@@ -718,7 +718,7 @@ float packC10(vec3 c) {
             result.AttributeFallback = true;
             for (int i = 0; i < hints.Attributes.Length; i++)
             {
-                var (regIndex, cc, _) = hints.Attributes[i];
+                (uint regIndex, int cc, byte _) = hints.Attributes[i];
                 var reg = Operand.Make(3);
                 reg.Bank = Bank.PrimAttr;
                 reg.Num = (int)regIndex;
@@ -728,7 +728,7 @@ float packC10(vec3 c) {
             }
         }
 
-        foreach (var (off, val) in literals)
+        foreach ((uint off, float val) in literals)
         {
             var reg = Operand.Make(3);
             reg.Bank = Bank.SecAttr;
@@ -813,12 +813,12 @@ float packC10(vec3 c) {
         }
 
         sb.AppendLine(PushConstants);
-        foreach (var s in samplerVars.Values)
+        foreach (UsseTranslator.SamplerUse s in samplerVars.Values)
         {
             sb.AppendLine($"layout(set = {texSet}, binding = {s.Index}) uniform {(s.IsCube ? "samplerCube" : "sampler2D")} {s.GlslName};");
         }
 
-        foreach (var s in samplerVars.Values)
+        foreach (UsseTranslator.SamplerUse s in samplerVars.Values)
         {
             if (s.RtFetch != null)
             {
@@ -846,7 +846,7 @@ float packC10(vec3 c) {
         sb.AppendLine("void main() {");
         sb.Append(t.Body);
         sb.AppendLine("}");
-        foreach (var w in t.Warnings)
+        foreach (string w in t.Warnings)
         {
             result.Warnings.Add(w);
         }
@@ -865,7 +865,7 @@ float packC10(vec3 c) {
         }.CopyLists(result);
     }
 
-    static GeneratedShader CopyLists(this GeneratedShader dst, GeneratedShader src)
+    private static GeneratedShader CopyLists(this GeneratedShader dst, GeneratedShader src)
     {
         dst.VertexInputs.AddRange(src.VertexInputs);
         dst.UniformBuffers.AddRange(src.UniformBuffers);
@@ -873,7 +873,7 @@ float packC10(vec3 c) {
         return dst;
     }
 
-    static ulong[] ReadCode(GxpProgram p, int start, int count)
+    private static ulong[] ReadCode(GxpProgram p, int start, int count)
     {
         // a block that is not a real program (a GXP magic inside other data) can claim millions of instructions: every
         // instruction has to lie inside the program's bytes, as on the GPU, which only runs what was uploaded
@@ -882,7 +882,7 @@ float packC10(vec3 c) {
             throw new InvalidDataException($"GXP program: {count} instructions at 0x{(uint)start:X} lie outside the 0x{p.Data.Length:X}-byte program");
         }
 
-        var code = new ulong[Math.Max(0, count)];
+        ulong[] code = new ulong[Math.Max(0, count)];
         for (int i = 0; i < code.Length; i++)
         {
             code[i] = p.ReadInstruction(start, i);
@@ -891,15 +891,15 @@ float packC10(vec3 c) {
         return code;
     }
 
-    const byte AttributeFormatUntyped = 10; // SCE_GXM_ATTRIBUTE_FORMAT_UNTYPED
+    private const byte AttributeFormatUntyped = 10; // SCE_GXM_ATTRIBUTE_FORMAT_UNTYPED
 
     /// <summary>
     /// UNTYPED attributes are copied into the parameter's registers as raw 32-bit words without conversion; the
     /// program then reads them with its own type (packed u8/s8/f16 ...). They are fetched as R32_UINT words.
     /// </summary>
-    static void EmitUntypedAttribute(UsseTranslator t, StringBuilder decl, GeneratedShader result, Operand reg, uint regIndex, int location, int words, int rawSize = 0)
+    private static void EmitUntypedAttribute(UsseTranslator t, StringBuilder decl, GeneratedShader result, Operand reg, uint regIndex, int location, int words, int rawSize = 0)
     {
-        var raw = reg;
+        Operand raw = reg;
         raw.Type = DataType.UInt32;
         string name = $"in_attr{location}";
         int k = (words + 3) / 4;
@@ -920,9 +920,9 @@ float packC10(vec3 c) {
     }
 
     /// <summary>Raw 8/16-bit register-format attribute: fetched as unsigned integers and packed into 32-bit PA registers.</summary>
-    static void EmitRawAttribute(UsseTranslator t, StringBuilder decl, GeneratedShader result, Operand reg, uint regIndex, int location, int comps, int typeSize)
+    private static void EmitRawAttribute(UsseTranslator t, StringBuilder decl, GeneratedShader result, Operand reg, uint regIndex, int location, int comps, int typeSize)
     {
-        var raw = reg;
+        Operand raw = reg;
         raw.Type = DataType.UInt32;
         string name = $"in_attr{location}";
         int k = (comps + 3) / 4;
@@ -983,7 +983,7 @@ float packC10(vec3 c) {
     /// words); components the stream lacks read as 0, the fourth as 1. Aligned attributes keep their shaders. Returns
     /// the input locations used.
     /// </summary>
-    static int EmitByteFetchAttribute(UsseTranslator t, StringBuilder decl, GeneratedShader result, Operand reg, uint regIndex, int location,
+    private static int EmitByteFetchAttribute(UsseTranslator t, StringBuilder decl, GeneratedShader result, Operand reg, uint regIndex, int location,
         int n, byte fmt, int count)
     {
         int cs = AttributeComponentBytes(fmt);
@@ -1046,7 +1046,7 @@ float packC10(vec3 c) {
         return k;
     }
 
-    static void EmitAttribute(UsseTranslator t, StringBuilder decl, GeneratedShader result, Operand reg, uint regIndex, int location, int n, bool forceArray = false, int hintCount = 0)
+    private static void EmitAttribute(UsseTranslator t, StringBuilder decl, GeneratedShader result, Operand reg, uint regIndex, int location, int n, bool forceArray = false, int hintCount = 0)
     {
         char kind = GxpProgram.IsSigned(reg.Type) ? 'i' : GxpProgram.IsUnsigned(reg.Type) ? 'u' : 'f';
         string vecT = kind switch
@@ -1097,7 +1097,7 @@ float packC10(vec3 c) {
 
     // ------------------------------------------------------------------ fragment inputs (create_fragment_inputs)
 
-    static void EmitFragmentInputs(GxpProgram program, ShaderHints hints, UsseTranslator t, StringBuilder decl, GeneratedShader result,
+    private static void EmitFragmentInputs(GxpProgram program, ShaderHints hints, UsseTranslator t, StringBuilder decl, GeneratedShader result,
         Func<uint, bool, UsseTranslator.SamplerUse> samplerFor)
     {
         var declared = new HashSet<int>();
@@ -1122,15 +1122,15 @@ float packC10(vec3 c) {
         }
 
         uint paOffset = 0;
-        var coords = new string?[11];
+        string?[] coords = new string?[11];
         var queries = new List<(UsseTranslator.SamplerUse S, int CoordIndex, int ProdPos, uint Dest, DataType Store)>();
 
-        foreach (var d in program.FragmentAttributeDescriptors())
+        foreach (GxpAttributeDescriptor d in program.FragmentAttributeDescriptors())
         {
             if ((d.AttributeInfo & 0x4000F000) != 0xF000)
             {
                 uint inputId = d.AttributeInfo & 0x4000F000;
-                var dtype = DataType.UInt8;
+                DataType dtype = DataType.UInt8;
                 uint inputType = d.AttributeInfo & 0x30100000;
                 bool isColor = inputId is 0xA000 or 0xB000;
                 if (inputType == 0x20000000)
@@ -1201,10 +1201,10 @@ float packC10(vec3 c) {
                 }
 
                 uint unit = d.ResourceIndex;
-                var param = program.Parameters.FirstOrDefault(p => p.ResourceIndex == unit && p.Category == ParamCategory.Sampler);
+                GxpParameter? param = program.Parameters.FirstOrDefault(p => p.ResourceIndex == unit && p.Category == ParamCategory.Sampler);
                 bool cube = param?.IsSamplerCube ?? false;
-                var s = samplerFor(unit, cube);
-                var storeType = ((d.ComponentInfo >> 4) & 3) switch
+                UsseTranslator.SamplerUse s = samplerFor(unit, cube);
+                DataType storeType = ((d.ComponentInfo >> 4) & 3) switch
                 {
                     0 => DataType.Unk,
                     2 => DataType.F16,
@@ -1223,7 +1223,7 @@ float packC10(vec3 c) {
             }
         }
 
-        foreach (var q in queries)
+        foreach ((UsseTranslator.SamplerUse S, int CoordIndex, int ProdPos, uint Dest, DataType Store) q in queries)
         {
             string coord;
             if (q.CoordIndex == 10)
@@ -1253,7 +1253,7 @@ float packC10(vec3 c) {
                 sampleExpr = $"texture({q.S.GlslName}, {coord}.xy)";
             }
 
-            var type = q.Store == DataType.Unk ? q.S.ComponentType : q.Store;
+            DataType type = q.Store == DataType.Unk ? q.S.ComponentType : q.Store;
             var reg = Operand.Make(3);
             reg.Bank = Bank.PrimAttr;
             reg.Num = (int)q.Dest;
@@ -1329,7 +1329,7 @@ float packC10(vec3 c) {
         }
     }
 
-    static string Paren(string e) => e.StartsWith('(') || e.All(c => char.IsLetterOrDigit(c) || c == '_') ? e : $"({e})";
+    private static string Paren(string e) => e.StartsWith('(') || e.All(c => char.IsLetterOrDigit(c) || c == '_') ? e : $"({e})";
 
     /// <summary>
     /// Type of the framebuffer-fetch preload of o0: the output register layout (<see cref="OutputType"/>), except for
@@ -1362,7 +1362,7 @@ float packC10(vec3 c) {
     /// </summary>
     internal static DataType OutputType(GxpProgram program, ShaderHints hints)
     {
-        var type = GxpProgram.StoreType(program.OutputParamType);
+        DataType type = GxpProgram.StoreType(program.OutputParamType);
         if (program.IsNativeColor)
         {
             // a program that declares a packed byte colour keeps bytes in o0 whatever wider register format it was
@@ -1425,9 +1425,9 @@ float packC10(vec3 c) {
     /// Tearaway packs RGBA8 into o0 in its blend passes and converts it back to half4 (VPCK U8 -> F16) in the final
     /// full-screen pass. Without a known U8/F16/F32 write the output register format decides (<see cref="OutputType"/>).
     /// </summary>
-    static DataType FinalOutputType(GxpProgram program, ShaderHints hints, UsseTranslator t)
+    private static DataType FinalOutputType(GxpProgram program, ShaderHints hints, UsseTranslator t)
     {
-        var fallback = OutputType(program, hints);
+        DataType fallback = OutputType(program, hints);
         if (!program.IsNativeColor || hints.OutputRegisterFormat == 0)
         {
             return fallback;
@@ -1443,7 +1443,7 @@ float packC10(vec3 c) {
         };
     }
 
-    static void EmitFragmentFinalize(GxpProgram program, ShaderHints hints, UsseTranslator t, StringBuilder decl, GeneratedShader result)
+    private static void EmitFragmentFinalize(GxpProgram program, ShaderHints hints, UsseTranslator t, StringBuilder decl, GeneratedShader result)
     {
         var color = Operand.Make(0);
         color.Bank = program.IsNativeColor ? Bank.Output : Bank.PrimAttr;
@@ -1469,7 +1469,7 @@ float packC10(vec3 c) {
             words.Num = 0;
             words.Type = DataType.UInt32;
             int count = program.OutputCompCount;
-            var w = t.Load(words, (1 << count) - 1, regOff);
+            Val w = t.Load(words, (1 << count) - 1, regOff);
             decl.AppendLine("layout(location = 0) out uvec4 out_raw;");
             decl.AppendLine("vec4 out_color;"); // debug overrides below assign it (re-packed as halves into out_raw)
             t.Line($"uvec4 raw_words = uvec4({w.E}{string.Concat(Enumerable.Repeat(", 0u", 4 - count))});");
@@ -1483,7 +1483,7 @@ float packC10(vec3 c) {
         }
         else
         {
-            var v = t.Load(color, 0xF, regOff);
+            Val v = t.Load(color, 0xF, regOff);
             if (!GxpProgram.IsFloat(color.Type))
             {
                 v = t.ToFloat(v, color.Type, true);
@@ -1515,15 +1515,15 @@ float packC10(vec3 c) {
         int bodyLength = t.Body.Length;
         // debug bisection (VITASHARP_DEBUG_TEX0=1): show the raw first texture at the first coordinate, bypassing the
         // shader math, to tell texture/coordinate problems from lighting/fog problems
-        if (DebugTex0 && t.Body.Contains("texture(ftex0, v_TexCoord0") && decl.ToString().Contains("in vec4 v_TexCoord0;"))
+        if (s_debugTex0 && t.Body.Contains("texture(ftex0, v_TexCoord0") && decl.ToString().Contains("in vec4 v_TexCoord0;"))
         {
-            t.Line(DebugUv ? "out_color = vec4(fract(v_TexCoord0.xy), fract(v_TexCoord0.x * 0.0625), out_color.a);" : DebugLod ? "out_color = vec4(clamp(textureQueryLod(ftex0, v_TexCoord0.xy).y / 16.0 + 0.5, 0.0, 1.0), clamp(log2(max(fwidth(v_TexCoord0.x), fwidth(v_TexCoord0.y)) * float(textureSize(ftex0, 0).x)) / 16.0 + 0.5, 0.0, 1.0), float(textureSize(ftex0, 0).x) / 1024.0, 1.0);" : DebugAlpha ? "out_color = vec4(texture(ftex0, v_TexCoord0.xy).aaa, 1.0);" : "out_color = vec4(texture(ftex0, v_TexCoord0.xy).rgb, out_color.a);");
+            t.Line(s_debugUv ? "out_color = vec4(fract(v_TexCoord0.xy), fract(v_TexCoord0.x * 0.0625), out_color.a);" : s_debugLod ? "out_color = vec4(clamp(textureQueryLod(ftex0, v_TexCoord0.xy).y / 16.0 + 0.5, 0.0, 1.0), clamp(log2(max(fwidth(v_TexCoord0.x), fwidth(v_TexCoord0.y)) * float(textureSize(ftex0, 0).x)) / 16.0 + 0.5, 0.0, 1.0), float(textureSize(ftex0, 0).x) / 1024.0, 1.0);" : s_debugAlpha ? "out_color = vec4(texture(ftex0, v_TexCoord0.xy).aaa, 1.0);" : "out_color = vec4(texture(ftex0, v_TexCoord0.xy).rgb, out_color.a);");
         }
         // VITASHARP_DEBUG_FS=<hash>:<glsl vec4 expression>: replace one fragment program's output (term bisection)
         // several programs: separate the entries with '|'
-        if (DebugFs != null)
+        if (s_debugFs != null)
         {
-            foreach (var dfs in DebugFs.Split('|'))
+            foreach (string dfs in s_debugFs.Split('|'))
             {
                 if (dfs.StartsWith($"{program.Hash:X16}:", StringComparison.OrdinalIgnoreCase))
                 {
@@ -1532,12 +1532,12 @@ float packC10(vec3 c) {
             }
         }
         // VITASHARP_DEBUG_TEX0=hash: every pixel shows the fragment program that wrote it (low 3 bytes of its hash as RGB)
-        if (DebugHash)
+        if (s_debugHash)
         {
             t.Line($"out_color = vec4({program.Hash & 0xFF}.0, {(program.Hash >> 8) & 0xFF}.0, {(program.Hash >> 16) & 0xFF}.0, 255.0) / 255.0;");
         }
         // VITASHARP_DEBUG_TEX0=id: every pixel shows the number of the draw that wrote it, 4 bits per channel (R low, G mid, B high), so it survives packed float targets
-        if (DebugId)
+        if (s_debugId)
         {
             t.Line("{ uint did = uint(rinfo.draw_id); out_color = vec4(float(did & 15u) / 15.0, float((did >> 4) & 15u) / 15.0, float((did >> 8) & 15u) / 15.0, 1.0); }");
         }
@@ -1574,7 +1574,7 @@ float packC10(vec3 c) {
     /// </summary>
     public static int RawOutputBits(GxpProgram program, uint colorFormat)
     {
-        var type = GxpProgram.StoreType(program.OutputParamType);
+        DataType type = GxpProgram.StoreType(program.OutputParamType);
         if (type is not (DataType.Int32 or DataType.UInt32))
         {
             return 0;
@@ -1585,7 +1585,7 @@ float packC10(vec3 c) {
             return 0; // swizzled
         }
 
-        var (bits, bytes) = (colorFormat & 0xF1800000) switch
+        (int bits, int bytes) = (colorFormat & 0xF1800000) switch
         {
             0x01000000 => (16, 8), // F16F16F16F16
             0x00800000 => (16, 4), // F16F16
@@ -1597,13 +1597,13 @@ float packC10(vec3 c) {
         return bits != 0 && program.OutputCompCount * 4 == bytes ? bits : 0;
     }
 
-    static readonly bool DebugTex0 = Environment.GetEnvironmentVariable(EnvVars.DebugTex0) is "1" or "uv" or "alpha" or "lod";
-    static readonly bool DebugHash = Environment.GetEnvironmentVariable(EnvVars.DebugTex0) == "hash";
-    static readonly string? DebugFs = Environment.GetEnvironmentVariable(EnvVars.DebugFs);
-    static readonly bool DebugLod = Environment.GetEnvironmentVariable(EnvVars.DebugTex0) == "lod";
-    static readonly bool DebugAlpha = Environment.GetEnvironmentVariable(EnvVars.DebugTex0) == "alpha";
-    static readonly bool DebugUv = Environment.GetEnvironmentVariable(EnvVars.DebugTex0) == "uv";
-    static readonly bool DebugId = Environment.GetEnvironmentVariable(EnvVars.DebugTex0) == "id";
+    private static readonly bool s_debugTex0 = Environment.GetEnvironmentVariable(EnvVars.DebugTex0) is "1" or "uv" or "alpha" or "lod";
+    private static readonly bool s_debugHash = Environment.GetEnvironmentVariable(EnvVars.DebugTex0) == "hash";
+    private static readonly string? s_debugFs = Environment.GetEnvironmentVariable(EnvVars.DebugFs);
+    private static readonly bool s_debugLod = Environment.GetEnvironmentVariable(EnvVars.DebugTex0) == "lod";
+    private static readonly bool s_debugAlpha = Environment.GetEnvironmentVariable(EnvVars.DebugTex0) == "alpha";
+    private static readonly bool s_debugUv = Environment.GetEnvironmentVariable(EnvVars.DebugTex0) == "uv";
+    private static readonly bool s_debugId = Environment.GetEnvironmentVariable(EnvVars.DebugTex0) == "id";
 
     /// <summary>
     /// VITASHARP_DEBUG_NAN=draws (debug, chosen at launch): every generated fragment shader checks its colour output
@@ -1615,7 +1615,7 @@ float packC10(vec3 c) {
     /// 2 = Inf, 0xFFFFFFFF - first pixel (y &lt;&lt; 16 | x), unused); draw ids at or above the last slot share it.</summary>
     public const int NanDrawBinding = 4, NanDrawSlots = 4096;
 
-    static void EmitNanDrawCheck(StringBuilder decl, UsseTranslator t, uint colorFormat)
+    private static void EmitNanDrawCheck(StringBuilder decl, UsseTranslator t, uint colorFormat)
     {
         // only the components the colour surface stores (an F32F32 target ignores .zw, F11F11F10 has no alpha)
         int stored = (colorFormat & 0xF1800000) switch
@@ -1650,9 +1650,9 @@ float packC10(vec3 c) {
 
     // ------------------------------------------------------------------ vertex outputs
 
-    static int CopyCount(byte info) => ((info & 1) != 0 ? 2 : 0) + ((info & 2) != 0 ? 1 : 0) + ((info & 4) != 0 ? 1 : 0);
+    private static int CopyCount(byte info) => ((info & 1) != 0 ? 2 : 0) + ((info & 2) != 0 ? 1 : 0) + ((info & 4) != 0 ? 1 : 0);
 
-    static readonly System.Runtime.CompilerServices.ConditionalWeakTable<GxpProgram, System.Runtime.CompilerServices.StrongBox<uint>> VaryingMasks = new();
+    private static readonly System.Runtime.CompilerServices.ConditionalWeakTable<GxpProgram, System.Runtime.CompilerServices.StrongBox<uint>> s_varyingMasks = new();
 
     /// <summary>
     /// The varying locations (bit n = location n, 1-13: colour 0/1, fog, texture coordinates 0-9) a fragment program
@@ -1660,11 +1660,11 @@ float packC10(vec3 c) {
     /// of its non-dependent texture reads). 0 when it reads something outside 1-13 (the vertex shader then declares
     /// everything, as without a mask).
     /// </summary>
-    public static uint FragmentVaryingMask(GxpProgram program) => VaryingMasks.GetValue(program, p =>
+    public static uint FragmentVaryingMask(GxpProgram program) => s_varyingMasks.GetValue(program, p =>
     {
         uint mask = 0;
         bool other = false;
-        foreach (var d in p.FragmentAttributeDescriptors())
+        foreach (GxpAttributeDescriptor d in p.FragmentAttributeDescriptors())
         {
             uint id = d.AttributeInfo & 0x4000F000;
             if (id != 0xF000 && (id & 0x40000000) == 0 && id != 0xD000)
@@ -1702,10 +1702,10 @@ float packC10(vec3 c) {
         return new System.Runtime.CompilerServices.StrongBox<uint>(other ? 0 : mask | 1);
     }).Value;
 
-    static void EmitVertexFinalize(GxpProgram program, UsseTranslator t, StringBuilder decl, uint varyingMask, bool scaledPointSize)
+    private static void EmitVertexFinalize(GxpProgram program, UsseTranslator t, StringBuilder decl, uint varyingMask, bool scaledPointSize)
     {
         bool Declared(int loc) => varyingMask == 0 || (varyingMask & (1u << loc)) != 0;
-        int outputs = program.VertexOutputs(out var coordInfos);
+        int outputs = program.VertexOutputs(out byte[]? coordInfos);
         var list = new List<(int Flag, string Name, int Count, int Loc)>
         {
             (GxpProgram.OutPosition, "gl_Position", 4, -1),
@@ -1745,7 +1745,7 @@ float packC10(vec3 c) {
         }
         var written = new HashSet<string>();
         int num = 0;
-        foreach (var (flag, name, count, loc) in list)
+        foreach ((int flag, string? name, int count, int loc) in list)
         {
             if ((outputs & flag) == 0)
             {
@@ -1758,7 +1758,7 @@ float packC10(vec3 c) {
             o.Type = DataType.F32;
             if (flag == GxpProgram.OutPosition)
             {
-                var pos = t.Load(o, 0xF);
+                Val pos = t.Load(o, 0xF);
                 t.Line($"vec4 vpos = {pos.E};");
                 t.Open("if (rinfo.viewport_flag < 0.5)");
                 t.Line("gl_Position = vpos * vec4(2.0 / rinfo.screen_width, 2.0 / rinfo.screen_height, 1.0, 1.0) + vec4(-1.0, -1.0, 0.0, 0.0);");
