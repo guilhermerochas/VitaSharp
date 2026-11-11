@@ -13,13 +13,13 @@ namespace VitaSharp.Tests;
 /// <summary>SceLibMonoBridge (the PSM runtime's eglib, pthreads and pss_* layer): eglib's structure layouts and rules,
 /// the callbacks through guest code, threads.</summary>
 [Collection("guest")]
-public sealed class MonoBridgeTests(GuestMemoryFixture fx) : IDisposable
+public sealed class MonoBridgeTests(GuestMemoryFixture fixture) : IDisposable
 {
-    readonly string _root = Path.Combine(Path.GetTempPath(), "vitasharp-monobridge-" + Guid.NewGuid().ToString("N"));
-    Emulator? _emu;
-    uint _stubs, _nextStub;
+    private readonly string _root = Path.Combine(Path.GetTempPath(), "vitasharp-monobridge-" + Guid.NewGuid().ToString("N"));
+    private Emulator? _emu;
+    private uint _stubs, _nextStub;
 
-    Emulator Emu()
+    private Emulator Emu()
     {
         if (_emu != null)
         {
@@ -27,26 +27,26 @@ public sealed class MonoBridgeTests(GuestMemoryFixture fx) : IDisposable
         }
 
         Directory.CreateDirectory(_root);
-        _emu = new Emulator(new EmulatorOptions { FsRoot = _root, Memory = fx.Memory, EnableJit = false, CpuBackend = "interp" });
-        _stubs = _nextStub = fx.Memory.Alloc(0x1000, "monobridge test stubs");
+        _emu = new Emulator(new EmulatorOptions { FsRoot = _root, Memory = fixture.Memory, EnableJit = false, CpuBackend = "interp" });
+        _stubs = _nextStub = fixture.Memory.Alloc(0x1000, "monobridge test stubs");
         return _emu;
     }
 
-    MonoBridge M => Emu().Hle.Modules.OfType<MonoBridge>().Single();
+    private MonoBridge MonoBridge => Emu().Hle.Modules.OfType<MonoBridge>().Single();
 
-    object? Call(string method, params object?[] args) =>
-        typeof(MonoBridge).GetMethod(method, BindingFlags.Instance | BindingFlags.Static | BindingFlags.NonPublic | BindingFlags.Public)!.Invoke(M, args);
+    private object? Call(string method, params object?[] args) =>
+        typeof(MonoBridge).GetMethod(method, BindingFlags.Instance | BindingFlags.Static | BindingFlags.NonPublic | BindingFlags.Public)!.Invoke(MonoBridge, args);
 
-    uint U(string method, params object?[] args) => Convert.ToUInt32(Call(method, args));
+    private uint U(string method, params object?[] args) => Convert.ToUInt32(Call(method, args));
 
-    uint Alloc(uint size)
+    private uint Alloc(uint size)
     {
-        uint p = fx.Memory.Alloc(size, "monobridge test");
+        uint p = fixture.Memory.Alloc(size, "monobridge test");
         GuestMemory.Fill(p, 0, size);
         return p;
     }
 
-    uint CStr(string s)
+    private uint CStr(string s)
     {
         byte[] b = Encoding.UTF8.GetBytes(s + "\0");
         uint p = Alloc((uint)b.Length);
@@ -54,9 +54,9 @@ public sealed class MonoBridgeTests(GuestMemoryFixture fx) : IDisposable
         return p;
     }
 
-    static string Str(uint p) => GuestMemory.ReadCString(p, 1 << 20);
+    private static string Str(uint p) => GuestMemory.ReadCString(p, 1 << 20);
 
-    static List<string> Vector(uint v)
+    private static List<string> Vector(uint v)
     {
         var l = new List<string>();
         for (uint p = v; GuestMemory.R32(p) != 0; p += 4)
@@ -67,7 +67,7 @@ public sealed class MonoBridgeTests(GuestMemoryFixture fx) : IDisposable
         return l;
     }
 
-    uint Stub(string name, Action<HleContext> body)
+    private uint Stub(string name, Action<HleContext> body)
     {
         uint a = _nextStub;
         _nextStub += 16;
@@ -77,10 +77,10 @@ public sealed class MonoBridgeTests(GuestMemoryFixture fx) : IDisposable
     }
 
     /// <summary>Runs <paramref name="body"/> on a guest thread (for the functions that call back into guest code).</summary>
-    void OnGuestThread(Action body)
+    private void OnGuestThread(Action body)
     {
         Exception? failure = null;
-        var t = Emu().Kernel.CreateThread("monobridge-test", 0, 0x10000100, 0x10000, 0, 0x70000);
+        GuestThread t = Emu().Kernel.CreateThread("monobridge-test", 0, 0x10000100, 0x10000, 0, 0x70000);
         t.HostBody = _ =>
         {
             try
@@ -369,8 +369,8 @@ public sealed class MonoBridgeTests(GuestMemoryFixture fx) : IDisposable
         uint each = Stub("mbtest:each", c => seen.Add($"{c.Gpr(0)}:{c.Gpr(1)}"));
         uint start = Stub("mbtest:start", c =>
         {
-            var names = Vector(c.Gpr(2));
-            var values = Vector(c.Gpr(3));
+            List<string> names = Vector(c.Gpr(2));
+            List<string> values = Vector(c.Gpr(3));
             seen.Add($"<{Str(c.Gpr(1))} {string.Join(",", names.Zip(values, (n, v) => n + "=" + v))}>");
         });
         uint end = Stub("mbtest:end", c => seen.Add($"</{Str(c.Gpr(1))}>"));

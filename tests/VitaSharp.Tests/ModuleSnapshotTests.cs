@@ -16,16 +16,16 @@ namespace VitaSharp.Tests;
 /// saved field filled with values of its type (collections with two entries, nested states filled the same way).
 /// </summary>
 [Collection("guest")]
-public sealed class ModuleSnapshotTests(GuestMemoryFixture fx, ITestOutputHelper output)
+public sealed class ModuleSnapshotTests(GuestMemoryFixture fixture, ITestOutputHelper output)
 {
-    static byte[] Save(ISnapshotState s)
+    private static byte[] Save(ISnapshotState s)
     {
         var w = new SnapshotWriter();
         s.SaveState(w);
         return w.Data.ToArray();
     }
 
-    static void Load(ISnapshotState s, byte[] data, ObjectTable objects)
+    private static void Load(ISnapshotState s, byte[] data, ObjectTable objects)
     {
         var r = new SnapshotReader(data) { Objects = objects };
         s.LoadState(r);
@@ -39,8 +39,8 @@ public sealed class ModuleSnapshotTests(GuestMemoryFixture fx, ITestOutputHelper
         Directory.CreateDirectory(root);
         try
         {
-            using var a = new Emulator(new EmulatorOptions { FsRoot = root, Memory = fx.Memory, EnableJit = false, CpuBackend = "interp" });
-            using var b = new Emulator(new EmulatorOptions { FsRoot = root, Memory = fx.Memory, EnableJit = false, CpuBackend = "interp" });
+            using var a = new Emulator(new EmulatorOptions { FsRoot = root, Memory = fixture.Memory, EnableJit = false, CpuBackend = "interp" });
+            using var b = new Emulator(new EmulatorOptions { FsRoot = root, Memory = fixture.Memory, EnableJit = false, CpuBackend = "interp" });
             var src = a.Hle.Modules.ToList();
             var dst = b.Hle.Modules.ToList();
             Assert.Equal(src.Select(m => m.GetType()), dst.Select(m => m.GetType()));
@@ -120,22 +120,22 @@ public sealed class ModuleSnapshotTests(GuestMemoryFixture fx, ITestOutputHelper
 
     /// <summary>Fills the fields a [GenerateSnapshot] type saves (the generator's rules: instance fields declared in
     /// the type, without [SnapshotIgnore] or a [SnapshotIgnoreFields] name; readonly scalars are configuration).</summary>
-    sealed class Filler(Random rng)
+    private sealed class Filler(Random rng)
     {
-        const int MaxDepth = 4;
+        private const int MaxDepth = 4;
 
         /// <summary>Fields that only carry a value across a load (the hand-written LoadExtra sets them from other saved
         /// data and AfterSnapshotLoad applies them): they keep their resting value.</summary>
         /// AvPlayer's player clock offset is set the same way from the saved playback time.
-        static readonly HashSet<string> LoadOnly = ["AvPlayer+Player.RestoreUs", "AvPlayer+Player.RestoreRunning", "AvPlayer+Player.ClockOffsetUs"];
+        private static readonly HashSet<string> s_loadOnly = ["AvPlayer+Player.RestoreUs", "AvPlayer+Player.RestoreRunning", "AvPlayer+Player.ClockOffsetUs"];
 
-        static bool Generated(Type t) => t.GetCustomAttribute<GenerateSnapshotAttribute>() != null;
+        private static bool Generated(Type t) => t.GetCustomAttribute<GenerateSnapshotAttribute>() != null;
 
         /// <summary>Fills <paramref name="o"/>'s saved fields; false when its type has no generated snapshot.</summary>
         public bool Fill(object o, int depth)
         {
             bool any = false;
-            for (var t = o.GetType(); t != null && t != typeof(object); t = t.BaseType)
+            for (Type? t = o.GetType(); t != null && t != typeof(object); t = t.BaseType)
             {
                 if (!Generated(t))
                 {
@@ -144,7 +144,7 @@ public sealed class ModuleSnapshotTests(GuestMemoryFixture fx, ITestOutputHelper
 
                 any = true;
                 var ignored = new HashSet<string>(t.GetCustomAttributes<SnapshotIgnoreFieldsAttribute>().SelectMany(x => x.Names));
-                foreach (var f in t.GetFields(BindingFlags.Instance | BindingFlags.Public | BindingFlags.NonPublic | BindingFlags.DeclaredOnly))
+                foreach (FieldInfo f in t.GetFields(BindingFlags.Instance | BindingFlags.Public | BindingFlags.NonPublic | BindingFlags.DeclaredOnly))
                 {
                     string name = f.Name;
                     PropertyInfo? prop = null;
@@ -167,13 +167,13 @@ public sealed class ModuleSnapshotTests(GuestMemoryFixture fx, ITestOutputHelper
                         continue;
                     }
 
-                    if (LoadOnly.Contains($"{t.DeclaringType?.Name}+{t.Name}.{name}"))
+                    if (s_loadOnly.Contains($"{t.DeclaringType?.Name}+{t.Name}.{name}"))
                     {
                         continue;
                     }
 
                     bool readOnly = prop != null ? prop.SetMethod == null || IsInitOnly(prop) : f.IsInitOnly;
-                    var cur = f.GetValue(o);
+                    object? cur = f.GetValue(o);
                     if (readOnly)
                     {
                         // filled in place: collections and nested states
@@ -184,7 +184,7 @@ public sealed class ModuleSnapshotTests(GuestMemoryFixture fx, ITestOutputHelper
 
                         continue;
                     }
-                    if (Value(f.FieldType, depth + 1, cur, out var v))
+                    if (Value(f.FieldType, depth + 1, cur, out object? v))
                     {
                         f.SetValue(o, v);
                     }
@@ -193,10 +193,10 @@ public sealed class ModuleSnapshotTests(GuestMemoryFixture fx, ITestOutputHelper
             return any;
         }
 
-        static bool IsInitOnly(PropertyInfo p) =>
+        private static bool IsInitOnly(PropertyInfo p) =>
             p.SetMethod!.ReturnParameter.GetRequiredCustomModifiers().Any(m => m.FullName == "System.Runtime.CompilerServices.IsExternalInit");
 
-        void FillInPlace(object cur, Type t, int depth)
+        private void FillInPlace(object cur, Type t, int depth)
         {
             if (cur is IDictionary || IsCollection(t))
             {
@@ -205,10 +205,10 @@ public sealed class ModuleSnapshotTests(GuestMemoryFixture fx, ITestOutputHelper
             }
             if (cur is Array arr)
             {
-                var et = t.GetElementType()!;
+                Type et = t.GetElementType()!;
                 for (int i = 0; i < arr.Length; i++)
                 {
-                    if (Value(et, depth, arr.GetValue(i), out var v))
+                    if (Value(et, depth, arr.GetValue(i), out object? v))
                     {
                         arr.SetValue(v, i);
                     }
@@ -222,14 +222,14 @@ public sealed class ModuleSnapshotTests(GuestMemoryFixture fx, ITestOutputHelper
             }
         }
 
-        static bool IsCollection(Type t) => t.IsGenericType && t.GetGenericTypeDefinition() is var g &&
+        private static bool IsCollection(Type t) => t.IsGenericType && t.GetGenericTypeDefinition() is var g &&
             (g == typeof(List<>) || g == typeof(HashSet<>) || g == typeof(Queue<>) || g == typeof(Dictionary<,>) ||
              g == typeof(SortedDictionary<,>) || g == typeof(System.Collections.Concurrent.ConcurrentDictionary<,>));
 
-        void FillCollection(object c, Type t, int depth)
+        private void FillCollection(object c, Type t, int depth)
         {
-            var g = t.GetGenericTypeDefinition();
-            var args = t.GetGenericArguments();
+            Type g = t.GetGenericTypeDefinition();
+            Type[] args = t.GetGenericArguments();
             t.GetMethod("Clear")!.Invoke(c, null);
             if (depth >= MaxDepth)
             {
@@ -238,14 +238,14 @@ public sealed class ModuleSnapshotTests(GuestMemoryFixture fx, ITestOutputHelper
 
             for (int i = 0; i < 2; i++)
             {
-                if (!Value(args[0], depth + 1, null, out var e))
+                if (!Value(args[0], depth + 1, null, out object? e))
                 {
                     return;
                 }
 
                 if (args.Length == 2)
                 {
-                    if (e == null || !Value(args[1], depth + 1, null, out var val))
+                    if (e == null || !Value(args[1], depth + 1, null, out object? val))
                     {
                         return;
                     }
@@ -343,7 +343,7 @@ public sealed class ModuleSnapshotTests(GuestMemoryFixture fx, ITestOutputHelper
             }
             if (t.IsEnum)
             {
-                var vals = Enum.GetValues(t);
+                Array vals = Enum.GetValues(t);
                 if (vals.Length == 0)
                 {
                     return false;
@@ -369,11 +369,11 @@ public sealed class ModuleSnapshotTests(GuestMemoryFixture fx, ITestOutputHelper
 
             if (t.IsArray && t.GetArrayRank() == 1)
             {
-                var et = t.GetElementType()!;
+                Type et = t.GetElementType()!;
                 var arr = Array.CreateInstance(et, 2);
                 for (int i = 0; i < 2; i++)
                 {
-                    if (!Value(et, depth + 1, null, out var e))
+                    if (!Value(et, depth + 1, null, out object? e))
                     {
                         return false;
                     }
@@ -385,9 +385,9 @@ public sealed class ModuleSnapshotTests(GuestMemoryFixture fx, ITestOutputHelper
             if (t.IsGenericType && t.FullName!.StartsWith("System.ValueTuple`", StringComparison.Ordinal))
             {
                 var parts = new List<object?>();
-                foreach (var p in t.GetGenericArguments())
+                foreach (Type p in t.GetGenericArguments())
                 {
-                    if (!Value(p, depth + 1, null, out var e))
+                    if (!Value(p, depth + 1, null, out object? e))
                     {
                         return false;
                     }
@@ -398,7 +398,7 @@ public sealed class ModuleSnapshotTests(GuestMemoryFixture fx, ITestOutputHelper
             }
             if (IsCollection(t))
             {
-                var c = cur ?? Activator.CreateInstance(t)!;
+                object c = cur ?? Activator.CreateInstance(t)!;
                 FillCollection(c, t, depth);
                 v = c;
                 return true;

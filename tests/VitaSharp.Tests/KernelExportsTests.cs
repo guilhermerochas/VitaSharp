@@ -14,22 +14,22 @@ namespace VitaSharp.Tests;
 /// module manager's are in <see cref="KernelModulemgrTests"/>.
 /// </summary>
 [Collection("guest")]
-public sealed class KernelExportsTests(GuestMemoryFixture fx) : IDisposable
+public sealed class KernelExportsTests(GuestMemoryFixture fixture) : IDisposable
 {
-    const uint KernelRw = 0x1020D006, UserRw = 0x0C20D060, UserRx = 0x0C20D050;
+    private const uint KernelRw = 0x1020D006, UserRw = 0x0C20D060, UserRx = 0x0C20D050;
 
-    readonly HleHarness _h = new(fx, "kernexp");
-    SysmemKernel Sysmem => _h.Module<SysmemKernel>();
-    ProcessmgrKernel Procmgr => _h.Module<ProcessmgrKernel>();
+    private readonly HleHarness _harness = new(fixture, "kernexp");
+    private SysmemKernel Sysmem => _harness.Module<SysmemKernel>();
+    private ProcessmgrKernel Procmgr => _harness.Module<ProcessmgrKernel>();
 
-    public void Dispose() => _h.Dispose();
+    public void Dispose() => _harness.Dispose();
 
     /// <summary>The firmware imports of the kernel plugins of a HENkaku installation (taihen.skprx, kubridge.skprx and
     /// fd_fix.skprx as installed by the homebrew's own installers, their import tables read with the loader), and the
     /// firmware functions kubridge looks up by module: every one is served by VitaSharp. taiHEN's own libraries
     /// (taihenForKernel, taihenModuleUtils, which kubridge and fd_fix import) are not firmware: only the real
     /// taihen.skprx exports them.</summary>
-    static readonly uint[] PluginImports =
+    private static readonly uint[] s_pluginImports =
     [
         // SceThreadmgrForDriver
         0xFBAA026E, 0xE54FD746, 0x9DCB4B7A, 0x270993A6, 0x1E82E5D0, 0x16AC80C5, 0x0A912340, 0x1D17DECF, 0x21F5419B,
@@ -57,13 +57,13 @@ public sealed class KernelExportsTests(GuestMemoryFixture fx) : IDisposable
     [Fact]
     public void EveryFirmwareImportOfTheKernelPluginsIsImplemented()
     {
-        var missing = PluginImports.Where(n => !_h.Emu.Hle.IsImplemented(n)).Select(n => $"0x{n:X8} {NidDatabase.NameOf(n)}").ToList();
+        var missing = s_pluginImports.Where(n => !_harness.Emu.Hle.IsImplemented(n)).Select(n => $"0x{n:X8} {NidDatabase.NameOf(n)}").ToList();
         Assert.True(missing.Count == 0, string.Join("\n", missing));
     }
 
-    uint Opt(uint attr, uint vbase = 0, uint align = 0, int pid = 0)
+    private uint Opt(uint attr, uint vbase = 0, uint align = 0, int pid = 0)
     {
-        uint opt = _h.Alloc(0x58);
+        uint opt = _harness.Alloc(0x58);
         GuestMemory.W32(opt, 0x58);
         GuestMemory.W32(opt + 8, attr);
         GuestMemory.W32(opt + 0xC, vbase);
@@ -75,8 +75,8 @@ public sealed class KernelExportsTests(GuestMemoryFixture fx) : IDisposable
     [Fact]
     public void AllocMemBlockPlacesKernelAndUserTypes()
     {
-        using var scope = ProcessScope.Enter(_h.Emu);
-        uint name = _h.Str("kblock"), basePtr = _h.Alloc(4);
+        using ProcessScope.Scope scope = ProcessScope.Enter(_harness.Emu);
+        uint name = _harness.Str("kblock"), basePtr = _harness.Alloc(4);
         Assert.Equal(SceError.ILLEGAL_ADDR, Call(Sysmem, "ksceKernelAllocMemBlock", 0u, KernelRw, 0x1000u, 0u));
         Assert.Equal(SceError.ILLEGAL_SIZE, Call(Sysmem, "ksceKernelAllocMemBlock", name, KernelRw, 0u, 0u));
 
@@ -86,18 +86,18 @@ public sealed class KernelExportsTests(GuestMemoryFixture fx) : IDisposable
         uint kbase = GuestMemory.R32(basePtr);
         Assert.InRange(kbase, GuestMemory.KernelStart, GuestMemory.KernelEnd - 1);
         Assert.True(KernelSpace.IsKernelOwned(kbase));
-        Assert.Equal(KernelSpace.KernelPid, _h.Emu.Kernel.Objects.Get<MemBlock>(k)!.OwnerPid);
-        Assert.Equal(0x2000u, _h.Emu.Kernel.Objects.Get<MemBlock>(k)!.Size);
+        Assert.Equal(KernelSpace.KernelPid, _harness.Emu.Kernel.Objects.Get<MemBlock>(k)!.OwnerPid);
+        Assert.Equal(0x2000u, _harness.Emu.Kernel.Objects.Get<MemBlock>(k)!.Size);
 
         // a user block at a fixed address (HAS_VBASE), as kubridge's loaders ask for
-        const uint probe = 0xA1000000;
-        int u = Call(Sysmem, "ksceKernelAllocMemBlock", name, UserRx, 0x3000u, Opt(0x1, probe));
+        const uint Probe = 0xA1000000;
+        int u = Call(Sysmem, "ksceKernelAllocMemBlock", name, UserRx, 0x3000u, Opt(0x1, Probe));
         Assert.True(u > 0, $"0x{u:X8}");
         Assert.Equal(0, Call(Sysmem, "ksceKernelGetMemBlockBase", u, basePtr));
-        Assert.Equal(probe, GuestMemory.R32(basePtr));
-        Assert.True(KernelSpace.IsUserRange(probe, 0x3000));
-        Assert.Equal(SceError.NO_MEMORY, Call(Sysmem, "ksceKernelAllocMemBlock", name, UserRx, 0x1000u, Opt(0x1, probe)));
-        Assert.Equal(SceError.INVALID_ARGUMENT, Call(Sysmem, "ksceKernelAllocMemBlock", name, UserRw, 0x1000u, Opt(0x1, probe + 4)));
+        Assert.Equal(Probe, GuestMemory.R32(basePtr));
+        Assert.True(KernelSpace.IsUserRange(Probe, 0x3000));
+        Assert.Equal(SceError.NO_MEMORY, Call(Sysmem, "ksceKernelAllocMemBlock", name, UserRx, 0x1000u, Opt(0x1, Probe)));
+        Assert.Equal(SceError.INVALID_ARGUMENT, Call(Sysmem, "ksceKernelAllocMemBlock", name, UserRw, 0x1000u, Opt(0x1, Probe + 4)));
         // alignment, and HAS_PID with no such process
         int aligned = Call(Sysmem, "ksceKernelAllocMemBlock", name, UserRw, 0x1000u, Opt(0x4, align: 0x100000));
         Assert.Equal(0, Call(Sysmem, "ksceKernelGetMemBlockBase", aligned, basePtr));
@@ -115,11 +115,11 @@ public sealed class KernelExportsTests(GuestMemoryFixture fx) : IDisposable
     [Fact]
     public void CopiesCheckTheUserSide()
     {
-        using var scope = ProcessScope.Enter(_h.Emu);
-        int k = Call(Sysmem, "ksceKernelAllocMemBlock", _h.Str("kcopy"), KernelRw, 0x1000u, 0u);
-        uint basePtr = _h.Alloc(4);
+        using ProcessScope.Scope scope = ProcessScope.Enter(_harness.Emu);
+        int k = Call(Sysmem, "ksceKernelAllocMemBlock", _harness.Str("kcopy"), KernelRw, 0x1000u, 0u);
+        uint basePtr = _harness.Alloc(4);
         Call(Sysmem, "ksceKernelGetMemBlockBase", k, basePtr);
-        uint kmem = GuestMemory.R32(basePtr), user = _h.Alloc(64);
+        uint kmem = GuestMemory.R32(basePtr), user = _harness.Alloc(64);
         GuestMemory.WriteCString(user, "hello");
 
         Assert.Equal(0, Call(Sysmem, "ksceKernelMemcpyUserToKernel", kmem, user, 6u));
@@ -145,16 +145,16 @@ public sealed class KernelExportsTests(GuestMemoryFixture fx) : IDisposable
         Assert.Equal(SceError.INVALID_UID, Call(Sysmem, "ksceKernelMapBlockUserVisible", 0x7FFFFF01));
 
         // the ForPid copy reads the process's memory; an unknown process is refused
-        Assert.Equal(0, Call(Sysmem, "ksceKernelMemcpyUserToKernelForPid", _h.Emu.Pid, kmem + 0x400, user, 6u));
+        Assert.Equal(0, Call(Sysmem, "ksceKernelMemcpyUserToKernelForPid", _harness.Emu.Pid, kmem + 0x400, user, 6u));
         Assert.Equal("hello", GuestMemory.ReadCString(kmem + 0x400));
         Assert.Equal(SceError.INVALID_PID, Call(Sysmem, "ksceKernelMemcpyUserToKernelForPid", 0x7FFFFF01, kmem, user, 6u));
 
         // into executable user memory of a process (code the kernel installs there)
-        uint code = _h.Alloc(16);
+        uint code = _harness.Alloc(16);
         GuestMemory.W32(kmem + 0x500, 0xE12FFF1E);
         Assert.Equal(0, Call(Sysmem, "ksceKernelProcCopyToUserRx", 0, code, kmem + 0x500, 4u));
         Assert.Equal(0xE12FFF1Eu, GuestMemory.R32(code));
-        int k2 = Call(Sysmem, "ksceKernelAllocMemBlock", _h.Str("kcopy2"), KernelRw, 0x1000u, 0u);
+        int k2 = Call(Sysmem, "ksceKernelAllocMemBlock", _harness.Str("kcopy2"), KernelRw, 0x1000u, 0u);
         Call(Sysmem, "ksceKernelGetMemBlockBase", k2, basePtr);
         Assert.Equal(KernelSpace.UserCopyFault, Call(Sysmem, "ksceKernelProcCopyToUserRx", 0, GuestMemory.R32(basePtr), kmem + 0x500, 4u));
         Call(Sysmem, "ksceKernelFreeMemBlock", k2);
@@ -169,7 +169,7 @@ public sealed class KernelExportsTests(GuestMemoryFixture fx) : IDisposable
     [Fact]
     public void HeapsAllocateZeroedKernelMemory()
     {
-        uint name = _h.Str("kheap");
+        uint name = _harness.Str("kheap");
         Assert.Equal(SceError.ILLEGAL_SIZE, Call(Sysmem, "ksceKernelCreateHeap", name, 0u, 0u));
         int heap = Call(Sysmem, "ksceKernelCreateHeap", name, 0x10000u, 0u);
         Assert.True(heap > 0);
@@ -190,9 +190,9 @@ public sealed class KernelExportsTests(GuestMemoryFixture fx) : IDisposable
     [Fact]
     public void ClassesAndObjects()
     {
-        uint cls = _h.Alloc(0x2C), name = _h.Str("TestClass");
+        uint cls = _harness.Alloc(0x2C), name = _harness.Str("TestClass");
         // create callback: obj->data[0] (+8) = 0x55
-        uint create = _h.Alloc(8);
+        uint create = _harness.Alloc(8);
         GuestMemory.Write(create, (ushort)0x2155);
         GuestMemory.Write(create + 2, (ushort)0x6081);
         GuestMemory.Write(create + 4, (ushort)0x4770);
@@ -204,36 +204,36 @@ public sealed class KernelExportsTests(GuestMemoryFixture fx) : IDisposable
         Assert.Equal(0x20, GuestMemory.Read<ushort>(cls + 0x18));
         Assert.Equal("SceUIDClass", GuestMemory.ReadCString(GuestMemory.R32(root + 0x0C)));
 
-        _h.OnGuest(_ =>
+        _harness.OnGuest(_ =>
         {
-            uint objOut = _h.Alloc(4);
-            int guid = Call(Sysmem, "ksceGUIDKernelCreateWithOpt", cls, _h.Str("obj"), 0u, objOut);
+            uint objOut = _harness.Alloc(4);
+            int guid = Call(Sysmem, "ksceGUIDKernelCreateWithOpt", cls, _harness.Str("obj"), 0u, objOut);
             Assert.True(guid > 0);
             uint obj = GuestMemory.R32(objOut);
             Assert.Equal(cls, GuestMemory.R32(obj + 4));
             Assert.Equal(0x55u, GuestMemory.R32(obj + 8));
-            Assert.Equal(SceError.ILLEGAL_TYPE, Call(Sysmem, "ksceGUIDKernelCreateWithOpt", _h.Alloc(0x2C), 0u, 0u, objOut));
+            Assert.Equal(SceError.ILLEGAL_TYPE, Call(Sysmem, "ksceGUIDKernelCreateWithOpt", _harness.Alloc(0x2C), 0u, 0u, objOut));
 
-            uint got = _h.Alloc(4);
+            uint got = _harness.Alloc(4);
             Assert.Equal(0, Call(Sysmem, "ksceGUIDReferObjectWithClass", guid, cls, got));
             Assert.Equal(obj, GuestMemory.R32(got));
             Assert.Equal(0, Call(Sysmem, "ksceGUIDReferObjectWithClass", guid, root, got)); // a base class matches
-            Assert.Equal(SceError.INVALID_UID_CLASS, Call(Sysmem, "ksceGUIDReferObjectWithClass", guid, _h.Alloc(0x2C), got));
+            Assert.Equal(SceError.INVALID_UID_CLASS, Call(Sysmem, "ksceGUIDReferObjectWithClass", guid, _harness.Alloc(0x2C), got));
             Assert.Equal(0, Call(Sysmem, "ksceGUIDReferObject", guid, got));
             Assert.Equal(obj, GuestMemory.R32(got));
-            Assert.Equal(3, _h.Emu.Kernel.Objects.Get<KernelData>(guid)!.References);
+            Assert.Equal(3, _harness.Emu.Kernel.Objects.Get<KernelData>(guid)!.References);
             for (int i = 0; i < 3; i++)
             {
                 Assert.Equal(0, Call(Sysmem, "ksceGUIDReleaseObject", guid));
             }
 
-            Assert.Equal(0, _h.Emu.Kernel.Objects.Get<KernelData>(guid)!.References);
+            Assert.Equal(0, _harness.Emu.Kernel.Objects.Get<KernelData>(guid)!.References);
 
             // process handles: the same UID, now the process's
-            Assert.Equal(guid, Call(Sysmem, "kscePUIDOpenByGUID", _h.Emu.Pid, guid));
-            Assert.Equal(_h.Emu.Pid, _h.Emu.Kernel.Objects.Get<KernelData>(guid)!.OwnerPid);
-            Assert.Equal(guid, Call(Sysmem, "kscePUIDtoGUID", _h.Emu.Pid, guid));
-            Assert.Equal(0, Call(Sysmem, "kscePUIDClose", _h.Emu.Pid, guid));
+            Assert.Equal(guid, Call(Sysmem, "kscePUIDOpenByGUID", _harness.Emu.Pid, guid));
+            Assert.Equal(_harness.Emu.Pid, _harness.Emu.Kernel.Objects.Get<KernelData>(guid)!.OwnerPid);
+            Assert.Equal(guid, Call(Sysmem, "kscePUIDtoGUID", _harness.Emu.Pid, guid));
+            Assert.Equal(0, Call(Sysmem, "kscePUIDClose", _harness.Emu.Pid, guid));
             Assert.Equal(SceError.INVALID_PID, Call(Sysmem, "kscePUIDOpenByGUID", 0x7FFFFF01, guid));
 
             Assert.Equal(0, Call(Sysmem, "ksceGUIDClose", guid));
@@ -245,22 +245,22 @@ public sealed class KernelExportsTests(GuestMemoryFixture fx) : IDisposable
         });
 
         // an HLE object (a memory block) has a body kernel code can refer to, stable across calls
-        int block = Call(Sysmem, "ksceKernelAllocMemBlock", _h.Str("b"), KernelRw, 0x1000u, 0u);
-        uint body1 = _h.Alloc(4), body2 = _h.Alloc(4);
+        int block = Call(Sysmem, "ksceKernelAllocMemBlock", _harness.Str("b"), KernelRw, 0x1000u, 0u);
+        uint body1 = _harness.Alloc(4), body2 = _harness.Alloc(4);
         Assert.Equal(0, Call(Sysmem, "ksceGUIDReferObject", block, body1));
         Assert.Equal(0, Call(Sysmem, "ksceGUIDReferObject", block, body2));
         Assert.Equal(GuestMemory.R32(body1), GuestMemory.R32(body2));
         Assert.Equal(0, Call(Sysmem, "ksceGUIDClose", block)); // frees the block
-        Assert.Null(_h.Emu.Kernel.Objects.Get<MemBlock>(block));
+        Assert.Null(_harness.Emu.Kernel.Objects.Get<MemBlock>(block));
     }
 
     [Fact]
     public void PidContextAndAddressSpaceRecords()
     {
-        uint out1 = _h.Alloc(4), out2 = _h.Alloc(4);
+        uint out1 = _harness.Alloc(4), out2 = _harness.Alloc(4);
         Assert.Equal(SceError.ILLEGAL_ADDR, Call(Sysmem, "ksceKernelGetPidContext", 0, 0u));
         Assert.Equal(0, Call(Sysmem, "ksceKernelGetPidContext", 0, out1));
-        Assert.Equal(0, Call(Sysmem, "ksceKernelGetPidContext", _h.Emu.Pid, out2));
+        Assert.Equal(0, Call(Sysmem, "ksceKernelGetPidContext", _harness.Emu.Pid, out2));
         Assert.Equal(GuestMemory.R32(out1), GuestMemory.R32(out2));
         Assert.Equal(0, Call(Sysmem, "ksceKernelGetPidContext", KernelSpace.KernelPid, out2));
         Assert.NotEqual(GuestMemory.R32(out1), GuestMemory.R32(out2));
@@ -273,10 +273,10 @@ public sealed class KernelExportsTests(GuestMemoryFixture fx) : IDisposable
     [Fact]
     public void ProcessTitleId()
     {
-        uint buf = _h.Alloc(16);
+        uint buf = _harness.Alloc(16);
         Assert.Equal(SceError.ILLEGAL_ADDR, Call(Sysmem, "ksceKernelSysrootGetProcessTitleId", 0, 0u, 16u));
         Assert.Equal(0, Call(Sysmem, "ksceKernelSysrootGetProcessTitleId", 0, buf, 16u));
-        Assert.Equal(_h.Emu.TitleId, GuestMemory.ReadCString(buf));
+        Assert.Equal(_harness.Emu.TitleId, GuestMemory.ReadCString(buf));
         Assert.Equal(0, Call(Sysmem, "ksceKernelSysrootGetProcessTitleId", KernelSpace.KernelPid, buf, 16u));
         Assert.Equal("", GuestMemory.ReadCString(buf));
         Assert.Equal(SceError.INVALID_PID, Call(Sysmem, "ksceKernelSysrootGetProcessTitleId", 0x7FFFFF01, buf, 16u));
@@ -286,10 +286,10 @@ public sealed class KernelExportsTests(GuestMemoryFixture fx) : IDisposable
     public void CachesInterruptsAndSpinlocks()
     {
         // a Thumb function returning 1, run, then rewritten to return 2: after the icache flush the new code runs
-        uint code = _h.Alloc(16);
+        uint code = _harness.Alloc(16);
         GuestMemory.Write(code, (ushort)0x2001);
         GuestMemory.Write(code + 2, (ushort)0x4770);
-        _h.OnGuest(t =>
+        _harness.OnGuest(t =>
         {
             Assert.Equal(1u, t.CallGuest(code | 1));
             GuestMemory.Write(code, (ushort)0x2002);
@@ -310,7 +310,7 @@ public sealed class KernelExportsTests(GuestMemoryFixture fx) : IDisposable
             Call(Sysmem, "ksceKernelCpuResumeIntr", 0);
 
             // spinlocks: the word holds the holder, 0 when free
-            uint lockWord = _h.Alloc(4);
+            uint lockWord = _harness.Alloc(4);
             Assert.Equal(0, Call(Sysmem, "ksceKernelCpuLockSuspendIntrStoreFlag", lockWord));
             Assert.Equal(1u, GuestMemory.R32(lockWord));
             Invoke(Sysmem, "ksceKernelCpuUnlockResumeIntrStoreFlag", lockWord, 0);
@@ -323,8 +323,8 @@ public sealed class KernelExportsTests(GuestMemoryFixture fx) : IDisposable
     public void LockStoreLRKeepsTheHolder()
     {
         // the lock takes its address in r0 and keeps the caller's return address in the word
-        uint lockWord = _h.Alloc(4);
-        _h.OnGuest(t =>
+        uint lockWord = _harness.Alloc(4);
+        _harness.OnGuest(t =>
         {
             unsafe
             {
@@ -348,10 +348,10 @@ public sealed class KernelExportsTests(GuestMemoryFixture fx) : IDisposable
     [Fact]
     public void ProcessLocalStorage()
     {
-        uint addr = _h.Alloc(4);
+        uint addr = _harness.Alloc(4);
         Assert.Equal(SceError.ILLEGAL_ADDR, Call(Procmgr, "ksceKernelCreateProcessLocalStorage", 0u, 0x20u));
-        Assert.Equal(SceError.ILLEGAL_SIZE, Call(Procmgr, "ksceKernelCreateProcessLocalStorage", _h.Str("pls"), 0u));
-        int key = Call(Procmgr, "ksceKernelCreateProcessLocalStorage", _h.Str("pls"), 0x20u);
+        Assert.Equal(SceError.ILLEGAL_SIZE, Call(Procmgr, "ksceKernelCreateProcessLocalStorage", _harness.Str("pls"), 0u));
+        int key = Call(Procmgr, "ksceKernelCreateProcessLocalStorage", _harness.Str("pls"), 0x20u);
         Assert.True(key >= 0);
         Assert.Equal(SceError.NO_PROCESS_DATA, Call(Procmgr, "ksceKernelGetProcessLocalStorageAddrForPid", 0, key, addr, 0));
         Assert.Equal(0u, GuestMemory.R32(addr));
@@ -359,7 +359,7 @@ public sealed class KernelExportsTests(GuestMemoryFixture fx) : IDisposable
         uint block = GuestMemory.R32(addr);
         Assert.True(KernelSpace.IsKernelOwned(block));
         Assert.Equal(new byte[0x20], GuestMemory.ReadSpan(block, 0x20).ToArray());
-        Assert.Equal(0, Call(Procmgr, "ksceKernelGetProcessLocalStorageAddrForPid", _h.Emu.Pid, key, addr, 0));
+        Assert.Equal(0, Call(Procmgr, "ksceKernelGetProcessLocalStorageAddrForPid", _harness.Emu.Pid, key, addr, 0));
         Assert.Equal(block, GuestMemory.R32(addr));
         Assert.Equal(SceError.INVALID_ARGUMENT, Call(Procmgr, "ksceKernelGetProcessLocalStorageAddrForPid", 0, key + 100, addr, 1));
         Assert.Equal(SceError.INVALID_PID, Call(Procmgr, "ksceKernelGetProcessLocalStorageAddrForPid", 0x7FFFFF01, key, addr, 1));
@@ -369,28 +369,28 @@ public sealed class KernelExportsTests(GuestMemoryFixture fx) : IDisposable
     [Fact]
     public void RemoteProcessHeap()
     {
-        uint p = Convert.ToUInt32(Invoke(Procmgr, "ksceKernelAllocRemoteProcessHeap", _h.Emu.Pid, 0x100u, 0u));
+        uint p = Convert.ToUInt32(Invoke(Procmgr, "ksceKernelAllocRemoteProcessHeap", _harness.Emu.Pid, 0x100u, 0u));
         Assert.NotEqual(0u, p);
         Assert.True(KernelSpace.IsUserRange(p, 0x100));
         Assert.Equal(0u, Convert.ToUInt32(Invoke(Procmgr, "ksceKernelAllocRemoteProcessHeap", 0x7FFFFF01, 0x100u, 0u)));
-        Invoke(Procmgr, "ksceKernelFreeRemoteProcessHeap", _h.Emu.Pid, p);
+        Invoke(Procmgr, "ksceKernelFreeRemoteProcessHeap", _harness.Emu.Pid, p);
         Assert.False(GuestMemory.IsMapped(p));
     }
 
     [Fact]
     public void ProcEventHandlersAreCopied()
     {
-        uint handler = _h.Alloc(0x1C);
+        uint handler = _harness.Alloc(0x1C);
         GuestMemory.W32(handler, 0x1C);
         GuestMemory.W32(handler + 8, 0x81000101);
         Assert.Equal(SceError.ILLEGAL_ADDR, Call(Procmgr, "ksceKernelRegisterProcEventHandler", 0u, handler, 0));
         GuestMemory.W32(handler, 0x40);
-        Assert.Equal(SceError.ILLEGAL_SIZE, Call(Procmgr, "ksceKernelRegisterProcEventHandler", _h.Str("h"), handler, 0));
+        Assert.Equal(SceError.ILLEGAL_SIZE, Call(Procmgr, "ksceKernelRegisterProcEventHandler", _harness.Str("h"), handler, 0));
         GuestMemory.W32(handler, 0x1C);
-        int uid = Call(Procmgr, "ksceKernelRegisterProcEventHandler", _h.Str("h"), handler, 0);
+        int uid = Call(Procmgr, "ksceKernelRegisterProcEventHandler", _harness.Str("h"), handler, 0);
         Assert.True(uid > 0);
         GuestMemory.W32(handler + 8, 0); // the caller's copy (on its stack) goes away
-        var h = _h.Emu.Kernel.Objects.Get<KernelData>(uid)!;
+        KernelData h = _harness.Emu.Kernel.Objects.Get<KernelData>(uid)!;
         Assert.Equal(0x81000101u, GuestMemory.R32(h.Address + 8));
         Assert.Equal(0, Call(Procmgr, "ksceKernelUnregisterProcEventHandler", uid));
         Assert.Equal(SceError.INVALID_UID, Call(Procmgr, "ksceKernelUnregisterProcEventHandler", uid));
@@ -399,7 +399,7 @@ public sealed class KernelExportsTests(GuestMemoryFixture fx) : IDisposable
     [Fact]
     public void ExceptionHandlersChainPerKind()
     {
-        uint a = _h.Alloc(16), b = _h.Alloc(16);
+        uint a = _harness.Alloc(16), b = _harness.Alloc(16);
         Assert.Equal(SceError.INVALID_ARGUMENT, Call(Procmgr, "sceKernelRegisterExceptionHandler", 8u, 0u, a));
         Assert.Equal(SceError.ILLEGAL_ADDR, Call(Procmgr, "sceKernelRegisterExceptionHandler", 1u, 0u, 0u));
         Assert.Equal(0, Call(Procmgr, "sceKernelRegisterExceptionHandler", 4u, 0u, a));
@@ -413,18 +413,18 @@ public sealed class KernelExportsTests(GuestMemoryFixture fx) : IDisposable
     [Fact]
     public void KernelThreadsWorkForTheKernel()
     {
-        uint code = _h.Alloc(16);
+        uint code = _harness.Alloc(16);
         GuestMemory.Write(code, (ushort)0x2007); // movs r0, #7; bx lr
         GuestMemory.Write(code + 2, (ushort)0x4770);
-        _h.OnGuest(t =>
+        _harness.OnGuest(t =>
         {
             int uid = Call(Procmgr, "ksceKernelCreateThread", "kthread", code | 1, 0x40, 0x4000, 0u, 0x10000, 0u);
             Assert.True(uid > 0);
-            var kt = _h.Emu.Kernel.GetThread(uid)!;
+            GuestThread kt = _harness.Emu.Kernel.GetThread(uid)!;
             Assert.True(kt.KernelMode);
-            Assert.Equal(0, Call(_h.Module<ThreadMgr>(), "ksceKernelStartThread", uid, 0u, 0u));
-            uint stat = _h.Alloc(4);
-            Assert.Equal(7, Call(_h.Module<ThreadMgr>(), "ksceKernelWaitThreadEnd", uid, new Ptr<int>(stat), new Ptr<uint>(0)));
+            Assert.Equal(0, Call(_harness.Module<ThreadMgr>(), "ksceKernelStartThread", uid, 0u, 0u));
+            uint stat = _harness.Alloc(4);
+            Assert.Equal(7, Call(_harness.Module<ThreadMgr>(), "ksceKernelWaitThreadEnd", uid, new Ptr<int>(stat), new Ptr<uint>(0)));
             Assert.Equal(7u, GuestMemory.R32(stat));
             Assert.Equal(SceError.INVALID_ARGUMENT, Call(Procmgr, "ksceKernelCreateThread", "bad", 0u, 0x40, 0x4000, 0u, 0, 0u));
             // run with stack: func(arg) on the caller
@@ -436,8 +436,8 @@ public sealed class KernelExportsTests(GuestMemoryFixture fx) : IDisposable
     [Fact]
     public void KernelMutexes()
     {
-        var tm = _h.Module<ThreadMgr>();
-        _h.OnGuest(_ =>
+        ThreadMgr tm = _harness.Module<ThreadMgr>();
+        _harness.OnGuest(_ =>
         {
             int m = Call(tm, "ksceKernelCreateMutex", "kmutex", 0u, 0, 0u);
             Assert.True(m > 0);
@@ -477,10 +477,10 @@ public sealed class KernelExportsTests(GuestMemoryFixture fx) : IDisposable
     public void KernelLibraryAliasesShareTheUserImplementations()
     {
         // the kernel's C library, I/O and controller calls take the same arguments as the user ones
-        _h.OnGuest(_ =>
+        _harness.OnGuest(_ =>
         {
-            var pm = _h.Module<ProcessMgr>();
-            uint a = _h.Str("abcd"), b = _h.Str("abcf"), dst = _h.Alloc(8);
+            ProcessMgr pm = _harness.Module<ProcessMgr>();
+            uint a = _harness.Str("abcd"), b = _harness.Str("abcf"), dst = _harness.Alloc(8);
             Assert.Equal(dst, Convert.ToUInt32(Invoke(pm, "kmemcpy", dst, a, 5u)));
             Assert.Equal("abcd", GuestMemory.ReadCString(dst));
             Assert.Equal(dst, Convert.ToUInt32(Invoke(pm, "kmemset", dst, 0x41, 3u)));
@@ -490,19 +490,19 @@ public sealed class KernelExportsTests(GuestMemoryFixture fx) : IDisposable
         });
         foreach (string name in new[] { "ksnprintf", "ksceIoOpen", "ksceIoRead", "ksceIoLseek", "ksceIoClose", "ksceCtrlPeekBufferPositive" })
         {
-            var nids = NidDatabase.LookupName(name);
+            IReadOnlyList<NidInfo> nids = NidDatabase.LookupName(name);
             Assert.NotEmpty(nids);
-            Assert.All(nids, n => Assert.True(_h.Emu.Hle.IsImplemented(n.Nid), name));
+            Assert.All(nids, n => Assert.True(_harness.Emu.Hle.IsImplemented(n.Nid), name));
         }
     }
 
     [Fact]
     public void ProcessIdOfKernelAndUserThreads()
     {
-        var tm = _h.Module<ThreadMgr>();
-        _h.OnGuest(t =>
+        ThreadMgr tm = _harness.Module<ThreadMgr>();
+        _harness.OnGuest(t =>
         {
-            Assert.Equal(_h.Emu.Pid, Call(tm, "sceKernelGetProcessId"));
+            Assert.Equal(_harness.Emu.Pid, Call(tm, "sceKernelGetProcessId"));
             t.KernelMode = true;
             Assert.Equal(KernelSpace.KernelPid, Call(tm, "sceKernelGetProcessId"));
             t.KernelMode = false;

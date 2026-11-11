@@ -8,19 +8,19 @@ namespace VitaSharp.Tests;
 /// <summary>G1 misc media/voice libraries: SceIme, SceVoice, SceVoiceQoS, SceG729, SceAudioenc, SceVideoenc,
 /// SceLibMp4Recorder, SceHandwriting.</summary>
 [Collection("guest")]
-public sealed class MediaMiscHleTests(GuestMemoryFixture fx)
+public sealed class MediaMiscHleTests(GuestMemoryFixture fixture)
 {
-    static object? Invoke<T>(T module, string name, params object[] args) =>
+    private static object? Invoke<T>(T module, string name, params object[] args) =>
         typeof(T).GetMethod(name, BindingFlags.Instance | BindingFlags.NonPublic | BindingFlags.Public)!.Invoke(module, args);
-    static int Call<T>(T module, string name, params object[] args) => (int)Invoke(module, name, args)!;
+    private static int Call<T>(T module, string name, params object[] args) => (int)Invoke(module, name, args)!;
 
-    static void WriteUtf16(uint addr, string s)
+    private static void WriteUtf16(uint addr, string s)
     {
-        var b = Encoding.Unicode.GetBytes(s + "\0");
+        byte[] b = Encoding.Unicode.GetBytes(s + "\0");
         b.CopyTo(GuestMemory.Span(addr, b.Length));
     }
 
-    static string ReadUtf16(uint addr)
+    private static string ReadUtf16(uint addr)
     {
         int n = 0;
         while (GuestMemory.Read<ushort>(addr + (uint)n * 2) != 0)
@@ -33,14 +33,14 @@ public sealed class MediaMiscHleTests(GuestMemoryFixture fx)
 
     // ------------------------------------------------------------------ SceIme
 
-    const uint ImeHandler = 0x1234_5679;
+    private const uint ImeHandler = 0x1234_5679;
 
-    (Ime ime, uint param, uint buffer, List<(uint id, uint p0, uint p2, string text, int edIdx, int edLen)> events) NewIme(string initial)
+    private (Ime ime, uint param, uint buffer, List<(uint id, uint p0, uint p2, string text, int edIdx, int edLen)> events) NewIme(string initial)
     {
         var ime = new Ime();
-        uint param = fx.Memory.Alloc(0x1000, "ime param");
+        uint param = fixture.Memory.Alloc(0x1000, "ime param");
         GuestMemory.Fill(param, 0, 0x40);
-        uint init = param + 0x100, buffer = param + 0x400, work = fx.Memory.Alloc(20 * 1024, "ime work");
+        uint init = param + 0x100, buffer = param + 0x400, work = fixture.Memory.Alloc(20 * 1024, "ime work");
         WriteUtf16(init, initial);
         GuestMemory.W32(param + 0x1C, work);
         GuestMemory.W32(param + 0x20, 0xA5A5);
@@ -64,7 +64,7 @@ public sealed class MediaMiscHleTests(GuestMemoryFixture fx)
     [Fact]
     public void ImeOpenValidatesParam()
     {
-        var (ime, param, _, _) = NewIme("");
+        (Ime? ime, uint param, uint _, List<(uint id, uint p0, uint p2, string text, int edIdx, int edLen)> _) = NewIme("");
         Assert.Equal(Ime.ERR_INVALID_POINTER, Call(ime, "sceImeOpen", 0u));
         GuestMemory.W32(param + 0x30, 0);
         Assert.Equal(Ime.ERR_INVALID_MAX_TEXT_LENGTH, Call(ime, "sceImeOpen", param));
@@ -98,7 +98,7 @@ public sealed class MediaMiscHleTests(GuestMemoryFixture fx)
         CommonDialog.ImeDefaultText = null;
         try
         {
-            var (ime, param, buffer, events) = NewIme("ab");
+            (Ime? ime, uint param, uint buffer, List<(uint id, uint p0, uint p2, string text, int edIdx, int edLen)>? events) = NewIme("ab");
             Assert.Equal(Ime.ERR_NOT_OPENED, Call(ime, "sceImeUpdate"));
             Assert.Equal(0, Call(ime, "sceImeOpen", param));
             Assert.Equal(Ime.ERR_ALREADY_OPENED, Call(ime, "sceImeOpen", param));
@@ -127,7 +127,7 @@ public sealed class MediaMiscHleTests(GuestMemoryFixture fx)
             Assert.Equal((0, -2), (events[3].edIdx, events[3].edLen));
 
             // caret moved by the game: UPDATE_CARET with the new index; out of range rejected
-            uint caret = fx.Memory.Alloc(0x10, "ime caret");
+            uint caret = fixture.Memory.Alloc(0x10, "ime caret");
             GuestMemory.W32(caret + 12, 0);
             Assert.Equal(0, Call(ime, "sceImeSetCaret", caret));
             GuestMemory.W32(caret + 12, 5);
@@ -170,8 +170,8 @@ public sealed class MediaMiscHleTests(GuestMemoryFixture fx)
         CommonDialog.ImeDefaultText = "Hi";
         try
         {
-            var (ime, param, buffer, events) = NewIme("");
-            var inner = ime.GuestCallOverride!;
+            (Ime? ime, uint param, uint buffer, List<(uint id, uint p0, uint p2, string text, int edIdx, int edLen)>? events) = NewIme("");
+            Func<uint, uint[], uint> inner = ime.GuestCallOverride!;
             ime.GuestCallOverride = (fn, a) =>
             {
                 uint r = inner(fn, a);
@@ -202,10 +202,10 @@ public sealed class MediaMiscHleTests(GuestMemoryFixture fx)
         CommonDialog.ImeDefaultText = null;
         try
         {
-            var (ime, param, buffer, events) = NewIme("");
+            (Ime? ime, uint param, uint buffer, List<(uint id, uint p0, uint p2, string text, int edIdx, int edLen)>? events) = NewIme("");
             const uint Filter = 0x2222_0001;
             GuestMemory.W32(param + 0x28, Filter);
-            var inner = ime.GuestCallOverride!;
+            Func<uint, uint[], uint> inner = ime.GuestCallOverride!;
             ime.GuestCallOverride = (fn, a) =>
             {
                 if (fn != Filter)
@@ -240,16 +240,16 @@ public sealed class MediaMiscHleTests(GuestMemoryFixture fx)
 
     // ------------------------------------------------------------------ SceVoice
 
-    sealed class FakeClock
+    private sealed class FakeClock
     {
         public double Now;
     }
 
-    (Voice v, FakeClock clock, uint scratch) NewVoice()
+    private (Voice v, FakeClock clock, uint scratch) NewVoice()
     {
         var clock = new FakeClock();
         var v = new Voice { Clock = () => clock.Now, MemBlockExists = uid => uid == 0x4242 };
-        uint s = fx.Memory.Alloc(0x10000, "voice scratch");
+        uint s = fixture.Memory.Alloc(0x10000, "voice scratch");
         GuestMemory.Fill(s, 0, 0x10000);
         GuestMemory.W32(s, 0x20000000);
         Assert.Equal(0, Call(v, "sceVoiceInit", s, 100u));
@@ -257,7 +257,7 @@ public sealed class MediaMiscHleTests(GuestMemoryFixture fx)
     }
 
     /// <summary>Writes a SceVoicePortParam at <paramref name="p"/> and creates the port; returns (result, id).</summary>
-    static (int r, uint id) CreatePort(Voice v, uint p, uint type, uint data, ushort threshold = 0, float volume = 1f, uint rate = 16000)
+    private static (int r, uint id) CreatePort(Voice v, uint p, uint type, uint data, ushort threshold = 0, float volume = 1f, uint rate = 16000)
     {
         GuestMemory.Fill(p, 0, 0x20);
         GuestMemory.W32(p, type);
@@ -272,7 +272,7 @@ public sealed class MediaMiscHleTests(GuestMemoryFixture fx)
     [Fact]
     public void VoiceInitStartStopEnd()
     {
-        var (v, _, s) = NewVoice();
+        (Voice? v, FakeClock _, uint s) = NewVoice();
         Assert.Equal(Voice.ERR_ALREADY_INITIALIZED, Call(v, "sceVoiceInit", s, 100u));
         uint info = s + 0x100;
         Assert.Equal(0, Call(v, "sceVoiceGetResourceInfo", info));
@@ -281,7 +281,7 @@ public sealed class MediaMiscHleTests(GuestMemoryFixture fx)
         uint start = s + 0x200;
         GuestMemory.W32(start, 99);
         Assert.Equal(Voice.ERR_INVALID_MEMBLOCK, Call(v, "sceVoiceStart", start));
-        var (r, id) = CreatePort(v, s + 0x300, Voice.OUT_PCMAUDIO, 2048);
+        (int r, uint id) = CreatePort(v, s + 0x300, Voice.OUT_PCMAUDIO, 2048);
         Assert.Equal(0, r);
         GuestMemory.Fill(info, 0xEE, 0x18);
         Assert.Equal(Voice.ERR_NOT_STARTED, Call(v, "sceVoiceGetPortInfo", id, info));
@@ -305,9 +305,9 @@ public sealed class MediaMiscHleTests(GuestMemoryFixture fx)
     [Fact]
     public void VoiceCreatePortValidationAndLimits()
     {
-        var (v, _, s) = NewVoice();
+        (Voice? v, FakeClock _, uint s) = NewVoice();
         uint p = s + 0x400;
-        var (r, id) = CreatePort(v, p, Voice.IN_PCMAUDIO, 1000);
+        (int r, uint id) = CreatePort(v, p, Voice.IN_PCMAUDIO, 1000);
         Assert.Equal(Voice.ERR_INVALID_ARGUMENT, r);
         Assert.Equal(0xFFu, id); // written before validation
         Assert.Equal(0, CreatePort(v, p, Voice.IN_PCMAUDIO, 1024).r);
@@ -329,14 +329,14 @@ public sealed class MediaMiscHleTests(GuestMemoryFixture fx)
         Assert.Equal(0, Call(v, "sceVoiceDeletePort", 0u));
         Assert.Equal(Voice.ERR_INVALID_PORT_ID, Call(v, "sceVoiceDeletePort", 0u));
         Assert.Equal(Voice.ERR_INVALID_PORT_ID, Call(v, "sceVoiceDeletePort", 64u));
-        var (r2, id2) = CreatePort(v, p, Voice.OUT_PCMAUDIO, 4096);
+        (int r2, uint id2) = CreatePort(v, p, Voice.OUT_PCMAUDIO, 4096);
         Assert.Equal((0, 0u), (r2, id2));
     }
 
     [Fact]
     public void VoiceConnectDisconnectAndTopology()
     {
-        var (v, _, s) = NewVoice();
+        (Voice? v, FakeClock _, uint s) = NewVoice();
         uint p = s + 0x400;
         uint mic = CreatePort(v, p, Voice.IN_DEVICE, 0).id;
         uint inV = CreatePort(v, p, Voice.IN_VOICE, 12200).id;
@@ -367,7 +367,7 @@ public sealed class MediaMiscHleTests(GuestMemoryFixture fx)
     [Fact]
     public void VoicePcmMixWithVolume()
     {
-        var (v, clock, s) = NewVoice();
+        (Voice? v, FakeClock? clock, uint s) = NewVoice();
         uint p = s + 0x400;
         uint inP = CreatePort(v, p, Voice.IN_PCMAUDIO, 1024).id;
         uint outP = CreatePort(v, p, Voice.OUT_PCMAUDIO, 4096, volume: 0.5f).id;
@@ -424,7 +424,7 @@ public sealed class MediaMiscHleTests(GuestMemoryFixture fx)
     [Fact]
     public void VoiceOutVoiceProducesSizedFramesFromMic()
     {
-        var (v, clock, s) = NewVoice();
+        (Voice? v, FakeClock? clock, uint s) = NewVoice();
         uint p = s + 0x400;
         uint mic = CreatePort(v, p, Voice.IN_DEVICE, 0).id;
         uint outV = CreatePort(v, p, Voice.OUT_VOICE, 5700).id; // 15 bytes / 20 ms
@@ -456,7 +456,7 @@ public sealed class MediaMiscHleTests(GuestMemoryFixture fx)
     [Fact]
     public void VoicePortAttributes()
     {
-        var (v, _, s) = NewVoice();
+        (Voice? v, FakeClock _, uint s) = NewVoice();
         uint p = s + 0x400, outp = s + 0x80;
         uint mic = CreatePort(v, p, Voice.IN_DEVICE, 0).id;
         uint pcm = CreatePort(v, p, Voice.OUT_PCMAUDIO, 2048).id;
@@ -502,7 +502,7 @@ public sealed class MediaMiscHleTests(GuestMemoryFixture fx)
     public void VoiceQoSSessionFlow()
     {
         var q = new VoiceQoS();
-        uint s = fx.Memory.Alloc(0x1000, "qos");
+        uint s = fixture.Memory.Alloc(0x1000, "qos");
         Assert.Equal(VoiceQoS.ERR_GENERIC, Call(q, "sceVoiceQoSCreateLocalEndpoint", s));
         Assert.Equal(0, Call(q, "sceVoiceQoSInit", s + 0x800, 0x800u, 0x20000000u));
         Assert.Equal(VoiceQoS.ERR_GENERIC, Call(q, "sceVoiceQoSInit", s + 0x800, 0x800u, 0x20000000u));
@@ -549,9 +549,9 @@ public sealed class MediaMiscHleTests(GuestMemoryFixture fx)
     // ------------------------------------------------------------------ SceAudioenc / SceG729
 
     /// <summary>Allocates a SceAudioencCtrl with its SceAudioencInfoCelp, PCM/ES buffers and SceAudioencOptInfoCelp.</summary>
-    uint NewEncCtrl(uint bitRate)
+    private uint NewEncCtrl(uint bitRate)
     {
-        uint c = fx.Memory.Alloc(0x2000, "audioenc ctrl");
+        uint c = fixture.Memory.Alloc(0x2000, "audioenc ctrl");
         GuestMemory.Fill(c, 0, 0x2000);
         uint info = c + 0x40, opt = c + 0x80, pcm = c + 0x400, es = c + 0x1000;
         GuestMemory.W32(c, 0x2C);
@@ -571,7 +571,7 @@ public sealed class MediaMiscHleTests(GuestMemoryFixture fx)
     public void AudioencCelpContextSizesAndFrames()
     {
         var a = new Audioenc();
-        uint init = fx.Memory.Alloc(0x10, "audioenc init");
+        uint init = fixture.Memory.Alloc(0x10, "audioenc init");
         GuestMemory.W32(init, 8);
         GuestMemory.W32(init + 4, 1);
         uint ctrl = NewEncCtrl(12200);
@@ -646,7 +646,7 @@ public sealed class MediaMiscHleTests(GuestMemoryFixture fx)
     public void G729ContextLifecycle()
     {
         var g = new G729();
-        uint ctx = fx.Memory.Alloc(0x2000, "g729"), io = ctx + 0x1000;
+        uint ctx = fixture.Memory.Alloc(0x2000, "g729"), io = ctx + 0x1000;
         Assert.Equal(G729.ContextSize, Call(g, "sceG729DecodeGetContextSize", 0u));
         Assert.Equal(G729.ContextSize, Call(g, "sceG729EncodeGetContextSize", 0u));
         Assert.Equal(G729.ERR_INVALID_ARGUMENT, Call(g, "sceG729EncodeCore", ctx, io, io + 0x200));
@@ -669,7 +669,7 @@ public sealed class MediaMiscHleTests(GuestMemoryFixture fx)
     public void VideoencEncoderLifecycle()
     {
         var v = new Videoenc();
-        uint s = fx.Memory.Alloc(0x1000, "videoenc"), ctrl = s, query = s + 0x40, info = s + 0x80, pic = s + 0x100;
+        uint s = fixture.Memory.Alloc(0x1000, "videoenc"), ctrl = s, query = s + 0x40, info = s + 0x80, pic = s + 0x100;
         Assert.Equal(0, Call(v, "sceVideoencInitLibrary", Videoenc.TYPE_HW_AVCENC_GUESS, s + 0x200));
         Assert.Equal(Videoenc.ERR_INVALID_POINTER, Call(v, "sceVideoencInitLibraryWithUnmapMem", Videoenc.TYPE_HW_AVCENC_GUESS, 0u, 0u, 0u));
         Assert.Equal(0, Call(v, "sceVideoencQueryMemSize", Videoenc.TYPE_HW_AVCENC_GUESS, s + 0x200, info, 0u));
@@ -717,7 +717,7 @@ public sealed class MediaMiscHleTests(GuestMemoryFixture fx)
         }
 
         var v = new Videoenc();
-        uint s = fx.Memory.Alloc(0x20000, "avcenc"), ctrl = s, query = s + 0x40, input = s + 0x80, output = s + 0x100,
+        uint s = fixture.Memory.Alloc(0x20000, "avcenc"), ctrl = s, query = s + 0x40, input = s + 0x80, output = s + 0x100,
             info = s + 0x140, nal = s + 0x180, yuv = s + 0x1000, buf = s + 0x4000;
         GuestMemory.W32(query, 64);
         GuestMemory.W32(query + 4, 48);
@@ -762,7 +762,7 @@ public sealed class MediaMiscHleTests(GuestMemoryFixture fx)
     public void Mp4RecorderAcceptsAndDropsSamples()
     {
         var m = new Mp4Recorder();
-        uint s = fx.Memory.Alloc(0x1000, "mp4rec"), rec = s, init = s + 0x40, term = s + 0x400;
+        uint s = fixture.Memory.Alloc(0x1000, "mp4rec"), rec = s, init = s + 0x40, term = s + 0x400;
         GuestMemory.Fill(s, 0, 0x1000);
         GuestMemory.W32(rec, 0x10);
         Assert.Equal(Mp4Recorder.ERR_INVALID_ARGUMENT, Call(m, "sceMp4RecInit", rec, init));
@@ -794,10 +794,10 @@ public sealed class MediaMiscHleTests(GuestMemoryFixture fx)
     public void Mp4RecCscConvertsAndScales()
     {
         var m = new Mp4Recorder();
-        const int sw = 8, sh = 4, dw = 4, dh = 2;
-        uint s = fx.Memory.Alloc(0x2000, "mp4rec csc"), src = s, dst = s + 0x40, sBuf = s + 0x100, dBuf = s + 0x800;
+        const int SourceWidth = 8, SourceHeight = 4, DestinationWidth = 4, DestinationHeight = 2;
+        uint s = fixture.Memory.Alloc(0x2000, "mp4rec csc"), src = s, dst = s + 0x40, sBuf = s + 0x100, dBuf = s + 0x800;
         GuestMemory.Fill(s, 0, 0x2000);
-        foreach (var (f, fmt, w, h, buf) in new[] { (src, Mp4Recorder.PIXEL_A8B8G8R8, sw, sh, sBuf), (dst, Mp4Recorder.PIXEL_YUV420_PACKED, dw, dh, dBuf) })
+        foreach ((uint f, uint fmt, int w, int h, uint buf) in new[] { (src, Mp4Recorder.PIXEL_A8B8G8R8, SourceWidth, SourceHeight, sBuf), (dst, Mp4Recorder.PIXEL_YUV420_PACKED, DestinationWidth, DestinationHeight, dBuf) })
         {
             GuestMemory.W32(f, 0x2C);
             GuestMemory.W32(f + 4, fmt);
@@ -807,19 +807,19 @@ public sealed class MediaMiscHleTests(GuestMemoryFixture fx)
             GuestMemory.W32(f + 0x24, buf);
         }
         // white left half, black right half (bytes R,G,B,A)
-        for (int y = 0; y < sh; y++)
+        for (int y = 0; y < SourceHeight; y++)
         {
-            for (int x = 0; x < sw; x++)
+            for (int x = 0; x < SourceWidth; x++)
             {
-                GuestMemory.W32(sBuf + (uint)(y * sw + x) * 4, x < sw / 2 ? 0xFFFFFFFFu : 0xFF000000u);
+                GuestMemory.W32(sBuf + (uint)(y * SourceWidth + x) * 4, x < SourceWidth / 2 ? 0xFFFFFFFFu : 0xFF000000u);
             }
         }
 
         Assert.Equal(0, Call(m, "sceMp4RecCsc", dst, src));
         Assert.Equal(235, GuestMemory.Read<byte>(dBuf));          // white luma
         Assert.Equal(16, GuestMemory.Read<byte>(dBuf + 3));       // black luma
-        Assert.Equal(235, GuestMemory.Read<byte>(dBuf + dw));     // second row
-        uint uv = dBuf + dw * dh;
+        Assert.Equal(235, GuestMemory.Read<byte>(dBuf + DestinationWidth));     // second row
+        uint uv = dBuf + DestinationWidth * DestinationHeight;
         Assert.InRange(GuestMemory.Read<byte>(uv), 127, 129);     // neutral chroma (V)
         Assert.InRange(GuestMemory.Read<byte>(uv + 1), 127, 129); // neutral chroma (U)
         GuestMemory.W32(dst + 4, 0x10);

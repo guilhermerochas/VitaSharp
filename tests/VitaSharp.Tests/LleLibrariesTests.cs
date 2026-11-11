@@ -1,4 +1,5 @@
 using VitaSharp.Core;
+using VitaSharp.Core.Firmware;
 using VitaSharp.Core.Hle;
 using VitaSharp.Core.Kernel;
 using VitaSharp.Core.Loader;
@@ -18,9 +19,9 @@ namespace VitaSharp.Tests;
 /// work.bin or licence) and the firmware's livespace_db; without them the test is skipped and says what is missing.
 /// </summary>
 [Collection("guest")]
-public sealed class LleLibrariesTests(GuestMemoryFixture fx, ITestOutputHelper output)
+public sealed class LleLibrariesTests(GuestMemoryFixture fixture, ITestOutputHelper output)
 {
-    static string FsRoot => Path.Combine(Environment.GetEnvironmentVariable(EnvVars.Data) is { Length: > 0 } d ? d
+    private static string FsRoot => Path.Combine(Environment.GetEnvironmentVariable(EnvVars.Data) is { Length: > 0 } d ? d
         : Path.Combine(Environment.GetFolderPath(Environment.SpecialFolder.ApplicationData), "VitaSharp"), "fs");
 
     /// <summary>The module file and the key to decrypt it (null for a module that needs none).</summary>
@@ -28,8 +29,8 @@ public sealed class LleLibrariesTests(GuestMemoryFixture fx, ITestOutputHelper o
     /// or the firmware module), found the way the coverage scan finds them.</summary>
     internal static (string Path, string VitaPath, byte[]? Klicensee)? Find(string library)
     {
-        var modules = LleLibraries.GameModules(FsRoot).Concat(LleLibraries.DataModules(FsRoot)).Concat(LleLibraries.FirmwareModules(FsRoot, l => l == library));
-        foreach (var (m, _, _) in LleLibraries.Exports(modules, (_, l) => l == library))
+        IEnumerable<LleLibraries.InstalledModule> modules = LleLibraries.GameModules(FsRoot).Concat(LleLibraries.DataModules(FsRoot)).Concat(LleLibraries.FirmwareModules(FsRoot, l => l == library));
+        foreach ((LleLibraries.InstalledModule? m, string _, IReadOnlyList<uint> _) in LleLibraries.Exports(modules, (_, l) => l == library))
         {
             return (m.HostPath, m.VitaPath, m.Klicensee);
         }
@@ -44,7 +45,7 @@ public sealed class LleLibrariesTests(GuestMemoryFixture fx, ITestOutputHelper o
     [InlineData("SceLsdb", "sceLsdbAppDatabaseInit")]
     public void RealModuleLoadsAndRuns(string library, string export)
     {
-        var found = Find(library);
+        (string Path, string VitaPath, byte[]? Klicensee)? found = Find(library);
         if (found == null)
         {
             output.WriteLine($"{library}: no installed module exporting it under {FsRoot}; nothing to check");
@@ -54,9 +55,9 @@ public sealed class LleLibrariesTests(GuestMemoryFixture fx, ITestOutputHelper o
         Directory.CreateDirectory(root);
         try
         {
-            using var emu = new Emulator(new EmulatorOptions { FsRoot = root, Memory = fx.Memory, EnableJit = false, CpuBackend = "interp" });
-            var elf = SelfDecryptor.ToElf(File.ReadAllBytes(found.Value.Path), found.Value.Klicensee);
-            var m = ModuleLoader.Load(elf, found.Value.VitaPath, emu.Memory, emu.Linker, 0);
+            using var emu = new Emulator(new EmulatorOptions { FsRoot = root, Memory = fixture.Memory, EnableJit = false, CpuBackend = "interp" });
+            byte[] elf = SelfDecryptor.ToElf(File.ReadAllBytes(found.Value.Path), found.Value.Klicensee);
+            LoadedModule m = ModuleLoader.Load(elf, found.Value.VitaPath, emu.Memory, emu.Linker, 0);
             emu.Code.Invalidate(0, uint.MaxValue);
             // every NID of the library the module exports is bound by the linker
             var nids = NidDatabase.All.Where(n => n.Library == library).ToList();
@@ -69,7 +70,7 @@ public sealed class LleLibrariesTests(GuestMemoryFixture fx, ITestOutputHelper o
             GuestMemory.Fill(buf, 0, 0x1000);
             uint result = 0;
             Exception? failure = null;
-            var t = emu.Kernel.CreateThread("lle-test", 0, 0x10000100, 0x10000, 0, 0x70000);
+            GuestThread t = emu.Kernel.CreateThread("lle-test", 0, 0x10000100, 0x10000, 0, 0x70000);
             t.HostBody = th =>
             {
                 try
@@ -112,7 +113,7 @@ public sealed class LleLibrariesTests(GuestMemoryFixture fx, ITestOutputHelper o
     [Fact]
     public void FirmwareLleLibraryLoadsForAnyImporter()
     {
-        var found = Find("SceLsdb");
+        (string Path, string VitaPath, byte[]? Klicensee)? found = Find("SceLsdb");
         if (found == null)
         {
             output.WriteLine($"livespace_db.suprx not installed under {FsRoot}; nothing to check");
@@ -123,8 +124,8 @@ public sealed class LleLibrariesTests(GuestMemoryFixture fx, ITestOutputHelper o
         File.Copy(found.Value.Path, Path.Combine(root, "vs0", "vsh", "shell", "livespace_db.suprx"));
         try
         {
-            using var emu = new Emulator(new EmulatorOptions { FsRoot = root, Memory = fx.Memory, EnableJit = false, CpuBackend = "interp" });
-            var lib = VitaSharp.Core.Firmware.FirmwareLibraries.For(root).Provider("SceLsdb");
+            using var emu = new Emulator(new EmulatorOptions { FsRoot = root, Memory = fixture.Memory, EnableJit = false, CpuBackend = "interp" });
+            FirmwareLibraries.Module? lib = VitaSharp.Core.Firmware.FirmwareLibraries.For(root).Provider("SceLsdb");
             Assert.NotNull(lib);
             uint libNid = lib!.Libraries.Single(l => l.Library == "SceLsdb").LibNid;
             uint[] nids = new[] { "sceLsdbAppDatabaseInit", "sceLsdbGetDatabaseLanguageIndex", "sceLsdbOpen" }
@@ -137,7 +138,7 @@ public sealed class LleLibrariesTests(GuestMemoryFixture fx, ITestOutputHelper o
                 emu.Linker.BindFunctionImport(nids[i], libNid, "SceLsdb", seg + (uint)i * 0x10, importer.Segments);
             }
 
-            var loaded = emu.LoadFirmwareDependencies(importer);
+            List<LoadedModule> loaded = emu.LoadFirmwareDependencies(importer);
             Assert.Contains(loaded, m => m.Path.Equals("vs0:vsh/shell/livespace_db.suprx", StringComparison.OrdinalIgnoreCase));
             foreach (uint nid in nids)
             {

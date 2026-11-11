@@ -12,27 +12,27 @@ namespace VitaSharp.Tests;
 /// results in firing order, auto-reset taken per event, unknown uids reported in the results, timeout), and
 /// _sceKernelGetTimer5Reg.</summary>
 [Collection("guest")]
-public sealed class KernelGapTests(GuestMemoryFixture fx)
+public sealed class KernelGapTests(GuestMemoryFixture fixture)
 {
-    static int Call(object module, string name, params object?[] args) =>
+    private static int Call(object module, string name, params object?[] args) =>
         Convert.ToInt32(module.GetType().GetMethod(name, BindingFlags.Instance | BindingFlags.NonPublic | BindingFlags.Public)!.Invoke(module, args));
 
-    uint Alloc(uint size)
+    private uint Alloc(uint size)
     {
-        uint p = fx.Memory.Alloc(size, "wme");
+        uint p = fixture.Memory.Alloc(size, "wme");
         GuestMemory.Fill(p, 0, size);
         return p;
     }
 
-    Emulator Shell()
+    private Emulator Shell()
     {
         var emu = (Emulator)RuntimeHelpers.GetUninitializedObject(typeof(Emulator));
         emu.GetType().GetField("<Kernel>k__BackingField", BindingFlags.Instance | BindingFlags.NonPublic)!.SetValue(emu, new VitaSharp.Core.Kernel.Kernel(emu));
-        emu.GetType().GetField("<Memory>k__BackingField", BindingFlags.Instance | BindingFlags.NonPublic)!.SetValue(emu, fx.Memory);
+        emu.GetType().GetField("<Memory>k__BackingField", BindingFlags.Instance | BindingFlags.NonPublic)!.SetValue(emu, fixture.Memory);
         return emu;
     }
 
-    ThreadMgr Module() => new() { Emu = Shell() };
+    private ThreadMgr Module() => new() { Emu = Shell() };
 
     [Fact]
     public void Timer5RegIsAPageWithTheProcessTime()
@@ -50,7 +50,7 @@ public sealed class KernelGapTests(GuestMemoryFixture fx)
         Assert.Equal(page, GuestMemory.R32(reg)); // one page per process
     }
 
-    int Event(ThreadMgr tm, uint attr, uint pattern)
+    private int Event(ThreadMgr tm, uint attr, uint pattern)
     {
         uint name = Alloc(16);
         GuestMemory.WriteCString(name, "ev");
@@ -61,7 +61,7 @@ public sealed class KernelGapTests(GuestMemoryFixture fx)
     public void OrAndModesResultsAndErrors()
     {
         const uint A = 0x01000000, B = 0x02000000; // the user bits of an event pattern
-        var tm = Module();
+        ThreadMgr tm = Module();
         int a = Event(tm, EventBits.AttrAutoReset, 0), b = Event(tm, 0, 0);
         uint events = Alloc(3 * 8), results = Alloc(3 * 0x18), timeout = Alloc(4);
         GuestMemory.W32(events, (uint)a);
@@ -110,7 +110,7 @@ public sealed class KernelGapTests(GuestMemoryFixture fx)
         Assert.Equal(0, Call(tm, "sceKernelWaitMultipleEvents", events, 2u, 1u, 0u, new Ptr<uint>(0)));
     }
 
-    uint OptOf(uint results, uint timeout)
+    private uint OptOf(uint results, uint timeout)
     {
         uint opt = Alloc(16);
         GuestMemory.W32(opt, results);

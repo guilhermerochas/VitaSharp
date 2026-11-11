@@ -17,8 +17,8 @@ namespace VitaSharp.Tests;
 /// </summary>
 public sealed class LocalHttpServer : IDisposable
 {
-    readonly TcpListener _listener = new(IPAddress.Loopback, 0);
-    readonly CancellationTokenSource _cts = new();
+    private readonly TcpListener _listener = new(IPAddress.Loopback, 0);
+    private readonly CancellationTokenSource _cts = new();
     public int Port { get; }
     public string Base => $"http://127.0.0.1:{Port}";
     public int Requests;
@@ -31,7 +31,7 @@ public sealed class LocalHttpServer : IDisposable
         _ = Task.Run(AcceptLoop);
     }
 
-    async Task AcceptLoop()
+    private async Task AcceptLoop()
     {
         while (!_cts.IsCancellationRequested)
         {
@@ -48,14 +48,14 @@ public sealed class LocalHttpServer : IDisposable
         }
     }
 
-    async Task Serve(TcpClient c)
+    private async Task Serve(TcpClient c)
     {
-        using var _ = c;
+        using TcpClient _ = c;
         try
         {
-            var s = c.GetStream();
+            NetworkStream s = c.GetStream();
             var head = new StringBuilder();
-            var one = new byte[1];
+            byte[] one = new byte[1];
             while (!head.ToString().EndsWith("\r\n\r\n"))
             {
                 if (await s.ReadAsync(one) == 0)
@@ -66,19 +66,19 @@ public sealed class LocalHttpServer : IDisposable
                 head.Append((char)one[0]);
             }
             Interlocked.Increment(ref Requests);
-            var lines = head.ToString().Split("\r\n");
-            var parts = lines[0].Split(' ');
+            string[] lines = head.ToString().Split("\r\n");
+            string[] parts = lines[0].Split(' ');
             string method = parts[0], path = parts[1];
             var headers = lines.Skip(1).Where(l => l.Contains(':')).ToDictionary(l => l[..l.IndexOf(':')].Trim(), l => l[(l.IndexOf(':') + 1)..].Trim(), StringComparer.OrdinalIgnoreCase);
             byte[] body = [];
-            if (headers.TryGetValue("Content-Length", out var cl) && int.Parse(cl) > 0)
+            if (headers.TryGetValue("Content-Length", out string? cl) && int.Parse(cl) > 0)
             {
                 body = new byte[int.Parse(cl)];
                 await s.ReadExactlyAsync(body);
             }
             async Task Send(string status, string extraHeaders, byte[] content, bool chunked = false)
             {
-                var h = $"HTTP/1.1 {status}\r\nConnection: close\r\n{extraHeaders}" +
+                string h = $"HTTP/1.1 {status}\r\nConnection: close\r\n{extraHeaders}" +
                         (chunked ? "Transfer-Encoding: chunked\r\n" : $"Content-Length: {content.Length}\r\n") + "\r\n";
                 await s.WriteAsync(Encoding.ASCII.GetBytes(h));
                 if (!chunked)
@@ -157,9 +157,9 @@ public sealed class LocalHttpServer : IDisposable
 /// </summary>
 public sealed class MockRpcnServer : IDisposable
 {
-    readonly TcpListener _listener = new(IPAddress.Loopback, 0);
-    readonly CancellationTokenSource _cts = new();
-    readonly X509Certificate2? _cert;
+    private readonly TcpListener _listener = new(IPAddress.Loopback, 0);
+    private readonly CancellationTokenSource _cts = new();
+    private readonly X509Certificate2? _cert;
     public int Port { get; }
     public uint Version { get; init; } = RpcnClient.ProtocolVersion;
     public string User = "Tester", Password = "secret";
@@ -167,10 +167,10 @@ public sealed class MockRpcnServer : IDisposable
     public int Logins;
 
     // TUS: (comm, owner, slot) -> variable / data
-    readonly Dictionary<(string, string, int), (long Value, long Old, ulong Date, string Author)> _vars = new();
-    readonly Dictionary<(string, string, int), (byte[] Data, byte[] Info, ulong Date, string Author)> _data = new();
+    private readonly Dictionary<(string, string, int), (long Value, long Old, ulong Date, string Author)> _vars = new();
+    private readonly Dictionary<(string, string, int), (byte[] Data, byte[] Info, ulong Date, string Author)> _data = new();
     // Score: (comm, board) -> entries
-    readonly Dictionary<(string, uint), List<(string NpId, int PcId, long Score, string Comment, byte[] Info, ulong Date, byte[]? GameData)>> _boards = new();
+    private readonly Dictionary<(string, uint), List<(string NpId, int PcId, long Score, string Comment, byte[] Info, ulong Date, byte[]? GameData)>> _boards = new();
 
     public MockRpcnServer(bool tls = true)
     {
@@ -178,7 +178,7 @@ public sealed class MockRpcnServer : IDisposable
         {
             using var key = RSA.Create(2048);
             var req = new CertificateRequest("CN=rpcn-mock", key, HashAlgorithmName.SHA256, RSASignaturePadding.Pkcs1);
-            using var c = req.CreateSelfSigned(DateTimeOffset.UtcNow.AddDays(-1), DateTimeOffset.UtcNow.AddDays(1));
+            using X509Certificate2 c = req.CreateSelfSigned(DateTimeOffset.UtcNow.AddDays(-1), DateTimeOffset.UtcNow.AddDays(1));
             _cert = X509CertificateLoader.LoadPkcs12(c.Export(X509ContentType.Pfx), null);
         }
         _listener.Start();
@@ -186,7 +186,7 @@ public sealed class MockRpcnServer : IDisposable
         _ = Task.Run(AcceptLoop);
     }
 
-    async Task AcceptLoop()
+    private async Task AcceptLoop()
     {
         while (!_cts.IsCancellationRequested)
         {
@@ -203,9 +203,9 @@ public sealed class MockRpcnServer : IDisposable
         }
     }
 
-    static byte[] Packet(byte type, ushort cmd, ulong id, byte[] data)
+    private static byte[] Packet(byte type, ushort cmd, ulong id, byte[] data)
     {
-        var p = new byte[RpcnClient.HeaderSize + data.Length];
+        byte[] p = new byte[RpcnClient.HeaderSize + data.Length];
         p[0] = type;
         BinaryPrimitives.WriteUInt16LittleEndian(p.AsSpan(1), cmd);
         BinaryPrimitives.WriteUInt32LittleEndian(p.AsSpan(3), (uint)p.Length);
@@ -214,9 +214,9 @@ public sealed class MockRpcnServer : IDisposable
         return p;
     }
 
-    void Serve(TcpClient c)
+    private void Serve(TcpClient c)
     {
-        using var _ = c;
+        using TcpClient _ = c;
         try
         {
             Stream s = c.GetStream();
@@ -226,20 +226,20 @@ public sealed class MockRpcnServer : IDisposable
                 ssl.AuthenticateAsServer(_cert);
                 s = ssl;
             }
-            var ver = new byte[4];
+            byte[] ver = new byte[4];
             BinaryPrimitives.WriteUInt32LittleEndian(ver, Version);
             s.Write(Packet(3, 0, 0, ver));
             // an unsolicited notification first: the client must skip it
             s.Write(Packet(2, 8, 0, "x\0"u8.ToArray()));
             bool logged = false;
-            var h = new byte[RpcnClient.HeaderSize];
+            byte[] h = new byte[RpcnClient.HeaderSize];
             while (true)
             {
                 s.ReadExactly(h);
                 var cmd = (RpcnCommand)BinaryPrimitives.ReadUInt16LittleEndian(h.AsSpan(1));
                 uint size = BinaryPrimitives.ReadUInt32LittleEndian(h.AsSpan(3));
                 ulong id = BinaryPrimitives.ReadUInt64LittleEndian(h.AsSpan(7));
-                var data = new byte[size - RpcnClient.HeaderSize];
+                byte[] data = new byte[size - RpcnClient.HeaderSize];
                 s.ReadExactly(data);
                 lock (Commands)
                 {
@@ -249,7 +249,7 @@ public sealed class MockRpcnServer : IDisposable
                 byte[] reply;
                 if (cmd == RpcnCommand.Login)
                 {
-                    var f = Encoding.UTF8.GetString(data).Split('\0');
+                    string[] f = Encoding.UTF8.GetString(data).Split('\0');
                     if (f[0] != User || f[1] != Password)
                     {
                         reply = [(byte)RpcnError.LoginInvalidPassword];
@@ -292,14 +292,14 @@ public sealed class MockRpcnServer : IDisposable
         catch (Exception e) when (e is IOException or SocketException or ObjectDisposedException or EndOfStreamException) { }
     }
 
-    static byte[] Ok(ProtoWriter m)
+    private static byte[] Ok(ProtoWriter m)
     {
-        var b = m.ToArray();
+        byte[] b = m.ToArray();
         return [0, .. BitConverter.GetBytes((uint)b.Length), .. b];
     }
-    static byte[] Err(RpcnError e) => [(byte)e];
+    private static byte[] Err(RpcnError e) => [(byte)e];
 
-    byte[] Handle(RpcnCommand cmd, byte[] data)
+    private byte[] Handle(RpcnCommand cmd, byte[] data)
     {
         string comm = Encoding.ASCII.GetString(data, 0, 12).TrimEnd('\0');
         if (cmd == RpcnCommand.GetBoardInfos)
@@ -322,11 +322,11 @@ public sealed class MockRpcnServer : IDisposable
                 case RpcnCommand.TusSetMultiSlotVariable:
                 {
                     string owner = m.Message(1).String(2);
-                    var slots = m.Repeated(2);
-                    var values = m.Repeated(3);
+                    List<long> slots = m.Repeated(2);
+                    List<long> values = m.Repeated(3);
                     for (int i = 0; i < slots.Count; i++)
                     {
-                        long old = _vars.TryGetValue((comm, owner, (int)slots[i]), out var v) ? v.Value : 0;
+                        long old = _vars.TryGetValue((comm, owner, (int)slots[i]), out (long Value, long Old, ulong Date, string Author) v) ? v.Value : 0;
                         _vars[(comm, owner, (int)slots[i])] = (values[i], old, now, User);
                     }
                     return [0];
@@ -335,10 +335,10 @@ public sealed class MockRpcnServer : IDisposable
                 {
                     string owner = m.Message(1).String(2);
                     var resp = new ProtoWriter();
-                    foreach (var slot in m.Repeated(2))
+                    foreach (long slot in m.Repeated(2))
                     {
-                        var var = new ProtoWriter().String(1, owner);
-                        if (_vars.TryGetValue((comm, owner, (int)slot), out var v))
+                        ProtoWriter var = new ProtoWriter().String(1, owner);
+                        if (_vars.TryGetValue((comm, owner, (int)slot), out (long Value, long Old, ulong Date, string Author) v))
                         {
                             var.Bool(2, true).UInt64(3, v.Date).String(4, v.Author).Int64(5, v.Value).Int64(6, v.Old);
                         }
@@ -351,7 +351,7 @@ public sealed class MockRpcnServer : IDisposable
                 {
                     string owner = m.Message(1).String(2);
                     int slot = m.Int32(2);
-                    long old = _vars.TryGetValue((comm, owner, slot), out var v) ? v.Value : 0;
+                    long old = _vars.TryGetValue((comm, owner, slot), out (long Value, long Old, ulong Date, string Author) v) ? v.Value : 0;
                     _vars[(comm, owner, slot)] = (old + m.Int64(3), old, now, User);
                     return Ok(new ProtoWriter().String(1, owner).Bool(2, true).UInt64(3, now).String(4, User).Int64(5, old + m.Int64(3)).Int64(6, old));
                 }
@@ -360,7 +360,7 @@ public sealed class MockRpcnServer : IDisposable
                     string owner = m.Message(1).String(2);
                     int slot = m.Int32(2), op = m.Int32(3);
                     long value = m.Int64(4);
-                    bool has = _vars.TryGetValue((comm, owner, slot), out var v);
+                    bool has = _vars.TryGetValue((comm, owner, slot), out (long Value, long Old, ulong Date, string Author) v);
                     bool ok = !has || op switch
                     {
                         3 => value > v.Value,
@@ -385,9 +385,9 @@ public sealed class MockRpcnServer : IDisposable
                 case RpcnCommand.TusGetData:
                 {
                     string owner = m.Message(1).String(2);
-                    var st = new ProtoWriter().String(1, owner);
+                    ProtoWriter st = new ProtoWriter().String(1, owner);
                     var resp = new ProtoWriter();
-                    if (_data.TryGetValue((comm, owner, m.Int32(2)), out var d))
+                    if (_data.TryGetValue((comm, owner, m.Int32(2)), out (byte[] Data, byte[] Info, ulong Date, string Author) d))
                     {
                         st.Bool(2, true).UInt64(3, d.Date).String(4, d.Author).Bytes(5, d.Info);
                         resp.Message(1, st).Bytes(2, d.Data);
@@ -403,10 +403,10 @@ public sealed class MockRpcnServer : IDisposable
                 {
                     string owner = m.Message(1).String(2);
                     var resp = new ProtoWriter();
-                    foreach (var slot in m.Repeated(2))
+                    foreach (long slot in m.Repeated(2))
                     {
-                        var st = new ProtoWriter().String(1, owner);
-                        if (_data.TryGetValue((comm, owner, (int)slot), out var d))
+                        ProtoWriter st = new ProtoWriter().String(1, owner);
+                        if (_data.TryGetValue((comm, owner, (int)slot), out (byte[] Data, byte[] Info, ulong Date, string Author) d))
                         {
                             st.Bool(2, true).UInt64(3, d.Date).String(4, d.Author).Bytes(5, d.Info);
                         }
@@ -418,7 +418,7 @@ public sealed class MockRpcnServer : IDisposable
                 case RpcnCommand.TusDeleteMultiSlotData:
                 {
                     string owner = m.Message(1).String(2);
-                    foreach (var slot in m.Repeated(2))
+                    foreach (long slot in m.Repeated(2))
                     {
                         _data.Remove((comm, owner, (int)slot));
                     }
@@ -428,7 +428,7 @@ public sealed class MockRpcnServer : IDisposable
                 case RpcnCommand.RecordScore:
                 {
                     uint board = m.UInt32(1);
-                    var list = Board(comm, board);
+                    List<(string NpId, int PcId, long Score, string Comment, byte[] Info, ulong Date, byte[]? GameData)> list = Board(comm, board);
                     long score = m.Int64(3);
                     int pc = m.Int32(2);
                     int i = list.FindIndex(e => e.NpId == User && e.PcId == pc);
@@ -449,20 +449,20 @@ public sealed class MockRpcnServer : IDisposable
                 }
                 case RpcnCommand.GetScoreRange:
                 {
-                    var list = Board(comm, m.UInt32(1));
+                    List<(string NpId, int PcId, long Score, string Comment, byte[] Info, ulong Date, byte[]? GameData)> list = Board(comm, m.UInt32(1));
                     int start = (int)m.UInt32(2), n = (int)m.UInt32(3);
                     return Ok(Scores(list.Select((e, i) => (e, i + 1)).Skip(start - 1).Take(n).ToList(), list.Count));
                 }
                 case RpcnCommand.GetScoreNpid:
                 {
-                    var list = Board(comm, m.UInt32(1));
+                    List<(string NpId, int PcId, long Score, string Comment, byte[] Info, ulong Date, byte[]? GameData)> list = Board(comm, m.UInt32(1));
                     var rows = m.Messages(2).Select(q =>
                     {
                         int i = list.FindIndex(e => e.NpId == q.String(1) && e.PcId == q.Int32(2));
                         return i < 0 ? ((string, int, long, string, byte[], ulong, byte[]?)?)null : list[i];
                     }).ToList();
                     var resp = new ProtoWriter();
-                    foreach (var r in rows)
+                    foreach ((string, int, long, string, byte[], ulong, byte[]?)? r in rows)
                     {
                         if (r is not { } e)
                         {
@@ -481,8 +481,8 @@ public sealed class MockRpcnServer : IDisposable
                 }
                 case RpcnCommand.GetScoreData:
                 {
-                    var list = Board(comm, m.UInt32(1));
-                    var e = list.FirstOrDefault(x => x.NpId == m.String(2) && x.PcId == m.Int32(3));
+                    List<(string NpId, int PcId, long Score, string Comment, byte[] Info, ulong Date, byte[]? GameData)> list = Board(comm, m.UInt32(1));
+                    (string NpId, int PcId, long Score, string Comment, byte[] Info, ulong Date, byte[]? GameData) e = list.FirstOrDefault(x => x.NpId == m.String(2) && x.PcId == m.Int32(3));
                     if (e.GameData == null)
                     {
                         return Err(RpcnError.NotFound);
@@ -492,9 +492,9 @@ public sealed class MockRpcnServer : IDisposable
                 }
                 case RpcnCommand.RecordScoreData:
                 {
-                    var list = Board(comm, m.UInt32(1));
+                    List<(string NpId, int PcId, long Score, string Comment, byte[] Info, ulong Date, byte[]? GameData)> list = Board(comm, m.UInt32(1));
                     int dlen = (int)BinaryPrimitives.ReadUInt32LittleEndian(data.AsSpan(16 + len));
-                    var blob = data.AsSpan(20 + len, dlen).ToArray();
+                    byte[] blob = data.AsSpan(20 + len, dlen).ToArray();
                     int i = list.FindIndex(x => x.NpId == User && x.PcId == m.Int32(2) && x.Score == m.Int64(3));
                     if (i < 0)
                     {
@@ -518,9 +518,9 @@ public sealed class MockRpcnServer : IDisposable
         }
     }
 
-    List<(string NpId, int PcId, long Score, string Comment, byte[] Info, ulong Date, byte[]? GameData)> Board(string comm, uint board)
+    private List<(string NpId, int PcId, long Score, string Comment, byte[] Info, ulong Date, byte[]? GameData)> Board(string comm, uint board)
     {
-        if (!_boards.TryGetValue((comm, board), out var l))
+        if (!_boards.TryGetValue((comm, board), out List<(string NpId, int PcId, long Score, string Comment, byte[] Info, ulong Date, byte[]? GameData)>? l))
         {
             _boards[(comm, board)] = l = new();
         }
@@ -528,20 +528,20 @@ public sealed class MockRpcnServer : IDisposable
         return l;
     }
 
-    static ProtoWriter Scores(List<((string NpId, int PcId, long Score, string Comment, byte[] Info, ulong Date, byte[]? GameData) E, int Rank)> rows, int total)
+    private static ProtoWriter Scores(List<((string NpId, int PcId, long Score, string Comment, byte[] Info, ulong Date, byte[]? GameData) E, int Rank)> rows, int total)
     {
         var resp = new ProtoWriter();
-        foreach (var (e, rank) in rows)
+        foreach (((string NpId, int PcId, long Score, string Comment, byte[] Info, ulong Date, byte[]? GameData) e, int rank) in rows)
         {
             resp.Message(1, new ProtoWriter().String(1, e.NpId).String(2, e.NpId).Int32(3, e.PcId).UInt32(4, (uint)rank).Int64(5, e.Score).Bool(6, e.GameData != null).UInt64(7, e.Date));
         }
 
-        foreach (var (e, _) in rows)
+        foreach (((string NpId, int PcId, long Score, string Comment, byte[] Info, ulong Date, byte[]? GameData) e, int _) in rows)
         {
             resp.String(2, e.Comment);
         }
 
-        foreach (var (e, _) in rows)
+        foreach (((string NpId, int PcId, long Score, string Comment, byte[] Info, ulong Date, byte[]? GameData) e, int _) in rows)
         {
             resp.Message(3, new ProtoWriter().Bytes(1, e.Info));
         }
