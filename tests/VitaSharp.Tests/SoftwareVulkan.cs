@@ -37,7 +37,11 @@ public static class SoftwareVulkan
         if ((Env("VK_DRIVER_FILES") ?? Env("VK_ICD_FILENAMES")) is { } given)
         {
             string first = given.Split(Path.PathSeparator)[0];
-            if (File.Exists(first)) return (first, OperatingSystem.IsMacOS() ? MacLoader() : null, null);
+            if (File.Exists(first))
+            {
+                return (first, OperatingSystem.IsMacOS() ? MacLoader() : null, null);
+            }
+
             return (null, null, $"VK_DRIVER_FILES / VK_ICD_FILENAMES names {first}, which does not exist");
         }
         if (OperatingSystem.IsWindows())
@@ -51,10 +55,17 @@ public static class SoftwareVulkan
                 Environment.GetFolderPath(Environment.SpecialFolder.LocalApplicationData) + @"\Google\Chrome\Application",
             })
             {
-                if (!Directory.Exists(root)) continue;
+                if (!Directory.Exists(root))
+                {
+                    continue;
+                }
+
                 var dll = Directory.EnumerateDirectories(root).Select(d => Path.Combine(d, "vk_swiftshader.dll")).Where(File.Exists)
                     .OrderByDescending(File.GetLastWriteTimeUtc).FirstOrDefault();
-                if (dll != null) return (dll, null, null);
+                if (dll != null)
+                {
+                    return (dll, null, null);
+                }
             }
             return (null, null, "no software Vulkan driver: install Microsoft Edge or Google Chrome (they ship SwiftShader, vk_swiftshader.dll), "
                 + "or set VK_DRIVER_FILES to the ICD manifest of a SwiftShader or Mesa build");
@@ -62,8 +73,13 @@ public static class SoftwareVulkan
         if (OperatingSystem.IsLinux())
         {
             foreach (var dir in new[] { "/usr/share/vulkan/icd.d", "/etc/vulkan/icd.d", "/usr/local/share/vulkan/icd.d" })
+            {
                 if (Directory.Exists(dir) && Directory.EnumerateFiles(dir, "lvp_icd*.json").FirstOrDefault() is { } json)
+                {
                     return NativeLibrary.TryLoad("libvulkan.so.1", out var h) ? Free(h, json) : (null, null, "Mesa lavapipe is installed but not the Vulkan loader: install libvulkan1");
+                }
+            }
+
             return (null, null, "no software Vulkan driver: install Mesa lavapipe (Debian/Ubuntu: sudo apt install mesa-vulkan-drivers libvulkan1; "
                 + "Fedora: mesa-vulkan-drivers vulkan-loader), or set VK_DRIVER_FILES to a SwiftShader ICD manifest");
         }
@@ -71,28 +87,49 @@ public static class SoftwareVulkan
         {
             string home = Env("HOME") ?? "";
             var dirs = new List<string> { "/opt/homebrew/share/vulkan/icd.d", "/opt/homebrew/etc/vulkan/icd.d", "/usr/local/share/vulkan/icd.d", "/usr/local/etc/vulkan/icd.d" };
-            if (Env("VULKAN_SDK") is { } sdk) dirs.Insert(0, Path.Combine(sdk, "share", "vulkan", "icd.d"));
+            if (Env("VULKAN_SDK") is { } sdk)
+            {
+                dirs.Insert(0, Path.Combine(sdk, "share", "vulkan", "icd.d"));
+            }
+
             if (Directory.Exists(Path.Combine(home, "VulkanSDK")))
+            {
                 dirs.AddRange(Directory.EnumerateDirectories(Path.Combine(home, "VulkanSDK")).Select(d => Path.Combine(d, "macOS", "share", "vulkan", "icd.d")));
+            }
+
             var icd = dirs.Where(Directory.Exists).SelectMany(d => Directory.EnumerateFiles(d, "MoltenVK_icd.json")).FirstOrDefault();
             if (icd == null)
+            {
                 return (null, null, "no Vulkan driver: install MoltenVK (the LunarG Vulkan SDK, or brew install molten-vk vulkan-loader), "
                     + "or set VK_DRIVER_FILES to a SwiftShader ICD manifest");
+            }
+
             return MacLoader() is { } loader ? (icd, loader, null) : (null, null, "MoltenVK is installed but not the Vulkan loader (libvulkan.1.dylib): brew install vulkan-loader, or the LunarG SDK");
         }
         return (null, null, "no software Vulkan device for this OS");
     }
 
-    static (string?, string?, string?) Free(nint h, string json) { NativeLibrary.Free(h); return (json, null, null); }
+    static (string?, string?, string?) Free(nint h, string json)
+    {
+        NativeLibrary.Free(h);
+        return (json, null, null);
+    }
 
     /// <summary>macOS: the Vulkan loader's path (Homebrew and the SDK are not on dyld's default search path).</summary>
     static string? MacLoader()
     {
         string home = Env("HOME") ?? "";
         var candidates = new List<string> { "/opt/homebrew/lib/libvulkan.1.dylib", "/usr/local/lib/libvulkan.1.dylib" };
-        if (Env("VULKAN_SDK") is { } sdk) candidates.Insert(0, Path.Combine(sdk, "lib", "libvulkan.1.dylib"));
+        if (Env("VULKAN_SDK") is { } sdk)
+        {
+            candidates.Insert(0, Path.Combine(sdk, "lib", "libvulkan.1.dylib"));
+        }
+
         if (Directory.Exists(Path.Combine(home, "VulkanSDK")))
+        {
             candidates.AddRange(Directory.EnumerateDirectories(Path.Combine(home, "VulkanSDK")).Select(d => Path.Combine(d, "macOS", "lib", "libvulkan.1.dylib")));
+        }
+
         return candidates.FirstOrDefault(File.Exists);
     }
 
@@ -119,7 +156,11 @@ public static class SoftwareVulkan
         VulkanLoader.DriverProvider = null;
         Environment.SetEnvironmentVariable("VK_DRIVER_FILES", manifest);
         Environment.SetEnvironmentVariable("VK_ICD_FILENAMES", manifest);
-        if (Found.Loader is { } lib) Environment.SetEnvironmentVariable(EnvVars.VulkanLib, lib);
+        if (Found.Loader is { } lib)
+        {
+            Environment.SetEnvironmentVariable(EnvVars.VulkanLib, lib);
+        }
+
         return new Restore(() =>
         {
             VulkanLoader.DriverProvider = saved;
@@ -143,19 +184,39 @@ public static class SoftwareVulkan
     /// <paramref name="systemLoader"/> forces the loader on Windows too (a window surface goes through it).</summary>
     public static IEnumerable<(string Name, string Value)> ChildEnvironment(bool systemLoader)
     {
-        if (Driver == null) yield break;
-        if (!ThroughLoader && !systemLoader) { yield return (EnvVars.VulkanLib, Driver); yield break; }
+        if (Driver == null)
+        {
+            yield break;
+        }
+
+        if (!ThroughLoader && !systemLoader)
+        {
+            yield return (EnvVars.VulkanLib, Driver);
+            yield break;
+        }
         string manifest = ThroughLoader ? Driver : IcdManifest ?? Path.ChangeExtension(Driver, null) + "_icd.json";
         yield return ("VK_DRIVER_FILES", manifest);
         yield return ("VK_ICD_FILENAMES", manifest);
-        if (Found.Loader is { } lib) yield return (EnvVars.VulkanLib, lib);
+        if (Found.Loader is { } lib)
+        {
+            yield return (EnvVars.VulkanLib, lib);
+        }
     }
 
-    sealed class Restore(Action a) : IDisposable { public void Dispose() => a(); }
+    sealed class Restore(Action a) : IDisposable
+    {
+        public void Dispose() => a();
+    }
 }
 
 /// <summary>[Fact] skipped when no software Vulkan driver is installed.</summary>
 public sealed class SoftwareVulkanFactAttribute : FactAttribute
 {
-    public SoftwareVulkanFactAttribute() { if (SoftwareVulkan.SkipReason is { } r) Skip = r; }
+    public SoftwareVulkanFactAttribute()
+    {
+        if (SoftwareVulkan.SkipReason is { } r)
+        {
+            Skip = r;
+        }
+    }
 }

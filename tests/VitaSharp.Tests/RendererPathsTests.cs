@@ -20,7 +20,11 @@ public sealed class RendererPathsTests(GuestMemoryFixture fx)
 
     static VulkanRenderer NewRenderer(string? cacheDir = null, string? msaa = null) => new(new VulkanRendererOptions
     {
-        VSync = false, AsyncShaders = false, AsyncPipelines = false, ShaderCacheDir = cacheDir, Msaa = msaa,
+        VSync = false,
+        AsyncShaders = false,
+        AsyncPipelines = false,
+        ShaderCacheDir = cacheDir,
+        Msaa = msaa,
     });
 
     /// <summary>Runs <paramref name="body"/> with <paramref name="renderer"/> as the GPU queue's backend of a fresh
@@ -52,15 +56,28 @@ public sealed class RendererPathsTests(GuestMemoryFixture fx)
         {
             var renderer = new VulkanRenderer(new VulkanRendererOptions
             {
-                VSync = false, AsyncShaders = false, AsyncPipelines = false, Msaa = msaa, DumpFramesDir = frames, DumpEvery = 1,
+                VSync = false,
+                AsyncShaders = false,
+                AsyncPipelines = false,
+                Msaa = msaa,
+                DumpFramesDir = frames,
+                DumpEvery = 1,
             });
             WithRenderer("vkmsaa", renderer, h =>
             {
                 var w = new RendererTextureTests.Workload(h, multisample, scaleMode: multisample != 0 ? 1u : 0u);
                 // a surface holding a pattern, and one triangle over its lower-left half sampling an RGBA8 texture
-                for (uint i = 0; i < W * H; i++) GuestMemory.W32(w.Data + i * 4, 0xFF000000u | (i * 2654435761u >> 8));
+                for (uint i = 0; i < W * H; i++)
+                {
+                    GuestMemory.W32(w.Data + i * 4, 0xFF000000u | (i * 2654435761u >> 8));
+                }
+
                 float[] v = [-1, -1, 0.5f, 1, 1, -1, 0.5f, 1, -1, 1, 0.5f, 1];
-                for (int i = 0; i < v.Length; i++) GuestMemory.Write(w.Verts + (uint)i * 4, v[i]);
+                for (int i = 0; i < v.Length; i++)
+                {
+                    GuestMemory.Write(w.Verts + (uint)i * 4, v[i]);
+                }
+
                 uint rgba = w.Textures[w.TextureFormats.IndexOf(VitaSharp.Core.Gxm.TexBase.U8U8U8U8)];
                 w.Textures.Clear();
                 w.Textures.Add(rgba);
@@ -77,7 +94,12 @@ public sealed class RendererPathsTests(GuestMemoryFixture fx)
         }
         finally
         {
-            try { Directory.Delete(frames, true); } catch (IOException) { } catch (UnauthorizedAccessException) { }
+            try
+            {
+                Directory.Delete(frames, true);
+            }
+            catch (IOException) { }
+            catch (UnauthorizedAccessException) { }
         }
     }
 
@@ -90,13 +112,25 @@ public sealed class RendererPathsTests(GuestMemoryFixture fx)
         // texture inside and the pattern outside; along the edge only a band of a pixel or two may differ
         var single = MsaaScene(null, 0, out _);
         static (byte, byte, byte) At(byte[] img, int x, int y) => (img[(y * W + x) * 3], img[(y * W + x) * 3 + 1], img[(y * W + x) * 3 + 2]);
-        static (byte, byte, byte) Pattern(int x, int y) { uint p = unchecked((uint)(y * W + x) * 2654435761u) >> 8; return ((byte)p, (byte)(p >> 8), (byte)(p >> 16)); }
+        static (byte, byte, byte) Pattern(int x, int y)
+        {
+            uint p = unchecked((uint)(y * W + x) * 2654435761u) >> 8;
+            return ((byte)p, (byte)(p >> 8), (byte)(p >> 16));
+        }
         // y grows downwards: the triangle covers the lower-left half (x < y)
         Assert.Equal(Pattern(60, 3), At(single, 60, 3));
         int drawn = 0;
         for (int y = 0; y < H; y++)
+        {
             for (int x = 0; x < y - 2; x++)
-                if (At(single, x, y) != Pattern(x, y)) drawn++;
+            {
+                if (At(single, x, y) != Pattern(x, y))
+                {
+                    drawn++;
+                }
+            }
+        }
+
         Assert.True(drawn > (W - 3) * (H - 3) / 2 * 9 / 10, $"the triangle drew {drawn} pixels");
         foreach (var (mode, samples) in new[] { ("native", (ushort)2), ("native", (ushort)1), ("ss", (ushort)2), ("off", (ushort)2) })
         {
@@ -104,13 +138,27 @@ public sealed class RendererPathsTests(GuestMemoryFixture fx)
             Assert.Equal(mode, shown);
             int far = 0, edge = 0;
             for (int y = 0; y < H; y++)
+            {
                 for (int x = 0; x < W; x++)
                 {
                     var (a, b) = (At(single, x, y), At(img, x, y));
                     bool same = Math.Abs(a.Item1 - b.Item1) <= 2 && Math.Abs(a.Item2 - b.Item2) <= 2 && Math.Abs(a.Item3 - b.Item3) <= 2;
-                    if (same) continue;
-                    if (Math.Abs(x + (H - 1 - y) - (W - 1)) <= 2) edge++; else far++;
+                    if (same)
+                    {
+                        continue;
+                    }
+
+                    if (Math.Abs(x + (H - 1 - y) - (W - 1)) <= 2)
+                    {
+                        edge++;
+                    }
+                    else
+                    {
+                        far++;
+                    }
                 }
+            }
+
             Assert.True(far == 0, $"MSAA {mode} {samples}: {far} pixels away from the edge differ ({edge} on it)");
             Assert.True(edge <= 3 * W, $"MSAA {mode} {samples}: {edge} edge pixels differ");
         }
@@ -149,13 +197,21 @@ public sealed class RendererPathsTests(GuestMemoryFixture fx)
             Assert.True(first.Misses >= 2, $"first session: {first.Misses} shaders translated");
             string dir = Path.Combine(cache, "titles", Title);
             foreach (var f in new[] { "shaders.pack", "pipelines.list", "programs.pack" })
+            {
                 Assert.True(File.Exists(Path.Combine(dir, f)) && new FileInfo(Path.Combine(dir, f)).Length > 0, $"{f} missing in {dir}");
+            }
+
             var second = Session();
             Assert.Equal(0, second.Misses);
         }
         finally
         {
-            try { Directory.Delete(cache, true); } catch (IOException) { } catch (UnauthorizedAccessException) { }
+            try
+            {
+                Directory.Delete(cache, true);
+            }
+            catch (IOException) { }
+            catch (UnauthorizedAccessException) { }
         }
     }
 
@@ -178,10 +234,18 @@ public sealed class RendererPathsTests(GuestMemoryFixture fx)
                 r.BeginTitle("PCSA00078");
                 var w = new RendererTextureTests.Workload(h);
                 w.Textures.RemoveRange(8, w.Textures.Count - 8);
-                for (int i = 0; i < 3; i++) w.Run(8); // a few frames in the rings
+                for (int i = 0; i < 3; i++)
+                {
+                    w.Run(8); // a few frames in the rings
+                }
+
                 Assert.True(r.RequestDiagnosticCapture(Path.Combine(dir, "capture"), res => { result = res; done.Set(); }));
                 Assert.False(r.RequestDiagnosticCapture(dir, _ => { }), "one capture at a time");
-                for (int i = 0; i < 4 && !done.IsSet; i++) { w.Run(8); h.Emu.Gpu.WaitIdle(); }
+                for (int i = 0; i < 4 && !done.IsSet; i++)
+                {
+                    w.Run(8);
+                    h.Emu.Gpu.WaitIdle();
+                }
                 Assert.True(done.Wait(30_000), "the capture did not complete");
                 w.Terminate();
             });
@@ -206,8 +270,17 @@ public sealed class RendererPathsTests(GuestMemoryFixture fx)
         }
         finally
         {
-            if (!wasOn) DebugMode.Disable();
-            try { Directory.Delete(dir, true); } catch (IOException) { } catch (UnauthorizedAccessException) { }
+            if (!wasOn)
+            {
+                DebugMode.Disable();
+            }
+
+            try
+            {
+                Directory.Delete(dir, true);
+            }
+            catch (IOException) { }
+            catch (UnauthorizedAccessException) { }
         }
     }
 
@@ -217,24 +290,54 @@ public sealed class RendererPathsTests(GuestMemoryFixture fx)
     {
         var r = NewRenderer();
         var anomalies = new List<string>();
-        r.AnomalyDetected += (kind, detail, present) => { lock (anomalies) anomalies.Add(kind + ": " + detail); };
+        r.AnomalyDetected += (kind, detail, present) =>
+        {
+            lock (anomalies)
+            {
+                anomalies.Add(kind + ": " + detail);
+            }
+        };
         long scans = 0;
         WithRenderer("vknan", r, h =>
         {
             var w = new RendererTextureTests.Workload(h, colorFormat: 0x01000000);
-            for (uint i = 0; i < W * H * 4; i++) GuestMemory.Write(w.Data + i * 2, half);
+            for (uint i = 0; i < W * H * 4; i++)
+            {
+                GuestMemory.Write(w.Data + i * 2, half);
+            }
             // the draw covers the lower-left half: the rest of the surface keeps what the CPU wrote
             float[] v = [-1, -1, 0.5f, 1, 1, -1, 0.5f, 1, -1, 1, 0.5f, 1];
-            for (int i = 0; i < v.Length; i++) GuestMemory.Write(w.Verts + (uint)i * 4, v[i]);
+            for (int i = 0; i < v.Length; i++)
+            {
+                GuestMemory.Write(w.Verts + (uint)i * 4, v[i]);
+            }
+
             w.Textures.RemoveRange(1, w.Textures.Count - 1);
-            for (int i = 0; i < 4; i++) { w.Run(1); h.Emu.Gpu.WaitIdle(); }
+            for (int i = 0; i < 4; i++)
+            {
+                w.Run(1);
+                h.Emu.Gpu.WaitIdle();
+            }
             w.Terminate();
             h.Emu.Gpu.WaitIdle();
             scans = (long)typeof(VulkanRenderer).GetField("_nanScans", BindingFlags.Instance | BindingFlags.NonPublic)!.GetValue(r)!;
         });
         // the anomaly handler runs on the thread pool
-        for (int i = 0; i < 40; i++) { lock (anomalies) if (anomalies.Count > 0) break; Thread.Sleep(50); }
-        lock (anomalies) return (anomalies.ToList(), scans);
+        for (int i = 0; i < 40; i++)
+        {
+            lock (anomalies)
+            {
+                if (anomalies.Count > 0)
+                {
+                    break;
+                }
+            }
+            Thread.Sleep(50);
+        }
+        lock (anomalies)
+        {
+            return (anomalies.ToList(), scans);
+        }
     }
 
     /// <summary>
@@ -261,6 +364,12 @@ public sealed class RendererPathsTests(GuestMemoryFixture fx)
             Assert.True(cleanScans >= 4, $"{cleanScans} scans");
             Assert.Empty(clean);
         }
-        finally { if (!wasOn) DebugMode.Disable(); }
+        finally
+        {
+            if (!wasOn)
+            {
+                DebugMode.Disable();
+            }
+        }
     }
 }

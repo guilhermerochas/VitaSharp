@@ -16,7 +16,12 @@ public sealed class DesktopCliTests : IDisposable
 
     public void Dispose()
     {
-        try { Directory.Delete(_root, true); } catch (IOException) { } catch (UnauthorizedAccessException) { }
+        try
+        {
+            Directory.Delete(_root, true);
+        }
+        catch (IOException) { }
+        catch (UnauthorizedAccessException) { }
     }
 
     DesktopProcess.Result Run(params string[] args)
@@ -55,7 +60,10 @@ public sealed class DesktopCliTests : IDisposable
         Assert.True(r.ExitCode == 0, Tail(r.Output));
         Assert.Contains("== VitaSharpSynthetic", r.Output);
         foreach (var lib in new[] { "SceCtrl", "SceDisplayUser", "SceDisplay" })
+        {
             Assert.Matches(new Regex($@"\b{lib}\s+1 imports,\s+0 missing"), r.Output);
+        }
+
         Assert.Contains("Total 3: LLE 0, HLE 3, missing 0", r.Output);
 
         // stub: the import stub of sceCtrlPeekBufferPositive (svc + bx lr + NID)
@@ -111,9 +119,12 @@ public sealed class DesktopCliTests : IDisposable
         // png-diff: a picture against itself and against the same panel with the other button selected
         string a = Path.Combine(_root, "a"), b = Path.Combine(_root, "b"), msg0 = Path.Combine(_root, "msg0.png");
         Assert.Equal(0, Run("msg-preview", msg0, "Save?", "--buttons=Yes,No", "--selected=0", "--progress=40").ExitCode);
-        Directory.CreateDirectory(a); Directory.CreateDirectory(b);
-        File.Copy(msg, Path.Combine(a, "x.png")); File.Copy(msg, Path.Combine(b, "x.png"));
-        File.Copy(msg0, Path.Combine(a, "y.png")); File.Copy(msg, Path.Combine(b, "y.png"));
+        Directory.CreateDirectory(a);
+        Directory.CreateDirectory(b);
+        File.Copy(msg, Path.Combine(a, "x.png"));
+        File.Copy(msg, Path.Combine(b, "x.png"));
+        File.Copy(msg0, Path.Combine(a, "y.png"));
+        File.Copy(msg, Path.Combine(b, "y.png"));
         var r = Run("png-diff", a, b);
         Assert.True(r.ExitCode == 0, Tail(r.Output));
         Assert.Contains("COMPARE 2 frames", r.Output);
@@ -148,8 +159,12 @@ public sealed class DesktopCliTests : IDisposable
         static void Dump(string path, float[] floats)
         {
             using var w = new BinaryWriter(File.Create(path));
-            w.Write(0x81000000u); w.Write((uint)floats.Length * 4);
-            foreach (var f in floats) w.Write(f);
+            w.Write(0x81000000u);
+            w.Write((uint)floats.Length * 4);
+            foreach (var f in floats)
+            {
+                w.Write(f);
+            }
         }
         string before = Path.Combine(_root, "before.bin"), after = Path.Combine(_root, "after.bin");
         Dump(before, [10, 20, 30, 0, 500, 600, 700, 0, 1.5f]);
@@ -185,7 +200,9 @@ public sealed class DesktopCliTests : IDisposable
         Assert.True(int.Parse(m.Groups[2].Value) > int.Parse(m.Groups[1].Value));
         var pngs = Directory.GetFiles(shots, "*.png").Select(Path.GetFileNameWithoutExtension).ToHashSet();
         foreach (var page in new[] { "game_dark", "livearea_dark", "running_dark", "after-launch_dark" })
+        {
             Assert.Contains(page, pngs);
+        }
         // the game page shows the title's name from its param.sfo: the page differs from the empty library's
         Assert.True(DesktopProcess.Probe(Path.Combine(shots, "game_dark.png")).Width >= 960);
         Assert.Equal("{ \"CheckUpdates\": false }", File.ReadAllText(Path.Combine(_root, "launcher.json")));

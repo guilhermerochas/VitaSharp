@@ -40,13 +40,19 @@ public sealed class RendererTextureTests(GuestMemoryFixture fx)
             GuestMemory.W32(ip + 4, 2);
             Assert.Equal(0, Call(_g, "sceGxmInitialize", ip));
             uint cp = h.Alloc(0x24);
-            GuestMemory.W32(cp + 8, h.Alloc(0x1000)); GuestMemory.W32(cp + 12, 0x1000);
-            GuestMemory.W32(cp + 16, h.Alloc(0x10000)); GuestMemory.W32(cp + 20, 0x10000);
-            GuestMemory.W32(cp + 24, h.Alloc(0x10000)); GuestMemory.W32(cp + 28, 0x10000);
+            GuestMemory.W32(cp + 8, h.Alloc(0x1000));
+            GuestMemory.W32(cp + 12, 0x1000);
+            GuestMemory.W32(cp + 16, h.Alloc(0x10000));
+            GuestMemory.W32(cp + 20, 0x10000);
+            GuestMemory.W32(cp + 24, h.Alloc(0x10000));
+            GuestMemory.W32(cp + 28, 0x10000);
             Assert.Equal(0, Call(_g, "sceGxmCreateContext", cp, new Ptr<uint>(o)));
             Ctx = GuestMemory.R32(o);
             uint rp = h.Alloc(0x14);
-            GuestMemory.Write(rp + 4, (ushort)W); GuestMemory.Write(rp + 6, (ushort)H); GuestMemory.Write(rp + 8, (ushort)1); GuestMemory.Write(rp + 10, multisample);
+            GuestMemory.Write(rp + 4, (ushort)W);
+            GuestMemory.Write(rp + 6, (ushort)H);
+            GuestMemory.Write(rp + 8, (ushort)1);
+            GuestMemory.Write(rp + 10, multisample);
             Assert.Equal(0, Call(_g, "sceGxmCreateRenderTarget", rp, new Ptr<uint>(o)));
             Rt = GuestMemory.R32(o);
             Data = h.Alloc(W * H * 8); // room for 64-bit colour formats
@@ -66,32 +72,61 @@ public sealed class RendererTextureTests(GuestMemoryFixture fx)
             Assert.Equal(0, Call(_g, "sceGxmShaderPatcherCreateVertexProgram", patcher, GuestMemory.R32(vid), attr, 1u, stream, 1u, new Ptr<uint>(vp)));
             Assert.Equal(0, Call(_g, "sceGxmShaderPatcherCreateFragmentProgram", patcher, GuestMemory.R32(fid), 0u, 0u, 0u, GuestMemory.R32(vp), new Ptr<uint>(fp)));
             Assert.Equal(0, Call(_g, "sceGxmShaderPatcherCreateFragmentProgram", patcher, GuestMemory.R32(cid), 0u, 0u, 0u, GuestMemory.R32(vp), new Ptr<uint>(fc)));
-            Vp = GuestMemory.R32(vp); Fp = GuestMemory.R32(fp); FpCube = GuestMemory.R32(fc);
-            Verts = h.Alloc(48); Idx = h.Alloc(8);
+            Vp = GuestMemory.R32(vp);
+            Fp = GuestMemory.R32(fp);
+            FpCube = GuestMemory.R32(fc);
+            Verts = h.Alloc(48);
+            Idx = h.Alloc(8);
             float[] v = [-1, -1, 0.5f, 1, 3, -1, 0.5f, 1, -1, 3, 0.5f, 1]; // a triangle over the whole surface
-            for (int i = 0; i < v.Length; i++) GuestMemory.Write(Verts + (uint)i * 4, v[i]);
-            GuestMemory.Write(Idx + 2, (ushort)1); GuestMemory.Write(Idx + 4, (ushort)2);
+            for (int i = 0; i < v.Length; i++)
+            {
+                GuestMemory.Write(Verts + (uint)i * 4, v[i]);
+            }
+
+            GuestMemory.Write(Idx + 2, (ushort)1);
+            GuestMemory.Write(Idx + 4, (ushort)2);
 
             // one texture per format and layout over the same pseudo-random texels (and a palette)
             uint texels = h.Alloc(W * H * 16 * 6), palette = h.Alloc(256 * 4 + 64) + 63 & ~63u;
             var rng = new Random(7);
-            for (uint i = 0; i < W * H * 16 * 6; i += 4) GuestMemory.W32(texels + i, (uint)rng.Next());
-            for (uint i = 0; i < 256; i++) GuestMemory.W32(palette + i * 4, 0xFF000000u | (i * 0x010203u));
+            for (uint i = 0; i < W * H * 16 * 6; i += 4)
+            {
+                GuestMemory.W32(texels + i, (uint)rng.Next());
+            }
+
+            for (uint i = 0; i < 256; i++)
+            {
+                GuestMemory.W32(palette + i * 4, 0xFF000000u | (i * 0x010203u));
+            }
+
             foreach (var f in Formats)
+            {
                 foreach (var init in new[] { "sceGxmTextureInitLinear", "sceGxmTextureInitSwizzled", "sceGxmTextureInitTiled", "sceGxmTextureInitCube", "strided" })
                 {
                     uint t = h.Alloc(16);
                     int r = init == "strided"
                         ? Call(_g, "sceGxmTextureInitLinearStrided", t, texels, (uint)f, (uint)W, (uint)H, (uint)W * 8)
                         : Call(_g, init, t, texels, (uint)f, (uint)W, (uint)H, 1u);
-                    if (r != 0) continue;
-                    if (f is TexBase.P4 or TexBase.P8) Call(_g, "sceGxmTextureSetPalette", t, palette);
+                    if (r != 0)
+                    {
+                        continue;
+                    }
+
+                    if (f is TexBase.P4 or TexBase.P8)
+                    {
+                        Call(_g, "sceGxmTextureSetPalette", t, palette);
+                    }
+
                     Call(_g, "sceGxmTextureSetMinFilter", t, 1u);
                     Call(_g, "sceGxmTextureSetMagFilter", t, 1u);
                     Textures.Add(t);
                     TextureFormats.Add(f);
-                    if (init == "sceGxmTextureInitCube") CubeTextures.Add(t);
+                    if (init == "sceGxmTextureInitCube")
+                    {
+                        CubeTextures.Add(t);
+                    }
                 }
+            }
         }
 
         /// <summary>One scene per group of textures, each drawn once, and a present after each scene.</summary>
@@ -146,7 +181,11 @@ public sealed class RendererTextureTests(GuestMemoryFixture fx)
         "pos"u8.CopyTo(d.AsSpan(0x90));
         W32(0x3C, (uint)VertexCode.Length);
         W32(0x40, 0x100 - 0x40);    // primary program
-        for (int i = 0; i < VertexCode.Length; i++) { W32(0x100 + i * 8, (uint)VertexCode[i]); W32(0x104 + i * 8, (uint)(VertexCode[i] >> 32)); }
+        for (int i = 0; i < VertexCode.Length; i++)
+        {
+            W32(0x100 + i * 8, (uint)VertexCode[i]);
+            W32(0x104 + i * 8, (uint)(VertexCode[i] >> 32));
+        }
         return d;
     }
 
@@ -196,7 +235,11 @@ public sealed class RendererTextureTests(GuestMemoryFixture fx)
 
     static VulkanRenderer NewRenderer(string frames) => new(new VulkanRendererOptions
     {
-        VSync = false, AsyncShaders = false, AsyncPipelines = false, DumpFramesDir = frames, DumpEvery = 1,
+        VSync = false,
+        AsyncShaders = false,
+        AsyncPipelines = false,
+        DumpFramesDir = frames,
+        DumpEvery = 1,
     });
 
     [SoftwareVulkanFact]
@@ -205,7 +248,8 @@ public sealed class RendererTextureTests(GuestMemoryFixture fx)
         using var driver = SoftwareVulkan.Use();
         using var h = new HleHarness(fx, "vktex");
         string live = Path.Combine(h.Root, "live"), replay = Path.Combine(h.Root, "replay"), dump = Path.Combine(h.Root, "tex.vsgd");
-        Directory.CreateDirectory(live); Directory.CreateDirectory(replay);
+        Directory.CreateDirectory(live);
+        Directory.CreateDirectory(replay);
         var w = new Workload(h);
         Assert.True(w.Textures.Count > Formats.Length * 3, $"only {w.Textures.Count} textures were accepted");
 
@@ -247,7 +291,10 @@ public sealed class RendererTextureTests(GuestMemoryFixture fx)
             stats = GpuDumpPlayer.Play(reader, second);
             second.Execute(new FinishCommand());
         }
-        finally { second.Dispose(); }
+        finally
+        {
+            second.Dispose();
+        }
         Assert.True(stats.Draws >= w.Textures.Count, $"{stats.Draws} draws replayed of {w.Textures.Count}");
         Assert.True(stats.Frames >= frames);
         var liveFrames = Directory.GetFiles(live, "*.png").Order().ToArray();
@@ -267,7 +314,14 @@ public sealed class RendererTextureTests(GuestMemoryFixture fx)
         using (var re = new GpuDumpReader(small))
         {
             int draws = 0;
-            while (re.Next()) if (re.Kind == GpuDumpRecord.Draw) draws++;
+            while (re.Next())
+            {
+                if (re.Kind == GpuDumpRecord.Draw)
+                {
+                    draws++;
+                }
+            }
+
             Assert.Equal(stats.Draws, draws); // the same commands, compressed again
         }
     }

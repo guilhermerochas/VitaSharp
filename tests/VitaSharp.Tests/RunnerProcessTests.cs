@@ -19,7 +19,12 @@ public sealed class RunnerProcessTests : IDisposable
 
     public void Dispose()
     {
-        try { Directory.Delete(_root, true); } catch (IOException) { } catch (UnauthorizedAccessException) { }
+        try
+        {
+            Directory.Delete(_root, true);
+        }
+        catch (IOException) { }
+        catch (UnauthorizedAccessException) { }
     }
 
     static long FramesOf(string output)
@@ -106,7 +111,11 @@ public sealed class RunnerProcessTests : IDisposable
         // a window needs a display (Linux/macOS CI runners have none) and, on Windows, the system Vulkan loader for
         // its surface: without them there is nothing to run
         if (OperatingSystem.IsWindows() ? !File.Exists(Path.Combine(Environment.SystemDirectory, "vulkan-1.dll"))
-            : !OperatingSystem.IsLinux() || string.IsNullOrEmpty(Environment.GetEnvironmentVariable("DISPLAY"))) return;
+            : !OperatingSystem.IsLinux() || string.IsNullOrEmpty(Environment.GetEnvironmentVariable("DISPLAY")))
+        {
+            return;
+        }
+
         string frames = Path.Combine(_root, "frames"), overlays = Path.Combine(_root, "overlays");
         var r = DesktopProcess.Run(_root, ["run", _app, "--no-vsync", $"--dump-frames={frames}", "--dump-every=1", $"--overlay-dump={overlays}",
             "--input=cross@f20:10,key@f40:F5,key@f60:F7,key@f80:F6,circle@f80+1:0.3,key@f100:F10,key@f120:F1,key@f160:Close"], timeoutMs: 180_000, systemLoader: true);

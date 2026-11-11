@@ -39,7 +39,11 @@ public static class SyntheticTitle
     public static void WriteVpk(string path, string titleId = "VSTS00001")
     {
         using var zip = System.IO.Compression.ZipFile.Open(path, System.IO.Compression.ZipArchiveMode.Create);
-        void Add(string name, byte[] data) { using var s = zip.CreateEntry(name).Open(); s.Write(data); }
+        void Add(string name, byte[] data)
+        {
+            using var s = zip.CreateEntry(name).Open();
+            s.Write(data);
+        }
         Add("eboot.bin", Elf());
         Add("sce_sys/param.sfo", ParamSfo(titleId));
     }
@@ -65,13 +69,28 @@ public static class SyntheticTitle
             data.Write(bytes);
             data.Write(new byte[max - bytes.Length]);
         }
-        while (keys.Length % 4 != 0) keys.WriteByte(0);
+        while (keys.Length % 4 != 0)
+        {
+            keys.WriteByte(0);
+        }
+
         int keyStart = 20 + index.Count * 16, dataStart = keyStart + (int)keys.Length;
         var o = new MemoryStream();
         using (var w = new BinaryWriter(o, Encoding.ASCII, leaveOpen: true))
         {
-            w.Write(0x46535000u); w.Write(0x00000101u); w.Write(keyStart); w.Write(dataStart); w.Write(index.Count);
-            foreach (var (ko, doff, len, max) in index) { w.Write((ushort)ko); w.Write((ushort)0x0204); w.Write(len); w.Write(max); w.Write(doff); }
+            w.Write(0x46535000u);
+            w.Write(0x00000101u);
+            w.Write(keyStart);
+            w.Write(dataStart);
+            w.Write(index.Count);
+            foreach (var (ko, doff, len, max) in index)
+            {
+                w.Write((ushort)ko);
+                w.Write((ushort)0x0204);
+                w.Write(len);
+                w.Write(max);
+                w.Write(doff);
+            }
             w.Write(keys.ToArray());
             w.Write(data.ToArray());
         }
@@ -110,19 +129,28 @@ public static class SyntheticTitle
             str += (uint)imports[i].Lib.Length + 1;
         }
         // 3 imports x 0x34 = 0x9C bytes from 0x60: the strings at 0x100 follow without overlap
-        if (ImportsOff + imports.Length * 0x34 > StringsOff) throw new InvalidOperationException("import table overlaps the strings");
+        if (ImportsOff + imports.Length * 0x34 > StringsOff)
+        {
+            throw new InvalidOperationException("import table overlaps the strings");
+        }
 
         // module_info
         Encoding.ASCII.GetBytes("VitaSharpSynthetic").CopyTo(seg, (int)InfoOff + 4);
         W16(InfoOff + 2, 0x0101);
-        W32(InfoOff + 0x24, 0); W32(InfoOff + 0x28, 0); // no exports
-        W32(InfoOff + 0x2C, ImportsOff); W32(InfoOff + 0x30, ImportsOff + (uint)imports.Length * 0x34);
+        W32(InfoOff + 0x24, 0);
+        W32(InfoOff + 0x28, 0); // no exports
+        W32(InfoOff + 0x2C, ImportsOff);
+        W32(InfoOff + 0x30, ImportsOff + (uint)imports.Length * 0x34);
         W32(InfoOff + 0x44, CodeOff); // module_start (ARM)
         W32(InfoOff + 0x48, 0xFFFFFFFF);
 
         // SceDisplayFrameBuf: size, base, pitch, format (A8B8G8R8), width, height
-        W32(ParamOff, 0x18); W32(ParamOff + 4, Base + FbOff); W32(ParamOff + 8, Width); W32(ParamOff + 12, 0);
-        W32(ParamOff + 16, Width); W32(ParamOff + 20, Height);
+        W32(ParamOff, 0x18);
+        W32(ParamOff + 4, Base + FbOff);
+        W32(ParamOff + 8, Width);
+        W32(ParamOff + 12, 0);
+        W32(ParamOff + 16, Width);
+        W32(ParamOff + 20, Height);
 
         var a = new ArmCode(Base + CodeOff);
         a.Label("loop");
@@ -147,7 +175,11 @@ public static class SyntheticTitle
         a.Bl(Base + StubsOff + 32);                // sceDisplayWaitVblankStart
         a.Branch("loop", 0xE);
         var code = a.Assemble();
-        if (CodeOff + code.Length > ParamOff) throw new InvalidOperationException("code too long");
+        if (CodeOff + code.Length > ParamOff)
+        {
+            throw new InvalidOperationException("code too long");
+        }
+
         code.CopyTo(seg, (int)CodeOff);
 
         // ELF header + one PT_LOAD (the framebuffer is the zero-filled rest of the segment)
@@ -155,7 +187,9 @@ public static class SyntheticTitle
         var elf = new byte[dataOff + seg.Length];
         var e = elf.AsSpan();
         BinaryPrimitives.WriteUInt32LittleEndian(e, 0x464C457F);
-        e[4] = 1; e[5] = 1; e[6] = 1;                                // 32-bit, little endian, version 1
+        e[4] = 1;
+        e[5] = 1;
+        e[6] = 1;                                // 32-bit, little endian, version 1
         BinaryPrimitives.WriteUInt16LittleEndian(e[16..], 0xFE00);  // ET_SCE_EXEC
         BinaryPrimitives.WriteUInt16LittleEndian(e[18..], 40);      // ARM
         BinaryPrimitives.WriteUInt32LittleEndian(e[20..], 1);
@@ -196,7 +230,11 @@ public static class SyntheticTitle
         public void LdrLiteral(int rd, uint value, uint cond = 0xE)
         {
             int index = _literals.IndexOf(value);
-            if (index < 0) { index = _literals.Count; _literals.Add(value); }
+            if (index < 0)
+            {
+                index = _literals.Count;
+                _literals.Add(value);
+            }
             _words.Add(pc =>
             {
                 uint lit = origin + (uint)(_words.Count + index) * 4;
@@ -208,9 +246,15 @@ public static class SyntheticTitle
         {
             var bytes = new byte[(_words.Count + _literals.Count) * 4];
             for (int i = 0; i < _words.Count; i++)
+            {
                 BinaryPrimitives.WriteUInt32LittleEndian(bytes.AsSpan(i * 4), _words[i](origin + (uint)i * 4));
+            }
+
             for (int i = 0; i < _literals.Count; i++)
+            {
                 BinaryPrimitives.WriteUInt32LittleEndian(bytes.AsSpan((_words.Count + i) * 4), _literals[i]);
+            }
+
             return bytes;
         }
     }

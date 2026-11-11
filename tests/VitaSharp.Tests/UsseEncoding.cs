@@ -12,14 +12,34 @@ public static class UsseEncoding
     public static ulong Encode(string pattern, params (char Field, uint Value)[] fields)
     {
         ulong word = 0;
-        for (int i = 0; i < 64; i++) if (pattern[i] == '1') word |= 1ul << (63 - i);
+        for (int i = 0; i < 64; i++)
+        {
+            if (pattern[i] == '1')
+            {
+                word |= 1ul << (63 - i);
+            }
+        }
+
         foreach (var (field, value) in fields)
         {
             var bits = Enumerable.Range(0, 64).Where(i => pattern[i] == field).ToArray(); // MSB first
-            if (bits.Length == 0) throw new ArgumentException($"no field '{field}'");
-            if (value >> bits.Length != 0) throw new ArgumentException($"{value} does not fit field '{field}'");
+            if (bits.Length == 0)
+            {
+                throw new ArgumentException($"no field '{field}'");
+            }
+
+            if (value >> bits.Length != 0)
+            {
+                throw new ArgumentException($"{value} does not fit field '{field}'");
+            }
+
             for (int k = 0; k < bits.Length; k++)
-                if ((value >> (bits.Length - 1 - k) & 1) != 0) word |= 1ul << (63 - bits[k]);
+            {
+                if ((value >> (bits.Length - 1 - k) & 1) != 0)
+                {
+                    word |= 1ul << (63 - bits[k]);
+                }
+            }
         }
         return word;
     }

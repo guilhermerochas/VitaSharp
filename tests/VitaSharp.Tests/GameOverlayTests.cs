@@ -1,7 +1,7 @@
-using System.Reflection;
 using Silk.NET.Input;
-using VitaSharp.Core.Host;
+using System.Reflection;
 using VitaSharp.Core.Hle.Np;
+using VitaSharp.Core.Host;
 using VitaSharp.Core.Input;
 using VitaSharp.Core.Util;
 using VitaSharp.Desktop.Host;
@@ -36,10 +36,19 @@ public sealed class GameOverlayTests : IDisposable
     {
         _window.Dispose();
         Environment.SetEnvironmentVariable(EnvVars.Data, _savedData);
-        try { Directory.Delete(_root, true); } catch (IOException) { } catch (UnauthorizedAccessException) { }
+        try
+        {
+            Directory.Delete(_root, true);
+        }
+        catch (IOException) { }
+        catch (UnauthorizedAccessException) { }
     }
 
-    void Show(byte[]? bgra, int w, int h) { _shown = (bgra, w, h); _draws++; }
+    void Show(byte[]? bgra, int w, int h)
+    {
+        _shown = (bgra, w, h);
+        _draws++;
+    }
 
     /// <summary>One update of the window loop (the overlays poll the controller there).</summary>
     void Tick()
@@ -51,14 +60,31 @@ public sealed class GameOverlayTests : IDisposable
     /// <summary>Presses and releases <paramref name="b"/> on the controller, with a window update at each edge.</summary>
     void PadPress(VitaButtons b)
     {
-        _pad = ControllerState.Neutral with { Buttons = b }; Tick();
-        _pad = ControllerState.Neutral; Tick();
+        _pad = ControllerState.Neutral with { Buttons = b };
+        Tick();
+        _pad = ControllerState.Neutral;
+        Tick();
     }
 
-    static (byte B, byte G, byte R) Px(byte[] bgra, int w, int x, int y) { int i = (y * w + x) * 4; return (bgra[i], bgra[i + 1], bgra[i + 2]); }
+    static (byte B, byte G, byte R) Px(byte[] bgra, int w, int x, int y)
+    {
+        int i = (y * w + x) * 4;
+        return (bgra[i], bgra[i + 1], bgra[i + 2]);
+    }
 
     /// <summary>Pixels that are neither the panel background nor its accent bar: the drawn text, boxes and images.</summary>
-    static int Ink(byte[] bgra) { int n = 0; for (int i = 0; i < bgra.Length; i += 4) if (bgra[i] != 0x27 || bgra[i + 1] != 0x1F || bgra[i + 2] != 0x1B) n++; return n; }
+    static int Ink(byte[] bgra)
+    {
+        int n = 0;
+        for (int i = 0; i < bgra.Length; i += 4)
+        {
+            if (bgra[i] != 0x27 || bgra[i + 1] != 0x1F || bgra[i + 2] != 0x1B)
+            {
+                n++;
+            }
+        }
+        return n;
+    }
 
     // ---------------------------------------------------------------- message dialog
 
@@ -109,9 +135,11 @@ public sealed class GameOverlayTests : IDisposable
         overlay.Open(new MessageDialogRequest("Pad", buttons), i => answer = i);
         answer = -1;
         _pad = ControllerState.Neutral with { Buttons = VitaButtons.Cross };
-        Tick(); Tick();
+        Tick();
+        Tick();
         Assert.Equal(-1, answer);
-        _pad = ControllerState.Neutral; Tick();
+        _pad = ControllerState.Neutral;
+        Tick();
         PadPress(VitaButtons.Right);
         PadPress(VitaButtons.Cross);
         Assert.Equal(1, answer);
@@ -164,7 +192,11 @@ public sealed class GameOverlayTests : IDisposable
         overlay.Open(new ImeDialogRequest("Name", "ab", 8, 0, false, 0), s => result = s);
         Assert.Same(overlay, _window.TextCapture);
         int before = Ink(_shown.Bgra!);
-        foreach (char c in "cdef") overlay.OnChar(c);
+        foreach (char c in "cdef")
+        {
+            overlay.OnChar(c);
+        }
+
         Assert.True(Ink(_shown.Bgra!) > before, "the typed text is drawn");
         overlay.OnKey(Key.Backspace);               // abcde
         overlay.OnKey(Key.Home);
@@ -173,7 +205,11 @@ public sealed class GameOverlayTests : IDisposable
         overlay.OnKey(Key.Left);
         overlay.OnChar('X');                        // bcdXe
         overlay.OnKey(Key.Right);
-        foreach (char c in "123456") overlay.OnChar(c); // up to the 8 characters allowed
+        foreach (char c in "123456")
+        {
+            overlay.OnChar(c); // up to the 8 characters allowed
+        }
+
         overlay.OnKey(Key.Enter);
         Assert.Equal("bcdXe123", result);
         Assert.Null(_window.TextCapture);
@@ -239,10 +275,15 @@ public sealed class GameOverlayTests : IDisposable
         Directory.CreateDirectory(dir);
         string PathOf(int slot) => Path.Combine(dir, $"slot{slot}.vss");
         var overlay = new SaveStateOverlay(_window, Show, PathOf, _ => null, () => _pad);
-        var saved = new List<int>(); var loaded = new List<int>(); var deleted = new List<int>();
+        var saved = new List<int>();
+        var loaded = new List<int>();
+        var deleted = new List<int>();
         int opened = 0, closed = 0;
-        overlay.SaveRequested += saved.Add; overlay.LoadRequested += loaded.Add; overlay.Deleted += deleted.Add;
-        overlay.Opened += () => opened++; overlay.Closed += () => closed++;
+        overlay.SaveRequested += saved.Add;
+        overlay.LoadRequested += loaded.Add;
+        overlay.Deleted += deleted.Add;
+        overlay.Opened += () => opened++;
+        overlay.Closed += () => closed++;
 
         // an empty slot saves at once
         Assert.True(overlay.Open(1));
@@ -315,12 +356,22 @@ public sealed class GameOverlayTests : IDisposable
     {
         var shown = new List<(byte[]? Bgra, int W, int H)>();
         int chimes = 0;
-        using var toast = new TrophyToast((b, w, h) => { lock (shown) shown.Add((b, w, h)); }, () => 1088, () => chimes++);
+        using var toast = new TrophyToast((b, w, h) =>
+        {
+            lock (shown)
+            {
+                shown.Add((b, w, h));
+            }
+        }, () => 1088, () => chimes++);
         var gold = new TrophyInfo(1, TrophyGrade.Gold, false, 0, -1, "First", "");
         var bronze = new TrophyInfo(2, TrophyGrade.Bronze, false, 0, -1, "Second", "");
         toast.Enqueue(new TrophyUnlockedEvent("", "", gold, null));
         toast.Enqueue(new TrophyUnlockedEvent("", "", bronze, null)); // waits for the first card
-        lock (shown) Assert.Single(shown);
+        lock (shown)
+        {
+            Assert.Single(shown);
+        }
+
         Assert.Equal(1, chimes);
         var card = shown[0];
         Assert.NotNull(card.Bgra);
@@ -344,7 +395,17 @@ public sealed class GameOverlayTests : IDisposable
         Assert.Equal(68, big.Height);
         Assert.True(plain.Width < badge.Width, "no sign: narrower");
         // the pause sign's orange bars, the recording's red dot
-        static bool Has(byte[] bgra, byte r, byte g, byte b) { for (int i = 0; i < bgra.Length; i += 4) if (bgra[i] == b && bgra[i + 1] == g && bgra[i + 2] == r) return true; return false; }
+        static bool Has(byte[] bgra, byte r, byte g, byte b)
+        {
+            for (int i = 0; i < bgra.Length; i += 4)
+            {
+                if (bgra[i] == b && bgra[i + 1] == g && bgra[i + 2] == r)
+                {
+                    return true;
+                }
+            }
+            return false;
+        }
         Assert.True(Has(badge.Bgra, 0xFF, 0xB5, 0x47));
         Assert.False(Has(plain.Bgra, 0xFF, 0xB5, 0x47));
         Assert.True(Has(rec.Bgra, 0xE5, 0x2B, 0x2B));

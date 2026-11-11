@@ -16,15 +16,29 @@ public sealed class RendererValidationTests(GuestMemoryFixture fx)
     sealed class Collect : ILogSink
     {
         public readonly List<string> Lines = [];
-        public void Write(LogLevel level, string thread, string message) { if (message.StartsWith("[Vulkan]") || message.Contains("WITHOUT validation")) lock (Lines) Lines.Add(message); }
+        public void Write(LogLevel level, string thread, string message)
+        {
+            if (message.StartsWith("[Vulkan]") || message.Contains("WITHOUT validation"))
+            {
+                lock (Lines)
+                {
+                    Lines.Add(message);
+                }
+            }
+        }
     }
 
     static bool LayerInstalled()
     {
         const string Json = "VkLayer_khronos_validation.json";
         foreach (var v in new[] { "VK_LAYER_PATH", "VK_ADD_LAYER_PATH" })
+        {
             if (Environment.GetEnvironmentVariable(v) is { Length: > 0 } dirs && dirs.Split(Path.PathSeparator).Any(d => File.Exists(Path.Combine(d, Json))))
+            {
                 return true;
+            }
+        }
+
         if (OperatingSystem.IsWindows())
         {
             using var key = Microsoft.Win32.Registry.LocalMachine.OpenSubKey(@"SOFTWARE\Khronos\Vulkan\ExplicitLayers");
@@ -38,8 +52,14 @@ public sealed class RendererValidationTests(GuestMemoryFixture fx)
     {
         public ValidationFactAttribute()
         {
-            if (SoftwareVulkan.IcdManifest == null) Skip = "no software Vulkan driver behind a system Vulkan loader";
-            else if (!LayerInstalled()) Skip = "the Khronos validation layer is not installed (LunarG Vulkan SDK)";
+            if (SoftwareVulkan.IcdManifest == null)
+            {
+                Skip = "no software Vulkan driver behind a system Vulkan loader";
+            }
+            else if (!LayerInstalled())
+            {
+                Skip = "the Khronos validation layer is not installed (LunarG Vulkan SDK)";
+            }
         }
     }
 
@@ -58,7 +78,15 @@ public sealed class RendererValidationTests(GuestMemoryFixture fx)
         {
             foreach (var (msaa, samples, debug) in new[] { ("native", (ushort)0, false), ("native", (ushort)2, true), ("ss", (ushort)2, false) })
             {
-                if (debug) DebugMode.Enable(); else DebugMode.Disable();
+                if (debug)
+                {
+                    DebugMode.Enable();
+                }
+                else
+                {
+                    DebugMode.Disable();
+                }
+
                 var renderer = new VulkanRenderer(new VulkanRendererOptions { VSync = false, AsyncShaders = false, AsyncPipelines = false, Validation = true, Msaa = msaa });
                 using var h = new HleHarness(fx, "vkvalid");
                 try
@@ -80,14 +108,29 @@ public sealed class RendererValidationTests(GuestMemoryFixture fx)
         {
             Log.Sink = savedSink;
             Environment.SetEnvironmentVariable(EnvVars.VkValidation, savedMode);
-            if (wasDebug) DebugMode.Enable(); else DebugMode.Disable();
+            if (wasDebug)
+            {
+                DebugMode.Enable();
+            }
+            else
+            {
+                DebugMode.Disable();
+            }
         }
         // the layer was loaded (the renderer warns when validation was asked for and the layer is missing), on the
         // software driver through the loader
-        lock (sink.Lines) Assert.DoesNotContain(sink.Lines, l => l.Contains("WITHOUT validation"));
+        lock (sink.Lines)
+        {
+            Assert.DoesNotContain(sink.Lines, l => l.Contains("WITHOUT validation"));
+        }
+
         Assert.False(VulkanLoader.CustomDriverLoaded);
         string[] errors;
-        lock (sink.Lines) errors = sink.Lines.Where(l => l.Contains("Validation Error", StringComparison.OrdinalIgnoreCase) || l.Contains("SYNC-HAZARD")).ToArray();
+        lock (sink.Lines)
+        {
+            errors = sink.Lines.Where(l => l.Contains("Validation Error", StringComparison.OrdinalIgnoreCase) || l.Contains("SYNC-HAZARD")).ToArray();
+        }
+
         Assert.True(errors.Length == 0, $"{errors.Length} validation errors:\n" + string.Join("\n", errors.Take(30)));
     }
 }
