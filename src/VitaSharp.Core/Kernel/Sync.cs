@@ -64,7 +64,13 @@ public static class Wait
                 {
                     Monitor.Exit(sync);
                     try { GuestThread.CallbackProcessor(self); }
-                    finally { Monitor.Enter(sync); }
+                    finally
+                    {
+                        Monitor.Enter(sync);
+                        // the callback ran as Running (and a wait inside it ended as Running): this wait goes on, so
+                        // thread dumps and the watchdog show it waiting on its object again, not "Running"
+                        self.Status = ThreadStatus.Waiting; self.WaitingOn = what; self.CurrentWaitSync = sync;
+                    }
                     continue;
                 }
                 int sliceMs = 50;
