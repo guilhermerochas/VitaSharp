@@ -1157,8 +1157,21 @@ public sealed class ThreadMgrHleTests(GuestMemoryFixture fx) : IDisposable
             Assert.Equal(0x3Cu, GuestMemory.R32(info));
             GuestMemory.W32(info, 0x44); // the syscall form wrote its smaller size there
             // cancel drops the notifications without running the callback
+            // a second callback of the thread notified once: cancelling the first leaves only its notification pending
+            int cb2 = Call(Tm, "sceKernelCreateCallback", "cb2", 0u, 0x81000003u, 0u);
+            _h.Join(_h.Start(_ => Call(Tm, "sceKernelNotifyCallback", cb2, 1), "cb2-notify"));
+            Assert.Equal(3, self.PendingCallbacks);
+            // the kernel clears the count, the argument and the notifier: all of its notifications stop being pending
             Assert.Equal(0, Call(Tm, "sceKernelCancelCallback", cb));
             Assert.Equal(0, Call(Tm, "sceKernelGetCallbackCount", cb));
+            Assert.Equal(1, self.PendingCallbacks);
+            Assert.Equal(0, Call(Tm, "sceKernelGetCallbackInfo", cb, info));
+            Assert.Equal(0u, GuestMemory.R32(info + 0x34));
+            Assert.Equal(0u, GuestMemory.R32(info + 0x38));
+            Assert.Equal(0u, GuestMemory.R32(info + 0x3C));
+            Assert.Equal(0, Call(Tm, "sceKernelCancelCallback", cb2));
+            Assert.Equal(0, self.PendingCallbacks);
+            Assert.Equal(0, Call(Tm, "sceKernelDeleteCallback", cb2));
             Assert.Equal(0, Call(Tm, "sceKernelCheckCallback")); // nothing pending: nothing runs
             Assert.Equal(0, Call(Tm, "sceKernelDeleteCallback", cb));
             Assert.Equal(SceError.UNKNOWN_CALLBACK_ID, Call(Tm, "sceKernelNotifyCallback", cb, 1));

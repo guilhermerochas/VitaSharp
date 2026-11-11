@@ -1003,13 +1003,16 @@ public sealed partial class ThreadMgr : HleModule
         if (c == null) return SceError.UNKNOWN_CALLBACK_ID;
         lock (c)
         {
+            // the kernel (threadmgr) only clears the callback's notify count, argument and notifier: its notifications
+            // stop being pending. PendingCallbacks counts notifications (one per Callback.Notify), so all of them go
             if (c.NotifyCount > 0 && c.Owner != null)
             {
                 int p;
-                while ((p = Volatile.Read(ref c.Owner.PendingCallbacks)) > 0 && Interlocked.CompareExchange(ref c.Owner.PendingCallbacks, p - 1, p) != p) { }
+                while ((p = Volatile.Read(ref c.Owner.PendingCallbacks)) > 0 && Interlocked.CompareExchange(ref c.Owner.PendingCallbacks, Math.Max(0, p - c.NotifyCount), p) != p) { }
             }
             c.NotifyCount = 0;
             c.NotifyArg = 0;
+            c.NotifyId = 0;
         }
         return 0;
     }
