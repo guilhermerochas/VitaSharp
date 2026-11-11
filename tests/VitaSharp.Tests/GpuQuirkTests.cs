@@ -1,5 +1,6 @@
 using System.IO.Compression;
 using VitaSharp.Core.Gpu;
+using VitaSharp.Mobile.Core.Gpu;
 
 namespace VitaSharp.Tests;
 
@@ -9,13 +10,13 @@ namespace VitaSharp.Tests;
 /// </summary>
 public sealed class GpuQuirkTests
 {
-    const GpuFeature Desktop = GpuFeature.TextureCompressionBC | GpuFeature.ShaderStorageImageWriteWithoutFormat | GpuFeature.SampleRateShading
+    private const GpuFeature Desktop = GpuFeature.TextureCompressionBC | GpuFeature.ShaderStorageImageWriteWithoutFormat | GpuFeature.SampleRateShading
         | GpuFeature.DepthClamp | GpuFeature.FillModeNonSolid | GpuFeature.GeometryShader | GpuFeature.LogicOp | GpuFeature.Storage16Bit
         | GpuFeature.WideLines | GpuFeature.OcclusionQueryPrecise | GpuFeature.MemoryBudget | GpuFeature.Timestamps | GpuFeature.PushDescriptor
         | GpuFeature.IndependentBlend | GpuFeature.DepthBiasClamp | GpuFeature.SamplerMirrorClampToEdge | GpuFeature.SamplerAnisotropy
         | GpuFeature.DynamicRendering | GpuFeature.ExtendedDynamicState | GpuFeature.ShaderClipDistance;
 
-    static readonly GpuLimits DesktopLimits = new()
+    private static readonly GpuLimits s_desktopLimits = new()
     {
         MaxPushConstantsSize = 256,
         MaxBoundDescriptorSets = 32,
@@ -29,7 +30,7 @@ public sealed class GpuQuirkTests
         MaxImageDimension2D = 32768,
     };
 
-    static GpuDeviceInfo Device(uint vendor, uint driverId, uint version, GpuFeature? features = null, GpuLimits? limits = null, bool unified = false) => new()
+    private static GpuDeviceInfo Device(uint vendor, uint driverId, uint version, GpuFeature? features = null, GpuLimits? limits = null, bool unified = false) => new()
     {
         VendorId = vendor,
         DeviceId = 0x1234,
@@ -38,14 +39,14 @@ public sealed class GpuQuirkTests
         ApiVersion = GpuQuirkTable.MakeVersion(1, 3, 250),
         DeviceName = "test GPU",
         Features = features ?? Desktop,
-        Limits = limits ?? DesktopLimits,
+        Limits = limits ?? s_desktopLimits,
         UnifiedMemory = unified,
     };
 
     // GTX 1650 on 5xx drivers (NVIDIA encodes 10.8.8.6 bits)
-    static readonly GpuDeviceInfo Nvidia = Device(GpuQuirkTable.VendorNvidia, GpuQuirkTable.DriverNvidiaProprietary, (566u << 22) | (36u << 14));
-    static readonly GpuDeviceInfo AdrenoBlob = Device(GpuQuirkTable.VendorQualcomm, GpuQuirkTable.DriverQualcommProprietary, GpuQuirkTable.MakeVersion(512, 744),
-        Desktop & ~(GpuFeature.TextureCompressionBC | GpuFeature.MemoryBudget), DesktopLimits with
+    private static readonly GpuDeviceInfo s_nvidia = Device(GpuQuirkTable.VendorNvidia, GpuQuirkTable.DriverNvidiaProprietary, (566u << 22) | (36u << 14));
+    private static readonly GpuDeviceInfo s_adrenoBlob = Device(GpuQuirkTable.VendorQualcomm, GpuQuirkTable.DriverQualcommProprietary, GpuQuirkTable.MakeVersion(512, 744),
+        Desktop & ~(GpuFeature.TextureCompressionBC | GpuFeature.MemoryBudget), s_desktopLimits with
         {
             FramebufferSampleCounts = 1 | 2 | 4
         }, unified: true);
@@ -53,7 +54,7 @@ public sealed class GpuQuirkTests
     [Fact]
     public void DesktopNvidiaHasNoQuirks()
     {
-        var c = GpuQuirkTable.Select(Nvidia);
+        GpuCapabilities c = GpuQuirkTable.Select(s_nvidia);
         Assert.Equal(GpuVendor.Nvidia, c.Vendor);
         Assert.Equal(GpuDriver.NvidiaProprietary, c.Driver);
         Assert.Equal(GpuQuirk.None, c.Quirks);
@@ -68,7 +69,7 @@ public sealed class GpuQuirkTests
     public void IntelIntegratedOnWindowsHasNoQuirks()
     {
         // Iris Xe: unified memory, but VK_EXT_memory_budget present and an immediate-mode renderer
-        var c = GpuQuirkTable.Select(Device(GpuQuirkTable.VendorIntel, GpuQuirkTable.DriverIntelWindows, (101u << 14) | 5333, unified: true));
+        GpuCapabilities c = GpuQuirkTable.Select(Device(GpuQuirkTable.VendorIntel, GpuQuirkTable.DriverIntelWindows, (101u << 14) | 5333, unified: true));
         Assert.Equal(GpuDriver.IntelWindows, c.Driver);
         Assert.Equal(GpuQuirk.None, c.Quirks);
     }
@@ -76,10 +77,10 @@ public sealed class GpuQuirkTests
     [Fact]
     public void AdrenoProprietarySelectsTheBlobWorkarounds()
     {
-        var c = GpuQuirkTable.Select(AdrenoBlob);
+        GpuCapabilities c = GpuQuirkTable.Select(s_adrenoBlob);
         Assert.Equal(GpuVendor.Qualcomm, c.Vendor);
         Assert.Equal(GpuDriver.QualcommProprietary, c.Driver);
-        foreach (var q in new[] { GpuQuirk.TileBased, GpuQuirk.DynamicIndexLowering, GpuQuirk.StaticExtendedDynamicState, GpuQuirk.StaticDepthBiasEnable,
+        foreach (GpuQuirk q in new[] { GpuQuirk.TileBased, GpuQuirk.DynamicIndexLowering, GpuQuirk.StaticExtendedDynamicState, GpuQuirk.StaticDepthBiasEnable,
                      GpuQuirk.AvoidPushDescriptors, GpuQuirk.AvoidClearAttachments, GpuQuirk.PipelineCachePerDriverBuild, GpuQuirk.CustomDriverCapable,
                      GpuQuirk.DynamicRenderingSuspect, GpuQuirk.ConservativeMemoryBudget })
         {
@@ -97,7 +98,7 @@ public sealed class GpuQuirkTests
     [InlineData(0u, 24u)]                           // no driver properties: Mesa-style major version (< 100)
     public void TurnipGetsNoProprietaryWorkarounds(uint driverId, uint major)
     {
-        var c = GpuQuirkTable.Select(Device(GpuQuirkTable.VendorQualcomm, driverId, GpuQuirkTable.MakeVersion(major, 1, 0)));
+        GpuCapabilities c = GpuQuirkTable.Select(Device(GpuQuirkTable.VendorQualcomm, driverId, GpuQuirkTable.MakeVersion(major, 1, 0)));
         Assert.Equal(GpuDriver.Turnip, c.Driver);
         Assert.True(c.Has(GpuQuirk.TurnipDriver));
         Assert.True(c.Has(GpuQuirk.TileBased));
@@ -118,8 +119,8 @@ public sealed class GpuQuirkTests
     [Fact]
     public void MaliWithoutTwoSamplesRendersTwoXAsFour()
     {
-        var c = GpuQuirkTable.Select(Device(GpuQuirkTable.VendorArm, GpuQuirkTable.DriverArmProprietary, GpuQuirkTable.MakeVersion(38, 1),
-            Desktop & ~GpuFeature.TextureCompressionBC, DesktopLimits with
+        GpuCapabilities c = GpuQuirkTable.Select(Device(GpuQuirkTable.VendorArm, GpuQuirkTable.DriverArmProprietary, GpuQuirkTable.MakeVersion(38, 1),
+            Desktop & ~GpuFeature.TextureCompressionBC, s_desktopLimits with
             {
                 FramebufferSampleCounts = 1 | 4
             }));
@@ -138,7 +139,7 @@ public sealed class GpuQuirkTests
     [Fact]
     public void NoMultisamplingAtAllFallsBack()
     {
-        var c = GpuQuirkTable.Select(Device(GpuQuirkTable.VendorArm, GpuQuirkTable.DriverArmProprietary, 1, limits: DesktopLimits with
+        GpuCapabilities c = GpuQuirkTable.Select(Device(GpuQuirkTable.VendorArm, GpuQuirkTable.DriverArmProprietary, 1, limits: s_desktopLimits with
         {
             FramebufferSampleCounts = 1
         }));
@@ -150,7 +151,7 @@ public sealed class GpuQuirkTests
     [Fact]
     public void PowerVrIsTileBasedWithMobileBlobQuirks()
     {
-        var c = GpuQuirkTable.Select(Device(GpuQuirkTable.VendorImagination, GpuQuirkTable.DriverImaginationProprietary, GpuQuirkTable.MakeVersion(1, 426, 234)));
+        GpuCapabilities c = GpuQuirkTable.Select(Device(GpuQuirkTable.VendorImagination, GpuQuirkTable.DriverImaginationProprietary, GpuQuirkTable.MakeVersion(1, 426, 234)));
         Assert.Equal(GpuVendor.Imagination, c.Vendor);
         Assert.True(c.Has(GpuQuirk.TileBased));
         Assert.True(c.Has(GpuQuirk.AvoidPushDescriptors));
@@ -162,7 +163,7 @@ public sealed class GpuQuirkTests
     [InlineData(GpuQuirkTable.VendorAmd)]
     public void SamsungXclipseIsImmediateMode(uint vendor)
     {
-        var c = GpuQuirkTable.Select(Device(vendor, GpuQuirkTable.DriverSamsungProprietary, GpuQuirkTable.MakeVersion(2, 0)));
+        GpuCapabilities c = GpuQuirkTable.Select(Device(vendor, GpuQuirkTable.DriverSamsungProprietary, GpuQuirkTable.MakeVersion(2, 0)));
         Assert.Equal(GpuDriver.SamsungProprietary, c.Driver);
         Assert.False(c.Has(GpuQuirk.TileBased));
         Assert.Equal(GpuQuirk.None, c.Quirks);
@@ -171,7 +172,7 @@ public sealed class GpuQuirkTests
     [Fact]
     public void AdrenoProfileOnDesktopRemovesFeaturesAndActsAsTheBlob()
     {
-        var c = GpuQuirkTable.Select(Nvidia, GpuProfile.Adreno);
+        GpuCapabilities c = GpuQuirkTable.Select(s_nvidia, GpuProfile.Adreno);
         Assert.Equal(GpuVendor.Qualcomm, c.Vendor);
         Assert.Equal(GpuDriver.QualcommProprietary, c.Driver);
         Assert.False(c.Has(GpuFeature.TextureCompressionBC));
@@ -193,7 +194,7 @@ public sealed class GpuQuirkTests
     [Fact]
     public void MaliProfileOnDesktopShrinksLimits()
     {
-        var c = GpuQuirkTable.Select(Nvidia, GpuProfile.Mali);
+        GpuCapabilities c = GpuQuirkTable.Select(s_nvidia, GpuProfile.Mali);
         Assert.Equal(GpuVendor.Arm, c.Vendor);
         // as the Mali-G57 MC2 (r54) reports: depth clamp but no clip distance, so depth clamp is turned off and the
         // hardware clips the far plane (no fragment discard)
@@ -213,36 +214,36 @@ public sealed class GpuQuirkTests
     [Fact]
     public void FarPlaneWithoutClipDistance()
     {
-        var mali = GpuFeature.DepthClamp | GpuFeature.DynamicRendering | GpuFeature.ExtendedDynamicState;
+        GpuFeature mali = GpuFeature.DepthClamp | GpuFeature.DynamicRendering | GpuFeature.ExtendedDynamicState;
         // depth clamp, no clip distance: no depth clamp, the hardware clips both planes (no fragment discard: on Mali it
         // turned off the early depth/stencil tests of every draw)
-        var c = GpuQuirkTable.Select(Device(GpuQuirkTable.VendorArm, GpuQuirkTable.DriverArmProprietary, GpuQuirkTable.MakeVersion(54, 1), mali));
+        GpuCapabilities c = GpuQuirkTable.Select(Device(GpuQuirkTable.VendorArm, GpuQuirkTable.DriverArmProprietary, GpuQuirkTable.MakeVersion(54, 1), mali));
         Assert.False(c.Has(GpuQuirk.FarPlaneDiscard));
         Assert.False(c.Has(GpuFeature.DepthClamp));
         Assert.True((c.Masked & GpuFeature.DepthClamp) != 0);
         Assert.Contains("hardware clips the far", c.Describe());
         // forced on (testing the discard path): depth clamp stays
-        var on = GpuQuirkTable.Select(Device(GpuQuirkTable.VendorArm, GpuQuirkTable.DriverArmProprietary, 1, mali), overrides: "+FarPlaneDiscard");
+        GpuCapabilities on = GpuQuirkTable.Select(Device(GpuQuirkTable.VendorArm, GpuQuirkTable.DriverArmProprietary, 1, mali), overrides: "+FarPlaneDiscard");
         Assert.True(on.Has(GpuQuirk.FarPlaneDiscard));
         Assert.True(on.Has(GpuFeature.DepthClamp));
         // neither: the hardware clips the far plane, nothing to emulate
-        var none = GpuQuirkTable.Select(Device(GpuQuirkTable.VendorArm, GpuQuirkTable.DriverArmProprietary, 1, GpuFeature.DynamicRendering));
+        GpuCapabilities none = GpuQuirkTable.Select(Device(GpuQuirkTable.VendorArm, GpuQuirkTable.DriverArmProprietary, 1, GpuFeature.DynamicRendering));
         Assert.False(none.Has(GpuQuirk.FarPlaneDiscard));
         // a desktop GPU has both: clip distance, no quirk
-        Assert.False(GpuQuirkTable.Select(Nvidia).Has(GpuQuirk.FarPlaneDiscard));
+        Assert.False(GpuQuirkTable.Select(s_nvidia).Has(GpuQuirk.FarPlaneDiscard));
         // forced on a desktop GPU (testing the discard path)
-        Assert.True(GpuQuirkTable.Select(Nvidia, overrides: "+FarPlaneDiscard").Has(GpuQuirk.FarPlaneDiscard));
+        Assert.True(GpuQuirkTable.Select(s_nvidia, overrides: "+FarPlaneDiscard").Has(GpuQuirk.FarPlaneDiscard));
     }
 
     [Fact]
     public void ProfilesNeverAddWhatTheDeviceLacks()
     {
-        var weak = Device(GpuQuirkTable.VendorNvidia, GpuQuirkTable.DriverNvidiaProprietary, 1, GpuFeature.Timestamps, DesktopLimits with
+        GpuDeviceInfo weak = Device(GpuQuirkTable.VendorNvidia, GpuQuirkTable.DriverNvidiaProprietary, 1, GpuFeature.Timestamps, s_desktopLimits with
         {
             FramebufferSampleCounts = 1 | 4,
             MaxPerStageDescriptorSamplers = 8
         });
-        var c = GpuQuirkTable.Select(weak, GpuProfile.Adreno);
+        GpuCapabilities c = GpuQuirkTable.Select(weak, GpuProfile.Adreno);
         Assert.Equal(GpuFeature.Timestamps, c.Features);
         Assert.Equal(1u | 4, c.Limits.FramebufferSampleCounts);
         Assert.Equal(8u, GpuQuirkTable.Select(weak, GpuProfile.Mali).Limits.MaxPerStageDescriptorSamplers);
@@ -251,7 +252,7 @@ public sealed class GpuQuirkTests
     [Fact]
     public void DesktopProfileOnAPhoneDisablesVendorQuirks()
     {
-        var c = GpuQuirkTable.Select(AdrenoBlob, GpuProfile.Desktop);
+        GpuCapabilities c = GpuQuirkTable.Select(s_adrenoBlob, GpuProfile.Desktop);
         Assert.Equal(GpuDriver.QualcommProprietary, c.Driver);
         Assert.False(c.Has(GpuQuirk.StaticExtendedDynamicState));
         Assert.False(c.Has(GpuQuirk.TileBased));
@@ -261,7 +262,7 @@ public sealed class GpuQuirkTests
     [Fact]
     public void OverridesForceQuirksAndRemoveFeatures()
     {
-        var c = GpuQuirkTable.Select(AdrenoBlob, GpuProfile.Native, "-StaticExtendedDynamicState, +Msaa2xAs4x ,-timestamps,bogus,+SampleRateShading");
+        GpuCapabilities c = GpuQuirkTable.Select(s_adrenoBlob, GpuProfile.Native, "-StaticExtendedDynamicState, +Msaa2xAs4x ,-timestamps,bogus,+SampleRateShading");
         Assert.False(c.Has(GpuQuirk.StaticExtendedDynamicState));
         Assert.True(c.Has(GpuQuirk.Msaa2xAs4x));
         Assert.True(c.Has(GpuQuirk.DynamicIndexLowering));
@@ -273,26 +274,26 @@ public sealed class GpuQuirkTests
         Assert.DoesNotContain(c.QuirkReasons, r => r.StartsWith("StaticExtendedDynamicState: Qualcomm"));
         Assert.Contains("'bogus' is not a quirk", c.Describe());
 
-        var on = GpuQuirkTable.Select(Nvidia, GpuProfile.Native, "TileBased");
+        GpuCapabilities on = GpuQuirkTable.Select(s_nvidia, GpuProfile.Native, "TileBased");
         Assert.Equal(GpuQuirk.TileBased, on.Quirks);
     }
 
     [Fact]
     public void Vulkan11DeviceUsesRenderPassesAndStaticState()
     {
-        var old = Device(GpuQuirkTable.VendorQualcomm, GpuQuirkTable.DriverQualcommProprietary, GpuQuirkTable.MakeVersion(512, 454),
+        GpuDeviceInfo old = Device(GpuQuirkTable.VendorQualcomm, GpuQuirkTable.DriverQualcommProprietary, GpuQuirkTable.MakeVersion(512, 454),
             Desktop & ~(GpuFeature.DynamicRendering | GpuFeature.ExtendedDynamicState | GpuFeature.TextureCompressionBC)) with
         {
             ApiVersion = GpuQuirkTable.MakeVersion(1, 1, 128)
         };
-        var c = GpuQuirkTable.Select(old);
+        GpuCapabilities c = GpuQuirkTable.Select(old);
         Assert.True(c.Has(GpuQuirk.RenderPasses));
         Assert.True(c.Has(GpuQuirk.StaticExtendedDynamicState));
         Assert.True(c.Has(GpuQuirk.StaticDepthBiasEnable));
         Assert.Contains(c.QuirkReasons, r => r.StartsWith("RenderPasses:"));
         // what the device cannot do is not overridable; Turnip on the same phone (no blob quirks) still needs them
         Assert.True(GpuQuirkTable.Select(old, GpuProfile.Native, "-RenderPasses,-StaticExtendedDynamicState").Has(GpuQuirk.RenderPasses | GpuQuirk.StaticExtendedDynamicState));
-        var turnip = GpuQuirkTable.Select(old with
+        GpuCapabilities turnip = GpuQuirkTable.Select(old with
         {
             DriverId = GpuQuirkTable.DriverTurnip,
             DriverVersion = GpuQuirkTable.MakeVersion(24, 1)
@@ -303,19 +304,19 @@ public sealed class GpuQuirkTests
     [Fact]
     public void RenderPassesFollowSuspectDriversAndOverrides()
     {
-        Assert.False(GpuQuirkTable.Select(Nvidia).Has(GpuQuirk.RenderPasses));
-        Assert.Equal(GpuQuirk.RenderPasses, GpuQuirkTable.Select(Nvidia, GpuProfile.Native, "+RenderPasses").Quirks);
+        Assert.False(GpuQuirkTable.Select(s_nvidia).Has(GpuQuirk.RenderPasses));
+        Assert.Equal(GpuQuirk.RenderPasses, GpuQuirkTable.Select(s_nvidia, GpuProfile.Native, "+RenderPasses").Quirks);
         // proprietary mobile blobs with suspect dynamic rendering get render passes (DuckStation); a phone whose
         // driver has working dynamic rendering can turn them off
-        Assert.True(GpuQuirkTable.Select(AdrenoBlob).Has(GpuQuirk.RenderPasses));
-        Assert.False(GpuQuirkTable.Select(AdrenoBlob, GpuProfile.Native, "-RenderPasses").Has(GpuQuirk.RenderPasses));
+        Assert.True(GpuQuirkTable.Select(s_adrenoBlob).Has(GpuQuirk.RenderPasses));
+        Assert.False(GpuQuirkTable.Select(s_adrenoBlob, GpuProfile.Native, "-RenderPasses").Has(GpuQuirk.RenderPasses));
         Assert.False(GpuQuirkTable.Select(Device(GpuQuirkTable.VendorQualcomm, GpuQuirkTable.DriverTurnip, GpuQuirkTable.MakeVersion(24, 1))).Has(GpuQuirk.RenderPasses));
     }
 
     [Fact]
     public void AdrenoVulkan11ProfileRemovesDynamicRendering()
     {
-        var c = GpuQuirkTable.Select(Nvidia, GpuProfile.AdrenoVulkan11);
+        GpuCapabilities c = GpuQuirkTable.Select(s_nvidia, GpuProfile.AdrenoVulkan11);
         Assert.Equal(GpuVendor.Qualcomm, c.Vendor);
         Assert.False(c.Has(GpuFeature.DynamicRendering));
         Assert.False(c.Has(GpuFeature.ExtendedDynamicState));
@@ -337,7 +338,7 @@ public sealed class GpuQuirkTests
     [Fact]
     public void DescribeListsFeaturesLimitsAndQuirks()
     {
-        var d = GpuQuirkTable.Select(Nvidia, GpuProfile.Adreno).Describe();
+        string d = GpuQuirkTable.Select(s_nvidia, GpuProfile.Adreno).Describe();
         Assert.Contains("GPU profile: adreno", d);
         Assert.Contains("TextureCompressionBC(profile)", d);
         Assert.Contains("GPU limits: pushConstants 128", d);
@@ -346,16 +347,16 @@ public sealed class GpuQuirkTests
 
     // ------------------------------------------------------------------ custom drivers
 
-    static string MakeZip(string dir, string meta, params string[] files)
+    private static string MakeZip(string dir, string meta, params string[] files)
     {
         string zip = Path.Combine(dir, $"pkg{Guid.NewGuid():N}.zip");
-        using var z = ZipFile.Open(zip, ZipArchiveMode.Create);
+        using ZipArchive z = ZipFile.Open(zip, ZipArchiveMode.Create);
         using (var w = new StreamWriter(z.CreateEntry("meta.json").Open()))
         {
             w.Write(meta);
         }
 
-        foreach (var f in files)
+        foreach (string f in files)
         {
             using (var w = new StreamWriter(z.CreateEntry(f).Open()))
             {
@@ -366,7 +367,7 @@ public sealed class GpuQuirkTests
         return zip;
     }
 
-    const string TurnipMeta = """{"schemaVersion":1,"name":"Turnip v24.1","description":"Mesa Turnip","author":"K11MCH1","packageVersion":"1","vendor":"Mesa","driverVersion":"Vulkan 1.3.274","minApi":27,"libraryName":"vulkan.ad07XX.so"}""";
+    private const string TurnipMeta = """{"schemaVersion":1,"name":"Turnip v24.1","description":"Mesa Turnip","author":"K11MCH1","packageVersion":"1","vendor":"Mesa","driverVersion":"Vulkan 1.3.274","minApi":27,"libraryName":"vulkan.ad07XX.so"}""";
 
     [Fact]
     public void DriverStoreInstallsListsAndRemoves()
@@ -376,13 +377,13 @@ public sealed class GpuQuirkTests
         try
         {
             var store = new CustomDriverStore(Path.Combine(root, "gpu_drivers"));
-            var d = store.Install(MakeZip(root, TurnipMeta, "vulkan.ad07XX.so", "../evil.so", "sub/x.so"), deviceApiLevel: 33);
+            InstalledGpuDriver d = store.Install(MakeZip(root, TurnipMeta, "vulkan.ad07XX.so", "../evil.so", "sub/x.so"), deviceApiLevel: 33);
             Assert.Equal("Turnip_v24.1", d.Id);
             Assert.True(File.Exists(d.LibraryPath));
             Assert.EndsWith(Path.DirectorySeparatorChar.ToString(), d.Directory);
             Assert.False(File.Exists(Path.Combine(store.Root, "evil.so")));
             Assert.False(Directory.Exists(Path.Combine(d.Directory, "sub")));
-            var list = store.List();
+            IReadOnlyList<InstalledGpuDriver> list = store.List();
             Assert.Single(list);
             Assert.Equal("Vulkan 1.3.274", list[0].Meta.DriverVersion);
             Assert.NotNull(store.Find("Turnip_v24.1"));
@@ -408,7 +409,7 @@ public sealed class GpuQuirkTests
     [InlineData("""not json""", "JSON")]
     public void BadMetaIsRejected(string json, string why)
     {
-        Assert.Null(CustomDriverMeta.Parse(json, out var err));
+        Assert.Null(CustomDriverMeta.Parse(json, out string? err));
         Assert.Contains(why, err);
     }
 
@@ -454,8 +455,8 @@ public sealed class GpuQuirkTests
     [Fact]
     public void GpuInfoViewDescribesTheDeviceFeaturesAndQuirks()
     {
-        var adreno = GpuQuirkTable.Select(AdrenoBlob);
-        var rows = VitaSharp.Mobile.Core.Gpu.GpuInfoView.Rows(adreno);
+        GpuCapabilities adreno = GpuQuirkTable.Select(s_adrenoBlob);
+        IReadOnlyList<GpuInfoRow> rows = VitaSharp.Mobile.Core.Gpu.GpuInfoView.Rows(adreno);
         Assert.Equal(["GPU", "Driver", "Vulkan"], rows.Take(3).Select(r => r.Label));
         Assert.Equal("test GPU", rows[0].Value);
         Assert.EndsWith("512.744", rows[1].Value);
@@ -464,20 +465,20 @@ public sealed class GpuQuirkTests
         Assert.DoesNotContain("VK_EXT_memory_budget", rows[4].Value); // the blob has no budget extension: a heap fraction
         Assert.Equal("Turnip 24.1", VitaSharp.Mobile.Core.Gpu.GpuInfoView.Rows(adreno, "Turnip 24.1")[1].Value);
 
-        var chips = VitaSharp.Mobile.Core.Gpu.GpuInfoView.Features(adreno);
+        IReadOnlyList<GpuFeatureChip> chips = VitaSharp.Mobile.Core.Gpu.GpuInfoView.Features(adreno);
         Assert.False(chips.Single(c => c.Name == "BCn").Present);
-        var patched = VitaSharp.Mobile.Core.Gpu.GpuInfoView.Features(adreno, bcnPatched: true).Single(c => c.Name == "BCn");
+        GpuFeatureChip patched = VitaSharp.Mobile.Core.Gpu.GpuInfoView.Features(adreno, bcnPatched: true).Single(c => c.Name == "BCn");
         Assert.True(patched.Present);
         Assert.Equal("via BCeNabler", patched.Note);
 
-        var quirks = VitaSharp.Mobile.Core.Gpu.GpuInfoView.Quirks(adreno);
+        IReadOnlyList<GpuQuirkLine> quirks = VitaSharp.Mobile.Core.Gpu.GpuInfoView.Quirks(adreno);
         Assert.Contains(quirks, q => q.Quirk == GpuQuirk.TileBased && q.Workaround);
         Assert.Contains(quirks, q => q.Quirk == GpuQuirk.CustomDriverCapable && !q.Workaround);
         Assert.All(quirks, q => Assert.False(string.IsNullOrEmpty(q.Description)));
         int lastWorkaround = quirks.ToList().FindLastIndex(q => q.Workaround), firstOther = quirks.ToList().FindIndex(q => !q.Workaround);
         Assert.True(lastWorkaround < firstOther, "workarounds come first");
 
-        var nvidia = GpuQuirkTable.Select(Nvidia);
+        GpuCapabilities nvidia = GpuQuirkTable.Select(s_nvidia);
         Assert.Empty(VitaSharp.Mobile.Core.Gpu.GpuInfoView.Quirks(nvidia));
         Assert.Contains("VK_EXT_memory_budget", VitaSharp.Mobile.Core.Gpu.GpuInfoView.Rows(nvidia)[4].Value);
         Assert.True(VitaSharp.Mobile.Core.Gpu.GpuInfoView.Features(nvidia).Single(c => c.Name == "BCn").Present);

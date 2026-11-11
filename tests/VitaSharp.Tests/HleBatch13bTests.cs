@@ -9,12 +9,12 @@ namespace VitaSharp.Tests;
 
 /// <summary>HLE batch 13b: libpaf's type checks and math, SceShellUtil/SceShellSvc, small np_common_ps4/dbutil exports.</summary>
 [Collection("guest")]
-public sealed class HleBatch13bTests(GuestMemoryFixture fx) : IDisposable
+public sealed class HleBatch13bTests(GuestMemoryFixture fixture) : IDisposable
 {
-    readonly string _root = Path.Combine(Path.GetTempPath(), "vitasharp-hle13b-" + Guid.NewGuid().ToString("N"));
-    Emulator? _emu;
+    private readonly string _root = Path.Combine(Path.GetTempPath(), "vitasharp-hle13b-" + Guid.NewGuid().ToString("N"));
+    private Emulator? _emu;
 
-    Emulator Emu()
+    private Emulator Emu()
     {
         if (_emu != null)
         {
@@ -22,22 +22,22 @@ public sealed class HleBatch13bTests(GuestMemoryFixture fx) : IDisposable
         }
 
         Directory.CreateDirectory(_root);
-        return _emu = new Emulator(new EmulatorOptions { FsRoot = _root, Memory = fx.Memory, EnableJit = false, CpuBackend = "interp" });
+        return _emu = new Emulator(new EmulatorOptions { FsRoot = _root, Memory = fixture.Memory, EnableJit = false, CpuBackend = "interp" });
     }
 
-    T Module<T>() => Emu().Hle.Modules.OfType<T>().Single();
+    private T Module<T>() => Emu().Hle.Modules.OfType<T>().Single();
 
-    static object? Invoke(object module, string name, params object?[] args) =>
+    private static object? Invoke(object module, string name, params object?[] args) =>
         module.GetType().GetMethod(name, BindingFlags.Instance | BindingFlags.Static | BindingFlags.NonPublic | BindingFlags.Public)!.Invoke(module, args);
 
-    uint Alloc(uint size)
+    private uint Alloc(uint size)
     {
-        uint p = fx.Memory.Alloc(size, "hle13b");
+        uint p = fixture.Memory.Alloc(size, "hle13b");
         GuestMemory.Fill(p, 0, size);
         return p;
     }
 
-    uint CStr(string s)
+    private uint CStr(string s)
     {
         byte[] b = Encoding.UTF8.GetBytes(s + "\0");
         uint p = Alloc((uint)b.Length);
@@ -55,12 +55,12 @@ public sealed class HleBatch13bTests(GuestMemoryFixture fx) : IDisposable
         catch (IOException) { }
     }
 
-    uint TypeName(string s) => (uint)Invoke(Module<Libc>(), "ConstString", s)!;
+    private uint TypeName(string s) => (uint)Invoke(Module<Libc>(), "ConstString", s)!;
 
     [Fact]
     public void IsInheritWalksTheBaseClassesByPointer()
     {
-        var paf = Module<Paf>();
+        Paf paf = Module<Paf>();
         bool Is(string method, uint name) => (bool)Invoke(paf, method, 0u, name)!;
         // dialog -> box -> plane -> widget_base
         Assert.True(Is("IsInheritUiDialog", TypeName("dialog")));
@@ -84,7 +84,7 @@ public sealed class HleBatch13bTests(GuestMemoryFixture fx) : IDisposable
     [Fact]
     public void ShellUtilClientQueuesRequestsAndKeepsTheLocks()
     {
-        var s = Module<ShellUtil>();
+        ShellUtil s = Module<ShellUtil>();
         Assert.Equal(unchecked((int)0x80101801), Invoke(s, "Lock", 1u));
         Assert.Equal(0, Invoke(s, "InitEvents", 1u)); // no client thread: the program polls
         Assert.Equal(unchecked((int)0x80101802), Invoke(s, "InitEvents", 1u));
@@ -111,9 +111,9 @@ public sealed class HleBatch13bTests(GuestMemoryFixture fx) : IDisposable
     [Fact]
     public void ShellUtilClipboardAndEventFlags()
     {
-        var s = Module<ShellUtil>();
+        ShellUtil s = Module<ShellUtil>();
         uint text = Alloc(0x40);
-        foreach (var (c, i) in "hello".Select((c, i) => (c, (uint)i)))
+        foreach ((char c, uint i) in "hello".Select((c, i) => (c, (uint)i)))
         {
             GuestMemory.Write(text + i * 2, (ushort)c);
         }
@@ -146,7 +146,7 @@ public sealed class HleBatch13bTests(GuestMemoryFixture fx) : IDisposable
     [Fact]
     public void NpCommonPs4AndDbutilMembers()
     {
-        var n = Module<NpCommonPs4>();
+        NpCommonPs4 n = Module<NpCommonPs4>();
         uint o = Alloc(0x120);
         GuestMemory.W32(o + 0x10, 5);
         GuestMemory.W32(o + 0x14, 5);
@@ -161,7 +161,7 @@ public sealed class HleBatch13bTests(GuestMemoryFixture fx) : IDisposable
         Invoke(n, "Ps4_EF60709C", o);
         Assert.Equal(0u, GuestMemory.R32(o + 8));
         Assert.Equal(0u, GuestMemory.R32(o + 0x10C));
-        var d = Module<Dbutil>();
+        Dbutil d = Module<Dbutil>();
         GuestMemory.W32(o + 4, 0x55);
         Assert.Equal(0x55u, Invoke(d, "Dbu_7C8652D9", o));
     }
@@ -169,7 +169,7 @@ public sealed class HleBatch13bTests(GuestMemoryFixture fx) : IDisposable
     [Fact]
     public void Psp2CompatKeysAndEnvironment()
     {
-        var p = Module<Psp2Compat>();
+        Psp2Compat p = Module<Psp2Compat>();
         uint key = Alloc(4);
         Assert.Equal(0, Invoke(p, "KeyCreate", key, 0u));
         uint k = GuestMemory.R32(key);
@@ -196,7 +196,7 @@ public sealed class HleBatch13bTests(GuestMemoryFixture fx) : IDisposable
     [Fact]
     public void TextLayoutLayoutAttributes()
     {
-        var paf = Module<Paf>();
+        Paf paf = Module<Paf>();
         uint l = Alloc(0x100), o = Alloc(8);
         Assert.Equal(0, Invoke(paf, "TextLayoutGetBool", l, 9, o));
         Assert.Equal((byte)0, GuestMemory.Read<byte>(o));

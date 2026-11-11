@@ -9,12 +9,12 @@ namespace VitaSharp.Tests;
 
 /// <summary>HLE batch 12: SceLsdb's AppInfo getters and helpers (and the other small libraries of the batch).</summary>
 [Collection("guest")]
-public sealed class HleBatch12Tests(GuestMemoryFixture fx) : IDisposable
+public sealed class HleBatch12Tests(GuestMemoryFixture fixture) : IDisposable
 {
-    readonly string _root = Path.Combine(Path.GetTempPath(), "vitasharp-hle12-" + Guid.NewGuid().ToString("N"));
-    Emulator? _emu;
+    private readonly string _root = Path.Combine(Path.GetTempPath(), "vitasharp-hle12-" + Guid.NewGuid().ToString("N"));
+    private Emulator? _emu;
 
-    Emulator Emu()
+    private Emulator Emu()
     {
         if (_emu != null)
         {
@@ -22,22 +22,22 @@ public sealed class HleBatch12Tests(GuestMemoryFixture fx) : IDisposable
         }
 
         Directory.CreateDirectory(_root);
-        return _emu = new Emulator(new EmulatorOptions { FsRoot = _root, Memory = fx.Memory, EnableJit = false, CpuBackend = "interp" });
+        return _emu = new Emulator(new EmulatorOptions { FsRoot = _root, Memory = fixture.Memory, EnableJit = false, CpuBackend = "interp" });
     }
 
-    T Module<T>() => Emu().Hle.Modules.OfType<T>().Single();
+    private T Module<T>() => Emu().Hle.Modules.OfType<T>().Single();
 
-    static object? Invoke(object module, string name, params object?[] args) =>
+    private static object? Invoke(object module, string name, params object?[] args) =>
         module.GetType().GetMethod(name, BindingFlags.Instance | BindingFlags.Static | BindingFlags.NonPublic | BindingFlags.Public)!.Invoke(module, args);
 
-    uint Alloc(uint size)
+    private uint Alloc(uint size)
     {
-        uint p = fx.Memory.Alloc(size, "hle12");
+        uint p = fixture.Memory.Alloc(size, "hle12");
         GuestMemory.Fill(p, 0, size);
         return p;
     }
 
-    uint CStr(string s)
+    private uint CStr(string s)
     {
         byte[] b = Encoding.UTF8.GetBytes(s + "\0");
         uint p = Alloc((uint)b.Length);
@@ -57,12 +57,12 @@ public sealed class HleBatch12Tests(GuestMemoryFixture fx) : IDisposable
 
     /// <summary>An AppInfo as the module builds it: { -> { header } }, a binary search tree of nodes { +4 larger,
     /// +8 smaller, +0x10 key, +0x18 type, +0x20 value, +0x29 nil }, the header being the nil end.</summary>
-    uint AppInfo(params (uint Key, object Value)[] entries)
+    private uint AppInfo(params (uint Key, object Value)[] entries)
     {
         uint head = Alloc(0x30);
         GuestMemory.Write<byte>(head + 0x29, 1);
         uint root = head;
-        foreach (var (key, value) in entries.OrderBy(e => e.Key))
+        foreach ((uint key, object? value) in entries.OrderBy(e => e.Key))
         {
             uint n = Alloc(0x30);
             GuestMemory.W32(n + 4, head);
@@ -108,7 +108,7 @@ public sealed class HleBatch12Tests(GuestMemoryFixture fx) : IDisposable
     [Fact]
     public void LsdbGettersReadTheAppInfoMap()
     {
-        var l = Module<Lsdb>();
+        Lsdb l = Module<Lsdb>();
         uint info = AppInfo((0xA1541070, "Gravity Rush"), (0x21CA76B1, "gd"), (0x19FAFFCF, (ulong)((1 << 13) | (1 << 16)) | (3ul << 34)),
             (0x924BC88D, (ulong)5), (0xBCD7161E, "01.02"), (0x222641E9, "Default"), (0x87_9D_39_0D, 7ul));
         string S(string fn) => Invoke(l, fn, info) is uint p and not 0 ? GuestMemory.ReadCString(p) : "<null>";
@@ -134,7 +134,7 @@ public sealed class HleBatch12Tests(GuestMemoryFixture fx) : IDisposable
     [Fact]
     public void LsdbHelpers()
     {
-        var l = Module<Lsdb>();
+        Lsdb l = Module<Lsdb>();
         uint str = Alloc(8);
         GuestMemory.W32(str, CStr("03.65"));
         GuestMemory.W32(str + 4, 5);
@@ -164,7 +164,7 @@ public sealed class HleBatch12Tests(GuestMemoryFixture fx) : IDisposable
         // _XLgamma is the Lanczos log-gamma: Γ(5) = 24, Γ(0.5) = √π
         Assert.Equal(Math.Log(24), Libc.XLgamma(5), 9);
         Assert.Equal(Math.Log(Math.Sqrt(Math.PI)), Libc.XLgamma(0.5), 9);
-        var c = Module<Libc>();
+        Libc c = Module<Libc>();
         uint mp = Alloc(5 * 8);
         Invoke(c, "_ZSt7_MP_MulPyyy", mp, 0xFFFFFFFFFFFFFFFFul, 0x10ul);            // 2^68 - 16
         Assert.Equal(0xFFFFFFF0ul, GuestMemory.Read<ulong>(mp));
@@ -182,7 +182,7 @@ public sealed class HleBatch12Tests(GuestMemoryFixture fx) : IDisposable
     [Fact]
     public void PromoterWithoutTheShellIsUnavailable()
     {
-        var f = Module<SystemFallback>();
+        SystemFallback f = Module<SystemFallback>();
         Assert.Equal(unchecked((int)0x80AF008F), Invoke(f, "PromoterDeletePkg", 0u));
         Assert.Equal(unchecked((int)0x80AF008F), Invoke(f, "PromoterGetSize", CStr("PCSA00001"), 0u));
         Assert.Equal(unchecked((int)0x80AF008F), Invoke(f, "PromoterUpdateLiveArea", 0u));
@@ -191,7 +191,7 @@ public sealed class HleBatch12Tests(GuestMemoryFixture fx) : IDisposable
     [Fact]
     public void PamgrTimebaseAndNoTraceHardware()
     {
-        var d = Module<DebugPerf>();
+        DebugPerf d = Module<DebugPerf>();
         Assert.Equal(1_000_000u, Invoke(d, "sceKernelPaGetTimebaseFrequency"));
         Assert.NotEqual(0u, Invoke(d, "sceKernelPaGetIoBaseAddress"));
         Assert.Equal(unchecked((int)0x80010002), Invoke(d, "sceDTraceClientOpen", CStr("/dev/dtrace/dtrace"), 0));
@@ -201,7 +201,7 @@ public sealed class HleBatch12Tests(GuestMemoryFixture fx) : IDisposable
     [Fact]
     public void EmailEngineAccessorsReadAndWriteTheirMember()
     {
-        var e = Module<EmailEngine>();
+        EmailEngine e = Module<EmailEngine>();
         uint o = Alloc(0x100);
         for (uint off = 0; off < 0x100; off += 4)
         {
@@ -218,7 +218,7 @@ public sealed class HleBatch12Tests(GuestMemoryFixture fx) : IDisposable
     [Fact]
     public void Psp2CompatAccessorsAndConstants()
     {
-        var p = Module<Psp2Compat>();
+        Psp2Compat p = Module<Psp2Compat>();
         uint o = Alloc(0x400);
         for (uint off = 0; off < 0x400; off += 4)
         {

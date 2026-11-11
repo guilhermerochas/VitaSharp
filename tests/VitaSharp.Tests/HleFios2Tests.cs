@@ -12,9 +12,9 @@ namespace VitaSharp.Tests;
 
 /// <summary>HLE batch 4: SceFios2 (files, directories, ops, PSARC archives) over a temporary app0:.</summary>
 [Collection("guest")]
-public sealed class HleFios2Tests(GuestMemoryFixture fx) : IDisposable
+public sealed class HleFios2Tests(GuestMemoryFixture fixture) : IDisposable
 {
-    readonly string _root = Path.Combine(Path.GetTempPath(), "vitasharp-fios2-" + Guid.NewGuid().ToString("N"));
+    private readonly string _root = Path.Combine(Path.GetTempPath(), "vitasharp-fios2-" + Guid.NewGuid().ToString("N"));
 
     public void Dispose()
     {
@@ -25,23 +25,23 @@ public sealed class HleFios2Tests(GuestMemoryFixture fx) : IDisposable
         catch (IOException) { }
     }
 
-    static object? Invoke(object module, string name, params object?[] args) =>
+    private static object? Invoke(object module, string name, params object?[] args) =>
         module.GetType().GetMethod(name, BindingFlags.Instance | BindingFlags.Static | BindingFlags.NonPublic | BindingFlags.Public)!.Invoke(module, args);
 
-    static T Call<T>(object module, string name, params object?[] args) => (T)Invoke(module, name, args)!;
+    private static T Call<T>(object module, string name, params object?[] args) => (T)Invoke(module, name, args)!;
 
-    uint Buf(uint n)
+    private uint Buf(uint n)
     {
-        uint p = fx.Memory.Alloc(n, "fios-test");
+        uint p = fixture.Memory.Alloc(n, "fios-test");
         GuestMemory.Fill(p, 0, n);
         return p;
     }
 
-    Fios2 NewFios()
+    private Fios2 NewFios()
     {
         var emu = (Emulator)RuntimeHelpers.GetUninitializedObject(typeof(Emulator));
         void Set(string prop, object v) => typeof(Emulator).GetField($"<{prop}>k__BackingField", BindingFlags.Instance | BindingFlags.NonPublic)!.SetValue(emu, v);
-        Set("Memory", fx.Memory);
+        Set("Memory", fixture.Memory);
         Set("Vfs", new VitaSharp.Core.Io.Vfs(_root));
         Set("Hle", new HleRegistry(emu));
         emu.Vfs.Mount("app0", Path.Combine(_root, "app"));
@@ -56,7 +56,7 @@ public sealed class HleFios2Tests(GuestMemoryFixture fx) : IDisposable
     [Fact]
     public void FileHandlesReadWriteSeekAndStat()
     {
-        var f = NewFios();
+        Fios2 f = NewFios();
         File.WriteAllText(Path.Combine(_root, "app", "a.txt"), "hello fios");
         uint fhOut = Buf(4), buf = Buf(64);
         Assert.Equal(0, Call<int>(f, "sceFiosFHOpenSync", 0u, fhOut, "app0:a.txt", 0u));
@@ -96,7 +96,7 @@ public sealed class HleFios2Tests(GuestMemoryFixture fx) : IDisposable
     [Fact]
     public void PathOperationsAndDirectories()
     {
-        var f = NewFios();
+        Fios2 f = NewFios();
         uint data = Buf(16), exists = Buf(4);
         GuestMemory.WriteCString(data, "0123456789");
         Assert.Equal(10L, Call<long>(f, "sceFiosFileWriteSync", 0u, "app0:dir/b.bin", data, 10L, 0L));
@@ -124,7 +124,7 @@ public sealed class HleFios2Tests(GuestMemoryFixture fx) : IDisposable
     }
 
     /// <summary>A PSARC with a manifest and one zlib-compressed file.</summary>
-    static byte[] MakePsarc(string name, byte[] content)
+    private static byte[] MakePsarc(string name, byte[] content)
     {
         byte[] manifest = Encoding.ASCII.GetBytes(name);
         var z = new MemoryStream();
@@ -134,21 +134,21 @@ public sealed class HleFios2Tests(GuestMemoryFixture fx) : IDisposable
         }
 
         byte[] comp = z.ToArray();
-        const uint entrySize = 30, blockSize = 0x10000;
-        uint count = 2, tocLen = 32 + count * entrySize + 2 * 2;
-        var a = new byte[tocLen + manifest.Length + comp.Length];
+        const uint EntrySize = 30, BlockSize = 0x10000;
+        uint count = 2, tocLen = 32 + count * EntrySize + 2 * 2;
+        byte[] a = new byte[tocLen + manifest.Length + comp.Length];
         Encoding.ASCII.GetBytes("PSAR").CopyTo(a, 0);
         BinaryPrimitives.WriteUInt16BigEndian(a.AsSpan(4), 1);
         BinaryPrimitives.WriteUInt16BigEndian(a.AsSpan(6), 4);
         Encoding.ASCII.GetBytes("zlib").CopyTo(a, 8);
         BinaryPrimitives.WriteUInt32BigEndian(a.AsSpan(12), tocLen);
-        BinaryPrimitives.WriteUInt32BigEndian(a.AsSpan(16), entrySize);
+        BinaryPrimitives.WriteUInt32BigEndian(a.AsSpan(16), EntrySize);
         BinaryPrimitives.WriteUInt32BigEndian(a.AsSpan(20), count);
-        BinaryPrimitives.WriteUInt32BigEndian(a.AsSpan(24), blockSize);
+        BinaryPrimitives.WriteUInt32BigEndian(a.AsSpan(24), BlockSize);
         BinaryPrimitives.WriteUInt32BigEndian(a.AsSpan(28), 1);
         void Entry(int i, uint block, long size, long off)
         {
-            var e = a.AsSpan(32 + i * (int)entrySize);
+            Span<byte> e = a.AsSpan(32 + i * (int)EntrySize);
             BinaryPrimitives.WriteUInt32BigEndian(e[16..], block);
             e[20] = (byte)(size >> 32);
             BinaryPrimitives.WriteUInt32BigEndian(e[21..], (uint)size);
@@ -157,8 +157,8 @@ public sealed class HleFios2Tests(GuestMemoryFixture fx) : IDisposable
         }
         Entry(0, 0, manifest.Length, tocLen);
         Entry(1, 1, content.Length, tocLen + manifest.Length);
-        BinaryPrimitives.WriteUInt16BigEndian(a.AsSpan(32 + 2 * (int)entrySize), (ushort)manifest.Length);
-        BinaryPrimitives.WriteUInt16BigEndian(a.AsSpan(32 + 2 * (int)entrySize + 2), (ushort)comp.Length);
+        BinaryPrimitives.WriteUInt16BigEndian(a.AsSpan(32 + 2 * (int)EntrySize), (ushort)manifest.Length);
+        BinaryPrimitives.WriteUInt16BigEndian(a.AsSpan(32 + 2 * (int)EntrySize + 2), (ushort)comp.Length);
         manifest.CopyTo(a, tocLen);
         comp.CopyTo(a, tocLen + manifest.Length);
         return a;
@@ -167,7 +167,7 @@ public sealed class HleFios2Tests(GuestMemoryFixture fx) : IDisposable
     [Fact]
     public void PsarcArchiveMountReadsCompressedFiles()
     {
-        var f = NewFios();
+        Fios2 f = NewFios();
         byte[] content = Encoding.ASCII.GetBytes(string.Concat(Enumerable.Repeat("archived data ", 50)));
         File.WriteAllBytes(Path.Combine(_root, "app", "data.psarc"), MakePsarc("levels/one.txt", content));
         long need = Call<long>(f, "sceFiosArchiveGetMountBufferSizeSync", 0u, "app0:data.psarc", 0u);
@@ -191,7 +191,7 @@ public sealed class HleFios2Tests(GuestMemoryFixture fx) : IDisposable
     [Fact]
     public void DatesAndTimes()
     {
-        var f = NewFios();
+        Fios2 f = NewFios();
         Assert.Equal(5000L, Call<long>(f, "sceFiosTimeIntervalToNanoseconds", 5L));
         Assert.Equal(2L, Call<long>(f, "sceFiosTimeIntervalFromNanoseconds", 1001L));
         uint tm = Buf(36);

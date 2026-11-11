@@ -9,13 +9,13 @@ public sealed unsafe class HandlerTableTests
     [Fact]
     public void EveryOpResolvesToItsNamedHandler()
     {
-        var asm = typeof(HandlerTable).Assembly;
-        var sig = new[] { typeof(CpuState*), typeof(uint), typeof(uint) };
+        Assembly asm = typeof(HandlerTable).Assembly;
+        Type[] sig = new[] { typeof(CpuState*), typeof(uint), typeof(uint) };
         for (int i = 1; i < (int)Op.Count; i++)
         {
-            var name = ((Op)i).ToString();
+            string name = ((Op)i).ToString();
             int us = name.IndexOf('_');
-            var mi = asm.GetType($"VitaSharp.Core.Cpu.{name[..us]}")!
+            MethodInfo? mi = asm.GetType($"VitaSharp.Core.Cpu.{name[..us]}")!
                 .GetMethod(name[(us + 1)..], BindingFlags.Static | BindingFlags.Public | BindingFlags.NonPublic, sig);
             Assert.NotNull(mi);
             Assert.Equal(mi, HandlerTable.Methods[i]);

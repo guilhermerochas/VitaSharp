@@ -7,9 +7,9 @@ namespace VitaSharp.Tests;
 
 /// <summary>Managed JPEG decoder, YCbCr conversion and the SceJpegUser / SceJpegArm HLE.</summary>
 [Collection("guest")]
-public sealed class JpegHleTests(GuestMemoryFixture fx)
+public sealed class JpegHleTests(GuestMemoryFixture fixture)
 {
-    static int Call<T>(T module, string name, params object[] args) =>
+    private static int Call<T>(T module, string name, params object[] args) =>
         (int)typeof(T).GetMethod(name, BindingFlags.Instance | BindingFlags.NonPublic | BindingFlags.Public)!.Invoke(module, args)!;
 
     internal sealed record Planes(byte[] Y, byte[]? Cb, byte[]? Cr, int W, int H, int HDiv, int VDiv)
@@ -23,7 +23,7 @@ public sealed class JpegHleTests(GuestMemoryFixture fx)
     {
         var rnd = new Random(seed);
         int cw = (w + hdiv - 1) / hdiv, ch = (h + vdiv - 1) / vdiv;
-        var y = new byte[w * h];
+        byte[] y = new byte[w * h];
         for (int j = 0; j < h; j++)
         {
             for (int i = 0; i < w; i++)
@@ -37,8 +37,8 @@ public sealed class JpegHleTests(GuestMemoryFixture fx)
             return new Planes(y, null, null, w, h, 1, 1);
         }
 
-        var cb = new byte[cw * ch];
-        var cr = new byte[cw * ch];
+        byte[] cb = new byte[cw * ch];
+        byte[] cr = new byte[cw * ch];
         for (int j = 0; j < ch; j++)
         {
             for (int i = 0; i < cw; i++)
@@ -51,10 +51,10 @@ public sealed class JpegHleTests(GuestMemoryFixture fx)
         return new Planes(y, cb, cr, w, h, hdiv, vdiv);
     }
 
-    static readonly byte[] FineQuant = Enumerable.Range(0, 64).Select(i => (byte)(1 + i / 8)).ToArray();
+    private static readonly byte[] s_fineQuant = Enumerable.Range(0, 64).Select(i => (byte)(1 + i / 8)).ToArray();
 
-    static byte[] Write(Planes p, bool progressive, int restart = 0) =>
-        JpegTestWriter.Write(p.Y, p.Cb, p.Cr, p.W, p.H, p.HDiv, p.VDiv, FineQuant, progressive, restart);
+    private static byte[] Write(Planes p, bool progressive, int restart = 0) =>
+        JpegTestWriter.Write(p.Y, p.Cb, p.Cr, p.W, p.H, p.HDiv, p.VDiv, s_fineQuant, progressive, restart);
 
     internal static double Psnr(ReadOnlySpan<byte> a, int aStride, ReadOnlySpan<byte> b, int bStride, int w, int h)
     {
@@ -71,12 +71,12 @@ public sealed class JpegHleTests(GuestMemoryFixture fx)
         return se == 0 ? 99 : 10 * Math.Log10(255.0 * 255 * w * h / se);
     }
 
-    static bool SameImageArea(JpegImage a, JpegImage b)
+    private static bool SameImageArea(JpegImage a, JpegImage b)
     {
         for (int p = 0; p < a.Planes.Length; p++)
         {
-            var x = a.Planes[p];
-            var y = b.Planes[p];
+            JpegPlane x = a.Planes[p];
+            JpegPlane y = b.Planes[p];
             for (int r = 0; r < x.Height; r++)
             {
                 if (!x.Data.AsSpan(r * x.Stride, x.Width).SequenceEqual(y.Data.AsSpan(r * y.Stride, y.Width)))
@@ -88,9 +88,9 @@ public sealed class JpegHleTests(GuestMemoryFixture fx)
         return true;
     }
 
-    uint Put(byte[] data, string name)
+    private uint Put(byte[] data, string name)
     {
-        uint a = fx.Memory.Alloc((uint)Math.Max(data.Length, 16), name);
+        uint a = fixture.Memory.Alloc((uint)Math.Max(data.Length, 16), name);
         data.CopyTo(GuestMemory.Span(a, data.Length));
         return a;
     }
@@ -109,11 +109,11 @@ public sealed class JpegHleTests(GuestMemoryFixture fx)
         f.AddRange([0xFF, 0xC4, 0x00, 0x14, 0x00, 0x01, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0x09]);
         f.AddRange([0xFF, 0xC4, 0x00, 0x14, 0x10, 0x01, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0x00]);
         f.AddRange([0xFF, 0xDA, 0x00, 0x08, 0x01, 0x01, 0x00, 0x00, 0x3F, 0x00, 0x40, 0x07, 0xFB, 0xFF, 0xD9]);
-        var img = JpegDecoder.Decode(f.ToArray());
+        JpegImage img = JpegDecoder.Decode(f.ToArray());
         Assert.True(img.Info.Gray);
         Assert.Equal(0x10101, img.Info.ColorSpace);
         Assert.Equal((16, 8), (img.Info.Width, img.Info.Height));
-        var p = img.Planes[0];
+        JpegPlane p = img.Planes[0];
         for (int y = 0; y < 8; y++)
         {
             for (int x = 0; x < 16; x++)
@@ -133,8 +133,8 @@ public sealed class JpegHleTests(GuestMemoryFixture fx)
     [InlineData(1, 1, true, 0x10101)]
     public void SubsamplingVariantsDecode(int hdiv, int vdiv, bool gray, int colorSpace)
     {
-        var src = Synthetic(100, 60, hdiv, vdiv, gray);
-        var img = JpegDecoder.Decode(Write(src, false));
+        Planes src = Synthetic(100, 60, hdiv, vdiv, gray);
+        JpegImage img = JpegDecoder.Decode(Write(src, false));
         Assert.Equal(colorSpace, img.Info.ColorSpace);
         Assert.Equal(gray ? 1 : 3, img.Planes.Length);
         Assert.True(Psnr(img.Planes[0].Data, img.Planes[0].Stride, src.Y, src.W, src.W, src.H) > 38);
@@ -157,9 +157,9 @@ public sealed class JpegHleTests(GuestMemoryFixture fx)
     [InlineData(1, 1, true, 0)]
     public void ProgressiveMatchesBaseline(int hdiv, int vdiv, bool gray, int restart)
     {
-        var src = Synthetic(93, 61, hdiv, vdiv, gray, seed: 3);
-        var baseline = JpegDecoder.Decode(Write(src, false, restart));
-        var prog = JpegDecoder.Decode(Write(src, true, restart));
+        Planes src = Synthetic(93, 61, hdiv, vdiv, gray, seed: 3);
+        JpegImage baseline = JpegDecoder.Decode(Write(src, false, restart));
+        JpegImage prog = JpegDecoder.Decode(Write(src, true, restart));
         Assert.True(prog.Info.Progressive);
         Assert.False(baseline.Info.Progressive);
         Assert.True(SameImageArea(baseline, prog));
@@ -168,10 +168,10 @@ public sealed class JpegHleTests(GuestMemoryFixture fx)
     [Fact]
     public void RestartIntervalsDecodeIdentically()
     {
-        var src = Synthetic(70, 50, 2, 2);
-        var a = JpegDecoder.Decode(Write(src, false));
-        var b = JpegDecoder.Decode(Write(src, false, restart: 1));
-        var c = JpegDecoder.Decode(Write(src, false, restart: 4));
+        Planes src = Synthetic(70, 50, 2, 2);
+        JpegImage a = JpegDecoder.Decode(Write(src, false));
+        JpegImage b = JpegDecoder.Decode(Write(src, false, restart: 1));
+        JpegImage c = JpegDecoder.Decode(Write(src, false, restart: 4));
         Assert.True(SameImageArea(a, b));
         Assert.True(SameImageArea(a, c));
     }
@@ -181,7 +181,7 @@ public sealed class JpegHleTests(GuestMemoryFixture fx)
     {
         // JFIF: neutral grey, pure red (Y 76 Cb 85 Cr 255), BT.601 limited white (235,128,128)
         byte[] y = [128, 76], cb = [128, 85], cr = [128, 255];
-        var dst = new byte[8];
+        byte[] dst = new byte[8];
         YuvConvert.ToRgba(y, 2, cb, cr, 2, 2, 1, 1, 1, dst, 2);
         Assert.Equal(new byte[] { 128, 128, 128, 255 }, dst[..4]);
         Assert.InRange(dst[4], 253, 255);
@@ -205,16 +205,16 @@ public sealed class JpegHleTests(GuestMemoryFixture fx)
             255, 0, 0, 255, 255, 0, 0, 255, 0, 255, 0, 255, 0, 255, 0, 255,
             0, 0, 255, 255, 0, 0, 255, 255, 255, 255, 255, 255, 0, 0, 0, 255,
         ];
-        var y = new byte[8];
-        var cb = new byte[8];
-        var cr = new byte[8];
+        byte[] y = new byte[8];
+        byte[] cb = new byte[8];
+        byte[] cr = new byte[8];
         YuvConvert.FromRgba(rgba, 4, 4, 2, false, 1, 1, y, 4, cb, cr, 4);
         Assert.Equal(76, y[0]);
         Assert.Equal(85, cb[0]);
         Assert.Equal(255, cr[0]);
         Assert.Equal((byte)255, y[6]);
         Assert.Equal((128, 128), (cb[6], cr[6]));
-        var back = new byte[32];
+        byte[] back = new byte[32];
         YuvConvert.ToRgba(y, 4, cb, cr, 4, 4, 2, 1, 1, back, 4);
         for (int i = 0; i < 32; i++)
         {
@@ -247,20 +247,20 @@ public sealed class JpegHleTests(GuestMemoryFixture fx)
     [InlineData(new byte[] { 0xFF, 0xD8, 0xFF, 0x05 }, JpegError.UnknownMarker)]
     public void MalformedStreamsReportTheirError(byte[] data, JpegError expected)
     {
-        var e = Assert.Throws<JpegFormatException>(() => JpegDecoder.Decode(data));
+        JpegFormatException e = Assert.Throws<JpegFormatException>(() => JpegDecoder.Decode(data));
         Assert.Equal(expected, e.Error);
     }
 
     [Fact]
     public void BadProgressiveScanParameters()
     {
-        var src = Synthetic(16, 16, 1, 1, gray: true);
-        var f = JpegTestWriter.Write(src.Y, null, null, 16, 16, 1, 1, FineQuant, true);
+        Planes src = Synthetic(16, 16, 1, 1, gray: true);
+        byte[] f = JpegTestWriter.Write(src.Y, null, null, 16, 16, 1, 1, s_fineQuant, true);
         // first SOS is the DC scan (Ss=0, Se=0): make it Se=5, which is illegal for a DC scan
         int sos = Enumerable.Range(0, f.Length - 1).First(i => f[i] == 0xFF && f[i + 1] == 0xDA);
         int ns = f[sos + 4];
         f[sos + 4 + 1 + 2 * ns + 1] = 5;
-        var e = Assert.Throws<JpegFormatException>(() => JpegDecoder.Decode(f));
+        JpegFormatException e = Assert.Throws<JpegFormatException>(() => JpegDecoder.Decode(f));
         Assert.Equal(JpegError.BadProgressiveParam, e.Error);
     }
 
@@ -275,7 +275,7 @@ public sealed class JpegHleTests(GuestMemoryFixture fx)
         Assert.Equal(2, j.MaxSplitDecoders);
         Assert.Equal(0, Call(j, "sceJpegFinishMJpeg"));
         Assert.False(j.Initialized);
-        uint p = fx.Memory.Alloc(0x10, "jpeg-init");
+        uint p = fixture.Memory.Alloc(0x10, "jpeg-init");
         GuestMemory.W32(p, 0xC);
         GuestMemory.W32(p + 4, 3);
         GuestMemory.W32(p + 8, 0);
@@ -284,15 +284,15 @@ public sealed class JpegHleTests(GuestMemoryFixture fx)
         Assert.Equal(Jpeg.ERR_INVALID_POINTER, Call(j, "sceJpegInitMJpegWithParam", 0u));
         Assert.Equal(0, Call(j, "sceJpegInitMJpeg", 1)); // second init is accepted (as Vita3K)
         // the syscall form (avcodec_us 3.74: the parameter struct, then a scratch struct with its size)
-        uint scratch = fx.Memory.Alloc(8, "jpeg-opt");
+        uint scratch = fixture.Memory.Alloc(8, "jpeg-opt");
         GuestMemory.W32(p + 4, 4);
         Assert.Equal(0, Call(j, "_sceJpegInitMJpegWithParam", p, scratch));
         Assert.Equal(4, j.MaxSplitDecoders);
     }
 
-    uint OutputInfo(Jpeg j, uint jpeg, int size, int format, int mode, out int ret, bool arm = false)
+    private uint OutputInfo(Jpeg j, uint jpeg, int size, int format, int mode, out int ret, bool arm = false)
     {
-        uint o = fx.Memory.Alloc(0x40, "jpeg-info");
+        uint o = fixture.Memory.Alloc(0x40, "jpeg-info");
         GuestMemory.Fill(o, 0xCD, 0x40);
         ret = arm
             ? Call(j, "sceJpegArmGetOutputInfo", jpeg, (uint)size, mode, format, o)
@@ -300,13 +300,13 @@ public sealed class JpegHleTests(GuestMemoryFixture fx)
         return o;
     }
 
-    static (uint X, uint Y) Pitch(uint info, int i) => (GuestMemory.R32(info + 0x14 + (uint)i * 8), GuestMemory.R32(info + 0x18 + (uint)i * 8));
+    private static (uint X, uint Y) Pitch(uint info, int i) => (GuestMemory.R32(info + 0x14 + (uint)i * 8), GuestMemory.R32(info + 0x18 + (uint)i * 8));
 
     [Fact]
     public void OutputInfo420And422()
     {
         var j = new Jpeg();
-        var f420 = Write(Synthetic(100, 60, 2, 2), false);
+        byte[] f420 = Write(Synthetic(100, 60, 2, 2), false);
         uint a = Put(f420, "j420");
         uint o = OutputInfo(j, a, f420.Length, -1, 0, out int r);
         Assert.Equal(0, r);
@@ -336,7 +336,7 @@ public sealed class JpegHleTests(GuestMemoryFixture fx)
         Assert.Equal((64u, 32u), Pitch(o, 0));
         Assert.Equal((32u, 16u), Pitch(o, 1));
 
-        var f422 = Write(Synthetic(100, 60, 2, 1), false);
+        byte[] f422 = Write(Synthetic(100, 60, 2, 1), false);
         uint b = Put(f422, "j422");
         o = OutputInfo(j, b, f422.Length, -1, 1, out r);
         Assert.Equal(0, r);
@@ -349,7 +349,7 @@ public sealed class JpegHleTests(GuestMemoryFixture fx)
     public void OutputInfoModesAndErrors()
     {
         var j = new Jpeg();
-        var f444 = Write(Synthetic(100, 60, 1, 1), false);
+        byte[] f444 = Write(Synthetic(100, 60, 1, 1), false);
         uint a = Put(f444, "j444");
         OutputInfo(j, a, f444.Length, -1, 0, out int r);
         Assert.Equal(Jpeg.ERR_UNSUPPORT_SAMPLING, r);
@@ -366,7 +366,7 @@ public sealed class JpegHleTests(GuestMemoryFixture fx)
         Assert.Equal(0, r);
         Assert.Equal((104u, 64u), Pitch(o, 0));
 
-        var gray = Write(Synthetic(64, 64, 1, 1, gray: true), false);
+        byte[] gray = Write(Synthetic(64, 64, 1, 1, gray: true), false);
         uint g = Put(gray, "jgray");
         o = OutputInfo(j, g, gray.Length, -1, 0, out r);
         Assert.Equal(Jpeg.ERR_UNSUPPORT_COLORSPACE, r);
@@ -392,18 +392,18 @@ public sealed class JpegHleTests(GuestMemoryFixture fx)
     public void DecodeYCbCrLayoutAndRgba()
     {
         var j = new Jpeg();
-        var src = Synthetic(100, 60, 2, 2);
-        var file = Write(src, false);
+        Planes src = Synthetic(100, 60, 2, 2);
+        byte[] file = Write(src, false);
         uint a = Put(file, "jdec");
-        const int total = 11264;
-        uint yuv = fx.Memory.Alloc(total + 0x100, "jyuv");
-        GuestMemory.Fill(yuv + total, 0xEE, 0x100);
-        int ret = Call(j, "sceJpegDecodeMJpegYCbCr", a, (uint)file.Length, yuv, (uint)total, 0, 0u, 0u);
+        const int Total = 11264;
+        uint yuv = fixture.Memory.Alloc(Total + 0x100, "jyuv");
+        GuestMemory.Fill(yuv + Total, 0xEE, 0x100);
+        int ret = Call(j, "sceJpegDecodeMJpegYCbCr", a, (uint)file.Length, yuv, (uint)Total, 0, 0u, 0u);
         Assert.Equal((112 << 16) | 64, ret);
-        Assert.Equal(0xEEEEEEEEu, GuestMemory.R32(yuv + total)); // nothing past the layout
-        var y = GuestMemory.Span(yuv, 112 * 64).ToArray();
-        var cb = GuestMemory.Span(yuv + 112 * 64, 64 * 32).ToArray();
-        var cr = GuestMemory.Span(yuv + 112 * 64 + 64 * 32, 64 * 32).ToArray();
+        Assert.Equal(0xEEEEEEEEu, GuestMemory.R32(yuv + Total)); // nothing past the layout
+        byte[] y = GuestMemory.Span(yuv, 112 * 64).ToArray();
+        byte[] cb = GuestMemory.Span(yuv + 112 * 64, 64 * 32).ToArray();
+        byte[] cr = GuestMemory.Span(yuv + 112 * 64 + 64 * 32, 64 * 32).ToArray();
         Assert.True(Psnr(y, 112, src.Y, src.W, src.W, src.H) > 38);
         Assert.True(Psnr(cb, 64, src.Cb, src.CW, src.CW, src.CH) > 38);
         Assert.True(Psnr(cr, 64, src.Cr, src.CW, src.CW, src.CH) > 38);
@@ -411,17 +411,17 @@ public sealed class JpegHleTests(GuestMemoryFixture fx)
         Assert.Equal(cb[10 * 64 + 55], cb[10 * 64 + 63]);
 
         // Arm variant with its argument order
-        uint yuv2 = fx.Memory.Alloc(total, "jyuv2");
-        Assert.Equal(ret, Call(j, "sceJpegArmDecodeMJpegYCbCr", a, (uint)file.Length, 0, yuv2, (uint)total, 0u, 0u));
-        Assert.True(GuestMemory.Span(yuv, total).SequenceEqual(GuestMemory.Span(yuv2, total)));
+        uint yuv2 = fixture.Memory.Alloc(Total, "jyuv2");
+        Assert.Equal(ret, Call(j, "sceJpegArmDecodeMJpegYCbCr", a, (uint)file.Length, 0, yuv2, (uint)Total, 0u, 0u));
+        Assert.True(GuestMemory.Span(yuv, Total).SequenceEqual(GuestMemory.Span(yuv2, Total)));
 
         // DecodeMJpeg (RGBA, line width = pitch) == DecodeMJpegYCbCr + MJpegCsc
-        uint rgba = fx.Memory.Alloc(112 * 64 * 4, "jrgba");
-        uint temp = fx.Memory.Alloc(total, "jtemp");
-        ret = Call(j, "sceJpegDecodeMJpeg", a, (uint)file.Length, rgba, 112u * 64 * 4, 0, temp, (uint)total, 0u, 0u);
+        uint rgba = fixture.Memory.Alloc(112 * 64 * 4, "jrgba");
+        uint temp = fixture.Memory.Alloc(Total, "jtemp");
+        ret = Call(j, "sceJpegDecodeMJpeg", a, (uint)file.Length, rgba, 112u * 64 * 4, 0, temp, (uint)Total, 0u, 0u);
         Assert.Equal((112 << 16) | 64, ret);
-        Assert.True(GuestMemory.Span(temp, total).SequenceEqual(GuestMemory.Span(yuv, total)));
-        uint rgba2 = fx.Memory.Alloc(112 * 64 * 4, "jrgba2");
+        Assert.True(GuestMemory.Span(temp, Total).SequenceEqual(GuestMemory.Span(yuv, Total)));
+        uint rgba2 = fixture.Memory.Alloc(112 * 64 * 4, "jrgba2");
         Assert.Equal(0, Call(j, "sceJpegMJpegCsc", rgba2, yuv, (uint)((112 << 16) | 64), 112, 0, 0x202));
         Assert.True(GuestMemory.Span(rgba, 112 * 64 * 4).SequenceEqual(GuestMemory.Span(rgba2, 112 * 64 * 4)));
         Assert.Equal(0xFF, GuestMemory.Read<byte>(rgba + 3));
@@ -432,20 +432,20 @@ public sealed class JpegHleTests(GuestMemoryFixture fx)
 
         Assert.Equal(Jpeg.ERR_INVALID_COLOR_FORMAT, Call(j, "sceJpegMJpegCsc", rgba2, yuv, (uint)((112 << 16) | 64), 112, 1, 0x202));
         Assert.Equal(Jpeg.ERR_UNSUPPORT_IMAGE_SIZE, Call(j, "sceJpegMJpegCsc", rgba2, yuv, (uint)((32 << 16) | 64), 112, 0, 0x202));
-        Assert.Equal(Jpeg.ERR_INVALID_POINTER, Call(j, "sceJpegDecodeMJpegYCbCr", 0u, 10u, yuv, (uint)total, 0, 0u, 0u));
+        Assert.Equal(Jpeg.ERR_INVALID_POINTER, Call(j, "sceJpegDecodeMJpegYCbCr", 0u, 10u, yuv, (uint)Total, 0, 0u, 0u));
     }
 
     [Fact]
     public void DecodeProgressiveDownscaleAndSizeLimit()
     {
         var j = new Jpeg();
-        var src = Synthetic(128, 96, 2, 2);
-        var prog = Write(src, true);
+        Planes src = Synthetic(128, 96, 2, 2);
+        byte[] prog = Write(src, true);
         uint a = Put(prog, "jprog");
         uint o = OutputInfo(j, a, prog.Length, -1, 0, out int r);
         Assert.Equal(0, r);
         Assert.True(GuestMemory.R32(o + 0x10) >= 128 * 96 * 3 / 2 * 2); // coefficients of the whole frame
-        uint yuv = fx.Memory.Alloc(128 * 96 * 2, "jprogyuv");
+        uint yuv = fixture.Memory.Alloc(128 * 96 * 2, "jprogyuv");
         int ret = Call(j, "sceJpegDecodeMJpegYCbCr", a, (uint)prog.Length, yuv, 128u * 96 * 2, 0, 0u, 0u);
         Assert.Equal((128 << 16) | 96, ret);
         Assert.True(Psnr(GuestMemory.Span(yuv, 128 * 96), 128, src.Y, 128, 128, 96) > 38);
@@ -453,8 +453,8 @@ public sealed class JpegHleTests(GuestMemoryFixture fx)
         // 1/4 downscale averages 4x4 boxes
         ret = Call(j, "sceJpegDecodeMJpegYCbCr", a, (uint)prog.Length, yuv, 128u * 96 * 2, 0x20, 0u, 0u);
         Assert.Equal((32 << 16) | 24, ret);
-        var small = GuestMemory.Span(yuv, 32 * 24).ToArray();
-        var expect = new byte[32 * 24];
+        byte[] small = GuestMemory.Span(yuv, 32 * 24).ToArray();
+        byte[] expect = new byte[32 * 24];
         for (int y = 0; y < 24; y++)
         {
             for (int x = 0; x < 32; x++)
@@ -475,7 +475,7 @@ public sealed class JpegHleTests(GuestMemoryFixture fx)
         Assert.True(Psnr(small, 32, expect, 32, 32, 24) > 38);
 
         // the hardware decoder refuses output pitches outside 64x64..2032x1088 (checked after downscaling)
-        uint rgba = fx.Memory.Alloc(128 * 96 * 4, "jprogrgba");
+        uint rgba = fixture.Memory.Alloc(128 * 96 * 4, "jprogrgba");
         Assert.Equal(Jpeg.ERR_UNSUPPORT_IMAGE_SIZE, Call(j, "sceJpegDecodeMJpeg", a, (uint)prog.Length, rgba, 128u * 96 * 4, 0x10, 0u, 0u, 0u, 0u));
         Assert.Equal((128 << 16) | 96, Call(j, "sceJpegDecodeMJpeg", a, (uint)prog.Length, rgba, 128u * 96 * 4, 0, 0u, 0u, 0u, 0u));
         // the Arm decoder has no such limit
@@ -489,7 +489,7 @@ public sealed class JpegHleTests(GuestMemoryFixture fx)
         // 4:4:4 3x2 planes: grey and red
         byte[] planes = [128, 76, 128, 128, 128, 128, 128, 85, 128, 128, 128, 128, 128, 255, 128, 128, 128, 128];
         uint yuv = Put(planes, "jcsc");
-        uint rgba = fx.Memory.Alloc(4 * 4 * 2, "jcscout");
+        uint rgba = fixture.Memory.Alloc(4 * 4 * 2, "jcscout");
         Assert.Equal(0, Call(j, "sceJpegCsc", rgba, yuv, (uint)((3 << 16) | 2), 4, 0, 0x101));
         Assert.Equal(0xFF808080u, GuestMemory.R32(rgba));
         Assert.InRange(GuestMemory.Read<byte>(rgba + 4), 253, 255);
@@ -499,9 +499,9 @@ public sealed class JpegHleTests(GuestMemoryFixture fx)
         Assert.Equal(0, Call(j, "sceJpegCsc", rgba, yuv, (uint)((3 << 16) | 2), 4, 0x10, 0x101)); // BT.601 flag accepted
 
         // a short output buffer truncates instead of overrunning
-        var file = Write(Synthetic(64, 64, 2, 2), false);
+        byte[] file = Write(Synthetic(64, 64, 2, 2), false);
         uint a = Put(file, "jshort");
-        uint outp = fx.Memory.Alloc(0x2000, "jshortout");
+        uint outp = fixture.Memory.Alloc(0x2000, "jshortout");
         GuestMemory.Fill(outp, 0x5A, 0x2000);
         int ret = Call(j, "sceJpegDecodeMJpegYCbCr", a, (uint)file.Length, outp, 0x1000u, 0, 0u, 0u);
         Assert.Equal((64 << 16) | 64, ret);
@@ -512,7 +512,7 @@ public sealed class JpegHleTests(GuestMemoryFixture fx)
     public void SplitDecoderIsRefused()
     {
         var j = new Jpeg();
-        uint ctrl = fx.Memory.Alloc(0x40, "jsplit");
+        uint ctrl = fixture.Memory.Alloc(0x40, "jsplit");
         Assert.Equal(Jpeg.ERR_EXCEED_MAX_SPLIT_DECODER, Call(j, "sceJpegCreateSplitDecoder", ctrl, 0u, 0u, 0u));
         Assert.Equal(Jpeg.ERR_EXCEED_MAX_SPLIT_DECODER, Call(j, "sceJpegArmCreateSplitDecoder", ctrl, 0u, 0u, 0u));
         Assert.Equal(Jpeg.ERR_INVALID_STATE, Call(j, "sceJpegSplitDecodeMJpeg", ctrl));

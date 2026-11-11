@@ -7,9 +7,9 @@ namespace VitaSharp.Tests;
 
 /// <summary>GPU dump format round trips (codec, chunks, header) and an end-to-end recording through a GpuQueue.</summary>
 [Collection("guest")]
-public sealed class GpuDumpTests(GuestMemoryFixture fx) : IDisposable
+public sealed class GpuDumpTests(GuestMemoryFixture fixture) : IDisposable
 {
-    readonly string _dir = Path.Combine(Path.GetTempPath(), "vitasharp-gpudump-" + Guid.NewGuid().ToString("N"));
+    private readonly string _dir = Path.Combine(Path.GetTempPath(), "vitasharp-gpudump-" + Guid.NewGuid().ToString("N"));
 
     public void Dispose()
     {
@@ -20,17 +20,17 @@ public sealed class GpuDumpTests(GuestMemoryFixture fx) : IDisposable
         catch { }
     }
 
-    static GxmProgramInfo Info(bool fragment, byte seed)
+    private static GxmProgramInfo Info(bool fragment, byte seed)
     {
-        var data = new byte[0xC0];
+        byte[] data = new byte[0xC0];
         data[0x14] = fragment ? (byte)1 : (byte)0;
         data[0xBF] = seed;
         var p = new GxpProgram(data, 0x81000000u + seed);
-        var (slots, bytes) = ShaderGenerator.UniformLayout(p);
+        (List<UniformBufferSlot>? slots, int bytes) = ShaderGenerator.UniformLayout(p);
         return new GxmProgramInfo { Address = 0x81000000u + seed, Program = p, UniformSlots = slots, UniformBytes = bytes, TexturesUsed = 0, CubeSamplers = 0 };
     }
 
-    static readonly GxmVertexProgram Vp = new()
+    private static readonly GxmVertexProgram s_vertexProgram = new()
     {
         Handle = 0x1234,
         Info = Info(false, 1),
@@ -38,7 +38,7 @@ public sealed class GpuDumpTests(GuestMemoryFixture fx) : IDisposable
         Streams = [new GxmVertexStream(20, 0), new GxmVertexStream(8, 1)],
     };
 
-    static readonly GxmFragmentProgram Fp = new()
+    private static readonly GxmFragmentProgram s_fragmentProgram = new()
     {
         Handle = 0x5678,
         Info = Info(true, 2),
@@ -47,9 +47,9 @@ public sealed class GpuDumpTests(GuestMemoryFixture fx) : IDisposable
         MultisampleMode = 2,
     };
 
-    static DrawCommand Draw(byte[] vu, byte[] fu, uint index)
+    private static DrawCommand Draw(byte[] vu, byte[] fu, uint index)
     {
-        var d = new DrawCommand { VertexProgram = Vp, FragmentProgram = Fp };
+        var d = new DrawCommand { VertexProgram = s_vertexProgram, FragmentProgram = s_fragmentProgram };
         d.Reset();
         d.State.CullMode = 2;
         d.State.Front = SideState.Default;
@@ -79,7 +79,7 @@ public sealed class GpuDumpTests(GuestMemoryFixture fx) : IDisposable
         return d;
     }
 
-    static void AssertSameDraw(DrawCommand a, DrawCommand b)
+    private static void AssertSameDraw(DrawCommand a, DrawCommand b)
     {
         Assert.Equal(a.VertexProgram.Handle, b.VertexProgram.Handle);
         Assert.Equal(a.VertexProgram.Attributes, b.VertexProgram.Attributes);
@@ -105,16 +105,16 @@ public sealed class GpuDumpTests(GuestMemoryFixture fx) : IDisposable
         var rnd = new Random(5);
         byte[] Bytes(int n)
         {
-            var b = new byte[n];
+            byte[] b = new byte[n];
             rnd.NextBytes(b);
             return b;
         }
-        var vu1 = Bytes(4096);
-        var vu2 = (byte[])vu1.Clone();
+        byte[] vu1 = Bytes(4096);
+        byte[] vu2 = (byte[])vu1.Clone();
         vu2[100] ^= 0xFF;
         vu2[3000] ^= 1;     // small change: delta
-        var vu3 = Bytes(4096);                                               // all new: inline
-        var fu = Bytes(64);                                                  // repeated: references
+        byte[] vu3 = Bytes(4096);                                               // all new: inline
+        byte[] fu = Bytes(64);                                                  // repeated: references
         var cmds = new List<GpuCommand>
         {
             new BeginSceneCommand { Width = 960, Height = 544, Multisample = 2,
@@ -128,7 +128,7 @@ public sealed class GpuDumpTests(GuestMemoryFixture fx) : IDisposable
             new FinishCommand(),
             new PresentCommand { Frame = new DisplayFrame(0x60000000, 960, 960, 544, DisplayPixelFormat.A2B10G10R10) },
         };
-        var memory = Bytes(300);
+        byte[] memory = Bytes(300);
 
         var codec = new GpuDumpCodec();
         var body = new DumpBuffer();
@@ -138,7 +138,7 @@ public sealed class GpuDumpTests(GuestMemoryFixture fx) : IDisposable
         body.U32(0x81400000);
         body.Var((uint)memory.Length);
         body.Bytes(memory);
-        foreach (var c in cmds)
+        foreach (GpuCommand c in cmds)
         {
             defs.Clear();
             rec.Clear();
@@ -157,7 +157,7 @@ public sealed class GpuDumpTests(GuestMemoryFixture fx) : IDisposable
         var header = new GpuDumpHeader();
         header["title-id"] = "PCSC00045";
         header["renderer.0"] = "GPU: test\nsecond line";
-        using (var f = File.Create(path))
+        using (FileStream f = File.Create(path))
         {
             GpuDumpCodec.WriteFileHeader(f, header);
             byte[]? scratch = null;
@@ -177,10 +177,10 @@ public sealed class GpuDumpTests(GuestMemoryFixture fx) : IDisposable
         Assert.Equal(GpuDumpRecord.Memory, r.Kind);
         Assert.Equal(0x81400000u, r.Address);
         Assert.Equal(memory, r.Data.ToArray());
-        foreach (var expected in cmds)
+        foreach (GpuCommand expected in cmds)
         {
             Assert.True(r.Next());
-            var got = r.Command!;
+            GpuCommand got = r.Command!;
             Assert.Equal(expected.GetType(), got.GetType());
             switch (expected)
             {
@@ -214,7 +214,7 @@ public sealed class GpuDumpTests(GuestMemoryFixture fx) : IDisposable
     {
         Directory.CreateDirectory(_dir);
         string path = Path.Combine(_dir, "t.vsgd");
-        using (var f = File.Create(path))
+        using (FileStream f = File.Create(path))
         {
             GpuDumpCodec.WriteFileHeader(f, new GpuDumpHeader { ["title-id"] = "X" });
             byte[]? scratch = null;
@@ -223,7 +223,7 @@ public sealed class GpuDumpTests(GuestMemoryFixture fx) : IDisposable
             GpuDumpCodec.WriteChunk(f, GpuDumpFormat.ChunkRecords, b.Span, 3, ref scratch);
             GpuDumpCodec.WriteChunk(f, GpuDumpFormat.ChunkRecords, new byte[5000], 3, ref scratch);
         }
-        var bytes = File.ReadAllBytes(path);
+        byte[] bytes = File.ReadAllBytes(path);
         File.WriteAllBytes(path, bytes[..^10]); // the last chunk is cut short
         using var r = new GpuDumpReader(path);
         Assert.True(r.Next());
@@ -238,12 +238,12 @@ public sealed class GpuDumpTests(GuestMemoryFixture fx) : IDisposable
         Assert.Throws<InvalidDataException>(() => new GpuDumpReader(new MemoryStream(new byte[64])));
         var ms = new MemoryStream();
         GpuDumpCodec.WriteFileHeader(ms, new GpuDumpHeader());
-        var b = ms.ToArray();
+        byte[] b = ms.ToArray();
         b[8] = (byte)(GpuDumpFormat.Version + 1);
         Assert.Throws<InvalidDataException>(() => new GpuDumpReader(new MemoryStream(b)));
     }
 
-    sealed class FakeBackend : IGpuBackend
+    private sealed class FakeBackend : IGpuBackend
     {
         public long Presents;
         public long PresentCount => Presents;
@@ -268,7 +268,7 @@ public sealed class GpuDumpTests(GuestMemoryFixture fx) : IDisposable
     [Fact]
     public async Task RecorderStoresWhatTheBackendReadAndOnlyChangesLater()
     {
-        uint buf = fx.Memory.Alloc(0x3000, "gpudump test");
+        uint buf = fixture.Memory.Alloc(0x3000, "gpudump test");
         GuestMemory.Fill(buf, 0x11, 0x3000);
         using var queue = new GpuQueue();
         var backend = new FakeBackend();
@@ -279,18 +279,18 @@ public sealed class GpuDumpTests(GuestMemoryFixture fx) : IDisposable
         // armed: starts after the first present, records 2 frames
         var rec = GpuDumpRecorder.Start(new GpuDumpOptions { Path = path, MaxFrames = 2, Header = new GpuDumpHeader { ["title-id"] = "TEST" } });
         Assert.NotNull(rec);
-        var d1 = Draw([1, 2, 3], [], buf + 0x100);
+        DrawCommand d1 = Draw([1, 2, 3], [], buf + 0x100);
         d1.IndexCount = 0x40;
         queue.Submit(present);
         queue.Submit(d1);
         queue.WaitIdle();
         GuestMemory.Fill(buf + 0x120, 0x22, 4); // the CPU changes 4 bytes the next draw reads
-        var d2 = Draw([1, 2, 3], [], buf + 0x100);
+        DrawCommand d2 = Draw([1, 2, 3], [], buf + 0x100);
         d2.IndexCount = 0x40;
         queue.Submit(d2);
         queue.Submit(new PresentCommand { Frame = present.Frame });
         queue.Submit(new PresentCommand { Frame = present.Frame });
-        var result = await rec!.Completion.WaitAsync(TimeSpan.FromSeconds(10));
+        GpuDumpResult result = await rec!.Completion.WaitAsync(TimeSpan.FromSeconds(10));
         Assert.Null(result.Error);
         Assert.Equal(2, result.Frames);
         Assert.Null(GpuDumpRecorder.Current);

@@ -22,13 +22,13 @@ namespace VitaSharp.Tests;
 /// Without a firmware module only the HLE run happens (with a few fixed expectations).
 /// </summary>
 [Collection("guest")]
-public sealed unsafe class JsonHleTests(GuestMemoryFixture fx, ITestOutputHelper output)
+public sealed unsafe class JsonHleTests(GuestMemoryFixture fixture, ITestOutputHelper output)
 {
     [Fact]
     public void Hle_ParsesSerializesAndReportsErrors()
     {
-        using var h = new JsonHarness(fx, null);
-        var log = h.Run(useLle: false, d =>
+        using var harness = new JsonHarness(fixture, null);
+        JsonRunLog log = harness.Run(useLle: false, d =>
         {
             d.Init();
             uint v = d.NewValue();
@@ -48,14 +48,14 @@ public sealed unsafe class JsonHleTests(GuestMemoryFixture fx, ITestOutputHelper
     [Fact]
     public void Hle_AllocationFailureAbortsTheParseWithNoMem()
     {
-        using var h = new JsonHarness(fx, null);
-        h.Run(useLle: false, d =>
+        using var harness = new JsonHarness(fixture, null);
+        harness.Run(useLle: false, d =>
         {
             d.Init();
             uint v = d.NewValue();
-            h.FailAfter = 3;
+            harness.FailAfter = 3;
             Assert.Equal(Json.ERROR_NOMEM, (int)d.Parse(v, "{\"key\":[1,2,3,\"long string value\"]}"));
-            h.FailAfter = -1;
+            harness.FailAfter = -1;
             d.DestroyValue(v);
             d.Call(JsonDriver.TerminateFn, d.Initializer);
         });
@@ -69,10 +69,10 @@ public sealed unsafe class JsonHleTests(GuestMemoryFixture fx, ITestOutputHelper
     [MemberData(nameof(Scenarios))]
     public void MatchesFirmwareModule(string scenario)
     {
-        using var h = new JsonHarness(fx, JsonFirmware.ModulePath);
-        var body = JsonScenarios.All[scenario];
-        var lle = h.Run(useLle: true, body);
-        var hle = h.Run(useLle: false, body);
+        using var harness = new JsonHarness(fixture, JsonFirmware.ModulePath);
+        Action<JsonDriver> body = JsonScenarios.All[scenario];
+        JsonRunLog lle = harness.Run(useLle: true, body);
+        JsonRunLog hle = harness.Run(useLle: false, body);
         output.WriteLine($"{scenario}: {lle.Allocator.Count} allocator calls, {lle.Results.Count} results, {lle.ArenaUsed} arena bytes");
         Compare("allocator calls", lle.Allocator, hle.Allocator);
         Compare("results", lle.Results, hle.Results);
@@ -82,7 +82,7 @@ public sealed unsafe class JsonHleTests(GuestMemoryFixture fx, ITestOutputHelper
         CompareMemory("game memory", lle.Game, hle.Game, null);
     }
 
-    void Compare(string what, List<string> lle, List<string> hle)
+    private void Compare(string what, List<string> lle, List<string> hle)
     {
         int n = Math.Min(lle.Count, hle.Count);
         for (int i = 0; i < n; i++)
@@ -93,7 +93,7 @@ public sealed unsafe class JsonHleTests(GuestMemoryFixture fx, ITestOutputHelper
             }
 
             int from = Math.Max(0, i - 6), to = Math.Min(n - 1, i + 2);
-            var ctx = string.Join("\n", Enumerable.Range(from, to - from + 1).Select(k => $"  [{k}] lle={lle[k]}  hle={hle[k]}"));
+            string ctx = string.Join("\n", Enumerable.Range(from, to - from + 1).Select(k => $"  [{k}] lle={lle[k]}  hle={hle[k]}"));
             Assert.Fail($"{what} differ at {i}:\n{ctx}");
         }
         if (lle.Count != hle.Count)
@@ -102,7 +102,7 @@ public sealed unsafe class JsonHleTests(GuestMemoryFixture fx, ITestOutputHelper
         }
     }
 
-    static void CompareMemory(string what, uint[] lle, uint[] hle, bool[]? mask)
+    private static void CompareMemory(string what, uint[] lle, uint[] hle, bool[]? mask)
     {
         Assert.Equal(lle.Length, hle.Length);
         for (int i = 0; i < lle.Length; i++)
@@ -119,13 +119,13 @@ public sealed unsafe class JsonHleTests(GuestMemoryFixture fx, ITestOutputHelper
         }
     }
 
-    static string Latin1(byte[] b) => Encoding.Latin1.GetString(b);
+    private static string Latin1(byte[] b) => Encoding.Latin1.GetString(b);
 }
 
 /// <summary>The scenarios run against both implementations (each is a driver body).</summary>
-static class JsonScenarios
+internal static class JsonScenarios
 {
-    const string Doc = "{ \"name\" : \"Devious\\tDungeon\", \"level\": 12, \"neg\": -42, \"big\": 18446744073709551615, " +
+    private const string Doc = "{ \"name\" : \"Devious\\tDungeon\", \"level\": 12, \"neg\": -42, \"big\": 18446744073709551615, " +
                        "\"over\": 18446744073709551616, \"min\": -9223372036854775808, \"pi\": 3.14159, \"e\": 1e3, \"e2\": 2.5E-2, " +
                        "\"z\": -0, \"dot\": .5, \"t\": true, \"f\": false, \"n\": null, \"esc\": \"q\\\"b\\\\s\\/\\b\\f\\n\\r\\t\\u0041\\u00e9\\u20ac\\ud83d\\ude00\", " +
                        "\"ctl\": \"\\u0001\\u001f\\u007f\", \"arr\": [ [], {}, [1,[2,[3]]], {\"x\":{\"y\":{}}} ], \"empty\": \"\", " +
@@ -157,7 +157,7 @@ static class JsonScenarios
             d.Rec(d.Parse(v, Doc));
             d.RecText(d.Serialize(v));
             d.Rec(d.Call(JsonDriver.Count, v));
-            foreach (var key in new[] { "name", "level", "neg", "big", "over", "min", "pi", "e", "e2", "z", "dot", "t", "f", "n", "esc", "nope" })
+            foreach (string? key in new[] { "name", "level", "neg", "big", "over", "min", "pi", "e", "e2", "z", "dot", "t", "f", "n", "esc", "nope" })
             {
                 uint e = d.Call(JsonDriver.IndexCStr, v, d.CStr(key));
                 d.Rec(d.Call(JsonDriver.GetTypeFn, e));
@@ -189,7 +189,7 @@ static class JsonScenarios
         {
             d.Init();
             uint v = d.NewValue();
-            foreach (var text in new[]
+            foreach (string? text in new[]
                      {
                          "", " ", "{", "}", "[", "]", "[1,]", "[,1]", "{\"a\" 1}", "{\"a\":}", "{a:1}", "{\"a\":1,}", "tru", "nul", "falsy",
                          "\"abc", "\"\\x\"", "\"\\u12\"", "\"\\ud800\"", "\"\\ud800\\u0041\"", "\"\\udc00\"", "\"a\u0001b\"", "01", "-", "--1", "1.2.3",
@@ -289,7 +289,7 @@ static class JsonScenarios
             d.Call(JsonDriver.ValueSetArray, c, d.Call(JsonDriver.GetArray, b));
             d.Call(JsonDriver.ValueClear, b);
             d.RecValue(b);
-            foreach (var f in new[] { JsonDriver.ReferString, JsonDriver.ReferArray, JsonDriver.ReferObject, JsonDriver.ReferInteger,
+            foreach (string? f in new[] { JsonDriver.ReferString, JsonDriver.ReferArray, JsonDriver.ReferObject, JsonDriver.ReferInteger,
                          JsonDriver.ReferUInteger, JsonDriver.ReferReal, JsonDriver.ReferBoolean })
             {
                 d.Rec(d.Call(f, a));
@@ -378,7 +378,7 @@ static class JsonScenarios
                 d.Rec(d.Call(JsonDriver.RFindCN, s, d.CStr(""), pos, 0));
                 d.Rec(d.Call(JsonDriver.RFindCh, s, (uint)'h', pos));
             }
-            foreach (var (pos, len) in new (uint, uint)[] { (0, 5), (6, uint.MaxValue), (20, 10), (23, 1), (2, 0) })
+            foreach ((uint pos, uint len) in new (uint, uint)[] { (0, 5), (6, uint.MaxValue), (20, 10), (23, 1), (2, 0) })
             {
                 uint sub = d.Game(4);
                 d.Call(JsonDriver.Substr, sub, s, pos, len);
@@ -491,7 +491,7 @@ static class JsonScenarios
             var rng = new Random(1234);
             var keys = Enumerable.Range(0, 48).Select(i => $"k{rng.Next(1000):D3}_{i}").ToList();
             uint val = d.NewValue();
-            foreach (var key in keys)
+            foreach (string? key in keys)
             {
                 uint ks = d.NewString(key);
                 d.Call(JsonDriver.ValueSetUInt, val, 0, (uint)key.Length, 0);
@@ -514,7 +514,7 @@ static class JsonScenarios
             d.Call(JsonDriver.ObjectInsert, res, obj, emptyPair);
             d.Call(JsonDriver.ObjectItDtor, res);
             d.Call(JsonDriver.PairDtor, emptyPair);
-            foreach (var key in new[] { keys[5], "nope", keys[40] })
+            foreach (string? key in new[] { keys[5], "nope", keys[40] })
             {
                 uint ks = d.NewString(key);
                 d.Call(JsonDriver.ObjectFind, res, obj, ks);
@@ -525,7 +525,7 @@ static class JsonScenarios
             uint wrap = d.NewValue();
             d.Call(JsonDriver.ValueSetObject, wrap, obj);
             d.RecText(d.Serialize(wrap));
-            foreach (var key in keys.OrderBy(_ => rng.Next()).Take(40).Append("absent"))
+            foreach (string? key in keys.OrderBy(_ => rng.Next()).Take(40).Append("absent"))
             {
                 uint ks = d.NewString(key);
                 d.Call(JsonDriver.ObjectErase, obj, ks);
@@ -640,33 +640,33 @@ static class JsonScenarios
             d.Call("_ZN3sce4Json6StringC2Ev", s3);
             d.RecText(d.StringBytes(s2));
             uint vals = d.Game(0x18 * 12);
-            uint v(int i) => vals + (uint)i * 0x18;
-            d.Call("_ZN3sce4Json5ValueC1Ey", v(0), 0, 1, 2);
-            d.Call("_ZN3sce4Json5ValueC2ENS0_9ValueTypeE", v(1), 6);
-            d.Call("_ZN3sce4Json5ValueC2ERKNS0_6StringE", v(2), s);
-            d.Call("_ZN3sce4Json5ValueC2Eb", v(3), 1);
-            d.CallD("_ZN3sce4Json5ValueC2Ed", -0.25, v(4));
-            d.Call("_ZN3sce4Json5ValueC2Ev", v(5));
-            d.Call("_ZN3sce4Json5ValueC2Ex", v(6), 0, 3, 0x80000000);
-            d.Call("_ZN3sce4Json5ValueC2ERKS1_", v(7), v(2));
+            uint V(int i) => vals + (uint)i * 0x18;
+            d.Call("_ZN3sce4Json5ValueC1Ey", V(0), 0, 1, 2);
+            d.Call("_ZN3sce4Json5ValueC2ENS0_9ValueTypeE", V(1), 6);
+            d.Call("_ZN3sce4Json5ValueC2ERKNS0_6StringE", V(2), s);
+            d.Call("_ZN3sce4Json5ValueC2Eb", V(3), 1);
+            d.CallD("_ZN3sce4Json5ValueC2Ed", -0.25, V(4));
+            d.Call("_ZN3sce4Json5ValueC2Ev", V(5));
+            d.Call("_ZN3sce4Json5ValueC2Ex", V(6), 0, 3, 0x80000000);
+            d.Call("_ZN3sce4Json5ValueC2ERKS1_", V(7), V(2));
             uint arr = d.Game(4), arr2 = d.Game(4), arr3 = d.Game(4);
             d.Call("_ZN3sce4Json5ArrayC2Ev", arr);
-            d.Call(JsonDriver.PushBack, arr, v(0));
-            d.Call(JsonDriver.PushBack, arr, v(2));
+            d.Call(JsonDriver.PushBack, arr, V(0));
+            d.Call(JsonDriver.PushBack, arr, V(2));
             d.Call("_ZN3sce4Json5ArrayC1ERKS1_", arr2, arr);
-            d.Call("_ZN3sce4Json5ValueC2ERKNS0_5ArrayE", v(8), arr2);
+            d.Call("_ZN3sce4Json5ValueC2ERKNS0_5ArrayE", V(8), arr2);
             uint obj = d.Game(4), obj2 = d.Game(4);
             d.Call("_ZN3sce4Json6ObjectC2Ev", obj);
-            d.Call(JsonDriver.ValueAssign, d.Call(JsonDriver.ObjIndex, obj, s), v(8));
+            d.Call(JsonDriver.ValueAssign, d.Call(JsonDriver.ObjIndex, obj, s), V(8));
             d.Call("_ZN3sce4Json6ObjectC2ERKS1_", obj2, obj);
-            d.Call("_ZN3sce4Json5ValueC2ERKNS0_6ObjectE", v(9), obj2);
+            d.Call("_ZN3sce4Json5ValueC2ERKNS0_6ObjectE", V(9), obj2);
             for (int i = 0; i < 10; i++)
             {
-                d.RecText(d.Serialize(v(i)));
+                d.RecText(d.Serialize(V(i)));
             }
 
-            d.Rec(d.Call("_ZNK3sce4Json5Value9getObjectEv", v(9)));
-            d.Rec(d.Call("_ZNK3sce4Json5Value9getObjectEv", v(0)));
+            d.Rec(d.Call("_ZNK3sce4Json5Value9getObjectEv", V(9)));
+            d.Rec(d.Call("_ZNK3sce4Json5Value9getObjectEv", V(0)));
             uint ai = d.Game(4), ai2 = d.Game(4), ae = d.Game(4);
             d.Call("_ZN3sce4Json5Array8iteratorC2Ev", ai);
             d.Call(JsonDriver.ArrayItDtor, ai);
@@ -694,7 +694,7 @@ static class JsonScenarios
             }
 
             uint pair = d.Game(0x20), pair2 = d.Game(0x20);
-            d.Call("_ZN3sce4Json6Object4PairC2ERKNS0_6StringERKNS0_5ValueE", pair, s, v(3));
+            d.Call("_ZN3sce4Json6Object4PairC2ERKNS0_6StringERKNS0_5ValueE", pair, s, V(3));
             d.Call("_ZN3sce4Json6Object4PairC2Ev", pair2);
             d.RecMem(pair + 8, 0x18);
             foreach (uint x in new[] { pair, pair2 })
@@ -714,7 +714,7 @@ static class JsonScenarios
 
             for (int i = 0; i < 10; i++)
             {
-                d.Call("_ZN3sce4Json5ValueD2Ev", v(i));
+                d.Call("_ZN3sce4Json5ValueD2Ev", V(i));
             }
 
             foreach (uint x in new[] { s, s2, s3 })
@@ -742,7 +742,7 @@ static class JsonScenarios
 }
 
 /// <summary>What one run of a scenario produced.</summary>
-sealed class JsonRunLog
+internal sealed class JsonRunLog
 {
     public List<string> Allocator = [], Results = [], Callbacks = [];
     public uint[] Arena = [], Game = [];
@@ -751,7 +751,7 @@ sealed class JsonRunLog
 }
 
 /// <summary>Calls the library from a guest thread through one implementation (firmware exports or HLE stubs).</summary>
-sealed unsafe class JsonDriver(JsonHarness h, GuestThread thread, Func<string, uint> resolve)
+internal sealed unsafe class JsonDriver(JsonHarness harness, GuestThread thread, Func<string, uint> resolve)
 {
     // mangled names used by the scenarios
     public const string Initialize = "_ZN3sce4Json11Initializer10initializeEPKNS0_13InitParameterE",
@@ -822,20 +822,20 @@ sealed unsafe class JsonDriver(JsonHarness h, GuestThread thread, Func<string, u
         PairCtor = "_ZN3sce4Json6Object4PairC1Ev", PairCtorKV = "_ZN3sce4Json6Object4PairC1ERKNS0_6StringERKNS0_5ValueE",
         PairDtor = "_ZN3sce4Json6Object4PairD1Ev";
 
-    public JsonRunLog Log => h.Current!;
+    public JsonRunLog Log => harness.Current!;
     public uint Initializer, InitParam;
-    public uint NullCallback => h.NullCallbackStub;
-    public uint SerializeCallback => h.SerializeCallbackStub;
-    public uint NullAnswer { get => h.NullAnswer; set => h.NullAnswer = value; }
-    public int SerializeFlushes { get => h.SerializeFlushes; set => h.SerializeFlushes = value; }
+    public uint NullCallback => harness.NullCallbackStub;
+    public uint SerializeCallback => harness.SerializeCallbackStub;
+    public uint NullAnswer { get => harness.NullAnswer; set => harness.NullAnswer = value; }
+    public int SerializeFlushes { get => harness.SerializeFlushes; set => harness.SerializeFlushes = value; }
     public JsonDriver Self => this;
 
     public uint Call(string name, params uint[] args)
     {
         uint r = thread.CallGuest(resolve(name), args);
-        if (name == Initialize && GuestMemory.R32(h.DataBase + Json.DMutex) is var m and not 0)
+        if (name == Initialize && GuestMemory.R32(harness.DataBase + Json.DMutex) is var m and not 0)
         {
-            h.LwMutexBlocks.Add(m);
+            harness.LwMutexBlocks.Add(m);
         }
 
         return r;
@@ -847,15 +847,15 @@ sealed unsafe class JsonDriver(JsonHarness h, GuestThread thread, Func<string, u
         return Call(name, args);
     }
 
-    public void FailAfter(int n) => h.FailAfter = n;
-    public uint Game(uint size) => h.Game(size);
-    public uint CStr(string s) => h.GameCString(Encoding.UTF8.GetBytes(s));
+    public void FailAfter(int n) => harness.FailAfter = n;
+    public uint Game(uint size) => harness.Game(size);
+    public uint CStr(string s) => harness.GameCString(Encoding.UTF8.GetBytes(s));
 
-    public void Rec(uint v) => Log.Results.Add(h.Normalize(v));
+    public void Rec(uint v) => Log.Results.Add(harness.Normalize(v));
     public void Rec(int v) => Log.Results.Add(v.ToString());
     public void RecText(byte[] b) => Log.Results.Add("\"" + Encoding.Latin1.GetString(b) + "\"");
     public void RecMem(uint addr, int len) => Log.Results.Add(addr == 0 ? "null" : Convert.ToHexString(GuestMemory.ReadSpan(addr, len)));
-    public void RecValue(uint v) => Log.Results.Add($"type={GuestMemory.R32(v + 0x14)} payload={GuestMemory.Read<ulong>(v + 8):X16} parent={h.Normalize(GuestMemory.R32(v))} ri={h.Normalize(GuestMemory.R32(v + 4))}");
+    public void RecValue(uint v) => Log.Results.Add($"type={GuestMemory.R32(v + 0x14)} payload={GuestMemory.Read<ulong>(v + 8):X16} parent={harness.Normalize(GuestMemory.R32(v))} ri={harness.Normalize(GuestMemory.R32(v + 4))}");
 
     /// <summary>Initializer + InitParameter (allocator, user data 0x1234, file buffer size) and initialize().</summary>
     public void Init(uint bufSize = 0x100)
@@ -866,7 +866,7 @@ sealed unsafe class JsonDriver(JsonHarness h, GuestThread thread, Func<string, u
             Call(InitializerCtor, Initializer);
             InitParam = Game(12);
         }
-        GuestMemory.W32(InitParam, h.Allocator);
+        GuestMemory.W32(InitParam, harness.Allocator);
         GuestMemory.W32(InitParam + 4, 0x1234);
         GuestMemory.W32(InitParam + 8, bufSize);
         Rec(Call(Initialize, Initializer, InitParam));
@@ -905,20 +905,20 @@ sealed unsafe class JsonDriver(JsonHarness h, GuestThread thread, Func<string, u
 
     public uint Parse(uint v, string text)
     {
-        var b = Encoding.UTF8.GetBytes(text);
-        return Call(ParseBuf, v, h.GameCString(b), (uint)b.Length);
+        byte[] b = Encoding.UTF8.GetBytes(text);
+        return Call(ParseBuf, v, harness.GameCString(b), (uint)b.Length);
     }
 
-    public uint ParseN(uint v, string text, uint n) => Call(ParseBuf, v, h.GameCString(Encoding.UTF8.GetBytes(text)), n);
+    public uint ParseN(uint v, string text, uint n) => Call(ParseBuf, v, harness.GameCString(Encoding.UTF8.GetBytes(text)), n);
 
     /// <summary>Parses through the character callback; <paramref name="failAt"/> &gt;= 0 makes the callback return an
     /// error after that many characters (-1: it returns 0x80920101 at the end of the text).</summary>
     public uint ParseCb(uint v, string text, int failAt)
     {
-        h.ReaderText = Encoding.UTF8.GetBytes(text);
-        h.ReaderPos = 0;
-        h.ReaderFailAt = failAt;
-        return Call(ParseCbFn, v, h.ReaderStub, 0x99);
+        harness.ReaderText = Encoding.UTF8.GetBytes(text);
+        harness.ReaderPos = 0;
+        harness.ReaderFailAt = failAt;
+        return Call(ParseCbFn, v, harness.ReaderStub, 0x99);
     }
 
     public byte[] Serialize(uint v)
@@ -926,7 +926,7 @@ sealed unsafe class JsonDriver(JsonHarness h, GuestThread thread, Func<string, u
         uint s = NewString("");
         uint r = Call(Serialize1, v, s);
         Rec(r);
-        var b = StringBytes(s);
+        byte[] b = StringBytes(s);
         DestroyString(s);
         return b;
     }
@@ -934,32 +934,32 @@ sealed unsafe class JsonDriver(JsonHarness h, GuestThread thread, Func<string, u
 
 /// <summary>One emulator in the shared test address space, with the firmware module (optional) loaded, HLE stubs for
 /// every SceLibJson NID, a guest MemAllocator whose methods are host code, and the arenas both runs share.</summary>
-sealed unsafe class JsonHarness : IDisposable
+internal sealed unsafe class JsonHarness : IDisposable
 {
-    const uint ArenaSize = 0x80_0000, GameSize = 0x4_0000;
-    readonly Emulator _emu;
-    readonly bool _jitEnabled;
-    readonly string _jitMode;
-    readonly string _root;
-    readonly uint _arena, _gameBase, _stubs;
-    readonly Dictionary<string, uint> _hleStubs = [];
-    readonly LoadedModule? _lle;
-    readonly Json _hle;
-    uint _bump, _gameBump;
-    int _allocCount;
+    private const uint ArenaSize = 0x80_0000, GameSize = 0x4_0000;
+    private readonly Emulator _emu;
+    private readonly bool _jitEnabled;
+    private readonly string _jitMode;
+    private readonly string _root;
+    private readonly uint _arena, _gameBase, _stubs;
+    private readonly Dictionary<string, uint> _hleStubs = [];
+    private readonly LoadedModule? _lle;
+    private readonly Json _hle;
+    private uint _bump, _gameBump;
+    private int _allocCount;
 
     public JsonRunLog? Current;
     public uint Allocator, NullCallbackStub, SerializeCallbackStub, ReaderStub;
-    int _failAt = -1;
+    private int _failAt = -1;
     /// <summary>Makes the allocator fail from the n-th next allocation on (-1: never).</summary>
     public int FailAfter { set => _failAt = value < 0 ? -1 : _allocCount + value; }
     public uint NullAnswer;
     public int SerializeFlushes = -1;
     public byte[] ReaderText = [];
     public int ReaderPos, ReaderFailAt = -1;
-    Exception? _fatal;
+    private Exception? _fatal;
 
-    public JsonHarness(GuestMemoryFixture fx, string? firmwareModule)
+    public JsonHarness(GuestMemoryFixture fixture, string? firmwareModule)
     {
         _jitEnabled = Jit.Enabled;
         _jitMode = Jit.Mode;
@@ -972,7 +972,7 @@ sealed unsafe class JsonHarness : IDisposable
             Directory.CreateDirectory(Path.Combine(_root, "vs0", "sys", "external"));
             File.Copy(firmwareModule, Path.Combine(_root, "vs0", "sys", "external", "libSceJson.suprx"));
         }
-        _emu = new Emulator(new EmulatorOptions { FsRoot = _root, Memory = fx.Memory, EnableJit = false, CpuBackend = "interp" });
+        _emu = new Emulator(new EmulatorOptions { FsRoot = _root, Memory = fixture.Memory, EnableJit = false, CpuBackend = "interp" });
         _emu.Fatal += (_, e) => _fatal ??= e;
         _hle = _emu.Hle.Modules.OfType<Json>().Single();
         if (firmwareModule != null)
@@ -980,7 +980,7 @@ sealed unsafe class JsonHarness : IDisposable
             _lle = _emu.LoadModule("vs0:sys/external/libSceJson.suprx");
         }
 
-        var mem = _emu.Memory;
+        GuestMemory mem = _emu.Memory;
         _arena = mem.Alloc(ArenaSize, "json test arena");
         _gameBase = mem.Alloc(GameSize, "json test game");
         _stubs = mem.Alloc(0x4000, "json test stubs");
@@ -1039,17 +1039,17 @@ sealed unsafe class JsonHarness : IDisposable
         _emu.Code.Invalidate(0, uint.MaxValue);
     }
 
-    uint _nextStub;
+    private uint _nextStub;
 
     /// <summary>An HLE stub for a SceLibJson export (made on first use).</summary>
-    uint HleStub(string name)
+    private uint HleStub(string name)
     {
         if (_hleStubs.TryGetValue(name, out uint a))
         {
             return a;
         }
 
-        var info = NidDatabase.LookupName(name).Single(n => n.Library == "SceLibJson");
+        NidInfo info = NidDatabase.LookupName(name).Single(n => n.Library == "SceLibJson");
         a = _nextStub;
         _nextStub += 16;
         Linker.WriteHleStub(a, _emu.Hle.GetHleFunctionIndex(info.Nid, 0x0854B69C, "SceLibJson"), info.Nid);
@@ -1057,7 +1057,7 @@ sealed unsafe class JsonHarness : IDisposable
         return _hleStubs[name] = a;
     }
 
-    uint Allocate(uint size, uint user)
+    private uint Allocate(uint size, uint user)
     {
         int n = _allocCount++;
         if (_failAt >= 0 && n >= _failAt)
@@ -1077,7 +1077,7 @@ sealed unsafe class JsonHarness : IDisposable
         return p;
     }
 
-    readonly Dictionary<uint, uint> _sizes = [];
+    private readonly Dictionary<uint, uint> _sizes = [];
 
     public uint Game(uint size)
     {
@@ -1152,7 +1152,7 @@ sealed unsafe class JsonHarness : IDisposable
         return $"{v:X8}";
     }
 
-    uint NormalizeWord(uint v)
+    private uint NormalizeWord(uint v)
     {
         string n = Normalize(v);
         if (n == "LIT")
@@ -1173,7 +1173,7 @@ sealed unsafe class JsonHarness : IDisposable
         return v;
     }
 
-    bool _runLle;
+    private bool _runLle;
 
     public JsonRunLog Run(bool useLle, Action<JsonDriver> body)
     {
@@ -1192,9 +1192,9 @@ sealed unsafe class JsonHarness : IDisposable
         SerializeFlushes = -1;
         NullAnswer = 0;
         _fatal = null;
-        var log = Current = new JsonRunLog();
+        JsonRunLog log = Current = new JsonRunLog();
         Exception? failure = null;
-        var t = _emu.Kernel.CreateThread("json-test", 0, 0x10000100, 0x10000, 0, 0x70000);
+        GuestThread t = _emu.Kernel.CreateThread("json-test", 0, 0x10000100, 0x10000, 0, 0x70000);
         t.HostBody = th =>
         {
             try
@@ -1217,7 +1217,7 @@ sealed unsafe class JsonHarness : IDisposable
                     log.Game[i] = NormalizeWord(GuestMemory.R32(_gameBase + (uint)i * 4));
                 }
 
-                foreach (var (p, size) in _sizes)
+                foreach ((uint p, uint size) in _sizes)
                 {
                     int w = (int)((p - _arena) / 4);
                     if (size == 0x48)
@@ -1278,14 +1278,14 @@ sealed unsafe class JsonHarness : IDisposable
 /// <summary>Where the firmware's libSceJson.suprx comes from: <see cref="EnvVars.FirmwareDir"/> (a Vita3K data folder
 /// or a vs0 folder), else %APPDATA%\Vita3K\Vita3K, else installed from the official PSVUPDAT.PUP
 /// (<see cref="EnvVars.FirmwarePup"/> or the repository root) into a temporary folder.</summary>
-static class JsonFirmware
+internal static class JsonFirmware
 {
-    static readonly Lazy<string?> _path = new(Find);
-    public static string? ModulePath => _path.Value;
+    private static readonly Lazy<string?> s_path = new(Find);
+    public static string? ModulePath => s_path.Value;
 
-    static string? InVs0(string dir)
+    private static string? InVs0(string dir)
     {
-        foreach (var p in new[] { Path.Combine(dir, "vs0", "sys", "external", "libSceJson.suprx"), Path.Combine(dir, "sys", "external", "libSceJson.suprx") })
+        foreach (string? p in new[] { Path.Combine(dir, "vs0", "sys", "external", "libSceJson.suprx"), Path.Combine(dir, "sys", "external", "libSceJson.suprx") })
         {
             if (File.Exists(p))
             {
@@ -1296,15 +1296,15 @@ static class JsonFirmware
         return null;
     }
 
-    static string? Find()
+    private static string? Find()
     {
-        var env = Environment.GetEnvironmentVariable(EnvVars.FirmwareDir);
+        string? env = Environment.GetEnvironmentVariable(EnvVars.FirmwareDir);
         if (!string.IsNullOrEmpty(env))
         {
             return InVs0(env);
         }
 
-        var appData = Environment.GetFolderPath(Environment.SpecialFolder.ApplicationData);
+        string appData = Environment.GetFolderPath(Environment.SpecialFolder.ApplicationData);
         if (!string.IsNullOrEmpty(appData) && InVs0(Path.Combine(appData, "Vita3K", "Vita3K")) is { } v3k)
         {
             return v3k;
@@ -1315,7 +1315,7 @@ static class JsonFirmware
             return null;
         }
 
-        var tmp = Path.Combine(Path.GetTempPath(), "vitasharp-json-fw-" + Environment.ProcessId);
+        string tmp = Path.Combine(Path.GetTempPath(), "vitasharp-json-fw-" + Environment.ProcessId);
         FirmwareInstaller.Install(pup, tmp);
         AppDomain.CurrentDomain.ProcessExit += (_, _) =>
         {

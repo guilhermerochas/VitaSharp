@@ -6,9 +6,9 @@ namespace VitaSharp.Tests;
 /// <summary>A backend swap (state load, LoadExec) runs where <see cref="GpuQueue.ReplaceOn"/> says: the desktop window
 /// thread, which owns the Vulkan surface (made and destroyed elsewhere, the NVIDIA driver corrupted the native heap).</summary>
 [Collection("guest")]
-public sealed class GpuQueueReplaceTests(GuestMemoryFixture fx)
+public sealed class GpuQueueReplaceTests(GuestMemoryFixture fixture)
 {
-    sealed class ThreadBackend : IGpuBackend
+    private sealed class ThreadBackend : IGpuBackend
     {
         public int CreatedOn = Environment.CurrentManagedThreadId, DisposedOn;
         public long PresentCount => 0;
@@ -22,11 +22,11 @@ public sealed class GpuQueueReplaceTests(GuestMemoryFixture fx)
     [Fact]
     public void ReplacementRunsOnTheSurfaceThread()
     {
-        _ = fx;
+        _ = fixture;
         using var work = new BlockingCollection<Action>();
         var owner = new Thread(() =>
         {
-            foreach (var a in work.GetConsumingEnumerable())
+            foreach (Action a in work.GetConsumingEnumerable())
             {
                 a();
             }

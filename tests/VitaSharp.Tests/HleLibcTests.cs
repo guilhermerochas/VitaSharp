@@ -9,24 +9,24 @@ namespace VitaSharp.Tests;
 
 /// <summary>HLE batch 4: SceLibc/SceLibm (the C library a process gets when it does not load libc.suprx).</summary>
 [Collection("guest")]
-public sealed class HleLibcTests(GuestMemoryFixture fx)
+public sealed class HleLibcTests(GuestMemoryFixture fixture)
 {
-    static object? Invoke(object module, string name, params object?[] args) =>
+    private static object? Invoke(object module, string name, params object?[] args) =>
         module.GetType().GetMethod(name, BindingFlags.Instance | BindingFlags.Static | BindingFlags.NonPublic | BindingFlags.Public)!.Invoke(module, args);
 
-    static T Call<T>(object module, string name, params object?[] args) => (T)Invoke(module, name, args)!;
+    private static T Call<T>(object module, string name, params object?[] args) => (T)Invoke(module, name, args)!;
 
-    uint Str(string s)
+    private uint Str(string s)
     {
-        uint p = fx.Memory.Alloc((uint)s.Length + 16, "libc-test");
+        uint p = fixture.Memory.Alloc((uint)s.Length + 16, "libc-test");
         GuestMemory.Fill(p, 0, (uint)s.Length + 16);
         GuestMemory.WriteCString(p, s);
         return p;
     }
 
-    uint Wide(string s)
+    private uint Wide(string s)
     {
-        uint p = fx.Memory.Alloc((uint)s.Length * 2 + 16, "libc-test");
+        uint p = fixture.Memory.Alloc((uint)s.Length * 2 + 16, "libc-test");
         GuestMemory.Fill(p, 0, (uint)s.Length * 2 + 16);
         for (int i = 0; i < s.Length; i++)
         {
@@ -36,20 +36,20 @@ public sealed class HleLibcTests(GuestMemoryFixture fx)
         return p;
     }
 
-    uint Buf(uint n)
+    private uint Buf(uint n)
     {
-        uint p = fx.Memory.Alloc(n, "libc-test");
+        uint p = fixture.Memory.Alloc(n, "libc-test");
         GuestMemory.Fill(p, 0, n);
         return p;
     }
 
-    static void SetBacking(object o, string prop, object value) =>
+    private static void SetBacking(object o, string prop, object value) =>
         o.GetType().GetField($"<{prop}>k__BackingField", BindingFlags.Instance | BindingFlags.NonPublic)!.SetValue(o, value);
 
-    Libc NewLibc()
+    private Libc NewLibc()
     {
         var emu = (Emulator)RuntimeHelpers.GetUninitializedObject(typeof(Emulator));
-        SetBacking(emu, "Memory", fx.Memory);
+        SetBacking(emu, "Memory", fixture.Memory);
         var libc = new Libc { Emu = emu };
         typeof(Libc).GetField("_clib", BindingFlags.Instance | BindingFlags.NonPublic)!.SetValue(libc, new Clib { Emu = emu });
         typeof(Libc).GetField("_heapLimit", BindingFlags.Instance | BindingFlags.NonPublic)!.SetValue(libc, -1L);
@@ -57,7 +57,7 @@ public sealed class HleLibcTests(GuestMemoryFixture fx)
     }
 
     /// <summary>A va_list: the words in guest memory.</summary>
-    uint VaList(params uint[] words)
+    private uint VaList(params uint[] words)
     {
         uint p = Buf((uint)words.Length * 4 + 4);
         for (int i = 0; i < words.Length; i++)
@@ -71,7 +71,7 @@ public sealed class HleLibcTests(GuestMemoryFixture fx)
     [Fact]
     public void StringFunctions()
     {
-        var c = NewLibc();
+        Libc c = NewLibc();
         uint a = Str("hello world"), b = Str("hello"), set = Str(" o");
         Assert.Equal(11u, Call<uint>(c, "strlen", a));
         Assert.True(Call<int>(c, "strcmp", a, b) > 0);
@@ -99,8 +99,8 @@ public sealed class HleLibcTests(GuestMemoryFixture fx)
     [Fact]
     public void AnnexKViolationsReturnErangeAndEmptyTheDestination()
     {
-        var c = NewLibc();
-        var stderr = typeof(Libc).GetField("_stderr", BindingFlags.Instance | BindingFlags.NonPublic)!;
+        Libc c = NewLibc();
+        FieldInfo stderr = typeof(Libc).GetField("_stderr", BindingFlags.Instance | BindingFlags.NonPublic)!;
         uint dst = Buf(8);
         GuestMemory.WriteCString(dst, "xyz");
         // the default handler writes to stderr: give the test a stream that discards (no descriptor behind it)
@@ -112,9 +112,9 @@ public sealed class HleLibcTests(GuestMemoryFixture fx)
     }
 
     /// <summary>Calls with a handler that ignores violations (ignore_handler_s semantics through a NULL-free path).</summary>
-    static int CallQuiet(Libc c, string name, params object[] args)
+    private static int CallQuiet(Libc c, string name, params object[] args)
     {
-        var h = typeof(Libc).GetField("_constraintHandler", BindingFlags.Instance | BindingFlags.NonPublic)!;
+        FieldInfo h = typeof(Libc).GetField("_constraintHandler", BindingFlags.Instance | BindingFlags.NonPublic)!;
         // a non-zero handler with no guest thread is not called: the violation is still reported by the return value
         h.SetValue(c, 1u);
         try
@@ -130,7 +130,7 @@ public sealed class HleLibcTests(GuestMemoryFixture fx)
     [Fact]
     public void IntegerConversions()
     {
-        var c = NewLibc();
+        Libc c = NewLibc();
         uint end = Buf(4), s = Str("  -0x1Fz");
         Assert.Equal(-31, Call<int>(c, "strtol", s, end, 0));
         Assert.Equal(s + 7, GuestMemory.R32(end));
@@ -149,7 +149,7 @@ public sealed class HleLibcTests(GuestMemoryFixture fx)
     [Fact]
     public void FloatConversions()
     {
-        var c = NewLibc();
+        Libc c = NewLibc();
         uint end = Buf(4), s = Str("3.5e2xyz");
         Assert.Equal(350.0, Call<double>(c, "strtod", s, end));
         Assert.Equal(s + 5, GuestMemory.R32(end));
@@ -163,7 +163,7 @@ public sealed class HleLibcTests(GuestMemoryFixture fx)
     [Fact]
     public void PrintfAndScanf()
     {
-        var c = NewLibc();
+        Libc c = NewLibc();
         uint buf = Buf(64);
         Assert.Equal(11, Call<int>(c, "vsnprintf", buf, 64u, "%d-%5s|%x", VaList(42, Str("ab"), 255)));
         Assert.Equal("42-   ab|ff", GuestMemory.ReadCString(buf));
@@ -188,7 +188,7 @@ public sealed class HleLibcTests(GuestMemoryFixture fx)
     [Fact]
     public void HeapAndMspace()
     {
-        var c = NewLibc();
+        Libc c = NewLibc();
         uint p = Call<uint>(c, "malloc", 100u);
         Assert.NotEqual(0u, p);
         Assert.Equal(0u, p & 7);
@@ -219,7 +219,7 @@ public sealed class HleLibcTests(GuestMemoryFixture fx)
     [Fact]
     public void RandMatchesTheFirmwareGenerators()
     {
-        var c = NewLibc();
+        Libc c = NewLibc();
         Invoke(c, "srand", 1u);
         ulong state = 1;
         for (int i = 0; i < 4; i++)
@@ -235,7 +235,7 @@ public sealed class HleLibcTests(GuestMemoryFixture fx)
     [Fact]
     public void WideAndMultibyte()
     {
-        var c = NewLibc();
+        Libc c = NewLibc();
         uint w = Wide("héllo");
         Assert.Equal(5u, Call<uint>(c, "wcslen", w));
         Assert.Equal(w + 2, Call<uint>(c, "wcschr", w, 0xE9));
@@ -256,7 +256,7 @@ public sealed class HleLibcTests(GuestMemoryFixture fx)
     [Fact]
     public void TimeFormatting()
     {
-        var c = NewLibc();
+        Libc c = NewLibc();
         uint t = Buf(4), tm = Buf(36), buf = Buf(64);
         GuestMemory.W32(t, 0); // 1970-01-01 00:00:00 UTC, a Thursday
         Assert.Equal(tm, Call<uint>(c, "gmtime_s", t, tm));
@@ -291,7 +291,7 @@ public sealed class HleLibcTests(GuestMemoryFixture fx)
     [Fact]
     public void CxxRuntimePieces()
     {
-        var c = NewLibc();
+        Libc c = NewLibc();
         uint p = Call<uint>(c, "_Znwj", null!, 24u); // no HLE context: only used to throw bad_alloc
         Assert.NotEqual(0u, p);
         Invoke(c, "_ZdlPv", p);

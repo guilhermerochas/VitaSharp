@@ -1,6 +1,7 @@
 using System.Reflection;
 using VitaSharp.Core;
 using VitaSharp.Core.Hle.Modules;
+using VitaSharp.Core.Kernel;
 using VitaSharp.Core.Memory;
 using Xunit;
 
@@ -9,12 +10,12 @@ namespace VitaSharp.Tests;
 /// <summary>HLE batch 7: the system side (SceVshBridge, SceAppMgr, SceAVConfig, SceBbmc, Videodec, SceNetPs syscalls,
 /// libpaf's C library, the xthreads of libc.suprx).</summary>
 [Collection("guest")]
-public sealed class HleBatch7Tests(GuestMemoryFixture fx) : IDisposable
+public sealed class HleBatch7Tests(GuestMemoryFixture fixture) : IDisposable
 {
-    readonly string _root = Path.Combine(Path.GetTempPath(), "vitasharp-hle7-" + Guid.NewGuid().ToString("N"));
-    Emulator? _emu;
+    private readonly string _root = Path.Combine(Path.GetTempPath(), "vitasharp-hle7-" + Guid.NewGuid().ToString("N"));
+    private Emulator? _emu;
 
-    Emulator Emu()
+    private Emulator Emu()
     {
         if (_emu != null)
         {
@@ -22,24 +23,24 @@ public sealed class HleBatch7Tests(GuestMemoryFixture fx) : IDisposable
         }
 
         Directory.CreateDirectory(_root);
-        return _emu = new Emulator(new EmulatorOptions { FsRoot = _root, Memory = fx.Memory, EnableJit = false, CpuBackend = "interp" });
+        return _emu = new Emulator(new EmulatorOptions { FsRoot = _root, Memory = fixture.Memory, EnableJit = false, CpuBackend = "interp" });
     }
 
-    T Module<T>() => Emu().Hle.Modules.OfType<T>().Single();
+    private T Module<T>() => Emu().Hle.Modules.OfType<T>().Single();
 
-    static object? Invoke(object module, string name, params object?[] args) =>
+    private static object? Invoke(object module, string name, params object?[] args) =>
         module.GetType().GetMethod(name, BindingFlags.Instance | BindingFlags.Static | BindingFlags.NonPublic | BindingFlags.Public)!.Invoke(module, args);
 
-    static int Call(object module, string name, params object?[] args) => Convert.ToInt32(Invoke(module, name, args));
+    private static int Call(object module, string name, params object?[] args) => Convert.ToInt32(Invoke(module, name, args));
 
-    uint Alloc(uint size)
+    private uint Alloc(uint size)
     {
-        uint p = fx.Memory.Alloc(size, "hle7");
+        uint p = fixture.Memory.Alloc(size, "hle7");
         GuestMemory.Fill(p, 0, size);
         return p;
     }
 
-    uint Str(string s)
+    private uint Str(string s)
     {
         uint p = Alloc((uint)s.Length + 1);
         GuestMemory.WriteCString(p, s);
@@ -59,7 +60,7 @@ public sealed class HleBatch7Tests(GuestMemoryFixture fx) : IDisposable
     [Fact]
     public void NvsDataRoundTripsAndChecksTheSize()
     {
-        var vsh = Module<VshBridge>();
+        VshBridge vsh = Module<VshBridge>();
         uint buf = Alloc(0x20), opt = Alloc(8), back = Alloc(0x20);
         for (uint i = 0; i < 0x10; i++)
         {
@@ -79,7 +80,7 @@ public sealed class HleBatch7Tests(GuestMemoryFixture fx) : IDisposable
     [Fact]
     public void CrashArchiveSegmentsRoundTrip()
     {
-        var vsh = Module<VshBridge>();
+        VshBridge vsh = Module<VshBridge>();
         int ctx = Call(vsh, "vshCoredumpCafContextCreate");
         uint opt = Alloc(0x18), src = Alloc(0x40), enc = Alloc(0x40), dec = Alloc(0x40), iv = Alloc(0x10), digA = Alloc(0x20), digB = Alloc(0x20), o8 = Alloc(8);
         for (uint i = 0; i < 0x40; i++)
@@ -109,7 +110,7 @@ public sealed class HleBatch7Tests(GuestMemoryFixture fx) : IDisposable
     [Fact]
     public void EbootSignaturesVerifyOnlyTheirEboot()
     {
-        var vsh = Module<VshBridge>();
+        VshBridge vsh = Module<VshBridge>();
         uint path = Str("ux0:pspemu/PSP/GAME/NPUZ00001/EBOOT.PBP"), sha = Alloc(0x20), sig = Alloc(0x200), sw = Alloc(4);
         for (uint i = 0; i < 0x20; i++)
         {
@@ -125,7 +126,7 @@ public sealed class HleBatch7Tests(GuestMemoryFixture fx) : IDisposable
     [Fact]
     public void IduModeAndClocks()
     {
-        var vsh = Module<VshBridge>();
+        VshBridge vsh = Module<VshBridge>();
         Assert.Equal(0, Call(vsh, "vshSysconIsIduMode"));
         Call(vsh, "vshSysconIduModeSet");
         Assert.Equal(1, Call(vsh, "vshSysconIsIduMode"));
@@ -141,7 +142,7 @@ public sealed class HleBatch7Tests(GuestMemoryFixture fx) : IDisposable
     [Fact]
     public void NotificationRequestsReachTheShellInOrder()
     {
-        var am = Module<AppMgrShell>();
+        AppMgrShell am = Module<AppMgrShell>();
         uint req = Alloc(0x40), out1 = Alloc(0x40);
         Assert.Equal(unchecked((int)0x80802013), Call(am, "sceAppMgrReceiveNotificationRequestForShell", out1));
         GuestMemory.W32(req, 0x1234);
@@ -158,7 +159,7 @@ public sealed class HleBatch7Tests(GuestMemoryFixture fx) : IDisposable
     [Fact]
     public void SystemEventsQueueForTheApplication()
     {
-        var sys = Module<SystemMisc>();
+        SystemMisc sys = Module<SystemMisc>();
         uint ev = Alloc(0x40);
         Assert.Equal(unchecked((int)0x80801000), Call(sys, "sceAppMgrReceiveSystemEvent", ev));
         Invoke(sys, "PostSystemEvent", 0x10000002, "ABCDEFGHIJKL");
@@ -170,8 +171,8 @@ public sealed class HleBatch7Tests(GuestMemoryFixture fx) : IDisposable
     [Fact]
     public void HandheldAnswersOfAvConfigAndBbmc()
     {
-        var vsh = Module<VshBridge>();
-        var svc = Module<SystemServicesVsh>();
+        VshBridge vsh = Module<VshBridge>();
+        SystemServicesVsh svc = Module<SystemServicesVsh>();
         // the test process is not a system program
         Assert.Equal(unchecked((int)0x80010058), Call(vsh, "sceAVConfigHdmiCecEnable"));
         Assert.Equal(unchecked((int)0x80010058), Call(svc, "sceBbmcNoModem"));
@@ -191,7 +192,7 @@ public sealed class HleBatch7Tests(GuestMemoryFixture fx) : IDisposable
     [Fact]
     public void NetSyscallsSysctlAndDescriptors()
     {
-        var net = Module<Net>();
+        Net net = Module<Net>();
         uint block = Alloc(0x18), name = Alloc(8);
         GuestMemory.W32(block, name);
         GuestMemory.W32(block + 4, 2);
@@ -207,7 +208,7 @@ public sealed class HleBatch7Tests(GuestMemoryFixture fx) : IDisposable
     [Fact]
     public void PafStringFunctionsFollowLibpaf()
     {
-        var libc = Module<Libc>();
+        Libc libc = Module<Libc>();
         uint a = Str("abc"), b = Str("abd"), dst = Alloc(8);
         Assert.Equal(0, Call(libc, "sce_paf_private_strcmp", 0u, 0u));
         Assert.Equal(-1, Call(libc, "sce_paf_private_strcmp", 0u, a));
@@ -228,11 +229,11 @@ public sealed class HleBatch7Tests(GuestMemoryFixture fx) : IDisposable
     [Fact]
     public void XthreadsMutexOnAGuestThread()
     {
-        var emu = Emu();
-        var libc = Module<Libc>();
+        Emulator emu = Emu();
+        Libc libc = Module<Libc>();
         Exception? failure = null;
         var results = new List<int>();
-        var th = emu.Kernel.CreateThread("hle7-xthreads", 0, 0x10000100, 0x10000, 0, 0x70000);
+        GuestThread th = emu.Kernel.CreateThread("hle7-xthreads", 0, 0x10000100, 0x10000, 0, 0x70000);
         th.HostBody = t =>
         {
             try

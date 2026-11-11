@@ -11,7 +11,7 @@ namespace VitaSharp.Tests;
 /// </summary>
 public class HleStatusReportTests
 {
-    static string Root([CallerFilePath] string source = "")
+    private static string Root([CallerFilePath] string source = "")
     {
         for (var d = new DirectoryInfo(Path.GetDirectoryName(source)!); d != null; d = d.Parent)
         {
@@ -24,12 +24,12 @@ public class HleStatusReportTests
         throw new DirectoryNotFoundException("repository root");
     }
 
-    static string Read(string relative) => File.ReadAllText(Path.Combine(Root(), relative)).Replace("\r\n", "\n");
+    private static string Read(string relative) => File.ReadAllText(Path.Combine(Root(), relative)).Replace("\r\n", "\n");
 
     [Fact]
     public void CommittedFilesMatchTheSummary()
     {
-        var status = HleStatusReport.Parse(Read(HleStatusReport.TsvPath));
+        HleStatusReport.Status status = HleStatusReport.Parse(Read(HleStatusReport.TsvPath));
         Assert.NotEmpty(status.Libraries);
         var stale = HleStatusReport.Render(status).Where(f => !File.Exists(Path.Combine(Root(), f.Key)) || Read(f.Key) != f.Value)
             .Select(f => f.Key).ToList();
@@ -39,9 +39,9 @@ public class HleStatusReportTests
     [Fact]
     public void BadgesShowTheSummaryCounts()
     {
-        var status = HleStatusReport.Parse(Read(HleStatusReport.TsvPath));
+        HleStatusReport.Status status = HleStatusReport.Parse(Read(HleStatusReport.TsvPath));
         Assert.Equal(status.Libraries.Sum(l => l.Total), status.Total);
-        foreach (var (id, _, impl, total) in HleStatusReport.Badges(status))
+        foreach ((string? id, string _, int impl, int total) in HleStatusReport.Badges(status))
         {
             string svg = Read($"{HleStatusReport.AssetDir}/badge-{id}.svg");
             Assert.Contains($"({impl.ToString("N0", CultureInfo.InvariantCulture)}/{total.ToString("N0", CultureInfo.InvariantCulture)}", svg);
@@ -51,12 +51,12 @@ public class HleStatusReportTests
     [Fact]
     public void RoundTripsThroughTheTsv()
     {
-        var s = HleStatusReport.Build("3.74", 2, 10, 4,
+        HleStatusReport.Status s = HleStatusReport.Build("3.74", 2, 10, 4,
         [
             ("SceA", "vs0:a.suprx", "games", true, false, false), ("SceA", "vs0:a.suprx", "system", false, false, false), ("SceB", "os0:b.skprx", "general", true, true, false),
             ("SceB", "os0:b.skprx", "system", true, true, false), ("SceC", "ux0:c.suprx", "general", true, false, true),
         ], 3, 5);
-        var back = HleStatusReport.Parse(HleStatusReport.ToTsv(s));
+        HleStatusReport.Status back = HleStatusReport.Parse(HleStatusReport.ToTsv(s));
         Assert.Equal(s.Firmware, back.Firmware);
         Assert.Equal((s.VitaSdk, s.VitaSdkImpl, s.VitaSdkDefault, s.VitaSdkLle, s.GameTitles), (back.VitaSdk, back.VitaSdkImpl, back.VitaSdkDefault, back.VitaSdkLle, back.GameTitles));
         Assert.Equal(s.Libraries, back.Libraries);

@@ -10,12 +10,12 @@ namespace VitaSharp.Tests;
 /// <summary>HLE batch 9: the NP side of the system software (libnetctl's and np_manager's requests to the shell's
 /// services, np_commerce2's contexts and requests).</summary>
 [Collection("guest")]
-public sealed class HleBatch9Tests(GuestMemoryFixture fx) : IDisposable
+public sealed class HleBatch9Tests(GuestMemoryFixture fixture) : IDisposable
 {
-    readonly string _root = Path.Combine(Path.GetTempPath(), "vitasharp-hle9-" + Guid.NewGuid().ToString("N"));
-    Emulator? _emu;
+    private readonly string _root = Path.Combine(Path.GetTempPath(), "vitasharp-hle9-" + Guid.NewGuid().ToString("N"));
+    private Emulator? _emu;
 
-    Emulator Emu()
+    private Emulator Emu()
     {
         if (_emu != null)
         {
@@ -23,19 +23,19 @@ public sealed class HleBatch9Tests(GuestMemoryFixture fx) : IDisposable
         }
 
         Directory.CreateDirectory(_root);
-        return _emu = new Emulator(new EmulatorOptions { FsRoot = _root, Memory = fx.Memory, EnableJit = false, CpuBackend = "interp" });
+        return _emu = new Emulator(new EmulatorOptions { FsRoot = _root, Memory = fixture.Memory, EnableJit = false, CpuBackend = "interp" });
     }
 
-    T Module<T>() => Emu().Hle.Modules.OfType<T>().Single();
+    private T Module<T>() => Emu().Hle.Modules.OfType<T>().Single();
 
-    static object? Invoke(object module, string name, params object?[] args) =>
+    private static object? Invoke(object module, string name, params object?[] args) =>
         module.GetType().GetMethod(name, BindingFlags.Instance | BindingFlags.Static | BindingFlags.NonPublic | BindingFlags.Public)!.Invoke(module, args);
 
-    static int Call(object module, string name, params object?[] args) => Convert.ToInt32(Invoke(module, name, args));
+    private static int Call(object module, string name, params object?[] args) => Convert.ToInt32(Invoke(module, name, args));
 
-    uint Alloc(uint size)
+    private uint Alloc(uint size)
     {
-        uint p = fx.Memory.Alloc(size, "hle9");
+        uint p = fixture.Memory.Alloc(size, "hle9");
         GuestMemory.Fill(p, 0, size);
         return p;
     }
@@ -50,12 +50,12 @@ public sealed class HleBatch9Tests(GuestMemoryFixture fx) : IDisposable
         catch (IOException) { }
     }
 
-    const int NetCtlNotInit = unchecked((int)0x80412101), NetCtlAddr = unchecked((int)0x80412107), NetCtlSize = unchecked((int)0x80412111);
+    private const int NetCtlNotInit = unchecked((int)0x80412101), NetCtlAddr = unchecked((int)0x80412107), NetCtlSize = unchecked((int)0x80412111);
 
     [Fact]
     public void NetCtlRequestsCheckLikeTheLibraryAndNeedTheShell()
     {
-        var net = Module<Net>();
+        Net net = Module<Net>();
         uint p = Alloc(0x478 * 2);
         Assert.Equal(NetCtlNotInit, Call(net, "NetCtlSvc1C", p));
         Assert.Equal(0, Call(net, "sceNetCtlInit"));
@@ -72,7 +72,7 @@ public sealed class HleBatch9Tests(GuestMemoryFixture fx) : IDisposable
     [Fact]
     public void NetCtlSystemCallbackListsRegisterAndUnregister()
     {
-        var net = Module<Net>();
+        Net net = Module<Net>();
         uint cid = Alloc(4);
         Assert.Equal(0, Call(net, "sceNetCtlInit"));
         Assert.Equal(0, Call(net, "NetCtlRegisterCallbackSys3", 0x81000001u, 7u, cid));
@@ -91,7 +91,7 @@ public sealed class HleBatch9Tests(GuestMemoryFixture fx) : IDisposable
     [Fact]
     public void NetCtlKeepsTheNetworkTickAndBuildsTheAuthName()
     {
-        var net = Module<Net>();
+        Net net = Module<Net>();
         uint tick = Alloc(8), id = Alloc(12), buf = Alloc(0x40);
         Assert.Equal(0, Call(net, "sceNetCtlInit"));
         Assert.Equal(0, Call(net, "NetCtlSaveNetworkTick"));
@@ -107,7 +107,7 @@ public sealed class HleBatch9Tests(GuestMemoryFixture fx) : IDisposable
     [Fact]
     public void NetCtlAuthContextLifecycle()
     {
-        var net = Module<Net>();
+        Net net = Module<Net>();
         uint ctx = Alloc(0x1F44);
         Assert.Equal(unchecked((int)0x80414101), Call(net, "NetAuthCtxAbort", ctx));
         Assert.Equal(0, Call(net, "NetAuthCtxInit", ctx));
@@ -122,7 +122,7 @@ public sealed class HleBatch9Tests(GuestMemoryFixture fx) : IDisposable
     [Fact]
     public void NpManagerKeepsTheCommunicationConfig()
     {
-        var np = Module<NpManager>();
+        NpManager np = Module<NpManager>();
         uint cfg = Alloc(12), id = Alloc(12), sign = Alloc(0xA0), outp = Alloc(12);
         GuestMemory.WriteCString(id, "NPWR00001");
         GuestMemory.W32(cfg, id);
@@ -148,7 +148,7 @@ public sealed class HleBatch9Tests(GuestMemoryFixture fx) : IDisposable
     [Fact]
     public void Commerce2TypedRequestsLiveInTheirContext()
     {
-        var c2 = Module<NpCommerce2>();
+        NpCommerce2 c2 = Module<NpCommerce2>();
         uint ctxOut = Alloc(4), req = Alloc(4);
         Assert.Equal(unchecked((int)0x80550F01), Call(c2, "Create07C16199", 1u, req));
         Assert.Equal(0, Call(c2, "sceNpCommerce2Init"));
@@ -176,7 +176,7 @@ public sealed class HleBatch9Tests(GuestMemoryFixture fx) : IDisposable
         Assert.Equal(unchecked((int)0x80550F0C), Call(c2, "DeleteCtx", ctx));
     }
 
-    uint Str(string s)
+    private uint Str(string s)
     {
         uint p = Alloc((uint)s.Length + 1);
         GuestMemory.WriteCString(p, s);
@@ -186,7 +186,7 @@ public sealed class HleBatch9Tests(GuestMemoryFixture fx) : IDisposable
     [Fact]
     public void NpCommonEscapesUrlAndXml()
     {
-        var np = Module<NpManager>();
+        NpManager np = Module<NpManager>();
         uint src = Str("a b&<\"/~"), dst = Alloc(64), len = Alloc(4);
         Assert.Equal(0, Call(np, "NpCommonUrlEncode", dst, 64u, src, 8u, len));
         Assert.Equal("a+b%26%3C%22%2F%7E", GuestMemory.ReadCString(dst));
@@ -206,7 +206,7 @@ public sealed class HleBatch9Tests(GuestMemoryFixture fx) : IDisposable
     [Fact]
     public void NpCommonDecodesBase64AndParsesNumbers()
     {
-        var np = Module<NpManager>();
+        NpManager np = Module<NpManager>();
         uint b = Str("aGVsbG8="), dst = Alloc(16), end = Alloc(4);
         Assert.Equal(5, Call(np, "NpCommonBase64DecodedSize", b, 8u));
         Assert.Equal(5, Call(np, "NpCommonBase64Decode", b, 8u, dst, 16u));
@@ -224,7 +224,7 @@ public sealed class HleBatch9Tests(GuestMemoryFixture fx) : IDisposable
     [Fact]
     public void SqliteVshRunsStatementsOnARealDatabase()
     {
-        var sq = Module<SqliteVsh>();
+        SqliteVsh sq = Module<SqliteVsh>();
         uint ppDb = Alloc(4), ppStmt = Alloc(4), err = Alloc(4);
         Assert.Equal(0, Call(sq, "SqlInitialize"));
         Assert.Equal(0, Call(sq, "Open", Str(":memory:"), ppDb));
@@ -254,7 +254,7 @@ public sealed class HleBatch9Tests(GuestMemoryFixture fx) : IDisposable
     [Fact]
     public void PafMembersFollowTheLibrary()
     {
-        var paf = Module<Paf>();
+        Paf paf = Module<Paf>();
         uint surf = Alloc(0x80), style = Alloc(0x20), img = Alloc(0x40), info = Alloc(0x60), rect = Alloc(16);
         Assert.Equal(0u, Convert.ToUInt32(Invoke(paf, "SurfaceSetWrapS", surf, 4)));
         Assert.Equal(1u, GuestMemory.R32(surf + 0x54));

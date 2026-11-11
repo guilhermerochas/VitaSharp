@@ -15,26 +15,26 @@ namespace VitaSharp.Tests;
 /// identical return registers.
 /// </summary>
 [Collection("guest")]
-public sealed unsafe class HleBinderTests(GuestMemoryFixture fx)
+public sealed unsafe class HleBinderTests(GuestMemoryFixture fixture)
 {
     // ------------------------------------------------------------------ reference: the former reflection binder
 
-    static readonly MethodInfo MArgU32 = typeof(HleContext).GetMethod(nameof(HleContext.ArgU32))!;
-    static readonly MethodInfo MArgU64 = typeof(HleContext).GetMethod(nameof(HleContext.ArgU64))!;
-    static readonly MethodInfo MArgU64Stack = typeof(HleContext).GetMethod(nameof(HleContext.ArgU64Stack))!;
-    static readonly MethodInfo MArgStack = typeof(HleContext).GetMethod(nameof(HleContext.ArgStack))!;
-    static readonly MethodInfo MArgF32 = typeof(HleContext).GetMethod(nameof(HleContext.ArgF32))!;
-    static readonly MethodInfo MArgString = typeof(HleContext).GetMethod(nameof(HleContext.ArgString))!;
+    private static readonly MethodInfo s_argU32Method = typeof(HleContext).GetMethod(nameof(HleContext.ArgU32))!;
+    private static readonly MethodInfo s_argU64Method = typeof(HleContext).GetMethod(nameof(HleContext.ArgU64))!;
+    private static readonly MethodInfo s_argU64StackMethod = typeof(HleContext).GetMethod(nameof(HleContext.ArgU64Stack))!;
+    private static readonly MethodInfo s_argStackMethod = typeof(HleContext).GetMethod(nameof(HleContext.ArgStack))!;
+    private static readonly MethodInfo s_argF32Method = typeof(HleContext).GetMethod(nameof(HleContext.ArgF32))!;
+    private static readonly MethodInfo s_argStringMethod = typeof(HleContext).GetMethod(nameof(HleContext.ArgString))!;
 
-    sealed record RefBinding(string Method, string? Name, uint Nid, string? Library, string Layout, MethodInfo Info);
+    private sealed record RefBinding(string Method, string? Name, uint Nid, string? Library, string Layout, MethodInfo Info);
 
     /// <summary>Reflection discovery exactly as HleRegistry.RegisterModule did it (declared instance methods, every [Hle]).</summary>
-    static List<RefBinding> ReflectionBindings(Type module)
+    private static List<RefBinding> ReflectionBindings(Type module)
     {
         var list = new List<RefBinding>();
-        foreach (var mi in module.GetMethods(BindingFlags.Instance | BindingFlags.Public | BindingFlags.NonPublic | BindingFlags.DeclaredOnly))
+        foreach (MethodInfo mi in module.GetMethods(BindingFlags.Instance | BindingFlags.Public | BindingFlags.NonPublic | BindingFlags.DeclaredOnly))
         {
-            foreach (var attr in mi.GetCustomAttributes<HleAttribute>())
+            foreach (HleAttribute attr in mi.GetCustomAttributes<HleAttribute>())
             {
                 list.Add(new RefBinding(mi.Name, attr.Name, attr.Nid, attr.Library, Layout(mi), mi));
             }
@@ -44,13 +44,13 @@ public sealed unsafe class HleBinderTests(GuestMemoryFixture fx)
     }
 
     /// <summary>The layout string of the reference binder's argument walk (same tokens as the generator).</summary>
-    static string Layout(MethodInfo mi)
+    private static string Layout(MethodInfo mi)
     {
         var parts = new List<string>();
         int gpr = 0, stack = 0, fpr = 0;
-        foreach (var p in mi.GetParameters())
+        foreach (ParameterInfo p in mi.GetParameters())
         {
-            var t = p.ParameterType;
+            Type t = p.ParameterType;
             if (t == typeof(HleContext))
             {
                 parts.Add("ctx");
@@ -99,7 +99,7 @@ public sealed unsafe class HleBinderTests(GuestMemoryFixture fx)
             }
             parts.Add($"{token}={Name(t)}");
         }
-        var rt = mi.ReturnType;
+        Type rt = mi.ReturnType;
         string ret;
         if (rt == typeof(void))
         {
@@ -107,13 +107,13 @@ public sealed unsafe class HleBinderTests(GuestMemoryFixture fx)
         }
         else
         {
-            var norm = NormalizeReturn(rt);
+            Type norm = NormalizeReturn(rt);
             ret = rt == norm ? Name(norm) : rt.IsGenericType && rt.GetGenericTypeDefinition() == typeof(Ptr<>) ? $"{Name(norm)}<-ptr" : $"{Name(norm)}<-{Name(rt)}";
         }
         return string.Join(",", parts) + "->" + ret;
     }
 
-    static string Name(Type t)
+    private static string Name(Type t)
     {
         if (t == typeof(int))
         {
@@ -182,20 +182,20 @@ public sealed unsafe class HleBinderTests(GuestMemoryFixture fx)
 
         if (t.IsGenericType)
         {
-            var def = t.GetGenericTypeDefinition().FullName!;
+            string def = t.GetGenericTypeDefinition().FullName!;
             return $"{def[..def.IndexOf('`')].Replace('+', '.')}<{string.Join(",", t.GetGenericArguments().Select(Name))}>";
         }
         return t.FullName!.Replace('+', '.');
     }
 
-    static Action<HleContext> Bind(HleModule module, MethodInfo mi)
+    private static Action<HleContext> Bind(HleModule module, MethodInfo mi)
     {
-        var ctx = Expression.Parameter(typeof(HleContext), "ctx");
+        ParameterExpression ctx = Expression.Parameter(typeof(HleContext), "ctx");
         var args = new List<Expression>();
         int gpr = 0, stack = 0, fpr = 0;
-        foreach (var p in mi.GetParameters())
+        foreach (ParameterInfo p in mi.GetParameters())
         {
-            var t = p.ParameterType;
+            Type t = p.ParameterType;
             if (t == typeof(HleContext))
             {
                 args.Add(ctx);
@@ -208,7 +208,7 @@ public sealed unsafe class HleBinderTests(GuestMemoryFixture fx)
             }
             if (t == typeof(float))
             {
-                args.Add(Expression.Call(MArgF32, ctx, Expression.Constant(fpr++)));
+                args.Add(Expression.Call(s_argF32Method, ctx, Expression.Constant(fpr++)));
                 continue;
             }
             bool wide = t == typeof(long) || t == typeof(ulong) || t == typeof(double);
@@ -222,14 +222,14 @@ public sealed unsafe class HleBinderTests(GuestMemoryFixture fx)
 
                 if (gpr + 2 <= 4)
                 {
-                    raw = Expression.Call(MArgU64, ctx, Expression.Constant(gpr));
+                    raw = Expression.Call(s_argU64Method, ctx, Expression.Constant(gpr));
                     gpr += 2;
                 }
                 else
                 {
                     gpr = 4;
                     stack = (stack + 7) & ~7;
-                    raw = Expression.Call(MArgU64Stack, ctx, Expression.Constant(stack));
+                    raw = Expression.Call(s_argU64StackMethod, ctx, Expression.Constant(stack));
                     stack += 8;
                 }
             }
@@ -237,11 +237,11 @@ public sealed unsafe class HleBinderTests(GuestMemoryFixture fx)
             {
                 if (gpr < 4)
                 {
-                    raw = Expression.Call(MArgU32, ctx, Expression.Constant(gpr++));
+                    raw = Expression.Call(s_argU32Method, ctx, Expression.Constant(gpr++));
                 }
                 else
                 {
-                    raw = Expression.Call(MArgStack, ctx, Expression.Constant(stack));
+                    raw = Expression.Call(s_argStackMethod, ctx, Expression.Constant(stack));
                     stack += 4;
                 }
             }
@@ -249,21 +249,21 @@ public sealed unsafe class HleBinderTests(GuestMemoryFixture fx)
         }
         Expression call = Expression.Call(Expression.Constant(module), mi, args);
         Expression body;
-        var rt = mi.ReturnType;
+        Type rt = mi.ReturnType;
         if (rt == typeof(void))
         {
             body = call;
         }
         else
         {
-            var ret = typeof(HleContext).GetMethods().First(m => m.Name == nameof(HleContext.Return)
+            MethodInfo ret = typeof(HleContext).GetMethods().First(m => m.Name == nameof(HleContext.Return)
                 && m.GetParameters()[0].ParameterType == NormalizeReturn(rt));
             body = Expression.Call(ctx, ret, ConvertReturn(call, rt));
         }
         return Expression.Lambda<Action<HleContext>>(body, ctx).Compile();
     }
 
-    static Type NormalizeReturn(Type t)
+    private static Type NormalizeReturn(Type t)
     {
         if (t == typeof(int) || t == typeof(uint) || t == typeof(ulong) || t == typeof(long) || t == typeof(float) || t == typeof(bool) || t == typeof(double))
         {
@@ -283,9 +283,9 @@ public sealed unsafe class HleBinderTests(GuestMemoryFixture fx)
         return typeof(uint); // ushort, byte, Ptr<T>
     }
 
-    static Expression ConvertReturn(Expression e, Type t)
+    private static Expression ConvertReturn(Expression e, Type t)
     {
-        var target = NormalizeReturn(t);
+        Type target = NormalizeReturn(t);
         if (t == target)
         {
             return e;
@@ -299,7 +299,7 @@ public sealed unsafe class HleBinderTests(GuestMemoryFixture fx)
         return Expression.Convert(e, target);
     }
 
-    static Expression Convert(Expression raw, Type t)
+    private static Expression Convert(Expression raw, Type t)
     {
         if (t == raw.Type)
         {
@@ -308,7 +308,7 @@ public sealed unsafe class HleBinderTests(GuestMemoryFixture fx)
 
         if (t == typeof(string))
         {
-            return Expression.Call(MArgString, raw);
+            return Expression.Call(s_argStringMethod, raw);
         }
 
         if (t == typeof(bool))
@@ -344,7 +344,7 @@ public sealed unsafe class HleBinderTests(GuestMemoryFixture fx)
             .OrderBy(t => t.FullName).ToList();
         var generated = HleBindings.Modules.OrderBy(m => m.Type.FullName).Select(m => m.Type).ToList();
         Assert.Equal(reflected, generated);
-        foreach (var m in HleBindings.Modules)
+        foreach (HleModuleEntry m in HleBindings.Modules)
         {
             Assert.IsType(m.Type, m.Create());
         }
@@ -355,9 +355,9 @@ public sealed unsafe class HleBinderTests(GuestMemoryFixture fx)
     [Fact]
     public void ReturnsValueReachesTheBindings()
     {
-        foreach (var m in HleBindings.Modules)
+        foreach (HleModuleEntry m in HleBindings.Modules)
         {
-            foreach (var b in HleBindings.For(m.Type)!)
+            foreach (HleBinding b in HleBindings.For(m.Type)!)
             {
                 var attrs = m.Type.GetMethods(BindingFlags.Instance | BindingFlags.Static | BindingFlags.Public | BindingFlags.NonPublic | BindingFlags.DeclaredOnly)
                     .Where(x => x.Name == b.Method).SelectMany(x => x.GetCustomAttributes<HleAttribute>())
@@ -374,7 +374,7 @@ public sealed unsafe class HleBinderTests(GuestMemoryFixture fx)
     public void EveryHleMethodBindsLikeTheReflectionBinder()
     {
         int total = 0;
-        foreach (var m in HleBindings.Modules)
+        foreach (HleModuleEntry m in HleBindings.Modules)
         {
             var expected = ReflectionBindings(m.Type).Select(b => $"{b.Method}|{b.Name}|{b.Nid:X8}|{b.Library}|{b.Layout}").ToList();
             var actual = HleBindings.For(m.Type)!.Select(b => $"{b.Method}|{b.Name}|{b.Nid:X8}|{b.Library}|{b.Layout}").ToList();
@@ -384,10 +384,10 @@ public sealed unsafe class HleBinderTests(GuestMemoryFixture fx)
         Assert.True(total > 2000, $"only {total} bindings");
     }
 
-    const uint DataBase = 0x0040_0000, DataSize = 0x10000;
+    private const uint DataBase = 0x0040_0000, DataSize = 0x10000;
 
     /// <summary>Random registers/stack/VFP state whose 32-bit values all point at NUL-terminated text in guest memory.</summary>
-    static void RandomState(CpuState* s, Random rng)
+    private static void RandomState(CpuState* s, Random rng)
     {
         uint Word() => rng.Next(4) == 0 ? (uint)rng.NextInt64() : DataBase + (uint)rng.Next((int)DataSize - 0x100);
         for (int i = 0; i < 13; i++)
@@ -407,18 +407,18 @@ public sealed unsafe class HleBinderTests(GuestMemoryFixture fx)
         }
     }
 
-    static (uint R0, uint R1, ulong D0) Result(CpuState* s) => (s->R[0], s->R[1], ((ulong*)s->D)[0]);
+    private static (uint R0, uint R1, ulong D0) Result(CpuState* s) => (s->R[0], s->R[1], ((ulong*)s->D)[0]);
 
     [Fact]
     public void GeneratedInvokersMarshalLikeTheReflectionBinder()
     {
-        if (fx.Memory.FindBlock(DataBase) == null)
+        if (fixture.Memory.FindBlock(DataBase) == null)
         {
-            fx.Memory.MapFixed(DataBase, DataSize, "binder test data");
+            fixture.Memory.MapFixed(DataBase, DataSize, "binder test data");
         }
 
         var rng = new Random(1234);
-        var text = new byte[DataSize];
+        byte[] text = new byte[DataSize];
         for (int i = 0; i < text.Length; i++)
         {
             text[i] = rng.Next(8) == 0 ? (byte)0 : (byte)rng.Next(0x20, 0x7F);
@@ -429,31 +429,31 @@ public sealed unsafe class HleBinderTests(GuestMemoryFixture fx)
         var entry = VitaSharp.Generated.HleLocalBindings.Modules().Single(e => e.Type == typeof(ProbeModule));
         var probe = (ProbeModule)entry.Create();
         var generated = entry.Bindings();
-        var reference = ReflectionBindings(typeof(ProbeModule));
+        List<RefBinding> reference = ReflectionBindings(typeof(ProbeModule));
         Assert.Equal(reference.Select(b => b.Method + b.Layout), generated.Select(b => b.Method + b.Layout));
         Assert.True(generated.Length >= 12);
 
-        var s = CpuState.Allocate();
+        CpuState* s = CpuState.Allocate();
         try
         {
             var ctx = new HleContext { Cpu = s };
             for (int i = 0; i < generated.Length; i++)
             {
                 var gen = generated[i].Bind(probe);
-                var refl = Bind(probe, reference[i].Info);
+                Action<HleContext> refl = Bind(probe, reference[i].Info);
                 for (int round = 0; round < 200; round++)
                 {
                     int seed = rng.Next();
                     RandomState(s, new Random(seed));
                     probe.Seed = seed;
                     refl(ctx);
-                    var expectedArgs = probe.Take();
+                    string expectedArgs = probe.Take();
                     Assert.True(expectedArgs.Length > 0 || reference[i].Info.GetParameters().Length == 0, "probe recorded nothing");
-                    var expected = Result(s);
+                    (uint R0, uint R1, ulong D0) expected = Result(s);
                     RandomState(s, new Random(seed));
                     probe.Seed = seed;
                     gen(ctx);
-                    var actualArgs = probe.Take();
+                    string actualArgs = probe.Take();
                     Assert.Equal(expectedArgs, actualArgs);
                     Assert.Equal(expected, Result(s));
                 }
@@ -487,16 +487,16 @@ public struct ProbeStruct
 public sealed class ProbeModule : HleModule
 {
     public int Seed;
-    readonly List<string> _log = new();
+    private readonly List<string> _log = new();
     public string Take()
     {
-        var s = string.Join("|", _log);
+        string s = string.Join("|", _log);
         _log.Clear();
         return s;
     }
-    void Log(params object?[] a)
+    private void Log(params object?[] a)
     {
-        foreach (var x in a)
+        foreach (object? x in a)
         {
             _log.Add(x switch
             {
@@ -512,90 +512,90 @@ public sealed class ProbeModule : HleModule
     }
 
     [Hle("probeInts", Nid = 0x1)]
-    int Ints(int a, uint b, short c, ushort d, byte e, sbyte f, char g)
+    private int Ints(int a, uint b, short c, ushort d, byte e, sbyte f, char g)
     {
         Log(a, b, c, d, e, f, g);
         return Seed;
     }
     [Hle("probeWide", Nid = 0x2)]
-    long Wide(uint a, long b, ulong c, int d, long e)
+    private long Wide(uint a, long b, ulong c, int d, long e)
     {
         Log(a, b, c, d, e);
         return (long)Seed * 31;
     }
     [Hle("probeWide2", Nid = 0x3)]
-    ulong Wide2(ulong a, uint b, uint c, double d, uint e)
+    private ulong Wide2(ulong a, uint b, uint c, double d, uint e)
     {
         Log(a, b, c, d, e);
         return (ulong)Seed << 20;
     }
     [Hle("probeFloats", Nid = 0x4)]
-    float Floats(float a, uint b, float c, long d, float e, double f)
+    private float Floats(float a, uint b, float c, long d, float e, double f)
     {
         Log(a, b, c, d, e, f);
         return Seed / 3f;
     }
     [Hle("probeDouble", Nid = 0x5)]
-    double Double(double a, float b)
+    private double Double(double a, float b)
     {
         Log(a, b);
         return Seed / 7.0;
     }
     [Hle("probeMisc", Nid = 0x6)]
-    bool Misc(bool a, string s, Ptr<ProbeStruct> p, ProbeEnum e, ProbeByteEnum be, ProbeLongEnum le)
+    private bool Misc(bool a, string s, Ptr<ProbeStruct> p, ProbeEnum e, ProbeByteEnum be, ProbeLongEnum le)
     {
         Log(a, s, p, e, be, le);
         return (Seed & 1) != 0;
     }
     [Hle("probeVa", Nid = 0x7)]
-    uint Va(uint a, string fmt, VarArgs va)
+    private uint Va(uint a, string fmt, VarArgs va)
     {
         Log(a, fmt, va);
         return (uint)Seed;
     }
     [Hle("probeStackVa", Nid = 0x8)]
-    int StackVa(uint a, uint b, uint c, uint d, uint e, VarArgs va)
+    private int StackVa(uint a, uint b, uint c, uint d, uint e, VarArgs va)
     {
         Log(a, b, c, d, e, va);
         return -Seed;
     }
     [Hle("probeCtx", Nid = 0x9)]
-    void Ctx(HleContext ctx, uint a, long b)
+    private void Ctx(HleContext ctx, uint a, long b)
     {
         Log(ctx, a, b);
     }
     [Hle("probeRetEnum", Nid = 0xA)]
-    ProbeEnum RetEnum(uint a)
+    private ProbeEnum RetEnum(uint a)
     {
         Log(a);
         return (ProbeEnum)Seed;
     }
     [Hle("probeRetShort", Nid = 0xB)]
-    short RetShort(uint a)
+    private short RetShort(uint a)
     {
         Log(a);
         return (short)Seed;
     }
     [Hle("probeRetByte", Nid = 0xC)]
-    byte RetByte(uint a)
+    private byte RetByte(uint a)
     {
         Log(a);
         return (byte)Seed;
     }
     [Hle("probeRetPtr", Nid = 0xD)]
-    Ptr<ProbeStruct> RetPtr(Ptr<ProbeStruct> p)
+    private Ptr<ProbeStruct> RetPtr(Ptr<ProbeStruct> p)
     {
         Log(p);
         return new Ptr<ProbeStruct>((uint)Seed);
     }
     [Hle("probeRetByteEnum", Nid = 0xE)]
-    ProbeByteEnum RetByteEnum()
+    private ProbeByteEnum RetByteEnum()
     {
         Log();
         return (ProbeByteEnum)Seed;
     }
     [Hle("probeManyStack", Nid = 0xF)]
-    uint ManyStack(uint a, uint b, uint c, long d, uint e, long f, ushort g, string h)
+    private uint ManyStack(uint a, uint b, uint c, long d, uint e, long f, ushort g, string h)
     {
         Log(a, b, c, d, e, f, g, h);
         return 0;

@@ -8,9 +8,9 @@ namespace VitaSharp.Tests;
 
 /// <summary>Cross-package HLE fixes: error code values, tty devices, struct offsets.</summary>
 [Collection("guest")]
-public sealed class HleCrossTests(GuestMemoryFixture fx)
+public sealed class HleCrossTests(GuestMemoryFixture fixture)
 {
-    static int Call<T>(T module, string name, params object[] args) =>
+    private static int Call<T>(T module, string name, params object[] args) =>
         (int)typeof(T).GetMethod(name, BindingFlags.Instance | BindingFlags.NonPublic | BindingFlags.Public)!.Invoke(module, args)!;
 
     [Fact]
@@ -40,7 +40,7 @@ public sealed class HleCrossTests(GuestMemoryFixture fx)
     [Fact]
     public void SystemSwVersionLayout()
     {
-        uint p = fx.Memory.Alloc(0x40, "swver");
+        uint p = fixture.Memory.Alloc(0x40, "swver");
         GuestMemory.Fill(p, 0xCC, 0x40);
         GuestMemory.W32(p, 0x28);
         Assert.Equal(0, Call(new SystemMisc(), "sceKernelGetSystemSwVersion", p));

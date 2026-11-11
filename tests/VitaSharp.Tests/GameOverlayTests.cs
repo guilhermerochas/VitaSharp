@@ -17,13 +17,13 @@ namespace VitaSharp.Tests;
 [Collection("launcher")]
 public sealed class GameOverlayTests : IDisposable
 {
-    readonly string _root = Path.Combine(Path.GetTempPath(), "vitasharp-overlay-" + Guid.NewGuid().ToString("N"));
-    readonly string? _savedData = Environment.GetEnvironmentVariable(EnvVars.Data);
-    readonly WindowHost _window;
+    private readonly string _root = Path.Combine(Path.GetTempPath(), "vitasharp-overlay-" + Guid.NewGuid().ToString("N"));
+    private readonly string? _savedData = Environment.GetEnvironmentVariable(EnvVars.Data);
+    private readonly WindowHost _window;
     /// <summary>The last panel the overlay showed (null: hidden) and how many times it was drawn.</summary>
-    (byte[]? Bgra, int W, int H) _shown;
-    int _draws;
-    ControllerState _pad = ControllerState.Neutral;
+    private (byte[]? Bgra, int W, int H) _shown;
+    private int _draws;
+    private ControllerState _pad = ControllerState.Neutral;
 
     public GameOverlayTests()
     {
@@ -44,21 +44,21 @@ public sealed class GameOverlayTests : IDisposable
         catch (UnauthorizedAccessException) { }
     }
 
-    void Show(byte[]? bgra, int w, int h)
+    private void Show(byte[]? bgra, int w, int h)
     {
         _shown = (bgra, w, h);
         _draws++;
     }
 
     /// <summary>One update of the window loop (the overlays poll the controller there).</summary>
-    void Tick()
+    private void Tick()
     {
-        var f = typeof(WindowHost).GetField("Tick", BindingFlags.Instance | BindingFlags.NonPublic)!;
+        FieldInfo f = typeof(WindowHost).GetField("Tick", BindingFlags.Instance | BindingFlags.NonPublic)!;
         ((Action?)f.GetValue(_window))?.Invoke();
     }
 
     /// <summary>Presses and releases <paramref name="b"/> on the controller, with a window update at each edge.</summary>
-    void PadPress(VitaButtons b)
+    private void PadPress(VitaButtons b)
     {
         _pad = ControllerState.Neutral with { Buttons = b };
         Tick();
@@ -66,14 +66,14 @@ public sealed class GameOverlayTests : IDisposable
         Tick();
     }
 
-    static (byte B, byte G, byte R) Px(byte[] bgra, int w, int x, int y)
+    private static (byte B, byte G, byte R) Px(byte[] bgra, int w, int x, int y)
     {
         int i = (y * w + x) * 4;
         return (bgra[i], bgra[i + 1], bgra[i + 2]);
     }
 
     /// <summary>Pixels that are neither the panel background nor its accent bar: the drawn text, boxes and images.</summary>
-    static int Ink(byte[] bgra)
+    private static int Ink(byte[] bgra)
     {
         int n = 0;
         for (int i = 0; i < bgra.Length; i += 4)
@@ -92,20 +92,20 @@ public sealed class GameOverlayTests : IDisposable
     public void MessageDialogAnswersWithTheKeyboardMouseAndController()
     {
         var overlay = new MessageOverlay(_window, Show, () => _pad);
-        var buttons = new[] { new MessageDialogButton("Yes", 1), new MessageDialogButton("No", 2, IsCancel: true) };
+        MessageDialogButton[] buttons = new[] { new MessageDialogButton("Yes", 1), new MessageDialogButton("No", 2, IsCancel: true) };
         int answer = -1;
 
         // the panel: accent bar on top, background below, the buttons drawn inside it
         overlay.Open(new MessageDialogRequest("Save the game?", buttons), i => answer = i);
         Assert.True(overlay.IsOpen);
         Assert.Same(overlay, _window.TextCapture);
-        var (bgra, w, h) = _shown;
+        (byte[]? bgra, int w, int h) = _shown;
         Assert.NotNull(bgra);
         Assert.Equal(600, w); // 1x: the window has no framebuffer yet
         Assert.Equal((0xFD, 0x8B, 0x3D), Px(bgra!, w, w / 2, 1));
         Assert.Equal((0x27, 0x1F, 0x1B), Px(bgra!, w, 2, h - 2));
         Assert.True(Ink(bgra!) > 1000);
-        var first = bgra!;
+        byte[] first = bgra!;
 
         // arrows move the selection (the panel changes), Enter presses the selected button
         overlay.OnKey(Key.Right);
@@ -156,7 +156,7 @@ public sealed class GameOverlayTests : IDisposable
 
         // a progress message without buttons: the bar follows SetProgress, no key answers it, Close hides it
         overlay.Open(new MessageDialogRequest("Saving...", [], Progress: 0), i => answer = 99);
-        var empty = _shown.Bgra!.ToArray();
+        byte[] empty = _shown.Bgra!.ToArray();
         overlay.SetProgress(80, "Saving... 80%");
         Assert.True(Ink(_shown.Bgra!) > Ink(empty), "the bar filled");
         overlay.OnKey(Key.Enter);
@@ -170,9 +170,9 @@ public sealed class GameOverlayTests : IDisposable
     [WindowFact]
     public void MessagePanelWrapsLongTextAndGrowsWithTheScale()
     {
-        var one = MessageOverlay.Render("short", ["OK"], 0, null, 1f);
-        var many = MessageOverlay.Render(string.Join(' ', Enumerable.Repeat("a rather long message", 40)), ["OK"], 0, null, 1f);
-        var big = MessageOverlay.Render("short", ["OK"], 0, null, 2f);
+        MessageOverlay.Panel one = MessageOverlay.Render("short", ["OK"], 0, null, 1f);
+        MessageOverlay.Panel many = MessageOverlay.Render(string.Join(' ', Enumerable.Repeat("a rather long message", 40)), ["OK"], 0, null, 1f);
+        MessageOverlay.Panel big = MessageOverlay.Render("short", ["OK"], 0, null, 2f);
         Assert.True(many.Height > one.Height + 100, $"{many.Height} vs {one.Height}");
         Assert.Equal(one.Width * 2, big.Width);
         Assert.InRange(big.Height, one.Height * 2 - 4, one.Height * 2 + 4);
@@ -254,8 +254,8 @@ public sealed class GameOverlayTests : IDisposable
     [WindowFact]
     public void ImePanelMasksPasswordsAndScrollsMultilineText()
     {
-        var plain = ImeOverlay.Render(new TextEntry("Password", "secret", 16, 0, false, false), 1f);
-        var masked = ImeOverlay.Render(new TextEntry("Password", "secret", 16, 0, false, true), 1f);
+        (byte[] Bgra, int Width, int Height) plain = ImeOverlay.Render(new TextEntry("Password", "secret", 16, 0, false, false), 1f);
+        (byte[] Bgra, int Width, int Height) masked = ImeOverlay.Render(new TextEntry("Password", "secret", 16, 0, false, true), 1f);
         Assert.Equal((plain.Width, plain.Height), (masked.Width, masked.Height));
         Assert.False(plain.Bgra.AsSpan().SequenceEqual(masked.Bgra));
         // the box grows with the lines up to five
@@ -373,7 +373,7 @@ public sealed class GameOverlayTests : IDisposable
         }
 
         Assert.Equal(1, chimes);
-        var card = shown[0];
+        (byte[]? Bgra, int W, int H) card = shown[0];
         Assert.NotNull(card.Bgra);
         // 2x at 1088 lines
         Assert.Equal(TrophyToast.Render(new TrophyUnlockedEvent("", "", gold, null), 2f).Width, card.W);
@@ -387,10 +387,10 @@ public sealed class GameOverlayTests : IDisposable
     {
         Assert.NotEqual(PauseBadge.Text(""), PauseBadge.Text("P"));
         Assert.Contains("P", PauseBadge.Text("P"));
-        var badge = PauseBadge.Render("Paused (P)", 544)!.Value;
-        var big = PauseBadge.Render("Paused (P)", 1088)!.Value;
-        var plain = PauseBadge.Render("Paused (P)", 544, pauseSign: false)!.Value;
-        var rec = PauseBadge.Render("REC", 544, recDot: true)!.Value;
+        (byte[] Bgra, int Width, int Height) badge = PauseBadge.Render("Paused (P)", 544)!.Value;
+        (byte[] Bgra, int Width, int Height) big = PauseBadge.Render("Paused (P)", 1088)!.Value;
+        (byte[] Bgra, int Width, int Height) plain = PauseBadge.Render("Paused (P)", 544, pauseSign: false)!.Value;
+        (byte[] Bgra, int Width, int Height) rec = PauseBadge.Render("REC", 544, recDot: true)!.Value;
         Assert.Equal(34, badge.Height);
         Assert.Equal(68, big.Height);
         Assert.True(plain.Width < badge.Width, "no sign: narrower");

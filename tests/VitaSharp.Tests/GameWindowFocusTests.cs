@@ -10,7 +10,7 @@ public class GameWindowFocusTests
     [Fact]
     public void PicksTheGameWindowOverInputMethodHelpers()
     {
-        var windows = new[]
+        Candidate[] windows = new[]
         {
             new Candidate(1, "IME", "Default IME", false, false),
             new Candidate(2, "MSCTFIME UI", "MSCTFIME UI", false, false),
@@ -22,7 +22,7 @@ public class GameWindowFocusTests
     [Fact]
     public void PrefersAVisibleWindowAndSkipsOwnedOrUntitledOnes()
     {
-        var windows = new[]
+        Candidate[] windows = new[]
         {
             new Candidate(4, "GLFW30", "", true, false),          // no title
             new Candidate(5, "#32770", "Dialog", true, true),     // owned (a dialog of the game window)
@@ -50,10 +50,10 @@ public class GameWindowFocusTests
     [Fact]
     public void BuildsTheActivationCommandPerSystem()
     {
-        var linux = ActivateCommand(1234, linux: true, macOS: false)!.Value;
+        (string File, string[] Args) linux = ActivateCommand(1234, linux: true, macOS: false)!.Value;
         Assert.Equal("xdotool", linux.File);
         Assert.Equal(["search", "--onlyvisible", "--pid", "1234", "windowactivate"], linux.Args);
-        var mac = ActivateCommand(1234, linux: false, macOS: true)!.Value;
+        (string File, string[] Args) mac = ActivateCommand(1234, linux: false, macOS: true)!.Value;
         Assert.Equal("osascript", mac.File);
         Assert.Contains("unix id is 1234", mac.Args[1]);
         Assert.Null(ActivateCommand(1234, linux: false, macOS: false));

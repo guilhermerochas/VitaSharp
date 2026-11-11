@@ -10,12 +10,12 @@ namespace VitaSharp.Tests;
 /// <summary>HLE batch 10b: the system side the shell and its applications import (MTP, HTTP over MTP and its wrapper,
 /// the MTP service client, livespace_db, the email engine, ScePsp2Compat helpers).</summary>
 [Collection("guest")]
-public sealed class HleBatch10bTests(GuestMemoryFixture fx) : IDisposable
+public sealed class HleBatch10bTests(GuestMemoryFixture fixture) : IDisposable
 {
-    readonly string _root = Path.Combine(Path.GetTempPath(), "vitasharp-hle10b-" + Guid.NewGuid().ToString("N"));
-    Emulator? _emu;
+    private readonly string _root = Path.Combine(Path.GetTempPath(), "vitasharp-hle10b-" + Guid.NewGuid().ToString("N"));
+    private Emulator? _emu;
 
-    Emulator Emu()
+    private Emulator Emu()
     {
         if (_emu != null)
         {
@@ -23,24 +23,24 @@ public sealed class HleBatch10bTests(GuestMemoryFixture fx) : IDisposable
         }
 
         Directory.CreateDirectory(_root);
-        return _emu = new Emulator(new EmulatorOptions { FsRoot = _root, Memory = fx.Memory, EnableJit = false, CpuBackend = "interp" });
+        return _emu = new Emulator(new EmulatorOptions { FsRoot = _root, Memory = fixture.Memory, EnableJit = false, CpuBackend = "interp" });
     }
 
-    T Module<T>() => Emu().Hle.Modules.OfType<T>().Single();
+    private T Module<T>() => Emu().Hle.Modules.OfType<T>().Single();
 
-    static object? Invoke(object module, string name, params object?[] args) =>
+    private static object? Invoke(object module, string name, params object?[] args) =>
         module.GetType().GetMethod(name, BindingFlags.Instance | BindingFlags.Static | BindingFlags.NonPublic | BindingFlags.Public)!.Invoke(module, args);
 
-    static int Call(object module, string name, params object?[] args) => Convert.ToInt32(Invoke(module, name, args));
+    private static int Call(object module, string name, params object?[] args) => Convert.ToInt32(Invoke(module, name, args));
 
-    uint Alloc(uint size)
+    private uint Alloc(uint size)
     {
-        uint p = fx.Memory.Alloc(size, "hle10b");
+        uint p = fixture.Memory.Alloc(size, "hle10b");
         GuestMemory.Fill(p, 0, size);
         return p;
     }
 
-    uint Str(string s)
+    private uint Str(string s)
     {
         uint p = Alloc((uint)s.Length + 1);
         GuestMemory.WriteCString(p, s);
@@ -60,7 +60,7 @@ public sealed class HleBatch10bTests(GuestMemoryFixture fx) : IDisposable
     [Fact]
     public void MtpHttpWrapperPicksItsLibraryAndChecksTheMode()
     {
-        var w = Module<MtpHttpWrapper>();
+        MtpHttpWrapper w = Module<MtpHttpWrapper>();
         Assert.Equal(unchecked((int)0x80546500), Call(w, "sceMtpHttpWrapperStopUnloadModules"));
         Assert.Equal(unchecked((int)0x80546502), Call(w, "sceMtpHttpWrapperLoadStartModules", (ushort)0));
         Assert.Equal(unchecked((int)0x80546502), Call(w, "sceMtpHttpWrapperLoadStartModules", (ushort)5));
@@ -77,7 +77,7 @@ public sealed class HleBatch10bTests(GuestMemoryFixture fx) : IDisposable
     [Fact]
     public void HttpSetProxyNeedsTheLibraryAndAHost()
     {
-        var http = Module<Http>();
+        Http http = Module<Http>();
         Assert.Equal(unchecked((int)0x80431001), Call(http, "sceHttpSetProxy", 1, 0, 0, Str("proxy"), (ushort)8080));
         Assert.Equal(0, Call(http, "sceHttpInit", 0x10000u));
         int tmpl = Call(http, "sceHttpCreateTemplate", Str("ua"), 1, 0);
@@ -88,12 +88,12 @@ public sealed class HleBatch10bTests(GuestMemoryFixture fx) : IDisposable
         Assert.Equal(0, Call(http, "sceHttpTerm"));
     }
 
-    const int MtpInvalid = unchecked((int)0x80540003), MtpNoHost = unchecked((int)0x8054001B), MtpUsbDisconnected = unchecked((int)0x80540034);
+    private const int MtpInvalid = unchecked((int)0x80540003), MtpNoHost = unchecked((int)0x8054001B), MtpUsbDisconnected = unchecked((int)0x80540034);
 
     [Fact]
     public void MtpCoreGoesThroughItsStatesWithoutAHost()
     {
-        var mtp = Module<Mtp>();
+        Mtp mtp = Module<Mtp>();
         uint id = Alloc(4), info = Alloc(0x68), flag = Alloc(4);
         Assert.Equal(unchecked((int)0x80540001), Call(mtp, "sceMtpStart", 1u, 0u));
         Assert.Equal(unchecked((int)0x80540001), Call(mtp, "sceMtpEnd"));
@@ -125,7 +125,7 @@ public sealed class HleBatch10bTests(GuestMemoryFixture fx) : IDisposable
     [Fact]
     public void MtpKeepsItsLocalSettings()
     {
-        var mtp = Module<Mtp>();
+        Mtp mtp = Module<Mtp>();
         uint v = Alloc(16), got = Alloc(4), id = Alloc(16);
         // the Marlin settings: a size reallocates its buffer, which then holds the data
         GuestMemory.W32(v, 8);
@@ -165,7 +165,7 @@ public sealed class HleBatch10bTests(GuestMemoryFixture fx) : IDisposable
     [Fact]
     public void MtpClientWithoutTheServiceFailsItsRequestsAndKeepsListeners()
     {
-        var c = Module<MtpClient>();
+        MtpClient c = Module<MtpClient>();
         uint client = Alloc(0x60), id = Alloc(4), obs = Alloc(0x14), bg = Alloc(0x10);
         Assert.Equal(unchecked((int)0x80540102), Call(c, "ClientInitialize", 0u));
         Assert.Equal(unchecked((int)0x80540105), Call(c, "ClientInitialize", client)); // SceMtpService not reachable
