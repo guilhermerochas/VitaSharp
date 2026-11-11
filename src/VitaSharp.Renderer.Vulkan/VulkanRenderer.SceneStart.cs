@@ -29,8 +29,18 @@ public sealed unsafe partial class VulkanRenderer
 
     void SetDrawArea(in Core.Gpu.DrawState st)
     {
-        if (st.RegionClipMode == 2) { _drawMinX = st.ClipMinX; _drawMinY = st.ClipMinY; _drawMaxX = st.ClipMaxX; _drawMaxY = st.ClipMaxY; }
-        else { _drawMinX = _drawMinY = 0; _drawMaxX = _drawMaxY = int.MaxValue; }
+        if (st.RegionClipMode == 2)
+        {
+            _drawMinX = st.ClipMinX;
+            _drawMinY = st.ClipMinY;
+            _drawMaxX = st.ClipMaxX;
+            _drawMaxY = st.ClipMaxY;
+        }
+        else
+        {
+            _drawMinX = _drawMinY = 0;
+            _drawMaxX = _drawMaxY = int.MaxValue;
+        }
         // the draw is rendered through a Vulkan viewport of the GXM viewport's rectangle, which clips it to that
         // rectangle: post-processing passes chained through regions of one surface (Croixleur Sigma's bloom blurs one
         // half of a 1024x512 target into the other with a full-surface region clip) do not render where they sample
@@ -59,7 +69,11 @@ public sealed unsafe partial class VulkanRenderer
     /// <summary>The scene-start copy of the current surface (created the first time a draw samples it).</summary>
     RenderTarget SceneStartSource(RenderTarget rt)
     {
-        if (_sceneStartCopies.TryGetValue(rt, out var c)) return c.Valid ? c.Shadow : rt;
+        if (_sceneStartCopies.TryGetValue(rt, out var c))
+        {
+            return c.Valid ? c.Shadow : rt;
+        }
+
         Log.WarnOnce($"selfsample-{rt.Address:X8}", $"[gpu] render target 0x{rt.Address:X8} {rt.Width}x{rt.Height} is sampled while it is rendered: textures read its content from the start of the scene");
         CreateSceneStartCopy(rt);
         // usable from the next scene of this surface on
@@ -69,24 +83,43 @@ public sealed unsafe partial class VulkanRenderer
     /// <summary>Multisampled scenes always keep a scene-start copy: their first rendering loads the samples from it.</summary>
     void EnsureSceneStartCopy(RenderTarget rt)
     {
-        if (!_sceneStartCopies.ContainsKey(rt)) CreateSceneStartCopy(rt);
+        if (!_sceneStartCopies.ContainsKey(rt))
+        {
+            CreateSceneStartCopy(rt);
+        }
     }
 
     /// <summary>The scene-start copy viewed as <paramref name="format"/> (same texel size as the surface).</summary>
     ImageView SceneStartCopyView(RenderTarget rt, Format format)
     {
         var c = _sceneStartCopies[rt];
-        if (format == c.Shadow.Format) return c.Shadow.View;
-        if (c.Views.TryGetValue(format, out var v)) return v;
+        if (format == c.Shadow.Format)
+        {
+            return c.Shadow.View;
+        }
+
+        if (c.Views.TryGetValue(format, out var v))
+        {
+            return v;
+        }
+
         return c.Views[format] = CreateView(c.Shadow.Image, format, ImageAspectFlags.ColorBit, 1, 1, false, default);
     }
 
     void DestroySceneStartCopyLater(RenderTarget rt, bool now = false)
     {
-        if (!_sceneStartCopies.Remove(rt, out var c)) return;
+        if (!_sceneStartCopies.Remove(rt, out var c))
+        {
+            return;
+        }
+
         Release(() =>
         {
-            foreach (var v in c.Views.Values) _vk.DestroyImageView(_dev, v, null);
+            foreach (var v in c.Views.Values)
+            {
+                _vk.DestroyImageView(_dev, v, null);
+            }
+
             _vk.DestroyImageView(_dev, c.Shadow.View, null);
             _vk.DestroyImage(_dev, c.Shadow.Image, null);
             _imagePool.Free(c.Mem);
@@ -99,8 +132,16 @@ public sealed unsafe partial class VulkanRenderer
             ImageAspectFlags.ColorBit, mutable: true);
         var shadow = new RenderTarget
         {
-            Address = rt.Address, Width = rt.Width, Height = rt.Height, ColorFormat = rt.ColorFormat, Stride = rt.Stride, Format = rt.Format,
-            Image = img, View = view, Version = 0, Scale = rt.Scale,
+            Address = rt.Address,
+            Width = rt.Width,
+            Height = rt.Height,
+            ColorFormat = rt.ColorFormat,
+            Stride = rt.Stride,
+            Format = rt.Format,
+            Image = img,
+            View = view,
+            Version = 0,
+            Scale = rt.Scale,
         };
         _sceneStartCopies[rt] = new SceneStartCopy { Shadow = shadow, Mem = mem };
     }
@@ -108,7 +149,11 @@ public sealed unsafe partial class VulkanRenderer
     /// <summary>Called when a scene begins: refreshes the copy of a surface that its own draws sample.</summary>
     void CaptureSceneStart(RenderTarget rt)
     {
-        if (!_sceneStartCopies.TryGetValue(rt, out var c)) return;
+        if (!_sceneStartCopies.TryGetValue(rt, out var c))
+        {
+            return;
+        }
+
         var s = c.Shadow;
         EndRendering();
         rt.Dirty = true;

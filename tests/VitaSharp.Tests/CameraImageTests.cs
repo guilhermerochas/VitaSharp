@@ -10,7 +10,13 @@ public sealed class CameraImageTests
     static byte[] Solid(int w, int h, byte r, byte g, byte b)
     {
         var a = new byte[w * h * 4];
-        for (int i = 0; i < a.Length; i += 4) { a[i] = r; a[i + 1] = g; a[i + 2] = b; a[i + 3] = 255; }
+        for (int i = 0; i < a.Length; i += 4)
+        {
+            a[i] = r;
+            a[i + 1] = g;
+            a[i + 2] = b;
+            a[i + 3] = 255;
+        }
         return a;
     }
 
@@ -66,7 +72,9 @@ public sealed class CameraImageTests
     public void RedInBothRanges()
     {
         var img = Solid(2, 2, 255, 0, 0);
-        var y = new byte[4]; var u = new byte[2]; var v = new byte[2];
+        var y = new byte[4];
+        var u = new byte[2];
+        var v = new byte[2];
         CameraImage.Encode(img, 2, 2, VitaCameraFormat.Yuv422Planar, true, 2, y, u, v);
         Assert.InRange(y[0], 76, 77);
         Assert.InRange(u[0], 84, 86);
@@ -93,8 +101,14 @@ public sealed class CameraImageTests
     {
         // left column white, right column black: chroma neutral, luma alternates
         var img = new byte[2 * 2 * 4];
-        for (int y = 0; y < 2; y++) { img[y * 8] = img[y * 8 + 1] = img[y * 8 + 2] = 255; img[y * 8 + 3] = img[y * 8 + 7] = 255; }
-        var yp = new byte[4]; var u = new byte[1]; var v = new byte[1];
+        for (int y = 0; y < 2; y++)
+        {
+            img[y * 8] = img[y * 8 + 1] = img[y * 8 + 2] = 255;
+            img[y * 8 + 3] = img[y * 8 + 7] = 255;
+        }
+        var yp = new byte[4];
+        var u = new byte[1];
+        var v = new byte[1];
         CameraImage.Encode(img, 2, 2, VitaCameraFormat.Yuv420Planar, true, 2, yp, u, v);
         Assert.Equal(new byte[] { 255, 0, 255, 0 }, yp);
         Assert.Equal(128, u[0]);
@@ -120,17 +134,25 @@ public sealed class CameraImageTests
         const int w = 16, h = 8;
         var img = new byte[w * h * 4];
         for (int y = 0; y < h; y++)
+        {
             for (int x = 0; x < w; x++)
             {
                 int i = (y * w + x) * 4;
-                img[i] = (byte)(x * 16); img[i + 1] = (byte)(y * 32); img[i + 2] = 200; img[i + 3] = 255;
+                img[i] = (byte)(x * 16);
+                img[i + 1] = (byte)(y * 32);
+                img[i + 2] = 200;
+                img[i + 3] = 255;
             }
+        }
         // horizontally smooth content: 4:2:2 subsampling loses little
         var yuyv = new byte[w * h * 2];
         CameraImage.Encode(img, w, h, VitaCameraFormat.Yuv422Packed, false, w, yuyv, default, default);
         var back = new byte[w * h * 4];
         CameraImage.DecodeToRgba(yuyv, CameraHostFormat.Yuyv, w, h, false, back);
-        for (int i = 0; i < img.Length; i++) Assert.InRange(back[i] - img[i], -12, 12);
+        for (int i = 0; i < img.Length; i++)
+        {
+            Assert.InRange(back[i] - img[i], -12, 12);
+        }
     }
 
     [Fact]
@@ -155,18 +177,36 @@ public sealed class CameraImageTests
         const int sw = 64, sh = 36;
         var src = Solid(sw, sh, 0, 0, 255);
         for (int y = 0; y < sh; y++)
+        {
             for (int x = 0; x < sw; x++)
-                if (x < 8 || x >= 56) { int i = (y * sw + x) * 4; src[i] = 255; src[i + 2] = 0; }
+            {
+                if (x < 8 || x >= 56)
+                {
+                    int i = (y * sw + x) * 4;
+                    src[i] = 255;
+                    src[i + 2] = 0;
+                }
+            }
+        }
+
         var dst = new byte[16 * 12 * 4];
         CameraImage.Resample(src, sw, sh, dst, 16, 12);
-        for (int i = 0; i < dst.Length; i += 4) { Assert.True(dst[i] < 40, $"red leaked at {i / 4}"); Assert.True(dst[i + 2] > 215); }
+        for (int i = 0; i < dst.Length; i += 4)
+        {
+            Assert.True(dst[i] < 40, $"red leaked at {i / 4}");
+            Assert.True(dst[i + 2] > 215);
+        }
     }
 
     [Fact]
     public void ResampleMirrorAndFlip()
     {
         var src = new byte[2 * 2 * 4];
-        for (int p = 0; p < 4; p++) { src[p * 4] = (byte)(p * 50); src[p * 4 + 3] = 255; }
+        for (int p = 0; p < 4; p++)
+        {
+            src[p * 4] = (byte)(p * 50);
+            src[p * 4 + 3] = 255;
+        }
         var dst = new byte[16];
         CameraImage.Resample(src, 2, 2, dst, 2, 2, mirror: true);
         Assert.Equal(new byte[] { 50, 0, 150, 100 }, new[] { dst[0], dst[4], dst[8], dst[12] });

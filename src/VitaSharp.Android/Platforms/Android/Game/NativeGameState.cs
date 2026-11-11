@@ -32,7 +32,8 @@ public sealed class NativeGameState
 
     public NativeGameState(Context context)
     {
-        if (OperatingSystem.IsAndroidVersionAtLeast(31)) _games = context.GetSystemService(Context.GameService) as GameManager;
+        if (OperatingSystem.IsAndroidVersionAtLeast(31))
+            _games = context.GetSystemService(Context.GameService) as GameManager;
         _power = context.GetSystemService(Context.PowerService) as PowerManager;
     }
 
@@ -42,9 +43,11 @@ public sealed class NativeGameState
     /// <summary>Reads the game mode; true when it changed (the first read counts as a change).</summary>
     public bool PollMode()
     {
-        if (_games == null || !OperatingSystem.IsAndroidVersionAtLeast(31)) return false;
+        if (_games == null || !OperatingSystem.IsAndroidVersionAtLeast(31))
+            return false;
         int mode = (int)_games.GameMode;
-        if (mode == _mode) return false;
+        if (mode == _mode)
+            return false;
         _mode = mode;
         Log.Info($"Android game mode: {ModeName(mode)}" + (PreferPowerEfficiency ? " (ADPF prefers power efficiency)" : ""));
         return true;
@@ -63,22 +66,29 @@ public sealed class NativeGameState
     public void SetLoading(bool loading)
     {
         int v = loading ? 1 : 0;
-        if (!_enabled || v == _loading || _failed || _games == null || !OperatingSystem.IsAndroidVersionAtLeast(33)) return;
+        if (!_enabled || v == _loading || _failed || _games == null || !OperatingSystem.IsAndroidVersionAtLeast(33))
+            return;
         _loading = v;
         try
         {
             // MODE_GAMEPLAY_UNINTERRUPTIBLE: the player is in the game (a phone call or notification interrupts play)
             using var state = new GameState(loading, (int)GameStateMode.GameplayUninterruptible);
             _games.SetGameState(state);
-            if (loading) Log.Info("Android game state: loading");
+            if (loading)
+                Log.Info("Android game state: loading");
         }
-        catch (Exception e) { _failed = true; Log.Warn($"GameManager.setGameState failed: {e.Message}"); }
+        catch (Exception e)
+        {
+            _failed = true;
+            Log.Warn($"GameManager.setGameState failed: {e.Message}");
+        }
     }
 
     /// <summary>One line with the thermal status and the headroom now and in 10 s (forecast).</summary>
     public void LogThermal()
     {
-        if (_power == null || !OperatingSystem.IsAndroidVersionAtLeast(30)) return;
+        if (_power == null || !OperatingSystem.IsAndroidVersionAtLeast(30))
+            return;
         float now = _power.GetThermalHeadroom(0), soon = _power.GetThermalHeadroom(10);
         Log.Info($"PERF thermal: status {_power.CurrentThermalStatus}, headroom {Fmt(now)} now, {Fmt(soon)} in 10 s (1.0 = severe throttling)");
     }

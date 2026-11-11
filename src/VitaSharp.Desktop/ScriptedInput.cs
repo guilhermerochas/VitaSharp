@@ -36,7 +36,10 @@ namespace VitaSharp.Desktop;
 /// </summary>
 sealed class ScriptedInput : IInputBackend, IMotionSource
 {
-    enum Kind { Button, Tap, BackTap, LStick, RStick, Tilt, Key, MouseLook, MouseStick }
+    enum Kind
+    {
+        Button, Tap, BackTap, LStick, RStick, Tilt, Key, MouseLook, MouseStick
+    }
 
     /// <param name="AfterSeconds">"fN+S": the step starts S wall-clock seconds after frame N (NaN: plain timing).</param>
     sealed record Step(Kind Kind, VitaButtons Button, bool Frames, double Start, double Length, float X, float Y, float X1 = float.NaN, float Y1 = float.NaN, string? KeyName = null)
@@ -65,8 +68,14 @@ sealed class ScriptedInput : IInputBackend, IMotionSource
             // steps are comma separated, so a decimal comma (a script written with the pt-BR culture: "circle@52,5")
             // cuts a step in two; the piece after it starts with a digit
             if (i + 1 < steps.Length && steps[i + 1].Length > 0 && char.IsAsciiDigit(steps[i + 1][0]))
+            {
                 throw new FormatException($"bad input step '{steps[i]},{steps[i + 1]}': numbers use '.' as the decimal separator ('52.5', not '52,5')");
-            try { ParseStep(steps[i]); }
+            }
+
+            try
+            {
+                ParseStep(steps[i]);
+            }
             catch (Exception e) when (e is FormatException or IndexOutOfRangeException or ArgumentException or OverflowException)
             {
                 throw new FormatException($"bad input step '{steps[i]}' (name@time[:args], numbers with '.'): {e.Message}", e);
@@ -79,7 +88,11 @@ sealed class ScriptedInput : IInputBackend, IMotionSource
         var inv = CultureInfo.InvariantCulture;
         {
             var at = raw.Split('@');
-            if (at.Length != 2) throw new FormatException("expected exactly one '@'");
+            if (at.Length != 2)
+            {
+                throw new FormatException("expected exactly one '@'");
+            }
+
             var parts = at[1].Split(':');
             bool frames = parts[0].StartsWith('f');
             string when = parts[0];
@@ -122,7 +135,13 @@ sealed class ScriptedInput : IInputBackend, IMotionSource
                     _steps.Add(new Step(Kind.Button, Enum.Parse<VitaButtons>(name, true), frames, start, Len(1), 0, 0));
                     break;
             }
-            if (!double.IsNaN(after)) _steps[^1] = _steps[^1] with { AfterSeconds = after };
+            if (!double.IsNaN(after))
+            {
+                _steps[^1] = _steps[^1] with
+                {
+                    AfterSeconds = after
+                };
+            }
         }
     }
 
@@ -130,14 +149,21 @@ sealed class ScriptedInput : IInputBackend, IMotionSource
     (double Now, double Start) Timeline(Step s)
     {
         if (double.IsNaN(s.AfterSeconds))
+        {
             return (s.Frames ? VitaSharp.Core.Hle.Modules.Display.FramesPresented : _clock.Elapsed.TotalSeconds, s.Start);
+        }
+
         double wall = _clock.Elapsed.TotalSeconds;
         double seen;
         lock (_frameSeenAt)
         {
             if (!_frameSeenAt.TryGetValue(s, out seen))
             {
-                if (VitaSharp.Core.Hle.Modules.Display.FramesPresented < s.Start) return (wall, double.PositiveInfinity);
+                if (VitaSharp.Core.Hle.Modules.Display.FramesPresented < s.Start)
+                {
+                    return (wall, double.PositiveInfinity);
+                }
+
                 _frameSeenAt[s] = seen = wall;
             }
         }
@@ -163,9 +189,16 @@ sealed class ScriptedInput : IInputBackend, IMotionSource
         List<string>? keys = null;
         foreach (var s in _steps)
         {
-            if (s.Kind != Kind.Key || !IsHostKey(s.KeyName)) continue;
+            if (s.Kind != Kind.Key || !IsHostKey(s.KeyName))
+            {
+                continue;
+            }
+
             var (now, start) = Timeline(s);
-            if (now >= start && _hostKeysFired.Add(s)) (keys ??= new()).Add(IsPauseKey(s.KeyName) ? PauseKey : s.KeyName!);
+            if (now >= start && _hostKeysFired.Add(s))
+            {
+                (keys ??= new()).Add(IsPauseKey(s.KeyName) ? PauseKey : s.KeyName!);
+            }
         }
         return keys;
     }
@@ -175,7 +208,13 @@ sealed class ScriptedInput : IInputBackend, IMotionSource
     bool IsPauseKey(string? key)
     {
         foreach (ref readonly var b in _keyboard[VitaControl.PauseEmulation])
-            if (b.Kind == BindingKind.Key && b.Key == key) return true;
+        {
+            if (b.Kind == BindingKind.Key && b.Key == key)
+            {
+                return true;
+            }
+        }
+
         return false;
     }
 
@@ -185,7 +224,11 @@ sealed class ScriptedInput : IInputBackend, IMotionSource
     /// <summary>The touch of a tap, or the point a swipe has reached.</summary>
     TouchPoint Touch(Step s, bool back)
     {
-        if (float.IsNaN(s.X1)) return new TouchPoint(back ? 2 : 1, s.X, s.Y);
+        if (float.IsNaN(s.X1))
+        {
+            return new TouchPoint(back ? 2 : 1, s.X, s.Y);
+        }
+
         var (now, start) = Timeline(s);
         float t = (float)Math.Clamp((now - start) / Math.Max(s.Length, 1e-6), 0, 1);
         return new TouchPoint(back ? 2 : 1, s.X + (s.X1 - s.X) * t, s.Y + (s.Y1 - s.Y) * t);
@@ -198,25 +241,53 @@ sealed class ScriptedInput : IInputBackend, IMotionSource
         var st = ControllerState.Neutral;
         foreach (var s in _steps)
         {
-            if (!Active(s)) continue;
+            if (!Active(s))
+            {
+                continue;
+            }
+
             switch (s.Kind)
             {
-                case Kind.Button: st.Buttons |= s.Button; break;
-                case Kind.LStick: st.Lx = Axis(s.X); st.Ly = Axis(s.Y); break;
-                case Kind.RStick: st.Rx = Axis(s.X); st.Ry = Axis(s.Y); break;
+                case Kind.Button:
+                    st.Buttons |= s.Button;
+                    break;
+                case Kind.LStick:
+                    st.Lx = Axis(s.X);
+                    st.Ly = Axis(s.Y);
+                    break;
+                case Kind.RStick:
+                    st.Rx = Axis(s.X);
+                    st.Ry = Axis(s.Y);
+                    break;
             }
         }
         if (MouseStickInput() is { } mouse)
         {
-            if (mouse.Rx != 0 || mouse.Ry != 0) { st.Rx = mouse.State.Rx; st.Ry = mouse.State.Ry; }
-            if (mouse.Lx != 0 || mouse.Ly != 0) { st.Lx = mouse.State.Lx; st.Ly = mouse.State.Ly; }
+            if (mouse.Rx != 0 || mouse.Ry != 0)
+            {
+                st.Rx = mouse.State.Rx;
+                st.Ry = mouse.State.Ry;
+            }
+            if (mouse.Lx != 0 || mouse.Ly != 0)
+            {
+                st.Lx = mouse.State.Lx;
+                st.Ly = mouse.State.Ly;
+            }
         }
         if (HeldKeys() is { } keys)
         {
             var m = InputMapper.Map(_keyboard, null, keys);
             st.Buttons |= m.State.Buttons;
-            if (m.Lx != 0 || m.Ly != 0) { st.Lx = m.State.Lx; st.Ly = m.State.Ly; }
-            if (m.Rx != 0 || m.Ry != 0) { st.Rx = m.State.Rx; st.Ry = m.State.Ry; }
+            if (m.Lx != 0 || m.Ly != 0)
+            {
+                st.Lx = m.State.Lx;
+                st.Ly = m.State.Ly;
+            }
+            if (m.Rx != 0 || m.Ry != 0)
+            {
+                st.Rx = m.State.Rx;
+                st.Ry = m.State.Ry;
+            }
         }
         return st;
     }
@@ -229,12 +300,20 @@ sealed class ScriptedInput : IInputBackend, IMotionSource
         {
             foreach (var s in _steps)
             {
-                if (s.Kind != Kind.MouseStick) continue;
+                if (s.Kind != Kind.MouseStick)
+                {
+                    continue;
+                }
+
                 mode = s.KeyName == "l" ? MouseMode.LeftStick : MouseMode.RightStick;
                 var (now, start) = Timeline(s);
                 float t = (float)Math.Clamp((now - start) / Math.Max(s.Length, 1e-6), 0, 1);
                 float done = _mouseStickDone.GetValueOrDefault(s);
-                if (t <= done) continue;
+                if (t <= done)
+                {
+                    continue;
+                }
+
                 _mouseStick.Add(s.X * (t - done), s.Y * (t - done));
                 _mouseStickDone[s] = t;
             }
@@ -247,7 +326,13 @@ sealed class ScriptedInput : IInputBackend, IMotionSource
     {
         HashSet<string>? keys = null;
         foreach (var s in _steps)
-            if (s.Kind == Kind.Key && Active(s)) (keys ??= new()).Add(s.KeyName!);
+        {
+            if (s.Kind == Kind.Key && Active(s))
+            {
+                (keys ??= new()).Add(s.KeyName!);
+            }
+        }
+
         return keys;
     }
 
@@ -255,7 +340,13 @@ sealed class ScriptedInput : IInputBackend, IMotionSource
     {
         var kind = back ? Kind.BackTap : Kind.Tap;
         foreach (var s in _steps)
-            if (s.Kind == kind && Active(s)) return [Touch(s, back)];
+        {
+            if (s.Kind == kind && Active(s))
+            {
+                return [Touch(s, back)];
+            }
+        }
+
         return [];
     }
 
@@ -271,8 +362,16 @@ sealed class ScriptedInput : IInputBackend, IMotionSource
     {
         get
         {
-            if (HasTiltSteps) return true;
-            lock (_motionLock) { UpdateVirtual(); return _virtual.Used; }
+            if (HasTiltSteps)
+            {
+                return true;
+            }
+
+            lock (_motionLock)
+            {
+                UpdateVirtual();
+                return _virtual.Used;
+            }
         }
     }
 
@@ -282,11 +381,19 @@ sealed class ScriptedInput : IInputBackend, IMotionSource
         _virtual.SetControls(_keyboard, null, HeldKeys());
         foreach (var s in _steps)
         {
-            if (s.Kind != Kind.MouseLook) continue;
+            if (s.Kind != Kind.MouseLook)
+            {
+                continue;
+            }
+
             var (now, start) = Timeline(s);
             float t = (float)Math.Clamp((now - start) / Math.Max(s.Length, 1e-6), 0, 1);
             float done = _mouseDone.GetValueOrDefault(s);
-            if (t <= done) continue;
+            if (t <= done)
+            {
+                continue;
+            }
+
             _virtual.AddMouse(s.X * (t - done), s.Y * (t - done));
             _mouseDone[s] = t;
         }
@@ -294,7 +401,11 @@ sealed class ScriptedInput : IInputBackend, IMotionSource
 
     public int ReadSamples(Span<MotionSample> dest)
     {
-        if (dest.Length == 0 || !HasSensors) return 0;
+        if (dest.Length == 0 || !HasSensors)
+        {
+            return 0;
+        }
+
         lock (_motionLock)
         {
             if (!HasTiltSteps)
@@ -303,12 +414,23 @@ sealed class ScriptedInput : IInputBackend, IMotionSource
                 return _virtual.Generate((long)(_clock.Elapsed.TotalMilliseconds * 1000), dest);
             }
             long now = (long)(_clock.Elapsed.TotalMilliseconds * 1000);
-            if (_motionLastUs >= 0 && now - _motionLastUs < 2000) return 0; // ~500 Hz at most
+            if (_motionLastUs >= 0 && now - _motionLastUs < 2000)
+            {
+                return 0; // ~500 Hz at most
+            }
+
             float dt = _motionLastUs < 0 ? 0 : (now - _motionLastUs) / 1e6f;
             _motionLastUs = now;
             float tp = 0, tr = 0;
             foreach (var s in _steps)
-                if (s.Kind == Kind.Tilt && Active(s)) { tp = s.X * MathF.PI / 180; tr = s.Y * MathF.PI / 180; }
+            {
+                if (s.Kind == Kind.Tilt && Active(s))
+                {
+                    tp = s.X * MathF.PI / 180;
+                    tr = s.Y * MathF.PI / 180;
+                }
+            }
+
             float max = MathF.PI * dt; // 180 degrees/s
             float np = _pitch + Math.Clamp(tp - _pitch, -max, max), nr = _roll + Math.Clamp(tr - _roll, -max, max);
             var gyro = dt > 0 ? new Vector3((np - _pitch) / dt, (nr - _roll) / dt, 0) : Vector3.Zero;
@@ -322,9 +444,20 @@ sealed class ScriptedInput : IInputBackend, IMotionSource
     public int GetTouches(bool back, Span<TouchPoint> dest)
     {
         var kind = back ? Kind.BackTap : Kind.Tap;
-        if (dest.Length == 0) return 0;
+        if (dest.Length == 0)
+        {
+            return 0;
+        }
+
         foreach (var s in _steps)
-            if (s.Kind == kind && Active(s)) { dest[0] = Touch(s, back); return 1; }
+        {
+            if (s.Kind == kind && Active(s))
+            {
+                dest[0] = Touch(s, back);
+                return 1;
+            }
+        }
+
         return 0;
     }
 }

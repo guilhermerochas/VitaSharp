@@ -14,7 +14,11 @@ public sealed class UniformSlotTests(GuestMemoryFixture fx)
     public void SlotIsCopiedThenZeroedOverGarbage()
     {
         uint src = fx.Memory.Alloc(0x1000, "ubslot");
-        for (uint i = 0; i < 0x1000; i += 4) GuestMemory.W32(src + i, 0x11000000 + i);
+        for (uint i = 0; i < 0x1000; i += 4)
+        {
+            GuestMemory.W32(src + i, 0x11000000 + i);
+        }
+
         var chunk = UniformArena.Rent(1024, out int off, clear: false);
         try
         {
@@ -34,8 +38,14 @@ public sealed class UniformSlotTests(GuestMemoryFixture fx)
             // a slot running past the data is cut at its end
             data.Fill(0xCD);
             Gxm.WriteSlot(1000, 64, src, 64, data, chunk, off);
-            for (int i = 1000; i < 1024; i++) Assert.Equal(GuestMemory.Read<byte>(src + (uint)(i - 1000)), data[i]);
+            for (int i = 1000; i < 1024; i++)
+            {
+                Assert.Equal(GuestMemory.Read<byte>(src + (uint)(i - 1000)), data[i]);
+            }
         }
-        finally { UniformArena.Release(chunk); }
+        finally
+        {
+            UniformArena.Release(chunk);
+        }
     }
 }

@@ -29,7 +29,10 @@ public class PkgInstallTests
             Assert.Equal(rif, File.ReadAllBytes(Path.Combine(ux0, "license", "PCSE00000", ContentId + ".rif")));
             Assert.Equal(rif, File.ReadAllBytes(Path.Combine(ux0, "app", "PCSE00000", "sce_sys", "package", "work.bin")));
         }
-        finally { dir.Delete(true); }
+        finally
+        {
+            dir.Delete(true);
+        }
     }
 
     [Fact]
@@ -44,6 +47,9 @@ public class PkgInstallTests
             Assert.Contains(ContentId, e.Message);
             Assert.False(Directory.Exists(Path.Combine(dir.FullName, "ux0", "license")));
         }
-        finally { dir.Delete(true); }
+        finally
+        {
+            dir.Delete(true);
+        }
     }
 }

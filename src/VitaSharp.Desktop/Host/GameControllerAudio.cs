@@ -16,7 +16,11 @@ public static unsafe partial class GameControllerAudio
     /// at most every 3 s, since it walks the whole device tree) or the name rule.</summary>
     public static Func<string, bool> Predicate()
     {
-        if (!OperatingSystem.IsWindows()) return AudioOutputFollower.LooksLikeController;
+        if (!OperatingSystem.IsWindows())
+        {
+            return AudioOutputFollower.LooksLikeController;
+        }
+
         HashSet<string> set = new(StringComparer.OrdinalIgnoreCase);
         long at = long.MinValue;
         object gate = new();
@@ -37,32 +41,51 @@ public static unsafe partial class GameControllerAudio
     /// <summary>Friendly names of the audio endpoints that are part of a game controller (empty on failure).</summary>
     public static HashSet<string> Find()
     {
-        if (!OperatingSystem.IsWindows()) return [];
+        if (!OperatingSystem.IsWindows())
+        {
+            return [];
+        }
+
         var outputs = new List<(string, Guid)>();
         var devices = new List<(Guid, IReadOnlyList<string>, string, string)>();
         try
         {
             nint set = SetupDiGetClassDevsW(0, null, 0, DIGCF_PRESENT | DIGCF_ALLCLASSES);
-            if (set == -1) return [];
+            if (set == -1)
+            {
+                return [];
+            }
+
             try
             {
                 var data = new SP_DEVINFO_DATA { cbSize = (uint)sizeof(SP_DEVINFO_DATA) };
                 for (uint i = 0; SetupDiEnumDeviceInfo(set, i, ref data); i++)
                 {
-                    if (Property(set, ref data, ContainerId) is not { Length: 16 } c) continue;
+                    if (Property(set, ref data, ContainerId) is not { Length: 16 } c)
+                    {
+                        continue;
+                    }
+
                     var container = new Guid(c);
                     string cls = Text(Property(set, ref data, DeviceClass));
                     if (cls.Equals("AudioEndpoint", StringComparison.OrdinalIgnoreCase))
                     {
                         string name = Text(Property(set, ref data, FriendlyName));
-                        if (name.Length > 0) outputs.Add((name, container));
+                        if (name.Length > 0)
+                        {
+                            outputs.Add((name, container));
+                        }
+
                         continue;
                     }
                     var compat = Text(Property(set, ref data, CompatibleIds)).Split('\0', StringSplitOptions.RemoveEmptyEntries);
                     devices.Add((container, compat, cls, Text(Property(set, ref data, Service))));
                 }
             }
-            finally { SetupDiDestroyDeviceInfoList(set); }
+            finally
+            {
+                SetupDiDestroyDeviceInfoList(set);
+            }
         }
         catch (Exception e) when (e is DllNotFoundException or EntryPointNotFoundException)
         {
@@ -77,7 +100,11 @@ public static unsafe partial class GameControllerAudio
     static byte[]? Property(nint set, ref SP_DEVINFO_DATA data, DEVPROPKEY key)
     {
         byte* buf = stackalloc byte[4096];
-        if (!SetupDiGetDevicePropertyW(set, ref data, &key, out _, buf, 4096, out uint size, 0)) return null;
+        if (!SetupDiGetDevicePropertyW(set, ref data, &key, out _, buf, 4096, out uint size, 0))
+        {
+            return null;
+        }
+
         return new ReadOnlySpan<byte>(buf, (int)Math.Min(size, 4096)).ToArray();
     }
 

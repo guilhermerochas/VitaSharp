@@ -133,7 +133,10 @@ public class ShellTests
             Assert.Equal("a3", LiveAreaTemplate.Load(app, root)!.Style);
             Assert.False(LiveAreaTemplate.Load(app, root)!.IsDefault);
         }
-        finally { Directory.Delete(root, true); }
+        finally
+        {
+            Directory.Delete(root, true);
+        }
     }
 
     [Theory]
@@ -192,9 +195,15 @@ public class ShellTests
         Assert.Equal(new LaRect(60, 44, 840, 500), LiveAreaLayout.BackgroundRect);
         // every frame of every style lies inside the background area
         foreach (var style in LiveAreaLayout.KnownStyles)
+        {
             for (int i = 1; i <= 10; i++)
+            {
                 if (LiveAreaLayout.Frame(style, "frame" + i) is { } f)
+                {
                     Assert.True(f.X >= 60 - 0.01 && f.Right <= 900.01 && f.Y >= 44 && f.Bottom <= 544, $"{style} frame{i} {f}");
+                }
+            }
+        }
     }
 
     [Fact]
@@ -246,22 +255,35 @@ public class ShellTests
         var offsets = new Dictionary<string, int>();
         int S(string s)
         {
-            if (offsets.TryGetValue(s, out var o)) return o;
+            if (offsets.TryGetValue(s, out var o))
+            {
+                return o;
+            }
+
             o = (int)strings.Length;
             var b = Encoding.UTF8.GetBytes(s);
-            strings.Write(b); strings.WriteByte(0);
+            strings.Write(b);
+            strings.WriteByte(0);
             offsets[s] = o;
             return o;
         }
         byte[] compressed;
         using (var ms = new MemoryStream())
         {
-            using (var z = new ZLibStream(ms, CompressionLevel.Optimal, true)) z.Write(fileA);
+            using (var z = new ZLibStream(ms, CompressionLevel.Optimal, true))
+            {
+                z.Write(fileA);
+            }
+
             compressed = ms.ToArray();
         }
         var files = new MemoryStream();
         files.Write(compressed);
-        while (files.Length % 16 != 0) files.WriteByte(0);
+        while (files.Length % 16 != 0)
+        {
+            files.WriteByte(0);
+        }
+
         int offB = (int)files.Length;
         files.Write(fileB);
 
@@ -273,7 +295,11 @@ public class ShellTests
         var hashes = new byte[8];
         BinaryPrimitives.WriteUInt32LittleEndian(hashes.AsSpan(4), 0xCAFEBABE);
         var ints = new byte[12];
-        for (int i = 0; i < 3; i++) BinaryPrimitives.WriteInt32LittleEndian(ints.AsSpan(i * 4), (i + 1) * 10);
+        for (int i = 0; i < 3; i++)
+        {
+            BinaryPrimitives.WriteInt32LittleEndian(ints.AsSpan(i * 4), (i + 1) * 10);
+        }
+
         var floats = new byte[8];
         BinaryPrimitives.WriteSingleLittleEndian(floats, 0.5f);
         BinaryPrimitives.WriteSingleLittleEndian(floats.AsSpan(4), -2f);
@@ -284,14 +310,28 @@ public class ShellTests
         var w = new BinaryWriter(tree);
         void Element(string name, int parent, int prev, int next, int first, int last, params (string, int, int, int)[] attrs)
         {
-            w.Write(S(name)); w.Write(attrs.Length); w.Write(parent); w.Write(prev); w.Write(next); w.Write(first); w.Write(last);
-            foreach (var (n, type, a, b) in attrs) { w.Write(S(n)); w.Write(type); w.Write(a); w.Write(b); }
+            w.Write(S(name));
+            w.Write(attrs.Length);
+            w.Write(parent);
+            w.Write(prev);
+            w.Write(next);
+            w.Write(first);
+            w.Write(last);
+            foreach (var (n, type, a, b) in attrs)
+            {
+                w.Write(S(n));
+                w.Write(type);
+                w.Write(a);
+                w.Write(b);
+            }
         }
         // offsets: root 0 (28 + 2*16 = 60), table 60 (28), texA 88 (28 + 4*16 = 92), texB 180
         const int Root = 0, Table = 60, TexA = 88, TexB = 180;
         Element("resource", -1, -1, -1, Table, Table, ("version", 2, BitConverter.SingleToInt32Bits(0.1f), 0), ("id", 11, 0, 0));
         Element("texturetable", Root, -1, -1, TexA, TexB);
-        S("compress"); S("on"); S("texture/png");
+        S("compress");
+        S("on");
+        S("texture/png");
         Element("texture", Table, -1, TexB, -1, -1, ("id", 11, 8, 0), ("src", 8, 0, compressed.Length),
             ("compress", 3, S("on"), 2), ("origsize", 1, fileA.Length, 0));
         Element("texture", Table, TexA, -1, -1, -1, ("id", 11, 16, 0), ("src", 8, offB, fileB.Length), ("type", 3, S("texture/png"), 11),
@@ -301,10 +341,23 @@ public class ShellTests
         byte[][] tables = [tree.ToArray(), [], idInt, strings.ToArray(), wide, hashes, ints, floats, files.ToArray()];
         var outS = new MemoryStream();
         var hw = new BinaryWriter(outS);
-        hw.Write(0x464F4352u); hw.Write(0x110u);
+        hw.Write(0x464F4352u);
+        hw.Write(0x110u);
         int pos = 0x50;
-        foreach (var t in tables) { hw.Write(pos); hw.Write(t.Length); pos += (t.Length + 15) / 16 * 16; }
-        foreach (var t in tables) { hw.Write(t); while (outS.Length % 16 != 0) hw.Write((byte)0); }
+        foreach (var t in tables)
+        {
+            hw.Write(pos);
+            hw.Write(t.Length);
+            pos += (t.Length + 15) / 16 * 16;
+        }
+        foreach (var t in tables)
+        {
+            hw.Write(t);
+            while (outS.Length % 16 != 0)
+            {
+                hw.Write((byte)0);
+            }
+        }
         return outS.ToArray();
     }
 
@@ -397,7 +450,11 @@ public class ShellTests
         // 2x2 RGBA8888, rows padded to 16 bytes
         var px = new byte[32];
         byte[][] colours = [[255, 0, 0, 255], [0, 255, 0, 128], [0, 0, 255, 255], [10, 20, 30, 0]];
-        for (int i = 0; i < 4; i++) colours[i].CopyTo(px, (i / 2) * 16 + (i % 2) * 4);
+        for (int i = 0; i < 4; i++)
+        {
+            colours[i].CopyTo(px, (i / 2) * 16 + (i % 2) * 4);
+        }
+
         var img = Gim.Decode(BuildGim(3, 0, 2, 2, 32, 16, px));
         Assert.Equal((2, 2), (img.Width, img.Height));
         Assert.Equal(colours.SelectMany(c => c), img.Pixels);
@@ -405,7 +462,11 @@ public class ShellTests
         // RGBA5650: pure red, green, blue, white
         var p16 = new byte[32];
         ushort[] v = [0x001F, 0x07E0, 0xF800, 0xFFFF];
-        for (int i = 0; i < 4; i++) BinaryPrimitives.WriteUInt16LittleEndian(p16.AsSpan((i / 2) * 16 + (i % 2) * 2), v[i]);
+        for (int i = 0; i < 4; i++)
+        {
+            BinaryPrimitives.WriteUInt16LittleEndian(p16.AsSpan((i / 2) * 16 + (i % 2) * 2), v[i]);
+        }
+
         var img16 = Gim.Decode(BuildGim(0, 0, 2, 2, 16, 16, p16));
         Assert.Equal(new byte[] { 255, 0, 0, 255, 0, 255, 0, 255, 0, 0, 255, 255, 255, 255, 255, 255 }, img16.Pixels);
     }
@@ -415,7 +476,11 @@ public class ShellTests
     {
         // 32x8 INDEX8 in the "faster" order: two 16x8 tiles, tile 0 all index 1, tile 1 all index 2
         var px = new byte[256];
-        for (int i = 0; i < 128; i++) { px[i] = 1; px[128 + i] = 2; }
+        for (int i = 0; i < 128; i++)
+        {
+            px[i] = 1;
+            px[128 + i] = 2;
+        }
         var pal = new byte[16];
         new byte[] { 0, 0, 0, 0, 255, 0, 0, 255, 0, 0, 255, 255 }.CopyTo(pal, 0);
         var img = Gim.Decode(BuildGim(5, 1, 32, 8, 8, 16, px, (3, pal, 4)));
@@ -569,6 +634,9 @@ public class ShellTests
             Assert.Equal(0xFF102030u, night.BarColor);
             Assert.Equal(0xFFEEEEEEu, night.FontColor);
         }
-        finally { Directory.Delete(root, true); }
+        finally
+        {
+            Directory.Delete(root, true);
+        }
     }
 }

@@ -177,7 +177,10 @@ public static class SelfDecryptor
                     segKeys = DecryptMetadata(f, set, sceType, keyRev, metadataOffset, headerLength, sysver, selfType, npdrmType, klicensee);
                     break;
                 }
-                catch (Exception e) { last = e; }
+                catch (Exception e)
+                {
+                    last = e;
+                }
             }
             if (segKeys.Count == 0)
             {
@@ -285,7 +288,10 @@ public static class SelfDecryptor
             {
                 return DecryptSections(f, set, sceType, keyRev, metadataOffset, headerLength, sysver, selfType, klic);
             }
-            catch (Exception e) when (e is KeyNotFoundException or InvalidDataException or System.Security.Cryptography.CryptographicException) { last = e; }
+            catch (Exception e) when (e is KeyNotFoundException or InvalidDataException or System.Security.Cryptography.CryptographicException)
+            {
+                last = e;
+            }
         }
         throw new InvalidDataException("Unable to decrypt SCE metadata", last);
     }

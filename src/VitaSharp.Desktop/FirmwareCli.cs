@@ -17,7 +17,11 @@ public static class FirmwareCli
 {
     public static int Install(string source, string[] options)
     {
-        try { Console.OutputEncoding = System.Text.Encoding.UTF8; } catch (IOException) { } // stage names are Portuguese (launcher)
+        try
+        {
+            Console.OutputEncoding = System.Text.Encoding.UTF8;
+        }
+        catch (IOException) { } // stage names are Portuguese (launcher)
         using var cts = new CancellationTokenSource();
         ConsoleCancelEventHandler onCancel = (_, e) => { e.Cancel = true; cts.Cancel(); Console.WriteLine("\nCancelling\u2026"); };
         Console.CancelKeyPress += onCancel;
@@ -26,7 +30,11 @@ public static class FirmwareCli
         var progress = new SyncProgress(p =>
         {
             int pct = (int)(p.Fraction * 100);
-            if (pct == lastPct && p.Stage == lastStage) return;
+            if (pct == lastPct && p.Stage == lastStage)
+            {
+                return;
+            }
+
             lastPct = pct;
             lastStage = p.Stage;
             Console.WriteLine($"  {pct,3}%  {p.Stage}{(p.Detail != null ? "  " + p.Detail : "")}");
@@ -38,7 +46,11 @@ public static class FirmwareCli
             {
                 // only the factory data (the home screen BGM), from a folder or Vita3K's installation
                 string? from = source.Length > 6 ? source[6..] : FirmwareInstaller.FindVita3KFirmware();
-                if (from == null || !FirmwareInstaller.HasFactoryData(from)) { Console.Error.WriteLine("No pd0 found (give --pd0=<folder with pd0/data>)."); return 1; }
+                if (from == null || !FirmwareInstaller.HasFactoryData(from))
+                {
+                    Console.Error.WriteLine("No pd0 found (give --pd0=<folder with pd0/data>).");
+                    return 1;
+                }
                 Console.WriteLine($"Copying pd0 from {from} into {Program.FsRoot}");
                 info = FirmwareInstaller.ImportFactoryData(from, Program.FsRoot, cts.Token);
                 Console.WriteLine($"Installed pd0 ({string.Join(", ", info.Partitions)})");
@@ -47,7 +59,11 @@ public static class FirmwareCli
             if (source == "--vita3k")
             {
                 var v3k = FirmwareInstaller.FindVita3KFirmware();
-                if (v3k == null) { Console.Error.WriteLine("No Vita3K installation with firmware found."); return 1; }
+                if (v3k == null)
+                {
+                    Console.Error.WriteLine("No Vita3K installation with firmware found.");
+                    return 1;
+                }
                 Console.WriteLine($"Copying the firmware installed in Vita3K ({v3k}) into {Program.FsRoot}");
                 info = FirmwareInstaller.ImportFrom(v3k, Program.FsRoot, "Vita3K", progress, cts.Token);
             }
@@ -66,9 +82,15 @@ public static class FirmwareCli
             // a system update (PSVUPDAT.PUP) carries os0 and vs0 only: sa0 (system fonts) comes with the font package
             // PUP, pd0 is factory data written at the factory (Welcome Park, the home screen BGM) and no update has it
             if (!Directory.Exists(Path.Combine(Program.FsRoot, "sa0", "data", "font")))
+            {
                 Console.WriteLine("Note: no system fonts (sa0:data/font). Text needs them: install the font package PUP, or copy sa0 from Vita3K (install-firmware --vita3k).");
+            }
+
             if (!Directory.Exists(Path.Combine(Program.FsRoot, "pd0", "data")))
+            {
                 Console.WriteLine("Note: no pd0 (factory data, not part of system updates). The shell runs without it; only the home screen BGM and Welcome Park come from it (install-firmware --pd0 copies Vita3K's).");
+            }
+
             return 0;
         }
         catch (OperationCanceledException)
@@ -110,21 +132,37 @@ public static class FirmwareCli
         foreach (var rel in KeyFiles)
         {
             var path = Path.Combine(root, rel);
-            if (!File.Exists(path)) { Console.WriteLine($"MISSING  {rel}"); bad++; continue; }
+            if (!File.Exists(path))
+            {
+                Console.WriteLine($"MISSING  {rel}");
+                bad++;
+                continue;
+            }
             try
             {
                 var elf = SelfDecryptor.ToElf(File.ReadAllBytes(path), null);
                 Console.WriteLine($"OK       {rel} -> ELF {elf.Length} bytes");
             }
-            catch (Exception e) { Console.WriteLine($"FAIL     {rel}: {e.Message}"); bad++; }
+            catch (Exception e)
+            {
+                Console.WriteLine($"FAIL     {rel}: {e.Message}");
+                bad++;
+            }
         }
         // every module in vs0:sys/external must decrypt
         int mods = 0, modFail = 0;
         foreach (var f in Directory.EnumerateFiles(Path.Combine(root, "vs0", "sys", "external"), "*.suprx"))
         {
             mods++;
-            try { SelfDecryptor.ToElf(File.ReadAllBytes(f), null); }
-            catch (Exception e) { modFail++; Console.WriteLine($"FAIL     vs0/sys/external/{Path.GetFileName(f)}: {e.Message}"); }
+            try
+            {
+                SelfDecryptor.ToElf(File.ReadAllBytes(f), null);
+            }
+            catch (Exception e)
+            {
+                modFail++;
+                Console.WriteLine($"FAIL     vs0/sys/external/{Path.GetFileName(f)}: {e.Message}");
+            }
         }
         Console.WriteLine($"vs0:sys/external: {mods - modFail}/{mods} modules decrypt");
         bad += modFail;
@@ -133,9 +171,16 @@ public static class FirmwareCli
             var d = Path.Combine(root, dir);
             int n = Directory.Exists(d) ? Directory.EnumerateFiles(d).Count() : 0;
             Console.WriteLine($"{(n > 0 ? "OK      " : "MISSING ")} {dir}: {n} files");
-            if (n == 0) bad++;
+            if (n == 0)
+            {
+                bad++;
+            }
         }
-        if (args.Length > 0) bad += Compare(root, args[0]);
+        if (args.Length > 0)
+        {
+            bad += Compare(root, args[0]);
+        }
+
         return bad == 0 ? 0 : 1;
     }
 
@@ -153,12 +198,30 @@ public static class FirmwareCli
             var onlyB = fb.Keys.Except(fa.Keys, StringComparer.OrdinalIgnoreCase).Order().ToList();
             foreach (var rel in fa.Keys.Intersect(fb.Keys, StringComparer.OrdinalIgnoreCase))
             {
-                if (Hash(fa[rel]) == Hash(fb[rel])) same++;
-                else { differ++; if (differ <= 20) Console.WriteLine($"  DIFF   {part}/{rel}"); }
+                if (Hash(fa[rel]) == Hash(fb[rel]))
+                {
+                    same++;
+                }
+                else
+                {
+                    differ++;
+                    if (differ <= 20)
+                    {
+                        Console.WriteLine($"  DIFF   {part}/{rel}");
+                    }
+                }
             }
             Console.WriteLine($"{part}: {same} identical, {differ} different, {onlyA.Count} only here, {onlyB.Count} only in {other}");
-            foreach (var r in onlyA.Take(20)) Console.WriteLine($"  +      {part}/{r}");
-            foreach (var r in onlyB.Take(20)) Console.WriteLine($"  -      {part}/{r}");
+            foreach (var r in onlyA.Take(20))
+            {
+                Console.WriteLine($"  +      {part}/{r}");
+            }
+
+            foreach (var r in onlyB.Take(20))
+            {
+                Console.WriteLine($"  -      {part}/{r}");
+            }
+
             diffs += differ;
         }
         return diffs;
@@ -167,9 +230,16 @@ public static class FirmwareCli
     static Dictionary<string, string> List(string dir)
     {
         var d = new Dictionary<string, string>(StringComparer.OrdinalIgnoreCase);
-        if (!Directory.Exists(dir)) return d;
+        if (!Directory.Exists(dir))
+        {
+            return d;
+        }
+
         foreach (var f in Directory.EnumerateFiles(dir, "*", SearchOption.AllDirectories))
+        {
             d[Path.GetRelativePath(dir, f).Replace('\\', '/')] = f;
+        }
+
         return d;
     }
 

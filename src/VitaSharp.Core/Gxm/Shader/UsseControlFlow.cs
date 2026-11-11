@@ -12,8 +12,16 @@ public sealed class CfBlock : CfNode
     public readonly List<CfNode> Children = new();
     public void Add(CfNode? n)
     {
-        if (n == null) return;
-        if (n is CfCode c && c.Size == 0) return;
+        if (n == null)
+        {
+            return;
+        }
+
+        if (n is CfCode c && c.Size == 0)
+        {
+            return;
+        }
+
         n.Parent = this;
         Children.Add(n);
     }
@@ -25,8 +33,14 @@ public sealed class CfCode : CfNode
     public byte Condition;
 }
 
-public sealed class CfBreak(byte cond) : CfNode { public byte Condition = cond; }
-public sealed class CfContinue(byte cond) : CfNode { public byte Condition = cond; }
+public sealed class CfBreak(byte cond) : CfNode
+{
+    public byte Condition = cond;
+}
+public sealed class CfContinue(byte cond) : CfNode
+{
+    public byte Condition = cond;
+}
 
 public sealed class CfConditional : CfNode
 {
@@ -59,7 +73,10 @@ public static class UsseControlFlow
         {
             off = (int)(low & ((1u << 20) - 1));
             pred = (byte)((high & ~0xF8FFFFFFu) >> 24);
-            if ((inst & (1ul << 38)) != 0 && (off & (1 << 19)) != 0) off |= unchecked((int)0xFFF00000);
+            if ((inst & (1ul << 38)) != 0 && (off & (1 << 19)) != 0)
+            {
+                off |= unchecked((int)0xFFF00000);
+            }
         }
         return br;
     }
@@ -87,11 +104,22 @@ public static class UsseControlFlow
         uint hi = (uint)(inst >> 32);
         switch (inst >> 59)
         {
-            case 0b00000: return (byte)((hi & ~0xFCFFFFFFu) >> 24);
-            case 0b00001: case 0b00010: case 0b00011: return ExtVecToExt((byte)((hi & ~0xF8FFFFFFu) >> 24));
+            case 0b00000:
+                return (byte)((hi & ~0xFCFFFFFFu) >> 24);
+            case 0b00001:
+            case 0b00010:
+            case 0b00011:
+                return ExtVecToExt((byte)((hi & ~0xF8FFFFFFu) >> 24));
             case 0b00100:
             case 0b00101:
-                return ((hi & ~0xFCFFFFFFu) >> 24) switch { 0 => (byte)0, 1 => (byte)1, 2 => (byte)5, 3 => (byte)7, _ => (byte)0 };
+                return ((hi & ~0xFCFFFFFFu) >> 24) switch
+                {
+                    0 => (byte)0,
+                    1 => (byte)1,
+                    2 => (byte)5,
+                    3 => (byte)7,
+                    _ => (byte)0
+                };
             case 0b10000:
             case 0b10001:
             case 0b10010:
@@ -104,14 +132,36 @@ public static class UsseControlFlow
                 uint opcat = (uint)(inst >> (32 + 20)) & 3, extra = (uint)(inst >> (32 + 22)) & 1;
                 if (opcat == 0)
                 {
-                    if (extra == 0) break;
+                    if (extra == 0)
+                    {
+                        break;
+                    }
+
                     return 0;
                 }
                 uint op2 = (uint)(inst >> (32 + 24)) & 7;
                 if (opcat == 3 && op2 == 1)
-                    return ((hi & ~0xFFFFF9FFu) >> 9) switch { 0 => (byte)0, 1 => (byte)5, 2 => (byte)6, 3 => (byte)1, _ => (byte)0 };
-                if (opcat == 2 && op2 == 4) return (byte)((hi & ~0xFFFFF1FFu) >> 9);
-                if (opcat == 3 && op2 == 3) return ShortToExt((byte)((hi & ~0xFFFFF9FFu) >> 9));
+                {
+                    return ((hi & ~0xFFFFF9FFu) >> 9) switch
+                    {
+                        0 => (byte)0,
+                        1 => (byte)5,
+                        2 => (byte)6,
+                        3 => (byte)1,
+                        _ => (byte)0
+                    };
+                }
+
+                if (opcat == 2 && op2 == 4)
+                {
+                    return (byte)((hi & ~0xFFFFF1FFu) >> 9);
+                }
+
+                if (opcat == 3 && op2 == 3)
+                {
+                    return ShortToExt((byte)((hi & ~0xFFFFF9FFu) >> 9));
+                }
+
                 return 0;
             }
         }
@@ -135,11 +185,22 @@ public static class UsseControlFlow
             {
                 uint dest = (uint)(a + off);
                 var info = new Branch(a, dest, pred);
-                if (dest == 0 && returnOffset > 0) calls.Add(a);
-                if (off < 0) back.Add(info);
+                if (dest == 0 && returnOffset > 0)
+                {
+                    calls.Add(a);
+                }
+
+                if (off < 0)
+                {
+                    back.Add(info);
+                }
+
                 from[a] = info;
             }
-            if (IsReturn(inst)) returnOffset = a;
+            if (IsReturn(inst))
+            {
+                returnOffset = a;
+            }
         }
 
         var queue = new Queue<Request>();
@@ -161,20 +222,38 @@ public static class UsseControlFlow
             for (uint a = req.Begin; a <= req.End && a != uint.MaxValue; a++)
             {
                 ulong inst = read(a);
-                if (inst == 0) break;
+                if (inst == 0)
+                {
+                    break;
+                }
+
                 byte pred = GetPredicate(inst);
-                if (a == code.Offset) code.Condition = pred;
+                if (a == code.Offset)
+                {
+                    code.Condition = pred;
+                }
 
                 if (from.TryGetValue(a, out var br))
                 {
                     bool loopStmt = false;
                     CfNode? lp = req.Block;
-                    while (lp != null && lp is not CfLoop) lp = lp.Parent;
+                    while (lp != null && lp is not CfLoop)
+                    {
+                        lp = lp.Parent;
+                    }
+
                     if (lp is CfLoop loop)
                     {
                         CfNode? add = null;
-                        if (loop.LoopEnd <= br.Dest - 1) add = new CfBreak(br.Pred);
-                        else if (loop.Content.Start == br.Dest) add = new CfContinue(br.Pred);
+                        if (loop.LoopEnd <= br.Dest - 1)
+                        {
+                            add = new CfBreak(br.Pred);
+                        }
+                        else if (loop.Content.Start == br.Dest)
+                        {
+                            add = new CfContinue(br.Pred);
+                        }
+
                         if (add != null)
                         {
                             code.Size = a - code.Offset;
@@ -199,14 +278,30 @@ public static class UsseControlFlow
                             uint elseEnd = 0;
                             if (from.TryGetValue(br.Dest - 1, out var elseBr))
                             {
-                                if (elseBr.Dest >= br.Dest) { elseEnd = elseBr.Dest; elseExist = true; }
+                                if (elseBr.Dest >= br.Dest)
+                                {
+                                    elseEnd = elseBr.Dest;
+                                    elseExist = true;
+                                }
                                 else
                                 {
                                     foreach (var kv in from)
                                     {
-                                        if (kv.Key <= elseBr.Dest + 1) continue;
-                                        if (kv.Key >= br.Dest - 1) break;
-                                        if (kv.Value.Dest > br.Dest) { elseExist = true; elseEnd = kv.Value.Dest; }
+                                        if (kv.Key <= elseBr.Dest + 1)
+                                        {
+                                            continue;
+                                        }
+
+                                        if (kv.Key >= br.Dest - 1)
+                                        {
+                                            break;
+                                        }
+
+                                        if (kv.Value.Dest > br.Dest)
+                                        {
+                                            elseExist = true;
+                                            elseEnd = kv.Value.Dest;
+                                        }
                                     }
                                 }
                             }
@@ -231,11 +326,23 @@ public static class UsseControlFlow
                 {
                     uint found = uint.MaxValue;
                     foreach (var b in back)
-                        if (b.Dest == a && b.Pred == 0 && (found == uint.MaxValue || found < b.Offset)) found = b.Offset;
+                    {
+                        if (b.Dest == a && b.Pred == 0 && (found == uint.MaxValue || found < b.Offset))
+                        {
+                            found = b.Offset;
+                        }
+                    }
+
                     if (found == uint.MaxValue)
                     {
                         // conditional back edge without an unconditional end: treat the last one as the loop end
-                        foreach (var b in back) if (b.Dest == a) found = Math.Max(found == uint.MaxValue ? 0 : found, b.Offset);
+                        foreach (var b in back)
+                        {
+                            if (b.Dest == a)
+                            {
+                                found = Math.Max(found == uint.MaxValue ? 0 : found, b.Offset);
+                            }
+                        }
                     }
                     var loop = new CfLoop { LoopEnd = found };
                     loop.Content = new CfBlock { Start = a, Parent = loop };
@@ -250,7 +357,10 @@ public static class UsseControlFlow
                 {
                     bool invalidated = false;
                     if (WritesPredicate(inst, out byte pw))
+                    {
                         invalidated = pw + 1 == code.Condition || pw + 5 == code.Condition;
+                    }
+
                     uint offsetEnd = 0;
                     if (pred != code.Condition)
                     {
@@ -288,8 +398,15 @@ public sealed partial class UsseTranslator
     {
         int num = 0;
         bool doNeg = neg;
-        if (pred is >= 1 and <= 4) num = pred - 1;
-        else if (pred is >= 5 and <= 6) { num = pred - 5; doNeg = !doNeg; }
+        if (pred is >= 1 and <= 4)
+        {
+            num = pred - 1;
+        }
+        else if (pred is >= 5 and <= 6)
+        {
+            num = pred - 5;
+            doNeg = !doNeg;
+        }
         return doNeg ? $"!p[{num}]" : $"p[{num}]";
     }
 
@@ -299,7 +416,11 @@ public sealed partial class UsseTranslator
         SecondProgram = secondary;
         ResetRepeat();
         _code = code;
-        if (code.Length == 0) return;
+        if (code.Length == 0)
+        {
+            return;
+        }
+
         var root = UsseControlFlow.Analyze(a => a < code.Length ? code[a] : 0, (uint)code.Length - 1);
         EmitBlock(root);
     }
@@ -310,12 +431,30 @@ public sealed partial class UsseTranslator
         {
             switch (n)
             {
-                case CfCode c: EmitCode(c); break;
+                case CfCode c:
+                    EmitCode(c);
+                    break;
                 case CfBreak br:
-                    if (br.Condition != 0) Line($"if ({Condition(br.Condition)}) break;"); else Line("break;");
+                    if (br.Condition != 0)
+                    {
+                        Line($"if ({Condition(br.Condition)}) break;");
+                    }
+                    else
+                    {
+                        Line("break;");
+                    }
+
                     break;
                 case CfContinue ct:
-                    if (ct.Condition != 0) Line($"if ({Condition(ct.Condition)}) continue;"); else Line("continue;");
+                    if (ct.Condition != 0)
+                    {
+                        Line($"if ({Condition(ct.Condition)}) continue;");
+                    }
+                    else
+                    {
+                        Line("continue;");
+                    }
+
                     break;
                 case CfConditional cd:
                     Open($"if ({Condition(cd.NegIfCondition, true)})");
@@ -340,15 +479,26 @@ public sealed partial class UsseTranslator
 
     void EmitCode(CfCode c)
     {
-        if (c.Size == 0) return;
+        if (c.Size == 0)
+        {
+            return;
+        }
+
         bool cond = c.Condition != 0 && !(c.Size == 1 && (_code[c.Offset] >> 59) == 0b10001);
-        if (cond) Open($"if ({Condition(c.Condition)})");
+        if (cond)
+        {
+            Open($"if ({Condition(c.Condition)})");
+        }
+
         for (uint pc = c.Offset; pc < c.Offset + c.Size && pc < _code.Length; pc++)
         {
             var ins = UsseDecoder.Decode(_code[pc]);
             Line($"// {pc}: {ins.Op} {_code[pc]:X16}");
             Translate(ins);
         }
-        if (cond) Close();
+        if (cond)
+        {
+            Close();
+        }
     }
 }

@@ -23,7 +23,11 @@ public sealed class MediaMiscHleTests(GuestMemoryFixture fx)
     static string ReadUtf16(uint addr)
     {
         int n = 0;
-        while (GuestMemory.Read<ushort>(addr + (uint)n * 2) != 0) n++;
+        while (GuestMemory.Read<ushort>(addr + (uint)n * 2) != 0)
+        {
+            n++;
+        }
+
         return Encoding.Unicode.GetString(GuestMemory.Span(addr, n * 2));
     }
 
@@ -153,7 +157,10 @@ public sealed class MediaMiscHleTests(GuestMemoryFixture fx)
             Assert.Equal(Ime.EVENT_OPEN, events[^1].id);
             Assert.Equal(0, Call(ime, "sceImeClose"));
         }
-        finally { CommonDialog.ImeDefaultText = saved; }
+        finally
+        {
+            CommonDialog.ImeDefaultText = saved;
+        }
     }
 
     [Fact]
@@ -168,7 +175,11 @@ public sealed class MediaMiscHleTests(GuestMemoryFixture fx)
             ime.GuestCallOverride = (fn, a) =>
             {
                 uint r = inner(fn, a);
-                if (GuestMemory.R32(a[1]) == Ime.EVENT_UPDATE_TEXT) Assert.Equal(0, Call(ime, "sceImeClose"));
+                if (GuestMemory.R32(a[1]) == Ime.EVENT_UPDATE_TEXT)
+                {
+                    Assert.Equal(0, Call(ime, "sceImeClose"));
+                }
+
                 return r;
             };
             Assert.Equal(0, Call(ime, "sceImeOpen", param));
@@ -178,7 +189,10 @@ public sealed class MediaMiscHleTests(GuestMemoryFixture fx)
             Assert.Equal("Hi", ReadUtf16(buffer));
             Assert.False(ime.IsOpen);
         }
-        finally { CommonDialog.ImeDefaultText = saved; }
+        finally
+        {
+            CommonDialog.ImeDefaultText = saved;
+        }
     }
 
     [Fact]
@@ -194,10 +208,17 @@ public sealed class MediaMiscHleTests(GuestMemoryFixture fx)
             var inner = ime.GuestCallOverride!;
             ime.GuestCallOverride = (fn, a) =>
             {
-                if (fn != Filter) return inner(fn, a);
+                if (fn != Filter)
+                {
+                    return inner(fn, a);
+                }
                 // filter(outText, outTextLength, srcText, srcTextLength): upper-case, reject "bad"
                 string src = Encoding.Unicode.GetString(GuestMemory.Span(a[2], (int)a[3] * 2));
-                if (src == "bad") return unchecked((uint)-1);
+                if (src == "bad")
+                {
+                    return unchecked((uint)-1);
+                }
+
                 WriteUtf16(a[0], src.ToUpperInvariant());
                 GuestMemory.W32(a[1], (uint)src.Length);
                 return 0;
@@ -211,12 +232,18 @@ public sealed class MediaMiscHleTests(GuestMemoryFixture fx)
             Assert.Equal("ABC", ReadUtf16(buffer));
             Assert.Equal(0, Call(ime, "sceImeClose"));
         }
-        finally { CommonDialog.ImeDefaultText = saved; }
+        finally
+        {
+            CommonDialog.ImeDefaultText = saved;
+        }
     }
 
     // ------------------------------------------------------------------ SceVoice
 
-    sealed class FakeClock { public double Now; }
+    sealed class FakeClock
+    {
+        public double Now;
+    }
 
     (Voice v, FakeClock clock, uint scratch) NewVoice()
     {
@@ -292,7 +319,11 @@ public sealed class MediaMiscHleTests(GuestMemoryFixture fx)
         Assert.Equal(Voice.ERR_INVALID_ARGUMENT, CreatePort(v, p, 6, 0).r);
         Assert.Equal(0, CreatePort(v, p, Voice.IN_DEVICE, 0).r);
         Assert.Equal(Voice.ERR_RESOURCE_LIMIT, CreatePort(v, p, Voice.IN_DEVICE, 0).r);
-        for (int i = 0; i < 7; i++) Assert.Equal(0, CreatePort(v, p, Voice.IN_VOICE, 12200).r);
+        for (int i = 0; i < 7; i++)
+        {
+            Assert.Equal(0, CreatePort(v, p, Voice.IN_VOICE, 12200).r);
+        }
+
         Assert.Equal(Voice.ERR_RESOURCE_LIMIT, CreatePort(v, p, Voice.IN_VOICE, 12200).r);
         // deleting frees the lowest slot for reuse
         Assert.Equal(0, Call(v, "sceVoiceDeletePort", 0u));
@@ -349,7 +380,11 @@ public sealed class MediaMiscHleTests(GuestMemoryFixture fx)
 
         // writing more than the ring holds accepts only the free space
         uint data = s + 0x1000, size = s + 0x80;
-        for (uint i = 0; i < 1024; i++) GuestMemory.Write(data + i * 2, (short)1000);
+        for (uint i = 0; i < 1024; i++)
+        {
+            GuestMemory.Write(data + i * 2, (short)1000);
+        }
+
         GuestMemory.W32(size, 2048);
         Assert.Equal(0, Call(v, "sceVoiceWriteToIPort", inP, data, size, 0u));
         Assert.Equal(1024u, GuestMemory.R32(size));
@@ -676,7 +711,11 @@ public sealed class MediaMiscHleTests(GuestMemoryFixture fx)
     [Fact]
     public void AvcencEncodesCameraPicture()
     {
-        if (!VitaSharp.Core.Media.FFmpegLoader.Available) return;
+        if (!VitaSharp.Core.Media.FFmpegLoader.Available)
+        {
+            return;
+        }
+
         var v = new Videoenc();
         uint s = fx.Memory.Alloc(0x20000, "avcenc"), ctrl = s, query = s + 0x40, input = s + 0x80, output = s + 0x100,
             info = s + 0x140, nal = s + 0x180, yuv = s + 0x1000, buf = s + 0x4000;
@@ -769,8 +808,13 @@ public sealed class MediaMiscHleTests(GuestMemoryFixture fx)
         }
         // white left half, black right half (bytes R,G,B,A)
         for (int y = 0; y < sh; y++)
+        {
             for (int x = 0; x < sw; x++)
+            {
                 GuestMemory.W32(sBuf + (uint)(y * sw + x) * 4, x < sw / 2 ? 0xFFFFFFFFu : 0xFF000000u);
+            }
+        }
+
         Assert.Equal(0, Call(m, "sceMp4RecCsc", dst, src));
         Assert.Equal(235, GuestMemory.Read<byte>(dBuf));          // white luma
         Assert.Equal(16, GuestMemory.Read<byte>(dBuf + 3));       // black luma

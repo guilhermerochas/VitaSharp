@@ -9,7 +9,11 @@ public class BlobPackTests : IDisposable
 
     public void Dispose()
     {
-        try { Directory.Delete(_dir, true); } catch { }
+        try
+        {
+            Directory.Delete(_dir, true);
+        }
+        catch { }
     }
 
     [Fact]
@@ -33,7 +37,11 @@ public class BlobPackTests : IDisposable
     public void OwnershipPassesToTheNextSessionOnDispose()
     {
         var first = BlobPack.Open(PackPath, 1)!;
-        using (var second = BlobPack.Open(PackPath, 1)!) Assert.True(second.IsReadOnly);
+        using (var second = BlobPack.Open(PackPath, 1)!)
+        {
+            Assert.True(second.IsReadOnly);
+        }
+
         first.Add(1, [1]);
         first.Dispose();
         using var third = BlobPack.Open(PackPath, 1)!;
@@ -45,7 +53,11 @@ public class BlobPackTests : IDisposable
     [Fact]
     public void OtherVersionStartsOver()
     {
-        using (var p = BlobPack.Open(PackPath, 1)!) p.Add(1, [1]);
+        using (var p = BlobPack.Open(PackPath, 1)!)
+        {
+            p.Add(1, [1]);
+        }
+
         using var q = BlobPack.Open(PackPath, 2)!;
         Assert.Equal(0, q.Count);
         Assert.Null(q.TryRead(1));
@@ -60,7 +72,11 @@ public class BlobPackTests : IDisposable
             p.Add(2, new byte[200]);
         }
         long full = new FileInfo(PackPath).Length;
-        using (var fs = new FileStream(PackPath, FileMode.Open)) fs.SetLength(full - 50); // crash in the middle of record 2
+        using (var fs = new FileStream(PackPath, FileMode.Open))
+        {
+            fs.SetLength(full - 50); // crash in the middle of record 2
+        }
+
         using (var p = BlobPack.Open(PackPath, 1)!)
         {
             Assert.Equal(1, p.Count);
@@ -75,7 +91,11 @@ public class BlobPackTests : IDisposable
     [Fact]
     public void CorruptedPayloadReadsAsMissing()
     {
-        using (var p = BlobPack.Open(PackPath, 1)!) p.Add(1, [1, 2, 3, 4]);
+        using (var p = BlobPack.Open(PackPath, 1)!)
+        {
+            p.Add(1, [1, 2, 3, 4]);
+        }
+
         var bytes = File.ReadAllBytes(PackPath);
         bytes[^1] ^= 0xFF;
         File.WriteAllBytes(PackPath, bytes);

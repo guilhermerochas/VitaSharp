@@ -59,9 +59,18 @@ public static class UiScript
             string? error = null;
             activity.RunOnUiThread(() =>
             {
-                try { error = Dispatch(activity, p, width, height, inv); }
-                catch (Exception e) { error = e.Message; }
-                finally { done.Set(); }
+                try
+                {
+                    error = Dispatch(activity, p, width, height, inv);
+                }
+                catch (Exception e)
+                {
+                    error = e.Message;
+                }
+                finally
+                {
+                    done.Set();
+                }
             });
             done.Wait(2000);
             if (error != null) Log.Warn($"{EnvVars.AndroidUiInput}: '{raw}': {error}");

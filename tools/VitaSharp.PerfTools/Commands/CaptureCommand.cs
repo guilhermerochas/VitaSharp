@@ -26,17 +26,27 @@ sealed class CaptureCommand : IPerfCommand
 
     public int Run(PerfArgs a)
     {
-        if (a.Positional.Count < 1) throw new PerfArgsException("capture: a capture folder (or its .zip) is required");
+        if (a.Positional.Count < 1)
+        {
+            throw new PerfArgsException("capture: a capture folder (or its .zip) is required");
+        }
+
         string path = Path.GetFullPath(a.Positional[0]);
         if (File.Exists(path) && path.EndsWith(".zip", StringComparison.OrdinalIgnoreCase))
         {
             string to = Path.GetDirectoryName(path)!;
             string folder = Path.Combine(to, Path.GetFileNameWithoutExtension(path));
-            if (!Directory.Exists(folder)) System.IO.Compression.ZipFile.ExtractToDirectory(path, to);
+            if (!Directory.Exists(folder))
+            {
+                System.IO.Compression.ZipFile.ExtractToDirectory(path, to);
+            }
+
             path = folder;
         }
         if (!Directory.Exists(path) || !File.Exists(Path.Combine(path, "session.txt")))
+        {
             throw new PerfArgsException($"capture: {path} is not a capture folder (no session.txt)");
+        }
         // --frames-only: just the pictures, nothing written into the capture folder (a user's capture stays read-only)
         bool framesOnly = a.Has("--frames-only");
         string report = framesOnly ? "" : CaptureAnalyzer.Analyze(path, quiet: false, threshold: a.Double("--threshold", 6));
@@ -48,14 +58,29 @@ sealed class CaptureCommand : IPerfCommand
             foreach (var (f, pic) in FramesFile.ReadAll(Path.Combine(path, "frames.vsfr")))
             {
                 long pr = f.Info.Present;
-                if (pr > to) break;
-                if (pic is { } p && pr >= from && (pr - from) % every == 0) { CapturePng.Write(Path.Combine(framesDir, $"frame_{pr}.png"), p.Rgba, p.W, p.H); n++; }
+                if (pr > to)
+                {
+                    break;
+                }
+
+                if (pic is { } p && pr >= from && (pr - from) % every == 0)
+                {
+                    CapturePng.Write(Path.Combine(framesDir, $"frame_{pr}.png"), p.Rgba, p.W, p.H);
+                    n++;
+                }
             }
             Console.WriteLine($"{n} frames written to {Path.GetFullPath(framesDir)}");
         }
-        if (a.Has("--rerun")) Console.WriteLine($"VitaSharp.Desktop rerun \"{path}\"");
+        if (a.Has("--rerun"))
+        {
+            Console.WriteLine($"VitaSharp.Desktop rerun \"{path}\"");
+        }
         // a re-run folder (DIR/reruns/X) against the capture it re-ran
-        if (a.Get("--compare") is { } original) Console.WriteLine(CaptureAnalyzer.Compare(Path.GetFullPath(original), path));
+        if (a.Get("--compare") is { } original)
+        {
+            Console.WriteLine(CaptureAnalyzer.Compare(Path.GetFullPath(original), path));
+        }
+
         bool problems = report.Split('\n').Any(l => l.TrimStart().StartsWith('[') && !l.Contains("(info)"));
         return problems ? 1 : 0;
     }

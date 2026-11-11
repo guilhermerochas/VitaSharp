@@ -5,10 +5,7 @@ namespace VitaSharp.Core.Package;
 public sealed record InstalledTitle(string TitleId, string Title, string Path, PkgContentType Type)
 {
     /// <summary>The kind of package installed (null for VPKs).</summary>
-    public PkgKind? Kind
-    {
-        get; init;
-    }
+    public PkgKind? Kind { get; init; }
 }
 
 /// <summary>What a .pkg is, read from its header before installing (the UIs ask for a license only when it needs one).</summary>
@@ -56,7 +53,11 @@ public static class PkgInstaller
         {
             kind = pkg.Kind;
         }
-        catch { pkg.Dispose(); throw; }
+        catch
+        {
+            pkg.Dispose();
+            throw;
+        }
         if (kind.NeedsLicense())
         {
             pkg.Dispose();
@@ -118,7 +119,11 @@ public static class PkgInstaller
         {
             kind = reader.Kind;
         }
-        catch { reader.Dispose(); throw; }
+        catch
+        {
+            reader.Dispose();
+            throw;
+        }
         if (kind.IsPspEmu())
         {
             log?.Invoke($"{kind.Describe()} package: it needs no license, the one given is not used");
@@ -183,7 +188,10 @@ public static class PkgInstaller
                 throw;
             }
         }
-        finally { thread.Priority = priority; }
+        finally
+        {
+            thread.Priority = priority;
+        }
 
         var licDir = Path.Combine(ux0Root, "license", titleId);
         Directory.CreateDirectory(licDir);
@@ -261,7 +269,10 @@ public static class PkgInstaller
                         ctrTime += d;
                         table = pfs.Match(size, h);
                     }
-                    finally { writer.Return(head); }
+                    finally
+                    {
+                        writer.Return(head);
+                    }
                     if (table != null)
                     {
                         node = pfs.Node(e.Name);

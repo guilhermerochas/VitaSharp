@@ -448,10 +448,7 @@ public sealed class VitaSystem
 
     /// <summary>The title whose LiveArea page the shell shows (null: its home screen, the bubble pages), for the
     /// diagnostics (Gravar tudo's context): see <see cref="NoteShellLiveArea"/>.</summary>
-    public ShellPage? ShellLiveArea
-    {
-        get; private set;
-    }
+    public ShellPage? ShellLiveArea { get; private set; }
 
     public sealed record ShellPage(string TitleId, string Title);
 

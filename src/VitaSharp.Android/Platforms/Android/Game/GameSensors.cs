@@ -49,6 +49,13 @@ public sealed class GameSensors : IDisposable
     /// <summary>The camera itself is disposed by the emulator's host services with the session.</summary>
     public void Dispose()
     {
-        try { _motion.Dispose(); } catch (Exception e) { Log.Warn($"Motion: {e.Message}"); }
+        try
+        {
+            _motion.Dispose();
+        }
+        catch (Exception e)
+        {
+            Log.Warn($"Motion: {e.Message}");
+        }
     }
 }

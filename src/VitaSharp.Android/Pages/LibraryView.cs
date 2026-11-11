@@ -41,7 +41,11 @@ public sealed class LibraryView : Screen<LibraryState>
         MainActivity.Resumed += Reload;
         Reload();
         base.OnMounted();
-        if (InstallRequested) { InstallRequested = false; InstallGame(); }
+        if (InstallRequested)
+        {
+            InstallRequested = false;
+            InstallGame();
+        }
     }
 
     protected override void OnWillUnmount()
@@ -161,8 +165,10 @@ public sealed class LibraryView : Screen<LibraryState>
             .BackgroundColor(Palette.Surface).Margin(20, 12, 20, 0)
             .OnTapped(() =>
             {
-                if (State.Firmware is { Shell: true }) GameActivity.Launch(MainActivity.Current!, GameActivity.SystemTitleId);
-                else Navigation?.PushAsync<FirmwarePage>();
+                if (State.Firmware is { Shell: true })
+                    GameActivity.Launch(MainActivity.Current!, GameActivity.SystemTitleId);
+                else
+                    Navigation?.PushAsync<FirmwarePage>();
             });
     }
 
@@ -230,13 +236,16 @@ public sealed class LibraryView : Screen<LibraryState>
 
     async void InstallGame()
     {
-        if (State.Installing != null) return;
+        if (State.Installing != null)
+            return;
         var kind = await Choose(Loc.Get("MInstallGame"), [
             new Mobile.Core.Settings.Choice("vpk", Loc.Get("MVpkFile")),
             new Mobile.Core.Settings.Choice("pkg", Loc.Get("MPkgFile")),
         ]);
-        if (kind == "vpk") await InstallVpk();
-        else if (kind == "pkg") await InstallPkg();
+        if (kind == "vpk")
+            await InstallVpk();
+        else if (kind == "pkg")
+            await InstallPkg();
     }
 
     static string ImportCache => System.IO.Path.Combine(AppServices.AppContext.CacheDir!.AbsolutePath, "imports");
@@ -245,14 +254,16 @@ public sealed class LibraryView : Screen<LibraryState>
     async Task InstallPkg()
     {
         var pkg = await Saf.PickAsync("application/octet-stream");
-        if (pkg == null) return;
+        if (pkg == null)
+            return;
         if (!pkg.DisplayName.EndsWith(".pkg", StringComparison.OrdinalIgnoreCase)
             && !await Confirm(Loc.Get("MInstallPkg"), Loc.Format("MNotPkgConfirm", pkg.DisplayName), Loc.Get("MTry")))
             return;
         // PSP and PSone Classic packages need no license: straight to ux0:pspemu
         PkgInfo? info = null;
         await Run(Loc.Get("MInstallPkg"), async () => info = await Task.Run(() => PkgInstaller.Inspect(pkg.OpenSeekable(ImportCache))));
-        if (info == null) return;
+        if (info == null)
+            return;
         if (!info.NeedsLicense)
         {
             string kindText = info.Description;
@@ -281,7 +292,8 @@ public sealed class LibraryView : Screen<LibraryState>
         if (source == "file")
         {
             var lic = await Saf.PickAsync("application/octet-stream");
-            if (lic == null) return;
+            if (lic == null)
+                return;
             await Run(Loc.Get("MLicense"), async () => license = await Task.Run(() =>
             {
                 using var s = lic.OpenSeekable(ImportCache);
@@ -293,11 +305,20 @@ public sealed class LibraryView : Screen<LibraryState>
         else if (source == "zrif")
         {
             var text = await Prompt("zRIF", Loc.Get("MPasteZrifDetail"));
-            if (string.IsNullOrWhiteSpace(text)) return;
-            try { license = Zrif.Decode(text); }
-            catch (InvalidDataException e) { await Alert(Loc.Get("MInvalidZrif"), e.Message); return; }
+            if (string.IsNullOrWhiteSpace(text))
+                return;
+            try
+            {
+                license = Zrif.Decode(text);
+            }
+            catch (InvalidDataException e)
+            {
+                await Alert(Loc.Get("MInvalidZrif"), e.Message);
+                return;
+            }
         }
-        if (license == null) return;
+        if (license == null)
+            return;
 
         SetState(s => { s.Installing = pkg.DisplayName; s.InstallProgress = 0; s.InstallDetail = ""; });
         await Run(Loc.Get("MInstallPkg"), async () =>
@@ -325,7 +346,8 @@ public sealed class LibraryView : Screen<LibraryState>
     async Task InstallVpk()
     {
         var doc = await Saf.PickAsync("application/zip", "application/octet-stream", "application/vnd.android.package-archive");
-        if (doc == null) return;
+        if (doc == null)
+            return;
         SetState(s => { s.Installing = doc.DisplayName; s.InstallProgress = 0; s.InstallDetail = ""; });
         await Run(Loc.Get("MInstallVpk"), async () =>
         {

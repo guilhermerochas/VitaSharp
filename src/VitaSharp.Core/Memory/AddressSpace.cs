@@ -79,19 +79,32 @@ public sealed unsafe class AddressSpace
     public static Activation Use(AddressSpace? space)
     {
         var prev = t_current;
-        if (!ReferenceEquals(prev, space)) SetThread(space);
+        if (!ReferenceEquals(prev, space))
+        {
+            SetThread(space);
+        }
+
         return new Activation(prev, space);
     }
 
     /// <summary>A long-lived worker (the GPU worker) switches to the space of the work item it takes next.</summary>
     public static void MakeCurrent(AddressSpace? space)
     {
-        if (!ReferenceEquals(t_current, space)) SetThread(space);
+        if (!ReferenceEquals(t_current, space))
+        {
+            SetThread(space);
+        }
     }
 
     public readonly struct Activation(AddressSpace? previous, AddressSpace? active) : IDisposable
     {
-        public void Dispose() { if (!ReferenceEquals(previous, active)) SetThread(previous); }
+        public void Dispose()
+        {
+            if (!ReferenceEquals(previous, active))
+            {
+                SetThread(previous);
+            }
+        }
     }
 
     // the space also flows with the execution context: tasks and host threads started by a process's code (async I/O,

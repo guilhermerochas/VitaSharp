@@ -4,16 +4,10 @@ namespace VitaSharp.Core.Kernel;
 
 public abstract class KernelObject
 {
-    public int Uid
-    {
-        get; internal set;
-    }
+    public int Uid { get; internal set; }
     public string Name { get; init; } = "";
     /// <summary>Process that created the object (<see cref="ProcessScope.CurrentPid"/> at registration; 0 = the system).</summary>
-    public int OwnerPid
-    {
-        get; internal set;
-    }
+    public int OwnerPid { get; internal set; }
 
     string? _waitDescription;
     /// <summary>"kind name" shown in thread states; built once so blocking waits do not allocate a string each time.</summary>

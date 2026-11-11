@@ -24,10 +24,18 @@ public sealed class RendererSoftwareTests(GuestMemoryFixture fx)
         uint size = 0x100 + (uint)code.Length * 8, p = h.Alloc(size);
         GuestMemory.W32(p, 0x00505847);
         GuestMemory.W32(p + 8, size);
-        if (fragment) GuestMemory.W32(p + 0x14, GxpProgram.FlagFragment);
+        if (fragment)
+        {
+            GuestMemory.W32(p + 0x14, GxpProgram.FlagFragment);
+        }
+
         GuestMemory.W32(p + 0x3C, (uint)code.Length);
         GuestMemory.W32(p + 0x40, 0x100 - 0x40);
-        for (int i = 0; i < code.Length; i++) { GuestMemory.W32(p + 0x100 + (uint)i * 8, (uint)code[i]); GuestMemory.W32(p + 0x104 + (uint)i * 8, (uint)(code[i] >> 32)); }
+        for (int i = 0; i < code.Length; i++)
+        {
+            GuestMemory.W32(p + 0x100 + (uint)i * 8, (uint)code[i]);
+            GuestMemory.W32(p + 0x104 + (uint)i * 8, (uint)(code[i] >> 32));
+        }
         return p;
     }
 
@@ -40,7 +48,11 @@ public sealed class RendererSoftwareTests(GuestMemoryFixture fx)
         Directory.CreateDirectory(frames);
         var renderer = new VulkanRenderer(new VulkanRendererOptions
         {
-            VSync = false, AsyncShaders = false, AsyncPipelines = false, DumpFramesDir = frames, DumpEvery = 1,
+            VSync = false,
+            AsyncShaders = false,
+            AsyncPipelines = false,
+            DumpFramesDir = frames,
+            DumpEvery = 1,
         });
         try
         {
@@ -54,24 +66,34 @@ public sealed class RendererSoftwareTests(GuestMemoryFixture fx)
             try
             {
                 uint cp = h.Alloc(0x24), o = h.Word(0);
-                GuestMemory.W32(cp + 8, h.Alloc(0x1000)); GuestMemory.W32(cp + 12, 0x1000);
-                GuestMemory.W32(cp + 16, h.Alloc(0x4000)); GuestMemory.W32(cp + 20, 0x4000);
-                GuestMemory.W32(cp + 24, h.Alloc(0x4000)); GuestMemory.W32(cp + 28, 0x4000);
+                GuestMemory.W32(cp + 8, h.Alloc(0x1000));
+                GuestMemory.W32(cp + 12, 0x1000);
+                GuestMemory.W32(cp + 16, h.Alloc(0x4000));
+                GuestMemory.W32(cp + 20, 0x4000);
+                GuestMemory.W32(cp + 24, h.Alloc(0x4000));
+                GuestMemory.W32(cp + 28, 0x4000);
                 Assert.Equal(0, Call(g, "sceGxmCreateContext", cp, new Ptr<uint>(o)));
                 uint ctx = GuestMemory.R32(o);
                 uint rp = h.Alloc(0x14);
-                GuestMemory.Write(rp + 4, (ushort)W); GuestMemory.Write(rp + 6, (ushort)H); GuestMemory.Write(rp + 8, (ushort)1);
+                GuestMemory.Write(rp + 4, (ushort)W);
+                GuestMemory.Write(rp + 6, (ushort)H);
+                GuestMemory.Write(rp + 8, (ushort)1);
                 Assert.Equal(0, Call(g, "sceGxmCreateRenderTarget", rp, new Ptr<uint>(o)));
                 uint rt = GuestMemory.R32(o);
                 // an A8B8G8R8 linear colour surface holding a pattern
                 uint data = h.Alloc(W * H * 4), color = h.Alloc(0x40);
-                for (uint i = 0; i < W * H; i++) GuestMemory.W32(data + i * 4, 0xFF000000u | (i * 2654435761u >> 8));
+                for (uint i = 0; i < W * H; i++)
+                {
+                    GuestMemory.W32(data + i * 4, 0xFF000000u | (i * 2654435761u >> 8));
+                }
+
                 var pattern = GuestMemory.ReadSpan(data, W * H * 4).ToArray();
                 Assert.Equal(0, Call(g, "sceGxmColorSurfaceInit", color, 0u, 0u, 0u, 0u, (uint)W, (uint)H, (uint)W, data));
 
                 // 1. a scene without draws: the surface comes back as it was
                 uint word = h.Word(0), notif = h.Alloc(8);
-                GuestMemory.W32(notif, word); GuestMemory.W32(notif + 4, 1);
+                GuestMemory.W32(notif, word);
+                GuestMemory.W32(notif + 4, 1);
                 Assert.Equal(0, Call(g, "sceGxmBeginScene", ctx, 0u, rt, 0u, 0u, 0u, color, 0u));
                 Assert.Equal(0, Call(g, "sceGxmEndScene", ctx, 0u, notif));
                 Assert.Equal(0, Call(g, "sceGxmFinish", ctx));
@@ -99,8 +121,14 @@ public sealed class RendererSoftwareTests(GuestMemoryFixture fx)
                 Assert.Equal(0, Call(g, "sceGxmShaderPatcherCreateFragmentProgram", patcher, GuestMemory.R32(fid), 0u, 0u, 0u, GuestMemory.R32(vp), new Ptr<uint>(fpo)));
                 uint verts = h.Alloc(36), idx = h.Alloc(8);
                 float[] v = [-1, -1, 0.5f, 3, -1, 0.5f, -1, 3, 0.5f];
-                for (int i = 0; i < v.Length; i++) GuestMemory.Write(verts + (uint)i * 4, v[i]);
-                GuestMemory.Write(idx, (ushort)0); GuestMemory.Write(idx + 2, (ushort)1); GuestMemory.Write(idx + 4, (ushort)2);
+                for (int i = 0; i < v.Length; i++)
+                {
+                    GuestMemory.Write(verts + (uint)i * 4, v[i]);
+                }
+
+                GuestMemory.Write(idx, (ushort)0);
+                GuestMemory.Write(idx + 2, (ushort)1);
+                GuestMemory.Write(idx + 4, (ushort)2);
                 uint depth = h.Alloc(0x20), depthData = h.Alloc(W * H * 4);
                 Assert.Equal(0, Call(g, "sceGxmDepthStencilSurfaceInit", depth, 0x00044000u, 0u, (uint)W, depthData, 0u));
                 for (int frame = 0; frame < 2; frame++)
@@ -121,7 +149,10 @@ public sealed class RendererSoftwareTests(GuestMemoryFixture fx)
                 Assert.True(renderer.PresentCount >= 2);
                 Assert.NotEmpty(Directory.EnumerateFiles(frames, "*.png"));
             }
-            finally { Call(g, "sceGxmTerminate"); }
+            finally
+            {
+                Call(g, "sceGxmTerminate");
+            }
         }
         finally
         {

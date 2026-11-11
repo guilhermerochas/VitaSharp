@@ -41,7 +41,11 @@ public sealed class Watchdog : IDisposable
     {
         try
         {
-            if (!_emu.Running) return;
+            if (!_emu.Running)
+            {
+                return;
+            }
+
             var now = DateTime.Now;
             if (EmulationPause.IsPaused)
             {
@@ -52,8 +56,17 @@ public sealed class Watchdog : IDisposable
             }
             long frames = Core.Hle.Modules.Display.FramesPresented;
             long completed = _emu.Gpu.Completed, submitted = _emu.Gpu.Submitted;
-            if (frames != _lastFrames) { _lastFrames = frames; _frameAt = now; _reportsThisStall = 0; }
-            if (completed != _lastCompleted || submitted == completed) { _lastCompleted = completed; _gpuAt = now; }
+            if (frames != _lastFrames)
+            {
+                _lastFrames = frames;
+                _frameAt = now;
+                _reportsThisStall = 0;
+            }
+            if (completed != _lastCompleted || submitted == completed)
+            {
+                _lastCompleted = completed;
+                _gpuAt = now;
+            }
             double frameStall = (now - _frameAt).TotalSeconds, gpuStall = (now - _gpuAt).TotalSeconds;
             // only once the game presents (boot and loading before the first frame can take long)
             double stall = Math.Max(frames > 0 ? frameStall : 0, gpuStall);
@@ -66,11 +79,21 @@ public sealed class Watchdog : IDisposable
                 Log.Flush();
             }
             // F9 turned debug mode on: the periodic audio lines count from now (AudioDiagnostics logged a snapshot)
-            if (DebugMode.Enabled && !_debugWas) _audioAt = now;
+            if (DebugMode.Enabled && !_debugWas)
+            {
+                _audioAt = now;
+            }
+
             _debugWas = DebugMode.Enabled;
-            if (DebugMode.Enabled) Periodic(now, frames);
+            if (DebugMode.Enabled)
+            {
+                Periodic(now, frames);
+            }
         }
-        catch (Exception e) { Log.Warn($"[watchdog] check failed: {e.Message}"); }
+        catch (Exception e)
+        {
+            Log.Warn($"[watchdog] check failed: {e.Message}");
+        }
     }
 
     void Periodic(DateTime now, long frames)
@@ -85,8 +108,15 @@ public sealed class Watchdog : IDisposable
             Log.Info($"PERF periodic f{frames}: {(frames - _perfFrames) / secs:F1} fps, process cpu {(cpu - _perfCpu).TotalMilliseconds / df:F1} ms/frame, " +
                      $"allocated {(alloc - _perfAlloc) / 1024.0 / df:F0} KB/frame, GC {GC.CollectionCount(0)}/{GC.CollectionCount(1)}/{GC.CollectionCount(2)}, " +
                      $"working set {Environment.WorkingSet / 1048576.0:F0} MB, GPU queue pending {_emu.Gpu.Pending}, threads {proc.Threads.Count}");
-            if (_renderer() is { } r) Log.Info($"PERF periodic f{frames} {r.VramSummary()}");
-            _perfAt = now; _perfFrames = frames; _perfCpu = cpu; _perfAlloc = alloc;
+            if (_renderer() is { } r)
+            {
+                Log.Info($"PERF periodic f{frames} {r.VramSummary()}");
+            }
+
+            _perfAt = now;
+            _perfFrames = frames;
+            _perfCpu = cpu;
+            _perfAlloc = alloc;
         }
         if ((now - _audioAt).TotalSeconds >= AudioDiagnostics.PeriodSeconds)
         {
@@ -103,7 +133,10 @@ public sealed class Watchdog : IDisposable
     /// <summary>Debug mode: warnings by count and HLE error/unimplemented summaries (also at the end of a run).</summary>
     public static void LogSummaries()
     {
-        foreach (var l in SessionReport.DebugSummaryLines()) Log.Info(l);
+        foreach (var l in SessionReport.DebugSummaryLines())
+        {
+            Log.Info(l);
+        }
     }
 
     /// <summary>Threads, mutexes, GPU queue and renderer state (hang reports, diagnostic captures).</summary>
@@ -111,13 +144,20 @@ public sealed class Watchdog : IDisposable
     {
         var sb = new StringBuilder();
         sb.AppendLine($"guest frame {Core.Hle.Modules.Display.FramesPresented}; GPU queue: submitted {emu.Gpu.Submitted}, completed {emu.Gpu.Completed}, executing {emu.Gpu.Executing?.GetType().Name ?? "nothing"}");
-        if (renderer != null) sb.AppendLine(renderer.DebugState());
+        if (renderer != null)
+        {
+            sb.AppendLine(renderer.DebugState());
+        }
+
         try
         {
             foreach (var t in emu.Kernel.Threads.ToArray())
             {
                 sb.AppendLine("thread " + t.Describe());
-                foreach (var call in t.RecentHleCalls(hleCalls)) sb.AppendLine("    hle " + call);
+                foreach (var call in t.RecentHleCalls(hleCalls))
+                {
+                    sb.AppendLine("    hle " + call);
+                }
             }
             // the applications the shell started run as processes of their own (read in their address space)
             foreach (var p in emu.Vita?.Processes.Where(p => !ReferenceEquals(p, emu)) ?? [])
@@ -127,14 +167,24 @@ public sealed class Watchdog : IDisposable
                 foreach (var t in p.Kernel.Threads.ToArray())
                 {
                     sb.AppendLine("  thread " + t.Describe());
-                    foreach (var call in t.RecentHleCalls(hleCalls)) sb.AppendLine("      hle " + call);
+                    foreach (var call in t.RecentHleCalls(hleCalls))
+                    {
+                        sb.AppendLine("      hle " + call);
+                    }
                 }
             }
             foreach (var m in emu.Kernel.Objects.All<Core.Kernel.Mutex>().ToArray())
+            {
                 if (m.Owner != null && m.Waiters > 0)
+                {
                     sb.AppendLine($"mutex '{m.Name}' held by '{m.Owner.Name}' ({m.Owner.Status}) count {m.LockCount}, {m.Waiters} waiting");
+                }
+            }
         }
-        catch (Exception e) { sb.AppendLine($"(thread list changed while reading: {e.Message})"); }
+        catch (Exception e)
+        {
+            sb.AppendLine($"(thread list changed while reading: {e.Message})");
+        }
         if (renderer != null)
         {
             sb.AppendLine("last frames:");
@@ -167,7 +217,11 @@ public static class LogFiles
             {
                 var (stamp, title) = ReadHeader(last);
                 string dest = Path.Combine(dir, $"{stamp}_{title}.log");
-                for (int i = 2; File.Exists(dest); i++) dest = Path.Combine(dir, $"{stamp}_{title}_{i}.log");
+                for (int i = 2; File.Exists(dest); i++)
+                {
+                    dest = Path.Combine(dir, $"{stamp}_{title}_{i}.log");
+                }
+
                 File.Move(last, dest);
             }
             Log.OpenFile(last);
@@ -192,9 +246,17 @@ public static class LogFiles
             for (int i = 0; i < 5 && r.ReadLine() is { } line; i++)
             {
                 int k = line.IndexOf(Header, StringComparison.Ordinal);
-                if (k < 0) continue;
+                if (k < 0)
+                {
+                    continue;
+                }
+
                 var parts = line[(k + Header.Length)..].Split(' ');
-                if (parts.Length >= 2) { title = parts[0]; stamp = parts[1]; }
+                if (parts.Length >= 2)
+                {
+                    title = parts[0];
+                    stamp = parts[1];
+                }
                 break;
             }
         }
@@ -207,7 +269,14 @@ public static class LogFiles
         try
         {
             var old = Directory.GetFiles(dir, "*_*.log").Select(f => new FileInfo(f)).OrderByDescending(f => f.LastWriteTimeUtc).Skip(Keep);
-            foreach (var f in old) { try { f.Delete(); } catch (IOException) { } }
+            foreach (var f in old)
+            {
+                try
+                {
+                    f.Delete();
+                }
+                catch (IOException) { }
+            }
         }
         catch (IOException) { }
     }
@@ -216,7 +285,11 @@ public static class LogFiles
     public static string TitleOf(string appPath)
     {
         string name = Path.GetFileName(appPath.TrimEnd('/', '\\'));
-        if (name.Length == 9 && name[..4].All(char.IsAsciiLetterUpper) && name[4..].All(char.IsAsciiDigit)) return name;
+        if (name.Length == 9 && name[..4].All(char.IsAsciiLetterUpper) && name[4..].All(char.IsAsciiDigit))
+        {
+            return name;
+        }
+
         return string.IsNullOrEmpty(name) ? "unknown" : string.Concat(name.Where(c => char.IsLetterOrDigit(c) || c is '_' or '-'));
     }
 }

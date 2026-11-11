@@ -25,11 +25,22 @@ public sealed unsafe partial class NativeJitTests
 
     static void RunArm64(IArm64Runner sb, CpuState* s, nint entry)
     {
-        s->CycleAcc = 0; s->CheckWindow = 0; s->LinkBreak = 1; s->NBlocks = 0; s->NInstr = 0;
+        s->CycleAcc = 0;
+        s->CheckWindow = 0;
+        s->LinkBreak = 1;
+        s->NBlocks = 0;
+        s->NInstr = 0;
         sb.Run(s, entry);
-        if (s->CalloutFault != 0) NativeRuntime.ThrowPendingFault(s);
+        if (s->CalloutFault != 0)
+        {
+            NativeRuntime.ThrowPendingFault(s);
+        }
         // the block found FPSCR outside the Vita mode at its entry (A64Opt.FpEntryCheck): the dispatcher interprets it
-        if (s->TierUpRequest == 2) { s->TierUpRequest = 0; CpuCore.Interpret(s, BlockBuilder.Build(s->R[15], s->Thumb != 0)); }
+        if (s->TierUpRequest == 2)
+        {
+            s->TierUpRequest = 0;
+            CpuCore.Interpret(s, BlockBuilder.Build(s->R[15], s->Thumb != 0));
+        }
     }
 
     [Arm64SandboxTheory]
@@ -50,9 +61,18 @@ public sealed unsafe partial class NativeJitTests
         foreach (var w in words.Split(','))
         {
             uint v = Convert.ToUInt32(w, 16);
-            if (!thumb) bytes.AddRange(BitConverter.GetBytes(v));
-            else if (w.Length > 4) bytes.AddRange([(byte)(v >> 16), (byte)(v >> 24), (byte)v, (byte)(v >> 8)]);
-            else bytes.AddRange([(byte)v, (byte)(v >> 8)]);
+            if (!thumb)
+            {
+                bytes.AddRange(BitConverter.GetBytes(v));
+            }
+            else if (w.Length > 4)
+            {
+                bytes.AddRange([(byte)(v >> 16), (byte)(v >> 24), (byte)v, (byte)(v >> 8)]);
+            }
+            else
+            {
+                bytes.AddRange([(byte)v, (byte)(v >> 8)]);
+            }
         }
         bytes.ToArray().CopyTo(GuestMemory.Span(CodeBase, 0x1000));
         var b = BlockBuilder.Build(CodeBase, thumb);
@@ -62,7 +82,12 @@ public sealed unsafe partial class NativeJitTests
         try
         {
             var st = new RandomState(new Random(5));
-            void Init() { st.Apply(s, thumb); s->R[13] = DataBase + 0x100; s->R[0] = DataBase + 0x200; }
+            void Init()
+            {
+                st.Apply(s, thumb);
+                s->R[13] = DataBase + 0x100;
+                s->R[0] = DataBase + 0x200;
+            }
             Init();
             var interp = Take(s, Guard(() => CpuCore.Interpret(s, b)));
             Init();
@@ -72,7 +97,10 @@ public sealed unsafe partial class NativeJitTests
             Assert.Equal(1, s->NBlocks);
             Assert.Equal(b.Insts.Length, s->NInstr);
         }
-        finally { CpuState.Free(s); }
+        finally
+        {
+            CpuState.Free(s);
+        }
     }
 
     [Arm64SandboxTheory]
@@ -98,8 +126,16 @@ public sealed unsafe partial class NativeJitTests
         NativeX64Compiler.ValidateIr = true;
         Arm64Emitter.VerifyAllocation = true;
         int oldMax = Arm64Emitter.MaxTempRegisters;
-        if (spillStress) Arm64Emitter.MaxTempRegisters = 2;
-        if (int.TryParse(Environment.GetEnvironmentVariable(EnvVars.FuzzIter), out int itOverride)) iterations = itOverride;
+        if (spillStress)
+        {
+            Arm64Emitter.MaxTempRegisters = 2;
+        }
+
+        if (int.TryParse(Environment.GetEnvironmentVariable(EnvVars.FuzzIter), out int itOverride))
+        {
+            iterations = itOverride;
+        }
+
         var rng = new Random(seed);
         var s = CpuState.Allocate();
         var failures = new Dictionary<string, (int Count, string Example)>();
@@ -109,11 +145,23 @@ public sealed unsafe partial class NativeJitTests
             for (int it = 0; it < iterations; it++)
             {
                 var b = RandomBlock(rng, thumb, 12, forUnicorn: false);
-                if (b == null) continue;
+                if (b == null)
+                {
+                    continue;
+                }
+
                 var st = new RandomState(rng);
                 var codeSnap = GuestMemory.Span(CodeBase, 0x1000).ToArray();
-                void Restore() { st.Apply(s, thumb); codeSnap.CopyTo(GuestMemory.Span(CodeBase, 0x1000)); }
-                if (Trace != null) { Trace.WriteLine($"{it} {(thumb ? "T" : "A")} {string.Join(",", b.Insts.Select(i => $"{i.Raw:X8}:{i.Op}"))}"); Trace.Flush(); }
+                void Restore()
+                {
+                    st.Apply(s, thumb);
+                    codeSnap.CopyTo(GuestMemory.Span(CodeBase, 0x1000));
+                }
+                if (Trace != null)
+                {
+                    Trace.WriteLine($"{it} {(thumb ? "T" : "A")} {string.Join(",", b.Insts.Select(i => $"{i.Raw:X8}:{i.Op}"))}");
+                    Trace.Flush();
+                }
                 Snapshot interp = default, prev = default;
                 bool stable = false;
                 for (int k = 0; k < 4 && !stable; k++)
@@ -123,8 +171,16 @@ public sealed unsafe partial class NativeJitTests
                     stable = k > 0 && Diff(prev, interp).Length == 0;
                     prev = interp;
                 }
-                if (!stable) { unstable++; continue; }
-                if (Trace != null) { Trace.WriteLine($"  arm64 regs {string.Join(" ", st.Regs.Select(r => r.ToString("X8")))} flags {st.Flags:X8}"); Trace.Flush(); }
+                if (!stable)
+                {
+                    unstable++;
+                    continue;
+                }
+                if (Trace != null)
+                {
+                    Trace.WriteLine($"  arm64 regs {string.Join(" ", st.Regs.Select(r => r.ToString("X8")))} flags {st.Flags:X8}");
+                    Trace.Flush();
+                }
                 var cb = NativeArm64Compiler.Instance.Compile(b, sb.Stubs);
                 Assert.NotNull(cb);
                 Restore();
@@ -133,14 +189,30 @@ public sealed unsafe partial class NativeJitTests
                 compared++;
                 insts += b.Insts.Length;
                 string d = Diff(interp, native);
-                if (native.Error == "InvalidOperationException" && interp.Error == null) d += " sandbox fault";
-                if (!accountingOk) d += $" accounting: blocks {s->NBlocks} instr {s->NInstr} cycles {s->CycleAcc} (expected 1/{b.Insts.Length}/{b.Cycles})";
+                if (native.Error == "InvalidOperationException" && interp.Error == null)
+                {
+                    d += " sandbox fault";
+                }
+
+                if (!accountingOk)
+                {
+                    d += $" accounting: blocks {s->NBlocks} instr {s->NInstr} cycles {s->CycleAcc} (expected 1/{b.Insts.Length}/{b.Cycles})";
+                }
+
                 if (d.Length > 0)
                 {
                     if (detailed++ < 6)
                     {
                         string why = "";
-                        try { Restore(); RunArm64(sb, s, cb!.NativeEntry); } catch (Exception e) { why = e.Message; }
+                        try
+                        {
+                            Restore();
+                            RunArm64(sb, s, cb!.NativeEntry);
+                        }
+                        catch (Exception e)
+                        {
+                            why = e.Message;
+                        }
                         output.WriteLine($"--- {b}:{d} {why}\nregs {string.Join(" ", st.Regs.Select(r => r.ToString("X8")))} flags {st.Flags:X8} fpscr {st.Fpscr:X8}\n{DescribeArm64(b, cb!)}");
                     }
                     Record(failures, "arm64", b, d);
@@ -155,7 +227,10 @@ public sealed unsafe partial class NativeJitTests
         }
         output.WriteLine($"compared {compared} blocks, {insts} instructions on the ARM64 backend ({unstable} skipped: memory-dependent), {sb.Callouts} callouts; failing kinds {failures.Count}");
         foreach (var (k, (count, ex)) in failures.OrderByDescending(f => f.Value.Count).Take(40))
+        {
             output.WriteLine($"{k,-40} x{count,-5} {ex}");
+        }
+
         Assert.True(failures.Count == 0, $"{failures.Count} kinds of differences (see output)");
     }
 
@@ -174,20 +249,32 @@ public sealed unsafe partial class NativeJitTests
             for (int it = 0; it <= index; it++)
             {
                 var b = RandomBlock(rng, thumb, 12, forUnicorn: false);
-                if (b == null) continue;
+                if (b == null)
+                {
+                    continue;
+                }
+
                 var st = new RandomState(rng);
-                if (it < index) continue;
+                if (it < index)
+                {
+                    continue;
+                }
+
                 var cb = NativeArm64Compiler.Instance.Compile(b, sb.Stubs)!;
                 output.WriteLine($"replay {b}\n{DescribeArm64(b, cb)}");
                 st.Apply(s, thumb);
                 var interp = Take(s, Guard(() => CpuCore.Interpret(s, b)));
                 st.Apply(s, thumb);
-                Console.Error.WriteLine($"native entry {cb.NativeEntry:X}"); Console.Error.Flush();
+                Console.Error.WriteLine($"native entry {cb.NativeEntry:X}");
+                Console.Error.Flush();
                 var native = Take(s, Guard(() => RunArm64(sb, s, cb.NativeEntry)));
                 output.WriteLine($"diff: {Diff(interp, native)}");
             }
         }
-        finally { CpuState.Free(s); }
+        finally
+        {
+            CpuState.Free(s);
+        }
     }
 
     /// <summary>VFP blocks with special operands, Vita FPSCR mode mostly (fast paths) and other modes (handler).</summary>
@@ -204,7 +291,11 @@ public sealed unsafe partial class NativeJitTests
     {
         EnsureGuestPages();
         using var sb = Arm64Runner.Create();
-        if (int.TryParse(Environment.GetEnvironmentVariable(EnvVars.FuzzIter), out int itOverride)) iterations = itOverride;
+        if (int.TryParse(Environment.GetEnvironmentVariable(EnvVars.FuzzIter), out int itOverride))
+        {
+            iterations = itOverride;
+        }
+
         var rng = new Random(seed);
         var s = CpuState.Allocate();
         var failures = new Dictionary<string, (int, string)>();
@@ -219,18 +310,38 @@ public sealed unsafe partial class NativeJitTests
                 {
                     uint r = (uint)rng.NextInt64();
                     uint ins = rng.Next(5) == 0 ? 0xEE000A10u | (r & 0x00FFF1EF) : 0xEE000A00u | (r & 0x00FFF1EF);
-                    if (rng.Next(3) == 0) ins = (ins & ~0x00B000C0u) | ((uint)rng.Next(8) << 4 & 0x00B00000) | (r & 0x40);
-                    if (thumb) ins = (ins & 0x00FFFFFF) | 0xEE000000;
+                    if (rng.Next(3) == 0)
+                    {
+                        ins = (ins & ~0x00B000C0u) | ((uint)rng.Next(8) << 4 & 0x00B00000) | (r & 0x40);
+                    }
+
+                    if (thumb)
+                    {
+                        ins = (ins & 0x00FFFFFF) | 0xEE000000;
+                    }
+
                     var d = !thumb ? Decoder.DecodeArm(ins, CodeBase) : Decoder.DecodeThumb32(ins, CodeBase, false, 14);
-                    if (d.EndsBlock || CpuFuzzTests.IsUnpredictable(d, thumb)) continue;
+                    if (d.EndsBlock || CpuFuzzTests.IsUnpredictable(d, thumb))
+                    {
+                        continue;
+                    }
+
                     code.AddRange(!thumb ? BitConverter.GetBytes(ins) : [(byte)(ins >> 16), (byte)(ins >> 24), (byte)ins, (byte)(ins >> 8)]);
                 }
-                if (code.Count == 0) continue;
+                if (code.Count == 0)
+                {
+                    continue;
+                }
+
                 code.AddRange(thumb ? [0xFE, 0xE7] : [0xFE, 0xFF, 0xFF, 0xEA]);
                 code.ToArray().CopyTo(GuestMemory.Span(CodeBase, 0x1000));
                 var b = BlockBuilder.Build(CodeBase, thumb);
                 var st = new RandomState(rng);
-                for (int i = 0; i < 32; i++) st.D[i] = CpuFuzzTests.RandomSpecialSimd(rng);
+                for (int i = 0; i < 32; i++)
+                {
+                    st.D[i] = CpuFuzzTests.RandomSpecialSimd(rng);
+                }
+
                 st.Fpscr = rng.Next(5) != 0 ? (uint)rng.Next(16) << 28 | 0x0300_0000 : (uint)rng.Next(16) << 28 | (uint)rng.Next(16) << 22;
                 st.Apply(s, thumb);
                 var interp = Take(s, Guard(() => CpuCore.Interpret(s, b)));
@@ -241,15 +352,25 @@ public sealed unsafe partial class NativeJitTests
                 string diff = Diff(interp, native);
                 if (diff.Length > 0)
                 {
-                    if (detailed++ < 4) output.WriteLine($"--- fpscr {st.Fpscr:X8} D=[{string.Join(" ", st.D.Take(16).Select(v => v.ToString("X16")))}]{diff}\n{DescribeArm64(b, cb)}");
+                    if (detailed++ < 4)
+                    {
+                        output.WriteLine($"--- fpscr {st.Fpscr:X8} D=[{string.Join(" ", st.D.Take(16).Select(v => v.ToString("X16")))}]{diff}\n{DescribeArm64(b, cb)}");
+                    }
+
                     Record(failures, "arm64", b, diff);
                 }
             }
         }
-        finally { CpuState.Free(s); }
+        finally
+        {
+            CpuState.Free(s);
+        }
         output.WriteLine($"compared {compared} VFP blocks on the ARM64 backend; failing kinds {failures.Count}");
         foreach (var (k, (count, ex)) in failures.OrderByDescending(f => f.Value.Item1).Take(40))
+        {
             output.WriteLine($"{k,-40} x{count,-5} {ex}");
+        }
+
         Assert.True(failures.Count == 0, $"{failures.Count} kinds of differences (see output)");
     }
 
@@ -296,15 +417,25 @@ public sealed unsafe partial class NativeJitTests
                 string diff = Diff(interp, native);
                 if (diff.Length > 0)
                 {
-                    if (detailed++ < 4) output.WriteLine($"--- fpscr {st.Fpscr:X8}{diff}\n{DescribeArm64(b, cb)}");
+                    if (detailed++ < 4)
+                    {
+                        output.WriteLine($"--- fpscr {st.Fpscr:X8}{diff}\n{DescribeArm64(b, cb)}");
+                    }
+
                     Record(failures, $"arm64 fpscr {st.Fpscr:X8}", b, diff);
                 }
             }
         }
-        finally { CpuState.Free(s); }
+        finally
+        {
+            CpuState.Free(s);
+        }
         output.WriteLine($"compared {compared} fixed-point conversion blocks on the ARM64 backend; failing kinds {failures.Count}");
         foreach (var (k, (count, ex)) in failures.OrderByDescending(f => f.Value.Item1).Take(20))
+        {
             output.WriteLine($"{k,-40} x{count,-5} {ex}");
+        }
+
         Assert.True(failures.Count == 0, $"{failures.Count} kinds of differences (see output)");
     }
 
@@ -349,7 +480,11 @@ public sealed unsafe partial class NativeJitTests
     {
         EnsureGuestPages();
         using var sb = Arm64Runner.Create();
-        if (int.TryParse(Environment.GetEnvironmentVariable(EnvVars.FuzzIter), out int itOverride)) iterations = itOverride;
+        if (int.TryParse(Environment.GetEnvironmentVariable(EnvVars.FuzzIter), out int itOverride))
+        {
+            iterations = itOverride;
+        }
+
         bool oldValidate = NativeX64Compiler.ValidateIr;
         NativeX64Compiler.ValidateIr = true;
         var rng = new Random(seed);
@@ -361,28 +496,47 @@ public sealed unsafe partial class NativeJitTests
             for (int it = 0; it < iterations; it++)
             {
                 var b = NeonBlock(rng, thumb, cls);
-                if (b == null) continue;
+                if (b == null)
+                {
+                    continue;
+                }
+
                 var st = new RandomState(rng);
                 NeonState(rng, st);
                 st.Apply(s, thumb);
                 var interp = Take(s, Guard(() => CpuCore.Interpret(s, b)));
                 var cb = NativeArm64Compiler.Instance.Compile(b, sb.Stubs)!;
-                if (NativeArm64Compiler.NewFrontend().Translate(b).Callouts == 0) inlined++;
+                if (NativeArm64Compiler.NewFrontend().Translate(b).Callouts == 0)
+                {
+                    inlined++;
+                }
+
                 st.Apply(s, thumb);
                 var native = Take(s, Guard(() => RunArm64(sb, s, cb.NativeEntry)));
                 compared++;
                 string diff = Diff(interp, native);
                 if (diff.Length > 0)
                 {
-                    if (detailed++ < 6) output.WriteLine($"--- fpscr {st.Fpscr:X8} D=[{string.Join(" ", st.D.Select(v => v.ToString("X16")))}]{diff}\n{DescribeArm64(b, cb)}");
+                    if (detailed++ < 6)
+                    {
+                        output.WriteLine($"--- fpscr {st.Fpscr:X8} D=[{string.Join(" ", st.D.Select(v => v.ToString("X16")))}]{diff}\n{DescribeArm64(b, cb)}");
+                    }
+
                     Record(failures, "arm64", b, diff);
                 }
             }
         }
-        finally { CpuState.Free(s); NativeX64Compiler.ValidateIr = oldValidate; }
+        finally
+        {
+            CpuState.Free(s);
+            NativeX64Compiler.ValidateIr = oldValidate;
+        }
         output.WriteLine($"compared {compared} NEON blocks on the ARM64 backend ({inlined} fully inline); failing kinds {failures.Count}");
         foreach (var (k, (count, ex)) in failures.OrderByDescending(f => f.Value.Item1).Take(40))
+        {
             output.WriteLine($"{k,-40} x{count,-5} {ex}");
+        }
+
         Assert.True(failures.Count == 0, $"{failures.Count} kinds of differences (see output)");
     }
 
@@ -412,12 +566,29 @@ public sealed unsafe partial class NativeJitTests
                 bool storeOnly = scenario >= 1;
                 uint at = scenario == 6 ? addr + 2 : addr; // unaligned: the plain-store path
                 var bytes = new List<byte>();
-                if (!thumb) foreach (var w in storeOnly ? armStore : armFull) bytes.AddRange(BitConverter.GetBytes(w));
-                else foreach (var w in storeOnly ? thumbStore : thumbFull)
+                if (!thumb)
                 {
-                    uint v = Convert.ToUInt32(w, 16);
-                    if (w.Length > 4) bytes.AddRange([(byte)(v >> 16), (byte)(v >> 24), (byte)v, (byte)(v >> 8)]); else bytes.AddRange([(byte)v, (byte)(v >> 8)]);
+                    foreach (var w in storeOnly ? armStore : armFull)
+                    {
+                        bytes.AddRange(BitConverter.GetBytes(w));
+                    }
                 }
+                else
+                {
+                    foreach (var w in storeOnly ? thumbStore : thumbFull)
+                    {
+                        uint v = Convert.ToUInt32(w, 16);
+                        if (w.Length > 4)
+                        {
+                            bytes.AddRange([(byte)(v >> 16), (byte)(v >> 24), (byte)v, (byte)(v >> 8)]);
+                        }
+                        else
+                        {
+                            bytes.AddRange([(byte)v, (byte)(v >> 8)]);
+                        }
+                    }
+                }
+
                 bytes.ToArray().CopyTo(GuestMemory.Span(CodeBase, 0x1000));
                 var b = BlockBuilder.Build(CodeBase, thumb);
                 var cb = NativeArm64Compiler.Instance.Compile(b, sb.Stubs)!;
@@ -427,19 +598,58 @@ public sealed unsafe partial class NativeJitTests
 
                 (Snapshot Snap, uint GenDelta) Run(bool native)
                 {
-                    *s = default; s->MemBase = GuestMemory.Base;
-                    s->R[0] = at; s->R[1] = 0x1234; s->R[2] = 0x1234; s->R[3] = 0x5678; s->R[4] = 0x99; s->R[15] = CodeBase; s->Thumb = thumb ? 1u : 0u;
-                    GuestMemory.Write(at, unchecked((uint)mem0)); GuestMemory.Write(at + 4, (uint)(mem0 >> 32));
+                    *s = default;
+                    s->MemBase = GuestMemory.Base;
+                    s->R[0] = at;
+                    s->R[1] = 0x1234;
+                    s->R[2] = 0x1234;
+                    s->R[3] = 0x5678;
+                    s->R[4] = 0x99;
+                    s->R[15] = CodeBase;
+                    s->Thumb = thumb ? 1u : 0u;
+                    GuestMemory.Write(at, unchecked((uint)mem0));
+                    GuestMemory.Write(at + 4, (uint)(mem0 >> 32));
                     uint g0 = gens[genIdx];
                     switch (scenario)
                     {
-                        case 1: s->ExclusiveValid = 0; break;
-                        case 2: s->ExclusiveValid = 1; s->ExclusiveAddr = at + 8; s->ExclusiveGen = g0; s->ExclusiveValue = mem0; break;
-                        case 3: s->ExclusiveValid = 1; s->ExclusiveAddr = at; s->ExclusiveGen = g0 - 2; s->ExclusiveValue = mem0; break;
-                        case 4: s->ExclusiveValid = 1; s->ExclusiveAddr = at; s->ExclusiveGen = g0; s->ExclusiveValue = mem0 ^ (dual ? 1ul << 40 : 1); break;
-                        case 5: case 6: s->ExclusiveValid = 1; s->ExclusiveAddr = at; s->ExclusiveGen = g0; s->ExclusiveValue = mem0; break;
+                        case 1:
+                            s->ExclusiveValid = 0;
+                            break;
+                        case 2:
+                            s->ExclusiveValid = 1;
+                            s->ExclusiveAddr = at + 8;
+                            s->ExclusiveGen = g0;
+                            s->ExclusiveValue = mem0;
+                            break;
+                        case 3:
+                            s->ExclusiveValid = 1;
+                            s->ExclusiveAddr = at;
+                            s->ExclusiveGen = g0 - 2;
+                            s->ExclusiveValue = mem0;
+                            break;
+                        case 4:
+                            s->ExclusiveValid = 1;
+                            s->ExclusiveAddr = at;
+                            s->ExclusiveGen = g0;
+                            s->ExclusiveValue = mem0 ^ (dual ? 1ul << 40 : 1);
+                            break;
+                        case 5:
+                        case 6:
+                            s->ExclusiveValid = 1;
+                            s->ExclusiveAddr = at;
+                            s->ExclusiveGen = g0;
+                            s->ExclusiveValue = mem0;
+                            break;
                     }
-                    if (native) RunArm64(sb, s, cb.NativeEntry); else CpuCore.Interpret(s, b);
+                    if (native)
+                    {
+                        RunArm64(sb, s, cb.NativeEntry);
+                    }
+                    else
+                    {
+                        CpuCore.Interpret(s, b);
+                    }
+
                     return (Take(s, null), gens[genIdx] - g0);
                 }
                 var i = Run(false);
@@ -450,7 +660,10 @@ public sealed unsafe partial class NativeJitTests
                 output.WriteLine($"scenario {scenario}: status {(dual ? n.Snap.R[4] : n.Snap.R[2])} gen +{n.GenDelta}");
             }
         }
-        finally { CpuState.Free(s); }
+        finally
+        {
+            CpuState.Free(s);
+        }
     }
 
     /// <summary>
@@ -474,7 +687,11 @@ public sealed unsafe partial class NativeJitTests
         ];
         var code = GuestMemory.Span(CodeBase, 0x1000);
         code.Clear();
-        for (int i = 0; i < prog.Length; i++) BitConverter.GetBytes(prog[i]).CopyTo(code[(i * 4)..]);
+        for (int i = 0; i < prog.Length; i++)
+        {
+            BitConverter.GetBytes(prog[i]).CopyTo(code[(i * 4)..]);
+        }
+
         var loop = BlockBuilder.Build(CodeBase, false);
         var tail = BlockBuilder.Build(CodeBase + 0xC, false);
         var target = BlockBuilder.Build(CodeBase + 0x10, false);
@@ -485,29 +702,45 @@ public sealed unsafe partial class NativeJitTests
         try
         {
             // interpreter reference: block by block
-            *s = default; s->MemBase = GuestMemory.Base; s->R[14] = CodeBase + 0x10; s->R[15] = CodeBase;
+            *s = default;
+            s->MemBase = GuestMemory.Base;
+            s->R[14] = CodeBase + 0x10;
+            s->R[15] = CodeBase;
             long blocks = 0, cycles = 0;
             var all = new[] { loop, tail, target };
             while (s->Exit == ExitReason.None)
             {
                 var b = all.First(x => x.Start == s->R[15]);
-                CpuCore.Interpret(s, b); blocks++; cycles += b.Cycles;
+                CpuCore.Interpret(s, b);
+                blocks++;
+                cycles += b.Cycles;
             }
             uint r0 = s->R[0], r1 = s->R[1];
 
             // native, driven like CpuCore.Run: run, then link the static exit that returned (if its slot is empty)
             sb.Publish(target.Start, false, cTarget.NativeEntry);
             var entries = new Dictionary<uint, nint> { [loop.Start] = cLoop.NativeEntry, [tail.Start] = cTail.NativeEntry, [target.Start] = cTarget.NativeEntry };
-            *s = default; s->MemBase = GuestMemory.Base; s->R[14] = CodeBase + 0x10; s->R[15] = CodeBase;
+            *s = default;
+            s->MemBase = GuestMemory.Base;
+            s->R[14] = CodeBase + 0x10;
+            s->R[15] = CodeBase;
             long nb = 0, cyc = 0;
             int runs = 0;
             while (s->Exit == ExitReason.None)
             {
-                s->CycleAcc = 0; s->CheckWindow = 1L << 40; s->LinkBreak = 0; s->NBlocks = 0; s->NInstr = 0;
+                s->CycleAcc = 0;
+                s->CheckWindow = 1L << 40;
+                s->LinkBreak = 0;
+                s->NBlocks = 0;
+                s->NInstr = 0;
                 sb.Run(s, entries[s->R[15]]);
                 runs++;
-                nb += s->NBlocks; cyc += s->CycleAcc;
-                if (s->LastExitSlot != 0 && *(nint*)s->LastExitSlot == 0) *(nint*)s->LastExitSlot = entries[s->R[15]];
+                nb += s->NBlocks;
+                cyc += s->CycleAcc;
+                if (s->LastExitSlot != 0 && *(nint*)s->LastExitSlot == 0)
+                {
+                    *(nint*)s->LastExitSlot = entries[s->R[15]];
+                }
             }
             Assert.True(runs <= 3, $"{runs} trips through the dispatcher: chaining did not happen");
             output.WriteLine($"interpreter: {blocks} blocks; native: {nb} blocks");
@@ -517,7 +750,10 @@ public sealed unsafe partial class NativeJitTests
             Assert.Equal(blocks, nb);
             Assert.Equal(cycles, cyc);
         }
-        finally { CpuState.Free(s); }
+        finally
+        {
+            CpuState.Free(s);
+        }
     }
 
     /// <summary>
@@ -527,7 +763,11 @@ public sealed unsafe partial class NativeJitTests
     [Arm64SandboxFact]
     public void Arm64LazyCommitHandler()
     {
-        if (Arm64Runner.Native) return; // Windows-only code; the sandbox replaces VirtualAlloc with a stub
+        if (Arm64Runner.Native)
+        {
+            return; // Windows-only code; the sandbox replaces VirtualAlloc with a stub
+        }
+
         using var sb = new Arm64Sandbox();
         const ulong Base = 0x7000_0000_0000, Size = 0x1_0001_0000;
         var code = NativeRuntime.Instance.Code;
@@ -559,7 +799,10 @@ public sealed unsafe partial class NativeJitTests
             Assert.Equal(0UL, Run(0xC0000005, Base + 8) & 0xFFFFFFFF);
             Assert.NotNull(call);
         }
-        finally { System.Runtime.InteropServices.NativeMemory.Free(mem); }
+        finally
+        {
+            System.Runtime.InteropServices.NativeMemory.Free(mem);
+        }
     }
 
     /// <summary>The generated cache-maintenance helper (Linux/Android ARM64 __clear_cache) runs and returns.</summary>

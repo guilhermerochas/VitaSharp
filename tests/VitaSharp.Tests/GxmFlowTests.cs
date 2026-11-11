@@ -30,10 +30,20 @@ public sealed class GxmFlowTests : IDisposable
         public void Execute(GpuCommand command)
         {
             Kinds.Enqueue(command.GetType().Name);
-            if (command is BeginSceneCommand b) LastBegin = b;
-            if (command is DrawCommand d) { Draws++; LastDraw = (d.IndexAddress, d.IndexCount, d.PrimitiveType, d.InstanceCount); }
+            if (command is BeginSceneCommand b)
+            {
+                LastBegin = b;
+            }
+
+            if (command is DrawCommand d)
+            {
+                Draws++;
+                LastDraw = (d.IndexAddress, d.IndexCount, d.PrimitiveType, d.InstanceCount);
+            }
         }
-        public void Dispose() { }
+        public void Dispose()
+        {
+        }
     }
 
     readonly HleHarness _h;
@@ -66,9 +76,12 @@ public sealed class GxmFlowTests : IDisposable
     uint Context()
     {
         uint p = _h.Alloc(0x24), o = Out();
-        GuestMemory.W32(p + 8, _h.Alloc(0x1000)); GuestMemory.W32(p + 12, 0x1000);    // VDM ring
-        GuestMemory.W32(p + 16, _h.Alloc(0x4000)); GuestMemory.W32(p + 20, 0x4000);   // vertex ring
-        GuestMemory.W32(p + 24, _h.Alloc(0x4000)); GuestMemory.W32(p + 28, 0x4000);   // fragment ring
+        GuestMemory.W32(p + 8, _h.Alloc(0x1000));
+        GuestMemory.W32(p + 12, 0x1000);    // VDM ring
+        GuestMemory.W32(p + 16, _h.Alloc(0x4000));
+        GuestMemory.W32(p + 20, 0x4000);   // vertex ring
+        GuestMemory.W32(p + 24, _h.Alloc(0x4000));
+        GuestMemory.W32(p + 28, 0x4000);   // fragment ring
         Assert.Equal(0, Call(G, "sceGxmCreateContext", p, new Ptr<uint>(o)));
         return GuestMemory.R32(o);
     }
@@ -76,7 +89,9 @@ public sealed class GxmFlowTests : IDisposable
     uint RenderTarget(ushort w, ushort h)
     {
         uint p = _h.Alloc(0x14), o = Out();
-        GuestMemory.Write(p + 4, w); GuestMemory.Write(p + 6, h); GuestMemory.Write(p + 8, (ushort)1);
+        GuestMemory.Write(p + 4, w);
+        GuestMemory.Write(p + 6, h);
+        GuestMemory.Write(p + 8, (ushort)1);
         GuestMemory.W32(p + 16, 0x1234);
         Assert.Equal(0, Call(G, "sceGxmCreateRenderTarget", p, new Ptr<uint>(o)));
         return GuestMemory.R32(o);
@@ -91,11 +106,19 @@ public sealed class GxmFlowTests : IDisposable
         uint p = _h.Alloc(size);
         GuestMemory.W32(p, 0x00505847);
         GuestMemory.W32(p + 8, size);
-        if (fragment) GuestMemory.W32(p + 0x14, GxpProgram.FlagFragment);
+        if (fragment)
+        {
+            GuestMemory.W32(p + 0x14, GxpProgram.FlagFragment);
+        }
+
         GuestMemory.W32(p + 0x3C, (uint)code.Length);
         GuestMemory.W32(p + 0x40, 0x100 - 0x40);
         GuestMemory.W32(p + 0x64, defaultUniforms);
-        for (int i = 0; i < code.Length; i++) { GuestMemory.W32(p + 0x100 + (uint)i * 8, (uint)code[i]); GuestMemory.W32(p + 0x104 + (uint)i * 8, (uint)(code[i] >> 32)); }
+        for (int i = 0; i < code.Length; i++)
+        {
+            GuestMemory.W32(p + 0x100 + (uint)i * 8, (uint)code[i]);
+            GuestMemory.W32(p + 0x104 + (uint)i * 8, (uint)(code[i] >> 32));
+        }
         return p;
     }
 
@@ -109,7 +132,8 @@ public sealed class GxmFlowTests : IDisposable
         Assert.Equal(0, Call(G, "sceGxmShaderPatcherRegisterProgram", patcher, Program(false, vUniforms), new Ptr<uint>(vid)));
         Assert.Equal(0, Call(G, "sceGxmShaderPatcherRegisterProgram", patcher, Program(true, fUniforms), new Ptr<uint>(fid)));
         uint attr = _h.Alloc(8), stream = _h.Alloc(4), vp = Out(), fp = Out();
-        GuestMemory.Write(attr + 4, (byte)0); GuestMemory.Write(attr + 5, (byte)3); // F32 x3 from stream 0
+        GuestMemory.Write(attr + 4, (byte)0);
+        GuestMemory.Write(attr + 5, (byte)3); // F32 x3 from stream 0
         GuestMemory.Write(stream, (ushort)12);
         Assert.Equal(0, Call(G, "sceGxmShaderPatcherCreateVertexProgram", patcher, GuestMemory.R32(vid), attr, 1u, stream, 1u, new Ptr<uint>(vp)));
         Assert.Equal(0, Call(G, "sceGxmShaderPatcherCreateFragmentProgram", patcher, GuestMemory.R32(fid), 0u, 0u, 0u, GuestMemory.R32(vp), new Ptr<uint>(fp)));
@@ -152,7 +176,10 @@ public sealed class GxmFlowTests : IDisposable
         Assert.Equal(0, Call(G, "sceGxmUnmapVertexUsseMemory", mem));
         Assert.Equal(0, Call(G, "sceGxmUnmapFragmentUsseMemory", mem));
         foreach (var fn in new[] { "sceGxmIsDebugVersion", "sceGxmIsInitializationInternal", "sceGxmPadTriggerGpuPaTrace" })
+        {
             Assert.Equal(0, Call(G, fn));
+        }
+
         Assert.Equal(0, Call(G, "sceGxmSetWarningEnabled", 1u, 0u));
         Assert.Equal(0, Call(G, "sceGxmPadHeartbeat", 0u, 0u));
         Assert.Equal(INVALID_POINTER, Call(G, "sceGxmAddRazorGpuCaptureBuffer", 0u, 0u));
@@ -236,7 +263,8 @@ public sealed class GxmFlowTests : IDisposable
         Assert.Equal(0, Call(G, "sceGxmMidSceneFlush", ctx, 0u, 0u, 0u));
         // fragment notification: written by the GPU once the scene is done
         uint word = _h.Word(0), notif = _h.Alloc(8);
-        GuestMemory.W32(notif, word); GuestMemory.W32(notif + 4, 0x77);
+        GuestMemory.W32(notif, word);
+        GuestMemory.W32(notif + 4, 0x77);
         Assert.Equal(0, Call(G, "sceGxmEndScene", ctx, 0u, notif));
         Finish();
         Assert.Equal(0x77u, GuestMemory.R32(word));
@@ -252,7 +280,8 @@ public sealed class GxmFlowTests : IDisposable
 
         // the old SDK's entry carries the valid region at +8; a disabled colour surface renders without colour
         uint region = _h.Alloc(16), off = _h.Alloc(0x40);
-        GuestMemory.W32(region + 8, 479); GuestMemory.W32(region + 12, 271);
+        GuestMemory.W32(region + 8, 479);
+        GuestMemory.W32(region + 12, 271);
         Assert.Equal(0, Call(G, "sceGxmColorSurfaceInitDisabled", off));
         Assert.False((bool)Invoke(G, "sceGxmColorSurfaceIsEnabled", off)!);
         Assert.Equal(0, Call(G, "_sceGxmBeginScene", ctx, 0u, rt, region, 0u, 0u, off, 0u));
@@ -334,7 +363,10 @@ public sealed class GxmFlowTests : IDisposable
         Assert.Equal(INVALID_POINTER, Call(G, "sceGxmShaderPatcherUnregisterProgram", 0x1234u, 0u));
         foreach (var fn in new[] { "sceGxmShaderPatcherGetHostMemAllocated", "sceGxmShaderPatcherGetBufferMemAllocated",
             "sceGxmShaderPatcherGetVertexUsseMemAllocated", "sceGxmShaderPatcherGetFragmentUsseMemAllocated" })
+        {
             Assert.Equal(0u, (uint)Invoke(G, fn, patcher)!);
+        }
+
         Assert.Equal(0, Call(G, "sceGxmShaderPatcherDestroy", patcher));
     }
 
@@ -371,27 +403,43 @@ public sealed class GxmFlowTests : IDisposable
         // the void setters take any value on a known context and ignore an unknown one
         foreach (uint c in new[] { ctx, 0x1234u })
         {
-            Invoke(G, "sceGxmSetCullMode", c, 1u); Invoke(G, "sceGxmSetTwoSidedEnable", c, 1u);
-            Invoke(G, "sceGxmSetFrontDepthFunc", c, 0x00400000u); Invoke(G, "sceGxmSetBackDepthFunc", c, 0x00400000u);
-            Invoke(G, "sceGxmSetFrontDepthWriteEnable", c, 0u); Invoke(G, "sceGxmSetBackDepthWriteEnable", c, 1u);
-            Invoke(G, "sceGxmSetFrontFragmentProgramEnable", c, 0u); Invoke(G, "sceGxmSetBackFragmentProgramEnable", c, 0u);
-            Invoke(G, "sceGxmSetFrontPolygonMode", c, 0x8000u); Invoke(G, "sceGxmSetBackPolygonMode", c, 0u);
-            Invoke(G, "sceGxmSetWBufferEnable", c, 0x4000u); Invoke(G, "sceGxmSetWClampEnable", c, 1u); Invoke(G, "sceGxmSetWClampValue", c, 1f);
-            Invoke(G, "sceGxmSetFrontLineFillLastPixelEnable", c, 1u); Invoke(G, "sceGxmSetBackLineFillLastPixelEnable", c, 1u);
-            Invoke(G, "sceGxmSetFrontPointLineWidth", c, 2u); Invoke(G, "sceGxmSetBackPointLineWidth", c, 2u);
-            Invoke(G, "sceGxmSetFrontDepthBias", c, 1, 2); Invoke(G, "sceGxmSetBackDepthBias", c, 1, 2);
+            Invoke(G, "sceGxmSetCullMode", c, 1u);
+            Invoke(G, "sceGxmSetTwoSidedEnable", c, 1u);
+            Invoke(G, "sceGxmSetFrontDepthFunc", c, 0x00400000u);
+            Invoke(G, "sceGxmSetBackDepthFunc", c, 0x00400000u);
+            Invoke(G, "sceGxmSetFrontDepthWriteEnable", c, 0u);
+            Invoke(G, "sceGxmSetBackDepthWriteEnable", c, 1u);
+            Invoke(G, "sceGxmSetFrontFragmentProgramEnable", c, 0u);
+            Invoke(G, "sceGxmSetBackFragmentProgramEnable", c, 0u);
+            Invoke(G, "sceGxmSetFrontPolygonMode", c, 0x8000u);
+            Invoke(G, "sceGxmSetBackPolygonMode", c, 0u);
+            Invoke(G, "sceGxmSetWBufferEnable", c, 0x4000u);
+            Invoke(G, "sceGxmSetWClampEnable", c, 1u);
+            Invoke(G, "sceGxmSetWClampValue", c, 1f);
+            Invoke(G, "sceGxmSetFrontLineFillLastPixelEnable", c, 1u);
+            Invoke(G, "sceGxmSetBackLineFillLastPixelEnable", c, 1u);
+            Invoke(G, "sceGxmSetFrontPointLineWidth", c, 2u);
+            Invoke(G, "sceGxmSetBackPointLineWidth", c, 2u);
+            Invoke(G, "sceGxmSetFrontDepthBias", c, 1, 2);
+            Invoke(G, "sceGxmSetBackDepthBias", c, 1, 2);
             Invoke(G, "sceGxmSetFrontStencilFunc", c, 0x0E000000u, 1u, 2u, 3u, 0xFFu, 0xFFu);
             Invoke(G, "sceGxmSetBackStencilFunc", c, 0x0E000000u, 1u, 2u, 3u, 0xFFu, 0xFFu);
-            Invoke(G, "sceGxmSetFrontStencilRef", c, 5u); Invoke(G, "sceGxmSetBackStencilRef", c, 6u);
+            Invoke(G, "sceGxmSetFrontStencilRef", c, 5u);
+            Invoke(G, "sceGxmSetBackStencilRef", c, 6u);
             Invoke(G, "sceGxmSetViewport", c, 480f, 480f, 272f, -272f, 0.5f, 0.5f);
             Invoke(G, "sceGxmSetViewportEnable", c, 0u);
             Invoke(G, "sceGxmSetRegionClip", c, 0x40000000u, 0u, 0u, 959u, 543u);
             Invoke(G, "sceGxmSetDefaultRegionClipAndViewport", c, 959u, 543u);
-            Invoke(G, "sceGxmSetFrontVisibilityTestEnable", c, 1u); Invoke(G, "sceGxmSetBackVisibilityTestEnable", c, 1u);
-            Invoke(G, "sceGxmSetFrontVisibilityTestIndex", c, 1u); Invoke(G, "sceGxmSetBackVisibilityTestIndex", c, 1u);
-            Invoke(G, "sceGxmSetFrontVisibilityTestOp", c, 1u); Invoke(G, "sceGxmSetBackVisibilityTestOp", c, 0u);
-            Invoke(G, "sceGxmSetPrecomputedVertexState", c, 0u); Invoke(G, "sceGxmSetPrecomputedFragmentState", c, 0u);
-            Invoke(G, "sceGxmSetVertexProgram", c, 0u); Invoke(G, "sceGxmSetFragmentProgram", c, 0u);
+            Invoke(G, "sceGxmSetFrontVisibilityTestEnable", c, 1u);
+            Invoke(G, "sceGxmSetBackVisibilityTestEnable", c, 1u);
+            Invoke(G, "sceGxmSetFrontVisibilityTestIndex", c, 1u);
+            Invoke(G, "sceGxmSetBackVisibilityTestIndex", c, 1u);
+            Invoke(G, "sceGxmSetFrontVisibilityTestOp", c, 1u);
+            Invoke(G, "sceGxmSetBackVisibilityTestOp", c, 0u);
+            Invoke(G, "sceGxmSetPrecomputedVertexState", c, 0u);
+            Invoke(G, "sceGxmSetPrecomputedFragmentState", c, 0u);
+            Invoke(G, "sceGxmSetVertexProgram", c, 0u);
+            Invoke(G, "sceGxmSetFragmentProgram", c, 0u);
         }
         Assert.Equal(0, Call(G, "sceGxmSetValidationEnable", ctx, 1u));
     }
@@ -403,9 +451,12 @@ public sealed class GxmFlowTests : IDisposable
         uint imm = Context(), rt = RenderTarget(64, 64);
         var (vp, fp, _) = Programs();
         uint p = _h.Alloc(0x30), o = Out();
-        GuestMemory.W32(p + 0x18, _h.Alloc(0x2000)); GuestMemory.W32(p + 0x1C, 0x2000);
-        GuestMemory.W32(p + 0x20, _h.Alloc(0x4000)); GuestMemory.W32(p + 0x24, 0x4000);
-        GuestMemory.W32(p + 0x28, _h.Alloc(0x4000)); GuestMemory.W32(p + 0x2C, 0x4000);
+        GuestMemory.W32(p + 0x18, _h.Alloc(0x2000));
+        GuestMemory.W32(p + 0x1C, 0x2000);
+        GuestMemory.W32(p + 0x20, _h.Alloc(0x4000));
+        GuestMemory.W32(p + 0x24, 0x4000);
+        GuestMemory.W32(p + 0x28, _h.Alloc(0x4000));
+        GuestMemory.W32(p + 0x2C, 0x4000);
         Assert.Equal(INVALID_POINTER, Call(G, "sceGxmCreateDeferredContext", 0u, new Ptr<uint>(o)));
         Assert.Equal(0, Call(G, "sceGxmCreateDeferredContext", p, new Ptr<uint>(o)));
         uint def = GuestMemory.R32(o), type = Out();
@@ -641,7 +692,8 @@ public sealed class GxmFlowTests : IDisposable
         Init();
         const int W = 8, H = 4;
         uint src = _h.Alloc(W * H * 4), dst = _h.Alloc(W * H * 4), word = _h.Word(0), notif = _h.Alloc(8);
-        GuestMemory.W32(notif, word); GuestMemory.W32(notif + 4, 5);
+        GuestMemory.W32(notif, word);
+        GuestMemory.W32(notif + 4, 5);
         // fill a 4x2 block at (2,1) of a linear 8x4 surface
         Assert.Equal(INVALID_POINTER, Call(G, "sceGxmTransferFill", 0u, 0x000C0000u, 0u, 0u, 0u, 1u, 1u, W * 4, 0u, 0u, 0u));
         Assert.Equal(0, Call(G, "sceGxmTransferFill", 0xFF00FF00u, 0x000C0000u, src, 2u, 1u, 4u, 2u, W * 4, 0u, 0u, notif));
@@ -652,7 +704,14 @@ public sealed class GxmFlowTests : IDisposable
         Assert.Equal(0u, GuestMemory.R32(src + (1 * W + 1) * 4));
         Assert.Equal(0u, GuestMemory.R32(src + (3 * W + 2) * 4));
         // copy with a colour key: key mode 1 copies only the pixels matching the key
-        for (uint i = 0; i < W * H; i++) if (GuestMemory.R32(src + i * 4) == 0) GuestMemory.W32(src + i * 4, 0x11111111);
+        for (uint i = 0; i < W * H; i++)
+        {
+            if (GuestMemory.R32(src + i * 4) == 0)
+            {
+                GuestMemory.W32(src + i * 4, 0x11111111);
+            }
+        }
+
         Assert.Equal(INVALID_POINTER, Call(G, "sceGxmTransferCopy", 1u, 1u, 0u, 0u, 0u, 0x000C0000u, 0u, 0u, 0u, 0u, W * 4, 0x000C0000u, 0u, dst, 0u, 0u, W * 4, 0u, 0u, 0u));
         Assert.Equal(0, Call(G, "sceGxmTransferCopy", (uint)W, (uint)H, 0xFF00FF00u, 0xFFFFFFFFu, 1u, 0x000C0000u, 0u, src, 0u, 0u, W * 4,
             0x000C0000u, 0u, dst, 0u, 0u, W * 4, 0u, 0u, 0u));
@@ -678,14 +737,19 @@ public sealed class GxmFlowTests : IDisposable
     {
         Init();
         uint so = Out(), a, b;
-        Call(G, "sceGxmSyncObjectCreate", new Ptr<uint>(so)); a = GuestMemory.R32(so);
-        Call(G, "sceGxmSyncObjectCreate", new Ptr<uint>(so)); b = GuestMemory.R32(so);
+        Call(G, "sceGxmSyncObjectCreate", new Ptr<uint>(so));
+        a = GuestMemory.R32(so);
+        Call(G, "sceGxmSyncObjectCreate", new Ptr<uint>(so));
+        b = GuestMemory.R32(so);
         Assert.Equal(INVALID_POINTER, Call(G, "sceGxmDisplayQueueAddEntry", 0u, b, 0u));
         uint data = _h.Word(0x1234);
         _h.OnGuest(_ =>
         {
             for (int i = 0; i < 4; i++)
+            {
                 Assert.Equal(0, Call(G, "sceGxmDisplayQueueAddEntry", i % 2 == 0 ? a : b, i % 2 == 0 ? b : a, data));
+            }
+
             Assert.Equal(0, Call(G, "sceGxmDisplayQueueFinish"));
             Assert.Equal(0, Call(G, "sceGxmWaitEvent"));
         });

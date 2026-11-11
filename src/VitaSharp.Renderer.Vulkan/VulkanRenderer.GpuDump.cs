@@ -18,8 +18,16 @@ public sealed unsafe partial class VulkanRenderer
     /// <summary>Reads back every colour render target (GPU worker, at a frame boundary; waits for the GPU).</summary>
     public byte[]? ExportDumpState()
     {
-        if (ResScale != 1f) { Log.Warn("[gpudump] render targets are not carried in dumps taken at a resolution scale (VITASHARP_RES_SCALE)"); return null; }
-        if (F.Recording) { SubmitFrame(false, 0); _drawsSinceSubmit = 0; }
+        if (ResScale != 1f)
+        {
+            Log.Warn("[gpudump] render targets are not carried in dumps taken at a resolution scale (VITASHARP_RES_SCALE)");
+            return null;
+        }
+        if (F.Recording)
+        {
+            SubmitFrame(false, 0);
+            _drawsSinceSubmit = 0;
+        }
         DrainPresent();
         _vk.DeviceWaitIdle(_dev);
         var targets = _renderTargets.Values.OrderBy(t => t.LastScene).ThenBy(t => t.LastUsedFrame).ToList();
@@ -33,8 +41,13 @@ public sealed unsafe partial class VulkanRenderer
             foreach (var rt in targets)
             {
                 uint bpp = (uint)HostBytesPerPixel(rt.Format), bytes = rt.Width * rt.Height * bpp;
-                w.U32(rt.Address); w.U32(rt.Width); w.U32(rt.Height); w.U32(rt.ColorFormat); w.U32(rt.Stride);
-                w.I32((int)rt.Format); w.U32(bpp);
+                w.U32(rt.Address);
+                w.U32(rt.Width);
+                w.U32(rt.Height);
+                w.U32(rt.ColorFormat);
+                w.U32(rt.Stride);
+                w.I32((int)rt.Format);
+                w.U32(bpp);
                 var (buf, mem, ptr) = _core.CreateHostBuffer(bytes, BufferUsageFlags.TransferDstBit, MemCat.GpuDump);
                 var ai = new CommandBufferAllocateInfo { SType = StructureType.CommandBufferAllocateInfo, CommandPool = pool, Level = CommandBufferLevel.Primary, CommandBufferCount = 1 };
                 CommandBuffer cmd = default;
@@ -55,11 +68,17 @@ public sealed unsafe partial class VulkanRenderer
                 {
                     // one buffer per target, released before the next (a failure must not leak it)
                     _core.DestroyBuffer(buf, mem);
-                    if (cmd.Handle != 0) _vk.FreeCommandBuffers(_dev, pool, 1, in cmd);
+                    if (cmd.Handle != 0)
+                    {
+                        _vk.FreeCommandBuffers(_dev, pool, 1, in cmd);
+                    }
                 }
             }
         }
-        finally { _vk.DestroyCommandPool(_dev, pool, null); }
+        finally
+        {
+            _vk.DestroyCommandPool(_dev, pool, null);
+        }
         Log.Info($"[gpudump] exported {targets.Count} render targets ({w.Length / 1048576.0:F1} MB)");
         return w.Span.ToArray();
     }
@@ -71,7 +90,11 @@ public sealed unsafe partial class VulkanRenderer
         var r = new DumpCursor();
         r.Reset(buffer, buffer.Length);
         uint version = r.U32();
-        if (version != DumpStateVersion) { Log.Warn($"[replay] renderer state v{version} not supported: render targets start from guest memory"); return; }
+        if (version != DumpStateVersion)
+        {
+            Log.Warn($"[replay] renderer state v{version} not supported: render targets start from guest memory");
+            return;
+        }
         int count = (int)r.U32(), imported = 0;
         for (int i = 0; i < count; i++)
         {

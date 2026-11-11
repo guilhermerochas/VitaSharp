@@ -10,7 +10,11 @@ public sealed partial class UsseTranslator
 
     (VOp op, DataType dt, bool isSub) DecodeTest(uint aluSel, uint aluOp, uint prec)
     {
-        if (aluSel == 0) return (TestF16[aluOp], prec == 0 ? DataType.F16 : DataType.F32, aluOp == 14);
+        if (aluSel == 0)
+        {
+            return (TestF16[aluOp], prec == 0 ? DataType.F16 : DataType.F32, aluOp == 14);
+        }
+
         switch (aluSel)
         {
             case 1:
@@ -95,17 +99,36 @@ public sealed partial class UsseTranslator
         if (lhs.K != rhs.K)
         {
             // align kinds (integer tests on float-loaded data)
-            rhs = lhs.K switch { 'i' => new Val($"ivec{rhs.N}({rhs})".Replace("ivec1", "int"), 'i', rhs.N), 'u' => new Val($"uvec{rhs.N}({rhs})".Replace("uvec1", "uint"), 'u', rhs.N), _ => rhs };
+            rhs = lhs.K switch
+            {
+                'i' => new Val($"ivec{rhs.N}({rhs})".Replace("ivec1", "int"), 'i', rhs.N),
+                'u' => new Val($"uvec{rhs.N}({rhs})".Replace("uvec1", "uint"), 'u', rhs.N),
+                _ => rhs
+            };
         }
         alu = isSub ? new Val($"({lhs} - {rhs})", lhs.K, lhs.N) : lhs;
         bool eq = zeroTest == 1;
-        if (signTest == 3) return new Val("true", 'b', 1);
+        if (signTest == 3)
+        {
+            return new Val("true", 'b', 1);
+        }
+
         if (lhs.N == 1)
         {
-            string o = signTest switch { 0 => eq ? "==" : "!=", 1 => eq ? "<=" : "<", _ => eq ? ">=" : ">" };
+            string o = signTest switch
+            {
+                0 => eq ? "==" : "!=",
+                1 => eq ? "<=" : "<",
+                _ => eq ? ">=" : ">"
+            };
             return new Val($"({lhs} {o} {rhs})", 'b', 1);
         }
-        string fn = signTest switch { 0 => eq ? "equal" : "notEqual", 1 => eq ? "lessThanEqual" : "lessThan", _ => eq ? "greaterThanEqual" : "greaterThan" };
+        string fn = signTest switch
+        {
+            0 => eq ? "equal" : "notEqual",
+            1 => eq ? "lessThanEqual" : "lessThan",
+            _ => eq ? "greaterThanEqual" : "greaterThan"
+        };
         return new Val($"{fn}({lhs}, {rhs})", 'b', lhs.N);
     }
 
@@ -113,9 +136,17 @@ public sealed partial class UsseTranslator
     {
         // "01001ppps-oydrceavttiizzmhhhnnbbkkffgggggggwlluuuujjjjjjjqqqqqqq"
         var (op, dt, isSub) = DecodeTest(i['l'], i['u'], i['a']);
-        if (op == VOp.Invalid) { Warnings.Add($"vtst op {i['l']}:{i['u']}"); return; }
+        if (op == VOp.Invalid)
+        {
+            Warnings.Add($"vtst op {i['l']}:{i['u']}");
+            return;
+        }
         uint chan = i['h'];
-        if (chan >= 4) { Warnings.Add("vtst chan_cc"); return; }
+        if (chan >= 4)
+        {
+            Warnings.Add("vtst chan_cc");
+            return;
+        }
         int loadMask = 1 << (int)chan;
         bool dbl = i['l'] == 0;
         int bits = dbl ? 8 : 7;
@@ -123,8 +154,14 @@ public sealed partial class UsseTranslator
         var src2 = DecodeSrc12(2, i['q'], i['f'], i.Bit('e'), dbl, bits);
         src1.Type = src2.Type = dt;
         src2.Swizzle = i.Bit('v') && i['l'] == 0 ? S4("XXXX") : (Sw[])Default4.Clone();
-        if (i.Bit('r')) src1.Flags |= OpFlags.Neg;
-        var pred = Operand.Make(3); pred.Bank = Bank.Predicate; pred.Num = (int)i['n'];
+        if (i.Bit('r'))
+        {
+            src1.Flags |= OpFlags.Neg;
+        }
+
+        var pred = Operand.Make(3);
+        pred.Bank = Bank.Predicate;
+        pred.Num = (int)i['n'];
         var res = TestImpl(op, isSub, src1, src2, (int)i['z'], (int)i['i'], loadMask, out var alu);
         Store(pred, res.N == 1 ? res : new Val($"any({res})", 'b', 1), 1);
         // test_wben: the ALU result the test was made on is also written to the destination register (channel chan_cc),
@@ -143,9 +180,17 @@ public sealed partial class UsseTranslator
     {
         // "01111ppps-oydtrcevuuiizzm-aa--bbnnkkfffffffwllgggghhhhhhhjjjjjjj"
         var (op, dt, isSub) = DecodeTest(i['l'], i['g'], i['e']);
-        if (op == VOp.Invalid) { Warnings.Add("vtstmsk op"); return; }
+        if (op == VOp.Invalid)
+        {
+            Warnings.Add("vtstmsk op");
+            return;
+        }
         uint maskType = i['a'];
-        if (maskType == 3) return;
+        if (maskType == 3)
+        {
+            return;
+        }
+
         bool dbl = i['l'] == 0;
         int bits = dbl ? 8 : 7;
         var src1 = DecodeSrc12(1, i['h'], i['n'], i.Bit('r'), dbl, bits);
@@ -153,8 +198,16 @@ public sealed partial class UsseTranslator
         var dest = DecodeDest(3, i['f'], i['b'], i.Bit('d'), dbl, bits);
         src1.Type = src2.Type = dest.Type = dt;
         src2.Swizzle = i['l'] == 0 && i.Bit('v') ? S4("XXXX") : (Sw[])Default4.Clone();
-        if (i.Bit('t')) src1.Flags |= OpFlags.Neg;
-        if (!i.Bit('w')) { Warnings.Add("vtstmsk without write"); return; }
+        if (i.Bit('t'))
+        {
+            src1.Flags |= OpFlags.Neg;
+        }
+
+        if (!i.Bit('w'))
+        {
+            Warnings.Add("vtstmsk without write");
+            return;
+        }
         bool isVdp = op == VOp.VDp;
         bool out4 = i['l'] == 0 && maskType == 2;
         var res = Bind(TestImpl(op, isSub, src1, src2, (int)i['z'], (int)i['i'], (isVdp || out4) ? 0b1111 : 0b1));
@@ -200,7 +253,11 @@ public sealed partial class UsseTranslator
             0b101 => op2 ? VOp.Asr : VOp.Shr,
             _ => VOp.Invalid,
         };
-        if (op == VOp.Invalid) { Warnings.Add($"vbw op1 {op1}"); return; }
+        if (op == VOp.Invalid)
+        {
+            Warnings.Add($"vbw op1 {op1}");
+            return;
+        }
         var src1 = DecodeSrc12(1, i['m'], i['f'], i.Bit('c'), false, 7);
         var src2 = DecodeSrc12(2, i['q'], i['g'], i.Bit('x'), false, 7);
         var dest = DecodeDest(3, i['j'], i['k'], i.Bit('d'), false, 7);
@@ -225,10 +282,21 @@ public sealed partial class UsseTranslator
                         ushort t = (ushort)value;
                         value = (ushort)((t << (int)rr) | (t >> (16 - (int)rr)));
                     }
-                    else value = BitOperations.RotateLeft(value, (int)rot);
+                    else
+                    {
+                        value = BitOperations.RotateLeft(value, (int)rot);
+                    }
                 }
-                if (i.Bit('i')) value = ~value;
-                if (dt == DataType.UInt16) value &= 0xFFFF;
+                if (i.Bit('i'))
+                {
+                    value = ~value;
+                }
+
+                if (dt == DataType.UInt16)
+                {
+                    value &= 0xFFFF;
+                }
+
                 s2 = $"{value}u";
                 copy = dt == DataType.UInt32 && (op is VOp.Or or VOp.Xor ? value == 0 : op == VOp.And && value == uint.MaxValue);
             }
@@ -240,9 +308,15 @@ public sealed partial class UsseTranslator
                     uint rr = dt == DataType.UInt16 ? rot & 15 : rot;
                     uint right = dt == DataType.UInt16 ? 16 - rr : 32 - rr;
                     s2 = $"(({s2} << {rr}u) | ({s2} >> {right}u))";
-                    if (dt == DataType.UInt16) s2 = $"({s2} & 0xFFFFu)";
+                    if (dt == DataType.UInt16)
+                    {
+                        s2 = $"({s2} & 0xFFFFu)";
+                    }
                 }
-                if (i.Bit('i')) s2 = dt == DataType.UInt16 ? $"(~{s2} & 0xFFFFu)" : $"(~{s2})";
+                if (i.Bit('i'))
+                {
+                    s2 = dt == DataType.UInt16 ? $"(~{s2} & 0xFFFFu)" : $"(~{s2})";
+                }
             }
             var a = Load(src1, 1, RepeatOffset(src1, r, RepeatMode.Slmsi));
             string e = op switch
@@ -259,7 +333,9 @@ public sealed partial class UsseTranslator
             Store(dest, new Val(e, 'u', 1), 1, destOff);
             // keep track of copied SA words (texture state moved to temporaries for SMP, see Smp)
             if (copy && src1.Bank is not (Bank.Indexed1 or Bank.Indexed2))
+            {
                 SetSaCopy(dest.Bank, dest.Num + destOff, SaWordOf(src1.Bank, src1.Num + RepeatOffset(src1, r, RepeatMode.Slmsi)));
+            }
         }
         ResetRepeatMultiplier();
     }
@@ -282,7 +358,11 @@ public sealed partial class UsseTranslator
         var dest = DecodeDest(3, i['q'], i['t'], i.Bit('d'), false, 7);
         src1.Type = src2.Type = dest.Type = DataType.UInt8;
         uint csel1 = i['g'], csel2 = i['h'], asel1 = i['a'], asel2 = i['l'];
-        if (csel1 > 4 || csel2 > 4 || asel1 > 2 || asel2 > 2) { Warnings.Add("sop2 selector"); return; }
+        if (csel1 > 4 || csel2 > 4 || asel1 > 2 || asel2 > 2)
+        {
+            Warnings.Add("sop2 selector");
+            return;
+        }
         int cop = (int)i['v'], aop = (int)i['w'];
         int repeats = (int)i['o'] + 1;
         for (int r = 0; r < repeats; r++)
@@ -293,14 +373,46 @@ public sealed partial class UsseTranslator
             var a1 = Bind(ToFloat(Load(src1, 0b1000, o1), DataType.UInt8, true));
             var a2 = Bind(ToFloat(Load(src2, 0b1000, o2), DataType.UInt8, true));
             string sc1 = c1.E, sa1 = a1.E;
-            if (i.Bit('u')) { sc1 = $"(vec3(1.0) - {c1})"; sa1 = $"(1.0 - {a1})"; }
-            string CSel(uint s) => s switch { 0 => "vec3(0.0)", 1 => sc1, 2 => c2.E, 3 => $"vec3({sa1})", _ => $"vec3({a2})" };
-            string ASel(uint s) => s switch { 0 => "0.0", 1 => sa1, _ => a2.E };
+            if (i.Bit('u'))
+            {
+                sc1 = $"(vec3(1.0) - {c1})";
+                sa1 = $"(1.0 - {a1})";
+            }
+            string CSel(uint s) => s switch
+            {
+                0 => "vec3(0.0)",
+                1 => sc1,
+                2 => c2.E,
+                3 => $"vec3({sa1})",
+                _ => $"vec3({a2})"
+            };
+            string ASel(uint s) => s switch
+            {
+                0 => "0.0",
+                1 => sa1,
+                _ => a2.E
+            };
             string fl = CSel(csel1), fr = CSel(csel2), al = ASel(asel1), ar = ASel(asel2);
-            if (i.Bit('c')) fl = $"(vec3(1.0) - {fl})";
-            if (i.Bit('m')) fr = $"(vec3(1.0) - {fr})";
-            if (i.Bit('f')) al = $"(1.0 - {al})";
-            if (i.Bit('i')) ar = $"(1.0 - {ar})";
+            if (i.Bit('c'))
+            {
+                fl = $"(vec3(1.0) - {fl})";
+            }
+
+            if (i.Bit('m'))
+            {
+                fr = $"(vec3(1.0) - {fr})";
+            }
+
+            if (i.Bit('f'))
+            {
+                al = $"(1.0 - {al})";
+            }
+
+            if (i.Bit('i'))
+            {
+                ar = $"(1.0 - {ar})";
+            }
+
             string color = BlendOp(cop, $"({fl} * {sc1})", $"({fr} * {c2})");
             string alpha = BlendOp(aop, $"({al} * {sa1})", $"({ar} * {a2})");
             Store(dest, ToInt(new Val(color, 'f', 3), DataType.UInt8, true), 0b0111, RepeatOffset(dest, r, RepeatMode.Slmsi));
@@ -316,20 +428,44 @@ public sealed partial class UsseTranslator
         var dest = DecodeDest(3, i['u'], i['t'], i.Bit('d'), false, 7);
         src1.Type = src2.Type = dest.Type = DataType.UInt8;
         uint sel1 = i['l'], sel2 = i['f'];
-        static string? Sel(uint s, string a, string b) => s switch { 0 => "vec4(0.0)", 2 => a, 3 => $"{a}.wwww", 6 => b, 7 => $"{b}.wwww", _ => null };
+        static string? Sel(uint s, string a, string b) => s switch
+        {
+            0 => "vec4(0.0)",
+            2 => a,
+            3 => $"{a}.wwww",
+            6 => b,
+            7 => $"{b}.wwww",
+            _ => null
+        };
         var s1 = Bind(ToFloat(Load(src1, 0b1111), DataType.UInt8, true));
         var s2 = Bind(ToFloat(Load(src2, 0b1111), DataType.UInt8, true));
         var op1 = Sel(sel1, s1.E, s2.E);
         var op2 = Sel(sel2, s1.E, s2.E);
-        if (op1 == null || op2 == null) { Warnings.Add("sop2m selector"); return; }
-        if (i.Bit('m')) op1 = $"(vec4(1.0) - {op1})";
-        if (i.Bit('o')) op2 = $"(vec4(1.0) - {op2})";
+        if (op1 == null || op2 == null)
+        {
+            Warnings.Add("sop2m selector");
+            return;
+        }
+        if (i.Bit('m'))
+        {
+            op1 = $"(vec4(1.0) - {op1})";
+        }
+
+        if (i.Bit('o'))
+        {
+            op2 = $"(vec4(1.0) - {op2})";
+        }
+
         string t1 = Bind(new Val($"({op1} * {s1})", 'f', 4)).E, t2 = Bind(new Val($"({op2} * {s2})", 'f', 4)).E;
         int cop = (int)i['c'], aop = (int)i['a'];
         string res = Bind(new Val(BlendOp(cop, t1, t2), 'f', 4)).E;
         int wmask = (int)i['w'];
         wmask = ((wmask & 0b1110) >> 1) | ((wmask & 1) << 3);
-        if ((wmask & 0b1000) != 0) Line($"{res}.w = {BlendOp(aop, $"{t1}.w", $"{t2}.w")};");
+        if ((wmask & 0b1000) != 0)
+        {
+            Line($"{res}.w = {BlendOp(aop, $"{t1}.w", $"{t2}.w")};");
+        }
+
         Store(dest, ToInt(new Val(res, 'f', 4), DataType.UInt8, true), wmask);
     }
 
@@ -341,7 +477,11 @@ public sealed partial class UsseTranslator
         var src2 = DecodeSrc12(2, i['x'], i['q'], i.Bit('b'), false, 7);
         var dest = DecodeDest(3, i['u'], i['t'], i.Bit('d'), false, 7);
         src0.Type = src1.Type = src2.Type = dest.Type = DataType.UInt8;
-        if (i.Bit('f')) { Warnings.Add("sop3 dmod"); return; }
+        if (i.Bit('f'))
+        {
+            Warnings.Add("sop3 dmod");
+            return;
+        }
         uint csel1 = i['h'], csel2 = i['i'], asel1 = i['l'];
         var c0 = Bind(ToFloat(Load(src0, 0b0111), DataType.UInt8, true));
         var c1 = Bind(ToFloat(Load(src1, 0b0111), DataType.UInt8, true));
@@ -349,14 +489,56 @@ public sealed partial class UsseTranslator
         var a0 = Bind(ToFloat(Load(src0, 0b1000), DataType.UInt8, true));
         var a1 = Bind(ToFloat(Load(src1, 0b1000), DataType.UInt8, true));
         var a2 = Bind(ToFloat(Load(src2, 0b1000), DataType.UInt8, true));
-        string? CSel(uint s) => s switch { 0 => "vec3(0.0)", 2 => c1.E, 3 => $"vec3({a1})", 4 => c0.E, 5 => $"vec3({a0})", 6 => c2.E, 7 => $"vec3({a2})", _ => null };
-        string ASel1(uint s) => s switch { 0 => "0.0", 1 => a0.E, 2 => a1.E, _ => a2.E };
-        string? ASel2(uint s) => s switch { 0 => "0.0", 2 or 3 => a1.E, 4 or 5 => a0.E, 6 or 7 => a2.E, _ => null };
-        var fl = CSel(csel1); var fr = CSel(csel2); var al = ASel1(asel1); var ar = ASel2(csel2);
-        if (fl == null || fr == null || ar == null) { Warnings.Add("sop3 selector"); return; }
-        if (i.Bit('c')) fl = $"(vec3(1.0) - {fl})";
-        if (i.Bit('m')) { fr = $"(vec3(1.0) - {fr})"; ar = $"(1.0 - {ar})"; }
-        if (i.Bit('a')) al = $"(1.0 - {al})";
+        string? CSel(uint s) => s switch
+        {
+            0 => "vec3(0.0)",
+            2 => c1.E,
+            3 => $"vec3({a1})",
+            4 => c0.E,
+            5 => $"vec3({a0})",
+            6 => c2.E,
+            7 => $"vec3({a2})",
+            _ => null
+        };
+        string ASel1(uint s) => s switch
+        {
+            0 => "0.0",
+            1 => a0.E,
+            2 => a1.E,
+            _ => a2.E
+        };
+        string? ASel2(uint s) => s switch
+        {
+            0 => "0.0",
+            2 or 3 => a1.E,
+            4 or 5 => a0.E,
+            6 or 7 => a2.E,
+            _ => null
+        };
+        var fl = CSel(csel1);
+        var fr = CSel(csel2);
+        var al = ASel1(asel1);
+        var ar = ASel2(csel2);
+        if (fl == null || fr == null || ar == null)
+        {
+            Warnings.Add("sop3 selector");
+            return;
+        }
+        if (i.Bit('c'))
+        {
+            fl = $"(vec3(1.0) - {fl})";
+        }
+
+        if (i.Bit('m'))
+        {
+            fr = $"(vec3(1.0) - {fr})";
+            ar = $"(1.0 - {ar})";
+        }
+        if (i.Bit('a'))
+        {
+            al = $"(1.0 - {al})";
+        }
+
         int cop = (int)i['o'], aop = (int)i['g'];
         string color = cop == 0 ? $"(({fl} * {c1}) + ({fr} * {c2}))" : $"(({fl} * {c1}) - ({fr} * {c2}))";
         string alpha = aop == 0 ? $"(({al} * {a1}) + ({ar} * {a2}))" : $"(({al} * {a1}) - ({ar} * {a2}))";
@@ -374,8 +556,16 @@ public sealed partial class UsseTranslator
         var src2 = DecodeSrc12(2, i['B'], i['x'], i.Bit('b'), false, 7);
         var dest = DecodeDest(3, i['y'], i['v'], i.Bit('d'), false, 7);
         src0.Type = src1.Type = src2.Type = dest.Type = DataType.UInt8;
-        if (i.Bit('i')) src1.Swizzle = S4("WWWW");
-        if (i.Bit('j')) src2.Swizzle = S4("WWWW");
+        if (i.Bit('i'))
+        {
+            src1.Swizzle = S4("WWWW");
+        }
+
+        if (i.Bit('j'))
+        {
+            src2.Swizzle = S4("WWWW");
+        }
+
         int repeats = (int)i['t'] + 1;
         for (int r = 0; r < repeats; r++)
         {
@@ -401,13 +591,27 @@ public sealed partial class UsseTranslator
         int m1 = 1, m2 = 1;
         if (i['o'] != 0)
         {
-            if (i['o'] == 1) src1.Type = signed ? DataType.Int8 : DataType.UInt8;
-            if (i.Bit('e')) m1 = 0b10;
+            if (i['o'] == 1)
+            {
+                src1.Type = signed ? DataType.Int8 : DataType.UInt8;
+            }
+
+            if (i.Bit('e'))
+            {
+                m1 = 0b10;
+            }
         }
         if (i['f'] != 0)
         {
-            if (i['f'] == 1) src2.Type = signed ? DataType.Int8 : DataType.UInt8;
-            if (i.Bit('l')) m2 = 0b10;
+            if (i['f'] == 1)
+            {
+                src2.Type = signed ? DataType.Int8 : DataType.UInt8;
+            }
+
+            if (i.Bit('l'))
+            {
+                m2 = 0b10;
+            }
         }
         int repeats = (int)i['t'] + 1;
         for (int r = 0; r < repeats; r++)
@@ -430,7 +634,9 @@ public sealed partial class UsseTranslator
         var src2 = DecodeSrc12(2, i['q'], i['j'], i.Bit('a'), false, 7);
         var dt32 = signed ? DataType.Int32 : DataType.UInt32;
         var dt16 = signed ? DataType.Int16 : DataType.UInt16;
-        dest.Type = dt32; src0.Type = dt16; src1.Type = dt16;
+        dest.Type = dt32;
+        src0.Type = dt16;
+        src1.Type = dt16;
         src2.Type = i['y'] == 2 ? dt32 : dt16;
         int m0 = i.Bit('s') ? 0b10 : 1, m1 = i.Bit('r') ? 0b10 : 1, m2 = i['y'] != 2 && i.Bit('c') ? 0b10 : 1;
         SetRepeatMultiplier(1, 1, 1, 1);
@@ -456,8 +662,16 @@ public sealed partial class UsseTranslator
         var src2 = DecodeSrc12(2, i['q'], i['h'], i.Bit('c'), false, 7);
         var dt = signed ? DataType.Int32 : DataType.UInt32;
         dest.Type = src0.Type = src1.Type = src2.Type = dt;
-        if (i.Bit('g')) src1.Flags |= OpFlags.Neg;
-        if (i.Bit('a')) src2.Flags |= OpFlags.Neg;
+        if (i.Bit('g'))
+        {
+            src1.Flags |= OpFlags.Neg;
+        }
+
+        if (i.Bit('a'))
+        {
+            src2.Flags |= OpFlags.Neg;
+        }
+
         SetRepeatMultiplier(1, 1, 1, 1);
         int repeats = (int)i['o'] + 1;
         for (int r = 0; r < repeats; r++)
@@ -482,7 +696,11 @@ public sealed partial class UsseTranslator
         // "11111011s-11recb----npp---tffa--kkddggggggghhhhhhhiiiiiiijjjjjjj"
         var src0 = DecodeSrc0(0, i['h'], i['a'], i.Bit('r'), true, 7);
         // the depth feedback goes to the pixel's depth test: a vertex program has no fragment depth, nothing happens
-        if (_program.IsVertex) { Warnings.Add("DEPTHF in a vertex program (ignored)"); return; }
+        if (_program.IsVertex)
+        {
+            Warnings.Add("DEPTHF in a vertex program (ignored)");
+            return;
+        }
         UsesFragDepth = true;
         Line($"gl_FragDepth = {Load(src0, 1)};");
     }
@@ -492,8 +710,20 @@ public sealed partial class UsseTranslator
         // "11111010--01-n--ttttppppssssdrcieeeeeeeeaaaaaaaabbbbbbbbffffffff"
         void Parse(int idx, bool mode, uint value)
         {
-            if (mode) for (int k = 0; k < 4; k++) _repeatIncrease[idx, k] = (int)((value >> (2 * k)) & 3);
-            else for (int k = 0; k < 17; k++) _repeatIncrease[idx, k] = k * (sbyte)(byte)value;
+            if (mode)
+            {
+                for (int k = 0; k < 4; k++)
+                {
+                    _repeatIncrease[idx, k] = (int)((value >> (2 * k)) & 3);
+                }
+            }
+            else
+            {
+                for (int k = 0; k < 17; k++)
+                {
+                    _repeatIncrease[idx, k] = k * (sbyte)(byte)value;
+                }
+            }
         }
         Parse(3, i.Bit('d'), i['e']);
         Parse(0, i.Bit('r'), i['a']);
@@ -504,7 +734,13 @@ public sealed partial class UsseTranslator
     void Smbo(UsseInst i)
     {
         // "11111011--01-n--ddddddddddddssssssssssssrrrrrrrrrrrrcccccccccccc"
-        void Parse(int idx, uint off) { for (int k = 0; k < 17; k++) _repeatIncrease[idx, k] = k + (int)off; }
+        void Parse(int idx, uint off)
+        {
+            for (int k = 0; k < 17; k++)
+            {
+                _repeatIncrease[idx, k] = k + (int)off;
+            }
+        }
         Parse(3, i['d']);
         Parse(0, i['s']);
         Parse(1, i['r']);

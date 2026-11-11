@@ -11,7 +11,11 @@ public static class KeyNames
 {
     public static string? FromAvalonia(PhysicalKey physical, Key key)
     {
-        if (physical != PhysicalKey.None && FromPhysical(physical) is { } p) return p;
+        if (physical != PhysicalKey.None && FromPhysical(physical) is { } p)
+        {
+            return p;
+        }
+
         return key switch
         {
             Key.None => null,

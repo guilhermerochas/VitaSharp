@@ -10,7 +10,11 @@ internal static unsafe partial class Neon
     /// <summary>Three registers of the same length: 1111 001U 0 D size Vn Vd A N Q M B Vm</summary>
     public static void ThreeSame(CpuState* s, uint ins, uint pc)
     {
-        if (ThreeSameFast(s, ins)) return;
+        if (ThreeSameFast(s, ins))
+        {
+            return;
+        }
+
         uint a = Bits(ins, 11, 8);
         bool b = Bit(ins, 4) != 0, u = Bit(ins, 24) != 0, q = Bit(ins, 6) != 0;
         uint size = Bits(ins, 21, 20);
@@ -47,7 +51,12 @@ internal static unsafe partial class Neon
         Buffer.MemoryCopy(Reg(s, m), tm, 16, bytes);
         Buffer.MemoryCopy(Reg(s, d), td, 16, bytes);
 
-        if (a >= 0xC) { ThreeSameFloat(s, a, b, u, size, tn, tm, td, bytes); Buffer.MemoryCopy(td, Reg(s, d), bytes, bytes); return; }
+        if (a >= 0xC)
+        {
+            ThreeSameFloat(s, a, b, u, size, tn, tm, td, bytes);
+            Buffer.MemoryCopy(td, Reg(s, d), bytes, bytes);
+            return;
+        }
 
         int esize = 8 << (int)size;
         int count = bytes * 8 / esize;
@@ -122,8 +131,14 @@ internal static unsafe partial class Neon
                 for (int i = 0; i < count; i++)
                 {
                     ulong x = GetU(tn, i, esize), y = GetU(tm, i, esize);
-                    if (!b) Set(td, i, esize, u ? GetU(td, i, esize) - x * y : GetU(td, i, esize) + x * y); // VMLA/VMLS
-                    else Set(td, i, esize, u ? PolyMul8((byte)x, (byte)y) : x * y);                          // VMUL (int / poly)
+                    if (!b)
+                    {
+                        Set(td, i, esize, u ? GetU(td, i, esize) - x * y : GetU(td, i, esize) + x * y); // VMLA/VMLS
+                    }
+                    else
+                    {
+                        Set(td, i, esize, u ? PolyMul8((byte)x, (byte)y) : x * y);                          // VMUL (int / poly)
+                    }
                 }
                 break;
             case 0xA: // VPMAX / VPMIN
@@ -169,7 +184,14 @@ internal static unsafe partial class Neon
     internal static ulong PolyMul8(byte a, byte b)
     {
         uint r = 0;
-        for (int i = 0; i < 8; i++) if ((b & (1 << i)) != 0) r ^= (uint)a << i;
+        for (int i = 0; i < 8; i++)
+        {
+            if ((b & (1 << i)) != 0)
+            {
+                r ^= (uint)a << i;
+            }
+        }
+
         return (byte)r;
     }
 
@@ -191,7 +213,10 @@ internal static unsafe partial class Neon
                 {
                     if (!u)
                     {
-                        for (int i = 0; i < count; i++) SetF(td, i, sz1 ? F(tn, i) - F(tm, i) : F(tn, i) + F(tm, i));
+                        for (int i = 0; i < count; i++)
+                        {
+                            SetF(td, i, sz1 ? F(tn, i) - F(tm, i) : F(tn, i) + F(tm, i));
+                        }
                     }
                     else if (!sz1) // VPADD.F32
                     {
@@ -204,18 +229,31 @@ internal static unsafe partial class Neon
                         }
                         Buffer.MemoryCopy(res, td, 16, bytes);
                     }
-                    else for (int i = 0; i < count; i++) SetF(td, i, MathF.Abs(F(tn, i) - F(tm, i))); // VABD.F32
+                    else
+                    {
+                        for (int i = 0; i < count; i++)
+                        {
+                            SetF(td, i, MathF.Abs(F(tn, i) - F(tm, i))); // VABD.F32
+                        }
+                    }
                 }
                 else
                 {
                     if (!u) // VMLA / VMLS (float)
+                    {
                         for (int i = 0; i < count; i++)
                         {
                             float p = FRes(MulFz(F(tn, i), F(tm, i)));
                             SetF(td, i, sz1 ? F(td, i) - p : F(td, i) + p);
                         }
+                    }
                     else // VMUL.F32
-                        for (int i = 0; i < count; i++) SetF(td, i, MulFz(F(tn, i), F(tm, i)));
+                    {
+                        for (int i = 0; i < count; i++)
+                        {
+                            SetF(td, i, MulFz(F(tn, i), F(tm, i)));
+                        }
+                    }
                 }
                 break;
             case 0xE:
@@ -223,15 +261,28 @@ internal static unsafe partial class Neon
                 {
                     float x = F(tn, i), y = F(tm, i);
                     bool t;
-                    if (!b) t = !u ? x == y : (sz1 ? x > y : x >= y);           // VCEQ / VCGE / VCGT
-                    else t = sz1 ? MathF.Abs(x) > MathF.Abs(y) : MathF.Abs(x) >= MathF.Abs(y); // VACGT / VACGE
+                    if (!b)
+                    {
+                        t = !u ? x == y : (sz1 ? x > y : x >= y);           // VCEQ / VCGE / VCGT
+                    }
+                    else
+                    {
+                        t = sz1 ? MathF.Abs(x) > MathF.Abs(y) : MathF.Abs(x) >= MathF.Abs(y); // VACGT / VACGE
+                    }
+
                     ((uint*)td)[i] = t ? 0xFFFFFFFF : 0;
                 }
                 break;
             case 0xF:
                 if (!b)
                 {
-                    if (!u) for (int i = 0; i < count; i++) SetF(td, i, sz1 ? FMin(F(tn, i), F(tm, i)) : FMax(F(tn, i), F(tm, i)));
+                    if (!u)
+                    {
+                        for (int i = 0; i < count; i++)
+                        {
+                            SetF(td, i, sz1 ? FMin(F(tn, i), F(tm, i)) : FMax(F(tn, i), F(tm, i)));
+                        }
+                    }
                     else
                     {
                         int half = count / 2;
@@ -251,8 +302,15 @@ internal static unsafe partial class Neon
                     {
                         float x = F(tn, i), y = F(tm, i);
                         float r;
-                        if ((float.IsInfinity(x) && y == 0) || (x == 0 && float.IsInfinity(y))) r = sz1 ? 1.5f : 2f;
-                        else r = sz1 ? (3f - x * y) / 2f : 2f - x * y;
+                        if ((float.IsInfinity(x) && y == 0) || (x == 0 && float.IsInfinity(y)))
+                        {
+                            r = sz1 ? 1.5f : 2f;
+                        }
+                        else
+                        {
+                            r = sz1 ? (3f - x * y) / 2f : 2f - x * y;
+                        }
+
                         SetF(td, i, r);
                     }
                 }
@@ -264,7 +322,11 @@ internal static unsafe partial class Neon
     /// <summary>Three registers of different lengths: 1111 001U 1 D size Vn Vd A N 0 M 0 Vm</summary>
     public static void ThreeDiff(CpuState* s, uint ins, uint pc)
     {
-        if (ThreeDiffFast(s, ins)) return;
+        if (ThreeDiffFast(s, ins))
+        {
+            return;
+        }
+
         uint a = Bits(ins, 11, 8);
         bool u = Bit(ins, 24) != 0;
         int esize = 8 << (int)Bits(ins, 21, 20);
@@ -286,7 +348,11 @@ internal static unsafe partial class Neon
             {
                 ulong x = GetU(tn, i, w), y = GetU(tm, i, w);
                 ulong r = a == 4 ? x + y : x - y;
-                if (u) r += 1ul << (esize - 1);
+                if (u)
+                {
+                    r += 1ul << (esize - 1);
+                }
+
                 Set(td, i, esize, r >> esize);
             }
             Buffer.MemoryCopy(td, Reg(s, d), 8, 8);
@@ -301,18 +367,44 @@ internal static unsafe partial class Neon
             ulong r;
             switch (a)
             {
-                case 0: case 1: r = (ulong)(long)(x + y); break;
-                case 2: case 3: r = (ulong)(long)(x - y); break;
-                case 5: r = (ulong)(long)(acc + Int128.Abs(x - y)); break;            // VABAL
-                case 7: r = (ulong)(long)Int128.Abs(x - y); break;                    // VABDL
-                case 8: r = (ulong)(long)(acc + x * y); break;                        // VMLAL
-                case 9: r = (ulong)SatS(s, acc + (Int128)SatS(s, 2 * x * y, w), w); break;   // VQDMLAL
-                case 10: r = (ulong)(long)(acc - x * y); break;                       // VMLSL
-                case 11: r = (ulong)SatS(s, acc - (Int128)SatS(s, 2 * x * y, w), w); break;  // VQDMLSL
-                case 12: r = (ulong)(long)(x * y); break;                             // VMULL
-                case 13: r = (ulong)SatS(s, 2 * x * y, w); break;                     // VQDMULL
-                case 14: r = PolyMulLong(GetU(tn, i, esize), GetU(tm, i, esize), esize); break; // VMULL.P8
-                default: r = 0; break;
+                case 0:
+                case 1:
+                    r = (ulong)(long)(x + y);
+                    break;
+                case 2:
+                case 3:
+                    r = (ulong)(long)(x - y);
+                    break;
+                case 5:
+                    r = (ulong)(long)(acc + Int128.Abs(x - y));
+                    break;            // VABAL
+                case 7:
+                    r = (ulong)(long)Int128.Abs(x - y);
+                    break;                    // VABDL
+                case 8:
+                    r = (ulong)(long)(acc + x * y);
+                    break;                        // VMLAL
+                case 9:
+                    r = (ulong)SatS(s, acc + (Int128)SatS(s, 2 * x * y, w), w);
+                    break;   // VQDMLAL
+                case 10:
+                    r = (ulong)(long)(acc - x * y);
+                    break;                       // VMLSL
+                case 11:
+                    r = (ulong)SatS(s, acc - (Int128)SatS(s, 2 * x * y, w), w);
+                    break;  // VQDMLSL
+                case 12:
+                    r = (ulong)(long)(x * y);
+                    break;                             // VMULL
+                case 13:
+                    r = (ulong)SatS(s, 2 * x * y, w);
+                    break;                     // VQDMULL
+                case 14:
+                    r = PolyMulLong(GetU(tn, i, esize), GetU(tm, i, esize), esize);
+                    break; // VMULL.P8
+                default:
+                    r = 0;
+                    break;
             }
             Set(td, i, w, r);
         }
@@ -322,7 +414,14 @@ internal static unsafe partial class Neon
     static ulong PolyMulLong(ulong a, ulong b, int esize)
     {
         ulong r = 0;
-        for (int i = 0; i < esize; i++) if ((b & (1ul << i)) != 0) r ^= a << i;
+        for (int i = 0; i < esize; i++)
+        {
+            if ((b & (1ul << i)) != 0)
+            {
+                r ^= a << i;
+            }
+        }
+
         return r;
     }
 
@@ -336,8 +435,16 @@ internal static unsafe partial class Neon
         int esize = 8 << (int)size;
         uint d = Rd(ins), n = Rn(ins);
         uint mReg, index;
-        if (esize == 16) { mReg = ins & 7; index = (Bit(ins, 5) << 1) | Bit(ins, 3); }
-        else { mReg = ins & 0xF; index = Bit(ins, 5); }
+        if (esize == 16)
+        {
+            mReg = ins & 7;
+            index = (Bit(ins, 5) << 1) | Bit(ins, 3);
+        }
+        else
+        {
+            mReg = ins & 0xF;
+            index = Bit(ins, 5);
+        }
         bool longOp = a is 2 or 3 or 6 or 7 or 10 or 11;
         bool fp = a is 1 or 5 or 9;
         int bytesIn = longOp ? 8 : (q ? 16 : 8);
@@ -368,15 +475,33 @@ internal static unsafe partial class Neon
         {
             switch (a)
             {
-                case 0: Set(td, i, esize, GetU(td, i, esize) + GetU(tn, i, esize) * (ulong)(long)ys); break;
-                case 4: Set(td, i, esize, GetU(td, i, esize) - GetU(tn, i, esize) * (ulong)(long)ys); break;
-                case 8: Set(td, i, esize, GetU(tn, i, esize) * (ulong)(long)ys); break;
-                case 2: Set(td, i, w, (ulong)(long)(GetI(td, i, w, u) + GetI(tn, i, esize, u) * ys)); break;
-                case 6: Set(td, i, w, (ulong)(long)(GetI(td, i, w, u) - GetI(tn, i, esize, u) * ys)); break;
-                case 10: Set(td, i, w, (ulong)(long)(GetI(tn, i, esize, u) * ys)); break;
-                case 3: Set(td, i, w, (ulong)SatS(s, GetS(td, i, w) + (Int128)SatS(s, 2 * GetS(tn, i, esize) * ys, w), w)); break;
-                case 7: Set(td, i, w, (ulong)SatS(s, GetS(td, i, w) - (Int128)SatS(s, 2 * GetS(tn, i, esize) * ys, w), w)); break;
-                case 11: Set(td, i, w, (ulong)SatS(s, 2 * GetS(tn, i, esize) * ys, w)); break;
+                case 0:
+                    Set(td, i, esize, GetU(td, i, esize) + GetU(tn, i, esize) * (ulong)(long)ys);
+                    break;
+                case 4:
+                    Set(td, i, esize, GetU(td, i, esize) - GetU(tn, i, esize) * (ulong)(long)ys);
+                    break;
+                case 8:
+                    Set(td, i, esize, GetU(tn, i, esize) * (ulong)(long)ys);
+                    break;
+                case 2:
+                    Set(td, i, w, (ulong)(long)(GetI(td, i, w, u) + GetI(tn, i, esize, u) * ys));
+                    break;
+                case 6:
+                    Set(td, i, w, (ulong)(long)(GetI(td, i, w, u) - GetI(tn, i, esize, u) * ys));
+                    break;
+                case 10:
+                    Set(td, i, w, (ulong)(long)(GetI(tn, i, esize, u) * ys));
+                    break;
+                case 3:
+                    Set(td, i, w, (ulong)SatS(s, GetS(td, i, w) + (Int128)SatS(s, 2 * GetS(tn, i, esize) * ys, w), w));
+                    break;
+                case 7:
+                    Set(td, i, w, (ulong)SatS(s, GetS(td, i, w) - (Int128)SatS(s, 2 * GetS(tn, i, esize) * ys, w), w));
+                    break;
+                case 11:
+                    Set(td, i, w, (ulong)SatS(s, 2 * GetS(tn, i, esize) * ys, w));
+                    break;
                 case 12:
                 case 13:
                 {

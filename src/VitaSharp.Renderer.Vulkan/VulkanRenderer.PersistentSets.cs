@@ -27,7 +27,11 @@ public sealed unsafe partial class VulkanRenderer
 
     void DestroyPersistentSets()
     {
-        if (_persistentPool.Handle != 0) _vk.DestroyDescriptorPool(_dev, _persistentPool, null);
+        if (_persistentPool.Handle != 0)
+        {
+            _vk.DestroyDescriptorPool(_dev, _persistentPool, null);
+        }
+
         _persistentPool = default;
     }
 }

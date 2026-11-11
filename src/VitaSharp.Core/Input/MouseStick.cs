@@ -64,8 +64,15 @@ public sealed class MouseSettings
 
     public MouseSettings Clone() => new()
     {
-        Mode = Mode, Sensitivity = Sensitivity, InvertY = InvertY, Deadzone = Deadzone, Curve = Curve, ReturnMs = ReturnMs,
-        ReleaseKey = ReleaseKey, ToggleKey = ToggleKey, Games = new(Games),
+        Mode = Mode,
+        Sensitivity = Sensitivity,
+        InvertY = InvertY,
+        Deadzone = Deadzone,
+        Curve = Curve,
+        ReturnMs = ReturnMs,
+        ReleaseKey = ReleaseKey,
+        ToggleKey = ToggleKey,
+        Games = new(Games),
     };
 }
 
@@ -94,14 +101,25 @@ public sealed class MouseStick
 
     public void Add(float dx, float dy)
     {
-        if (dx == 0 && dy == 0) return;
-        lock (_lock) { _ax += dx; _ay += dy; }
+        if (dx == 0 && dy == 0)
+        {
+            return;
+        }
+
+        lock (_lock)
+        {
+            _ax += dx;
+            _ay += dy;
+        }
     }
 
     /// <summary>Drops the motion (the cursor was released, the mode changed).</summary>
     public void Reset()
     {
-        lock (_lock) { _ax = _ay = _x = _y = 0; }
+        lock (_lock)
+        {
+            _ax = _ay = _x = _y = 0;
+        }
     }
 
     /// <summary>The deflection now as the input of the stick <paramref name="mode"/> moves (neutral in the other
@@ -109,17 +127,37 @@ public sealed class MouseStick
     public MappedInput Mapped(MouseMode mode, long nowTicks = 0)
     {
         var m = MappedInput.Neutral;
-        if (mode is not (MouseMode.RightStick or MouseMode.LeftStick)) return m;
+        if (mode is not (MouseMode.RightStick or MouseMode.LeftStick))
+        {
+            return m;
+        }
+
         var (x, y) = Sample(nowTicks);
-        if (mode == MouseMode.RightStick) { m.Rx = x; m.Ry = y; m.State.Rx = StickMath.ToByte(x); m.State.Ry = StickMath.ToByte(y); }
-        else { m.Lx = x; m.Ly = y; m.State.Lx = StickMath.ToByte(x); m.State.Ly = StickMath.ToByte(y); }
+        if (mode == MouseMode.RightStick)
+        {
+            m.Rx = x;
+            m.Ry = y;
+            m.State.Rx = StickMath.ToByte(x);
+            m.State.Ry = StickMath.ToByte(y);
+        }
+        else
+        {
+            m.Lx = x;
+            m.Ly = y;
+            m.State.Lx = StickMath.ToByte(x);
+            m.State.Ly = StickMath.ToByte(y);
+        }
         return m;
     }
 
     /// <summary>The deflection now, -1..1 per axis, y down (the Vita's stick convention: up is negative).</summary>
     public (float X, float Y) Sample(long nowTicks = 0)
     {
-        if (nowTicks == 0) nowTicks = Stopwatch.GetTimestamp();
+        if (nowTicks == 0)
+        {
+            nowTicks = Stopwatch.GetTimestamp();
+        }
+
         var s = Settings;
         lock (_lock)
         {
@@ -127,14 +165,24 @@ public sealed class MouseStick
             _last = nowTicks;
             float tau = Math.Clamp(s.ReturnMs, 10, 1000) / 3000f;
             float decay = (float)Math.Exp(-dt / tau);
-            _x *= decay; _y *= decay;
+            _x *= decay;
+            _y *= decay;
             float k = PixelGain * Math.Clamp(s.Sensitivity, 0.1f, 5f);
             _x += _ax * k;
             _y += (s.InvertY ? -_ay : _ay) * k;
             _ax = _ay = 0;
             float mag = MathF.Sqrt(_x * _x + _y * _y);
-            if (mag > 1) { _x /= mag; _y /= mag; mag = 1; }
-            if (mag < RestThreshold) return (0, 0); // at rest (and below ~30 px/s of jitter)
+            if (mag > 1)
+            {
+                _x /= mag;
+                _y /= mag;
+                mag = 1;
+            }
+            if (mag < RestThreshold)
+            {
+                return (0, 0); // at rest (and below ~30 px/s of jitter)
+            }
+
             float dz = Math.Clamp(s.Deadzone, 0, 0.5f);
             float shaped = dz + (1 - dz) * MathF.Pow(mag, Math.Clamp(s.Curve, 0.3f, 3f));
             return (_x / mag * shaped, _y / mag * shaped);

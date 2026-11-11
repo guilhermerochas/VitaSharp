@@ -26,11 +26,16 @@ public static class SessionLog
                 string stamp = File.GetLastWriteTime(last).ToString("yyyyMMdd_HHmmss");
                 string oldTag = ReadTag(last);
                 string dest = Path.Combine(dir, $"{stamp}_{oldTag}.log");
-                for (int i = 2; File.Exists(dest); i++) dest = Path.Combine(dir, $"{stamp}_{oldTag}_{i}.log");
+                for (int i = 2; File.Exists(dest); i++)
+                {
+                    dest = Path.Combine(dir, $"{stamp}_{oldTag}_{i}.log");
+                }
                 // the file may be the one Log still has open (the app's own run): copy it, Log.OpenFile truncates it
                 using (var src = new FileStream(last, FileMode.Open, FileAccess.Read, FileShare.ReadWrite))
                 using (var dst = File.Create(dest))
+                {
                     src.CopyTo(dst);
+                }
             }
             Log.OpenFile(last);
         }
@@ -52,7 +57,10 @@ public static class SessionLog
             for (int i = 0; i < 5 && r.ReadLine() is { } line; i++)
             {
                 int k = line.IndexOf(Header, StringComparison.Ordinal);
-                if (k >= 0) return Clean(line[(k + Header.Length)..].Split(' ')[0]);
+                if (k >= 0)
+                {
+                    return Clean(line[(k + Header.Length)..].Split(' ')[0]);
+                }
             }
         }
         catch (IOException) { }
@@ -70,7 +78,13 @@ public static class SessionLog
         try
         {
             foreach (var f in Directory.GetFiles(dir, "*_*.log").Select(f => new FileInfo(f)).OrderByDescending(f => f.LastWriteTimeUtc).Skip(Keep))
-                try { f.Delete(); } catch (IOException) { }
+            {
+                try
+                {
+                    f.Delete();
+                }
+                catch (IOException) { }
+            }
         }
         catch (IOException) { }
     }

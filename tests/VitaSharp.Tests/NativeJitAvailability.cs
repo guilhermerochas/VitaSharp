@@ -20,14 +20,26 @@ public static class NativeJitAvailability
 public sealed class NativeFactAttribute : FactAttribute
 {
     /// <param name="unicorn">The test also needs Unicorn's native library (e.g. to filter encodings).</param>
-    public NativeFactAttribute(bool unicorn = false) { if (NativeJitAvailability.Reason(unicorn) is { } r) Skip = r; }
+    public NativeFactAttribute(bool unicorn = false)
+    {
+        if (NativeJitAvailability.Reason(unicorn) is { } r)
+        {
+            Skip = r;
+        }
+    }
 }
 
 /// <summary>[Theory] that is skipped when the native backend cannot run on this host.</summary>
 public sealed class NativeTheoryAttribute : TheoryAttribute
 {
     /// <param name="unicorn">The test also needs Unicorn's native library (e.g. to filter encodings).</param>
-    public NativeTheoryAttribute(bool unicorn = false) { if (NativeJitAvailability.Reason(unicorn) is { } r) Skip = r; }
+    public NativeTheoryAttribute(bool unicorn = false)
+    {
+        if (NativeJitAvailability.Reason(unicorn) is { } r)
+        {
+            Skip = r;
+        }
+    }
 }
 
 /// <summary>

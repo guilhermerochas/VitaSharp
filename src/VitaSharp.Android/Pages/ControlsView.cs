@@ -35,9 +35,11 @@ public sealed class ControlsView : Screen<ControlsState>
         foreach (int id in InputDevice.GetDeviceIds() ?? [])
         {
             var d = InputDevice.GetDevice(id);
-            if (d == null || d.IsVirtual) continue;
+            if (d == null || d.IsVirtual)
+                continue;
             bool pad = (d.Sources & InputSourceType.Gamepad) == InputSourceType.Gamepad || (d.Sources & InputSourceType.Joystick) == InputSourceType.Joystick;
-            if (!pad) continue;
+            if (!pad)
+                continue;
             string guid = AndroidGamepads.Guid(d.VendorId, d.ProductId);
             list.Add((guid, d.Name ?? Loc.Get("MController"), ControllerClassifier.Classify(guid, d.Name)));
         }
@@ -46,7 +48,8 @@ public sealed class ControlsView : Screen<ControlsState>
 
     ControllerProfile? Profile()
     {
-        if (State.Controllers.Count == 0) return null;
+        if (State.Controllers.Count == 0)
+            return null;
         var (id, name, kind) = State.Controllers[State.Selected];
         return AppServices.InputProfiles.ProfileFor(id, name, kind, isGamepad: true);
     }
@@ -130,7 +133,8 @@ public sealed class ControlsView : Screen<ControlsState>
 
     void SaveProfile(Action<ControllerProfile> change)
     {
-        if (Profile() is not { } p) return;
+        if (Profile() is not { } p)
+            return;
         change(p);
         AppServices.InputProfiles.Put(p);
         AppServices.InputProfiles.Save();
@@ -141,7 +145,8 @@ public sealed class ControlsView : Screen<ControlsState>
     {
         var choices = new[] { 0, 5, 10, 15, 20, 25 }.Select(v => new Mobile.Core.Settings.Choice(v.ToString(), $"{v}%")).ToList();
         var v = await Choose(Loc.Get("MDeadzone"), choices);
-        if (v == null) return;
+        if (v == null)
+            return;
         float dz = int.Parse(v) / 100f;
         SaveProfile(x => { x.LeftStick.Deadzone = dz; x.RightStick.Deadzone = dz; });
     }
@@ -165,7 +170,8 @@ public sealed class ControlsView : Screen<ControlsState>
             new(AndroidMotionModes.Off, AndroidMotionModes.Label(AndroidMotionMode.Off)),
         };
         var v = await Choose(Loc.Get("MMotion"), choices);
-        if (v == null) return;
+        if (v == null)
+            return;
         AppServices.Prefs.Motion = v;
         AppServices.SavePrefs();
         SetState(s => s.Revision++);
@@ -175,7 +181,8 @@ public sealed class ControlsView : Screen<ControlsState>
     {
         var choices = new[] { 20, 35, 55, 75, 100 }.Select(v => new Mobile.Core.Settings.Choice(v.ToString(), $"{v}%")).ToList();
         var v = await Choose(Loc.Get("MControlsOpacity"), choices);
-        if (v == null) return;
+        if (v == null)
+            return;
         AppServices.Prefs.OnScreenOpacity = int.Parse(v) / 100f;
         AppServices.SavePrefs();
         SetState(s => s.Revision++);

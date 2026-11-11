@@ -14,7 +14,11 @@ public class UpdateFeedTests
         var sb = new StringBuilder("[");
         foreach (var r in releases)
         {
-            if (sb.Length > 1) sb.Append(',');
+            if (sb.Length > 1)
+            {
+                sb.Append(',');
+            }
+
             string assets = string.Join(",", r.Assets.Select(a => $"{{\"name\":\"{a}\",\"browser_download_url\":\"https://example.invalid/{a}\",\"size\":10}}"));
             sb.Append($"{{\"tag_name\":\"{r.Tag}\",\"name\":\"VitaSharp {r.Tag}\",\"body\":\"## Changes\\n- a commit (abc)\",\"draft\":false," +
                       $"\"prerelease\":{(r.Pre ? "true" : "false")},\"target_commitish\":\"{r.Commit}\",\"published_at\":\"{r.When}\",\"assets\":[{assets}]}}");
@@ -43,7 +47,10 @@ public class UpdateFeedTests
         // a commit that is not on the list (a local build) is compared by its build time
         var local = BuildIdentity.Parse("1.0.0+4444444ddddddddddddddddddddddddddddddddd", DateTimeOffset.Parse("2026-11-08T00:00:00Z"));
         Assert.Null(UpdateFeed.FindUpdate(Feed, local, UpdateFeed.ChannelBuilds));
-        var older = local with { Built = DateTimeOffset.Parse("2026-11-06T00:00:00Z") };
+        var older = local with
+        {
+            Built = DateTimeOffset.Parse("2026-11-06T00:00:00Z")
+        };
         Assert.Equal("build-2222222", UpdateFeed.FindUpdate(Feed, older, UpdateFeed.ChannelBuilds)?.Tag);
         // the releases channel ignores builds: v0.1.0 is older than the running build
         Assert.Null(UpdateFeed.FindUpdate(Feed, BuildIdentity.Parse("1.0.0+" + New, DateTimeOffset.UtcNow), UpdateFeed.ChannelReleases));
@@ -83,7 +90,13 @@ public class UpdateFeedTests
             int port = 0;
             for (int p = 45100; p < 45200 && port == 0; p++)
             {
-                try { listener.Prefixes.Clear(); listener.Prefixes.Add($"http://localhost:{p}/"); listener.Start(); port = p; }
+                try
+                {
+                    listener.Prefixes.Clear();
+                    listener.Prefixes.Add($"http://localhost:{p}/");
+                    listener.Start();
+                    port = p;
+                }
                 catch (HttpListenerException) { }
             }
             Assert.NotEqual(0, port);
@@ -94,7 +107,14 @@ public class UpdateFeedTests
                 while (listener.IsListening)
                 {
                     HttpListenerContext ctx;
-                    try { ctx = await listener.GetContextAsync(); } catch (Exception) { return; }
+                    try
+                    {
+                        ctx = await listener.GetContextAsync();
+                    }
+                    catch (Exception)
+                    {
+                        return;
+                    }
                     string name = ctx.Request.Url!.AbsolutePath.Trim('/');
                     byte[] body = name.StartsWith("releases") ? Encoding.UTF8.GetBytes(json)
                         : File.Exists(Path.Combine(served.FullName, name)) ? File.ReadAllBytes(Path.Combine(served.FullName, name)) : [];
@@ -137,6 +157,9 @@ public class UpdateFeedTests
             Assert.Throws<InvalidOperationException>(() => UpdateInstaller.Apply(root, install.FullName, Path.Combine(install.FullName, "data"), TimeSpan.Zero));
             await serve;
         }
-        finally { dir.Delete(true); }
+        finally
+        {
+            dir.Delete(true);
+        }
     }
 }

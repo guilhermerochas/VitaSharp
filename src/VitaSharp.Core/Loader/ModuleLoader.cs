@@ -53,17 +53,11 @@ public sealed class Linker(IImportResolver hle)
     readonly List<(uint nid, byte[] relocs, Dictionary<int, SegmentInfo> segs)> _varBindings = new();
     readonly Dictionary<uint, string> _varSources = new(); // variable import NID -> "library (importing module)", for the log
 
-    public uint ProcessParam
-    {
-        get; private set;
-    }
+    public uint ProcessParam { get; private set; }
 
     /// <summary>Address ranges whose import stubs keep their binding while modules load (a module loaded for the
     /// emulator's own use must not take over the program's imports); null = none.</summary>
-    public List<(uint Start, uint Size)>? KeepBindingsIn
-    {
-        get; set;
-    }
+    public List<(uint Start, uint Size)>? KeepBindingsIn { get; set; }
 
     bool Kept(uint stub)
     {
@@ -83,14 +77,8 @@ public sealed class Linker(IImportResolver hle)
         return false;
     }
 
-    public Action<uint, uint>? InvalidateCode
-    {
-        get; set;
-    }
-    public Action<string>? Log
-    {
-        get; set;
-    }
+    public Action<uint, uint>? InvalidateCode { get; set; }
+    public Action<string>? Log { get; set; }
 
     public bool TryGetFunctionExport(uint nid, out uint addr)
     {

@@ -23,7 +23,11 @@ public sealed unsafe class VfpShortVectorTests(GuestMemoryFixture fx)
         var bytes = code.SelectMany(BitConverter.GetBytes).ToArray();
         bytes.CopyTo(GuestMemory.Span(CodeBase, bytes.Length));
         var s = core.State;
-        s->R[0] = vecFpscr; s->R[1] = BaseFpscr; s->R[15] = CodeBase; s->Cpsr = 0x10; s->Fpscr = BaseFpscr;
+        s->R[0] = vecFpscr;
+        s->R[1] = BaseFpscr;
+        s->R[15] = CodeBase;
+        s->Cpsr = 0x10;
+        s->Fpscr = BaseFpscr;
         Assert.Equal(ExitReason.Svc, core.Run());
         Assert.Equal(BaseFpscr, s->Fpscr);
     }
@@ -33,10 +37,22 @@ public sealed unsafe class VfpShortVectorTests(GuestMemoryFixture fx)
 
     CpuCore NewCore()
     {
-        if (fx.Memory.FindBlock(CodeBase) == null) fx.Memory.MapFixed(CodeBase, 0x1000, "fuzz code");
+        if (fx.Memory.FindBlock(CodeBase) == null)
+        {
+            fx.Memory.MapFixed(CodeBase, 0x1000, "fuzz code");
+        }
+
         var core = new CpuCore(new BlockCache());
-        for (int i = 0; i < 32; i++) core.State->D[i] = 0;
-        for (int i = 0; i < 32; i++) S(core.State, i) = i + 1; // s0..s31 = 1..32
+        for (int i = 0; i < 32; i++)
+        {
+            core.State->D[i] = 0;
+        }
+
+        for (int i = 0; i < 32; i++)
+        {
+            S(core.State, i) = i + 1; // s0..s31 = 1..32
+        }
+
         return core;
     }
 
@@ -46,7 +62,11 @@ public sealed unsafe class VfpShortVectorTests(GuestMemoryFixture fx)
         using var core = NewCore();
         var s = core.State;
         Run(core, Vadd, BaseFpscr | (3 << 16)); // LEN = 4
-        for (int i = 0; i < 4; i++) Assert.Equal((17 + i) + (25 + i), S(s, 8 + i));
+        for (int i = 0; i < 4; i++)
+        {
+            Assert.Equal((17 + i) + (25 + i), S(s, 8 + i));
+        }
+
         Assert.Equal(13f, S(s, 12)); // the fifth element is untouched
     }
 
@@ -56,7 +76,11 @@ public sealed unsafe class VfpShortVectorTests(GuestMemoryFixture fx)
         using var core = NewCore();
         var s = core.State;
         Run(core, 0xEE284A00, BaseFpscr | (3 << 16)); // vmul.f32 s8, s16, s0: s0 applies to every element
-        for (int i = 0; i < 4; i++) Assert.Equal((17 + i) * 1f, S(s, 8 + i));
+        for (int i = 0; i < 4; i++)
+        {
+            Assert.Equal((17 + i) * 1f, S(s, 8 + i));
+        }
+
         using var core2 = NewCore();
         s = core2.State;
         Run(core2, 0xEE380A0C, BaseFpscr | (3 << 16)); // vadd.f32 s0, s16, s24: destination in bank 0 = scalar
@@ -79,7 +103,11 @@ public sealed unsafe class VfpShortVectorTests(GuestMemoryFixture fx)
     {
         using var core = NewCore();
         var s = core.State;
-        for (int i = 0; i < 16; i++) D(s, i) = i * 10;
+        for (int i = 0; i < 16; i++)
+        {
+            D(s, i) = i * 10;
+        }
+
         Run(core, 0xEE384B0C, BaseFpscr | (3 << 20) | (1 << 16)); // vadd.f64 d4, d8, d12, LEN = 2, STRIDE = 2
         Assert.Equal(80.0 + 120.0, D(s, 4));
         Assert.Equal(100.0 + 140.0, D(s, 6));

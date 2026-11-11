@@ -20,7 +20,8 @@ usage() {
   cat <<'EOF'
 Usage: build/format-check.sh [--fix] [--whitespace-only] [--help]
   (no option)        verify: exits 1 and lists the files that differ from .editorconfig
-  --fix              rewrite the files instead of verifying (review the diff before committing)
+  --fix              rewrite the files instead of verifying (dotnet format + build/FormatTool: one-line blocks
+                     split, accessor lists on one line); review the diff before committing
   --whitespace-only  only the layout check (no project load, no restore needed)
 Folders in build/format-pending.txt are skipped. Same as build/format-check.ps1.
 EOF
@@ -81,6 +82,13 @@ main() {
     echo "format-check: style (severity warn)"
     # shellcheck disable=SC2086
     dotnet format style VitaSharp.sln --severity warn ${verify} ${exclude_args[@]+"${exclude_args[@]}"}
+  fi
+  if [[ -z "${verify}" ]]; then
+    # what dotnet format cannot do: split one-line statement blocks, keep { get; set; } on one line (the check is
+    # tests/VitaSharp.Tests/OneLineBlockTests); then indent the split lines
+    echo "format-check: layout (build/FormatTool)"
+    dotnet run --project "${ROOT}/build/FormatTool" -c Release -v q -- "${ROOT}"
+    dotnet format whitespace --folder ${exclude_args[@]+"${exclude_args[@]}"}
   fi
   echo "format-check: ok"
 }

@@ -34,10 +34,18 @@ public sealed class DecoderOutputsTests(GuestMemoryFixture fx)
         // a movie decoded into a ring of three buffers; picture 0 (buffer a) is never drawn
         uint a = fx.Memory.Alloc(W * H, "dec-ring-a"), b = fx.Memory.Alloc(W * H, "dec-ring-b"), c = fx.Memory.Alloc(W * H, "dec-ring-c");
         uint[] ring = [a, b, c];
-        for (int n = 0; n < 3; n++) Decode(ring[n], 100 + n);
+        for (int n = 0; n < 3; n++)
+        {
+            Decode(ring[n], 100 + n);
+        }
+
         for (int n = 1; n < 12; n++)
         {
-            if (n >= 3) Decode(ring[n % 3], 100 + n);
+            if (n >= 3)
+            {
+                Decode(ring[n % 3], 100 + n);
+            }
+
             var served = DecoderOutputs.EarlierFor(ring[n % 3], W, H);
             int shown = served?.Data[0] ?? GuestMemory.Read<byte>(ring[n % 3]);
             Assert.Equal(100 + n, shown); // before the fix buffer a kept serving its previous picture: 102, 103, 101, ...

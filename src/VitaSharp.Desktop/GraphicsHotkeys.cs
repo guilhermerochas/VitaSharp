@@ -33,9 +33,18 @@ sealed class GraphicsHotkeys(Emulator emu, VulkanRendererOptions ro, Func<Vulkan
     public void Press(string key)
     {
         bool back = key.StartsWith("Shift+", StringComparison.Ordinal);
-        if (key.EndsWith("F1", StringComparison.Ordinal)) CycleResolution(back);
-        else if (key.EndsWith("F2", StringComparison.Ordinal)) CycleFrameRate(back);
-        else if (key.EndsWith("F3", StringComparison.Ordinal)) CycleMsaa(back);
+        if (key.EndsWith("F1", StringComparison.Ordinal))
+        {
+            CycleResolution(back);
+        }
+        else if (key.EndsWith("F2", StringComparison.Ordinal))
+        {
+            CycleFrameRate(back);
+        }
+        else if (key.EndsWith("F3", StringComparison.Ordinal))
+        {
+            CycleMsaa(back);
+        }
     }
 
     static readonly string[] MsaaModes = ["native", "ss", "off"];
@@ -44,8 +53,16 @@ sealed class GraphicsHotkeys(Emulator emu, VulkanRendererOptions ro, Func<Vulkan
     /// new renderer replaces the current one between two GPU scenes.</summary>
     public void CycleMsaa(bool back)
     {
-        if (current() is not { } r) return;
-        if (Interlocked.Exchange(ref _busy, 1) == 1) return;
+        if (current() is not { } r)
+        {
+            return;
+        }
+
+        if (Interlocked.Exchange(ref _busy, 1) == 1)
+        {
+            return;
+        }
+
         string from = r.MsaaMode;
         string to = MsaaModes[Next(Array.IndexOf(MsaaModes, from), MsaaModes.Length, back)];
         Task.Run(() =>
@@ -69,7 +86,10 @@ sealed class GraphicsHotkeys(Emulator emu, VulkanRendererOptions ro, Func<Vulkan
                 Log.Error($"MSAA change failed: {e}");
                 notice(Loc.Get("GameMsaaFailed"));
             }
-            finally { Volatile.Write(ref _busy, 0); }
+            finally
+            {
+                Volatile.Write(ref _busy, 0);
+            }
         });
     }
 
@@ -85,8 +105,16 @@ sealed class GraphicsHotkeys(Emulator emu, VulkanRendererOptions ro, Func<Vulkan
     /// <summary>The next (or previous) internal resolution; a factor below native (0.5, 0.75) goes to 1x first.</summary>
     public void CycleResolution(bool back)
     {
-        if (current() is not { } r) return; // no renderer (a headless run without frames)
-        if (Interlocked.Exchange(ref _busy, 1) == 1) return; // a change is still being applied
+        if (current() is not { } r)
+        {
+            return; // no renderer (a headless run without frames)
+        }
+
+        if (Interlocked.Exchange(ref _busy, 1) == 1)
+        {
+            return; // a change is still being applied
+        }
+
         float from = r.InternalScale;
         float to = Scales[Next(Array.IndexOf(Scales, from), Scales.Length, back)];
         Task.Run(() =>
@@ -110,7 +138,10 @@ sealed class GraphicsHotkeys(Emulator emu, VulkanRendererOptions ro, Func<Vulkan
                 Log.Error($"Internal resolution change failed: {e}");
                 notice(Loc.Get("GameResFailed"));
             }
-            finally { Volatile.Write(ref _busy, 0); }
+            finally
+            {
+                Volatile.Write(ref _busy, 0);
+            }
         });
     }
 

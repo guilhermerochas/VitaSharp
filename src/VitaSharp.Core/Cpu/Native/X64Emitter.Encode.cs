@@ -25,7 +25,11 @@ public sealed unsafe partial class X64Emitter
         public int Pos;
         public override void WriteByte(byte value)
         {
-            if (Pos == Buf.Length) Array.Resize(ref Buf, Buf.Length * 2);
+            if (Pos == Buf.Length)
+            {
+                Array.Resize(ref Buf, Buf.Length * 2);
+            }
+
             Buf[Pos++] = value;
         }
     }
@@ -48,14 +52,25 @@ public sealed unsafe partial class X64Emitter
         if (_fOff.Length < n + 1)
         {
             int m = Math.Max(n + 1, _fOff.Length * 2);
-            _fOff = new int[m]; _fLen = new int[m]; _fTarget = new int[m]; _fAddr = new ulong[m]; _fShort = new bool[m];
+            _fOff = new int[m];
+            _fLen = new int[m];
+            _fTarget = new int[m];
+            _fAddr = new ulong[m];
+            _fShort = new bool[m];
         }
         var fw = _fw ??= new ByteWriter();
         var enc = _enc ??= Encoder.Create(64, fw);
         fw.Pos = 0;
         _labelAt.Clear();
         // Iced's assembler stores a label's id in the IP of the instruction it labels
-        for (int i = 0; i < n; i++) { ulong ip = list[i].IP; if (ip != 0) _labelAt[ip] = i; }
+        for (int i = 0; i < n; i++)
+        {
+            ulong ip = list[i].IP;
+            if (ip != 0)
+            {
+                _labelAt[ip] = i;
+            }
+        }
         for (int i = 0; i < n; i++)
         {
             var ins = list[i];
@@ -63,18 +78,42 @@ public sealed unsafe partial class X64Emitter
             {
                 if (_labelAt.TryGetValue(ins.NearBranch64, out int li))
                 {
-                    if (li <= i) return false; // only forward label branches are expected
-                    _fTarget[i] = li; _fShort[i] = true; _fLen[i] = 2;
+                    if (li <= i)
+                    {
+                        return false; // only forward label branches are expected
+                    }
+
+                    _fTarget[i] = li;
+                    _fShort[i] = true;
+                    _fLen[i] = 2;
                 }
-                else { _fTarget[i] = AbsoluteTarget; _fShort[i] = false; _fLen[i] = ins.IsJmpShortOrNear ? 5 : 6; }
+                else
+                {
+                    _fTarget[i] = AbsoluteTarget;
+                    _fShort[i] = false;
+                    _fLen[i] = ins.IsJmpShortOrNear ? 5 : 6;
+                }
                 continue;
             }
-            if (ins.IsCallNear) { _fTarget[i] = AbsoluteTarget; _fShort[i] = false; _fLen[i] = 5; continue; }
+            if (ins.IsCallNear)
+            {
+                _fTarget[i] = AbsoluteTarget;
+                _fShort[i] = false;
+                _fLen[i] = 5;
+                continue;
+            }
             if (ins.IsIPRelativeMemoryOperand || ins.FlowControl is FlowControl.ConditionalBranch or FlowControl.UnconditionalBranch)
+            {
                 return false; // other direct branch forms (jrcxz, loop, ...) are never emitted: leave them to Iced
+            }
+
             _fTarget[i] = NotBranch;
             _fOff[i] = fw.Pos;
-            if (!enc.TryEncode(ins, 0, out uint len, out _)) return false;
+            if (!enc.TryEncode(ins, 0, out uint len, out _))
+            {
+                return false;
+            }
+
             _fLen[i] = (int)len;
         }
         // layout: grow short label branches whose displacement does not fit until nothing changes
@@ -82,12 +121,20 @@ public sealed unsafe partial class X64Emitter
         while (true)
         {
             ulong a = rip;
-            for (int i = 0; i < n; i++) { _fAddr[i] = a; a += (ulong)_fLen[i]; }
+            for (int i = 0; i < n; i++)
+            {
+                _fAddr[i] = a;
+                a += (ulong)_fLen[i];
+            }
             end = a;
             bool changed = false;
             for (int i = 0; i < n; i++)
             {
-                if (_fTarget[i] < 0 || !_fShort[i]) continue;
+                if (_fTarget[i] < 0 || !_fShort[i])
+                {
+                    continue;
+                }
+
                 long disp = (long)(_fAddr[_fTarget[i]] - (_fAddr[i] + 2));
                 if (disp is < sbyte.MinValue or > sbyte.MaxValue)
                 {
@@ -96,26 +143,47 @@ public sealed unsafe partial class X64Emitter
                     changed = true;
                 }
             }
-            if (!changed) break;
+            if (!changed)
+            {
+                break;
+            }
         }
         // branches at their final addresses
         for (int i = 0; i < n; i++)
         {
-            if (_fTarget[i] == NotBranch) continue;
+            if (_fTarget[i] == NotBranch)
+            {
+                continue;
+            }
+
             var ins = list[i];
             if (_fTarget[i] >= 0)
             {
                 ins.NearBranch64 = _fAddr[_fTarget[i]];
-                if (_fShort[i]) ins.ToShortBranch(); else ins.ToNearBranch();
+                if (_fShort[i])
+                {
+                    ins.ToShortBranch();
+                }
+                else
+                {
+                    ins.ToNearBranch();
+                }
             }
             else
             {
                 ins.ToNearBranch();
                 long disp = (long)(ins.NearBranch64 - (_fAddr[i] + (ulong)_fLen[i]));
-                if (disp is < int.MinValue or > int.MaxValue) return false;
+                if (disp is < int.MinValue or > int.MaxValue)
+                {
+                    return false;
+                }
             }
             int at = fw.Pos;
-            if (!enc.TryEncode(ins, _fAddr[i], out uint len, out _) || len != _fLen[i]) return false;
+            if (!enc.TryEncode(ins, _fAddr[i], out uint len, out _) || len != _fLen[i])
+            {
+                return false;
+            }
+
             _fOff[i] = at;
         }
         code = new byte[(int)(end - rip)];

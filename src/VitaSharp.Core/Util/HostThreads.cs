@@ -14,7 +14,10 @@ namespace VitaSharp.Core.Util;
 /// </summary>
 public static class HostThreads
 {
-    public enum Role { Guest, Gpu }
+    public enum Role
+    {
+        Guest, Gpu
+    }
 
     /// <summary>Set by the front end from <c>--host-prio=on|off</c> before the emulator starts threads.</summary>
     public static bool Enabled = true;
@@ -29,13 +32,27 @@ public static class HostThreads
     /// <summary>Raises the calling thread's host priority for its role (both roles get the same boost today).</summary>
     public static void Apply(Role role)
     {
-        if (!On) return;
+        if (!On)
+        {
+            return;
+        }
+
         try
         {
-            if (OperatingSystem.IsMacOS()) { pthread_set_qos_class_self_np(QOS_CLASS_USER_INTERACTIVE, 0); return; }
-            if (OperatingSystem.IsWindows()) Thread.CurrentThread.Priority = ThreadPriority.AboveNormal;
+            if (OperatingSystem.IsMacOS())
+            {
+                pthread_set_qos_class_self_np(QOS_CLASS_USER_INTERACTIVE, 0);
+                return;
+            }
+            if (OperatingSystem.IsWindows())
+            {
+                Thread.CurrentThread.Priority = ThreadPriority.AboveNormal;
+            }
         }
-        catch (Exception e) { Log.WarnOnce("host-prio-" + role, $"host thread priority for {role} not set: {e.Message}"); }
+        catch (Exception e)
+        {
+            Log.WarnOnce("host-prio-" + role, $"host thread priority for {role} not set: {e.Message}");
+        }
     }
 
     const uint QOS_CLASS_USER_INTERACTIVE = 0x21;

@@ -26,7 +26,10 @@ static class ShaderTest
         };
         byte[]? klic = null;
         var work = Path.Combine(appDir, "sce_sys", "package", "work.bin");
-        if (File.Exists(work)) klic = PkgInstaller.ReadKlicensee(work);
+        if (File.Exists(work))
+        {
+            klic = PkgInstaller.ReadKlicensee(work);
+        }
 
         using var compiler = new ShaderCompiler(null);
         var seen = new HashSet<ulong>();
@@ -39,15 +42,28 @@ static class ShaderTest
             {
                 data = File.ReadAllBytes(file);
                 if (data.Length > 4 && data[0] == 'S' && data[1] == 'C' && data[2] == 'E' && data[3] == 0)
+                {
                     data = SelfDecryptor.ToElf(data, klic);
+                }
             }
-            catch { continue; }
+            catch
+            {
+                continue;
+            }
             var span = data.AsSpan();
             for (int i = 0; i + 64 < data.Length; i += 4)
             {
-                if (data[i] != 'G' || data[i + 1] != 'X' || data[i + 2] != 'P' || data[i + 3] != 0) continue;
+                if (data[i] != 'G' || data[i + 1] != 'X' || data[i + 2] != 'P' || data[i + 3] != 0)
+                {
+                    continue;
+                }
+
                 int size = (int)BinaryPrimitives.ReadUInt32LittleEndian(span[(i + 8)..]);
-                if (size < 0x40 || i + size > data.Length) continue;
+                if (size < 0x40 || i + size > data.Length)
+                {
+                    continue;
+                }
+
                 if (GxpProgram.Validate(span.Slice(i, size)) is { } bad)
                 {
                     invalid++;
@@ -55,9 +71,17 @@ static class ShaderTest
                     continue;
                 }
                 var prog = new GxpProgram(span.Slice(i, size).ToArray(), 0);
-                if (!seen.Add(prog.Hash)) continue;
+                if (!seen.Add(prog.Hash))
+                {
+                    continue;
+                }
+
                 total++;
-                if (prog.WritesPointSize) pointSize++; // point sprites (their size follows the internal resolution)
+                if (prog.WritesPointSize)
+                {
+                    pointSize++; // point sprites (their size follows the internal resolution)
+                }
+
                 string name = $"{prog.Hash:x16}.{(prog.IsVertex ? "vert" : "frag")}";
                 GeneratedShader gen;
                 try
@@ -71,8 +95,19 @@ static class ShaderTest
                     File.WriteAllBytes(Path.Combine(outDir, name + ".gxp"), prog.Data);
                     continue;
                 }
-                foreach (var w in gen.Warnings) warnings[w] = warnings.GetValueOrDefault(w) + 1;
-                if (perShader) foreach (var w in gen.Warnings.Distinct()) Console.WriteLine($"{name} ({Path.GetFileName(file)}): warning: {w}");
+                foreach (var w in gen.Warnings)
+                {
+                    warnings[w] = warnings.GetValueOrDefault(w) + 1;
+                }
+
+                if (perShader)
+                {
+                    foreach (var w in gen.Warnings.Distinct())
+                    {
+                        Console.WriteLine($"{name} ({Path.GetFileName(file)}): warning: {w}");
+                    }
+                }
+
                 var spv = compiler.Compile(gen.Glsl, gen.IsVertex, out var err);
                 if (spv == null)
                 {
@@ -84,12 +119,19 @@ static class ShaderTest
                 else
                 {
                     ok++;
-                    if (dumpAll) File.WriteAllText(Path.Combine(outDir, name), gen.Glsl);
+                    if (dumpAll)
+                    {
+                        File.WriteAllText(Path.Combine(outDir, name), gen.Glsl);
+                    }
                 }
             }
         }
         Console.WriteLine($"GXP programs: {total}, compiled {ok}, failed {fail}" + (invalid > 0 ? $", {invalid} invalid GXP blocks skipped" : "") + $"; {pointSize} vertex programs write the point size");
-        foreach (var (w, n) in warnings.OrderByDescending(kv => kv.Value).Take(25)) Console.WriteLine($"  {n,5}x {w}");
+        foreach (var (w, n) in warnings.OrderByDescending(kv => kv.Value).Take(25))
+        {
+            Console.WriteLine($"  {n,5}x {w}");
+        }
+
         return fail == 0 ? 0 : 2;
     }
 }

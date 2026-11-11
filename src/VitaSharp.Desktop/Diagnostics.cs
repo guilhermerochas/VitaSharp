@@ -60,7 +60,11 @@ public sealed class Diagnostics
             string title = SafeName(string.IsNullOrEmpty(_emu.TitleId) ? "NOTITLE" : _emu.TitleId);
             string baseName = $"{title}_{DateTime.Now:yyyyMMdd_HHmmss}";
             dir = Path.Combine(Root, baseName);
-            for (int i = 2; Directory.Exists(dir) || File.Exists(dir + ".zip"); i++) dir = Path.Combine(Root, $"{baseName}_{i}");
+            for (int i = 2; Directory.Exists(dir) || File.Exists(dir + ".zip"); i++)
+            {
+                dir = Path.Combine(Root, $"{baseName}_{i}");
+            }
+
             Directory.CreateDirectory(dir);
         }
         catch (Exception e)
@@ -81,19 +85,41 @@ public sealed class Diagnostics
             DiagnosticCaptureResult? res = null;
             try
             {
-                if (!requested) note = renderer == null ? "no renderer: GPU part skipped" : "renderer busy with another capture";
-                else if (await Task.WhenAny(tcs.Task, Task.Delay(15000)) == tcs.Task) res = tcs.Task.Result;
-                else if (renderer!.CancelDiagnosticCapture()) note = "no frame was presented within 15 s (hang?): GPU part skipped, see state.txt";
+                if (!requested)
+                {
+                    note = renderer == null ? "no renderer: GPU part skipped" : "renderer busy with another capture";
+                }
+                else if (await Task.WhenAny(tcs.Task, Task.Delay(15000)) == tcs.Task)
+                {
+                    res = tcs.Task.Result;
+                }
+                else if (renderer!.CancelDiagnosticCapture())
+                {
+                    note = "no frame was presented within 15 s (hang?): GPU part skipped, see state.txt";
+                }
                 else
                 {
                     // armed but not finished: the frame is still being traced (very slow frame); wait a bit more
-                    if (await Task.WhenAny(tcs.Task, Task.Delay(60000)) == tcs.Task) res = tcs.Task.Result;
-                    else note = "the traced frame did not complete within 75 s (hang?)";
+                    if (await Task.WhenAny(tcs.Task, Task.Delay(60000)) == tcs.Task)
+                    {
+                        res = tcs.Task.Result;
+                    }
+                    else
+                    {
+                        note = "the traced frame did not complete within 75 s (hang?)";
+                    }
                 }
                 Finish(dir, reason, guestFrame, renderer, res, note);
             }
-            catch (Exception e) { Log.Warn($"[diag] capture failed: {e}"); Status?.Invoke(Loc.Get("DiagFailed")); }
-            finally { Volatile.Write(ref _busy, 0); }
+            catch (Exception e)
+            {
+                Log.Warn($"[diag] capture failed: {e}");
+                Status?.Invoke(Loc.Get("DiagFailed"));
+            }
+            finally
+            {
+                Volatile.Write(ref _busy, 0);
+            }
         });
         return true;
     }
@@ -103,41 +129,72 @@ public sealed class Diagnostics
     {
         lock (this)
         {
-            if (_autoCount >= AutoMax) { Log.Info($"[diag] anomaly '{kind}': automatic capture limit ({AutoMax} per session) reached"); return; }
-            if (DateTime.Now - _lastAuto < AutoInterval) { Log.Info($"[diag] anomaly '{kind}': last automatic capture less than {AutoInterval.TotalMinutes:F0} min ago, skipped"); return; }
+            if (_autoCount >= AutoMax)
+            {
+                Log.Info($"[diag] anomaly '{kind}': automatic capture limit ({AutoMax} per session) reached");
+                return;
+            }
+            if (DateTime.Now - _lastAuto < AutoInterval)
+            {
+                Log.Info($"[diag] anomaly '{kind}': last automatic capture less than {AutoInterval.TotalMinutes:F0} min ago, skipped");
+                return;
+            }
             // keep the replay ring running ~1 s past the spike so both sides of it are saved
             // NaN/Inf in a render target: trace the very next frame (the NaN may be gone a second later, and the
             // visible frame may look fine); the presented-image anomalies keep ~1 s of replay after the spike
             int post = kind == VulkanRenderer.NanAnomalyKind ? 0 : VulkanRenderer.ReplayPostFrames;
-            if (!Capture($"auto: {kind} at present #{present} - {detail}", post, present)) return;
+            if (!Capture($"auto: {kind} at present #{present} - {detail}", post, present))
+            {
+                return;
+            }
+
             _lastAuto = DateTime.Now;
             _autoCount++;
         }
     }
 
     /// <summary>Waits for a running capture (end of headless runs).</summary>
-    public void WaitIdle(int ms = 120000) { try { _last.Wait(ms); } catch { } }
+    public void WaitIdle(int ms = 120000)
+    {
+        try
+        {
+            _last.Wait(ms);
+        }
+        catch { }
+    }
 
     void Finish(string dir, string reason, long guestFrame, VulkanRenderer? renderer, DiagnosticCaptureResult? res, string? note)
     {
         // emulator state: threads, held mutexes, recent HLE calls (debug mode), GPU queue
         File.WriteAllText(Path.Combine(dir, "state.txt"), Watchdog.DescribeState(_emu, renderer, 16));
         File.WriteAllText(Path.Combine(dir, "audio.txt"), AudioDiagnostics.Describe());
-        if (res == null && renderer != null) File.WriteAllText(Path.Combine(dir, "frames.txt"), renderer.RecentFrames());
+        if (res == null && renderer != null)
+        {
+            File.WriteAllText(Path.Combine(dir, "frames.txt"), renderer.RecentFrames());
+        }
+
         File.WriteAllText(Path.Combine(dir, "info.txt"), BuildInfo(reason, guestFrame, renderer, res, note));
         string zip = dir + ".zip";
         Log.Info($"[diag] saved{(note != null ? $" ({note})" : "")}: {dir} and {zip}" +
                  (res != null ? $" - {res.Draws} draws, {res.Targets} render targets, {res.Textures} textures traced" : ""));
         Log.Flush();
         CopyLog(Path.Combine(dir, "log.txt"));
-        if (File.Exists(zip)) File.Delete(zip);
+        if (File.Exists(zip))
+        {
+            File.Delete(zip);
+        }
+
         ZipFile.CreateFromDirectory(dir, zip, CompressionLevel.Optimal, includeBaseDirectory: true);
         Status?.Invoke(Loc.Format("DiagSaved", zip));
     }
 
     static void CopyLog(string dest)
     {
-        if (Log.FilePath is not { } src || !File.Exists(src)) { File.WriteAllText(dest, "(no log file: console logging only)\n"); return; }
+        if (Log.FilePath is not { } src || !File.Exists(src))
+        {
+            File.WriteAllText(dest, "(no log file: console logging only)\n");
+            return;
+        }
         // the log is open for writing (shared read/write): copy what is there now
         using var input = new FileStream(src, FileMode.Open, FileAccess.Read, FileShare.ReadWrite | FileShare.Delete);
         using var output = File.Create(dest);
@@ -149,7 +206,11 @@ public sealed class Diagnostics
         var sb = new StringBuilder();
         sb.AppendLine("VitaSharp diagnostic capture");
         sb.AppendLine($"Reason: {reason}");
-        if (note != null) sb.AppendLine($"NOTE: {note}");
+        if (note != null)
+        {
+            sb.AppendLine($"NOTE: {note}");
+        }
+
         sb.AppendLine($"Time: {DateTime.Now:yyyy-MM-dd HH:mm:ss} (local), {DateTime.UtcNow:yyyy-MM-dd HH:mm:ss} UTC");
         sb.AppendLine($"Title: {_emu.TitleId} {_emu.Title}");
         sb.AppendLine($"App path: {_emu.AppPath}");
@@ -162,7 +223,10 @@ public sealed class Diagnostics
                 : res.ReplayFrames < 0 ? "Replay: writing replay/ failed (see log.txt)" : "Replay: off (the replay ring runs only in debug mode, F9)");
             sb.AppendLine(res.DrawRingFrames > 0 ? $"Draw ring: draw lists of {res.DrawRingFrames} presented frames before the traced one in drawring/ (see drawring/index.txt and diff.txt)"
                 : res.DrawRingFrames < 0 ? "Draw ring: writing drawring/ failed (see log.txt)" : "Draw ring: off (runs only in debug mode, F9)");
-            if (res.Error != null) sb.AppendLine($"Renderer error: {res.Error}");
+            if (res.Error != null)
+            {
+                sb.AppendLine($"Renderer error: {res.Error}");
+            }
         }
         sb.AppendLine($"Build: {BuildVersion()}");
         sb.AppendLine($"Runtime: .NET {Environment.Version}, {System.Runtime.InteropServices.RuntimeInformation.OSDescription} {System.Runtime.InteropServices.RuntimeInformation.OSArchitecture}, {Environment.ProcessorCount} logical CPUs");
@@ -173,14 +237,33 @@ public sealed class Diagnostics
         sb.AppendLine(Core.Gpu.GpuDumpRecorder.Current is { } dump
             ? $"GPU dump: {(dump.Recording ? $"recording, {dump.FramesRecorded} frames so far" : "armed")} -> {dump.Options.Path}"
             : $"GPU dump: not recording (Ctrl+F8 records one into {GpuDumpControl.Root}; see docs/notes/gpu-dump.md)");
-        if (HostInfo?.Invoke() is { Length: > 0 } host) sb.AppendLine(host);
-        if (renderer != null) sb.AppendLine(renderer.DescribeForDiagnostics());
+        if (HostInfo?.Invoke() is { Length: > 0 } host)
+        {
+            sb.AppendLine(host);
+        }
+
+        if (renderer != null)
+        {
+            sb.AppendLine(renderer.DescribeForDiagnostics());
+        }
+
         sb.AppendLine($"GPU queue: submitted {_emu.Gpu.Submitted}, completed {_emu.Gpu.Completed}");
         sb.AppendLine("Environment overrides:");
         int env = 0;
         foreach (DictionaryEntry e in Environment.GetEnvironmentVariables())
-            if (e.Key is string k && k.StartsWith("VITASHARP_", StringComparison.OrdinalIgnoreCase)) { sb.AppendLine($"  {k}={e.Value}"); env++; }
-        if (env == 0) sb.AppendLine("  (none)");
+        {
+            if (e.Key is string k && k.StartsWith("VITASHARP_", StringComparison.OrdinalIgnoreCase))
+            {
+                sb.AppendLine($"  {k}={e.Value}");
+                env++;
+            }
+        }
+
+        if (env == 0)
+        {
+            sb.AppendLine("  (none)");
+        }
+
         sb.AppendLine();
         sb.AppendLine("Files:");
         sb.AppendLine("  screenshot.png      the presented frame at the end of the traced frame");
@@ -204,7 +287,11 @@ public sealed class Diagnostics
         var asm = Assembly.GetEntryAssembly() ?? typeof(Diagnostics).Assembly;
         string? info = asm.GetCustomAttribute<AssemblyInformationalVersionAttribute>()?.InformationalVersion;
         string when = "";
-        try { when = $", built {Updater.BuildTime().ToLocalTime():yyyy-MM-dd HH:mm}"; } catch { }
+        try
+        {
+            when = $", built {Updater.BuildTime().ToLocalTime():yyyy-MM-dd HH:mm}";
+        }
+        catch { }
         return $"VitaSharp {info ?? asm.GetName().Version?.ToString() ?? "?"}{when}";
     }
 

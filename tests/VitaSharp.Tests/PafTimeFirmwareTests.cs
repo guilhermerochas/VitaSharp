@@ -40,9 +40,17 @@ public sealed unsafe class PafTimeFirmwareTests(GuestMemoryFixture fx, ITestOutp
         public Run(GuestMemoryFixture fx, string? module)
         {
             Directory.CreateDirectory(Path.Combine(_root, "vs0", "sys", "external"));
-            if (module != null) File.Copy(module, Path.Combine(_root, "vs0", "sys", "external", "libpaf.suprx"));
+            if (module != null)
+            {
+                File.Copy(module, Path.Combine(_root, "vs0", "sys", "external", "libpaf.suprx"));
+            }
+
             Emu = new Emulator(new EmulatorOptions { FsRoot = _root, Memory = fx.Memory, EnableJit = false, CpuBackend = "interp" });
-            if (module != null) Emu.LoadModule("vs0:sys/external/libpaf.suprx");
+            if (module != null)
+            {
+                Emu.LoadModule("vs0:sys/external/libpaf.suprx");
+            }
+
             _lle = module != null;
             _paf = Emu.Hle.Modules.OfType<Paf>().Single();
             _arena = Emu.Memory.Alloc(0x10000, "paf time test");
@@ -51,17 +59,42 @@ public sealed unsafe class PafTimeFirmwareTests(GuestMemoryFixture fx, ITestOutp
         public void Dispose()
         {
             Emu.Dispose();
-            try { Directory.Delete(_root, true); } catch (IOException) { }
+            try
+            {
+                Directory.Delete(_root, true);
+            }
+            catch (IOException) { }
         }
 
-        public uint Alloc(uint n) { uint p = _arena + _bump; _bump += (n + 15) & ~15u; GuestMemory.Fill(p, 0xCD, n); return p; }
-        public uint Str(string s) { uint p = Alloc((uint)s.Length + 1); GuestMemory.WriteCString(p, s); return p; }
-        public uint Tick(ulong v) { uint p = Alloc(8); GuestMemory.Write(p, v); return p; }
+        public uint Alloc(uint n)
+        {
+            uint p = _arena + _bump;
+            _bump += (n + 15) & ~15u;
+            GuestMemory.Fill(p, 0xCD, n);
+            return p;
+        }
+        public uint Str(string s)
+        {
+            uint p = Alloc((uint)s.Length + 1);
+            GuestMemory.WriteCString(p, s);
+            return p;
+        }
+        public uint Tick(ulong v)
+        {
+            uint p = Alloc(8);
+            GuestMemory.Write(p, v);
+            return p;
+        }
         public uint Date(ushort y, ushort mo, ushort d, ushort h = 0, ushort mi = 0, ushort s = 0, uint us = 0)
         {
             uint p = Alloc(0x18);
-            GuestMemory.Write(p, y); GuestMemory.Write(p + 2, mo); GuestMemory.Write(p + 4, d);
-            GuestMemory.Write(p + 6, h); GuestMemory.Write(p + 8, mi); GuestMemory.Write(p + 10, s); GuestMemory.Write(p + 12, us);
+            GuestMemory.Write(p, y);
+            GuestMemory.Write(p + 2, mo);
+            GuestMemory.Write(p + 4, d);
+            GuestMemory.Write(p + 6, h);
+            GuestMemory.Write(p + 8, mi);
+            GuestMemory.Write(p + 10, s);
+            GuestMemory.Write(p + 12, us);
             return p;
         }
 
@@ -91,7 +124,11 @@ public sealed unsafe class PafTimeFirmwareTests(GuestMemoryFixture fx, ITestOutp
             string ret = none ? "" : wide ? $" = {r:X16}" : typeof(Paf).GetMethod(hle, BindingFlags.Instance | BindingFlags.NonPublic)!.ReturnType == typeof(bool) ? $" = {(r & 0xFF) != 0}"
                 : r32 >= _arena && r32 < _arena + 0x10000 ? $" = @{r32 - _arena:X}" : $" = {r32:X8}";
             // an error leaves the outputs undefined (libpaf copies an uninitialised local)
-            if (!none && !wide && r32 >= 0x80000000 && !(r32 >= _arena && r32 < _arena + 0x10000)) outs = [];
+            if (!none && !wide && r32 >= 0x80000000 && !(r32 >= _arena && r32 < _arena + 0x10000))
+            {
+                outs = [];
+            }
+
             Log.Add($"{hle}({string.Join(",", args.Select(a => a is uint u && u >= _arena && u < _arena + 0x10000 ? $"@{u - _arena:X}" : a.ToString()))}){ret} {string.Join(" ", outs.Select(o => Hex(o.P, o.N)))}");
         }
     }
@@ -110,7 +147,10 @@ public sealed unsafe class PafTimeFirmwareTests(GuestMemoryFixture fx, ITestOutp
             {
                 void C(string fw, string hle, uint[] regs, object[] args, params (uint, uint)[] outs) => r.Call(t, fw, hle, regs, args, outs);
                 foreach (uint y in new uint[] { 1900, 2000, 2020, 2023 })
+                {
                     C("_ZN3paf3rtc10IsLeapYearEt", "RtcIsLeapYear", [y], [(int)y]);
+                }
+
                 const ulong t2020 = 63718562096789000; // 2020-02-29 12:34:56.789 (SceRtc ticks: microseconds since year 1)
                 ulong[] ticks = [t2020, t2020 - 59L * 86_400_000_000, 62135596800000000, 0];
                 foreach (ulong k in ticks)
@@ -134,14 +174,18 @@ public sealed unsafe class PafTimeFirmwareTests(GuestMemoryFixture fx, ITestOutp
                 {
                     uint src = r.Tick(t2020), dst = r.Alloc(8);
                     foreach (var (fw, hle) in new[] { ("_ZN3paf3rtc19TickAddMicrosecondsEPyPKyx", "RtcAddUs"), ("_ZN3paf3rtc14TickAddSecondsEPyPKyx", "RtcAddSeconds"), ("_ZN3paf3rtc14TickAddMinutesEPyPKyx", "RtcAddMinutes") })
+                    {
                         C(fw, hle, [dst, src, (uint)n, (uint)(n >> 32)], [dst, src, n], (dst, 8));
+                    }
                 }
                 foreach (int n in new[] { 1, -1, 12, -25 })
                 {
                     uint src = r.Tick(t2020 - 29L * 86_400_000_000), dst = r.Alloc(8); // 2020-01-31
                     foreach (var (fw, hle) in new[] { ("_ZN3paf3rtc12TickAddHoursEPyPKyi", "RtcAddHours"), ("_ZN3paf3rtc11TickAddDaysEPyPKyi", "RtcAddDays"),
                                  ("_ZN3paf3rtc12TickAddWeeksEPyPKyi", "RtcAddWeeks"), ("_ZN3paf3rtc13TickAddMonthsEPyPKyi", "RtcAddMonths"), ("_ZN3paf3rtc12TickAddYearsEPyPKyi", "RtcAddYears") })
+                    {
                         C(fw, hle, [dst, src, (uint)n], [dst, src, n], (dst, 8));
+                    }
                 }
                 foreach (string s in Rfc3339)
                 {
@@ -170,14 +214,22 @@ public sealed unsafe class PafTimeFirmwareTests(GuestMemoryFixture fx, ITestOutp
                 C("_ZNK3paf8datetime8DateTimeltERKS1_", "DtLess", [a, sum], [a, sum]);
                 C("_ZNK3paf8datetime8DateTimeltERKS1_", "DtLess", [sum, a], [sum, a]);
                 foreach (var (y, m, d) in new[] { (2020u, 2u, 29u), (2000u, 1u, 1u), (1999u, 12u, 31u), (2024u, 3u, 1u) })
+                {
                     C("_ZN3paf8datetime8DateTime9DayOfWeekEttt", "DtDayOfWeek", [y, m, d], [y, m, d]);
+                }
             }
-            catch (Exception e) { failure = e; }
+            catch (Exception e)
+            {
+                failure = e;
+            }
         };
         th.Start(0, 0);
         Assert.True(th.WaitForExit(120_000), "paf time test thread did not finish");
         r.Emu.Kernel.DeleteThread(th);
-        if (failure != null) throw new Xunit.Sdk.XunitException(failure.ToString());
+        if (failure != null)
+        {
+            throw new Xunit.Sdk.XunitException(failure.ToString());
+        }
     }
 
     static string Hash(List<string> log) => Convert.ToHexString(SHA256.HashData(Encoding.UTF8.GetBytes(string.Join("\n", log))))[..16];
@@ -199,8 +251,16 @@ public sealed unsafe class PafTimeFirmwareTests(GuestMemoryFixture fx, ITestOutp
     public void MatchesFirmwareModule()
     {
         List<string> fw, hle;
-        using (var r = new Run(fx, FirmwarePath.Value)) { Scenario(r); fw = r.Log; }
-        using (var r = new Run(fx, null)) { Scenario(r); hle = r.Log; }
+        using (var r = new Run(fx, FirmwarePath.Value))
+        {
+            Scenario(r);
+            fw = r.Log;
+        }
+        using (var r = new Run(fx, null))
+        {
+            Scenario(r);
+            hle = r.Log;
+        }
         var diff = fw.Zip(hle).Where(p => p.First != p.Second).Select(p => $"fw:  {p.First}\nhle: {p.Second}").ToList();
         Assert.True(diff.Count == 0 && fw.Count == hle.Count, $"{diff.Count} calls differ from libpaf ({fw.Count} / {hle.Count} lines):\n" + string.Join("\n", diff.Take(20)));
         Assert.True(Hash(fw) == FirmwareLogHash, $"FirmwareLogHash is out of date: the firmware log hashes to {Hash(fw)}");

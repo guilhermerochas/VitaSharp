@@ -44,11 +44,27 @@ public sealed class FFmpegVideoBackend : IVideoDecoderBackend
 
     static AVHWDeviceType ParseDevice(string? v, string source)
     {
-        if (string.IsNullOrEmpty(v) || v == "auto" || IsOff(v)) return AVHWDeviceType.AV_HWDEVICE_TYPE_NONE;
-        if (v is "on" or "1" or "hw") return PlatformDevice;
-        if (!FFmpegLoader.Available) return AVHWDeviceType.AV_HWDEVICE_TYPE_NONE;
+        if (string.IsNullOrEmpty(v) || v == "auto" || IsOff(v))
+        {
+            return AVHWDeviceType.AV_HWDEVICE_TYPE_NONE;
+        }
+
+        if (v is "on" or "1" or "hw")
+        {
+            return PlatformDevice;
+        }
+
+        if (!FFmpegLoader.Available)
+        {
+            return AVHWDeviceType.AV_HWDEVICE_TYPE_NONE;
+        }
+
         var t = ffmpeg.av_hwdevice_find_type_by_name(v);
-        if (t == AVHWDeviceType.AV_HWDEVICE_TYPE_NONE) Log.Warn($"{source}={v}: unknown FFmpeg hardware device type, using the platform default");
+        if (t == AVHWDeviceType.AV_HWDEVICE_TYPE_NONE)
+        {
+            Log.Warn($"{source}={v}: unknown FFmpeg hardware device type, using the platform default");
+        }
+
         return t;
     }
 
@@ -70,7 +86,10 @@ public sealed class FFmpegVideoBackend : IVideoDecoderBackend
 
     public IVideoDecoder? CreateH264(VideoDecoderOptions options)
     {
-        if (!FFmpegLoader.Available) return null;
+        if (!FFmpegLoader.Available)
+        {
+            return null;
+        }
         // auto: software (see the class remarks); a hardware decoder only when one was asked for
         var device = Hardware == HardwareDecode.Off ? AVHWDeviceType.AV_HWDEVICE_TYPE_NONE : ForcedDevice;
         return FFmpegVideoDecoder.Create(AVCodecID.AV_CODEC_ID_H264, device);
@@ -123,10 +142,22 @@ public sealed unsafe class FFmpegVideoDecoder : IVideoDecoder
     /// <summary>A decoder using <paramref name="device"/> when possible, software otherwise; null without FFmpeg/codec.</summary>
     public static FFmpegVideoDecoder? Create(AVCodecID codecId, AVHWDeviceType device)
     {
-        if (!FFmpegLoader.Available) return null;
+        if (!FFmpegLoader.Available)
+        {
+            return null;
+        }
+
         var d = new FFmpegVideoDecoder(codecId);
-        if (device != AVHWDeviceType.AV_HWDEVICE_TYPE_NONE && d.Open(device)) return d;
-        if (d.Open(AVHWDeviceType.AV_HWDEVICE_TYPE_NONE)) return d;
+        if (device != AVHWDeviceType.AV_HWDEVICE_TYPE_NONE && d.Open(device))
+        {
+            return d;
+        }
+
+        if (d.Open(AVHWDeviceType.AV_HWDEVICE_TYPE_NONE))
+        {
+            return d;
+        }
+
         d.Dispose();
         return null;
     }
@@ -136,24 +167,44 @@ public sealed unsafe class FFmpegVideoDecoder : IVideoDecoder
     bool Open(AVHWDeviceType device)
     {
         var codec = ffmpeg.avcodec_find_decoder(_codecId);
-        if (codec == null) return false;
+        if (codec == null)
+        {
+            return false;
+        }
+
         AVPixelFormat hwFormat = AVPixelFormat.AV_PIX_FMT_NONE;
         if (device != AVHWDeviceType.AV_HWDEVICE_TYPE_NONE)
         {
             for (int i = 0; ; i++)
             {
                 var cfg = ffmpeg.avcodec_get_hw_config(codec, i);
-                if (cfg == null) break;
-                if ((cfg->methods & (int)AvCodecHwConfigMethod.AV_CODEC_HW_CONFIG_METHOD_HW_DEVICE_CTX) != 0 && cfg->device_type == device) { hwFormat = cfg->pix_fmt; break; }
+                if (cfg == null)
+                {
+                    break;
+                }
+
+                if ((cfg->methods & (int)AvCodecHwConfigMethod.AV_CODEC_HW_CONFIG_METHOD_HW_DEVICE_CTX) != 0 && cfg->device_type == device)
+                {
+                    hwFormat = cfg->pix_fmt;
+                    break;
+                }
             }
-            if (hwFormat == AVPixelFormat.AV_PIX_FMT_NONE) { ReportUnavailable(device, "the decoder has no such hwaccel"); return false; }
+            if (hwFormat == AVPixelFormat.AV_PIX_FMT_NONE)
+            {
+                ReportUnavailable(device, "the decoder has no such hwaccel");
+                return false;
+            }
         }
         var ctx = ffmpeg.avcodec_alloc_context3(codec);
         // pictures come out in display order, as from the Vita's decoder and Vita3K's (no low-delay flag): with
         // AV_CODEC_FLAG_LOW_DELAY FFmpeg hands each picture out as soon as it is decoded, so a stream with B-frames
         // came out in decode order and a game that shows the pictures as they arrive (Ninja Gaiden Sigma 2 Plus's
         // intro, every third picture two frames back) jumped back and forth. VITASHARP_VIDEO_LOW_DELAY=1: the old way
-        if (LowDelay) ctx->flags |= ffmpeg.AV_CODEC_FLAG_LOW_DELAY;
+        if (LowDelay)
+        {
+            ctx->flags |= ffmpeg.AV_CODEC_FLAG_LOW_DELAY;
+        }
+
         ctx->thread_count = 1;
         if (device != AVHWDeviceType.AV_HWDEVICE_TYPE_NONE)
         {
@@ -178,13 +229,24 @@ public sealed unsafe class FFmpegVideoDecoder : IVideoDecoder
         if (ffmpeg.avcodec_open2(ctx, codec, null) < 0)
         {
             ffmpeg.avcodec_free_context(&ctx);
-            if (device != AVHWDeviceType.AV_HWDEVICE_TYPE_NONE) ReportUnavailable(device, "avcodec_open2 failed");
+            if (device != AVHWDeviceType.AV_HWDEVICE_TYPE_NONE)
+            {
+                ReportUnavailable(device, "avcodec_open2 failed");
+            }
+
             return false;
         }
         _ctx = ctx;
         _device = device;
         _hwFormat = hwFormat;
-        lock (_reportedOpened) if (_reportedOpened.Add(device)) Log.Info($"Video decoder: H.264 via {Name}");
+        lock (_reportedOpened)
+        {
+            if (_reportedOpened.Add(device))
+            {
+                Log.Info($"Video decoder: H.264 via {Name}");
+            }
+        }
+
         return true;
     }
 
@@ -206,14 +268,26 @@ public sealed unsafe class FFmpegVideoDecoder : IVideoDecoder
     /// <summary>A shared library <paramref name="device"/> needs that cannot be loaded, or null.</summary>
     static string? MissingDeviceLibrary(AVHWDeviceType device)
     {
-        if (!OperatingSystem.IsLinux() || !LinuxDeviceLibraries.TryGetValue(device, out var libs)) return null;
+        if (!OperatingSystem.IsLinux() || !LinuxDeviceLibraries.TryGetValue(device, out var libs))
+        {
+            return null;
+        }
+
         lock (_missingLibrary)
         {
-            if (_missingLibrary.TryGetValue(device, out var known)) return known;
+            if (_missingLibrary.TryGetValue(device, out var known))
+            {
+                return known;
+            }
+
             string? missing = null;
             foreach (var lib in libs)
             {
-                if (!System.Runtime.InteropServices.NativeLibrary.TryLoad(lib, out var h)) { missing = lib; break; }
+                if (!System.Runtime.InteropServices.NativeLibrary.TryLoad(lib, out var h))
+                {
+                    missing = lib;
+                    break;
+                }
                 System.Runtime.InteropServices.NativeLibrary.Free(h);
             }
             _missingLibrary[device] = missing;
@@ -224,8 +298,12 @@ public sealed unsafe class FFmpegVideoDecoder : IVideoDecoder
     static void ReportUnavailable(AVHWDeviceType device, string why)
     {
         lock (_reportedUnavailable)
+        {
             if (_reportedUnavailable.Add(device))
+            {
                 Log.Info($"Video decoder: hardware decoding ({ffmpeg.av_hwdevice_get_type_name(device)}) unavailable: {why}; using software");
+            }
+        }
     }
 
     static string Error(int code)
@@ -238,7 +316,11 @@ public sealed unsafe class FFmpegVideoDecoder : IVideoDecoder
     void Close()
     {
         var c = _ctx;
-        if (c != null) ffmpeg.avcodec_free_context(&c);
+        if (c != null)
+        {
+            ffmpeg.avcodec_free_context(&c);
+        }
+
         _ctx = null;
     }
 
@@ -248,28 +330,53 @@ public sealed unsafe class FFmpegVideoDecoder : IVideoDecoder
         Interlocked.Increment(ref Fallbacks);
         Log.Warn($"Video decoder: {Name} failed ({why}); switching to software decoding");
         Close();
-        if (!Open(AVHWDeviceType.AV_HWDEVICE_TYPE_NONE)) { Log.Error("Video decoder: software H.264 decoder unavailable"); return; }
+        if (!Open(AVHWDeviceType.AV_HWDEVICE_TYPE_NONE))
+        {
+            Log.Error("Video decoder: software H.264 decoder unavailable");
+            return;
+        }
         // pictures already output (taken or still queued) come out of the replay again: skip them
         var replay = _replayable ? _sinceIdr.ToArray() : [];
         _skip = replay.Length > 0 ? _producedSinceIdr : 0;
         _producedSinceIdr = 0;
         _sinceIdr.Clear();
         _sinceIdrBytes = 0;
-        foreach (var (data, pts) in replay) SendPacket(data, pts);
+        foreach (var (data, pts) in replay)
+        {
+            SendPacket(data, pts);
+        }
     }
 
     /// <summary>Tests: behaves as if the hardware decoder had just failed.</summary>
-    internal void SimulateHardwareFailure() { if (IsHardware) FallBackToSoftware("simulated failure"); }
+    internal void SimulateHardwareFailure()
+    {
+        if (IsHardware)
+        {
+            FallBackToSoftware("simulated failure");
+        }
+    }
 
     /// <summary>True when the Annex B access unit contains an IDR slice (NAL type 5).</summary>
     internal static bool ContainsIdr(ReadOnlySpan<byte> au)
     {
         for (int i = 0; i + 3 < au.Length; i++)
         {
-            if (au[i] != 0 || au[i + 1] != 0) continue;
+            if (au[i] != 0 || au[i + 1] != 0)
+            {
+                continue;
+            }
+
             int hdr = au[i + 2] == 1 ? i + 3 : au[i + 2] == 0 && au[i + 3] == 1 ? i + 4 : -1;
-            if (hdr < 0 || hdr >= au.Length) continue;
-            if ((au[hdr] & 0x1F) == 5) return true;
+            if (hdr < 0 || hdr >= au.Length)
+            {
+                continue;
+            }
+
+            if ((au[hdr] & 0x1F) == 5)
+            {
+                return true;
+            }
+
             i = hdr;
         }
         return false;
@@ -277,12 +384,29 @@ public sealed unsafe class FFmpegVideoDecoder : IVideoDecoder
 
     public void Send(ReadOnlySpan<byte> au, long pts)
     {
-        if (_ctx == null) return;
+        if (_ctx == null)
+        {
+            return;
+        }
+
         if (IsHardware)
         {
-            if (ContainsIdr(au)) { _sinceIdr.Clear(); _sinceIdrBytes = 0; _replayable = true; _producedSinceIdr = 0; }
-            if (_sinceIdrBytes + au.Length <= MaxReplayBytes) { _sinceIdr.Add((au.ToArray(), pts)); _sinceIdrBytes += au.Length; }
-            else _replayable = false; // too long since the last IDR: a fallback restarts at the next one
+            if (ContainsIdr(au))
+            {
+                _sinceIdr.Clear();
+                _sinceIdrBytes = 0;
+                _replayable = true;
+                _producedSinceIdr = 0;
+            }
+            if (_sinceIdrBytes + au.Length <= MaxReplayBytes)
+            {
+                _sinceIdr.Add((au.ToArray(), pts));
+                _sinceIdrBytes += au.Length;
+            }
+            else
+            {
+                _replayable = false; // too long since the last IDR: a fallback restarts at the next one
+            }
         }
         long t0 = System.Diagnostics.Stopwatch.GetTimestamp();
         SendPacket(au, pts);
@@ -294,28 +418,51 @@ public sealed unsafe class FFmpegVideoDecoder : IVideoDecoder
         var buf = (byte*)ffmpeg.av_malloc((ulong)au.Length + ffmpeg.AV_INPUT_BUFFER_PADDING_SIZE);
         au.CopyTo(new Span<byte>(buf, au.Length));
         new Span<byte>(buf + au.Length, ffmpeg.AV_INPUT_BUFFER_PADDING_SIZE).Clear();
-        if (ffmpeg.av_packet_from_data(_pkt, buf, au.Length) < 0) { ffmpeg.av_free(buf); return; }
+        if (ffmpeg.av_packet_from_data(_pkt, buf, au.Length) < 0)
+        {
+            ffmpeg.av_free(buf);
+            return;
+        }
         _pkt->pts = pts;
         int r = ffmpeg.avcodec_send_packet(_ctx, _pkt);
         ffmpeg.av_packet_unref(_pkt);
-        if (r < 0 && r != ffmpeg.AVERROR(ffmpeg.EAGAIN) && IsHardware) { FallBackToSoftware($"send_packet: {Error(r)}"); return; }
-        if (r >= 0) Receive();
+        if (r < 0 && r != ffmpeg.AVERROR(ffmpeg.EAGAIN) && IsHardware)
+        {
+            FallBackToSoftware($"send_packet: {Error(r)}");
+            return;
+        }
+        if (r >= 0)
+        {
+            Receive();
+        }
     }
 
     /// <summary>Drains pictures still held for reordering (end of stream).</summary>
     public void Flush()
     {
-        if (_ctx == null) return;
+        if (_ctx == null)
+        {
+            return;
+        }
+
         ffmpeg.avcodec_send_packet(_ctx, null);
         Receive();
-        if (_ctx != null) ffmpeg.avcodec_flush_buffers(_ctx);
+        if (_ctx != null)
+        {
+            ffmpeg.avcodec_flush_buffers(_ctx);
+        }
+
         _sinceIdr.Clear();
         _sinceIdrBytes = 0;
     }
 
     public void Reset()
     {
-        if (_ctx != null) ffmpeg.avcodec_flush_buffers(_ctx);
+        if (_ctx != null)
+        {
+            ffmpeg.avcodec_flush_buffers(_ctx);
+        }
+
         _ready.Clear();
         _sinceIdr.Clear();
         _sinceIdrBytes = 0;
@@ -327,14 +474,23 @@ public sealed unsafe class FFmpegVideoDecoder : IVideoDecoder
     /// <summary>Pictures the caller is done with; their planes are reused by later frames of the same size.</summary>
     readonly Stack<DecodedPicture> _free = new();
 
-    public void Recycle(DecodedPicture p) { if (_free.Count < 4) _free.Push(p); }
+    public void Recycle(DecodedPicture p)
+    {
+        if (_free.Count < 4)
+        {
+            _free.Push(p);
+        }
+    }
 
     DecodedPicture RentPicture(int w, int h, int cw, int ch)
     {
         while (_free.Count > 0)
         {
             var p = _free.Pop();
-            if (p.Y.Length == w * h && p.U.Length == cw * ch) return p; // other sizes are dropped
+            if (p.Y.Length == w * h && p.U.Length == cw * ch)
+            {
+                return p; // other sizes are dropped
+            }
         }
         return new DecodedPicture { Y = new byte[w * h], U = new byte[cw * ch], V = new byte[cw * ch] };
     }
@@ -344,10 +500,18 @@ public sealed unsafe class FFmpegVideoDecoder : IVideoDecoder
         while (true)
         {
             int r = ffmpeg.avcodec_receive_frame(_ctx, _frame);
-            if (r == ffmpeg.AVERROR(ffmpeg.EAGAIN) || r == ffmpeg.AVERROR_EOF) return;
+            if (r == ffmpeg.AVERROR(ffmpeg.EAGAIN) || r == ffmpeg.AVERROR_EOF)
+            {
+                return;
+            }
+
             if (r < 0)
             {
-                if (IsHardware) FallBackToSoftware($"receive_frame: {Error(r)}");
+                if (IsHardware)
+                {
+                    FallBackToSoftware($"receive_frame: {Error(r)}");
+                }
+
                 return;
             }
             AVFrame* src = _frame;
@@ -379,20 +543,30 @@ public sealed unsafe class FFmpegVideoDecoder : IVideoDecoder
             if (_skip > 0)
             {
                 _skip--;
-                if (src == _swFrame) ffmpeg.av_frame_unref(_swFrame);
+                if (src == _swFrame)
+                {
+                    ffmpeg.av_frame_unref(_swFrame);
+                }
+
                 ffmpeg.av_frame_unref(_frame);
                 continue;
             }
             _producedSinceIdr++;
             int w = _frame->width, h = _frame->height, cw = (w + 1) / 2, ch = (h + 1) / 2;
             var p = RentPicture(w, h, cw, ch);
-            p.Width = w; p.Height = h; p.Pts = _frame->pts;
+            p.Width = w;
+            p.Height = h;
+            p.Pts = _frame->pts;
             p.FullRange = _frame->color_range == AVColorRange.AVCOL_RANGE_JPEG
                             || (AVPixelFormat)_frame->format == AVPixelFormat.AV_PIX_FMT_YUVJ420P;
             p.Bt709 = _frame->colorspace == AVColorSpace.AVCOL_SPC_BT709;
             CopyPlanes(src, p, w, h, cw, ch);
             _ready.Enqueue(p);
-            if (src == _swFrame) ffmpeg.av_frame_unref(_swFrame);
+            if (src == _swFrame)
+            {
+                ffmpeg.av_frame_unref(_swFrame);
+            }
+
             ffmpeg.av_frame_unref(_frame);
         }
     }
@@ -406,7 +580,11 @@ public sealed unsafe class FFmpegVideoDecoder : IVideoDecoder
             for (int y = 0; y < ch; y++)
             {
                 byte* row = f->data[1] + y * f->linesize[1];
-                for (int x = 0; x < cw; x++) { p.U[y * cw + x] = row[2 * x]; p.V[y * cw + x] = row[2 * x + 1]; }
+                for (int x = 0; x < cw; x++)
+                {
+                    p.U[y * cw + x] = row[2 * x];
+                    p.V[y * cw + x] = row[2 * x + 1];
+                }
             }
         }
         else if (fmt is AVPixelFormat.AV_PIX_FMT_YUV420P or AVPixelFormat.AV_PIX_FMT_YUVJ420P)
@@ -425,14 +603,22 @@ public sealed unsafe class FFmpegVideoDecoder : IVideoDecoder
     static void Copy(byte* src, int stride, byte[] dst, int w, int h)
     {
         fixed (byte* d = dst)
-            for (int y = 0; y < h; y++) Buffer.MemoryCopy(src + y * stride, d + y * w, w, w);
+        {
+            for (int y = 0; y < h; y++)
+            {
+                Buffer.MemoryCopy(src + y * stride, d + y * w, w, w);
+            }
+        }
     }
 
     public void Dispose()
     {
         Close();
-        var p = _pkt; ffmpeg.av_packet_free(&p);
-        var f = _frame; ffmpeg.av_frame_free(&f);
-        var s = _swFrame; ffmpeg.av_frame_free(&s);
+        var p = _pkt;
+        ffmpeg.av_packet_free(&p);
+        var f = _frame;
+        ffmpeg.av_frame_free(&f);
+        var s = _swFrame;
+        ffmpeg.av_frame_free(&s);
     }
 }

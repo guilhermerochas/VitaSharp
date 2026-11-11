@@ -14,18 +14,35 @@ public sealed partial class UsseTranslator
     {
         string e;
         // a reinterpreted render target above native: one texel at the native mapping (ShaderGenerator.RtFetchHelper)
-        if (s.RtFetch != null && gatherComp < 0 && !s.IsCube) e = lodMode == 4 && dim == 3 ? $"{s.RtFetch}(({coords}).xy / ({coords}).z)" : $"{s.RtFetch}(({coords}).xy)";
-        else if (gatherComp >= 0) e = $"textureGather({s.GlslName}, {coords}, {gatherComp})";
-        else if (extra1 == null) e = lodMode == 4 ? $"textureProj({s.GlslName}, {coords})" : $"texture({s.GlslName}, {coords})";
-        else e = lodMode switch
+        if (s.RtFetch != null && gatherComp < 0 && !s.IsCube)
         {
-            1 => $"texture({s.GlslName}, {coords}, {extra1})",
-            2 => $"textureLod({s.GlslName}, {coords}, {extra1})",
-            3 => $"textureGrad({s.GlslName}, {coords}, {extra1}, {extra2})",
-            _ => $"texture({s.GlslName}, {coords})",
-        };
+            e = lodMode == 4 && dim == 3 ? $"{s.RtFetch}(({coords}).xy / ({coords}).z)" : $"{s.RtFetch}(({coords}).xy)";
+        }
+        else if (gatherComp >= 0)
+        {
+            e = $"textureGather({s.GlslName}, {coords}, {gatherComp})";
+        }
+        else if (extra1 == null)
+        {
+            e = lodMode == 4 ? $"textureProj({s.GlslName}, {coords})" : $"texture({s.GlslName}, {coords})";
+        }
+        else
+        {
+            e = lodMode switch
+            {
+                1 => $"texture({s.GlslName}, {coords}, {extra1})",
+                2 => $"textureLod({s.GlslName}, {coords}, {extra1})",
+                3 => $"textureGrad({s.GlslName}, {coords}, {extra1}, {extra2})",
+                _ => $"texture({s.GlslName}, {coords})",
+            };
+        }
+
         var v = new Val(e, 'f', 4);
-        if (GxpProgram.IsInteger(destType)) v = ToInt(v, destType, true);
+        if (GxpProgram.IsInteger(destType))
+        {
+            v = ToInt(v, destType, true);
+        }
+
         return v;
     }
 
@@ -41,7 +58,11 @@ public sealed partial class UsseTranslator
         // temporaries first and name the copy (Silent Hill: Book of Memories' blur passes); any other operand keeps its
         // register number as the SA offset
         int stateSa = src1.Bank is Bank.Indexed1 or Bank.Indexed2 ? -1 : SaWordOf(src1.Bank, src1.Num);
-        if (stateSa < 0 || !Samplers.ContainsKey(stateSa)) stateSa = src1.Num;
+        if (stateSa < 0 || !Samplers.ContainsKey(stateSa))
+        {
+            stateSa = src1.Num;
+        }
+
         if (!Samplers.TryGetValue(stateSa, out var sampler))
         {
             Warnings.Add($"SMP: no sampler bound at SA {src1.Num} (texture buffer path not supported)");
@@ -53,15 +74,27 @@ public sealed partial class UsseTranslator
         dest.Bank = usePa ? (SecondProgram ? Bank.SecAttr : Bank.PrimAttr) : Bank.Temp;
         dest.Num = (int)i['o'];
         dest.Type = SmpDestFmt[fconv];
-        if (dest.Type == DataType.Unk) dest.Type = sampler.ComponentType;
+        if (dest.Type == DataType.Unk)
+        {
+            dest.Type = sampler.ComponentType;
+        }
+
         int dim = (int)i['d'] + 1;
         int coordMask = dim == 3 ? 0b0111 : dim == 1 ? 0b0001 : 0b0011;
         uint sbMode = i['b'];
         int lodMode = (int)i['l'];
         var coords = Load(src0, coordMask);
         string c = coords.E;
-        if (dim == 1) { c = $"vec2({c}, 0.0)"; dim = 2; }
-        if (sampler.IsCube && dim == 2) { Warnings.Add("cube sampled with 2D coords"); c = $"vec3({c}, 1.0)"; }
+        if (dim == 1)
+        {
+            c = $"vec2({c}, 0.0)";
+            dim = 2;
+        }
+        if (sampler.IsCube && dim == 2)
+        {
+            Warnings.Add("cube sampled with 2D coords");
+            c = $"vec3({c}, 1.0)";
+        }
         c = Bind(new Val(c, 'f', sampler.IsCube ? 3 : dim)).E;
 
         if (sbMode == 2)
@@ -88,8 +121,16 @@ public sealed partial class UsseTranslator
                     e1 = Bind(Load(src2, 0b1)).E;
                     break;
                 case 3:
-                    if (dim == 2) { e1 = Bind(Load(src2, 0b0011)).E; e2 = Bind(Load(src2, 0b1100)).E; }
-                    else { e1 = Bind(Load(src2, 0b0111)).E; e2 = Bind(Load(src2, 0b0111, 1)).E; }
+                    if (dim == 2)
+                    {
+                        e1 = Bind(Load(src2, 0b0011)).E;
+                        e2 = Bind(Load(src2, 0b1100)).E;
+                    }
+                    else
+                    {
+                        e1 = Bind(Load(src2, 0b0111)).E;
+                        e2 = Bind(Load(src2, 0b0111, 1)).E;
+                    }
                     break;
             }
         }
@@ -104,7 +145,10 @@ public sealed partial class UsseTranslator
             // gather4: per-component gathers, interleaved by pixel
             var gathers = new List<string>();
             for (int comp = 0; comp < compCount; comp++)
+            {
                 gathers.Add(Bind(FetchTexture(sampler, c, dim, dest.Type, lodMode, e1, e2, comp)).E);
+            }
+
             int step = GxpProgram.TypeSize(dest.Type);
             if (compCount == 1)
             {
@@ -115,7 +159,13 @@ public sealed partial class UsseTranslator
             {
                 var all = new List<string>();
                 for (int px = 0; px < 4; px++)
-                    for (int comp = 0; comp < compCount; comp++) all.Add($"{gathers[comp]}.{"xyzw"[px]}");
+                {
+                    for (int comp = 0; comp < compCount; comp++)
+                    {
+                        all.Add($"{gathers[comp]}.{"xyzw"[px]}");
+                    }
+                }
+
                 char k = GxpProgram.IsInteger(dest.Type) ? (GxpProgram.IsSigned(dest.Type) ? 'i' : 'u') : 'f';
                 for (int idx = 0; idx + 3 < all.Count; idx += 4)
                 {
@@ -140,9 +190,19 @@ public sealed partial class UsseTranslator
     {
         // "111oopppsnmycrbakkkkddeetgffihjlqquuvvvvvvvwwwwwwwxxxxxxxzzzzzzz"
         uint op1 = i['o'];
-        if (op1 != 1 && op1 != 2) { Warnings.Add($"vldst op {op1}"); return; }
+        if (op1 != 1 && op1 != 2)
+        {
+            Warnings.Add($"vldst op {op1}");
+            return;
+        }
         bool isStore = op1 == 2;
-        var type = i['f'] switch { 0 => DataType.F32, 1 => DataType.Int16, 2 => DataType.Int8, _ => DataType.Unk };
+        var type = i['f'] switch
+        {
+            0 => DataType.F32,
+            1 => DataType.Int16,
+            2 => DataType.Int8,
+            _ => DataType.Unk
+        };
         int maskCount = (int)i['k'];
         int total = maskCount + 1;
         int totalBytes = GxpProgram.TypeSize(type) * total;
@@ -163,7 +223,11 @@ public sealed partial class UsseTranslator
             toStore.Num = (int)i['v'];
             toStore.Type = DataType.F32;
         }
-        if (src1.Bank == Bank.Immediate) src1.Num *= GxpProgram.TypeSize(type);
+        if (src1.Bank == Bank.Immediate)
+        {
+            src1.Num *= GxpProgram.TypeSize(type);
+        }
+
         bool moeExpand = i.Bit('m');
 
         // Literal / texture buffers are resolved at translation time
@@ -194,15 +258,34 @@ public sealed partial class UsseTranslator
             var b1 = Load(src1, 1, s1off);
             string addr = $"int({b1})";
             int regIndexBase = thread ? 0x1000000 : 0x10000;
-            if (src1.Bank != Bank.Immediate) addr = $"({addr} - {regIndexBase})";
-            if (!moeExpand) addr = $"({addr} + 4)";
-            if (!isStore) addr = $"({addr} + int({Load(src2, 1)}))";
+            if (src1.Bank != Bank.Immediate)
+            {
+                addr = $"({addr} - {regIndexBase})";
+            }
+
+            if (!moeExpand)
+            {
+                addr = $"({addr} + 4)";
+            }
+
+            if (!isStore)
+            {
+                addr = $"({addr} + int({Load(src2, 1)}))";
+            }
+
             if (thread)
             {
                 UsesThreadBuffer = true;
                 string index = $"(({addr} + {ThreadBufferBase}) >> 2)";
-                if (isStore) Line($"thread_buffer[{index}] = {Load(toStore, 1, storeOff)};");
-                else Store(toStore, new Val($"thread_buffer[{index}]", 'f', 1), 1);
+                if (isStore)
+                {
+                    Line($"thread_buffer[{index}] = {Load(toStore, 1, storeOff)};");
+                }
+                else
+                {
+                    Store(toStore, new Val($"thread_buffer[{index}]", 'f', 1), 1);
+                }
+
                 continue;
             }
             string baseAddr = Bind(new Val($"(int({b0}) + {addr})", 'i', 1)).E;

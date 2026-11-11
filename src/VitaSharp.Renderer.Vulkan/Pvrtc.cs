@@ -8,7 +8,16 @@ namespace VitaSharp.Renderer.Vulkan;
 /// </summary>
 public static class Pvrtc
 {
-    struct C { public int R, G, B, A; public C(int r, int g, int b, int a) { R = r; G = g; B = b; A = a; } }
+    struct C
+    {
+        public int R, G, B, A; public C(int r, int g, int b, int a)
+        {
+            R = r;
+            G = g;
+            B = b;
+            A = a;
+        }
+    }
 
     /// <summary>Per-thread block scratch (texture decoding runs on the GPU worker; no garbage per texture).</summary>
     [ThreadStatic] static Scratch? _scratch;
@@ -28,7 +37,8 @@ public static class Pvrtc
         int ww = twoBpp ? 8 : 4, wh = 4;
         int tw = Math.Max((int)width, ww * 2), th = Math.Max((int)height, wh * 2);
         int nx = (tw + ww - 1) / ww, ny = (th + wh - 1) / wh;
-        tw = nx * ww; th = ny * wh;
+        tw = nx * ww;
+        th = ny * wh;
         var fullT = Texels.Rent((long)tw * th * 4);
         var full = fullT.Array;
         var wordsArr = System.Buffers.ArrayPool<uint>.Shared.Rent(nx * ny * 2);
@@ -38,18 +48,27 @@ public static class Pvrtc
         {
             int px2 = (int)System.Numerics.BitOperations.RoundUpToPowerOf2((uint)nx), py2 = (int)System.Numerics.BitOperations.RoundUpToPowerOf2((uint)ny);
             for (int y = 0; y < ny; y++)
+            {
                 for (int x = 0; x < nx; x++)
                 {
                     int o = (int)Twiddle((uint)px2, (uint)py2, (uint)x, (uint)y) * 8;
-                    if (o + 8 > src.Length) continue;
+                    if (o + 8 > src.Length)
+                    {
+                        continue;
+                    }
+
                     words[(y * nx + x) * 2] = BitConverter.ToUInt32(src.Slice(o, 4));
                     words[(y * nx + x) * 2 + 1] = BitConverter.ToUInt32(src.Slice(o + 4, 4));
                 }
+            }
 
             var sc = _scratch ??= new Scratch();
             var block = sc.Block;
-            System.Array.Clear(block); System.Array.Clear(sc.UpA); System.Array.Clear(sc.UpB); // fresh state per texture, as before
+            System.Array.Clear(block);
+            System.Array.Clear(sc.UpA);
+            System.Array.Clear(sc.UpB); // fresh state per texture, as before
             for (int wy = -1; wy < ny - 1; wy++)
+            {
                 for (int wx = -1; wx < nx - 1; wx++)
                 {
                     int p0 = Wrap(nx, wx), p1 = Wrap(ny, wy), q0 = Wrap(nx, wx + 1), r1 = Wrap(ny, wy + 1);
@@ -57,6 +76,7 @@ public static class Pvrtc
                     DecodeBlock(P, Q, R, S, block, sc.ModVals, sc.ModModes, sc.UpA, sc.UpB, twoBpp, ii);
                     // map the 4 quadrants (the block spans the centres of P, Q, R, S)
                     for (int y = 0; y < wh / 2; y++)
+                    {
                         for (int x = 0; x < ww / 2; x++)
                         {
                             Put(full, tw, p0 * ww + x + ww / 2, p1 * wh + y + wh / 2, block[y * ww + x]);
@@ -64,16 +84,28 @@ public static class Pvrtc
                             Put(full, tw, p0 * ww + x + ww / 2, r1 * wh + y, block[(y + wh / 2) * ww + x]);
                             Put(full, tw, q0 * ww + x, r1 * wh + y, block[(y + wh / 2) * ww + x + ww / 2]);
                         }
+                    }
                 }
+            }
         }
-        finally { System.Buffers.ArrayPool<uint>.Shared.Return(wordsArr); }
+        finally
+        {
+            System.Buffers.ArrayPool<uint>.Shared.Return(wordsArr);
+        }
 
-        if (tw == width && th == height) return fullT;
+        if (tw == width && th == height)
+        {
+            return fullT;
+        }
+
         using (fullT)
         {
             var outBuf = Texels.Rent((long)width * height * 4);
             for (int y = 0; y < height; y++)
+            {
                 Buffer.BlockCopy(full, y * tw * 4, outBuf.Array, (int)(y * width * 4), (int)width * 4);
+            }
+
             return outBuf;
         }
     }
@@ -83,7 +115,10 @@ public static class Pvrtc
     static void Put(byte[] full, int tw, int x, int y, C c)
     {
         int o = (y * tw + x) * 4;
-        full[o] = (byte)c.R; full[o + 1] = (byte)c.G; full[o + 2] = (byte)c.B; full[o + 3] = (byte)c.A;
+        full[o] = (byte)c.R;
+        full[o + 1] = (byte)c.G;
+        full[o + 2] = (byte)c.B;
+        full[o + 3] = (byte)c.A;
     }
 
     static int Wrap(int n, int i) => (i + n) % n;
@@ -92,12 +127,26 @@ public static class Pvrtc
     {
         uint minDim = xSize, maxVal = y, result = 0, src = 1, dst = 1;
         int shift = 0;
-        if (ySize < xSize) { minDim = ySize; maxVal = x; }
+        if (ySize < xSize)
+        {
+            minDim = ySize;
+            maxVal = x;
+        }
         while (src < minDim)
         {
-            if ((y & src) != 0) result |= dst;
-            if ((x & src) != 0) result |= dst << 1;
-            src <<= 1; dst <<= 2; shift++;
+            if ((y & src) != 0)
+            {
+                result |= dst;
+            }
+
+            if ((x & src) != 0)
+            {
+                result |= dst << 1;
+            }
+
+            src <<= 1;
+            dst <<= 2;
+            shift++;
         }
         return result | ((maxVal >> shift) << (2 * shift));
     }
@@ -106,7 +155,10 @@ public static class Pvrtc
     static C ColorA(uint c, bool ii)
     {
         if ((c & (ii ? 0x80000000u : 0x8000u)) != 0)
+        {
             return new((int)((c & 0x7c00) >> 10), (int)((c & 0x3e0) >> 5), (int)((c & 0x1e) | ((c & 0x1e) >> 4)), 0xf);
+        }
+
         return new((int)(((c & 0xf00) >> 7) | ((c & 0xf00) >> 11)), (int)(((c & 0xf0) >> 3) | ((c & 0xf0) >> 7)),
                    (int)(((c & 0xe) << 1) | ((c & 0xe) >> 2)), (int)((c & 0x7000) >> 11));
     }
@@ -114,7 +166,10 @@ public static class Pvrtc
     static C ColorB(uint c, bool ii)
     {
         if ((c & 0x80000000u) != 0)
+        {
             return new((int)((c & 0x7c000000) >> 26), (int)((c & 0x3e00000) >> 21), (int)((c & 0x1f0000) >> 16), 0xf);
+        }
+
         return new((int)(((c & 0xf000000) >> 23) | ((c & 0xf000000) >> 27)), (int)(((c & 0xf00000) >> 19) | ((c & 0xf00000) >> 23)),
                    (int)(((c & 0xf0000) >> 15) | ((c & 0xf0000) >> 19)), (int)((c & 0x70000000) >> 27) | (ii ? 1 : 0));
     }
@@ -142,10 +197,19 @@ public static class Pvrtc
                 for (int y = 0; y < wh; y++)
                 {
                     o[y * ww + x] = new((res.R >> 7) + (res.R >> 2), (res.G >> 7) + (res.G >> 2), (res.B >> 7) + (res.B >> 2), (res.A >> 5) + (res.A >> 1));
-                    res.R += dy.R; res.G += dy.G; res.B += dy.B; res.A += dy.A;
+                    res.R += dy.R;
+                    res.G += dy.G;
+                    res.B += dy.B;
+                    res.A += dy.A;
                 }
-                hp.R += qp.R; hp.G += qp.G; hp.B += qp.B; hp.A += qp.A;
-                hr.R += sr.R; hr.G += sr.G; hr.B += sr.B; hr.A += sr.A;
+                hp.R += qp.R;
+                hp.G += qp.G;
+                hp.B += qp.B;
+                hp.A += qp.A;
+                hr.R += sr.R;
+                hr.G += sr.G;
+                hr.B += sr.B;
+                hr.A += sr.A;
             }
         }
         else
@@ -156,10 +220,19 @@ public static class Pvrtc
                 for (int x = 0; x < ww; x++)
                 {
                     o[y * ww + x] = new((res.R >> 6) + (res.R >> 1), (res.G >> 6) + (res.G >> 1), (res.B >> 6) + (res.B >> 1), (res.A >> 4) + res.A);
-                    res.R += dy.R; res.G += dy.G; res.B += dy.B; res.A += dy.A;
+                    res.R += dy.R;
+                    res.G += dy.G;
+                    res.B += dy.B;
+                    res.A += dy.A;
                 }
-                hp.R += qp.R; hp.G += qp.G; hp.B += qp.B; hp.A += qp.A;
-                hr.R += sr.R; hr.G += sr.G; hr.B += sr.B; hr.A += sr.A;
+                hp.R += qp.R;
+                hp.G += qp.G;
+                hp.B += qp.B;
+                hp.A += qp.A;
+                hr.R += sr.R;
+                hr.G += sr.G;
+                hr.B += sr.B;
+                hr.A += sr.A;
             }
         }
     }
@@ -176,49 +249,100 @@ public static class Pvrtc
                 if ((bits & 1) != 0)
                 {
                     mode = (bits & (1u << 20)) != 0 ? 3u : 2u;
-                    if ((bits & (1u << 21)) != 0) bits |= 1u << 20; else bits &= ~(1u << 20);
+                    if ((bits & (1u << 21)) != 0)
+                    {
+                        bits |= 1u << 20;
+                    }
+                    else
+                    {
+                        bits &= ~(1u << 20);
+                    }
                 }
-                if ((bits & 2) != 0) bits |= 1; else bits &= ~1u;
+                if ((bits & 2) != 0)
+                {
+                    bits |= 1;
+                }
+                else
+                {
+                    bits &= ~1u;
+                }
+
                 for (int y = 0; y < 4; y++)
+                {
                     for (int x = 0; x < 8; x++)
                     {
                         modes[x + ox, y + oy] = (int)mode;
-                        if (((x ^ y) & 1) == 0) { vals[x + ox, y + oy] = (int)(bits & 3); bits >>= 2; }
-                        else vals[x + ox, y + oy] = 0;
-                        if (ii && hard && InHardRegion(x + ox, y + oy, 8)) modes[x + ox, y + oy] += 20;
+                        if (((x ^ y) & 1) == 0)
+                        {
+                            vals[x + ox, y + oy] = (int)(bits & 3);
+                            bits >>= 2;
+                        }
+                        else
+                        {
+                            vals[x + ox, y + oy] = 0;
+                        }
+
+                        if (ii && hard && InHardRegion(x + ox, y + oy, 8))
+                        {
+                            modes[x + ox, y + oy] += 20;
+                        }
                     }
+                }
             }
             else
             {
                 for (int y = 0; y < 4; y++)
+                {
                     for (int x = 0; x < 8; x++)
                     {
                         modes[x + ox, y + oy] = 0;
                         vals[x + ox, y + oy] = (bits & 1) != 0 ? 3 : 0;
-                        if (ii && hard && InHardRegion(x + ox, y + oy, 8)) modes[x + ox, y + oy] += 20;
+                        if (ii && hard && InHardRegion(x + ox, y + oy, 8))
+                        {
+                            modes[x + ox, y + oy] += 20;
+                        }
+
                         bits >>= 1;
                     }
+                }
             }
             return;
         }
 
         // 4bpp: vals indexed [y, x]
         for (int y = 0; y < 4; y++)
+        {
             for (int x = 0; x < 4; x++)
             {
                 int v = (int)(bits & 3);
                 bool hardTexel = ii && hard && InHardRegion(x + ox, y + oy, 4);
                 if (mode != 0)
-                    v = hardTexel ? v + 30 : v switch { 1 => 4, 2 => 14, 3 => 8, _ => 0 };
+                {
+                    v = hardTexel ? v + 30 : v switch
+                    {
+                        1 => 4,
+                        2 => 14,
+                        3 => 8,
+                        _ => 0
+                    };
+                }
                 else
                 {
                     v *= 3;
-                    if (v > 3) v -= 1;
-                    if (hardTexel) v += 20;
+                    if (v > 3)
+                    {
+                        v -= 1;
+                    }
+
+                    if (hardTexel)
+                    {
+                        v += 20;
+                    }
                 }
                 vals[y + oy, x + ox] = v;
                 bits >>= 2;
             }
+        }
     }
 
     // the texels of the decoded block nearest the boundary between the four words
@@ -228,14 +352,35 @@ public static class Pvrtc
 
     static int ModulationAt(int[,] vals, int[,] modes, int x, int y, bool twoBpp)
     {
-        if (!twoBpp) return vals[x, y];
+        if (!twoBpp)
+        {
+            return vals[x, y];
+        }
+
         int mode = modes[x, y], extra = 0;
-        if (mode >= 20) { mode -= 20; extra = 20; }
+        if (mode >= 20)
+        {
+            mode -= 20;
+            extra = 20;
+        }
         int v;
-        if (mode == 0 || ((x ^ y) & 1) == 0) v = RepVals[vals[x, y]];
-        else if (mode == 1) v = (RepVals[vals[x, y - 1]] + RepVals[vals[x, y + 1]] + RepVals[vals[x - 1, y]] + RepVals[vals[x + 1, y]] + 2) / 4;
-        else if (mode == 2) v = (RepVals[vals[x - 1, y]] + RepVals[vals[x + 1, y]] + 1) / 2;
-        else v = (RepVals[vals[x, y - 1]] + RepVals[vals[x, y + 1]] + 1) / 2;
+        if (mode == 0 || ((x ^ y) & 1) == 0)
+        {
+            v = RepVals[vals[x, y]];
+        }
+        else if (mode == 1)
+        {
+            v = (RepVals[vals[x, y - 1]] + RepVals[vals[x, y + 1]] + RepVals[vals[x - 1, y]] + RepVals[vals[x + 1, y]] + 2) / 4;
+        }
+        else if (mode == 2)
+        {
+            v = (RepVals[vals[x - 1, y]] + RepVals[vals[x + 1, y]] + 1) / 2;
+        }
+        else
+        {
+            v = (RepVals[vals[x, y - 1]] + RepVals[vals[x, y + 1]] + 1) / 2;
+        }
+
         return v + extra;
     }
 
@@ -256,6 +401,7 @@ public static class Pvrtc
 
         C[]? palette = null;
         for (int y = 0; y < wh; y++)
+        {
             for (int x = 0; x < ww; x++)
             {
                 // 4bpp: vals is stored [row, column] and read as [x, y] (the reference decoder's getModulationValues),
@@ -281,13 +427,24 @@ public static class Pvrtc
                         b = Expand(ColorB(w.Col, ii), twoBpp);
                         mod -= 20;
                     }
-                    else if (mod > 10) { punch = true; mod -= 10; }
+                    else if (mod > 10)
+                    {
+                        punch = true;
+                        mod -= 10;
+                    }
                     res = new((a.R * (8 - mod) + b.R * mod) / 8, (a.G * (8 - mod) + b.G * mod) / 8, (a.B * (8 - mod) + b.B * mod) / 8,
                               punch ? 0 : (a.A * (8 - mod) + b.A * mod) / 8);
                 }
-                if (twoBpp) outBlock[y * ww + x] = res;
-                else outBlock[y + x * wh] = res; // the reference decoder transposes 4bpp blocks here
+                if (twoBpp)
+                {
+                    outBlock[y * ww + x] = res;
+                }
+                else
+                {
+                    outBlock[y + x * wh] = res; // the reference decoder transposes 4bpp blocks here
+                }
             }
+        }
     }
 
     /// <summary>PVRTC-II 4bpp local palette mode: each texel position picks from the colours of the four words.</summary>
@@ -309,7 +466,13 @@ public static class Pvrtc
         ];
         var pal = new C[4 * 16];
         for (int t = 0; t < 16; t++)
-            for (int i = 0; i < 4; i++) pal[i * 16 + t] = sets[t][i];
+        {
+            for (int i = 0; i < 4; i++)
+            {
+                pal[i * 16 + t] = sets[t][i];
+            }
+        }
+
         return pal;
     }
 }

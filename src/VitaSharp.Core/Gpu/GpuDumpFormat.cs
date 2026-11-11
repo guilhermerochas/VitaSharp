@@ -75,7 +75,11 @@ public sealed class DumpBuffer
 
     Span<byte> Grow(int n)
     {
-        if (Length + n > _buf.Length) Array.Resize(ref _buf, Math.Max(_buf.Length * 2, Length + n));
+        if (Length + n > _buf.Length)
+        {
+            Array.Resize(ref _buf, Math.Max(_buf.Length * 2, Length + n));
+        }
+
         var s = _buf.AsSpan(Length, n);
         Length += n;
         return s;
@@ -90,7 +94,11 @@ public sealed class DumpBuffer
 
     public void Var(ulong v)
     {
-        while (v >= 0x80) { U8((byte)(v | 0x80)); v >>= 7; }
+        while (v >= 0x80)
+        {
+            U8((byte)(v | 0x80));
+            v >>= 7;
+        }
         U8((byte)v);
     }
 
@@ -104,12 +112,21 @@ public sealed class DumpCursor
     public byte[] Data = [];
     public int Position, End;
 
-    public void Reset(byte[] data, int length) { Data = data; Position = 0; End = length; }
+    public void Reset(byte[] data, int length)
+    {
+        Data = data;
+        Position = 0;
+        End = length;
+    }
     public bool AtEnd => Position >= End;
 
     ReadOnlySpan<byte> Take(int n)
     {
-        if (Position + n > End) throw new InvalidDataException("GPU dump record truncated");
+        if (Position + n > End)
+        {
+            throw new InvalidDataException("GPU dump record truncated");
+        }
+
         var s = Data.AsSpan(Position, n);
         Position += n;
         return s;
@@ -129,14 +146,26 @@ public sealed class DumpCursor
         {
             byte b = U8();
             v |= (ulong)(b & 0x7F) << shift;
-            if (b < 0x80) return v;
-            if (shift > 63) throw new InvalidDataException("GPU dump varint too long");
+            if (b < 0x80)
+            {
+                return v;
+            }
+
+            if (shift > 63)
+            {
+                throw new InvalidDataException("GPU dump varint too long");
+            }
         }
     }
 
     public int VarInt() => checked((int)Var());
     /// <summary>The next <paramref name="n"/> bytes, as an offset into <see cref="Data"/>.</summary>
-    public int Skip(int n) { int p = Position; Take(n); return p; }
+    public int Skip(int n)
+    {
+        int p = Position;
+        Take(n);
+        return p;
+    }
     public ReadOnlySpan<byte> BytesSpan(int n) => Take(n);
 }
 
@@ -147,22 +176,46 @@ public sealed class GpuDumpHeader
 
     public string? this[string key]
     {
-        get { foreach (var e in Entries) if (e.Key == key) return e.Value; return null; }
+        get
+        {
+            foreach (var e in Entries)
+            {
+                if (e.Key == key)
+                {
+                    return e.Value;
+                }
+            }
+
+            return null;
+        }
         set
         {
             Entries.RemoveAll(e => e.Key == key);
-            if (value != null) Entries.Add(new(key, value));
+            if (value != null)
+            {
+                Entries.Add(new(key, value));
+            }
         }
     }
 
-    public void Add(string key, string? value) { if (value != null) this[key] = value; }
+    public void Add(string key, string? value)
+    {
+        if (value != null)
+        {
+            this[key] = value;
+        }
+    }
 
     public string Text
     {
         get
         {
             var sb = new StringBuilder();
-            foreach (var (k, v) in Entries) sb.Append(k).Append(": ").Append(v.Replace("\r", "").Replace("\n", " | ")).Append('\n');
+            foreach (var (k, v) in Entries)
+            {
+                sb.Append(k).Append(": ").Append(v.Replace("\r", "").Replace("\n", " | ")).Append('\n');
+            }
+
             return sb.ToString();
         }
     }
@@ -173,7 +226,10 @@ public sealed class GpuDumpHeader
         foreach (var line in text.Split('\n'))
         {
             int c = line.IndexOf(": ", StringComparison.Ordinal);
-            if (c > 0) h.Entries.Add(new(line[..c], line[(c + 2)..]));
+            if (c > 0)
+            {
+                h.Entries.Add(new(line[..c], line[(c + 2)..]));
+            }
         }
         return h;
     }
@@ -225,7 +281,11 @@ public sealed class GpuDumpCodec
         {
             int id = _next++;
             int slot = id % Window;
-            if (_ring[slot] != null && _byHash.TryGetValue(_hash[slot], out int old) && old == id - Window) _byHash.Remove(_hash[slot]);
+            if (_ring[slot] != null && _byHash.TryGetValue(_hash[slot], out int old) && old == id - Window)
+            {
+                _byHash.Remove(_hash[slot]);
+            }
+
             _ring[slot] = content;
             _hash[slot] = hash;
             _byHash[hash] = id;
@@ -235,7 +295,11 @@ public sealed class GpuDumpCodec
         public void Write(DumpBuffer w, ReadOnlySpan<byte> data, int stream)
         {
             w.Var((uint)data.Length);
-            if (data.Length == 0) return;
+            if (data.Length == 0)
+            {
+                return;
+            }
+
             int start = w.Length;
             ulong hash = System.IO.Hashing.XxHash3.HashToUInt64(data);
             if (_byHash.TryGetValue(hash, out int same) && Live(same) && _ring[same % Window].AsSpan().SequenceEqual(data))
@@ -248,7 +312,9 @@ public sealed class GpuDumpCodec
             {
                 var content = data.ToArray();
                 if (_lastOfStream.TryGetValue(stream, out int baseId) && Live(baseId) && _ring[baseId % Window].Length == data.Length && TryDelta(w, _ring[baseId % Window], data, _next - baseId))
+                {
                     Stats.Deltas++;
+                }
                 else
                 {
                     w.U8(0);
@@ -270,7 +336,9 @@ public sealed class GpuDumpCodec
             w.Var((uint)distance);
             int countAt = w.Length;
             // runs are counted afterwards: reserve a fixed 3-byte varint
-            w.U8(0x80); w.U8(0x80); w.U8(0);
+            w.U8(0x80);
+            w.U8(0x80);
+            w.U8(0);
             int runs = 0, pos = 0, prevEnd = 0, budget = data.Length / 2;
             // compared in 8-byte words (uniform blocks are vectors of floats): a run is a stretch of differing words,
             // ended by two equal words in a row
@@ -287,12 +355,23 @@ public sealed class GpuDumpCodec
                 {
                     // tail bytes after the last whole word
                     pos = Math.Max(pos, words << 3);
-                    if (pos >= data.Length || data[pos..].SequenceEqual(b[pos..data.Length])) break;
+                    if (pos >= data.Length || data[pos..].SequenceEqual(b[pos..data.Length]))
+                    {
+                        break;
+                    }
                 }
                 int endWord = wi + 1;
-                while (endWord < words && !(dw[endWord] == bw[endWord] && (endWord + 1 >= words || dw[endWord + 1] == bw[endWord + 1]))) endWord++;
+                while (endWord < words && !(dw[endWord] == bw[endWord] && (endWord + 1 >= words || dw[endWord + 1] == bw[endWord + 1])))
+                {
+                    endWord++;
+                }
+
                 int end = endWord >= words ? data.Length : endWord << 3;
-                if (end - pos > budget) { w.Truncate(start); return false; }
+                if (end - pos > budget)
+                {
+                    w.Truncate(start);
+                    return false;
+                }
                 int skip = pos - prevEnd;
                 w.Var((uint)skip);
                 w.Var((uint)(end - pos));
@@ -300,17 +379,27 @@ public sealed class GpuDumpCodec
                 prevEnd = end;
                 pos = end;
                 runs++;
-                if (w.Length - start > budget || runs > 0x1FFFFF) { w.Truncate(start); return false; }
+                if (w.Length - start > budget || runs > 0x1FFFFF)
+                {
+                    w.Truncate(start);
+                    return false;
+                }
             }
             var span = w.Buffer.AsSpan(countAt, 3);
-            span[0] = (byte)(runs | 0x80); span[1] = (byte)((runs >> 7) | 0x80); span[2] = (byte)(runs >> 14);
+            span[0] = (byte)(runs | 0x80);
+            span[1] = (byte)((runs >> 7) | 0x80);
+            span[2] = (byte)(runs >> 14);
             return true;
         }
 
         public byte[] Read(DumpCursor r)
         {
             int len = r.VarInt();
-            if (len == 0) return [];
+            if (len == 0)
+            {
+                return [];
+            }
+
             byte mode = r.U8();
             switch (mode)
             {
@@ -323,13 +412,21 @@ public sealed class GpuDumpCodec
                 case 1:
                 {
                     int id = _next - r.VarInt();
-                    if (!Live(id)) throw new InvalidDataException("GPU dump: uniform reference outside the window");
+                    if (!Live(id))
+                    {
+                        throw new InvalidDataException("GPU dump: uniform reference outside the window");
+                    }
+
                     return _ring[id % Window];
                 }
                 case 2:
                 {
                     int id = _next - r.VarInt();
-                    if (!Live(id) || _ring[id % Window].Length != len) throw new InvalidDataException("GPU dump: bad uniform delta base");
+                    if (!Live(id) || _ring[id % Window].Length != len)
+                    {
+                        throw new InvalidDataException("GPU dump: bad uniform delta base");
+                    }
+
                     var content = (byte[])_ring[id % Window].Clone();
                     int runs = r.VarInt(), pos = 0;
                     for (int i = 0; i < runs; i++)
@@ -351,7 +448,11 @@ public sealed class GpuDumpCodec
 
     int InfoId(GxmProgramInfo info, DumpBuffer w)
     {
-        if (_ids.TryGetValue(info, out int id)) return id;
+        if (_ids.TryGetValue(info, out int id))
+        {
+            return id;
+        }
+
         id = _ids[info] = _nextInfo++;
         w.U8((byte)GpuDumpRecord.ProgramInfo);
         w.Var((uint)id);
@@ -363,7 +464,11 @@ public sealed class GpuDumpCodec
 
     int VertexProgramId(GxmVertexProgram vp, DumpBuffer w)
     {
-        if (_ids.TryGetValue(vp, out int id)) return id;
+        if (_ids.TryGetValue(vp, out int id))
+        {
+            return id;
+        }
+
         int info = InfoId(vp.Info, w);
         id = _ids[vp] = _nextVp++;
         w.U8((byte)GpuDumpRecord.VertexProgram);
@@ -371,15 +476,30 @@ public sealed class GpuDumpCodec
         w.Var((uint)info);
         w.U32(vp.Handle);
         w.Var((uint)vp.Attributes.Length);
-        foreach (var a in vp.Attributes) { w.U16(a.StreamIndex); w.U16(a.Offset); w.U8(a.Format); w.U8(a.ComponentCount); w.U16(a.RegIndex); }
+        foreach (var a in vp.Attributes)
+        {
+            w.U16(a.StreamIndex);
+            w.U16(a.Offset);
+            w.U8(a.Format);
+            w.U8(a.ComponentCount);
+            w.U16(a.RegIndex);
+        }
         w.Var((uint)vp.Streams.Length);
-        foreach (var s in vp.Streams) { w.U16(s.Stride); w.U16(s.IndexSource); }
+        foreach (var s in vp.Streams)
+        {
+            w.U16(s.Stride);
+            w.U16(s.IndexSource);
+        }
         return id;
     }
 
     int FragmentProgramId(GxmFragmentProgram fp, DumpBuffer w)
     {
-        if (_ids.TryGetValue(fp, out int id)) return id;
+        if (_ids.TryGetValue(fp, out int id))
+        {
+            return id;
+        }
+
         int info = fp.Info != null ? InfoId(fp.Info, w) + 1 : 0;
         id = _ids[fp] = _nextFp++;
         w.U8((byte)GpuDumpRecord.FragmentProgram);
@@ -387,7 +507,16 @@ public sealed class GpuDumpCodec
         w.Var((uint)info);
         w.U32(fp.Handle);
         w.Bool(fp.Blend.HasValue);
-        if (fp.Blend is { } b) { w.U8(b.ColorMask); w.U8(b.ColorFunc); w.U8(b.AlphaFunc); w.U8(b.ColorSrc); w.U8(b.ColorDst); w.U8(b.AlphaSrc); w.U8(b.AlphaDst); }
+        if (fp.Blend is { } b)
+        {
+            w.U8(b.ColorMask);
+            w.U8(b.ColorFunc);
+            w.U8(b.AlphaFunc);
+            w.U8(b.ColorSrc);
+            w.U8(b.ColorDst);
+            w.U8(b.AlphaSrc);
+            w.U8(b.AlphaDst);
+        }
         w.U32(fp.OutputFormat);
         w.U32(fp.MultisampleMode);
         w.Bool(fp.IsMaskUpdate);
@@ -409,39 +538,71 @@ public sealed class GpuDumpCodec
         }
         switch (cmd)
         {
-            case DrawCommand d: WriteDraw(d, defs, w); return true;
+            case DrawCommand d:
+                WriteDraw(d, defs, w);
+                return true;
             case BeginSceneCommand b:
                 w.U8((byte)GpuDumpRecord.BeginScene);
-                w.U32(b.Width); w.U32(b.Height); w.U32(b.Multisample);
+                w.U32(b.Width);
+                w.U32(b.Height);
+                w.U32(b.Multisample);
                 w.Bool(b.Color != null);
                 if (b.Color is { } c)
                 {
-                    w.U32(c.Data); w.U32(c.Width); w.U32(c.Height); w.U32(c.StrideInPixels); w.U32(c.ColorFormat); w.U32(c.SurfaceType);
-                    w.Bool(c.Downscale); w.U32(c.GammaMode);
+                    w.U32(c.Data);
+                    w.U32(c.Width);
+                    w.U32(c.Height);
+                    w.U32(c.StrideInPixels);
+                    w.U32(c.ColorFormat);
+                    w.U32(c.SurfaceType);
+                    w.Bool(c.Downscale);
+                    w.U32(c.GammaMode);
                 }
                 w.Bool(b.Depth != null);
                 if (b.Depth is { } z)
                 {
-                    w.U32(z.DepthData); w.U32(z.StencilData); w.U32(z.StrideInSamples); w.U32(z.Format); w.U32(z.Type);
-                    w.F32(z.BackgroundDepth); w.U8(z.BackgroundStencil); w.Bool(z.ForceLoad); w.Bool(z.ForceStore);
+                    w.U32(z.DepthData);
+                    w.U32(z.StencilData);
+                    w.U32(z.StrideInSamples);
+                    w.U32(z.Format);
+                    w.U32(z.Type);
+                    w.F32(z.BackgroundDepth);
+                    w.U8(z.BackgroundStencil);
+                    w.Bool(z.ForceLoad);
+                    w.Bool(z.ForceStore);
                 }
                 return true;
             case EndSceneCommand e:
                 w.U8((byte)GpuDumpRecord.EndScene);
                 w.Var((uint)e.Notifications.Length);
-                foreach (var (a, v) in e.Notifications) { w.U32(a); w.U32(v); }
+                foreach (var (a, v) in e.Notifications)
+                {
+                    w.U32(a);
+                    w.U32(v);
+                }
                 return true;
-            case FinishCommand: w.U8((byte)GpuDumpRecord.Finish); return true;
-            case MidSceneFlushCommand: w.U8((byte)GpuDumpRecord.MidSceneFlush); return true;
-            case SignalCommand: w.U8((byte)GpuDumpRecord.Signal); return true;
+            case FinishCommand:
+                w.U8((byte)GpuDumpRecord.Finish);
+                return true;
+            case MidSceneFlushCommand:
+                w.U8((byte)GpuDumpRecord.MidSceneFlush);
+                return true;
+            case SignalCommand:
+                w.U8((byte)GpuDumpRecord.Signal);
+                return true;
             case CallbackCommand cb:
                 w.U8((byte)GpuDumpRecord.Callback);
-                w.U32(cb.WriteAddress); w.U32(cb.WriteSize);
+                w.U32(cb.WriteAddress);
+                w.U32(cb.WriteSize);
                 return true;
             case PresentCommand p:
                 // the timing fields follow (see WritePresentInfo)
                 w.U8((byte)GpuDumpRecord.Present);
-                w.U32(p.Frame.Address); w.U32(p.Frame.Pitch); w.U32(p.Frame.Width); w.U32(p.Frame.Height); w.U32((uint)p.Frame.Format);
+                w.U32(p.Frame.Address);
+                w.U32(p.Frame.Pitch);
+                w.U32(p.Frame.Width);
+                w.U32(p.Frame.Height);
+                w.U32((uint)p.Frame.Format);
                 return true;
         }
         return false;
@@ -457,59 +618,118 @@ public sealed class GpuDumpCodec
 
     static void WriteSide(DumpBuffer w, in SideState s)
     {
-        w.U8(s.DepthFunc); w.Bool(s.DepthWrite);
-        w.U8(s.Stencil.Func); w.U8(s.Stencil.StencilFail); w.U8(s.Stencil.DepthFail); w.U8(s.Stencil.DepthPass);
-        w.U8(s.Stencil.CompareMask); w.U8(s.Stencil.WriteMask); w.U8(s.Stencil.Ref);
-        w.U8(s.PolygonMode); w.Bool(s.FragmentEnabled); w.I32(s.DepthBiasFactor); w.I32(s.DepthBiasUnits);
-        w.U8(s.PointLineWidth); w.Bool(s.LineFillLastPixel);
+        w.U8(s.DepthFunc);
+        w.Bool(s.DepthWrite);
+        w.U8(s.Stencil.Func);
+        w.U8(s.Stencil.StencilFail);
+        w.U8(s.Stencil.DepthFail);
+        w.U8(s.Stencil.DepthPass);
+        w.U8(s.Stencil.CompareMask);
+        w.U8(s.Stencil.WriteMask);
+        w.U8(s.Stencil.Ref);
+        w.U8(s.PolygonMode);
+        w.Bool(s.FragmentEnabled);
+        w.I32(s.DepthBiasFactor);
+        w.I32(s.DepthBiasUnits);
+        w.U8(s.PointLineWidth);
+        w.Bool(s.LineFillLastPixel);
     }
 
     static SideState ReadSide(DumpCursor r) => new()
     {
-        DepthFunc = r.U8(), DepthWrite = r.Bool(),
+        DepthFunc = r.U8(),
+        DepthWrite = r.Bool(),
         Stencil = new StencilState { Func = r.U8(), StencilFail = r.U8(), DepthFail = r.U8(), DepthPass = r.U8(), CompareMask = r.U8(), WriteMask = r.U8(), Ref = r.U8() },
-        PolygonMode = r.U8(), FragmentEnabled = r.Bool(), DepthBiasFactor = r.I32(), DepthBiasUnits = r.I32(),
-        PointLineWidth = r.U8(), LineFillLastPixel = r.Bool(),
+        PolygonMode = r.U8(),
+        FragmentEnabled = r.Bool(),
+        DepthBiasFactor = r.I32(),
+        DepthBiasUnits = r.I32(),
+        PointLineWidth = r.U8(),
+        LineFillLastPixel = r.Bool(),
     };
 
     static void WriteWords(DumpBuffer w, ReadOnlySpan<uint> words)
     {
         uint mask = 0;
-        for (int i = 0; i < words.Length; i++) if (words[i] != 0) mask |= 1u << i;
+        for (int i = 0; i < words.Length; i++)
+        {
+            if (words[i] != 0)
+            {
+                mask |= 1u << i;
+            }
+        }
+
         w.U16((ushort)mask);
-        for (int i = 0; i < words.Length; i++) if (words[i] != 0) w.U32(words[i]);
+        for (int i = 0; i < words.Length; i++)
+        {
+            if (words[i] != 0)
+            {
+                w.U32(words[i]);
+            }
+        }
     }
 
     static void ReadWords(DumpCursor r, Span<uint> words)
     {
         uint mask = r.U16();
-        for (int i = 0; i < words.Length; i++) words[i] = (mask & (1u << i)) != 0 ? r.U32() : 0;
+        for (int i = 0; i < words.Length; i++)
+        {
+            words[i] = (mask & (1u << i)) != 0 ? r.U32() : 0;
+        }
     }
 
     static void WriteTextures(DumpBuffer w, GxmTextureDesc[] t)
     {
         uint mask = 0;
-        for (int i = 0; i < t.Length; i++) if (t[i] != default) mask |= 1u << i;
+        for (int i = 0; i < t.Length; i++)
+        {
+            if (t[i] != default)
+            {
+                mask |= 1u << i;
+            }
+        }
+
         w.U16((ushort)mask);
         for (int i = 0; i < t.Length; i++)
-            if (t[i] != default) { w.U32(t[i].W0); w.U32(t[i].W1); w.U32(t[i].W2); w.U32(t[i].W3); }
+        {
+            if (t[i] != default)
+            {
+                w.U32(t[i].W0);
+                w.U32(t[i].W1);
+                w.U32(t[i].W2);
+                w.U32(t[i].W3);
+            }
+        }
     }
 
     static void ReadTextures(DumpCursor r, GxmTextureDesc[] t)
     {
         uint mask = r.U16();
-        for (int i = 0; i < t.Length; i++) t[i] = (mask & (1u << i)) != 0 ? new GxmTextureDesc(r.U32(), r.U32(), r.U32(), r.U32()) : default;
+        for (int i = 0; i < t.Length; i++)
+        {
+            t[i] = (mask & (1u << i)) != 0 ? new GxmTextureDesc(r.U32(), r.U32(), r.U32(), r.U32()) : default;
+        }
     }
 
     /// <summary>A stage's uniform data as dumps hold it: the whole layout, the split slots' bytes put back in place.</summary>
     static ReadOnlySpan<byte> RecordedUniforms(DrawCommand d, GxmProgramInfo info, ReadOnlySpan<byte> data, int stage)
     {
-        if (!info.HasSplit) return data;
+        if (!info.HasSplit)
+        {
+            return data;
+        }
+
         var full = new byte[info.UniformBytes];
         foreach (var s in info.UniformSlots)
         {
-            if (s.IsSplit) d.SplitSpan(stage + s.Split).CopyTo(full.AsSpan(s.ByteOffset));
-            else if (s.DataOffset < data.Length) data.Slice(s.DataOffset, Math.Min(s.ByteSize, data.Length - s.DataOffset)).CopyTo(full.AsSpan(s.ByteOffset));
+            if (s.IsSplit)
+            {
+                d.SplitSpan(stage + s.Split).CopyTo(full.AsSpan(s.ByteOffset));
+            }
+            else if (s.DataOffset < data.Length)
+            {
+                data.Slice(s.DataOffset, Math.Min(s.ByteSize, data.Length - s.DataOffset)).CopyTo(full.AsSpan(s.ByteOffset));
+            }
         }
         return full;
     }
@@ -521,12 +741,25 @@ public sealed class GpuDumpCodec
         w.Var((uint)vp);
         w.Var((uint)fp);
         ref readonly var s = ref d.State;
-        w.U8(s.CullMode); w.Bool(s.TwoSided);
-        WriteSide(w, s.Front); WriteSide(w, s.Back);
+        w.U8(s.CullMode);
+        w.Bool(s.TwoSided);
+        WriteSide(w, s.Front);
+        WriteSide(w, s.Back);
         w.Bool(s.ViewportEnabled);
-        w.F32(s.VpOffX); w.F32(s.VpOffY); w.F32(s.VpOffZ); w.F32(s.VpScaleX); w.F32(s.VpScaleY); w.F32(s.VpScaleZ);
-        w.U8(s.RegionClipMode); w.I32(s.ClipMinX); w.I32(s.ClipMinY); w.I32(s.ClipMaxX); w.I32(s.ClipMaxY);
-        w.Bool(s.WBuffer); w.Bool(s.WClampEnabled); w.F32(s.WClampValue);
+        w.F32(s.VpOffX);
+        w.F32(s.VpOffY);
+        w.F32(s.VpOffZ);
+        w.F32(s.VpScaleX);
+        w.F32(s.VpScaleY);
+        w.F32(s.VpScaleZ);
+        w.U8(s.RegionClipMode);
+        w.I32(s.ClipMinX);
+        w.I32(s.ClipMinY);
+        w.I32(s.ClipMaxX);
+        w.I32(s.ClipMaxY);
+        w.Bool(s.WBuffer);
+        w.Bool(s.WClampEnabled);
+        w.F32(s.WClampValue);
         _uniforms.Write(w, RecordedUniforms(d, d.VertexProgram.Info, d.VertexUniformSpan, 0), vp * 2);
         _uniforms.Write(w, d.FragmentProgram.Info is { } fi ? RecordedUniforms(d, fi, d.FragmentUniformSpan, 2) : d.FragmentUniformSpan, fp * 2 + 1);
         WriteWords(w, d.VertexUniformAddrs);
@@ -564,9 +797,17 @@ public sealed class GpuDumpCodec
                 int id = r.VarInt(), info = r.VarInt();
                 uint handle = r.U32();
                 var attrs = new GxmVertexAttribute[r.VarInt()];
-                for (int i = 0; i < attrs.Length; i++) attrs[i] = new GxmVertexAttribute(r.U16(), r.U16(), r.U8(), r.U8(), r.U16());
+                for (int i = 0; i < attrs.Length; i++)
+                {
+                    attrs[i] = new GxmVertexAttribute(r.U16(), r.U16(), r.U8(), r.U8(), r.U16());
+                }
+
                 var streams = new GxmVertexStream[r.VarInt()];
-                for (int i = 0; i < streams.Length; i++) streams[i] = new GxmVertexStream(r.U16(), r.U16());
+                for (int i = 0; i < streams.Length; i++)
+                {
+                    streams[i] = new GxmVertexStream(r.U16(), r.U16());
+                }
+
                 Put(_vps, id, new GxmVertexProgram { Handle = handle, Info = _infos[info], Attributes = attrs, Streams = streams });
                 break;
             }
@@ -577,18 +818,27 @@ public sealed class GpuDumpCodec
                 GxmBlendInfo? blend = r.Bool() ? new GxmBlendInfo(r.U8(), r.U8(), r.U8(), r.U8(), r.U8(), r.U8(), r.U8()) : null;
                 Put(_fps, id, new GxmFragmentProgram
                 {
-                    Handle = handle, Info = info > 0 ? _infos[info - 1] : null!, Blend = blend,
-                    OutputFormat = r.U32(), MultisampleMode = r.U32(), IsMaskUpdate = r.Bool(),
+                    Handle = handle,
+                    Info = info > 0 ? _infos[info - 1] : null!,
+                    Blend = blend,
+                    OutputFormat = r.U32(),
+                    MultisampleMode = r.U32(),
+                    IsMaskUpdate = r.Bool(),
                 });
                 break;
             }
-            default: throw new InvalidDataException($"not a program record: {kind}");
+            default:
+                throw new InvalidDataException($"not a program record: {kind}");
         }
     }
 
     static void Put<T>(List<T> list, int id, T value)
     {
-        if (id != list.Count) throw new InvalidDataException($"GPU dump program id {id} out of order (expected {list.Count})");
+        if (id != list.Count)
+        {
+            throw new InvalidDataException($"GPU dump program id {id} out of order (expected {list.Count})");
+        }
+
         list.Add(value);
     }
 
@@ -611,24 +861,41 @@ public sealed class GpuDumpCodec
     {
         switch (kind)
         {
-            case GpuDumpRecord.Draw: return ReadDraw(r, draw);
+            case GpuDumpRecord.Draw:
+                return ReadDraw(r, draw);
             case GpuDumpRecord.BeginScene:
             {
                 var b = new BeginSceneCommand { Width = r.U32(), Height = r.U32(), Multisample = r.U32() };
-                if (r.Bool()) b.Color = new ColorSurfaceInfo(r.U32(), r.U32(), r.U32(), r.U32(), r.U32(), r.U32(), r.Bool(), r.U32());
-                if (r.Bool()) b.Depth = new DepthSurfaceInfo(r.U32(), r.U32(), r.U32(), r.U32(), r.U32(), r.F32(), r.U8(), r.Bool(), r.Bool());
+                if (r.Bool())
+                {
+                    b.Color = new ColorSurfaceInfo(r.U32(), r.U32(), r.U32(), r.U32(), r.U32(), r.U32(), r.Bool(), r.U32());
+                }
+
+                if (r.Bool())
+                {
+                    b.Depth = new DepthSurfaceInfo(r.U32(), r.U32(), r.U32(), r.U32(), r.U32(), r.F32(), r.U8(), r.Bool(), r.Bool());
+                }
+
                 return b;
             }
             case GpuDumpRecord.EndScene:
             {
                 var n = new (uint, uint)[r.VarInt()];
-                for (int i = 0; i < n.Length; i++) n[i] = (r.U32(), r.U32());
+                for (int i = 0; i < n.Length; i++)
+                {
+                    n[i] = (r.U32(), r.U32());
+                }
+
                 return new EndSceneCommand { Notifications = n };
             }
-            case GpuDumpRecord.Finish: return new FinishCommand();
-            case GpuDumpRecord.MidSceneFlush: return new MidSceneFlushCommand();
-            case GpuDumpRecord.Signal: return new SignalCommand { Signal = static () => { } };
-            case GpuDumpRecord.Callback: return new CallbackCommand { WriteAddress = r.U32(), WriteSize = r.U32(), Action = static () => { } };
+            case GpuDumpRecord.Finish:
+                return new FinishCommand();
+            case GpuDumpRecord.MidSceneFlush:
+                return new MidSceneFlushCommand();
+            case GpuDumpRecord.Signal:
+                return new SignalCommand { Signal = static () => { } };
+            case GpuDumpRecord.Callback:
+                return new CallbackCommand { WriteAddress = r.U32(), WriteSize = r.U32(), Action = static () => { } };
             case GpuDumpRecord.Present:
                 return new PresentCommand { Frame = new DisplayFrame(r.U32(), r.U32(), r.U32(), r.U32(), (DisplayPixelFormat)r.U32()) };
         }
@@ -646,9 +913,20 @@ public sealed class GpuDumpCodec
         s.Front = ReadSide(r);
         s.Back = ReadSide(r);
         s.ViewportEnabled = r.Bool();
-        s.VpOffX = r.F32(); s.VpOffY = r.F32(); s.VpOffZ = r.F32(); s.VpScaleX = r.F32(); s.VpScaleY = r.F32(); s.VpScaleZ = r.F32();
-        s.RegionClipMode = r.U8(); s.ClipMinX = r.I32(); s.ClipMinY = r.I32(); s.ClipMaxX = r.I32(); s.ClipMaxY = r.I32();
-        s.WBuffer = r.Bool(); s.WClampEnabled = r.Bool(); s.WClampValue = r.F32();
+        s.VpOffX = r.F32();
+        s.VpOffY = r.F32();
+        s.VpOffZ = r.F32();
+        s.VpScaleX = r.F32();
+        s.VpScaleY = r.F32();
+        s.VpScaleZ = r.F32();
+        s.RegionClipMode = r.U8();
+        s.ClipMinX = r.I32();
+        s.ClipMinY = r.I32();
+        s.ClipMaxX = r.I32();
+        s.ClipMaxY = r.I32();
+        s.WBuffer = r.Bool();
+        s.WClampEnabled = r.Bool();
+        s.WClampValue = r.F32();
         d.State = s;
         d.VertexUniforms = _uniforms.Read(r);
         d.VertexUniformsOffset = 0;
@@ -687,7 +965,11 @@ public sealed class GpuDumpCodec
     public static void WriteChunk(Stream output, byte type, ReadOnlySpan<byte> raw, int quality, ref byte[]? scratch)
     {
         int max = BrotliEncoder.GetMaxCompressedLength(raw.Length);
-        if (scratch == null || scratch.Length < max) scratch = new byte[Math.Max(max, 1 << 16)];
+        if (scratch == null || scratch.Length < max)
+        {
+            scratch = new byte[Math.Max(max, 1 << 16)];
+        }
+
         byte codec = GpuDumpFormat.CodecStored;
         ReadOnlySpan<byte> payload = raw;
         if (quality > 0 && raw.Length > 64 && BrotliEncoder.TryCompress(raw, scratch, out int written, quality, 22) && written < raw.Length)
@@ -707,24 +989,52 @@ public sealed class GpuDumpCodec
     /// <summary>Reads the next chunk into <paramref name="buffer"/>; false at the end of the file (or a truncated tail).</summary>
     public static bool ReadChunk(Stream input, ref byte[] buffer, ref byte[]? scratch, out byte type, out int length)
     {
-        type = 0; length = 0;
+        type = 0;
+        length = 0;
         Span<byte> head = stackalloc byte[10];
-        if (input.ReadAtLeast(head, head.Length, throwOnEndOfStream: false) < head.Length) return false;
+        if (input.ReadAtLeast(head, head.Length, throwOnEndOfStream: false) < head.Length)
+        {
+            return false;
+        }
+
         type = head[0];
         length = checked((int)BinaryPrimitives.ReadUInt32LittleEndian(head[1..]));
         int stored = checked((int)BinaryPrimitives.ReadUInt32LittleEndian(head[5..]));
         byte codec = head[9];
-        if (buffer.Length < length) buffer = new byte[Math.Max(length, buffer.Length * 2)];
+        if (buffer.Length < length)
+        {
+            buffer = new byte[Math.Max(length, buffer.Length * 2)];
+        }
+
         if (codec == GpuDumpFormat.CodecStored)
         {
-            if (stored != length) throw new InvalidDataException("GPU dump: stored chunk size mismatch");
+            if (stored != length)
+            {
+                throw new InvalidDataException("GPU dump: stored chunk size mismatch");
+            }
+
             return input.ReadAtLeast(buffer.AsSpan(0, length), length, throwOnEndOfStream: false) == length;
         }
-        if (codec != GpuDumpFormat.CodecBrotli) throw new InvalidDataException($"GPU dump: unknown chunk codec {codec}");
-        if (scratch == null || scratch.Length < stored) scratch = new byte[Math.Max(stored, 1 << 16)];
-        if (input.ReadAtLeast(scratch.AsSpan(0, stored), stored, throwOnEndOfStream: false) < stored) return false;
+        if (codec != GpuDumpFormat.CodecBrotli)
+        {
+            throw new InvalidDataException($"GPU dump: unknown chunk codec {codec}");
+        }
+
+        if (scratch == null || scratch.Length < stored)
+        {
+            scratch = new byte[Math.Max(stored, 1 << 16)];
+        }
+
+        if (input.ReadAtLeast(scratch.AsSpan(0, stored), stored, throwOnEndOfStream: false) < stored)
+        {
+            return false;
+        }
+
         if (!BrotliDecoder.TryDecompress(scratch.AsSpan(0, stored), buffer.AsSpan(0, length), out int got) || got != length)
+        {
             throw new InvalidDataException("GPU dump: corrupt compressed chunk");
+        }
+
         return true;
     }
 
@@ -743,10 +1053,16 @@ public sealed class GpuDumpCodec
     {
         Span<byte> b = stackalloc byte[16];
         if (input.ReadAtLeast(b, 16, throwOnEndOfStream: false) < 16 || !b[..8].SequenceEqual(GpuDumpFormat.Magic))
+        {
             throw new InvalidDataException("not a VitaSharp GPU dump (bad magic)");
+        }
+
         version = BinaryPrimitives.ReadUInt32LittleEndian(b[8..]);
         if (version == 0 || version > GpuDumpFormat.Version)
+        {
             throw new InvalidDataException($"GPU dump version {version} is newer than this build supports ({GpuDumpFormat.Version})");
+        }
+
         int len = checked((int)BinaryPrimitives.ReadUInt32LittleEndian(b[12..]));
         var text = new byte[len];
         input.ReadExactly(text);

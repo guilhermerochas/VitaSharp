@@ -53,12 +53,19 @@ internal sealed class IlDump
                 }
                 string name = MethodName(b);
                 // a block recompiled after an invalidation gets a suffix: method names stay unique in the type
-                if (_blocks.Exists(x => x.Name == name && x.File == _file)) name += $"_{_blocks.Count}";
+                if (_blocks.Exists(x => x.Name == name && x.File == _file))
+                {
+                    name += $"_{_blocks.Count}";
+                }
+
                 var mb = _type.DefineMethod(name, MethodAttributes.Public | MethodAttributes.Static, typeof(void), [typeof(CpuState).MakePointerType()]);
                 mb.DefineParameter(1, ParameterAttributes.None, "s");
                 emit(mb.GetILGenerator());
                 _blocks.Add((b, name, _file));
-                if (++_inFile >= BatchSize) SaveAssembly();
+                if (++_inFile >= BatchSize)
+                {
+                    SaveAssembly();
+                }
             }
             catch (Exception e)
             {
@@ -69,10 +76,17 @@ internal sealed class IlDump
 
     void SaveAssembly()
     {
-        if (_type == null || _asm == null) return;
+        if (_type == null || _asm == null)
+        {
+            return;
+        }
+
         _type.CreateType();
         _asm.Save(Path.Combine(_dir, $"il_blocks_{_file:D3}.dll"));
-        _type = null; _asm = null; _inFile = 0; _file++;
+        _type = null;
+        _asm = null;
+        _inFile = 0;
+        _file++;
         WriteIndex();
     }
 
@@ -81,7 +95,10 @@ internal sealed class IlDump
     {
         var sb = new System.Text.StringBuilder("method\tfile\tstart\tmode\tinstructions\texecutions\texecuted_instructions\n");
         foreach (var (b, name, file) in _blocks.OrderByDescending(x => (long)x.Block.ExecCount * x.Block.Insts.Length))
+        {
             sb.Append($"{name}\til_blocks_{file:D3}.dll\t{b.Start:X8}\t{(b.Thumb ? "T" : "A")}\t{b.Insts.Length}\t{b.ExecCount}\t{(long)b.ExecCount * b.Insts.Length}\n");
+        }
+
         File.WriteAllText(Path.Combine(_dir, "index.tsv"), sb.ToString());
     }
 
@@ -92,8 +109,14 @@ internal sealed class IlDump
         {
             try
             {
-                if (_inFile > 0) SaveAssembly();
-                else WriteIndex();
+                if (_inFile > 0)
+                {
+                    SaveAssembly();
+                }
+                else
+                {
+                    WriteIndex();
+                }
             }
             catch (Exception e)
             {

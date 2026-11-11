@@ -1,4 +1,4 @@
-<!-- pair: README.md sha256=b27b484a8941edbff534a547a844e7bcc6b71feb220b333f48e58ebf4cca4cc6 -->
+<!-- pair: README.md sha256=281ffbbe144ecbfe3bcda9ef30e05ef7115c98fae1a42b0fcb76e69bb6cacf40 -->
 <div align="center">
 
 [English](README.md) | **Português**
@@ -235,6 +235,35 @@ Todo script vem em par `.ps1` + `.sh`, e o CI confere isso. Os textos da interfa
 `src/VitaSharp.Core/Localization` (`Texts.resx` em inglês, `Texts.pt-BR.resx`); a documentação externa também vem nos
 dois idiomas (`README.md` + `README.pt-BR.md`, conferidos pelo `ExternalDocPairsTests`). Para contribuir com funções do
 sistema, veja as especificações em [`docs/hle`](docs/hle/README.md).
+
+### Estilo de código
+
+O estilo do C# é o do Ryujinx/Ryubing, e o [`.editorconfig`](.editorconfig) é a regra (o que é cobrado, o que está
+desligado e por quê). `build/format-check.ps1` (Windows) / `build/format-check.sh` (Linux, macOS) roda
+`dotnet format whitespace` e `dotnet format style --severity warn` com `--verify-no-changes`, como o job "Code style"
+do CI; `-Fix` / `--fix` reescreve os arquivos em vez de conferir (rodando também o `build/FormatTool`, que
+quebra os blocos escritos numa linha e mantém `{ get; set; }` numa linha). As pastas ainda não convertidas ficam em
+[`build/format-pending.txt`](build/format-pending.txt) e são puladas. O `OneLineBlockTests` (na suíte de testes)
+recusa blocos escritos numa linha só (`if (x) { a; }`): todo corpo vai em linhas próprias.
+
+Os scripts shell seguem o Google Shell Style Guide e precisam passar no ShellCheck (job "ShellCheck" do CI; o job
+"Scripts on macOS" também roda o `build/check-scripts-help.sh` no bash 3.2 do sistema). Instale o ShellCheck com
+`winget install koalaman.shellcheck` (Windows), `sudo apt install shellcheck` / `sudo dnf install ShellCheck`
+(Linux) ou `brew install shellcheck` (macOS) e rode `shellcheck --severity=style build/*.sh build/package/*.sh`.
+
+### Ferramentas de desenvolvimento
+
+- Dump do backend IL: `VITASHARP_IL_DUMP=<pasta>` grava os blocos do jogo compilados como assemblies para ler no ILSpy
+  (`dotnet tool install -g ilspycmd`, depois `ilspycmd -il <arquivo>.dll`); `DOTNET_JitDisasm=<método>` mostra o
+  código de máquina que o RyuJIT gera. Veja [`docs/notes/il-jit.md`](docs/notes/il-jit.md).
+- Validação do Vulkan: `--validation` (`run`, `test`, `replay-gpu`) ou `VITASHARP_VK_VALIDATION=1` (`=sync` inclui a
+  validação de sincronização) precisa da camada da Khronos: o [Vulkan SDK](https://vulkan.lunarg.com/sdk/home)
+  (Windows, Linux, macOS) ou, no Linux, o pacote da distribuição (`vulkan-validationlayers` /
+  `vulkan-validation-layers`); no macOS o SDK também traz o MoltenVK. Captura de quadros:
+  [RenderDoc](https://renderdoc.org) (Windows, Linux) e os dumps da GPU (`replay-gpu`,
+  [`docs/notes/gpu-dump.md`](docs/notes/gpu-dump.md)) em todos os sistemas.
+- Perfil: `dotnet-trace` / `dotnet-counters` (`dotnet tool install -g dotnet-trace`, todos os sistemas); no Windows
+  também o PerfView e o WPR/WPA (Windows Performance Toolkit).
 
 ## Releases
 

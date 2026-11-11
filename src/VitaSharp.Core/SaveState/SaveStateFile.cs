@@ -52,8 +52,10 @@ public static class SaveStateFile
         h.Write(header.Thumbnail);
         output.Write(Magic);
         Span<byte> word = stackalloc byte[4];
-        BitConverter.TryWriteBytes(word, FormatVersion); output.Write(word);
-        BitConverter.TryWriteBytes(word, h.Length); output.Write(word);
+        BitConverter.TryWriteBytes(word, FormatVersion);
+        output.Write(word);
+        BitConverter.TryWriteBytes(word, h.Length);
+        output.Write(word);
         output.Write(h.Data);
     }
 
@@ -63,10 +65,17 @@ public static class SaveStateFile
     {
         Span<byte> head = stackalloc byte[16];
         if (input.ReadAtLeast(head, 16, throwOnEndOfStream: false) < 16 || !head[..8].SequenceEqual(Magic))
+        {
             throw new SnapshotException("this file is not a VitaSharp save state");
+        }
+
         int version = BitConverter.ToInt32(head[8..]);
         int len = BitConverter.ToInt32(head[12..]);
-        if (len < 0 || len > 64 << 20) throw new SnapshotException("the save state header is corrupt");
+        if (len < 0 || len > 64 << 20)
+        {
+            throw new SnapshotException("the save state header is corrupt");
+        }
+
         var buf = new byte[len];
         input.ReadExactly(buf);
         var r = new SnapshotReader(buf);
@@ -93,18 +102,31 @@ public static class SaveStateFile
     public static string? Incompatibility(SaveStateHeader h, string titleId)
     {
         if (h.FormatVersion != FormatVersion)
+        {
             return Localization.Loc.Format("StateOtherFormat", ShortVersion(h.EmulatorVersion), h.FormatVersion, FormatVersion);
+        }
+
         if (h.Schema != SnapshotSchema.Hash)
+        {
             return Localization.Loc.Format("StateOtherVersion", ShortVersion(h.EmulatorVersion));
+        }
+
         if (!string.Equals(h.TitleId, titleId, StringComparison.OrdinalIgnoreCase))
+        {
             return Localization.Loc.Format("StateOtherGame", h.TitleId, h.Title, titleId);
+        }
+
         return null;
     }
 
     /// <summary>"1.0.0+60d6517ede5e..." as "1.0.0+60d6517": the build's commit, short enough for a title bar.</summary>
     public static string ShortVersion(string? v)
     {
-        if (string.IsNullOrEmpty(v)) return Localization.Loc.Get("UnknownVersion");
+        if (string.IsNullOrEmpty(v))
+        {
+            return Localization.Loc.Get("UnknownVersion");
+        }
+
         int plus = v.IndexOf('+');
         return plus >= 0 && v.Length > plus + 8 ? v[..(plus + 8)] : v;
     }
@@ -152,27 +174,50 @@ public sealed class SaveStateReader : IDisposable
     {
         Header = SaveStateFile.ReadHeader(input);
         if (Header.FormatVersion != SaveStateFile.FormatVersion)
+        {
             throw new SaveStateIncompatibleException(SaveStateFile.Incompatibility(Header, Header.TitleId)!);
+        }
+
         _z = new BrotliStream(input, CompressionMode.Decompress, leaveOpen: true);
     }
 
     /// <summary>Moves to the next section (skipping what is left of the current one); false at the end.</summary>
     public bool Next(out string name, out long length)
     {
-        if (_left > 0) Skip(_left);
+        if (_left > 0)
+        {
+            Skip(_left);
+        }
+
         Span<byte> b = stackalloc byte[8];
         int got = _z.ReadAtLeast(b[..4], 4, throwOnEndOfStream: false);
         name = "";
         length = 0;
-        if (got == 0) return false;
-        if (got < 4) throw new SnapshotException("the save state is truncated");
+        if (got == 0)
+        {
+            return false;
+        }
+
+        if (got < 4)
+        {
+            throw new SnapshotException("the save state is truncated");
+        }
+
         int nl = BitConverter.ToInt32(b);
-        if (nl is < 0 or > 4096) throw new SnapshotException("the save state is corrupt");
+        if (nl is < 0 or > 4096)
+        {
+            throw new SnapshotException("the save state is corrupt");
+        }
+
         var nb = new byte[nl];
         Fill(nb);
         Fill(b);
         length = BitConverter.ToInt64(b);
-        if (length < 0) throw new SnapshotException("the save state is corrupt");
+        if (length < 0)
+        {
+            throw new SnapshotException("the save state is corrupt");
+        }
+
         name = Encoding.UTF8.GetString(nb);
         _left = length;
         return true;
@@ -180,15 +225,28 @@ public sealed class SaveStateReader : IDisposable
 
     void Fill(Span<byte> dst)
     {
-        try { _z.ReadExactly(dst); }
-        catch (EndOfStreamException) { throw new SnapshotException("the save state is truncated"); }
-        catch (InvalidDataException) { throw new SnapshotException("the save state is corrupt"); }
+        try
+        {
+            _z.ReadExactly(dst);
+        }
+        catch (EndOfStreamException)
+        {
+            throw new SnapshotException("the save state is truncated");
+        }
+        catch (InvalidDataException)
+        {
+            throw new SnapshotException("the save state is corrupt");
+        }
     }
 
     /// <summary>Reads the next <paramref name="dst"/>.Length bytes of the current section.</summary>
     public void Read(Span<byte> dst)
     {
-        if (dst.Length > _left) throw new SnapshotException("the save state is corrupt (section overrun)");
+        if (dst.Length > _left)
+        {
+            throw new SnapshotException("the save state is corrupt (section overrun)");
+        }
+
         Fill(dst);
         _left -= dst.Length;
     }
@@ -196,7 +254,11 @@ public sealed class SaveStateReader : IDisposable
     /// <summary>The rest of the current section.</summary>
     public byte[] ReadAll()
     {
-        if (_left > int.MaxValue) throw new SnapshotException("the save state is corrupt (section too large)");
+        if (_left > int.MaxValue)
+        {
+            throw new SnapshotException("the save state is corrupt (section too large)");
+        }
+
         var data = new byte[_left];
         Read(data);
         return data;

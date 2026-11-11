@@ -47,9 +47,17 @@ public static class StateLiveness
     public static int DeadIn(Block b, ArmFrontend? like = null)
     {
         int cached = b.DeadIn;
-        if (cached != Unknown) return cached;
+        if (cached != Unknown)
+        {
+            return cached;
+        }
+
         var fe = _frontend ??= NativeArm64Compiler.NewFrontend(reuseIr: true);
-        if (like != null) { fe.HleCallouts = like.HleCallouts; fe.DeferRegions = like.DeferRegions; }
+        if (like != null)
+        {
+            fe.HleCallouts = like.HleCallouts;
+            fe.DeferRegions = like.DeferRegions;
+        }
         var ir = fe.Translate(b);
         int written = 0, readFirst = 0, depth = 0;
         uint openLabel = 0;
@@ -63,14 +71,23 @@ public static class StateLiveness
                     break;
                 case IrOp.SetReg:
                 case IrOp.SetFlag:
-                    if (depth == 0) written |= Bit(x); // a store inside a conditional region happens on one path only
+                    if (depth == 0)
+                    {
+                        written |= Bit(x); // a store inside a conditional region happens on one path only
+                    }
+
                     break;
                 case IrOp.CondBranch:
                 case IrOp.BranchIf:
-                    depth = 1; openLabel = x.Imm2;
+                    depth = 1;
+                    openLabel = x.Imm2;
                     break;
                 case IrOp.Label:
-                    if (depth > 0 && x.Imm == openLabel) depth = 0;
+                    if (depth > 0 && x.Imm == openLabel)
+                    {
+                        depth = 0;
+                    }
+
                     break;
                 case IrOp.Callout:
                 case IrOp.ExitStatic:
@@ -78,7 +95,10 @@ public static class StateLiveness
                     readFirst |= ~written; // the handler or whatever runs next sees the state as it is
                     break;
             }
-            if (depth == 0 && x.Op is IrOp.Callout or IrOp.ExitStatic or IrOp.ExitDynamic) break;
+            if (depth == 0 && x.Op is IrOp.Callout or IrOp.ExitStatic or IrOp.ExitDynamic)
+            {
+                break;
+            }
         }
         int dead = ~readFirst & Trackable;
         b.DeadIn = dead;
@@ -95,7 +115,13 @@ public static class StateLiveness
     {
         var insts = System.Runtime.InteropServices.CollectionsMarshal.AsSpan(ir.Insts);
         foreach (ref readonly var x in insts)
-            if (x.Op == IrOp.Callout) return 0; // a handler may raise an exit the dispatcher handles with the full state
+        {
+            if (x.Op == IrOp.Callout)
+            {
+                return 0; // a handler may raise an exit the dispatcher handles with the full state
+            }
+        }
+
         const int All = Trackable | Pc;
         var atLabel = _liveAtLabel is { } l && l.Length >= ir.Labels ? l : (_liveAtLabel = new int[Math.Max(16, ir.Labels * 2)]);
         Array.Fill(atLabel, All, 0, ir.Labels);
@@ -105,18 +131,42 @@ public static class StateLiveness
             ref var x = ref insts[i];
             switch (x.Op)
             {
-                case IrOp.ExitStatic: live = All & ~(deadAt(x.Imm, x.Imm2 != 0) & Trackable | (x.Imm3 == ColdPc ? Pc : 0)); break;
-                case IrOp.ExitDynamic: live = All; break;
-                case IrOp.Label: atLabel[x.Imm] = live; break;
-                case IrOp.CondBranch: case IrOp.BranchIf: live |= atLabel[x.Imm2]; break;
-                case IrOp.GetReg: case IrOp.GetFlag: live |= Bit(x); break;
+                case IrOp.ExitStatic:
+                    live = All & ~(deadAt(x.Imm, x.Imm2 != 0) & Trackable | (x.Imm3 == ColdPc ? Pc : 0));
+                    break;
+                case IrOp.ExitDynamic:
+                    live = All;
+                    break;
+                case IrOp.Label:
+                    atLabel[x.Imm] = live;
+                    break;
+                case IrOp.CondBranch:
+                case IrOp.BranchIf:
+                    live |= atLabel[x.Imm2];
+                    break;
+                case IrOp.GetReg:
+                case IrOp.GetFlag:
+                    live |= Bit(x);
+                    break;
                 case IrOp.SetReg:
                 case IrOp.SetFlag:
                 {
                     int bit = Bit(x);
-                    if (bit == 0) break;
-                    if ((live & bit) == 0) { x = new IrInst(IrOp.Nop); removed++; }
-                    else live &= ~bit;
+                    if (bit == 0)
+                    {
+                        break;
+                    }
+
+                    if ((live & bit) == 0)
+                    {
+                        x = new IrInst(IrOp.Nop);
+                        removed++;
+                    }
+                    else
+                    {
+                        live &= ~bit;
+                    }
+
                     break;
                 }
             }

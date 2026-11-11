@@ -25,7 +25,11 @@ public sealed unsafe partial class X64Emitter
     /// <summary>Whether <paramref name="k"/> (at lane <paramref name="size"/>) has an inline lowering on this host.</summary>
     public static bool SupportsVec(VecKind k, uint size = 2)
     {
-        if (!NeonSupported) return false;
+        if (!NeonSupported)
+        {
+            return false;
+        }
+
         return k switch
         {
             VecKind.FmaF or VecKind.FmsF => HasFma,
@@ -48,12 +52,17 @@ public sealed unsafe partial class X64Emitter
     static ulong ConstAddr(ulong lo, ulong hi) => Pool.GetOrAdd((lo, hi), static k =>
     {
         var p = (ulong*)NativeMemory.AlignedAlloc(16, 16);
-        p[0] = k.Item1; p[1] = k.Item2;
+        p[0] = k.Item1;
+        p[1] = k.Item2;
         return (ulong)p;
     });
 
     /// <summary>Memory operand for a constant (clobbers rax).</summary>
-    AssemblerMemoryOperand K(ulong lo, ulong hi) { _a.mov(rax, ConstAddr(lo, hi)); return __xmmword_ptr[rax]; }
+    AssemblerMemoryOperand K(ulong lo, ulong hi)
+    {
+        _a.mov(rax, ConstAddr(lo, hi));
+        return __xmmword_ptr[rax];
+    }
     AssemblerMemoryOperand K64(ulong v) => K(v, v);
     AssemblerMemoryOperand K32(uint v) => K64(v | ((ulong)v << 32));
     AssemblerMemoryOperand K16(uint v) => K64((v & 0xFFFF) * 0x0001000100010001ul);
@@ -72,7 +81,11 @@ public sealed unsafe partial class X64Emitter
 
     void NeonFp()
     {
-        if (_neonMxcsr) return;
+        if (_neonMxcsr)
+        {
+            return;
+        }
+
         _a.ldmxcsr(State(OffMxcsrNeon));
         _neonMxcsr = true;
     }
@@ -80,38 +93,150 @@ public sealed unsafe partial class X64Emitter
     // ------------------------------------------------------------------ operand helpers
 
     static int Reg8(int off) => OffD + off;
-    void LdV(AssemblerRegisterXMM r, int off, bool q) { if (q) _a.movdqu(r, __xmmword_ptr[rbx + OffD + off]); else _a.movq(r, __qword_ptr[rbx + OffD + off]); }
-    void StV(int off, AssemblerRegisterXMM r, bool q) { if (q) _a.movdqu(__xmmword_ptr[rbx + OffD + off], r); else _a.movq(__qword_ptr[rbx + OffD + off], r); }
-    void Mov(AssemblerRegisterXMM d, AssemblerRegisterXMM s) { if (d != s) _a.movdqa(d, s); }
+    void LdV(AssemblerRegisterXMM r, int off, bool q)
+    {
+        if (q)
+        {
+            _a.movdqu(r, __xmmword_ptr[rbx + OffD + off]);
+        }
+        else
+        {
+            _a.movq(r, __qword_ptr[rbx + OffD + off]);
+        }
+    }
+    void StV(int off, AssemblerRegisterXMM r, bool q)
+    {
+        if (q)
+        {
+            _a.movdqu(__xmmword_ptr[rbx + OffD + off], r);
+        }
+        else
+        {
+            _a.movq(__qword_ptr[rbx + OffD + off], r);
+        }
+    }
+    void Mov(AssemblerRegisterXMM d, AssemblerRegisterXMM s)
+    {
+        if (d != s)
+        {
+            _a.movdqa(d, s);
+        }
+    }
 
     void PAdd(uint size, AssemblerRegisterXMM d, AssemblerRegisterXMM s)
     {
-        switch (size) { case 0: _a.paddb(d, s); break; case 1: _a.paddw(d, s); break; case 2: _a.paddd(d, s); break; default: _a.paddq(d, s); break; }
+        switch (size)
+        {
+            case 0:
+                _a.paddb(d, s);
+                break;
+            case 1:
+                _a.paddw(d, s);
+                break;
+            case 2:
+                _a.paddd(d, s);
+                break;
+            default:
+                _a.paddq(d, s);
+                break;
+        }
     }
 
     void PSub(uint size, AssemblerRegisterXMM d, AssemblerRegisterXMM s)
     {
-        switch (size) { case 0: _a.psubb(d, s); break; case 1: _a.psubw(d, s); break; case 2: _a.psubd(d, s); break; default: _a.psubq(d, s); break; }
+        switch (size)
+        {
+            case 0:
+                _a.psubb(d, s);
+                break;
+            case 1:
+                _a.psubw(d, s);
+                break;
+            case 2:
+                _a.psubd(d, s);
+                break;
+            default:
+                _a.psubq(d, s);
+                break;
+        }
     }
 
     void PCmpEq(uint size, AssemblerRegisterXMM d, AssemblerRegisterXMM s)
     {
-        switch (size) { case 0: _a.pcmpeqb(d, s); break; case 1: _a.pcmpeqw(d, s); break; case 2: _a.pcmpeqd(d, s); break; default: _a.pcmpeqq(d, s); break; }
+        switch (size)
+        {
+            case 0:
+                _a.pcmpeqb(d, s);
+                break;
+            case 1:
+                _a.pcmpeqw(d, s);
+                break;
+            case 2:
+                _a.pcmpeqd(d, s);
+                break;
+            default:
+                _a.pcmpeqq(d, s);
+                break;
+        }
     }
 
     /// <summary>Signed d > s per lane (64-bit lanes need SSE4.2).</summary>
     void PCmpGt(uint size, AssemblerRegisterXMM d, AssemblerRegisterXMM s)
     {
-        switch (size) { case 0: _a.pcmpgtb(d, s); break; case 1: _a.pcmpgtw(d, s); break; case 2: _a.pcmpgtd(d, s); break; default: _a.pcmpgtq(d, s); break; }
+        switch (size)
+        {
+            case 0:
+                _a.pcmpgtb(d, s);
+                break;
+            case 1:
+                _a.pcmpgtw(d, s);
+                break;
+            case 2:
+                _a.pcmpgtd(d, s);
+                break;
+            default:
+                _a.pcmpgtq(d, s);
+                break;
+        }
     }
 
     void PMax(uint size, bool unsigned, AssemblerRegisterXMM d, AssemblerRegisterXMM s)
     {
         switch (size)
         {
-            case 0: if (unsigned) _a.pmaxub(d, s); else _a.pmaxsb(d, s); break;
-            case 1: if (unsigned) _a.pmaxuw(d, s); else _a.pmaxsw(d, s); break;
-            default: if (unsigned) _a.pmaxud(d, s); else _a.pmaxsd(d, s); break;
+            case 0:
+                if (unsigned)
+                {
+                    _a.pmaxub(d, s);
+                }
+                else
+                {
+                    _a.pmaxsb(d, s);
+                }
+
+                break;
+            case 1:
+                if (unsigned)
+                {
+                    _a.pmaxuw(d, s);
+                }
+                else
+                {
+                    _a.pmaxsw(d, s);
+                }
+
+                break;
+            default:
+                if (unsigned)
+                {
+                    _a.pmaxud(d, s);
+                }
+                else
+                {
+                    _a.pmaxsd(d, s);
+                }
+
+                break;
         }
     }
 
@@ -119,9 +244,39 @@ public sealed unsafe partial class X64Emitter
     {
         switch (size)
         {
-            case 0: if (unsigned) _a.pminub(d, s); else _a.pminsb(d, s); break;
-            case 1: if (unsigned) _a.pminuw(d, s); else _a.pminsw(d, s); break;
-            default: if (unsigned) _a.pminud(d, s); else _a.pminsd(d, s); break;
+            case 0:
+                if (unsigned)
+                {
+                    _a.pminub(d, s);
+                }
+                else
+                {
+                    _a.pminsb(d, s);
+                }
+
+                break;
+            case 1:
+                if (unsigned)
+                {
+                    _a.pminuw(d, s);
+                }
+                else
+                {
+                    _a.pminsw(d, s);
+                }
+
+                break;
+            default:
+                if (unsigned)
+                {
+                    _a.pminud(d, s);
+                }
+                else
+                {
+                    _a.pminsd(d, s);
+                }
+
+                break;
         }
     }
 
@@ -130,20 +285,30 @@ public sealed unsafe partial class X64Emitter
         switch (size)
         {
             case 0: // bytes: even bytes from one 16-bit product, odd bytes from another
-                Mov(t1, d); Mov(t2, s);
+                Mov(t1, d);
+                Mov(t2, s);
                 _a.pmullw(d, s);
                 _a.pand(d, K16(0x00FF));
-                _a.psrlw(t1, 8); _a.psrlw(t2, 8);
+                _a.psrlw(t1, 8);
+                _a.psrlw(t2, 8);
                 _a.pmullw(t1, t2);
                 _a.psllw(t1, 8);
                 _a.por(d, t1);
                 break;
-            case 1: _a.pmullw(d, s); break;
-            default: _a.pmulld(d, s); break;
+            case 1:
+                _a.pmullw(d, s);
+                break;
+            default:
+                _a.pmulld(d, s);
+                break;
         }
     }
 
-    void Not(AssemblerRegisterXMM r, AssemblerRegisterXMM t) { _a.pcmpeqd(t, t); _a.pxor(r, t); }
+    void Not(AssemblerRegisterXMM r, AssemblerRegisterXMM t)
+    {
+        _a.pcmpeqd(t, t);
+        _a.pxor(r, t);
+    }
 
     /// <summary>r = ~mask &amp; r | mask &amp; value (mask lanes all ones or zero); mask is clobbered.</summary>
     void Blend(AssemblerRegisterXMM r, AssemblerRegisterXMM mask, AssemblerRegisterXMM value)
@@ -157,27 +322,61 @@ public sealed unsafe partial class X64Emitter
     // shifts by an immediate count; counts at or beyond the lane width give 0 (logical) or the sign (arithmetic)
     void ShlI(AssemblerRegisterXMM r, uint size, int n)
     {
-        if (n == 0) return;
-        if (n >= (8 << (int)size)) { _a.pxor(r, r); return; }
+        if (n == 0)
+        {
+            return;
+        }
+
+        if (n >= (8 << (int)size))
+        {
+            _a.pxor(r, r);
+            return;
+        }
         switch (size)
         {
-            case 0: _a.psllw(r, (byte)n); _a.pand(r, K8((0xFFu << n) & 0xFF)); break;
-            case 1: _a.psllw(r, (byte)n); break;
-            case 2: _a.pslld(r, (byte)n); break;
-            default: _a.psllq(r, (byte)n); break;
+            case 0:
+                _a.psllw(r, (byte)n);
+                _a.pand(r, K8((0xFFu << n) & 0xFF));
+                break;
+            case 1:
+                _a.psllw(r, (byte)n);
+                break;
+            case 2:
+                _a.pslld(r, (byte)n);
+                break;
+            default:
+                _a.psllq(r, (byte)n);
+                break;
         }
     }
 
     void ShrU(AssemblerRegisterXMM r, uint size, int n)
     {
-        if (n == 0) return;
-        if (n >= (8 << (int)size)) { _a.pxor(r, r); return; }
+        if (n == 0)
+        {
+            return;
+        }
+
+        if (n >= (8 << (int)size))
+        {
+            _a.pxor(r, r);
+            return;
+        }
         switch (size)
         {
-            case 0: _a.psrlw(r, (byte)n); _a.pand(r, K8(0xFFu >> n)); break;
-            case 1: _a.psrlw(r, (byte)n); break;
-            case 2: _a.psrld(r, (byte)n); break;
-            default: _a.psrlq(r, (byte)n); break;
+            case 0:
+                _a.psrlw(r, (byte)n);
+                _a.pand(r, K8(0xFFu >> n));
+                break;
+            case 1:
+                _a.psrlw(r, (byte)n);
+                break;
+            case 2:
+                _a.psrld(r, (byte)n);
+                break;
+            default:
+                _a.psrlq(r, (byte)n);
+                break;
         }
     }
 
@@ -185,11 +384,19 @@ public sealed unsafe partial class X64Emitter
     {
         int bits = 8 << (int)size;
         n = Math.Min(n, bits - 1);
-        if (n == 0) return;
+        if (n == 0)
+        {
+            return;
+        }
+
         switch (size)
         {
-            case 1: _a.psraw(r, (byte)n); break;
-            case 2: _a.psrad(r, (byte)n); break;
+            case 1:
+                _a.psraw(r, (byte)n);
+                break;
+            case 2:
+                _a.psrad(r, (byte)n);
+                break;
             default:
             {
                 // logical shift, then sign-extend from the shifted sign position: (x ^ m) - m
@@ -205,7 +412,14 @@ public sealed unsafe partial class X64Emitter
 
     void Shr(AssemblerRegisterXMM r, uint size, int n, bool signed, AssemblerRegisterXMM t)
     {
-        if (signed) ShrS(r, size, n, t); else ShrU(r, size, n);
+        if (signed)
+        {
+            ShrS(r, size, n, t);
+        }
+        else
+        {
+            ShrU(r, size, n);
+        }
     }
 
     /// <summary>r = (r >> n) with ARM rounding (adds bit n-1 of the operand): (x + 2^(n-1)) >> n without overflow.</summary>
@@ -223,9 +437,17 @@ public sealed unsafe partial class X64Emitter
     {
         switch (wsize)
         {
-            case 1: _a.pand(r, K16(0x00FF)); _a.packuswb(r, r); break;
-            case 2: _a.pand(r, K32(0xFFFF)); _a.packusdw(r, r); break;
-            default: _a.pshufd(r, r, 0x08); break;
+            case 1:
+                _a.pand(r, K16(0x00FF));
+                _a.packuswb(r, r);
+                break;
+            case 2:
+                _a.pand(r, K32(0xFFFF));
+                _a.packusdw(r, r);
+                break;
+            default:
+                _a.pshufd(r, r, 0x08);
+                break;
         }
     }
 
@@ -233,9 +455,39 @@ public sealed unsafe partial class X64Emitter
     {
         switch (size)
         {
-            case 0: if (unsigned) _a.pmovzxbw(d, s); else _a.pmovsxbw(d, s); break;
-            case 1: if (unsigned) _a.pmovzxwd(d, s); else _a.pmovsxwd(d, s); break;
-            default: if (unsigned) _a.pmovzxdq(d, s); else _a.pmovsxdq(d, s); break;
+            case 0:
+                if (unsigned)
+                {
+                    _a.pmovzxbw(d, s);
+                }
+                else
+                {
+                    _a.pmovsxbw(d, s);
+                }
+
+                break;
+            case 1:
+                if (unsigned)
+                {
+                    _a.pmovzxwd(d, s);
+                }
+                else
+                {
+                    _a.pmovsxwd(d, s);
+                }
+
+                break;
+            default:
+                if (unsigned)
+                {
+                    _a.pmovzxdq(d, s);
+                }
+                else
+                {
+                    _a.pmovsxdq(d, s);
+                }
+
+                break;
         }
     }
 
@@ -244,7 +496,11 @@ public sealed unsafe partial class X64Emitter
     {
         var skip = _a.CreateLabel();
         _a.pmovmskb(eax, mask);
-        if (!q) _a.and(eax, 0xFF);
+        if (!q)
+        {
+            _a.and(eax, 0xFF);
+        }
+
         _a.test(eax, eax);
         _a.jz(skip);
         _a.or(State(OffFpscr), 0x08000000);
@@ -256,8 +512,16 @@ public sealed unsafe partial class X64Emitter
     {
         var skip = _a.CreateLabel();
         _a.pmovmskb(eax, eqMask);
-        if (!q) { _a.and(eax, 0xFF); _a.cmp(eax, 0xFF); }
-        else _a.cmp(eax, 0xFFFF);
+        if (!q)
+        {
+            _a.and(eax, 0xFF);
+            _a.cmp(eax, 0xFF);
+        }
+        else
+        {
+            _a.cmp(eax, 0xFFFF);
+        }
+
         _a.je(skip);
         _a.or(State(OffFpscr), 0x08000000);
         Place(ref skip);
@@ -301,7 +565,11 @@ public sealed unsafe partial class X64Emitter
         int eb = 1 << (int)size;
         var m = new byte[16];
         Array.Fill(m, (byte)0x80);
-        for (int j = 0; j < 8; j++) m[j] = (byte)((2 * (j / eb) + (odd ? 1 : 0)) * eb + j % eb);
+        for (int j = 0; j < 8; j++)
+        {
+            m[j] = (byte)((2 * (j / eb) + (odd ? 1 : 0)) * eb + j % eb);
+        }
+
         return m;
     }
 
@@ -316,7 +584,10 @@ public sealed unsafe partial class X64Emitter
     /// <summary>Broadcasts the scalar element at byte offset <paramref name="off"/> (16 or 32 bits) to every lane of r.</summary>
     void Broadcast(AssemblerRegisterXMM r, int off, uint size)
     {
-        if (size == 2) _a.movd(r, __dword_ptr[rbx + OffD + off]);
+        if (size == 2)
+        {
+            _a.movd(r, __dword_ptr[rbx + OffD + off]);
+        }
         else
         {
             _a.movzx(eax, __word_ptr[rbx + OffD + off]);
@@ -331,14 +602,16 @@ public sealed unsafe partial class X64Emitter
     /// </summary>
     void Permute(AssemblerRegisterXMM dst, AssemblerRegisterXMM srcA, AssemblerRegisterXMM srcB, AssemblerRegisterXMM t, byte[] src)
     {
-        var ma = new byte[16]; var mb = new byte[16];
+        var ma = new byte[16];
+        var mb = new byte[16];
         bool anyA = false, anyB = false;
         for (int j = 0; j < 16; j++)
         {
             byte s = src[j];
             ma[j] = s < 16 ? s : (byte)0x80;
             mb[j] = s is >= 16 and < 32 ? (byte)(s - 16) : (byte)0x80;
-            anyA |= s < 16; anyB |= s is >= 16 and < 32;
+            anyA |= s < 16;
+            anyB |= s is >= 16 and < 32;
         }
         Mov(dst, srcA);
         _a.pshufb(dst, KBytes(ma));
@@ -346,9 +619,19 @@ public sealed unsafe partial class X64Emitter
         {
             Mov(t, srcB);
             _a.pshufb(t, KBytes(mb));
-            if (anyA) _a.por(dst, t); else Mov(dst, t);
+            if (anyA)
+            {
+                _a.por(dst, t);
+            }
+            else
+            {
+                Mov(dst, t);
+            }
         }
-        else if (!anyA) _a.pxor(dst, dst);
+        else if (!anyA)
+        {
+            _a.pxor(dst, dst);
+        }
     }
 
     // ------------------------------------------------------------------ estimate tables (built from the handlers)
@@ -362,7 +645,11 @@ public sealed unsafe partial class X64Emitter
     static ulong BuildTable(int n, Func<int, uint> f)
     {
         var p = (uint*)NativeMemory.AlignedAlloc((nuint)(n * 4), 64);
-        for (int i = 0; i < n; i++) p[i] = f(i);
+        for (int i = 0; i < n; i++)
+        {
+            p[i] = f(i);
+        }
+
         return (ulong)p;
     }
 
@@ -375,7 +662,9 @@ public sealed unsafe partial class X64Emitter
         {
             case VecKind.RecpeF:
             {
-                var nan = a.CreateLabel(); var zero = a.CreateLabel(); var inf = a.CreateLabel();
+                var nan = a.CreateLabel();
+                var zero = a.CreateLabel();
+                var inf = a.CreateLabel();
                 a.mov(edx, eax);
                 a.and(edx, 0x7FFFFFFF);
                 a.cmp(edx, 0x7F800000);
@@ -410,7 +699,9 @@ public sealed unsafe partial class X64Emitter
             }
             case VecKind.RsqrteF:
             {
-                var nan = a.CreateLabel(); var inf = a.CreateLabel(); var zero = a.CreateLabel();
+                var nan = a.CreateLabel();
+                var inf = a.CreateLabel();
+                var zero = a.CreateLabel();
                 a.mov(edx, eax);
                 a.and(edx, 0x7FFFFFFF);
                 a.cmp(edx, 0x7F800000);
@@ -480,7 +771,11 @@ public sealed unsafe partial class X64Emitter
         Place(ref done);
     }
 
-    Label Lbl(out Label l) { l = _a.CreateLabel(); return l; }
+    Label Lbl(out Label l)
+    {
+        l = _a.CreateLabel();
+        return l;
+    }
 
     // ------------------------------------------------------------------ VecOp
 
@@ -494,7 +789,11 @@ public sealed unsafe partial class X64Emitter
     void VecOp(IrInst x, Runtime rt)
     {
         var a = _a;
-        if ((x.Imm & (uint)VecFlags.SlowPath) == 0) { VecOpCore(x); return; }
+        if ((x.Imm & (uint)VecFlags.SlowPath) == 0)
+        {
+            VecOpCore(x);
+            return;
+        }
         _tinySlow = a.CreateLabel();
         var done = a.CreateLabel();
         VecOpCore(x);
@@ -502,8 +801,20 @@ public sealed unsafe partial class X64Emitter
         Place(ref _tinySlow);
         a.ldmxcsr(State(OffMxcsrHost));
         uint op = x.Imm2 >> 16;
-        if (Windows) { a.mov(rcx, rbx); a.mov(edx, op); a.mov(r8d, x.Imm3); a.xor(r9d, r9d); }
-        else { a.mov(rdi, rbx); a.mov(esi, op); a.mov(edx, x.Imm3); a.xor(ecx, ecx); }
+        if (Windows)
+        {
+            a.mov(rcx, rbx);
+            a.mov(edx, op);
+            a.mov(r8d, x.Imm3);
+            a.xor(r9d, r9d);
+        }
+        else
+        {
+            a.mov(rdi, rbx);
+            a.mov(esi, op);
+            a.mov(edx, x.Imm3);
+            a.xor(ecx, ecx);
+        }
         a.mov(rax, rt.Callout);
         a.call(rax);
         a.test(eax, eax);
@@ -520,7 +831,11 @@ public sealed unsafe partial class X64Emitter
         a.pand(X4, K32(0x7FFFFFFF));
         a.pcmpeqd(X4, K32(0x00800000));
         a.pmovmskb(eax, X4);
-        if (!q) a.and(eax, 0xFF);
+        if (!q)
+        {
+            a.and(eax, 0xFF);
+        }
+
         a.test(eax, eax);
         a.jnz(_tinySlow);
     }
@@ -546,12 +861,35 @@ public sealed unsafe partial class X64Emitter
         for (uint s = 1; s <= size; s++)
         {
             Mov(X1, X2);
-            if (s == 1) a.psrlw(X1, 8); else a.psrld(X1, 16);              // clz of the high half
+            if (s == 1)
+            {
+                a.psrlw(X1, 8);
+            }
+            else
+            {
+                a.psrld(X1, 16);              // clz of the high half
+            }
+
             Mov(X4, X1);
-            if (s == 1) a.pcmpeqw(X4, K16(8)); else a.pcmpeqd(X4, K32(16)); // high half all zero
+            if (s == 1)
+            {
+                a.pcmpeqw(X4, K16(8));
+            }
+            else
+            {
+                a.pcmpeqd(X4, K32(16)); // high half all zero
+            }
+
             a.pand(X2, s == 1 ? K16(0x00FF) : K32(0xFFFF));               // clz of the low half
             a.pand(X2, X4);
-            if (s == 1) a.paddw(X2, X1); else a.paddd(X2, X1);
+            if (s == 1)
+            {
+                a.paddw(X2, X1);
+            }
+            else
+            {
+                a.paddd(X2, X1);
+            }
         }
     }
 
@@ -569,24 +907,64 @@ public sealed unsafe partial class X64Emitter
         uint w = size + 1;
         bool srcSigned = toUnsigned || !u;
         LdV(X0, mOff, true);
-        if (round) RoundShr(X0, w, shift, srcSigned, X1, X2); else Shr(X0, w, shift, srcSigned, X1);
+        if (round)
+        {
+            RoundShr(X0, w, shift, srcSigned, X1, X2);
+        }
+        else
+        {
+            Shr(X0, w, shift, srcSigned, X1);
+        }
+
         Mov(X1, X0);
         if (toUnsigned)
         {
             // signed source, unsigned saturation
-            if (w == 1) { a.packuswb(X1, X1); a.pmovzxbw(X2, X1); a.pcmpeqw(X2, X0); }
-            else { a.packusdw(X1, X1); a.pmovzxwd(X2, X1); a.pcmpeqd(X2, X0); }
+            if (w == 1)
+            {
+                a.packuswb(X1, X1);
+                a.pmovzxbw(X2, X1);
+                a.pcmpeqw(X2, X0);
+            }
+            else
+            {
+                a.packusdw(X1, X1);
+                a.pmovzxwd(X2, X1);
+                a.pcmpeqd(X2, X0);
+            }
         }
         else if (!u)
         {
-            if (w == 1) { a.packsswb(X1, X1); a.pmovsxbw(X2, X1); a.pcmpeqw(X2, X0); }
-            else { a.packssdw(X1, X1); a.pmovsxwd(X2, X1); a.pcmpeqd(X2, X0); }
+            if (w == 1)
+            {
+                a.packsswb(X1, X1);
+                a.pmovsxbw(X2, X1);
+                a.pcmpeqw(X2, X0);
+            }
+            else
+            {
+                a.packssdw(X1, X1);
+                a.pmovsxwd(X2, X1);
+                a.pcmpeqd(X2, X0);
+            }
         }
         else
         {
             // unsigned: clamp to the narrow maximum, then truncate
-            if (w == 1) { a.pminuw(X1, K16(0xFF)); Mov(X2, X1); a.pcmpeqw(X2, X0); a.packuswb(X1, X1); }
-            else { a.pminud(X1, K32(0xFFFF)); Mov(X2, X1); a.pcmpeqd(X2, X0); a.packusdw(X1, X1); }
+            if (w == 1)
+            {
+                a.pminuw(X1, K16(0xFF));
+                Mov(X2, X1);
+                a.pcmpeqw(X2, X0);
+                a.packuswb(X1, X1);
+            }
+            else
+            {
+                a.pminud(X1, K32(0xFFFF));
+                Mov(X2, X1);
+                a.pcmpeqd(X2, X0);
+                a.packusdw(X1, X1);
+            }
         }
         QcIfNotAll(X2, true);
         StV(dOff, X1, false);
@@ -602,7 +980,8 @@ public sealed unsafe partial class X64Emitter
         {
             var r = lane == 0 ? rax : rdx;
             var r32 = lane == 0 ? eax : edx;
-            var ok = a.CreateLabel(); var sat = a.CreateLabel();
+            var ok = a.CreateLabel();
+            var sat = a.CreateLabel();
             if (toUnsigned)
             {
                 var pos = a.CreateLabel();
@@ -646,7 +1025,10 @@ public sealed unsafe partial class X64Emitter
         for (int lane = 0; lane < (q ? 2 : 1); lane++)
         {
             int o = lane * 8;
-            var neg = a.CreateLabel(); var left = a.CreateLabel(); var right = a.CreateLabel(); var store = a.CreateLabel();
+            var neg = a.CreateLabel();
+            var left = a.CreateLabel();
+            var right = a.CreateLabel();
+            var store = a.CreateLabel();
             a.mov(rax, __qword_ptr[rbx + OffD + mOff + o]);
             a.movsx(ecx, __byte_ptr[rbx + OffD + nOff + o]);
             a.test(ecx, ecx);
@@ -662,10 +1044,26 @@ public sealed unsafe partial class X64Emitter
             a.neg(ecx);
             a.cmp(ecx, 64);
             a.jb(right);
-            if (u) a.xor(eax, eax); else a.sar(rax, 63);
+            if (u)
+            {
+                a.xor(eax, eax);
+            }
+            else
+            {
+                a.sar(rax, 63);
+            }
+
             a.jmp(store);
             Place(ref right);
-            if (u) a.shr(rax, cl); else a.sar(rax, cl);
+            if (u)
+            {
+                a.shr(rax, cl);
+            }
+            else
+            {
+                a.sar(rax, cl);
+            }
+
             Place(ref store);
             a.mov(__qword_ptr[rbx + OffD + dOff + o], rax);
         }
@@ -678,7 +1076,8 @@ public sealed unsafe partial class X64Emitter
     void MulLong(uint size, bool u, bool acc, int aux, int dOff, int nOff, int mOff)
     {
         var a = _a;
-        LdV(X1, nOff, false); LdV(X2, mOff, false);
+        LdV(X1, nOff, false);
+        LdV(X2, mOff, false);
         if ((aux & 1) != 0)
         {
             // carry-less 8x8 -> 16: xor of the shifted multiplicand for every set bit of the multiplier
@@ -693,7 +1092,10 @@ public sealed unsafe partial class X64Emitter
                 a.pcmpeqw(X1, X5);
                 a.pand(X1, X0);
                 a.pxor(X4, X1);
-                if (i < 7) a.psllw(X0, 1);
+                if (i < 7)
+                {
+                    a.psllw(X0, 1);
+                }
             }
             Mov(X0, X4);
         }
@@ -703,16 +1105,37 @@ public sealed unsafe partial class X64Emitter
             Widen(X3, X2, size, u);
             switch (size)
             {
-                case 0: a.pmullw(X0, X3); break;
-                case 1: a.pmulld(X0, X3); break;
-                default: if (u) a.pmuludq(X0, X3); else a.pmuldq(X0, X3); break;
+                case 0:
+                    a.pmullw(X0, X3);
+                    break;
+                case 1:
+                    a.pmulld(X0, X3);
+                    break;
+                default:
+                    if (u)
+                    {
+                        a.pmuludq(X0, X3);
+                    }
+                    else
+                    {
+                        a.pmuldq(X0, X3);
+                    }
+
+                    break;
             }
         }
         if (acc)
         {
             LdV(X1, dOff, true);
-            if ((aux & 2) != 0) { PSub(size + 1, X1, X0); Mov(X0, X1); }
-            else PAdd(size + 1, X0, X1);
+            if ((aux & 2) != 0)
+            {
+                PSub(size + 1, X1, X0);
+                Mov(X0, X1);
+            }
+            else
+            {
+                PAdd(size + 1, X0, X1);
+            }
         }
         StV(dOff, X0, true);
     }
@@ -742,46 +1165,95 @@ public sealed unsafe partial class X64Emitter
             case VecKind.Bsl:
             case VecKind.Bit:
             case VecKind.Bif:
-                LdV(X0, nOff, q); LdV(X1, mOff, q);
+                LdV(X0, nOff, q);
+                LdV(X1, mOff, q);
                 switch (kind)
                 {
-                    case VecKind.And: a.pand(X0, X1); break;
-                    case VecKind.Bic: a.pandn(X1, X0); Mov(X0, X1); break;              // n & ~m
-                    case VecKind.Orr: a.por(X0, X1); break;
-                    case VecKind.Orn: Not(X1, X2); a.por(X0, X1); break;
-                    case VecKind.Eor: a.pxor(X0, X1); break;
-                    case VecKind.Bsl: LdV(X2, dOff, q); a.pand(X0, X2); a.pandn(X2, X1); a.por(X0, X2); break; // (n&d)|(m&~d)
-                    case VecKind.Bit: LdV(X2, dOff, q); a.pand(X0, X1); a.pandn(X1, X2); a.por(X0, X1); break; // (n&m)|(d&~m)
-                    default: LdV(X2, dOff, q); a.pand(X2, X1); a.pandn(X1, X0); Mov(X0, X2); a.por(X0, X1); break; // (d&m)|(n&~m)
+                    case VecKind.And:
+                        a.pand(X0, X1);
+                        break;
+                    case VecKind.Bic:
+                        a.pandn(X1, X0);
+                        Mov(X0, X1);
+                        break;              // n & ~m
+                    case VecKind.Orr:
+                        a.por(X0, X1);
+                        break;
+                    case VecKind.Orn:
+                        Not(X1, X2);
+                        a.por(X0, X1);
+                        break;
+                    case VecKind.Eor:
+                        a.pxor(X0, X1);
+                        break;
+                    case VecKind.Bsl:
+                        LdV(X2, dOff, q);
+                        a.pand(X0, X2);
+                        a.pandn(X2, X1);
+                        a.por(X0, X2);
+                        break; // (n&d)|(m&~d)
+                    case VecKind.Bit:
+                        LdV(X2, dOff, q);
+                        a.pand(X0, X1);
+                        a.pandn(X1, X2);
+                        a.por(X0, X1);
+                        break; // (n&m)|(d&~m)
+                    default:
+                        LdV(X2, dOff, q);
+                        a.pand(X2, X1);
+                        a.pandn(X1, X0);
+                        Mov(X0, X2);
+                        a.por(X0, X1);
+                        break; // (d&m)|(n&~m)
                 }
                 StV(dOff, X0, q);
                 return;
             case VecKind.AddI:
             case VecKind.SubI:
-                LdV(X0, nOff, q); LdV(X1, mOff, q);
-                if (kind == VecKind.AddI) PAdd(size, X0, X1); else PSub(size, X0, X1);
+                LdV(X0, nOff, q);
+                LdV(X1, mOff, q);
+                if (kind == VecKind.AddI)
+                {
+                    PAdd(size, X0, X1);
+                }
+                else
+                {
+                    PSub(size, X0, X1);
+                }
+
                 StV(dOff, X0, q);
                 return;
             case VecKind.MulI:
             case VecKind.MlaI:
             case VecKind.MlsI:
-                LdV(X0, nOff, q); LdV(X1, mOff, q);
+                LdV(X0, nOff, q);
+                LdV(X1, mOff, q);
                 PMul(size, X0, X1, X2, X3);
                 if (kind != VecKind.MulI)
                 {
                     LdV(X2, dOff, q);
-                    if (kind == VecKind.MlaI) PAdd(size, X2, X0); else PSub(size, X2, X0);
+                    if (kind == VecKind.MlaI)
+                    {
+                        PAdd(size, X2, X0);
+                    }
+                    else
+                    {
+                        PSub(size, X2, X0);
+                    }
+
                     Mov(X0, X2);
                 }
                 StV(dOff, X0, q);
                 return;
             case VecKind.CeqI:
-                LdV(X0, nOff, q); LdV(X1, mOff, q);
+                LdV(X0, nOff, q);
+                LdV(X1, mOff, q);
                 PCmpEq(size, X0, X1);
                 StV(dOff, X0, q);
                 return;
             case VecKind.TstI:
-                LdV(X0, nOff, q); LdV(X1, mOff, q);
+                LdV(X0, nOff, q);
+                LdV(X1, mOff, q);
                 a.pand(X0, X1);
                 a.pxor(X1, X1);
                 PCmpEq(size, X0, X1);
@@ -790,34 +1262,59 @@ public sealed unsafe partial class X64Emitter
                 return;
             case VecKind.CgtI:
             case VecKind.CgeI:
-                LdV(X0, nOff, q); LdV(X1, mOff, q);
+                LdV(X0, nOff, q);
+                LdV(X1, mOff, q);
                 if (u)
                 {
                     a.movdqa(X2, KLane(size, 1ul << (bits - 1)));
-                    a.pxor(X0, X2); a.pxor(X1, X2);
+                    a.pxor(X0, X2);
+                    a.pxor(X1, X2);
                 }
-                if (kind == VecKind.CgtI) PCmpGt(size, X0, X1);
-                else { PCmpGt(size, X1, X0); Not(X1, X2); Mov(X0, X1); } // n >= m == !(m > n)
+                if (kind == VecKind.CgtI)
+                {
+                    PCmpGt(size, X0, X1);
+                }
+                else
+                {
+                    PCmpGt(size, X1, X0);
+                    Not(X1, X2);
+                    Mov(X0, X1);
+                } // n >= m == !(m > n)
                 StV(dOff, X0, q);
                 return;
             case VecKind.MaxI:
             case VecKind.MinI:
-                LdV(X0, nOff, q); LdV(X1, mOff, q);
-                if (kind == VecKind.MaxI) PMax(size, u, X0, X1); else PMin(size, u, X0, X1);
+                LdV(X0, nOff, q);
+                LdV(X1, mOff, q);
+                if (kind == VecKind.MaxI)
+                {
+                    PMax(size, u, X0, X1);
+                }
+                else
+                {
+                    PMin(size, u, X0, X1);
+                }
+
                 StV(dOff, X0, q);
                 return;
             case VecKind.AbdI:
             case VecKind.AbaI:
-                LdV(X0, nOff, q); LdV(X1, mOff, q);
+                LdV(X0, nOff, q);
+                LdV(X1, mOff, q);
                 Mov(X2, X0);
                 PMax(size, u, X0, X1);
                 PMin(size, u, X2, X1);
                 PSub(size, X0, X2);
-                if (kind == VecKind.AbaI) { LdV(X1, dOff, q); PAdd(size, X0, X1); }
+                if (kind == VecKind.AbaI)
+                {
+                    LdV(X1, dOff, q);
+                    PAdd(size, X0, X1);
+                }
                 StV(dOff, X0, q);
                 return;
             case VecKind.HaddI: // (x & y) + ((x ^ y) >> 1)
-                LdV(X0, nOff, q); LdV(X1, mOff, q);
+                LdV(X0, nOff, q);
+                LdV(X1, mOff, q);
                 Mov(X2, X0);
                 a.pand(X0, X1);
                 a.pxor(X2, X1);
@@ -826,9 +1323,16 @@ public sealed unsafe partial class X64Emitter
                 StV(dOff, X0, q);
                 return;
             case VecKind.RhaddI: // (x | y) - ((x ^ y) >> 1)
-                LdV(X0, nOff, q); LdV(X1, mOff, q);
-                if (u && size == 0) a.pavgb(X0, X1);
-                else if (u && size == 1) a.pavgw(X0, X1);
+                LdV(X0, nOff, q);
+                LdV(X1, mOff, q);
+                if (u && size == 0)
+                {
+                    a.pavgb(X0, X1);
+                }
+                else if (u && size == 1)
+                {
+                    a.pavgw(X0, X1);
+                }
                 else
                 {
                     Mov(X2, X0);
@@ -840,7 +1344,8 @@ public sealed unsafe partial class X64Emitter
                 StV(dOff, X0, q);
                 return;
             case VecKind.HsubI: // (x >> 1) - (y >> 1) - (~x & y & 1)
-                LdV(X0, nOff, q); LdV(X1, mOff, q);
+                LdV(X0, nOff, q);
+                LdV(X1, mOff, q);
                 Mov(X2, X0);
                 a.pandn(X2, X1);
                 a.pand(X2, KLane(size, 1));
@@ -861,16 +1366,31 @@ public sealed unsafe partial class X64Emitter
                 Mov(X1, X0);
                 a.pshufb(X1, KBytes(PairMask(size, false)));
                 a.pshufb(X0, KBytes(PairMask(size, true)));
-                if (kind == VecKind.PaddI) PAdd(size, X1, X0);
-                else if (kind == VecKind.PmaxI) PMax(size, u, X1, X0);
-                else PMin(size, u, X1, X0);
+                if (kind == VecKind.PaddI)
+                {
+                    PAdd(size, X1, X0);
+                }
+                else if (kind == VecKind.PmaxI)
+                {
+                    PMax(size, u, X1, X0);
+                }
+                else
+                {
+                    PMin(size, u, X1, X0);
+                }
+
                 StV(dOff, X1, false);
                 return;
             case VecKind.QdmulhI:
             case VecKind.QrdmulhI: // 16-bit lanes
-                LdV(X0, nOff, q); LdV(X1, mOff, q);
-                Mov(X2, X0); Mov(X3, X1);
-                if (kind == VecKind.QrdmulhI) a.pmulhrsw(X0, X1); // (x*y + 2^14) >> 15
+                LdV(X0, nOff, q);
+                LdV(X1, mOff, q);
+                Mov(X2, X0);
+                Mov(X3, X1);
+                if (kind == VecKind.QrdmulhI)
+                {
+                    a.pmulhrsw(X0, X1); // (x*y + 2^14) >> 15
+                }
                 else
                 {
                     // (2xy) >> 16 = (hi << 1) | (lo >> 15)
@@ -891,14 +1411,27 @@ public sealed unsafe partial class X64Emitter
                 StV(dOff, X0, q);
                 return;
             case VecKind.ShlRegI: // VSHL (register), shift = signed low byte of each n lane: 32-bit lanes with AVX2, 64-bit in GPRs
-                if (size == 3) { ShlReg64(u, q, dOff, nOff, mOff); return; }
-                LdV(X0, mOff, q); LdV(X1, nOff, q);
+                if (size == 3)
+                {
+                    ShlReg64(u, q, dOff, nOff, mOff);
+                    return;
+                }
+                LdV(X0, mOff, q);
+                LdV(X1, nOff, q);
                 a.pslld(X1, 24);
                 a.psrad(X1, 24);
                 a.vpsllvd(X2, X0, X1);
                 a.pxor(X3, X3);
                 a.psubd(X3, X1);
-                if (u) a.vpsrlvd(X0, X0, X3); else a.vpsravd(X0, X0, X3);
+                if (u)
+                {
+                    a.vpsrlvd(X0, X0, X3);
+                }
+                else
+                {
+                    a.vpsravd(X0, X0, X3);
+                }
+
                 a.vblendvps(X0, X2, X0, X1);
                 StV(dOff, X0, q);
                 return;
@@ -911,18 +1444,37 @@ public sealed unsafe partial class X64Emitter
             case VecKind.MlsF:
             case VecKind.AbdF:
                 NeonFp();
-                LdV(X0, nOff, q); LdV(X1, mOff, q);
+                LdV(X0, nOff, q);
+                LdV(X1, mOff, q);
                 switch (kind)
                 {
-                    case VecKind.AddF: a.addps(X0, X1); break;
-                    case VecKind.SubF: a.subps(X0, X1); break;
-                    case VecKind.MulF: a.mulps(X0, X1); TinyGuard(X0, q); break;
-                    case VecKind.AbdF: a.subps(X0, X1); a.pand(X0, K32(0x7FFFFFFF)); break;
+                    case VecKind.AddF:
+                        a.addps(X0, X1);
+                        break;
+                    case VecKind.SubF:
+                        a.subps(X0, X1);
+                        break;
+                    case VecKind.MulF:
+                        a.mulps(X0, X1);
+                        TinyGuard(X0, q);
+                        break;
+                    case VecKind.AbdF:
+                        a.subps(X0, X1);
+                        a.pand(X0, K32(0x7FFFFFFF));
+                        break;
                     default: // VMLA/VMLS: d +/- round(n * m); a denormal product reads as zero (DAZ) like the handler's FRes
                         a.mulps(X0, X1);
                         TinyGuard(X0, q);
                         LdV(X1, dOff, q);
-                        if (kind == VecKind.MlaF) a.addps(X1, X0); else a.subps(X1, X0);
+                        if (kind == VecKind.MlaF)
+                        {
+                            a.addps(X1, X0);
+                        }
+                        else
+                        {
+                            a.subps(X1, X0);
+                        }
+
                         Mov(X0, X1);
                         break;
                 }
@@ -932,8 +1484,14 @@ public sealed unsafe partial class X64Emitter
             case VecKind.FmaF:
             case VecKind.FmsF:
                 NeonFp();
-                LdV(X0, nOff, q); LdV(X1, mOff, q); LdV(X2, dOff, q);
-                if (kind == VecKind.FmsF) a.pxor(X0, K32(0x80000000));
+                LdV(X0, nOff, q);
+                LdV(X1, mOff, q);
+                LdV(X2, dOff, q);
+                if (kind == VecKind.FmsF)
+                {
+                    a.pxor(X0, K32(0x80000000));
+                }
+
                 a.vfmadd231ps(X2, X0, X1);
                 TinyGuard(X2, q);
                 FRes(X2);
@@ -952,24 +1510,36 @@ public sealed unsafe partial class X64Emitter
             case VecKind.AcgeF:
             case VecKind.AcgtF:
                 NeonFp();
-                LdV(X0, nOff, q); LdV(X1, mOff, q);
+                LdV(X0, nOff, q);
+                LdV(X1, mOff, q);
                 if (kind is VecKind.AcgeF or VecKind.AcgtF)
                 {
                     a.movdqa(X2, K32(0x7FFFFFFF));
-                    a.pand(X0, X2); a.pand(X1, X2);
+                    a.pand(X0, X2);
+                    a.pand(X1, X2);
                 }
                 switch (kind)
                 {
-                    case VecKind.CeqF: a.cmpeqps(X0, X1); break;
-                    case VecKind.CgeF: case VecKind.AcgeF: a.cmpleps(X1, X0); Mov(X0, X1); break;
-                    default: a.cmpltps(X1, X0); Mov(X0, X1); break;
+                    case VecKind.CeqF:
+                        a.cmpeqps(X0, X1);
+                        break;
+                    case VecKind.CgeF:
+                    case VecKind.AcgeF:
+                        a.cmpleps(X1, X0);
+                        Mov(X0, X1);
+                        break;
+                    default:
+                        a.cmpltps(X1, X0);
+                        Mov(X0, X1);
+                        break;
                 }
                 StV(dOff, X0, q);
                 return;
             case VecKind.MaxF:
             case VecKind.MinF:
                 NeonFp();
-                LdV(X0, nOff, q); LdV(X1, mOff, q);
+                LdV(X0, nOff, q);
+                LdV(X1, mOff, q);
                 MaxMinF(kind == VecKind.MaxF);
                 StV(dOff, X0, q);
                 return;
@@ -990,7 +1560,8 @@ public sealed unsafe partial class X64Emitter
                 // 2 - n*m (VRECPS) / (3 - n*m) / 2 (VRSQRTS); infinity * zero gives exactly 2 / 1.5
                 bool rs = kind == VecKind.RsqrtsF;
                 NeonFp();
-                LdV(X0, nOff, q); LdV(X1, mOff, q);
+                LdV(X0, nOff, q);
+                LdV(X1, mOff, q);
                 Mov(X2, X0);
                 a.mulps(X2, X1);              // p
                 Mov(X3, X0);
@@ -1000,7 +1571,11 @@ public sealed unsafe partial class X64Emitter
                 a.pand(X3, X4);               // infinity * zero
                 a.movdqa(X0, K32(F32(rs ? 3f : 2f)));
                 a.subps(X0, X2);
-                if (rs) a.mulps(X0, K32(F32(0.5f)));
+                if (rs)
+                {
+                    a.mulps(X0, K32(F32(0.5f)));
+                }
+
                 a.movdqa(X1, K32(F32(rs ? 1.5f : 2f)));
                 Blend(X0, X3, X1);
                 FRes(X0);
@@ -1020,7 +1595,15 @@ public sealed unsafe partial class X64Emitter
                 if (kind != VecKind.MulFS)
                 {
                     LdV(X1, dOff, q);
-                    if (kind == VecKind.MlaFS) a.addps(X1, X0); else a.subps(X1, X0);
+                    if (kind == VecKind.MlaFS)
+                    {
+                        a.addps(X1, X0);
+                    }
+                    else
+                    {
+                        a.subps(X1, X0);
+                    }
+
                     Mov(X0, X1);
                 }
                 FRes(X0);
@@ -1035,7 +1618,15 @@ public sealed unsafe partial class X64Emitter
                 if (kind != VecKind.MulIS)
                 {
                     LdV(X1, dOff, q);
-                    if (kind == VecKind.MlaIS) PAdd(size, X1, X0); else PSub(size, X1, X0);
+                    if (kind == VecKind.MlaIS)
+                    {
+                        PAdd(size, X1, X0);
+                    }
+                    else
+                    {
+                        PSub(size, X1, X0);
+                    }
+
                     Mov(X0, X1);
                 }
                 StV(dOff, X0, q);
@@ -1044,8 +1635,20 @@ public sealed unsafe partial class X64Emitter
             // ---------------------------------------------------------- shifts by immediate
             case VecKind.ShrImm:
                 LdV(X0, mOff, q);
-                if (round) RoundShr(X0, size, aux, !u, X1, X2); else Shr(X0, size, aux, !u, X1);
-                if (acc) { LdV(X1, dOff, q); PAdd(size, X0, X1); }
+                if (round)
+                {
+                    RoundShr(X0, size, aux, !u, X1, X2);
+                }
+                else
+                {
+                    Shr(X0, size, aux, !u, X1);
+                }
+
+                if (acc)
+                {
+                    LdV(X1, dOff, q);
+                    PAdd(size, X0, X1);
+                }
                 StV(dOff, X0, q);
                 return;
             case VecKind.ShlImm:
@@ -1061,7 +1664,15 @@ public sealed unsafe partial class X64Emitter
                     ? (aux >= bits ? mask : ~(mask >> aux) & mask)
                     : ~(mask << aux) & mask;
                 LdV(X0, mOff, q);
-                if (kind == VecKind.SriImm) ShrU(X0, size, aux); else ShlI(X0, size, aux);
+                if (kind == VecKind.SriImm)
+                {
+                    ShrU(X0, size, aux);
+                }
+                else
+                {
+                    ShlI(X0, size, aux);
+                }
+
                 LdV(X1, dOff, q);
                 a.pand(X1, KLane(size, keep));
                 a.por(X0, X1);
@@ -1072,7 +1683,15 @@ public sealed unsafe partial class X64Emitter
             {
                 uint w = size + 1;
                 LdV(X0, mOff, true);
-                if (round) RoundShr(X0, w, aux, false, X1, X2); else ShrU(X0, w, aux);
+                if (round)
+                {
+                    RoundShr(X0, w, aux, false, X1, X2);
+                }
+                else
+                {
+                    ShrU(X0, w, aux);
+                }
+
                 NarrowTrunc(X0, w);
                 StV(dOff, X0, false);
                 return;
@@ -1104,28 +1723,66 @@ public sealed unsafe partial class X64Emitter
                 return;
             }
             case VecKind.Mvn:
-                LdV(X0, mOff, q); Not(X0, X1); StV(dOff, X0, q); return;
+                LdV(X0, mOff, q);
+                Not(X0, X1);
+                StV(dOff, X0, q);
+                return;
             case VecKind.AbsF:
-                LdV(X0, mOff, q); a.pand(X0, K32(0x7FFFFFFF)); StV(dOff, X0, q); return;
+                LdV(X0, mOff, q);
+                a.pand(X0, K32(0x7FFFFFFF));
+                StV(dOff, X0, q);
+                return;
             case VecKind.NegF:
-                LdV(X0, mOff, q); a.pxor(X0, K32(0x80000000)); StV(dOff, X0, q); return;
+                LdV(X0, mOff, q);
+                a.pxor(X0, K32(0x80000000));
+                StV(dOff, X0, q);
+                return;
             case VecKind.AbsI:
                 LdV(X0, mOff, q);
-                switch (size) { case 0: a.pabsb(X0, X0); break; case 1: a.pabsw(X0, X0); break; default: a.pabsd(X0, X0); break; }
+                switch (size)
+                {
+                    case 0:
+                        a.pabsb(X0, X0);
+                        break;
+                    case 1:
+                        a.pabsw(X0, X0);
+                        break;
+                    default:
+                        a.pabsd(X0, X0);
+                        break;
+                }
                 StV(dOff, X0, q);
                 return;
             case VecKind.NegI:
-                LdV(X1, mOff, q); a.pxor(X0, X0); PSub(size, X0, X1); StV(dOff, X0, q); return;
+                LdV(X1, mOff, q);
+                a.pxor(X0, X0);
+                PSub(size, X0, X1);
+                StV(dOff, X0, q);
+                return;
             case VecKind.CmpZeroI:
                 LdV(X0, mOff, q);
                 a.pxor(X1, X1);
                 switch (aux)
                 {
-                    case 0: PCmpGt(size, X0, X1); break;                         // x > 0
-                    case 1: PCmpGt(size, X1, X0); Not(X1, X2); Mov(X0, X1); break; // x >= 0 == !(0 > x)
-                    case 2: PCmpEq(size, X0, X1); break;
-                    case 3: PCmpGt(size, X0, X1); Not(X0, X2); break;           // x <= 0 == !(x > 0)
-                    default: PCmpGt(size, X1, X0); Mov(X0, X1); break;          // x < 0
+                    case 0:
+                        PCmpGt(size, X0, X1);
+                        break;                         // x > 0
+                    case 1:
+                        PCmpGt(size, X1, X0);
+                        Not(X1, X2);
+                        Mov(X0, X1);
+                        break; // x >= 0 == !(0 > x)
+                    case 2:
+                        PCmpEq(size, X0, X1);
+                        break;
+                    case 3:
+                        PCmpGt(size, X0, X1);
+                        Not(X0, X2);
+                        break;           // x <= 0 == !(x > 0)
+                    default:
+                        PCmpGt(size, X1, X0);
+                        Mov(X0, X1);
+                        break;          // x < 0
                 }
                 StV(dOff, X0, q);
                 return;
@@ -1135,17 +1792,31 @@ public sealed unsafe partial class X64Emitter
                 a.xorps(X1, X1);
                 switch (aux)
                 {
-                    case 0: a.cmpltps(X1, X0); Mov(X0, X1); break;  // 0 < x
-                    case 1: a.cmpleps(X1, X0); Mov(X0, X1); break;  // 0 <= x
-                    case 2: a.cmpeqps(X0, X1); break;
-                    case 3: a.cmpleps(X0, X1); break;               // x <= 0
-                    default: a.cmpltps(X0, X1); break;              // x < 0
+                    case 0:
+                        a.cmpltps(X1, X0);
+                        Mov(X0, X1);
+                        break;  // 0 < x
+                    case 1:
+                        a.cmpleps(X1, X0);
+                        Mov(X0, X1);
+                        break;  // 0 <= x
+                    case 2:
+                        a.cmpeqps(X0, X1);
+                        break;
+                    case 3:
+                        a.cmpleps(X0, X1);
+                        break;               // x <= 0
+                    default:
+                        a.cmpltps(X0, X1);
+                        break;              // x < 0
                 }
                 StV(dOff, X0, q);
                 return;
             case VecKind.Swp:
-                LdV(X0, dOff, q); LdV(X1, mOff, q);
-                StV(mOff, X0, q); StV(dOff, X1, q);
+                LdV(X0, dOff, q);
+                LdV(X1, mOff, q);
+                StV(mOff, X0, q);
+                StV(dOff, X1, q);
                 return;
             case VecKind.Trn:
             case VecKind.Uzp:
@@ -1153,10 +1824,13 @@ public sealed unsafe partial class X64Emitter
             {
                 // byte sources of the new d and new m: 0-15 = old d, 16-31 = old m (the handlers store m first, then d)
                 int eb = 1 << (int)size, bytes = q ? 16 : 8, count = bytes / eb;
-                var nd = new byte[16]; var nm = new byte[16];
-                Array.Fill(nd, (byte)0x80); Array.Fill(nm, (byte)0x80);
+                var nd = new byte[16];
+                var nm = new byte[16];
+                Array.Fill(nd, (byte)0x80);
+                Array.Fill(nm, (byte)0x80);
                 byte Src(int globalElem, int k) => (byte)(globalElem < count ? globalElem * eb + k : 16 + (globalElem - count) * eb + k);
                 for (int i = 0; i < count; i++)
+                {
                     for (int k = 0; k < eb; k++)
                     {
                         int j = i * eb + k;
@@ -1180,11 +1854,22 @@ public sealed unsafe partial class X64Emitter
                             }
                         }
                     }
-                LdV(X0, dOff, q); LdV(X1, mOff, q);
+                }
+
+                LdV(X0, dOff, q);
+                LdV(X1, mOff, q);
                 Permute(X2, X0, X1, X4, nm);
                 Permute(X3, X0, X1, X4, nd);
-                if (kind == VecKind.Trn) { StV(mOff, X2, q); StV(dOff, X3, q); }
-                else { StV(dOff, X3, q); StV(mOff, X2, q); } // VZIP/VUZP with Vd == Vm keep the second half (interpreter)
+                if (kind == VecKind.Trn)
+                {
+                    StV(mOff, X2, q);
+                    StV(dOff, X3, q);
+                }
+                else
+                {
+                    StV(dOff, X3, q);
+                    StV(mOff, X2, q);
+                } // VZIP/VUZP with Vd == Vm keep the second half (interpreter)
                 return;
             }
             case VecKind.Movn:
@@ -1197,8 +1882,16 @@ public sealed unsafe partial class X64Emitter
                 switch (size)
                 {
                     case 0:
-                        if (u) a.pmaddubsw(X0, K8(1));                       // unsigned bytes * signed 1
-                        else { a.movdqa(X1, K8(1)); a.pmaddubsw(X1, X0); Mov(X0, X1); } // signed bytes * unsigned 1
+                        if (u)
+                        {
+                            a.pmaddubsw(X0, K8(1));                       // unsigned bytes * signed 1
+                        }
+                        else
+                        {
+                            a.movdqa(X1, K8(1));
+                            a.pmaddubsw(X1, X0);
+                            Mov(X0, X1);
+                        } // signed bytes * unsigned 1
                         break;
                     case 1:
                         if (u)
@@ -1207,7 +1900,11 @@ public sealed unsafe partial class X64Emitter
                             a.pmaddwd(X0, K16(1));
                             a.paddd(X0, K32(0x10000));
                         }
-                        else a.pmaddwd(X0, K16(1));
+                        else
+                        {
+                            a.pmaddwd(X0, K16(1));
+                        }
+
                         break;
                     default:
                         a.pshufd(X1, X0, 0x08);                               // even lanes [0, 2]
@@ -1217,7 +1914,11 @@ public sealed unsafe partial class X64Emitter
                         a.paddq(X0, X3);
                         break;
                 }
-                if (acc) { LdV(X1, dOff, q); PAdd(size + 1, X0, X1); }
+                if (acc)
+                {
+                    LdV(X1, dOff, q);
+                    PAdd(size + 1, X0, X1);
+                }
                 StV(dOff, X0, q);
                 return;
             case VecKind.Clz:
@@ -1239,13 +1940,24 @@ public sealed unsafe partial class X64Emitter
                 MulLong(size, u, acc, aux, dOff, nOff, mOff);
                 return;
             case VecKind.Qmovn:
-                if (size < 2) QNarrow(aux == 1, u, size, false, 0, dOff, mOff);
-                else QNarrow64(aux == 1, u, dOff, mOff);
+                if (size < 2)
+                {
+                    QNarrow(aux == 1, u, size, false, 0, dOff, mOff);
+                }
+                else
+                {
+                    QNarrow64(aux == 1, u, dOff, mOff);
+                }
+
                 return;
             case VecKind.Cnt: // bytes: nibble popcount table
             {
                 var lut = new byte[16];
-                for (int i = 0; i < 16; i++) lut[i] = (byte)System.Numerics.BitOperations.PopCount((uint)i);
+                for (int i = 0; i < 16; i++)
+                {
+                    lut[i] = (byte)System.Numerics.BitOperations.PopCount((uint)i);
+                }
+
                 LdV(X0, mOff, q);
                 a.movdqa(X3, K8(0x0F));
                 Mov(X1, X0);
@@ -1275,7 +1987,10 @@ public sealed unsafe partial class X64Emitter
                 return;
             }
             case VecKind.CvtS2F:
-                LdV(X0, mOff, q); a.cvtdq2ps(X0, X0); StV(dOff, X0, q); return;
+                LdV(X0, mOff, q);
+                a.cvtdq2ps(X0, X0);
+                StV(dOff, X0, q);
+                return;
             case VecKind.CvtU2F: // hi16 * 65536 + lo16: both exact, one rounding
                 LdV(X0, mOff, q);
                 Mov(X1, X0);
@@ -1340,13 +2055,24 @@ public sealed unsafe partial class X64Emitter
             case VecKind.Ext:
                 if (q)
                 {
-                    LdV(X0, mOff, true); LdV(X1, nOff, true);
-                    if (aux != 0) a.palignr(X0, X1, (byte)aux); else Mov(X0, X1);
+                    LdV(X0, mOff, true);
+                    LdV(X1, nOff, true);
+                    if (aux != 0)
+                    {
+                        a.palignr(X0, X1, (byte)aux);
+                    }
+                    else
+                    {
+                        Mov(X0, X1);
+                    }
                 }
                 else
                 {
                     LdPair(X0, X1, nOff, mOff);
-                    if (aux != 0) a.psrldq(X0, (byte)aux);
+                    if (aux != 0)
+                    {
+                        a.psrldq(X0, (byte)aux);
+                    }
                 }
                 StV(dOff, X0, q);
                 return;
@@ -1361,9 +2087,17 @@ public sealed unsafe partial class X64Emitter
                 {
                     int regs = Math.Min(2, len - 2 * c);
                     a.movq(X1, __qword_ptr[rbx + OffD + ((n + 2 * c) & 31) * 8]);
-                    if (regs == 2) { a.movq(X2, __qword_ptr[rbx + OffD + ((n + 2 * c + 1) & 31) * 8]); a.punpcklqdq(X1, X2); }
+                    if (regs == 2)
+                    {
+                        a.movq(X2, __qword_ptr[rbx + OffD + ((n + 2 * c + 1) & 31) * 8]);
+                        a.punpcklqdq(X1, X2);
+                    }
                     Mov(X3, X0);
-                    if (c > 0) a.psubb(X3, K8((uint)(16 * c)));
+                    if (c > 0)
+                    {
+                        a.psubb(X3, K8((uint)(16 * c)));
+                    }
+
                     a.movdqa(X5, X3);
                     a.pminub(X5, K8((uint)(8 * regs - 1)));
                     a.pcmpeqb(X5, X3);        // index inside this chunk
@@ -1383,7 +2117,8 @@ public sealed unsafe partial class X64Emitter
                 StV(dOff, X4, false);
                 return;
             }
-            default: throw new NotSupportedException($"vector kind {kind}");
+            default:
+                throw new NotSupportedException($"vector kind {kind}");
         }
     }
 
@@ -1397,11 +2132,27 @@ public sealed unsafe partial class X64Emitter
         FlushIn(X0);
         FlushIn(X1);
         Mov(X2, X0);
-        if (max) a.maxps(X2, X1); else a.minps(X2, X1);
+        if (max)
+        {
+            a.maxps(X2, X1);
+        }
+        else
+        {
+            a.minps(X2, X1);
+        }
+
         Mov(X3, X0);
         a.cmpeqps(X3, X1);                // equal (incl. +0/-0)
         Mov(X4, X0);
-        if (max) a.pand(X4, X1); else a.por(X4, X1);
+        if (max)
+        {
+            a.pand(X4, X1);
+        }
+        else
+        {
+            a.por(X4, X1);
+        }
+
         Blend(X2, X3, X4);
         Mov(X3, X0);
         a.cmpunordps(X3, X1);
@@ -1414,20 +2165,69 @@ public sealed unsafe partial class X64Emitter
     void SatAddSub(bool sub, uint size, bool u, bool q, int dOff, int nOff, int mOff)
     {
         var a = _a;
-        LdV(X0, nOff, q); LdV(X1, mOff, q);
+        LdV(X0, nOff, q);
+        LdV(X1, mOff, q);
         if (size <= 1)
         {
             Mov(X2, X0);
-            if (sub) PSub(size, X2, X1); else PAdd(size, X2, X1); // wrapped result
-            if (size == 0)
+            if (sub)
             {
-                if (sub) { if (u) a.psubusb(X0, X1); else a.psubsb(X0, X1); }
-                else { if (u) a.paddusb(X0, X1); else a.paddsb(X0, X1); }
+                PSub(size, X2, X1);
             }
             else
             {
-                if (sub) { if (u) a.psubusw(X0, X1); else a.psubsw(X0, X1); }
-                else { if (u) a.paddusw(X0, X1); else a.paddsw(X0, X1); }
+                PAdd(size, X2, X1); // wrapped result
+            }
+
+            if (size == 0)
+            {
+                if (sub)
+                {
+                    if (u)
+                    {
+                        a.psubusb(X0, X1);
+                    }
+                    else
+                    {
+                        a.psubsb(X0, X1);
+                    }
+                }
+                else
+                {
+                    if (u)
+                    {
+                        a.paddusb(X0, X1);
+                    }
+                    else
+                    {
+                        a.paddsb(X0, X1);
+                    }
+                }
+            }
+            else
+            {
+                if (sub)
+                {
+                    if (u)
+                    {
+                        a.psubusw(X0, X1);
+                    }
+                    else
+                    {
+                        a.psubsw(X0, X1);
+                    }
+                }
+                else
+                {
+                    if (u)
+                    {
+                        a.paddusw(X0, X1);
+                    }
+                    else
+                    {
+                        a.paddsw(X0, X1);
+                    }
+                }
             }
             a.pcmpeqb(X2, X0);
             QcIfNotAll(X2, q);
@@ -1435,13 +2235,30 @@ public sealed unsafe partial class X64Emitter
             return;
         }
         Mov(X2, X0);
-        if (sub) PSub(size, X2, X1); else PAdd(size, X2, X1);     // r
+        if (sub)
+        {
+            PSub(size, X2, X1);
+        }
+        else
+        {
+            PAdd(size, X2, X1);     // r
+        }
+
         if (!u)
         {
             // overflow: add (x^r) & (y^r), sub (x^y) & (x^r); saturated value = (x >> top) ^ max
             Mov(X3, X0);
             a.pxor(X3, X2);
-            if (sub) { Mov(X4, X0); a.pxor(X4, X1); } else { Mov(X4, X1); a.pxor(X4, X2); }
+            if (sub)
+            {
+                Mov(X4, X0);
+                a.pxor(X4, X1);
+            }
+            else
+            {
+                Mov(X4, X1);
+                a.pxor(X4, X2);
+            }
             a.pand(X3, X4);
             SignMask(X3, size);                                // overflow lanes
             Mov(X4, X0);
@@ -1454,10 +2271,28 @@ public sealed unsafe partial class X64Emitter
         {
             // unsigned: add overflows when r < x, sub when x < y (biased signed compares)
             a.movdqa(X5, KLane(size, size == 2 ? 0x80000000ul : 0x8000000000000000ul));
-            if (sub) { Mov(X3, X1); Mov(X4, X0); } else { Mov(X3, X0); Mov(X4, X2); }
-            a.pxor(X3, X5); a.pxor(X4, X5);
+            if (sub)
+            {
+                Mov(X3, X1);
+                Mov(X4, X0);
+            }
+            else
+            {
+                Mov(X3, X0);
+                Mov(X4, X2);
+            }
+            a.pxor(X3, X5);
+            a.pxor(X4, X5);
             PCmpGt(size, X3, X4);                              // overflow lanes
-            if (sub) a.pandn(X3, X2); else a.por(X3, X2);
+            if (sub)
+            {
+                a.pandn(X3, X2);
+            }
+            else
+            {
+                a.por(X3, X2);
+            }
+
             Mov(X4, X3);
             Mov(X3, X2);
             a.pcmpeqd(X3, X4);                                 // unchanged lanes
@@ -1474,7 +2309,10 @@ public sealed unsafe partial class X64Emitter
     void SignMask(AssemblerRegisterXMM r, uint size)
     {
         _a.psrad(r, 31);
-        if (size == 3) _a.pshufd(r, r, 0xF5);
+        if (size == 3)
+        {
+            _a.pshufd(r, r, 0xF5);
+        }
     }
 }
 

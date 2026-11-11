@@ -43,9 +43,20 @@ public sealed unsafe partial class VulkanRenderer
 
     internal static float ParseResScale(string? s)
     {
-        if (string.IsNullOrWhiteSpace(s)) return 1f;
-        if (!float.TryParse(s.Trim(), System.Globalization.NumberStyles.Float, System.Globalization.CultureInfo.InvariantCulture, out float v)) return 1f;
-        if (v is >= 0.25f and < 1f) return v;
+        if (string.IsNullOrWhiteSpace(s))
+        {
+            return 1f;
+        }
+
+        if (!float.TryParse(s.Trim(), System.Globalization.NumberStyles.Float, System.Globalization.CultureInfo.InvariantCulture, out float v))
+        {
+            return 1f;
+        }
+
+        if (v is >= 0.25f and < 1f)
+        {
+            return v;
+        }
         // above native only whole factors (PCSX2's 2x-4x): every guest pixel is a block of attachment pixels, so
         // scissors, region copies and fetch copies stay on pixel edges
         float k = MathF.Round(v);
@@ -60,13 +71,20 @@ public sealed unsafe partial class VulkanRenderer
     /// <summary>The scale a new colour target of this size and host format gets.</summary>
     float TargetScale(uint w, uint h, Format f)
     {
-        if (ResScale == 1f || w < ResScaleMinSize || h < ResScaleMinSize) return 1f;
+        if (ResScale == 1f || w < ResScaleMinSize || h < ResScaleMinSize)
+        {
+            return 1f;
+        }
+
         if (!_blitOk.TryGetValue(f, out bool ok))
         {
             _core.Vk.GetPhysicalDeviceFormatProperties(_core.Physical, f, out var props);
             const FormatFeatureFlags need = FormatFeatureFlags.BlitSrcBit | FormatFeatureFlags.BlitDstBit;
             _blitOk[f] = ok = (props.OptimalTilingFeatures & need) == need;
-            if (!ok) Log.Warn($"[gpu] resolution scale: {f} cannot be blitted, its targets stay at native size");
+            if (!ok)
+            {
+                Log.Warn($"[gpu] resolution scale: {f} cannot be blitted, its targets stay at native size");
+            }
         }
         return ok ? ResScale : 1f;
     }
@@ -93,7 +111,11 @@ public sealed unsafe partial class VulkanRenderer
 
     void EnsureNativeImage(RenderTarget rt)
     {
-        if (rt.NativeImage.Handle != 0) return;
+        if (rt.NativeImage.Handle != 0)
+        {
+            return;
+        }
+
         (rt.NativeImage, rt.NativeView, rt.NativeMem) = CreateImage(MemCat.Region, rt.Width, rt.Height, rt.Format,
             ImageUsageFlags.TransferSrcBit | ImageUsageFlags.TransferDstBit, ImageAspectFlags.ColorBit, mutable: true);
         Barrier(rt.NativeImage, ImageLayout.Undefined, ImageLayout.General, ImageAspectFlags.ColorBit,
@@ -108,9 +130,17 @@ public sealed unsafe partial class VulkanRenderer
     /// </summary>
     Image NativeImageOf(RenderTarget rt)
     {
-        if (rt.Scale == 1f) return rt.Image;
+        if (rt.Scale == 1f)
+        {
+            return rt.Image;
+        }
+
         EnsureNativeImage(rt);
-        if (rt.NativeVersion == rt.Version) return rt.NativeImage;
+        if (rt.NativeVersion == rt.Version)
+        {
+            return rt.NativeImage;
+        }
+
         rt.NativeVersion = rt.Version;
         Barrier(rt.Image, ImageLayout.General, ImageLayout.General, ImageAspectFlags.ColorBit,
             PipelineStageFlags.ColorAttachmentOutputBit | PipelineStageFlags.TransferBit, PipelineStageFlags.TransferBit,
@@ -132,10 +162,22 @@ public sealed unsafe partial class VulkanRenderer
     /// </summary>
     Image NativeRectOf(RenderTarget rt, uint x, uint y, uint w, uint h)
     {
-        if (rt.Scale == 1f) return rt.Image;
-        if (x == 0 && y == 0 && w >= rt.Width && h >= rt.Height) return NativeImageOf(rt);
+        if (rt.Scale == 1f)
+        {
+            return rt.Image;
+        }
+
+        if (x == 0 && y == 0 && w >= rt.Width && h >= rt.Height)
+        {
+            return NativeImageOf(rt);
+        }
+
         EnsureNativeImage(rt);
-        if (rt.NativeVersion == rt.Version) return rt.NativeImage;
+        if (rt.NativeVersion == rt.Version)
+        {
+            return rt.NativeImage;
+        }
+
         Barrier(rt.Image, ImageLayout.General, ImageLayout.General, ImageAspectFlags.ColorBit,
             PipelineStageFlags.ColorAttachmentOutputBit | PipelineStageFlags.TransferBit, PipelineStageFlags.TransferBit,
             AccessFlags.ColorAttachmentWriteBit | AccessFlags.TransferWriteBit, AccessFlags.TransferReadBit);
@@ -149,7 +191,11 @@ public sealed unsafe partial class VulkanRenderer
         float s = rt.Scale;
         int sx0 = (int)ScaledLo(x, s), sy0 = (int)ScaledLo(y, s);
         int sx1 = (int)Math.Min(ScaledHi(x + w, s), rt.ImgW), sy1 = (int)Math.Min(ScaledHi(y + h, s), rt.ImgH);
-        if (sx1 <= sx0 || sy1 <= sy0) return rt.NativeImage;
+        if (sx1 <= sx0 || sy1 <= sy0)
+        {
+            return rt.NativeImage;
+        }
+
         blit.SrcOffsets[0] = new Offset3D(sx0, sy0, 0);
         blit.SrcOffsets[1] = new Offset3D(sx1, sy1, 1);
         blit.DstOffsets[0] = new Offset3D((int)x, (int)y, 0);
@@ -167,7 +213,11 @@ public sealed unsafe partial class VulkanRenderer
     /// <see cref="NativeToScaled"/> brings them into the image), else the image.</summary>
     Image UploadImageOf(RenderTarget rt)
     {
-        if (rt.Scale == 1f) return rt.Image;
+        if (rt.Scale == 1f)
+        {
+            return rt.Image;
+        }
+
         EnsureNativeImage(rt);
         Barrier(rt.NativeImage, ImageLayout.General, ImageLayout.General, ImageAspectFlags.ColorBit,
             PipelineStageFlags.TransferBit, PipelineStageFlags.TransferBit, AccessFlags.TransferReadBit | AccessFlags.TransferWriteBit, AccessFlags.TransferWriteBit);
@@ -177,7 +227,11 @@ public sealed unsafe partial class VulkanRenderer
     /// <summary>After an upload into <see cref="UploadImageOf"/>: the native copy is blitted into the scaled image.</summary>
     void NativeToScaled(RenderTarget rt)
     {
-        if (rt.Scale == 1f) return;
+        if (rt.Scale == 1f)
+        {
+            return;
+        }
+
         Barrier(rt.NativeImage, ImageLayout.General, ImageLayout.General, ImageAspectFlags.ColorBit,
             PipelineStageFlags.TransferBit, PipelineStageFlags.TransferBit, AccessFlags.TransferWriteBit, AccessFlags.TransferReadBit);
         Blit(rt.NativeImage, rt.Width, rt.Height, rt.Image, rt.ImgW, rt.ImgH, Filter.Nearest);
@@ -202,28 +256,54 @@ public sealed unsafe partial class VulkanRenderer
     /// </summary>
     ReinterpretGeo? ScaledReinterpretGeometry(RenderTarget rt, uint addr, uint w, uint h, uint texRow, uint rtBpp, uint texBpp)
     {
-        if (rt.Scale == 1f) return null;
+        if (rt.Scale == 1f)
+        {
+            return null;
+        }
+
         uint rowBytes = rt.Stride * rtBpp;
-        if (texRow != rowBytes || addr < rt.Address) return null;
+        if (texRow != rowBytes || addr < rt.Address)
+        {
+            return null;
+        }
+
         uint scaledRowBytes = rt.ImgW * rtBpp;
-        if (scaledRowBytes % texBpp != 0) return null;
+        if (scaledRowBytes % texBpp != 0)
+        {
+            return null;
+        }
+
         uint off = addr - rt.Address, y0 = off / rowBytes, xb = off % rowBytes;
         uint px = xb / rtBpp, within = xb % rtBpp;
-        if (y0 >= rt.Height || px >= rt.Width) return null;
+        if (y0 >= rt.Height || px >= rt.Width)
+        {
+            return null;
+        }
+
         float s = rt.Scale;
         uint sy0 = Math.Min((uint)ScaledLo(y0, s), rt.ImgH - 1), spx = Math.Min((uint)ScaledLo(px, s), rt.ImgW - 1);
         ulong start = (ulong)sy0 * scaledRowBytes + (ulong)spx * rtBpp + within;
-        if (start % texBpp != 0) return null;
+        if (start % texBpp != 0)
+        {
+            return null;
+        }
         // the texture's width in surface pixels, scaled, then in texels of the texture
         uint spanPx = Math.Max(1, (uint)((ulong)w * texBpp / rtBpp));
         uint sw = Math.Max(1, (uint)((ulong)ScaleDim(spanPx, s) * rtBpp / texBpp));
         uint maxW = (uint)((scaledRowBytes - (start % scaledRowBytes)) / texBpp);
         uint sh = ScaleDim(h, s);
         uint copyW = Math.Min(sw, maxW), copyH = Math.Min(sh, rt.ImgH - sy0);
-        if (copyW == 0 || copyH == 0) return null;
+        if (copyW == 0 || copyH == 0)
+        {
+            return null;
+        }
         // above native a scaled row is longer than the surface's stride and the scaled layout does not fit in the
         // target's memory: it goes into a buffer of the target's own (ScaledRowsOf)
-        if (s > 1f) return new ReinterpretGeo(start, scaledRowBytes / texBpp, sw, sh, copyW, copyH, Own: true);
+        if (s > 1f)
+        {
+            return new ReinterpretGeo(start, scaledRowBytes / texBpp, sw, sh, copyW, copyH, Own: true);
+        }
+
         return new ReinterpretGeo(rt.Address - Core.Memory.GuestMemory.CdramStart + start, scaledRowBytes / texBpp, sw, sh, copyW, copyH);
     }
 
@@ -231,9 +311,17 @@ public sealed unsafe partial class VulkanRenderer
     bool MirrorRenderTargetScaled(RenderTarget rt)
     {
         int guestBpp = Formats.ColorBytesPerPixel(rt.ColorFormat);
-        if (rt.Format == Format.B8G8R8A8Unorm || HostBytesPerPixel(rt.Format) != guestBpp || rt.ImgW > rt.Stride) return false;
+        if (rt.Format == Format.B8G8R8A8Unorm || HostBytesPerPixel(rt.Format) != guestBpp || rt.ImgW > rt.Stride)
+        {
+            return false;
+        }
+
         rt.LastTouchedFrame = FrameCount;
-        if (_mirroredRtScaled.TryGetValue(rt, out var v) && v == rt.Version) return true;
+        if (_mirroredRtScaled.TryGetValue(rt, out var v) && v == rt.Version)
+        {
+            return true;
+        }
+
         _mirroredRtScaled[rt] = rt.Version;
         _mirroredRt.Remove(rt);
         rt.Dirty = true;
@@ -262,12 +350,23 @@ public sealed unsafe partial class VulkanRenderer
     Silk.NET.Vulkan.Buffer ScaledRowsOf(RenderTarget rt)
     {
         int guestBpp = Formats.ColorBytesPerPixel(rt.ColorFormat);
-        if (!ScaledRowsCopyable(rt)) return default;
+        if (!ScaledRowsCopyable(rt))
+        {
+            return default;
+        }
+
         rt.LastTouchedFrame = FrameCount;
         if (rt.ScaledRows.Handle == 0)
+        {
             (rt.ScaledRows, rt.ScaledRowsMem) = _core.CreateDeviceBuffer((ulong)rt.ImgW * rt.ImgH * (uint)guestBpp,
                 BufferUsageFlags.TransferDstBit | BufferUsageFlags.TransferSrcBit, MemCat.Region);
-        if (rt.ScaledRowsVersion == rt.Version) return rt.ScaledRows;
+        }
+
+        if (rt.ScaledRowsVersion == rt.Version)
+        {
+            return rt.ScaledRows;
+        }
+
         rt.ScaledRowsVersion = rt.Version;
         rt.Dirty = true;
         SyncRenderTargetForRead(rt);
@@ -299,29 +398,60 @@ public sealed unsafe partial class VulkanRenderer
     /// </summary>
     uint[]? RtReinterpretHints(GxmTextureDesc[] tex, uint used)
     {
-        if (ResScale <= 1f || used == 0) return null;
+        if (ResScale <= 1f || used == 0)
+        {
+            return null;
+        }
+
         uint[]? bits = null;
         for (int i = 0; i < 16 && i < tex.Length; i++)
         {
-            if ((used & (1u << i)) == 0) continue;
+            if ((used & (1u << i)) == 0)
+            {
+                continue;
+            }
+
             var d = tex[i];
-            if (d.TextureType is not (GxmTextureDesc.TypeLinear or GxmTextureDesc.TypeLinearStrided)) continue;
+            if (d.TextureType is not (GxmTextureDesc.TypeLinear or GxmTextureDesc.TypeLinearStrided))
+            {
+                continue;
+            }
+
             uint addr = d.DataAddress;
-            if (addr < Core.Memory.GuestMemory.CdramStart || addr >= Core.Memory.GuestMemory.CdramEnd) continue;
+            if (addr < Core.Memory.GuestMemory.CdramStart || addr >= Core.Memory.GuestMemory.CdramEnd)
+            {
+                continue;
+            }
+
             var info = Formats.Texture(GxmFormats.BaseOf(d.Format));
-            if (info.Compressed || info.Convert != TexConvert.None || info.BitsPerPixel < 8 || info.BitsPerPixel % 8 != 0) continue;
+            if (info.Compressed || info.Convert != TexConvert.None || info.BitsPerPixel < 8 || info.BitsPerPixel % 8 != 0)
+            {
+                continue;
+            }
+
             uint texBpp = (uint)info.BitsPerPixel / 8;
             foreach (var rt in TargetsContaining(addr))
             {
                 uint rtBpp = (uint)Formats.ColorBytesPerPixel(rt.ColorFormat);
-                if (addr < rt.Address || addr >= rt.Address + rt.Stride * rtBpp * rt.Height) continue;
+                if (addr < rt.Address || addr >= rt.Address + rt.Stride * rtBpp * rt.Height)
+                {
+                    continue;
+                }
                 // texels that split a pixel (r texels per pixel); wider texels keep sampling as before
-                if (texBpp >= rtBpp || rtBpp % texBpp != 0) break;
+                if (texBpp >= rtBpp || rtBpp % texBpp != 0)
+                {
+                    break;
+                }
+
                 uint texRow = d.TextureType == GxmTextureDesc.TypeLinearStrided ? d.StrideBytes : Align(d.Width, 8) * texBpp;
                 var geo = ScaledReinterpretGeometry(rt, addr, d.Width, d.Height, texRow, rtBpp, texBpp);
                 int k = geo is { Own: true } && !ScaledRowsCopyable(rt) ? 1 : geo != null ? (int)rt.Scale : 1;
                 // a native target read by a native scene needs nothing
-                if (k == 1 && RtScale <= 1f) break;
+                if (k == 1 && RtScale <= 1f)
+                {
+                    break;
+                }
+
                 bits ??= new uint[16];
                 bits[i] = Core.Gxm.Shader.ShaderGenerator.RtReinterpretHint(k, (int)(rtBpp / texBpp));
                 break;
@@ -340,7 +470,11 @@ public sealed unsafe partial class VulkanRenderer
             rt.ScaledRowsVersion = -1;
             Release(() => _core.DestroyBuffer(b, m), now);
         }
-        if (rt.NativeImage.Handle == 0) return;
+        if (rt.NativeImage.Handle == 0)
+        {
+            return;
+        }
+
         var (img, view, mem) = (rt.NativeImage, rt.NativeView, rt.NativeMem);
         rt.NativeImage = default;
         Release(() =>

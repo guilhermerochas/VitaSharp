@@ -4,6 +4,8 @@
 # Enforcement: build/format-check.ps1 / build/format-check.sh (CI job "Code style") run
 #   dotnet format whitespace --verify-no-changes            (layout: Allman braces, 4 spaces, spacing, indentation)
 #   dotnet format style --severity warn --verify-no-changes (the code-style rules below set to :warning)
+# and tests/VitaSharp.Tests/OneLineBlockTests rejects statement blocks written on one line (docs/agents/regras.md,
+# "Código legível"; the formatter itself has to keep one-line blocks for `{ get; set; }`).
 # Severities: ":warning" = the code already follows the rule, CI fails if it comes back; ":suggestion" = the rule of the
 # guide, shown by the IDE, raised to :warning folder by folder as the code is converted; ":silent"/"none" = deliberately
 # not applied (reason next to it). A place where a rule would hurt performance keeps its code and gets a targeted
@@ -14,8 +16,7 @@
 #   would make the format check fail on the other platforms;
 # - no charset: a few sources keep a UTF-8 BOM (both are valid UTF-8, tests/VitaSharp.Tests/SourceEncodingTests);
 # - file-scoped namespaces stay (the guide has no rule about it; block-scoped would re-indent every line of every file);
-# - layout details the guide does not name keep the existing layout: a block after `case X:` is not indented again,
-#   short object initializers stay on one line;
+# - a block after `case X:` is not indented again (the existing layout; the guide does not name it);
 # - rule 16 (non-ASCII as \uXXXX) is not applied: the user-interface texts are Portuguese (docs/roadmap.md);
 # - analyzers that rewrite code shape in ways that change codegen or allocate on hot paths (JIT/interpreter dispatch,
 #   ARM/USSE translators, renderer worker, uniform arena, texture upload, audio decode) are off; see "Performance".
@@ -139,8 +140,9 @@ csharp_style_prefer_method_group_conversion = true:silent
 csharp_style_prefer_readonly_struct = true:silent
 csharp_style_prefer_readonly_struct_member = true:silent
 
-# Code-block preferences (rules 1 and 18: braces are optional for single-line bodies)
-csharp_prefer_braces = when_multiline:silent
+# Code-block preferences: braces on every if/else/for/foreach/while/using/lock body (docs/agents/regras.md, "Código
+# legível": stricter than Ryubing rule 18; braces never change the generated code)
+csharp_prefer_braces = true:warning
 csharp_prefer_simple_using_statement = true:suggestion
 csharp_prefer_system_threading_lock = true:suggestion
 csharp_style_prefer_primary_constructors = false:suggestion
@@ -165,9 +167,8 @@ csharp_style_prefer_range_operator = false:silent
 csharp_new_line_before_catch = true
 csharp_new_line_before_else = true
 csharp_new_line_before_finally = true
-# short initializers stay on one line (`new Thread(...) { IsBackground = true, Name = "..." }`)
-csharp_new_line_before_members_in_anonymous_types = false
-csharp_new_line_before_members_in_object_initializers = false
+csharp_new_line_before_members_in_anonymous_types = true
+csharp_new_line_before_members_in_object_initializers = true
 csharp_new_line_before_open_brace = all
 csharp_new_line_between_query_expression_clauses = true
 
@@ -204,8 +205,12 @@ csharp_space_between_parentheses = false
 csharp_space_between_square_brackets = false
 
 # Wrapping
+# one statement per line and every block on its own lines (docs/agents/regras.md, "Código legível")
+# one-line blocks are kept only where the formatter cannot tell them apart: auto-property accessor lists
+# (`{ get; set; }`), short lambdas and initializers. Bodies of if/else/loops/methods are expanded (prefer_braces +
+# preserve_single_line_statements = false); OneLineBlockTests rejects one-line statement blocks.
 csharp_preserve_single_line_blocks = true
-csharp_preserve_single_line_statements = true
+csharp_preserve_single_line_statements = false
 
 #### Naming (rules 3, 12, 13) ####
 

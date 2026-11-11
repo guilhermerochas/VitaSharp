@@ -24,17 +24,29 @@ public sealed class SessionStatistics(Emulator emu, Func<bool> paused)
         _running = true;
         string? env = Environment.GetEnvironmentVariable(EnvVars.SessionReportSeconds);
         int seconds = int.TryParse(env, out int s) ? s : 30;
-        if (seconds <= 0) return;
+        if (seconds <= 0)
+            return;
         _timer = new System.Threading.Timer(_ => { if (!paused()) WritePeriodic(); }, null, seconds * 1000, seconds * 1000);
     }
 
     /// <summary>The periodic lines now (the game paused: the last callback Android guarantees before a kill).</summary>
     public void WritePeriodic()
     {
-        if (!_running || _stopped || Interlocked.Exchange(ref _writing, 1) != 0) return;
-        try { foreach (var line in SessionReport.PeriodicLines(emu)) Log.InfoFileOnly(line); }
-        catch (Exception e) { Log.Warn($"Periodic session report: {e.GetType().Name}: {e.Message}"); }
-        finally { Volatile.Write(ref _writing, 0); }
+        if (!_running || _stopped || Interlocked.Exchange(ref _writing, 1) != 0)
+            return;
+        try
+        {
+            foreach (var line in SessionReport.PeriodicLines(emu))
+                Log.InfoFileOnly(line);
+        }
+        catch (Exception e)
+        {
+            Log.Warn($"Periodic session report: {e.GetType().Name}: {e.Message}");
+        }
+        finally
+        {
+            Volatile.Write(ref _writing, 0);
+        }
     }
 
     /// <summary>Stops the timer and waits for a report in progress (the emulator is torn down next).</summary>
@@ -44,16 +56,25 @@ public sealed class SessionStatistics(Emulator emu, Func<bool> paused)
         if (_timer is { } t)
         {
             using var done = new ManualResetEvent(false);
-            if (t.Dispose(done)) done.WaitOne(5000);
+            if (t.Dispose(done))
+                done.WaitOne(5000);
             _timer = null;
         }
-        for (int i = 0; i < 100 && Volatile.Read(ref _writing) != 0; i++) Thread.Sleep(10);
+        for (int i = 0; i < 100 && Volatile.Read(ref _writing) != 0; i++)
+            Thread.Sleep(10);
     }
 
     /// <summary>The end-of-run report, once the emulation stopped.</summary>
     public void WriteFinal()
     {
-        try { foreach (var line in SessionReport.Lines(emu)) Log.Info(line); }
-        catch (Exception e) { Log.Warn($"Session report: {e.GetType().Name}: {e.Message}"); }
+        try
+        {
+            foreach (var line in SessionReport.Lines(emu))
+                Log.Info(line);
+        }
+        catch (Exception e)
+        {
+            Log.Warn($"Session report: {e.GetType().Name}: {e.Message}");
+        }
     }
 }

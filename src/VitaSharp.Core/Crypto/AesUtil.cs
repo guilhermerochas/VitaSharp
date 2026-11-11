@@ -86,8 +86,15 @@ public static class AesUtil
         int i = 0;
         var vd = System.Runtime.InteropServices.MemoryMarshal.Cast<byte, System.Numerics.Vector<byte>>(data);
         var vk = System.Runtime.InteropServices.MemoryMarshal.Cast<byte, System.Numerics.Vector<byte>>(key);
-        for (; i < vd.Length; i++) vd[i] ^= vk[i];
-        for (i *= System.Numerics.Vector<byte>.Count; i < data.Length; i++) data[i] ^= key[i];
+        for (; i < vd.Length; i++)
+        {
+            vd[i] ^= vk[i];
+        }
+
+        for (i *= System.Numerics.Vector<byte>.Count; i < data.Length; i++)
+        {
+            data[i] ^= key[i];
+        }
     }
 
     /// <summary>counter = iv + blockIndex (128-bit big-endian add).</summary>

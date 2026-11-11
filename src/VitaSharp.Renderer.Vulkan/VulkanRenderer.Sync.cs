@@ -22,7 +22,10 @@ public sealed unsafe partial class VulkanRenderer
     public void Attach(GpuQueue queue) => _queue = queue;
 
     /// <summary>Why a frame is retired (fence wait + publication of its results).</summary>
-    enum RetireCause { Slot, Idle, Present, Finish, Older, Dispose, Poll, Memory }
+    enum RetireCause
+    {
+        Slot, Idle, Present, Finish, Older, Dispose, Poll, Memory
+    }
 
     const int RetireCauses = 8;
     readonly long[] _retireCount = new long[RetireCauses];
@@ -44,15 +47,30 @@ public sealed unsafe partial class VulkanRenderer
     {
         int c = (int)cause;
         _retireCount[c]++;
-        if (_vk.GetFenceStatus(_dev, f.Fence) == Result.Success) return;
+        if (_vk.GetFenceStatus(_dev, f.Fence) == Result.Success)
+        {
+            return;
+        }
+
         long t0 = Stopwatch.GetTimestamp();
-        if (_vk.WaitForFences(_dev, 1, in f.Fence, true, ulong.MaxValue) == Result.ErrorDeviceLost) { _deviceLost = true; ReportDeviceLost("vkWaitForFences"); }
+        if (_vk.WaitForFences(_dev, 1, in f.Fence, true, ulong.MaxValue) == Result.ErrorDeviceLost)
+        {
+            _deviceLost = true;
+            ReportDeviceLost("vkWaitForFences");
+        }
         FrameLedger.AddSince(FrameLedger.Cat.FenceWait, t0);
         _retireBlocked[c]++;
         long dt = Stopwatch.GetTimestamp() - t0;
         _retireWaitTicks[c] += dt;
-        if (TraceSync && Ms(dt) >= 20) _longWait = (cause, Ms(dt));
-        if (SyncCallers) NoteBlockedCaller(cause, dt);
+        if (TraceSync && Ms(dt) >= 20)
+        {
+            _longWait = (cause, Ms(dt));
+        }
+
+        if (SyncCallers)
+        {
+            NoteBlockedCaller(cause, dt);
+        }
     }
 
     /// <summary>VITASHARP_SYNC_CALLERS=1: every blocking fence wait is attributed to its callers (3 frames of the stack),
@@ -78,21 +96,36 @@ public sealed unsafe partial class VulkanRenderer
     {
         Frame? oldest = null;
         foreach (var f in _frames)
-            if (f.Submitted && !f.Retired && (oldest == null || f.SubmitSeq < oldest.SubmitSeq)) oldest = f;
+        {
+            if (f.Submitted && !f.Retired && (oldest == null || f.SubmitSeq < oldest.SubmitSeq))
+            {
+                oldest = f;
+            }
+        }
+
         return oldest;
     }
 
     bool InFlightResults()
     {
         foreach (var f in _frames)
-            if (f.Submitted && !f.Retired && HasPendingResults(f)) return true;
+        {
+            if (f.Submitted && !f.Retired && HasPendingResults(f))
+            {
+                return true;
+            }
+        }
+
         return false;
     }
 
     /// <summary>Publishes the results of every frame the GPU has already finished, oldest first, without waiting.</summary>
     void PollRetire()
     {
-        while (OldestInFlight() is { } f && _vk.GetFenceStatus(_dev, f.Fence) == Result.Success) RetireFrame(f, RetireCause.Poll);
+        while (OldestInFlight() is { } f && _vk.GetFenceStatus(_dev, f.Fence) == Result.Success)
+        {
+            RetireFrame(f, RetireCause.Poll);
+        }
     }
 
     /// <summary>
@@ -103,14 +136,25 @@ public sealed unsafe partial class VulkanRenderer
     /// </summary>
     public void Idle()
     {
-        if (VitaSharp.Core.EmulationPause.IsPaused) PresentWhilePaused();
-        else if (_splashPixels != null || _splashRt != null) PresentBootSplash(); // VulkanRenderer.BootSplash.cs
+        if (VitaSharp.Core.EmulationPause.IsPaused)
+        {
+            PresentWhilePaused();
+        }
+        else if (_splashPixels != null || _splashRt != null)
+        {
+            PresentBootSplash(); // VulkanRenderer.BootSplash.cs
+        }
         // keep latency low when the guest stops producing work (loading screens etc.)
         bool resultsRecorded = F.Recording && HasPendingResults(F);
         if (F.Recording && (!_inScene || resultsRecorded) && (_drawsSinceSubmit > 0 || resultsRecorded))
         {
-            if (TraceVis) Log.Info($"[vis] idle submit inScene={_inScene} rt=0x{_rt?.Address ?? 0:X8} present={_presentCount} draws={_drawSerial}");
-            SubmitFrame(false, 0); _drawsSinceSubmit = 0;
+            if (TraceVis)
+            {
+                Log.Info($"[vis] idle submit inScene={_inScene} rt=0x{_rt?.Address ?? 0:X8} present={_presentCount} draws={_drawSerial}");
+            }
+
+            SubmitFrame(false, 0);
+            _drawsSinceSubmit = 0;
         }
         PollRetire();
         long t0 = Stopwatch.GetTimestamp();
@@ -118,15 +162,33 @@ public sealed unsafe partial class VulkanRenderer
         {
             while (InFlightResults())
             {
-                if (_queue is { Pending: > 0 }) { _idleYields++; return; }
+                if (_queue is { Pending: > 0 })
+                {
+                    _idleYields++;
+                    return;
+                }
                 var f = OldestInFlight()!;
                 var r = _vk.WaitForFences(_dev, 1, in f.Fence, true, 1_000_000);
-                if (r == Result.Success) RetireFrame(f, RetireCause.Idle);
-                else if (r == Result.ErrorDeviceLost) { _deviceLost = true; ReportDeviceLost("vkWaitForFences (idle)"); return; }
-                else if (Ms(Stopwatch.GetTimestamp() - t0) > 50) return; // the queue loop calls again (and can stop)
+                if (r == Result.Success)
+                {
+                    RetireFrame(f, RetireCause.Idle);
+                }
+                else if (r == Result.ErrorDeviceLost)
+                {
+                    _deviceLost = true;
+                    ReportDeviceLost("vkWaitForFences (idle)");
+                    return;
+                }
+                else if (Ms(Stopwatch.GetTimestamp() - t0) > 50)
+                {
+                    return; // the queue loop calls again (and can stop)
+                }
             }
         }
-        finally { _idleWaitTicks += Stopwatch.GetTimestamp() - t0; }
+        finally
+        {
+            _idleWaitTicks += Stopwatch.GetTimestamp() - t0;
+        }
     }
 
     /// <summary>
@@ -138,7 +200,13 @@ public sealed unsafe partial class VulkanRenderer
     {
         PollRetire();
         if (_flipSeq is long seq)
-            while (OldestInFlight() is { } f && f.SubmitSeq <= seq) RetireFrame(f, RetireCause.Present);
+        {
+            while (OldestInFlight() is { } f && f.SubmitSeq <= seq)
+            {
+                RetireFrame(f, RetireCause.Present);
+            }
+        }
+
         var just = _frames[(_frameIndex + FramesInFlight - 1) % FramesInFlight];
         _flipSeq = just.Submitted && !just.Retired && HasPendingResults(just) ? just.SubmitSeq : null;
     }
@@ -153,7 +221,11 @@ public sealed unsafe partial class VulkanRenderer
         for (int i = 0; i < RetireCauses; i++)
         {
             total += _retireWaitTicks[i];
-            if (_retireCount[i] == 0) continue;
+            if (_retireCount[i] == 0)
+            {
+                continue;
+            }
+
             sb.Append($" {(RetireCause)i} {_retireBlocked[i]}/{_retireCount[i]} {Ms(_retireWaitTicks[i]):F0};");
         }
         sb.Append($" total {Ms(total) / frames:F3} ms/frame; idle (queue empty) {Ms(_idleWaitTicks) / frames:F3} ms/frame, {_idleYields} yields to new work;");

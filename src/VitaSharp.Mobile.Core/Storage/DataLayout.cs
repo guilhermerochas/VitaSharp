@@ -51,7 +51,10 @@ public sealed class DataLayout(string root, string? internalRoot = null)
 
     public void EnsureCreated()
     {
-        foreach (var d in new[] { Root, Fs, Ux0, Apps, SaveData, Logs, Config, GameSettingsDir }) Directory.CreateDirectory(d);
+        foreach (var d in new[] { Root, Fs, Ux0, Apps, SaveData, Logs, Config, GameSettingsDir })
+        {
+            Directory.CreateDirectory(d);
+        }
     }
 
     static string Sanitize(string s)

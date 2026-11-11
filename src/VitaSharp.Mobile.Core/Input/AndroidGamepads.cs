@@ -99,13 +99,34 @@ public sealed class AndroidGamepads
     /// <summary>Connected controllers (id, name, family), in connection order.</summary>
     public IReadOnlyList<(int Id, string Name, ControllerKind Kind)> Devices
     {
-        get { lock (_lock) return _devices.Values.Select(d => (d.Id, d.Name, d.Kind)).ToList(); }
+        get
+        {
+            lock (_lock)
+            {
+                return _devices.Values.Select(d => (d.Id, d.Name, d.Kind)).ToList();
+            }
+        }
     }
 
-    public bool AnyConnected { get { lock (_lock) return _devices.Count > 0; } }
+    public bool AnyConnected
+    {
+        get
+        {
+            lock (_lock)
+            {
+                return _devices.Count > 0;
+            }
+        }
+    }
 
     /// <summary>The device is a connected controller (its key events are controller keys, not keyboard keys).</summary>
-    public bool IsConnected(int deviceId) { lock (_lock) return _devices.ContainsKey(deviceId); }
+    public bool IsConnected(int deviceId)
+    {
+        lock (_lock)
+        {
+            return _devices.ContainsKey(deviceId);
+        }
+    }
 
     /// <summary>An SDL 2 style GUID from the USB/Bluetooth vendor and product ids, so <see cref="ControllerClassifier"/>
     /// and saved profiles work like on the desktop.</summary>
@@ -121,23 +142,41 @@ public sealed class AndroidGamepads
         string guid = Guid(vendorId, productId);
         var kind = ControllerClassifier.Classify(guid, name);
         var profile = ProfileFor(guid, name, kind);
-        lock (_lock) _devices[deviceId] = new Device(deviceId, guid, name, kind, AndroidPadLayout.FromAxes(axes), new CompiledProfile(profile));
+        lock (_lock)
+        {
+            _devices[deviceId] = new Device(deviceId, guid, name, kind, AndroidPadLayout.FromAxes(axes), new CompiledProfile(profile));
+        }
+
         DevicesChanged?.Invoke();
     }
 
     public void Disconnect(int deviceId)
     {
         bool removed;
-        lock (_lock) removed = _devices.Remove(deviceId);
-        if (removed) DevicesChanged?.Invoke();
+        lock (_lock)
+        {
+            removed = _devices.Remove(deviceId);
+        }
+
+        if (removed)
+        {
+            DevicesChanged?.Invoke();
+        }
     }
 
     /// <summary>The Controles screen (or another process) saved input.json: every connected controller takes its new
     /// profile at once, without reconnecting or restarting the game. Called under _lock.</summary>
     void ReloadIfChanged()
     {
-        if (_profiles == null || !_profiles.CheckChanged(ref _revision)) return;
-        foreach (var d in _devices.Values) d.Profile = new CompiledProfile(ProfileFor(d.Guid, d.Name, d.Kind));
+        if (_profiles == null || !_profiles.CheckChanged(ref _revision))
+        {
+            return;
+        }
+
+        foreach (var d in _devices.Values)
+        {
+            d.Profile = new CompiledProfile(ProfileFor(d.Guid, d.Name, d.Kind));
+        }
     }
 
     /// <summary>A key event of a controller. Returns true when the key is a controller key (consume the event).</summary>
@@ -145,16 +184,31 @@ public sealed class AndroidGamepads
     {
         lock (_lock)
         {
-            if (!_devices.TryGetValue(deviceId, out var d)) return false;
+            if (!_devices.TryGetValue(deviceId, out var d))
+            {
+                return false;
+            }
+
             if (AndroidKeys.TriggerKey(keyCode) is { } t)
             {
                 d.KeyTrigger[t - PadAxis.LeftTrigger] = down ? 1f : 0f;
                 UpdateTriggers(d);
                 return true;
             }
-            if (AndroidKeys.Button(keyCode) is not { } b) return false;
-            if (b is >= PadButton.DpadUp and <= PadButton.DpadRight) d.KeyDpad[b - PadButton.DpadUp] = down;
-            else d.Pad.Buttons[(int)b] = down;
+            if (AndroidKeys.Button(keyCode) is not { } b)
+            {
+                return false;
+            }
+
+            if (b is >= PadButton.DpadUp and <= PadButton.DpadRight)
+            {
+                d.KeyDpad[b - PadButton.DpadUp] = down;
+            }
+            else
+            {
+                d.Pad.Buttons[(int)b] = down;
+            }
+
             UpdateDpad(d);
             return true;
         }
@@ -165,7 +219,11 @@ public sealed class AndroidGamepads
     {
         lock (_lock)
         {
-            if (!_devices.TryGetValue(deviceId, out var d)) return false;
+            if (!_devices.TryGetValue(deviceId, out var d))
+            {
+                return false;
+            }
+
             var a = d.Pad.Axes;
             a[(int)PadAxis.LeftX] = axisValue(AndroidKeys.AxisX);
             a[(int)PadAxis.LeftY] = axisValue(AndroidKeys.AxisY);
@@ -229,11 +287,23 @@ public sealed class AndroidInput(OnScreenPad pad, AndroidGamepads gamepads, Andr
     MappedInput Current()
     {
         var touch = new MappedInput { State = Pad.GetController(0) };
-        foreach (var t in Pad.GetTouches(false)) touch.AddTouch(false, t);
-        foreach (var t in Pad.GetTouches(true)) touch.AddTouch(true, t);
+        foreach (var t in Pad.GetTouches(false))
+        {
+            touch.AddTouch(false, t);
+        }
+
+        foreach (var t in Pad.GetTouches(true))
+        {
+            touch.AddTouch(true, t);
+        }
+
         var r = Gamepads.AnyConnected ? InputMapper.Combine(touch, Gamepads.Map()) : touch;
         // keyboard contacts (TouchFront/TouchBack keys) get ids of their own
-        if (Keyboard is { AnyHeld: true } k) r = InputMapper.Combine(r, k.Map(), 200);
+        if (Keyboard is { AnyHeld: true } k)
+        {
+            r = InputMapper.Combine(r, k.Map(), 200);
+        }
+
         if (Script is { } s)
         {
             r.State = s.Apply(r.State);

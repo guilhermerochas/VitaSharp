@@ -39,8 +39,10 @@ public sealed unsafe class MediaCodecAacDecoder : IAudioFrameDecoder
         try
         {
             var fmt = MediaFormat.CreateAudioFormat(MediaFormat.MimetypeAudioAac, sampleRate > 0 ? sampleRate : 48000, Math.Max(1, channels));
-            if (audioSpecificConfig != null) fmt.SetByteBuffer("csd-0", JByteBuffer.Wrap(audioSpecificConfig));
-            else fmt.SetInteger(MediaFormat.KeyIsAdts, 1);
+            if (audioSpecificConfig != null)
+                fmt.SetByteBuffer("csd-0", JByteBuffer.Wrap(audioSpecificConfig));
+            else
+                fmt.SetInteger(MediaFormat.KeyIsAdts, 1);
             codec = MediaCodec.CreateDecoderByType(MediaFormat.MimetypeAudioAac);
             codec.Configure(fmt, null, null, MediaCodecConfigFlags.None);
             codec.Start();
@@ -50,7 +52,11 @@ public sealed unsafe class MediaCodecAacDecoder : IAudioFrameDecoder
         catch (Java.Lang.Exception e)
         {
             Log.Warn($"sceAudiodec: no MediaCodec AAC decoder ({e.Message})");
-            try { codec?.Release(); } catch (Java.Lang.Exception) { }
+            try
+            {
+                codec?.Release();
+            }
+            catch (Java.Lang.Exception) { }
             return null;
         }
     }
@@ -76,7 +82,11 @@ public sealed unsafe class MediaCodecAacDecoder : IAudioFrameDecoder
         catch (Java.Lang.Exception e)
         {
             Log.Warn($"sceAudiodec: no MediaCodec MP3 decoder ({e.Message})");
-            try { codec?.Release(); } catch (Java.Lang.Exception) { }
+            try
+            {
+                codec?.Release();
+            }
+            catch (Java.Lang.Exception) { }
             return null;
         }
     }
@@ -86,19 +96,26 @@ public sealed unsafe class MediaCodecAacDecoder : IAudioFrameDecoder
     public int RawFrameLength(byte* data, int maxSize)
     {
         int n = RawAudioFrameLengths.Find(new ReadOnlySpan<byte>(data, maxSize));
-        if (n == 0) Log.WarnOnce("aac-rawlen", "sceAudiodec: raw AAC frame of unknown length (not from SceMp4): decoded with the whole input");
+        if (n == 0)
+            Log.WarnOnce("aac-rawlen", "sceAudiodec: raw AAC frame of unknown length (not from SceMp4): decoded with the whole input");
         return n > 0 ? n : maxSize;
     }
 
     public int Decode(byte* data, int size, Span<short> pcmOut, int outChannels = 0)
     {
         long t0 = System.Diagnostics.Stopwatch.GetTimestamp();
-        if (_firstCall == 0) _firstCall = t0;
-        try { return DecodeCore(data, size, pcmOut, outChannels); }
+        if (_firstCall == 0)
+            _firstCall = t0;
+        try
+        {
+            return DecodeCore(data, size, pcmOut, outChannels);
+        }
         finally
         {
             long t1 = System.Diagnostics.Stopwatch.GetTimestamp();
-            _decodeTicks += t1 - t0; _maxDecodeTicks = Math.Max(_maxDecodeTicks, t1 - t0); _lastCall = t1;
+            _decodeTicks += t1 - t0;
+            _maxDecodeTicks = Math.Max(_maxDecodeTicks, t1 - t0);
+            _lastCall = t1;
         }
     }
 
@@ -106,9 +123,11 @@ public sealed unsafe class MediaCodecAacDecoder : IAudioFrameDecoder
     {
         var c = _codec;
         _frames++;
-        if (c == null) return 0;
+        if (c == null)
+            return 0;
         int oc = outChannels > 0 ? outChannels : _outChannels;
-        if (_mp3 && _frameSamples == 0) _frameSamples = AudioFrameDecoders.Mp3FrameSamples(new ReadOnlySpan<byte>(data, size));
+        if (_mp3 && _frameSamples == 0)
+            _frameSamples = AudioFrameDecoders.Mp3FrameSamples(new ReadOnlySpan<byte>(data, size));
         try
         {
             int idx = c.DequeueInputBuffer(InputTimeoutUs);
@@ -120,14 +139,17 @@ public sealed unsafe class MediaCodecAacDecoder : IAudioFrameDecoder
                 c.QueueInputBuffer(idx, 0, n, _pts, MediaCodecBufferFlags.None);
                 _pts += 21_333;
             }
-            else Log.WarnOnce("aac-in", "sceAudiodec: MediaCodec AAC input full, frame dropped");
-            if (idx >= 0) _queued++;
+            else
+                Log.WarnOnce("aac-in", "sceAudiodec: MediaCodec AAC input full, frame dropped");
+            if (idx >= 0)
+                _queued++;
             Drain(c, 0);
             // the decoder runs on its own thread: wait for PCM whenever a frame is in flight. Silence is only right
             // while the decoder primes (no output yet for a frame it holds back); answering silence for a late frame
             // inserted a 1024-sample gap into about one movie frame in four (F1 2011, Persona 4 Golden). Frames are
             // counted in samples: an output buffer may carry more than one frame.
-            if (_fill < FrameSamples * _outChannels && _queued > _producedSamples / FrameSamples) Drain(c, OutputWaitUs);
+            if (_fill < FrameSamples * _outChannels && _queued > _producedSamples / FrameSamples)
+                Drain(c, OutputWaitUs);
         }
         catch (Java.Lang.Exception e)
         {
@@ -135,7 +157,8 @@ public sealed unsafe class MediaCodecAacDecoder : IAudioFrameDecoder
             return Silence(pcmOut, oc);
         }
         int ch = _outChannels;
-        if (_fill < FrameSamples * ch) return Silence(pcmOut, oc);
+        if (_fill < FrameSamples * ch)
+            return Silence(pcmOut, oc);
         // one frame per call, the decoder's own frame size
         int samples = Math.Min(FrameSamples, pcmOut.Length / oc);
         for (int i = 0; i < samples; i++)
@@ -171,18 +194,23 @@ public sealed unsafe class MediaCodecAacDecoder : IAudioFrameDecoder
             if (idx == InfoOutputFormatChanged)
             {
                 var f = c.OutputFormat;
-                if (f.ContainsKey(MediaFormat.KeyChannelCount)) _outChannels = Math.Max(1, f.GetInteger(MediaFormat.KeyChannelCount));
+                if (f.ContainsKey(MediaFormat.KeyChannelCount))
+                    _outChannels = Math.Max(1, f.GetInteger(MediaFormat.KeyChannelCount));
                 continue;
             }
-            if (idx == InfoOutputBuffersChanged) continue;
-            if (idx < 0) return;
+            if (idx == InfoOutputBuffersChanged)
+                continue;
+            if (idx < 0)
+                return;
             timeoutUs = 0;
             if (_info.Size > 0)
             {
                 using var buf = c.GetOutputBuffer(idx)!;
                 int n = _info.Size / 2;
-                if (_frameSamples == 0) _frameSamples = Math.Clamp(n / _outChannels, 1, 2048);
-                if (_samples.Length < _fill + n) Array.Resize(ref _samples, Math.Max(_fill + n, _samples.Length * 2));
+                if (_frameSamples == 0)
+                    _frameSamples = Math.Clamp(n / _outChannels, 1, 2048);
+                if (_samples.Length < _fill + n)
+                    Array.Resize(ref _samples, Math.Max(_fill + n, _samples.Length * 2));
                 new ReadOnlySpan<byte>((byte*)buf.GetDirectBufferAddress() + _info.Offset, n * 2)
                     .CopyTo(System.Runtime.InteropServices.MemoryMarshal.AsBytes(_samples.AsSpan(_fill, n)));
                 _fill += n;
@@ -194,7 +222,11 @@ public sealed unsafe class MediaCodecAacDecoder : IAudioFrameDecoder
 
     public void Flush()
     {
-        try { _codec?.Flush(); } catch (Java.Lang.Exception) { }
+        try
+        {
+            _codec?.Flush();
+        }
+        catch (Java.Lang.Exception) { }
         _queued = _producedSamples = 0;
         _fill = 0;
     }
@@ -203,10 +235,19 @@ public sealed unsafe class MediaCodecAacDecoder : IAudioFrameDecoder
     {
         var c = _codec;
         _codec = null;
-        if (c == null) return;
+        if (c == null)
+            return;
         Log.Info($"sceAudiodec: MediaCodec AAC decoder closed after {_frames} frames, {_silent} answered with silence (decoder late); {_decodeTicks * 1000.0 / System.Diagnostics.Stopwatch.Frequency / Math.Max(1, _frames):F2} ms per call (worst {_maxDecodeTicks * 1000.0 / System.Diagnostics.Stopwatch.Frequency:F1}), calls over {(_lastCall - _firstCall) * 1000.0 / System.Diagnostics.Stopwatch.Frequency:F0} ms");
-        try { c.Stop(); } catch (Java.Lang.Exception) { }
-        try { c.Release(); } catch (Java.Lang.Exception) { }
+        try
+        {
+            c.Stop();
+        }
+        catch (Java.Lang.Exception) { }
+        try
+        {
+            c.Release();
+        }
+        catch (Java.Lang.Exception) { }
         c.Dispose();
         _info.Dispose();
     }

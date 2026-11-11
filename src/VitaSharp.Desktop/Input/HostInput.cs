@@ -45,13 +45,23 @@ public sealed class HostInput : IMotionSource, IDisposable
         _mouseMode = _keyboard.Profile.Mouse.ModeFor(null);
         _revision = _store.Revision;
         if (_store.Config.Keyboard != null || _store.Config.Controllers.Count > 0)
+        {
             Log.Info($"Input: profiles from {ConfigPath(dataRoot)} (keyboard {(_store.Config.Keyboard != null ? "custom" : "default")}, {_store.Config.Controllers.Count} controller profile(s))");
-        if (pads != null) _pads = pads.Available ? pads : null;
+        }
+
+        if (pads != null)
+        {
+            _pads = pads.Available ? pads : null;
+        }
         else if (controllers)
         {
             _pads = new SdlGamepads(dataRoot);
             _ownsPads = true;
-            if (!_pads.Available) { _pads.Dispose(); _pads = null; }
+            if (!_pads.Available)
+            {
+                _pads.Dispose();
+                _pads = null;
+            }
         }
     }
 
@@ -62,9 +72,19 @@ public sealed class HostInput : IMotionSource, IDisposable
     {
         lock (_lock)
         {
-            if (down) _keys.Add(key); else _keys.Remove(key);
+            if (down)
+            {
+                _keys.Add(key);
+            }
+            else
+            {
+                _keys.Remove(key);
+            }
             // tilt keys take effect (and a quick re-centre tap is seen) even between two SceMotion polls
-            if (SourceMode is not (MotionSourceMode.Off or MotionSourceMode.Controller)) UpdateVirtualControls();
+            if (SourceMode is not (MotionSourceMode.Off or MotionSourceMode.Controller))
+            {
+                UpdateVirtualControls();
+            }
         }
     }
 
@@ -73,7 +93,11 @@ public sealed class HostInput : IMotionSource, IDisposable
     {
         lock (_lock)
         {
-            if (state == null) { _fallback = null; return; }
+            if (state == null)
+            {
+                _fallback = null;
+                return;
+            }
             _fallback ??= new PadSnapshot();
             state.CopyTo(_fallback);
             if (_fallbackProfile == null || _fallbackProfile.Profile.Id != guid)
@@ -88,7 +112,11 @@ public sealed class HostInput : IMotionSource, IDisposable
     /// controller take the new mapping at once, without restarting the game. Called under _lock.</summary>
     void ReloadIfChanged()
     {
-        if (!_store.CheckChanged(ref _revision)) return;
+        if (!_store.CheckChanged(ref _revision))
+        {
+            return;
+        }
+
         _keyboard = new CompiledProfile(_store.KeyboardProfile());
         _virtual.Settings = _keyboard.Profile.Tilt;
         _mouse.Settings = _keyboard.Profile.Mouse;
@@ -125,13 +153,24 @@ public sealed class HostInput : IMotionSource, IDisposable
                 int k = 0;
                 foreach (var info in _pads.Devices)
                 {
-                    if (!_pads.TryGetState(info.InstanceId, _scratch)) continue;
+                    if (!_pads.TryGetState(info.InstanceId, _scratch))
+                    {
+                        continue;
+                    }
+
                     m = InputMapper.Combine(m, InputMapper.Map(ProfileFor(info), _scratch, null), 100 * ++k);
                 }
             }
             else if (_fallback != null && _fallbackProfile != null)
+            {
                 m = InputMapper.Combine(m, InputMapper.Map(_fallbackProfile, _fallback, null));
-            if (MouseIsStick) m = InputMapper.Combine(m, _mouse.Mapped(_mouseMode));
+            }
+
+            if (MouseIsStick)
+            {
+                m = InputMapper.Combine(m, _mouse.Mapped(_mouseMode));
+            }
+
             return m;
         }
     }
@@ -142,7 +181,13 @@ public sealed class HostInput : IMotionSource, IDisposable
     public bool IsHotkeyKey(VitaControl c, string key)
     {
         foreach (ref readonly var b in _keyboard[c])
-            if (b.Kind == BindingKind.Key && b.Key == key) return true;
+        {
+            if (b.Kind == BindingKind.Key && b.Key == key)
+            {
+                return true;
+            }
+        }
+
         return false;
     }
 
@@ -154,8 +199,16 @@ public sealed class HostInput : IMotionSource, IDisposable
         {
             ReloadIfChanged();
             foreach (var c in VitaControls.All)
+            {
                 foreach (ref readonly var b in _keyboard[c])
-                    if (b.Kind == BindingKind.Key && b.Key == key) return true;
+                {
+                    if (b.Kind == BindingKind.Key && b.Key == key)
+                    {
+                        return true;
+                    }
+                }
+            }
+
             return false;
         }
     }
@@ -172,7 +225,10 @@ public sealed class HostInput : IMotionSource, IDisposable
                 foreach (var info in _pads.Devices)
                 {
                     var cp = ProfileFor(info);
-                    if ((cp[c].Length > 0 || cp.Combos(c).Length > 0) && _pads.TryGetState(info.InstanceId, _scratch) && InputMapper.HotkeyHeld(cp, c, _scratch, null)) return true;
+                    if ((cp[c].Length > 0 || cp.Combos(c).Length > 0) && _pads.TryGetState(info.InstanceId, _scratch) && InputMapper.HotkeyHeld(cp, c, _scratch, null))
+                    {
+                        return true;
+                    }
                 }
                 return false;
             }
@@ -197,7 +253,15 @@ public sealed class HostInput : IMotionSource, IDisposable
     public string? TitleId
     {
         get => _titleId;
-        set { lock (_lock) { _titleId = value; _mouseMode = _keyboard.Profile.Mouse.ModeFor(value); _mouse.Reset(); } }
+        set
+        {
+            lock (_lock)
+            {
+                _titleId = value;
+                _mouseMode = _keyboard.Profile.Mouse.ModeFor(value);
+                _mouse.Reset();
+            }
+        }
     }
 
     public MouseMode MouseMode => _mouseMode;
@@ -208,7 +272,13 @@ public sealed class HostInput : IMotionSource, IDisposable
     public MouseSettings MouseSettings => _keyboard.Profile.Mouse;
 
     /// <summary>The captured cursor moved by (dx, dy) pixels.</summary>
-    public void MouseMoved(float dx, float dy) { if (MouseIsStick) _mouse.Add(dx, dy); }
+    public void MouseMoved(float dx, float dy)
+    {
+        if (MouseIsStick)
+        {
+            _mouse.Add(dx, dy);
+        }
+    }
 
     /// <summary>The cursor was released: the stick goes back to the centre at once.</summary>
     public void MouseReleased() => _mouse.Reset();
@@ -232,7 +302,10 @@ public sealed class HostInput : IMotionSource, IDisposable
                     _store.Put(stored);
                     _store.Save();
                 }
-                catch (Exception e) when (e is IOException or UnauthorizedAccessException) { Log.Warn($"Input: could not save the mouse mode: {e.Message}"); }
+                catch (Exception e) when (e is IOException or UnauthorizedAccessException)
+                {
+                    Log.Warn($"Input: could not save the mouse mode: {e.Message}");
+                }
             }
             Log.Info($"Input: mouse mode {_mouseMode}{(_titleId != null ? $" for {_titleId}" : "")}");
             return _mouseMode;
@@ -242,8 +315,16 @@ public sealed class HostInput : IMotionSource, IDisposable
     /// <summary>The mouse moved by (dx, dy) pixels in the game window while the middle button was held.</summary>
     public void MouseLook(float dx, float dy)
     {
-        if (_mouseMode != MouseMode.Motion) return;
-        if (!_keyboard.Profile.Tilt.MouseLook || SourceMode is MotionSourceMode.Off or MotionSourceMode.Controller) return;
+        if (_mouseMode != MouseMode.Motion)
+        {
+            return;
+        }
+
+        if (!_keyboard.Profile.Tilt.MouseLook || SourceMode is MotionSourceMode.Off or MotionSourceMode.Controller)
+        {
+            return;
+        }
+
         _virtual.AddMouse(dx, dy);
     }
 
@@ -255,9 +336,12 @@ public sealed class HostInput : IMotionSource, IDisposable
         void Add(CompiledProfile cp, PadSnapshot? pad, IReadOnlySet<string>? keys)
         {
             float V(VitaControl c) => InputMapper.Value(cp, c, pad, keys);
-            fwd = Math.Max(fwd, V(VitaControl.TiltForward)); back = Math.Max(back, V(VitaControl.TiltBack));
-            left = Math.Max(left, V(VitaControl.TiltLeft)); right = Math.Max(right, V(VitaControl.TiltRight));
-            tl = Math.Max(tl, V(VitaControl.TwistLeft)); tr = Math.Max(tr, V(VitaControl.TwistRight));
+            fwd = Math.Max(fwd, V(VitaControl.TiltForward));
+            back = Math.Max(back, V(VitaControl.TiltBack));
+            left = Math.Max(left, V(VitaControl.TiltLeft));
+            right = Math.Max(right, V(VitaControl.TiltRight));
+            tl = Math.Max(tl, V(VitaControl.TwistLeft));
+            tr = Math.Max(tr, V(VitaControl.TwistRight));
             recenter |= V(VitaControl.MotionRecenter) >= 0.5f;
         }
         Add(_keyboard, null, _keys);
@@ -267,10 +351,17 @@ public sealed class HostInput : IMotionSource, IDisposable
             foreach (var info in _pads.Devices)
             {
                 var cp = ProfileFor(info);
-                if (cp.HasMotionBindings && _pads.TryGetState(info.InstanceId, _scratch)) Add(cp, _scratch, null);
+                if (cp.HasMotionBindings && _pads.TryGetState(info.InstanceId, _scratch))
+                {
+                    Add(cp, _scratch, null);
+                }
             }
         }
-        else if (_fallback != null && _fallbackProfile is { HasMotionBindings: true }) Add(_fallbackProfile, _fallback, null);
+        else if (_fallback != null && _fallbackProfile is { HasMotionBindings: true })
+        {
+            Add(_fallbackProfile, _fallback, null);
+        }
+
         _virtual.SetControls(fwd, back, left, right, tl, tr, recenter);
     }
 
@@ -278,9 +369,19 @@ public sealed class HostInput : IMotionSource, IDisposable
     /// accelerometer whose profile keeps "Usar giroscopio do controle" on. Called under _lock.</summary>
     PadInfo? MotionPad()
     {
-        if (_pads == null || SourceMode is MotionSourceMode.Off or MotionSourceMode.KeyboardMouse) return null;
+        if (_pads == null || SourceMode is MotionSourceMode.Off or MotionSourceMode.KeyboardMouse)
+        {
+            return null;
+        }
+
         foreach (var info in _pads.Devices)
-            if (info.HasMotion && ProfileFor(info).Profile.MotionEnabled) return info;
+        {
+            if (info.HasMotion && ProfileFor(info).Profile.MotionEnabled)
+            {
+                return info;
+            }
+        }
+
         return null;
     }
 
@@ -289,7 +390,11 @@ public sealed class HostInput : IMotionSource, IDisposable
     /// historic at-rest state). Called under _lock.</summary>
     bool VirtualActive(PadInfo? pad)
     {
-        if (pad != null || SourceMode is MotionSourceMode.Off or MotionSourceMode.Controller) return false;
+        if (pad != null || SourceMode is MotionSourceMode.Off or MotionSourceMode.Controller)
+        {
+            return false;
+        }
+
         UpdateVirtualControls();
         return _virtual.Used;
     }
@@ -314,7 +419,11 @@ public sealed class HostInput : IMotionSource, IDisposable
             if (pad == null)
             {
                 _motionPad = -1;
-                if (!VirtualActive(null)) return 0;
+                if (!VirtualActive(null))
+                {
+                    return 0;
+                }
+
                 if (!_virtualLogged)
                 {
                     _virtualLogged = true;
@@ -342,5 +451,11 @@ public sealed class HostInput : IMotionSource, IDisposable
 
     static long NowUs() => (long)(System.Diagnostics.Stopwatch.GetTimestamp() / (double)System.Diagnostics.Stopwatch.Frequency * 1e6);
 
-    public void Dispose() { if (_ownsPads) _pads?.Dispose(); }
+    public void Dispose()
+    {
+        if (_ownsPads)
+        {
+            _pads?.Dispose();
+        }
+    }
 }

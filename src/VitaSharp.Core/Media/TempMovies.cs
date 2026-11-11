@@ -15,7 +15,11 @@ public static class TempMovies
     /// <summary>A new temp path "vitasharp-{kind}-{pid}-{suffix}.mp4".</summary>
     public static string NewPath(string kind, string suffix)
     {
-        if (Interlocked.Exchange(ref _swept, 1) == 0) SweepStale();
+        if (Interlocked.Exchange(ref _swept, 1) == 0)
+        {
+            SweepStale();
+        }
+
         return Path.Combine(Path.GetTempPath(), $"vitasharp-{kind}-{Environment.ProcessId}-{suffix}.mp4");
     }
 
@@ -28,24 +32,53 @@ public static class TempMovies
             foreach (var file in Directory.EnumerateFiles(Path.GetTempPath(), "vitasharp-*-*-*.mp4"))
             {
                 var parts = Path.GetFileNameWithoutExtension(file).Split('-');
-                if (parts.Length < 4 || !int.TryParse(parts[2], out int pid) || Running(pid)) continue;
-                try { File.Delete(file); deleted++; }
+                if (parts.Length < 4 || !int.TryParse(parts[2], out int pid) || Running(pid))
+                {
+                    continue;
+                }
+
+                try
+                {
+                    File.Delete(file);
+                    deleted++;
+                }
                 catch (IOException) { }
                 catch (UnauthorizedAccessException) { }
             }
         }
         catch (IOException) { }
         catch (UnauthorizedAccessException) { }
-        if (deleted > 0) Log.Info($"Media: deleted {deleted} temp movie(s) left by earlier sessions");
+        if (deleted > 0)
+        {
+            Log.Info($"Media: deleted {deleted} temp movie(s) left by earlier sessions");
+        }
+
         return deleted;
     }
 
     static bool Running(int pid)
     {
-        if (pid == Environment.ProcessId) return true;
-        try { using var p = System.Diagnostics.Process.GetProcessById(pid); return !p.HasExited; }
-        catch (ArgumentException) { return false; }
-        catch (InvalidOperationException) { return false; }
-        catch (System.ComponentModel.Win32Exception) { return true; } // cannot tell: keep it
+        if (pid == Environment.ProcessId)
+        {
+            return true;
+        }
+
+        try
+        {
+            using var p = System.Diagnostics.Process.GetProcessById(pid);
+            return !p.HasExited;
+        }
+        catch (ArgumentException)
+        {
+            return false;
+        }
+        catch (InvalidOperationException)
+        {
+            return false;
+        }
+        catch (System.ComponentModel.Win32Exception) // cannot tell: keep it
+        {
+            return true;
+        }
     }
 }

@@ -49,13 +49,55 @@ ref struct LevelLogHandler
         _inner = enabled ? new DefaultInterpolatedStringHandler(literalLength, formattedCount) : default;
     }
 
-    public void AppendLiteral(string s) { if (_enabled) _inner.AppendLiteral(s); }
-    public void AppendFormatted<T>(T value) { if (_enabled) _inner.AppendFormatted(value); }
-    public void AppendFormatted<T>(T value, string? format) { if (_enabled) _inner.AppendFormatted(value, format); }
-    public void AppendFormatted<T>(T value, int alignment) { if (_enabled) _inner.AppendFormatted(value, alignment); }
-    public void AppendFormatted<T>(T value, int alignment, string? format) { if (_enabled) _inner.AppendFormatted(value, alignment, format); }
-    public void AppendFormatted(ReadOnlySpan<char> value) { if (_enabled) _inner.AppendFormatted(value); }
-    public void AppendFormatted(string? value) { if (_enabled) _inner.AppendFormatted(value); }
+    public void AppendLiteral(string s)
+    {
+        if (_enabled)
+        {
+            _inner.AppendLiteral(s);
+        }
+    }
+    public void AppendFormatted<T>(T value)
+    {
+        if (_enabled)
+        {
+            _inner.AppendFormatted(value);
+        }
+    }
+    public void AppendFormatted<T>(T value, string? format)
+    {
+        if (_enabled)
+        {
+            _inner.AppendFormatted(value, format);
+        }
+    }
+    public void AppendFormatted<T>(T value, int alignment)
+    {
+        if (_enabled)
+        {
+            _inner.AppendFormatted(value, alignment);
+        }
+    }
+    public void AppendFormatted<T>(T value, int alignment, string? format)
+    {
+        if (_enabled)
+        {
+            _inner.AppendFormatted(value, alignment, format);
+        }
+    }
+    public void AppendFormatted(ReadOnlySpan<char> value)
+    {
+        if (_enabled)
+        {
+            _inner.AppendFormatted(value);
+        }
+    }
+    public void AppendFormatted(string? value)
+    {
+        if (_enabled)
+        {
+            _inner.AppendFormatted(value);
+        }
+    }
     public string ToStringAndClear() => _enabled ? _inner.ToStringAndClear() : "";
 }
 
@@ -89,7 +131,11 @@ public ref struct OnceKeyHandler
 
     public void AppendFormatted(ReadOnlySpan<char> s)
     {
-        if (_pos + s.Length > _buf.Length) Grow(s.Length);
+        if (_pos + s.Length > _buf.Length)
+        {
+            Grow(s.Length);
+        }
+
         s.CopyTo(_buf.AsSpan(_pos));
         _pos += s.Length;
     }
@@ -104,27 +150,62 @@ public ref struct OnceKeyHandler
     {
         // the common key holes (addresses, ids) are formatted without the interface cast: the JIT only removes the box
         // of `(ISpanFormattable)value` for optimised IL, so Debug builds allocated 24 bytes per seen key
-        if (typeof(T) == typeof(uint)) { Append(Unsafe.As<T, uint>(ref value), format); return; }
-        if (typeof(T) == typeof(int)) { Append(Unsafe.As<T, int>(ref value), format); return; }
-        if (typeof(T) == typeof(ulong)) { Append(Unsafe.As<T, ulong>(ref value), format); return; }
-        if (typeof(T) == typeof(long)) { Append(Unsafe.As<T, long>(ref value), format); return; }
-        if (typeof(T) == typeof(ushort)) { Append(Unsafe.As<T, ushort>(ref value), format); return; }
-        if (typeof(T) == typeof(byte)) { Append(Unsafe.As<T, byte>(ref value), format); return; }
+        if (typeof(T) == typeof(uint))
+        {
+            Append(Unsafe.As<T, uint>(ref value), format);
+            return;
+        }
+        if (typeof(T) == typeof(int))
+        {
+            Append(Unsafe.As<T, int>(ref value), format);
+            return;
+        }
+        if (typeof(T) == typeof(ulong))
+        {
+            Append(Unsafe.As<T, ulong>(ref value), format);
+            return;
+        }
+        if (typeof(T) == typeof(long))
+        {
+            Append(Unsafe.As<T, long>(ref value), format);
+            return;
+        }
+        if (typeof(T) == typeof(ushort))
+        {
+            Append(Unsafe.As<T, ushort>(ref value), format);
+            return;
+        }
+        if (typeof(T) == typeof(byte))
+        {
+            Append(Unsafe.As<T, byte>(ref value), format);
+            return;
+        }
 #pragma warning disable IDE0038 // `is X x` boxes a generic T; `is X` + cast is the shape the JIT compiles box-free
         if (value is ISpanFormattable)
 #pragma warning restore IDE0038
         {
             int written;
-            while (!((ISpanFormattable)value).TryFormat(_buf.AsSpan(_pos), out written, format, null)) Grow(64);
+            while (!((ISpanFormattable)value).TryFormat(_buf.AsSpan(_pos), out written, format, null))
+            {
+                Grow(64);
+            }
+
             _pos += written;
         }
-        else AppendFormatted(value is IFormattable f ? f.ToString(format, null) : value?.ToString());
+        else
+        {
+            AppendFormatted(value is IFormattable f ? f.ToString(format, null) : value?.ToString());
+        }
     }
 
     void Append<TF>(TF value, string? format) where TF : ISpanFormattable
     {
         int written;
-        while (!value.TryFormat(_buf.AsSpan(_pos), out written, format, null)) Grow(64);
+        while (!value.TryFormat(_buf.AsSpan(_pos), out written, format, null))
+        {
+            Grow(64);
+        }
+
         _pos += written;
     }
 }

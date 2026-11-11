@@ -38,7 +38,10 @@ public sealed class TrophyToast : IDisposable
         lock (_queue)
         {
             _queue.Enqueue(e);
-            if (_showing) return;
+            if (_showing)
+            {
+                return;
+            }
         }
         Next();
     }
@@ -50,7 +53,11 @@ public sealed class TrophyToast : IDisposable
         {
             _showing = _queue.TryDequeue(out e);
         }
-        if (e == null) { _show(null, 0, 0); return; }
+        if (e == null)
+        {
+            _show(null, 0, 0);
+            return;
+        }
         try
         {
             float scale = Math.Clamp(_windowHeight() / 544f, 1f, 3f);
@@ -61,8 +68,14 @@ public sealed class TrophyToast : IDisposable
         {
             Log.WarnOnce("trophy-toast", $"Trophy notification could not be drawn: {ex.Message}");
         }
-        try { _shown?.Invoke(); }
-        catch (Exception ex) { Log.WarnOnce("trophy-sound", $"Trophy sound could not be played: {ex.Message}"); }
+        try
+        {
+            _shown?.Invoke();
+        }
+        catch (Exception ex)
+        {
+            Log.WarnOnce("trophy-sound", $"Trophy sound could not be played: {ex.Message}");
+        }
         _timer.Change(Duration, Timeout.InfiniteTimeSpan);
     }
 
@@ -92,15 +105,29 @@ public sealed class TrophyToast : IDisposable
         {
             c.Clear(new SKColor(0x1B, 0x1F, 0x27));
             var grade = GradeColor(e.Trophy.Grade);
-            using (var bar = new SKPaint { Color = grade }) c.DrawRect(0, 0, 5 * scale, h, bar);
+            using (var bar = new SKPaint { Color = grade })
+            {
+                c.DrawRect(0, 0, 5 * scale, h, bar);
+            }
+
             float pad = 10 * scale, icon = h - 2 * pad, x = 5 * scale + pad;
             using (var iconBmp = e.Icon is { Length: > 0 } png ? SKBitmap.Decode(png) : null)
             {
                 var dst = new SKRect(x, pad, x + icon, pad + icon);
                 if (iconBmp != null)
-                    using (var p = new SKPaint { IsAntialias = true }) c.DrawBitmap(iconBmp, dst, p);
+                {
+                    using (var p = new SKPaint { IsAntialias = true })
+                    {
+                        c.DrawBitmap(iconBmp, dst, p);
+                    }
+                }
                 else
-                    using (var p = new SKPaint { Color = grade.WithAlpha(90) }) c.DrawRect(dst, p);
+                {
+                    using (var p = new SKPaint { Color = grade.WithAlpha(90) })
+                    {
+                        c.DrawRect(dst, p);
+                    }
+                }
             }
             float tx = x + icon + pad, right = w - pad;
             using var small = new SKFont(SKTypeface.Default, 12 * scale);
@@ -119,8 +146,16 @@ public sealed class TrophyToast : IDisposable
     static string Fit(string s, SKFont font, float width)
     {
         using var m = new SKPaint { Typeface = font.Typeface, TextSize = font.Size };
-        if (m.MeasureText(s) <= width) return s;
-        while (s.Length > 1 && m.MeasureText(s + "\u2026") > width) s = s[..^1];
+        if (m.MeasureText(s) <= width)
+        {
+            return s;
+        }
+
+        while (s.Length > 1 && m.MeasureText(s + "\u2026") > width)
+        {
+            s = s[..^1];
+        }
+
         return s + "\u2026";
     }
 

@@ -71,7 +71,8 @@ public sealed partial class EmulationSession : IDisposable
         var prefs = AppServices.Prefs;
         _settings = EffectiveSettings.Resolve(prefs, AppServices.GameSettingsFor(game.TitleId));
         SessionLog.Open(data.Logs, game.TitleId);
-        foreach (var line in RuntimeReport.Lines()) Log.Info(line);
+        foreach (var line in RuntimeReport.Lines())
+            Log.Info(line);
         Log.Info($"Game {game.TitleId} '{game.Title}' {game.Version}: CPU {(_settings.CpuBackend.Length > 0 ? _settings.CpuBackend : "auto")}, " +
                  $"{_settings.ClockHz / 1_000_000} MHz, GPU profile {(_settings.GpuProfile.Length > 0 ? _settings.GpuProfile : "native")}, VSync {_settings.VSync}" + (_settings.ResScale.Length > 0 ? $", resolution scale {_settings.ResScale}" : "") + (_settings.FastLoading ? ", fast loading" : ""));
 
@@ -86,7 +87,9 @@ public sealed partial class EmulationSession : IDisposable
             CpuBackend = _settings.CpuBackend.Length > 0 ? _settings.CpuBackend : null,
             PatchDir = data.Patches,
             NpRoot = data.Np,
-            Psn = psn, Net = net, Rpcn = rpcn,
+            Psn = psn,
+            Net = net,
+            Rpcn = rpcn,
         });
         _emu.Fatal += (t, e) =>
         {
@@ -126,7 +129,10 @@ public sealed partial class EmulationSession : IDisposable
             GameProcessMarker.Write(data.GameProcessFile, new GameProcessInfo(global::Android.OS.Process.MyPid(), game.TitleId, game.Title,
                 GpuDriverScreen.ConfigOf(gpuSettings, gpuStore), DateTime.UtcNow));
         }
-        catch (IOException e) { Log.Warn($"Game process marker: {e.Message}"); }
+        catch (IOException e)
+        {
+            Log.Warn($"Game process marker: {e.Message}");
+        }
 
         _rendererOptions = new VulkanRendererOptions
         {
@@ -160,7 +166,9 @@ public sealed partial class EmulationSession : IDisposable
             Info = () => $"build: android {RuntimeReport.BuildRuntime ?? "?"}, {RuntimeReport.Runtime}\naudio: {AudioSummary}\nrenderer: {_renderer?.DeviceName}\nsettings: CPU {(_settings.CpuBackend.Length > 0 ? _settings.CpuBackend : "auto")}, {_settings.ClockHz / 1_000_000} MHz, GPU profile {(_settings.GpuProfile.Length > 0 ? _settings.GpuProfile : "native")}, VSync {_settings.VSync}",
             RunOptions = [$"--cpu-mhz={_settings.ClockHz / 1_000_000}"],
             // a phone has less memory and slower cores than a PC
-            PreRollMaxBytes = 64L << 20, EncoderQueueFrames = 48, DumpMaxFrames = 1800,
+            PreRollMaxBytes = 64L << 20,
+            EncoderQueueFrames = 48,
+            DumpMaxFrames = 1800,
             StopHint = Loc.Get("MStopHint"),
             Status = s => CaptureStatus?.Invoke(s),
         });
@@ -176,7 +184,8 @@ public sealed partial class EmulationSession : IDisposable
             {
                 _emu.PerformExec(() =>
                 {
-                    lock (_surfaceLock) return _renderer = new VulkanRenderer(_rendererOptions);
+                    lock (_surfaceLock)
+                        return _renderer = new VulkanRenderer(_rendererOptions);
                 });
             }
             catch (Exception e)
@@ -195,7 +204,8 @@ public sealed partial class EmulationSession : IDisposable
     /// of its own (the guest's ports are untouched). Called when the trophy toast appears.</summary>
     public void PlayTrophySound()
     {
-        if (!AppServices.Prefs.TrophySound || _audio is not { } audio) return;
+        if (!AppServices.Prefs.TrophySound || _audio is not { } audio)
+            return;
         // the first time reads the firmware's RCO: off the UI thread
         Task.Run(() =>
         {
@@ -220,7 +230,8 @@ public sealed partial class EmulationSession : IDisposable
     /// (GameSensors). The motion source set before (the keyboard's tilt keys) becomes the fallback.</summary>
     public void SetSensors(AndroidMotion motion, VitaSharp.Core.Host.ICameraSource camera)
     {
-        if (!ReferenceEquals(_emu.Host.Motion, motion)) motion.Fallback ??= _emu.Host.Motion;
+        if (!ReferenceEquals(_emu.Host.Motion, motion))
+            motion.Fallback ??= _emu.Host.Motion;
         _emu.Host.Motion = motion;
         _emu.Host.Camera = camera;
     }
@@ -236,7 +247,8 @@ public sealed partial class EmulationSession : IDisposable
                 _renderer.AttachSurface(surface);
                 return;
             }
-            if (_started) return;
+            if (_started)
+                return;
             _started = true;
         }
         _boot = new Thread(Boot) { Name = "boot", IsBackground = true };
@@ -249,9 +261,14 @@ public sealed partial class EmulationSession : IDisposable
         {
             lock (_surfaceLock)
             {
-                if (_disposed) return;
+                if (_disposed)
+                    return;
                 // the window went away before the boot thread ran: the next surfaceCreated boots
-                if (_rendererOptions.Surface == null) { _started = false; return; }
+                if (_rendererOptions.Surface == null)
+                {
+                    _started = false;
+                    return;
+                }
                 _renderer = new VulkanRenderer(_rendererOptions);
             }
             Log.Info($"Renderer: {_renderer.DeviceName}");
@@ -304,7 +321,8 @@ public sealed partial class EmulationSession : IDisposable
     /// desktop's pause key does the same), which also pauses the audio streams.</summary>
     public void Pause(string reason = "pause menu")
     {
-        if (Paused || _disposed) return;
+        if (Paused || _disposed)
+            return;
         Paused = true;
         _played.Stop();
         EmulationPause.Pause(reason);
@@ -314,10 +332,12 @@ public sealed partial class EmulationSession : IDisposable
 
     public void Resume(string reason = "pause menu")
     {
-        if (!Paused || _disposed) return;
+        if (!Paused || _disposed)
+            return;
         Paused = false;
         EmulationPause.Resume(reason);
-        if (_started) _played.Start();
+        if (_started)
+            _played.Start();
     }
 
     /// <summary>The game was started and its process has stopped by itself (the guest exited, a stack-protector
@@ -427,7 +447,10 @@ public sealed partial class EmulationSession : IDisposable
             using var dst = File.Create(Path.Combine(dir, "log.txt"));
             src.CopyTo(dst);
         }
-        catch (IOException e) { Log.Warn($"[capture] log copy: {e.Message}"); }
+        catch (IOException e)
+        {
+            Log.Warn($"[capture] log copy: {e.Message}");
+        }
         CaptureDir = null;
     }
 #endif
@@ -439,7 +462,8 @@ public sealed partial class EmulationSession : IDisposable
     /// </summary>
     void ScheduleGpuDump()
     {
-        if (System.Environment.GetEnvironmentVariable(EnvVars.GpuDumpAt) is not { Length: > 0 } spec) return;
+        if (System.Environment.GetEnvironmentVariable(EnvVars.GpuDumpAt) is not { Length: > 0 } spec)
+            return;
         var parts = spec.Split(':', 3);
         if (parts.Length < 2 || !long.TryParse(parts[0].TrimStart('f'), out long f1) || !long.TryParse(parts[1].TrimStart('f'), out long f2) || f1 < 1 || f2 < f1)
         {
@@ -451,10 +475,14 @@ public sealed partial class EmulationSession : IDisposable
         string path = parts.Length > 2 && parts[2].Length > 0 ? Path.Combine(dir, parts[2]) : Path.Combine(dir, $"{_game.TitleId}_{DateTime.Now:yyyyMMdd_HHmmss}{GpuDumpFormat.Extension}");
         var rec = GpuDumpRecorder.Start(new GpuDumpOptions
         {
-            Path = path, Header = DumpHeader(), StartAfterPresent = f1 - 1, MaxFrames = f2 - f1 + 1,
+            Path = path,
+            Header = DumpHeader(),
+            StartAfterPresent = f1 - 1,
+            MaxFrames = f2 - f1 + 1,
             Finished = r => Log.Warn(r.Error != null ? $"[gpudump] failed: {r.Error}" : $"[gpudump] saved {r.Path} ({r.Frames} frames, {r.FileBytes / 1048576.0:F0} MB)"),
         });
-        if (rec != null) Log.Warn($"[gpudump] armed: {path} after present #{f1 - 1}, {f2 - f1 + 1} frames");
+        if (rec != null)
+            Log.Warn($"[gpudump] armed: {path} after present #{f1 - 1}, {f2 - f1 + 1} frames");
     }
 
     GpuDumpHeader DumpHeader()
@@ -471,10 +499,12 @@ public sealed partial class EmulationSession : IDisposable
         {
             header["gpu"] = _renderer.DeviceName;
             int i = 0;
-            foreach (var line in _renderer.DescribeForDiagnostics().Split('\n')) header[$"renderer.{i++}"] = line.TrimEnd('\r');
+            foreach (var line in _renderer.DescribeForDiagnostics().Split('\n'))
+                header[$"renderer.{i++}"] = line.TrimEnd('\r');
         }
         foreach (System.Collections.DictionaryEntry e in System.Environment.GetEnvironmentVariables())
-            if (e.Key is string k && k.StartsWith("VITASHARP_", StringComparison.OrdinalIgnoreCase)) header["env." + k] = e.Value as string ?? "";
+            if (e.Key is string k && k.StartsWith("VITASHARP_", StringComparison.OrdinalIgnoreCase))
+                header["env." + k] = e.Value as string ?? "";
         return header;
     }
 
@@ -484,29 +514,39 @@ public sealed partial class EmulationSession : IDisposable
     {
         lock (_surfaceLock)
         {
-            if (_disposed) return;
+            if (_disposed)
+                return;
             _disposed = true;
         }
         TrophyNotifications.Unlocked -= OnTrophy;
         _stats.Stop();
         RecordStatistics();
-        try { GameProcessMarker.Clear(AppServices.Data.GameProcessFile, global::Android.OS.Process.MyPid()); } catch (IOException) { }
+        try
+        {
+            GameProcessMarker.Clear(AppServices.Data.GameProcessFile, global::Android.OS.Process.MyPid());
+        }
+        catch (IOException) { }
         Log.Info($"Session of {_game.TitleId} ends after {_played.Elapsed:hh\\:mm\\:ss}, {Frames} frames");
         // a recording still running is completed (its GPU dump while the GPU worker runs)
         Capture.StopAndWait(300000);
         Capture.Dispose();
         // a GPU dump still recording is completed while the GPU worker runs
-        if (GpuDumpRecorder.Current is { } dump && dump.StopNow(15000) == null) Log.Warn("[gpudump] the recording did not finish in time");
+        if (GpuDumpRecorder.Current is { } dump && dump.StopNow(15000) == null)
+            Log.Warn("[gpudump] the recording did not finish in time");
         try
         {
             _emu.Stop();
             EmulationPause.Resume("session ended"); // the clock and the parked threads let go (they see the stop)
             _boot?.Join(5000);
-            if (_emuStarted) _stats.WriteFinal(); // the desktop Runner's end-of-run lines (SessionReport)
+            if (_emuStarted)
+                _stats.WriteFinal(); // the desktop Runner's end-of-run lines (SessionReport)
             Performance.Dispose();
             _emu.Dispose();
         }
-        catch (Exception e) { Log.Warn($"Shutdown: {e.Message}"); }
+        catch (Exception e)
+        {
+            Log.Warn($"Shutdown: {e.Message}");
+        }
         Log.Flush();
     }
 
@@ -530,20 +570,27 @@ public sealed partial class EmulationSession : IDisposable
             gs.Msaa = off ? "off" : null;
             AppServices.SaveGameSettings(_game.TitleId, gs);
         }
-        catch (Exception e) { Log.Warn($"MSAA setting: {e.Message}"); }
+        catch (Exception e)
+        {
+            Log.Warn($"MSAA setting: {e.Message}");
+        }
         _rendererOptions.Msaa = off ? "off" : null;
-        if (!_started) return;
+        if (!_started)
+            return;
         Task.Run(() =>
         {
             var why = SaveStates.ReplaceBackendBetweenScenes(_emu, () => { lock (_surfaceLock) return _renderer = new VulkanRenderer(_rendererOptions); });
-            if (why != null) Log.Warn($"MSAA {(off ? "off" : "native")} applies at the next start: {why}");
-            else Log.Info($"MSAA {(off ? "off" : "native")}: renderer replaced");
+            if (why != null)
+                Log.Warn($"MSAA {(off ? "off" : "native")} applies at the next start: {why}");
+            else
+                Log.Info($"MSAA {(off ? "off" : "native")}: renderer replaced");
         });
     }
 
     public void RecordStatistics()
     {
-        if (Interlocked.Exchange(ref _recorded, 1) != 0) return;
+        if (Interlocked.Exchange(ref _recorded, 1) != 0)
+            return;
         _played.Stop();
         try
         {
@@ -554,6 +601,9 @@ public sealed partial class EmulationSession : IDisposable
             AppServices.Prefs.LastPlayed = _game.TitleId;
             AppServices.SavePrefs();
         }
-        catch (Exception e) { Log.Warn($"Play statistics: {e.Message}"); }
+        catch (Exception e)
+        {
+            Log.Warn($"Play statistics: {e.Message}");
+        }
     }
 }

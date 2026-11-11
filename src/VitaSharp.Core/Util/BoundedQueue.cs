@@ -10,14 +10,31 @@ public sealed class BoundedQueue<T>(int capacity)
     readonly Queue<T> _items = new(capacity);
     bool _completed;
 
-    public int Count { get { lock (_items) return _items.Count; } }
+    public int Count
+    {
+        get
+        {
+            lock (_items)
+            {
+                return _items.Count;
+            }
+        }
+    }
 
     public void Add(T item)
     {
         lock (_items)
         {
-            while (_items.Count >= capacity && !_completed) Monitor.Wait(_items);
-            if (_completed) throw new InvalidOperationException("The queue has been marked as complete with regards to additions.");
+            while (_items.Count >= capacity && !_completed)
+            {
+                Monitor.Wait(_items);
+            }
+
+            if (_completed)
+            {
+                throw new InvalidOperationException("The queue has been marked as complete with regards to additions.");
+            }
+
             _items.Enqueue(item);
             Monitor.PulseAll(_items);
         }
@@ -31,10 +48,18 @@ public sealed class BoundedQueue<T>(int capacity)
         {
             while (_items.Count >= capacity && !_completed)
             {
-                if (!keepWaiting()) return false;
+                if (!keepWaiting())
+                {
+                    return false;
+                }
+
                 Monitor.Wait(_items, 50);
             }
-            if (_completed) throw new InvalidOperationException("The queue has been marked as complete with regards to additions.");
+            if (_completed)
+            {
+                throw new InvalidOperationException("The queue has been marked as complete with regards to additions.");
+            }
+
             _items.Enqueue(item);
             Monitor.PulseAll(_items);
             return true;
@@ -47,7 +72,11 @@ public sealed class BoundedQueue<T>(int capacity)
         {
             while (_items.Count == 0)
             {
-                if (_completed) throw new InvalidOperationException("The queue is empty and has been marked as complete with regards to additions.");
+                if (_completed)
+                {
+                    throw new InvalidOperationException("The queue is empty and has been marked as complete with regards to additions.");
+                }
+
                 Monitor.Wait(_items);
             }
             var item = _items.Dequeue();
@@ -64,8 +93,16 @@ public sealed class BoundedQueue<T>(int capacity)
         {
             while (_items.Count == 0)
             {
-                if (_completed) throw new InvalidOperationException("The queue is empty and has been marked as complete with regards to additions.");
-                if (!keepWaiting()) { item = default!; return false; }
+                if (_completed)
+                {
+                    throw new InvalidOperationException("The queue is empty and has been marked as complete with regards to additions.");
+                }
+
+                if (!keepWaiting())
+                {
+                    item = default!;
+                    return false;
+                }
                 Monitor.Wait(_items, 50);
             }
             item = _items.Dequeue();
@@ -76,6 +113,10 @@ public sealed class BoundedQueue<T>(int capacity)
 
     public void CompleteAdding()
     {
-        lock (_items) { _completed = true; Monitor.PulseAll(_items); }
+        lock (_items)
+        {
+            _completed = true;
+            Monitor.PulseAll(_items);
+        }
     }
 }

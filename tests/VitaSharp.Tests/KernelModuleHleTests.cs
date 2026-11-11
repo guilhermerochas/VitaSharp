@@ -9,7 +9,12 @@ namespace VitaSharp.Tests;
 [Collection("guest")]
 public sealed class KernelModuleHleTests(GuestMemoryFixture fx)
 {
-    uint Alloc(uint size, string tag = "km") { uint p = fx.Memory.Alloc(size, tag); GuestMemory.Fill(p, 0, size); return p; }
+    uint Alloc(uint size, string tag = "km")
+    {
+        uint p = fx.Memory.Alloc(size, tag);
+        GuestMemory.Fill(p, 0, size);
+        return p;
+    }
 
     static GuestThread FakeThread() =>
         (GuestThread)System.Runtime.CompilerServices.RuntimeHelpers.GetUninitializedObject(typeof(GuestThread));
@@ -25,7 +30,11 @@ public sealed class KernelModuleHleTests(GuestMemoryFixture fx)
         int r = 0;
         var t = new Thread(() => r = m.Lock(waiter, 1, default));
         t.Start();
-        while (Volatile.Read(ref m.Waiters) == 0) Thread.Sleep(1);
+        while (Volatile.Read(ref m.Waiters) == 0)
+        {
+            Thread.Sleep(1);
+        }
+
         uint n = Alloc(4);
         Assert.Equal(0, m.Cancel(canceller, 1, new Ptr<int>(n)));
         t.Join();
@@ -57,7 +66,9 @@ public sealed class KernelModuleHleTests(GuestMemoryFixture fx)
     {
         var table = new ObjectTable();
         GuestThread owner = FakeThread(), waiter = FakeThread(), other = FakeThread();
-        table.Register(owner); table.Register(waiter); table.Register(other);
+        table.Register(owner);
+        table.Register(waiter);
+        table.Register(other);
         uint work = Alloc(32);
         var m = new Mutex { Name = "lw", WorkArea = work, Threads = table };
         GuestMemory.W32(work + Mutex.LwUidOffset, (uint)table.Register(m));
@@ -74,7 +85,11 @@ public sealed class KernelModuleHleTests(GuestMemoryFixture fx)
         int r = -1;
         var t = new Thread(() => r = m.Lock(waiter, 2, default));
         t.Start();
-        while (Word() != ((uint)owner.Uid | Mutex.Contended)) Thread.Sleep(1); // the sleeper flagged the word
+        while (Word() != ((uint)owner.Uid | Mutex.Contended))
+        {
+            Thread.Sleep(1); // the sleeper flagged the word
+        }
+
         Assert.Equal(0, m.Unlock(owner, 1));
         t.Join();
         Assert.Equal(0, r);
@@ -84,17 +99,27 @@ public sealed class KernelModuleHleTests(GuestMemoryFixture fx)
 
         // guest code takes the free mutex; a sleeper flags it; guest code taking it back between the kernel's wake-up and
         // the woken thread's retry sends that thread back to sleep
-        GuestMemory.W32(work, (uint)other.Uid); GuestMemory.W32(work + 8, 1);
+        GuestMemory.W32(work, (uint)other.Uid);
+        GuestMemory.W32(work + 8, 1);
         r = -1;
         t = new Thread(() => r = m.Lock(waiter, 1, default));
         t.Start();
-        while (Word() != ((uint)other.Uid | Mutex.Contended)) Thread.Sleep(1);
+        while (Word() != ((uint)other.Uid | Mutex.Contended))
+        {
+            Thread.Sleep(1);
+        }
+
         lock (m)
         {
             Assert.Equal(0, m.Unlock(other, 1)); // the flagged word: the guest unlock's slow path
-            GuestMemory.W32(work, (uint)owner.Uid); GuestMemory.W32(work + 8, 1); // guest code again, before the waiter runs
+            GuestMemory.W32(work, (uint)owner.Uid);
+            GuestMemory.W32(work + 8, 1); // guest code again, before the waiter runs
         }
-        while (Word() != ((uint)owner.Uid | Mutex.Contended)) Thread.Sleep(1); // back to sleep, flagged again
+        while (Word() != ((uint)owner.Uid | Mutex.Contended))
+        {
+            Thread.Sleep(1); // back to sleep, flagged again
+        }
+
         Assert.True(t.IsAlive);
         Assert.Equal(0, m.Unlock(owner, 1));
         t.Join();
@@ -102,7 +127,8 @@ public sealed class KernelModuleHleTests(GuestMemoryFixture fx)
         Assert.Equal(0, m.Unlock(waiter, 1));
 
         // an owner that has ended does not hold the mutex
-        GuestMemory.W32(work, (uint)other.Uid); GuestMemory.W32(work + 8, 1);
+        GuestMemory.W32(work, (uint)other.Uid);
+        GuestMemory.W32(work + 8, 1);
         other.Status = ThreadStatus.Dormant;
         Assert.Equal(0, m.Lock(owner, 1, default));
         Assert.Equal((uint)owner.Uid, Word());
@@ -118,14 +144,21 @@ public sealed class KernelModuleHleTests(GuestMemoryFixture fx)
         var missing = new List<string>();
         foreach (var t in typeof(VitaSharp.Core.Hle.HleModule).Assembly.GetTypes()
                      .Where(t => t.IsSubclassOf(typeof(VitaSharp.Core.Hle.HleModule)) && !t.IsAbstract))
+        {
             foreach (var mi in t.GetMethods(System.Reflection.BindingFlags.Instance | System.Reflection.BindingFlags.Public |
                                             System.Reflection.BindingFlags.NonPublic | System.Reflection.BindingFlags.DeclaredOnly))
+            {
                 foreach (var a in System.Reflection.CustomAttributeExtensions.GetCustomAttributes<VitaSharp.Core.Hle.HleAttribute>(mi))
                 {
                     string name = a.Name ?? mi.Name;
                     if (a.Nid == 0 && !VitaSharp.Core.Hle.NidDatabase.LookupName(name).Any(n => a.Library == null || n.Library == a.Library))
+                    {
                         missing.Add($"{t.Name}.{name}");
+                    }
                 }
+            }
+        }
+
         Assert.Empty(missing);
     }
 
@@ -154,7 +187,10 @@ public sealed class KernelModuleHleTests(GuestMemoryFixture fx)
         var importer = new LoadedModule { Name = "importer", Segments = { [0] = new SegmentInfo(seg, 0, 0x100) } };
         uint sCode = seg, sCode2 = seg + 0x10, sSvc = seg + 0x20, sExport = seg + 0x30, sHooked = seg + 0x40;
         foreach (var (n, s) in new[] { (nidCode, sCode), (nidCode, sCode2), (nidSvc, sSvc), (nidExport, sExport), (nidHooked, sHooked) })
+        {
             linker.BindFunctionImport(n, libNid, "Lib", s, importer.Segments);
+        }
+
         var provider = new LoadedModule { Name = "p", Segments = { [0] = new SegmentInfo(prov, 0, 0x40) } };
         linker.RegisterExports(provider, libNid, [nidExport], [prov + 1], 1);
         Assert.Equal(newCode, StubTarget(sCode));

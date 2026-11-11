@@ -30,7 +30,10 @@ public enum PadButton
 }
 
 /// <summary>Standard gamepad axes in SDL GameController order.</summary>
-public enum PadAxis { LeftX, LeftY, RightX, RightY, LeftTrigger, RightTrigger }
+public enum PadAxis
+{
+    LeftX, LeftY, RightX, RightY, LeftTrigger, RightTrigger
+}
 
 /// <summary>
 /// Several host inputs that act only when all are held together, e.g. "pad:back&amp;pad:start" (Select + Start on a
@@ -47,12 +50,26 @@ public readonly record struct InputCombo(InputBinding[] Parts)
     public static bool TryParse(string? s, out InputCombo combo)
     {
         combo = default;
-        if (string.IsNullOrWhiteSpace(s) || !s.Contains(Separator)) return false;
+        if (string.IsNullOrWhiteSpace(s) || !s.Contains(Separator))
+        {
+            return false;
+        }
+
         var items = s.Split(Separator, StringSplitOptions.RemoveEmptyEntries | StringSplitOptions.TrimEntries);
         var parts = new InputBinding[items.Length];
         for (int i = 0; i < items.Length; i++)
-            if (!InputBinding.TryParse(items[i], out parts[i])) return false;
-        if (parts.Length < 2) return false;
+        {
+            if (!InputBinding.TryParse(items[i], out parts[i]))
+            {
+                return false;
+            }
+        }
+
+        if (parts.Length < 2)
+        {
+            return false;
+        }
+
         combo = new InputCombo(parts);
         return true;
     }
@@ -61,7 +78,11 @@ public readonly record struct InputCombo(InputBinding[] Parts)
     public float Value(PadSnapshot? pad, IReadOnlySet<string>? keys)
     {
         float v = 1f;
-        foreach (var p in Parts) v = Math.Min(v, InputMapper.Value(p, pad, keys));
+        foreach (var p in Parts)
+        {
+            v = Math.Min(v, InputMapper.Value(p, pad, keys));
+        }
+
         return v;
     }
 
@@ -104,10 +125,18 @@ public readonly record struct InputBinding(BindingKind Kind, int Index, int Dir 
     public static bool TryParse(string? s, out InputBinding binding)
     {
         binding = default;
-        if (string.IsNullOrWhiteSpace(s)) return false;
+        if (string.IsNullOrWhiteSpace(s))
+        {
+            return false;
+        }
+
         s = s.Trim();
         int colon = s.IndexOf(':');
-        if (colon <= 0 || colon == s.Length - 1) return false;
+        if (colon <= 0 || colon == s.Length - 1)
+        {
+            return false;
+        }
+
         string kind = s[..colon], v = s[(colon + 1)..];
         var inv = CultureInfo.InvariantCulture;
         switch (kind)
@@ -118,12 +147,27 @@ public readonly record struct InputBinding(BindingKind Kind, int Index, int Dir 
             case "pad":
             {
                 int b = Array.IndexOf(ButtonNames, v);
-                if (b >= 0) { binding = Of((PadButton)b); return true; }
+                if (b >= 0)
+                {
+                    binding = Of((PadButton)b);
+                    return true;
+                }
                 int dir = 1;
-                if (v.EndsWith('+')) v = v[..^1];
-                else if (v.EndsWith('-')) { v = v[..^1]; dir = -1; }
+                if (v.EndsWith('+'))
+                {
+                    v = v[..^1];
+                }
+                else if (v.EndsWith('-'))
+                {
+                    v = v[..^1];
+                    dir = -1;
+                }
                 int a = Array.IndexOf(AxisNames, v);
-                if (a < 0) return false;
+                if (a < 0)
+                {
+                    return false;
+                }
+
                 binding = Of((PadAxis)a, dir);
                 return true;
             }
@@ -131,19 +175,40 @@ public readonly record struct InputBinding(BindingKind Kind, int Index, int Dir 
             {
                 char t = v[0];
                 string rest = v[1..];
-                if (t == 'b' && int.TryParse(rest, NumberStyles.None, inv, out int bi)) { binding = JoyButton(bi); return true; }
+                if (t == 'b' && int.TryParse(rest, NumberStyles.None, inv, out int bi))
+                {
+                    binding = JoyButton(bi);
+                    return true;
+                }
                 if (t == 'a')
                 {
-                    int dir = rest[^1] switch { '-' => -1, '~' => 2, _ => 1 };
-                    if (rest[^1] is '+' or '-' or '~') rest = rest[..^1];
-                    if (!int.TryParse(rest, NumberStyles.None, inv, out int ai)) return false;
+                    int dir = rest[^1] switch
+                    {
+                        '-' => -1,
+                        '~' => 2,
+                        _ => 1
+                    };
+                    if (rest[^1] is '+' or '-' or '~')
+                    {
+                        rest = rest[..^1];
+                    }
+
+                    if (!int.TryParse(rest, NumberStyles.None, inv, out int ai))
+                    {
+                        return false;
+                    }
+
                     binding = JoyAxis(ai, dir);
                     return true;
                 }
                 if (t == 'h')
                 {
                     var p = rest.Split('.');
-                    if (p.Length != 2 || !int.TryParse(p[0], NumberStyles.None, inv, out int hi) || !int.TryParse(p[1], NumberStyles.None, inv, out int bit)) return false;
+                    if (p.Length != 2 || !int.TryParse(p[0], NumberStyles.None, inv, out int hi) || !int.TryParse(p[1], NumberStyles.None, inv, out int bit))
+                    {
+                        return false;
+                    }
+
                     binding = JoyHat(hi, bit);
                     return true;
                 }
@@ -158,21 +223,45 @@ public readonly record struct InputBinding(BindingKind Kind, int Index, int Dir 
     {
         switch (Kind)
         {
-            case BindingKind.Key: return Key ?? "";
-            case BindingKind.PadButton: return ButtonLabel((PadButton)Index, kind);
+            case BindingKind.Key:
+                return Key ?? "";
+            case BindingKind.PadButton:
+                return ButtonLabel((PadButton)Index, kind);
             case BindingKind.PadAxis:
             {
                 var a = (PadAxis)Index;
-                if (a == PadAxis.LeftTrigger) return kind switch { ControllerKind.PlayStation => "L2", ControllerKind.Nintendo => "ZL", _ => "LT" };
-                if (a == PadAxis.RightTrigger) return kind switch { ControllerKind.PlayStation => "R2", ControllerKind.Nintendo => "ZR", _ => "RT" };
+                if (a == PadAxis.LeftTrigger)
+                {
+                    return kind switch
+                    {
+                        ControllerKind.PlayStation => "L2",
+                        ControllerKind.Nintendo => "ZL",
+                        _ => "LT"
+                    };
+                }
+
+                if (a == PadAxis.RightTrigger)
+                {
+                    return kind switch
+                    {
+                        ControllerKind.PlayStation => "R2",
+                        ControllerKind.Nintendo => "ZR",
+                        _ => "RT"
+                    };
+                }
+
                 string stick = a <= PadAxis.LeftY ? "Left stick" : "Right stick";
                 bool x = a is PadAxis.LeftX or PadAxis.RightX;
                 return $"{stick} {(x ? (Dir < 0 ? "←" : "→") : (Dir < 0 ? "↑" : "↓"))}";
             }
-            case BindingKind.JoyButton: return $"Button {Index}";
-            case BindingKind.JoyAxis: return $"Axis {Index}{(Dir == 2 ? "" : Dir < 0 ? "-" : "+")}";
-            case BindingKind.JoyHat: return $"Hat {Index} {Dir switch { 1 => "↑", 2 => "→", 4 => "↓", 8 => "←", _ => Dir.ToString(CultureInfo.InvariantCulture) }}";
-            default: return "";
+            case BindingKind.JoyButton:
+                return $"Button {Index}";
+            case BindingKind.JoyAxis:
+                return $"Axis {Index}{(Dir == 2 ? "" : Dir < 0 ? "-" : "+")}";
+            case BindingKind.JoyHat:
+                return $"Hat {Index} {Dir switch { 1 => "↑", 2 => "→", 4 => "↓", 8 => "←", _ => Dir.ToString(CultureInfo.InvariantCulture) }}";
+            default:
+                return "";
         }
     }
 

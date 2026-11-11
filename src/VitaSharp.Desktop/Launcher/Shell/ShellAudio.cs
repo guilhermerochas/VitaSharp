@@ -24,7 +24,10 @@ public sealed class ShellAudio : IDisposable
     Thread? _sfx;
     readonly BlockingCollection<PcmSound> _sfxQueue = new(4);
 
-    public ShellAudio(ShellAssets assets) { _assets = assets; }
+    public ShellAudio(ShellAssets assets)
+    {
+        _assets = assets;
+    }
 
     OpenAlAudio? Device()
     {
@@ -42,18 +45,33 @@ public sealed class ShellAudio : IDisposable
     /// <summary>Plays <paramref name="path"/> in a loop (null or a different file stops the current one first).</summary>
     public void PlayBgm(string? path)
     {
-        if (path == _bgmPath && _bgm != null) return;
+        if (path == _bgmPath && _bgm != null)
+        {
+            return;
+        }
+
         StopBgm();
-        if (path == null || !File.Exists(path)) return;
+        if (path == null || !File.Exists(path))
+        {
+            return;
+        }
+
         At9Reader reader;
-        try { reader = At9Reader.Open(path); }
+        try
+        {
+            reader = At9Reader.Open(path);
+        }
         catch (Exception e) when (e is InvalidDataException or IOException)
         {
             Log.Warn($"home BGM: {path}: {e.Message}");
             return;
         }
         var dev = Device();
-        if (dev == null) return;
+        if (dev == null)
+        {
+            return;
+        }
+
         _bgmPath = path;
         _bgmStop = false;
         _bgm = new Thread(() => BgmLoop(dev, reader)) { IsBackground = true, Name = "Home BGM" };
@@ -70,13 +88,24 @@ public sealed class ShellAudio : IDisposable
         {
             buf.Clear();
             bool ok;
-            try { ok = reader.Read(buf, out _); }
+            try
+            {
+                ok = reader.Read(buf, out _);
+            }
             catch (Exception e) when (e is InvalidDataException or IndexOutOfRangeException or ArgumentException)
             {
-                if (++fails > 3) { Log.Warn($"home BGM: decoding failed: {e.Message}"); return; }
+                if (++fails > 3)
+                {
+                    Log.Warn($"home BGM: decoding failed: {e.Message}");
+                    return;
+                }
                 ok = false;
             }
-            if (!ok) { reader.Rewind(); continue; }
+            if (!ok)
+            {
+                reader.Rewind();
+                continue;
+            }
             stream.Submit(System.Runtime.InteropServices.CollectionsMarshal.AsSpan(buf));
         }
     }
@@ -93,9 +122,17 @@ public sealed class ShellAudio : IDisposable
     public void Play(ShellSoundEffect effect)
     {
         var pcm = _assets.Sound(effect);
-        if (pcm == null) return;
+        if (pcm == null)
+        {
+            return;
+        }
+
         var dev = Device();
-        if (dev == null) return;
+        if (dev == null)
+        {
+            return;
+        }
+
         if (_sfx == null)
         {
             _sfx = new Thread(() => SfxLoop(dev)) { IsBackground = true, Name = "Home sound effects" };
@@ -122,7 +159,10 @@ public sealed class ShellAudio : IDisposable
             }
         }
         catch (Exception e) when (e is InvalidOperationException or ObjectDisposedException) { }
-        finally { stream?.Dispose(); }
+        finally
+        {
+            stream?.Dispose();
+        }
     }
 
     public void Dispose()
@@ -130,6 +170,10 @@ public sealed class ShellAudio : IDisposable
         StopBgm();
         _sfxQueue.CompleteAdding();
         _sfx?.Join(500);
-        lock (_lock) { _audio?.Dispose(); _audio = null; }
+        lock (_lock)
+        {
+            _audio?.Dispose();
+            _audio = null;
+        }
     }
 }

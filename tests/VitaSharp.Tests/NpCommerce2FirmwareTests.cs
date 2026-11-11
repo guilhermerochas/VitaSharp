@@ -36,11 +36,24 @@ public sealed class NpCommerce2FirmwareTests(GuestMemoryFixture fx, ITestOutputH
             var log = h.Run(p, lle: false);
             // the reply with everything in it parses: a record, not an error code
             if (log.FirstOrDefault(l => l.StartsWith("full: ", StringComparison.Ordinal) || l.StartsWith("[0] full: ", StringComparison.Ordinal)) is { } full
-                && full.Split(": ")[1] is var r && !(r.Length == 8 && r.StartsWith("80", StringComparison.Ordinal))) parsed++;
-            else unparsed.Add($"{p.Method.Name} {log.FirstOrDefault(l => l.Contains("full: "))}");
+                && full.Split(": ")[1] is var r && !(r.Length == 8 && r.StartsWith("80", StringComparison.Ordinal)))
+            {
+                parsed++;
+            }
+            else
+            {
+                unparsed.Add($"{p.Method.Name} {log.FirstOrDefault(l => l.Contains("full: "))}");
+            }
+
             string hash = C2Harness.Hash(log);
-            if (!NpCommerce2FirmwareGolden.Hashes.TryGetValue(p.Nid, out var want)) bad.Add($"{p.Nid:X8} {p.Method.Name}: no firmware hash");
-            else if (want != hash) bad.Add($"{p.Nid:X8} {p.Method.Name}: {hash} (firmware {want})\n  " + string.Join("\n  ", log.Take(40)));
+            if (!NpCommerce2FirmwareGolden.Hashes.TryGetValue(p.Nid, out var want))
+            {
+                bad.Add($"{p.Nid:X8} {p.Method.Name}: no firmware hash");
+            }
+            else if (want != hash)
+            {
+                bad.Add($"{p.Nid:X8} {p.Method.Name}: {hash} (firmware {want})\n  " + string.Join("\n  ", log.Take(40)));
+            }
         }
         Assert.True(bad.Count == 0, $"{bad.Count} of {C2Harness.Parsers.Count} parsers differ from the firmware:\n" + string.Join("\n", bad.Take(10)));
         output.WriteLine($"{parsed} of {C2Harness.Parsers.Count} parsers fill their record from the full reply");
@@ -63,9 +76,15 @@ public sealed class NpCommerce2FirmwareTests(GuestMemoryFixture fx, ITestOutputH
             var hle = h.Run(p, lle: false);
             golden.AppendLine($"        [0x{p.Nid:X8}] = \"{C2Harness.Hash(lle)}\", // {p.Method.Name}");
             int i = 0;
-            while (i < lle.Count && i < hle.Count && lle[i] == hle[i]) i++;
+            while (i < lle.Count && i < hle.Count && lle[i] == hle[i])
+            {
+                i++;
+            }
+
             if (i < lle.Count || i < hle.Count)
+            {
                 bad.Add($"{p.Nid:X8} {p.Method.Name}: line {i}\n  fw:  {(i < lle.Count ? lle[i] : "<end>")}\n  hle: {(i < hle.Count ? hle[i] : "<end>")}");
+            }
         }
         output.WriteLine(golden.ToString());
         Assert.True(bad.Count == 0, $"{bad.Count} of {C2Harness.Parsers.Count} parsers differ from the firmware:\n" + string.Join("\n", bad.Take(20)));
@@ -86,7 +105,7 @@ sealed class C2Harness : IDisposable
     readonly uint _arena;
     const uint ArenaSize = 0x40_0000;
     uint _bump;
-    GuestThread? _thread;
+    readonly GuestThread? _thread;
     readonly Queue<(Action<GuestThread> Work, ManualResetEventSlim Done)> _work = new();
     readonly SemaphoreSlim _pending = new(0);
     bool _stop;
@@ -128,7 +147,11 @@ sealed class C2Harness : IDisposable
         _hle = _emu.Hle.Modules.OfType<NpCommerce2>().Single();
         _arena = _emu.Memory.Alloc(ArenaSize, "c2 test arena");
         Call(_hle, "sceNpCommerce2Init");
-        if (firmwareModule == null) return;
+        if (firmwareModule == null)
+        {
+            return;
+        }
+
         var lle = _emu.LoadModule("vs0:sys/external/np_commerce2.suprx");
         _thread = _emu.Kernel.CreateThread("c2-test", 0, 0x10000100, 0x40000, 0, 0x70000);
         _thread.HostBody = t =>
@@ -137,8 +160,22 @@ sealed class C2Harness : IDisposable
             {
                 _pending.Wait();
                 (Action<GuestThread> Work, ManualResetEventSlim Done) w;
-                lock (_work) { if (_stop) return; w = _work.Dequeue(); }
-                try { w.Work(t); } catch (Exception e) { _failure ??= e; }
+                lock (_work)
+                {
+                    if (_stop)
+                    {
+                        return;
+                    }
+                    w = _work.Dequeue();
+                }
+                try
+                {
+                    w.Work(t);
+                }
+                catch (Exception e)
+                {
+                    _failure ??= e;
+                }
                 w.Done.Set();
             }
         };
@@ -146,10 +183,16 @@ sealed class C2Harness : IDisposable
         uint init = Export(InitNid);
         // the exports are the module's own code, not HLE stubs
         if (!lle.Segments.Values.Any(sg => init >= sg.Address && init < sg.Address + sg.Size))
+        {
             throw new InvalidOperationException($"sceNpCommerce2Init at 0x{init:X8} is outside np_commerce2.suprx");
+        }
+
         int r = 0;
         OnGuest(t => r = (int)t.CallGuest(init, 0, 0, 0));
-        if (r < 0) throw new InvalidOperationException($"the firmware's sceNpCommerce2Init returned 0x{r:X8}");
+        if (r < 0)
+        {
+            throw new InvalidOperationException($"the firmware's sceNpCommerce2Init returned 0x{r:X8}");
+        }
     }
 
     uint Export(uint nid) => _emu.Linker.TryGetFunctionExport(LibNid, nid, out uint a) ? a : throw new InvalidOperationException($"no export {nid:X8}");
@@ -157,10 +200,21 @@ sealed class C2Harness : IDisposable
     void OnGuest(Action<GuestThread> work)
     {
         using var done = new ManualResetEventSlim();
-        lock (_work) _work.Enqueue((work, done));
+        lock (_work)
+        {
+            _work.Enqueue((work, done));
+        }
+
         _pending.Release();
-        if (!done.Wait(60_000)) throw new TimeoutException("c2 test thread");
-        if (_failure != null) throw new InvalidOperationException("c2 guest call failed", _failure);
+        if (!done.Wait(60_000))
+        {
+            throw new TimeoutException("c2 test thread");
+        }
+
+        if (_failure != null)
+        {
+            throw new InvalidOperationException("c2 guest call failed", _failure);
+        }
     }
 
     static int Call(object m, string name, params object[] args) =>
@@ -170,14 +224,22 @@ sealed class C2Harness : IDisposable
     {
         uint p = _arena + _bump;
         _bump = (_bump + size + 15) & ~15u;
-        if (_bump > ArenaSize) throw new InvalidOperationException("c2 test arena exhausted");
+        if (_bump > ArenaSize)
+        {
+            throw new InvalidOperationException("c2 test arena exhausted");
+        }
+
         GuestMemory.Fill(p, 0, size);
         return p;
     }
 
     int Invoke(Parser p, bool lle, params uint[] args)
     {
-        if (!lle) return Convert.ToInt32(p.Method.Invoke(_hle, args.Cast<object>().ToArray()));
+        if (!lle)
+        {
+            return Convert.ToInt32(p.Method.Invoke(_hle, args.Cast<object>().ToArray()));
+        }
+
         uint a = Export(p.Nid);
         int r = 0;
         OnGuest(t => r = (int)t.CallGuest(a, args));
@@ -188,7 +250,11 @@ sealed class C2Harness : IDisposable
 
     static byte[] Be16(int v) => [(byte)(v >> 8), (byte)v];
     static byte[] Cat(params byte[][] parts) => parts.SelectMany(x => x).ToArray();
-    static byte[] T(int tag, params byte[][] value) { var v = Cat(value); return Cat(Be16(tag), Be16(v.Length), v); }
+    static byte[] T(int tag, params byte[][] value)
+    {
+        var v = Cat(value);
+        return Cat(Be16(tag), Be16(v.Length), v);
+    }
     static byte[] Sec(int type, int count, params byte[][] items) => T(1, Be16(type), Be16(count), Cat(items));
     static byte[] Sec8(int type, int count, params byte[][] items) => T(2, Be16(type), Be16(count), Be16(0x1111), Be16(0x2222), Cat(items));
     static byte[] Z(string s) => [.. Encoding.ASCII.GetBytes(s), 0];
@@ -254,7 +320,9 @@ sealed class C2Harness : IDisposable
     static byte[] CachedBody(int fixedLen, bool withTail)
     {
         lock (Bodies)
+        {
             return Bodies.TryGetValue((fixedLen, withTail), out var b) ? b : Bodies[(fixedLen, withTail)] = Body(fixedLen, withTail);
+        }
     }
 
     /// <summary>A reply buffer: id, 4 + body length, the lenient flag, the body at +0x68.</summary>
@@ -273,8 +341,12 @@ sealed class C2Harness : IDisposable
     uint Parent(uint buf, uint size, uint lenient)
     {
         uint rec = Alloc(0x100);
-        GuestMemory.W32(rec, 0x1234); GuestMemory.W32(rec + 4, buf); GuestMemory.W32(rec + 8, size);
-        GuestMemory.W32(rec + 12, buf + 0x68); GuestMemory.W32(rec + 16, size - 0x68); GuestMemory.W32(rec + 20, buf + 0x68);
+        GuestMemory.W32(rec, 0x1234);
+        GuestMemory.W32(rec + 4, buf);
+        GuestMemory.W32(rec + 8, size);
+        GuestMemory.W32(rec + 12, buf + 0x68);
+        GuestMemory.W32(rec + 16, size - 0x68);
+        GuestMemory.W32(rec + 20, buf + 0x68);
         GuestMemory.W32(rec + 24, lenient);
         return rec;
     }
@@ -282,7 +354,11 @@ sealed class C2Harness : IDisposable
     uint Record()
     {
         uint r = Alloc(RecSize);
-        for (uint i = 0; i < RecSize; i += 4) GuestMemory.W32(r + i, Fill);
+        for (uint i = 0; i < RecSize; i += 4)
+        {
+            GuestMemory.W32(r + i, Fill);
+        }
+
         return r;
     }
 
@@ -310,7 +386,10 @@ sealed class C2Harness : IDisposable
     {
         var (buf, size) = Reply(CachedBody(0x120, false), 0);
         uint parent = Parent(buf, size, 0), rec = Record();
-        if (p.Kind is "root" or "ptr" or "ptr2") return 0x40;
+        if (p.Kind is "root" or "ptr" or "ptr2")
+        {
+            return 0x40;
+        }
         // the cursor is set before the strings after the fixed part are looked up (which fail on this bare item)
         Invoke(p, false, p.Kind == "find" ? [parent, rec] : [parent, 0, rec]);
         uint data = GuestMemory.R32(rec + 12), cursor = GuestMemory.R32(rec + 20);
@@ -334,7 +413,11 @@ sealed class C2Harness : IDisposable
                 var (buf, size) = Reply(body, lenient);
                 uint parent = Parent(buf, size, lenient), rec = Record(), rec2 = Record();
                 var a = args(buf, cut ? size - 1 : size, parent, rec);
-                if (a.Length > 3 && a[3] == uint.MaxValue) a[3] = rec2;
+                if (a.Length > 3 && a[3] == uint.MaxValue)
+                {
+                    a[3] = rec2;
+                }
+
                 int r = Invoke(p, lle, a);
                 runs.Add((r, buf, Words(rec), Words(rec2)));
                 _bump = 0;
@@ -342,7 +425,10 @@ sealed class C2Harness : IDisposable
             var (r0, b0, w0, x0) = runs[0];
             log.Add($"{name}: {(r0 < 0 ? $"{r0:X8}" : $"{r0:X}")}{(runs[1].R != r0 ? " (?)" : "")}");
             log.Add("  " + Dump(w0, runs[1].Rec, b0));
-            if (p.Kind == "ptr2") log.Add("  " + Dump(x0, runs[1].Rec2, b0));
+            if (p.Kind == "ptr2")
+            {
+                log.Add("  " + Dump(x0, runs[1].Rec2, b0));
+            }
         }
         byte[] full = CachedBody(f, true), bare = CachedBody(f, false), shortItems = CachedBody(Math.Max(f - 1, 0), true);
         if (p.Kind == "root")
@@ -382,12 +468,20 @@ sealed class C2Harness : IDisposable
     {
         if (_thread != null)
         {
-            lock (_work) _stop = true;
+            lock (_work)
+            {
+                _stop = true;
+            }
+
             _pending.Release();
             _thread.WaitForExit(10_000);
         }
         _emu.Dispose();
-        try { Directory.Delete(_root, true); } catch (IOException) { }
+        try
+        {
+            Directory.Delete(_root, true);
+        }
+        catch (IOException) { }
     }
 }
 
@@ -403,6 +497,8 @@ public sealed class C2FirmwareFactAttribute : FactAttribute
     public C2FirmwareFactAttribute()
     {
         if (C2Firmware.ModulePath == null)
+        {
             Skip = $"np_commerce2.suprx not found (set {EnvVars.FirmwareDir} to a Vita3K data folder or vs0, or {EnvVars.FirmwarePup})";
+        }
     }
 }

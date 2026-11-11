@@ -98,10 +98,17 @@ public sealed class GameSettings
     /// <summary>Adds one finished session to the statistics.</summary>
     public void RecordSession(TimeSpan played, long framesPresented, DateTime endUtc)
     {
-        if (played <= TimeSpan.Zero) return;
+        if (played <= TimeSpan.Zero)
+        {
+            return;
+        }
+
         PlaySeconds += (long)played.TotalSeconds;
         LastPlayedUtc = endUtc;
-        if (played.TotalSeconds >= 5) AverageFps = Math.Round(framesPresented / played.TotalSeconds, 1);
+        if (played.TotalSeconds >= 5)
+        {
+            AverageFps = Math.Round(framesPresented / played.TotalSeconds, 1);
+        }
     }
 }
 
@@ -111,9 +118,17 @@ public sealed record EffectiveSettings(string CpuBackend, int CpuMhz, string Gpu
     public static EffectiveSettings Resolve(AppPreferences app, GameSettings? game)
     {
         string cpu = game?.CpuBackend ?? app.CpuBackend;
-        if (cpu.Length > 0 && cpu != "interp" && !Jit.All.Any(b => b.Name == cpu && b.IsSupported)) cpu = ""; // not on this device
+        if (cpu.Length > 0 && cpu != "interp" && !Jit.All.Any(b => b.Name == cpu && b.IsSupported))
+        {
+            cpu = ""; // not on this device
+        }
+
         int mhz = game?.CpuMhz ?? app.CpuMhz;
-        if (mhz is not (0 or 444)) mhz = 0;
+        if (mhz is not (0 or 444))
+        {
+            mhz = 0;
+        }
+
         string gpu = SettingsChoices.GpuProfiles.Any(c => c.Value == (game?.GpuProfile ?? app.GpuProfile)) ? game?.GpuProfile ?? app.GpuProfile : "";
         string res = SettingsChoices.ResScales.Any(c => c.Value == game?.ResScale) ? game!.ResScale! : "";
         string msaa = game?.Msaa == "off" ? "off" : "";
@@ -174,7 +189,10 @@ static class SettingsFile
     {
         try
         {
-            if (File.Exists(path)) return JsonSerializer.Deserialize(File.ReadAllText(path), info);
+            if (File.Exists(path))
+            {
+                return JsonSerializer.Deserialize(File.ReadAllText(path), info);
+            }
         }
         catch (Exception e) when (e is JsonException or IOException or UnauthorizedAccessException)
         {

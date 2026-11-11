@@ -35,7 +35,11 @@ public sealed class AppUtilSaveDataTests : IDisposable
         GuestMemory.Fill(buf, 0xEE, 64);
         Assert.Equal(64, Call(U, "sceAppUtilLoadSafeMemory", buf, 64u, 0L)); // nothing saved yet: zeros, and the size copied (apputil.suprx 3.74)
         Assert.All(GuestMemory.ReadSpan(buf, 64).ToArray(), b => Assert.Equal(0, b));
-        for (uint i = 0; i < 64; i++) GuestMemory.Write(buf + i, (byte)(i + 1));
+        for (uint i = 0; i < 64; i++)
+        {
+            GuestMemory.Write(buf + i, (byte)(i + 1));
+        }
+
         Assert.Equal(64, Call(U, "sceAppUtilSaveSafeMemory", buf, 64u, 100L));
         Assert.True(File.Exists(Path.Combine(_save, "sce_sys", "safemem.dat")));
         Assert.Equal(64 * 1024, new FileInfo(Path.Combine(_save, "sce_sys", "safemem.dat")).Length);
@@ -77,16 +81,23 @@ public sealed class AppUtilSaveDataTests : IDisposable
 
         // search used slots (type 0) 0..9 by user parameter, then by id descending; free slots (type 1)
         uint cond = _h.Alloc(0x20), result = _h.Alloc(0x10), list = _h.Alloc(16 * 16), work = _h.Alloc(8);
-        GuestMemory.W32(work, list); GuestMemory.W32(work + 4, 16 * 16);
-        GuestMemory.W32(cond, 0); GuestMemory.W32(cond + 4, 0); GuestMemory.W32(cond + 8, 10); GuestMemory.W32(cond + 12, 1); GuestMemory.W32(cond + 16, 0);
+        GuestMemory.W32(work, list);
+        GuestMemory.W32(work + 4, 16 * 16);
+        GuestMemory.W32(cond, 0);
+        GuestMemory.W32(cond + 4, 0);
+        GuestMemory.W32(cond + 8, 10);
+        GuestMemory.W32(cond + 12, 1);
+        GuestMemory.W32(cond + 16, 0);
         Assert.Equal(0, Call(U, "sceAppUtilSaveDataSlotSearch", work, cond, result, 0u));
         Assert.Equal(3u, GuestMemory.R32(result));
         Assert.Equal(new uint[] { 1, 2, 3 }, Enumerable.Range(0, 3).Select(i => GuestMemory.R32(list + (uint)i * 16)).ToArray());
         Assert.Equal(10u, GuestMemory.R32(list + 8));
-        GuestMemory.W32(cond + 12, 0); GuestMemory.W32(cond + 16, 1);
+        GuestMemory.W32(cond + 12, 0);
+        GuestMemory.W32(cond + 16, 1);
         Call(U, "sceAppUtilSaveDataSlotSearch", work, cond, result, 0u);
         Assert.Equal(new uint[] { 3, 2, 1 }, Enumerable.Range(0, 3).Select(i => GuestMemory.R32(list + (uint)i * 16)).ToArray());
-        GuestMemory.W32(cond, 1); GuestMemory.W32(cond + 16, 0);
+        GuestMemory.W32(cond, 1);
+        GuestMemory.W32(cond + 16, 0);
         Call(U, "sceAppUtilSaveDataSlotSearch", work, cond, result, 0u);
         Assert.Equal(7u, GuestMemory.R32(result)); // 0 and 4..9 are free
         Assert.Equal(ERR_PARAMETER, Call(U, "sceAppUtilSaveDataSlotSearch", work, 0u, result, 0u));
@@ -101,15 +112,25 @@ public sealed class AppUtilSaveDataTests : IDisposable
     {
         uint path = _h.Str("savedata0:game/progress.bin"), dirPath = _h.Str("savedata0:game/extra");
         uint data = _h.Alloc(16);
-        for (uint i = 0; i < 16; i++) GuestMemory.Write(data + i, (byte)(0x40 + i));
+        for (uint i = 0; i < 16; i++)
+        {
+            GuestMemory.Write(data + i, (byte)(0x40 + i));
+        }
         // SceAppUtilSaveDataFile (0x40): dataPath, buf, bufSize, pad, offset (s64), mode (0 write, 1 truncate, 2 dir)
         uint files = _h.Alloc(64 * 3);
-        GuestMemory.W32(files, path); GuestMemory.W32(files + 4, data); GuestMemory.W32(files + 8, 16);
-        GuestMemory.W32(files + 64, path); GuestMemory.W32(files + 68, data); GuestMemory.W32(files + 72, 4);
-        GuestMemory.Write(files + 64 + 16, 20L); GuestMemory.W32(files + 64 + 24, 1); // 4 bytes at 20, then cut there
-        GuestMemory.W32(files + 128, dirPath); GuestMemory.W32(files + 128 + 24, 2);
+        GuestMemory.W32(files, path);
+        GuestMemory.W32(files + 4, data);
+        GuestMemory.W32(files + 8, 16);
+        GuestMemory.W32(files + 64, path);
+        GuestMemory.W32(files + 68, data);
+        GuestMemory.W32(files + 72, 4);
+        GuestMemory.Write(files + 64 + 16, 20L);
+        GuestMemory.W32(files + 64 + 24, 1); // 4 bytes at 20, then cut there
+        GuestMemory.W32(files + 128, dirPath);
+        GuestMemory.W32(files + 128 + 24, 2);
         uint slot = _h.Alloc(8), req = _h.Word(9);
-        GuestMemory.W32(slot, 5); GuestMemory.W32(slot + 4, SlotParam("Autosave", 7));
+        GuestMemory.W32(slot, 5);
+        GuestMemory.W32(slot + 4, SlotParam("Autosave", 7));
         Assert.Equal(0, Call(U, "sceAppUtilSaveDataDataSave", slot, files, 3u, 0u, new Ptr<uint>(req)));
         Assert.Equal(0u, GuestMemory.R32(req));
         string host = Path.Combine(_save, "game", "progress.bin");
@@ -127,7 +148,8 @@ public sealed class AppUtilSaveDataTests : IDisposable
 
         // removal: SceAppUtilSaveDataRemoveItem (0x2C) {dataPath, mode}; mode 0 also removes the slot
         uint rm = _h.Alloc(0x2C * 2);
-        GuestMemory.W32(rm, path); GuestMemory.W32(rm + 0x2C, dirPath);
+        GuestMemory.W32(rm, path);
+        GuestMemory.W32(rm + 0x2C, dirPath);
         Assert.Equal(0, Call(U, "sceAppUtilSaveDataDataRemove", slot, rm, 2u, 0u));
         Assert.False(File.Exists(host));
         Assert.False(Directory.Exists(Path.Combine(_save, "game", "extra")));

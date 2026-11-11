@@ -15,7 +15,10 @@ public class ZrifTests
         var rif = Zrif.Decode(Sample);
         Assert.Equal(Zrif.RifSize, rif.Length);
         Assert.Equal("EP0001-PCSE00000_00-0000000000000001", Zrif.ContentId(rif));
-        for (int i = 0; i < 16; i++) Assert.Equal(0x10 + i, rif[0x50 + i]);
+        for (int i = 0; i < 16; i++)
+        {
+            Assert.Equal(0x10 + i, rif[0x50 + i]);
+        }
     }
 
     [Fact]

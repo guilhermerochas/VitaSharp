@@ -38,12 +38,20 @@ public sealed unsafe class H264Encoder : IDisposable
 
     public static H264Encoder? TryCreate(int width, int height, int fps, int bitRate, int gop)
     {
-        if (width <= 0 || height <= 0 || (width & 1) != 0 || (height & 1) != 0 || !FFmpegLoader.Available) return null;
+        if (width <= 0 || height <= 0 || (width & 1) != 0 || (height & 1) != 0 || !FFmpegLoader.Available)
+        {
+            return null;
+        }
+
         fps = Math.Clamp(fps, 1, 120);
         foreach (var name in new[] { "libopenh264", "" })
         {
             var codec = name.Length > 0 ? ffmpeg.avcodec_find_encoder_by_name(name) : ffmpeg.avcodec_find_encoder(AVCodecID.AV_CODEC_ID_H264);
-            if (codec == null) continue;
+            if (codec == null)
+            {
+                continue;
+            }
+
             var ctx = ffmpeg.avcodec_alloc_context3(codec);
             ctx->width = width;
             ctx->height = height;
@@ -80,7 +88,11 @@ public sealed unsafe class H264Encoder : IDisposable
         Copy(v, cPitch, _frame->data[2], _frame->linesize[2], Width / 2, Height / 2);
         _frame->pts = _pts++;
         var list = new List<(byte[], bool)>();
-        if (ffmpeg.avcodec_send_frame(_ctx, _frame) >= 0) Drain(list);
+        if (ffmpeg.avcodec_send_frame(_ctx, _frame) >= 0)
+        {
+            Drain(list);
+        }
+
         return list;
     }
 
@@ -88,7 +100,11 @@ public sealed unsafe class H264Encoder : IDisposable
     public List<(byte[] Data, bool Key)> Flush()
     {
         var list = new List<(byte[], bool)>();
-        if (ffmpeg.avcodec_send_frame(_ctx, null) >= 0) Drain(list);
+        if (ffmpeg.avcodec_send_frame(_ctx, null) >= 0)
+        {
+            Drain(list);
+        }
+
         return list;
     }
 
@@ -101,7 +117,10 @@ public sealed unsafe class H264Encoder : IDisposable
             // with the global header the encoder may leave the parameter sets out of the stream: keep them in band
             // before each key picture, as without it
             if (key && ParameterSets() is var (sps, pps) && !SplitNals(au).Exists(n => (au[n.Offset] & 0x1F) == 7))
+            {
                 au = [0, 0, 0, 1, .. sps, 0, 0, 0, 1, .. pps, .. au];
+            }
+
             list.Add((au, key));
             ffmpeg.av_packet_unref(_pkt);
         }
@@ -112,7 +131,11 @@ public sealed unsafe class H264Encoder : IDisposable
         for (int row = 0; row < h; row++)
         {
             int o = row * srcPitch;
-            if (o + w > src.Length) break;
+            if (o + w > src.Length)
+            {
+                break;
+            }
+
             src.Slice(o, w).CopyTo(new Span<byte>(dst + row * dstPitch, w));
         }
     }
@@ -121,7 +144,11 @@ public sealed unsafe class H264Encoder : IDisposable
     /// in Annex B (OpenH264) or avcC form; null when the encoder gave none.</summary>
     public (byte[] Sps, byte[] Pps)? ParameterSets()
     {
-        if (_ctx == null || _ctx->extradata == null || _ctx->extradata_size <= 0) return null;
+        if (_ctx == null || _ctx->extradata == null || _ctx->extradata_size <= 0)
+        {
+            return null;
+        }
+
         return ParseParameterSets(new ReadOnlySpan<byte>(_ctx->extradata, _ctx->extradata_size));
     }
 
@@ -138,20 +165,40 @@ public sealed unsafe class H264Encoder : IDisposable
                 {
                     int len = extra[p] << 8 | extra[p + 1];
                     p += 2;
-                    if (p + len > extra.Length) return null;
+                    if (p + len > extra.Length)
+                    {
+                        return null;
+                    }
+
                     var nal = extra.Slice(p, len).ToArray();
                     p += len;
-                    if (pass == 0) sps ??= nal; else pps ??= nal;
+                    if (pass == 0)
+                    {
+                        sps ??= nal;
+                    }
+                    else
+                    {
+                        pps ??= nal;
+                    }
                 }
             }
         }
         else
+        {
             foreach (var (off, len) in SplitNals(extra))
+            {
                 switch (extra[off] & 0x1F)
                 {
-                    case 7: sps ??= extra.Slice(off, len).ToArray(); break;
-                    case 8: pps ??= extra.Slice(off, len).ToArray(); break;
+                    case 7:
+                        sps ??= extra.Slice(off, len).ToArray();
+                        break;
+                    case 8:
+                        pps ??= extra.Slice(off, len).ToArray();
+                        break;
                 }
+            }
+        }
+
         return sps != null && pps != null ? (sps, pps) : null;
     }
 
@@ -160,22 +207,46 @@ public sealed unsafe class H264Encoder : IDisposable
     {
         var starts = new List<int>();
         for (int i = 0; i + 2 < au.Length; i++)
-            if (au[i] == 0 && au[i + 1] == 0 && au[i + 2] == 1) { starts.Add(i + 3); i += 2; }
+        {
+            if (au[i] == 0 && au[i + 1] == 0 && au[i + 2] == 1)
+            {
+                starts.Add(i + 3);
+                i += 2;
+            }
+        }
+
         var nals = new List<(int, int)>();
         for (int k = 0; k < starts.Count; k++)
         {
             int end = k + 1 < starts.Count ? starts[k + 1] - 3 : au.Length;
-            while (end > starts[k] && au[end - 1] == 0) end--; // the next start code's leading zero (4-byte form)
-            if (end > starts[k]) nals.Add((starts[k], end - starts[k]));
+            while (end > starts[k] && au[end - 1] == 0)
+            {
+                end--; // the next start code's leading zero (4-byte form)
+            }
+
+            if (end > starts[k])
+            {
+                nals.Add((starts[k], end - starts[k]));
+            }
         }
         return nals;
     }
 
     public void Dispose()
     {
-        if (_ctx == null) return;
-        var c = _ctx; ffmpeg.avcodec_free_context(&c); _ctx = null;
-        var f = _frame; ffmpeg.av_frame_free(&f); _frame = null;
-        var p = _pkt; ffmpeg.av_packet_free(&p); _pkt = null;
+        if (_ctx == null)
+        {
+            return;
+        }
+
+        var c = _ctx;
+        ffmpeg.avcodec_free_context(&c);
+        _ctx = null;
+        var f = _frame;
+        ffmpeg.av_frame_free(&f);
+        _frame = null;
+        var p = _pkt;
+        ffmpeg.av_packet_free(&p);
+        _pkt = null;
     }
 }

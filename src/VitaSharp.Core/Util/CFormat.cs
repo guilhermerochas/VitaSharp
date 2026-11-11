@@ -15,34 +15,95 @@ public static class CFormat
         while (i < fmt.Length)
         {
             char c = fmt[i++];
-            if (c != '%') { sb.Append(c); continue; }
-            if (i < fmt.Length && fmt[i] == '%') { sb.Append('%'); i++; continue; }
+            if (c != '%')
+            {
+                sb.Append(c);
+                continue;
+            }
+            if (i < fmt.Length && fmt[i] == '%')
+            {
+                sb.Append('%');
+                i++;
+                continue;
+            }
 
             bool left = false, plus = false, space = false, alt = false, zero = false;
             for (; i < fmt.Length; i++)
             {
                 char f = fmt[i];
-                if (f == '-') left = true;
-                else if (f == '+') plus = true;
-                else if (f == ' ') space = true;
-                else if (f == '#') alt = true;
-                else if (f == '0') zero = true;
-                else break;
+                if (f == '-')
+                {
+                    left = true;
+                }
+                else if (f == '+')
+                {
+                    plus = true;
+                }
+                else if (f == ' ')
+                {
+                    space = true;
+                }
+                else if (f == '#')
+                {
+                    alt = true;
+                }
+                else if (f == '0')
+                {
+                    zero = true;
+                }
+                else
+                {
+                    break;
+                }
             }
             int width = -1;
-            if (i < fmt.Length && fmt[i] == '*') { width = (int)args.NextU32(); i++; if (width < 0) { left = true; width = -width; } }
-            else while (i < fmt.Length && char.IsDigit(fmt[i])) width = Math.Max(width, 0) * 10 + (fmt[i++] - '0');
+            if (i < fmt.Length && fmt[i] == '*')
+            {
+                width = (int)args.NextU32();
+                i++;
+                if (width < 0)
+                {
+                    left = true;
+                    width = -width;
+                }
+            }
+            else
+            {
+                while (i < fmt.Length && char.IsDigit(fmt[i]))
+                {
+                    width = Math.Max(width, 0) * 10 + (fmt[i++] - '0');
+                }
+            }
+
             int prec = -1;
             if (i < fmt.Length && fmt[i] == '.')
             {
                 i++;
                 prec = 0;
-                if (i < fmt.Length && fmt[i] == '*') { prec = (int)args.NextU32(); i++; }
-                else while (i < fmt.Length && char.IsDigit(fmt[i])) prec = prec * 10 + (fmt[i++] - '0');
+                if (i < fmt.Length && fmt[i] == '*')
+                {
+                    prec = (int)args.NextU32();
+                    i++;
+                }
+                else
+                {
+                    while (i < fmt.Length && char.IsDigit(fmt[i]))
+                    {
+                        prec = prec * 10 + (fmt[i++] - '0');
+                    }
+                }
             }
             string len = "";
-            while (i < fmt.Length && "hlLqjzt".Contains(fmt[i])) len += fmt[i++];
-            if (i >= fmt.Length) break;
+            while (i < fmt.Length && "hlLqjzt".Contains(fmt[i]))
+            {
+                len += fmt[i++];
+            }
+
+            if (i >= fmt.Length)
+            {
+                break;
+            }
+
             char conv = fmt[i++];
             bool wide = len is "ll" or "q" or "j" or "L";
             string body;
@@ -53,7 +114,11 @@ public static class CFormat
                 {
                     long v = wide ? (long)args.NextU64() : len == "h" ? (short)args.NextU32() : len == "hh" ? (sbyte)args.NextU32() : (int)args.NextU32();
                     body = Math.Abs((decimal)v).ToString(CultureInfo.InvariantCulture);
-                    if (prec >= 0) body = body.PadLeft(prec, '0');
+                    if (prec >= 0)
+                    {
+                        body = body.PadLeft(prec, '0');
+                    }
+
                     string sign = v < 0 ? "-" : plus ? "+" : space ? " " : "";
                     body = Pad(sign, body, width, left, zero && prec < 0);
                     break;
@@ -71,7 +136,11 @@ public static class CFormat
                         'X' => v.ToString("X"),
                         _ => Convert.ToString((long)v, 8),
                     };
-                    if (prec >= 0) body = body.PadLeft(prec, '0');
+                    if (prec >= 0)
+                    {
+                        body = body.PadLeft(prec, '0');
+                    }
+
                     string prefix = alt && v != 0 ? (conv == 'x' ? "0x" : conv == 'X' ? "0X" : conv == 'o' ? "0" : "") : "";
                     body = Pad(prefix, body, width, left, zero && prec < 0);
                     break;
@@ -88,7 +157,11 @@ public static class CFormat
                     uint p = args.NextU32();
                     // %ls: a wide (UTF-16) string
                     string s = p == 0 ? "(null)" : len == "l" ? ReadWide(p) : GuestMemory.ReadCString(p);
-                    if (prec >= 0 && s.Length > prec) s = s[..prec];
+                    if (prec >= 0 && s.Length > prec)
+                    {
+                        s = s[..prec];
+                    }
+
                     body = Pad("", s, width, left, false);
                     break;
                 }
@@ -130,15 +203,32 @@ public static class CFormat
     static string ReadWide(uint p)
     {
         var sb = new StringBuilder();
-        for (; ; p += 2) { ushort c = GuestMemory.Read<ushort>(p); if (c == 0) break; sb.Append((char)c); }
+        for (; ; p += 2)
+        {
+            ushort c = GuestMemory.Read<ushort>(p);
+            if (c == 0)
+            {
+                break;
+            }
+
+            sb.Append((char)c);
+        }
         return sb.ToString();
     }
 
     static string Pad(string prefix, string body, int width, bool left, bool zero)
     {
         int total = prefix.Length + body.Length;
-        if (width <= total) return prefix + body;
-        if (left) return (prefix + body).PadRight(width);
+        if (width <= total)
+        {
+            return prefix + body;
+        }
+
+        if (left)
+        {
+            return (prefix + body).PadRight(width);
+        }
+
         if (zero)
         {
             bool neg = body.StartsWith('-');

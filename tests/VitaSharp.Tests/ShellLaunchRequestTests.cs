@@ -15,7 +15,11 @@ public sealed class ShellLaunchRequestTests(GuestMemoryFixture fx) : IDisposable
 
     Emulator Emu()
     {
-        if (_emu != null) return _emu;
+        if (_emu != null)
+        {
+            return _emu;
+        }
+
         Directory.CreateDirectory(_root);
         return _emu = new Emulator(new EmulatorOptions { FsRoot = _root, Memory = fx.Memory, EnableJit = false, CpuBackend = "interp" });
     }
@@ -23,7 +27,11 @@ public sealed class ShellLaunchRequestTests(GuestMemoryFixture fx) : IDisposable
     public void Dispose()
     {
         _emu?.Dispose();
-        try { Directory.Delete(_root, true); } catch (IOException) { }
+        try
+        {
+            Directory.Delete(_root, true);
+        }
+        catch (IOException) { }
     }
 
     static (int Type, int W1, int W2) Event(byte[] e) =>
@@ -52,7 +60,9 @@ public sealed class ShellLaunchRequestTests(GuestMemoryFixture fx) : IDisposable
     public void ByNameReservesTheApplicationAndPostsEvent6()
     {
         var emu = Emu();
-        while (emu.Vita.TakeShellEvent() != null) { }
+        while (emu.Vita.TakeShellEvent() != null)
+        {
+        }
         var pl = emu.Vita.RequestLaunchByName(emu, "NPXS10015", "dir", 0x20000, "param");
         Assert.Same(pl, emu.Vita.GetPendingLaunch(pl.App.Uid));
         Assert.Equal(("NPXS10015", "dir", 0x20000, "param"), (pl.TitleId, pl.Dir, pl.Flags, pl.Param));
@@ -65,7 +75,9 @@ public sealed class ShellLaunchRequestTests(GuestMemoryFixture fx) : IDisposable
     public void ByUriIsARequestWithoutAnApplication()
     {
         var emu = Emu();
-        while (emu.Vita.TakeShellEvent() != null) { }
+        while (emu.Vita.TakeShellEvent() != null)
+        {
+        }
         var pl = emu.Vita.RequestLaunchByUri(emu, "psgm:play?titleid=NPXS10015", 0xFFFFF);
         Assert.Equal(("", "", 0xFFFFF | 0x100000, "psgm:play?titleid=NPXS10015"), (pl.TitleId, pl.Dir, pl.Flags, pl.Param));
         Assert.Equal((ShellEvents.LaunchRequest, pl.App.Uid, pl.App.Uid), Event(emu.Vita.TakeShellEvent()!));
@@ -76,9 +88,17 @@ public sealed class ShellLaunchRequestTests(GuestMemoryFixture fx) : IDisposable
     {
         var emu = Emu();
         Assert.False(emu.Vita.ShellImposesSystemUi);
-        lock (emu.Vita.AppMgrState) BitConverter.TryWriteBytes(emu.Vita.AppMgrState.AsSpan(0x14), 1);
+        lock (emu.Vita.AppMgrState)
+        {
+            BitConverter.TryWriteBytes(emu.Vita.AppMgrState.AsSpan(0x14), 1);
+        }
+
         Assert.True(emu.Vita.ShellImposesSystemUi);
-        lock (emu.Vita.AppMgrState) BitConverter.TryWriteBytes(emu.Vita.AppMgrState.AsSpan(0x14), 0);
+        lock (emu.Vita.AppMgrState)
+        {
+            BitConverter.TryWriteBytes(emu.Vita.AppMgrState.AsSpan(0x14), 0);
+        }
+
         Assert.False(emu.Vita.ShellImposesSystemUi);
     }
 

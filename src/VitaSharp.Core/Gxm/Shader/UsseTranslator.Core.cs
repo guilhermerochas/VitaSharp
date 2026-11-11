@@ -24,8 +24,19 @@ public struct Operand
 
     public readonly bool IsSame(in Operand o, int mask)
     {
-        if (o.Bank != Bank || o.Num != Num) return false;
-        for (int i = 0; i < 4; i++) if ((mask & (1 << i)) != 0 && Swizzle[i] != o.Swizzle[i]) return false;
+        if (o.Bank != Bank || o.Num != Num)
+        {
+            return false;
+        }
+
+        for (int i = 0; i < 4; i++)
+        {
+            if ((mask & (1 << i)) != 0 && Swizzle[i] != o.Swizzle[i])
+            {
+                return false;
+            }
+        }
+
         return true;
     }
 }
@@ -94,14 +105,22 @@ public sealed partial class UsseTranslator
     /// <summary>Records that a register word now holds an unmodified copy of SA word <paramref name="saWord"/>.</summary>
     void SetSaCopy(Bank bank, int word, int saWord)
     {
-        if (bank is Bank.Indexed1 or Bank.Indexed2 or Bank.FpInternal or Bank.SecAttr || saWord < 0) return;
+        if (bank is Bank.Indexed1 or Bank.Indexed2 or Bank.FpInternal or Bank.SecAttr || saWord < 0)
+        {
+            return;
+        }
+
         _saCopy[(bank, word)] = saWord;
     }
 
     /// <summary>Records the data a bit-copy move left in a register word (the source word's type).</summary>
     void SetWordType(Bank bank, int word, DataType type)
     {
-        if (bank is Bank.Indexed1 or Bank.Indexed2 or Bank.FpInternal) return;
+        if (bank is Bank.Indexed1 or Bank.Indexed2 or Bank.FpInternal)
+        {
+            return;
+        }
+
         _wordType[(bank, word)] = type;
     }
 
@@ -117,35 +136,85 @@ public sealed partial class UsseTranslator
 
     public void ResetRepeat()
     {
-        for (int i = 0; i < 4; i++) for (int j = 0; j < 17; j++) _repeatIncrease[i, j] = j;
+        for (int i = 0; i < 4; i++)
+        {
+            for (int j = 0; j < 17; j++)
+            {
+                _repeatIncrease[i, j] = j;
+            }
+        }
+
         ResetRepeatMultiplier();
     }
 
-    void ResetRepeatMultiplier() { for (int i = 0; i < 4; i++) _repeatMultiplier[i] = 2; }
-    void SetRepeatMultiplier(int a, int b, int c, int d) { _repeatMultiplier[0] = a; _repeatMultiplier[1] = b; _repeatMultiplier[2] = c; _repeatMultiplier[3] = d; }
+    void ResetRepeatMultiplier()
+    {
+        for (int i = 0; i < 4; i++)
+        {
+            _repeatMultiplier[i] = 2;
+        }
+    }
+    void SetRepeatMultiplier(int a, int b, int c, int d)
+    {
+        _repeatMultiplier[0] = a;
+        _repeatMultiplier[1] = b;
+        _repeatMultiplier[2] = c;
+        _repeatMultiplier[3] = d;
+    }
 
     public string Body => _sb.ToString();
     public void Line(string s) => _sb.Append(' ', _indent * 4).AppendLine(s);
-    public void Open(string s) { Line(s + " {"); _indent++; }
-    public void Close() { _indent--; Line("}"); }
+    public void Open(string s)
+    {
+        Line(s + " {");
+        _indent++;
+    }
+    public void Close()
+    {
+        _indent--;
+        Line("}");
+    }
     string Tmp() => "t" + (_tmp++).ToString(CultureInfo.InvariantCulture);
 
     public static string F(float f)
     {
         // NaN bit patterns are often packed integer data (a U16x2 clear colour 0xFFFFFFFF): keep the exact bits
-        if (float.IsNaN(f)) return $"uintBitsToFloat(0x{BitConverter.SingleToUInt32Bits(f):X8}u)";
-        if (float.IsPositiveInfinity(f)) return "uintBitsToFloat(0x7F800000u)";
-        if (float.IsNegativeInfinity(f)) return "uintBitsToFloat(0xFF800000u)";
+        if (float.IsNaN(f))
+        {
+            return $"uintBitsToFloat(0x{BitConverter.SingleToUInt32Bits(f):X8}u)";
+        }
+
+        if (float.IsPositiveInfinity(f))
+        {
+            return "uintBitsToFloat(0x7F800000u)";
+        }
+
+        if (float.IsNegativeInfinity(f))
+        {
+            return "uintBitsToFloat(0xFF800000u)";
+        }
         // denormals (often packed f16/u8 data reinterpreted as f32) would be flushed by the compiler: keep exact bits
-        if (float.IsSubnormal(f) || (f == 0 && float.IsNegative(f))) return $"uintBitsToFloat(0x{BitConverter.SingleToUInt32Bits(f):X8}u)";
+        if (float.IsSubnormal(f) || (f == 0 && float.IsNegative(f)))
+        {
+            return $"uintBitsToFloat(0x{BitConverter.SingleToUInt32Bits(f):X8}u)";
+        }
+
         var s = f.ToString("R", CultureInfo.InvariantCulture);
-        if (!s.Contains('.') && !s.Contains('E') && !s.Contains('e')) s += ".0";
+        if (!s.Contains('.') && !s.Contains('E') && !s.Contains('e'))
+        {
+            s += ".0";
+        }
+
         return s;
     }
 
     Val Bind(Val v)
     {
-        if (IsSimple(v.E)) return v;
+        if (IsSimple(v.E))
+        {
+            return v;
+        }
+
         string t = Tmp();
         Line($"{v.GlslType} {t} = {v.E};");
         return v with { E = t };
@@ -170,11 +239,21 @@ public sealed partial class UsseTranslator
         int v = word >> 2;
         switch (b)
         {
-            case Bank.Temp: MaxTemp = Math.Max(MaxTemp, v); break;
-            case Bank.PrimAttr: MaxPa = Math.Max(MaxPa, v); break;
-            case Bank.SecAttr: MaxSa = Math.Max(MaxSa, v); break;
-            case Bank.Output: MaxOut = Math.Max(MaxOut, v); break;
-            case Bank.FpInternal: MaxFi = Math.Max(MaxFi, v); break;
+            case Bank.Temp:
+                MaxTemp = Math.Max(MaxTemp, v);
+                break;
+            case Bank.PrimAttr:
+                MaxPa = Math.Max(MaxPa, v);
+                break;
+            case Bank.SecAttr:
+                MaxSa = Math.Max(MaxSa, v);
+                break;
+            case Bank.Output:
+                MaxOut = Math.Max(MaxOut, v);
+                break;
+            case Bank.FpInternal:
+                MaxFi = Math.Max(MaxFi, v);
+                break;
         }
     }
 
@@ -206,8 +285,17 @@ public sealed partial class UsseTranslator
     {
         if (_saCopy.Count > 0)
         {
-            if (dynBase == null) _saCopy.Remove((b, baseWord + rel));
-            else foreach (var k in _saCopy.Keys.Where(k => k.Item1 == b).ToList()) _saCopy.Remove(k);
+            if (dynBase == null)
+            {
+                _saCopy.Remove((b, baseWord + rel));
+            }
+            else
+            {
+                foreach (var k in _saCopy.Keys.Where(k => k.Item1 == b).ToList())
+                {
+                    _saCopy.Remove(k);
+                }
+            }
         }
         if (dynBase != null && ShaderGenerator.LowerDynamicIndexing)
         {
@@ -236,7 +324,11 @@ public sealed partial class UsseTranslator
 
     static Val Compose(List<string> comps, char kind)
     {
-        if (comps.Count == 1) return new Val(comps[0], kind, 1);
+        if (comps.Count == 1)
+        {
+            return new Val(comps[0], kind, 1);
+        }
+
         string t = kind switch { 'f' => "vec", 'i' => "ivec", 'u' => "uvec", _ => "bvec" };
         return new Val($"{t}{comps.Count}({string.Join(", ", comps)})", kind, comps.Count);
     }
@@ -245,18 +337,29 @@ public sealed partial class UsseTranslator
     {
         if ((f & OpFlags.Abs) != 0)
         {
-            if (v.K == 'u') return v;
+            if (v.K == 'u')
+            {
+                return v;
+            }
+
             v = v with { E = $"abs({v.E})" };
         }
         if ((f & OpFlags.Neg) != 0)
+        {
             v = v with { E = v.K == 'u' ? $"(0u - {v.E})" : $"(-{v.E})" };
+        }
+
         return v;
     }
 
     /// <summary>Port of Vita3K utils::load.</summary>
     public Val Load(Operand op, int destMask, int shift = 0)
     {
-        if (destMask == 0) destMask = 1;
+        if (destMask == 0)
+        {
+            destMask = 1;
+        }
+
         char kind = KindOf(op.Type);
 
         if (op.Bank == Bank.FpConstant)
@@ -264,9 +367,17 @@ public sealed partial class UsseTranslator
             var cs = new List<string>();
             for (int i = 0; i < 4; i++)
             {
-                if ((destMask & (1 << i)) == 0) continue;
+                if ((destMask & (1 << i)) == 0)
+                {
+                    continue;
+                }
+
                 var sw = op.Swizzle[i];
-                if (sw >= Sw.Zero) { cs.Add(ConstOf(sw, kind)); continue; }
+                if (sw >= Sw.Zero)
+                {
+                    cs.Add(ConstOf(sw, kind));
+                    continue;
+                }
                 int s = (int)sw;
                 if (op.Type is DataType.F32 or DataType.UInt32 or DataType.Int32)
                 {
@@ -278,7 +389,10 @@ public sealed partial class UsseTranslator
                 {
                     var table = s switch { 1 => UsseConstants.F16Bank1, 2 => UsseConstants.F16Bank2, 3 => UsseConstants.F16Bank3, _ => UsseConstants.F16Bank0 };
                     float fv = op.Num < table.Length ? table[op.Num] : 0;
-                    if (kind == 'f') cs.Add(F(fv));
+                    if (kind == 'f')
+                    {
+                        cs.Add(F(fv));
+                    }
                     else
                     {
                         ushort h = BitConverter.HalfToUInt16Bits((Half)fv);
@@ -303,14 +417,26 @@ public sealed partial class UsseTranslator
             shift <<= 2;
         }
 
-        if (op.Bank == Bank.Predicate) return new Val($"p[{op.Num}]", 'b', 1);
+        if (op.Bank == Bank.Predicate)
+        {
+            return new Val($"p[{op.Num}]", 'b', 1);
+        }
+
         if (op.Bank == Bank.Index)
         {
             // the USSE has two index registers (numbers 1 and 2: i.l, i.h); any other number names none, reads 0
-            if (op.Num is not (1 or 2)) { Warnings.Add($"read of index register {op.Num} (0)"); return kind == 'u' ? new Val("0u", 'u', 1) : new Val("0", 'i', 1); }
+            if (op.Num is not (1 or 2))
+            {
+                Warnings.Add($"read of index register {op.Num} (0)");
+                return kind == 'u' ? new Val("0u", 'u', 1) : new Val("0", 'i', 1);
+            }
             string e = $"idx[{op.Num - 1}]";
             int sz = GxpProgram.TypeSize(op.Type);
-            if (!GxpProgram.IsFloat(op.Type) && sz < 4) e = $"({e} & {(sz == 1 ? 0xFF : 0xFFFF)})";
+            if (!GxpProgram.IsFloat(op.Type) && sz < 4)
+            {
+                e = $"({e} & {(sz == 1 ? 0xFF : 0xFFFF)})";
+            }
+
             return kind == 'u' ? new Val($"uint({e})", 'u', 1) : new Val(e, 'i', 1);
         }
 
@@ -336,17 +462,33 @@ public sealed partial class UsseTranslator
             };
             var cs = new List<string>();
             for (int i = 0; i < 4; i++)
-                if ((destMask & (1 << i)) != 0) cs.Add(op.Swizzle[i] >= Sw.Zero ? ConstOf(op.Swizzle[i], kind) : c);
+            {
+                if ((destMask & (1 << i)) != 0)
+                {
+                    cs.Add(op.Swizzle[i] >= Sw.Zero ? ConstOf(op.Swizzle[i], kind) : c);
+                }
+            }
+
             return ApplyModifiers(Compose(cs, kind), op.Flags);
         }
         if (op.Bank == Bank.Immediate || (!indexed && BankName(op.Bank) == ""))
         {
-            if (op.Bank != Bank.Immediate) Warnings.Add($"load from unsupported bank {op.Bank} register {op.Num}");
+            if (op.Bank != Bank.Immediate)
+            {
+                Warnings.Add($"load from unsupported bank {op.Bank} register {op.Num}");
+            }
+
             int imm = op.Bank == Bank.Immediate ? op.Num : 0;
             string c = kind switch { 'f' => F(imm), 'i' => imm.ToString(CultureInfo.InvariantCulture), _ => $"{(uint)imm}u" };
             var cs = new List<string>();
             for (int i = 0; i < 4; i++)
-                if ((destMask & (1 << i)) != 0) cs.Add(op.Swizzle[i] >= Sw.Zero ? ConstOf(op.Swizzle[i], kind) : c);
+            {
+                if ((destMask & (1 << i)) != 0)
+                {
+                    cs.Add(op.Swizzle[i] >= Sw.Zero ? ConstOf(op.Swizzle[i], kind) : c);
+                }
+            }
+
             return ApplyModifiers(Compose(cs, kind), op.Flags);
         }
 
@@ -368,25 +510,58 @@ public sealed partial class UsseTranslator
         int size = GxpProgram.TypeSize(op.Type);
         for (int i = 0; i < 4; i++)
         {
-            if ((destMask & (1 << i)) == 0) continue;
+            if ((destMask & (1 << i)) == 0)
+            {
+                continue;
+            }
+
             var sw = op.Swizzle[i];
-            if (sw >= Sw.Zero) { comps.Add(ConstOf(sw, kind)); continue; }
+            if (sw >= Sw.Zero)
+            {
+                comps.Add(ConstOf(sw, kind));
+                continue;
+            }
             int s = (int)sw;
             switch (op.Type)
             {
-                case DataType.F32: comps.Add(W(s)); break;
-                case DataType.UInt32: comps.Add($"floatBitsToUint({W(s)})"); break;
-                case DataType.Int32: comps.Add($"floatBitsToInt({W(s)})"); break;
-                case DataType.F16: comps.Add($"unpackHalf2x16(floatBitsToUint({W(s / 2)})).{Comps[s % 2]}"); break;
-                case DataType.UInt16: comps.Add($"bitfieldExtract(floatBitsToUint({W(s / 2)}), {16 * (s % 2)}, 16)"); break;
-                case DataType.Int16: comps.Add($"bitfieldExtract(floatBitsToInt({W(s / 2)}), {16 * (s % 2)}, 16)"); break;
-                case DataType.UInt8: case DataType.O8: comps.Add($"bitfieldExtract(floatBitsToUint({W(s / 4)}), {8 * (s % 4)}, 8)"); break;
-                case DataType.Int8: comps.Add($"bitfieldExtract(floatBitsToInt({W(s / 4)}), {8 * (s % 4)}, 8)"); break;
-                case DataType.C10: comps.Add($"unpackC10({W(s / 3)}).{Comps[s % 3]}"); break;
-                default: comps.Add(W(s)); break;
+                case DataType.F32:
+                    comps.Add(W(s));
+                    break;
+                case DataType.UInt32:
+                    comps.Add($"floatBitsToUint({W(s)})");
+                    break;
+                case DataType.Int32:
+                    comps.Add($"floatBitsToInt({W(s)})");
+                    break;
+                case DataType.F16:
+                    comps.Add($"unpackHalf2x16(floatBitsToUint({W(s / 2)})).{Comps[s % 2]}");
+                    break;
+                case DataType.UInt16:
+                    comps.Add($"bitfieldExtract(floatBitsToUint({W(s / 2)}), {16 * (s % 2)}, 16)");
+                    break;
+                case DataType.Int16:
+                    comps.Add($"bitfieldExtract(floatBitsToInt({W(s / 2)}), {16 * (s % 2)}, 16)");
+                    break;
+                case DataType.UInt8:
+                case DataType.O8:
+                    comps.Add($"bitfieldExtract(floatBitsToUint({W(s / 4)}), {8 * (s % 4)}, 8)");
+                    break;
+                case DataType.Int8:
+                    comps.Add($"bitfieldExtract(floatBitsToInt({W(s / 4)}), {8 * (s % 4)}, 8)");
+                    break;
+                case DataType.C10:
+                    comps.Add($"unpackC10({W(s / 3)}).{Comps[s % 3]}");
+                    break;
+                default:
+                    comps.Add(W(s));
+                    break;
             }
         }
-        if (op.Type == DataType.O8) kind = 'u';
+        if (op.Type == DataType.O8)
+        {
+            kind = 'u';
+        }
+
         return ApplyModifiers(Compose(comps, kind), op.Flags);
     }
 
@@ -396,7 +571,11 @@ public sealed partial class UsseTranslator
     /// <summary>Port of Vita3K utils::store.</summary>
     public void Store(Operand dest, Val v, int destMask, int off = 0)
     {
-        if (destMask == 0) return;
+        if (destMask == 0)
+        {
+            return;
+        }
+
         if (dest.Bank == Bank.Predicate)
         {
             Line($"p[{dest.Num}] = {(v.K == 'b' ? Comp(v, 0) : $"({Comp(v, 0)} != {(v.K == 'f' ? "0.0" : v.K == 'u' ? "0u" : "0")})")};");
@@ -411,7 +590,11 @@ public sealed partial class UsseTranslator
             int sz = GxpProgram.TypeSize(dest.Type);
             e = $"({e} & {(!GxpProgram.IsFloat(dest.Type) && sz == 1 ? 0xFF : 0xFFFF)})";
             // only the two index registers (1 and 2) exist: a write to another number changes nothing
-            if (dest.Num is not (1 or 2)) { Warnings.Add($"write to index register {dest.Num} (dropped)"); return; }
+            if (dest.Num is not (1 or 2))
+            {
+                Warnings.Add($"write to index register {dest.Num} (dropped)");
+                return;
+            }
             Line($"idx[{dest.Num - 1}] = {e};");
             return;
         }
@@ -462,9 +645,16 @@ public sealed partial class UsseTranslator
             case DataType.Int32:
                 for (int i = 0; i < 4; i++)
                 {
-                    if ((destMask & (1 << i)) == 0) continue;
+                    if ((destMask & (1 << i)) == 0)
+                    {
+                        continue;
+                    }
+
                     AssignWord(bank, dynBase, baseWord, i, AsF32Bits(NextSrc()));
-                    if (dynBase == null) _wordType[(bank, baseWord + i)] = dest.Type;
+                    if (dynBase == null)
+                    {
+                        _wordType[(bank, baseWord + i)] = dest.Type;
+                    }
                 }
                 return;
             default:
@@ -474,16 +664,37 @@ public sealed partial class UsseTranslator
                 for (int word = 0; word * n < 4; word++)
                 {
                     int any = 0;
-                    for (int j = 0; j < n && word * n + j < 4; j++) if ((destMask & (1 << (word * n + j))) != 0) any = 1;
-                    if (any == 0) continue;
+                    for (int j = 0; j < n && word * n + j < 4; j++)
+                    {
+                        if ((destMask & (1 << (word * n + j))) != 0)
+                        {
+                            any = 1;
+                        }
+                    }
+
+                    if (any == 0)
+                    {
+                        continue;
+                    }
+
                     string w = W(word);
-                    if (dynBase == null) _wordType[(bank, baseWord + word)] = dest.Type;
+                    if (dynBase == null)
+                    {
+                        _wordType[(bank, baseWord + word)] = dest.Type;
+                    }
+
                     if (dest.Type == DataType.F16)
                     {
                         string t = Tmp();
                         Line($"vec2 {t} = unpackHalf2x16(floatBitsToUint({w}));");
                         for (int j = 0; j < 2; j++)
-                            if ((destMask & (1 << (word * 2 + j))) != 0) Line($"{t}.{Comps[j]} = {AsF(NextSrc())};");
+                        {
+                            if ((destMask & (1 << (word * 2 + j))) != 0)
+                            {
+                                Line($"{t}.{Comps[j]} = {AsF(NextSrc())};");
+                            }
+                        }
+
                         AssignWord(bank, dynBase, baseWord, word, $"uintBitsToFloat(packHalf2x16({t}))");
                     }
                     else if (dest.Type == DataType.C10)
@@ -491,7 +702,13 @@ public sealed partial class UsseTranslator
                         string t = Tmp();
                         Line($"vec3 {t} = unpackC10({w});");
                         for (int j = 0; j < 3; j++)
-                            if ((destMask & (1 << (word * 3 + j))) != 0) Line($"{t}.{Comps[j]} = {AsF(NextSrc())};");
+                        {
+                            if ((destMask & (1 << (word * 3 + j))) != 0)
+                            {
+                                Line($"{t}.{Comps[j]} = {AsF(NextSrc())};");
+                            }
+                        }
+
                         AssignWord(bank, dynBase, baseWord, word, $"packC10({t})");
                     }
                     else
@@ -500,7 +717,11 @@ public sealed partial class UsseTranslator
                         Line($"uint {t} = floatBitsToUint({w});");
                         for (int j = 0; j < n; j++)
                         {
-                            if ((destMask & (1 << (word * n + j))) == 0) continue;
+                            if ((destMask & (1 << (word * n + j))) == 0)
+                            {
+                                continue;
+                            }
+
                             string src = GxpProgram.IsSigned(dest.Type) ? $"uint({AsI(NextSrc())})" : AsU(NextSrc());
                             Line($"{t} = bitfieldInsert({t}, {src}, {j * bits}, {bits});");
                         }
@@ -530,20 +751,31 @@ public sealed partial class UsseTranslator
 
     public Val ToFloat(Val v, DataType type, bool normalize)
     {
-        if (v.K == 'f') return v;
+        if (v.K == 'f')
+        {
+            return v;
+        }
+
         string t = v.N == 1 ? "float" : $"vec{v.N}";
         string e = $"{t}({v.E})";
         if (normalize)
         {
             e = $"({e} / {Splat(F(IntNormRange(type)), v.N, 'f')})";
-            if (v.K == 'i') e = $"max({e}, {Splat(F(type == DataType.C10 ? -2f : -1f), v.N, 'f')})";
+            if (v.K == 'i')
+            {
+                e = $"max({e}, {Splat(F(type == DataType.C10 ? -2f : -1f), v.N, 'f')})";
+            }
         }
         return new Val(e, 'f', v.N);
     }
 
     public Val ToInt(Val v, DataType type, bool normalize)
     {
-        if (v.K is 'i' or 'u') return v;
+        if (v.K is 'i' or 'u')
+        {
+            return v;
+        }
+
         bool uns = GxpProgram.IsUnsigned(type) || type == DataType.O8;
         string e = v.E;
         if (normalize)
@@ -567,7 +799,11 @@ public sealed partial class UsseTranslator
         if (r.Bank == Bank.Temp && r.Num >= limit)
         {
             r.Num -= limit;
-            if (dbl) r.Num >>= 1;
+            if (dbl)
+            {
+                r.Num >>= 1;
+            }
+
             r.Bank = Bank.FpInternal;
         }
     }
@@ -577,16 +813,28 @@ public sealed partial class UsseTranslator
         CheckRegInternal(ref r, dbl, regBits);
         if (r.Bank == Bank.Special)
         {
-            if ((r.Num & 0x40) != 0) { r.Num &= ~0x40; r.Bank = Bank.Global; }
-            else r.Bank = Bank.FpConstant;
+            if ((r.Num & 0x40) != 0)
+            {
+                r.Num &= ~0x40;
+                r.Bank = Bank.Global;
+            }
+            else
+            {
+                r.Bank = Bank.FpConstant;
+            }
         }
         if (r.Bank != Bank.FpInternal && r.Bank != Bank.FpConstant && r.Bank != Bank.Immediate && SecondProgram)
+        {
             r.Bank = Bank.SecAttr;
+        }
     }
 
     static void DoubleReg(ref int num, Bank b)
     {
-        if (b != Bank.Special && b != Bank.Immediate) num = (num << 1) & 0xFF;
+        if (b != Bank.Special && b != Bank.Immediate)
+        {
+            num = (num << 1) & 0xFF;
+        }
     }
 
     Operand DecodeDest(int index, uint n, uint bank, bool ext, bool dbl, int regBits)
@@ -596,7 +844,11 @@ public sealed partial class UsseTranslator
         o.Bank = ext
             ? bank switch { 0 => Bank.SecAttr, 1 => Bank.Special, 2 => Bank.Index, _ => Bank.Indexed2 }
             : bank switch { 0 => Bank.Temp, 1 => Bank.Output, 2 => Bank.PrimAttr, _ => Bank.Indexed1 };
-        if (dbl) DoubleReg(ref o.Num, o.Bank);
+        if (dbl)
+        {
+            DoubleReg(ref o.Num, o.Bank);
+        }
+
         FinalizeRegister(ref o, dbl, regBits);
         return o;
     }
@@ -608,7 +860,11 @@ public sealed partial class UsseTranslator
         o.Bank = ext
             ? bank switch { 0 => Bank.Indexed1, 1 => Bank.Special, 2 => Bank.Immediate, _ => Bank.Indexed2 }
             : bank switch { 0 => Bank.Temp, 1 => Bank.Output, 2 => Bank.PrimAttr, _ => Bank.SecAttr };
-        if (dbl) DoubleReg(ref o.Num, o.Bank);
+        if (dbl)
+        {
+            DoubleReg(ref o.Num, o.Bank);
+        }
+
         FinalizeRegister(ref o, dbl, regBits);
         return o;
     }
@@ -618,7 +874,11 @@ public sealed partial class UsseTranslator
         var o = Operand.Make(index);
         o.Num = (int)n;
         o.Bank = ext ? (bank == 0 ? Bank.Output : Bank.SecAttr) : (bank == 0 ? Bank.Temp : Bank.PrimAttr);
-        if (dbl) DoubleReg(ref o.Num, o.Bank);
+        if (dbl)
+        {
+            DoubleReg(ref o.Num, o.Bank);
+        }
+
         FinalizeRegister(ref o, dbl, regBits);
         return o;
     }
@@ -626,14 +886,29 @@ public sealed partial class UsseTranslator
     static int DecodeWriteMask(Bank destBank, int mask, bool f16)
     {
         bool f16CanNormal = destBank is not (Bank.PrimAttr or Bank.SecAttr or Bank.Output or Bank.FpInternal or Bank.Temp);
-        if (destBank == Bank.FpInternal || (f16 && f16CanNormal)) return mask;
+        if (destBank == Bank.FpInternal || (f16 && f16CanNormal))
+        {
+            return mask;
+        }
+
         int nm = 0;
         if (f16)
         {
-            if ((mask & 1) != 0) nm |= 0b11;
-            if ((mask & 4) != 0) nm |= 0b1100;
+            if ((mask & 1) != 0)
+            {
+                nm |= 0b11;
+            }
+
+            if ((mask & 4) != 0)
+            {
+                nm |= 0b1100;
+            }
         }
-        else nm = mask & 0b11;
+        else
+        {
+            nm = mask & 0b11;
+        }
+
         return nm;
     }
 
@@ -696,18 +971,38 @@ public sealed partial class UsseTranslator
     int RepeatOffset(in Operand op, int idx, RepeatMode mode)
     {
         if (mode is RepeatMode.Internal or RepeatMode.Both)
-            if (op.Bank == Bank.FpInternal) return idx;
-        if ((op.Flags & OpFlags.Gpi) != 0) return 0;
-        if (mode == RepeatMode.Both) return op.Bank == Bank.FpInternal ? idx : idx * 4;
+        {
+            if (op.Bank == Bank.FpInternal)
+            {
+                return idx;
+            }
+        }
+
+        if ((op.Flags & OpFlags.Gpi) != 0)
+        {
+            return 0;
+        }
+
+        if (mode == RepeatMode.Both)
+        {
+            return op.Bank == Bank.FpInternal ? idx : idx * 4;
+        }
         // an internal register named through the temporary bank (the top temp numbers, see CheckRegInternal) is an
         // external operand: it advances one register per repeat. Silent Hill: Book of Memories' lighting vertex programs
         // compute two light vectors with one repeated VMAD into fi1/fi2 (only fi1 written: the second light read garbage)
-        if (mode == RepeatMode.External) return op.Bank == Bank.FpInternal ? idx : idx * 4;
+        if (mode == RepeatMode.External)
+        {
+            return op.Bank == Bank.FpInternal ? idx : idx * 4;
+        }
+
         if (mode == RepeatMode.Slmsi)
         {
             int inc = _repeatIncrease[op.Index, Math.Min(idx, 16)];
             if (op.Bank is >= Bank.Temp and <= Bank.SecAttr or Bank.Predicate or Bank.Indexed1 or Bank.Indexed2)
+            {
                 inc *= _repeatMultiplier[op.Index];
+            }
+
             return inc;
         }
         return 0;

@@ -17,10 +17,15 @@ public sealed class AstcTests(ITestOutputHelper output)
     {
         var rng = new Random(1);
         foreach (int levels in AllLevels)
+        {
             for (int count = 1; count <= 12; count++)
             {
                 var values = new int[count];
-                for (int i = 0; i < count; i++) values[i] = rng.Next(levels);
+                for (int i = 0; i < count; i++)
+                {
+                    values[i] = rng.Next(levels);
+                }
+
                 var bits = new Bits128();
                 Ise.Encode(ref bits, 5, values, levels);
                 var back = new int[count];
@@ -30,6 +35,7 @@ public sealed class AstcTests(ITestOutputHelper output)
                 int end = 5 + Ise.BitCount(count, levels);
                 Assert.Equal(0u, bits.Read(end, Math.Min(32, 128 - end)));
             }
+        }
     }
 
     [Fact]
@@ -41,7 +47,10 @@ public sealed class AstcTests(ITestOutputHelper output)
             Assert.Equal(levels, t.Unquant.Distinct().Count());
             Assert.Contains(0, t.Unquant);
             Assert.Contains(255, t.Unquant);
-            for (int x = 0; x < 256; x++) Assert.InRange(Math.Abs(t.Unquant[t.Quantize[x]] - x), 0, 256 / (levels - 1) + 1);
+            for (int x = 0; x < 256; x++)
+            {
+                Assert.InRange(Math.Abs(t.Unquant[t.Quantize[x]] - x), 0, 256 / (levels - 1) + 1);
+            }
         }
         // the decoder's choice of endpoint range for the bits that are left (RGB, 8 weight levels: 8-bit endpoints;
         // RGBA, 8 levels: the 192-level trit range)
@@ -63,7 +72,13 @@ public sealed class AstcTests(ITestOutputHelper output)
     public void UniformBlocksAreExactVoidExtents()
     {
         var img = new byte[8 * 8 * 4];
-        for (int i = 0; i < 64; i++) { img[i * 4] = 12; img[i * 4 + 1] = 200; img[i * 4 + 2] = 99; img[i * 4 + 3] = 7; }
+        for (int i = 0; i < 64; i++)
+        {
+            img[i * 4] = 12;
+            img[i * 4 + 1] = 200;
+            img[i * 4 + 2] = 99;
+            img[i * 4 + 3] = 7;
+        }
         var blocks = new byte[4 * 16];
         AstcEncoder.Encode(img, 8, 8, blocks, AstcChannels.Rgba);
         Assert.Equal(0xFCu, blocks[0]);
@@ -76,6 +91,7 @@ public sealed class AstcTests(ITestOutputHelper output)
     {
         var img = new byte[w * h * 4];
         for (int y = 0; y < h; y++)
+        {
             for (int x = 0; x < w; x++)
             {
                 int o = (y * w + x) * 4;
@@ -84,6 +100,8 @@ public sealed class AstcTests(ITestOutputHelper output)
                 img[o + 2] = (byte)((x + y) * 255 / (w + h - 2));
                 img[o + 3] = 255;
             }
+        }
+
         return img;
     }
 
@@ -93,6 +111,7 @@ public sealed class AstcTests(ITestOutputHelper output)
         var rng = new Random(seed);
         var img = new byte[w * h * 4];
         for (int y = 0; y < h; y++)
+        {
             for (int x = 0; x < w; x++)
             {
                 int o = (y * w + x) * 4;
@@ -103,6 +122,8 @@ public sealed class AstcTests(ITestOutputHelper output)
                 img[o + 2] = (byte)Math.Clamp(90 + 80 * Math.Sin(fx * fy * 20) + rng.Next(-6, 7), 0, 255);
                 img[o + 3] = alpha ? (byte)Math.Clamp(255 * (0.5 + 0.5 * Math.Cos(fx * 13)) + rng.Next(-4, 5), 0, 255) : (byte)255;
             }
+        }
+
         return img;
     }
 
@@ -112,19 +133,28 @@ public sealed class AstcTests(ITestOutputHelper output)
         var rng = new Random(seed);
         var img = new byte[w * h * 4];
         for (int by = 0; by < h; by += 4)
+        {
             for (int bx = 0; bx < w; bx += 4)
             {
                 var c0 = new int[] { rng.Next(256), rng.Next(256), rng.Next(256) };
                 var c1 = new int[] { Math.Clamp(c0[0] + rng.Next(-60, 61), 0, 255), Math.Clamp(c0[1] + rng.Next(-60, 61), 0, 255), Math.Clamp(c0[2] + rng.Next(-60, 61), 0, 255) };
                 int a0 = rng.Next(256), a1 = rng.Next(256);
                 for (int y = by; y < Math.Min(by + 4, h); y++)
+                {
                     for (int x = bx; x < Math.Min(bx + 4, w); x++)
                     {
                         int k = rng.Next(4), ka = rng.Next(8), o = (y * w + x) * 4;
-                        for (int c = 0; c < 3; c++) img[o + c] = (byte)((c0[c] * (3 - k) + c1[c] * k + 1) / 3);
+                        for (int c = 0; c < 3; c++)
+                        {
+                            img[o + c] = (byte)((c0[c] * (3 - k) + c1[c] * k + 1) / 3);
+                        }
+
                         img[o + 3] = alpha ? (byte)((a0 * (7 - ka) + a1 * ka + 3) / 7) : (byte)255;
                     }
+                }
             }
+        }
+
         return img;
     }
 
@@ -136,8 +166,26 @@ public sealed class AstcTests(ITestOutputHelper output)
         mtexelsPerSecond = w * h / sw.Elapsed.TotalSeconds / 1e6;
         var back = new byte[img.Length];
         AstcDecoder.Decode(blocks, w, h, back);
-        if (ch == AstcChannels.R) for (int i = 0; i < back.Length; i += 4) { back[i + 1] = img[i + 1]; back[i + 2] = img[i + 2]; back[i + 3] = img[i + 3]; }
-        if (ch == AstcChannels.Rg) for (int i = 0; i < back.Length; i += 4) { back[i + 1] = back[i + 3]; back[i + 2] = img[i + 2]; back[i + 3] = img[i + 3]; }
+        if (ch == AstcChannels.R)
+        {
+            for (int i = 0; i < back.Length; i += 4)
+            {
+                back[i + 1] = img[i + 1];
+                back[i + 2] = img[i + 2];
+                back[i + 3] = img[i + 3];
+            }
+        }
+
+        if (ch == AstcChannels.Rg)
+        {
+            for (int i = 0; i < back.Length; i += 4)
+            {
+                back[i + 1] = back[i + 3];
+                back[i + 2] = img[i + 2];
+                back[i + 3] = img[i + 3];
+            }
+        }
+
         return AstcDecoder.Psnr(img, back, mask);
     }
 
@@ -152,7 +200,14 @@ public sealed class AstcTests(ITestOutputHelper output)
     public void RoundTripQuality(string name, int kind, AstcChannels ch, int mask, double minPsnr)
     {
         const int w = 128, h = 128;
-        var img = kind switch { 0 => Gradient(w, h), 2 => Textured(w, h, true, 3), 5 => BcLike(w, h, false, 5), 6 => BcLike(w, h, true, 6), _ => Textured(w, h, false, kind) };
+        var img = kind switch
+        {
+            0 => Gradient(w, h),
+            2 => Textured(w, h, true, 3),
+            5 => BcLike(w, h, false, 5),
+            6 => BcLike(w, h, true, 6),
+            _ => Textured(w, h, false, kind)
+        };
         double psnr = RoundTrip(img, w, h, ch, mask, out double speed);
         output.WriteLine($"{name}: PSNR {psnr:F2} dB, {speed:F2} M texels/s (one thread)");
         Assert.True(psnr >= minPsnr, $"{name}: PSNR {psnr:F2} dB < {minPsnr}");
@@ -182,7 +237,11 @@ public sealed class AstcTests(ITestOutputHelper output)
         {
             var big = Gradient(64, 64);
             var img = new byte[w * h * 4];
-            for (int y = 0; y < h; y++) big.AsSpan(y * 64 * 4, w * 4).CopyTo(img.AsSpan(y * w * 4));
+            for (int y = 0; y < h; y++)
+            {
+                big.AsSpan(y * 64 * 4, w * 4).CopyTo(img.AsSpan(y * w * 4));
+            }
+
             double psnr = RoundTrip(img, w, h, AstcChannels.Rgba, 0xF, out _);
             Assert.True(psnr >= 30, $"{w}x{h}: {psnr:F1} dB");
         }
@@ -214,6 +273,9 @@ public sealed class AstcTests(ITestOutputHelper output)
             Assert.True(cache.Bytes <= 1 << 20);
             Assert.True(cache.Evictions >= 1);
         }
-        finally { Directory.Delete(dir, true); }
+        finally
+        {
+            Directory.Delete(dir, true);
+        }
     }
 }

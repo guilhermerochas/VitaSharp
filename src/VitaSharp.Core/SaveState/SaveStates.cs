@@ -30,9 +30,19 @@ public static class SaveStates
     static void CheckSystem(Emulator emu)
     {
         if (emu.Parent != null || emu.Vita.Processes.Count != 1)
+        {
             throw new SnapshotException("save states support a game run directly (one process); running under the Vita shell is not supported yet");
-        if (emu.MainModule == null || !emu.Running) throw new SnapshotException("no game is running");
-        if (emu.Execing || emu.ExecRequest != null) throw new SnapshotException("the game is restarting (LoadExec)");
+        }
+
+        if (emu.MainModule == null || !emu.Running)
+        {
+            throw new SnapshotException("no game is running");
+        }
+
+        if (emu.Execing || emu.ExecRequest != null)
+        {
+            throw new SnapshotException("the game is restarting (LoadExec)");
+        }
     }
 
     // ------------------------------------------------------------------ save
@@ -46,7 +56,10 @@ public static class SaveStates
     /// </summary>
     public static SaveStateHeader Save(Emulator emu, string path, byte[]? thumbnailPng = null, int timeoutMs = 3000)
     {
-        lock (Gate) return SaveLocked(emu, path, thumbnailPng, timeoutMs);
+        lock (Gate)
+        {
+            return SaveLocked(emu, path, thumbnailPng, timeoutMs);
+        }
     }
 
     /// <summary>One save or load at a time: the Gravar tudo pre-roll saves every 30 s on its own thread, and one that ran
@@ -67,9 +80,17 @@ public static class SaveStates
         {
             while (true)
             {
-                if (EmulationPause.IsPaused) EmulationPause.Resume("save state");
+                if (EmulationPause.IsPaused)
+                {
+                    EmulationPause.Resume("save state");
+                }
+
                 string? why = HoldBetweenScenes(emu, held, sw, timeoutMs);
-                if (why != null) throw new SnapshotException($"not at a safe point: {why}");
+                if (why != null)
+                {
+                    throw new SnapshotException($"not at a safe point: {why}");
+                }
+
                 EmulationPause.Pause("save state", @internal: true);
                 why = SafePointProblems(emu, out var kinds);
                 if (why == null)
@@ -78,41 +99,83 @@ public static class SaveStates
                     var seq = kinds.Keys.ToDictionary(t => t, t => t.HleSequence);
                     SaveStateHeader? header = null;
                     List<(string Name, byte[] Data)>? sections = null;
-                    try { (header, sections) = Capture(emu, kinds, thumbnailPng); }
-                    catch (SnapshotRetryException e) { why = e.Message; }
+                    try
+                    {
+                        (header, sections) = Capture(emu, kinds, thumbnailPng);
+                    }
+                    catch (SnapshotRetryException e)
+                    {
+                        why = e.Message;
+                    }
                     if (header != null)
                     {
                         why = SafePointProblems(emu, out var after);
                         if (why == null && seq.Any(p => p.Key.HleSequence != p.Value || after.GetValueOrDefault(p.Key) != kinds[p.Key]))
+                        {
                             why = "a thread woke up while the state was taken";
+                        }
+
                         if (why == null)
                         {
                             long pausedMs = sw.ElapsedMilliseconds;
                             // the game goes on while the file is compressed and written
-                            if (!wasPaused) EmulationPause.Resume("save state");
-                            foreach (var t in held) t.HoldForSave(false);
+                            if (!wasPaused)
+                            {
+                                EmulationPause.Resume("save state");
+                            }
+
+                            foreach (var t in held)
+                            {
+                                t.HoldForSave(false);
+                            }
+
                             held.Clear();
                             Directory.CreateDirectory(Path.GetDirectoryName(Path.GetFullPath(path))!);
                             using (var f = File.Create(tmp))
                             using (var w = new SaveStateWriter(f, header))
-                                foreach (var (name, data) in sections!) w.Section(name, data);
+                            {
+                                foreach (var (name, data) in sections!)
+                                {
+                                    w.Section(name, data);
+                                }
+                            }
+
                             File.Move(tmp, path, overwrite: true);
                             Log.Info($"Save state: {path} written in {sw.ElapsedMilliseconds} ms ({pausedMs} ms with the game stopped; {new FileInfo(path).Length / 1024} KB, {kinds.Count} threads)");
                             return header;
                         }
                     }
                 }
-                if (sw.ElapsedMilliseconds > timeoutMs) throw new SnapshotException($"not at a safe point: {why}");
+                if (sw.ElapsedMilliseconds > timeoutMs)
+                {
+                    throw new SnapshotException($"not at a safe point: {why}");
+                }
+
                 Log.Info($"Save state: not at a safe point ({why}), retrying");
             }
         }
         finally
         {
-            try { File.Delete(tmp); } catch (IOException) { }
+            try
+            {
+                File.Delete(tmp);
+            }
+            catch (IOException) { }
             // always back to how the player left it, also when the state could not be taken (a hung game): the
             // internal pause never stays
-            if (wasPaused) EmulationPause.Pause("save state"); else EmulationPause.Resume("save state");
-            foreach (var t in held) t.HoldForSave(false);
+            if (wasPaused)
+            {
+                EmulationPause.Pause("save state");
+            }
+            else
+            {
+                EmulationPause.Resume("save state");
+            }
+
+            foreach (var t in held)
+            {
+                t.HoldForSave(false);
+            }
         }
     }
 
@@ -128,14 +191,29 @@ public static class SaveStates
         {
             if (held.Count == 0)
             {
-                for (int i = 0; i < 400 && emu.OpenSceneThread != null; i++) Thread.Sleep(1);
+                for (int i = 0; i < 400 && emu.OpenSceneThread != null; i++)
+                {
+                    Thread.Sleep(1);
+                }
+
                 held.AddRange(Hold(emu));
             }
             why = WaitForSafePoint(emu, 300, out _);
-            if (why == null) return null;
-            if (emu.OpenSceneThread == null && !why.Contains("GPU scene", StringComparison.Ordinal)) continue;
+            if (why == null)
+            {
+                return null;
+            }
+
+            if (emu.OpenSceneThread == null && !why.Contains("GPU scene", StringComparison.Ordinal))
+            {
+                continue;
+            }
             // a scene stays open: let every thread run, then hold again between two scenes
-            foreach (var t in held) t.HoldForSave(false);
+            foreach (var t in held)
+            {
+                t.HoldForSave(false);
+            }
+
             held.Clear();
             Thread.Sleep(5);
         }
@@ -155,10 +233,22 @@ public static class SaveStates
             var held = new List<GuestThread>();
             try
             {
-                if (wasPaused) EmulationPause.Resume("GPU backend swap");
-                if (HoldBetweenScenes(emu, held, Stopwatch.StartNew(), timeoutMs) is { } why) return why;
+                if (wasPaused)
+                {
+                    EmulationPause.Resume("GPU backend swap");
+                }
+
+                if (HoldBetweenScenes(emu, held, Stopwatch.StartNew(), timeoutMs) is { } why)
+                {
+                    return why;
+                }
+
                 EmulationPause.Pause("GPU backend swap", @internal: true);
-                if (emu.OpenSceneThread is { } scene) return $"thread '{scene.Name}' is finishing a GPU scene";
+                if (emu.OpenSceneThread is { } scene)
+                {
+                    return $"thread '{scene.Name}' is finishing a GPU scene";
+                }
+
                 var t0 = Stopwatch.GetTimestamp();
                 emu.Gpu.WaitIdle();
                 emu.Gpu.ReplaceBackend(factory, sameTitle: true);
@@ -167,8 +257,19 @@ public static class SaveStates
             }
             finally
             {
-                if (wasPaused) EmulationPause.Pause("GPU backend swap"); else EmulationPause.Resume("GPU backend swap");
-                foreach (var t in held) t.HoldForSave(false);
+                if (wasPaused)
+                {
+                    EmulationPause.Pause("GPU backend swap");
+                }
+                else
+                {
+                    EmulationPause.Resume("GPU backend swap");
+                }
+
+                foreach (var t in held)
+                {
+                    t.HoldForSave(false);
+                }
             }
         }
     }
@@ -177,7 +278,11 @@ public static class SaveStates
     static List<GuestThread> Hold(Emulator emu)
     {
         var held = emu.Kernel.Threads.Where(t => t.HostBody == null).ToList();
-        foreach (var t in held) t.HoldForSave(true);
+        foreach (var t in held)
+        {
+            t.HoldForSave(true);
+        }
+
         return held;
     }
 
@@ -190,12 +295,20 @@ public static class SaveStates
             string name = m.GetType().Name;
             if (m is ISnapshotState s)
             {
-                if (s.CheckSnapshot() is { } problem) problems.Add($"module {name}: {problem}");
+                if (s.CheckSnapshot() is { } problem)
+                {
+                    problems.Add($"module {name}: {problem}");
+                }
             }
             else if (SnapshotSchema.IsStateful(m.GetType()) && emu.Hle.WasUsed(m))
+            {
                 problems.Add($"module {name}: its state is not supported by save states yet");
+            }
         }
-        if (problems.Count > 0) throw new SnapshotException(string.Join("; ", problems));
+        if (problems.Count > 0)
+        {
+            throw new SnapshotException(string.Join("; ", problems));
+        }
     }
 
     static string? WaitForSafePoint(Emulator emu, int ms, out Dictionary<GuestThread, GuestThread.SafeKind> kinds)
@@ -204,7 +317,11 @@ public static class SaveStates
         while (true)
         {
             string? why = SafePointProblems(emu, out kinds);
-            if (why == null || Environment.TickCount64 > until) return why;
+            if (why == null || Environment.TickCount64 > until)
+            {
+                return why;
+            }
+
             Thread.Sleep(1);
         }
     }
@@ -212,10 +329,18 @@ public static class SaveStates
     static string? SafePointProblems(Emulator emu, out Dictionary<GuestThread, GuestThread.SafeKind> kinds)
     {
         kinds = new();
-        if (emu.OpenSceneThread is { } scene) return $"thread '{scene.Name}' is finishing a GPU scene";
+        if (emu.OpenSceneThread is { } scene)
+        {
+            return $"thread '{scene.Name}' is finishing a GPU scene";
+        }
+
         foreach (var t in emu.Kernel.Threads)
         {
-            if (t.SafePointProblem(out var k) is { } why) return why;
+            if (t.SafePointProblem(out var k) is { } why)
+            {
+                return why;
+            }
+
             kinds[t] = k;
         }
         return null;
@@ -256,7 +381,11 @@ public static class SaveStates
         var used = new HashSet<string>();
         foreach (var m in emu.Hle.Modules)
         {
-            if (m is not ISnapshotState s) continue;
+            if (m is not ISnapshotState s)
+            {
+                continue;
+            }
+
             string name = ModuleKey(m, used);
             var mw = new SnapshotWriter();
             s.SaveState(mw);
@@ -282,7 +411,11 @@ public static class SaveStates
     static string ModuleKey(HleModule m, HashSet<string> used)
     {
         string name = m.GetType().Name;
-        for (int i = 2; !used.Add(name); i++) name = $"{m.GetType().Name}#{i}";
+        for (int i = 2; !used.Add(name); i++)
+        {
+            name = $"{m.GetType().Name}#{i}";
+        }
+
         return name;
     }
 
@@ -291,9 +424,18 @@ public static class SaveStates
     /// <summary>Reads the header of a state file and says whether it can be loaded into <paramref name="emu"/>.</summary>
     public static string? CheckFile(Emulator emu, string path)
     {
-        try { return SaveStateFile.Incompatibility(SaveStateFile.ReadHeader(path), emu.TitleId); }
-        catch (SnapshotException e) { return e.Message; }
-        catch (IOException e) { return e.Message; }
+        try
+        {
+            return SaveStateFile.Incompatibility(SaveStateFile.ReadHeader(path), emu.TitleId);
+        }
+        catch (SnapshotException e)
+        {
+            return e.Message;
+        }
+        catch (IOException e)
+        {
+            return e.Message;
+        }
     }
 
     /// <summary>
@@ -309,7 +451,11 @@ public static class SaveStates
             using var reader = new SaveStateReader(file);
             while (reader.Next(out var name, out _))
             {
-                if (name != ObjectsSection) continue;
+                if (name != ObjectsSection)
+                {
+                    continue;
+                }
+
                 var r = new SnapshotReader(reader.ReadAll());
                 r.ReadInt32();
                 int n = r.ReadInt32();
@@ -319,9 +465,13 @@ public static class SaveStates
                     string kind = r.ReadStringNotNull();
                     int uid = r.ReadInt32();
                     r.ReadStringNotNull();
-                    r.ReadInt32(); r.ReadInt32();
+                    r.ReadInt32();
+                    r.ReadInt32();
                     var b = r.ReadBlock();
-                    if (kind == KernelSnapshot.Module && (first == null || uid < first.Value.Uid)) first = (uid, b.ReadStringNotNull());
+                    if (kind == KernelSnapshot.Module && (first == null || uid < first.Value.Uid))
+                    {
+                        first = (uid, b.ReadStringNotNull());
+                    }
                 }
                 return first?.Path;
             }
@@ -341,24 +491,43 @@ public static class SaveStates
     public static bool SwitchProgramFor(Emulator emu, string path, Action<string>? status = null, int frames = 120, int timeoutMs = 60_000)
     {
         if (ProgramOf(path) is not { } program || emu.MainModule == null
-            || string.Equals(program, emu.MainModule.Path, StringComparison.OrdinalIgnoreCase)) return false;
+            || string.Equals(program, emu.MainModule.Path, StringComparison.OrdinalIgnoreCase))
+        {
+            return false;
+        }
+
         if (!program.StartsWith("app0:", StringComparison.OrdinalIgnoreCase))
+        {
             throw new SnapshotException($"the state was saved in {program}, which cannot be started here");
+        }
+
         CheckSystem(emu);
-        if (SaveStateFile.Incompatibility(SaveStateFile.ReadHeader(path), emu.TitleId) is { } why) throw new SaveStateIncompatibleException(why);
+        if (SaveStateFile.Incompatibility(SaveStateFile.ReadHeader(path), emu.TitleId) is { } why)
+        {
+            throw new SaveStateIncompatibleException(why);
+        }
+
         Log.Info($"Load state: the state was saved in {program}, {emu.MainModule.Path} is running: LoadExec {program} first");
         status?.Invoke($"Abrindo {program[5..].TrimStart('/')} para carregar o estado...");
         emu.RequestExec(program, []);
         var until = Environment.TickCount64 + timeoutMs;
         while (emu.ExecRequest != null || emu.Execing || !emu.Running || emu.MainModule == null)
         {
-            if (Environment.TickCount64 > until) throw new SnapshotException($"{program} did not start in time");
+            if (Environment.TickCount64 > until)
+            {
+                throw new SnapshotException($"{program} did not start in time");
+            }
+
             Thread.Sleep(10);
         }
         long start = Hle.Modules.Display.FramesPresented;
         while (Hle.Modules.Display.FramesPresented < start + frames)
         {
-            if (Environment.TickCount64 > until) throw new SnapshotException($"{program} did not present {frames} frames in time");
+            if (Environment.TickCount64 > until)
+            {
+                throw new SnapshotException($"{program} did not present {frames} frames in time");
+            }
+
             Thread.Sleep(10);
         }
         return true;
@@ -373,7 +542,11 @@ public static class SaveStates
     /// </summary>
     public static void Load(Emulator emu, string path, Func<Gpu.IGpuBackend?>? backendFactory = null)
     {
-        lock (Gate) LoadLocked(emu, path, backendFactory);
+        lock (Gate)
+        {
+            LoadLocked(emu, path, backendFactory);
+        }
+
         Loaded?.Invoke(emu);
     }
 
@@ -387,27 +560,44 @@ public static class SaveStates
         using (var reader = new SaveStateReader(file))
         {
             header = reader.Header;
-            if (SaveStateFile.Incompatibility(header, emu.TitleId) is { } why) throw new SaveStateIncompatibleException(why);
+            if (SaveStateFile.Incompatibility(header, emu.TitleId) is { } why)
+            {
+                throw new SaveStateIncompatibleException(why);
+            }
             // decompressed while the game still runs
-            while (reader.Next(out var name, out _)) sections.Add((name, reader.ReadAll()));
+            while (reader.Next(out var name, out _))
+            {
+                sections.Add((name, reader.ReadAll()));
+            }
         }
         long readMs = sw.ElapsedMilliseconds;
         foreach (var m in emu.Hle.Modules)
+        {
             if (m is not ISnapshotState && SnapshotSchema.IsStateful(m.GetType()) && emu.Hle.WasUsed(m))
+            {
                 throw new SnapshotException($"module {m.GetType().Name} was used in this session and its state cannot be replaced; restart the game, then load the state");
+            }
+        }
 
         bool wasPaused = EmulationPause.IsPaused;
         var held = new List<GuestThread>();
         try
         {
             // module service threads finish what they are doing with the emulation running, then everything stops
-            if (wasPaused) EmulationPause.Resume("load state");
+            if (wasPaused)
+            {
+                EmulationPause.Resume("load state");
+            }
+
             HoldForLoad(emu, held);
             EmulationPause.Pause("load state", @internal: true);
             long t0 = sw.ElapsedMilliseconds;
             StopThreads(emu);
             Log.Info($"Load state: threads stopped in {sw.ElapsedMilliseconds - t0} ms");
-            try { StartRestored(LoadCore(emu, sections, backendFactory)); }
+            try
+            {
+                StartRestored(LoadCore(emu, sections, backendFactory));
+            }
             catch (Exception e) when (e is not SnapshotException)
             {
                 throw new SnapshotException($"loading the state failed ({e.Message}); restart the game");
@@ -420,8 +610,19 @@ public static class SaveStates
         }
         finally
         {
-            foreach (var t in held) t.HoldForSave(false);
-            if (!wasPaused) EmulationPause.Resume("load state"); else EmulationPause.Pause("load state");
+            foreach (var t in held)
+            {
+                t.HoldForSave(false);
+            }
+
+            if (!wasPaused)
+            {
+                EmulationPause.Resume("load state");
+            }
+            else
+            {
+                EmulationPause.Pause("load state");
+            }
         }
     }
 
@@ -438,7 +639,11 @@ public static class SaveStates
         {
             if (held.Count == 0)
             {
-                for (int i = 0; i < 400 && emu.OpenSceneThread != null; i++) Thread.Sleep(1);
+                for (int i = 0; i < 400 && emu.OpenSceneThread != null; i++)
+                {
+                    Thread.Sleep(1);
+                }
+
                 held.AddRange(Hold(emu));
             }
             string? busy = null;
@@ -447,15 +652,40 @@ public static class SaveStates
             {
                 busy = null;
                 foreach (var t in emu.Kernel.Threads)
-                    if (t.HostBody != null && t.IsLive && t.SafePointProblem(out _) is { } p) busy = p;
-                if (emu.OpenSceneThread is { } scene) busy = $"thread '{scene.Name}' is finishing a GPU scene";
-                if (busy == null) return;
+                {
+                    if (t.HostBody != null && t.IsLive && t.SafePointProblem(out _) is { } p)
+                    {
+                        busy = p;
+                    }
+                }
+
+                if (emu.OpenSceneThread is { } scene)
+                {
+                    busy = $"thread '{scene.Name}' is finishing a GPU scene";
+                }
+
+                if (busy == null)
+                {
+                    return;
+                }
+
                 Thread.Sleep(1);
             } while (Environment.TickCount64 < settle);
-            if (Environment.TickCount64 > until) throw new SnapshotException($"not at a safe point: {busy}");
-            if (emu.OpenSceneThread == null) continue;
+            if (Environment.TickCount64 > until)
+            {
+                throw new SnapshotException($"not at a safe point: {busy}");
+            }
+
+            if (emu.OpenSceneThread == null)
+            {
+                continue;
+            }
             // a scene stays open: let every thread run, then hold again between two scenes
-            foreach (var t in held) t.HoldForSave(false);
+            foreach (var t in held)
+            {
+                t.HoldForSave(false);
+            }
+
             held.Clear();
             Thread.Sleep(5);
         }
@@ -464,11 +694,19 @@ public static class SaveStates
     static void StopThreads(Emulator emu)
     {
         var stopping = emu.Kernel.Threads.Where(t => t.HostBody == null && t.IsLive).ToList();
-        foreach (var t in stopping) { t.RequestStop(); t.WakeFromSuspend(); }
+        foreach (var t in stopping)
+        {
+            t.RequestStop();
+            t.WakeFromSuspend();
+        }
         var deadline = Environment.TickCount64 + 5000;
         foreach (var t in stopping)
+        {
             if (!t.WaitForExit((int)Math.Max(1, deadline - Environment.TickCount64)))
+            {
                 throw new SnapshotException($"thread '{t.Name}' did not stop (in {t.WaitingOn}); restart the game");
+            }
+        }
     }
 
     /// <summary>
@@ -482,24 +720,52 @@ public static class SaveStates
         var waiting = restored.Where(t => t.ReissuesWait).ToList();
         var running = restored.Where(t => !t.ReissuesWait).ToList();
         bool order = waiting.Count > 0 && running.Count > 0;
-        if (order) foreach (var t in running) t.HoldForSave(true);
-        foreach (var t in restored) t.StartRestored();
-        if (!order) return;
+        if (order)
+        {
+            foreach (var t in running)
+            {
+                t.HoldForSave(true);
+            }
+        }
+
+        foreach (var t in restored)
+        {
+            t.StartRestored();
+        }
+
+        if (!order)
+        {
+            return;
+        }
         // the emulation is paused here: let only the waiting threads run until their waits are queued
         EmulationPause.Resume("load state: reissuing waits");
         var until = Environment.TickCount64 + 2000;
-        while (waiting.Any(t => !t.WaitReissued) && Environment.TickCount64 < until) Thread.Sleep(1);
+        while (waiting.Any(t => !t.WaitReissued) && Environment.TickCount64 < until)
+        {
+            Thread.Sleep(1);
+        }
+
         if (waiting.FirstOrDefault(t => !t.WaitReissued) is { } late)
+        {
             Log.Warn($"Load state: thread '{late.Name}' did not issue its wait again in time");
+        }
+
         EmulationPause.Pause("load state: reissuing waits", @internal: true);
-        foreach (var t in running) t.HoldForSave(false);
+        foreach (var t in running)
+        {
+            t.HoldForSave(false);
+        }
     }
 
     static List<GuestThread> LoadCore(Emulator emu, List<(string Name, byte[] Data)> list, Func<Gpu.IGpuBackend?>? backendFactory)
     {
         emu.Gpu.WaitIdle();
         var t0 = Stopwatch.GetTimestamp();
-        if (backendFactory != null) emu.Gpu.ReplaceBackend(backendFactory, sameTitle: true);
+        if (backendFactory != null)
+        {
+            emu.Gpu.ReplaceBackend(backendFactory, sameTitle: true);
+        }
+
         Log.Info($"Load state: GPU backend replaced in {Stopwatch.GetElapsedTime(t0).TotalMilliseconds:F0} ms");
         emu.Code.Clear();
         AudioDiagnostics.ProcessEnded();
@@ -509,23 +775,40 @@ public static class SaveStates
         foreach (var (name, data) in list)
         {
             if (name == BlocksSection)
+            {
                 blocks = emu.Memory.RestoreBlocks(GuestMemory.ReadBlockTable(new SnapshotReader(data))).ToDictionary(b => b.Address);
+            }
             else if (name.StartsWith(MemPrefix, StringComparison.Ordinal))
             {
                 uint addr = Convert.ToUInt32(name[MemPrefix.Length..], 16);
-                if (blocks == null || !blocks.TryGetValue(addr, out var b)) throw new SnapshotException($"memory block 0x{addr:X8} is missing from the block table");
+                if (blocks == null || !blocks.TryGetValue(addr, out var b))
+                {
+                    throw new SnapshotException($"memory block 0x{addr:X8} is missing from the block table");
+                }
+
                 emu.Memory.RestoreContents(b, data);
             }
-            else sections[name] = data;
+            else
+            {
+                sections[name] = data;
+            }
         }
-        if (blocks == null) throw new SnapshotException("the save state has no memory");
+        if (blocks == null)
+        {
+            throw new SnapshotException("the save state has no memory");
+        }
+
         byte[] Need(string n) => sections.GetValueOrDefault(n) ?? throw new SnapshotException($"the save state has no {n} section");
 
         var sys = new SnapshotReader(Need(SysSection));
         sys.ReadString();
         long clockUs = sys.ReadInt64();
         int pid = sys.ReadInt32(), appId = sys.ReadInt32();
-        if (pid != emu.Pid || appId != emu.AppId) throw new SnapshotException($"the process ids differ (saved 0x{pid:X}/0x{appId:X}, here 0x{emu.Pid:X}/0x{emu.AppId:X})");
+        if (pid != emu.Pid || appId != emu.AppId)
+        {
+            throw new SnapshotException($"the process ids differ (saved 0x{pid:X}/0x{appId:X}, here 0x{emu.Pid:X}/0x{emu.AppId:X})");
+        }
+
         int mainUid = sys.ReadInt32();
         (sys.ReadBytes() ?? []).CopyTo(emu.Vita.AppMgrState, 0);
         emu.BgmPriority = Math.Max(0, sys.ReadInt32());
@@ -544,13 +827,30 @@ public static class SaveStates
         var used = new HashSet<string>();
         foreach (var m in emu.Hle.Modules)
         {
-            if (m is not ISnapshotState s) continue;
+            if (m is not ISnapshotState s)
+            {
+                continue;
+            }
+
             string key = ModuleKey(m, used);
-            if (!sections.TryGetValue(ModulePrefix + key, out var data)) throw new SnapshotException($"module {key} has no state in the save state");
+            if (!sections.TryGetValue(ModulePrefix + key, out var data))
+            {
+                throw new SnapshotException($"module {key} has no state in the save state");
+            }
+
             var mr = new SnapshotReader(data) { Objects = emu.Kernel.Objects };
-            try { s.LoadState(mr); }
-            catch (SnapshotException e) { throw new SnapshotException($"module {key}: {e.Message}"); }
-            if (!mr.AtEnd) throw new SnapshotException($"module {key}: {mr.Remaining} bytes of its state were not read (layout mismatch)");
+            try
+            {
+                s.LoadState(mr);
+            }
+            catch (SnapshotException e)
+            {
+                throw new SnapshotException($"module {key}: {e.Message}");
+            }
+            if (!mr.AtEnd)
+            {
+                throw new SnapshotException($"module {key}: {mr.Remaining} bytes of its state were not read (layout mismatch)");
+            }
         }
         Scheduler.Reset();
         return restored;

@@ -47,17 +47,44 @@ public sealed class VirtualMotion
     long _lastUs = -1;
     Quaternion _pose = Quaternion.Identity;
 
-    public VirtualMotion(TiltSettings? settings = null) { if (settings != null) _settings = settings.Clone(); }
+    public VirtualMotion(TiltSettings? settings = null)
+    {
+        if (settings != null)
+        {
+            _settings = settings.Clone();
+        }
+    }
 
     public TiltSettings Settings
     {
-        get { lock (_lock) return _settings.Clone(); }
-        set { lock (_lock) _settings = value.Clone(); }
+        get
+        {
+            lock (_lock)
+            {
+                return _settings.Clone();
+            }
+        }
+        set
+        {
+            lock (_lock)
+            {
+                _settings = value.Clone();
+            }
+        }
     }
 
     /// <summary>True once any tilt control or mouse look was used: until then the source reports no sensors and the
     /// Vita keeps the historic at-rest state.</summary>
-    public bool Used { get { lock (_lock) return _used; } }
+    public bool Used
+    {
+        get
+        {
+            lock (_lock)
+            {
+                return _used;
+            }
+        }
+    }
     bool _used;
 
     /// <summary>Current activations of the controls (0..1 each, as the input mapper gives them). Re-centre acts on its
@@ -69,8 +96,16 @@ public sealed class VirtualMotion
             _inPitch = Math.Clamp(back - forward, -1f, 1f);
             _inRoll = Math.Clamp(right - left, -1f, 1f);
             _inYaw = Math.Clamp(twistLeft - twistRight, -1f, 1f);
-            if (_inPitch != 0 || _inRoll != 0 || _inYaw != 0) _used = true;
-            if (recenter && !_recenterHeld) RecenterLocked();
+            if (_inPitch != 0 || _inRoll != 0 || _inYaw != 0)
+            {
+                _used = true;
+            }
+
+            if (recenter && !_recenterHeld)
+            {
+                RecenterLocked();
+            }
+
             _recenterHeld = recenter;
         }
     }
@@ -88,11 +123,19 @@ public sealed class VirtualMotion
     /// right, moving up raises its top edge (looks up through the rear camera).</summary>
     public void AddMouse(float dx, float dy)
     {
-        if (dx == 0 && dy == 0) return;
+        if (dx == 0 && dy == 0)
+        {
+            return;
+        }
+
         lock (_lock)
         {
             float k = MouseDegreesPerPixel * Math.Clamp(_settings.MouseSensitivity, 0.05f, 10f) * Deg;
-            if (_settings.MouseInvertY) dy = -dy;
+            if (_settings.MouseInvertY)
+            {
+                dy = -dy;
+            }
+
             _mouseYawTarget -= dx * k;
             _mousePitchTarget = Math.Clamp(_mousePitchTarget - dy * k, -MouseMaxPitch, MouseMaxPitch);
             _used = true;
@@ -100,7 +143,13 @@ public sealed class VirtualMotion
     }
 
     /// <summary>Brings the mouse-look rotation back to neutral (smoothly, at <see cref="MouseMaxRate"/>).</summary>
-    public void Recenter() { lock (_lock) RecenterLocked(); }
+    public void Recenter()
+    {
+        lock (_lock)
+        {
+            RecenterLocked();
+        }
+    }
 
     void RecenterLocked()
     {
@@ -115,12 +164,23 @@ public sealed class VirtualMotion
         get
         {
             lock (_lock)
+            {
                 return (Math.Clamp(_pitch + _mousePitch, -MaxPitch, MaxPitch) / Deg, _roll / Deg, MathF.IEEERemainder(_yaw + _mouseYaw, 2 * MathF.PI) / Deg);
+            }
         }
     }
 
     /// <summary>Device-to-flat rotation of the current pose.</summary>
-    public Quaternion Pose { get { lock (_lock) return _pose; } }
+    public Quaternion Pose
+    {
+        get
+        {
+            lock (_lock)
+            {
+                return _pose;
+            }
+        }
+    }
 
     /// <summary>Gravity as the accelerometer of a Vita in <paramref name="pose"/> reads it (G; flat = (0, 0, -1)).</summary>
     public static Vector3 Gravity(Quaternion pose) => Vector3.Transform(new Vector3(0, 0, -1), Quaternion.Conjugate(pose));
@@ -137,7 +197,11 @@ public sealed class VirtualMotion
     /// </summary>
     public int Generate(long nowUs, Span<MotionSample> dest)
     {
-        if (dest.Length == 0) return 0;
+        if (dest.Length == 0)
+        {
+            return 0;
+        }
+
         lock (_lock)
         {
             if (_lastUs < 0)
@@ -148,12 +212,20 @@ public sealed class VirtualMotion
                 return 1;
             }
             long steps = (nowUs - _lastUs) / StepUs;
-            if (steps <= 0) return 0;
+            if (steps <= 0)
+            {
+                return 0;
+            }
+
             long maxSteps = MaxCatchUpUs / StepUs;
             if (steps > maxSteps)
             {
                 // a long gap: run the springs through it without samples (the fusion would ignore them anyway)
-                for (long i = steps - maxSteps; i > 0; i--) Step(1);
+                for (long i = steps - maxSteps; i > 0; i--)
+                {
+                    Step(1);
+                }
+
                 _lastUs += (steps - maxSteps) * StepUs;
                 _pose = Compose();
                 steps = maxSteps;
@@ -166,7 +238,11 @@ public sealed class VirtualMotion
                 var pose = Compose();
                 // body-frame angular velocity: pose = previous * delta
                 var delta = Quaternion.Normalize(Quaternion.Conjugate(_pose) * pose);
-                if (delta.W < 0) delta = Quaternion.Negate(delta);
+                if (delta.W < 0)
+                {
+                    delta = Quaternion.Negate(delta);
+                }
+
                 var v = new Vector3(delta.X, delta.Y, delta.Z);
                 float s = v.Length();
                 var gyro = s > 1e-9f ? v / s * (2 * MathF.Atan2(s, delta.W) / StepS) : Vector3.Zero;
@@ -189,7 +265,11 @@ public sealed class VirtualMotion
         // pending mouse movement spread over the stretch, the combined rate (pitch and yaw axes are orthogonal) capped
         float dp = (_mousePitchTarget - _mousePitch) / Math.Max(remaining, 1), dy = (_mouseYawTarget - _mouseYaw) / Math.Max(remaining, 1);
         float len = MathF.Sqrt(dp * dp + dy * dy), limit = MouseMaxRate * Deg * StepS;
-        if (len > limit) { dp *= limit / len; dy *= limit / len; }
+        if (len > limit)
+        {
+            dp *= limit / len;
+            dy *= limit / len;
+        }
         _mousePitch += dp;
         _mouseYaw += dy;
     }
@@ -199,7 +279,11 @@ public sealed class VirtualMotion
     {
         v += (w * w * (target - x) - 2 * w * v) * StepS;
         x += v * StepS;
-        if (MathF.Abs(target - x) < 1e-5f && MathF.Abs(v) < 1e-4f) { x = target; v = 0; }
+        if (MathF.Abs(target - x) < 1e-5f && MathF.Abs(v) < 1e-4f)
+        {
+            x = target;
+            v = 0;
+        }
     }
 
     Quaternion Compose() => PoseOf(Math.Clamp(_pitch + _mousePitch, -MaxPitch, MaxPitch), _roll, _yaw + _mouseYaw);

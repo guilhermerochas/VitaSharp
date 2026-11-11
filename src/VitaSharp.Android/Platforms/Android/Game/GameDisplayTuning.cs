@@ -50,17 +50,22 @@ public sealed class GameDisplayTuning
     /// </summary>
     void ApplyFrameRate(float fps)
     {
-        if (!OperatingSystem.IsAndroidVersionAtLeast(30) || _view.Holder?.Surface is not { IsValid: true } s || fps == _frameRateSet) return;
+        if (!OperatingSystem.IsAndroidVersionAtLeast(30) || _view.Holder?.Surface is not { IsValid: true } s || fps == _frameRateSet)
+            return;
         try
         {
             if (OperatingSystem.IsAndroidVersionAtLeast(31))
                 s.SetFrameRate(fps, (int)SurfaceFrameRateCompatibility.Default,
                     _frameRateSet == 0 ? (int)SurfaceChangeFrameRate.Always : (int)SurfaceChangeFrameRate.OnlyIfSeamless);
-            else s.SetFrameRate(fps, (int)SurfaceFrameRateCompatibility.Default);
+            else
+                s.SetFrameRate(fps, (int)SurfaceFrameRateCompatibility.Default);
             Log.Info($"Surface frame rate: {fps:F0} Hz{(_activity.Display?.RefreshRate is float hz ? $" (display at {hz:F0} Hz now)" : "")}");
             _frameRateSet = fps;
         }
-        catch (Exception e) { Log.Warn($"Surface.setFrameRate({fps}): {e.Message}"); }
+        catch (Exception e)
+        {
+            Log.Warn($"Surface.setFrameRate({fps}): {e.Message}");
+        }
     }
 
     /// <summary>
@@ -72,7 +77,8 @@ public sealed class GameDisplayTuning
     {
         bool want = System.Environment.GetEnvironmentVariable(EnvVars.AndroidSustained)?.Trim() is "1" or "on" or "true" or "yes";
         bool supported = _activity.GetSystemService(Context.PowerService) is PowerManager pm && pm.IsSustainedPerformanceModeSupported;
-        if (want && supported) _activity.Window?.SetSustainedPerformanceMode(true);
+        if (want && supported)
+            _activity.Window?.SetSustainedPerformanceMode(true);
         Log.Info($"Sustained performance mode: {(supported ? "supported" : "not supported")}, {(want && supported ? "on" : "off")}"
                  + (want ? "" : $" ({EnvVars.AndroidSustained}=1 to try it)"));
     }

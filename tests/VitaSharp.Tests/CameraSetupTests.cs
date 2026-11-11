@@ -50,7 +50,11 @@ public sealed class CameraSetupTests
         public readonly List<CameraFacing> Opened = new();
         public int Disposed;
         public IReadOnlyList<string> DeviceNames => [name];
-        public ICameraStream? Open(CameraFacing facing, int width, int height, int fps) { Opened.Add(facing); return null; }
+        public ICameraStream? Open(CameraFacing facing, int width, int height, int fps)
+        {
+            Opened.Add(facing);
+            return null;
+        }
         public void Dispose() => Disposed++;
     }
 
@@ -78,7 +82,13 @@ public sealed class CameraSetupTests
     public void StillPictureDeliversItsPixels()
     {
         var rgba = new byte[4 * 2 * 4];
-        for (int i = 0; i < rgba.Length; i += 4) { rgba[i] = 200; rgba[i + 1] = 10; rgba[i + 2] = 30; rgba[i + 3] = 255; }
+        for (int i = 0; i < rgba.Length; i += 4)
+        {
+            rgba[i] = 200;
+            rgba[i + 1] = 10;
+            rgba[i + 2] = 30;
+            rgba[i + 3] = 255;
+        }
         using var cam = new StillImageCamera("p.png", rgba, 4, 2);
         using var s = cam.Open(CameraFacing.Back, 640, 480, 30)!;
         byte[] dst = [];
@@ -95,14 +105,22 @@ public sealed class CameraSetupTests
         using var ms = new MemoryStream();
         void Chunk(string type, byte[] body)
         {
-            var len = new byte[4]; System.Buffers.Binary.BinaryPrimitives.WriteInt32BigEndian(len, body.Length);
-            ms.Write(len); ms.Write(System.Text.Encoding.ASCII.GetBytes(type)); ms.Write(body); ms.Write(new byte[4]);
+            var len = new byte[4];
+            System.Buffers.Binary.BinaryPrimitives.WriteInt32BigEndian(len, body.Length);
+            ms.Write(len);
+            ms.Write(System.Text.Encoding.ASCII.GetBytes(type));
+            ms.Write(body);
+            ms.Write(new byte[4]);
         }
         ms.Write([0x89, (byte)'P', (byte)'N', (byte)'G', 13, 10, 26, 10]);
         Chunk("IHDR", [0, 0, 0, 2, 0, 0, 0, 1, 8, 2, 0, 0, 0]);
         using (var z = new MemoryStream())
         {
-            using (var zs = new System.IO.Compression.ZLibStream(z, System.IO.Compression.CompressionLevel.Optimal, true)) zs.Write(raw);
+            using (var zs = new System.IO.Compression.ZLibStream(z, System.IO.Compression.CompressionLevel.Optimal, true))
+            {
+                zs.Write(raw);
+            }
+
             Chunk("IDAT", z.ToArray());
         }
         Chunk("IEND", []);

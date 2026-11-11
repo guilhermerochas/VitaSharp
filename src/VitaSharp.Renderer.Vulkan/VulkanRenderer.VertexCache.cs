@@ -41,7 +41,11 @@ public sealed unsafe partial class VulkanRenderer
     {
         if (!VertexCacheOn || length < MinBytes)
         {
-            if (SmallCacheOn && VertexCacheOn && length >= SmallMinBytes) return UploadSmallRange(addr, length, align);
+            if (SmallCacheOn && VertexCacheOn && length >= SmallMinBytes)
+            {
+                return UploadSmallRange(addr, length, align);
+            }
+
             _statSmallUploadBytes += length;
             return UploadSpan(GuestMemory.ReadSpan(addr, (int)length), align);
         }
@@ -62,8 +66,16 @@ public sealed unsafe partial class VulkanRenderer
             return (e.Buffer, 0);
         }
         _statRangeMisses++;
-        if (e == null && _rangeCacheBytes + length > MaxCachedBytes) EvictRanges(force: true);
-        if (e == null && _rangeCacheBytes + length > MaxCachedBytes) return UploadSpan(GuestMemory.ReadSpan(addr, (int)length), align);
+        if (e == null && _rangeCacheBytes + length > MaxCachedBytes)
+        {
+            EvictRanges(force: true);
+        }
+
+        if (e == null && _rangeCacheBytes + length > MaxCachedBytes)
+        {
+            return UploadSpan(GuestMemory.ReadSpan(addr, (int)length), align);
+        }
+
         if (e != null)
         {
             F.Overflow.Add((e.Buffer, e.Memory)); // frames in flight may still read the old copy
@@ -75,12 +87,21 @@ public sealed unsafe partial class VulkanRenderer
                 return UploadSpan(GuestMemory.ReadSpan(addr, (int)length), align);
             }
         }
-        else { e = new CachedRange(); _rangeCache[key] = e; _rangeCacheBytes += length; }
+        else
+        {
+            e = new CachedRange();
+            _rangeCache[key] = e;
+            _rangeCacheBytes += length;
+        }
         var (b, m, p) = _core.CreateHostBuffer(length, BufferUsageFlags.VertexBufferBit | BufferUsageFlags.IndexBufferBit, MemCat.UploadRing);
         Core.Util.FastCopy.Copy(GuestMemory.ReadSpan(addr, (int)length), new Span<byte>((void*)p, (int)length));
         _uploadBytes += length;
         (e.Buffer, e.Memory, e.Stamp, e.LastUsedFrame) = (b, m, DirtyPages.Epoch, FrameCount);
-        if (_rangeSweepFrame + 300 < FrameCount) EvictRanges(force: false);
+        if (_rangeSweepFrame + 300 < FrameCount)
+        {
+            EvictRanges(force: false);
+        }
+
         return (b, 0);
     }
 
@@ -123,7 +144,11 @@ public sealed unsafe partial class VulkanRenderer
                 _statSmallHitBytes += length;
                 return (_smallChunks[e.Chunk].Buffer, e.Offset);
             }
-            if (written && e.Misses < 255) e.Misses++;
+            if (written && e.Misses < 255)
+            {
+                e.Misses++;
+            }
+
             if (e.Misses >= 2)
             {
                 // volatile: the ring is cheaper than re-caching it every frame
@@ -134,11 +159,19 @@ public sealed unsafe partial class VulkanRenderer
                 return UploadSpan(GuestMemory.ReadSpan(addr, (int)length), align);
             }
         }
-        else _smallCache[key] = e = new SmallRange();
+        else
+        {
+            _smallCache[key] = e = new SmallRange();
+        }
+
         uint off = (_smallUsed + 15) & ~15u;
         if (_smallChunks.Count == 0 || off + length > SmallChunkBytes)
         {
-            if (_smallChunks.Count >= SmallMaxChunks) ResetSmallCache();
+            if (_smallChunks.Count >= SmallMaxChunks)
+            {
+                ResetSmallCache();
+            }
+
             var (b, m, p) = _core.CreateHostBuffer(SmallChunkBytes, BufferUsageFlags.VertexBufferBit | BufferUsageFlags.IndexBufferBit, MemCat.UploadRing);
             _smallChunks.Add((b, m, p));
             off = 0;
@@ -155,17 +188,28 @@ public sealed unsafe partial class VulkanRenderer
     /// <summary>The arena is full: every entry is invalidated (their volatility kept) and the chunks freed after the frame.</summary>
     void ResetSmallCache()
     {
-        foreach (var (b, m, _) in _smallChunks) F.Overflow.Add((b, m));
+        foreach (var (b, m, _) in _smallChunks)
+        {
+            F.Overflow.Add((b, m));
+        }
+
         _smallChunks.Clear();
         _smallUsed = 0;
         _smallGeneration++;
         _statSmallResets++;
-        if (_smallCache.Count > 200_000) _smallCache.Clear();
+        if (_smallCache.Count > 200_000)
+        {
+            _smallCache.Clear();
+        }
     }
 
     void DestroySmallCache()
     {
-        foreach (var (b, m, _) in _smallChunks) _core.DestroyBuffer(b, m);
+        foreach (var (b, m, _) in _smallChunks)
+        {
+            _core.DestroyBuffer(b, m);
+        }
+
         _smallChunks.Clear();
         _smallCache.Clear();
     }
@@ -176,9 +220,17 @@ public sealed unsafe partial class VulkanRenderer
         _rangeSweepFrame = FrameCount;
         foreach (var (k, e) in _rangeCache.ToList())
         {
-            if (e.LastUsedFrame >= FrameCount - (force ? 0 : 300)) continue;
+            if (e.LastUsedFrame >= FrameCount - (force ? 0 : 300))
+            {
+                continue;
+            }
+
             _rangeCache.Remove(k);
-            if (e.Volatile) continue;
+            if (e.Volatile)
+            {
+                continue;
+            }
+
             F.Overflow.Add((e.Buffer, e.Memory));
             _rangeCacheBytes -= k.Length;
         }
@@ -186,7 +238,14 @@ public sealed unsafe partial class VulkanRenderer
 
     void DestroyRangeCache()
     {
-        foreach (var e in _rangeCache.Values) if (!e.Volatile) _core.DestroyBuffer(e.Buffer, e.Memory);
+        foreach (var e in _rangeCache.Values)
+        {
+            if (!e.Volatile)
+            {
+                _core.DestroyBuffer(e.Buffer, e.Memory);
+            }
+        }
+
         _rangeCache.Clear();
         _rangeCacheBytes = 0;
         DestroySmallCache();
@@ -194,7 +253,11 @@ public sealed unsafe partial class VulkanRenderer
 
     string RangeCacheReport()
     {
-        if (!VertexCacheOn) return "";
+        if (!VertexCacheOn)
+        {
+            return "";
+        }
+
         double f = Math.Max(1.0, _workFrames);
         return $"; vertex/index cache: {_statRangeHits / f:F0} hits/frame ({_statRangeHitBytes / f / 1024:F0} KB/frame not uploaded), {_statRangeMisses / f:F0} copies/frame, {_rangeCache.Count} ranges ({_rangeCacheBytes >> 20} MB), {_statRangeVolatile} volatile ({_statRangeVolatileBytes / f / 1024:F0} KB/frame through the ring)"
             + $"; small ranges: {_statSmallUploadBytes / f / 1024:F0} KB/frame through the ring"

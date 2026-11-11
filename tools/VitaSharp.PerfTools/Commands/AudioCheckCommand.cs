@@ -22,33 +22,72 @@ sealed class AudioCheckCommand : IPerfCommand
 
     public int Run(PerfArgs a)
     {
-        if (a.Positional.Count == 0) throw new PerfArgsException("audio-check: a WAV file or a folder of WAVs is required");
+        if (a.Positional.Count == 0)
+        {
+            throw new PerfArgsException("audio-check: a WAV file or a folder of WAVs is required");
+        }
+
         int grain = (int)a.Double("--grain", 512);
         int click = (int)a.Double("--click", 12000);
         var files = a.Positional.SelectMany(p => Directory.Exists(p) ? Directory.GetFiles(p, "*.wav", SearchOption.AllDirectories).Order() : (IEnumerable<string>)[p]).ToList();
         foreach (var f in files)
         {
             var (pcm, ch, rate) = ReadWav(f);
-            if (ch == 0) { Console.WriteLine($"{Path.GetFileName(f)}: not a 16-bit PCM WAV"); continue; }
+            if (ch == 0)
+            {
+                Console.WriteLine($"{Path.GetFileName(f)}: not a 16-bit PCM WAV");
+                continue;
+            }
             int frames = pcm.Length / ch;
             // first and last non-zero frame: the silence around the sound is not a gap
             int first = 0, last = frames - 1;
-            while (first < frames && Silent(pcm, first, ch)) first++;
-            while (last > first && Silent(pcm, last, ch)) last--;
+            while (first < frames && Silent(pcm, first, ch))
+            {
+                first++;
+            }
+
+            while (last > first && Silent(pcm, last, ch))
+            {
+                last--;
+            }
+
             int gaps = 0, gapFrames = 0, run = 0;
             for (int i = first; i <= last; i++)
             {
-                if (Silent(pcm, i, ch)) { run++; continue; }
-                if (run >= grain) { gaps++; gapFrames += run; }
+                if (Silent(pcm, i, ch))
+                {
+                    run++;
+                    continue;
+                }
+                if (run >= grain)
+                {
+                    gaps++;
+                    gapFrames += run;
+                }
                 run = 0;
             }
             int repeats = 0;
             for (int g = first + grain; g + grain <= last; g += grain)
-                if (!AllSilent(pcm, g, grain, ch) && pcm.AsSpan(g * ch, grain * ch).SequenceEqual(pcm.AsSpan((g - grain) * ch, grain * ch))) repeats++;
+            {
+                if (!AllSilent(pcm, g, grain, ch) && pcm.AsSpan(g * ch, grain * ch).SequenceEqual(pcm.AsSpan((g - grain) * ch, grain * ch)))
+                {
+                    repeats++;
+                }
+            }
+
             int clicks = 0;
             for (int i = Math.Max(first, 1); i <= last; i++)
+            {
                 for (int c = 0; c < ch; c++)
-                    if (Math.Abs(pcm[i * ch + c] - pcm[(i - 1) * ch + c]) > click) { clicks++; break; }
+                {
+                    if (Math.Abs(pcm[i * ch + c] - pcm[(i - 1) * ch + c]) > click)
+                    {
+                        clicks++;
+                        break;
+                    }
+                }
+            }
+
             Console.WriteLine($"{Path.GetFileName(f)}: {frames / (double)rate:F2} s ({ch} ch, {rate} Hz), sound {(last - first + 1) / (double)rate:F2} s; " +
                               $"gaps {gaps} ({gapFrames / (double)rate * 1000:F0} ms), repeated grains {repeats}, clicks {clicks}");
         }
@@ -57,13 +96,27 @@ sealed class AudioCheckCommand : IPerfCommand
 
     static bool Silent(short[] pcm, int frame, int ch)
     {
-        for (int c = 0; c < ch; c++) if (pcm[frame * ch + c] != 0) return false;
+        for (int c = 0; c < ch; c++)
+        {
+            if (pcm[frame * ch + c] != 0)
+            {
+                return false;
+            }
+        }
+
         return true;
     }
 
     static bool AllSilent(short[] pcm, int start, int n, int ch)
     {
-        for (int i = start; i < start + n; i++) if (!Silent(pcm, i, ch)) return false;
+        for (int i = start; i < start + n; i++)
+        {
+            if (!Silent(pcm, i, ch))
+            {
+                return false;
+            }
+        }
+
         return true;
     }
 
@@ -71,7 +124,11 @@ sealed class AudioCheckCommand : IPerfCommand
     static (short[] Pcm, int Channels, int Rate) ReadWav(string path)
     {
         var d = File.ReadAllBytes(path);
-        if (d.Length < 12 || BinaryPrimitives.ReadUInt32LittleEndian(d) != 0x46464952) return ([], 0, 0);
+        if (d.Length < 12 || BinaryPrimitives.ReadUInt32LittleEndian(d) != 0x46464952)
+        {
+            return ([], 0, 0);
+        }
+
         int p = 12, ch = 0, rate = 0, bits = 0;
         while (p + 8 <= d.Length)
         {

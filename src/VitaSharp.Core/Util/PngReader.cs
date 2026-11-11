@@ -21,17 +21,32 @@ public static class PngReader
             {
                 w = System.Buffers.Binary.BinaryPrimitives.ReadInt32BigEndian(body);
                 h = System.Buffers.Binary.BinaryPrimitives.ReadInt32BigEndian(body[4..]);
-                if (body[8] != 8 || body[12] != 0 || body[9] is not (2 or 6)) throw new NotSupportedException($"{path}: only 8-bit RGB/RGBA PNGs");
+                if (body[8] != 8 || body[12] != 0 || body[9] is not (2 or 6))
+                {
+                    throw new NotSupportedException($"{path}: only 8-bit RGB/RGBA PNGs");
+                }
+
                 colorType = body[9];
             }
-            else if (type == "IDAT") idat.Write(body);
-            else if (type == "IEND") break;
+            else if (type == "IDAT")
+            {
+                idat.Write(body);
+            }
+            else if (type == "IEND")
+            {
+                break;
+            }
+
             p += 12 + len;
         }
         int bpp = colorType == 6 ? 4 : 3, stride = w * bpp;
         var raw = new byte[(stride + 1) * h];
         idat.Position = 0;
-        using (var z = new System.IO.Compression.ZLibStream(idat, System.IO.Compression.CompressionMode.Decompress)) z.ReadExactly(raw);
+        using (var z = new System.IO.Compression.ZLibStream(idat, System.IO.Compression.CompressionMode.Decompress))
+        {
+            z.ReadExactly(raw);
+        }
+
         var img = new byte[stride * h];
         for (int y = 0; y < h; y++)
         {
@@ -53,9 +68,19 @@ public static class PngReader
                 dst[x] = (byte)v;
             }
         }
-        if (bpp == 4) return (img, w, h);
+        if (bpp == 4)
+        {
+            return (img, w, h);
+        }
+
         var rgba = new byte[w * h * 4];
-        for (int i = 0, j = 0; i < img.Length; i += 3, j += 4) { rgba[j] = img[i]; rgba[j + 1] = img[i + 1]; rgba[j + 2] = img[i + 2]; rgba[j + 3] = 255; }
+        for (int i = 0, j = 0; i < img.Length; i += 3, j += 4)
+        {
+            rgba[j] = img[i];
+            rgba[j + 1] = img[i + 1];
+            rgba[j + 2] = img[i + 2];
+            rgba[j + 3] = 255;
+        }
         return (rgba, w, h);
 
         static int Paeth(int a, int b, int c)

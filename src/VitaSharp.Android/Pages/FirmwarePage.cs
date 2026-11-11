@@ -84,7 +84,8 @@ public sealed class FirmwarePage : Screen<FirmwareState>
     async void Install(string what)
     {
         var doc = await Saf.PickAsync(FirmwareSetup.PickerMimeType);
-        if (doc == null) return;
+        if (doc == null)
+            return;
         _cts = new CancellationTokenSource();
         SetState(s => { s.Installing = doc.DisplayName; s.Progress = new(Loc.Get("MOpening"), 0); });
         DeviceDisplay.Current.KeepScreenOn = true;

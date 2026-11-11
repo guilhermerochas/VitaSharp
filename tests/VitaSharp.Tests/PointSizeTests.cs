@@ -18,7 +18,11 @@ public class PointSizeTests
         var d = new byte[0x100 + code.Length * 8];
         void W32(int o, uint v) => BinaryPrimitives.WriteUInt32LittleEndian(d.AsSpan(o), v);
         W32(0x2C, 0xA0 - 0x2C); // varyings offset (relative to the field)
-        if (pointSize) W32(0xA0 + 16, 0x100); // vertex outputs 1: point size
+        if (pointSize)
+        {
+            W32(0xA0 + 16, 0x100); // vertex outputs 1: point size
+        }
+
         W32(0x3C, (uint)code.Length);
         W32(0x40, 0x100 - 0x40);
         for (int i = 0; i < code.Length; i++)

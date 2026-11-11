@@ -52,7 +52,10 @@ public sealed class LiveAreaView : ShellCanvas
     protected override void OnAttachedToVisualTree(VisualTreeAttachmentEventArgs e)
     {
         base.OnAttachedToVisualTree(e);
-        if (_template?.Frames.Any(f => f.AutoflipSeconds > 0 && f.Items.Count > 1) == true) _flip.Start();
+        if (_template?.Frames.Any(f => f.AutoflipSeconds > 0 && f.Items.Count > 1) == true)
+        {
+            _flip.Start();
+        }
     }
 
     protected override void OnDetachedFromVisualTree(VisualTreeAttachmentEventArgs e)
@@ -66,12 +69,18 @@ public sealed class LiveAreaView : ShellCanvas
         _flipTick++;
         bool changed = false;
         foreach (var f in _template?.Frames ?? [])
+        {
             if (f.AutoflipSeconds > 0 && f.Items.Count > 1 && _flipTick % f.AutoflipSeconds == 0)
             {
                 _flipIndex[f.Id] = (_flipIndex.GetValueOrDefault(f.Id) + 1) % f.Items.Count;
                 changed = true;
             }
-        if (changed) InvalidateVisual();
+        }
+
+        if (changed)
+        {
+            InvalidateVisual();
+        }
     }
 
     Bitmap? Image(string? file) => Visuals.File(_template?.Resolve(file));
@@ -86,8 +95,15 @@ public sealed class LiveAreaView : ShellCanvas
         using (ctx.PushClip(new RoundedRect(bgRect, 6)))
         {
             var bg = Image(_template?.Background) ?? Visuals.File(Io("sce_sys/pic0.png"));
-            if (bg != null) DrawImageFit(ctx, bg, bgRect, fill: true);
-            else ctx.FillRectangle(new SolidColorBrush(Color.FromRgb(148, 164, 173)), bgRect);
+            if (bg != null)
+            {
+                DrawImageFit(ctx, bg, bgRect, fill: true);
+            }
+            else
+            {
+                ctx.FillRectangle(new SolidColorBrush(Color.FromRgb(148, 164, 173)), bgRect);
+            }
+
             DrawFrames(ctx);
         }
 
@@ -115,8 +131,14 @@ public sealed class LiveAreaView : ShellCanvas
             ctx.FillRectangle(new SolidColorBrush(Color.FromArgb((byte)(200 * Math.Min(1, t * 2)), 0, 0, 0)), full);
             using (ctx.PushOpacity(Math.Min(1, t * 3)))
             {
-                if (pic != null) DrawImageFit(ctx, pic, r, fill: true);
-                else ctx.FillRectangle(Brushes.Black, r);
+                if (pic != null)
+                {
+                    DrawImageFit(ctx, pic, r, fill: true);
+                }
+                else
+                {
+                    ctx.FillRectangle(Brushes.Black, r);
+                }
             }
         }
     }
@@ -131,10 +153,18 @@ public sealed class LiveAreaView : ShellCanvas
 
     void DrawFrames(DrawingContext ctx)
     {
-        if (_template == null) return;
+        if (_template == null)
+        {
+            return;
+        }
+
         foreach (var frame in _template.Frames)
         {
-            if (LiveAreaLayout.Frame(Style, frame.Id) is not { } fr || frame.Items.Count == 0) continue;
+            if (LiveAreaLayout.Frame(Style, frame.Id) is not { } fr || frame.Items.Count == 0)
+            {
+                continue;
+            }
+
             var item = frame.Items[Math.Min(_flipIndex.GetValueOrDefault(frame.Id), frame.Items.Count - 1)];
             LaRect? bgPlaced = null, imgPlaced = null;
             using (ctx.PushClip(R(fr)))
@@ -152,7 +182,9 @@ public sealed class LiveAreaView : ShellCanvas
                     imgPlaced = r;
                 }
                 if (item.Text is { } txt && txt.PlainText.Trim().Length > 0)
+                {
                     DrawLiveText(ctx, LiveAreaLayout.PlaceText(fr, bgPlaced, imgPlaced, txt), txt);
+                }
             }
         }
     }
@@ -161,7 +193,11 @@ public sealed class LiveAreaView : ShellCanvas
     static void DrawLiveText(DrawingContext ctx, LaTextPlacement place, LiveAreaText txt)
     {
         var runs = txt.Strings.Where(s => s.Text.Length > 0).ToList();
-        if (runs.Count == 0 || place.Box.W <= 0 || place.Box.H <= 0) return;
+        if (runs.Count == 0 || place.Box.W <= 0 || place.Box.H <= 0)
+        {
+            return;
+        }
+
         string all = string.Concat(runs.Select(r => r.Text));
         var first = runs[0];
         static double Size(LiveAreaString s) => s.Size > 0 ? s.Size : 20;
@@ -173,16 +209,36 @@ public sealed class LiveAreaView : ShellCanvas
             MaxTextHeight = place.Box.H,
             Trimming = txt.Ellipsis || !place.Wrap ? TextTrimming.CharacterEllipsis : TextTrimming.None,
         };
-        if (!place.Wrap) ft.MaxTextWidth = place.Box.W;
-        if (txt.LineSpace > 0) ft.LineHeight = Size(first) * 1.2 + txt.LineSpace;
+        if (!place.Wrap)
+        {
+            ft.MaxTextWidth = place.Box.W;
+        }
+
+        if (txt.LineSpace > 0)
+        {
+            ft.LineHeight = Size(first) * 1.2 + txt.LineSpace;
+        }
+
         int at = 0;
         foreach (var r in runs)
         {
             ft.SetForegroundBrush(new SolidColorBrush(ShellVisuals.ToColor(r.Color)), at, r.Text.Length);
             ft.SetFontSize(Size(r), at, r.Text.Length);
-            if (r.Bold) ft.SetFontWeight(FontWeight.Bold, at, r.Text.Length);
-            if (r.Italic) ft.SetFontStyle(FontStyle.Oblique, at, r.Text.Length);
-            if (r.Underline) ft.SetTextDecorations(TextDecorations.Underline, at, r.Text.Length);
+            if (r.Bold)
+            {
+                ft.SetFontWeight(FontWeight.Bold, at, r.Text.Length);
+            }
+
+            if (r.Italic)
+            {
+                ft.SetFontStyle(FontStyle.Oblique, at, r.Text.Length);
+            }
+
+            if (r.Underline)
+            {
+                ft.SetTextDecorations(TextDecorations.Underline, at, r.Text.Length);
+            }
+
             at += r.Text.Length;
         }
         double y = place.Vertical switch
@@ -193,7 +249,10 @@ public sealed class LiveAreaView : ShellCanvas
         };
         var origin = new Point(place.Box.X, y);
         if (runs.Any(r => r.Shadow) && ft.BuildGeometry(origin + new Point(1.5, 1.5)) is { } geo)
+        {
             ctx.DrawGeometry(new SolidColorBrush(Color.FromArgb(160, 0, 0, 0)), null, geo);
+        }
+
         ctx.DrawText(ft, origin);
     }
 
@@ -203,17 +262,26 @@ public sealed class LiveAreaView : ShellCanvas
         ctx.DrawRectangle(new SolidColorBrush(Color.FromArgb(110, 0, 0, 0)), null, gate.Translate(new Vector(0, 5)).Inflate(3), 12, 12);
         using (ctx.PushClip(new RoundedRect(gate, 10)))
         {
-            if (Image(_template?.Gate) is { } g) ctx.DrawImage(g, new Rect(g.Size), gate);
+            if (Image(_template?.Gate) is { } g)
+            {
+                ctx.DrawImage(g, new Rect(g.Size), gate);
+            }
             else
             {
                 ctx.FillRectangle(new SolidColorBrush(Color.FromRgb(47, 51, 50)), gate);
                 if (Visuals.File(_app.IconPath) is { } icon)
                 {
                     var ir = new Rect(gate.X + (gate.Width - 94) / 2, gate.Y + 15.5, 94, 94);
-                    using (ctx.PushGeometryClip(new EllipseGeometry(ir))) DrawImageFit(ctx, icon, ir, fill: true);
+                    using (ctx.PushGeometryClip(new EllipseGeometry(ir)))
+                    {
+                        DrawImageFit(ctx, icon, ir, fill: true);
+                    }
                 }
             }
-            if (_hoverGate && !Running) ctx.FillRectangle(new SolidColorBrush(Color.FromArgb(40, 255, 255, 255)), gate);
+            if (_hoverGate && !Running)
+            {
+                ctx.FillRectangle(new SolidColorBrush(Color.FromArgb(40, 255, 255, 255)), gate);
+            }
         }
         ctx.DrawRectangle(null, new Pen(new SolidColorBrush(Color.FromRgb(210, 210, 210)), _hoverGate ? 4 : 3), gate, 10, 10);
         // the Start button at the bottom of the gate
@@ -242,13 +310,20 @@ public sealed class LiveAreaView : ShellCanvas
 
     public void Start()
     {
-        if (_launch >= 0 || Running) return;
+        if (_launch >= 0 || Running)
+        {
+            return;
+        }
         // system apps (vs0:app) run like games, on the firmware's own libraries (see docs/notes/system-apps.md)
         _launch = 0;
         Animate(() =>
         {
             _launch += 0.06;
-            if (_launch < 1) return true;
+            if (_launch < 1)
+            {
+                return true;
+            }
+
             _launch = -1;
             Started?.Invoke(_app);
             return false;
@@ -261,7 +336,14 @@ public sealed class LiveAreaView : ShellCanvas
     {
         _status = text;
         InvalidateVisual();
-        DispatcherTimer.RunOnce(() => { if (_status == text) { _status = null; InvalidateVisual(); } }, TimeSpan.FromSeconds(4));
+        DispatcherTimer.RunOnce(() =>
+        {
+            if (_status == text)
+            {
+                _status = null;
+                InvalidateVisual();
+            }
+        }, TimeSpan.FromSeconds(4));
     }
 
     protected override void OnPointerMoved(PointerEventArgs e)
@@ -269,7 +351,12 @@ public sealed class LiveAreaView : ShellCanvas
         base.OnPointerMoved(e);
         var p = ToScreen(e.GetPosition(this));
         bool g = LiveAreaLayout.Gate(Style).Contains(p.X, p.Y), b = BackButton.Contains(p.X, p.Y);
-        if (g != _hoverGate || b != _hoverBack) { _hoverGate = g; _hoverBack = b; InvalidateVisual(); }
+        if (g != _hoverGate || b != _hoverBack)
+        {
+            _hoverGate = g;
+            _hoverBack = b;
+            InvalidateVisual();
+        }
         Cursor = g || b || LinkAt(p) != null ? new Cursor(StandardCursorType.Hand) : Cursor.Default;
     }
 
@@ -277,11 +364,28 @@ public sealed class LiveAreaView : ShellCanvas
     {
         base.OnPointerReleased(e);
         var p = ToScreen(e.GetPosition(this));
-        if (e.InitialPressMouseButton == MouseButton.Right) { Back(); return; }
-        if (e.InitialPressMouseButton != MouseButton.Left) return;
-        if (BackButton.Contains(p.X, p.Y)) Back();
-        else if (LiveAreaLayout.Gate(Style).Contains(p.X, p.Y)) Start();
-        else if (LinkAt(p) is { } url) OpenLink(url);
+        if (e.InitialPressMouseButton == MouseButton.Right)
+        {
+            Back();
+            return;
+        }
+        if (e.InitialPressMouseButton != MouseButton.Left)
+        {
+            return;
+        }
+
+        if (BackButton.Contains(p.X, p.Y))
+        {
+            Back();
+        }
+        else if (LiveAreaLayout.Gate(Style).Contains(p.X, p.Y))
+        {
+            Start();
+        }
+        else if (LinkAt(p) is { } url)
+        {
+            OpenLink(url);
+        }
     }
 
     /// <summary>The web target of the liveitem under a point (psts: store links and others are not opened).</summary>
@@ -289,16 +393,26 @@ public sealed class LiveAreaView : ShellCanvas
     {
         foreach (var f in _template?.Frames ?? [])
         {
-            if (f.Items.Count == 0 || LiveAreaLayout.Frame(Style, f.Id) is not { } fr || !fr.Contains(p.X, p.Y)) continue;
+            if (f.Items.Count == 0 || LiveAreaLayout.Frame(Style, f.Id) is not { } fr || !fr.Contains(p.X, p.Y))
+            {
+                continue;
+            }
+
             var target = f.Items[Math.Min(_flipIndex.GetValueOrDefault(f.Id), f.Items.Count - 1)].Target;
-            if (target.StartsWith("http://", StringComparison.OrdinalIgnoreCase) || target.StartsWith("https://", StringComparison.OrdinalIgnoreCase)) return target;
+            if (target.StartsWith("http://", StringComparison.OrdinalIgnoreCase) || target.StartsWith("https://", StringComparison.OrdinalIgnoreCase))
+            {
+                return target;
+            }
         }
         return null;
     }
 
     static void OpenLink(string url)
     {
-        try { System.Diagnostics.Process.Start(new System.Diagnostics.ProcessStartInfo(url) { UseShellExecute = true }); }
+        try
+        {
+            System.Diagnostics.Process.Start(new System.Diagnostics.ProcessStartInfo(url) { UseShellExecute = true });
+        }
         catch (Exception) { }
     }
 
@@ -313,9 +427,14 @@ public sealed class LiveAreaView : ShellCanvas
         base.OnKeyDown(e);
         switch (e.Key)
         {
-            case Key.Enter or Key.Space: Start(); break;
-            case Key.Escape or Key.Back or Key.BrowserBack: Back(); break;
-            default: return;
+            case Key.Enter or Key.Space:
+                Start();
+                break;
+            case Key.Escape or Key.Back or Key.BrowserBack:
+                Back();
+                break;
+            default:
+                return;
         }
         e.Handled = true;
     }

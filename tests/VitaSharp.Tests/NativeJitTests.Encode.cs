@@ -23,12 +23,20 @@ public sealed unsafe partial class NativeJitTests
             {
                 bool thumb = (it & 1) != 0;
                 var b = it % 3 == 0 ? MediaBlock(rng, thumb) : RandomBlock(rng, thumb, 12, forUnicorn: false);
-                if (b == null) continue;
+                if (b == null)
+                {
+                    continue;
+                }
+
                 var ir = new ArmFrontend().Translate(b);
                 IrPasses.DeadCode(ir);
                 const ulong Rip = 0x7FF0_0000_0000;
                 var stubs = new X64Emitter.Runtime { Epilogue = Rip + 0x100000, Callout = Rip + 0x200000, DispatchTable = Rip + 0x300000 };
-                if (!em.Prepare(ir, stubs, k => (nint)(slots + (k & 4095)), it % 5 == 0 ? (nint)slots : 0)) continue;
+                if (!em.Prepare(ir, stubs, k => (nint)(slots + (k & 4095)), it % 5 == 0 ? (nint)slots : 0))
+                {
+                    continue;
+                }
+
                 X64Emitter.FastEncode = true;
                 byte[] fast = em.Assemble(Rip);
                 X64Emitter.FastEncode = false;
@@ -38,7 +46,11 @@ public sealed unsafe partial class NativeJitTests
                 compared++;
             }
         }
-        finally { X64Emitter.FastEncode = true; System.Runtime.InteropServices.NativeMemory.Free(slots); }
+        finally
+        {
+            X64Emitter.FastEncode = true;
+            System.Runtime.InteropServices.NativeMemory.Free(slots);
+        }
         output.WriteLine($"compared {compared} blocks; fast encoder fallbacks {X64Emitter.FastEncodeFallbacks - fallbacks0}");
         Assert.Equal(0, X64Emitter.FastEncodeFallbacks - fallbacks0);
 
@@ -46,9 +58,17 @@ public sealed unsafe partial class NativeJitTests
         {
             var dec = Iced.Intel.Decoder.Create(64, new Iced.Intel.ByteArrayCodeReader(code), rip);
             var list = new List<Iced.Intel.Instruction>();
-            while (dec.IP < rip + (ulong)code.Length) list.Add(dec.Decode());
+            while (dec.IP < rip + (ulong)code.Length)
+            {
+                list.Add(dec.Decode());
+            }
+
             var index = new Dictionary<ulong, int>();
-            for (int i = 0; i < list.Count; i++) index[list[i].IP] = i;
+            for (int i = 0; i < list.Count; i++)
+            {
+                index[list[i].IP] = i;
+            }
+
             var fmt = new Iced.Intel.NasmFormatter();
             var sb = new System.Text.StringBuilder();
             foreach (var ins in list)

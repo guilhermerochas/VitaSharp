@@ -10,12 +10,28 @@ public class ErrorTableTests
     {
         var b = new List<byte>();
         void U16(int v) => b.AddRange(BitConverter.GetBytes((ushort)v));
-        void Pfx(string s) { var p = new byte[4]; System.Text.Encoding.ASCII.GetBytes(s).CopyTo(p, 0); b.AddRange(p); }
-        Pfx("C0"); U16(2); U16(codes.Length);
-        U16(1); U16(0x0F); Pfx("C1");
-        U16(0x41); U16(1); Pfx("NW");
-        U16(2000); U16(codes.Length);
-        foreach (uint c in codes) b.AddRange(BitConverter.GetBytes(c));
+        void Pfx(string s)
+        {
+            var p = new byte[4];
+            System.Text.Encoding.ASCII.GetBytes(s).CopyTo(p, 0);
+            b.AddRange(p);
+        }
+        Pfx("C0");
+        U16(2);
+        U16(codes.Length);
+        U16(1);
+        U16(0x0F);
+        Pfx("C1");
+        U16(0x41);
+        U16(1);
+        Pfx("NW");
+        U16(2000);
+        U16(codes.Length);
+        foreach (uint c in codes)
+        {
+            b.AddRange(BitConverter.GetBytes(c));
+        }
+
         return b.ToArray();
     }
 

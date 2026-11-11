@@ -66,8 +66,10 @@ public sealed class SettingsView : Screen<SettingsState>
                     Divider(),
                     Row(Loc.Get("MVitaSystem"), fw is { Shell: true } ? Loc.Get("MReady") : Loc.Get("MNeedsFirmware"), () =>
                     {
-                        if (fw is { Shell: true }) Game.GameActivity.Launch(MainActivity.Current!, Game.GameActivity.SystemTitleId);
-                        else Navigation?.PushAsync<FirmwarePage>();
+                        if (fw is { Shell: true })
+                            Game.GameActivity.Launch(MainActivity.Current!, Game.GameActivity.SystemTitleId);
+                        else
+                            Navigation?.PushAsync<FirmwarePage>();
                     }, detail: Loc.Get("MShellDetail"))
                 ),
                 SectionTitle(Loc.Get("MPerformance")),
@@ -130,7 +132,8 @@ public sealed class SettingsView : Screen<SettingsState>
     async void Pick(string title, IReadOnlyList<Choice> choices, Action<string> apply)
     {
         var v = await Choose(title, choices);
-        if (v != null) Change(_ => apply(v));
+        if (v != null)
+            Change(_ => apply(v));
     }
 
     /// <summary>The language row: the choice is saved and applied at once; the screens already built keep their texts
@@ -138,7 +141,8 @@ public sealed class SettingsView : Screen<SettingsState>
     async void PickLanguage()
     {
         var v = await Choose(Loc.Get("Language"), AppPreferences.Languages);
-        if (v == null || v == AppServices.Prefs.Language) return;
+        if (v == null || v == AppServices.Prefs.Language)
+            return;
         Change(x => x.Language = v);
         Loc.SetLanguage(v);
         System.Globalization.CultureInfo.CurrentCulture = System.Globalization.CultureInfo.DefaultThreadCurrentCulture = Loc.Culture;
@@ -151,7 +155,8 @@ public sealed class SettingsView : Screen<SettingsState>
     static void RestartApp()
     {
         var context = MainActivity.Current ?? (global::Android.Content.Context)AppServices.AppContext;
-        if (context.PackageManager?.GetLaunchIntentForPackage(context.PackageName!) is not { } intent) return;
+        if (context.PackageManager?.GetLaunchIntentForPackage(context.PackageName!) is not { } intent)
+            return;
         intent.AddFlags(global::Android.Content.ActivityFlags.NewTask | global::Android.Content.ActivityFlags.ClearTask);
         context.StartActivity(intent);
         Log.Info("Language changed: restarting the app");
@@ -162,8 +167,16 @@ public sealed class SettingsView : Screen<SettingsState>
     {
         change(AppServices.Prefs);
         AppServices.SavePrefs();
-        if (AppServices.Prefs.DebugMode) { Log.Level = LogLevel.Debug; DebugMode.Enable(); }
-        else { Log.Level = LogLevel.Info; DebugMode.Disable(); }
+        if (AppServices.Prefs.DebugMode)
+        {
+            Log.Level = LogLevel.Debug;
+            DebugMode.Enable();
+        }
+        else
+        {
+            Log.Level = LogLevel.Info;
+            DebugMode.Disable();
+        }
         SetState(s => s.Revision++);
     }
 
@@ -176,8 +189,13 @@ public sealed class SettingsView : Screen<SettingsState>
     async void ShareLog()
     {
         string path = System.IO.Path.Combine(AppServices.Data.Logs, "last.log");
-        if (!File.Exists(path)) path = System.IO.Path.Combine(AppServices.Data.Logs, "app.log");
-        if (!File.Exists(path)) { await Alert("Log", Loc.Get("MNoLogYet")); return; }
+        if (!File.Exists(path))
+            path = System.IO.Path.Combine(AppServices.Data.Logs, "app.log");
+        if (!File.Exists(path))
+        {
+            await Alert("Log", Loc.Get("MNoLogYet"));
+            return;
+        }
         await Share.Default.RequestAsync(new ShareFileRequest(Loc.Get("MVitaSharpLog"), new ShareFile(path, "text/plain")));
     }
 }

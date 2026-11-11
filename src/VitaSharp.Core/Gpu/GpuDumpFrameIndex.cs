@@ -74,7 +74,11 @@ public sealed class GpuDumpFrameIndex
                     lastPresentDraws = draws;
                     ix.Frames.Add(f);
                     begun.Add(scenes.Count);
-                    if (ix.FirstPresent < 0) ix.FirstPresent = present;
+                    if (ix.FirstPresent < 0)
+                    {
+                        ix.FirstPresent = present;
+                    }
+
                     ix.LastPresent = present;
                     break;
             }
@@ -88,7 +92,14 @@ public sealed class GpuDumpFrameIndex
             // buffer again before it is shown; a later empty scene into it, a clear, does not move the frame)
             Scene? sc = null;
             for (int k = begun[i] - 1, n = 0; k >= 0 && n < 4096; k--, n++)
-                if (scenes[k].Address == f.Address && f.Address != 0 && scenes[k].Last >= scenes[k].First) { sc = scenes[k]; break; }
+            {
+                if (scenes[k].Address == f.Address && f.Address != 0 && scenes[k].Last >= scenes[k].First)
+                {
+                    sc = scenes[k];
+                    break;
+                }
+            }
+
             f.FirstDraw = prevEnd + 1;
             if (sc != null && sc.Last >= sc.First && sc.Last >= f.FirstDraw)
             {
@@ -96,7 +107,11 @@ public sealed class GpuDumpFrameIndex
                 f.ScenePresent = sc.BeginPresent;
                 prevEnd = sc.Last;
             }
-            else f.LastDraw = prevEnd; // nothing found (CPU framebuffer, or drawn before the dump starts): empty
+            else
+            {
+                f.LastDraw = prevEnd; // nothing found (CPU framebuffer, or drawn before the dump starts): empty
+            }
+
             ix._byPresent[f.Present] = f;
         }
         ix.Seconds = t0.Elapsed.TotalSeconds;
@@ -108,10 +123,13 @@ public sealed class GpuDumpFrameIndex
     {
         var sb = new StringBuilder("# present framebuffer draws(first-last,count) issued-between-presents lag | draws between the previous present and this one\n");
         foreach (var f in Frames)
+        {
             sb.Append(f.Mapped
                 ? $"#{f.Present} 0x{f.Address:X8} draws {f.FirstDraw}-{f.LastDraw} ({f.Draws}) between #{f.ScenePresent}-#{f.ScenePresent + 1} lag {f.Lag}"
                 : $"#{f.Present} 0x{f.Address:X8} no scene found (CPU framebuffer, or drawn before the dump starts)")
               .Append($" | interval {f.IntervalFirst}-{f.IntervalLast} ({Math.Max(0, f.IntervalLast - f.IntervalFirst + 1)})\n");
+        }
+
         return sb.ToString();
     }
 
@@ -119,7 +137,11 @@ public sealed class GpuDumpFrameIndex
     public string LagSummary()
     {
         var hist = new SortedDictionary<long, int>();
-        foreach (var f in Frames) { long k = f.Lag; hist[k] = hist.GetValueOrDefault(k) + 1; }
+        foreach (var f in Frames)
+        {
+            long k = f.Lag;
+            hist[k] = hist.GetValueOrDefault(k) + 1;
+        }
         return string.Join(", ", hist.Select(kv => kv.Key < 0 ? $"unmapped {kv.Value}" : $"lag {kv.Key}: {kv.Value} presents"));
     }
 }

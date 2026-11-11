@@ -50,12 +50,23 @@ public sealed class InputProfileStore
 
     public void Save()
     {
-        if (Path == null) return;
-        if (System.IO.Path.GetDirectoryName(Path) is { Length: > 0 } dir) Directory.CreateDirectory(dir);
+        if (Path == null)
+        {
+            return;
+        }
+
+        if (System.IO.Path.GetDirectoryName(Path) is { Length: > 0 } dir)
+        {
+            Directory.CreateDirectory(dir);
+        }
+
         var tmp = Path + ".tmp";
         File.WriteAllText(tmp, Serialize(Config));
         File.Move(tmp, Path, true);
-        lock (_diskLock) _fileTime = File.GetLastWriteTimeUtc(Path);
+        lock (_diskLock)
+        {
+            _fileTime = File.GetLastWriteTimeUtc(Path);
+        }
     }
 
     /// <summary>
@@ -68,7 +79,11 @@ public sealed class InputProfileStore
     {
         RefreshFromDisk();
         int r = Revision;
-        if (r == seen) return false;
+        if (r == seen)
+        {
+            return false;
+        }
+
         seen = r;
         return true;
     }
@@ -76,19 +91,39 @@ public sealed class InputProfileStore
     /// <summary>Reloads input.json when its time stamp changed since it was last loaded or saved here.</summary>
     public void RefreshFromDisk()
     {
-        if (Path == null) return;
+        if (Path == null)
+        {
+            return;
+        }
+
         long now = Environment.TickCount64;
-        if (now - Volatile.Read(ref _checkedAt) < DiskCheckIntervalMs) return;
+        if (now - Volatile.Read(ref _checkedAt) < DiskCheckIntervalMs)
+        {
+            return;
+        }
+
         lock (_diskLock)
         {
-            if (now - _checkedAt < DiskCheckIntervalMs) return;
+            if (now - _checkedAt < DiskCheckIntervalMs)
+            {
+                return;
+            }
+
             _checkedAt = now;
             try
             {
                 var time = File.Exists(Path) ? File.GetLastWriteTimeUtc(Path) : default;
-                if (time == _fileTime) return;
+                if (time == _fileTime)
+                {
+                    return;
+                }
+
                 var config = time == default ? new InputConfig() : Deserialize(File.ReadAllText(Path));
-                if (config == null) return;
+                if (config == null)
+                {
+                    return;
+                }
+
                 _fileTime = time;
                 Config = config;
                 Interlocked.Increment(ref _revision);
@@ -108,10 +143,22 @@ public sealed class InputProfileStore
     /// its default key the same way.</summary>
     public ControllerProfile KeyboardProfile()
     {
-        if (Config.Keyboard == null) return DefaultMappings.Keyboard();
+        if (Config.Keyboard == null)
+        {
+            return DefaultMappings.Keyboard();
+        }
+
         var p = Config.Keyboard.Clone();
-        if (Config.Version < 2) DefaultMappings.AddMotionKeys(p);
-        if (Config.Version < 3) DefaultMappings.AddHotkeys(p);
+        if (Config.Version < 2)
+        {
+            DefaultMappings.AddMotionKeys(p);
+        }
+
+        if (Config.Version < 3)
+        {
+            DefaultMappings.AddHotkeys(p);
+        }
+
         return p;
     }
 
@@ -136,15 +183,30 @@ public sealed class InputProfileStore
             return;
         }
         int i = Config.Controllers.FindIndex(x => x.Id.Equals(p.Id, StringComparison.OrdinalIgnoreCase));
-        if (i >= 0) Config.Controllers[i] = copy; else Config.Controllers.Add(copy);
+        if (i >= 0)
+        {
+            Config.Controllers[i] = copy;
+        }
+        else
+        {
+            Config.Controllers.Add(copy);
+        }
+
         Interlocked.Increment(ref _revision);
     }
 
     /// <summary>Forgets a device's profile, so it goes back to the default mapping.</summary>
     public void Remove(string id)
     {
-        if (id == ControllerProfile.KeyboardId) Config.Keyboard = null;
-        else Config.Controllers.RemoveAll(x => x.Id.Equals(id, StringComparison.OrdinalIgnoreCase));
+        if (id == ControllerProfile.KeyboardId)
+        {
+            Config.Keyboard = null;
+        }
+        else
+        {
+            Config.Controllers.RemoveAll(x => x.Id.Equals(id, StringComparison.OrdinalIgnoreCase));
+        }
+
         Interlocked.Increment(ref _revision);
     }
 }

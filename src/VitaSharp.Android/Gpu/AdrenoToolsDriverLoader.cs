@@ -49,12 +49,15 @@ public sealed class AdrenoToolsDriverLoader : IVulkanDriverProvider
     public static AdrenoToolsDriverLoader? Create(GpuDriverSettings settings, CustomDriverStore store, DataLayout data, string nativeLibDir, string cacheDir)
     {
         var driver = store.Find(settings.Driver);
-        if (settings.Driver.Length > 0 && driver == null) Log.Warn($"GPU driver '{settings.Driver}' is not installed: system driver");
-        if (driver == null && !settings.Turbo && !settings.PatchBcn && !settings.FileRedirect) return null;
+        if (settings.Driver.Length > 0 && driver == null)
+            Log.Warn($"GPU driver '{settings.Driver}' is not installed: system driver");
+        if (driver == null && !settings.Turbo && !settings.PatchBcn && !settings.FileRedirect)
+            return null;
         // everything libadrenotools does is for Qualcomm's kernel driver (kgsl): elsewhere use the system loader
         if (!IsAdreno)
         {
-            if (driver != null || settings.FileRedirect || settings.Turbo) Log.Warn("GPU driver options ignored: this is not an Adreno GPU (no /dev/kgsl-3d0)");
+            if (driver != null || settings.FileRedirect || settings.Turbo)
+                Log.Warn("GPU driver options ignored: this is not an Adreno GPU (no /dev/kgsl-3d0)");
             return null;
         }
         if (!NativeLibrary.TryLoad("libadrenotools.so", out var h))
@@ -102,7 +105,8 @@ public sealed class AdrenoToolsDriverLoader : IVulkanDriverProvider
     public nint Open()
     {
         int flags = Flags;
-        if (_settings.FileRedirect) Directory.CreateDirectory(_redirectDir);
+        if (_settings.FileRedirect)
+            Directory.CreateDirectory(_redirectDir);
         // RTLD_NOW; libadrenotools loads the driver into its own linker namespace with the hooks applied. The temporary
         // directory is only used below API 29 (no memfd)
         nint handle = AdrenoTools.adrenotools_open_libvulkan(2, flags, _tmpLibDir, _hookLibDir,
@@ -116,7 +120,10 @@ public sealed class AdrenoToolsDriverLoader : IVulkanDriverProvider
         Log.Info($"Vulkan driver: {Description}");
         if (_settings.Turbo)
         {
-            try { AdrenoTools.adrenotools_set_turbo(true); }
+            try
+            {
+                AdrenoTools.adrenotools_set_turbo(true);
+            }
             catch (EntryPointNotFoundException) { }
         }
         return handle;
@@ -124,11 +131,20 @@ public sealed class AdrenoToolsDriverLoader : IVulkanDriverProvider
 
     public bool TryEnableBcn(uint vendorId, uint driverVersion, nint getPhysicalDeviceFormatProperties)
     {
-        if (!_opened || !_settings.PatchBcn || vendorId != GpuQuirkTable.VendorQualcomm) return false;
+        if (!_opened || !_settings.PatchBcn || vendorId != GpuQuirkTable.VendorQualcomm)
+            return false;
         // VK_VERSION_MAJOR/MINOR of the driver version, as Vita3K passes them
         var type = AdrenoTools.adrenotools_get_bcn_type(driverVersion >> 22, (driverVersion >> 12) & 0x3FF, vendorId);
-        if (type == AdrenoTools.BcnBlob) { Log.Info("BCeNabler: the driver decodes BCn already"); return true; }
-        if (type != AdrenoTools.BcnPatch) { Log.Info("BCeNabler: this driver version cannot be patched"); return false; }
+        if (type == AdrenoTools.BcnBlob)
+        {
+            Log.Info("BCeNabler: the driver decodes BCn already");
+            return true;
+        }
+        if (type != AdrenoTools.BcnPatch)
+        {
+            Log.Info("BCeNabler: this driver version cannot be patched");
+            return false;
+        }
         bool ok = AdrenoTools.adrenotools_patch_bcn(getPhysicalDeviceFormatProperties);
         Log.Info($"BCeNabler: {(ok ? "BCn textures enabled" : "patch failed")}");
         return ok;

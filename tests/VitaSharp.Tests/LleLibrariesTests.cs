@@ -72,8 +72,14 @@ public sealed class LleLibrariesTests(GuestMemoryFixture fx, ITestOutputHelper o
             var t = emu.Kernel.CreateThread("lle-test", 0, 0x10000100, 0x10000, 0, 0x70000);
             t.HostBody = th =>
             {
-                try { result = th.CallGuest(addr, buf); }
-                catch (Exception e) { failure = e; }
+                try
+                {
+                    result = th.CallGuest(addr, buf);
+                }
+                catch (Exception e)
+                {
+                    failure = e;
+                }
             };
             t.Start(0, 0);
             Assert.True(t.WaitForExit(60_000), $"{export} did not return");
@@ -85,9 +91,20 @@ public sealed class LleLibrariesTests(GuestMemoryFixture fx, ITestOutputHelper o
                 Assert.False(string.IsNullOrEmpty(GuestMemory.ReadCString(result)));
             }
 
-            if (export == "sceLsdbAppDatabaseInit") { Assert.Equal(buf, result); Assert.NotEqual(0u, GuestMemory.R32(buf)); }
+            if (export == "sceLsdbAppDatabaseInit")
+            {
+                Assert.Equal(buf, result);
+                Assert.NotEqual(0u, GuestMemory.R32(buf));
+            }
         }
-        finally { try { Directory.Delete(root, true); } catch (IOException) { } }
+        finally
+        {
+            try
+            {
+                Directory.Delete(root, true);
+            }
+            catch (IOException) { }
+        }
     }
 
     /// <summary>A program that is not the shell importing SceLsdb gets the firmware's livespace_db.suprx through the
@@ -96,7 +113,11 @@ public sealed class LleLibrariesTests(GuestMemoryFixture fx, ITestOutputHelper o
     public void FirmwareLleLibraryLoadsForAnyImporter()
     {
         var found = Find("SceLsdb");
-        if (found == null) { output.WriteLine($"livespace_db.suprx not installed under {FsRoot}; nothing to check"); return; }
+        if (found == null)
+        {
+            output.WriteLine($"livespace_db.suprx not installed under {FsRoot}; nothing to check");
+            return;
+        }
         string root = Path.Combine(Path.GetTempPath(), "vitasharp-lle-" + Guid.NewGuid().ToString("N"));
         Directory.CreateDirectory(Path.Combine(root, "vs0", "vsh", "shell"));
         File.Copy(found.Value.Path, Path.Combine(root, "vs0", "vsh", "shell", "livespace_db.suprx"));
@@ -111,13 +132,27 @@ public sealed class LleLibrariesTests(GuestMemoryFixture fx, ITestOutputHelper o
             uint seg = emu.Memory.Alloc(0x100, "lle importer");
             var importer = new LoadedModule { Name = "homebrew", Path = "app0:eboot.bin", Segments = { [0] = new SegmentInfo(seg, 0, 0x100) } };
             importer.Imports.Add(("SceLsdb", libNid, nids));
-            for (int i = 0; i < nids.Length; i++) emu.Linker.BindFunctionImport(nids[i], libNid, "SceLsdb", seg + (uint)i * 0x10, importer.Segments);
+            for (int i = 0; i < nids.Length; i++)
+            {
+                emu.Linker.BindFunctionImport(nids[i], libNid, "SceLsdb", seg + (uint)i * 0x10, importer.Segments);
+            }
+
             var loaded = emu.LoadFirmwareDependencies(importer);
             Assert.Contains(loaded, m => m.Path.Equals("vs0:vsh/shell/livespace_db.suprx", StringComparison.OrdinalIgnoreCase));
-            foreach (uint nid in nids) Assert.True(emu.Linker.TryGetFunctionExport(nid, out _));
+            foreach (uint nid in nids)
+            {
+                Assert.True(emu.Linker.TryGetFunctionExport(nid, out _));
+            }
             // the importer's stub now jumps into the module instead of trapping into the HLE
             Assert.NotEqual(0xEF000000u, GuestMemory.R32(seg) & 0xFF000000u);
         }
-        finally { try { Directory.Delete(root, true); } catch (IOException) { } }
+        finally
+        {
+            try
+            {
+                Directory.Delete(root, true);
+            }
+            catch (IOException) { }
+        }
     }
 }

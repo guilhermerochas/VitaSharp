@@ -99,30 +99,55 @@ public sealed class ControllerProfile
 
     public IEnumerable<InputBinding> Get(VitaControl c)
     {
-        if (!Bindings.TryGetValue(c.ToString(), out var list)) yield break;
+        if (!Bindings.TryGetValue(c.ToString(), out var list))
+        {
+            yield break;
+        }
+
         foreach (var s in list)
-            if (InputBinding.TryParse(s, out var b)) yield return b;
+        {
+            if (InputBinding.TryParse(s, out var b))
+            {
+                yield return b;
+            }
+        }
     }
 
     /// <summary>Replaces every binding of <paramref name="c"/> with <paramref name="b"/> (null = unbound).</summary>
     public void Set(VitaControl c, InputBinding? b)
     {
-        if (b is { } x) Bindings[c.ToString()] = [x.ToString()];
-        else Bindings.Remove(c.ToString());
+        if (b is { } x)
+        {
+            Bindings[c.ToString()] = [x.ToString()];
+        }
+        else
+        {
+            Bindings.Remove(c.ToString());
+        }
     }
 
     public void Add(VitaControl c, InputBinding b)
     {
         var key = c.ToString();
-        if (!Bindings.TryGetValue(key, out var list)) Bindings[key] = list = new();
+        if (!Bindings.TryGetValue(key, out var list))
+        {
+            Bindings[key] = list = new();
+        }
+
         var s = b.ToString();
-        if (!list.Contains(s)) list.Add(s);
+        if (!list.Contains(s))
+        {
+            list.Add(s);
+        }
     }
 
     public void Remove(VitaControl c, InputBinding b)
     {
         var key = c.ToString();
-        if (Bindings.TryGetValue(key, out var list) && list.Remove(b.ToString()) && list.Count == 0) Bindings.Remove(key);
+        if (Bindings.TryGetValue(key, out var list) && list.Remove(b.ToString()) && list.Count == 0)
+        {
+            Bindings.Remove(key);
+        }
     }
 
     public bool Has(VitaControl c, InputBinding b) => Bindings.TryGetValue(c.ToString(), out var list) && list.Contains(b.ToString());
@@ -130,28 +155,58 @@ public sealed class ControllerProfile
     /// <summary>The button combinations bound to <paramref name="c"/> (<see cref="InputCombo"/>; hotkeys).</summary>
     public IEnumerable<InputCombo> GetCombos(VitaControl c)
     {
-        if (!Bindings.TryGetValue(c.ToString(), out var list)) yield break;
+        if (!Bindings.TryGetValue(c.ToString(), out var list))
+        {
+            yield break;
+        }
+
         foreach (var s in list)
-            if (InputCombo.TryParse(s, out var combo)) yield return combo;
+        {
+            if (InputCombo.TryParse(s, out var combo))
+            {
+                yield return combo;
+            }
+        }
     }
 
     /// <summary>Adds a combination to <paramref name="c"/>, or replaces every binding with it.</summary>
     public void AddCombo(VitaControl c, InputCombo combo, bool replace = false)
     {
         var key = c.ToString();
-        if (replace || !Bindings.TryGetValue(key, out var list)) Bindings[key] = list = new();
+        if (replace || !Bindings.TryGetValue(key, out var list))
+        {
+            Bindings[key] = list = new();
+        }
+
         var s = combo.ToString();
-        if (!list.Contains(s)) list.Add(s);
+        if (!list.Contains(s))
+        {
+            list.Add(s);
+        }
     }
 
     public ControllerProfile Clone() => new()
     {
-        Id = Id, Name = Name, Kind = Kind,
+        Id = Id,
+        Name = Name,
+        Kind = Kind,
         Bindings = Bindings.ToDictionary(kv => kv.Key, kv => kv.Value.ToList()),
-        LeftStick = LeftStick.Clone(), RightStick = RightStick.Clone(), SwapConfirm = SwapConfirm, ButtonThreshold = ButtonThreshold,
-        TouchFrontX = TouchFrontX, TouchFrontY = TouchFrontY, TouchBackX = TouchBackX, TouchBackY = TouchBackY,
-        TouchpadEnabled = TouchpadEnabled, TouchpadRearModifier = TouchpadRearModifier, TouchpadBothModifier = TouchpadBothModifier,
-        MotionEnabled = MotionEnabled, MotionOrientation = MotionOrientation, MotionSource = MotionSource, Tilt = Tilt.Clone(), Mouse = Mouse.Clone(),
+        LeftStick = LeftStick.Clone(),
+        RightStick = RightStick.Clone(),
+        SwapConfirm = SwapConfirm,
+        ButtonThreshold = ButtonThreshold,
+        TouchFrontX = TouchFrontX,
+        TouchFrontY = TouchFrontY,
+        TouchBackX = TouchBackX,
+        TouchBackY = TouchBackY,
+        TouchpadEnabled = TouchpadEnabled,
+        TouchpadRearModifier = TouchpadRearModifier,
+        TouchpadBothModifier = TouchpadBothModifier,
+        MotionEnabled = MotionEnabled,
+        MotionOrientation = MotionOrientation,
+        MotionSource = MotionSource,
+        Tilt = Tilt.Clone(),
+        Mouse = Mouse.Clone(),
     };
 }
 

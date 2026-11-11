@@ -30,7 +30,11 @@ public sealed unsafe partial class VulkanRenderer
 
     void EnsureMirror()
     {
-        if (_mirror.Handle != 0) return;
+        if (_mirror.Handle != 0)
+        {
+            return;
+        }
+
         (_mirror, _mirrorMem) = _core.CreateDeviceBuffer((ulong)CdramBytes + ScratchBytes,
             BufferUsageFlags.StorageBufferBit | BufferUsageFlags.TransferDstBit | BufferUsageFlags.TransferSrcBit | BufferUsageFlags.VertexBufferBit, MemCat.PipelineBuffer);
         // the last 256 bytes stay zero: slots bound to a null address read from there
@@ -45,20 +49,51 @@ public sealed unsafe partial class VulkanRenderer
     DescriptorBufferInfo ResolveMappedSlots(List<UniformBufferSlot> slots, Span<byte> data, uint[] addrs, bool writes = false)
     {
         var dummy = new DescriptorBufferInfo(_dummyBuffer, 0, 256);
-        if (data.Length == 0 || addrs.Length == 0) return dummy;
+        if (data.Length == 0 || addrs.Length == 0)
+        {
+            return dummy;
+        }
+
         bool anyMapped = false;
-        foreach (var s in slots) if (s.Mapped) { anyMapped = true; break; }
-        if (!anyMapped) return dummy;
+        foreach (var s in slots)
+        {
+            if (s.Mapped)
+            {
+                anyMapped = true;
+                break;
+            }
+        }
+
+        if (!anyMapped)
+        {
+            return dummy;
+        }
+
         EnsureMirror();
-        if (_scratchFrame != FrameCount) { _scratchFrame = FrameCount; _scratchUsed = 0; }
+        if (_scratchFrame != FrameCount)
+        {
+            _scratchFrame = FrameCount;
+            _scratchUsed = 0;
+        }
         // a reader of memory an earlier draw's shader wrote waits for those writes
-        if (!writes) AwaitMirrorWrites(PipelineStageFlags.VertexShaderBit | PipelineStageFlags.FragmentShaderBit, AccessFlags.ShaderReadBit);
+        if (!writes)
+        {
+            AwaitMirrorWrites(PipelineStageFlags.VertexShaderBit | PipelineStageFlags.FragmentShaderBit, AccessFlags.ShaderReadBit);
+        }
 
         foreach (var s in slots)
         {
-            if (!s.Mapped) continue;
+            if (!s.Mapped)
+            {
+                continue;
+            }
+
             uint addr = addrs[Math.Min(s.GuestIndex, 14)];
-            if (addr == 0) { WriteHeader(data, s, CdramBytes + ScratchBytes - 256); continue; }
+            if (addr == 0)
+            {
+                WriteHeader(data, s, CdramBytes + ScratchBytes - 256);
+                continue;
+            }
             WriteHeader(data, s, PrepareMapped(addr, s.DeclaredBytes, writes));
         }
         return new DescriptorBufferInfo(_mirror, 0, (ulong)CdramBytes + ScratchBytes);
@@ -80,7 +115,11 @@ public sealed unsafe partial class VulkanRenderer
 
     void AwaitMirrorWrites(PipelineStageFlags dstStage, AccessFlags dstAccess)
     {
-        if (!_mirrorWritesPending) return;
+        if (!_mirrorWritesPending)
+        {
+            return;
+        }
+
         _mirrorWritesPending = false;
         EndRendering();
         BufferBarrier(_mirror, PipelineStageFlags.VertexShaderBit | PipelineStageFlags.FragmentShaderBit, dstStage | PipelineStageFlags.TransferBit,
@@ -103,31 +142,62 @@ public sealed unsafe partial class VulkanRenderer
     /// </summary>
     void ExpireGpuWritten(uint start, uint end, bool innerPages = false)
     {
-        if (_gpuWritten.Count == 0) return;
+        if (_gpuWritten.Count == 0)
+        {
+            return;
+        }
+
         SweepDirtyPages();
         const uint page = 1u << DirtyPages.PageShift;
         for (int i = _gpuWritten.Count - 1; i >= 0; i--)
         {
             uint s = _gpuWritten.Keys[i];
             var (e, stamp) = _gpuWritten.Values[i];
-            if (e <= start || s >= end) continue;
+            if (e <= start || s >= end)
+            {
+                continue;
+            }
+
             uint os = Math.Max(s, start), oe = Math.Min(e, end);
-            if (innerPages) { os = (os + page - 1 & ~(page - 1)) + page; oe &= ~(page - 1); }
+            if (innerPages)
+            {
+                os = (os + page - 1 & ~(page - 1)) + page;
+                oe &= ~(page - 1);
+            }
             if (oe > os && DirtyPages.WrittenBetween(os, oe - os, stamp, GpuQueue.ReadBound))
             {
-                if (_diagActive != null) TraceLine($"[mirror] range 0x{s:X8}-0x{e:X8} stored by a program was written by the CPU since: its written pages go back to guest memory (before draw id={NextDrawId})");
+                if (_diagActive != null)
+                {
+                    TraceLine($"[mirror] range 0x{s:X8}-0x{e:X8} stored by a program was written by the CPU since: its written pages go back to guest memory (before draw id={NextDrawId})");
+                }
+
                 _gpuWritten.RemoveAt(i);
                 // only the pages the CPU wrote: the rest of the range keeps what the GPU stored there
                 uint keep = s;
                 for (uint p = os & ~(page - 1); p < oe; p += page)
                 {
                     uint ps = Math.Max(p, os), pe = Math.Min(p + page, oe);
-                    if (!DirtyPages.WrittenBetween(ps, pe - ps, stamp, GpuQueue.ReadBound)) continue;
-                    if (_diagActive != null) TraceLine($"[mirror]   CPU-written 0x{ps:X8}-0x{pe:X8}");
-                    if (ps > keep) _gpuWritten[keep] = (ps, stamp);
+                    if (!DirtyPages.WrittenBetween(ps, pe - ps, stamp, GpuQueue.ReadBound))
+                    {
+                        continue;
+                    }
+
+                    if (_diagActive != null)
+                    {
+                        TraceLine($"[mirror]   CPU-written 0x{ps:X8}-0x{pe:X8}");
+                    }
+
+                    if (ps > keep)
+                    {
+                        _gpuWritten[keep] = (ps, stamp);
+                    }
+
                     keep = pe;
                 }
-                if (e > keep) _gpuWritten[keep] = (e, stamp);
+                if (e > keep)
+                {
+                    _gpuWritten[keep] = (e, stamp);
+                }
             }
         }
     }
@@ -135,17 +205,35 @@ public sealed unsafe partial class VulkanRenderer
     /// <summary>Records [start, end) as written by a shader (merged with the ranges it touches).</summary>
     void NoteGpuWritten(uint start, uint end)
     {
-        if (_gpuWritten.Count >= 4096) _gpuWritten.Clear(); // runaway bookkeeping: back to guest copies
+        if (_gpuWritten.Count >= 4096)
+        {
+            _gpuWritten.Clear(); // runaway bookkeeping: back to guest copies
+        }
         // the merged range gets a new stamp: the CPU writes since the older ranges were stored count first
         uint lo = start, hi = end;
         foreach (var (s, (e, _)) in _gpuWritten)
-            if (e >= start && s <= end) { lo = Math.Min(lo, s); hi = Math.Max(hi, e); }
-        if (lo < start || hi > end) ExpireGpuWritten(lo, hi);
+        {
+            if (e >= start && s <= end)
+            {
+                lo = Math.Min(lo, s);
+                hi = Math.Max(hi, e);
+            }
+        }
+
+        if (lo < start || hi > end)
+        {
+            ExpireGpuWritten(lo, hi);
+        }
+
         for (int i = _gpuWritten.Count - 1; i >= 0; i--)
         {
             uint s = _gpuWritten.Keys[i];
             uint e = _gpuWritten.Values[i].End;
-            if (e < start || s > end) continue;
+            if (e < start || s > end)
+            {
+                continue;
+            }
+
             start = Math.Min(start, s);
             end = Math.Max(end, e);
             _gpuWritten.RemoveAt(i);
@@ -156,17 +244,28 @@ public sealed unsafe partial class VulkanRenderer
         _gpuWritten[start] = (end, bound != uint.MaxValue ? bound + 1 : DirtyPages.Epoch);
         GpuQueue.SceneEndSweeps = true;
         _mirrorWritesPending = true;
-        if (_diagActive != null) TraceLine($"[mirror] draw id={NextDrawId - 1} stores to 0x{start:X8}-0x{end:X8}: later streams there are read from the mirror");
+        if (_diagActive != null)
+        {
+            TraceLine($"[mirror] draw id={NextDrawId - 1} stores to 0x{start:X8}-0x{end:X8}: later streams there are read from the mirror");
+        }
     }
 
     /// <summary>The mirror offset of a vertex stream that lies in shader-written memory, else -1 (read from guest memory).</summary>
     long GpuWrittenStream(uint addr, uint length)
     {
-        if (_gpuWritten.Count == 0 || addr < GuestMemory.CdramStart || (ulong)addr + length > GuestMemory.CdramEnd) return -1;
+        if (_gpuWritten.Count == 0 || addr < GuestMemory.CdramStart || (ulong)addr + length > GuestMemory.CdramEnd)
+        {
+            return -1;
+        }
+
         ExpireGpuWritten(addr, addr + length, innerPages: length >= 3u << DirtyPages.PageShift);
         foreach (var (s, (e, _)) in _gpuWritten)
         {
-            if (s > addr) break;
+            if (s > addr)
+            {
+                break;
+            }
+
             if (addr + length <= e)
             {
                 AwaitMirrorWrites(PipelineStageFlags.VertexInputBit, AccessFlags.VertexAttributeReadBit);
@@ -179,8 +278,16 @@ public sealed unsafe partial class VulkanRenderer
             }
         }
         if (_diagActive != null)
+        {
             foreach (var (s, (e, _)) in _gpuWritten)
-                if (s < addr + length && addr < e) TraceLine($"[mirror] draw id={NextDrawId - 1} stream 0x{addr:X8}+{length} overlaps the stored range 0x{s:X8}-0x{e:X8} but is not inside it: read from guest memory");
+            {
+                if (s < addr + length && addr < e)
+                {
+                    TraceLine($"[mirror] draw id={NextDrawId - 1} stream 0x{addr:X8}+{length} overlaps the stored range 0x{s:X8}-0x{e:X8} but is not inside it: read from guest memory");
+                }
+            }
+        }
+
         return -1;
     }
 
@@ -191,13 +298,31 @@ public sealed unsafe partial class VulkanRenderer
         ExpireGpuWritten(addr, end);
         foreach (var (s, (e, _)) in _gpuWritten)
         {
-            if (e <= at) continue;
-            if (s >= end) break;
-            if (s > at) CopyGuestToMirror(at, s - at, at - GuestMemory.CdramStart);
+            if (e <= at)
+            {
+                continue;
+            }
+
+            if (s >= end)
+            {
+                break;
+            }
+
+            if (s > at)
+            {
+                CopyGuestToMirror(at, s - at, at - GuestMemory.CdramStart);
+            }
+
             at = Math.Max(at, e);
-            if (at >= end) return;
+            if (at >= end)
+            {
+                return;
+            }
         }
-        if (at < end) CopyGuestToMirror(at, end - at, at - GuestMemory.CdramStart);
+        if (at < end)
+        {
+            CopyGuestToMirror(at, end - at, at - GuestMemory.CdramStart);
+        }
     }
 
     /// <summary>Makes the data at <paramref name="addr"/> current in the mirror; returns its offset in the mirror buffer.</summary>
@@ -218,12 +343,24 @@ public sealed unsafe partial class VulkanRenderer
             Log.DebugOnce($"mapped-{addr:X8}", $"[gpu] mapped 0x{addr:X8}: guest memory");
             uint n = (uint)Math.Min(Math.Min(declaredBytes, MappedWindowBytes), GuestMemory.CdramEnd - addr);
             CopyGuestToMirrorExceptGpuWritten(addr, n);
-            if (writes) NoteGpuWritten(addr, addr + n);
+            if (writes)
+            {
+                NoteGpuWritten(addr, addr + n);
+            }
+
             return addr - GuestMemory.CdramStart;
         }
-        if (writes) Log.WarnOnce("mapped-store-scratch", $"[gpu] a program stores to memory at 0x{addr:X8}, outside CDRAM: later draws do not see what it wrote");
+        if (writes)
+        {
+            Log.WarnOnce("mapped-store-scratch", $"[gpu] a program stores to memory at 0x{addr:X8}, outside CDRAM: later draws do not see what it wrote");
+        }
+
         uint size = (uint)Math.Min(declaredBytes, MappedWindowBytes);
-        if (_scratchUsed + size > ScratchBytes - 256) _scratchUsed = 0; // wrap: draws recorded earlier read their windows before these copies (ordered by barriers)
+        if (_scratchUsed + size > ScratchBytes - 256)
+        {
+            _scratchUsed = 0; // wrap: draws recorded earlier read their windows before these copies (ordered by barriers)
+        }
+
         uint off = CdramBytes + _scratchUsed;
         CopyGuestToMirror(addr, size, off);
         _scratchUsed += (size + 255) & ~255u;
@@ -247,7 +384,9 @@ public sealed unsafe partial class VulkanRenderer
     static void WriteHeader(Span<byte> data, UniformBufferSlot s, uint offset)
     {
         if (s.DataOffset + 4 <= data.Length)
+        {
             BitConverter.TryWriteBytes(data[s.DataOffset..], ShaderGenerator.MappedFlag | offset);
+        }
     }
 
     RenderTarget? RenderTargetContaining(uint addr)
@@ -258,15 +397,29 @@ public sealed unsafe partial class VulkanRenderer
             foreach (var rt in _renderTargets.Values)
             {
                 uint bytes = rt.Stride * (uint)Formats.ColorBytesPerPixel(rt.ColorFormat) * rt.Height;
-                if (addr < rt.Address || addr >= rt.Address + bytes) continue;
-                if (best == null || rt.LastUsedFrame > best.LastUsedFrame) best = rt;
+                if (addr < rt.Address || addr >= rt.Address + bytes)
+                {
+                    continue;
+                }
+
+                if (best == null || rt.LastUsedFrame > best.LastUsedFrame)
+                {
+                    best = rt;
+                }
             }
             return best;
         }
         foreach (ref readonly var r in RtRanges())
         {
-            if (addr < r.Lo || addr >= r.Hi) continue;
-            if (best == null || r.Rt.LastUsedFrame > best.LastUsedFrame) best = r.Rt;
+            if (addr < r.Lo || addr >= r.Hi)
+            {
+                continue;
+            }
+
+            if (best == null || r.Rt.LastUsedFrame > best.LastUsedFrame)
+            {
+                best = r.Rt;
+            }
         }
         return best;
     }
@@ -276,11 +429,22 @@ public sealed unsafe partial class VulkanRenderer
     /// target was a measurable part of the GPU worker on the phone.</summary>
     ReadOnlySpan<RtRange> RtRanges()
     {
-        if (_rtRangesValid) return _rtRanges.AsSpan(0, _rtRangeCount);
-        if (_rtRanges.Length < _renderTargets.Count) _rtRanges = new RtRange[Math.Max(16, _renderTargets.Count * 2)];
+        if (_rtRangesValid)
+        {
+            return _rtRanges.AsSpan(0, _rtRangeCount);
+        }
+
+        if (_rtRanges.Length < _renderTargets.Count)
+        {
+            _rtRanges = new RtRange[Math.Max(16, _renderTargets.Count * 2)];
+        }
+
         int n = 0;
         foreach (var rt in _renderTargets.Values)
+        {
             _rtRanges[n++] = new RtRange(rt.Address, rt.Address + rt.Stride * (uint)Formats.ColorBytesPerPixel(rt.ColorFormat) * rt.Height, rt);
+        }
+
         _rtRangeCount = n;
         _rtRangesValid = true;
         return _rtRanges.AsSpan(0, n);
@@ -300,12 +464,24 @@ public sealed unsafe partial class VulkanRenderer
         {
             bool inDepth = dt.Address != 0 && addr >= dt.Address && addr < dt.Address + dt.StrideBytes * dt.Height;
             bool inStencil = dt.StencilAddress != 0 && addr >= dt.StencilAddress && addr < dt.StencilAddress + dt.StencilStrideBytes * dt.Height;
-            if (!inDepth && !inStencil) continue;
-            if (best != null && dt.LastUsedFrame <= best.LastUsedFrame) continue;
+            if (!inDepth && !inStencil)
+            {
+                continue;
+            }
+
+            if (best != null && dt.LastUsedFrame <= best.LastUsedFrame)
+            {
+                continue;
+            }
+
             best = dt;
             stencil = !inDepth;
         }
-        if (DebugMode.Enabled && best != null) DbgDepthOverlap(addr, best, stencil);
+        if (DebugMode.Enabled && best != null)
+        {
+            DbgDepthOverlap(addr, best, stencil);
+        }
+
         return best != null && MultisampledDepthRead(best, stencil) ? null : best;
     }
 
@@ -328,7 +504,11 @@ public sealed unsafe partial class VulkanRenderer
             return false;
         }
         rt.LastTouchedFrame = FrameCount;
-        if (_mirroredRt.TryGetValue(rt, out var v) && v == rt.Version) return true;
+        if (_mirroredRt.TryGetValue(rt, out var v) && v == rt.Version)
+        {
+            return true;
+        }
+
         _mirroredRt[rt] = rt.Version;
         _mirroredRtScaled.Remove(rt); // (the scaled layout shares the memory: VulkanRenderer.ResScale.cs)
         rt.Dirty = true;
@@ -363,7 +543,11 @@ public sealed unsafe partial class VulkanRenderer
             return false;
         }
         dt.LastTouchedFrame = FrameCount;
-        if (_mirroredDepth.TryGetValue((dt, stencil), out var v) && v == dt.Version) return true;
+        if (_mirroredDepth.TryGetValue((dt, stencil), out var v) && v == dt.Version)
+        {
+            return true;
+        }
+
         _mirroredDepth[(dt, stencil)] = dt.Version;
         EndRendering();
         const ImageAspectFlags ds = ImageAspectFlags.DepthBit | ImageAspectFlags.StencilBit;
@@ -394,16 +578,25 @@ public sealed unsafe partial class VulkanRenderer
     {
         var bb = new BufferMemoryBarrier
         {
-            SType = StructureType.BufferMemoryBarrier, Buffer = b, Offset = 0, Size = Vk.WholeSize,
-            SrcAccessMask = srcAccess, DstAccessMask = dstAccess,
-            SrcQueueFamilyIndex = Vk.QueueFamilyIgnored, DstQueueFamilyIndex = Vk.QueueFamilyIgnored,
+            SType = StructureType.BufferMemoryBarrier,
+            Buffer = b,
+            Offset = 0,
+            Size = Vk.WholeSize,
+            SrcAccessMask = srcAccess,
+            DstAccessMask = dstAccess,
+            SrcQueueFamilyIndex = Vk.QueueFamilyIgnored,
+            DstQueueFamilyIndex = Vk.QueueFamilyIgnored,
         };
         _vk.CmdPipelineBarrier(Cmd, src, dst, 0, 0, null, 1, in bb, 0, null);
     }
 
     void DestroyMirror()
     {
-        if (_mirror.Handle != 0) _core.DestroyBuffer(_mirror, _mirrorMem);
+        if (_mirror.Handle != 0)
+        {
+            _core.DestroyBuffer(_mirror, _mirrorMem);
+        }
+
         _mirror = default;
         DestroyStencilScratch();
     }

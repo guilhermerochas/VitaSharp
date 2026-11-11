@@ -52,8 +52,16 @@ public sealed class SharedCapture : IDisposable
         ICameraStream lease;
         lock (_gate)
         {
-            if (_disposed) return null;
-            if (_capture != null && _leases == 0 && !Equals(_mode, mode)) StopLocked();
+            if (_disposed)
+            {
+                return null;
+            }
+
+            if (_capture != null && _leases == 0 && !Equals(_mode, mode))
+            {
+                StopLocked();
+            }
+
             if (_capture != null)
             {
                 reused = true;
@@ -84,8 +92,19 @@ public sealed class SharedCapture : IDisposable
         // stops are chained: a device is never opened while an earlier capture of it is still closing
         _lastStop = Task.Run(async () =>
         {
-            try { await prev; } catch { }
-            try { await c.StopAsync(); } catch (Exception e) { Log.Warn($"Camera: stopping the host capture failed: {e.Message}"); }
+            try
+            {
+                await prev;
+            }
+            catch { }
+            try
+            {
+                await c.StopAsync();
+            }
+            catch (Exception e)
+            {
+                Log.Warn($"Camera: stopping the host capture failed: {e.Message}");
+            }
         });
     }
 
@@ -94,11 +113,23 @@ public sealed class SharedCapture : IDisposable
         long gen;
         lock (_gate)
         {
-            if (_capture != c || _leases == 0) return; // already replaced or stopped
-            if (--_leases > 0) return;
+            if (_capture != c || _leases == 0)
+            {
+                return; // already replaced or stopped
+            }
+
+            if (--_leases > 0)
+            {
+                return;
+            }
+
             gen = ++_generation;
         }
-        if (_linger <= TimeSpan.Zero) { StopIfIdle(c, gen); return; }
+        if (_linger <= TimeSpan.Zero)
+        {
+            StopIfIdle(c, gen);
+            return;
+        }
         _ = Task.Delay(_linger).ContinueWith(_ => StopIfIdle(c, gen), TaskScheduler.Default);
     }
 
@@ -106,7 +137,10 @@ public sealed class SharedCapture : IDisposable
     {
         lock (_gate)
         {
-            if (_capture == c && _leases == 0 && _generation == gen) StopLocked();
+            if (_capture == c && _leases == 0 && _generation == gen)
+            {
+                StopLocked();
+            }
         }
     }
 
@@ -114,8 +148,19 @@ public sealed class SharedCapture : IDisposable
     public bool WaitStopped(TimeSpan timeout)
     {
         Task t;
-        lock (_gate) t = _lastStop;
-        try { return t.Wait(timeout); } catch { return true; }
+        lock (_gate)
+        {
+            t = _lastStop;
+        }
+
+        try
+        {
+            return t.Wait(timeout);
+        }
+        catch
+        {
+            return true;
+        }
     }
 
     /// <summary>Stops the capture now (even with live streams) and waits a bounded time for the device to close.</summary>
@@ -125,17 +170,41 @@ public sealed class SharedCapture : IDisposable
         Task prev;
         lock (_gate)
         {
-            if (_disposed) return;
+            if (_disposed)
+            {
+                return;
+            }
+
             _disposed = true;
             c = _capture;
             prev = _lastStop;
-            if (c != null) { _capture = null; _mode = null; _leases = 0; _generation++; }
+            if (c != null)
+            {
+                _capture = null;
+                _mode = null;
+                _leases = 0;
+                _generation++;
+            }
         }
         // stopped on this thread instead of queued to the thread pool, so a busy pool cannot delay it past the wait
-        try { prev.Wait(TimeSpan.FromSeconds(3)); } catch { }
-        if (c == null) return;
-        try { c.StopAsync().Wait(TimeSpan.FromSeconds(3)); }
-        catch (Exception e) { Log.Warn($"Camera: stopping the host capture failed: {e.Message}"); }
+        try
+        {
+            prev.Wait(TimeSpan.FromSeconds(3));
+        }
+        catch { }
+        if (c == null)
+        {
+            return;
+        }
+
+        try
+        {
+            c.StopAsync().Wait(TimeSpan.FromSeconds(3));
+        }
+        catch (Exception e)
+        {
+            Log.Warn($"Camera: stopping the host capture failed: {e.Message}");
+        }
     }
 
     sealed class Lease(SharedCapture owner, IHostCapture capture) : ICameraStream
@@ -144,7 +213,10 @@ public sealed class SharedCapture : IDisposable
         public CameraFrameBuffer Frames => capture.Frames;
         public void Dispose()
         {
-            if (Interlocked.Exchange(ref _disposed, 1) == 0) owner.Release(capture);
+            if (Interlocked.Exchange(ref _disposed, 1) == 0)
+            {
+                owner.Release(capture);
+            }
         }
     }
 }

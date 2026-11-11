@@ -57,7 +57,11 @@ public sealed unsafe partial class VulkanRenderer
         {
             if (ArmAt < 0)
             {
-                if (TriggerPresent < 0) TriggerPresent = present;
+                if (TriggerPresent < 0)
+                {
+                    TriggerPresent = present;
+                }
+
                 ArmAt = present + PostFrames;
             }
             return present >= ArmAt;
@@ -103,9 +107,16 @@ public sealed unsafe partial class VulkanRenderer
     /// <param name="present">the present the traced draws produce, reported in the result</param>
     public bool BeginDrawTrace(string dir, string title, long present, Action<DiagnosticCaptureResult> done)
     {
-        if (_diagActive != null || _diagRequest != null) return false;
+        if (_diagActive != null || _diagRequest != null)
+        {
+            return false;
+        }
+
         var req = new DiagRequest { Dir = dir, Done = done };
-        try { Directory.CreateDirectory(dir); }
+        try
+        {
+            Directory.CreateDirectory(dir);
+        }
         catch (Exception e) { done(new DiagnosticCaptureResult { Dir = dir, Error = e.Message }); return false; }
         _diagActive = req;
         req.Present = present;
@@ -128,7 +139,11 @@ public sealed unsafe partial class VulkanRenderer
     /// dumped (with the last presented frame as the screenshot) and the result is delivered. Call it between scenes.</summary>
     public void EndDrawTrace()
     {
-        if (!_traceManual || _diagActive is not { } dc) return;
+        if (!_traceManual || _diagActive is not { } dc)
+        {
+            return;
+        }
+
         _traceManual = false;
         EndRendering();
         SubmitFrame(false, 0);
@@ -144,20 +159,39 @@ public sealed unsafe partial class VulkanRenderer
 
     void TraceLine(string line)
     {
-        if (_diagActive is { } capture) capture.Draws.AppendLine(line);
-        else Log.Info(line);
+        if (_diagActive is { } capture)
+        {
+            capture.Draws.AppendLine(line);
+        }
+        else
+        {
+            Log.Info(line);
+        }
     }
 
     void ArmCapture(DiagRequest req)
     {
         // a concurrent CancelDiagnosticCapture may have withdrawn it
-        if (Interlocked.CompareExchange(ref _diagRequest, null, req) != req) return;
-        try { Directory.CreateDirectory(req.Dir); }
+        if (Interlocked.CompareExchange(ref _diagRequest, null, req) != req)
+        {
+            return;
+        }
+
+        try
+        {
+            Directory.CreateDirectory(req.Dir);
+        }
         catch (Exception e) { req.Done(new DiagnosticCaptureResult { Dir = req.Dir, Error = e.Message }); return; }
         // the replay ring before the traced frame: snapshot now, PNGs written in the background
         req.Replay = SaveReplay(req.Dir, req.TriggerPresent);
-        try { req.DrawRing = SaveDrawRing(req.Dir, req.TriggerPresent); }
-        catch (Exception e) { Log.Warn($"[diag] draw ring snapshot failed: {e.Message}"); }
+        try
+        {
+            req.DrawRing = SaveDrawRing(req.Dir, req.TriggerPresent);
+        }
+        catch (Exception e)
+        {
+            Log.Warn($"[diag] draw ring snapshot failed: {e.Message}");
+        }
         _diagActive = req;
         req.Present = _presentCount;
         req.T0 = Stopwatch.GetTimestamp();
@@ -181,7 +215,11 @@ public sealed unsafe partial class VulkanRenderer
             res.Screenshot = File.Exists(shot);
             File.WriteAllText(Path.Combine(dc.Dir, "draws.txt"), dc.Draws.ToString());
             File.WriteAllText(Path.Combine(dc.Dir, "frames.txt"), RecentFrames(FrameRingSize));
-            if (_nanScans > 0 || Core.Gxm.Shader.ShaderGenerator.NanDraws) File.WriteAllText(Path.Combine(dc.Dir, "nan.txt"), NanHistory());
+            if (_nanScans > 0 || Core.Gxm.Shader.ShaderGenerator.NanDraws)
+            {
+                File.WriteAllText(Path.Combine(dc.Dir, "nan.txt"), NanHistory());
+            }
+
             File.WriteAllText(Path.Combine(dc.Dir, "renderer.txt"),
                 DescribeForDiagnostics() + "\n\n# state\n" + DebugState() + "\n\n# statistics so far\n" + (((IGpuBackend)this).Report() ?? "") + "\n");
         }
@@ -206,17 +244,34 @@ public sealed unsafe partial class VulkanRenderer
                 {
                     if (dc.Replay is { } replay)
                     {
-                        try { res.ReplayFrames = replay.Wait(TimeSpan.FromSeconds(60)) ? replay.Result : -1; }
-                        catch (Exception e) { res.ReplayFrames = -1; Log.Warn($"[diag] replay write failed: {e.GetBaseException().Message}"); }
+                        try
+                        {
+                            res.ReplayFrames = replay.Wait(TimeSpan.FromSeconds(60)) ? replay.Result : -1;
+                        }
+                        catch (Exception e)
+                        {
+                            res.ReplayFrames = -1;
+                            Log.Warn($"[diag] replay write failed: {e.GetBaseException().Message}");
+                        }
                     }
                     if (dc.DrawRing is { } ring)
                     {
-                        try { res.DrawRingFrames = ring.Wait(TimeSpan.FromSeconds(60)) ? ring.Result : -1; }
-                        catch (Exception e) { res.DrawRingFrames = -1; Log.Warn($"[diag] draw ring write failed: {e.GetBaseException().Message}"); }
+                        try
+                        {
+                            res.DrawRingFrames = ring.Wait(TimeSpan.FromSeconds(60)) ? ring.Result : -1;
+                        }
+                        catch (Exception e)
+                        {
+                            res.DrawRingFrames = -1;
+                            Log.Warn($"[diag] draw ring write failed: {e.GetBaseException().Message}");
+                        }
                     }
                     dc.Done(res);
                 }
-                catch (Exception e) { Log.Warn($"[diag] completion failed: {e}"); }
+                catch (Exception e)
+                {
+                    Log.Warn($"[diag] completion failed: {e}");
+                }
             });
         }
     }
@@ -258,16 +313,29 @@ public sealed unsafe partial class VulkanRenderer
         {
             long t = FrameLedger.Total(c), d = t - _ledgerPrev[(int)c];
             _ledgerPrev[(int)c] = t;
-            if (d > topTicks) { topTicks = d; top = (int)c; }
+            if (d > topTicks)
+            {
+                topTicks = d;
+                top = (int)c;
+            }
         }
         ref var s = ref _frameRing[_frameRingCount++ % FrameRingSize];
         s = new FrameSummary
         {
-            Present = _presentCount + 1, GuestFrame = DebugMode.Frame, Draws = _drawSerial, Scenes = _fScenes,
-            NewShaders = _fNewShaders, NewPipelines = _fNewPipelines, NewTargets = _fNewTargets, NewTextures = _fNewTextures,
+            Present = _presentCount + 1,
+            GuestFrame = DebugMode.Frame,
+            Draws = _drawSerial,
+            Scenes = _fScenes,
+            NewShaders = _fNewShaders,
+            NewPipelines = _fNewPipelines,
+            NewTargets = _fNewTargets,
+            NewTextures = _fNewTextures,
             IntervalMs = _lastPresentTicks == 0 ? 0 : (float)((now - _lastPresentTicks) * 1000.0 / Stopwatch.Frequency),
-            TopCause = top, TopCauseMs = (float)(topTicks * 1000.0 / Stopwatch.Frequency),
-            Address = frame.Address, Width = frame.Width, Height = frame.Height,
+            TopCause = top,
+            TopCauseMs = (float)(topTicks * 1000.0 / Stopwatch.Frequency),
+            Address = frame.Address,
+            Width = frame.Width,
+            Height = frame.Height,
         };
         _lastPresentTicks = now;
         _lastFrameW = frame.Width;
@@ -331,7 +399,10 @@ public sealed unsafe partial class VulkanRenderer
             string info = Marshal.PtrToStringAnsi((nint)drv.DriverInfo) ?? "";
             return $"{name} {info} ({drv.DriverID}), version {ver} (raw 0x{v:X8})".Trim();
         }
-        catch { return $"version {ver} (raw 0x{v:X8})"; }
+        catch
+        {
+            return $"version {ver} (raw 0x{v:X8})";
+        }
     }
 
     /// <summary>Renderer state for hang reports (read from any thread without locking: values may be slightly stale).</summary>
@@ -355,11 +426,22 @@ public sealed unsafe partial class VulkanRenderer
 
     void ReportDeviceLost(string where)
     {
-        if (_deviceLostReported) return;
+        if (_deviceLostReported)
+        {
+            return;
+        }
+
         _deviceLostReported = true;
         Log.Error($"[gpu] VULKAN DEVICE LOST in {where} at present #{_presentCount} (guest frame {DebugMode.Frame})\n{DebugState()}\nlast frames:\n{RecentFrames(20)}");
         Log.Flush();
-        try { DeviceLost?.Invoke(where); } catch (Exception e) { Log.Warn($"[gpu] device lost notice failed: {e.Message}"); }
+        try
+        {
+            DeviceLost?.Invoke(where);
+        }
+        catch (Exception e)
+        {
+            Log.Warn($"[gpu] device lost notice failed: {e.Message}");
+        }
     }
 
     // ================================================================ debug mode: first-use logging
@@ -373,14 +455,22 @@ public sealed unsafe partial class VulkanRenderer
 
     void DbgVertexShader(VsEntry e, DrawCommand d)
     {
-        if (!_dbgSeen.Add($"vs{e.ProgramHash:X16}{e.HintKey:X16}")) return;
+        if (!_dbgSeen.Add($"vs{e.ProgramHash:X16}{e.HintKey:X16}"))
+        {
+            return;
+        }
+
         Dbg($"new vertex shader {e.ProgramHash:X16} hint {e.HintKey:X16}: {d.VertexProgram.Attributes.Length} attributes, {d.VertexProgram.Streams.Length} streams, " +
             $"{(e.Failed ? "FAILED" : string.IsNullOrEmpty(e.Gen?.Glsl) ? "from the shader pack" : "translated")}{(e.Gen?.AttributeFallback == true ? ", attribute fallback" : "")}");
     }
 
     void DbgFragmentShader(FsEntry e, DrawCommand d, bool fetchInput)
     {
-        if (!_dbgSeen.Add($"fs{e.ProgramHash:X16}{e.HintKey:X16}")) return;
+        if (!_dbgSeen.Add($"fs{e.ProgramHash:X16}{e.HintKey:X16}"))
+        {
+            return;
+        }
+
         var fp = d.FragmentProgram;
         var prog = fp.Info.Program;
         Dbg($"new fragment shader {e.ProgramHash:X16} hint {e.HintKey:X16}: output fmt 0x{fp.OutputFormat:X} param {prog.OutputParamType}x{prog.OutputCompCount} start {prog.FragmentOutputStart}, " +
@@ -399,28 +489,46 @@ public sealed unsafe partial class VulkanRenderer
     void DbgRenderTarget(RenderTarget rt, Format format, List<KeyValuePair<(uint, uint, uint, uint), RenderTarget>> replaced)
     {
         var sb = new StringBuilder($"new render target 0x{rt.Address:X8} {rt.Width}x{rt.Height} stride {rt.Stride} fmt 0x{rt.ColorFormat:X8} -> {format}");
-        foreach (var (_, old) in replaced) sb.Append($"; replaces 0x{old.Address:X8} {old.Width}x{old.Height} fmt 0x{old.ColorFormat:X8} ({old.Format})");
+        foreach (var (_, old) in replaced)
+        {
+            sb.Append($"; replaces 0x{old.Address:X8} {old.Width}x{old.Height} fmt 0x{old.ColorFormat:X8} ({old.Format})");
+        }
+
         uint bytes = rt.Stride * (uint)Formats.ColorBytesPerPixel(rt.ColorFormat) * rt.Height;
         foreach (var o in _renderTargets.Values)
         {
-            if (o == rt) continue;
+            if (o == rt)
+            {
+                continue;
+            }
+
             uint ob = o.Stride * (uint)Formats.ColorBytesPerPixel(o.ColorFormat) * o.Height;
             if (o.Address < rt.Address + bytes && rt.Address < o.Address + ob)
+            {
                 sb.Append($"; overlaps 0x{o.Address:X8} {o.Width}x{o.Height} fmt 0x{o.ColorFormat:X8}");
+            }
         }
         Dbg(sb.ToString());
     }
 
     void DbgScene(BeginSceneCommand b)
     {
-        if (!_dbgSeen.Add($"sc{_rt?.Address ?? 0:X8}{_rt?.ColorFormat ?? 0:X8}{b.Width}x{b.Height}{b.Multisample}{b.Color?.Downscale}{b.Depth?.DepthData ?? 0:X8}{MsaaPath}")) return;
+        if (!_dbgSeen.Add($"sc{_rt?.Address ?? 0:X8}{_rt?.ColorFormat ?? 0:X8}{b.Width}x{b.Height}{b.Multisample}{b.Color?.Downscale}{b.Depth?.DepthData ?? 0:X8}{MsaaPath}"))
+        {
+            return;
+        }
+
         Dbg($"new scene setup: rt 0x{_rt?.Address ?? 0:X8} {_rt?.Width}x{_rt?.Height} fmt 0x{_rt?.ColorFormat ?? 0:X8} ({_rt?.Format}) scene {b.Width}x{b.Height} gxm msaa {b.Multisample} downscale {b.Color?.Downscale} -> {MsaaPath}" +
             $", depth 0x{b.Depth?.DepthData ?? 0:X8} stencil 0x{b.Depth?.StencilData ?? 0:X8} fmt 0x{b.Depth?.Format ?? 0:X8}, gamma {b.Color?.GammaMode}");
     }
 
     void DbgTextureFormat(GxmTextureDesc d, uint w, uint h)
     {
-        if (!_dbgSeen.Add($"tf{d.Format:X8}{d.TextureType:X8}")) return;
+        if (!_dbgSeen.Add($"tf{d.Format:X8}{d.TextureType:X8}"))
+        {
+            return;
+        }
+
         Dbg($"new texture format 0x{d.Format:X8} ({Core.Gxm.GxmFormats.BaseOf(d.Format)}, swizzle bits 0x{d.Format & 0x7000:X}) type 0x{d.TextureType:X8} first seen at 0x{d.DataAddress:X8} {w}x{h} mips {d.MipCount} gamma {d.GammaMode}");
     }
 
@@ -430,10 +538,17 @@ public sealed unsafe partial class VulkanRenderer
         uint addr = d.DataAddress;
         var candidates = TargetsContaining(addr);
         int n = candidates.Count;
-        if (n < 2 || !_dbgOverlapSeen.Add((addr, d.Format, n))) return;
+        if (n < 2 || !_dbgOverlapSeen.Add((addr, d.Format, n)))
+        {
+            return;
+        }
+
         var sb = new StringBuilder();
         foreach (var rt in candidates)
+        {
             sb.Append($" [0x{rt.Address:X8} {rt.Width}x{rt.Height} fmt 0x{rt.ColorFormat:X8} lastScene {rt.LastScene}]");
+        }
+
         string set = sb.ToString();
         Dbg($"texture 0x{addr:X8} fmt 0x{d.Format:X8} {d.Width}x{d.Height} lies in {n} render targets, tried in this order:{set}");
     }
@@ -448,13 +563,30 @@ public sealed unsafe partial class VulkanRenderer
             {
                 bool inDepth = dt.Address != 0 && addr >= dt.Address && addr < dt.Address + dt.StrideBytes * dt.Height;
                 bool inStencil = dt.StencilAddress != 0 && addr >= dt.StencilAddress && addr < dt.StencilAddress + dt.StencilStrideBytes * dt.Height;
-                if (!inDepth && !inStencil) continue;
-                if (sb == null) n++;
-                else sb.Append($" [0x{dt.Address:X8}/0x{dt.StencilAddress:X8} {dt.Width}x{dt.Height} lastUsed {dt.LastUsedFrame}]");
+                if (!inDepth && !inStencil)
+                {
+                    continue;
+                }
+
+                if (sb == null)
+                {
+                    n++;
+                }
+                else
+                {
+                    sb.Append($" [0x{dt.Address:X8}/0x{dt.StencilAddress:X8} {dt.Width}x{dt.Height} lastUsed {dt.LastUsedFrame}]");
+                }
             }
             // the list is only built for a combination not logged yet
-            if (sb == null && (n < 2 || !_dbgOverlapSeen.Add((chosen.Address, stencil ? 1u : 0u, -n)))) return;
-            if (sb != null) Dbg($"address 0x{addr:X8} lies in {n} depth/stencil targets:{sb}; picked 0x{chosen.Address:X8} ({(stencil ? "stencil" : "depth")}, most recently used)");
+            if (sb == null && (n < 2 || !_dbgOverlapSeen.Add((chosen.Address, stencil ? 1u : 0u, -n))))
+            {
+                return;
+            }
+
+            if (sb != null)
+            {
+                Dbg($"address 0x{addr:X8} lies in {n} depth/stencil targets:{sb}; picked 0x{chosen.Address:X8} ({(stencil ? "stencil" : "depth")}, most recently used)");
+            }
         }
     }
 }

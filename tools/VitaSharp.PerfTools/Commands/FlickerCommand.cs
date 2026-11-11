@@ -23,7 +23,11 @@ sealed class FlickerCommand : IPerfCommand
 
     public int Run(PerfArgs a)
     {
-        if (a.Positional.Count < 1) throw new PerfArgsException("flicker: a folder of frame_N.png files is required");
+        if (a.Positional.Count < 1)
+        {
+            throw new PerfArgsException("flicker: a folder of frame_N.png files is required");
+        }
+
         string dir = Path.GetFullPath(a.Positional[0]);
         double threshold = a.Double("--threshold", 6);
         var files = Directory.GetFiles(dir, "frame_*.png")
@@ -33,8 +37,14 @@ sealed class FlickerCommand : IPerfCommand
         var img = new (byte[] Rgba, int W, int H)[3];
         for (int i = 1; i + 1 < files.Length; i++)
         {
-            if (files[i + 1].N - files[i - 1].N != 2) continue; // only consecutive frames
-            img[0] = PngReader.Read(files[i - 1].Path); img[1] = PngReader.Read(files[i].Path); img[2] = PngReader.Read(files[i + 1].Path);
+            if (files[i + 1].N - files[i - 1].N != 2)
+            {
+                continue; // only consecutive frames
+            }
+
+            img[0] = PngReader.Read(files[i - 1].Path);
+            img[1] = PngReader.Read(files[i].Path);
+            img[2] = PngReader.Read(files[i + 1].Path);
             double prev = Mean(img[0], img[1]), next = Mean(img[1], img[2]), around = Mean(img[0], img[2]);
             if (prev > threshold && next > threshold && around < threshold / 3)
             {
@@ -51,10 +61,17 @@ sealed class FlickerCommand : IPerfCommand
 
     static double Mean((byte[] Rgba, int W, int H) a, (byte[] Rgba, int W, int H) b)
     {
-        if (a.W != b.W || a.H != b.H) return 255;
+        if (a.W != b.W || a.H != b.H)
+        {
+            return 255;
+        }
+
         long sum = 0;
         for (int i = 0; i < a.Rgba.Length; i += 4)
+        {
             sum += Math.Abs(a.Rgba[i] - b.Rgba[i]) + Math.Abs(a.Rgba[i + 1] - b.Rgba[i + 1]) + Math.Abs(a.Rgba[i + 2] - b.Rgba[i + 2]);
+        }
+
         return sum / (3.0 * a.Rgba.Length / 4);
     }
 }

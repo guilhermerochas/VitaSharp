@@ -125,10 +125,21 @@ public static class CalloutClasses
                 string v = load ? "VLD" : "VST";
                 if (!lanes)
                 {
-                    string m = t switch { 7 or 0xA or 6 or 2 => "1", 8 or 9 or 3 => "2", 4 or 5 => "3", 0 or 1 => "4", _ => "?" };
+                    string m = t switch
+                    {
+                        7 or 0xA or 6 or 2 => "1",
+                        8 or 9 or 3 => "2",
+                        4 or 5 => "3",
+                        0 or 1 => "4",
+                        _ => "?"
+                    };
                     return $"{n}.{v}{m}.multiple";
                 }
-                if ((t >> 2) == 3) return $"{n}.{v}{(t & 3) + 1}.alllanes";
+                if ((t >> 2) == 3)
+                {
+                    return $"{n}.{v}{(t & 3) + 1}.alllanes";
+                }
+
                 return $"{n}.{v}{(t & 3) + 1}.lane.{8 << (int)(t >> 2)}";
             }
             case Op.A32_Exclusive:
@@ -183,7 +194,8 @@ public static class CalloutClasses
                 string[] names = ["VMLA", "VMLS", "VNMLS", "VNMLA", "VMUL", "VNMUL", "VADD", "VSUB", "VDIV", "?", "VFNMS/A", "VFNMS/A", "VFMA", "VFMS", "?", "?"];
                 return $"{n}.{names[s >> 1]}{((s & 1) != 0 ? ".F64" : ".F32")}";
             }
-            default: return n;
+            default:
+                return n;
         }
     }
 

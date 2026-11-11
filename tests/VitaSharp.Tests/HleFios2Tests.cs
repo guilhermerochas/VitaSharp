@@ -16,14 +16,26 @@ public sealed class HleFios2Tests(GuestMemoryFixture fx) : IDisposable
 {
     readonly string _root = Path.Combine(Path.GetTempPath(), "vitasharp-fios2-" + Guid.NewGuid().ToString("N"));
 
-    public void Dispose() { try { Directory.Delete(_root, true); } catch (IOException) { } }
+    public void Dispose()
+    {
+        try
+        {
+            Directory.Delete(_root, true);
+        }
+        catch (IOException) { }
+    }
 
     static object? Invoke(object module, string name, params object?[] args) =>
         module.GetType().GetMethod(name, BindingFlags.Instance | BindingFlags.Static | BindingFlags.NonPublic | BindingFlags.Public)!.Invoke(module, args);
 
     static T Call<T>(object module, string name, params object?[] args) => (T)Invoke(module, name, args)!;
 
-    uint Buf(uint n) { uint p = fx.Memory.Alloc(n, "fios-test"); GuestMemory.Fill(p, 0, n); return p; }
+    uint Buf(uint n)
+    {
+        uint p = fx.Memory.Alloc(n, "fios-test");
+        GuestMemory.Fill(p, 0, n);
+        return p;
+    }
 
     Fios2 NewFios()
     {
@@ -116,7 +128,11 @@ public sealed class HleFios2Tests(GuestMemoryFixture fx) : IDisposable
     {
         byte[] manifest = Encoding.ASCII.GetBytes(name);
         var z = new MemoryStream();
-        using (var zs = new ZLibStream(z, CompressionLevel.Optimal, true)) zs.Write(content);
+        using (var zs = new ZLibStream(z, CompressionLevel.Optimal, true))
+        {
+            zs.Write(content);
+        }
+
         byte[] comp = z.ToArray();
         const uint entrySize = 30, blockSize = 0x10000;
         uint count = 2, tocLen = 32 + count * entrySize + 2 * 2;
@@ -134,8 +150,10 @@ public sealed class HleFios2Tests(GuestMemoryFixture fx) : IDisposable
         {
             var e = a.AsSpan(32 + i * (int)entrySize);
             BinaryPrimitives.WriteUInt32BigEndian(e[16..], block);
-            e[20] = (byte)(size >> 32); BinaryPrimitives.WriteUInt32BigEndian(e[21..], (uint)size);
-            e[25] = (byte)(off >> 32); BinaryPrimitives.WriteUInt32BigEndian(e[26..], (uint)off);
+            e[20] = (byte)(size >> 32);
+            BinaryPrimitives.WriteUInt32BigEndian(e[21..], (uint)size);
+            e[25] = (byte)(off >> 32);
+            BinaryPrimitives.WriteUInt32BigEndian(e[26..], (uint)off);
         }
         Entry(0, 0, manifest.Length, tocLen);
         Entry(1, 1, content.Length, tocLen + manifest.Length);

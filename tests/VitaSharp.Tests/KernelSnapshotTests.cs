@@ -17,7 +17,11 @@ public sealed class KernelSnapshotTests(GuestMemoryFixture fx) : IDisposable
 {
     readonly HleHarness _a = new(fx, "ksnap-a"), _b = new(fx, "ksnap-b");
 
-    public void Dispose() { _a.Dispose(); _b.Dispose(); }
+    public void Dispose()
+    {
+        _a.Dispose();
+        _b.Dispose();
+    }
 
     [Fact]
     public void ObjectTableRoundTrips()

@@ -17,12 +17,42 @@ public sealed class VideoDecoderTests(ITestOutputHelper output)
     {
         readonly List<byte> _bytes = new();
         int _cur, _n;
-        public void U(int bits, uint v) { for (int i = bits - 1; i >= 0; i--) Bit((int)(v >> i) & 1); }
-        public void Bit(int b) { _cur = (_cur << 1) | b; if (++_n == 8) { _bytes.Add((byte)_cur); _cur = _n = 0; } }
-        public void Ue(uint v) { uint x = v + 1; int len = 31 - System.Numerics.BitOperations.LeadingZeroCount(x); U(len, 0); U(len + 1, x); }
+        public void U(int bits, uint v)
+        {
+            for (int i = bits - 1; i >= 0; i--)
+            {
+                Bit((int)(v >> i) & 1);
+            }
+        }
+        public void Bit(int b)
+        {
+            _cur = (_cur << 1) | b;
+            if (++_n == 8)
+            {
+                _bytes.Add((byte)_cur);
+                _cur = _n = 0;
+            }
+        }
+        public void Ue(uint v)
+        {
+            uint x = v + 1;
+            int len = 31 - System.Numerics.BitOperations.LeadingZeroCount(x);
+            U(len, 0);
+            U(len + 1, x);
+        }
         public void Se(int v) => Ue(v <= 0 ? (uint)(-2 * v) : (uint)(2 * v - 1));
-        public void Align() { while (_n != 0) Bit(0); }
-        public void Trailing() { Bit(1); Align(); }
+        public void Align()
+        {
+            while (_n != 0)
+            {
+                Bit(0);
+            }
+        }
+        public void Trailing()
+        {
+            Bit(1);
+            Align();
+        }
         public byte[] ToArray() => _bytes.ToArray();
     }
 
@@ -33,7 +63,11 @@ public sealed class VideoDecoderTests(ITestOutputHelper output)
         int zeros = 0;
         foreach (var b in rbsp)
         {
-            if (zeros >= 2 && b <= 3) { o.Add(3); zeros = 0; }
+            if (zeros >= 2 && b <= 3)
+            {
+                o.Add(3);
+                zeros = 0;
+            }
             o.Add(b);
             zeros = b == 0 ? zeros + 1 : 0;
         }
@@ -43,15 +77,20 @@ public sealed class VideoDecoderTests(ITestOutputHelper output)
     static byte[] Sps()
     {
         var b = new Bits();
-        b.U(8, 66); b.U(8, 0x40); b.U(8, 30); // constrained baseline (hwaccel rejects plain baseline), level 3.0
+        b.U(8, 66);
+        b.U(8, 0x40);
+        b.U(8, 30); // constrained baseline (hwaccel rejects plain baseline), level 3.0
         b.Ue(0);                             // sps id
         b.Ue(0);                             // log2_max_frame_num - 4
         b.Ue(2);                             // pic_order_cnt_type 2: output order = decoding order
         b.Ue(1);                             // max_num_ref_frames
         b.Bit(0);                            // gaps_in_frame_num_value_allowed
-        b.Ue(W / 16 - 1); b.Ue(H / 16 - 1);
-        b.Bit(1); b.Bit(1);                  // frame_mbs_only, direct_8x8_inference
-        b.Bit(0); b.Bit(0);                  // no cropping, no VUI
+        b.Ue(W / 16 - 1);
+        b.Ue(H / 16 - 1);
+        b.Bit(1);
+        b.Bit(1);                  // frame_mbs_only, direct_8x8_inference
+        b.Bit(0);
+        b.Bit(0);                  // no cropping, no VUI
         b.Trailing();
         return Nal(3, 7, b.ToArray());
     }
@@ -59,12 +98,21 @@ public sealed class VideoDecoderTests(ITestOutputHelper output)
     static byte[] Pps()
     {
         var b = new Bits();
-        b.Ue(0); b.Ue(0);                    // pps id, sps id
-        b.Bit(0); b.Bit(0);                  // CAVLC, no bottom field poc
-        b.Ue(0); b.Ue(0); b.Ue(0);           // slice groups, ref idx l0/l1
-        b.Bit(0); b.U(2, 0);                 // no weighted prediction
-        b.Se(0); b.Se(0); b.Se(0);           // qp, qs, chroma qp offset
-        b.Bit(1); b.Bit(0); b.Bit(0);        // deblocking control present, constrained intra off, no redundant pic cnt
+        b.Ue(0);
+        b.Ue(0);                    // pps id, sps id
+        b.Bit(0);
+        b.Bit(0);                  // CAVLC, no bottom field poc
+        b.Ue(0);
+        b.Ue(0);
+        b.Ue(0);           // slice groups, ref idx l0/l1
+        b.Bit(0);
+        b.U(2, 0);                 // no weighted prediction
+        b.Se(0);
+        b.Se(0);
+        b.Se(0);           // qp, qs, chroma qp offset
+        b.Bit(1);
+        b.Bit(0);
+        b.Bit(0);        // deblocking control present, constrained intra off, no redundant pic cnt
         b.Trailing();
         return Nal(3, 8, b.ToArray());
     }
@@ -72,18 +120,40 @@ public sealed class VideoDecoderTests(ITestOutputHelper output)
     /// <summary>One picture of I_PCM macroblocks with deterministic sample values (never 0, so no start code emulation).</summary>
     static byte[] Picture(int index, out byte[] y, out byte[] u, out byte[] v)
     {
-        y = new byte[W * H]; u = new byte[W * H / 4]; v = new byte[W * H / 4];
-        for (int i = 0; i < y.Length; i++) y[i] = (byte)(16 + (i * 7 + index * 31) % 220);
-        for (int i = 0; i < u.Length; i++) { u[i] = (byte)(16 + (i * 3 + index * 17) % 220); v[i] = (byte)(16 + (i * 5 + index * 13) % 220); }
+        y = new byte[W * H];
+        u = new byte[W * H / 4];
+        v = new byte[W * H / 4];
+        for (int i = 0; i < y.Length; i++)
+        {
+            y[i] = (byte)(16 + (i * 7 + index * 31) % 220);
+        }
+
+        for (int i = 0; i < u.Length; i++)
+        {
+            u[i] = (byte)(16 + (i * 3 + index * 17) % 220);
+            v[i] = (byte)(16 + (i * 5 + index * 13) % 220);
+        }
         bool idr = index == 0;
         var b = new Bits();
         b.Ue(0);                             // first_mb_in_slice
         b.Ue(7);                             // slice_type: I (all slices)
         b.Ue(0);                             // pps id
         b.U(4, (uint)index);                 // frame_num
-        if (idr) b.Ue(0);                    // idr_pic_id
-        if (idr) { b.Bit(0); b.Bit(0); }     // no_output_of_prior_pics, long_term_reference
-        else b.Bit(0);                       // adaptive_ref_pic_marking_mode
+        if (idr)
+        {
+            b.Ue(0);                    // idr_pic_id
+        }
+
+        if (idr)
+        {
+            b.Bit(0);
+            b.Bit(0);
+        }     // no_output_of_prior_pics, long_term_reference
+        else
+        {
+            b.Bit(0);                       // adaptive_ref_pic_marking_mode
+        }
+
         b.Se(0);                             // slice_qp_delta
         b.Ue(1);                             // disable_deblocking_filter_idc = 1
         for (int mb = 0; mb < (W / 16) * (H / 16); mb++)
@@ -91,9 +161,29 @@ public sealed class VideoDecoderTests(ITestOutputHelper output)
             int mx = mb % (W / 16), my = mb / (W / 16);
             b.Ue(25);                        // mb_type I_PCM
             b.Align();                       // pcm_alignment_zero_bits
-            for (int r = 0; r < 16; r++) for (int c = 0; c < 16; c++) b.U(8, y[(my * 16 + r) * W + mx * 16 + c]);
-            for (int r = 0; r < 8; r++) for (int c = 0; c < 8; c++) b.U(8, u[(my * 8 + r) * (W / 2) + mx * 8 + c]);
-            for (int r = 0; r < 8; r++) for (int c = 0; c < 8; c++) b.U(8, v[(my * 8 + r) * (W / 2) + mx * 8 + c]);
+            for (int r = 0; r < 16; r++)
+            {
+                for (int c = 0; c < 16; c++)
+                {
+                    b.U(8, y[(my * 16 + r) * W + mx * 16 + c]);
+                }
+            }
+
+            for (int r = 0; r < 8; r++)
+            {
+                for (int c = 0; c < 8; c++)
+                {
+                    b.U(8, u[(my * 8 + r) * (W / 2) + mx * 8 + c]);
+                }
+            }
+
+            for (int r = 0; r < 8; r++)
+            {
+                for (int c = 0; c < 8; c++)
+                {
+                    b.U(8, v[(my * 8 + r) * (W / 2) + mx * 8 + c]);
+                }
+            }
         }
         b.Trailing();
         var slice = Nal(3, idr ? 5 : 1, b.ToArray());
@@ -103,7 +193,11 @@ public sealed class VideoDecoderTests(ITestOutputHelper output)
     internal static List<(byte[] Au, byte[] Y, byte[] U, byte[] V)> Stream(int pictures)
     {
         var list = new List<(byte[], byte[], byte[], byte[])>();
-        for (int i = 0; i < pictures; i++) list.Add((Picture(i, out var y, out var u, out var v), y, u, v));
+        for (int i = 0; i < pictures; i++)
+        {
+            list.Add((Picture(i, out var y, out var u, out var v), y, u, v));
+        }
+
         return list;
     }
 
@@ -113,12 +207,23 @@ public sealed class VideoDecoderTests(ITestOutputHelper output)
         var got = new List<DecodedPicture>();
         for (int i = 0; i < stream.Count; i++)
         {
-            if (i == failAt && d is FFmpegVideoDecoder f) f.SimulateHardwareFailure();
+            if (i == failAt && d is FFmpegVideoDecoder f)
+            {
+                f.SimulateHardwareFailure();
+            }
+
             d.Send(stream[i].Au, i);
-            while (d.Take() is { } p) got.Add(Copy(p));
+            while (d.Take() is { } p)
+            {
+                got.Add(Copy(p));
+            }
         }
         d.Flush();
-        while (d.Take() is { } p) got.Add(Copy(p));
+        while (d.Take() is { } p)
+        {
+            got.Add(Copy(p));
+        }
+
         return got;
     }
 
@@ -148,7 +253,11 @@ public sealed class VideoDecoderTests(ITestOutputHelper output)
     [Fact]
     public void SoftwareDecoderIsBitExact()
     {
-        if (!FFmpegLoader.Available) { output.WriteLine("FFmpeg not available: skipped"); return; }
+        if (!FFmpegLoader.Available)
+        {
+            output.WriteLine("FFmpeg not available: skipped");
+            return;
+        }
         using var d = FFmpegVideoDecoder.Create(AVCodecID.AV_CODEC_ID_H264, AVHWDeviceType.AV_HWDEVICE_TYPE_NONE)!;
         Assert.False(d.IsHardware);
         var s = Stream(6);
@@ -158,7 +267,11 @@ public sealed class VideoDecoderTests(ITestOutputHelper output)
     [Fact]
     public void HardwareDecoderMatchesOrFallsBack()
     {
-        if (!FFmpegLoader.Available) { output.WriteLine("FFmpeg not available: skipped"); return; }
+        if (!FFmpegLoader.Available)
+        {
+            output.WriteLine("FFmpeg not available: skipped");
+            return;
+        }
         var s = Stream(6);
         using (var d = FFmpegVideoDecoder.Create(AVCodecID.AV_CODEC_ID_H264, FFmpegVideoBackend.PlatformDevice)!)
         {
@@ -205,7 +318,11 @@ public sealed class VideoDecoderTests(ITestOutputHelper output)
             pkt->pts = pkt->dts = ffmpeg.av_rescale_q(i, new AVRational { num = 1, den = 30 }, st->time_base);
             pkt->duration = ffmpeg.av_rescale_q(1, new AVRational { num = 1, den = 30 }, st->time_base);
             pkt->stream_index = 0;
-            if (i == 0) pkt->flags |= ffmpeg.AV_PKT_FLAG_KEY;
+            if (i == 0)
+            {
+                pkt->flags |= ffmpeg.AV_PKT_FLAG_KEY;
+            }
+
             Assert.True(ffmpeg.av_interleaved_write_frame(oc, pkt) >= 0);
         }
         ffmpeg.av_packet_free(&pkt);
@@ -220,7 +337,11 @@ public sealed class VideoDecoderTests(ITestOutputHelper output)
     [InlineData("auto")]
     public void MediaPlayerDecodesMp4ThroughTheDecoderInterface(string mode)
     {
-        if (!FFmpegLoader.Available) { output.WriteLine("FFmpeg not available: skipped"); return; }
+        if (!FFmpegLoader.Available)
+        {
+            output.WriteLine("FFmpeg not available: skipped");
+            return;
+        }
         var s = Stream(8);
         string path = Path.Combine(Path.GetTempPath(), $"vitasharp-videotest-{Environment.ProcessId}-{mode}.mp4");
         var oldBackend = VideoDecoders.Backend;
@@ -239,8 +360,17 @@ public sealed class VideoDecoderTests(ITestOutputHelper output)
             while (frames.Count < s.Count && DateTime.UtcNow < until)
             {
                 long clock = (long)(frames.Count * 1_000_000.0 / 30) + 1000;
-                if (player.TakeVideo(clock) is { } f) frames.Add(f with { Nv12 = f.Nv12.ToArray() });
-                else Thread.Sleep(2);
+                if (player.TakeVideo(clock) is { } f)
+                {
+                    frames.Add(f with
+                    {
+                        Nv12 = f.Nv12.ToArray()
+                    });
+                }
+                else
+                {
+                    Thread.Sleep(2);
+                }
             }
             Assert.Equal(s.Count, frames.Count);
             foreach (var f in frames)
@@ -249,7 +379,11 @@ public sealed class VideoDecoderTests(ITestOutputHelper output)
                 Assert.InRange(i, 0, s.Count - 1);
                 Assert.Equal(s[i].Y, f.Nv12.AsSpan(0, W * H).ToArray());
                 var vu = new byte[W * H / 2];
-                for (int k = 0; k < W * H / 4; k++) { vu[2 * k] = s[i].V[k]; vu[2 * k + 1] = s[i].U[k]; }
+                for (int k = 0; k < W * H / 4; k++)
+                {
+                    vu[2 * k] = s[i].V[k];
+                    vu[2 * k + 1] = s[i].U[k];
+                }
                 Assert.Equal(vu, f.Nv12.AsSpan(W * H).ToArray());
             }
             output.WriteLine($"{mode}: {frames.Count} frames compared");
@@ -257,7 +391,11 @@ public sealed class VideoDecoderTests(ITestOutputHelper output)
         finally
         {
             VideoDecoders.Backend = oldBackend;
-            try { File.Delete(path); } catch (IOException) { }
+            try
+            {
+                File.Delete(path);
+            }
+            catch (IOException) { }
         }
     }
 
@@ -284,7 +422,11 @@ public sealed class VideoDecoderTests(ITestOutputHelper output)
     [Fact]
     public void BackendHonoursSoftwareSetting()
     {
-        if (!FFmpegLoader.Available) { output.WriteLine("FFmpeg not available: skipped"); return; }
+        if (!FFmpegLoader.Available)
+        {
+            output.WriteLine("FFmpeg not available: skipped");
+            return;
+        }
         var backend = new FFmpegVideoBackend();
         backend.Configure("sw");
         using var d = backend.CreateH264(new VideoDecoderOptions(W, H))!;

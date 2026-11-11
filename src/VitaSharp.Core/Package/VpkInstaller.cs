@@ -35,24 +35,12 @@ public sealed class VpkInstallOptions
     /// Called (on the installing thread) when the destination already exists. Return true to replace it,
     /// false to skip this content. When null, existing content is replaced.
     /// </summary>
-    public Func<VpkContentInfo, bool>? ConfirmOverwrite
-    {
-        get; init;
-    }
+    public Func<VpkContentInfo, bool>? ConfirmOverwrite { get; init; }
     /// <summary>Called on the installing threads, at most every 100 ms.</summary>
-    public Action<InstallProgress>? Progress
-    {
-        get; init;
-    }
-    public Action<string>? Log
-    {
-        get; init;
-    }
+    public Action<InstallProgress>? Progress { get; init; }
+    public Action<string>? Log { get; init; }
     /// <summary>Optional NoNpDrm license (work.bin / .rif) for encrypted content that does not ship sce_sys/package/work.bin.</summary>
-    public string? LicensePath
-    {
-        get; init;
-    }
+    public string? LicensePath { get; init; }
 }
 
 /// <summary>The archive (or one of its contents) is encrypted and no license to decrypt it was found.</summary>
@@ -238,7 +226,10 @@ public static class VpkInstaller
         {
             InstallPlan(plan, entriesOf, ux0Root, options, reporter, results, cancellationToken);
         }
-        finally { thread.Priority = priority; }
+        finally
+        {
+            thread.Priority = priority;
+        }
         reporter.Finish();
         return results;
     }
@@ -463,8 +454,14 @@ public static class VpkInstaller
 
             return true;
         }
-        catch (IOException) { return false; }
-        catch (UnauthorizedAccessException) { return false; }
+        catch (IOException)
+        {
+            return false;
+        }
+        catch (UnauthorizedAccessException)
+        {
+            return false;
+        }
     }
 
     static void TryDeleteIfEmpty(string dir)

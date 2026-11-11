@@ -36,15 +36,9 @@ public sealed class PfsPlan
     readonly List<PfsTable> _unmatched;
     Aes? _aes;
 
-    public IReadOnlyList<PfsTable> Tables
-    {
-        get;
-    }
+    public IReadOnlyList<PfsTable> Tables { get; }
     /// <summary>Sum of the logical sizes of the files in files.db.</summary>
-    public long TotalSize
-    {
-        get;
-    }
+    public long TotalSize { get; }
 
     internal PfsPlan(List<PfsTable> tables, Dictionary<string, PfsNode> nodes, long totalSize, byte[] drvKey)
     {

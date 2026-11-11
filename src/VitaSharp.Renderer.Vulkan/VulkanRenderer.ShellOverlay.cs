@@ -37,7 +37,11 @@ public sealed unsafe partial class VulkanRenderer
         var c = _overlayComposite;
         if (c == null || c.ImgW != src.ImgW || c.ImgH != src.ImgH || c.Format != src.Format || c.Scale != src.Scale || c.Width != src.Width)
         {
-            if (c != null) DestroyLater(c);
+            if (c != null)
+            {
+                DestroyLater(c);
+            }
+
             var (img, view, mem) = CreateImage(MemCat.RenderTarget, src.ImgW, src.ImgH, src.Format,
                 ImageUsageFlags.ColorAttachmentBit | ImageUsageFlags.SampledBit | ImageUsageFlags.TransferSrcBit | ImageUsageFlags.TransferDstBit, ImageAspectFlags.ColorBit);
             c = _overlayComposite = new RenderTarget { Width = src.Width, Height = src.Height, Stride = src.Stride, Image = img, View = view, Mem = mem, Format = src.Format, Scale = src.Scale };
@@ -69,7 +73,9 @@ public sealed unsafe partial class VulkanRenderer
         var area = new Extent2D(c.ImgW, c.ImgH);
         var rbi = new RenderPassBeginInfo
         {
-            SType = StructureType.RenderPassBeginInfo, RenderPass = pass, Framebuffer = TransientFramebuffer(pass, area, c.View),
+            SType = StructureType.RenderPassBeginInfo,
+            RenderPass = pass,
+            Framebuffer = TransientFramebuffer(pass, area, c.View),
             RenderArea = new Rect2D(new Offset2D(0, 0), area),
         };
         var set = AllocSet(EnsureLoadLayout());
@@ -101,7 +107,11 @@ public sealed unsafe partial class VulkanRenderer
 
     (RenderPass, Pipeline) OverlayPipeline(Format format)
     {
-        if (_overlayPipelines.TryGetValue(format, out var p)) return p;
+        if (_overlayPipelines.TryGetValue(format, out var p))
+        {
+            return p;
+        }
+
         var att = new AttachmentDescription(0, format, SampleCountFlags.Count1Bit, AttachmentLoadOp.Load, AttachmentStoreOp.Store,
             AttachmentLoadOp.DontCare, AttachmentStoreOp.DontCare, ImageLayout.General, ImageLayout.General);
         var colorRef = new AttachmentReference(0, ImageLayout.General);
@@ -123,8 +133,12 @@ public sealed unsafe partial class VulkanRenderer
         var blend = new PipelineColorBlendAttachmentState
         {
             BlendEnable = true,
-            SrcColorBlendFactor = BlendFactor.SrcAlpha, DstColorBlendFactor = BlendFactor.OneMinusSrcAlpha, ColorBlendOp = BlendOp.Add,
-            SrcAlphaBlendFactor = BlendFactor.Zero, DstAlphaBlendFactor = BlendFactor.One, AlphaBlendOp = BlendOp.Add,
+            SrcColorBlendFactor = BlendFactor.SrcAlpha,
+            DstColorBlendFactor = BlendFactor.OneMinusSrcAlpha,
+            ColorBlendOp = BlendOp.Add,
+            SrcAlphaBlendFactor = BlendFactor.Zero,
+            DstAlphaBlendFactor = BlendFactor.One,
+            AlphaBlendOp = BlendOp.Add,
             ColorWriteMask = ColorComponentFlags.RBit | ColorComponentFlags.GBit | ColorComponentFlags.BBit | ColorComponentFlags.ABit,
         };
         var cb = new PipelineColorBlendStateCreateInfo { SType = StructureType.PipelineColorBlendStateCreateInfo, AttachmentCount = 1, PAttachments = &blend };
@@ -132,9 +146,20 @@ public sealed unsafe partial class VulkanRenderer
         var dsi = new PipelineDynamicStateCreateInfo { SType = StructureType.PipelineDynamicStateCreateInfo, DynamicStateCount = 2, PDynamicStates = dyn };
         var gci = new GraphicsPipelineCreateInfo
         {
-            SType = StructureType.GraphicsPipelineCreateInfo, RenderPass = pass, Subpass = 0, StageCount = 2, PStages = stages,
-            PVertexInputState = &vi, PInputAssemblyState = &ia, PViewportState = &vps, PRasterizationState = &rs, PMultisampleState = &ms,
-            PDepthStencilState = &dss, PColorBlendState = &cb, PDynamicState = &dsi, Layout = _msLoadLayout,
+            SType = StructureType.GraphicsPipelineCreateInfo,
+            RenderPass = pass,
+            Subpass = 0,
+            StageCount = 2,
+            PStages = stages,
+            PVertexInputState = &vi,
+            PInputAssemblyState = &ia,
+            PViewportState = &vps,
+            PRasterizationState = &rs,
+            PMultisampleState = &ms,
+            PDepthStencilState = &dss,
+            PColorBlendState = &cb,
+            PDynamicState = &dsi,
+            Layout = _msLoadLayout,
         };
         _vk.CreateGraphicsPipelines(_dev, _vkPipelineCache, 1, in gci, null, out var pipeline).Ok("shell overlay pipeline");
         return _overlayPipelines[format] = (pass, pipeline);

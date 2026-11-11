@@ -42,7 +42,10 @@ public static class Zrif
             var raw = Convert.FromBase64String(Pad(text));
             return raw.Length > 6 && (raw[0] & 0xF) == 8 && ((raw[0] << 8) | raw[1]) % 31 == 0;
         }
-        catch (FormatException) { return false; }
+        catch (FormatException)
+        {
+            return false;
+        }
     }
 
     static string Pad(string s) => s.Length % 4 == 0 ? s : s + new string('=', 4 - s.Length % 4);
@@ -55,7 +58,10 @@ public static class Zrif
         {
             raw = Convert.FromBase64String(Pad(zrif.Trim()));
         }
-        catch (FormatException) { throw new InvalidDataException("zRIF is not valid base64"); }
+        catch (FormatException)
+        {
+            throw new InvalidDataException("zRIF is not valid base64");
+        }
         if (raw.Length < 2 + 4)
         {
             throw new InvalidDataException("zRIF is too short");
@@ -112,7 +118,10 @@ public static class Zrif
             inflate.CopyTo(output);
             all = output.ToArray();
         }
-        catch (InvalidDataException) { throw new InvalidDataException("zRIF is corrupted (cannot decompress)"); }
+        catch (InvalidDataException)
+        {
+            throw new InvalidDataException("zRIF is corrupted (cannot decompress)");
+        }
         var rif = all.AsSpan(dict.Length).ToArray();
 
         uint expected = (uint)(raw[^4] << 24 | raw[^3] << 16 | raw[^2] << 8 | raw[^1]);

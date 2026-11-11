@@ -15,7 +15,11 @@ public class SystemSoftwareTests
         Directory.CreateDirectory(Path.Combine(root, "os0", "kd"));
         var body = Encoding.ASCII.GetBytes(text);
         var file = new byte[138 + body.Length];
-        for (int i = 0; i < body.Length; i++) file[138 + i] = (byte)(body[i] ^ XorKey[i & 0xF]);
+        for (int i = 0; i < body.Length; i++)
+        {
+            file[138 + i] = (byte)(body[i] ^ XorKey[i & 0xF]);
+        }
+
         File.WriteAllBytes(Path.Combine(root, "os0", "kd", "registry.db0"), file);
         return root;
     }
@@ -42,7 +46,10 @@ public class SystemSoftwareTests
             Assert.Null(reg.Find("/CONFIG/NET/04/", "conf_flag"));
             Assert.Null(reg.Get("/CONFIG/SYSTEM/", "nope"));
         }
-        finally { Directory.Delete(root, true); }
+        finally
+        {
+            Directory.Delete(root, true);
+        }
     }
 
     [Fact]
@@ -61,7 +68,10 @@ public class SystemSoftwareTests
             Assert.Equal(17, lang);
             Assert.StartsWith("Bob", Encoding.UTF8.GetString(again.Get("/CONFIG/SYSTEM/", "username")!));
         }
-        finally { Directory.Delete(root, true); }
+        finally
+        {
+            Directory.Delete(root, true);
+        }
     }
 
     [Fact]
@@ -82,6 +92,9 @@ public class SystemSoftwareTests
             Assert.True(reg.TryGetInt("/CONFIG/SYSTEM/", "language", out v));
             Assert.Equal(2, v);
         }
-        finally { Directory.Delete(root, true); }
+        finally
+        {
+            Directory.Delete(root, true);
+        }
     }
 }

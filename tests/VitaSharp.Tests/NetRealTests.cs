@@ -63,7 +63,12 @@ public sealed class NetRealTests(GuestMemoryFixture fx) : IDisposable
 
     static int SaPort(uint sa) => (ushort)IPAddress.NetworkToHostOrder((short)GuestMemory.Read<ushort>(sa + 2));
 
-    uint Int(int v) { uint p = Alloc(4); GuestMemory.W32(p, (uint)v); return p; }
+    uint Int(int v)
+    {
+        uint p = Alloc(4);
+        GuestMemory.W32(p, (uint)v);
+        return p;
+    }
 
     /// <summary>An Emulator shell with only the guest memory (SceHttp allocates the library-owned header buffers there).</summary>
     Emulator Shell()
@@ -352,7 +357,11 @@ public sealed class NetRealTests(GuestMemoryFixture fx) : IDisposable
         {
             int n = Call(http, "sceHttpReadData", req, buf, 10u);
             Assert.True(n >= 0, $"read 0x{n:X8}");
-            if (n == 0) return sb.ToString();
+            if (n == 0)
+            {
+                return sb.ToString();
+            }
+
             sb.Append(Encoding.Latin1.GetString(GuestMemory.Span(buf, n)));
         }
         throw new InvalidOperationException("body never ended");
@@ -466,7 +475,11 @@ public sealed class NetRealTests(GuestMemoryFixture fx) : IDisposable
         Assert.Equal(0, srv.Requests);
         // a closed port on localhost: a real connection failure
         int dead;
-        using (var probe = new TcpListener(IPAddress.Loopback, 0)) { probe.Start(); dead = ((IPEndPoint)probe.LocalEndpoint).Port; }
+        using (var probe = new TcpListener(IPAddress.Loopback, 0))
+        {
+            probe.Start();
+            dead = ((IPEndPoint)probe.LocalEndpoint).Port;
+        }
         int r3 = Request(http, t, $"http://127.0.0.1:{dead}/x");
         Assert.Equal(HTTP_NETWORK, Call(http, "sceHttpSendRequest", r3, 0u, 0u));
         Assert.Equal(0, Call(http, "sceHttpGetLastErrno", r3, errno));
@@ -476,7 +489,11 @@ public sealed class NetRealTests(GuestMemoryFixture fx) : IDisposable
     // ---------------------------------------------------------------- RPCN
 
     static RpcnClient Client(MockRpcnServer srv, string password = "secret", bool tls = true) =>
-        new(new RpcnConfig("localhost", srv.Port, "Tester", password), LocalOnly) { UseTls = tls, Timeout = TimeSpan.FromSeconds(10) };
+        new(new RpcnConfig("localhost", srv.Port, "Tester", password), LocalOnly)
+        {
+            UseTls = tls,
+            Timeout = TimeSpan.FromSeconds(10)
+        };
 
     [Fact]
     public void RpcnLoginAndTus()
@@ -568,7 +585,10 @@ public sealed class NetRealTests(GuestMemoryFixture fx) : IDisposable
     {
         using var srv = new MockRpcnServer(tls: false);
         using var client = Client(srv, tls: false);
-        PsnAccount.Current = PsnAccount.Create(true, "Tester", localServices: false) with { Server = $"localhost:{srv.Port}" };
+        PsnAccount.Current = PsnAccount.Create(true, "Tester", localServices: false) with
+        {
+            Server = $"localhost:{srv.Port}"
+        };
         var m = new NpTus { StoreOverride = new RpcnTusService(client) };
         Assert.Equal(0, Call(m, "sceNpTusInit", 0, 0, 0u));
         uint comm = Alloc(12);
@@ -578,8 +598,10 @@ public sealed class NetRealTests(GuestMemoryFixture fx) : IDisposable
         uint me = Alloc(0x24);
         NpManager.WriteNpId(me, "Tester");
         uint slots = Alloc(8), values = Alloc(16);
-        GuestMemory.W32(slots, 1); GuestMemory.W32(slots + 4, 2);
-        GuestMemory.Write(values, 41L); GuestMemory.Write(values + 8, 42L);
+        GuestMemory.W32(slots, 1);
+        GuestMemory.W32(slots + 4, 2);
+        GuestMemory.Write(values, 41L);
+        GuestMemory.Write(values + 8, 42L);
         Assert.Equal(0, Call(m, "sceNpTusSetMultiSlotVariable", Req(), me, slots, values, 2, 0u));
         uint vars = Alloc(2 * NpTus.VariableSize), result = Alloc(4);
         int get = Req();

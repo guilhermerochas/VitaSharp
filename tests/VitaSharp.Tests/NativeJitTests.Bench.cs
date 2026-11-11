@@ -26,7 +26,11 @@ public sealed unsafe partial class NativeJitTests
             foreach (var line in File.ReadLines(path))
             {
                 var parts = line.Split(' ', StringSplitOptions.RemoveEmptyEntries);
-                if (parts.Length < 3) continue;
+                if (parts.Length < 3)
+                {
+                    continue;
+                }
+
                 bool thumb = parts[0] == "T";
                 var bytes = new List<byte>();
                 foreach (var p in parts.Skip(2))
@@ -34,12 +38,24 @@ public sealed unsafe partial class NativeJitTests
                     int c = p.IndexOf(':');
                     int size = int.Parse(p[..c]);
                     uint raw = Convert.ToUInt32(p[(c + 1)..], 16);
-                    if (size == 2) bytes.AddRange([(byte)raw, (byte)(raw >> 8)]);
-                    else if (thumb) bytes.AddRange([(byte)(raw >> 16), (byte)(raw >> 24), (byte)raw, (byte)(raw >> 8)]);
-                    else bytes.AddRange(BitConverter.GetBytes(raw));
+                    if (size == 2)
+                    {
+                        bytes.AddRange([(byte)raw, (byte)(raw >> 8)]);
+                    }
+                    else if (thumb)
+                    {
+                        bytes.AddRange([(byte)(raw >> 16), (byte)(raw >> 24), (byte)raw, (byte)(raw >> 8)]);
+                    }
+                    else
+                    {
+                        bytes.AddRange(BitConverter.GetBytes(raw));
+                    }
                 }
                 blocks.Add((thumb, bytes.ToArray()));
-                if (blocks.Count >= 20_000) break;
+                if (blocks.Count >= 20_000)
+                {
+                    break;
+                }
             }
         }
         else
@@ -49,7 +65,10 @@ public sealed unsafe partial class NativeJitTests
             {
                 bool thumb = (i & 1) != 0;
                 var b = RandomBlock(rng, thumb, 12, forUnicorn: false);
-                if (b != null) blocks.Add((thumb, GuestMemory.Span(CodeBase, 0x1000)[..(int)(b.End - b.Start + 4)].ToArray()));
+                if (b != null)
+                {
+                    blocks.Add((thumb, GuestMemory.Span(CodeBase, 0x1000)[..(int)(b.End - b.Start + 4)].ToArray()));
+                }
             }
         }
         output.WriteLine($"corpus: {blocks.Count} blocks ({(path is { Length: > 0 } ? path : "random")})");
@@ -84,8 +103,14 @@ public sealed unsafe partial class NativeJitTests
                 long m0 = GC.GetAllocatedBytesForCurrentThread(), c0 = Stopwatch.GetTimestamp();
                 foreach (var b in decoded)
                 {
-                    if (arm64) VitaSharp.Core.Cpu.Backends.NativeArm64Compiler.Instance.Compile(b, sb.Stubs);
-                    else VitaSharp.Core.Cpu.Backends.NativeX64Compiler.Instance.Compile(b);
+                    if (arm64)
+                    {
+                        VitaSharp.Core.Cpu.Backends.NativeArm64Compiler.Instance.Compile(b, sb.Stubs);
+                    }
+                    else
+                    {
+                        VitaSharp.Core.Cpu.Backends.NativeX64Compiler.Instance.Compile(b);
+                    }
                 }
                 double us = (Stopwatch.GetTimestamp() - c0) * 1e6 / Stopwatch.Frequency / decoded.Count;
                 long bytes = (GC.GetAllocatedBytesForCurrentThread() - m0) / decoded.Count;
@@ -128,27 +153,43 @@ public sealed unsafe partial class NativeJitTests
                 for (int i = 0; i < 128; i++)
                 {
                     uint q = rotate ? (uint)(i & 7) : 0, ins = word | (q * 2) << 12 | (q * 2) << 16; // Qd = Qn = q, Qm = q1... (d2)
-                    if (rotate && q == 1) ins = (word & ~0xFF0FF000u) | 0x00080000u | 0x8000u; // q1 is the addend: use q8 instead
+                    if (rotate && q == 1)
+                    {
+                        ins = (word & ~0xFF0FF000u) | 0x00080000u | 0x8000u; // q1 is the addend: use q8 instead
+                    }
+
                     code.AddRange(BitConverter.GetBytes(ins));
                 }
                 code.AddRange([0xFE, 0xFF, 0xFF, 0xEA]);
                 code.ToArray().CopyTo(GuestMemory.Span(CodeBase, 0x1000));
                 var b = BlockBuilder.Build(CodeBase, false);
                 var cb = VitaSharp.Core.Cpu.Backends.NativeX64Compiler.Instance.Compile(b)!;
-                *s = default; s->Fpscr = 0x03000000;
-                for (int i = 0; i < 32; i++) s->D[i] = 0x3F8000003F800000;
+                *s = default;
+                s->Fpscr = 0x03000000;
+                for (int i = 0; i < 32; i++)
+                {
+                    s->D[i] = 0x3F8000003F800000;
+                }
+
                 int ops = b.Insts.Count(x => x.Op == Op.Neon_ThreeSame);
                 double best = double.MaxValue;
                 for (int round = 0; round < 5; round++)
                 {
                     long t0 = Stopwatch.GetTimestamp();
-                    for (int k = 0; k < 20_000; k++) RunNative(s, cb.NativeEntry);
+                    for (int k = 0; k < 20_000; k++)
+                    {
+                        RunNative(s, cb.NativeEntry);
+                    }
+
                     double ns = (Stopwatch.GetTimestamp() - t0) * 1e9 / Stopwatch.Frequency / 20_000 / ops;
                     best = Math.Min(best, ns);
                 }
                 output.WriteLine($"{name}: {best:F2} ns per op ({ops} ops per block, block entry/exit included)");
             }
         }
-        finally { CpuState.Free(s); }
+        finally
+        {
+            CpuState.Free(s);
+        }
     }
 }

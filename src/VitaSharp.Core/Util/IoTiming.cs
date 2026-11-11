@@ -67,7 +67,10 @@ public static class IoTiming
     static readonly object Lock = new();
 
     /// <summary>The file range the last device read of a file brought in (guarded by <see cref="Lock"/>).</summary>
-    sealed class Window { public long Start = -1, End = -1; }
+    sealed class Window
+    {
+        public long Start = -1, End = -1;
+    }
     static readonly System.Runtime.CompilerServices.ConditionalWeakTable<object, Window> Windows = new();
 
     /// <summary>Blocks the calling thread until a read of <paramref name="bytes"/> issued now would have completed.</summary>
@@ -77,14 +80,22 @@ public static class IoTiming
     /// when the range is inside the read-ahead window of the file's last device read.</summary>
     public static void Read(object? file, long offset, long bytes)
     {
-        if (BytesPerSecond <= 0 || bytes <= 0) return;
+        if (BytesPerSecond <= 0 || bytes <= 0)
+        {
+            return;
+        }
+
         long done;
         lock (Lock)
         {
             if (file != null && ReadAheadBytes > 0)
             {
                 var w = Windows.GetOrCreateValue(file);
-                if (offset >= w.Start && offset + bytes <= w.End) return;
+                if (offset >= w.Start && offset + bytes <= w.End)
+                {
+                    return;
+                }
+
                 w.Start = offset;
                 w.End = offset + Math.Max(bytes, ReadAheadBytes);
             }
@@ -97,7 +108,13 @@ public static class IoTiming
         }
         long t0 = GuestClock.Ticks;
         long woke = t0;
-        if (t0 < done) { var blocked = Kernel.Scheduler.Block(); GuestClock.WaitUntil(done); woke = GuestClock.Ticks; blocked.Dispose(); }
+        if (t0 < done)
+        {
+            var blocked = Kernel.Scheduler.Block();
+            GuestClock.WaitUntil(done);
+            woke = GuestClock.Ticks;
+            blocked.Dispose();
+        }
         long waited = GuestClock.Ticks - t0, regain = GuestClock.Ticks - woke;
         string who = (Kernel.GuestThread.Current?.Name ?? "host") + (InAsyncRequest ? " (async)" : "");
         lock (Lock)
@@ -117,8 +134,14 @@ public static class IoTiming
     public static IEnumerable<string> WaitLines(int max = 6)
     {
         List<KeyValuePair<string, (long Reads, long Ticks, long Bytes, long Regain)>> all;
-        lock (Lock) all = WaitsByThread.ToList();
+        lock (Lock)
+        {
+            all = WaitsByThread.ToList();
+        }
+
         foreach (var (name, s) in all.OrderByDescending(e => e.Value.Ticks).Take(max))
+        {
             yield return $"    {name}: {s.Ticks / (double)System.Diagnostics.Stopwatch.Frequency:0.0} s waiting, {s.Reads} reads, {s.Bytes / 1e6:0.0} MB, {s.Regain / (double)System.Diagnostics.Stopwatch.Frequency:0.0} s of it getting a core back";
+        }
     }
 }

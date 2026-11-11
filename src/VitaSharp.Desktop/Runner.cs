@@ -23,7 +23,11 @@ public static class Runner
     /// silently ignored).</summary>
     internal static string? TraceOpt(string[] options, string name)
     {
-        if (Opt(options, name) is { } v) return v;
+        if (Opt(options, name) is { } v)
+        {
+            return v;
+        }
+
         int i = Array.IndexOf(options, name);
         return i >= 0 && i + 1 < options.Length && !options[i + 1].StartsWith("--", StringComparison.Ordinal) ? options[i + 1] : null;
     }
@@ -32,12 +36,20 @@ public static class Runner
     static bool? OnOff(string[] options, string name)
     {
         var v = Opt(options, name);
-        if (v == null) return null;
+        if (v == null)
+        {
+            return null;
+        }
+
         switch (v.Trim().ToLowerInvariant())
         {
-            case "on" or "1" or "true" or "yes": return true;
-            case "off" or "0" or "false" or "no": return false;
-            default: Log.Warn($"{name}={v} not recognised (use on or off): using the default"); return null;
+            case "on" or "1" or "true" or "yes":
+                return true;
+            case "off" or "0" or "false" or "no":
+                return false;
+            default:
+                Log.Warn($"{name}={v} not recognised (use on or off): using the default");
+                return null;
         }
     }
 
@@ -56,11 +68,23 @@ public static class Runner
         var seen = new HashSet<string>();
         foreach (var e in options)
         {
-            if (!e.StartsWith("--env=", StringComparison.Ordinal)) continue;
+            if (!e.StartsWith("--env=", StringComparison.Ordinal))
+            {
+                continue;
+            }
+
             var kv = e["--env=".Length..];
             int eq = kv.IndexOf('=');
-            if (eq <= 0) { Log.Warn($"{e} ignored (use --env=KEY=VALUE)"); continue; }
-            if (!seen.Add(kv[..eq])) continue;
+            if (eq <= 0)
+            {
+                Log.Warn($"{e} ignored (use --env=KEY=VALUE)");
+                continue;
+            }
+            if (!seen.Add(kv[..eq]))
+            {
+                continue;
+            }
+
             Environment.SetEnvironmentVariable(kv[..eq], kv[(eq + 1)..]);
             Console.WriteLine($"Environment: {kv}");
         }
@@ -70,11 +94,23 @@ public static class Runner
     {
         ApplyEnvOptions(options);
         // 1 ms system timer resolution while a game runs (guest wait timeouts and audio/vsync pacing rely on it)
-        if (OperatingSystem.IsWindows()) timeBeginPeriod(1);
+        if (OperatingSystem.IsWindows())
+        {
+            timeBeginPeriod(1);
+        }
         // guest threads and the GPU worker above normal host priority (docs/notes/thread-priority.md); VITASHARP_HOST_PRIO wins
         HostThreads.Enabled = OnOff(options, "--host-prio") ?? true;
-        try { return RunCore(appPath, options); }
-        finally { if (OperatingSystem.IsWindows()) timeEndPeriod(1); }
+        try
+        {
+            return RunCore(appPath, options);
+        }
+        finally
+        {
+            if (OperatingSystem.IsWindows())
+            {
+                timeEndPeriod(1);
+            }
+        }
     }
 
     [System.Runtime.InteropServices.DllImport("winmm.dll")] static extern uint timeBeginPeriod(uint ms);
@@ -83,17 +119,38 @@ public static class Runner
     static int RunCore(string appPath, string[] options)
     {
         // watchpoints are compiled out unless enabled before the CPU helpers are first used
-        if (options.Any(o => o.StartsWith("--watch"))) Environment.SetEnvironmentVariable(EnvVars.Watch, "1");
+        if (options.Any(o => o.StartsWith("--watch")))
+        {
+            Environment.SetEnvironmentVariable(EnvVars.Watch, "1");
+        }
+
         bool trace = options.Contains("--trace-hle");
         bool noJit = options.Contains("--no-jit");
         bool headless = options.Contains("--headless") || Opt(options, "--seconds") != null;
-        if (options.Contains("--debug")) Log.Level = LogLevel.Debug;
+        if (options.Contains("--debug"))
+        {
+            Log.Level = LogLevel.Debug;
+        }
         // debug mode (launcher "Modo de depuracao"): rate-limited diagnostic logging, see docs/notes/debug-mode.md
-        if (options.Contains("--debug-mode") || Environment.GetEnvironmentVariable(EnvVars.DebugMode) is "1" or "on" or "true") DebugMode.Enable();
+        if (options.Contains("--debug-mode") || Environment.GetEnvironmentVariable(EnvVars.DebugMode) is "1" or "on" or "true")
+        {
+            DebugMode.Enable();
+        }
         // logs/last.log for this session, the previous sessions kept as logs/<time>_<title>.log
-        if (Opt(options, "--log") is { } logPath) Log.OpenFile(logPath);
-        else LogFiles.OpenSession(Path.Combine(Program.DataRoot, "logs"), LogFiles.TitleOf(appPath));
-        if (DebugMode.Enabled) Log.Info("[dbg] debug mode on (first-use logging, HLE errors, anomaly checks, periodic PERF, deduplicated warnings)");
+        if (Opt(options, "--log") is { } logPath)
+        {
+            Log.OpenFile(logPath);
+        }
+        else
+        {
+            LogFiles.OpenSession(Path.Combine(Program.DataRoot, "logs"), LogFiles.TitleOf(appPath));
+        }
+
+        if (DebugMode.Enabled)
+        {
+            Log.Info("[dbg] debug mode on (first-use logging, HLE errors, anomaly checks, periodic PERF, deduplicated warnings)");
+        }
+
         InstallCrashLogging();
         // --ime-text=<text>: every IME dialog / SceIme keyboard is answered with this text and Enter, without any UI
         // (automated runs; "\n" in the value is a line break for multiline dialogs)
@@ -105,14 +162,20 @@ public static class Runner
 
         // --video-decoder=auto|sw|<FFmpeg hwaccel device> (default: VITASHARP_VIDEO_HW, else auto = software; hw or a device: hardware with software fallback)
         if (Opt(options, "--video-decoder") is { } vdec && VitaSharp.Core.Media.VideoDecoders.Backend is VitaSharp.Core.Media.FFmpegVideoBackend ffv)
+        {
             ffv.Configure(vdec);
+        }
         // --psn=on|off: emulated PSN account signed in or signed out (default: no network, NP signed out, like Vita3K); --psn-id=<online id> names the account
         // (launcher: Configuracoes > Geral > Rede e PSN). Nothing is ever sent to Sony's servers.
         // --net=off|real (default VITASHARP_NET, else off): real internet for SceNet/SceHttp; --net-allow=h1,h2 limits it to
         // those hosts (default VITASHARP_NET_ALLOW). Sony's servers are always blocked.
         string? netOpt = Opt(options, "--net") ?? Environment.GetEnvironmentVariable(EnvVars.Net);
         var netMode = NetConfig.ParseMode(netOpt);
-        if (netOpt != null && netMode == null) Log.Warn($"--net={netOpt} not recognised (use off or real): internet stays off");
+        if (netOpt != null && netMode == null)
+        {
+            Log.Warn($"--net={netOpt} not recognised (use off or real): internet stays off");
+        }
+
         var net = new NetConfig(netMode ?? NetMode.Off,
             (Opt(options, "--net-allow") ?? Environment.GetEnvironmentVariable(EnvVars.NetAllow))?.Split(',', StringSplitOptions.RemoveEmptyEntries | StringSplitOptions.TrimEntries));
         // --rpcn=host[:port] --rpcn-user=<name> [--rpcn-token=]: Score/TUS on an RPCN server (real internet only); the
@@ -122,12 +185,20 @@ public static class Runner
         {
             string user = Opt(options, "--rpcn-user") ?? "";
             string pass = Environment.GetEnvironmentVariable(EnvVars.RpcnPassword) ?? "";
-            if (user.Length == 0 || pass.Length == 0) Log.Warn($"--rpcn={server.Host}: needs --rpcn-user and the password in {EnvVars.RpcnPassword}; using the local PSN services");
-            else rpcn = new VitaSharp.Core.Hle.Np.Rpcn.RpcnConfig(server.Host, server.Port, user, pass, Opt(options, "--rpcn-token") ?? "");
+            if (user.Length == 0 || pass.Length == 0)
+            {
+                Log.Warn($"--rpcn={server.Host}: needs --rpcn-user and the password in {EnvVars.RpcnPassword}; using the local PSN services");
+            }
+            else
+            {
+                rpcn = new VitaSharp.Core.Hle.Np.Rpcn.RpcnConfig(server.Host, server.Port, user, pass, Opt(options, "--rpcn-token") ?? "");
+            }
         }
         string? psnId = Opt(options, "--psn-id") ?? (rpcn != null && PsnAccount.IsValidOnlineId(rpcn.User) ? rpcn.User : null);
         if (psnId != null && !PsnAccount.IsValidOnlineId(psnId))
+        {
             Log.Warn($"--psn-id={psnId} is not a valid online ID (3-16 letters, digits, '-' or '_', starting with a letter): using {PsnAccount.DefaultOnlineId}");
+        }
         // --psn-local=on|off: local PSN services (TUS / Cross-Save, rankings, tickets, matching, in <data>/np; default on)
         // or every PSN server request failing as unreachable
         var psn = PsnAccount.Create(OnOff(options, "--psn") ?? PsnAccount.Default.SignedIn, psnId, OnOff(options, "--psn-local") ?? true);
@@ -135,33 +206,72 @@ public static class Runner
         // them; --hle-modules=libult,...: keep these on HLE even when the game or the firmware has the module
         // (defaults: VITASHARP_LLE_MODULES / VITASHARP_HLE_MODULES)
         static string[]? ModuleListOpt(string[] o, string name) => Opt(o, name)?.Split(',', StringSplitOptions.RemoveEmptyEntries | StringSplitOptions.TrimEntries);
-        if (FirmwareInfo.Read(Program.FsRoot) is { } fw) Log.Info($"Firmware {fw.Display} installed ({string.Join(", ", fw.Partitions)})");
-        else Log.Info("No firmware installed: Json runs on HLE; system libraries without HLE (Xml, Sqlite...) are unavailable");
+        if (FirmwareInfo.Read(Program.FsRoot) is { } fw)
+        {
+            Log.Info($"Firmware {fw.Display} installed ({string.Join(", ", fw.Partitions)})");
+        }
+        else
+        {
+            Log.Info("No firmware installed: Json runs on HLE; system libraries without HLE (Xml, Sqlite...) are unavailable");
+        }
         // a window and a headless run alike (the launcher passes them: "Clock da CPU", "Taxa de quadros" per game)
-        if (long.TryParse(Opt(options, "--cpu-mips"), out var mips)) VitaSharp.Core.Cpu.CpuCore.InstructionsPerSecond = mips * 1_000_000;
-        if (long.TryParse(Opt(options, "--cpu-mhz"), out var cpuMhz)) VitaSharp.Core.Cpu.CpuCore.InstructionsPerSecond = cpuMhz * 1_000_000; // 0 = unpaced
+        if (long.TryParse(Opt(options, "--cpu-mips"), out var mips))
+        {
+            VitaSharp.Core.Cpu.CpuCore.InstructionsPerSecond = mips * 1_000_000;
+        }
+
+        if (long.TryParse(Opt(options, "--cpu-mhz"), out var cpuMhz))
+        {
+            VitaSharp.Core.Cpu.CpuCore.InstructionsPerSecond = cpuMhz * 1_000_000; // 0 = unpaced
+        }
         // --frame-rate=native|30|60|unlimited: vblanks per flip (the launcher's "Taxa de quadros" per game)
-        if (Opt(options, "--frame-rate") is { } frameRate) VitaSharp.Core.Hle.Modules.FrameRate.Mode = VitaSharp.Core.Hle.Modules.FrameRate.Parse(frameRate);
+        if (Opt(options, "--frame-rate") is { } frameRate)
+        {
+            VitaSharp.Core.Hle.Modules.FrameRate.Mode = VitaSharp.Core.Hle.Modules.FrameRate.Parse(frameRate);
+        }
+
         if (VitaSharp.Core.Hle.Modules.FrameRate.Mode != VitaSharp.Core.Hle.Modules.FrameRateMode.Native)
+        {
             Log.Info($"Frame rate: {VitaSharp.Core.Hle.Modules.FrameRate.Label} (--frame-rate)");
+        }
         // storage speed: the Vita memory card's by default (VITASHARP_IO_SPEED); --fast-loading[=on|off] is the launchers'
         // "Carregamento rapido" (per game or the global default: no read speed limit), --io-speed=<MB/s> sets it (0 = instant)
-        if (options.Contains("--fast-loading")) VitaSharp.Core.Util.IoTiming.FastLoading = true;
-        else if (OnOff(options, "--fast-loading") is { } fastLoading) VitaSharp.Core.Util.IoTiming.FastLoading = fastLoading;
+        if (options.Contains("--fast-loading"))
+        {
+            VitaSharp.Core.Util.IoTiming.FastLoading = true;
+        }
+        else if (OnOff(options, "--fast-loading") is { } fastLoading)
+        {
+            VitaSharp.Core.Util.IoTiming.FastLoading = fastLoading;
+        }
+
         if (Opt(options, "--io-speed") is { } ioSpeed)
         {
-            if (VitaSharp.Core.Util.IoTiming.ParseSpeed(ioSpeed) is { } bps) VitaSharp.Core.Util.IoTiming.BytesPerSecond = bps;
-            else Log.Warn($"--io-speed={ioSpeed} not recognised (use MB/s, vita or fast): using the default");
+            if (VitaSharp.Core.Util.IoTiming.ParseSpeed(ioSpeed) is { } bps)
+            {
+                VitaSharp.Core.Util.IoTiming.BytesPerSecond = bps;
+            }
+            else
+            {
+                Log.Warn($"--io-speed={ioSpeed} not recognised (use MB/s, vita or fast): using the default");
+            }
         }
         Log.Info(VitaSharp.Core.Util.IoTiming.FastLoading ? "Storage: fast loading (no read speed limit)"
             : $"Storage: {VitaSharp.Core.Util.IoTiming.BytesPerSecond / 1e6:0.#} MB/s (the Vita memory card's speed is {VitaSharp.Core.Util.IoTiming.VitaBytesPerSecond / 1e6:0} MB/s)");
         // --cpu=native|il|interp selects the CPU backend (default: VITASHARP_CPU, else the best one the host supports)
         using var emu = new Emulator(new EmulatorOptions
         {
-            FsRoot = Program.FsRoot, EnableJit = !noJit, CpuBackend = Opt(options, "--cpu"), TraceHle = trace,
-            PatchDir = Path.Combine(Program.DataRoot, "patches"), Psn = psn, NpRoot = Path.Combine(Program.DataRoot, "np"),
-            Net = net, Rpcn = rpcn,
-            LleModules = ModuleListOpt(options, "--lle-modules"), HleModules = ModuleListOpt(options, "--hle-modules"),
+            FsRoot = Program.FsRoot,
+            EnableJit = !noJit,
+            CpuBackend = Opt(options, "--cpu"),
+            TraceHle = trace,
+            PatchDir = Path.Combine(Program.DataRoot, "patches"),
+            Psn = psn,
+            NpRoot = Path.Combine(Program.DataRoot, "np"),
+            Net = net,
+            Rpcn = rpcn,
+            LleModules = ModuleListOpt(options, "--lle-modules"),
+            HleModules = ModuleListOpt(options, "--hle-modules"),
         });
         var fatal = new ManualResetEventSlim();
         emu.Fatal += (t, e) => fatal.Set();
@@ -189,14 +299,28 @@ public static class Runner
         if (options.Any(o => o == "--flicker-check" || o.StartsWith("--flicker-check=")))
         {
             var det = _flicker = new FlickerDetector(double.TryParse(Opt(options, "--flicker-check"), System.Globalization.CultureInfo.InvariantCulture, out var ft) && ft > 0 ? ft : 6);
-            rendererOptions.FrameSink = (n, px, w, h) => { if (det.Add(n, px, w, h) is { } f) Log.Warn($"FLICKER {det.Describe(f)}"); };
+            rendererOptions.FrameSink = (n, px, w, h) =>
+            {
+                if (det.Add(n, px, w, h) is { } f)
+                {
+                    Log.Warn($"FLICKER {det.Describe(f)}");
+                }
+            };
         }
         if (rendererOptions.ShaderOptimization is { } so && ShaderCompiler.ParseOptLevel(so) == null)
+        {
             Log.Warn($"--shaderc-opt={so} not recognised (use zero, size or perf): using the default");
+        }
 
-        if (headless) return RunHeadless(emu, appPath, options, rendererOptions, fatal);
+        if (headless)
+        {
+            return RunHeadless(emu, appPath, options, rendererOptions, fatal);
+        }
         // --dump-frames in a window too (the windowed path's frames, e.g. a VITASHARP_HIDDEN_WINDOW=1 check)
-        if (options.Any(o => o.StartsWith("--dump-frames")) && ApplyFrameDumpOptions(options, rendererOptions) is { } windowDumpDir) Log.Info($"Frame dumps: {windowDumpDir}");
+        if (options.Any(o => o.StartsWith("--dump-frames")) && ApplyFrameDumpOptions(options, rendererOptions) is { } windowDumpDir)
+        {
+            Log.Info($"Frame dumps: {windowDumpDir}");
+        }
 
         using var window = new WindowHost("VitaSharp", Opt(options, "--scale") is { } s ? int.Parse(s) : 1, options.Contains("--fullscreen"));
         // a hidden test window (VITASHARP_HIDDEN_WINDOW=1) stays silent too: the PC may be in use
@@ -230,17 +354,34 @@ public static class Runner
                 : EmulationPause.IsPaused ? Loc.Get(statePickerRef?.IsOpen == true ? "SsTitle" : "GameSavingState") : $"{fps:F0} FPS"
                 + (VitaSharp.Core.Hle.Modules.FrameRate.Label is { Length: > 0 } fr ? $" ({fr})" : "");
             string rec = capture?.Capture.IsRecording == true ? $"\u25CF REC {RecTime(capture.Capture.RecordingSeconds)} | " : "";
-            if (capture?.Capture.SavePercent is int pct && pct >= 0) st = Loc.Format("GameSavingRecordingPct", pct);
-            try { window.Title = st != null ? $"VitaSharp | {rec}{st}" : $"VitaSharp | {rec}{emu.TitleId} {emu.Title} | {rate} | {renderer?.DeviceName}"; } catch { }
+            if (capture?.Capture.SavePercent is int pct && pct >= 0)
+            {
+                st = Loc.Format("GameSavingRecordingPct", pct);
+            }
+
+            try
+            {
+                window.Title = st != null ? $"VitaSharp | {rec}{st}" : $"VitaSharp | {rec}{emu.TitleId} {emu.Title} | {rate} | {renderer?.DeviceName}";
+            }
+            catch { }
         }
         // errors stay longer than the short confirmations (a refused save state was gone before it could be read)
-        void ShowStatus(string s, int ms) { Volatile.Write(ref status, s); Interlocked.Exchange(ref statusUntil, Environment.TickCount64 + ms); ShowTitle(); }
+        void ShowStatus(string s, int ms)
+        {
+            Volatile.Write(ref status, s);
+            Interlocked.Exchange(ref statusUntil, Environment.TickCount64 + ms);
+            ShowTitle();
+        }
         var titleTimer = new System.Threading.Timer(_ =>
         {
             long frames = VitaSharp.Core.Hle.Modules.Display.FramesPresented;
             fps = (frames - lastFrames) / 1.0;
             lastFrames = frames;
-            if (++titleTicks % 5 == 0) Log.Info($"FPS frame {frames}: {fps:F0} frames/s");
+            if (++titleTicks % 5 == 0)
+            {
+                Log.Info($"FPS frame {frames}: {fps:F0} frames/s");
+            }
+
             ShowTitle();
             ShowPauseBadge(renderer);
         }, null, 1000, 1000);
@@ -272,13 +413,20 @@ public static class Runner
         void ShowCenter(byte[]? bgra, int w, int h)
         {
             renderer?.SetCenterOverlay(bgra, w, h);
-            if (overlayDump == null || bgra == null) return;
+            if (overlayDump == null || bgra == null)
+            {
+                return;
+            }
+
             try
             {
                 Directory.CreateDirectory(overlayDump);
                 Program.WriteBgraPng(Path.Combine(overlayDump, $"overlay_{Interlocked.Increment(ref overlayDumps):D3}.png"), bgra, w, h);
             }
-            catch (IOException e) { Log.WarnOnce("overlay-dump", $"--overlay-dump: {e.Message}"); }
+            catch (IOException e)
+            {
+                Log.WarnOnce("overlay-dump", $"--overlay-dump: {e.Message}");
+            }
         }
         var imeOverlay = new ImeOverlay(window, ShowCenter, scripted != null ? () => scripted.GetController(0) : null);
         emu.Host.ImeDialog = imeOverlay;
@@ -286,20 +434,34 @@ public static class Runner
         // system message dialogs (sceMsgDialog, the save data dialog's messages): a panel over the game that waits for the
         // user (arrows / Enter / Esc, d-pad / Cross / Circle, click); --dialogs=auto answers them at once as headless runs do
         var msgOverlay = new MessageOverlay(window, ShowCenter, scripted != null ? () => scripted.GetController(0) : null);
-        if (Opt(options, "--dialogs") == "auto") Log.Info("Message dialogs: automatic answers (--dialogs=auto)");
-        else emu.Host.MessageDialog = msgOverlay;
+        if (Opt(options, "--dialogs") == "auto")
+        {
+            Log.Info("Message dialogs: automatic answers (--dialogs=auto)");
+        }
+        else
+        {
+            emu.Host.MessageDialog = msgOverlay;
+        }
         // the script drives the dialog, not the game, while one is open (as the window's own input does)
-        if (scripted != null) emu.Host.Input = new DialogGatedInput(scripted, () => window.TextCapture != null);
+        if (scripted != null)
+        {
+            emu.Host.Input = new DialogGatedInput(scripted, () => window.TextCapture != null);
+        }
+
         VitaSharp.Core.Hle.Np.TrophyNotifications.Unlocked += e => { trophyToast.Enqueue(e); diag.Status?.Invoke(TrophyNotice(e)); };
         // --trophy-toast-test=<seconds>: shows the notification of the title's trophy 1 (nothing is unlocked), to check it
         if (int.TryParse(Opt(options, "--trophy-toast-test"), out int toastAt))
+        {
             _ = Task.Delay(TimeSpan.FromSeconds(toastAt)).ContinueWith(_ =>
             {
                 var set = VitaSharp.Core.Hle.Np.TrophyPackage.FindSets(appPath).FirstOrDefault();
                 var pkg = set.TrpPath != null ? VitaSharp.Core.Hle.Np.TrophyPackage.Load(set.TrpPath, set.CommId) : null;
                 if (pkg?.Trophies.Count > 1)
+                {
                     trophyToast.Enqueue(new VitaSharp.Core.Hle.Np.TrophyUnlockedEvent(set.CommId, pkg.Title, pkg.Trophies[1], pkg.TrophyIcon(pkg.Trophies[1].Id)));
+                }
             });
+        }
         // F8: "Gravar tudo", the session capture (docs/notes/session-capture.md); the pre-roll follows debug mode
         capture = new SessionCaptureControl(emu, rendererOptions, () => renderer, options, diag.Status, diag.HostInfo);
         capture.Capture.Options.RecordingChanged = _ => { ShowTitle(); ShowPauseBadge(renderer); };
@@ -309,7 +471,15 @@ public static class Runner
         window.GpuDumpToggled += () => { capture.Capture.NoteKey("Ctrl+F8"); GpuDumpControl.Toggle(emu, () => renderer, options, diag.Status, diag.HostInfo); };
         window.DebugModeToggled += () =>
         {
-            if (DebugMode.Enabled) DebugMode.Disable(); else DebugMode.Enable();
+            if (DebugMode.Enabled)
+            {
+                DebugMode.Disable();
+            }
+            else
+            {
+                DebugMode.Enable();
+            }
+
             Log.Info($"[dbg] debug mode {(DebugMode.Enabled ? "on" : "off")} (F9) at guest frame {DebugMode.Frame}");
             capture.Capture.NoteKey("F9");
             capture.UpdatePreRoll();
@@ -330,15 +500,26 @@ public static class Runner
         Task? pickerGrab = null;
         statePicker.Opened += () =>
         {
-            lock (pickerLock) pickerPicture = null;
+            lock (pickerLock)
+            {
+                pickerPicture = null;
+            }
+
             pickerGrab = Task.Run(() =>
             {
                 byte[]? png = EmulationPause.IsPaused ? null : SaveStateControl.GrabThumbnail(rendererOptions, 300);
                 lock (pickerLock)
                 {
-                    if (!statePicker.IsOpen) return;
+                    if (!statePicker.IsOpen)
+                    {
+                        return;
+                    }
+
                     pickerPicture = png;
-                    if (EmulationPause.Pause("save state picker", @internal: true)) pickerPaused = true;
+                    if (EmulationPause.Pause("save state picker", @internal: true))
+                    {
+                        pickerPaused = true;
+                    }
                 }
                 statePicker.SetCurrentPicture(png);
                 ShowTitle();
@@ -349,7 +530,11 @@ public static class Runner
             pickerGrab?.Wait(1000);
             lock (pickerLock)
             {
-                if (!pickerPaused) return;
+                if (!pickerPaused)
+                {
+                    return;
+                }
+
                 pickerPaused = false;
             }
             EmulationPause.Resume("save state picker");
@@ -359,7 +544,11 @@ public static class Runner
         {
             states.Select(slot);
             byte[]? png;
-            lock (pickerLock) png = pickerPicture;
+            lock (pickerLock)
+            {
+                png = pickerPicture;
+            }
+
             states.SaveAsync(slot, png);
         };
         statePicker.LoadRequested += slot => { states.Select(slot); states.LoadAsync(slot); };
@@ -367,7 +556,11 @@ public static class Runner
         window.SaveStateKey += slot =>
         {
             capture.Capture.NoteKey(slot < 0 ? "F6" : "F5");
-            if (slot >= 0) { states.SaveAsync(slot == 0 ? 0 : states.Slot); return; }
+            if (slot >= 0)
+            {
+                states.SaveAsync(slot == 0 ? 0 : states.Slot);
+                return;
+            }
             states.NextSlot();
             statePicker.Open(states.Slot);
         };
@@ -389,18 +582,37 @@ public static class Runner
         // it is written (the title bar is not visible in fullscreen); the overlay never reaches the captured frames
         void ShowPauseBadge(VulkanRenderer? r)
         {
-            if (r == null) return;
-            if (Environment.TickCount64 < Interlocked.Read(ref noticeUntil)) return; // a short notice (mouse mode) is shown
+            if (r == null)
+            {
+                return;
+            }
+
+            if (Environment.TickCount64 < Interlocked.Read(ref noticeUntil))
+            {
+                return; // a short notice (mouse mode) is shown
+            }
+
             bool paused = EmulationPause.IsUserPaused;
             var c = capture?.Capture;
             string? text = paused ? PauseBadge.Text(window.PauseKeyLabel)
                 : c?.IsRecording == true ? $"REC {RecTime(c.RecordingSeconds)}"
                 : c?.SavePercent is int pct && pct >= 0 ? Loc.Format("GameSavingRecordingPct", pct) : null;
             string key = $"{System.Runtime.CompilerServices.RuntimeHelpers.GetHashCode(r)}|{paused}|{text}|{window.FramebufferSize.Height}";
-            if (key == Volatile.Read(ref shownBadge)) return; // unchanged: nothing to redraw
+            if (key == Volatile.Read(ref shownBadge))
+            {
+                return; // unchanged: nothing to redraw
+            }
+
             Volatile.Write(ref shownBadge, key);
             var badge = text != null ? PauseBadge.Render(text, window.FramebufferSize.Height, pauseSign: paused, recDot: !paused && c?.IsRecording == true) : null;
-            if (badge is { } b) r.SetStatusOverlay(b.Bgra, b.Width, b.Height); else r.SetStatusOverlay(null, 0, 0);
+            if (badge is { } b)
+            {
+                r.SetStatusOverlay(b.Bgra, b.Width, b.Height);
+            }
+            else
+            {
+                r.SetStatusOverlay(null, 0, 0);
+            }
         }
         void OnPauseChanged(bool paused)
         {
@@ -409,18 +621,34 @@ public static class Runner
         }
         EmulationPause.Changed += OnPauseChanged;
         window.PauseToggled += () => { capture.Capture.NoteKey("pause"); EmulationPause.Toggle("pause key"); };
-        window.Resized += () => { if (EmulationPause.IsUserPaused) ShowPauseBadge(renderer); };
+        window.Resized += () =>
+        {
+            if (EmulationPause.IsUserPaused)
+            {
+                ShowPauseBadge(renderer);
+            }
+        };
         // the mouse mode (F4 cycles giroscopio / analogico direito / analogico esquerdo / desligado): a notice in the
         // top-left corner for 3 s and in the title bar
         int mouseNotice = 0;
         void ShowMouseNotice(string text)
         {
             diag.Status?.Invoke(text);
-            if (renderer is { } r && PauseBadge.Render(text, window.FramebufferSize.Height, pauseSign: false) is { } b) r.SetStatusOverlay(b.Bgra, b.Width, b.Height);
+            if (renderer is { } r && PauseBadge.Render(text, window.FramebufferSize.Height, pauseSign: false) is { } b)
+            {
+                r.SetStatusOverlay(b.Bgra, b.Width, b.Height);
+            }
+
             Volatile.Write(ref shownBadge, null);
             Interlocked.Exchange(ref noticeUntil, Environment.TickCount64 + 2900);
             int n = Interlocked.Increment(ref mouseNotice);
-            _ = Task.Delay(3000).ContinueWith(_ => { if (Volatile.Read(ref mouseNotice) == n) ShowPauseBadge(renderer); });
+            _ = Task.Delay(3000).ContinueWith(_ =>
+            {
+                if (Volatile.Read(ref mouseNotice) == n)
+                {
+                    ShowPauseBadge(renderer);
+                }
+            });
         }
         window.MouseModeChanged += ShowMouseNotice;
         // F1 / F2 / F3: internal resolution, frame rate mode and MSAA mode while the game runs, with the same notice
@@ -429,7 +657,10 @@ public static class Runner
             text => { ShowMouseNotice(text); ShowTitle(); });
         window.GraphicsKey += k => { capture.Capture.NoteKey(k); graphics.Press(k); };
         // scripted pause / F10 / F1 / F2 / F3 key steps (--input key@...:P) also work in the window
-        if (scripted is { HasHostKeySteps: true }) window.Tick += () => RunScriptedHostKeys(scripted, diag, window, graphics);
+        if (scripted is { HasHostKeySteps: true })
+        {
+            window.Tick += () => RunScriptedHostKeys(scripted, diag, window, graphics);
+        }
 
         window.Loaded += () =>
         {
@@ -444,18 +675,32 @@ public static class Runner
             emu.LoadTitle(appPath, BootSelf(options));
             // the system's start-up picture (the app's sce_sys/pic0.png) until the game's first frame; the system
             // software (run from vs0:) has none
-            if (!emu.IsSystemProgram) ShowBootSplash(renderer, emu.AppPath);
+            if (!emu.IsSystemProgram)
+            {
+                ShowBootSplash(renderer, emu.AppPath);
+            }
+
             window.TitleId = emu.TitleId; // its saved mouse mode (input.json)
             emu.Start();
             StartShellLaunch(emu, options);
             // --start-paused: the threads stop right after the start (debugging: attach, set up captures, then P)
-            if (options.Contains("--start-paused")) EmulationPause.Pause("--start-paused");
+            if (options.Contains("--start-paused"))
+            {
+                EmulationPause.Pause("--start-paused");
+            }
         };
         // sceAppMgrLoadExec: restart the process with the requested executable (new renderer: all GPU state is stale)
         emu.ExecRequested += () => Task.Run(() =>
         {
-            try { emu.PerformExec(() => { var r = NewRenderer(rendererOptions); r.AnomalyDetected += diag.OnAnomaly; r.DeviceLost += OnDeviceLost; ShowPauseBadge(r); return renderer = r; }); }
-            catch (Exception e) { Log.Error($"LoadExec failed: {e}"); fatal.Set(); }
+            try
+            {
+                emu.PerformExec(() => { var r = NewRenderer(rendererOptions); r.AnomalyDetected += diag.OnAnomaly; r.DeviceLost += OnDeviceLost; ShowPauseBadge(r); return renderer = r; });
+            }
+            catch (Exception e)
+            {
+                Log.Error($"LoadExec failed: {e}");
+                fatal.Set();
+            }
         });
         window.Resized += () => renderer?.NotifyResized();
         window.Closing += () => emu.Stop();
@@ -466,7 +711,11 @@ public static class Runner
         window.CloseVeto = () =>
         {
             var c = capture.Capture;
-            if (Volatile.Read(ref closeNow) == 1 || (!c.IsRecording && c.Idle.IsSet)) return false;
+            if (Volatile.Read(ref closeNow) == 1 || (!c.IsRecording && c.Idle.IsSet))
+            {
+                return false;
+            }
+
             if (!closeAfterSave)
             {
                 closeAfterSave = true;
@@ -479,27 +728,49 @@ public static class Runner
                     var sw = Stopwatch.StartNew();
                     // a recording still starting keeps the stop for when it has started; then wait for the save, with
                     // its progress in the title bar and the badge
-                    while (c.IsRecording && !c.Stop("window closed")) Thread.Sleep(250);
+                    while (c.IsRecording && !c.Stop("window closed"))
+                    {
+                        Thread.Sleep(250);
+                    }
+
                     int last = -1, lastTen = -1;
                     while (!c.Idle.Wait(250))
                     {
                         int pct = c.SavePercent;
-                        if (pct == last) continue;
+                        if (pct == last)
+                        {
+                            continue;
+                        }
+
                         last = pct;
                         ShowTitle();
                         ShowPauseBadge(renderer);
-                        if (pct >= 0 && pct / 10 != lastTen) { lastTen = pct / 10; Console.WriteLine($"Saving the recording: {pct}% ({c.SaveStep})"); }
+                        if (pct >= 0 && pct / 10 != lastTen)
+                        {
+                            lastTen = pct / 10;
+                            Console.WriteLine($"Saving the recording: {pct}% ({c.SaveStep})");
+                        }
                     }
                     Log.Info(FormattableString.Invariant($"[capture] closing: the recording was saved {sw.Elapsed.TotalSeconds:F1} s after the window was closed"));
                     Console.WriteLine(c.LastZip is { } z ? $"Recording saved: {z}" : "Recording saved (see the log)");
                     Volatile.Write(ref closeNow, 1);
                 })
-                { IsBackground = true, Name = "capture close" }.Start();
+                {
+                    IsBackground = true,
+                    Name = "capture close"
+                }.Start();
             }
             ShowTitle();
             return true;
         };
-        window.Tick += () => { if (Volatile.Read(ref closeNow) == 1 && closeAfterSave) { closeAfterSave = false; window.Close(); } };
+        window.Tick += () =>
+        {
+            if (Volatile.Read(ref closeNow) == 1 && closeAfterSave)
+            {
+                closeAfterSave = false;
+                window.Close();
+            }
+        };
         emu.Fatal += (t, e) => Log.Error($"Fatal error in thread {t.Name}: {e.Message}");
         window.Run();
         Log.Info($"Window: longest stop of the window thread {window.MaxUpdateGapMs:F0} ms");
@@ -522,23 +793,52 @@ public static class Runner
     /// change the internal resolution / frame rate mode / MSAA mode.</summary>
     static void RunScriptedHostKeys(ScriptedInput script, Diagnostics diag, WindowHost? window = null, GraphicsHotkeys? graphics = null)
     {
-        if (script.TakeHostKeys() is not { } keys) return;
+        if (script.TakeHostKeys() is not { } keys)
+        {
+            return;
+        }
+
         foreach (var k in keys)
         {
-            if (k == ScriptedInput.PauseKey) EmulationPause.Toggle("--input");
-            else if (k == "F10") diag.Capture("--input F10");
-            else if (k == "F11") window?.ToggleFullscreen();
-            else if (k == "Close") window?.RequestClose();
-            else if (k is "F8" or "Ctrl+F8") window?.PressF8(k == "Ctrl+F8");
-            else if (k is "F5" or "F6" or "F7" or "Shift+F5" or "Shift+F7") window?.PressStateKey(k);
-            else if (GraphicsHotkeys.IsHotkey(k)) graphics?.Press(k);
+            if (k == ScriptedInput.PauseKey)
+            {
+                EmulationPause.Toggle("--input");
+            }
+            else if (k == "F10")
+            {
+                diag.Capture("--input F10");
+            }
+            else if (k == "F11")
+            {
+                window?.ToggleFullscreen();
+            }
+            else if (k == "Close")
+            {
+                window?.RequestClose();
+            }
+            else if (k is "F8" or "Ctrl+F8")
+            {
+                window?.PressF8(k == "Ctrl+F8");
+            }
+            else if (k is "F5" or "F6" or "F7" or "Shift+F5" or "Shift+F7")
+            {
+                window?.PressStateKey(k);
+            }
+            else if (GraphicsHotkeys.IsHotkey(k))
+            {
+                graphics?.Press(k);
+            }
         }
     }
 
     /// <summary>--debug-mode-at=FRAME[,FRAME...]: toggles debug mode like F9 when the guest frame is reached (tests).</summary>
     static void StartDebugModeToggles(string[] options)
     {
-        if (Opt(options, "--debug-mode-at") is not { } spec) return;
+        if (Opt(options, "--debug-mode-at") is not { } spec)
+        {
+            return;
+        }
+
         var frames = new SortedSet<long>(spec.Split(',', StringSplitOptions.RemoveEmptyEntries).Select(s => long.Parse(s.TrimStart('f'))));
         new Thread(() =>
         {
@@ -547,19 +847,34 @@ public static class Runner
                 if (VitaSharp.Core.Hle.Modules.Display.FramesPresented >= frames.Min)
                 {
                     frames.Remove(frames.Min);
-                    if (DebugMode.Enabled) DebugMode.Disable(); else DebugMode.Enable();
+                    if (DebugMode.Enabled)
+                    {
+                        DebugMode.Disable();
+                    }
+                    else
+                    {
+                        DebugMode.Enable();
+                    }
+
                     Log.Info($"[dbg] debug mode {(DebugMode.Enabled ? "on" : "off")} (--debug-mode-at) at guest frame {DebugMode.Frame}");
                 }
                 Thread.Sleep(5);
             }
         })
-        { IsBackground = true, Name = "debug-mode-at" }.Start();
+        {
+            IsBackground = true,
+            Name = "debug-mode-at"
+        }.Start();
     }
 
     /// <summary>--diag-at=FRAME[,FRAME...]: the F10 capture, triggered when the guest frame is reached (tests).</summary>
     static void StartScheduledCaptures(string[] options, Diagnostics diag)
     {
-        if (Opt(options, "--diag-at") is not { } spec) return;
+        if (Opt(options, "--diag-at") is not { } spec)
+        {
+            return;
+        }
+
         var frames = new SortedSet<long>(spec.Split(',', StringSplitOptions.RemoveEmptyEntries).Select(s => long.Parse(s.TrimStart('f'))));
         new Thread(() =>
         {
@@ -573,7 +888,10 @@ public static class Runner
                 Thread.Sleep(5);
             }
         })
-        { IsBackground = true, Name = "diag-at" }.Start();
+        {
+            IsBackground = true,
+            Name = "diag-at"
+        }.Start();
     }
 
     /// <summary>Unhandled exceptions (any thread) and unobserved task failures go to the log, which is flushed. Every
@@ -615,7 +933,11 @@ public static class Runner
     static void StartShellLaunch(Emulator emu, string[] options)
     {
         string? app = Opt(options, "--launch-app"), uri = Opt(options, "--launch-uri");
-        if (string.IsNullOrEmpty(app) && string.IsNullOrEmpty(uri)) return;
+        if (string.IsNullOrEmpty(app) && string.IsNullOrEmpty(uri))
+        {
+            return;
+        }
+
         int flags = Opt(options, "--launch-flags") is { } lfs ? Convert.ToInt32(lfs, lfs.StartsWith("0x", StringComparison.OrdinalIgnoreCase) ? 16 : 10)
             : string.IsNullOrEmpty(uri) ? LaunchAtOnceFlag : 0;
         long after = long.TryParse(Opt(options, "--launch-after"), out var la) && la > 0 ? la : 0;
@@ -623,18 +945,46 @@ public static class Runner
         {
             // the shell handles requests once its home screen is built (VitaSystem.ShellUp), a moment after that
             static long Frames() => VitaSharp.Core.Hle.Modules.Display.FramesPresented;
-            while (emu.Running && !emu.Vita.WaitShellUp(50) && Frames() < ShellUpFallbackFrames) { }
+            while (emu.Running && !emu.Vita.WaitShellUp(50) && Frames() < ShellUpFallbackFrames)
+            {
+            }
             long ready = Frames() + ShellLaunchDelayFrames;
-            while (emu.Running && Frames() < Math.Max(ready, after)) Thread.Sleep(50);
-            if (!emu.Running || emu.Vita.Shell is not { } shell) return;
-            if (!string.IsNullOrEmpty(uri)) { shell.Vita.RequestLaunchByUri(shell, uri, flags); return; }
+            while (emu.Running && Frames() < Math.Max(ready, after))
+            {
+                Thread.Sleep(50);
+            }
+
+            if (!emu.Running || emu.Vita.Shell is not { } shell)
+            {
+                return;
+            }
+
+            if (!string.IsNullOrEmpty(uri))
+            {
+                shell.Vita.RequestLaunchByUri(shell, uri, flags);
+                return;
+            }
             string? dir = null;
             foreach (var root in new[] { "vs0:app/", "ux0:app/" })
-                if (shell.Vfs.Resolve(root + app) is { } d && File.Exists(Path.Combine(d, "eboot.bin"))) { dir = d; break; }
-            if (dir == null) { Log.Warn($"--launch-app={app}: not installed"); return; }
+            {
+                if (shell.Vfs.Resolve(root + app) is { } d && File.Exists(Path.Combine(d, "eboot.bin")))
+                {
+                    dir = d;
+                    break;
+                }
+            }
+
+            if (dir == null)
+            {
+                Log.Warn($"--launch-app={app}: not installed");
+                return;
+            }
             shell.Vita.RequestLaunchByName(shell, app!, dir, flags, null);
         })
-        { IsBackground = true, Name = "shell launch" };
+        {
+            IsBackground = true,
+            Name = "shell launch"
+        };
         t.Start();
     }
 
@@ -650,15 +1000,27 @@ public static class Runner
     /// started, booted directly: Jak1.self of the Jak and Daxter Collection), else eboot.bin.</summary>
     static string BootSelf(string[] options)
     {
-        if (Opt(options, "--self") is { } self) return self;
+        if (Opt(options, "--self") is { } self)
+        {
+            return self;
+        }
+
         if (Opt(options, "--load-state") is { } ls)
         {
             int at = ls.LastIndexOf('@');
-            if (at > 1 && long.TryParse(ls[(at + 1)..].TrimStart('f'), out _)) ls = ls[..at];
+            if (at > 1 && long.TryParse(ls[(at + 1)..].TrimStart('f'), out _))
+            {
+                ls = ls[..at];
+            }
+
             if (VitaSharp.Core.SaveState.SaveStates.ProgramOf(ls) is { } p && p.StartsWith("app0:", StringComparison.OrdinalIgnoreCase))
             {
                 string exe = p[5..].TrimStart('/');
-                if (!exe.Equals("eboot.bin", StringComparison.OrdinalIgnoreCase)) Log.Info($"--load-state: the state was saved in {p}: booting it");
+                if (!exe.Equals("eboot.bin", StringComparison.OrdinalIgnoreCase))
+                {
+                    Log.Info($"--load-state: the state was saved in {p}: booting it");
+                }
+
                 return exe;
             }
         }
@@ -678,16 +1040,31 @@ public static class Runner
     static void ShowBootSplash(VulkanRenderer r, string appDir)
     {
         var path = VitaSharp.Core.Io.Vfs.ResolveCaseInsensitive(appDir, "sce_sys/pic0.png");
-        if (!File.Exists(path)) return;
+        if (!File.Exists(path))
+        {
+            return;
+        }
+
         try
         {
             using var decoded = SkiaSharp.SKBitmap.Decode(path);
-            if (decoded == null) return;
+            if (decoded == null)
+            {
+                return;
+            }
+
             using var rgba = decoded.Copy(SkiaSharp.SKColorType.Rgba8888);
-            if (rgba == null) return;
+            if (rgba == null)
+            {
+                return;
+            }
+
             r.SetBootSplash(rgba.Bytes, rgba.Width, rgba.Height);
         }
-        catch (Exception e) { Log.Warn($"Boot picture {path}: {e.Message}"); }
+        catch (Exception e)
+        {
+            Log.Warn($"Boot picture {path}: {e.Message}");
+        }
     }
 
     static VulkanRenderer NewHeadlessRenderer(VulkanRendererOptions ro, Diagnostics diag)
@@ -707,9 +1084,20 @@ public static class Runner
         ro.DumpEvery = int.TryParse(Opt(options, "--dump-every"), out var de) ? de : 60;
         ro.DumpFrom = long.TryParse(Opt(options, "--dump-from"), out var dfr) ? dfr : 0;
         ro.TraceDrawsFrame = long.TryParse(Opt(options, "--trace-draws"), out var tdf) ? tdf : -1;
-        if (dumpOpt == null) return null;
+        if (dumpOpt == null)
+        {
+            return null;
+        }
+
         var dir = dumpOpt.Contains('=') ? dumpOpt[(dumpOpt.IndexOf('=') + 1)..] : Path.Combine(Program.DataRoot, "frames");
-        if (Directory.Exists(dir)) foreach (var f in Directory.GetFiles(dir, "*.png")) File.Delete(f);
+        if (Directory.Exists(dir))
+        {
+            foreach (var f in Directory.GetFiles(dir, "*.png"))
+            {
+                File.Delete(f);
+            }
+        }
+
         ro.DumpFramesDir = dir;
         ro.InspectTextures = !options.Contains("--no-inspect");
         return dir;
@@ -723,7 +1111,11 @@ public static class Runner
         if (options.Any(o => o.StartsWith("--dump-frames")) || options.Contains("--vulkan") || Opt(options, "--trace-draws") != null)
         {
             dumpDir = ApplyFrameDumpOptions(options, ro);
-            if (dumpDir != null) ro.Thumbnails = thumbs = new();
+            if (dumpDir != null)
+            {
+                ro.Thumbnails = thumbs = new();
+            }
+
             emu.Gpu.Backend = NewHeadlessRenderer(ro, diag);
         }
         // turbo: no vblank/audio pacing, guest time jumps one frame per frame (automated tests)
@@ -731,42 +1123,120 @@ public static class Runner
         if (int.TryParse(Opt(options, "--cores"), out var cores)) // 0 = unlimited (old behaviour), also for the shell's core
         {
             VitaSharp.Core.Kernel.Scheduler.Cores = cores;
-            if (cores <= 0) VitaSharp.Core.Kernel.Scheduler.SystemCores = 0;
+            if (cores <= 0)
+            {
+                VitaSharp.Core.Kernel.Scheduler.SystemCores = 0;
+            }
         }
-        if (long.TryParse(Opt(options, "--jit-threshold"), out var jitT)) VitaSharp.Core.Cpu.Jit.HotInstructions = jitT; // executed instructions before a block is compiled
-        if (int.TryParse(Opt(options, "--bt-depth"), out var btd)) VitaSharp.Core.Kernel.GuestThread.BacktraceDepth = btd;
-        if (int.TryParse(Opt(options, "--frame-sleep"), out var fsl)) VitaSharp.Core.Hle.Modules.Display.FrameSleepMs = fsl;
-        if (double.TryParse(Opt(options, "--speed"), System.Globalization.NumberStyles.Float, System.Globalization.CultureInfo.InvariantCulture, out var speed) && speed > 0) VitaSharp.Core.Util.GuestClock.Speed = speed;
-        if (Opt(options, "--input") is { } script) { var si = new ScriptedInput(script); emu.Host.Input = si; emu.Host.Motion = si; }
+        if (long.TryParse(Opt(options, "--jit-threshold"), out var jitT))
+        {
+            VitaSharp.Core.Cpu.Jit.HotInstructions = jitT; // executed instructions before a block is compiled
+        }
+
+        if (int.TryParse(Opt(options, "--bt-depth"), out var btd))
+        {
+            VitaSharp.Core.Kernel.GuestThread.BacktraceDepth = btd;
+        }
+
+        if (int.TryParse(Opt(options, "--frame-sleep"), out var fsl))
+        {
+            VitaSharp.Core.Hle.Modules.Display.FrameSleepMs = fsl;
+        }
+
+        if (double.TryParse(Opt(options, "--speed"), System.Globalization.NumberStyles.Float, System.Globalization.CultureInfo.InvariantCulture, out var speed) && speed > 0)
+        {
+            VitaSharp.Core.Util.GuestClock.Speed = speed;
+        }
+
+        if (Opt(options, "--input") is { } script)
+        {
+            var si = new ScriptedInput(script);
+            emu.Host.Input = si;
+            emu.Host.Motion = si;
+        }
         // --nav=<file>: screen-driven navigation script (NavScript), shots in --nav-out (default <dump dir>/nav)
         NavScript? nav = Opt(options, "--nav") is { } navFile
             ? new NavScript(navFile, options.Contains("--nav-live"), Opt(options, "--nav-out") ?? Path.Combine(dumpDir ?? Program.DataRoot, "nav"), ro)
             : null;
-        if (nav != null) emu.Host.Input = nav;
-        if (options.Contains("--audio")) emu.Host.Audio = OpenAlAudio.TryCreate(Opt(options, "--audio-device")); // real audio device, as in the window mode
-        if (Opt(options, "--audio-dump") is { } adump) VitaSharp.Core.Util.AudioDump.Enable(adump); // per-port WAVs of what the guest output
+        if (nav != null)
+        {
+            emu.Host.Input = nav;
+        }
+
+        if (options.Contains("--audio"))
+        {
+            emu.Host.Audio = OpenAlAudio.TryCreate(Opt(options, "--audio-device")); // real audio device, as in the window mode
+        }
+
+        if (Opt(options, "--audio-dump") is { } adump)
+        {
+            VitaSharp.Core.Util.AudioDump.Enable(adump); // per-port WAVs of what the guest output
+        }
         // headless: cameras only on request (an unset side stays grey)
         if (CameraSpec.FromOptions(Opt(options, "--camera"), Opt(options, "--camera-front"), Opt(options, "--camera-back")) is var (hf, hb) && (hf != null || hb != null))
+        {
             emu.Host.Camera = FlashCapCamera.CreateForVita(hf ?? "none", hb ?? "none");
+        }
+
         emu.BacktraceHle = Opt(options, "--bt");
-        if (TraceOpt(options, "--trace-hle-only") is { } tho) emu.TraceHleOnly = tho.Split('+');
-        if (TraceOpt(options, "--trace-hle-threads") is { } tht) emu.TraceHleThreads = tht.Split('+');
+        if (TraceOpt(options, "--trace-hle-only") is { } tho)
+        {
+            emu.TraceHleOnly = tho.Split('+');
+        }
+
+        if (TraceOpt(options, "--trace-hle-threads") is { } tht)
+        {
+            emu.TraceHleThreads = tht.Split('+');
+        }
+
         if (TraceOpt(options, "--trace-hle-frames") is { } thf)
         {
             var p = thf.Split(':');
             emu.TraceHleFrames = (long.Parse(p[0]), long.Parse(p[1]));
-            if (p.Length > 2) emu.TraceHleExclude = p[2] == "all" ? [] : p[2].Split('+');
+            if (p.Length > 2)
+            {
+                emu.TraceHleExclude = p[2] == "all" ? [] : p[2].Split('+');
+            }
         }
-        if (Opt(options, "--probe-frames") is { } pf) { var q = pf.Split(':'); ProbeFrom = long.Parse(q[0]); ProbeTo = long.Parse(q[1]); ProbeAll = true; }
-        if (Opt(options, "--probe") is { } probes) InstallProbes(probes);
+        if (Opt(options, "--probe-frames") is { } pf)
+        {
+            var q = pf.Split(':');
+            ProbeFrom = long.Parse(q[0]);
+            ProbeTo = long.Parse(q[1]);
+            ProbeAll = true;
+        }
+        if (Opt(options, "--probe") is { } probes)
+        {
+            InstallProbes(probes);
+        }
 #if LOCKSTEP
         Lockstep.Install();
 #endif
-        if (Opt(options, "--poke") is { } poke) InstallPokes(poke);
-        if (Opt(options, "--watch") is { } watch) InstallWatch(watch);
-        if (Opt(options, "--watch-read") is { } watchRead) InstallReadWatch(watchRead);
-        if (Opt(options, "--dump-mem") is { } dm) StartMemoryDumps(dm, Path.Combine(Program.DataRoot, "memdump"));
-        if (Opt(options, "--peek") is { } pk) StartPeeks(pk);
+        if (Opt(options, "--poke") is { } poke)
+        {
+            InstallPokes(poke);
+        }
+
+        if (Opt(options, "--watch") is { } watch)
+        {
+            InstallWatch(watch);
+        }
+
+        if (Opt(options, "--watch-read") is { } watchRead)
+        {
+            InstallReadWatch(watchRead);
+        }
+
+        if (Opt(options, "--dump-mem") is { } dm)
+        {
+            StartMemoryDumps(dm, Path.Combine(Program.DataRoot, "memdump"));
+        }
+
+        if (Opt(options, "--peek") is { } pk)
+        {
+            StartPeeks(pk);
+        }
+
         using var watchdog = new Watchdog(emu, () => emu.Gpu.Backend as VulkanRenderer);
         StartScheduledCaptures(options, diag);
         StartDebugModeToggles(options);
@@ -776,39 +1246,72 @@ public static class Runner
         using var capture = new SessionCaptureControl(emu, ro, () => emu.Gpu.Backend as VulkanRenderer, options, s => Log.Info($"[capture] {s}"), null);
         capture.StartScheduled(options);
         var playback = SessionCaptureControl.Playback.Install(emu, ro, () => emu.Gpu.Backend as VulkanRenderer, options);
-        if (playback != null && emu.Gpu.Backend == null) emu.Gpu.Backend = NewHeadlessRenderer(ro, diag); // the re-run records its frames
+        if (playback != null && emu.Gpu.Backend == null)
+        {
+            emu.Gpu.Backend = NewHeadlessRenderer(ro, diag); // the re-run records its frames
+        }
+
         var wall = Stopwatch.StartNew();
         emu.LoadTitle(appPath, BootSelf(options));
         emu.Start();
         StartShellLaunch(emu, options);
-        if (options.Contains("--start-paused")) EmulationPause.Pause("--start-paused");
+        if (options.Contains("--start-paused"))
+        {
+            EmulationPause.Pause("--start-paused");
+        }
+
         var hostKeyScript = emu.Host.Input is ScriptedInput { HasHostKeySteps: true } ps ? ps : null;
         var graphics = new GraphicsHotkeys(emu, ro, () => emu.Gpu.Backend as VulkanRenderer, () => NewHeadlessRenderer(ro, diag), text => Log.Info($"[notice] {text}"));
         int seconds = int.TryParse(Opt(options, "--seconds"), out var sec) ? sec : 30;
         long frameLimit = long.TryParse(Opt(options, "--frames"), out var fl) ? fl : -1;
         bool profileHle = options.Contains("--profile-hle");
         Sampler? sampler = options.Contains("--profile") || profileHle || Opt(options, "--profile-from") != null ? new Sampler(emu, long.TryParse(Opt(options, "--profile-from"), out var pfrom) ? pfrom : 0, profileHle) : null;
-        if (Opt(options, "--seconds") == null && frameLimit > 0) seconds = 1800; // frames decide; seconds is a safety timeout
-        if (Opt(options, "--seconds") == null && nav != null) seconds = 3600; // the script decides (quit)
-        long fpsFrames = 0; double fpsAt = 0;
+        if (Opt(options, "--seconds") == null && frameLimit > 0)
+        {
+            seconds = 1800; // frames decide; seconds is a safety timeout
+        }
+
+        if (Opt(options, "--seconds") == null && nav != null)
+        {
+            seconds = 3600; // the script decides (quit)
+        }
+
+        long fpsFrames = 0;
+        double fpsAt = 0;
         var allocMarks = new List<AllocMark>();
         while (!fatal.Wait(50) && nav?.Quit != true && playback?.Done != true && (frameLimit <= 0 || VitaSharp.Core.Hle.Modules.Display.FramesPresented < frameLimit) && wall.Elapsed.TotalSeconds < seconds)
         {
             // scripted pause / F10 key steps (key@f300:P, key@f300+5:P): the guest polls no input while paused, so here
-            if (hostKeyScript != null) RunScriptedHostKeys(hostKeyScript, diag, graphics: graphics);
+            if (hostKeyScript != null)
+            {
+                RunScriptedHostKeys(hostKeyScript, diag, graphics: graphics);
+            }
+
             double now = wall.Elapsed.TotalSeconds;
             if (now - fpsAt >= 5) // periodic frame rate, so boot and gameplay can be told apart
             {
                 long f = VitaSharp.Core.Hle.Modules.Display.FramesPresented;
                 Log.Info($"FPS frame {f}: {(f - fpsFrames) / (now - fpsAt):F1} frames/s");
                 LogAllocWindow(allocMarks, f);
-                if (SessionReport.ThreadMarkFrame < 0 && f >= SessionReport.ThreadMarkFrom) SessionReport.MarkThreadCpu(f);
-                fpsFrames = f; fpsAt = now;
+                if (SessionReport.ThreadMarkFrame < 0 && f >= SessionReport.ThreadMarkFrom)
+                {
+                    SessionReport.MarkThreadCpu(f);
+                }
+
+                fpsFrames = f;
+                fpsAt = now;
             }
             if (emu.ExecRequest != null)
             {
-                try { emu.PerformExec(emu.Gpu.Backend != null ? () => NewHeadlessRenderer(ro, diag) : null); }
-                catch (Exception e) { Log.Error($"LoadExec failed: {e}"); break; }
+                try
+                {
+                    emu.PerformExec(emu.Gpu.Backend != null ? () => NewHeadlessRenderer(ro, diag) : null);
+                }
+                catch (Exception e)
+                {
+                    Log.Error($"LoadExec failed: {e}");
+                    break;
+                }
             }
         }
         capture.Capture.StopAndWait(); // a recording still running at the end (its GPU dump needs the worker)
@@ -821,8 +1324,16 @@ public static class Runner
         emu.Stop();
         EmulationPause.Resume("run finished");
         Log.Info($"Run finished: {frames} frames in {wall.Elapsed.TotalSeconds:F1} s ({frames / Math.Max(wall.Elapsed.TotalSeconds, 0.001):F1} frames/s)");
-        if (_flicker is { } flick) Log.Info(flick.Summary + (flick.Flagged.Count > 0 ? ": frames " + string.Join(" ", flick.Flagged.Take(20).Select(x => x.Frame)) : ""));
-        if (dumpDir != null && thumbs != null) WriteContactSheet(dumpDir, thumbs);
+        if (_flicker is { } flick)
+        {
+            Log.Info(flick.Summary + (flick.Flagged.Count > 0 ? ": frames " + string.Join(" ", flick.Flagged.Take(20).Select(x => x.Frame)) : ""));
+        }
+
+        if (dumpDir != null && thumbs != null)
+        {
+            WriteContactSheet(dumpDir, thumbs);
+        }
+
         return 0;
     }
 
@@ -836,7 +1347,10 @@ public static class Runner
     {
         var m = TakeAllocMark(frame);
         if (marks.Count > 0 && marks[^1] is var p && m.Frame > p.Frame)
+        {
             Log.Info($"ALLOC frames {p.Frame}-{m.Frame}: {(m.Bytes - p.Bytes) / 1024.0 / (m.Frame - p.Frame):F1} KB/frame, GC +{m.Gen0 - p.Gen0}/+{m.Gen1 - p.Gen1}/+{m.Gen2 - p.Gen2}, working set {Environment.WorkingSet / 1048576.0:F0} MB");
+        }
+
         marks.Add(m);
     }
 
@@ -844,10 +1358,18 @@ public static class Runner
     static void LogSteadyAllocations(List<AllocMark> marks, long frames)
     {
         int i = marks.FindIndex(m => m.Frame >= frames / 2);
-        if (i < 0) return;
+        if (i < 0)
+        {
+            return;
+        }
+
         var p = marks[i];
         var m = TakeAllocMark(frames);
-        if (m.Frame <= p.Frame) return;
+        if (m.Frame <= p.Frame)
+        {
+            return;
+        }
+
         Log.Info($"PERF steady allocated (frames {p.Frame}-{m.Frame}): {(m.Bytes - p.Bytes) / 1024.0 / (m.Frame - p.Frame):F1} KB/frame, GC gen0 +{m.Gen0 - p.Gen0} gen1 +{m.Gen1 - p.Gen1} gen2 +{m.Gen2 - p.Gen2}");
     }
 
@@ -856,10 +1378,17 @@ public static class Runner
     internal static void WriteContactSheet(string dir, List<(long Frame, byte[] Rgba)> thumbs)
     {
         Directory.CreateDirectory(dir); // no PNG written (--dump-from past the run's last frame): the folder may not exist
-        foreach (var old in Directory.GetFiles(dir, "sheet*.png")) File.Delete(old);
+        foreach (var old in Directory.GetFiles(dir, "sheet*.png"))
+        {
+            File.Delete(old);
+        }
+
         var all = thumbs.OrderBy(t => t.Frame).ToList();
         for (int i = 0; i < all.Count; i += 30)
+        {
             WriteSheet(Path.Combine(dir, i == 0 ? "sheet.png" : $"sheet_{i / 30 + 1}.png"), all.GetRange(i, Math.Min(30, all.Count - i)));
+        }
+
         WriteFrameMetrics(dir, all);
     }
 
@@ -871,35 +1400,85 @@ public static class Runner
     static void WriteFrameMetrics(string dir, List<(long Frame, byte[] Rgba)> all)
     {
         var sb = new System.Text.StringBuilder("frame,mean,white,black,hash\n");
-        var over = new List<long>(); var black = new List<long>(); var flicker = new List<long>(); var magenta = new List<long>();
+        var over = new List<long>();
+        var black = new List<long>();
+        var flicker = new List<long>();
+        var magenta = new List<long>();
         long frozenStart = -1, frozenLen = 0, longestFrozen = 0, longestFrozenStart = -1;
         ulong prevHash = 0;
-        float prevMean = -1; bool prevBlack = false;
+        float prevMean = -1;
+        bool prevBlack = false;
         foreach (var (frame, px) in all)
         {
-            long sum = 0; int white = 0, dark = 0, pink = 0, n = px.Length / 4;
+            long sum = 0;
+            int white = 0, dark = 0, pink = 0, n = px.Length / 4;
             ulong hash = 14695981039346656037;
             for (int i = 0; i < px.Length; i += 4)
             {
                 int r = px[i], g = px[i + 1], b = px[i + 2];
                 int lum = (r * 54 + g * 183 + b * 19) >> 8;
                 sum += lum;
-                if (r > 235 && g > 235 && b > 235) white++;
-                if (r < 10 && g < 10 && b < 10) dark++;
-                if (r > 200 && b > 200 && g < 80) pink++; // magenta: the classic missing/garbage texture colour
+                if (r > 235 && g > 235 && b > 235)
+                {
+                    white++;
+                }
+
+                if (r < 10 && g < 10 && b < 10)
+                {
+                    dark++;
+                }
+
+                if (r > 200 && b > 200 && g < 80)
+                {
+                    pink++; // magenta: the classic missing/garbage texture colour
+                }
+
                 hash = (hash ^ (ulong)((r >> 2) | (g >> 2) << 8 | (b >> 2) << 16)) * 1099511628211;
             }
             float mean = sum / (255f * n), fw = white / (float)n, fb = dark / (float)n;
             sb.Append($"{frame},{mean:F3},{fw:F3},{fb:F3},{hash:X16}\n");
-            if (fw > 0.35f || mean > 0.85f) over.Add(frame);
-            if (fb > 0.97f) black.Add(frame);
-            if (pink / (float)n > 0.05f) magenta.Add(frame);
+            if (fw > 0.35f || mean > 0.85f)
+            {
+                over.Add(frame);
+            }
+
+            if (fb > 0.97f)
+            {
+                black.Add(frame);
+            }
+
+            if (pink / (float)n > 0.05f)
+            {
+                magenta.Add(frame);
+            }
             // exposure/brightness flicker: a big swing between consecutive dumps that is not a fade through black
             bool isBlack = fb > 0.97f;
-            if (prevMean >= 0 && !isBlack && !prevBlack && MathF.Abs(mean - prevMean) > 0.35f) flicker.Add(frame);
-            prevMean = mean; prevBlack = isBlack;
-            if (hash == prevHash) { if (frozenLen == 0) frozenStart = frame; frozenLen++; if (frozenLen > longestFrozen) { longestFrozen = frozenLen; longestFrozenStart = frozenStart; } }
-            else frozenLen = 0;
+            if (prevMean >= 0 && !isBlack && !prevBlack && MathF.Abs(mean - prevMean) > 0.35f)
+            {
+                flicker.Add(frame);
+            }
+
+            prevMean = mean;
+            prevBlack = isBlack;
+            if (hash == prevHash)
+            {
+                if (frozenLen == 0)
+                {
+                    frozenStart = frame;
+                }
+
+                frozenLen++;
+                if (frozenLen > longestFrozen)
+                {
+                    longestFrozen = frozenLen;
+                    longestFrozenStart = frozenStart;
+                }
+            }
+            else
+            {
+                frozenLen = 0;
+            }
+
             prevHash = hash;
         }
         File.WriteAllText(Path.Combine(dir, "metrics.csv"), sb.ToString());
@@ -920,7 +1499,10 @@ public static class Runner
         {
             int ox = (i % cols) * tw, oy = (i / cols) * th;
             for (int y = 0; y < th; y++)
+            {
                 Buffer.BlockCopy(list[i].Rgba, y * tw * 4, sheet, ((oy + y) * w + ox) * 4, tw * 4);
+            }
+
             DrawNumber(sheet, w, ox + 3, oy + 3, list[i].Frame);
         }
         Png.Write(path, sheet, w, h);
@@ -934,18 +1516,45 @@ public static class Runner
                          "111100111001111", "111100111101111", "111001001001001", "111101111101111", "111101111001111"];
         string s = value.ToString();
         for (int py = -1; py < 11; py++)
-            for (int px = -1; px < s.Length * 8; px++) Set(x + px, y + py, 0, 0, 0);
+        {
+            for (int px = -1; px < s.Length * 8; px++)
+            {
+                Set(x + px, y + py, 0, 0, 0);
+            }
+        }
+
         for (int c = 0; c < s.Length; c++)
+        {
             for (int r = 0; r < 5; r++)
+            {
                 for (int k = 0; k < 3; k++)
+                {
                     if (font[s[c] - '0'][r * 3 + k] == '1')
+                    {
                         for (int dy = 0; dy < 2; dy++)
-                            for (int dx = 0; dx < 2; dx++) Set(x + c * 8 + k * 2 + dx, y + r * 2 + dy, 255, 230, 0);
+                        {
+                            for (int dx = 0; dx < 2; dx++)
+                            {
+                                Set(x + c * 8 + k * 2 + dx, y + r * 2 + dy, 255, 230, 0);
+                            }
+                        }
+                    }
+                }
+            }
+        }
+
         void Set(int px, int py, byte r, byte g, byte b)
         {
             int o = (py * stride + px) * 4;
-            if (px < 0 || py < 0 || px >= stride || o + 3 >= img.Length) return;
-            img[o] = r; img[o + 1] = g; img[o + 2] = b; img[o + 3] = 255;
+            if (px < 0 || py < 0 || px >= stride || o + 3 >= img.Length)
+            {
+                return;
+            }
+
+            img[o] = r;
+            img[o + 1] = g;
+            img[o + 2] = b;
+            img[o + 3] = 255;
         }
     }
 
@@ -963,9 +1572,17 @@ public static class Runner
         VitaSharp.Core.Cpu.WriteWatch.OnHit = (a, size, v) =>
         {
             long f = VitaSharp.Core.Hle.Modules.Display.FramesPresented;
-            if (f < from || f >= to || Interlocked.Increment(ref hits) > WatchMax) return;
+            if (f < from || f >= to || Interlocked.Increment(ref hits) > WatchMax)
+            {
+                return;
+            }
+
             var t = VitaSharp.Core.Kernel.GuestThread.Current;
-            if (t == null) return;
+            if (t == null)
+            {
+                return;
+            }
+
             var s = t.Core.State;
             float fv = size == 4 ? BitConverter.UInt32BitsToSingle((uint)v) : float.NaN;
             Log.Info($"WATCH f{f} [{t.Name}] {a:X8} <- {v:X} ({fv}) size {size} blockEnd={s->R[15]:X8} lr={s->R[14]:X8} {t.Backtrace(s)}");
@@ -976,11 +1593,19 @@ public static class Runner
     /// the frame window starts, so watches can follow heap objects reached from a global.</summary>
     static void ResolveWatchAddress(string spec, long fromFrame, Action<uint> apply)
     {
-        if (!spec.StartsWith('@')) { apply(Convert.ToUInt32(spec, 16)); return; }
+        if (!spec.StartsWith('@'))
+        {
+            apply(Convert.ToUInt32(spec, 16));
+            return;
+        }
         var parts = spec[1..].Split(',').Select(s => Convert.ToUInt32(s, 16)).ToArray();
         new Thread(() =>
         {
-            while (VitaSharp.Core.Hle.Modules.Display.FramesPresented < Math.Max(fromFrame - 5, 1)) Thread.Sleep(5);
+            while (VitaSharp.Core.Hle.Modules.Display.FramesPresented < Math.Max(fromFrame - 5, 1))
+            {
+                Thread.Sleep(5);
+            }
+
             uint a;
             while (true)
             {
@@ -993,13 +1618,19 @@ public static class Runner
                     ok = ptr != 0;
                     a = ptr + parts[i];
                 }
-                if (ok) break;
+                if (ok)
+                {
+                    break;
+                }
+
                 Thread.Sleep(5);
             }
             Log.Info($"Watch {spec} resolved to 0x{a:X8}");
             apply(a);
         })
-        { IsBackground = true }.Start();
+        {
+            IsBackground = true
+        }.Start();
     }
 
     /// <summary>--poke=ADDR:HEXVALUE@fN,...: writes a 32-bit value into guest memory when frame N is presented (experiments).</summary>
@@ -1010,12 +1641,18 @@ public static class Runner
         {
             foreach (var p in pokes)
             {
-                while (VitaSharp.Core.Hle.Modules.Display.FramesPresented < p.Frame) Thread.Sleep(2);
+                while (VitaSharp.Core.Hle.Modules.Display.FramesPresented < p.Frame)
+                {
+                    Thread.Sleep(2);
+                }
+
                 VitaSharp.Core.Memory.GuestMemory.W32(p.Addr, p.Value);
                 Log.Info($"POKE f{p.Frame} {p.Addr:X8} <- {p.Value:X8}");
             }
         })
-        { IsBackground = true }.Start();
+        {
+            IsBackground = true
+        }.Start();
     }
 
     /// <summary>--watch-read=ADDR:LEN[:FROM:TO] logs every 32/64-bit CPU load from the range.</summary>
@@ -1028,9 +1665,17 @@ public static class Runner
         VitaSharp.Core.Cpu.WriteWatch.OnRead = (a, size) =>
         {
             long f = VitaSharp.Core.Hle.Modules.Display.FramesPresented;
-            if (f < from || f >= to || Interlocked.Increment(ref hits) > WatchMax) return;
+            if (f < from || f >= to || Interlocked.Increment(ref hits) > WatchMax)
+            {
+                return;
+            }
+
             var t = VitaSharp.Core.Kernel.GuestThread.Current;
-            if (t == null) return;
+            if (t == null)
+            {
+                return;
+            }
+
             var s = t.Core.State;
             Log.Info($"RWATCH f{f} [{t.Name}] {a:X8} = {VitaSharp.Core.Memory.GuestMemory.R32(a):X8} size {size} blockEnd={s->R[15]:X8} lr={s->R[14]:X8} {t.Backtrace(s)}");
         };
@@ -1051,14 +1696,21 @@ public static class Runner
                 foreach (var it in items.Where(i => f >= i.Frame).ToList())
                 {
                     var sb = new System.Text.StringBuilder($"PEEK f{f} 0x{it.Addr:X8}:");
-                    for (int o = 0; o < it.Len; o += 4) sb.Append(o % 32 == 0 ? $"\n  +{o:X3}: " : " ").Append(VitaSharp.Core.Memory.GuestMemory.R32(it.Addr + (uint)o).ToString("X8"));
+                    for (int o = 0; o < it.Len; o += 4)
+                    {
+                        sb.Append(o % 32 == 0 ? $"\n  +{o:X3}: " : " ").Append(VitaSharp.Core.Memory.GuestMemory.R32(it.Addr + (uint)o).ToString("X8"));
+                    }
+
                     Log.Info(sb.ToString());
                     items.Remove(it);
                 }
                 Thread.Sleep(5);
             }
         })
-        { IsBackground = true, Name = "peek" }.Start();
+        {
+            IsBackground = true,
+            Name = "peek"
+        }.Start();
     }
 
     static void StartMemoryDumps(string spec, string dir)
@@ -1077,7 +1729,8 @@ public static class Runner
                     using var w = new BinaryWriter(File.Create(path));
                     foreach (var b in VitaSharp.Core.Memory.GuestMemory.Instance!.Blocks().Where(b => b.Region == VitaSharp.Core.Memory.MemoryRegion.User))
                     {
-                        w.Write(b.Address); w.Write(b.Size);
+                        w.Write(b.Address);
+                        w.Write(b.Size);
                         w.Write(VitaSharp.Core.Memory.GuestMemory.ReadSpan(b.Address, (int)b.Size));
                     }
                     Log.Info($"Memory dump {path}");
@@ -1085,7 +1738,10 @@ public static class Runner
                 Thread.Sleep(2);
             }
         })
-        { IsBackground = true, Name = "memdump" }.Start();
+        {
+            IsBackground = true,
+            Name = "memdump"
+        }.Start();
     }
 
     /// <summary>--probe=ADDR[?rC][:WORDS@rN],... logs (only when rC != 0) registers (and optionally memory at a register) when a block starts at ADDR.</summary>
@@ -1099,8 +1755,16 @@ public static class Runner
         {
             var parts = p.Split(':');
             int reg = -1, words = 0, when = -1;
-            if (parts[0].Split('?') is [var a, var c]) { parts[0] = a; when = int.Parse(c.TrimStart('r')); }
-            if (parts.Length > 1 && parts[1].Split('@') is [var w, var r]) { words = int.Parse(w); reg = int.Parse(r.TrimStart('r')); }
+            if (parts[0].Split('?') is [var a, var c])
+            {
+                parts[0] = a;
+                when = int.Parse(c.TrimStart('r'));
+            }
+            if (parts.Length > 1 && parts[1].Split('@') is [var w, var r])
+            {
+                words = int.Parse(w);
+                reg = int.Parse(r.TrimStart('r'));
+            }
             probes[Convert.ToUInt32(parts[0], 16) & ~1u] = (reg, words, when);
         }
         var hits = new Dictionary<uint, int>();
@@ -1108,22 +1772,40 @@ public static class Runner
         VitaSharp.Core.Cpu.CpuCore.ProbeHit = (core, s) =>
         {
             uint pc = s->R[15];
-            if (probes[pc].When is >= 0 and var wr && s->R[wr] == 0) return;
+            if (probes[pc].When is >= 0 and var wr && s->R[wr] == 0)
+            {
+                return;
+            }
+
             long frame = VitaSharp.Core.Hle.Modules.Display.FramesPresented;
-            if (frame < ProbeFrom || frame >= ProbeTo) return;
+            if (frame < ProbeFrom || frame >= ProbeTo)
+            {
+                return;
+            }
+
             lock (hits)
             {
                 hits[pc] = hits.GetValueOrDefault(pc) + 1;
                 int n = hits[pc];
-                if (!ProbeAll && n > 8 && n % 300 != 0) return;
+                if (!ProbeAll && n > 8 && n % 300 != 0)
+                {
+                    return;
+                }
             }
             var sb = new System.Text.StringBuilder($"PROBE f{VitaSharp.Core.Hle.Modules.Display.FramesPresented} {pc:X8} #{hits[pc]} cyc={core.BlockCycles} ins={core.InstructionsExecuted}:");
-            for (int i = 0; i < 15; i++) sb.Append($" r{i}={s->R[i]:X}");
+            for (int i = 0; i < 15; i++)
+            {
+                sb.Append($" r{i}={s->R[i]:X}");
+            }
+
             var (reg, words, _) = probes[pc];
             if (reg >= 0)
             {
                 sb.Append($"\n   [r{reg}]:");
-                for (int i = 0; i < words; i++) sb.Append($" {VitaSharp.Core.Memory.GuestMemory.R32(s->R[reg] + (uint)i * 4):X8}");
+                for (int i = 0; i < words; i++)
+                {
+                    sb.Append($" {VitaSharp.Core.Memory.GuestMemory.R32(s->R[reg] + (uint)i * 4):X8}");
+                }
             }
             Log.Info(sb.ToString());
         };
@@ -1131,7 +1813,10 @@ public static class Runner
 
     static void PrintStats(Emulator emu)
     {
-        foreach (var l in SessionReport.Lines(emu)) Log.Info(l);
+        foreach (var l in SessionReport.Lines(emu))
+        {
+            Log.Info(l);
+        }
     }
 }
 

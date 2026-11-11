@@ -40,10 +40,22 @@ public sealed unsafe class Block
     /// <summary>Whether the block's code or a range it depends on overlaps [addr, addr + size).</summary>
     internal bool Overlaps(uint addr, uint size)
     {
-        if (Start < addr + size && End > addr) return true;
+        if (Start < addr + size && End > addr)
+        {
+            return true;
+        }
+
         if (Deps is { } d)
+        {
             for (int i = 0; i + 1 < d.Length; i += 2)
-                if (d[i] < addr + size && d[i + 1] > addr) return true;
+            {
+                if (d[i] < addr + size && d[i + 1] > addr)
+                {
+                    return true;
+                }
+            }
+        }
+
         return false;
     }
 
@@ -74,12 +86,23 @@ public static unsafe class BlockBuilder
         {
             while (true)
             {
-                if (addr != pc && CpuCore.Probes is { } pa && pa.Contains(addr)) break; // probes are block starts
-                if (!GuestMemory.IsMapped(addr)) { list.Add(FetchFault(addr, false)); break; }
+                if (addr != pc && CpuCore.Probes is { } pa && pa.Contains(addr))
+                {
+                    break; // probes are block starts
+                }
+
+                if (!GuestMemory.IsMapped(addr))
+                {
+                    list.Add(FetchFault(addr, false));
+                    break;
+                }
                 var d = Decoder.DecodeArm(GuestMemory.Read<uint>(addr), addr); // the building thread's (its process's) space
                 list.Add(d);
                 addr += 4;
-                if (d.EndsBlock || list.Count >= MaxInstructions || d.Op == Op.Vfp_Vmsr) break;
+                if (d.EndsBlock || list.Count >= MaxInstructions || d.Op == Op.Vfp_Vmsr)
+                {
+                    break;
+                }
             }
         }
         else
@@ -87,10 +110,18 @@ public static unsafe class BlockBuilder
             uint itState = 0;
             while (true)
             {
-                if (addr != pc && CpuCore.Probes is { } pt && pt.Contains(addr) && (itState & 0xF) == 0) break; // probes are block starts
+                if (addr != pc && CpuCore.Probes is { } pt && pt.Contains(addr) && (itState & 0xF) == 0)
+                {
+                    break; // probes are block starts
+                }
+
                 bool inIt = (itState & 0xF) != 0;
                 byte itCond = (byte)(itState >> 4);
-                if (!GuestMemory.IsMapped(addr) || (Decoder.IsThumb32(GuestMemory.Read<ushort>(addr)) && !GuestMemory.IsMapped(addr + 2))) { list.Add(FetchFault(addr, true)); break; }
+                if (!GuestMemory.IsMapped(addr) || (Decoder.IsThumb32(GuestMemory.Read<ushort>(addr)) && !GuestMemory.IsMapped(addr + 2)))
+                {
+                    list.Add(FetchFault(addr, true));
+                    break;
+                }
                 ushort hw1 = GuestMemory.Read<ushort>(addr);
                 DecodedInst d;
                 if (Decoder.IsThumb32(hw1))
@@ -98,7 +129,10 @@ public static unsafe class BlockBuilder
                     uint ins = ((uint)hw1 << 16) | GuestMemory.Read<ushort>(addr + 2);
                     d = Decoder.DecodeThumb32(ins, addr, inIt, itCond);
                 }
-                else d = Decoder.DecodeThumb16(hw1, addr, inIt, itCond);
+                else
+                {
+                    d = Decoder.DecodeThumb16(hw1, addr, inIt, itCond);
+                }
 
                 if (inIt)
                 {
@@ -112,14 +146,24 @@ public static unsafe class BlockBuilder
                 }
                 list.Add(d);
                 addr += d.Size;
-                if (d.EndsBlock) break;
+                if (d.EndsBlock)
+                {
+                    break;
+                }
                 // VMSR may switch VFP short-vector mode, which the rest of a block cannot follow
-                if ((list.Count >= MaxInstructions || d.Op == Op.Vfp_Vmsr) && (itState & 0xF) == 0) break;
+                if ((list.Count >= MaxInstructions || d.Op == Op.Vfp_Vmsr) && (itState & 0xF) == 0)
+                {
+                    break;
+                }
             }
         }
         var insts = list.ToArray();
         long quarters = 0;
-        foreach (ref var d in insts.AsSpan()) quarters += CycleCost(in d);
+        foreach (ref var d in insts.AsSpan())
+        {
+            quarters += CycleCost(in d);
+        }
+
         return new Block { Start = pc, End = addr, Thumb = thumb, Insts = insts, Cycles = Math.Max(1, (quarters + CostUnit / 2) / CostUnit), HotAt = Jit.InitialThreshold };
     }
 
@@ -218,7 +262,11 @@ public sealed unsafe class BlockCache
     public Block Get(uint pc, bool thumb)
     {
         var key = Key(pc, thumb);
-        if (_blocks.TryGetValue(key, out var b)) return b;
+        if (_blocks.TryGetValue(key, out var b))
+        {
+            return b;
+        }
+
         b = BlockBuilder.Build(pc, thumb);
         b.Owner = this;
         return _blocks.GetOrAdd(key, b);
@@ -230,16 +278,27 @@ public sealed unsafe class BlockCache
     {
         get
         {
-            if (_dispatch != 0) return _dispatch;
+            if (_dispatch != 0)
+            {
+                return _dispatch;
+            }
+
             var t = Native.NativeRuntime.AllocateDispatchTable();
-            if (Interlocked.CompareExchange(ref _dispatch, t, 0) != 0) Native.NativeRuntime.FreeDispatchTable(t);
+            if (Interlocked.CompareExchange(ref _dispatch, t, 0) != 0)
+            {
+                Native.NativeRuntime.FreeDispatchTable(t);
+            }
+
             return _dispatch;
         }
     }
 
     ~BlockCache()
     {
-        if (_dispatch != 0) Native.NativeRuntime.FreeDispatchTable(_dispatch);
+        if (_dispatch != 0)
+        {
+            Native.NativeRuntime.FreeDispatchTable(_dispatch);
+        }
     }
 
     public bool TryGet(uint pc, bool thumb, out Block? block) => _blocks.TryGetValue(Key(pc, thumb), out block);
@@ -248,8 +307,15 @@ public sealed unsafe class BlockCache
     /// targets of the block it compiles): decodes in <see cref="Space"/>.</summary>
     public Block GetFromAnyThread(uint pc, bool thumb)
     {
-        if (_blocks.TryGetValue(Key(pc, thumb), out var b)) return b;
-        using (AddressSpace.Use(Space ?? AddressSpace.Current)) return Get(pc, thumb);
+        if (_blocks.TryGetValue(Key(pc, thumb), out var b))
+        {
+            return b;
+        }
+
+        using (AddressSpace.Use(Space ?? AddressSpace.Current))
+        {
+            return Get(pc, thumb);
+        }
     }
 
     /// <summary>Drop every block overlapping [addr, addr+size) (code was rewritten, e.g. module load/unload).</summary>
@@ -259,21 +325,33 @@ public sealed unsafe class BlockCache
         {
             var b = kv.Value;
             if (b.Overlaps(addr, size) && _blocks.TryRemove(kv.Key, out _))
+            {
                 Retire(b);
+            }
         }
     }
 
     public void Clear()
     {
-        foreach (var kv in _blocks) Retire(kv.Value);
+        foreach (var kv in _blocks)
+        {
+            Retire(kv.Value);
+        }
+
         _blocks.Clear();
     }
 
     /// <summary>A block left the cache: native exits linked to it must go back through the dispatcher.</summary>
     static void Retire(Block b)
     {
-        if (b.NativeEntry != 0) Native.NativeRuntime.Unlink(b);
-        else b.Invalidated = true;
+        if (b.NativeEntry != 0)
+        {
+            Native.NativeRuntime.Unlink(b);
+        }
+        else
+        {
+            b.Invalidated = true;
+        }
     }
 
     public int Count => _blocks.Count;

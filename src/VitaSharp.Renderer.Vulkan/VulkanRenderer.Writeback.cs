@@ -21,7 +21,10 @@ public sealed unsafe partial class VulkanRenderer
 
     /// <summary>ReverseBytes / LogicalToBgra: U8U8U8U8 RGBA / BGRA surfaces, whose images hold logical components (see
     /// <see cref="Formats.LogicalOrderSwizzle"/>), stored in guest byte order (RGBA: A,B,G,R; BGRA: A,R,G,B).</summary>
-    enum WritebackConvert : byte { None, SwapRb, Half4ToU2F10F10F10, Rgba8ToRgb8, ReverseBytes, LogicalToBgra }
+    enum WritebackConvert : byte
+    {
+        None, SwapRb, Half4ToU2F10F10F10, Rgba8ToRgb8, ReverseBytes, LogicalToBgra
+    }
 
     sealed class RtWriteback
     {
@@ -44,10 +47,21 @@ public sealed unsafe partial class VulkanRenderer
     /// <summary>How a host pixel row is turned into the guest layout; null when no conversion is known.</summary>
     static WritebackConvert? WritebackConversion(uint colorFormat, Format hostFormat, int hostBpp, int guestBpp)
     {
-        if (hostFormat == Format.B8G8R8A8Unorm) return WritebackConvert.SwapRb;
+        if (hostFormat == Format.B8G8R8A8Unorm)
+        {
+            return WritebackConvert.SwapRb;
+        }
+
         if (hostFormat == Format.R8G8B8A8Unorm && Formats.LogicalOrderSwizzle(colorFormat) is var s && s != 0)
+        {
             return s == 2 ? WritebackConvert.ReverseBytes : WritebackConvert.LogicalToBgra;
-        if (hostBpp == guestBpp) return WritebackConvert.None;
+        }
+
+        if (hostBpp == guestBpp)
+        {
+            return WritebackConvert.None;
+        }
+
         return (colorFormat & 0xF1800000) switch
         {
             0x41000000 when hostFormat == Format.R16G16B16A16Sfloat => WritebackConvert.Half4ToU2F10F10F10,
@@ -74,30 +88,62 @@ public sealed unsafe partial class VulkanRenderer
     {
         var rt = _rt;
         // (a scene rendered without MSAA downscale has 2x2 surface pixels per scene pixel: not mapped here)
-        if (rt == null || _msaaNoDownscale || rt.Width * rt.Height <= WritebackMaxPixels || WritebackRegionMaxPixels == 0 || _sceneRegions.Count >= MaxWritebackRegions) return;
+        if (rt == null || _msaaNoDownscale || rt.Width * rt.Height <= WritebackMaxPixels || WritebackRegionMaxPixels == 0 || _sceneRegions.Count >= MaxWritebackRegions)
+        {
+            return;
+        }
+
         int w = (int)Math.Min(_sceneW, rt.Width), h = (int)Math.Min(_sceneH, rt.Height);
         int x0 = 0, y0 = 0, x1 = w, y1 = h;
-        if (st.RegionClipMode == 2) { x0 = st.ClipMinX; y0 = st.ClipMinY; x1 = st.ClipMaxX + 1; y1 = st.ClipMaxY + 1; }
+        if (st.RegionClipMode == 2)
+        {
+            x0 = st.ClipMinX;
+            y0 = st.ClipMinY;
+            x1 = st.ClipMaxX + 1;
+            y1 = st.ClipMaxY + 1;
+        }
         if (st.ViewportEnabled)
         {
             float hx = Math.Abs(st.VpScaleX), hy = Math.Abs(st.VpScaleY);
-            x0 = Math.Max(x0, (int)MathF.Floor(st.VpOffX - hx)); x1 = Math.Min(x1, (int)MathF.Ceiling(st.VpOffX + hx));
-            y0 = Math.Max(y0, (int)MathF.Floor(st.VpOffY - hy)); y1 = Math.Min(y1, (int)MathF.Ceiling(st.VpOffY + hy));
+            x0 = Math.Max(x0, (int)MathF.Floor(st.VpOffX - hx));
+            x1 = Math.Min(x1, (int)MathF.Ceiling(st.VpOffX + hx));
+            y0 = Math.Max(y0, (int)MathF.Floor(st.VpOffY - hy));
+            y1 = Math.Min(y1, (int)MathF.Ceiling(st.VpOffY + hy));
         }
-        x0 = Math.Clamp(x0, 0, w); x1 = Math.Clamp(x1, x0, w);
-        y0 = Math.Clamp(y0, 0, h); y1 = Math.Clamp(y1, y0, h);
+        x0 = Math.Clamp(x0, 0, w);
+        x1 = Math.Clamp(x1, x0, w);
+        y0 = Math.Clamp(y0, 0, h);
+        y1 = Math.Clamp(y1, y0, h);
         uint rw = (uint)(x1 - x0), rh = (uint)(y1 - y0);
-        if (rw == 0 || rh == 0 || rw * rh > WritebackRegionMaxPixels) return;
+        if (rw == 0 || rh == 0 || rw * rh > WritebackRegionMaxPixels)
+        {
+            return;
+        }
+
         foreach (var r in _sceneRegions)
-            if (x0 >= r.X && y0 >= r.Y && x1 <= r.X + r.W && y1 <= r.Y + r.H) return;
+        {
+            if (x0 >= r.X && y0 >= r.Y && x1 <= r.X + r.W && y1 <= r.Y + r.H)
+            {
+                return;
+            }
+        }
+
         _sceneRegions.Add(((uint)x0, (uint)y0, rw, rh));
     }
 
     bool ScheduleWriteback(RenderTarget rt)
     {
-        if (rt.Address == 0) return false;
+        if (rt.Address == 0)
+        {
+            return false;
+        }
+
         bool whole = rt.Width * rt.Height <= WritebackMaxPixels;
-        if (!whole && _sceneRegions.Count == 0) return false;
+        if (!whole && _sceneRegions.Count == 0)
+        {
+            return false;
+        }
+
         int guestBpp = Formats.ColorBytesPerPixel(rt.ColorFormat);
         int hostBpp = HostBytesPerPixel(rt.Format);
         var conv = WritebackConversion(rt.ColorFormat, rt.Format, hostBpp, guestBpp);
@@ -113,17 +159,34 @@ public sealed unsafe partial class VulkanRenderer
         SyncRenderTargetForRead(rt); // (also marks the target used by this frame: eviction keeps it)
         // a whole lossless copy that UploadSurfaceFromGuest can load back: the target may be evicted and recreated
         // (region writebacks leave the rest of the surface only on the GPU)
-        if (whole && conv == WritebackConvert.None && guestBpp == 4 && hostBpp == 4 && width == rt.Width) rt.InMemoryVersion = rt.Version;
-        if (whole) { CopyOutRect(rt, 0, 0, width, rt.Height, hostBpp, guestBpp, conv.Value); rt.MemVersion = rt.Version; }
+        if (whole && conv == WritebackConvert.None && guestBpp == 4 && hostBpp == 4 && width == rt.Width)
+        {
+            rt.InMemoryVersion = rt.Version;
+        }
+
+        if (whole)
+        {
+            CopyOutRect(rt, 0, 0, width, rt.Height, hostBpp, guestBpp, conv.Value);
+            rt.MemVersion = rt.Version;
+        }
         else
+        {
             foreach (var r in _sceneRegions)
             {
                 uint w = Math.Min(r.W, width - Math.Min(r.X, width)), h = Math.Min(r.H, rt.Height - Math.Min(r.Y, rt.Height));
-                if (w > 0 && h > 0) CopyOutRect(rt, r.X, r.Y, w, h, hostBpp, guestBpp, conv.Value);
+                if (w > 0 && h > 0)
+                {
+                    CopyOutRect(rt, r.X, r.Y, w, h, hostBpp, guestBpp, conv.Value);
+                }
             }
+        }
+
         if (TraceSync && _tracedWritebacks.Add((rt.Address, rt.Width, rt.Height)))
+        {
             Log.Info($"[sync] writeback target 0x{rt.Address:X8} {rt.Width}x{rt.Height} stride {rt.Stride} fmt 0x{rt.ColorFormat:X8} ({rt.Format}, {conv}) present {_presentCount}" +
                 (whole ? "" : $", regions {string.Join(" ", _sceneRegions.Select(r => $"({r.X},{r.Y} {r.W}x{r.H})"))}"));
+        }
+
         return true;
     }
 
@@ -136,10 +199,18 @@ public sealed unsafe partial class VulkanRenderer
     /// </summary>
     public void BeforeCallback(CallbackCommand cb)
     {
-        if (cb.ReadSize == 0) return;
+        if (cb.ReadSize == 0)
+        {
+            return;
+        }
+
         ulong lo = cb.ReadAddress, hi = lo + cb.ReadSize;
         bool any = WriteBackTransferSource(cb);
-        if (any) { Finish(); return; } // submits and retires every frame: the rows are in guest memory when it returns
+        if (any)
+        {
+            Finish();
+            return;
+        } // submits and retires every frame: the rows are in guest memory when it returns
         // the source's pixels were already copied out at its scene end (MemVersion == Version) but that frame has not
         // retired yet: its rows are not in memory, and the transfer would read older ones. Jak 1 renders its sky tiles
         // into a 512x512 surface at the memory of a 360x204 one and copies them out right after the scene; the copy found
@@ -150,8 +221,15 @@ public sealed unsafe partial class VulkanRenderer
         {
             bool recording = f == F && f.Recording;
             if (_xferPendingWaits++ < 20 || TraceSync)
+            {
                 Log.Info($"[gpu] transfer reads 0x{lo:X8}-0x{hi:X8} with a writeback in flight ({(recording ? "recording frame" : "submitted frame")}): waiting for that frame (present {_presentCount})");
-            if (recording) { SubmitFrame(false, 0); _drawsSinceSubmit = 0; }
+            }
+
+            if (recording)
+            {
+                SubmitFrame(false, 0);
+                _drawsSinceSubmit = 0;
+            }
             RetireFrame(f, RetireCause.Finish);
         }
     }
@@ -167,15 +245,32 @@ public sealed unsafe partial class VulkanRenderer
         _xferTargets.AddRange(_renderTargets.Values);
         foreach (var rt in _xferTargets)
         {
-            if (rt.Address == 0 || rt.Version == rt.MemVersion) continue;
+            if (rt.Address == 0 || rt.Version == rt.MemVersion)
+            {
+                continue;
+            }
+
             ulong end = rt.Address + (ulong)rt.Stride * (uint)Formats.ColorBytesPerPixel(rt.ColorFormat) * rt.Height;
-            if (lo >= end || hi <= rt.Address) continue;
+            if (lo >= end || hi <= rt.Address)
+            {
+                continue;
+            }
             // evicted by a reclaim during an earlier writeback of this loop (its image is gone)
-            if (!_renderTargets.TryGetValue((rt.Address, rt.Width, rt.Height, rt.ColorFormat), out var live) || live != rt) continue;
+            if (!_renderTargets.TryGetValue((rt.Address, rt.Width, rt.Height, rt.ColorFormat), out var live) || live != rt)
+            {
+                continue;
+            }
             // memory written after the surface was last rendered (an earlier transfer into a stale surface's memory,
             // data loaded there) is newer than the surface: the writeback would overwrite it
-            if (!swept) { _sweptFrame = -1; swept = true; } // fold the stores made since this frame's sweep
-            if (OverwrittenSinceRendered(rt, cb.ReadAddress, cb.ReadSize)) continue;
+            if (!swept)
+            {
+                _sweptFrame = -1;
+                swept = true;
+            } // fold the stores made since this frame's sweep
+            if (OverwrittenSinceRendered(rt, cb.ReadAddress, cb.ReadSize))
+            {
+                continue;
+            }
             // a transfer issued while a scene is open runs after the work submitted before it (its sync object waits for
             // the scene): what was rendered so far is written back. God Wars (Unity) copies its framebuffer into the 3D
             // target before its last full-screen pass with the framebuffer's scene still open; skipped, the copy read
@@ -183,7 +278,10 @@ public sealed unsafe partial class VulkanRenderer
             if (_inScene)
             {
                 if (_xferInScene++ < 20 || TraceSync)
+                {
                     Log.Info($"[gpu] transfer reads render target 0x{rt.Address:X8} while the scene of 0x{_rt?.Address ?? 0:X8} is open: rendering paused for the writeback");
+                }
+
                 PauseRendering(rt);
             }
             int guestBpp = Formats.ColorBytesPerPixel(rt.ColorFormat), hostBpp = HostBytesPerPixel(rt.Format);
@@ -197,11 +295,18 @@ public sealed unsafe partial class VulkanRenderer
             rt.WrittenBack = true;
             SyncRenderTargetForRead(rt);
             uint width = Math.Min(rt.Width, rt.Stride);
-            if (conv == WritebackConvert.None && guestBpp == 4 && hostBpp == 4 && width == rt.Width) rt.InMemoryVersion = rt.Version; // evictable, as in ScheduleWriteback
+            if (conv == WritebackConvert.None && guestBpp == 4 && hostBpp == 4 && width == rt.Width)
+            {
+                rt.InMemoryVersion = rt.Version; // evictable, as in ScheduleWriteback
+            }
+
             CopyOutRect(rt, 0, 0, width, rt.Height, hostBpp, guestBpp, conv);
             rt.MemVersion = rt.Version;
             if (_xferWritebacks++ < 20 || TraceSync)
+            {
                 Log.Info($"[gpu] transfer reads render target 0x{rt.Address:X8} {rt.Width}x{rt.Height}: written back first (present {_presentCount})");
+            }
+
             any = true;
         }
         _xferTargets.Clear();
@@ -220,11 +325,26 @@ public sealed unsafe partial class VulkanRenderer
         long newestOrder = long.MinValue;
         foreach (var f in _frames)
         {
-            if (f == null || !(f.Recording || (f.Submitted && !f.Retired))) continue;
+            if (f == null || !(f.Recording || (f.Submitted && !f.Retired)))
+            {
+                continue;
+            }
+
             long order = f.Recording ? long.MaxValue : f.SubmitSeq; // the recording frame is submitted after every other
-            if (order <= newestOrder) continue;
+            if (order <= newestOrder)
+            {
+                continue;
+            }
+
             foreach (var wb in f.Writebacks)
-                if (wb.Address < hi && wb.Address + (ulong)wb.GuestStride * wb.Rows > lo) { newest = f; newestOrder = order; break; }
+            {
+                if (wb.Address < hi && wb.Address + (ulong)wb.GuestStride * wb.Rows > lo)
+                {
+                    newest = f;
+                    newestOrder = order;
+                    break;
+                }
+            }
         }
         return newest;
     }
@@ -235,7 +355,11 @@ public sealed unsafe partial class VulkanRenderer
     void CopyOutRect(RenderTarget rt, uint x, uint y, uint w, uint h, int hostBpp, int guestBpp, WritebackConvert conv)
     {
         ulong size = (ulong)w * (uint)hostBpp * h;
-        if (!_writebackPool.TryGetValue(size, out var pool)) _writebackPool[size] = pool = new();
+        if (!_writebackPool.TryGetValue(size, out var pool))
+        {
+            _writebackPool[size] = pool = new();
+        }
+
         _writebackPoolUsed[size] = FrameCount;
         var wb = pool.Count > 0 ? pool.Pop() : null;
         if (wb == null)
@@ -273,8 +397,18 @@ public sealed unsafe partial class VulkanRenderer
         {
             byte r = src[i], g = src[i + 1], b = src[i + 2], a = src[i + 3];
             dst[i] = a;
-            if (reverse) { dst[i + 1] = b; dst[i + 2] = g; dst[i + 3] = r; }
-            else { dst[i + 1] = r; dst[i + 2] = g; dst[i + 3] = b; }
+            if (reverse)
+            {
+                dst[i + 1] = b;
+                dst[i + 2] = g;
+                dst[i + 3] = r;
+            }
+            else
+            {
+                dst[i + 1] = r;
+                dst[i + 2] = g;
+                dst[i + 3] = b;
+            }
         }
     }
 
@@ -284,8 +418,18 @@ public sealed unsafe partial class VulkanRenderer
         for (int i = 0; i + 3 < dst.Length; i += 4)
         {
             byte a = src[i];
-            if (reverse) { dst[i] = src[i + 3]; dst[i + 1] = src[i + 2]; dst[i + 2] = src[i + 1]; }
-            else { dst[i] = src[i + 1]; dst[i + 1] = src[i + 2]; dst[i + 2] = src[i + 3]; }
+            if (reverse)
+            {
+                dst[i] = src[i + 3];
+                dst[i + 1] = src[i + 2];
+                dst[i + 2] = src[i + 1];
+            }
+            else
+            {
+                dst[i] = src[i + 1];
+                dst[i + 1] = src[i + 2];
+                dst[i + 2] = src[i + 3];
+            }
             dst[i + 3] = a;
         }
     }
@@ -293,12 +437,20 @@ public sealed unsafe partial class VulkanRenderer
     /// <summary>Runs after the frame's fence signalled: copies each target's rows into guest memory.</summary>
     void CompleteWritebacks(Frame f)
     {
-        if (f.Writebacks.Count == 0) return;
+        if (f.Writebacks.Count == 0)
+        {
+            return;
+        }
+
         long t0 = System.Diagnostics.Stopwatch.GetTimestamp();
         foreach (var wb in f.Writebacks)
         {
             using var space = AddressSpace.Use(wb.Space);
-            if (!wb.Coherent) _core.InvalidateMapped(wb.Memory);
+            if (!wb.Coherent)
+            {
+                _core.InvalidateMapped(wb.Memory);
+            }
+
             var src = new ReadOnlySpan<byte>((void*)wb.Ptr, (int)wb.Size);
             for (uint y = 0; y < wb.Rows; y++)
             {
@@ -315,7 +467,11 @@ public sealed unsafe partial class VulkanRenderer
                     {
                         var dst = GuestMemory.Span(wb.Address + y * wb.GuestStride, (int)wb.Width * 4);
                         FastCopy.Copy(row[..dst.Length], dst);
-                        for (int i = 0; i + 3 < dst.Length; i += 4) (dst[i], dst[i + 2]) = (dst[i + 2], dst[i]);
+                        for (int i = 0; i + 3 < dst.Length; i += 4)
+                        {
+                            (dst[i], dst[i + 2]) = (dst[i + 2], dst[i]);
+                        }
+
                         break;
                     }
                     case WritebackConvert.ReverseBytes:
@@ -341,7 +497,12 @@ public sealed unsafe partial class VulkanRenderer
                     case WritebackConvert.Rgba8ToRgb8:
                     {
                         var dst = GuestMemory.Span(wb.Address + y * wb.GuestStride, (int)wb.Width * 3);
-                        for (int i = 0, o = 0; o + 2 < dst.Length; i += 4, o += 3) { dst[o] = row[i]; dst[o + 1] = row[i + 1]; dst[o + 2] = row[i + 2]; }
+                        for (int i = 0, o = 0; o + 2 < dst.Length; i += 4, o += 3)
+                        {
+                            dst[o] = row[i];
+                            dst[o + 1] = row[i + 1];
+                            dst[o + 2] = row[i + 2];
+                        }
                         break;
                     }
                 }
@@ -378,12 +539,32 @@ public sealed unsafe partial class VulkanRenderer
     /// <summary>Half (1.5.10) to the surface's unsigned 10-bit float (5.5): negatives clamp to zero, round to nearest.</summary>
     static uint HalfToF10(ushort half)
     {
-        if ((half & 0x8000) != 0) return 0;
+        if ((half & 0x8000) != 0)
+        {
+            return 0;
+        }
+
         uint exp = (uint)(half >> 10) & 0x1F, man = (uint)half & 0x3FF;
-        if (exp == 0x1F) return 0x3FF; // inf/nan -> max
+        if (exp == 0x1F)
+        {
+            return 0x3FF; // inf/nan -> max
+        }
+
         uint m5 = man >> 5;
-        if ((man & 0x10) != 0 && (m5 != 0x1F || exp != 0x1E)) { m5++; if (m5 == 0x20) { m5 = 0; exp++; } }
-        if (exp >= 0x1F) return 0x3FF;
+        if ((man & 0x10) != 0 && (m5 != 0x1F || exp != 0x1E))
+        {
+            m5++;
+            if (m5 == 0x20)
+            {
+                m5 = 0;
+                exp++;
+            }
+        }
+        if (exp >= 0x1F)
+        {
+            return 0x3FF;
+        }
+
         return (exp << 5) | m5;
     }
 
@@ -401,11 +582,22 @@ public sealed unsafe partial class VulkanRenderer
         ulong freed = 0;
         _writebackIdle.Clear();
         foreach (var (size, pool) in _writebackPool)
-            if (FrameCount - _writebackPoolUsed.GetValueOrDefault(size) >= minAge) _writebackIdle.Add(size);
+        {
+            if (FrameCount - _writebackPoolUsed.GetValueOrDefault(size) >= minAge)
+            {
+                _writebackIdle.Add(size);
+            }
+        }
+
         foreach (var size in _writebackIdle)
         {
             var pool = _writebackPool[size];
-            while (pool.Count > 0) { var wb = pool.Pop(); _core.DestroyBuffer(wb.Buffer, wb.Memory); freed += wb.Size; }
+            while (pool.Count > 0)
+            {
+                var wb = pool.Pop();
+                _core.DestroyBuffer(wb.Buffer, wb.Memory);
+                freed += wb.Size;
+            }
         }
         return freed;
     }
@@ -413,7 +605,13 @@ public sealed unsafe partial class VulkanRenderer
     void DestroyWritebacks()
     {
         foreach (var pool in _writebackPool.Values)
-            foreach (var wb in pool) _core.DestroyBuffer(wb.Buffer, wb.Memory);
+        {
+            foreach (var wb in pool)
+            {
+                _core.DestroyBuffer(wb.Buffer, wb.Memory);
+            }
+        }
+
         _writebackPool.Clear();
     }
 }

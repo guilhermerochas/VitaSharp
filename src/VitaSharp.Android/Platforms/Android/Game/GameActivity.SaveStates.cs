@@ -18,8 +18,10 @@ public sealed partial class GameActivity
     /// the pause menu does (menu picture, pause, save or load in the background, resume when the dialog closes).</summary>
     void ScriptedState(bool save, int slot)
     {
-        if (_session is not { } session || slot < 1 || slot > EmulationSession.StateSlots) return;
-        if (save) session.CaptureMenuThumbnail();
+        if (_session is not { } session || slot < 1 || slot > EmulationSession.StateSlots)
+            return;
+        if (save)
+            session.CaptureMenuThumbnail();
         session.Pause();
         Toast.MakeText(this, save ? Loc.Get("MSavingState") : Loc.Get("MLoadingState"), ToastLength.Short)?.Show();
         Task.Run(() =>
@@ -28,6 +30,7 @@ public sealed partial class GameActivity
             Log.Info($"Scripted {(save ? "save" : "load")} state, slot {slot}: {msg}");
             RunOnUiThread(() => Toast.MakeText(this, msg, ToastLength.Long)?.Show());
         });
-        if (!IsFinishing) session.Resume();
+        if (!IsFinishing)
+            session.Resume();
     }
 }

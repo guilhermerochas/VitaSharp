@@ -37,14 +37,19 @@ public sealed class OnScreenControlsView : View
     public float ControlsOpacity
     {
         get => _opacity;
-        set { _opacity = Math.Clamp(value, 0.1f, 1f); Invalidate(); }
+        set
+        {
+            _opacity = Math.Clamp(value, 0.1f, 1f);
+            Invalidate();
+        }
     }
 
     public bool Haptics { get; set; } = true;
 
     public override bool OnTouchEvent(MotionEvent? e)
     {
-        if (e == null || Width == 0 || Height == 0) return false;
+        if (e == null || Width == 0 || Height == 0)
+            return false;
         int n = e.PointerCount;
         var action = e.ActionMasked;
         int lifted = action is MotionEventActions.Up or MotionEventActions.PointerUp or MotionEventActions.Cancel ? e.ActionIndex : -1;
@@ -52,7 +57,8 @@ public sealed class OnScreenControlsView : View
         int count = 0;
         for (int i = 0; i < n && count < fingers.Length; i++)
         {
-            if (i == lifted || action == MotionEventActions.Cancel) continue;
+            if (i == lifted || action == MotionEventActions.Cancel)
+                continue;
             fingers[count++] = (e.GetPointerId(i), e.GetX(i) / Width, e.GetY(i) / Height);
         }
         bool before = AnyPressed();
@@ -68,7 +74,8 @@ public sealed class OnScreenControlsView : View
     protected override void OnDraw(Canvas canvas)
     {
         base.OnDraw(canvas);
-        if (!_pad.Visible) return;
+        if (!_pad.Visible)
+            return;
         float w = Width, h = Height;
         int alpha = (int)(_opacity * 255);
         float density = Resources?.DisplayMetrics?.Density ?? 2f;

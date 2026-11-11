@@ -26,8 +26,16 @@ public static class FetchSplit
         {
             for (int t = 0; t + 2 < n; t += 3)
             {
-                if (Degenerate(indices, index32, t)) continue;
-                if (pieces.Count == max) return false;
+                if (Degenerate(indices, index32, t))
+                {
+                    continue;
+                }
+
+                if (pieces.Count == max)
+                {
+                    return false;
+                }
+
                 pieces.Add(((uint)t, 3));
             }
         }
@@ -36,8 +44,16 @@ public static class FetchSplit
             for (int s = 0; s + 2 < n; s += 2)
             {
                 int count = Math.Min(4, n - s);
-                if (Degenerate(indices, index32, s) && (count < 4 || Degenerate(indices, index32, s + 1))) continue;
-                if (pieces.Count == max) return false;
+                if (Degenerate(indices, index32, s) && (count < 4 || Degenerate(indices, index32, s + 1)))
+                {
+                    continue;
+                }
+
+                if (pieces.Count == max)
+                {
+                    return false;
+                }
+
                 pieces.Add(((uint)s, (uint)count));
             }
         }

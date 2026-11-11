@@ -20,7 +20,11 @@ public sealed unsafe partial class ArmFrontend
     /// <summary>CPSR.Q |= bit (0/1 temp).</summary>
     void OrQ(int bit)
     {
-        if (B.IsConst(bit, 0u)) return;
+        if (B.IsConst(bit, 0u))
+        {
+            return;
+        }
+
         B.StoreState(QOffset, B.Or(B.LoadState(QOffset), bit));
     }
 
@@ -32,7 +36,11 @@ public sealed unsafe partial class ArmFrontend
     /// <summary>Arm.SignedSat of an exact int32 value to <paramref name="bits"/> (1-32): (result, saturated 0/1).</summary>
     (int R, int Sat) SignedSatIr(int v, int bits)
     {
-        if (bits >= 32) return (v, C(0));
+        if (bits >= 32)
+        {
+            return (v, C(0));
+        }
+
         int sh = 32 - bits;
         int inRange = B.CmpEq(B.Sar(B.Shl(v, sh), sh), v);
         uint max = (1u << (bits - 1)) - 1;
@@ -75,14 +83,19 @@ public sealed unsafe partial class ArmFrontend
                     SetReg(rd, f.R);
                     OrQ(f.V);
                 }
-                else SetReg(rd, p);
+                else
+                {
+                    SetReg(rd, p);
+                }
+
                 break;
             }
             case 2:
             {
                 int p = B.Mul(Half(vn, x), Half(vm, y));
                 var (l, h) = B.Add64(Reg(ra), Reg(rd), p, B.Sar(p, 31));
-                SetReg(ra, l); SetReg(rd, h);
+                SetReg(ra, l);
+                SetReg(rd, h);
                 break;
             }
             default:
@@ -104,12 +117,23 @@ public sealed unsafe partial class ArmFrontend
             var (lo, hi) = B.MulLong(vn, vm, true);
             uint round = swap ? 0x80000000u : 0;
             int r;
-            if ((op2 & 6) == 0) r = B.Add64(lo, hi, C(round), accumulate ? Reg(ra) : C(0)).Hi; // (a << 32) + p (+ 2^31)
-            else r = B.Add64(B.Not(lo), B.Not(hi), C(round + 1), Reg(ra)).Hi;                  // (a << 32) - p (+ 2^31)
+            if ((op2 & 6) == 0)
+            {
+                r = B.Add64(lo, hi, C(round), accumulate ? Reg(ra) : C(0)).Hi; // (a << 32) + p (+ 2^31)
+            }
+            else
+            {
+                r = B.Add64(B.Not(lo), B.Not(hi), C(round + 1), Reg(ra)).Hi;                  // (a << 32) - p (+ 2^31)
+            }
+
             SetReg(rd, r);
             return;
         }
-        if (swap) vm = B.Ror(vm, 16);
+        if (swap)
+        {
+            vm = B.Ror(vm, 16);
+        }
+
         int p1 = B.Mul(B.SExt16(vn), B.SExt16(vm));
         int p2 = B.Mul(B.Sar(vn, 16), B.Sar(vm, 16));
         bool sub = (op2 & 2) != 0;
@@ -126,13 +150,18 @@ public sealed unsafe partial class ArmFrontend
                 (l, h) = B.Add64(l, h, p1, B.Sar(p1, 31));
                 (l, h) = B.Add64(l, h, p2, B.Sar(p2, 31));
             }
-            SetReg(ra, l); SetReg(rd, h);
+            SetReg(ra, l);
+            SetReg(rd, h);
             return;
         }
         if (sub)
         {
             int dif = B.Sub(p1, p2);
-            if (!accumulate) { SetReg(rd, dif); return; }
+            if (!accumulate)
+            {
+                SetReg(rd, dif);
+                return;
+            }
             var f = B.AddC(dif, Reg(ra), -1);
             SetReg(rd, f.R);
             OrQ(f.V);
@@ -140,7 +169,11 @@ public sealed unsafe partial class ArmFrontend
         }
         // p1 + p2 (+ a) in 64 bits: Q when the sum is not an int32 (only the final result counts, like the handler)
         var (sl, sh) = B.Add64(p1, B.Sar(p1, 31), p2, B.Sar(p2, 31));
-        if (accumulate) { int a = Reg(ra); (sl, sh) = B.Add64(sl, sh, a, B.Sar(a, 31)); }
+        if (accumulate)
+        {
+            int a = Reg(ra);
+            (sl, sh) = B.Add64(sl, sh, a, B.Sar(a, 31));
+        }
         SetReg(rd, sl);
         OrQ(NotBit(B.CmpEq(sh, B.Sar(sl, 31))));
     }
@@ -150,7 +183,11 @@ public sealed unsafe partial class ArmFrontend
         uint ins = d.Raw, op = Bits(ins, 22, 21);
         uint rd = Bits(ins, 19, 16), ra = Bits(ins, 15, 12), rm = Bits(ins, 11, 8), rn = ins & 0xF;
         bool x = Bit(ins, 5) != 0, y = Bit(ins, 6) != 0;
-        if (rd == 15 || (op == 2 && ra == 15)) return null; // PC destinations (SMLALxy: RdLo = ra)
+        if (rd == 15 || (op == 2 && ra == 15))
+        {
+            return null; // PC destinations (SMLALxy: RdLo = ra)
+        }
+
         HalfMultiply(op, rd, ra, Rg(rn, in d), Rg(rm, in d), x, y);
         return false;
     }
@@ -159,23 +196,36 @@ public sealed unsafe partial class ArmFrontend
     {
         uint ins = d.Raw, op1 = Bits(ins, 22, 20), op2 = Bits(ins, 7, 5);
         uint rd = Bits(ins, 19, 16), ra = Bits(ins, 15, 12), rm = Bits(ins, 11, 8), rn = ins & 0xF;
-        if (rd == 15) return null;
+        if (rd == 15)
+        {
+            return null;
+        }
+
         int vn = Rg(rn, in d), vm = Rg(rm, in d);
         switch (op1)
         {
             case 0:
                 SignedMultiplyMedia(0, op2, rd, ra, ra != 15, vn, vm);
                 return false;
-            case 1: SetReg(rd, B.SDiv(vn, vm)); return false;
-            case 3: SetReg(rd, B.UDiv(vn, vm)); return false;
+            case 1:
+                SetReg(rd, B.SDiv(vn, vm));
+                return false;
+            case 3:
+                SetReg(rd, B.UDiv(vn, vm));
+                return false;
             case 4:
-                if (ra == 15) return null; // RdLo = PC
+                if (ra == 15)
+                {
+                    return null; // RdLo = PC
+                }
+
                 SignedMultiplyMedia(4, op2, rd, ra, true, vn, vm);
                 return false;
             case 5:
                 SignedMultiplyMedia(5, op2, rd, ra, (op2 & 6) != 0 || ra != 15, vn, vm);
                 return false;
-            default: return null; // no effect in the handler: keep it there
+            default:
+                return null; // no effect in the handler: keep it there
         }
     }
 
@@ -183,22 +233,43 @@ public sealed unsafe partial class ArmFrontend
     {
         uint ins = d.Raw, op1 = Bits(ins, 22, 20), op2 = Bits(ins, 5, 4);
         uint rn = Bits(ins, 19, 16), ra = Bits(ins, 15, 12), rd = Bits(ins, 11, 8), rm = ins & 0xF;
-        if (rd == 15) return null;
+        if (rd == 15)
+        {
+            return null;
+        }
+
         int vn = Reg(rn), vm = Reg(rm); // raw registers, like the handler
         switch (op1)
         {
             case 0:
             {
                 int prod = B.Mul(vn, vm);
-                if (op2 == 0) SetReg(rd, ra == 15 ? prod : B.Add(prod, Reg(ra)));
-                else SetReg(rd, B.Sub(Reg(ra), prod));
+                if (op2 == 0)
+                {
+                    SetReg(rd, ra == 15 ? prod : B.Add(prod, Reg(ra)));
+                }
+                else
+                {
+                    SetReg(rd, B.Sub(Reg(ra), prod));
+                }
+
                 return false;
             }
-            case 1: HalfMultiply(ra == 15 ? 3u : 0u, rd, ra, vn, vm, Bit(ins, 5) != 0, Bit(ins, 4) != 0); return false;
-            case 2: SignedMultiplyMedia(0, op2 & 1, rd, ra, ra != 15, vn, vm); return false;
-            case 3: HalfMultiply(1, rd, ra, vn, vm, ra == 15, Bit(ins, 4) != 0); return false;
-            case 4: SignedMultiplyMedia(0, 2 | (op2 & 1), rd, ra, ra != 15, vn, vm); return false;
-            case 5: SignedMultiplyMedia(5, op2 & 1, rd, ra, ra != 15, vn, vm); return false;
+            case 1:
+                HalfMultiply(ra == 15 ? 3u : 0u, rd, ra, vn, vm, Bit(ins, 5) != 0, Bit(ins, 4) != 0);
+                return false;
+            case 2:
+                SignedMultiplyMedia(0, op2 & 1, rd, ra, ra != 15, vn, vm);
+                return false;
+            case 3:
+                HalfMultiply(1, rd, ra, vn, vm, ra == 15, Bit(ins, 4) != 0);
+                return false;
+            case 4:
+                SignedMultiplyMedia(0, 2 | (op2 & 1), rd, ra, ra != 15, vn, vm);
+                return false;
+            case 5:
+                SignedMultiplyMedia(5, op2 & 1, rd, ra, ra != 15, vn, vm);
+                return false;
             case 6:
                 SignedMultiplyMedia(5, 6 | (op2 & 1), rd, ra, true, vn, vm);
                 return false;
@@ -214,24 +285,39 @@ public sealed unsafe partial class ArmFrontend
     /// <summary>T32.LongMul forms beyond SMULL/UMULL/SMLAL/UMLAL/SDIV/UDIV: SMLALxy, SMLALD, SMLSLD, UMAAL.</summary>
     bool? T32LongMulMedia(in DecodedInst d, uint op1, uint op2, uint rn, uint lo, uint hi, uint rm)
     {
-        if (lo == 15 || hi == 15) return null;
+        if (lo == 15 || hi == 15)
+        {
+            return null;
+        }
+
         int vn = Reg(rn), vm = Reg(rm);
         switch (op1)
         {
             case 4:
-                if ((op2 & 0xC) == 0x8) HalfMultiply(2, hi, lo, vn, vm, Bit(d.Raw, 5) != 0, Bit(d.Raw, 4) != 0);
-                else SignedMultiplyMedia(4, op2 & 1, hi, lo, true, vn, vm);
+                if ((op2 & 0xC) == 0x8)
+                {
+                    HalfMultiply(2, hi, lo, vn, vm, Bit(d.Raw, 5) != 0, Bit(d.Raw, 4) != 0);
+                }
+                else
+                {
+                    SignedMultiplyMedia(4, op2 & 1, hi, lo, true, vn, vm);
+                }
+
                 return false;
-            case 5: SignedMultiplyMedia(4, 2 | (op2 & 1), hi, lo, true, vn, vm); return false;
+            case 5:
+                SignedMultiplyMedia(4, 2 | (op2 & 1), hi, lo, true, vn, vm);
+                return false;
             case 6:
             {
                 var (pl, ph) = B.MulLong(vn, vm, false);
                 var (l1, h1) = B.Add64(pl, ph, Reg(lo), C(0));
                 var (l2, h2) = B.Add64(l1, h1, Reg(hi), C(0));
-                SetReg(lo, l2); SetReg(hi, h2);
+                SetReg(lo, l2);
+                SetReg(hi, h2);
                 return false;
             }
-            default: return null;
+            default:
+                return null;
         }
     }
 
@@ -252,7 +338,11 @@ public sealed unsafe partial class ArmFrontend
     bool? A32Usad8(in DecodedInst d)
     {
         uint ins = d.Raw, rd = Bits(ins, 19, 16), ra = Bits(ins, 15, 12), rm = Bits(ins, 11, 8), rn = ins & 0xF;
-        if (rd == 15) return null;
+        if (rd == 15)
+        {
+            return null;
+        }
+
         int sad = Usad8Ir(Rg(rn, in d), Rg(rm, in d));
         SetReg(rd, ra == 15 ? sad : B.Add(sad, Reg(ra)));
         return false;
@@ -284,8 +374,15 @@ public sealed unsafe partial class ArmFrontend
                     int g = signed || !add ? NotBit(B.Shr(v, 31)) : B.Bit(v, 8);
                     ge = B.Or(ge, i == 0 ? g : B.Shl(g, i));
                 }
-                else if (kind == 2) res = B.AndK((signed ? SignedSatIr(v, 8) : UnsignedSatIr(v, 8)).R, 0xFF);
-                else res = B.AndK(B.Sar(v, 1), 0xFF);
+                else if (kind == 2)
+                {
+                    res = B.AndK((signed ? SignedSatIr(v, 8) : UnsignedSatIr(v, 8)).R, 0xFF);
+                }
+                else
+                {
+                    res = B.AndK(B.Sar(v, 1), 0xFF);
+                }
+
                 r = B.Or(r, i == 0 ? res : B.Shl(res, sh));
             }
         }
@@ -297,15 +394,34 @@ public sealed unsafe partial class ArmFrontend
             bool loAdd, hiAdd;
             switch (op2)
             {
-                case 0: lo = B.Add(al, bl); hi = B.Add(ah, bh); loAdd = hiAdd = true; break;   // ADD16
-                case 1: lo = B.Sub(al, bh); hi = B.Add(ah, bl); loAdd = false; hiAdd = true; break; // ASX
-                case 2: lo = B.Add(al, bh); hi = B.Sub(ah, bl); loAdd = true; hiAdd = false; break; // SAX
-                default: lo = B.Sub(al, bl); hi = B.Sub(ah, bh); loAdd = hiAdd = false; break; // SUB16
+                case 0:
+                    lo = B.Add(al, bl);
+                    hi = B.Add(ah, bh);
+                    loAdd = hiAdd = true;
+                    break;   // ADD16
+                case 1:
+                    lo = B.Sub(al, bh);
+                    hi = B.Add(ah, bl);
+                    loAdd = false;
+                    hiAdd = true;
+                    break; // ASX
+                case 2:
+                    lo = B.Add(al, bh);
+                    hi = B.Sub(ah, bl);
+                    loAdd = true;
+                    hiAdd = false;
+                    break; // SAX
+                default:
+                    lo = B.Sub(al, bl);
+                    hi = B.Sub(ah, bh);
+                    loAdd = hiAdd = false;
+                    break; // SUB16
             }
             int rl, rh;
             if (kind == 1)
             {
-                rl = B.ZExt16(lo); rh = B.ZExt16(hi);
+                rl = B.ZExt16(lo);
+                rh = B.ZExt16(hi);
                 int gl = signed || !loAdd ? NotBit(B.Shr(lo, 31)) : B.Bit(lo, 16);
                 int gh = signed || !hiAdd ? NotBit(B.Shr(hi, 31)) : B.Bit(hi, 16);
                 ge = B.Or(B.Mul(gl, C(3)), B.Mul(gh, C(0xC)));
@@ -315,16 +431,28 @@ public sealed unsafe partial class ArmFrontend
                 rl = B.ZExt16((signed ? SignedSatIr(lo, 16) : UnsignedSatIr(lo, 16)).R);
                 rh = B.ZExt16((signed ? SignedSatIr(hi, 16) : UnsignedSatIr(hi, 16)).R);
             }
-            else { rl = B.ZExt16(B.Sar(lo, 1)); rh = B.ZExt16(B.Sar(hi, 1)); }
+            else
+            {
+                rl = B.ZExt16(B.Sar(lo, 1));
+                rh = B.ZExt16(B.Sar(hi, 1));
+            }
             r = B.Or(rl, B.Shl(rh, 16));
         }
-        if (kind == 1) B.StoreState(GeOffset, ge);
+        if (kind == 1)
+        {
+            B.StoreState(GeOffset, ge);
+        }
+
         return r;
     }
 
     int Lane8(int v, int sh, bool signed)
     {
-        if (sh == 24) return signed ? B.Sar(v, 24) : B.Shr(v, 24);
+        if (sh == 24)
+        {
+            return signed ? B.Sar(v, 24) : B.Shr(v, 24);
+        }
+
         int s = sh == 0 ? v : B.Shr(v, sh);
         return signed ? B.SExt8(s) : B.ZExt8(s);
     }
@@ -333,7 +461,11 @@ public sealed unsafe partial class ArmFrontend
     {
         uint ins = d.Raw, op1 = Bits(ins, 22, 20), op2 = Bits(ins, 7, 5);
         uint rn = Bits(ins, 19, 16), rd = Bits(ins, 15, 12), rm = ins & 0xF;
-        if (rd == 15) return null;
+        if (rd == 15)
+        {
+            return null;
+        }
+
         SetReg(rd, Parallel(op1, op2, Rg(rn, in d), Rg(rm, in d)));
         return false;
     }
@@ -341,10 +473,22 @@ public sealed unsafe partial class ArmFrontend
     bool? T32Parallel(in DecodedInst d)
     {
         uint ins = d.Raw, op1 = Bits(ins, 22, 20), rn = Bits(ins, 19, 16), rd = Bits(ins, 11, 8), rm = ins & 0xF;
-        if (rd == 15) return null;
+        if (rd == 15)
+        {
+            return null;
+        }
+
         bool unsigned = Bit(ins, 6) != 0;
         uint kind = Bits(ins, 5, 4);
-        uint armOp2 = op1 switch { 1 => 0u, 2 => 1u, 6 => 2u, 5 => 3u, 0 => 4u, _ => 7u };
+        uint armOp2 = op1 switch
+        {
+            1 => 0u,
+            2 => 1u,
+            6 => 2u,
+            5 => 3u,
+            0 => 4u,
+            _ => 7u
+        };
         uint armOp1 = (unsigned ? 4u : 0u) + (kind == 0 ? 1u : kind == 1 ? 2u : 3u);
         SetReg(rd, Parallel(armOp1, armOp2, Reg(rn), Reg(rm)));
         return false;
@@ -362,7 +506,11 @@ public sealed unsafe partial class ArmFrontend
     bool? A32Sel(in DecodedInst d)
     {
         uint ins = d.Raw, rn = Bits(ins, 19, 16), rd = Bits(ins, 15, 12), rm = ins & 0xF;
-        if (rd == 15) return null;
+        if (rd == 15)
+        {
+            return null;
+        }
+
         SetReg(rd, Sel(Reg(rn), Reg(rm))); // the handler reads the raw registers
         return false;
     }
@@ -387,7 +535,11 @@ public sealed unsafe partial class ArmFrontend
     bool? A32SatAddSub(in DecodedInst d)
     {
         uint ins = d.Raw, op = Bits(ins, 22, 21), rn = Bits(ins, 19, 16), rd = Bits(ins, 15, 12), rm = ins & 0xF;
-        if (rd == 15) return null;
+        if (rd == 15)
+        {
+            return null;
+        }
+
         SetReg(rd, SatAddSub(op, Rg(rm, in d), Rg(rn, in d)));
         return false;
     }
@@ -415,7 +567,11 @@ public sealed unsafe partial class ArmFrontend
     bool? A32Sat(in DecodedInst d)
     {
         uint ins = d.Raw, rd = Bits(ins, 15, 12), rn = ins & 0xF;
-        if (rd == 15) return null;
+        if (rd == 15)
+        {
+            return null;
+        }
+
         SetReg(rd, SatIr(Bit(ins, 22) != 0, Bits(ins, 20, 16), Reg(rn), Bit(ins, 6), Bits(ins, 11, 7)));
         return false;
     }
@@ -423,7 +579,11 @@ public sealed unsafe partial class ArmFrontend
     bool? A32Sat16(in DecodedInst d)
     {
         uint ins = d.Raw, rd = Bits(ins, 15, 12), rn = ins & 0xF;
-        if (rd == 15) return null;
+        if (rd == 15)
+        {
+            return null;
+        }
+
         SetReg(rd, Sat16Ir(Bit(ins, 22) != 0, Bits(ins, 19, 16), Reg(rn)));
         return false;
     }
@@ -442,7 +602,11 @@ public sealed unsafe partial class ArmFrontend
     bool? A32Pkh(in DecodedInst d)
     {
         uint ins = d.Raw, rn = Bits(ins, 19, 16), rd = Bits(ins, 15, 12), rm = ins & 0xF;
-        if (rd == 15) return null;
+        if (rd == 15)
+        {
+            return null;
+        }
+
         SetReg(rd, Pkh(Reg(rn), Reg(rm), Bit(ins, 6) != 0, Bits(ins, 11, 7)));
         return false;
     }
@@ -450,11 +614,22 @@ public sealed unsafe partial class ArmFrontend
     /// <summary>T32 SSAT/USAT/SSAT16/USAT16 (data processing, plain immediate, op 0x10/0x12/0x18/0x1A).</summary>
     bool? T32Sat(in DecodedInst d, uint op, uint rn, uint rd, uint imm3, uint imm2)
     {
-        if (rd == 15) return null;
+        if (rd == 15)
+        {
+            return null;
+        }
+
         uint ins = d.Raw;
         bool unsigned = op >= 0x18;
-        if ((op & 2) != 0 && imm3 == 0 && imm2 == 0) SetReg(rd, Sat16Ir(unsigned, ins & 0xF, Reg(rn)));
-        else SetReg(rd, SatIr(unsigned, ins & 0x1F, Reg(rn), Bit(ins, 21), (imm3 << 2) | imm2));
+        if ((op & 2) != 0 && imm3 == 0 && imm2 == 0)
+        {
+            SetReg(rd, Sat16Ir(unsigned, ins & 0xF, Reg(rn)));
+        }
+        else
+        {
+            SetReg(rd, SatIr(unsigned, ins & 0x1F, Reg(rn), Bit(ins, 21), (imm3 << 2) | imm2));
+        }
+
         return false;
     }
 }

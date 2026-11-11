@@ -42,7 +42,13 @@ public sealed class HleBinderGenerator : IIncrementalGenerator
     static bool DerivesFrom(INamedTypeSymbol t, INamedTypeSymbol baseType)
     {
         for (var b = t.BaseType; b != null; b = b.BaseType)
-            if (SymbolEqualityComparer.Default.Equals(b, baseType)) return true;
+        {
+            if (SymbolEqualityComparer.Default.Equals(b, baseType))
+            {
+                return true;
+            }
+        }
+
         return false;
     }
 
@@ -50,7 +56,11 @@ public sealed class HleBinderGenerator : IIncrementalGenerator
     {
         var moduleBase = compilation.GetTypeByMetadataName(HleModuleName);
         var hleAttr = compilation.GetTypeByMetadataName(HleAttributeName);
-        if (moduleBase == null || hleAttr == null) return; // not the core assembly
+        if (moduleBase == null || hleAttr == null)
+        {
+            return; // not the core assembly
+        }
+
         var types = candidates.Where(t => t != null).Select(t => t!).Where(t => !t.IsAbstract && t.TypeKind == TypeKind.Class && DerivesFrom(t, moduleBase))
             .Distinct<INamedTypeSymbol>(SymbolEqualityComparer.Default)
             .OrderBy(t => t!.ToDisplayString(), System.StringComparer.Ordinal) // stable output; registration order is decided at run time
@@ -99,22 +109,37 @@ public sealed class HleBinderGenerator : IIncrementalGenerator
             // GetMembers keeps declaration order (partial parts in syntax tree order), like reflection's metadata order
             foreach (var m in t.GetMembers().OfType<IMethodSymbol>())
             {
-                if (m.IsStatic || m.MethodKind != MethodKind.Ordinary) continue;
+                if (m.IsStatic || m.MethodKind != MethodKind.Ordinary)
+                {
+                    continue;
+                }
+
                 var attrs = m.GetAttributes().Where(a => SymbolEqualityComparer.Default.Equals(a.AttributeClass, hleAttr)).ToList();
-                if (attrs.Count == 0) continue;
+                if (attrs.Count == 0)
+                {
+                    continue;
+                }
+
                 if (!TryBuild(m, compilation, out var layout, out var call, out string? error))
                 {
                     spc.ReportDiagnostic(Diagnostic.Create(Unsupported, m.Locations.FirstOrDefault(), $"{t.Name}.{m.Name}", error));
                     continue;
                 }
                 string target;
-                if (IsAccessible(m)) target = $"self.{m.Name}";
+                if (IsAccessible(m))
+                {
+                    target = $"self.{m.Name}";
+                }
                 else
                 {
                     target = $"A{accessorId}";
                     accessors.AppendLine($"    [global::System.Runtime.CompilerServices.UnsafeAccessor(global::System.Runtime.CompilerServices.UnsafeAccessorKind.Method, Name = \"{m.Name}\")]");
                     accessors.Append($"    static extern {(m.ReturnsVoid ? "void" : Fq(m.ReturnType))} A{accessorId}({Fq(t)} self");
-                    foreach (var p in m.Parameters) accessors.Append($", {Fq(p.Type)} {Escape(p.Name)}");
+                    foreach (var p in m.Parameters)
+                    {
+                        accessors.Append($", {Fq(p.Type)} {Escape(p.Name)}");
+                    }
+
                     accessors.AppendLine(");");
                     accessorId++;
                 }
@@ -127,10 +152,22 @@ public sealed class HleBinderGenerator : IIncrementalGenerator
                     bool returnsValue = false;
                     foreach (var na in a.NamedArguments)
                     {
-                        if (na.Key == "Nid" && na.Value.Value is uint n) nid = n;
-                        else if (na.Key == "Library") library = na.Value.Value as string;
-                        else if (na.Key == "Default" && na.Value.Value is bool dv) isDefault = dv;
-                        else if (na.Key == "ReturnsValue" && na.Value.Value is bool rv) returnsValue = rv;
+                        if (na.Key == "Nid" && na.Value.Value is uint n)
+                        {
+                            nid = n;
+                        }
+                        else if (na.Key == "Library")
+                        {
+                            library = na.Value.Value as string;
+                        }
+                        else if (na.Key == "Default" && na.Value.Value is bool dv)
+                        {
+                            isDefault = dv;
+                        }
+                        else if (na.Key == "ReturnsValue" && na.Value.Value is bool rv)
+                        {
+                            returnsValue = rv;
+                        }
                     }
                     string invocation = target.StartsWith("self.") ? $"{target}({call.Args})" : $"{target}(self{(call.Args.Length > 0 ? ", " + call.Args : "")})";
                     sb.AppendLine($"        new(\"{m.Name}\", {Str(name)}, 0x{nid:X8}u, {Str(library)}, {Str(layout)},");
@@ -172,46 +209,131 @@ public sealed class HleBinderGenerator : IIncrementalGenerator
         const string Ctx = "global::VitaSharp.Core.Hle.HleContext";
         foreach (var p in m.Parameters)
         {
-            if (p.RefKind != RefKind.None) { layout = ""; error = $"parameter {p.Name} is passed by reference"; return false; }
+            if (p.RefKind != RefKind.None)
+            {
+                layout = "";
+                error = $"parameter {p.Name} is passed by reference";
+                return false;
+            }
             var t = p.Type;
             string token, raw, rawType;
-            if (sbLayout.Length > 0) sbLayout.Append(',');
-            if (t.ToDisplayString() == HleContextName) { args.Add("ctx"); sbLayout.Append("ctx"); continue; }
-            if (t.ToDisplayString() == VarArgsName) { args.Add($"new global::VitaSharp.Core.Hle.VarArgs(ctx, {gpr})"); sbLayout.Append($"va@{gpr}"); continue; }
-            if (t.SpecialType == SpecialType.System_Single) { args.Add($"{Ctx}.ArgF32(ctx, {fpr})"); sbLayout.Append($"s{fpr}=float"); fpr++; continue; }
+            if (sbLayout.Length > 0)
+            {
+                sbLayout.Append(',');
+            }
+
+            if (t.ToDisplayString() == HleContextName)
+            {
+                args.Add("ctx");
+                sbLayout.Append("ctx");
+                continue;
+            }
+            if (t.ToDisplayString() == VarArgsName)
+            {
+                args.Add($"new global::VitaSharp.Core.Hle.VarArgs(ctx, {gpr})");
+                sbLayout.Append($"va@{gpr}");
+                continue;
+            }
+            if (t.SpecialType == SpecialType.System_Single)
+            {
+                args.Add($"{Ctx}.ArgF32(ctx, {fpr})");
+                sbLayout.Append($"s{fpr}=float");
+                fpr++;
+                continue;
+            }
             bool wide = t.SpecialType is SpecialType.System_Int64 or SpecialType.System_UInt64 or SpecialType.System_Double;
             if (wide)
             {
-                if ((gpr & 1) != 0) gpr++;
-                if (gpr + 2 <= 4) { raw = $"{Ctx}.ArgU64(ctx, {gpr})"; token = $"r{gpr}r{gpr + 1}"; gpr += 2; }
-                else { gpr = 4; stack = (stack + 7) & ~7; raw = $"{Ctx}.ArgU64Stack(ctx, {stack})"; token = $"sp{stack}+8"; stack += 8; }
+                if ((gpr & 1) != 0)
+                {
+                    gpr++;
+                }
+
+                if (gpr + 2 <= 4)
+                {
+                    raw = $"{Ctx}.ArgU64(ctx, {gpr})";
+                    token = $"r{gpr}r{gpr + 1}";
+                    gpr += 2;
+                }
+                else
+                {
+                    gpr = 4;
+                    stack = (stack + 7) & ~7;
+                    raw = $"{Ctx}.ArgU64Stack(ctx, {stack})";
+                    token = $"sp{stack}+8";
+                    stack += 8;
+                }
                 rawType = "ulong";
             }
             else
             {
-                if (gpr < 4) { raw = $"{Ctx}.ArgU32(ctx, {gpr})"; token = $"r{gpr}"; gpr++; }
-                else { raw = $"{Ctx}.ArgStack(ctx, {stack})"; token = $"sp{stack}"; stack += 4; }
+                if (gpr < 4)
+                {
+                    raw = $"{Ctx}.ArgU32(ctx, {gpr})";
+                    token = $"r{gpr}";
+                    gpr++;
+                }
+                else
+                {
+                    raw = $"{Ctx}.ArgStack(ctx, {stack})";
+                    token = $"sp{stack}";
+                    stack += 4;
+                }
                 rawType = "uint";
             }
-            if (!TryConvert(raw, rawType, t, out string expr, out string conv)) { layout = ""; error = $"parameter type {t.ToDisplayString()} is not supported"; return false; }
-            if (!IsAccessible(t)) { layout = ""; error = $"parameter type {t.ToDisplayString()} is not accessible from generated code: make it internal"; return false; }
+            if (!TryConvert(raw, rawType, t, out string expr, out string conv))
+            {
+                layout = "";
+                error = $"parameter type {t.ToDisplayString()} is not supported";
+                return false;
+            }
+            if (!IsAccessible(t))
+            {
+                layout = "";
+                error = $"parameter type {t.ToDisplayString()} is not accessible from generated code: make it internal";
+                return false;
+            }
             args.Add(expr);
             sbLayout.Append(token).Append('=').Append(conv);
         }
         call.Args = string.Join(", ", args);
         sbLayout.Append("->");
-        if (m.ReturnsVoid) sbLayout.Append("void");
+        if (m.ReturnsVoid)
+        {
+            sbLayout.Append("void");
+        }
         else
         {
             var rt = m.ReturnType;
-            if (!IsAccessible(rt)) { layout = ""; error = $"return type {rt.ToDisplayString()} is not accessible from generated code"; return false; }
+            if (!IsAccessible(rt))
+            {
+                layout = "";
+                error = $"return type {rt.ToDisplayString()} is not accessible from generated code";
+                return false;
+            }
             string norm = NormalizeReturn(rt);
             call.Return = norm;
-            if (Name(rt) == norm) { call.ReturnConv = "{0}"; sbLayout.Append(norm); }
-            else if (IsPtr(rt)) { call.ReturnConv = "{0}.Address"; sbLayout.Append($"{norm}<-ptr"); }
+            if (Name(rt) == norm)
+            {
+                call.ReturnConv = "{0}";
+                sbLayout.Append(norm);
+            }
+            else if (IsPtr(rt))
+            {
+                call.ReturnConv = "{0}.Address";
+                sbLayout.Append($"{norm}<-ptr");
+            }
             else if (rt.SpecialType is SpecialType.System_String || rt.IsReferenceType || (rt.TypeKind == TypeKind.Struct && rt.SpecialType == SpecialType.None && rt.TypeKind != TypeKind.Enum))
-            { layout = ""; error = $"return type {rt.ToDisplayString()} is not supported"; return false; }
-            else { call.ReturnConv = $"({norm})({{0}})"; sbLayout.Append($"{norm}<-{Name(rt)}"); }
+            {
+                layout = "";
+                error = $"return type {rt.ToDisplayString()} is not supported";
+                return false;
+            }
+            else
+            {
+                call.ReturnConv = $"({norm})({{0}})";
+                sbLayout.Append($"{norm}<-{Name(rt)}");
+            }
         }
         layout = sbLayout.ToString();
         return true;
@@ -223,11 +345,31 @@ public sealed class HleBinderGenerator : IIncrementalGenerator
     {
         string name = Name(t);
         conv = name;
-        if (name == rawType) { expr = raw; return true; }
-        if (t.SpecialType == SpecialType.System_String) { expr = $"global::VitaSharp.Core.Hle.HleContext.ArgString({raw})"; return true; }
-        if (t.SpecialType == SpecialType.System_Boolean) { expr = $"({raw} != 0u)"; return true; }
-        if (IsPtr(t)) { expr = $"new {Fq(t)}({raw})"; return true; }
-        if (t.SpecialType == SpecialType.System_Double) { expr = $"global::System.BitConverter.UInt64BitsToDouble({raw})"; return true; }
+        if (name == rawType)
+        {
+            expr = raw;
+            return true;
+        }
+        if (t.SpecialType == SpecialType.System_String)
+        {
+            expr = $"global::VitaSharp.Core.Hle.HleContext.ArgString({raw})";
+            return true;
+        }
+        if (t.SpecialType == SpecialType.System_Boolean)
+        {
+            expr = $"({raw} != 0u)";
+            return true;
+        }
+        if (IsPtr(t))
+        {
+            expr = $"new {Fq(t)}({raw})";
+            return true;
+        }
+        if (t.SpecialType == SpecialType.System_Double)
+        {
+            expr = $"global::System.BitConverter.UInt64BitsToDouble({raw})";
+            return true;
+        }
         if (t.TypeKind == TypeKind.Enum && t is INamedTypeSymbol { EnumUnderlyingType: { } u })
         {
             expr = $"({Fq(t)})({Fq(u)})({raw})";
@@ -248,16 +390,29 @@ public sealed class HleBinderGenerator : IIncrementalGenerator
     {
         switch (t.SpecialType)
         {
-            case SpecialType.System_Int32: return "int";
-            case SpecialType.System_UInt32: return "uint";
-            case SpecialType.System_UInt64: return "ulong";
-            case SpecialType.System_Int64: return "long";
-            case SpecialType.System_Single: return "float";
-            case SpecialType.System_Boolean: return "bool";
-            case SpecialType.System_Double: return "double";
-            case SpecialType.System_Int16: case SpecialType.System_SByte: return "int";
+            case SpecialType.System_Int32:
+                return "int";
+            case SpecialType.System_UInt32:
+                return "uint";
+            case SpecialType.System_UInt64:
+                return "ulong";
+            case SpecialType.System_Int64:
+                return "long";
+            case SpecialType.System_Single:
+                return "float";
+            case SpecialType.System_Boolean:
+                return "bool";
+            case SpecialType.System_Double:
+                return "double";
+            case SpecialType.System_Int16:
+            case SpecialType.System_SByte:
+                return "int";
         }
-        if (t.TypeKind == TypeKind.Enum && t is INamedTypeSymbol { EnumUnderlyingType: { } u }) return NormalizeReturn(u);
+        if (t.TypeKind == TypeKind.Enum && t is INamedTypeSymbol { EnumUnderlyingType: { } u })
+        {
+            return NormalizeReturn(u);
+        }
+
         return "uint"; // ushort, byte, Ptr<T>
     }
 
@@ -266,29 +421,49 @@ public sealed class HleBinderGenerator : IIncrementalGenerator
     {
         switch (t.SpecialType)
         {
-            case SpecialType.System_Int32: return "int";
-            case SpecialType.System_UInt32: return "uint";
-            case SpecialType.System_Int64: return "long";
-            case SpecialType.System_UInt64: return "ulong";
-            case SpecialType.System_Int16: return "short";
-            case SpecialType.System_UInt16: return "ushort";
-            case SpecialType.System_Byte: return "byte";
-            case SpecialType.System_SByte: return "sbyte";
-            case SpecialType.System_Single: return "float";
-            case SpecialType.System_Double: return "double";
-            case SpecialType.System_Boolean: return "bool";
-            case SpecialType.System_String: return "string";
-            case SpecialType.System_Char: return "char";
+            case SpecialType.System_Int32:
+                return "int";
+            case SpecialType.System_UInt32:
+                return "uint";
+            case SpecialType.System_Int64:
+                return "long";
+            case SpecialType.System_UInt64:
+                return "ulong";
+            case SpecialType.System_Int16:
+                return "short";
+            case SpecialType.System_UInt16:
+                return "ushort";
+            case SpecialType.System_Byte:
+                return "byte";
+            case SpecialType.System_SByte:
+                return "sbyte";
+            case SpecialType.System_Single:
+                return "float";
+            case SpecialType.System_Double:
+                return "double";
+            case SpecialType.System_Boolean:
+                return "bool";
+            case SpecialType.System_String:
+                return "string";
+            case SpecialType.System_Char:
+                return "char";
         }
         if (t is INamedTypeSymbol { IsGenericType: true } g)
+        {
             return $"{QualifiedName(g.ConstructedFrom)}<{string.Join(",", g.TypeArguments.Select(Name))}>";
+        }
+
         return QualifiedName(t);
     }
 
     static string QualifiedName(ITypeSymbol t)
     {
         string n = t.Name;
-        for (var c = t.ContainingType; c != null; c = c.ContainingType) n = c.Name + "." + n;
+        for (var c = t.ContainingType; c != null; c = c.ContainingType)
+        {
+            n = c.Name + "." + n;
+        }
+
         var ns = t.ContainingNamespace;
         return ns == null || ns.IsGlobalNamespace ? n : ns.ToDisplayString() + "." + n;
     }
@@ -304,14 +479,24 @@ public sealed class HleBinderGenerator : IIncrementalGenerator
     {
         switch (s)
         {
-            case IArrayTypeSymbol a: return IsAccessible(a.ElementType);
-            case IPointerTypeSymbol p: return IsAccessible(p.PointedAtType);
-            case ITypeParameterSymbol: return false;
+            case IArrayTypeSymbol a:
+                return IsAccessible(a.ElementType);
+            case IPointerTypeSymbol p:
+                return IsAccessible(p.PointedAtType);
+            case ITypeParameterSymbol:
+                return false;
         }
         for (var x = s; x != null && x is not INamespaceSymbol; x = x.ContainingSymbol)
         {
-            if (x.DeclaredAccessibility is Accessibility.Private or Accessibility.Protected or Accessibility.ProtectedAndInternal) return false;
-            if (x is INamedTypeSymbol { IsGenericType: true } g && g.TypeArguments.Any(a => !IsAccessible(a))) return false;
+            if (x.DeclaredAccessibility is Accessibility.Private or Accessibility.Protected or Accessibility.ProtectedAndInternal)
+            {
+                return false;
+            }
+
+            if (x is INamedTypeSymbol { IsGenericType: true } g && g.TypeArguments.Any(a => !IsAccessible(a)))
+            {
+                return false;
+            }
         }
         return true;
     }

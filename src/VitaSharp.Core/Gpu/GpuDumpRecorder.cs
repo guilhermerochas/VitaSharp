@@ -132,13 +132,28 @@ public sealed unsafe class GpuDumpRecorder
 
     internal void BeforeExecute(GpuCommand cmd)
     {
-        if (_state != 1) return;
+        if (_state != 1)
+        {
+            return;
+        }
+
         long t0 = Stopwatch.GetTimestamp();
         _cmd.Clear();
         _defs.Clear();
-        try { _cmdPending = _codec.Write(cmd, _defs, _cmd); }
-        catch (Exception e) { Fail(e); return; }
-        if (_defs.Length > 0) _main.Append(_defs);
+        try
+        {
+            _cmdPending = _codec.Write(cmd, _defs, _cmd);
+        }
+        catch (Exception e)
+        {
+            Fail(e);
+            return;
+        }
+        if (_defs.Length > 0)
+        {
+            _main.Append(_defs);
+        }
+
         _workerTicks += Stopwatch.GetTimestamp() - t0;
     }
 
@@ -146,11 +161,23 @@ public sealed unsafe class GpuDumpRecorder
     {
         if (_state == 0)
         {
-            if (_stopNow) return;
-            if (cmd is PresentCommand && (_opt.StartAfterPresent < 0 || PresentCount(backend) >= _opt.StartAfterPresent)) Activate(backend);
+            if (_stopNow)
+            {
+                return;
+            }
+
+            if (cmd is PresentCommand && (_opt.StartAfterPresent < 0 || PresentCount(backend) >= _opt.StartAfterPresent))
+            {
+                Activate(backend);
+            }
+
             return;
         }
-        if (_state != 1) return;
+        if (_state != 1)
+        {
+            return;
+        }
+
         long t0 = Stopwatch.GetTimestamp();
         _ranSinceIdle = true;
         if (_cmdPending)
@@ -166,26 +193,55 @@ public sealed unsafe class GpuDumpRecorder
             }
             _main.Append(_cmd);
             _result.Commands++;
-            if (cmd is DrawCommand) _result.Draws++;
+            if (cmd is DrawCommand)
+            {
+                _result.Draws++;
+            }
         }
         if (cmd is PresentCommand)
         {
             Interlocked.Increment(ref _result.Frames);
             bool limit = (_opt.MaxFrames > 0 && _result.Frames >= _opt.MaxFrames) || _result.RawBytes + _main.Length > _opt.MaxRawBytes;
             Flush();
-            if (_stopRequested || _stopNow || limit) { _workerTicks += Stopwatch.GetTimestamp() - t0; Finish(); return; }
+            if (_stopRequested || _stopNow || limit)
+            {
+                _workerTicks += Stopwatch.GetTimestamp() - t0;
+                Finish();
+                return;
+            }
         }
-        else if (_main.Length > ChunkFlushBytes) Flush();
-        if (_stopNow) { _workerTicks += Stopwatch.GetTimestamp() - t0; Finish(); return; }
+        else if (_main.Length > ChunkFlushBytes)
+        {
+            Flush();
+        }
+
+        if (_stopNow)
+        {
+            _workerTicks += Stopwatch.GetTimestamp() - t0;
+            Finish();
+            return;
+        }
         _workerTicks += Stopwatch.GetTimestamp() - t0;
     }
 
     /// <summary>The worker ran the backend's Idle (the queue was empty).</summary>
     internal void AfterIdle()
     {
-        if (_state != 1) return;
-        if (_stopNow) { Finish(); return; }
-        if (!_ranSinceIdle) return;
+        if (_state != 1)
+        {
+            return;
+        }
+
+        if (_stopNow)
+        {
+            Finish();
+            return;
+        }
+        if (!_ranSinceIdle)
+        {
+            return;
+        }
+
         _ranSinceIdle = false;
         _main.U8((byte)GpuDumpRecord.Idle);
     }
@@ -197,7 +253,11 @@ public sealed unsafe class GpuDumpRecorder
         try
         {
             var dir = System.IO.Path.GetDirectoryName(System.IO.Path.GetFullPath(_opt.Path));
-            if (!string.IsNullOrEmpty(dir)) Directory.CreateDirectory(dir);
+            if (!string.IsNullOrEmpty(dir))
+            {
+                Directory.CreateDirectory(dir);
+            }
+
             _file = new FileStream(_opt.Path, FileMode.Create, FileAccess.Write, FileShare.Read, 1 << 20);
             long first = PresentCount(backend);
             _result.Path = _opt.Path;
@@ -226,11 +286,18 @@ public sealed unsafe class GpuDumpRecorder
                 _main.Bytes(state);
             }
         }
-        catch (Exception e) { Log.Warn($"[gpudump] backend state export failed: {e.Message}"); }
+        catch (Exception e)
+        {
+            Log.Warn($"[gpudump] backend state export failed: {e.Message}");
+        }
         _shadow = new byte[]?[1 << (32 - PageShift)];
         _verified = new uint[1 << (32 - PageShift)];
         // every page counts as written once: the renderer re-validates (re-reads) its cached textures next frame
-        if (DirtyPages.Enabled && GuestMemory.Base != null) new Span<byte>(DirtyPages.Table, (int)DirtyPages.TableBytes).Fill(1);
+        if (DirtyPages.Enabled && GuestMemory.Base != null)
+        {
+            new Span<byte>(DirtyPages.Table, (int)DirtyPages.TableBytes).Fill(1);
+        }
+
         _writer = new Thread(WriterLoop) { Name = "GPU dump writer", IsBackground = true };
         _writer.Start();
         _startTicks = Stopwatch.GetTimestamp();
@@ -238,7 +305,14 @@ public sealed unsafe class GpuDumpRecorder
         Volatile.Write(ref _state, 1);
         TapEnabled = true;
         Log.Info($"[gpudump] recording to {_opt.Path} from present #{_result.FirstPresent + 1}" + (_opt.MaxFrames > 0 ? $" for {_opt.MaxFrames} frames" : ""));
-        try { _opt.Started?.Invoke(this); } catch (Exception e) { Log.Warn($"[gpudump] start callback failed: {e.Message}"); }
+        try
+        {
+            _opt.Started?.Invoke(this);
+        }
+        catch (Exception e)
+        {
+            Log.Warn($"[gpudump] start callback failed: {e.Message}");
+        }
     }
 
     // =========================================================== memory tap
@@ -247,8 +321,15 @@ public sealed unsafe class GpuDumpRecorder
     /// the GPU worker's reads are recorded).</summary>
     public static void Tap(uint addr, long length)
     {
-        if (Environment.CurrentManagedThreadId != _tapThread || length <= 0) return;
-        if (_current is { _state: 1 } r) r.OnRead(addr, length);
+        if (Environment.CurrentManagedThreadId != _tapThread || length <= 0)
+        {
+            return;
+        }
+
+        if (_current is { _state: 1 } r)
+        {
+            r.OnRead(addr, length);
+        }
     }
 
     void OnRead(uint addr, long length)
@@ -264,7 +345,11 @@ public sealed unsafe class GpuDumpRecorder
         _result.TapBytes += (long)(end - addr);
         for (ulong p = addr >> PageShift; p <= (end - 1) >> PageShift; p++)
         {
-            if (dirty != null && verified[p] == stamp && dirty[p] == 0) continue;
+            if (dirty != null && verified[p] == stamp && dirty[p] == 0)
+            {
+                continue;
+            }
+
             byte before = dirty != null ? dirty[p] : (byte)1;
             uint pa = (uint)(p << PageShift);
             int a = (int)(Math.Max(addr, pa) - pa), b = (int)(Math.Min(end, (ulong)pa + PageSize) - pa);
@@ -281,15 +366,24 @@ public sealed unsafe class GpuDumpRecorder
                 continue;
             }
             // the whole page is compared (and so verified), not only the range read
-            a = 0; b = PageSize;
+            a = 0;
+            b = PageSize;
             var g = guest[a..b];
             var sh = s.AsSpan(a, b - a);
             _result.ComparedBytes += b - a;
             verified[p] = before == 0 ? stamp : 0;
-            if (g.SequenceEqual(sh)) continue;
+            if (g.SequenceEqual(sh))
+            {
+                continue;
+            }
+
             int first = g.CommonPrefixLength(sh);
             int last = LastMismatchEnd(g, sh);
-            if (last <= first) continue; // changed back while comparing
+            if (last <= first)
+            {
+                continue; // changed back while comparing
+            }
+
             g[first..last].CopyTo(sh[first..]);
             EmitMemory(pa + (uint)(a + first), sh[first..last]);
         }
@@ -301,8 +395,16 @@ public sealed unsafe class GpuDumpRecorder
     static int LastMismatchEnd(ReadOnlySpan<byte> x, ReadOnlySpan<byte> y)
     {
         int n = x.Length;
-        while (n >= 64 && x.Slice(n - 64, 64).SequenceEqual(y.Slice(n - 64, 64))) n -= 64;
-        while (n > 0 && x[n - 1] == y[n - 1]) n--;
+        while (n >= 64 && x.Slice(n - 64, 64).SequenceEqual(y.Slice(n - 64, 64)))
+        {
+            n -= 64;
+        }
+
+        while (n > 0 && x[n - 1] == y[n - 1])
+        {
+            n--;
+        }
+
         return n;
     }
 
@@ -320,7 +422,11 @@ public sealed unsafe class GpuDumpRecorder
 
     void Flush()
     {
-        if (_main.Length == 0) return;
+        if (_main.Length == 0)
+        {
+            return;
+        }
+
         _result.RawBytes += _main.Length;
         var data = _main.Buffer;
         int len = _main.Length;
@@ -335,10 +441,18 @@ public sealed unsafe class GpuDumpRecorder
 
     void Finish()
     {
-        if (_state != 1) return;
+        if (_state != 1)
+        {
+            return;
+        }
+
         TapEnabled = false;
         Volatile.Write(ref _state, 2);
-        if (_cmdPending) { _main.Append(_cmd); _cmdPending = false; }
+        if (_cmdPending)
+        {
+            _main.Append(_cmd);
+            _cmdPending = false;
+        }
         Flush();
         _result.Seconds = (Stopwatch.GetTimestamp() - _startTicks) / (double)Stopwatch.Frequency;
         _result.WorkerMs = _workerTicks * 1000.0 / Stopwatch.Frequency;
@@ -379,17 +493,28 @@ public sealed unsafe class GpuDumpRecorder
             long t0 = Stopwatch.GetTimestamp();
             var chunk = GpuDumpCodec.EncodeChunk(type, data.AsSpan(0, len), _opt.Quality);
             Interlocked.Add(ref _compressTicks, Stopwatch.GetTimestamp() - t0);
-            if (recycle && data.Length <= 64 << 20 && _spare.Count < 4) _spare.Add(data);
+            if (recycle && data.Length <= 64 << 20 && _spare.Count < 4)
+            {
+                _spare.Add(data);
+            }
+
             return chunk;
         }
-        finally { _compressSlots.Release(); }
+        finally
+        {
+            _compressSlots.Release();
+        }
     });
 
     void WriterLoop()
     {
         try
         {
-            foreach (var chunk in _out.GetConsumingEnumerable()) _file!.Write(chunk.GetAwaiter().GetResult());
+            foreach (var chunk in _out.GetConsumingEnumerable())
+            {
+                _file!.Write(chunk.GetAwaiter().GetResult());
+            }
+
             _file!.Flush();
         }
         catch (Exception e)
@@ -397,7 +522,9 @@ public sealed unsafe class GpuDumpRecorder
             Log.Warn($"[gpudump] writing {_opt.Path} failed: {e.Message}");
             _result.Error ??= e.Message;
             _stopNow = true;
-            foreach (var _ in _out.GetConsumingEnumerable()) { } // unblock the worker
+            foreach (var _ in _out.GetConsumingEnumerable())
+            {
+            } // unblock the worker
         }
         finally
         {
@@ -407,6 +534,13 @@ public sealed unsafe class GpuDumpRecorder
         _result.WriterMs = Interlocked.Read(ref _compressTicks) * 1000.0 / Stopwatch.Frequency;
         Log.Info($"[gpudump] {(_result.Error != null ? "FAILED (" + _result.Error + "): " : "saved")} {_opt.Path}: {_result}");
         _done.TrySetResult(_result);
-        try { _opt.Finished?.Invoke(_result); } catch (Exception e) { Log.Warn($"[gpudump] finished callback failed: {e.Message}"); }
+        try
+        {
+            _opt.Finished?.Invoke(_result);
+        }
+        catch (Exception e)
+        {
+            Log.Warn($"[gpudump] finished callback failed: {e.Message}");
+        }
     }
 }

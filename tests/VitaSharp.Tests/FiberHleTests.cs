@@ -22,7 +22,12 @@ public sealed unsafe class FiberHleTests(GuestMemoryFixture fx)
     static int Call(Fiber f, string name, params object[] args) =>
         Convert.ToInt32(typeof(Fiber).GetMethod(name, BindingFlags.Instance | BindingFlags.NonPublic | BindingFlags.Public)!.Invoke(f, args));
 
-    uint Alloc(uint size) { uint p = fx.Memory.Alloc(size, "fiber"); GuestMemory.Fill(p, 0, size); return p; }
+    uint Alloc(uint size)
+    {
+        uint p = fx.Memory.Alloc(size, "fiber");
+        GuestMemory.Fill(p, 0, size);
+        return p;
+    }
 
     static void SetBacking(object o, string prop, object? value) =>
         o.GetType().GetField($"<{prop}>k__BackingField", BindingFlags.Instance | BindingFlags.NonPublic)!.SetValue(o, value);
@@ -54,7 +59,11 @@ public sealed unsafe class FiberHleTests(GuestMemoryFixture fx)
     static void LeaveFakeThread() => typeof(GuestThread).GetField("_current", BindingFlags.Static | BindingFlags.NonPublic)!.SetValue(null, null);
 
     /// <summary>Simulates the guest calling an HLE function from <paramref name="pc"/> (returning to pc+4 in Thumb).</summary>
-    static void CallFrom(CpuState* s, uint pc, uint sp) { s->R[14] = (pc + 4) | 1; s->R[13] = sp; }
+    static void CallFrom(CpuState* s, uint pc, uint sp)
+    {
+        s->R[14] = (pc + 4) | 1;
+        s->R[13] = sp;
+    }
 
     [Fact]
     public void ContextlessFiberRestartsAtEntryOnEverySwitch()
@@ -70,7 +79,8 @@ public sealed unsafe class FiberHleTests(GuestMemoryFixture fx)
         try
         {
             // the thread runs the scheduler fiber B: it starts on the thread's stack
-            s->R[14] = ThreadLr; s->R[13] = ThreadSp;
+            s->R[14] = ThreadLr;
+            s->R[13] = ThreadSp;
             Call(f, "sceFiberRun", b, 5u, 0u);
             Assert.Equal(EntryB & ~1u, s->R[15]);
             Assert.Equal(0x22u, s->R[0]);
@@ -127,7 +137,8 @@ public sealed unsafe class FiberHleTests(GuestMemoryFixture fx)
         var s = EnterFakeThread(emu);
         try
         {
-            s->R[14] = ThreadLr; s->R[13] = ThreadSp;
+            s->R[14] = ThreadLr;
+            s->R[13] = ThreadSp;
             Assert.Equal(ERR_PERMISSION, Call(f, "_sceFiberAttachContextAndSwitch", b, ctxB, 0x800u, 0u, 0u)); // not in a fiber
             // B runs on the thread stack (no context), then switches to A: B is now idle (suspended) without a context area
             Call(f, "sceFiberRun", b, 0u, 0u);
@@ -175,7 +186,8 @@ public sealed unsafe class FiberHleTests(GuestMemoryFixture fx)
         var s = EnterFakeThread(emu);
         try
         {
-            s->R[14] = ThreadLr; s->R[13] = ThreadSp;
+            s->R[14] = ThreadLr;
+            s->R[13] = ThreadSp;
             Call(f, "sceFiberRun", a, 0u, argOnReturn);
             uint lr = s->R[14];
             Assert.NotEqual(emu.Kernel.ThreadExitTrap, lr);

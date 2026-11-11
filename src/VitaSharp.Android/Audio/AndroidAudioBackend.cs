@@ -61,25 +61,29 @@ public sealed class AndroidAudioBackend : IAudioBackend
     IPcmSink? OpenSink(int channels)
     {
         int rate = DeviceRate;
-        if (_useAAudio && AAudioSink.Open(channels, rate) is { } a) return a;
+        if (_useAAudio && AAudioSink.Open(channels, rate) is { } a)
+            return a;
         return AudioTrackSink.Open(channels, rate, DeviceBurst);
     }
 
     public IAudioStream OpenStream(int sampleRate, int channels, int grainSamples)
     {
         var s = new BufferedPcmStream(OpenSink, sampleRate, channels, grainSamples, Closed);
-        lock (_streams) _streams.Add(s);
+        lock (_streams)
+            _streams.Add(s);
         return s;
     }
 
     void Closed(BufferedPcmStream s)
     {
-        lock (_streams) _streams.Remove(s);
+        lock (_streams)
+            _streams.Remove(s);
     }
 
     BufferedPcmStream[] Streams()
     {
-        lock (_streams) return [.. _streams];
+        lock (_streams)
+            return [.. _streams];
     }
 
     /// <summary>Device and per-stream buffering (AUDIO summary, F10-style audio.txt, debug lines).</summary>
@@ -99,49 +103,69 @@ public sealed class AndroidAudioBackend : IAudioBackend
     /// </summary>
     public void PlayEffect(VitaSharp.Core.Shell.PcmSound pcm, float gain = 1f)
     {
-        if (Interlocked.Exchange(ref _effectBusy, 1) == 1) return;
+        if (Interlocked.Exchange(ref _effectBusy, 1) == 1)
+            return;
         new Thread(() =>
         {
             try
             {
                 using var sink = OpenSink(Math.Clamp(pcm.Channels, 1, 2));
-                if (sink != null) EffectPlayer.Play(sink, pcm, gain);
+                if (sink != null)
+                    EffectPlayer.Play(sink, pcm, gain);
             }
-            catch (Exception e) { Log.WarnOnce("effect-play", $"Audio: sound effect failed: {e.Message}"); }
-            finally { Volatile.Write(ref _effectBusy, 0); }
+            catch (Exception e)
+            {
+                Log.WarnOnce("effect-play", $"Audio: sound effect failed: {e.Message}");
+            }
+            finally
+            {
+                Volatile.Write(ref _effectBusy, 0);
+            }
         })
-        { IsBackground = true, Name = "Sound effect" }.Start();
+        {
+            IsBackground = true,
+            Name = "Sound effect"
+        }.Start();
     }
 
     /// <summary>Activity lifecycle: pauses every stream (onPause) so the device stops playing the queued grains.</summary>
     public void Pause()
     {
-        foreach (var s in Streams()) s.Pause();
+        foreach (var s in Streams())
+            s.Pause();
     }
 
     /// <summary>Restarts the streams paused by <see cref="Pause"/> (onResume).</summary>
     public void Resume()
     {
-        foreach (var s in Streams()) s.Resume();
+        foreach (var s in Streams())
+            s.Resume();
     }
 
     /// <summary>The emulation was paused or resumed (EmulationPause: the pause menu, the activity's lifecycle).</summary>
     public void SetPaused(bool paused)
     {
-        if (paused) Pause(); else Resume();
+        if (paused)
+            Pause();
+        else
+            Resume();
     }
 
     void DevicesChanged(string what)
     {
         Log.Info($"Audio: {what}: the streams reopen on their next grain");
-        foreach (var s in Streams()) s.RequestReopen();
+        foreach (var s in Streams())
+            s.RequestReopen();
     }
 
     public void Dispose()
     {
-        if (_callback != null) _manager?.UnregisterAudioDeviceCallback(_callback);
-        foreach (var s in Streams()) s.Dispose();
-        if (AudioDiagnostics.DeviceInfo == Describe) AudioDiagnostics.DeviceInfo = null;
+        if (_callback != null)
+            _manager?.UnregisterAudioDeviceCallback(_callback);
+        foreach (var s in Streams())
+            s.Dispose();
+        if (AudioDiagnostics.DeviceInfo == Describe)
+            AudioDiagnostics.DeviceInfo = null;
     }
 
     sealed class DeviceCallback(AndroidAudioBackend owner) : AudioDeviceCallback
@@ -152,14 +176,21 @@ public sealed class AndroidAudioBackend : IAudioBackend
         public override void OnAudioDevicesAdded(AudioDeviceInfo[]? addedDevices)
         {
             var sinks = Sinks(addedDevices);
-            if (_initial) { _initial = false; Log.Info($"Audio: outputs: {sinks}"); return; }
-            if (sinks.Length > 0) owner.DevicesChanged($"output added ({sinks})");
+            if (_initial)
+            {
+                _initial = false;
+                Log.Info($"Audio: outputs: {sinks}");
+                return;
+            }
+            if (sinks.Length > 0)
+                owner.DevicesChanged($"output added ({sinks})");
         }
 
         public override void OnAudioDevicesRemoved(AudioDeviceInfo[]? removedDevices)
         {
             var sinks = Sinks(removedDevices);
-            if (sinks.Length > 0) owner.DevicesChanged($"output removed ({sinks})");
+            if (sinks.Length > 0)
+                owner.DevicesChanged($"output removed ({sinks})");
         }
 
         static string Sinks(AudioDeviceInfo[]? devices) =>
@@ -194,7 +225,8 @@ sealed unsafe class AAudioSink : IPcmSink
     {
         try
         {
-            if (AAudio.AAudio_createStreamBuilder(out nint b) != 0) return false;
+            if (AAudio.AAudio_createStreamBuilder(out nint b) != 0)
+                return false;
             AAudio.AAudioStreamBuilder_delete(b);
             return true;
         }
@@ -207,7 +239,8 @@ sealed unsafe class AAudioSink : IPcmSink
 
     public static AAudioSink? Open(int channels, int deviceRate)
     {
-        if (AAudio.AAudio_createStreamBuilder(out nint b) != 0) return null;
+        if (AAudio.AAudio_createStreamBuilder(out nint b) != 0)
+            return null;
         var holder = new AAudioSink[1];
         var handle = GCHandle.Alloc(holder);
         nint stream = 0;
@@ -225,12 +258,17 @@ sealed unsafe class AAudioSink : IPcmSink
             // Redmi Note 14 a 4096-frame burst and ~181 ms of latency; AAudio's own is 4104 frames, a 2052-frame burst and
             // ~96 ms, with no underrun in Devious Dungeon (86 s) or Knightin'+
             int capacity = int.TryParse(System.Environment.GetEnvironmentVariable(VitaSharp.Core.Util.EnvVars.AAudioCapacity), out int cap) ? cap : 0;
-            if (capacity > 0) AAudio.AAudioStreamBuilder_setBufferCapacityInFrames(b, capacity);
-            if (OperatingSystem.IsAndroidVersionAtLeast(28)) AAudio.AAudioStreamBuilder_setUsage(b, AAudio.UsageGame);
+            if (capacity > 0)
+                AAudio.AAudioStreamBuilder_setBufferCapacityInFrames(b, capacity);
+            if (OperatingSystem.IsAndroidVersionAtLeast(28))
+                AAudio.AAudioStreamBuilder_setUsage(b, AAudio.UsageGame);
             AAudio.AAudioStreamBuilder_setErrorCallback(b, &OnError, GCHandle.ToIntPtr(handle));
             r = AAudio.AAudioStreamBuilder_openStream(b, out stream);
         }
-        finally { AAudio.AAudioStreamBuilder_delete(b); }
+        finally
+        {
+            AAudio.AAudioStreamBuilder_delete(b);
+        }
         if (r != 0 || stream == 0)
         {
             handle.Free();
@@ -267,13 +305,19 @@ sealed unsafe class AAudioSink : IPcmSink
 #if VITASHARP_DEVELOPER
         Core.Util.Developer.DevTrace.Begin("audio grain"); Core.Util.Developer.DevTrace.End();
 #endif
-        if (_stream == 0) return PcmSinkStatus.Error;
+        if (_stream == 0)
+            return PcmSinkStatus.Error;
         int frames = interleaved.Length / Channels;
         fixed (short* p = interleaved)
         {
             int n = AAudio.AAudioStream_write(_stream, p, frames, timeoutNanos);
-            if (n >= 0) return n;
-            if (n == AAudio.ErrorDisconnected) { _disconnected = true; return PcmSinkStatus.Disconnected; }
+            if (n >= 0)
+                return n;
+            if (n == AAudio.ErrorDisconnected)
+            {
+                _disconnected = true;
+                return PcmSinkStatus.Disconnected;
+            }
             Log.WarnOnce($"aaudio-write{n}", $"AAudio: write failed ({AAudio.ResultText(n)})");
             return PcmSinkStatus.Error;
         }
@@ -285,21 +329,25 @@ sealed unsafe class AAudioSink : IPcmSink
 
     public void Start()
     {
-        if (_stream != 0) AAudio.AAudioStream_requestStart(_stream);
+        if (_stream != 0)
+            AAudio.AAudioStream_requestStart(_stream);
     }
 
     public void Pause()
     {
-        if (_stream != 0) AAudio.AAudioStream_requestPause(_stream);
+        if (_stream != 0)
+            AAudio.AAudioStream_requestPause(_stream);
     }
 
     public void Dispose()
     {
-        if (_stream == 0) return;
+        if (_stream == 0)
+            return;
         AAudio.AAudioStream_requestStop(_stream);
         AAudio.AAudioStream_close(_stream);
         _stream = 0;
-        if (_self.IsAllocated) _self.Free();
+        if (_self.IsAllocated)
+            _self.Free();
     }
 }
 
@@ -339,7 +387,8 @@ sealed class AudioTrackSink : IPcmSink
                 .SetAudioFormat(new AudioFormat.Builder().SetEncoding(Encoding.Pcm16bit)!.SetSampleRate(rate)!.SetChannelMask(mask)!.Build()!)!
                 .SetTransferMode(AudioTrackMode.Stream)!
                 .SetBufferSizeInBytes(Math.Max(min, 8192 * channels * 2))!;
-            if (OperatingSystem.IsAndroidVersionAtLeast(26)) builder.SetPerformanceMode(AudioTrackPerformanceMode.LowLatency);
+            if (OperatingSystem.IsAndroidVersionAtLeast(26))
+                builder.SetPerformanceMode(AudioTrackPerformanceMode.LowLatency);
             var track = builder.Build();
             return new AudioTrackSink(track, channels, track.SampleRate, burst);
         }
@@ -359,11 +408,20 @@ sealed class AudioTrackSink : IPcmSink
 #if VITASHARP_DEVELOPER
         Core.Util.Developer.DevTrace.Begin("audio grain"); Core.Util.Developer.DevTrace.End();
 #endif
-        if (_buf.Length < interleaved.Length) _buf = new short[interleaved.Length];
+        if (_buf.Length < interleaved.Length)
+            _buf = new short[interleaved.Length];
         interleaved.CopyTo(_buf);
         int n = _track.Write(_buf, 0, interleaved.Length, timeoutNanos == 0 ? WriteMode.NonBlocking : WriteMode.Blocking);
-        if (n == ErrorDeadObject) { _disconnected = true; return PcmSinkStatus.Disconnected; }
-        if (n < 0) { Log.WarnOnce($"audiotrack-write{n}", $"AudioTrack: write failed ({n})"); return PcmSinkStatus.Error; }
+        if (n == ErrorDeadObject)
+        {
+            _disconnected = true;
+            return PcmSinkStatus.Disconnected;
+        }
+        if (n < 0)
+        {
+            Log.WarnOnce($"audiotrack-write{n}", $"AudioTrack: write failed ({n})");
+            return PcmSinkStatus.Error;
+        }
         int frames = n / Channels;
         _written += frames;
         return frames;
@@ -391,7 +449,11 @@ sealed class AudioTrackSink : IPcmSink
 
     public void Dispose()
     {
-        try { _track.Stop(); } catch (Java.Lang.IllegalStateException) { }
+        try
+        {
+            _track.Stop();
+        }
+        catch (Java.Lang.IllegalStateException) { }
         _track.Release();
         _track.Dispose();
     }
@@ -406,8 +468,14 @@ internal static unsafe partial class AAudio
 
     public static string ResultText(int r)
     {
-        try { return Marshal.PtrToStringUTF8(AAudio_convertResultToText(r)) ?? r.ToString(); }
-        catch (EntryPointNotFoundException) { return r.ToString(); }
+        try
+        {
+            return Marshal.PtrToStringUTF8(AAudio_convertResultToText(r)) ?? r.ToString();
+        }
+        catch (EntryPointNotFoundException)
+        {
+            return r.ToString();
+        }
     }
 
     [LibraryImport(Lib)] public static partial int AAudio_createStreamBuilder(out nint builder);

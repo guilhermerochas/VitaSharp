@@ -21,7 +21,13 @@ public class ExternalDocPairsTests
     static string Root([CallerFilePath] string source = "")
     {
         for (var d = new DirectoryInfo(Path.GetDirectoryName(source)!); d != null; d = d.Parent)
-            if (File.Exists(Path.Combine(d.FullName, "VitaSharp.sln"))) return d.FullName;
+        {
+            if (File.Exists(Path.Combine(d.FullName, "VitaSharp.sln")))
+            {
+                return d.FullName;
+            }
+        }
+
         throw new DirectoryNotFoundException("repository root");
     }
 
@@ -29,7 +35,11 @@ public class ExternalDocPairsTests
     public static string Hash(string path)
     {
         var lines = File.ReadAllText(path).Replace("\r\n", "\n").Split('\n').ToList();
-        if (lines.Count > 0 && lines[0].StartsWith(Marker, StringComparison.Ordinal)) lines.RemoveAt(0);
+        if (lines.Count > 0 && lines[0].StartsWith(Marker, StringComparison.Ordinal))
+        {
+            lines.RemoveAt(0);
+        }
+
         return Convert.ToHexStringLower(SHA256.HashData(Encoding.UTF8.GetBytes(string.Join("\n", lines))));
     }
 
@@ -44,23 +54,36 @@ public class ExternalDocPairsTests
         string root = Root();
         var english = Required.Select(p => Path.Combine(root, p)).ToList();
         foreach (var dir in new[] { root, Path.Combine(root, "docs") })
+        {
             foreach (var pt in Directory.EnumerateFiles(dir, "*.pt-BR.md"))
+            {
                 english.Add(pt[..^".pt-BR.md".Length] + ".md");
+            }
+        }
 
         var bad = new List<string>();
         foreach (var en in english.Distinct())
         {
             string pt = en[..^".md".Length] + ".pt-BR.md";
             string name = Path.GetRelativePath(root, en);
-            if (!File.Exists(en) || !File.Exists(pt)) { bad.Add($"{name}: needs both {Path.GetFileName(en)} and {Path.GetFileName(pt)}"); continue; }
+            if (!File.Exists(en) || !File.Exists(pt))
+            {
+                bad.Add($"{name}: needs both {Path.GetFileName(en)} and {Path.GetFileName(pt)}");
+                continue;
+            }
             foreach (var (file, other) in new[] { (en, pt), (pt, en) })
             {
                 string text = File.ReadAllText(file);
                 if (!text.Contains($"({Path.GetFileName(other)})", StringComparison.Ordinal))
+                {
                     bad.Add($"{Path.GetRelativePath(root, file)}: no \"English | Português\" link to {Path.GetFileName(other)}");
+                }
+
                 if (PairLine(file) != Expected(other))
+                {
                     bad.Add($"{Path.GetRelativePath(root, file)}: {Path.GetFileName(other)} changed without this file (or the reverse). " +
                             $"Bring the two languages in step, then make the first line of each: {Expected(other)}  /  {Expected(file)}");
+                }
             }
         }
         Assert.Empty(bad);

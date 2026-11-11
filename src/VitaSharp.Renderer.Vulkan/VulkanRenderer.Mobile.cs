@@ -27,15 +27,25 @@ public sealed unsafe partial class VulkanRenderer
         _texUnitsV = Math.Clamp(perStage, 1, 16);
         // all sets of the pipeline layout together (maxDescriptorSetSamplers)
         int total = (int)l.MaxDescriptorSetSamplers;
-        if (_texUnitsV + _texUnitsF + 2 > total) _texUnitsV = Math.Max(1, total - _texUnitsF - 2);
+        if (_texUnitsV + _texUnitsF + 2 > total)
+        {
+            _texUnitsV = Math.Max(1, total - _texUnitsF - 2);
+        }
+
         if (_texUnitsV < 16 || _texUnitsF < 16)
+        {
             Log.Warn($"[gpu] {_core.DeviceName}: {l.MaxPerStageDescriptorSamplers} samplers / {l.MaxPerStageDescriptorSampledImages} sampled images per stage: binding {_texUnitsV} vertex and {_texUnitsF} fragment texture units (draws using higher units are skipped)");
+        }
     }
 
     /// <summary>A program samples a texture unit the layout does not have (devices with small descriptor limits).</summary>
     bool UsesMissingTextureUnit(uint used, int units, ulong programHash)
     {
-        if (units >= 16 || (used >> units) == 0) return false;
+        if (units >= 16 || (used >> units) == 0)
+        {
+            return false;
+        }
+
         _statUnitSkips++;
         Log.WarnOnce($"texunit-{programHash:X16}", $"[gpu] program {programHash:X16} samples texture unit {31 - System.Numerics.BitOperations.LeadingZeroCount(used)} but this device binds only {units}: draw skipped");
         return true;
@@ -47,7 +57,11 @@ public sealed unsafe partial class VulkanRenderer
     string MobileReport()
     {
         var c = _core.Caps;
-        if (c.Quirks == GpuQuirk.None && c.Profile == GpuProfile.Native && c.Has(GpuFeature.TextureCompressionBC) && AstcTranscoder.Encoded == 0) return "";
+        if (c.Quirks == GpuQuirk.None && c.Profile == GpuProfile.Native && c.Has(GpuFeature.TextureCompressionBC) && AstcTranscoder.Encoded == 0)
+        {
+            return "";
+        }
+
         return $"\nPERF mobile ({c.Profile.ToString().ToLowerInvariant()} profile): {MobilePathsSummary()}; {_statPipelinesStatic} static-state pipelines";
     }
 
@@ -56,7 +70,15 @@ public sealed unsafe partial class VulkanRenderer
     {
         var c = _core.Caps;
         var sb = new StringBuilder();
-        void Add(string s) { if (sb.Length > 0) sb.Append("; "); sb.Append(s); }
+        void Add(string s)
+        {
+            if (sb.Length > 0)
+            {
+                sb.Append("; ");
+            }
+
+            sb.Append(s);
+        }
         Add(c.Has(GpuFeature.TextureCompressionBC) ? "BC sampled compressed" : AstcUsable ? $"BC transcoded to ASTC (signed BC4/BC5 decoded on the CPU: {BcCacheSummary()})" : $"BC decoded on the CPU ({BcCacheSummary()})");
         Add(AstcUsable ? AstcTranscoder.Summary() : "PVRTC decoded on the CPU");
         Add($"texture units {_texUnitsV} vertex / {_texUnitsF} fragment{(_statUnitSkips > 0 ? $" ({_statUnitSkips} draws skipped)" : "")}");

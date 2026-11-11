@@ -49,7 +49,11 @@ public sealed unsafe partial class VulkanRenderer
     void DrawOverlay(Image dst)
     {
         int margin = (int)Math.Max(8, _swapExtent.Height / 40);
-        if (Volatile.Read(ref _statusOverlay) is { } st) CopyOverlay(dst, st, _statusOverlayBufs, margin, margin);
+        if (Volatile.Read(ref _statusOverlay) is { } st)
+        {
+            CopyOverlay(dst, st, _statusOverlayBufs, margin, margin);
+        }
+
         if (Volatile.Read(ref _centerOverlay) is { } c)
         {
             var (cx, cy) = CenterOverlayOrigin(c.Width, (int)_swapExtent.Width, (int)_swapExtent.Height);
@@ -65,22 +69,38 @@ public sealed unsafe partial class VulkanRenderer
     void CopyOverlay(Image dst, OverlayImage o, (Buffer Buffer, DeviceMemory Memory, nint Mapped, ulong Size)[] bufs, int x, int y)
     {
         int w = Math.Min(o.Width, (int)_swapExtent.Width - x), h = Math.Min(o.Height, (int)_swapExtent.Height - y);
-        if (w <= 0 || h <= 0) return;
+        if (w <= 0 || h <= 0)
+        {
+            return;
+        }
+
         ulong size = (ulong)o.Width * (ulong)o.Height * 4;
         ref var slot = ref bufs[_frameIndex];
         if (slot.Size < size)
         {
-            if (slot.Buffer.Handle != 0) { _vk.DestroyBuffer(_dev, slot.Buffer, null); _vk.FreeMemory(_dev, slot.Memory, null); }
+            if (slot.Buffer.Handle != 0)
+            {
+                _vk.DestroyBuffer(_dev, slot.Buffer, null);
+                _vk.FreeMemory(_dev, slot.Memory, null);
+            }
             var (b, m, p) = _core.CreateHostBuffer(size, BufferUsageFlags.TransferSrcBit, MemCat.Other);
             slot = (b, m, p, size);
         }
         var span = new Span<byte>((void*)slot.Mapped, (int)size);
         o.Bgra.AsSpan(0, (int)size).CopyTo(span);
         if (_swapFormat is Format.R8G8B8A8Unorm or Format.R8G8B8A8Srgb)
-            for (int i = 0; i < span.Length; i += 4) (span[i], span[i + 2]) = (span[i + 2], span[i]);
+        {
+            for (int i = 0; i < span.Length; i += 4)
+            {
+                (span[i], span[i + 2]) = (span[i + 2], span[i]);
+            }
+        }
+
         var region = new BufferImageCopy
         {
-            BufferOffset = 0, BufferRowLength = (uint)o.Width, BufferImageHeight = (uint)o.Height,
+            BufferOffset = 0,
+            BufferRowLength = (uint)o.Width,
+            BufferImageHeight = (uint)o.Height,
             ImageSubresource = new ImageSubresourceLayers(ImageAspectFlags.ColorBit, 0, 0, 1),
             ImageOffset = new Offset3D(x, y, 0),
             ImageExtent = new Extent3D((uint)w, (uint)h, 1),
@@ -93,12 +113,18 @@ public sealed unsafe partial class VulkanRenderer
     void DestroyOverlay()
     {
         foreach (var bufs in new[] { _overlayBufs, _centerOverlayBufs, _statusOverlayBufs })
+        {
             for (int i = 0; i < bufs.Length; i++)
             {
-                if (bufs[i].Buffer.Handle == 0) continue;
+                if (bufs[i].Buffer.Handle == 0)
+                {
+                    continue;
+                }
+
                 _vk.DestroyBuffer(_dev, bufs[i].Buffer, null);
                 _vk.FreeMemory(_dev, bufs[i].Memory, null);
                 bufs[i] = default;
             }
+        }
     }
 }

@@ -1,0 +1,17 @@
+<Project Sdk="Microsoft.NET.Sdk">
+
+  <!--
+    The layout rules dotnet format cannot apply (docs/agents/regras.md, "Código legível"): splits statement blocks
+    written on one line and keeps auto-property accessor lists on one line (SourceLayout.cs, shared with
+    tests/VitaSharp.Tests/OneLineBlockTests). Run by build/format-check.ps1 / build/format-check.sh with the fix option. Not part
+    of VitaSharp.sln: a developer tool.
+  -->
+  <PropertyGroup>
+    <OutputType>Exe</OutputType>
+    <TargetFramework>net10.0</TargetFramework>
+    <ImplicitUsings>enable</ImplicitUsings>
+    <Nullable>enable</Nullable>
+    <InvariantGlobalization>true</InvariantGlobalization>
+  </PropertyGroup>
+
+</Project>

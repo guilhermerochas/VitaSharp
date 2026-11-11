@@ -12,8 +12,16 @@ public sealed class SceneGateTests(GuestMemoryFixture fx)
         public int Draws;
         public long PresentCount => 0;
         public byte[]? ExportDumpState() => null;
-        public void Execute(GpuCommand command) { if (command is DrawCommand) Interlocked.Increment(ref Draws); }
-        public void Dispose() { }
+        public void Execute(GpuCommand command)
+        {
+            if (command is DrawCommand)
+            {
+                Interlocked.Increment(ref Draws);
+            }
+        }
+        public void Dispose()
+        {
+        }
     }
 
     [Fact]

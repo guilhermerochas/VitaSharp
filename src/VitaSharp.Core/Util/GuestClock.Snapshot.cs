@@ -11,7 +11,11 @@ public static partial class GuestClock
     /// it, so guest time continues from where the state was saved (also the observed-time floor).</summary>
     internal static void RestoreMicroseconds(long us)
     {
-        if (!Frozen) throw new InvalidOperationException("the guest clock is restored only while the emulation is paused");
+        if (!Frozen)
+        {
+            throw new InvalidOperationException("the guest clock is restored only while the emulation is paused");
+        }
+
         long ticks = (long)(us * (Stopwatch.Frequency / 1_000_000.0));
         Volatile.Write(ref _frozen, ticks);
         Volatile.Write(ref _lastObserved, ticks);

@@ -38,7 +38,11 @@ public sealed class IostreamHleTests(GuestMemoryFixture fx)
         public uint Stub(string name, string library = "SceLibstdcxx")
         {
             uint nid = NidDatabase.LookupName(name).Single(n => n.Library == library).Nid;
-            if (_stubAt.TryGetValue(nid, out uint a)) return a;
+            if (_stubAt.TryGetValue(nid, out uint a))
+            {
+                return a;
+            }
+
             a = _nextStub;
             _nextStub += 16;
             Linker.WriteHleStub(a, Emu.Hle.GetHleFunctionIndex(nid, 0, library), nid);
@@ -54,13 +58,23 @@ public sealed class IostreamHleTests(GuestMemoryFixture fx)
             var th = Emu.Kernel.CreateThread("ios-test", 0, 0x10000100, 0x10000, 0, 0x70000);
             th.HostBody = t =>
             {
-                try { result = t.CallGuest(fn, args); } // HLE stubs are ARM code
-                catch (Exception e) { failure = e; }
+                try
+                {
+                    result = t.CallGuest(fn, args);
+                } // HLE stubs are ARM code
+                catch (Exception e)
+                {
+                    failure = e;
+                }
             };
             th.Start(0, 0);
             Assert.True(th.WaitForExit(60_000), "test thread did not finish");
             Emu.Kernel.DeleteThread(th);
-            if (failure != null) throw new Xunit.Sdk.XunitException(failure.ToString());
+            if (failure != null)
+            {
+                throw new Xunit.Sdk.XunitException(failure.ToString());
+            }
+
             return result;
         }
 
@@ -70,15 +84,29 @@ public sealed class IostreamHleTests(GuestMemoryFixture fx)
         /// <summary>The virtual function at byte offset <paramref name="off"/> of the object's vtable.</summary>
         public uint Virtual(uint obj, uint off, params uint[] args) => Run(GuestMemory.R32(GuestMemory.R32(obj) + off), [obj, .. args]);
 
-        public uint Alloc(uint n) { uint p = Emu.Memory.Alloc(n, "ios test"); GuestMemory.Fill(p, 0, n); return p; }
-        public uint Str(string s) { uint p = Alloc((uint)s.Length + 1); GuestMemory.WriteCString(p, s); return p; }
+        public uint Alloc(uint n)
+        {
+            uint p = Emu.Memory.Alloc(n, "ios test");
+            GuestMemory.Fill(p, 0, n);
+            return p;
+        }
+        public uint Str(string s)
+        {
+            uint p = Alloc((uint)s.Length + 1);
+            GuestMemory.WriteCString(p, s);
+            return p;
+        }
 
         public T Invoke<T>(string method, params object[] args) =>
             (T)typeof(Libc).GetMethod(method, BindingFlags.Instance | BindingFlags.NonPublic)!.Invoke(Libc, args)!;
 
         public void Dispose()
         {
-            try { Directory.Delete(Root, true); } catch (IOException) { }
+            try
+            {
+                Directory.Delete(Root, true);
+            }
+            catch (IOException) { }
         }
     }
 
@@ -206,7 +234,11 @@ public sealed class IostreamHleTests(GuestMemoryFixture fx)
     {
         using var w = new World(fx);
         uint fb = OpenFilebuf(w, "wide.txt", "w", true);
-        foreach (char c in "aé€") Assert.Equal((uint)c, w.Virtual(fb, 0x10, c));
+        foreach (char c in "aé€")
+        {
+            Assert.Equal((uint)c, w.Virtual(fb, 0x10, c));
+        }
+
         Assert.Equal((byte)1, GuestMemory.Read<byte>(fb + 0x7E)); // _Wrotesome
         w.Call("_ZNSt13basic_filebufIwSt11char_traitsIwEED1Ev", fb);
         Assert.Equal("aé€", File.ReadAllText(Path.Combine(w.Root, "ux0", "data", "wide.txt"), Encoding.UTF8));
@@ -237,7 +269,11 @@ public sealed class IostreamHleTests(GuestMemoryFixture fx)
         Assert.Equal(1u, w.Virtual(wct, 8, 0x20, '7'));
         Assert.Equal(0u, w.Virtual(wct, 8, 0x20, 'x'));
         uint ws = w.Alloc(16);
-        foreach (var (c, i) in "abCd".Select((c, i) => (c, i))) GuestMemory.Write(ws + (uint)i * 2, (ushort)c);
+        foreach (var (c, i) in "abCd".Select((c, i) => (c, i)))
+        {
+            GuestMemory.Write(ws + (uint)i * 2, (ushort)c);
+        }
+
         Assert.Equal(ws + 4, w.Virtual(wct, 0x10, 0x02, ws, ws + 8));
         Assert.Equal((uint)'z', w.Virtual(wct, 0x18, 'Z'));
         Assert.Equal((uint)'A', w.Virtual(wct, 0x28, 'A'));        // widen

@@ -17,7 +17,11 @@ public sealed class HleBatch9Tests(GuestMemoryFixture fx) : IDisposable
 
     Emulator Emu()
     {
-        if (_emu != null) return _emu;
+        if (_emu != null)
+        {
+            return _emu;
+        }
+
         Directory.CreateDirectory(_root);
         return _emu = new Emulator(new EmulatorOptions { FsRoot = _root, Memory = fx.Memory, EnableJit = false, CpuBackend = "interp" });
     }
@@ -29,12 +33,21 @@ public sealed class HleBatch9Tests(GuestMemoryFixture fx) : IDisposable
 
     static int Call(object module, string name, params object?[] args) => Convert.ToInt32(Invoke(module, name, args));
 
-    uint Alloc(uint size) { uint p = fx.Memory.Alloc(size, "hle9"); GuestMemory.Fill(p, 0, size); return p; }
+    uint Alloc(uint size)
+    {
+        uint p = fx.Memory.Alloc(size, "hle9");
+        GuestMemory.Fill(p, 0, size);
+        return p;
+    }
 
     public void Dispose()
     {
         _emu?.Dispose();
-        try { Directory.Delete(_root, true); } catch (IOException) { }
+        try
+        {
+            Directory.Delete(_root, true);
+        }
+        catch (IOException) { }
     }
 
     const int NetCtlNotInit = unchecked((int)0x80412101), NetCtlAddr = unchecked((int)0x80412107), NetCtlSize = unchecked((int)0x80412111);
@@ -67,7 +80,11 @@ public sealed class HleBatch9Tests(GuestMemoryFixture fx) : IDisposable
         Assert.Equal(0, Call(net, "NetCtlUnregisterCallbackSys3", id));
         Assert.Equal(unchecked((int)0x80412104), Call(net, "NetCtlUnregisterCallbackSys3", id));
         Assert.Equal(unchecked((int)0x80412105), Call(net, "NetCtlUnregisterCallbackSys4", 8));
-        for (int i = 0; i < 8; i++) Assert.Equal(0, Call(net, "NetCtlRegisterCallbackSys4", 0x81000001u, 0u, cid));
+        for (int i = 0; i < 8; i++)
+        {
+            Assert.Equal(0, Call(net, "NetCtlRegisterCallbackSys4", 0x81000001u, 0u, cid));
+        }
+
         Assert.Equal(unchecked((int)0x80412103), Call(net, "NetCtlRegisterCallbackSys4", 0x81000001u, 0u, cid));
     }
 
@@ -108,7 +125,8 @@ public sealed class HleBatch9Tests(GuestMemoryFixture fx) : IDisposable
         var np = Module<NpManager>();
         uint cfg = Alloc(12), id = Alloc(12), sign = Alloc(0xA0), outp = Alloc(12);
         GuestMemory.WriteCString(id, "NPWR00001");
-        GuestMemory.W32(cfg, id); GuestMemory.W32(cfg + 8, sign);
+        GuestMemory.W32(cfg, id);
+        GuestMemory.W32(cfg + 8, sign);
         Assert.Equal(0, Call(np, "NpIsInitialized"));
         Assert.Equal(unchecked((int)0x80550002), Call(np, "NpGetCommunicationConfig", outp));
         Assert.Equal(0, Call(np, "sceNpInit", cfg, 0u));
@@ -147,14 +165,23 @@ public sealed class HleBatch9Tests(GuestMemoryFixture fx) : IDisposable
         Assert.Equal(unchecked((int)0x80550F03), Call(c2, "StoreExchange", id, 0u, 0x100u, filled));
         Assert.Equal(unchecked((int)0x80550F0E), Call(c2, "StoreExchange", ctx << 16 | 0xFFFE, buf, 0x100u, filled));
         Assert.Equal(PsnAccount.Current.ServerError, Call(c2, "StoreExchange", id, buf, 0x100u, filled));
-        for (int i = 2; i < 8; i++) Assert.Equal(0, Call(c2, "Create0985546A", ctx, req));
+        for (int i = 2; i < 8; i++)
+        {
+            Assert.Equal(0, Call(c2, "Create0985546A", ctx, req));
+        }
+
         Assert.Equal(unchecked((int)0x80550F19), Call(c2, "Create0985546A", ctx, req));
         Assert.Equal(unchecked((int)0x80550F91), Call(c2, "CopyCtxSession", ctx, ctx, buf, 0x100u));
         Assert.Equal(0, Call(c2, "DeleteCtx", ctx));
         Assert.Equal(unchecked((int)0x80550F0C), Call(c2, "DeleteCtx", ctx));
     }
 
-    uint Str(string s) { uint p = Alloc((uint)s.Length + 1); GuestMemory.WriteCString(p, s); return p; }
+    uint Str(string s)
+    {
+        uint p = Alloc((uint)s.Length + 1);
+        GuestMemory.WriteCString(p, s);
+        return p;
+    }
 
     [Fact]
     public void NpCommonEscapesUrlAndXml()
@@ -241,8 +268,12 @@ public sealed class HleBatch9Tests(GuestMemoryFixture fx) : IDisposable
         Invoke(paf, "TextStyleSetBool", style, 9, true);
         Assert.Equal(4, GuestMemory.Read<ushort>(style + 6));
         GuestMemory.W32(img + 0x2C, info);
-        GuestMemory.W32(info + 0x1C, 100); GuestMemory.W32(info + 0x20, 50);
-        GuestMemory.W32(rect, unchecked((uint)-10)); GuestMemory.W32(rect + 4, 10); GuestMemory.W32(rect + 8, 60); GuestMemory.W32(rect + 0xC, 100);
+        GuestMemory.W32(info + 0x1C, 100);
+        GuestMemory.W32(info + 0x20, 50);
+        GuestMemory.W32(rect, unchecked((uint)-10));
+        GuestMemory.W32(rect + 4, 10);
+        GuestMemory.W32(rect + 8, 60);
+        GuestMemory.W32(rect + 0xC, 100);
         Assert.True((bool)Invoke(paf, "ImageSetClip", img, rect)!);
         Assert.Equal(0u, GuestMemory.R32(info + 0x24));
         Assert.Equal(50u, GuestMemory.R32(info + 0x2C)); // clipped at x = 0 and the 100-pixel width: 50 wide

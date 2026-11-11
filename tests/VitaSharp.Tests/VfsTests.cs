@@ -15,7 +15,11 @@ public sealed class VfsTests : IDisposable
 
     public void Dispose()
     {
-        try { Directory.Delete(_root, true); } catch { }
+        try
+        {
+            Directory.Delete(_root, true);
+        }
+        catch { }
     }
 
     Vfs NewVfs()

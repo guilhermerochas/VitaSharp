@@ -19,7 +19,11 @@ public sealed class AwakeActivity : Activity
         base.OnCreate(savedInstanceState);
         if (Close()) return;
         Window?.AddFlags(global::Android.Views.WindowManagerFlags.KeepScreenOn);
-        if (OperatingSystem.IsAndroidVersionAtLeast(27)) { SetTurnScreenOn(true); SetShowWhenLocked(true); } // CA1416: API 27
+        if (OperatingSystem.IsAndroidVersionAtLeast(27)) // CA1416: API 27
+        {
+            SetTurnScreenOn(true);
+            SetShowWhenLocked(true);
+        }
         SetContentView(new global::Android.Widget.TextView(this) { Text = VitaSharp.Core.Localization.Loc.Get("MDevAwake"), TextSize = 16 });
     }
 

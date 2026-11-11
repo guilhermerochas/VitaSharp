@@ -153,7 +153,11 @@ public readonly record struct GxmTextureDesc(uint W0, uint W1, uint W2, uint W3)
     {
         get
         {
-            if (TextureType == TypeLinearStrided) return 1;
+            if (TextureType == TypeLinearStrided)
+            {
+                return 1;
+            }
+
             uint c = (MipCountRaw + 1) & 15;
             return c == 0 ? 1 : c;
         }
@@ -194,7 +198,10 @@ public sealed class SceneGate
     /// is marked ended, so the worker sees the epoch with the end.</summary>
     public void TakeSweep()
     {
-        if (GpuQueue.SceneEndSweeps && SweepEpoch == 0) SweepEpoch = Memory.DirtyPages.Sweep();
+        if (GpuQueue.SceneEndSweeps && SweepEpoch == 0)
+        {
+            SweepEpoch = Memory.DirtyPages.Sweep();
+        }
     }
 
     /// <summary>The scene-end sweep once the scene ended, else <see cref="uint.MaxValue"/> (no bound yet).</summary>
@@ -202,8 +209,17 @@ public sealed class SceneGate
 
     public void End()
     {
-        if (_ended) return;
-        lock (this) { _ended = true; _sceneEnded = true; Monitor.PulseAll(this); }
+        if (_ended)
+        {
+            return;
+        }
+
+        lock (this)
+        {
+            _ended = true;
+            _sceneEnded = true;
+            Monitor.PulseAll(this);
+        }
     }
 
     /// <summary>Frame mode: marks the scene's end without opening the gate.</summary>
@@ -212,14 +228,22 @@ public sealed class SceneGate
     /// <summary>Waits up to <paramref name="timeoutMs"/> for <see cref="End"/>; false on a timeout.</summary>
     public bool Wait(int timeoutMs)
     {
-        if (_ended) return true;
+        if (_ended)
+        {
+            return true;
+        }
+
         lock (this)
         {
             long until = Environment.TickCount64 + timeoutMs;
             while (!_ended)
             {
                 long left = until - Environment.TickCount64;
-                if (left <= 0) return false;
+                if (left <= 0)
+                {
+                    return false;
+                }
+
                 Monitor.Wait(this, (int)Math.Min(left, 20));
             }
         }
@@ -256,8 +280,14 @@ public sealed class DrawCommand : GpuCommand
     public void SetSplit(int i, UniformChunk chunk, int offset, int size)
     {
         UniformArena.AddRef(chunk);
-        if (SplitChunks[i] is { } old) UniformArena.Release(old);
-        SplitChunks[i] = chunk; SplitOffsets[i] = offset; SplitSizes[i] = size;
+        if (SplitChunks[i] is { } old)
+        {
+            UniformArena.Release(old);
+        }
+
+        SplitChunks[i] = chunk;
+        SplitOffsets[i] = offset;
+        SplitSizes[i] = size;
     }
 
     public Span<byte> SplitSpan(int i) => SplitChunks[i] is { } c ? c.Span.Slice(SplitOffsets[i], SplitSizes[i]) : default;
@@ -265,8 +295,20 @@ public sealed class DrawCommand : GpuCommand
     /// <summary>Gives the uniform slice back to the arena (GPU worker, after the backend executed the draw).</summary>
     public void ReleaseUniforms()
     {
-        if (UniformChunk is { } c) { UniformChunk = null; UniformArena.Release(c); }
-        for (int i = 0; i < 4; i++) if (SplitChunks[i] is { } s) { SplitChunks[i] = null; UniformArena.Release(s); }
+        if (UniformChunk is { } c)
+        {
+            UniformChunk = null;
+            UniformArena.Release(c);
+        }
+        for (int i = 0; i < 4; i++)
+        {
+            if (SplitChunks[i] is { } s)
+            {
+                SplitChunks[i] = null;
+                UniformArena.Release(s);
+            }
+        }
+
         VertexUniforms = FragmentUniforms = [];
         VertexUniformsOffset = FragmentUniformsOffset = 0;
     }

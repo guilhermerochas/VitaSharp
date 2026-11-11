@@ -28,18 +28,29 @@ public sealed unsafe class PafRectFirmwareTests(GuestMemoryFixture fx)
     {
         string root = Path.Combine(Path.GetTempPath(), "vitasharp-pafrect-" + Guid.NewGuid().ToString("N"));
         Directory.CreateDirectory(Path.Combine(root, "vs0", "sys", "external"));
-        if (module != null) File.Copy(module, Path.Combine(root, "vs0", "sys", "external", "libpaf.suprx"));
+        if (module != null)
+        {
+            File.Copy(module, Path.Combine(root, "vs0", "sys", "external", "libpaf.suprx"));
+        }
+
         var log = new List<string>();
         try
         {
             using var emu = new Emulator(new EmulatorOptions { FsRoot = root, Memory = fx.Memory, EnableJit = false, CpuBackend = "interp" });
-            if (module != null) emu.LoadModule("vs0:sys/external/libpaf.suprx");
+            if (module != null)
+            {
+                emu.LoadModule("vs0:sys/external/libpaf.suprx");
+            }
+
             var paf = emu.Hle.Modules.OfType<Paf>().Single();
             uint arena = emu.Memory.Alloc(0x1000, "paf rect test");
             uint me = arena, other = arena + 0x20, v = arena + 0x40;
             void Rect(uint p, float cx, float cy, float w, float h)
             {
-                GuestMemory.Write(p, cx); GuestMemory.Write(p + 4, cy); GuestMemory.Write(p + 8, w); GuestMemory.Write(p + 12, h);
+                GuestMemory.Write(p, cx);
+                GuestMemory.Write(p + 4, cy);
+                GuestMemory.Write(p + 8, w);
+                GuestMemory.Write(p + 12, h);
             }
             string Dump(uint p) => string.Join(",", Enumerable.Range(0, 4).Select(i => GuestMemory.Read<float>(p + (uint)i * 4).ToString("R", System.Globalization.CultureInfo.InvariantCulture)));
             var th = emu.Kernel.CreateThread("paf-rect-test", 0, 0x10000100, 0x10000, 0, 0x70000);
@@ -56,7 +67,11 @@ public sealed unsafe class PafRectFirmwareTests(GuestMemoryFixture fx)
                         {
                             uint nid = NidDatabase.LookupName(fw).First(n => n.Library.StartsWith("ScePaf", StringComparison.Ordinal)).Nid;
                             Assert.True(emu.Linker.TryGetFunctionExport(nid, out uint fn), fw);
-                            for (int i = 0; i < floats.Length; i++) ((float*)t.Core.State->D)[i] = floats[i];
+                            for (int i = 0; i < floats.Length; i++)
+                            {
+                                ((float*)t.Core.State->D)[i] = floats[i];
+                            }
+
                             r = t.CallGuest(fn, ptrs);
                         }
                         else
@@ -75,48 +90,82 @@ public sealed unsafe class PafRectFirmwareTests(GuestMemoryFixture fx)
                     foreach (var (cx, cy, w, h) in start)
                     {
                         void Reset() => Rect(me, cx, cy, w, h);
-                        Reset(); C("_ZN3paf4math4rect5clearEv", "RectClear", [me]);
-                        Reset(); C("_ZN3paf4math4rect5_0011Ev", "RectUnit", [me]);
-                        Reset(); C("_ZN3paf4math4rect3setEffff", "RectSet", [me], 1, 2, -3, 4);
-                        Rect(v, 9, 8, 0, 0); Rect(v + 8, 6, -5, 0, 0);
-                        Reset(); C("_ZN3paf4math4rect3setERKNS0_2v2ES4_", "RectSetV2", [me, v, v + 8]);
-                        Reset(); C("_ZN3paf4math4rect8set_sizeEff", "RectSetSize", [me], 3, -1);
-                        Reset(); C("_ZN3paf4math4rect9set_widthEf", "RectSetWidth", [me], -2);
-                        Reset(); C("_ZN3paf4math4rect10set_heightEf", "RectSetHeight", [me], 6);
-                        Reset(); C("_ZN3paf4math4rect4moveEff", "RectMove", [me], 1.5f, -2);
+                        Reset();
+                        C("_ZN3paf4math4rect5clearEv", "RectClear", [me]);
+                        Reset();
+                        C("_ZN3paf4math4rect5_0011Ev", "RectUnit", [me]);
+                        Reset();
+                        C("_ZN3paf4math4rect3setEffff", "RectSet", [me], 1, 2, -3, 4);
+                        Rect(v, 9, 8, 0, 0);
+                        Rect(v + 8, 6, -5, 0, 0);
+                        Reset();
+                        C("_ZN3paf4math4rect3setERKNS0_2v2ES4_", "RectSetV2", [me, v, v + 8]);
+                        Reset();
+                        C("_ZN3paf4math4rect8set_sizeEff", "RectSetSize", [me], 3, -1);
+                        Reset();
+                        C("_ZN3paf4math4rect9set_widthEf", "RectSetWidth", [me], -2);
+                        Reset();
+                        C("_ZN3paf4math4rect10set_heightEf", "RectSetHeight", [me], 6);
+                        Reset();
+                        C("_ZN3paf4math4rect4moveEff", "RectMove", [me], 1.5f, -2);
                         foreach (float e in new[] { -20f, 0f, 1f, 20f })
                         {
-                            Reset(); C("_ZN3paf4math4rect8set_leftEf", "RectSetLeft", [me], e);
-                            Reset(); C("_ZN3paf4math4rect9set_rightEf", "RectSetRight", [me], e);
-                            Reset(); C("_ZN3paf4math4rect7set_topEf", "RectSetTop", [me], e);
-                            Reset(); C("_ZN3paf4math4rect10set_bottomEf", "RectSetBottom", [me], e);
-                            Reset(); C("_ZN3paf4math4rect10align_leftEf", "RectAlignLeft", [me], e);
-                            Reset(); C("_ZN3paf4math4rect11align_rightEf", "RectAlignRight", [me], e);
-                            Reset(); C("_ZN3paf4math4rect9align_topEf", "RectAlignTop", [me], e);
-                            Reset(); C("_ZN3paf4math4rect12align_bottomEf", "RectAlignBottom", [me], e);
+                            Reset();
+                            C("_ZN3paf4math4rect8set_leftEf", "RectSetLeft", [me], e);
+                            Reset();
+                            C("_ZN3paf4math4rect9set_rightEf", "RectSetRight", [me], e);
+                            Reset();
+                            C("_ZN3paf4math4rect7set_topEf", "RectSetTop", [me], e);
+                            Reset();
+                            C("_ZN3paf4math4rect10set_bottomEf", "RectSetBottom", [me], e);
+                            Reset();
+                            C("_ZN3paf4math4rect10align_leftEf", "RectAlignLeft", [me], e);
+                            Reset();
+                            C("_ZN3paf4math4rect11align_rightEf", "RectAlignRight", [me], e);
+                            Reset();
+                            C("_ZN3paf4math4rect9align_topEf", "RectAlignTop", [me], e);
+                            Reset();
+                            C("_ZN3paf4math4rect12align_bottomEf", "RectAlignBottom", [me], e);
                         }
                         foreach (var (ox, oy, ow, oh) in new (float, float, float, float)[] { (0, 0, 10, 4), (10, 0, 10, 4), (1, 1, 2, 1), (100, 100, 1, 1), (5, 2, 0, 0) })
                         {
-                            Reset(); Rect(other, ox, oy, ow, oh);
+                            Reset();
+                            Rect(other, ox, oy, ow, oh);
                             C("_ZN3paf4math4rect3hitERKS1_", "RectHit", [me, other]);
                             C("_ZN3paf4math4rect10is_in_rectERKS1_", "RectIsIn", [me, other]);
                             C("_ZNK3paf4math4recteqERKS1_", "RectDiffers", [me, other]);
                         }
                         foreach (var (px, py) in new (float, float)[] { (0, 0), (5, 2), (5.01f, 0), (-5, -2), (cx, cy) })
                         {
-                            Reset(); C("_ZN3paf4math4rect16is_point_in_rectEff", "RectHasPoint", [me], px, py);
+                            Reset();
+                            C("_ZN3paf4math4rect16is_point_in_rectEff", "RectHasPoint", [me], px, py);
                         }
-                        Reset(); Rect(other, 1, 1, 1, 1); C("_ZN3paf4math4rectaSERKS1_", "RectCopy", [me, other]);
+                        Reset();
+                        Rect(other, 1, 1, 1, 1);
+                        C("_ZN3paf4math4rectaSERKS1_", "RectCopy", [me, other]);
                     }
                 }
-                catch (Exception e) { failure = e; }
+                catch (Exception e)
+                {
+                    failure = e;
+                }
             };
             th.Start(0, 0);
             Assert.True(th.WaitForExit(60_000), "paf rect test thread did not finish");
             emu.Kernel.DeleteThread(th);
-            if (failure != null) throw new Xunit.Sdk.XunitException(failure.ToString());
+            if (failure != null)
+            {
+                throw new Xunit.Sdk.XunitException(failure.ToString());
+            }
         }
-        finally { try { Directory.Delete(root, true); } catch (IOException) { } }
+        finally
+        {
+            try
+            {
+                Directory.Delete(root, true);
+            }
+            catch (IOException) { }
+        }
         return log;
     }
 

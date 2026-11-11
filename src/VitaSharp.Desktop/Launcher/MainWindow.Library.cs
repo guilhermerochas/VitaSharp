@@ -22,7 +22,11 @@ public sealed partial class MainWindow
 
     Control LibraryPage()
     {
-        if (_all.Count == 0 && _jobs.Count == 0) return WelcomePage();
+        if (_all.Count == 0 && _jobs.Count == 0)
+        {
+            return WelcomePage();
+        }
+
         var page = new Grid { RowDefinitions = new RowDefinitions("Auto,Auto,*"), Margin = new Thickness(36, 28, 36, 0) };
         _filtersHost = new Border();
         _resultsHost = new Border();
@@ -31,9 +35,17 @@ public sealed partial class MainWindow
         header.Children.Add(_k.VStack(2, _k.Heading(S.Library, 30), _k.Text(S.LibrarySubtitle(_all.Count, _all.Count(g => g.Category == "gd")), 13.5, color: P.Muted)));
         _search = new TextBox
         {
-            Text = _search?.Text ?? "", Watermark = S.SearchGames, Width = 340, Height = 46, CornerRadius = new CornerRadius(14),
-            VerticalContentAlignment = VerticalAlignment.Center, Padding = new Thickness(40, 0, 12, 0), FontSize = 14,
-            Background = Kit.B(P.Surface), BorderBrush = Kit.B(P.BorderStrong), VerticalAlignment = VerticalAlignment.Center,
+            Text = _search?.Text ?? "",
+            Watermark = S.SearchGames,
+            Width = 340,
+            Height = 46,
+            CornerRadius = new CornerRadius(14),
+            VerticalContentAlignment = VerticalAlignment.Center,
+            Padding = new Thickness(40, 0, 12, 0),
+            FontSize = 14,
+            Background = Kit.B(P.Surface),
+            BorderBrush = Kit.B(P.BorderStrong),
+            VerticalAlignment = VerticalAlignment.Center,
         };
         _search.TextChanged += (_, _) => RebuildResults();
         var searchBox = new Grid { Margin = new Thickness(0, 0, 12, 0), VerticalAlignment = VerticalAlignment.Center };
@@ -71,7 +83,12 @@ public sealed partial class MainWindow
     {
         var filters = new Grid { ColumnDefinitions = new ColumnDefinitions("*,Auto"), Margin = new Thickness(0, 0, 0, 22) };
         var chips = new WrapPanel { Orientation = Orientation.Horizontal, ItemSpacing = 8, LineSpacing = 8 };
-        void SetFilter(string f) { _filter = f; RebuildFilters(); RebuildResults(); }
+        void SetFilter(string f)
+        {
+            _filter = f;
+            RebuildFilters();
+            RebuildResults();
+        }
         int recent = _all.Count(g => PlayOf(g.TitleId) != null);
         chips.Children.Add(_k.Chip(S.FilterAll(_all.Count), _filter == FilterAll, () => SetFilter(FilterAll)));
         chips.Children.Add(_k.Chip(S.FilterPlayable(_all.Count(g => g.Category == "gd")), _filter == FilterPlayable, () => SetFilter(FilterPlayable)));
@@ -80,7 +97,12 @@ public sealed partial class MainWindow
         chips.Children.Add(new Border { Width = 1, Height = 22, Background = Kit.B(P.BorderStrong), Margin = new Thickness(6, 6), VerticalAlignment = VerticalAlignment.Center });
         var regions = _all.Select(g => g.Region).Distinct().OrderBy(r => r).ToList();
         var regionItems = new List<(string, bool, Action)> { (S.AllRegions, _settings.LibraryRegion == "", () => { _settings.LibraryRegion = ""; SaveSettings(); RebuildFilters(); RebuildResults(); }) };
-        foreach (var r in regions) regionItems.Add((r, _settings.LibraryRegion == r, () => { _settings.LibraryRegion = r; SaveSettings(); RebuildFilters(); RebuildResults(); }));
+        foreach (var r in regions)
+        {
+            regionItems.Add((r, _settings.LibraryRegion == r, () => { _settings.LibraryRegion = r; SaveSettings(); RebuildFilters(); RebuildResults(); }
+            ));
+        }
+
         chips.Children.Add(_k.ChipMenu(S.RegionChip(_settings.LibraryRegion == "" ? S.AllRegionsShort : _settings.LibraryRegion), "globe", regionItems));
         (string Key, string Label)[] sorts = [("az", S.SortAz), ("recent", S.SortRecent), ("time", S.SortTime)];
         chips.Children.Add(_k.ChipMenu(S.SortChip(sorts.FirstOrDefault(s => s.Key == _settings.LibrarySort).Label ?? S.SortAz), null,
@@ -88,10 +110,18 @@ public sealed partial class MainWindow
         filters.Children.Add(chips);
 
         var views = new List<(string Text, string? Icon, string? Tip)> { ("", "grid", S.ViewGrid), ("", "list", S.ViewList) };
-        if (_settings.RecreatedHome) views.Add((S.ViewHome, "vita", S.ViewHomeTip));
+        if (_settings.RecreatedHome)
+        {
+            views.Add((S.ViewHome, "vita", S.ViewHomeTip));
+        }
+
         string[] keys = [LauncherSettings.ViewGrid, LauncherSettings.ViewList, LauncherSettings.ViewHome];
         int sel = Math.Max(0, Array.IndexOf(keys, _settings.View));
-        if (sel >= views.Count) sel = 0;
+        if (sel >= views.Count)
+        {
+            sel = 0;
+        }
+
         var seg = _k.Segmented(sel, i => { _settings.View = keys[i]; SaveSettings(); RebuildResults(); }, views.ToArray());
         seg.VerticalAlignment = VerticalAlignment.Top;
         filters.Children.Add(Kit.At(seg, col: 1));
@@ -104,7 +134,11 @@ public sealed partial class MainWindow
         IEnumerable<GameEntry> list = _all.Where(g => q.Length == 0
             || g.Title.Contains(q, StringComparison.CurrentCultureIgnoreCase)
             || g.TitleId.Contains(q, StringComparison.OrdinalIgnoreCase));
-        if (_settings.LibraryRegion.Length > 0) list = list.Where(g => g.Region == _settings.LibraryRegion);
+        if (_settings.LibraryRegion.Length > 0)
+        {
+            list = list.Where(g => g.Region == _settings.LibraryRegion);
+        }
+
         list = _filter switch
         {
             FilterPlayable => list.Where(g => g.Category == "gd"),
@@ -113,12 +147,15 @@ public sealed partial class MainWindow
             _ => list,
         };
         if (_filter != FilterRecent)
+        {
             list = _settings.LibrarySort switch
             {
                 "recent" => list.OrderByDescending(g => PlayOf(g.TitleId)?.LastPlayedUtc ?? DateTime.MinValue),
                 "time" => list.OrderByDescending(g => PlayOf(g.TitleId)?.Seconds ?? 0),
                 _ => list,
             };
+        }
+
         return list.ToList();
     }
 
@@ -133,8 +170,13 @@ public sealed partial class MainWindow
             shell.IsVisible = true;
             _resultsHost.Child = new Border
             {
-                CornerRadius = new CornerRadius(22), ClipToBounds = true, Child = shell, Margin = new Thickness(0, 0, 0, 24),
-                BorderBrush = Kit.B(P.Border), BorderThickness = new Thickness(1), Background = Brushes.Black,
+                CornerRadius = new CornerRadius(22),
+                ClipToBounds = true,
+                Child = shell,
+                Margin = new Thickness(0, 0, 0, 24),
+                BorderBrush = Kit.B(P.Border),
+                BorderThickness = new Thickness(1),
+                Background = Brushes.Black,
             };
             shell.Home.Focus();
             return;
@@ -148,9 +190,18 @@ public sealed partial class MainWindow
             body.Children.Add(SectionHeader(S.AllGames, null).Also(h => h.Margin = new Thickness(0, 28, 0, 14)));
         }
         if (games.Count == 0)
+        {
             body.Children.Add(_k.Wrap(S.NoMatch, 14).Also(t => t.Margin = new Thickness(4, 30)));
-        else if (_settings.View == LauncherSettings.ViewList) body.Children.Add(GameList(games));
-        else body.Children.Add(GameGrid(games));
+        }
+        else if (_settings.View == LauncherSettings.ViewList)
+        {
+            body.Children.Add(GameList(games));
+        }
+        else
+        {
+            body.Children.Add(GameGrid(games));
+        }
+
         var scroll = new ScrollViewer { Content = body, HorizontalScrollBarVisibility = ScrollBarVisibility.Disabled };
         _resultsHost.Child = scroll;
     }
@@ -159,7 +210,11 @@ public sealed partial class MainWindow
     {
         var g = new Grid { ColumnDefinitions = new ColumnDefinitions("*,Auto"), Margin = new Thickness(0, 0, 0, 12) };
         g.Children.Add(_k.Text(title, 17, FontWeight.SemiBold));
-        if (link != null && open != null) g.Children.Add(Kit.At(Kit.Click(_k.Text(link, 13, FontWeight.SemiBold, P.Accent), open), col: 1));
+        if (link != null && open != null)
+        {
+            g.Children.Add(Kit.At(Kit.Click(_k.Text(link, 13, FontWeight.SemiBold, P.Accent), open), col: 1));
+        }
+
         return g;
     }
 
@@ -174,7 +229,8 @@ public sealed partial class MainWindow
             CornerRadius = new CornerRadius(24),
             Background = new LinearGradientBrush
             {
-                StartPoint = Kit.Rel(0, 0), EndPoint = Kit.Rel(1, 0),
+                StartPoint = Kit.Rel(0, 0),
+                EndPoint = Kit.Rel(1, 0),
                 GradientStops =
                 {
                     new GradientStop(Color.FromArgb(250, P.Scrim.R, P.Scrim.G, P.Scrim.B), 0),
@@ -202,7 +258,11 @@ public sealed partial class MainWindow
         }
         info.Children.Add(meta);
         var buttons = _k.HStack(10, PlayButton(g, 46, 140));
-        if (LatestState(g) is { } state) buttons.Children.Add(_k.Secondary(S.LoadLatestState, "save", () => LoadState(g, state), 46, enabled: _running == null));
+        if (LatestState(g) is { } state)
+        {
+            buttons.Children.Add(_k.Secondary(S.LoadLatestState, "save", () => LoadState(g, state), 46, enabled: _running == null));
+        }
+
         buttons.Margin = new Thickness(0, 10, 0, 0);
         info.Children.Add(buttons);
         row.Children.Add(Kit.At(info, col: 1));
@@ -214,16 +274,25 @@ public sealed partial class MainWindow
     Control PlayButton(GameEntry g, double height, double minWidth)
     {
         if (IsRunningGame(g))
+        {
             return _k.HStack(10, _k.Primary(S.GoToGame, "monitor", GoToGame, height, minWidth, tip: S.GoToGameTip),
                 _k.Secondary(_stopAsked ? S.ForceStop : S.Stop, "stop", StopRunning, height, P.Danger));
+        }
+
         return _k.Primary(S.Play, "play", () => Launch(g), height, minWidth, _running == null, _running != null ? S.AlreadyRunning(_runningTitle ?? "") : null);
     }
 
     /// <summary>A click on a game: its window when it runs, else its page.</summary>
     void OpenOrGoTo(GameEntry g)
     {
-        if (IsRunningGame(g)) GoToGame();
-        else Navigate(PageGame, g);
+        if (IsRunningGame(g))
+        {
+            GoToGame();
+        }
+        else
+        {
+            Navigate(PageGame, g);
+        }
     }
 
     Control IconText(string icon, string text, Color? iconColor = null, double size = 13)
@@ -239,11 +308,18 @@ public sealed partial class MainWindow
     {
         // as many columns as fit (cards at least 240 px wide); the gap is each card's right/bottom margin
         var grid = new UniformGrid { Columns = 4, Margin = new Thickness(0, 0, -18, 0) };
-        foreach (var g in games) grid.Children.Add(GameCard(g));
+        foreach (var g in games)
+        {
+            grid.Children.Add(GameCard(g));
+        }
+
         grid.SizeChanged += (_, e) =>
         {
             int cols = Math.Max(2, (int)((e.NewSize.Width) / (240 + 18)));
-            if (cols != grid.Columns) grid.Columns = cols;
+            if (cols != grid.Columns)
+            {
+                grid.Columns = cols;
+            }
         };
         return grid;
     }
@@ -255,7 +331,8 @@ public sealed partial class MainWindow
         art.Children.Add(new Border { Background = Kit.Image(g.Pic0Path, 480), CornerRadius = new CornerRadius(18, 18, 0, 0) });
         art.Children.Add(new Border
         {
-            CornerRadius = new CornerRadius(18, 18, 0, 0), IsHitTestVisible = false,
+            CornerRadius = new CornerRadius(18, 18, 0, 0),
+            IsHitTestVisible = false,
             Background = Kit.Fade(P.Surface, Kit.Rel(0, 0.35), Kit.Rel(0, 1)),
         });
         var icon = _k.Picture(g.IconPath, 64, 64, 16, g.Initials, 128);
@@ -267,23 +344,33 @@ public sealed partial class MainWindow
         art.Children.Add(icon);
         art.Children.Add(new Border
         {
-            HorizontalAlignment = HorizontalAlignment.Right, VerticalAlignment = VerticalAlignment.Top, Margin = new Thickness(10),
-            Padding = new Thickness(8, 3), CornerRadius = new CornerRadius(8), Background = Kit.B(Color.Parse("#0B0E13"), 0.62),
+            HorizontalAlignment = HorizontalAlignment.Right,
+            VerticalAlignment = VerticalAlignment.Top,
+            Margin = new Thickness(10),
+            Padding = new Thickness(8, 3),
+            CornerRadius = new CornerRadius(8),
+            Background = Kit.B(Color.Parse("#0B0E13"), 0.62),
             Child = _k.Text(g.Region, 11, FontWeight.SemiBold, Color.Parse("#E8ECF2")),
         });
         bool running = _running != null && _runningGame?.TitleId == g.TitleId;
         if (running)
+        {
             art.Children.Add(new Border
             {
-                HorizontalAlignment = HorizontalAlignment.Left, VerticalAlignment = VerticalAlignment.Top, Margin = new Thickness(10),
+                HorizontalAlignment = HorizontalAlignment.Left,
+                VerticalAlignment = VerticalAlignment.Top,
+                Margin = new Thickness(10),
                 Child = _k.Badge(S.RunningBadge, P.Ok, Color.Parse("#0B0E13")),
             });
+        }
 
         // mouse over: the two ways to start it (the main one from "Ao escolher um jogo" first)
         var actions = HoverActions(g, 40);
         var hover = new Border
         {
-            CornerRadius = new CornerRadius(18, 18, 0, 0), Background = Kit.B(Color.Parse("#0B0E13"), 0.55), IsVisible = false,
+            CornerRadius = new CornerRadius(18, 18, 0, 0),
+            Background = Kit.B(Color.Parse("#0B0E13"), 0.55),
+            IsVisible = false,
             Child = actions,
         };
         art.Children.Add(hover);
@@ -294,7 +381,11 @@ public sealed partial class MainWindow
         var foot = new Grid { ColumnDefinitions = new ColumnDefinitions("Auto,*,Auto"), Margin = new Thickness(0, 6, 0, 0) };
         foot.Children.Add(PlayedOrCategory(g));
         var (got, total) = TrophyCount(g);
-        if (total > 0) foot.Children.Add(Kit.At(IconText("trophy", $"{got}/{total}", P.Gold, 12), col: 2));
+        if (total > 0)
+        {
+            foot.Children.Add(Kit.At(IconText("trophy", $"{got}/{total}", P.Gold, 12), col: 2));
+        }
+
         text.Children.Add(foot);
 
         var stack = new StackPanel();
@@ -302,8 +393,14 @@ public sealed partial class MainWindow
         stack.Children.Add(text);
         var card = new Border
         {
-            Margin = new Thickness(0, 0, 18, 18), CornerRadius = new CornerRadius(18), Background = Kit.B(P.Surface), ClipToBounds = true,
-            BorderBrush = Kit.B(running ? P.Ok : P.Border), BorderThickness = new Thickness(1), Child = stack, Cursor = new Cursor(StandardCursorType.Hand),
+            Margin = new Thickness(0, 0, 18, 18),
+            CornerRadius = new CornerRadius(18),
+            Background = Kit.B(P.Surface),
+            ClipToBounds = true,
+            BorderBrush = Kit.B(running ? P.Ok : P.Border),
+            BorderThickness = new Thickness(1),
+            Child = stack,
+            Cursor = new Cursor(StandardCursorType.Hand),
             BoxShadow = P.Dark ? default : BoxShadows.Parse("0 2 8 0 #14000000"),
         };
         HookCard(card, hover, g, running ? P.Ok : P.Border);
@@ -316,8 +413,20 @@ public sealed partial class MainWindow
         card.PointerEntered += (_, _) => { hover.IsVisible = true; card.BorderBrush = Kit.B(P.Accent); };
         card.PointerExited += (_, _) => { hover.IsVisible = false; card.BorderBrush = Kit.B(border); };
         card.ContextFlyout = GameFoldersMenu(g); // right click: the game's folders
-        card.Tapped += (_, e) => { if (!FromButton(e)) OpenOrGoTo(g); };
-        card.DoubleTapped += (_, e) => { if (!FromButton(e) && _running == null) DefaultAction(g); };
+        card.Tapped += (_, e) =>
+        {
+            if (!FromButton(e))
+            {
+                OpenOrGoTo(g);
+            }
+        };
+        card.DoubleTapped += (_, e) =>
+        {
+            if (!FromButton(e) && _running == null)
+            {
+                DefaultAction(g);
+            }
+        };
     }
 
     /// <summary>The event came from a button inside the card (its own action, not the card's).</summary>
@@ -349,7 +458,11 @@ public sealed partial class MainWindow
 
     Control PlayedOrCategory(GameEntry g)
     {
-        if (g.Category != "gd") return _k.Badge(g.CategoryText, P.Warn);
+        if (g.Category != "gd")
+        {
+            return _k.Badge(g.CategoryText, P.Warn);
+        }
+
         return PlayOf(g.TitleId) is { } r ? _k.Badge(S.Duration(r.Seconds), P.Accent) : _k.Badge(S.NeverPlayed, P.Muted);
     }
 
@@ -361,7 +474,11 @@ public sealed partial class MainWindow
         var s = new StackPanel();
         var head = new Grid { ColumnDefinitions = new ColumnDefinitions(Cols), Margin = new Thickness(18, 0, 18, 8) };
         string[] cols = ["", S.ColGame, S.ColRegion, S.ColPlayed, S.ColTrophies, S.ColSize, ""];
-        for (int i = 0; i < cols.Length; i++) head.Children.Add(Kit.At(_k.Kicker(cols[i]), col: i));
+        for (int i = 0; i < cols.Length; i++)
+        {
+            head.Children.Add(Kit.At(_k.Kicker(cols[i]), col: i));
+        }
+
         s.Children.Add(head);
         int n = 0;
         foreach (var g in games)
@@ -387,13 +504,29 @@ public sealed partial class MainWindow
             var zebra = n++ % 2 == 0 ? P.Surface : P.Background;
             var row = new Border
             {
-                CornerRadius = new CornerRadius(14), Child = r, Background = Kit.B(zebra), Cursor = new Cursor(StandardCursorType.Hand),
-                BorderBrush = Kit.B(Colors.Transparent), BorderThickness = new Thickness(1),
+                CornerRadius = new CornerRadius(14),
+                Child = r,
+                Background = Kit.B(zebra),
+                Cursor = new Cursor(StandardCursorType.Hand),
+                BorderBrush = Kit.B(Colors.Transparent),
+                BorderThickness = new Thickness(1),
             };
             row.PointerEntered += (_, _) => { acts.IsVisible = true; row.Background = Kit.B(P.Highlight); row.BorderBrush = Kit.B(P.HighlightBorder); };
             row.PointerExited += (_, _) => { acts.IsVisible = false; row.Background = Kit.B(zebra); row.BorderBrush = Kit.B(Colors.Transparent); };
-            row.Tapped += (_, e) => { if (!FromButton(e)) OpenOrGoTo(g); };
-            row.DoubleTapped += (_, e) => { if (!FromButton(e) && _running == null) DefaultAction(g); };
+            row.Tapped += (_, e) =>
+            {
+                if (!FromButton(e))
+                {
+                    OpenOrGoTo(g);
+                }
+            };
+            row.DoubleTapped += (_, e) =>
+            {
+                if (!FromButton(e) && _running == null)
+                {
+                    DefaultAction(g);
+                }
+            };
             s.Children.Add(row);
         }
         return s;
@@ -427,7 +560,10 @@ public sealed partial class MainWindow
         top.Children.Add(_k.IconChip(icon, 44));
         top.Children.Add(Kit.At(new Border
         {
-            Width = 26, Height = 26, CornerRadius = new CornerRadius(13), Background = Kit.B(current ? P.Accent : P.Track),
+            Width = 26,
+            Height = 26,
+            CornerRadius = new CornerRadius(13),
+            Background = Kit.B(current ? P.Accent : P.Track),
             Child = _k.Text(n.ToString(S.Culture), 12.5, FontWeight.Bold, current ? P.OnAccent : P.TextSoft).Also(t => t.HorizontalAlignment = HorizontalAlignment.Center),
         }, col: 2));
         s.Children.Add(top);
@@ -435,10 +571,18 @@ public sealed partial class MainWindow
         s.Children.Add(_k.Wrap(text, 13).Also(t => t.MinHeight = 54));
         action.HorizontalAlignment = HorizontalAlignment.Left;
         s.Children.Add(action);
-        if (link != null) s.Children.Add(_k.Text(link, 13, FontWeight.SemiBold, P.Accent));
+        if (link != null)
+        {
+            s.Children.Add(_k.Text(link, 13, FontWeight.SemiBold, P.Accent));
+        }
+
         var card = _k.Card(s, 20, new Thickness(20, 18));
         card.Margin = new Thickness(0, 0, 16, 0);
-        if (current) card.BorderBrush = Kit.B(P.HighlightBorder);
+        if (current)
+        {
+            card.BorderBrush = Kit.B(P.HighlightBorder);
+        }
+
         return card;
     }
 }

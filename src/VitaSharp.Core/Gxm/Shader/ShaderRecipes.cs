@@ -27,8 +27,13 @@ public sealed record ShaderRecipe(ulong ProgramHash, ulong HintKey, bool Vertex,
         BinaryPrimitives.WriteUInt64LittleEndian(s[10..], HintKey);
         int o = 18;
         s[o++] = checked((byte)h.TextureFormats.Length);
-        foreach (var t in h.TextureFormats) { BinaryPrimitives.WriteUInt32LittleEndian(s[o..], t); o += 4; }
-        BinaryPrimitives.WriteUInt16LittleEndian(s[o..], checked((ushort)h.Attributes.Length)); o += 2;
+        foreach (var t in h.TextureFormats)
+        {
+            BinaryPrimitives.WriteUInt32LittleEndian(s[o..], t);
+            o += 4;
+        }
+        BinaryPrimitives.WriteUInt16LittleEndian(s[o..], checked((ushort)h.Attributes.Length));
+        o += 2;
         foreach (var a in h.Attributes)
         {
             BinaryPrimitives.WriteUInt32LittleEndian(s[o..], a.RegIndex);
@@ -36,41 +41,85 @@ public sealed record ShaderRecipe(ulong ProgramHash, ulong HintKey, bool Vertex,
             s[o + 8] = a.Format;
             o += 9;
         }
-        BinaryPrimitives.WriteUInt32LittleEndian(s[o..], h.ColorFormat); o += 4;
+        BinaryPrimitives.WriteUInt32LittleEndian(s[o..], h.ColorFormat);
+        o += 4;
         // fetch flag byte: bit 0 FetchInputAttachment, bit 1 TileWord1, bit 2 FetchInputSingleSample, bit 3 ScaledPointSize
         // (records without the latter three are unchanged)
         s[o++] = (byte)((h.FetchInputAttachment ? 1 : 0) | (h.TileWord1 ? 2 : 0) | (h.FetchInputSingleSample ? 4 : 0) | (h.ScaledPointSize ? 8 : 0));
-        if (outFmt) BinaryPrimitives.WriteUInt32LittleEndian(s[o..], h.OutputRegisterFormat);
-        if (mask) BinaryPrimitives.WriteUInt32LittleEndian(s[(o + 4)..], h.VaryingMask);
+        if (outFmt)
+        {
+            BinaryPrimitives.WriteUInt32LittleEndian(s[o..], h.OutputRegisterFormat);
+        }
+
+        if (mask)
+        {
+            BinaryPrimitives.WriteUInt32LittleEndian(s[(o + 4)..], h.VaryingMask);
+        }
+
         return buf;
     }
 
     /// <summary>Null when the record is malformed or its hints no longer produce the recorded key.</summary>
     public static ShaderRecipe? Decode(ReadOnlySpan<byte> s)
     {
-        if (s.Length < 19 || s[0] is not (Tag or TagOutputFormat or TagVaryingMask) || s[1] > 1) return null;
-        int extra = s[0] switch { TagOutputFormat => 4, TagVaryingMask => 8, _ => 0 };
+        if (s.Length < 19 || s[0] is not (Tag or TagOutputFormat or TagVaryingMask) || s[1] > 1)
+        {
+            return null;
+        }
+
+        int extra = s[0] switch
+        {
+            TagOutputFormat => 4,
+            TagVaryingMask => 8,
+            _ => 0
+        };
         ulong program = BinaryPrimitives.ReadUInt64LittleEndian(s[2..]), hintKey = BinaryPrimitives.ReadUInt64LittleEndian(s[10..]);
         int o = 18;
         int nt = s[o++];
-        if (s.Length < o + nt * 4 + 2) return null;
+        if (s.Length < o + nt * 4 + 2)
+        {
+            return null;
+        }
+
         var tex = new uint[nt];
-        for (int i = 0; i < nt; i++) { tex[i] = BinaryPrimitives.ReadUInt32LittleEndian(s[o..]); o += 4; }
-        int na = BinaryPrimitives.ReadUInt16LittleEndian(s[o..]); o += 2;
+        for (int i = 0; i < nt; i++)
+        {
+            tex[i] = BinaryPrimitives.ReadUInt32LittleEndian(s[o..]);
+            o += 4;
+        }
+        int na = BinaryPrimitives.ReadUInt16LittleEndian(s[o..]);
+        o += 2;
         // exact size: attributes, colour format, fetch flag (, output register format)
-        if (s.Length != o + na * 9 + 5 + extra) return null;
+        if (s.Length != o + na * 9 + 5 + extra)
+        {
+            return null;
+        }
+
         var attrs = new (uint, int, byte)[na];
         for (int i = 0; i < na; i++)
         {
             attrs[i] = (BinaryPrimitives.ReadUInt32LittleEndian(s[o..]), BinaryPrimitives.ReadInt32LittleEndian(s[(o + 4)..]), s[o + 8]);
             o += 9;
         }
-        uint color = BinaryPrimitives.ReadUInt32LittleEndian(s[o..]); o += 4;
-        if (s[o] > 15) return null;
+        uint color = BinaryPrimitives.ReadUInt32LittleEndian(s[o..]);
+        o += 4;
+        if (s[o] > 15)
+        {
+            return null;
+        }
+
         uint outputFormat = extra != 0 ? BinaryPrimitives.ReadUInt32LittleEndian(s[(o + 1)..]) : 0;
-        if (extra == 4 && outputFormat == 0) return null;
+        if (extra == 4 && outputFormat == 0)
+        {
+            return null;
+        }
+
         uint varyingMask = extra == 8 ? BinaryPrimitives.ReadUInt32LittleEndian(s[(o + 5)..]) : 0;
-        if (extra == 8 && varyingMask == 0) return null;
+        if (extra == 8 && varyingMask == 0)
+        {
+            return null;
+        }
+
         var hints = new ShaderHints(tex, attrs, color, (s[o] & 1) != 0, outputFormat, (s[o] & 2) != 0, (s[o] & 4) != 0, varyingMask, (s[o] & 8) != 0);
         // the key is the identity used by every cache: a record whose hints disagree with it is useless
         return hints.Key() == hintKey ? new ShaderRecipe(program, hintKey, s[1] != 0, hints) : null;
@@ -103,9 +152,23 @@ public sealed record PipelineRecipe(ulong VsHash, ulong VsHint, ulong FsHash, ul
         BinaryPrimitives.WriteInt32LittleEndian(s[32..], AttachFormat);
         s[36] = HasColor ? (byte)1 : (byte)0;
         s[37] = Blend ? (byte)1 : (byte)0;
-        s[38] = ColorFunc; s[39] = AlphaFunc; s[40] = ColorSrc; s[41] = ColorDst; s[42] = AlphaSrc; s[43] = AlphaDst; s[44] = Mask;
-        s[45] = Topology; s[46] = Polygon; s[47] = Samples;
-        s[48] = (byte)((FsUsesFragColor ? 1 : 0) | (FsRawColorBits switch { 8 => 1, 16 => 2, 32 => 3, _ => 0 }) << 1);
+        s[38] = ColorFunc;
+        s[39] = AlphaFunc;
+        s[40] = ColorSrc;
+        s[41] = ColorDst;
+        s[42] = AlphaSrc;
+        s[43] = AlphaDst;
+        s[44] = Mask;
+        s[45] = Topology;
+        s[46] = Polygon;
+        s[47] = Samples;
+        s[48] = (byte)((FsUsesFragColor ? 1 : 0) | (FsRawColorBits switch
+        {
+            8 => 1,
+            16 => 2,
+            32 => 3,
+            _ => 0
+        }) << 1);
         BinaryPrimitives.WriteUInt16LittleEndian(s[49..], checked((ushort)Attributes.Length));
         BinaryPrimitives.WriteUInt16LittleEndian(s[51..], checked((ushort)Streams.Length));
         int o = HeadSize;
@@ -129,21 +192,41 @@ public sealed record PipelineRecipe(ulong VsHash, ulong VsHint, ulong FsHash, ul
 
     public static PipelineRecipe? Decode(ReadOnlySpan<byte> s)
     {
-        if (s.Length < HeadSize || s[36] > 1 || s[37] > 1 || s[48] > 7) return null;
+        if (s.Length < HeadSize || s[36] > 1 || s[37] > 1 || s[48] > 7)
+        {
+            return null;
+        }
+
         int na = BinaryPrimitives.ReadUInt16LittleEndian(s[49..]), ns = BinaryPrimitives.ReadUInt16LittleEndian(s[51..]);
-        if (ns > 16 || s.Length != HeadSize + na * 8 + ns * 4) return null;
+        if (ns > 16 || s.Length != HeadSize + na * 8 + ns * 4)
+        {
+            return null;
+        }
+
         var attrs = new GxmVertexAttribute[na];
         int o = HeadSize;
         for (int i = 0; i < na; i++, o += 8)
+        {
             attrs[i] = new GxmVertexAttribute(BinaryPrimitives.ReadUInt16LittleEndian(s[o..]), BinaryPrimitives.ReadUInt16LittleEndian(s[(o + 2)..]),
                 s[o + 4], s[o + 5], BinaryPrimitives.ReadUInt16LittleEndian(s[(o + 6)..]));
+        }
+
         var streams = new GxmVertexStream[ns];
         for (int i = 0; i < ns; i++, o += 4)
+        {
             streams[i] = new GxmVertexStream(BinaryPrimitives.ReadUInt16LittleEndian(s[o..]), BinaryPrimitives.ReadUInt16LittleEndian(s[(o + 2)..]));
+        }
+
         return new PipelineRecipe(BinaryPrimitives.ReadUInt64LittleEndian(s), BinaryPrimitives.ReadUInt64LittleEndian(s[8..]),
             BinaryPrimitives.ReadUInt64LittleEndian(s[16..]), BinaryPrimitives.ReadUInt64LittleEndian(s[24..]), BinaryPrimitives.ReadInt32LittleEndian(s[32..]),
             s[36] != 0, s[37] != 0, s[38], s[39], s[40], s[41], s[42], s[43], s[44], s[45], s[46], s[47],
-            (s[48] & 1) != 0, (byte)(((s[48] >> 1) & 3) switch { 1 => 8, 2 => 16, 3 => 32, _ => 0 }), attrs, streams);
+            (s[48] & 1) != 0, (byte)(((s[48] >> 1) & 3) switch
+            {
+                1 => 8,
+                2 => 16,
+                3 => 32,
+                _ => 0
+            }), attrs, streams);
     }
 
     /// <summary>Record key: the same pipeline always maps to the same key, whatever the generator version.</summary>
@@ -164,7 +247,10 @@ public sealed class ShaderRecipeStore : IDisposable
 
     readonly BlobPack _pack;
 
-    ShaderRecipeStore(BlobPack pack) { _pack = pack; }
+    ShaderRecipeStore(BlobPack pack)
+    {
+        _pack = pack;
+    }
 
     public string Path => _pack.Path;
     public bool IsReadOnly => _pack.IsReadOnly;
@@ -204,10 +290,22 @@ public sealed class ShaderRecipeStore : IDisposable
         foreach (ulong key in _pack.Keys())
         {
             var data = _pack.TryRead(key);
-            if (data == null) { corrupted++; continue; }
-            if (data.Length > 0 && data[0] == ProgramTag) continue;
+            if (data == null)
+            {
+                corrupted++;
+                continue;
+            }
+            if (data.Length > 0 && data[0] == ProgramTag)
+            {
+                continue;
+            }
+
             var r = ShaderRecipe.Decode(data);
-            if (r == null || RecipeKey(r.ProgramHash, r.HintKey) != key) { corrupted++; continue; }
+            if (r == null || RecipeKey(r.ProgramHash, r.HintKey) != key)
+            {
+                corrupted++;
+                continue;
+            }
             list.Add(r);
         }
         return list;
@@ -217,7 +315,11 @@ public sealed class ShaderRecipeStore : IDisposable
     public byte[]? ProgramBytes(ulong programHash)
     {
         var data = _pack.TryRead(ProgramKey(programHash));
-        if (data == null || data.Length < 2 || data[0] != ProgramTag) return null;
+        if (data == null || data.Length < 2 || data[0] != ProgramTag)
+        {
+            return null;
+        }
+
         var bytes = data.AsSpan(1);
         return XxHash64.HashToUInt64(bytes) == programHash ? bytes.ToArray() : null;
     }

@@ -27,7 +27,9 @@ public sealed class NgsHleTests(GuestMemoryFixture fx) : IDisposable
     uint System()
     {
         uint p = _h.Alloc(32);
-        GuestMemory.W32(p + 4, 16); GuestMemory.W32(p + 8, Granularity); GuestMemory.W32(p + 12, 48000);
+        GuestMemory.W32(p + 4, 16);
+        GuestMemory.W32(p + 8, Granularity);
+        GuestMemory.W32(p + 12, 48000);
         uint mem = _h.Alloc(256), o = Out();
         Assert.Equal(OK, Call(N, "sceNgsSystemInit", mem, 256u, p, new Ptr<uint>(o)));
         return GuestMemory.R32(o);
@@ -38,13 +40,17 @@ public sealed class NgsHleTests(GuestMemoryFixture fx) : IDisposable
     uint Rack(uint system, uint def, int voices, int channels)
     {
         uint desc = _h.Alloc(32);
-        GuestMemory.W32(desc, def); GuestMemory.W32(desc + 4, (uint)voices); GuestMemory.W32(desc + 8, (uint)channels);
-        GuestMemory.W32(desc + 12, 2); GuestMemory.W32(desc + 16, 2);
+        GuestMemory.W32(desc, def);
+        GuestMemory.W32(desc + 4, (uint)voices);
+        GuestMemory.W32(desc + 8, (uint)channels);
+        GuestMemory.W32(desc + 12, 2);
+        GuestMemory.W32(desc + 16, 2);
         uint size = Out();
         Assert.Equal(OK, Call(N, "sceNgsRackGetRequiredMemorySize", system, desc, new Ptr<uint>(size)));
         uint bytes = GuestMemory.R32(size);
         uint mem = _h.Alloc(bytes), info = _h.Alloc(8), o = Out();
-        GuestMemory.W32(info, mem); GuestMemory.W32(info + 4, bytes);
+        GuestMemory.W32(info, mem);
+        GuestMemory.W32(info + 4, bytes);
         Assert.Equal(OK, Call(N, "sceNgsRackInit", system, info, desc, new Ptr<uint>(o)));
         return GuestMemory.R32(o);
     }
@@ -59,8 +65,11 @@ public sealed class NgsHleTests(GuestMemoryFixture fx) : IDisposable
     uint Patch(uint src, uint dst)
     {
         uint setup = _h.Alloc(20), o = Out();
-        GuestMemory.W32(setup, src); GuestMemory.W32(setup + 4, 0); GuestMemory.W32(setup + 8, 0xFFFFFFFF);
-        GuestMemory.W32(setup + 12, dst); GuestMemory.W32(setup + 16, 0);
+        GuestMemory.W32(setup, src);
+        GuestMemory.W32(setup + 4, 0);
+        GuestMemory.W32(setup + 8, 0xFFFFFFFF);
+        GuestMemory.W32(setup + 12, dst);
+        GuestMemory.W32(setup + 16, 0);
         Assert.Equal(OK, Call(N, "sceNgsPatchCreateRouting", setup, new Ptr<uint>(o)));
         return GuestMemory.R32(o);
     }
@@ -72,10 +81,14 @@ public sealed class NgsHleTests(GuestMemoryFixture fx) : IDisposable
         uint blk = _h.Alloc(8 + 84);
         GuestMemory.W32(blk, 0);                    // module index
         uint d = blk + 8;
-        GuestMemory.W32(d, 0x01015CE6); GuestMemory.W32(d + 4, 84);
-        GuestMemory.W32(d + 8, pcm); GuestMemory.W32(d + 12, bytes);
-        GuestMemory.Write(d + 16, loops); GuestMemory.Write(d + 18, (short)-1);
-        GuestMemory.Write(d + 56, 48000f); GuestMemory.Write(d + 60, 1f);
+        GuestMemory.W32(d, 0x01015CE6);
+        GuestMemory.W32(d + 4, 84);
+        GuestMemory.W32(d + 8, pcm);
+        GuestMemory.W32(d + 12, bytes);
+        GuestMemory.Write(d + 16, loops);
+        GuestMemory.Write(d + 18, (short)-1);
+        GuestMemory.Write(d + 56, 48000f);
+        GuestMemory.Write(d + 60, 1f);
         GuestMemory.Write(d + 76, (byte)channels);
         uint n = _h.Word(0xFF);
         int r = Call(N, "sceNgsVoiceSetParamsBlock", voice, blk, 8u + 84u, new Ptr<int>(n));
@@ -86,7 +99,11 @@ public sealed class NgsHleTests(GuestMemoryFixture fx) : IDisposable
     uint Pcm(int frames, short l, short r)
     {
         uint p = _h.Alloc((uint)frames * 4);
-        for (int i = 0; i < frames; i++) { GuestMemory.Write(p + (uint)i * 4, l); GuestMemory.Write(p + (uint)i * 4 + 2, r); }
+        for (int i = 0; i < frames; i++)
+        {
+            GuestMemory.Write(p + (uint)i * 4, l);
+            GuestMemory.Write(p + (uint)i * 4 + 2, r);
+        }
         return p;
     }
 
@@ -112,7 +129,9 @@ public sealed class NgsHleTests(GuestMemoryFixture fx) : IDisposable
             "sceNgsVoiceDefGetPauserBuss", "sceNgsVoiceDefGetPitchShiftBuss", "sceNgsVoiceDefGetReverbBuss", "sceNgsVoiceDefGetSasEmuVoice",
             "sceNgsVoiceDefGetSimpleAtrac9Voice", "sceNgsVoiceDefGetScreamVoice", "sceNgsVoiceDefGetScreamAtrac9Voice", "sceNgsVoiceDefGetTemplate1",
             "sceNgsVoiceDefGetMasterBussInternal" })
+        {
             Assert.NotEqual(0u, (uint)Invoke(N, name)!);
+        }
 
         uint size = Out();
         Assert.Equal(INVALID_ARG, Call(N, "sceNgsSystemGetRequiredMemorySize", 0u, new Ptr<uint>(size)));
@@ -150,7 +169,8 @@ public sealed class NgsHleTests(GuestMemoryFixture fx) : IDisposable
         Assert.Equal(INVALID_ARG, Call(N, "sceNgsRackInit", sys, _h.Alloc(8), desc, new Ptr<uint>(size))); // NULL memory
         // a rack given too little memory fails
         uint small = _h.Alloc(8);
-        GuestMemory.W32(small, _h.Alloc(64)); GuestMemory.W32(small + 4, 64);
+        GuestMemory.W32(small, _h.Alloc(64));
+        GuestMemory.W32(small + 4, 64);
         Assert.Equal(ERROR, Call(N, "sceNgsRackInit", sys, small, desc, new Ptr<uint>(size)));
 
         uint rack = Rack(sys, simple, 2, 2);
@@ -208,7 +228,8 @@ public sealed class NgsHleTests(GuestMemoryFixture fx) : IDisposable
         Assert.Equal(patch, GuestMemory.R32(o));
         // a new routing starts silent; set the identity matrix
         uint m = _h.Alloc(16);
-        GuestMemory.Write(m, 1f); GuestMemory.Write(m + 12, 1f);
+        GuestMemory.Write(m, 1f);
+        GuestMemory.Write(m + 12, 1f);
         Assert.Equal(OK, Call(N, "sceNgsVoicePatchSetVolumesMatrix", patch, m));
         uint prop = _h.Alloc(24), deliv = _h.Alloc(20);
         Assert.Equal(OK, Call(N, "sceNgsPatchGetInfo", patch, prop, deliv));
@@ -250,12 +271,17 @@ public sealed class NgsHleTests(GuestMemoryFixture fx) : IDisposable
         Assert.Equal(OK, Call(N, "sceNgsSystemUpdate", sys));
         Assert.Equal(8192, MasterOutput(master)[0]);
         uint vols = _h.Alloc(8);
-        GuestMemory.Write(vols, 1f); GuestMemory.Write(vols + 4, 0f);
+        GuestMemory.Write(vols, 1f);
+        GuestMemory.Write(vols + 4, 0f);
         Assert.Equal(OK, Call(N, "sceNgsVoicePatchSetVolumes", patch, 0, vols, 2));
         Assert.Equal(INVALID_ARG, Call(N, "sceNgsVoicePatchSetVolumes", patch, 0, 0u, 2));
 
         // the buffer runs out after 1024 frames (4 granules): the voice finishes and leaves the queue
-        for (int i = 0; i < 4; i++) Call(N, "sceNgsSystemUpdate", sys);
+        for (int i = 0; i < 4; i++)
+        {
+            Call(N, "sceNgsSystemUpdate", sys);
+        }
+
         Call(N, "sceNgsVoiceGetInfo", voice, info);
         Assert.Equal(0u, GuestMemory.R32(info) & 1);
         Call(N, "sceNgsSystemUpdate", sys);
@@ -280,15 +306,24 @@ public sealed class NgsHleTests(GuestMemoryFixture fx) : IDisposable
         uint master = Voice(masterRack, 0), voice = Voice(voiceRack, 0);
         uint patch = Patch(voice, master);
         uint m = _h.Alloc(16);
-        GuestMemory.Write(m, 1f); GuestMemory.Write(m + 12, 1f);
+        GuestMemory.Write(m, 1f);
+        GuestMemory.Write(m + 12, 1f);
         Call(N, "sceNgsVoicePatchSetVolumesMatrix", patch, m);
         // a mono buffer of 128 frames looping forever (-1): the left sample is copied to both sides
         uint pcm = _h.Alloc(256);
-        for (uint i = 0; i < 128; i++) GuestMemory.Write(pcm + i * 2, (short)0x2000);
+        for (uint i = 0; i < 128; i++)
+        {
+            GuestMemory.Write(pcm + i * 2, (short)0x2000);
+        }
+
         Assert.Equal(OK, SetPlayer(voice, pcm, 256, -1, channels: 1));
         Call(N, "sceNgsVoicePlay", master);
         Call(N, "sceNgsVoicePlay", voice);
-        for (int i = 0; i < 6; i++) Assert.Equal(OK, Call(N, "sceNgsSystemUpdate", sys));
+        for (int i = 0; i < 6; i++)
+        {
+            Assert.Equal(OK, Call(N, "sceNgsSystemUpdate", sys));
+        }
+
         var o = MasterOutput(master);
         Assert.All(o, s => Assert.Equal(8192, s));
         uint info = _h.Alloc(24);
@@ -322,7 +357,10 @@ public sealed class NgsHleTests(GuestMemoryFixture fx) : IDisposable
         Call(N, "sceNgsVoiceGetInfo", voice, info);
         Assert.Equal(0u, GuestMemory.R32(info) & 1);
         foreach (var fn in new[] { "sceNgsVoicePlay", "sceNgsVoiceKill", "sceNgsVoiceKeyOff", "sceNgsVoicePause", "sceNgsVoiceResume" })
+        {
             Assert.Equal(INVALID_ARG, Call(N, fn, 0x1234u));
+        }
+
         Assert.Equal(INVALID_ARG, Call(N, "sceNgsVoiceGetInfo", 0x1234u, info));
         Assert.Equal(INVALID_ARG, Call(N, "sceNgsVoiceGetInfo", voice, 0u));
 
@@ -369,7 +407,9 @@ public sealed class NgsHleTests(GuestMemoryFixture fx) : IDisposable
         Assert.Equal(ERROR, Call(N, "sceNgsVoiceLockParams", voice, 3u, 0x01015CE5u, bi));
         // a params block for a locked module counts as an error
         uint blk = _h.Alloc(8 + 16), n = _h.Word(0);
-        GuestMemory.W32(blk, 3); GuestMemory.W32(blk + 8, 0x01015CE5); GuestMemory.W32(blk + 12, 16);
+        GuestMemory.W32(blk, 3);
+        GuestMemory.W32(blk + 8, 0x01015CE5);
+        GuestMemory.W32(blk + 12, 16);
         Assert.Equal(ERROR, Call(N, "sceNgsVoiceSetParamsBlock", voice, blk, 24u, new Ptr<int>(n)));
         Assert.Equal(1u, GuestMemory.R32(n));
         Assert.Equal(OK, Call(N, "sceNgsVoiceUnlockParams", voice, 3u));
@@ -379,7 +419,8 @@ public sealed class NgsHleTests(GuestMemoryFixture fx) : IDisposable
         // an unknown module, or a descriptor larger than the module's parameters
         GuestMemory.W32(blk, 9);
         Assert.Equal(ERROR, Call(N, "sceNgsVoiceSetParamsBlock", voice, blk, 24u, new Ptr<int>(n)));
-        GuestMemory.W32(blk, 3); GuestMemory.W32(blk + 12, 200);
+        GuestMemory.W32(blk, 3);
+        GuestMemory.W32(blk + 12, 200);
         Assert.Equal(ERROR, Call(N, "sceNgsVoiceSetParamsBlock", voice, blk, 8u + 200u, new Ptr<int>(n)));
         Assert.Equal(INVALID_ARG, Call(N, "sceNgsVoiceLockParams", voice, 9u, 0u, bi));
         Assert.Equal(INVALID_ARG, Call(N, "sceNgsVoiceUnlockParams", voice, 9u));

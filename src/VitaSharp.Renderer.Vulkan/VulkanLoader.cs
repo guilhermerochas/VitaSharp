@@ -29,8 +29,14 @@ public static class VulkanLoader
         if (DriverProvider is { } provider)
         {
             nint handle = 0;
-            try { handle = provider.Open(); }
-            catch (Exception e) { Log.Warn($"Custom GPU driver {provider.Description} failed to open: {e.Message}"); }
+            try
+            {
+                handle = provider.Open();
+            }
+            catch (Exception e)
+            {
+                Log.Warn($"Custom GPU driver {provider.Description} failed to open: {e.Message}");
+            }
             if (handle != 0)
             {
                 LoadedFrom = provider.Description;
@@ -52,10 +58,17 @@ public static class VulkanLoader
             LoadedFrom = "";
             return Vk.GetApi();
         }
-        catch (Exception e) { first = e; }
+        catch (Exception e)
+        {
+            first = e;
+        }
         foreach (var path in Candidates())
         {
-            if (!File.Exists(path) || !NativeLibrary.TryLoad(path, out var h)) continue;
+            if (!File.Exists(path) || !NativeLibrary.TryLoad(path, out var h))
+            {
+                continue;
+            }
+
             NativeLibrary.Free(h);
             try
             {
@@ -83,13 +96,22 @@ public static class VulkanLoader
                          "/opt/homebrew/lib", "/usr/local/lib",
                      })
             {
-                if (dir.Length == 0) continue;
+                if (dir.Length == 0)
+                {
+                    continue;
+                }
+
                 yield return Path.Combine(dir, "libvulkan.1.dylib");
                 yield return Path.Combine(dir, "libvulkan.dylib");
             }
             // MoltenVK without the loader: no layers, but enough to run
             foreach (var dir in new[] { exeDir, Path.Combine(exeDir, "..", "Frameworks"), string.IsNullOrEmpty(sdk) ? "" : Path.Combine(sdk, "lib"), "/opt/homebrew/lib", "/usr/local/lib" })
-                if (dir.Length > 0) yield return Path.Combine(dir, "libMoltenVK.dylib");
+            {
+                if (dir.Length > 0)
+                {
+                    yield return Path.Combine(dir, "libMoltenVK.dylib");
+                }
+            }
         }
         else if (OperatingSystem.IsLinux() || OperatingSystem.IsAndroid())
         {

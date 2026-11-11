@@ -52,8 +52,14 @@ public sealed class MainActivity : MauiAppCompatActivity
     {
         _duplicate = true;
         Core.Util.Log.Info("Second MainActivity: its launch intent goes to the first one");
-        try { base.OnCreate(savedInstanceState); }
-        catch (InvalidOperationException e) { Core.Util.Log.Info($"Second MainActivity: {e.Message}"); }
+        try
+        {
+            base.OnCreate(savedInstanceState);
+        }
+        catch (InvalidOperationException e)
+        {
+            Core.Util.Log.Info($"Second MainActivity: {e.Message}");
+        }
         var intent = Intent;
         Finish();
         first.LaunchRequestedGame(intent);
@@ -61,10 +67,20 @@ public sealed class MainActivity : MauiAppCompatActivity
 
     protected override void OnPostCreate(Bundle? savedInstanceState)
     {
-        if (!_duplicate) { base.OnPostCreate(savedInstanceState); return; }
+        if (!_duplicate)
+        {
+            base.OnPostCreate(savedInstanceState);
+            return;
+        }
         // Android's onPostCreate runs first; MAUI's window events after it have no window for this instance
-        try { base.OnPostCreate(savedInstanceState); }
-        catch (InvalidOperationException e) { Core.Util.Log.Info($"Second MainActivity: {e.Message}"); }
+        try
+        {
+            base.OnPostCreate(savedInstanceState);
+        }
+        catch (InvalidOperationException e)
+        {
+            Core.Util.Log.Info($"Second MainActivity: {e.Message}");
+        }
     }
 
     protected override void OnNewIntent(Intent? intent)
@@ -90,7 +106,8 @@ public sealed class MainActivity : MauiAppCompatActivity
         }
 #endif
 
-        if (intent?.GetStringExtra(Game.GameActivity.ExtraTitleId) is not { Length: > 0 } titleId) return;
+        if (intent?.GetStringExtra(Game.GameActivity.ExtraTitleId) is not { Length: > 0 } titleId)
+            return;
         intent.RemoveExtra(Game.GameActivity.ExtraTitleId);
         Core.Util.Log.Info($"Launch intent: starting {titleId}");
         Game.GameActivity.Launch(this, titleId, wakeScreen: true);
@@ -99,10 +116,12 @@ public sealed class MainActivity : MauiAppCompatActivity
     protected override void OnResume()
     {
         base.OnResume();
-        if (_duplicate) return;
+        if (_duplicate)
+            return;
         Current = this;
         // the game process may have changed the statistics and "last played"
-        if (AppServices.Initialized) AppServices.ReloadPrefs();
+        if (AppServices.Initialized)
+            AppServices.ReloadPrefs();
         Resumed?.Invoke();
     }
 

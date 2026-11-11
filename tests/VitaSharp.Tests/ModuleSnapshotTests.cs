@@ -50,26 +50,56 @@ public sealed class ModuleSnapshotTests(GuestMemoryFixture fx, ITestOutputHelper
             var fill = new Filler(new Random(20261111));
             for (int i = 0; i < src.Count; i++)
             {
-                if (src[i] is not ISnapshotState s || dst[i] is not ISnapshotState d) continue;
+                if (src[i] is not ISnapshotState s || dst[i] is not ISnapshotState d)
+                {
+                    continue;
+                }
+
                 string name = src[i].GetType().Name;
                 states++;
                 byte[] first = Save(s);
                 Load(d, first, b.Kernel.Objects);
                 byte[] again = Save(d);
-                if (!first.AsSpan().SequenceEqual(again)) { bad.Add($"{name} (as it starts): {first.Length} bytes saved, {again.Length} after a load"); continue; }
+                if (!first.AsSpan().SequenceEqual(again))
+                {
+                    bad.Add($"{name} (as it starts): {first.Length} bytes saved, {again.Length} after a load");
+                    continue;
+                }
 
-                if (!fill.Fill(src[i], 0)) { notFilled.Add($"{name}: no generated fields"); continue; }
+                if (!fill.Fill(src[i], 0))
+                {
+                    notFilled.Add($"{name}: no generated fields");
+                    continue;
+                }
                 byte[] full;
-                try { full = Save(s); }
-                catch (Exception e) { notFilled.Add($"{name}: filled state not savable ({e.GetType().Name}: {e.Message})"); continue; }
-                try { Load(d, full, b.Kernel.Objects); }
-                catch (Exception e) { notFilled.Add($"{name}: filled state not loadable ({e.GetType().Name}: {e.Message})"); continue; }
+                try
+                {
+                    full = Save(s);
+                }
+                catch (Exception e)
+                {
+                    notFilled.Add($"{name}: filled state not savable ({e.GetType().Name}: {e.Message})");
+                    continue;
+                }
+                try
+                {
+                    Load(d, full, b.Kernel.Objects);
+                }
+                catch (Exception e)
+                {
+                    notFilled.Add($"{name}: filled state not loadable ({e.GetType().Name}: {e.Message})");
+                    continue;
+                }
                 byte[] full2 = Save(d);
                 filled++;
                 if (!full.AsSpan().SequenceEqual(full2))
                 {
                     int at = 0;
-                    while (at < full.Length && at < full2.Length && full[at] == full2[at]) at++;
+                    while (at < full.Length && at < full2.Length && full[at] == full2[at])
+                    {
+                        at++;
+                    }
+
                     bad.Add($"{name} (filled): {full.Length} bytes saved, {full2.Length} after a load, first difference at {at}");
                 }
             }
@@ -78,7 +108,14 @@ public sealed class ModuleSnapshotTests(GuestMemoryFixture fx, ITestOutputHelper
             Assert.True(states > 80, $"only {states} modules with a state");
             Assert.True(filled * 10 >= states * 8, $"only {filled} of {states} module states could be filled:\n" + string.Join("\n", notFilled));
         }
-        finally { try { Directory.Delete(root, true); } catch (IOException) { } }
+        finally
+        {
+            try
+            {
+                Directory.Delete(root, true);
+            }
+            catch (IOException) { }
+        }
     }
 
     /// <summary>Fills the fields a [GenerateSnapshot] type saves (the generator's rules: instance fields declared in
@@ -100,7 +137,11 @@ public sealed class ModuleSnapshotTests(GuestMemoryFixture fx, ITestOutputHelper
             bool any = false;
             for (var t = o.GetType(); t != null && t != typeof(object); t = t.BaseType)
             {
-                if (!Generated(t)) continue;
+                if (!Generated(t))
+                {
+                    continue;
+                }
+
                 any = true;
                 var ignored = new HashSet<string>(t.GetCustomAttributes<SnapshotIgnoreFieldsAttribute>().SelectMany(x => x.Names));
                 foreach (var f in t.GetFields(BindingFlags.Instance | BindingFlags.Public | BindingFlags.NonPublic | BindingFlags.DeclaredOnly))
@@ -111,20 +152,42 @@ public sealed class ModuleSnapshotTests(GuestMemoryFixture fx, ITestOutputHelper
                     {
                         name = name[1..name.IndexOf('>')];
                         prop = t.GetProperty(name, BindingFlags.Instance | BindingFlags.Public | BindingFlags.NonPublic | BindingFlags.DeclaredOnly);
-                        if (prop?.GetCustomAttribute<SnapshotIgnoreAttribute>() != null) continue;
+                        if (prop?.GetCustomAttribute<SnapshotIgnoreAttribute>() != null)
+                        {
+                            continue;
+                        }
                     }
-                    else if (f.GetCustomAttribute<CompilerGeneratedAttribute>() != null) continue;
-                    if (ignored.Contains(name) || f.GetCustomAttribute<SnapshotIgnoreAttribute>() != null) continue;
-                    if (LoadOnly.Contains($"{t.DeclaringType?.Name}+{t.Name}.{name}")) continue;
+                    else if (f.GetCustomAttribute<CompilerGeneratedAttribute>() != null)
+                    {
+                        continue;
+                    }
+
+                    if (ignored.Contains(name) || f.GetCustomAttribute<SnapshotIgnoreAttribute>() != null)
+                    {
+                        continue;
+                    }
+
+                    if (LoadOnly.Contains($"{t.DeclaringType?.Name}+{t.Name}.{name}"))
+                    {
+                        continue;
+                    }
+
                     bool readOnly = prop != null ? prop.SetMethod == null || IsInitOnly(prop) : f.IsInitOnly;
                     var cur = f.GetValue(o);
                     if (readOnly)
                     {
                         // filled in place: collections and nested states
-                        if (cur != null && depth < MaxDepth) FillInPlace(cur, f.FieldType, depth + 1);
+                        if (cur != null && depth < MaxDepth)
+                        {
+                            FillInPlace(cur, f.FieldType, depth + 1);
+                        }
+
                         continue;
                     }
-                    if (Value(f.FieldType, depth + 1, cur, out var v)) f.SetValue(o, v);
+                    if (Value(f.FieldType, depth + 1, cur, out var v))
+                    {
+                        f.SetValue(o, v);
+                    }
                 }
             }
             return any;
@@ -135,14 +198,28 @@ public sealed class ModuleSnapshotTests(GuestMemoryFixture fx, ITestOutputHelper
 
         void FillInPlace(object cur, Type t, int depth)
         {
-            if (cur is IDictionary || IsCollection(t)) { FillCollection(cur, t, depth); return; }
+            if (cur is IDictionary || IsCollection(t))
+            {
+                FillCollection(cur, t, depth);
+                return;
+            }
             if (cur is Array arr)
             {
                 var et = t.GetElementType()!;
-                for (int i = 0; i < arr.Length; i++) if (Value(et, depth, arr.GetValue(i), out var v)) arr.SetValue(v, i);
+                for (int i = 0; i < arr.Length; i++)
+                {
+                    if (Value(et, depth, arr.GetValue(i), out var v))
+                    {
+                        arr.SetValue(v, i);
+                    }
+                }
+
                 return;
             }
-            if (Generated(cur.GetType())) Fill(cur, depth);
+            if (Generated(cur.GetType()))
+            {
+                Fill(cur, depth);
+            }
         }
 
         static bool IsCollection(Type t) => t.IsGenericType && t.GetGenericTypeDefinition() is var g &&
@@ -154,18 +231,39 @@ public sealed class ModuleSnapshotTests(GuestMemoryFixture fx, ITestOutputHelper
             var g = t.GetGenericTypeDefinition();
             var args = t.GetGenericArguments();
             t.GetMethod("Clear")!.Invoke(c, null);
-            if (depth >= MaxDepth) return;
+            if (depth >= MaxDepth)
+            {
+                return;
+            }
+
             for (int i = 0; i < 2; i++)
             {
-                if (!Value(args[0], depth + 1, null, out var e)) return;
+                if (!Value(args[0], depth + 1, null, out var e))
+                {
+                    return;
+                }
+
                 if (args.Length == 2)
                 {
-                    if (e == null || !Value(args[1], depth + 1, null, out var val)) return;
+                    if (e == null || !Value(args[1], depth + 1, null, out var val))
+                    {
+                        return;
+                    }
+
                     var dict = (IDictionary)c;
-                    if (!dict.Contains(e)) dict[e] = val;
+                    if (!dict.Contains(e))
+                    {
+                        dict[e] = val;
+                    }
                 }
-                else if (g == typeof(Queue<>)) t.GetMethod("Enqueue")!.Invoke(c, [e]);
-                else t.GetMethod("Add")!.Invoke(c, [e]);
+                else if (g == typeof(Queue<>))
+                {
+                    t.GetMethod("Enqueue")!.Invoke(c, [e]);
+                }
+                else
+                {
+                    t.GetMethod("Add")!.Invoke(c, [e]);
+                }
             }
         }
 
@@ -173,42 +271,128 @@ public sealed class ModuleSnapshotTests(GuestMemoryFixture fx, ITestOutputHelper
         public bool Value(Type t, int depth, object? cur, out object? v)
         {
             v = null;
-            if (t == typeof(bool)) { v = true; return true; }
-            if (t == typeof(byte)) { v = (byte)rng.Next(1, 256); return true; }
-            if (t == typeof(sbyte)) { v = (sbyte)rng.Next(-128, 128); return true; }
-            if (t == typeof(short)) { v = (short)rng.Next(short.MinValue, short.MaxValue); return true; }
-            if (t == typeof(ushort)) { v = (ushort)rng.Next(1, 65536); return true; }
-            if (t == typeof(char)) { v = (char)rng.Next('a', 'z'); return true; }
-            if (t == typeof(int)) { v = rng.Next(1, 1000); return true; }
-            if (t == typeof(uint)) { v = (uint)rng.Next(1, int.MaxValue); return true; }
-            if (t == typeof(long)) { v = rng.NextInt64(1, long.MaxValue); return true; }
-            if (t == typeof(ulong)) { v = (ulong)rng.NextInt64(1, long.MaxValue); return true; }
-            if (t == typeof(float)) { v = (float)rng.NextDouble() * 100; return true; }
-            if (t == typeof(double)) { v = rng.NextDouble() * 100; return true; }
-            if (t == typeof(nint)) { v = (nint)rng.Next(1, 1000); return true; }
-            if (t == typeof(string)) { v = "s" + rng.Next(1000, 9999); return true; }
+            if (t == typeof(bool))
+            {
+                v = true;
+                return true;
+            }
+            if (t == typeof(byte))
+            {
+                v = (byte)rng.Next(1, 256);
+                return true;
+            }
+            if (t == typeof(sbyte))
+            {
+                v = (sbyte)rng.Next(-128, 128);
+                return true;
+            }
+            if (t == typeof(short))
+            {
+                v = (short)rng.Next(short.MinValue, short.MaxValue);
+                return true;
+            }
+            if (t == typeof(ushort))
+            {
+                v = (ushort)rng.Next(1, 65536);
+                return true;
+            }
+            if (t == typeof(char))
+            {
+                v = (char)rng.Next('a', 'z');
+                return true;
+            }
+            if (t == typeof(int))
+            {
+                v = rng.Next(1, 1000);
+                return true;
+            }
+            if (t == typeof(uint))
+            {
+                v = (uint)rng.Next(1, int.MaxValue);
+                return true;
+            }
+            if (t == typeof(long))
+            {
+                v = rng.NextInt64(1, long.MaxValue);
+                return true;
+            }
+            if (t == typeof(ulong))
+            {
+                v = (ulong)rng.NextInt64(1, long.MaxValue);
+                return true;
+            }
+            if (t == typeof(float))
+            {
+                v = (float)rng.NextDouble() * 100;
+                return true;
+            }
+            if (t == typeof(double))
+            {
+                v = rng.NextDouble() * 100;
+                return true;
+            }
+            if (t == typeof(nint))
+            {
+                v = (nint)rng.Next(1, 1000);
+                return true;
+            }
+            if (t == typeof(string))
+            {
+                v = "s" + rng.Next(1000, 9999);
+                return true;
+            }
             if (t.IsEnum)
             {
                 var vals = Enum.GetValues(t);
-                if (vals.Length == 0) return false;
+                if (vals.Length == 0)
+                {
+                    return false;
+                }
+
                 v = vals.GetValue(rng.Next(vals.Length));
                 return true;
             }
-            if (Nullable.GetUnderlyingType(t) is { } inner) return Value(inner, depth, null, out v);
-            if (typeof(KernelObject).IsAssignableFrom(t)) return false; // saved by UID: null stays null
-            if (depth > MaxDepth) return false;
+            if (Nullable.GetUnderlyingType(t) is { } inner)
+            {
+                return Value(inner, depth, null, out v);
+            }
+
+            if (typeof(KernelObject).IsAssignableFrom(t))
+            {
+                return false; // saved by UID: null stays null
+            }
+
+            if (depth > MaxDepth)
+            {
+                return false;
+            }
+
             if (t.IsArray && t.GetArrayRank() == 1)
             {
                 var et = t.GetElementType()!;
                 var arr = Array.CreateInstance(et, 2);
-                for (int i = 0; i < 2; i++) { if (!Value(et, depth + 1, null, out var e)) return false; arr.SetValue(e, i); }
+                for (int i = 0; i < 2; i++)
+                {
+                    if (!Value(et, depth + 1, null, out var e))
+                    {
+                        return false;
+                    }
+                    arr.SetValue(e, i);
+                }
                 v = arr;
                 return true;
             }
             if (t.IsGenericType && t.FullName!.StartsWith("System.ValueTuple`", StringComparison.Ordinal))
             {
                 var parts = new List<object?>();
-                foreach (var p in t.GetGenericArguments()) { if (!Value(p, depth + 1, null, out var e)) return false; parts.Add(e); }
+                foreach (var p in t.GetGenericArguments())
+                {
+                    if (!Value(p, depth + 1, null, out var e))
+                    {
+                        return false;
+                    }
+                    parts.Add(e);
+                }
                 v = Activator.CreateInstance(t, [.. parts]);
                 return true;
             }
@@ -221,15 +405,32 @@ public sealed class ModuleSnapshotTests(GuestMemoryFixture fx, ITestOutputHelper
             }
             if (t.IsClass && typeof(ISnapshotState).IsAssignableFrom(t))
             {
-                if (t.IsAbstract) return false;
+                if (t.IsAbstract)
+                {
+                    return false;
+                }
+
                 object? o = cur;
                 if (o == null)
                 {
-                    try { o = Activator.CreateInstance(t, nonPublic: true); }
-                    catch (MissingMethodException) { return false; }
-                    catch (TargetInvocationException) { return false; }
+                    try
+                    {
+                        o = Activator.CreateInstance(t, nonPublic: true);
+                    }
+                    catch (MissingMethodException)
+                    {
+                        return false;
+                    }
+                    catch (TargetInvocationException)
+                    {
+                        return false;
+                    }
                 }
-                if (o != null && Generated(t)) Fill(o, depth);
+                if (o != null && Generated(t))
+                {
+                    Fill(o, depth);
+                }
+
                 v = o;
                 return o != null;
             }

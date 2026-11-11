@@ -241,10 +241,7 @@ public sealed partial class ThreadEventHandler
 
 public sealed partial class ObjectTable
 {
-    internal int NextUid
-    {
-        get => Volatile.Read(ref _next); set => Volatile.Write(ref _next, value);
-    }
+    internal int NextUid { get => Volatile.Read(ref _next); set => Volatile.Write(ref _next, value); }
 
     /// <summary>Every object, by UID order.</summary>
     internal List<KernelObject> Snapshot() => _objects.Values.OrderBy(o => o.Uid).ToList();

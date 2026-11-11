@@ -42,7 +42,11 @@ public sealed class FlashCapCamera : ICameraSource
             CameraSpecKind.Image => (ICameraSource?)StillImageCamera.TryLoad(s.Value),
             _ => webcam,
         }).ToArray();
-        if (sides[0] == null && sides[1] == null) return null;
+        if (sides[0] == null && sides[1] == null)
+        {
+            return null;
+        }
+
         return new FacingCameras(sides[0], sides[1]);
 
         static string? DeviceSel(CameraSpec s) => s.Kind == CameraSpecKind.Device ? s.Value : null;
@@ -110,8 +114,16 @@ public sealed class FlashCapCamera : ICameraSource
             var list = new List<CaptureDeviceDescriptor>();
             foreach (var d in all.OrderBy(d => Rank(d.DeviceType)))
             {
-                if (d.DeviceType == DeviceTypes.VideoForWindows && list.Count > 0) continue;
-                if (list.Any(e => e.Name == d.Name)) continue;
+                if (d.DeviceType == DeviceTypes.VideoForWindows && list.Count > 0)
+                {
+                    continue;
+                }
+
+                if (list.Any(e => e.Name == d.Name))
+                {
+                    continue;
+                }
+
                 list.Add(d);
             }
             return list;
@@ -138,8 +150,16 @@ public sealed class FlashCapCamera : ICameraSource
                 : [];
             return DirectShowEnabled ? EnumerateDirectShow().Concat(mf).Concat(vfw) : mf.Concat(vfw);
         }
-        if (OperatingSystem.IsLinux()) return Enumerate(new FlashCap.Devices.V4L2Devices());
-        if (OperatingSystem.IsMacOS()) return Enumerate(new FlashCap.Devices.AVFoundationDevices());
+        if (OperatingSystem.IsLinux())
+        {
+            return Enumerate(new FlashCap.Devices.V4L2Devices());
+        }
+
+        if (OperatingSystem.IsMacOS())
+        {
+            return Enumerate(new FlashCap.Devices.AVFoundationDevices());
+        }
+
         return [];
     }
 
@@ -178,7 +198,11 @@ public sealed class FlashCapCamera : ICameraSource
             return null;
         }
         var ch = Choose(desc, width, height, fps);
-        if (ch == null) { Log.Warn($"Camera: '{desc.Name}' has no supported uncompressed format"); return null; }
+        if (ch == null)
+        {
+            Log.Warn($"Camera: '{desc.Name}' has no supported uncompressed format");
+            return null;
+        }
         var mode = (desc.Name, desc.DeviceType, ch.Width, ch.Height, ch.PixelFormat, (double)ch.FramesPerSecond);
         var stream = _shared.Acquire(mode, after => new Capture(desc, ch, after), out bool reused);
         Log.Info($"Camera: {facing} camera -> '{desc.Name}' ({desc.DeviceType}) {ch}{(reused ? " (capture already running, reused)" : "")}");
@@ -225,7 +249,10 @@ public sealed class FlashCapCamera : ICameraSource
         {
             int off = (int)BinaryPrimitives.ReadUInt32LittleEndian(data[10..]);
             int h = BinaryPrimitives.ReadInt32LittleEndian(data[22..]);
-            if (off >= 54 && off <= data.Length - expected) return (off, h > 0);
+            if (off >= 54 && off <= data.Length - expected)
+            {
+                return (off, h > 0);
+            }
         }
         return (Math.Max(0, data.Length - expected), false);
     }
@@ -259,7 +286,8 @@ public sealed class FlashCapCamera : ICameraSource
             _desc = desc;
             _ch = ch;
             _format = Map(ch.PixelFormat)!.Value;
-            _w = ch.Width; _h = ch.Height;
+            _w = ch.Width;
+            _h = ch.Height;
             _expected = CameraImage.HostSize(_format, _w, _h);
             _rgb = _format is CameraHostFormat.Bgr24 or CameraHostFormat.Bgra32;
             _run = Task.Run(() => RunAsync(after));
@@ -268,38 +296,79 @@ public sealed class FlashCapCamera : ICameraSource
         async Task RunAsync(Task after)
         {
             var ct = _cts.Token;
-            try { await after.WaitAsync(TimeSpan.FromSeconds(5), ct); } // the previous capture of this device closes first
-            catch (OperationCanceledException) { return; }
+            try
+            {
+                await after.WaitAsync(TimeSpan.FromSeconds(5), ct);
+            } // the previous capture of this device closes first
+            catch (OperationCanceledException)
+            {
+                return;
+            }
             catch { }
             for (int attempt = 1; ; attempt++)
             {
                 try
                 {
                     var dev = await _desc.OpenAsync(_ch, TranscodeFormats.DoNotTranscode, false, 1, OnFrame, ct);
-                    lock (_lock) _device = dev;
+                    lock (_lock)
+                    {
+                        _device = dev;
+                    }
+
                     ct.ThrowIfCancellationRequested();
                     await dev.StartAsync(ct);
-                    if (attempt > 1) Log.Info($"Camera: '{_desc.Name}' started on attempt {attempt}");
+                    if (attempt > 1)
+                    {
+                        Log.Info($"Camera: '{_desc.Name}' started on attempt {attempt}");
+                    }
+
                     return;
                 }
-                catch (OperationCanceledException) when (ct.IsCancellationRequested) { return; }
+                catch (OperationCanceledException) when (ct.IsCancellationRequested)
+                {
+                    return;
+                }
                 catch (Exception e)
                 {
-                    if (attempt == 1) Log.Warn($"Camera: could not start '{_desc.Name}': {e.Message} (grey frames, retrying)");
-                    else if (attempt % 10 == 0) Log.Warn($"Camera: '{_desc.Name}' still failing after {attempt} attempts: {e.Message}");
+                    if (attempt == 1)
+                    {
+                        Log.Warn($"Camera: could not start '{_desc.Name}': {e.Message} (grey frames, retrying)");
+                    }
+                    else if (attempt % 10 == 0)
+                    {
+                        Log.Warn($"Camera: '{_desc.Name}' still failing after {attempt} attempts: {e.Message}");
+                    }
+
                     await CloseDeviceAsync(); // release whatever the failed start opened before trying again
                 }
                 _waitingRetry = true;
-                try { await _retry.WaitAsync(TimeSpan.FromSeconds(Math.Min(10, 2 * attempt)), ct); }
-                catch (OperationCanceledException) { return; }
-                finally { _waitingRetry = false; }
+                try
+                {
+                    await _retry.WaitAsync(TimeSpan.FromSeconds(Math.Min(10, 2 * attempt)), ct);
+                }
+                catch (OperationCanceledException)
+                {
+                    return;
+                }
+                finally
+                {
+                    _waitingRetry = false;
+                }
             }
         }
 
         public void RetryNow()
         {
-            if (!_waitingRetry) return;
-            try { _retry.Release(); } catch (SemaphoreFullException) { }
+            if (!_waitingRetry)
+            {
+                return;
+            }
+
+            try
+            {
+                _retry.Release();
+            }
+            catch (SemaphoreFullException) { }
         }
 
         void OnFrame(PixelBufferScope scope)
@@ -309,29 +378,57 @@ public sealed class FlashCapCamera : ICameraSource
                 var seg = scope.Buffer.ReferImage();
                 var data = seg.AsSpan();
                 var (off, bottomUp) = ParseBitmap(data, _expected);
-                if (data.Length - off < _expected) return; // truncated frame
+                if (data.Length - off < _expected)
+                {
+                    return; // truncated frame
+                }
+
                 var pixels = seg.Slice(off, _expected);
                 _frames.Publish(_w, _h, dst => CameraImage.DecodeToRgba(pixels, _format, _w, _h, _rgb && bottomUp, dst));
             }
             catch (Exception e)
             {
-                if (!_loggedError) { _loggedError = true; Log.Warn($"Camera: frame conversion failed: {e.Message}"); }
+                if (!_loggedError)
+                {
+                    _loggedError = true;
+                    Log.Warn($"Camera: frame conversion failed: {e.Message}");
+                }
             }
         }
 
         async Task CloseDeviceAsync()
         {
             CaptureDevice? dev;
-            lock (_lock) { dev = _device; _device = null; }
-            if (dev == null) return;
-            try { await dev.StopAsync(); } catch { }
-            try { await dev.DisposeAsync(); } catch { }
+            lock (_lock)
+            {
+                dev = _device;
+                _device = null;
+            }
+            if (dev == null)
+            {
+                return;
+            }
+
+            try
+            {
+                await dev.StopAsync();
+            }
+            catch { }
+            try
+            {
+                await dev.DisposeAsync();
+            }
+            catch { }
         }
 
         public async Task StopAsync()
         {
             _cts.Cancel();
-            try { await _run; } catch { }
+            try
+            {
+                await _run;
+            }
+            catch { }
             await CloseDeviceAsync();
             _cts.Dispose();
         }

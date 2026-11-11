@@ -21,7 +21,11 @@ public sealed unsafe class AddressSpaceTests(GuestMemoryFixture fx)
     [Fact]
     public void FixedUserAddressesArePrivatePerSpace()
     {
-        if (NewSpace() is not { } b) return;
+        if (NewSpace() is not { } b)
+        {
+            return;
+        }
+
         var a = fx.Memory.Primary;
         try
         {
@@ -42,19 +46,34 @@ public sealed unsafe class AddressSpaceTests(GuestMemoryFixture fx)
             }
             Assert.Equal(0xAAAA_AAAAu, GuestMemory.Read<uint>(Fixed));
             Assert.Equal("a", fx.Memory.FindBlock(Fixed)!.Name);
-            using (AddressSpace.Use(b)) Assert.Equal(0xBBBB_BBBBu, GuestMemory.Read<uint>(Fixed));
+            using (AddressSpace.Use(b))
+            {
+                Assert.Equal(0xBBBB_BBBBu, GuestMemory.Read<uint>(Fixed));
+            }
 
             // the range becomes free for everyone only when both spaces released it
             fx.Memory.Free(Fixed);
             Assert.Equal(0u, fx.Memory.TryAllocAt(Fixed, FixedSize, "a again"));
-            using (AddressSpace.Use(b)) fx.Memory.Free(Fixed);
+            using (AddressSpace.Use(b))
+            {
+                fx.Memory.Free(Fixed);
+            }
+
             Assert.Equal(Fixed, fx.Memory.TryAllocAt(Fixed, FixedSize, "a again"));
             fx.Memory.Free(Fixed);
         }
         finally
         {
-            using (AddressSpace.Use(b)) fx.Memory.Free(Fixed);
-            using (AddressSpace.Use(a)) fx.Memory.Free(Fixed);
+            using (AddressSpace.Use(b))
+            {
+                fx.Memory.Free(Fixed);
+            }
+
+            using (AddressSpace.Use(a))
+            {
+                fx.Memory.Free(Fixed);
+            }
+
             fx.Memory.ReleaseSpace(b);
         }
     }
@@ -62,7 +81,11 @@ public sealed unsafe class AddressSpaceTests(GuestMemoryFixture fx)
     [Fact]
     public void SharedRegionsAreTheSameMemoryEverywhere()
     {
-        if (NewSpace() is not { } b) return;
+        if (NewSpace() is not { } b)
+        {
+            return;
+        }
+
         uint cdram = fx.Memory.Alloc(0x10000, "shared cdram", MemoryRegion.Cdram);
         uint kernel = fx.Memory.Alloc(0x1000, "shared kernel", MemoryRegion.Kernel);
         try
@@ -88,19 +111,35 @@ public sealed unsafe class AddressSpaceTests(GuestMemoryFixture fx)
     [Fact]
     public void DirtyPagesOfEverySpaceAreSwept()
     {
-        if (NewSpace() is not { } b) return;
+        if (NewSpace() is not { } b)
+        {
+            return;
+        }
+
         try
         {
-            using (AddressSpace.Use(b)) Assert.True(fx.Memory.MapFixed(Code + 0x10000, 0x1000, "dirty"));
+            using (AddressSpace.Use(b))
+            {
+                Assert.True(fx.Memory.MapFixed(Code + 0x10000, 0x1000, "dirty"));
+            }
+
             uint stamp = DirtyPages.Sweep();
             Assert.False(DirtyPages.WrittenSince(Code + 0x10000, 4, stamp + 1));
-            using (AddressSpace.Use(b)) GuestMemory.Write(Code + 0x10000, 1u);
+            using (AddressSpace.Use(b))
+            {
+                GuestMemory.Write(Code + 0x10000, 1u);
+            }
+
             uint e = DirtyPages.Sweep();
             Assert.True(DirtyPages.WrittenSince(Code + 0x10000, 4, e));
         }
         finally
         {
-            using (AddressSpace.Use(b)) fx.Memory.Free(Code + 0x10000);
+            using (AddressSpace.Use(b))
+            {
+                fx.Memory.Free(Code + 0x10000);
+            }
+
             fx.Memory.ReleaseSpace(b);
         }
     }
@@ -110,12 +149,17 @@ public sealed unsafe class AddressSpaceTests(GuestMemoryFixture fx)
     [Fact]
     public void CpuRunsInItsSpace()
     {
-        if (NewSpace() is not { } b) return;
+        if (NewSpace() is not { } b)
+        {
+            return;
+        }
+
         var a = fx.Memory.Primary;
         var spaces = new[] { a, b };
         try
         {
             for (int i = 0; i < 2; i++)
+            {
                 using (AddressSpace.Use(spaces[i]))
                 {
                     Assert.True(fx.Memory.MapFixed(Code, 0x2000, $"code {i}"));
@@ -125,6 +169,8 @@ public sealed unsafe class AddressSpaceTests(GuestMemoryFixture fx)
                     GuestMemory.Write(Code + 4, 0xE5801000u);
                     GuestMemory.Write(Code + 8, 0xEF000000u);
                 }
+            }
+
             for (int i = 0; i < 2; i++)
             {
                 for (int native = 0; native < 2; native++)
@@ -136,9 +182,16 @@ public sealed unsafe class AddressSpaceTests(GuestMemoryFixture fx)
                         var block = cache.Get(Code, false);
                         if (native == 1)
                         {
-                            if (Jit.Chain.Length == 0 || Jit.Chain[0].Name != "native") continue;
+                            if (Jit.Chain.Length == 0 || Jit.Chain[0].Name != "native")
+                            {
+                                continue;
+                            }
+
                             Jit.Compile(block);
-                            if (block.NativeEntry == 0) continue;
+                            if (block.NativeEntry == 0)
+                            {
+                                continue;
+                            }
                         }
                     }
                     var s = core.State;
@@ -146,12 +199,22 @@ public sealed unsafe class AddressSpaceTests(GuestMemoryFixture fx)
                     s->R[15] = Code;
                     Assert.Equal(ExitReason.Svc, core.Run());
                 }
-                using (AddressSpace.Use(spaces[i])) Assert.Equal(0x1111u * (uint)(i + 1), GuestMemory.Read<uint>(Code + 0x1000));
+                using (AddressSpace.Use(spaces[i]))
+                {
+                    Assert.Equal(0x1111u * (uint)(i + 1), GuestMemory.Read<uint>(Code + 0x1000));
+                }
             }
         }
         finally
         {
-            foreach (var sp in spaces) using (AddressSpace.Use(sp)) fx.Memory.Free(Code);
+            foreach (var sp in spaces)
+            {
+                using (AddressSpace.Use(sp))
+                {
+                    fx.Memory.Free(Code);
+                }
+            }
+
             fx.Memory.ReleaseSpace(b);
         }
     }

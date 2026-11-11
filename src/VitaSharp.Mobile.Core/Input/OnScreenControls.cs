@@ -4,7 +4,10 @@ using VitaSharp.Core.Localization;
 
 namespace VitaSharp.Mobile.Core.Input;
 
-public enum OnScreenShape { Button, Stick, Toggle }
+public enum OnScreenShape
+{
+    Button, Stick, Toggle
+}
 
 /// <summary>
 /// One on-screen control. Rectangles are in fractions of the landscape screen (0..1) so one layout fits every phone;
@@ -54,8 +57,20 @@ public sealed class OnScreenPad : IInputBackend
     /// <summary>TRAS: while on, touches on the image go to the rear touch pad instead of the screen.</summary>
     public bool RearTouch
     {
-        get { lock (_lock) return _rear; }
-        set { lock (_lock) _rear = value; }
+        get
+        {
+            lock (_lock)
+            {
+                return _rear;
+            }
+        }
+        set
+        {
+            lock (_lock)
+            {
+                _rear = value;
+            }
+        }
     }
 
     /// <summary>Raised on the UI thread on a PS button press (pressed edge).</summary>
@@ -76,13 +91,19 @@ public sealed class OnScreenPad : IInputBackend
     /// <summary>Controls held right now, and TRAS while it is on (drawn in the accent colour).</summary>
     public bool IsPressed(OnScreenControl c)
     {
-        lock (_lock) return _pressed.Contains(c) || c.Control == VitaControl.TouchBack && _rear;
+        lock (_lock)
+        {
+            return _pressed.Contains(c) || c.Control == VitaControl.TouchBack && _rear;
+        }
     }
 
     /// <summary>Offset of a stick's knob from its centre, -1..1 per axis (0,0 when released).</summary>
     public (float X, float Y) Knob(OnScreenControl c)
     {
-        lock (_lock) return _knobs.GetValueOrDefault(c);
+        lock (_lock)
+        {
+            return _knobs.GetValueOrDefault(c);
+        }
     }
 
     /// <summary>Feeds the current fingers (MotionEvent pointers, in fractions of the screen) from the UI thread.</summary>
@@ -103,34 +124,76 @@ public sealed class OnScreenPad : IInputBackend
             {
                 live.Add(f.Id);
                 if (!_captured.TryGetValue(f.Id, out var hit))
+                {
                     _captured[f.Id] = hit = Visible ? Layout.FirstOrDefault(c => c.Contains(f.X, f.Y)) : null;
+                }
+
                 if (hit == null)
                 {
                     var im = Image;
                     if (f.X >= im.X && f.X < im.X + im.Width && f.Y >= im.Y && f.Y < im.Y + im.Height)
+                    {
                         image.Add(new TouchPoint(f.Id, (f.X - im.X) / im.Width, (f.Y - im.Y) / im.Height));
+                    }
+
                     continue;
                 }
                 // a button only counts while the finger is still on it; a stick follows its finger anywhere
-                if (hit.Shape != OnScreenShape.Stick && !hit.Contains(f.X, f.Y)) continue;
+                if (hit.Shape != OnScreenShape.Stick && !hit.Contains(f.X, f.Y))
+                {
+                    continue;
+                }
+
                 _pressed.Add(hit);
-                if (hit.Shape == OnScreenShape.Stick) _knobs[hit] = Stick(ref st, hit, f.X, f.Y);
-                else if (hit.Shape == OnScreenShape.Button) st.Buttons |= VitaControls.Button(hit.Control);
+                if (hit.Shape == OnScreenShape.Stick)
+                {
+                    _knobs[hit] = Stick(ref st, hit, f.X, f.Y);
+                }
+                else if (hit.Shape == OnScreenShape.Button)
+                {
+                    st.Buttons |= VitaControls.Button(hit.Control);
+                }
             }
-            foreach (var id in _captured.Keys.Where(id => !live.Contains(id)).ToList()) _captured.Remove(id);
+            foreach (var id in _captured.Keys.Where(id => !live.Contains(id)).ToList())
+            {
+                _captured.Remove(id);
+            }
+
             foreach (var c in _pressed)
             {
-                if (before.Contains(c)) continue;
+                if (before.Contains(c))
+                {
+                    continue;
+                }
+
                 newlyPressed.Add(c);
-                if (c.Shape == OnScreenShape.Toggle && c.Control == VitaControl.TouchBack) _rear = !_rear;
+                if (c.Shape == OnScreenShape.Toggle && c.Control == VitaControl.TouchBack)
+                {
+                    _rear = !_rear;
+                }
             }
             psNow = (st.Buttons & VitaButtons.PsButton) != 0;
             _state = st;
-            if (_rear) { _back = [.. image]; _front = []; }
-            else { _front = [.. image]; _back = []; }
+            if (_rear)
+            {
+                _back = [.. image];
+                _front = [];
+            }
+            else
+            {
+                _front = [.. image];
+                _back = [];
+            }
         }
-        foreach (var c in newlyPressed) ControlPressed?.Invoke(c);
-        if (psNow && !psBefore) PsPressed?.Invoke();
+        foreach (var c in newlyPressed)
+        {
+            ControlPressed?.Invoke(c);
+        }
+
+        if (psNow && !psBefore)
+        {
+            PsPressed?.Invoke();
+        }
     }
 
     /// <summary>Releases every finger (the activity lost focus or the overlay was hidden).</summary>
@@ -141,22 +204,40 @@ public sealed class OnScreenPad : IInputBackend
         float dx = (x - (c.X + c.Width / 2)) / (c.Width / 2), dy = (y - (c.Y + c.Height / 2)) / (c.Height / 2);
         // a finger outside the ring pushes the stick to its edge in that direction
         float len = MathF.Sqrt(dx * dx + dy * dy);
-        if (len > 1) { dx /= len; dy /= len; }
+        if (len > 1)
+        {
+            dx /= len;
+            dy /= len;
+        }
         static byte Axis(float v) => (byte)Math.Clamp(128 + v * 127, 0, 255);
         bool left = c.Control is VitaControl.LStickUp or VitaControl.LStickDown or VitaControl.LStickLeft or VitaControl.LStickRight;
-        if (left) { st.Lx = Axis(dx); st.Ly = Axis(dy); }
-        else { st.Rx = Axis(dx); st.Ry = Axis(dy); }
+        if (left)
+        {
+            st.Lx = Axis(dx);
+            st.Ly = Axis(dy);
+        }
+        else
+        {
+            st.Rx = Axis(dx);
+            st.Ry = Axis(dy);
+        }
         return (dx, dy);
     }
 
     public ControllerState GetController(int port)
     {
-        lock (_lock) return port == 0 ? _state : ControllerState.Neutral;
+        lock (_lock)
+        {
+            return port == 0 ? _state : ControllerState.Neutral;
+        }
     }
 
     public IReadOnlyList<TouchPoint> GetTouches(bool back)
     {
-        lock (_lock) return back ? _back : _front;
+        lock (_lock)
+        {
+            return back ? _back : _front;
+        }
     }
 
     // dp of the 844x390 reference screen to a fraction (axis 0 = x, 1 = y)

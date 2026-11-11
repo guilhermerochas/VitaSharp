@@ -393,20 +393,32 @@ public sealed class Arm64AssemblerTests
         // every encodable 32-bit bitmask decodes back to itself (DecodeBitMasks)
         var rng = new Random(7);
         for (int size = 2; size <= 32; size *= 2)
+        {
             for (int ones = 1; ones < size; ones++)
+            {
                 for (int rot = 0; rot < size; rot++)
                 {
                     ulong elem = ((1UL << ones) - 1);
                     elem = ((elem >> rot) | (elem << (size - rot))) & ((1UL << size) - 1);
                     ulong v = 0;
-                    for (int i = 0; i < 32; i += size) v |= elem << i;
+                    for (int i = 0; i < 32; i += size)
+                    {
+                        v |= elem << i;
+                    }
+
                     Assert.True(TryLogicalImm(v, false, out uint enc), $"{v:X8}");
                     Assert.Equal(v, Decode(enc, false));
                 }
+            }
+        }
+
         for (int i = 0; i < 2000; i++)
         {
             ulong v = (ulong)rng.NextInt64();
-            if (TryLogicalImm(v, true, out uint enc)) Assert.Equal(v, Decode(enc, true));
+            if (TryLogicalImm(v, true, out uint enc))
+            {
+                Assert.Equal(v, Decode(enc, true));
+            }
         }
         Assert.False(TryLogicalImm(0, false, out _));
         Assert.False(TryLogicalImm(0xFFFFFFFF, false, out _));
@@ -424,7 +436,11 @@ public sealed class Arm64AssemblerTests
         ulong mask = size == 64 ? ulong.MaxValue : (1UL << size) - 1;
         ulong elem = r == 0 ? welem : ((welem >> r) | (welem << (size - r))) & mask;
         ulong v = 0;
-        for (int i = 0; i < 64; i += size) v |= elem << i;
+        for (int i = 0; i < 64; i += size)
+        {
+            v |= elem << i;
+        }
+
         return x ? v : v & 0xFFFFFFFF;
     }
 }

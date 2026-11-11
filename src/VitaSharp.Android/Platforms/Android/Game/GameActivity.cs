@@ -69,8 +69,10 @@ public sealed partial class GameActivity : Activity, ISurfaceHolderCallback, Inp
     {
         var intent = new Intent(context, typeof(GameActivity));
         intent.PutExtra(ExtraTitleId, titleId);
-        if (wakeScreen) intent.PutExtra(ExtraWakeScreen, true);
-        if (context is not Activity) intent.AddFlags(ActivityFlags.NewTask);
+        if (wakeScreen)
+            intent.PutExtra(ExtraWakeScreen, true);
+        if (context is not Activity)
+            intent.AddFlags(ActivityFlags.NewTask);
         context.StartActivity(intent);
     }
 
@@ -82,7 +84,8 @@ public sealed partial class GameActivity : Activity, ISurfaceHolderCallback, Inp
     {
         Log.Info($"Restarting {running.TitleId} (pid {running.Pid}) for a new GPU driver configuration");
         Process.KillProcess(running.Pid);
-        for (int i = 0; i < 60 && GameProcessMarker.IsGameProcess(running.Pid); i++) await Task.Delay(50);
+        for (int i = 0; i < 60 && GameProcessMarker.IsGameProcess(running.Pid); i++)
+            await Task.Delay(50);
         // the killed process could not remove its marker; the next game writes its own
         GameProcessMarker.Clear(AppServices.Data.GameProcessFile, running.Pid);
         Launch(context, running.TitleId);
@@ -100,8 +103,10 @@ public sealed partial class GameActivity : Activity, ISurfaceHolderCallback, Inp
             SetShowWhenLocked(true);
             if (GetSystemService(KeyguardService) is KeyguardManager km)
             {
-                if (!km.IsKeyguardSecure) km.RequestDismissKeyguard(this, null);
-                else if (km.IsKeyguardLocked) Log.Warn("Launch intent: the lock screen is secure (PIN/pattern); unlock the phone to see the game");
+                if (!km.IsKeyguardSecure)
+                    km.RequestDismissKeyguard(this, null);
+                else if (km.IsKeyguardLocked)
+                    Log.Warn("Launch intent: the lock screen is secure (PIN/pattern); unlock the phone to see the game");
             }
         }
         else
@@ -117,7 +122,8 @@ public sealed partial class GameActivity : Activity, ISurfaceHolderCallback, Inp
         base.OnCreate(savedInstanceState);
         AppServices.Initialize(this, gameProcess: true);
         Window?.AddFlags(WindowManagerFlags.KeepScreenOn);
-        if (Intent?.GetBooleanExtra(ExtraWakeScreen, false) == true) WakeScreen();
+        if (Intent?.GetBooleanExtra(ExtraWakeScreen, false) == true)
+            WakeScreen();
 
         string titleId = Intent?.GetStringExtra(ExtraTitleId) ?? "";
         bool system = titleId == SystemTitleId;
@@ -144,12 +150,17 @@ public sealed partial class GameActivity : Activity, ISurfaceHolderCallback, Inp
                 _input.Script.StateRequested += (save, slot) => RunOnUiThread(() => ScriptedState(save, slot));
                 Log.Info($"{EnvVars.AndroidInput}: {_input.Script.Count} scripted input steps");
             }
-            catch (FormatException e) { Log.Warn($"{EnvVars.AndroidInput} ignored: {e.Message}"); }
+            catch (FormatException e)
+            {
+                Log.Warn($"{EnvVars.AndroidInput} ignored: {e.Message}");
+            }
         }
         _sensors = new GameSensors(this); // SceMotion from the phone's sensors, SceCamera from its cameras
         // the shell takes the PS button itself (the running game's LiveArea); a game on its own opens the pause menu
-        if (system) _pad.Layout = OnScreenPad.SystemLayout;
-        else _pad.PsPressed += OnPsPressed;
+        if (system)
+            _pad.Layout = OnScreenPad.SystemLayout;
+        else
+            _pad.PsPressed += OnPsPressed;
         _isSystem = system;
 
         var root = _root = new FrameLayout(this);
@@ -163,7 +174,10 @@ public sealed partial class GameActivity : Activity, ISurfaceHolderCallback, Inp
         _toast = Chip("", 14);
         _toast.Visibility = ViewStates.Gone;
         root.AddView(_toast, new FrameLayout.LayoutParams(ViewGroup.LayoutParams.WrapContent, ViewGroup.LayoutParams.WrapContent, GravityFlags.Top | GravityFlags.Right)
-        { TopMargin = Dp(12), RightMargin = Dp(96) });
+        {
+            TopMargin = Dp(12),
+            RightMargin = Dp(96)
+        });
         SetContentView(root);
         // after SetContentView: Window.InsetsController needs the decor view, which does not exist before it (a
         // NullPointerException inside PhoneWindow.getInsetsController on API 30+)
@@ -173,7 +187,8 @@ public sealed partial class GameActivity : Activity, ISurfaceHolderCallback, Inp
         // physical controllers: the ones already connected, then hot-plug
         _inputManager = (InputManager?)GetSystemService(InputService);
         _inputManager?.RegisterInputDeviceListener(this, null);
-        foreach (int id in InputDevice.GetDeviceIds() ?? []) OnInputDeviceAdded(id);
+        foreach (int id in InputDevice.GetDeviceIds() ?? [])
+            OnInputDeviceAdded(id);
         AppServices.Gamepads.DevicesChanged += OnGamepadsChanged;
         OnGamepadsChanged();
 
@@ -210,7 +225,8 @@ public sealed partial class GameActivity : Activity, ISurfaceHolderCallback, Inp
         var ime = new AndroidImeDialog(this);
         _session.SetTextInput(ime, ime);
         _sensors?.Attach(_session);
-        if (_surface != null) _session.SurfaceCreated(_surface);
+        if (_surface != null)
+            _session.SurfaceCreated(_surface);
         _fpsTimer = new System.Threading.Timer(_ => RunOnUiThread(UpdateFps), null, 1000, 1000);
     }
 
@@ -218,7 +234,8 @@ public sealed partial class GameActivity : Activity, ISurfaceHolderCallback, Inp
 
     public void SurfaceCreated(ISurfaceHolder holder)
     {
-        if (holder.Surface is not { IsValid: true } s) return;
+        if (holder.Surface is not { IsValid: true } s)
+            return;
         _surface = new AndroidVulkanSurface(s);
         _session?.SurfaceCreated(_surface);
         _displayTuning?.SurfaceCreated();
@@ -242,7 +259,8 @@ public sealed partial class GameActivity : Activity, ISurfaceHolderCallback, Inp
     /// the pad needs its rectangle to turn image touches into front-touch points.</summary>
     void UpdateImageRect()
     {
-        if (_view is not { Width: > 0, Height: > 0 } v) return;
+        if (_view is not { Width: > 0, Height: > 0 } v)
+            return;
         float scale = Math.Min(v.Width / 960f, v.Height / 544f);
         float iw = 960 * scale / v.Width, ih = 544 * scale / v.Height;
         _pad.Image = ((1 - iw) / 2, (1 - ih) / 2, iw, ih);
@@ -256,16 +274,19 @@ public sealed partial class GameActivity : Activity, ISurfaceHolderCallback, Inp
 
     void ApplySurfaceSize(SurfaceView v)
     {
-        if (string.IsNullOrEmpty(SurfaceSize) || v.Holder is not { } holder) return;
+        if (string.IsNullOrEmpty(SurfaceSize) || v.Holder is not { } holder)
+            return;
         int h = SurfaceSize switch
         {
             "game" => 544,
             "half" => v.Height / 2,
             _ => int.TryParse(SurfaceSize, out int px) ? px : 0,
         };
-        if (h <= 0 || h >= v.Height) return;
+        if (h <= 0 || h >= v.Height)
+            return;
         int w = (int)Math.Round((double)v.Width * h / v.Height);
-        if (_surfaceSizeSet == (w, h)) return;
+        if (_surfaceSizeSet == (w, h))
+            return;
         _surfaceSizeSet = (w, h);
         holder.SetFixedSize(w, h);
         Log.Info($"Game surface buffers {w}x{h} (view {v.Width}x{v.Height}, {EnvVars.AndroidSurfaceSize}={SurfaceSize})");
@@ -286,7 +307,8 @@ public sealed partial class GameActivity : Activity, ISurfaceHolderCallback, Inp
     {
         base.OnResume();
         EnterImmersive();
-        if (!_menuOpen) _session?.Resume();
+        if (!_menuOpen)
+            _session?.Resume();
         _sensors?.Resume();
     }
 
@@ -300,10 +322,12 @@ public sealed partial class GameActivity : Activity, ISurfaceHolderCallback, Inp
     public override void OnWindowFocusChanged(bool hasFocus)
     {
         base.OnWindowFocusChanged(hasFocus);
-        if (hasFocus) EnterImmersive();
+        if (hasFocus)
+            EnterImmersive();
         // a dialog (IME text entry, the fatal message) took the key events: the key-up of a key held now would never come
         // back here, and the game would see it held after the dialog closes
-        else _keyboard?.ReleaseAll();
+        else
+            _keyboard?.ReleaseAll();
     }
 
     protected override void OnDestroy()
@@ -317,14 +341,16 @@ public sealed partial class GameActivity : Activity, ISurfaceHolderCallback, Inp
         _surface?.Dispose();
         base.OnDestroy();
         // the game process exists for one game: end it so the next game starts clean
-        if (IsFinishing) Process.KillProcess(Process.MyPid());
+        if (IsFinishing)
+            Process.KillProcess(Process.MyPid());
     }
 
     public override void OnBackPressed() => OpenMenu();
 
     void EnterImmersive()
     {
-        if (Window is not { } w) return;
+        if (Window is not { } w)
+            return;
         if (OperatingSystem.IsAndroidVersionAtLeast(30))
         {
             if (w.InsetsController is { } c)
@@ -350,7 +376,8 @@ public sealed partial class GameActivity : Activity, ISurfaceHolderCallback, Inp
     public void OnInputDeviceAdded(int deviceId)
     {
         var d = InputDevice.GetDevice(deviceId);
-        if (!IsGameController(d)) return;
+        if (!IsGameController(d))
+            return;
         var axes = d!.MotionRanges?.Select(r => (int)r.Axis).Distinct().ToArray() ?? [];
         AppServices.Gamepads.Connect(deviceId, d.Name ?? Loc.Get("MController"), d.VendorId, d.ProductId, axes);
         Log.Info($"Controller connected: {d.Name} ({d.VendorId:X4}:{d.ProductId:X4}), axes {string.Join(",", axes)}");
@@ -374,12 +401,14 @@ public sealed partial class GameActivity : Activity, ISurfaceHolderCallback, Inp
     public override bool DispatchKeyEvent(KeyEvent? e)
     {
         // the pause menu takes a controller's keys (focus, press, back) instead of the paused game
-        if (e != null && MenuVisible && (AppServices.Gamepads.IsConnected(e.DeviceId) || (e.Source & InputSourceType.Gamepad) == InputSourceType.Gamepad) && MenuControllerKey(e)) return true;
+        if (e != null && MenuVisible && (AppServices.Gamepads.IsConnected(e.DeviceId) || (e.Source & InputSourceType.Gamepad) == InputSourceType.Gamepad) && MenuControllerKey(e))
+            return true;
         if (e != null && !MenuVisible && e.Action is KeyEventActions.Down or KeyEventActions.Up && e.RepeatCount == 0
             && AppServices.Gamepads.OnKey(e.DeviceId, (int)e.KeyCode, e.Action == KeyEventActions.Down))
         {
             // the PS/Home button of a controller in a game without the shell: the pause menu, like the on-screen PS
-            if (e.KeyCode == Keycode.ButtonMode && e.Action == KeyEventActions.Down && !_isSystem) OnPsPressed();
+            if (e.KeyCode == Keycode.ButtonMode && e.Action == KeyEventActions.Down && !_isSystem)
+                OnPsPressed();
             return true;
         }
         return base.DispatchKeyEvent(e);
@@ -395,15 +424,20 @@ public sealed partial class GameActivity : Activity, ISurfaceHolderCallback, Inp
 
     bool OnKeyboardKey(Keycode keyCode, KeyEvent? e, bool down)
     {
-        if (_keyboard == null || e == null || (e.Source & InputSourceType.Keyboard) != InputSourceType.Keyboard) return false;
+        if (_keyboard == null || e == null || (e.Source & InputSourceType.Keyboard) != InputSourceType.Keyboard)
+            return false;
         // the pause menu is open: arrows and Enter move and press its buttons (Android's focus), Escape goes back
-        if (MenuVisible) return false;
+        if (MenuVisible)
+            return false;
         // a controller's own keys (and their auto-repeats, which DispatchKeyEvent leaves to us) are not keyboard keys
-        if (AppServices.Gamepads.IsConnected(e.DeviceId)) return false;
+        if (AppServices.Gamepads.IsConnected(e.DeviceId))
+            return false;
         var action = _keyboard.OnKey((int)keyCode, down, e.RepeatCount > 0);
-        if ((action & KeyboardKeyAction.Pause) != 0) OpenMenu();
+        if ((action & KeyboardKeyAction.Pause) != 0)
+            OpenMenu();
         // the PS key in a game without the shell: the pause menu, like the on-screen PS and a controller's PS button
-        if ((action & KeyboardKeyAction.PsButton) != 0 && !_isSystem) OnPsPressed();
+        if ((action & KeyboardKeyAction.PsButton) != 0 && !_isSystem)
+            OnPsPressed();
         return action != KeyboardKeyAction.None;
     }
 
@@ -450,7 +484,8 @@ public sealed partial class GameActivity : Activity, ISurfaceHolderCallback, Inp
 
     void UpdateFps()
     {
-        if (_session == null || _fps == null) return;
+        if (_session == null || _fps == null)
+            return;
         // the guest process stopped by itself (exit, stack-protector failure, crash): say so instead of a frozen image
         if (_session.Ended && !_endedShown)
         {
@@ -467,13 +502,15 @@ public sealed partial class GameActivity : Activity, ISurfaceHolderCallback, Inp
 #if VITASHARP_DEVELOPER
         rec |= _session.CaptureDir != null;
 #endif
-        if (rec) _fps.Text = "\u25CF REC  " + _fps.Text;
+        if (rec)
+            _fps.Text = "\u25CF REC  " + _fps.Text;
 
         // every 30 s in the log (device runs are read from logcat): frame rate and what the CPU backends compiled
         if (++_fpsTicks % 30 == 0 && !_session.Paused)
         {
             Log.Info($"[perf] {(frames - _framesAtLog) / 30.0:F1} fps over 30 s, {frames} frames");
-            if (Core.Cpu.Jit.Enabled) Log.Info($"[perf] {Core.Cpu.Jit.Describe()}");
+            if (Core.Cpu.Jit.Enabled)
+                Log.Info($"[perf] {Core.Cpu.Jit.Describe()}");
             Log.Info($"[perf] audio: {_session.AudioSummary}");
             _framesAtLog = frames;
         }
@@ -482,7 +519,8 @@ public sealed partial class GameActivity : Activity, ISurfaceHolderCallback, Inp
 
     void ShowTrophy(TrophyUnlockedEvent e)
     {
-        if (_toast == null) return;
+        if (_toast == null)
+            return;
         _toast.Text = Loc.Format("MTrophyUnlocked", e.Trophy.Name, TrophyList.GradeName(e.Trophy.Grade));
         _toast.Visibility = ViewStates.Visible;
         _toast.PostDelayed(() => _toast.Visibility = ViewStates.Gone, 5000);
@@ -501,11 +539,15 @@ public sealed partial class GameActivity : Activity, ISurfaceHolderCallback, Inp
             var saving = SavingNotice(); // the pause menu's card (GameActivity.PauseMenu.cs)
             new System.Threading.Thread(() =>
             {
-                while (c.IsRecording && !c.Stop("leaving the game")) System.Threading.Thread.Sleep(250);
+                while (c.IsRecording && !c.Stop("leaving the game"))
+                    System.Threading.Thread.Sleep(250);
                 c.Idle.Wait();
                 RunOnUiThread(() => { _root?.RemoveView(saving); Finish(); });
             })
-            { IsBackground = true, Name = "capture leave" }.Start();
+            {
+                IsBackground = true,
+                Name = "capture leave"
+            }.Start();
             return;
         }
         Finish();

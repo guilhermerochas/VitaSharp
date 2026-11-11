@@ -27,7 +27,13 @@ sealed class SaveStateControl(Emulator emu, VulkanRendererOptions ro, Func<IGpuB
     public string? LoadProblem(string path) => SaveStates.CheckFile(emu, path);
 
     /// <summary>The slot picked in the save state picker becomes the one Shift+F5 / Shift+F7 use (the quick slot leaves it).</summary>
-    public void Select(int slot) { if (slot is >= 1 and <= 9) _slot = slot; }
+    public void Select(int slot)
+    {
+        if (slot is >= 1 and <= 9)
+        {
+            _slot = slot;
+        }
+    }
 
     public void NextSlot()
     {
@@ -44,8 +50,22 @@ sealed class SaveStateControl(Emulator emu, VulkanRendererOptions ro, Func<IGpuB
 
     void Run(Action a)
     {
-        if (Interlocked.Exchange(ref _busy, 1) == 1) return;
-        Task.Run(() => { try { a(); } finally { Volatile.Write(ref _busy, 0); } });
+        if (Interlocked.Exchange(ref _busy, 1) == 1)
+        {
+            return;
+        }
+
+        Task.Run(() =>
+        {
+            try
+            {
+                a();
+            }
+            finally
+            {
+                Volatile.Write(ref _busy, 0);
+            }
+        });
     }
 
     public bool Save(string path, string label = "", byte[]? thumbnail = null)
@@ -68,7 +88,11 @@ sealed class SaveStateControl(Emulator emu, VulkanRendererOptions ro, Func<IGpuB
 
     public bool Load(string path, string label = "")
     {
-        if (!File.Exists(path)) { status?.Invoke(Loc.Format("StateEmpty", label)); return false; }
+        if (!File.Exists(path))
+        {
+            status?.Invoke(Loc.Format("StateEmpty", label));
+            return false;
+        }
         try
         {
             // a state of another executable of the game (saved after a LoadExec): that one is started first
@@ -99,7 +123,11 @@ sealed class SaveStateControl(Emulator emu, VulkanRendererOptions ro, Func<IGpuB
             var sw = System.Diagnostics.Stopwatch.StartNew();
             while (sw.ElapsedMilliseconds < timeoutMs + 700) // the frame retires a few frames later, then the PNG is written
             {
-                if (File.Exists(shot) && ScaleShot(shot) is { } png) return png;
+                if (File.Exists(shot) && ScaleShot(shot) is { } png)
+                {
+                    return png;
+                }
+
                 Thread.Sleep(15);
             }
             Log.Info("Save state: no screenshot in time, using the small frame picture");
@@ -107,7 +135,12 @@ sealed class SaveStateControl(Emulator emu, VulkanRendererOptions ro, Func<IGpuB
         finally
         {
             Interlocked.CompareExchange(ref ro.ShotPath, null, shot);
-            try { File.Delete(shot); } catch (IOException) { } catch (UnauthorizedAccessException) { }
+            try
+            {
+                File.Delete(shot);
+            }
+            catch (IOException) { }
+            catch (UnauthorizedAccessException) { }
         }
         return GrabSinkThumbnail(ro, timeoutMs);
     }
@@ -119,16 +152,34 @@ sealed class SaveStateControl(Emulator emu, VulkanRendererOptions ro, Func<IGpuB
         try
         {
             byte[] bytes = File.ReadAllBytes(path); // the writer holds the file open exclusively until it is complete
-            if (bytes.Length < 12 || !bytes.AsSpan(bytes.Length - 8, 4).SequenceEqual("IEND"u8)) return null;
+            if (bytes.Length < 12 || !bytes.AsSpan(bytes.Length - 8, 4).SequenceEqual("IEND"u8))
+            {
+                return null;
+            }
+
             using var full = SkiaSharp.SKBitmap.Decode(bytes);
-            if (full == null) return null;
+            if (full == null)
+            {
+                return null;
+            }
+
             using var small = full.Resize(new SkiaSharp.SKImageInfo(ThumbWidth, ThumbHeight), SkiaSharp.SKFilterQuality.Medium);
-            if (small == null) return null;
+            if (small == null)
+            {
+                return null;
+            }
+
             using var data = small.Encode(SkiaSharp.SKEncodedImageFormat.Png, 100);
             return data?.ToArray();
         }
-        catch (IOException) { return null; }
-        catch (UnauthorizedAccessException) { return null; }
+        catch (IOException)
+        {
+            return null;
+        }
+        catch (UnauthorizedAccessException)
+        {
+            return null;
+        }
     }
 
     static byte[]? GrabSinkThumbnail(VulkanRendererOptions ro, int timeoutMs)
@@ -140,21 +191,49 @@ sealed class SaveStateControl(Emulator emu, VulkanRendererOptions ro, Func<IGpuB
         ro.FrameSink = (n, p, pw, ph) =>
         {
             previous?.Invoke(n, p, pw, ph);
-            if (got.IsSet) return;
-            px = p; w = pw; h = ph;
+            if (got.IsSet)
+            {
+                return;
+            }
+
+            px = p;
+            w = pw;
+            h = ph;
             got.Set();
         };
-        try { got.Wait(timeoutMs); }
-        finally { ro.FrameSink = previous; }
-        if (px == null) return null;
+        try
+        {
+            got.Wait(timeoutMs);
+        }
+        finally
+        {
+            ro.FrameSink = previous;
+        }
+        if (px == null)
+        {
+            return null;
+        }
+
         string tmp = Path.Combine(Path.GetTempPath(), $"vitasharp-thumb-{Environment.ProcessId}.png");
         try
         {
             Png.Write(tmp, px, w, h);
             return File.ReadAllBytes(tmp);
         }
-        catch (IOException) { return null; }
-        finally { try { File.Delete(tmp); } catch (IOException) { } }
+        catch (IOException)
+        {
+            return null;
+        }
+        finally
+        {
+            try
+            {
+                File.Delete(tmp);
+            }
+            catch (IOException)
+            {
+            }
+        }
     }
 
     /// <summary>--save-state=fN[,fN...] (to &lt;data&gt;/savestates/&lt;TITLEID&gt;/test_fN.vss), --load-state-at=fN[,...]
@@ -163,23 +242,59 @@ sealed class SaveStateControl(Emulator emu, VulkanRendererOptions ro, Func<IGpuB
     public void StartScheduled(string[] options)
     {
         var steps = new SortedList<long, Action>();
-        void Add(long frame, Action a) { while (steps.ContainsKey(frame)) frame++; steps.Add(frame, a); }
+        void Add(long frame, Action a)
+        {
+            while (steps.ContainsKey(frame))
+            {
+                frame++;
+            }
+
+            steps.Add(frame, a);
+        }
         string? loadPath = null;
         if (Runner.Opt(options, "--load-state") is { } ls)
         {
             int at = ls.LastIndexOf('@');
             long frame = 120;
-            if (at > 1 && long.TryParse(ls[(at + 1)..].TrimStart('f'), out var lf)) { frame = lf; ls = ls[..at]; }
+            if (at > 1 && long.TryParse(ls[(at + 1)..].TrimStart('f'), out var lf))
+            {
+                frame = lf;
+                ls = ls[..at];
+            }
             loadPath = ls;
             Add(frame, () => Load(ls, Path.GetFileName(ls)));
         }
         if (Runner.Opt(options, "--save-state") is { } ss)
+        {
             foreach (var f in ss.Split(',', StringSplitOptions.RemoveEmptyEntries).Select(s => long.Parse(s.TrimStart('f'))))
+            {
                 Add(f, () => Save(Path.Combine(SaveStates.Folder(Program.DataRoot, emu.TitleId), $"test_f{f}.vss"), $"f{f}"));
+            }
+        }
+
         if (Runner.Opt(options, "--load-state-at") is { } la)
+        {
             foreach (var f in la.Split(',', StringSplitOptions.RemoveEmptyEntries).Select(s => long.Parse(s.TrimStart('f'))))
-                Add(f, () => { if ((_lastSaved ?? loadPath) is { } p) Load(p, Path.GetFileName(p)); else Log.Warn("--load-state-at: no state saved yet"); });
-        if (steps.Count == 0) return;
+            {
+                Add(f, () =>
+                {
+                    if ((_lastSaved ?? loadPath) is { } p)
+                    {
+                        Load(p, Path.GetFileName(p));
+                    }
+                    else
+                    {
+                        Log.Warn("--load-state-at: no state saved yet");
+                    }
+                });
+            }
+        }
+
+        if (steps.Count == 0)
+        {
+            return;
+        }
+
         new Thread(() =>
         {
             while (steps.Count > 0)
@@ -194,6 +309,9 @@ sealed class SaveStateControl(Emulator emu, VulkanRendererOptions ro, Func<IGpuB
                 Thread.Sleep(5);
             }
         })
-        { IsBackground = true, Name = "save-state steps" }.Start();
+        {
+            IsBackground = true,
+            Name = "save-state steps"
+        }.Start();
     }
 }

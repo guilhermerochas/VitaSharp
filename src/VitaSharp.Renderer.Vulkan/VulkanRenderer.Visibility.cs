@@ -32,7 +32,11 @@ public sealed unsafe partial class VulkanRenderer
 
     VisibilityFrame Vis(Frame f)
     {
-        if (f.Visibility != null) return f.Visibility;
+        if (f.Visibility != null)
+        {
+            return f.Visibility;
+        }
+
         var ci = new QueryPoolCreateInfo { SType = StructureType.QueryPoolCreateInfo, QueryType = QueryType.Occlusion, QueryCount = VisQueriesPerFrame };
         var v = new VisibilityFrame();
         _vk.CreateQueryPool(_dev, in ci, null, out v.Pool);
@@ -53,9 +57,17 @@ public sealed unsafe partial class VulkanRenderer
     bool BeginVisibilityQuery(CommandBuffer cmd, DrawCommand d, out uint query)
     {
         query = 0;
-        if (d.VisAddress == 0) return false;
+        if (d.VisAddress == 0)
+        {
+            return false;
+        }
+
         var v = Vis(F);
-        if (v.Used >= VisQueriesPerFrame) { Log.WarnOnce("visq-full", "[gpu] visibility queries per frame exhausted"); return false; }
+        if (v.Used >= VisQueriesPerFrame)
+        {
+            Log.WarnOnce("visq-full", "[gpu] visibility queries per frame exhausted");
+            return false;
+        }
         query = v.Used++;
         float k = RtScale; // internal resolution only: the supersampled MSAA path stands for GXM's own samples
         v.Queries.Add((d.VisAddress, d.VisIncrement, d.Space, k * k));
@@ -70,11 +82,22 @@ public sealed unsafe partial class VulkanRenderer
     void CompleteVisibility(Frame f)
     {
         var v = f.Visibility;
-        if (v == null || v.Used == 0) return;
-        if (v.Results.Length < v.Used) v.Results = new uint[Math.Max(v.Used, Math.Min(v.Results.Length * 2, VisQueriesPerFrame))];
+        if (v == null || v.Used == 0)
+        {
+            return;
+        }
+
+        if (v.Results.Length < v.Used)
+        {
+            v.Results = new uint[Math.Max(v.Used, Math.Min(v.Results.Length * 2, VisQueriesPerFrame))];
+        }
+
         var results = v.Results;
         fixed (uint* p = results)
+        {
             _vk.GetQueryPoolResults(_dev, v.Pool, 0, v.Used, (nuint)(v.Used * 4), p, 4, QueryResultFlags.ResultWaitBit);
+        }
+
         var sums = v.Sums;
         sums.Clear();
         for (int i = 0; i < v.Queries.Count; i++)
@@ -84,15 +107,29 @@ public sealed unsafe partial class VulkanRenderer
             sums[(space, addr)] = (cur.Samples + (ForceVisible ? 1u << 16 : area == 1f ? results[i] : results[i] / (double)area), inc);
         }
         foreach (var ((space, addr), (samples, inc)) in sums)
-            using (AddressSpace.Use(space)) GuestMemory.W32(addr, inc ? (uint)Math.Min(samples > 0 ? Math.Max(1, Math.Round(samples)) : 0, uint.MaxValue) : samples > 0 ? 1u : 0u);
-        if (TraceVis) Log.Info($"[vis] retire f{VitaSharp.Core.Hle.Modules.Display.FramesPresented} gpuframe={FrameCount} wrote {sums.Count} words, nonzero: " + string.Join(" ", sums.Where(k => k.Value.Samples > 0).OrderBy(k => k.Key.Item2).Select(k => $"{k.Key.Item2:X}={k.Value.Samples}")));
+        {
+            using (AddressSpace.Use(space))
+            {
+                GuestMemory.W32(addr, inc ? (uint)Math.Min(samples > 0 ? Math.Max(1, Math.Round(samples)) : 0, uint.MaxValue) : samples > 0 ? 1u : 0u);
+            }
+        }
+
+        if (TraceVis)
+        {
+            Log.Info($"[vis] retire f{VitaSharp.Core.Hle.Modules.Display.FramesPresented} gpuframe={FrameCount} wrote {sums.Count} words, nonzero: " + string.Join(" ", sums.Where(k => k.Value.Samples > 0).OrderBy(k => k.Key.Item2).Select(k => $"{k.Key.Item2:X}={k.Value.Samples}")));
+        }
+
         v.Used = 0;
         v.Queries.Clear();
     }
 
     void DestroyVisibility(Frame f)
     {
-        if (f.Visibility is { } v) _vk.DestroyQueryPool(_dev, v.Pool, null);
+        if (f.Visibility is { } v)
+        {
+            _vk.DestroyQueryPool(_dev, v.Pool, null);
+        }
+
         f.Visibility = null;
     }
 }

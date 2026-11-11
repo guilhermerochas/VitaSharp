@@ -26,7 +26,11 @@ internal static unsafe class T16
         DecodeImmShift(op, imm5, out int t, out int n);
         uint r = ShiftC(s->R[rm], t, n, s->C, out uint c);
         s->R[rd] = r;
-        if (SetFlags(ins)) { SetNZ(s, r); s->C = c; }
+        if (SetFlags(ins))
+        {
+            SetNZ(s, r);
+            s->C = c;
+        }
     }
 
     /// <summary>ADD/SUB register and 3-bit immediate: 00011 I op Rm/imm3 Rn Rd</summary>
@@ -38,7 +42,12 @@ internal static unsafe class T16
         uint b = imm ? m : s->R[m];
         uint r = sub ? AddWithCarry(s->R[rn], ~b, 1, out uint c, out uint v) : AddWithCarry(s->R[rn], b, 0, out c, out v);
         s->R[rd] = r;
-        if (SetFlags(ins)) { SetNZ(s, r); s->C = c; s->V = v; }
+        if (SetFlags(ins))
+        {
+            SetNZ(s, r);
+            s->C = c;
+            s->V = v;
+        }
     }
 
     /// <summary>MOV/CMP/ADD/SUB imm8: 001 op Rdn imm8</summary>
@@ -50,21 +59,37 @@ internal static unsafe class T16
         {
             case 0:
                 s->R[rdn] = imm;
-                if (SetFlags(ins)) SetNZ(s, imm);
+                if (SetFlags(ins))
+                {
+                    SetNZ(s, imm);
+                }
+
                 break;
-            case 1: AddFlags(s, s->R[rdn], ~imm, 1); break;
+            case 1:
+                AddFlags(s, s->R[rdn], ~imm, 1);
+                break;
             case 2:
             {
                 uint r = AddWithCarry(s->R[rdn], imm, 0, out uint c, out uint v);
                 s->R[rdn] = r;
-                if (SetFlags(ins)) { SetNZ(s, r); s->C = c; s->V = v; }
+                if (SetFlags(ins))
+                {
+                    SetNZ(s, r);
+                    s->C = c;
+                    s->V = v;
+                }
                 break;
             }
             default:
             {
                 uint r = AddWithCarry(s->R[rdn], ~imm, 1, out uint c, out uint v);
                 s->R[rdn] = r;
-                if (SetFlags(ins)) { SetNZ(s, r); s->C = c; s->V = v; }
+                if (SetFlags(ins))
+                {
+                    SetNZ(s, r);
+                    s->C = c;
+                    s->V = v;
+                }
                 break;
             }
         }
@@ -80,25 +105,122 @@ internal static unsafe class T16
         uint r, c, v;
         switch (op)
         {
-            case 0x0: r = a & b; s->R[rdn] = r; if (sf) SetNZ(s, r); return;
-            case 0x1: r = a ^ b; s->R[rdn] = r; if (sf) SetNZ(s, r); return;
-            case 0x2: r = ShiftRegC(a, 0, b, s->C, out c); s->R[rdn] = r; if (sf) { SetNZ(s, r); s->C = c; } return;
-            case 0x3: r = ShiftRegC(a, 1, b, s->C, out c); s->R[rdn] = r; if (sf) { SetNZ(s, r); s->C = c; } return;
-            case 0x4: r = ShiftRegC(a, 2, b, s->C, out c); s->R[rdn] = r; if (sf) { SetNZ(s, r); s->C = c; } return;
-            case 0x5: r = AddWithCarry(a, b, s->C, out c, out v); break;
-            case 0x6: r = AddWithCarry(a, ~b, s->C, out c, out v); break;
-            case 0x7: r = ShiftRegC(a, 3, b, s->C, out c); s->R[rdn] = r; if (sf) { SetNZ(s, r); s->C = c; } return;
-            case 0x8: SetNZ(s, a & b); return;                                  // TST
-            case 0x9: r = AddWithCarry(~b, 0, 1, out c, out v); break;          // RSB #0 (NEG): Rd = 0 - Rm
-            case 0xA: AddFlags(s, a, ~b, 1); return;                            // CMP
-            case 0xB: AddFlags(s, a, b, 0); return;                             // CMN
-            case 0xC: r = a | b; s->R[rdn] = r; if (sf) SetNZ(s, r); return;
-            case 0xD: r = a * b; s->R[rdn] = r; if (sf) SetNZ(s, r); return;
-            case 0xE: r = a & ~b; s->R[rdn] = r; if (sf) SetNZ(s, r); return;
-            default: r = ~b; s->R[rdn] = r; if (sf) SetNZ(s, r); return;
+            case 0x0:
+                r = a & b;
+                s->R[rdn] = r;
+                if (sf)
+                {
+                    SetNZ(s, r);
+                }
+
+                return;
+            case 0x1:
+                r = a ^ b;
+                s->R[rdn] = r;
+                if (sf)
+                {
+                    SetNZ(s, r);
+                }
+
+                return;
+            case 0x2:
+                r = ShiftRegC(a, 0, b, s->C, out c);
+                s->R[rdn] = r;
+                if (sf)
+                {
+                    SetNZ(s, r);
+                    s->C = c;
+                }
+                return;
+            case 0x3:
+                r = ShiftRegC(a, 1, b, s->C, out c);
+                s->R[rdn] = r;
+                if (sf)
+                {
+                    SetNZ(s, r);
+                    s->C = c;
+                }
+                return;
+            case 0x4:
+                r = ShiftRegC(a, 2, b, s->C, out c);
+                s->R[rdn] = r;
+                if (sf)
+                {
+                    SetNZ(s, r);
+                    s->C = c;
+                }
+                return;
+            case 0x5:
+                r = AddWithCarry(a, b, s->C, out c, out v);
+                break;
+            case 0x6:
+                r = AddWithCarry(a, ~b, s->C, out c, out v);
+                break;
+            case 0x7:
+                r = ShiftRegC(a, 3, b, s->C, out c);
+                s->R[rdn] = r;
+                if (sf)
+                {
+                    SetNZ(s, r);
+                    s->C = c;
+                }
+                return;
+            case 0x8:
+                SetNZ(s, a & b);
+                return;                                  // TST
+            case 0x9:
+                r = AddWithCarry(~b, 0, 1, out c, out v);
+                break;          // RSB #0 (NEG): Rd = 0 - Rm
+            case 0xA:
+                AddFlags(s, a, ~b, 1);
+                return;                            // CMP
+            case 0xB:
+                AddFlags(s, a, b, 0);
+                return;                             // CMN
+            case 0xC:
+                r = a | b;
+                s->R[rdn] = r;
+                if (sf)
+                {
+                    SetNZ(s, r);
+                }
+
+                return;
+            case 0xD:
+                r = a * b;
+                s->R[rdn] = r;
+                if (sf)
+                {
+                    SetNZ(s, r);
+                }
+
+                return;
+            case 0xE:
+                r = a & ~b;
+                s->R[rdn] = r;
+                if (sf)
+                {
+                    SetNZ(s, r);
+                }
+
+                return;
+            default:
+                r = ~b;
+                s->R[rdn] = r;
+                if (sf)
+                {
+                    SetNZ(s, r);
+                }
+
+                return;
         }
         s->R[rdn] = r;
-        if (sf) { SetNZ(s, r); s->C = c; s->V = v; }
+        if (sf)
+        {
+            SetNZ(s, r);
+            s->C = c;
+            s->V = v;
+        }
     }
 
     /// <summary>ADD (high registers): 01000100 DN Rm Rdn</summary>
@@ -107,7 +229,14 @@ internal static unsafe class T16
     {
         uint rdn = (Bit(ins, 7) << 3) | (ins & 7), rm = Bits(ins, 6, 3);
         uint r = Rg(s, rdn, pc) + Rg(s, rm, pc);
-        if (rdn == 15) BranchWritePcThumb(s, r); else s->R[rdn] = r;
+        if (rdn == 15)
+        {
+            BranchWritePcThumb(s, r);
+        }
+        else
+        {
+            s->R[rdn] = r;
+        }
     }
 
     /// <summary>CMP (high registers): 01000101 N Rm Rn</summary>
@@ -124,7 +253,14 @@ internal static unsafe class T16
     {
         uint rd = (Bit(ins, 7) << 3) | (ins & 7), rm = Bits(ins, 6, 3);
         uint v = Rg(s, rm, pc);
-        if (rd == 15) BranchWritePcThumb(s, v); else s->R[rd] = v;
+        if (rd == 15)
+        {
+            BranchWritePcThumb(s, v);
+        }
+        else
+        {
+            s->R[rd] = v;
+        }
     }
 
     /// <summary>BX/BLX register: 01000111 L Rm 000</summary>
@@ -133,7 +269,11 @@ internal static unsafe class T16
     {
         uint rm = Bits(ins, 6, 3);
         uint target = Rg(s, rm, pc);
-        if (Bit(ins, 7) != 0) s->R[14] = (pc + 2) | 1;
+        if (Bit(ins, 7) != 0)
+        {
+            s->R[14] = (pc + 2) | 1;
+        }
+
         BxWritePc(s, target);
     }
 
@@ -150,14 +290,30 @@ internal static unsafe class T16
         uint addr = s->R[rn] + s->R[rm];
         switch (op)
         {
-            case 0: Mem.W32(s, addr, s->R[rt]); break;
-            case 1: Mem.W16(s, addr, s->R[rt]); break;
-            case 2: Mem.W8(s, addr, s->R[rt]); break;
-            case 3: s->R[rt] = (uint)(sbyte)Mem.R8(s, addr); break;
-            case 4: s->R[rt] = Mem.R32(s, addr); break;
-            case 5: s->R[rt] = Mem.R16(s, addr); break;
-            case 6: s->R[rt] = Mem.R8(s, addr); break;
-            default: s->R[rt] = (uint)(short)Mem.R16(s, addr); break;
+            case 0:
+                Mem.W32(s, addr, s->R[rt]);
+                break;
+            case 1:
+                Mem.W16(s, addr, s->R[rt]);
+                break;
+            case 2:
+                Mem.W8(s, addr, s->R[rt]);
+                break;
+            case 3:
+                s->R[rt] = (uint)(sbyte)Mem.R8(s, addr);
+                break;
+            case 4:
+                s->R[rt] = Mem.R32(s, addr);
+                break;
+            case 5:
+                s->R[rt] = Mem.R16(s, addr);
+                break;
+            case 6:
+                s->R[rt] = Mem.R8(s, addr);
+                break;
+            default:
+                s->R[rt] = (uint)(short)Mem.R16(s, addr);
+                break;
         }
     }
 
@@ -168,8 +324,18 @@ internal static unsafe class T16
         bool b = Bit(ins, 12) != 0, l = Bit(ins, 11) != 0;
         uint imm5 = Bits(ins, 10, 6), rn = Bits(ins, 5, 3), rt = ins & 7;
         uint addr = s->R[rn] + (b ? imm5 : imm5 << 2);
-        if (l) s->R[rt] = b ? Mem.R8(s, addr) : Mem.R32(s, addr);
-        else if (b) Mem.W8(s, addr, s->R[rt]); else Mem.W32(s, addr, s->R[rt]);
+        if (l)
+        {
+            s->R[rt] = b ? Mem.R8(s, addr) : Mem.R32(s, addr);
+        }
+        else if (b)
+        {
+            Mem.W8(s, addr, s->R[rt]);
+        }
+        else
+        {
+            Mem.W32(s, addr, s->R[rt]);
+        }
     }
 
     /// <summary>STRH/LDRH imm5: 1000 L imm5 Rn Rt</summary>
@@ -178,7 +344,14 @@ internal static unsafe class T16
     {
         uint imm5 = Bits(ins, 10, 6), rn = Bits(ins, 5, 3), rt = ins & 7;
         uint addr = s->R[rn] + (imm5 << 1);
-        if (Bit(ins, 11) != 0) s->R[rt] = Mem.R16(s, addr); else Mem.W16(s, addr, s->R[rt]);
+        if (Bit(ins, 11) != 0)
+        {
+            s->R[rt] = Mem.R16(s, addr);
+        }
+        else
+        {
+            Mem.W16(s, addr, s->R[rt]);
+        }
     }
 
     /// <summary>STR/LDR SP-relative: 1001 L Rt imm8</summary>
@@ -187,7 +360,14 @@ internal static unsafe class T16
     {
         uint rt = Bits(ins, 10, 8);
         uint addr = s->R[13] + ((ins & 0xFF) << 2);
-        if (Bit(ins, 11) != 0) s->R[rt] = Mem.R32(s, addr); else Mem.W32(s, addr, s->R[rt]);
+        if (Bit(ins, 11) != 0)
+        {
+            s->R[rt] = Mem.R32(s, addr);
+        }
+        else
+        {
+            Mem.W32(s, addr, s->R[rt]);
+        }
     }
 
     /// <summary>ADR: 10100 Rd imm8</summary>
@@ -213,7 +393,10 @@ internal static unsafe class T16
         uint rn = ins & 7;
         bool nonZero = Bit(ins, 11) != 0;
         uint imm = (Bit(ins, 9) << 6) | (Bits(ins, 7, 3) << 1);
-        if ((s->R[rn] != 0) == nonZero) s->R[15] = pc + 4 + imm;
+        if ((s->R[rn] != 0) == nonZero)
+        {
+            s->R[15] = pc + 4 + imm;
+        }
     }
 
     /// <summary>SXTH/SXTB/UXTH/UXTB: 1011 0010 op Rm Rd</summary>
@@ -317,5 +500,7 @@ internal static unsafe class T16
     }
 
     [MethodImpl(MethodImplOptions.AggressiveInlining)]
-    public static void Nop(CpuState* s, uint ins, uint pc) { }
+    public static void Nop(CpuState* s, uint ins, uint pc)
+    {
+    }
 }

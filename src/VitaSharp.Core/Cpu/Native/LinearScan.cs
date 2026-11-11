@@ -44,26 +44,83 @@ public static class LinearScan
         {
             ref readonly var x = ref insts[i];
             calloutsBefore[i + 1] = calloutsBefore[i] + (IsCallSite(x) ? 1 : 0);
-            if (x.D >= 0) def[x.D] = i;
-            if (x.D2 >= 0) def[x.D2] = i;
-            if (x.Fn >= 0) def[x.Fn] = i;
-            if (x.Fz >= 0) def[x.Fz] = i;
-            if (x.Fc >= 0) def[x.Fc] = i;
-            if (x.Fv >= 0) def[x.Fv] = i;
-            if (x.A >= 0) last[x.A] = i;
-            if (x.B >= 0) last[x.B] = i;
-            if (x.C >= 0) last[x.C] = i;
-            if (x.E >= 0) last[x.E] = i;
+            if (x.D >= 0)
+            {
+                def[x.D] = i;
+            }
+
+            if (x.D2 >= 0)
+            {
+                def[x.D2] = i;
+            }
+
+            if (x.Fn >= 0)
+            {
+                def[x.Fn] = i;
+            }
+
+            if (x.Fz >= 0)
+            {
+                def[x.Fz] = i;
+            }
+
+            if (x.Fc >= 0)
+            {
+                def[x.Fc] = i;
+            }
+
+            if (x.Fv >= 0)
+            {
+                def[x.Fv] = i;
+            }
+
+            if (x.A >= 0)
+            {
+                last[x.A] = i;
+            }
+
+            if (x.B >= 0)
+            {
+                last[x.B] = i;
+            }
+
+            if (x.C >= 0)
+            {
+                last[x.C] = i;
+            }
+
+            if (x.E >= 0)
+            {
+                last[x.E] = i;
+            }
         }
         var loc = reuse ? Ensure(ref sc.Loc, n) : new int[n];
         Array.Fill(loc, -1, 0, n);
         var freeRegs = sc.FreeRegs;
         freeRegs.Clear();
         int limit = maxTempRegisters;
-        foreach (var r in callerSaved) if (freeRegs.Count < limit) freeRegs.Add(r);
-        foreach (var r in calleeSaved) if (freeRegs.Count < limit) freeRegs.Add(r);
+        foreach (var r in callerSaved)
+        {
+            if (freeRegs.Count < limit)
+            {
+                freeRegs.Add(r);
+            }
+        }
+
+        foreach (var r in calleeSaved)
+        {
+            if (freeRegs.Count < limit)
+            {
+                freeRegs.Add(r);
+            }
+        }
+
         uint calleeMask = 0;
-        foreach (var r in calleeSaved) calleeMask |= 1u << r;
+        foreach (var r in calleeSaved)
+        {
+            calleeMask |= 1u << r;
+        }
+
         var active = sc.Active; // temps currently holding registers
         active.Clear();
         // a slot is free for a whole live range [from, until] when its previous occupant died before "from"
@@ -73,7 +130,14 @@ public static class LinearScan
         int TakeSlot(int from, int until)
         {
             for (int s = 0; s < spillSlots; s++)
-                if (slotFreeAfter[s] < from) { slotFreeAfter[s] = until; return s; }
+            {
+                if (slotFreeAfter[s] < from)
+                {
+                    slotFreeAfter[s] = until;
+                    return s;
+                }
+            }
+
             return -1;
         }
 
@@ -85,21 +149,41 @@ public static class LinearScan
         {
             // release temps whose last use is before this instruction
             for (int k = active.Count - 1; k >= 0; k--)
-                if (last[active[k]] < i) { freeRegs.Add(loc[active[k]]); active.RemoveAt(k); }
+            {
+                if (last[active[k]] < i)
+                {
+                    freeRegs.Add(loc[active[k]]);
+                    active.RemoveAt(k);
+                }
+            }
 
             ref readonly var x = ref insts[i];
             foreach (int t in (ReadOnlySpan<int>)[x.D, x.D2, x.Fn, x.Fz, x.Fc, x.Fv])
             {
-                if (t < 0 || isConst[t]) continue;
-                if (last[t] < 0) { last[t] = i; } // defined but unused (kept for side effects): short interval
+                if (t < 0 || isConst[t])
+                {
+                    continue;
+                }
+
+                if (last[t] < 0)
+                {
+                    last[t] = i;
+                } // defined but unused (kept for side effects): short interval
                 bool crosses = Crosses(t);
                 int reg = -1;
                 // pick: crossing temps need callee-saved; others prefer caller-saved
                 for (int k = 0; k < freeRegs.Count; k++)
                 {
                     int r = freeRegs[k];
-                    if (crosses && !IsCallee(r)) continue;
-                    if (reg < 0 || (!crosses && IsCallee(reg) && !IsCallee(r))) reg = r;
+                    if (crosses && !IsCallee(r))
+                    {
+                        continue;
+                    }
+
+                    if (reg < 0 || (!crosses && IsCallee(reg) && !IsCallee(r)))
+                    {
+                        reg = r;
+                    }
                 }
                 if (reg >= 0)
                 {
@@ -112,13 +196,24 @@ public static class LinearScan
                 int victim = -1;
                 foreach (int a in active)
                 {
-                    if (crosses && !IsCallee(loc[a])) continue;
-                    if (victim < 0 || last[a] > last[victim]) victim = a;
+                    if (crosses && !IsCallee(loc[a]))
+                    {
+                        continue;
+                    }
+
+                    if (victim < 0 || last[a] > last[victim])
+                    {
+                        victim = a;
+                    }
                 }
                 if (victim >= 0 && last[victim] > last[t])
                 {
                     int slot = TakeSlot(def[victim], last[victim]);
-                    if (slot < 0) return null;
+                    if (slot < 0)
+                    {
+                        return null;
+                    }
+
                     loc[t] = loc[victim];
                     active.Remove(victim);
                     active.Add(t);
@@ -127,7 +222,11 @@ public static class LinearScan
                 else
                 {
                     int slot = TakeSlot(i, last[t]);
-                    if (slot < 0) return null;
+                    if (slot < 0)
+                    {
+                        return null;
+                    }
+
                     loc[t] = -2 - slot;
                 }
             }
@@ -137,9 +236,15 @@ public static class LinearScan
             // no two temps whose live ranges overlap may share a register or a spill slot
             var temps = Enumerable.Range(0, n).Where(t => loc[t] != -1).ToArray();
             foreach (int x in temps)
+            {
                 foreach (int y in temps)
+                {
                     if (x < y && loc[x] == loc[y] && def[x] <= last[y] && def[y] <= last[x])
+                    {
                         throw new InvalidOperationException($"allocation: t{x} [{def[x]},{last[x]}] and t{y} [{def[y]},{last[y]}] share {loc[x]}\n{ir}");
+                    }
+                }
+            }
         }
         return loc;
     }

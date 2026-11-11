@@ -60,7 +60,11 @@ public sealed partial class MainWindow
             _k.Row("library", S.RecreatedHome, S.RecreatedHomeDetail, _k.Switch(_settings.RecreatedHome, v =>
             {
                 _settings.RecreatedHome = v;
-                if (!v && _settings.View == LauncherSettings.ViewHome) _settings.View = LauncherSettings.ViewGrid;
+                if (!v && _settings.View == LauncherSettings.ViewHome)
+                {
+                    _settings.View = LauncherSettings.ViewGrid;
+                }
+
                 SaveSettings();
             })),
             themes.Count > 1 ? _k.Row("image", S.HomeTheme, null, _k.Dropdown(themes.Select(t => t.Title).ToArray(), Math.Max(0, themes.FindIndex(t => t.Id == _settings.Theme)), i =>

@@ -21,7 +21,11 @@ public sealed class MonoBridgeTests(GuestMemoryFixture fx) : IDisposable
 
     Emulator Emu()
     {
-        if (_emu != null) return _emu;
+        if (_emu != null)
+        {
+            return _emu;
+        }
+
         Directory.CreateDirectory(_root);
         _emu = new Emulator(new EmulatorOptions { FsRoot = _root, Memory = fx.Memory, EnableJit = false, CpuBackend = "interp" });
         _stubs = _nextStub = fx.Memory.Alloc(0x1000, "monobridge test stubs");
@@ -35,7 +39,12 @@ public sealed class MonoBridgeTests(GuestMemoryFixture fx) : IDisposable
 
     uint U(string method, params object?[] args) => Convert.ToUInt32(Call(method, args));
 
-    uint Alloc(uint size) { uint p = fx.Memory.Alloc(size, "monobridge test"); GuestMemory.Fill(p, 0, size); return p; }
+    uint Alloc(uint size)
+    {
+        uint p = fx.Memory.Alloc(size, "monobridge test");
+        GuestMemory.Fill(p, 0, size);
+        return p;
+    }
 
     uint CStr(string s)
     {
@@ -50,7 +59,11 @@ public sealed class MonoBridgeTests(GuestMemoryFixture fx) : IDisposable
     static List<string> Vector(uint v)
     {
         var l = new List<string>();
-        for (uint p = v; GuestMemory.R32(p) != 0; p += 4) l.Add(Str(GuestMemory.R32(p)));
+        for (uint p = v; GuestMemory.R32(p) != 0; p += 4)
+        {
+            l.Add(Str(GuestMemory.R32(p)));
+        }
+
         return l;
     }
 
@@ -70,19 +83,32 @@ public sealed class MonoBridgeTests(GuestMemoryFixture fx) : IDisposable
         var t = Emu().Kernel.CreateThread("monobridge-test", 0, 0x10000100, 0x10000, 0, 0x70000);
         t.HostBody = _ =>
         {
-            try { body(); }
-            catch (Exception e) { failure = e; }
+            try
+            {
+                body();
+            }
+            catch (Exception e)
+            {
+                failure = e;
+            }
         };
         t.Start(0, 0);
         Assert.True(t.WaitForExit(60_000), "test thread did not finish");
         Emu().Kernel.DeleteThread(t);
-        if (failure != null) throw new Xunit.Sdk.XunitException(failure.ToString());
+        if (failure != null)
+        {
+            throw new Xunit.Sdk.XunitException(failure.ToString());
+        }
     }
 
     public void Dispose()
     {
         _emu?.Dispose();
-        try { Directory.Delete(_root, true); } catch (IOException) { }
+        try
+        {
+            Directory.Delete(_root, true);
+        }
+        catch (IOException) { }
     }
 
     [Fact]
@@ -148,7 +174,9 @@ public sealed class MonoBridgeTests(GuestMemoryFixture fx) : IDisposable
         uint a = U("GArrayNew", true, true, 4u);
         Assert.Equal(64u, GuestMemory.R32(a + 20)); // capacity (16 rounded to 64)
         uint vals = Alloc(12);
-        GuestMemory.W32(vals, 1); GuestMemory.W32(vals + 4, 2); GuestMemory.W32(vals + 8, 3);
+        GuestMemory.W32(vals, 1);
+        GuestMemory.W32(vals + 4, 2);
+        GuestMemory.W32(vals + 8, 3);
         Call("GArrayAppendVals", a, vals, 2u);
         Call("GArrayInsertVals", a, 1u, vals + 8, 1u);
         uint d = GuestMemory.R32(a);
@@ -156,7 +184,11 @@ public sealed class MonoBridgeTests(GuestMemoryFixture fx) : IDisposable
         Assert.Equal(new uint[] { 1, 3, 2, 0 }, new[] { GuestMemory.R32(d), GuestMemory.R32(d + 4), GuestMemory.R32(d + 8), GuestMemory.R32(d + 12) });
 
         uint p = U("GPtrArrayNew");
-        for (uint i = 1; i <= 5; i++) Call("GPtrArrayAdd", p, i * 0x10);
+        for (uint i = 1; i <= 5; i++)
+        {
+            Call("GPtrArrayAdd", p, i * 0x10);
+        }
+
         Assert.Equal(16u, GuestMemory.R32(p + 8));
         Assert.Equal(0x20u, U("GPtrArrayRemoveIndex", p, 1u));
         Assert.Equal(0x10u, U("GPtrArrayRemoveIndexFast", p, 0u)); // the last one moves in
@@ -170,7 +202,11 @@ public sealed class MonoBridgeTests(GuestMemoryFixture fx) : IDisposable
     public void Lists_LinkAsEglib()
     {
         uint l = 0;
-        foreach (uint v in new uint[] { 1, 2, 3 }) l = U("GListAppend", l, v);
+        foreach (uint v in new uint[] { 1, 2, 3 })
+        {
+            l = U("GListAppend", l, v);
+        }
+
         l = U("GListPrepend", l, 0u);
         Assert.Equal(4u, U("GListLength", l));
         Assert.Equal(2u, U("GListNthData", l, 2u));
@@ -186,7 +222,11 @@ public sealed class MonoBridgeTests(GuestMemoryFixture fx) : IDisposable
         Assert.Equal(9u, GuestMemory.R32(ins));
 
         uint s = 0;
-        foreach (uint v in new uint[] { 1, 2, 3 }) s = U("GSlistAppend", s, v);
+        foreach (uint v in new uint[] { 1, 2, 3 })
+        {
+            s = U("GSlistAppend", s, v);
+        }
+
         s = U("GSlistReverse", s);
         Assert.Equal(3u, GuestMemory.R32(s));
         s = U("GSlistRemove", s, 2u);
@@ -195,7 +235,8 @@ public sealed class MonoBridgeTests(GuestMemoryFixture fx) : IDisposable
 
         uint q = U("GQueueNew");
         Assert.True((bool)Call("GQueueIsEmpty", q)!);
-        Call("GQueuePushHead", q, 7u); Call("GQueuePushHead", q, 8u);
+        Call("GQueuePushHead", q, 7u);
+        Call("GQueuePushHead", q, 8u);
         Assert.Equal(8u, U("GQueuePopHead", q));
         Assert.Equal(7u, U("GQueuePopHead", q));
         Assert.Equal(0u, GuestMemory.R32(q + 4)); // tail cleared
@@ -206,7 +247,11 @@ public sealed class MonoBridgeTests(GuestMemoryFixture fx) : IDisposable
     {
         uint ht = U("GHashTableNew", 0u, 0u);
         Assert.Equal(11u, GuestMemory.R32(ht + 12));
-        for (uint i = 1; i <= 100; i++) Call("GHashTableInsertReplace", ht, i, i * 2, false);
+        for (uint i = 1; i <= 100; i++)
+        {
+            Call("GHashTableInsertReplace", ht, i, i * 2, false);
+        }
+
         Assert.Equal(100u, U("GHashTableSize", ht));
         Assert.Equal(84u, U("GHashTableLookup", ht, 42u));
         Assert.True(GuestMemory.R32(ht + 12) > 11); // rehashed
@@ -215,7 +260,11 @@ public sealed class MonoBridgeTests(GuestMemoryFixture fx) : IDisposable
         uint it = Alloc(32), k = Alloc(4), v = Alloc(4);
         Call("GHashTableIterInit", it, ht);
         int count = 0;
-        while ((bool)Call("GHashTableIterNext", it, k, v)!) { Assert.Equal(GuestMemory.R32(k) * 2, GuestMemory.R32(v)); count++; }
+        while ((bool)Call("GHashTableIterNext", it, k, v)!)
+        {
+            Assert.Equal(GuestMemory.R32(k) * 2, GuestMemory.R32(v));
+            count++;
+        }
         Assert.Equal(99, count);
 
         uint strHash = U("ExportStub", "monoeg_g_str_hash"), strEq = U("ExportStub", "monoeg_g_str_equal");
@@ -240,7 +289,8 @@ public sealed class MonoBridgeTests(GuestMemoryFixture fx) : IDisposable
         uint ucs4 = U("GUtf16ToUcs4", u16, -1, r, w, err);
         Assert.Equal(0x1F600u, GuestMemory.R32(ucs4 + 8));
         uint bad = Alloc(4);
-        GuestMemory.Write<byte>(bad, 0x61); GuestMemory.Write<byte>(bad + 1, 0xFF);
+        GuestMemory.Write<byte>(bad, 0x61);
+        GuestMemory.Write<byte>(bad + 1, 0xFF);
         Assert.Equal(0u, U("GUtf8ToUtf16", bad, -1, r, w, err));
         Assert.Equal(1u, GuestMemory.R32(r));
         Assert.Equal(1u, GuestMemory.R32(GuestMemory.R32(err) + 4)); // ILLEGAL_SEQUENCE
@@ -326,11 +376,17 @@ public sealed class MonoBridgeTests(GuestMemoryFixture fx) : IDisposable
         uint end = Stub("mbtest:end", c => seen.Add($"</{Str(c.Gpr(1))}>"));
         uint text = Stub("mbtest:text", c => seen.Add($"t:{Encoding.UTF8.GetString(GuestMemory.ReadSpan(c.Gpr(1), (int)c.Gpr(2)))}"));
         uint parser = Alloc(0x14);
-        GuestMemory.W32(parser, start); GuestMemory.W32(parser + 4, end); GuestMemory.W32(parser + 8, text);
+        GuestMemory.W32(parser, start);
+        GuestMemory.W32(parser + 4, end);
+        GuestMemory.W32(parser + 8, text);
         OnGuestThread(() =>
         {
             uint l = 0;
-            foreach (uint v in new uint[] { 5, 1, 4, 1, 3 }) l = U("GListAppend", l, v);
+            foreach (uint v in new uint[] { 5, 1, 4, 1, 3 })
+            {
+                l = U("GListAppend", l, v);
+            }
+
             l = U("GListSort", l, cmp);
             Call("GListForeach", l, each, 9u);
             uint s = U("GSlistInsertSorted", 0u, 3u, cmp);
@@ -387,7 +443,8 @@ public sealed class MonoBridgeTests(GuestMemoryFixture fx) : IDisposable
             uint m2 = Alloc(4);
             U("PthreadMutexLock", m2);
             long now = DateTimeOffset.UtcNow.ToUnixTimeSeconds();
-            GuestMemory.W32(abs, (uint)now); GuestMemory.W32(abs + 4, 0);
+            GuestMemory.W32(abs, (uint)now);
+            GuestMemory.W32(abs + 4, 0);
             Assert.Equal(116u, U("PthreadCondTimedwait", cond, m2, abs)); // ETIMEDOUT: the deadline is past
             U("PthreadMutexUnlock", m2);
         });

@@ -23,8 +23,16 @@ public sealed class TextEntry(string title, string initial, int maxLength, int t
     /// <summary>Whether <paramref name="c"/> may be typed in a dialog of this type.</summary>
     public bool Accepts(char c)
     {
-        if (c == '\n') return Multiline;
-        if (char.IsControl(c)) return false;
+        if (c == '\n')
+        {
+            return Multiline;
+        }
+
+        if (char.IsControl(c))
+        {
+            return false;
+        }
+
         return Type switch
         {
             TypeNumber => c is >= '0' and <= '9',
@@ -39,12 +47,30 @@ public sealed class TextEntry(string title, string initial, int maxLength, int t
     {
         var sb = new StringBuilder();
         foreach (char c in s.Replace("\r\n", "\n").Replace('\r', '\n'))
-            if (Accepts(c)) sb.Append(c);
+        {
+            if (Accepts(c))
+            {
+                sb.Append(c);
+            }
+        }
+
         int room = MaxLength - _text.Length;
-        if (room <= 0 || sb.Length == 0) return false;
+        if (room <= 0 || sb.Length == 0)
+        {
+            return false;
+        }
+
         string add = sb.Length > room ? sb.ToString(0, room) : sb.ToString();
-        if (add.Length > 0 && char.IsHighSurrogate(add[^1])) add = add[..^1]; // never half a pair
-        if (add.Length == 0) return false;
+        if (add.Length > 0 && char.IsHighSurrogate(add[^1]))
+        {
+            add = add[..^1]; // never half a pair
+        }
+
+        if (add.Length == 0)
+        {
+            return false;
+        }
+
         _text.Insert(Caret, add);
         Caret += add.Length;
         return true;
@@ -52,7 +78,11 @@ public sealed class TextEntry(string title, string initial, int maxLength, int t
 
     public bool Backspace()
     {
-        if (Caret == 0) return false;
+        if (Caret == 0)
+        {
+            return false;
+        }
+
         int n = Caret >= 2 && char.IsLowSurrogate(_text[Caret - 1]) && char.IsHighSurrogate(_text[Caret - 2]) ? 2 : 1;
         _text.Remove(Caret - n, n);
         Caret -= n;
@@ -61,7 +91,11 @@ public sealed class TextEntry(string title, string initial, int maxLength, int t
 
     public bool Delete()
     {
-        if (Caret >= _text.Length) return false;
+        if (Caret >= _text.Length)
+        {
+            return false;
+        }
+
         int n = Caret + 1 < _text.Length && char.IsHighSurrogate(_text[Caret]) && char.IsLowSurrogate(_text[Caret + 1]) ? 2 : 1;
         _text.Remove(Caret, n);
         return true;
@@ -70,8 +104,16 @@ public sealed class TextEntry(string title, string initial, int maxLength, int t
     public bool Move(int delta)
     {
         int c = Math.Clamp(Caret + delta, 0, _text.Length);
-        if (c > 0 && c < _text.Length && char.IsLowSurrogate(_text[c]) && char.IsHighSurrogate(_text[c - 1])) c += delta > 0 ? 1 : -1;
-        if (c == Caret) return false;
+        if (c > 0 && c < _text.Length && char.IsLowSurrogate(_text[c]) && char.IsHighSurrogate(_text[c - 1]))
+        {
+            c += delta > 0 ? 1 : -1;
+        }
+
+        if (c == Caret)
+        {
+            return false;
+        }
+
         Caret = c;
         return true;
     }
@@ -79,7 +121,11 @@ public sealed class TextEntry(string title, string initial, int maxLength, int t
     public bool MoveTo(int index)
     {
         index = Math.Clamp(index, 0, _text.Length);
-        if (index == Caret) return false;
+        if (index == Caret)
+        {
+            return false;
+        }
+
         Caret = index;
         return true;
     }

@@ -24,7 +24,10 @@ public sealed class MotionTests(GuestMemoryFixture fx)
 
     static void Feed(MotionFusion f, Vector3 accel, Vector3 gyro, int samples)
     {
-        for (int i = 0; i < samples; i++) f.Update(accel, gyro, Dt);
+        for (int i = 0; i < samples; i++)
+        {
+            f.Update(accel, gyro, Dt);
+        }
     }
 
     [Fact]
@@ -223,7 +226,11 @@ public sealed class MotionTests(GuestMemoryFixture fx)
         public int ReadSamples(Span<MotionSample> dest)
         {
             int n = 0;
-            while (n < dest.Length && Pending.TryDequeue(out var s)) dest[n++] = s;
+            while (n < dest.Length && Pending.TryDequeue(out var s))
+            {
+                dest[n++] = s;
+            }
+
             return n;
         }
     }
@@ -237,8 +244,16 @@ public sealed class MotionTests(GuestMemoryFixture fx)
         var src = new FakeSource();
         // 1 s flat, then 0.5 s turning about the screen normal at 1 rad/s
         ulong t = 1_000_000;
-        for (int i = 0; i < 250; i++) src.Pending.Enqueue(new MotionSample(t += 4000, Flat, Vector3.Zero));
-        for (int i = 0; i < 125; i++) src.Pending.Enqueue(new MotionSample(t += 4000, Flat, new Vector3(0, 0, 1f)));
+        for (int i = 0; i < 250; i++)
+        {
+            src.Pending.Enqueue(new MotionSample(t += 4000, Flat, Vector3.Zero));
+        }
+
+        for (int i = 0; i < 125; i++)
+        {
+            src.Pending.Enqueue(new MotionSample(t += 4000, Flat, new Vector3(0, 0, 1f)));
+        }
+
         dev.Poll(src, 5_000_000);
         Assert.True(dev.Live);
 
@@ -248,14 +263,22 @@ public sealed class MotionTests(GuestMemoryFixture fx)
         Assert.Equal(5_000_000u, GuestMemory.R32(st));                       // timestamp of the newest sample
         AssertNear(Flat, ReadVec(st + 4), 1e-5f);                             // acceleration
         AssertNear(new Vector3(0, 0, 1f), ReadVec(st + 16), 1e-5f);           // angularVelocity
-        for (uint o = 28; o < 40; o++) Assert.Equal(0, GuestMemory.Read<byte>(st + o)); // reserved1
+        for (uint o = 28; o < 40; o++)
+        {
+            Assert.Equal(0, GuestMemory.Read<byte>(st + o)); // reserved1
+        }
+
         var q = new Quaternion(ReadVec(st + 40), GuestMemory.Read<float>(st + 52));
         var expected = Quaternion.CreateFromAxisAngle(Vector3.UnitY, 0.5f) * Quaternion.CreateFromAxisAngle(Vector3.UnitX, -MathF.PI / 2);
         AssertSameRotation(expected, q, 0.01f);
         // rotation matrix x row = device x in world; NED = same (no magnetometer)
         AssertNear(Vector3.Transform(Vector3.UnitX, q), ReadVec(st + 56), 1e-4f);
         Assert.Equal(1f, GuestMemory.Read<float>(st + 56 + 60));
-        for (uint i = 0; i < 64; i += 4) Assert.Equal(GuestMemory.Read<float>(st + 56 + i), GuestMemory.Read<float>(st + 120 + i));
+        for (uint i = 0; i < 64; i += 4)
+        {
+            Assert.Equal(GuestMemory.Read<float>(st + 56 + i), GuestMemory.Read<float>(st + 120 + i));
+        }
+
         Assert.Equal(new Vector3(0, 0, 1), ReadVec(st + 188));                // basicOrientation
         Assert.Equal(5_000_000UL, GuestMemory.Read<ulong>(st + 200));         // hostTimestamp
         Assert.Equal(0, GuestMemory.Read<byte>(st + 244));                    // magFieldStability UNSTABLE
@@ -268,7 +291,11 @@ public sealed class MotionTests(GuestMemoryFixture fx)
         var dev = new MotionDevice();
         var src = new FakeSource();
         ulong t = 10_000;
-        for (int i = 0; i < 100; i++) src.Pending.Enqueue(new MotionSample(t += 4000, new Vector3(i, 0, -1) / 100f, new Vector3(0, i, 0)));
+        for (int i = 0; i < 100; i++)
+        {
+            src.Pending.Enqueue(new MotionSample(t += 4000, new Vector3(i, 0, -1) / 100f, new Vector3(0, i, 0)));
+        }
+
         dev.Poll(src, 3_000_000);
         uint p = fx.Memory.Alloc(64 * MotionDevice.SensorStateSize, "sensorring");
         dev.WriteSensorStates(p, 64, 3_000_000);

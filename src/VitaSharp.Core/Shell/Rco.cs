@@ -25,49 +25,19 @@ public enum RcoAttributeType
 /// <summary>One attribute of an <see cref="RcoElement"/>. Which members are set depends on <see cref="Type"/>.</summary>
 public sealed class RcoAttribute
 {
-    public required string Name
-    {
-        get; init;
-    }
-    public RcoAttributeType Type
-    {
-        get; init;
-    }
-    public int Int
-    {
-        get; init;
-    }
-    public float Float
-    {
-        get; init;
-    }
+    public required string Name { get; init; }
+    public RcoAttributeType Type { get; init; }
+    public int Int { get; init; }
+    public float Float { get; init; }
     /// <summary>String, WString, Id and IdRef values.</summary>
-    public string? Text
-    {
-        get; init;
-    }
+    public string? Text { get; init; }
     /// <summary>Hash, IdHash and IdHashRef values.</summary>
-    public uint Hash
-    {
-        get; init;
-    }
-    public int[]? Ints
-    {
-        get; init;
-    }
-    public float[]? Floats
-    {
-        get; init;
-    }
+    public uint Hash { get; init; }
+    public int[]? Ints { get; init; }
+    public float[]? Floats { get; init; }
     /// <summary>File: offset and size in the file table.</summary>
-    public int FileOffset
-    {
-        get; init;
-    }
-    public int FileSize
-    {
-        get; init;
-    }
+    public int FileOffset { get; init; }
+    public int FileSize { get; init; }
 
     public override string ToString() => Type switch
     {
@@ -85,16 +55,10 @@ public sealed class RcoAttribute
 /// <summary>An element of an RCO tree (e.g. &lt;texture id=... src=...&gt; inside &lt;texturetable&gt;).</summary>
 public sealed class RcoElement
 {
-    public required string Name
-    {
-        get; init;
-    }
+    public required string Name { get; init; }
     public List<RcoAttribute> Attributes { get; } = new();
     public List<RcoElement> Children { get; } = new();
-    public RcoElement? Parent
-    {
-        get; internal set;
-    }
+    public RcoElement? Parent { get; internal set; }
 
     public RcoAttribute? Attribute(string name) => Attributes.FirstOrDefault(a => a.Name == name);
     public string? Text(string name) => Attribute(name)?.Text;
@@ -135,14 +99,8 @@ public sealed class Rco
 {
     public const uint Magic = 0x464F4352; // "RCOF"
 
-    public RcoElement Root
-    {
-        get;
-    }
-    public uint Version
-    {
-        get;
-    }
+    public RcoElement Root { get; }
+    public uint Version { get; }
     readonly byte[] _data;
     readonly int _fileTable, _fileTableSize;
 
@@ -353,7 +311,10 @@ public sealed class Rco
             {
                 data = ReadFile(e, src.Name);
             }
-            catch (InvalidDataException) { continue; }
+            catch (InvalidDataException)
+            {
+                continue;
+            }
             yield return new RcoFile(e, e.Parent?.Name ?? "", e.Id ?? "", e.Text("type") ?? "", data);
         }
     }

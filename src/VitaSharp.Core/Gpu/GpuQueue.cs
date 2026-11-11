@@ -21,7 +21,14 @@ public sealed class GpuQueue : IDisposable
     volatile bool _stopping;
 
     IGpuBackend? _backend;
-    public IGpuBackend? Backend { get => _backend; set { _backend = value; value?.Attach(this); } }
+    public IGpuBackend? Backend
+    {
+        get => _backend; set
+        {
+            _backend = value;
+            value?.Attach(this);
+        }
+    }
 
     /// <summary>Drains the queue, disposes the current backend and installs a new one (process exec).</summary>
     /// <summary>Held by the worker while it is inside the backend (Execute / Idle); backend replacement takes it too, so a
@@ -48,11 +55,31 @@ public sealed class GpuQueue : IDisposable
                 string? title = sameTitle ? old?.TitleId : null;
                 Backend = null;
                 old?.Dispose();
-                if (factory != null) Backend = factory();
+                if (factory != null)
+                {
+                    Backend = factory();
+                }
+
                 if (title != null && Backend is { } b)
-                    try { b.BeginTitle(title); } catch (Exception e) { Log.Warn($"GPU backend title setup failed: {e.Message}"); }
+                {
+                    try
+                    {
+                        b.BeginTitle(title);
+                    }
+                    catch (Exception e)
+                    {
+                        Log.Warn($"GPU backend title setup failed: {e.Message}");
+                    }
+                }
             }
-            if (ReplaceOn is { } on) on(Swap); else Swap();
+            if (ReplaceOn is { } on)
+            {
+                on(Swap);
+            }
+            else
+            {
+                Swap();
+            }
         }
     }
 
@@ -83,7 +110,11 @@ public sealed class GpuQueue : IDisposable
     {
         lock (NotificationSync)
         {
-            using (AddressSpace.Use(space ?? AddressSpace.Current)) GuestMemory.W32(address, value);
+            using (AddressSpace.Use(space ?? AddressSpace.Current))
+            {
+                GuestMemory.W32(address, value);
+            }
+
             SignalCount++;
             Monitor.PulseAll(NotificationSync);
         }
@@ -104,8 +135,15 @@ public sealed class GpuQueue : IDisposable
 
     public DrawCommand RentDraw()
     {
-        if (_drawPool.TryDequeue(out var d)) Interlocked.Decrement(ref _drawPoolCount);
-        else d = new DrawCommand();
+        if (_drawPool.TryDequeue(out var d))
+        {
+            Interlocked.Decrement(ref _drawPoolCount);
+        }
+        else
+        {
+            d = new DrawCommand();
+        }
+
         d.Reset();
         d.Space = null;
         d.Pid = 0;
@@ -172,7 +210,9 @@ public sealed class GpuQueue : IDisposable
     {
         gate.End();
         if (Interlocked.Increment(ref SceneGateReleases) == 1)
+        {
             Log.Info("[gpu] a draw of an open scene ran before the scene ended (a guest waited for it, or 250 ms passed): its uniform buffers were read early");
+        }
     }
 
     /// <summary>Worker: runs what the lanes may run now (see above).</summary>
@@ -185,16 +225,27 @@ public sealed class GpuQueue : IDisposable
             {
                 if (c is DrawCommand { Gate: { Ended: false } g })
                 {
-                    if (!WaitedFor(pid, c.Sequence) && now - lane.Since < timeout && !_stopping) break;
+                    if (!WaitedFor(pid, c.Sequence) && now - lane.Since < timeout && !_stopping)
+                    {
+                        break;
+                    }
+
                     EndGateEarly(g);
                 }
                 lane.Commands.Dequeue();
                 ExecuteOne(c);
                 lane.Since = now;
             }
-            if (lane.Commands.Count == 0) _drained.Add(pid);
+            if (lane.Commands.Count == 0)
+            {
+                _drained.Add(pid);
+            }
         }
-        foreach (int pid in _drained) { _held.Remove(pid); _heldHead.TryRemove(pid, out _); }
+        foreach (int pid in _drained)
+        {
+            _held.Remove(pid);
+            _heldHead.TryRemove(pid, out _);
+        }
         _drained.Clear();
         Processed(Interlocked.Read(ref _processed));
     }
@@ -206,15 +257,33 @@ public sealed class GpuQueue : IDisposable
         Interlocked.Exchange(ref _processed, sequence);
         long done = sequence;
         foreach (var (pid, lane) in _held)
+        {
             if (lane.Commands.TryPeek(out var c))
             {
                 _heldHead[pid] = c.Sequence;
-                if (c.Sequence - 1 < done) done = c.Sequence - 1;
+                if (c.Sequence - 1 < done)
+                {
+                    done = c.Sequence - 1;
+                }
             }
-        if (done > Interlocked.Read(ref _completed)) Interlocked.Exchange(ref _completed, done); // full fence before reading the waiter count
-        else Interlocked.MemoryBarrier();
+        }
+
+        if (done > Interlocked.Read(ref _completed))
+        {
+            Interlocked.Exchange(ref _completed, done); // full fence before reading the waiter count
+        }
+        else
+        {
+            Interlocked.MemoryBarrier();
+        }
+
         if (!LightSignals || Volatile.Read(ref _progressWaiters) > 0)
-            lock (_progress) Monitor.PulseAll(_progress);
+        {
+            lock (_progress)
+            {
+                Monitor.PulseAll(_progress);
+            }
+        }
     }
 
     /// <summary>A process that ends with a scene open gives the GPU back.</summary>
@@ -223,12 +292,20 @@ public sealed class GpuQueue : IDisposable
         if (InterleaveScenes)
         {
             // the backend drops the scene the process left open (its suspended renderings name surfaces of its memory)
-            if (_openScenes.TryRemove(pid, out _)) Enqueue(new ProcessEndedCommand { Pid = pid, Space = AddressSpace.Current });
+            if (_openScenes.TryRemove(pid, out _))
+            {
+                Enqueue(new ProcessEndedCommand { Pid = pid, Space = AddressSpace.Current });
+            }
+
             return;
         }
         lock (_sceneLock)
         {
-            if (_sceneOwner != pid) return;
+            if (_sceneOwner != pid)
+            {
+                return;
+            }
+
             _sceneOwner = 0;
             Monitor.PulseAll(_sceneLock);
         }
@@ -242,8 +319,15 @@ public sealed class GpuQueue : IDisposable
         cmd.Pid = pid;
         if (InterleaveScenes)
         {
-            if (pid != 0 && cmd is BeginSceneCommand) _openScenes[pid] = 0;
-            else if (pid != 0 && cmd is EndSceneCommand) _openScenes.TryRemove(pid, out _);
+            if (pid != 0 && cmd is BeginSceneCommand)
+            {
+                _openScenes[pid] = 0;
+            }
+            else if (pid != 0 && cmd is EndSceneCommand)
+            {
+                _openScenes.TryRemove(pid, out _);
+            }
+
             return Enqueue(cmd);
         }
         lock (_sceneLock)
@@ -251,10 +335,16 @@ public sealed class GpuQueue : IDisposable
             if (pid != 0 && _sceneOwner != 0 && _sceneOwner != pid)
             {
                 using var blocked = Kernel.Scheduler.Block();
-                while (_sceneOwner != 0 && _sceneOwner != pid && !_stopping) Monitor.Wait(_sceneLock, 50);
+                while (_sceneOwner != 0 && _sceneOwner != pid && !_stopping)
+                {
+                    Monitor.Wait(_sceneLock, 50);
+                }
             }
             long seq = Enqueue(cmd);
-            if (pid != 0 && cmd is BeginSceneCommand) _sceneOwner = pid;
+            if (pid != 0 && cmd is BeginSceneCommand)
+            {
+                _sceneOwner = pid;
+            }
             else if (cmd is EndSceneCommand && _sceneOwner == pid && pid != 0)
             {
                 _sceneOwner = 0;
@@ -267,7 +357,14 @@ public sealed class GpuQueue : IDisposable
     public long Submit(GpuCommand cmd)
     {
         cmd.Space ??= AddressSpace.Current; // the submitting thread's process, unless the command names another
-        try { Backend?.Prefetch(cmd); } catch (Exception e) { Log.WarnOnce("gpu-prefetch", $"GPU backend prefetch failed: {e}"); }
+        try
+        {
+            Backend?.Prefetch(cmd);
+        }
+        catch (Exception e)
+        {
+            Log.WarnOnce("gpu-prefetch", $"GPU backend prefetch failed: {e}");
+        }
         long seq = SharedByProcesses ? SubmitArbitrated(cmd) : Enqueue(cmd);
         TrackSceneThread(cmd);
         return seq;
@@ -277,7 +374,11 @@ public sealed class GpuQueue : IDisposable
     /// <see cref="EmulationPause"/>).</summary>
     static void TrackSceneThread(GpuCommand cmd)
     {
-        if (cmd is not (BeginSceneCommand or EndSceneCommand) || Kernel.GuestThread.Current is not { } t) return;
+        if (cmd is not (BeginSceneCommand or EndSceneCommand) || Kernel.GuestThread.Current is not { } t)
+        {
+            return;
+        }
+
         t.Process.OpenSceneThread = cmd is BeginSceneCommand ? t : null;
     }
 
@@ -287,8 +388,15 @@ public sealed class GpuQueue : IDisposable
         _queue.Enqueue(cmd);
         // wake the worker only when it sleeps: a Release per command took the semaphore's lock on both threads for
         // every draw (the worker also took it back with Wait(0))
-        if (!LightSignals) _available.Release();
-        else if (Interlocked.CompareExchange(ref _workerSleeping, 0, 1) == 1) _available.Release();
+        if (!LightSignals)
+        {
+            _available.Release();
+        }
+        else if (Interlocked.CompareExchange(ref _workerSleeping, 0, 1) == 1)
+        {
+            _available.Release();
+        }
+
         return cmd.Sequence;
     }
 
@@ -329,46 +437,101 @@ public sealed class GpuQueue : IDisposable
             // the work recorded so far goes to the GPU and finished frames retire while the draw waits: a sync point
             // before the open scene (the display queue entry of the previous frame, which the guest may wait on before it
             // ends this scene) must still fire
-            try { lock (_backendLock) Backend?.Idle(); }
-            catch (Exception e) { Log.WarnOnce("gpu-gate-idle", $"GPU backend idle failed during a scene gate wait: {e.Message}"); }
-            if (ended = gate.Wait(10)) break;
-            if (GateCheck && !sceneSeen && gate.SceneEnded) { sceneSeen = true; atSceneEnd = CopyAndHash(d); }
+            try
+            {
+                lock (_backendLock)
+                {
+                    Backend?.Idle();
+                }
+            }
+            catch (Exception e)
+            {
+                Log.WarnOnce("gpu-gate-idle", $"GPU backend idle failed during a scene gate wait: {e.Message}");
+            }
+            if (ended = gate.Wait(10))
+            {
+                break;
+            }
+
+            if (GateCheck && !sceneSeen && gate.SceneEnded)
+            {
+                sceneSeen = true;
+                atSceneEnd = CopyAndHash(d);
+            }
         }
         FrameLedger.AddSince(FrameLedger.Cat.GpuIdle, ti);
         if (GateCheck)
         {
             long held = ++_gateHeld;
             uint after = CopyAndHash(d);
-            if (!sceneSeen) atSceneEnd = after;
-            if (atSceneEnd != before) _gateChanged++;
-            if (after != atSceneEnd) _gateChangedAfterScene++;
+            if (!sceneSeen)
+            {
+                atSceneEnd = after;
+            }
+
+            if (atSceneEnd != before)
+            {
+                _gateChanged++;
+            }
+
+            if (after != atSceneEnd)
+            {
+                _gateChangedAfterScene++;
+            }
+
             if ((held & (held - 1)) == 0 || held % 20000 == 0)
+            {
                 Log.Info($"[gpu] scene gate: {held} draws held, {_gateChanged} had uniform buffers rewritten before their scene ended, {_gateChangedAfterScene} between the scene's end and the frame's end (=frame mode only)");
+            }
         }
         if (!ended && !gate.Ended)
         {
             gate.End();
             if (Interlocked.Increment(ref SceneGateReleases) == 1)
+            {
                 Log.Info("[gpu] a draw of an open scene ran before the scene ended (a guest waited for it, or 250 ms passed): its uniform buffers were read early");
+            }
         }
     }
 
     public void WaitFor(long sequence, GuestWait site = GuestWait.Other)
     {
-        if (Completed >= sequence) return;
+        if (Completed >= sequence)
+        {
+            return;
+        }
         // a guest waiting for a draw of a scene it has not ended: the worker must not hold that draw back
         for (long m = Interlocked.Read(ref _maxWaited); m < sequence; m = Interlocked.Read(ref _maxWaited))
-            if (Interlocked.CompareExchange(ref _maxWaited, sequence, m) == m) break;
+        {
+            if (Interlocked.CompareExchange(ref _maxWaited, sequence, m) == m)
+            {
+                break;
+            }
+        }
+
         int pid = HoldsScenes ? Kernel.ProcessScope.CurrentPid : -1;
-        if (pid >= 0) _maxWaitedByPid.AddOrUpdate(pid, sequence, (_, w) => Math.Max(w, sequence));
+        if (pid >= 0)
+        {
+            _maxWaitedByPid.AddOrUpdate(pid, sequence, (_, w) => Math.Max(w, sequence));
+        }
+
         using var blocked = Kernel.Scheduler.Block();
         using var ledger = FrameLedger.Time(FrameLedger.Cat.GuestGpuWait);
         long t0 = System.Diagnostics.Stopwatch.GetTimestamp();
         lock (_progress)
         {
             Interlocked.Increment(ref _progressWaiters); // full fence before reading Completed (pairs with the worker's)
-            try { while (!Done(sequence, pid) && !_stopping) Monitor.Wait(_progress, pid >= 0 ? 10 : 100); }
-            finally { Interlocked.Decrement(ref _progressWaiters); }
+            try
+            {
+                while (!Done(sequence, pid) && !_stopping)
+                {
+                    Monitor.Wait(_progress, pid >= 0 ? 10 : 100);
+                }
+            }
+            finally
+            {
+                Interlocked.Decrement(ref _progressWaiters);
+            }
         }
         CountGuestWait(site, t0);
     }
@@ -379,7 +542,10 @@ public sealed class GpuQueue : IDisposable
         Completed >= sequence || pid > 0 && Interlocked.Read(ref _processed) >= sequence && !(_heldHead.TryGetValue(pid, out long h) && h <= sequence);
 
     /// <summary>Where guest threads block on the GPU (PERF guest waits line).</summary>
-    public enum GuestWait { Notification, DisplayQueue, Finish, Throttle, Other }
+    public enum GuestWait
+    {
+        Notification, DisplayQueue, Finish, Throttle, Other
+    }
 
     static readonly long[] GuestWaitTicks = new long[5], GuestWaitCount = new long[5];
 
@@ -395,7 +561,10 @@ public sealed class GpuQueue : IDisposable
         frames = Math.Max(1, frames);
         var sb = new System.Text.StringBuilder("PERF guest waits on the GPU (ms/frame, waits/frame):");
         for (int i = 0; i < GuestWaitTicks.Length; i++)
+        {
             sb.Append($" {(GuestWait)i} {Interlocked.Read(ref GuestWaitTicks[i]) * 1000.0 / System.Diagnostics.Stopwatch.Frequency / frames:F2} ({Interlocked.Read(ref GuestWaitCount[i]) / (double)frames:F2});");
+        }
+
         return sb.ToString();
     }
 
@@ -416,10 +585,24 @@ public sealed class GpuQueue : IDisposable
             GpuCommand? cmd;
             try
             {
-                if (_held.Count > 0) ReleaseHeld();
+                if (_held.Count > 0)
+                {
+                    ReleaseHeld();
+                }
+
                 if (!_queue.TryDequeue(out cmd))
                 {
-                    try { lock (_backendLock) Backend?.Idle(); } catch (Exception e) { Log.Error($"GPU backend idle failed: {e}"); }
+                    try
+                    {
+                        lock (_backendLock)
+                        {
+                            Backend?.Idle();
+                        }
+                    }
+                    catch (Exception e)
+                    {
+                        Log.Error($"GPU backend idle failed: {e}");
+                    }
                     GpuDumpRecorder.Current?.AfterIdle();
                     long ti = FrameLedger.Now();
                     if (LightSignals)
@@ -427,35 +610,63 @@ public sealed class GpuQueue : IDisposable
                         // announce the sleep, then look once more: a submit after the flag is set releases the semaphore
                         // (a leftover count only makes a later wait return early)
                         Interlocked.Exchange(ref _workerSleeping, 1);
-                        if (_queue.IsEmpty) _available.Wait(_held.Count > 0 ? 2 : 50);
+                        if (_queue.IsEmpty)
+                        {
+                            _available.Wait(_held.Count > 0 ? 2 : 50);
+                        }
+
                         Interlocked.Exchange(ref _workerSleeping, 0);
                         FrameLedger.AddSince(FrameLedger.Cat.GpuIdle, ti);
-                        if (!_queue.TryDequeue(out cmd)) continue;
+                        if (!_queue.TryDequeue(out cmd))
+                        {
+                            continue;
+                        }
                     }
                     else
                     {
                         bool got = _available.Wait(_held.Count > 0 ? 2 : 50);
                         FrameLedger.AddSince(FrameLedger.Cat.GpuIdle, ti);
-                        if (!got || !_queue.TryDequeue(out cmd)) continue;
+                        if (!got || !_queue.TryDequeue(out cmd))
+                        {
+                            continue;
+                        }
                     }
                 }
-                else if (!LightSignals) _available.Wait(0);
+                else if (!LightSignals)
+                {
+                    _available.Wait(0);
+                }
             }
-            catch (ObjectDisposedException) { break; }
+            catch (ObjectDisposedException)
+            {
+                break;
+            }
 
             if (HoldsScenes && cmd.Pid != 0)
             {
                 // the worker holds a process's draws until its scene ends while other processes' work goes on
-                if (_held.Count > 0) ReleaseHeld(); // a scene that ended before this command was queued comes first
+                if (_held.Count > 0)
+                {
+                    ReleaseHeld(); // a scene that ended before this command was queued comes first
+                }
+
                 if (_held.TryGetValue(cmd.Pid, out var lane) || cmd is DrawCommand { Gate.Ended: false } && !WaitedFor(cmd.Pid, cmd.Sequence))
                 {
-                    if (lane == null) _held[cmd.Pid] = lane = new HeldLane { Since = System.Diagnostics.Stopwatch.GetTimestamp() };
+                    if (lane == null)
+                    {
+                        _held[cmd.Pid] = lane = new HeldLane { Since = System.Diagnostics.Stopwatch.GetTimestamp() };
+                    }
+
                     lane.Commands.Enqueue(cmd);
                     Processed(cmd.Sequence);
                     continue;
                 }
             }
-            if (HoldsScenes && cmd is DrawCommand { Gate: { Ended: false } waited }) EndGateEarly(waited); // its process waits for it
+            if (HoldsScenes && cmd is DrawCommand { Gate: { Ended: false } waited })
+            {
+                EndGateEarly(waited); // its process waits for it
+            }
+
             ExecuteOne(cmd);
             Processed(cmd.Sequence);
         }
@@ -468,24 +679,61 @@ public sealed class GpuQueue : IDisposable
         // next command (deferred work in Idle runs in the last one; results that outlive it carry their own space)
         AddressSpace.MakeCurrent(cmd.Space);
         if (cmd is CallbackCommand xfer && (xfer.ReadSize > 0 || xfer.WriteSize > 0))
-            try { lock (_backendLock) xfer.Deferred = Backend?.DeferCallback(xfer) ?? false; }
-            catch (Exception e) { Log.WarnOnce("gpu-defercallback", $"GPU backend failed to defer a transfer: {e}"); }
+        {
+            try
+            {
+                lock (_backendLock)
+                {
+                    xfer.Deferred = Backend?.DeferCallback(xfer) ?? false;
+                }
+            }
+            catch (Exception e)
+            {
+                Log.WarnOnce("gpu-defercallback", $"GPU backend failed to defer a transfer: {e}");
+            }
+        }
+
         if (cmd is CallbackCommand { Deferred: false } pre)
         {
             // CPU work (transfers) happens first so the backend sees the memory it produced; a transfer that reads a
             // rendered surface needs its pixels in memory first
             if (pre.ReadSize > 0)
-                try { lock (_backendLock) Backend?.BeforeCallback(pre); }
-                catch (Exception e) { Log.WarnOnce("gpu-beforecallback", $"GPU backend failed to prepare a transfer source: {e}"); }
-            try { pre.Action(); }
-            catch (Exception e) { Log.Error($"GPU callback failed: {e}"); }
+            {
+                try
+                {
+                    lock (_backendLock)
+                    {
+                        Backend?.BeforeCallback(pre);
+                    }
+                }
+                catch (Exception e)
+                {
+                    Log.WarnOnce("gpu-beforecallback", $"GPU backend failed to prepare a transfer source: {e}");
+                }
+            }
+
+            try
+            {
+                pre.Action();
+            }
+            catch (Exception e)
+            {
+                Log.Error($"GPU callback failed: {e}");
+            }
         }
         ReadBound = uint.MaxValue;
         if (cmd is DrawCommand lateDraw)
         {
-            if (lateDraw.Gate is { Ended: false } gate) WaitSceneGate(lateDraw, gate);
+            if (lateDraw.Gate is { Ended: false } gate)
+            {
+                WaitSceneGate(lateDraw, gate);
+            }
+
             LateUniformCopy?.Invoke(lateDraw);
-            if (lateDraw.Scene is { } scene) ReadBound = scene.ReadBound;
+            if (lateDraw.Scene is { } scene)
+            {
+                ReadBound = scene.ReadBound;
+            }
         }
         var dump = GpuDumpRecorder.Current; // GPU dump recording (null when off)
         dump?.BeforeExecute(cmd);
@@ -498,10 +746,20 @@ public sealed class GpuQueue : IDisposable
 #if VITASHARP_DEVELOPER
             long tx = WorkerSlowdown > 1 ? System.Diagnostics.Stopwatch.GetTimestamp() : 0;
 #endif
-            lock (_backendLock) Backend?.Execute(cmd);
+            lock (_backendLock)
+            {
+                Backend?.Execute(cmd);
+            }
 #if VITASHARP_DEVELOPER
-            if (tx != 0) SlowDown(tx);
-            if (cmd is PresentCommand) Util.Developer.DevTrace.GpuPresented();
+            if (tx != 0)
+            {
+                SlowDown(tx);
+            }
+
+            if (cmd is PresentCommand)
+            {
+                Util.Developer.DevTrace.GpuPresented();
+            }
 #endif
 
         }
@@ -509,28 +767,55 @@ public sealed class GpuQueue : IDisposable
         {
             Log.WarnOnce("gpu-" + cmd.GetType().Name + e.GetType().Name, $"GPU backend failed on {cmd.GetType().Name}: {e}");
         }
-        if (dump != null) lock (_backendLock) dump.AfterExecute(cmd, Backend);
+        if (dump != null)
+        {
+            lock (_backendLock)
+            {
+                dump.AfterExecute(cmd, Backend);
+            }
+        }
 
         switch (cmd)
         {
             case DrawCommand draw:
                 draw.ReleaseUniforms(); // executed: its uniform slice is no longer read
-                if (Volatile.Read(ref _drawPoolCount) < 16384) { Interlocked.Increment(ref _drawPoolCount); _drawPool.Enqueue(draw); }
+                if (Volatile.Read(ref _drawPoolCount) < 16384)
+                {
+                    Interlocked.Increment(ref _drawPoolCount);
+                    _drawPool.Enqueue(draw);
+                }
                 break;
             case SignalCommand signal:
                 bool deferred = false;
                 // an immediate signal still hands the backend an empty deferred one: the work recorded so far starts
                 // on the GPU now (the guest will wait on later sync points for it), not at the next present
-                try { lock (_backendLock) deferred = (Backend?.DeferSignal(signal.Immediate ? NoOp : signal.Signal) ?? false) && !signal.Immediate; }
-                catch (Exception e) { Log.Error($"GPU backend signal failed: {e}"); }
-                if (!deferred) signal.Signal();
+                try
+                {
+                    lock (_backendLock)
+                    {
+                        deferred = (Backend?.DeferSignal(signal.Immediate ? NoOp : signal.Signal) ?? false) && !signal.Immediate;
+                    }
+                }
+                catch (Exception e)
+                {
+                    Log.Error($"GPU backend signal failed: {e}");
+                }
+                if (!deferred)
+                {
+                    signal.Signal();
+                }
+
                 break;
             case EndSceneCommand end:
                 if (end.Notifications.Length > 0 && !end.NotificationsDeferred)
                 {
                     lock (NotificationLock)
                     {
-                        foreach (var (addr, value) in end.Notifications) GuestMemory.W32(addr, value);
+                        foreach (var (addr, value) in end.Notifications)
+                        {
+                            GuestMemory.W32(addr, value);
+                        }
+
                         SignalCount++;
                         Monitor.PulseAll(NotificationLock);
                     }
@@ -549,7 +834,10 @@ public sealed class GpuQueue : IDisposable
     static void SlowDown(long t0)
     {
         long until = t0 + (long)((System.Diagnostics.Stopwatch.GetTimestamp() - t0) * WorkerSlowdown);
-        while (System.Diagnostics.Stopwatch.GetTimestamp() < until) Thread.SpinWait(20);
+        while (System.Diagnostics.Stopwatch.GetTimestamp() < until)
+        {
+            Thread.SpinWait(20);
+        }
     }
 #endif
 
@@ -567,13 +855,34 @@ public sealed class GpuQueue : IDisposable
     public sealed class Fence
     {
         bool _done;
-        public bool Done { get { lock (this) return _done; } }
-        public void Set() { lock (this) { _done = true; Monitor.PulseAll(this); } }
+        public bool Done
+        {
+            get
+            {
+                lock (this)
+                {
+                    return _done;
+                }
+            }
+        }
+        public void Set()
+        {
+            lock (this)
+            {
+                _done = true;
+                Monitor.PulseAll(this);
+            }
+        }
         /// <summary>Waits until set (or <paramref name="keepWaiting"/> turns false).</summary>
         public void Wait(Func<bool> keepWaiting)
         {
             lock (this)
-                while (!_done && keepWaiting()) Monitor.Wait(this, 50);
+            {
+                while (!_done && keepWaiting())
+                {
+                    Monitor.Wait(this, 50);
+                }
+            }
         }
     }
 
@@ -597,12 +906,29 @@ public sealed class GpuQueue : IDisposable
         long t0 = System.Diagnostics.Stopwatch.GetTimestamp();
         while (true)
         {
-            try { lock (_backendLock) Backend?.Idle(); }
-            catch (Exception e) { Log.WarnOnce("gpu-workerwait", $"GPU backend idle failed during a wait: {e.Message}"); }
+            try
+            {
+                lock (_backendLock)
+                {
+                    Backend?.Idle();
+                }
+            }
+            catch (Exception e)
+            {
+                Log.WarnOnce("gpu-workerwait", $"GPU backend idle failed during a wait: {e.Message}");
+            }
             lock (monitor)
             {
-                if (done()) return true;
-                if (System.Diagnostics.Stopwatch.GetElapsedTime(t0).TotalMilliseconds > timeoutMs) return false;
+                if (done())
+                {
+                    return true;
+                }
+
+                if (System.Diagnostics.Stopwatch.GetElapsedTime(t0).TotalMilliseconds > timeoutMs)
+                {
+                    return false;
+                }
+
                 Monitor.Wait(monitor, 2);
             }
         }
@@ -612,7 +938,11 @@ public sealed class GpuQueue : IDisposable
     public void Dispose()
     {
         _stopping = true;
-        lock (_progress) Monitor.PulseAll(_progress);
+        lock (_progress)
+        {
+            Monitor.PulseAll(_progress);
+        }
+
         _worker.Join(2000);
         _available.Dispose();
     }

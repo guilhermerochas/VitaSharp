@@ -136,7 +136,10 @@ public sealed class AppMgrShellHleTests(GuestMemoryFixture fx) : IDisposable
         Assert.Equal(ERR_NULL, Call(S, "sceAppMgrCaptureFrameBufIFTUByAppId", -2, fb));
         GuestMemory.W32(fb, 0x18); // no base
         Assert.Equal(ERR_NULL, Call(S, "_sceAppMgrCaptureFrameBufIFTUByAppId", -2, fb));
-        GuestMemory.W32(fb + 4, _h.Alloc(64 * 64 * 4)); GuestMemory.W32(fb + 8, 64); GuestMemory.W32(fb + 16, 64); GuestMemory.W32(fb + 20, 64);
+        GuestMemory.W32(fb + 4, _h.Alloc(64 * 64 * 4));
+        GuestMemory.W32(fb + 8, 64);
+        GuestMemory.W32(fb + 16, 64);
+        GuestMemory.W32(fb + 20, 64);
         // nothing displayed yet by this process (and no shell composing for it)
         Assert.Equal(ERR_NOT_FOUND, Call(S, "_sceAppMgrCaptureFrameBufDMACByAppId", -2, fb));
     }

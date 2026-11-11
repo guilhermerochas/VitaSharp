@@ -43,8 +43,12 @@ public sealed partial class MainWindow : Window
     readonly TextBlock _status = new() { VerticalAlignment = VerticalAlignment.Center, TextTrimming = TextTrimming.CharacterEllipsis };
     readonly TextBox _log = new()
     {
-        IsReadOnly = true, AcceptsReturn = true, TextWrapping = TextWrapping.NoWrap, FontSize = 12,
-        FontFamily = new FontFamily("Consolas, Menlo, monospace"), BorderThickness = new Thickness(0),
+        IsReadOnly = true,
+        AcceptsReturn = true,
+        TextWrapping = TextWrapping.NoWrap,
+        FontSize = 12,
+        FontFamily = new FontFamily("Consolas, Menlo, monospace"),
+        BorderThickness = new Thickness(0),
     };
     readonly Border _logPanel = new() { Height = 180 };
 
@@ -67,13 +71,26 @@ public sealed partial class MainWindow : Window
     internal Process? RunningProcessForTests => _running;
     internal void OpenLiveAreaForTests(GameEntry g) => OpenLiveArea(g);
     /// <summary>Opens the game page's "Pastas" menu (ui-render).</summary>
-    internal void ShowGameFoldersForTests() { if (_gameFolders?.Flyout is { } f) f.ShowAt(_gameFolders); }
+    internal void ShowGameFoldersForTests()
+    {
+        if (_gameFolders?.Flyout is { } f)
+        {
+            f.ShowAt(_gameFolders);
+        }
+    }
 
     /// <summary>Starts a title (or "shell") the way the launcher's buttons do; false when it could not start.</summary>
     internal bool LaunchForTests(string titleId)
     {
-        if (titleId == "shell") LaunchSystem();
-        else if (_all.FirstOrDefault(g => g.TitleId == titleId) is { } g) Launch(g);
+        if (titleId == "shell")
+        {
+            LaunchSystem();
+        }
+        else if (_all.FirstOrDefault(g => g.TitleId == titleId) is { } g)
+        {
+            Launch(g);
+        }
+
         return _running != null;
     }
 
@@ -116,18 +133,26 @@ public sealed partial class MainWindow : Window
         SetStatus(S.StatusReady(_all.Count, Program.DataRoot));
         // "Ao abrir o emulador: Sistema do Vita": the shell starts right away, the launcher stays behind it
         if (_saveSettings && _settings.StartupView == LauncherSettings.StartSystem && ShellInstalled)
+        {
             Opened += (_, _) => LaunchSystem();
+        }
         // "Procurar atualizacoes ao iniciar": the GitHub releases, in the background (quiet when nothing is new)
         if (_saveSettings)
         {
             Updater.CleanDownloads();
-            if (_settings.CheckUpdates) Opened += (_, _) => _ = CheckForUpdates(manual: false);
+            if (_settings.CheckUpdates)
+            {
+                Opened += (_, _) => _ = CheckForUpdates(manual: false);
+            }
         }
     }
 
     void SaveSettings()
     {
-        if (_saveSettings) _settings.Save();
+        if (_saveSettings)
+        {
+            _settings.Save();
+        }
     }
 
     void OnPaletteChanged() => Dispatcher.UIThread.Post(RebuildAll);
@@ -137,7 +162,11 @@ public sealed partial class MainWindow : Window
     {
         _settingsPage?.SaveControls();
         // panels drawn with the old palette are made again (the firmware panel keeps a running installation)
-        if (_firmwarePanel is { Busy: false }) _firmwarePanel = null;
+        if (_firmwarePanel is { Busy: false })
+        {
+            _firmwarePanel = null;
+        }
+
         _k = new Kit(Palette.Current);
         Background = Kit.B(P.Background);
         _sidebarHost.Background = Kit.B(P.Sidebar);
@@ -166,7 +195,11 @@ public sealed partial class MainWindow : Window
     void ShowPage()
     {
         CloseOverlay();
-        if (_page == PageGame && _pageGame != null && !_all.Any(g => g.TitleId == _pageGame.TitleId)) _page = PageLibrary;
+        if (_page == PageGame && _pageGame != null && !_all.Any(g => g.TitleId == _pageGame.TitleId))
+        {
+            _page = PageLibrary;
+        }
+
         _contentHost.Child = _page switch
         {
             PageGame when _pageGame != null => GamePage(_pageGame),
@@ -198,13 +231,26 @@ public sealed partial class MainWindow : Window
         s.Children.Add(launch);
 
         var bottom = _k.VStack(12);
-        if (RunningCard() is { } running) bottom.Children.Add(running);
-        if (InstallCard() is { } install) bottom.Children.Add(install);
+        if (RunningCard() is { } running)
+        {
+            bottom.Children.Add(running);
+        }
+
+        if (InstallCard() is { } install)
+        {
+            bottom.Children.Add(install);
+        }
+
         bool fw = FirmwareInstalled;
         var fwRow = _k.HStack(8, _k.Dot(fw ? P.Ok : P.Warn), _k.Text(fw ? S.FirmwareInstalledShort(FirmwareVersion) : S.FirmwareMissingShort, 12.5, color: P.Muted));
         fwRow.Margin = new Thickness(6, 2, 0, 0);
         bottom.Children.Add(Kit.Click(fwRow, () => Navigate(PageSystem), S.FirmwareTip));
-        int theme = _settings.UiTheme switch { LauncherSettings.ThemeDark => 1, LauncherSettings.ThemeLight => 2, _ => 0 };
+        int theme = _settings.UiTheme switch
+        {
+            LauncherSettings.ThemeDark => 1,
+            LauncherSettings.ThemeLight => 2,
+            _ => 0
+        };
         bottom.Children.Add(_k.Segmented(theme, i => SetTheme(i switch { 1 => LauncherSettings.ThemeDark, 2 => LauncherSettings.ThemeLight, _ => LauncherSettings.ThemeSystem }),
             (S.ThemeSystem, "monitor", null), ("", "moon", S.ThemeDark), ("", "sun", S.ThemeLight)));
         DockPanel.SetDock(bottom, Dock.Bottom);
@@ -228,12 +274,20 @@ public sealed partial class MainWindow : Window
         var g = new Grid { ColumnDefinitions = new ColumnDefinitions("Auto,*,Auto") };
         g.Children.Add(new Border { Margin = new Thickness(0, 0, 12, 0), Child = _k.Icon(icon, 19, selected ? P.Accent : P.Muted) });
         g.Children.Add(Kit.At(_k.Text(text, 14, selected ? FontWeight.SemiBold : FontWeight.Medium, selected ? P.Text : P.TextSoft), col: 1));
-        if (count != null) g.Children.Add(Kit.At(_k.Text(count, 12, FontWeight.Medium, P.Muted), col: 2));
+        if (count != null)
+        {
+            g.Children.Add(Kit.At(_k.Text(count, 12, FontWeight.Medium, P.Muted), col: 2));
+        }
+
         return Kit.Click(new Border
         {
-            Height = 42, Padding = new Thickness(12, 0), CornerRadius = new CornerRadius(12), Child = g,
+            Height = 42,
+            Padding = new Thickness(12, 0),
+            CornerRadius = new CornerRadius(12),
+            Child = g,
             Background = selected ? Kit.B(P.Highlight) : Brushes.Transparent,
-            BorderBrush = selected ? Kit.B(P.HighlightBorder) : Brushes.Transparent, BorderThickness = new Thickness(1),
+            BorderBrush = selected ? Kit.B(P.HighlightBorder) : Brushes.Transparent,
+            BorderThickness = new Thickness(1),
         }, open);
     }
 
@@ -247,7 +301,11 @@ public sealed partial class MainWindow : Window
         var g = new Grid { ColumnDefinitions = new ColumnDefinitions("Auto,*") };
         g.Children.Add(new Border
         {
-            Width = 30, Height = 30, CornerRadius = new CornerRadius(15), Margin = new Thickness(0, 0, 10, 0), VerticalAlignment = VerticalAlignment.Center,
+            Width = 30,
+            Height = 30,
+            CornerRadius = new CornerRadius(15),
+            Margin = new Thickness(0, 0, 10, 0),
+            VerticalAlignment = VerticalAlignment.Center,
             Background = Kit.B(enabled ? P.OnAccent : P.Border, enabled ? 0.16 : 1),
             Child = new Border { Margin = new Thickness(2, 0, 0, 0), Child = _k.Icon("play", 13, fg, fill: true) },
         });
@@ -258,11 +316,15 @@ public sealed partial class MainWindow : Window
         g.Children.Add(Kit.At(texts, col: 1));
         var visual = new Border
         {
-            Height = 54, Padding = new Thickness(12, 0), CornerRadius = new CornerRadius(16), Child = g,
+            Height = 54,
+            Padding = new Thickness(12, 0),
+            CornerRadius = new CornerRadius(16),
+            Child = g,
             Background = enabled
                 ? new LinearGradientBrush { StartPoint = Kit.Rel(0, 0), EndPoint = Kit.Rel(1, 1), GradientStops = { new GradientStop(P.Accent, 0), new GradientStop(P.Accent2, 1) } }
                 : Kit.B(P.Surface),
-            BorderBrush = Kit.B(enabled ? Colors.Transparent : P.Border), BorderThickness = new Thickness(1),
+            BorderBrush = Kit.B(enabled ? Colors.Transparent : P.Border),
+            BorderThickness = new Thickness(1),
             BoxShadow = enabled ? BoxShadows.Parse(P.Dark ? "0 8 24 0 #406E9BFF" : "0 8 20 0 #403767DB") : default,
         };
         return Kit.Click(visual, LaunchSystem, shellRunning ? S.GoToGameTip : S.OpenVitaSystemTip, enabled);
@@ -270,7 +332,11 @@ public sealed partial class MainWindow : Window
 
     Control? RunningCard()
     {
-        if (_running == null) return null;
+        if (_running == null)
+        {
+            return null;
+        }
+
         var head = _k.HStack(8, _k.Dot(P.Ok), _k.Text(S.RunningNow, 12.5, FontWeight.SemiBold, P.Ok));
         // the name and "Ir para o jogo" bring the game's window to the front (it runs in its own process and window)
         var name = Kit.Click(_k.Text(_runningTitle ?? "", 13.5, FontWeight.Medium), GoToGame, S.GoToGameTip);
@@ -282,8 +348,12 @@ public sealed partial class MainWindow : Window
         var body = _k.VStack(8, head, name, go, stop);
         return new Border
         {
-            Background = Kit.B(P.Surface), BorderBrush = Kit.B(P.Border), BorderThickness = new Thickness(1),
-            CornerRadius = new CornerRadius(16), Padding = new Thickness(14, 12), Child = body,
+            Background = Kit.B(P.Surface),
+            BorderBrush = Kit.B(P.Border),
+            BorderThickness = new Thickness(1),
+            CornerRadius = new CornerRadius(16),
+            Padding = new Thickness(14, 12),
+            Child = body,
         };
     }
 
@@ -336,8 +406,16 @@ public sealed partial class MainWindow : Window
     {
         _logLines.Enqueue(line);
         _logChars += line.Length + 1;
-        while (_logLines.Count > MaxLogLines) _logChars -= _logLines.Dequeue().Length + 1;
-        if (_logFlushPending) return;
+        while (_logLines.Count > MaxLogLines)
+        {
+            _logChars -= _logLines.Dequeue().Length + 1;
+        }
+
+        if (_logFlushPending)
+        {
+            return;
+        }
+
         _logFlushPending = true;
         DispatcherTimer.RunOnce(FlushLog, TimeSpan.FromMilliseconds(250));
     }
@@ -346,7 +424,11 @@ public sealed partial class MainWindow : Window
     {
         _logFlushPending = false;
         var sb = new System.Text.StringBuilder(_logChars + 16);
-        foreach (var l in _logLines) sb.Append(l).Append(Environment.NewLine);
+        foreach (var l in _logLines)
+        {
+            sb.Append(l).Append(Environment.NewLine);
+        }
+
         var text = sb.ToString();
         _log.Text = text;
         _log.CaretIndex = text.Length;
@@ -356,11 +438,32 @@ public sealed partial class MainWindow : Window
 
     void OnKey(object? sender, KeyEventArgs e)
     {
-        if (e.KeyModifiers == KeyModifiers.Control && e.Key == Key.H) { LaunchSystem(); e.Handled = true; }
-        else if (e.KeyModifiers == KeyModifiers.Control && e.Key == Key.F) { Navigate(PageLibrary); _search?.Focus(); e.Handled = true; }
-        else if (e.KeyModifiers == KeyModifiers.None && e.Key == Key.F5) { Refresh(); e.Handled = true; }
-        else if (e.KeyModifiers == KeyModifiers.None && e.Key == Key.Escape && _overlay.IsVisible) { CloseOverlay(); e.Handled = true; }
-        else if (e.KeyModifiers == KeyModifiers.None && e.Key == Key.Escape && _page == PageGame) { Navigate(PageLibrary); e.Handled = true; }
+        if (e.KeyModifiers == KeyModifiers.Control && e.Key == Key.H)
+        {
+            LaunchSystem();
+            e.Handled = true;
+        }
+        else if (e.KeyModifiers == KeyModifiers.Control && e.Key == Key.F)
+        {
+            Navigate(PageLibrary);
+            _search?.Focus();
+            e.Handled = true;
+        }
+        else if (e.KeyModifiers == KeyModifiers.None && e.Key == Key.F5)
+        {
+            Refresh();
+            e.Handled = true;
+        }
+        else if (e.KeyModifiers == KeyModifiers.None && e.Key == Key.Escape && _overlay.IsVisible)
+        {
+            CloseOverlay();
+            e.Handled = true;
+        }
+        else if (e.KeyModifiers == KeyModifiers.None && e.Key == Key.Escape && _page == PageGame)
+        {
+            Navigate(PageLibrary);
+            e.Handled = true;
+        }
     }
 
     // ------------------------------------------------------------------ library data
@@ -369,11 +472,26 @@ public sealed partial class MainWindow : Window
     {
         _all = GameLibrary.Scan(Program.Ux0);
         _play = PlayHistory.Load();
-        try { _fw = VitaSharp.Core.Firmware.FirmwareInfo.Read(Program.FsRoot); } catch (IOException) { _fw = null; }
+        try
+        {
+            _fw = VitaSharp.Core.Firmware.FirmwareInfo.Read(Program.FsRoot);
+        }
+        catch (IOException)
+        {
+            _fw = null;
+        }
         _trophies.Clear();
         _shell?.SetApps(_all);
-        if (_pageGame != null) _pageGame = _all.FirstOrDefault(g => g.TitleId == _pageGame.TitleId);
-        if (rebuild) { RebuildSidebar(); ShowPage(); }
+        if (_pageGame != null)
+        {
+            _pageGame = _all.FirstOrDefault(g => g.TitleId == _pageGame.TitleId);
+        }
+
+        if (rebuild)
+        {
+            RebuildSidebar();
+            ShowPage();
+        }
     }
 
     PlayRecord? PlayOf(string titleId) => _play.GetValueOrDefault(titleId);
@@ -384,7 +502,10 @@ public sealed partial class MainWindow : Window
     List<TrophySetView> TrophiesOf(GameEntry g)
     {
         if (!_trophies.TryGetValue(g.Path, out var sets))
+        {
             _trophies[g.Path] = sets = TrophySetView.ForGame(g.Path, Program.FsRoot, TrophySetView.VitaLanguage(System.Globalization.CultureInfo.CurrentUICulture));
+        }
+
         return sets;
     }
 
@@ -411,8 +532,14 @@ public sealed partial class MainWindow : Window
     /// <summary>Starts <paramref name="g"/> or opens its LiveArea first, as "Ao escolher um jogo" says.</summary>
     void DefaultAction(GameEntry g)
     {
-        if (_settings.GameClick == LauncherSettings.ClickLiveArea) OpenLiveArea(g);
-        else Launch(g);
+        if (_settings.GameClick == LauncherSettings.ClickLiveArea)
+        {
+            OpenLiveArea(g);
+        }
+        else
+        {
+            Launch(g);
+        }
     }
 
     void Launch(GameEntry g) => StartEmulator(g.Title, g.TitleId, ["run", g.Path], g);
@@ -423,7 +550,11 @@ public sealed partial class MainWindow : Window
     /// home screen and LiveArea; the games it starts run as processes of the same emulator session.</summary>
     void LaunchSystem()
     {
-        if (!ShellInstalled) { Navigate(PageSystem); return; }
+        if (!ShellInstalled)
+        {
+            Navigate(PageSystem);
+            return;
+        }
         StartEmulator(S.VitaSystem, "shell", ["boot-shell"], null);
     }
 
@@ -432,7 +563,11 @@ public sealed partial class MainWindow : Window
     /// <summary>"Ir para o jogo": the running game's window comes to the front with the focus (restored if minimized).</summary>
     internal void GoToGame()
     {
-        if (_running is not { } p) return;
+        if (_running is not { } p)
+        {
+            return;
+        }
+
         var line = GameWindowActivator.Activate(p);
         AppendLog(line);
         LastFocusResultForTests = line;
@@ -447,32 +582,75 @@ public sealed partial class MainWindow : Window
     void StartEmulator(string title, string titleId, string[] command, GameEntry? g)
     {
         // starting what already runs (its "Jogar", the LiveArea's Start, "Abrir Sistema do Vita") goes to its window
-        if (_running != null && _runningId == titleId) { GoToGame(); return; }
-        if (_running != null) { SetStatus(S.AlreadyRunning(_runningTitle ?? "")); return; }
+        if (_running != null && _runningId == titleId)
+        {
+            GoToGame();
+            return;
+        }
+        if (_running != null)
+        {
+            SetStatus(S.AlreadyRunning(_runningTitle ?? ""));
+            return;
+        }
         CloseOverlay();
         var exe = Environment.ProcessPath!;
         var psi = new ProcessStartInfo(exe)
         {
-            UseShellExecute = false, RedirectStandardOutput = true, RedirectStandardError = true, CreateNoWindow = true,
+            UseShellExecute = false,
+            RedirectStandardOutput = true,
+            RedirectStandardError = true,
+            CreateNoWindow = true,
         };
         // a framework-dependent build runs through "dotnet VitaSharp.Desktop.dll"
         if (Path.GetFileNameWithoutExtension(exe).Equals("dotnet", StringComparison.OrdinalIgnoreCase))
+        {
             psi.ArgumentList.Add(Environment.GetCommandLineArgs()[0]); // the .dll path
-        foreach (var c in command) psi.ArgumentList.Add(c);
-        foreach (var o in _settings.RunOptions(g?.TitleId)) psi.ArgumentList.Add(o);
-        foreach (var o in ExtraRunOptions) psi.ArgumentList.Add(o);
+        }
+
+        foreach (var c in command)
+        {
+            psi.ArgumentList.Add(c);
+        }
+
+        foreach (var o in _settings.RunOptions(g?.TitleId))
+        {
+            psi.ArgumentList.Add(o);
+        }
+
+        foreach (var o in ExtraRunOptions)
+        {
+            psi.ArgumentList.Add(o);
+        }
+
         psi.Environment[EnvVars.Data] = Program.DataRoot;
         // the RPCN password goes in the environment of the game process, not on its command line
-        if (_settings.RealInternet && _settings.UsesRpcn) psi.Environment[EnvVars.RpcnPassword] = _settings.RpcnPassword;
+        if (_settings.RealInternet && _settings.UsesRpcn)
+        {
+            psi.Environment[EnvVars.RpcnPassword] = _settings.RpcnPassword;
+        }
 
-        _logLines.Clear(); _logChars = 0; _log.Text = "";
+        _logLines.Clear();
+        _logChars = 0;
+        _log.Text = "";
         AppendLog($"> {title} ({titleId})");
         try
         {
             var p = Process.Start(psi)!;
             p.EnableRaisingEvents = true;
-            p.OutputDataReceived += (_, e) => { if (e.Data != null) Dispatcher.UIThread.Post(() => AppendLog(e.Data)); };
-            p.ErrorDataReceived += (_, e) => { if (e.Data != null) Dispatcher.UIThread.Post(() => AppendLog(e.Data)); };
+            p.OutputDataReceived += (_, e) =>
+            {
+                if (e.Data != null)
+                {
+                    Dispatcher.UIThread.Post(() => AppendLog(e.Data));
+                }
+            };
+            p.ErrorDataReceived += (_, e) =>
+            {
+                if (e.Data != null)
+                {
+                    Dispatcher.UIThread.Post(() => AppendLog(e.Data));
+                }
+            };
             p.Exited += (_, _) => Dispatcher.UIThread.Post(() => OnGameExited(p));
             p.BeginOutputReadLine();
             p.BeginErrorReadLine();
@@ -482,10 +660,17 @@ public sealed partial class MainWindow : Window
             _runningId = titleId;
             _runStartUtc = DateTime.UtcNow;
             _stopAsked = false;
-            if (g != null) _shell?.SetRunning(ShellAppOf(g));
+            if (g != null)
+            {
+                _shell?.SetRunning(ShellAppOf(g));
+            }
+
             SetStatus(S.Running(title));
             RebuildSidebar();
-            if (_page is PageGame or PageLibrary) ShowPage();
+            if (_page is PageGame or PageLibrary)
+            {
+                ShowPage();
+            }
         }
         catch (Exception e)
         {
@@ -499,8 +684,16 @@ public sealed partial class MainWindow : Window
     {
         try
         {
-            if (!_stopAsked && _running?.CloseMainWindow() == true) { _stopAsked = true; SetStatus(S.Closing); RebuildSidebar(); }
-            else _running?.Kill(true);
+            if (!_stopAsked && _running?.CloseMainWindow() == true)
+            {
+                _stopAsked = true;
+                SetStatus(S.Closing);
+                RebuildSidebar();
+            }
+            else
+            {
+                _running?.Kill(true);
+            }
         }
         catch (InvalidOperationException) { }
     }
@@ -512,7 +705,11 @@ public sealed partial class MainWindow : Window
     {
         int code = p.ExitCode;
         var title = _runningTitle;
-        if (_runningId != null) _play = PlayHistory.Add(_runningId, _runStartUtc);
+        if (_runningId != null)
+        {
+            _play = PlayHistory.Add(_runningId, _runStartUtc);
+        }
+
         _running = null;
         _runningGame = null;
         _runningTitle = _runningId = null;
@@ -520,7 +717,11 @@ public sealed partial class MainWindow : Window
         p.Dispose();
         Refresh(); // trophies earned and time played
         SetStatus(code == 0 ? S.Closed(title ?? "") : S.StoppedWithCode(title ?? "", code));
-        if (code != 0 && !_logPanel.IsVisible) ToggleLog();
+        if (code != 0 && !_logPanel.IsVisible)
+        {
+            ToggleLog();
+        }
+
         EmulatorExited?.Invoke(code);
     }
 
@@ -536,8 +737,19 @@ public sealed partial class MainWindow : Window
         }
         LeavePage();
         // the game closes its own window: a "Gravar tudo" recording is completed first (killing it lost the recording)
-        try { if (_running?.CloseMainWindow() != true) _running?.Kill(true); } catch (InvalidOperationException) { }
-        foreach (var j in _jobs) j.Cts?.Cancel();
+        try
+        {
+            if (_running?.CloseMainWindow() != true)
+            {
+                _running?.Kill(true);
+            }
+        }
+        catch (InvalidOperationException) { }
+        foreach (var j in _jobs)
+        {
+            j.Cts?.Cancel();
+        }
+
         _shell?.Dispose();
         LauncherApp.PaletteChanged -= OnPaletteChanged;
         base.OnClosing(e);
@@ -549,13 +761,27 @@ public sealed partial class MainWindow : Window
 
     Shell.ShellView EnsureShell()
     {
-        if (_shell != null) return _shell;
+        if (_shell != null)
+        {
+            return _shell;
+        }
+
         _shell = new Shell.ShellView(_settings, Program.FsRoot);
         // a system app runs from its vs0:app folder through the same "run" path as a game
         _shell.LaunchRequested += a => Launch(a.Game ?? new GameEntry(a.TitleId, a.Title, a.Version, "gd", a.Path, a.IconPath, 0));
-        _shell.LiveAreaClosed += () => { if (_overlay.IsVisible) CloseOverlay(); };
+        _shell.LiveAreaClosed += () =>
+        {
+            if (_overlay.IsVisible)
+            {
+                CloseOverlay();
+            }
+        };
         _shell.SetApps(_all);
-        if (_runningGame != null) _shell.SetRunning(ShellAppOf(_runningGame));
+        if (_runningGame != null)
+        {
+            _shell.SetRunning(ShellAppOf(_runningGame));
+        }
+
         return _shell;
     }
 
@@ -563,9 +789,15 @@ public sealed partial class MainWindow : Window
     {
         switch (c.Parent)
         {
-            case Panel p: p.Children.Remove(c); break;
-            case Decorator d: d.Child = null; break;
-            case ContentControl cc: cc.Content = null; break;
+            case Panel p:
+                p.Children.Remove(c);
+                break;
+            case Decorator d:
+                d.Child = null;
+                break;
+            case ContentControl cc:
+                cc.Content = null;
+                break;
         }
     }
 
@@ -578,8 +810,13 @@ public sealed partial class MainWindow : Window
         _overlay.Background = Kit.B(Colors.Black, 0.6);
         var frame = new Border
         {
-            Child = shell, CornerRadius = new CornerRadius(22), ClipToBounds = true, Margin = new Thickness(60, 40),
-            BorderBrush = Kit.B(P.BorderStrong), BorderThickness = new Thickness(1), BoxShadow = BoxShadows.Parse("0 24 60 0 #66000000"),
+            Child = shell,
+            CornerRadius = new CornerRadius(22),
+            ClipToBounds = true,
+            Margin = new Thickness(60, 40),
+            BorderBrush = Kit.B(P.BorderStrong),
+            BorderThickness = new Thickness(1),
+            BoxShadow = BoxShadows.Parse("0 24 60 0 #66000000"),
         };
         var close = _k.Secondary("", "x", CloseOverlay, 40);
         close.HorizontalAlignment = HorizontalAlignment.Right;
@@ -594,7 +831,11 @@ public sealed partial class MainWindow : Window
 
     void CloseOverlay()
     {
-        if (!_overlay.IsVisible) return;
+        if (!_overlay.IsVisible)
+        {
+            return;
+        }
+
         _overlay.IsVisible = false;
         if (_shell != null && _shell.Parent is Control parent && parent.Parent == _overlay)
         {
@@ -602,7 +843,10 @@ public sealed partial class MainWindow : Window
             Detach(_shell);
         }
         _overlay.Children.Clear();
-        if (_page == PageLibrary && _settings.View == LauncherSettings.ViewHome) ShowPage();
+        if (_page == PageLibrary && _settings.View == LauncherSettings.ViewHome)
+        {
+            ShowPage();
+        }
     }
 
     // ------------------------------------------------------------------ dialogs
@@ -636,15 +880,28 @@ public sealed partial class MainWindow : Window
 
     Window Dialog(Control content, double width) => new()
     {
-        Title = "VitaSharp", Width = width, SizeToContent = SizeToContent.Height, CanResize = false, Content = content,
-        WindowStartupLocation = WindowStartupLocation.CenterOwner, Background = Kit.B(P.Surface), FontFamily = Kit.Inter,
+        Title = "VitaSharp",
+        Width = width,
+        SizeToContent = SizeToContent.Height,
+        CanResize = false,
+        Content = content,
+        WindowStartupLocation = WindowStartupLocation.CenterOwner,
+        Background = Kit.B(P.Surface),
+        FontFamily = Kit.Inter,
         RequestedThemeVariant = P.Dark ? Avalonia.Styling.ThemeVariant.Dark : Avalonia.Styling.ThemeVariant.Light,
     };
 
     static void OpenPath(string path)
     {
-        if (!Directory.Exists(path) && !File.Exists(path)) return;
-        try { Process.Start(new ProcessStartInfo(path) { UseShellExecute = true }); }
+        if (!Directory.Exists(path) && !File.Exists(path))
+        {
+            return;
+        }
+
+        try
+        {
+            Process.Start(new ProcessStartInfo(path) { UseShellExecute = true });
+        }
         catch (Exception) { }
     }
 
@@ -653,8 +910,14 @@ public sealed partial class MainWindow : Window
     {
         try
         {
-            if (OperatingSystem.IsWindows() && File.Exists(file)) Process.Start("explorer.exe", $"/select,\"{file}\"");
-            else OpenPath(Path.GetDirectoryName(file) ?? file);
+            if (OperatingSystem.IsWindows() && File.Exists(file))
+            {
+                Process.Start("explorer.exe", $"/select,\"{file}\"");
+            }
+            else
+            {
+                OpenPath(Path.GetDirectoryName(file) ?? file);
+            }
         }
         catch (Exception) { }
     }

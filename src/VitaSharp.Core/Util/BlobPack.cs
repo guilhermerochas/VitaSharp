@@ -35,7 +35,16 @@ public sealed class BlobPack : IDisposable
     bool _disposed;
 
     public string Path { get; }
-    public int Count { get { lock (_lock) return _index.Count; } }
+    public int Count
+    {
+        get
+        {
+            lock (_lock)
+            {
+                return _index.Count;
+            }
+        }
+    }
     /// <summary>Another session owns the pack for writing: this view only reads.</summary>
     public bool IsReadOnly => _owner == null;
 
@@ -58,7 +67,10 @@ public sealed class BlobPack : IDisposable
         try
         {
             Directory.CreateDirectory(System.IO.Path.GetDirectoryName(path)!);
-            try { owner = new FileStream(lockPath, FileMode.OpenOrCreate, FileAccess.ReadWrite, FileShare.None, 1); }
+            try
+            {
+                owner = new FileStream(lockPath, FileMode.OpenOrCreate, FileAccess.ReadWrite, FileShare.None, 1);
+            }
             catch (IOException) when (File.Exists(lockPath)) { } // locked: another session owns this pack
             // the owner still opens the pack with FileShare.Read: a session of an older build, which only relied on
             // the sharing mode, then cannot write it at the same time on Windows (one of the two falls back below)
@@ -71,8 +83,15 @@ public sealed class BlobPack : IDisposable
             // sharing violation on the pack itself: a session that does not use the lock file writes it
             owner.Dispose();
             owner = null;
-            try { fs = OpenReadOnly(path); }
-            catch (Exception e2) { Log.Warn($"[shadercache] cannot open {path}: {e.Message} / {e2.Message}"); return null; }
+            try
+            {
+                fs = OpenReadOnly(path);
+            }
+            catch (Exception e2)
+            {
+                Log.Warn($"[shadercache] cannot open {path}: {e.Message} / {e2.Message}");
+                return null;
+            }
         }
         catch (Exception e)
         {
@@ -80,14 +99,34 @@ public sealed class BlobPack : IDisposable
             Log.Warn($"[shadercache] cannot open {path}: {e.Message}");
             return null;
         }
-        if (owner == null) Log.Info($"[shadercache] {System.IO.Path.GetFileName(path)} is in use by another session: read-only");
+        if (owner == null)
+        {
+            Log.Info($"[shadercache] {System.IO.Path.GetFileName(path)} is in use by another session: read-only");
+        }
+
         var pack = new BlobPack(path, fs, owner);
-        try { pack.Load(version); }
+        try
+        {
+            pack.Load(version);
+        }
         catch (Exception e)
         {
             Log.Warn($"[shadercache] {path} unreadable ({e.Message}), starting over");
-            if (pack.IsReadOnly) { pack._index.Clear(); pack._order.Clear(); return pack; }
-            try { pack.Reset(version); } catch { pack.Dispose(); return null; }
+            if (pack.IsReadOnly)
+            {
+                pack._index.Clear();
+                pack._order.Clear();
+                return pack;
+            }
+            try
+            {
+                pack.Reset(version);
+            }
+            catch
+            {
+                pack.Dispose();
+                return null;
+            }
         }
         return pack;
     }
@@ -102,36 +141,74 @@ public sealed class BlobPack : IDisposable
     {
         try
         {
-            if (!File.Exists(path)) return null;
+            if (!File.Exists(path))
+            {
+                return null;
+            }
+
             using var fs = new FileStream(path, FileMode.Open, FileAccess.Read, FileShare.ReadWrite | FileShare.Delete, 1);
             Span<byte> hdr = stackalloc byte[FileHeaderSize];
-            if (fs.Read(hdr) != FileHeaderSize || BinaryPrimitives.ReadUInt32LittleEndian(hdr) != FileMagic) return null;
+            if (fs.Read(hdr) != FileHeaderSize || BinaryPrimitives.ReadUInt32LittleEndian(hdr) != FileMagic)
+            {
+                return null;
+            }
+
             return BinaryPrimitives.ReadUInt32LittleEndian(hdr[4..]);
         }
-        catch (Exception) { return null; }
+        catch (Exception)
+        {
+            return null;
+        }
     }
 
     void Load(uint version)
     {
         long len = RandomAccess.GetLength(_h);
         Span<byte> hdr = stackalloc byte[RecordHeaderSize];
-        if (len < FileHeaderSize) { if (!IsReadOnly) Reset(version); return; }
+        if (len < FileHeaderSize)
+        {
+            if (!IsReadOnly)
+            {
+                Reset(version);
+            }
+
+            return;
+        }
         RandomAccess.Read(_h, hdr[..FileHeaderSize], 0);
         if (BinaryPrimitives.ReadUInt32LittleEndian(hdr) != FileMagic || BinaryPrimitives.ReadUInt32LittleEndian(hdr[4..]) != version)
         {
-            if (!IsReadOnly) Reset(version);
+            if (!IsReadOnly)
+            {
+                Reset(version);
+            }
+
             return;
         }
         long pos = FileHeaderSize;
         while (pos + RecordHeaderSize <= len)
         {
-            if (RandomAccess.Read(_h, hdr, pos) != RecordHeaderSize) break;
+            if (RandomAccess.Read(_h, hdr, pos) != RecordHeaderSize)
+            {
+                break;
+            }
+
             uint magic = BinaryPrimitives.ReadUInt32LittleEndian(hdr);
             int size = BinaryPrimitives.ReadInt32LittleEndian(hdr[4..]);
             ulong key = BinaryPrimitives.ReadUInt64LittleEndian(hdr[8..]);
-            if (magic != RecordMagic || size < 0 || size > MaxBlob || pos + RecordHeaderSize + size > len) break;
-            if (_index.TryAdd(key, (pos + RecordHeaderSize, size))) _order.Add(key);
-            else _index[key] = (pos + RecordHeaderSize, size);
+            if (magic != RecordMagic || size < 0 || size > MaxBlob || pos + RecordHeaderSize + size > len)
+            {
+                break;
+            }
+
+            if (_index.TryAdd(key, (pos + RecordHeaderSize, size)))
+            {
+                _order.Add(key);
+            }
+            else
+            {
+                _index[key] = (pos + RecordHeaderSize, size);
+            }
+
             pos += RecordHeaderSize + size;
         }
         if (pos != len && !IsReadOnly) // (read-only: the writer may be appending that tail right now)
@@ -155,40 +232,83 @@ public sealed class BlobPack : IDisposable
         _end = FileHeaderSize;
     }
 
-    public bool Contains(ulong key) { lock (_lock) return _index.ContainsKey(key); }
+    public bool Contains(ulong key)
+    {
+        lock (_lock)
+        {
+            return _index.ContainsKey(key);
+        }
+    }
 
     /// <summary>Keys in insertion order (first-seen first).</summary>
-    public ulong[] Keys() { lock (_lock) return _order.ToArray(); }
+    public ulong[] Keys()
+    {
+        lock (_lock)
+        {
+            return _order.ToArray();
+        }
+    }
 
     /// <summary>Reads and verifies a blob; a corrupted record counts as missing.</summary>
     public byte[]? TryRead(ulong key)
     {
-        long offset; int length;
+        long offset;
+        int length;
         lock (_lock)
         {
-            if (_disposed || !_index.TryGetValue(key, out var e)) return null;
+            if (_disposed || !_index.TryGetValue(key, out var e))
+            {
+                return null;
+            }
+
             (offset, length) = e;
         }
         try
         {
             Span<byte> hdr = stackalloc byte[RecordHeaderSize];
-            if (RandomAccess.Read(_h, hdr, offset - RecordHeaderSize) != RecordHeaderSize) return null;
+            if (RandomAccess.Read(_h, hdr, offset - RecordHeaderSize) != RecordHeaderSize)
+            {
+                return null;
+            }
+
             var data = new byte[length];
-            if (RandomAccess.Read(_h, data, offset) != length) return null;
-            if (XxHash64.HashToUInt64(data) != BinaryPrimitives.ReadUInt64LittleEndian(hdr[16..])) return null;
+            if (RandomAccess.Read(_h, data, offset) != length)
+            {
+                return null;
+            }
+
+            if (XxHash64.HashToUInt64(data) != BinaryPrimitives.ReadUInt64LittleEndian(hdr[16..]))
+            {
+                return null;
+            }
+
             return data;
         }
-        catch (ObjectDisposedException) { return null; }
-        catch (IOException) { return null; }
+        catch (ObjectDisposedException)
+        {
+            return null;
+        }
+        catch (IOException)
+        {
+            return null;
+        }
     }
 
     /// <summary>Appends a blob (no-op when the key is already stored).</summary>
     public void Add(ulong key, ReadOnlySpan<byte> data)
     {
-        if (data.Length > MaxBlob || IsReadOnly) return;
+        if (data.Length > MaxBlob || IsReadOnly)
+        {
+            return;
+        }
+
         lock (_lock)
         {
-            if (_disposed || _index.ContainsKey(key)) return;
+            if (_disposed || _index.ContainsKey(key))
+            {
+                return;
+            }
+
             Span<byte> hdr = stackalloc byte[RecordHeaderSize];
             BinaryPrimitives.WriteUInt32LittleEndian(hdr, RecordMagic);
             BinaryPrimitives.WriteInt32LittleEndian(hdr[4..], data.Length);
@@ -215,7 +335,11 @@ public sealed class BlobPack : IDisposable
     {
         lock (_lock)
         {
-            if (_disposed) return;
+            if (_disposed)
+            {
+                return;
+            }
+
             _disposed = true;
             _fs.Dispose();
             _owner?.Dispose(); // last: the next owner only starts writing once this session has stopped

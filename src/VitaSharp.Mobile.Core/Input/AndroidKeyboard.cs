@@ -134,21 +134,36 @@ public sealed class AndroidKeyboard : IMotionSource
     /// <summary>The keys of the keyboard profile: the pause and PS hotkeys and every other bound key.</summary>
     void IndexKeys()
     {
-        _bound.Clear(); _pauseKeys.Clear(); _psKeys.Clear();
+        _bound.Clear();
+        _pauseKeys.Clear();
+        _psKeys.Clear();
         foreach (var c in VitaControls.All)
+        {
             foreach (ref readonly var b in _profile[c])
             {
-                if (b.Kind != BindingKind.Key || b.Key == null) continue;
+                if (b.Kind != BindingKind.Key || b.Key == null)
+                {
+                    continue;
+                }
+
                 (c == VitaControl.PauseEmulation ? _pauseKeys : _bound).Add(b.Key);
-                if (c == VitaControl.PS) _psKeys.Add(b.Key);
+                if (c == VitaControl.PS)
+                {
+                    _psKeys.Add(b.Key);
+                }
             }
+        }
     }
 
     /// <summary>input.json changed (the Controles screen, another process): the new keyboard mapping applies at once,
     /// without restarting the game. Called under _lock.</summary>
     void ReloadIfChanged()
     {
-        if (_profiles == null || !_profiles.CheckChanged(ref _revision)) return;
+        if (_profiles == null || !_profiles.CheckChanged(ref _revision))
+        {
+            return;
+        }
+
         _profile = new CompiledProfile(_profiles.KeyboardProfile());
         _virtual.Settings = _profile.Profile.Tilt;
         IndexKeys();
@@ -158,7 +173,16 @@ public sealed class AndroidKeyboard : IMotionSource
     public ControllerProfile Profile => _profile.Profile;
 
     /// <summary>Some mapped key is held (the input backend skips the keyboard otherwise).</summary>
-    public bool AnyHeld { get { lock (_lock) return _keys.Count > 0; } }
+    public bool AnyHeld
+    {
+        get
+        {
+            lock (_lock)
+            {
+                return _keys.Count > 0;
+            }
+        }
+    }
 
     /// <summary>
     /// A key event of a keyboard (<paramref name="keyCode"/> = KeyEvent.getKeyCode). <paramref name="repeat"/>: an
@@ -166,26 +190,52 @@ public sealed class AndroidKeyboard : IMotionSource
     /// </summary>
     public KeyboardKeyAction OnKey(int keyCode, bool down, bool repeat = false)
     {
-        if (AndroidKeyNames.Name(keyCode) is not { } name) return KeyboardKeyAction.None;
+        if (AndroidKeyNames.Name(keyCode) is not { } name)
+        {
+            return KeyboardKeyAction.None;
+        }
+
         lock (_lock)
         {
             ReloadIfChanged();
             // the pause hotkey never reaches the game; a held key opens the menu once
             if (_pauseKeys.Contains(name))
             {
-                if (!down) { _pauseHeld.Remove(name); return KeyboardKeyAction.Handled; }
+                if (!down)
+                {
+                    _pauseHeld.Remove(name);
+                    return KeyboardKeyAction.Handled;
+                }
                 return !repeat && _pauseHeld.Add(name) ? KeyboardKeyAction.Handled | KeyboardKeyAction.Pause : KeyboardKeyAction.Handled;
             }
-            if (!_bound.Contains(name)) return KeyboardKeyAction.None;
-            if (repeat) return KeyboardKeyAction.Handled;
+            if (!_bound.Contains(name))
+            {
+                return KeyboardKeyAction.None;
+            }
+
+            if (repeat)
+            {
+                return KeyboardKeyAction.Handled;
+            }
+
             var action = KeyboardKeyAction.Handled;
             if (down)
             {
-                if (_keys.Add(name) && _psKeys.Contains(name)) action |= KeyboardKeyAction.PsButton;
+                if (_keys.Add(name) && _psKeys.Contains(name))
+                {
+                    action |= KeyboardKeyAction.PsButton;
+                }
             }
-            else _keys.Remove(name);
+            else
+            {
+                _keys.Remove(name);
+            }
             // tilt keys take effect (and a quick re-centre tap is seen) even between two SceMotion polls
-            if (MotionAllowed) _virtual.SetControls(_profile, null, _keys);
+            if (MotionAllowed)
+            {
+                _virtual.SetControls(_profile, null, _keys);
+            }
+
             return action;
         }
     }
@@ -198,7 +248,10 @@ public sealed class AndroidKeyboard : IMotionSource
         {
             _keys.Clear();
             _pauseHeld.Clear();
-            if (MotionAllowed) _virtual.SetControls(_profile, null, _keys);
+            if (MotionAllowed)
+            {
+                _virtual.SetControls(_profile, null, _keys);
+            }
         }
     }
 
@@ -224,7 +277,11 @@ public sealed class AndroidKeyboard : IMotionSource
 
     public int ReadSamples(Span<MotionSample> dest)
     {
-        if (!HasSensors) return 0;
+        if (!HasSensors)
+        {
+            return 0;
+        }
+
         if (!_virtualLogged)
         {
             _virtualLogged = true;

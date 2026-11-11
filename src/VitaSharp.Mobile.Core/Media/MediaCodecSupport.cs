@@ -26,8 +26,16 @@ public static class YuvImageCopy
     public static void Copy(Plane y, Plane u, Plane v, int cropX, int cropY, int width, int height, DecodedPicture picture)
     {
         int cw = (width + 1) / 2, ch = (height + 1) / 2;
-        if (picture.Y.Length != width * height) picture.Y = new byte[width * height];
-        if (picture.U.Length != cw * ch) { picture.U = new byte[cw * ch]; picture.V = new byte[cw * ch]; }
+        if (picture.Y.Length != width * height)
+        {
+            picture.Y = new byte[width * height];
+        }
+
+        if (picture.U.Length != cw * ch)
+        {
+            picture.U = new byte[cw * ch];
+            picture.V = new byte[cw * ch];
+        }
         picture.Width = width;
         picture.Height = height;
         CopyPlane(y, cropX, cropY, width, height, picture.Y);
@@ -40,10 +48,17 @@ public static class YuvImageCopy
     // FastCopy (libc memmove on Mono), interleaved chroma through pointers.
     static unsafe void CopyPlane(Plane p, int x0, int y0, int w, int h, Span<byte> dst)
     {
-        if (h <= 0 || w <= 0) return;
+        if (h <= 0 || w <= 0)
+        {
+            return;
+        }
         // the last row reads only up to its last sample: check the whole range once
         int lastStart = (y0 + h - 1) * p.RowStride + x0 * p.PixelStride;
-        if (lastStart + (w - 1) * p.PixelStride >= p.Data.Length || dst.Length < w * h) throw new ArgumentOutOfRangeException(nameof(p), "plane smaller than the crop rectangle");
+        if (lastStart + (w - 1) * p.PixelStride >= p.Data.Length || dst.Length < w * h)
+        {
+            throw new ArgumentOutOfRangeException(nameof(p), "plane smaller than the crop rectangle");
+        }
+
         fixed (byte* src0 = p.Data)
         fixed (byte* dst0 = dst)
         {
@@ -68,7 +83,10 @@ public static class YuvImageCopy
                         *(ulong*)(d + x) = ea | (eb << 32);
                     }
                 }
-                for (; x < w; x++) d[x] = s[x * stride];
+                for (; x < w; x++)
+                {
+                    d[x] = s[x * stride];
+                }
             }
         }
     }
@@ -121,9 +139,20 @@ public sealed class DecoderReplay
     /// <summary>Records an access unit before it goes to the decoder.</summary>
     public void Add(ReadOnlySpan<byte> accessUnit, long pts)
     {
-        if (H264AnnexB.ContainsIdr(accessUnit)) Clear(replayable: true);
-        if (_bytes + accessUnit.Length <= MaxBytes) { _units.Add((accessUnit.ToArray(), pts)); _bytes += accessUnit.Length; }
-        else _replayable = false; // too long since the last IDR: a fallback restarts at the next one
+        if (H264AnnexB.ContainsIdr(accessUnit))
+        {
+            Clear(replayable: true);
+        }
+
+        if (_bytes + accessUnit.Length <= MaxBytes)
+        {
+            _units.Add((accessUnit.ToArray(), pts));
+            _bytes += accessUnit.Length;
+        }
+        else
+        {
+            _replayable = false; // too long since the last IDR: a fallback restarts at the next one
+        }
     }
 
     /// <summary>A picture came out of the decoder.</summary>
@@ -165,7 +194,11 @@ public static class H264AnnexB
     public static int BuildAccessUnit(ReadOnlySpan<byte> sample, ReadOnlySpan<byte> header, ref byte[] buffer)
     {
         int need = header.Length + sample.Length + 64;
-        if (buffer.Length < need) buffer = new byte[need * 2];
+        if (buffer.Length < need)
+        {
+            buffer = new byte[need * 2];
+        }
+
         header.CopyTo(buffer);
         int o = header.Length;
         if (StartsWithStartCode(sample) || sample.Length < 5)
@@ -177,9 +210,20 @@ public static class H264AnnexB
         {
             int len = (sample[i] << 24) | (sample[i + 1] << 16) | (sample[i + 2] << 8) | sample[i + 3];
             i += 4;
-            if (len <= 0 || len > sample.Length - i) break;
-            if (buffer.Length < o + 4 + len) Array.Resize(ref buffer, (o + 4 + len) * 2);
-            buffer[o] = 0; buffer[o + 1] = 0; buffer[o + 2] = 0; buffer[o + 3] = 1;
+            if (len <= 0 || len > sample.Length - i)
+            {
+                break;
+            }
+
+            if (buffer.Length < o + 4 + len)
+            {
+                Array.Resize(ref buffer, (o + 4 + len) * 2);
+            }
+
+            buffer[o] = 0;
+            buffer[o + 1] = 0;
+            buffer[o + 2] = 0;
+            buffer[o + 3] = 1;
             sample.Slice(i, len).CopyTo(buffer.AsSpan(o + 4));
             o += 4 + len;
             i += len;
@@ -192,12 +236,30 @@ public static class H264AnnexB
     {
         for (int i = 0; i + 3 < au.Length; i++)
         {
-            if (au[i] != 0 || au[i + 1] != 0) continue;
+            if (au[i] != 0 || au[i + 1] != 0)
+            {
+                continue;
+            }
+
             int nal;
-            if (au[i + 2] == 1) nal = i + 3;
-            else if (au[i + 2] == 0 && au[i + 3] == 1 && i + 4 < au.Length) nal = i + 4;
-            else continue;
-            if (nal < au.Length && (au[nal] & 0x1F) == 5) return true;
+            if (au[i + 2] == 1)
+            {
+                nal = i + 3;
+            }
+            else if (au[i + 2] == 0 && au[i + 3] == 1 && i + 4 < au.Length)
+            {
+                nal = i + 4;
+            }
+            else
+            {
+                continue;
+            }
+
+            if (nal < au.Length && (au[nal] & 0x1F) == 5)
+            {
+                return true;
+            }
+
             i = nal - 1;
         }
         return false;

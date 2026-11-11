@@ -34,7 +34,11 @@ public sealed unsafe partial class VulkanRenderer
         }
         lock (_presentSlot)
         {
-            while (_presentPending) Monitor.Wait(_presentSlot);
+            while (_presentPending)
+            {
+                Monitor.Wait(_presentSlot);
+            }
+
             _pendingSwapchain = _swapchain;
             _pendingIndex = index;
             _pendingWait = wait;
@@ -46,9 +50,18 @@ public sealed unsafe partial class VulkanRenderer
     /// <summary>Waits until no present is in flight (before an acquire, a swapchain change, vkDeviceWaitIdle, the end).</summary>
     void DrainPresent()
     {
-        if (_presentThread == null) return;
+        if (_presentThread == null)
+        {
+            return;
+        }
+
         lock (_presentSlot)
-            while (_presentPending) Monitor.Wait(_presentSlot);
+        {
+            while (_presentPending)
+            {
+                Monitor.Wait(_presentSlot);
+            }
+        }
     }
 
     void PresentLoop()
@@ -60,12 +73,28 @@ public sealed unsafe partial class VulkanRenderer
             Silk.NET.Vulkan.Semaphore wait;
             lock (_presentSlot)
             {
-                while (!_presentPending && !_presentQuit) Monitor.Wait(_presentSlot);
-                if (_presentQuit && !_presentPending) return;
-                sc = _pendingSwapchain; index = _pendingIndex; wait = _pendingWait;
+                while (!_presentPending && !_presentQuit)
+                {
+                    Monitor.Wait(_presentSlot);
+                }
+
+                if (_presentQuit && !_presentPending)
+                {
+                    return;
+                }
+
+                sc = _pendingSwapchain;
+                index = _pendingIndex;
+                wait = _pendingWait;
             }
-            try { PresentNow(sc, index, wait); }
-            catch (Exception e) { Log.Warn($"present thread: {e.Message}"); }
+            try
+            {
+                PresentNow(sc, index, wait);
+            }
+            catch (Exception e)
+            {
+                Log.Warn($"present thread: {e.Message}");
+            }
             lock (_presentSlot)
             {
                 _presentPending = false;
@@ -76,8 +105,16 @@ public sealed unsafe partial class VulkanRenderer
 
     void StopPresentThread()
     {
-        if (_presentThread == null) return;
-        lock (_presentSlot) { _presentQuit = true; Monitor.PulseAll(_presentSlot); }
+        if (_presentThread == null)
+        {
+            return;
+        }
+
+        lock (_presentSlot)
+        {
+            _presentQuit = true;
+            Monitor.PulseAll(_presentSlot);
+        }
         _presentThread.Join();
         _presentThread = null;
     }

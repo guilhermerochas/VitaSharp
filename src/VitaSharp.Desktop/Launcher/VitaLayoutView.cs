@@ -63,14 +63,37 @@ public sealed class VitaLayoutView : Control
     public void SetState(in MappedInput state, (float X, float Y) rawLeft, (float X, float Y) rawRight, float deadzoneLeft, float deadzoneRight)
     {
         _state = state;
-        _rawL = rawLeft; _rawR = rawRight;
-        _dzL = deadzoneLeft; _dzR = deadzoneRight;
+        _rawL = rawLeft;
+        _rawR = rawRight;
+        _dzL = deadzoneLeft;
+        _dzR = deadzoneRight;
         InvalidateVisual();
     }
 
-    public VitaControl? SelectedControl { get => _selected; set { _selected = value; InvalidateVisual(); } }
-    public VitaControl? ListeningControl { get => _listening; set { _listening = value; InvalidateVisual(); } }
-    public void Blink() { _blink = !_blink; if (_listening != null) InvalidateVisual(); }
+    public VitaControl? SelectedControl
+    {
+        get => _selected; set
+        {
+            _selected = value;
+            InvalidateVisual();
+        }
+    }
+    public VitaControl? ListeningControl
+    {
+        get => _listening; set
+        {
+            _listening = value;
+            InvalidateVisual();
+        }
+    }
+    public void Blink()
+    {
+        _blink = !_blink;
+        if (_listening != null)
+        {
+            InvalidateVisual();
+        }
+    }
 
     protected override Size MeasureOverride(Size availableSize)
     {
@@ -89,7 +112,11 @@ public sealed class VitaLayoutView : Control
     public override void Render(DrawingContext ctx)
     {
         var (s, ox, oy) = Fit();
-        if (s <= 0) return;
+        if (s <= 0)
+        {
+            return;
+        }
+
         using var _ = ctx.PushTransform(Matrix.CreateScale(s, s) * Matrix.CreateTranslation(ox, oy));
         var b = _state.State.Buttons;
 
@@ -105,8 +132,15 @@ public sealed class VitaLayoutView : Control
         bool frontTouched = _state.FrontCount > 0;
         ctx.DrawRectangle(ScreenFill, new Pen(Outline(VitaControl.TouchFront) ?? (frontTouched ? Pressed : BodyStroke), Outline(VitaControl.TouchFront) != null ? 3 : 2), new RoundedRect(Screen, 6));
         Label(ctx, Core.Localization.Loc.Get("LayoutFrontScreen"), new Point(Screen.Center.X, Screen.Bottom - 16), 13, Muted);
-        if (TapPointFront is { } tf) DrawTapPoint(ctx, Screen, tf);
-        for (int i = 0; i < _state.FrontCount; i++) DrawTouch(ctx, Screen, _state.Front[i]);
+        if (TapPointFront is { } tf)
+        {
+            DrawTapPoint(ctx, Screen, tf);
+        }
+
+        for (int i = 0; i < _state.FrontCount; i++)
+        {
+            DrawTouch(ctx, Screen, _state.Front[i]);
+        }
 
         // D-pad
         DrawArm(ctx, VitaControl.Up, new Rect(DpadCenter.X - 17, DpadCenter.Y - 58, 34, 42), b.HasFlag(VitaButtons.Up));
@@ -139,8 +173,15 @@ public sealed class VitaLayoutView : Control
         var dashed = new Pen(rearOutline ?? (backTouched ? Pressed : ControlStroke), rearOutline != null ? 3 : 2) { DashStyle = new DashStyle([6, 4], 0) };
         ctx.DrawRectangle(backTouched ? new SolidColorBrush(Color.Parse("#1A2440")) : BodyFill, dashed, new RoundedRect(RearPad, 26));
         Label(ctx, Core.Localization.Loc.Get("LayoutRearPad"), new Point(RearPad.Center.X, RearPad.Bottom - 16), 13, Muted);
-        if (TapPointBack is { } tb) DrawTapPoint(ctx, RearPad, tb);
-        for (int i = 0; i < _state.BackCount; i++) DrawTouch(ctx, RearPad, _state.Back[i]);
+        if (TapPointBack is { } tb)
+        {
+            DrawTapPoint(ctx, RearPad, tb);
+        }
+
+        for (int i = 0; i < _state.BackCount; i++)
+        {
+            DrawTouch(ctx, RearPad, _state.Back[i]);
+        }
     }
 
     IBrush? Outline(VitaControl c) => _listening == c ? (_blink ? Listening : Brushes.White) : _selected == c ? Selected : null;
@@ -158,8 +199,14 @@ public sealed class VitaLayoutView : Control
         var outline = Outline(c);
         var pen = new Pen(outline ?? (down ? Pressed : ControlStroke), outline != null ? 3 : 1.5);
         var fill = down ? Pressed : ControlFill;
-        if (geometry != null) ctx.DrawGeometry(fill, pen, geometry);
-        else if (rect is { } r) ctx.DrawRectangle(fill, pen, r);
+        if (geometry != null)
+        {
+            ctx.DrawGeometry(fill, pen, geometry);
+        }
+        else if (rect is { } r)
+        {
+            ctx.DrawRectangle(fill, pen, r);
+        }
     }
 
     void DrawArm(DrawingContext ctx, VitaControl c, Rect r, bool down) => DrawButton(ctx, c, new RoundedRect(r, 6), down);
@@ -167,7 +214,11 @@ public sealed class VitaLayoutView : Control
     void DrawFace(DrawingContext ctx, VitaControl c, Point p, bool down, IBrush symbol)
     {
         const double R = 22;
-        if (down) ctx.DrawEllipse(PressedGlow, null, p, R + 8, R + 8);
+        if (down)
+        {
+            ctx.DrawEllipse(PressedGlow, null, p, R + 8, R + 8);
+        }
+
         DrawButton(ctx, c, null, down, new EllipseGeometry(new Rect(p.X - R, p.Y - R, 2 * R, 2 * R)));
         var pen = new Pen(down ? Brushes.White : symbol, 3);
         switch (c)
@@ -185,12 +236,16 @@ public sealed class VitaLayoutView : Control
                 ctx.DrawGeometry(null, pen, g);
                 break;
             }
-            case VitaControl.Circle: ctx.DrawEllipse(null, pen, p, 9, 9); break;
+            case VitaControl.Circle:
+                ctx.DrawEllipse(null, pen, p, 9, 9);
+                break;
             case VitaControl.Cross:
                 ctx.DrawLine(pen, new Point(p.X - 8, p.Y - 8), new Point(p.X + 8, p.Y + 8));
                 ctx.DrawLine(pen, new Point(p.X + 8, p.Y - 8), new Point(p.X - 8, p.Y + 8));
                 break;
-            default: ctx.DrawRectangle(null, pen, new Rect(p.X - 8, p.Y - 8, 16, 16)); break;
+            default:
+                ctx.DrawRectangle(null, pen, new Rect(p.X - 8, p.Y - 8, 16, 16));
+                break;
         }
     }
 
@@ -198,19 +253,29 @@ public sealed class VitaLayoutView : Control
     {
         var first = left ? VitaControl.LStickUp : VitaControl.RStickUp;
         IBrush? outline = null;
-        for (var d = first; d <= first + 3; d++) outline ??= Outline(d);
+        for (var d = first; d <= first + 3; d++)
+        {
+            outline ??= Outline(d);
+        }
+
         outline ??= Outline(left ? VitaControl.L3 : VitaControl.R3);
         bool moved = x != 0 || y != 0;
         ctx.DrawEllipse(ScreenFill, new Pen(outline ?? (clicked ? Pressed : ControlStroke), outline != null ? 3 : 2), c, StickBase, StickBase);
         // travel limit and deadzone ring
         ctx.DrawEllipse(null, new Pen(ControlStroke, 1), c, StickTravel, StickTravel);
         if (deadzone > 0)
+        {
             ctx.DrawEllipse(new SolidColorBrush(Color.Parse("#22FFB547")), new Pen(new SolidColorBrush(Color.Parse("#88FFB547")), 1) { DashStyle = new DashStyle([3, 3], 0) },
                 c, Math.Max(2, deadzone * StickTravel), Math.Max(2, deadzone * StickTravel));
+        }
         // raw position (before the deadzone) as a ring, mapped output as the knob
         var rawP = new Point(c.X + Math.Clamp(raw.X, -1, 1) * StickTravel, c.Y + Math.Clamp(raw.Y, -1, 1) * StickTravel);
         var knob = new Point(c.X + x * StickTravel, c.Y + y * StickTravel);
-        if (moved) ctx.DrawLine(new Pen(Pressed, 2), c, knob);
+        if (moved)
+        {
+            ctx.DrawLine(new Pen(Pressed, 2), c, knob);
+        }
+
         ctx.DrawEllipse(clicked || moved ? Pressed : ControlFill, new Pen(clicked ? Brushes.White : ControlStroke, 2), knob, StickKnob, StickKnob);
         ctx.DrawEllipse(null, new Pen(Listening, 1.5), rawP, 5, 5);
         // Vita byte values beside the stick (below it sit PS / Select / Start)
@@ -252,20 +317,65 @@ public sealed class VitaLayoutView : Control
     public static (VitaControl Control, Point Normalised)? HitTest(Point p)
     {
         static bool InCircle(Point p, Point c, double r) => (p.X - c.X) * (p.X - c.X) + (p.Y - c.Y) * (p.Y - c.Y) <= r * r;
-        if (LButton.Inflate(4).Contains(p)) return (VitaControl.L, default);
-        if (RButton.Inflate(4).Contains(p)) return (VitaControl.R, default);
+        if (LButton.Inflate(4).Contains(p))
+        {
+            return (VitaControl.L, default);
+        }
+
+        if (RButton.Inflate(4).Contains(p))
+        {
+            return (VitaControl.R, default);
+        }
+
         foreach (var c in new[] { VitaControl.Triangle, VitaControl.Circle, VitaControl.Cross, VitaControl.Square })
-            if (InCircle(p, FacePos(c), 26)) return (c, default);
-        if (InCircle(p, LStick, StickBase + 4)) return (VitaControl.LStickUp, default);
-        if (InCircle(p, RStick, StickBase + 4)) return (VitaControl.RStickUp, default);
-        if (InCircle(p, PsButton, 20)) return (VitaControl.PS, default);
-        if (SelectButton.Inflate(6).Contains(p)) return (VitaControl.Select, default);
-        if (StartButton.Inflate(6).Contains(p)) return (VitaControl.Start, default);
+        {
+            if (InCircle(p, FacePos(c), 26))
+            {
+                return (c, default);
+            }
+        }
+
+        if (InCircle(p, LStick, StickBase + 4))
+        {
+            return (VitaControl.LStickUp, default);
+        }
+
+        if (InCircle(p, RStick, StickBase + 4))
+        {
+            return (VitaControl.RStickUp, default);
+        }
+
+        if (InCircle(p, PsButton, 20))
+        {
+            return (VitaControl.PS, default);
+        }
+
+        if (SelectButton.Inflate(6).Contains(p))
+        {
+            return (VitaControl.Select, default);
+        }
+
+        if (StartButton.Inflate(6).Contains(p))
+        {
+            return (VitaControl.Start, default);
+        }
+
         double dx = p.X - DpadCenter.X, dy = p.Y - DpadCenter.Y;
         if (Math.Abs(dx) <= 60 && Math.Abs(dy) <= 60 && (Math.Abs(dx) <= 20 || Math.Abs(dy) <= 20) && (Math.Abs(dx) > 8 || Math.Abs(dy) > 8))
+        {
             return (Math.Abs(dx) > Math.Abs(dy) ? (dx < 0 ? VitaControl.Left : VitaControl.Right) : (dy < 0 ? VitaControl.Up : VitaControl.Down), default);
-        if (Screen.Contains(p)) return (VitaControl.TouchFront, new Point((p.X - Screen.X) / Screen.Width, (p.Y - Screen.Y) / Screen.Height));
-        if (RearPad.Contains(p)) return (VitaControl.TouchBack, new Point((p.X - RearPad.X) / RearPad.Width, (p.Y - RearPad.Y) / RearPad.Height));
+        }
+
+        if (Screen.Contains(p))
+        {
+            return (VitaControl.TouchFront, new Point((p.X - Screen.X) / Screen.Width, (p.Y - Screen.Y) / Screen.Height));
+        }
+
+        if (RearPad.Contains(p))
+        {
+            return (VitaControl.TouchBack, new Point((p.X - RearPad.X) / RearPad.Width, (p.Y - RearPad.Y) / RearPad.Height));
+        }
+
         return null;
     }
 
@@ -273,10 +383,18 @@ public sealed class VitaLayoutView : Control
     {
         base.OnPointerPressed(e);
         var (s, ox, oy) = Fit();
-        if (s <= 0) return;
+        if (s <= 0)
+        {
+            return;
+        }
+
         var pos = e.GetPosition(this);
         var hit = HitTest(new Point((pos.X - ox) / s, (pos.Y - oy) / s));
-        if (hit is not { } h) return;
+        if (hit is not { } h)
+        {
+            return;
+        }
+
         bool right = e.GetCurrentPoint(this).Properties.IsRightButtonPressed;
         ControlClicked?.Invoke(h.Control, right, h.Normalised);
         e.Handled = true;

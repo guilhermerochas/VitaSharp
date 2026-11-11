@@ -15,7 +15,9 @@ public sealed class Vfs
     {
         FsRoot = fsRoot;
         foreach (var dev in new[] { "ux0", "ur0", "uma0", "imc0", "tm0", "vs0", "os0", "sa0", "pd0", "ud0", "host0", "sd0" })
+        {
             Mount(dev, Path.Combine(fsRoot, dev));
+        }
         // the media devices are folders of the memory card, as on the Vita (and Vita3K): photo0 = ux0:picture,
         // music0 = ux0:music, video0 = ux0:video. The Camera saves in photo0: and the system's AvMediaService (another
         // process) opens the same path to register the picture, so every process must see the same folder.
@@ -52,15 +54,33 @@ public sealed class Vfs
         {
             try
             {
-                if (!Directory.Exists(legacy) || new DirectoryInfo(legacy).LinkTarget != null) return;
+                if (!Directory.Exists(legacy) || new DirectoryInfo(legacy).LinkTarget != null)
+                {
+                    return;
+                }
+
                 Directory.CreateDirectory(target);
                 foreach (var e in Directory.EnumerateFileSystemEntries(legacy))
                 {
                     string dst = Path.Combine(target, Path.GetFileName(e));
-                    if (Path.Exists(dst)) continue;
-                    if (Directory.Exists(e)) Directory.Move(e, dst); else File.Move(e, dst);
+                    if (Path.Exists(dst))
+                    {
+                        continue;
+                    }
+
+                    if (Directory.Exists(e))
+                    {
+                        Directory.Move(e, dst);
+                    }
+                    else
+                    {
+                        File.Move(e, dst);
+                    }
                 }
-                if (!Directory.EnumerateFileSystemEntries(legacy).Any()) Directory.Delete(legacy);
+                if (!Directory.EnumerateFileSystemEntries(legacy).Any())
+                {
+                    Directory.Delete(legacy);
+                }
             }
             catch (IOException) { } // in use or not movable: the old folder stays, the device uses the new one
             catch (UnauthorizedAccessException) { }
@@ -86,7 +106,11 @@ public sealed class Vfs
     public static (string device, string rel) Split(string vitaPath)
     {
         int c = vitaPath.IndexOf(':');
-        if (c < 0) return ("", vitaPath.TrimStart('/'));
+        if (c < 0)
+        {
+            return ("", vitaPath.TrimStart('/'));
+        }
+
         return (vitaPath[..c], vitaPath[(c + 1)..].Replace('\\', '/').TrimStart('/'));
     }
 
@@ -95,8 +119,16 @@ public sealed class Vfs
     {
         index = -1;
         var (dev, rel) = Split(vitaPath);
-        if (rel.Length != 0 || dev.Length != 4 || !dev.StartsWith("tty", StringComparison.OrdinalIgnoreCase)) return false;
-        if (dev[3] is < '0' or > '3') return false;
+        if (rel.Length != 0 || dev.Length != 4 || !dev.StartsWith("tty", StringComparison.OrdinalIgnoreCase))
+        {
+            return false;
+        }
+
+        if (dev[3] is < '0' or > '3')
+        {
+            return false;
+        }
+
         index = dev[3] - '0';
         return true;
     }
@@ -107,8 +139,20 @@ public sealed class Vfs
         var parts = new List<string>();
         foreach (var p in rel.Split('/', StringSplitOptions.RemoveEmptyEntries))
         {
-            if (p == ".") continue;
-            if (p == "..") { if (parts.Count > 0) parts.RemoveAt(parts.Count - 1); continue; }
+            if (p == ".")
+            {
+                continue;
+            }
+
+            if (p == "..")
+            {
+                if (parts.Count > 0)
+                {
+                    parts.RemoveAt(parts.Count - 1);
+                }
+
+                continue;
+            }
             parts.Add(p);
         }
         return string.Join('/', parts);
@@ -123,10 +167,17 @@ public sealed class Vfs
             foreach (var overlay in _app0Overlays)
             {
                 var o = ResolveCaseInsensitive(overlay, rel);
-                if (File.Exists(o) || Directory.Exists(o)) return o;
+                if (File.Exists(o) || Directory.Exists(o))
+                {
+                    return o;
+                }
             }
         }
-        if (!_mounts.TryGetValue(dev, out var root)) return null;
+        if (!_mounts.TryGetValue(dev, out var root))
+        {
+            return null;
+        }
+
         return ResolveCaseInsensitive(root, rel);
     }
 
@@ -141,17 +192,29 @@ public sealed class Vfs
     {
         rel = rel.Replace('\\', '/');
         string direct = Path.Combine(root, rel.Replace('/', Path.DirectorySeparatorChar));
-        if (!CaseSensitiveHost || rel.Length == 0 || File.Exists(direct) || Directory.Exists(direct)) return direct;
+        if (!CaseSensitiveHost || rel.Length == 0 || File.Exists(direct) || Directory.Exists(direct))
+        {
+            return direct;
+        }
+
         var parts = rel.Split('/', StringSplitOptions.RemoveEmptyEntries);
         string cur = root;
         int i = 0;
         for (; i < parts.Length; i++)
         {
             var match = FindEntry(cur, parts[i]);
-            if (match == null) break;
+            if (match == null)
+            {
+                break;
+            }
+
             cur = match;
         }
-        for (; i < parts.Length; i++) cur = Path.Combine(cur, parts[i]);
+        for (; i < parts.Length; i++)
+        {
+            cur = Path.Combine(cur, parts[i]);
+        }
+
         return cur;
     }
 
@@ -164,14 +227,25 @@ public sealed class Vfs
     static string? FindEntry(string dir, string name)
     {
         string exact = Path.Combine(dir, name);
-        if (File.Exists(exact) || Directory.Exists(exact)) return exact;
+        if (File.Exists(exact) || Directory.Exists(exact))
+        {
+            return exact;
+        }
+
         DateTime stamp;
         try
         {
-            if (!Directory.Exists(dir)) return null;
+            if (!Directory.Exists(dir))
+            {
+                return null;
+            }
+
             stamp = Directory.GetLastWriteTimeUtc(dir);
         }
-        catch (Exception e) when (e is IOException or UnauthorizedAccessException) { return null; }
+        catch (Exception e) when (e is IOException or UnauthorizedAccessException)
+        {
+            return null;
+        }
 
         if (!Listings.TryGetValue(dir, out var listing) || listing.Stamp != stamp)
         {
@@ -179,11 +253,20 @@ public sealed class Vfs
             try
             {
                 foreach (var e in Directory.EnumerateFileSystemEntries(dir))
+                {
                     entries.TryAdd(Path.GetFileName(e), e); // several spellings of one name: keep the first
+                }
             }
-            catch (Exception e) when (e is IOException or UnauthorizedAccessException) { return null; }
+            catch (Exception e) when (e is IOException or UnauthorizedAccessException)
+            {
+                return null;
+            }
             listing = (stamp, entries);
-            if (Listings.Count > 4096) Listings.Clear();
+            if (Listings.Count > 4096)
+            {
+                Listings.Clear();
+            }
+
             Listings[dir] = listing;
         }
         return listing.Entries.TryGetValue(name, out var hit) ? hit : null;

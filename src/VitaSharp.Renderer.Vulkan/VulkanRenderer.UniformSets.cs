@@ -31,8 +31,17 @@ public sealed unsafe partial class VulkanRenderer
         bool split = ShaderGenerator.SplitUniformSlots;
         var key = new UniformSetKey(infos[0].Buffer.Handle, infos[0].Range, infos[1].Buffer.Handle, infos[1].Range, infos[2].Buffer.Handle, infos[3].Buffer.Handle,
             split ? SplitKey(infos[4]) : 0, split ? SplitKey(infos[5]) : 0, split ? SplitKey(infos[6]) : 0, split ? SplitKey(infos[7]) : 0);
-        if (_uniformSetsSerial != _frameSerial) { _uniformSets.Clear(); _uniformSetsSerial = _frameSerial; _lastUniformSet = default; }
-        else if (_lastUniformSet.Handle != 0 && key == _lastUniformKey) return _lastUniformSet;
+        if (_uniformSetsSerial != _frameSerial)
+        {
+            _uniformSets.Clear();
+            _uniformSetsSerial = _frameSerial;
+            _lastUniformSet = default;
+        }
+        else if (_lastUniformSet.Handle != 0 && key == _lastUniformKey)
+        {
+            return _lastUniformSet;
+        }
+
         if (!_uniformSets.TryGetValue(key, out var set))
         {
             set = AllocSet(_uboLayout);
@@ -42,19 +51,35 @@ public sealed unsafe partial class VulkanRenderer
             uint nw = 0;
             for (int i = 0; i < (split ? 8 : 4); i++)
             {
-                if (infos[i].Buffer.Handle == _dummyBuffer.Handle && !ShaderGenerator.NanDraws) continue;
+                if (infos[i].Buffer.Handle == _dummyBuffer.Handle && !ShaderGenerator.NanDraws)
+                {
+                    continue;
+                }
+
                 bool dynamic = i < 2 || i >= 4; // 0/1 and the split slots: bound with dynamic offsets
                 bi[i] = dynamic ? new DescriptorBufferInfo(infos[i].Buffer, 0, infos[i].Range) : infos[i];
                 uint binding = i < 4 ? (uint)i : (uint)ShaderGenerator.SplitBinding(i < 6, (i - 4) & 1);
                 writes[nw++] = new WriteDescriptorSet
                 {
-                    SType = StructureType.WriteDescriptorSet, DstSet = set, DstBinding = binding, DescriptorCount = 1,
-                    DescriptorType = dynamic ? DescriptorType.StorageBufferDynamic : DescriptorType.StorageBuffer, PBufferInfo = &bi[i]
+                    SType = StructureType.WriteDescriptorSet,
+                    DstSet = set,
+                    DstBinding = binding,
+                    DescriptorCount = 1,
+                    DescriptorType = dynamic ? DescriptorType.StorageBufferDynamic : DescriptorType.StorageBuffer,
+                    PBufferInfo = &bi[i]
                 };
             }
-            if (nw > 0) _vk.UpdateDescriptorSets(_dev, nw, writes, 0, null);
+            if (nw > 0)
+            {
+                _vk.UpdateDescriptorSets(_dev, nw, writes, 0, null);
+            }
+
             _statDescWrites += nw;
-            if (ShaderGenerator.NanDraws) NanBindDrawBuffer(set);
+            if (ShaderGenerator.NanDraws)
+            {
+                NanBindDrawBuffer(set);
+            }
+
             _uniformSets[key] = set;
         }
         _lastUniformKey = key;

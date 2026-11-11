@@ -32,7 +32,11 @@ static class UiRender
         {
             var settings = LauncherSettings.Load();
             settings.UiTheme = theme;
-            if (Opt("--lang") is { } lang) settings.Language = lang;
+            if (Opt("--lang") is { } lang)
+            {
+                settings.Language = lang;
+            }
+
             settings.RecreatedHome = true;
             settings.View = LauncherSettings.ViewGrid;
             var main = new MainWindow(settings) { Width = size.Item1, Height = size.Item2 };
@@ -46,7 +50,12 @@ static class UiRender
                 }
                 var frame = main.CaptureRenderedFrame();
                 var path = Path.Combine(outDir, $"{name}_{theme}.png");
-                if (frame == null) { Console.WriteLine($"  {path}: no frame"); failures++; return; }
+                if (frame == null)
+                {
+                    Console.WriteLine($"  {path}: no frame");
+                    failures++;
+                    return;
+                }
                 frame.Save(path);
                 Console.WriteLine($"  wrote {path}");
             }
@@ -84,17 +93,27 @@ static class UiRender
             main.Navigate(MainWindow.PageLibrary);
 
             if (Opt("--install-pkg") is { } pkg && theme == themes[0])
+            {
                 failures += InstallPkg(main, Path.GetFullPath(pkg), Opt("--license") ?? "", outDir, theme, Shot);
+            }
 
             if (Opt("--update-feed") is { } feed && Updater.Feed(feed) is { } feedUri)
             {
                 var release = Updater.CheckAsync(Opt("--channel") ?? Core.Update.UpdateFeed.ChannelBuilds, feedUri).GetAwaiter().GetResult();
-                if (release == null) { Console.WriteLine($"  update-feed: no update for {Updater.Current.Display}"); failures++; }
+                if (release == null)
+                {
+                    Console.WriteLine($"  update-feed: no update for {Updater.Current.Display}");
+                    failures++;
+                }
                 else
                 {
                     var dlg = main.UpdateDialog(release);
                     dlg.Show(main);
-                    for (int i = 0; i < 4; i++) { Dispatcher.UIThread.RunJobs(); AvaloniaHeadlessPlatform.ForceRenderTimerTick(); }
+                    for (int i = 0; i < 4; i++)
+                    {
+                        Dispatcher.UIThread.RunJobs();
+                        AvaloniaHeadlessPlatform.ForceRenderTimerTick();
+                    }
                     var path = Path.Combine(outDir, $"update-dialog_{theme}.png");
                     dlg.CaptureRenderedFrame()?.Save(path);
                     Console.WriteLine($"  update-feed: {Updater.Current.Display} -> {release.Tag}; wrote {path}");
@@ -114,11 +133,19 @@ static class UiRender
                 int? exit = null;
                 main.EmulatorExited += code => exit = code;
                 var before = PlayHistory.Load().GetValueOrDefault(launch)?.Seconds ?? 0;
-                if (!main.LaunchForTests(launch)) { Console.WriteLine($"  launch {launch}: not started"); failures++; }
+                if (!main.LaunchForTests(launch))
+                {
+                    Console.WriteLine($"  launch {launch}: not started");
+                    failures++;
+                }
                 else if (OperatingSystem.IsWindows() && Opt("--affinity") is { } mask && main.RunningProcessForTests is { } proc)
                 {
                     // keep the check inside the CPU budget: half of the cores, below normal priority
-                    try { proc.ProcessorAffinity = (nint)Convert.ToInt64(mask, 16); proc.PriorityClass = System.Diagnostics.ProcessPriorityClass.BelowNormal; }
+                    try
+                    {
+                        proc.ProcessorAffinity = (nint)Convert.ToInt64(mask, 16);
+                        proc.PriorityClass = System.Diagnostics.ProcessPriorityClass.BelowNormal;
+                    }
                     catch (Exception e) when (e is InvalidOperationException or System.ComponentModel.Win32Exception) { }
                 }
                 if (main.IsRunning)
@@ -129,13 +156,24 @@ static class UiRender
                     {
                         Dispatcher.UIThread.RunJobs();
                         Thread.Sleep(50);
-                        if (!shotRunning && main.IsRunning) { Shot("running"); shotRunning = true; }
+                        if (!shotRunning && main.IsRunning)
+                        {
+                            Shot("running");
+                            shotRunning = true;
+                        }
                     }
                     var after = PlayHistory.Load().GetValueOrDefault(launch)?.Seconds ?? 0;
                     Console.WriteLine($"  launch {launch}: exit {(exit?.ToString() ?? "TIMEOUT")}, play time {before} -> {after} s, log lines {main.LogLines.Count}");
                     foreach (var line in main.LogLines.Where(l => l.Contains("frame", StringComparison.OrdinalIgnoreCase) || l.Contains("fps", StringComparison.OrdinalIgnoreCase)).TakeLast(4))
+                    {
                         Console.WriteLine("    " + line);
-                    if (exit != 0 || after <= before) failures++;
+                    }
+
+                    if (exit != 0 || after <= before)
+                    {
+                        failures++;
+                    }
+
                     Shot("after-launch");
                 }
             }
@@ -156,18 +194,42 @@ static class UiRender
         main.ExtraRunOptions = [];
         int? exit = null;
         main.EmulatorExited += code => exit = code;
-        if (!main.LaunchForTests(launch) || main.RunningProcessForTests is not { } proc) { Console.WriteLine($"  focus {launch}: not started"); return 1; }
+        if (!main.LaunchForTests(launch) || main.RunningProcessForTests is not { } proc)
+        {
+            Console.WriteLine($"  focus {launch}: not started");
+            return 1;
+        }
         if (OperatingSystem.IsWindows())
         {
-            try { proc.ProcessorAffinity = (nint)0xF0; proc.PriorityClass = System.Diagnostics.ProcessPriorityClass.BelowNormal; }
+            try
+            {
+                proc.ProcessorAffinity = (nint)0xF0;
+                proc.PriorityClass = System.Diagnostics.ProcessPriorityClass.BelowNormal;
+            }
             catch (Exception e) when (e is InvalidOperationException or System.ComponentModel.Win32Exception) { }
         }
-        static void Pump(int ms) { var until = DateTime.UtcNow.AddMilliseconds(ms); while (DateTime.UtcNow < until) { Dispatcher.UIThread.RunJobs(); Thread.Sleep(20); } }
+        static void Pump(int ms)
+        {
+            var until = DateTime.UtcNow.AddMilliseconds(ms);
+            while (DateTime.UtcNow < until)
+            {
+                Dispatcher.UIThread.RunJobs();
+                Thread.Sleep(20);
+            }
+        }
         int failures = 0;
         nint hwnd = 0;
         var deadline = DateTime.UtcNow.AddSeconds(Math.Max(seconds, 30));
-        while (hwnd == 0 && exit == null && DateTime.UtcNow < deadline) { Pump(250); hwnd = GameWindowActivator.FindWindow(proc.Id); }
-        if (hwnd == 0) { Console.WriteLine($"  focus {launch}: no game window (exit {exit?.ToString() ?? "-"})"); failures++; }
+        while (hwnd == 0 && exit == null && DateTime.UtcNow < deadline)
+        {
+            Pump(250);
+            hwnd = GameWindowActivator.FindWindow(proc.Id);
+        }
+        if (hwnd == 0)
+        {
+            Console.WriteLine($"  focus {launch}: no game window (exit {exit?.ToString() ?? "-"})");
+            failures++;
+        }
         else
         {
             Pump(3000); // the game draws its first frames
@@ -182,16 +244,38 @@ static class UiRender
                 string after = GameWindowActivator.Describe(hwnd);
                 bool ok = before.StartsWith("minimized") && !after.StartsWith("minimized") && main.LastFocusResultForTests != null;
                 Console.WriteLine($"  focus {launch}: {name}: {before} -> {after}; {main.LastFocusResultForTests} [{(ok ? "ok" : "FAIL")}]");
-                if (!ok) failures++;
+                if (!ok)
+                {
+                    failures++;
+                }
             }
             shot("focus-running");
         }
         if (main.RunningProcessForTests is { } p)
         {
-            try { if (!p.CloseMainWindow()) p.Kill(true); } catch (InvalidOperationException) { }
+            try
+            {
+                if (!p.CloseMainWindow())
+                {
+                    p.Kill(true);
+                }
+            }
+            catch (InvalidOperationException) { }
             var end = DateTime.UtcNow.AddSeconds(30);
-            while (exit == null && DateTime.UtcNow < end) Pump(100);
-            if (exit == null) { try { p.Kill(true); } catch (InvalidOperationException) { } Pump(1000); }
+            while (exit == null && DateTime.UtcNow < end)
+            {
+                Pump(100);
+            }
+
+            if (exit == null)
+            {
+                try
+                {
+                    p.Kill(true);
+                }
+                catch (InvalidOperationException) { }
+                Pump(1000);
+            }
         }
         Console.WriteLine($"  focus {launch}: game exit {exit?.ToString() ?? "killed"}");
         return failures;
@@ -212,7 +296,11 @@ static class UiRender
         {
             dialogShown = true;
             field.Text = zrif;
-            for (int i = 0; i < 4; i++) { Dispatcher.UIThread.RunJobs(); AvaloniaHeadlessPlatform.ForceRenderTimerTick(); }
+            for (int i = 0; i < 4; i++)
+            {
+                Dispatcher.UIThread.RunJobs();
+                AvaloniaHeadlessPlatform.ForceRenderTimerTick();
+            }
             var path = Path.Combine(outDir, $"license-dialog_{theme}.png");
             dlg.CaptureRenderedFrame()?.Save(path);
             Console.WriteLine($"  wrote {path}");
@@ -220,11 +308,23 @@ static class UiRender
         };
         var asked = main.AskLicenseAndQueue(pkg);
         var deadline = DateTime.UtcNow.AddMinutes(10);
-        while (!asked.IsCompleted && DateTime.UtcNow < deadline) { Dispatcher.UIThread.RunJobs(); Thread.Sleep(20); }
+        while (!asked.IsCompleted && DateTime.UtcNow < deadline)
+        {
+            Dispatcher.UIThread.RunJobs();
+            Thread.Sleep(20);
+        }
         main.LicenseDialogForTests = null;
         bool noLicense = zrif.Length == 0;
-        if (noLicense && (dialogShown || !asked.IsCompleted || !asked.Result)) { Console.WriteLine($"  install-pkg: a license-free package was not queued directly (dialog shown {dialogShown})"); return 1; }
-        if (!noLicense && (!dialogShown || !asked.IsCompleted || !asked.Result)) { Console.WriteLine($"  install-pkg: the license dialog did not accept the zRIF (shown {dialogShown})"); return 1; }
+        if (noLicense && (dialogShown || !asked.IsCompleted || !asked.Result))
+        {
+            Console.WriteLine($"  install-pkg: a license-free package was not queued directly (dialog shown {dialogShown})");
+            return 1;
+        }
+        if (!noLicense && (!dialogShown || !asked.IsCompleted || !asked.Result))
+        {
+            Console.WriteLine($"  install-pkg: the license dialog did not accept the zRIF (shown {dialogShown})");
+            return 1;
+        }
 
         while (main.JobsForTests.Any(j => j.State is JobState.Waiting or JobState.Running) && DateTime.UtcNow < deadline)
         {
@@ -236,7 +336,11 @@ static class UiRender
         shot("install-done");
         var job = main.JobsForTests.LastOrDefault();
         Console.WriteLine($"  install-pkg: {job?.State} {job?.TitleId} {job?.Detail}");
-        if (job is not { State: JobState.Done, TitleId: { } titleId }) return 1;
+        if (job is not { State: JobState.Done, TitleId: { } titleId })
+        {
+            return 1;
+        }
+
         if (noLicense)
         {
             var eboot = Path.Combine(Program.Ux0, "pspemu", "PSP", "GAME", titleId, "EBOOT.PBP");

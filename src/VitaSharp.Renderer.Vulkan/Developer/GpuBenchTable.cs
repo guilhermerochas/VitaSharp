@@ -21,7 +21,11 @@ public static class GpuBenchTable
             .Select(c => (Fixture: c[0], Variant: c[1], Config: c[2], Frame: double.Parse(c[4], CultureInfo.InvariantCulture),
                 Image: c.Length > 6 ? double.Parse(c[6], CultureInfo.InvariantCulture) : -1,
                 Scenes: c[5].Split(',', StringSplitOptions.RemoveEmptyEntries).Select(x => double.Parse(x, CultureInfo.InvariantCulture)).ToArray())).ToList();
-        if (rows.Count == 0) return "";
+        if (rows.Count == 0)
+        {
+            return "";
+        }
+
         o.AppendLine($"{"fixture",-22} {"variant",-14} {"config",-12} {"n",3} {"GPU ms",8} {"spread",7} {"delta",8} {"%",6}  picture");
         foreach (var fg in rows.GroupBy(r => r.Fixture))
         {
@@ -40,7 +44,11 @@ public static class GpuBenchTable
                 string pic = g.Key.Variant == baseVariant ? "" : img < 0 ? "  ?" : img < 0.5 ? "  same" : FormattableString.Invariant($"  DIFFERS ({img:F1})");
                 o.AppendLine(FormattableString.Invariant($"{fg.Key,-22} {g.Key.Variant,-14} {g.Key.Config,-12} {v.Count,3} {med,8:F3} {v.Max() - v.Min(),7:F3} {delta,15}{pic}"));
 
-                if (scenes <= 0) continue;
+                if (scenes <= 0)
+                {
+                    continue;
+                }
+
                 int n = g.Max(r => r.Scenes.Length);
                 var sceneMed = Enumerable.Range(0, n).Select(i => (i, Median(g.Where(r => r.Scenes.Length > i).Select(r => r.Scenes[i]).ToList()))).OrderByDescending(x => x.Item2).Take(scenes);
                 o.AppendLine("      top scenes: " + string.Join("  ", sceneMed.Select(x => FormattableString.Invariant($"s{x.i} {x.Item2:F3}"))));

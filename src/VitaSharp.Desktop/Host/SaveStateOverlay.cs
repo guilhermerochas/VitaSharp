@@ -21,7 +21,10 @@ public sealed class SaveStateOverlay : ITextCapture
     public const int Slots = 10; // 0 = quick, 1..9
 
     /// <summary>What the open question asks about the selected slot.</summary>
-    public enum Question { None, Overwrite, Load, Delete }
+    public enum Question
+    {
+        None, Overwrite, Load, Delete
+    }
 
     readonly WindowHost _window;
     readonly Action<byte[]?, int, int> _show;
@@ -59,12 +62,25 @@ public sealed class SaveStateOverlay : ITextCapture
         _window.Tick += PollGamepad;
     }
 
-    public bool IsOpen { get { lock (_lock) return _open; } }
+    public bool IsOpen
+    {
+        get
+        {
+            lock (_lock)
+            {
+                return _open;
+            }
+        }
+    }
 
     /// <summary>Opens the picker on <paramref name="slot"/> (window thread); false when another dialog is open.</summary>
     public bool Open(int slot)
     {
-        if (_window.TextCapture != null && _window.TextCapture != this) return false;
+        if (_window.TextCapture != null && _window.TextCapture != this)
+        {
+            return false;
+        }
+
         var slots = ReadSlots();
         bool wasOpen;
         lock (_lock)
@@ -81,7 +97,11 @@ public sealed class SaveStateOverlay : ITextCapture
         Log.Info($"Save state picker: open on slot {slot} ({slots.Count(s => s.Exists)} saved)");
         _window.TextCapture = this;
         Redraw();
-        if (!wasOpen) Opened?.Invoke();
+        if (!wasOpen)
+        {
+            Opened?.Invoke();
+        }
+
         return true;
     }
 
@@ -89,11 +109,21 @@ public sealed class SaveStateOverlay : ITextCapture
     public void SetCurrentPicture(byte[]? png)
     {
         SKBitmap? bmp = null;
-        try { bmp = png is { Length: > 0 } ? SKBitmap.Decode(png) : null; }
-        catch (Exception e) { Log.WarnOnce("state-overlay-pic", $"Save state picker: the current picture could not be decoded: {e.Message}"); }
+        try
+        {
+            bmp = png is { Length: > 0 } ? SKBitmap.Decode(png) : null;
+        }
+        catch (Exception e)
+        {
+            Log.WarnOnce("state-overlay-pic", $"Save state picker: the current picture could not be decoded: {e.Message}");
+        }
         lock (_lock)
         {
-            if (!_open) { bmp?.Dispose(); return; }
+            if (!_open)
+            {
+                bmp?.Dispose();
+                return;
+            }
             _current?.Dispose();
             _current = bmp;
             _dirty = true; // drawn on the window thread (PollGamepad)
@@ -106,7 +136,11 @@ public sealed class SaveStateOverlay : ITextCapture
         for (int i = 0; i < Slots; i++)
         {
             string path = _pathOf(i);
-            if (!File.Exists(path)) { list[i] = new SlotInfo(false, default, null, null, 0, ""); continue; }
+            if (!File.Exists(path))
+            {
+                list[i] = new SlotInfo(false, default, null, null, 0, "");
+                continue;
+            }
             try
             {
                 var h = SaveStateFile.ReadHeader(path);
@@ -125,7 +159,11 @@ public sealed class SaveStateOverlay : ITextCapture
     {
         lock (_lock)
         {
-            if (!_open) return;
+            if (!_open)
+            {
+                return;
+            }
+
             _open = false;
             _askSlot = -1;
             _ask = Question.None;
@@ -134,48 +172,95 @@ public sealed class SaveStateOverlay : ITextCapture
             _current = null;
             _panel = null;
         }
-        if (_window.TextCapture == this) _window.TextCapture = null;
+        if (_window.TextCapture == this)
+        {
+            _window.TextCapture = null;
+        }
+
         _show(null, 0, 0);
         Closed?.Invoke();
     }
 
     void DisposeThumbs()
     {
-        foreach (var s in _slots) s.Thumb?.Dispose();
+        foreach (var s in _slots)
+        {
+            s.Thumb?.Dispose();
+        }
+
         _slots = [];
     }
 
     // ---------------------------------------------------------------- input (window thread)
 
-    public void OnChar(char c) { }
+    public void OnChar(char c)
+    {
+    }
 
     public void OnKey(Key key)
     {
         bool asking;
-        lock (_lock) asking = _askSlot >= 0;
+        lock (_lock)
+        {
+            asking = _askSlot >= 0;
+        }
+
         if (asking)
         {
             switch (key)
             {
-                case Key.Left or Key.Right or Key.Up or Key.Down or Key.Tab: lock (_lock) _askChoice ^= 1; Redraw(); break;
-                case Key.Enter or Key.KeypadEnter or Key.Space: Answer(null); break;
-                case Key.Escape: Answer(false); break;
+                case Key.Left or Key.Right or Key.Up or Key.Down or Key.Tab:
+                    lock (_lock)
+                    {
+                        _askChoice ^= 1;
+                    }
+
+                    Redraw();
+                    break;
+                case Key.Enter or Key.KeypadEnter or Key.Space:
+                    Answer(null);
+                    break;
+                case Key.Escape:
+                    Answer(false);
+                    break;
             }
             return;
         }
         switch (key)
         {
-            case Key.Left: Move(-1); break;
-            case Key.Right: Move(1); break;
-            case Key.Up: Move(-5); break;
-            case Key.Down: Move(5); break;
-            case Key.Tab: SwitchTab(); break;
-            case Key.Enter or Key.KeypadEnter or Key.Space: Act(null); break;
-            case Key.F5: Act(true); break;
-            case Key.F7: Act(false); break;
-            case Key.F6: Move(1, wrap: true); break;
-            case Key.Delete or Key.Backspace: AskDelete(); break;
-            case Key.Escape: Close(); break;
+            case Key.Left:
+                Move(-1);
+                break;
+            case Key.Right:
+                Move(1);
+                break;
+            case Key.Up:
+                Move(-5);
+                break;
+            case Key.Down:
+                Move(5);
+                break;
+            case Key.Tab:
+                SwitchTab();
+                break;
+            case Key.Enter or Key.KeypadEnter or Key.Space:
+                Act(null);
+                break;
+            case Key.F5:
+                Act(true);
+                break;
+            case Key.F7:
+                Act(false);
+                break;
+            case Key.F6:
+                Move(1, wrap: true);
+                break;
+            case Key.Delete or Key.Backspace:
+                AskDelete();
+                break;
+            case Key.Escape:
+                Close();
+                break;
         }
     }
 
@@ -184,33 +269,74 @@ public sealed class SaveStateOverlay : ITextCapture
         var (fbW, fbH) = _window.FramebufferSize;
         Panel? p;
         bool asking;
-        lock (_lock) { p = _panel; asking = _askSlot >= 0; }
-        if (p == null) return;
+        lock (_lock)
+        {
+            p = _panel;
+            asking = _askSlot >= 0;
+        }
+        if (p == null)
+        {
+            return;
+        }
+
         var (ox, oy) = VitaSharp.Renderer.Vulkan.VulkanRenderer.CenterOverlayOrigin(p.Width, fbW, fbH);
         float px = x - ox, py = y - oy;
         if (asking)
         {
             for (int i = 0; i < p.ConfirmButtons.Length; i++)
-                if (p.ConfirmButtons[i].Contains(px, py)) { Answer(i == 0); return; }
+            {
+                if (p.ConfirmButtons[i].Contains(px, py))
+                {
+                    Answer(i == 0);
+                    return;
+                }
+            }
+
             return;
         }
-        if (p.SaveTab.Contains(px, py)) { SetTab(true); return; }
-        if (p.LoadTab.Contains(px, py)) { SetTab(false); return; }
+        if (p.SaveTab.Contains(px, py))
+        {
+            SetTab(true);
+            return;
+        }
+        if (p.LoadTab.Contains(px, py))
+        {
+            SetTab(false);
+            return;
+        }
         for (int i = 0; i < p.Tiles.Length; i++)
+        {
             if (p.Tiles[i].Contains(px, py))
             {
-                lock (_lock) _selected = i;
+                lock (_lock)
+                {
+                    _selected = i;
+                }
+
                 Act(null);
                 return;
             }
+        }
     }
 
     void PollGamepad()
     {
-        if (_window.TextCapture != this) return;
+        if (_window.TextCapture != this)
+        {
+            return;
+        }
+
         bool dirty;
-        lock (_lock) { dirty = _dirty; _dirty = false; }
-        if (dirty) Redraw();
+        lock (_lock)
+        {
+            dirty = _dirty;
+            _dirty = false;
+        }
+        if (dirty)
+        {
+            Redraw();
+        }
+
         var st = _pad();
         const VitaButtons Watched = VitaButtons.Cross | VitaButtons.Circle | VitaButtons.Triangle | VitaButtons.Left | VitaButtons.Right
                                     | VitaButtons.Up | VitaButtons.Down | VitaButtons.LTrigger | VitaButtons.RTrigger;
@@ -218,29 +344,90 @@ public sealed class SaveStateOverlay : ITextCapture
         VitaButtons pressed;
         lock (_lock)
         {
-            if (!_padArmed) { _padArmed = b == VitaButtons.None; _prevPad = b; return; }
+            if (!_padArmed)
+            {
+                _padArmed = b == VitaButtons.None;
+                _prevPad = b;
+                return;
+            }
             pressed = b & ~_prevPad;
             _prevPad = b;
         }
-        if (pressed == VitaButtons.None) return;
-        bool asking;
-        lock (_lock) asking = _askSlot >= 0;
-        if (asking)
+        if (pressed == VitaButtons.None)
         {
-            if ((pressed & (VitaButtons.Left | VitaButtons.Right)) != 0) { lock (_lock) _askChoice ^= 1; Redraw(); }
-            if ((pressed & VitaButtons.Cross) != 0) Answer(null);
-            else if ((pressed & VitaButtons.Circle) != 0) Answer(false);
             return;
         }
-        if ((pressed & VitaButtons.Left) != 0) Move(-1);
-        if ((pressed & VitaButtons.Right) != 0) Move(1);
-        if ((pressed & VitaButtons.Up) != 0) Move(-5);
-        if ((pressed & VitaButtons.Down) != 0) Move(5);
-        if ((pressed & VitaButtons.LTrigger) != 0) SetTab(true);
-        if ((pressed & VitaButtons.RTrigger) != 0) SetTab(false);
-        if ((pressed & VitaButtons.Triangle) != 0) AskDelete();
-        else if ((pressed & VitaButtons.Cross) != 0) Act(null);
-        else if ((pressed & VitaButtons.Circle) != 0) Close();
+
+        bool asking;
+        lock (_lock)
+        {
+            asking = _askSlot >= 0;
+        }
+
+        if (asking)
+        {
+            if ((pressed & (VitaButtons.Left | VitaButtons.Right)) != 0)
+            {
+                lock (_lock)
+                {
+                    _askChoice ^= 1;
+                }
+
+                Redraw();
+            }
+            if ((pressed & VitaButtons.Cross) != 0)
+            {
+                Answer(null);
+            }
+            else if ((pressed & VitaButtons.Circle) != 0)
+            {
+                Answer(false);
+            }
+
+            return;
+        }
+        if ((pressed & VitaButtons.Left) != 0)
+        {
+            Move(-1);
+        }
+
+        if ((pressed & VitaButtons.Right) != 0)
+        {
+            Move(1);
+        }
+
+        if ((pressed & VitaButtons.Up) != 0)
+        {
+            Move(-5);
+        }
+
+        if ((pressed & VitaButtons.Down) != 0)
+        {
+            Move(5);
+        }
+
+        if ((pressed & VitaButtons.LTrigger) != 0)
+        {
+            SetTab(true);
+        }
+
+        if ((pressed & VitaButtons.RTrigger) != 0)
+        {
+            SetTab(false);
+        }
+
+        if ((pressed & VitaButtons.Triangle) != 0)
+        {
+            AskDelete();
+        }
+        else if ((pressed & VitaButtons.Cross) != 0)
+        {
+            Act(null);
+        }
+        else if ((pressed & VitaButtons.Circle) != 0)
+        {
+            Close();
+        }
     }
 
     void Move(int delta, bool wrap = false)
@@ -253,11 +440,24 @@ public sealed class SaveStateOverlay : ITextCapture
         Redraw();
     }
 
-    void SwitchTab() { bool save; lock (_lock) save = !_saveTab; SetTab(save); }
+    void SwitchTab()
+    {
+        bool save;
+        lock (_lock)
+        {
+            save = !_saveTab;
+        }
+
+        SetTab(save);
+    }
 
     void SetTab(bool save)
     {
-        lock (_lock) _saveTab = save;
+        lock (_lock)
+        {
+            _saveTab = save;
+        }
+
         Redraw();
     }
 
@@ -269,17 +469,35 @@ public sealed class SaveStateOverlay : ITextCapture
         bool direct;
         lock (_lock)
         {
-            if (!_open || _slots.Length == 0) return;
+            if (!_open || _slots.Length == 0)
+            {
+                return;
+            }
+
             slot = _selected;
             var info = _slots[slot];
             bool doSave = save ?? _saveTab;
-            if (save is { } s) _saveTab = s;
+            if (save is { } s)
+            {
+                _saveTab = s;
+            }
+
             direct = doSave && !info.Exists; // an empty slot is saved at once
-            if (doSave && info.Exists) Ask(Question.Overwrite, slot);
-            else if (!doSave && info.Exists && info.Problem == null) Ask(Question.Load, slot);
+            if (doSave && info.Exists)
+            {
+                Ask(Question.Overwrite, slot);
+            }
+            else if (!doSave && info.Exists && info.Problem == null)
+            {
+                Ask(Question.Load, slot);
+            }
             // nothing to load: the tile says why
         }
-        if (!direct) { Redraw(); return; }
+        if (!direct)
+        {
+            Redraw();
+            return;
+        }
         Close();
         SaveRequested?.Invoke(slot);
     }
@@ -295,7 +513,11 @@ public sealed class SaveStateOverlay : ITextCapture
     {
         lock (_lock)
         {
-            if (!_open || _slots.Length == 0 || !_slots[_selected].Exists) return;
+            if (!_open || _slots.Length == 0 || !_slots[_selected].Exists)
+            {
+                return;
+            }
+
             Ask(Question.Delete, _selected);
         }
         Redraw();
@@ -304,22 +526,40 @@ public sealed class SaveStateOverlay : ITextCapture
     /// <summary>The open question: yes (true), no (false) or the selected answer (null).</summary>
     void Answer(bool? yes)
     {
-        int slot; bool ok; Question q;
+        int slot;
+        bool ok;
+        Question q;
         lock (_lock)
         {
-            if (_askSlot < 0) return;
+            if (_askSlot < 0)
+            {
+                return;
+            }
+
             slot = _askSlot;
             q = _ask;
             ok = yes ?? _askChoice == 0;
             _askSlot = -1;
             _ask = Question.None;
         }
-        if (!ok) { Redraw(); return; }
+        if (!ok)
+        {
+            Redraw();
+            return;
+        }
         switch (q)
         {
-            case Question.Overwrite: Close(); SaveRequested?.Invoke(slot); break;
-            case Question.Load: Close(); LoadRequested?.Invoke(slot); break;
-            case Question.Delete: Delete(slot); break;
+            case Question.Overwrite:
+                Close();
+                SaveRequested?.Invoke(slot);
+                break;
+            case Question.Load:
+                Close();
+                LoadRequested?.Invoke(slot);
+                break;
+            case Question.Delete:
+                Delete(slot);
+                break;
         }
     }
 
@@ -338,21 +578,46 @@ public sealed class SaveStateOverlay : ITextCapture
         var slots = ReadSlots();
         lock (_lock)
         {
-            if (!_open) { foreach (var s in slots) s.Thumb?.Dispose(); return; }
+            if (!_open)
+            {
+                foreach (var s in slots)
+                {
+                    s.Thumb?.Dispose();
+                }
+
+                return;
+            }
             DisposeThumbs();
             _slots = slots;
         }
         Redraw();
-        if (!File.Exists(path)) Deleted?.Invoke(slot);
+        if (!File.Exists(path))
+        {
+            Deleted?.Invoke(slot);
+        }
     }
 
     void Redraw()
     {
-        SlotInfo[] slots; int selected, ask, choice; bool save; Question q; SKBitmap? current;
+        SlotInfo[] slots;
+        int selected, ask, choice;
+        bool save;
+        Question q;
+        SKBitmap? current;
         lock (_lock)
         {
-            if (!_open) return;
-            slots = _slots; selected = _selected; ask = _askSlot; choice = _askChoice; save = _saveTab; q = _ask; current = _current;
+            if (!_open)
+            {
+                return;
+            }
+
+            slots = _slots;
+            selected = _selected;
+            ask = _askSlot;
+            choice = _askChoice;
+            save = _saveTab;
+            q = _ask;
+            current = _current;
             try
             {
                 float scale = Math.Clamp(_window.FramebufferSize.Height / 544f, 1f, 3f);
@@ -363,7 +628,12 @@ public sealed class SaveStateOverlay : ITextCapture
                 if (ask >= 0)
                 {
                     var s = slots[ask];
-                    string key = q switch { Question.Load => "SsLoadAsk", Question.Delete => "SsDeleteAsk", _ => "SsOverwrite" };
+                    string key = q switch
+                    {
+                        Question.Load => "SsLoadAsk",
+                        Question.Delete => "SsDeleteAsk",
+                        _ => "SsOverwrite"
+                    };
                     question = new QuestionView(Loc.Format(key, SlotName(ask), s.Saved.ToString("g", Loc.Culture)), s.Problem == null ? Extra(s) : "",
                         s.Thumb, q == Question.Overwrite ? current : null, q, choice);
                 }
@@ -446,7 +716,11 @@ public sealed class SaveStateOverlay : ITextCapture
 
             void Picture(SKBitmap? pic, SKRect r)
             {
-                if (pic != null) { c.DrawBitmap(pic, r, sampling); return; }
+                if (pic != null)
+                {
+                    c.DrawBitmap(pic, r, sampling);
+                    return;
+                }
                 c.DrawRect(r, empty);
                 c.DrawText("?", r.MidX - Measure(bold, "?") / 2, r.MidY + 5 * scale, bold, muted);
             }
@@ -472,7 +746,10 @@ public sealed class SaveStateOverlay : ITextCapture
                 tiles[i] = r;
                 c.DrawRoundRect(r, 6 * scale, 6 * scale, box);
                 var thumb = new SKRect(x + 4 * scale, y + 4 * scale, r.Right - 4 * scale, y + 4 * scale + thumbH - 8 * scale);
-                if (slots[i].Thumb is { } t) c.DrawBitmap(t, thumb, sampling);
+                if (slots[i].Thumb is { } t)
+                {
+                    c.DrawBitmap(t, thumb, sampling);
+                }
                 else
                 {
                     c.DrawRect(thumb, empty);
@@ -483,8 +760,14 @@ public sealed class SaveStateOverlay : ITextCapture
                 c.DrawText(Fit(slots[i].Detail, small, tileW - 8 * scale), x + 6 * scale, thumb.Bottom + 34 * scale, small,
                     slots[i].Unloadable ? warn : muted);
                 if (slots[i].Extra.Length > 0)
+                {
                     c.DrawText(Fit(slots[i].Extra, small, tileW - 8 * scale), x + 6 * scale, thumb.Bottom + 49 * scale, small, muted);
-                if (i == selected) c.DrawRoundRect(r, 6 * scale, 6 * scale, ring);
+                }
+
+                if (i == selected)
+                {
+                    c.DrawRoundRect(r, 6 * scale, 6 * scale, ring);
+                }
             }
 
             string help = Loc.Get("SsHelp");
@@ -539,8 +822,16 @@ public sealed class SaveStateOverlay : ITextCapture
 
     static string Fit(string s, SKFont font, float width)
     {
-        if (Measure(font, s) <= width) return s;
-        while (s.Length > 1 && Measure(font, s + "\u2026") > width) s = s[..^1];
+        if (Measure(font, s) <= width)
+        {
+            return s;
+        }
+
+        while (s.Length > 1 && Measure(font, s + "\u2026") > width)
+        {
+            s = s[..^1];
+        }
+
         return s + "\u2026";
     }
 

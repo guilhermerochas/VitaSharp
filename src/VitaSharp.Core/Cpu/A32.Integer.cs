@@ -17,7 +17,14 @@ internal static unsafe partial class A32
     [MethodImpl(MethodImplOptions.AggressiveInlining)]
     static void WriteRd(CpuState* s, uint rd, uint v)
     {
-        if (rd == 15) AluWritePcArm(s, v); else s->R[rd] = v;
+        if (rd == 15)
+        {
+            AluWritePcArm(s, v);
+        }
+        else
+        {
+            s->R[rd] = v;
+        }
     }
 
     // ================================================================ data processing
@@ -28,29 +35,80 @@ internal static unsafe partial class A32
         uint r, c, v;
         switch (opc)
         {
-            case 0x0: r = a & b; goto logical;
-            case 0x1: r = a ^ b; goto logical;
-            case 0x2: r = AddWithCarry(a, ~b, 1, out c, out v); goto arith;
-            case 0x3: r = AddWithCarry(~a, b, 1, out c, out v); goto arith;
-            case 0x4: r = AddWithCarry(a, b, 0, out c, out v); goto arith;
-            case 0x5: r = AddWithCarry(a, b, s->C, out c, out v); goto arith;
-            case 0x6: r = AddWithCarry(a, ~b, s->C, out c, out v); goto arith;
-            case 0x7: r = AddWithCarry(~a, b, s->C, out c, out v); goto arith;
-            case 0x8: r = a & b; SetNZ(s, r); s->C = shCarry; return;
-            case 0x9: r = a ^ b; SetNZ(s, r); s->C = shCarry; return;
-            case 0xA: r = AddWithCarry(a, ~b, 1, out c, out v); SetNZ(s, r); s->C = c; s->V = v; return;
-            case 0xB: r = AddWithCarry(a, b, 0, out c, out v); SetNZ(s, r); s->C = c; s->V = v; return;
-            case 0xC: r = a | b; goto logical;
-            case 0xD: r = b; goto logical;
-            case 0xE: r = a & ~b; goto logical;
-            default: r = ~b; goto logical;
+            case 0x0:
+                r = a & b;
+                goto logical;
+            case 0x1:
+                r = a ^ b;
+                goto logical;
+            case 0x2:
+                r = AddWithCarry(a, ~b, 1, out c, out v);
+                goto arith;
+            case 0x3:
+                r = AddWithCarry(~a, b, 1, out c, out v);
+                goto arith;
+            case 0x4:
+                r = AddWithCarry(a, b, 0, out c, out v);
+                goto arith;
+            case 0x5:
+                r = AddWithCarry(a, b, s->C, out c, out v);
+                goto arith;
+            case 0x6:
+                r = AddWithCarry(a, ~b, s->C, out c, out v);
+                goto arith;
+            case 0x7:
+                r = AddWithCarry(~a, b, s->C, out c, out v);
+                goto arith;
+            case 0x8:
+                r = a & b;
+                SetNZ(s, r);
+                s->C = shCarry;
+                return;
+            case 0x9:
+                r = a ^ b;
+                SetNZ(s, r);
+                s->C = shCarry;
+                return;
+            case 0xA:
+                r = AddWithCarry(a, ~b, 1, out c, out v);
+                SetNZ(s, r);
+                s->C = c;
+                s->V = v;
+                return;
+            case 0xB:
+                r = AddWithCarry(a, b, 0, out c, out v);
+                SetNZ(s, r);
+                s->C = c;
+                s->V = v;
+                return;
+            case 0xC:
+                r = a | b;
+                goto logical;
+            case 0xD:
+                r = b;
+                goto logical;
+            case 0xE:
+                r = a & ~b;
+                goto logical;
+            default:
+                r = ~b;
+                goto logical;
         }
     logical:
-        if (setFlags && rd != 15) { SetNZ(s, r); s->C = shCarry; }
+        if (setFlags && rd != 15)
+        {
+            SetNZ(s, r);
+            s->C = shCarry;
+        }
         WriteRd(s, rd, r);
         return;
     arith:
-        if (setFlags && rd != 15) { SetNZ(s, r); s->C = c; s->V = v; }
+        if (setFlags && rd != 15)
+        {
+            SetNZ(s, r);
+            s->C = c;
+            s->V = v;
+        }
         WriteRd(s, rd, r);
     }
 
@@ -111,14 +169,88 @@ internal static unsafe partial class A32
         uint a = Rg(s, rn, pc), b = Rg(s, rm, pc);
         switch (op)
         {
-            case 0: { uint r = a * b; s->R[hi] = r; if (S) SetNZ(s, r); break; }
-            case 1: { uint r = a * b + s->R[lo]; s->R[hi] = r; if (S) SetNZ(s, r); break; }
-            case 2: { ulong r = (ulong)a * b + s->R[lo] + s->R[hi]; s->R[lo] = (uint)r; s->R[hi] = (uint)(r >> 32); break; } // UMAAL
-            case 3: { s->R[hi] = s->R[lo] - a * b; break; } // MLS
-            case 4: { ulong r = (ulong)a * b; s->R[lo] = (uint)r; s->R[hi] = (uint)(r >> 32); if (S) SetNZ64(s, r); break; }
-            case 5: { ulong r = (ulong)a * b + (((ulong)s->R[hi] << 32) | s->R[lo]); s->R[lo] = (uint)r; s->R[hi] = (uint)(r >> 32); if (S) SetNZ64(s, r); break; }
-            case 6: { long r = (long)(int)a * (int)b; s->R[lo] = (uint)r; s->R[hi] = (uint)((ulong)r >> 32); if (S) SetNZ64(s, (ulong)r); break; }
-            default: { long r = (long)(int)a * (int)b + (long)(((ulong)s->R[hi] << 32) | s->R[lo]); s->R[lo] = (uint)r; s->R[hi] = (uint)((ulong)r >> 32); if (S) SetNZ64(s, (ulong)r); break; }
+            case 0:
+            {
+                uint r = a * b;
+                s->R[hi] = r;
+                if (S)
+                {
+                    SetNZ(s, r);
+                }
+
+                break;
+            }
+            case 1:
+            {
+                uint r = a * b + s->R[lo];
+                s->R[hi] = r;
+                if (S)
+                {
+                    SetNZ(s, r);
+                }
+
+                break;
+            }
+            case 2:
+            {
+                ulong r = (ulong)a * b + s->R[lo] + s->R[hi];
+                s->R[lo] = (uint)r;
+                s->R[hi] = (uint)(r >> 32);
+                break;
+            } // UMAAL
+            case 3:
+            {
+                s->R[hi] = s->R[lo] - a * b;
+                break;
+            } // MLS
+            case 4:
+            {
+                ulong r = (ulong)a * b;
+                s->R[lo] = (uint)r;
+                s->R[hi] = (uint)(r >> 32);
+                if (S)
+                {
+                    SetNZ64(s, r);
+                }
+
+                break;
+            }
+            case 5:
+            {
+                ulong r = (ulong)a * b + (((ulong)s->R[hi] << 32) | s->R[lo]);
+                s->R[lo] = (uint)r;
+                s->R[hi] = (uint)(r >> 32);
+                if (S)
+                {
+                    SetNZ64(s, r);
+                }
+
+                break;
+            }
+            case 6:
+            {
+                long r = (long)(int)a * (int)b;
+                s->R[lo] = (uint)r;
+                s->R[hi] = (uint)((ulong)r >> 32);
+                if (S)
+                {
+                    SetNZ64(s, (ulong)r);
+                }
+
+                break;
+            }
+            default:
+            {
+                long r = (long)(int)a * (int)b + (long)(((ulong)s->R[hi] << 32) | s->R[lo]);
+                s->R[lo] = (uint)r;
+                s->R[hi] = (uint)((ulong)r >> 32);
+                if (S)
+                {
+                    SetNZ64(s, (ulong)r);
+                }
+
+                break;
+            }
         }
     }
 
@@ -151,7 +283,11 @@ internal static unsafe partial class A32
             {
                 long r = (long)Half(vn, x) * Half(vm, y) + (int)s->R[ra];
                 s->R[rd] = (uint)r;
-                if (r != (int)r) s->Q = 1;
+                if (r != (int)r)
+                {
+                    s->Q = 1;
+                }
+
                 break;
             }
             case 1:
@@ -159,15 +295,23 @@ internal static unsafe partial class A32
                 {
                     long r = (((long)(int)vn * Half(vm, y)) >> 16) + (int)s->R[ra];
                     s->R[rd] = (uint)r;
-                    if (r != (int)r) s->Q = 1;
+                    if (r != (int)r)
+                    {
+                        s->Q = 1;
+                    }
                 }
-                else s->R[rd] = (uint)(((long)(int)vn * Half(vm, y)) >> 16); // SMULWy
+                else
+                {
+                    s->R[rd] = (uint)(((long)(int)vn * Half(vm, y)) >> 16); // SMULWy
+                }
+
                 break;
             case 2: // SMLALxy  (rd=RdHi, ra=RdLo)
             {
                 long acc = (long)(((ulong)s->R[rd] << 32) | s->R[ra]);
                 long r = acc + (long)Half(vn, x) * Half(vm, y);
-                s->R[ra] = (uint)r; s->R[rd] = (uint)((ulong)r >> 32);
+                s->R[ra] = (uint)r;
+                s->R[rd] = (uint)((ulong)r >> 32);
                 break;
             }
             default: // SMULxy
@@ -189,7 +333,11 @@ internal static unsafe partial class A32
     internal static void SignedMultiplyMediaCore(CpuState* s, uint op1, uint op2, uint rd, uint ra, uint vn, uint vm)
     {
         bool swap = (op2 & 1) != 0;
-        if (swap && (op1 == 0 || op1 == 4)) vm = BitOperations.RotateRight(vm, 16);
+        if (swap && (op1 == 0 || op1 == 4))
+        {
+            vm = BitOperations.RotateRight(vm, 16);
+        }
+
         int p1 = (short)vn * (short)vm;
         int p2 = (short)(vn >> 16) * (short)(vm >> 16);
         switch (op1)
@@ -199,13 +347,19 @@ internal static unsafe partial class A32
                 {
                     long r = (long)p1 + p2 + (ra == 15 ? 0 : (int)s->R[ra]);
                     s->R[rd] = (uint)r;
-                    if (r != (int)r) s->Q = 1;
+                    if (r != (int)r)
+                    {
+                        s->Q = 1;
+                    }
                 }
                 else // SMLSD / SMUSD
                 {
                     long r = (long)p1 - p2 + (ra == 15 ? 0 : (int)s->R[ra]);
                     s->R[rd] = (uint)r;
-                    if (r != (int)r) s->Q = 1;
+                    if (r != (int)r)
+                    {
+                        s->Q = 1;
+                    }
                 }
                 break;
             case 1: // SDIV
@@ -221,7 +375,8 @@ internal static unsafe partial class A32
             {
                 long acc = (long)(((ulong)s->R[rd] << 32) | s->R[ra]);
                 long r = (op2 & 2) == 0 ? acc + p1 + p2 : acc + p1 - p2;
-                s->R[ra] = (uint)r; s->R[rd] = (uint)((ulong)r >> 32);
+                s->R[ra] = (uint)r;
+                s->R[rd] = (uint)((ulong)r >> 32);
                 break;
             }
             case 5:
@@ -229,9 +384,20 @@ internal static unsafe partial class A32
                 bool round = (op2 & 1) != 0;
                 long prod = (long)(int)vn * (int)vm;
                 long r;
-                if ((op2 & 6) == 0) r = (ra == 15 ? 0 : ((long)(int)s->R[ra] << 32)) + prod;          // SMMLA / SMMUL
-                else r = ((long)(int)s->R[ra] << 32) - prod;                                           // SMMLS
-                if (round) r += 0x80000000L;
+                if ((op2 & 6) == 0)
+                {
+                    r = (ra == 15 ? 0 : ((long)(int)s->R[ra] << 32)) + prod;          // SMMLA / SMMUL
+                }
+                else
+                {
+                    r = ((long)(int)s->R[ra] << 32) - prod;                                           // SMMLS
+                }
+
+                if (round)
+                {
+                    r += 0x80000000L;
+                }
+
                 s->R[rd] = (uint)(r >> 32);
                 break;
             }
@@ -253,7 +419,11 @@ internal static unsafe partial class A32
     internal static uint SatAddSubCore(CpuState* s, uint op, uint vm, uint vn)
     {
         long a = (int)vm, b = (int)vn;
-        if ((op & 2) != 0) b = (int)SatQ(s, b * 2);
+        if ((op & 2) != 0)
+        {
+            b = (int)SatQ(s, b * 2);
+        }
+
         return (op & 1) == 0 ? SatQ(s, a + b) : SatQ(s, a - b);
     }
 
@@ -285,13 +455,27 @@ internal static unsafe partial class A32
                 if (kind == 1)
                 {
                     res = (uint)v & 0xFF;
-                    if (signed ? v >= 0 : (op2 == 4 ? v >= 0x100 : v >= 0)) ge |= 1u << i;
+                    if (signed ? v >= 0 : (op2 == 4 ? v >= 0x100 : v >= 0))
+                    {
+                        ge |= 1u << i;
+                    }
                 }
-                else if (kind == 2) res = signed ? (uint)SignedSat(v, 8, out _) & 0xFF : UnsignedSat(v, 8, out _);
-                else res = (uint)(v >> 1) & 0xFF;
+                else if (kind == 2)
+                {
+                    res = signed ? (uint)SignedSat(v, 8, out _) & 0xFF : UnsignedSat(v, 8, out _);
+                }
+                else
+                {
+                    res = (uint)(v >> 1) & 0xFF;
+                }
+
                 r |= res << (i * 8);
             }
-            if (kind == 1) s->GE = ge;
+            if (kind == 1)
+            {
+                s->GE = ge;
+            }
+
             return r;
         }
         else
@@ -301,25 +485,62 @@ internal static unsafe partial class A32
             int lo, hi;
             switch (op2)
             {
-                case 0: lo = al + bl; hi = ah + bh; break;   // ADD16
-                case 1: lo = al - bh; hi = ah + bl; break;   // ASX
-                case 2: lo = al + bh; hi = ah - bl; break;   // SAX
-                default: lo = al - bl; hi = ah - bh; break;  // SUB16
+                case 0:
+                    lo = al + bl;
+                    hi = ah + bh;
+                    break;   // ADD16
+                case 1:
+                    lo = al - bh;
+                    hi = ah + bl;
+                    break;   // ASX
+                case 2:
+                    lo = al + bh;
+                    hi = ah - bl;
+                    break;   // SAX
+                default:
+                    lo = al - bl;
+                    hi = ah - bh;
+                    break;  // SUB16
             }
             uint rl, rh;
             if (kind == 1)
             {
-                rl = (uint)lo & 0xFFFF; rh = (uint)hi & 0xFFFF;
+                rl = (uint)lo & 0xFFFF;
+                rh = (uint)hi & 0xFFFF;
                 uint ge = 0;
                 bool geLo, geHi;
-                if (signed) { geLo = lo >= 0; geHi = hi >= 0; }
+                if (signed)
+                {
+                    geLo = lo >= 0;
+                    geHi = hi >= 0;
+                }
                 else
                 {
-                    geLo = op2 switch { 0 => lo >= 0x10000, 1 => lo >= 0, 2 => lo >= 0x10000, _ => lo >= 0 };
-                    geHi = op2 switch { 0 => hi >= 0x10000, 1 => hi >= 0x10000, 2 => hi >= 0, _ => hi >= 0 };
+                    geLo = op2 switch
+                    {
+                        0 => lo >= 0x10000,
+                        1 => lo >= 0,
+                        2 => lo >= 0x10000,
+                        _ => lo >= 0
+                    };
+                    geHi = op2 switch
+                    {
+                        0 => hi >= 0x10000,
+                        1 => hi >= 0x10000,
+                        2 => hi >= 0,
+                        _ => hi >= 0
+                    };
                 }
-                if (geLo) ge |= 3;
-                if (geHi) ge |= 0xC;
+                if (geLo)
+                {
+                    ge |= 3;
+                }
+
+                if (geHi)
+                {
+                    ge |= 0xC;
+                }
+
                 s->GE = ge;
             }
             else if (kind == 2)
@@ -327,7 +548,11 @@ internal static unsafe partial class A32
                 rl = signed ? (uint)SignedSat(lo, 16, out _) & 0xFFFF : UnsignedSat(lo, 16, out _);
                 rh = signed ? (uint)SignedSat(hi, 16, out _) & 0xFFFF : UnsignedSat(hi, 16, out _);
             }
-            else { rl = (uint)(lo >> 1) & 0xFFFF; rh = (uint)(hi >> 1) & 0xFFFF; }
+            else
+            {
+                rl = (uint)(lo >> 1) & 0xFFFF;
+                rh = (uint)(hi >> 1) & 0xFFFF;
+            }
             return rl | (rh << 16);
         }
     }
@@ -370,7 +595,11 @@ internal static unsafe partial class A32
         int operand = (int)Shift(v, t, n, s->C);
         bool sat;
         uint r = unsigned ? UnsignedSat(operand, (int)satImm, out sat) : (uint)SignedSat(operand, (int)satImm + 1, out sat);
-        if (sat) s->Q = 1;
+        if (sat)
+        {
+            s->Q = 1;
+        }
+
         return r;
     }
 
@@ -397,7 +626,11 @@ internal static unsafe partial class A32
             lo = (uint)SignedSat((short)v, (int)satImm + 1, out s1) & 0xFFFF;
             hi = (uint)SignedSat((short)(v >> 16), (int)satImm + 1, out s2) & 0xFFFF;
         }
-        if (s1 || s2) s->Q = 1;
+        if (s1 || s2)
+        {
+            s->Q = 1;
+        }
+
         return (lo & 0xFFFF) | (hi << 16);
     }
 
@@ -420,19 +653,31 @@ internal static unsafe partial class A32
             case 0:
             {
                 uint lo = (uint)(sbyte)rotated & 0xFFFF, hi = (uint)(sbyte)(rotated >> 16) & 0xFFFF;
-                if (!noAdd) { lo = (vn + lo) & 0xFFFF; hi = ((vn >> 16) + hi) & 0xFFFF; }
+                if (!noAdd)
+                {
+                    lo = (vn + lo) & 0xFFFF;
+                    hi = ((vn >> 16) + hi) & 0xFFFF;
+                }
                 return lo | (hi << 16);
             }
-            case 2: return vn + (uint)(sbyte)rotated;
-            case 3: return vn + (uint)(short)rotated;
+            case 2:
+                return vn + (uint)(sbyte)rotated;
+            case 3:
+                return vn + (uint)(short)rotated;
             case 4:
             {
                 uint lo = rotated & 0xFF, hi = (rotated >> 16) & 0xFF;
-                if (!noAdd) { lo = (vn + lo) & 0xFFFF; hi = ((vn >> 16) + hi) & 0xFFFF; }
+                if (!noAdd)
+                {
+                    lo = (vn + lo) & 0xFFFF;
+                    hi = ((vn >> 16) + hi) & 0xFFFF;
+                }
                 return lo | (hi << 16);
             }
-            case 6: return vn + (rotated & 0xFF);
-            default: return vn + (rotated & 0xFFFF);
+            case 6:
+                return vn + (rotated & 0xFF);
+            default:
+                return vn + (rotated & 0xFFFF);
         }
     }
 
@@ -444,8 +689,15 @@ internal static unsafe partial class A32
         uint o1 = Bit(ins, 22), o2 = Bit(ins, 7);
         uint v = s->R[rm];
         uint r;
-        if (o1 == 0) r = o2 == 0 ? BinaryPrimitivesReverse(v) : Rev16(v);
-        else r = o2 == 0 ? RBit(v) : RevSh(v);
+        if (o1 == 0)
+        {
+            r = o2 == 0 ? BinaryPrimitivesReverse(v) : Rev16(v);
+        }
+        else
+        {
+            r = o2 == 0 ? RBit(v) : RevSh(v);
+        }
+
         s->R[rd] = r;
     }
 
@@ -472,7 +724,14 @@ internal static unsafe partial class A32
     internal static uint SelCore(CpuState* s, uint a, uint b)
     {
         uint mask = 0;
-        for (int i = 0; i < 4; i++) if (((s->GE >> i) & 1) != 0) mask |= 0xFFu << (i * 8);
+        for (int i = 0; i < 4; i++)
+        {
+            if (((s->GE >> i) & 1) != 0)
+            {
+                mask |= 0xFFu << (i * 8);
+            }
+        }
+
         return (a & mask) | (b & ~mask);
     }
 
@@ -487,7 +746,11 @@ internal static unsafe partial class A32
     internal static uint Usad8Core(uint a, uint b)
     {
         uint sum = 0;
-        for (int i = 0; i < 32; i += 8) sum += (uint)Math.Abs((int)((a >> i) & 0xFF) - (int)((b >> i) & 0xFF));
+        for (int i = 0; i < 32; i += 8)
+        {
+            sum += (uint)Math.Abs((int)((a >> i) & 0xFF) - (int)((b >> i) & 0xFF));
+        }
+
         return sum;
     }
 
@@ -519,7 +782,11 @@ internal static unsafe partial class A32
     [MethodImpl(MethodImplOptions.AggressiveInlining)]
     internal static uint BfiCore(uint dst, uint src, int lsb, int msb)
     {
-        if (msb < lsb) return dst;
+        if (msb < lsb)
+        {
+            return dst;
+        }
+
         int width = msb - lsb + 1;
         uint mask = (uint)((width >= 32 ? 0xFFFFFFFFul : ((1ul << width) - 1)) << lsb);
         return (dst & ~mask) | ((src << lsb) & mask);
@@ -576,12 +843,24 @@ internal static unsafe partial class A32
 
     internal static void MsrCore(CpuState* s, uint mask, uint v)
     {
-        if ((mask & 2) != 0) { s->N = v >> 31; s->Z = (v >> 30) & 1; s->C = (v >> 29) & 1; s->V = (v >> 28) & 1; s->Q = (v >> 27) & 1; }
-        if ((mask & 1) != 0) s->GE = (v >> 16) & 0xF;
+        if ((mask & 2) != 0)
+        {
+            s->N = v >> 31;
+            s->Z = (v >> 30) & 1;
+            s->C = (v >> 29) & 1;
+            s->V = (v >> 28) & 1;
+            s->Q = (v >> 27) & 1;
+        }
+        if ((mask & 1) != 0)
+        {
+            s->GE = (v >> 16) & 0xF;
+        }
     }
 
     [MethodImpl(MethodImplOptions.AggressiveInlining)]
-    public static void Nop(CpuState* s, uint ins, uint pc) { }
+    public static void Nop(CpuState* s, uint ins, uint pc)
+    {
+    }
 
     [MethodImpl(MethodImplOptions.AggressiveInlining)]
     public static void Svc(CpuState* s, uint ins, uint pc)
@@ -628,19 +907,41 @@ internal static unsafe partial class A32
     {
         uint rt = Bits(ins, 15, 12), crn = Bits(ins, 19, 16), opc2 = Bits(ins, 7, 5);
         uint v = 0;
-        if (crn == 13 && opc2 == 3) v = s->TpidrUro;
-        else if (crn == 13 && opc2 == 2) v = s->TpidrUrw;
-        if (rt == 15) { s->N = v >> 31; s->Z = (v >> 30) & 1; s->C = (v >> 29) & 1; s->V = (v >> 28) & 1; }
-        else s->R[rt] = v;
+        if (crn == 13 && opc2 == 3)
+        {
+            v = s->TpidrUro;
+        }
+        else if (crn == 13 && opc2 == 2)
+        {
+            v = s->TpidrUrw;
+        }
+
+        if (rt == 15)
+        {
+            s->N = v >> 31;
+            s->Z = (v >> 30) & 1;
+            s->C = (v >> 29) & 1;
+            s->V = (v >> 28) & 1;
+        }
+        else
+        {
+            s->R[rt] = v;
+        }
     }
 
     [MethodImpl(MethodImplOptions.AggressiveInlining)]
     public static void Mcr(CpuState* s, uint ins, uint pc)
     {
         uint rt = Bits(ins, 15, 12), crn = Bits(ins, 19, 16), opc2 = Bits(ins, 7, 5);
-        if (crn == 13 && opc2 == 2) s->TpidrUrw = s->R[rt];
+        if (crn == 13 && opc2 == 2)
+        {
+            s->TpidrUrw = s->R[rt];
+        }
         // c7 cache maintenance / barriers (CP15DMB etc.)
-        if (crn == 7) Interlocked.MemoryBarrier();
+        if (crn == 7)
+        {
+            Interlocked.MemoryBarrier();
+        }
     }
 
     // ================================================================ load / store
@@ -673,14 +974,36 @@ internal static unsafe partial class A32
         if (L)
         {
             uint v = Bb ? Mem.R8(s, addr) : Mem.R32(s, addr);
-            if (wback) s->R[rn] = offAddr;
-            if (rt == 15) BxWritePc(s, v); else s->R[rt] = v;
+            if (wback)
+            {
+                s->R[rn] = offAddr;
+            }
+
+            if (rt == 15)
+            {
+                BxWritePc(s, v);
+            }
+            else
+            {
+                s->R[rt] = v;
+            }
         }
         else
         {
             uint v = rt == 15 ? pc + 8 : s->R[rt];
-            if (Bb) Mem.W8(s, addr, v); else Mem.W32(s, addr, v);
-            if (wback) s->R[rn] = offAddr;
+            if (Bb)
+            {
+                Mem.W8(s, addr, v);
+            }
+            else
+            {
+                Mem.W32(s, addr, v);
+            }
+
+            if (wback)
+            {
+                s->R[rn] = offAddr;
+            }
         }
     }
 
@@ -699,14 +1022,46 @@ internal static unsafe partial class A32
         bool wback = !P || W;
         switch ((L ? 4u : 0u) | op)
         {
-            case 1: Mem.W16(s, addr, Rg(s, rt, pc)); break;                                        // STRH
-            case 2: s->R[rt] = Mem.R32(s, addr); s->R[rt + 1] = Mem.R32(s, addr + 4); break;          // LDRD
-            case 3: Mem.W32(s, addr, Rg(s, rt, pc)); Mem.W32(s, addr + 4, Rg(s, rt + 1, pc)); break;    // STRD
-            case 5: if (wback) s->R[rn] = offAddr; s->R[rt] = Mem.R16(s, addr); return;            // LDRH
-            case 6: if (wback) s->R[rn] = offAddr; s->R[rt] = (uint)(sbyte)Mem.R8(s, addr); return; // LDRSB
-            case 7: if (wback) s->R[rn] = offAddr; s->R[rt] = (uint)(short)Mem.R16(s, addr); return; // LDRSH
+            case 1:
+                Mem.W16(s, addr, Rg(s, rt, pc));
+                break;                                        // STRH
+            case 2:
+                s->R[rt] = Mem.R32(s, addr);
+                s->R[rt + 1] = Mem.R32(s, addr + 4);
+                break;          // LDRD
+            case 3:
+                Mem.W32(s, addr, Rg(s, rt, pc));
+                Mem.W32(s, addr + 4, Rg(s, rt + 1, pc));
+                break;    // STRD
+            case 5:
+                if (wback)
+                {
+                    s->R[rn] = offAddr;
+                }
+
+                s->R[rt] = Mem.R16(s, addr);
+                return;            // LDRH
+            case 6:
+                if (wback)
+                {
+                    s->R[rn] = offAddr;
+                }
+
+                s->R[rt] = (uint)(sbyte)Mem.R8(s, addr);
+                return; // LDRSB
+            case 7:
+                if (wback)
+                {
+                    s->R[rn] = offAddr;
+                }
+
+                s->R[rt] = (uint)(short)Mem.R16(s, addr);
+                return; // LDRSH
         }
-        if (wback) s->R[rn] = offAddr;
+        if (wback)
+        {
+            s->R[rn] = offAddr;
+        }
     }
 
     /// <summary>LDM/STM family: cond 100 P U S W L Rn register_list</summary>
@@ -729,27 +1084,53 @@ internal static unsafe partial class A32
         uint addr = start;
         if (L)
         {
-            if (W) s->R[rn] = newBase;
+            if (W)
+            {
+                s->R[rn] = newBase;
+            }
+
             uint pcLoad = 0;
             bool loadPc = false;
             for (int i = 0; i < 16; i++)
             {
-                if ((list & (1u << i)) == 0) continue;
+                if ((list & (1u << i)) == 0)
+                {
+                    continue;
+                }
+
                 uint v = Mem.R32(s, addr);
                 addr += 4;
-                if (i == 15) { pcLoad = v; loadPc = true; } else s->R[i] = v;
+                if (i == 15)
+                {
+                    pcLoad = v;
+                    loadPc = true;
+                }
+                else
+                {
+                    s->R[i] = v;
+                }
             }
-            if (loadPc) BxWritePc(s, pcLoad);
+            if (loadPc)
+            {
+                BxWritePc(s, pcLoad);
+            }
         }
         else
         {
             for (int i = 0; i < 16; i++)
             {
-                if ((list & (1u << i)) == 0) continue;
+                if ((list & (1u << i)) == 0)
+                {
+                    continue;
+                }
+
                 Mem.W32(s, addr, i == 15 ? pcValue : (i == rn ? baseVal : s->R[i]));
                 addr += 4;
             }
-            if (W) s->R[rn] = newBase;
+            if (W)
+            {
+                s->R[rn] = newBase;
+            }
         }
     }
 
@@ -776,10 +1157,35 @@ internal static unsafe partial class A32
             ReserveExclusive(s, addr);
             switch (op)
             {
-                case 0: { uint v = Volatile.Read(ref *(uint*)Mem.Ptr(s, addr)); s->R[rt] = v; SetExclusive(s, addr, v); break; }
-                case 1: { ulong v = Volatile.Read(ref *(ulong*)Mem.Ptr(s, addr)); s->R[rt] = (uint)v; s->R[rt2] = (uint)(v >> 32); SetExclusive(s, addr, v); break; }
-                case 2: { uint v = Mem.R8(s, addr); s->R[rt] = v; SetExclusive(s, addr, v); break; }
-                default: { uint v = Mem.R16(s, addr); s->R[rt] = v; SetExclusive(s, addr, v); break; }
+                case 0:
+                {
+                    uint v = Volatile.Read(ref *(uint*)Mem.Ptr(s, addr));
+                    s->R[rt] = v;
+                    SetExclusive(s, addr, v);
+                    break;
+                }
+                case 1:
+                {
+                    ulong v = Volatile.Read(ref *(ulong*)Mem.Ptr(s, addr));
+                    s->R[rt] = (uint)v;
+                    s->R[rt2] = (uint)(v >> 32);
+                    SetExclusive(s, addr, v);
+                    break;
+                }
+                case 2:
+                {
+                    uint v = Mem.R8(s, addr);
+                    s->R[rt] = v;
+                    SetExclusive(s, addr, v);
+                    break;
+                }
+                default:
+                {
+                    uint v = Mem.R16(s, addr);
+                    s->R[rt] = v;
+                    SetExclusive(s, addr, v);
+                    break;
+                }
             }
         }
         else

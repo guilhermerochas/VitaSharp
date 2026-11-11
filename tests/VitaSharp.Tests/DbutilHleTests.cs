@@ -40,9 +40,17 @@ public sealed class DbutilHleTests(GuestMemoryFixture fx, ITestOutputHelper outp
             Directory.CreateDirectory(Path.Combine(_root, "vs0", "sys", "external"));
             string src = Path.Combine(FsRoot, "vs0", "sys", "external", "dbutil.suprx");
             HasModule = File.Exists(src);
-            if (HasModule) File.Copy(src, Path.Combine(_root, "vs0", "sys", "external", "dbutil.suprx"));
+            if (HasModule)
+            {
+                File.Copy(src, Path.Combine(_root, "vs0", "sys", "external", "dbutil.suprx"));
+            }
+
             Emu = new Emulator(new EmulatorOptions { FsRoot = _root, Memory = fx.Memory, EnableJit = false, CpuBackend = "interp" });
-            if (HasModule) Emu.LoadModule("vs0:sys/external/dbutil.suprx");
+            if (HasModule)
+            {
+                Emu.LoadModule("vs0:sys/external/dbutil.suprx");
+            }
+
             _stubs = _next = Emu.Memory.Alloc(0x1000, "dbutil test stubs");
             Callback = Host("dbutiltest:callback", c => { Calls.Add($"cb arg={c.Gpr(0):X} code={c.Gpr(1):X}"); c.Return(0); });
             Emu.Code.Invalidate(0, uint.MaxValue);
@@ -50,7 +58,8 @@ public sealed class DbutilHleTests(GuestMemoryFixture fx, ITestOutputHelper outp
 
         public uint Host(string name, Action<HleContext> body)
         {
-            uint a = _next; _next += 16;
+            uint a = _next;
+            _next += 16;
             Linker.WriteHleStub(a, Emu.Hle.RegisterHostFunction(name, body), 0);
             Emu.Code.Invalidate(a, 16);
             return a;
@@ -58,7 +67,8 @@ public sealed class DbutilHleTests(GuestMemoryFixture fx, ITestOutputHelper outp
 
         public uint HleStub(uint nid, string lib)
         {
-            uint a = _next; _next += 16;
+            uint a = _next;
+            _next += 16;
             Linker.WriteHleStub(a, Emu.Hle.GetHleFunctionIndex(nid, 0, lib), nid);
             Emu.Code.Invalidate(a, 16);
             return a;
@@ -70,17 +80,34 @@ public sealed class DbutilHleTests(GuestMemoryFixture fx, ITestOutputHelper outp
         {
             Exception? failure = null;
             var t = Emu.Kernel.CreateThread("dbutil-test", 0, 0x10000100, 0x10000, 0, 0x70000);
-            t.HostBody = th => { try { body(th); } catch (Exception e) { failure = e; } };
+            t.HostBody = th =>
+            {
+                try
+                {
+                    body(th);
+                }
+                catch (Exception e)
+                {
+                    failure = e;
+                }
+            };
             t.Start(0, 0);
             Assert.True(t.WaitForExit(60_000), "test thread did not finish");
             Emu.Kernel.DeleteThread(t);
-            if (failure != null) throw new Xunit.Sdk.XunitException(failure.ToString());
+            if (failure != null)
+            {
+                throw new Xunit.Sdk.XunitException(failure.ToString());
+            }
         }
 
         public void Dispose()
         {
             Emu.Dispose();
-            try { Directory.Delete(_root, true); } catch (IOException) { }
+            try
+            {
+                Directory.Delete(_root, true);
+            }
+            catch (IOException) { }
         }
     }
 
@@ -89,10 +116,19 @@ public sealed class DbutilHleTests(GuestMemoryFixture fx, ITestOutputHelper outp
     static uint MakeObject(Harness h, GuestThread t, uint ctorStub, uint name, uint mutex)
     {
         uint o = h.Emu.Memory.Alloc(ObjSize, "dbutil test object");
-        for (uint i = 0; i < ObjSize; i += 4) GuestMemory.W32(o + i, 0x01010101u * (i / 4 % 7));
-        if (mutex != 0) t.CallGuest(ctorStub, o + mutex, name, 0);
+        for (uint i = 0; i < ObjSize; i += 4)
+        {
+            GuestMemory.W32(o + i, 0x01010101u * (i / 4 % 7));
+        }
+
+        if (mutex != 0)
+        {
+            t.CallGuest(ctorStub, o + mutex, name, 0);
+        }
+
         GuestMemory.W32(o + 8, 0); // no sqlite3 handle
-        GuestMemory.W32(o + 0x54, h.Callback); GuestMemory.W32(o + 0x58, 0x1234);
+        GuestMemory.W32(o + 0x54, h.Callback);
+        GuestMemory.W32(o + 0x58, 0x1234);
         return o;
     }
 
@@ -113,7 +149,11 @@ public sealed class DbutilHleTests(GuestMemoryFixture fx, ITestOutputHelper outp
     public void MatchesTheFirmwareModule()
     {
         using var h = new Harness(fx);
-        if (!h.HasModule) output.WriteLine("dbutil.suprx not installed: HLE only");
+        if (!h.HasModule)
+        {
+            output.WriteLine("dbutil.suprx not installed: HLE only");
+        }
+
         uint ctor = h.HleStub(0xC4BD9753, "ScePafThread");
         uint name = h.Emu.Memory.Alloc(16, "dbutil test name");
         GuestMemory.WriteCString(name, "test");
@@ -129,19 +169,42 @@ public sealed class DbutilHleTests(GuestMemoryFixture fx, ITestOutputHelper outp
                     uint o = MakeObject(h, t, ctor, name, mutex);
                     uint fn = lle ? h.Lle(nid) : h.HleStub(nid, Lib);
                     uint r = t.CallGuest(fn, [o, .. args]);
-                    if (label == "clear 30") r -= o; // the object's own address comes back
-                    if (!hasResult) r = 0;
+                    if (label == "clear 30")
+                    {
+                        r -= o; // the object's own address comes back
+                    }
+
+                    if (!hasResult)
+                    {
+                        r = 0;
+                    }
+
                     var bytes = GuestMemory.ReadSpan(o, (int)ObjSize).ToArray();
                     // the RMutex words hold kernel ids that differ between the two objects
-                    if (mutex != 0) Array.Clear(bytes, (int)mutex, 0x20);
+                    if (mutex != 0)
+                    {
+                        Array.Clear(bytes, (int)mutex, 0x20);
+                    }
+
                     results.Add((r, bytes, string.Join(";", h.Calls)));
                 }
                 output.WriteLine($"{label}: r={results[^1].R:X} {results[^1].Calls}");
                 if (results.Count == 2)
                 {
-                    if (results[0].R != results[1].R) diffs.Add($"{label}: result {results[0].R:X} (module) vs {results[1].R:X} (HLE)");
-                    if (!results[0].Bytes.AsSpan().SequenceEqual(results[1].Bytes)) diffs.Add($"{label}: object bytes differ");
-                    if (results[0].Calls != results[1].Calls) diffs.Add($"{label}: callbacks {results[0].Calls} vs {results[1].Calls}");
+                    if (results[0].R != results[1].R)
+                    {
+                        diffs.Add($"{label}: result {results[0].R:X} (module) vs {results[1].R:X} (HLE)");
+                    }
+
+                    if (!results[0].Bytes.AsSpan().SequenceEqual(results[1].Bytes))
+                    {
+                        diffs.Add($"{label}: object bytes differ");
+                    }
+
+                    if (results[0].Calls != results[1].Calls)
+                    {
+                        diffs.Add($"{label}: callbacks {results[0].Calls} vs {results[1].Calls}");
+                    }
                 }
             }
         });

@@ -20,7 +20,9 @@ public interface ITextCapture
     void OnKey(Key key);
     void OnChar(char c);
     /// <summary>A left click at <paramref name="x"/>, <paramref name="y"/> in window image (framebuffer) pixels.</summary>
-    void OnClick(int x, int y) { }
+    void OnClick(int x, int y)
+    {
+    }
 }
 
 /// <summary>Desktop window: Vulkan surface, keyboard/gamepad/mouse input.</summary>
@@ -87,7 +89,10 @@ public sealed unsafe class WindowHost : IPresentationSurface, IInputBackend, IDi
         {
             _hostInput.TitleId = value;
             CaptureMouse(_hostInput.MouseIsStick);
-            if (_hostInput.MouseIsStick) MouseModeChanged?.Invoke(MouseModeNotice());
+            if (_hostInput.MouseIsStick)
+            {
+                MouseModeChanged?.Invoke(MouseModeNotice());
+            }
         }
     }
 
@@ -115,8 +120,14 @@ public sealed unsafe class WindowHost : IPresentationSurface, IInputBackend, IDi
     {
         get
         {
-            try { return _input?.Keyboards.FirstOrDefault()?.ClipboardText ?? ""; }
-            catch (Exception) { return ""; }
+            try
+            {
+                return _input?.Keyboards.FirstOrDefault()?.ClipboardText ?? "";
+            }
+            catch (Exception)
+            {
+                return "";
+            }
         }
     }
 
@@ -155,7 +166,11 @@ public sealed unsafe class WindowHost : IPresentationSurface, IInputBackend, IDi
         _window.Load += OnLoad;
         _window.Closing += () =>
         {
-            if (CloseVeto?.Invoke() == true) { _window.IsClosing = false; return; }
+            if (CloseVeto?.Invoke() == true)
+            {
+                _window.IsClosing = false;
+                return;
+            }
             Closing?.Invoke();
         };
         _window.FramebufferResize += s => { _fbW = s.X; _fbH = s.Y; Resized?.Invoke(); };
@@ -163,8 +178,16 @@ public sealed unsafe class WindowHost : IPresentationSurface, IInputBackend, IDi
         // (one toggle per press) would be taken for key repeat and lost
         _window.FocusChanged += focused =>
         {
-            if (focused) return;
-            if (_f8Down || _f11Down || _graphicsKeysDown.Count > 0) Log.Info("Window: focus lost with F8/F11/F1-F3 held: their release is assumed");
+            if (focused)
+            {
+                return;
+            }
+
+            if (_f8Down || _f11Down || _graphicsKeysDown.Count > 0)
+            {
+                Log.Info("Window: focus lost with F8/F11/F1-F3 held: their release is assumed");
+            }
+
             _f8Down = _f11Down = false;
             _graphicsKeysDown.Clear();
         };
@@ -178,11 +201,18 @@ public sealed unsafe class WindowHost : IPresentationSurface, IInputBackend, IDi
                 double gapMs = (t - _lastUpdate) * 1000.0 / System.Diagnostics.Stopwatch.Frequency;
                 var gc = GC.GetTotalPauseDuration();
                 if (gapMs >= 1000)
+                {
                     Log.Warn($"Window: the window thread did not run for {gapMs:F0} ms; garbage collection paused every thread for {(gc - _gcPauseAtUpdate).TotalMilliseconds:F0} ms of it (moving or resizing the window also holds it)");
+                }
+
                 _gcPauseAtUpdate = gc;
                 MaxUpdateGapMs = Math.Max(MaxUpdateGapMs, gapMs);
             }
-            else _gcPauseAtUpdate = GC.GetTotalPauseDuration();
+            else
+            {
+                _gcPauseAtUpdate = GC.GetTotalPauseDuration();
+            }
+
             _lastUpdate = t;
             DrainWindowWork();
             ApplyPendingTitle();
@@ -193,7 +223,11 @@ public sealed unsafe class WindowHost : IPresentationSurface, IInputBackend, IDi
                 _lastHotkeyPoll = now;
                 PollPadHotkeys();
             }
-            if (now - _lastFallbackPoll < System.Diagnostics.Stopwatch.Frequency / 250) return;
+            if (now - _lastFallbackPoll < System.Diagnostics.Stopwatch.Frequency / 250)
+            {
+                return;
+            }
+
             _lastFallbackPoll = now;
             PollFallbackGamepad();
         };
@@ -220,27 +254,54 @@ public sealed unsafe class WindowHost : IPresentationSurface, IInputBackend, IDi
     /// </summary>
     static void SelectGlfwPlatform()
     {
-        if (!OperatingSystem.IsLinux() && !OperatingSystem.IsFreeBSD()) return;
+        if (!OperatingSystem.IsLinux() && !OperatingSystem.IsFreeBSD())
+        {
+            return;
+        }
+
         var want = Environment.GetEnvironmentVariable(EnvVars.GlfwPlatform)?.Trim().ToLowerInvariant();
         if (string.IsNullOrEmpty(want))
         {
             bool wayland = !string.IsNullOrEmpty(Environment.GetEnvironmentVariable("WAYLAND_DISPLAY"));
             bool x11 = !string.IsNullOrEmpty(Environment.GetEnvironmentVariable("DISPLAY"));
-            if (!wayland || !x11) return;
+            if (!wayland || !x11)
+            {
+                return;
+            }
+
             var missing = new[] { "libwayland-client.so.0", "libwayland-cursor.so.0", "libxkbcommon.so.0" }.Where(l => !CanLoad(l)).ToList();
-            if (missing.Count == 0) return;
+            if (missing.Count == 0)
+            {
+                return;
+            }
+
             Log.Info($"Window: Wayland libraries missing ({string.Join(", ", missing)}), using X11");
             want = "x11";
         }
         const int GLFW_PLATFORM = 0x00050003;
-        int platform = want switch { "x11" => 0x00060004, "wayland" => 0x00060003, _ => 0x00060000 /* any */ };
-        try { Silk.NET.GLFW.Glfw.GetApi().InitHint((Silk.NET.GLFW.InitHint)GLFW_PLATFORM, platform); }
-        catch (Exception e) { Log.Warn($"Window: could not select the GLFW platform '{want}': {e.Message}"); }
+        int platform = want switch
+        {
+            "x11" => 0x00060004,
+            "wayland" => 0x00060003,
+            _ => 0x00060000 /* any */
+        };
+        try
+        {
+            Silk.NET.GLFW.Glfw.GetApi().InitHint((Silk.NET.GLFW.InitHint)GLFW_PLATFORM, platform);
+        }
+        catch (Exception e)
+        {
+            Log.Warn($"Window: could not select the GLFW platform '{want}': {e.Message}");
+        }
     }
 
     static bool CanLoad(string lib)
     {
-        if (!NativeLibrary.TryLoad(lib, out var h)) return false;
+        if (!NativeLibrary.TryLoad(lib, out var h))
+        {
+            return false;
+        }
+
         NativeLibrary.Free(h);
         return true;
     }
@@ -258,8 +319,16 @@ public sealed unsafe class WindowHost : IPresentationSurface, IInputBackend, IDi
         set
         {
             _title = value;
-            if (_windowThread == Environment.CurrentManagedThreadId) { Volatile.Write(ref _pendingTitle, null); _window.Title = value; }
-            else { Volatile.Write(ref _pendingTitle, value); _windowWake.Set(); }
+            if (_windowThread == Environment.CurrentManagedThreadId)
+            {
+                Volatile.Write(ref _pendingTitle, null);
+                _window.Title = value;
+            }
+            else
+            {
+                Volatile.Write(ref _pendingTitle, value);
+                _windowWake.Set();
+            }
         }
     }
     string _title = "";
@@ -267,7 +336,10 @@ public sealed unsafe class WindowHost : IPresentationSurface, IInputBackend, IDi
 
     void ApplyPendingTitle()
     {
-        if (Interlocked.Exchange(ref _pendingTitle, null) is { } t) _window.Title = t;
+        if (Interlocked.Exchange(ref _pendingTitle, null) is { } t)
+        {
+            _window.Title = t;
+        }
     }
 
     void OnLoad()
@@ -295,39 +367,99 @@ public sealed unsafe class WindowHost : IPresentationSurface, IInputBackend, IDi
                 // bound to a Vita button still presses it (the dialog reads the mapped controller)
                 if (TextCapture is { } capture && !_mouseCaptured)
                 {
-                    if (b == MouseButton.Left) { var (fx, fy) = ToFramebuffer(mouse.Position); capture.OnClick(fx, fy); }
-                    if (b == MouseButton.Left || MouseKey(b) is not { } bound || !_hostInput.IsKeyBound(bound)) return;
+                    if (b == MouseButton.Left)
+                    {
+                        var (fx, fy) = ToFramebuffer(mouse.Position);
+                        capture.OnClick(fx, fy);
+                    }
+                    if (b == MouseButton.Left || MouseKey(b) is not { } bound || !_hostInput.IsKeyBound(bound))
+                    {
+                        return;
+                    }
                 }
-                if (!_mouseCaptured && _hostInput.MouseIsStick && b == MouseButton.Left) { CaptureMouse(true); return; }
+                if (!_mouseCaptured && _hostInput.MouseIsStick && b == MouseButton.Left)
+                {
+                    CaptureMouse(true);
+                    return;
+                }
                 if (MouseKey(b) is { } key && _hostInput.IsKeyBound(key))
                 {
                     _mouseKeysDown.Add(b);
-                    if (_hostInput.IsHotkeyKey(VitaControl.PauseEmulation, key)) PauseToggled?.Invoke();
-                    else _hostInput.KeyChanged(key, true);
+                    if (_hostInput.IsHotkeyKey(VitaControl.PauseEmulation, key))
+                    {
+                        PauseToggled?.Invoke();
+                    }
+                    else
+                    {
+                        _hostInput.KeyChanged(key, true);
+                    }
+
                     return;
                 }
-                if (_mouseCaptured) return;
-                if (b == MouseButton.Left) UpdateTouch(mouse.Position, true, false);
-                else if (b == MouseButton.Right) UpdateTouch(mouse.Position, true, true);
-                else if (b == MouseButton.Middle) _look = mouse.Position; // middle button held = mouse look (virtual motion)
+                if (_mouseCaptured)
+                {
+                    return;
+                }
+
+                if (b == MouseButton.Left)
+                {
+                    UpdateTouch(mouse.Position, true, false);
+                }
+                else if (b == MouseButton.Right)
+                {
+                    UpdateTouch(mouse.Position, true, true);
+                }
+                else if (b == MouseButton.Middle)
+                {
+                    _look = mouse.Position; // middle button held = mouse look (virtual motion)
+                }
             };
             m.MouseUp += (mouse, b) =>
             {
-                if (_mouseKeysDown.Remove(b)) { if (MouseKey(b) is { } key) _hostInput.KeyChanged(key, false); return; }
-                if (b == MouseButton.Left) UpdateTouch(mouse.Position, false, false);
-                else if (b == MouseButton.Right) UpdateTouch(mouse.Position, false, true);
-                else if (b == MouseButton.Middle) _look = null;
+                if (_mouseKeysDown.Remove(b))
+                {
+                    if (MouseKey(b) is { } key)
+                    {
+                        _hostInput.KeyChanged(key, false);
+                    }
+
+                    return;
+                }
+                if (b == MouseButton.Left)
+                {
+                    UpdateTouch(mouse.Position, false, false);
+                }
+                else if (b == MouseButton.Right)
+                {
+                    UpdateTouch(mouse.Position, false, true);
+                }
+                else if (b == MouseButton.Middle)
+                {
+                    _look = null;
+                }
             };
             m.MouseMove += (mouse, pos) =>
             {
                 if (_mouseCaptured)
                 {
-                    if (_mouseLast is { } prev) _hostInput.MouseMoved(pos.X - prev.X, pos.Y - prev.Y);
+                    if (_mouseLast is { } prev)
+                    {
+                        _hostInput.MouseMoved(pos.X - prev.X, pos.Y - prev.Y);
+                    }
+
                     _mouseLast = pos;
                     return;
                 }
-                if (mouse.IsButtonPressed(MouseButton.Left) && !_mouseKeysDown.Contains(MouseButton.Left)) UpdateTouch(pos, true, false);
-                if (mouse.IsButtonPressed(MouseButton.Right) && !_mouseKeysDown.Contains(MouseButton.Right)) UpdateTouch(pos, true, true);
+                if (mouse.IsButtonPressed(MouseButton.Left) && !_mouseKeysDown.Contains(MouseButton.Left))
+                {
+                    UpdateTouch(pos, true, false);
+                }
+
+                if (mouse.IsButtonPressed(MouseButton.Right) && !_mouseKeysDown.Contains(MouseButton.Right))
+                {
+                    UpdateTouch(pos, true, true);
+                }
+
                 if (_look is { } last && mouse.IsButtonPressed(MouseButton.Middle))
                 {
                     _hostInput.MouseLook(pos.X - last.X, pos.Y - last.Y);
@@ -356,16 +488,32 @@ public sealed unsafe class WindowHost : IPresentationSurface, IInputBackend, IDi
     /// <summary>Captures (hidden, raw unbounded motion) or releases the cursor. Window thread.</summary>
     void CaptureMouse(bool capture)
     {
-        if (_mouseDevice is not { } m || capture == _mouseCaptured) return;
+        if (_mouseDevice is not { } m || capture == _mouseCaptured)
+        {
+            return;
+        }
+
         try
         {
             m.Cursor.CursorMode = capture ? (m.Cursor.IsSupported(CursorMode.Raw) ? CursorMode.Raw : CursorMode.Disabled) : CursorMode.Normal;
         }
-        catch (Exception e) { Log.Warn($"Window: could not {(capture ? "capture" : "release")} the mouse cursor: {e.Message}"); return; }
+        catch (Exception e)
+        {
+            Log.Warn($"Window: could not {(capture ? "capture" : "release")} the mouse cursor: {e.Message}");
+            return;
+        }
         _mouseCaptured = capture;
         _mouseLast = null;
-        lock (_inputLock) { _touches.Clear(); _backTouches.Clear(); }
-        if (!capture) _hostInput.MouseReleased();
+        lock (_inputLock)
+        {
+            _touches.Clear();
+            _backTouches.Clear();
+        }
+        if (!capture)
+        {
+            _hostInput.MouseReleased();
+        }
+
         Log.Info(capture ? $"Window: mouse captured ({MouseSettings.Label(_hostInput.MouseMode)}; {_hostInput.MouseSettings.ReleaseKey} releases it, a click captures it again)" : "Window: mouse released");
     }
 
@@ -380,21 +528,38 @@ public sealed unsafe class WindowHost : IPresentationSurface, IInputBackend, IDi
     /// <summary>Title bar / taskbar icon. macOS (bundle icon) and Wayland (desktop file) have no per-window icon.</summary>
     void SetIcon()
     {
-        if (OperatingSystem.IsMacOS()) return;
+        if (OperatingSystem.IsMacOS())
+        {
+            return;
+        }
+
         try
         {
             var icons = AppIcon.ForGlfw();
-            if (icons.Length > 0) _window.SetWindowIcon(icons);
+            if (icons.Length > 0)
+            {
+                _window.SetWindowIcon(icons);
+            }
         }
-        catch (Exception e) { Log.Warn($"Window: could not set the window icon: {e.Message}"); }
+        catch (Exception e)
+        {
+            Log.Warn($"Window: could not set the window icon: {e.Message}");
+        }
     }
 
     public void Run()
     {
         _windowThread = Environment.CurrentManagedThreadId;
         VitaSharp.Core.Util.NativeThread.Register("Window");
-        try { _window.Run(); }
-        finally { _windowThread = -1; DrainWindowWork(); }
+        try
+        {
+            _window.Run();
+        }
+        finally
+        {
+            _windowThread = -1;
+            DrainWindowWork();
+        }
     }
 
     public void Close() => _window.Close();
@@ -403,7 +568,11 @@ public sealed unsafe class WindowHost : IPresentationSurface, IInputBackend, IDi
     /// saved), which <see cref="Close"/> skips. Window thread (scripted "Close" key).</summary>
     public void RequestClose()
     {
-        if (CloseVeto?.Invoke() == true) return;
+        if (CloseVeto?.Invoke() == true)
+        {
+            return;
+        }
+
         _window.Close();
     }
 
@@ -418,14 +587,37 @@ public sealed unsafe class WindowHost : IPresentationSurface, IInputBackend, IDi
     /// </summary>
     public void RunOnWindowThread(Action work)
     {
-        if (_windowThread == -1 || _windowThread == Environment.CurrentManagedThreadId) { work(); return; }
+        if (_windowThread == -1 || _windowThread == Environment.CurrentManagedThreadId)
+        {
+            work();
+            return;
+        }
         Exception? error = null;
         using var done = new ManualResetEventSlim();
-        _windowWork.Enqueue((() => { try { work(); } catch (Exception e) { error = e; } }, done));
+        _windowWork.Enqueue((() =>
+        {
+            try
+            {
+                work();
+            }
+            catch (Exception e)
+            {
+                error = e;
+            }
+        }, done));
         _windowWake.Set();
         while (!done.Wait(50))
-            if (_windowThread == -1) DrainWindowWork(); // the loop ended meanwhile
-        if (error != null) System.Runtime.ExceptionServices.ExceptionDispatchInfo.Throw(error);
+        {
+            if (_windowThread == -1)
+            {
+                DrainWindowWork(); // the loop ended meanwhile
+            }
+        }
+
+        if (error != null)
+        {
+            System.Runtime.ExceptionServices.ExceptionDispatchInfo.Throw(error);
+        }
     }
 
     void DrainWindowWork()
@@ -445,7 +637,11 @@ public sealed unsafe class WindowHost : IPresentationSurface, IInputBackend, IDi
         {
             var names = _window.VkSurface!.GetRequiredExtensions(out uint count);
             var list = new string[count];
-            for (int i = 0; i < count; i++) list[i] = Marshal.PtrToStringAnsi((nint)names[i])!;
+            for (int i = 0; i < count; i++)
+            {
+                list[i] = Marshal.PtrToStringAnsi((nint)names[i])!;
+            }
+
             return list;
         }
     }
@@ -475,7 +671,11 @@ public sealed unsafe class WindowHost : IPresentationSurface, IInputBackend, IDi
     {
         bool shift = name.StartsWith("Shift+", StringComparison.Ordinal);
         var key = Enum.Parse<Key>(shift ? name[6..] : name);
-        if (TextCapture is { } capture) { capture.OnKey(key); return; }
+        if (TextCapture is { } capture)
+        {
+            capture.OnKey(key);
+            return;
+        }
         (key == Key.F7 ? LoadStateKey : SaveStateKey)?.Invoke(key == Key.F6 ? -1 : shift ? 1 : 0);
     }
 
@@ -483,37 +683,80 @@ public sealed unsafe class WindowHost : IPresentationSurface, IInputBackend, IDi
     {
         if (key == Key.F11)
         {
-            if (down && !_f11Down) ToggleFullscreen(); // one toggle per press, whatever key repeat sends
+            if (down && !_f11Down)
+            {
+                ToggleFullscreen(); // one toggle per press, whatever key repeat sends
+            }
+
             _f11Down = down;
             return;
         }
-        if (key == Key.F10) { if (down) DiagnosticRequested?.Invoke(); return; }
-        if (key == Key.F9) { if (down) DebugModeToggled?.Invoke(); return; }
+        if (key == Key.F10)
+        {
+            if (down)
+            {
+                DiagnosticRequested?.Invoke();
+            }
+
+            return;
+        }
+        if (key == Key.F9)
+        {
+            if (down)
+            {
+                DebugModeToggled?.Invoke();
+            }
+
+            return;
+        }
         if (key == Key.F8)
         {
             // F8 alone: "Gravar tudo"; Ctrl+F8: the GPU dump (one toggle per press, whatever key repeat sends)
-            if (down && !_f8Down) PressF8(IsControlDown);
+            if (down && !_f8Down)
+            {
+                PressF8(IsControlDown);
+            }
+
             _f8Down = down;
             return;
         }
         if (key is Key.F1 or Key.F2 or Key.F3 && TextCapture == null)
         {
             // one change per press, whatever key repeat sends
-            if (!down) _graphicsKeysDown.Remove(key);
-            else if (_graphicsKeysDown.Add(key)) GraphicsKey?.Invoke((IsShiftDown ? "Shift+" : "") + key);
+            if (!down)
+            {
+                _graphicsKeysDown.Remove(key);
+            }
+            else if (_graphicsKeysDown.Add(key))
+            {
+                GraphicsKey?.Invoke((IsShiftDown ? "Shift+" : "") + key);
+            }
+
             return;
         }
         if (key is Key.F5 or Key.F6 or Key.F7 && TextCapture == null)
         {
-            if (down) (key == Key.F7 ? LoadStateKey : SaveStateKey)?.Invoke(key == Key.F6 ? -1 : IsShiftDown ? 1 : 0);
+            if (down)
+            {
+                (key == Key.F7 ? LoadStateKey : SaveStateKey)?.Invoke(key == Key.F6 ? -1 : IsShiftDown ? 1 : 0);
+            }
+
             return;
         }
-        if (down && TextCapture is { } capture) { capture.OnKey(key); return; }
+        if (down && TextCapture is { } capture)
+        {
+            capture.OnKey(key);
+            return;
+        }
         // the mouse keys never reach the game: release the captured cursor, change the mouse mode
         var mouse = _hostInput.MouseSettings;
         if (key.ToString() == mouse.ReleaseKey && _mouseCaptured)
         {
-            if (down) CaptureMouse(false);
+            if (down)
+            {
+                CaptureMouse(false);
+            }
+
             return;
         }
         if (key.ToString() == mouse.ToggleKey)
@@ -530,8 +773,15 @@ public sealed unsafe class WindowHost : IPresentationSurface, IInputBackend, IDi
         // the pause hotkey never reaches the game; a held key toggles once (key repeat is ignored)
         if (_hostInput.IsHotkeyKey(VitaControl.PauseEmulation, key.ToString()))
         {
-            if (!down) _pauseKeysDown.Remove(key);
-            else if (_pauseKeysDown.Add(key)) PauseToggled?.Invoke();
+            if (!down)
+            {
+                _pauseKeysDown.Remove(key);
+            }
+            else if (_pauseKeysDown.Add(key))
+            {
+                PauseToggled?.Invoke();
+            }
+
             return;
         }
         // the mapping (input.json keyboard profile, else the historic default) uses Silk.NET key names
@@ -542,7 +792,11 @@ public sealed unsafe class WindowHost : IPresentationSurface, IInputBackend, IDi
     void PollPadHotkeys()
     {
         bool held = _hostInput.PadHotkeyHeld(VitaControl.PauseEmulation);
-        if (held && !_padPauseHeld) PauseToggled?.Invoke();
+        if (held && !_padPauseHeld)
+        {
+            PauseToggled?.Invoke();
+        }
+
         _padPauseHeld = held;
     }
 
@@ -566,7 +820,10 @@ public sealed unsafe class WindowHost : IPresentationSurface, IInputBackend, IDi
             {
                 var monitor = glfw.GetPrimaryMonitor();
                 var mode = glfw.GetVideoMode(monitor);
-                if (mode != null) glfw.SetWindowMonitor(handle, monitor, 0, 0, mode->Width, mode->Height, mode->RefreshRate);
+                if (mode != null)
+                {
+                    glfw.SetWindowMonitor(handle, monitor, 0, 0, mode->Width, mode->Height, mode->RefreshRate);
+                }
             }
             Log.Info($"Window: fullscreen ({_window.Size.X}x{_window.Size.Y})");
             return;
@@ -574,14 +831,20 @@ public sealed unsafe class WindowHost : IPresentationSurface, IInputBackend, IDi
         _fullscreen = false;
         var size = _windowedSize;
         Vector2D<int> pos;
-        if (_windowedPosition is { } p) pos = p;
+        if (_windowedPosition is { } p)
+        {
+            pos = p;
+        }
         else
         {
             var area = _window.Monitor?.Bounds.Size ?? size;
             pos = new Vector2D<int>(Math.Max(0, (area.X - size.X) / 2), Math.Max(0, (area.Y - size.Y) / 2));
         }
         _window.WindowState = WindowState.Normal;
-        if (handle != null) glfw.SetWindowMonitor(handle, null, pos.X, pos.Y, size.X, size.Y, Silk.NET.GLFW.Glfw.DontCare);
+        if (handle != null)
+        {
+            glfw.SetWindowMonitor(handle, null, pos.X, pos.Y, size.X, size.Y, Silk.NET.GLFW.Glfw.DontCare);
+        }
         else
         {
             _window.Size = size;
@@ -609,7 +872,10 @@ public sealed unsafe class WindowHost : IPresentationSurface, IInputBackend, IDi
         {
             var list = back ? _backTouches : _touches;
             list.Clear();
-            if (down && x is >= 0 and <= 1 && y is >= 0 and <= 1) list.Add(new TouchPoint(back ? 2 : 1, x, y));
+            if (down && x is >= 0 and <= 1 && y is >= 0 and <= 1)
+            {
+                list.Add(new TouchPoint(back ? 2 : 1, x, y));
+            }
         }
     }
 
@@ -619,10 +885,18 @@ public sealed unsafe class WindowHost : IPresentationSurface, IInputBackend, IDi
     /// </summary>
     void PollFallbackGamepad()
     {
-        if (_hostInput.ControllersAvailable || _input == null) return;
+        if (_hostInput.ControllersAvailable || _input == null)
+        {
+            return;
+        }
+
         foreach (var g in _input.Gamepads)
         {
-            if (!g.IsConnected) continue;
+            if (!g.IsConnected)
+            {
+                continue;
+            }
+
             _fallbackPad.Clear();
             _fallbackPad.IsGamepad = true;
             foreach (var b in g.Buttons)
@@ -646,13 +920,32 @@ public sealed unsafe class WindowHost : IPresentationSurface, IInputBackend, IDi
                     ButtonName.RightStick => PadButton.RightStick,
                     _ => null,
                 };
-                if (pb is { } p) _fallbackPad.Buttons[(int)p] = b.Pressed;
+                if (pb is { } p)
+                {
+                    _fallbackPad.Buttons[(int)p] = b.Pressed;
+                }
             }
-            if (g.Thumbsticks.Count > 0) { _fallbackPad.Axes[0] = g.Thumbsticks[0].X; _fallbackPad.Axes[1] = g.Thumbsticks[0].Y; }
-            if (g.Thumbsticks.Count > 1) { _fallbackPad.Axes[2] = g.Thumbsticks[1].X; _fallbackPad.Axes[3] = g.Thumbsticks[1].Y; }
+            if (g.Thumbsticks.Count > 0)
+            {
+                _fallbackPad.Axes[0] = g.Thumbsticks[0].X;
+                _fallbackPad.Axes[1] = g.Thumbsticks[0].Y;
+            }
+            if (g.Thumbsticks.Count > 1)
+            {
+                _fallbackPad.Axes[2] = g.Thumbsticks[1].X;
+                _fallbackPad.Axes[3] = g.Thumbsticks[1].Y;
+            }
             // GLFW triggers rest at -1
-            if (g.Triggers.Count > 0) _fallbackPad.Axes[4] = Math.Clamp((g.Triggers[0].Position + 1) / 2, 0, 1);
-            if (g.Triggers.Count > 1) _fallbackPad.Axes[5] = Math.Clamp((g.Triggers[1].Position + 1) / 2, 0, 1);
+            if (g.Triggers.Count > 0)
+            {
+                _fallbackPad.Axes[4] = Math.Clamp((g.Triggers[0].Position + 1) / 2, 0, 1);
+            }
+
+            if (g.Triggers.Count > 1)
+            {
+                _fallbackPad.Axes[5] = Math.Clamp((g.Triggers[1].Position + 1) / 2, 0, 1);
+            }
+
             _hostInput.SetFallbackPad(_fallbackPad, g.Name, g.Name);
             return;
         }
@@ -678,7 +971,10 @@ public sealed unsafe class WindowHost : IPresentationSurface, IInputBackend, IDi
         {
             var list = back ? _backTouches : _touches;
             n = Math.Min(list.Count, dest.Length);
-            for (int i = 0; i < n; i++) dest[i] = list[i];
+            for (int i = 0; i < n; i++)
+            {
+                dest[i] = list[i];
+            }
         }
         // touch pad fingers and buttons mapped to a touch point
         var m = _hostInput.Poll();

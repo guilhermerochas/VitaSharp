@@ -20,12 +20,24 @@ static class GameWindowActivator
     {
         try
         {
-            if (p.HasExited) return "focus: the game has exited";
-            if (OperatingSystem.IsWindows()) return ActivateWin32(p.Id);
+            if (p.HasExited)
+            {
+                return "focus: the game has exited";
+            }
+
+            if (OperatingSystem.IsWindows())
+            {
+                return ActivateWin32(p.Id);
+            }
+
             if (GameWindowFocus.ActivateCommand(p.Id, OperatingSystem.IsLinux(), OperatingSystem.IsMacOS()) is { } cmd)
             {
                 var psi = new ProcessStartInfo(cmd.File) { UseShellExecute = false, CreateNoWindow = true, RedirectStandardOutput = true, RedirectStandardError = true };
-                foreach (var a in cmd.Args) psi.ArgumentList.Add(a);
+                foreach (var a in cmd.Args)
+                {
+                    psi.ArgumentList.Add(a);
+                }
+
                 using var tool = Process.Start(psi);
                 tool?.WaitForExit(3000);
                 return $"focus: {cmd.File} pid {p.Id} -> exit {(tool is { HasExited: true } ? tool.ExitCode.ToString(System.Globalization.CultureInfo.InvariantCulture) : "?")}";
@@ -41,15 +53,24 @@ static class GameWindowActivator
     /// <summary>The game window of process <paramref name="pid"/> (0 when it has none yet).</summary>
     public static nint FindWindow(int pid)
     {
-        if (!OperatingSystem.IsWindows()) return 0;
+        if (!OperatingSystem.IsWindows())
+        {
+            return 0;
+        }
+
         var found = new List<GameWindowFocus.Candidate>();
         var cls = new StringBuilder(256);
         var title = new StringBuilder(256);
         EnumWindows((h, _) =>
         {
             GetWindowThreadProcessId(h, out uint owner);
-            if (owner != pid) return true;
-            cls.Clear(); title.Clear();
+            if (owner != pid)
+            {
+                return true;
+            }
+
+            cls.Clear();
+            title.Clear();
             GetClassName(h, cls, cls.Capacity);
             GetWindowText(h, title, title.Capacity);
             found.Add(new(h, cls.ToString(), title.ToString(), IsWindowVisible(h), GetWindow(h, GW_OWNER) != 0));
@@ -65,12 +86,24 @@ static class GameWindowActivator
     static string ActivateWin32(int pid)
     {
         var hwnd = FindWindow(pid);
-        if (hwnd == 0) return $"focus: pid {pid} has no window yet";
+        if (hwnd == 0)
+        {
+            return $"focus: pid {pid} has no window yet";
+        }
+
         string before = Describe(hwnd);
         AllowSetForegroundWindow((uint)pid);
         var step = GameWindowFocus.Plan(IsIconic(hwnd), IsWindowVisible(hwnd));
-        if (step == GameWindowFocus.Step.KeepHidden) return $"focus: pid {pid} window 0x{hwnd:X} is hidden (test window), left hidden";
-        if (step == GameWindowFocus.Step.Restore) ShowWindow(hwnd, SW_RESTORE);
+        if (step == GameWindowFocus.Step.KeepHidden)
+        {
+            return $"focus: pid {pid} window 0x{hwnd:X} is hidden (test window), left hidden";
+        }
+
+        if (step == GameWindowFocus.Step.Restore)
+        {
+            ShowWindow(hwnd, SW_RESTORE);
+        }
+
         bool fg = SetForegroundWindow(hwnd);
         if (!fg)
         {
@@ -110,5 +143,11 @@ static class GameWindowActivator
 
     /// <summary>ui-render's focus check: minimizes the window the way the user would (it becomes a taskbar button
     /// of the desktop it runs on).</summary>
-    public static void MinimizeForTests(nint hwnd) { if (hwnd != 0) ShowWindow(hwnd, 6 /* SW_MINIMIZE */); }
+    public static void MinimizeForTests(nint hwnd)
+    {
+        if (hwnd != 0)
+        {
+            ShowWindow(hwnd, 6 /* SW_MINIMIZE */);
+        }
+    }
 }

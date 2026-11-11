@@ -171,7 +171,11 @@ public sealed class PigletHleTests(GuestMemoryFixture fx, ITestOutputHelper outp
             h.Call("glBindBuffer", GL_ARRAY_BUFFER, a);
             Assert.True(h.B("glIsBuffer", a));
             uint data = h.Mem(16);
-            for (uint i = 0; i < 16; i++) GuestMemory.Write(data + i, (byte)i);
+            for (uint i = 0; i < 16; i++)
+            {
+                GuestMemory.Write(data + i, (byte)i);
+            }
+
             h.Call("glBufferData", GL_ARRAY_BUFFER, 16, data, 0x1234u);
             Assert.Equal(GL_INVALID_ENUM, h.U("glGetError"));
             h.Call("glBufferData", GL_ARRAY_BUFFER, 16, data, GL_STATIC_DRAW);
@@ -213,7 +217,11 @@ public sealed class PigletHleTests(GuestMemoryFixture fx, ITestOutputHelper outp
             // 3x2 RGB with 4-byte row alignment: rows of 9 bytes padded to 12
             uint px = h.Mem(24);
             byte[] rgb = [1, 2, 3, 4, 5, 6, 7, 8, 9, 0, 0, 0, 11, 12, 13, 14, 15, 16, 17, 18, 19, 0, 0, 0];
-            for (int i = 0; i < rgb.Length; i++) GuestMemory.Write(px + (uint)i, rgb[i]);
+            for (int i = 0; i < rgb.Length; i++)
+            {
+                GuestMemory.Write(px + (uint)i, rgb[i]);
+            }
+
             h.Call("glTexImage2D", GL_TEXTURE_2D, 0, (int)GL_RGB, 3, 2, 0, GL_RGB, GL_UNSIGNED_BYTE, px);
             Assert.Equal(GL_NO_ERROR, h.U("glGetError"));
             var t = h.Piglet.Texture(tex)!;
@@ -249,7 +257,11 @@ public sealed class PigletHleTests(GuestMemoryFixture fx, ITestOutputHelper outp
             // DXT1 8x8: 2x2 blocks of 8 bytes, morton ordered in a swizzled texture
             h.Call("glBindTexture", GL_TEXTURE_2D, tex);
             uint blocks = h.Mem(32);
-            for (uint i = 0; i < 4; i++) GuestMemory.W32(blocks + i * 8, 0x11111111 * (i + 1));
+            for (uint i = 0; i < 4; i++)
+            {
+                GuestMemory.W32(blocks + i * 8, 0x11111111 * (i + 1));
+            }
+
             h.Call("glCompressedTexImage2D", GL_TEXTURE_2D, 0, GL_COMPRESSED_RGBA_S3TC_DXT1, 8, 8, 0, 31, blocks);
             Assert.Equal(GL_INVALID_VALUE, h.U("glGetError")); // wrong image size
             h.Call("glCompressedTexImage2D", GL_TEXTURE_2D, 0, GL_COMPRESSED_RGBA_S3TC_DXT1, 8, 8, 0, 32, blocks);
@@ -448,8 +460,15 @@ public sealed class PigletHleTests(GuestMemoryFixture fx, ITestOutputHelper outp
     public void Draw_TriangleAndTexturedQuad_ReadBack()
     {
         IGpuBackend backend;
-        try { backend = PigletHarness.NewRenderer(); }
-        catch (Exception e) { output.WriteLine($"no Vulkan device: {e.Message}"); return; }
+        try
+        {
+            backend = PigletHarness.NewRenderer();
+        }
+        catch (Exception e)
+        {
+            output.WriteLine($"no Vulkan device: {e.Message}");
+            return;
+        }
         using var h = new PigletHarness(fx, true, backend);
         byte[]? pixels = null, quadPixels = null;
         h.Run(() =>
@@ -466,7 +485,11 @@ public sealed class PigletHleTests(GuestMemoryFixture fx, ITestOutputHelper outp
             h.Call("glClear", GL_COLOR_BUFFER_BIT | GL_DEPTH_BUFFER_BIT);
             // a red triangle on the left half (client arrays): (-1,-1) (0,-1) (-0.5, 1)
             uint pos = h.Floats(-1, -1, 0, -1, -0.5f, 1), col = h.Mem(12);
-            for (int i = 0; i < 3; i++) GuestMemory.W32(col + (uint)i * 4, 0xFF0000FF);
+            for (int i = 0; i < 3; i++)
+            {
+                GuestMemory.W32(col + (uint)i * 4, 0xFF0000FF);
+            }
+
             h.Call("glEnableVertexAttribArray", 0u);
             h.Call("glVertexAttribPointer", 0u, 2, GL_FLOAT, false, 0, pos);
             h.Call("glEnableVertexAttribArray", 1u);
@@ -480,8 +503,10 @@ public sealed class PigletHleTests(GuestMemoryFixture fx, ITestOutputHelper outp
             h.Call("glActiveTexture", 0x84C0u + 2);
             h.Call("glBindTexture", GL_TEXTURE_2D, GuestMemory.R32(names));
             uint texels = h.Mem(16);
-            GuestMemory.W32(texels, 0xFF00FF00); GuestMemory.W32(texels + 4, 0xFFFFFFFF);
-            GuestMemory.W32(texels + 8, 0xFF000000); GuestMemory.W32(texels + 12, 0xFF00FFFF);
+            GuestMemory.W32(texels, 0xFF00FF00);
+            GuestMemory.W32(texels + 4, 0xFFFFFFFF);
+            GuestMemory.W32(texels + 8, 0xFF000000);
+            GuestMemory.W32(texels + 12, 0xFF00FFFF);
             h.Call("glTexImage2D", GL_TEXTURE_2D, 0, (int)GL_RGBA, 2, 2, 0, GL_RGBA, GL_UNSIGNED_BYTE, texels);
             h.Call("glTexParameteri", GL_TEXTURE_2D, GL_TEXTURE_MIN_FILTER, (int)GL_NEAREST);
             h.Call("glTexParameteri", GL_TEXTURE_2D, 0x2800u, (int)GL_NEAREST);
@@ -500,7 +525,11 @@ public sealed class PigletHleTests(GuestMemoryFixture fx, ITestOutputHelper outp
             h.Call("glBindBuffer", GL_ELEMENT_ARRAY_BUFFER, GuestMemory.R32(names + 4));
             uint idx = h.Mem(12);
             ushort[] ix = [0, 1, 2, 2, 1, 3];
-            for (int i = 0; i < 6; i++) GuestMemory.Write(idx + (uint)i * 2, ix[i]);
+            for (int i = 0; i < 6; i++)
+            {
+                GuestMemory.Write(idx + (uint)i * 2, ix[i]);
+            }
+
             h.Call("glBufferData", GL_ELEMENT_ARRAY_BUFFER, 12, idx, GL_STATIC_DRAW);
             h.Call("glDrawElements", GL_TRIANGLES, 6, GL_UNSIGNED_SHORT, 0u);
             Assert.Equal(GL_NO_ERROR, h.U("glGetError"));
@@ -530,8 +559,15 @@ public sealed class PigletHleTests(GuestMemoryFixture fx, ITestOutputHelper outp
     public void Draw_FramebufferObject_DepthScissorCull()
     {
         IGpuBackend backend;
-        try { backend = PigletHarness.NewRenderer(); }
-        catch (Exception e) { output.WriteLine($"no Vulkan device: {e.Message}"); return; }
+        try
+        {
+            backend = PigletHarness.NewRenderer();
+        }
+        catch (Exception e)
+        {
+            output.WriteLine($"no Vulkan device: {e.Message}");
+            return;
+        }
         using var h = new PigletHarness(fx, true, backend);
         byte[]? fbo = null, win = null;
         h.Run(() =>
@@ -664,7 +700,11 @@ sealed class PigletHarness : IDisposable
             File.Copy(shacccg, Path.Combine(app, "sce_module", "libshacccg.suprx"));
             _emu.Vfs.Mount("app0", app);
         }
-        if (backend != null) _emu.Gpu.Backend = backend;
+        if (backend != null)
+        {
+            _emu.Gpu.Backend = backend;
+        }
+
         Piglet = _emu.Hle.Modules.OfType<Piglet>().First();
         _arena = _emu.Memory.Alloc(ArenaSize, "piglet test arena");
     }
@@ -675,11 +715,24 @@ sealed class PigletHarness : IDisposable
     {
         Exception? failure = null;
         var t = _emu.Kernel.CreateThread("piglet-test", 0, 0x10000100, 0x40000, 0, 0x70000);
-        t.HostBody = _ => { try { body(); } catch (Exception e) { failure = e; } };
+        t.HostBody = _ =>
+        {
+            try
+            {
+                body();
+            }
+            catch (Exception e)
+            {
+                failure = e;
+            }
+        };
         t.Start(0, 0);
         Assert.True(t.WaitForExit(600_000), "piglet test thread did not finish");
         _emu.Kernel.DeleteThread(t);
-        if (failure != null) System.Runtime.ExceptionServices.ExceptionDispatchInfo.Capture(failure).Throw();
+        if (failure != null)
+        {
+            System.Runtime.ExceptionServices.ExceptionDispatchInfo.Capture(failure).Throw();
+        }
     }
 
     static readonly Dictionary<string, MethodInfo> Methods = typeof(Piglet).GetMethods(BindingFlags.Instance | BindingFlags.NonPublic | BindingFlags.Public)
@@ -707,13 +760,35 @@ sealed class PigletHarness : IDisposable
     {
         uint p = _arena + _bump;
         _bump = (_bump + size + 15) & ~15u;
-        if (_bump > ArenaSize) throw new InvalidOperationException("piglet test arena exhausted");
+        if (_bump > ArenaSize)
+        {
+            throw new InvalidOperationException("piglet test arena exhausted");
+        }
+
         GuestMemory.Fill(p, 0, size);
         return p;
     }
 
-    public uint Ints(params int[] v) { uint p = Mem((uint)v.Length * 4); for (int i = 0; i < v.Length; i++) GuestMemory.W32(p + (uint)i * 4, (uint)v[i]); return p; }
-    public uint Floats(params float[] v) { uint p = Mem((uint)v.Length * 4); for (int i = 0; i < v.Length; i++) GuestMemory.Write(p + (uint)i * 4, v[i]); return p; }
+    public uint Ints(params int[] v)
+    {
+        uint p = Mem((uint)v.Length * 4);
+        for (int i = 0; i < v.Length; i++)
+        {
+            GuestMemory.W32(p + (uint)i * 4, (uint)v[i]);
+        }
+
+        return p;
+    }
+    public uint Floats(params float[] v)
+    {
+        uint p = Mem((uint)v.Length * 4);
+        for (int i = 0; i < v.Length; i++)
+        {
+            GuestMemory.Write(p + (uint)i * 4, v[i]);
+        }
+
+        return p;
+    }
 
     public uint Str(string s)
     {
@@ -792,7 +867,12 @@ sealed class PigletHarness : IDisposable
         }
         _emu.Dispose();
         backend?.Dispose();
-        try { Directory.Delete(_root, true); } catch (IOException) { } catch (UnauthorizedAccessException) { }
+        try
+        {
+            Directory.Delete(_root, true);
+        }
+        catch (IOException) { }
+        catch (UnauthorizedAccessException) { }
     }
 }
 
@@ -803,9 +883,19 @@ static class PigletCompiler
     static readonly Lazy<string?> _path = new(() =>
     {
         var appData = Environment.GetFolderPath(Environment.SpecialFolder.ApplicationData);
-        if (string.IsNullOrEmpty(appData)) return null;
+        if (string.IsNullOrEmpty(appData))
+        {
+            return null;
+        }
+
         foreach (var p in new[] { System.IO.Path.Combine(appData, "VitaSharp", "fs", "ur0", "data", "libshacccg.suprx"), System.IO.Path.Combine(appData, "Vita3K", "Vita3K", "ur0", "data", "libshacccg.suprx") })
-            if (File.Exists(p)) return p;
+        {
+            if (File.Exists(p))
+            {
+                return p;
+            }
+        }
+
         return null;
     });
     public static string? Path => _path.Value;
@@ -815,7 +905,10 @@ public sealed class PigletCompilerFactAttribute : FactAttribute
 {
     public PigletCompilerFactAttribute()
     {
-        if (PigletCompiler.Path == null) Skip = "libshacccg.suprx not found in ur0:data of the VitaSharp or Vita3K data folder";
+        if (PigletCompiler.Path == null)
+        {
+            Skip = "libshacccg.suprx not found in ur0:data of the VitaSharp or Vita3K data folder";
+        }
     }
 }
 
@@ -823,6 +916,9 @@ public sealed class PigletRenderFactAttribute : FactAttribute
 {
     public PigletRenderFactAttribute()
     {
-        if (PigletCompiler.Path == null) Skip = "libshacccg.suprx not found in ur0:data of the VitaSharp or Vita3K data folder";
+        if (PigletCompiler.Path == null)
+        {
+            Skip = "libshacccg.suprx not found in ur0:data of the VitaSharp or Vita3K data folder";
+        }
     }
 }

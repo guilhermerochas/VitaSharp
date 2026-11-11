@@ -24,7 +24,11 @@ public sealed partial class MainWindow
         var list = new List<CaptureFile>();
         void Add(string dir, string pattern, string kind)
         {
-            if (!Directory.Exists(dir)) return;
+            if (!Directory.Exists(dir))
+            {
+                return;
+            }
+
             foreach (var f in Directory.GetFiles(dir, pattern))
             {
                 try
@@ -60,25 +64,40 @@ public sealed partial class MainWindow
         page.Children.Add(header);
 
         var chips = new WrapPanel { ItemSpacing = 8, LineSpacing = 8, Margin = new Thickness(0, 0, 0, 18) };
-        void Kind(string k) { _captureKind = k; ShowPage(); }
+        void Kind(string k)
+        {
+            _captureKind = k;
+            ShowPage();
+        }
         chips.Children.Add(_k.Chip(S.FilterAll(all.Count), _captureKind == "", () => Kind("")));
         chips.Children.Add(_k.Chip(S.Recordings(all.Count(c => c.Kind == CaptureRecording)), _captureKind == CaptureRecording, () => Kind(CaptureRecording), "camera"));
         chips.Children.Add(_k.Chip(S.GpuDumps(all.Count(c => c.Kind == CaptureGpuDump)), _captureKind == CaptureGpuDump, () => Kind(CaptureGpuDump), "layers"));
         chips.Children.Add(_k.Chip(S.DiagnosticsChip(all.Count(c => c.Kind == CaptureDiagnostic)), _captureKind == CaptureDiagnostic, () => Kind(CaptureDiagnostic), "alert"));
         var gameItems = new List<(string, bool, Action)> { (S.AllGames, _captureGame == null, () => { _captureGame = null; ShowPage(); }) };
         foreach (var id in all.Select(c => c.TitleId).Distinct().OrderBy(CaptureTitle))
-            gameItems.Add((CaptureTitle(id), _captureGame == id, () => { _captureGame = id; ShowPage(); }));
+        {
+            gameItems.Add((CaptureTitle(id), _captureGame == id, () => { _captureGame = id; ShowPage(); }
+            ));
+        }
+
         chips.Children.Add(_k.ChipMenu(S.GameChip(_captureGame == null ? S.AllShort : CaptureTitle(_captureGame)), null, gameItems));
         page.Children.Add(Kit.At(chips, row: 1));
 
         Control body;
-        if (shown.Count == 0) body = _k.Card(_k.Wrap(S.NoCaptures, 13.5), 18, new Thickness(20)).Also(c => c.VerticalAlignment = VerticalAlignment.Top);
+        if (shown.Count == 0)
+        {
+            body = _k.Card(_k.Wrap(S.NoCaptures, 13.5), 18, new Thickness(20)).Also(c => c.VerticalAlignment = VerticalAlignment.Top);
+        }
         else
         {
             var rows = new StackPanel();
             foreach (var c in shown.Take(200))
             {
-                if (rows.Children.Count > 0) rows.Children.Add(_k.Divider(14));
+                if (rows.Children.Count > 0)
+                {
+                    rows.Children.Add(_k.Divider(14));
+                }
+
                 rows.Children.Add(CaptureRow(c, compact: false));
             }
             body = new ScrollViewer { Content = _k.Card(rows, 18, new Thickness(0, 4)).Also(c => c.Margin = new Thickness(0, 0, 0, 24)), HorizontalScrollBarVisibility = ScrollBarVisibility.Disabled };
@@ -123,8 +142,16 @@ public sealed partial class MainWindow
 
     async Task DeleteCaptures(List<CaptureFile> files)
     {
-        if (files.Count == 0) return;
-        if (!await Confirm(files.Count == 1 ? S.ConfirmDeleteOne(System.IO.Path.GetFileName(files[0].Path)) : S.ConfirmDeleteMany(files.Count, S.Size(files.Sum(f => f.Size))), S.Delete, danger: true)) return;
+        if (files.Count == 0)
+        {
+            return;
+        }
+
+        if (!await Confirm(files.Count == 1 ? S.ConfirmDeleteOne(System.IO.Path.GetFileName(files[0].Path)) : S.ConfirmDeleteMany(files.Count, S.Size(files.Sum(f => f.Size))), S.Delete, danger: true))
+        {
+            return;
+        }
+
         int done = 0;
         await Task.Run(() =>
         {
@@ -135,7 +162,11 @@ public sealed partial class MainWindow
                     File.Delete(f.Path);
                     // a recording's unpacked folder (same name, no .zip) goes with it
                     var folder = System.IO.Path.ChangeExtension(f.Path, null);
-                    if (f.Kind == CaptureRecording && Directory.Exists(folder)) Directory.Delete(folder, true);
+                    if (f.Kind == CaptureRecording && Directory.Exists(folder))
+                    {
+                        Directory.Delete(folder, true);
+                    }
+
                     done++;
                 }
                 catch (Exception e) when (e is IOException or UnauthorizedAccessException) { }

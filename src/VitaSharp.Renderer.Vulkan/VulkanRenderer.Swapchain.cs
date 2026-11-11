@@ -26,14 +26,25 @@ public sealed unsafe partial class VulkanRenderer
         uint fc = 0;
         se.GetPhysicalDeviceSurfaceFormats(_core.Physical, _core.Surface, ref fc, null);
         var formats = new SurfaceFormatKHR[fc];
-        fixed (SurfaceFormatKHR* p = formats) se.GetPhysicalDeviceSurfaceFormats(_core.Physical, _core.Surface, ref fc, p);
+        fixed (SurfaceFormatKHR* p = formats)
+        {
+            se.GetPhysicalDeviceSurfaceFormats(_core.Physical, _core.Surface, ref fc, p);
+        }
+
         var chosen = formats.FirstOrDefault(f => f.Format == Format.B8G8R8A8Unorm, formats[0]);
         if (formats.Any(f => f.Format == Format.R8G8B8A8Unorm) && !formats.Any(f => f.Format == Format.B8G8R8A8Unorm))
+        {
             chosen = formats.First(f => f.Format == Format.R8G8B8A8Unorm);
+        }
+
         uint pc = 0;
         se.GetPhysicalDeviceSurfacePresentModes(_core.Physical, _core.Surface, ref pc, null);
         var modes = new PresentModeKHR[pc];
-        fixed (PresentModeKHR* p = modes) se.GetPhysicalDeviceSurfacePresentModes(_core.Physical, _core.Surface, ref pc, p);
+        fixed (PresentModeKHR* p = modes)
+        {
+            se.GetPhysicalDeviceSurfacePresentModes(_core.Physical, _core.Surface, ref pc, p);
+        }
+
         var mode = _opt.VSync ? PresentModeKHR.FifoKhr : modes.Contains(PresentModeKHR.MailboxKhr) ? PresentModeKHR.MailboxKhr
             : modes.Contains(PresentModeKHR.ImmediateKhr) ? PresentModeKHR.ImmediateKhr : PresentModeKHR.FifoKhr;
 
@@ -51,15 +62,26 @@ public sealed unsafe partial class VulkanRenderer
         {
             if ((transform & (SurfaceTransformFlagsKHR.Rotate90BitKhr | SurfaceTransformFlagsKHR.Rotate270BitKhr)) != 0
                 && w > 0 && h > 0 && (w > h) != (extent.Width > extent.Height))
+            {
                 extent = new Extent2D(extent.Height, extent.Width);
+            }
+
             transform = SurfaceTransformFlagsKHR.IdentityBitKhr;
             _suboptimalExpected = true;
         }
-        if (extent.Width == 0 || extent.Height == 0) { _swapchainDirty = true; return; }
+        if (extent.Width == 0 || extent.Height == 0)
+        {
+            _swapchainDirty = true;
+            return;
+        }
         // Android: 3 images (triple buffering under FIFO) unless the driver needs more; minImageCount + 1 there gave 4
         // on drivers that report 3, one more frame of latency for nothing. The desktop is unchanged.
         uint count = OperatingSystem.IsAndroid() ? Math.Max(caps.MinImageCount, 3) : Math.Max(caps.MinImageCount + 1, 3);
-        if (caps.MaxImageCount > 0) count = Math.Min(count, caps.MaxImageCount);
+        if (caps.MaxImageCount > 0)
+        {
+            count = Math.Min(count, caps.MaxImageCount);
+        }
+
         var old = _swapchain;
         var ci = new SwapchainCreateInfoKHR
         {
@@ -82,11 +104,18 @@ public sealed unsafe partial class VulkanRenderer
             OldSwapchain = old,
         };
         sw.CreateSwapchain(_dev, in ci, null, out _swapchain).Ok("vkCreateSwapchainKHR");
-        if (old.Handle != 0) sw.DestroySwapchain(_dev, old, null);
+        if (old.Handle != 0)
+        {
+            sw.DestroySwapchain(_dev, old, null);
+        }
+
         uint ic = 0;
         sw.GetSwapchainImages(_dev, _swapchain, ref ic, null);
         _swapImages = new Image[ic];
-        fixed (Image* p = _swapImages) sw.GetSwapchainImages(_dev, _swapchain, ref ic, p);
+        fixed (Image* p = _swapImages)
+        {
+            sw.GetSwapchainImages(_dev, _swapchain, ref ic, p);
+        }
         // the semaphore a frame signals for its present belongs to the swapchain image, not to the frame in flight:
         // per frame, a frame signalled it again while the presentation of an earlier image could still be waiting on it
         // (validation: "may still be in use by VkSwapchainKHR")
@@ -117,7 +146,11 @@ public sealed unsafe partial class VulkanRenderer
     {
         lock (_presentLock)
         {
-            if (_core.SurfaceExt == null) return;
+            if (_core.SurfaceExt == null)
+            {
+                return;
+            }
+
             DrainPresent();
             _vk.DeviceWaitIdle(_dev);
             DestroySwapchain();
@@ -132,7 +165,11 @@ public sealed unsafe partial class VulkanRenderer
     {
         lock (_presentLock)
         {
-            if (_core.SurfaceExt == null) throw new InvalidOperationException("the renderer was created without a presentation surface");
+            if (_core.SurfaceExt == null)
+            {
+                throw new InvalidOperationException("the renderer was created without a presentation surface");
+            }
+
             DrainPresent();
             _vk.DeviceWaitIdle(_dev);
             DestroySwapchain();
@@ -152,12 +189,27 @@ public sealed unsafe partial class VulkanRenderer
             DrainPresent();
             _vk.DeviceWaitIdle(_dev);
             CreateSwapchain();
-            if (_swapchainDirty) return false;
+            if (_swapchainDirty)
+            {
+                return false;
+            }
         }
         var r = _core.SwapchainExt!.AcquireNextImage(_dev, _swapchain, 1_000_000_000, F.Acquire, default, ref index);
-        if (r is Result.ErrorOutOfDateKhr) { _swapchainDirty = true; return false; }
-        if (r is not (Result.Success or Result.SuboptimalKhr)) return false;
-        if (r == Result.SuboptimalKhr && !_suboptimalExpected) _swapchainDirty = true;
+        if (r is Result.ErrorOutOfDateKhr)
+        {
+            _swapchainDirty = true;
+            return false;
+        }
+        if (r is not (Result.Success or Result.SuboptimalKhr))
+        {
+            return false;
+        }
+
+        if (r == Result.SuboptimalKhr && !_suboptimalExpected)
+        {
+            _swapchainDirty = true;
+        }
+
         return true;
     }
 
@@ -185,7 +237,11 @@ public sealed unsafe partial class VulkanRenderer
         };
         blit.SrcOffsets[0] = new Offset3D(0, 0, 0);
         // a target at a lower internal resolution is scaled up from its image (VulkanRenderer.ResScale.cs)
-        if (src.Scale != 1f) { w = Math.Min(ScaleDim(w, src.Scale), src.ImgW); h = Math.Min(ScaleDim(h, src.Scale), src.ImgH); }
+        if (src.Scale != 1f)
+        {
+            w = Math.Min(ScaleDim(w, src.Scale), src.ImgW);
+            h = Math.Min(ScaleDim(h, src.Scale), src.ImgH);
+        }
         blit.SrcOffsets[1] = new Offset3D((int)w, (int)h, 1);
         blit.DstOffsets[0] = new Offset3D(dx, dy, 0);
         blit.DstOffsets[1] = new Offset3D(dx + dw, dy + dh, 1);
@@ -201,8 +257,14 @@ public sealed unsafe partial class VulkanRenderer
 
     void PresentSwapchain(uint index, Silk.NET.Vulkan.Semaphore wait)
     {
-        if (PresentThreadOn) QueuePresentAsync(index, wait); // VulkanRenderer.PresentThread.cs
-        else PresentNow(_swapchain, index, wait);
+        if (PresentThreadOn)
+        {
+            QueuePresentAsync(index, wait); // VulkanRenderer.PresentThread.cs
+        }
+        else
+        {
+            PresentNow(_swapchain, index, wait);
+        }
     }
 
     /// <summary>vkQueuePresentKHR (the GPU worker, or the present thread with VITASHARP_PRESENT_THREAD=1).</summary>
@@ -218,13 +280,24 @@ public sealed unsafe partial class VulkanRenderer
             PImageIndices = &index,
         };
         Result r;
-        lock (_queueLock) r = _core.SwapchainExt!.QueuePresent(_core.Queue, in pi);
-        if (r == Result.ErrorOutOfDateKhr || (r == Result.SuboptimalKhr && !_suboptimalExpected)) _swapchainDirty = true;
+        lock (_queueLock)
+        {
+            r = _core.SwapchainExt!.QueuePresent(_core.Queue, in pi);
+        }
+
+        if (r == Result.ErrorOutOfDateKhr || (r == Result.SuboptimalKhr && !_suboptimalExpected))
+        {
+            _swapchainDirty = true;
+        }
     }
 
     void DestroySwapchain()
     {
-        if (_swapchain.Handle != 0) _core.SwapchainExt!.DestroySwapchain(_dev, _swapchain, null);
+        if (_swapchain.Handle != 0)
+        {
+            _core.SwapchainExt!.DestroySwapchain(_dev, _swapchain, null);
+        }
+
         _swapchain = default;
     }
 }

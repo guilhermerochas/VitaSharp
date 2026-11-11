@@ -27,9 +27,18 @@ public static class Updater
     {
         if (Metadata("VitaSharpBuildTime") is { } stamp
             && DateTimeOffset.TryParse(stamp, System.Globalization.CultureInfo.InvariantCulture, System.Globalization.DateTimeStyles.AssumeUniversal, out var t))
+        {
             return t;
-        try { return File.GetLastWriteTimeUtc(Environment.ProcessPath ?? Path.Combine(AppContext.BaseDirectory, "VitaSharp.Core.dll")); }
-        catch (Exception) { return DateTimeOffset.UtcNow; }
+        }
+
+        try
+        {
+            return File.GetLastWriteTimeUtc(Environment.ProcessPath ?? Path.Combine(AppContext.BaseDirectory, "VitaSharp.Core.dll"));
+        }
+        catch (Exception)
+        {
+            return DateTimeOffset.UtcNow;
+        }
     }
 
     /// <summary>"owner/name" of the GitHub repository the packages come from (set by the CI build).</summary>
@@ -40,7 +49,11 @@ public static class Updater
     public static Uri? Feed(string? overrideFeed = null)
     {
         string? f = overrideFeed ?? Environment.GetEnvironmentVariable(EnvVars.UpdateFeed);
-        if (!string.IsNullOrEmpty(f)) return Uri.TryCreate(f, UriKind.Absolute, out var u) ? u : new Uri(Path.GetFullPath(f));
+        if (!string.IsNullOrEmpty(f))
+        {
+            return Uri.TryCreate(f, UriKind.Absolute, out var u) ? u : new Uri(Path.GetFullPath(f));
+        }
+
         return Repository is { } repo ? UpdateFeed.GitHubFeed(repo) : null;
     }
 
@@ -56,8 +69,16 @@ public static class Updater
     /// AppImage when running as one, else the platform's archive.</summary>
     public static string PackageKind()
     {
-        if (OperatingSystem.IsWindows() && File.Exists(Path.Combine(InstallDir(), "unins000.exe"))) return "-setup.exe";
-        if (OperatingSystem.IsLinux() && !string.IsNullOrEmpty(Environment.GetEnvironmentVariable("APPIMAGE"))) return ".AppImage";
+        if (OperatingSystem.IsWindows() && File.Exists(Path.Combine(InstallDir(), "unins000.exe")))
+        {
+            return "-setup.exe";
+        }
+
+        if (OperatingSystem.IsLinux() && !string.IsNullOrEmpty(Environment.GetEnvironmentVariable("APPIMAGE")))
+        {
+            return ".AppImage";
+        }
+
         return UpdateFeed.DefaultKind(UpdateFeed.CurrentRid());
     }
 
@@ -97,7 +118,11 @@ public static class Updater
             case ".AppImage":
             {
                 string appImage = Environment.GetEnvironmentVariable("APPIMAGE")!;
-                if (!OperatingSystem.IsWindows()) File.SetUnixFileMode(file, File.GetUnixFileMode(appImage) | UnixFileMode.UserExecute);
+                if (!OperatingSystem.IsWindows())
+                {
+                    File.SetUnixFileMode(file, File.GetUnixFileMode(appImage) | UnixFileMode.UserExecute);
+                }
+
                 File.Move(file, appImage, overwrite: true); // a rename: the running image keeps its old inode
                 Start(appImage, restartArgs, Path.GetDirectoryName(appImage)!);
                 return;
@@ -108,19 +133,31 @@ public static class Updater
         string target = InstallDir();
         // the executable at the same place inside the package (VitaSharp.exe, VitaSharp.app/Contents/MacOS/VitaSharp)
         string updater = Path.Combine(root, Path.GetRelativePath(target, self));
-        if (!File.Exists(updater)) throw new InvalidDataException($"The package has no {Path.GetRelativePath(target, self)}");
+        if (!File.Exists(updater))
+        {
+            throw new InvalidDataException($"The package has no {Path.GetRelativePath(target, self)}");
+        }
+
         var args = new List<string> { "apply-update", $"--from={root}", $"--to={target}", $"--pid={Environment.ProcessId}", $"--restart={self}" };
         args.AddRange(restartArgs.Select(a => "--restart-arg=" + a));
         log?.Invoke($"Update: {updater} applies {release.Tag} to {target} after this process exits");
         var psi = new ProcessStartInfo(updater) { UseShellExecute = false, WorkingDirectory = work };
-        foreach (var a in args) psi.ArgumentList.Add(a);
+        foreach (var a in args)
+        {
+            psi.ArgumentList.Add(a);
+        }
+
         Process.Start(psi);
     }
 
     static void Start(string exe, string[] args, string workingDir)
     {
         var psi = new ProcessStartInfo(exe) { UseShellExecute = false, WorkingDirectory = workingDir };
-        foreach (var a in args) psi.ArgumentList.Add(a);
+        foreach (var a in args)
+        {
+            psi.ArgumentList.Add(a);
+        }
+
         Process.Start(psi);
     }
 
@@ -134,17 +171,28 @@ public static class Updater
         void Log(string s)
         {
             Console.WriteLine(s);
-            try { File.AppendAllText(log, $"{DateTime.Now:yyyy-MM-dd HH:mm:ss} {s}{Environment.NewLine}"); } catch (IOException) { }
+            try
+            {
+                File.AppendAllText(log, $"{DateTime.Now:yyyy-MM-dd HH:mm:ss} {s}{Environment.NewLine}");
+            }
+            catch (IOException) { }
         }
         try
         {
-            if (to.Length == 0) throw new ArgumentException("--to=<installation> is missing");
+            if (to.Length == 0)
+            {
+                throw new ArgumentException("--to=<installation> is missing");
+            }
+
             if (int.TryParse(Opt("--pid"), out int pid))
             {
                 try
                 {
                     using var old = Process.GetProcessById(pid);
-                    if (!old.WaitForExit(TimeSpan.FromSeconds(60))) Log($"apply-update: process {pid} still running after 60 s, copying anyway");
+                    if (!old.WaitForExit(TimeSpan.FromSeconds(60)))
+                    {
+                        Log($"apply-update: process {pid} still running after 60 s, copying anyway");
+                    }
                 }
                 catch (ArgumentException) { } // already gone
             }
@@ -172,17 +220,41 @@ public static class Updater
         string? Opt(string name) => args.FirstOrDefault(a => a.StartsWith(name + "="))?[(name.Length + 1)..];
         Console.WriteLine($"VitaSharp {Current.Display} ({UpdateFeed.CurrentRid()}, {PackageKind()} package, installed in {InstallDir()})");
         var feed = Feed(Opt("--feed"));
-        if (feed == null) { Console.WriteLine("This build has no update feed (built from source): update it with git, or pass --feed="); return 2; }
+        if (feed == null)
+        {
+            Console.WriteLine("This build has no update feed (built from source): update it with git, or pass --feed=");
+            return 2;
+        }
         string channel = Opt("--channel") ?? UpdateFeed.ChannelBuilds;
         try
         {
             var release = CheckAsync(channel, feed).GetAwaiter().GetResult();
-            if (release == null) { Console.WriteLine($"Up to date ({channel}, {feed})"); return 0; }
+            if (release == null)
+            {
+                Console.WriteLine($"Up to date ({channel}, {feed})");
+                return 0;
+            }
             Console.WriteLine($"Update: {Current.Display} -> {release.Name} ({release.Tag}, {release.Published:yyyy-MM-dd HH:mm})");
-            foreach (var line in release.Body.Split('\n').Take(12)) Console.WriteLine("  " + line.TrimEnd());
-            if (!args.Contains("--apply")) return 0;
+            foreach (var line in release.Body.Split('\n').Take(12))
+            {
+                Console.WriteLine("  " + line.TrimEnd());
+            }
+
+            if (!args.Contains("--apply"))
+            {
+                return 0;
+            }
+
             int lastPct = -1;
-            InstallAsync(release, p => { int pct = (int)(p * 100); if (pct / 10 != lastPct / 10) { lastPct = pct; Console.WriteLine($"  {pct}%"); } },
+            InstallAsync(release, p =>
+            {
+                int pct = (int)(p * 100);
+                if (pct / 10 != lastPct / 10)
+                {
+                    lastPct = pct;
+                    Console.WriteLine($"  {pct}%");
+                }
+            },
                 Console.WriteLine, args.Where(a => a.StartsWith("--restart-arg=")).Select(a => a["--restart-arg=".Length..]).ToArray()).GetAwaiter().GetResult();
             return 0;
         }
@@ -197,9 +269,21 @@ public static class Updater
     public static void CleanDownloads()
     {
         string dir = Path.Combine(Path.GetTempPath(), "VitaSharp-update");
-        if (!Directory.Exists(dir)) return;
+        if (!Directory.Exists(dir))
+        {
+            return;
+        }
+
         foreach (var d in Directory.GetDirectories(dir))
-            try { if (Directory.GetLastWriteTimeUtc(d) < DateTime.UtcNow.AddMinutes(-10)) Directory.Delete(d, true); }
+        {
+            try
+            {
+                if (Directory.GetLastWriteTimeUtc(d) < DateTime.UtcNow.AddMinutes(-10))
+                {
+                    Directory.Delete(d, true);
+                }
+            }
             catch (Exception e) when (e is IOException or UnauthorizedAccessException) { }
+        }
     }
 }

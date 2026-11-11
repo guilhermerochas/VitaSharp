@@ -25,17 +25,29 @@ public sealed class JpegHleTests(GuestMemoryFixture fx)
         int cw = (w + hdiv - 1) / hdiv, ch = (h + vdiv - 1) / vdiv;
         var y = new byte[w * h];
         for (int j = 0; j < h; j++)
+        {
             for (int i = 0; i < w; i++)
+            {
                 y[j * w + i] = (byte)Math.Clamp(128 + 90 * Math.Sin(i * 0.11 + seed) * Math.Cos(j * 0.07) + rnd.Next(-6, 7), 0, 255);
-        if (gray) return new Planes(y, null, null, w, h, 1, 1);
+            }
+        }
+
+        if (gray)
+        {
+            return new Planes(y, null, null, w, h, 1, 1);
+        }
+
         var cb = new byte[cw * ch];
         var cr = new byte[cw * ch];
         for (int j = 0; j < ch; j++)
+        {
             for (int i = 0; i < cw; i++)
             {
                 cb[j * cw + i] = (byte)(128 + 50 * Math.Sin(i * 0.09));
                 cr[j * cw + i] = (byte)(128 + 50 * Math.Cos(j * 0.08 + i * 0.02));
             }
+        }
+
         return new Planes(y, cb, cr, w, h, hdiv, vdiv);
     }
 
@@ -48,11 +60,14 @@ public sealed class JpegHleTests(GuestMemoryFixture fx)
     {
         double se = 0;
         for (int y = 0; y < h; y++)
+        {
             for (int x = 0; x < w; x++)
             {
                 double d = a[y * aStride + x] - b[y * bStride + x];
                 se += d * d;
             }
+        }
+
         return se == 0 ? 99 : 10 * Math.Log10(255.0 * 255 * w * h / se);
     }
 
@@ -63,7 +78,12 @@ public sealed class JpegHleTests(GuestMemoryFixture fx)
             var x = a.Planes[p];
             var y = b.Planes[p];
             for (int r = 0; r < x.Height; r++)
-                if (!x.Data.AsSpan(r * x.Stride, x.Width).SequenceEqual(y.Data.AsSpan(r * y.Stride, y.Width))) return false;
+            {
+                if (!x.Data.AsSpan(r * x.Stride, x.Width).SequenceEqual(y.Data.AsSpan(r * y.Stride, y.Width)))
+                {
+                    return false;
+                }
+            }
         }
         return true;
     }
@@ -95,7 +115,12 @@ public sealed class JpegHleTests(GuestMemoryFixture fx)
         Assert.Equal((16, 8), (img.Info.Width, img.Info.Height));
         var p = img.Planes[0];
         for (int y = 0; y < 8; y++)
-            for (int x = 0; x < 16; x++) Assert.Equal(x < 8 ? 160 : 128, p.Data[y * p.Stride + x]);
+        {
+            for (int x = 0; x < 16; x++)
+            {
+                Assert.Equal(x < 8 ? 160 : 128, p.Data[y * p.Stride + x]);
+            }
+        }
     }
 
     [Theory]
@@ -191,7 +216,10 @@ public sealed class JpegHleTests(GuestMemoryFixture fx)
         Assert.Equal((128, 128), (cb[6], cr[6]));
         var back = new byte[32];
         YuvConvert.ToRgba(y, 4, cb, cr, 4, 4, 2, 1, 1, back, 4);
-        for (int i = 0; i < 32; i++) Assert.InRange(back[i] - rgba[i], -2, 2);
+        for (int i = 0; i < 32; i++)
+        {
+            Assert.InRange(back[i] - rgba[i], -2, 2);
+        }
         // 4:2:2: chroma is the average of each horizontal pair
         YuvConvert.FromRgba(rgba, 4, 4, 2, false, 2, 1, y, 4, cb, cr, 2);
         Assert.Equal((85, 255), (cb[0], cr[0]));
@@ -428,13 +456,22 @@ public sealed class JpegHleTests(GuestMemoryFixture fx)
         var small = GuestMemory.Span(yuv, 32 * 24).ToArray();
         var expect = new byte[32 * 24];
         for (int y = 0; y < 24; y++)
+        {
             for (int x = 0; x < 32; x++)
             {
                 int s = 0;
                 for (int dy = 0; dy < 4; dy++)
-                    for (int dx = 0; dx < 4; dx++) s += src.Y[(y * 4 + dy) * 128 + x * 4 + dx];
+                {
+                    for (int dx = 0; dx < 4; dx++)
+                    {
+                        s += src.Y[(y * 4 + dy) * 128 + x * 4 + dx];
+                    }
+                }
+
                 expect[y * 32 + x] = (byte)((s + 8) / 16);
             }
+        }
+
         Assert.True(Psnr(small, 32, expect, 32, 32, 24) > 38);
 
         // the hardware decoder refuses output pitches outside 64x64..2032x1088 (checked after downscaling)

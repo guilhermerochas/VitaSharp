@@ -13,14 +13,21 @@ public static class UpdateInstaller
     /// package's root: its single top-level folder (VitaSharp/, VitaSharp.app/) when it has one.</summary>
     public static string Extract(string package, string stagingDir)
     {
-        if (Directory.Exists(stagingDir)) Directory.Delete(stagingDir, true);
+        if (Directory.Exists(stagingDir))
+        {
+            Directory.Delete(stagingDir, true);
+        }
+
         Directory.CreateDirectory(stagingDir);
         if (package.EndsWith(".tar.gz", StringComparison.OrdinalIgnoreCase) || package.EndsWith(".tgz", StringComparison.OrdinalIgnoreCase))
         {
             using var gz = new GZipStream(File.OpenRead(package), CompressionMode.Decompress);
             TarFile.ExtractToDirectory(gz, stagingDir, overwriteFiles: true);
         }
-        else ZipFile.ExtractToDirectory(package, stagingDir, overwriteFiles: true);
+        else
+        {
+            ZipFile.ExtractToDirectory(package, stagingDir, overwriteFiles: true);
+        }
 
         var dirs = Directory.GetDirectories(stagingDir);
         return dirs.Length == 1 && Directory.GetFiles(stagingDir).Length == 0 ? dirs[0] : stagingDir;
@@ -36,9 +43,14 @@ public static class UpdateInstaller
         source = Path.GetFullPath(source);
         target = Path.GetFullPath(target);
         if (dataRoot != null && IsInside(Path.GetFullPath(dataRoot), target))
+        {
             throw new InvalidOperationException($"The data folder {dataRoot} is inside the installation {target}: not updating it");
+        }
+
         if (IsInside(target, source) || IsInside(source, target))
+        {
             throw new InvalidOperationException("The update and the installation are the same folder");
+        }
 
         int written = 0;
         foreach (var file in Directory.EnumerateFiles(source, "*", SearchOption.AllDirectories))
@@ -52,11 +64,21 @@ public static class UpdateInstaller
                 try
                 {
                     File.Copy(file, dest, overwrite: true);
-                    if (!OperatingSystem.IsWindows()) File.SetUnixFileMode(dest, File.GetUnixFileMode(file));
+                    if (!OperatingSystem.IsWindows())
+                    {
+                        File.SetUnixFileMode(dest, File.GetUnixFileMode(file));
+                    }
+
                     break;
                 }
-                catch (IOException) when (DateTime.UtcNow < deadline) { Thread.Sleep(250); }
-                catch (UnauthorizedAccessException) when (DateTime.UtcNow < deadline) { Thread.Sleep(250); }
+                catch (IOException) when (DateTime.UtcNow < deadline)
+                {
+                    Thread.Sleep(250);
+                }
+                catch (UnauthorizedAccessException) when (DateTime.UtcNow < deadline)
+                {
+                    Thread.Sleep(250);
+                }
             }
             written++;
         }

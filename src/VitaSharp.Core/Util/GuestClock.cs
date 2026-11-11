@@ -39,7 +39,11 @@ public static partial class GuestClock
     /// <summary>Stops the clock at its current reading (<see cref="EmulationPause.Pause"/>).</summary>
     internal static void Freeze()
     {
-        if (Frozen) return;
+        if (Frozen)
+        {
+            return;
+        }
+
         Volatile.Write(ref _frozen, RealElapsed + Interlocked.Read(ref _offset));
     }
 
@@ -48,7 +52,11 @@ public static partial class GuestClock
     internal static void Thaw()
     {
         long f = Volatile.Read(ref _frozen);
-        if (f == NotFrozen) return;
+        if (f == NotFrozen)
+        {
+            return;
+        }
+
         Interlocked.Exchange(ref _offset, f - RealElapsed);
         Volatile.Write(ref _frozen, NotFrozen);
     }
@@ -73,7 +81,11 @@ public static partial class GuestClock
         while (t > last)
         {
             long seen = Interlocked.CompareExchange(ref _lastObserved, t, last);
-            if (seen == last) return t;
+            if (seen == last)
+            {
+                return t;
+            }
+
             last = seen;
         }
         return last;
@@ -90,10 +102,22 @@ public static partial class GuestClock
     /// emulation is paused it first waits for the resume (see <see cref="EmulationPause.WaitWhilePaused"/>).</summary>
     public static void WaitUntil(long deadline, bool allowSpin = true)
     {
-        if (EmulationPause.IsPaused && EmulationPause.WaitWhilePaused()) { Thread.Sleep(1); return; } // the thread finishing a GPU scene: the frozen clock never gets there
+        if (EmulationPause.IsPaused && EmulationPause.WaitWhilePaused())
+        {
+            Thread.Sleep(1);
+            return;
+        } // the thread finishing a GPU scene: the frozen clock never gets there
         long now = Ticks;
-        if (now >= deadline) return;
-        if (Turbo) { AdvanceTo(deadline); return; }
+        if (now >= deadline)
+        {
+            return;
+        }
+
+        if (Turbo)
+        {
+            AdvanceTo(deadline);
+            return;
+        }
         PreciseSleep.Until(Stopwatch.GetTimestamp() + (long)((deadline - now) / Speed), allowSpin);
     }
 
@@ -105,8 +129,15 @@ public static partial class GuestClock
         {
             long off = Interlocked.Read(ref _offset);
             long needed = deadline - RealElapsed;
-            if (needed <= off) return;
-            if (Interlocked.CompareExchange(ref _offset, needed, off) == off) return;
+            if (needed <= off)
+            {
+                return;
+            }
+
+            if (Interlocked.CompareExchange(ref _offset, needed, off) == off)
+            {
+                return;
+            }
         }
     }
 }
@@ -117,9 +148,31 @@ public sealed class GuestStopwatch
     long _start, _accumulated;
     public bool IsRunning { get; private set; }
 
-    public void Start() { if (IsRunning) return; _start = GuestClock.Ticks; IsRunning = true; }
-    public void Stop() { if (!IsRunning) return; _accumulated += GuestClock.Ticks - _start; IsRunning = false; }
-    public void Reset() { _accumulated = 0; IsRunning = false; }
+    public void Start()
+    {
+        if (IsRunning)
+        {
+            return;
+        }
+
+        _start = GuestClock.Ticks;
+        IsRunning = true;
+    }
+    public void Stop()
+    {
+        if (!IsRunning)
+        {
+            return;
+        }
+
+        _accumulated += GuestClock.Ticks - _start;
+        IsRunning = false;
+    }
+    public void Reset()
+    {
+        _accumulated = 0;
+        IsRunning = false;
+    }
     public long ElapsedTicks => _accumulated + (IsRunning ? GuestClock.Ticks - _start : 0);
     public long ElapsedMicroseconds => (long)(ElapsedTicks * (1_000_000.0 / System.Diagnostics.Stopwatch.Frequency));
 }

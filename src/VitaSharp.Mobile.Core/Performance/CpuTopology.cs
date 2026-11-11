@@ -20,7 +20,10 @@ public sealed class CpuTopology
 {
     public IReadOnlyList<CpuCluster> Clusters { get; }
 
-    CpuTopology(List<CpuCluster> clusters) { Clusters = clusters; }
+    CpuTopology(List<CpuCluster> clusters)
+    {
+        Clusters = clusters;
+    }
 
     /// <summary>Every known core.</summary>
     public ulong AllMask => Clusters.Aggregate(0UL, (m, c) => m | c.Mask);
@@ -60,7 +63,11 @@ public sealed class CpuTopology
             foreach (var dir in Directory.EnumerateDirectories(root, "cpu*"))
             {
                 var name = Path.GetFileName(dir);
-                if (name.Length < 4 || !int.TryParse(name.AsSpan(3), NumberStyles.None, CultureInfo.InvariantCulture, out int cpu)) continue;
+                if (name.Length < 4 || !int.TryParse(name.AsSpan(3), NumberStyles.None, CultureInfo.InvariantCulture, out int cpu))
+                {
+                    continue;
+                }
+
                 long freq = ReadLong(Path.Combine(dir, "cpufreq", "cpuinfo_max_freq"));
                 int cap = (int)ReadLong(Path.Combine(dir, "cpu_capacity"));
                 cores.Add((cpu, freq, cap));
@@ -72,8 +79,14 @@ public sealed class CpuTopology
 
     static long ReadLong(string path)
     {
-        try { return long.TryParse(File.ReadAllText(path).Trim(), NumberStyles.None, CultureInfo.InvariantCulture, out long v) ? v : 0; }
-        catch (Exception e) when (e is IOException or UnauthorizedAccessException) { return 0; }
+        try
+        {
+            return long.TryParse(File.ReadAllText(path).Trim(), NumberStyles.None, CultureInfo.InvariantCulture, out long v) ? v : 0;
+        }
+        catch (Exception e) when (e is IOException or UnauthorizedAccessException)
+        {
+            return 0;
+        }
     }
 
     public static ulong MaskOf(IEnumerable<int> cpus) => cpus.Aggregate(0UL, (m, c) => m | 1UL << c);
@@ -83,12 +96,20 @@ public sealed class CpuTopology
 
     public static string Ranges(int[] cpus)
     {
-        if (cpus.Length == 0) return "none";
+        if (cpus.Length == 0)
+        {
+            return "none";
+        }
+
         var parts = new List<string>();
         int start = cpus[0], prev = cpus[0];
         foreach (int c in cpus.Skip(1).Append(int.MinValue))
         {
-            if (c == prev + 1) { prev = c; continue; }
+            if (c == prev + 1)
+            {
+                prev = c;
+                continue;
+            }
             parts.Add(start == prev ? $"{start}" : $"{start}-{prev}");
             start = prev = c;
         }

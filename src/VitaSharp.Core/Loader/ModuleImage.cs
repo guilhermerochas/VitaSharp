@@ -11,10 +11,7 @@ namespace VitaSharp.Core.Loader;
 public sealed class ModuleImage
 {
     public string Name { get; private init; } = "";
-    public ushort Attributes
-    {
-        get; private init;
-    }
+    public ushort Attributes { get; private init; }
     public List<(string Library, uint LibNid, ushort Attributes, uint[] FuncNids, uint[] VarNids)> Exports { get; } = new();
     public List<(string Library, uint LibNid, uint[] FuncNids)> Imports { get; } = new();
 

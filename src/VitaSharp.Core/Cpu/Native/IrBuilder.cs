@@ -53,7 +53,11 @@ public sealed unsafe class IrBuilder
     /// <summary>Indirect exits carry the target pc (A) and Thumb state (B) temps when cached (ARM64 backend).</summary>
     public bool DynamicExitOperands;
 
-    int Emit(IrInst i) { Block.Insts.Add(i); return Block.Insts.Count - 1; }
+    int Emit(IrInst i)
+    {
+        Block.Insts.Add(i);
+        return Block.Insts.Count - 1;
+    }
 
     public int Const(uint v) => Block.NewConst(v);
     public bool IsConst(int t, out uint v) => Block.TryConst(t, out v);
@@ -64,16 +68,30 @@ public sealed unsafe class IrBuilder
     public int Reg(int r) => Read(r);
     public void SetReg(int r, int v) => Write(r, v);
     public int Flag(IrFlag f) => Read(SlotFlag0 + (int)f);
-    public void SetFlag(IrFlag f, int v) { if (v >= 0) Write(SlotFlag0 + (int)f, v); }
+    public void SetFlag(IrFlag f, int v)
+    {
+        if (v >= 0)
+        {
+            Write(SlotFlag0 + (int)f, v);
+        }
+    }
     public int Thumb() => Read(SlotThumb);
     public void SetThumb(int v) => Write(SlotThumb, v);
 
     /// <summary>True when the cached value of a slot is a known constant (R15 after a direct branch).</summary>
-    public bool KnownConst(int slot, out uint v) { v = 0; return _val[slot] >= 0 && IsConst(_val[slot], out v); }
+    public bool KnownConst(int slot, out uint v)
+    {
+        v = 0;
+        return _val[slot] >= 0 && IsConst(_val[slot], out v);
+    }
 
     int Read(int slot)
     {
-        if (_val[slot] >= 0) return _val[slot];
+        if (_val[slot] >= 0)
+        {
+            return _val[slot];
+        }
+
         int t = Block.NewTemp();
         var i = slot switch
         {
@@ -91,7 +109,10 @@ public sealed unsafe class IrBuilder
     {
         _val[slot] = v;
         _dirty[slot] = true;
-        if (InRegion) _written[slot] = true;
+        if (InRegion)
+        {
+            _written[slot] = true;
+        }
     }
 
     /// <summary>Stores every dirty slot (values stay cached, now clean).</summary>
@@ -100,15 +121,24 @@ public sealed unsafe class IrBuilder
         // inside a deferred region (a callout or an exit): the values from before it are stored before its branch
         // instead, on both paths, as without deferral
         if (_deferBranch >= 0)
+        {
             for (int s = 0; s < Slots; s++)
+            {
                 if (_dirtySnapshot[s] && !_written[s])
                 {
                     Block.Insts.Insert(_deferBranch++, Store(s, _snapshot[s]));
                     _dirtySnapshot[s] = _dirty[s] = false;
                 }
+            }
+        }
+
         for (int s = 0; s < Slots; s++)
         {
-            if (!_dirty[s]) continue;
+            if (!_dirty[s])
+            {
+                continue;
+            }
+
             _dirty[s] = false;
             Emit(Store(s, _val[s]));
         }
@@ -119,9 +149,16 @@ public sealed unsafe class IrBuilder
     {
         for (int s = 0; s < Slots; s++)
         {
-            if (_dirty[s]) throw new InvalidOperationException("invalidate with dirty state");
+            if (_dirty[s])
+            {
+                throw new InvalidOperationException("invalidate with dirty state");
+            }
+
             _val[s] = -1;
-            if (InRegion) _written[s] = true;
+            if (InRegion)
+            {
+                _written[s] = true;
+            }
         }
     }
 
@@ -138,30 +175,63 @@ public sealed unsafe class IrBuilder
     /// </summary>
     public void BeginCond(uint cond, bool defer = false)
     {
-        if (InRegion) throw new InvalidOperationException("nested region");
+        if (InRegion)
+        {
+            throw new InvalidOperationException("nested region");
+        }
         // condition inputs are read (and possibly loaded) before the flush and the branch
         int n = -1, z = -1, c = -1, v = -1;
         switch (cond >> 1)
         {
-            case 0: z = Flag(IrFlag.Z); break;
-            case 1: c = Flag(IrFlag.C); break;
-            case 2: n = Flag(IrFlag.N); break;
-            case 3: v = Flag(IrFlag.V); break;
-            case 4: c = Flag(IrFlag.C); z = Flag(IrFlag.Z); break;
-            case 5: n = Flag(IrFlag.N); v = Flag(IrFlag.V); break;
-            case 6: n = Flag(IrFlag.N); v = Flag(IrFlag.V); z = Flag(IrFlag.Z); break;
+            case 0:
+                z = Flag(IrFlag.Z);
+                break;
+            case 1:
+                c = Flag(IrFlag.C);
+                break;
+            case 2:
+                n = Flag(IrFlag.N);
+                break;
+            case 3:
+                v = Flag(IrFlag.V);
+                break;
+            case 4:
+                c = Flag(IrFlag.C);
+                z = Flag(IrFlag.Z);
+                break;
+            case 5:
+                n = Flag(IrFlag.N);
+                v = Flag(IrFlag.V);
+                break;
+            case 6:
+                n = Flag(IrFlag.N);
+                v = Flag(IrFlag.V);
+                z = Flag(IrFlag.Z);
+                break;
         }
-        if (!defer) Flush();
+        if (!defer)
+        {
+            Flush();
+        }
+
         int label = NewLabel();
         int at = Emit(new IrInst(IrOp.CondBranch) { A = n, B = z, C = c, E = v, Imm = cond, Imm2 = (uint)label });
         Enter(label);
-        if (defer) { _deferBranch = at; Array.Copy(_dirty, _dirtySnapshot, Slots); }
+        if (defer)
+        {
+            _deferBranch = at;
+            Array.Copy(_dirty, _dirtySnapshot, Slots);
+        }
     }
 
     /// <summary>Starts a region that runs only when <c>(value != 0) == runIfNonZero</c>.</summary>
     public void BeginIf(int value, bool runIfNonZero)
     {
-        if (InRegion) throw new InvalidOperationException("nested region");
+        if (InRegion)
+        {
+            throw new InvalidOperationException("nested region");
+        }
+
         Flush();
         int label = NewLabel();
         Emit(new IrInst(IrOp.BranchIf) { A = value, Imm = runIfNonZero ? 0u : 1u, Imm2 = (uint)label });
@@ -181,9 +251,21 @@ public sealed unsafe class IrBuilder
     /// </summary>
     public void EndRegion(bool terminated)
     {
-        if (!InRegion) throw new InvalidOperationException("no region");
-        if (_deferBranch >= 0) { EndDeferred(terminated); return; }
-        if (!terminated) Flush();
+        if (!InRegion)
+        {
+            throw new InvalidOperationException("no region");
+        }
+
+        if (_deferBranch >= 0)
+        {
+            EndDeferred(terminated);
+            return;
+        }
+        if (!terminated)
+        {
+            Flush();
+        }
+
         int label = _regionLabel;
         _regionLabel = -1;
         for (int s = 0; s < Slots; s++)
@@ -204,10 +286,21 @@ public sealed unsafe class IrBuilder
         {
             // region path: store what the region wrote; skip path: the old values of those slots, if dirty before
             for (int s = 0; s < Slots; s++)
-                if (_written[s] && _dirty[s]) Emit(Store(s, _val[s]));
+            {
+                if (_written[s] && _dirty[s])
+                {
+                    Emit(Store(s, _val[s]));
+                }
+            }
+
             int k = branch;
             for (int s = 0; s < Slots; s++)
-                if (_written[s] && _dirtySnapshot[s]) Block.Insts.Insert(k++, Store(s, _snapshot[s]));
+            {
+                if (_written[s] && _dirtySnapshot[s])
+                {
+                    Block.Insts.Insert(k++, Store(s, _snapshot[s]));
+                }
+            }
         }
         for (int s = 0; s < Slots; s++)
         {
@@ -250,9 +343,17 @@ public sealed unsafe class IrBuilder
     /// </summary>
     public void Callout(Op op, uint ins, uint pc, bool touchesCore)
     {
-        if (touchesCore) Flush();
+        if (touchesCore)
+        {
+            Flush();
+        }
+
         Emit(new IrInst(IrOp.Callout) { Imm = (uint)op, Imm2 = ins, Imm3 = pc });
-        if (touchesCore) Invalidate();
+        if (touchesCore)
+        {
+            Invalidate();
+        }
+
         Block.Callouts++;
     }
 
@@ -267,7 +368,12 @@ public sealed unsafe class IrBuilder
     }
 
     public void StoreState(uint offset, int v) => Emit(new IrInst(IrOp.StoreState) { A = v, Imm = offset });
-    public int LoadState(uint offset) { int t = Block.NewTemp(); Emit(new IrInst(IrOp.LoadState) { D = t, Imm = offset }); return t; }
+    public int LoadState(uint offset)
+    {
+        int t = Block.NewTemp();
+        Emit(new IrInst(IrOp.LoadState) { D = t, Imm = offset });
+        return t;
+    }
     public void Fence() => Emit(new IrInst(IrOp.Fence));
 
     // ------------------------------------------------------------------ ALU with folding
@@ -278,27 +384,51 @@ public sealed unsafe class IrBuilder
         {
             switch (op)
             {
-                case IrOp.Add: return Const(x + y);
-                case IrOp.Sub: return Const(x - y);
-                case IrOp.And: return Const(x & y);
-                case IrOp.Or: return Const(x | y);
-                case IrOp.Xor: return Const(x ^ y);
-                case IrOp.AndNot: return Const(x & ~y);
-                case IrOp.OrNot: return Const(x | ~y);
-                case IrOp.Mul: return Const(x * y);
-                case IrOp.Shl: return Const(x << (int)(y & 31));
-                case IrOp.Shr: return Const(x >> (int)(y & 31));
-                case IrOp.Sar: return Const((uint)((int)x >> (int)(y & 31)));
-                case IrOp.Ror: return Const(System.Numerics.BitOperations.RotateRight(x, (int)(y & 31)));
-                case IrOp.CmpEq: return Const(x == y ? 1u : 0u);
+                case IrOp.Add:
+                    return Const(x + y);
+                case IrOp.Sub:
+                    return Const(x - y);
+                case IrOp.And:
+                    return Const(x & y);
+                case IrOp.Or:
+                    return Const(x | y);
+                case IrOp.Xor:
+                    return Const(x ^ y);
+                case IrOp.AndNot:
+                    return Const(x & ~y);
+                case IrOp.OrNot:
+                    return Const(x | ~y);
+                case IrOp.Mul:
+                    return Const(x * y);
+                case IrOp.Shl:
+                    return Const(x << (int)(y & 31));
+                case IrOp.Shr:
+                    return Const(x >> (int)(y & 31));
+                case IrOp.Sar:
+                    return Const((uint)((int)x >> (int)(y & 31)));
+                case IrOp.Ror:
+                    return Const(System.Numerics.BitOperations.RotateRight(x, (int)(y & 31)));
+                case IrOp.CmpEq:
+                    return Const(x == y ? 1u : 0u);
             }
         }
         if (IsConst(b, out uint k))
         {
-            if (k == 0 && op is IrOp.Add or IrOp.Sub or IrOp.Or or IrOp.Xor or IrOp.Shl or IrOp.Shr or IrOp.Sar or IrOp.Ror or IrOp.AndNot) return a;
-            if (k == 0xFFFFFFFF && op == IrOp.And) return a;
+            if (k == 0 && op is IrOp.Add or IrOp.Sub or IrOp.Or or IrOp.Xor or IrOp.Shl or IrOp.Shr or IrOp.Sar or IrOp.Ror or IrOp.AndNot)
+            {
+                return a;
+            }
+
+            if (k == 0xFFFFFFFF && op == IrOp.And)
+            {
+                return a;
+            }
         }
-        if (IsConst(a, 0) && op is IrOp.Add or IrOp.Or or IrOp.Xor) return b;
+        if (IsConst(a, 0) && op is IrOp.Add or IrOp.Or or IrOp.Xor)
+        {
+            return b;
+        }
+
         int t = Block.NewTemp();
         Emit(new IrInst(op) { D = t, A = a, B = b });
         return t;
@@ -310,15 +440,24 @@ public sealed unsafe class IrBuilder
         {
             switch (op)
             {
-                case IrOp.Not: return Const(~x);
-                case IrOp.Neg: return Const(0 - x);
-                case IrOp.SExt8: return Const((uint)(sbyte)x);
-                case IrOp.SExt16: return Const((uint)(short)x);
-                case IrOp.ZExt8: return Const(x & 0xFF);
-                case IrOp.ZExt16: return Const(x & 0xFFFF);
-                case IrOp.Bit: return Const((x >> (int)imm) & 1);
-                case IrOp.Clz: return Const((uint)System.Numerics.BitOperations.LeadingZeroCount(x));
-                case IrOp.Bswap: return Const(System.Buffers.Binary.BinaryPrimitives.ReverseEndianness(x));
+                case IrOp.Not:
+                    return Const(~x);
+                case IrOp.Neg:
+                    return Const(0 - x);
+                case IrOp.SExt8:
+                    return Const((uint)(sbyte)x);
+                case IrOp.SExt16:
+                    return Const((uint)(short)x);
+                case IrOp.ZExt8:
+                    return Const(x & 0xFF);
+                case IrOp.ZExt16:
+                    return Const(x & 0xFFFF);
+                case IrOp.Bit:
+                    return Const((x >> (int)imm) & 1);
+                case IrOp.Clz:
+                    return Const((uint)System.Numerics.BitOperations.LeadingZeroCount(x));
+                case IrOp.Bswap:
+                    return Const(System.Buffers.Binary.BinaryPrimitives.ReverseEndianness(x));
             }
         }
         int t = Block.NewTemp();
@@ -358,7 +497,11 @@ public sealed unsafe class IrBuilder
 
     public int Select(int cond, int ifTrue, int ifFalse)
     {
-        if (IsConst(cond, out uint c)) return c != 0 ? ifTrue : ifFalse;
+        if (IsConst(cond, out uint c))
+        {
+            return c != 0 ? ifTrue : ifFalse;
+        }
+
         int t = Block.NewTemp();
         Emit(new IrInst(IrOp.Select) { D = t, A = ifTrue, B = ifFalse, C = cond });
         return t;
@@ -382,7 +525,11 @@ public sealed unsafe class IrBuilder
 
     public (int N, int Z) TestNZ(int a)
     {
-        if (IsConst(a, out uint x)) return (Const(x >> 31), Const(x == 0 ? 1u : 0u));
+        if (IsConst(a, out uint x))
+        {
+            return (Const(x >> 31), Const(x == 0 ? 1u : 0u));
+        }
+
         var i = new IrInst(IrOp.TestNZ) { A = a, Fn = Block.NewTemp(), Fz = Block.NewTemp() };
         Emit(i);
         return (i.Fn, i.Fz);
@@ -424,7 +571,9 @@ public sealed unsafe class IrBuilder
     public void VecOp(VecKind kind, bool q, uint size, uint dOff, uint nOff, uint mOff, VecFlags flags = 0, uint aux = 0, uint ins = 0)
         => Emit(new IrInst(IrOp.VecOp)
         {
-            Imm = (uint)kind | (q ? (uint)VecFlags.Q : 0) | ((size & 3) << 9) | (uint)flags, Imm2 = aux, Imm3 = ins,
+            Imm = (uint)kind | (q ? (uint)VecFlags.Q : 0) | ((size & 3) << 9) | (uint)flags,
+            Imm2 = aux,
+            Imm3 = ins,
             Imm4 = dOff | (nOff << 8) | (mOff << 16),
         });
 
@@ -433,8 +582,18 @@ public sealed unsafe class IrBuilder
     public void LoadD(int addr, uint stateOff) => Emit(new IrInst(IrOp.LoadD) { A = addr, Imm = stateOff });
     public void StoreD(int addr, uint stateOff) => Emit(new IrInst(IrOp.StoreD) { A = addr, Imm = stateOff });
 
-    public int LoadExclusive(int addr) { int t = Block.NewTemp(); Emit(new IrInst(IrOp.LdrEx) { D = t, A = addr }); return t; }
-    public int StoreExclusive(int addr, int value) { int t = Block.NewTemp(); Emit(new IrInst(IrOp.StrEx) { D = t, A = addr, B = value }); return t; }
+    public int LoadExclusive(int addr)
+    {
+        int t = Block.NewTemp();
+        Emit(new IrInst(IrOp.LdrEx) { D = t, A = addr });
+        return t;
+    }
+    public int StoreExclusive(int addr, int value)
+    {
+        int t = Block.NewTemp();
+        Emit(new IrInst(IrOp.StrEx) { D = t, A = addr, B = value });
+        return t;
+    }
 
     /// <summary>LDREXD: D = low word, D2 = high word (Imm = 1 selects the doubleword form).</summary>
     public (int Lo, int Hi) LoadExclusiveDual(int addr)

@@ -27,8 +27,15 @@ public sealed unsafe partial class NativeJitTests(GuestMemoryFixture fx, ITestOu
 
     void EnsureGuestPages()
     {
-        if (fx.Memory.FindBlock(CodeBase) == null) fx.Memory.MapFixed(CodeBase, 0x1000, "fuzz code");
-        if (fx.Memory.FindBlock(DataBase) == null) fx.Memory.MapFixed(DataBase, DataSize, "fuzz data");
+        if (fx.Memory.FindBlock(CodeBase) == null)
+        {
+            fx.Memory.MapFixed(CodeBase, 0x1000, "fuzz code");
+        }
+
+        if (fx.Memory.FindBlock(DataBase) == null)
+        {
+            fx.Memory.MapFixed(DataBase, DataSize, "fuzz data");
+        }
     }
 
     /// <summary>VITASHARP_TEST_TRACE=file logs every block before it runs natively (finds the block that crashed the host).</summary>
@@ -41,10 +48,17 @@ public sealed unsafe partial class NativeJitTests(GuestMemoryFixture fx, ITestOu
 
     static bool SimdDefined(uint ins, bool thumb)
     {
-        if (SimdOk.TryGetValue((ins, thumb), out bool ok)) return ok;
+        if (SimdOk.TryGetValue((ins, thumb), out bool ok))
+        {
+            return ok;
+        }
         // ARM64 hosts: Unicorn 2.1's AArch64 TCG backend emits an UNDEFINED NEG .1D for 64-bit-lane VNEG, killing the
         // test host, so only verdicts preloaded into SimdOk are used there (none by default: no random SIMD slots)
-        if (System.Runtime.InteropServices.RuntimeInformation.ProcessArchitecture == System.Runtime.InteropServices.Architecture.Arm64) return false;
+        if (System.Runtime.InteropServices.RuntimeInformation.ProcessArchitecture == System.Runtime.InteropServices.Architecture.Arm64)
+        {
+            return false;
+        }
+
         int k = thumb ? 1 : 0;
         const uint Region = 0x0030_0000, RegionSize = 0x10_0000;
         if (SimdUc[k] == null || SimdNext[k] >= RegionSize - 8)
@@ -63,12 +77,21 @@ public sealed unsafe partial class NativeJitTests(GuestMemoryFixture fx, ITestOu
         {
             u.MemWrite(at, code);
             u.RegWrite(UcArm.UC_ARM_REG_CPSR, (long)(0x10u | (thumb ? 0x20u : 0)));
-            for (int r = 0; r < 15; r++) u.RegWrite(RegIds[r], DataBase + 0x8000);
+            for (int r = 0; r < 15; r++)
+            {
+                u.RegWrite(RegIds[r], DataBase + 0x8000);
+            }
+
             u.EmuStart(at | (thumb ? 1u : 0), at + 4, 0, 1);
             uint pc = (uint)u.RegRead(UcArm.UC_ARM_REG_PC);
             ok = (pc & ~1u) != 0x4 && (pc & ~1u) != 0xFFFF0004;
         }
-        catch (Exception) { ok = false; SimdUc[k]!.Close(); SimdUc[k] = null; }
+        catch (Exception)
+        {
+            ok = false;
+            SimdUc[k]!.Close();
+            SimdUc[k] = null;
+        }
         SimdOk[(ins, thumb)] = ok;
         return ok;
     }
@@ -80,7 +103,11 @@ public sealed unsafe partial class NativeJitTests(GuestMemoryFixture fx, ITestOu
     /// </summary>
     static bool PcOperandUnpredictable(DecodedInst d, bool thumb)
     {
-        if (!thumb) return false;
+        if (!thumb)
+        {
+            return false;
+        }
+
         uint i = d.Raw, rn = (i >> 16) & 0xF, op = (i >> 21) & 0xF;
         return d.Op switch
         {
@@ -110,16 +137,31 @@ public sealed unsafe partial class NativeJitTests(GuestMemoryFixture fx, ITestOu
             {
                 ins = (uint)rng.NextInt64();
                 int c = rng.Next(8);
-                if (c < 5) ins = (ins & 0x0FFFFFFF) | 0xE000_0000;          // mostly unconditional
-                else if (c < 7) ins = (ins & 0x0FFFFFFF) | ((uint)rng.Next(15) << 28);
-                if (rng.Next(3) == 0) ins = (ins & 0xF1FFFFFF) | ((uint)rng.Next(5) << 25); // bias: DP / LDR / STR / LDM
+                if (c < 5)
+                {
+                    ins = (ins & 0x0FFFFFFF) | 0xE000_0000;          // mostly unconditional
+                }
+                else if (c < 7)
+                {
+                    ins = (ins & 0x0FFFFFFF) | ((uint)rng.Next(15) << 28);
+                }
+
+                if (rng.Next(3) == 0)
+                {
+                    ins = (ins & 0xF1FFFFFF) | ((uint)rng.Next(5) << 25); // bias: DP / LDR / STR / LDM
+                }
+
                 bytes = BitConverter.GetBytes(ins);
                 d = Decoder.DecodeArm(ins, addr);
             }
             else
             {
                 ushort hw1 = (ushort)rng.Next(0x10000);
-                if (rng.Next(2) == 0) hw1 |= 0xE800;
+                if (rng.Next(2) == 0)
+                {
+                    hw1 |= 0xE800;
+                }
+
                 if (Decoder.IsThumb32(hw1))
                 {
                     ushort hw2 = (ushort)rng.Next(0x10000);
@@ -133,7 +175,10 @@ public sealed unsafe partial class NativeJitTests(GuestMemoryFixture fx, ITestOu
                     bytes = [(byte)hw1, (byte)(hw1 >> 8)];
                     d = Decoder.DecodeThumb16(ins, addr, false, 14);
                 }
-                if (d.Op == Op.Thumb_It && forUnicorn) continue; // IT blocks are compared by the interpreter mode
+                if (d.Op == Op.Thumb_It && forUnicorn)
+                {
+                    continue; // IT blocks are compared by the interpreter mode
+                }
             }
             // SIMD: raw random words hit UNDEFINED NEON encodings whose interpreter handlers overrun their scratch
             // buffers; SIMD slots come from the vetted generator of the single-instruction fuzz instead
@@ -142,35 +187,65 @@ public sealed unsafe partial class NativeJitTests(GuestMemoryFixture fx, ITestOu
             {
                 // VFP loads/stores (VLDR/VSTR/VLDM/VSTM/VPUSH/VPOP): cond 110P UDWL Rn Vd 101s imm8, same bits in Thumb
                 ins = 0xEC000A00u | ((uint)rng.NextInt64() & 0x01FFF1FFu);
-                if (rng.Next(2) == 0) ins = (ins & ~0xFFu) | (uint)rng.Next(1, 9); // short register lists mostly
+                if (rng.Next(2) == 0)
+                {
+                    ins = (ins & ~0xFFu) | (uint)rng.Next(1, 9); // short register lists mostly
+                }
+
                 bytes = !thumb ? BitConverter.GetBytes(ins) : [(byte)(ins >> 16), (byte)(ins >> 24), (byte)ins, (byte)(ins >> 8)];
                 d = !thumb ? Decoder.DecodeArm(ins, addr) : Decoder.DecodeThumb32(ins, addr, false, 14);
                 simd = false; // the VFP transfer handlers are safe for any encoding
             }
             else if (simd || rng.Next(10) == 0)
             {
-                if (!simd && forUnicorn) { }
+                if (!simd && forUnicorn)
+                {
+                }
                 else
                 {
                     ins = CpuFuzzTests.RandomSimdInstruction(rng, thumb);
                     bytes = !thumb ? BitConverter.GetBytes(ins) : [(byte)(ins >> 16), (byte)(ins >> 24), (byte)ins, (byte)(ins >> 8)];
                     d = !thumb ? Decoder.DecodeArm(ins, addr) : Decoder.DecodeThumb32(ins, addr, false, 14);
-                    if (forUnicorn || CpuFuzzTests.IsUnpredictable(d, thumb) || !SimdDefined(ins, thumb)) continue;
+                    if (forUnicorn || CpuFuzzTests.IsUnpredictable(d, thumb) || !SimdDefined(ins, thumb))
+                    {
+                        continue;
+                    }
                 }
             }
-            if (Excluded(d.Op)) continue;
-            if (d.Op is Op.A32_Udf or Op.T16_Udf or Op.T32_Udf or Op.A32_Bkpt or Op.T16_Bkpt) continue;
+            if (Excluded(d.Op))
+            {
+                continue;
+            }
+
+            if (d.Op is Op.A32_Udf or Op.T16_Udf or Op.T32_Udf or Op.A32_Bkpt or Op.T16_Bkpt)
+            {
+                continue;
+            }
+
             if (forUnicorn && (d.Op is Op.A32_Svc or Op.T16_Svc or Op.A32_Yield or Op.T16_Yield or Op.T32_Yield or Op.A32_Mrc or Op.A32_Mcr
                 or Op.T32_Mrc or Op.T32_Mcr or Op.Vfp_Vmrs or Op.Vfp_Vmsr or Op.A32_Mrs or Op.T32_Mrs or Op.A32_MsrImm or Op.A32_MsrReg
-                or Op.T32_Msr or Op.T32_BxjOrSubsPcLr || CpuFuzzTests.IsUnpredictable(d, thumb) || PcOperandUnpredictable(d, thumb))) continue;
+                or Op.T32_Msr or Op.T32_BxjOrSubsPcLr || CpuFuzzTests.IsUnpredictable(d, thumb) || PcOperandUnpredictable(d, thumb)))
+            {
+                continue;
+            }
             // a block-ending instruction only at the end (the builder would stop there anyway)
-            if (d.EndsBlock && !last && rng.Next(4) != 0) continue;
+            if (d.EndsBlock && !last && rng.Next(4) != 0)
+            {
+                continue;
+            }
+
             code.AddRange(bytes);
             accepted++;
             addr += (uint)bytes.Length;
-            if (d.EndsBlock || last) break;
+            if (d.EndsBlock || last)
+            {
+                break;
+            }
         }
-        if (code.Count == 0) return null;
+        if (code.Count == 0)
+        {
+            return null;
+        }
         // pad with a branch-to-self so the builder stops inside the written code
         code.AddRange(thumb ? [0xFE, 0xE7] : [0xFE, 0xFF, 0xFF, 0xEA]);
         code.ToArray().CopyTo(GuestMemory.Span(CodeBase, 0x1000));
@@ -187,31 +262,105 @@ public sealed unsafe partial class NativeJitTests(GuestMemoryFixture fx, ITestOu
 
     static Snapshot Take(CpuState* s, string? error)
     {
-        var r = new uint[16]; for (int i = 0; i < 16; i++) r[i] = s->R[i];
-        var d = new ulong[32]; for (int i = 0; i < 32; i++) d[i] = s->D[i];
+        var r = new uint[16];
+        for (int i = 0; i < 16; i++)
+        {
+            r[i] = s->R[i];
+        }
+
+        var d = new ulong[32];
+        for (int i = 0; i < 32; i++)
+        {
+            d[i] = s->D[i];
+        }
+
         return new Snapshot
         {
-            R = r, D = d, Cpsr = s->Cpsr, Fpscr = s->Fpscr, Exit = (uint)s->Exit, SvcImm = s->SvcImm, SvcPc = s->SvcPc, Q = s->Q, GE = s->GE,
-            ExclusiveValid = s->ExclusiveValid, ExclusiveAddr = s->ExclusiveAddr, TpidrUrw = s->TpidrUrw,
-            Mem = GuestMemory.Span(DataBase, (int)DataSize).ToArray(), Error = error,
+            R = r,
+            D = d,
+            Cpsr = s->Cpsr,
+            Fpscr = s->Fpscr,
+            Exit = (uint)s->Exit,
+            SvcImm = s->SvcImm,
+            SvcPc = s->SvcPc,
+            Q = s->Q,
+            GE = s->GE,
+            ExclusiveValid = s->ExclusiveValid,
+            ExclusiveAddr = s->ExclusiveAddr,
+            TpidrUrw = s->TpidrUrw,
+            Mem = GuestMemory.Span(DataBase, (int)DataSize).ToArray(),
+            Error = error,
         };
     }
 
     static string Diff(Snapshot a, Snapshot b)
     {
         var sb = new StringBuilder();
-        if (a.Error != b.Error) { sb.Append($" error: {a.Error ?? "-"} vs {b.Error ?? "-"}"); return sb.ToString(); }
-        if (a.Error != null) return "";
-        for (int i = 0; i < 16; i++) if (a.R[i] != b.R[i]) sb.Append($" R{i}: {a.R[i]:X8} vs {b.R[i]:X8}");
-        if (a.Cpsr != b.Cpsr) sb.Append($" CPSR: {a.Cpsr:X8} vs {b.Cpsr:X8}");
-        if (a.Fpscr != b.Fpscr) sb.Append($" FPSCR: {a.Fpscr:X8} vs {b.Fpscr:X8}");
-        if (a.Exit != b.Exit) sb.Append($" Exit: {a.Exit} vs {b.Exit}");
-        if (a.Exit != 0 && (a.SvcImm != b.SvcImm || a.SvcPc != b.SvcPc)) sb.Append($" Svc: {a.SvcImm:X}@{a.SvcPc:X8} vs {b.SvcImm:X}@{b.SvcPc:X8}");
-        if (a.ExclusiveValid != b.ExclusiveValid || a.ExclusiveAddr != b.ExclusiveAddr) sb.Append(" exclusive monitor");
-        if (a.TpidrUrw != b.TpidrUrw) sb.Append($" TPIDRURW: {a.TpidrUrw:X8} vs {b.TpidrUrw:X8}");
-        for (int i = 0; i < 32; i++) if (a.D[i] != b.D[i]) sb.Append($" D{i}: {a.D[i]:X16} vs {b.D[i]:X16}");
+        if (a.Error != b.Error)
+        {
+            sb.Append($" error: {a.Error ?? "-"} vs {b.Error ?? "-"}");
+            return sb.ToString();
+        }
+        if (a.Error != null)
+        {
+            return "";
+        }
+
+        for (int i = 0; i < 16; i++)
+        {
+            if (a.R[i] != b.R[i])
+            {
+                sb.Append($" R{i}: {a.R[i]:X8} vs {b.R[i]:X8}");
+            }
+        }
+
+        if (a.Cpsr != b.Cpsr)
+        {
+            sb.Append($" CPSR: {a.Cpsr:X8} vs {b.Cpsr:X8}");
+        }
+
+        if (a.Fpscr != b.Fpscr)
+        {
+            sb.Append($" FPSCR: {a.Fpscr:X8} vs {b.Fpscr:X8}");
+        }
+
+        if (a.Exit != b.Exit)
+        {
+            sb.Append($" Exit: {a.Exit} vs {b.Exit}");
+        }
+
+        if (a.Exit != 0 && (a.SvcImm != b.SvcImm || a.SvcPc != b.SvcPc))
+        {
+            sb.Append($" Svc: {a.SvcImm:X}@{a.SvcPc:X8} vs {b.SvcImm:X}@{b.SvcPc:X8}");
+        }
+
+        if (a.ExclusiveValid != b.ExclusiveValid || a.ExclusiveAddr != b.ExclusiveAddr)
+        {
+            sb.Append(" exclusive monitor");
+        }
+
+        if (a.TpidrUrw != b.TpidrUrw)
+        {
+            sb.Append($" TPIDRURW: {a.TpidrUrw:X8} vs {b.TpidrUrw:X8}");
+        }
+
+        for (int i = 0; i < 32; i++)
+        {
+            if (a.D[i] != b.D[i])
+            {
+                sb.Append($" D{i}: {a.D[i]:X16} vs {b.D[i]:X16}");
+            }
+        }
+
         for (int i = 0; i < a.Mem.Length; i++)
-            if (a.Mem[i] != b.Mem[i]) { sb.Append($" MEM@{DataBase + i:X8}: {a.Mem[i]:X2} vs {b.Mem[i]:X2}"); break; }
+        {
+            if (a.Mem[i] != b.Mem[i])
+            {
+                sb.Append($" MEM@{DataBase + i:X8}: {a.Mem[i]:X2} vs {b.Mem[i]:X2}");
+                break;
+            }
+        }
+
         return sb.ToString();
     }
 
@@ -225,20 +374,36 @@ public sealed unsafe partial class NativeJitTests(GuestMemoryFixture fx, ITestOu
         public RandomState(Random rng)
         {
             for (int r = 0; r < 15; r++)
+            {
                 Regs[r] = rng.Next(6) == 0 ? (uint)rng.NextInt64() : rng.Next(5) == 0 ? (uint)rng.Next(-64, 64) : DataBase + 0x4000 + (uint)rng.Next(0x4000) * (rng.Next(2) == 0 ? 4u : 1u) % 0x7000;
+            }
+
             Flags = (uint)rng.Next(32) << 27 | (uint)rng.Next(16) << 16;
             Fpscr = (uint)rng.Next(16) << 28 | 0x0300_0000;
-            for (int i = 0; i < 32; i++) D[i] = (ulong)rng.NextInt64();
+            for (int i = 0; i < 32; i++)
+            {
+                D[i] = (ulong)rng.NextInt64();
+            }
+
             rng.NextBytes(Data);
         }
 
         public void Apply(CpuState* s, bool thumb)
         {
-            *s = default; s->MemBase = GuestMemory.Base;
-            for (int r = 0; r < 15; r++) s->R[r] = Regs[r];
+            *s = default;
+            s->MemBase = GuestMemory.Base;
+            for (int r = 0; r < 15; r++)
+            {
+                s->R[r] = Regs[r];
+            }
+
             s->R[15] = CodeBase;
             s->Cpsr = Flags | 0x10 | (thumb ? 0x20u : 0);
-            for (int i = 0; i < 32; i++) s->D[i] = D[i];
+            for (int i = 0; i < 32; i++)
+            {
+                s->D[i] = D[i];
+            }
+
             s->Fpscr = Fpscr;
             Data.CopyTo(GuestMemory.Span(DataBase, (int)DataSize));
             // small and small-negative register values address the first and last pages: reset them too
@@ -260,16 +425,30 @@ public sealed unsafe partial class NativeJitTests(GuestMemoryFixture fx, ITestOu
 
     static string? Guard(Action a)
     {
-        try { a(); return null; }
-        catch (Exception e) { return e.GetType().Name; }
+        try
+        {
+            a();
+            return null;
+        }
+        catch (Exception e)
+        {
+            return e.GetType().Name;
+        }
     }
 
     /// <summary>Runs native code for one block without linking (the dispatcher's per-block contract).</summary>
     static void RunNative(CpuState* s, nint entry)
     {
-        s->CycleAcc = 0; s->CheckWindow = 0; s->LinkBreak = 1; s->NBlocks = 0; s->NInstr = 0;
+        s->CycleAcc = 0;
+        s->CheckWindow = 0;
+        s->LinkBreak = 1;
+        s->NBlocks = 0;
+        s->NInstr = 0;
         NativeRuntime.Instance.Run(s, entry);
-        if (s->CalloutFault != 0) NativeRuntime.ThrowPendingFault(s);
+        if (s->CalloutFault != 0)
+        {
+            NativeRuntime.ThrowPendingFault(s);
+        }
     }
 
     /// <summary>
@@ -318,8 +497,15 @@ public sealed unsafe partial class NativeJitTests(GuestMemoryFixture fx, ITestOu
         {
             var code = GuestMemory.Span(CodeBase, 0x1000);
             code.Clear();
-            for (int i = 0; i < arm.Length; i++) BitConverter.GetBytes(i == 13 ? patchAdd : arm[i]).CopyTo(code[(i * 4)..]);
-            for (int i = 0; i < thumbFn.Length; i++) BitConverter.GetBytes(thumbFn[i]).CopyTo(code[(0x50 + i * 2)..]);
+            for (int i = 0; i < arm.Length; i++)
+            {
+                BitConverter.GetBytes(i == 13 ? patchAdd : arm[i]).CopyTo(code[(i * 4)..]);
+            }
+
+            for (int i = 0; i < thumbFn.Length; i++)
+            {
+                BitConverter.GetBytes(thumbFn[i]).CopyTo(code[(0x50 + i * 2)..]);
+            }
         }
 
         long oldRate = CpuCore.InstructionsPerSecond;
@@ -343,7 +529,9 @@ public sealed unsafe partial class NativeJitTests(GuestMemoryFixture fx, ITestOu
                 // run a few times: the native backend compiles in the background and links as blocks appear
                 for (int pass = 0; pass < 3; pass++)
                 {
-                    s->R[15] = CodeBase; s->Thumb = 0; s->R[13] = DataBase + 0xF000;
+                    s->R[15] = CodeBase;
+                    s->Thumb = 0;
+                    s->R[13] = DataBase + 0xF000;
                     var exit = core.Run();
                     Assert.Equal(ExitReason.Svc, exit);
                     Assert.Equal(0x42u, s->SvcImm);
@@ -400,12 +588,29 @@ public sealed unsafe partial class NativeJitTests(GuestMemoryFixture fx, ITestOu
             {
                 bool storeOnly = scenario >= 1;
                 var bytes = new List<byte>();
-                if (!thumb) foreach (var w in storeOnly ? armStore : armFull) bytes.AddRange(BitConverter.GetBytes(w));
-                else foreach (var w in storeOnly ? thumbStore : thumbFull)
+                if (!thumb)
                 {
-                    uint v = Convert.ToUInt32(w, 16);
-                    if (w.Length > 4) bytes.AddRange([(byte)(v >> 16), (byte)(v >> 24), (byte)v, (byte)(v >> 8)]); else bytes.AddRange([(byte)v, (byte)(v >> 8)]);
+                    foreach (var w in storeOnly ? armStore : armFull)
+                    {
+                        bytes.AddRange(BitConverter.GetBytes(w));
+                    }
                 }
+                else
+                {
+                    foreach (var w in storeOnly ? thumbStore : thumbFull)
+                    {
+                        uint v = Convert.ToUInt32(w, 16);
+                        if (w.Length > 4)
+                        {
+                            bytes.AddRange([(byte)(v >> 16), (byte)(v >> 24), (byte)v, (byte)(v >> 8)]);
+                        }
+                        else
+                        {
+                            bytes.AddRange([(byte)v, (byte)(v >> 8)]);
+                        }
+                    }
+                }
+
                 bytes.ToArray().CopyTo(GuestMemory.Span(CodeBase, 0x1000));
                 var b = BlockBuilder.Build(CodeBase, thumb);
                 var cb = NativeX64Compiler.Instance.Compile(b)!;
@@ -414,19 +619,53 @@ public sealed unsafe partial class NativeJitTests(GuestMemoryFixture fx, ITestOu
 
                 (Snapshot Snap, uint GenDelta) Run(bool native)
                 {
-                    *s = default; s->MemBase = GuestMemory.Base;
-                    s->R[0] = addr; s->R[1] = 0x1234; s->R[15] = CodeBase; s->Thumb = thumb ? 1u : 0u;
+                    *s = default;
+                    s->MemBase = GuestMemory.Base;
+                    s->R[0] = addr;
+                    s->R[1] = 0x1234;
+                    s->R[15] = CodeBase;
+                    s->Thumb = thumb ? 1u : 0u;
                     GuestMemory.Write(addr, 41u);
                     uint g0 = gens[genIdx];
                     switch (scenario)
                     {
-                        case 1: s->ExclusiveValid = 0; break;                                                         // no LDREX
-                        case 2: s->ExclusiveValid = 1; s->ExclusiveAddr = addr + 8; s->ExclusiveGen = g0; s->ExclusiveValue = 41; break; // other address
-                        case 3: s->ExclusiveValid = 1; s->ExclusiveAddr = addr; s->ExclusiveGen = g0 - 2; s->ExclusiveValue = 41; break;  // stale generation
-                        case 4: s->ExclusiveValid = 1; s->ExclusiveAddr = addr; s->ExclusiveGen = g0; s->ExclusiveValue = 40; break;      // value changed
-                        case 5: s->ExclusiveValid = 1; s->ExclusiveAddr = addr; s->ExclusiveGen = g0; s->ExclusiveValue = 41; break;      // armed: succeeds
+                        case 1:
+                            s->ExclusiveValid = 0;
+                            break;                                                         // no LDREX
+                        case 2:
+                            s->ExclusiveValid = 1;
+                            s->ExclusiveAddr = addr + 8;
+                            s->ExclusiveGen = g0;
+                            s->ExclusiveValue = 41;
+                            break; // other address
+                        case 3:
+                            s->ExclusiveValid = 1;
+                            s->ExclusiveAddr = addr;
+                            s->ExclusiveGen = g0 - 2;
+                            s->ExclusiveValue = 41;
+                            break;  // stale generation
+                        case 4:
+                            s->ExclusiveValid = 1;
+                            s->ExclusiveAddr = addr;
+                            s->ExclusiveGen = g0;
+                            s->ExclusiveValue = 40;
+                            break;      // value changed
+                        case 5:
+                            s->ExclusiveValid = 1;
+                            s->ExclusiveAddr = addr;
+                            s->ExclusiveGen = g0;
+                            s->ExclusiveValue = 41;
+                            break;      // armed: succeeds
                     }
-                    if (native) RunNative(s, cb.NativeEntry); else CpuCore.Interpret(s, b);
+                    if (native)
+                    {
+                        RunNative(s, cb.NativeEntry);
+                    }
+                    else
+                    {
+                        CpuCore.Interpret(s, b);
+                    }
+
                     return (Take(s, null), gens[genIdx] - g0);
                 }
                 var i = Run(false);
@@ -437,7 +676,10 @@ public sealed unsafe partial class NativeJitTests(GuestMemoryFixture fx, ITestOu
                 output.WriteLine($"scenario {scenario}: status r2={n.Snap.R[2]} gen +{n.GenDelta}");
             }
         }
-        finally { CpuState.Free(s); }
+        finally
+        {
+            CpuState.Free(s);
+        }
     }
 
     /// <summary>Inline LDREXD/STREXD against the interpreter, same monitor scenarios as the word form.</summary>
@@ -461,12 +703,29 @@ public sealed unsafe partial class NativeJitTests(GuestMemoryFixture fx, ITestOu
             {
                 bool storeOnly = scenario >= 1;
                 var bytes = new List<byte>();
-                if (!thumb) foreach (var w in storeOnly ? armStore : armFull) bytes.AddRange(BitConverter.GetBytes(w));
-                else foreach (var w in storeOnly ? thumbStore : thumbFull)
+                if (!thumb)
                 {
-                    uint v = Convert.ToUInt32(w, 16);
-                    if (w.Length > 4) bytes.AddRange([(byte)(v >> 16), (byte)(v >> 24), (byte)v, (byte)(v >> 8)]); else bytes.AddRange([(byte)v, (byte)(v >> 8)]);
+                    foreach (var w in storeOnly ? armStore : armFull)
+                    {
+                        bytes.AddRange(BitConverter.GetBytes(w));
+                    }
                 }
+                else
+                {
+                    foreach (var w in storeOnly ? thumbStore : thumbFull)
+                    {
+                        uint v = Convert.ToUInt32(w, 16);
+                        if (w.Length > 4)
+                        {
+                            bytes.AddRange([(byte)(v >> 16), (byte)(v >> 24), (byte)v, (byte)(v >> 8)]);
+                        }
+                        else
+                        {
+                            bytes.AddRange([(byte)v, (byte)(v >> 8)]);
+                        }
+                    }
+                }
+
                 bytes.ToArray().CopyTo(GuestMemory.Span(CodeBase, 0x1000));
                 var b = BlockBuilder.Build(CodeBase, thumb);
                 var cb = NativeX64Compiler.Instance.Compile(b)!;
@@ -476,19 +735,56 @@ public sealed unsafe partial class NativeJitTests(GuestMemoryFixture fx, ITestOu
 
                 (Snapshot Snap, uint GenDelta) Run(bool native)
                 {
-                    *s = default; s->MemBase = GuestMemory.Base;
-                    s->R[0] = addr; s->R[2] = 0x1234; s->R[3] = 0x5678; s->R[4] = 0x99; s->R[15] = CodeBase; s->Thumb = thumb ? 1u : 0u;
-                    GuestMemory.Write(addr, unchecked((uint)Mem0)); GuestMemory.Write(addr + 4, (uint)(Mem0 >> 32));
+                    *s = default;
+                    s->MemBase = GuestMemory.Base;
+                    s->R[0] = addr;
+                    s->R[2] = 0x1234;
+                    s->R[3] = 0x5678;
+                    s->R[4] = 0x99;
+                    s->R[15] = CodeBase;
+                    s->Thumb = thumb ? 1u : 0u;
+                    GuestMemory.Write(addr, unchecked((uint)Mem0));
+                    GuestMemory.Write(addr + 4, (uint)(Mem0 >> 32));
                     uint g0 = gens[genIdx];
                     switch (scenario)
                     {
-                        case 1: s->ExclusiveValid = 0; break;
-                        case 2: s->ExclusiveValid = 1; s->ExclusiveAddr = addr + 8; s->ExclusiveGen = g0; s->ExclusiveValue = Mem0; break;
-                        case 3: s->ExclusiveValid = 1; s->ExclusiveAddr = addr; s->ExclusiveGen = g0 - 2; s->ExclusiveValue = Mem0; break;
-                        case 4: s->ExclusiveValid = 1; s->ExclusiveAddr = addr; s->ExclusiveGen = g0; s->ExclusiveValue = Mem0 ^ (1ul << 40); break; // high word changed
-                        case 5: s->ExclusiveValid = 1; s->ExclusiveAddr = addr; s->ExclusiveGen = g0; s->ExclusiveValue = Mem0; break;
+                        case 1:
+                            s->ExclusiveValid = 0;
+                            break;
+                        case 2:
+                            s->ExclusiveValid = 1;
+                            s->ExclusiveAddr = addr + 8;
+                            s->ExclusiveGen = g0;
+                            s->ExclusiveValue = Mem0;
+                            break;
+                        case 3:
+                            s->ExclusiveValid = 1;
+                            s->ExclusiveAddr = addr;
+                            s->ExclusiveGen = g0 - 2;
+                            s->ExclusiveValue = Mem0;
+                            break;
+                        case 4:
+                            s->ExclusiveValid = 1;
+                            s->ExclusiveAddr = addr;
+                            s->ExclusiveGen = g0;
+                            s->ExclusiveValue = Mem0 ^ (1ul << 40);
+                            break; // high word changed
+                        case 5:
+                            s->ExclusiveValid = 1;
+                            s->ExclusiveAddr = addr;
+                            s->ExclusiveGen = g0;
+                            s->ExclusiveValue = Mem0;
+                            break;
                     }
-                    if (native) RunNative(s, cb.NativeEntry); else CpuCore.Interpret(s, b);
+                    if (native)
+                    {
+                        RunNative(s, cb.NativeEntry);
+                    }
+                    else
+                    {
+                        CpuCore.Interpret(s, b);
+                    }
+
                     return (Take(s, null), gens[genIdx] - g0);
                 }
                 var i = Run(false);
@@ -496,11 +792,19 @@ public sealed unsafe partial class NativeJitTests(GuestMemoryFixture fx, ITestOu
                 string diff = Diff(i.Snap, n.Snap);
                 Assert.True(diff.Length == 0, $"scenario {scenario}: {diff}");
                 Assert.Equal(i.GenDelta, n.GenDelta);
-                if (scenario == 0) { Assert.Equal(0u, n.Snap.R[4]); Assert.Equal(42u, n.Snap.R[2]); Assert.Equal(7u, n.Snap.R[3]); }
+                if (scenario == 0)
+                {
+                    Assert.Equal(0u, n.Snap.R[4]);
+                    Assert.Equal(42u, n.Snap.R[2]);
+                    Assert.Equal(7u, n.Snap.R[3]);
+                }
                 output.WriteLine($"scenario {scenario}: status r4={n.Snap.R[4]} gen +{n.GenDelta}");
             }
         }
-        finally { CpuState.Free(s); }
+        finally
+        {
+            CpuState.Free(s);
+        }
     }
 
     /// <summary>
@@ -518,7 +822,14 @@ public sealed unsafe partial class NativeJitTests(GuestMemoryFixture fx, ITestOu
         foreach (var w in code)
         {
             uint v = Convert.ToUInt32(w, 16);
-            if (w.Length > 4) bytes.AddRange([(byte)(v >> 16), (byte)(v >> 24), (byte)v, (byte)(v >> 8)]); else bytes.AddRange([(byte)v, (byte)(v >> 8)]);
+            if (w.Length > 4)
+            {
+                bytes.AddRange([(byte)(v >> 16), (byte)(v >> 24), (byte)v, (byte)(v >> 8)]);
+            }
+            else
+            {
+                bytes.AddRange([(byte)v, (byte)(v >> 8)]);
+            }
         }
         bytes.ToArray().CopyTo(GuestMemory.Span(CodeBase, 0x1000));
         var b = BlockBuilder.Build(CodeBase, true);
@@ -528,10 +839,22 @@ public sealed unsafe partial class NativeJitTests(GuestMemoryFixture fx, ITestOu
         {
             foreach (bool native in new[] { false, true })
             {
-                *s = default; s->MemBase = GuestMemory.Base;
-                s->R[0] = 0xFF804000; s->R[15] = CodeBase; s->Cpsr = 0x30; s->Fpscr = 0x0300_0000;
+                *s = default;
+                s->MemBase = GuestMemory.Base;
+                s->R[0] = 0xFF804000;
+                s->R[15] = CodeBase;
+                s->Cpsr = 0x30;
+                s->Fpscr = 0x0300_0000;
                 s->D[0] = 0x1122334455667788; // garbage the first half would pick up
-                if (native) RunNative(s, cb.NativeEntry); else CpuCore.Interpret(s, b);
+                if (native)
+                {
+                    RunNative(s, cb.NativeEntry);
+                }
+                else
+                {
+                    CpuCore.Interpret(s, b);
+                }
+
                 float[] lanes = [BitConverter.UInt32BitsToSingle((uint)s->D[0]), BitConverter.UInt32BitsToSingle((uint)(s->D[0] >> 32)),
                                  BitConverter.UInt32BitsToSingle((uint)s->D[1]), BitConverter.UInt32BitsToSingle((uint)(s->D[1] >> 32))];
                 output.WriteLine($"{(native ? "native" : "interpreter")}: {string.Join(", ", lanes)}");
@@ -541,7 +864,10 @@ public sealed unsafe partial class NativeJitTests(GuestMemoryFixture fx, ITestOu
                 Assert.Equal(0.0f, lanes[3], 3);
             }
         }
-        finally { CpuState.Free(s); }
+        finally
+        {
+            CpuState.Free(s);
+        }
     }
 
     /// <summary>Four guest threads increment one counter with LDREX/ADD/STREX loops in native code: no update may be lost.</summary>
@@ -564,7 +890,11 @@ public sealed unsafe partial class NativeJitTests(GuestMemoryFixture fx, ITestOu
         ];
         var code = GuestMemory.Span(CodeBase, 0x1000);
         code.Clear();
-        for (int i = 0; i < arm.Length; i++) BitConverter.GetBytes(arm[i]).CopyTo(code[(i * 4)..]);
+        for (int i = 0; i < arm.Length; i++)
+        {
+            BitConverter.GetBytes(arm[i]).CopyTo(code[(i * 4)..]);
+        }
+
         GuestMemory.Write(counter, 0u);
         long oldRate = CpuCore.InstructionsPerSecond, oldHot = NativeX64Compiler.Instance.HotInstructions;
         var oldMode = Jit.Mode;
@@ -580,11 +910,28 @@ public sealed unsafe partial class NativeJitTests(GuestMemoryFixture fx, ITestOu
             {
                 using var core = new CpuCore(cache);
                 var s = core.State;
-                s->R[0] = counter; s->R[3] = Per; s->R[15] = CodeBase;
-                while (true) { var e = core.Run(); if (e == ExitReason.Svc) break; }
+                s->R[0] = counter;
+                s->R[3] = Per;
+                s->R[15] = CodeBase;
+                while (true)
+                {
+                    var e = core.Run();
+                    if (e == ExitReason.Svc)
+                    {
+                        break;
+                    }
+                }
             })).ToArray();
-            foreach (var t in threads) t.Start();
-            foreach (var t in threads) t.Join();
+            foreach (var t in threads)
+            {
+                t.Start();
+            }
+
+            foreach (var t in threads)
+            {
+                t.Join();
+            }
+
             Assert.Equal((uint)(Threads * Per), GuestMemory.Read<uint>(counter));
             Assert.True(cache.Get(CodeBase, false).NativeEntry != 0, "the loop never ran natively");
         }
@@ -626,16 +973,39 @@ public sealed unsafe partial class NativeJitTests(GuestMemoryFixture fx, ITestOu
             var cache = new BlockCache();
             using var core = new CpuCore(cache);
             var s = core.State;
-            void Load(uint imm) { var c = GuestMemory.Span(CodeBase, 0x1000); c.Clear(); var p = prog(imm); for (int i = 0; i < p.Length; i++) BitConverter.GetBytes(p[i]).CopyTo(c[(i * 4)..]); }
-            uint RunOnce() { s->R[15] = CodeBase; s->Thumb = 0; Assert.Equal(ExitReason.Svc, core.Run()); return s->R[0]; }
+            void Load(uint imm)
+            {
+                var c = GuestMemory.Span(CodeBase, 0x1000);
+                c.Clear();
+                var p = prog(imm);
+                for (int i = 0; i < p.Length; i++)
+                {
+                    BitConverter.GetBytes(p[i]).CopyTo(c[(i * 4)..]);
+                }
+            }
+            uint RunOnce()
+            {
+                s->R[15] = CodeBase;
+                s->Thumb = 0;
+                Assert.Equal(ExitReason.Svc, core.Run());
+                return s->R[0];
+            }
             Load(3);
-            for (int i = 0; i < 5; i++) { Assert.Equal(3u * 0x1000, RunOnce()); WaitForJit(); }
+            for (int i = 0; i < 5; i++)
+            {
+                Assert.Equal(3u * 0x1000, RunOnce());
+                WaitForJit();
+            }
             var loop = cache.Get(CodeBase + 8, false);
             Assert.True(loop.NativeEntry != 0, "loop block was not compiled natively");
             Load(5);
             cache.Invalidate(CodeBase, 0x1000);
             Assert.True(loop.Invalidated);
-            for (int i = 0; i < 5; i++) { Assert.Equal(5u * 0x1000, RunOnce()); WaitForJit(); }
+            for (int i = 0; i < 5; i++)
+            {
+                Assert.Equal(5u * 0x1000, RunOnce());
+                WaitForJit();
+            }
         }
         finally
         {
@@ -678,13 +1048,22 @@ public sealed unsafe partial class NativeJitTests(GuestMemoryFixture fx, ITestOu
                 Assert.True(Jit.Select(backend));
                 var code = GuestMemory.Span(CodeBase, 0x1000);
                 code.Clear();
-                for (int i = 0; i < arm.Length; i++) BitConverter.GetBytes(arm[i]).CopyTo(code[(i * 4)..]);
+                for (int i = 0; i < arm.Length; i++)
+                {
+                    BitConverter.GetBytes(arm[i]).CopyTo(code[(i * 4)..]);
+                }
+
                 using var core = new CpuCore(new BlockCache());
                 var s = core.State;
-                for (int i = 0; i < 32; i++) s->D[i] = 0x0001000200030004ul * (ulong)(i + 1);
+                for (int i = 0; i < 32; i++)
+                {
+                    s->D[i] = 0x0001000200030004ul * (ulong)(i + 1);
+                }
+
                 for (int pass = 0; pass < 6; pass++)
                 {
-                    s->R[15] = CodeBase; s->Thumb = 0;
+                    s->R[15] = CodeBase;
+                    s->Thumb = 0;
                     Assert.Equal(ExitReason.Svc, core.Run());
                     WaitForJit(); // let the workers compile
                 }
@@ -715,16 +1094,29 @@ public sealed unsafe partial class NativeJitTests(GuestMemoryFixture fx, ITestOu
     [Fact]
     public void HuntBlock()
     {
-        if (Environment.GetEnvironmentVariable(EnvVars.Hunt) is not { Length: > 2 } spec) return;
+        if (Environment.GetEnvironmentVariable(EnvVars.Hunt) is not { Length: > 2 } spec)
+        {
+            return;
+        }
+
         bool thumb = spec[0] == 'T';
         EnsureGuestPages();
         var bytes = new List<byte>();
         foreach (var w in spec[2..].Split(','))
         {
             uint v = Convert.ToUInt32(w, 16);
-            if (!thumb) bytes.AddRange(BitConverter.GetBytes(v));
-            else if (w.Length > 4) bytes.AddRange([(byte)(v >> 16), (byte)(v >> 24), (byte)v, (byte)(v >> 8)]);
-            else bytes.AddRange([(byte)v, (byte)(v >> 8)]);
+            if (!thumb)
+            {
+                bytes.AddRange(BitConverter.GetBytes(v));
+            }
+            else if (w.Length > 4)
+            {
+                bytes.AddRange([(byte)(v >> 16), (byte)(v >> 24), (byte)v, (byte)(v >> 8)]);
+            }
+            else
+            {
+                bytes.AddRange([(byte)v, (byte)(v >> 8)]);
+            }
         }
         var s = CpuState.Allocate();
         if (Environment.GetEnvironmentVariable(EnvVars.HuntNative) == "1")
@@ -737,18 +1129,30 @@ public sealed unsafe partial class NativeJitTests(GuestMemoryFixture fx, ITestOu
             for (int seed = 0; seed < 20000; seed++)
             {
                 var st = new RandomState(new Random(seed));
-                Snapshot a = default, p = default; bool stable = false;
+                Snapshot a = default, p = default;
+                bool stable = false;
                 for (int k = 0; k < 4 && !stable; k++)
                 {
-                    st.Apply(s, thumb); code.CopyTo(GuestMemory.Span(CodeBase, 0x1000));
+                    st.Apply(s, thumb);
+                    code.CopyTo(GuestMemory.Span(CodeBase, 0x1000));
                     a = Take(s, Guard(() => CpuCore.Interpret(s, nb)));
-                    stable = k > 0 && Diff(p, a).Length == 0; p = a;
+                    stable = k > 0 && Diff(p, a).Length == 0;
+                    p = a;
                 }
-                if (!stable) continue;
-                st.Apply(s, thumb); code.CopyTo(GuestMemory.Span(CodeBase, 0x1000));
+                if (!stable)
+                {
+                    continue;
+                }
+
+                st.Apply(s, thumb);
+                code.CopyTo(GuestMemory.Span(CodeBase, 0x1000));
                 var n = Take(s, Guard(() => RunNative(s, cb.NativeEntry)));
                 string d = Diff(a, n);
-                if (d.Length == 0) continue;
+                if (d.Length == 0)
+                {
+                    continue;
+                }
+
                 output.WriteLine($"seed {seed}:{d}\nregs {string.Join(" ", st.Regs.Select(r => r.ToString("X8")))} flags {st.Flags:X8}\n{DescribeNative(nb, cb)}");
                 break;
             }
@@ -761,11 +1165,13 @@ public sealed unsafe partial class NativeJitTests(GuestMemoryFixture fx, ITestOu
             var b = BlockBuilder.Build(CodeBase, thumb);
             var st = new RandomState(new Random(seed));
             st.Apply(s, thumb);
-            Trace?.WriteLine($"seed {seed} regs {string.Join(" ", st.Regs.Select(r => r.ToString("X8")))}"); Trace?.Flush();
+            Trace?.WriteLine($"seed {seed} regs {string.Join(" ", st.Regs.Select(r => r.ToString("X8")))}");
+            Trace?.Flush();
             for (int i = 0; i < b.Insts.Length; i++)
             {
                 var one = new Block { Start = b.Insts[i].Address, Thumb = thumb, Insts = [b.Insts[i]], End = b.Insts[i].Address + b.Insts[i].Size };
-                Trace?.WriteLine($"  {b.Insts[i]} r=[{string.Join(" ", Enumerable.Range(0, 16).Select(r => s->R[r].ToString("X8")))}]"); Trace?.Flush();
+                Trace?.WriteLine($"  {b.Insts[i]} r=[{string.Join(" ", Enumerable.Range(0, 16).Select(r => s->R[r].ToString("X8")))}]");
+                Trace?.Flush();
                 Guard(() => CpuCore.Interpret(s, one));
             }
         }
@@ -788,9 +1194,18 @@ public sealed unsafe partial class NativeJitTests(GuestMemoryFixture fx, ITestOu
         foreach (var w in words.Split(','))
         {
             uint v = Convert.ToUInt32(w, 16);
-            if (!thumb) bytes.AddRange(BitConverter.GetBytes(v));
-            else if (w.Length > 4) bytes.AddRange([(byte)(v >> 16), (byte)(v >> 24), (byte)v, (byte)(v >> 8)]);
-            else bytes.AddRange([(byte)v, (byte)(v >> 8)]);
+            if (!thumb)
+            {
+                bytes.AddRange(BitConverter.GetBytes(v));
+            }
+            else if (w.Length > 4)
+            {
+                bytes.AddRange([(byte)(v >> 16), (byte)(v >> 24), (byte)v, (byte)(v >> 8)]);
+            }
+            else
+            {
+                bytes.AddRange([(byte)v, (byte)(v >> 8)]);
+            }
         }
         bytes.ToArray().CopyTo(GuestMemory.Span(CodeBase, 0x1000));
         var b = BlockBuilder.Build(CodeBase, thumb);
@@ -814,7 +1229,10 @@ public sealed unsafe partial class NativeJitTests(GuestMemoryFixture fx, ITestOu
             Assert.Equal("", Diff(interp, native));
             Assert.Equal(b.Cycles, s->CycleAcc);
         }
-        finally { CpuState.Free(s); }
+        finally
+        {
+            CpuState.Free(s);
+        }
     }
 
     [NativeTheory(unicorn: true)]
@@ -843,7 +1261,11 @@ public sealed unsafe partial class NativeJitTests(GuestMemoryFixture fx, ITestOu
     {
         using var arena = new ArenaScope(); // the code of these throwaway blocks is reclaimed afterwards
         EnsureGuestPages();
-        if (int.TryParse(Environment.GetEnvironmentVariable(EnvVars.FuzzIter), out int itOverride)) iterations = itOverride;
+        if (int.TryParse(Environment.GetEnvironmentVariable(EnvVars.FuzzIter), out int itOverride))
+        {
+            iterations = itOverride;
+        }
+
         var rng = new Random(seed);
         var s = CpuState.Allocate();
         var failures = new Dictionary<string, (int, string)>();
@@ -859,25 +1281,45 @@ public sealed unsafe partial class NativeJitTests(GuestMemoryFixture fx, ITestOu
                 {
                     uint r = (uint)rng.NextInt64();
                     uint ins = rng.Next(5) == 0 ? 0xEE000A10u | (r & 0x00FFF1EF) : 0xEE000A00u | (r & 0x00FFF1EF);
-                    if (rng.Next(3) == 0) ins = (ins & ~0x00B000C0u) | ((uint)rng.Next(8) << 4 & 0x00B00000) | (r & 0x40); // bias: opc1 0..7
+                    if (rng.Next(3) == 0)
+                    {
+                        ins = (ins & ~0x00B000C0u) | ((uint)rng.Next(8) << 4 & 0x00B00000) | (r & 0x40); // bias: opc1 0..7
+                    }
+
                     if (rng.Next(3) == 0)
                     {
                         // NEON three-same (ARM form 1111 001U 0Dsz nnnn dddd AAAA NQMB mmmm), biased to the inline subset
                         uint[] aField = [0x1, 0x8, 0xD, 0xD, 0xD, (uint)rng.Next(16)];
                         uint arm = 0xF2000000u | ((r & 1) << 24) | (r & 0x007FF0FF & ~0xF00u) | (aField[rng.Next(aField.Length)] << 8);
-                        if (!SimdDefined(thumb ? (((arm & 0x01000000) != 0 ? 0xFF000000u : 0xEF000000u) | (arm & 0x00FFFFFF)) : arm, thumb)) continue;
+                        if (!SimdDefined(thumb ? (((arm & 0x01000000) != 0 ? 0xFF000000u : 0xEF000000u) | (arm & 0x00FFFFFF)) : arm, thumb))
+                        {
+                            continue;
+                        }
+
                         ins = thumb ? (((arm & 0x01000000) != 0 ? 0xFF000000u : 0xEF000000u) | (arm & 0x00FFFFFF)) : arm;
                     }
                     var d = !thumb ? Decoder.DecodeArm(ins, CodeBase) : Decoder.DecodeThumb32(ins, CodeBase, false, 14);
-                    if (d.EndsBlock || CpuFuzzTests.IsUnpredictable(d, thumb)) continue;
+                    if (d.EndsBlock || CpuFuzzTests.IsUnpredictable(d, thumb))
+                    {
+                        continue;
+                    }
+
                     code.AddRange(!thumb ? BitConverter.GetBytes(ins) : [(byte)(ins >> 16), (byte)(ins >> 24), (byte)ins, (byte)(ins >> 8)]);
                 }
-                if (code.Count == 0) continue;
+                if (code.Count == 0)
+                {
+                    continue;
+                }
+
                 code.AddRange(thumb ? [0xFE, 0xE7] : [0xFE, 0xFF, 0xFF, 0xEA]);
                 code.ToArray().CopyTo(GuestMemory.Span(CodeBase, 0x1000));
                 var b = BlockBuilder.Build(CodeBase, thumb);
                 var st = new RandomState(rng);
-                for (int i = 0; i < 32; i++) st.D[i] = CpuFuzzTests.RandomSpecialSimd(rng);
+                for (int i = 0; i < 32; i++)
+                {
+                    st.D[i] = CpuFuzzTests.RandomSpecialSimd(rng);
+                }
+
                 st.Fpscr = rng.Next(5) != 0 ? (uint)rng.Next(16) << 28 | 0x0300_0000 : (uint)rng.Next(16) << 28 | (uint)rng.Next(16) << 22;
 
                 st.Apply(s, thumb);
@@ -889,15 +1331,25 @@ public sealed unsafe partial class NativeJitTests(GuestMemoryFixture fx, ITestOu
                 string diff = Diff(interp, native);
                 if (diff.Length > 0)
                 {
-                    if (detailed++ < 4) output.WriteLine($"--- fpscr {st.Fpscr:X8} D=[{string.Join(" ", st.D.Take(16).Select(v => v.ToString("X16")))}]{diff}\n{DescribeNative(b, cb)}");
+                    if (detailed++ < 4)
+                    {
+                        output.WriteLine($"--- fpscr {st.Fpscr:X8} D=[{string.Join(" ", st.D.Take(16).Select(v => v.ToString("X16")))}]{diff}\n{DescribeNative(b, cb)}");
+                    }
+
                     Record(failures, "native", b, diff);
                 }
             }
         }
-        finally { CpuState.Free(s); }
+        finally
+        {
+            CpuState.Free(s);
+        }
         output.WriteLine($"compared {compared} VFP blocks; failing kinds {failures.Count}");
         foreach (var (k, (count, ex)) in failures.OrderByDescending(f => f.Value.Item1).Take(40))
+        {
             output.WriteLine($"{k,-40} x{count,-5} {ex}");
+        }
+
         Assert.True(failures.Count == 0, $"{failures.Count} kinds of differences (see output)");
     }
 
@@ -916,8 +1368,16 @@ public sealed unsafe partial class NativeJitTests(GuestMemoryFixture fx, ITestOu
         NativeX64Compiler.ValidateIr = true;
         X64Emitter.VerifyAllocation = true;
         int oldMax = X64Emitter.MaxTempRegisters;
-        if (spillStress) X64Emitter.MaxTempRegisters = 2;
-        if (int.TryParse(Environment.GetEnvironmentVariable(EnvVars.FuzzIter), out int itOverride)) iterations = itOverride;
+        if (spillStress)
+        {
+            X64Emitter.MaxTempRegisters = 2;
+        }
+
+        if (int.TryParse(Environment.GetEnvironmentVariable(EnvVars.FuzzIter), out int itOverride))
+        {
+            iterations = itOverride;
+        }
+
         var rng = new Random(seed);
         var s = CpuState.Allocate();
         var failures = new Dictionary<string, (int Count, string Example)>();
@@ -927,14 +1387,26 @@ public sealed unsafe partial class NativeJitTests(GuestMemoryFixture fx, ITestOu
             for (int it = 0; it < iterations; it++)
             {
                 var b = RandomBlock(rng, thumb, 12, forUnicorn: false);
-                if (b == null) continue;
+                if (b == null)
+                {
+                    continue;
+                }
+
                 var st = new RandomState(rng);
 
                 // Random addresses reach memory outside the restored windows (and the code page holds literals):
                 // rerun the interpreter until it reproduces itself, so every run starts from the same memory.
                 var codeSnap = GuestMemory.Span(CodeBase, 0x1000).ToArray();
-                void Restore() { st.Apply(s, thumb); codeSnap.CopyTo(GuestMemory.Span(CodeBase, 0x1000)); }
-                if (Trace != null) { Trace.WriteLine($"{it} {(thumb ? "T" : "A")} {string.Join(",", b.Insts.Select(i => $"{i.Raw:X8}:{i.Op}"))}"); Trace.Flush(); }
+                void Restore()
+                {
+                    st.Apply(s, thumb);
+                    codeSnap.CopyTo(GuestMemory.Span(CodeBase, 0x1000));
+                }
+                if (Trace != null)
+                {
+                    Trace.WriteLine($"{it} {(thumb ? "T" : "A")} {string.Join(",", b.Insts.Select(i => $"{i.Raw:X8}:{i.Op}"))}");
+                    Trace.Flush();
+                }
                 Snapshot interp = default, prev = default;
                 bool stable = false;
                 for (int k = 0; k < 4 && !stable; k++)
@@ -944,9 +1416,17 @@ public sealed unsafe partial class NativeJitTests(GuestMemoryFixture fx, ITestOu
                     stable = k > 0 && Diff(prev, interp).Length == 0;
                     prev = interp;
                 }
-                if (!stable) { unstable++; continue; }
+                if (!stable)
+                {
+                    unstable++;
+                    continue;
+                }
 
-                if (Trace != null) { Trace.WriteLine("  native"); Trace.Flush(); }
+                if (Trace != null)
+                {
+                    Trace.WriteLine("  native");
+                    Trace.Flush();
+                }
                 var cb = NativeX64Compiler.Instance.Compile(b);
                 Assert.NotNull(cb);
                 Restore();
@@ -955,10 +1435,18 @@ public sealed unsafe partial class NativeJitTests(GuestMemoryFixture fx, ITestOu
                 compared++;
                 insts += b.Insts.Length;
                 string d = Diff(interp, native);
-                if (!accountingOk) d += $" accounting: blocks {s->NBlocks} instr {s->NInstr} cycles {s->CycleAcc} (expected 1/{b.Insts.Length}/{b.Cycles})";
+                if (!accountingOk)
+                {
+                    d += $" accounting: blocks {s->NBlocks} instr {s->NInstr} cycles {s->CycleAcc} (expected 1/{b.Insts.Length}/{b.Cycles})";
+                }
+
                 if (d.Length > 0)
                 {
-                    if (detailed++ < 6) output.WriteLine($"--- {b}:{d}\n{DescribeNative(b, cb!)}");
+                    if (detailed++ < 6)
+                    {
+                        output.WriteLine($"--- {b}:{d}\n{DescribeNative(b, cb!)}");
+                    }
+
                     Record(failures, "native", b, d);
                 }
 
@@ -968,7 +1456,10 @@ public sealed unsafe partial class NativeJitTests(GuestMemoryFixture fx, ITestOu
                     Restore();
                     var ils = Take(s, Guard(() => il.Managed!(s)));
                     string di = Diff(interp, ils);
-                    if (di.Length > 0) Record(failures, "il", b, di);
+                    if (di.Length > 0)
+                    {
+                        Record(failures, "il", b, di);
+                    }
                 }
             }
         }
@@ -978,10 +1469,17 @@ public sealed unsafe partial class NativeJitTests(GuestMemoryFixture fx, ITestOu
             X64Emitter.MaxTempRegisters = oldMax;
             CpuState.Free(s);
         }
-        foreach (var c in ArmFrontend.CalloutCount) callouts += (int)Math.Min(c, int.MaxValue);
+        foreach (var c in ArmFrontend.CalloutCount)
+        {
+            callouts += (int)Math.Min(c, int.MaxValue);
+        }
+
         output.WriteLine($"compared {compared} blocks, {insts} instructions (callouts so far {callouts}, {unstable} blocks skipped: memory-dependent); failing kinds {failures.Count}");
         foreach (var (k, (count, ex)) in failures.OrderByDescending(f => f.Value.Count).Take(40))
+        {
             output.WriteLine($"{k,-40} x{count,-5} {ex}");
+        }
+
         Assert.True(failures.Count == 0, $"{failures.Count} kinds of differences (see output)");
     }
 
@@ -990,8 +1488,14 @@ public sealed unsafe partial class NativeJitTests(GuestMemoryFixture fx, ITestOu
         // classify by the first instruction's op of the block (the usual culprit in a 1-3 instruction repro)
         string key = backend + ":" + string.Join(",", b.Insts.Select(i => i.Op).Distinct().Take(3));
         string ex = $"[{string.Join(" ", b.Insts.Select(i => $"{i.Raw:X8}{(i.Cond != 14 ? $"/c{i.Cond}" : "")}"))}]:{diff}";
-        if (f.TryGetValue(key, out var v)) f[key] = (v.Item1 + 1, v.Item2);
-        else f[key] = (1, ex);
+        if (f.TryGetValue(key, out var v))
+        {
+            f[key] = (v.Item1 + 1, v.Item2);
+        }
+        else
+        {
+            f[key] = (1, ex);
+        }
     }
 
     // ------------------------------------------------------------------ against Unicorn
@@ -1021,7 +1525,10 @@ public sealed unsafe partial class NativeJitTests(GuestMemoryFixture fx, ITestOu
             for (int it = 0; it < iterations; it++)
             {
                 var b = RandomBlock(rng, thumb, 6, forUnicorn: true);
-                if (b == null) continue;
+                if (b == null)
+                {
+                    continue;
+                }
                 // only the random instructions: a block that ran into the padding branch is cut before it
                 var st = new RandomState(rng);
                 var codeBytes = GuestMemory.Span(CodeBase, 0x1000).ToArray();
@@ -1035,38 +1542,80 @@ public sealed unsafe partial class NativeJitTests(GuestMemoryFixture fx, ITestOu
                     uc.MemWrite(CodeBase, codeBytes);
                     uc.MemWrite(DataBase, st.Data);
                     uc.RegWrite(UcArm.UC_ARM_REG_CPSR, (long)(st.Flags | 0x10 | (thumb ? 0x20u : 0)));
-                    for (int r = 0; r < 15; r++) uc.RegWrite(RegIds[r], st.Regs[r]);
+                    for (int r = 0; r < 15; r++)
+                    {
+                        uc.RegWrite(RegIds[r], st.Regs[r]);
+                    }
+
                     uc.EmuStart(CodeBase | (thumb ? 1u : 0), CodeBase + 0x800, 0, b.Insts.Length);
                 }
-                catch (Exception) { skipped++; uc?.Close(); continue; }
+                catch (Exception)
+                {
+                    skipped++;
+                    uc?.Close();
+                    continue;
+                }
 
                 st.Apply(s, thumb);
                 var cb = NativeX64Compiler.Instance.Compile(b)!;
                 string? err = Guard(() => RunNative(s, cb.NativeEntry));
-                if (err != null) { skipped++; uc.Close(); continue; }
+                if (err != null)
+                {
+                    skipped++;
+                    uc.Close();
+                    continue;
+                }
                 compared++;
                 var sb = new StringBuilder();
                 for (int r = 0; r < 15; r++)
                 {
                     uint u = (uint)uc.RegRead(RegIds[r]);
-                    if (u != s->R[r]) sb.Append($" R{r}: uc={u:X8} us={s->R[r]:X8}");
+                    if (u != s->R[r])
+                    {
+                        sb.Append($" R{r}: uc={u:X8} us={s->R[r]:X8}");
+                    }
                 }
                 uint ucPc = (uint)uc.RegRead(UcArm.UC_ARM_REG_PC), ucCpsr = (uint)uc.RegRead(UcArm.UC_ARM_REG_CPSR);
                 bool oddArmTarget = (ucPc & 3) == 2 && (ucCpsr & 0x20) == 0;
-                if ((ucPc & ~1u) != s->R[15] && !oddArmTarget) sb.Append($" PC: uc={ucPc:X8} us={s->R[15]:X8}");
-                if ((ucCpsr & 0xF80F0020) != (s->Cpsr & 0xF80F0020)) sb.Append($" CPSR: uc={ucCpsr & 0xF80F0020:X8} us={s->Cpsr & 0xF80F0020:X8}");
+                if ((ucPc & ~1u) != s->R[15] && !oddArmTarget)
+                {
+                    sb.Append($" PC: uc={ucPc:X8} us={s->R[15]:X8}");
+                }
+
+                if ((ucCpsr & 0xF80F0020) != (s->Cpsr & 0xF80F0020))
+                {
+                    sb.Append($" CPSR: uc={ucCpsr & 0xF80F0020:X8} us={s->Cpsr & 0xF80F0020:X8}");
+                }
+
                 var ucData = new byte[DataSize];
                 uc.MemRead(DataBase, ucData);
                 var ours = GuestMemory.Span(DataBase, (int)DataSize);
-                for (int i = 0; i < DataSize; i++) if (ucData[i] != ours[i]) { sb.Append($" MEM@{DataBase + i:X8}: uc={ucData[i]:X2} us={ours[i]:X2}"); break; }
+                for (int i = 0; i < DataSize; i++)
+                {
+                    if (ucData[i] != ours[i])
+                    {
+                        sb.Append($" MEM@{DataBase + i:X8}: uc={ucData[i]:X2} us={ours[i]:X2}");
+                        break;
+                    }
+                }
+
                 uc.Close();
-                if (sb.Length > 0) Record(failures, "unicorn", b, sb.ToString());
+                if (sb.Length > 0)
+                {
+                    Record(failures, "unicorn", b, sb.ToString());
+                }
             }
         }
-        finally { CpuState.Free(s); }
+        finally
+        {
+            CpuState.Free(s);
+        }
         output.WriteLine($"compared {compared} blocks against Unicorn, skipped {skipped}; failing kinds {failures.Count}");
         foreach (var (k, (count, ex)) in failures.OrderByDescending(f => f.Value.Item1).Take(40))
+        {
             output.WriteLine($"{k,-40} x{count,-5} {ex}");
+        }
+
         Assert.True(failures.Count == 0, $"{failures.Count} kinds of differences against Unicorn (see output)");
     }
 }

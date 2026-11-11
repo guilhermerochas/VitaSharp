@@ -21,14 +21,22 @@ public sealed class LibcWideTests(GuestMemoryFixture fx) : IDisposable
     uint Wide(string s, uint extra = 16)
     {
         uint p = _h.Alloc((uint)s.Length * 2 + extra * 2);
-        for (int i = 0; i < s.Length; i++) GuestMemory.Write(p + (uint)i * 2, (ushort)s[i]);
+        for (int i = 0; i < s.Length; i++)
+        {
+            GuestMemory.Write(p + (uint)i * 2, (ushort)s[i]);
+        }
+
         return p;
     }
 
     static string Read(uint p)
     {
         var sb = new System.Text.StringBuilder();
-        for (ushort c; (c = GuestMemory.Read<ushort>(p)) != 0; p += 2) sb.Append((char)c);
+        for (ushort c; (c = GuestMemory.Read<ushort>(p)) != 0; p += 2)
+        {
+            sb.Append((char)c);
+        }
+
         return sb.ToString();
     }
 

@@ -21,8 +21,16 @@ public sealed record UpdateRelease(string Tag, string Name, string Body, DateTim
     /// <summary>True when this release was made from <paramref name="commit"/> (a full or short hash).</summary>
     public bool IsCommit(string commit)
     {
-        if (commit.Length < 7) return false;
-        if (BuildHash.Length >= 7 && commit.StartsWith(BuildHash, StringComparison.OrdinalIgnoreCase)) return true;
+        if (commit.Length < 7)
+        {
+            return false;
+        }
+
+        if (BuildHash.Length >= 7 && commit.StartsWith(BuildHash, StringComparison.OrdinalIgnoreCase))
+        {
+            return true;
+        }
+
         return Commit.Length >= 7 && (Commit.StartsWith(commit, StringComparison.OrdinalIgnoreCase) || commit.StartsWith(Commit, StringComparison.OrdinalIgnoreCase));
     }
 }
@@ -37,7 +45,11 @@ public sealed record BuildIdentity(string Version, string Commit, DateTimeOffset
         int plus = info.IndexOf('+');
         string version = plus >= 0 ? info[..plus] : info;
         string commit = plus >= 0 ? info[(plus + 1)..] : "";
-        if (commit.Length > 0 && !commit.All(char.IsAsciiHexDigit)) commit = "";
+        if (commit.Length > 0 && !commit.All(char.IsAsciiHexDigit))
+        {
+            commit = "";
+        }
+
         return new BuildIdentity(version.Length > 0 ? version : "0.0.0", commit, built);
     }
 
@@ -63,15 +75,28 @@ public static class UpdateFeed
         var list = new List<UpdateRelease>();
         foreach (var r in doc.RootElement.EnumerateArray())
         {
-            if (r.TryGetProperty("draft", out var draft) && draft.ValueKind == JsonValueKind.True) continue;
+            if (r.TryGetProperty("draft", out var draft) && draft.ValueKind == JsonValueKind.True)
+            {
+                continue;
+            }
+
             static string Str(JsonElement e, string name) => e.TryGetProperty(name, out var v) && v.ValueKind == JsonValueKind.String ? v.GetString() ?? "" : "";
             var assets = new List<UpdateAsset>();
             if (r.TryGetProperty("assets", out var arr) && arr.ValueKind == JsonValueKind.Array)
+            {
                 foreach (var a in arr.EnumerateArray())
+                {
                     assets.Add(new UpdateAsset(Str(a, "name"), Str(a, "browser_download_url"),
                         a.TryGetProperty("size", out var size) && size.TryGetInt64(out long n) ? n : 0));
+                }
+            }
+
             string published = Str(r, "published_at");
-            if (published.Length == 0) published = Str(r, "created_at");
+            if (published.Length == 0)
+            {
+                published = Str(r, "created_at");
+            }
+
             list.Add(new UpdateRelease(Str(r, "tag_name"), Str(r, "name"), Str(r, "body"),
                 DateTimeOffset.TryParse(published, CultureInfo.InvariantCulture, DateTimeStyles.AssumeUniversal, out var when) ? when : DateTimeOffset.MinValue,
                 r.TryGetProperty("prerelease", out var pre) && pre.ValueKind == JsonValueKind.True,
@@ -91,7 +116,11 @@ public static class UpdateFeed
         var candidates = releases.Where(r => channel == ChannelReleases ? r.IsVersion : r.IsBuild || r.IsVersion)
                                  .OrderByDescending(r => r.Published).ToList();
         var latest = candidates.FirstOrDefault();
-        if (latest == null || (current.Commit.Length > 0 && latest.IsCommit(current.Commit))) return null;
+        if (latest == null || (current.Commit.Length > 0 && latest.IsCommit(current.Commit)))
+        {
+            return null;
+        }
+
         var mine = current.Commit.Length > 0 ? releases.FirstOrDefault(r => r.IsCommit(current.Commit)) : null;
         // a minute of slack: the packages are built before their release is published
         var since = mine?.Published ?? current.Built.AddMinutes(1);
@@ -127,9 +156,16 @@ public static class UpdateFeed
         {
             var line = raw.Trim();
             int sp = line.IndexOf(' ');
-            if (sp != 64) continue;
+            if (sp != 64)
+            {
+                continue;
+            }
+
             string name = line[(sp + 1)..].TrimStart(' ', '*');
-            if (name == file) return line[..64].ToLowerInvariant();
+            if (name == file)
+            {
+                return line[..64].ToLowerInvariant();
+            }
         }
         return null;
     }
@@ -145,7 +181,11 @@ public static class UpdateFeed
     /// <summary>Reads a feed or file: http(s) through <paramref name="http"/>, <c>file://</c> from disk.</summary>
     public static async Task<Stream> OpenAsync(HttpClient http, Uri uri, CancellationToken ct)
     {
-        if (uri.IsFile) return File.OpenRead(uri.LocalPath);
+        if (uri.IsFile)
+        {
+            return File.OpenRead(uri.LocalPath);
+        }
+
         var response = await http.GetAsync(uri, HttpCompletionOption.ResponseHeadersRead, ct).ConfigureAwait(false);
         response.EnsureSuccessStatusCode();
         return await response.Content.ReadAsStreamAsync(ct).ConfigureAwait(false);
@@ -154,7 +194,11 @@ public static class UpdateFeed
     /// <summary>The releases of a feed: an API URL, or a folder (<c>file://</c>) holding <c>releases.json</c>.</summary>
     public static async Task<IReadOnlyList<UpdateRelease>> FetchAsync(HttpClient http, Uri feed, CancellationToken ct = default)
     {
-        if (feed.IsFile && Directory.Exists(feed.LocalPath)) feed = new Uri(Path.Combine(feed.LocalPath, "releases.json"));
+        if (feed.IsFile && Directory.Exists(feed.LocalPath))
+        {
+            feed = new Uri(Path.Combine(feed.LocalPath, "releases.json"));
+        }
+
         using var s = await OpenAsync(http, feed, ct).ConfigureAwait(false);
         using var reader = new StreamReader(s);
         return Parse(await reader.ReadToEndAsync(ct).ConfigureAwait(false));
@@ -184,7 +228,10 @@ public static class UpdateFeed
             {
                 await dst.WriteAsync(buf.AsMemory(0, n), ct).ConfigureAwait(false);
                 done += n;
-                if (asset.Size > 0) progress?.Invoke(Math.Min(1, (double)done / asset.Size));
+                if (asset.Size > 0)
+                {
+                    progress?.Invoke(Math.Min(1, (double)done / asset.Size));
+                }
             }
         }
         File.Move(part, dest, true);
@@ -200,9 +247,15 @@ public static class UpdateFeed
         string sums;
         using (var s = await OpenAsync(http, new Uri(sumsAsset.Url), ct).ConfigureAwait(false))
         using (var reader = new StreamReader(s))
+        {
             sums = await reader.ReadToEndAsync(ct).ConfigureAwait(false);
+        }
+
         string expected = ExpectedHash(sums, name) ?? throw new InvalidDataException($"{name} is not in {SumsFile}");
         string actual = Sha256(file);
-        if (actual != expected) throw new InvalidDataException($"{name}: SHA-256 {actual} does not match {SumsFile} ({expected})");
+        if (actual != expected)
+        {
+            throw new InvalidDataException($"{name}: SHA-256 {actual} does not match {SumsFile} ({expected})");
+        }
     }
 }

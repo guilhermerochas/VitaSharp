@@ -13,7 +13,11 @@ public sealed class SessionCaptureTests : IDisposable
 
     public void Dispose()
     {
-        try { Directory.Delete(_dir, true); } catch { }
+        try
+        {
+            Directory.Delete(_dir, true);
+        }
+        catch { }
     }
 
     const int W = 120, H = 68;
@@ -23,13 +27,26 @@ public sealed class SessionCaptureTests : IDisposable
     {
         var px = new byte[W * H * 4];
         for (int y = 0; y < H; y++)
+        {
             for (int x = 0; x < W; x++)
             {
                 int o = (y * W + x) * 4;
-                if (fill is { } f) { px[o] = f.R; px[o + 1] = f.G; px[o + 2] = f.B; }
-                else { px[o] = (byte)(x * 2 + t); px[o + 1] = (byte)(y * 3); px[o + 2] = (byte)(128 + t * 3); }
+                if (fill is { } f)
+                {
+                    px[o] = f.R;
+                    px[o + 1] = f.G;
+                    px[o + 2] = f.B;
+                }
+                else
+                {
+                    px[o] = (byte)(x * 2 + t);
+                    px[o + 1] = (byte)(y * 3);
+                    px[o + 2] = (byte)(128 + t * 3);
+                }
                 px[o + 3] = 255;
             }
+        }
+
         return px;
     }
 
@@ -39,7 +56,11 @@ public sealed class SessionCaptureTests : IDisposable
         var rnd = new Random(7);
         var noise = new byte[W * H * 4];
         rnd.NextBytes(noise);
-        for (int i = 3; i < noise.Length; i += 4) noise[i] = 255;
+        for (int i = 3; i < noise.Length; i += 4)
+        {
+            noise[i] = 255;
+        }
+
         foreach (var px in new[] { Picture(3), noise, Picture(0, (10, 20, 30)) })
         {
             var enc = Qoi.Encode(px, W, H);
@@ -83,8 +104,14 @@ public sealed class SessionCaptureTests : IDisposable
         for (int i = 0; i < all.Count; i++)
         {
             Assert.Equal(i + 1, all[i].Frame.Info.Present);
-            if (pictures[i] is { } expected) Assert.Equal(expected, all[i].Picture!.Value.Rgba);
-            else Assert.Null(all[i].Picture);
+            if (pictures[i] is { } expected)
+            {
+                Assert.Equal(expected, all[i].Picture!.Value.Rgba);
+            }
+            else
+            {
+                Assert.Null(all[i].Picture);
+            }
         }
         Assert.Equal("fileIo", all[5].Frame.Info.Hitch);
         var index = FramesFile.ReadIndex(path);
@@ -107,7 +134,11 @@ public sealed class SessionCaptureTests : IDisposable
                 FramesFile.WriteRecord(fs, new PresentInfo { Present = i }, f, d);
             }
         }
-        using (var fs = new FileStream(path, FileMode.Open)) fs.SetLength(fs.Length - 10);
+        using (var fs = new FileStream(path, FileMode.Open))
+        {
+            fs.SetLength(fs.Length - 10);
+        }
+
         Assert.Equal(4, FramesFile.ReadIndex(path).Count);
     }
 
@@ -173,7 +204,10 @@ public sealed class SessionCaptureTests : IDisposable
     {
         string a = Path.Combine(_dir, "a.wav"), b = Path.Combine(_dir, "b.wav"), mix = Path.Combine(_dir, "mix.wav");
         var tone = new short[48000 * 2];
-        for (int i = 0; i < 48000; i++) tone[2 * i] = tone[2 * i + 1] = (short)(8000 * Math.Sin(i * 0.05));
+        for (int i = 0; i < 48000; i++)
+        {
+            tone[2 * i] = tone[2 * i + 1] = (short)(8000 * Math.Sin(i * 0.05));
+        }
         // a 200 ms hole in the middle
         Array.Clear(tone, 24000 * 2, 9600 * 2);
         CaptureAudio.WriteWav(a, tone, 48000);
@@ -205,10 +239,23 @@ public sealed class SessionCaptureTests : IDisposable
             for (int i = 0; i < 200; i++)
             {
                 byte[] px;
-                if (i is 60 or 61) px = Picture(0, (0, 0, 0));                  // black flash (2 frames)
-                else if (i == 100) px = Picture(i, (250, 0, 250));              // one-frame flash
-                else if (i is >= 150 and < 190) px = Picture(0, (0, 0, 0));     // black screen (40 frames... see the threshold)
-                else px = Picture(i / 8); // a picture that changes every 8 frames
+                if (i is 60 or 61)
+                {
+                    px = Picture(0, (0, 0, 0));                  // black flash (2 frames)
+                }
+                else if (i == 100)
+                {
+                    px = Picture(i, (250, 0, 250));              // one-frame flash
+                }
+                else if (i is >= 150 and < 190)
+                {
+                    px = Picture(0, (0, 0, 0));     // black screen (40 frames... see the threshold)
+                }
+                else
+                {
+                    px = Picture(i / 8); // a picture that changes every 8 frames
+                }
+
                 long f = i == 121 ? flip - 2 : flip;                            // a flip presented out of order
                 ns += i == 80 ? 400_000_000 : 16_666_667;                       // a 400 ms stall
                 var (data, flags) = enc.Encode(px, W, H);
@@ -253,10 +300,18 @@ public sealed class SessionCaptureTests : IDisposable
             "audio: BGM port held by shell (the shell's music player, SceShellMusicCore: the home screen / LiveArea music)\n");
         Directory.CreateDirectory(Path.Combine(dir, "audio"));
         var music = new short[48000 * 2 * 2];
-        for (int i = 0; i < music.Length / 2; i++) music[2 * i] = music[2 * i + 1] = (short)(6000 * Math.Sin(i * 0.03));
+        for (int i = 0; i < music.Length / 2; i++)
+        {
+            music[2 * i] = music[2 * i + 1] = (short)(6000 * Math.Sin(i * 0.03));
+        }
+
         CaptureAudio.WriteWav(Path.Combine(dir, "audio", "02_port2_BGM_48000.wav"), music, 48000);
         var click = new short[48000 / 5 * 2];
-        for (int i = 0; i < click.Length / 2; i++) click[2 * i] = click[2 * i + 1] = (short)(6000 * Math.Sin(i * 0.2));
+        for (int i = 0; i < click.Length / 2; i++)
+        {
+            click[2 * i] = click[2 * i + 1] = (short)(6000 * Math.Sin(i * 0.2));
+        }
+
         CaptureAudio.WriteWav(Path.Combine(dir, "audio", "01_port1_MAIN_48000.wav"), click, 48000);
 
         string report = CaptureAnalyzer.Analyze(dir, quiet: true);

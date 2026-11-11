@@ -39,21 +39,30 @@ public sealed class DisplayRotationTracker : Java.Lang.Object, DisplayManager.ID
     {
         try
         {
-            if (OperatingSystem.IsAndroidVersionAtLeast(30)) return (int)(_activity.Display?.Rotation ?? SurfaceOrientation.Rotation0) & 3;
+            if (OperatingSystem.IsAndroidVersionAtLeast(30))
+                return (int)(_activity.Display?.Rotation ?? SurfaceOrientation.Rotation0) & 3;
 #pragma warning disable CA1422 // the pre-API 30 way, only taken below API 30
             return (int)(_activity.WindowManager?.DefaultDisplay?.Rotation ?? SurfaceOrientation.Rotation0) & 3;
 #pragma warning restore CA1422
         }
-        catch (Exception) { return _rotation; }
+        catch (Exception)
+        {
+            return _rotation;
+        }
     }
 
-    public void OnDisplayAdded(int displayId) { }
-    public void OnDisplayRemoved(int displayId) { }
+    public void OnDisplayAdded(int displayId)
+    {
+    }
+    public void OnDisplayRemoved(int displayId)
+    {
+    }
 
     public void OnDisplayChanged(int displayId)
     {
         int r = Read();
-        if (r == _rotation) return;
+        if (r == _rotation)
+            return;
         _rotation = r;
         Log.Info($"Display rotation {r * 90} degrees");
         Changed?.Invoke(r);
@@ -61,7 +70,12 @@ public sealed class DisplayRotationTracker : Java.Lang.Object, DisplayManager.ID
 
     protected override void Dispose(bool disposing)
     {
-        if (disposing) try { _manager?.UnregisterDisplayListener(this); } catch (Exception) { }
+        if (disposing)
+            try
+            {
+                _manager?.UnregisterDisplayListener(this);
+            }
+            catch (Exception) { }
         base.Dispose(disposing);
     }
 }
@@ -95,7 +109,8 @@ public sealed class AndroidMotionSensors : IDisposable
         _motion = new AndroidMotion(AndroidMotionModes.Resolve(setting, phone != null));
         Log.Info($"Motion: {AndroidMotionModes.Label(_motion.Mode)} (setting '{setting}', phone sensors {(phone != null ? "yes" : "no")})");
         _display.Changed += r => { if (_motion.Sensors is { } s) s.DisplayRotation = r; };
-        if (_motion.Mode == AndroidMotionMode.Controller) AppServices.Gamepads.DevicesChanged += OnControllersChanged;
+        if (_motion.Mode == AndroidMotionMode.Controller)
+            AppServices.Gamepads.DevicesChanged += OnControllersChanged;
     }
 
     /// <summary>The session's SceMotion source.</summary>
@@ -113,15 +128,20 @@ public sealed class AndroidMotionSensors : IDisposable
     /// <summary>The first connected controller that has an accelerometer and a gyroscope (Android 12+).</summary>
     (SensorManager Sm, int Id, string Name)? ControllerSensors()
     {
-        if (!OperatingSystem.IsAndroidVersionAtLeast(31)) return null;
+        if (!OperatingSystem.IsAndroidVersionAtLeast(31))
+            return null;
         foreach (var (id, name, _) in AppServices.Gamepads.Devices)
         {
             try
             {
                 var sm = InputDevice.GetDevice(id)?.SensorManager;
-                if (sm?.GetDefaultSensor(SensorType.Accelerometer) != null && sm.GetDefaultSensor(SensorType.Gyroscope) != null) return (sm, id, name);
+                if (sm?.GetDefaultSensor(SensorType.Accelerometer) != null && sm.GetDefaultSensor(SensorType.Gyroscope) != null)
+                    return (sm, id, name);
             }
-            catch (Exception e) { Log.Warn($"Motion: sensors of controller {name}: {e.Message}"); }
+            catch (Exception e)
+            {
+                Log.Warn($"Motion: sensors of controller {name}: {e.Message}");
+            }
         }
         return null;
     }
@@ -129,7 +149,8 @@ public sealed class AndroidMotionSensors : IDisposable
     /// <summary>OnResume: registers the listeners.</summary>
     public void Resume()
     {
-        if (_disposed) return;
+        if (_disposed)
+            return;
         _resumed = true;
         Register();
     }
@@ -146,28 +167,37 @@ public sealed class AndroidMotionSensors : IDisposable
 
     void OnControllersChanged()
     {
-        if (!_resumed || _disposed) return;
+        if (!_resumed || _disposed)
+            return;
         var c = ControllerSensors();
-        if ((c?.Id ?? -1) == _controllerId) return;
+        if ((c?.Id ?? -1) == _controllerId)
+            return;
         Unregister();
         Register();
     }
 
     void Register()
     {
-        if (_listener != null || _motion.Mode == AndroidMotionMode.Off) return;
+        if (_listener != null || _motion.Mode == AndroidMotionMode.Off)
+            return;
         SensorManager? sm;
         SensorMotionSource source;
         if (_motion.Mode == AndroidMotionMode.Phone)
         {
             sm = PhoneSensors();
-            if (sm == null) return;
+            if (sm == null)
+                return;
             source = _motion.Sensors ?? new SensorMotionSource(SensorFrame.Phone, "phone sensors");
         }
         else
         {
             var c = ControllerSensors();
-            if (c == null) { _controllerId = -1; _motion.Sensors = null; return; }
+            if (c == null)
+            {
+                _controllerId = -1;
+                _motion.Sensors = null;
+                return;
+            }
             sm = c.Value.Sm;
             // another controller: a fresh history (its own re-centre)
             source = _controllerId == c.Value.Id && _motion.Sensors != null ? _motion.Sensors : new SensorMotionSource(SensorFrame.Controller, $"controller '{c.Value.Name}'");
@@ -190,14 +220,23 @@ public sealed class AndroidMotionSensors : IDisposable
     {
         var l = _listener;
         _listener = null;
-        if (l == null) return;
-        try { l.Manager?.UnregisterListener(l); } catch (Exception e) { Log.Warn($"Motion: unregister: {e.Message}"); }
+        if (l == null)
+            return;
+        try
+        {
+            l.Manager?.UnregisterListener(l);
+        }
+        catch (Exception e)
+        {
+            Log.Warn($"Motion: unregister: {e.Message}");
+        }
         l.Dispose();
     }
 
     public void Dispose()
     {
-        if (_disposed) return;
+        if (_disposed)
+            return;
         _disposed = true;
         AppServices.Gamepads.DevicesChanged -= OnControllersChanged;
         Unregister();
@@ -209,16 +248,23 @@ public sealed class AndroidMotionSensors : IDisposable
     {
         public SensorManager? Manager;
 
-        public void OnAccuracyChanged(Sensor? sensor, [GeneratedEnum] SensorStatus accuracy) { }
+        public void OnAccuracyChanged(Sensor? sensor, [GeneratedEnum] SensorStatus accuracy)
+        {
+        }
 
         public void OnSensorChanged(SensorEvent? e)
         {
-            if (e?.Values is not { Count: >= 3 } v || e.Sensor == null) return;
+            if (e?.Values is not { Count: >= 3 } v || e.Sensor == null)
+                return;
             var vec = new Vector3(v[0], v[1], v[2]);
             switch (e.Sensor.Type)
             {
-                case SensorType.Accelerometer: source.OnAccelerometer(vec); break;
-                case SensorType.Gyroscope: source.OnGyroscope(e.Timestamp, vec); break;
+                case SensorType.Accelerometer:
+                    source.OnAccelerometer(vec);
+                    break;
+                case SensorType.Gyroscope:
+                    source.OnGyroscope(e.Timestamp, vec);
+                    break;
             }
         }
     }

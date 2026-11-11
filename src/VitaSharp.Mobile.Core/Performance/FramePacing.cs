@@ -35,16 +35,36 @@ public sealed class FrameRateEstimator
     {
         long last = _lastTicks;
         _lastTicks = ticks;
-        if (last < 0 || ticks <= last) return false;
+        if (last < 0 || ticks <= last)
+        {
+            return false;
+        }
+
         double vblanks = (ticks - last) / (double)frequency / VblankSeconds;
         int rounded = Math.Max(1, (int)Math.Round(vblanks));
-        if (rounded > MaxVblanks || rounded > 1 && !longWait) return false; // a load or hitch, or a frame paced by the host
+        if (rounded > MaxVblanks || rounded > 1 && !longWait)
+        {
+            return false; // a load or hitch, or a frame paced by the host
+        }
+
         _ring[_next] = rounded;
         _next = (_next + 1) % Window;
-        if (_count < Window) _count++;
+        if (_count < Window)
+        {
+            _count++;
+        }
+
         int min = MaxVblanks;
-        for (int i = 0; i < _count; i++) min = Math.Min(min, _ring[i]);
-        if (min == Vblanks) return false;
+        for (int i = 0; i < _count; i++)
+        {
+            min = Math.Min(min, _ring[i]);
+        }
+
+        if (min == Vblanks)
+        {
+            return false;
+        }
+
         Vblanks = min;
         return true;
     }
@@ -82,10 +102,18 @@ public sealed class FrameWorkMeter
         long work = -1;
         for (int i = 0; i < cpuNanos.Length && i < _last.Length; i++)
         {
-            if (cpuNanos[i] >= 0 && _last[i] >= 0) work = Math.Max(work, cpuNanos[i] - _last[i]);
+            if (cpuNanos[i] >= 0 && _last[i] >= 0)
+            {
+                work = Math.Max(work, cpuNanos[i] - _last[i]);
+            }
+
             _last[i] = cpuNanos[i];
         }
-        if (wall <= 0 || work < 0) return -1;
+        if (wall <= 0 || work < 0)
+        {
+            return -1;
+        }
+
         return Math.Clamp(work, 1, wall);
     }
 }

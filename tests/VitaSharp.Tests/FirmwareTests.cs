@@ -23,13 +23,20 @@ public class FirmwareTests
         if (compress)
         {
             using var ms = new MemoryStream();
-            using (var z = new ZLibStream(ms, CompressionLevel.Optimal, leaveOpen: true)) z.Write(payload);
+            using (var z = new ZLibStream(ms, CompressionLevel.Optimal, leaveOpen: true))
+            {
+                z.Write(payload);
+            }
+
             body = ms.ToArray();
         }
         var key = Enumerable.Range(1, 16).Select(i => (byte)(i * 7)).ToArray();
         var iv = Enumerable.Range(1, 16).Select(i => (byte)(0xA0 + i)).ToArray();
         var enc = (byte[])body.Clone();
-        using (var ctr = new AesUtil.Ctr(key)) ctr.Transform(enc, iv.ToArray());
+        using (var ctr = new AesUtil.Ctr(key))
+        {
+            ctr.Transform(enc, iv.ToArray());
+        }
 
         var f = new byte[headerLength + spkgHeader + enc.Length];
         BinaryPrimitives.WriteUInt32LittleEndian(f, 0x00454353);
@@ -84,7 +91,11 @@ public class FirmwareTests
         long headerLength = 0x1000;
         long cursor = headerLength;
         var offsets = new long[n];
-        for (int i = 0; i < n; i++) { offsets[i] = cursor; cursor += (files[i].Data.Length + 0xF) & ~0xF; }
+        for (int i = 0; i < n; i++)
+        {
+            offsets[i] = cursor;
+            cursor += (files[i].Data.Length + 0xF) & ~0xF;
+        }
         var pup = new byte[cursor];
         "SCEUF"u8.CopyTo(pup);
         pup[7] = 1;
@@ -122,7 +133,9 @@ public class FirmwareTests
         int rootSectors = rootEntries * 32 / bps;
         int dataStart = reserved + fatSectors + rootSectors;
         var img = new byte[totalSectors * bps];
-        img[0] = 0xEB; img[1] = 0x3C; img[2] = 0x90;
+        img[0] = 0xEB;
+        img[1] = 0x3C;
+        img[2] = 0x90;
         "MSDOS5.0"u8.CopyTo(img.AsSpan(3));
         BinaryPrimitives.WriteUInt16LittleEndian(img.AsSpan(11), bps);
         img[13] = 1;
@@ -132,15 +145,25 @@ public class FirmwareTests
         BinaryPrimitives.WriteUInt16LittleEndian(img.AsSpan(19), (ushort)totalSectors);
         img[21] = 0xF8;
         BinaryPrimitives.WriteUInt16LittleEndian(img.AsSpan(22), (ushort)fatSectors);
-        img[510] = 0x55; img[511] = 0xAA;
+        img[510] = 0x55;
+        img[511] = 0xAA;
         int fatOff = reserved * bps;
         void SetFat(int c, int v)
         {
             int o = fatOff + c * 3 / 2;
-            if ((c & 1) == 0) { img[o] = (byte)v; img[o + 1] = (byte)((img[o + 1] & 0xF0) | ((v >> 8) & 0x0F)); }
-            else { img[o] = (byte)((img[o] & 0x0F) | ((v & 0x0F) << 4)); img[o + 1] = (byte)(v >> 4); }
+            if ((c & 1) == 0)
+            {
+                img[o] = (byte)v;
+                img[o + 1] = (byte)((img[o + 1] & 0xF0) | ((v >> 8) & 0x0F));
+            }
+            else
+            {
+                img[o] = (byte)((img[o] & 0x0F) | ((v & 0x0F) << 4));
+                img[o + 1] = (byte)(v >> 4);
+            }
         }
-        SetFat(0, 0xFF8); SetFat(1, 0xFFF);
+        SetFat(0, 0xFF8);
+        SetFat(1, 0xFFF);
         int next = 2;
         int ClusterOff(int c) => (dataStart + c - 2) * bps;
         int Alloc(int bytes)
@@ -150,7 +173,11 @@ public class FirmwareTests
             {
                 int c = next;
                 next += fragment ? 2 : 1;
-                if (prev >= 0) SetFat(prev, c);
+                if (prev >= 0)
+                {
+                    SetFat(prev, c);
+                }
+
                 prev = c;
             }
             SetFat(prev, 0xFFF);
@@ -179,13 +206,24 @@ public class FirmwareTests
             bool lowerFits = !fits && b.Length <= 8 && x.Length <= 3 && name == name.ToLowerInvariant();
             byte nt = 0;
             string sb = b, sx = x;
-            if (lowerFits) nt = 0x18;
-            else if (!fits) { sb = (b.Length > 6 ? b[..6] : b) + "~" + (++shortCounter); sx = x.Length > 3 ? x[..3] : x; }
+            if (lowerFits)
+            {
+                nt = 0x18;
+            }
+            else if (!fits)
+            {
+                sb = (b.Length > 6 ? b[..6] : b) + "~" + (++shortCounter);
+                sx = x.Length > 3 ? x[..3] : x;
+            }
             var sn = Encoding.ASCII.GetBytes(sb.PadRight(8) + sx.PadRight(3));
             if (!fits && !lowerFits)
             {
                 byte sum = 0;
-                foreach (var c in sn) sum = (byte)((((sum & 1) << 7) | (sum >> 1)) + c);
+                foreach (var c in sn)
+                {
+                    sum = (byte)((((sum & 1) << 7) | (sum >> 1)) + c);
+                }
+
                 var chars = (name + "\0").PadRight(((name.Length + 1 + 12) / 13) * 13, '￿');
                 int pieces = chars.Length / 13;
                 int[] offs = [1, 3, 5, 7, 9, 14, 16, 18, 20, 22, 24, 28, 30];
@@ -195,7 +233,11 @@ public class FirmwareTests
                     e[0] = (byte)(p | (p == pieces ? 0x40 : 0));
                     e[11] = 0x0F;
                     e[13] = sum;
-                    for (int k = 0; k < 13; k++) BinaryPrimitives.WriteUInt16LittleEndian(e.AsSpan(offs[k]), chars[(p - 1) * 13 + k]);
+                    for (int k = 0; k < 13; k++)
+                    {
+                        BinaryPrimitives.WriteUInt16LittleEndian(e.AsSpan(offs[k]), chars[(p - 1) * 13 + k]);
+                    }
+
                     list.Add(e);
                 }
             }
@@ -216,9 +258,14 @@ public class FirmwareTests
             var entries = new List<byte[]>();
             if (prefix.Length > 0)
             {
-                var dot = new byte[32]; Encoding.ASCII.GetBytes(".          ").CopyTo(dot, 0); dot[11] = 0x10;
-                var dotdot = new byte[32]; Encoding.ASCII.GetBytes("..         ").CopyTo(dotdot, 0); dotdot[11] = 0x10;
-                entries.Add(dot); entries.Add(dotdot);
+                var dot = new byte[32];
+                Encoding.ASCII.GetBytes(".          ").CopyTo(dot, 0);
+                dot[11] = 0x10;
+                var dotdot = new byte[32];
+                Encoding.ASCII.GetBytes("..         ").CopyTo(dotdot, 0);
+                dotdot[11] = 0x10;
+                entries.Add(dot);
+                entries.Add(dotdot);
             }
             var below = tree.Where(kv => kv.Key.StartsWith(prefix)).Select(kv => (Rel: kv.Key[prefix.Length..], kv.Value)).ToList();
             foreach (var dir in below.Where(b => b.Rel.Contains('/')).Select(b => b.Rel[..b.Rel.IndexOf('/')]).Distinct())
@@ -231,7 +278,11 @@ public class FirmwareTests
             foreach (var (rel, data) in below.Where(b => !b.Rel.Contains('/')))
             {
                 int fc = data.Length == 0 ? 0 : Alloc(data.Length);
-                if (fc != 0) WriteChain(fc, data);
+                if (fc != 0)
+                {
+                    WriteChain(fc, data);
+                }
+
                 entries.AddRange(DirEntries(rel, 0x20, fc, data.Length));
             }
             return entries;
@@ -243,7 +294,10 @@ public class FirmwareTests
         label[11] = 0x08;
         root.Add(label);
         root.AddRange(Contents(""));
-        var deleted = new byte[32]; deleted[0] = 0xE5; deleted[11] = 0x20; root.Add(deleted);
+        var deleted = new byte[32];
+        deleted[0] = 0xE5;
+        deleted[11] = 0x20;
+        root.Add(deleted);
         var rootBytes = root.SelectMany(e => e).ToArray();
         Assert.True(rootBytes.Length <= rootEntries * 32);
         rootBytes.CopyTo(img, (reserved + fatSectors) * bps);
@@ -366,9 +420,13 @@ public class FirmwareTests
     [Fact]
     public void Fat_VolumeBehindMbrIsFound()
     {
-        var vol = BuildFat12(new() { ["f.txt"] = "x"u8.ToArray() }, totalSectors: 256);
+        var vol = BuildFat12(new()
+        {
+            ["f.txt"] = "x"u8.ToArray()
+        }, totalSectors: 256);
         var img = new byte[512 * 8 + vol.Length];
-        img[510] = 0x55; img[511] = 0xAA;
+        img[510] = 0x55;
+        img[511] = 0xAA;
         BinaryPrimitives.WriteUInt32LittleEndian(img.AsSpan(0x1BE + 8), 8);
         vol.CopyTo(img, 512 * 8);
         var fs = FsImage.Open(new MemoryStream(img));
@@ -386,17 +444,22 @@ public class FirmwareTests
         BinaryPrimitives.WriteUInt32LittleEndian(img.AsSpan(0x58), 2);  // heap sector
         BinaryPrimitives.WriteUInt32LittleEndian(img.AsSpan(0x5C), 36); // clusters
         BinaryPrimitives.WriteUInt32LittleEndian(img.AsSpan(0x60), 2);  // root cluster
-        img[0x6C] = 9; img[0x6D] = 0;
-        img[510] = 0x55; img[511] = 0xAA;
+        img[0x6C] = 9;
+        img[0x6D] = 0;
+        img[510] = 0x55;
+        img[511] = 0xAA;
         void Fat(uint c, uint v) => BinaryPrimitives.WriteUInt32LittleEndian(img.AsSpan(cs + (int)c * 4), v);
         int Cl(uint c) => cs * 2 + (int)(c - 2) * cs;
         byte[] Set(string name, bool dir, uint first, long size, bool contiguous)
         {
             int names = (name.Length + 14) / 15;
             var e = new byte[32 * (2 + names)];
-            e[0] = 0x85; e[1] = (byte)(1 + names);
+            e[0] = 0x85;
+            e[1] = (byte)(1 + names);
             BinaryPrimitives.WriteUInt16LittleEndian(e.AsSpan(4), (ushort)(dir ? 0x10 : 0x20));
-            e[32] = 0xC0; e[33] = (byte)(0x01 | (contiguous ? 0x02 : 0)); e[35] = (byte)name.Length;
+            e[32] = 0xC0;
+            e[33] = (byte)(0x01 | (contiguous ? 0x02 : 0));
+            e[35] = (byte)name.Length;
             BinaryPrimitives.WriteUInt64LittleEndian(e.AsSpan(32 + 8), (ulong)size);
             BinaryPrimitives.WriteUInt32LittleEndian(e.AsSpan(32 + 20), first);
             BinaryPrimitives.WriteUInt64LittleEndian(e.AsSpan(32 + 24), (ulong)size);
@@ -404,32 +467,47 @@ public class FirmwareTests
             {
                 int o = 64 + n * 32;
                 e[o] = 0xC1;
-                for (int c = 0; c < 15 && n * 15 + c < name.Length; c++) BinaryPrimitives.WriteUInt16LittleEndian(e.AsSpan(o + 2 + c * 2), name[n * 15 + c]);
+                for (int c = 0; c < 15 && n * 15 + c < name.Length; c++)
+                {
+                    BinaryPrimitives.WriteUInt16LittleEndian(e.AsSpan(o + 2 + c * 2), name[n * 15 + c]);
+                }
             }
             return e;
         }
-        files = new() { ["big.dat"] = Bytes(700, 11), ["app/a_long_name_exceeding15.txt"] = "12345"u8.ToArray() };
+        files = new()
+        {
+            ["big.dat"] = Bytes(700, 11),
+            ["app/a_long_name_exceeding15.txt"] = "12345"u8.ToArray()
+        };
         // root (cluster 2, chained to 3 so it spans two clusters)
-        var bitmap = new byte[32]; bitmap[0] = 0x81;
+        var bitmap = new byte[32];
+        bitmap[0] = 0x81;
         var root = bitmap.Concat(Set("app", true, 5, cs, true)).Concat(Set("big.dat", false, 6, 700, false)).ToArray();
-        var deleted = Set("gone.txt", false, 9, 3, true); deleted[0] = 0x05; // in-use bit clear
+        var deleted = Set("gone.txt", false, 9, 3, true);
+        deleted[0] = 0x05; // in-use bit clear
         root = root.Concat(deleted).ToArray();
         // spill the end of the root into the second cluster
         var rootFull = new byte[cs * 2];
         root.CopyTo(rootFull, 0);
-        for (int o = root.Length; o < cs; o += 32) rootFull[o] = 0x05; // unused (deleted) slots, not the end marker
+        for (int o = root.Length; o < cs; o += 32)
+        {
+            rootFull[o] = 0x05; // unused (deleted) slots, not the end marker
+        }
+
         Set("tail.bin", false, 10, 4, true).CopyTo(rootFull, cs);
         files["tail.bin"] = "TAIL"u8.ToArray();
         rootFull.AsSpan(0, cs).CopyTo(img.AsSpan(Cl(2)));
         rootFull.AsSpan(cs, cs).CopyTo(img.AsSpan(Cl(3)));
-        Fat(2, 3); Fat(3, 0xFFFFFFFF);
+        Fat(2, 3);
+        Fat(3, 0xFFFFFFFF);
         // app/ (contiguous, cluster 5) with one file in cluster 7
         Set("a_long_name_exceeding15.txt", false, 7, 5, true).CopyTo(img, Cl(5));
         "12345"u8.CopyTo(img.AsSpan(Cl(7)));
         // big.dat: clusters 6 -> 8 (chained)
         files["big.dat"].AsSpan(0, cs).CopyTo(img.AsSpan(Cl(6)));
         files["big.dat"].AsSpan(cs).CopyTo(img.AsSpan(Cl(8)));
-        Fat(6, 8); Fat(8, 0xFFFFFFFF);
+        Fat(6, 8);
+        Fat(8, 0xFFFFFFFF);
         "TAIL"u8.CopyTo(img.AsSpan(Cl(10)));
         return img;
     }
@@ -471,13 +549,21 @@ public class FirmwareTests
     /// font, plus a part the installer must ignore (boot_slb2).</summary>
     static byte[] FullFirmwarePup()
     {
-        var os0 = BuildFat12(new() { ["psp2bootconfig.skprx"] = Bytes(700, 1), ["kd/sysmodule.skprx"] = Bytes(100, 2) });
+        var os0 = BuildFat12(new()
+        {
+            ["psp2bootconfig.skprx"] = Bytes(700, 1),
+            ["kd/sysmodule.skprx"] = Bytes(100, 2)
+        });
         var vs0 = BuildFat12(new()
         {
-            ["sys/external/libSceJson.suprx"] = Bytes(3000, 3), ["sys/external/libult.suprx"] = Bytes(1000, 4),
+            ["sys/external/libSceJson.suprx"] = Bytes(3000, 3),
+            ["sys/external/libult.suprx"] = Bytes(1000, 4),
             ["data/external/cdlg/msg.rco"] = Bytes(10, 5),
         });
-        var sa0 = BuildFat12(new() { ["data/font/pgf/ltn0.pgf"] = Bytes(900, 6) });
+        var sa0 = BuildFat12(new()
+        {
+            ["data/font/pgf/ltn0.pgf"] = Bytes(900, 6)
+        });
         int half = vs0.Length / 2;
         return BuildPup(
             (0x100, "3.74\n"u8.ToArray()),
@@ -523,7 +609,10 @@ public class FirmwareTests
             Assert.False(read.FontPackage);
 
             // a font package (no vs0) merges into sa0 and keeps the installed version
-            var font = WritePup(tmp, "FONT.PUP", BuildPup((0x306, BuildSpkg(SpkgType.Sa0, BuildFat12(new() { ["data/font/pvf/jpn0.pvf"] = Bytes(400, 8) })))));
+            var font = WritePup(tmp, "FONT.PUP", BuildPup((0x306, BuildSpkg(SpkgType.Sa0, BuildFat12(new()
+            {
+                ["data/font/pvf/jpn0.pvf"] = Bytes(400, 8)
+            })))));
             var after = FirmwareInstaller.Install(font, fsRoot);
             Assert.Equal("3.74", after.Version);
             Assert.True(after.FontPackage);
@@ -537,7 +626,10 @@ public class FirmwareTests
             Assert.True(File.Exists(Path.Combine(fsRoot, "sa0", "data", "font", "pvf", "jpn0.pvf")));
             Assert.True(again.FontPackage);
         }
-        finally { FirmwareInstaller.DeleteTree(tmp); }
+        finally
+        {
+            FirmwareInstaller.DeleteTree(tmp);
+        }
     }
 
     [Fact]
@@ -559,7 +651,10 @@ public class FirmwareTests
             Assert.Throws<InvalidDataException>(() => FirmwareInstaller.Install(notFirmware, fsRoot));
             Assert.Equal("3.74", FirmwareInfo.Read(fsRoot)!.Version);
         }
-        finally { FirmwareInstaller.DeleteTree(tmp); }
+        finally
+        {
+            FirmwareInstaller.DeleteTree(tmp);
+        }
     }
 
     [Fact]
@@ -590,7 +685,10 @@ public class FirmwareTests
             Assert.True(File.Exists(Path.Combine(other, "vs0", "sys", "external", "libSceXml.suprx")));     // source untouched
             Assert.Throws<InvalidDataException>(() => FirmwareInstaller.ImportFrom(Path.Combine(tmp, "nothing"), fsRoot, "x"));
         }
-        finally { FirmwareInstaller.DeleteTree(tmp); }
+        finally
+        {
+            FirmwareInstaller.DeleteTree(tmp);
+        }
     }
 
     [Fact]
@@ -613,7 +711,10 @@ public class FirmwareTests
             Assert.False(Directory.Exists(Path.Combine(fsRoot, "vs0"))); // only pd0
             Assert.Throws<InvalidDataException>(() => FirmwareInstaller.ImportFactoryData(Path.Combine(tmp, "nothing"), fsRoot));
         }
-        finally { FirmwareInstaller.DeleteTree(tmp); }
+        finally
+        {
+            FirmwareInstaller.DeleteTree(tmp);
+        }
     }
 
     [Fact]
@@ -628,7 +729,10 @@ public class FirmwareTests
             Assert.Null(FirmwareInfo.Read(tmp));
             Assert.False(FirmwareInfo.HasSystemFonts(tmp));
         }
-        finally { FirmwareInstaller.DeleteTree(tmp); }
+        finally
+        {
+            FirmwareInstaller.DeleteTree(tmp);
+        }
     }
 
 
@@ -697,7 +801,10 @@ public class FirmwareTests
             Assert.True(File.Exists(Path.Combine(fsRoot, "vs0", "vsh", "shell", "liblocation_provider.suprx")));
             Assert.False(File.Exists(Path.Combine(fsRoot, "vs0", "vsh", "shell", "liblocation_dolce_provider.suprx")));
         }
-        finally { FirmwareInstaller.DeleteTree(tmp); }
+        finally
+        {
+            FirmwareInstaller.DeleteTree(tmp);
+        }
     }
 }
 
@@ -712,18 +819,27 @@ static class RealFirmware
     static string? Find()
     {
         var env = Environment.GetEnvironmentVariable(EnvVars.FirmwarePup);
-        if (!string.IsNullOrEmpty(env)) return File.Exists(env) ? env : null;
+        if (!string.IsNullOrEmpty(env))
+        {
+            return File.Exists(env) ? env : null;
+        }
         // the test binaries may be built anywhere (-o): look up from this source file instead
         for (var d = new FileInfo(SourceFile()).Directory; d != null; d = d.Parent)
         {
             if (File.Exists(Path.Combine(d.FullName, "VitaSharp.sln")))
             {
                 var p = Path.Combine(d.FullName, "PSVUPDAT.PUP");
-                if (File.Exists(p)) return p;
+                if (File.Exists(p))
+                {
+                    return p;
+                }
                 // a git worktree nested in the repository (<repo>/<dir>/worktrees/<name>): the file sits in the main checkout
                 var main = d.Parent?.Parent?.Parent;
                 if (d.Parent?.Name == "worktrees" && main != null && File.Exists(Path.Combine(main.FullName, "PSVUPDAT.PUP")))
+                {
                     return Path.Combine(main.FullName, "PSVUPDAT.PUP");
+                }
+
                 return null;
             }
         }
@@ -735,6 +851,9 @@ public sealed class RealFirmwareFactAttribute : FactAttribute
 {
     public RealFirmwareFactAttribute()
     {
-        if (RealFirmware.PupPath == null) Skip = "PSVUPDAT.PUP not found (set VITASHARP_FIRMWARE_PUP to run the real-firmware tests)";
+        if (RealFirmware.PupPath == null)
+        {
+            Skip = "PSVUPDAT.PUP not found (set VITASHARP_FIRMWARE_PUP to run the real-firmware tests)";
+        }
     }
 }

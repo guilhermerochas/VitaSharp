@@ -80,7 +80,8 @@ static class ControlNames
         var inv = CultureInfo.InvariantCulture;
         switch (b.Kind)
         {
-            case BindingKind.Key: return Key(b.Key ?? "");
+            case BindingKind.Key:
+                return Key(b.Key ?? "");
             case BindingKind.PadButton:
                 return (PadButton)b.Index switch
                 {
@@ -98,15 +99,22 @@ static class ControlNames
             case BindingKind.PadAxis:
             {
                 var a = (PadAxis)b.Index;
-                if (a >= PadAxis.LeftTrigger) return b.Describe(kind);
+                if (a >= PadAxis.LeftTrigger)
+                {
+                    return b.Describe(kind);
+                }
+
                 bool x = a is PadAxis.LeftX or PadAxis.RightX;
                 return Stick(a <= PadAxis.LeftY, x ? (b.Dir < 0 ? ArrowLeft : ArrowRight) : (b.Dir < 0 ? ArrowUp : ArrowDown));
             }
-            case BindingKind.JoyButton: return Loc.Format("CtlJoyButton", b.Index);
-            case BindingKind.JoyAxis: return Loc.Format("CtlJoyAxis", string.Create(inv, $"{b.Index}{(b.Dir == 2 ? "" : b.Dir < 0 ? "-" : "+")}"));
+            case BindingKind.JoyButton:
+                return Loc.Format("CtlJoyButton", b.Index);
+            case BindingKind.JoyAxis:
+                return Loc.Format("CtlJoyAxis", string.Create(inv, $"{b.Index}{(b.Dir == 2 ? "" : b.Dir < 0 ? "-" : "+")}"));
             case BindingKind.JoyHat:
                 return string.Create(inv, $"Hat {b.Index} {b.Dir switch { 1 => ArrowUp, 2 => ArrowRight, 4 => ArrowDown, 8 => ArrowLeft, _ => b.Dir.ToString(inv) }}");
-            default: return "";
+            default:
+                return "";
         }
     }
 

@@ -60,7 +60,9 @@ public sealed unsafe class Mp4Demuxer : IMp4Demuxer
             streams.Add(new DemuxedStream(par->codec_type == AVMediaType.AVMEDIA_TYPE_VIDEO, par->codec_id, par->width, par->height,
                 par->ch_layout.nb_channels, par->sample_rate, (int)par->bit_rate, dur, fr.den != 0 ? (double)fr.num / fr.den : 0, language));
             if (par->codec_id == AVCodecID.AV_CODEC_ID_H264 && par->extradata_size > 7 && par->extradata[0] == 1)
+            {
                 (_annexBHeaders[i], _nalLengthSize[i]) = ParseAvcC(new ReadOnlySpan<byte>(par->extradata, par->extradata_size));
+            }
         }
         Streams = streams;
         Duration90k = fmt->duration > 0 ? fmt->duration * 9 / 100 : streams.Count > 0 ? streams.Max(s => s.Duration90k) : 0;
@@ -68,10 +70,22 @@ public sealed unsafe class Mp4Demuxer : IMp4Demuxer
 
     public static Mp4Demuxer? Open(string path)
     {
-        if (!FFmpegLoader.Available || !File.Exists(path)) return null;
+        if (!FFmpegLoader.Available || !File.Exists(path))
+        {
+            return null;
+        }
+
         AVFormatContext* fmt = null;
-        if (ffmpeg.avformat_open_input(&fmt, path, null, null) < 0) return null;
-        if (ffmpeg.avformat_find_stream_info(fmt, null) < 0) { ffmpeg.avformat_close_input(&fmt); return null; }
+        if (ffmpeg.avformat_open_input(&fmt, path, null, null) < 0)
+        {
+            return null;
+        }
+
+        if (ffmpeg.avformat_find_stream_info(fmt, null) < 0)
+        {
+            ffmpeg.avformat_close_input(&fmt);
+            return null;
+        }
         return new Mp4Demuxer(fmt);
     }
 
@@ -85,16 +99,22 @@ public sealed unsafe class Mp4Demuxer : IMp4Demuxer
         int p = 5, sps = c[p++] & 0x1F;
         for (int i = 0; i < sps && p + 2 <= c.Length; i++)
         {
-            int l = (c[p] << 8) | c[p + 1]; p += 2;
-            ms.Write([0, 0, 0, 1]); ms.Write(c.Slice(p, Math.Min(l, c.Length - p))); p += l;
+            int l = (c[p] << 8) | c[p + 1];
+            p += 2;
+            ms.Write([0, 0, 0, 1]);
+            ms.Write(c.Slice(p, Math.Min(l, c.Length - p)));
+            p += l;
         }
         if (p < c.Length)
         {
             int pps = c[p++];
             for (int i = 0; i < pps && p + 2 <= c.Length; i++)
             {
-                int l = (c[p] << 8) | c[p + 1]; p += 2;
-                ms.Write([0, 0, 0, 1]); ms.Write(c.Slice(p, Math.Min(l, c.Length - p))); p += l;
+                int l = (c[p] << 8) | c[p + 1];
+                p += 2;
+                ms.Write([0, 0, 0, 1]);
+                ms.Write(c.Slice(p, Math.Min(l, c.Length - p)));
+                p += l;
             }
         }
         return (ms.ToArray(), lenSize);
@@ -108,7 +128,11 @@ public sealed unsafe class Mp4Demuxer : IMp4Demuxer
             try
             {
                 int s = _pkt->stream_index;
-                if (!enabled(s)) continue;
+                if (!enabled(s))
+                {
+                    continue;
+                }
+
                 var tb = _fmt->streams[s]->time_base;
                 var data = new ReadOnlySpan<byte>(_pkt->data, _pkt->size);
                 bool key = (_pkt->flags & ffmpeg.AV_PKT_FLAG_KEY) != 0;
@@ -116,7 +140,10 @@ public sealed unsafe class Mp4Demuxer : IMp4Demuxer
                 long pts = To90k(_pkt->pts, tb), dts = _pkt->dts == ffmpeg.AV_NOPTS_VALUE ? pts : To90k(_pkt->dts, tb);
                 return new DemuxedUnit(s, bytes, pts, dts, key);
             }
-            finally { ffmpeg.av_packet_unref(_pkt); }
+            finally
+            {
+                ffmpeg.av_packet_unref(_pkt);
+            }
         }
         return null;
     }
@@ -128,13 +155,28 @@ public sealed unsafe class Mp4Demuxer : IMp4Demuxer
     internal static int ToAnnexB(ReadOnlySpan<byte> avcc, int lenSize, byte[]? header, ref byte[] buffer)
     {
         int total = header?.Length ?? 0;
-        for (int p = 0; Nal(avcc, lenSize, ref p, out _, out int l);) total += 4 + l;
-        if (buffer.Length < total) buffer = new byte[Math.Max(total, buffer.Length * 2)];
+        for (int p = 0; Nal(avcc, lenSize, ref p, out _, out int l);)
+        {
+            total += 4 + l;
+        }
+
+        if (buffer.Length < total)
+        {
+            buffer = new byte[Math.Max(total, buffer.Length * 2)];
+        }
+
         int o = 0;
-        if (header != null) { header.CopyTo(buffer, 0); o = header.Length; }
+        if (header != null)
+        {
+            header.CopyTo(buffer, 0);
+            o = header.Length;
+        }
         for (int p = 0; Nal(avcc, lenSize, ref p, out int start, out int l);)
         {
-            buffer[o] = 0; buffer[o + 1] = 0; buffer[o + 2] = 0; buffer[o + 3] = 1;
+            buffer[o] = 0;
+            buffer[o + 1] = 0;
+            buffer[o + 2] = 0;
+            buffer[o + 3] = 1;
             avcc.Slice(start, l).CopyTo(buffer.AsSpan(o + 4));
             o += 4 + l;
         }
@@ -145,10 +187,18 @@ public sealed unsafe class Mp4Demuxer : IMp4Demuxer
     {
         // two passes (size, then copy): one exact-size array instead of a growing stream plus a copy
         int total = header?.Length ?? 0;
-        for (int p = 0; Nal(avcc, lenSize, ref p, out _, out int l);) total += 4 + l;
+        for (int p = 0; Nal(avcc, lenSize, ref p, out _, out int l);)
+        {
+            total += 4 + l;
+        }
+
         var result = new byte[total];
         int o = 0;
-        if (header != null) { header.CopyTo(result, 0); o = header.Length; }
+        if (header != null)
+        {
+            header.CopyTo(result, 0);
+            o = header.Length;
+        }
         for (int p = 0; Nal(avcc, lenSize, ref p, out int start, out int l);)
         {
             result[o + 3] = 1; // start code 00 00 00 01
@@ -162,11 +212,23 @@ public sealed unsafe class Mp4Demuxer : IMp4Demuxer
     static bool Nal(ReadOnlySpan<byte> avcc, int lenSize, ref int p, out int start, out int length)
     {
         start = length = 0;
-        if (p + lenSize > avcc.Length) return false;
+        if (p + lenSize > avcc.Length)
+        {
+            return false;
+        }
+
         int l = 0;
-        for (int i = 0; i < lenSize; i++) l = (l << 8) | avcc[p + i];
+        for (int i = 0; i < lenSize; i++)
+        {
+            l = (l << 8) | avcc[p + i];
+        }
+
         p += lenSize;
-        if (l <= 0 || p + l > avcc.Length) return false;
+        if (l <= 0 || p + l > avcc.Length)
+        {
+            return false;
+        }
+
         start = p;
         length = l;
         p += l;
@@ -180,9 +242,14 @@ public sealed unsafe class Mp4Demuxer : IMp4Demuxer
 
     public void Dispose()
     {
-        var p = _pkt; ffmpeg.av_packet_free(&p);
+        var p = _pkt;
+        ffmpeg.av_packet_free(&p);
         var f = _fmt;
-        if (f != null) ffmpeg.avformat_close_input(&f);
+        if (f != null)
+        {
+            ffmpeg.avformat_close_input(&f);
+        }
+
         _fmt = null;
     }
 }

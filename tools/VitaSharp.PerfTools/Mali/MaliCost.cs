@@ -41,14 +41,34 @@ sealed class MaliCost(MaliCost.Settings s)
     public static string? FindMalioc(string? opt)
     {
         foreach (var c in new[] { opt, Environment.GetEnvironmentVariable(EnvVars.Malioc) })
-            if (!string.IsNullOrEmpty(c) && File.Exists(c)) return c;
+        {
+            if (!string.IsNullOrEmpty(c) && File.Exists(c))
+            {
+                return c;
+            }
+        }
+
         string exe = OperatingSystem.IsWindows() ? "malioc.exe" : "malioc";
         foreach (var dir in (Environment.GetEnvironmentVariable("PATH") ?? "").Split(Path.PathSeparator))
-            if (dir.Length > 0 && File.Exists(Path.Combine(dir, exe))) return Path.Combine(dir, exe);
+        {
+            if (dir.Length > 0 && File.Exists(Path.Combine(dir, exe)))
+            {
+                return Path.Combine(dir, exe);
+            }
+        }
+
         var arm = Path.Combine(Environment.GetFolderPath(Environment.SpecialFolder.ProgramFiles), "Arm");
         if (Directory.Exists(arm))
+        {
             foreach (var d in Directory.GetDirectories(arm, "Arm Performance Studio*").OrderDescending())
-                if (File.Exists(Path.Combine(d, "mali_offline_compiler", exe))) return Path.Combine(d, "mali_offline_compiler", exe);
+            {
+                if (File.Exists(Path.Combine(d, "mali_offline_compiler", exe)))
+                {
+                    return Path.Combine(d, "mali_offline_compiler", exe);
+                }
+            }
+        }
+
         return null;
     }
 
@@ -56,8 +76,15 @@ sealed class MaliCost(MaliCost.Settings s)
     public void Add(IReadOnlyList<DrawCostRecord> draws)
     {
         lock (_draws)
+        {
             foreach (var d in draws)
-                if (d.Present >= s.FirstFrame && d.Present <= s.LastFrame) _draws.Add(d);
+            {
+                if (d.Present >= s.FirstFrame && d.Present <= s.LastFrame)
+                {
+                    _draws.Add(d);
+                }
+            }
+        }
     }
 
     /// <summary>At the end of the replay, before the renderer is disposed.</summary>
@@ -82,7 +109,10 @@ sealed class MaliCost(MaliCost.Settings s)
 
     Stats Compile(ulong hash, ulong hint, bool vertex, string variant, string glsl)
     {
-        if (glsl.Length == 0) return new Stats(new double[4], -1, false, 100, 0, 0, "no GLSL");
+        if (glsl.Length == 0)
+        {
+            return new Stats(new double[4], -1, false, 100, 0, 0, "no GLSL");
+        }
         // the GLSL's own hash in the name: a generator or what-if change compiles again
         string textHash = Convert.ToHexStringLower(System.Security.Cryptography.SHA1.HashData(Encoding.UTF8.GetBytes(glsl)))[..8];
         string name = $"{hash:x16}_{hint:x16}{(variant.Length > 0 ? "_" + variant : "")}_{textHash}";
@@ -93,10 +123,17 @@ sealed class MaliCost(MaliCost.Settings s)
     Stats CompileOnce(string name, bool vertex, string glsl)
     {
         string src = Path.Combine(_cacheDir, name + (vertex ? ".vert" : ".frag")), json = Path.Combine(_cacheDir, name + ".json");
-        if (File.Exists(json)) return Parse(File.ReadAllText(json));
+        if (File.Exists(json))
+        {
+            return Parse(File.ReadAllText(json));
+        }
+
         File.WriteAllText(src, glsl);
         var psi = new ProcessStartInfo(s.Malioc) { RedirectStandardOutput = true, RedirectStandardError = true, UseShellExecute = false, CreateNoWindow = true };
-        foreach (var a in new[] { "-c", s.Core, "--vulkan", "--format", "json", src }) psi.ArgumentList.Add(a);
+        foreach (var a in new[] { "-c", s.Core, "--vulkan", "--format", "json", src })
+        {
+            psi.ArgumentList.Add(a);
+        }
         // malioc writes its SPIR-V to a fixed name under %TEMP%\moc-temp: concurrent runs need their own TEMP
         string tmp = Path.Combine(_cacheDir, "tmp", name);
         Directory.CreateDirectory(tmp);
@@ -104,16 +141,32 @@ sealed class MaliCost(MaliCost.Settings s)
         string text;
         using (var p = Process.Start(psi)!)
         {
-            try { p.PriorityClass = ProcessPriorityClass.BelowNormal; } catch (InvalidOperationException) { } catch (System.ComponentModel.Win32Exception) { }
+            try
+            {
+                p.PriorityClass = ProcessPriorityClass.BelowNormal;
+            }
+            catch (InvalidOperationException) { }
+            catch (System.ComponentModel.Win32Exception) { }
             var stdout = p.StandardOutput.ReadToEndAsync();
             var stderr = p.StandardError.ReadToEnd();
             p.WaitForExit();
             text = stdout.Result;
             if (!text.TrimStart().StartsWith('{'))
+            {
                 return new Stats(new double[4], -1, false, 100, 0, 0, stderr.Trim().Split('\n').LastOrDefault()?.Trim() is { Length: > 0 } msg ? msg : $"malioc exit code {p.ExitCode}");
+            }
         }
-        try { Directory.Delete(tmp, true); } catch (IOException) { } catch (UnauthorizedAccessException) { }
-        if (!text.Contains("\"name\":\"error\"")) File.WriteAllText(json, text); // errors are not cached: the next run retries
+        try
+        {
+            Directory.Delete(tmp, true);
+        }
+        catch (IOException) { }
+        catch (UnauthorizedAccessException) { }
+        if (!text.Contains("\"name\":\"error\""))
+        {
+            File.WriteAllText(json, text); // errors are not cached: the next run retries
+        }
+
         return Parse(text);
     }
 
@@ -126,8 +179,16 @@ sealed class MaliCost(MaliCost.Settings s)
         string? error = null;
         foreach (var sh in doc.RootElement.GetProperty("shaders").EnumerateArray())
         {
-            if (sh.TryGetProperty("errors", out var errs) && errs.ValueKind == JsonValueKind.Array && errs.GetArrayLength() > 0) error = errs[0].ToString();
-            if (!sh.TryGetProperty("variants", out var variants)) continue;
+            if (sh.TryGetProperty("errors", out var errs) && errs.ValueKind == JsonValueKind.Array && errs.GetArrayLength() > 0)
+            {
+                error = errs[0].ToString();
+            }
+
+            if (!sh.TryGetProperty("variants", out var variants))
+            {
+                continue;
+            }
+
             foreach (var v in variants.EnumerateArray())
             {
                 var perf = v.GetProperty("performance");
@@ -137,23 +198,48 @@ sealed class MaliCost(MaliCost.Settings s)
                     ? lc : perf.GetProperty("total_cycles").GetProperty("cycle_count");
                 var vals = path.EnumerateArray().Select(x => x.ValueKind == JsonValueKind.Number ? x.GetDouble() : 0).ToArray();
                 for (int u = 0; u < Units.Length; u++)
-                    if (names.IndexOf(Units[u]) is var i and >= 0 && i < vals.Length) cycles[u] += vals[i];
+                {
+                    if (names.IndexOf(Units[u]) is var i and >= 0 && i < vals.Length)
+                    {
+                        cycles[u] += vals[i];
+                    }
+                }
+
                 foreach (var prop in v.GetProperty("properties").EnumerateArray())
                 {
                     var val = prop.GetProperty("value");
                     switch (prop.GetProperty("name").GetString())
                     {
-                        case "has_stack_spilling" when val.ValueKind == JsonValueKind.True: spills = true; break;
-                        case "thread_occupancy" when val.ValueKind == JsonValueKind.Number: occupancy = Math.Min(occupancy, val.GetInt32()); break;
-                        case "work_registers_used" when val.ValueKind == JsonValueKind.Number: regs = Math.Max(regs, val.GetInt32()); break;
-                        case "fp16_arithmetic" when val.ValueKind == JsonValueKind.Number: fp16 = Math.Max(fp16, val.GetInt32()); break;
+                        case "has_stack_spilling" when val.ValueKind == JsonValueKind.True:
+                            spills = true;
+                            break;
+                        case "thread_occupancy" when val.ValueKind == JsonValueKind.Number:
+                            occupancy = Math.Min(occupancy, val.GetInt32());
+                            break;
+                        case "work_registers_used" when val.ValueKind == JsonValueKind.Number:
+                            regs = Math.Max(regs, val.GetInt32());
+                            break;
+                        case "fp16_arithmetic" when val.ValueKind == JsonValueKind.Number:
+                            fp16 = Math.Max(fp16, val.GetInt32());
+                            break;
                     }
                 }
             }
         }
         int bound = -1;
-        for (int u = 0; u < 4; u++) if (bound < 0 || cycles[u] > cycles[bound]) bound = u;
-        if (cycles.All(c => c == 0)) bound = -1;
+        for (int u = 0; u < 4; u++)
+        {
+            if (bound < 0 || cycles[u] > cycles[bound])
+            {
+                bound = u;
+            }
+        }
+
+        if (cycles.All(c => c == 0))
+        {
+            bound = -1;
+        }
+
         return new Stats(cycles, bound, spills, occupancy, regs, fp16, error);
     }
 
@@ -167,12 +253,21 @@ sealed class MaliCost(MaliCost.Settings s)
     public void Report()
     {
         List<DrawCostRecord> draws;
-        lock (_draws) draws = _draws.ToList();
+        lock (_draws)
+        {
+            draws = _draws.ToList();
+        }
+
         Directory.CreateDirectory(_cacheDir);
         var sb = new StringBuilder();
         sb.AppendLine($"Mali cost estimate: {s.Core}, {s.Cores} cores at {s.Mhz} MHz, {s.Gbps} GB/s for tile load/store, scale {s.Scale}; malioc {s.Malioc}");
         sb.AppendLine("model: draw = fragments (passing samples / samples per pixel) x fragment bound cycles + vertices (indices x instances) x vertex bound cycles (position + varying), / (cores x clock); frame = draws + tile bytes / bandwidth");
-        if (draws.Count == 0) { sb.AppendLine("no draws recorded"); Write(sb); return; }
+        if (draws.Count == 0)
+        {
+            sb.AppendLine("no draws recorded");
+            Write(sb);
+            return;
+        }
 
         var keys = draws.SelectMany(d => new[] { (d.VsHash, d.VsHint, true), (d.FsHash, d.FsHint, false) }).Distinct().ToList();
         string[] variants = s.Fp16WhatIf ? ["", "half", "allmp"] : [""];
@@ -184,15 +279,26 @@ sealed class MaliCost(MaliCost.Settings s)
             var ((h, hint, vertex), v) = kv;
             string glsl = _glsl.GetValueOrDefault((h, hint, vertex)) ?? "";
             // Mali Bifrost/Valhall has no clip distances (the device path is FarPlaneDiscard) and malioc crashes on them
-            if (vertex) glsl = Regex.Replace(glsl, @"^\s*gl_ClipDistance\[\d\] = [^;]*;\r?\n", "", RegexOptions.Multiline);
-            string src = v switch { "half" => VitaSharp.Core.Gxm.Shader.ShaderGenerator.RelaxHalf(glsl), "allmp" => RelaxAll(glsl), _ => glsl };
+            if (vertex)
+            {
+                glsl = Regex.Replace(glsl, @"^\s*gl_ClipDistance\[\d\] = [^;]*;\r?\n", "", RegexOptions.Multiline);
+            }
+
+            string src = v switch
+            {
+                "half" => VitaSharp.Core.Gxm.Shader.ShaderGenerator.RelaxHalf(glsl),
+                "allmp" => RelaxAll(glsl),
+                _ => glsl
+            };
             // a variant identical to the base shader compiles under the base name
             stats[(h, hint, vertex, v)] = Compile(h, hint, vertex, src == glsl ? "" : v, src);
         });
         Stats S(ulong h, ulong hint, bool vertex, string v) => stats.TryGetValue((h, hint, vertex, v), out var st) ? st : stats[(h, hint, vertex, "")];
         sb.AppendLine($"{keys.Count} shaders ({keys.Count(k => k.Item3)} vertex, {keys.Count(k => !k.Item3)} fragment), malioc {sw.Elapsed.TotalSeconds:F1} s (cached in {_cacheDir})");
         foreach (var e in keys.Select(k => (k, st: S(k.Item1, k.Item2, k.Item3, ""))).Where(x => x.st.Error != null).Take(10))
+        {
             sb.AppendLine($"  malioc failed on {e.k.Item1:x16}/{e.k.Item2:x16} {(e.k.Item3 ? "vert" : "frag")}: {e.st.Error}");
+        }
 
         double cyclesPerMs = s.Cores * s.Mhz * 1000 / s.Scale;
         DrawCost Cost(DrawCostRecord d, string v)
@@ -257,9 +363,15 @@ sealed class MaliCost(MaliCost.Settings s)
         sb.AppendLine();
         sb.AppendLine($"shaders that spill or run at reduced occupancy: {bad.Count} of {keys.Count}");
         foreach (var (k, st) in bad.Take(20))
+        {
             sb.AppendLine(Inv, $"  {k.Item1:x16}/{k.Item2:x16} {(k.Item3 ? "vert" : "frag")}: {(st.Spills ? "spills, " : "")}occupancy {st.Occupancy}%, {st.WorkRegisters} work registers, {share.GetValueOrDefault(k) / totals.Count:F3} ms per frame");
+        }
+
         if (s.Fp16WhatIf)
+        {
             sb.AppendLine($"fp16 what-if: {keys.Count(k => S(k.Item1, k.Item2, k.Item3, "half").Fp16 > S(k.Item1, k.Item2, k.Item3, "").Fp16)} of {keys.Count} shaders gain 16-bit arithmetic from the half-register relaxation");
+        }
+
         Write(sb);
     }
 

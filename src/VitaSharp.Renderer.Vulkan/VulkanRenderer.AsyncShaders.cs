@@ -67,17 +67,29 @@ public sealed unsafe partial class VulkanRenderer
         {
             if (Interlocked.CompareExchange(ref _state, 1, 0) == 0)
             {
-                if (rebuild && byGame) Interlocked.Increment(ref r._statRebuildTakenByGame); // the game got there before the rebuild
+                if (rebuild && byGame)
+                {
+                    Interlocked.Increment(ref r._statRebuildTakenByGame); // the game got there before the rebuild
+                }
+
                 Run(r);
             }
-            else _done.Wait();
+            else
+            {
+                _done.Wait();
+            }
+
             return _result!;
         }
 
         /// <summary>Worker side: runs the job unless the GPU thread took it (true when this call ran it).</summary>
         public bool TryRun(VulkanRenderer r)
         {
-            if (Interlocked.CompareExchange(ref _state, 1, 0) != 0) return false;
+            if (Interlocked.CompareExchange(ref _state, 1, 0) != 0)
+            {
+                return false;
+            }
+
             Run(r);
             return true;
         }
@@ -90,7 +102,11 @@ public sealed unsafe partial class VulkanRenderer
         /// renderer state never sees it; a waiter gets an empty module).</summary>
         public void Cancel(VulkanRenderer r)
         {
-            if (Interlocked.CompareExchange(ref _state, 1, 0) != 0) return;
+            if (Interlocked.CompareExchange(ref _state, 1, 0) != 0)
+            {
+                return;
+            }
+
             _result = new ModuleEntry(default, null);
             Finish(r);
         }
@@ -104,7 +120,10 @@ public sealed unsafe partial class VulkanRenderer
                 if (e == null)
                 {
                     e = r.TranslateAndCompile(program, hintKey, hints, background: true);
-                    if (rebuild) Interlocked.Increment(ref r._statRebuiltShaders);
+                    if (rebuild)
+                    {
+                        Interlocked.Increment(ref r._statRebuiltShaders);
+                    }
                 }
                 _result = r.PublishModule(key, e);
             }
@@ -113,7 +132,10 @@ public sealed unsafe partial class VulkanRenderer
                 Log.Error($"[shader worker] {program.Hash:X16}: {ex.Message}");
                 _result = r.PublishModule(key, new ModuleEntry(default, null));
             }
-            finally { Finish(r); }
+            finally
+            {
+                Finish(r);
+            }
         }
 
         void Finish(VulkanRenderer r)
@@ -140,34 +162,71 @@ public sealed unsafe partial class VulkanRenderer
     /// <summary>Called on the submitting (guest) thread for every command, before it is queued.</summary>
     public void Prefetch(GpuCommand command)
     {
-        if (!_asyncShaders || _stopShaderJobs || _deviceLost) return;
+        if (!_asyncShaders || _stopShaderJobs || _deviceLost)
+        {
+            return;
+        }
+
         Interlocked.Increment(ref _prefetchActive);
         try
         {
-            if (_stopShaderJobs) return; // re-checked after announcing ourselves (see StopShaderWorkers)
+            if (_stopShaderJobs)
+            {
+                return; // re-checked after announcing ourselves (see StopShaderWorkers)
+            }
+
             switch (command)
             {
                 case BeginSceneCommand b:
                     _prefetchColorFormat = b.Color?.ColorFormat ?? 0;
-                    if (_asyncPipelines) PredictScene(b);
+                    if (_asyncPipelines)
+                    {
+                        PredictScene(b);
+                    }
+
                     break;
                 case DrawCommand d:
-                    if (d.IndexCount == 0 || d.FragmentProgram.IsMaskUpdate || d.FragmentProgram.Info == null || d.VertexProgram?.Info == null) return;
+                    if (d.IndexCount == 0 || d.FragmentProgram.IsMaskUpdate || d.FragmentProgram.Info == null || d.VertexProgram?.Info == null)
+                    {
+                        return;
+                    }
+
                     var vp = d.VertexProgram;
                     uint vmask = VertexVaryingMask(d);
                     ulong vk = HintKey(d.VertexTextures, vp.Info.TexturesUsed, vp.Attributes, vp.Streams, 0, varyingMask: vmask, scaledPointSize: vp.Info.Program.WritesPointSize);
-                    if (NeedsJob(vp.Info.Program, vk)) Queue(vp.Info.Program, vk, VertexHints(d, vmask));
-                    else PromoteRebuildJob(vp.Info.Program.Hash, vk);
+                    if (NeedsJob(vp.Info.Program, vk))
+                    {
+                        Queue(vp.Info.Program, vk, VertexHints(d, vmask));
+                    }
+                    else
+                    {
+                        PromoteRebuildJob(vp.Info.Program.Hash, vk);
+                    }
+
                     var fp = d.FragmentProgram;
                     uint cf = _prefetchColorFormat;
                     ulong fk = HintKey(d.FragmentTextures, fp.Info.TexturesUsed, null, null, cf, outputFormat: NativeOutputFormat(fp));
-                    if (NeedsJob(fp.Info.Program, fk)) Queue(fp.Info.Program, fk, FragmentHints(d, cf));
-                    else PromoteRebuildJob(fp.Info.Program.Hash, fk);
-                    if (_asyncPipelines) PrefetchPipeline(d, vk, fk, cf);
+                    if (NeedsJob(fp.Info.Program, fk))
+                    {
+                        Queue(fp.Info.Program, fk, FragmentHints(d, cf));
+                    }
+                    else
+                    {
+                        PromoteRebuildJob(fp.Info.Program.Hash, fk);
+                    }
+
+                    if (_asyncPipelines)
+                    {
+                        PrefetchPipeline(d, vk, fk, cf);
+                    }
+
                     break;
             }
         }
-        finally { Interlocked.Decrement(ref _prefetchActive); }
+        finally
+        {
+            Interlocked.Decrement(ref _prefetchActive);
+        }
     }
 
     // =================================================================== pipeline prefetch
@@ -187,7 +246,11 @@ public sealed unsafe partial class VulkanRenderer
 
     void PredictScene(BeginSceneCommand b)
     {
-        if (b.Color is not { } c) { _prefetchScene = NoColorScene; return; }
+        if (b.Color is not { } c)
+        {
+            _prefetchScene = NoColorScene;
+            return;
+        }
         var f = SurfaceFormat(c.ColorFormat);
         f = RenderableFormat(f);
         var srgb = Formats.Srgb(f);
@@ -198,7 +261,10 @@ public sealed unsafe partial class VulkanRenderer
             var s = GxmSamples(b.Multisample);
             bool ok = _msOkPrefetch.GetOrAdd(((ulong)f, (ulong)s), _ =>
                 (_core.ImageSampleCounts(f, MsaaImageUsage) & s) != 0 && (_core.Properties.Limits.FramebufferColorSampleCounts & s) != 0);
-            if (ok) samples = s;
+            if (ok)
+            {
+                samples = s;
+            }
         }
         _prefetchScene = new PredictedScene(true, f, attach, samples);
     }
@@ -218,15 +284,26 @@ public sealed unsafe partial class VulkanRenderer
         sig = ShaderHints.Fnv.Mix(sig, (uint)(vp.Info.Program.Hash ^ d.FragmentProgram.Info.Program.Hash));
         // static-state pipelines (driver quirk) also depend on the draw's depth/stencil/cull state
         ulong staticKey = StaticStateKey(in st, Formats.Topology(d.PrimitiveType));
-        if (staticKey != 0) sig = ShaderHints.Fnv.Mix(ShaderHints.Fnv.Mix(sig, (uint)staticKey), (uint)(staticKey >> 32));
+        if (staticKey != 0)
+        {
+            sig = ShaderHints.Fnv.Mix(ShaderHints.Fnv.Mix(sig, (uint)staticKey), (uint)(staticKey >> 32));
+        }
         // every draw lands here on the guest thread: the lock-free read first (TryAdd locks even when the key exists)
-        if (_seenDrawSignatures.ContainsKey(sig) || !_seenDrawSignatures.TryAdd(sig, 0)) return;
+        if (_seenDrawSignatures.ContainsKey(sig) || !_seenDrawSignatures.TryAdd(sig, 0))
+        {
+            return;
+        }
+
         bool ms = scene.Samples != SampleCountFlags.Count1Bit;
         var job = new PipelineJob(vp, vk, d.FragmentProgram.Info.Program, fk,
             ms ? HintKey(d.FragmentTextures, d.FragmentProgram.Info.TexturesUsed, null, null, colorFormat, true, NativeOutputFormat(d.FragmentProgram)) : 0,
             ms ? FragmentHintsInputFetch(d, colorFormat) : null,
             scene, blend, st.Front.FragmentEnabled, d.PrimitiveType, st.Front.PolygonMode, staticKey);
-        if (!EnsureShaderWorkers()) return;
+        if (!EnsureShaderWorkers())
+        {
+            return;
+        }
+
         _pipelineJobs.Enqueue(job);
         _workAvailable.Release();
     }
@@ -240,10 +317,26 @@ public sealed unsafe partial class VulkanRenderer
     ModuleEntry? ModuleFor(GxpProgram p, ulong hk, ShaderHints? hints)
     {
         var key = (p.Hash, hk);
-        if (_modules.TryGetValue(key, out var e)) return e;
-        if (_inflight.TryGetValue(key, out var job)) return job.RunOrWait(this);
-        if (_modules.TryGetValue(key, out e)) return e;
-        if (hints == null || _stopShaderJobs) return null;
+        if (_modules.TryGetValue(key, out var e))
+        {
+            return e;
+        }
+
+        if (_inflight.TryGetValue(key, out var job))
+        {
+            return job.RunOrWait(this);
+        }
+
+        if (_modules.TryGetValue(key, out e))
+        {
+            return e;
+        }
+
+        if (hints == null || _stopShaderJobs)
+        {
+            return null;
+        }
+
         var j = new ShaderJob(p, hk, hints);
         return _inflight.TryAdd(key, j) ? j.RunOrWait(this) : ModuleFor(p, hk, null);
     }
@@ -252,7 +345,11 @@ public sealed unsafe partial class VulkanRenderer
     {
         var vsM = ModuleFor(j.Vp.Info.Program, j.Vk, null);
         var fsM = ModuleFor(j.Fs, j.Fk, null);
-        if (vsM?.Gen == null || fsM?.Gen == null || vsM.Module.Handle == 0 || fsM.Module.Handle == 0) return;
+        if (vsM?.Gen == null || fsM?.Gen == null || vsM.Module.Handle == 0 || fsM.Module.Handle == 0)
+        {
+            return;
+        }
+
         var s = j.Scene;
         bool ms = s.Samples != SampleCountFlags.Count1Bit;
         ulong fsKey = j.Fk;
@@ -260,9 +357,16 @@ public sealed unsafe partial class VulkanRenderer
         {
             fsM = ModuleFor(j.Fs, j.FetchKey, j.FetchHints);
             fsKey = j.FetchKey;
-            if (fsM?.Gen == null || fsM.Module.Handle == 0) return;
+            if (fsM?.Gen == null || fsM.Module.Handle == 0)
+            {
+                return;
+            }
         }
-        if (fsM.Gen.RawColorBits != 0 && s.HasColor) return; // integer views: left to the GPU thread
+        if (fsM.Gen.RawColorBits != 0 && s.HasColor)
+        {
+            return; // integer views: left to the GPU thread
+        }
+
         var vs = new VsEntry { Module = vsM.Module, Gen = vsM.Gen, ProgramHash = j.Vp.Info.Program.Hash, HintKey = j.Vk };
         BuildVertexInput(j.Vp, vsM.Gen, vs);
         var fs = new FsEntry { Module = fsM.Module, Gen = fsM.Gen, ProgramHash = j.Fs.Hash, HintKey = fsKey };
@@ -273,26 +377,48 @@ public sealed unsafe partial class VulkanRenderer
             blendOn, j.Blend?.ColorFunc ?? 0, j.Blend?.AlphaFunc ?? 0, j.Blend?.ColorSrc ?? 1, j.Blend?.ColorDst ?? 0, j.Blend?.AlphaSrc ?? 1, j.Blend?.AlphaDst ?? 0,
             mask, TopologyClass(topology), Formats.Polygon(j.PolygonMode), s.Samples, j.Static);
         // (recorded in pipelines.list when the GPU thread first uses it, not here: a misprediction is never recorded)
-        if (BuildSharedPipeline(key, vs, fs.Module, topology) == SharedBuild.Built) Interlocked.Increment(ref _statPipelinesPrefetched);
+        if (BuildSharedPipeline(key, vs, fs.Module, topology) == SharedBuild.Built)
+        {
+            Interlocked.Increment(ref _statPipelinesPrefetched);
+        }
     }
 
-    enum SharedBuild { Exists, Built, Failed }
+    enum SharedBuild
+    {
+        Exists, Built, Failed
+    }
 
     /// <summary>Background thread (worker or prewarm): builds a pipeline into the shared table unless it exists or
     /// someone else is building it. The key is claimed first (the GPU thread claims it too when it builds one
     /// itself), so nobody builds the same pipeline twice.</summary>
     SharedBuild BuildSharedPipeline(in PipelineKey key, VsEntry vs, ShaderModule fsModule, PrimitiveTopology topology)
     {
-        if (_sharedPipelines.ContainsKey(key)) return SharedBuild.Exists;
+        if (_sharedPipelines.ContainsKey(key))
+        {
+            return SharedBuild.Exists;
+        }
+
         var done = new ManualResetEventSlim();
-        if (!_pipelineInflight.TryAdd(key, done)) return SharedBuild.Exists;
+        if (!_pipelineInflight.TryAdd(key, done))
+        {
+            return SharedBuild.Exists;
+        }
+
         try
         {
-            if (_sharedPipelines.ContainsKey(key)) return SharedBuild.Exists;
+            if (_sharedPipelines.ContainsKey(key))
+            {
+                return SharedBuild.Exists;
+            }
+
             long t0 = FrameLedger.Now();
             var p = CreatePipeline(key, vs.Module, fsModule, vs.Bindings, vs.Attributes, topology);
             FrameLedger.AddSince(FrameLedger.Cat.BgPipeline, t0);
-            if (p.Handle == 0) return SharedBuild.Failed;
+            if (p.Handle == 0)
+            {
+                return SharedBuild.Failed;
+            }
+
             if (_sharedPipelines.TryAdd(key, p))
             {
                 NotePipelineCreated();
@@ -313,7 +439,11 @@ public sealed unsafe partial class VulkanRenderer
     bool WaitPrefetchedPipeline(in PipelineKey key, out Pipeline p)
     {
         p = default;
-        if (!_pipelineInflight.TryGetValue(key, out var ev)) return false;
+        if (!_pipelineInflight.TryGetValue(key, out var ev))
+        {
+            return false;
+        }
+
         long t0 = FrameLedger.Now();
         ev.Wait();
         long dt = FrameLedger.Now() - t0;
@@ -329,8 +459,16 @@ public sealed unsafe partial class VulkanRenderer
     void Queue(GxpProgram p, ulong hk, ShaderHints hints)
     {
         var job = new ShaderJob(p, hk, hints);
-        if (!_inflight.TryAdd((p.Hash, hk), job)) return;
-        if (!EnsureShaderWorkers()) { job.Cancel(this); return; } // renderer shutting down: drop it
+        if (!_inflight.TryAdd((p.Hash, hk), job))
+        {
+            return;
+        }
+
+        if (!EnsureShaderWorkers())
+        {
+            job.Cancel(this);
+            return;
+        } // renderer shutting down: drop it
         Interlocked.Increment(ref _statAsyncQueued);
         _shaderJobs.Enqueue(job);
         _workAvailable.Release();
@@ -339,11 +477,23 @@ public sealed unsafe partial class VulkanRenderer
     /// <summary>Starts the worker pool on first use; false once the renderer is shutting down.</summary>
     bool EnsureShaderWorkers()
     {
-        if (_shaderWorkers != null) return !_stopShaderJobs;
+        if (_shaderWorkers != null)
+        {
+            return !_stopShaderJobs;
+        }
+
         lock (_inflight)
         {
-            if (_stopShaderJobs) return false;
-            if (_shaderWorkers != null) return true;
+            if (_stopShaderJobs)
+            {
+                return false;
+            }
+
+            if (_shaderWorkers != null)
+            {
+                return true;
+            }
+
             var workers = new Thread[_shaderWorkerCount];
             for (int i = 0; i < workers.Length; i++)
             {
@@ -352,7 +502,11 @@ public sealed unsafe partial class VulkanRenderer
                     NativeThread.Register("Shader worker");
                     WorkerLoop();
                 })
-                { IsBackground = true, Name = $"Shader worker {i}", Priority = WorkerPriority };
+                {
+                    IsBackground = true,
+                    Name = $"Shader worker {i}",
+                    Priority = WorkerPriority
+                };
                 workers[i].Start();
             }
             _shaderWorkers = workers;
@@ -367,15 +521,31 @@ public sealed unsafe partial class VulkanRenderer
             // shader jobs first: pipeline jobs need their modules
             if (_shaderJobs.TryDequeue(out var sj))
             {
-                if (_stopShaderJobs || _deviceLost) sj.Cancel(this);
-                else sj.TryRun(this);
+                if (_stopShaderJobs || _deviceLost)
+                {
+                    sj.Cancel(this);
+                }
+                else
+                {
+                    sj.TryRun(this);
+                }
+
                 continue;
             }
             if (_pipelineJobs.TryDequeue(out var pj))
             {
                 if (!_stopShaderJobs && !_deviceLost)
-                    try { RunPipelineJob(pj); }
-                    catch (Exception e) { Log.WarnOnce("pipeline-prefetch", $"[shader worker] pipeline prefetch failed: {e.Message}"); }
+                {
+                    try
+                    {
+                        RunPipelineJob(pj);
+                    }
+                    catch (Exception e)
+                    {
+                        Log.WarnOnce("pipeline-prefetch", $"[shader worker] pipeline prefetch failed: {e.Message}");
+                    }
+                }
+
                 continue;
             }
             // the boot rebuild comes last: whatever the running game asks for goes first
@@ -385,8 +555,16 @@ public sealed unsafe partial class VulkanRenderer
                 continue;
             }
             // then the recorded pipelines of the prewarm (VulkanRenderer.Cache.cs, Prewarm)
-            if (RunPrewarmItem()) continue;
-            if (_stopShaderJobs) return;
+            if (RunPrewarmItem())
+            {
+                continue;
+            }
+
+            if (_stopShaderJobs)
+            {
+                return;
+            }
+
             _workAvailable.Wait(50);
         }
     }
@@ -401,17 +579,35 @@ public sealed unsafe partial class VulkanRenderer
     /// </summary>
     void StopShaderWorkers()
     {
-        lock (_inflight) _stopShaderJobs = true;
+        lock (_inflight)
+        {
+            _stopShaderJobs = true;
+        }
+
         var spin = new SpinWait();
-        while (Volatile.Read(ref _prefetchActive) != 0) spin.SpinOnce();
+        while (Volatile.Read(ref _prefetchActive) != 0)
+        {
+            spin.SpinOnce();
+        }
+
         if (_shaderWorkers != null)
         {
             _workAvailable.Release(_shaderWorkers.Length);
-            foreach (var t in _shaderWorkers) t.Join();
+            foreach (var t in _shaderWorkers)
+            {
+                t.Join();
+            }
         }
-        while (_shaderJobs.TryDequeue(out var sj)) sj.Cancel(this);
+        while (_shaderJobs.TryDequeue(out var sj))
+        {
+            sj.Cancel(this);
+        }
+
         _pipelineJobs.Clear();
         DrainRebuildQueue();
-        foreach (var job in _inflight.Values) job.Cancel(this);
+        foreach (var job in _inflight.Values)
+        {
+            job.Cancel(this);
+        }
     }
 }

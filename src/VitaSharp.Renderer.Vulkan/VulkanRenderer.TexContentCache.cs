@@ -39,7 +39,11 @@ public sealed unsafe partial class VulkanRenderer
     /// <summary>The kept image of <paramref name="hash"/> for this key's layout, removed from the cache (now the caller's).</summary>
     (Image, ImageView, ImageMemoryPool.Allocation)? TakeCachedContent(TexKey key, ulong hash)
     {
-        if (_contentCache.Count == 0 || !_contentCache.Remove(ContentKeyOf(key, hash), out var k)) return null;
+        if (_contentCache.Count == 0 || !_contentCache.Remove(ContentKeyOf(key, hash), out var k))
+        {
+            return null;
+        }
+
         _contentCacheBytes -= k.Mem.Size;
         return (k.Image, k.View, k.Mem);
     }
@@ -59,7 +63,14 @@ public sealed unsafe partial class VulkanRenderer
         while (_contentCacheBytes > ContentCacheBudget && _contentCache.Count > 0)
         {
             var oldest = default(KeyValuePair<ContentKey, KeptImage>);
-            foreach (var kv in _contentCache) if (oldest.Value == null || kv.Value.Order < oldest.Value.Order) oldest = kv;
+            foreach (var kv in _contentCache)
+            {
+                if (oldest.Value == null || kv.Value.Order < oldest.Value.Order)
+                {
+                    oldest = kv;
+                }
+            }
+
             _contentCache.Remove(oldest.Key);
             _contentCacheBytes -= oldest.Value.Mem.Size;
             ReleaseImage(oldest.Value.Image, oldest.Value.View, oldest.Value.Mem, now: false);
@@ -70,7 +81,11 @@ public sealed unsafe partial class VulkanRenderer
     ulong FlushContentCache(bool now)
     {
         ulong freed = _contentCacheBytes;
-        foreach (var k in _contentCache.Values) ReleaseImage(k.Image, k.View, k.Mem, now);
+        foreach (var k in _contentCache.Values)
+        {
+            ReleaseImage(k.Image, k.View, k.Mem, now);
+        }
+
         _contentCache.Clear();
         _contentCacheBytes = 0;
         return freed;

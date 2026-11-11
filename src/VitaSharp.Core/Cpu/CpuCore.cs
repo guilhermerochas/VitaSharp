@@ -17,13 +17,27 @@ public sealed unsafe class CpuCore : IDisposable
     public bool StopRequested
     {
         get => _stop;
-        set { _stop = value; if (value) State->LinkBreak = 1; } // native code chained across blocks returns
+        set
+        {
+            _stop = value;
+            if (value)
+            {
+                State->LinkBreak = 1;
+            }
+        } // native code chained across blocks returns
     }
     /// <summary>Makes <see cref="Run"/> return <see cref="ExitReason.Yield"/> at the next block boundary.</summary>
     public bool InterruptRequested
     {
         get => _interrupt;
-        set { _interrupt = value; if (value) State->LinkBreak = 1; }
+        set
+        {
+            _interrupt = value;
+            if (value)
+            {
+                State->LinkBreak = 1;
+            }
+        }
     }
     /// <summary>Polled every ~0.5 ms of guest CPU time: true when the thread must give its core to a higher-priority one.</summary>
     public Func<bool>? ShouldYield;
@@ -49,7 +63,10 @@ public sealed unsafe class CpuCore : IDisposable
     [MethodImpl(MethodImplOptions.AggressiveInlining)]
     void Bind(CpuState* s)
     {
-        if (s->MemBase == null) s->MemBase = _memBase;
+        if (s->MemBase == null)
+        {
+            s->MemBase = _memBase;
+        }
     }
 
     [MethodImpl(MethodImplOptions.AggressiveInlining)]
@@ -57,7 +74,11 @@ public sealed unsafe class CpuCore : IDisposable
     {
         int slot = (int)((pc >> 1) & (FastSize - 1));
         var b = _fast[slot];
-        if (b != null && b.Start == pc && b.Thumb == thumb && !b.Invalidated) return b; // invalidated: guest rewrote the code
+        if (b != null && b.Start == pc && b.Thumb == thumb && !b.Invalidated)
+        {
+            return b; // invalidated: guest rewrote the code
+        }
+
         b = _cache.Get(pc, thumb);
         _fast[slot] = b;
         return b;
@@ -69,9 +90,16 @@ public sealed unsafe class CpuCore : IDisposable
     void LinkExit(CpuState* s)
     {
         nint slot = s->LastExitSlot;
-        if (*(nint*)slot != 0) return; // linked already (the exit returned for pacing or an interrupt)
+        if (*(nint*)slot != 0)
+        {
+            return; // linked already (the exit returned for pacing or an interrupt)
+        }
+
         var next = Lookup(s->R[15], s->Thumb != 0);
-        if (next.NativeEntry != 0) Native.NativeRuntime.Link(slot, next);
+        if (next.NativeEntry != 0)
+        {
+            Native.NativeRuntime.Link(slot, next);
+        }
     }
 
     /// <summary>Run until the guest raises an exit (SVC, undefined, breakpoint, yield) or a stop is requested.</summary>
@@ -101,22 +129,40 @@ public sealed unsafe class CpuCore : IDisposable
     long _throttleInstrs, _throttleStart = -1;
     /// <summary>True while the thread sleeps off CPU pacing (profiling).</summary>
     public volatile bool InThrottle;
-    public struct SleepStat { public long Count, Requested, Actual; }
+    public struct SleepStat
+    {
+        public long Count, Requested, Actual;
+    }
     public static readonly SleepStat[] SleepStats = new SleepStat[2];
-    static void Stat(ref SleepStat s, long t0, long expected) { Interlocked.Increment(ref s.Count); Interlocked.Add(ref s.Requested, expected - t0); Interlocked.Add(ref s.Actual, Util.GuestClock.Ticks - t0); }
+    static void Stat(ref SleepStat s, long t0, long expected)
+    {
+        Interlocked.Increment(ref s.Count);
+        Interlocked.Add(ref s.Requested, expected - t0);
+        Interlocked.Add(ref s.Actual, Util.GuestClock.Ticks - t0);
+    }
 
     void Throttle()
     {
         long rate = InstructionsPerSecond;
-        if (rate <= 0 || Util.GuestClock.Turbo) return;
+        if (rate <= 0 || Util.GuestClock.Turbo)
+        {
+            return;
+        }
+
         long now = Util.GuestClock.Ticks, freq = System.Diagnostics.Stopwatch.Frequency;
-        if (_throttleStart < 0) { _throttleStart = now; _throttleInstrs = 0; return; }
+        if (_throttleStart < 0)
+        {
+            _throttleStart = now;
+            _throttleInstrs = 0;
+            return;
+        }
         long expected = _throttleStart + _throttleInstrs * freq / rate;
         if (expected < now - freq / 100)
         {
             // more than 10 ms behind: the thread spent that time in host-side HLE work (no guest instructions); the
             // ledger restarts there rather than banking credit. Blocking waits reset it explicitly (ResetThrottle).
-            _throttleStart = now - freq / 100; _throttleInstrs = 0;
+            _throttleStart = now - freq / 100;
+            _throttleInstrs = 0;
         }
         else if (expected > now + freq / 1000) // ahead by > 1 ms: sleep it off (no spinning: on a phone that is battery)
         {
@@ -136,7 +182,11 @@ public sealed unsafe class CpuCore : IDisposable
     {
         // paused emulation: the guest clock stands still, there is nothing to pace against (the thread parks at its
         // next safe point, or it is the one finishing a GPU scene)
-        if (EmulationPause.IsPaused) return;
+        if (EmulationPause.IsPaused)
+        {
+            return;
+        }
+
         InThrottle = true;
         long t0 = Util.GuestClock.Ticks, target = Math.Max(t0, expected - Volatile.Read(ref _wakeLate));
         Util.GuestClock.WaitUntil(target, allowSpin: false);
@@ -160,11 +210,26 @@ public sealed unsafe class CpuCore : IDisposable
     public void ResetThrottle()
     {
         long rate = InstructionsPerSecond, now = Util.GuestClock.Ticks;
-        if (rate <= 0 || Util.GuestClock.Turbo) { _throttleStart = -1; _throttleInstrs = 0; _blockedAt = _wakeDeadline = 0; return; }
+        if (rate <= 0 || Util.GuestClock.Turbo)
+        {
+            _throttleStart = -1;
+            _throttleInstrs = 0;
+            _blockedAt = _wakeDeadline = 0;
+            return;
+        }
         long start = now;
-        if (_wakeDeadline != 0) start = Math.Max(_wakeDeadline, now - MaxWakeCredit); // timed wait: resume at its deadline
-        else if (_blockedAt != 0) start = Math.Max(now, Math.Min(_blockedAt, now + MaxWakeCredit)); // event: max(P, signal)
-        _throttleStart = start; _throttleInstrs = 0; _blockedAt = _wakeDeadline = 0;
+        if (_wakeDeadline != 0)
+        {
+            start = Math.Max(_wakeDeadline, now - MaxWakeCredit); // timed wait: resume at its deadline
+        }
+        else if (_blockedAt != 0)
+        {
+            start = Math.Max(now, Math.Min(_blockedAt, now + MaxWakeCredit)); // event: max(P, signal)
+        }
+
+        _throttleStart = start;
+        _throttleInstrs = 0;
+        _blockedAt = _wakeDeadline = 0;
     }
 
     /// <summary>Most wake-up lateness a timed wait may recover (ticks); bounds the effect of a stalled host.</summary>
@@ -178,7 +243,13 @@ public sealed unsafe class CpuCore : IDisposable
 
     /// <summary>A timed wait (delay, vblank) ended: on hardware the thread resumes at <paramref name="deadline"/> (or
     /// where it blocked, if that was later), however late the host woke it.</summary>
-    public void WokeAt(long deadline) { if (_blockedAt != 0) _wakeDeadline = Math.Max(deadline, _blockedAt); }
+    public void WokeAt(long deadline)
+    {
+        if (_blockedAt != 0)
+        {
+            _wakeDeadline = Math.Max(deadline, _blockedAt);
+        }
+    }
 
     /// <summary>
     /// Where this thread's emulated CPU time is (guest clock ticks), or 0 when unknown/unpaced. A paced thread runs in
@@ -189,7 +260,11 @@ public sealed unsafe class CpuCore : IDisposable
     public long EmulatedPosition()
     {
         long rate = InstructionsPerSecond;
-        if (rate <= 0 || Util.GuestClock.Turbo || _throttleStart < 0) return 0;
+        if (rate <= 0 || Util.GuestClock.Turbo || _throttleStart < 0)
+        {
+            return 0;
+        }
+
         return _throttleStart + (_throttleInstrs + PendingInstructions) * System.Diagnostics.Stopwatch.Frequency / rate;
     }
 
@@ -203,7 +278,11 @@ public sealed unsafe class CpuCore : IDisposable
     public void SettleThrottle(long pendingInstructions)
     {
         long rate = InstructionsPerSecond;
-        if (rate <= 0 || Util.GuestClock.Turbo || _throttleStart < 0) return;
+        if (rate <= 0 || Util.GuestClock.Turbo || _throttleStart < 0)
+        {
+            return;
+        }
+
         _throttleInstrs += pendingInstructions;
         long expected = _throttleStart + _throttleInstrs * System.Diagnostics.Stopwatch.Frequency / rate;
         _blockedAt = expected;
@@ -220,7 +299,14 @@ public sealed unsafe class CpuCore : IDisposable
     public static long HleCallCost = 1500;
 
     /// <summary>Charges host-side work (an HLE call, a memory copy done natively) to the emulated CPU ledger.</summary>
-    public void ChargeInstructions(long n) { ChargedCycles += n; if (InstructionsPerSecond > 0) _throttleInstrs += n; }
+    public void ChargeInstructions(long n)
+    {
+        ChargedCycles += n;
+        if (InstructionsPerSecond > 0)
+        {
+            _throttleInstrs += n;
+        }
+    }
     /// <summary>Profiling totals: cycles of executed guest blocks and cycles charged for host-side (HLE) work.</summary>
     public long BlockCycles, ChargedCycles;
     /// <summary>Profiling: host time (Stopwatch ticks) spent inside native-backend code, its callouts included.</summary>
@@ -260,9 +346,12 @@ public sealed unsafe class CpuCore : IDisposable
 
     void FlushTierCounts()
     {
-        Interlocked.Add(ref TierTotals[0], NativeInstructions - _flushedNative); _flushedNative = NativeInstructions;
-        Interlocked.Add(ref TierTotals[1], IlInstructions - _flushedIl); _flushedIl = IlInstructions;
-        Interlocked.Add(ref TierTotals[2], InterpInstructions - _flushedInterp); _flushedInterp = InterpInstructions;
+        Interlocked.Add(ref TierTotals[0], NativeInstructions - _flushedNative);
+        _flushedNative = NativeInstructions;
+        Interlocked.Add(ref TierTotals[1], IlInstructions - _flushedIl);
+        _flushedIl = IlInstructions;
+        Interlocked.Add(ref TierTotals[2], InterpInstructions - _flushedInterp);
+        _flushedInterp = InterpInstructions;
     }
 
     /// <summary>
@@ -296,8 +385,14 @@ public sealed unsafe class CpuCore : IDisposable
 
     public ExitReason Run()
     {
-        try { return RunBlocks(); }
-        finally { FlushTierCounts(); }
+        try
+        {
+            return RunBlocks();
+        }
+        finally
+        {
+            FlushTierCounts();
+        }
     }
 
     ExitReason RunBlocks()
@@ -320,7 +415,11 @@ public sealed unsafe class CpuCore : IDisposable
         {
             Block? b = null;
             nint entry = 0;
-            if (resume) { resume = false; entry = native!.ResumeEntry; }
+            if (resume)
+            {
+                resume = false;
+                entry = native!.ResumeEntry;
+            }
             else if ((s->Fpscr & Vfp.FpscrVectorMask) != 0)
             {
                 // VFP short-vector mode (FPSCR LEN/STRIDE): only the interpreter models it; generated code assumes
@@ -331,16 +430,32 @@ public sealed unsafe class CpuCore : IDisposable
                 BlocksExecuted++;
                 InstructionsExecuted += b.Insts.Length;
                 InterpInstructions += b.Insts.Length;
-                sinceCheck += b.Cycles; BlockCycles += b.Cycles;
+                sinceCheck += b.Cycles;
+                BlockCycles += b.Cycles;
                 goto ran;
             }
             else
             {
-                if (Probes != null && Probes.Contains(s->R[15])) ProbeHit?.Invoke(this, s);
+                if (Probes != null && Probes.Contains(s->R[15]))
+                {
+                    ProbeHit?.Invoke(this, s);
+                }
+
                 b = Lookup(s->R[15], s->Thumb != 0);
-                if (b.NativeEntry != 0 && BlockHook == null && !verify && !interpretNext) entry = b.NativeEntry;
+                if (b.NativeEntry != 0 && BlockHook == null && !verify && !interpretNext)
+                {
+                    entry = b.NativeEntry;
+                }
+
                 interpretNext = false;
-                if (republish) { republish = false; if (entry != 0) native!.Republish(b); }
+                if (republish)
+                {
+                    republish = false;
+                    if (entry != 0)
+                    {
+                        native!.Republish(b);
+                    }
+                }
             }
             if (entry == 0 && b!.NativeEntry != 0 && BlockHook == null && verify)
             {
@@ -349,7 +464,8 @@ public sealed unsafe class CpuCore : IDisposable
                 BlocksExecuted++;
                 InstructionsExecuted += b.Insts.Length;
                 InterpInstructions += b.Insts.Length;
-                sinceCheck += b.Cycles; BlockCycles += b.Cycles;
+                sinceCheck += b.Cycles;
+                BlockCycles += b.Cycles;
             }
             else if (entry != 0)
             {
@@ -359,8 +475,13 @@ public sealed unsafe class CpuCore : IDisposable
                 s->CycleAcc = sinceCheck;
                 s->CheckWindow = Probes != null ? 0 : checkWindow;
                 s->LinkBreak = _interrupt || _stop ? 1u : 0u;
-                s->NBlocks = 0; s->NInstr = 0;
-                if (s->DispatchTable == 0) s->DispatchTable = _cache.DispatchTable;
+                s->NBlocks = 0;
+                s->NInstr = 0;
+                if (s->DispatchTable == 0)
+                {
+                    s->DispatchTable = _cache.DispatchTable;
+                }
+
                 native ??= Native.NativeRuntime.Instance;
                 if (++_nativeEntries >= NativeTimingSample)
                 {
@@ -369,60 +490,128 @@ public sealed unsafe class CpuCore : IDisposable
                     native.Run(s, entry);
                     NativeTicks += (System.Diagnostics.Stopwatch.GetTimestamp() - n0) * NativeTimingSample;
                 }
-                else native.Run(s, entry);
+                else
+                {
+                    native.Run(s, entry);
+                }
+
                 NativeEntries++;
-                if (s->LastExitSlot == 0 && s->Exit == ExitReason.None) { NativeReturnsUnlinked++; republish = true; }
-                SimdOps += s->NSimdOps; CondBranches += s->NCondBranches; s->NSimdOps = 0; s->NCondBranches = 0;
-                if (s->CalloutFault != 0) Native.NativeRuntime.ThrowPendingFault(s);
+                if (s->LastExitSlot == 0 && s->Exit == ExitReason.None)
+                {
+                    NativeReturnsUnlinked++;
+                    republish = true;
+                }
+                SimdOps += s->NSimdOps;
+                CondBranches += s->NCondBranches;
+                s->NSimdOps = 0;
+                s->NCondBranches = 0;
+                if (s->CalloutFault != 0)
+                {
+                    Native.NativeRuntime.ThrowPendingFault(s);
+                }
+
                 BlocksExecuted += s->NBlocks;
                 InstructionsExecuted += s->NInstr;
                 NativeInstructions += s->NInstr;
                 BlockCycles += s->CycleAcc - sinceCheck;
                 sinceCheck = s->CycleAcc;
-                if (s->LastExitSlot != 0) LinkExit(s);
-                else if (s->TierUpRequest == 2) { s->TierUpRequest = 0; interpretNext = true; } // FPSCR not in the mode the block assumes
-                else if (s->TierUpRequest != 0) { s->TierUpRequest = 0; Jit.TierUp(Lookup(s->R[15], s->Thumb != 0)); }
+                if (s->LastExitSlot != 0)
+                {
+                    LinkExit(s);
+                }
+                else if (s->TierUpRequest == 2)
+                {
+                    s->TierUpRequest = 0;
+                    interpretNext = true;
+                } // FPSCR not in the mode the block assumes
+                else if (s->TierUpRequest != 0)
+                {
+                    s->TierUpRequest = 0;
+                    Jit.TierUp(Lookup(s->R[15], s->Thumb != 0));
+                }
             }
             else
             {
                 b ??= Lookup(s->R[15], s->Thumb != 0); // always looked up above (only a resume skips it, and it runs native code)
                 var fn = b.Compiled;
-                if (BlockHook != null && BlockHook(this, s, b)) { } // the hook executed the block itself
-                else if (fn != null && Native.NativeVerifier.Enabled) { Native.NativeVerifier.RunCompiled(s, b, fn); IlInstructions += b.Insts.Length; }
+                if (BlockHook != null && BlockHook(this, s, b))
+                {
+                } // the hook executed the block itself
+                else if (fn != null && Native.NativeVerifier.Enabled)
+                {
+                    Native.NativeVerifier.RunCompiled(s, b, fn);
+                    IlInstructions += b.Insts.Length;
+                }
                 else if (fn != null)
                 {
                     fn(s);
                     IlInstructions += b.Insts.Length;
-                    if (Backends.IlJitCompiler.CountExecutions) b.ExecCount++; // IL dump index (racy: statistics)
+                    if (Backends.IlJitCompiler.CountExecutions)
+                    {
+                        b.ExecCount++; // IL dump index (racy: statistics)
+                    }
                 }
                 else
                 {
                     Interpret(s, b);
                     InterpInstructions += b.Insts.Length;
                     InterpByJitState[b.JitState & 3] += b.Insts.Length; // racy on purpose: statistics only
-                    if (++b.ExecCount >= Jit.MinExecutions && b.JitState == 0 && (long)b.ExecCount * b.Insts.Length >= b.HotAt) Jit.Enqueue(b);
+                    if (++b.ExecCount >= Jit.MinExecutions && b.JitState == 0 && (long)b.ExecCount * b.Insts.Length >= b.HotAt)
+                    {
+                        Jit.Enqueue(b);
+                    }
                 }
                 BlocksExecuted++;
                 InstructionsExecuted += b.Insts.Length;
-                sinceCheck += b.Cycles; BlockCycles += b.Cycles;
+                sinceCheck += b.Cycles;
+                BlockCycles += b.Cycles;
             }
         ran:
-            if (s->Exit == ExitReason.FpMode) s->Exit = ExitReason.None; // VMSR changed the vector mode: the loop picks the path
-            if (sinceCheck >= checkWindow) { _throttleInstrs += sinceCheck; sinceCheck = 0; Throttle(); if (ShouldYield != null && ShouldYield()) InterruptRequested = true; }
+            if (s->Exit == ExitReason.FpMode)
+            {
+                s->Exit = ExitReason.None; // VMSR changed the vector mode: the loop picks the path
+            }
+
+            if (sinceCheck >= checkWindow)
+            {
+                _throttleInstrs += sinceCheck;
+                sinceCheck = 0;
+                Throttle();
+                if (ShouldYield != null && ShouldYield())
+                {
+                    InterruptRequested = true;
+                }
+            }
             if (s->Exit != ExitReason.None)
             {
                 PendingInstructions = sinceCheck;
-                if (s->Exit != ExitReason.Svc || SvcHandler is not { } svc) return s->Exit;
+                if (s->Exit != ExitReason.Svc || SvcHandler is not { } svc)
+                {
+                    return s->Exit;
+                }
+
                 s->Exit = ExitReason.None;
-                if (!svc.TryHandleSvc(s)) { s->Exit = ExitReason.Svc; return ExitReason.Svc; }
+                if (!svc.TryHandleSvc(s))
+                {
+                    s->Exit = ExitReason.Svc;
+                    return ExitReason.Svc;
+                }
                 // handled in place: the HLE call may have settled the pending instructions (a blocking wait)
                 sinceCheck = PendingInstructions;
                 PendingInstructions = 0;
-                if (s->Exit != ExitReason.None) { PendingInstructions = sinceCheck; return s->Exit; }
+                if (s->Exit != ExitReason.None)
+                {
+                    PendingInstructions = sinceCheck;
+                    return s->Exit;
+                }
                 resume = native != null && native.ResumeEntry != 0 && Probes == null && BlockHook == null && !verify
                     && (s->Fpscr & Vfp.FpscrVectorMask) == 0;
             }
-            if (InterruptRequested) { InterruptRequested = false; return ExitReason.Yield; }
+            if (InterruptRequested)
+            {
+                InterruptRequested = false;
+                return ExitReason.Yield;
+            }
         }
         return ExitReason.Halt;
     }
@@ -445,8 +634,16 @@ public sealed unsafe class CpuCore : IDisposable
         for (int i = 0; i < insts.Length; i++)
         {
             ref var d = ref insts[i];
-            if (d.EndsBlock || i == insts.Length - 1) s->R[15] = d.Address + d.Size;
-            if ((d.Flags & InstFlags.Conditional) != 0 && !Arm.CondPassed(s, d.Cond)) continue;
+            if (d.EndsBlock || i == insts.Length - 1)
+            {
+                s->R[15] = d.Address + d.Size;
+            }
+
+            if ((d.Flags & InstFlags.Conditional) != 0 && !Arm.CondPassed(s, d.Cond))
+            {
+                continue;
+            }
+
             ptrs[(int)d.Op](s, d.Raw, d.Address);
         }
     }
@@ -456,16 +653,34 @@ public sealed unsafe class CpuCore : IDisposable
     /// <summary><see cref="Interpret"/> in VFP short-vector mode: the vector-capable VFP instructions run as vectors.</summary>
     static void InterpretVector(CpuState* s, Block b)
     {
-        if (!_vectorModeSeen) { _vectorModeSeen = true; Util.Log.Info($"VFP short-vector mode in use (FPSCR 0x{s->Fpscr:X8}, block 0x{b.Start:X8})"); }
+        if (!_vectorModeSeen)
+        {
+            _vectorModeSeen = true;
+            Util.Log.Info($"VFP short-vector mode in use (FPSCR 0x{s->Fpscr:X8}, block 0x{b.Start:X8})");
+        }
         var insts = b.Insts;
         var ptrs = HandlerTable.Pointers;
         for (int i = 0; i < insts.Length; i++)
         {
             ref var d = ref insts[i];
-            if (d.EndsBlock || i == insts.Length - 1) s->R[15] = d.Address + d.Size;
-            if ((d.Flags & InstFlags.Conditional) != 0 && !Arm.CondPassed(s, d.Cond)) continue;
-            if ((s->Fpscr & Vfp.FpscrVectorMask) != 0 && Vfp.IsVectorCapable(d.Op, d.Raw)) Vfp.VectorOp(s, d.Op, d.Raw, d.Address);
-            else ptrs[(int)d.Op](s, d.Raw, d.Address);
+            if (d.EndsBlock || i == insts.Length - 1)
+            {
+                s->R[15] = d.Address + d.Size;
+            }
+
+            if ((d.Flags & InstFlags.Conditional) != 0 && !Arm.CondPassed(s, d.Cond))
+            {
+                continue;
+            }
+
+            if ((s->Fpscr & Vfp.FpscrVectorMask) != 0 && Vfp.IsVectorCapable(d.Op, d.Raw))
+            {
+                Vfp.VectorOp(s, d.Op, d.Raw, d.Address);
+            }
+            else
+            {
+                ptrs[(int)d.Op](s, d.Raw, d.Address);
+            }
         }
     }
 

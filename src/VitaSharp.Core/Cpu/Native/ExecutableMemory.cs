@@ -32,7 +32,10 @@ public sealed unsafe partial class ExecutableMemory : IDisposable
     nint _section;     // Windows section handle / Linux memfd
     readonly Mode _mode;
 
-    enum Mode { DualMapped, AppleJit, Rwx }
+    enum Mode
+    {
+        DualMapped, AppleJit, Rwx
+    }
 
     public byte* ExecBase => _exec;
     public int Used => _used;
@@ -61,11 +64,30 @@ public sealed unsafe partial class ExecutableMemory : IDisposable
 
     public ExecutableMemory()
     {
-        if (UnsupportedReason != null) throw new PlatformNotSupportedException(UnsupportedReason);
-        if (OperatingSystem.IsWindows()) { CreateWindows(); _mode = Mode.DualMapped; }
-        else if (OperatingSystem.IsMacOS()) { CreateApple(); _mode = Mode.AppleJit; }
-        else if (TryCreateLinux()) _mode = Mode.DualMapped;
-        else { CreateRwx(); _mode = Mode.Rwx; }
+        if (UnsupportedReason != null)
+        {
+            throw new PlatformNotSupportedException(UnsupportedReason);
+        }
+
+        if (OperatingSystem.IsWindows())
+        {
+            CreateWindows();
+            _mode = Mode.DualMapped;
+        }
+        else if (OperatingSystem.IsMacOS())
+        {
+            CreateApple();
+            _mode = Mode.AppleJit;
+        }
+        else if (TryCreateLinux())
+        {
+            _mode = Mode.DualMapped;
+        }
+        else
+        {
+            CreateRwx();
+            _mode = Mode.Rwx;
+        }
         _committed = 0;
     }
 
@@ -78,8 +100,16 @@ public sealed unsafe partial class ExecutableMemory : IDisposable
         lock (_lock)
         {
             int start = (_used + 15) & ~15;
-            if (start + size > ReserveSize) throw new OutOfMemoryException("JIT code arena full");
-            while (start + size > _committed) CommitMore();
+            if (start + size > ReserveSize)
+            {
+                throw new OutOfMemoryException("JIT code arena full");
+            }
+
+            while (start + size > _committed)
+            {
+                CommitMore();
+            }
+
             _used = start + size;
             return _exec + start;
         }
@@ -95,8 +125,16 @@ public sealed unsafe partial class ExecutableMemory : IDisposable
         {
             int start = (_used + 15) & ~15;
             var code = assemble((ulong)(_exec + start));
-            if (start + code.Length > ReserveSize) throw new OutOfMemoryException("JIT code arena full");
-            while (start + code.Length > _committed) CommitMore();
+            if (start + code.Length > ReserveSize)
+            {
+                throw new OutOfMemoryException("JIT code arena full");
+            }
+
+            while (start + code.Length > _committed)
+            {
+                CommitMore();
+            }
+
             _used = start + code.Length;
             Write(_exec + start, code);
             return _exec + start;
@@ -107,10 +145,27 @@ public sealed unsafe partial class ExecutableMemory : IDisposable
     public void Write(byte* execAddr, ReadOnlySpan<byte> code)
     {
         long off = execAddr - _exec;
-        if (off < 0 || off + code.Length > _used) throw new ArgumentOutOfRangeException(nameof(execAddr));
-        if (_mode == Mode.AppleJit) AppleWriteProtect(false);
-        try { code.CopyTo(new Span<byte>(_write + off, code.Length)); }
-        finally { if (_mode == Mode.AppleJit) AppleWriteProtect(true); }
+        if (off < 0 || off + code.Length > _used)
+        {
+            throw new ArgumentOutOfRangeException(nameof(execAddr));
+        }
+
+        if (_mode == Mode.AppleJit)
+        {
+            AppleWriteProtect(false);
+        }
+
+        try
+        {
+            code.CopyTo(new Span<byte>(_write + off, code.Length));
+        }
+        finally
+        {
+            if (_mode == Mode.AppleJit)
+            {
+                AppleWriteProtect(true);
+            }
+        }
         FlushInstructionCache(execAddr, code.Length);
     }
 
@@ -119,17 +174,37 @@ public sealed unsafe partial class ExecutableMemory : IDisposable
     public void PatchWord(byte* execAddr, uint word)
     {
         long off = execAddr - _exec;
-        if (off < 0 || off + 4 > _used || (off & 3) != 0) throw new ArgumentOutOfRangeException(nameof(execAddr));
-        if (_mode == Mode.AppleJit) AppleWriteProtect(false);
-        try { Volatile.Write(ref *(uint*)(_write + off), word); }
-        finally { if (_mode == Mode.AppleJit) AppleWriteProtect(true); }
+        if (off < 0 || off + 4 > _used || (off & 3) != 0)
+        {
+            throw new ArgumentOutOfRangeException(nameof(execAddr));
+        }
+
+        if (_mode == Mode.AppleJit)
+        {
+            AppleWriteProtect(false);
+        }
+
+        try
+        {
+            Volatile.Write(ref *(uint*)(_write + off), word);
+        }
+        finally
+        {
+            if (_mode == Mode.AppleJit)
+            {
+                AppleWriteProtect(true);
+            }
+        }
         FlushInstructionCache(execAddr, 4);
     }
 
     /// <summary>Forgets every block (process exec): only valid when no thread can run generated code.</summary>
     public void Reset(int keepBytes)
     {
-        lock (_lock) _used = keepBytes;
+        lock (_lock)
+        {
+            _used = keepBytes;
+        }
     }
 
     void CommitMore()
@@ -139,16 +214,27 @@ public sealed unsafe partial class ExecutableMemory : IDisposable
         {
             // views of a SEC_RESERVE section: commit through one view commits the shared pages for both
             if (VirtualAlloc(_write + _committed, (nuint)(next - _committed), MEM_COMMIT, PAGE_READWRITE) == null)
+            {
                 throw new OutOfMemoryException($"JIT arena commit failed ({Marshal.GetLastPInvokeError()})");
+            }
         }
         _committed = next;
     }
 
     void FlushInstructionCache(byte* addr, int len)
     {
-        if (OperatingSystem.IsWindows()) FlushInstructionCache(GetCurrentProcess(), addr, (nuint)len);
-        else if (OperatingSystem.IsMacOS() && RuntimeInformation.ProcessArchitecture == Architecture.Arm64) sys_icache_invalidate(addr, (nuint)len);
-        else if (RuntimeInformation.ProcessArchitecture == Architecture.Arm64) ClearCache(addr, len);
+        if (OperatingSystem.IsWindows())
+        {
+            FlushInstructionCache(GetCurrentProcess(), addr, (nuint)len);
+        }
+        else if (OperatingSystem.IsMacOS() && RuntimeInformation.ProcessArchitecture == Architecture.Arm64)
+        {
+            sys_icache_invalidate(addr, (nuint)len);
+        }
+        else if (RuntimeInformation.ProcessArchitecture == Architecture.Arm64)
+        {
+            ClearCache(addr, len);
+        }
         // x64 keeps instruction fetch coherent with stores
     }
 
@@ -172,9 +258,17 @@ public sealed unsafe partial class ExecutableMemory : IDisposable
                     var code = Arm64Emitter.EmitCacheFlush();
                     nuint page = (nuint)Environment.SystemPageSize;
                     var p = mmap(null, page, PROT_READ | PROT_WRITE, MAP_PRIVATE | MAP_ANON_LINUX, -1, 0);
-                    if (p == (void*)-1) throw new InvalidOperationException("mmap for the cache flush helper failed");
+                    if (p == (void*)-1)
+                    {
+                        throw new InvalidOperationException("mmap for the cache flush helper failed");
+                    }
+
                     code.CopyTo(new Span<byte>(p, code.Length));
-                    if (mprotect(p, page, PROT_READ | PROT_EXEC) != 0) throw new InvalidOperationException("mprotect for the cache flush helper failed");
+                    if (mprotect(p, page, PROT_READ | PROT_EXEC) != 0)
+                    {
+                        throw new InvalidOperationException("mprotect for the cache flush helper failed");
+                    }
+
                     _clearCache = (delegate* unmanaged<void*, nuint, void>)p;
                 }
                 f = _clearCache;
@@ -191,10 +285,17 @@ public sealed unsafe partial class ExecutableMemory : IDisposable
     void CreateWindows()
     {
         _section = CreateFileMappingW(-1, null, PAGE_EXECUTE_READWRITE | SEC_RESERVE, 0, ReserveSize, null);
-        if (_section == 0) throw new InvalidOperationException($"CreateFileMapping failed ({Marshal.GetLastPInvokeError()})");
+        if (_section == 0)
+        {
+            throw new InvalidOperationException($"CreateFileMapping failed ({Marshal.GetLastPInvokeError()})");
+        }
+
         _write = (byte*)MapViewOfFile(_section, FILE_MAP_WRITE, 0, 0, ReserveSize);
         _exec = (byte*)MapViewOfFile(_section, FILE_MAP_READ | FILE_MAP_EXECUTE, 0, 0, ReserveSize);
-        if (_write == null || _exec == null) throw new InvalidOperationException($"MapViewOfFile failed ({Marshal.GetLastPInvokeError()})");
+        if (_write == null || _exec == null)
+        {
+            throw new InvalidOperationException($"MapViewOfFile failed ({Marshal.GetLastPInvokeError()})");
+        }
     }
 
     [LibraryImport("kernel32.dll", SetLastError = true)]
@@ -242,52 +343,91 @@ public sealed unsafe partial class ExecutableMemory : IDisposable
     bool TryCreateLinux()
     {
         int fd = -1;
-        try { fd = memfd_create("vitasharp-jit", 1 /*MFD_CLOEXEC*/); }
+        try
+        {
+            fd = memfd_create("vitasharp-jit", 1 /*MFD_CLOEXEC*/);
+        }
         catch (EntryPointNotFoundException) { }
-        if (fd >= 0 && ftruncate(fd, ReserveSize) != 0) { close(fd); fd = -1; }
+        if (fd >= 0 && ftruncate(fd, ReserveSize) != 0)
+        {
+            close(fd);
+            fd = -1;
+        }
         // Android before API 30 has no memfd_create in bionic: an ashmem region (API 26+) is mappable twice too
         if (fd < 0 && OperatingSystem.IsAndroid())
         {
-            try { fd = ASharedMemory_create("vitasharp-jit", ReserveSize); }
+            try
+            {
+                fd = ASharedMemory_create("vitasharp-jit", ReserveSize);
+            }
             catch (Exception e) when (e is EntryPointNotFoundException or DllNotFoundException) { }
         }
-        if (fd < 0) return false;
+        if (fd < 0)
+        {
+            return false;
+        }
+
         var w = mmap(null, ReserveSize, PROT_READ | PROT_WRITE, MAP_SHARED, fd, 0);
         var x = mmap(null, ReserveSize, PROT_READ | PROT_EXEC, MAP_SHARED, fd, 0);
         if (w == (void*)-1 || x == (void*)-1)
         {
-            if (w != (void*)-1) munmap(w, ReserveSize);
-            if (x != (void*)-1) munmap(x, ReserveSize);
+            if (w != (void*)-1)
+            {
+                munmap(w, ReserveSize);
+            }
+
+            if (x != (void*)-1)
+            {
+                munmap(x, ReserveSize);
+            }
+
             close(fd);
             return false;
         }
-        _write = (byte*)w; _exec = (byte*)x; _section = fd;
+        _write = (byte*)w;
+        _exec = (byte*)x;
+        _section = fd;
         return true;
     }
 
     void CreateApple()
     {
         var p = mmap(null, ReserveSize, PROT_READ | PROT_WRITE | PROT_EXEC, MAP_PRIVATE | MAP_ANON_MAC | MAP_JIT, -1, 0);
-        if (p == (void*)-1) throw new InvalidOperationException("mmap(MAP_JIT) failed");
+        if (p == (void*)-1)
+        {
+            throw new InvalidOperationException("mmap(MAP_JIT) failed");
+        }
+
         _exec = _write = (byte*)p;
     }
 
     void CreateRwx()
     {
         var p = mmap(null, ReserveSize, PROT_READ | PROT_WRITE | PROT_EXEC, MAP_PRIVATE | MAP_ANON_LINUX, -1, 0);
-        if (p == (void*)-1) throw new InvalidOperationException("mmap(RWX) failed");
+        if (p == (void*)-1)
+        {
+            throw new InvalidOperationException("mmap(RWX) failed");
+        }
+
         _exec = _write = (byte*)p;
     }
 
     static void AppleWriteProtect(bool enable)
     {
         // only Apple silicon enforces per-thread JIT write protection; Intel Macs map MAP_JIT memory RWX
-        if (RuntimeInformation.ProcessArchitecture == Architecture.Arm64) pthread_jit_write_protect_np(enable ? 1 : 0);
+        if (RuntimeInformation.ProcessArchitecture == Architecture.Arm64)
+        {
+            pthread_jit_write_protect_np(enable ? 1 : 0);
+        }
     }
 
     public void Dispose()
     {
-        if (_exec == null) return;
+        if (_exec == null)
+        {
+            return;
+        }
+
         if (OperatingSystem.IsWindows())
         {
             UnmapViewOfFile(_exec);
@@ -297,8 +437,15 @@ public sealed unsafe partial class ExecutableMemory : IDisposable
         else
         {
             munmap(_exec, ReserveSize);
-            if (_write != _exec) munmap(_write, ReserveSize);
-            if (_mode == Mode.DualMapped) close((int)_section);
+            if (_write != _exec)
+            {
+                munmap(_write, ReserveSize);
+            }
+
+            if (_mode == Mode.DualMapped)
+            {
+                close((int)_section);
+            }
         }
         _exec = _write = null;
     }

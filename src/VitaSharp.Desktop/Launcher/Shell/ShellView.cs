@@ -79,8 +79,16 @@ public sealed class ShellView : Panel, IDisposable
 
     public void CloseLiveArea(bool sound)
     {
-        if (_liveArea == null) return;
-        if (sound) Sound(ShellSoundEffect.Cancel);
+        if (_liveArea == null)
+        {
+            return;
+        }
+
+        if (sound)
+        {
+            Sound(ShellSoundEffect.Cancel);
+        }
+
         Children.Remove(_liveArea);
         _liveArea = null;
         _home.Focus();
@@ -91,13 +99,20 @@ public sealed class ShellView : Panel, IDisposable
     {
         _gameRunning = app != null;
         _runningTitle = app?.TitleId;
-        if (_liveArea != null) { _liveArea.Running = _gameRunning && _liveArea.App.TitleId == _runningTitle; _liveArea.InvalidateVisual(); }
+        if (_liveArea != null)
+        {
+            _liveArea.Running = _gameRunning && _liveArea.App.TitleId == _runningTitle;
+            _liveArea.InvalidateVisual();
+        }
         UpdateBgm();
     }
 
     void Sound(ShellSoundEffect e)
     {
-        if (_settings.SystemSounds) _audio.Play(e);
+        if (_settings.SystemSounds)
+        {
+            _audio.Play(e);
+        }
     }
 
     void UpdateBgm()
@@ -128,7 +143,14 @@ public sealed class ShellView : Panel, IDisposable
         if (change.Property == IsVisibleProperty)
         {
             UpdateBgm();
-            if (IsVisible) _padTimer.Start(); else _padTimer.Stop();
+            if (IsVisible)
+            {
+                _padTimer.Start();
+            }
+            else
+            {
+                _padTimer.Stop();
+            }
         }
     }
 
@@ -136,46 +158,113 @@ public sealed class ShellView : Panel, IDisposable
 
     void PollPad()
     {
-        if (_gameRunning || !IsVisible) return;
-        if (this.GetVisualRoot() is Window { IsActive: false }) return;
+        if (_gameRunning || !IsVisible)
+        {
+            return;
+        }
+
+        if (this.GetVisualRoot() is Window { IsActive: false })
+        {
+            return;
+        }
+
         _pads ??= new SdlGamepads(Program.DataRoot);
         var dev = _pads.Devices.FirstOrDefault(d => d.IsGamepad);
-        if (dev == null || !_pads.TryGetState(dev.InstanceId, _pad)) return;
+        if (dev == null || !_pads.TryGetState(dev.InstanceId, _pad))
+        {
+            return;
+        }
+
         bool Pressed(PadButton b) => _pad.Buttons[(int)b] && !_prev[(int)b];
 
         // direction: D-pad or the left stick, repeating while held
         int dir = -1;
         float lx = _pad.Axes[0], ly = _pad.Axes[1];
-        if (_pad.Buttons[(int)PadButton.DpadLeft] || lx < -0.6f) dir = 0;
-        else if (_pad.Buttons[(int)PadButton.DpadRight] || lx > 0.6f) dir = 1;
-        else if (_pad.Buttons[(int)PadButton.DpadUp] || ly < -0.6f) dir = 2;
-        else if (_pad.Buttons[(int)PadButton.DpadDown] || ly > 0.6f) dir = 3;
+        if (_pad.Buttons[(int)PadButton.DpadLeft] || lx < -0.6f)
+        {
+            dir = 0;
+        }
+        else if (_pad.Buttons[(int)PadButton.DpadRight] || lx > 0.6f)
+        {
+            dir = 1;
+        }
+        else if (_pad.Buttons[(int)PadButton.DpadUp] || ly < -0.6f)
+        {
+            dir = 2;
+        }
+        else if (_pad.Buttons[(int)PadButton.DpadDown] || ly > 0.6f)
+        {
+            dir = 3;
+        }
+
         var now = DateTime.UtcNow;
-        if (dir != _repeatDir) { _repeatDir = dir; _repeatAt = now.AddMilliseconds(380); if (dir >= 0) Direction(dir); }
-        else if (dir >= 0 && now >= _repeatAt) { _repeatAt = now.AddMilliseconds(120); Direction(dir); }
+        if (dir != _repeatDir)
+        {
+            _repeatDir = dir;
+            _repeatAt = now.AddMilliseconds(380);
+            if (dir >= 0)
+            {
+                Direction(dir);
+            }
+        }
+        else if (dir >= 0 && now >= _repeatAt)
+        {
+            _repeatAt = now.AddMilliseconds(120);
+            Direction(dir);
+        }
 
         if (Pressed(PadButton.South))
         {
-            if (_liveArea != null) _liveArea.Start(); else _home.Activate();
+            if (_liveArea != null)
+            {
+                _liveArea.Start();
+            }
+            else
+            {
+                _home.Activate();
+            }
         }
-        if (Pressed(PadButton.East) && _liveArea != null) CloseLiveArea(sound: true);
+        if (Pressed(PadButton.East) && _liveArea != null)
+        {
+            CloseLiveArea(sound: true);
+        }
+
         if (_liveArea == null)
         {
-            if (Pressed(PadButton.LeftShoulder)) _home.PageBy(-1);
-            if (Pressed(PadButton.RightShoulder)) _home.PageBy(1);
+            if (Pressed(PadButton.LeftShoulder))
+            {
+                _home.PageBy(-1);
+            }
+
+            if (Pressed(PadButton.RightShoulder))
+            {
+                _home.PageBy(1);
+            }
         }
         Array.Copy(_pad.Buttons, _prev, _prev.Length);
     }
 
     void Direction(int dir)
     {
-        if (_liveArea != null) return;
+        if (_liveArea != null)
+        {
+            return;
+        }
+
         switch (dir)
         {
-            case 0: _home.Move(-1, 0); break;
-            case 1: _home.Move(1, 0); break;
-            case 2: _home.Move(0, -1); break;
-            case 3: _home.Move(0, 1); break;
+            case 0:
+                _home.Move(-1, 0);
+                break;
+            case 1:
+                _home.Move(1, 0);
+                break;
+            case 2:
+                _home.Move(0, -1);
+                break;
+            case 3:
+                _home.Move(0, 1);
+                break;
         }
     }
 

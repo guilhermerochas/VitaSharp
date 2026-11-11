@@ -21,7 +21,11 @@ public static unsafe class Jit
     public static IBlockCompiler[] Chain
     {
         get => _chain;
-        private set { _chain = value; InitialThreshold = value.Length > 0 ? value[0].HotInstructions : long.MaxValue; }
+        private set
+        {
+            _chain = value;
+            InitialThreshold = value.Length > 0 ? value[0].HotInstructions : long.MaxValue;
+        }
     }
     static IBlockCompiler[] _chain = [];
 
@@ -40,7 +44,11 @@ public static unsafe class Jit
     public static long HotInstructions
     {
         get => IlJitCompiler.Instance.HotInstructions;
-        set { IlJitCompiler.Instance.HotInstructions = value; Chain = Chain; }
+        set
+        {
+            IlJitCompiler.Instance.HotInstructions = value;
+            Chain = Chain;
+        }
     }
 
     /// <summary>A block is never compiled before this many executions (whatever its length).</summary>
@@ -68,9 +76,30 @@ public static unsafe class Jit
         }
         int idx = -1;
         // several backends may share a name (native = x64 or ARM64): take the first one this host supports
-        for (int i = 0; i < All.Count && idx < 0; i++) if (All[i].Name.Equals(name, StringComparison.OrdinalIgnoreCase) && All[i].IsSupported) idx = i;
-        if (idx < 0) for (int i = 0; i < All.Count && idx < 0; i++) if (All[i].Name.Equals(name, StringComparison.OrdinalIgnoreCase)) idx = i;
-        if (idx < 0 || !All[idx].IsSupported) return false;
+        for (int i = 0; i < All.Count && idx < 0; i++)
+        {
+            if (All[i].Name.Equals(name, StringComparison.OrdinalIgnoreCase) && All[i].IsSupported)
+            {
+                idx = i;
+            }
+        }
+
+        if (idx < 0)
+        {
+            for (int i = 0; i < All.Count && idx < 0; i++)
+            {
+                if (All[i].Name.Equals(name, StringComparison.OrdinalIgnoreCase))
+                {
+                    idx = i;
+                }
+            }
+        }
+
+        if (idx < 0 || !All[idx].IsSupported)
+        {
+            return false;
+        }
+
         Chain = All.Skip(idx).Where(b => b.IsSupported).ToArray();
         Mode = All[idx].Name;
         return true;
@@ -80,15 +109,22 @@ public static unsafe class Jit
     public static void SelectFromEnvironment()
     {
         if (Environment.GetEnvironmentVariable(EnvVars.Cpu) is { Length: > 0 } env && !Select(env))
+        {
             Console.Error.WriteLine($"VITASHARP_CPU={env}: {WhyUnavailable(env)}, using {Mode}");
+        }
     }
 
     /// <summary>Why <see cref="Select"/> rejected <paramref name="name"/> (for the fallback log line).</summary>
     public static string WhyUnavailable(string? name)
     {
         foreach (var b in All)
+        {
             if (b.Name.Equals(name, StringComparison.OrdinalIgnoreCase))
+            {
                 return $"the {b.Name} backend {b.UnsupportedReason ?? "is not supported on this host"}";
+            }
+        }
+
         return $"unknown CPU backend '{name}' (native, il, interp or auto)";
     }
 
@@ -115,7 +151,11 @@ public static unsafe class Jit
 
     public static void Enqueue(Block b)
     {
-        if (!Enabled || Interlocked.CompareExchange(ref b.JitState, 1, 0) != 0) return;
+        if (!Enabled || Interlocked.CompareExchange(ref b.JitState, 1, 0) != 0)
+        {
+            return;
+        }
+
         Interlocked.Increment(ref _inFlight);
         EnsureWorkers();
         Queue.Add(b);
@@ -123,7 +163,11 @@ public static unsafe class Jit
 
     static void EnsureWorkers()
     {
-        if (Interlocked.Exchange(ref _workersStarted, 1) != 0) return;
+        if (Interlocked.Exchange(ref _workersStarted, 1) != 0)
+        {
+            return;
+        }
+
         int n = Math.Clamp(Environment.ProcessorCount / 4, 1, 3);
         for (int i = 0; i < n; i++)
         {
@@ -132,12 +176,26 @@ public static unsafe class Jit
                 Util.NativeThread.Register("JIT worker", Util.NativeThread.Role.JitWorker);
                 foreach (var b in Queue.GetConsumingEnumerable())
                 {
-                    try { Compile(b); }
-                    catch (Exception e) { Console.Error.WriteLine($"[JIT] {b}: {e.Message}"); b.JitState = 3; }
-                    finally { Interlocked.Decrement(ref _inFlight); }
+                    try
+                    {
+                        Compile(b);
+                    }
+                    catch (Exception e)
+                    {
+                        Console.Error.WriteLine($"[JIT] {b}: {e.Message}");
+                        b.JitState = 3;
+                    }
+                    finally
+                    {
+                        Interlocked.Decrement(ref _inFlight);
+                    }
                 }
             })
-            { IsBackground = true, Name = $"JIT worker {i}", Priority = ThreadPriority.BelowNormal };
+            {
+                IsBackground = true,
+                Name = $"JIT worker {i}",
+                Priority = ThreadPriority.BelowNormal
+            };
             t.Start();
         }
     }
@@ -146,7 +204,11 @@ public static unsafe class Jit
     public static void Compile(Block b)
     {
         var chain = Chain;
-        if (b.Tier >= chain.Length) { b.JitState = 3; return; }
+        if (b.Tier >= chain.Length)
+        {
+            b.JitState = 3;
+            return;
+        }
         var backend = chain[b.Tier];
         long t0 = System.Diagnostics.Stopwatch.GetTimestamp();
         BackendStats.RejectReason = null;
@@ -182,7 +244,10 @@ public static unsafe class Jit
         if (cb.Managed != null)
         {
             b.Compiled = cb.Managed;
-            if (b.NativeEntry != 0) Native.NativeRuntime.Retire(b); // tier-up from native code
+            if (b.NativeEntry != 0)
+            {
+                Native.NativeRuntime.Retire(b); // tier-up from native code
+            }
         }
         // compiled before it is published: once NativeEntry is set the block runs natively and may ask to tier up at
         // once (Jit.TierUp ignores a block still marked queued); publishing can take a while (the first block of a
@@ -203,7 +268,11 @@ public static unsafe class Jit
     {
         var chain = Chain;
         int il = Array.IndexOf(chain, IlJitCompiler.Instance);
-        if (il <= b.Tier || b.NativeEntry == 0 || b.JitState == 1) return;
+        if (il <= b.Tier || b.NativeEntry == 0 || b.JitState == 1)
+        {
+            return;
+        }
+
         b.Tier = il;
         b.HotAt = 0;
         b.JitState = 0;

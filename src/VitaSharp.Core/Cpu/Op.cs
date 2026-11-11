@@ -39,7 +39,9 @@ public enum Op : ushort
 internal static unsafe class Thumb
 {
     /// <summary>IT itself has no effect at execution time: the block builder applies its conditions.</summary>
-    public static void It(CpuState* s, uint ins, uint pc) { }
+    public static void It(CpuState* s, uint ins, uint pc)
+    {
+    }
 }
 
 /// <summary>
@@ -67,12 +69,18 @@ public static unsafe partial class HandlerTable
     {
         get
         {
-            if (_methods != null) return _methods;
+            if (_methods != null)
+            {
+                return _methods;
+            }
+
             var m = new MethodInfo[(int)Op.Count];
             FillMethods(m);
             return _methods = m;
         }
     }
 
-    public static void EnsureInitialized() { }
+    public static void EnsureInitialized()
+    {
+    }
 }

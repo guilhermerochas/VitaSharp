@@ -31,15 +31,25 @@ public static class PspPkgFixture
             var n = Encoding.UTF8.GetBytes(it.Name);
             names.Add(((int)area.Length, n.Length));
             area.Write(n);
-            while (area.Length % 16 != 0) area.WriteByte(0);
+            while (area.Length % 16 != 0)
+            {
+                area.WriteByte(0);
+            }
         }
         var datas = new List<long>();
         foreach (var it in all)
         {
             datas.Add(area.Length);
-            if (it.Data == null) continue;
+            if (it.Data == null)
+            {
+                continue;
+            }
+
             area.Write(it.Data);
-            while (area.Length % 16 != 0) area.WriteByte(0);
+            while (area.Length % 16 != 0)
+            {
+                area.WriteByte(0);
+            }
         }
         var plain = area.ToArray();
         for (int i = 0; i < all.Count; i++)
@@ -54,7 +64,11 @@ public static class PspPkgFixture
         }
 
         var iv = new byte[16];
-        for (int i = 0; i < 16; i++) iv[i] = (byte)(0x31 + i * 7);
+        for (int i = 0; i < 16; i++)
+        {
+            iv[i] = (byte)(0x31 + i * 7);
+        }
+
         byte[] Encrypted(byte[] key)
         {
             var c = (byte[])plain.Clone();
@@ -71,7 +85,10 @@ public static class PspPkgFixture
         {
             var src = all[i].PspType == 0x90 && !ps3Format ? psp : ps3;
             Take(src, names[i].Off, names[i].Len);
-            if (all[i].Data != null) Take(src, datas[i], all[i].Data!.Length);
+            if (all[i].Data != null)
+            {
+                Take(src, datas[i], all[i].Data!.Length);
+            }
         }
 
         var info = new MemoryStream();
@@ -134,7 +151,11 @@ public static class PspPkgFixture
         "\0PBP"u8.CopyTo(pbp);
         BinaryPrimitives.WriteUInt32LittleEndian(pbp.AsSpan(4), 0x10000);
         BinaryPrimitives.WriteUInt32LittleEndian(pbp.AsSpan(8), (uint)sfoOff);
-        for (int at = 0xC; at <= 0x20; at += 4) BinaryPrimitives.WriteUInt32LittleEndian(pbp.AsSpan(at), (uint)end);
+        for (int at = 0xC; at <= 0x20; at += 4)
+        {
+            BinaryPrimitives.WriteUInt32LittleEndian(pbp.AsSpan(at), (uint)end);
+        }
+
         BinaryPrimitives.WriteUInt32LittleEndian(pbp.AsSpan(0x24), (uint)psarOff);
         sfo.CopyTo(pbp, sfoOff);
         psar.CopyTo(pbp, psarOff);
@@ -146,7 +167,11 @@ public static class PspPkgFixture
     public static byte[] Psar(string magic, int size = 0x400)
     {
         var psar = new byte[size];
-        for (int i = 0; i < size; i++) psar[i] = (byte)(i * 7 + 3);
+        for (int i = 0; i < size; i++)
+        {
+            psar[i] = (byte)(i * 7 + 3);
+        }
+
         Encoding.ASCII.GetBytes(magic).CopyTo(psar, 0);
         return psar;
     }

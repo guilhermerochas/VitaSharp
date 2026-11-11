@@ -27,7 +27,10 @@ public sealed class ControllerSettingsPanel : UserControl
     }
 
     /// <summary>Combo: record several controller buttons held together (a hotkey combination, <see cref="InputCombo"/>).</summary>
-    enum ListenMode { Replace, Add, Combo }
+    enum ListenMode
+    {
+        Replace, Add, Combo
+    }
 
     readonly InputProfileStore _store;
     readonly Dictionary<string, ControllerProfile> _working = new(StringComparer.OrdinalIgnoreCase);
@@ -98,7 +101,13 @@ public sealed class ControllerSettingsPanel : UserControl
         _compiled = new CompiledProfile(_profile);
 
         _device = new ComboBox { MinWidth = 340, VerticalAlignment = VerticalAlignment.Center };
-        _device.SelectionChanged += (_, _) => { if (!_updatingUi && _device.SelectedItem is DeviceItem d) Select(d); };
+        _device.SelectionChanged += (_, _) =>
+        {
+            if (!_updatingUi && _device.SelectedItem is DeviceItem d)
+            {
+                Select(d);
+            }
+        };
         var reset = new Button { Content = Loc.Get("CsResetDefault"), VerticalAlignment = VerticalAlignment.Center };
         reset.Click += (_, _) => ResetProfile();
         _deviceInfo = new TextBlock { Foreground = LauncherTheme.Muted, TextWrapping = TextWrapping.Wrap, FontSize = 12 };
@@ -118,7 +127,9 @@ public sealed class ControllerSettingsPanel : UserControl
         _status = new TextBlock { TextWrapping = TextWrapping.Wrap, MinHeight = 20 };
         _hint = new TextBlock
         {
-            Foreground = LauncherTheme.Muted, TextWrapping = TextWrapping.Wrap, FontSize = 12,
+            Foreground = LauncherTheme.Muted,
+            TextWrapping = TextWrapping.Wrap,
+            FontSize = 12,
             Text = Loc.Get("CsHint"),
         };
 
@@ -144,7 +155,8 @@ public sealed class ControllerSettingsPanel : UserControl
         _motionOrientation = new ComboBox
         {
             ItemsSource = new[] { Loc.Get("CsOrientNatural"), Loc.Get("CsOrientUpright") },
-            HorizontalAlignment = HorizontalAlignment.Stretch, FontSize = 12,
+            HorizontalAlignment = HorizontalAlignment.Stretch,
+            FontSize = 12,
         };
         ToolTip.SetTip(_motionOrientation, Loc.Get("CsOrientTip"));
         _motionOrientation.SelectionChanged += (_, _) =>
@@ -161,7 +173,9 @@ public sealed class ControllerSettingsPanel : UserControl
         _motionSource = new ComboBox
         {
             ItemsSource = new[] { Loc.Get("CsSourceAuto"), Loc.Get("CsSourcePad"), Loc.Get("CsSourceKeyboard"), Loc.Get("CsOff") },
-            Width = 170, VerticalAlignment = VerticalAlignment.Center, FontSize = 12,
+            Width = 170,
+            VerticalAlignment = VerticalAlignment.Center,
+            FontSize = 12,
         };
         ToolTip.SetTip(_motionSource, Loc.Get("CsSourceTip"));
         _motionSource.SelectionChanged += (_, _) => Edit(p => p.MotionSource = (MotionSourceMode)Math.Max(0, _motionSource.SelectedIndex));
@@ -187,7 +201,9 @@ public sealed class ControllerSettingsPanel : UserControl
         _mouseMode = new ComboBox
         {
             ItemsSource = new[] { Loc.Get("CsModeGyro"), Loc.Get("CsModeRight"), Loc.Get("CsModeLeft"), Loc.Get("CsOff") },
-            Width = 170, VerticalAlignment = VerticalAlignment.Center, FontSize = 12,
+            Width = 170,
+            VerticalAlignment = VerticalAlignment.Center,
+            FontSize = 12,
         };
         ToolTip.SetTip(_mouseMode, Loc.Get("CsModeTip"));
         _mouseMode.SelectionChanged += (_, _) => Edit(p => p.Mouse.Mode = (MouseMode)Math.Max(0, _mouseMode.SelectedIndex));
@@ -238,7 +254,11 @@ public sealed class ControllerSettingsPanel : UserControl
 
         var right = new Border
         {
-            Background = LauncherTheme.Panel, CornerRadius = new CornerRadius(10), Padding = new Thickness(12), Width = 360, Margin = new Thickness(12, 0, 0, 0),
+            Background = LauncherTheme.Panel,
+            CornerRadius = new CornerRadius(10),
+            Padding = new Thickness(12),
+            Width = 360,
+            Margin = new Thickness(12, 0, 0, 0),
             Child = new ScrollViewer { Content = options, HorizontalScrollBarVisibility = Avalonia.Controls.Primitives.ScrollBarVisibility.Disabled },
         };
 
@@ -259,7 +279,10 @@ public sealed class ControllerSettingsPanel : UserControl
 
         _timer = new DispatcherTimer(TimeSpan.FromMilliseconds(16), DispatcherPriority.Input, (_, _) => Tick());
         SyncDevices();
-        if (_pads == null) _status.Text = Loc.Get("CsNoSdl");
+        if (_pads == null)
+        {
+            _status.Text = Loc.Get("CsNoSdl");
+        }
     }
 
     static TextBlock Header(string text) => new() { Text = text, FontWeight = FontWeight.SemiBold, Margin = new Thickness(0, 8, 0, 0) };
@@ -270,9 +293,16 @@ public sealed class ControllerSettingsPanel : UserControl
         var t = new TextBlock { Width = 48, VerticalAlignment = VerticalAlignment.Center, Foreground = LauncherTheme.Muted, TextAlignment = TextAlignment.Right };
         s.PropertyChanged += (_, e) =>
         {
-            if (e.Property != RangeBase.ValueProperty) return;
+            if (e.Property != RangeBase.ValueProperty)
+            {
+                return;
+            }
+
             t.Text = fmt(s.Value);
-            if (!_updatingUi) set(Math.Round(s.Value, 2));
+            if (!_updatingUi)
+            {
+                set(Math.Round(s.Value, 2));
+            }
         };
         return (s, t);
     }
@@ -296,7 +326,10 @@ public sealed class ControllerSettingsPanel : UserControl
             top.AddHandler(KeyDownEvent, OnKeyDown, RoutingStrategies.Tunnel);
             top.AddHandler(KeyUpEvent, OnKeyUp, RoutingStrategies.Tunnel);
             top.AddHandler(PointerPressedEvent, OnPointerPressedListen, RoutingStrategies.Tunnel);
-            if (top is Window w) w.Deactivated += OnDeactivated;
+            if (top is Window w)
+            {
+                w.Deactivated += OnDeactivated;
+            }
         }
         _timer.Start();
     }
@@ -309,9 +342,16 @@ public sealed class ControllerSettingsPanel : UserControl
             top.RemoveHandler(KeyDownEvent, OnKeyDown);
             top.RemoveHandler(KeyUpEvent, OnKeyUp);
             top.RemoveHandler(PointerPressedEvent, OnPointerPressedListen);
-            if (top is Window w) w.Deactivated -= OnDeactivated;
+            if (top is Window w)
+            {
+                w.Deactivated -= OnDeactivated;
+            }
         }
-        if (_ownsPads) _pads?.Dispose();
+        if (_ownsPads)
+        {
+            _pads?.Dispose();
+        }
+
         base.OnDetachedFromVisualTree(e);
     }
 
@@ -328,26 +368,44 @@ public sealed class ControllerSettingsPanel : UserControl
         foreach (var p in pads)
         {
             items.Add(new DeviceItem(p.Guid, $"{p.Name} \u2014 {ControlNames.Kind(p.Kind)}", p, p.Kind, p.IsGamepad));
-            if (_knownPads.Add(p.InstanceId) && !_firstSync) fresh = p;
+            if (_knownPads.Add(p.InstanceId) && !_firstSync)
+            {
+                fresh = p;
+            }
         }
         _knownPads.IntersectWith(pads.Select(p => p.InstanceId));
         // saved profiles of controllers that are not connected stay editable
         foreach (var saved in _store.Config.Controllers)
+        {
             if (!items.Any(i => i.Id.Equals(saved.Id, StringComparison.OrdinalIgnoreCase)))
+            {
                 items.Add(new DeviceItem(saved.Id, Loc.Format("CsDisconnected", saved.Name.Length > 0 ? saved.Name : saved.Id), null, saved.Kind, saved.Bindings.Values.SelectMany(v => v).Any(b => b.StartsWith("pad:"))));
+            }
+        }
 
         // a controller that was just plugged in is selected (that is the automatic recognition the player sees);
         // on opening, the first connected controller is preferred over the keyboard
         string? want = fresh?.Guid ?? (_firstSync && pads.Count > 0 ? pads[0].Guid : _current?.Id);
-        if (_current != null && fresh == null && !items.Any(i => i.Id == _current.Id)) want = ControllerProfile.KeyboardId;
+        if (_current != null && fresh == null && !items.Any(i => i.Id == _current.Id))
+        {
+            want = ControllerProfile.KeyboardId;
+        }
+
         _firstSync = false;
         _updatingUi = true;
         _device.ItemsSource = items;
         var sel = items.FirstOrDefault(i => i.Id == want) ?? items[0];
         _device.SelectedItem = sel;
         _updatingUi = false;
-        if (sel.Id != _current?.Id || sel.Pad?.InstanceId != _current?.Pad?.InstanceId) Select(sel);
-        if (fresh != null) _status.Text = Loc.Format("CsConnected", fresh.Name, MappingSource(fresh));
+        if (sel.Id != _current?.Id || sel.Pad?.InstanceId != _current?.Pad?.InstanceId)
+        {
+            Select(sel);
+        }
+
+        if (fresh != null)
+        {
+            _status.Text = Loc.Format("CsConnected", fresh.Name, MappingSource(fresh));
+        }
     }
 
     string MappingSource(PadInfo p)
@@ -363,7 +421,11 @@ public sealed class ControllerSettingsPanel : UserControl
 
     void RefreshDeviceInfo()
     {
-        if (_current is not { } d) return;
+        if (_current is not { } d)
+        {
+            return;
+        }
+
         _deviceInfo.Text = d.IsKeyboard
             ? Loc.Format("CsKeyboardInfo", ProfileState(d.Id, _store.Config.Keyboard != null))
             : d.Pad is { } info
@@ -381,7 +443,12 @@ public sealed class ControllerSettingsPanel : UserControl
                 : d.Pad is { } pad ? _store.ProfileFor(pad.Guid, pad.Name, pad.Kind, pad.IsGamepad)
                 : _store.FindSaved(d.Id, "")?.Clone() ?? DefaultMappings.For(d.Id, d.Label, d.Kind, d.IsGamepad);
             // a profile found by name is stored under this controller's GUID from now on
-            if (d.Pad is { } pp) { p.Id = pp.Guid; p.Name = pp.Name; p.Kind = pp.Kind; }
+            if (d.Pad is { } pp)
+            {
+                p.Id = pp.Guid;
+                p.Name = pp.Name;
+                p.Kind = pp.Kind;
+            }
             _working[d.Id] = p;
         }
         _profile = p;
@@ -396,7 +463,11 @@ public sealed class ControllerSettingsPanel : UserControl
 
     void Edit(Action<ControllerProfile> change)
     {
-        if (_updatingUi) return;
+        if (_updatingUi)
+        {
+            return;
+        }
+
         change(_profile);
         _compiled = new CompiledProfile(_profile);
         _dirty.Add(_profile.Id);
@@ -408,7 +479,11 @@ public sealed class ControllerSettingsPanel : UserControl
 
     void ResetProfile()
     {
-        if (_current == null) return;
+        if (_current == null)
+        {
+            return;
+        }
+
         CancelListen();
         var d = _current;
         var p = d.IsKeyboard ? DefaultMappings.Keyboard()
@@ -432,14 +507,24 @@ public sealed class ControllerSettingsPanel : UserControl
         _gamepadOptions.IsVisible = isPad;
         _keyboardMotionOptions.IsVisible = !isPad;
         _motionSource.SelectedIndex = (int)_profile.MotionSource;
-        _tiltAngle.Value = _profile.Tilt.MaxAngle; _tiltSpeed.Value = _profile.Tilt.Speed; _mouseSens.Value = _profile.Tilt.MouseSensitivity;
-        _tiltAngleText.Text = $"{_tiltAngle.Value:0}\u00B0"; _tiltSpeedText.Text = $"{_tiltSpeed.Value:0.00}x"; _mouseSensText.Text = $"{_mouseSens.Value:0.00}x";
+        _tiltAngle.Value = _profile.Tilt.MaxAngle;
+        _tiltSpeed.Value = _profile.Tilt.Speed;
+        _mouseSens.Value = _profile.Tilt.MouseSensitivity;
+        _tiltAngleText.Text = $"{_tiltAngle.Value:0}\u00B0";
+        _tiltSpeedText.Text = $"{_tiltSpeed.Value:0.00}x";
+        _mouseSensText.Text = $"{_mouseSens.Value:0.00}x";
         _mouseLook.IsChecked = _profile.Tilt.MouseLook;
         _mouseInvert.IsChecked = _profile.Tilt.MouseInvertY;
         var mouse = _profile.Mouse;
         _mouseMode.SelectedIndex = (int)mouse.Mode;
-        _mStickSens.Value = mouse.Sensitivity; _mStickDz.Value = mouse.Deadzone; _mStickCurve.Value = mouse.Curve; _mStickReturn.Value = mouse.ReturnMs;
-        _mStickSensText.Text = $"{mouse.Sensitivity:0.00}x"; _mStickDzText.Text = $"{mouse.Deadzone:P0}"; _mStickCurveText.Text = $"{mouse.Curve:0.00}"; _mStickReturnText.Text = $"{mouse.ReturnMs:0} ms";
+        _mStickSens.Value = mouse.Sensitivity;
+        _mStickDz.Value = mouse.Deadzone;
+        _mStickCurve.Value = mouse.Curve;
+        _mStickReturn.Value = mouse.ReturnMs;
+        _mStickSensText.Text = $"{mouse.Sensitivity:0.00}x";
+        _mStickDzText.Text = $"{mouse.Deadzone:P0}";
+        _mStickCurveText.Text = $"{mouse.Curve:0.00}";
+        _mStickReturnText.Text = $"{mouse.ReturnMs:0} ms";
         _mStickInvert.IsChecked = mouse.InvertY;
         _mouseModeNote.Text = Loc.Format("CsMouseNote", mouse.ToggleKey, mouse.ReleaseKey)
             + (mouse.Games.Count > 0 ? Loc.Format("CsMouseGames", string.Join(", ", mouse.Games.Select(g => $"{g.Key} ({MouseSettings.Label(Enum.TryParse<MouseMode>(g.Value, out var m) ? m : MouseMode.Motion)})"))) : "");
@@ -451,11 +536,16 @@ public sealed class ControllerSettingsPanel : UserControl
         _motion.IsEnabled = _motionOrientation.IsEnabled = _current?.Pad?.HasMotion != false;
         _motionOrientation.SelectedIndex = _profile.MotionOrientation == MotionOrientation.FlatIsUpright ? 1 : 0;
         _motionLive.Text = _current?.Pad is { HasMotion: false } ? Loc.Get("CsNoGyro") : "";
-        _dzL.Value = _profile.LeftStick.Deadzone; _dzR.Value = _profile.RightStick.Deadzone;
-        _sensL.Value = _profile.LeftStick.Sensitivity; _sensR.Value = _profile.RightStick.Sensitivity;
-        _invertL.IsChecked = _profile.LeftStick.InvertY; _invertR.IsChecked = _profile.RightStick.InvertY;
-        _dzLText.Text = $"{_dzL.Value:P0}"; _dzRText.Text = $"{_dzR.Value:P0}";
-        _sensLText.Text = $"{_sensL.Value:0.00}x"; _sensRText.Text = $"{_sensR.Value:0.00}x";
+        _dzL.Value = _profile.LeftStick.Deadzone;
+        _dzR.Value = _profile.RightStick.Deadzone;
+        _sensL.Value = _profile.LeftStick.Sensitivity;
+        _sensR.Value = _profile.RightStick.Sensitivity;
+        _invertL.IsChecked = _profile.LeftStick.InvertY;
+        _invertR.IsChecked = _profile.RightStick.InvertY;
+        _dzLText.Text = $"{_dzL.Value:P0}";
+        _dzRText.Text = $"{_dzR.Value:P0}";
+        _sensLText.Text = $"{_sensL.Value:0.00}x";
+        _sensRText.Text = $"{_sensR.Value:0.00}x";
         _updatingUi = false;
     }
 
@@ -500,7 +590,9 @@ public sealed class ControllerSettingsPanel : UserControl
             {
                 Text = listening ? ListeningText : Describe(c),
                 Foreground = listening ? new SolidColorBrush(Color.Parse("#FFB547")) : LauncherTheme.Muted,
-                VerticalAlignment = VerticalAlignment.Center, TextTrimming = TextTrimming.CharacterEllipsis, FontSize = 13,
+                VerticalAlignment = VerticalAlignment.Center,
+                TextTrimming = TextTrimming.CharacterEllipsis,
+                FontSize = 13,
             };
             var rowContent = new DockPanel();
             DockPanel.SetDock(name, Dock.Left);
@@ -508,8 +600,11 @@ public sealed class ControllerSettingsPanel : UserControl
             rowContent.Children.Add(value);
             var row = new Button
             {
-                Content = rowContent, HorizontalAlignment = HorizontalAlignment.Stretch, HorizontalContentAlignment = HorizontalAlignment.Stretch,
-                Padding = new Thickness(8, 3), Background = _layout.SelectedControl == c || listening ? new SolidColorBrush(Color.Parse("#2A3550")) : Brushes.Transparent,
+                Content = rowContent,
+                HorizontalAlignment = HorizontalAlignment.Stretch,
+                HorizontalContentAlignment = HorizontalAlignment.Stretch,
+                Padding = new Thickness(8, 3),
+                Background = _layout.SelectedControl == c || listening ? new SolidColorBrush(Color.Parse("#2A3550")) : Brushes.Transparent,
             };
             ToolTip.SetTip(row, c == VitaControl.PauseEmulation
                 ? Loc.Get("CsPauseTip")
@@ -548,8 +643,16 @@ public sealed class ControllerSettingsPanel : UserControl
         {
             Edit(p =>
             {
-                if (c == VitaControl.TouchFront) { p.TouchFrontX = (float)Math.Round(normalised.X, 3); p.TouchFrontY = (float)Math.Round(normalised.Y, 3); }
-                else { p.TouchBackX = (float)Math.Round(normalised.X, 3); p.TouchBackY = (float)Math.Round(normalised.Y, 3); }
+                if (c == VitaControl.TouchFront)
+                {
+                    p.TouchFrontX = (float)Math.Round(normalised.X, 3);
+                    p.TouchFrontY = (float)Math.Round(normalised.Y, 3);
+                }
+                else
+                {
+                    p.TouchBackX = (float)Math.Round(normalised.X, 3);
+                    p.TouchBackY = (float)Math.Round(normalised.Y, 3);
+                }
             });
             _status.Text = Loc.Format("CsTouchPoint", ControlNames.Label(c), normalised.X, normalised.Y);
             return;
@@ -558,20 +661,35 @@ public sealed class ControllerSettingsPanel : UserControl
         if (c is VitaControl.LStickUp or VitaControl.RStickUp)
         {
             // a stick: bind up, down, left, right in turn
-            for (var d = c + 1; d <= c + 3; d++) _sequence.Enqueue(d);
+            for (var d = c + 1; d <= c + 3; d++)
+            {
+                _sequence.Enqueue(d);
+            }
         }
         BeginListen(c, ListenMode.Replace, keepSequence: true);
     }
 
     /// <summary>Starts waiting for the input to bind to <paramref name="c"/>.</summary>
     public void BeginListen(VitaControl c, ListenModeArg mode = ListenModeArg.Replace) =>
-        BeginListen(c, mode switch { ListenModeArg.Add => ListenMode.Add, ListenModeArg.Combo => ListenMode.Combo, _ => ListenMode.Replace });
+        BeginListen(c, mode switch
+        {
+            ListenModeArg.Add => ListenMode.Add,
+            ListenModeArg.Combo => ListenMode.Combo,
+            _ => ListenMode.Replace
+        });
 
-    public enum ListenModeArg { Replace, Add, Combo }
+    public enum ListenModeArg
+    {
+        Replace, Add, Combo
+    }
 
     void BeginListen(VitaControl c, ListenMode mode, bool keepSequence = false)
     {
-        if (!keepSequence) _sequence.Clear();
+        if (!keepSequence)
+        {
+            _sequence.Clear();
+        }
+
         _listen = c;
         _listenMode = mode;
         _comboParts.Clear();
@@ -579,8 +697,15 @@ public sealed class ControllerSettingsPanel : UserControl
         _listenSince = DateTime.UtcNow;
         _layout.ListeningControl = c;
         _layout.SelectedControl = c;
-        if (_current?.Pad is { } pad && _pads != null) _pads.TryGetState(pad.InstanceId, _baseline);
-        else _baseline.Clear();
+        if (_current?.Pad is { } pad && _pads != null)
+        {
+            _pads.TryGetState(pad.InstanceId, _baseline);
+        }
+        else
+        {
+            _baseline.Clear();
+        }
+
         _status.Text = Loc.Format("CsListenStatus", ControlNames.Label(c), Loc.Get(_current?.IsKeyboard == true ? "CsPressKey" : mode == ListenMode.Combo ? "CsHoldCombo" : "CsPressButton"));
         RefreshBindings();
         Focus();
@@ -588,7 +713,11 @@ public sealed class ControllerSettingsPanel : UserControl
 
     void CancelListen()
     {
-        if (_listen == null) return;
+        if (_listen == null)
+        {
+            return;
+        }
+
         _listen = null;
         _sequence.Clear();
         _layout.ListeningControl = null;
@@ -601,7 +730,17 @@ public sealed class ControllerSettingsPanel : UserControl
         var mode = _listenMode;
         _listen = null;
         _layout.ListeningControl = null;
-        Edit(p => { if (mode == ListenMode.Add) p.Add(c, b); else p.Set(c, b); });
+        Edit(p =>
+        {
+            if (mode == ListenMode.Add)
+            {
+                p.Add(c, b);
+            }
+            else
+            {
+                p.Set(c, b);
+            }
+        });
         var kind = _current?.Kind ?? ControllerKind.Generic;
         var shared = VitaControls.All.Where(o => o != c && _profile.Has(o, b)).Select(ControlNames.Label).ToList();
         _status.Text = $"{ControlNames.Label(c)} = {ControlNames.Describe(b, kind)}"
@@ -621,7 +760,12 @@ public sealed class ControllerSettingsPanel : UserControl
         var c = _listen!.Value;
         var parts = _comboParts.ToArray();
         _comboParts.Clear();
-        if (parts.Length == 1) { _listenMode = ListenMode.Add; Bound(parts[0]); return; }
+        if (parts.Length == 1)
+        {
+            _listenMode = ListenMode.Add;
+            Bound(parts[0]);
+            return;
+        }
         _listen = null;
         _layout.ListeningControl = null;
         var combo = new InputCombo(parts);
@@ -634,7 +778,13 @@ public sealed class ControllerSettingsPanel : UserControl
         var name = KeyNames.FromAvalonia(e.PhysicalKey, e.Key);
         if (_listen != null)
         {
-            if (e.Key == Key.Escape) { CancelListen(); _status.Text = Loc.Get("CsCancelled"); e.Handled = true; return; }
+            if (e.Key == Key.Escape)
+            {
+                CancelListen();
+                _status.Text = Loc.Get("CsCancelled");
+                e.Handled = true;
+                return;
+            }
             if (_current?.IsKeyboard == true && name != null)
             {
                 Bound(InputBinding.OfKey(name));
@@ -646,7 +796,10 @@ public sealed class ControllerSettingsPanel : UserControl
         {
             _keys.Add(name);
             // keep the arrow keys / space from moving the focus while the keyboard is being tested
-            if (e.Source is not TextBox && e.Source is not Slider && e.Source is not ComboBox) e.Handled = true;
+            if (e.Source is not TextBox && e.Source is not Slider && e.Source is not ComboBox)
+            {
+                e.Handled = true;
+            }
         }
     }
 
@@ -657,7 +810,11 @@ public sealed class ControllerSettingsPanel : UserControl
     /// </summary>
     void OnPointerPressedListen(object? sender, PointerPressedEventArgs e)
     {
-        if (_listen == null || _current?.IsKeyboard != true || (DateTime.UtcNow - _listenSince).TotalMilliseconds < 250) return;
+        if (_listen == null || _current?.IsKeyboard != true || (DateTime.UtcNow - _listenSince).TotalMilliseconds < 250)
+        {
+            return;
+        }
+
         var kind = e.GetCurrentPoint(null).Properties.PointerUpdateKind;
         string? name = kind switch
         {
@@ -668,23 +825,48 @@ public sealed class ControllerSettingsPanel : UserControl
             PointerUpdateKind.XButton2Pressed => "Mouse5",
             _ => null,
         };
-        if (name == null) return;
+        if (name == null)
+        {
+            return;
+        }
+
         Bound(InputBinding.OfKey(name));
         e.Handled = true;
     }
     void OnKeyUp(object? sender, KeyEventArgs e)
     {
-        if (KeyNames.FromAvalonia(e.PhysicalKey, e.Key) is { } name) _keys.Remove(name);
+        if (KeyNames.FromAvalonia(e.PhysicalKey, e.Key) is { } name)
+        {
+            _keys.Remove(name);
+        }
     }
 
     /// <summary>Test hook: simulates a key of the game keyboard.</summary>
-    public void SimulateKey(string silkKeyName, bool down) { if (down) _keys.Add(silkKeyName); else _keys.Remove(silkKeyName); }
+    public void SimulateKey(string silkKeyName, bool down)
+    {
+        if (down)
+        {
+            _keys.Add(silkKeyName);
+        }
+        else
+        {
+            _keys.Remove(silkKeyName);
+        }
+    }
 
     /// <summary>Test hook: selects the device with this id ("keyboard" or a GUID).</summary>
     public bool SelectDevice(string id)
     {
-        if (_devicesChanged) SyncDevices();
-        if (_device.ItemsSource is not IEnumerable<DeviceItem> items || items.FirstOrDefault(i => i.Id.Equals(id, StringComparison.OrdinalIgnoreCase)) is not { } d) return false;
+        if (_devicesChanged)
+        {
+            SyncDevices();
+        }
+
+        if (_device.ItemsSource is not IEnumerable<DeviceItem> items || items.FirstOrDefault(i => i.Id.Equals(id, StringComparison.OrdinalIgnoreCase)) is not { } d)
+        {
+            return false;
+        }
+
         _device.SelectedItem = d;
         return true;
     }
@@ -703,8 +885,15 @@ public sealed class ControllerSettingsPanel : UserControl
     /// binding rows).</summary>
     public void ShowMotion(bool rows)
     {
-        if (rows) { _bindingRows.Children[^1].BringIntoView(); _motionRowsHeader?.BringIntoView(); }
-        else _keyboardMotionOptions.BringIntoView();
+        if (rows)
+        {
+            _bindingRows.Children[^1].BringIntoView();
+            _motionRowsHeader?.BringIntoView();
+        }
+        else
+        {
+            _keyboardMotionOptions.BringIntoView();
+        }
     }
 
     /// <summary>Test hook: scrolls the option list to the emulator hotkey rows (the end of the list).</summary>
@@ -718,15 +907,31 @@ public sealed class ControllerSettingsPanel : UserControl
 
     void Tick()
     {
-        if (_devicesChanged) SyncDevices();
-        if (++_ticks % 15 == 0) _layout.Blink();
+        if (_devicesChanged)
+        {
+            SyncDevices();
+        }
+
+        if (++_ticks % 15 == 0)
+        {
+            _layout.Blink();
+        }
+
         PadSnapshot? pad = null;
-        if (_current?.Pad is { } info && _pads != null && _pads.TryGetState(info.InstanceId, _snap)) pad = _snap;
+        if (_current?.Pad is { } info && _pads != null && _pads.TryGetState(info.InstanceId, _snap))
+        {
+            pad = _snap;
+        }
+
         var keys = _current?.IsKeyboard == true ? _keys : null;
 
         if (_listen != null)
         {
-            if (DateTime.UtcNow > _listenUntil) { CancelListen(); _status.Text = Loc.Get("CsNoInput"); }
+            if (DateTime.UtcNow > _listenUntil)
+            {
+                CancelListen();
+                _status.Text = Loc.Get("CsNoInput");
+            }
             else if (_listenMode == ListenMode.Combo)
             {
                 if (pad != null)
@@ -735,9 +940,23 @@ public sealed class ControllerSettingsPanel : UserControl
                     var held = InputCapture.Held(_baseline, pad);
                     bool grew = false;
                     foreach (var h in held)
-                        if (!_comboParts.Contains(h)) { _comboParts.Add(h); grew = true; }
-                    if (grew) { _listenUntil = DateTime.UtcNow.AddSeconds(8); RefreshBindings(); }
-                    if (held.Count == 0 && _comboParts.Count > 0) BoundCombo();
+                    {
+                        if (!_comboParts.Contains(h))
+                        {
+                            _comboParts.Add(h);
+                            grew = true;
+                        }
+                    }
+
+                    if (grew)
+                    {
+                        _listenUntil = DateTime.UtcNow.AddSeconds(8);
+                        RefreshBindings();
+                    }
+                    if (held.Count == 0 && _comboParts.Count > 0)
+                    {
+                        BoundCombo();
+                    }
                 }
             }
             else if (pad != null && InputCapture.Detect(_baseline, pad) is { } b)
@@ -751,8 +970,16 @@ public sealed class ControllerSettingsPanel : UserControl
         float V(VitaControl c) => InputMapper.Value(_compiled, c, pad, keys);
         var rawL = (V(VitaControl.LStickRight) - V(VitaControl.LStickLeft), V(VitaControl.LStickDown) - V(VitaControl.LStickUp));
         var rawR = (V(VitaControl.RStickRight) - V(VitaControl.RStickLeft), V(VitaControl.RStickDown) - V(VitaControl.RStickUp));
-        if (_profile.LeftStick.InvertY) rawL.Item2 = -rawL.Item2;
-        if (_profile.RightStick.InvertY) rawR.Item2 = -rawR.Item2;
+        if (_profile.LeftStick.InvertY)
+        {
+            rawL.Item2 = -rawL.Item2;
+        }
+
+        if (_profile.RightStick.InvertY)
+        {
+            rawR.Item2 = -rawR.Item2;
+        }
+
         _layout.TapPointFront = _compiled[VitaControl.TouchFront].Length > 0 ? new Point(_profile.TouchFrontX, _profile.TouchFrontY) : null;
         _layout.TapPointBack = _compiled[VitaControl.TouchBack].Length > 0 ? new Point(_profile.TouchBackX, _profile.TouchBackY) : null;
         _layout.SetState(m, rawL, rawR, _profile.LeftStick.Deadzone, _profile.RightStick.Deadzone);
@@ -763,7 +990,9 @@ public sealed class ControllerSettingsPanel : UserControl
             _tiltPreview.Settings = _profile.Tilt;
             _tiltPreview.SetControls(_compiled, null, keys);
             long now = (long)(_tiltClock.Elapsed.TotalMilliseconds * 1000);
-            while (_tiltPreview.Generate(now, _tiltScratch) == _tiltScratch.Length) { }
+            while (_tiltPreview.Generate(now, _tiltScratch) == _tiltScratch.Length)
+            {
+            }
             if (_ticks % 6 == 0)
             {
                 var (tp, tr, ty) = _tiltPreview.Angles;
@@ -786,7 +1015,9 @@ public sealed class ControllerSettingsPanel : UserControl
         }
 
         if (_listen == null && _ticks % 6 == 0 && (m.State.Buttons != 0 || m.FrontCount + m.BackCount > 0))
+        {
             _status.Text = Loc.Format("CsPressed", Pressed(m.State.Buttons)) + (m.FrontCount > 0 ? Loc.Format("CsFrontTouch", m.FrontCount) : "") + (m.BackCount > 0 ? Loc.Format("CsBackTouch", m.BackCount) : "");
+        }
     }
 
     static string Pressed(VitaButtons b)
@@ -795,7 +1026,10 @@ public sealed class ControllerSettingsPanel : UserControl
         foreach (var c in VitaControls.All)
         {
             var bit = VitaControls.Button(c);
-            if (bit != 0 && (b & bit) != 0) names.Add(ControlNames.Label(c));
+            if (bit != 0 && (b & bit) != 0)
+            {
+                names.Add(ControlNames.Label(c));
+            }
         }
         return names.Count == 0 ? "\u2014" : string.Join(", ", names);
     }
@@ -806,10 +1040,24 @@ public sealed class ControllerSettingsPanel : UserControl
     public void Save()
     {
         CancelListen();
-        if (_dirty.Count == 0 && _reset.Count == 0) return;
-        foreach (var id in _reset) _store.Remove(id);
+        if (_dirty.Count == 0 && _reset.Count == 0)
+        {
+            return;
+        }
+
+        foreach (var id in _reset)
+        {
+            _store.Remove(id);
+        }
+
         foreach (var p in _working.Values)
-            if (_dirty.Contains(p.Id)) _store.Put(p);
+        {
+            if (_dirty.Contains(p.Id))
+            {
+                _store.Put(p);
+            }
+        }
+
         _store.Save();
         _dirty.Clear();
         _reset.Clear();

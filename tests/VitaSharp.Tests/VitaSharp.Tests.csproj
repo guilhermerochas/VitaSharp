@@ -20,6 +20,11 @@
     <Using Include="Xunit" />
   </ItemGroup>
 
+  <!-- the "Código legível" layout rules, shared with build/FormatTool (the format-check fix mode) -->
+  <ItemGroup>
+    <Compile Include="..\..\build\FormatTool\SourceLayout.cs" Link="Style\SourceLayout.cs" />
+  </ItemGroup>
+
   <ItemGroup>
     <ProjectReference Include="..\..\src\VitaSharp.Core\VitaSharp.Core.csproj" />
     <!-- DeveloperGatingTests: the renderer of a normal build has none of the developer tooling -->

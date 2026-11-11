@@ -22,8 +22,20 @@ public sealed class SessionCaptureFlowTests(GuestMemoryFixture fx) : IDisposable
         var status = new List<string>();
         var cap = new SessionCapture(_h.Emu, new SessionCaptureOptions
         {
-            Root = root, SetPresentTap = t => tap = t, StartState = false, GpuDump = false, Zip = true,
-            Status = s => { lock (status) status.Add(s); }, Threads = () => "no threads", Info = () => "test info",
+            Root = root,
+            SetPresentTap = t => tap = t,
+            StartState = false,
+            GpuDump = false,
+            Zip = true,
+            Status = s =>
+            {
+                lock (status)
+                {
+                    status.Add(s);
+                }
+            },
+            Threads = () => "no threads",
+            Info = () => "test info",
         });
         Assert.False(cap.IsRecording);
         Assert.False(cap.Stop()); // nothing to stop
@@ -34,7 +46,11 @@ public sealed class SessionCaptureFlowTests(GuestMemoryFixture fx) : IDisposable
         var px = new byte[W * H * 4];
         for (int f = 0; f < 5; f++)
         {
-            for (int i = 0; i < px.Length; i++) px[i] = (byte)(i * 7 + f * 13);
+            for (int i = 0; i < px.Length; i++)
+            {
+                px[i] = (byte)(i * 7 + f * 13);
+            }
+
             var info = new PresentInfo { Present = f + 1, Flip = f, VBlank = f * 2, PresentNs = CaptureClock.NowNs, IntervalMs = 16.7f, Hitch = "" };
             tap!.OnPresent(info, px, W, H);
         }
@@ -49,7 +65,10 @@ public sealed class SessionCaptureFlowTests(GuestMemoryFixture fx) : IDisposable
         Assert.NotNull(cap.LastZip);
         Assert.True(File.Exists(cap.LastZip));
         Assert.Equal(-1, cap.SavePercent);
-        lock (status) Assert.NotEmpty(status);
+        lock (status)
+        {
+            Assert.NotEmpty(status);
+        }
 
         cap.SetPreRoll(5);
         Assert.True(cap.Armed);

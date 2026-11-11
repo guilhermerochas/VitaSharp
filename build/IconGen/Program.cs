@@ -142,18 +142,25 @@ byte[] Ico(int[] sizes)
     var images = sizes.Select(n => n >= 128 ? pngs[n] : Dib(pixels[n])).ToArray();
     using var ms = new MemoryStream();
     using var w = new BinaryWriter(ms);
-    w.Write((ushort)0); w.Write((ushort)1); w.Write((ushort)sizes.Length);
+    w.Write((ushort)0);
+    w.Write((ushort)1);
+    w.Write((ushort)sizes.Length);
     int offset = 6 + 16 * sizes.Length;
     for (int i = 0; i < sizes.Length; i++)
     {
         int n = sizes[i];
-        w.Write((byte)(n >= 256 ? 0 : n)); w.Write((byte)(n >= 256 ? 0 : n));
-        w.Write((byte)0); w.Write((byte)0);          // palette, reserved
-        w.Write((ushort)1); w.Write((ushort)32);     // planes, bits per pixel
-        w.Write(images[i].Length); w.Write(offset);
+        w.Write((byte)(n >= 256 ? 0 : n));
+        w.Write((byte)(n >= 256 ? 0 : n));
+        w.Write((byte)0);
+        w.Write((byte)0);          // palette, reserved
+        w.Write((ushort)1);
+        w.Write((ushort)32);     // planes, bits per pixel
+        w.Write(images[i].Length);
+        w.Write(offset);
         offset += images[i].Length;
     }
-    foreach (var img in images) w.Write(img);
+    foreach (var img in images)
+        w.Write(img);
     return ms.ToArray();
 }
 
@@ -164,19 +171,32 @@ static byte[] Dib(SKBitmap bmp)
     using var ms = new MemoryStream();
     using var w = new BinaryWriter(ms);
     // BITMAPINFOHEADER; the height covers the XOR (colour) and AND (mask) bitmaps
-    w.Write(40); w.Write(n); w.Write(n * 2); w.Write((ushort)1); w.Write((ushort)32);
-    w.Write(0); w.Write(n * n * 4 + maskStride * n); w.Write(0); w.Write(0); w.Write(0); w.Write(0);
+    w.Write(40);
+    w.Write(n);
+    w.Write(n * 2);
+    w.Write((ushort)1);
+    w.Write((ushort)32);
+    w.Write(0);
+    w.Write(n * n * 4 + maskStride * n);
+    w.Write(0);
+    w.Write(0);
+    w.Write(0);
+    w.Write(0);
     for (int y = n - 1; y >= 0; y--) // bottom-up, BGRA, straight alpha
         for (int x = 0; x < n; x++)
         {
             var p = bmp.GetPixel(x, y);
-            w.Write(p.Blue); w.Write(p.Green); w.Write(p.Red); w.Write(p.Alpha);
+            w.Write(p.Blue);
+            w.Write(p.Green);
+            w.Write(p.Red);
+            w.Write(p.Alpha);
         }
     for (int y = n - 1; y >= 0; y--) // AND mask: 1 = transparent (ignored when alpha is present, kept for old readers)
     {
         var row = new byte[maskStride];
         for (int x = 0; x < n; x++)
-            if (bmp.GetPixel(x, y).Alpha == 0) row[x >> 3] |= (byte)(0x80 >> (x & 7));
+            if (bmp.GetPixel(x, y).Alpha == 0)
+                row[x >> 3] |= (byte)(0x80 >> (x & 7));
         w.Write(row);
     }
     return ms.ToArray();
@@ -191,7 +211,13 @@ byte[] Icns()
         ("ic11", 32), ("ic12", 64), ("ic13", 256), ("ic14", 512), // @2x of 16, 32, 128, 256
     ];
     using var ms = new MemoryStream();
-    void Be(int v) { ms.WriteByte((byte)(v >> 24)); ms.WriteByte((byte)(v >> 16)); ms.WriteByte((byte)(v >> 8)); ms.WriteByte((byte)v); }
+    void Be(int v)
+    {
+        ms.WriteByte((byte)(v >> 24));
+        ms.WriteByte((byte)(v >> 16));
+        ms.WriteByte((byte)(v >> 8));
+        ms.WriteByte((byte)v);
+    }
     ms.Write("icns"u8);
     Be(8 + entries.Sum(e => 8 + pngs[e.Size].Length));
     foreach (var (type, size) in entries)

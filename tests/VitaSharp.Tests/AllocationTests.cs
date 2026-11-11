@@ -7,7 +7,11 @@ namespace VitaSharp.Tests;
 public sealed class AllocationTests
 {
     static int _evaluations;
-    static int Evaluate() { _evaluations++; return 42; }
+    static int Evaluate()
+    {
+        _evaluations++;
+        return 42;
+    }
 
     [Fact]
     public void DisabledDebugDoesNotFormat()
@@ -21,10 +25,17 @@ public sealed class AllocationTests
             Log.Trace($"value {Evaluate()}");
             Assert.Equal(0, _evaluations);
             long before = GC.GetAllocatedBytesForCurrentThread();
-            for (int i = 0; i < 100; i++) Log.Debug($"value {i} {i * 2.5}");
+            for (int i = 0; i < 100; i++)
+            {
+                Log.Debug($"value {i} {i * 2.5}");
+            }
+
             Assert.Equal(0, GC.GetAllocatedBytesForCurrentThread() - before);
         }
-        finally { Log.Level = level; }
+        finally
+        {
+            Log.Level = level;
+        }
     }
 
     [Fact]
@@ -32,7 +43,11 @@ public sealed class AllocationTests
     {
         string tag = Guid.NewGuid().ToString("N");
         _evaluations = 0;
-        for (int i = 0; i < 3; i++) Log.WarnOnce($"alloc-test-{tag}-{0x1234:X8}", $"first {Evaluate()}");
+        for (int i = 0; i < 3; i++)
+        {
+            Log.WarnOnce($"alloc-test-{tag}-{0x1234:X8}", $"first {Evaluate()}");
+        }
+
         Assert.Equal(1, _evaluations);
         // the same key built as a plain string is the same entry
         Log.WarnOnce($"alloc-test-{tag}-00001234", "never");
@@ -40,7 +55,11 @@ public sealed class AllocationTests
         Assert.Equal(1, _evaluations);
         // a seen key costs no allocation
         long before = GC.GetAllocatedBytesForCurrentThread();
-        for (int i = 0; i < 100; i++) Log.WarnOnce($"alloc-test-{tag}-{0x1234:X8}", $"again {i}");
+        for (int i = 0; i < 100; i++)
+        {
+            Log.WarnOnce($"alloc-test-{tag}-{0x1234:X8}", $"again {i}");
+        }
+
         Assert.Equal(0, GC.GetAllocatedBytesForCurrentThread() - before);
     }
 
@@ -52,7 +71,11 @@ public sealed class AllocationTests
         {
             var c = UniformArena.Rent(1000, out int off);
             // zero only with the old invariant (VITASHARP_UB_ZERO=recycle); by default the renter writes every byte
-            if (UniformArena.ZeroOnRecycle) Assert.All(c.Span.Slice(off, 1000).ToArray(), b => Assert.Equal(0, b));
+            if (UniformArena.ZeroOnRecycle)
+            {
+                Assert.All(c.Span.Slice(off, 1000).ToArray(), b => Assert.Equal(0, b));
+            }
+
             c.Span.Slice(off, 1000).Fill(0xAB);
             chunks.Add((c, off));
         }
@@ -60,12 +83,22 @@ public sealed class AllocationTests
         foreach (var g in chunks.GroupBy(x => x.Chunk))
         {
             var offs = g.Select(x => x.Offset).OrderBy(x => x).ToList();
-            for (int i = 1; i < offs.Count; i++) Assert.True(offs[i] - offs[i - 1] >= 1000);
+            for (int i = 1; i < offs.Count; i++)
+            {
+                Assert.True(offs[i] - offs[i - 1] >= 1000);
+            }
         }
-        foreach (var (c, _) in chunks) UniformArena.Release(c);
+        foreach (var (c, _) in chunks)
+        {
+            UniformArena.Release(c);
+        }
         // released chunks come back
         long before = GC.GetAllocatedBytesForCurrentThread();
-        for (int i = 0; i < 2000; i++) UniformArena.Release(UniformArena.Rent(1000, out _));
+        for (int i = 0; i < 2000; i++)
+        {
+            UniformArena.Release(UniformArena.Rent(1000, out _));
+        }
+
         Assert.True(GC.GetAllocatedBytesForCurrentThread() - before < 1 << 20);
     }
 
@@ -83,7 +116,10 @@ public sealed class AllocationTests
                 int len = 16 + rng.Next(20000);
                 var c = UniformArena.Rent(len, out int off, clear: false);
                 var slice = c.Span.Slice(off, len);
-                if (UniformArena.ZeroOnRecycle) Assert.True(slice.IndexOfAnyExcept((byte)0) < 0, $"round {round} slice {i} not zero");
+                if (UniformArena.ZeroOnRecycle)
+                {
+                    Assert.True(slice.IndexOfAnyExcept((byte)0) < 0, $"round {round} slice {i} not zero");
+                }
                 // a few writes of random size and place, each marked
                 for (int k = 0; k < 3; k++)
                 {
@@ -93,7 +129,10 @@ public sealed class AllocationTests
                 }
                 held.Add(c);
             }
-            foreach (var c in held) UniformArena.Release(c);
+            foreach (var c in held)
+            {
+                UniformArena.Release(c);
+            }
         }
     }
 }

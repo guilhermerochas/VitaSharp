@@ -49,18 +49,29 @@ public static class GameLibrary
     {
         var list = new List<GameEntry>();
         var appDir = System.IO.Path.Combine(ux0, "app");
-        if (!Directory.Exists(appDir)) return list;
+        if (!Directory.Exists(appDir))
+        {
+            return list;
+        }
+
         foreach (var dir in Directory.GetDirectories(appDir))
         {
             var entry = Read(dir);
-            if (entry != null) list.Add(entry);
+            if (entry != null)
+            {
+                list.Add(entry);
+            }
         }
         return list.OrderBy(g => g.Title, StringComparer.CurrentCultureIgnoreCase).ToList();
     }
 
     public static GameEntry? Read(string dir)
     {
-        if (!File.Exists(VitaSharp.Core.Io.Vfs.ResolveCaseInsensitive(dir, "eboot.bin"))) return null;
+        if (!File.Exists(VitaSharp.Core.Io.Vfs.ResolveCaseInsensitive(dir, "eboot.bin")))
+        {
+            return null;
+        }
+
         string id = System.IO.Path.GetFileName(dir), title = id, version = "", category = "gd", contentId = "";
         var sfoPath = VitaSharp.Core.Io.Vfs.ResolveCaseInsensitive(dir, "sce_sys/param.sfo");
         try
@@ -68,10 +79,22 @@ public static class GameLibrary
             if (File.Exists(sfoPath))
             {
                 var sfo = Sfo.Load(sfoPath);
-                if (sfo.Title.Length > 0) title = sfo.Title.Replace('\n', ' ');
-                if (sfo.TitleId.Length > 0) id = sfo.TitleId;
+                if (sfo.Title.Length > 0)
+                {
+                    title = sfo.Title.Replace('\n', ' ');
+                }
+
+                if (sfo.TitleId.Length > 0)
+                {
+                    id = sfo.TitleId;
+                }
+
                 version = sfo.AppVersion.TrimStart('0');
-                if (version.StartsWith('.')) version = "0" + version;
+                if (version.StartsWith('.'))
+                {
+                    version = "0" + version;
+                }
+
                 category = sfo.Category;
                 contentId = sfo.ContentId;
             }
@@ -83,8 +106,17 @@ public static class GameLibrary
 
     static long DirectorySize(string dir)
     {
-        try { return new DirectoryInfo(dir).EnumerateFiles("*", SearchOption.AllDirectories).Sum(f => f.Length); }
-        catch (IOException) { return 0; }
-        catch (UnauthorizedAccessException) { return 0; }
+        try
+        {
+            return new DirectoryInfo(dir).EnumerateFiles("*", SearchOption.AllDirectories).Sum(f => f.Length);
+        }
+        catch (IOException)
+        {
+            return 0;
+        }
+        catch (UnauthorizedAccessException)
+        {
+            return 0;
+        }
     }
 }

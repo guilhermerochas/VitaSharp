@@ -40,7 +40,10 @@ public sealed unsafe class ShaderCompiler : IDisposable
         OptLevel = optLevel;
         _compilers = new(() => (nint)_sc.CompilerInitialize(), trackAllValues: true);
         _cacheDir = cacheDir;
-        if (cacheDir != null) Directory.CreateDirectory(cacheDir);
+        if (cacheDir != null)
+        {
+            Directory.CreateDirectory(cacheDir);
+        }
     }
 
     /// <summary>
@@ -52,8 +55,16 @@ public sealed unsafe class ShaderCompiler : IDisposable
     /// </summary>
     public static void WarmProcessInBackground()
     {
-        if (Environment.GetEnvironmentVariable(EnvVars.ShadercWarm) is "0" or "off") return;
-        if (Interlocked.Exchange(ref _warmStarted, 1) != 0) return;
+        if (Environment.GetEnvironmentVariable(EnvVars.ShadercWarm) is "0" or "off")
+        {
+            return;
+        }
+
+        if (Interlocked.Exchange(ref _warmStarted, 1) != 0)
+        {
+            return;
+        }
+
         new Thread(() =>
         {
             try
@@ -68,9 +79,16 @@ public sealed unsafe class ShaderCompiler : IDisposable
                 WarmCompile(sc, compiler, "#version 450\nlayout(location = 0) out vec4 c;\nvoid main() { c = vec4(0.0); }\n", ShaderKind.FragmentShader);
                 Log.Info($"[gpu] shaderc warmed up in {System.Diagnostics.Stopwatch.GetElapsedTime(t0).TotalMilliseconds:F0} ms (background)");
             }
-            catch (Exception e) { Log.WarnOnce("shaderc-warm", $"[gpu] shaderc warm-up failed: {e.Message}"); }
+            catch (Exception e)
+            {
+                Log.WarnOnce("shaderc-warm", $"[gpu] shaderc warm-up failed: {e.Message}");
+            }
         })
-        { IsBackground = true, Name = "shaderc warm-up", Priority = ThreadPriority.BelowNormal }.Start();
+        {
+            IsBackground = true,
+            Name = "shaderc warm-up",
+            Priority = ThreadPriority.BelowNormal
+        }.Start();
     }
 
     static int _warmStarted;
@@ -85,8 +103,13 @@ public sealed unsafe class ShaderCompiler : IDisposable
         var opts = sc.CompileOptionsInitialize();
         sc.CompileOptionsSetTargetEnv(opts, TargetEnv.Vulkan, (uint)EnvVersion.Vulkan10);
         CompilationResult* res;
-        fixed (byte* s = src) fixed (byte* n = name) fixed (byte* e = entry)
+        fixed (byte* s = src)
+        fixed (byte* n = name)
+        fixed (byte* e = entry)
+        {
             res = sc.CompileIntoSpv(compiler, s, (nuint)src.Length, kind, n, e, opts);
+        }
+
         sc.CompileOptionsRelease(opts);
         sc.ResultRelease(res);
     }
@@ -102,15 +125,30 @@ public sealed unsafe class ShaderCompiler : IDisposable
         // the optimisation level is part of the key (performance keeps the historical file names)
         string suffix = OptLevel == OptimizationLevel.Performance ? "" : OptLevel == OptimizationLevel.Zero ? ".o0" : ".os";
         // simulated generator bump (test only): as if every GLSL had changed
-        if (VitaSharp.Core.Gxm.Shader.ShaderGenerator.VersionSalt != 0) suffix += $".salt{VitaSharp.Core.Gxm.Shader.ShaderGenerator.VersionSalt}";
+        if (VitaSharp.Core.Gxm.Shader.ShaderGenerator.VersionSalt != 0)
+        {
+            suffix += $".salt{VitaSharp.Core.Gxm.Shader.ShaderGenerator.VersionSalt}";
+        }
+
         string? cachePath = _cacheDir != null ? Path.Combine(_cacheDir, $"{hash:x16}{suffix}.spv") : null;
         if (cachePath != null && File.Exists(cachePath))
         {
-            try { var cached = File.ReadAllBytes(cachePath); Interlocked.Increment(ref DiskHits); return cached; } catch { }
+            try
+            {
+                var cached = File.ReadAllBytes(cachePath);
+                Interlocked.Increment(ref DiskHits);
+                return cached;
+            }
+            catch { }
         }
 
         byte[] src = Encoding.UTF8.GetBytes(glsl);
-        byte[] name = Encoding.ASCII.GetBytes(kind switch { ShaderKind.VertexShader => "shader.vert", ShaderKind.ComputeShader => "shader.comp", _ => "shader.frag" } + "\0");
+        byte[] name = Encoding.ASCII.GetBytes(kind switch
+        {
+            ShaderKind.VertexShader => "shader.vert",
+            ShaderKind.ComputeShader => "shader.comp",
+            _ => "shader.frag"
+        } + "\0");
         byte[] entry = "main\0"u8.ToArray();
         CompilationResult* res;
         Compiler* compiler = (Compiler*)_compilers.Value;
@@ -119,8 +157,13 @@ public sealed unsafe class ShaderCompiler : IDisposable
             _sc.CompileOptionsSetTargetEnv(opts, TargetEnv.Vulkan, (uint)EnvVersion.Vulkan10);
             _sc.CompileOptionsSetOptimizationLevel(opts, OptLevel);
             long t0 = System.Diagnostics.Stopwatch.GetTimestamp();
-            fixed (byte* s = src) fixed (byte* n = name) fixed (byte* e = entry)
+            fixed (byte* s = src)
+            fixed (byte* n = name)
+            fixed (byte* e = entry)
+            {
                 res = _sc.CompileIntoSpv(compiler, s, (nuint)src.Length, kind, n, e, opts);
+            }
+
             Interlocked.Add(ref CompileTicks, System.Diagnostics.Stopwatch.GetTimestamp() - t0);
             Interlocked.Increment(ref Compiled);
             _sc.CompileOptionsRelease(opts);
@@ -141,21 +184,39 @@ public sealed unsafe class ShaderCompiler : IDisposable
                 // that generate identical source): write a private temp file and rename it, so a reader never sees a
                 // partially written .spv and concurrent writers do not fail on a sharing violation
                 string tmp = $"{cachePath}.{Environment.CurrentManagedThreadId}.tmp";
-                try { File.WriteAllBytes(tmp, bytes); File.Move(tmp, cachePath, true); }
+                try
+                {
+                    File.WriteAllBytes(tmp, bytes);
+                    File.Move(tmp, cachePath, true);
+                }
                 catch (Exception ex)
                 {
-                    try { File.Delete(tmp); } catch { }
-                    if (!File.Exists(cachePath)) Log.WarnOnce("spv-cache-write", $"shader cache write failed: {ex.Message}");
+                    try
+                    {
+                        File.Delete(tmp);
+                    }
+                    catch { }
+                    if (!File.Exists(cachePath))
+                    {
+                        Log.WarnOnce("spv-cache-write", $"shader cache write failed: {ex.Message}");
+                    }
                 }
             }
             return bytes;
         }
-        finally { _sc.ResultRelease(res); }
+        finally
+        {
+            _sc.ResultRelease(res);
+        }
     }
 
     public void Dispose()
     {
-        foreach (var c in _compilers.Values) _sc.CompilerRelease((Compiler*)c);
+        foreach (var c in _compilers.Values)
+        {
+            _sc.CompilerRelease((Compiler*)c);
+        }
+
         _compilers.Dispose();
         // The shaderc library is deliberately not unloaded (no _sc.Dispose()): it registers a process-exit handler
         // that stays behind after dlclose, so on Linux exit() jumped into the unmapped library (SIGSEGV after every

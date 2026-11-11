@@ -42,15 +42,31 @@ public sealed class TranscodeDiskCache
             byte[] data;
             lock (_lock)
             {
-                if (!File.Exists(p)) { Misses++; return null; }
+                if (!File.Exists(p))
+                {
+                    Misses++;
+                    return null;
+                }
                 data = File.ReadAllBytes(p);
-                try { File.SetLastWriteTimeUtc(p, DateTime.UtcNow); } catch (IOException) { }
+                try
+                {
+                    File.SetLastWriteTimeUtc(p, DateTime.UtcNow);
+                }
+                catch (IOException) { }
             }
             if (data.Length < HeaderSize || BinaryPrimitives.ReadUInt32LittleEndian(data) != Magic
                 || BinaryPrimitives.ReadUInt32LittleEndian(data.AsSpan(4)) != data.Length - HeaderSize || BinaryPrimitives.ReadUInt64LittleEndian(data.AsSpan(8)) != key)
             {
                 // torn or foreign file: drop it so the next Put can write the entry again
-                lock (_lock) { try { File.Delete(p); _bytes = -1; } catch (IOException) { } }
+                lock (_lock)
+                {
+                    try
+                    {
+                        File.Delete(p);
+                        _bytes = -1;
+                    }
+                    catch (IOException) { }
+                }
                 Misses++;
                 return null;
             }
@@ -83,14 +99,24 @@ public sealed class TranscodeDiskCache
             lock (_lock)
             {
                 System.IO.Directory.CreateDirectory(_dir);
-                if (_bytes < 0) _bytes = Measure();
-                if (File.Exists(p)) return;
+                if (_bytes < 0)
+                {
+                    _bytes = Measure();
+                }
+
+                if (File.Exists(p))
+                {
+                    return;
+                }
                 // written in place (a rename right after the write fails while a virus scanner holds the new file);
                 // a torn file fails the length/magic check on read and is deleted there
                 File.WriteAllBytes(p, data);
                 _bytes += data.Length;
                 Writes++;
-                if (_bytes > _limit) Trim();
+                if (_bytes > _limit)
+                {
+                    Trim();
+                }
             }
         }
         catch (Exception e) when (e is IOException or UnauthorizedAccessException)
@@ -102,7 +128,11 @@ public sealed class TranscodeDiskCache
     long Measure()
     {
         long n = 0;
-        foreach (var f in new DirectoryInfo(_dir).EnumerateFiles("*.astc")) n += f.Length;
+        foreach (var f in new DirectoryInfo(_dir).EnumerateFiles("*.astc"))
+        {
+            n += f.Length;
+        }
+
         return n;
     }
 
@@ -114,15 +144,33 @@ public sealed class TranscodeDiskCache
         long target = _limit * 9 / 10;
         foreach (var f in files)
         {
-            if (total <= target) break;
+            if (total <= target)
+            {
+                break;
+            }
+
             long length = f.Length; // (read first: a deleted FileInfo no longer knows it)
-            try { f.Delete(); total -= length; Evictions++; }
+            try
+            {
+                f.Delete();
+                total -= length;
+                Evictions++;
+            }
             catch (IOException) { }
         }
         _bytes = total;
     }
 
-    public long Bytes { get { lock (_lock) return _bytes < 0 ? (_bytes = System.IO.Directory.Exists(_dir) ? Measure() : 0) : _bytes; } }
+    public long Bytes
+    {
+        get
+        {
+            lock (_lock)
+            {
+                return _bytes < 0 ? (_bytes = System.IO.Directory.Exists(_dir) ? Measure() : 0) : _bytes;
+            }
+        }
+    }
 
     public string Summary() => $"disk cache {Hits} hits, {Misses} misses, {Writes} written, {Evictions} evicted, {Bytes / 1048576.0:F1} of {_limit / 1048576} MB";
 }

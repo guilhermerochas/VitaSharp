@@ -13,7 +13,11 @@ public sealed class GpuDumpTests(GuestMemoryFixture fx) : IDisposable
 
     public void Dispose()
     {
-        try { Directory.Delete(_dir, true); } catch { }
+        try
+        {
+            Directory.Delete(_dir, true);
+        }
+        catch { }
     }
 
     static GxmProgramInfo Info(bool fragment, byte seed)
@@ -28,14 +32,19 @@ public sealed class GpuDumpTests(GuestMemoryFixture fx) : IDisposable
 
     static readonly GxmVertexProgram Vp = new()
     {
-        Handle = 0x1234, Info = Info(false, 1),
+        Handle = 0x1234,
+        Info = Info(false, 1),
         Attributes = [new GxmVertexAttribute(0, 0, 3, 3, 0), new GxmVertexAttribute(1, 12, 5, 2, 4)],
         Streams = [new GxmVertexStream(20, 0), new GxmVertexStream(8, 1)],
     };
 
     static readonly GxmFragmentProgram Fp = new()
     {
-        Handle = 0x5678, Info = Info(true, 2), Blend = new GxmBlendInfo(0xF, 1, 2, 3, 4, 5, 6), OutputFormat = 0x80000000, MultisampleMode = 2,
+        Handle = 0x5678,
+        Info = Info(true, 2),
+        Blend = new GxmBlendInfo(0xF, 1, 2, 3, 4, 5, 6),
+        OutputFormat = 0x80000000,
+        MultisampleMode = 2,
     };
 
     static DrawCommand Draw(byte[] vu, byte[] fu, uint index)
@@ -44,17 +53,29 @@ public sealed class GpuDumpTests(GuestMemoryFixture fx) : IDisposable
         d.Reset();
         d.State.CullMode = 2;
         d.State.Front = SideState.Default;
-        d.State.Back = SideState.Default with { DepthBiasUnits = -7 };
+        d.State.Back = SideState.Default with
+        {
+            DepthBiasUnits = -7
+        };
         d.State.VpScaleX = 480.5f;
         d.State.ClipMaxY = 543;
         d.State.WClampValue = 0.25f;
-        d.VertexUniforms = vu; d.VertexUniformsLength = vu.Length;
-        d.FragmentUniforms = fu; d.FragmentUniformsLength = fu.Length;
-        d.VertexUniformAddrs[0] = 0x81100000; d.FragmentUniformAddrs[14] = 0x62000000;
+        d.VertexUniforms = vu;
+        d.VertexUniformsLength = vu.Length;
+        d.FragmentUniforms = fu;
+        d.FragmentUniformsLength = fu.Length;
+        d.VertexUniformAddrs[0] = 0x81100000;
+        d.FragmentUniformAddrs[14] = 0x62000000;
         d.FragmentTextures[3] = new GxmTextureDesc(1, 2, 0x81200000, 4);
-        d.Streams[0] = index + 0x100; d.Streams[1] = index + 0x200;
-        d.PrimitiveType = 3; d.Index32 = true; d.IndexAddress = index; d.IndexCount = 99; d.InstanceCount = 2;
-        d.VisAddress = 0x81300004; d.VisIncrement = true;
+        d.Streams[0] = index + 0x100;
+        d.Streams[1] = index + 0x200;
+        d.PrimitiveType = 3;
+        d.Index32 = true;
+        d.IndexAddress = index;
+        d.IndexCount = 99;
+        d.InstanceCount = 2;
+        d.VisAddress = 0x81300004;
+        d.VisIncrement = true;
         return d;
     }
 
@@ -82,9 +103,16 @@ public sealed class GpuDumpTests(GuestMemoryFixture fx) : IDisposable
     public void CommandsRoundTripThroughAFile()
     {
         var rnd = new Random(5);
-        byte[] Bytes(int n) { var b = new byte[n]; rnd.NextBytes(b); return b; }
+        byte[] Bytes(int n)
+        {
+            var b = new byte[n];
+            rnd.NextBytes(b);
+            return b;
+        }
         var vu1 = Bytes(4096);
-        var vu2 = (byte[])vu1.Clone(); vu2[100] ^= 0xFF; vu2[3000] ^= 1;     // small change: delta
+        var vu2 = (byte[])vu1.Clone();
+        vu2[100] ^= 0xFF;
+        vu2[3000] ^= 1;     // small change: delta
         var vu3 = Bytes(4096);                                               // all new: inline
         var fu = Bytes(64);                                                  // repeated: references
         var cmds = new List<GpuCommand>
@@ -106,14 +134,21 @@ public sealed class GpuDumpTests(GuestMemoryFixture fx) : IDisposable
         var body = new DumpBuffer();
         var defs = new DumpBuffer();
         var rec = new DumpBuffer();
-        body.U8((byte)GpuDumpRecord.Memory); body.U32(0x81400000); body.Var((uint)memory.Length); body.Bytes(memory);
+        body.U8((byte)GpuDumpRecord.Memory);
+        body.U32(0x81400000);
+        body.Var((uint)memory.Length);
+        body.Bytes(memory);
         foreach (var c in cmds)
         {
-            defs.Clear(); rec.Clear();
+            defs.Clear();
+            rec.Clear();
             Assert.True(codec.Write(c, defs, rec));
             body.Append(defs);
             body.Append(rec);
-            if (c is PresentCommand) GpuDumpCodec.WritePresentInfo(body, 33_333, 4300, 4301);
+            if (c is PresentCommand)
+            {
+                GpuDumpCodec.WritePresentInfo(body, 33_333, 4300, 4301);
+            }
         }
         Assert.Equal((3L, 3L, 1L), (codec.UniformStats.Inline, codec.UniformStats.Refs, codec.UniformStats.Deltas));
 
@@ -149,13 +184,19 @@ public sealed class GpuDumpTests(GuestMemoryFixture fx) : IDisposable
             Assert.Equal(expected.GetType(), got.GetType());
             switch (expected)
             {
-                case DrawCommand d: AssertSameDraw(d, (DrawCommand)got); break;
+                case DrawCommand d:
+                    AssertSameDraw(d, (DrawCommand)got);
+                    break;
                 case BeginSceneCommand b:
                     var gb = (BeginSceneCommand)got;
                     Assert.Equal((b.Width, b.Height, b.Multisample, b.Color, b.Depth), (gb.Width, gb.Height, gb.Multisample, gb.Color, gb.Depth));
                     break;
-                case EndSceneCommand e: Assert.Equal(e.Notifications, ((EndSceneCommand)got).Notifications); break;
-                case CallbackCommand cb: Assert.Equal((cb.WriteAddress, cb.WriteSize), (((CallbackCommand)got).WriteAddress, ((CallbackCommand)got).WriteSize)); break;
+                case EndSceneCommand e:
+                    Assert.Equal(e.Notifications, ((EndSceneCommand)got).Notifications);
+                    break;
+                case CallbackCommand cb:
+                    Assert.Equal((cb.WriteAddress, cb.WriteSize), (((CallbackCommand)got).WriteAddress, ((CallbackCommand)got).WriteSize));
+                    break;
                 case PresentCommand p:
                     Assert.Equal(p.Frame, ((PresentCommand)got).Frame);
                     Assert.Equal((33_333L, 4300L, 4301L), r.PresentInfo);
@@ -211,11 +252,17 @@ public sealed class GpuDumpTests(GuestMemoryFixture fx) : IDisposable
         {
             switch (command)
             {
-                case DrawCommand d: _ = GuestMemory.ReadSpan(d.IndexAddress, (int)d.IndexCount); break; // the backend reads guest memory
-                case PresentCommand: Presents++; break;
+                case DrawCommand d:
+                    _ = GuestMemory.ReadSpan(d.IndexAddress, (int)d.IndexCount);
+                    break; // the backend reads guest memory
+                case PresentCommand:
+                    Presents++;
+                    break;
             }
         }
-        public void Dispose() { }
+        public void Dispose()
+        {
+        }
     }
 
     [Fact]
@@ -253,6 +300,7 @@ public sealed class GpuDumpTests(GuestMemoryFixture fx) : IDisposable
         uint page = (buf + 0x100) & ~0xFFFu;
         var seen = new List<string>();
         while (r.Next())
+        {
             seen.Add(r.Kind switch
             {
                 GpuDumpRecord.Memory => $"mem {r.Address - page:X}+{r.Data.Length}={r.Data[0]:X2}",
@@ -260,6 +308,7 @@ public sealed class GpuDumpTests(GuestMemoryFixture fx) : IDisposable
                 GpuDumpRecord.Present => $"present {r.PresentInfo.Present}",
                 _ => r.Kind.ToString(),
             });
+        }
         // first read: the whole page; second read: only the 4 changed bytes; idle points may come in between
         Assert.Equal(["state 3", "mem 0+4096=11", "Draw", $"mem {buf + 0x120 - page:X}+4=22", "Draw", "present 2", "present 3"], seen.Where(s => s != "Idle"));
     }

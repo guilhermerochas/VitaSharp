@@ -53,7 +53,11 @@ public sealed unsafe partial class VulkanRenderer
     /// <summary>Why the epoch moved (report): 0 an image released, 1 a target's sampled view replaced, 2 a reinterpreted alias replaced.</summary>
     readonly long[] _epochBumps = new long[3];
     readonly Dictionary<string, long> _releaseSites = new();
-    void BumpTexEpoch(int site) { _texEpoch++; _epochBumps[site]++; }
+    void BumpTexEpoch(int site)
+    {
+        _texEpoch++;
+        _epochBumps[site]++;
+    }
     /// <summary>The colour target the last resolved texture came from (null: not a colour target).</summary>
     RenderTarget? _texSrcRt;
     /// <summary>The texture cache entry the last resolved guest-memory texture came from.</summary>
@@ -73,8 +77,10 @@ public sealed unsafe partial class VulkanRenderer
         for (uint m = mask; m != 0; m &= m - 1)
         {
             var d = textures[System.Numerics.BitOperations.TrailingZeroCount(m)];
-            h = (h ^ d.W0) * 1099511628211UL; h = (h ^ d.W1) * 1099511628211UL;
-            h = (h ^ d.W2) * 1099511628211UL; h = (h ^ d.W3) * 1099511628211UL;
+            h = (h ^ d.W0) * 1099511628211UL;
+            h = (h ^ d.W1) * 1099511628211UL;
+            h = (h ^ d.W2) * 1099511628211UL;
+            h = (h ^ d.W3) * 1099511628211UL;
         }
         return h;
     }
@@ -82,13 +88,29 @@ public sealed unsafe partial class VulkanRenderer
     /// <summary>After resolving one unit: whether the stage can still be kept, and what it depends on.</summary>
     void NoteReuseSource(int unit, ImageView v)
     {
-        if (v.Handle == 0) return; // the dummy texture: stable
+        if (v.Handle == 0)
+        {
+            return; // the dummy texture: stable
+        }
+
         var kind = _texSrc & TexSource.KindMask;
-        if ((_texSrc & (TexSource.SceneStart | TexSource.LodLowered | TexSource.Failed)) != 0) { _reuseOk = false; return; }
+        if ((_texSrc & (TexSource.SceneStart | TexSource.LodLowered | TexSource.Failed)) != 0)
+        {
+            _reuseOk = false;
+            return;
+        }
         if (kind == TexSource.Memory)
         {
-            if (!TexSetPersist) return;
-            if (_texSrcTex is { } t && _reuseMem < 16) { _reuseMemScratch[_reuseMem++] = (unit, t); return; }
+            if (!TexSetPersist)
+            {
+                return;
+            }
+
+            if (_texSrcTex is { } t && _reuseMem < 16)
+            {
+                _reuseMemScratch[_reuseMem++] = (unit, t);
+                return;
+            }
             _reuseOk = false;
             return;
         }
@@ -104,13 +126,25 @@ public sealed unsafe partial class VulkanRenderer
     DescriptorSet? ReusedTextureSet(bool vertexStage, GxmTextureDesc[] textures, uint mask, uint cube, int units)
     {
         var map = vertexStage ? _reuseV : _reuseF;
-        if (!map.TryGetValue(ReuseKey(textures, mask, cube, units), out var e)) { _statReuseMisses++; return null; }
+        if (!map.TryGetValue(ReuseKey(textures, mask, cube, units), out var e))
+        {
+            _statReuseMisses++;
+            return null;
+        }
         bool fresh = e.Serial == _frameSerial;
-        if ((!fresh && !TexSetPersist) || e.Epoch != _texEpoch || e.Mask != mask || e.Cube != cube || e.Units != units) { _statReuseMisses++; return null; }
+        if ((!fresh && !TexSetPersist) || e.Epoch != _texEpoch || e.Mask != mask || e.Cube != cube || e.Units != units)
+        {
+            _statReuseMisses++;
+            return null;
+        }
         for (uint m = mask; m != 0; m &= m - 1)
         {
             int i = System.Numerics.BitOperations.TrailingZeroCount(m);
-            if (e.Descs[i] != textures[i]) { _statReuseMisses++; return null; }
+            if (e.Descs[i] != textures[i])
+            {
+                _statReuseMisses++;
+                return null;
+            }
         }
         if (!fresh)
         {
@@ -119,16 +153,28 @@ public sealed unsafe partial class VulkanRenderer
             for (int i = 0; i < e.MemCount; i++)
             {
                 var (unit, tex) = e.Mem[i];
-                if (tex.CheckedFrame == FrameCount) { tex.LastUsedFrame = FrameCount; continue; }
+                if (tex.CheckedFrame == FrameCount)
+                {
+                    tex.LastUsedFrame = FrameCount;
+                    continue;
+                }
                 _statReuseRechecks++;
                 var (v, _) = ResolveTextureOrSkip(textures[unit], false);
-                if (v.Handle != tex.View.Handle || _texSrcTex != tex) { _statReuseMisses++; return null; }
+                if (v.Handle != tex.View.Handle || _texSrcTex != tex)
+                {
+                    _statReuseMisses++;
+                    return null;
+                }
             }
         }
         for (int i = 0; i < e.DepCount; i++)
         {
             var (rt, ver) = e.Deps[i];
-            if (rt.Version != ver || rt == _rt) { _statReuseMisses++; return null; }
+            if (rt.Version != ver || rt == _rt)
+            {
+                _statReuseMisses++;
+                return null;
+            }
             rt.LastTouchedFrame = FrameCount;
             rt.LastUsedFrame = FrameCount;
         }
@@ -136,33 +182,72 @@ public sealed unsafe partial class VulkanRenderer
         // built is dirty without a version change), and the views are sampled by this draw (scene-break hazards)
         if (!fresh)
         {
-            for (int i = 0; i < e.DepCount; i++) SyncRenderTargetForRead(e.Deps[i].Rt);
+            for (int i = 0; i < e.DepCount; i++)
+            {
+                SyncRenderTargetForRead(e.Deps[i].Rt);
+            }
+
             _statReuseOld++;
         }
-        for (int i = 0; i < e.ViewCount; i++) NoteSampled(e.Views[i]);
+        for (int i = 0; i < e.ViewCount; i++)
+        {
+            NoteSampled(e.Views[i]);
+        }
+
         _statReuseHits++;
         return e.Set;
     }
 
     void StoreReusedSet(bool vertexStage, GxmTextureDesc[] textures, uint mask, uint cube, int units, DescriptorSet set, DescriptorImageInfo* infos)
     {
-        if (!_reuseOk) { if (TexSetReuse) _statReuseRejected++; return; }
+        if (!_reuseOk)
+        {
+            if (TexSetReuse)
+            {
+                _statReuseRejected++;
+            }
+
+            return;
+        }
         var map = vertexStage ? _reuseV : _reuseF;
-        if (map.Count > 4096) map.Clear();
+        if (map.Count > 4096)
+        {
+            map.Clear();
+        }
+
         ulong key = ReuseKey(textures, mask, cube, units);
-        if (!map.TryGetValue(key, out var e)) map[key] = e = new ReuseEntry();
-        e.Mask = mask; e.Cube = cube; e.Units = units; e.Serial = _frameSerial; e.Epoch = _texEpoch; e.Set = set;
+        if (!map.TryGetValue(key, out var e))
+        {
+            map[key] = e = new ReuseEntry();
+        }
+
+        e.Mask = mask;
+        e.Cube = cube;
+        e.Units = units;
+        e.Serial = _frameSerial;
+        e.Epoch = _texEpoch;
+        e.Set = set;
         e.ViewCount = 0;
         for (uint m = mask; m != 0; m &= m - 1)
         {
             int i = System.Numerics.BitOperations.TrailingZeroCount(m);
             e.Descs[i] = textures[i];
-            if (infos[i].ImageView.Handle != 0) e.Views[e.ViewCount++] = infos[i].ImageView;
+            if (infos[i].ImageView.Handle != 0)
+            {
+                e.Views[e.ViewCount++] = infos[i].ImageView;
+            }
         }
         e.DepCount = _reuseDeps;
-        for (int i = 0; i < _reuseDeps; i++) e.Deps[i] = _reuseDepScratch[i];
+        for (int i = 0; i < _reuseDeps; i++)
+        {
+            e.Deps[i] = _reuseDepScratch[i];
+        }
+
         e.MemCount = _reuseMem;
-        for (int i = 0; i < _reuseMem; i++) e.Mem[i] = _reuseMemScratch[i];
+        for (int i = 0; i < _reuseMem; i++)
+        {
+            e.Mem[i] = _reuseMemScratch[i];
+        }
     }
 
     /// <summary>A set that will be kept across submits (VITASHARP_TEXSET_PERSIST): from the persistent texture-set pool.</summary>
@@ -179,7 +264,11 @@ public sealed unsafe partial class VulkanRenderer
             }
             var ai = new DescriptorSetAllocateInfo { SType = StructureType.DescriptorSetAllocateInfo, DescriptorPool = _texSetPool, DescriptorSetCount = 1, PSetLayouts = &layout };
             var r = _vk.AllocateDescriptorSets(_dev, in ai, out var set);
-            if (r == Result.Success) { _statSets++; return set; }
+            if (r == Result.Success)
+            {
+                _statSets++;
+                return set;
+            }
             // full: every kept set is forgotten and the pool goes once the GPU is done with the frames that bind them
             var old = _texSetPool;
             _texSetPool = default;
@@ -198,7 +287,11 @@ public sealed unsafe partial class VulkanRenderer
 
     void DestroyTexSetPool()
     {
-        if (_texSetPool.Handle != 0) _vk.DestroyDescriptorPool(_dev, _texSetPool, null);
+        if (_texSetPool.Handle != 0)
+        {
+            _vk.DestroyDescriptorPool(_dev, _texSetPool, null);
+        }
+
         _texSetPool = default;
         ForgetKeptTexSets();
     }

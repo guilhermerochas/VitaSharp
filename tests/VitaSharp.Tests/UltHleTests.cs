@@ -22,9 +22,19 @@ public sealed class UltHleTests(GuestMemoryFixture fx)
     static int Call(Ult u, string name, params object[] args) =>
         Convert.ToInt32(typeof(Ult).GetMethod(name, BindingFlags.Instance | BindingFlags.NonPublic | BindingFlags.Public)!.Invoke(u, args));
 
-    uint Alloc(uint size) { uint p = fx.Memory.Alloc(size, "ult"); GuestMemory.Fill(p, 0, size); return p; }
+    uint Alloc(uint size)
+    {
+        uint p = fx.Memory.Alloc(size, "ult");
+        GuestMemory.Fill(p, 0, size);
+        return p;
+    }
 
-    uint Name(string s) { uint p = Alloc(32); GuestMemory.WriteCString(p, s); return p; }
+    uint Name(string s)
+    {
+        uint p = Alloc(32);
+        GuestMemory.WriteCString(p, s);
+        return p;
+    }
 
     static Ult Make()
     {

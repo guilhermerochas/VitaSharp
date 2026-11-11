@@ -44,14 +44,29 @@ public static class EmulationPause
         {
             if (_paused)
             {
-                if (!@internal && _internal) { _internal = false; promoted = true; }
-                if (!promoted) return false;
+                if (!@internal && _internal)
+                {
+                    _internal = false;
+                    promoted = true;
+                }
+                if (!promoted)
+                {
+                    return false;
+                }
             }
         }
-        if (promoted) { Raise(true); return false; }
+        if (promoted)
+        {
+            Raise(true);
+            return false;
+        }
         lock (Lock)
         {
-            if (_paused) return false;
+            if (_paused)
+            {
+                return false;
+            }
+
             _internal = @internal;
             GuestClock.Freeze();
             _pausedSince = Stopwatch.GetTimestamp();
@@ -72,7 +87,11 @@ public static class EmulationPause
         long frames;
         lock (Lock)
         {
-            if (!_paused) return false;
+            if (!_paused)
+            {
+                return false;
+            }
+
             long d = Stopwatch.GetTimestamp() - _pausedSince;
             _pausedTotal += d;
             seconds = d / (double)Stopwatch.Frequency;
@@ -93,7 +112,11 @@ public static class EmulationPause
     /// <summary>Pauses a running emulation or resumes a paused one; returns the new state (true = paused).</summary>
     public static bool Toggle(string reason = "")
     {
-        if (!Pause(reason)) Resume(reason);
+        if (!Pause(reason))
+        {
+            Resume(reason);
+        }
+
         return _paused;
     }
 
@@ -102,7 +125,10 @@ public static class EmulationPause
     {
         get
         {
-            lock (Lock) return _pausedTotal + (_paused ? Stopwatch.GetTimestamp() - _pausedSince : 0);
+            lock (Lock)
+            {
+                return _pausedTotal + (_paused ? Stopwatch.GetTimestamp() - _pausedSince : 0);
+            }
         }
     }
 
@@ -118,17 +144,40 @@ public static class EmulationPause
     /// </summary>
     public static bool WaitWhilePaused()
     {
-        if (!_paused) return false;
+        if (!_paused)
+        {
+            return false;
+        }
+
         var self = GuestThread.Current;
-        if (self != null && (self.FinishingScene || self.Core.StopRequested)) return true;
+        if (self != null && (self.FinishingScene || self.Core.StopRequested))
+        {
+            return true;
+        }
+
         bool hadCore = self is { HasCore: true, Core.InThrottle: false };
-        if (hadCore) Scheduler.Release(self!);
+        if (hadCore)
+        {
+            Scheduler.Release(self!);
+        }
+
         try
         {
             lock (Lock)
-                while (_paused && self?.Core.StopRequested != true) Monitor.Wait(Lock, 50);
+            {
+                while (_paused && self?.Core.StopRequested != true)
+                {
+                    Monitor.Wait(Lock, 50);
+                }
+            }
         }
-        finally { if (hadCore) Scheduler.Acquire(self!); }
+        finally
+        {
+            if (hadCore)
+            {
+                Scheduler.Acquire(self!);
+            }
+        }
         return _paused;
     }
 
@@ -136,11 +185,21 @@ public static class EmulationPause
 
     static void Raise(bool paused)
     {
-        if (Changed is not { } handlers) return;
+        if (Changed is not { } handlers)
+        {
+            return;
+        }
+
         foreach (var h in handlers.GetInvocationList())
         {
-            try { ((Action<bool>)h)(paused); }
-            catch (Exception e) { Log.Warn($"Pause: a {(paused ? "pause" : "resume")} handler failed: {e.Message}"); }
+            try
+            {
+                ((Action<bool>)h)(paused);
+            }
+            catch (Exception e)
+            {
+                Log.Warn($"Pause: a {(paused ? "pause" : "resume")} handler failed: {e.Message}");
+            }
         }
     }
 }

@@ -84,10 +84,26 @@ public sealed unsafe partial class VulkanRenderer
     /// <summary>Called once per presented frame (GPU thread): counts frames stalled by shader/pipeline work.</summary>
     void EndFrameStallStats()
     {
-        if (_frameStallTicks == 0) return;
-        if (Ms(_frameStallTicks) >= HitchMs) _statHitchFrames++;
-        if (Ms(_frameStallTicks) >= LongHitchMs) _statLongHitchFrames++;
-        if (_frameStallTicks > _statWorstFrameStallTicks) _statWorstFrameStallTicks = _frameStallTicks;
+        if (_frameStallTicks == 0)
+        {
+            return;
+        }
+
+        if (Ms(_frameStallTicks) >= HitchMs)
+        {
+            _statHitchFrames++;
+        }
+
+        if (Ms(_frameStallTicks) >= LongHitchMs)
+        {
+            _statLongHitchFrames++;
+        }
+
+        if (_frameStallTicks > _statWorstFrameStallTicks)
+        {
+            _statWorstFrameStallTicks = _frameStallTicks;
+        }
+
         _frameStallTicks = 0;
     }
 
@@ -100,12 +116,23 @@ public sealed unsafe partial class VulkanRenderer
     {
         lock (_titleLock)
         {
-            if (_titleId != null || _opt.ShaderCacheDir == null) return;
+            if (_titleId != null || _opt.ShaderCacheDir == null)
+            {
+                return;
+            }
+
             _titleId = titleId;
             var safe = string.Concat(titleId.Select(c => char.IsLetterOrDigit(c) || c is '_' or '-' ? c : '_'));
             var dir = Path.Combine(_opt.ShaderCacheDir, "titles", safe.Length > 0 ? safe : "unknown");
-            try { Directory.CreateDirectory(dir); }
-            catch (Exception e) { Log.Warn($"[shadercache] cannot create {dir}: {e.Message}"); return; }
+            try
+            {
+                Directory.CreateDirectory(dir);
+            }
+            catch (Exception e)
+            {
+                Log.Warn($"[shadercache] cannot create {dir}: {e.Message}");
+                return;
+            }
             OpenAstcCache(dir);
 
             var props = _core.Properties;
@@ -120,7 +147,11 @@ public sealed unsafe partial class VulkanRenderer
             {
                 Log.Info($"[shadercache] {titleId}: shader/pipeline caches bypassed (debug shader overrides or draw trace active); driver cache {vkStatus}");
                 // VITASHARP_DEBUG_NAN=draws: every pipeline is an instrumented variant, kept out of the driver cache file
-                if (ShaderGenerator.NanDraws) _vkCachePath = null;
+                if (ShaderGenerator.NanDraws)
+                {
+                    _vkCachePath = null;
+                }
+
                 return;
             }
             _shaderPack = BlobPack.Open(Path.Combine(dir, "shaders.pack"), ShaderPackFormatVersion << 16 | (uint)ShaderGenerator.CacheVersion);
@@ -149,7 +180,11 @@ public sealed unsafe partial class VulkanRenderer
                 _rebuildActive = true;
                 _prewarmThread = new Thread(() => RebuildFromRecipes(recipes, missing, sync)) { Name = "Shader rebuild", IsBackground = true };
                 _prewarmThread.Start();
-                if (sync) _prewarmThread.Join();
+                if (sync)
+                {
+                    _prewarmThread.Join();
+                }
+
                 return;
             }
             if (pipelines + legacy == 0)
@@ -167,12 +202,26 @@ public sealed unsafe partial class VulkanRenderer
     static List<byte[]>? ReadLegacyPipelineList(string path)
     {
         uint legacy = LegacyPipelineFormatVersion << 16 | (uint)ShaderGenerator.CacheVersion;
-        if (BlobPack.PeekVersion(path) != legacy) return null;
+        if (BlobPack.PeekVersion(path) != legacy)
+        {
+            return null;
+        }
+
         using var old = BlobPack.Open(path, legacy);
-        if (old == null || old.IsReadOnly) return null; // (in use by another session: leave it alone)
+        if (old == null || old.IsReadOnly)
+        {
+            return null; // (in use by another session: leave it alone)
+        }
+
         var list = new List<byte[]>();
         foreach (ulong k in old.Keys())
-            if (old.TryRead(k) is { } rec) list.Add(rec);
+        {
+            if (old.TryRead(k) is { } rec)
+            {
+                list.Add(rec);
+            }
+        }
+
         return list;
     }
 
@@ -180,7 +229,11 @@ public sealed unsafe partial class VulkanRenderer
     void RecordShaderRecipe(GxpProgram program, ulong hintKey, Func<DrawCommand, uint, ShaderHints> hints, DrawCommand d, uint colorFormat)
     {
         var store = _recipes;
-        if (store == null || store.IsReadOnly || store.Has(program.Hash, hintKey)) return;
+        if (store == null || store.IsReadOnly || store.Has(program.Hash, hintKey))
+        {
+            return;
+        }
+
         var h = hints(d, colorFormat);
         if (h.Key() != hintKey)
         {
@@ -216,11 +269,21 @@ public sealed unsafe partial class VulkanRenderer
     void StorePackedShader(ulong programHash, ulong hintKey, GeneratedShader gen, byte[] spv)
     {
         var pack = _shaderPack;
-        if (pack == null) return;
+        if (pack == null)
+        {
+            return;
+        }
+
         int n = gen.VertexInputs.Count;
         var buf = new byte[3 + n * InputRecordSize + spv.Length];
         buf[0] = (byte)((gen.IsVertex ? 1 : 0) | (gen.UsesFragColor ? 2 : 0) | (gen.WritesDepth ? 4 : 0) | (gen.AttributeFallback ? 8 : 0)
-            | (gen.RawColorBits switch { 8 => 1, 16 => 2, 32 => 3, _ => 0 }) << 4 | ((int)gen.TileWord1 & 3) << 6);
+            | (gen.RawColorBits switch
+            {
+                8 => 1,
+                16 => 2,
+                32 => 3,
+                _ => 0
+            }) << 4 | ((int)gen.TileWord1 & 3) << 6);
         BinaryPrimitives.WriteUInt16LittleEndian(buf.AsSpan(1), (ushort)(n | (gen.WritesMemory ? 0x8000 : 0)));
         int o = 3;
         foreach (var vi in gen.VertexInputs)
@@ -243,15 +306,27 @@ public sealed unsafe partial class VulkanRenderer
     ModuleEntry? LoadPackedShader(ulong programHash, ulong hintKey, bool vertex)
     {
         var data = _shaderPack?.TryRead(ShaderPackKey(programHash, hintKey));
-        if (data == null || data.Length < 3) return null;
+        if (data == null || data.Length < 3)
+        {
+            return null;
+        }
+
         byte flags = data[0];
-        if (((flags & 1) != 0) != vertex) return null;
+        if (((flags & 1) != 0) != vertex)
+        {
+            return null;
+        }
+
         int n = BinaryPrimitives.ReadUInt16LittleEndian(data.AsSpan(1));
         bool writesMemory = (n & 0x8000) != 0;
         n &= 0x7FFF;
         int spvOffset = 3 + n * InputRecordSize;
         int spvLength = data.Length - spvOffset;
-        if (spvLength < 20 || (spvLength & 3) != 0 || BinaryPrimitives.ReadUInt32LittleEndian(data.AsSpan(spvOffset)) != 0x07230203) return null;
+        if (spvLength < 20 || (spvLength & 3) != 0 || BinaryPrimitives.ReadUInt32LittleEndian(data.AsSpan(spvOffset)) != 0x07230203)
+        {
+            return null;
+        }
+
         var gen = new GeneratedShader
         {
             Glsl = "",
@@ -281,7 +356,11 @@ public sealed unsafe partial class VulkanRenderer
         var list = _pipelineList;
         // pipelines with the tile-word attachment are not recorded (the recipe has no field for it; rare, built on use)
         // nor one-sample programmable-blending render pass pipelines (VulkanRenderer.SingleFetch.cs)
-        if (list == null || list.IsReadOnly || vs.Vp is not { } vp || fs.Gen == null || StaticEds || key.TileWord1 != 0 || key.InputPass) return;
+        if (list == null || list.IsReadOnly || vs.Vp is not { } vp || fs.Gen == null || StaticEds || key.TileWord1 != 0 || key.InputPass)
+        {
+            return;
+        }
+
         var rec = new PipelineRecipe(vs.ProgramHash, vs.HintKey, fs.ProgramHash, fs.HintKey, (int)key.ColorFormat, key.HasColor, key.Blend,
             key.ColorFunc, key.AlphaFunc, key.ColorSrc, key.ColorDst, key.AlphaSrc, key.AlphaDst, key.Mask,
             (byte)topology, (byte)key.Polygon, (byte)key.Samples, fs.Gen.UsesFragColor, (byte)fs.Gen.RawColorBits, vp.Attributes, vp.Streams).Encode();
@@ -293,11 +372,27 @@ public sealed unsafe partial class VulkanRenderer
     ModuleEntry? RecordedModule(ulong programHash, ulong hintKey, bool vertex)
     {
         var key = (programHash, hintKey);
-        if (_modules.TryGetValue(key, out var e)) return e;
-        if (_inflight.TryGetValue(key, out var job)) return job.RunOrWait(this, byGame: false);
-        if (_modules.TryGetValue(key, out e)) return e;
+        if (_modules.TryGetValue(key, out var e))
+        {
+            return e;
+        }
+
+        if (_inflight.TryGetValue(key, out var job))
+        {
+            return job.RunOrWait(this, byGame: false);
+        }
+
+        if (_modules.TryGetValue(key, out e))
+        {
+            return e;
+        }
+
         var loaded = LoadPackedShader(programHash, hintKey, vertex);
-        if (loaded == null) return null;
+        if (loaded == null)
+        {
+            return null;
+        }
+
         Interlocked.Increment(ref _statPrewarmModules);
         return PublishModule(key, loaded);
     }
@@ -307,13 +402,23 @@ public sealed unsafe partial class VulkanRenderer
     SharedBuild BuildRecordedPipeline(PipelineRecipe r, out bool stale)
     {
         stale = false;
-        if (StaticEds) return SharedBuild.Failed; // recipes carry no depth/stencil state (VulkanRenderer.StaticState.cs)
+        if (StaticEds)
+        {
+            return SharedBuild.Failed; // recipes carry no depth/stencil state (VulkanRenderer.StaticState.cs)
+        }
+
         var vsM = RecordedModule(r.VsHash, r.VsHint, true);
         var fsM = RecordedModule(r.FsHash, r.FsHint, false);
         if (vsM?.Gen == null || fsM?.Gen == null || vsM.Module.Handle == 0 || fsM.Module.Handle == 0 || !vsM.Gen.IsVertex || fsM.Gen.IsVertex)
+        {
             return SharedBuild.Failed;
+        }
         // the fixed-function state was resolved against these (blend off for framebuffer fetch, integer view for raw outputs)
-        if (fsM.Gen.UsesFragColor != r.FsUsesFragColor || fsM.Gen.RawColorBits != r.FsRawColorBits) { stale = true; return SharedBuild.Failed; }
+        if (fsM.Gen.UsesFragColor != r.FsUsesFragColor || fsM.Gen.RawColorBits != r.FsRawColorBits)
+        {
+            stale = true;
+            return SharedBuild.Failed;
+        }
         var vs = new VsEntry { Module = vsM.Module, Gen = vsM.Gen, ProgramHash = r.VsHash, HintKey = r.VsHint };
         BuildVertexInput(r.Attributes, r.Streams, vsM.Gen, vs);
         var topology = (PrimitiveTopology)r.Topology;
@@ -345,32 +450,56 @@ public sealed unsafe partial class VulkanRenderer
         {
             foreach (ulong recordKey in _pipelineList!.Keys())
             {
-                if (_stopPrewarm || _deviceLost) break;
+                if (_stopPrewarm || _deviceLost)
+                {
+                    break;
+                }
+
                 var rec = _pipelineList.TryRead(recordKey);
                 var r = rec == null ? null : PipelineRecipe.Decode(rec);
-                if (r == null) { failed++; continue; }
+                if (r == null)
+                {
+                    failed++;
+                    continue;
+                }
                 EnqueuePrewarm(r);
             }
             if (_legacyPipelines != null)
-                foreach (var rec in _legacyPipelines) EnqueuePrewarm(rec);
+            {
+                foreach (var rec in _legacyPipelines)
+                {
+                    EnqueuePrewarm(rec);
+                }
+            }
             // the workers start on first use; they poll their queues, so a release only saves them the wait
             if (_asyncShaders && !_prewarmJobs.IsEmpty && EnsureShaderWorkers())
             {
                 shared = true;
                 _workAvailable.Release(_shaderWorkerCount);
             }
-            while (RunPrewarmItem()) { }
+            while (RunPrewarmItem())
+            {
+            }
             // items a worker is still building
-            while (Volatile.Read(ref _prewarmPending) > 0 && !_stopPrewarm && !_stopShaderJobs && !_deviceLost) Thread.Sleep(2);
+            while (Volatile.Read(ref _prewarmPending) > 0 && !_stopPrewarm && !_stopShaderJobs && !_deviceLost)
+            {
+                Thread.Sleep(2);
+            }
         }
-        catch (Exception e) { Log.Warn($"[shadercache] prewarm aborted: {e.Message}"); }
+        catch (Exception e)
+        {
+            Log.Warn($"[shadercache] prewarm aborted: {e.Message}");
+        }
         _legacyPipelines = null;
         failed += _statPrewarmFailed;
         bool stopped = _stopPrewarm || _stopShaderJobs || _deviceLost;
         Log.Info($"{head}; prewarmed {_statPrewarmed} pipelines ({_statPrewarmModules} shader modules) in {sw.ElapsedMilliseconds} ms"
             + (shared ? $" (with {_shaderWorkerCount} shader workers)" : "")
             + (failed > 0 ? $", {failed} skipped" : "") + (_statPrewarmStale > 0 ? $", {_statPrewarmStale} stale" : "") + (stopped ? " (stopped early)" : ""));
-        if (!stopped && _statPrewarmed > 0) ScheduleVkCacheSave();
+        if (!stopped && _statPrewarmed > 0)
+        {
+            ScheduleVkCacheSave();
+        }
     }
 
     /// <summary>Recorded pipelines to prewarm: <see cref="PipelineRecipe"/>s, or byte[] version 3 records.</summary>
@@ -387,21 +516,47 @@ public sealed unsafe partial class VulkanRenderer
     /// After shutdown started the items are dropped.</summary>
     bool RunPrewarmItem()
     {
-        if (!_prewarmJobs.TryDequeue(out var item)) return false;
+        if (!_prewarmJobs.TryDequeue(out var item))
+        {
+            return false;
+        }
+
         try
         {
-            if (_stopPrewarm || _stopShaderJobs || _deviceLost) return true;
+            if (_stopPrewarm || _stopShaderJobs || _deviceLost)
+            {
+                return true;
+            }
+
             if (item is PipelineRecipe r)
             {
                 var res = BuildRecordedPipeline(r, out bool stale);
-                if (res == SharedBuild.Built) Interlocked.Increment(ref _statPrewarmed);
-                else if (stale) Interlocked.Increment(ref _statPrewarmStale);
-                else if (res == SharedBuild.Failed) Interlocked.Increment(ref _statPrewarmFailed);
+                if (res == SharedBuild.Built)
+                {
+                    Interlocked.Increment(ref _statPrewarmed);
+                }
+                else if (stale)
+                {
+                    Interlocked.Increment(ref _statPrewarmStale);
+                }
+                else if (res == SharedBuild.Failed)
+                {
+                    Interlocked.Increment(ref _statPrewarmFailed);
+                }
             }
-            else if (item is byte[] rec && !PrewarmLegacy(rec)) Interlocked.Increment(ref _statPrewarmFailed);
+            else if (item is byte[] rec && !PrewarmLegacy(rec))
+            {
+                Interlocked.Increment(ref _statPrewarmFailed);
+            }
         }
-        catch (Exception e) { Log.WarnOnce("prewarm-item", $"[shadercache] prewarm item failed: {e.Message}"); }
-        finally { Interlocked.Decrement(ref _prewarmPending); }
+        catch (Exception e)
+        {
+            Log.WarnOnce("prewarm-item", $"[shadercache] prewarm item failed: {e.Message}");
+        }
+        finally
+        {
+            Interlocked.Decrement(ref _prewarmPending);
+        }
         return true;
     }
 
@@ -413,19 +568,33 @@ public sealed unsafe partial class VulkanRenderer
     /// </summary>
     void WarmTranslator(List<ShaderRecipe> recipes)
     {
-        if (_stopPrewarm || _recipes is not { } store) return;
+        if (_stopPrewarm || _recipes is not { } store)
+        {
+            return;
+        }
+
         try
         {
             long t0 = Stopwatch.GetTimestamp();
             foreach (bool vertex in (ReadOnlySpan<bool>)[true, false])
             {
-                if (recipes.FirstOrDefault(r => r.Vertex == vertex) is not { } r || store.ProgramBytes(r.ProgramHash) is not { } bytes) continue;
+                if (recipes.FirstOrDefault(r => r.Vertex == vertex) is not { } r || store.ProgramBytes(r.ProgramHash) is not { } bytes)
+                {
+                    continue;
+                }
+
                 var prog = new GxpProgram(bytes, 0);
-                if (prog.IsVertex == vertex) ShaderGenerator.Generate(prog, r.Hints);
+                if (prog.IsVertex == vertex)
+                {
+                    ShaderGenerator.Generate(prog, r.Hints);
+                }
             }
             Log.Info($"[shadercache] shader translator warmed up in {Ms(Stopwatch.GetTimestamp() - t0):F0} ms (background)");
         }
-        catch (Exception e) { Log.WarnOnce("translator-warm", $"[shadercache] translator warm-up failed: {e.Message}"); }
+        catch (Exception e)
+        {
+            Log.WarnOnce("translator-warm", $"[shadercache] translator warm-up failed: {e.Message}");
+        }
     }
 
     // version 3 record: vs program u64, vs hints u64, fs program u64, fs hints u64, colour format i32, has colour, blend,
@@ -437,13 +606,25 @@ public sealed unsafe partial class VulkanRenderer
     /// <summary>One version 3 record (resolved Vulkan vertex layout): true when built or already there.</summary>
     bool PrewarmLegacy(byte[] rec)
     {
-        if (rec.Length < LegacyRecordHead || StaticEds) return false;
+        if (rec.Length < LegacyRecordHead || StaticEds)
+        {
+            return false;
+        }
+
         var r = rec.AsSpan();
         int nb = BinaryPrimitives.ReadUInt16LittleEndian(r[47..]), na = BinaryPrimitives.ReadUInt16LittleEndian(r[49..]);
-        if (rec.Length != LegacyRecordHead + nb * 12 + na * 16) return false;
+        if (rec.Length != LegacyRecordHead + nb * 12 + na * 16)
+        {
+            return false;
+        }
+
         var vs = RecordedModule(BinaryPrimitives.ReadUInt64LittleEndian(r), BinaryPrimitives.ReadUInt64LittleEndian(r[8..]), true);
         var fs = RecordedModule(BinaryPrimitives.ReadUInt64LittleEndian(r[16..]), BinaryPrimitives.ReadUInt64LittleEndian(r[24..]), false);
-        if (vs?.Gen == null || fs?.Gen == null || vs.Module.Handle == 0 || fs.Module.Handle == 0) return false;
+        if (vs?.Gen == null || fs?.Gen == null || vs.Module.Handle == 0 || fs.Module.Handle == 0)
+        {
+            return false;
+        }
+
         var bindings = MemoryMarshal.Cast<byte, VertexInputBindingDescription>(r.Slice(LegacyRecordHead, nb * 12)).ToArray();
         var attrs = MemoryMarshal.Cast<byte, VertexInputAttributeDescription>(r.Slice(LegacyRecordHead + nb * 12, na * 16)).ToArray();
         var topology = (PrimitiveTopology)r[45];
@@ -452,7 +633,11 @@ public sealed unsafe partial class VulkanRenderer
             r[51] == 0 ? SampleCountFlags.Count1Bit : (SampleCountFlags)r[51]);
         var entry = new VsEntry { Module = vs.Module, Gen = vs.Gen, Bindings = bindings, Attributes = attrs, LayoutHash = key.VertexLayout };
         var res = BuildSharedPipeline(key, entry, fs.Module, topology);
-        if (res == SharedBuild.Built) Interlocked.Increment(ref _statPrewarmed);
+        if (res == SharedBuild.Built)
+        {
+            Interlocked.Increment(ref _statPrewarmed);
+        }
+
         return res != SharedBuild.Failed;
     }
 
@@ -482,9 +667,17 @@ public sealed unsafe partial class VulkanRenderer
         int queuedShaders = 0, queuedPipelines = 0, noProgram = 0;
         try
         {
-            if (!EnsureShaderWorkers()) return;
+            if (!EnsureShaderWorkers())
+            {
+                return;
+            }
+
             var byKey = new Dictionary<(ulong, ulong), ShaderRecipe>();
-            foreach (var r in recipes) byKey.TryAdd((r.ProgramHash, r.HintKey), r);
+            foreach (var r in recipes)
+            {
+                byKey.TryAdd((r.ProgramHash, r.HintKey), r);
+            }
+
             var programs = new Dictionary<ulong, GxpProgram?>();
             var seen = new HashSet<(ulong, ulong)>();
             Volatile.Write(ref _rebuildPending, 1); // released after the last item is queued
@@ -493,28 +686,58 @@ public sealed unsafe partial class VulkanRenderer
             void QueueShader(ulong hash, ulong hintKey)
             {
                 var key = (hash, hintKey);
-                if (!seen.Add(key) || _modules.ContainsKey(key) || _inflight.ContainsKey(key)) return;
-                if (!byKey.TryGetValue(key, out var r)) return; // no recipe: the pipeline loads it from the pack or is skipped
+                if (!seen.Add(key) || _modules.ContainsKey(key) || _inflight.ContainsKey(key))
+                {
+                    return;
+                }
+
+                if (!byKey.TryGetValue(key, out var r))
+                {
+                    return; // no recipe: the pipeline loads it from the pack or is skipped
+                }
+
                 if (!programs.TryGetValue(hash, out var prog))
                 {
                     var bytes = _recipes!.ProgramBytes(hash);
-                    try { prog = bytes == null ? null : new GxpProgram(bytes, 0); }
-                    catch (Exception) { prog = null; } // (bytes verified against the hash, but stay defensive)
+                    try
+                    {
+                        prog = bytes == null ? null : new GxpProgram(bytes, 0);
+                    }
+                    catch (Exception) // (bytes verified against the hash, but stay defensive)
+                    {
+                        prog = null;
+                    }
                     programs[hash] = prog;
                 }
-                if (prog == null || prog.IsVertex != r.Vertex) { noProgram++; return; }
+                if (prog == null || prog.IsVertex != r.Vertex)
+                {
+                    noProgram++;
+                    return;
+                }
                 var job = new ShaderJob(prog, hintKey, r.Hints, rebuild: true);
-                if (!_inflight.TryAdd(key, job)) return;
+                if (!_inflight.TryAdd(key, job))
+                {
+                    return;
+                }
+
                 queuedShaders++;
                 EnqueueRebuild(job);
             }
 
             foreach (ulong recordKey in _pipelineList!.Keys())
             {
-                if (_stopPrewarm || _stopShaderJobs || _deviceLost) break;
+                if (_stopPrewarm || _stopShaderJobs || _deviceLost)
+                {
+                    break;
+                }
+
                 var rec = _pipelineList.TryRead(recordKey);
                 var p = rec == null ? null : PipelineRecipe.Decode(rec);
-                if (p == null) { Interlocked.Increment(ref _statRebuildFailed); continue; }
+                if (p == null)
+                {
+                    Interlocked.Increment(ref _statRebuildFailed);
+                    continue;
+                }
                 QueueShader(p.VsHash, p.VsHint);
                 QueueShader(p.FsHash, p.FsHint);
                 queuedPipelines++;
@@ -522,15 +745,34 @@ public sealed unsafe partial class VulkanRenderer
             }
             foreach (var r in recipes)
             {
-                if (_stopPrewarm || _stopShaderJobs || _deviceLost) break;
+                if (_stopPrewarm || _stopShaderJobs || _deviceLost)
+                {
+                    break;
+                }
+
                 QueueShader(r.ProgramHash, r.HintKey);
             }
-            if (Interlocked.Decrement(ref _rebuildPending) == 0) _rebuildDone.Set();
+            if (Interlocked.Decrement(ref _rebuildPending) == 0)
+            {
+                _rebuildDone.Set();
+            }
+
             while (!_rebuildDone.Wait(100))
-                if (_stopPrewarm || _stopShaderJobs || _deviceLost) break;
+            {
+                if (_stopPrewarm || _stopShaderJobs || _deviceLost)
+                {
+                    break;
+                }
+            }
         }
-        catch (Exception e) { Log.Warn($"[shadercache] rebuild aborted: {e.Message}"); }
-        finally { _rebuildActive = false; }
+        catch (Exception e)
+        {
+            Log.Warn($"[shadercache] rebuild aborted: {e.Message}");
+        }
+        finally
+        {
+            _rebuildActive = false;
+        }
         bool stopped = !_rebuildDone.IsSet;
         _rebuildSummary = $"rebuilt {_statRebuiltShaders} shaders + {_statRebuiltPipelines} pipelines for generator v{ShaderGenerator.CacheVersion} in {sw.Elapsed.TotalSeconds:F1} s on {_shaderWorkers?.Length ?? 0} workers"
             + (sync ? " (before the game started)" : "")
@@ -538,7 +780,10 @@ public sealed unsafe partial class VulkanRenderer
             + (_statRebuildFailed + noProgram > 0 ? $", {_statRebuildFailed + noProgram} unusable" : "") + (_statRebuildStale > 0 ? $", {_statRebuildStale} stale" : "")
             + (stopped ? ", stopped early" : "") + ")";
         Log.Info("[shadercache] " + _rebuildSummary);
-        if (!stopped) ScheduleVkCacheSave();
+        if (!stopped)
+        {
+            ScheduleVkCacheSave();
+        }
     }
 
     void EnqueueRebuild(object item)
@@ -556,21 +801,44 @@ public sealed unsafe partial class VulkanRenderer
             switch (item)
             {
                 case ShaderJob sj:
-                    if (_stopShaderJobs || _deviceLost) sj.Cancel(this);
-                    else sj.TryRun(this); // (no-op when promoted and already run, or taken by the GPU thread)
+                    if (_stopShaderJobs || _deviceLost)
+                    {
+                        sj.Cancel(this);
+                    }
+                    else
+                    {
+                        sj.TryRun(this); // (no-op when promoted and already run, or taken by the GPU thread)
+                    }
+
                     break;
                 case PipelineRecipe pr when !_stopShaderJobs && !_deviceLost:
                     var res = BuildRecordedPipeline(pr, out bool stale);
-                    if (res == SharedBuild.Built) Interlocked.Increment(ref _statRebuiltPipelines);
-                    else if (stale) Interlocked.Increment(ref _statRebuildStale);
-                    else if (res == SharedBuild.Failed) Interlocked.Increment(ref _statRebuildFailed);
+                    if (res == SharedBuild.Built)
+                    {
+                        Interlocked.Increment(ref _statRebuiltPipelines);
+                    }
+                    else if (stale)
+                    {
+                        Interlocked.Increment(ref _statRebuildStale);
+                    }
+                    else if (res == SharedBuild.Failed)
+                    {
+                        Interlocked.Increment(ref _statRebuildFailed);
+                    }
+
                     break;
             }
         }
-        catch (Exception e) { Log.WarnOnce("rebuild-item", $"[shader worker] rebuild item failed: {e.Message}"); }
+        catch (Exception e)
+        {
+            Log.WarnOnce("rebuild-item", $"[shader worker] rebuild item failed: {e.Message}");
+        }
         finally
         {
-            if (Interlocked.Decrement(ref _rebuildPending) == 0) _rebuildDone.Set();
+            if (Interlocked.Decrement(ref _rebuildPending) == 0)
+            {
+                _rebuildDone.Set();
+            }
         }
     }
 
@@ -579,15 +847,26 @@ public sealed unsafe partial class VulkanRenderer
     {
         while (_rebuildJobs.TryDequeue(out var item))
         {
-            if (item is ShaderJob sj) sj.Cancel(this);
-            if (Interlocked.Decrement(ref _rebuildPending) == 0) _rebuildDone.Set();
+            if (item is ShaderJob sj)
+            {
+                sj.Cancel(this);
+            }
+
+            if (Interlocked.Decrement(ref _rebuildPending) == 0)
+            {
+                _rebuildDone.Set();
+            }
         }
     }
 
     /// <summary>A draw needs a shader the rebuild has queued but not started: move it ahead of the rest.</summary>
     void PromoteRebuildJob(ulong programHash, ulong hintKey)
     {
-        if (!_rebuildActive || !_inflight.TryGetValue((programHash, hintKey), out var job) || !job.TryPromote()) return;
+        if (!_rebuildActive || !_inflight.TryGetValue((programHash, hintKey), out var job) || !job.TryPromote())
+        {
+            return;
+        }
+
         _shaderJobs.Enqueue(job);
         _workAvailable.Release();
     }
@@ -609,35 +888,63 @@ public sealed unsafe partial class VulkanRenderer
         byte[] file;
         try
         {
-            if (!File.Exists(path)) return "empty";
+            if (!File.Exists(path))
+            {
+                return "empty";
+            }
+
             file = File.ReadAllBytes(path);
         }
-        catch (Exception e) { return $"unreadable ({e.Message})"; }
+        catch (Exception e)
+        {
+            return $"unreadable ({e.Message})";
+        }
         var props = _core.Properties;
         var f = file.AsSpan();
         if (f.Length < VkCacheHeaderSize || BinaryPrimitives.ReadUInt32LittleEndian(f) != VkCacheMagic || BinaryPrimitives.ReadUInt32LittleEndian(f[4..]) != VkCacheFormatVersion)
+        {
             return "discarded (bad header)";
+        }
+
         if (BinaryPrimitives.ReadUInt32LittleEndian(f[8..]) != props.VendorID || BinaryPrimitives.ReadUInt32LittleEndian(f[12..]) != props.DeviceID)
+        {
             return "discarded (other GPU)";
+        }
+
         if (BinaryPrimitives.ReadUInt32LittleEndian(f[16..]) != props.DriverVersion || !f.Slice(20, 16).SequenceEqual(new ReadOnlySpan<byte>(props.PipelineCacheUuid, 16)))
+        {
             return "discarded (driver changed)";
+        }
+
         int len = BinaryPrimitives.ReadInt32LittleEndian(f[36..]);
         if (len <= 0 || len != f.Length - VkCacheHeaderSize || XxHash64.HashToUInt64(f[VkCacheHeaderSize..]) != BinaryPrimitives.ReadUInt64LittleEndian(f[40..]))
+        {
             return "discarded (corrupted)";
+        }
+
         var data = f[VkCacheHeaderSize..];
         // the driver's own header: length, version ONE, vendor, device, pipeline cache UUID
         if (data.Length < 32 || BinaryPrimitives.ReadUInt32LittleEndian(data) < 32 || BinaryPrimitives.ReadUInt32LittleEndian(data[4..]) != 1
             || BinaryPrimitives.ReadUInt32LittleEndian(data[8..]) != props.VendorID || BinaryPrimitives.ReadUInt32LittleEndian(data[12..]) != props.DeviceID
             || !data.Slice(16, 16).SequenceEqual(new ReadOnlySpan<byte>(props.PipelineCacheUuid, 16)))
+        {
             return "discarded (driver header mismatch)";
+        }
+
         fixed (byte* p = data)
         {
             var ci = new PipelineCacheCreateInfo { SType = StructureType.PipelineCacheCreateInfo, InitialDataSize = (nuint)data.Length, PInitialData = p };
-            if (_vk.CreatePipelineCache(_dev, in ci, null, out var loaded) != Result.Success) return "rejected by the driver";
+            if (_vk.CreatePipelineCache(_dev, in ci, null, out var loaded) != Result.Success)
+            {
+                return "rejected by the driver";
+            }
             // the title starts before its first GPU command: nothing else uses the cache yet
             var r = _vk.MergePipelineCaches(_dev, _vkPipelineCache, 1, in loaded);
             _vk.DestroyPipelineCache(_dev, loaded, null);
-            if (r != Result.Success) return $"merge failed ({r})";
+            if (r != Result.Success)
+            {
+                return $"merge failed ({r})";
+            }
         }
         bytes = data.Length;
         return "loaded";
@@ -645,16 +952,29 @@ public sealed unsafe partial class VulkanRenderer
 
     void NotePipelineCreated()
     {
-        if (Interlocked.Increment(ref _newPipelines) >= SaveEveryPipelines) ScheduleVkCacheSave();
+        if (Interlocked.Increment(ref _newPipelines) >= SaveEveryPipelines)
+        {
+            ScheduleVkCacheSave();
+        }
     }
 
     void ScheduleVkCacheSave()
     {
-        if (_vkCachePath == null || Interlocked.CompareExchange(ref _saveQueued, 1, 0) != 0) return;
+        if (_vkCachePath == null || Interlocked.CompareExchange(ref _saveQueued, 1, 0) != 0)
+        {
+            return;
+        }
+
         ThreadPool.UnsafeQueueUserWorkItem(_ =>
         {
-            try { SaveVkPipelineCache(); }
-            finally { Volatile.Write(ref _saveQueued, 0); }
+            try
+            {
+                SaveVkPipelineCache();
+            }
+            finally
+            {
+                Volatile.Write(ref _saveQueued, 0);
+            }
         }, null);
     }
 
@@ -665,7 +985,11 @@ public sealed unsafe partial class VulkanRenderer
     {
         lock (_vkCacheLock)
         {
-            if (_vkCacheClosed || _vkCachePath == null) return;
+            if (_vkCacheClosed || _vkCachePath == null)
+            {
+                return;
+            }
+
             Interlocked.Exchange(ref _newPipelines, 0);
             try
             {
@@ -676,17 +1000,39 @@ public sealed unsafe partial class VulkanRenderer
                 for (int attempt = 0; attempt < 4 && file == null; attempt++)
                 {
                     size = 0;
-                    if (_vk.GetPipelineCacheData(_dev, _vkPipelineCache, ref size, null) != Result.Success || size == 0 || size > int.MaxValue / 2) return;
+                    if (_vk.GetPipelineCacheData(_dev, _vkPipelineCache, ref size, null) != Result.Success || size == 0 || size > int.MaxValue / 2)
+                    {
+                        return;
+                    }
+
                     size += size / 8; // headroom for concurrent additions
                     // reused between saves (guarded by _vkCacheLock): the cache grows to megabytes and is saved repeatedly
-                    if (_vkCacheSaveBuf.Length < VkCacheHeaderSize + (int)size) _vkCacheSaveBuf = new byte[VkCacheHeaderSize + (int)size + (int)size / 4];
+                    if (_vkCacheSaveBuf.Length < VkCacheHeaderSize + (int)size)
+                    {
+                        _vkCacheSaveBuf = new byte[VkCacheHeaderSize + (int)size + (int)size / 4];
+                    }
+
                     var buf = _vkCacheSaveBuf;
                     Result r;
-                    fixed (byte* p = &buf[VkCacheHeaderSize]) r = _vk.GetPipelineCacheData(_dev, _vkPipelineCache, ref size, p);
-                    if (r == Result.Success) file = buf;
-                    else if (r != Result.Incomplete) return;
+                    fixed (byte* p = &buf[VkCacheHeaderSize])
+                    {
+                        r = _vk.GetPipelineCacheData(_dev, _vkPipelineCache, ref size, p);
+                    }
+
+                    if (r == Result.Success)
+                    {
+                        file = buf;
+                    }
+                    else if (r != Result.Incomplete)
+                    {
+                        return;
+                    }
                 }
-                if (file == null) return;
+                if (file == null)
+                {
+                    return;
+                }
+
                 var props = _core.Properties;
                 var f = file.AsSpan();
                 BinaryPrimitives.WriteUInt32LittleEndian(f, VkCacheMagic);
@@ -706,7 +1052,10 @@ public sealed unsafe partial class VulkanRenderer
                 }
                 File.Move(tmp, _vkCachePath, true);
             }
-            catch (Exception e) { Log.WarnOnce("vkcache-save", $"[shadercache] saving the driver pipeline cache failed: {e.Message}"); }
+            catch (Exception e)
+            {
+                Log.WarnOnce("vkcache-save", $"[shadercache] saving the driver pipeline cache failed: {e.Message}");
+            }
         }
     }
 
@@ -715,18 +1064,29 @@ public sealed unsafe partial class VulkanRenderer
     {
         StopPrewarm();
         SaveVkPipelineCache();
-        lock (_vkCacheLock) _vkCacheClosed = true;
+        lock (_vkCacheLock)
+        {
+            _vkCacheClosed = true;
+        }
+
         _shaderPack?.Dispose();
         _pipelineList?.Dispose();
         _recipes?.Dispose();
         if (_titleId != null)
+        {
             Log.Info($"[shadercache] session {_titleId}: shaders {_statShaderPackHits} from cache, {_statShaderMisses} translated+compiled, {_statShaderMemHits} prewarmed/shared"
                 + $" ({Ms(_statShaderTicks):F0} ms on the GPU thread); pipelines {_statPrewarmed} prewarmed ({_statPrewarmUsed} used),"
                 + $" {_statGpuPipelines} compiled on the GPU thread ({Ms(_statGpuPipelineTicks):F0} ms, worst {Ms(_statGpuPipelineMaxTicks):F1} ms);"
                 + $" frames stalled >= {HitchMs} ms by shader/pipeline work: {_statHitchFrames}, >= {LongHitchMs} ms: {_statLongHitchFrames} (worst {Ms(_statWorstFrameStallTicks):F1} ms);"
                 + $" shaderc ({_compiler.OptLevel}): {ShaderCompiler.Compiled} compiled in {Ms(ShaderCompiler.CompileTicks):F0} ms, {ShaderCompiler.DiskHits} .spv disk hits; prefetch: {_statAsyncQueued} shaders queued to {(_shaderWorkers?.Length ?? 0)} workers, {_statAsyncWaited} waited for by the GPU thread; {_statPipelinesPrefetched} pipelines prefetched, {_statPipelineWaits} waited for ({Ms(_statPipelineWaitTicks):F0} ms)"
                 + $"; rebuild: {_rebuildSummary ?? (_rebuildActive ? "still running" : "not needed")}");
-        if (_titleId != null) Log.Info(StallReport());
+        }
+
+        if (_titleId != null)
+        {
+            Log.Info(StallReport());
+        }
+
         _stalls.Clear();
     }
 }

@@ -16,8 +16,16 @@ public static unsafe class WriteWatch
     /// <summary>Called on the loading thread with (address, size).</summary>
     public static Action<uint, int>? OnRead;
 
-    public static void Set(uint addr, uint length) { Lo = addr; Span = length; }
-    public static void SetRead(uint addr, uint length) { ReadLo = addr; ReadSpan = length; }
+    public static void Set(uint addr, uint length)
+    {
+        Lo = addr;
+        Span = length;
+    }
+    public static void SetRead(uint addr, uint length)
+    {
+        ReadLo = addr;
+        ReadSpan = length;
+    }
 
     [System.Runtime.CompilerServices.MethodImpl(System.Runtime.CompilerServices.MethodImplOptions.NoInlining)]
     internal static void Hit(uint addr, int size, ulong value) => OnHit?.Invoke(addr, size, value);
@@ -30,9 +38,17 @@ public static unsafe class WriteWatch
     /// length, so the log line tells an HLE write from a CPU store).</summary>
     public static void HitRange(uint addr, uint len)
     {
-        if (!Enabled || Span == 0 || OnHit == null) return;
+        if (!Enabled || Span == 0 || OnHit == null)
+        {
+            return;
+        }
+
         ulong end = (ulong)addr + len, lo = Lo, hi = lo + Span;
-        if (addr >= hi || end <= lo) return;
+        if (addr >= hi || end <= lo)
+        {
+            return;
+        }
+
         uint a = Math.Max(addr, Lo);
         OnHit(a, (int)Math.Min(len, int.MaxValue), Memory.GuestMemory.R32(a & ~3u));
     }

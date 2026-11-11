@@ -96,7 +96,10 @@ public sealed record FirmwareInfo(string? Version, uint Build, string Source, Da
         {
             return Directory.Exists(ext) && Directory.EnumerateFiles(ext, "*.suprx").Any();
         }
-        catch (Exception e) when (e is IOException or UnauthorizedAccessException) { return false; }
+        catch (Exception e) when (e is IOException or UnauthorizedAccessException)
+        {
+            return false;
+        }
     }
 
     /// <summary>"3.74" from the app-info system-software version (0x00000374_00000000 for 3.74) of a firmware module.</summary>

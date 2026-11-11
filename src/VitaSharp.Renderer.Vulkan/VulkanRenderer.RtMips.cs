@@ -34,14 +34,25 @@ public sealed unsafe partial class VulkanRenderer
     {
         uint w = d.Width, h = d.Height;
         uint mips = Math.Min(d.MipCount, (uint)BitOperations.Log2(Math.Max(w, h)) + 1);
-        if (mips <= 1) return null;
+        if (mips <= 1)
+        {
+            return null;
+        }
+
         var info = Formats.Texture(GxmFormats.BaseOf(d.Format));
         // level 0 is copied from the surface image, the other levels are uploaded: both need the surface's layout
         var hostFormat = rt.Format is Format.B8G8R8A8Unorm ? Format.Undefined : rt.Format;
         if (info.Compressed || info.Convert != TexConvert.None || info.Format != hostFormat
-            || HostBytesPerPixel(rt.Format) != Formats.ColorBytesPerPixel(rt.ColorFormat)) return null;
+            || HostBytesPerPixel(rt.Format) != Formats.ColorBytesPerPixel(rt.ColorFormat))
+        {
+            return null;
+        }
+
         var viewFormat = gamma ? Formats.Srgb(rt.Format) : rt.Format;
-        if (!_core.SupportsSampled(viewFormat)) return null;
+        if (!_core.SupportsSampled(viewFormat))
+        {
+            return null;
+        }
 
         var key = (rt, x0, y0, d.Format, w, h, mips, gamma);
         if (!_rtMipTextures.TryGetValue(key, out var t))
@@ -77,11 +88,18 @@ public sealed unsafe partial class VulkanRenderer
             }
         }
         bool copyBase = t.Version != rt.Version;
-        if (!copyBase && !uploadUpper) return t.View;
+        if (!copyBase && !uploadUpper)
+        {
+            return t.View;
+        }
 
         // another surface (and the levels from memory) go before the open rendering; the scene's own surface ends it
         using var outside = BeginOutside(t.View, rt);
-        if (copyBase) { rt.Dirty = true; SyncRenderTargetForRead(rt); }
+        if (copyBase)
+        {
+            rt.Dirty = true;
+            SyncRenderTargetForRead(rt);
+        }
         Barrier(t.Image, ImageLayout.ShaderReadOnlyOptimal, ImageLayout.TransferDstOptimal, ImageAspectFlags.ColorBit,
             PipelineStageFlags.FragmentShaderBit | PipelineStageFlags.VertexShaderBit, PipelineStageFlags.TransferBit, AccessFlags.ShaderReadBit, AccessFlags.TransferWriteBit);
         if (copyBase)

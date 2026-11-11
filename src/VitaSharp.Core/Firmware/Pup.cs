@@ -46,31 +46,13 @@ public sealed class Pup : IDisposable
     readonly Stream _stream;
     readonly bool _ownsStream;
 
-    public ulong PackageVersion
-    {
-        get;
-    }
+    public ulong PackageVersion { get; }
     /// <summary>Firmware version as stored in the header, e.g. 0x03740000 for 3.74.</summary>
-    public uint FirmwareVersion
-    {
-        get;
-    }
-    public uint BuildNumber
-    {
-        get;
-    }
-    public long HeaderLength
-    {
-        get;
-    }
-    public long PackageLength
-    {
-        get;
-    }
-    public IReadOnlyList<PupEntry> Entries
-    {
-        get;
-    }
+    public uint FirmwareVersion { get; }
+    public uint BuildNumber { get; }
+    public long HeaderLength { get; }
+    public long PackageLength { get; }
+    public IReadOnlyList<PupEntry> Entries { get; }
 
     /// <summary>"3.74" from <see cref="FirmwareVersion"/> (major.minor, each a BCD byte).</summary>
     public string FirmwareVersionString => FormatVersion(FirmwareVersion);

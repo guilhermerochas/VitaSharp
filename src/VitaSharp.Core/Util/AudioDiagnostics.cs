@@ -72,7 +72,10 @@ public static class AudioDiagnostics
         var p = new PortStats { Name = name, Grain = grain, Freq = freq, Channels = channels, Stream = stream };
         Open[p] = 0;
         if (DebugMode.Enabled)
+        {
             Log.Info($"[dbg] {Frame} AUDIO open {p.Describe()}, expected {p.ExpectedPerSecond:F1} outputs/s{(stream == null ? ", no host stream (paced by the clock)" : "")}");
+        }
+
         return p;
     }
 
@@ -81,25 +84,47 @@ public static class AudioDiagnostics
     {
         lock (p.Lock)
         {
-            p.Grain = grain; p.Freq = freq; p.Channels = channels;
-            if (!ReferenceEquals(p.Stream, stream)) { p.Stream = stream; p.StreamUnderrunsSeen = 0; }
+            p.Grain = grain;
+            p.Freq = freq;
+            p.Channels = channels;
+            if (!ReferenceEquals(p.Stream, stream))
+            {
+                p.Stream = stream;
+                p.StreamUnderrunsSeen = 0;
+            }
         }
-        if (DebugMode.Enabled) Log.Info($"[dbg] {Frame} AUDIO config {p.Describe()}");
+        if (DebugMode.Enabled)
+        {
+            Log.Info($"[dbg] {Frame} AUDIO config {p.Describe()}");
+        }
     }
 
     public static void ClosePort(PortStats p)
     {
-        if (!Open.TryRemove(p, out _)) return;
+        if (!Open.TryRemove(p, out _))
+        {
+            return;
+        }
+
         p.ClosedAt = Now;
         Closed.Enqueue(p);
-        while (Closed.Count > 64 && Closed.TryDequeue(out _)) { }
-        if (DebugMode.Enabled) Log.Info($"[dbg] {Frame} AUDIO release {p.Describe()}: {Totals(p)}");
+        while (Closed.Count > 64 && Closed.TryDequeue(out _))
+        {
+        }
+        if (DebugMode.Enabled)
+        {
+            Log.Info($"[dbg] {Frame} AUDIO release {p.Describe()}: {Totals(p)}");
+        }
     }
 
     /// <summary>sceAppMgrLoadExec replaced the process: its ports count as released, its streams are gone.</summary>
     public static void ProcessEnded()
     {
-        foreach (var p in Open.Keys) ClosePort(p);
+        foreach (var p in Open.Keys)
+        {
+            ClosePort(p);
+        }
+
         Streams.Clear();
     }
 
@@ -113,28 +138,68 @@ public static class AudioDiagnostics
             {
                 double gap = now - p.LastOutput;
                 p.LastGap = gap;
-                p.Gaps++; p.GapSum += gap; if (gap > p.GapMax) p.GapMax = gap;
-                p.IGaps++; p.IGapSum += gap; if (gap > p.IGapMax) p.IGapMax = gap;
+                p.Gaps++;
+                p.GapSum += gap;
+                if (gap > p.GapMax)
+                {
+                    p.GapMax = gap;
+                }
+
+                p.IGaps++;
+                p.IGapSum += gap;
+                if (gap > p.IGapMax)
+                {
+                    p.IGapMax = gap;
+                }
             }
             p.LastOutput = now;
-            p.Outputs++; p.IOutputs++;
-            if (silent) { p.Silent++; p.ISilent++; }
+            p.Outputs++;
+            p.IOutputs++;
+            if (silent)
+            {
+                p.Silent++;
+                p.ISilent++;
+            }
         }
     }
 
     /// <summary>After the host stream accepted a grain: picks up the underruns it detected.</summary>
     public static void AfterSubmit(PortStats p)
     {
-        if (p.Stream is not { } s) return;
+        if (p.Stream is not { } s)
+        {
+            return;
+        }
+
         int u = s.Underruns;
-        if (u == p.StreamUnderrunsSeen) return;
+        if (u == p.StreamUnderrunsSeen)
+        {
+            return;
+        }
+
         int n;
         bool idle;
-        lock (p.Lock) { n = u - p.StreamUnderrunsSeen; p.StreamUnderrunsSeen = u; idle = ResumedAfterIdle(p); }
-        if (n <= 0) return;
+        lock (p.Lock)
+        {
+            n = u - p.StreamUnderrunsSeen;
+            p.StreamUnderrunsSeen = u;
+            idle = ResumedAfterIdle(p);
+        }
+        if (n <= 0)
+        {
+            return;
+        }
         // a port that was simply idle (UI sounds of the shell: one short sound now and then) drains its host queue
         // between sounds: that is not a stall of the guest's output, so it is counted apart and not logged
-        if (idle) { lock (p.Lock) p.IdleResumes++; return; }
+        if (idle)
+        {
+            lock (p.Lock)
+            {
+                p.IdleResumes++;
+            }
+
+            return;
+        }
         Underrun(p, n);
     }
 
@@ -154,35 +219,57 @@ public static class AudioDiagnostics
         long burst;
         lock (p.Lock)
         {
-            p.Underruns += n; p.IUnderruns += n;
+            p.Underruns += n;
+            p.IUnderruns += n;
             start = !p.InBurst || now - p.BurstLast > BurstQuietSeconds;
             if (start)
             {
-                if (p.InBurst) EndBurstLocked(p);
-                p.InBurst = true; p.BurstStart = now; p.BurstCount = 0; p.BurstNumber++;
+                if (p.InBurst)
+                {
+                    EndBurstLocked(p);
+                }
+
+                p.InBurst = true;
+                p.BurstStart = now;
+                p.BurstCount = 0;
+                p.BurstNumber++;
             }
             p.BurstCount += n;
             p.BurstLast = now;
             sincePrev = p.LastGap;
             burst = p.BurstNumber;
         }
-        if (!start) return;
+        if (!start)
+        {
+            return;
+        }
         // one line per burst (debug mode: every burst; otherwise the 1st-3rd, 10th, 100th... burst)
         if (DebugMode.Enabled || DebugMode.ShouldLog((int)Math.Min(burst, int.MaxValue)))
+        {
             Log.Warn($"Audio: underrun burst #{burst} on {p.Name} at {Frame}: host queue ran dry, {sincePrev * 1000:F1} ms since the previous output " +
                      $"(grain {p.Grain * 1000.0 / Math.Max(1, p.Freq):F1} ms), host queue {Pending(p)} samples");
+        }
     }
 
     static void EndBurstLocked(PortStats p)
     {
         p.InBurst = false;
         if (DebugMode.Enabled)
+        {
             Log.Info($"[dbg] {Frame} AUDIO underrun burst #{p.BurstNumber} on {p.Name} ended: {p.BurstCount} underruns over {(p.BurstLast - p.BurstStart) * 1000:F0} ms");
+        }
     }
 
     static int Pending(PortStats p)
     {
-        try { return p.Stream?.PendingSamples ?? 0; } catch { return -1; }
+        try
+        {
+            return p.Stream?.PendingSamples ?? 0;
+        }
+        catch
+        {
+            return -1;
+        }
     }
 
     // ------------------------------------------------------------------ decoder and NGS streams
@@ -190,12 +277,18 @@ public static class AudioDiagnostics
     public static void StreamOpened(string key, string description)
     {
         Streams[key] = description;
-        if (DebugMode.Enabled) Log.Info($"[dbg] {Frame} AUDIO open {description}");
+        if (DebugMode.Enabled)
+        {
+            Log.Info($"[dbg] {Frame} AUDIO open {description}");
+        }
     }
 
     public static void StreamClosed(string key)
     {
-        if (Streams.TryRemove(key, out var d) && DebugMode.Enabled) Log.Info($"[dbg] {Frame} AUDIO release {d}");
+        if (Streams.TryRemove(key, out var d) && DebugMode.Enabled)
+        {
+            Log.Info($"[dbg] {Frame} AUDIO release {d}");
+        }
     }
 
     // ------------------------------------------------------------------ reports
@@ -203,20 +296,49 @@ public static class AudioDiagnostics
     /// <summary>Debug mode was switched on: everything already open, since those open lines were not logged.</summary>
     internal static void OnDebugModeChanged(bool on)
     {
-        if (!on) return;
+        if (!on)
+        {
+            return;
+        }
+
         double now = Now;
         foreach (var p in Open.Keys)
-            lock (p.Lock) { p.IOutputs = p.ISilent = p.IUnderruns = p.IGaps = 0; p.IGapSum = p.IGapMax = 0; p.IAt = now; }
-        if (Open.IsEmpty && Streams.IsEmpty) return;
-        foreach (var l in SnapshotLines()) Log.Info($"[dbg] {Frame} AUDIO snapshot: {l}");
+        {
+            lock (p.Lock)
+            {
+                p.IOutputs = p.ISilent = p.IUnderruns = p.IGaps = 0;
+                p.IGapSum = p.IGapMax = 0;
+                p.IAt = now;
+            }
+        }
+
+        if (Open.IsEmpty && Streams.IsEmpty)
+        {
+            return;
+        }
+
+        foreach (var l in SnapshotLines())
+        {
+            Log.Info($"[dbg] {Frame} AUDIO snapshot: {l}");
+        }
     }
 
     static IEnumerable<string> SnapshotLines()
     {
-        if (DeviceInfo?.Invoke() is { Length: > 0 } dev) yield return "device " + dev;
+        if (DeviceInfo?.Invoke() is { Length: > 0 } dev)
+        {
+            yield return "device " + dev;
+        }
+
         foreach (var p in Open.Keys.OrderBy(p => p.Name))
+        {
             yield return $"{p.Describe()}, host queue {Pending(p)} samples, {Totals(p)}";
-        foreach (var s in Streams.OrderBy(k => k.Key)) yield return s.Value;
+        }
+
+        foreach (var s in Streams.OrderBy(k => k.Key))
+        {
+            yield return s.Value;
+        }
     }
 
     /// <summary>Debug mode, every <see cref="PeriodSeconds"/>: one line per open port for the last interval.</summary>
@@ -228,12 +350,18 @@ public static class AudioDiagnostics
             string line;
             lock (p.Lock)
             {
-                if (p.InBurst && now - p.BurstLast > BurstQuietSeconds) EndBurstLocked(p);
+                if (p.InBurst && now - p.BurstLast > BurstQuietSeconds)
+                {
+                    EndBurstLocked(p);
+                }
+
                 double secs = Math.Max(0.001, now - p.IAt);
                 line = $"[dbg] {Frame} AUDIO {p.Name}: {p.IOutputs / secs:F1} outputs/s (expected {p.ExpectedPerSecond:F1}), " +
                        $"gap avg {(p.IGaps > 0 ? p.IGapSum / p.IGaps * 1000 : 0):F2} ms max {p.IGapMax * 1000:F1} ms (grain {p.Grain * 1000.0 / Math.Max(1, p.Freq):F2} ms), " +
                        $"host queue {Pending(p)} samples, underruns {p.IUnderruns}, silent {p.ISilent}/{p.IOutputs} over {secs:F1} s";
-                p.IOutputs = p.ISilent = p.IUnderruns = p.IGaps = 0; p.IGapSum = p.IGapMax = 0; p.IAt = now;
+                p.IOutputs = p.ISilent = p.IUnderruns = p.IGaps = 0;
+                p.IGapSum = p.IGapMax = 0;
+                p.IAt = now;
             }
             Log.Info(line);
         }
@@ -253,9 +381,20 @@ public static class AudioDiagnostics
     public static IEnumerable<string> SummaryLines()
     {
         var all = Closed.Concat(Open.Keys).OrderBy(p => p.OpenedAt).ToList();
-        if (all.Count == 0) yield break;
-        if (DeviceInfo?.Invoke() is { Length: > 0 } dev) yield return "AUDIO summary: device " + dev;
-        foreach (var p in all) yield return $"AUDIO summary: {p.Describe()}{(p.ClosedAt > 0 ? " (released)" : "")}: {Totals(p)}";
+        if (all.Count == 0)
+        {
+            yield break;
+        }
+
+        if (DeviceInfo?.Invoke() is { Length: > 0 } dev)
+        {
+            yield return "AUDIO summary: device " + dev;
+        }
+
+        foreach (var p in all)
+        {
+            yield return $"AUDIO summary: {p.Describe()}{(p.ClosedAt > 0 ? " (released)" : "")}: {Totals(p)}";
+        }
     }
 
     /// <summary>The open ports, then the released ones still remembered (the last 64).</summary>
@@ -275,11 +414,22 @@ public static class AudioDiagnostics
         sb.AppendLine("device: " + (DeviceInfo?.Invoke() ?? "(no host audio device: ports are paced by the clock)"));
         sb.AppendLine("open ports:");
         foreach (var p in Open.Keys.OrderBy(p => p.Name))
+        {
             sb.AppendLine($"  {p.Describe()}, host queue {Pending(p)} samples, {(p.LastOutput > 0 ? $"last output {(Now - p.LastOutput) * 1000:F0} ms ago" : "no output yet")}; {Totals(p)}");
+        }
+
         sb.AppendLine("released ports:");
-        foreach (var p in Closed) sb.AppendLine($"  {p.Describe()}: {Totals(p)}");
+        foreach (var p in Closed)
+        {
+            sb.AppendLine($"  {p.Describe()}: {Totals(p)}");
+        }
+
         sb.AppendLine("NGS systems and decoder streams:");
-        foreach (var s in Streams.OrderBy(k => k.Key)) sb.AppendLine("  " + s.Value);
+        foreach (var s in Streams.OrderBy(k => k.Key))
+        {
+            sb.AppendLine("  " + s.Value);
+        }
+
         return sb.ToString();
     }
 }

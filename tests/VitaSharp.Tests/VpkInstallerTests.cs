@@ -32,7 +32,10 @@ static class SfoWriter
                 index.Add((keyOff, 0x0204, (uint)bytes.Length, max, dataOff));
             }
         }
-        while (keyTable.Length % 4 != 0) keyTable.WriteByte(0);
+        while (keyTable.Length % 4 != 0)
+        {
+            keyTable.WriteByte(0);
+        }
 
         uint keyTableOff = (uint)(0x14 + 16 * index.Count);
         uint dataTableOff = keyTableOff + (uint)keyTable.Length;
@@ -45,7 +48,11 @@ static class SfoWriter
         w.Write((uint)index.Count);
         foreach (var e in index)
         {
-            w.Write(e.keyOff); w.Write(e.fmt); w.Write(e.len); w.Write(e.max); w.Write(e.dataOff);
+            w.Write(e.keyOff);
+            w.Write(e.fmt);
+            w.Write(e.len);
+            w.Write(e.max);
+            w.Write(e.dataOff);
         }
         w.Write(keyTable.ToArray());
         w.Write(dataTable.ToArray());
@@ -73,7 +80,11 @@ public sealed class VpkInstallerTests : IDisposable
 
     public void Dispose()
     {
-        try { Directory.Delete(_root, true); } catch (IOException) { }
+        try
+        {
+            Directory.Delete(_root, true);
+        }
+        catch (IOException) { }
     }
 
     static readonly byte[] FakeEboot = Encoding.ASCII.GetBytes("\u007fELF placeholder eboot");
@@ -82,13 +93,20 @@ public sealed class VpkInstallerTests : IDisposable
     {
         var ms = new MemoryStream();
         using (var zip = new ZipArchive(ms, ZipArchiveMode.Create, leaveOpen: true))
+        {
             foreach (var (name, data) in entries)
             {
                 var e = zip.CreateEntry(name);
-                if (name.EndsWith('/')) continue;
+                if (name.EndsWith('/'))
+                {
+                    continue;
+                }
+
                 using var s = e.Open();
                 s.Write(data);
             }
+        }
+
         ms.Position = 0;
         return ms;
     }
@@ -243,7 +261,16 @@ public sealed class VpkInstallerTests : IDisposable
         using var cts = new CancellationTokenSource();
         var entries = AppEntries("", "PCSE00009").Append(("big.bin", new byte[1 << 20])).ToArray();
         Assert.ThrowsAny<OperationCanceledException>(() => VpkInstaller.Install(Zip(entries), Ux0,
-            new VpkInstallOptions { Progress = p => { if (p.BytesDone > 0) cts.Cancel(); } }, cts.Token));
+            new VpkInstallOptions
+            {
+                Progress = p =>
+                {
+                    if (p.BytesDone > 0)
+                    {
+                        cts.Cancel();
+                    }
+                }
+            }, cts.Token));
         Assert.False(Directory.Exists(Path.Combine(Ux0, "app", "PCSE00009")));
         Assert.False(Directory.Exists(Path.Combine(Ux0, ".vpk-tmp")));
     }

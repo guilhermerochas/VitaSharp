@@ -24,7 +24,11 @@ public sealed unsafe partial class VulkanRenderer
         public nint Alloc(out int id)
         {
             id = _next;
-            if (_next >= UniformHeapChunks) return 0;
+            if (_next >= UniformHeapChunks)
+            {
+                return 0;
+            }
+
             _next++;
             return ptr + (nint)id * UniformArena.ChunkSize;
         }
@@ -43,7 +47,11 @@ public sealed unsafe partial class VulkanRenderer
 
     void DestroyUniformHeap()
     {
-        if (_uniformHeap is not { } h) return;
+        if (_uniformHeap is not { } h)
+        {
+            return;
+        }
+
         UniformArena.Detach(h);
         _core.DestroyBuffer(h.Buffer, h.Memory);
         _uniformHeap = null;
@@ -52,7 +60,11 @@ public sealed unsafe partial class VulkanRenderer
     /// <summary>The draw's uniform bindings 0/1: in place in the uniform heap, else copied into the upload ring.</summary>
     void DrawUniformInfos(DrawCommand d, DescriptorBufferInfo* infos)
     {
-        if (ShaderGenerator.SplitUniformSlots) SplitInfos(d, infos + 4);
+        if (ShaderGenerator.SplitUniformSlots)
+        {
+            SplitInfos(d, infos + 4);
+        }
+
         if (d.UniformChunk is { } c && _uniformHeap is { } h && ReferenceEquals(c.Heap, h))
         {
             HoldForFrame(c);
@@ -62,7 +74,11 @@ public sealed unsafe partial class VulkanRenderer
             infos[1] = d.FragmentUniformsLength == 0 ? new DescriptorBufferInfo(_dummyBuffer, 0, 256) : new DescriptorBufferInfo(h.Buffer, chunkOff + (ulong)d.FragmentUniformsOffset, (ulong)d.FragmentUniformsLength);
             return;
         }
-        if (d.VertexUniformsLength + d.FragmentUniformsLength > 0) _statUniformCopied++; // (only split slots: nothing to bind here)
+        if (d.VertexUniformsLength + d.FragmentUniformsLength > 0)
+        {
+            _statUniformCopied++; // (only split slots: nothing to bind here)
+        }
+
         infos[0] = UniformInfo(d.VertexUniformSpan);
         infos[1] = UniformInfo(d.FragmentUniformSpan);
     }
@@ -70,7 +86,11 @@ public sealed unsafe partial class VulkanRenderer
     /// <summary>The frame reads the heap chunk until its fence retires (Deferred runs then).</summary>
     void HoldForFrame(UniformChunk c)
     {
-        if (c.BackendTag == _frameSerial) return;
+        if (c.BackendTag == _frameSerial)
+        {
+            return;
+        }
+
         c.BackendTag = _frameSerial;
         UniformArena.AddRef(c);
         F.Deferred.Add(() => UniformArena.Release(c));
@@ -82,13 +102,20 @@ public sealed unsafe partial class VulkanRenderer
     {
         for (int i = 0; i < 4; i++)
         {
-            if (d.SplitChunks[i] is not { } c) { infos[i] = new DescriptorBufferInfo(_dummyBuffer, 0, 256); continue; }
+            if (d.SplitChunks[i] is not { } c)
+            {
+                infos[i] = new DescriptorBufferInfo(_dummyBuffer, 0, 256);
+                continue;
+            }
             if (_uniformHeap is { } h && ReferenceEquals(c.Heap, h))
             {
                 HoldForFrame(c);
                 infos[i] = new DescriptorBufferInfo(h.Buffer, (ulong)c.HeapId * UniformArena.ChunkSize + (ulong)d.SplitOffsets[i], (ulong)d.SplitSizes[i]);
             }
-            else infos[i] = UniformInfo(d.SplitSpan(i));
+            else
+            {
+                infos[i] = UniformInfo(d.SplitSpan(i));
+            }
         }
     }
 }

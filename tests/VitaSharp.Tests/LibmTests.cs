@@ -20,7 +20,11 @@ public sealed class LibmTests(GuestMemoryFixture fx) : IDisposable
 
     static unsafe double D(GuestThread t, string fn, double[] args, params object[] extra)
     {
-        for (int i = 0; i < args.Length; i++) ((double*)t.Core.State->D)[i] = args[i];
+        for (int i = 0; i < args.Length; i++)
+        {
+            ((double*)t.Core.State->D)[i] = args[i];
+        }
+
         return Convert.ToDouble(Invoke(t.Process.Hle.Modules.OfType<Libm>().Single(), fn, [t.Hle, .. extra]));
     }
 
@@ -40,8 +44,12 @@ public sealed class LibmTests(GuestMemoryFixture fx) : IDisposable
             Assert.Equal(0, R("acos", 1), 12);
             Assert.Equal(Math.PI / 4, R("atan", 1), 12);
             Assert.Equal(-Math.PI / 2, R("atan2", -1, 0), 12);
-            Assert.Equal(0, R("sinh", 0)); Assert.Equal(1, R("cosh", 0)); Assert.Equal(0, R("tanh", 0));
-            Assert.Equal(0, R("asinh", 0)); Assert.Equal(0, R("acosh", 1)); Assert.Equal(0, R("atanh", 0));
+            Assert.Equal(0, R("sinh", 0));
+            Assert.Equal(1, R("cosh", 0));
+            Assert.Equal(0, R("tanh", 0));
+            Assert.Equal(0, R("asinh", 0));
+            Assert.Equal(0, R("acosh", 1));
+            Assert.Equal(0, R("atanh", 0));
             Assert.Equal(Math.E, R("exp", 1), 12);
             Assert.Equal(1024, R("exp2", 10));
             Assert.Equal(1e-10, R("expm1", 1e-10), 1e-18);
@@ -58,15 +66,23 @@ public sealed class LibmTests(GuestMemoryFixture fx) : IDisposable
             Assert.Equal(1, R("erfc", 0));
             Assert.Equal(24, R("tgamma", 5), 9);
             Assert.Equal(0, R("lgamma", 1), 9);
-            Assert.Equal(3, R("ceil", 2.1)); Assert.Equal(2, R("floor", 2.9)); Assert.Equal(-2, R("trunc", -2.9));
-            Assert.Equal(3, R("round", 2.5)); Assert.Equal(-3, R("round", -2.5));
-            Assert.Equal(2, R("rint", 2.5)); Assert.Equal(4, R("nearbyint", 3.5));
+            Assert.Equal(3, R("ceil", 2.1));
+            Assert.Equal(2, R("floor", 2.9));
+            Assert.Equal(-2, R("trunc", -2.9));
+            Assert.Equal(3, R("round", 2.5));
+            Assert.Equal(-3, R("round", -2.5));
+            Assert.Equal(2, R("rint", 2.5));
+            Assert.Equal(4, R("nearbyint", 3.5));
             Assert.Equal(2.5, R("fabs", -2.5));
-            Assert.Equal(1, R("fmod", 7, 3)); Assert.Equal(-1, R("fmod", -7, 3));
-            Assert.Equal(1, R("remainder", 7, 3)); Assert.Equal(-1, R("remainder", 8, 3));
+            Assert.Equal(1, R("fmod", 7, 3));
+            Assert.Equal(-1, R("fmod", -7, 3));
+            Assert.Equal(1, R("remainder", 7, 3));
+            Assert.Equal(-1, R("remainder", 8, 3));
             Assert.Equal(-3, R("copysign", 3, -0.0));
-            Assert.Equal(2, R("fdim", 5, 3)); Assert.Equal(0, R("fdim", 3, 5));
-            Assert.Equal(1, R("fmax", double.NaN, 1)); Assert.Equal(1, R("fmin", 1, double.NaN));
+            Assert.Equal(2, R("fdim", 5, 3));
+            Assert.Equal(0, R("fdim", 3, 5));
+            Assert.Equal(1, R("fmax", double.NaN, 1));
+            Assert.Equal(1, R("fmin", 1, double.NaN));
             Assert.True(R("nextafter", 1, 2) > 1);
             Assert.Equal(7, R("fma", 2, 3, 1));
             Assert.Equal(1024, D(t, "ldexp", [1], 10));
@@ -96,27 +112,55 @@ public sealed class LibmTests(GuestMemoryFixture fx) : IDisposable
         _h.OnGuest(t =>
         {
             float F(string fn, params float[] a) => Convert.ToSingle(Invoke(M, fn, a.Cast<object>().ToArray()));
-            Assert.Equal(0f, F("sinf", 0)); Assert.Equal(1f, F("cosf", 0)); Assert.Equal(1f, F("tanf", MathF.PI / 4), 5);
-            Assert.Equal(MathF.PI / 2, F("asinf", 1), 5); Assert.Equal(0f, F("acosf", 1)); Assert.Equal(MathF.PI / 4, F("atanf", 1), 5);
+            Assert.Equal(0f, F("sinf", 0));
+            Assert.Equal(1f, F("cosf", 0));
+            Assert.Equal(1f, F("tanf", MathF.PI / 4), 5);
+            Assert.Equal(MathF.PI / 2, F("asinf", 1), 5);
+            Assert.Equal(0f, F("acosf", 1));
+            Assert.Equal(MathF.PI / 4, F("atanf", 1), 5);
             Assert.Equal(MathF.PI / 2, F("atan2f", 1, 0), 5);
-            Assert.Equal(0f, F("sinhf", 0)); Assert.Equal(1f, F("coshf", 0)); Assert.Equal(0f, F("tanhf", 0));
-            Assert.Equal(0f, F("asinhf", 0)); Assert.Equal(0f, F("acoshf", 1)); Assert.Equal(0f, F("atanhf", 0));
-            Assert.Equal(MathF.E, F("expf", 1), 5); Assert.Equal(8f, F("exp2f", 3)); Assert.Equal(0f, F("expm1f", 0));
-            Assert.Equal(1f, F("logf", MathF.E), 5); Assert.Equal(2f, F("log10f", 100), 5); Assert.Equal(3f, F("log2f", 8));
-            Assert.Equal(0f, F("log1pf", 0)); Assert.Equal(3f, F("logbf", 8));
-            Assert.Equal(8f, F("powf", 2, 3)); Assert.Equal(4f, F("sqrtf", 16)); Assert.Equal(2f, F("cbrtf", 8), 5);
+            Assert.Equal(0f, F("sinhf", 0));
+            Assert.Equal(1f, F("coshf", 0));
+            Assert.Equal(0f, F("tanhf", 0));
+            Assert.Equal(0f, F("asinhf", 0));
+            Assert.Equal(0f, F("acoshf", 1));
+            Assert.Equal(0f, F("atanhf", 0));
+            Assert.Equal(MathF.E, F("expf", 1), 5);
+            Assert.Equal(8f, F("exp2f", 3));
+            Assert.Equal(0f, F("expm1f", 0));
+            Assert.Equal(1f, F("logf", MathF.E), 5);
+            Assert.Equal(2f, F("log10f", 100), 5);
+            Assert.Equal(3f, F("log2f", 8));
+            Assert.Equal(0f, F("log1pf", 0));
+            Assert.Equal(3f, F("logbf", 8));
+            Assert.Equal(8f, F("powf", 2, 3));
+            Assert.Equal(4f, F("sqrtf", 16));
+            Assert.Equal(2f, F("cbrtf", 8), 5);
             Assert.Equal(5f, F("hypotf", 3, 4));
-            Assert.Equal(0f, F("erff", 0)); Assert.Equal(1f, F("erfcf", 0)); Assert.Equal(6f, F("tgammaf", 4), 4); Assert.Equal(0f, F("lgammaf", 2), 5);
-            Assert.Equal(3f, F("ceilf", 2.1f)); Assert.Equal(2f, F("floorf", 2.9f)); Assert.Equal(-2f, F("truncf", -2.9f));
-            Assert.Equal(3f, F("roundf", 2.5f)); Assert.Equal(2f, F("rintf", 2.5f)); Assert.Equal(4f, F("nearbyintf", 3.5f));
-            Assert.Equal(2f, F("fabsf", -2f)); Assert.Equal(1f, F("fmodf", 7, 3)); Assert.Equal(-1f, F("remainderf", 8, 3));
-            Assert.Equal(-3f, F("copysignf", 3, -1)); Assert.Equal(2f, F("fdimf", 5, 3));
-            Assert.Equal(2f, F("fmaxf", 1, 2)); Assert.Equal(1f, F("fminf", 1, 2));
+            Assert.Equal(0f, F("erff", 0));
+            Assert.Equal(1f, F("erfcf", 0));
+            Assert.Equal(6f, F("tgammaf", 4), 4);
+            Assert.Equal(0f, F("lgammaf", 2), 5);
+            Assert.Equal(3f, F("ceilf", 2.1f));
+            Assert.Equal(2f, F("floorf", 2.9f));
+            Assert.Equal(-2f, F("truncf", -2.9f));
+            Assert.Equal(3f, F("roundf", 2.5f));
+            Assert.Equal(2f, F("rintf", 2.5f));
+            Assert.Equal(4f, F("nearbyintf", 3.5f));
+            Assert.Equal(2f, F("fabsf", -2f));
+            Assert.Equal(1f, F("fmodf", 7, 3));
+            Assert.Equal(-1f, F("remainderf", 8, 3));
+            Assert.Equal(-3f, F("copysignf", 3, -1));
+            Assert.Equal(2f, F("fdimf", 5, 3));
+            Assert.Equal(2f, F("fmaxf", 1, 2));
+            Assert.Equal(1f, F("fminf", 1, 2));
             Assert.True(F("nextafterf", 1, 0) < 1);
             Assert.Equal(7f, F("fmaf", 2, 3, 1));
             Assert.Equal(3, Call(M, "ilogbf", 8f));
-            Assert.Equal(2, Call(M, "lrintf", 2.5f)); Assert.Equal(-3, Call(M, "lroundf", -2.5f));
-            Assert.Equal(2L, Convert.ToInt64(Invoke(M, "llrintf", 2.5f))); Assert.Equal(3L, Convert.ToInt64(Invoke(M, "llroundf", 2.5f)));
+            Assert.Equal(2, Call(M, "lrintf", 2.5f));
+            Assert.Equal(-3, Call(M, "lroundf", -2.5f));
+            Assert.Equal(2L, Convert.ToInt64(Invoke(M, "llrintf", 2.5f)));
+            Assert.Equal(3L, Convert.ToInt64(Invoke(M, "llroundf", 2.5f)));
             Assert.Equal(1024f, Convert.ToSingle(Invoke(M, "ldexpf", 1f, 10)));
 
             // frexp/modf/remquo write through their pointers

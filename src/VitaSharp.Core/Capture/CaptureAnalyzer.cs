@@ -107,7 +107,10 @@ public static class CaptureAnalyzer
                     }
                 }
             }
-            catch (Exception e) when (e is IOException or InvalidDataException or EndOfStreamException) { sb.AppendLine($"GPU dump unreadable past frame {dumpPresents.Count}: {e.Message}"); }
+            catch (Exception e) when (e is IOException or InvalidDataException or EndOfStreamException)
+            {
+                sb.AppendLine($"GPU dump unreadable past frame {dumpPresents.Count}: {e.Message}");
+            }
         }
 
         var input = ReadInput(dir);
@@ -245,7 +248,10 @@ public static class CaptureAnalyzer
 
                 sb.AppendLine();
             }
-            catch (Exception e) when (e is IOException or InvalidDataException) { sb.AppendLine($"  {Path.GetFileName(w)}: {e.Message}"); }
+            catch (Exception e) when (e is IOException or InvalidDataException)
+            {
+                sb.AppendLine($"  {Path.GetFileName(w)}: {e.Message}");
+            }
         }
         // session.txt is written after the analysis of a new recording: the frames' span then gives the length
         double recorded = ParseSeconds(session.GetValueOrDefault("recorded"));
@@ -663,7 +669,10 @@ public static class CaptureAnalyzer
         {
             return File.ReadLines(t).Count(l => l.Length > 0 && l[0] != '#');
         }
-        catch (IOException) { return expected; }
+        catch (IOException)
+        {
+            return expected;
+        }
     }
 
     /// <summary><paramref name="cells"/> frame indices spread evenly from the first to the last frame.</summary>
@@ -791,7 +800,10 @@ public static class CaptureAnalyzer
                 CapturePng.Write(Path.Combine(dir, "frames.png"), img, SheetW * SheetCols, SheetH * rows);
                 o.Add($"  contact sheet: frames.png ({sheet.Count} frames across the recording, left to right then down, at {string.Join(" ", times)} s)");
             }
-            catch (IOException e) { o.Add($"  contact sheet not written: {e.Message}"); }
+            catch (IOException e)
+            {
+                o.Add($"  contact sheet not written: {e.Message}");
+            }
         }
 
         string before = Path.Combine(dir, "input_before.tsv");

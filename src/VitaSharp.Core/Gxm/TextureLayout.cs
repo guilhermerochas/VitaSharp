@@ -54,9 +54,21 @@ public static class TextureLayout
             uint x = Compact1By1(i >> 1) & (min - 1);
             uint y = Compact1By1(i) & (min - 1);
             uint upper = (i >> (2 * k)) << k;
-            if (width >= height) x |= upper; else y |= upper;
+            if (width >= height)
+            {
+                x |= upper;
+            }
+            else
+            {
+                y |= upper;
+            }
+
             int s = (int)i * bytesPerPixel, d = (int)(y * width + x) * bytesPerPixel;
-            if (s + bytesPerPixel > src.Length || d + bytesPerPixel > dst.Length) continue;
+            if (s + bytesPerPixel > src.Length || d + bytesPerPixel > dst.Length)
+            {
+                continue;
+            }
+
             src.Slice(s, bytesPerPixel).CopyTo(dst.Slice(d, bytesPerPixel));
         }
     }
@@ -64,12 +76,18 @@ public static class TextureLayout
     public static void TiledToLinear(Span<byte> dst, ReadOnlySpan<byte> src, uint width, uint height, int bytesPerPixel)
     {
         for (uint y = 0; y < height; y++)
+        {
             for (uint x = 0; x < width; x++)
             {
                 int s = (int)Tiled(x, y, width) * bytesPerPixel, d = (int)(y * width + x) * bytesPerPixel;
-                if (s + bytesPerPixel > src.Length) continue;
+                if (s + bytesPerPixel > src.Length)
+                {
+                    continue;
+                }
+
                 src.Slice(s, bytesPerPixel).CopyTo(dst.Slice(d, bytesPerPixel));
             }
+        }
     }
 
     /// <summary>
@@ -89,7 +107,11 @@ public static class TextureLayout
     public static uint CubeFaceStride(uint mipCountRaw, uint mips, uint width, uint height, int bitsPerPixel, bool compressed,
         uint blockWidth, uint blockHeight, uint blockBytes, uint usedBytes)
     {
-        if (mipCountRaw == 0xF || (mips <= 1 && (width <= 32 || height <= 32))) return Align(usedBytes, 4);
+        if (mipCountRaw == 0xF || (mips <= 1 && (width <= 32 || height <= 32)))
+        {
+            return Align(usedBytes, 4);
+        }
+
         uint size = usedBytes;
         uint pw = BitOperations.RoundUpToPowerOf2(width), ph = BitOperations.RoundUpToPowerOf2(height);
         for (int m = (int)mips; m < 32 && (pw >> m) > 0 && (ph >> m) > 0; m++)

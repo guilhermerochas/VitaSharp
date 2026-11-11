@@ -48,9 +48,19 @@ public static class Loc
     {
         var set = Resources.GetResourceSet(culture, createIfNotExists: true, tryParents: false);
         var table = new Dictionary<string, string>();
-        if (set == null) return table;
+        if (set == null)
+        {
+            return table;
+        }
+
         foreach (System.Collections.DictionaryEntry e in set)
-            if (e.Value is string s) table[(string)e.Key] = s;
+        {
+            if (e.Value is string s)
+            {
+                table[(string)e.Key] = s;
+            }
+        }
+
         return table;
     }
 }

@@ -41,5 +41,7 @@ public sealed unsafe class Arm64HostRunner : IArm64Runner
     }
     public void Call(ulong fn, ulong arg0, ulong arg1) => ((delegate* unmanaged<ulong, ulong, void>)fn)(arg0, arg1);
     public long Callouts => -1;
-    public void Dispose() { }
+    public void Dispose()
+    {
+    }
 }

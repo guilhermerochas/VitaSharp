@@ -91,7 +91,10 @@ public class InputMappingTests
             loaded.Remove("guid-1");
             Assert.Null(loaded.FindSaved("guid-1", "Xbox Wireless Controller"));
         }
-        finally { dir.Delete(true); }
+        finally
+        {
+            dir.Delete(true);
+        }
     }
 
     [Fact]
@@ -107,7 +110,10 @@ public class InputMappingTests
             Assert.Empty(s.Config.Controllers);
             Assert.Equal([InputBinding.OfKey("X"), InputBinding.OfKey("Space")], s.KeyboardProfile().Get(VitaControl.Cross));
         }
-        finally { dir.Delete(true); }
+        finally
+        {
+            dir.Delete(true);
+        }
     }
 
     [Theory]
@@ -302,7 +308,9 @@ public class InputMappingTests
         var p = DefaultMappings.Gamepad("g", "DualSense", ControllerKind.PlayStation);
         var pad = Gamepad();
         pad.HasTouchpad = true;
-        pad.FingerDown[0] = true; pad.FingerX[0] = 0.25f; pad.FingerY[0] = 0.75f;
+        pad.FingerDown[0] = true;
+        pad.FingerX[0] = 0.25f;
+        pad.FingerY[0] = 0.75f;
 
         var m = Map(p, pad);
         Assert.Equal(1, m.FrontCount);
@@ -319,7 +327,9 @@ public class InputMappingTests
         // R2 held: both panels
         pad.Axes[(int)PadAxis.LeftTrigger] = 0f;
         pad.Axes[(int)PadAxis.RightTrigger] = 1f;
-        pad.FingerDown[1] = true; pad.FingerX[1] = 0.9f; pad.FingerY[1] = 0.1f;
+        pad.FingerDown[1] = true;
+        pad.FingerX[1] = 0.9f;
+        pad.FingerY[1] = 0.1f;
         m = Map(p, pad);
         Assert.Equal(2, m.FrontCount);
         Assert.Equal(2, m.BackCount);
@@ -343,7 +353,8 @@ public class InputMappingTests
         var p = DefaultMappings.Keyboard();
         p.Set(VitaControl.TouchFront, InputBinding.OfKey("T"));
         p.Set(VitaControl.TouchBack, InputBinding.OfKey("Y"));
-        p.TouchFrontX = 0.1f; p.TouchFrontY = 0.2f;
+        p.TouchFrontX = 0.1f;
+        p.TouchFrontY = 0.2f;
         var m = Map(p, null, "T", "Y");
         Assert.Equal(new TouchPoint(MappedInput.PointId, 0.1f, 0.2f), m.Front[0]);
         Assert.Equal(1, m.BackCount);

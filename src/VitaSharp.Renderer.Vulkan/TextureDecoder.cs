@@ -17,7 +17,12 @@ public readonly struct Texels : IDisposable
     public readonly int Length;
     readonly bool _pooled;
 
-    Texels(byte[] array, int length, bool pooled) { Array = array; Length = length; _pooled = pooled; }
+    Texels(byte[] array, int length, bool pooled)
+    {
+        Array = array;
+        Length = length;
+        _pooled = pooled;
+    }
 
     public Span<byte> Span => Array.AsSpan(0, Length);
 
@@ -36,7 +41,13 @@ public readonly struct Texels : IDisposable
     /// <summary>An exact-size array copy (callers that keep the data).</summary>
     public byte[] ToArray() => Span.ToArray();
 
-    public void Dispose() { if (_pooled) ArrayPool<byte>.Shared.Return(Array); }
+    public void Dispose()
+    {
+        if (_pooled)
+        {
+            ArrayPool<byte>.Shared.Return(Array);
+        }
+    }
 }
 
 /// <summary>Turns guest texture memory (any GXM layout) into tightly packed rows ready for vkCmdCopyBufferToImage.</summary>
@@ -62,7 +73,10 @@ public static class TextureDecoder
     static ReadOnlySpan<byte> Mem(uint addr, int length)
     {
         if (t_srcData is { } d && addr - t_srcAddr <= (uint)d.Length && (ulong)(addr - t_srcAddr) + (uint)length <= (uint)d.Length)
+        {
             return d.AsSpan((int)(addr - t_srcAddr), length);
+        }
+
         return GuestMemory.ReadSpan(addr, length);
     }
 
@@ -101,26 +115,36 @@ public static class TextureDecoder
             if (!swizzled)
             {
                 for (uint y = 0; y < bh; y++)
+                {
                     Mem(addr + y * rowPitch, (int)(bw * bb)).CopyTo(o[(int)(y * bw * bb)..]);
+                }
             }
             else
             {
                 uint pw = BitOperations.RoundUpToPowerOf2(bw), ph = BitOperations.RoundUpToPowerOf2(bh);
                 for (uint y = 0; y < bh; y++)
+                {
                     for (uint x = 0; x < bw; x++)
                     {
                         uint idx = TextureLayout.Morton(x, y, pw, ph);
                         Mem(addr + idx * (uint)bb, bb).CopyTo(o.Slice((int)((y * bw + x) * bb), bb));
                     }
+                }
             }
             if (info.Convert == TexConvert.BcSoftware)
             {
-                using (outBuf) return BcSoftware.Decode(GxmFormats.BaseOf(d.Format), outBuf.Span, w, h);
+                using (outBuf)
+                {
+                    return BcSoftware.Decode(GxmFormats.BaseOf(d.Format), outBuf.Span, w, h);
+                }
             }
             if (info.Convert == TexConvert.AstcFromBc)
             {
                 var bf = GxmFormats.BaseOf(d.Format);
-                using (outBuf) return AstcTranscoder.FromBc(bf, outBuf.Span, w, h, AstcTranscoder.ChannelsFor(bf, false) ?? AstcChannels.Rgba);
+                using (outBuf)
+                {
+                    return AstcTranscoder.FromBc(bf, outBuf.Span, w, h, AstcTranscoder.ChannelsFor(bf, false) ?? AstcChannels.Rgba);
+                }
             }
             return outBuf;
         }
@@ -146,7 +170,11 @@ public static class TextureDecoder
         var linear = Gather(addr, w, h, rowPitch, bpp, swizzled, tiled, halfBytes: false);
         if (info.Convert is TexConvert.None)
         {
-            if (IsU5U5U5U1(d.Format)) U5U5U5U1ToU1U5U5U5(linear.Span[..(int)(w * h * 2)]);
+            if (IsU5U5U5U1(d.Format))
+            {
+                U5U5U5U1ToU1U5U5U5(linear.Span[..(int)(w * h * 2)]);
+            }
+
             return linear;
         }
         using (linear)
@@ -174,7 +202,10 @@ public static class TextureDecoder
     static void U5U5U5U1ToU1U5U5U5(Span<byte> texels)
     {
         var px = System.Runtime.InteropServices.MemoryMarshal.Cast<byte, ushort>(texels);
-        for (int i = 0; i < px.Length; i++) px[i] = (ushort)((px[i] >> 1) | (px[i] << 15));
+        for (int i = 0; i < px.Length; i++)
+        {
+            px[i] = (ushort)((px[i] >> 1) | (px[i] << 15));
+        }
     }
 
     static Texels Unhandled(TexFormatInfo info, ReadOnlySpan<byte> data)
@@ -193,6 +224,7 @@ public static class TextureDecoder
         if (halfBytes)
         {
             for (uint y = 0; y < h; y++)
+            {
                 for (uint x = 0; x < w; x++)
                 {
                     uint idx = swizzled ? TextureLayout.Morton(x, y, BitOperations.RoundUpToPowerOf2(w), BitOperations.RoundUpToPowerOf2(h))
@@ -200,6 +232,8 @@ public static class TextureDecoder
                     byte b = Mem8(addr + idx / 2);
                     dst[(int)(y * w + x)] = (byte)((idx & 1) != 0 ? b >> 4 : b & 0xF);
                 }
+            }
+
             return result;
         }
         if (swizzled)
@@ -211,8 +245,13 @@ public static class TextureDecoder
                 return result;
             }
             for (uint y = 0; y < h; y++)
+            {
                 for (uint x = 0; x < w; x++)
+                {
                     Mem(addr + TextureLayout.Morton(x, y, pw, ph) * (uint)bpp, bpp).CopyTo(dst.Slice((int)((y * w + x) * bpp), bpp));
+                }
+            }
+
             return result;
         }
         if (tiled)
@@ -223,17 +262,28 @@ public static class TextureDecoder
         }
         int row = (int)(w * bpp);
         for (uint y = 0; y < h; y++)
+        {
             Mem(addr + y * rowPitch, row).CopyTo(dst.Slice((int)(y * row), row));
+        }
+
         return result;
     }
 
     static Texels ExpandPalette(ReadOnlySpan<byte> indices, uint palette, uint count, bool p4)
     {
         var result = Texels.Rent(count * 4L);
-        if (palette == 0) return result;
+        if (palette == 0)
+        {
+            return result;
+        }
+
         var dst = result.Span;
         var pal = GuestMemory.ReadSpan<uint>(palette, p4 ? 16 : 256);
-        for (int i = 0; i < count; i++) BitConverter.TryWriteBytes(dst[(i * 4)..], pal[indices[i] & (p4 ? 0xF : 0xFF)]);
+        for (int i = 0; i < count; i++)
+        {
+            BitConverter.TryWriteBytes(dst[(i * 4)..], pal[indices[i] & (p4 ? 0xF : 0xFF)]);
+        }
+
         return result;
     }
 
@@ -273,7 +323,10 @@ public static class TextureDecoder
         var result = Texels.Rent(count * 4L);
         var dst = result.Span;
         for (int i = 0; i < count; i++)
+        {
             BitConverter.TryWriteBytes(dst[(i * 4)..], (BitConverter.ToUInt32(src[(i * 4)..]) & 0xFFFFFF) / 16777215f);
+        }
+
         return result;
     }
 
@@ -343,6 +396,7 @@ public static class TextureDecoder
         var dst = result.Span;
         uint ySize = pitch * h;
         for (uint y = 0; y < h; y++)
+        {
             for (uint x = 0; x < w; x++)
             {
                 int Y = Mem8(addr + y * pitch + x);
@@ -361,6 +415,8 @@ public static class TextureDecoder
                 }
                 YuvToRgb(Y, U, V, dst.Slice((int)((y * w + x) * 4), 4), full);
             }
+        }
+
         return result;
     }
 
@@ -368,15 +424,25 @@ public static class TextureDecoder
     {
         var result = Texels.Rent(w * h * 4L);
         var dst = result.Span;
-        if (pitch == 0) pitch = w * 2;
+        if (pitch == 0)
+        {
+            pitch = w * 2;
+        }
+
         for (uint y = 0; y < h; y++)
+        {
             for (uint x = 0; x < w; x += 2)
             {
                 uint p = addr + y * pitch + x * 2;
                 int y0 = Mem8(p), u = Mem8(p + 1), y1 = Mem8(p + 2), v = Mem8(p + 3);
                 YuvToRgb(y0, u, v, dst.Slice((int)((y * w + x) * 4), 4));
-                if (x + 1 < w) YuvToRgb(y1, u, v, dst.Slice((int)((y * w + x + 1) * 4), 4));
+                if (x + 1 < w)
+                {
+                    YuvToRgb(y1, u, v, dst.Slice((int)((y * w + x + 1) * 4), 4));
+                }
             }
+        }
+
         return result;
     }
 }
@@ -387,13 +453,21 @@ public static class Png
     static readonly uint[] Crc = Enumerable.Range(0, 256).Select(n =>
     {
         uint c = (uint)n;
-        for (int k = 0; k < 8; k++) c = (c & 1) != 0 ? 0xEDB88320u ^ (c >> 1) : c >> 1;
+        for (int k = 0; k < 8; k++)
+        {
+            c = (c & 1) != 0 ? 0xEDB88320u ^ (c >> 1) : c >> 1;
+        }
+
         return c;
     }).ToArray();
 
     static uint Crc32(ReadOnlySpan<byte> data, uint crc = 0xFFFFFFFF)
     {
-        foreach (var b in data) crc = Crc[(crc ^ b) & 0xFF] ^ (crc >> 8);
+        foreach (var b in data)
+        {
+            crc = Crc[(crc ^ b) & 0xFF] ^ (crc >> 8);
+        }
+
         return crc;
     }
 
@@ -422,7 +496,8 @@ public static class Png
         ihdr.Clear();
         System.Buffers.Binary.BinaryPrimitives.WriteInt32BigEndian(ihdr, w);
         System.Buffers.Binary.BinaryPrimitives.WriteInt32BigEndian(ihdr[4..], h);
-        ihdr[8] = 8; ihdr[9] = 6;
+        ihdr[8] = 8;
+        ihdr[9] = 6;
         Chunk(fs, "IHDR", ihdr);
         var ms = _idat ??= new MemoryStream();
         ms.SetLength(0);

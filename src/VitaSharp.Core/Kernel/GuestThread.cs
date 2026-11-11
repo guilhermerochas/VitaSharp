@@ -33,61 +33,25 @@ public sealed unsafe partial class GuestThread : KernelObject, IDisposable, Cpu.
     /// <summary>The process the thread belongs to.</summary>
     public Emulator Process => _emu;
     public int Pid => _emu?.Pid ?? 0; // 0: a thread object made without a process (unit tests)
-    public CpuCore Core
-    {
-        get;
-    }
-    public HleContext Hle
-    {
-        get;
-    }
-    public uint Entry
-    {
-        get;
-    }
-    public int InitPriority
-    {
-        get;
-    }
-    public int Priority
-    {
-        get; set;
-    }
-    public uint Attr
-    {
-        get;
-    }
-    public int Affinity
-    {
-        get; set;
-    }
+    public CpuCore Core { get; }
+    public HleContext Hle { get; }
+    public uint Entry { get; }
+    public int InitPriority { get; }
+    public int Priority { get; set; }
+    public uint Attr { get; }
+    public int Affinity { get; set; }
     /// <summary>The thread currently holds one of the emulated CPU cores (see <see cref="Scheduler"/>).</summary>
     public bool HasCore;
     /// <summary>The thread runs on the system software's core, not the application cores (see <see cref="Scheduler"/>).</summary>
-    public bool OnSystemCore
-    {
-        get;
-    }
+    public bool OnSystemCore { get; }
     /// <summary>Blocked inside host-side HLE work (audio device, GPU queue, display queue): not waiting for a core.</summary>
     public volatile bool BlockedInHost;
-    public uint StackAddr
-    {
-        get;
-    }
-    public uint StackSize
-    {
-        get;
-    }
-    public uint TlsBase
-    {
-        get;
-    }
+    public uint StackAddr { get; }
+    public uint StackSize { get; }
+    public uint TlsBase { get; }
     public uint UserTls => TlsBase + KernelTlsSize;
     public ThreadStatus Status { get; internal set; } = ThreadStatus.Dormant;
-    public int ExitStatus
-    {
-        get; private set;
-    }
+    public int ExitStatus { get; private set; }
     public int WakeupCount;
     public readonly object WaitLock = new();
     /// <summary>Thread signal (sceKernelSendSignal / sceKernelWaitSignal): one pending flag guarded by SignalLock.</summary>
@@ -96,10 +60,7 @@ public sealed unsafe partial class GuestThread : KernelObject, IDisposable, Cpu.
     public long CpuTimeTicks;
     public string WaitingOn = "";
     /// <summary>When set, the thread runs this host code instead of guest code at Entry (it may still CallGuest).</summary>
-    public Action<GuestThread>? HostBody
-    {
-        get; set;
-    }
+    public Action<GuestThread>? HostBody { get; set; }
 
     // callback support for *CB waits
     public int PendingCallbacks;
@@ -304,7 +265,10 @@ public sealed unsafe partial class GuestThread : KernelObject, IDisposable, Cpu.
             {
                 exit = Core.Run();
             }
-            finally { _inGuest = false; }
+            finally
+            {
+                _inGuest = false;
+            }
             switch (exit)
             {
                 case ExitReason.Svc:
@@ -322,7 +286,11 @@ public sealed unsafe partial class GuestThread : KernelObject, IDisposable, Cpu.
                         throw new GuestFaultException("Unbalanced guest call return");
                     }
 #if VITASHARP_DEVELOPER
-                    if (Util.Developer.DevTrace.On) { DispatchHleTraced(s); break; }
+                    if (Util.Developer.DevTrace.On)
+                    {
+                    DispatchHleTraced(s);
+                    break;
+                    }
 #endif
                     DispatchHle(s);
                     break;
@@ -508,8 +476,14 @@ public sealed unsafe partial class GuestThread : KernelObject, IDisposable, Cpu.
     void DispatchHleTraced(CpuState* s)
     {
         bool traced = Util.Developer.DevTrace.BeginHle(_emu.Hle.GetFunction(s->SvcImm).Name);
-        try { DispatchHle(s); }
-        finally { if (traced) Util.Developer.DevTrace.End(); }
+        try
+        {
+        DispatchHle(s);
+        }
+        finally
+        {
+        if (traced) Util.Developer.DevTrace.End();
+        }
     }
 #endif
 
@@ -562,7 +536,10 @@ public sealed unsafe partial class GuestThread : KernelObject, IDisposable, Cpu.
 
                     InvokeGuarded(f, s);
                 }
-                finally { CallbackWait = prev; }
+                finally
+                {
+                    CallbackWait = prev;
+                }
             }
             else
             {
@@ -639,10 +616,7 @@ public sealed unsafe partial class GuestThread : KernelObject, IDisposable, Cpu.
     public uint CallGuest(uint addr, params ReadOnlySpan<uint> args) => CallGuestOnStack(addr, 0, args);
 
     /// <summary>r1 when the last <see cref="CallGuestOnStack"/> returned (the high word of a 64-bit result).</summary>
-    public uint LastCallR1
-    {
-        get; private set;
-    }
+    public uint LastCallR1 { get; private set; }
 
     /// <summary>Like <see cref="CallGuest"/>, with sp set to <paramref name="stackTop"/> (0 = just below the current sp).</summary>
     public uint CallGuestOnStack(uint addr, uint stackTop, params ReadOnlySpan<uint> args)
@@ -748,7 +722,10 @@ public sealed unsafe partial class GuestThread : KernelObject, IDisposable, Cpu.
                     Monitor.Wait(_suspendLock, 50);
                 }
             }
-            finally { _parkedDepth = -1; }
+            finally
+            {
+                _parkedDepth = -1;
+            }
         }
     }
 

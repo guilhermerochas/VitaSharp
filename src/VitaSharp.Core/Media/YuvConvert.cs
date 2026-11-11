@@ -80,10 +80,13 @@ public static class YuvConvert
             var s = src.Slice(row * srcStride * 4);
             var o = y.Slice(row * yStride, width);
             for (int x = 0; x < width; x++)
+            {
                 o[x] = (byte)((19595 * s[x * 4 + ri] + 38470 * s[x * 4 + 1] + 7471 * s[x * 4 + bi] + Half) >> 16);
+            }
         }
         int cw = (width + hdiv - 1) / hdiv, ch = (height + vdiv - 1) / vdiv;
         for (int cy = 0; cy < ch; cy++)
+        {
             for (int cx = 0; cx < cw; cx++)
             {
                 long rs = 0, gs = 0, bs = 0;
@@ -91,13 +94,23 @@ public static class YuvConvert
                 for (int dy = 0; dy < vdiv; dy++)
                 {
                     int py = cy * vdiv + dy;
-                    if (py >= height) break;
+                    if (py >= height)
+                    {
+                        break;
+                    }
+
                     for (int dx = 0; dx < hdiv; dx++)
                     {
                         int px = cx * hdiv + dx;
-                        if (px >= width) break;
+                        if (px >= width)
+                        {
+                            break;
+                        }
+
                         int i = (py * srcStride + px) * 4;
-                        rs += src[i + ri]; gs += src[i + 1]; bs += src[i + bi];
+                        rs += src[i + ri];
+                        gs += src[i + 1];
+                        bs += src[i + bi];
                         n++;
                     }
                 }
@@ -105,5 +118,6 @@ public static class YuvConvert
                 cb[cy * cStride + cx] = Clamp((int)((-11059 * rs - 21709 * gs + 32768 * bs + bias) / div));
                 cr[cy * cStride + cx] = Clamp((int)((32768 * rs - 27439 * gs - 5329 * bs + bias) / div));
             }
+        }
     }
 }

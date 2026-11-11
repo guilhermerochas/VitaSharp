@@ -15,7 +15,12 @@ public sealed class KernelHleTests(GuestMemoryFixture fx)
     static T Call<T>(object module, string name, params object[] args) =>
         (T)module.GetType().GetMethod(name, BindingFlags.Instance | BindingFlags.NonPublic | BindingFlags.Public)!.Invoke(module, args)!;
 
-    uint Alloc(uint size, string tag = "kt") { uint p = fx.Memory.Alloc(size, tag); GuestMemory.Fill(p, 0, size); return p; }
+    uint Alloc(uint size, string tag = "kt")
+    {
+        uint p = fx.Memory.Alloc(size, tag);
+        GuestMemory.Fill(p, 0, size);
+        return p;
+    }
 
     [Fact]
     public void WriteInfoHonoursSize()
@@ -125,7 +130,11 @@ public sealed class KernelHleTests(GuestMemoryFixture fx)
         int r = int.MinValue;
         var waiter = new Thread(() => r = e.Wait(null, 0x01000000, new Ptr<uint>(res), new Ptr<ulong>(res + 8), default));
         waiter.Start();
-        while (e.NumWaiters == 0) Thread.Sleep(1);
+        while (e.NumWaiters == 0)
+        {
+            Thread.Sleep(1);
+        }
+
         Assert.Equal(0, e.SetOrPulse(0x01000000, 77, pulse: true));
         waiter.Join();
         Assert.Equal(0, r);
@@ -153,7 +162,11 @@ public sealed class KernelHleTests(GuestMemoryFixture fx)
         int r = 0;
         var t = new Thread(() => r = e.Wait(null, 0x01000000, new Ptr<uint>(res), default, default));
         t.Start();
-        while (e.NumWaiters == 0) Thread.Sleep(1);
+        while (e.NumWaiters == 0)
+        {
+            Thread.Sleep(1);
+        }
+
         uint n = Alloc(4);
         e.Cancel(new Ptr<uint>(n));
         t.Join();
@@ -163,7 +176,11 @@ public sealed class KernelHleTests(GuestMemoryFixture fx)
 
         t = new Thread(() => r = e.Wait(null, EventBits.Delete, new Ptr<uint>(res), default, default));
         t.Start();
-        while (e.NumWaiters == 0) Thread.Sleep(1);
+        while (e.NumWaiters == 0)
+        {
+            Thread.Sleep(1);
+        }
+
         e.Delete();
         t.Join();
         Assert.Equal(0, r); // waiting for the DELETE bit succeeds
@@ -282,7 +299,11 @@ public sealed class KernelHleTests(GuestMemoryFixture fx)
         int r = 0;
         var t = new Thread(() => r = l.LockWrite(writer, default));
         t.Start();
-        while (l.WriteWaiters == 0) Thread.Sleep(1);
+        while (l.WriteWaiters == 0)
+        {
+            Thread.Sleep(1);
+        }
+
         uint nr = Alloc(4), nw = Alloc(4);
         Assert.Equal(0, l.Cancel(reader, new Ptr<uint>(nr), new Ptr<uint>(nw), false));
         t.Join();
@@ -301,7 +322,11 @@ public sealed class KernelHleTests(GuestMemoryFixture fx)
 
         uint dt = Alloc(16), dos = Alloc(4);
         ushort[] f = [2012, 3, 15, 13, 45, 31];
-        for (int i = 0; i < 6; i++) GuestMemory.Write(dt + (uint)i * 2, f[i]);
+        for (int i = 0; i < 6; i++)
+        {
+            GuestMemory.Write(dt + (uint)i * 2, f[i]);
+        }
+
         Assert.Equal(0, Call<int>(rtc, "sceRtcGetDosTime", dt, new Ptr<uint>(dos)));
         uint v = GuestMemory.R32(dos);
         Assert.Equal(0, Call<int>(rtc, "sceRtcSetDosTime", dt, v));

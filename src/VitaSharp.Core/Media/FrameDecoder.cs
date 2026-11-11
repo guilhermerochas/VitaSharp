@@ -22,7 +22,10 @@ public sealed unsafe class FrameDecoder : IAudioFrameDecoder
     FrameDecoder(AVCodecContext* ctx, AVCodecID id, int rate, int channels, byte[]? extradata)
     {
         _ctx = ctx;
-        _id = id; _rate = rate; _channels = channels; _extradata = extradata;
+        _id = id;
+        _rate = rate;
+        _channels = channels;
+        _extradata = extradata;
         _pkt = ffmpeg.av_packet_alloc();
         _frame = ffmpeg.av_frame_alloc();
     }
@@ -30,7 +33,11 @@ public sealed unsafe class FrameDecoder : IAudioFrameDecoder
     /// <summary>Creates a decoder; <paramref name="extradata"/> is the AAC AudioSpecificConfig for raw (non-ADTS) streams.</summary>
     public static FrameDecoder? Create(AVCodecID id, int sampleRate, int channels, byte[]? extradata = null)
     {
-        if (!FFmpegLoader.Available) return null;
+        if (!FFmpegLoader.Available)
+        {
+            return null;
+        }
+
         var ctx = Open(id, sampleRate, channels, extradata);
         return ctx == null ? null : new FrameDecoder(ctx, id, sampleRate, channels, extradata);
     }
@@ -38,10 +45,21 @@ public sealed unsafe class FrameDecoder : IAudioFrameDecoder
     static AVCodecContext* Open(AVCodecID id, int sampleRate, int channels, byte[]? extradata)
     {
         var codec = ffmpeg.avcodec_find_decoder(id);
-        if (codec == null) return null;
+        if (codec == null)
+        {
+            return null;
+        }
+
         var ctx = ffmpeg.avcodec_alloc_context3(codec);
-        if (sampleRate > 0) ctx->sample_rate = sampleRate;
-        if (channels > 0) ffmpeg.av_channel_layout_default(&ctx->ch_layout, channels);
+        if (sampleRate > 0)
+        {
+            ctx->sample_rate = sampleRate;
+        }
+
+        if (channels > 0)
+        {
+            ffmpeg.av_channel_layout_default(&ctx->ch_layout, channels);
+        }
         // A hardware frame decoder turns every compressed frame into a full frame of PCM; trimming encoder delay is
         // the caller's business. FFmpeg would otherwise trim it by itself (e.g. 1024 samples when the first AAC frame
         // carries a "libfaac x.y" fill element) and return 0 samples for that frame, which
@@ -50,7 +68,11 @@ public sealed unsafe class FrameDecoder : IAudioFrameDecoder
         if (extradata != null)
         {
             ctx->extradata = (byte*)ffmpeg.av_mallocz((ulong)extradata.Length + ffmpeg.AV_INPUT_BUFFER_PADDING_SIZE);
-            fixed (byte* e = extradata) Buffer.MemoryCopy(e, ctx->extradata, extradata.Length, extradata.Length);
+            fixed (byte* e = extradata)
+            {
+                Buffer.MemoryCopy(e, ctx->extradata, extradata.Length, extradata.Length);
+            }
+
             ctx->extradata_size = extradata.Length;
         }
         if (ffmpeg.avcodec_open2(ctx, codec, null) < 0)
@@ -72,21 +94,40 @@ public sealed unsafe class FrameDecoder : IAudioFrameDecoder
     /// </summary>
     public int RawFrameLength(byte* data, int maxSize)
     {
-        if (maxSize <= 1) return maxSize;
+        if (maxSize <= 1)
+        {
+            return maxSize;
+        }
+
         if (_probe == null)
         {
             _probe = Open(_id, _rate, _channels, _extradata);
-            if (_probe == null) return maxSize;
+            if (_probe == null)
+            {
+                return maxSize;
+            }
+
             _probe->log_level_offset = 32; // the failing trials are expected: keep them out of the error log
             _probeFrame = ffmpeg.av_frame_alloc();
             _probePkt = ffmpeg.av_packet_alloc();
         }
-        if (!ProbeDecodes(data, maxSize)) return maxSize;
+        if (!ProbeDecodes(data, maxSize))
+        {
+            return maxSize;
+        }
+
         int lo = 0, hi = maxSize; // lo fails, hi decodes
         while (hi - lo > 1)
         {
             int mid = (lo + hi) / 2;
-            if (ProbeDecodes(data, mid)) hi = mid; else lo = mid;
+            if (ProbeDecodes(data, mid))
+            {
+                hi = mid;
+            }
+            else
+            {
+                lo = mid;
+            }
         }
         return hi;
     }
@@ -113,7 +154,11 @@ public sealed unsafe class FrameDecoder : IAudioFrameDecoder
     {
         int[] rates = [96000, 88200, 64000, 48000, 44100, 32000, 24000, 22050, 16000, 12000, 11025, 8000, 7350];
         int idx = Array.IndexOf(rates, sampleRate);
-        if (idx < 0) idx = 3;
+        if (idx < 0)
+        {
+            idx = 3;
+        }
+
         int v = (2 << 11) | (idx << 7) | (Math.Clamp(channels, 1, 7) << 3); // object type 2 (LC)
         return [(byte)(v >> 8), (byte)v];
     }
@@ -136,7 +181,11 @@ public sealed unsafe class FrameDecoder : IAudioFrameDecoder
             while (ffmpeg.avcodec_receive_frame(_ctx, _frame) == 0)
             {
                 int oc = outChannels > 0 ? outChannels : _frame->ch_layout.nb_channels;
-                if (total * oc < pcmOut.Length) total += Convert(_frame, pcmOut[(total * oc)..], oc);
+                if (total * oc < pcmOut.Length)
+                {
+                    total += Convert(_frame, pcmOut[(total * oc)..], oc);
+                }
+
                 ffmpeg.av_frame_unref(_frame);
             }
         }
@@ -173,16 +222,25 @@ public sealed unsafe class FrameDecoder : IAudioFrameDecoder
     public void Dispose()
     {
         var ctx = _ctx;
-        if (ctx != null) ffmpeg.avcodec_free_context(&ctx);
+        if (ctx != null)
+        {
+            ffmpeg.avcodec_free_context(&ctx);
+        }
+
         _ctx = null;
-        var p = _pkt; ffmpeg.av_packet_free(&p);
-        var f = _frame; ffmpeg.av_frame_free(&f);
+        var p = _pkt;
+        ffmpeg.av_packet_free(&p);
+        var f = _frame;
+        ffmpeg.av_frame_free(&f);
         if (_probe != null)
         {
-            var pc = _probe; ffmpeg.avcodec_free_context(&pc);
+            var pc = _probe;
+            ffmpeg.avcodec_free_context(&pc);
             _probe = null;
-            var pf = _probeFrame; ffmpeg.av_frame_free(&pf);
-            var pp = _probePkt; ffmpeg.av_packet_free(&pp);
+            var pf = _probeFrame;
+            ffmpeg.av_frame_free(&pf);
+            var pp = _probePkt;
+            ffmpeg.av_packet_free(&pp);
         }
     }
 
@@ -195,21 +253,37 @@ public sealed unsafe class FrameDecoder : IAudioFrameDecoder
     /// <summary>Length in bytes of the MPEG audio layer III frame starting at <paramref name="p"/>, or 0.</summary>
     public static int Mp3FrameLength(ReadOnlySpan<byte> p)
     {
-        if (p.Length < 4 || p[0] != 0xFF || (p[1] & 0xE0) != 0xE0) return 0;
+        if (p.Length < 4 || p[0] != 0xFF || (p[1] & 0xE0) != 0xE0)
+        {
+            return 0;
+        }
+
         int version = (p[1] >> 3) & 3; // 3 = MPEG1, 2 = MPEG2, 0 = MPEG2.5
         int layer = (p[1] >> 1) & 3;   // 1 = layer III
         int brIdx = p[2] >> 4, srIdx = (p[2] >> 2) & 3, pad = (p[2] >> 1) & 1;
-        if (version == 1 || layer != 1 || srIdx == 3) return 0;
+        if (version == 1 || layer != 1 || srIdx == 3)
+        {
+            return 0;
+        }
+
         int rate = Mp3RateV1[srIdx] >> (version == 3 ? 0 : version == 2 ? 1 : 2);
         int bitrate = (version == 3 ? Mp3BitrateV1 : Mp3BitrateV2)[brIdx] * 1000;
-        if (bitrate == 0 || rate == 0) return 0;
+        if (bitrate == 0 || rate == 0)
+        {
+            return 0;
+        }
+
         return (version == 3 ? 144 : 72) * bitrate / rate + pad;
     }
 
     /// <summary>Length of the ADTS frame (header included) at <paramref name="p"/>, or 0 when it is not ADTS.</summary>
     public static int AdtsFrameLength(ReadOnlySpan<byte> p)
     {
-        if (p.Length < 7 || p[0] != 0xFF || (p[1] & 0xF6) != 0xF0) return 0;
+        if (p.Length < 7 || p[0] != 0xFF || (p[1] & 0xF6) != 0xF0)
+        {
+            return 0;
+        }
+
         return ((p[3] & 3) << 11) | (p[4] << 3) | (p[5] >> 5);
     }
 }

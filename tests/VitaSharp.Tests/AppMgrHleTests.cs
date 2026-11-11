@@ -15,15 +15,29 @@ public sealed class AppMgrHleTests(GuestMemoryFixture fx) : IDisposable
 
     public void Dispose()
     {
-        try { Directory.Delete(_root, true); } catch (IOException) { }
+        try
+        {
+            Directory.Delete(_root, true);
+        }
+        catch (IOException) { }
     }
 
     static T Call<T>(object module, string name, params object[] args) =>
         (T)module.GetType().GetMethod(name, BindingFlags.Instance | BindingFlags.NonPublic | BindingFlags.Public)!.Invoke(module, args)!;
 
-    uint Alloc(uint size) { uint p = fx.Memory.Alloc(size, "appmgr"); GuestMemory.Fill(p, 0, size); return p; }
+    uint Alloc(uint size)
+    {
+        uint p = fx.Memory.Alloc(size, "appmgr");
+        GuestMemory.Fill(p, 0, size);
+        return p;
+    }
 
-    uint Str(string s) { uint p = Alloc((uint)s.Length + 16); GuestMemory.WriteCString(p, s); return p; }
+    uint Str(string s)
+    {
+        uint p = Alloc((uint)s.Length + 16);
+        GuestMemory.WriteCString(p, s);
+        return p;
+    }
 
     static void SetBacking(object o, string prop, object value) =>
         typeof(Emulator).GetField($"<{prop}>k__BackingField", BindingFlags.Instance | BindingFlags.NonPublic)!.SetValue(o, value);
@@ -99,7 +113,11 @@ public sealed class AppMgrHleTests(GuestMemoryFixture fx) : IDisposable
     {
         var (mgr, _) = Make();
         uint bp = Alloc(0x2C), opt = Alloc(8);
-        for (uint o = 0; o < 0x2C; o += 4) GuestMemory.W32(bp + o, 0xA5A5A5A5);
+        for (uint o = 0; o < 0x2C; o += 4)
+        {
+            GuestMemory.W32(bp + o, 0xA5A5A5A5);
+        }
+
         GuestMemory.W32(opt, 0x2D);
         Assert.Equal(ERR_PARAM, Call<int>(mgr, "_sceAppMgrGetBootParam", 0u, bp, opt));
         GuestMemory.W32(opt, 0x2C);
@@ -150,14 +168,23 @@ public sealed class AppMgrHleTests(GuestMemoryFixture fx) : IDisposable
         return (mgr, util, emu);
     }
 
-    uint Sized(uint size) { uint p = Alloc(size); GuestMemory.W32(p, size); return p; }
+    uint Sized(uint size)
+    {
+        uint p = Alloc(size);
+        GuestMemory.W32(p, size);
+        return p;
+    }
 
     [Fact]
     public void PublicWrappersOfBootParamAndSaveDataInfo()
     {
         var (mgr, _) = Make();
         uint bp = Alloc(0x2C);
-        for (uint o = 4; o < 0x2C; o += 4) GuestMemory.W32(bp + o, 0xA5A5A5A5);
+        for (uint o = 4; o < 0x2C; o += 4)
+        {
+            GuestMemory.W32(bp + o, 0xA5A5A5A5);
+        }
+
         GuestMemory.W32(bp, 0x2C); // the wrapper takes the copy size from bootParam->size
         Assert.Equal(0, Call<int>(mgr, "sceAppMgrGetBootParam", 0u, bp));
         Assert.Equal(0u, GuestMemory.R32(bp + 4));

@@ -34,7 +34,10 @@ namespace VitaSharp.Renderer.Vulkan;
 /// </summary>
 public sealed unsafe partial class VulkanRenderer
 {
-    enum MsaaEmulation { Native, Supersample, Off }
+    enum MsaaEmulation
+    {
+        Native, Supersample, Off
+    }
 
     static MsaaEmulation ParseMsaa(string? s) => (s ?? "").Trim().ToLowerInvariant() switch
     {
@@ -108,7 +111,11 @@ public sealed unsafe partial class VulkanRenderer
     {
         lock (_msRenderPasses)
         {
-            if (_msRenderPasses.TryGetValue(k, out var rp)) return rp;
+            if (_msRenderPasses.TryGetValue(k, out var rp))
+            {
+                return rp;
+            }
+
             var att = stackalloc AttachmentDescription[4];
             att[0] = new AttachmentDescription(0, k.Format, k.Samples, k.ColorLoad, k.ColorStore, AttachmentLoadOp.DontCare, AttachmentStoreOp.DontCare,
                 ImageLayout.General, ImageLayout.General);
@@ -121,8 +128,11 @@ public sealed unsafe partial class VulkanRenderer
             att[resolveIndex] = new AttachmentDescription(0, k.Format, SampleCountFlags.Count1Bit, AttachmentLoadOp.DontCare, AttachmentStoreOp.Store,
                 AttachmentLoadOp.DontCare, AttachmentStoreOp.DontCare, ImageLayout.General, ImageLayout.General);
             if (k.TileWord1)
+            {
                 att[2] = new AttachmentDescription(0, TileWord1Format, k.Samples, AttachmentLoadOp.Load, AttachmentStoreOp.Store, AttachmentLoadOp.DontCare, AttachmentStoreOp.DontCare,
                     ImageLayout.General, ImageLayout.General);
+            }
+
             var colors = stackalloc AttachmentReference[2] { new(0, ImageLayout.General), new(2, ImageLayout.General) };
             var depth = new AttachmentReference(1, depthLayout);
             var resolves = stackalloc AttachmentReference[2] { new(resolveIndex, ImageLayout.General), new(Vk.AttachmentUnused, ImageLayout.General) };
@@ -130,8 +140,10 @@ public sealed unsafe partial class VulkanRenderer
             var sub = new SubpassDescription
             {
                 PipelineBindPoint = PipelineBindPoint.Graphics,
-                InputAttachmentCount = colorCount, PInputAttachments = colors,
-                ColorAttachmentCount = colorCount, PColorAttachments = colors,
+                InputAttachmentCount = colorCount,
+                PInputAttachments = colors,
+                ColorAttachmentCount = colorCount,
+                PColorAttachments = colors,
                 PResolveAttachments = k.Resolve ? resolves : null,
                 PDepthStencilAttachment = &depth,
                 // rasterization-order attachment access (Adreno/Mali): input attachment reads of the colour are
@@ -145,9 +157,12 @@ public sealed unsafe partial class VulkanRenderer
             var ci = new RenderPassCreateInfo
             {
                 SType = StructureType.RenderPassCreateInfo,
-                AttachmentCount = (k.Resolve ? 3u : 2u) + (k.TileWord1 ? 1u : 0u), PAttachments = att,
-                SubpassCount = 1, PSubpasses = &sub,
-                DependencyCount = 1, PDependencies = &self,
+                AttachmentCount = (k.Resolve ? 3u : 2u) + (k.TileWord1 ? 1u : 0u),
+                PAttachments = att,
+                SubpassCount = 1,
+                PSubpasses = &sub,
+                DependencyCount = 1,
+                PDependencies = &self,
             };
             _vk.CreateRenderPass(_dev, in ci, null, out rp).Ok("MSAA render pass");
             return _msRenderPasses[k] = rp;
@@ -158,7 +173,11 @@ public sealed unsafe partial class VulkanRenderer
     Framebuffer MsaaFramebuffer(MsaaImage m, RenderPass pass, ImageView color, ImageView depth, ImageView resolve, ImageView word = default)
     {
         var key = (color.Handle, depth.Handle, resolve.Handle, word.Handle);
-        if (m.Framebuffers.TryGetValue(key, out var fb)) return fb;
+        if (m.Framebuffers.TryGetValue(key, out var fb))
+        {
+            return fb;
+        }
+
         var views = stackalloc ImageView[4] { color, depth, word.Handle != 0 ? word : resolve, resolve };
         var ci = new FramebufferCreateInfo
         {
@@ -166,7 +185,9 @@ public sealed unsafe partial class VulkanRenderer
             RenderPass = pass,
             AttachmentCount = (resolve.Handle != 0 ? 3u : 2u) + (word.Handle != 0 ? 1u : 0u),
             PAttachments = views,
-            Width = m.Width, Height = m.Height, Layers = 1,
+            Width = m.Width,
+            Height = m.Height,
+            Layers = 1,
         };
         _vk.CreateFramebuffer(_dev, in ci, null, out fb).Ok("MSAA framebuffer");
         return m.Framebuffers[key] = fb;
@@ -208,17 +229,49 @@ public sealed unsafe partial class VulkanRenderer
 
     bool SupportsNativeMsaa(Format f, SampleCountFlags s)
     {
-        if (_msFormatOk.TryGetValue((f, s), out var ok)) return ok;
+        if (_msFormatOk.TryGetValue((f, s), out var ok))
+        {
+            return ok;
+        }
+
         var lim = _core.Properties.Limits;
         var why = new List<string>();
-        if ((lim.FramebufferColorSampleCounts & s) == 0) why.Add("framebufferColorSampleCounts");
-        if ((lim.FramebufferDepthSampleCounts & s) == 0 || (lim.FramebufferStencilSampleCounts & s) == 0) why.Add("framebufferDepth/StencilSampleCounts");
-        if ((lim.SampledImageColorSampleCounts & s) == 0) why.Add("sampledImageColorSampleCounts");
-        if ((_core.ImageSampleCounts(f, MsaaImageUsage) & s) == 0) why.Add($"{f} attachment");
-        if ((_core.ImageSampleCounts(f, ImageUsageFlags.SampledBit | ImageUsageFlags.TransferDstBit, 0) & s) == 0) why.Add($"{f} sampled");
-        if ((_core.ImageSampleCounts(_core.DepthFormat, ImageUsageFlags.DepthStencilAttachmentBit, 0) & s) == 0) why.Add($"{_core.DepthFormat} attachment");
+        if ((lim.FramebufferColorSampleCounts & s) == 0)
+        {
+            why.Add("framebufferColorSampleCounts");
+        }
+
+        if ((lim.FramebufferDepthSampleCounts & s) == 0 || (lim.FramebufferStencilSampleCounts & s) == 0)
+        {
+            why.Add("framebufferDepth/StencilSampleCounts");
+        }
+
+        if ((lim.SampledImageColorSampleCounts & s) == 0)
+        {
+            why.Add("sampledImageColorSampleCounts");
+        }
+
+        if ((_core.ImageSampleCounts(f, MsaaImageUsage) & s) == 0)
+        {
+            why.Add($"{f} attachment");
+        }
+
+        if ((_core.ImageSampleCounts(f, ImageUsageFlags.SampledBit | ImageUsageFlags.TransferDstBit, 0) & s) == 0)
+        {
+            why.Add($"{f} sampled");
+        }
+
+        if ((_core.ImageSampleCounts(_core.DepthFormat, ImageUsageFlags.DepthStencilAttachmentBit, 0) & s) == 0)
+        {
+            why.Add($"{_core.DepthFormat} attachment");
+        }
+
         ok = why.Count == 0;
-        if (!ok) Log.Warn($"[gpu] {s} multisampling of {f} unsupported on {_core.DeviceName} ({string.Join(", ", why)}): falling back to supersampling");
+        if (!ok)
+        {
+            Log.Warn($"[gpu] {s} multisampling of {f} unsupported on {_core.DeviceName} ({string.Join(", ", why)}): falling back to supersampling");
+        }
+
         return _msFormatOk[(f, s)] = ok;
     }
 
@@ -226,7 +279,11 @@ public sealed unsafe partial class VulkanRenderer
     {
         if (_msImages.TryGetValue(rt, out var m))
         {
-            if (m.Samples == samples) return m;
+            if (m.Samples == samples)
+            {
+                return m;
+            }
+
             DestroyMsaaLater(rt);
         }
         m = new MsaaImage { Samples = samples, Width = rt.ImgW, Height = rt.ImgH };
@@ -234,7 +291,11 @@ public sealed unsafe partial class VulkanRenderer
         (m.Image, view, m.Mem) = CreateImage(MemCat.Msaa, rt.ImgW, rt.ImgH, rt.Format, MsaaImageUsage, ImageAspectFlags.ColorBit, mutable: true, samples: samples);
         m.Views[rt.Format] = view;
         _msImages[rt] = m;
-        if (samples == SampleCountFlags.Count2Bit) _ms2xImages++;
+        if (samples == SampleCountFlags.Count2Bit)
+        {
+            _ms2xImages++;
+        }
+
         Barrier(m.Image, ImageLayout.Undefined, ImageLayout.General, ImageAspectFlags.ColorBit, PipelineStageFlags.TopOfPipeBit,
             PipelineStageFlags.ColorAttachmentOutputBit, 0, AccessFlags.ColorAttachmentReadBit | AccessFlags.ColorAttachmentWriteBit);
         return m;
@@ -242,21 +303,41 @@ public sealed unsafe partial class VulkanRenderer
 
     ImageView MsaaView(MsaaImage m, Format format)
     {
-        if (m.Views.TryGetValue(format, out var v)) return v;
+        if (m.Views.TryGetValue(format, out var v))
+        {
+            return v;
+        }
+
         return m.Views[format] = CreateView(m.Image, format, ImageAspectFlags.ColorBit, 1, 1, false, default);
     }
 
     void DestroyMsaaLater(RenderTarget rt, bool now = false)
     {
-        if (!_msImages.Remove(rt, out var m)) return;
-        if (m.Samples == SampleCountFlags.Count2Bit) _ms2xImages--;
+        if (!_msImages.Remove(rt, out var m))
+        {
+            return;
+        }
+
+        if (m.Samples == SampleCountFlags.Count2Bit)
+        {
+            _ms2xImages--;
+        }
+
         Release(() => DestroyMsaaImage(m), now);
     }
 
     void DestroyMsaaImage(MsaaImage m)
     {
-        foreach (var fb in m.Framebuffers.Values) _vk.DestroyFramebuffer(_dev, fb, null);
-        foreach (var v in m.Views.Values) _vk.DestroyImageView(_dev, v, null);
+        foreach (var fb in m.Framebuffers.Values)
+        {
+            _vk.DestroyFramebuffer(_dev, fb, null);
+        }
+
+        foreach (var v in m.Views.Values)
+        {
+            _vk.DestroyImageView(_dev, v, null);
+        }
+
         _vk.DestroyImage(_dev, m.Image, null);
         _imagePool.Free(m.Mem);
     }
@@ -267,12 +348,20 @@ public sealed unsafe partial class VulkanRenderer
     void ChooseMsaaPath(BeginSceneCommand b)
     {
         _ms = _ss = _msaaNoDownscale = false;
-        if (_rt == null || b.Multisample == 0) return;
+        if (_rt == null || b.Multisample == 0)
+        {
+            return;
+        }
+
         if (!b.Color!.Downscale)
         {
             // the surface stores the samples (see VulkanRenderer.Msaa.cs)
             _msaaNoDownscale = MsaaSetting != MsaaEmulation.Off;
-            if (_msaaNoDownscale && _msaaNoDownscaleLogged.Add(_rt.Address)) Log.Info($"[gpu] render target 0x{_rt.Address:X8} {b.Width}x{b.Height} MSAA {(b.Multisample == 2 ? "4X" : "2X")} without downscale: rendering at 2x into the {_rt.Width}x{_rt.Height} sample surface");
+            if (_msaaNoDownscale && _msaaNoDownscaleLogged.Add(_rt.Address))
+            {
+                Log.Info($"[gpu] render target 0x{_rt.Address:X8} {b.Width}x{b.Height} MSAA {(b.Multisample == 2 ? "4X" : "2X")} without downscale: rendering at 2x into the {_rt.Width}x{_rt.Height} sample surface");
+            }
+
             return;
         }
         var samples = GxmSamples(b.Multisample);
@@ -285,9 +374,14 @@ public sealed unsafe partial class VulkanRenderer
             _statMsScenes++;
             EnsureSceneStartCopy(_rt);
             if (_msLogged.Add((_rt.Address, samples)))
+            {
                 Log.Info($"[gpu] render target 0x{_rt.Address:X8} {_rt.Width}x{_rt.Height} fmt 0x{_rt.ColorFormat:X8}: MSAA downscale scene, rendering with {(samples == SampleCountFlags.Count4Bit ? 4 : 2)} samples and resolving into the surface");
+            }
         }
-        else if (MsaaSetting != MsaaEmulation.Off && SupportsSupersample(_rt.Format)) _ss = true;
+        else if (MsaaSetting != MsaaEmulation.Off && SupportsSupersample(_rt.Format))
+        {
+            _ss = true;
+        }
     }
 
     // =================================================================== renderings
@@ -295,7 +389,11 @@ public sealed unsafe partial class VulkanRenderer
     CommandBuffer AllocSecondary()
     {
         var f = F;
-        if (f.SecondaryIndex < f.Secondaries.Count) return f.Secondaries[f.SecondaryIndex++];
+        if (f.SecondaryIndex < f.Secondaries.Count)
+        {
+            return f.Secondaries[f.SecondaryIndex++];
+        }
+
         var ai = new CommandBufferAllocateInfo { SType = StructureType.CommandBufferAllocateInfo, CommandPool = f.Pool, Level = CommandBufferLevel.Secondary, CommandBufferCount = 1 };
         _vk.AllocateCommandBuffers(_dev, in ai, out CommandBuffer cb).Ok("vkAllocateCommandBuffers(secondary)");
         f.Secondaries.Add(cb);
@@ -326,7 +424,10 @@ public sealed unsafe partial class VulkanRenderer
             WordImage = _tw1Active ? _tw1!.Image : default,
         };
         _depthNeedsClear = false;
-        if (_renderRaw) _msSceneRaw = true;
+        if (_renderRaw)
+        {
+            _msSceneRaw = true;
+        }
 
         // the draws go into a secondary command buffer that inherits a render pass compatible with the one begun
         // when the rendering ends (load/store ops and the resolve attachment do not affect compatibility)
@@ -343,7 +444,8 @@ public sealed unsafe partial class VulkanRenderer
         _boundPipeline = default;
         _rendering = true;
         _statMsPasses++;
-        rt.Dirty = true; rt.Version++;
+        rt.Dirty = true;
+        rt.Version++;
         _depth.Version++;
         if (_msNeedsLoad)
         {
@@ -363,7 +465,11 @@ public sealed unsafe partial class VulkanRenderer
         _boundPipeline = default;
         var p = _msPass;
         bool keepDepth = !final || _scene?.Depth is { ForceStore: true };
-        if (final) _statMsDiscards++;
+        if (final)
+        {
+            _statMsDiscards++;
+        }
+
         resolve |= final;
         // float renderings of scenes without raw outputs resolve in the render pass (average); scenes with raw
         // integer outputs resolve afterwards through the integer views (SAMPLE_ZERO, exact bits)
@@ -379,9 +485,12 @@ public sealed unsafe partial class VulkanRenderer
             PipelineStageFlags.LateFragmentTestsBit, PipelineStageFlags.EarlyFragmentTestsBit | PipelineStageFlags.LateFragmentTestsBit,
             AccessFlags.DepthStencilAttachmentWriteBit, AccessFlags.DepthStencilAttachmentReadBit | AccessFlags.DepthStencilAttachmentWriteBit);
         if (p.WordImage.Handle != 0)
+        {
             Barrier(p.WordImage, ImageLayout.General, ImageLayout.General, ImageAspectFlags.ColorBit,
                 PipelineStageFlags.ColorAttachmentOutputBit | PipelineStageFlags.TransferBit, PipelineStageFlags.ColorAttachmentOutputBit | PipelineStageFlags.FragmentShaderBit,
                 AccessFlags.ColorAttachmentWriteBit | AccessFlags.TransferWriteBit, AccessFlags.ColorAttachmentReadBit | AccessFlags.ColorAttachmentWriteBit | AccessFlags.InputAttachmentReadBit);
+        }
+
         ImageView resolveView = default;
         if (inline)
         {
@@ -410,7 +519,10 @@ public sealed unsafe partial class VulkanRenderer
         _vk.CmdBeginRenderPass(cmd, in rbi, SubpassContents.SecondaryCommandBuffers);
         _vk.CmdExecuteCommands(cmd, 1, in cb);
         _vk.CmdEndRenderPass(cmd);
-        if (after) ResolveMsaa(final);
+        if (after)
+        {
+            ResolveMsaa(final);
+        }
     }
 
     /// <summary>Resolve settings of a rendering: average into the surface view the scene renders with, or (scenes with
@@ -472,8 +584,12 @@ public sealed unsafe partial class VulkanRenderer
             var clears = stackalloc ClearValue[3];
             var rbi = new RenderPassBeginInfo
             {
-                SType = StructureType.RenderPassBeginInfo, RenderPass = pass, Framebuffer = fb,
-                RenderArea = ri.RenderArea, ClearValueCount = 3, PClearValues = clears,
+                SType = StructureType.RenderPassBeginInfo,
+                RenderPass = pass,
+                Framebuffer = fb,
+                RenderArea = ri.RenderArea,
+                ClearValueCount = 3,
+                PClearValues = clears,
             };
             _vk.CmdBeginRenderPass(F.Cmd, in rbi, SubpassContents.Inline);
             _vk.CmdEndRenderPass(F.Cmd);
@@ -522,7 +638,11 @@ void main() { o = texelFetch(src, ivec2(gl_FragCoord.xy), 0); }
     /// <summary>Layout of the built-in full-screen passes (one combined image sampler) and their shared shaders.</summary>
     DescriptorSetLayout EnsureLoadLayout()
     {
-        if (_msLoadLayout.Handle != 0) return _msLoadSetLayout;
+        if (_msLoadLayout.Handle != 0)
+        {
+            return _msLoadSetLayout;
+        }
+
         var b = new DescriptorSetLayoutBinding(0, DescriptorType.CombinedImageSampler, 1, ShaderStageFlags.FragmentBit);
         var ci = new DescriptorSetLayoutCreateInfo { SType = StructureType.DescriptorSetLayoutCreateInfo, BindingCount = 1, PBindings = &b };
         _vk.CreateDescriptorSetLayout(_dev, in ci, null, out _msLoadSetLayout).Ok("load set layout");
@@ -538,7 +658,11 @@ void main() { o = texelFetch(src, ivec2(gl_FragCoord.xy), 0); }
     /// <param name="tileWord1">for a render pass with the tile-word attachment (left unwritten)</param>
     Pipeline MsaaLoadPipeline(Format format, SampleCountFlags samples, bool tileWord1)
     {
-        if (_msLoadPipelines.TryGetValue((format, samples, tileWord1), out var p)) return p;
+        if (_msLoadPipelines.TryGetValue((format, samples, tileWord1), out var p))
+        {
+            return p;
+        }
+
         EnsureLoadLayout();
         var entry = stackalloc byte[5] { (byte)'m', (byte)'a', (byte)'i', (byte)'n', 0 };
         var stages = stackalloc PipelineShaderStageCreateInfo[2];
@@ -560,9 +684,20 @@ void main() { o = texelFetch(src, ivec2(gl_FragCoord.xy), 0); }
         var dsi = new PipelineDynamicStateCreateInfo { SType = StructureType.PipelineDynamicStateCreateInfo, DynamicStateCount = 2, PDynamicStates = dyn };
         var gci = new GraphicsPipelineCreateInfo
         {
-            SType = StructureType.GraphicsPipelineCreateInfo, RenderPass = MsaaCompatPass(format, samples, tileWord1), Subpass = 0, StageCount = 2, PStages = stages,
-            PVertexInputState = &vi, PInputAssemblyState = &ia, PViewportState = &vp, PRasterizationState = &rs, PMultisampleState = &ms,
-            PDepthStencilState = &ds, PColorBlendState = &cb, PDynamicState = &dsi, Layout = _msLoadLayout,
+            SType = StructureType.GraphicsPipelineCreateInfo,
+            RenderPass = MsaaCompatPass(format, samples, tileWord1),
+            Subpass = 0,
+            StageCount = 2,
+            PStages = stages,
+            PVertexInputState = &vi,
+            PInputAssemblyState = &ia,
+            PViewportState = &vp,
+            PRasterizationState = &rs,
+            PMultisampleState = &ms,
+            PDepthStencilState = &ds,
+            PColorBlendState = &cb,
+            PDynamicState = &dsi,
+            Layout = _msLoadLayout,
         };
         _vk.CreateGraphicsPipelines(_dev, _vkPipelineCache, 1, in gci, null, out p).Ok("MSAA load pipeline");
         return _msLoadPipelines[(format, samples, tileWord1)] = p;
@@ -577,7 +712,11 @@ void main() { o = texelFetch(src, ivec2(gl_FragCoord.xy), 0); }
 
     void RecordMsaaLoad(Format format, bool tileWord1)
     {
-        if (MsaaLoadSkip) return;
+        if (MsaaLoadSkip)
+        {
+            return;
+        }
+
         var src = SceneStartCopyView(_rt!, format);
         var cmd = _msCmd;
         var pipeline = MsaaLoadPipeline(format, _msSamples, tileWord1);
@@ -607,7 +746,11 @@ void main() { o = texelFetch(src, ivec2(gl_FragCoord.xy), 0); }
     /// <summary>1x1 four-sample image bound to the multisampled framebuffer-fetch binding when the scene has none.</summary>
     ImageView DummyMsView()
     {
-        if (_dummyMsView.Handle != 0) return _dummyMsView;
+        if (_dummyMsView.Handle != 0)
+        {
+            return _dummyMsView;
+        }
+
         (_dummyMsImage, _dummyMsView, _dummyMsMem) = CreateImage(MemCat.Other, 1, 1, Format.R8G8B8A8Unorm, ImageUsageFlags.SampledBit | ImageUsageFlags.ColorAttachmentBit,
             ImageAspectFlags.ColorBit, samples: SampleCountFlags.Count4Bit);
         EndRendering();
@@ -633,7 +776,11 @@ void main() { o = texelFetch(src, ivec2(gl_FragCoord.xy), 0); }
         var view = MsaaView(m, _rtAttachFormat);
         var word = tileWord1 && _tw1 != null ? _tw1.View : default;
         // the set only names the attachment views: reused by every such draw of the frame (lighting passes issue many)
-        if (_msInputSet.Handle != 0 && _msInputSetView.Handle == view.Handle && _msInputSetWord.Handle == word.Handle && _msInputSetFrame == _frameSerial) return _msInputSet;
+        if (_msInputSet.Handle != 0 && _msInputSetView.Handle == view.Handle && _msInputSetWord.Handle == word.Handle && _msInputSetFrame == _frameSerial)
+        {
+            return _msInputSet;
+        }
+
         var set = AllocSet(_fbLayout);
         (_msInputSet, _msInputSetView, _msInputSetWord, _msInputSetFrame) = (set, view, word, _frameSerial);
         var info = stackalloc DescriptorImageInfo[4]
@@ -646,14 +793,24 @@ void main() { o = texelFetch(src, ivec2(gl_FragCoord.xy), 0); }
         uint count = word.Handle != 0 ? 4u : 3u;
         var w = stackalloc WriteDescriptorSet[4];
         for (int i = 0; i < count; i++)
+        {
             w[i] = new WriteDescriptorSet
             {
-                SType = StructureType.WriteDescriptorSet, DstSet = set, DstBinding = (uint)i, DescriptorCount = 1,
-                DescriptorType = i >= 2 ? DescriptorType.InputAttachment : DescriptorType.CombinedImageSampler, PImageInfo = &info[i],
+                SType = StructureType.WriteDescriptorSet,
+                DstSet = set,
+                DstBinding = (uint)i,
+                DescriptorCount = 1,
+                DescriptorType = i >= 2 ? DescriptorType.InputAttachment : DescriptorType.CombinedImageSampler,
+                PImageInfo = &info[i],
             };
+        }
+
         _vk.UpdateDescriptorSets(_dev, count, w, 0, null);
         if (_statMsInputFetches++ == 0)
+        {
             Log.Info($"[gpu] programmable blending in multisampled scenes reads the colour attachment as an input attachment{(_core.SampleRateShading ? " per sample" : " (sample 0: no sampleRateShading)")}");
+        }
+
         return set;
     }
 
@@ -672,7 +829,11 @@ void main() { o = texelFetch(src, ivec2(gl_FragCoord.xy), 0); }
         // the scene's first rendering loads the samples (draws the scene-start content into them): when the scene
         // starts with a programmable-blending draw that rendering has not happened yet, and the copy read undefined
         // samples (Soul Sacrifice's heat-haze quad, the first draw of a scene, became a triangle of coloured dots)
-        if (_msNeedsLoad) BeginRendering();
+        if (_msNeedsLoad)
+        {
+            BeginRendering();
+        }
+
         EndRendering(resolve: false); // stores the samples (the scene goes on); the next rendering resolves
         var m = GetMsaaImage(rt, _msSamples);
         var key = (rt.ImgW, rt.ImgH, _rtAttachFormat, _msSamples);
@@ -685,7 +846,10 @@ void main() { o = texelFetch(src, ivec2(gl_FragCoord.xy), 0); }
         }
         _statMsFetchCopies++;
         if (FetchRegion(RtScale, rt.ImgW, rt.ImgH) is not (var offset, var extent))
+        {
             return BuildFetchSet(_dummyView, ImageLayout.ShaderReadOnlyOptimal, copy.View, ImageLayout.General);
+        }
+
         Barrier(m.Image, ImageLayout.General, ImageLayout.General, ImageAspectFlags.ColorBit,
             PipelineStageFlags.ColorAttachmentOutputBit, PipelineStageFlags.TransferBit, AccessFlags.ColorAttachmentWriteBit, AccessFlags.TransferReadBit);
         Barrier(copy.Image, ImageLayout.General, ImageLayout.General, ImageAspectFlags.ColorBit, PipelineStageFlags.FragmentShaderBit, PipelineStageFlags.TransferBit,
@@ -694,7 +858,9 @@ void main() { o = texelFetch(src, ivec2(gl_FragCoord.xy), 0); }
         {
             SrcSubresource = new ImageSubresourceLayers(ImageAspectFlags.ColorBit, 0, 0, 1),
             DstSubresource = new ImageSubresourceLayers(ImageAspectFlags.ColorBit, 0, 0, 1),
-            SrcOffset = offset, DstOffset = offset, Extent = extent,
+            SrcOffset = offset,
+            DstOffset = offset,
+            Extent = extent,
         };
         _vk.CmdCopyImage(Cmd, m.Image, ImageLayout.General, copy.Image, ImageLayout.General, 1, in region);
         Barrier(copy.Image, ImageLayout.General, ImageLayout.General, ImageAspectFlags.ColorBit, PipelineStageFlags.TransferBit, PipelineStageFlags.FragmentShaderBit,
@@ -716,10 +882,16 @@ void main() { o = texelFetch(src, ivec2(gl_FragCoord.xy), 0); }
     {
         long x0 = Math.Clamp(_drawMinX, 0, _sceneW), y0 = Math.Clamp(_drawMinY, 0, _sceneH);
         long x1 = Math.Clamp((long)_drawMaxX + 1, x0, _sceneW), y1 = Math.Clamp((long)_drawMaxY + 1, y0, _sceneH);
-        x0 = Math.Min(ScaledLo(x0, scale), imageW); y0 = Math.Min(ScaledLo(y0, scale), imageH);
-        x1 = Math.Min(ScaledHi(x1, scale), imageW); y1 = Math.Min(ScaledHi(y1, scale), imageH);
+        x0 = Math.Min(ScaledLo(x0, scale), imageW);
+        y0 = Math.Min(ScaledLo(y0, scale), imageH);
+        x1 = Math.Min(ScaledHi(x1, scale), imageW);
+        y1 = Math.Min(ScaledHi(y1, scale), imageH);
         _statFetchFullPixels += (long)imageW * imageH;
-        if (x1 <= x0 || y1 <= y0) return null;
+        if (x1 <= x0 || y1 <= y0)
+        {
+            return null;
+        }
+
         _statFetchPixels += (x1 - x0) * (y1 - y0);
         return (new Offset3D((int)x0, (int)y0, 0), new Extent3D((uint)(x1 - x0), (uint)(y1 - y0), 1));
     }
@@ -733,8 +905,16 @@ void main() { o = texelFetch(src, ivec2(gl_FragCoord.xy), 0); }
     bool MultisampledDepthRead(DepthTarget dt, bool stencil, bool unpack = false)
     {
         dt.EverRead = true;
-        if (dt.Samples == SampleCountFlags.Count1Bit) return false;
-        if (unpack && !stencil && dt.ForceStored) return false;
+        if (dt.Samples == SampleCountFlags.Count1Bit)
+        {
+            return false;
+        }
+
+        if (unpack && !stencil && dt.ForceStored)
+        {
+            return false;
+        }
+
         Log.WarnOnce($"msdepth-read-{dt.Address:X8}-{stencil}", $"[gpu] {(stencil ? "stencil" : "depth")} surface 0x{(stencil ? dt.StencilAddress : dt.Address):X8} of a multisampled scene is read: " +
             "the samples are not stored (read from guest memory)" + (dt.ForceStored ? "; the scene forces the store, but only depth read as a texture is unpacked" : ""));
         return true;
@@ -749,16 +929,37 @@ void main() { o = texelFetch(src, ivec2(gl_FragCoord.xy), 0); }
 
     void DestroyMsaa()
     {
-        foreach (var m in _msImages.Values) DestroyMsaaImage(m);
+        foreach (var m in _msImages.Values)
+        {
+            DestroyMsaaImage(m);
+        }
+
         _msImages.Clear();
-        foreach (var rp in _msRenderPasses.Values) _vk.DestroyRenderPass(_dev, rp, null);
+        foreach (var rp in _msRenderPasses.Values)
+        {
+            _vk.DestroyRenderPass(_dev, rp, null);
+        }
+
         _msRenderPasses.Clear();
-        foreach (var c in _msFetchCopies.Values) { _vk.DestroyImageView(_dev, c.View, null); _vk.DestroyImage(_dev, c.Image, null); }
+        foreach (var c in _msFetchCopies.Values)
+        {
+            _vk.DestroyImageView(_dev, c.View, null);
+            _vk.DestroyImage(_dev, c.Image, null);
+        }
         _msFetchCopies.Clear();
-        if (_dummyMsView.Handle != 0) { _vk.DestroyImageView(_dev, _dummyMsView, null); _vk.DestroyImage(_dev, _dummyMsImage, null); }
-        foreach (var p in _msLoadPipelines.Values) _vk.DestroyPipeline(_dev, p, null);
+        if (_dummyMsView.Handle != 0)
+        {
+            _vk.DestroyImageView(_dev, _dummyMsView, null);
+            _vk.DestroyImage(_dev, _dummyMsImage, null);
+        }
+        foreach (var p in _msLoadPipelines.Values)
+        {
+            _vk.DestroyPipeline(_dev, p, null);
+        }
+
         _msLoadPipelines.Clear();
         for (int i = 0; i < _depthUnpackPipelines.Length; i++)
+        {
             if (_depthUnpackPipelines[i].Handle != 0)
             {
                 _vk.DestroyPipeline(_dev, _depthUnpackPipelines[i], null);
@@ -766,6 +967,8 @@ void main() { o = texelFetch(src, ivec2(gl_FragCoord.xy), 0); }
                 _depthUnpackPipelines[i] = default;
                 _depthUnpackFs[i] = default;
             }
+        }
+
         if (_msLoadLayout.Handle != 0)
         {
             _vk.DestroyPipelineLayout(_dev, _msLoadLayout, null);

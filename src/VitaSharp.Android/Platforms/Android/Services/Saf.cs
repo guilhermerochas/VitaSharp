@@ -23,13 +23,15 @@ public sealed record PickedDocument(AUri Uri, string DisplayName, long Size)
         var pfd = resolver.OpenFileDescriptor(Uri, "r") ?? throw new IOException($"cannot open {DisplayName}");
         var fs = new FileStream(new SafeFileHandle(pfd.DetachFd(), ownsHandle: true), FileAccess.Read, 1 << 16);
         pfd.Close();
-        if (fs.CanSeek) return fs;
+        if (fs.CanSeek)
+            return fs;
         Directory.CreateDirectory(cacheDir);
         string tmp = Path.Combine(cacheDir, "import-" + Guid.NewGuid().ToString("N"));
         Log.Info($"SAF: {DisplayName} is not seekable: copying it to {tmp}");
         // the copy deletes itself when the caller closes it
         var copy = new FileStream(tmp, FileMode.CreateNew, FileAccess.ReadWrite, FileShare.None, 1 << 16, FileOptions.DeleteOnClose);
-        using (fs) fs.CopyTo(copy);
+        using (fs)
+            fs.CopyTo(copy);
         copy.Position = 0;
         return copy;
     }
@@ -54,7 +56,8 @@ public static class Saf
         var intent = new Intent(Intent.ActionOpenDocument);
         intent.AddCategory(Intent.CategoryOpenable);
         intent.SetType(mimeTypes.Length == 1 ? mimeTypes[0] : "*/*");
-        if (mimeTypes.Length > 1) intent.PutExtra(Intent.ExtraMimeTypes, mimeTypes);
+        if (mimeTypes.Length > 1)
+            intent.PutExtra(Intent.ExtraMimeTypes, mimeTypes);
         int code;
         var tcs = new TaskCompletionSource<PickedDocument?>(TaskCreationOptions.RunContinuationsAsynchronously);
         lock (Pending)
@@ -71,10 +74,18 @@ public static class Saf
         TaskCompletionSource<PickedDocument?>? tcs;
         lock (Pending)
         {
-            if (!Pending.Remove(requestCode, out tcs)) return;
+            if (!Pending.Remove(requestCode, out tcs))
+                return;
         }
-        if (resultCode != Result.Ok || data?.Data is not { } uri) { tcs.TrySetResult(null); return; }
-        try { tcs.TrySetResult(Describe(uri)); }
+        if (resultCode != Result.Ok || data?.Data is not { } uri)
+        {
+            tcs.TrySetResult(null);
+            return;
+        }
+        try
+        {
+            tcs.TrySetResult(Describe(uri));
+        }
         catch (Exception e)
         {
             Log.Warn($"SAF: {uri}: {e.Message}");
@@ -89,8 +100,10 @@ public static class Saf
         using var c = AppServices.AppContext.ContentResolver!.Query(uri, [IOpenableColumns.DisplayName, IOpenableColumns.Size], null, null, null);
         if (c != null && c.MoveToFirst())
         {
-            if (!c.IsNull(0)) name = c.GetString(0) ?? name;
-            if (!c.IsNull(1)) size = c.GetLong(1);
+            if (!c.IsNull(0))
+                name = c.GetString(0) ?? name;
+            if (!c.IsNull(1))
+                size = c.GetLong(1);
         }
         return new PickedDocument(uri, name, size);
     }

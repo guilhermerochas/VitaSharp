@@ -49,14 +49,43 @@ public sealed record ShaderHints(uint[] TextureFormats, (uint RegIndex, int Comp
     public ulong Key()
     {
         ulong h = Fnv.Offset;
-        foreach (var t in TextureFormats) h = Fnv.Mix(h, t);
-        foreach (var a in Attributes) { h = Fnv.Mix(h, a.RegIndex); h = Fnv.Mix(h, (uint)a.ComponentCount); h = Fnv.Mix(h, a.Format); }
+        foreach (var t in TextureFormats)
+        {
+            h = Fnv.Mix(h, t);
+        }
+
+        foreach (var a in Attributes)
+        {
+            h = Fnv.Mix(h, a.RegIndex);
+            h = Fnv.Mix(h, (uint)a.ComponentCount);
+            h = Fnv.Mix(h, a.Format);
+        }
         h = Fnv.Mix(h, ColorFormat);
-        if (OutputRegisterFormat != 0) h = Fnv.Mix(h, OutputFormatKey ^ OutputRegisterFormat);
-        if (FetchInputAttachment) h = Fnv.Mix(h, FetchInputKey);
-        if (FetchInputSingleSample) h = Fnv.Mix(h, FetchInputSingleKey);
-        if (TileWord1) h = Fnv.Mix(h, TileWord1Key);
-        if (ScaledPointSize) h = Fnv.Mix(h, ScaledPointSizeKey);
+        if (OutputRegisterFormat != 0)
+        {
+            h = Fnv.Mix(h, OutputFormatKey ^ OutputRegisterFormat);
+        }
+
+        if (FetchInputAttachment)
+        {
+            h = Fnv.Mix(h, FetchInputKey);
+        }
+
+        if (FetchInputSingleSample)
+        {
+            h = Fnv.Mix(h, FetchInputSingleKey);
+        }
+
+        if (TileWord1)
+        {
+            h = Fnv.Mix(h, TileWord1Key);
+        }
+
+        if (ScaledPointSize)
+        {
+            h = Fnv.Mix(h, ScaledPointSizeKey);
+        }
+
         return VaryingMask != 0 ? Fnv.Mix(Fnv.Mix(h, VaryingMaskKey), VaryingMask) : h;
     }
 
@@ -211,7 +240,10 @@ public static class ShaderGenerator
         sb.AppendLine("    vec2 d = fract(gl_FragCoord.xy / m) - 0.5;");
         sb.AppendLine("    vec2 pc = p - (dFdx(p) * d.x + dFdy(p) * d.y) * m;");
         sb.AppendLine("    ivec2 t = clamp(ivec2(floor(pc)), ivec2(0), ivec2(nsz) - 1);");
-        if (k == 1) sb.AppendLine("    return texelFetch(" + sampler + ", t, 0);");
+        if (k == 1)
+        {
+            sb.AppendLine("    return texelFetch(" + sampler + ", t, 0);");
+        }
         else
         {
             // which of the k x k copies of the native pixel: the fragment's position inside it
@@ -234,7 +266,10 @@ public static class ShaderGenerator
     public static bool LowerDynamicIndexing;
 
     /// <summary>What a fragment program reads from global register G16 (the primitive's facing, see UsseTranslator.Core).</summary>
-    public enum FaceRegisterMode { Front, FrontAlways, Back, Zero }
+    public enum FaceRegisterMode
+    {
+        Front, FrontAlways, Back, Zero
+    }
 
     /// <summary>The value of G16 (default Front): non-zero on front faces of draws that cull (GXM cull CW/CCW), 0 in
     /// draws without culling. Zero Time Dilemma (cull CW) negates the normal of its two-sided lighting when it is zero:
@@ -313,10 +348,16 @@ public static class ShaderGenerator
             string name = m.Groups[3].Value;
             int uses = Regex.Matches(s, $@"(?<![\w.]){Regex.Escape(name)}\b").Count - 1;
             int copies = Regex.Matches(s, $@"(\w+)\.[xy] = {Regex.Escape(name)}\.[xyzw];").Count(c => halfTemps.Contains(c.Groups[1].Value));
-            if (uses > 0 && copies == uses) s = s.Replace(m.Value, $"{m.Groups[1].Value}in mediump {m.Groups[2].Value} {name};");
+            if (uses > 0 && copies == uses)
+            {
+                s = s.Replace(m.Value, $"{m.Groups[1].Value}in mediump {m.Groups[2].Value} {name};");
+            }
         }
         if (Regex.IsMatch(s, @"^// gxp .* out (F16|U8|C10)", RegexOptions.Multiline))
+        {
             s = s.Replace("layout(location = 0) out vec4 out_color;", "layout(location = 0) out mediump vec4 out_color;");
+        }
+
         return s;
     }
 
@@ -384,7 +425,14 @@ float packC10(vec3 c) {
     public static int DataBytes(List<UniformBufferSlot> slots)
     {
         int n = 0;
-        foreach (var s in slots) if (!s.IsSplit) n = Math.Max(n, s.DataOffset + s.ByteSize);
+        foreach (var s in slots)
+        {
+            if (!s.IsSplit)
+            {
+                n = Math.Max(n, s.DataOffset + s.ByteSize);
+            }
+        }
+
         return n;
     }
 
@@ -393,7 +441,11 @@ float packC10(vec3 c) {
         var sizes = new SortedDictionary<int, (uint Size, uint Guest)>();
         foreach (var b in input.UniformBuffers)
         {
-            if (b.Index >= 15) continue;
+            if (b.Index >= 15)
+            {
+                continue;
+            }
+
             sizes[HostIndex(b.Index)] = ((b.Size + 3) / 4, b.Index);
         }
         var slots = new List<UniformBufferSlot>();
@@ -411,7 +463,10 @@ float packC10(vec3 c) {
             int split = guest < 14 && bytes >= SplitSlotMinBytes && splits < SplitSlotsPerStage ? splits++ : -1;
             slots.Add(new UniformBufferSlot(guest, lastBase, (int)bytes, Split: split) { CompactOffset = split >= 0 ? -1 : compact });
             lastBase += (int)bytes;
-            if (split < 0) compact += (int)bytes;
+            if (split < 0)
+            {
+                compact += (int)bytes;
+            }
         }
         return (slots, lastBase);
     }
@@ -432,7 +487,11 @@ float packC10(vec3 c) {
         var splitSlots = slots.Where(s => s.IsSplit).ToList();
         result.UniformBuffers.AddRange(slots);
         int fullBytes = lastBase;
-        if (SplitUniformSlots) lastBase = DataBytes(slots);
+        if (SplitUniformSlots)
+        {
+            lastBase = DataBytes(slots);
+        }
+
         result.UniformBytes = lastBase;
         bool hasUb = fullBytes > 0;
         bool hasMapped = slots.Any(s => s.Mapped);
@@ -453,15 +512,25 @@ float packC10(vec3 c) {
                                 "return j < uint(mem.length()) ? uintBitsToFloat(mem[j]) : 0.0; } " +
                                 "uint i = uint(addr) >> 2; return i < uint(ub.length()) ? uintBitsToFloat(ub[i]) : 0.0; }");
             }
-            else decl.AppendLine($"float fetchMemory(int addr) {{ {split}uint i = uint(addr) >> 2; return i < uint(ub.length()) ? uintBitsToFloat(ub[i]) : 0.0; }}");
+            else
+            {
+                decl.AppendLine($"float fetchMemory(int addr) {{ {split}uint i = uint(addr) >> 2; return i < uint(ub.length()) ? uintBitsToFloat(ub[i]) : 0.0; }}");
+            }
         }
-        else decl.AppendLine("float fetchMemory(int addr) { return 0.0; }");
+        else
+        {
+            decl.AppendLine("float fetchMemory(int addr) { return 0.0; }");
+        }
 
         // ---- samplers
         var samplerVars = new Dictionary<uint, UsseTranslator.SamplerUse>();
         UsseTranslator.SamplerUse SamplerFor(uint unit, bool cube)
         {
-            if (samplerVars.TryGetValue(unit, out var s)) return s;
+            if (samplerVars.TryGetValue(unit, out var s))
+            {
+                return s;
+            }
+
             uint fmt = unit < hints.TextureFormats.Length ? hints.TextureFormats[unit] : 0x0C000000;
             string? rtFetch = !vertex && !cube && (fmt & RtReinterpretFlag) != 0 ? $"rtfetch_{stagePrefix}{unit}" : null;
             s = new UsseTranslator.SamplerUse($"{stagePrefix}{unit}", unit, cube, GxmFormats.TextureComponentType(fmt), GxmFormats.TextureComponentCount(fmt), rtFetch);
@@ -469,7 +538,10 @@ float packC10(vec3 c) {
             result.Textures.Add((unit, cube));
             return s;
         }
-        foreach (var s in input.Samplers) SamplerFor(s.Index, s.IsCube);
+        foreach (var s in input.Samplers)
+        {
+            SamplerFor(s.Index, s.IsCube);
+        }
 
         if (program.ThreadBufferCount > 0)
         {
@@ -481,11 +553,23 @@ float packC10(vec3 c) {
         // ---- copy register-resident uniform blocks into SA
         foreach (var b in input.UniformBuffers)
         {
-            if (b.Index >= 15 || b.RegBlockSize == 0) continue;
+            if (b.Index >= 15 || b.RegBlockSize == 0)
+            {
+                continue;
+            }
+
             int host = HostIndex(b.Index);
-            if (!bufferBase.TryGetValue(host, out var bb)) continue;
+            if (!bufferBase.TryGetValue(host, out var bb))
+            {
+                continue;
+            }
+
             int count = (int)Math.Min(b.RegBlockSize, UsseTranslator.RegSaCount - b.RegStartOffset);
-            if (count <= 0) continue;
+            if (count <= 0)
+            {
+                continue;
+            }
+
             int start = (int)b.RegStartOffset;
             t.MaxSa = Math.Max(t.MaxSa, (start + count + 3) >> 2);
             // one statement per word: the loop's dynamic sa index kept the whole array in memory on Mali (stack
@@ -497,19 +581,25 @@ float packC10(vec3 c) {
                 long splitBase = SplitFlag(bb.Split);
                 bool uncheckedSplit = UncheckedUniformLoads && count * 4 <= bb.Size;
                 for (int k = 0; k < count; k += 4)
+                {
                     t.Line(string.Join(" ", Enumerable.Range(k, Math.Min(4, count - k)).Select(j => $"sa[{(start + j) >> 2}].{"xyzw"[(start + j) & 3]} = " +
                         (uncheckedSplit ? $"uintBitsToFloat(us{bb.Split}[{j}]);" : $"fetchMemory({splitBase + j * 4});"))));
+                }
             }
             else if (UniformLoop)
+            {
                 t.Line($"for (int k = 0; k < {count}; k++) {{ int w = {start} + k; sa[w >> 2][w & 3] = fetchMemory({bb.Base} + k * 4); }}");
+            }
             else
             {
                 // the words of a copied slot are always inside the per-draw uniform data (UniformBytes long, the
                 // renderer binds exactly that much): read without fetchMemory's bounds check (UncheckedUniformLoads)
                 bool unchecked_ = UncheckedUniformLoads && !bb.Mapped && bb.Base + count * 4 <= lastBase;
                 for (int k = 0; k < count; k += 4)
+                {
                     t.Line(string.Join(" ", Enumerable.Range(k, Math.Min(4, count - k)).Select(j => $"sa[{(start + j) >> 2}].{"xyzw"[(start + j) & 3]} = " +
                         (unchecked_ ? $"uintBitsToFloat(ub[{(bb.Base + j * 4) >> 2}]);" : $"fetchMemory({bb.Base + j * 4});"))));
+                }
             }
         }
 
@@ -524,14 +614,29 @@ float packC10(vec3 c) {
                     literals.Add((inp.Offset, l.Data));
                     break;
                 case UniformBufferInputSource u:
-                    if (u.Index == ProgramInput.TextureBuffer) { t.TextureBufferSaOffset = (int)inp.Offset; t.TextureBufferBase = (int)u.Base; }
-                    else if (u.Index == ProgramInput.LiteralBuffer) { t.LiteralBufferSaOffset = (int)inp.Offset; t.LiteralBufferBase = (int)u.Base; }
-                    else if (u.Index == ProgramInput.ThreadBuffer) { t.ThreadBufferSaOffset = (int)inp.Offset; t.ThreadBufferBase = (int)u.Base; }
+                    if (u.Index == ProgramInput.TextureBuffer)
+                    {
+                        t.TextureBufferSaOffset = (int)inp.Offset;
+                        t.TextureBufferBase = (int)u.Base;
+                    }
+                    else if (u.Index == ProgramInput.LiteralBuffer)
+                    {
+                        t.LiteralBufferSaOffset = (int)inp.Offset;
+                        t.LiteralBufferBase = (int)u.Base;
+                    }
+                    else if (u.Index == ProgramInput.ThreadBuffer)
+                    {
+                        t.ThreadBufferSaOffset = (int)inp.Offset;
+                        t.ThreadBufferBase = (int)u.Base;
+                    }
                     else
                     {
                         int host = HostIndex(u.Index);
                         bool found = bufferBase.TryGetValue(host, out var bb);
-                        var reg = Operand.Make(3); reg.Bank = Bank.SecAttr; reg.Num = (int)inp.Offset; reg.Type = DataType.Int32;
+                        var reg = Operand.Make(3);
+                        reg.Bank = Bank.SecAttr;
+                        reg.Num = (int)inp.Offset;
+                        reg.Type = DataType.Int32;
                         if (found && bb.Mapped)
                         {
                             // runtime base (flag | offset in the mapped-memory buffer) written into the slot header by the renderer
@@ -558,7 +663,10 @@ float packC10(vec3 c) {
                 }
                 case AttributeInputSource a when vertex:
                 {
-                    var reg = Operand.Make(3); reg.Bank = Bank.PrimAttr; reg.Num = (int)inp.Offset; reg.Type = inp.Type;
+                    var reg = Operand.Make(3);
+                    reg.Bank = Bank.PrimAttr;
+                    reg.Num = (int)inp.Offset;
+                    reg.Type = inp.Type;
                     if (a.Semantic == 15 || a.Semantic == 16)
                     {
                         reg.Type = DataType.UInt32;
@@ -573,8 +681,15 @@ float packC10(vec3 c) {
                         // (one byte / half per component, packed), whatever the stream's declared format
                         int ts = GxpProgram.TypeSize(inp.Type);
                         int comps = inp.Type == DataType.C10 ? (n * 10 + 7) / 8 : Math.Max(n, 1);
-                        if (ts >= 4) EmitUntypedAttribute(t, decl, result, reg, a.Index, location, comps, 4);
-                        else EmitRawAttribute(t, decl, result, reg, a.Index, location, comps, ts);
+                        if (ts >= 4)
+                        {
+                            EmitUntypedAttribute(t, decl, result, reg, a.Index, location, comps, 4);
+                        }
+                        else
+                        {
+                            EmitRawAttribute(t, decl, result, reg, a.Index, location, comps, ts);
+                        }
+
                         inAllocated += (comps + 3) / 4 * 4;
                         break;
                     }
@@ -604,7 +719,9 @@ float packC10(vec3 c) {
             for (int i = 0; i < hints.Attributes.Length; i++)
             {
                 var (regIndex, cc, _) = hints.Attributes[i];
-                var reg = Operand.Make(3); reg.Bank = Bank.PrimAttr; reg.Num = (int)regIndex;
+                var reg = Operand.Make(3);
+                reg.Bank = Bank.PrimAttr;
+                reg.Num = (int)regIndex;
                 reg.Type = DataType.F32;
                 int arr = Math.Max(1, (cc + 3) >> 2);
                 EmitAttribute(t, decl, result, reg, regIndex, i, arr * 4, forceArray: arr > 1);
@@ -613,14 +730,23 @@ float packC10(vec3 c) {
 
         foreach (var (off, val) in literals)
         {
-            var reg = Operand.Make(3); reg.Bank = Bank.SecAttr; reg.Num = (int)off; reg.Type = DataType.F32;
+            var reg = Operand.Make(3);
+            reg.Bank = Bank.SecAttr;
+            reg.Num = (int)off;
+            reg.Type = DataType.F32;
             t.Store(reg, new Val(UsseTranslator.F(val), 'f', 1), 1);
         }
 
-        if (!vertex) EmitFragmentInputs(program, hints, t, decl, result, SamplerFor);
+        if (!vertex)
+        {
+            EmitFragmentInputs(program, hints, t, decl, result, SamplerFor);
+        }
 
         // ---- the programs: secondary (sample-rate) phase first, then primary
-        if (vertex) t.Line("for (int k = 0; k < o.length(); k++) o[k] = vec4(0.0);");
+        if (vertex)
+        {
+            t.Line("for (int k = 0; k < o.length(); k++) o[k] = vec4(0.0);");
+        }
         // Temporaries start at zero: programs write parts of a register (a 16-bit VBW into the low half) and read the
         // whole word back; an uninitialised GLSL local made those upper bits undefined (driver-dependent garbage that
         // changed every frame: Tearaway's skinned meshes indexed bone matrices far out of range).
@@ -628,12 +754,24 @@ float packC10(vec3 c) {
         t.Line("for (int k = 0; k < fi.length(); k++) fi[k] = vec4(0.0);");
         t.Line("idx[0] = 0; idx[1] = 0;");
         if (program.SecondaryInstrCount > 0)
+        {
             t.TranslateProgram(ReadCode(program, program.SecondaryProgramStart, program.SecondaryInstrCount), true);
-        if (program.PrimaryInstrCount > 0)
-            t.TranslateProgram(ReadCode(program, program.PrimaryProgramStart, (int)program.PrimaryInstrCount), false);
+        }
 
-        if (vertex) EmitVertexFinalize(program, t, decl, hints.VaryingMask, hints.ScaledPointSize);
-        else EmitFragmentFinalize(program, hints, t, decl, result);
+        if (program.PrimaryInstrCount > 0)
+        {
+            t.TranslateProgram(ReadCode(program, program.PrimaryProgramStart, (int)program.PrimaryInstrCount), false);
+        }
+
+        if (vertex)
+        {
+            EmitVertexFinalize(program, t, decl, hints.VaryingMask, hints.ScaledPointSize);
+        }
+        else
+        {
+            EmitFragmentFinalize(program, hints, t, decl, result);
+        }
+
         if (!vertex && FarPlane == FarPlaneClip.Discard)
         {
             // the far-plane clip without gl_ClipDistance, after everything else: texture derivatives stay in uniform
@@ -670,12 +808,24 @@ float packC10(vec3 c) {
                       (vertex ? "" : $" out {program.OutputParamType}x{program.OutputCompCount} start {program.FragmentOutputStart} surface 0x{hints.ColorFormat:X8} flags 0x{program.Flags:X8}" +
                                 (hints.OutputRegisterFormat != 0 ? $" outreg {hints.OutputRegisterFormat}" : "")));
         if (result.UniformBuffers.Count > 0)
+        {
             sb.AppendLine("// ub " + string.Join(" ", result.UniformBuffers.Select(s => $"[{s.GuestIndex}]@{s.ByteOffset}+{s.ByteSize}{(s.Mapped ? "M" : "")}")));
+        }
+
         sb.AppendLine(PushConstants);
         foreach (var s in samplerVars.Values)
+        {
             sb.AppendLine($"layout(set = {texSet}, binding = {s.Index}) uniform {(s.IsCube ? "samplerCube" : "sampler2D")} {s.GlslName};");
+        }
+
         foreach (var s in samplerVars.Values)
-            if (s.RtFetch != null) sb.Append(RtFetchHelper(s.RtFetch, s.GlslName, hints.TextureFormats[s.Index]));
+        {
+            if (s.RtFetch != null)
+            {
+                sb.Append(RtFetchHelper(s.RtFetch, s.GlslName, hints.TextureFormats[s.Index]));
+            }
+        }
+
         sb.Append(decl);
         // every register an instruction names with a constant index is in its array (a GLSL constant index past the
         // array does not compile: the whole draw was lost); a dynamic index (Track(255)) covers 64 registers
@@ -687,12 +837,20 @@ float packC10(vec3 c) {
         sb.AppendLine($"vec4 fi[{Size(t.MaxFi, 8)}];");
         sb.AppendLine("bool p[4];");
         sb.AppendLine("int idx[2];");
-        if (t.DynBanks.Count > 0) sb.Append(DynHelpers(t.DynBanks));
+        if (t.DynBanks.Count > 0)
+        {
+            sb.Append(DynHelpers(t.DynBanks));
+        }
+
         sb.AppendLine(Helpers);
         sb.AppendLine("void main() {");
         sb.Append(t.Body);
         sb.AppendLine("}");
-        foreach (var w in t.Warnings) result.Warnings.Add(w);
+        foreach (var w in t.Warnings)
+        {
+            result.Warnings.Add(w);
+        }
+
         return new GeneratedShader
         {
             Glsl = RelaxHalfPrecision ? RelaxHalf(sb.ToString()) : sb.ToString(),
@@ -720,9 +878,16 @@ float packC10(vec3 c) {
         // a block that is not a real program (a GXP magic inside other data) can claim millions of instructions: every
         // instruction has to lie inside the program's bytes, as on the GPU, which only runs what was uploaded
         if (count < 0 || start < 0 || (long)start + (long)count * 8 > p.Data.Length)
+        {
             throw new InvalidDataException($"GXP program: {count} instructions at 0x{(uint)start:X} lie outside the 0x{p.Data.Length:X}-byte program");
+        }
+
         var code = new ulong[Math.Max(0, count)];
-        for (int i = 0; i < code.Length; i++) code[i] = p.ReadInstruction(start, i);
+        for (int i = 0; i < code.Length; i++)
+        {
+            code[i] = p.ReadInstruction(start, i);
+        }
+
         return code;
     }
 
@@ -746,7 +911,10 @@ float packC10(vec3 c) {
         else
         {
             decl.AppendLine($"layout(location = {location}) in uvec4 {name}[{k}];");
-            for (int i = 0; i < k; i++) t.Store(raw, new Val($"{name}[{i}]", 'u', 4), 0b1111, i * 4);
+            for (int i = 0; i < k; i++)
+            {
+                t.Store(raw, new Val($"{name}[{i}]", 'u', 4), 0b1111, i * 4);
+            }
         }
         result.VertexInputs.Add(new VertexInputInfo(regIndex, location, 'u', Math.Min(words, 4), k, rawSize, rawSize > 0 ? words : 0));
     }
@@ -758,8 +926,15 @@ float packC10(vec3 c) {
         raw.Type = DataType.UInt32;
         string name = $"in_attr{location}";
         int k = (comps + 3) / 4;
-        if (k == 1) decl.AppendLine($"layout(location = {location}) in {(comps == 1 ? "uint" : $"uvec{comps}")} {name};");
-        else decl.AppendLine($"layout(location = {location}) in uvec4 {name}[{k}];");
+        if (k == 1)
+        {
+            decl.AppendLine($"layout(location = {location}) in {(comps == 1 ? "uint" : $"uvec{comps}")} {name};");
+        }
+        else
+        {
+            decl.AppendLine($"layout(location = {location}) in uvec4 {name}[{k}];");
+        }
+
         string C(int i) => k == 1 ? (comps == 1 ? name : $"{name}.{"xyzw"[i]}") : $"{name}[{i / 4}].{"xyzw"[i % 4]}";
         int perWord = 4 / typeSize, bits = typeSize * 8;
         uint mask = typeSize == 1 ? 0xFFu : 0xFFFFu;
@@ -815,13 +990,24 @@ float packC10(vec3 c) {
         count = Math.Clamp(count, 1, 4);
         int bytes = count * cs, k = (bytes + 3) / 4;
         string name = $"in_attr{location}";
-        if (k == 1) decl.AppendLine($"layout(location = {location}) in {(bytes == 1 ? "uint" : $"uvec{bytes}")} {name};");
-        else decl.AppendLine($"layout(location = {location}) in uvec4 {name}[{k}];");
+        if (k == 1)
+        {
+            decl.AppendLine($"layout(location = {location}) in {(bytes == 1 ? "uint" : $"uvec{bytes}")} {name};");
+        }
+        else
+        {
+            decl.AppendLine($"layout(location = {location}) in uvec4 {name}[{k}];");
+        }
+
         string B(int i) => k == 1 ? (bytes == 1 ? name : $"{name}.{"xyzw"[i]}") : $"{name}[{i / 4}].{"xyzw"[i % 4]}";
         string Bits(int c) => cs == 2 ? $"({B(2 * c)} | ({B(2 * c + 1)} << 8))"
             : $"({B(4 * c)} | ({B(4 * c + 1)} << 8) | ({B(4 * c + 2)} << 16) | ({B(4 * c + 3)} << 24))";
         char kind = GxpProgram.IsSigned(reg.Type) ? 'i' : GxpProgram.IsUnsigned(reg.Type) ? 'u' : 'f';
-        if (fmt == AttributeFormatUntyped) kind = 'u';
+        if (fmt == AttributeFormatUntyped)
+        {
+            kind = 'u';
+        }
+
         int dst = Math.Clamp(n, 1, 4);
         var comps = new List<string>();
         for (int c = 0; c < dst; c++)
@@ -849,7 +1035,12 @@ float packC10(vec3 c) {
                 _ => fmt is 9 or 10 or 2 or 6 ? bits : $"uint({f})",
             });
         }
-        string vt = kind switch { 'i' => "ivec", 'u' => "uvec", _ => "vec" };
+        string vt = kind switch
+        {
+            'i' => "ivec",
+            'u' => "uvec",
+            _ => "vec"
+        };
         t.Store(reg, new Val(dst == 1 ? comps[0] : $"{vt}{dst}({string.Join(", ", comps)})", kind, dst), (1 << dst) - 1);
         result.VertexInputs.Add(new VertexInputInfo(regIndex, location, 'u', Math.Min(bytes, 4), k, 1, bytes));
         return k;
@@ -858,8 +1049,18 @@ float packC10(vec3 c) {
     static void EmitAttribute(UsseTranslator t, StringBuilder decl, GeneratedShader result, Operand reg, uint regIndex, int location, int n, bool forceArray = false, int hintCount = 0)
     {
         char kind = GxpProgram.IsSigned(reg.Type) ? 'i' : GxpProgram.IsUnsigned(reg.Type) ? 'u' : 'f';
-        string vecT = kind switch { 'i' => "ivec", 'u' => "uvec", _ => "vec" };
-        string scalarT = kind switch { 'i' => "int", 'u' => "uint", _ => "float" };
+        string vecT = kind switch
+        {
+            'i' => "ivec",
+            'u' => "uvec",
+            _ => "vec"
+        };
+        string scalarT = kind switch
+        {
+            'i' => "int",
+            'u' => "uint",
+            _ => "float"
+        };
         string name = $"in_attr{location}";
         if (n <= 4 && !forceArray)
         {
@@ -867,7 +1068,16 @@ float packC10(vec3 c) {
             decl.AppendLine($"layout(location = {location}) in {(n == 1 ? scalarT : vecT + n)} {name};");
             string value = name;
             // 3-component 8/16-bit vertex formats may be fetched as 4 components: the 4th must read as 1
-            if (n == 4 && hintCount == 3) value = kind switch { 'f' => $"vec4({name}.xyz, 1.0)", 'i' => $"ivec4({name}.xyz, 1)", _ => $"uvec4({name}.xyz, 1u)" };
+            if (n == 4 && hintCount == 3)
+            {
+                value = kind switch
+                {
+                    'f' => $"vec4({name}.xyz, 1.0)",
+                    'i' => $"ivec4({name}.xyz, 1)",
+                    _ => $"uvec4({name}.xyz, 1u)"
+                };
+            }
+
             t.Store(reg, new Val(value, kind, n), (1 << n) - 1);
             result.VertexInputs.Add(new VertexInputInfo(regIndex, location, kind, n, 1));
         }
@@ -877,7 +1087,10 @@ float packC10(vec3 c) {
             decl.AppendLine($"layout(location = {location}) in {vecT}4 {name}[{k}];");
             int stride = 4 * GxpProgram.TypeSize(reg.Type) / 4;
             for (int i = 0; i < k; i++)
+            {
                 t.Store(reg, new Val($"{name}[{i}]", kind, 4), 0b1111, i * Math.Max(stride, 1));
+            }
+
             result.VertexInputs.Add(new VertexInputInfo(regIndex, location, kind, 4, k));
         }
     }
@@ -900,7 +1113,11 @@ float packC10(vec3 c) {
         // ignored by programs that run per sample (gl_SampleID), which are interpolated at the sample position.
         string Varying(int loc, string name)
         {
-            if (declared.Add(loc)) decl.AppendLine($"layout(location = {loc}) centroid in vec4 {name};");
+            if (declared.Add(loc))
+            {
+                decl.AppendLine($"layout(location = {loc}) centroid in vec4 {name};");
+            }
+
             return name;
         }
 
@@ -916,15 +1133,35 @@ float packC10(vec3 c) {
                 var dtype = DataType.UInt8;
                 uint inputType = d.AttributeInfo & 0x30100000;
                 bool isColor = inputId is 0xA000 or 0xB000;
-                if (inputType == 0x20000000) dtype = DataType.F16;
-                else if (inputType == 0x10000000) { }
-                else if (inputType == 0x100000) { if (isColor) dtype = DataType.F32; }
-                else if (!isColor) dtype = DataType.F32;
+                if (inputType == 0x20000000)
+                {
+                    dtype = DataType.F16;
+                }
+                else if (inputType == 0x10000000)
+                {
+                }
+                else if (inputType == 0x100000)
+                {
+                    if (isColor)
+                    {
+                        dtype = DataType.F32;
+                    }
+                }
+                else if (!isColor)
+                {
+                    dtype = DataType.F32;
+                }
 
                 int numComp = (int)((d.AttributeInfo >> 22) & 3) + 1;
                 string src;
-                if ((inputId & 0x40000000) != 0) src = "vec4(gl_PointCoord, 0.0, 1.0)";
-                else if (inputId == 0xD000) src = "(gl_FragCoord / vec4(rinfo.res_multiplier, rinfo.res_multiplier, 1.0, 1.0))";
+                if ((inputId & 0x40000000) != 0)
+                {
+                    src = "vec4(gl_PointCoord, 0.0, 1.0)";
+                }
+                else if (inputId == 0xD000)
+                {
+                    src = "(gl_FragCoord / vec4(rinfo.res_multiplier, rinfo.res_multiplier, 1.0, 1.0))";
+                }
                 else
                 {
                     (string name, int loc) = inputId switch
@@ -935,12 +1172,22 @@ float packC10(vec3 c) {
                         _ => ($"v_TexCoord{inputId / 0x1000}", 4 + (int)(inputId / 0x1000)),
                     };
                     src = Varying(loc, name);
-                    if (inputId <= 0x9000) coords[inputId / 0x1000] = name;
+                    if (inputId <= 0x9000)
+                    {
+                        coords[inputId / 0x1000] = name;
+                    }
                 }
-                var reg = Operand.Make(3); reg.Bank = Bank.PrimAttr; reg.Num = (int)paOffset; reg.Type = dtype;
+                var reg = Operand.Make(3);
+                reg.Bank = Bank.PrimAttr;
+                reg.Num = (int)paOffset;
+                reg.Type = dtype;
                 var v = new Val(src, 'f', 4);
                 Val stored = numComp == 4 ? v : new Val(numComp == 1 ? $"{Paren(src)}.x" : $"{Paren(src)}.{"xyzw"[..numComp]}", 'f', numComp);
-                if (GxpProgram.IsInteger(dtype)) stored = t.ToInt(stored, dtype, true);
+                if (GxpProgram.IsInteger(dtype))
+                {
+                    stored = t.ToInt(stored, dtype, true);
+                }
+
                 t.Store(reg, stored, (1 << numComp) - 1);
                 paOffset += ((d.Size >> 4) & 3) + 1;
             }
@@ -948,15 +1195,29 @@ float packC10(vec3 c) {
             uint texCoordIndex = d.AttributeInfo & 0x40F;
             if (texCoordIndex != 0xF)
             {
-                if (texCoordIndex == 0x400) texCoordIndex = 10;
+                if (texCoordIndex == 0x400)
+                {
+                    texCoordIndex = 10;
+                }
+
                 uint unit = d.ResourceIndex;
                 var param = program.Parameters.FirstOrDefault(p => p.ResourceIndex == unit && p.Category == ParamCategory.Sampler);
                 bool cube = param?.IsSamplerCube ?? false;
                 var s = samplerFor(unit, cube);
-                var storeType = ((d.ComponentInfo >> 4) & 3) switch { 0 => DataType.Unk, 2 => DataType.F16, 3 => DataType.F32, _ => DataType.F16 };
+                var storeType = ((d.ComponentInfo >> 4) & 3) switch
+                {
+                    0 => DataType.Unk,
+                    2 => DataType.F16,
+                    3 => DataType.F32,
+                    _ => DataType.F16
+                };
                 uint swz = d.AttributeInfo & 0x300;
                 int prod = swz == 0x300 ? 2 : swz == 0x200 ? 3 : -1;
-                if (cube) prod = -1;
+                if (cube)
+                {
+                    prod = -1;
+                }
+
                 queries.Add((s, (int)texCoordIndex, swz != 0x100 ? prod : -1, paOffset, storeType));
                 paOffset += ((d.Size >> 6) & 3) + 1;
             }
@@ -965,17 +1226,44 @@ float packC10(vec3 c) {
         foreach (var q in queries)
         {
             string coord;
-            if (q.CoordIndex == 10) coord = "vec4(gl_PointCoord, 0.0, 1.0)";
-            else coord = coords[q.CoordIndex] ?? Varying(4 + q.CoordIndex, $"v_TexCoord{q.CoordIndex}");
+            if (q.CoordIndex == 10)
+            {
+                coord = "vec4(gl_PointCoord, 0.0, 1.0)";
+            }
+            else
+            {
+                coord = coords[q.CoordIndex] ?? Varying(4 + q.CoordIndex, $"v_TexCoord{q.CoordIndex}");
+            }
+
             string sampleExpr;
-            if (q.S.IsCube) sampleExpr = $"texture({q.S.GlslName}, {coord}.xyz)";
-            else if (q.S.RtFetch != null) sampleExpr = q.ProdPos >= 0 ? $"{q.S.RtFetch}({coord}.xy / {coord}.{"xyzw"[q.ProdPos]})" : $"{q.S.RtFetch}({coord}.xy)";
-            else if (q.ProdPos >= 0) sampleExpr = $"textureProj({q.S.GlslName}, vec3({coord}.xy, {coord}.{"xyzw"[q.ProdPos]}))";
-            else sampleExpr = $"texture({q.S.GlslName}, {coord}.xy)";
+            if (q.S.IsCube)
+            {
+                sampleExpr = $"texture({q.S.GlslName}, {coord}.xyz)";
+            }
+            else if (q.S.RtFetch != null)
+            {
+                sampleExpr = q.ProdPos >= 0 ? $"{q.S.RtFetch}({coord}.xy / {coord}.{"xyzw"[q.ProdPos]})" : $"{q.S.RtFetch}({coord}.xy)";
+            }
+            else if (q.ProdPos >= 0)
+            {
+                sampleExpr = $"textureProj({q.S.GlslName}, vec3({coord}.xy, {coord}.{"xyzw"[q.ProdPos]}))";
+            }
+            else
+            {
+                sampleExpr = $"texture({q.S.GlslName}, {coord}.xy)";
+            }
+
             var type = q.Store == DataType.Unk ? q.S.ComponentType : q.Store;
-            var reg = Operand.Make(3); reg.Bank = Bank.PrimAttr; reg.Num = (int)q.Dest; reg.Type = type;
+            var reg = Operand.Make(3);
+            reg.Bank = Bank.PrimAttr;
+            reg.Num = (int)q.Dest;
+            reg.Type = type;
             var val = new Val(sampleExpr, 'f', 4);
-            if (GxpProgram.IsInteger(type)) val = t.ToInt(val, type, true);
+            if (GxpProgram.IsInteger(type))
+            {
+                val = t.ToInt(val, type, true);
+            }
+
             int cc = Math.Clamp(q.S.ComponentCount, 1, 4);
             t.Store(reg, cc == 4 ? val : new Val($"({val.E}).{"xyzw"[..cc]}", val.K, cc), (1 << cc) - 1);
         }
@@ -983,7 +1271,9 @@ float packC10(vec3 c) {
         if (program.IsFragColorUsed)
         {
             result.UsesFragColor = true;
-            var target = Operand.Make(3); target.Bank = Bank.Output; target.Num = 0;
+            var target = Operand.Make(3);
+            target.Bank = Bank.Output;
+            target.Num = 0;
             target.Type = FetchType(program, hints);
             string sample = PerSampleFramebufferFetch ? "gl_SampleID" : "0";
             Val src;
@@ -1008,9 +1298,16 @@ float packC10(vec3 c) {
                 decl.AppendLine("layout(set = 3, binding = 1) uniform sampler2DMS last_frag_ms;");
                 src = new Val($"(rinfo.fb_samples > 1.5 ? texelFetch(last_frag_ms, ivec2(gl_FragCoord.xy), {sample}) : texelFetch(last_frag_tex, ivec2(gl_FragCoord.xy), 0))", 'f', 4);
             }
-            if (!GxpProgram.IsFloat(target.Type)) src = t.ToInt(src, target.Type, true);
+            if (!GxpProgram.IsFloat(target.Type))
+            {
+                src = t.ToInt(src, target.Type, true);
+            }
+
             t.Store(target, src, 0b1111);
-            if (program.IsNativeColor && target.Type is DataType.UInt8 or DataType.Int8) result.TileWord1 |= TileWord1Use.Reads;
+            if (program.IsNativeColor && target.Type is DataType.UInt8 or DataType.Int8)
+            {
+                result.TileWord1 |= TileWord1Use.Reads;
+            }
         }
 
         if (hints.TileWord1)
@@ -1044,7 +1341,13 @@ float packC10(vec3 c) {
     internal static DataType FetchType(GxpProgram program, ShaderHints hints)
     {
         if (program.IsNativeColor && program.IsFragColorDeclared)
-            return OutputType(program, hints with { OutputRegisterFormat = 0 });
+        {
+            return OutputType(program, hints with
+            {
+                OutputRegisterFormat = 0
+            });
+        }
+
         return OutputType(program, hints);
     }
 
@@ -1070,12 +1373,20 @@ float packC10(vec3 c) {
             bool declaredBytes = type is DataType.UInt8 or DataType.Int8;
             switch (hints.OutputRegisterFormat)
             {
-                case 1: return DataType.UInt8;        // UCHAR4
-                case 2: return DataType.Int8;         // CHAR4
-                case 3: return DataType.UInt16;       // USHORT2
-                case 4: return DataType.Int16;        // SHORT2
-                case 5: case 6: return declaredBytes ? type : DataType.F16;  // HALF4, HALF2
-                case 7: case 8: return declaredBytes ? type : DataType.F32;  // FLOAT2, FLOAT
+                case 1:
+                    return DataType.UInt8;        // UCHAR4
+                case 2:
+                    return DataType.Int8;         // CHAR4
+                case 3:
+                    return DataType.UInt16;       // USHORT2
+                case 4:
+                    return DataType.Int16;        // SHORT2
+                case 5:
+                case 6:
+                    return declaredBytes ? type : DataType.F16;  // HALF4, HALF2
+                case 7:
+                case 8:
+                    return declaredBytes ? type : DataType.F32;  // FLOAT2, FLOAT
             }
         }
         // U32/S32 outputs are raw bits: the surface stores the output registers unconverted, so read them in the
@@ -1085,11 +1396,21 @@ float packC10(vec3 c) {
         if (type is DataType.Int32 or DataType.UInt32)
         {
             uint fmt = hints.ColorFormat & 0xF1800000;
-            if (fmt == 0x01000000) return DataType.F16;        // F16F16F16F16
+            if (fmt == 0x01000000)
+            {
+                return DataType.F16;        // F16F16F16F16
+            }
         }
-        if (type is DataType.Int32 or DataType.UInt32 or DataType.Unk) type = DataType.F32;
+        if (type is DataType.Int32 or DataType.UInt32 or DataType.Unk)
+        {
+            type = DataType.F32;
+        }
         // F32F32 colour surfaces with more than 2 components pack lower precision data
-        if ((hints.ColorFormat & 0xF1800000) == 0x11000000 && program.OutputCompCount > 2 && type == DataType.F16) type = DataType.F32;
+        if ((hints.ColorFormat & 0xF1800000) == 0x11000000 && program.OutputCompCount > 2 && type == DataType.F16)
+        {
+            type = DataType.F32;
+        }
+
         return type;
     }
 
@@ -1107,7 +1428,11 @@ float packC10(vec3 c) {
     static DataType FinalOutputType(GxpProgram program, ShaderHints hints, UsseTranslator t)
     {
         var fallback = OutputType(program, hints);
-        if (!program.IsNativeColor || hints.OutputRegisterFormat == 0) return fallback;
+        if (!program.IsNativeColor || hints.OutputRegisterFormat == 0)
+        {
+            return fallback;
+        }
+
         return t.WordType(Bank.Output, 0) switch
         {
             DataType.UInt8 or DataType.O8 => DataType.UInt8,
@@ -1130,7 +1455,10 @@ float packC10(vec3 c) {
         // U32 words to PA2/PA3 (output start 2), and reading PA0/PA1 stored the unpacked normal's halves as albedo
         // (saturated red/orange windows, red fringes along building edges)
         if (!program.IsNativeColor && GxpProgram.StoreType(program.OutputParamType) is DataType.F16 or DataType.UInt32 or DataType.Int32)
+        {
             regOff = program.FragmentOutputStart;
+        }
+
         int rawBits = RawOutputBits(program, hints.ColorFormat);
         if (rawBits != 0)
         {
@@ -1156,7 +1484,11 @@ float packC10(vec3 c) {
         else
         {
             var v = t.Load(color, 0xF, regOff);
-            if (!GxpProgram.IsFloat(color.Type)) v = t.ToFloat(v, color.Type, true);
+            if (!GxpProgram.IsFloat(color.Type))
+            {
+                v = t.ToFloat(v, color.Type, true);
+            }
+
             decl.AppendLine("layout(location = 0) out vec4 out_color;");
             t.Line($"out_color = {v.E};");
             // a one-word colour with the second output register word written: scratch the tile keeps (TileWord1Use)
@@ -1176,38 +1508,58 @@ float packC10(vec3 c) {
             // (Silent Hill: Book of Memories keeps each pixel's view depth in the light buffer's alpha and every
             // light reconstructs the position from it; clamped to 1, the lights, the flashlight included, lit nothing).
             if ((hints.ColorFormat & 0xF1800000) == 0x41000000)
+            {
                 t.Line("out_color = vec4(max(out_color.rgb, vec3(0.0)), out_color.a);");
+            }
         }
         int bodyLength = t.Body.Length;
         // debug bisection (VITASHARP_DEBUG_TEX0=1): show the raw first texture at the first coordinate, bypassing the
         // shader math, to tell texture/coordinate problems from lighting/fog problems
         if (DebugTex0 && t.Body.Contains("texture(ftex0, v_TexCoord0") && decl.ToString().Contains("in vec4 v_TexCoord0;"))
+        {
             t.Line(DebugUv ? "out_color = vec4(fract(v_TexCoord0.xy), fract(v_TexCoord0.x * 0.0625), out_color.a);" : DebugLod ? "out_color = vec4(clamp(textureQueryLod(ftex0, v_TexCoord0.xy).y / 16.0 + 0.5, 0.0, 1.0), clamp(log2(max(fwidth(v_TexCoord0.x), fwidth(v_TexCoord0.y)) * float(textureSize(ftex0, 0).x)) / 16.0 + 0.5, 0.0, 1.0), float(textureSize(ftex0, 0).x) / 1024.0, 1.0);" : DebugAlpha ? "out_color = vec4(texture(ftex0, v_TexCoord0.xy).aaa, 1.0);" : "out_color = vec4(texture(ftex0, v_TexCoord0.xy).rgb, out_color.a);");
+        }
         // VITASHARP_DEBUG_FS=<hash>:<glsl vec4 expression>: replace one fragment program's output (term bisection)
         // several programs: separate the entries with '|'
         if (DebugFs != null)
+        {
             foreach (var dfs in DebugFs.Split('|'))
+            {
                 if (dfs.StartsWith($"{program.Hash:X16}:", StringComparison.OrdinalIgnoreCase))
+                {
                     t.Line($"out_color = {dfs[17..]};");
+                }
+            }
+        }
         // VITASHARP_DEBUG_TEX0=hash: every pixel shows the fragment program that wrote it (low 3 bytes of its hash as RGB)
         if (DebugHash)
+        {
             t.Line($"out_color = vec4({program.Hash & 0xFF}.0, {(program.Hash >> 8) & 0xFF}.0, {(program.Hash >> 16) & 0xFF}.0, 255.0) / 255.0;");
+        }
         // VITASHARP_DEBUG_TEX0=id: every pixel shows the number of the draw that wrote it, 4 bits per channel (R low, G mid, B high), so it survives packed float targets
         if (DebugId)
+        {
             t.Line("{ uint did = uint(rinfo.draw_id); out_color = vec4(float(did & 15u) / 15.0, float((did >> 4) & 15u) / 15.0, float((did >> 8) & 15u) / 15.0, 1.0); }");
+        }
         // a debug override replaced the colour of a raw-output program: store it as the surface's halves/bytes/floats
         bool overridden = t.Body.Length != bodyLength;
         // VITASHARP_DEBUG_NAN=draws: count the fragments whose colour output has a NaN/Inf component, per draw
         // (rinfo.draw_id), in the renderer's per-frame buffer (VulkanRenderer.NanCheck.cs). Raw-bit outputs carry
         // packed data, not colours, unless a debug override above replaced them.
-        if (NanDraws && (rawBits == 0 || overridden)) EmitNanDrawCheck(decl, t, hints.ColorFormat);
+        if (NanDraws && (rawBits == 0 || overridden))
+        {
+            EmitNanDrawCheck(decl, t, hints.ColorFormat);
+        }
+
         if (rawBits != 0 && overridden)
+        {
             t.Line(rawBits switch
             {
                 32 => "out_raw = floatBitsToUint(out_color);",
                 16 => "out_raw = uvec4(packHalf2x16(out_color.xy) & 0xFFFFu, packHalf2x16(out_color.xy) >> 16, packHalf2x16(out_color.zw) & 0xFFFFu, packHalf2x16(out_color.zw) >> 16);",
                 _ => "out_raw = uvec4(round(clamp(out_color, 0.0, 1.0) * 255.0));",
             });
+        }
     }
 
     /// <summary>
@@ -1223,8 +1575,16 @@ float packC10(vec3 c) {
     public static int RawOutputBits(GxpProgram program, uint colorFormat)
     {
         var type = GxpProgram.StoreType(program.OutputParamType);
-        if (type is not (DataType.Int32 or DataType.UInt32)) return 0;
-        if (((colorFormat >> 20) & 3) != 0 && (colorFormat & 0xF1800000) is 0x00000000 or 0x01000000) return 0; // swizzled
+        if (type is not (DataType.Int32 or DataType.UInt32))
+        {
+            return 0;
+        }
+
+        if (((colorFormat >> 20) & 3) != 0 && (colorFormat & 0xF1800000) is 0x00000000 or 0x01000000)
+        {
+            return 0; // swizzled
+        }
+
         var (bits, bytes) = (colorFormat & 0xF1800000) switch
         {
             0x01000000 => (16, 8), // F16F16F16F16
@@ -1265,7 +1625,13 @@ float packC10(vec3 c) {
             0x30000000 or 0x21000000 or 0x31000000 => 3,
             _ => 4,
         };
-        string v = stored switch { 1 => "vec4(out_color.x)", 2 => "out_color.xyxy", 3 => "out_color.xyzx", _ => "out_color" };
+        string v = stored switch
+        {
+            1 => "vec4(out_color.x)",
+            2 => "out_color.xyxy",
+            3 => "out_color.xyzx",
+            _ => "out_color"
+        };
         decl.AppendLine($"layout(std430, set = 0, binding = {NanDrawBinding}) buffer NanDrawHits {{ uint nan_hits[]; }} nanh;");
         // 16-bit and packed float surfaces also flag huge finite values (>= 65000, the scan's threshold): a value
         // past the F16 range is stored as Inf or clamped to 65504 depending on the host GPU
@@ -1303,13 +1669,33 @@ float packC10(vec3 c) {
             uint id = d.AttributeInfo & 0x4000F000;
             if (id != 0xF000 && (id & 0x40000000) == 0 && id != 0xD000)
             {
-                int loc = id switch { 0xC000 => 3, 0xA000 => 1, 0xB000 => 2, _ => 4 + (int)(id / 0x1000) };
-                if (loc is >= 1 and <= 13) mask |= 1u << loc; else other = true;
+                int loc = id switch
+                {
+                    0xC000 => 3,
+                    0xA000 => 1,
+                    0xB000 => 2,
+                    _ => 4 + (int)(id / 0x1000)
+                };
+                if (loc is >= 1 and <= 13)
+                {
+                    mask |= 1u << loc;
+                }
+                else
+                {
+                    other = true;
+                }
             }
             uint tc = d.AttributeInfo & 0x40F;
             if (tc != 0xF && tc != 0x400)
             {
-                if (tc <= 9) mask |= 1u << (4 + (int)tc); else other = true;
+                if (tc <= 9)
+                {
+                    mask |= 1u << (4 + (int)tc);
+                }
+                else
+                {
+                    other = true;
+                }
             }
         }
         // (bit 0 marks "computed": a program without varyings still gets a non-zero mask)
@@ -1327,15 +1713,29 @@ float packC10(vec3 c) {
             (GxpProgram.OutColor1, "v_Color1", 4, 2),
             (GxpProgram.OutFog, "v_Fog", 2, 3),
         };
-        for (int i = 0; i < 10; i++) list.Add((GxpProgram.OutTexcoord0 << i, $"v_TexCoord{i}", CopyCount(coordInfos[i]), 4 + i));
+        for (int i = 0; i < 10; i++)
+        {
+            list.Add((GxpProgram.OutTexcoord0 << i, $"v_TexCoord{i}", CopyCount(coordInfos[i]), 4 + i));
+        }
+
         list.Add((GxpProgram.OutPsize, "gl_PointSize", 1, -2));
 
         // declare every varying location so any fragment program links (with a mask: the ones the draw's fragment
         // program reads; the others would only cost the vertex shader stores and, on tilers, memory per vertex)
         for (int loc = 1; loc <= 13; loc++)
         {
-            if (!Declared(loc)) continue;
-            string name = loc switch { 1 => "v_Color0", 2 => "v_Color1", 3 => "v_Fog", _ => $"v_TexCoord{loc - 4}" };
+            if (!Declared(loc))
+            {
+                continue;
+            }
+
+            string name = loc switch
+            {
+                1 => "v_Color0",
+                2 => "v_Color1",
+                3 => "v_Fog",
+                _ => $"v_TexCoord{loc - 4}"
+            };
             decl.AppendLine($"layout(location = {loc}) out vec4 {name};");
         }
         if (FarPlane == FarPlaneClip.Discard)
@@ -1347,8 +1747,15 @@ float packC10(vec3 c) {
         int num = 0;
         foreach (var (flag, name, count, loc) in list)
         {
-            if ((outputs & flag) == 0) continue;
-            var o = Operand.Make(0); o.Bank = Bank.Output; o.Num = num; o.Type = DataType.F32;
+            if ((outputs & flag) == 0)
+            {
+                continue;
+            }
+
+            var o = Operand.Make(0);
+            o.Bank = Bank.Output;
+            o.Num = num;
+            o.Type = DataType.F32;
             if (flag == GxpProgram.OutPosition)
             {
                 var pos = t.Load(o, 0xF);
@@ -1367,8 +1774,14 @@ float packC10(vec3 c) {
                 t.Line("gl_Position = vpos;");
                 t.Line("gl_Position.z = vpos.z * rinfo.z_scale + rinfo.z_offset * vpos.w;");
                 t.Close();
-                if (FarPlane == FarPlaneClip.ClipDistance) t.Line("gl_ClipDistance[0] = gl_Position.w - gl_Position.z;");
-                else if (FarPlane == FarPlaneClip.Discard) t.Line("v_FarClip = gl_Position.w - gl_Position.z;");
+                if (FarPlane == FarPlaneClip.ClipDistance)
+                {
+                    t.Line("gl_ClipDistance[0] = gl_Position.w - gl_Position.z;");
+                }
+                else if (FarPlane == FarPlaneClip.Discard)
+                {
+                    t.Line("v_FarClip = gl_Position.w - gl_Position.z;");
+                }
             }
             else if (flag == GxpProgram.OutPsize)
             {
@@ -1391,16 +1804,36 @@ float packC10(vec3 c) {
         {
             for (int i = 0; i < 8; i++)
             {
-                if ((outputs & (1 << (15 + i))) == 0) continue;
-                var o = Operand.Make(0); o.Bank = Bank.Output; o.Num = num; o.Type = DataType.F32;
-                if (i + 1 < MaxClipDistances) t.Line($"gl_ClipDistance[{i + 1}] = {t.Load(o, 1).E};");
+                if ((outputs & (1 << (15 + i))) == 0)
+                {
+                    continue;
+                }
+
+                var o = Operand.Make(0);
+                o.Bank = Bank.Output;
+                o.Num = num;
+                o.Type = DataType.F32;
+                if (i + 1 < MaxClipDistances)
+                {
+                    t.Line($"gl_ClipDistance[{i + 1}] = {t.Load(o, 1).E};");
+                }
+
                 num++;
             }
         }
         for (int loc = 1; loc <= 13; loc++)
         {
-            string name = loc switch { 1 => "v_Color0", 2 => "v_Color1", 3 => "v_Fog", _ => $"v_TexCoord{loc - 4}" };
-            if (Declared(loc) && !written.Contains(name)) t.Line($"{name} = vec4(0.0);");
+            string name = loc switch
+            {
+                1 => "v_Color0",
+                2 => "v_Color1",
+                3 => "v_Fog",
+                _ => $"v_TexCoord{loc - 4}"
+            };
+            if (Declared(loc) && !written.Contains(name))
+            {
+                t.Line($"{name} = vec4(0.0);");
+            }
         }
     }
 }

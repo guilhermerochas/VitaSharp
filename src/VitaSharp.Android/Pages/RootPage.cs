@@ -4,7 +4,10 @@ using VitaSharp.Android.Ui;
 
 namespace VitaSharp.Android.Pages;
 
-public enum RootTab { Library, Controls, Performance, Settings }
+public enum RootTab
+{
+    Library, Controls, Performance, Settings
+}
 
 public sealed class RootState
 {

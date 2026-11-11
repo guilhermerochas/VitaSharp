@@ -52,7 +52,13 @@ public sealed class BenchActivity : Activity
             catch (Exception e)
             {
                 Log.Error($"[bench] {text}: {e}");
-                try { File.AppendAllText(Path.Combine(Root, "results", "errors.txt"), $"{DateTime.Now:s} {text}: {e.Message}\n"); } catch (IOException) { }
+                try
+                {
+                    File.AppendAllText(Path.Combine(Root, "results", "errors.txt"), $"{DateTime.Now:s} {text}: {e.Message}\n");
+                }
+                catch (IOException)
+                {
+                }
             }
             Log.Flush();
             RunOnUiThread(() => { FinishAndRemoveTask(); global::Android.OS.Process.KillProcess(global::Android.OS.Process.MyPid()); });

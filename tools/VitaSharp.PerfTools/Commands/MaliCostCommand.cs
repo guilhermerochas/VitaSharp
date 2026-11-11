@@ -30,9 +30,17 @@ sealed class MaliCostCommand : IPerfCommand
 
     public int Run(PerfArgs a)
     {
-        if (a.Positional.Count != 1) throw new PerfArgsException("mali-cost needs one dump file");
+        if (a.Positional.Count != 1)
+        {
+            throw new PerfArgsException("mali-cost needs one dump file");
+        }
+
         string path = Path.GetFullPath(a.Positional[0]);
-        if (!File.Exists(path)) { Console.Error.WriteLine($"GPU dump {path} not found"); return 1; }
+        if (!File.Exists(path))
+        {
+            Console.Error.WriteLine($"GPU dump {path} not found");
+            return 1;
+        }
         string outDir = Path.GetFullPath(a.Get("--out") ?? Path.Combine(Path.GetDirectoryName(path)!, Path.GetFileNameWithoutExtension(path) + "_perf"));
         string cacheDir = Path.GetFullPath(a.Get("--shader-cache") ?? Path.Combine(outDir, "shadercache"));
         var (first, last) = a.Range("--frames");
@@ -44,13 +52,26 @@ sealed class MaliCostCommand : IPerfCommand
             FirstFrame: first, LastFrame: last, Fp16WhatIf: a.Has("--fp16-whatif"));
 
         GpuDumpHeader header;
-        using (var r = new GpuDumpReader(path)) header = r.Header;
+        using (var r = new GpuDumpReader(path))
+        {
+            header = r.Header;
+        }
         // environment switches must be in place before the renderer and shader generator types initialise
         var env = a.Has("--no-recorded-env") ? new Dictionary<string, string>() : GpuDumpPlayer.RecordedEnvironment(header);
         env[EnvVars.GpuProfile] = a.Get("--gpu-profile") ?? "mali";
         foreach (var e in Environment.GetCommandLineArgs().Where(x => x.StartsWith("--env=")).Select(x => x["--env=".Length..]).Append(a.Get("--env") ?? ""))
-            if (e.IndexOf('=') is var eq and > 0) env[e[..eq]] = e[(eq + 1)..];
-        foreach (var (k, v) in env) Environment.SetEnvironmentVariable(k, v);
+        {
+            if (e.IndexOf('=') is var eq and > 0)
+            {
+                env[e[..eq]] = e[(eq + 1)..];
+            }
+        }
+
+        foreach (var (k, v) in env)
+        {
+            Environment.SetEnvironmentVariable(k, v);
+        }
+
         Console.WriteLine($"{path}: {header["title-id"]} {header["title"]}; " + string.Join(' ', env.Select(kv => $"{kv.Key}={kv.Value}")));
 
         var cost = new MaliCost(settings);
@@ -70,15 +91,27 @@ sealed class MaliCostCommand : IPerfCommand
             var renderer = new VulkanRenderer(ro);
             try
             {
-                if (header["title-id"] is { Length: > 0 } title) renderer.BeginTitle(title);
+                if (header["title-id"] is { Length: > 0 } title)
+                {
+                    renderer.BeginTitle(title);
+                }
+
                 var st = GpuDumpPlayer.Play(reader, renderer, presented: _ => renderer.PresentCount < last);
                 renderer.Execute(new FinishCommand());
                 cost.Capture(renderer);
                 Console.WriteLine($"replayed {st.Frames} frames, {st.Draws} draws in {wall.Elapsed.TotalSeconds:F1} s");
                 if (renderer.Report() is { } rep)
-                    foreach (var line in rep.Split('\n').Where(l => l.StartsWith("PERF gpu"))) Console.WriteLine(line);
+                {
+                    foreach (var line in rep.Split('\n').Where(l => l.StartsWith("PERF gpu")))
+                    {
+                        Console.WriteLine(line);
+                    }
+                }
             }
-            finally { renderer.Dispose(); }
+            finally
+            {
+                renderer.Dispose();
+            }
         }
         cost.Report();
         Log.Flush();

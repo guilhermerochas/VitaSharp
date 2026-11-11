@@ -6,7 +6,10 @@ namespace VitaSharp.Renderer.Vulkan;
 
 /// <summary>How a GXM texture base format is uploaded: either directly or converted on the CPU to RGBA8.</summary>
 /// <summary>AstcFromBc / AstcFromPvrtc: the level is transcoded to ASTC 4x4 blocks (AstcTranscoder).</summary>
-public enum TexConvert { None, Rgb8ToRgba8, Srgb8ToRgba8, Palette4, Palette8, U8U3U3U2, Yuv420P2, Yuv420P3, Yuv422, Pvrtc, U2F10F10F10, S5S5U6, X8U24, BcSoftware, AstcFromBc, AstcFromPvrtc }
+public enum TexConvert
+{
+    None, Rgb8ToRgba8, Srgb8ToRgba8, Palette4, Palette8, U8U3U3U2, Yuv420P2, Yuv420P3, Yuv422, Pvrtc, U2F10F10F10, S5S5U6, X8U24, BcSoftware, AstcFromBc, AstcFromPvrtc
+}
 
 public readonly record struct TexFormatInfo(Format Format, int BitsPerPixel, int BlockW, int BlockH, int BlockBytes, TexConvert Convert)
 {
@@ -101,6 +104,7 @@ public static class Formats
                 // SCE_GXM_TEXTURE_SWIZZLE1_{R,000R,111R,RRRR,0RRR,1RRR,R000,R111}: names list the result in RGBA order
                 // (R111 = (R,1,1,1)); the legacy ABGR-order reading is kept behind VITASHARP_SWZ1=A for comparison
                 if (Swizzle1Legacy)
+                {
                     return s switch
                     {
                         0 => M(R, Z, Z, O),
@@ -112,6 +116,8 @@ public static class Formats
                         6 => M(Z, Z, Z, R),
                         _ => M(O, O, O, R),
                     };
+                }
+
                 return s switch
                 {
                     0 => M(R, Z, Z, O),
@@ -142,7 +148,8 @@ public static class Formats
                     5 => M(G, R, Z, Z),
                     _ => Identity,
                 };
-            case TexBase.X8U24: return Identity;
+            case TexBase.X8U24:
+                return Identity;
             case TexBase.U8U8U8:
             case TexBase.S8S8S8:
             case TexBase.F11F11F10:
@@ -151,7 +158,14 @@ public static class Formats
             case TexBase.U5U6U5:
                 return s == 0 ? M(B, G, R, O) : M(R, G, B, O);
             case TexBase.U4U4U4U4:
-                return s switch { 0 => M(A, B, G, R), 1 => M(G, B, A, R), 2 => M(R, G, B, A), 3 => M(B, G, R, A), _ => Identity };
+                return s switch
+                {
+                    0 => M(A, B, G, R),
+                    1 => M(G, B, A, R),
+                    2 => M(R, G, B, A),
+                    3 => M(B, G, R, A),
+                    _ => Identity
+                };
             case TexBase.U1U5U5U5:
                 // uploaded as A1R5G5B5 (A in bit 15, then 5-bit fields from the top). GXM names the fields from the most
                 // significant bit, so ABGR is A1B5G5R5 and ARGB is A1R5G5B5; the U5U5U5U1 variants (RGBA, BGRA, RGB1,
@@ -272,7 +286,13 @@ public static class Formats
         return (colorFormat & 0xF1800000) switch
         {
             0x00000000 or 0xE0800000 or 0x01000000 or 0x60800000 or 0x41000000 =>
-                s switch { 0 => M(R, G, B, A), 1 => M(B, G, R, A), 2 => M(A, B, G, R), _ => M(G, B, A, R) },
+                s switch
+                {
+                    0 => M(R, G, B, A),
+                    1 => M(B, G, R, A),
+                    2 => M(A, B, G, R),
+                    _ => M(G, B, A, R)
+                },
             _ => Identity,
         };
     }
@@ -293,12 +313,20 @@ public static class Formats
     {
         var all = new List<Format>();
         for (byte g = 0; g <= 10; g++)
+        {
             foreach (char k in "fiu")
+            {
                 for (int c = 1; c <= 4; c++)
                 {
                     var f = Attribute(g, c, k).Format;
-                    if (!all.Contains(f)) all.Add(f);
+                    if (!all.Contains(f))
+                    {
+                        all.Add(f);
+                    }
                 }
+            }
+        }
+
         return all;
     }
 
@@ -325,7 +353,12 @@ public static class Formats
                 : kind == 'i' ? [Format.R32Sint, Format.R32G32Sint, Format.R32G32B32Sint, Format.R32G32B32A32Sint]
                 : [Format.R32Uint, Format.R32G32Uint, Format.R32G32B32Uint, Format.R32G32B32A32Uint],
         };
-        int compSize = gxmFormat switch { 0 or 1 or 4 or 5 => 1, 2 or 3 or 6 or 7 or 8 => 2, _ => 4 };
+        int compSize = gxmFormat switch
+        {
+            0 or 1 or 4 or 5 => 1,
+            2 or 3 or 6 or 7 or 8 => 2,
+            _ => 4
+        };
         return (row[ci], compSize * count);
     }
 
@@ -360,10 +393,26 @@ public static class Formats
     public static ColorComponentFlags Mask(byte gxmMask)
     {
         ColorComponentFlags f = 0;
-        if ((gxmMask & 1) != 0) f |= ColorComponentFlags.ABit;
-        if ((gxmMask & 2) != 0) f |= ColorComponentFlags.RBit;
-        if ((gxmMask & 4) != 0) f |= ColorComponentFlags.GBit;
-        if ((gxmMask & 8) != 0) f |= ColorComponentFlags.BBit;
+        if ((gxmMask & 1) != 0)
+        {
+            f |= ColorComponentFlags.ABit;
+        }
+
+        if ((gxmMask & 2) != 0)
+        {
+            f |= ColorComponentFlags.RBit;
+        }
+
+        if ((gxmMask & 4) != 0)
+        {
+            f |= ColorComponentFlags.GBit;
+        }
+
+        if ((gxmMask & 8) != 0)
+        {
+            f |= ColorComponentFlags.BBit;
+        }
+
         return f;
     }
 

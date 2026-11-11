@@ -11,7 +11,10 @@ namespace VitaSharp.Tests;
 [GenerateSnapshot, SnapshotIgnoreFields("Ignored")]
 public sealed partial class SnapshotProbe
 {
-    public enum Kind : byte { A, B, C }
+    public enum Kind : byte
+    {
+        A, B, C
+    }
     public int I;
     public uint U;
     public long L;
@@ -49,16 +52,28 @@ public sealed class SaveStateFormatTests
 {
     static SaveStateHeader Header(string title = "PCSE01444") => new()
     {
-        FormatVersion = SaveStateFile.FormatVersion, EmulatorVersion = "test", Schema = SnapshotSchema.Hash,
-        TitleId = title, Title = "Knightin'+", AppVersion = "01.00", CreatedUtc = new DateTime(2026, 11, 4, 12, 0, 0, DateTimeKind.Utc),
-        GuestSeconds = 12.5, Thumbnail = [1, 2, 3],
+        FormatVersion = SaveStateFile.FormatVersion,
+        EmulatorVersion = "test",
+        Schema = SnapshotSchema.Hash,
+        TitleId = title,
+        Title = "Knightin'+",
+        AppVersion = "01.00",
+        CreatedUtc = new DateTime(2026, 11, 4, 12, 0, 0, DateTimeKind.Utc),
+        GuestSeconds = 12.5,
+        Thumbnail = [1, 2, 3],
     };
 
     static byte[] File(SaveStateHeader h, params (string, byte[])[] sections)
     {
         var ms = new MemoryStream();
         using (var w = new SaveStateWriter(ms, h))
-            foreach (var (n, d) in sections) w.Section(n, d);
+        {
+            foreach (var (n, d) in sections)
+            {
+                w.Section(n, d);
+            }
+        }
+
         return ms.ToArray();
     }
 
@@ -76,7 +91,11 @@ public sealed class SaveStateFormatTests
         Assert.Null(SaveStateFile.Incompatibility(h, "pcse01444"));
         using var r = new SaveStateReader(new MemoryStream(bytes));
         var got = new Dictionary<string, byte[]>();
-        while (r.Next(out var n, out _)) got[n] = r.ReadAll();
+        while (r.Next(out var n, out _))
+        {
+            got[n] = r.ReadAll();
+        }
+
         Assert.Equal([9, 8, 7], got["a"]);
         Assert.Empty(got["empty"]);
         Assert.Equal(big, got["big"]);
@@ -102,20 +121,45 @@ public sealed class SaveStateFormatTests
     {
         var bytes = File(Header(), ("x", new byte[100_000]));
         using var r = new SaveStateReader(new MemoryStream(bytes[..(bytes.Length - 20)]));
-        Assert.Throws<SnapshotException>(() => { while (r.Next(out _, out _)) r.ReadAll(); });
+        Assert.Throws<SnapshotException>(() =>
+        {
+            while (r.Next(out _, out _))
+            {
+                r.ReadAll();
+            }
+        });
     }
 
     [Fact]
     public void WriterReaderPrimitives()
     {
         var w = new SnapshotWriter();
-        w.Write(true); w.Write((byte)5); w.Write(-3); w.Write(uint.MaxValue); w.Write(long.MinValue); w.Write(1.5f); w.Write(2.25);
-        w.Write("héllo"); w.Write((string?)null); w.Write(new byte[] { 1, 2 }); w.WriteArray(new[] { 1f, 2f });
-        int at = w.BeginBlock(); w.Write(42); w.EndBlock(at);
+        w.Write(true);
+        w.Write((byte)5);
+        w.Write(-3);
+        w.Write(uint.MaxValue);
+        w.Write(long.MinValue);
+        w.Write(1.5f);
+        w.Write(2.25);
+        w.Write("héllo");
+        w.Write((string?)null);
+        w.Write(new byte[] { 1, 2 });
+        w.WriteArray(new[] { 1f, 2f });
+        int at = w.BeginBlock();
+        w.Write(42);
+        w.EndBlock(at);
         var r = new SnapshotReader(w.Data.ToArray());
-        Assert.True(r.ReadBool()); Assert.Equal(5, r.ReadByte()); Assert.Equal(-3, r.ReadInt32()); Assert.Equal(uint.MaxValue, r.ReadUInt32());
-        Assert.Equal(long.MinValue, r.ReadInt64()); Assert.Equal(1.5f, r.ReadSingle()); Assert.Equal(2.25, r.ReadDouble());
-        Assert.Equal("héllo", r.ReadString()); Assert.Null(r.ReadString()); Assert.Equal([1, 2], r.ReadBytes()); Assert.Equal([1f, 2f], r.ReadArray<float>()!);
+        Assert.True(r.ReadBool());
+        Assert.Equal(5, r.ReadByte());
+        Assert.Equal(-3, r.ReadInt32());
+        Assert.Equal(uint.MaxValue, r.ReadUInt32());
+        Assert.Equal(long.MinValue, r.ReadInt64());
+        Assert.Equal(1.5f, r.ReadSingle());
+        Assert.Equal(2.25, r.ReadDouble());
+        Assert.Equal("héllo", r.ReadString());
+        Assert.Null(r.ReadString());
+        Assert.Equal([1, 2], r.ReadBytes());
+        Assert.Equal([1f, 2f], r.ReadArray<float>()!);
         Assert.Equal(42, r.ReadBlock().ReadInt32());
         Assert.True(r.AtEnd);
         Assert.Throws<SnapshotException>(() => r.ReadInt32());
@@ -126,10 +170,27 @@ public sealed class SaveStateFormatTests
     {
         var a = new SnapshotProbe
         {
-            I = -1, U = 0xDEADBEEF, L = 1L << 40, D = 0.125, Flag = true, K = SnapshotProbe.Kind.C, S = "s", Ints = [1, 2, 3], Names = ["x", null!],
-            Range = (0x81000000, 0x1000), Maybe = 9, Child = new SnapshotChild { Value = 3 }, Ignored = new object(), Hook = () => { }, Extra = 21,
+            I = -1,
+            U = 0xDEADBEEF,
+            L = 1L << 40,
+            D = 0.125,
+            Flag = true,
+            K = SnapshotProbe.Kind.C,
+            S = "s",
+            Ints = [1, 2, 3],
+            Names = ["x", null!],
+            Range = (0x81000000, 0x1000),
+            Maybe = 9,
+            Child = new SnapshotChild { Value = 3 },
+            Ignored = new object(),
+            Hook = () => { },
+            Extra = 21,
         };
-        a.List.Add(4); a.Map[1] = "one"; a.Ci["Key"] = 5; a.Fixed.Value = 8; a.Fixed.Bytes.Enqueue(6);
+        a.List.Add(4);
+        a.Map[1] = "one";
+        a.Ci["Key"] = 5;
+        a.Fixed.Value = 8;
+        a.Fixed.Bytes.Enqueue(6);
         a.Children.Add(new SnapshotChild { Value = 11 });
         var w = new SnapshotWriter();
         a.SaveState(w);
@@ -170,22 +231,51 @@ public sealed unsafe class SaveStateGuestTests(GuestMemoryFixture fx)
         var b = CpuState.Allocate();
         try
         {
-            for (int i = 0; i < 16; i++) a->R[i] = (uint)(i * 0x1111);
-            for (int i = 0; i < 32; i++) a->D[i] = (ulong)i * 0x0101010101010101UL;
-            a->N = 1; a->C = 1; a->Q = 1; a->GE = 0xA; a->Thumb = 1; a->ITState = 0x18; a->Fpscr = 0x03000010;
-            a->TpidrUro = 0x81001000; a->ExclusiveAddr = 0x81002000; a->ExclusiveValue = 77; a->ExclusiveValid = 1;
+            for (int i = 0; i < 16; i++)
+            {
+                a->R[i] = (uint)(i * 0x1111);
+            }
+
+            for (int i = 0; i < 32; i++)
+            {
+                a->D[i] = (ulong)i * 0x0101010101010101UL;
+            }
+
+            a->N = 1;
+            a->C = 1;
+            a->Q = 1;
+            a->GE = 0xA;
+            a->Thumb = 1;
+            a->ITState = 0x18;
+            a->Fpscr = 0x03000010;
+            a->TpidrUro = 0x81001000;
+            a->ExclusiveAddr = 0x81002000;
+            a->ExclusiveValue = 77;
+            a->ExclusiveValid = 1;
             a->SvcPc = 0x81003000;
             var w = new SnapshotWriter();
             GuestThread.WriteCpu(w, a, reissue: true);
             GuestThread.ReadCpu(new SnapshotReader(w.Data.ToArray()), b);
-            for (int i = 0; i < 15; i++) Assert.Equal(a->R[i], b->R[i]);
+            for (int i = 0; i < 15; i++)
+            {
+                Assert.Equal(a->R[i], b->R[i]);
+            }
+
             Assert.Equal(0x81003000u, b->R[15]); // a reissued HLE call restarts at its SVC
-            for (int i = 0; i < 32; i++) Assert.Equal(a->D[i], b->D[i]);
+            for (int i = 0; i < 32; i++)
+            {
+                Assert.Equal(a->D[i], b->D[i]);
+            }
+
             Assert.Equal((a->N, a->C, a->Q, a->GE, a->Thumb, a->ITState, a->Fpscr, a->TpidrUro), (b->N, b->C, b->Q, b->GE, b->Thumb, b->ITState, b->Fpscr, b->TpidrUro));
             Assert.Equal(0u, b->ExclusiveValid);
             Assert.Equal(77ul, b->ExclusiveValue);
         }
-        finally { CpuState.Free(a); CpuState.Free(b); }
+        finally
+        {
+            CpuState.Free(a);
+            CpuState.Free(b);
+        }
     }
 
     [Fact]
@@ -210,7 +300,10 @@ public sealed unsafe class SaveStateGuestTests(GuestMemoryFixture fx)
             var back = Assert.Single(GuestMemory.ReadBlockTable(new SnapshotReader(bt.Data.ToArray())));
             Assert.Equal((block.Address, block.Size, block.Name, block.Region), (back.Address, back.Size, back.Name, back.Region));
         }
-        finally { fx.Memory.Free(addr); }
+        finally
+        {
+            fx.Memory.Free(addr);
+        }
     }
 
     [Fact]
@@ -222,26 +315,48 @@ public sealed unsafe class SaveStateGuestTests(GuestMemoryFixture fx)
         var mtx = new Mutex { Name = "m", LockCount = 2, Attr = Mutex.AttrRecursive };
         var cond = new CondVar { Name = "c", Mutex = mtx };
         var pipe = new MsgPipe { Name = "p", BufferSize = 64 };
-        table.Register(sema); table.Register(evf); table.Register(mtx); table.Register(cond); table.Register(pipe);
+        table.Register(sema);
+        table.Register(evf);
+        table.Register(mtx);
+        table.Register(cond);
+        table.Register(pipe);
         uint buf = fx.Memory.Alloc(0x1000, "pipe data");
         try
         {
             "abc"u8.CopyTo(GuestMemory.Span(buf, 3));
             Assert.Equal(0, pipe.Send(buf, 3, MsgPipe.WaitAsap, default, default, poll: true));
 
-            SnapshotWriter W(Action<SnapshotWriter> save) { var w = new SnapshotWriter(); save(w); return w; }
-            SnapshotReader R(SnapshotWriter w) => new(w.Data.ToArray()) { Objects = table };
-            var s2 = new Semaphore { Name = "s" }; s2.Load(R(W(sema.Save)));
+            SnapshotWriter W(Action<SnapshotWriter> save)
+            {
+                var w = new SnapshotWriter();
+                save(w);
+                return w;
+            }
+            SnapshotReader R(SnapshotWriter w) => new(w.Data.ToArray())
+            {
+                Objects = table
+            };
+            var s2 = new Semaphore { Name = "s" };
+            s2.Load(R(W(sema.Save)));
             Assert.Equal((1, 2, 5, 3u), (s2.InitCount, s2.Count, s2.MaxCount, s2.Attr));
-            var e2 = new EventFlag { Name = "e" }; e2.Load(R(W(evf.Save)));
+            var e2 = new EventFlag { Name = "e" };
+            e2.Load(R(W(evf.Save)));
             Assert.Equal(0xF0u, e2.Pattern);
-            var m2 = new Mutex { Name = "m" }; m2.Load(R(W(mtx.Save))); m2.Resolve(table);
+            var m2 = new Mutex { Name = "m" };
+            m2.Load(R(W(mtx.Save)));
+            m2.Resolve(table);
             Assert.Equal(2, m2.LockCount);
-            var c2 = new CondVar { Name = "c" }; c2.Load(R(W(cond.Save))); c2.Resolve(table);
+            var c2 = new CondVar { Name = "c" };
+            c2.Load(R(W(cond.Save)));
+            c2.Resolve(table);
             Assert.Same(mtx, c2.Mutex);
-            var p2 = new MsgPipe { Name = "p" }; p2.Load(R(W(pipe.Save)));
+            var p2 = new MsgPipe { Name = "p" };
+            p2.Load(R(W(pipe.Save)));
             Assert.Equal(61, p2.FreeSize);
         }
-        finally { fx.Memory.Free(buf); }
+        finally
+        {
+            fx.Memory.Free(buf);
+        }
     }
 }

@@ -46,7 +46,10 @@ public sealed class SystemGestureFlowTests(GuestMemoryFixture fx) : IDisposable
     uint Recognizer(uint type, short x = 0, short y = 0, short w = 1920, short h = 1088, uint param = 0)
     {
         uint rec = _h.Alloc(307 * 8), rect = _h.Alloc(8);
-        GuestMemory.Write(rect, x); GuestMemory.Write(rect + 2, y); GuestMemory.Write(rect + 4, w); GuestMemory.Write(rect + 6, h);
+        GuestMemory.Write(rect, x);
+        GuestMemory.Write(rect + 2, y);
+        GuestMemory.Write(rect + 4, w);
+        GuestMemory.Write(rect + 6, h);
         Assert.Equal(0, Call(G, "sceSystemGestureCreateTouchRecognizer", rec, type, 0u, rect, param));
         return rec;
     }
@@ -132,15 +135,20 @@ public sealed class SystemGestureFlowTests(GuestMemoryFixture fx) : IDisposable
         e = Assert.Single(Events(tap));
         Assert.Equal(2, e[30]);
         // a tap outside the rectangle, a long press and a slide are no taps
-        Frame(500_000, (1, 1500, 300)); Frame(50_000);
+        Frame(500_000, (1, 1500, 300));
+        Frame(50_000);
         Assert.Empty(Events(tap));
-        Frame(500_000, (1, 300, 300)); Frame(600_000);
+        Frame(500_000, (1, 300, 300));
+        Frame(600_000);
         Assert.Empty(Events(tap));
-        Frame(500_000, (1, 300, 300)); Frame(50_000, (1, 400, 300)); Frame(50_000);
+        Frame(500_000, (1, 300, 300));
+        Frame(50_000, (1, 400, 300));
+        Frame(50_000);
         Events(tap); // the move frame
         Assert.Empty(Events(tap));
         // events by index / id
-        Frame(500_000, (1, 100, 100)); Frame(50_000);
+        Frame(500_000, (1, 100, 100));
+        Frame(50_000);
         e = Assert.Single(Events(tap));
         uint dst = _h.Alloc(144);
         Assert.Equal(0, Call(G, "sceSystemGestureGetTouchEventByIndex", tap, 0u, dst));
@@ -229,7 +237,8 @@ public sealed class SystemGestureFlowTests(GuestMemoryFixture fx) : IDisposable
         Assert.Equal((short)10, GuestMemory.Read<short>(info + 8));
         Assert.Equal((short)400, GuestMemory.Read<short>(info + 14));
         uint rect = _h.Alloc(8);
-        GuestMemory.Write(rect + 4, (short)50); GuestMemory.Write(rect + 6, (short)60);
+        GuestMemory.Write(rect + 4, (short)50);
+        GuestMemory.Write(rect + 6, (short)60);
         Assert.Equal(0, Call(G, "sceSystemGestureUpdateTouchRecognizerRectangle", rec, rect));
         Call(G, "sceSystemGestureGetTouchRecognizerInformation", rec, info);
         Assert.Equal((short)0, GuestMemory.Read<short>(info + 8));

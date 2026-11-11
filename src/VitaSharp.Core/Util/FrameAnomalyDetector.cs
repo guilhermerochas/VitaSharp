@@ -7,7 +7,10 @@ public struct FrameMetrics
     public ulong Hash;
 
     [Flags]
-    public enum Hit : byte { None = 0, Magenta = 1, Saturated = 2, Bright = 4, Black = 8 }
+    public enum Hit : byte
+    {
+        None = 0, Magenta = 1, Saturated = 2, Bright = 4, Black = 8
+    }
 
     public const float MagentaLimit = 0.05f, SaturatedLimit = 0.08f, WhiteLimit = 0.35f, MeanLimit = 0.85f, BlackLimit = 0.97f;
 
@@ -35,20 +38,50 @@ public struct FrameMetrics
                 byte* q = row + x * 4;
                 int r = q[0], g = q[1], b = q[2];
                 sum += (r * 54 + g * 183 + b * 19) >> 8;
-                if (r > 235 && g > 235 && b > 235) white++;
-                if (r < 10 && g < 10 && b < 10) dark++;
-                if (r > 200 && b > 200 && g < 80) pink++;
-                if (g > 180 && r < 60 && b < 60) green++;
-                if (b > 180 && r < 60 && g < 60) blue++;
+                if (r > 235 && g > 235 && b > 235)
+                {
+                    white++;
+                }
+
+                if (r < 10 && g < 10 && b < 10)
+                {
+                    dark++;
+                }
+
+                if (r > 200 && b > 200 && g < 80)
+                {
+                    pink++;
+                }
+
+                if (g > 180 && r < 60 && b < 60)
+                {
+                    green++;
+                }
+
+                if (b > 180 && r < 60 && g < 60)
+                {
+                    blue++;
+                }
+
                 hash = (hash ^ (ulong)((r >> 2) | (g >> 2) << 8 | (b >> 2) << 16)) * 1099511628211;
                 n++;
             }
         }
-        if (n == 0) return default;
+        if (n == 0)
+        {
+            return default;
+        }
+
         float fn = n;
         return new FrameMetrics
         {
-            Mean = sum / (255f * fn), White = white / fn, Black = dark / fn, Magenta = pink / fn, Green = green / fn, Blue = blue / fn, Hash = hash,
+            Mean = sum / (255f * fn),
+            White = white / fn,
+            Black = dark / fn,
+            Magenta = pink / fn,
+            Green = green / fn,
+            Blue = blue / fn,
+            Hash = hash,
         };
     }
 
@@ -94,7 +127,11 @@ public sealed class FrameAnomalyDetector
     {
         _events.Clear();
         var hits = m.Hits;
-        for (int i = SpikeWindow - 1; i > 0; i--) _recent[i] = _recent[i - 1];
+        for (int i = SpikeWindow - 1; i > 0; i--)
+        {
+            _recent[i] = _recent[i - 1];
+        }
+
         _recent[0] = hits;
 
         Spike(FrameMetrics.Hit.Magenta, "magenta", ref _magentaOn, ref _magentaQuiet, present,
@@ -117,7 +154,14 @@ public sealed class FrameAnomalyDetector
     void Spike(FrameMetrics.Hit kind, string name, ref bool on, ref int quiet, long present, string detail)
     {
         int n = 0;
-        foreach (var h in _recent) if ((h & kind) != 0) n++;
+        foreach (var h in _recent)
+        {
+            if ((h & kind) != 0)
+            {
+                n++;
+            }
+        }
+
         if (!on)
         {
             if (n >= SpikeHits)
@@ -147,29 +191,48 @@ public sealed class FrameAnomalyDetector
     {
         if (!bright)
         {
-            if (_brightMoving >= BrightFrames) _events.Add(new Event("blown-out", $"cleared after {_brightRun} frames", false, present));
+            if (_brightMoving >= BrightFrames)
+            {
+                _events.Add(new Event("blown-out", $"cleared after {_brightRun} frames", false, present));
+            }
+
             _brightRun = _brightMoving = 0;
             return;
         }
         _brightRun++;
         if (changed && ++_brightMoving == BrightFrames)
+        {
             _events.Add(new Event("blown-out", $"{m.White:P0} saturated white, mean brightness {m.Mean:F2} for {_brightRun} frames ({BrightFrames} of them changing)", true, present));
+        }
     }
 
     void Run(bool hit, ref int run, int need, string name, bool capture, long present, string detail)
     {
         if (hit)
         {
-            if (++run == need) _events.Add(new Event(name, detail, capture, present));
+            if (++run == need)
+            {
+                _events.Add(new Event(name, detail, capture, present));
+            }
+
             return;
         }
-        if (run >= need) _events.Add(new Event(name, $"cleared after {run} frames", false, present));
+        if (run >= need)
+        {
+            _events.Add(new Event(name, $"cleared after {run} frames", false, present));
+        }
+
         run = 0;
     }
 
     void Flicker(long present, in FrameMetrics m, bool black)
     {
-        if (_baseline < 0) { _baseline = m.Mean; _baselineBlack = black; return; }
+        if (_baseline < 0)
+        {
+            _baseline = m.Mean;
+            _baselineBlack = black;
+            return;
+        }
         float d = MathF.Abs(m.Mean - _baseline);
         if (_excursion > 0)
         {
@@ -185,7 +248,11 @@ public sealed class FrameAnomalyDetector
             if (d > FlickerDelta && _excursion < FlickerMaxFrames)
             {
                 _excursion++;
-                if (MathF.Abs(m.Mean - _baseline) > MathF.Abs(_excursionPeak - _baseline)) _excursionPeak = m.Mean;
+                if (MathF.Abs(m.Mean - _baseline) > MathF.Abs(_excursionPeak - _baseline))
+                {
+                    _excursionPeak = m.Mean;
+                }
+
                 return;
             }
             // too long (a cut or a fade) or ended somewhere else: new baseline

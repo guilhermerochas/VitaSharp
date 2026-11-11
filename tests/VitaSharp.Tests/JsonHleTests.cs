@@ -87,13 +87,19 @@ public sealed unsafe class JsonHleTests(GuestMemoryFixture fx, ITestOutputHelper
         int n = Math.Min(lle.Count, hle.Count);
         for (int i = 0; i < n; i++)
         {
-            if (lle[i] == hle[i]) continue;
+            if (lle[i] == hle[i])
+            {
+                continue;
+            }
+
             int from = Math.Max(0, i - 6), to = Math.Min(n - 1, i + 2);
             var ctx = string.Join("\n", Enumerable.Range(from, to - from + 1).Select(k => $"  [{k}] lle={lle[k]}  hle={hle[k]}"));
             Assert.Fail($"{what} differ at {i}:\n{ctx}");
         }
         if (lle.Count != hle.Count)
+        {
             Assert.Fail($"{what}: {lle.Count} (firmware) vs {hle.Count} (HLE); first extra: {(lle.Count > n ? lle[n] : hle[n])}");
+        }
     }
 
     static void CompareMemory(string what, uint[] lle, uint[] hle, bool[]? mask)
@@ -101,8 +107,15 @@ public sealed unsafe class JsonHleTests(GuestMemoryFixture fx, ITestOutputHelper
         Assert.Equal(lle.Length, hle.Length);
         for (int i = 0; i < lle.Length; i++)
         {
-            if (mask != null && mask[i]) continue;
-            if (lle[i] != hle[i]) Assert.Fail($"{what} differs at +0x{i * 4:X}: firmware {lle[i]:X8}, HLE {hle[i]:X8}");
+            if (mask != null && mask[i])
+            {
+                continue;
+            }
+
+            if (lle[i] != hle[i])
+            {
+                Assert.Fail($"{what} differs at +0x{i * 4:X}: firmware {lle[i]:X8}, HLE {hle[i]:X8}");
+            }
         }
     }
 
@@ -161,7 +174,11 @@ static class JsonScenarios
                 d.DestroyString(str);
             }
             uint arr = d.Call(JsonDriver.IndexCStr, v, d.CStr("arr"));
-            for (uint i = 0; i < 5; i++) d.Rec(d.Call(JsonDriver.GetTypeFn, d.Call(JsonDriver.GetValueIdx, arr, i)));
+            for (uint i = 0; i < 5; i++)
+            {
+                d.Rec(d.Call(JsonDriver.GetTypeFn, d.Call(JsonDriver.GetValueIdx, arr, i)));
+            }
+
             d.Rec(d.Call(JsonDriver.GetValueIdx, v, 3));
             d.Rec(d.Call(JsonDriver.GetValueIdx, v, 300));
             d.RecText(d.Serialize(arr));
@@ -296,7 +313,11 @@ static class JsonScenarios
             d.RecText(d.Serialize(a));
             d.Call(JsonDriver.ValueCtorObject, d.Game(0x18), obj);
             d.Call(JsonDriver.ValueCtorArray, d.Game(0x18), arr);
-            foreach (uint v in new[] { a, b, c, copy, o }) d.Call(JsonDriver.ValueDtor, v);
+            foreach (uint v in new[] { a, b, c, copy, o })
+            {
+                d.Call(JsonDriver.ValueDtor, v);
+            }
+
             d.DestroyString(s);
             d.DestroyString(k);
             d.Terminate();
@@ -389,7 +410,11 @@ static class JsonScenarios
             d.Rec(d.Call(JsonDriver.StringEmpty, t));
             d.Call(JsonDriver.StringAssign, hello, none);
             d.RecText(d.StringBytes(hello));
-            foreach (uint x in new[] { s, t, u, hello, sub2 }) d.DestroyString(x);
+            foreach (uint x in new[] { s, t, u, hello, sub2 })
+            {
+                d.DestroyString(x);
+            }
+
             d.Terminate();
         },
         ["array-api"] = d =>
@@ -434,7 +459,11 @@ static class JsonScenarios
             d.Call(JsonDriver.ArrayItAssign, it2, blank);
             d.Rec(d.Call(JsonDriver.ArrayItNe, it2, blank));
             d.Rec(d.Call(JsonDriver.ArrayItDeref, blank));
-            foreach (uint x in new[] { it, it2, tmp, blank, end }) d.Call(JsonDriver.ArrayItDtor, x);
+            foreach (uint x in new[] { it, it2, tmp, blank, end })
+            {
+                d.Call(JsonDriver.ArrayItDtor, x);
+            }
+
             d.Call(JsonDriver.ArrayPopBack, arr);
             d.RecMem(d.Call(JsonDriver.ArrayBack, arr), 0x18);
             uint copy = d.Game(4);
@@ -520,7 +549,11 @@ static class JsonScenarios
             uint blank = d.Game(4);
             d.Call(JsonDriver.ObjectItCtor, blank);
             d.Rec(d.Call(JsonDriver.ObjectItDeref, blank));
-            foreach (uint x in new[] { it, end, it2, blank }) d.Call(JsonDriver.ObjectItDtor, x);
+            foreach (uint x in new[] { it, end, it2, blank })
+            {
+                d.Call(JsonDriver.ObjectItDtor, x);
+            }
+
             uint copy = d.Game(4);
             d.Call(JsonDriver.ObjectCopyCtor, copy, obj);
             uint other = d.Game(4);
@@ -531,7 +564,11 @@ static class JsonScenarios
             d.Call(JsonDriver.ObjectClear, obj);
             d.Rec(d.Call(JsonDriver.ObjectSize, obj));
             d.Rec(d.Call(JsonDriver.ObjectEmpty, obj));
-            foreach (uint x in new[] { obj, copy, other }) d.Call(JsonDriver.ObjectDtor, x);
+            foreach (uint x in new[] { obj, copy, other })
+            {
+                d.Call(JsonDriver.ObjectDtor, x);
+            }
+
             d.DestroyValue(val);
             d.DestroyValue(wrap);
             d.Terminate();
@@ -623,7 +660,11 @@ static class JsonScenarios
             d.Call(JsonDriver.ValueAssign, d.Call(JsonDriver.ObjIndex, obj, s), v(8));
             d.Call("_ZN3sce4Json6ObjectC2ERKS1_", obj2, obj);
             d.Call("_ZN3sce4Json5ValueC2ERKNS0_6ObjectE", v(9), obj2);
-            for (int i = 0; i < 10; i++) d.RecText(d.Serialize(v(i)));
+            for (int i = 0; i < 10; i++)
+            {
+                d.RecText(d.Serialize(v(i)));
+            }
+
             d.Rec(d.Call("_ZNK3sce4Json5Value9getObjectEv", v(9)));
             d.Rec(d.Call("_ZNK3sce4Json5Value9getObjectEv", v(0)));
             uint ai = d.Game(4), ai2 = d.Game(4), ae = d.Game(4);
@@ -635,7 +676,11 @@ static class JsonScenarios
             d.Rec(d.Call("_ZNK3sce4Json5Array8iteratorptEv", ai2));
             d.Call(JsonDriver.ArrayEnd, ae, arr);
             d.Rec(d.Call(JsonDriver.ArrayItNe, ai2, ae));
-            foreach (uint x in new[] { ai, ai2, ae }) d.Call("_ZN3sce4Json5Array8iteratorD2Ev", x);
+            foreach (uint x in new[] { ai, ai2, ae })
+            {
+                d.Call("_ZN3sce4Json5Array8iteratorD2Ev", x);
+            }
+
             uint oi = d.Game(4), oi2 = d.Game(4);
             d.Call("_ZN3sce4Json6Object8iteratorC1Ev", oi);
             d.Call(JsonDriver.ObjectItDtor, oi);
@@ -643,16 +688,39 @@ static class JsonScenarios
             d.Call("_ZN3sce4Json6Object8iteratorC2ERKS2_", oi2, oi);
             d.Call("_ZN3sce4Json6Object8iteratorppEv", oi2);
             d.Rec(d.Call(JsonDriver.ObjectItEq, oi, oi2));
-            foreach (uint x in new[] { oi, oi2 }) d.Call("_ZN3sce4Json6Object8iteratorD2Ev", x);
+            foreach (uint x in new[] { oi, oi2 })
+            {
+                d.Call("_ZN3sce4Json6Object8iteratorD2Ev", x);
+            }
+
             uint pair = d.Game(0x20), pair2 = d.Game(0x20);
             d.Call("_ZN3sce4Json6Object4PairC2ERKNS0_6StringERKNS0_5ValueE", pair, s, v(3));
             d.Call("_ZN3sce4Json6Object4PairC2Ev", pair2);
             d.RecMem(pair + 8, 0x18);
-            foreach (uint x in new[] { pair, pair2 }) d.Call("_ZN3sce4Json6Object4PairD2Ev", x);
-            foreach (uint x in new[] { arr, arr2, arr3 }) d.Call("_ZN3sce4Json5ArrayD2Ev", x);
-            foreach (uint x in new[] { obj, obj2 }) d.Call("_ZN3sce4Json6ObjectD2Ev", x);
-            for (int i = 0; i < 10; i++) d.Call("_ZN3sce4Json5ValueD2Ev", v(i));
-            foreach (uint x in new[] { s, s2, s3 }) d.Call("_ZN3sce4Json6StringD2Ev", x);
+            foreach (uint x in new[] { pair, pair2 })
+            {
+                d.Call("_ZN3sce4Json6Object4PairD2Ev", x);
+            }
+
+            foreach (uint x in new[] { arr, arr2, arr3 })
+            {
+                d.Call("_ZN3sce4Json5ArrayD2Ev", x);
+            }
+
+            foreach (uint x in new[] { obj, obj2 })
+            {
+                d.Call("_ZN3sce4Json6ObjectD2Ev", x);
+            }
+
+            for (int i = 0; i < 10; i++)
+            {
+                d.Call("_ZN3sce4Json5ValueD2Ev", v(i));
+            }
+
+            foreach (uint x in new[] { s, s2, s3 })
+            {
+                d.Call("_ZN3sce4Json6StringD2Ev", x);
+            }
             // the deleting destructor frees the object through the library's allocator
             uint boxed = d.Game(8);
             d.Call(JsonDriver.MemAllocatorCtor, boxed);
@@ -765,7 +833,11 @@ sealed unsafe class JsonDriver(JsonHarness h, GuestThread thread, Func<string, u
     public uint Call(string name, params uint[] args)
     {
         uint r = thread.CallGuest(resolve(name), args);
-        if (name == Initialize && GuestMemory.R32(h.DataBase + Json.DMutex) is var m and not 0) h.LwMutexBlocks.Add(m);
+        if (name == Initialize && GuestMemory.R32(h.DataBase + Json.DMutex) is var m and not 0)
+        {
+            h.LwMutexBlocks.Add(m);
+        }
+
         return r;
     }
 
@@ -823,7 +895,11 @@ sealed unsafe class JsonDriver(JsonHarness h, GuestThread thread, Func<string, u
     public byte[] StringBytes(uint str)
     {
         uint rep = GuestMemory.R32(str);
-        if (rep == 0) return [];
+        if (rep == 0)
+        {
+            return [];
+        }
+
         return GuestMemory.ReadSpan(GuestMemory.R32(rep), (int)GuestMemory.R32(rep + 4)).ToArray();
     }
 
@@ -899,7 +975,10 @@ sealed unsafe class JsonHarness : IDisposable
         _emu = new Emulator(new EmulatorOptions { FsRoot = _root, Memory = fx.Memory, EnableJit = false, CpuBackend = "interp" });
         _emu.Fatal += (_, e) => _fatal ??= e;
         _hle = _emu.Hle.Modules.OfType<Json>().Single();
-        if (firmwareModule != null) _lle = _emu.LoadModule("vs0:sys/external/libSceJson.suprx");
+        if (firmwareModule != null)
+        {
+            _lle = _emu.LoadModule("vs0:sys/external/libSceJson.suprx");
+        }
 
         var mem = _emu.Memory;
         _arena = mem.Alloc(ArenaSize, "json test arena");
@@ -934,13 +1013,25 @@ sealed unsafe class JsonHarness : IDisposable
             string text = rep == 0 ? "<null>" : Encoding.Latin1.GetString(GuestMemory.ReadSpan(GuestMemory.R32(rep), (int)GuestMemory.R32(rep + 4)));
             Current!.Callbacks.Add($"flush \"{text}\" u={c.Gpr(1):X}");
             int ret = SerializeFlushes == 0 ? unchecked((int)0x80001234) : 0;
-            if (SerializeFlushes > 0) SerializeFlushes--;
+            if (SerializeFlushes > 0)
+            {
+                SerializeFlushes--;
+            }
+
             c.Return(ret);
         }), 0);
         ReaderStub = Stub(_emu.Hle.RegisterHostFunction("test:reader", c =>
         {
-            if (ReaderFailAt >= 0 && ReaderPos >= ReaderFailAt) { c.Return(unchecked((int)0x80005678)); return; }
-            if (ReaderPos >= ReaderText.Length) { c.Return(unchecked((int)0x80920101)); return; }
+            if (ReaderFailAt >= 0 && ReaderPos >= ReaderFailAt)
+            {
+                c.Return(unchecked((int)0x80005678));
+                return;
+            }
+            if (ReaderPos >= ReaderText.Length)
+            {
+                c.Return(unchecked((int)0x80920101));
+                return;
+            }
             GuestMemory.Write(c.Gpr(0), ReaderText[ReaderPos++]);
             c.Return(0);
         }), 0);
@@ -953,7 +1044,11 @@ sealed unsafe class JsonHarness : IDisposable
     /// <summary>An HLE stub for a SceLibJson export (made on first use).</summary>
     uint HleStub(string name)
     {
-        if (_hleStubs.TryGetValue(name, out uint a)) return a;
+        if (_hleStubs.TryGetValue(name, out uint a))
+        {
+            return a;
+        }
+
         var info = NidDatabase.LookupName(name).Single(n => n.Library == "SceLibJson");
         a = _nextStub;
         _nextStub += 16;
@@ -972,7 +1067,11 @@ sealed unsafe class JsonHarness : IDisposable
         }
         uint p = _arena + _bump;
         _bump = (_bump + size + 7) & ~7u;
-        if (_bump > ArenaSize) throw new InvalidOperationException("json test arena exhausted");
+        if (_bump > ArenaSize)
+        {
+            throw new InvalidOperationException("json test arena exhausted");
+        }
+
         Current!.Allocator.Add($"A {size} u={user:X} -> +{p - _arena:X}");
         _sizes[p] = size;
         return p;
@@ -984,7 +1083,11 @@ sealed unsafe class JsonHarness : IDisposable
     {
         uint p = _gameBase + _gameBump;
         _gameBump = (_gameBump + size + 7) & ~7u;
-        if (_gameBump > GameSize) throw new InvalidOperationException("json test game memory exhausted");
+        if (_gameBump > GameSize)
+        {
+            throw new InvalidOperationException("json test game memory exhausted");
+        }
+
         return p;
     }
 
@@ -1003,28 +1106,70 @@ sealed unsafe class JsonHarness : IDisposable
         if (_runLle && _lle != null)
         {
             uint b0 = _lle.Segments[0].Address, b1 = _lle.Segments[1].Address;
-            if (v == b0 + 0x6210) return "LIT";
-            if (v == b0 + 0x621C) return "VPTR";
-            if (v >= b1 && v < b1 + 0x48) return $"D+{v - b1:X}";
+            if (v == b0 + 0x6210)
+            {
+                return "LIT";
+            }
+
+            if (v == b0 + 0x621C)
+            {
+                return "VPTR";
+            }
+
+            if (v >= b1 && v < b1 + 0x48)
+            {
+                return $"D+{v - b1:X}";
+            }
         }
         else
         {
             uint d = _hle.Data;
-            if (v == d + Json.DLit) return "LIT";
-            if (v == d + Json.DVptr) return "VPTR";
-            if (v >= d && v < d + 0x48) return $"D+{v - d:X}";
+            if (v == d + Json.DLit)
+            {
+                return "LIT";
+            }
+
+            if (v == d + Json.DVptr)
+            {
+                return "VPTR";
+            }
+
+            if (v >= d && v < d + 0x48)
+            {
+                return $"D+{v - d:X}";
+            }
         }
-        if (v >= _arena && v < _arena + ArenaSize) return $"A+{v - _arena:X}";
-        if (v >= _gameBase && v < _gameBase + GameSize) return $"G+{v - _gameBase:X}";
+        if (v >= _arena && v < _arena + ArenaSize)
+        {
+            return $"A+{v - _arena:X}";
+        }
+
+        if (v >= _gameBase && v < _gameBase + GameSize)
+        {
+            return $"G+{v - _gameBase:X}";
+        }
+
         return $"{v:X8}";
     }
 
     uint NormalizeWord(uint v)
     {
         string n = Normalize(v);
-        if (n == "LIT") return 0xEEEE0000;
-        if (n == "VPTR") return 0xEEEE0001;
-        if (n.StartsWith("D+")) return 0xEEEF0000 + Convert.ToUInt32(n[2..], 16);
+        if (n == "LIT")
+        {
+            return 0xEEEE0000;
+        }
+
+        if (n == "VPTR")
+        {
+            return 0xEEEE0001;
+        }
+
+        if (n.StartsWith("D+"))
+        {
+            return 0xEEEF0000 + Convert.ToUInt32(n[2..], 16);
+        }
+
         return v;
     }
 
@@ -1032,7 +1177,11 @@ sealed unsafe class JsonHarness : IDisposable
 
     public JsonRunLog Run(bool useLle, Action<JsonDriver> body)
     {
-        if (useLle && _lle == null) throw new InvalidOperationException("no firmware module");
+        if (useLle && _lle == null)
+        {
+            throw new InvalidOperationException("no firmware module");
+        }
+
         _runLle = useLle;
         GuestMemory.Fill(_arena, 0, ArenaSize);
         GuestMemory.Fill(_gameBase, 0, GameSize);
@@ -1057,24 +1206,53 @@ sealed unsafe class JsonHarness : IDisposable
                 log.ArenaUsed = _bump;
                 log.Arena = new uint[_bump / 4];
                 log.Mask = new bool[log.Arena.Length];
-                for (int i = 0; i < log.Arena.Length; i++) log.Arena[i] = NormalizeWord(GuestMemory.R32(_arena + (uint)i * 4));
+                for (int i = 0; i < log.Arena.Length; i++)
+                {
+                    log.Arena[i] = NormalizeWord(GuestMemory.R32(_arena + (uint)i * 4));
+                }
+
                 log.Game = new uint[_gameBump / 4];
-                for (int i = 0; i < log.Game.Length; i++) log.Game[i] = NormalizeWord(GuestMemory.R32(_gameBase + (uint)i * 4));
+                for (int i = 0; i < log.Game.Length; i++)
+                {
+                    log.Game[i] = NormalizeWord(GuestMemory.R32(_gameBase + (uint)i * 4));
+                }
+
                 foreach (var (p, size) in _sizes)
                 {
                     int w = (int)((p - _arena) / 4);
-                    if (size == 0x48) log.Mask[w + 9] = true; // node padding (uninitialised stack bytes in operator[])
-                    if (size == 0x20 && LwMutexBlocks.Contains(p)) for (int k = 0; k < 8; k++) log.Mask[w + k] = true;
+                    if (size == 0x48)
+                    {
+                        log.Mask[w + 9] = true; // node padding (uninitialised stack bytes in operator[])
+                    }
+
+                    if (size == 0x20 && LwMutexBlocks.Contains(p))
+                    {
+                        for (int k = 0; k < 8; k++)
+                        {
+                            log.Mask[w + k] = true;
+                        }
+                    }
                 }
             }
-            catch (Exception e) { failure = e; }
+            catch (Exception e)
+            {
+                failure = e;
+            }
         };
         LwMutexBlocks.Clear();
         t.Start(0, 0);
         Assert.True(t.WaitForExit(120_000), "json test thread did not finish");
         _emu.Kernel.DeleteThread(t);
-        if (failure != null) throw new Xunit.Sdk.XunitException($"driver failed ({(useLle ? "firmware" : "HLE")}): {failure}");
-        if (_fatal != null) throw new Xunit.Sdk.XunitException($"guest fault ({(useLle ? "firmware" : "HLE")}): {_fatal}");
+        if (failure != null)
+        {
+            throw new Xunit.Sdk.XunitException($"driver failed ({(useLle ? "firmware" : "HLE")}): {failure}");
+        }
+
+        if (_fatal != null)
+        {
+            throw new Xunit.Sdk.XunitException($"guest fault ({(useLle ? "firmware" : "HLE")}): {_fatal}");
+        }
+
         return log;
     }
 
@@ -1089,7 +1267,11 @@ sealed unsafe class JsonHarness : IDisposable
         _emu.Dispose();
         Jit.Enabled = _jitEnabled;
         Jit.Select(_jitMode);
-        try { Directory.Delete(_root, true); } catch (IOException) { }
+        try
+        {
+            Directory.Delete(_root, true);
+        }
+        catch (IOException) { }
     }
 }
 
@@ -1104,20 +1286,47 @@ static class JsonFirmware
     static string? InVs0(string dir)
     {
         foreach (var p in new[] { Path.Combine(dir, "vs0", "sys", "external", "libSceJson.suprx"), Path.Combine(dir, "sys", "external", "libSceJson.suprx") })
-            if (File.Exists(p)) return p;
+        {
+            if (File.Exists(p))
+            {
+                return p;
+            }
+        }
+
         return null;
     }
 
     static string? Find()
     {
         var env = Environment.GetEnvironmentVariable(EnvVars.FirmwareDir);
-        if (!string.IsNullOrEmpty(env)) return InVs0(env);
+        if (!string.IsNullOrEmpty(env))
+        {
+            return InVs0(env);
+        }
+
         var appData = Environment.GetFolderPath(Environment.SpecialFolder.ApplicationData);
-        if (!string.IsNullOrEmpty(appData) && InVs0(Path.Combine(appData, "Vita3K", "Vita3K")) is { } v3k) return v3k;
-        if (RealFirmware.PupPath is not { } pup) return null;
+        if (!string.IsNullOrEmpty(appData) && InVs0(Path.Combine(appData, "Vita3K", "Vita3K")) is { } v3k)
+        {
+            return v3k;
+        }
+
+        if (RealFirmware.PupPath is not { } pup)
+        {
+            return null;
+        }
+
         var tmp = Path.Combine(Path.GetTempPath(), "vitasharp-json-fw-" + Environment.ProcessId);
         FirmwareInstaller.Install(pup, tmp);
-        AppDomain.CurrentDomain.ProcessExit += (_, _) => { try { FirmwareInstaller.DeleteTree(tmp); } catch (IOException) { } };
+        AppDomain.CurrentDomain.ProcessExit += (_, _) =>
+        {
+            try
+            {
+                FirmwareInstaller.DeleteTree(tmp);
+            }
+            catch (IOException)
+            {
+            }
+        };
         return InVs0(tmp);
     }
 }
@@ -1127,6 +1336,8 @@ public sealed class JsonFirmwareTheoryAttribute : TheoryAttribute
     public JsonFirmwareTheoryAttribute()
     {
         if (JsonFirmware.ModulePath == null)
+        {
             Skip = $"libSceJson.suprx not found (set {EnvVars.FirmwareDir} to a Vita3K data folder or vs0, or {EnvVars.FirmwarePup})";
+        }
     }
 }

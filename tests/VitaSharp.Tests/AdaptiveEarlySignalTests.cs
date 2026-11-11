@@ -50,7 +50,11 @@ public sealed class AdaptiveEarlySignalTests
         int earlyFrames = 0;
         Run(a, 6000, (e, i) =>
         {
-            if (e) earlyFrames++;
+            if (e)
+            {
+                earlyFrames++;
+            }
+
             return e ? (i % 2 == 0 ? 50 : 40, 2) : (i % 2 == 0 ? 50 : 33.3, 6);
         });
         Assert.False(a.Early);
@@ -76,7 +80,14 @@ public sealed class AdaptiveEarlySignalTests
         Run(a, AdaptiveEarlySignal.RecheckFrames + 400, (e, i) => (i % 2 == 0 ? 50 : 33.3, 6));
         Assert.NotEqual(AdaptiveEarlySignal.Phase.On, a.State);
         int earlyFrames = 0;
-        Run(a, 1200, (e, i) => { if (e) earlyFrames++; return (i % 2 == 0 ? 50 : 33.3, 6); });
+        Run(a, 1200, (e, i) =>
+        {
+            if (e)
+            {
+                earlyFrames++;
+            }
+            return (i % 2 == 0 ? 50 : 33.3, 6);
+        });
         Assert.InRange(earlyFrames, 0, 200); // at most a probe window, backing off
         Assert.NotEqual(AdaptiveEarlySignal.Phase.On, a.State);
     }
