@@ -6,10 +6,6 @@ namespace VitaSharp.Core.Package;
 /// <summary>Options of a PSP/PSone package install.</summary>
 public sealed record PspInstallOptions
 {
-    /// <summary>Also write the decrypted UMD image of a PSP game to ux0:pspemu/ISO (what pkg2zip produces; the stock
-    /// PSP emulator boots the NPDRM EBOOT.PBP instead, so this is a second copy of the game).</summary>
-    public bool DecryptedIso { get; init; } = true;
-
     /// <summary>The user's own license for the title (the .rif from their console's ux0:pspemu/PSP/LICENSE), installed as
     /// ux0:pspemu/PSP/LICENSE/&lt;content id&gt;.rif; its content id must be the title's. Without one the title installs and
     /// the system shows its normal "no license" message when it is started.</summary>
@@ -20,18 +16,18 @@ public sealed record PspInstallOptions
 }
 
 /// <summary>
-/// Installs a PSP or PSone Classic .pkg of the PS Store. Those packages open with fixed keys (no license), so nothing is
-/// asked of the user. The files go where a PS Vita keeps a PSP/PSone title it downloaded (and where the shell's database
+/// Installs a PSP or PSone Classic .pkg of the PS Store. The package layer opens with fixed keys, so the package needs no
+/// license to be unpacked; the game files inside stay as sold (NPDRM, still encrypted: nothing of the game is
+/// decrypted). The files go where a PS Vita keeps a PSP/PSone title it downloaded (and where the shell's database
 /// rebuild, vs0:vsh/common/dbrecovery_plugin, looks for them: ux0:pspemu/PSP/GAME):
 /// <list type="bullet">
 /// <item>PSP game: ux0:pspemu/PSP/GAME/&lt;DISC_ID&gt;/EBOOT.PBP (the NPDRM eboot as sold, with its PARAM.SFO, icons and
 /// DATA.PSAR inside) plus the other USRDIR/CONTENT files (DOCUMENT.DAT, DOCINFO.EDAT, PSP-KEY.EDAT, CONTENT.DAT...) and
-/// __sce_ebootpbp (the eboot signature, <see cref="PspEbootSignature"/>); optionally the decrypted UMD image
-/// ux0:pspemu/ISO/&lt;title&gt; [&lt;DISC_ID&gt;].iso (pkg2zip's form).</item>
+/// __sce_ebootpbp (the eboot signature, <see cref="PspEbootSignature"/>).</item>
 /// <item>PSP add-on: its files into ux0:pspemu/PSP/GAME/&lt;install folder&gt;.</item>
 /// <item>PSP theme: ux0:pspemu/PSP/THEME.</item>
-/// <item>PSone Classic: ux0:pspemu/PSP/GAME/&lt;DISC_ID&gt;/EBOOT.PBP, DOCUMENT.DAT, KEYS.BIN (the version key, which
-/// stands in for the license, lusid1/pkg2zip) and __sce_ebootpbp; texture.enc (PS3 upscaling data) in ux0:ps1emu.</item>
+/// <item>PSone Classic: ux0:pspemu/PSP/GAME/&lt;DISC_ID&gt;/EBOOT.PBP, DOCUMENT.DAT and __sce_ebootpbp; texture.enc
+/// (PS3 upscaling data) in ux0:ps1emu.</item>
 /// </list>
 /// The shell reads the title's license from ux0:pspemu/PSP/LICENSE/&lt;content id&gt;.rif before it starts it (the content id
 /// the eboot carries at DATA.PSP + 0x560): the user's own license and act.dat go there when given
@@ -40,7 +36,6 @@ public sealed record PspInstallOptions
 public static class PspPkgInstaller
 {
     const string Content = "USRDIR/CONTENT/";
-    const int IsoSector = 2048;
 
     /// <summary>Installs <paramref name="pkg"/> (a PSP/PSone package; disposed here).</summary>
     public static InstalledTitle Install(PkgReader pkg, string ux0Root, PspInstallOptions? options = null,
@@ -102,9 +97,7 @@ public static class PspPkgInstaller
             else plan.Add((e, Combine(dest, relPath)));
         }
 
-        bool iso = options.DecryptedIso && eboot != null && kind is not (PkgKind.Psx or PkgKind.PspDlc or PkgKind.PspTheme)
-                   && IsUmdImage(pkg, eboot);
-        long total = plan.Sum(p => (long)p.Entry.DataSize) + (iso ? (long)eboot!.DataSize : 0);
+        long total = plan.Sum(p => (long)p.Entry.DataSize);
         var reporter = new InstallProgressReporter(progress, total);
         reporter.Flush();
 
@@ -112,7 +105,6 @@ public static class PspPkgInstaller
         var priority = thread.Priority;
         thread.Priority = ThreadPriority.BelowNormal;
         var written = new List<string>();
-        string? isoPath = null;
         try
         {
             byte[]? ebootHash = null;
@@ -136,13 +128,6 @@ public static class PspPkgInstaller
                 File.WriteAllBytes(sigPath, PspEbootSignature.Create("EBOOT.PBP", ebootHash, sigKind));
                 log?.Invoke($"wrote {Path.GetRelativePath(ux0Root, sigPath)} (eboot signature)");
             }
-            if (kind == PkgKind.Psx && eboot != null && PsxKeys(pkg, eboot) is { } keys)
-            {
-                var keysPath = Path.Combine(dest, "KEYS.BIN");
-                written.Add(keysPath);
-                File.WriteAllBytes(keysPath, keys);
-                log?.Invoke($"wrote {Path.GetRelativePath(ux0Root, keysPath)} (version key)");
-            }
             // the license is named after the content id the eboot carries (DATA.PSP + 0x560, what the shell reads before
             // it starts the title), which can differ from the package's
             if (options.License is { } rif && kind != PkgKind.PspTheme)
@@ -164,14 +149,6 @@ public static class PspPkgInstaller
             else if (options.License == null && kind is not (PkgKind.PspTheme or PkgKind.PspDlc)
                      && !File.Exists(Path.Combine(pspemu, "PSP", "LICENSE", licenseId + ".rif")))
                 log?.Invoke($"no license for {licenseId}: the title is installed, the system will say it has no license");
-            if (iso)
-            {
-                isoPath = Path.Combine(pspemu, "ISO", $"{SafeFileName(title)} [{id}].iso");
-                Directory.CreateDirectory(Path.GetDirectoryName(isoPath)!);
-                written.Add(isoPath);
-                long isoBytes = WriteIso(pkg, eboot!, isoPath, n => reporter.Add(n, "ISO"), cancellationToken);
-                log?.Invoke($"wrote {Path.GetRelativePath(ux0Root, isoPath)} (decrypted UMD image, {isoBytes / (1024.0 * 1024):N0} MB)");
-            }
         }
         catch
         {
@@ -187,7 +164,7 @@ public static class PspPkgInstaller
         // a new PSP/PSone title: the shell lists ux0:pspemu/PSP/GAME when it rebuilds the card's database
         if (kind is not (PkgKind.PspDlc or PkgKind.PspTheme)) AppMeta.InvalidateCardId(ux0Root, log);
         var type = kind switch { PkgKind.Psx => PkgContentType.Psx, PkgKind.PspDlc => PkgContentType.PspDlc, PkgKind.PspTheme => PkgContentType.PspTheme, _ => PkgContentType.Psp };
-        return new InstalledTitle(id, title, dest, type) { Kind = kind, IsoPath = isoPath };
+        return new InstalledTitle(id, title, dest, type) { Kind = kind };
     }
 
     static PkgEntry? Find(PkgReader pkg, string name) =>
@@ -207,13 +184,6 @@ public static class PspPkgInstaller
     {
         id = id.Trim();
         return id.Length is >= 4 and <= 16 && id.All(char.IsAsciiLetterOrDigit) ? id.ToUpperInvariant() : null;
-    }
-
-    static string SafeFileName(string s)
-    {
-        var bad = Path.GetInvalidFileNameChars().Concat(['\\', '/', ':', '*', '?', '"', '<', '>', '|']).ToHashSet();
-        var name = new string(s.Select(c => bad.Contains(c) || char.IsControl(c) ? ' ' : c).ToArray()).Trim().TrimEnd('.');
-        return name.Length == 0 ? "game" : name.Length > 100 ? name[..100].Trim() : name;
     }
 
     /// <summary>The PBP header of an EBOOT.PBP: (PARAM.SFO offset, ICON0 offset, DATA.PSAR offset).</summary>
@@ -275,84 +245,6 @@ public static class PspPkgInstaller
         pkg.ReadAt(eboot, dataPsp + 0x560, id);
         string s = CString(id);
         return s.Length == 36 && s.All(c => char.IsAsciiLetterOrDigit(c) || c is '-' or '_') ? s : null;
-    }
-
-    static bool IsUmdImage(PkgReader pkg, PkgEntry eboot)
-    {
-        var (_, _, psar) = PbpHeader(pkg, eboot);
-        if (psar + 256UL > eboot.DataSize) return false;
-        Span<byte> magic = stackalloc byte[8];
-        pkg.ReadAt(eboot, psar, magic);
-        return magic.SequenceEqual("NPUMDIMG"u8);
-    }
-
-    /// <summary>The KEYS.BIN of a PSone eboot (DATA.PSAR "PSISOIMG"/"PSTITLEIMG" and its PGD key header), or null.</summary>
-    static byte[]? PsxKeys(PkgReader pkg, PkgEntry eboot)
-    {
-        var (_, _, psar) = PbpHeader(pkg, eboot);
-        if (psar + 16UL > eboot.DataSize) return null;
-        Span<byte> magic = stackalloc byte[16];
-        pkg.ReadAt(eboot, psar, magic);
-        int keyHeaderAt = magic[..7].SequenceEqual("PSTITLE"u8) ? 0x1F0 : magic[..5].SequenceEqual("PSISO"u8) ? 0x3F0 : -1;
-        if (keyHeaderAt < 0 || psar + 16UL + (ulong)keyHeaderAt + 0x90 > eboot.DataSize) return null;
-        var pgd = new byte[0x90];
-        pkg.ReadAt(eboot, psar + 16 + keyHeaderAt, pgd);
-        if (!pgd.AsSpan(0, 4).SequenceEqual("\0PGD"u8) || U32LE(pgd, 4) != 1 || U32LE(pgd, 8) != 1) return null;
-        return PspCrypto.PsxKeysBin(pgd);
-    }
-
-    /// <summary>
-    /// Writes the UMD image inside a PSP eboot's DATA.PSAR (NPUMDIMG): the header's key is derived from the header itself
-    /// (pkg2zip), then each block of the offset table is decrypted and, when shorter than a full block, LZRC-expanded.
-    /// Returns the image size.
-    /// </summary>
-    static long WriteIso(PkgReader pkg, PkgEntry eboot, string path, Action<long> progress, CancellationToken ct)
-    {
-        var (_, _, psar) = PbpHeader(pkg, eboot);
-        var header = new byte[256];
-        pkg.ReadAt(eboot, psar, header);
-        if (!header.AsSpan(0, 8).SequenceEqual("NPUMDIMG"u8)) throw new InvalidDataException("EBOOT.PBP: DATA.PSAR is not a UMD image");
-        uint blockSectors = U32LE(header, 0xC);
-        if (blockSectors is 0 or > 16) throw new InvalidDataException($"NPUMDIMG: unsupported block size {blockSectors}");
-        var mac = PspCrypto.HeaderMac(header, 0xC0);
-        using var cipher = PspCrypto.SectionCipher(header, mac, eboot: true, keyAt: 0xC0, ivAt: 0xA0);
-        cipher.Decrypt(header.AsSpan(0x40, 0x60), 0);
-        uint isoStart = U32LE(header, 0x54), isoEnd = U32LE(header, 0x64), table = U32LE(header, 0x6C);
-        if (isoEnd <= isoStart) throw new InvalidDataException("NPUMDIMG: empty image");
-        uint sectors = isoEnd - isoStart + 1; // the last LBA is inclusive (as PPSSPP's NPDRM reader counts it)
-        uint blocks = (sectors + blockSectors - 1) / blockSectors;
-        if (psar + (ulong)table + blocks * 32UL > eboot.DataSize) throw new InvalidDataException("NPUMDIMG: offset table past the end");
-
-        int blockBytes = (int)blockSectors * IsoSector;
-        var data = new byte[blockBytes + 16];
-        var expanded = new byte[blockBytes];
-        var entry = new byte[32];
-        long size = 0;
-        using var outFile = new FileStream(path, FileMode.Create, FileAccess.Write, FileShare.None, 1 << 20);
-        for (uint i = 0; i < blocks; i++)
-        {
-            ct.ThrowIfCancellationRequested();
-            pkg.ReadAt(eboot, psar + table + 32L * i, entry);
-            uint T(int k) => U32LE(entry, k * 4);
-            uint offset = T(4) ^ T(2) ^ T(3), length = T(5) ^ T(1) ^ T(2), flags = T(6) ^ T(0) ^ T(3);
-            if (length == 0 || length > blockBytes || psar + (ulong)offset + length > eboot.DataSize)
-                throw new InvalidDataException($"NPUMDIMG: block {i} lies outside the eboot");
-            int padded = (int)Math.Min((length + 15) & ~15u, eboot.DataSize - psar - offset);
-            var span = data.AsSpan(0, (int)((length + 15) & ~15u));
-            span.Clear();
-            pkg.ReadAt(eboot, psar + offset, data.AsSpan(0, padded));
-            if ((flags & 4) == 0) cipher.Decrypt(span, offset / 16);
-            if (length == blockBytes) outFile.Write(data, 0, blockBytes);
-            else
-            {
-                int n = PspCrypto.Lzrc(expanded, data.AsSpan(0, (int)length));
-                if (n != blockBytes) throw new InvalidDataException($"NPUMDIMG: block {i} expands to {n} bytes, not {blockBytes}");
-                outFile.Write(expanded, 0, blockBytes);
-            }
-            size += blockBytes;
-            progress((long)eboot.DataSize * (i + 1) / blocks - (long)eboot.DataSize * i / blocks);
-        }
-        return size;
     }
 
     /// <summary>A write-through stream that hashes and counts what passes.</summary>

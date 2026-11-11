@@ -63,7 +63,7 @@ public sealed record PkgEntry(string Name, ulong DataOffset, ulong DataSize, boo
 /// <summary>
 /// Reader for retail .pkg files (outer AES-128-CTR layer): PS Vita packages and the PSP/PSone packages of the PS Store
 /// (key type 1). Format credits: mmozeiko/pkg2zip, lusid1/pkg2zip. The files of a Vita package are still PFS-encrypted
-/// (see <see cref="Pfs.PfsDecryptor"/>); those of a PSP package are still NPDRM (see <see cref="PspCrypto"/>).
+/// (see <see cref="Pfs.PfsDecryptor"/>); those of a PSP package are still NPDRM (the game stays encrypted as sold).
 /// </summary>
 public sealed class PkgReader : IDisposable
 {

@@ -879,7 +879,7 @@ Lista de itens futuros do VitaSharp. Marque `[x]` quando um item for concluído.
     byte 24 = 0x90, na chave PSP; o invólucro PS3 na chave PS3) e diz o tipo (`PkgKind`: jogo de Vita, atualização,
     DLC, tema, PSM; PSP, PSP Go 0xE, minis 0xF, NEOGEO 0x10, PC Engine (7 + categoria HG), DLC de PSP (7 + bloco 10
     com a pasta de instalação), tema de PSP 9, PSone 6; tabela do pkg2zip/psdevwiki). PSP/PS1 não pedem licença no
-    launcher, no Android nem no CLI (`install <pkg>`; `--no-iso`); Vita continua exigindo (`LicenseRequiredException`).
+    launcher, no Android nem no CLI (`install <pkg>`); Vita continua exigindo (`LicenseRequiredException`).
     O que a instalação deixa para o pspemu (o layout de um título baixado da loja num Vita de verdade, onde o
     `dbrecovery_plugin` do firmware procura: ele lista `ux0:pspemu/PSP/GAME` e `ux0:pspemu/PSP/GAME/%s` na
     reconstrução do banco; a instalação apaga `ux0:id.dat` para o shell reconstruir):
@@ -888,10 +888,11 @@ Lista de itens futuros do VitaSharp. Marque `[x]` quando um item for concluído.
       `USRDIR/CONTENT` (DOCUMENT.DAT, DOCINFO.EDAT, PSP-KEY.EDAT, CONTENT.DAT, EDATs) como estão, e `__sce_ebootpbp`
       (a assinatura do eboot, `PspEbootSignature`: o mesmo formato que o HLE de `_vshNpDrmEbootSigGenPsp` gera e que
       `_vshNpDrmEbootSigVerify`/`PspEbootVerify` aceitam; o shell.self importa essas quatro funções, o dbrecovery não).
-      E a imagem UMD decifrada `ux0:pspemu/ISO/<título> [<DISC_ID>].iso` (forma do pkg2zip: a chave do NPUMDIMG sai
-      do próprio cabeçalho, CMAC KIRK 0x38 + chaves de hash do amctrl; blocos LZRC expandidos).
-    - PSone Classic: `ux0:pspemu/PSP/GAME/<DISC_ID>/EBOOT.PBP` (PSISOIMG/PSTITLEIMG, NPDRM), DOCUMENT.DAT, `KEYS.BIN`
-      (a chave de versão de 16 bytes tirada do cabeçalho PGD, lusid1/pkg2zip) e `__sce_ebootpbp` (tipo 2);
+      Nada do jogo é decifrado: só a camada do pacote (chaves fixas) sai; EBOOT.PBP e EDATs ficam NPDRM, como vendidos.
+      (Até 11/11/2026 havia também a ISO decifrada e o KEYS.BIN derivado do eboot, como o pkg2zip faz; removidos por
+      decisão do lead: decifrar o jogo sem a licença do usuário é contornar o DRM.)
+    - PSone Classic: `ux0:pspemu/PSP/GAME/<DISC_ID>/EBOOT.PBP` (PSISOIMG/PSTITLEIMG, NPDRM), DOCUMENT.DAT e
+      `__sce_ebootpbp` (tipo 2);
       `texture.enc` vai para `ux0:ps1emu/<DISC_ID>`. Multidisco (`__sce_discinfo`, tipo 3) ainda não é gerado.
     - DLC de PSP: os arquivos em `ux0:pspemu/PSP/GAME/<pasta do bloco 10>/`; tema: `ux0:pspemu/PSP/THEME`.
     - Licença: só a do próprio usuário (decisão do usuário, 11/11/2026: nada de licença gerada). O shell procura
@@ -902,17 +903,14 @@ Lista de itens futuros do VitaSharp. Marque `[x]` quando um item for concluído.
       mostra a mensagem normal de falta de licença (C0-11136-2). Falta: os campos opcionais no diálogo do launcher.
     Para o trabalho do pspemu: o pspemu de verdade (NPXS10028) abre o EBOOT.PBP NPDRM e pede a licença
     (`sceCompatSetRif` aponta para `ux0:pspemu/PSP/LICENSE/<content id>.rif`) e a ativação. Use o EBOOT.PBP (é o que
-    o firmware roda) com a licença do usuário; KEYS.BIN traz a chave de versão do PS1. A ISO é a forma do Adrenaline/PPSSPP, mantida para referência e conferência (dá para desligar com
-    `--no-iso`; dobra o espaço em disco). Validado: testes `PspPkgInstallTests` (pacotes sintéticos montados no
-    teste, `PspPkgFixture`: detecção de cada tipo, layout, ISO decifrada bloco a bloco, KEYS.BIN, assinatura, DLC,
-    nomes que saem da pasta recusados, Vita sem licença recusado, CMAC pelos vetores da RFC 4493, pacote PS1 no
+    o firmware roda) com a licença do usuário. Validado: testes `PspPkgInstallTests` (pacotes sintéticos montados no
+    teste, `PspPkgFixture`: detecção de cada tipo, layout, assinatura, DLC, licença do usuário,
+    nomes que saem da pasta recusados, Vita sem licença recusado, pacote PS1 no
     formato PS3). Com pacotes reais do usuário (só leitura, instalados numa pasta de dados de teste): um jogo de PSP
-    (0,5 GB) instala em 36 s pelo CLI sem licença; a ISO decifrada é ISO 9660 válida (CD001, "PSP GAME", o volume de
-    287.968 setores bate com o tamanho do arquivo, UMD_DATA.BIN/PARAM.SFO/EBOOT.BIN dentro) e o EBOOT.PBP instalado
-    é o NPUMDIMG original; no `boot-shell` (shell de verdade, sem cabeça) a reconstrução do banco (dbrecovery) pôs a
+    (0,5 GB) instala em 36 s pelo CLI sem licença; o EBOOT.PBP instalado é o NPUMDIMG original; no `boot-shell` (shell de verdade, sem cabeça) a reconstrução do banco (dbrecovery) pôs a
     bolha do jogo na tela inicial com o ícone e o nome. Um PSone Classic real veio no formato PS3 (cabeçalho tipo 1,
     content type 1, arquivos em `<ID>/EBOOT.PBP`, tudo na chave PS3, sem PARAM.SFO próprio; lusid1/pkg2zip trata
-    igual): `PkgReader` reconhece esse formato; instala em 2 s (EBOOT.PBP com PSISOIMG, DOCUMENT.DAT, KEYS.BIN,
+    igual): `PkgReader` reconhece esse formato; instala em 2 s (EBOOT.PBP com PSISOIMG, DOCUMENT.DAT,
     `__sce_ebootpbp`). Com os dois instalados, o shell mostra as duas bolhas na mesma página (nomes certos).
     As duas diferenças vistas no shell (11/11/2026):
     - "Você deve atualizar o software de sistema para a versão - ou posterior" ao tocar na bolha do PSone: o shell

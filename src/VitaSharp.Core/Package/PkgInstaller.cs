@@ -6,8 +6,6 @@ public sealed record InstalledTitle(string TitleId, string Title, string Path, P
 {
     /// <summary>The kind of package installed (null for VPKs).</summary>
     public PkgKind? Kind { get; init; }
-    /// <summary>The decrypted UMD image a PSP install also wrote (ux0:pspemu/ISO), if any.</summary>
-    public string? IsoPath { get; init; }
 }
 
 /// <summary>What a .pkg is, read from its header before installing (the UIs ask for a license only when it needs one).</summary>

@@ -317,7 +317,6 @@ public sealed partial class MainWindow
                 new PspInstallOptions { License = rif != null ? File.ReadAllBytes(rif) : null, ActDat = act != null ? File.ReadAllBytes(act) : null },
                 msg => Dispatcher.UIThread.Post(() => AppendLog(msg)), p => Report(job, p), ct), ct);
             AppendLog($"Installed {t.TitleId} \"{t.Title}\" ({info.Description}) -> {t.Path}");
-            if (t.IsoPath != null) AppendLog($"Decrypted UMD image -> {t.IsoPath}");
             job.Detail = S.InstalledPspEmu(t.Title, info.Kind);
             return t.TitleId;
         },
