@@ -79,6 +79,11 @@ public static partial class GuestClock
         return last;
     }
 
+    /// <summary>The latest reading any guest thread got from <see cref="Observed"/>: a thread that starts a timed wait
+    /// may already have read the clock this far ahead of real time (another thread's CPU position moved it), so the
+    /// wait is measured from here, or the thread would see it end early (a 2 ms delay measured as 1.8 ms).</summary>
+    internal static long ObservedFloor => Volatile.Read(ref _lastObserved);
+
     public static long ToMicroseconds(long ticks) => (long)(ticks * (1_000_000.0 / Stopwatch.Frequency));
 
     /// <summary>Waits until the clock reaches <paramref name="deadline"/> (ticks); in turbo mode jumps there. While the

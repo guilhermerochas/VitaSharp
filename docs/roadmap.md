@@ -1740,12 +1740,14 @@ Lista de itens futuros do VitaSharp. Marque `[x]` quando um item for concluído.
   0x31AC7E864902C658 (143), 0x3C5942B26370B3DD (27), 0x42CA9BAA3693FE7A (51), em vs e fs. O array deve ter o tamanho do
   maior índice que alguma instrução pode endereçar, incluindo as formas indexadas/relativas; hoje o draw inteiro cai.
   Teste: ShaderFuzzTests.EveryTranslationCompiles (Skip até a correção; tirar o Skip junto).
-- [ ] Tempo de processo menor que um delay em volta dele (agente de testes, 10/11/2026): dois sceKernelGetProcessTimeWide
-  em volta de sceKernelDelayThread(2000) num thread guest mediram 1839 us; no Vita é sempre >= 2 ms. Suspeita:
+- [x] Tempo de processo menor que um delay em volta dele (agente de testes, 10/11/2026): dois sceKernelGetProcessTimeWide
+  em volta de sceKernelDelayThread(2000) num thread guest mediram 1839 us; no Vita é sempre >= 2 ms. Causa:
   GuestClock.Observed é monotônico entre threads (_lastObserved) e um thread com ritmo de CPU (que corre até ~1 ms à
-  frente do tempo real) deixa o relógio adiantado; a leitura antes do delay já sai adiantada e a diferença encolhe. Pode
-  afetar limitadores de quadro que medem o próprio sleep. Teste: ThreadMgrHleTests.ProcessTimeAroundADelayIsAtLeastTheDelay
-  (Skip até a correção; tirar o Skip junto).
+  frente do tempo real) deixa o relógio adiantado; a leitura antes do delay já sai adiantada e o delay contava do tempo
+  real. **Corrigido** (agente de testes T1, 11/11/2026): o delay começa no maior entre a posição do thread e o último
+  tempo que algum thread leu (`GuestClock.ObservedFloor`, limitado a 5 ms à frente do relógio). Teste sem Skip:
+  ThreadMgrHleTests.ProcessTimeAroundADelayIsAtLeastTheDelay (agora simula a vantagem de 1 ms de outro thread a cada
+  medida). Correção feita, ainda não validada com jogo (limitadores de quadro que medem o próprio sleep).
 - [x] Dragon's Crown (PCSE00019): flicker e texturas erradas (relato do usuário, 10/11/2026, capturas
   `PCSE00019_20261110_214605_tudo` e `..._214648_tudo`). Agente A4 (fix/bugs-a-4), duas causas:
   (1) **corrigido em bf2f3b9**: o jogo lê o back buffer (960x544, pitch 1024) como uma textura 1024x1024 que também

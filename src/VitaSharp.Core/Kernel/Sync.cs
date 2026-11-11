@@ -187,6 +187,10 @@ public static class Wait
         Interlocked.Increment(ref a[us == 0 ? 0 : us <= 100 ? 1 : us <= 1000 ? 2 : us <= 5000 ? 3 : 4]);
     }
 
+    /// <summary>How far ahead of the clock a delay may start because of <see cref="GuestClock.ObservedFloor"/> (a paced
+    /// thread runs up to ~1 ms ahead before it sleeps; the cap keeps a stray reading from stretching every delay).</summary>
+    static readonly long MaxObservedLead = Stopwatch.Frequency / 200; // 5 ms
+
     /// <summary>Plain sleep that stays responsive to emulator shutdown.</summary>
     public static void Sleep(ulong microseconds)
     {
@@ -212,7 +216,10 @@ public static class Wait
         {
             // the delay starts where the thread's emulated CPU time is, and it resumes at the deadline however late the
             // host wakes it (CpuCore.WokeAt): pacing sleeps and timer wake-ups overshoot by fractions of a millisecond
-            long end = (self?.Core.BlockedAt ?? GuestClock.Ticks) + GuestClock.FromSeconds(microseconds / 1e6 / TimeScale.Wait), slice = GuestClock.FromSeconds(0.05);
+            // nor before the process time the guest has already read (GuestClock.Observed runs ahead of real time by
+            // up to a paced thread's lead): on the Vita the process time measured around a delay is never shorter
+            long start = Math.Max(self?.Core.BlockedAt ?? GuestClock.Ticks, Math.Min(GuestClock.ObservedFloor, GuestClock.Ticks + MaxObservedLead));
+            long end = start + GuestClock.FromSeconds(microseconds / 1e6 / TimeScale.Wait), slice = GuestClock.FromSeconds(0.05);
             bool spin = microseconds >= DelaySpinMinUs, slept = false;
             // sceKernelDelayThreadCB: callbacks notified during the delay run inside it, as they arrive, and the delay
             // goes on. Jak and Daxter's vblank-callback thread sits in DelayThreadCB(0xFFFFFFFF) and counts vblanks in

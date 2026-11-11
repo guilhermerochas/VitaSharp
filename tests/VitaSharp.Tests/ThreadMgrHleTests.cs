@@ -1,6 +1,7 @@
 using VitaSharp.Core.Hle.Modules;
 using VitaSharp.Core.Kernel;
 using VitaSharp.Core.Memory;
+using VitaSharp.Core.Util;
 using static VitaSharp.Tests.HleHarness;
 using Mutex = VitaSharp.Core.Kernel.Mutex;
 
@@ -301,16 +302,20 @@ public sealed class ThreadMgrHleTests(GuestMemoryFixture fx) : IDisposable
         });
     }
 
-    /// <summary>On the Vita the process time measured around sceKernelDelayThread(2000) is at least 2 ms. Here the
-    /// process clock (GuestClock.Observed) is monotonic across threads and another, paced thread can leave it up to
-    /// ~1 ms ahead of real time, so the measured delay can come out shorter (1839 us seen).</summary>
-    [Fact(Skip = "bug: GuestClock.Observed cross-thread monotonic lead, see roadmap")]
+    /// <summary>On the Vita the process time measured around sceKernelDelayThread(2000) is at least 2 ms. The process
+    /// clock (GuestClock.Observed) is monotonic across threads, and another, paced thread leaves it up to ~1 ms ahead of
+    /// real time (simulated here with a 1 ms lead before each reading); the delay counts from that reading, or the
+    /// measured delay comes out shorter (1839 us seen).</summary>
+    [Fact]
     public void ProcessTimeAroundADelayIsAtLeastTheDelay()
     {
         _h.OnGuest(_ =>
         {
             for (int i = 0; i < 20; i++)
             {
+                var other = new Thread(() => GuestClock.Observed(GuestClock.Ticks + GuestClock.FromSeconds(0.001)));
+                other.Start();
+                other.Join();
                 ulong t0 = (ulong)Invoke(Tm, "sceKernelGetProcessTimeWide")!;
                 Call(Tm, "sceKernelDelayThread", 2000u);
                 ulong t1 = (ulong)Invoke(Tm, "sceKernelGetProcessTimeWide")!;
