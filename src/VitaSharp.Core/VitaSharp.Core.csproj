@@ -19,6 +19,7 @@
   <ItemGroup>
     <EmbeddedResource Include="Hle\Data\nids.txt" LogicalName="nids.txt" />
     <InternalsVisibleTo Include="VitaSharp.Tests" />
+    <InternalsVisibleTo Include="VitaSharp.Benchmarks" />
   </ItemGroup>
 
   <ItemGroup>

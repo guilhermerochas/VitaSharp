@@ -235,3 +235,30 @@ The script pulls the capture to `./captures/` and prints:
 - with `DESKTOP` / `-Desktop`, a Vulkan validation replay with synchronization validation.
 
 For phone GPU ms, cut fixtures from the dump (`bench cut`, element selections) and run `build/android-bench.*`.
+
+## Micro benchmarks (tests/VitaSharp.Benchmarks)
+
+BenchmarkDotNet benchmarks of the hot paths, to measure an optimisation in isolation before and after it. The project
+is not in `VitaSharp.sln`: the normal build, CI and the test suite never build or run it. Every run reports allocations
+(MemoryDiagnoser) and the JIT's code of each benchmark and what it calls (DisassemblyDiagnoser, two levels, in
+`<name>.artifacts/results/*-asm.md`).
+
+```
+build/bench.ps1 -Filter '*Uniform*' -Name before          # build/bench.sh --filter '*Uniform*' --name before
+build/bench.ps1 -Filter '*Uniform*' -Name after -Compare <out>/before.md
+build/bench.ps1 -Filter '*GpuWorker*' -Dump kz_game.vsgd -Variants 'VITASHARP_VK_DIRECT=1'
+build/bench.ps1 -Filter list                              # the benchmarks
+```
+
+- Results: `<out>/<name>.md` (default out: `<temp>/vitasharp-bench`), the joined GitHub Markdown table with the commit
+  in its first line; `-Compare` prints a table of ratios against an earlier result.
+- `-Job short` (default) is a quick run; `-Job default` for numbers worth writing down. The benchmark processes run
+  pinned to `-Affinity` (default 15: four logical CPUs); start the script at below-normal priority on a shared machine.
+- Benchmarks: `GpuWorkerBenchmarks` (the renderer's Execute over a whole GPU dump on the host GPU, caches warm;
+  `-Variants 'K=V,K2=V2|K3=V3'` adds A/B variants of switches on the same build), `ShaderTranslationBenchmarks` (USSE
+  to GLSL of every program of the dump), `UniformArenaBenchmarks` (rent, slot copy, release), `CpuTranslatorBenchmarks`
+  (decode, IL and native x64 compile of a block; `-Corpus` = a corpus of `VITASHARP_NATIVE_CORPUS`),
+  `CpuDispatchBenchmarks` (CpuCore.Run of a guest loop on interp/il/native), `HleSyncBenchmarks` (uncontended
+  lightweight mutex, mutex and semaphore in the kernel), `Atrac9Benchmarks` (superframe decode; `-At9` = an .at9 file,
+  else generated superframes the decoder accepts), `TextureBenchmarks` (swizzled/tiled to linear and their per-texel versions, PVRTC 4 bpp decode).
+- Fixtures with game data (`-Dump`, `-At9`, `-Corpus`) are never committed.

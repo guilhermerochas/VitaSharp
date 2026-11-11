@@ -458,6 +458,26 @@ Lista de itens futuros do VitaSharp. Marque `[x]` quando um item for concluído.
   ~1 fps e pausas de 30 s nas medidas do F1 apareceram com e sem a mudança (b-f1 em 2,5 fps, c-f1 com pausa de 31 s
   no boot): eram a máquina (disco C: a 98%, outros agentes, o Storage Sense apagando as junctions no meio das
   corridas), não o código
+- [x] Rodada 22 de desempenho (perf/desktop-22, 11/11/2026): projeto de benchmark (item "Projeto de benchmark à
+  parte") e os pontos quentes da rodada 21. **Ganho de bench**: swizzled -> linear por tabelas de coluna/linha (os bits intercalados de x e y não se
+  sobrepõem) e tiled -> linear por linhas de tile (32 texels contíguos), também nos swizzles de tamanho arbitrário e nas
+  grades de blocos comprimidos do decodificador: RGBA8 256x256 1032 -> 79 us e 1024x1024 13,6 -> 1,7 ms (13x); tiled
+  424 -> 24 us e 6,5 -> 0,85 ms (18x); bit-idêntico (`TextureLayoutTests`), `VITASHARP_TEX_LAYOUT=legacy` = antes. No
+  Killzone (escada) o tempo de upload por quadro não mudou (0,89-0,94 uploads/quadro, 0,15-0,19 ms/quadro nas duas
+  versões): os uploads dele são BC e o custo é o resto do upload; o ganho vale para jogos que sobem texturas
+  swizzled/tiled sem compressão. `replay-gpu --compare` nos 9 dumps (5.782 quadros) pixel-idêntico. Medido e
+  descartado: (1) `VITASHARP_VK_DIRECT=1` no desktop: fase Record 1,81 vs 1,76 ms/quadro no Killzone (o custo do Record
+  é o driver, não a transição do Silk.NET); (2) push constants só quando mudam (o número do draw só é lido pelos modos
+  de depuração): 9 dumps idênticos, mas sem ganho medível (bench do worker 599 vs 531 ms por replay do kz_game, ruído
+  de +-70 ms; no Killzone o Record ficou em 21-29% dos draws nas duas versões); (3) PVRTC com tabelas planas e sem
+  Array.Clear por bloco: 4,7 vs 7,2 ms (256x256) e 83 vs 89 ms (1024x1024), ruído; o custo (~60-80 ns/texel) vem de
+  desempacotar cada palavra 4 vezes e interpolar dois conjuntos de cor por bloco (um cache de modulação por palavra
+  seria o próximo passo, e vale mais no celular, onde o PVRTC vira ASTC na CPU). A máquina estava dividida com outros
+  agentes: o Execute do worker do Killzone variou de 6 a 35 ms/quadro entre rodadas iguais, então as fases só se
+  comparam dentro da mesma rodada ou no benchmark. `DOTNET_JitDisasm` nos métodos quentes do worker: `Draw`,
+  `BuildTextureSet` e `UniformSet` compilam direto em FullOpts (têm stackalloc, então ficam sem PGO dinâmico); em `Draw`,
+  os getters `FetchPassMerge` e `DepthFeedback` fazem um switch de string por chamada; nada disso aparece acima do ruído
+  (candidatos baratos anotados em perf_knowledge)
 
 ## Android
 
@@ -1532,13 +1552,23 @@ Lista de itens futuros do VitaSharp. Marque `[x]` quando um item for concluído.
   `Hle/Modules/SystemMisc.cs:66-100` (IDs de sysmodule -> módulos), `:141` `HleImplemented` e `:148` `HleFallback`
   (política HLE x LLE por módulo do firmware), `Hle/Modules/Rtc.cs:44` (threads `SceNpTrophyServer*` do shell levam a
   data do troféu da ponte do servidor de troféus). A camada Vulkan (`GpuQuirks`) é a exceção da regra.
-- [ ] Projeto de benchmark à parte (pedido do usuário, 11/11/2026): `tests/VitaSharp.Benchmarks` com BenchmarkDotNet
-  (`[MemoryDiagnoser]` + `[DisassemblyDiagnoser]`), fora da suíte de testes e do build normal, para medir os caminhos
-  quentes isolados antes e depois de cada otimização: execução do worker da GPU (dump curto do Killzone), cópia e
-  liberação dos dados de shader, tradução de shaders USSE, tradutor ARM->IL e despacho do backend nativo, HLE mais
-  chamado (travas, lwmutex), decodificador ATRAC9, cópia/swizzle de texturas. Script `build/bench.ps1`/`.sh`
-  (multiplataforma) que roda um filtro e guarda o resultado em Markdown para comparar. Junto: `DOTNET_JitDisasm` nos
-  métodos que o perfil mostrar quentes; ILSpy para conferir o IL gerado (ferramentas já instaladas).
+- [x] Projeto de benchmark à parte (pedido do usuário, 11/11/2026; perf/desktop-22): `tests/VitaSharp.Benchmarks`
+  com BenchmarkDotNet 0.15.2 (`MemoryDiagnoser` + `DisassemblyDiagnoser` de dois níveis, uma tabela Markdown juntada),
+  fora da solução, da suíte e do CI. Benchmarks: `GpuWorkerBenchmarks` (Execute do renderizador sobre um dump inteiro,
+  sem janela, na GPU do PC, caches quentes; `-Variants 'K=V|K2=V2'` mede chaves A/B no mesmo build),
+  `ShaderTranslationBenchmarks` (USSE -> GLSL de todos os programas do dump), `UniformArenaBenchmarks`,
+  `CpuTranslatorBenchmarks` (decodificação e compilação IL e x64 de um bloco; `-Corpus` = corpus do
+  `VITASHARP_NATIVE_CORPUS`, para o agente do IL), `CpuDispatchBenchmarks` (CpuCore.Run em interp/il/native),
+  `HleSyncBenchmarks` (lwmutex, mutex, semáforo sem disputa), `Atrac9Benchmarks` (superframe; `-At9` ou superframes
+  gerados com cabeçalhos válidos), `TextureBenchmarks`. `build/bench.ps1`/`.sh`: filtro, resultado em
+  `<out>/<nome>.md` com o commit, `-Compare` imprime as razões contra um resultado anterior (tools/dev/README.md).
+  O projeto gerado compila com `-m:2` sem servidor de compilação, o plano de energia do Windows não é trocado e os
+  processos rodam abaixo do normal (o BenchmarkDotNet os põe em High). Primeira rodada (PC, `--job short`, máquina
+  dividida): lwmutex lock+unlock 102 ns, mutex 113 ns, semáforo 143 ns; aluguel+slot+liberação de uniforms 57/279/565 ns
+  (256 B/4 KB/16 KB); decodificar um bloco ARM 0,18 us, compilar em IL 2,9 ms, em x64 13 us; laço de 4.096 voltas com
+  chamada: interp 229 us, IL 134 us, nativo 30 us; USSE do kz_game inteiro 37 ms (83 MB alocados); ATRAC9 39 us por
+  superframe (21,3 ms de áudio); PVRTC 4 bpp 256x256 4,7 ms e 1024x1024 83 ms (~60-80 ns/texel); replay do kz_game
+  (7 quadros) 0,6-0,8 s com 137 MB alocados por replay (a maior parte é o leitor do dump, que copia cada registro).
 - [x] Scripts `.sh` no Google Shell Style Guide (pedido do usuário, 10/11/2026):
   https://google.github.io/styleguide/shellguide.html, junto com a regra de que todo `.sh` roda em Linux e macOS
   (bash 3.2, sem ferramentas só do GNU sem alternativa; ver `docs/agents/regras.md`). Passos: (1) adequar os 17
