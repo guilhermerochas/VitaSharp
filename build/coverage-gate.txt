@@ -1,10 +1,12 @@
 # Minimum line coverage (%) of the Category!=Slow suite, checked by build/coverage.ps1 / build/coverage.sh --gate
 # (the CI coverage job, on windows-latest). "Overall" is the whole measurement; the others are assemblies as
 # ReportGenerator names them. The target is 70 for each. Raise a minimum when a measurement passes it by a point or
-# more (the gate says so); never lower one. Each is set half a point under the measurement it came from, so the
-# run-to-run noise of timing-dependent paths does not fail the build.
-Overall 65.3
-VitaSharp.Core 71.7
+# more (the gate says so). Each is set half a point under the measurement it came from, so the run-to-run noise of
+# timing-dependent paths does not fail the build. The minimums come from the CI job's coverage-report artifact, never
+# a local run: the runner has no firmware, so FirmwareTests, the LLE comparisons and the Piglet compiler skip there.
+# 11/11/2026 (user-approved rebaseline): CI Overall 64.4 / Core 70.0 vs local 65.8 / 72.2.
+Overall 63.9
+VitaSharp.Core 69.5
 VitaSharp.Desktop 28.4
 VitaSharp.Mobile.Core 83.8
 VitaSharp.Renderer.Vulkan 43.6
