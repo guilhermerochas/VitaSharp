@@ -34,19 +34,36 @@ $includeFile = [IO.Path]::GetTempFileName()
 $include = "@$includeFile"
 $verify = @(if (-not $Fix) { '--verify-no-changes' })
 
+# `dotnet format` expands the response file itself and starts dotnet-format.dll with every path on its command line,
+# longer than Windows allows (32K characters) once the whole tree is listed: the dll of the active SDK is run directly so
+# that it reads the response file. Other SDK layouts fall back to `dotnet format`.
+function Get-FormatCommand {
+    $version = (dotnet --version | Select-Object -First 1).Trim()
+    foreach ($line in @(dotnet --list-sdks)) {
+        if ($line -match '^(\S+) \[(.+)\]$' -and $Matches[1] -eq $version) {
+            $dll = Join-Path $Matches[2] "$version/DotnetTools/dotnet-format/dotnet-format.dll"
+            if (Test-Path -LiteralPath $dll) {
+                return @('exec', $dll)
+            }
+        }
+    }
+    return @('format')
+}
+
 Push-Location $root
 try {
+    $format = Get-FormatCommand
     "format-check: whitespace ($($files.Count) tracked files, $($pending.Count) folders pending)"
-    dotnet format whitespace --folder @verify $include
+    dotnet @format whitespace --folder @verify $include
     if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
     if (-not $WhitespaceOnly) {
         'format-check: style (severity warn)'
-        dotnet format style VitaSharp.sln --severity warn @verify $include
+        dotnet @format style VitaSharp.sln --severity warn @verify $include
         if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
         if ($Fix) {
             # a second pass: the fix-all of a rule applies one kind of its fixes per run (IDE0008 rewrites `var` of
             # built-in types and of the other types as two kinds)
-            dotnet format style VitaSharp.sln --severity warn $include
+            dotnet @format style VitaSharp.sln --severity warn $include
             if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
         }
     }
@@ -60,7 +77,7 @@ try {
         'format-check: layout (build/FormatTool)'
         dotnet run --project (Join-Path $root 'build/FormatTool') -c Release -v q -- $root $includeFile
         if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
-        dotnet format whitespace --folder $include
+        dotnet @format whitespace --folder $include
         if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
     }
     'format-check: ok'

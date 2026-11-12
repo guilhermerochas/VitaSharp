@@ -252,7 +252,10 @@ files only (`git ls-files`: never `.claude/` with the agents' worktrees, nor unt
 since `dotnet format` reports IDE1006 but cannot fix it, and `build/FormatTool`, which splits the blocks written on
 one line and keeps `{ get; set; }` on one line; the fix needs the NuGet packages of `build/NamingTool`, restored on
 its first run). Folders not converted yet are listed in [`build/format-pending.txt`](build/format-pending.txt) and
-skipped. `OneLineBlockTests` (in the test suite) rejects blocks written on one line (`if (x) { a; }`): every body
+skipped. The file list goes to `dotnet format` as a response file, and the scripts run the `dotnet-format.dll` of the
+active SDK (`<sdk>/DotnetTools/dotnet-format/`) directly so that it reads that file itself: `dotnet format` would put
+every path on one command line, longer than Windows allows once the whole tree is listed (other SDK layouts fall back
+to `dotnet format`). `OneLineBlockTests` (in the test suite) rejects blocks written on one line (`if (x) { a; }`): every body
 goes on its own lines.
 
 Shell scripts follow the Google Shell Style Guide and must pass ShellCheck (CI job "ShellCheck"; the job

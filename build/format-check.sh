@@ -64,6 +64,32 @@ is_pending() {
   return 1
 }
 
+#######################################
+# Picks the dotnet format command. `dotnet format` expands the response file itself and starts dotnet-format.dll with
+# every path on its command line, longer than Windows allows (32K characters) once the whole tree is listed: the dll
+# of the active SDK is run directly so that it reads the response file. Other SDK layouts fall back to `dotnet format`.
+# Globals:
+#   FORMAT (set): the dotnet arguments before the format verb
+#######################################
+format_command() {
+  local version line dir dll
+  version="$(dotnet --version | head -n 1)"
+  version="${version%$'\r'}"
+  FORMAT=(format)
+  while IFS= read -r line; do
+    line="${line%$'\r'}"
+    # "<version> [<sdk folder>]"
+    if [[ "${line%% *}" == "${version}" ]]; then
+      dir="${line#* [}"
+      dir="${dir%]}"
+      dll="${dir}/${version}/DotnetTools/dotnet-format/dotnet-format.dll"
+      if [[ -f "${dll}" ]]; then
+        FORMAT=(exec "${dll}")
+      fi
+    fi
+  done < <(dotnet --list-sdks)
+}
+
 main() {
   local verify="--verify-no-changes"
   local whitespace_only=0
@@ -93,6 +119,7 @@ main() {
   pending+=(".claude")
 
   cd "${ROOT}"
+  format_command
   # the file list goes through a response file (one token per line), like build/format-check.ps1 does
   # global, not local: the EXIT trap runs after main has returned
   include_file="$(mktemp)"
@@ -114,15 +141,15 @@ main() {
   echo "format-check: whitespace (${count} tracked files, $((${#pending[@]} - 1)) folders pending)"
   # ${verify} is either empty or one option
   # shellcheck disable=SC2086
-  dotnet format whitespace --folder ${verify} "${include}"
+  dotnet "${FORMAT[@]}" whitespace --folder ${verify} "${include}"
   if ((whitespace_only == 0)); then
     echo "format-check: style (severity warn)"
     # shellcheck disable=SC2086
-    dotnet format style VitaSharp.sln --severity warn ${verify} "${include}"
+    dotnet "${FORMAT[@]}" style VitaSharp.sln --severity warn ${verify} "${include}"
     if [[ -z "${verify}" ]]; then
       # a second pass: the fix-all of a rule applies one kind of its fixes per run (IDE0008 rewrites `var` of
       # built-in types and of the other types as two kinds)
-      dotnet format style VitaSharp.sln --severity warn "${include}"
+      dotnet "${FORMAT[@]}" style VitaSharp.sln --severity warn "${include}"
     fi
   fi
   if [[ -z "${verify}" ]]; then
@@ -133,7 +160,7 @@ main() {
     # tests/VitaSharp.Tests/OneLineBlockTests); then indent the split lines. FormatTool reads the same list.
     echo "format-check: layout (build/FormatTool)"
     dotnet run --project "${ROOT}/build/FormatTool" -c Release -v q -- "${ROOT}" "${include_file}"
-    dotnet format whitespace --folder "${include}"
+    dotnet "${FORMAT[@]}" whitespace --folder "${include}"
   fi
   echo "format-check: ok"
 }
