@@ -1,9 +1,9 @@
 # Runs benchmarks of tests/VitaSharp.Benchmarks (BenchmarkDotNet; not part of the solution build or the test suite)
 # and keeps the joined GitHub Markdown table as <out>/<name>.md, to compare runs before and after a change.
-# Usage: build/bench.ps1 [-Filter '*Uniform*'] [-Name label] [-Out folder] [-Dump file.vsgd] [-At9 file.at9]
+# Usage: build/bench.ps1 [-Help] [-Filter '*Uniform*'] [-Name label] [-Out folder] [-Dump file.vsgd] [-At9 file.at9]
 #                        [-Corpus file] [-Variants 'K=V,K2=V2|K3=V3'] [-Job short|medium|long|default] [-Affinity 15]
 #                        [-Compare base.md]
-#   (same as build/bench.sh --filter --name --out --dump --at9 --corpus --variants --job --affinity --compare)
+#   (same as build/bench.sh --help --filter --name --out --dump --at9 --corpus --variants --job --affinity --compare)
 #   -Filter: BenchmarkDotNet's globs over Type.Method, comma-separated (default '*'; -Filter list prints the
 #     benchmarks and exits).
 #   -Name: result file name (default bench_<date>_<time>); -Out: results folder (default <temp>/vitasharp-bench).
@@ -22,9 +22,14 @@ param(
     [string]$Variants = '',
     [string]$Job = 'short',
     [long]$Affinity = 15,
-    [string]$Compare = ''
+    [string]$Compare = '',
+    [switch]$Help
 )
 $ErrorActionPreference = 'Stop'
+if ($Help) {
+    Get-Content $PSCommandPath -TotalCount 14 | ForEach-Object { $_ -replace '^# ?', '' }
+    exit 0
+}
 $root = Split-Path -Parent $PSScriptRoot
 $project = Join-Path $root 'tests/VitaSharp.Benchmarks'
 if (-not $Out) { $Out = Join-Path ([System.IO.Path]::GetTempPath()) 'vitasharp-bench' }
