@@ -360,6 +360,10 @@ public static class EnvVars
     /// <summary>0 (A/B) turns off the wait of a scene's GPU work until the display released its colour buffer (fragment
     /// sync object), as on the hardware; trace also logs the waits. Default on.</summary>
     public const string DisplaySync = "VITASHARP_DISPLAY_SYNC";
+    /// <summary>queue (A/B): a GXM display queue flip goes to the tail of the GPU queue, behind the work the game queued
+    /// since its frame's fence (the old order). Default: the GPU worker runs it before its next command, as the display
+    /// controller flips independently of the GPU's command stream.</summary>
+    public const string DisplayFlipOrder = "VITASHARP_DISPLAY_FLIP_ORDER";
     /// <summary>1 (A/B): sceGxmDisplayQueueAddEntry keeps at most displayQueueMaxPendingCount entries queued or flipping.</summary>
     public const string DisplayQueueStrict = "VITASHARP_DISPLAY_QUEUE_STRICT";
     /// <summary>0: sceDisplaySetFrameBuf in IMMEDIATE mode no longer flips at most once per vblank (by default a second

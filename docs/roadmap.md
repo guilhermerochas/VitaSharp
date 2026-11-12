@@ -1765,23 +1765,20 @@ Lista de itens futuros do VitaSharp. Marque `[x]` quando um item for concluído.
 - [ ] Trocar entre o modo claro e o modo escuro demora muito (relato do usuário, 11/11/2026). Medir quanto leva a
   troca e onde o tempo vai (recriar a interface inteira, recarregar recursos/ícones/capas, refazer o layout da
   biblioteca) e fazer a troca só reaplicar as cores. Conferir no launcher do Desktop e no app Android.
-- [ ] **REGRESSÃO (11/11/2026, relato do usuário: "não estava assim")** Killzone Mercenary (PCSC00045): o HUD pisca
-  (flicker) no build 2e7789b2. Captura F8 `PCSC00045_20261111_222844_tudo` (pasta de capturas do usuário, com o dump da
-  GPU de 209 quadros): 17 achados, vários [flash] em quadros isolados que diferem dos dois vizinhos iguais, nas
-  células de cima da tela (2,0 e 3,0), onde fica o HUD. Mudanças do dia que tocam o desenho, a bisecar nesta ordem:
-  os registradores de atributo zerados nos shaders (gerador v27, fix/ci-macos), a conversão de texturas por tabelas
-  da rodada 22 (`MortonGather`, incluindo a resolução de conflito no `TextureDecoder.cs`), a invalidação de blocos
-  traduzidos pelas instruções de cache (kernel-env) e as texturas U32/S32 em R32 (T2). Os merges de nomes têm IL
-  idêntico. Reproduzir com `replay-gpu` nos quadros das findings antes e depois de cada mudança.
-  F1 2011 (PCSE00002) também (captura `PCSE00002_20261111_223250_tudo`, 759 quadros no dump): 21 quadros pretos
-  isolados (luma 0) a cada 3 a 8 quadros a partir do 2723, e o `replay-gpu` do dump repete os mesmos quadros pretos.
-  O `frames_index.txt` (`--trace-draws`) mostra o padrão: os quadros normais apresentam a cena desenhada um present
-  antes ("lag 1"); o quadro preto 2723 apresenta 0x604A0000 com "lag 0" e o registro do present fica no meio dos
-  draws dessa cena (draws 3665-3712, present no intervalo 3681-3698): o flip chegou antes de a cena terminar, e o
-  quadro mostra o alvo ainda limpo. No console, o flip pela fila de exibição do GXM (`sceGxmDisplayQueueAddEntry`)
-  espera o fim da cena; procurar o que, hoje, deixou o present ser registrado antes dos draws da cena (ordem da fila
-  de exibição/notificações do GXM, sincronização de processo/relógio do T1, ou a ordem de envio ao worker da GPU).
-  O flicker do HUD do Killzone pode ser a mesma causa: conferir o "lag" dos quadros com [flash] do mesmo jeito.
+- [x] **REGRESSÃO (11/11/2026, relato do usuário: "não estava assim")** Killzone Mercenary (PCSC00045): o HUD piscava,
+  e F1 2011 (PCSE00002) mostrava quadros pretos isolados, no build 2e7789b2 (capturas F8 `PCSC00045_20261111_222844_tudo`
+  e `PCSE00002_20261111_223250_tudo`). Causa: 758ad0a9 (a espera do sync object de fragmento no `sceGxmBeginScene`
+  ligada por padrão; A/B ao vivo no F1 com `VITASHARP_DISPLAY_SYNC=0`: 0 presents no meio de uma cena contra 50). A
+  espera segura no worker da GPU a cena seguinte no mesmo buffer até a fila de exibição trocar de buffer, mas o flip
+  (o `PresentCommand` que o callback da fila envia pelo `sceDisplaySetFrameBuf`) ia para o fim da fila da GPU, atrás
+  dos draws dessa cena: o worker liberava a cena, desenhava parte dela e só então apresentava o buffer (limpo ou pela
+  metade). No console o controlador de vídeo não faz parte do fluxo de comandos da GPU. Correção: os flips da fila de
+  exibição (`GpuQueue.SubmitFlip`, só na thread `SceGxmDisplayQueue`) rodam antes do próximo comando do worker e
+  dentro da espera do sync object; os flips de threads do jogo continuam na ordem da fila. `VITASHARP_DISPLAY_FLIP_ORDER=queue`
+  volta à ordem antiga (A/B). Teste `GxmFlowTests.DisplayQueueFlipComesBeforeALaterSceneIntoTheSameBuffer` (falha sem a
+  correção: a cena do quadro 2 vinha antes do flip do quadro 0). Ao vivo (estado das capturas, sem janela): F1 26
+  quadros pretos isolados em 501 -> 0, 50 presents no meio da cena -> 0; Killzone (rerun da captura com a entrada
+  gravada) 7 e 11 [flash] -> 0 e 0; fps igual (F1 59,9/52,9/42 -> 59,6/54,0/42; Killzone 30 -> 30).
 - [ ] Achados do jogo de teste VitaSDK (repositório local `VitaSharp-testgame`, 11/11/2026; 182 OK / 3 FAIL / 2 SKIP
   no VitaSharp sem janela). 1) Texturas ETC1 não são decodificadas: "texture base format 0x84000000 is not supported:
   treated as RGBA8", todos os blocos saem 0. 2) `U2U10U10U10` na ordem `_ABGR` sai com vermelho e azul trocados:

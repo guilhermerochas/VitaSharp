@@ -27,12 +27,20 @@ public sealed class GxmFlowTests : IDisposable
         public BeginSceneCommand? LastBegin;
         public int Draws;
         public (uint Index, uint Count, byte Prim, uint Instances) LastDraw;
+        /// <summary>Scenes and flips in GPU order, with their colour buffer: "begin 0x...", "present 0x...".</summary>
+        public readonly ConcurrentQueue<string> Frames = new();
         public void Execute(GpuCommand command)
         {
             Kinds.Enqueue(command.GetType().Name);
             if (command is BeginSceneCommand b)
             {
                 LastBegin = b;
+                Frames.Enqueue($"begin 0x{b.Color?.Data ?? 0:X8}");
+            }
+
+            if (command is PresentCommand p)
+            {
+                Frames.Enqueue($"present 0x{p.Frame.Address:X8}");
             }
 
             if (command is DrawCommand d)
@@ -753,5 +761,81 @@ public sealed class GxmFlowTests : IDisposable
             Assert.Equal(0, Call(Gxm, "sceGxmDisplayQueueFinish"));
             Assert.Equal(0, Call(Gxm, "sceGxmWaitEvent"));
         });
+    }
+
+    /// <summary>
+    /// Two buffers, a display queue of one pending entry (displayQueueMaxPendingCount 2), and a display callback that
+    /// flips (sceDisplaySetFrameBuf) only after the game began its next scene into the buffer being flipped, as when the
+    /// callback waits for a vblank and the game runs ahead. The scene into that buffer waits for the flip away from it
+    /// (its fragment sync object), so on the console the display shows the finished frame first, and only then does the
+    /// GPU render into the buffer again. The flip must come before that scene in GPU order: behind it, the display showed
+    /// the buffer cleared or half drawn (F1 2011's isolated black frames, Killzone Mercenary's HUD flicker, 11/11/2026).
+    /// </summary>
+    [Fact]
+    public void DisplayQueueFlipComesBeforeALaterSceneIntoTheSameBuffer()
+    {
+        const uint Width = 960, Height = 544;
+        using var sceneBegun = new ManualResetEventSlim();
+        int flips = 0;
+        uint callback = new VitaSharp.Core.Hle.HleGuestStubs(Gxm, "gxmflow").Host("display callback", c =>
+        {
+            uint buffer = GuestMemory.R32(c.Gpr(0));
+            if (Interlocked.Increment(ref flips) == 1)
+            {
+                // the first flip waits (for a vblank) while the game goes on into its next frame
+                using VitaSharp.Core.Kernel.Scheduler.Blocked blocked = VitaSharp.Core.Kernel.Scheduler.Block();
+                Assert.True(sceneBegun.Wait(10_000), "the game did not begin its next scene");
+            }
+
+            uint frameBuf = _harness.Alloc(0x18);
+            GuestMemory.W32(frameBuf, 0x18);
+            GuestMemory.W32(frameBuf + 4, buffer);
+            GuestMemory.W32(frameBuf + 8, Width);
+            GuestMemory.W32(frameBuf + 12, 0); // A8B8G8R8
+            GuestMemory.W32(frameBuf + 16, Width);
+            GuestMemory.W32(frameBuf + 20, Height);
+            Assert.Equal(0, Call(_harness.Module<Display>(), "SetFrameBuf", frameBuf, 1u));
+            c.Return(0);
+        });
+        uint p = _harness.Alloc(0x14);
+        GuestMemory.W32(p + 4, 2);        // displayQueueMaxPendingCount
+        GuestMemory.W32(p + 8, callback);
+        GuestMemory.W32(p + 12, 4);       // display callback data: the buffer's address
+        GuestMemory.W32(p + 16, 0x200000);
+        Assert.Equal(0, Call(Gxm, "sceGxmInitialize", p));
+        uint ctx = Context(), rt = RenderTarget((ushort)Width, (ushort)Height);
+        uint dataA = _harness.Alloc(Width * Height * 4), dataB = _harness.Alloc(Width * Height * 4);
+        uint colorA = _harness.Alloc(0x40), colorB = _harness.Alloc(0x40);
+        Assert.Equal(0, Call(Gxm, "sceGxmColorSurfaceInit", colorA, 0u, 0u, 0u, 0u, Width, Height, Width, dataA));
+        Assert.Equal(0, Call(Gxm, "sceGxmColorSurfaceInit", colorB, 0u, 0u, 0u, 0u, Width, Height, Width, dataB));
+        uint so = Out();
+        Assert.Equal(0, Call(Gxm, "sceGxmSyncObjectCreate", new Ptr<uint>(so)));
+        uint syncA = GuestMemory.R32(so);
+        Assert.Equal(0, Call(Gxm, "sceGxmSyncObjectCreate", new Ptr<uint>(so)));
+        uint syncB = GuestMemory.R32(so);
+        uint entryA = _harness.Word(dataA), entryB = _harness.Word(dataB);
+        // the display queue and the sync object waits only wait while the emulation runs
+        _harness.Emu.Running = true;
+        _harness.OnGuest(_ =>
+        {
+            // frame 0 into A, frame 1 into B, each queued for display
+            Assert.Equal(0, Call(Gxm, "sceGxmBeginScene", ctx, 0u, rt, 0u, 0u, syncA, colorA, 0u));
+            Assert.Equal(0, Call(Gxm, "sceGxmEndScene", ctx, 0u, 0u));
+            Assert.Equal(0, Call(Gxm, "sceGxmDisplayQueueAddEntry", syncB, syncA, entryA));
+            Assert.Equal(0, Call(Gxm, "sceGxmBeginScene", ctx, 0u, rt, 0u, 0u, syncB, colorB, 0u));
+            Assert.Equal(0, Call(Gxm, "sceGxmEndScene", ctx, 0u, 0u));
+            Assert.Equal(0, Call(Gxm, "sceGxmDisplayQueueAddEntry", syncA, syncB, entryB));
+            // frame 2 into A again while frame 0 is still being flipped: the GPU holds it until A leaves the screen
+            Assert.Equal(0, Call(Gxm, "sceGxmBeginScene", ctx, 0u, rt, 0u, 0u, syncA, colorA, 0u));
+            sceneBegun.Set();
+            Assert.Equal(0, Call(Gxm, "sceGxmEndScene", ctx, 0u, 0u));
+            Assert.Equal(0, Call(Gxm, "sceGxmDisplayQueueAddEntry", syncB, syncA, entryA));
+            Assert.Equal(0, Call(Gxm, "sceGxmDisplayQueueFinish"));
+            Finish();
+        });
+        _harness.Emu.Running = false;
+        string a = $"0x{dataA:X8}", b = $"0x{dataB:X8}";
+        string[] order = _rec.Frames.Where(e => e.EndsWith(a) || e.EndsWith(b)).ToArray();
+        Assert.True(order.SequenceEqual(new[] { "begin " + a, "begin " + b, "present " + a, "present " + b, "begin " + a, "present " + a }), "GPU order: " + string.Join(", ", order));
     }
 }

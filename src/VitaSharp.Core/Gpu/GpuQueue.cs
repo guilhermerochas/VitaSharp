@@ -373,6 +373,68 @@ public sealed class GpuQueue : IDisposable
         return seq;
     }
 
+    // ---- display flips. On the Vita the display controller is not part of the GPU's command stream: the display queue
+    // flips to a buffer once the scene that rendered it completed (its fence), and the GPU does not start a later scene
+    // into that buffer before the flip away from it (the fragment sync object of sceGxmBeginScene). Here a flip is a
+    // PresentCommand the display queue thread submits from its callback, and at the tail of the queue it landed behind
+    // whatever the game had submitted since: with the sync object wait on (10/11/2026) that was a later scene into the
+    // same buffer, held until this very flip released it, so the flip showed the buffer cleared or half drawn (F1 2011:
+    // isolated black frames; Killzone Mercenary: the HUD flickered). A flip taken by the worker before its next command
+    // shows the buffer as the scene the fence waited for left it, as on the console.
+
+    /// <summary>VITASHARP_DISPLAY_FLIP_ORDER=queue (A/B): display queue flips go to the tail of the GPU queue as before.</summary>
+    private static readonly bool s_flipsAtTail = Environment.GetEnvironmentVariable(EnvVars.DisplayFlipOrder) == "queue";
+
+    /// <summary>Flips submitted with <see cref="SubmitFlip"/>, run by the worker before its next command.</summary>
+    private readonly ConcurrentQueue<GpuCommand> _flips = new();
+
+    /// <summary>
+    /// Submits a display flip the GXM display queue issues once its frame's fence was reached: the worker runs it before
+    /// the next command it takes (and while it holds a scene for a sync object), not after the commands the game queued
+    /// since the fence. The caller's earlier submissions are not ordered against it, so only the display queue thread
+    /// uses this (a flip from a game thread stays in its queue order).
+    /// </summary>
+    public void SubmitFlip(PresentCommand cmd)
+    {
+        if (s_flipsAtTail)
+        {
+            Submit(cmd);
+            return;
+        }
+
+        cmd.Space ??= AddressSpace.Current;
+        if (SharedByProcesses)
+        {
+            cmd.Pid = Kernel.ProcessScope.CurrentPid;
+        }
+
+        cmd.Sequence = Submitted;
+        _flips.Enqueue(cmd);
+        // the worker may be asleep on an empty queue: wake it (a leftover count only makes a later wait return early)
+        if (!s_lightSignals || Interlocked.CompareExchange(ref _workerSleeping, 0, 1) == 1)
+        {
+            _available.Release();
+        }
+    }
+
+    /// <summary>Worker: runs the flips submitted so far (<see cref="SubmitFlip"/>), keeping the address space of the
+    /// command it is inside of.</summary>
+    private void RunFlips()
+    {
+        if (_flips.IsEmpty)
+        {
+            return;
+        }
+
+        AddressSpace? space = AddressSpace.Current;
+        while (_flips.TryDequeue(out GpuCommand? flip))
+        {
+            ExecuteOne(flip);
+        }
+
+        AddressSpace.MakeCurrent(space);
+    }
+
     /// <summary>Which guest thread has a scene open (it finishes the scene while the emulation is paused, see
     /// <see cref="EmulationPause"/>).</summary>
     private static void TrackSceneThread(GpuCommand cmd)
@@ -586,6 +648,7 @@ public sealed class GpuQueue : IDisposable
         while (!_stopping)
         {
             GpuCommand? cmd;
+            RunFlips(); // a flip whose frame is done goes before the work queued after it (see SubmitFlip)
             try
             {
                 if (_held.Count > 0)
@@ -613,7 +676,7 @@ public sealed class GpuQueue : IDisposable
                         // announce the sleep, then look once more: a submit after the flag is set releases the semaphore
                         // (a leftover count only makes a later wait return early)
                         Interlocked.Exchange(ref _workerSleeping, 1);
-                        if (_queue.IsEmpty)
+                        if (_queue.IsEmpty && _flips.IsEmpty)
                         {
                             _available.Wait(_held.Count > 0 ? 2 : 50);
                         }
@@ -645,6 +708,7 @@ public sealed class GpuQueue : IDisposable
                 break;
             }
 
+            RunFlips(); // one submitted while the worker slept or took this command
             if (HoldsScenes && cmd.Pid != 0)
             {
                 // the worker holds a process's draws until its scene ends while other processes' work goes on
@@ -902,13 +966,16 @@ public sealed class GpuQueue : IDisposable
     /// GPU worker only (inside a <see cref="CallbackCommand"/>): holds the GPU until <paramref name="done"/> (checked
     /// under <paramref name="monitor"/>, which the releasing thread pulses) or the timeout. The work recorded so far is
     /// submitted and finished frames keep retiring meanwhile, so sync points queued before this one still fire (the
-    /// display queue waits on them before it flips). Returns false on the timeout.
+    /// display queue waits on them before it flips), and the display queue's flips run (<see cref="SubmitFlip"/>: the
+    /// flip that releases the buffer a held scene renders into shows that buffer before the scene draws into it).
+    /// Returns false on the timeout.
     /// </summary>
     public bool WorkerWait(Func<bool> done, object monitor, int timeoutMs)
     {
         long t0 = System.Diagnostics.Stopwatch.GetTimestamp();
         while (true)
         {
+            RunFlips();
             try
             {
                 lock (_backendLock)
