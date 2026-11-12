@@ -362,8 +362,9 @@ public static class EnvVars
     /// sync object), as on the hardware; trace also logs the waits. Default on.</summary>
     public const string DisplaySync = "VITASHARP_DISPLAY_SYNC";
     /// <summary>queue (A/B): a GXM display queue flip goes to the tail of the GPU queue, behind the work the game queued
-    /// since its frame's fence (the old order). Default: the GPU worker runs it before its next command, as the display
-    /// controller flips independently of the GPU's command stream.</summary>
+    /// since its frame's fence (the old order); next (A/B): the GPU worker runs it before its next command even inside a
+    /// scene (5ce57aa6). Default: the flip keeps its queue position, and the worker runs it early only while it holds a
+    /// scene for a sync object (that scene waits for the flip).</summary>
     public const string DisplayFlipOrder = "VITASHARP_DISPLAY_FLIP_ORDER";
     /// <summary>1 (A/B): sceGxmDisplayQueueAddEntry keeps at most displayQueueMaxPendingCount entries queued or flipping.</summary>
     public const string DisplayQueueStrict = "VITASHARP_DISPLAY_QUEUE_STRICT";

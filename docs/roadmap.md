@@ -1892,6 +1892,23 @@ Lista de itens futuros do VitaSharp. Marque `[x]` quando um item for concluído.
   correção: a cena do quadro 2 vinha antes do flip do quadro 0). Ao vivo (estado das capturas, sem janela): F1 26
   quadros pretos isolados em 501 -> 0, 50 presents no meio da cena -> 0; Killzone (rerun da captura com a entrada
   gravada) 7 e 11 [flash] -> 0 e 0; fps igual (F1 59,9/52,9/42 -> 59,6/54,0/42; Killzone 30 -> 30).
+  - **Ajuste da ordem (12/11/2026, fix/flip-order-2): MGS HD voltava a alternar imagens.** Rodar todo flip antes do
+    próximo comando do worker apresentava no meio da cena que o worker estivesse desenhando (no MGS 6-22% dos presents
+    dividiam uma cena; na ordem da fila, nenhum), e o renderizador fecha o quadro num present (render pass, envio do
+    quadro, caches por quadro como a conferência de textura uma vez por quadro): o MGS caía em trechos de imagens
+    alternadas ([flash] e [picture-order]). Como o console faz (Vita3K `display_entry_thread`/`sceGxmBeginScene`,
+    vita-headers `gxm.h`): a fila de exibição chama o callback depois do fence do quadro, e só depois do callback marca
+    o sync object do buffer antigo como liberado; a cena seguinte nesse buffer espera esse sync object no fluxo da
+    GPU. Regra nova: o flip fica na sua posição da fila, e roda antes dela só enquanto o worker segura uma cena num sync
+    object (`GpuQueue.WorkerWait`, antes do `BeginScene`, então nunca divide uma cena), inclusive os flips que chegam
+    logo antes da liberação (a espera terminava sem eles: corrigido, teste
+    `GxmFlowTests.FlipsSubmittedJustBeforeTheReleaseRunBeforeTheHeldScene`, falha 3/3 sem a correção).
+    `VITASHARP_DISPLAY_FLIP_ORDER=next` (5ce57aa6) e `=queue` (antiga) ficam para A/B. Medidas (estado das capturas,
+    sem janela, núcleos 0x0F): MGS (captura 224104, 300 quadros, sem entrada, 10-11 execuções válidas por modo) [flash]
+    média 2,2 (fila) / 14,2 (next) / 2,8 (nova), [picture-order] em 0 / 5 / 0 execuções; Killzone (rerun da captura
+    222844, 5 por modo) [flash] 11,2 / 0 / 0; F1 (captura 223250, 500 quadros, 5 por modo) [black-flash] média 21,0 / 0 / 0 e [flash] 11,4 / 0 / 0. fps igual nos três
+    modos (MGS 30, Killzone 30, F1 60). O MGS trava no boot a partir do `state_start.vss` em ~1/3 das execuções em
+    todos os modos (o item "(3) trava" do MGS3 abaixo): essas execuções não entram nas médias.
 - [ ] Achados do jogo de teste VitaSDK (repositório local `VitaSharp-testgame`, 11/11/2026; 182 OK / 3 FAIL / 2 SKIP
   no VitaSharp sem janela). 1) e 2) corrigidos (revalidação de 12/11/2026, `fix/revalidate-2`): o vita-headers
   (`gxm.h`) define `SCE_GXM_TEXTURE_BASE_FORMAT_ETC1 = 0x84000000` ("Requires SCE_GXM_INITIALIZE_FLAG_EXTENDED_FORMAT",

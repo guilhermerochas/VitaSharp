@@ -24,6 +24,8 @@ public sealed class GpuDumpFrameIndex
         public long IntervalFirst, IntervalLast;
         /// <summary>Present count when the last scene into the shown buffer began (-1: no such scene in the dump).</summary>
         public long ScenePresent = -1;
+        /// <summary>The present lies between a scene's BeginScene and EndScene in the stream (it split that scene).</summary>
+        public bool InsideScene;
         public bool Mapped => ScenePresent >= 0 && LastDraw >= FirstDraw;
         public long Draws => Math.Max(0, LastDraw - FirstDraw + 1);
         /// <summary>Presents between the frame's draws and its display (0 = drawn right before it was shown).</summary>
@@ -70,7 +72,7 @@ public sealed class GpuDumpFrameIndex
                     break;
                 case PresentCommand p:
                     present++;
-                    var f = new Frame { Present = present, Address = p.Frame.Address, IntervalFirst = lastPresentDraws + 1, IntervalLast = draws };
+                    var f = new Frame { Present = present, Address = p.Frame.Address, IntervalFirst = lastPresentDraws + 1, IntervalLast = draws, InsideScene = cur != null };
                     lastPresentDraws = draws;
                     ix.Frames.Add(f);
                     begun.Add(scenes.Count);
@@ -127,9 +129,11 @@ public sealed class GpuDumpFrameIndex
             sb.Append(f.Mapped
                 ? $"#{f.Present} 0x{f.Address:X8} draws {f.FirstDraw}-{f.LastDraw} ({f.Draws}) between #{f.ScenePresent}-#{f.ScenePresent + 1} lag {f.Lag}"
                 : $"#{f.Present} 0x{f.Address:X8} no scene found (CPU framebuffer, or drawn before the dump starts)")
-              .Append($" | interval {f.IntervalFirst}-{f.IntervalLast} ({Math.Max(0, f.IntervalLast - f.IntervalFirst + 1)})\n");
+              .Append($" | interval {f.IntervalFirst}-{f.IntervalLast} ({Math.Max(0, f.IntervalLast - f.IntervalFirst + 1)})")
+              .Append(f.InsideScene ? " | inside a scene\n" : "\n");
         }
 
+        sb.Append($"# presents inside a scene (they split it): {Frames.Count(f => f.InsideScene)} of {Frames.Count}\n");
         return sb.ToString();
     }
 

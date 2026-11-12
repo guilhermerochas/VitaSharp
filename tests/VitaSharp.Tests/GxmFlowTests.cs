@@ -27,7 +27,7 @@ public sealed class GxmFlowTests : IDisposable
         public BeginSceneCommand? LastBegin;
         public int Draws;
         public (uint Index, uint Count, byte Prim, uint Instances) LastDraw;
-        /// <summary>Scenes and flips in GPU order, with their colour buffer: "begin 0x...", "present 0x...".</summary>
+        /// <summary>Scenes and flips in GPU order, with their colour buffer: "begin 0x...", "end", "present 0x...".</summary>
         public readonly ConcurrentQueue<string> Frames = new();
         public void Execute(GpuCommand command)
         {
@@ -43,11 +43,22 @@ public sealed class GxmFlowTests : IDisposable
                 Frames.Enqueue($"present 0x{p.Frame.Address:X8}");
             }
 
+            if (command is EndSceneCommand)
+            {
+                Frames.Enqueue("end");
+            }
+
             if (command is DrawCommand d)
             {
                 Draws++;
                 LastDraw = (d.IndexAddress, d.IndexCount, d.PrimitiveType, d.InstanceCount);
             }
+        }
+        /// <summary>Runs on the GPU worker at each <see cref="IGpuBackend.Idle"/> (also inside a sync object wait).</summary>
+        public Action? OnIdle;
+        public void Idle()
+        {
+            OnIdle?.Invoke();
         }
         public void Dispose()
         {
@@ -763,28 +774,22 @@ public sealed class GxmFlowTests : IDisposable
         });
     }
 
-    /// <summary>
-    /// Two buffers, a display queue of one pending entry (displayQueueMaxPendingCount 2), and a display callback that
-    /// flips (sceDisplaySetFrameBuf) only after the game began its next scene into the buffer being flipped, as when the
-    /// callback waits for a vblank and the game runs ahead. The scene into that buffer waits for the flip away from it
-    /// (its fragment sync object), so on the console the display shows the finished frame first, and only then does the
-    /// GPU render into the buffer again. The flip must come before that scene in GPU order: behind it, the display showed
-    /// the buffer cleared or half drawn (F1 2011's isolated black frames, Killzone Mercenary's HUD flicker, 11/11/2026).
-    /// </summary>
-    [Fact]
-    public void DisplayQueueFlipComesBeforeALaterSceneIntoTheSameBuffer()
+    /// <summary>Two 960x544 colour buffers A and B with their sync objects, and a display queue of one pending entry
+    /// (displayQueueMaxPendingCount 2) whose callback flips with sceDisplaySetFrameBuf. The callback runs
+    /// <paramref name="beforeFlip"/> and <paramref name="afterFlip"/> with the flip's number (1-based), blocked as a
+    /// guest waiting for a vblank. Emu.Running is set: the display queue and the sync object waits only wait while the
+    /// emulation runs.</summary>
+    private TwoBuffers TwoBufferDisplay(Action<int> beforeFlip, Action<int> afterFlip)
     {
         const uint Width = 960, Height = 544;
-        using var sceneBegun = new ManualResetEventSlim();
         int flips = 0;
         uint callback = new VitaSharp.Core.Hle.HleGuestStubs(Gxm, "gxmflow").Host("display callback", c =>
         {
             uint buffer = GuestMemory.R32(c.Gpr(0));
-            if (Interlocked.Increment(ref flips) == 1)
+            int flip = Interlocked.Increment(ref flips);
+            using (VitaSharp.Core.Kernel.Scheduler.Block())
             {
-                // the first flip waits (for a vblank) while the game goes on into its next frame
-                using VitaSharp.Core.Kernel.Scheduler.Blocked blocked = VitaSharp.Core.Kernel.Scheduler.Block();
-                Assert.True(sceneBegun.Wait(10_000), "the game did not begin its next scene");
+                beforeFlip(flip);
             }
 
             uint frameBuf = _harness.Alloc(0x18);
@@ -795,6 +800,7 @@ public sealed class GxmFlowTests : IDisposable
             GuestMemory.W32(frameBuf + 16, Width);
             GuestMemory.W32(frameBuf + 20, Height);
             Assert.Equal(0, Call(_harness.Module<Display>(), "SetFrameBuf", frameBuf, 1u));
+            afterFlip(flip);
             c.Return(0);
         });
         uint p = _harness.Alloc(0x14);
@@ -813,29 +819,157 @@ public sealed class GxmFlowTests : IDisposable
         uint syncA = GuestMemory.R32(so);
         Assert.Equal(0, Call(Gxm, "sceGxmSyncObjectCreate", new Ptr<uint>(so)));
         uint syncB = GuestMemory.R32(so);
-        uint entryA = _harness.Word(dataA), entryB = _harness.Word(dataB);
-        // the display queue and the sync object waits only wait while the emulation runs
         _harness.Emu.Running = true;
+        return new TwoBuffers(ctx, rt, colorA, colorB, dataA, dataB, syncA, syncB);
+    }
+
+    /// <summary>What <see cref="TwoBufferDisplay"/> set up: the context, the render target, the colour surfaces of A
+    /// and B, their memory and their sync objects.</summary>
+    private readonly record struct TwoBuffers(uint Ctx, uint Rt, uint ColorA, uint ColorB, uint DataA, uint DataB, uint SyncA, uint SyncB);
+
+    /// <summary>The scenes and flips of buffers A and B in GPU order ("begin 0x...", "end", "present 0x...").</summary>
+    private string[] SceneOrder(uint dataA, uint dataB)
+    {
+        string a = $"0x{dataA:X8}", b = $"0x{dataB:X8}";
+        return _rec.Frames.Where(e => e.EndsWith(a) || e.EndsWith(b) || e == "end").ToArray();
+    }
+
+    /// <summary>
+    /// A display callback that flips (sceDisplaySetFrameBuf) only after the game began its next scene into the buffer
+    /// being flipped, as when the callback waits for a vblank and the game runs ahead. The scene into that buffer waits
+    /// for the flip away from it (its fragment sync object), so on the console the display shows the finished frame
+    /// first, and only then does the GPU render into the buffer again. The flip must come before that scene in GPU
+    /// order: behind it, the display showed the buffer cleared or half drawn (F1 2011's isolated black frames, Killzone
+    /// Mercenary's HUD flicker, 11/11/2026).
+    /// </summary>
+    [Fact]
+    public void DisplayQueueFlipComesBeforeALaterSceneIntoTheSameBuffer()
+    {
+        using var sceneBegun = new ManualResetEventSlim();
+        // the first flip waits (for a vblank) while the game goes on into its next frame
+        TwoBuffers d = TwoBufferDisplay(flip => Assert.True(flip != 1 || sceneBegun.Wait(10_000), "the game did not begin its next scene"), _ => { });
+        uint entryA = _harness.Word(d.DataA), entryB = _harness.Word(d.DataB);
         _harness.OnGuest(_ =>
         {
             // frame 0 into A, frame 1 into B, each queued for display
-            Assert.Equal(0, Call(Gxm, "sceGxmBeginScene", ctx, 0u, rt, 0u, 0u, syncA, colorA, 0u));
-            Assert.Equal(0, Call(Gxm, "sceGxmEndScene", ctx, 0u, 0u));
-            Assert.Equal(0, Call(Gxm, "sceGxmDisplayQueueAddEntry", syncB, syncA, entryA));
-            Assert.Equal(0, Call(Gxm, "sceGxmBeginScene", ctx, 0u, rt, 0u, 0u, syncB, colorB, 0u));
-            Assert.Equal(0, Call(Gxm, "sceGxmEndScene", ctx, 0u, 0u));
-            Assert.Equal(0, Call(Gxm, "sceGxmDisplayQueueAddEntry", syncA, syncB, entryB));
+            Assert.Equal(0, Call(Gxm, "sceGxmBeginScene", d.Ctx, 0u, d.Rt, 0u, 0u, d.SyncA, d.ColorA, 0u));
+            Assert.Equal(0, Call(Gxm, "sceGxmEndScene", d.Ctx, 0u, 0u));
+            Assert.Equal(0, Call(Gxm, "sceGxmDisplayQueueAddEntry", d.SyncB, d.SyncA, entryA));
+            Assert.Equal(0, Call(Gxm, "sceGxmBeginScene", d.Ctx, 0u, d.Rt, 0u, 0u, d.SyncB, d.ColorB, 0u));
+            Assert.Equal(0, Call(Gxm, "sceGxmEndScene", d.Ctx, 0u, 0u));
+            Assert.Equal(0, Call(Gxm, "sceGxmDisplayQueueAddEntry", d.SyncA, d.SyncB, entryB));
             // frame 2 into A again while frame 0 is still being flipped: the GPU holds it until A leaves the screen
-            Assert.Equal(0, Call(Gxm, "sceGxmBeginScene", ctx, 0u, rt, 0u, 0u, syncA, colorA, 0u));
+            Assert.Equal(0, Call(Gxm, "sceGxmBeginScene", d.Ctx, 0u, d.Rt, 0u, 0u, d.SyncA, d.ColorA, 0u));
             sceneBegun.Set();
-            Assert.Equal(0, Call(Gxm, "sceGxmEndScene", ctx, 0u, 0u));
-            Assert.Equal(0, Call(Gxm, "sceGxmDisplayQueueAddEntry", syncB, syncA, entryA));
+            Assert.Equal(0, Call(Gxm, "sceGxmEndScene", d.Ctx, 0u, 0u));
+            Assert.Equal(0, Call(Gxm, "sceGxmDisplayQueueAddEntry", d.SyncB, d.SyncA, entryA));
             Assert.Equal(0, Call(Gxm, "sceGxmDisplayQueueFinish"));
             Finish();
         });
         _harness.Emu.Running = false;
-        string a = $"0x{dataA:X8}", b = $"0x{dataB:X8}";
-        string[] order = _rec.Frames.Where(e => e.EndsWith(a) || e.EndsWith(b)).ToArray();
+        string a = $"0x{d.DataA:X8}", b = $"0x{d.DataB:X8}";
+        string[] order = SceneOrder(d.DataA, d.DataB).Where(e => e != "end").ToArray();
+        Assert.True(order.SequenceEqual(new[] { "begin " + a, "begin " + b, "present " + a, "present " + b, "begin " + a, "present " + a }), "GPU order: " + string.Join(", ", order));
+    }
+
+    /// <summary>
+    /// The flip of frame 0 (buffer A) arrives while the GPU worker is still behind the game: frame 1's scene, into the
+    /// other buffer B, is queued but not run yet. Outside a sync object wait the flip keeps its place in GPU order, after
+    /// that scene. Running every flip at the worker's next command (5ce57aa6) put it before the queued scene, and Metal
+    /// Gear Solid HD then fell into stretches of alternating pictures ([flash] / [picture-order]) about five times as
+    /// often as with the queue order (12/11/2026).
+    /// </summary>
+    [Fact]
+    public void DisplayQueueFlipKeepsItsQueuePositionOutsideASyncWait()
+    {
+        using var sceneQueued = new ManualResetEventSlim();
+        using var flipped = new ManualResetEventSlim();
+        using var workerGo = new ManualResetEventSlim();
+        TwoBuffers d = TwoBufferDisplay(flip => Assert.True(flip != 1 || sceneQueued.Wait(10_000), "the game did not queue its next scene"),
+            flip =>
+            {
+                if (flip == 1)
+                {
+                    flipped.Set();
+                }
+            });
+        uint entryA = _harness.Word(d.DataA), entryB = _harness.Word(d.DataB);
+        _harness.OnGuest(_ =>
+        {
+            Assert.Equal(0, Call(Gxm, "sceGxmBeginScene", d.Ctx, 0u, d.Rt, 0u, 0u, d.SyncA, d.ColorA, 0u));
+            Assert.Equal(0, Call(Gxm, "sceGxmEndScene", d.Ctx, 0u, 0u));
+            Assert.Equal(0, Call(Gxm, "sceGxmDisplayQueueAddEntry", d.SyncB, d.SyncA, entryA));
+            // the worker is busy (a long transfer) while frame 1 into B is queued behind it and frame 0 is flipped
+            _harness.Emu.Gpu.Submit(new CallbackCommand { Action = () => workerGo.Wait(10_000) });
+            Assert.Equal(0, Call(Gxm, "sceGxmBeginScene", d.Ctx, 0u, d.Rt, 0u, 0u, d.SyncB, d.ColorB, 0u));
+            Assert.Equal(0, Call(Gxm, "sceGxmEndScene", d.Ctx, 0u, 0u));
+            sceneQueued.Set();
+            using (VitaSharp.Core.Kernel.Scheduler.Block())
+            {
+                Assert.True(flipped.Wait(10_000), "the display queue did not flip frame 0");
+            }
+
+            workerGo.Set();
+            Assert.Equal(0, Call(Gxm, "sceGxmDisplayQueueAddEntry", d.SyncA, d.SyncB, entryB));
+            Assert.Equal(0, Call(Gxm, "sceGxmDisplayQueueFinish"));
+            Finish();
+        });
+        _harness.Emu.Running = false;
+        string a = $"0x{d.DataA:X8}", b = $"0x{d.DataB:X8}";
+        string[] order = SceneOrder(d.DataA, d.DataB);
+        Assert.True(order.SequenceEqual(new[] { "begin " + a, "end", "begin " + b, "end", "present " + a, "present " + b }), "GPU order: " + string.Join(", ", order));
+    }
+
+    /// <summary>
+    /// The flips that release the buffer of a held scene arrive while the worker is not looking (here: in its
+    /// <see cref="IGpuBackend.Idle"/> inside the sync object wait), and the release comes right after them. The wait
+    /// ends on that release, and those flips must still run before the scene it held: ending the wait without them put
+    /// the scene into buffer A before the flip that shows A's previous frame (a cleared or half drawn picture, as in F1
+    /// 2011's black frames).
+    /// </summary>
+    [Fact]
+    public void FlipsSubmittedJustBeforeTheReleaseRunBeforeTheHeldScene()
+    {
+        using var sceneBegun = new ManualResetEventSlim();
+        using var workerHeld = new ManualResetEventSlim();
+        using var flipsDone = new ManualResetEventSlim();
+        int heldIdles = 0;
+        // the first flip waits until the worker sits in the sync object wait, past the flips it has looked at
+        TwoBuffers d = TwoBufferDisplay(flip => Assert.True(flip != 1 || workerHeld.Wait(10_000), "the worker did not wait for the sync object"), _ => { });
+        _rec.OnIdle = () =>
+        {
+            // the first Idle after frame 2's scene was queued is inside its sync object wait (the wait is the next
+            // command in the queue): the display thread flips both frames and releases A meanwhile
+            if (sceneBegun.IsSet && Interlocked.Increment(ref heldIdles) == 1)
+            {
+                workerHeld.Set();
+                Assert.True(flipsDone.Wait(10_000), "the display queue did not flip frames 0 and 1");
+            }
+        };
+        uint entryA = _harness.Word(d.DataA), entryB = _harness.Word(d.DataB);
+        _harness.OnGuest(_ =>
+        {
+            Assert.Equal(0, Call(Gxm, "sceGxmBeginScene", d.Ctx, 0u, d.Rt, 0u, 0u, d.SyncA, d.ColorA, 0u));
+            Assert.Equal(0, Call(Gxm, "sceGxmEndScene", d.Ctx, 0u, 0u));
+            Assert.Equal(0, Call(Gxm, "sceGxmDisplayQueueAddEntry", d.SyncB, d.SyncA, entryA));
+            Assert.Equal(0, Call(Gxm, "sceGxmBeginScene", d.Ctx, 0u, d.Rt, 0u, 0u, d.SyncB, d.ColorB, 0u));
+            Assert.Equal(0, Call(Gxm, "sceGxmEndScene", d.Ctx, 0u, 0u));
+            Assert.Equal(0, Call(Gxm, "sceGxmDisplayQueueAddEntry", d.SyncA, d.SyncB, entryB));
+            // frame 2 into A: held until the flip to B releases A
+            Assert.Equal(0, Call(Gxm, "sceGxmBeginScene", d.Ctx, 0u, d.Rt, 0u, 0u, d.SyncA, d.ColorA, 0u));
+            sceneBegun.Set();
+            // both entries flipped and A released (the display thread's pending count drops after the release)
+            Assert.Equal(0, Call(Gxm, "sceGxmDisplayQueueFinish"));
+            flipsDone.Set();
+            Assert.Equal(0, Call(Gxm, "sceGxmEndScene", d.Ctx, 0u, 0u));
+            Assert.Equal(0, Call(Gxm, "sceGxmDisplayQueueAddEntry", d.SyncB, d.SyncA, entryA));
+            Assert.Equal(0, Call(Gxm, "sceGxmDisplayQueueFinish"));
+            Finish();
+        });
+        _harness.Emu.Running = false;
+        string a = $"0x{d.DataA:X8}", b = $"0x{d.DataB:X8}";
+        string[] order = SceneOrder(d.DataA, d.DataB).Where(e => e != "end").ToArray();
+        Assert.True(heldIdles >= 1, "the worker never idled inside the sync object wait");
         Assert.True(order.SequenceEqual(new[] { "begin " + a, "begin " + b, "present " + a, "present " + b, "begin " + a, "present " + a }), "GPU order: " + string.Join(", ", order));
     }
 }

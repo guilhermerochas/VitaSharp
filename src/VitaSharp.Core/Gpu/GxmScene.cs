@@ -54,6 +54,10 @@ public sealed class PresentCommand : GpuCommand
     /// emulator's own, e.g. the process coming back to the front), the vblank count, the guest clock and the host
     /// time (Stopwatch ticks) of that sceDisplaySetFrameBuf. Not part of GPU dumps.</summary>
     public long Flip = -1, VBlank, GuestUs, HostTicks;
+    /// <summary>A GXM display queue flip (<see cref="GpuQueue.SubmitFlip"/>): the worker may run it ahead of its queue
+    /// position, and then skips it there (<see cref="FlipRan"/>, worker only). Not part of GPU dumps.</summary>
+    public bool IsFlip;
+    public bool FlipRan;
 }
 
 /// <summary>Arbitrary work that must happen in GPU order (transfers done on the CPU, sync points…).</summary>
