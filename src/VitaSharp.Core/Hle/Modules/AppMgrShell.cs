@@ -293,7 +293,16 @@ public sealed partial class AppMgrShell : HleModule
             Emu.Vita.RequestLaunchByName(Emu, tid, dir, flags, launchParam);
             return 0;
         }
-        var app = Emu.SpawnProcess(dir, "eboot.bin", [], background: true);
+        Emulator app;
+        try
+        {
+            app = Emu.SpawnProcess(dir, "eboot.bin", [], background: true);
+        }
+        catch (ProcessLoadException e)
+        {
+            return e.Error;
+        }
+
         // the parameter reaches the application as its launch parameter (sceAppMgrGetAppParam)
         if (launchParam != null) app.Hle.Modules.OfType<AppMgr>().First().LaunchParam = launchParam;
         Log.Info($"sceAppMgrLaunchAppByName(0x{flags:X}, {tid}): background process {app.Describe()}");
@@ -335,7 +344,16 @@ public sealed partial class AppMgrShell : HleModule
         string? dir = Io.FirmwareLayout.FindApplication(guest => Emu.Vfs.Resolve(guest), tid);
         if (dir == null) return unchecked((int)0x80800006);
         string? launchString = param != 0 ? GuestMemory.ReadCString(param, 0x400) : null;
-        var app = Emu.SpawnProcess(dir, "eboot.bin", [], background: true, started: _ => Notify());
+        Emulator app;
+        try
+        {
+            app = Emu.SpawnProcess(dir, "eboot.bin", [], background: true, started: _ => Notify());
+        }
+        catch (ProcessLoadException e)
+        {
+            return e.Error;
+        }
+
         app.Hle.Modules.OfType<AppMgr>().First().LaunchParam = launchString ?? "";
         app.Released += Notify;
         Log.Info($"sceAppMgrLaunchAppByName2({tid}, flags 0x{flags:X}, \"{launchString}\") from {Emu.Describe()}: {app.Describe()}");
@@ -366,7 +384,17 @@ public sealed partial class AppMgrShell : HleModule
             Log.Info($"sceAppMgrLaunchAppByName2ndStage(0x{appId:X}, flags 0x{flags:X}): {running.Describe()} already runs");
             return 0;
         }
-        var app = Emu.SpawnProcess(dir, self, [], reservedApp: pl.App);
+        Emulator app;
+        try
+        {
+            app = Emu.SpawnProcess(dir, self, [], reservedApp: pl.App);
+        }
+        catch (ProcessLoadException e)
+        {
+            // the reserved application id goes with the process that could not load
+            return e.Error;
+        }
+
         app.LaunchFlags = flags; // before its code runs (the process loads on a task)
         if (pl.Param != null) app.Hle.Modules.OfType<AppMgr>().First().LaunchParam = pl.Param;
         Log.Info($"sceAppMgrLaunchAppByName2ndStage(0x{appId:X}, flags 0x{flags:X}): {pl.TitleId} as {app.Describe()}");

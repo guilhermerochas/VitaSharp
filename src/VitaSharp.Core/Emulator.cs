@@ -289,13 +289,16 @@ public sealed class Emulator : IDisposable
 
     /// <summary>
     /// Creates a new process next to this one for the executable <paramref name="self"/> of the application in
-    /// <paramref name="appDir"/> (the shell launching a game from its LiveArea) and boots it on a host thread: loading
-    /// the executable and running its module_start functions takes a while. The process (with its application id) exists
-    /// at once; it takes the display when the shell activates it (sceAppMgrActivateApp), or with
-    /// <paramref name="activate"/>. It runs in its own address space (<see cref="Memory.GuestMemory.CreateSpace"/>), so an
-    /// executable linked at the shell's addresses runs too; only when every process shares one space
-    /// (VITASHARP_SHARED_ADDRESS_SPACE=1, or a host that cannot map memory twice) can such an executable not be placed:
-    /// then it ends and <paramref name="cannotPlace"/> runs instead.
+    /// <paramref name="appDir"/> (the shell launching a game from its LiveArea). As in the console's appmgr, whose launch
+    /// creates the process and loads its executable before it returns (FW 3.74 shell.self: the launch job's error goes to
+    /// the shell's launch-error dialog, 0x8129456C), the executable is loaded before this returns: an executable that
+    /// cannot be loaded (not a SELF, a missing module, no licence to decrypt it) throws <see cref="ProcessLoadException"/>
+    /// with the module manager's error, and no process or application id is left behind and the shell gets no event.
+    /// The module_start functions and the main thread then run on a host thread. The process takes the display when the
+    /// shell activates it (sceAppMgrActivateApp), or with <paramref name="activate"/>. It runs in its own address space
+    /// (<see cref="Memory.GuestMemory.CreateSpace"/>), so an executable linked at the shell's addresses runs too; only
+    /// when every process shares one space (VITASHARP_SHARED_ADDRESS_SPACE=1, or a host that cannot map memory twice) can
+    /// such an executable not be placed: then it ends and <paramref name="cannotPlace"/> runs instead.
     /// </summary>
     public Emulator SpawnProcess(string appDir, string self, string[] args, bool activate = false, Action? cannotPlace = null, bool background = false,
         AppObject? reservedApp = null, Action<Emulator>? started = null)
@@ -310,7 +313,43 @@ public sealed class Emulator : IDisposable
         }
 
         child.Running = true;
+        // the executable loads on a host thread (its own process scope); the caller's guest thread gives its core back
+        // while it waits, as a guest thread blocked in the kernel does
+        Exception? loadError = null;
+        var load = Task.Run(() =>
+        {
+            try
+            {
+                child.LoadTitle(appDir, self);
+            }
+            catch (Exception e) when (e is not OutOfMemoryException)
+            {
+                loadError = e;
+            }
+        });
+        using (VitaSharp.Core.Kernel.Scheduler.Block())
+        {
+            load.Wait();
+        }
+
+        if (loadError is InvalidOperationException placement && placement.Message.Contains("cannot map fixed segment") && cannotPlace != null)
+        {
+            Log.Warn($"{child.Describe()}: {placement.Message}; it cannot run next to {Describe()}");
+            child.Discard("could not be placed");
+            Task.Run(cannotPlace);
+            return child;
+        }
+
+        if (loadError != null)
+        {
+            int error = ModuleLoadError(loadError);
+            Log.Error($"Process {child.Describe()} could not start (0x{error:X8}): {loadError}");
+            child.Discard("failed to load");
+            throw new ProcessLoadException(error, loadError);
+        }
+
         // SceAppMgr tells the shell about the new application process: event 2 {pid, application id}
+        child._announced = true;
         if (Vita.Shell != null)
         {
             Vita.PostShellEvent(ShellEvents.AppCreated, child.Pid, child.AppId);
@@ -320,7 +359,6 @@ public sealed class Emulator : IDisposable
         {
             try
             {
-                child.LoadTitle(appDir, self);
                 Log.Info($"Process {child.Describe()} started by {Describe()}");
                 child.Start(args);
                 // the launch finished: event 0xA {application id}; the shell then activates it
@@ -336,16 +374,6 @@ public sealed class Emulator : IDisposable
 
                 started?.Invoke(child);
             }
-            catch (InvalidOperationException e) when (e.Message.Contains("cannot map fixed segment"))
-            {
-                Log.Warn($"{child.Describe()}: {e.Message}; it cannot run next to {Describe()}");
-                child.Terminate("could not be placed");
-                cannotPlace?.Invoke();
-                if (cannotPlace == null && Vita.Shell != null)
-                {
-                    Vita.PostShellEvent(ShellEvents.AppLaunched, -1);
-                }
-            }
             catch (Exception e) when (e is not OutOfMemoryException)
             {
                 Log.Error($"Process {child.Describe()} could not start: {e}");
@@ -359,9 +387,47 @@ public sealed class Emulator : IDisposable
         return child;
     }
 
+    /// <summary>
+    /// The module manager's error for an executable or module that could not be loaded: a missing file
+    /// 0x8002D01C (SCE_KERNEL_ERROR_MODULEMGR_NOENT), a file that is no SELF 0x80025002 (ILLEGAL_SELF_HEADER), anything
+    /// else the loader refuses (no licence to decrypt it, a bad ELF) 0x80025001 (ILLEGAL_ELF_HEADER).
+    /// </summary>
+    public static int ModuleLoadError(Exception e)
+    {
+        if (e is FileNotFoundException or DirectoryNotFoundException)
+        {
+            return SceError.MODULEMGR_NOENT;
+        }
+
+        if (e is InvalidDataException && e.Message.StartsWith("Not a SELF", StringComparison.Ordinal))
+        {
+            return SceError.ILLEGAL_SELF_HEADER;
+        }
+
+        return SceError.ILLEGAL_ELF_HEADER;
+    }
+
+    /// <summary>A process whose executable never ran (its load failed): it goes at once, without the end event a started
+    /// application gives the shell (the shell never heard of it).</summary>
+    private void Discard(string why)
+    {
+        if (Interlocked.Exchange(ref _terminated, 1) != 0)
+        {
+            return;
+        }
+
+        Log.Info($"Process {Describe()} {why}");
+        Running = false;
+        Kernel.StopAllThreads();
+        Release();
+    }
+
     private readonly List<Emulator> _children = new();
     private int _terminated, _exitStatus;
     private bool _background, _endedInFront;
+
+    /// <summary>The process's executable loaded and the system was told about it (a process whose load failed never was).</summary>
+    private bool _announced;
 
     /// <summary>Ends this process (exit, crash, or killed by the shell): stops its threads, then frees its memory and kernel
     /// objects and gives the display back. The threads are joined on a host thread, so this can be called from one of them.</summary>
@@ -418,7 +484,7 @@ public sealed class Emulator : IDisposable
         // SceAppMgr tells the shell the application is gone: event 4 {+4 pid, +0x14 application id}. Not for a background
         // service: NPXS10079 (daily checker) exits at once here, where on the Vita it stays resident, and the shell would
         // start it again on every end
-        if (Vita.Shell is { } shell && shell != this && !_background)
+        if (Vita.Shell is { } shell && shell != this && !_background && _announced)
         {
             Vita.PostAppEnded(Pid, AppId, _endedInFront ? 2 : 4, TitleId);
         }

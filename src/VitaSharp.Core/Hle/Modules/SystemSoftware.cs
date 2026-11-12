@@ -81,7 +81,8 @@ public sealed partial class SystemSoftware : HleModule
     /// gate (flags 0x2000000) or the initial setup at first boot. The application starts as a new process next to the
     /// caller (<see cref="Emulator.SpawnProcess"/>) and takes the display; the shell keeps running behind it. Only an
     /// executable that cannot be placed next to the caller (fixed addresses in use) falls back to replacing the caller
-    /// (<see cref="Emulator.RequestLaunch"/>), which is started again when the application exits.
+    /// (<see cref="Emulator.RequestLaunch"/>), which is started again when the application exits. An executable that
+    /// cannot be loaded fails the call with the loader's error (<see cref="ProcessLoadException"/>): no application id.
     /// </summary>
     [Hle]
     int sceAppMgrLaunchAppByPath4(string path, uint titleId, uint flags, uint param, uint arg4, uint launchParam)
@@ -100,8 +101,19 @@ public sealed partial class SystemSoftware : HleModule
             Emu.RequestLaunch(dir, self, [], suspendCurrent: true);
             throw new Kernel.GuestThreadExitException(0, false);
         }
-        var launcher = Emu;
-        var app = Emu.SpawnProcess(dir, self, [], cannotPlace: () => launcher.RequestLaunch(dir, self, [], suspendCurrent: true));
+        Emulator launcher = Emu;
+        Emulator app;
+        try
+        {
+            app = Emu.SpawnProcess(dir, self, [], cannotPlace: () => launcher.RequestLaunch(dir, self, [], suspendCurrent: true));
+        }
+        catch (ProcessLoadException e)
+        {
+            // the console's launch fails with the loader's error and the shell shows its launch-error dialog
+            Log.Warn($"sceAppMgrLaunchAppByPath4({path}, {tid}): the executable could not be loaded: 0x{e.Error:X8}");
+            return e.Error;
+        }
+
         // the launch parameter (up to 0x400 bytes) is what the application reads first with sceAppMgrGetAppParam: the
         // PSP emulator (vs0:app/NPXS10028) gets its title this way ("originalpath=...&selfpath=...&discid=...")
         if (param != 0) app.Hle.Modules.OfType<AppMgr>().First().LaunchParam = GuestMemory.ReadCString(param, 0x400);

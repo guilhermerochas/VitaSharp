@@ -70,19 +70,15 @@ public sealed partial class ModulemgrKernel : HleModule
         {
             return Emu.LoadModule(path, kernel: true).Uid;
         }
-        catch (FileNotFoundException)
-        {
-            return SceError.MODULEMGR_NOENT;
-        }
-        catch (InvalidDataException e) when (e.Message.StartsWith("Not a SELF", StringComparison.Ordinal))
-        {
-            return SceError.ILLEGAL_SELF_HEADER;
-        }
         catch (Exception e) when (e is not OutOfMemoryException)
         {
-            // not a loadable module: the firmware's loader refuses its ELF header
-            Log.Warn($"ksceKernelLoadModule({path}): {e.Message}");
-            return SceError.ILLEGAL_ELF_HEADER;
+            // not a loadable module: the firmware's loader refuses it (the same errors as an application launch)
+            if (e is not FileNotFoundException)
+            {
+                Log.Warn($"ksceKernelLoadModule({path}): {e.Message}");
+            }
+
+            return Emulator.ModuleLoadError(e);
         }
     }
 
