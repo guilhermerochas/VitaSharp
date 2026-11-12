@@ -159,33 +159,33 @@ public static class CaptureAnalyzer
         var strips = new List<(Finding F, string Path)>();
         foreach (Finding? f in findings.OrderBy(f => f.Index))
         {
-            FrameStat s = stats[f.Index];
-            PresentInfo p = s.F.Info;
-            double atS = (p.PresentNs - startNs) / 1e9;
+            FrameStat frameStat = stats[f.Index];
+            PresentInfo presentInfo = frameStat.F.Info;
+            double atS = (presentInfo.PresentNs - startNs) / 1e9;
             // present numbers restart with a new renderer (LoadExec, state load): pre-roll frames never match the dump
-            string where = !s.F.PreRoll && dumpPresents.TryGetValue(p.Present, out int dk) ? $"GPU dump frame {dk} (replay-gpu --frame={dk})"
-                : s.F.PreRoll ? "pre-roll, before the GPU dump: re-run from state_preroll.vss to reproduce it"
-                : dumpPresents.Count > 0 && p.Present > dumpPresents.Keys.Max() ? "after the GPU dump ended"
+            string where = !frameStat.F.PreRoll && dumpPresents.TryGetValue(presentInfo.Present, out int dk) ? $"GPU dump frame {dk} (replay-gpu --frame={dk})"
+                : frameStat.F.PreRoll ? "pre-roll, before the GPU dump: re-run from state_preroll.vss to reproduce it"
+                : dumpPresents.Count > 0 && presentInfo.Present > dumpPresents.Keys.Max() ? "after the GPU dump ended"
                 : "not in the GPU dump";
-            sb.AppendLine(FormattableString.Invariant($"  [{f.Kind}] present {p.Present} flip {p.Flip} at {atS:+0.000;-0.000} s{(f.Count > 1 ? $", {f.Count} frames" : "")}: {f.Detail}"));
+            sb.AppendLine(FormattableString.Invariant($"  [{f.Kind}] present {presentInfo.Present} flip {presentInfo.Flip} at {atS:+0.000;-0.000} s{(f.Count > 1 ? $", {f.Count} frames" : "")}: {f.Detail}"));
             sb.AppendLine($"      {where}");
             if (f.Kind == "stall" && f.Index > 0)
             {
                 long a = stats[f.Index - 1].F.Info.PresentNs;
-                var during = input.Where(e => e.Kind is "mark" or "key" && e.Ns > a - 150_000_000 && e.Ns <= p.PresentNs).Select(e => $"{e.Kind} {e.Data}").ToList();
+                var during = input.Where(e => e.Kind is "mark" or "key" && e.Ns > a - 150_000_000 && e.Ns <= presentInfo.PresentNs).Select(e => $"{e.Kind} {e.Data}").ToList();
                 if (during.Count > 0)
                 {
                     sb.AppendLine($"      during: {string.Join(", ", during)} (an emulator action, not the game)");
                 }
             }
-            if (NearInput(input, p.PresentNs) is { } ni)
+            if (NearInput(input, presentInfo.PresentNs) is { } ni)
             {
                 sb.AppendLine($"      input: {ni}");
             }
 
-            if (s.Thumb != null && strips.Count < 40)
+            if (frameStat.Thumb != null && strips.Count < 40)
             {
-                strips.Add((f, Path.Combine(findDir, $"{f.Kind}_p{p.Present}.png")));
+                strips.Add((f, Path.Combine(findDir, $"{f.Kind}_p{presentInfo.Present}.png")));
             }
         }
 
@@ -439,31 +439,31 @@ public static class CaptureAnalyzer
         return s / (3.0 * a.Length / 4);
     }
 
-    private static bool IsBlack(FrameStat s) => s.Thumb != null && s.Luma < 10 && s.Dark > 0.97;
+    private static bool IsBlack(FrameStat frameStat) => frameStat.Thumb != null && frameStat.Luma < 10 && frameStat.Dark > 0.97;
 
-    private static void FindFrames(List<FrameStat> st, List<Finding> findings, double threshold, List<InputEvent> input)
+    private static void FindFrames(List<FrameStat> frameStats, List<Finding> findings, double threshold, List<InputEvent> input)
     {
-        int n = st.Count;
+        int n = frameStats.Count;
         // black frames: a run of 1-3 between normal frames is a black flash, a longer run a black screen
         for (int i = 0; i < n;)
         {
-            if (!IsBlack(st[i]))
+            if (!IsBlack(frameStats[i]))
             {
                 i++;
                 continue;
             }
             int j = i;
-            while (j + 1 < n && IsBlack(st[j + 1]))
+            while (j + 1 < n && IsBlack(frameStats[j + 1]))
             {
                 j++;
             }
 
             int count = j - i + 1;
-            bool before = i > 0 && !IsBlack(st[i - 1]) && st[i - 1].Thumb != null, after = j + 1 < n && st[j + 1].Thumb != null;
-            double ms = (st[j].F.Info.PresentNs - st[i].F.Info.PresentNs) / 1e6 + st[j].F.Info.IntervalMs;
+            bool before = i > 0 && !IsBlack(frameStats[i - 1]) && frameStats[i - 1].Thumb != null, after = j + 1 < n && frameStats[j + 1].Thumb != null;
+            double ms = (frameStats[j].F.Info.PresentNs - frameStats[i].F.Info.PresentNs) / 1e6 + frameStats[j].F.Info.IntervalMs;
             if (count <= 3 && before && after)
             {
-                findings.Add(new Finding("black-flash", i, count, FormattableString.Invariant($"{count} black frame(s) between normal pictures (luma {st[i].Luma:F1})")));
+                findings.Add(new Finding("black-flash", i, count, FormattableString.Invariant($"{count} black frame(s) between normal pictures (luma {frameStats[i].Luma:F1})")));
             }
             else if (ms < 1000 && before && after)
             {
@@ -481,7 +481,7 @@ public static class CaptureAnalyzer
         var det = new FlickerDetector(threshold);
         for (int i = 0; i < n; i++)
         {
-            if (st[i].Thumb is not { } t)
+            if (frameStats[i].Thumb is not { } t)
             {
                 continue;
             }
@@ -489,7 +489,7 @@ public static class CaptureAnalyzer
             if (det.Add(i, t, TW, TH) is { } f)
             {
                 int k = (int)f.Frame;
-                if (IsBlack(st[k]))
+                if (IsBlack(frameStats[k]))
                 {
                     continue; // reported as a black flash
                 }
@@ -501,8 +501,8 @@ public static class CaptureAnalyzer
         // presentation order: guest flip numbers going back, a flip presented twice, flips the renderer skipped
         for (int i = 1; i < n; i++)
         {
-            PresentInfo a = st[i - 1].F.Info;
-            PresentInfo b = st[i].F.Info;
+            PresentInfo a = frameStats[i - 1].F.Info;
+            PresentInfo b = frameStats[i].F.Info;
             if (a.Flip < 0 || b.Flip < 0)
             {
                 continue;
@@ -526,8 +526,8 @@ public static class CaptureAnalyzer
         // buffer-order bug), while the frames do move
         for (int i = 1; i + 2 < n; i++)
         {
-            double d01 = Diff(st[i - 1].Thumb, st[i].Thumb), d12 = Diff(st[i].Thumb, st[i + 1].Thumb), d23 = Diff(st[i + 1].Thumb, st[i + 2].Thumb);
-            double d02 = Diff(st[i - 1].Thumb, st[i + 1].Thumb), d13 = Diff(st[i].Thumb, st[i + 2].Thumb);
+            double d01 = Diff(frameStats[i - 1].Thumb, frameStats[i].Thumb), d12 = Diff(frameStats[i].Thumb, frameStats[i + 1].Thumb), d23 = Diff(frameStats[i + 1].Thumb, frameStats[i + 2].Thumb);
+            double d02 = Diff(frameStats[i - 1].Thumb, frameStats[i + 1].Thumb), d13 = Diff(frameStats[i].Thumb, frameStats[i + 2].Thumb);
             if (d01 < 0 || d12 < 0 || d23 < 0 || d02 < 0 || d13 < 0)
             {
                 continue;
@@ -536,7 +536,7 @@ public static class CaptureAnalyzer
             double asIs = d01 + d12 + d23, swapped = d02 + d12 + d13;
             if (asIs > 3 * threshold && swapped < 0.6 * asIs && d02 < d01 * 0.5 && d13 < d23 * 0.5)
             {
-                findings.Add(new Finding("picture-order", i, 2, FormattableString.Invariant($"presents {st[i].F.Info.Present} and {st[i + 1].F.Info.Present} look swapped (path {asIs:F1} as shown, {swapped:F1} swapped)")));
+                findings.Add(new Finding("picture-order", i, 2, FormattableString.Invariant($"presents {frameStats[i].F.Info.Present} and {frameStats[i + 1].F.Info.Present} look swapped (path {asIs:F1} as shown, {swapped:F1} swapped)")));
                 i++;
             }
         }
@@ -545,26 +545,26 @@ public static class CaptureAnalyzer
         for (int i = 0; i < n;)
         {
             int j = i;
-            while (j + 1 < n && st[j + 1].Thumb != null && st[i].Thumb != null && st[j + 1].Hash == st[i].Hash)
+            while (j + 1 < n && frameStats[j + 1].Thumb != null && frameStats[i].Thumb != null && frameStats[j + 1].Hash == frameStats[i].Hash)
             {
                 j++;
             }
 
-            double ms = (st[j].F.Info.PresentNs - st[i].F.Info.PresentNs) / 1e6;
-            if (ms >= 1500 && !IsBlack(st[i]) && st[j].F.Info.Flip - st[i].F.Info.Flip >= 30)
+            double ms = (frameStats[j].F.Info.PresentNs - frameStats[i].F.Info.PresentNs) / 1e6;
+            if (ms >= 1500 && !IsBlack(frameStats[i]) && frameStats[j].F.Info.Flip - frameStats[i].F.Info.Flip >= 30)
             {
-                long a = st[i].F.Info.PresentNs, b = st[j].F.Info.PresentNs;
+                long a = frameStats[i].F.Info.PresentNs, b = frameStats[j].F.Info.PresentNs;
                 int presses = input.Count(e => e.Kind is "pad" or "touch" && e.Ns > a && e.Ns < b);
                 findings.Add(presses > 0
-                    ? new Finding("frozen-picture", i, j - i + 1, FormattableString.Invariant($"the same picture for {ms / 1000:F1} s while the guest flipped {st[j].F.Info.Flip - st[i].F.Info.Flip} times and read {presses} input changes: the game ignored the input, or it does not draw what changed"))
-                    : new Finding("static-picture", i, j - i + 1, FormattableString.Invariant($"(info) the same picture for {ms / 1000:F1} s ({st[j].F.Info.Flip - st[i].F.Info.Flip} flips), no input meanwhile")));
+                    ? new Finding("frozen-picture", i, j - i + 1, FormattableString.Invariant($"the same picture for {ms / 1000:F1} s while the guest flipped {frameStats[j].F.Info.Flip - frameStats[i].F.Info.Flip} times and read {presses} input changes: the game ignored the input, or it does not draw what changed"))
+                    : new Finding("static-picture", i, j - i + 1, FormattableString.Invariant($"(info) the same picture for {ms / 1000:F1} s ({frameStats[j].F.Info.Flip - frameStats[i].F.Info.Flip} flips), no input meanwhile")));
             }
             i = j + 1;
         }
         var iv = new List<double>();
         for (int i = 1; i < n; i++)
         {
-            iv.Add((st[i].F.Info.PresentNs - st[i - 1].F.Info.PresentNs) / 1e6);
+            iv.Add((frameStats[i].F.Info.PresentNs - frameStats[i - 1].F.Info.PresentNs) / 1e6);
         }
 
         var sorted = iv.Where(v => v > 0).OrderBy(v => v).ToList();
@@ -578,8 +578,8 @@ public static class CaptureAnalyzer
                 continue;
             }
 
-            PresentInfo p = st[i].F.Info;
-            bool restarted = p.Present < st[i - 1].F.Info.Present;
+            PresentInfo p = frameStats[i].F.Info;
+            bool restarted = p.Present < frameStats[i - 1].F.Info.Present;
             // a cause longer than the interval is a ledger total carried over a renderer change, not this frame's
             string cause = restarted ? "the renderer was replaced here (LoadExec or a state load): boot of the new process or the load itself"
                 : string.IsNullOrEmpty(p.Hitch) || p.HitchMs > d + 50 ? "no stall cause recorded on the GPU worker (the guest itself was slow, or the host)"
@@ -589,11 +589,11 @@ public static class CaptureAnalyzer
         }
     }
 
-    private static string FpsLine(List<FrameStat> st)
+    private static string FpsLine(List<FrameStat> frameStats)
     {
         // frames presented in each second (the dips)
-        long t0 = st[0].F.Info.PresentNs;
-        var perSecond = st.GroupBy(s => (s.F.Info.PresentNs - t0) / 1_000_000_000).OrderBy(g => g.Key).Select(g => g.Count()).ToList();
+        long t0 = frameStats[0].F.Info.PresentNs;
+        var perSecond = frameStats.GroupBy(s => (s.F.Info.PresentNs - t0) / 1_000_000_000).OrderBy(g => g.Key).Select(g => g.Count()).ToList();
         if (perSecond.Count > 2)
         {
             perSecond = perSecond.Skip(1).SkipLast(1).ToList();
@@ -610,21 +610,21 @@ public static class CaptureAnalyzer
     private static string? NearInput(List<InputEvent> input, long ns)
     {
         InputEvent? best = null;
-        foreach (InputEvent e in input)
+        foreach (InputEvent inputEvent in input)
         {
-            if (e.Kind is "motion" or "rng")
+            if (inputEvent.Kind is "motion" or "rng")
             {
                 continue;
             }
 
-            if (e.Ns > ns)
+            if (inputEvent.Ns > ns)
             {
                 break;
             }
 
-            if (ns - e.Ns <= 2_000_000_000)
+            if (ns - inputEvent.Ns <= 2_000_000_000)
             {
-                best = e;
+                best = inputEvent;
             }
         }
         if (best is not { } b)
@@ -635,17 +635,17 @@ public static class CaptureAnalyzer
         return FormattableString.Invariant($"{(ns - b.Ns) / 1e6:F0} ms after {b.Kind} {DescribeInput(b)} (guest frame {b.Flip})");
     }
 
-    private static string DescribeInput(InputEvent e)
+    private static string DescribeInput(InputEvent inputEvent)
     {
-        if (e.Kind != "pad")
+        if (inputEvent.Kind != "pad")
         {
-            return e.Data;
+            return inputEvent.Data;
         }
 
-        string[] p = e.Data.Split(' ');
+        string[] p = inputEvent.Data.Split(' ');
         if (p.Length < 6 || !uint.TryParse(p[1], NumberStyles.HexNumber, null, out uint btn))
         {
-            return e.Data;
+            return inputEvent.Data;
         }
 
         IEnumerable<string> names = Enum.GetValues<Host.VitaButtons>().Where(v => v != 0 && ((uint)v & ((uint)v - 1)) == 0 && (btn & (uint)v) != 0).Select(v => v.ToString()).Distinct();

@@ -180,8 +180,8 @@ public sealed class Rco
                 throw new InvalidDataException("RCO sibling chain loops");
             }
 
-            RcoElement c = ReadElement(child, e, depth + 1);
-            e.Children.Add(c);
+            RcoElement rcoElement = ReadElement(child, e, depth + 1);
+            e.Children.Add(rcoElement);
             child = I32(_tree.off + child + 16); // next sibling
         }
         return e;
@@ -270,18 +270,18 @@ public sealed class Rco
     /// <summary>The bytes of a file attribute, inflated when its element says compress="on".</summary>
     public byte[] ReadFile(RcoElement element, string attribute = "src")
     {
-        RcoAttribute? a = element.Attribute(attribute);
-        if (a == null || a.Type != RcoAttributeType.File)
+        RcoAttribute? rcoAttribute = element.Attribute(attribute);
+        if (rcoAttribute == null || rcoAttribute.Type != RcoAttributeType.File)
         {
             throw new InvalidDataException($"<{element.Name}> has no file attribute '{attribute}'");
         }
 
-        if (a.FileOffset < 0 || a.FileSize < 0 || (long)a.FileOffset + a.FileSize > _fileTableSize)
+        if (rcoAttribute.FileOffset < 0 || rcoAttribute.FileSize < 0 || (long)rcoAttribute.FileOffset + rcoAttribute.FileSize > _fileTableSize)
         {
             throw new InvalidDataException("RCO file lies outside the file table");
         }
 
-        Span<byte> raw = _data.AsSpan(_fileTable + a.FileOffset, a.FileSize);
+        Span<byte> raw = _data.AsSpan(_fileTable + rcoAttribute.FileOffset, rcoAttribute.FileSize);
         if (element.Text("compress") != "on")
         {
             return raw.ToArray();
@@ -289,7 +289,7 @@ public sealed class Rco
 
         int orig = element.Attribute("origsize")?.Int ?? 0;
         using var z = new ZLibStream(new MemoryStream(raw.ToArray()), CompressionMode.Decompress);
-        var ms = new MemoryStream(orig > 0 ? orig : a.FileSize * 4);
+        var ms = new MemoryStream(orig > 0 ? orig : rcoAttribute.FileSize * 4);
         z.CopyTo(ms);
         return ms.ToArray();
     }
@@ -298,9 +298,9 @@ public sealed class Rco
     /// "soundtable", ...), id and type ("texture/png", "texture/gim", "sound/vag"...). Files that fail to read are skipped.</summary>
     public IEnumerable<RcoFile> Files()
     {
-        foreach (RcoElement e in Root.Descendants())
+        foreach (RcoElement rcoElement in Root.Descendants())
         {
-            RcoAttribute? src = e.Attributes.FirstOrDefault(a => a.Type == RcoAttributeType.File);
+            RcoAttribute? src = rcoElement.Attributes.FirstOrDefault(a => a.Type == RcoAttributeType.File);
             if (src == null)
             {
                 continue;
@@ -309,13 +309,13 @@ public sealed class Rco
             byte[] data;
             try
             {
-                data = ReadFile(e, src.Name);
+                data = ReadFile(rcoElement, src.Name);
             }
             catch (InvalidDataException)
             {
                 continue;
             }
-            yield return new RcoFile(e, e.Parent?.Name ?? "", e.Id ?? "", e.Text("type") ?? "", data);
+            yield return new RcoFile(rcoElement, rcoElement.Parent?.Name ?? "", rcoElement.Id ?? "", rcoElement.Text("type") ?? "", data);
         }
     }
 

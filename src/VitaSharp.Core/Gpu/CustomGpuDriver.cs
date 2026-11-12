@@ -121,14 +121,14 @@ public sealed class CustomDriverStore(string root)
 
         System.IO.Directory.CreateDirectory(tmp);
         string fullTmp = Path.GetFullPath(tmp) + Path.DirectorySeparatorChar;
-        foreach (ZipArchiveEntry e in zip.Entries)
+        foreach (ZipArchiveEntry entry in zip.Entries)
         {
-            if (e.FullName.EndsWith('/') || !e.FullName.StartsWith(prefix, StringComparison.Ordinal))
+            if (entry.FullName.EndsWith('/') || !entry.FullName.StartsWith(prefix, StringComparison.Ordinal))
             {
                 continue;
             }
             // flat packages only: the library and its companions live next to meta.json
-            string name = e.FullName[prefix.Length..];
+            string name = entry.FullName[prefix.Length..];
             if (!CustomDriverMeta.IsSafeFileName(name))
             {
                 continue;
@@ -140,7 +140,7 @@ public sealed class CustomDriverStore(string root)
                 continue;
             }
 
-            e.ExtractToFile(dest, true);
+            entry.ExtractToFile(dest, true);
             // read-only, as Android 14 requires of dynamically loaded code (the driver is dlopen'd from here)
             if (!OperatingSystem.IsWindows())
             {
@@ -247,8 +247,8 @@ public sealed class GpuDriverSettings
     public void Save(string path)
     {
         System.IO.Directory.CreateDirectory(Path.GetDirectoryName(Path.GetFullPath(path))!);
-        using FileStream f = File.Create(path);
-        using var w = new Utf8JsonWriter(f, new JsonWriterOptions { Indented = true });
+        using FileStream stream = File.Create(path);
+        using var w = new Utf8JsonWriter(stream, new JsonWriterOptions { Indented = true });
         w.WriteStartObject();
         w.WriteString("driver", Driver);
         w.WriteBoolean("fileRedirect", FileRedirect);

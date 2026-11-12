@@ -411,19 +411,19 @@ public sealed unsafe partial class VulkanRenderer
                 continue;
             }
 
-            GxmTextureDesc d = tex[i];
-            if (d.TextureType is not (GxmTextureDesc.TypeLinear or GxmTextureDesc.TypeLinearStrided))
+            GxmTextureDesc gxmTextureDesc = tex[i];
+            if (gxmTextureDesc.TextureType is not (GxmTextureDesc.TypeLinear or GxmTextureDesc.TypeLinearStrided))
             {
                 continue;
             }
 
-            uint addr = d.DataAddress;
+            uint addr = gxmTextureDesc.DataAddress;
             if (addr < Core.Memory.GuestMemory.CdramStart || addr >= Core.Memory.GuestMemory.CdramEnd)
             {
                 continue;
             }
 
-            TexFormatInfo info = Formats.Texture(GxmFormats.BaseOf(d.Format));
+            TexFormatInfo info = Formats.Texture(GxmFormats.BaseOf(gxmTextureDesc.Format));
             if (info.Compressed || info.Convert != TexConvert.None || info.BitsPerPixel < 8 || info.BitsPerPixel % 8 != 0)
             {
                 continue;
@@ -443,8 +443,8 @@ public sealed unsafe partial class VulkanRenderer
                     break;
                 }
 
-                uint texRow = d.TextureType == GxmTextureDesc.TypeLinearStrided ? d.StrideBytes : Align(d.Width, 8) * texBpp;
-                ReinterpretGeo? geo = ScaledReinterpretGeometry(rt, addr, d.Width, d.Height, texRow, rtBpp, texBpp);
+                uint texRow = gxmTextureDesc.TextureType == GxmTextureDesc.TypeLinearStrided ? gxmTextureDesc.StrideBytes : Align(gxmTextureDesc.Width, 8) * texBpp;
+                ReinterpretGeo? geo = ScaledReinterpretGeometry(rt, addr, gxmTextureDesc.Width, gxmTextureDesc.Height, texRow, rtBpp, texBpp);
                 int k = geo is { Own: true } && !ScaledRowsCopyable(rt) ? 1 : geo != null ? (int)rt.Scale : 1;
                 // a native target read by a native scene needs nothing
                 if (k == 1 && RtScale <= 1f)

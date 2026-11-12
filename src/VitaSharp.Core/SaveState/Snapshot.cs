@@ -127,9 +127,9 @@ public sealed class SnapshotWriter
         => WriteRaw(System.Runtime.InteropServices.MemoryMarshal.AsBytes(new ReadOnlySpan<T>(in v)));
 
     /// <summary>A nested state, length-prefixed so a reader can skip or bound it.</summary>
-    public void Write(ISnapshotState? s)
+    public void Write(ISnapshotState? snapshotState)
     {
-        if (s == null)
+        if (snapshotState == null)
         {
             Write(false);
             return;
@@ -137,7 +137,7 @@ public sealed class SnapshotWriter
         Write(true);
         int at = _len;
         Write(0);
-        s.SaveState(this);
+        snapshotState.SaveState(this);
         BinaryPrimitives.WriteInt32LittleEndian(_buf.AsSpan(at), _len - at - 4);
     }
 

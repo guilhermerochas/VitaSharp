@@ -43,9 +43,9 @@ public sealed class MouseSettings
 
     /// <summary>The mode for a game: its own choice, else the profile's.</summary>
     public MouseMode ModeFor(string? titleId)
-        => titleId != null && Games.TryGetValue(titleId, out string? s) && Enum.TryParse<MouseMode>(s, true, out MouseMode m) ? m : Mode;
+        => titleId != null && Games.TryGetValue(titleId, out string? s) && Enum.TryParse<MouseMode>(s, true, out MouseMode mouseMode) ? mouseMode : Mode;
 
-    public static MouseMode Next(MouseMode m) => m switch
+    public static MouseMode Next(MouseMode mouseMode) => mouseMode switch
     {
         MouseMode.Motion => MouseMode.RightStick,
         MouseMode.RightStick => MouseMode.LeftStick,
@@ -54,7 +54,7 @@ public sealed class MouseSettings
     };
 
     /// <summary>The mode's name for the launcher and the on-screen notice, in the interface language.</summary>
-    public static string Label(MouseMode m) => m switch
+    public static string Label(MouseMode mouseMode) => mouseMode switch
     {
         MouseMode.Motion => Localization.Loc.Get("MouseModeMotion"),
         MouseMode.RightStick => Localization.Loc.Get("MouseModeRight"),
@@ -126,28 +126,28 @@ public sealed class MouseStick
     /// modes), to combine with the keyboard and controllers (<see cref="InputMapper.Combine"/>).</summary>
     public MappedInput Mapped(MouseMode mode, long nowTicks = 0)
     {
-        MappedInput m = MappedInput.Neutral;
+        MappedInput mappedInput = MappedInput.Neutral;
         if (mode is not (MouseMode.RightStick or MouseMode.LeftStick))
         {
-            return m;
+            return mappedInput;
         }
 
         (float x, float y) = Sample(nowTicks);
         if (mode == MouseMode.RightStick)
         {
-            m.Rx = x;
-            m.Ry = y;
-            m.State.Rx = StickMath.ToByte(x);
-            m.State.Ry = StickMath.ToByte(y);
+            mappedInput.Rx = x;
+            mappedInput.Ry = y;
+            mappedInput.State.Rx = StickMath.ToByte(x);
+            mappedInput.State.Ry = StickMath.ToByte(y);
         }
         else
         {
-            m.Lx = x;
-            m.Ly = y;
-            m.State.Lx = StickMath.ToByte(x);
-            m.State.Ly = StickMath.ToByte(y);
+            mappedInput.Lx = x;
+            mappedInput.Ly = y;
+            mappedInput.State.Lx = StickMath.ToByte(x);
+            mappedInput.State.Ly = StickMath.ToByte(y);
         }
-        return m;
+        return mappedInput;
     }
 
     /// <summary>The deflection now, -1..1 per axis, y down (the Vita's stick convention: up is negative).</summary>
@@ -158,18 +158,18 @@ public sealed class MouseStick
             nowTicks = Stopwatch.GetTimestamp();
         }
 
-        MouseSettings s = Settings;
+        MouseSettings mouseSettings = Settings;
         lock (_lock)
         {
             double dt = _last == 0 ? 0 : Math.Max(0, (nowTicks - _last) / (double)Stopwatch.Frequency);
             _last = nowTicks;
-            float tau = Math.Clamp(s.ReturnMs, 10, 1000) / 3000f;
+            float tau = Math.Clamp(mouseSettings.ReturnMs, 10, 1000) / 3000f;
             float decay = (float)Math.Exp(-dt / tau);
             _x *= decay;
             _y *= decay;
-            float k = PixelGain * Math.Clamp(s.Sensitivity, 0.1f, 5f);
+            float k = PixelGain * Math.Clamp(mouseSettings.Sensitivity, 0.1f, 5f);
             _x += _ax * k;
-            _y += (s.InvertY ? -_ay : _ay) * k;
+            _y += (mouseSettings.InvertY ? -_ay : _ay) * k;
             _ax = _ay = 0;
             float mag = MathF.Sqrt(_x * _x + _y * _y);
             if (mag > 1)
@@ -183,8 +183,8 @@ public sealed class MouseStick
                 return (0, 0); // at rest (and below ~30 px/s of jitter)
             }
 
-            float dz = Math.Clamp(s.Deadzone, 0, 0.5f);
-            float shaped = dz + (1 - dz) * MathF.Pow(mag, Math.Clamp(s.Curve, 0.3f, 3f));
+            float dz = Math.Clamp(mouseSettings.Deadzone, 0, 0.5f);
+            float shaped = dz + (1 - dz) * MathF.Pow(mag, Math.Clamp(mouseSettings.Curve, 0.3f, 3f));
             return (_x / mag * shaped, _y / mag * shaped);
         }
     }

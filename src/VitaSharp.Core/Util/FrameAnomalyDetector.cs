@@ -123,10 +123,10 @@ public sealed class FrameAnomalyDetector
     private float _excursionPeak;
     private long _excursionStart;
 
-    public IReadOnlyList<Event> Feed(long present, in FrameMetrics m)
+    public IReadOnlyList<Event> Feed(long present, in FrameMetrics frameMetrics)
     {
         _events.Clear();
-        FrameMetrics.Hit hits = m.Hits;
+        FrameMetrics.Hit hits = frameMetrics.Hits;
         for (int i = SpikeWindow - 1; i > 0; i--)
         {
             _recent[i] = _recent[i - 1];
@@ -135,19 +135,19 @@ public sealed class FrameAnomalyDetector
         _recent[0] = hits;
 
         Spike(FrameMetrics.Hit.Magenta, "magenta", ref _magentaOn, ref _magentaQuiet, present,
-            $"{m.Magenta:P0} of the image is magenta (missing/garbage textures)");
+            $"{frameMetrics.Magenta:P0} of the image is magenta (missing/garbage textures)");
         Spike(FrameMetrics.Hit.Saturated, "saturated", ref _saturatedOn, ref _saturatedQuiet, present,
-            $"{m.Green:P0} pure green and {m.Blue:P0} pure blue pixels (garbage render target / effect)");
+            $"{frameMetrics.Green:P0} pure green and {frameMetrics.Blue:P0} pure blue pixels (garbage render target / effect)");
 
-        BrightRun(hits.HasFlag(FrameMetrics.Hit.Bright), !_fed || m.Hash != _prevHash, present, m);
+        BrightRun(hits.HasFlag(FrameMetrics.Hit.Bright), !_fed || frameMetrics.Hash != _prevHash, present, frameMetrics);
         _fed = true;
         Run(hits.HasFlag(FrameMetrics.Hit.Black), ref _blackRun, BlackFrames, "black", false, present,
             $"more than 97% black pixels for {BlackFrames} frames");
-        Run(m.Hash == _prevHash, ref _frozenRun, FrozenFrames, "frozen", false, present,
+        Run(frameMetrics.Hash == _prevHash, ref _frozenRun, FrozenFrames, "frozen", false, present,
             $"identical image for {FrozenFrames} presents");
-        _prevHash = m.Hash;
+        _prevHash = frameMetrics.Hash;
 
-        Flicker(present, m, hits.HasFlag(FrameMetrics.Hit.Black));
+        Flicker(present, frameMetrics, hits.HasFlag(FrameMetrics.Hit.Black));
         return _events;
     }
 
@@ -187,7 +187,7 @@ public sealed class FrameAnomalyDetector
     /// Mania's SEGA screen: 81% pure white for two seconds) never fires, while a moving scene washed out to white (Gravity
     /// Rush's dream intro with a wrong exposure) does. The run ends at the first frame that is not bright.
     /// </summary>
-    private void BrightRun(bool bright, bool changed, long present, in FrameMetrics m)
+    private void BrightRun(bool bright, bool changed, long present, in FrameMetrics frameMetrics)
     {
         if (!bright)
         {
@@ -202,7 +202,7 @@ public sealed class FrameAnomalyDetector
         _brightRun++;
         if (changed && ++_brightMoving == BrightFrames)
         {
-            _events.Add(new Event("blown-out", $"{m.White:P0} saturated white, mean brightness {m.Mean:F2} for {_brightRun} frames ({BrightFrames} of them changing)", true, present));
+            _events.Add(new Event("blown-out", $"{frameMetrics.White:P0} saturated white, mean brightness {frameMetrics.Mean:F2} for {_brightRun} frames ({BrightFrames} of them changing)", true, present));
         }
     }
 
@@ -225,32 +225,32 @@ public sealed class FrameAnomalyDetector
         run = 0;
     }
 
-    private void Flicker(long present, in FrameMetrics m, bool black)
+    private void Flicker(long present, in FrameMetrics frameMetrics, bool black)
     {
         if (_baseline < 0)
         {
-            _baseline = m.Mean;
+            _baseline = frameMetrics.Mean;
             _baselineBlack = black;
             return;
         }
-        float d = MathF.Abs(m.Mean - _baseline);
+        float d = MathF.Abs(frameMetrics.Mean - _baseline);
         if (_excursion > 0)
         {
             if (d <= FlickerReturn && !black && !_baselineBlack)
             {
                 // snapped back to the frame before the excursion: a transient flash/blackout, not a scene change
-                _events.Add(new Event("flicker", $"mean brightness {_baseline:F2} -> {_excursionPeak:F2} -> {m.Mean:F2} for {_excursion} frame(s) from present #{_excursionStart}", true, present));
+                _events.Add(new Event("flicker", $"mean brightness {_baseline:F2} -> {_excursionPeak:F2} -> {frameMetrics.Mean:F2} for {_excursion} frame(s) from present #{_excursionStart}", true, present));
                 _excursion = 0;
-                _baseline = m.Mean;
+                _baseline = frameMetrics.Mean;
                 _baselineBlack = black;
                 return;
             }
             if (d > FlickerDelta && _excursion < FlickerMaxFrames)
             {
                 _excursion++;
-                if (MathF.Abs(m.Mean - _baseline) > MathF.Abs(_excursionPeak - _baseline))
+                if (MathF.Abs(frameMetrics.Mean - _baseline) > MathF.Abs(_excursionPeak - _baseline))
                 {
-                    _excursionPeak = m.Mean;
+                    _excursionPeak = frameMetrics.Mean;
                 }
 
                 return;
@@ -261,11 +261,11 @@ public sealed class FrameAnomalyDetector
         else if (d > FlickerDelta)
         {
             _excursion = 1;
-            _excursionPeak = m.Mean;
+            _excursionPeak = frameMetrics.Mean;
             _excursionStart = present;
             return;
         }
-        _baseline = m.Mean;
+        _baseline = frameMetrics.Mean;
         _baselineBlack = black;
     }
 }

@@ -157,9 +157,9 @@ public sealed class HostServices : IDisposable
     {
         lock (CameraStreams)
         {
-            foreach (ICameraStream s in CameraStreams)
+            foreach (ICameraStream cameraStream in CameraStreams)
             {
-                s.Dispose();
+                cameraStream.Dispose();
             }
 
             CameraStreams.Clear();

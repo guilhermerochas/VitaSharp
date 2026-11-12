@@ -210,10 +210,10 @@ public static class PkgInstaller
     private static PkgEntry? FindEntry(PkgReader pkg, string name) =>
         pkg.Entries.FirstOrDefault(e => !e.IsDirectory && e.Name.Equals(name, StringComparison.OrdinalIgnoreCase));
 
-    private static byte[] ReadEntry(PkgReader pkg, PkgEntry e)
+    private static byte[] ReadEntry(PkgReader pkg, PkgEntry pkgEntry)
     {
-        var ms = new MemoryStream((int)e.DataSize);
-        pkg.Extract(e, ms);
+        var ms = new MemoryStream((int)pkgEntry.DataSize);
+        pkg.Extract(pkgEntry, ms);
         return ms.ToArray();
     }
 
@@ -221,15 +221,15 @@ public static class PkgInstaller
                         Action<InstallProgress>? progress, CancellationToken ct)
     {
         // The PFS image (sce_pfs/files.db + unicv.db) is read first, so the files can be decrypted as they are written.
-        PfsPlan? pfs = null;
+        PfsPlan? pfsPlan = null;
         if (FindEntry(pkg, "sce_pfs/files.db") is { } filesDb)
         {
             PkgEntry unicv = FindEntry(pkg, "sce_pfs/unicv.db")
                 ?? throw new InvalidDataException("PFS: the package has sce_pfs/files.db but no sce_pfs/unicv.db");
-            pfs = new PfsDecryptor(klicensee).Plan(ReadEntry(pkg, filesDb), ReadEntry(pkg, unicv));
+            pfsPlan = new PfsDecryptor(klicensee).Plan(ReadEntry(pkg, filesDb), ReadEntry(pkg, unicv));
         }
 
-        bool Skipped(PkgEntry e) => pfs != null && (e.Name.StartsWith("sce_pfs/", StringComparison.OrdinalIgnoreCase)
+        bool Skipped(PkgEntry e) => pfsPlan != null && (e.Name.StartsWith("sce_pfs/", StringComparison.OrdinalIgnoreCase)
                                                    || e.Name.Equals("sce_pfs", StringComparison.OrdinalIgnoreCase));
         var files = pkg.Entries.Where(e => !e.IsDirectory && !Skipped(e)).ToList();
         long total = files.Sum(e => (long)e.DataSize);
@@ -259,16 +259,16 @@ public static class PkgInstaller
                 long size = (long)e.DataSize;
                 PfsTable? table = null;
                 PfsNode? node = null;
-                if (pfs != null && size > 0 && PfsPlan.IsCandidatePath(e.Name) && pfs.HeadBytes > 0)
+                if (pfsPlan != null && size > 0 && PfsPlan.IsCandidatePath(e.Name) && pfsPlan.HeadBytes > 0)
                 {
                     byte[] head = writer.Rent();
                     try
                     {
-                        Span<byte> h = head.AsSpan(0, (int)Math.Min(size, Math.Min(pfs.HeadBytes, head.Length)));
+                        Span<byte> h = head.AsSpan(0, (int)Math.Min(size, Math.Min(pfsPlan.HeadBytes, head.Length)));
                         (TimeSpan r, TimeSpan d) = pkg.ReadData(e, 0, h, ctr);
                         readTime += r;
                         ctrTime += d;
-                        table = pfs.Match(size, h);
+                        table = pfsPlan.Match(size, h);
                     }
                     finally
                     {
@@ -276,10 +276,10 @@ public static class PkgInstaller
                     }
                     if (table != null)
                     {
-                        node = pfs.Node(e.Name);
+                        node = pfsPlan.Node(e.Name);
                     }
                 }
-                PfsSectorCipher? cipher = table != null && node!.Encrypted ? pfs!.Cipher(table) : null;
+                PfsSectorCipher? cipher = table != null && node!.Encrypted ? pfsPlan!.Cipher(table) : null;
                 if (cipher != null)
                 {
                     decrypted++;
@@ -328,13 +328,13 @@ public static class PkgInstaller
                 }
                 writer.Close(node?.Size);
             }
-            pfs?.EnsureAllMatched();
+            pfsPlan?.EnsureAllMatched();
             writer.Complete();
 
             double mb = writer.BytesWritten / (1024.0 * 1024);
             string Rate(TimeSpan t) => t.TotalSeconds > 0 ? $"{mb / t.TotalSeconds:N0} MB/s" : "-";
             log?.Invoke($"Extracted {pkg.Entries.Count} entries to {dest}" +
-                        (pfs != null ? $" ({decrypted} PFS-decrypted, {plain} plain)" : ""));
+                        (pfsPlan != null ? $" ({decrypted} PFS-decrypted, {plain} plain)" : ""));
             log?.Invoke($"Install: {mb:N0} MB in {reporter.Elapsed.TotalSeconds:N1} s ({Rate(reporter.Elapsed)}); " +
                         $"read {readTime.TotalSeconds:N1} s ({Rate(readTime)}), AES-CTR {ctrTime.TotalSeconds:N1} s ({Rate(ctrTime)}), " +
                         $"PFS {pfsTime.TotalSeconds:N1} s ({Rate(pfsTime)}), write {writer.WriteTime.TotalSeconds:N1} s ({Rate(writer.WriteTime)})");

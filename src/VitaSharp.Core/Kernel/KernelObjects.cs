@@ -247,21 +247,21 @@ public sealed partial class ObjectTable
     private readonly ConcurrentDictionary<int, KernelObject> _objects = new();
     private int _next = 0x4001_0001;
 
-    public int Register(KernelObject o)
+    public int Register(KernelObject kernelObject)
     {
         int uid = Interlocked.Add(ref _next, 2);
-        o.Uid = uid;
-        o.OwnerPid = o switch
+        kernelObject.Uid = uid;
+        kernelObject.OwnerPid = kernelObject switch
         {
             ProcessObject => uid,
             GuestThread t => t.Pid,
             _ => ProcessScope.CurrentPid
         };
-        _objects[uid] = o;
+        _objects[uid] = kernelObject;
         return uid;
     }
 
-    public T? Get<T>(int uid) where T : KernelObject => _objects.TryGetValue(uid, out KernelObject? o) ? o as T : null;
+    public T? Get<T>(int uid) where T : KernelObject => _objects.TryGetValue(uid, out KernelObject? kernelObject) ? kernelObject as T : null;
     public bool Remove(int uid) => _objects.TryRemove(uid, out _);
 
     /// <summary>Deletes a message pipe: its waiters wake with WAIT_DELETE. When handles opened by name are still open
@@ -278,14 +278,14 @@ public sealed partial class ObjectTable
         return false;
     }
     /// <summary>sceKernelDelete* of a semaphore, event flag or mutex: gone now, or orphaned while opened handles remain.</summary>
-    public void Delete(KernelObject o)
+    public void Delete(KernelObject kernelObject)
     {
-        if (Volatile.Read(ref o.OpenCount) > 0)
+        if (Volatile.Read(ref kernelObject.OpenCount) > 0)
         {
-            o.Orphaned = true;
+            kernelObject.Orphaned = true;
             return;
         }
-        _objects.TryRemove(o.Uid, out _);
+        _objects.TryRemove(kernelObject.Uid, out _);
     }
     public IEnumerable<T> All<T>() where T : KernelObject => _objects.Values.OfType<T>();
     /// <summary>The objects of one kind that process <paramref name="pid"/> created.</summary>
@@ -295,15 +295,15 @@ public sealed partial class ObjectTable
     public int RemoveOwnedBy(int pid)
     {
         int n = 0;
-        foreach ((int uid, KernelObject? o) in _objects)
+        foreach ((int uid, KernelObject? kernelObject) in _objects)
         {
-            if (o.OwnerPid != pid || o is ProcessObject or AppObject)
+            if (kernelObject.OwnerPid != pid || kernelObject is ProcessObject or AppObject)
             {
                 continue;
             }
             // a message pipe another process still holds a handle to stays until that handle is closed: its
             // operations fail with MPP_DELETED (a libipmi server sees its client gone)
-            if (o is MsgPipe pipe)
+            if (kernelObject is MsgPipe pipe)
             {
                 if (!Delete(pipe))
                 {
@@ -312,9 +312,9 @@ public sealed partial class ObjectTable
 
                 continue;
             }
-            if (Volatile.Read(ref o.OpenCount) > 0)
+            if (Volatile.Read(ref kernelObject.OpenCount) > 0)
             {
-                o.Orphaned = true;
+                kernelObject.Orphaned = true;
                 continue;
             }
             if (_objects.TryRemove(uid, out _))

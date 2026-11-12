@@ -80,110 +80,110 @@ public static class AudioDiagnostics
     }
 
     /// <summary>Grain, rate or channels changed (sceAudioOutSetConfig), possibly with a new host stream.</summary>
-    public static void Reconfigure(PortStats p, int grain, int freq, int channels, IAudioStream? stream)
+    public static void Reconfigure(PortStats portStats, int grain, int freq, int channels, IAudioStream? stream)
     {
-        lock (p._lock)
+        lock (portStats._lock)
         {
-            p.Grain = grain;
-            p.Freq = freq;
-            p.Channels = channels;
-            if (!ReferenceEquals(p.Stream, stream))
+            portStats.Grain = grain;
+            portStats.Freq = freq;
+            portStats.Channels = channels;
+            if (!ReferenceEquals(portStats.Stream, stream))
             {
-                p.Stream = stream;
-                p._streamUnderrunsSeen = 0;
+                portStats.Stream = stream;
+                portStats._streamUnderrunsSeen = 0;
             }
         }
         if (DebugMode.Enabled)
         {
-            Log.Info($"[dbg] {Frame} AUDIO config {p.Describe()}");
+            Log.Info($"[dbg] {Frame} AUDIO config {portStats.Describe()}");
         }
     }
 
-    public static void ClosePort(PortStats p)
+    public static void ClosePort(PortStats portStats)
     {
-        if (!s_open.TryRemove(p, out _))
+        if (!s_open.TryRemove(portStats, out _))
         {
             return;
         }
 
-        p.ClosedAt = Now;
-        s_closed.Enqueue(p);
+        portStats.ClosedAt = Now;
+        s_closed.Enqueue(portStats);
         while (s_closed.Count > 64 && s_closed.TryDequeue(out _))
         {
         }
         if (DebugMode.Enabled)
         {
-            Log.Info($"[dbg] {Frame} AUDIO release {p.Describe()}: {Totals(p)}");
+            Log.Info($"[dbg] {Frame} AUDIO release {portStats.Describe()}: {Totals(portStats)}");
         }
     }
 
     /// <summary>sceAppMgrLoadExec replaced the process: its ports count as released, its streams are gone.</summary>
     public static void ProcessEnded()
     {
-        foreach (PortStats p in s_open.Keys)
+        foreach (PortStats portStats in s_open.Keys)
         {
-            ClosePort(p);
+            ClosePort(portStats);
         }
 
         s_streams.Clear();
     }
 
     /// <summary>One guest output of a grain (called on entry to sceAudioOutOutput, before it blocks).</summary>
-    public static void Output(PortStats p, bool silent)
+    public static void Output(PortStats portStats, bool silent)
     {
         double now = Now;
-        lock (p._lock)
+        lock (portStats._lock)
         {
-            if (p.LastOutput > 0)
+            if (portStats.LastOutput > 0)
             {
-                double gap = now - p.LastOutput;
-                p.LastGap = gap;
-                p.Gaps++;
-                p.GapSum += gap;
-                if (gap > p.GapMax)
+                double gap = now - portStats.LastOutput;
+                portStats.LastGap = gap;
+                portStats.Gaps++;
+                portStats.GapSum += gap;
+                if (gap > portStats.GapMax)
                 {
-                    p.GapMax = gap;
+                    portStats.GapMax = gap;
                 }
 
-                p._iGaps++;
-                p._iGapSum += gap;
-                if (gap > p._iGapMax)
+                portStats._iGaps++;
+                portStats._iGapSum += gap;
+                if (gap > portStats._iGapMax)
                 {
-                    p._iGapMax = gap;
+                    portStats._iGapMax = gap;
                 }
             }
-            p.LastOutput = now;
-            p.Outputs++;
-            p._iOutputs++;
+            portStats.LastOutput = now;
+            portStats.Outputs++;
+            portStats._iOutputs++;
             if (silent)
             {
-                p.Silent++;
-                p._iSilent++;
+                portStats.Silent++;
+                portStats._iSilent++;
             }
         }
     }
 
     /// <summary>After the host stream accepted a grain: picks up the underruns it detected.</summary>
-    public static void AfterSubmit(PortStats p)
+    public static void AfterSubmit(PortStats portStats)
     {
-        if (p.Stream is not { } s)
+        if (portStats.Stream is not { } s)
         {
             return;
         }
 
         int u = s.Underruns;
-        if (u == p._streamUnderrunsSeen)
+        if (u == portStats._streamUnderrunsSeen)
         {
             return;
         }
 
         int n;
         bool idle;
-        lock (p._lock)
+        lock (portStats._lock)
         {
-            n = u - p._streamUnderrunsSeen;
-            p._streamUnderrunsSeen = u;
-            idle = ResumedAfterIdle(p);
+            n = u - portStats._streamUnderrunsSeen;
+            portStats._streamUnderrunsSeen = u;
+            idle = ResumedAfterIdle(portStats);
         }
         if (n <= 0)
         {
@@ -193,51 +193,51 @@ public static class AudioDiagnostics
         // between sounds: that is not a stall of the guest's output, so it is counted apart and not logged
         if (idle)
         {
-            lock (p._lock)
+            lock (portStats._lock)
             {
-                p.IdleResumes++;
+                portStats.IdleResumes++;
             }
 
             return;
         }
-        Underrun(p, n);
+        Underrun(portStats, n);
     }
 
     /// <summary>The last output came after a pause much longer than the host queue holds (the guest stopped
     /// outputting and started again): the queue ran dry because the port was idle, not because output was late.</summary>
-    internal static bool ResumedAfterIdle(PortStats p) =>
-        p.LastGap > Math.Max(IdleGapSeconds, 4.0 * p.Grain / Math.Max(1, p.Freq));
+    internal static bool ResumedAfterIdle(PortStats portStats) =>
+        portStats.LastGap > Math.Max(IdleGapSeconds, 4.0 * portStats.Grain / Math.Max(1, portStats.Freq));
 
     /// <summary>Gap between two outputs from which a port counts as having been idle (no sound to play).</summary>
     private const double IdleGapSeconds = 0.25;
 
-    private static void Underrun(PortStats p, int n)
+    private static void Underrun(PortStats portStats, int n)
     {
         double now = Now;
         bool start;
         double sincePrev;
         long burst;
-        lock (p._lock)
+        lock (portStats._lock)
         {
-            p.Underruns += n;
-            p._iUnderruns += n;
-            start = !p._inBurst || now - p._burstLast > BurstQuietSeconds;
+            portStats.Underruns += n;
+            portStats._iUnderruns += n;
+            start = !portStats._inBurst || now - portStats._burstLast > BurstQuietSeconds;
             if (start)
             {
-                if (p._inBurst)
+                if (portStats._inBurst)
                 {
-                    EndBurstLocked(p);
+                    EndBurstLocked(portStats);
                 }
 
-                p._inBurst = true;
-                p._burstStart = now;
-                p._burstCount = 0;
-                p._burstNumber++;
+                portStats._inBurst = true;
+                portStats._burstStart = now;
+                portStats._burstCount = 0;
+                portStats._burstNumber++;
             }
-            p._burstCount += n;
-            p._burstLast = now;
-            sincePrev = p.LastGap;
-            burst = p._burstNumber;
+            portStats._burstCount += n;
+            portStats._burstLast = now;
+            sincePrev = portStats.LastGap;
+            burst = portStats._burstNumber;
         }
         if (!start)
         {
@@ -246,25 +246,25 @@ public static class AudioDiagnostics
         // one line per burst (debug mode: every burst; otherwise the 1st-3rd, 10th, 100th... burst)
         if (DebugMode.Enabled || DebugMode.ShouldLog((int)Math.Min(burst, int.MaxValue)))
         {
-            Log.Warn($"Audio: underrun burst #{burst} on {p.Name} at {Frame}: host queue ran dry, {sincePrev * 1000:F1} ms since the previous output " +
-                     $"(grain {p.Grain * 1000.0 / Math.Max(1, p.Freq):F1} ms), host queue {Pending(p)} samples");
+            Log.Warn($"Audio: underrun burst #{burst} on {portStats.Name} at {Frame}: host queue ran dry, {sincePrev * 1000:F1} ms since the previous output " +
+                     $"(grain {portStats.Grain * 1000.0 / Math.Max(1, portStats.Freq):F1} ms), host queue {Pending(portStats)} samples");
         }
     }
 
-    private static void EndBurstLocked(PortStats p)
+    private static void EndBurstLocked(PortStats portStats)
     {
-        p._inBurst = false;
+        portStats._inBurst = false;
         if (DebugMode.Enabled)
         {
-            Log.Info($"[dbg] {Frame} AUDIO underrun burst #{p._burstNumber} on {p.Name} ended: {p._burstCount} underruns over {(p._burstLast - p._burstStart) * 1000:F0} ms");
+            Log.Info($"[dbg] {Frame} AUDIO underrun burst #{portStats._burstNumber} on {portStats.Name} ended: {portStats._burstCount} underruns over {(portStats._burstLast - portStats._burstStart) * 1000:F0} ms");
         }
     }
 
-    private static int Pending(PortStats p)
+    private static int Pending(PortStats portStats)
     {
         try
         {
-            return p.Stream?.PendingSamples ?? 0;
+            return portStats.Stream?.PendingSamples ?? 0;
         }
         catch
         {
@@ -302,13 +302,13 @@ public static class AudioDiagnostics
         }
 
         double now = Now;
-        foreach (PortStats p in s_open.Keys)
+        foreach (PortStats portStats in s_open.Keys)
         {
-            lock (p._lock)
+            lock (portStats._lock)
             {
-                p._iOutputs = p._iSilent = p._iUnderruns = p._iGaps = 0;
-                p._iGapSum = p._iGapMax = 0;
-                p._iAt = now;
+                portStats._iOutputs = portStats._iSilent = portStats._iUnderruns = portStats._iGaps = 0;
+                portStats._iGapSum = portStats._iGapMax = 0;
+                portStats._iAt = now;
             }
         }
 
@@ -330,9 +330,9 @@ public static class AudioDiagnostics
             yield return "device " + dev;
         }
 
-        foreach (PortStats? p in s_open.Keys.OrderBy(p => p.Name))
+        foreach (PortStats? portStats in s_open.Keys.OrderBy(p => p.Name))
         {
-            yield return $"{p.Describe()}, host queue {Pending(p)} samples, {Totals(p)}";
+            yield return $"{portStats.Describe()}, host queue {Pending(portStats)} samples, {Totals(portStats)}";
         }
 
         foreach (KeyValuePair<string, string> s in s_streams.OrderBy(k => k.Key))
@@ -345,36 +345,36 @@ public static class AudioDiagnostics
     public static void Periodic()
     {
         double now = Now;
-        foreach (PortStats? p in s_open.Keys.OrderBy(p => p.Name))
+        foreach (PortStats? portStats in s_open.Keys.OrderBy(p => p.Name))
         {
             string line;
-            lock (p._lock)
+            lock (portStats._lock)
             {
-                if (p._inBurst && now - p._burstLast > BurstQuietSeconds)
+                if (portStats._inBurst && now - portStats._burstLast > BurstQuietSeconds)
                 {
-                    EndBurstLocked(p);
+                    EndBurstLocked(portStats);
                 }
 
-                double secs = Math.Max(0.001, now - p._iAt);
-                line = $"[dbg] {Frame} AUDIO {p.Name}: {p._iOutputs / secs:F1} outputs/s (expected {p.ExpectedPerSecond:F1}), " +
-                       $"gap avg {(p._iGaps > 0 ? p._iGapSum / p._iGaps * 1000 : 0):F2} ms max {p._iGapMax * 1000:F1} ms (grain {p.Grain * 1000.0 / Math.Max(1, p.Freq):F2} ms), " +
-                       $"host queue {Pending(p)} samples, underruns {p._iUnderruns}, silent {p._iSilent}/{p._iOutputs} over {secs:F1} s";
-                p._iOutputs = p._iSilent = p._iUnderruns = p._iGaps = 0;
-                p._iGapSum = p._iGapMax = 0;
-                p._iAt = now;
+                double secs = Math.Max(0.001, now - portStats._iAt);
+                line = $"[dbg] {Frame} AUDIO {portStats.Name}: {portStats._iOutputs / secs:F1} outputs/s (expected {portStats.ExpectedPerSecond:F1}), " +
+                       $"gap avg {(portStats._iGaps > 0 ? portStats._iGapSum / portStats._iGaps * 1000 : 0):F2} ms max {portStats._iGapMax * 1000:F1} ms (grain {portStats.Grain * 1000.0 / Math.Max(1, portStats.Freq):F2} ms), " +
+                       $"host queue {Pending(portStats)} samples, underruns {portStats._iUnderruns}, silent {portStats._iSilent}/{portStats._iOutputs} over {secs:F1} s";
+                portStats._iOutputs = portStats._iSilent = portStats._iUnderruns = portStats._iGaps = 0;
+                portStats._iGapSum = portStats._iGapMax = 0;
+                portStats._iAt = now;
             }
             Log.Info(line);
         }
     }
 
-    private static string Totals(PortStats p)
+    private static string Totals(PortStats portStats)
     {
-        double secs = Math.Max(0.001, (p.ClosedAt > 0 ? p.ClosedAt : Now) - p.OpenedAt);
-        double active = p.Gaps > 0 ? p.GapSum : 0;
-        return $"{p.Outputs} outputs in {secs:F1} s ({(p.Gaps >= 10 && active > 0 ? $"{p.Gaps / active:F1}" : "-")}/s while active, expected {p.ExpectedPerSecond:F1}), " +
-               $"gap avg {(p.Gaps > 0 ? p.GapSum / p.Gaps * 1000 : 0):F2} ms max {p.GapMax * 1000:F1} ms, " +
-               $"underruns {p.Underruns} ({p.Underruns / secs * 60:F1}/min) in {p._burstNumber} bursts, silent {p.Silent}" +
-               (p.IdleResumes > 0 ? $", {p.IdleResumes} starts after an idle pause (not underruns)" : "");
+        double secs = Math.Max(0.001, (portStats.ClosedAt > 0 ? portStats.ClosedAt : Now) - portStats.OpenedAt);
+        double active = portStats.Gaps > 0 ? portStats.GapSum : 0;
+        return $"{portStats.Outputs} outputs in {secs:F1} s ({(portStats.Gaps >= 10 && active > 0 ? $"{portStats.Gaps / active:F1}" : "-")}/s while active, expected {portStats.ExpectedPerSecond:F1}), " +
+               $"gap avg {(portStats.Gaps > 0 ? portStats.GapSum / portStats.Gaps * 1000 : 0):F2} ms max {portStats.GapMax * 1000:F1} ms, " +
+               $"underruns {portStats.Underruns} ({portStats.Underruns / secs * 60:F1}/min) in {portStats._burstNumber} bursts, silent {portStats.Silent}" +
+               (portStats.IdleResumes > 0 ? $", {portStats.IdleResumes} starts after an idle pause (not underruns)" : "");
     }
 
     /// <summary>End of session (always): device and every port of the session.</summary>
@@ -391,9 +391,9 @@ public static class AudioDiagnostics
             yield return "AUDIO summary: device " + dev;
         }
 
-        foreach (PortStats? p in all)
+        foreach (PortStats? portStats in all)
         {
-            yield return $"AUDIO summary: {p.Describe()}{(p.ClosedAt > 0 ? " (released)" : "")}: {Totals(p)}";
+            yield return $"AUDIO summary: {portStats.Describe()}{(portStats.ClosedAt > 0 ? " (released)" : "")}: {Totals(portStats)}";
         }
     }
 
@@ -404,7 +404,7 @@ public static class AudioDiagnostics
     public static List<string> StreamDescriptions() => s_streams.OrderBy(k => k.Key).Select(k => k.Value).ToList();
 
     /// <summary>Seconds since the port's last output (host time without pauses), -1 when it never output.</summary>
-    public static double SecondsSinceOutput(PortStats p) => p.LastOutput > 0 ? Now - p.LastOutput : -1;
+    public static double SecondsSinceOutput(PortStats portStats) => portStats.LastOutput > 0 ? Now - portStats.LastOutput : -1;
 
     /// <summary>audio.txt of a diagnostic capture.</summary>
     public static string Describe()

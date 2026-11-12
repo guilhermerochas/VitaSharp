@@ -19,15 +19,15 @@ internal static unsafe class VulkanCapabilityReport
     {
         var missing = new List<string>();
         object boxed = features;
-        foreach (FieldInfo f in typeof(T).GetFields())
+        foreach (FieldInfo fieldInfo in typeof(T).GetFields())
         {
-            if (f.FieldType != typeof(Bool32))
+            if (fieldInfo.FieldType != typeof(Bool32))
             {
                 continue;
             }
 
-            bool on = ((Bool32)f.GetValue(boxed)!).Value != 0;
-            string name = char.ToLowerInvariant(f.Name[0]) + f.Name[1..];
+            bool on = ((Bool32)fieldInfo.GetValue(boxed)!).Value != 0;
+            string name = char.ToLowerInvariant(fieldInfo.Name[0]) + fieldInfo.Name[1..];
             if (!on)
             {
                 missing.Add(name);
@@ -40,26 +40,26 @@ internal static unsafe class VulkanCapabilityReport
         return missing;
     }
 
-    public static List<string> Lines(in PhysicalDeviceProperties props, in PhysicalDeviceFeatures f10, in PhysicalDeviceVulkan11Features f11,
-        in PhysicalDeviceVulkan12Features f12, in PhysicalDeviceVulkan13Features f13, uint api, HashSet<string> exts, Func<Format, string> format, Func<Format, bool>? vertex = null)
+    public static List<string> Lines(in PhysicalDeviceProperties props, in PhysicalDeviceFeatures physicalDeviceFeatures, in PhysicalDeviceVulkan11Features physicalDeviceVulkan11Features,
+        in PhysicalDeviceVulkan12Features physicalDeviceVulkan12Features, in PhysicalDeviceVulkan13Features physicalDeviceVulkan13Features, uint api, HashSet<string> exts, Func<Format, string> format, Func<Format, bool>? vertex = null)
     {
-        var r = new List<string> { $"Vulkan 1.0 features missing: {Join(Missing(f10))}" };
+        var r = new List<string> { $"Vulkan 1.0 features missing: {Join(Missing(physicalDeviceFeatures))}" };
         if (api >= Vk.Version12)
         {
-            r.Add($"Vulkan 1.1 features missing: {Join(Missing(f11))}");
-            r.Add($"Vulkan 1.2 features missing: {Join(Missing(f12))}");
+            r.Add($"Vulkan 1.1 features missing: {Join(Missing(physicalDeviceVulkan11Features))}");
+            r.Add($"Vulkan 1.2 features missing: {Join(Missing(physicalDeviceVulkan12Features))}");
         }
         if (api >= Vk.Version13)
         {
-            r.Add($"Vulkan 1.3 features missing: {Join(Missing(f13))}");
+            r.Add($"Vulkan 1.3 features missing: {Join(Missing(physicalDeviceVulkan13Features))}");
         }
 
-        PhysicalDeviceLimits l = props.Limits;
-        r.Add($"Vulkan limits: maxClipDistances {l.MaxClipDistances}, vertex outputs {l.MaxVertexOutputComponents}, fragment inputs {l.MaxFragmentInputComponents}, " +
-                     $"colour attachments {l.MaxColorAttachments}, viewport {l.MaxViewportDimensions[0]}x{l.MaxViewportDimensions[1]}, max 2D {l.MaxImageDimension2D}, " +
-                     $"LOD bias {l.MaxSamplerLodBias}, anisotropy {l.MaxSamplerAnisotropy}, line width {l.LineWidthRange[0]}-{l.LineWidthRange[1]}, " +
-                     $"point size {l.PointSizeRange[0]}-{l.PointSizeRange[1]}, uniform buffer range {l.MaxUniformBufferRange}, storage buffer range {l.MaxStorageBufferRange}, " +
-                     $"min storage buffer alignment {l.MinStorageBufferOffsetAlignment}, push constants {l.MaxPushConstantsSize}, timestamp period {l.TimestampPeriod}");
+        PhysicalDeviceLimits physicalDeviceLimits = props.Limits;
+        r.Add($"Vulkan limits: maxClipDistances {physicalDeviceLimits.MaxClipDistances}, vertex outputs {physicalDeviceLimits.MaxVertexOutputComponents}, fragment inputs {physicalDeviceLimits.MaxFragmentInputComponents}, " +
+                     $"colour attachments {physicalDeviceLimits.MaxColorAttachments}, viewport {physicalDeviceLimits.MaxViewportDimensions[0]}x{physicalDeviceLimits.MaxViewportDimensions[1]}, max 2D {physicalDeviceLimits.MaxImageDimension2D}, " +
+                     $"LOD bias {physicalDeviceLimits.MaxSamplerLodBias}, anisotropy {physicalDeviceLimits.MaxSamplerAnisotropy}, line width {physicalDeviceLimits.LineWidthRange[0]}-{physicalDeviceLimits.LineWidthRange[1]}, " +
+                     $"point size {physicalDeviceLimits.PointSizeRange[0]}-{physicalDeviceLimits.PointSizeRange[1]}, uniform buffer range {physicalDeviceLimits.MaxUniformBufferRange}, storage buffer range {physicalDeviceLimits.MaxStorageBufferRange}, " +
+                     $"min storage buffer alignment {physicalDeviceLimits.MinStorageBufferOffsetAlignment}, push constants {physicalDeviceLimits.MaxPushConstantsSize}, timestamp period {physicalDeviceLimits.TimestampPeriod}");
         r.Add("Vulkan formats: " + string.Join(", ", new[]
         {
             Format.D24UnormS8Uint, Format.D32SfloatS8Uint, Format.D16Unorm, Format.R16G16B16A16Sfloat, Format.B10G11R11UfloatPack32,

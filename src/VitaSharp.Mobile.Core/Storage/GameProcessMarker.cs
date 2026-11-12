@@ -18,8 +18,8 @@ public static class GameProcessMarker
     {
         Directory.CreateDirectory(Path.GetDirectoryName(Path.GetFullPath(path))!);
         string tmp = path + ".tmp";
-        using (FileStream f = File.Create(tmp))
-        using (var w = new Utf8JsonWriter(f, new JsonWriterOptions { Indented = true }))
+        using (FileStream stream = File.Create(tmp))
+        using (var w = new Utf8JsonWriter(stream, new JsonWriterOptions { Indented = true }))
         {
             w.WriteStartObject();
             w.WriteNumber("pid", info.Pid);

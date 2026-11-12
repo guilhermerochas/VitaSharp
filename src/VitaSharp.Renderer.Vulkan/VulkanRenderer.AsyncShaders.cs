@@ -37,7 +37,7 @@ public sealed unsafe partial class VulkanRenderer
     private static readonly ThreadPriority s_workerPriority = Environment.GetEnvironmentVariable(EnvVars.ShaderWorkerPrio) == "below" ? ThreadPriority.BelowNormal : ThreadPriority.Normal;
 
     /// <summary>Environment overrides win over the options (launcher / command line).</summary>
-    private void ConfigureAsyncShaders(VulkanRendererOptions o)
+    private void ConfigureAsyncShaders(VulkanRendererOptions vulkanRendererOptions)
     {
         static bool? Flag(string name) => Environment.GetEnvironmentVariable(name)?.Trim().ToLowerInvariant() switch
         {
@@ -45,9 +45,9 @@ public sealed unsafe partial class VulkanRenderer
             "1" or "on" or "true" or "yes" => true,
             _ => null,
         };
-        _asyncShaders = Flag(EnvVars.AsyncShaders) ?? o.AsyncShaders;
-        _asyncPipelines = _asyncShaders && (Flag(EnvVars.AsyncPipelines) ?? o.AsyncPipelines);
-        int workers = int.TryParse(Environment.GetEnvironmentVariable(EnvVars.ShaderWorkers), out int n) && n > 0 ? n : o.ShaderWorkers;
+        _asyncShaders = Flag(EnvVars.AsyncShaders) ?? vulkanRendererOptions.AsyncShaders;
+        _asyncPipelines = _asyncShaders && (Flag(EnvVars.AsyncPipelines) ?? vulkanRendererOptions.AsyncPipelines);
+        int workers = int.TryParse(Environment.GetEnvironmentVariable(EnvVars.ShaderWorkers), out int n) && n > 0 ? n : vulkanRendererOptions.ShaderWorkers;
         _shaderWorkerCount = workers > 0 ? Math.Min(workers, 64) : Math.Clamp(Environment.ProcessorCount / 2, 1, 6);
         Log.Info($"[gpu] shaders: shaderc optimisation {_compiler.OptLevel}, background compilation "
             + (_asyncShaders ? $"on ({_shaderWorkerCount} workers, pipelines {(_asyncPipelines ? "on" : "off")})" : "off"));
@@ -116,16 +116,16 @@ public sealed unsafe partial class VulkanRenderer
             (ulong Hash, ulong hintKey) key = (program.Hash, hintKey);
             try
             {
-                ModuleEntry? e = r.LoadPackedShader(program.Hash, hintKey, program.IsVertex);
-                if (e == null)
+                ModuleEntry? moduleEntry = r.LoadPackedShader(program.Hash, hintKey, program.IsVertex);
+                if (moduleEntry == null)
                 {
-                    e = r.TranslateAndCompile(program, hintKey, hints, background: true);
+                    moduleEntry = r.TranslateAndCompile(program, hintKey, hints, background: true);
                     if (rebuild)
                     {
                         Interlocked.Increment(ref r._statRebuiltShaders);
                     }
                 }
-                _result = r.PublishModule(key, e);
+                _result = r.PublishModule(key, moduleEntry);
             }
             catch (Exception ex)
             {
@@ -191,28 +191,28 @@ public sealed unsafe partial class VulkanRenderer
                         return;
                     }
 
-                    GxmVertexProgram vp = d.VertexProgram;
+                    GxmVertexProgram gxmVertexProgram = d.VertexProgram;
                     uint vmask = VertexVaryingMask(d);
-                    ulong vk = HintKey(d.VertexTextures, vp.Info.TexturesUsed, vp.Attributes, vp.Streams, 0, varyingMask: vmask, scaledPointSize: vp.Info.Program.WritesPointSize);
-                    if (NeedsJob(vp.Info.Program, vk))
+                    ulong vk = HintKey(d.VertexTextures, gxmVertexProgram.Info.TexturesUsed, gxmVertexProgram.Attributes, gxmVertexProgram.Streams, 0, varyingMask: vmask, scaledPointSize: gxmVertexProgram.Info.Program.WritesPointSize);
+                    if (NeedsJob(gxmVertexProgram.Info.Program, vk))
                     {
-                        Queue(vp.Info.Program, vk, VertexHints(d, vmask));
+                        Queue(gxmVertexProgram.Info.Program, vk, VertexHints(d, vmask));
                     }
                     else
                     {
-                        PromoteRebuildJob(vp.Info.Program.Hash, vk);
+                        PromoteRebuildJob(gxmVertexProgram.Info.Program.Hash, vk);
                     }
 
-                    GxmFragmentProgram fp = d.FragmentProgram;
+                    GxmFragmentProgram gxmFragmentProgram = d.FragmentProgram;
                     uint cf = _prefetchColorFormat;
-                    ulong fk = HintKey(d.FragmentTextures, fp.Info.TexturesUsed, null, null, cf, outputFormat: NativeOutputFormat(fp));
-                    if (NeedsJob(fp.Info.Program, fk))
+                    ulong fk = HintKey(d.FragmentTextures, gxmFragmentProgram.Info.TexturesUsed, null, null, cf, outputFormat: NativeOutputFormat(gxmFragmentProgram));
+                    if (NeedsJob(gxmFragmentProgram.Info.Program, fk))
                     {
-                        Queue(fp.Info.Program, fk, FragmentHints(d, cf));
+                        Queue(gxmFragmentProgram.Info.Program, fk, FragmentHints(d, cf));
                     }
                     else
                     {
-                        PromoteRebuildJob(fp.Info.Program.Hash, fk);
+                        PromoteRebuildJob(gxmFragmentProgram.Info.Program.Hash, fk);
                     }
 
                     if (_asyncPipelines)
@@ -244,9 +244,9 @@ public sealed unsafe partial class VulkanRenderer
     private readonly ConcurrentDictionary<PipelineKey, ManualResetEventSlim> _pipelineInflight = new();
     private int _statPipelinesPrefetched, _statPipelineWaits;
 
-    private void PredictScene(BeginSceneCommand b)
+    private void PredictScene(BeginSceneCommand beginSceneCommand)
     {
-        if (b.Color is not { } c)
+        if (beginSceneCommand.Color is not { } c)
         {
             _prefetchScene = s_noColorScene;
             return;
@@ -256,14 +256,14 @@ public sealed unsafe partial class VulkanRenderer
         Format srgb = Formats.Srgb(f);
         Format attach = c.GammaMode != 0 && srgb != f && _core.SupportsColorAttachment(srgb) ? srgb : f;
         SampleCountFlags samples = SampleCountFlags.Count1Bit;
-        if (b.Multisample != 0 && c.Downscale && _msaaSetting == MsaaEmulation.Native)
+        if (beginSceneCommand.Multisample != 0 && c.Downscale && _msaaSetting == MsaaEmulation.Native)
         {
-            SampleCountFlags s = GxmSamples(b.Multisample);
-            bool ok = _msOkPrefetch.GetOrAdd(((ulong)f, (ulong)s), _ =>
-                (_core.ImageSampleCounts(f, MsaaImageUsage) & s) != 0 && (_core.Properties.Limits.FramebufferColorSampleCounts & s) != 0);
+            SampleCountFlags sampleCountFlags = GxmSamples(beginSceneCommand.Multisample);
+            bool ok = _msOkPrefetch.GetOrAdd(((ulong)f, (ulong)sampleCountFlags), _ =>
+                (_core.ImageSampleCounts(f, MsaaImageUsage) & sampleCountFlags) != 0 && (_core.Properties.Limits.FramebufferColorSampleCounts & sampleCountFlags) != 0);
             if (ok)
             {
-                samples = s;
+                samples = sampleCountFlags;
             }
         }
         _prefetchScene = new PredictedScene(true, f, attach, samples);
@@ -272,18 +272,18 @@ public sealed unsafe partial class VulkanRenderer
     private void PrefetchPipeline(DrawCommand d, ulong vk, ulong fk, uint colorFormat)
     {
         PredictedScene scene = _prefetchScene;
-        DrawState st = d.State;
+        DrawState drawState = d.State;
         GxmBlendInfo? blend = d.FragmentProgram.Blend;
-        GxmVertexProgram vp = d.VertexProgram;
+        GxmVertexProgram gxmVertexProgram = d.VertexProgram;
         // one job per distinct draw signature (everything the pipeline key is derived from)
         ulong sig = ShaderHints.Fnv.Mix(ShaderHints.Fnv.Mix(vk, (uint)fk), (uint)(fk >> 32));
-        sig = ShaderHints.Fnv.Mix(sig, (uint)System.Runtime.CompilerServices.RuntimeHelpers.GetHashCode(vp));
+        sig = ShaderHints.Fnv.Mix(sig, (uint)System.Runtime.CompilerServices.RuntimeHelpers.GetHashCode(gxmVertexProgram));
         sig = ShaderHints.Fnv.Mix(sig, (uint)scene.Attach | (uint)scene.Samples << 24 | (scene.HasColor ? 1u << 31 : 0));
         sig = ShaderHints.Fnv.Mix(sig, blend is { } bl ? (uint)(bl.ColorMask | bl.ColorFunc << 4 | bl.AlphaFunc << 8 | bl.ColorSrc << 12 | bl.ColorDst << 16 | bl.AlphaSrc << 20 | bl.AlphaDst << 24) | 1u << 31 : 0);
-        sig = ShaderHints.Fnv.Mix(sig, (uint)(d.PrimitiveType | st.Front.PolygonMode << 8 | (st.Front.FragmentEnabled ? 1 << 16 : 0)));
-        sig = ShaderHints.Fnv.Mix(sig, (uint)(vp.Info.Program.Hash ^ d.FragmentProgram.Info.Program.Hash));
+        sig = ShaderHints.Fnv.Mix(sig, (uint)(d.PrimitiveType | drawState.Front.PolygonMode << 8 | (drawState.Front.FragmentEnabled ? 1 << 16 : 0)));
+        sig = ShaderHints.Fnv.Mix(sig, (uint)(gxmVertexProgram.Info.Program.Hash ^ d.FragmentProgram.Info.Program.Hash));
         // static-state pipelines (driver quirk) also depend on the draw's depth/stencil/cull state
-        ulong staticKey = StaticStateKey(in st, Formats.Topology(d.PrimitiveType));
+        ulong staticKey = StaticStateKey(in drawState, Formats.Topology(d.PrimitiveType));
         if (staticKey != 0)
         {
             sig = ShaderHints.Fnv.Mix(ShaderHints.Fnv.Mix(sig, (uint)staticKey), (uint)(staticKey >> 32));
@@ -295,10 +295,10 @@ public sealed unsafe partial class VulkanRenderer
         }
 
         bool ms = scene.Samples != SampleCountFlags.Count1Bit;
-        var job = new PipelineJob(vp, vk, d.FragmentProgram.Info.Program, fk,
+        var job = new PipelineJob(gxmVertexProgram, vk, d.FragmentProgram.Info.Program, fk,
             ms ? HintKey(d.FragmentTextures, d.FragmentProgram.Info.TexturesUsed, null, null, colorFormat, true, NativeOutputFormat(d.FragmentProgram)) : 0,
             ms ? FragmentHintsInputFetch(d, colorFormat) : null,
-            scene, blend, st.Front.FragmentEnabled, d.PrimitiveType, st.Front.PolygonMode, staticKey);
+            scene, blend, drawState.Front.FragmentEnabled, d.PrimitiveType, drawState.Front.PolygonMode, staticKey);
         if (!EnsureShaderWorkers())
         {
             return;
@@ -314,12 +314,12 @@ public sealed unsafe partial class VulkanRenderer
         PredictedScene Scene, GxmBlendInfo? Blend, bool FragEnabled, byte PrimitiveType, byte PolygonMode, ulong Static);
 
     /// <summary>Module of a prefetched key: ready, in flight (wait / run it), or null when the shader job is gone.</summary>
-    private ModuleEntry? ModuleFor(GxpProgram p, ulong hk, ShaderHints? hints)
+    private ModuleEntry? ModuleFor(GxpProgram gxpProgram, ulong hk, ShaderHints? hints)
     {
-        (ulong Hash, ulong hk) key = (p.Hash, hk);
-        if (_modules.TryGetValue(key, out ModuleEntry? e))
+        (ulong Hash, ulong hk) key = (gxpProgram.Hash, hk);
+        if (_modules.TryGetValue(key, out ModuleEntry? moduleEntry))
         {
-            return e;
+            return moduleEntry;
         }
 
         if (_inflight.TryGetValue(key, out ShaderJob? job))
@@ -327,9 +327,9 @@ public sealed unsafe partial class VulkanRenderer
             return job.RunOrWait(this);
         }
 
-        if (_modules.TryGetValue(key, out e))
+        if (_modules.TryGetValue(key, out moduleEntry))
         {
-            return e;
+            return moduleEntry;
         }
 
         if (hints == null || _stopShaderJobs)
@@ -337,8 +337,8 @@ public sealed unsafe partial class VulkanRenderer
             return null;
         }
 
-        var j = new ShaderJob(p, hk, hints);
-        return _inflight.TryAdd(key, j) ? j.RunOrWait(this) : ModuleFor(p, hk, null);
+        var j = new ShaderJob(gxpProgram, hk, hints);
+        return _inflight.TryAdd(key, j) ? j.RunOrWait(this) : ModuleFor(gxpProgram, hk, null);
     }
 
     private void RunPipelineJob(PipelineJob j)
@@ -350,8 +350,8 @@ public sealed unsafe partial class VulkanRenderer
             return;
         }
 
-        PredictedScene s = j.Scene;
-        bool ms = s.Samples != SampleCountFlags.Count1Bit;
+        PredictedScene predictedScene = j.Scene;
+        bool ms = predictedScene.Samples != SampleCountFlags.Count1Bit;
         ulong fsKey = j.Fk;
         if (fsM.Gen.UsesFragColor && ms && s_msaaInputFetch && fsM.Gen.RawColorBits == 0)
         {
@@ -362,7 +362,7 @@ public sealed unsafe partial class VulkanRenderer
                 return;
             }
         }
-        if (fsM.Gen.RawColorBits != 0 && s.HasColor)
+        if (fsM.Gen.RawColorBits != 0 && predictedScene.HasColor)
         {
             return; // integer views: left to the GPU thread
         }
@@ -373,9 +373,9 @@ public sealed unsafe partial class VulkanRenderer
         PrimitiveTopology topology = Formats.Topology(j.PrimitiveType);
         byte mask = !j.FragEnabled || j.Fs.IsOutputUndefined ? (byte)0 : j.Blend?.ColorMask ?? 0xF; // see Draw
         bool blendOn = j.Blend is { } bi && !fsM.Gen.UsesFragColor && !(bi.ColorFunc == 0 && bi.AlphaFunc == 0) && !(bi.ColorSrc == 1 && bi.ColorDst == 0 && bi.AlphaSrc == 1 && bi.AlphaDst == 0);
-        var key = new PipelineKey(vs.Module.Handle, fs.Module.Handle, vs.LayoutHash, s.Attach, s.HasColor,
+        var key = new PipelineKey(vs.Module.Handle, fs.Module.Handle, vs.LayoutHash, predictedScene.Attach, predictedScene.HasColor,
             blendOn, j.Blend?.ColorFunc ?? 0, j.Blend?.AlphaFunc ?? 0, j.Blend?.ColorSrc ?? 1, j.Blend?.ColorDst ?? 0, j.Blend?.AlphaSrc ?? 1, j.Blend?.AlphaDst ?? 0,
-            mask, TopologyClass(topology), Formats.Polygon(j.PolygonMode), s.Samples, j.Static);
+            mask, TopologyClass(topology), Formats.Polygon(j.PolygonMode), predictedScene.Samples, j.Static);
         // (recorded in pipelines.list when the GPU thread first uses it, not here: a misprediction is never recorded)
         if (BuildSharedPipeline(key, vs, fs.Module, topology) == SharedBuild.Built)
         {
@@ -439,13 +439,13 @@ public sealed unsafe partial class VulkanRenderer
     private bool WaitPrefetchedPipeline(in PipelineKey key, out Pipeline p)
     {
         p = default;
-        if (!_pipelineInflight.TryGetValue(key, out ManualResetEventSlim? ev))
+        if (!_pipelineInflight.TryGetValue(key, out ManualResetEventSlim? manualResetEventSlim))
         {
             return false;
         }
 
         long t0 = FrameLedger.Now();
-        ev.Wait();
+        manualResetEventSlim.Wait();
         long dt = FrameLedger.Now() - t0;
         FrameLedger.Add(FrameLedger.Cat.ShaderWait, dt);
         _statPipelineWaits++;
@@ -454,12 +454,12 @@ public sealed unsafe partial class VulkanRenderer
         return _sharedPipelines.TryGetValue(key, out p);
     }
 
-    private bool NeedsJob(GxpProgram p, ulong hk) => !_modules.ContainsKey((p.Hash, hk)) && !_inflight.ContainsKey((p.Hash, hk));
+    private bool NeedsJob(GxpProgram gxpProgram, ulong hk) => !_modules.ContainsKey((gxpProgram.Hash, hk)) && !_inflight.ContainsKey((gxpProgram.Hash, hk));
 
-    private void Queue(GxpProgram p, ulong hk, ShaderHints hints)
+    private void Queue(GxpProgram gxpProgram, ulong hk, ShaderHints hints)
     {
-        var job = new ShaderJob(p, hk, hints);
-        if (!_inflight.TryAdd((p.Hash, hk), job))
+        var job = new ShaderJob(gxpProgram, hk, hints);
+        if (!_inflight.TryAdd((gxpProgram.Hash, hk), job))
         {
             return;
         }
@@ -519,26 +519,26 @@ public sealed unsafe partial class VulkanRenderer
         while (true)
         {
             // shader jobs first: pipeline jobs need their modules
-            if (_shaderJobs.TryDequeue(out ShaderJob? sj))
+            if (_shaderJobs.TryDequeue(out ShaderJob? shaderJob))
             {
                 if (_stopShaderJobs || _deviceLost)
                 {
-                    sj.Cancel(this);
+                    shaderJob.Cancel(this);
                 }
                 else
                 {
-                    sj.TryRun(this);
+                    shaderJob.TryRun(this);
                 }
 
                 continue;
             }
-            if (_pipelineJobs.TryDequeue(out PipelineJob? pj))
+            if (_pipelineJobs.TryDequeue(out PipelineJob? pipelineJob))
             {
                 if (!_stopShaderJobs && !_deviceLost)
                 {
                     try
                     {
-                        RunPipelineJob(pj);
+                        RunPipelineJob(pipelineJob);
                     }
                     catch (Exception e)
                     {
@@ -598,9 +598,9 @@ public sealed unsafe partial class VulkanRenderer
                 t.Join();
             }
         }
-        while (_shaderJobs.TryDequeue(out ShaderJob? sj))
+        while (_shaderJobs.TryDequeue(out ShaderJob? shaderJob))
         {
-            sj.Cancel(this);
+            shaderJob.Cancel(this);
         }
 
         _pipelineJobs.Clear();

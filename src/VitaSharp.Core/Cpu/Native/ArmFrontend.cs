@@ -13,7 +13,7 @@ namespace VitaSharp.Core.Cpu.Native;
 /// </summary>
 public sealed unsafe partial class ArmFrontend
 {
-    private IrBuilder _b = null!;
+    private IrBuilder _builder = null!;
     private bool _thumb;
     private readonly Func<VecKind, uint, bool> _supportsVec;
     private readonly bool _tinyCheck;
@@ -85,20 +85,20 @@ public sealed unsafe partial class ArmFrontend
     {
         if (!_reuseIr)
         {
-            _b = new IrBuilder(block.Start, block.Thumb);
+            _builder = new IrBuilder(block.Start, block.Thumb);
         }
         else if (_reused == null)
         {
-            _b = _reused = new IrBuilder(block.Start, block.Thumb);
+            _builder = _reused = new IrBuilder(block.Start, block.Thumb);
         }
         else
         {
             _reused.Reset(block.Start, block.Thumb);
-            _b = _reused;
+            _builder = _reused;
         }
         _thumb = block.Thumb;
-        _b.DynamicExitOperands = DynamicExitOperands;
-        IrBlock ir = _b.Block;
+        _builder.DynamicExitOperands = DynamicExitOperands;
+        IrBlock ir = _builder.Block;
         int segments = chain?.Count ?? 1;
         long cycles = 0;
         int guest = 0;
@@ -115,14 +115,14 @@ public sealed unsafe partial class ArmFrontend
                 bool last = i == insts.Length - 1;
                 if (d.EndsBlock || last)
                 {
-                    _b.SetReg(15, _b.Const(d.Address + d.Size));
+                    _builder.SetReg(15, _builder.Const(d.Address + d.Size));
                 }
 
                 if (d.Op is Op.Thumb_It or Op.A32_Nop or Op.T16_Nop or Op.T32_Nop)
                 {
                     if (last && !more)
                     {
-                        _b.Exit();
+                        _builder.Exit();
                         terminated = true;
                     }
                     continue;
@@ -131,7 +131,7 @@ public sealed unsafe partial class ArmFrontend
                 bool cond = (d.Flags & InstFlags.Conditional) != 0;
                 if (cond)
                 {
-                    _b.BeginCond(d.Cond, defer: DeferRegions && !d.EndsBlock && !last);
+                    _builder.BeginCond(d.Cond, defer: DeferRegions && !d.EndsBlock && !last);
                 }
 
                 bool exitNow = Translate(d);
@@ -144,23 +144,23 @@ public sealed unsafe partial class ArmFrontend
                         // superblock: the taken path exits, the other one continues into the next block
                         if (cond)
                         {
-                            _b.Exit();
-                            _b.EndRegion(terminated: true);
+                            _builder.Exit();
+                            _builder.EndRegion(terminated: true);
                         }
                         break;
                     }
-                    _b.Exit(neverLink: exitNow);
+                    _builder.Exit(neverLink: exitNow);
                     if (cond)
                     {
-                        _b.EndRegion(terminated: true);
-                        _b.Exit(); // condition failed: fall through to the next address (R15 was set before the region)
+                        _builder.EndRegion(terminated: true);
+                        _builder.Exit(); // condition failed: fall through to the next address (R15 was set before the region)
                     }
                     terminated = true;
                     break;
                 }
                 if (cond)
                 {
-                    _b.EndRegion(terminated: false);
+                    _builder.EndRegion(terminated: false);
                 }
             }
             cycles += seg.Cycles;
@@ -180,7 +180,7 @@ public sealed unsafe partial class ArmFrontend
         }
         if (!terminated)
         {
-            _b.Exit();
+            _builder.Exit();
         }
 
         if (chain != null)
@@ -201,10 +201,10 @@ public sealed unsafe partial class ArmFrontend
 
     // ------------------------------------------------------------------ helpers
 
-    private IrBuilder B => _b;
-    private int C(uint v) => _b.Const(v);
-    private int Reg(uint r) => _b.Reg((int)r);
-    private void SetReg(uint r, int v) => _b.SetReg((int)r, v);
+    private IrBuilder B => _builder;
+    private int C(uint v) => _builder.Const(v);
+    private int Reg(uint r) => _builder.Reg((int)r);
+    private void SetReg(uint r, int v) => _builder.SetReg((int)r, v);
 
     /// <summary>Register operand as the handlers read it: PC reads as the address plus 8 (ARM) or 4 (Thumb).</summary>
     private int Rg(uint n, in DecodedInst d) => n == 15 ? C(d.Address + (_thumb ? 4u : 8u)) : Reg(n);

@@ -17,43 +17,43 @@ public sealed record ShaderRecipe(ulong ProgramHash, ulong HintKey, bool Vertex,
 
     public byte[] Encode()
     {
-        ShaderHints h = Hints;
-        bool mask = h.VaryingMask != 0, outFmt = h.OutputRegisterFormat != 0 || mask;
-        byte[] buf = new byte[1 + 1 + 16 + 1 + h.TextureFormats.Length * 4 + 2 + h.Attributes.Length * 9 + 4 + 1 + (outFmt ? 4 : 0) + (mask ? 4 : 0)];
+        ShaderHints shaderHints = Hints;
+        bool mask = shaderHints.VaryingMask != 0, outFmt = shaderHints.OutputRegisterFormat != 0 || mask;
+        byte[] buf = new byte[1 + 1 + 16 + 1 + shaderHints.TextureFormats.Length * 4 + 2 + shaderHints.Attributes.Length * 9 + 4 + 1 + (outFmt ? 4 : 0) + (mask ? 4 : 0)];
         Span<byte> s = buf.AsSpan();
         s[0] = mask ? TagVaryingMask : outFmt ? TagOutputFormat : Tag;
         s[1] = Vertex ? (byte)1 : (byte)0;
         BinaryPrimitives.WriteUInt64LittleEndian(s[2..], ProgramHash);
         BinaryPrimitives.WriteUInt64LittleEndian(s[10..], HintKey);
         int o = 18;
-        s[o++] = checked((byte)h.TextureFormats.Length);
-        foreach (uint t in h.TextureFormats)
+        s[o++] = checked((byte)shaderHints.TextureFormats.Length);
+        foreach (uint t in shaderHints.TextureFormats)
         {
             BinaryPrimitives.WriteUInt32LittleEndian(s[o..], t);
             o += 4;
         }
-        BinaryPrimitives.WriteUInt16LittleEndian(s[o..], checked((ushort)h.Attributes.Length));
+        BinaryPrimitives.WriteUInt16LittleEndian(s[o..], checked((ushort)shaderHints.Attributes.Length));
         o += 2;
-        foreach ((uint RegIndex, int ComponentCount, byte Format) a in h.Attributes)
+        foreach ((uint RegIndex, int ComponentCount, byte Format) a in shaderHints.Attributes)
         {
             BinaryPrimitives.WriteUInt32LittleEndian(s[o..], a.RegIndex);
             BinaryPrimitives.WriteInt32LittleEndian(s[(o + 4)..], a.ComponentCount);
             s[o + 8] = a.Format;
             o += 9;
         }
-        BinaryPrimitives.WriteUInt32LittleEndian(s[o..], h.ColorFormat);
+        BinaryPrimitives.WriteUInt32LittleEndian(s[o..], shaderHints.ColorFormat);
         o += 4;
         // fetch flag byte: bit 0 FetchInputAttachment, bit 1 TileWord1, bit 2 FetchInputSingleSample, bit 3 ScaledPointSize
         // (records without the latter three are unchanged)
-        s[o++] = (byte)((h.FetchInputAttachment ? 1 : 0) | (h.TileWord1 ? 2 : 0) | (h.FetchInputSingleSample ? 4 : 0) | (h.ScaledPointSize ? 8 : 0));
+        s[o++] = (byte)((shaderHints.FetchInputAttachment ? 1 : 0) | (shaderHints.TileWord1 ? 2 : 0) | (shaderHints.FetchInputSingleSample ? 4 : 0) | (shaderHints.ScaledPointSize ? 8 : 0));
         if (outFmt)
         {
-            BinaryPrimitives.WriteUInt32LittleEndian(s[o..], h.OutputRegisterFormat);
+            BinaryPrimitives.WriteUInt32LittleEndian(s[o..], shaderHints.OutputRegisterFormat);
         }
 
         if (mask)
         {
-            BinaryPrimitives.WriteUInt32LittleEndian(s[(o + 4)..], h.VaryingMask);
+            BinaryPrimitives.WriteUInt32LittleEndian(s[(o + 4)..], shaderHints.VaryingMask);
         }
 
         return buf;
@@ -172,19 +172,19 @@ public sealed record PipelineRecipe(ulong VsHash, ulong VsHint, ulong FsHash, ul
         BinaryPrimitives.WriteUInt16LittleEndian(s[49..], checked((ushort)Attributes.Length));
         BinaryPrimitives.WriteUInt16LittleEndian(s[51..], checked((ushort)Streams.Length));
         int o = HeadSize;
-        foreach (GxmVertexAttribute a in Attributes)
+        foreach (GxmVertexAttribute gxmVertexAttribute in Attributes)
         {
-            BinaryPrimitives.WriteUInt16LittleEndian(s[o..], a.StreamIndex);
-            BinaryPrimitives.WriteUInt16LittleEndian(s[(o + 2)..], a.Offset);
-            s[o + 4] = a.Format;
-            s[o + 5] = a.ComponentCount;
-            BinaryPrimitives.WriteUInt16LittleEndian(s[(o + 6)..], a.RegIndex);
+            BinaryPrimitives.WriteUInt16LittleEndian(s[o..], gxmVertexAttribute.StreamIndex);
+            BinaryPrimitives.WriteUInt16LittleEndian(s[(o + 2)..], gxmVertexAttribute.Offset);
+            s[o + 4] = gxmVertexAttribute.Format;
+            s[o + 5] = gxmVertexAttribute.ComponentCount;
+            BinaryPrimitives.WriteUInt16LittleEndian(s[(o + 6)..], gxmVertexAttribute.RegIndex);
             o += 8;
         }
-        foreach (GxmVertexStream st in Streams)
+        foreach (GxmVertexStream gxmVertexStream in Streams)
         {
-            BinaryPrimitives.WriteUInt16LittleEndian(s[o..], st.Stride);
-            BinaryPrimitives.WriteUInt16LittleEndian(s[(o + 2)..], st.IndexSource);
+            BinaryPrimitives.WriteUInt16LittleEndian(s[o..], gxmVertexStream.Stride);
+            BinaryPrimitives.WriteUInt16LittleEndian(s[(o + 2)..], gxmVertexStream.IndexSource);
             o += 4;
         }
         return buf;

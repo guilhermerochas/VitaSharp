@@ -94,11 +94,11 @@ public sealed unsafe partial class GuestThread
 
         if ((_hleSeq & 1) == 1 && (Status == ThreadStatus.Waiting || BlockedInHost))
         {
-            HleFunction f = _emu.Hle.GetFunction(Core.State->SvcImm);
+            HleFunction hleFunction = _emu.Hle.GetFunction(Core.State->SvcImm);
             // a condition wait that was signalled and now waits for its mutex: reissuing it would wait for a new signal
-            if (CurrentWaitSync is Mutex && f.Name.Contains("Cond", StringComparison.Ordinal))
+            if (CurrentWaitSync is Mutex && hleFunction.Name.Contains("Cond", StringComparison.Ordinal))
             {
-                return $"thread '{Name}' is taking back a mutex in {f.Name}";
+                return $"thread '{Name}' is taking back a mutex in {hleFunction.Name}";
             }
 
             kind = SafeKind.Reissue;

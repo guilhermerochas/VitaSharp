@@ -32,7 +32,7 @@ public static class AndroidMotionModes
         _ => phoneHasSensors ? AndroidMotionMode.Phone : AndroidMotionMode.Controller,
     };
 
-    public static string Label(AndroidMotionMode m) => m switch
+    public static string Label(AndroidMotionMode androidMotionMode) => androidMotionMode switch
     {
         AndroidMotionMode.Phone => Loc.Get("MPhoneSensors"),
         AndroidMotionMode.Controller => Loc.Get("MControllerGyro"),
@@ -106,8 +106,8 @@ public static class AndroidMotionAxes
     }
 
     /// <summary>A sample with the re-centre rotation applied to both vectors (a constant rotation of the body frame).</summary>
-    public static MotionSample Rotate(MotionSample s, Quaternion q) => q.IsIdentity ? s
-        : new MotionSample(s.TimestampUs, Vector3.Transform(s.Acceleration, q), Vector3.Transform(s.AngularVelocity, q));
+    public static MotionSample Rotate(MotionSample motionSample, Quaternion quaternion) => quaternion.IsIdentity ? motionSample
+        : new MotionSample(motionSample.TimestampUs, Vector3.Transform(motionSample.Acceleration, quaternion), Vector3.Transform(motionSample.AngularVelocity, quaternion));
 }
 
 /// <summary>Which frame a <see cref="SensorMotionSource"/>'s raw vectors are in.</summary>
@@ -197,8 +197,8 @@ public sealed class SensorMotionSource : IMotionSource
                 return;
             }
 
-            MotionSample s = Map((ulong)Math.Max(0, timestampNs / 1000), _accel, rads);
-            _ring[_head] = AndroidMotionAxes.Rotate(s, _recentre);
+            MotionSample motionSample = Map((ulong)Math.Max(0, timestampNs / 1000), _accel, rads);
+            _ring[_head] = AndroidMotionAxes.Rotate(motionSample, _recentre);
             _head = (_head + 1) % Capacity;
             if (_count < Capacity)
             {

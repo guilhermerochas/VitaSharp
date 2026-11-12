@@ -208,9 +208,9 @@ public static class FramesFile
         s.Write(v);
     }
 
-    public static void WriteRecord(Stream s, in PresentInfo p, byte flags, ReadOnlySpan<byte> qoi)
+    public static void WriteRecord(Stream s, in PresentInfo presentInfo, byte flags, ReadOnlySpan<byte> qoi)
     {
-        byte[] hitch = Encoding.UTF8.GetBytes(p.Hitch ?? "");
+        byte[] hitch = Encoding.UTF8.GetBytes(presentInfo.Hitch ?? "");
         if (hitch.Length > 255)
         {
             Array.Resize(ref hitch, 255);
@@ -240,22 +240,22 @@ public static class FramesFile
             o += 4;
         }
         I32(len);
-        I64(p.Present);
-        I64(p.Flip);
-        I64(p.VBlank);
-        I64(p.GuestUs);
-        I64(p.FlipNs);
-        I64(p.PresentNs);
-        F32(p.IntervalMs);
-        F32(p.GpuMs);
-        F32(p.HitchMs);
-        I32(p.Draws);
-        I32(p.Scenes);
-        I32(p.NewShaders);
-        I32(p.NewPipelines);
-        U32(p.Address);
-        U32(p.SrcW);
-        U32(p.SrcH);
+        I64(presentInfo.Present);
+        I64(presentInfo.Flip);
+        I64(presentInfo.VBlank);
+        I64(presentInfo.GuestUs);
+        I64(presentInfo.FlipNs);
+        I64(presentInfo.PresentNs);
+        F32(presentInfo.IntervalMs);
+        F32(presentInfo.GpuMs);
+        F32(presentInfo.HitchMs);
+        I32(presentInfo.Draws);
+        I32(presentInfo.Scenes);
+        I32(presentInfo.NewShaders);
+        I32(presentInfo.NewPipelines);
+        U32(presentInfo.Address);
+        U32(presentInfo.SrcW);
+        U32(presentInfo.SrcH);
         b[o++] = flags;
         b[o++] = (byte)hitch.Length;
         hitch.CopyTo(b, o);

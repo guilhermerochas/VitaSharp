@@ -68,19 +68,19 @@ public static class TrophySound
 
     /// <summary>The sound as interleaved 16-bit samples at <paramref name="rate"/> with <paramref name="channels"/>
     /// channels (linear interpolation; mono is copied to every channel, extra channels are dropped or averaged).</summary>
-    public static short[] Convert(PcmSound pcm, int rate, int channels)
+    public static short[] Convert(PcmSound pcmSound, int rate, int channels)
     {
-        int inCh = Math.Max(1, pcm.Channels), inFrames = pcm.Samples.Length / inCh;
+        int inCh = Math.Max(1, pcmSound.Channels), inFrames = pcmSound.Samples.Length / inCh;
         if (inFrames == 0 || rate <= 0 || channels <= 0)
         {
             return [];
         }
 
-        double Frame(int i, int c) => inCh == 1 ? pcm.Samples[i] : channels == 1 ? (pcm.Samples[i * inCh] + pcm.Samples[i * inCh + 1]) / 2.0
-            : pcm.Samples[i * inCh + Math.Min(c, inCh - 1)];
-        long outFrames = (long)inFrames * rate / Math.Max(1, pcm.SampleRate);
+        double Frame(int i, int c) => inCh == 1 ? pcmSound.Samples[i] : channels == 1 ? (pcmSound.Samples[i * inCh] + pcmSound.Samples[i * inCh + 1]) / 2.0
+            : pcmSound.Samples[i * inCh + Math.Min(c, inCh - 1)];
+        long outFrames = (long)inFrames * rate / Math.Max(1, pcmSound.SampleRate);
         short[] o = new short[outFrames * channels];
-        double step = pcm.SampleRate / (double)rate;
+        double step = pcmSound.SampleRate / (double)rate;
         for (long f = 0; f < outFrames; f++)
         {
             double pos = f * step;

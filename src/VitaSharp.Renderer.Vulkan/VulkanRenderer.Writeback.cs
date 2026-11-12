@@ -336,9 +336,9 @@ public sealed unsafe partial class VulkanRenderer
                 continue;
             }
 
-            foreach (RtWriteback wb in f.Writebacks)
+            foreach (RtWriteback rtWriteback in f.Writebacks)
             {
-                if (wb.Address < hi && wb.Address + (ulong)wb.GuestStride * wb.Rows > lo)
+                if (rtWriteback.Address < hi && rtWriteback.Address + (ulong)rtWriteback.GuestStride * rtWriteback.Rows > lo)
                 {
                     newest = f;
                     newestOrder = order;
@@ -361,20 +361,20 @@ public sealed unsafe partial class VulkanRenderer
         }
 
         _writebackPoolUsed[size] = FrameCount;
-        RtWriteback? wb = pool.Count > 0 ? pool.Pop() : null;
-        if (wb == null)
+        RtWriteback? rtWriteback = pool.Count > 0 ? pool.Pop() : null;
+        if (rtWriteback == null)
         {
-            wb = new RtWriteback { Size = size };
-            (wb.Buffer, wb.Memory, wb.Ptr) = _core.CreateReadbackBuffer(size, BufferUsageFlags.TransferDstBit, MemCat.Readback, out wb.Coherent);
+            rtWriteback = new RtWriteback { Size = size };
+            (rtWriteback.Buffer, rtWriteback.Memory, rtWriteback.Ptr) = _core.CreateReadbackBuffer(size, BufferUsageFlags.TransferDstBit, MemCat.Readback, out rtWriteback.Coherent);
         }
-        wb.GuestStride = rt.Stride * (uint)guestBpp;
-        wb.Address = rt.Address + y * wb.GuestStride + x * (uint)guestBpp;
-        wb.Width = w;
-        wb.Rows = h;
-        wb.HostStride = w * (uint)hostBpp;
-        wb.GuestBpp = (uint)guestBpp;
-        wb.Convert = conv;
-        wb.Space = AddressSpace.Current;
+        rtWriteback.GuestStride = rt.Stride * (uint)guestBpp;
+        rtWriteback.Address = rt.Address + y * rtWriteback.GuestStride + x * (uint)guestBpp;
+        rtWriteback.Width = w;
+        rtWriteback.Rows = h;
+        rtWriteback.HostStride = w * (uint)hostBpp;
+        rtWriteback.GuestBpp = (uint)guestBpp;
+        rtWriteback.Convert = conv;
+        rtWriteback.Space = AddressSpace.Current;
         var region = new BufferImageCopy
         {
             BufferOffset = 0,
@@ -385,8 +385,8 @@ public sealed unsafe partial class VulkanRenderer
             ImageExtent = new Extent3D(w, h, 1),
         };
         DevStampOp();
-        _vk.CmdCopyImageToBuffer(Cmd, NativeRectOf(rt, x, y, w, h), ImageLayout.General, wb.Buffer, 1, in region); // guest pixels (VulkanRenderer.ResScale.cs)
-        F.Writebacks.Add(wb);
+        _vk.CmdCopyImageToBuffer(Cmd, NativeRectOf(rt, x, y, w, h), ImageLayout.General, rtWriteback.Buffer, 1, in region); // guest pixels (VulkanRenderer.ResScale.cs)
+        F.Writebacks.Add(rtWriteback);
     }
 
     /// <summary>Logical R,G,B,A pixels (a logical-order surface image) to guest bytes: A,B,G,R (RGBA swizzle,
@@ -443,29 +443,29 @@ public sealed unsafe partial class VulkanRenderer
         }
 
         long t0 = System.Diagnostics.Stopwatch.GetTimestamp();
-        foreach (RtWriteback wb in f.Writebacks)
+        foreach (RtWriteback rtWriteback in f.Writebacks)
         {
-            using AddressSpace.Activation space = AddressSpace.Use(wb.Space);
-            if (!wb.Coherent)
+            using AddressSpace.Activation space = AddressSpace.Use(rtWriteback.Space);
+            if (!rtWriteback.Coherent)
             {
-                _core.InvalidateMapped(wb.Memory);
+                _core.InvalidateMapped(rtWriteback.Memory);
             }
 
-            var src = new ReadOnlySpan<byte>((void*)wb.Ptr, (int)wb.Size);
-            for (uint y = 0; y < wb.Rows; y++)
+            var src = new ReadOnlySpan<byte>((void*)rtWriteback.Ptr, (int)rtWriteback.Size);
+            for (uint y = 0; y < rtWriteback.Rows; y++)
             {
-                ReadOnlySpan<byte> row = src.Slice((int)(y * wb.HostStride));
-                switch (wb.Convert)
+                ReadOnlySpan<byte> row = src.Slice((int)(y * rtWriteback.HostStride));
+                switch (rtWriteback.Convert)
                 {
                     case WritebackConvert.None:
                     {
-                        Span<byte> dst = GuestMemory.Span(wb.Address + y * wb.GuestStride, (int)(wb.Width * wb.GuestBpp));
+                        Span<byte> dst = GuestMemory.Span(rtWriteback.Address + y * rtWriteback.GuestStride, (int)(rtWriteback.Width * rtWriteback.GuestBpp));
                         FastCopy.Copy(row[..dst.Length], dst);
                         break;
                     }
                     case WritebackConvert.SwapRb:
                     {
-                        Span<byte> dst = GuestMemory.Span(wb.Address + y * wb.GuestStride, (int)wb.Width * 4);
+                        Span<byte> dst = GuestMemory.Span(rtWriteback.Address + y * rtWriteback.GuestStride, (int)rtWriteback.Width * 4);
                         FastCopy.Copy(row[..dst.Length], dst);
                         for (int i = 0; i + 3 < dst.Length; i += 4)
                         {
@@ -477,14 +477,14 @@ public sealed unsafe partial class VulkanRenderer
                     case WritebackConvert.ReverseBytes:
                     case WritebackConvert.LogicalToBgra:
                     {
-                        Span<byte> dst = GuestMemory.Span(wb.Address + y * wb.GuestStride, (int)wb.Width * 4);
-                        LogicalToMemoryOrder(row[..dst.Length], dst, wb.Convert == WritebackConvert.ReverseBytes);
+                        Span<byte> dst = GuestMemory.Span(rtWriteback.Address + y * rtWriteback.GuestStride, (int)rtWriteback.Width * 4);
+                        LogicalToMemoryOrder(row[..dst.Length], dst, rtWriteback.Convert == WritebackConvert.ReverseBytes);
                         break;
                     }
                     case WritebackConvert.Half4ToU2F10F10F10:
                     {
-                        Span<byte> dst = GuestMemory.Span(wb.Address + y * wb.GuestStride, (int)wb.Width * 4);
-                        ReadOnlySpan<ushort> h = System.Runtime.InteropServices.MemoryMarshal.Cast<byte, ushort>(row[..(int)(wb.Width * 8)]);
+                        Span<byte> dst = GuestMemory.Span(rtWriteback.Address + y * rtWriteback.GuestStride, (int)rtWriteback.Width * 4);
+                        ReadOnlySpan<ushort> h = System.Runtime.InteropServices.MemoryMarshal.Cast<byte, ushort>(row[..(int)(rtWriteback.Width * 8)]);
                         Span<uint> d = System.Runtime.InteropServices.MemoryMarshal.Cast<byte, uint>(dst);
                         ushort[] lut = s_f10Lut;
                         for (int i = 0; i < d.Length; i++)
@@ -496,7 +496,7 @@ public sealed unsafe partial class VulkanRenderer
                     }
                     case WritebackConvert.Rgba8ToRgb8:
                     {
-                        Span<byte> dst = GuestMemory.Span(wb.Address + y * wb.GuestStride, (int)wb.Width * 3);
+                        Span<byte> dst = GuestMemory.Span(rtWriteback.Address + y * rtWriteback.GuestStride, (int)rtWriteback.Width * 3);
                         for (int i = 0, o = 0; o + 2 < dst.Length; i += 4, o += 3)
                         {
                             dst[o] = row[i];
@@ -507,9 +507,9 @@ public sealed unsafe partial class VulkanRenderer
                     }
                 }
             }
-            _writebackPool[wb.Size].Push(wb);
+            _writebackPool[rtWriteback.Size].Push(rtWriteback);
             _wbCount++;
-            _wbBytes += wb.Rows * wb.Width * wb.GuestBpp;
+            _wbBytes += rtWriteback.Rows * rtWriteback.Width * rtWriteback.GuestBpp;
         }
         // the rows just written mark their pages: sweep again before the next texture check, so a texture over that
         // memory is re-read in this frame already (as when every texture was hashed every frame)
@@ -594,9 +594,9 @@ public sealed unsafe partial class VulkanRenderer
             Stack<RtWriteback> pool = _writebackPool[size];
             while (pool.Count > 0)
             {
-                RtWriteback wb = pool.Pop();
-                _core.DestroyBuffer(wb.Buffer, wb.Memory);
-                freed += wb.Size;
+                RtWriteback rtWriteback = pool.Pop();
+                _core.DestroyBuffer(rtWriteback.Buffer, rtWriteback.Memory);
+                freed += rtWriteback.Size;
             }
         }
         return freed;
@@ -606,9 +606,9 @@ public sealed unsafe partial class VulkanRenderer
     {
         foreach (Stack<RtWriteback> pool in _writebackPool.Values)
         {
-            foreach (RtWriteback wb in pool)
+            foreach (RtWriteback rtWriteback in pool)
             {
-                _core.DestroyBuffer(wb.Buffer, wb.Memory);
+                _core.DestroyBuffer(rtWriteback.Buffer, rtWriteback.Memory);
             }
         }
 

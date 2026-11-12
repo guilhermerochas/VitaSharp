@@ -93,27 +93,27 @@ public static class SaveStateFile
 
     public static SaveStateHeader ReadHeader(string path)
     {
-        using FileStream f = File.OpenRead(path);
-        return ReadHeader(f);
+        using FileStream stream = File.OpenRead(path);
+        return ReadHeader(stream);
     }
 
     /// <summary>Why a state with this header cannot be loaded into the running build and title, or null. Shown to the
     /// user as is (title bar, launcher tooltip, Android notice), so in the interface language.</summary>
-    public static string? Incompatibility(SaveStateHeader h, string titleId)
+    public static string? Incompatibility(SaveStateHeader saveStateHeader, string titleId)
     {
-        if (h.FormatVersion != FormatVersion)
+        if (saveStateHeader.FormatVersion != FormatVersion)
         {
-            return Localization.Loc.Format("StateOtherFormat", ShortVersion(h.EmulatorVersion), h.FormatVersion, FormatVersion);
+            return Localization.Loc.Format("StateOtherFormat", ShortVersion(saveStateHeader.EmulatorVersion), saveStateHeader.FormatVersion, FormatVersion);
         }
 
-        if (h.Schema != SnapshotSchema.Hash)
+        if (saveStateHeader.Schema != SnapshotSchema.Hash)
         {
-            return Localization.Loc.Format("StateOtherVersion", ShortVersion(h.EmulatorVersion));
+            return Localization.Loc.Format("StateOtherVersion", ShortVersion(saveStateHeader.EmulatorVersion));
         }
 
-        if (!string.Equals(h.TitleId, titleId, StringComparison.OrdinalIgnoreCase))
+        if (!string.Equals(saveStateHeader.TitleId, titleId, StringComparison.OrdinalIgnoreCase))
         {
-            return Localization.Loc.Format("StateOtherGame", h.TitleId, h.Title, titleId);
+            return Localization.Loc.Format("StateOtherGame", saveStateHeader.TitleId, saveStateHeader.Title, titleId);
         }
 
         return null;

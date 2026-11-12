@@ -21,8 +21,8 @@ internal sealed record KeyEntry(KeyType KeyType, SceType SceType, int KeyRev, st
 
 internal static partial class SelfKeys
 {
-    public static KeyEntry? Find(KeyEntry[] set, KeyType kt, SceType st, ulong sysver, int keyrev, SelfType self)
-        => set.FirstOrDefault(k => k.KeyType == kt && k.SceType == st && k.SelfType == self
+    public static KeyEntry? Find(KeyEntry[] set, KeyType keyType, SceType st, ulong sysver, int keyrev, SelfType self)
+        => set.FirstOrDefault(k => k.KeyType == keyType && k.SceType == st && k.SelfType == self
                                    && sysver >= k.MinVer && sysver <= k.MaxVer && k.KeyRev == keyrev);
 }
 
@@ -262,11 +262,11 @@ public static class SelfDecryptor
         uint metadataOffset, ulong headerLength, ulong sysver, SelfType selfType, int npdrmType, byte[]? klic)
     {
         var result = new Dictionary<int, (byte[], byte[])>();
-        foreach (MetadataSection s in DecryptSections(f, set, sceType, keyRev, metadataOffset, headerLength, sysver, selfType, klic))
+        foreach (MetadataSection metadataSection in DecryptSections(f, set, sceType, keyRev, metadataOffset, headerLength, sysver, selfType, klic))
         {
-            if (s.Encryption == 3)
+            if (metadataSection.Encryption == 3)
             {
-                result[s.SegmentIndex] = (s.Key, s.Iv);
+                result[metadataSection.SegmentIndex] = (metadataSection.Key, metadataSection.Iv);
             }
         }
 
@@ -314,10 +314,10 @@ public static class SelfDecryptor
         if (selfType == SelfType.APP)
         {
             int kt = keyRev >= 2 ? 1 : 0;
-            KeyEntry np = SelfKeys.Find(set, KeyType.NPDRM, sceType, sysver, kt, selfType)
+            KeyEntry keyEntry = SelfKeys.Find(set, KeyType.NPDRM, sceType, sysver, kt, selfType)
                      ?? throw new KeyNotFoundException("No NPDRM key");
-            byte[] npKey = FromHex(np.Key);
-            byte[] npIv = FromHex(np.Iv);
+            byte[] npKey = FromHex(keyEntry.Key);
+            byte[] npIv = FromHex(keyEntry.Iv);
             byte[] predec = new byte[16];
             AesUtil.CbcDecrypt(npKey, npIv, klic!, predec);
             AesUtil.CbcDecrypt(predec, npIv, dat.AsSpan(0, 64), info);

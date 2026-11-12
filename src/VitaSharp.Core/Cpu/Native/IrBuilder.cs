@@ -67,12 +67,12 @@ public sealed unsafe class IrBuilder
 
     public int Reg(int r) => Read(r);
     public void SetReg(int r, int v) => Write(r, v);
-    public int Flag(IrFlag f) => Read(SlotFlag0 + (int)f);
-    public void SetFlag(IrFlag f, int v)
+    public int Flag(IrFlag irFlag) => Read(SlotFlag0 + (int)irFlag);
+    public void SetFlag(IrFlag irFlag, int v)
     {
         if (v >= 0)
         {
-            Write(SlotFlag0 + (int)f, v);
+            Write(SlotFlag0 + (int)irFlag, v);
         }
     }
     public int Thumb() => Read(SlotThumb);

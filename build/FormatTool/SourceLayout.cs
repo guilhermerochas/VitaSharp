@@ -146,10 +146,10 @@ public static partial class SourceLayout
     /// lambda body `=> { ...; }`).</summary>
     public static bool HasOneLineBlock(string maskedLine)
     {
-        foreach (Match m in StatementBlock().Matches(maskedLine))
+        foreach (Match match in StatementBlock().Matches(maskedLine))
         {
-            string before = maskedLine[..m.Index].TrimEnd();
-            if (!before.EndsWith("=>", StringComparison.Ordinal) && !AccessorList().IsMatch(m.Groups[1].Value))
+            string before = maskedLine[..match.Index].TrimEnd();
+            if (!before.EndsWith("=>", StringComparison.Ordinal) && !AccessorList().IsMatch(match.Groups[1].Value))
             {
                 return true;
             }
@@ -344,9 +344,9 @@ public static partial class SourceLayout
         int k = i + 2;
         while (k < lines.Count && AccessorList().IsMatch(lines[k]))
         {
-            foreach (Match m in OneAccessor().Matches(lines[k]))
+            foreach (Match match in OneAccessor().Matches(lines[k]))
             {
-                accessors.Add(m.Value.Trim());
+                accessors.Add(match.Value.Trim());
             }
 
             k++;

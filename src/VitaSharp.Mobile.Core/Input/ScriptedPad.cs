@@ -38,7 +38,7 @@ public sealed class ScriptedPad
     private static List<Step> Parse(string script, double offset, List<(bool, int, double)> states)
     {
         var steps = new List<Step>();
-        CultureInfo inv = CultureInfo.InvariantCulture;
+        CultureInfo invariant = CultureInfo.InvariantCulture;
         foreach (string raw in script.Split(',', StringSplitOptions.RemoveEmptyEntries | StringSplitOptions.TrimEntries))
         {
             string[] at = raw.Split('@');
@@ -48,11 +48,11 @@ public sealed class ScriptedPad
             }
 
             string[] p = at[1].Split(':');
-            double start = offset + double.Parse(p[0], inv);
+            double start = offset + double.Parse(p[0], invariant);
             string name = at[0].ToLowerInvariant();
             if (name is "savestate" or "loadstate")
             {
-                states.Add((name == "savestate", p.Length > 1 ? int.Parse(p[1], inv) : 1, start));
+                states.Add((name == "savestate", p.Length > 1 ? int.Parse(p[1], invariant) : 1, start));
                 continue;
             }
             if (name is "tap" or "btap")
@@ -62,8 +62,8 @@ public sealed class ScriptedPad
                     throw new FormatException($"bad tap step '{raw}'");
                 }
 
-                steps.Add(new Step(0, name == "tap" ? 3 : 4, start, p.Length > 3 ? double.Parse(p[3], inv) : 0.25,
-                    float.Parse(p[1], inv), float.Parse(p[2], inv)));
+                steps.Add(new Step(0, name == "tap" ? 3 : 4, start, p.Length > 3 ? double.Parse(p[3], invariant) : 0.25,
+                    float.Parse(p[1], invariant), float.Parse(p[2], invariant)));
                 continue;
             }
             if (name is "lstick" or "rstick")
@@ -73,8 +73,8 @@ public sealed class ScriptedPad
                     throw new FormatException($"bad stick step '{raw}'");
                 }
 
-                steps.Add(new Step(0, name == "lstick" ? 1 : 2, start, p.Length > 3 ? double.Parse(p[3], inv) : 0.25,
-                    float.Parse(p[1], inv), float.Parse(p[2], inv)));
+                steps.Add(new Step(0, name == "lstick" ? 1 : 2, start, p.Length > 3 ? double.Parse(p[3], invariant) : 0.25,
+                    float.Parse(p[1], invariant), float.Parse(p[2], invariant)));
                 continue;
             }
             VitaButtons button = name switch
@@ -93,7 +93,7 @@ public sealed class ScriptedPad
                 "rtrigger" or "r" => VitaButtons.RTrigger,
                 _ => throw new FormatException($"unknown button '{at[0]}'"),
             };
-            steps.Add(new Step(button, 0, start, p.Length > 1 ? double.Parse(p[1], inv) : 0.25, 0, 0));
+            steps.Add(new Step(button, 0, start, p.Length > 1 ? double.Parse(p[1], invariant) : 0.25, 0, 0));
         }
         return steps;
     }
@@ -122,8 +122,8 @@ public sealed class ScriptedPad
         catch (Exception e) when (e is IOException or FormatException or UnauthorizedAccessException) { }
     }
 
-    /// <summary>Applies the steps active now to <paramref name="s"/> (buttons OR-ed, sticks replaced).</summary>
-    public ControllerState Apply(ControllerState s)
+    /// <summary>Applies the steps active now to <paramref name="controllerState"/> (buttons OR-ed, sticks replaced).</summary>
+    public ControllerState Apply(ControllerState controllerState)
     {
         _clock ??= Stopwatch.StartNew();
         double t = _clock.Elapsed.TotalSeconds;
@@ -144,20 +144,20 @@ public sealed class ScriptedPad
                 continue;
             }
 
-            s.Buttons |= st.Button;
+            controllerState.Buttons |= st.Button;
             static byte AxisByte(float v) => (byte)Math.Clamp((int)MathF.Round(128 + v * 127), 0, 255);
             if (st.Stick == 1)
             {
-                s.Lx = AxisByte(st.X);
-                s.Ly = AxisByte(st.Y);
+                controllerState.Lx = AxisByte(st.X);
+                controllerState.Ly = AxisByte(st.Y);
             }
             else if (st.Stick == 2)
             {
-                s.Rx = AxisByte(st.X);
-                s.Ry = AxisByte(st.Y);
+                controllerState.Rx = AxisByte(st.X);
+                controllerState.Ry = AxisByte(st.Y);
             }
         }
-        return s;
+        return controllerState;
     }
 
     private void FireStates(double t)
@@ -176,7 +176,7 @@ public sealed class ScriptedPad
     }
 
     /// <summary>Adds the touches of the tap steps active now (front: tap, rear: btap), each step its own contact.</summary>
-    public void AddTouches(ref MappedInput m)
+    public void AddTouches(ref MappedInput mappedInput)
     {
         _clock ??= Stopwatch.StartNew();
         double t = _clock.Elapsed.TotalSeconds;
@@ -188,7 +188,7 @@ public sealed class ScriptedPad
                 continue;
             }
 
-            m.AddTouch(st.Stick == 4, new TouchPoint(TouchIdBase + i, st.X, st.Y));
+            mappedInput.AddTouch(st.Stick == 4, new TouchPoint(TouchIdBase + i, st.X, st.Y));
         }
     }
 

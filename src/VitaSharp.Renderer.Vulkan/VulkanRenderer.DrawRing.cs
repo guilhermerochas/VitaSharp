@@ -155,10 +155,10 @@ public sealed unsafe partial class VulkanRenderer
         e.RtFormat = rt?.ColorFormat ?? 0;
         e.RtW = (ushort)(rt?.Width ?? 0);
         e.RtH = (ushort)(rt?.Height ?? 0);
-        DepthTarget? ds = _depth;
-        e.DsAddr = ds?.Address ?? 0;
-        e.DsW = (ushort)(ds?.Width ?? 0);
-        e.DsH = (ushort)(ds?.Height ?? 0);
+        DepthTarget? depthTarget = _depth;
+        e.DsAddr = depthTarget?.Address ?? 0;
+        e.DsW = (ushort)(depthTarget?.Width ?? 0);
+        e.DsH = (ushort)(depthTarget?.Height ?? 0);
         e.IndexCount = d.IndexCount;
         e.InstanceCount = d.InstanceCount;
         e.State = d.State;
@@ -200,7 +200,7 @@ public sealed unsafe partial class VulkanRenderer
     }
 
     /// <summary>BeginScene, after the MSAA path was chosen.</summary>
-    private void DrawRingScene(BeginSceneCommand b)
+    private void DrawRingScene(BeginSceneCommand beginSceneCommand)
     {
         DrawRing r = _drawRing!;
         if (r.ScenesWritten - r.FrameSceneStart >= MaxScenesPerFrame)
@@ -215,18 +215,18 @@ public sealed unsafe partial class VulkanRenderer
         s.RtFormat = rt?.ColorFormat ?? 0;
         s.RtW = rt?.Width ?? 0;
         s.RtH = rt?.Height ?? 0;
-        s.W = b.Width;
-        s.H = b.Height;
-        DepthSurfaceInfo? dsi = b.Depth;
-        s.Ds = dsi?.DepthData ?? 0;
-        s.St = dsi?.StencilData ?? 0;
-        s.DsFormat = dsi?.Format ?? 0;
-        s.BgDepth = dsi?.BackgroundDepth ?? 0;
-        s.BgStencil = dsi?.BackgroundStencil ?? 0;
-        s.GxmMsaa = (byte)b.Multisample;
+        s.W = beginSceneCommand.Width;
+        s.H = beginSceneCommand.Height;
+        DepthSurfaceInfo? depthSurfaceInfo = beginSceneCommand.Depth;
+        s.Ds = depthSurfaceInfo?.DepthData ?? 0;
+        s.St = depthSurfaceInfo?.StencilData ?? 0;
+        s.DsFormat = depthSurfaceInfo?.Format ?? 0;
+        s.BgDepth = depthSurfaceInfo?.BackgroundDepth ?? 0;
+        s.BgStencil = depthSurfaceInfo?.BackgroundStencil ?? 0;
+        s.GxmMsaa = (byte)beginSceneCommand.Multisample;
         s.Msaa = (byte)(_multisampled ? (int)_msSamples : _supersampled ? 1 : 0);
-        s.Flags = (byte)((b.Color?.Downscale == true ? DrScDownscale : 0) | (dsi?.ForceLoad == true ? DrScLoad : 0) | (dsi?.ForceStore == true ? DrScStore : 0)
-            | (dsi != null ? DrScDepth : 0) | (b.Color?.GammaMode is > 0 ? DrScGamma : 0) | (b.Color != null ? DrScColor : 0));
+        s.Flags = (byte)((beginSceneCommand.Color?.Downscale == true ? DrScDownscale : 0) | (depthSurfaceInfo?.ForceLoad == true ? DrScLoad : 0) | (depthSurfaceInfo?.ForceStore == true ? DrScStore : 0)
+            | (depthSurfaceInfo != null ? DrScDepth : 0) | (beginSceneCommand.Color?.GammaMode is > 0 ? DrScGamma : 0) | (beginSceneCommand.Color != null ? DrScColor : 0));
     }
 
     /// <summary>Every present, before the present counter moves on: closes the frame (or creates/frees the ring when
@@ -315,39 +315,39 @@ public sealed unsafe partial class VulkanRenderer
         if (_replay is { } ring)
         {
             replay = new Dictionary<long, (FrameMetrics, FrameMetrics.Hit)>(ReplaySlots);
-            foreach (ReplayEntry e in ring.Entries)
+            foreach (ReplayEntry replayEntry in ring.Entries)
             {
-                if (e.Ready)
+                if (replayEntry.Ready)
                 {
-                    replay[e.Present] = (e.Metrics, e.Hits);
+                    replay[replayEntry.Present] = (replayEntry.Metrics, replayEntry.Hits);
                 }
             }
         }
         for (long k = Math.Max(0, r.FramesWritten - DrawRingFrames); k < r.FramesWritten; k++)
         {
-            DrFrame f = r.Frames[k % DrawRingFrames];
-            if (f.DrawStart < r.DrawsWritten - DrawPool || f.TexStart < r.TexWritten - TexPool || f.SceneStart < r.ScenesWritten - ScenePool)
+            DrFrame drFrame = r.Frames[k % DrawRingFrames];
+            if (drFrame.DrawStart < r.DrawsWritten - DrawPool || drFrame.TexStart < r.TexWritten - TexPool || drFrame.SceneStart < r.ScenesWritten - ScenePool)
             {
                 evicted++;
                 continue;
             }
-            var s = new DrFrameShot { Frame = f, Draws = new DrDraw[f.Draws], Texs = new DrTex[f.Texs], Scenes = new DrScene[f.Scenes] };
-            for (int i = 0; i < f.Draws; i++)
+            var s = new DrFrameShot { Frame = drFrame, Draws = new DrDraw[drFrame.Draws], Texs = new DrTex[drFrame.Texs], Scenes = new DrScene[drFrame.Scenes] };
+            for (int i = 0; i < drFrame.Draws; i++)
             {
-                s.Draws[i] = r.Draws[(f.DrawStart + i) & (DrawPool - 1)];
+                s.Draws[i] = r.Draws[(drFrame.DrawStart + i) & (DrawPool - 1)];
             }
 
-            for (int i = 0; i < f.Texs; i++)
+            for (int i = 0; i < drFrame.Texs; i++)
             {
-                s.Texs[i] = r.Texs[(f.TexStart + i) & (TexPool - 1)];
+                s.Texs[i] = r.Texs[(drFrame.TexStart + i) & (TexPool - 1)];
             }
 
-            for (int i = 0; i < f.Scenes; i++)
+            for (int i = 0; i < drFrame.Scenes; i++)
             {
-                s.Scenes[i] = r.Scenes[(f.SceneStart + i) & (ScenePool - 1)];
+                s.Scenes[i] = r.Scenes[(drFrame.SceneStart + i) & (ScenePool - 1)];
             }
 
-            if (replay != null && replay.TryGetValue(f.Present, out (FrameMetrics, FrameMetrics.Hit) m))
+            if (replay != null && replay.TryGetValue(drFrame.Present, out (FrameMetrics, FrameMetrics.Hit) m))
             {
                 s.HasReplay = true;
                 (s.Metrics, s.Hits) = m;
@@ -370,34 +370,34 @@ public sealed unsafe partial class VulkanRenderer
         public readonly Dictionary<(uint Addr, uint Fmt), (TexSource Src, uint SrcAddr, int Draw)> TexSrc = new();
     }
 
-    private static DrFrameInfo Summarize(DrFrameShot s)
+    private static DrFrameInfo Summarize(DrFrameShot drFrameShot)
     {
         var info = new DrFrameInfo();
         var seenRt = new HashSet<(uint, uint)>();
-        foreach (DrScene sc in s.Scenes)
+        foreach (DrScene drScene in drFrameShot.Scenes)
         {
-            if ((sc.Flags & DrScColor) != 0 && seenRt.Add((sc.RtAddr, sc.RtFormat)))
+            if ((drScene.Flags & DrScColor) != 0 && seenRt.Add((drScene.RtAddr, drScene.RtFormat)))
             {
-                info.Targets.Add((sc.RtAddr, sc.RtFormat, sc.RtW, sc.RtH));
+                info.Targets.Add((drScene.RtAddr, drScene.RtFormat, drScene.RtW, drScene.RtH));
             }
         }
 
-        long texBase = s.Frame.TexStart;
-        foreach (DrDraw d in s.Draws)
+        long texBase = drFrameShot.Frame.TexStart;
+        foreach (DrDraw drDraw in drFrameShot.Draws)
         {
-            info.Pairs[(d.Vs, d.Fs)] = info.Pairs.GetValueOrDefault((d.Vs, d.Fs)) + 1;
-            info.Vs.Add(d.Vs);
-            info.Fs.Add(d.Fs);
-            for (int i = 0; i < d.TexCount; i++)
+            info.Pairs[(drDraw.Vs, drDraw.Fs)] = info.Pairs.GetValueOrDefault((drDraw.Vs, drDraw.Fs)) + 1;
+            info.Vs.Add(drDraw.Vs);
+            info.Fs.Add(drDraw.Fs);
+            for (int i = 0; i < drDraw.TexCount; i++)
             {
-                long ti = d.TexStart - texBase + i;
-                if (ti < 0 || ti >= s.Texs.Length)
+                long ti = drDraw.TexStart - texBase + i;
+                if (ti < 0 || ti >= drFrameShot.Texs.Length)
                 {
                     break;
                 }
 
-                DrTex t = s.Texs[ti];
-                info.TexSrc.TryAdd((t.Desc.DataAddress, t.Desc.Format), (t.Src & ~TexSource.Failed, t.SrcAddr, d.Id));
+                DrTex drTex = drFrameShot.Texs[ti];
+                info.TexSrc.TryAdd((drTex.Desc.DataAddress, drTex.Desc.Format), (drTex.Src & ~TexSource.Failed, drTex.SrcAddr, drDraw.Id));
             }
         }
         return info;
@@ -511,7 +511,7 @@ public sealed unsafe partial class VulkanRenderer
 
     private static int WriteDrawRing(string dir, List<DrFrameShot> shots, long trigger, long armed, int evicted)
     {
-        CultureInfo inv = CultureInfo.InvariantCulture;
+        CultureInfo invariant = CultureInfo.InvariantCulture;
         Directory.CreateDirectory(dir);
         var infos = shots.Select(Summarize).ToList();
         var diffs = new List<string>[shots.Count];
@@ -568,7 +568,7 @@ public sealed unsafe partial class VulkanRenderer
                 }
             }
             string rts = info.Targets.Count == 0 ? "-" : string.Join(",", info.Targets.Take(16).Select(t => $"0x{t.Addr:X8}")) + (info.Targets.Count > 16 ? $",+{info.Targets.Count - 16}" : "");
-            string rep = s.HasReplay ? string.Create(inv, $"mean={s.Metrics.Mean:F3} hits={HitString(s.Hits)}") : "-";
+            string rep = s.HasReplay ? string.Create(invariant, $"mean={s.Metrics.Mean:F3} hits={HitString(s.Hits)}") : "-";
             string drop = f.DroppedDraws + f.DroppedTex + f.DroppedScenes == 0 ? "0" : $"{f.DroppedDraws}d/{f.DroppedTex}t/{f.DroppedScenes}s";
             index.AppendLine($"p{f.Present} f{f.GuestFrame} draws={f.Draws}/{f.TotalDraws} scenes={f.Scenes} tex={s.Texs.Length} drop={drop} new={news} rts={rts} fb=0x{f.Fb:X8} replay={rep}"
                 + (transient[i] ? "  TRANSIENT" : "") + (f.Present == trigger ? "  <== trigger" : ""));
@@ -607,19 +607,19 @@ public sealed unsafe partial class VulkanRenderer
 
             int sc = 0;
             long texBase = f.TexStart;
-            foreach (DrDraw d in s.Draws)
+            foreach (DrDraw drDraw in s.Draws)
             {
                 // the scenes that began before this draw
-                while (sc < s.Scenes.Length && s.Scenes[sc].FirstDrawId <= d.Id)
+                while (sc < s.Scenes.Length && s.Scenes[sc].FirstDrawId <= drDraw.Id)
                 {
-                    AppendScene(sb, inv, s.Scenes[sc++], f.Present - 1);
+                    AppendScene(sb, invariant, s.Scenes[sc++], f.Present - 1);
                 }
 
-                AppendDraw(sb, inv, d, s, texBase, f.Present - 1);
+                AppendDraw(sb, invariant, drDraw, s, texBase, f.Present - 1);
             }
             while (sc < s.Scenes.Length)
             {
-                AppendScene(sb, inv, s.Scenes[sc++], f.Present - 1);
+                AppendScene(sb, invariant, s.Scenes[sc++], f.Present - 1);
             }
 
             File.WriteAllText(Path.Combine(dir, $"frame_{f.Present:D6}.txt"), sb.ToString());
@@ -628,39 +628,39 @@ public sealed unsafe partial class VulkanRenderer
         return shots.Count;
     }
 
-    private static void AppendScene(StringBuilder sb, CultureInfo inv, in DrScene s, long present)
+    private static void AppendScene(StringBuilder sb, CultureInfo invariant, in DrScene drScene, long present)
     {
-        bool depth = (s.Flags & DrScDepth) != 0;
-        sb.Append(inv, $"[scene] begin present={present} rt=0x{s.RtAddr:X8} {s.W}x{s.H} msaa={s.GxmMsaa} downscale={((s.Flags & DrScColor) != 0 ? ((s.Flags & DrScDownscale) != 0).ToString() : "")} ds=0x{s.Ds:X8}");
-        sb.Append(inv, $" load={(depth ? ((s.Flags & DrScLoad) != 0).ToString() : "")} bgDepth={(depth ? s.BgDepth.ToString(inv) : "")} (next draw id={s.FirstDrawId})");
-        sb.Append(inv, $" fmt=0x{s.RtFormat:X8} rtsize={s.RtW}x{s.RtH} st=0x{s.St:X8} dsfmt=0x{s.DsFormat:X8} store={(s.Flags & DrScStore) != 0} bgStencil={s.BgStencil} gamma={(s.Flags & DrScGamma) != 0} path={MsaaName(s.Msaa)}\n");
+        bool depth = (drScene.Flags & DrScDepth) != 0;
+        sb.Append(invariant, $"[scene] begin present={present} rt=0x{drScene.RtAddr:X8} {drScene.W}x{drScene.H} msaa={drScene.GxmMsaa} downscale={((drScene.Flags & DrScColor) != 0 ? ((drScene.Flags & DrScDownscale) != 0).ToString() : "")} ds=0x{drScene.Ds:X8}");
+        sb.Append(invariant, $" load={(depth ? ((drScene.Flags & DrScLoad) != 0).ToString() : "")} bgDepth={(depth ? drScene.BgDepth.ToString(invariant) : "")} (next draw id={drScene.FirstDrawId})");
+        sb.Append(invariant, $" fmt=0x{drScene.RtFormat:X8} rtsize={drScene.RtW}x{drScene.RtH} st=0x{drScene.St:X8} dsfmt=0x{drScene.DsFormat:X8} store={(drScene.Flags & DrScStore) != 0} bgStencil={drScene.BgStencil} gamma={(drScene.Flags & DrScGamma) != 0} path={MsaaName(drScene.Msaa)}\n");
     }
 
-    private static void AppendDraw(StringBuilder sb, CultureInfo inv, in DrDraw d, DrFrameShot s, long texBase, long present)
+    private static void AppendDraw(StringBuilder sb, CultureInfo invariant, in DrDraw drDraw, DrFrameShot drFrameShot, long texBase, long present)
     {
-        DrawState st = d.State;
-        sb.Append(inv, $"[draw] id={d.Id} f={present} rt=0x{d.RtAddr:X8}:{d.RtFormat:X8} ds=0x{d.DsAddr:X8}/{d.DsW}x{d.DsH} vs={d.Vs:X16} fs={d.Fs:X16} prim={d.Prim} n={d.IndexCount}x{d.InstanceCount}");
-        GxmBlendInfo b = d.Blend;
-        sb.Append(inv, $" blend={((d.Flags & DrHasBlend) != 0 ? $"{b.ColorMask:X}:{b.ColorFunc}/{b.ColorSrc}/{b.ColorDst}" : "none")} fragEn={st.Front.FragmentEnabled} cull={st.CullMode} twoSided={st.TwoSided} depth={st.Front.DepthFunc}/{st.Front.DepthWrite} bias={st.Front.DepthBiasFactor}/{st.Front.DepthBiasUnits} st={st.Front.Stencil.Func}/{st.Back.Stencil.Func}");
-        sb.Append(inv, $" vp={st.ViewportEnabled}({st.VpOffX},{st.VpOffY},{st.VpScaleX},{st.VpScaleY},{st.VpOffZ},{st.VpScaleZ}) clip={st.RegionClipMode}[{st.ClipMinX},{st.ClipMinY}-{st.ClipMaxX},{st.ClipMaxY}]");
-        for (int i = 0; i < d.TexCount; i++)
+        DrawState drawState = drDraw.State;
+        sb.Append(invariant, $"[draw] id={drDraw.Id} f={present} rt=0x{drDraw.RtAddr:X8}:{drDraw.RtFormat:X8} ds=0x{drDraw.DsAddr:X8}/{drDraw.DsW}x{drDraw.DsH} vs={drDraw.Vs:X16} fs={drDraw.Fs:X16} prim={drDraw.Prim} n={drDraw.IndexCount}x{drDraw.InstanceCount}");
+        GxmBlendInfo gxmBlendInfo = drDraw.Blend;
+        sb.Append(invariant, $" blend={((drDraw.Flags & DrHasBlend) != 0 ? $"{gxmBlendInfo.ColorMask:X}:{gxmBlendInfo.ColorFunc}/{gxmBlendInfo.ColorSrc}/{gxmBlendInfo.ColorDst}" : "none")} fragEn={drawState.Front.FragmentEnabled} cull={drawState.CullMode} twoSided={drawState.TwoSided} depth={drawState.Front.DepthFunc}/{drawState.Front.DepthWrite} bias={drawState.Front.DepthBiasFactor}/{drawState.Front.DepthBiasUnits} st={drawState.Front.Stencil.Func}/{drawState.Back.Stencil.Func}");
+        sb.Append(invariant, $" vp={drawState.ViewportEnabled}({drawState.VpOffX},{drawState.VpOffY},{drawState.VpScaleX},{drawState.VpScaleY},{drawState.VpOffZ},{drawState.VpScaleZ}) clip={drawState.RegionClipMode}[{drawState.ClipMinX},{drawState.ClipMinY}-{drawState.ClipMaxX},{drawState.ClipMaxY}]");
+        for (int i = 0; i < drDraw.TexCount; i++)
         {
-            long ti = d.TexStart - texBase + i;
-            if (ti < 0 || ti >= s.Texs.Length)
+            long ti = drDraw.TexStart - texBase + i;
+            if (ti < 0 || ti >= drFrameShot.Texs.Length)
             {
                 break;
             }
 
-            DrTex t = s.Texs[ti];
-            GxmTextureDesc x = t.Desc;
-            sb.Append(inv, $" {((t.Unit & 0x80) != 0 ? "vt" : "t")}{t.Unit & 0x7F}=0x{x.DataAddress:X8}:{x.Format:X8}:{x.Width}x{x.Height}:T{x.TextureType >> 29}:S{x.StrideBytes}:G{x.GammaMode}:F{x.MagFilter}{x.MinFilter}{x.MipFilter}:B{x.LodBias}:L{x.LodMin}:M{x.MipCount}:A{x.UAddr}{x.VAddr}:W0={x.W0:X8}:Z{x.Swizzle}:K{SrcName(t.Src, t.SrcAddr)}");
+            DrTex drTex = drFrameShot.Texs[ti];
+            GxmTextureDesc x = drTex.Desc;
+            sb.Append(invariant, $" {((drTex.Unit & 0x80) != 0 ? "vt" : "t")}{drTex.Unit & 0x7F}=0x{x.DataAddress:X8}:{x.Format:X8}:{x.Width}x{x.Height}:T{x.TextureType >> 29}:S{x.StrideBytes}:G{x.GammaMode}:F{x.MagFilter}{x.MinFilter}{x.MipFilter}:B{x.LodBias}:L{x.LodMin}:M{x.MipCount}:A{x.UAddr}{x.VAddr}:W0={x.W0:X8}:Z{x.Swizzle}:K{SrcName(drTex.Src, drTex.SrcAddr)}");
         }
-        sb.Append(inv, $" vh={d.VsHint:X16} fh={d.FsHint:X16} scene={(d.Scene == 0xFFFF ? "-" : d.Scene.ToString(inv))} rtsize={d.RtW}x{d.RtH}");
-        if ((d.Flags & (DrVsFailed | DrFsFailed)) != 0)
+        sb.Append(invariant, $" vh={drDraw.VsHint:X16} fh={drDraw.FsHint:X16} scene={(drDraw.Scene == 0xFFFF ? "-" : drDraw.Scene.ToString(invariant))} rtsize={drDraw.RtW}x{drDraw.RtH}");
+        if ((drDraw.Flags & (DrVsFailed | DrFsFailed)) != 0)
         {
-            sb.Append($" FAILED={((d.Flags & DrVsFailed) != 0 ? "vs" : "")}{((d.Flags & DrFsFailed) != 0 ? "fs" : "")}");
+            sb.Append($" FAILED={((drDraw.Flags & DrVsFailed) != 0 ? "vs" : "")}{((drDraw.Flags & DrFsFailed) != 0 ? "fs" : "")}");
         }
 
-        sb.Append(inv, $" msaa={MsaaName(d.Msaa)}\n");
+        sb.Append(invariant, $" msaa={MsaaName(drDraw.Msaa)}\n");
     }
 }

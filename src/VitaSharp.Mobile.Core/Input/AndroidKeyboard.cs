@@ -137,17 +137,17 @@ public sealed class AndroidKeyboard : IMotionSource
         _bound.Clear();
         _pauseKeys.Clear();
         _psKeys.Clear();
-        foreach (VitaControl c in VitaControls.All)
+        foreach (VitaControl vitaControl in VitaControls.All)
         {
-            foreach (ref readonly InputBinding b in _profile[c])
+            foreach (ref readonly InputBinding b in _profile[vitaControl])
             {
                 if (b.Kind != BindingKind.Key || b.Key == null)
                 {
                     continue;
                 }
 
-                (c == VitaControl.PauseEmulation ? _pauseKeys : _bound).Add(b.Key);
-                if (c == VitaControl.PS)
+                (vitaControl == VitaControl.PauseEmulation ? _pauseKeys : _bound).Add(b.Key);
+                if (vitaControl == VitaControl.PS)
                 {
                     _psKeys.Add(b.Key);
                 }

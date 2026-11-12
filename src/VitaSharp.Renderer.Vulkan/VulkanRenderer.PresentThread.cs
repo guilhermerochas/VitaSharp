@@ -68,7 +68,7 @@ public sealed unsafe partial class VulkanRenderer
     {
         while (true)
         {
-            SwapchainKHR sc;
+            SwapchainKHR swapchainKHR;
             uint index;
             Silk.NET.Vulkan.Semaphore wait;
             lock (_presentSlot)
@@ -83,13 +83,13 @@ public sealed unsafe partial class VulkanRenderer
                     return;
                 }
 
-                sc = _pendingSwapchain;
+                swapchainKHR = _pendingSwapchain;
                 index = _pendingIndex;
                 wait = _pendingWait;
             }
             try
             {
-                PresentNow(sc, index, wait);
+                PresentNow(swapchainKHR, index, wait);
             }
             catch (Exception e)
             {

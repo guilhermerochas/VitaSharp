@@ -17,16 +17,16 @@ public static class CaptureContext
     /// <summary>One line: where the player is now.</summary>
     public static string Where(Emulator emu)
     {
-        VitaSystem v = emu.Vita;
-        Emulator fg = v.Foreground ?? emu;
-        if (v.Shell != null && v.ShellImposesSystemUi)
+        VitaSystem vitaSystem = emu.Vita;
+        Emulator fg = vitaSystem.Foreground ?? emu;
+        if (vitaSystem.Shell != null && vitaSystem.ShellImposesSystemUi)
         {
             return "lock screen (the shell's system screen is on top" + (fg.IsShell ? ")" : $"; {Name(fg)} behind it)");
         }
 
         if (fg.IsShell)
         {
-            return v.ShellLiveArea is { } la
+            return vitaSystem.ShellLiveArea is { } la
                 ? $"shell: LiveArea page of {la.TitleId} '{la.Title}' (the last LiveArea the shell opened; frames.png shows if it went back to the bubbles)"
                 : "shell: home screen (bubble pages; no LiveArea opened yet)";
         }
@@ -34,19 +34,19 @@ public static class CaptureContext
         return $"{Kind(fg)} {Name(fg)} in front";
     }
 
-    private static string Kind(Emulator e) => e.IsShell ? "shell" : e.IsGameProgram && !e.IsSystemProgram ? "game" : e.IsSystemProgram ? "system app" : "application";
+    private static string Kind(Emulator emulator) => emulator.IsShell ? "shell" : emulator.IsGameProgram && !emulator.IsSystemProgram ? "game" : emulator.IsSystemProgram ? "system app" : "application";
 
-    private static string Name(Emulator e) => e.Title.Length > 0 ? $"{e.TitleId} '{e.Title}'" : e.TitleId.Length > 0 ? e.TitleId : $"process 0x{e.Pid:X}";
+    private static string Name(Emulator emulator) => emulator.Title.Length > 0 ? $"{emulator.TitleId} '{emulator.Title}'" : emulator.TitleId.Length > 0 ? emulator.TitleId : $"process 0x{emulator.Pid:X}";
 
     /// <summary>context.txt: the screen, the processes and the audio (ports, the BGM port, decoders).</summary>
     public static string Describe(Emulator emu, string when)
     {
-        VitaSystem v = emu.Vita;
+        VitaSystem vitaSystem = emu.Vita;
         var sb = new StringBuilder();
         sb.AppendLine($"[{when}]");
         sb.AppendLine($"where: {Where(emu)}");
-        Emulator fg = v.Foreground ?? emu;
-        foreach (Emulator p in v.Processes)
+        Emulator fg = vitaSystem.Foreground ?? emu;
+        foreach (Emulator p in vitaSystem.Processes)
         {
             string state = ReferenceEquals(p, fg) ? "in front" : p.Suspended ? "suspended (in the background)" : "running in the background";
             sb.AppendLine($"process: {Kind(p)} {Name(p)} pid 0x{p.Pid:X}: {state}");
@@ -62,7 +62,7 @@ public static class CaptureContext
     /// <summary>One line per audio port (open, or released while the capture ran), the BGM port and the decoders.</summary>
     public static List<string> AudioLines(Emulator emu)
     {
-        VitaSystem v = emu.Vita;
+        VitaSystem vitaSystem = emu.Vita;
         var lines = new List<string>();
         List<AudioDiagnostics.PortStats> ports = AudioDiagnostics.AllPorts();
         foreach (AudioDiagnostics.PortStats p in ports)
@@ -74,7 +74,7 @@ public static class CaptureContext
 
             double since = AudioDiagnostics.SecondsSinceOutput(p);
             string activity = since < 0 ? "no output yet" : since < 0.5 ? "outputting now" : FormattableString.Invariant($"idle (last output {since:F1} s ago)");
-            string muted = p.Type == 1 && p.Owner is { } o && v.BgmMuted(o) ? ", muted: another application is in front" : "";
+            string muted = p.Type == 1 && p.Owner is { } o && vitaSystem.BgmMuted(o) ? ", muted: another application is in front" : "";
             lines.Add(FormattableString.Invariant($"audio: {p.Name} ({p.DumpName}.wav): {Role(p)}; opened by {(p.Owner is { } ow ? Name(ow) : "?")} thread '{p.OwnerThread}'; {p.Freq} Hz grain {p.Grain}; {activity}{muted}"));
         }
         if (lines.Count == 0)
@@ -82,11 +82,11 @@ public static class CaptureContext
             lines.Add("audio: no audio port open");
         }
 
-        Emulator? holder = v.BgmHolder(out int prio);
+        Emulator? holder = vitaSystem.BgmHolder(out int prio);
         lines.Add(holder == null ? "audio: BGM: no process (nothing to route it to)"
             : $"audio: BGM routed to {Name(holder)}{(holder.IsShell ? " (the shell's music player, SceShellMusicCore: the home screen / LiveArea music)" : "")}" +
               (prio == Kernel.VitaSystem.BgmNoPriority ? ", as the process in front (no BGM priority set)" : $", BGM priority 0x{prio:X}") +
-              string.Concat(v.Processes.Where(p => p.BgmPriority > 0).Select(p => $"; {Name(p)} priority 0x{p.BgmPriority:X}{(p.Suspended ? " (suspended: not counted)" : "")}")));
+              string.Concat(vitaSystem.Processes.Where(p => p.BgmPriority > 0).Select(p => $"; {Name(p)} priority 0x{p.BgmPriority:X}{(p.Suspended ? " (suspended: not counted)" : "")}")));
         foreach (string s in AudioDiagnostics.StreamDescriptions())
         {
             lines.Add("audio: decoder/stream " + s);

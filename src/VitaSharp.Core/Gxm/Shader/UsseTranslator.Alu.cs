@@ -8,85 +8,85 @@ public sealed partial class UsseTranslator
 
     private static string Splat(float f, int n) => n == 1 ? F(f) : $"vec{n}({F(f)})";
 
-    public bool Translate(UsseInst ins)
+    public bool Translate(UsseInst usseInst)
     {
-        switch (ins.Op)
+        switch (usseInst.Op)
         {
             case UsseOp.VMAD:
-                Vmad(ins);
+                Vmad(usseInst);
                 return true;
             case UsseOp.VMAD2:
-                Vmad2(ins);
+                Vmad2(usseInst);
                 return true;
             case UsseOp.VDP:
-                Vdp(ins);
+                Vdp(usseInst);
                 return true;
             case UsseOp.V32NMAD:
             case UsseOp.V16NMAD:
-                Vnmad(ins);
+                Vnmad(usseInst);
                 return true;
             case UsseOp.VCOMP:
-                Vcomp(ins);
+                Vcomp(usseInst);
                 return true;
             case UsseOp.VDUAL:
-                Vdual(ins);
+                Vdual(usseInst);
                 return true;
             case UsseOp.VMOV:
-                Vmov(ins);
+                Vmov(usseInst);
                 return true;
             case UsseOp.VPCK:
-                Vpck(ins);
+                Vpck(usseInst);
                 return true;
             case UsseOp.VTST:
-                Vtst(ins);
+                Vtst(usseInst);
                 return true;
             case UsseOp.VTSTMSK:
-                Vtstmsk(ins);
+                Vtstmsk(usseInst);
                 return true;
             case UsseOp.VBW:
-                Vbw(ins);
+                Vbw(usseInst);
                 return true;
             case UsseOp.SOP2:
-                Sop2(ins);
+                Sop2(usseInst);
                 return true;
             case UsseOp.SOP2M:
-                Sop2m(ins);
+                Sop2m(usseInst);
                 return true;
             case UsseOp.SOP3:
-                Sop3(ins);
+                Sop3(usseInst);
                 return true;
             case UsseOp.I8MAD:
-                I8mad(ins);
+                I8mad(usseInst);
                 return true;
             case UsseOp.I16MAD:
-                I16mad(ins);
+                I16mad(usseInst);
                 return true;
             case UsseOp.I32MAD:
-                I32mad(ins);
+                I32mad(usseInst);
                 return true;
             case UsseOp.I32MAD2:
-                I32mad2(ins);
+                I32mad2(usseInst);
                 return true;
             case UsseOp.SMP:
-                Smp(ins);
+                Smp(usseInst);
                 return true;
             case UsseOp.VLDST:
-                Vldst(ins);
+                Vldst(usseInst);
                 return true;
             case UsseOp.LIMM:
-                Limm(ins);
+                Limm(usseInst);
                 return true;
             case UsseOp.KILL:
                 Line("discard;");
                 return true;
             case UsseOp.DEPTHF:
-                Depthf(ins);
+                Depthf(usseInst);
                 return true;
             case UsseOp.SMLSI:
-                Smlsi(ins);
+                Smlsi(usseInst);
                 return true;
             case UsseOp.SMBO:
-                Smbo(ins);
+                Smbo(usseInst);
                 return true;
             case UsseOp.NOP:
             case UsseOp.PHAS:
@@ -95,7 +95,7 @@ public sealed partial class UsseTranslator
             case UsseOp.BR:
                 return true;
             default:
-                Warnings.Add($"unhandled USSE op {ins.Op} ({ins.Raw:X16})");
+                Warnings.Add($"unhandled USSE op {usseInst.Op} ({usseInst.Raw:X16})");
                 return false;
         }
     }
@@ -514,76 +514,76 @@ public sealed partial class UsseTranslator
             return list;
         }
 
-        Val DoOp(DOp code, List<Operand> ops, int destMask, (int, bool vecLoad, bool) info)
+        Val DoOp(DOp code, List<Operand> operands, int destMask, (int, bool vecLoad, bool) info)
         {
             bool isVdp = code is DOp.VDp or DOp.VSsq;
             int srcMask = info.vecLoad ? (isVdp ? (0b1111 >> (compCountType ? 0 : 1)) : destMask) : 0b0001;
             switch (code)
             {
                 case DOp.VMov:
-                    return Load(ops[0], srcMask);
+                    return Load(operands[0], srcMask);
                 case DOp.FAdd:
                 case DOp.VAdd:
                 {
-                    Val a = Load(ops[0], srcMask);
-                    Val b = Load(ops[1], srcMask);
+                    Val a = Load(operands[0], srcMask);
+                    Val b = Load(operands[1], srcMask);
                     return new Val($"({a} + {b})", 'f', a.N);
                 }
                 case DOp.FMul:
                 case DOp.VMul:
                 {
-                    Val a = Load(ops[0], srcMask);
-                    Val b = Load(ops[1], srcMask);
+                    Val a = Load(operands[0], srcMask);
+                    Val b = Load(operands[1], srcMask);
                     return new Val($"({a} * {b})", 'f', a.N);
                 }
                 case DOp.FRcp:
                 {
-                    Val a = Load(ops[0], srcMask);
+                    Val a = Load(operands[0], srcMask);
                     return new Val($"(1.0 / {a})", 'f', a.N);
                 }
                 case DOp.FRsq:
                 {
-                    Val a = Load(ops[0], srcMask);
+                    Val a = Load(operands[0], srcMask);
                     return new Val($"inversesqrt({a})", 'f', a.N);
                 }
                 case DOp.VDp:
                 {
-                    Val a = Load(ops[0], srcMask);
-                    Val b = Load(ops[1], srcMask);
+                    Val a = Load(operands[0], srcMask);
+                    Val b = Load(operands[1], srcMask);
                     return new Val(a.N > 1 ? $"dot({a}, {b})" : $"({a} * {b})", 'f', 1);
                 }
                 case DOp.FExp:
                 {
-                    Val a = Bind(Load(ops[0], srcMask));
+                    Val a = Bind(Load(operands[0], srcMask));
                     return new Val($"mix(exp2({a}), {Splat(1f, a.N)}, isnan(exp2({a})))", 'f', a.N);
                 }
                 case DOp.FLog:
                 {
-                    Val a = Load(ops[0], srcMask);
+                    Val a = Load(operands[0], srcMask);
                     return new Val($"log2({a})", 'f', a.N);
                 }
                 case DOp.VSsq:
                 {
-                    Val a = Bind(Load(ops[0], srcMask));
+                    Val a = Bind(Load(operands[0], srcMask));
                     return new Val(a.N > 1 ? $"dot({a}, {a})" : $"({a} * {a})", 'f', 1);
                 }
                 case DOp.FMad:
                 case DOp.VMad:
                 {
-                    Val a = Load(ops[0], srcMask);
-                    Val b = Load(ops[1], srcMask);
-                    Val c = Load(ops[2], srcMask);
+                    Val a = Load(operands[0], srcMask);
+                    Val b = Load(operands[1], srcMask);
+                    Val c = Load(operands[2], srcMask);
                     return new Val($"({a} * {b} + {c})", 'f', a.N);
                 }
                 case DOp.FSubFlr:
                 {
-                    Val a = Load(ops[0], srcMask);
-                    if (ops[0].IsSame(ops[1], srcMask))
+                    Val a = Load(operands[0], srcMask);
+                    if (operands[0].IsSame(operands[1], srcMask))
                     {
                         return new Val($"fract({a})", 'f', a.N);
                     }
 
-                    Val b = Load(ops[1], srcMask);
+                    Val b = Load(operands[1], srcMask);
                     return new Val($"({a} - floor({b}))", 'f', a.N);
                 }
             }
@@ -733,9 +733,9 @@ public sealed partial class UsseTranslator
             Store(dest, result, mask, RepeatOffset(dest, r, RepeatMode.Slmsi));
             if (copied != null)
             {
-                foreach ((int w, DataType? t) in copied)
+                foreach ((int w, DataType? dataType) in copied)
                 {
-                    SetWordType(dest.Bank, w, t ?? dt);
+                    SetWordType(dest.Bank, w, dataType ?? dt);
                 }
             }
         }
@@ -860,7 +860,7 @@ public sealed partial class UsseTranslator
     }
 
     /// <summary>Banks whose registers hold raw 32-bit words (a typed move between them is a bit copy).</summary>
-    private static bool IsBitRegister(Bank b) => b is Bank.Temp or Bank.PrimAttr or Bank.SecAttr or Bank.Output or Bank.Indexed1 or Bank.Indexed2;
+    private static bool IsBitRegister(Bank bank) => bank is Bank.Temp or Bank.PrimAttr or Bank.SecAttr or Bank.Output or Bank.Indexed1 or Bank.Indexed2;
 
     private void Limm(UsseInst i)
     {

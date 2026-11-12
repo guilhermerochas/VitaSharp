@@ -111,8 +111,8 @@ public sealed unsafe class VkCore : IDisposable
         CreateInstance(surface, validation);
         if (surface != null)
         {
-            Vk.TryGetInstanceExtension(Instance, out KhrSurface se);
-            SurfaceExt = se;
+            Vk.TryGetInstanceExtension(Instance, out KhrSurface khrSurface);
+            SurfaceExt = khrSurface;
             Surface = surface.CreateSurface(Vk, Instance);
         }
         PickDevice();
@@ -134,9 +134,9 @@ public sealed unsafe class VkCore : IDisposable
                 Vk.EnumerateInstanceLayerProperties(ref lc, p);
             }
 
-            foreach (LayerProperties l in props)
+            foreach (LayerProperties layerProperties in props)
             {
-                if (Marshal.PtrToStringAnsi((nint)l.LayerName) == "VK_LAYER_KHRONOS_validation")
+                if (Marshal.PtrToStringAnsi((nint)layerProperties.LayerName) == "VK_LAYER_KHRONOS_validation")
                 {
                     layers.Add("VK_LAYER_KHRONOS_validation");
                 }
@@ -216,9 +216,9 @@ public sealed unsafe class VkCore : IDisposable
         SilkMarshal.Free((nint)extPtrs);
         SilkMarshal.Free((nint)layerPtrs);
 
-        if (layers.Count > 0 && Vk.TryGetInstanceExtension(Instance, out ExtDebugUtils du))
+        if (layers.Count > 0 && Vk.TryGetInstanceExtension(Instance, out ExtDebugUtils extDebugUtils))
         {
-            _debugUtils = du;
+            _debugUtils = extDebugUtils;
             var mci = new DebugUtilsMessengerCreateInfoEXT
             {
                 SType = StructureType.DebugUtilsMessengerCreateInfoExt,
@@ -226,7 +226,7 @@ public sealed unsafe class VkCore : IDisposable
                 MessageType = DebugUtilsMessageTypeFlagsEXT.GeneralBitExt | DebugUtilsMessageTypeFlagsEXT.ValidationBitExt | DebugUtilsMessageTypeFlagsEXT.PerformanceBitExt,
                 PfnUserCallback = (DebugUtilsMessengerCallbackFunctionEXT)DebugCallback,
             };
-            du.CreateDebugUtilsMessenger(Instance, in mci, null, out _messenger);
+            extDebugUtils.CreateDebugUtilsMessenger(Instance, in mci, null, out _messenger);
         }
     }
 
@@ -252,28 +252,28 @@ public sealed unsafe class VkCore : IDisposable
         }
 
         var set = new HashSet<string>();
-        foreach (ExtensionProperties e in props)
+        foreach (ExtensionProperties extensionProperties in props)
         {
-            set.Add(Marshal.PtrToStringAnsi((nint)e.ExtensionName) ?? "");
+            set.Add(Marshal.PtrToStringAnsi((nint)extensionProperties.ExtensionName) ?? "");
         }
 
         return set;
     }
 
-    private HashSet<string> DeviceExtensions(PhysicalDevice d)
+    private HashSet<string> DeviceExtensions(PhysicalDevice physicalDevice)
     {
         uint n = 0;
-        Vk.EnumerateDeviceExtensionProperties(d, (byte*)null, ref n, null);
+        Vk.EnumerateDeviceExtensionProperties(physicalDevice, (byte*)null, ref n, null);
         var props = new ExtensionProperties[n];
         fixed (ExtensionProperties* p = props)
         {
-            Vk.EnumerateDeviceExtensionProperties(d, (byte*)null, ref n, p);
+            Vk.EnumerateDeviceExtensionProperties(physicalDevice, (byte*)null, ref n, p);
         }
 
         var set = new HashSet<string>();
-        foreach (ExtensionProperties e in props)
+        foreach (ExtensionProperties extensionProperties in props)
         {
-            set.Add(Marshal.PtrToStringAnsi((nint)e.ExtensionName) ?? "");
+            set.Add(Marshal.PtrToStringAnsi((nint)extensionProperties.ExtensionName) ?? "");
         }
 
         return set;
@@ -307,9 +307,9 @@ public sealed unsafe class VkCore : IDisposable
         PhysicalDevice best = default;
         int bestScore = int.MinValue;
         var rejected = new List<string>();
-        foreach (PhysicalDevice d in devices)
+        foreach (PhysicalDevice physicalDevice in devices)
         {
-            Vk.GetPhysicalDeviceProperties(d, out PhysicalDeviceProperties props);
+            Vk.GetPhysicalDeviceProperties(physicalDevice, out PhysicalDeviceProperties props);
             // Vulkan 1.1 is the minimum: older devices render with render passes and static pipeline state
             // (GpuQuirk.RenderPasses); 1.3 devices are preferred within a device type
             if (props.ApiVersion < Vk.Version11)
@@ -324,7 +324,7 @@ public sealed unsafe class VkCore : IDisposable
                 _ => 1000,
             } + (props.ApiVersion >= Vk.Version13 ? 100 : 0);
             // VITASHARP_GPU_DEVICE=<index or name part>: pick a specific device (an integrated GPU with ASTC, say)
-            if (s_deviceFilter is { } want && !(int.TryParse(want, out int wi) ? wi == Array.IndexOf(devices, d)
+            if (s_deviceFilter is { } want && !(int.TryParse(want, out int wi) ? wi == Array.IndexOf(devices, physicalDevice)
                     : (Marshal.PtrToStringAnsi((nint)props.DeviceName) ?? "").Contains(want, StringComparison.OrdinalIgnoreCase)))
             {
                 score -= 10000;
@@ -333,7 +333,7 @@ public sealed unsafe class VkCore : IDisposable
             if (score > bestScore)
             {
                 bestScore = score;
-                best = d;
+                best = physicalDevice;
             }
         }
         if (best.Handle == 0)
@@ -361,7 +361,7 @@ public sealed unsafe class VkCore : IDisposable
     public bool RasterizationOrderColor;
 
     /// <summary>The driver's identity and what it supports, for <see cref="GpuQuirkTable.Select"/>.</summary>
-    private GpuDeviceInfo DescribeDevice(in PhysicalDeviceFeatures f, in PhysicalDeviceVulkan11Features f11, in PhysicalDeviceVulkan12Features f12,
+    private GpuDeviceInfo DescribeDevice(in PhysicalDeviceFeatures physicalDeviceFeatures, in PhysicalDeviceVulkan11Features physicalDeviceVulkan11Features, in PhysicalDeviceVulkan12Features physicalDeviceVulkan12Features,
         HashSet<string> exts, bool roaa, uint timestampBits, bool bcPatched, bool dynamicRendering)
     {
         uint driverId = 0;
@@ -376,30 +376,30 @@ public sealed unsafe class VkCore : IDisposable
             driverInfo = Marshal.PtrToStringAnsi((nint)drv.DriverInfo) ?? "";
         }
         GpuFeature feats = GpuFeature.None;
-        void Set(bool on, GpuFeature g)
+        void Set(bool on, GpuFeature gpuFeature)
         {
             if (on)
             {
-                feats |= g;
+                feats |= gpuFeature;
             }
         }
-        Set(f.TextureCompressionBC || bcPatched, GpuFeature.TextureCompressionBC);
-        Set(f.TextureCompressionAstcLdr, GpuFeature.TextureCompressionAstc);
-        Set(f.TextureCompressionEtc2, GpuFeature.TextureCompressionEtc2);
-        Set(f.ShaderStorageImageWriteWithoutFormat, GpuFeature.ShaderStorageImageWriteWithoutFormat);
-        Set(f.SampleRateShading, GpuFeature.SampleRateShading);
-        Set(f.DepthClamp, GpuFeature.DepthClamp);
-        Set(f.FillModeNonSolid, GpuFeature.FillModeNonSolid);
-        Set(f.GeometryShader, GpuFeature.GeometryShader);
-        Set(f.LogicOp, GpuFeature.LogicOp);
-        Set(f11.StorageBuffer16BitAccess, GpuFeature.Storage16Bit);
-        Set(f.ShaderInt16, GpuFeature.ShaderInt16);
-        Set(f.WideLines, GpuFeature.WideLines);
-        Set(f.OcclusionQueryPrecise, GpuFeature.OcclusionQueryPrecise);
-        Set(f.IndependentBlend, GpuFeature.IndependentBlend);
-        Set(f.DepthBiasClamp, GpuFeature.DepthBiasClamp);
-        Set(f.SamplerAnisotropy, GpuFeature.SamplerAnisotropy);
-        Set(f12.SamplerMirrorClampToEdge, GpuFeature.SamplerMirrorClampToEdge);
+        Set(physicalDeviceFeatures.TextureCompressionBC || bcPatched, GpuFeature.TextureCompressionBC);
+        Set(physicalDeviceFeatures.TextureCompressionAstcLdr, GpuFeature.TextureCompressionAstc);
+        Set(physicalDeviceFeatures.TextureCompressionEtc2, GpuFeature.TextureCompressionEtc2);
+        Set(physicalDeviceFeatures.ShaderStorageImageWriteWithoutFormat, GpuFeature.ShaderStorageImageWriteWithoutFormat);
+        Set(physicalDeviceFeatures.SampleRateShading, GpuFeature.SampleRateShading);
+        Set(physicalDeviceFeatures.DepthClamp, GpuFeature.DepthClamp);
+        Set(physicalDeviceFeatures.FillModeNonSolid, GpuFeature.FillModeNonSolid);
+        Set(physicalDeviceFeatures.GeometryShader, GpuFeature.GeometryShader);
+        Set(physicalDeviceFeatures.LogicOp, GpuFeature.LogicOp);
+        Set(physicalDeviceVulkan11Features.StorageBuffer16BitAccess, GpuFeature.Storage16Bit);
+        Set(physicalDeviceFeatures.ShaderInt16, GpuFeature.ShaderInt16);
+        Set(physicalDeviceFeatures.WideLines, GpuFeature.WideLines);
+        Set(physicalDeviceFeatures.OcclusionQueryPrecise, GpuFeature.OcclusionQueryPrecise);
+        Set(physicalDeviceFeatures.IndependentBlend, GpuFeature.IndependentBlend);
+        Set(physicalDeviceFeatures.DepthBiasClamp, GpuFeature.DepthBiasClamp);
+        Set(physicalDeviceFeatures.SamplerAnisotropy, GpuFeature.SamplerAnisotropy);
+        Set(physicalDeviceVulkan12Features.SamplerMirrorClampToEdge, GpuFeature.SamplerMirrorClampToEdge);
         Set(exts.Contains(MemoryBudgetExtension), GpuFeature.MemoryBudget);
         Set(exts.Contains(PushDescriptorExt), GpuFeature.PushDescriptor);
         Set(exts.Contains(CustomBorderColorExt), GpuFeature.CustomBorderColor);
@@ -407,13 +407,13 @@ public sealed unsafe class VkCore : IDisposable
         Set(timestampBits > 0 && Properties.Limits.TimestampPeriod > 0, GpuFeature.Timestamps);
         Set(dynamicRendering, GpuFeature.DynamicRendering);
         Set(Properties.ApiVersion >= Vk.Version13, GpuFeature.ExtendedDynamicState);
-        Set(f.ShaderClipDistance, GpuFeature.ShaderClipDistance);
-        PhysicalDeviceLimits l = Properties.Limits;
+        Set(physicalDeviceFeatures.ShaderClipDistance, GpuFeature.ShaderClipDistance);
+        PhysicalDeviceLimits physicalDeviceLimits = Properties.Limits;
         bool unified = true;
         for (int i = 0; i < MemoryProperties.MemoryTypeCount; i++)
         {
-            MemoryPropertyFlags t = MemoryProperties.MemoryTypes[i].PropertyFlags;
-            if ((t & MemoryPropertyFlags.DeviceLocalBit) != 0 && (t & MemoryPropertyFlags.HostVisibleBit) == 0)
+            MemoryPropertyFlags memoryPropertyFlags = MemoryProperties.MemoryTypes[i].PropertyFlags;
+            if ((memoryPropertyFlags & MemoryPropertyFlags.DeviceLocalBit) != 0 && (memoryPropertyFlags & MemoryPropertyFlags.HostVisibleBit) == 0)
             {
                 unified = false;
             }
@@ -432,16 +432,16 @@ public sealed unsafe class VkCore : IDisposable
             UnifiedMemory = unified || MemoryProperties.MemoryHeapCount == 1,
             Limits = new GpuLimits
             {
-                MaxPushConstantsSize = l.MaxPushConstantsSize,
-                MaxBoundDescriptorSets = l.MaxBoundDescriptorSets,
-                MaxPerStageDescriptorSamplers = l.MaxPerStageDescriptorSamplers,
-                MaxPerStageDescriptorSampledImages = l.MaxPerStageDescriptorSampledImages,
-                MaxPerStageDescriptorStorageBuffers = l.MaxPerStageDescriptorStorageBuffers,
-                MaxPerStageDescriptorInputAttachments = l.MaxPerStageDescriptorInputAttachments,
-                MaxPerStageResources = l.MaxPerStageResources,
-                MaxDescriptorSetSamplers = l.MaxDescriptorSetSamplers,
-                FramebufferSampleCounts = (uint)(l.FramebufferColorSampleCounts & l.FramebufferDepthSampleCounts & l.FramebufferStencilSampleCounts),
-                MaxImageDimension2D = l.MaxImageDimension2D,
+                MaxPushConstantsSize = physicalDeviceLimits.MaxPushConstantsSize,
+                MaxBoundDescriptorSets = physicalDeviceLimits.MaxBoundDescriptorSets,
+                MaxPerStageDescriptorSamplers = physicalDeviceLimits.MaxPerStageDescriptorSamplers,
+                MaxPerStageDescriptorSampledImages = physicalDeviceLimits.MaxPerStageDescriptorSampledImages,
+                MaxPerStageDescriptorStorageBuffers = physicalDeviceLimits.MaxPerStageDescriptorStorageBuffers,
+                MaxPerStageDescriptorInputAttachments = physicalDeviceLimits.MaxPerStageDescriptorInputAttachments,
+                MaxPerStageResources = physicalDeviceLimits.MaxPerStageResources,
+                MaxDescriptorSetSamplers = physicalDeviceLimits.MaxDescriptorSetSamplers,
+                FramebufferSampleCounts = (uint)(physicalDeviceLimits.FramebufferColorSampleCounts & physicalDeviceLimits.FramebufferDepthSampleCounts & physicalDeviceLimits.FramebufferStencilSampleCounts),
+                MaxImageDimension2D = physicalDeviceLimits.MaxImageDimension2D,
             },
         };
     }
@@ -542,7 +542,7 @@ public sealed unsafe class VkCore : IDisposable
         }
         Caps = GpuQuirkTable.Select(DescribeDevice(supported2.Features, has11, has12, devExts, roaaName != null && hasRoaa.RasterizationOrderColorAttachmentAccess,
             families[QueueFamily].TimestampValidBits, bcPatched, dynamicRendering), profile, Environment.GetEnvironmentVariable(EnvVars.GpuQuirks));
-        bool Has(GpuFeature f) => Caps.Has(f);
+        bool Has(GpuFeature gpuFeature) => Caps.Has(gpuFeature);
         // the sample counts every multisampling check reads: the profile's (e.g. Mali: no 2x)
         var counts = (SampleCountFlags)Caps.Limits.FramebufferSampleCounts;
         Properties.Limits.FramebufferColorSampleCounts &= counts | SampleCountFlags.Count1Bit;
@@ -687,8 +687,8 @@ public sealed unsafe class VkCore : IDisposable
         Vk.GetDeviceQueue(Device, QueueFamily, 0, out Queue);
         if (present)
         {
-            Vk.TryGetDeviceExtension(Instance, Device, out KhrSwapchain sw);
-            SwapchainExt = sw;
+            Vk.TryGetDeviceExtension(Instance, Device, out KhrSwapchain khrSwapchain);
+            SwapchainExt = khrSwapchain;
         }
         // capabilities and active quirks, once at startup (also in the F10 capture's info.txt)
         foreach (string line in Caps.Describe().Split('\n'))
@@ -738,46 +738,46 @@ public sealed unsafe class VkCore : IDisposable
     ///  - triangleFans, separateStencilMaskRef, constantAlphaColorBlendFactors: logged (no fallback yet).
     /// Geometry/tessellation shaders and 64-bit floats are not used by the renderer.
     /// </summary>
-    private void ApplyPortabilityLimits(in PhysicalDevicePortabilitySubsetFeaturesKHR p, ref PhysicalDeviceFeatures feats)
+    private void ApplyPortabilityLimits(in PhysicalDevicePortabilitySubsetFeaturesKHR physicalDevicePortabilitySubsetFeaturesKHR, ref PhysicalDeviceFeatures feats)
     {
         var missing = new List<string>();
-        if (!p.SamplerMipLodBias)
+        if (!physicalDevicePortabilitySubsetFeaturesKHR.SamplerMipLodBias)
         {
             Properties.Limits.MaxSamplerLodBias = 0;
             missing.Add("samplerMipLodBias (sampler LOD bias ignored)");
         }
-        if (!p.PointPolygons)
+        if (!physicalDevicePortabilitySubsetFeaturesKHR.PointPolygons)
         {
             FillModeNonSolid = false;
             feats.FillModeNonSolid = false;
             missing.Add("pointPolygons (wireframe/point fill drawn filled)");
         }
-        if (!p.TriangleFans)
+        if (!physicalDevicePortabilitySubsetFeaturesKHR.TriangleFans)
         {
             TriangleFansUnsupported = true;
             missing.Add("triangleFans");
         }
-        if (!p.SeparateStencilMaskRef)
+        if (!physicalDevicePortabilitySubsetFeaturesKHR.SeparateStencilMaskRef)
         {
             missing.Add("separateStencilMaskRef");
         }
 
-        if (!p.ConstantAlphaColorBlendFactors)
+        if (!physicalDevicePortabilitySubsetFeaturesKHR.ConstantAlphaColorBlendFactors)
         {
             missing.Add("constantAlphaColorBlendFactors");
         }
 
-        if (!p.ImageViewFormatSwizzle)
+        if (!physicalDevicePortabilitySubsetFeaturesKHR.ImageViewFormatSwizzle)
         {
             missing.Add("imageViewFormatSwizzle");
         }
 
-        if (!p.ImageViewFormatReinterpretation)
+        if (!physicalDevicePortabilitySubsetFeaturesKHR.ImageViewFormatReinterpretation)
         {
             missing.Add("imageViewFormatReinterpretation");
         }
 
-        if (!p.MutableComparisonSamplers)
+        if (!physicalDevicePortabilitySubsetFeaturesKHR.MutableComparisonSamplers)
         {
             missing.Add("mutableComparisonSamplers");
         }
@@ -805,9 +805,9 @@ public sealed unsafe class VkCore : IDisposable
     private string FormatSupport(Format f)
     {
         Vk.GetPhysicalDeviceFormatProperties(Physical, f, out FormatProperties props);
-        FormatFeatureFlags t = props.OptimalTilingFeatures;
-        string s = ((t & FormatFeatureFlags.SampledImageBit) != 0 ? "S" : "") + ((t & FormatFeatureFlags.ColorAttachmentBit) != 0 ? "C" : "")
-                + ((t & FormatFeatureFlags.ColorAttachmentBlendBit) != 0 ? "B" : "") + ((t & FormatFeatureFlags.DepthStencilAttachmentBit) != 0 ? "D" : "");
+        FormatFeatureFlags formatFeatureFlags = props.OptimalTilingFeatures;
+        string s = ((formatFeatureFlags & FormatFeatureFlags.SampledImageBit) != 0 ? "S" : "") + ((formatFeatureFlags & FormatFeatureFlags.ColorAttachmentBit) != 0 ? "C" : "")
+                + ((formatFeatureFlags & FormatFeatureFlags.ColorAttachmentBlendBit) != 0 ? "B" : "") + ((formatFeatureFlags & FormatFeatureFlags.DepthStencilAttachmentBit) != 0 ? "D" : "");
         return s.Length == 0 ? "-" : s;
     }
 
@@ -1076,14 +1076,14 @@ public sealed unsafe class VkCore : IDisposable
     public long AllocationFailures => Volatile.Read(ref _failures);
     public long CapRefusals => Volatile.Read(ref _capRefusals);
 
-    /// <summary>Bytes the renderer holds for <paramref name="cat"/>: device-local (pool sub-allocations + device buffers) and host.</summary>
-    public (long Device, long Host) CategoryBytes(MemCat cat) =>
-        (Volatile.Read(ref _poolUsed[(int)cat]) + Volatile.Read(ref _directDevice[(int)cat]), Volatile.Read(ref _directHost[(int)cat]));
+    /// <summary>Bytes the renderer holds for <paramref name="category"/>: device-local (pool sub-allocations + device buffers) and host.</summary>
+    public (long Device, long Host) CategoryBytes(MemCat category) =>
+        (Volatile.Read(ref _poolUsed[(int)category]) + Volatile.Read(ref _directDevice[(int)category]), Volatile.Read(ref _directHost[(int)category]));
 
-    internal void PoolAccount(MemCat cat, long delta) => Interlocked.Add(ref _poolUsed[(int)cat], delta);
+    internal void PoolAccount(MemCat category, long delta) => Interlocked.Add(ref _poolUsed[(int)category], delta);
 
     /// <summary>One vkAllocateMemory with accounting; the budget cap refuses device-local allocations past it. No eviction.</summary>
-    public Result TryAllocateMemory(ulong size, uint type, MemCat cat, bool pooled, out DeviceMemory mem)
+    public Result TryAllocateMemory(ulong size, uint type, MemCat category, bool pooled, out DeviceMemory mem)
     {
         mem = default;
         bool device = IsDeviceLocal(type);
@@ -1101,7 +1101,7 @@ public sealed unsafe class VkCore : IDisposable
 
         lock (_allocations)
         {
-            _allocations[mem.Handle] = (size, cat, device, pooled);
+            _allocations[mem.Handle] = (size, category, device, pooled);
         }
 
         if (pooled)
@@ -1110,11 +1110,11 @@ public sealed unsafe class VkCore : IDisposable
         }
         else if (device)
         {
-            Interlocked.Add(ref _directDevice[(int)cat], (long)size);
+            Interlocked.Add(ref _directDevice[(int)category], (long)size);
         }
         else
         {
-            Interlocked.Add(ref _directHost[(int)cat], (long)size);
+            Interlocked.Add(ref _directHost[(int)category], (long)size);
         }
 
         if (device)
@@ -1138,9 +1138,9 @@ public sealed unsafe class VkCore : IDisposable
 
     /// <summary>vkAllocateMemory for a whole buffer: on out-of-memory the renderer reclaims memory and it is retried;
     /// throws <see cref="VkOutOfMemoryException"/> when nothing helped.</summary>
-    public DeviceMemory AllocateMemory(ulong size, uint type, MemCat cat, string what)
+    public DeviceMemory AllocateMemory(ulong size, uint type, MemCat category, string what)
     {
-        Result r = TryAllocateMemory(size, type, cat, false, out DeviceMemory mem);
+        Result r = TryAllocateMemory(size, type, category, false, out DeviceMemory mem);
         if (r == Result.Success)
         {
             return mem;
@@ -1158,14 +1158,14 @@ public sealed unsafe class VkCore : IDisposable
                 continue;
             }
 
-            r = TryAllocateMemory(size, type, cat, false, out mem);
+            r = TryAllocateMemory(size, type, category, false, out mem);
             if (r == Result.Success)
             {
                 return mem;
             }
         }
         MarkHopeless(size);
-        throw OutOfMemory(r, what, size, cat);
+        throw OutOfMemory(r, what, size, category);
     }
 
     private ulong _hopelessSize = ulong.MaxValue;
@@ -1184,7 +1184,7 @@ public sealed unsafe class VkCore : IDisposable
         _hopelessUntil = Environment.TickCount64 + 2000;
     }
 
-    public VkOutOfMemoryException OutOfMemory(Result r, string what, ulong size, MemCat cat)
+    public VkOutOfMemoryException OutOfMemory(Result r, string what, ulong size, MemCat category)
     {
         Interlocked.Increment(ref _failures);
         string desc;
@@ -1196,7 +1196,7 @@ public sealed unsafe class VkCore : IDisposable
         {
             desc = $"(memory summary failed: {e.Message})";
         }
-        return new VkOutOfMemoryException(r, what, size, cat, desc);
+        return new VkOutOfMemoryException(r, what, size, category, desc);
     }
 
     public void FreeMemory(DeviceMemory mem)
@@ -1248,8 +1248,8 @@ public sealed unsafe class VkCore : IDisposable
 
         for (int i = 0; i < n; i++)
         {
-            MemoryHeap h = MemoryProperties.MemoryHeaps[i];
-            heaps[i] = new HeapInfo(i, h.Size, (h.Flags & MemoryHeapFlags.DeviceLocalBit) != 0,
+            MemoryHeap memoryHeap = MemoryProperties.MemoryHeaps[i];
+            heaps[i] = new HeapInfo(i, memoryHeap.Size, (memoryHeap.Flags & MemoryHeapFlags.DeviceLocalBit) != 0,
                 MemoryBudgetSupported ? budget.HeapBudget[i] : 0, MemoryBudgetSupported ? budget.HeapUsage[i] : 0);
         }
         return heaps;
@@ -1270,17 +1270,17 @@ public sealed unsafe class VkCore : IDisposable
 
         double worst = 0;
         ulong largest = 0;
-        foreach (HeapInfo h in Heaps())
+        foreach (HeapInfo heapInfo in Heaps())
         {
-            if (!h.DeviceLocal)
+            if (!heapInfo.DeviceLocal)
             {
                 continue;
             }
 
-            largest = Math.Max(largest, h.Size);
-            if (h.Budget > 0)
+            largest = Math.Max(largest, heapInfo.Size);
+            if (heapInfo.Budget > 0)
             {
-                worst = Math.Max(worst, h.Usage / (double)h.Budget);
+                worst = Math.Max(worst, heapInfo.Usage / (double)heapInfo.Budget);
             }
         }
         if (MemoryBudgetSupported)
@@ -1297,17 +1297,17 @@ public sealed unsafe class VkCore : IDisposable
     public string HeapSummary()
     {
         var sb = new System.Text.StringBuilder();
-        foreach (HeapInfo h in Heaps())
+        foreach (HeapInfo heapInfo in Heaps())
         {
             if (sb.Length > 0)
             {
                 sb.Append("; ");
             }
 
-            sb.Append($"heap {h.Index} {(h.DeviceLocal ? "device-local" : "host")} {h.Size / 1073741824.0:F1} GB");
-            if (h.Budget > 0)
+            sb.Append($"heap {heapInfo.Index} {(heapInfo.DeviceLocal ? "device-local" : "host")} {heapInfo.Size / 1073741824.0:F1} GB");
+            if (heapInfo.Budget > 0)
             {
-                sb.Append($": budget {Mb(h.Budget)}, usage {Mb(h.Usage)} ({100.0 * h.Usage / h.Budget:F0}%)");
+                sb.Append($": budget {Mb(heapInfo.Budget)}, usage {Mb(heapInfo.Usage)} ({100.0 * heapInfo.Usage / heapInfo.Budget:F0}%)");
             }
         }
         if (!MemoryBudgetSupported)
@@ -1467,18 +1467,18 @@ public sealed unsafe class ImageMemoryPool : IDisposable
         }
     }
 
-    public Allocation Allocate(MemoryRequirements req, MemCat cat)
+    public Allocation Allocate(MemoryRequirements req, MemCat category)
     {
         uint type = _vk.FindMemoryType(req.MemoryTypeBits, MemoryPropertyFlags.DeviceLocalBit);
         ulong align = Math.Max(req.Alignment, 256);
-        if (TryExisting(type, req.Size, align, cat, out Allocation a))
+        if (TryExisting(type, req.Size, align, category, out Allocation a))
         {
             return a;
         }
 
         ulong need = (req.Size + align - 1) & ~(align - 1);
         ulong full = Math.Max(PageSize, need), small = Math.Max(SmallPageSize, need);
-        Result r = TryNewPage(full, type, req.Size, align, cat, out a);
+        Result r = TryNewPage(full, type, req.Size, align, category, out a);
         if (r == Result.Success)
         {
             return a;
@@ -1495,32 +1495,32 @@ public sealed unsafe class ImageMemoryPool : IDisposable
         {
             if (!hopeless && _vk.Reclaim?.Invoke(need, true, level) == true)
             {
-                if (TryExisting(type, req.Size, align, cat, out a))
+                if (TryExisting(type, req.Size, align, category, out a))
                 {
                     return a;
                 }
 
-                if (level == 0 && (r = TryNewPage(full, type, req.Size, align, cat, out a)) == Result.Success)
+                if (level == 0 && (r = TryNewPage(full, type, req.Size, align, category, out a)) == Result.Success)
                 {
                     return a;
                 }
             }
-            if (small < full && (r = TryNewPage(small, type, req.Size, align, cat, out a)) == Result.Success)
+            if (small < full && (r = TryNewPage(small, type, req.Size, align, category, out a)) == Result.Success)
             {
                 return a;
             }
         }
         // last resort: a page of exactly this image (what is left under a budget may be smaller than a small page)
-        if (need < small && (r = TryNewPage(need, type, req.Size, align, cat, out a)) == Result.Success)
+        if (need < small && (r = TryNewPage(need, type, req.Size, align, category, out a)) == Result.Success)
         {
             return a;
         }
 
         _vk.MarkHopeless(need);
-        throw _vk.OutOfMemory(r, "vkAllocateMemory(image page)", req.Size, cat);
+        throw _vk.OutOfMemory(r, "vkAllocateMemory(image page)", req.Size, category);
     }
 
-    private bool TryExisting(uint type, ulong size, ulong align, MemCat cat, out Allocation a)
+    private bool TryExisting(uint type, ulong size, ulong align, MemCat category, out Allocation a)
     {
         foreach (Page p in _pages)
         {
@@ -1531,7 +1531,7 @@ public sealed unsafe class ImageMemoryPool : IDisposable
 
             if (TryTake(p, size, align, out ulong off))
             {
-                a = Take(p, off, size, cat);
+                a = Take(p, off, size, category);
                 return true;
             }
         }
@@ -1539,7 +1539,7 @@ public sealed unsafe class ImageMemoryPool : IDisposable
         return false;
     }
 
-    private Result TryNewPage(ulong pageSize, uint type, ulong size, ulong align, MemCat cat, out Allocation a)
+    private Result TryNewPage(ulong pageSize, uint type, ulong size, ulong align, MemCat category, out Allocation a)
     {
         a = default;
         Result r = _vk.TryAllocateMemory(pageSize, type, MemCat.Other, true, out DeviceMemory mem);
@@ -1552,15 +1552,15 @@ public sealed unsafe class ImageMemoryPool : IDisposable
         page.Free.Add(0, page.Size);
         _pages.Add(page);
         TryTake(page, size, align, out ulong off);
-        a = Take(page, off, size, cat);
+        a = Take(page, off, size, category);
         return r;
     }
 
-    private Allocation Take(Page p, ulong offset, ulong size, MemCat cat)
+    private Allocation Take(Page p, ulong offset, ulong size, MemCat category)
     {
         p.Used += size;
-        _vk.PoolAccount(cat, (long)size);
-        return new Allocation(p.Memory, offset, size, p, cat);
+        _vk.PoolAccount(category, (long)size);
+        return new Allocation(p.Memory, offset, size, p, category);
     }
 
     private static bool TryTake(Page p, ulong size, ulong align, out ulong offset)

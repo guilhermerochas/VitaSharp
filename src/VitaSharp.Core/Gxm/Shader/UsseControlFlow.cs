@@ -10,20 +10,20 @@ public sealed class CfBlock : CfNode
 {
     public uint Start;
     public readonly List<CfNode> Children = new();
-    public void Add(CfNode? n)
+    public void Add(CfNode? cfNode)
     {
-        if (n == null)
+        if (cfNode == null)
         {
             return;
         }
 
-        if (n is CfCode c && c.Size == 0)
+        if (cfNode is CfCode c && c.Size == 0)
         {
             return;
         }
 
-        n.Parent = this;
-        Children.Add(n);
+        cfNode.Parent = this;
+        Children.Add(cfNode);
     }
 }
 
@@ -236,13 +236,13 @@ public static class UsseControlFlow
                 if (from.TryGetValue(a, out Branch br))
                 {
                     bool loopStmt = false;
-                    CfNode? lp = req.Block;
-                    while (lp != null && lp is not CfLoop)
+                    CfNode? cfNode = req.Block;
+                    while (cfNode != null && cfNode is not CfLoop)
                     {
-                        lp = lp.Parent;
+                        cfNode = cfNode.Parent;
                     }
 
-                    if (lp is CfLoop loop)
+                    if (cfNode is CfLoop loop)
                     {
                         CfNode? add = null;
                         if (loop.LoopEnd <= br.Dest - 1)
@@ -425,11 +425,11 @@ public sealed partial class UsseTranslator
         EmitBlock(root);
     }
 
-    private void EmitBlock(CfBlock b)
+    private void EmitBlock(CfBlock cfBlock)
     {
-        foreach (CfNode n in b.Children)
+        foreach (CfNode cfNode in cfBlock.Children)
         {
-            switch (n)
+            switch (cfNode)
             {
                 case CfCode c:
                     EmitCode(c);
@@ -477,24 +477,24 @@ public sealed partial class UsseTranslator
         }
     }
 
-    private void EmitCode(CfCode c)
+    private void EmitCode(CfCode cfCode)
     {
-        if (c.Size == 0)
+        if (cfCode.Size == 0)
         {
             return;
         }
 
-        bool cond = c.Condition != 0 && !(c.Size == 1 && (_code[c.Offset] >> 59) == 0b10001);
+        bool cond = cfCode.Condition != 0 && !(cfCode.Size == 1 && (_code[cfCode.Offset] >> 59) == 0b10001);
         if (cond)
         {
-            Open($"if ({Condition(c.Condition)})");
+            Open($"if ({Condition(cfCode.Condition)})");
         }
 
-        for (uint pc = c.Offset; pc < c.Offset + c.Size && pc < _code.Length; pc++)
+        for (uint pc = cfCode.Offset; pc < cfCode.Offset + cfCode.Size && pc < _code.Length; pc++)
         {
-            UsseInst ins = UsseDecoder.Decode(_code[pc]);
-            Line($"// {pc}: {ins.Op} {_code[pc]:X16}");
-            Translate(ins);
+            UsseInst usseInst = UsseDecoder.Decode(_code[pc]);
+            Line($"// {pc}: {usseInst.Op} {_code[pc]:X16}");
+            Translate(usseInst);
         }
         if (cond)
         {

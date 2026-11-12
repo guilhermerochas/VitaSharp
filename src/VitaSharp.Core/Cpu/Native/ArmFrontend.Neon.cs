@@ -25,7 +25,7 @@ public sealed unsafe partial class ArmFrontend
     private static bool NeedsTinyCheck(VecKind k) => k is VecKind.MulF or VecKind.MlaF or VecKind.MlsF or VecKind.FmaF or VecKind.FmsF
         or VecKind.MulFS or VecKind.MlaFS or VecKind.MlsFS;
 
-    private bool? Vec(VecKind k, bool q, uint size, uint vd, uint vn, uint vm, VecFlags f = 0, uint aux = 0)
+    private bool? Vec(VecKind k, bool q, uint size, uint vd, uint vn, uint vm, VecFlags vecFlags = 0, uint aux = 0)
     {
         if (!_supportsVec(k, size))
         {
@@ -34,10 +34,10 @@ public sealed unsafe partial class ArmFrontend
 
         if (_tinyCheck && NeedsTinyCheck(k))
         {
-            f |= VecFlags.SlowPath;
+            vecFlags |= VecFlags.SlowPath;
             aux |= (uint)_op << 16;
         }
-        B.VecOp(k, q, size, vd * 8, vn * 8, vm * 8, f, aux, _ins);
+        B.VecOp(k, q, size, vd * 8, vn * 8, vm * 8, vecFlags, aux, _ins);
         return false;
     }
 
@@ -52,7 +52,7 @@ public sealed unsafe partial class ArmFrontend
             return null; // odd Q registers: UNDEFINED, the handler decides
         }
 
-        VecFlags f = u ? VecFlags.Unsigned : 0;
+        VecFlags vecFlags = u ? VecFlags.Unsigned : 0;
         bool sz1 = (size & 2) != 0, s64 = size == 3;
         VecKind? k = a switch
         {
@@ -107,7 +107,7 @@ public sealed unsafe partial class ArmFrontend
             return null;
         }
 
-        return Vec(kind, q, size, vd, vn, vm, f);
+        return Vec(kind, q, size, vd, vn, vm, vecFlags);
     }
 
     /// <summary>Neon.Scalar: two registers and a scalar (non-long forms).</summary>
@@ -752,12 +752,12 @@ public sealed unsafe partial class ArmFrontend
             return null; // Q destination: odd registers are UNDEFINED
         }
 
-        VecFlags uf = u ? VecFlags.Unsigned : 0;
+        VecFlags vecFlags = u ? VecFlags.Unsigned : 0;
         return a switch
         {
-            12 => Vec(VecKind.MullI, false, size, vd, vn, vm, uf),
-            8 => Vec(VecKind.MullI, false, size, vd, vn, vm, uf | VecFlags.Accumulate),
-            10 => Vec(VecKind.MullI, false, size, vd, vn, vm, uf | VecFlags.Accumulate, 2),
+            12 => Vec(VecKind.MullI, false, size, vd, vn, vm, vecFlags),
+            8 => Vec(VecKind.MullI, false, size, vd, vn, vm, vecFlags | VecFlags.Accumulate),
+            10 => Vec(VecKind.MullI, false, size, vd, vn, vm, vecFlags | VecFlags.Accumulate, 2),
             14 => u || size != 0 ? null : Vec(VecKind.MullI, false, 0, vd, vn, vm, 0, 1),
             _ => null,
         };

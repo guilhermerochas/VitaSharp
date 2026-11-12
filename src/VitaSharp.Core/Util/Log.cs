@@ -197,18 +197,18 @@ public static class Log
         }
     }
     /// <summary>Interpolated messages are only formatted when the level is enabled (no allocation otherwise).</summary>
-    public static void Trace(ref TraceLogHandler m)
+    public static void Trace(ref TraceLogHandler traceLogHandler)
     {
         if (Level <= LogLevel.Trace)
         {
-            Write(LogLevel.Trace, m.ToStringAndClear());
+            Write(LogLevel.Trace, traceLogHandler.ToStringAndClear());
         }
     }
-    public static void Debug(ref DebugLogHandler m)
+    public static void Debug(ref DebugLogHandler debugLogHandler)
     {
         if (Level <= LogLevel.Debug)
         {
-            Write(LogLevel.Debug, m.ToStringAndClear());
+            Write(LogLevel.Debug, debugLogHandler.ToStringAndClear());
         }
     }
     public static void Info(string m) => Write(LogLevel.Info, m);
@@ -226,11 +226,11 @@ public static class Log
 
     /// <summary><see cref="WarnOnce(string, string)"/> for interpolated keys: a key seen before costs no allocation and the
     /// message is only formatted the first time.</summary>
-    public static void WarnOnce(ref OnceKeyHandler key, [System.Runtime.CompilerServices.InterpolatedStringHandlerArgument("key")] ref OnceMessageHandler m)
+    public static void WarnOnce(ref OnceKeyHandler key, [System.Runtime.CompilerServices.InterpolatedStringHandlerArgument("key")] ref OnceMessageHandler onceMessageHandler)
     {
-        if (m._enabled)
+        if (onceMessageHandler._enabled)
         {
-            Warn(m.ToStringAndClear());
+            Warn(onceMessageHandler.ToStringAndClear());
         }
     }
 

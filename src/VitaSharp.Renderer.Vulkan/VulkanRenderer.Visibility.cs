@@ -47,10 +47,10 @@ public sealed unsafe partial class VulkanRenderer
     /// <summary>At the start of a frame's command buffer (outside any rendering): make its queries reusable.</summary>
     private void ResetVisibility(Frame f)
     {
-        VisibilityFrame v = Vis(f);
-        _vk.CmdResetQueryPool(f.Cmd, v.Pool, 0, VisQueriesPerFrame);
-        v.Used = 0;
-        v.Queries.Clear();
+        VisibilityFrame visibilityFrame = Vis(f);
+        _vk.CmdResetQueryPool(f.Cmd, visibilityFrame.Pool, 0, VisQueriesPerFrame);
+        visibilityFrame.Used = 0;
+        visibilityFrame.Queries.Clear();
     }
 
     /// <summary>Starts the occlusion query for a draw with a visibility test; returns false when none is needed.</summary>
@@ -62,17 +62,17 @@ public sealed unsafe partial class VulkanRenderer
             return false;
         }
 
-        VisibilityFrame v = Vis(F);
-        if (v.Used >= VisQueriesPerFrame)
+        VisibilityFrame visibilityFrame = Vis(F);
+        if (visibilityFrame.Used >= VisQueriesPerFrame)
         {
             Log.WarnOnce("visq-full", "[gpu] visibility queries per frame exhausted");
             return false;
         }
-        query = v.Used++;
+        query = visibilityFrame.Used++;
         float k = RtScale; // internal resolution only: the supersampled MSAA path stands for GXM's own samples
-        v.Queries.Add((d.VisAddress, d.VisIncrement, d.Space, k * k));
+        visibilityFrame.Queries.Add((d.VisAddress, d.VisIncrement, d.Space, k * k));
         QueryControlFlags flags = (d.VisIncrement || CostOn) && _core.OcclusionQueryPrecise ? QueryControlFlags.PreciseBit : 0;
-        _vk.CmdBeginQuery(cmd, v.Pool, query, flags);
+        _vk.CmdBeginQuery(cmd, visibilityFrame.Pool, query, flags);
         return true;
     }
 
@@ -81,28 +81,28 @@ public sealed unsafe partial class VulkanRenderer
     /// <summary>Runs after the frame's fence signalled: writes the results into guest memory.</summary>
     private void CompleteVisibility(Frame f)
     {
-        VisibilityFrame? v = f.Visibility;
-        if (v == null || v.Used == 0)
+        VisibilityFrame? visibilityFrame = f.Visibility;
+        if (visibilityFrame == null || visibilityFrame.Used == 0)
         {
             return;
         }
 
-        if (v.Results.Length < v.Used)
+        if (visibilityFrame.Results.Length < visibilityFrame.Used)
         {
-            v.Results = new uint[Math.Max(v.Used, Math.Min(v.Results.Length * 2, VisQueriesPerFrame))];
+            visibilityFrame.Results = new uint[Math.Max(visibilityFrame.Used, Math.Min(visibilityFrame.Results.Length * 2, VisQueriesPerFrame))];
         }
 
-        uint[] results = v.Results;
+        uint[] results = visibilityFrame.Results;
         fixed (uint* p = results)
         {
-            _vk.GetQueryPoolResults(_dev, v.Pool, 0, v.Used, (nuint)(v.Used * 4), p, 4, QueryResultFlags.ResultWaitBit);
+            _vk.GetQueryPoolResults(_dev, visibilityFrame.Pool, 0, visibilityFrame.Used, (nuint)(visibilityFrame.Used * 4), p, 4, QueryResultFlags.ResultWaitBit);
         }
 
-        Dictionary<(AddressSpace?, uint), (double Samples, bool Increment)> sums = v.Sums;
+        Dictionary<(AddressSpace?, uint), (double Samples, bool Increment)> sums = visibilityFrame.Sums;
         sums.Clear();
-        for (int i = 0; i < v.Queries.Count; i++)
+        for (int i = 0; i < visibilityFrame.Queries.Count; i++)
         {
-            (uint addr, bool inc, AddressSpace? space, float area) = v.Queries[i];
+            (uint addr, bool inc, AddressSpace? space, float area) = visibilityFrame.Queries[i];
             (double Samples, bool Increment) cur = sums.GetValueOrDefault((space, addr));
             sums[(space, addr)] = (cur.Samples + (s_forceVisible ? 1u << 16 : area == 1f ? results[i] : results[i] / (double)area), inc);
         }
@@ -119,8 +119,8 @@ public sealed unsafe partial class VulkanRenderer
             Log.Info($"[vis] retire f{VitaSharp.Core.Hle.Modules.Display.FramesPresented} gpuframe={FrameCount} wrote {sums.Count} words, nonzero: " + string.Join(" ", sums.Where(k => k.Value.Samples > 0).OrderBy(k => k.Key.Item2).Select(k => $"{k.Key.Item2:X}={k.Value.Samples}")));
         }
 
-        v.Used = 0;
-        v.Queries.Clear();
+        visibilityFrame.Used = 0;
+        visibilityFrame.Queries.Clear();
     }
 
     private void DestroyVisibility(Frame f)

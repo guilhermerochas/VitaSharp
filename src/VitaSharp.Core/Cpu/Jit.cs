@@ -117,11 +117,11 @@ public static unsafe class Jit
     /// <summary>Why <see cref="Select"/> rejected <paramref name="name"/> (for the fallback log line).</summary>
     public static string WhyUnavailable(string? name)
     {
-        foreach (IBlockCompiler b in All)
+        foreach (IBlockCompiler blockCompiler in All)
         {
-            if (b.Name.Equals(name, StringComparison.OrdinalIgnoreCase))
+            if (blockCompiler.Name.Equals(name, StringComparison.OrdinalIgnoreCase))
             {
-                return $"the {b.Name} backend {b.UnsupportedReason ?? "is not supported on this host"}";
+                return $"the {blockCompiler.Name} backend {blockCompiler.UnsupportedReason ?? "is not supported on this host"}";
             }
         }
 
@@ -221,21 +221,21 @@ public static unsafe class Jit
 #endif
 
         long dt = System.Diagnostics.Stopwatch.GetTimestamp() - t0;
-        BackendStats st = backend.Stats;
-        Interlocked.Add(ref st.Ticks, dt);
+        BackendStats backendStats = backend.Stats;
+        Interlocked.Add(ref backendStats.Ticks, dt);
         Util.FrameLedger.Add(Util.FrameLedger.Cat.JitCompile, dt);
         if (cb == null)
         {
-            Interlocked.Increment(ref st.Rejected);
-            st.AddReject(BackendStats.RejectReason ?? "unspecified", b.Insts.Length);
+            Interlocked.Increment(ref backendStats.Rejected);
+            backendStats.AddReject(BackendStats.RejectReason ?? "unspecified", b.Insts.Length);
             b.Tier++;
             b.HotAt = NextThreshold(b);
             b.JitState = b.Tier < chain.Length ? 0 : 3; // the next backend takes it once the block reaches its threshold
             return;
         }
         Install(b, cb);
-        Interlocked.Increment(ref st.Blocks);
-        Interlocked.Add(ref st.Instructions, b.Insts.Length);
+        Interlocked.Increment(ref backendStats.Blocks);
+        Interlocked.Add(ref backendStats.Instructions, b.Insts.Length);
     }
 
     private static void Install(Block b, CompiledBlock cb)

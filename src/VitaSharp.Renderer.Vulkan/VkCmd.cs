@@ -84,294 +84,294 @@ internal sealed unsafe class VkCmd
     public bool Direct => _direct;
 
     [MethodImpl(MethodImplOptions.AggressiveInlining)]
-    public void CmdBindPipeline(CommandBuffer c, PipelineBindPoint bp, Pipeline p)
+    public void CmdBindPipeline(CommandBuffer commandBuffer, PipelineBindPoint pipelineBindPoint, Pipeline pipeline)
     {
         if (_direct)
         {
-            _bindPipeline(c, bp, p);
+            _bindPipeline(commandBuffer, pipelineBindPoint, pipeline);
         }
         else
         {
-            _vk.CmdBindPipeline(c, bp, p);
+            _vk.CmdBindPipeline(commandBuffer, pipelineBindPoint, pipeline);
         }
     }
 
     [MethodImpl(MethodImplOptions.AggressiveInlining)]
-    public void CmdBindDescriptorSets(CommandBuffer c, PipelineBindPoint bp, PipelineLayout l, uint first, uint count, DescriptorSet* sets, uint dynCount, uint* dyn)
+    public void CmdBindDescriptorSets(CommandBuffer commandBuffer, PipelineBindPoint pipelineBindPoint, PipelineLayout pipelineLayout, uint first, uint count, DescriptorSet* sets, uint dynCount, uint* dyn)
     {
         if (_direct)
         {
-            _bindDescriptorSets(c, bp, l, first, count, sets, dynCount, dyn);
+            _bindDescriptorSets(commandBuffer, pipelineBindPoint, pipelineLayout, first, count, sets, dynCount, dyn);
         }
         else
         {
-            _vk.CmdBindDescriptorSets(c, bp, l, first, count, sets, dynCount, dyn);
+            _vk.CmdBindDescriptorSets(commandBuffer, pipelineBindPoint, pipelineLayout, first, count, sets, dynCount, dyn);
         }
     }
 
     [MethodImpl(MethodImplOptions.AggressiveInlining)]
-    public void CmdBindVertexBuffers(CommandBuffer c, uint first, uint count, Buffer* b, ulong* o)
+    public void CmdBindVertexBuffers(CommandBuffer commandBuffer, uint first, uint count, Buffer* b, ulong* o)
     {
         if (_direct)
         {
-            _bindVertexBuffers(c, first, count, b, o);
+            _bindVertexBuffers(commandBuffer, first, count, b, o);
         }
         else
         {
-            _vk.CmdBindVertexBuffers(c, first, count, b, o);
+            _vk.CmdBindVertexBuffers(commandBuffer, first, count, b, o);
         }
     }
 
     [MethodImpl(MethodImplOptions.AggressiveInlining)]
-    public void CmdBindIndexBuffer(CommandBuffer c, Buffer b, ulong o, IndexType t)
+    public void CmdBindIndexBuffer(CommandBuffer commandBuffer, Buffer buffer, ulong o, IndexType indexType)
     {
         if (_direct)
         {
-            _bindIndexBuffer(c, b, o, t);
+            _bindIndexBuffer(commandBuffer, buffer, o, indexType);
         }
         else
         {
-            _vk.CmdBindIndexBuffer(c, b, o, t);
+            _vk.CmdBindIndexBuffer(commandBuffer, buffer, o, indexType);
         }
     }
 
     [MethodImpl(MethodImplOptions.AggressiveInlining)]
-    public void CmdDrawIndexed(CommandBuffer c, uint indexCount, uint instanceCount, uint firstIndex, int vertexOffset, uint firstInstance)
+    public void CmdDrawIndexed(CommandBuffer commandBuffer, uint indexCount, uint instanceCount, uint firstIndex, int vertexOffset, uint firstInstance)
     {
         if (_direct)
         {
-            _drawIndexed(c, indexCount, instanceCount, firstIndex, vertexOffset, firstInstance);
+            _drawIndexed(commandBuffer, indexCount, instanceCount, firstIndex, vertexOffset, firstInstance);
         }
         else
         {
-            _vk.CmdDrawIndexed(c, indexCount, instanceCount, firstIndex, vertexOffset, firstInstance);
+            _vk.CmdDrawIndexed(commandBuffer, indexCount, instanceCount, firstIndex, vertexOffset, firstInstance);
         }
     }
 
     [MethodImpl(MethodImplOptions.AggressiveInlining)]
-    public void CmdPushConstants(CommandBuffer c, PipelineLayout l, ShaderStageFlags s, uint offset, uint size, void* data)
+    public void CmdPushConstants(CommandBuffer commandBuffer, PipelineLayout pipelineLayout, ShaderStageFlags shaderStageFlags, uint offset, uint size, void* data)
     {
         if (_direct)
         {
-            _pushConstants(c, l, s, offset, size, data);
+            _pushConstants(commandBuffer, pipelineLayout, shaderStageFlags, offset, size, data);
         }
         else
         {
-            _vk.CmdPushConstants(c, l, s, offset, size, data);
+            _vk.CmdPushConstants(commandBuffer, pipelineLayout, shaderStageFlags, offset, size, data);
         }
     }
 
     [MethodImpl(MethodImplOptions.AggressiveInlining)]
-    public void CmdSetViewport(CommandBuffer c, uint first, uint count, in Viewport v)
+    public void CmdSetViewport(CommandBuffer commandBuffer, uint first, uint count, in Viewport viewport)
     {
         if (_direct)
         {
-            fixed (Viewport* p = &v)
+            fixed (Viewport* p = &viewport)
             {
-                _setViewport(c, first, count, p);
+                _setViewport(commandBuffer, first, count, p);
             }
         }
         else
         {
-            _vk.CmdSetViewport(c, first, count, in v);
+            _vk.CmdSetViewport(commandBuffer, first, count, in viewport);
         }
     }
 
     [MethodImpl(MethodImplOptions.AggressiveInlining)]
-    public void CmdSetScissor(CommandBuffer c, uint first, uint count, in Rect2D r)
+    public void CmdSetScissor(CommandBuffer commandBuffer, uint first, uint count, in Rect2D r)
     {
         if (_direct)
         {
             fixed (Rect2D* p = &r)
             {
-                _setScissor(c, first, count, p);
+                _setScissor(commandBuffer, first, count, p);
             }
         }
         else
         {
-            _vk.CmdSetScissor(c, first, count, in r);
+            _vk.CmdSetScissor(commandBuffer, first, count, in r);
         }
     }
 
     [MethodImpl(MethodImplOptions.AggressiveInlining)]
-    public void CmdSetPrimitiveTopology(CommandBuffer c, PrimitiveTopology t)
+    public void CmdSetPrimitiveTopology(CommandBuffer commandBuffer, PrimitiveTopology primitiveTopology)
     {
         if (_direct)
         {
-            _setPrimitiveTopology(c, t);
+            _setPrimitiveTopology(commandBuffer, primitiveTopology);
         }
         else
         {
-            _vk.CmdSetPrimitiveTopology(c, t);
+            _vk.CmdSetPrimitiveTopology(commandBuffer, primitiveTopology);
         }
     }
 
     [MethodImpl(MethodImplOptions.AggressiveInlining)]
-    public void CmdSetCullMode(CommandBuffer c, CullModeFlags m)
+    public void CmdSetCullMode(CommandBuffer commandBuffer, CullModeFlags cullModeFlags)
     {
         if (_direct)
         {
-            _setCullMode(c, m);
+            _setCullMode(commandBuffer, cullModeFlags);
         }
         else
         {
-            _vk.CmdSetCullMode(c, m);
+            _vk.CmdSetCullMode(commandBuffer, cullModeFlags);
         }
     }
 
     [MethodImpl(MethodImplOptions.AggressiveInlining)]
-    public void CmdSetFrontFace(CommandBuffer c, FrontFace f)
+    public void CmdSetFrontFace(CommandBuffer commandBuffer, FrontFace frontFace)
     {
         if (_direct)
         {
-            _setFrontFace(c, f);
+            _setFrontFace(commandBuffer, frontFace);
         }
         else
         {
-            _vk.CmdSetFrontFace(c, f);
+            _vk.CmdSetFrontFace(commandBuffer, frontFace);
         }
     }
 
     [MethodImpl(MethodImplOptions.AggressiveInlining)]
-    public void CmdSetLineWidth(CommandBuffer c, float w)
+    public void CmdSetLineWidth(CommandBuffer commandBuffer, float w)
     {
         if (_direct)
         {
-            _setLineWidth(c, w);
+            _setLineWidth(commandBuffer, w);
         }
         else
         {
-            _vk.CmdSetLineWidth(c, w);
+            _vk.CmdSetLineWidth(commandBuffer, w);
         }
     }
 
     [MethodImpl(MethodImplOptions.AggressiveInlining)]
-    public void CmdSetDepthTestEnable(CommandBuffer c, Bool32 e)
+    public void CmdSetDepthTestEnable(CommandBuffer commandBuffer, Bool32 e)
     {
         if (_direct)
         {
-            _setDepthTestEnable(c, e);
+            _setDepthTestEnable(commandBuffer, e);
         }
         else
         {
-            _vk.CmdSetDepthTestEnable(c, e);
+            _vk.CmdSetDepthTestEnable(commandBuffer, e);
         }
     }
 
     [MethodImpl(MethodImplOptions.AggressiveInlining)]
-    public void CmdSetDepthWriteEnable(CommandBuffer c, Bool32 e)
+    public void CmdSetDepthWriteEnable(CommandBuffer commandBuffer, Bool32 e)
     {
         if (_direct)
         {
-            _setDepthWriteEnable(c, e);
+            _setDepthWriteEnable(commandBuffer, e);
         }
         else
         {
-            _vk.CmdSetDepthWriteEnable(c, e);
+            _vk.CmdSetDepthWriteEnable(commandBuffer, e);
         }
     }
 
     [MethodImpl(MethodImplOptions.AggressiveInlining)]
-    public void CmdSetStencilTestEnable(CommandBuffer c, Bool32 e)
+    public void CmdSetStencilTestEnable(CommandBuffer commandBuffer, Bool32 e)
     {
         if (_direct)
         {
-            _setStencilTestEnable(c, e);
+            _setStencilTestEnable(commandBuffer, e);
         }
         else
         {
-            _vk.CmdSetStencilTestEnable(c, e);
+            _vk.CmdSetStencilTestEnable(commandBuffer, e);
         }
     }
 
     [MethodImpl(MethodImplOptions.AggressiveInlining)]
-    public void CmdSetDepthBiasEnable(CommandBuffer c, Bool32 e)
+    public void CmdSetDepthBiasEnable(CommandBuffer commandBuffer, Bool32 e)
     {
         if (_direct)
         {
-            _setDepthBiasEnable(c, e);
+            _setDepthBiasEnable(commandBuffer, e);
         }
         else
         {
-            _vk.CmdSetDepthBiasEnable(c, e);
+            _vk.CmdSetDepthBiasEnable(commandBuffer, e);
         }
     }
 
     [MethodImpl(MethodImplOptions.AggressiveInlining)]
-    public void CmdSetDepthCompareOp(CommandBuffer c, CompareOp op)
+    public void CmdSetDepthCompareOp(CommandBuffer commandBuffer, CompareOp op)
     {
         if (_direct)
         {
-            _setDepthCompareOp(c, op);
+            _setDepthCompareOp(commandBuffer, op);
         }
         else
         {
-            _vk.CmdSetDepthCompareOp(c, op);
+            _vk.CmdSetDepthCompareOp(commandBuffer, op);
         }
     }
 
     [MethodImpl(MethodImplOptions.AggressiveInlining)]
-    public void CmdSetDepthBias(CommandBuffer c, float constant, float clamp, float slope)
+    public void CmdSetDepthBias(CommandBuffer commandBuffer, float constant, float clamp, float slope)
     {
         if (_direct)
         {
-            _setDepthBias(c, constant, clamp, slope);
+            _setDepthBias(commandBuffer, constant, clamp, slope);
         }
         else
         {
-            _vk.CmdSetDepthBias(c, constant, clamp, slope);
+            _vk.CmdSetDepthBias(commandBuffer, constant, clamp, slope);
         }
     }
 
     [MethodImpl(MethodImplOptions.AggressiveInlining)]
-    public void CmdSetStencilOp(CommandBuffer c, StencilFaceFlags f, StencilOp fail, StencilOp pass, StencilOp depthFail, CompareOp op)
+    public void CmdSetStencilOp(CommandBuffer commandBuffer, StencilFaceFlags stencilFaceFlags, StencilOp fail, StencilOp pass, StencilOp depthFail, CompareOp op)
     {
         if (_direct)
         {
-            _setStencilOp(c, f, fail, pass, depthFail, op);
+            _setStencilOp(commandBuffer, stencilFaceFlags, fail, pass, depthFail, op);
         }
         else
         {
-            _vk.CmdSetStencilOp(c, f, fail, pass, depthFail, op);
+            _vk.CmdSetStencilOp(commandBuffer, stencilFaceFlags, fail, pass, depthFail, op);
         }
     }
 
     [MethodImpl(MethodImplOptions.AggressiveInlining)]
-    public void CmdSetStencilCompareMask(CommandBuffer c, StencilFaceFlags f, uint m)
+    public void CmdSetStencilCompareMask(CommandBuffer commandBuffer, StencilFaceFlags stencilFaceFlags, uint m)
     {
         if (_direct)
         {
-            _setStencilCompareMask(c, f, m);
+            _setStencilCompareMask(commandBuffer, stencilFaceFlags, m);
         }
         else
         {
-            _vk.CmdSetStencilCompareMask(c, f, m);
+            _vk.CmdSetStencilCompareMask(commandBuffer, stencilFaceFlags, m);
         }
     }
 
     [MethodImpl(MethodImplOptions.AggressiveInlining)]
-    public void CmdSetStencilWriteMask(CommandBuffer c, StencilFaceFlags f, uint m)
+    public void CmdSetStencilWriteMask(CommandBuffer commandBuffer, StencilFaceFlags stencilFaceFlags, uint m)
     {
         if (_direct)
         {
-            _setStencilWriteMask(c, f, m);
+            _setStencilWriteMask(commandBuffer, stencilFaceFlags, m);
         }
         else
         {
-            _vk.CmdSetStencilWriteMask(c, f, m);
+            _vk.CmdSetStencilWriteMask(commandBuffer, stencilFaceFlags, m);
         }
     }
 
     [MethodImpl(MethodImplOptions.AggressiveInlining)]
-    public void CmdSetStencilReference(CommandBuffer c, StencilFaceFlags f, uint r)
+    public void CmdSetStencilReference(CommandBuffer commandBuffer, StencilFaceFlags stencilFaceFlags, uint r)
     {
         if (_direct)
         {
-            _setStencilReference(c, f, r);
+            _setStencilReference(commandBuffer, stencilFaceFlags, r);
         }
         else
         {
-            _vk.CmdSetStencilReference(c, f, r);
+            _vk.CmdSetStencilReference(commandBuffer, stencilFaceFlags, r);
         }
     }
 }

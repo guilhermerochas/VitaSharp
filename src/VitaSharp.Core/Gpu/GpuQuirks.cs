@@ -186,8 +186,8 @@ public sealed class GpuCapabilities
     /// <summary>VITASHARP_GPU_QUIRKS entries that named nothing.</summary>
     public IReadOnlyList<string> UnknownOverrides { get; init; } = [];
 
-    public bool Has(GpuFeature f) => (Features & f) == f;
-    public bool Has(GpuQuirk q) => (Quirks & q) == q;
+    public bool Has(GpuFeature gpuFeature) => (Features & gpuFeature) == gpuFeature;
+    public bool Has(GpuQuirk gpuQuirk) => (Quirks & gpuQuirk) == gpuQuirk;
 
     /// <summary>Fraction of the largest device-local heap the renderer may fill when there is no VK_EXT_memory_budget.</summary>
     public double FallbackBudgetFraction => Has(GpuQuirk.ConservativeMemoryBudget) ? 0.5 : 0.8;
@@ -209,7 +209,7 @@ public sealed class GpuCapabilities
         return 0;
     }
 
-    public static string VendorName(GpuVendor v) => v switch
+    public static string VendorName(GpuVendor gpuVendor) => gpuVendor switch
     {
         GpuVendor.Nvidia => "NVIDIA",
         GpuVendor.Amd => "AMD",
@@ -248,8 +248,8 @@ public sealed class GpuCapabilities
         GpuFeature[] all = Enum.GetValues<GpuFeature>().Where(f => f != GpuFeature.None).ToArray();
         sb.AppendLine($"GPU features: {string.Join(" ", all.Where(Has).Select(f => f.ToString()))}");
         sb.AppendLine($"GPU missing: {string.Join(" ", all.Where(f => !Has(f)).Select(f => f.ToString() + ((Masked & f) != 0 ? "(profile)" : "")))}");
-        GpuLimits l = Limits;
-        sb.AppendLine($"GPU limits: pushConstants {l.MaxPushConstantsSize}, sets {l.MaxBoundDescriptorSets}, per-stage samplers {l.MaxPerStageDescriptorSamplers}/sampled images {l.MaxPerStageDescriptorSampledImages}/storage buffers {l.MaxPerStageDescriptorStorageBuffers}/input attachments {l.MaxPerStageDescriptorInputAttachments}/resources {l.MaxPerStageResources}, set samplers {l.MaxDescriptorSetSamplers}, framebuffer samples {SampleCounts(l.FramebufferSampleCounts)}, max 2D {l.MaxImageDimension2D}");
+        GpuLimits gpuLimits = Limits;
+        sb.AppendLine($"GPU limits: pushConstants {gpuLimits.MaxPushConstantsSize}, sets {gpuLimits.MaxBoundDescriptorSets}, per-stage samplers {gpuLimits.MaxPerStageDescriptorSamplers}/sampled images {gpuLimits.MaxPerStageDescriptorSampledImages}/storage buffers {gpuLimits.MaxPerStageDescriptorStorageBuffers}/input attachments {gpuLimits.MaxPerStageDescriptorInputAttachments}/resources {gpuLimits.MaxPerStageResources}, set samplers {gpuLimits.MaxDescriptorSetSamplers}, framebuffer samples {SampleCounts(gpuLimits.FramebufferSampleCounts)}, max 2D {gpuLimits.MaxImageDimension2D}");
         sb.Append($"GPU quirks: {(Quirks == GpuQuirk.None ? "none" : string.Join(" ", Enum.GetValues<GpuQuirk>().Where(q => q != GpuQuirk.None && Has(q))))}");
         foreach (string r in QuirkReasons)
         {
@@ -353,9 +353,9 @@ public static class GpuQuirkTable
 
     /// <summary>Tile-based renderers: Adreno (proprietary or Turnip), Mali, PowerVR, Apple, VideoCore. Samsung
     /// Xclipse is RDNA (immediate mode) and is not listed.</summary>
-    public static bool IsTileBased(GpuVendor v) => v is GpuVendor.Qualcomm or GpuVendor.Arm or GpuVendor.Imagination or GpuVendor.Apple or GpuVendor.Broadcom;
+    public static bool IsTileBased(GpuVendor gpuVendor) => gpuVendor is GpuVendor.Qualcomm or GpuVendor.Arm or GpuVendor.Imagination or GpuVendor.Apple or GpuVendor.Broadcom;
 
-    private static bool MobileProprietary(GpuDriver d) => d is GpuDriver.QualcommProprietary or GpuDriver.ArmProprietary or GpuDriver.ImaginationProprietary;
+    private static bool MobileProprietary(GpuDriver gpuDriver) => gpuDriver is GpuDriver.QualcommProprietary or GpuDriver.ArmProprietary or GpuDriver.ImaginationProprietary;
 
     /// <summary>One row of the table: a quirk, when it applies, and where the knowledge comes from.</summary>
     public sealed record Entry(GpuQuirk Quirk, string Applies, string Source, Func<GpuVendor, GpuDriver, uint, bool> When);
@@ -398,7 +398,7 @@ public static class GpuQuirkTable
     ];
 
     /// <summary>Features a test profile removes from the real device (what the emulated device class lacks).</summary>
-    public static GpuFeature ProfileMask(GpuProfile p) => p switch
+    public static GpuFeature ProfileMask(GpuProfile gpuProfile) => gpuProfile switch
     {
         // Adreno 6xx on the 512.x blob: no BCn (unless patched, see the Android BCeNabler hook), no
         // shaderStorageImageWriteWithoutFormat, no memory budget, sample-rate shading treated as unusable
@@ -414,7 +414,7 @@ public static class GpuQuirkTable
     };
 
     /// <summary>Limits of the emulated device class (each is the minimum of this and the real device's).</summary>
-    public static GpuLimits ProfileLimits(GpuProfile p, GpuLimits real) => p switch
+    public static GpuLimits ProfileLimits(GpuProfile gpuProfile, GpuLimits real) => gpuProfile switch
     {
         GpuProfile.Adreno or GpuProfile.AdrenoVulkan11 => real with
         {
@@ -439,7 +439,7 @@ public static class GpuQuirkTable
     };
 
     /// <summary>The vendor, driver and version a profile pretends to be (quirk selection).</summary>
-    public static (GpuVendor Vendor, GpuDriver Driver, uint Version) ProfileIdentity(GpuProfile p, GpuDeviceInfo real) => p switch
+    public static (GpuVendor Vendor, GpuDriver Driver, uint Version) ProfileIdentity(GpuProfile gpuProfile, GpuDeviceInfo real) => gpuProfile switch
     {
         GpuProfile.Adreno => (GpuVendor.Qualcomm, GpuDriver.QualcommProprietary, MakeVersion(512, 615)),
         GpuProfile.AdrenoVulkan11 => (GpuVendor.Qualcomm, GpuDriver.QualcommProprietary, MakeVersion(512, 454)),
@@ -471,15 +471,15 @@ public static class GpuQuirkTable
         var reasons = new List<string>();
         if (profile != GpuProfile.Desktop)
         {
-            foreach (Entry e in Table)
+            foreach (Entry entry in Table)
             {
-                if (!e.When(vendor, driver, version))
+                if (!entry.When(vendor, driver, version))
                 {
                     continue;
                 }
 
-                quirks |= e.Quirk;
-                reasons.Add($"{e.Quirk}: {e.Applies} [{e.Source}]");
+                quirks |= entry.Quirk;
+                reasons.Add($"{entry.Quirk}: {entry.Applies} [{entry.Source}]");
             }
         }
         // capability-derived
@@ -522,10 +522,10 @@ public static class GpuQuirkTable
 
                 reasons.Add($"{q}: forced {(off ? "off" : "on")} by {Util.EnvVars.GpuQuirks}");
             }
-            else if (Enum.TryParse<GpuFeature>(name, true, out GpuFeature f) && f != GpuFeature.None && Enum.IsDefined(f) && off)
+            else if (Enum.TryParse<GpuFeature>(name, true, out GpuFeature gpuFeature) && gpuFeature != GpuFeature.None && Enum.IsDefined(gpuFeature) && off)
             {
-                features &= ~f;
-                mask |= f & dev.Features;
+                features &= ~gpuFeature;
+                mask |= gpuFeature & dev.Features;
             }
             else
             {

@@ -246,8 +246,8 @@ public sealed partial class ObjectTable
     /// <summary>Every object, by UID order.</summary>
     internal List<KernelObject> Snapshot() => _objects.Values.OrderBy(o => o.Uid).ToList();
 
-    /// <summary>Puts <paramref name="o"/> in the table under the UID it already has (save state load).</summary>
-    internal void Put(KernelObject o) => _objects[o.Uid] = o;
+    /// <summary>Puts <paramref name="kernelObject"/> in the table under the UID it already has (save state load).</summary>
+    internal void Put(KernelObject kernelObject) => _objects[kernelObject.Uid] = kernelObject;
 
     internal void Clear() => _objects.Clear();
 }

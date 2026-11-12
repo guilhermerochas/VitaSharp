@@ -43,7 +43,7 @@ public static class AstcTranscoder
     public static Format FormatFor(bool gamma) => gamma ? Format.Astc4x4SrgbBlock : Format.Astc4x4UnormBlock;
 
     /// <summary>The ASTC channel layout for a GXM BC/PVRTC base format; null when it stays on the RGBA8 fallback.</summary>
-    public static AstcChannels? ChannelsFor(TexBase f, bool gamma) => f switch
+    public static AstcChannels? ChannelsFor(TexBase texBase, bool gamma) => texBase switch
     {
         TexBase.UBC1 or TexBase.UBC2 or TexBase.UBC3 => AstcChannels.Rgba,
         TexBase.PVRT2BPP or TexBase.PVRT4BPP or TexBase.PVRTII2BPP or TexBase.PVRTII4BPP => AstcChannels.Rgba,
@@ -53,7 +53,7 @@ public static class AstcTranscoder
     };
 
     /// <summary>How the decoded ASTC channels map to the source format's (R, G, B, A).</summary>
-    public static (ComponentSwizzle R, ComponentSwizzle G, ComponentSwizzle B, ComponentSwizzle A) ChannelSwizzle(AstcChannels c) => c switch
+    public static (ComponentSwizzle R, ComponentSwizzle G, ComponentSwizzle B, ComponentSwizzle A) ChannelSwizzle(AstcChannels astcChannels) => astcChannels switch
     {
         AstcChannels.R => (ComponentSwizzle.R, ComponentSwizzle.Zero, ComponentSwizzle.Zero, ComponentSwizzle.One),
         AstcChannels.Rg => (ComponentSwizzle.R, ComponentSwizzle.A, ComponentSwizzle.Zero, ComponentSwizzle.One),
@@ -61,9 +61,9 @@ public static class AstcTranscoder
     };
 
     /// <summary>The texture's own swizzle applied on top of <see cref="ChannelSwizzle"/>.</summary>
-    public static ComponentMapping Compose(ComponentMapping texture, AstcChannels c)
+    public static ComponentMapping Compose(ComponentMapping texture, AstcChannels astcChannels)
     {
-        (ComponentSwizzle r, ComponentSwizzle g, ComponentSwizzle b, ComponentSwizzle a) = ChannelSwizzle(c);
+        (ComponentSwizzle r, ComponentSwizzle g, ComponentSwizzle b, ComponentSwizzle a) = ChannelSwizzle(astcChannels);
         ComponentSwizzle Map(ComponentSwizzle s, ComponentSwizzle identity) => (s == ComponentSwizzle.Identity ? identity : s) switch
         {
             ComponentSwizzle.R => r,
@@ -85,22 +85,22 @@ public static class AstcTranscoder
         }
     }
 
-    private static ulong Key(ReadOnlySpan<byte> source, TexBase f, uint w, uint h) =>
-        XxHash3.HashToUInt64(source, (long)(((ulong)f * 0x9E3779B97F4A7C15ul) ^ ((ulong)w << 32 | h) ^ ((ulong)EncoderVersion << 56)));
+    private static ulong Key(ReadOnlySpan<byte> source, TexBase texBase, uint w, uint h) =>
+        XxHash3.HashToUInt64(source, (long)(((ulong)texBase * 0x9E3779B97F4A7C15ul) ^ ((ulong)w << 32 | h) ^ ((ulong)EncoderVersion << 56)));
 
-    private static ulong Tag(TexBase f, uint w, uint h) => (ulong)(uint)f << 40 ^ (ulong)w << 20 ^ h;
+    private static ulong Tag(TexBase texBase, uint w, uint h) => (ulong)(uint)texBase << 40 ^ (ulong)w << 20 ^ h;
 
     /// <summary>One level of BC blocks (row order) to ASTC 4x4 blocks.</summary>
-    public static Texels FromBc(TexBase f, ReadOnlySpan<byte> blocks, uint w, uint h, AstcChannels channels) =>
-        Transcode(Key(blocks, f, w, h), Tag(f, w, h), w, h, channels, blocks, static (src, f, w, h) => BcSoftware.Decode(f, src, w, h), f);
+    public static Texels FromBc(TexBase texBase, ReadOnlySpan<byte> blocks, uint w, uint h, AstcChannels channels) =>
+        Transcode(Key(blocks, texBase, w, h), Tag(texBase, w, h), w, h, channels, blocks, static (src, f, w, h) => BcSoftware.Decode(f, src, w, h), texBase);
 
     /// <summary>One level of PVRTC data to ASTC 4x4 blocks.</summary>
-    public static Texels FromPvrtc(TexBase f, ReadOnlySpan<byte> data, uint w, uint h, bool twoBpp, bool ii) =>
-        Transcode(Key(data, f, w, h), Tag(f, w, h), w, h, AstcChannels.Rgba, data, (src, _, sw, sh) => Pvrtc.Decode(src, sw, sh, twoBpp, ii), f);
+    public static Texels FromPvrtc(TexBase texBase, ReadOnlySpan<byte> data, uint w, uint h, bool twoBpp, bool ii) =>
+        Transcode(Key(data, texBase, w, h), Tag(texBase, w, h), w, h, AstcChannels.Rgba, data, (src, _, sw, sh) => Pvrtc.Decode(src, sw, sh, twoBpp, ii), texBase);
 
-    private delegate Texels DecodeFn(ReadOnlySpan<byte> src, TexBase f, uint w, uint h);
+    private delegate Texels DecodeFn(ReadOnlySpan<byte> src, TexBase texBase, uint w, uint h);
 
-    private static Texels Transcode(ulong key, ulong tag, uint w, uint h, AstcChannels channels, ReadOnlySpan<byte> source, DecodeFn decode, TexBase f)
+    private static Texels Transcode(ulong key, ulong tag, uint w, uint h, AstcChannels channels, ReadOnlySpan<byte> source, DecodeFn decode, TexBase texBase)
     {
         int length = (int)(((w + 3) / 4) * ((h + 3) / 4) * AstcEncoder.BlockBytes);
         lock (s_lock)
@@ -121,7 +121,7 @@ public static class AstcTranscoder
         }
         long t0 = Stopwatch.GetTimestamp();
         byte[] outBlocks = new byte[length];
-        using (Texels rgba = decode(source, f, w, h))
+        using (Texels rgba = decode(source, texBase, w, h))
         {
             AstcEncoder.EncodeParallel(rgba.Span, (int)w, (int)h, outBlocks, channels, Threads);
         }

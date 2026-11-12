@@ -55,7 +55,7 @@ public static class JpegEncoder
     {
         public readonly MemoryStream Out = new();
         private ulong _acc;
-        private int _n;
+        private int _bitCount;
 
         public void Byte(int b) => Out.WriteByte((byte)b);
         public void Word(int w)
@@ -72,30 +72,30 @@ public static class JpegEncoder
             }
 
             _acc = (_acc << count) | ((uint)value & ((1u << count) - 1));
-            _n += count;
-            while (_n >= 8)
+            _bitCount += count;
+            while (_bitCount >= 8)
             {
-                int b = (int)(_acc >> (_n - 8)) & 0xFF;
+                int b = (int)(_acc >> (_bitCount - 8)) & 0xFF;
                 Out.WriteByte((byte)b);
                 if (b == 0xFF)
                 {
                     Out.WriteByte(0);
                 }
 
-                _n -= 8;
+                _bitCount -= 8;
             }
         }
 
         /// <summary>Pads the last byte with 1 bits.</summary>
         public void Flush()
         {
-            if (_n > 0)
+            if (_bitCount > 0)
             {
-                Bits(0x7F, 8 - _n);
+                Bits(0x7F, 8 - _bitCount);
             }
 
             _acc = 0;
-            _n = 0;
+            _bitCount = 0;
         }
     }
 

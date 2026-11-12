@@ -243,18 +243,18 @@ public static class CapturePng
         Chunk(fs, "IEND"u8, []);
     }
 
-    private static void Chunk(Stream s, ReadOnlySpan<byte> type, ReadOnlySpan<byte> data)
+    private static void Chunk(Stream stream, ReadOnlySpan<byte> type, ReadOnlySpan<byte> data)
     {
         Span<byte> len = stackalloc byte[4];
         BinaryPrimitives.WriteInt32BigEndian(len, data.Length);
-        s.Write(len);
+        stream.Write(len);
         var crc = new Crc32();
         crc.Append(type);
         crc.Append(data);
-        s.Write(type);
-        s.Write(data);
+        stream.Write(type);
+        stream.Write(data);
         Span<byte> c = stackalloc byte[4];
         BinaryPrimitives.WriteUInt32BigEndian(c, crc.GetCurrentHashAsUInt32());
-        s.Write(c);
+        stream.Write(c);
     }
 }

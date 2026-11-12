@@ -28,7 +28,7 @@ internal sealed class FileWritePipeline : IDisposable
     public long BytesWritten { get; private set; }
 
     /// <param name="written">Called on the writer thread after each chunk with its size.</param>
-    public FileWritePipeline(int bufferSize, int buffers, Action<long>? written, CancellationToken ct)
+    public FileWritePipeline(int bufferSize, int buffers, Action<long>? written, CancellationToken cancellationToken)
     {
         BufferSize = bufferSize;
         for (int i = 0; i < buffers; i++)
@@ -37,7 +37,7 @@ internal sealed class FileWritePipeline : IDisposable
         }
 
         _written = written;
-        _cts = CancellationTokenSource.CreateLinkedTokenSource(ct);
+        _cts = CancellationTokenSource.CreateLinkedTokenSource(cancellationToken);
         _thread = new Thread(Run) { Name = "Install writer", IsBackground = true, Priority = ThreadPriority.BelowNormal };
         _thread.Start();
     }

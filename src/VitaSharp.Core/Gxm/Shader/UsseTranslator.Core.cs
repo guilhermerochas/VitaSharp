@@ -92,7 +92,7 @@ public sealed partial class UsseTranslator
     private readonly Dictionary<(Bank, int), DataType> _wordType = new();
 
     /// <summary>Type of the last translated write to a register word (null: never written or not statically known).</summary>
-    public DataType? WordType(Bank bank, int word) => _wordType.TryGetValue((bank, word), out DataType t) ? t : null;
+    public DataType? WordType(Bank bank, int word) => _wordType.TryGetValue((bank, word), out DataType dataType) ? dataType : null;
 
     // register words that hold an unmodified copy of a secondary-attribute word (program order, statically addressed
     // words only; any later write to the word drops it). A program can copy a dependent sampler's texture state out of
@@ -307,9 +307,9 @@ public sealed partial class UsseTranslator
         Line($"{(dynBase == null ? Word(b, baseWord + rel) : WordDyn(b, $"{dynBase} + {rel}"))} = {value};");
     }
 
-    private static int PackedCount(DataType t) => t == DataType.C10 ? 3 : 4 / GxpProgram.TypeSize(t);
+    private static int PackedCount(DataType dataType) => dataType == DataType.C10 ? 3 : 4 / GxpProgram.TypeSize(dataType);
 
-    private static char KindOf(DataType t) => GxpProgram.IsSigned(t) ? 'i' : GxpProgram.IsUnsigned(t) ? 'u' : 'f';
+    private static char KindOf(DataType dataType) => GxpProgram.IsSigned(dataType) ? 'i' : GxpProgram.IsUnsigned(dataType) ? 'u' : 'f';
 
     private static string ConstOf(Sw sw, char kind)
     {
@@ -333,9 +333,9 @@ public sealed partial class UsseTranslator
         return new Val($"{t}{comps.Count}({string.Join(", ", comps)})", kind, comps.Count);
     }
 
-    private Val ApplyModifiers(Val v, OpFlags f)
+    private Val ApplyModifiers(Val v, OpFlags opFlags)
     {
-        if ((f & OpFlags.Abs) != 0)
+        if ((opFlags & OpFlags.Abs) != 0)
         {
             if (v.K == 'u')
             {
@@ -344,7 +344,7 @@ public sealed partial class UsseTranslator
 
             v = v with { E = $"abs({v.E})" };
         }
-        if ((f & OpFlags.Neg) != 0)
+        if ((opFlags & OpFlags.Neg) != 0)
         {
             v = v with { E = v.K == 'u' ? $"(0u - {v.E})" : $"(-{v.E})" };
         }
@@ -735,7 +735,7 @@ public sealed partial class UsseTranslator
 
     // ------------------------------------------------------------------ conversions
 
-    private static float IntNormRange(DataType t) => t switch
+    private static float IntNormRange(DataType dataType) => dataType switch
     {
         DataType.UInt8 => 255f,
         DataType.Int8 => 127f,

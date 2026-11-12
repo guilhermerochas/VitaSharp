@@ -41,9 +41,9 @@ public static class RuntimeReport
         yield return $"Runtime: {Runtime} ({Kind}), {RuntimeInformation.ProcessArchitecture}, " +
                      $"{RuntimeInformation.RuntimeIdentifier}, build {BuildRuntime ?? "?"}";
         yield return $"Dynamic code: supported {DynamicCodeSupported}, compiled {DynamicCodeCompiled}";
-        foreach (IBlockCompiler b in Jit.All)
+        foreach (IBlockCompiler blockCompiler in Jit.All)
         {
-            yield return $"CPU backend {b.Name} ({b.GetType().Name}): {(b.IsSupported ? "available" : b.UnsupportedReason ?? "unavailable")}";
+            yield return $"CPU backend {blockCompiler.Name} ({blockCompiler.GetType().Name}): {(blockCompiler.IsSupported ? "available" : blockCompiler.UnsupportedReason ?? "unavailable")}";
         }
 
         yield return $"CPU backend selected: {Jit.Mode} (chain: {string.Join(" > ", Jit.Chain.Select(b => b.Name).Append("interp"))})";

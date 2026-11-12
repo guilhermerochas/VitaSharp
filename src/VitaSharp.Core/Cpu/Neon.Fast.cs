@@ -14,30 +14,30 @@ namespace VitaSharp.Core.Cpu;
 internal static unsafe partial class Neon
 {
     [MethodImpl(MethodImplOptions.AggressiveInlining)]
-    private static Vector128<byte> LoadD(CpuState* s, uint r) => Vector128.Create(*(ulong*)Reg(s, r), 0UL).AsByte();
+    private static Vector128<byte> LoadD(CpuState* state, uint r) => Vector128.Create(*(ulong*)Reg(state, r), 0UL).AsByte();
 
     [MethodImpl(MethodImplOptions.AggressiveInlining)]
-    private static Vector128<byte> LoadQ(CpuState* s, uint r) => Vector128.Load(Reg(s, r));
+    private static Vector128<byte> LoadQ(CpuState* state, uint r) => Vector128.Load(Reg(state, r));
 
     [MethodImpl(MethodImplOptions.AggressiveInlining)]
-    private static Vector128<byte> LoadV(CpuState* s, uint r, bool q) => q ? LoadQ(s, r) : LoadD(s, r);
+    private static Vector128<byte> LoadV(CpuState* state, uint r, bool q) => q ? LoadQ(state, r) : LoadD(state, r);
 
     [MethodImpl(MethodImplOptions.AggressiveInlining)]
-    private static void StoreV(CpuState* s, uint r, Vector128<byte> v, bool q)
+    private static void StoreV(CpuState* state, uint r, Vector128<byte> v, bool q)
     {
         if (q)
         {
-            v.Store(Reg(s, r));
+            v.Store(Reg(state, r));
         }
         else
         {
-            *(ulong*)Reg(s, r) = v.AsUInt64().GetElement(0);
+            *(ulong*)Reg(state, r) = v.AsUInt64().GetElement(0);
         }
     }
 
     // ------------------------------------------------------------------ three registers, same length
 
-    private static bool ThreeSameFast(CpuState* s, uint ins)
+    private static bool ThreeSameFast(CpuState* state, uint ins)
     {
         uint a = Bits(ins, 11, 8);
         bool b = Bit(ins, 4) != 0, u = Bit(ins, 24) != 0, q = Bit(ins, 6) != 0;
@@ -58,8 +58,8 @@ internal static unsafe partial class Neon
             return false;
         }
 
-        Vector128<byte> x = LoadV(s, n, q);
-        Vector128<byte> y = LoadV(s, m, q);
+        Vector128<byte> x = LoadV(state, n, q);
+        Vector128<byte> y = LoadV(state, m, q);
         Vector128<byte> r;
         switch (a)
         {
@@ -96,7 +96,7 @@ internal static unsafe partial class Neon
                 }
                 if (!LanesEqual(plain, sat, q))
                 {
-                    SetQC(s);
+                    SetQC(state);
                 }
 
                 r = sat;
@@ -111,7 +111,7 @@ internal static unsafe partial class Neon
             case 0x7:                                                               // VABD / VABA
             {
                 Vector128<byte> diff = AbsDiff(x, y, size, u);
-                r = b ? AddSub(LoadV(s, d, q), diff, size, false) : diff;
+                r = b ? AddSub(LoadV(state, d, q), diff, size, false) : diff;
                 break;
             }
             case 0x8 when !b:
@@ -122,7 +122,7 @@ internal static unsafe partial class Neon
                 break;
             case 0x9 when !b:                                                       // VMLA / VMLS
             {
-                Vector128<byte> acc = LoadV(s, d, q);
+                Vector128<byte> acc = LoadV(state, d, q);
                 Vector128<byte> prod = Mul(x, y, size);
                 r = AddSub(acc, prod, size, u);
                 break;
@@ -133,7 +133,7 @@ internal static unsafe partial class Neon
             default:
                 return false;
         }
-        StoreV(s, d, r, q);
+        StoreV(state, d, r, q);
         return true;
     }
 
@@ -270,7 +270,7 @@ internal static unsafe partial class Neon
 
     // ------------------------------------------------------------------ shifts by immediate
 
-    private static bool ShiftFast(CpuState* s, uint ins)
+    private static bool ShiftFast(CpuState* state, uint ins)
     {
         uint a = Bits(ins, 11, 8);
         bool u = Bit(ins, 24) != 0, l = Bit(ins, 7) != 0, q = Bit(ins, 6) != 0;
@@ -288,7 +288,7 @@ internal static unsafe partial class Neon
                 return false;
             }
 
-            Vector128<byte> x = LoadV(s, m, q);
+            Vector128<byte> x = LoadV(state, m, q);
             bool round = (a & 2) != 0, accumulate = (a & 1) != 0;
             Vector128<byte> r;
             if (rshift >= esize)
@@ -310,10 +310,10 @@ internal static unsafe partial class Neon
             }
             if (accumulate)
             {
-                r = AddSub(LoadV(s, d, q), r, size, false);
+                r = AddSub(LoadV(state, d, q), r, size, false);
             }
 
-            StoreV(s, d, r, q);
+            StoreV(state, d, r, q);
             return true;
         }
         if (a == 5 && !u) // VSHL (immediate)
@@ -323,7 +323,7 @@ internal static unsafe partial class Neon
                 return false;
             }
 
-            StoreV(s, d, ShiftLeftN(LoadV(s, m, q), size, lshift), q);
+            StoreV(state, d, ShiftLeftN(LoadV(state, m, q), size, lshift), q);
             return true;
         }
         if (a == 10) // VSHLL / VMOVL: D source, Q destination, lanes widen
@@ -333,7 +333,7 @@ internal static unsafe partial class Neon
                 return false;
             }
 
-            Vector128<byte> x = LoadD(s, m);
+            Vector128<byte> x = LoadD(state, m);
             Vector128<byte> wide = size switch
             {
                 0 => (u ? Vector128.WidenLower(x).AsByte() : Vector128.WidenLower(x.AsSByte()).AsByte()),
@@ -345,7 +345,7 @@ internal static unsafe partial class Neon
                 wide = ShiftLeftN(wide, size + 1, lshift);
             }
 
-            wide.Store(Reg(s, d));
+            wide.Store(Reg(state, d));
             return true;
         }
         if (a == 8 || a == 9) // narrowing right shifts: Q source, D destination
@@ -358,7 +358,7 @@ internal static unsafe partial class Neon
             uint wsize = size + 1; // source lane size
             bool round = q;
             bool srcUnsigned = a == 9 && u;
-            Vector128<byte> x = LoadQ(s, m);
+            Vector128<byte> x = LoadQ(state, m);
             // the shifted value, kept at the wide lane size
             Vector128<byte> sh;
             if (rshift >= 2 * esize)
@@ -441,10 +441,10 @@ internal static unsafe partial class Neon
                 }
                 if (!Vector128.EqualsAll(back, sh))
                 {
-                    SetQC(s);
+                    SetQC(state);
                 }
             }
-            *(ulong*)Reg(s, d) = narrow.AsUInt64().GetElement(0);
+            *(ulong*)Reg(state, d) = narrow.AsUInt64().GetElement(0);
             return true;
         }
         return false;
@@ -452,7 +452,7 @@ internal static unsafe partial class Neon
 
     // ------------------------------------------------------------------ three registers, different lengths
 
-    private static bool ThreeDiffFast(CpuState* s, uint ins)
+    private static bool ThreeDiffFast(CpuState* state, uint ins)
     {
         uint a = Bits(ins, 11, 8);
         bool u = Bit(ins, 24) != 0;
@@ -480,8 +480,8 @@ internal static unsafe partial class Neon
         }
 
         uint wsize = size + 1;
-        Vector128<byte> xn = wideN ? LoadQ(s, n) : Widen(LoadD(s, n), size, u);
-        Vector128<byte> ym = Widen(LoadD(s, m), size, u);
+        Vector128<byte> xn = wideN ? LoadQ(state, n) : Widen(LoadD(state, n), size, u);
+        Vector128<byte> ym = Widen(LoadD(state, m), size, u);
         Vector128<byte> r;
         switch (a)
         {
@@ -494,16 +494,16 @@ internal static unsafe partial class Neon
                 r = AddSub(xn, ym, wsize, true);
                 break;                        // VSUBL / VSUBW
             case 5:
-                r = AddSub(LoadQ(s, d), AbsDiff(xn, ym, wsize, u), wsize, false);
+                r = AddSub(LoadQ(state, d), AbsDiff(xn, ym, wsize, u), wsize, false);
                 break; // VABAL
             case 7:
                 r = AbsDiff(xn, ym, wsize, u);
                 break;                                  // VABDL
             case 8:
-                r = AddSub(LoadQ(s, d), MulWide(xn, ym, wsize), wsize, false);
+                r = AddSub(LoadQ(state, d), MulWide(xn, ym, wsize), wsize, false);
                 break;  // VMLAL
             case 10:
-                r = AddSub(LoadQ(s, d), MulWide(xn, ym, wsize), wsize, true);
+                r = AddSub(LoadQ(state, d), MulWide(xn, ym, wsize), wsize, true);
                 break;  // VMLSL
             case 12:
                 r = MulWide(xn, ym, wsize);
@@ -511,7 +511,7 @@ internal static unsafe partial class Neon
             default:
                 return false;
         }
-        r.Store(Reg(s, d));
+        r.Store(Reg(state, d));
         return true;
     }
 

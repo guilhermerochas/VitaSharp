@@ -66,15 +66,15 @@ public sealed unsafe partial class VulkanRenderer
         }
     }
 
-    private void CopyOverlay(Image dst, OverlayImage o, (Buffer Buffer, DeviceMemory Memory, nint Mapped, ulong Size)[] bufs, int x, int y)
+    private void CopyOverlay(Image dst, OverlayImage overlayImage, (Buffer Buffer, DeviceMemory Memory, nint Mapped, ulong Size)[] bufs, int x, int y)
     {
-        int w = Math.Min(o.Width, (int)_swapExtent.Width - x), h = Math.Min(o.Height, (int)_swapExtent.Height - y);
+        int w = Math.Min(overlayImage.Width, (int)_swapExtent.Width - x), h = Math.Min(overlayImage.Height, (int)_swapExtent.Height - y);
         if (w <= 0 || h <= 0)
         {
             return;
         }
 
-        ulong size = (ulong)o.Width * (ulong)o.Height * 4;
+        ulong size = (ulong)overlayImage.Width * (ulong)overlayImage.Height * 4;
         ref (Buffer Buffer, DeviceMemory Memory, nint Mapped, ulong Size) slot = ref bufs[_frameIndex];
         if (slot.Size < size)
         {
@@ -83,11 +83,11 @@ public sealed unsafe partial class VulkanRenderer
                 _vk.DestroyBuffer(_dev, slot.Buffer, null);
                 _vk.FreeMemory(_dev, slot.Memory, null);
             }
-            (Buffer b, DeviceMemory m, nint p) = _core.CreateHostBuffer(size, BufferUsageFlags.TransferSrcBit, MemCat.Other);
-            slot = (b, m, p, size);
+            (Buffer b, DeviceMemory memory, nint p) = _core.CreateHostBuffer(size, BufferUsageFlags.TransferSrcBit, MemCat.Other);
+            slot = (b, memory, p, size);
         }
         var span = new Span<byte>((void*)slot.Mapped, (int)size);
-        o.Bgra.AsSpan(0, (int)size).CopyTo(span);
+        overlayImage.Bgra.AsSpan(0, (int)size).CopyTo(span);
         if (_swapFormat is Format.R8G8B8A8Unorm or Format.R8G8B8A8Srgb)
         {
             for (int i = 0; i < span.Length; i += 4)
@@ -99,8 +99,8 @@ public sealed unsafe partial class VulkanRenderer
         var region = new BufferImageCopy
         {
             BufferOffset = 0,
-            BufferRowLength = (uint)o.Width,
-            BufferImageHeight = (uint)o.Height,
+            BufferRowLength = (uint)overlayImage.Width,
+            BufferImageHeight = (uint)overlayImage.Height,
             ImageSubresource = new ImageSubresourceLayers(ImageAspectFlags.ColorBit, 0, 0, 1),
             ImageOffset = new Offset3D(x, y, 0),
             ImageExtent = new Extent3D((uint)w, (uint)h, 1),

@@ -65,7 +65,7 @@ public sealed unsafe class NativeX64Compiler : IBlockCompiler
         }
 
         nint* slots = rt.AllocateSlots(exits);
-        X64Emitter em = t_emitter ??= new X64Emitter(); // per compile thread: the Iced assembler and buffers are reused
+        X64Emitter x64Emitter = t_emitter ??= new X64Emitter(); // per compile thread: the Iced assembler and buffers are reused
         // Blocks dominated by NEON callouts run better in the IL backend once hot (it inlines the handlers, a callout
         // is a call plus two GC transitions): give them an execution budget after which they are recompiled there.
         nint tierUp = 0;
@@ -86,7 +86,7 @@ public sealed unsafe class NativeX64Compiler : IBlockCompiler
                 *(int*)tierUp = (int)Math.Clamp(IlJitCompiler.Instance.HotInstructions / Math.Max(1, b.Insts.Length), 64, int.MaxValue);
             }
         }
-        if (!em.Prepare(ir, rt.Stubs, k => (nint)(slots + k), tierUp))
+        if (!x64Emitter.Prepare(ir, rt.Stubs, k => (nint)(slots + k), tierUp))
         {
             BackendStats.RejectReason = "register allocation out of spill slots";
             return null;
@@ -94,10 +94,17 @@ public sealed unsafe class NativeX64Compiler : IBlockCompiler
         long t3 = Stopwatch.GetTimestamp();
         int size = 0;
         long encode = 0;
-        byte* code = rt.Code.Place(rip => { long e0 = Stopwatch.GetTimestamp(); byte[] bytes = em.Assemble(rip); encode = Stopwatch.GetTimestamp() - e0; size = bytes.Length; return bytes; });
+        byte* code = rt.Code.Place(rip =>
+        {
+            long e0 = Stopwatch.GetTimestamp();
+            byte[] bytes = x64Emitter.Assemble(rip);
+            encode = Stopwatch.GetTimestamp() - e0;
+            size = bytes.Length;
+            return bytes;
+        });
         Interlocked.Add(ref CodeBytes, size);
         rt.Register((nint)code, size, b);
-        Stats.Phases!.Add(t1 - t0, t2 - t1, em.AllocTicks, t3 - t2 - em.AllocTicks, encode, Stopwatch.GetTimestamp() - t3 - encode);
+        Stats.Phases!.Add(t1 - t0, t2 - t1, x64Emitter.AllocTicks, t3 - t2 - x64Emitter.AllocTicks, encode, Stopwatch.GetTimestamp() - t3 - encode);
         CompilePhases.Record(b);
         if (DumpCode)
         {

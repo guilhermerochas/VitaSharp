@@ -200,9 +200,9 @@ public sealed class Emulator : IDisposable
         Linker = new Linker(Hle) { InvalidateCode = Code.Invalidate, Log = Log.Warn };
         Kernel.Initialize();
         // every concrete HleModule of the core (generated table), in full type name order as before
-        foreach (HleModuleEntry? m in HleBindings.Modules.OrderBy(m => m.Type.FullName))
+        foreach (HleModuleEntry? hleModuleEntry in HleBindings.Modules.OrderBy(m => m.Type.FullName))
         {
-            Hle.RegisterModule(m.Create());
+            Hle.RegisterModule(hleModuleEntry.Create());
         }
     }
 
@@ -427,9 +427,9 @@ public sealed class Emulator : IDisposable
         Parent?._children.Remove(this);
         Gpu.ReleaseScene(Pid);
         // the kernel modules loaded for this process go with it (VitaSharp's kernel lives in each process's emulator)
-        foreach (LoadedModule? m in Kernel.Modules.Values.Where(m => m.IsKernel).ToList())
+        foreach (LoadedModule? loadedModule in Kernel.Modules.Values.Where(m => m.IsKernel).ToList())
         {
-            UnloadModule(m);
+            UnloadModule(loadedModule);
         }
 
         int objects = Vita.Objects.RemoveOwnedBy(Pid);
@@ -777,9 +777,9 @@ public sealed class Emulator : IDisposable
     private static void WarnUnresolvedVariable(uint nid, string source) =>
         Log.Warn($"Unresolved variable import NID {nid:X8} ({NidDatabase.Lookup(nid)?.Name ?? "unknown"}) from {source}");
 
-    /// <summary>After <paramref name="m"/> loaded: the waiting variable imports it resolved are done, and the ones from a
+    /// <summary>After <paramref name="loadedModule"/> loaded: the waiting variable imports it resolved are done, and the ones from a
     /// library it exports that it did not resolve are reported.</summary>
-    private void CheckPendingVariables(LoadedModule m)
+    private void CheckPendingVariables(LoadedModule loadedModule)
     {
         lock (_pendingVariables)
         {
@@ -799,7 +799,7 @@ public sealed class Emulator : IDisposable
                     resolved++;
                     continue;
                 }
-                if (!m.Exports.Any(e => e.Library == LibraryOf(source)))
+                if (!loadedModule.Exports.Any(e => e.Library == LibraryOf(source)))
                 {
                     continue;
                 }
@@ -809,7 +809,7 @@ public sealed class Emulator : IDisposable
             }
             if (resolved > 0)
             {
-                Log.Info($"{m.Name}: {resolved} waiting variable imports bound");
+                Log.Info($"{loadedModule.Name}: {resolved} waiting variable imports bound");
             }
         }
     }
@@ -865,9 +865,9 @@ public sealed class Emulator : IDisposable
                 continue;
             }
 
-            LoadedModule m = LoadModule(path);
-            _startFirst.AddRange(LoadFirmwareDependencies(m));
-            _startFirst.Add(m);
+            LoadedModule loadedModule = LoadModule(path);
+            _startFirst.AddRange(LoadFirmwareDependencies(loadedModule));
+            _startFirst.Add(loadedModule);
         }
     }
 
@@ -1063,18 +1063,18 @@ public sealed class Emulator : IDisposable
         // a missing file or folder is the guest's error (the callers return it), never a host exception that ends the thread
         string host = Vfs.Resolve(vitaPath) is { } h && File.Exists(h) ? h : throw new FileNotFoundException(vitaPath);
         byte[] elf = SelfDecryptor.ToElf(File.ReadAllBytes(host), Klicensee);
-        LoadedModule m;
+        LoadedModule loadedModule;
         using (ProcessScope.Enter(kernel ? KernelSpace.KernelPid : ProcessScope.CurrentPid))
         {
-            m = ModuleLoader.Load(elf, vitaPath, Memory, Linker, 0, kernel);
-            m.Uid = Kernel.Objects.Register(new ModuleObject(m));
+            loadedModule = ModuleLoader.Load(elf, vitaPath, Memory, Linker, 0, kernel);
+            loadedModule.Uid = Kernel.Objects.Register(new ModuleObject(loadedModule));
         }
 
-        Kernel.Modules[m.Uid] = m;
+        Kernel.Modules[loadedModule.Uid] = loadedModule;
         Code.Invalidate(0, uint.MaxValue);
-        Log.Info($"Loaded {(kernel ? "kernel " : "")}module {m.Name} ({vitaPath}) start=0x{m.StartEntry:X8} imports={m.Imports.Sum(i => i.FuncNids.Length)}");
-        CheckPendingVariables(m);
-        return m;
+        Log.Info($"Loaded {(kernel ? "kernel " : "")}module {loadedModule.Name} ({vitaPath}) start=0x{loadedModule.StartEntry:X8} imports={loadedModule.Imports.Sum(i => i.FuncNids.Length)}");
+        CheckPendingVariables(loadedModule);
+        return loadedModule;
     }
 
     /// <summary>SCE_KERNEL_START_SUCCESS, _NO_RESIDENT and _FAILED: what module_start returns.</summary>
@@ -1084,20 +1084,20 @@ public sealed class Emulator : IDisposable
     /// Runs a kernel module's module_start(args, argp) on a new kernel thread of this process and waits for it (as the
     /// kernel module manager runs it before its load call returns). Returns what module_start returned.
     /// </summary>
-    public int StartKernelModule(LoadedModule m, uint args, uint argp)
+    public int StartKernelModule(LoadedModule loadedModule, uint args, uint argp)
     {
-        m.Started = true;
-        if (m.StartEntry == 0)
+        loadedModule.Started = true;
+        if (loadedModule.StartEntry == 0)
         {
             return ModuleStartSuccess;
         }
 
-        GuestThread t = Kernel.CreateThread($"start:{m.Name}", m.StartEntry, 0x40, 0x4000, 0, 0x70000);
+        GuestThread t = Kernel.CreateThread($"start:{loadedModule.Name}", loadedModule.StartEntry, 0x40, 0x4000, 0, 0x70000);
         t.KernelMode = true;
         t.Start(args, argp);
         if (!t.WaitForExit(30_000))
         {
-            Log.Warn($"module_start of kernel module {m.Name} did not finish in time");
+            Log.Warn($"module_start of kernel module {loadedModule.Name} did not finish in time");
             return ModuleStartFailed;
         }
 
@@ -1106,17 +1106,17 @@ public sealed class Emulator : IDisposable
 
     /// <summary>Removes a loaded module (sceKernelUnloadModule): imports that pointed at its exports go back to the next
     /// provider or to HLE, its segments are freed and the translated code of their range is dropped.</summary>
-    public void UnloadModule(LoadedModule m)
+    public void UnloadModule(LoadedModule loadedModule)
     {
-        int rebound = Linker.UnregisterModule(m);
-        foreach (SegmentInfo s in m.Segments.Values)
+        int rebound = Linker.UnregisterModule(loadedModule);
+        foreach (SegmentInfo segmentInfo in loadedModule.Segments.Values)
         {
-            Code.Invalidate(s.Address, s.Size);
-            Memory.Free(s.Address);
+            Code.Invalidate(segmentInfo.Address, segmentInfo.Size);
+            Memory.Free(segmentInfo.Address);
         }
-        Kernel.Modules.TryRemove(m.Uid, out _);
-        Kernel.Objects.Remove(m.Uid);
-        Log.Info($"Unloaded module {m.Name} ({m.Path}): {rebound} import stub(s) rebound");
+        Kernel.Modules.TryRemove(loadedModule.Uid, out _);
+        Kernel.Objects.Remove(loadedModule.Uid);
+        Log.Info($"Unloaded module {loadedModule.Name} ({loadedModule.Path}): {rebound} import stub(s) rebound");
     }
 
     /// <summary>
@@ -1230,43 +1230,43 @@ public sealed class Emulator : IDisposable
     /// </summary>
     private string LoadPlugin(string path, bool kernel)
     {
-        LoadedModule m;
+        LoadedModule loadedModule;
         try
         {
-            m = LoadModule(path, kernel);
+            loadedModule = LoadModule(path, kernel);
         }
         catch (Exception e) when (e is not OutOfMemoryException)
         {
             return $"not loaded ({e.Message})";
         }
 
-        var missing = m.Imports
+        var missing = loadedModule.Imports
             .Where(i => !i.FuncNids.Any(n => Linker.TryGetVisibleExport(n, i.LibNid, kernel, out _) || Hle.Implements(n)))
             .Select(i => i.Library)
             .Distinct(StringComparer.Ordinal)
             .ToList();
         if (missing.Count > 0)
         {
-            UnloadModule(m);
+            UnloadModule(loadedModule);
             return $"not started: no module provides {string.Join(", ", missing)}";
         }
 
         if (!kernel)
         {
-            return $"loaded ({m.Name})";
+            return $"loaded ({loadedModule.Name})";
         }
 
-        int status = StartKernelModule(m, 0, 0);
+        int status = StartKernelModule(loadedModule, 0, 0);
         if (status != ModuleStartSuccess)
         {
             // NO_RESIDENT: the module did its work and asks to go; FAILED (or a crash): it is unloaded too
-            UnloadModule(m);
-            return status == ModuleStartNoResident ? $"started and unloaded ({m.Name}: module_start asked not to stay)"
-                : $"not started: module_start of {m.Name} returned 0x{status:X}, unloaded";
+            UnloadModule(loadedModule);
+            return status == ModuleStartNoResident ? $"started and unloaded ({loadedModule.Name}: module_start asked not to stay)"
+                : $"not started: module_start of {loadedModule.Name} returned 0x{status:X}, unloaded";
 
         }
 
-        return $"loaded and started ({m.Name})";
+        return $"loaded and started ({loadedModule.Name})";
     }
 
     /// <summary>Runs library module_start functions, then starts the main thread at the eboot entry.</summary>
@@ -1294,11 +1294,11 @@ public sealed class Emulator : IDisposable
 
         // Library module_start functions run (in load order) before the main thread.
         // (firmware dependencies of a system program first, each after the modules it imports from)
-        foreach (LoadedModule? m in _startFirst.Concat(Kernel.Modules.Values.Where(m => !_startFirst.Contains(m)).OrderBy(m => m.Uid))
+        foreach (LoadedModule? loadedModule in _startFirst.Concat(Kernel.Modules.Values.Where(m => !_startFirst.Contains(m)).OrderBy(m => m.Uid))
                      .Where(m => m != MainModule && m.StartEntry != 0 && !m.Started && !m.IsKernel).ToList())
         {
-            m.Started = true;
-            RunOnNewThread($"start:{m.Name}", m.StartEntry);
+            loadedModule.Started = true;
+            RunOnNewThread($"start:{loadedModule.Name}", loadedModule.StartEntry);
         }
         // the launch posts the application's PARAM_NOTIFY event (FW 3.74 kernel appmgr, its launch path at 0x8100EC52):
         // Settings and Friends wait for it to open their first page and then read the launch parameter, which a launch

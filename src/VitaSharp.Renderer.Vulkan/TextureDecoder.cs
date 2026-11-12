@@ -117,11 +117,11 @@ public static class TextureDecoder
     private static byte Mem8(uint addr) => t_srcData is { } d && addr - t_srcAddr < (uint)d.Length ? d[addr - t_srcAddr] : GuestMemory.Read<byte>(addr);
 
     /// <summary>Decodes one level. The result is pooled: dispose it once its bytes were copied.</summary>
-    public static Texels Decode(GxmTextureDesc d, TexFormatInfo info, uint addr, uint w, uint h, uint rowPitch, out uint outW, out uint outH)
+    public static Texels Decode(GxmTextureDesc gxmTextureDesc, TexFormatInfo info, uint addr, uint w, uint h, uint rowPitch, out uint outW, out uint outH)
     {
         outW = w;
         outH = h;
-        uint type = d.TextureType;
+        uint type = gxmTextureDesc.TextureType;
         bool swizzled = type is GxmTextureDesc.TypeSwizzled or GxmTextureDesc.TypeCube or GxmTextureDesc.TypeSwizzledArbitrary or GxmTextureDesc.TypeCubeArbitrary;
         bool tiled = type == GxmTextureDesc.TypeTiled;
 
@@ -129,7 +129,7 @@ public static class TextureDecoder
         {
             if (info.Convert == TexConvert.Pvrtc)
             {
-                TexBase bf = GxmFormats.BaseOf(d.Format);
+                TexBase bf = GxmFormats.BaseOf(gxmTextureDesc.Format);
                 bool two = bf is TexBase.PVRT2BPP or TexBase.PVRTII2BPP, ii = bf is TexBase.PVRTII2BPP or TexBase.PVRTII4BPP;
                 uint nx = BitOperations.RoundUpToPowerOf2(Math.Max((w + (two ? 7u : 3u)) / (two ? 8u : 4u), 2)), ny = BitOperations.RoundUpToPowerOf2(Math.Max((h + 3) / 4, 2));
                 return Pvrtc.Decode(Mem(addr, (int)(nx * ny * 8)), w, h, two, ii);
@@ -137,7 +137,7 @@ public static class TextureDecoder
             if (info.Convert == TexConvert.AstcFromPvrtc)
             {
                 // GPUs without BCn but with ASTC: PVRTC decoded, then encoded as ASTC 4x4 (AstcTranscoder)
-                TexBase bf = GxmFormats.BaseOf(d.Format);
+                TexBase bf = GxmFormats.BaseOf(gxmTextureDesc.Format);
                 bool two = bf is TexBase.PVRT2BPP or TexBase.PVRTII2BPP, ii = bf is TexBase.PVRTII2BPP or TexBase.PVRTII4BPP;
                 uint nx = BitOperations.RoundUpToPowerOf2(Math.Max((w + (two ? 7u : 3u)) / (two ? 8u : 4u), 2)), ny = BitOperations.RoundUpToPowerOf2(Math.Max((h + 3) / 4, 2));
                 return AstcTranscoder.FromPvrtc(bf, Mem(addr, (int)(nx * ny * 8)), w, h, two, ii);
@@ -172,12 +172,12 @@ public static class TextureDecoder
             {
                 using (outBuf)
                 {
-                    return BcSoftware.Decode(GxmFormats.BaseOf(d.Format), outBuf.Span, w, h);
+                    return BcSoftware.Decode(GxmFormats.BaseOf(gxmTextureDesc.Format), outBuf.Span, w, h);
                 }
             }
             if (info.Convert == TexConvert.AstcFromBc)
             {
-                TexBase bf = GxmFormats.BaseOf(d.Format);
+                TexBase bf = GxmFormats.BaseOf(gxmTextureDesc.Format);
                 using (outBuf)
                 {
                     return AstcTranscoder.FromBc(bf, outBuf.Span, w, h, AstcTranscoder.ChannelsFor(bf, false) ?? AstcChannels.Rgba);
@@ -191,7 +191,7 @@ public static class TextureDecoder
         {
             case TexConvert.Yuv420P2:
             case TexConvert.Yuv420P3:
-                return Yuv420(addr, w, h, rowPitch == 0 ? w : (uint)Math.Max(rowPitch, w), info.Convert == TexConvert.Yuv420P3, d.Swizzle);
+                return Yuv420(addr, w, h, rowPitch == 0 ? w : (uint)Math.Max(rowPitch, w), info.Convert == TexConvert.Yuv420P3, gxmTextureDesc.Swizzle);
             case TexConvert.Yuv422:
                 return Yuv422(addr, w, h, rowPitch);
         }
@@ -200,14 +200,14 @@ public static class TextureDecoder
         {
             // P4: 2 texels per byte
             using Texels raw = Gather(addr, w, h, rowPitch, 1, swizzled, tiled, halfBytes: true);
-            return ExpandPalette(raw.Span, d.PaletteAddress, w * h, true);
+            return ExpandPalette(raw.Span, gxmTextureDesc.PaletteAddress, w * h, true);
         }
 
         int bpp = bits / 8;
         Texels linear = Gather(addr, w, h, rowPitch, bpp, swizzled, tiled, halfBytes: false);
         if (info.Convert is TexConvert.None)
         {
-            if (IsU5U5U5U1(d.Format))
+            if (IsU5U5U5U1(gxmTextureDesc.Format))
             {
                 U5U5U5U1ToU1U5U5U5(linear.Span[..(int)(w * h * 2)]);
             }
@@ -219,9 +219,9 @@ public static class TextureDecoder
             Span<byte> src = linear.Span;
             return info.Convert switch
             {
-                TexConvert.Palette8 => ExpandPalette(src, d.PaletteAddress, w * h, false),
+                TexConvert.Palette8 => ExpandPalette(src, gxmTextureDesc.PaletteAddress, w * h, false),
                 TexConvert.Rgb8ToRgba8 => Rgb8ToRgba8(src, w * h, 0xFF),
-                TexConvert.Srgb8ToRgba8 => Rgb8ToRgba8(src, w * h, GxmFormats.BaseOf(d.Format) == TexBase.S8S8S8 ? (byte)0x7F : (byte)0xFF), // SNorm alpha = +1.0
+                TexConvert.Srgb8ToRgba8 => Rgb8ToRgba8(src, w * h, GxmFormats.BaseOf(gxmTextureDesc.Format) == TexBase.S8S8S8 ? (byte)0x7F : (byte)0xFF), // SNorm alpha = +1.0
                 TexConvert.U8U3U3U2 => U8U3U3U2(src, w * h),
                 TexConvert.U2F10F10F10 => U2F10F10F10(src, w * h),
                 TexConvert.S5S5U6 => S5S5U6(src, w * h),
@@ -513,18 +513,18 @@ public static class Png
         return crc;
     }
 
-    private static void Chunk(Stream s, string type, ReadOnlySpan<byte> data)
+    private static void Chunk(Stream stream, string type, ReadOnlySpan<byte> data)
     {
         Span<byte> len = stackalloc byte[4];
         System.Buffers.Binary.BinaryPrimitives.WriteInt32BigEndian(len, data.Length);
-        s.Write(len);
+        stream.Write(len);
         Span<byte> t = stackalloc byte[4];
         System.Text.Encoding.ASCII.GetBytes(type, t);
-        s.Write(t);
-        s.Write(data);
+        stream.Write(t);
+        stream.Write(data);
         uint crc = Crc32(data, Crc32(t)) ^ 0xFFFFFFFF;
         System.Buffers.Binary.BinaryPrimitives.WriteUInt32BigEndian(len, crc);
-        s.Write(len);
+        stream.Write(len);
     }
 
     /// <summary>Compressed image data buffer reused across writes on the same thread (frame dumps write one PNG every few frames).</summary>

@@ -116,31 +116,31 @@ public static class LiveAreaLayout
     /// valign (top/center/bottom/outside-top), then moved by x (right) and y (up); margins are inside it. The lines are
     /// aligned in the box by text-align / text-valign (else line-align, else align / valign; centred by default).
     /// </summary>
-    public static LaTextPlacement PlaceText(LaRect frame, LaRect? background, LaRect? image, LiveAreaText t)
+    public static LaTextPlacement PlaceText(LaRect frame, LaRect? background, LaRect? image, LiveAreaText liveAreaText)
     {
-        LaRect box = t.Origin switch
+        LaRect box = liveAreaText.Origin switch
         {
             "image" => image ?? background ?? frame,
             "frame" => frame,
             _ => background ?? frame,
         };
         // the text box: width/height (default: the origin's), placed in the origin by align/valign
-        double w = t.Width > 0 ? t.Width : box.W;
-        double h = t.Height > 0 && (t.WordScroll || t.Height <= frame.H) ? t.Height : box.H;
-        double x = t.Align switch
+        double w = liveAreaText.Width > 0 ? liveAreaText.Width : box.W;
+        double h = liveAreaText.Height > 0 && (liveAreaText.WordScroll || liveAreaText.Height <= frame.H) ? liveAreaText.Height : box.H;
+        double x = liveAreaText.Align switch
         {
             "left" => box.X,
             "right" => box.Right - w,
             "outside-right" => box.Right,
             _ => box.X + (box.W - w) / 2,
         };
-        if (t.Align == "outside-right" && t.Width <= 0)
+        if (liveAreaText.Align == "outside-right" && liveAreaText.Width <= 0)
         {
             w = Math.Max(0, frame.Right - x); // up to the frame edge
         }
         // with a y offset, top/bottom are measured from the centre (as the shell draws e.g. Silent Hill's
         // valign="top" y="47" caption on its frame image)
-        string valign = t.Y != 0 && t.Valign is "top" or "bottom" ? "center" : t.Valign;
+        string valign = liveAreaText.Y != 0 && liveAreaText.Valign is "top" or "bottom" ? "center" : liveAreaText.Valign;
         double y = valign switch
         {
             "top" => box.Y,
@@ -148,16 +148,16 @@ public static class LiveAreaLayout
             "outside-top" => box.Y - h,
             _ => box.Y + (box.H - h) / 2,
         };
-        x += t.X;
-        y -= t.Y;
+        x += liveAreaText.X;
+        y -= liveAreaText.Y;
         // margins are inside the box
-        x += t.MarginLeft;
-        w -= t.MarginLeft + t.MarginRight;
-        y += t.MarginTop;
-        h -= t.MarginTop + t.MarginBottom;
+        x += liveAreaText.MarginLeft;
+        w -= liveAreaText.MarginLeft + liveAreaText.MarginRight;
+        y += liveAreaText.MarginTop;
+        h -= liveAreaText.MarginTop + liveAreaText.MarginBottom;
         // lines in the box: text-align / text-valign, else line-align, else the box alignment, else centred
-        string ha = t.TextAlign.Length > 0 ? t.TextAlign : t.LineAlign.Length > 0 ? t.LineAlign : t.Align;
-        string va = t.TextValign.Length > 0 ? t.TextValign : valign;
+        string ha = liveAreaText.TextAlign.Length > 0 ? liveAreaText.TextAlign : liveAreaText.LineAlign.Length > 0 ? liveAreaText.LineAlign : liveAreaText.Align;
+        string va = liveAreaText.TextValign.Length > 0 ? liveAreaText.TextValign : valign;
         LaAlign horizontal = ha switch
         {
             "left" or "outside-right" => LaAlign.Start,
@@ -170,6 +170,6 @@ public static class LiveAreaLayout
             "bottom" or "outside-top" => LaAlign.End,
             _ => LaAlign.Center
         };
-        return new(new LaRect(x, y, Math.Max(0, w), Math.Max(0, h)), horizontal, vertical, t.WordWrap);
+        return new(new LaRect(x, y, Math.Max(0, w), Math.Max(0, h)), horizontal, vertical, liveAreaText.WordWrap);
     }
 }

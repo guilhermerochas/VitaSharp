@@ -24,14 +24,14 @@ internal sealed class CaptureCommand : IPerfCommand
         Console.WriteLine("  --compare <original>  <folder> is a re-run (original/reruns/...): pair its frames with the original's by guest time");
     }
 
-    public int Run(PerfArgs a)
+    public int Run(PerfArgs perfArgs)
     {
-        if (a.Positional.Count < 1)
+        if (perfArgs.Positional.Count < 1)
         {
             throw new PerfArgsException("capture: a capture folder (or its .zip) is required");
         }
 
-        string path = Path.GetFullPath(a.Positional[0]);
+        string path = Path.GetFullPath(perfArgs.Positional[0]);
         if (File.Exists(path) && path.EndsWith(".zip", StringComparison.OrdinalIgnoreCase))
         {
             string to = Path.GetDirectoryName(path)!;
@@ -48,13 +48,13 @@ internal sealed class CaptureCommand : IPerfCommand
             throw new PerfArgsException($"capture: {path} is not a capture folder (no session.txt)");
         }
         // --frames-only: just the pictures, nothing written into the capture folder (a user's capture stays read-only)
-        bool framesOnly = a.Has("--frames-only");
-        string report = framesOnly ? "" : CaptureAnalyzer.Analyze(path, quiet: false, threshold: a.Double("--threshold", 6));
-        if (a.Get("--frames") is { } framesDir)
+        bool framesOnly = perfArgs.Has("--frames-only");
+        string report = framesOnly ? "" : CaptureAnalyzer.Analyze(path, quiet: false, threshold: perfArgs.Double("--threshold", 6));
+        if (perfArgs.Get("--frames") is { } framesDir)
         {
             Directory.CreateDirectory(framesDir);
             int n = 0;
-            long from = (long)a.Double("--from", 0), to = (long)a.Double("--to", long.MaxValue), every = Math.Max(1, (long)a.Double("--every", 1));
+            long from = (long)perfArgs.Double("--from", 0), to = (long)perfArgs.Double("--to", long.MaxValue), every = Math.Max(1, (long)perfArgs.Double("--every", 1));
             foreach ((FramesFile.Frame? f, (byte[] Rgba, int W, int H)? pic) in FramesFile.ReadAll(Path.Combine(path, "frames.vsfr")))
             {
                 long pr = f.Info.Present;
@@ -71,12 +71,12 @@ internal sealed class CaptureCommand : IPerfCommand
             }
             Console.WriteLine($"{n} frames written to {Path.GetFullPath(framesDir)}");
         }
-        if (a.Has("--rerun"))
+        if (perfArgs.Has("--rerun"))
         {
             Console.WriteLine($"VitaSharp.Desktop rerun \"{path}\"");
         }
         // a re-run folder (DIR/reruns/X) against the capture it re-ran
-        if (a.Get("--compare") is { } original)
+        if (perfArgs.Get("--compare") is { } original)
         {
             Console.WriteLine(CaptureAnalyzer.Compare(Path.GetFullPath(original), path));
         }

@@ -83,7 +83,7 @@ public sealed class SharedCapture : IDisposable
     /// <summary>Starts stopping the current capture; the caller holds <see cref="_gate"/>.</summary>
     private void StopLocked()
     {
-        IHostCapture c = _capture!;
+        IHostCapture hostCapture = _capture!;
         _capture = null;
         _mode = null;
         _leases = 0;
@@ -99,7 +99,7 @@ public sealed class SharedCapture : IDisposable
             catch { }
             try
             {
-                await c.StopAsync();
+                await hostCapture.StopAsync();
             }
             catch (Exception e)
             {
@@ -108,12 +108,12 @@ public sealed class SharedCapture : IDisposable
         });
     }
 
-    private void Release(IHostCapture c)
+    private void Release(IHostCapture hostCapture)
     {
         long gen;
         lock (_gate)
         {
-            if (_capture != c || _leases == 0)
+            if (_capture != hostCapture || _leases == 0)
             {
                 return; // already replaced or stopped
             }
@@ -127,17 +127,17 @@ public sealed class SharedCapture : IDisposable
         }
         if (_linger <= TimeSpan.Zero)
         {
-            StopIfIdle(c, gen);
+            StopIfIdle(hostCapture, gen);
             return;
         }
-        _ = Task.Delay(_linger).ContinueWith(_ => StopIfIdle(c, gen), TaskScheduler.Default);
+        _ = Task.Delay(_linger).ContinueWith(_ => StopIfIdle(hostCapture, gen), TaskScheduler.Default);
     }
 
-    private void StopIfIdle(IHostCapture c, long gen)
+    private void StopIfIdle(IHostCapture hostCapture, long gen)
     {
         lock (_gate)
         {
-            if (_capture == c && _leases == 0 && _generation == gen)
+            if (_capture == hostCapture && _leases == 0 && _generation == gen)
             {
                 StopLocked();
             }
@@ -166,7 +166,7 @@ public sealed class SharedCapture : IDisposable
     /// <summary>Stops the capture now (even with live streams) and waits a bounded time for the device to close.</summary>
     public void Dispose()
     {
-        IHostCapture? c;
+        IHostCapture? hostCapture;
         Task prev;
         lock (_gate)
         {
@@ -176,9 +176,9 @@ public sealed class SharedCapture : IDisposable
             }
 
             _disposed = true;
-            c = _capture;
+            hostCapture = _capture;
             prev = _lastStop;
-            if (c != null)
+            if (hostCapture != null)
             {
                 _capture = null;
                 _mode = null;
@@ -192,14 +192,14 @@ public sealed class SharedCapture : IDisposable
             prev.Wait(TimeSpan.FromSeconds(3));
         }
         catch { }
-        if (c == null)
+        if (hostCapture == null)
         {
             return;
         }
 
         try
         {
-            c.StopAsync().Wait(TimeSpan.FromSeconds(3));
+            hostCapture.StopAsync().Wait(TimeSpan.FromSeconds(3));
         }
         catch (Exception e)
         {

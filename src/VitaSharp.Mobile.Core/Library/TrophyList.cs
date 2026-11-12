@@ -49,10 +49,10 @@ public sealed class TrophyList
             }
 
             Dictionary<int, ulong> unlocked = TrophyUnlocks.Load(TrophyUnlocks.PathFor(data.Fs, commId));
-            foreach (TrophyInfo t in pkg.Trophies)
+            foreach (TrophyInfo trophyInfo in pkg.Trophies)
             {
-                rows.Add(new TrophyRow(commId, t.Id, t.Grade, t.Name, t.Detail, t.Hidden,
-                    unlocked.TryGetValue(t.Id, out ulong tick) ? TrophyUnlocks.TickToUtc(tick) : null, pkg.TrophyIcon(t.Id)));
+                rows.Add(new TrophyRow(commId, trophyInfo.Id, trophyInfo.Grade, trophyInfo.Name, trophyInfo.Detail, trophyInfo.Hidden,
+                    unlocked.TryGetValue(trophyInfo.Id, out ulong tick) ? TrophyUnlocks.TickToUtc(tick) : null, pkg.TrophyIcon(trophyInfo.Id)));
             }
         }
         return new TrophyList(title, rows, Summarize(rows));
@@ -85,7 +85,7 @@ public sealed class TrophyList
         return total == 0 ? TrophyProgress.None : new TrophyProgress(earned, total, grades);
     }
 
-    public static string GradeName(TrophyGrade g) => g switch
+    public static string GradeName(TrophyGrade trophyGrade) => trophyGrade switch
     {
         TrophyGrade.Platinum => Loc.Get("MPlatinum"),
         TrophyGrade.Gold => Loc.Get("MGold"),
@@ -94,7 +94,7 @@ public sealed class TrophyList
     };
 
     /// <summary>The grade colours of the mockups (and the desktop's trophy window).</summary>
-    public static string GradeColor(TrophyGrade g) => g switch
+    public static string GradeColor(TrophyGrade trophyGrade) => trophyGrade switch
     {
         TrophyGrade.Platinum => "#A9C4E8",
         TrophyGrade.Gold => "#E2B13C",

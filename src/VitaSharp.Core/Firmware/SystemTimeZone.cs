@@ -53,10 +53,10 @@ public static class SystemTimeZone
 
     /// <summary>The zone of the same city (IANA id, also from a Windows id), else the first one with the same
     /// standard offset, else the one with the nearest offset.</summary>
-    public static int FromTimeZone(TimeZoneInfo tz)
+    public static int FromTimeZone(TimeZoneInfo timeZoneInfo)
     {
-        string iana = tz.HasIanaId ? tz.Id
-            : TimeZoneInfo.TryConvertWindowsIdToIanaId(tz.Id, out string? i) ? i : "";
+        string iana = timeZoneInfo.HasIanaId ? timeZoneInfo.Id
+            : TimeZoneInfo.TryConvertWindowsIdToIanaId(timeZoneInfo.Id, out string? i) ? i : "";
         foreach ((int Id, int Minutes, string Iana) z in s_zones)
         {
             if (string.Equals(z.Iana, iana, StringComparison.OrdinalIgnoreCase))
@@ -65,7 +65,7 @@ public static class SystemTimeZone
             }
         }
 
-        int minutes = (int)tz.BaseUtcOffset.TotalMinutes;
+        int minutes = (int)timeZoneInfo.BaseUtcOffset.TotalMinutes;
         return s_zones.MinBy(z => Math.Abs(z.Minutes - minutes)).Id;
     }
 

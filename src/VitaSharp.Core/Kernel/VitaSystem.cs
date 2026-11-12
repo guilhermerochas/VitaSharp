@@ -144,24 +144,24 @@ public sealed class VitaSystem
         }
     }
 
-    public bool IsForeground(Emulator e) => ReferenceEquals(Volatile.Read(ref _foreground), e) || _foreground == null;
+    public bool IsForeground(Emulator emulator) => ReferenceEquals(Volatile.Read(ref _foreground), emulator) || _foreground == null;
 
-    internal int Register(Emulator e)
+    internal int Register(Emulator emulator)
     {
-        int pid = Objects.Register(new ProcessObject(e));
+        int pid = Objects.Register(new ProcessObject(emulator));
         lock (_lock)
         {
-            _processes.Add(e);
-            _foreground ??= e;
+            _processes.Add(emulator);
+            _foreground ??= emulator;
         }
         return pid;
     }
 
-    /// <summary>The application id of process <paramref name="e"/> (an <see cref="AppObject"/> it owns).</summary>
-    internal int RegisterApp(Emulator e)
+    /// <summary>The application id of process <paramref name="emulator"/> (an <see cref="AppObject"/> it owns).</summary>
+    internal int RegisterApp(Emulator emulator)
     {
-        using ProcessScope.Scope scope = ProcessScope.Enter(e);
-        return Objects.Register(new AppObject(e));
+        using ProcessScope.Scope scope = ProcessScope.Enter(emulator);
+        return Objects.Register(new AppObject(emulator));
     }
 
     public Emulator? ByAppId(int appId) => Objects.Get<AppObject>(appId)?.Process;
@@ -192,20 +192,20 @@ public sealed class VitaSystem
     /// starts it with sceAppMgrLaunchAppByName2ndStage.</summary>
     public PendingLaunch RequestLaunchByUri(Emulator caller, string uri, int flags)
     {
-        PendingLaunch pl = AddPendingLaunch(caller, "", "", flags | 0x100000, uri);
-        Log.Info($"Launch by URI (0x{flags:X}, {uri}) from {caller.Describe()}: request 0x{pl.App.Uid:X} for the shell");
-        PostShellEvent(ShellEvents.LaunchRequest, pl.App.Uid, pl.App.Uid);
-        return pl;
+        PendingLaunch pendingLaunch = AddPendingLaunch(caller, "", "", flags | 0x100000, uri);
+        Log.Info($"Launch by URI (0x{flags:X}, {uri}) from {caller.Describe()}: request 0x{pendingLaunch.App.Uid:X} for the shell");
+        PostShellEvent(ShellEvents.LaunchRequest, pendingLaunch.App.Uid, pendingLaunch.App.Uid);
+        return pendingLaunch;
     }
 
     /// <summary>An application asking the shell to start another one by title id (sceAppMgrLaunchAppByName from an
     /// application): its entry with the flags and parameter, and shell event 6.</summary>
     public PendingLaunch RequestLaunchByName(Emulator caller, string titleId, string dir, int flags, string? param)
     {
-        PendingLaunch pl = AddPendingLaunch(caller, titleId, dir, flags, param);
-        Log.Info($"Launch of {titleId} (0x{flags:X}) asked by {caller.Describe()}: application id 0x{pl.App.Uid:X} waits for the shell");
-        PostShellEvent(ShellEvents.LaunchRequest, pl.App.Uid, pl.App.Uid);
-        return pl;
+        PendingLaunch pendingLaunch = AddPendingLaunch(caller, titleId, dir, flags, param);
+        Log.Info($"Launch of {titleId} (0x{flags:X}) asked by {caller.Describe()}: application id 0x{pendingLaunch.App.Uid:X} waits for the shell");
+        PostShellEvent(ShellEvents.LaunchRequest, pendingLaunch.App.Uid, pendingLaunch.App.Uid);
+        return pendingLaunch;
     }
 
     private readonly ManualResetEventSlim _shellUp = new();
@@ -234,15 +234,15 @@ public sealed class VitaSystem
     {
         lock (_pendingLaunches)
         {
-            return _pendingLaunches.Remove(appId, out PendingLaunch? pl) ? pl : null;
+            return _pendingLaunches.Remove(appId, out PendingLaunch? pendingLaunch) ? pendingLaunch : null;
         }
     }
 
     /// <summary>Gives a process the application record reserved for it.</summary>
-    internal int ClaimApp(AppObject app, Emulator e)
+    internal int ClaimApp(AppObject app, Emulator emulator)
     {
-        app.Process = e;
-        app.OwnerPid = e.Pid;
+        app.Process = emulator;
+        app.OwnerPid = emulator.Pid;
         return app.Uid;
     }
 
@@ -511,10 +511,10 @@ public sealed class VitaSystem
         return best;
     }
 
-    /// <summary>The BGM ports of <paramref name="e"/> are silent: another process holds the BGM
+    /// <summary>The BGM ports of <paramref name="emulator"/> are silent: another process holds the BGM
     /// (<see cref="BgmHolder"/>). On the Vita the system music stops while an application runs and comes back on the
     /// home screen; the shell's music player itself makes no audio call when an application opens.</summary>
-    public bool BgmMuted(Emulator e) => !ReferenceEquals(BgmHolder(out _), e);
+    public bool BgmMuted(Emulator emulator) => !ReferenceEquals(BgmHolder(out _), emulator);
     /// <summary>The process holding the audio output alone (sceAppMgrAcquireSoundOutExclusive2/3), -1 none.</summary>
     public int SoundOutExclusiveOwner = -1;
     /// <summary>The process holding the input devices (sceAppMgrAcquireBtrm), -1 none.</summary>
@@ -617,46 +617,46 @@ public sealed class VitaSystem
         }
     }
 
-    internal void Unregister(Emulator e)
+    internal void Unregister(Emulator emulator)
     {
         Emulator? next = null;
         lock (_lock)
         {
-            _processes.Remove(e);
-            if (ReferenceEquals(_foreground, e))
+            _processes.Remove(emulator);
+            if (ReferenceEquals(_foreground, emulator))
             {
-                next = e.Parent is { } p && _processes.Contains(p) ? p : _processes.LastOrDefault();
+                next = emulator.Parent is { } p && _processes.Contains(p) ? p : _processes.LastOrDefault();
                 _foreground = next;
             }
         }
-        Objects.Remove(e.Pid);
-        Objects.Remove(e.AppId);
+        Objects.Remove(emulator.Pid);
+        Objects.Remove(emulator.AppId);
         if (next != null)
         {
             NotifyForeground(next);
         }
     }
 
-    /// <summary>Gives the display and the input to <paramref name="e"/>.</summary>
-    public void SetForeground(Emulator e)
+    /// <summary>Gives the display and the input to <paramref name="emulator"/>.</summary>
+    public void SetForeground(Emulator emulator)
     {
         lock (_lock)
         {
-            if (ReferenceEquals(_foreground, e) || !_processes.Contains(e))
+            if (ReferenceEquals(_foreground, emulator) || !_processes.Contains(emulator))
             {
                 return;
             }
 
-            _foreground = e;
+            _foreground = emulator;
         }
-        Log.Info($"Foreground process: {e.Describe()}");
-        NotifyForeground(e);
+        Log.Info($"Foreground process: {emulator.Describe()}");
+        NotifyForeground(emulator);
     }
 
-    private void NotifyForeground(Emulator e)
+    private void NotifyForeground(Emulator emulator)
     {
-        e.OnForeground();
-        ForegroundChanged?.Invoke(e);
+        emulator.OnForeground();
+        ForegroundChanged?.Invoke(emulator);
     }
 
     public Emulator? ByPid(int pid) => Objects.Get<ProcessObject>(pid)?.Process;

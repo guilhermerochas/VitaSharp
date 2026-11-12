@@ -122,17 +122,17 @@ public sealed class Pup : IDisposable
 
     public static Pup Open(string path) => new(File.OpenRead(path), ownsStream: true);
 
-    public byte[] Read(PupEntry e)
+    public byte[] Read(PupEntry pupEntry)
     {
-        if (e.Length > Array.MaxLength)
+        if (pupEntry.Length > Array.MaxLength)
         {
             throw new InvalidDataException("PUP entry too large");
         }
 
-        byte[] buf = new byte[e.Length];
+        byte[] buf = new byte[pupEntry.Length];
         lock (_stream)
         {
-            _stream.Position = e.Offset;
+            _stream.Position = pupEntry.Offset;
             _stream.ReadExactly(buf);
         }
         return buf;
@@ -141,13 +141,13 @@ public sealed class Pup : IDisposable
     /// <summary>The first line of version.txt (e.g. "3.74"), or null when the package has none.</summary>
     public string? ReadVersionText()
     {
-        PupEntry? e = Entries.FirstOrDefault(x => x.Type == 0x100);
-        if (e == null)
+        PupEntry? pupEntry = Entries.FirstOrDefault(x => x.Type == 0x100);
+        if (pupEntry == null)
         {
             return null;
         }
 
-        string text = System.Text.Encoding.ASCII.GetString(Read(e)).TrimEnd('\0');
+        string text = System.Text.Encoding.ASCII.GetString(Read(pupEntry)).TrimEnd('\0');
         string line = text.Split('\n', 2)[0].Trim();
         return line.Length > 0 ? line : null;
     }

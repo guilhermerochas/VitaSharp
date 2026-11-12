@@ -224,11 +224,11 @@ public sealed class GpuQueue : IDisposable
         long now = System.Diagnostics.Stopwatch.GetTimestamp(), timeout = System.Diagnostics.Stopwatch.Frequency / 4;
         foreach ((int pid, HeldLane? lane) in _held)
         {
-            while (lane.Commands.TryPeek(out GpuCommand? c))
+            while (lane.Commands.TryPeek(out GpuCommand? gpuCommand))
             {
-                if (c is DrawCommand { Gate: { Ended: false } g })
+                if (gpuCommand is DrawCommand { Gate: { Ended: false } g })
                 {
-                    if (!WaitedFor(pid, c.Sequence) && now - lane.Since < timeout && !_stopping)
+                    if (!WaitedFor(pid, gpuCommand.Sequence) && now - lane.Since < timeout && !_stopping)
                     {
                         break;
                     }
@@ -236,7 +236,7 @@ public sealed class GpuQueue : IDisposable
                     EndGateEarly(g);
                 }
                 lane.Commands.Dequeue();
-                ExecuteOne(c);
+                ExecuteOne(gpuCommand);
                 lane.Since = now;
             }
             if (lane.Commands.Count == 0)
@@ -261,12 +261,12 @@ public sealed class GpuQueue : IDisposable
         long done = sequence;
         foreach ((int pid, HeldLane? lane) in _held)
         {
-            if (lane.Commands.TryPeek(out GpuCommand? c))
+            if (lane.Commands.TryPeek(out GpuCommand? gpuCommand))
             {
-                _heldHead[pid] = c.Sequence;
-                if (c.Sequence - 1 < done)
+                _heldHead[pid] = gpuCommand.Sequence;
+                if (gpuCommand.Sequence - 1 < done)
                 {
-                    done = c.Sequence - 1;
+                    done = gpuCommand.Sequence - 1;
                 }
             }
         }

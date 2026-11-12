@@ -26,16 +26,16 @@ public sealed unsafe partial class VulkanRenderer
     private const PipelineColorBlendStateCreateFlags RoaaBlendFlag = (PipelineColorBlendStateCreateFlags)1;
 
     /// <summary>The draw's fixed-function state that a static-state pipeline bakes in (0 without the quirk).</summary>
-    private ulong StaticStateKey(in DrawState st, PrimitiveTopology topology)
+    private ulong StaticStateKey(in DrawState drawState, PrimitiveTopology topology)
     {
         if (!StaticEds)
         {
             return 0;
         }
 
-        SideState front = st.Front;
-        SideState back = st.TwoSided ? st.Back : st.Front;
-        ulong k = StaticPresent | (ulong)(st.CullMode & 3u) | ((ulong)(uint)topology & 15) << 2;
+        SideState front = drawState.Front;
+        SideState back = drawState.TwoSided ? drawState.Back : drawState.Front;
+        ulong k = StaticPresent | (ulong)(drawState.CullMode & 3u) | ((ulong)(uint)topology & 15) << 2;
         bool depthTest = !(front.DepthFunc == 7 && !front.DepthWrite);
         if (depthTest)
         {
@@ -56,8 +56,8 @@ public sealed unsafe partial class VulkanRenderer
         return k;
     }
 
-    private static ulong StencilBits(in StencilState s) =>
-        (s.StencilFail & 7u) | (s.DepthPass & 7u) << 3 | (s.DepthFail & 7u) << 6 | (s.Func & 7u) << 9;
+    private static ulong StencilBits(in StencilState stencilState) =>
+        (stencilState.StencilFail & 7u) | (stencilState.DepthPass & 7u) << 3 | (stencilState.DepthFail & 7u) << 6 | (stencilState.Func & 7u) << 9;
 
     private static StencilOpState StencilFrom(ulong bits) => new()
     {
@@ -71,7 +71,7 @@ public sealed unsafe partial class VulkanRenderer
     };
 
     /// <summary>Bakes a static state key into the pipeline create infos.</summary>
-    private static void ApplyStaticState(ulong k, ref PipelineInputAssemblyStateCreateInfo ia, ref PipelineRasterizationStateCreateInfo rs, ref PipelineDepthStencilStateCreateInfo ds)
+    private static void ApplyStaticState(ulong k, ref PipelineInputAssemblyStateCreateInfo pipelineInputAssemblyStateCreateInfo, ref PipelineRasterizationStateCreateInfo rs, ref PipelineDepthStencilStateCreateInfo pipelineDepthStencilStateCreateInfo)
     {
         if (k == 0)
         {
@@ -85,15 +85,15 @@ public sealed unsafe partial class VulkanRenderer
             _ => CullModeFlags.None
         };
         rs.FrontFace = FrontFace.CounterClockwise;
-        ia.Topology = (PrimitiveTopology)((k >> 2) & 15);
-        ds.DepthTestEnable = (k & (1ul << 6)) != 0;
-        ds.DepthWriteEnable = (k & (1ul << 7)) != 0;
-        ds.DepthCompareOp = (CompareOp)((k >> 8) & 7);
-        ds.StencilTestEnable = (k & (1ul << 11)) != 0;
-        if (ds.StencilTestEnable)
+        pipelineInputAssemblyStateCreateInfo.Topology = (PrimitiveTopology)((k >> 2) & 15);
+        pipelineDepthStencilStateCreateInfo.DepthTestEnable = (k & (1ul << 6)) != 0;
+        pipelineDepthStencilStateCreateInfo.DepthWriteEnable = (k & (1ul << 7)) != 0;
+        pipelineDepthStencilStateCreateInfo.DepthCompareOp = (CompareOp)((k >> 8) & 7);
+        pipelineDepthStencilStateCreateInfo.StencilTestEnable = (k & (1ul << 11)) != 0;
+        if (pipelineDepthStencilStateCreateInfo.StencilTestEnable)
         {
-            ds.Front = StencilFrom(k >> 12);
-            ds.Back = StencilFrom(k >> 24);
+            pipelineDepthStencilStateCreateInfo.Front = StencilFrom(k >> 12);
+            pipelineDepthStencilStateCreateInfo.Back = StencilFrom(k >> 24);
         }
     }
 

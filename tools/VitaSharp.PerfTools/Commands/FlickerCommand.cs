@@ -21,15 +21,15 @@ internal sealed class FlickerCommand : IPerfCommand
         Console.WriteLine("  frame_N.png files in <dir> (consecutive N); writes <dir>/flicker.txt");
     }
 
-    public int Run(PerfArgs a)
+    public int Run(PerfArgs perfArgs)
     {
-        if (a.Positional.Count < 1)
+        if (perfArgs.Positional.Count < 1)
         {
             throw new PerfArgsException("flicker: a folder of frame_N.png files is required");
         }
 
-        string dir = Path.GetFullPath(a.Positional[0]);
-        double threshold = a.Double("--threshold", 6);
+        string dir = Path.GetFullPath(perfArgs.Positional[0]);
+        double threshold = perfArgs.Double("--threshold", 6);
         (string Path, long N)[] files = Directory.GetFiles(dir, "frame_*.png")
             .Select(f => (Path: f, N: long.TryParse(Path.GetFileNameWithoutExtension(f)[6..], out long v) ? v : -1)).Where(x => x.N >= 0).OrderBy(x => x.N).ToArray();
         var sb = new StringBuilder("# frame prev-diff next-diff neighbours-diff\n");

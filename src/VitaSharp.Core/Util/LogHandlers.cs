@@ -10,32 +10,32 @@ namespace VitaSharp.Core.Util;
 [InterpolatedStringHandler]
 public ref struct DebugLogHandler
 {
-    private LevelLogHandler _h;
-    public DebugLogHandler(int literalLength, int formattedCount, out bool enabled) => _h = new(literalLength, formattedCount, LogLevel.Debug, out enabled);
-    public void AppendLiteral(string s) => _h.AppendLiteral(s);
-    public void AppendFormatted<T>(T value) => _h.AppendFormatted(value);
-    public void AppendFormatted<T>(T value, string? format) => _h.AppendFormatted(value, format);
-    public void AppendFormatted<T>(T value, int alignment) => _h.AppendFormatted(value, alignment);
-    public void AppendFormatted<T>(T value, int alignment, string? format) => _h.AppendFormatted(value, alignment, format);
-    public void AppendFormatted(ReadOnlySpan<char> value) => _h.AppendFormatted(value);
-    public void AppendFormatted(string? value) => _h.AppendFormatted(value);
-    internal string ToStringAndClear() => _h.ToStringAndClear();
+    private LevelLogHandler _handler;
+    public DebugLogHandler(int literalLength, int formattedCount, out bool enabled) => _handler = new(literalLength, formattedCount, LogLevel.Debug, out enabled);
+    public void AppendLiteral(string s) => _handler.AppendLiteral(s);
+    public void AppendFormatted<T>(T value) => _handler.AppendFormatted(value);
+    public void AppendFormatted<T>(T value, string? format) => _handler.AppendFormatted(value, format);
+    public void AppendFormatted<T>(T value, int alignment) => _handler.AppendFormatted(value, alignment);
+    public void AppendFormatted<T>(T value, int alignment, string? format) => _handler.AppendFormatted(value, alignment, format);
+    public void AppendFormatted(ReadOnlySpan<char> value) => _handler.AppendFormatted(value);
+    public void AppendFormatted(string? value) => _handler.AppendFormatted(value);
+    internal string ToStringAndClear() => _handler.ToStringAndClear();
 }
 
 /// <summary>Trace-level counterpart of <see cref="DebugLogHandler"/>.</summary>
 [InterpolatedStringHandler]
 public ref struct TraceLogHandler
 {
-    private LevelLogHandler _h;
-    public TraceLogHandler(int literalLength, int formattedCount, out bool enabled) => _h = new(literalLength, formattedCount, LogLevel.Trace, out enabled);
-    public void AppendLiteral(string s) => _h.AppendLiteral(s);
-    public void AppendFormatted<T>(T value) => _h.AppendFormatted(value);
-    public void AppendFormatted<T>(T value, string? format) => _h.AppendFormatted(value, format);
-    public void AppendFormatted<T>(T value, int alignment) => _h.AppendFormatted(value, alignment);
-    public void AppendFormatted<T>(T value, int alignment, string? format) => _h.AppendFormatted(value, alignment, format);
-    public void AppendFormatted(ReadOnlySpan<char> value) => _h.AppendFormatted(value);
-    public void AppendFormatted(string? value) => _h.AppendFormatted(value);
-    internal string ToStringAndClear() => _h.ToStringAndClear();
+    private LevelLogHandler _handler;
+    public TraceLogHandler(int literalLength, int formattedCount, out bool enabled) => _handler = new(literalLength, formattedCount, LogLevel.Trace, out enabled);
+    public void AppendLiteral(string s) => _handler.AppendLiteral(s);
+    public void AppendFormatted<T>(T value) => _handler.AppendFormatted(value);
+    public void AppendFormatted<T>(T value, string? format) => _handler.AppendFormatted(value, format);
+    public void AppendFormatted<T>(T value, int alignment) => _handler.AppendFormatted(value, alignment);
+    public void AppendFormatted<T>(T value, int alignment, string? format) => _handler.AppendFormatted(value, alignment, format);
+    public void AppendFormatted(ReadOnlySpan<char> value) => _handler.AppendFormatted(value);
+    public void AppendFormatted(string? value) => _handler.AppendFormatted(value);
+    internal string ToStringAndClear() => _handler.ToStringAndClear();
 }
 
 /// <summary>Shared implementation: formats into a <see cref="DefaultInterpolatedStringHandler"/> only when enabled.</summary>

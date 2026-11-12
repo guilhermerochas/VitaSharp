@@ -172,14 +172,14 @@ public sealed class ShellAssets
         return t.HomeBackgrounds.Count > 0 ? t : null;
     }
 
-    private static string? Localized(XElement? e, string language)
+    private static string? Localized(XElement? element, string language)
     {
-        if (e == null)
+        if (element == null)
         {
             return null;
         }
 
-        XElement? param = e.Element("m_param");
+        XElement? param = element.Element("m_param");
         if (param != null)
         {
             string key = "m_" + language.Replace('-', '_');
@@ -190,13 +190,13 @@ public sealed class ShellAssets
                 return match.Value.Trim();
             }
         }
-        string? def = e.Element("m_default")?.Value.Trim();
+        string? def = element.Element("m_default")?.Value.Trim();
         if (!string.IsNullOrEmpty(def))
         {
             return def;
         }
 
-        string own = string.Concat(e.Nodes().OfType<XText>().Select(n => n.Value)).Trim();
+        string own = string.Concat(element.Nodes().OfType<XText>().Select(n => n.Value)).Trim();
         return own.Length > 0 ? own : null;
     }
 
@@ -407,7 +407,7 @@ public sealed class ShellAssets
             }
         }
 
-        PcmSound? pcm = null;
+        PcmSound? pcmSound = null;
         Rco? r = RcoOf(CommonRco);
         RcoElement? index = r?.Root.Descendants().FirstOrDefault(e => e.Name == "soundindextable");
         if (r != null && (index != null || effect == ShellSoundEffect.Notice))
@@ -429,11 +429,11 @@ public sealed class ShellAssets
                 {
                     if (sd.Attribute("src") != null)
                     {
-                        pcm = Vag.Decode(r.ReadFile(sd));
+                        pcmSound = Vag.Decode(r.ReadFile(sd));
                     }
                     else if (sd.Attribute("left") != null)
                     {
-                        pcm = Vag.Decode(r.ReadFile(sd, "left"), sd.Attribute("right") != null ? r.ReadFile(sd, "right") : null);
+                        pcmSound = Vag.Decode(r.ReadFile(sd, "left"), sd.Attribute("right") != null ? r.ReadFile(sd, "right") : null);
                     }
                 }
                 catch (InvalidDataException e)
@@ -444,9 +444,9 @@ public sealed class ShellAssets
         }
         lock (_lock)
         {
-            _sounds[effect] = pcm;
+            _sounds[effect] = pcmSound;
         }
 
-        return pcm;
+        return pcmSound;
     }
 }

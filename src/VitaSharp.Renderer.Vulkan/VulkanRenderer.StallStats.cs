@@ -33,58 +33,58 @@ public sealed unsafe partial class VulkanRenderer
 
     private void NoteDrawStall(DrawCommand d, byte colorMask, byte tw1Key, bool fetch, long ticks)
     {
-        DrawState st = d.State;
-        StallClass c = StallClass.None;
+        DrawState drawState = d.State;
+        StallClass stallClass = StallClass.None;
         if (d.VisAddress != 0)
         {
-            c |= StallClass.Visibility;
+            stallClass |= StallClass.Visibility;
         }
 
-        if (_depth != null && WritesStencil(st))
+        if (_depth != null && WritesStencil(drawState))
         {
-            c |= StallClass.StencilWrite;
+            stallClass |= StallClass.StencilWrite;
         }
 
-        if (_depth != null && st.Front.DepthWrite)
+        if (_depth != null && drawState.Front.DepthWrite)
         {
-            c |= StallClass.DepthWrite;
+            stallClass |= StallClass.DepthWrite;
         }
 
         if (_renderTarget != null && colorMask != 0)
         {
-            c |= StallClass.Color;
+            stallClass |= StallClass.Color;
         }
 
         if (tw1Key == 2)
         {
-            c |= StallClass.TileWord1Write;
+            stallClass |= StallClass.TileWord1Write;
         }
 
         if (fetch)
         {
-            c |= StallClass.FramebufferFetch;
+            stallClass |= StallClass.FramebufferFetch;
         }
 
         if (_multisampled)
         {
-            c |= StallClass.Multisampled;
+            stallClass |= StallClass.Multisampled;
         }
 
         if (_renderTarget != null && (ulong)_renderTarget.Width * _renderTarget.Height <= s_writebackMaxPixels)
         {
-            c |= StallClass.WritebackSized;
+            stallClass |= StallClass.WritebackSized;
         }
 
         if (_stalls.Count < 100_000)
         {
-            _stalls.Add(new StallRecord(_presentCount, _renderTarget?.Address ?? 0, c, ticks));
+            _stalls.Add(new StallRecord(_presentCount, _renderTarget?.Address ?? 0, stallClass, ticks));
         }
     }
 
-    private static bool WritesStencil(in DrawState st)
+    private static bool WritesStencil(in DrawState drawState)
     {
-        static bool Writes(in StencilState s) => s.WriteMask != 0 && (s.StencilFail != 0 || s.DepthFail != 0 || s.DepthPass != 0);
-        return !(IsTrivial(st.Front.Stencil) && IsTrivial(st.Back.Stencil)) && (Writes(st.Front.Stencil) || (st.TwoSided && Writes(st.Back.Stencil)));
+        static bool Writes(in StencilState stencilState) => stencilState.WriteMask != 0 && (stencilState.StencilFail != 0 || stencilState.DepthFail != 0 || stencilState.DepthPass != 0);
+        return !(IsTrivial(drawState.Front.Stencil) && IsTrivial(drawState.Back.Stencil)) && (Writes(drawState.Front.Stencil) || (drawState.TwoSided && Writes(drawState.Back.Stencil)));
     }
 
     /// <summary>A draw that could be skipped without side effects beyond the presented image.</summary>

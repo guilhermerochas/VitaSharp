@@ -78,9 +78,9 @@ public readonly record struct InputCombo(InputBinding[] Parts)
     public float Value(PadSnapshot? pad, IReadOnlySet<string>? keys)
     {
         float v = 1f;
-        foreach (InputBinding p in Parts)
+        foreach (InputBinding inputBinding in Parts)
         {
-            v = Math.Min(v, InputMapper.Value(p, pad, keys));
+            v = Math.Min(v, InputMapper.Value(inputBinding, pad, keys));
         }
 
         return v;
@@ -97,8 +97,8 @@ public readonly record struct InputCombo(InputBinding[] Parts)
 public readonly record struct InputBinding(BindingKind Kind, int Index, int Dir = 1, string? Key = null)
 {
     public static InputBinding OfKey(string key) => new(BindingKind.Key, 0, 1, key);
-    public static InputBinding Of(PadButton b) => new(BindingKind.PadButton, (int)b);
-    public static InputBinding Of(PadAxis a, int dir = 1) => new(BindingKind.PadAxis, (int)a, a >= PadAxis.LeftTrigger ? 1 : dir);
+    public static InputBinding Of(PadButton padButton) => new(BindingKind.PadButton, (int)padButton);
+    public static InputBinding Of(PadAxis padAxis, int dir = 1) => new(BindingKind.PadAxis, (int)padAxis, padAxis >= PadAxis.LeftTrigger ? 1 : dir);
     public static InputBinding JoyButton(int i) => new(BindingKind.JoyButton, i);
     public static InputBinding JoyAxis(int i, int dir) => new(BindingKind.JoyAxis, i, dir);
     public static InputBinding JoyHat(int i, int bit) => new(BindingKind.JoyHat, i, bit);
@@ -138,7 +138,7 @@ public readonly record struct InputBinding(BindingKind Kind, int Index, int Dir 
         }
 
         string kind = s[..colon], v = s[(colon + 1)..];
-        CultureInfo inv = CultureInfo.InvariantCulture;
+        CultureInfo invariant = CultureInfo.InvariantCulture;
         switch (kind)
         {
             case "key":
@@ -175,7 +175,7 @@ public readonly record struct InputBinding(BindingKind Kind, int Index, int Dir 
             {
                 char t = v[0];
                 string rest = v[1..];
-                if (t == 'b' && int.TryParse(rest, NumberStyles.None, inv, out int bi))
+                if (t == 'b' && int.TryParse(rest, NumberStyles.None, invariant, out int bi))
                 {
                     binding = JoyButton(bi);
                     return true;
@@ -193,7 +193,7 @@ public readonly record struct InputBinding(BindingKind Kind, int Index, int Dir 
                         rest = rest[..^1];
                     }
 
-                    if (!int.TryParse(rest, NumberStyles.None, inv, out int ai))
+                    if (!int.TryParse(rest, NumberStyles.None, invariant, out int ai))
                     {
                         return false;
                     }
@@ -204,7 +204,7 @@ public readonly record struct InputBinding(BindingKind Kind, int Index, int Dir 
                 if (t == 'h')
                 {
                     string[] p = rest.Split('.');
-                    if (p.Length != 2 || !int.TryParse(p[0], NumberStyles.None, inv, out int hi) || !int.TryParse(p[1], NumberStyles.None, inv, out int bit))
+                    if (p.Length != 2 || !int.TryParse(p[0], NumberStyles.None, invariant, out int hi) || !int.TryParse(p[1], NumberStyles.None, invariant, out int bit))
                     {
                         return false;
                     }
@@ -265,7 +265,7 @@ public readonly record struct InputBinding(BindingKind Kind, int Index, int Dir 
         }
     }
 
-    public static string ButtonLabel(PadButton b, ControllerKind kind) => (b, kind) switch
+    public static string ButtonLabel(PadButton padButton, ControllerKind kind) => (padButton, kind) switch
     {
         (PadButton.South, ControllerKind.PlayStation) => "Cross",
         (PadButton.East, ControllerKind.PlayStation) => "Circle",
@@ -311,6 +311,6 @@ public readonly record struct InputBinding(BindingKind Kind, int Index, int Dir 
         (PadButton.Paddle3, _) => "Paddle 3",
         (PadButton.Paddle4, _) => "Paddle 4",
         (PadButton.Touchpad, _) => "Touchpad click",
-        _ => b.ToString(),
+        _ => padButton.ToString(),
     };
 }

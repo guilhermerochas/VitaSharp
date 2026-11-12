@@ -99,11 +99,11 @@ public static class VpkInstaller
             throw new InvalidDataException("No sce_sys/param.sfo found in the archive: this is not a PS Vita VPK/content zip");
         }
 
-        foreach (VpkContentInfo? c in contents.Where(c => c.Kind == VpkContentKind.App))
+        foreach (VpkContentInfo? vpkContentInfo in contents.Where(c => c.Kind == VpkContentKind.App))
         {
-            if (!zip.Entries.Any(e => Normalize(e.FullName).Equals(c.ArchivePrefix + "eboot.bin", StringComparison.OrdinalIgnoreCase)))
+            if (!zip.Entries.Any(e => Normalize(e.FullName).Equals(vpkContentInfo.ArchivePrefix + "eboot.bin", StringComparison.OrdinalIgnoreCase)))
             {
-                throw new InvalidDataException($"{c.TitleId}: the application has no eboot.bin");
+                throw new InvalidDataException($"{vpkContentInfo.TitleId}: the application has no eboot.bin");
             }
         }
 
@@ -176,9 +176,9 @@ public static class VpkInstaller
             throw new InvalidDataException($"{e.FullName} is too large");
         }
 
-        using Stream s = e.Open();
+        using Stream stream = e.Open();
         using var ms = new MemoryStream((int)e.Length);
-        s.CopyTo(ms);
+        stream.CopyTo(ms);
         return ms.ToArray();
     }
 
@@ -202,16 +202,16 @@ public static class VpkInstaller
         // decide what to install before touching the disk
         var plan = new List<(VpkContentInfo info, bool replace)>();
         var results = new List<VpkInstallResult>();
-        foreach (VpkContentInfo c in contents)
+        foreach (VpkContentInfo vpkContentInfo in contents)
         {
             cancellationToken.ThrowIfCancellationRequested();
-            bool exists = c.AlreadyInstalled;
-            if (exists && options.ConfirmOverwrite != null && !options.ConfirmOverwrite(c))
+            bool exists = vpkContentInfo.AlreadyInstalled;
+            if (exists && options.ConfirmOverwrite != null && !options.ConfirmOverwrite(vpkContentInfo))
             {
-                results.Add(new VpkInstallResult(c, false, false));
+                results.Add(new VpkInstallResult(vpkContentInfo, false, false));
                 continue;
             }
-            plan.Add((c, exists));
+            plan.Add((vpkContentInfo, exists));
         }
 
         var entriesOf = plan.ToDictionary(p => p.info, p => EntriesUnder(zip, p.info.ArchivePrefix));

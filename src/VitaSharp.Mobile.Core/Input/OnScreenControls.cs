@@ -89,27 +89,27 @@ public sealed class OnScreenPad : IInputBackend
     private readonly Dictionary<OnScreenControl, (float X, float Y)> _knobs = new();
 
     /// <summary>Controls held right now, and TRAS while it is on (drawn in the accent colour).</summary>
-    public bool IsPressed(OnScreenControl c)
+    public bool IsPressed(OnScreenControl onScreenControl)
     {
         lock (_lock)
         {
-            return _pressed.Contains(c) || c.Control == VitaControl.TouchBack && _rear;
+            return _pressed.Contains(onScreenControl) || onScreenControl.Control == VitaControl.TouchBack && _rear;
         }
     }
 
     /// <summary>Offset of a stick's knob from its centre, -1..1 per axis (0,0 when released).</summary>
-    public (float X, float Y) Knob(OnScreenControl c)
+    public (float X, float Y) Knob(OnScreenControl onScreenControl)
     {
         lock (_lock)
         {
-            return _knobs.GetValueOrDefault(c);
+            return _knobs.GetValueOrDefault(onScreenControl);
         }
     }
 
     /// <summary>Feeds the current fingers (MotionEvent pointers, in fractions of the screen) from the UI thread.</summary>
     public void Update(ReadOnlySpan<(int Id, float X, float Y)> fingers)
     {
-        ControllerState st = ControllerState.Neutral;
+        ControllerState controllerState = ControllerState.Neutral;
         var image = new List<TouchPoint>();
         var newlyPressed = new List<OnScreenControl>();
         bool psBefore, psNow;
@@ -147,11 +147,11 @@ public sealed class OnScreenPad : IInputBackend
                 _pressed.Add(hit);
                 if (hit.Shape == OnScreenShape.Stick)
                 {
-                    _knobs[hit] = Stick(ref st, hit, f.X, f.Y);
+                    _knobs[hit] = Stick(ref controllerState, hit, f.X, f.Y);
                 }
                 else if (hit.Shape == OnScreenShape.Button)
                 {
-                    st.Buttons |= VitaControls.Button(hit.Control);
+                    controllerState.Buttons |= VitaControls.Button(hit.Control);
                 }
             }
             foreach (int id in _captured.Keys.Where(id => !live.Contains(id)).ToList())
@@ -172,8 +172,8 @@ public sealed class OnScreenPad : IInputBackend
                     _rear = !_rear;
                 }
             }
-            psNow = (st.Buttons & VitaButtons.PsButton) != 0;
-            _state = st;
+            psNow = (controllerState.Buttons & VitaButtons.PsButton) != 0;
+            _state = controllerState;
             if (_rear)
             {
                 _back = [.. image];
@@ -199,9 +199,9 @@ public sealed class OnScreenPad : IInputBackend
     /// <summary>Releases every finger (the activity lost focus or the overlay was hidden).</summary>
     public void Reset() => Update([]);
 
-    private static (float, float) Stick(ref ControllerState st, OnScreenControl c, float x, float y)
+    private static (float, float) Stick(ref ControllerState controllerState, OnScreenControl onScreenControl, float x, float y)
     {
-        float dx = (x - (c.X + c.Width / 2)) / (c.Width / 2), dy = (y - (c.Y + c.Height / 2)) / (c.Height / 2);
+        float dx = (x - (onScreenControl.X + onScreenControl.Width / 2)) / (onScreenControl.Width / 2), dy = (y - (onScreenControl.Y + onScreenControl.Height / 2)) / (onScreenControl.Height / 2);
         // a finger outside the ring pushes the stick to its edge in that direction
         float len = MathF.Sqrt(dx * dx + dy * dy);
         if (len > 1)
@@ -210,16 +210,16 @@ public sealed class OnScreenPad : IInputBackend
             dy /= len;
         }
         static byte Axis(float v) => (byte)Math.Clamp(128 + v * 127, 0, 255);
-        bool left = c.Control is VitaControl.LStickUp or VitaControl.LStickDown or VitaControl.LStickLeft or VitaControl.LStickRight;
+        bool left = onScreenControl.Control is VitaControl.LStickUp or VitaControl.LStickDown or VitaControl.LStickLeft or VitaControl.LStickRight;
         if (left)
         {
-            st.Lx = Axis(dx);
-            st.Ly = Axis(dy);
+            controllerState.Lx = Axis(dx);
+            controllerState.Ly = Axis(dy);
         }
         else
         {
-            st.Rx = Axis(dx);
-            st.Ry = Axis(dy);
+            controllerState.Rx = Axis(dx);
+            controllerState.Ry = Axis(dy);
         }
         return (dx, dy);
     }

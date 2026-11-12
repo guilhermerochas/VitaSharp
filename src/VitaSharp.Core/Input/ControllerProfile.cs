@@ -97,65 +97,65 @@ public sealed class ControllerProfile
 
     public const string KeyboardId = "keyboard";
 
-    public IEnumerable<InputBinding> Get(VitaControl c)
+    public IEnumerable<InputBinding> Get(VitaControl vitaControl)
     {
-        if (!Bindings.TryGetValue(c.ToString(), out List<string>? list))
+        if (!Bindings.TryGetValue(vitaControl.ToString(), out List<string>? list))
         {
             yield break;
         }
 
         foreach (string s in list)
         {
-            if (InputBinding.TryParse(s, out InputBinding b))
+            if (InputBinding.TryParse(s, out InputBinding inputBinding))
             {
-                yield return b;
+                yield return inputBinding;
             }
         }
     }
 
-    /// <summary>Replaces every binding of <paramref name="c"/> with <paramref name="b"/> (null = unbound).</summary>
-    public void Set(VitaControl c, InputBinding? b)
+    /// <summary>Replaces every binding of <paramref name="vitaControl"/> with <paramref name="inputBinding"/> (null = unbound).</summary>
+    public void Set(VitaControl vitaControl, InputBinding? inputBinding)
     {
-        if (b is { } x)
+        if (inputBinding is { } x)
         {
-            Bindings[c.ToString()] = [x.ToString()];
+            Bindings[vitaControl.ToString()] = [x.ToString()];
         }
         else
         {
-            Bindings.Remove(c.ToString());
+            Bindings.Remove(vitaControl.ToString());
         }
     }
 
-    public void Add(VitaControl c, InputBinding b)
+    public void Add(VitaControl vitaControl, InputBinding inputBinding)
     {
-        string key = c.ToString();
+        string key = vitaControl.ToString();
         if (!Bindings.TryGetValue(key, out List<string>? list))
         {
             Bindings[key] = list = new();
         }
 
-        string s = b.ToString();
+        string s = inputBinding.ToString();
         if (!list.Contains(s))
         {
             list.Add(s);
         }
     }
 
-    public void Remove(VitaControl c, InputBinding b)
+    public void Remove(VitaControl vitaControl, InputBinding inputBinding)
     {
-        string key = c.ToString();
-        if (Bindings.TryGetValue(key, out List<string>? list) && list.Remove(b.ToString()) && list.Count == 0)
+        string key = vitaControl.ToString();
+        if (Bindings.TryGetValue(key, out List<string>? list) && list.Remove(inputBinding.ToString()) && list.Count == 0)
         {
             Bindings.Remove(key);
         }
     }
 
-    public bool Has(VitaControl c, InputBinding b) => Bindings.TryGetValue(c.ToString(), out List<string>? list) && list.Contains(b.ToString());
+    public bool Has(VitaControl vitaControl, InputBinding inputBinding) => Bindings.TryGetValue(vitaControl.ToString(), out List<string>? list) && list.Contains(inputBinding.ToString());
 
-    /// <summary>The button combinations bound to <paramref name="c"/> (<see cref="InputCombo"/>; hotkeys).</summary>
-    public IEnumerable<InputCombo> GetCombos(VitaControl c)
+    /// <summary>The button combinations bound to <paramref name="vitaControl"/> (<see cref="InputCombo"/>; hotkeys).</summary>
+    public IEnumerable<InputCombo> GetCombos(VitaControl vitaControl)
     {
-        if (!Bindings.TryGetValue(c.ToString(), out List<string>? list))
+        if (!Bindings.TryGetValue(vitaControl.ToString(), out List<string>? list))
         {
             yield break;
         }
@@ -169,10 +169,10 @@ public sealed class ControllerProfile
         }
     }
 
-    /// <summary>Adds a combination to <paramref name="c"/>, or replaces every binding with it.</summary>
-    public void AddCombo(VitaControl c, InputCombo combo, bool replace = false)
+    /// <summary>Adds a combination to <paramref name="vitaControl"/>, or replaces every binding with it.</summary>
+    public void AddCombo(VitaControl vitaControl, InputCombo combo, bool replace = false)
     {
-        string key = c.ToString();
+        string key = vitaControl.ToString();
         if (replace || !Bindings.TryGetValue(key, out List<string>? list))
         {
             Bindings[key] = list = new();

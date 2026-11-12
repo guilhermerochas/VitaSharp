@@ -86,8 +86,8 @@ public sealed unsafe partial class VulkanRenderer
 
     private void InitTrace()
     {
-        _traceFrame = _traceDumpFrame = _opt.TraceDrawsFrame;
-        _traceDir = _opt.TraceDrawsFrame >= 0 && _opt.ShaderCacheDir != null ? Path.Combine(_opt.ShaderCacheDir, "trace") : null;
+        _traceFrame = _traceDumpFrame = _options.TraceDrawsFrame;
+        _traceDir = _options.TraceDrawsFrame >= 0 && _options.ShaderCacheDir != null ? Path.Combine(_options.ShaderCacheDir, "trace") : null;
     }
 
     /// <summary>
@@ -206,22 +206,22 @@ public sealed unsafe partial class VulkanRenderer
         Log.Info($"[diag] capture armed at present #{_presentCount}: tracing the next frame into {req.Dir}");
     }
 
-    private void CompleteCapture(DiagRequest dc, RenderTarget? src, DisplayFrame frame)
+    private void CompleteCapture(DiagRequest diagRequest, RenderTarget? src, DisplayFrame frame)
     {
-        var res = new DiagnosticCaptureResult { Dir = dc.Dir, Present = dc.Present, FrameWidth = frame.Width, FrameHeight = frame.Height };
+        var res = new DiagnosticCaptureResult { Dir = diagRequest.Dir, Present = diagRequest.Present, FrameWidth = frame.Width, FrameHeight = frame.Height };
         try
         {
-            string shot = Path.Combine(dc.Dir, "screenshot.png");
-            res.Targets = DumpAllTargets(Path.Combine(dc.Dir, "targets"), src != null ? (src, frame.Width, frame.Height, shot) : null);
+            string shot = Path.Combine(diagRequest.Dir, "screenshot.png");
+            res.Targets = DumpAllTargets(Path.Combine(diagRequest.Dir, "targets"), src != null ? (src, frame.Width, frame.Height, shot) : null);
             res.Screenshot = File.Exists(shot);
-            File.WriteAllText(Path.Combine(dc.Dir, "draws.txt"), dc.Draws.ToString());
-            File.WriteAllText(Path.Combine(dc.Dir, "frames.txt"), RecentFrames(FrameRingSize));
+            File.WriteAllText(Path.Combine(diagRequest.Dir, "draws.txt"), diagRequest.Draws.ToString());
+            File.WriteAllText(Path.Combine(diagRequest.Dir, "frames.txt"), RecentFrames(FrameRingSize));
             if (_nanScans > 0 || Core.Gxm.Shader.ShaderGenerator.NanDraws)
             {
-                File.WriteAllText(Path.Combine(dc.Dir, "nan.txt"), NanHistory());
+                File.WriteAllText(Path.Combine(diagRequest.Dir, "nan.txt"), NanHistory());
             }
 
-            File.WriteAllText(Path.Combine(dc.Dir, "renderer.txt"),
+            File.WriteAllText(Path.Combine(diagRequest.Dir, "renderer.txt"),
                 DescribeForDiagnostics() + "\n\n# state\n" + DebugState() + "\n\n# statistics so far\n" + (((IGpuBackend)this).Report() ?? "") + "\n");
         }
         catch (Exception e)
@@ -231,9 +231,9 @@ public sealed unsafe partial class VulkanRenderer
         }
         finally
         {
-            res.Draws = dc.DrawCount;
+            res.Draws = diagRequest.DrawCount;
             res.Textures = _tracedTextures.Count;
-            res.Milliseconds = Stopwatch.GetElapsedTime(dc.T0).TotalMilliseconds;
+            res.Milliseconds = Stopwatch.GetElapsedTime(diagRequest.T0).TotalMilliseconds;
             _diagActive = null;
             _traceManual = false;
             InitTrace(); // back to normal rendering (or to a --trace-draws frame still ahead)
@@ -243,7 +243,7 @@ public sealed unsafe partial class VulkanRenderer
             {
                 try
                 {
-                    if (dc.Replay is { } replay)
+                    if (diagRequest.Replay is { } replay)
                     {
                         try
                         {
@@ -255,7 +255,7 @@ public sealed unsafe partial class VulkanRenderer
                             Log.Warn($"[diag] replay write failed: {e.GetBaseException().Message}");
                         }
                     }
-                    if (dc.DrawRing is { } ring)
+                    if (diagRequest.DrawRing is { } ring)
                     {
                         try
                         {
@@ -267,7 +267,7 @@ public sealed unsafe partial class VulkanRenderer
                             Log.Warn($"[diag] draw ring write failed: {e.GetBaseException().Message}");
                         }
                     }
-                    dc.Done(res);
+                    diagRequest.Done(res);
                 }
                 catch (Exception e)
                 {
@@ -352,9 +352,9 @@ public sealed unsafe partial class VulkanRenderer
         int n = Math.Min(Math.Min(count, FrameRingSize), _frameRingCount);
         for (int i = _frameRingCount - n; i < _frameRingCount; i++)
         {
-            FrameSummary s = _frameRing[i % FrameRingSize];
-            string cause = s.TopCause >= 0 && s.TopCauseMs >= 0.05f ? $"{FrameLedger.Names[s.TopCause]}({s.TopCauseMs:F1})" : "-";
-            sb.Append($"p{s.Present} f{s.GuestFrame} {s.IntervalMs:F1}ms draws={s.Draws} scenes={s.Scenes} newSh={s.NewShaders} newPipe={s.NewPipelines} newRT={s.NewTargets} newTex={s.NewTextures} hitch={cause} fb=0x{s.Address:X8} {s.Width}x{s.Height}\n");
+            FrameSummary frameSummary = _frameRing[i % FrameRingSize];
+            string cause = frameSummary.TopCause >= 0 && frameSummary.TopCauseMs >= 0.05f ? $"{FrameLedger.Names[frameSummary.TopCause]}({frameSummary.TopCauseMs:F1})" : "-";
+            sb.Append($"p{frameSummary.Present} f{frameSummary.GuestFrame} {frameSummary.IntervalMs:F1}ms draws={frameSummary.Draws} scenes={frameSummary.Scenes} newSh={frameSummary.NewShaders} newPipe={frameSummary.NewPipelines} newRT={frameSummary.NewTargets} newTex={frameSummary.NewTextures} hitch={cause} fb=0x{frameSummary.Address:X8} {frameSummary.Width}x{frameSummary.Height}\n");
         }
         return sb.ToString();
     }
@@ -364,15 +364,15 @@ public sealed unsafe partial class VulkanRenderer
     /// <summary>GPU, driver and renderer settings for info.txt / renderer.txt.</summary>
     public string DescribeForDiagnostics()
     {
-        PhysicalDeviceProperties p = _core.Properties;
+        PhysicalDeviceProperties physicalDeviceProperties = _core.Properties;
         var sb = new StringBuilder();
-        sb.AppendLine($"GPU: {_core.DeviceName} (vendor 0x{p.VendorID:X4}, device 0x{p.DeviceID:X4}, type {p.DeviceType})");
-        sb.AppendLine($"Vulkan API: {p.ApiVersion >> 22}.{(p.ApiVersion >> 12) & 0x3FF}.{p.ApiVersion & 0xFFF}");
+        sb.AppendLine($"GPU: {_core.DeviceName} (vendor 0x{physicalDeviceProperties.VendorID:X4}, device 0x{physicalDeviceProperties.DeviceID:X4}, type {physicalDeviceProperties.DeviceType})");
+        sb.AppendLine($"Vulkan API: {physicalDeviceProperties.ApiVersion >> 22}.{(physicalDeviceProperties.ApiVersion >> 12) & 0x3FF}.{physicalDeviceProperties.ApiVersion & 0xFFF}");
         sb.AppendLine($"Driver: {DriverDescription()}");
         sb.AppendLine($"MSAA: {_msaaSetting} (VITASHARP_MSAA), programmable blending in MSAA scenes: {(s_msaaInputFetch ? "input attachment" : "copy")} (VITASHARP_MSAA_FETCH), sample-rate shading {_core.SampleRateShading}");
-        sb.AppendLine($"Shaders: shaderc {_compiler.OptLevel} (setting {_opt.ShaderOptimization ?? "default"}), async shaders {_asyncShaders}, async pipelines {_asyncPipelines}, workers setting {_opt.ShaderWorkers}, generator v{ShaderGenerator.GeneratorVersion}, debug overrides {ShaderGenerator.DebugOverridesActive}");
-        sb.AppendLine($"Shader cache: {_opt.ShaderCacheDir ?? "(none)"}, title {_titleId ?? "-"}, pack {(_shaderPack != null ? "in use" : "not used")}");
-        sb.AppendLine($"VSync {_opt.VSync}, validation {_opt.Validation}, presented frame {_lastFrameW}x{_lastFrameH}, swapchain {(_swapchain.Handle != 0 ? "yes" : "no (headless)")}");
+        sb.AppendLine($"Shaders: shaderc {_compiler.OptLevel} (setting {_options.ShaderOptimization ?? "default"}), async shaders {_asyncShaders}, async pipelines {_asyncPipelines}, workers setting {_options.ShaderWorkers}, generator v{ShaderGenerator.GeneratorVersion}, debug overrides {ShaderGenerator.DebugOverridesActive}");
+        sb.AppendLine($"Shader cache: {_options.ShaderCacheDir ?? "(none)"}, title {_titleId ?? "-"}, pack {(_shaderPack != null ? "in use" : "not used")}");
+        sb.AppendLine($"VSync {_options.VSync}, validation {_options.Validation}, presented frame {_lastFrameW}x{_lastFrameH}, swapchain {(_swapchain.Handle != 0 ? "yes" : "no (headless)")}");
         sb.AppendLine($"VRAM: {VramSummary()}");
         sb.AppendLine(_core.Caps.Describe());
         sb.AppendLine($"Mobile paths: {MobilePathsSummary()}");
@@ -382,10 +382,10 @@ public sealed unsafe partial class VulkanRenderer
 
     private string DriverDescription()
     {
-        PhysicalDeviceProperties p = _core.Properties;
-        uint v = p.DriverVersion;
+        PhysicalDeviceProperties physicalDeviceProperties = _core.Properties;
+        uint v = physicalDeviceProperties.DriverVersion;
         // NVIDIA packs 10.8.8.6 bits; Intel on Windows 18.14; the others follow the Vulkan version encoding
-        string ver = p.VendorID switch
+        string ver = physicalDeviceProperties.VendorID switch
         {
             0x10DE => $"{v >> 22}.{(v >> 14) & 0xFF}.{(v >> 6) & 0xFF}.{v & 0x3F}",
             0x8086 when OperatingSystem.IsWindows() => $"{v >> 14}.{v & 0x3FFF}",
@@ -454,30 +454,30 @@ public sealed unsafe partial class VulkanRenderer
 
     private string MsaaPath => _multisampled ? $"native {(int)_msSamples}x" : _supersampled ? "supersampled 2x" : "off";
 
-    private void DbgVertexShader(VsEntry e, DrawCommand d)
+    private void DbgVertexShader(VsEntry vsEntry, DrawCommand d)
     {
-        if (!_dbgSeen.Add($"vs{e.ProgramHash:X16}{e.HintKey:X16}"))
+        if (!_dbgSeen.Add($"vs{vsEntry.ProgramHash:X16}{vsEntry.HintKey:X16}"))
         {
             return;
         }
 
-        Dbg($"new vertex shader {e.ProgramHash:X16} hint {e.HintKey:X16}: {d.VertexProgram.Attributes.Length} attributes, {d.VertexProgram.Streams.Length} streams, " +
-            $"{(e.Failed ? "FAILED" : string.IsNullOrEmpty(e.Gen?.Glsl) ? "from the shader pack" : "translated")}{(e.Gen?.AttributeFallback == true ? ", attribute fallback" : "")}");
+        Dbg($"new vertex shader {vsEntry.ProgramHash:X16} hint {vsEntry.HintKey:X16}: {d.VertexProgram.Attributes.Length} attributes, {d.VertexProgram.Streams.Length} streams, " +
+            $"{(vsEntry.Failed ? "FAILED" : string.IsNullOrEmpty(vsEntry.Gen?.Glsl) ? "from the shader pack" : "translated")}{(vsEntry.Gen?.AttributeFallback == true ? ", attribute fallback" : "")}");
     }
 
-    private void DbgFragmentShader(FsEntry e, DrawCommand d, bool fetchInput)
+    private void DbgFragmentShader(FsEntry fsEntry, DrawCommand d, bool fetchInput)
     {
-        if (!_dbgSeen.Add($"fs{e.ProgramHash:X16}{e.HintKey:X16}"))
+        if (!_dbgSeen.Add($"fs{fsEntry.ProgramHash:X16}{fsEntry.HintKey:X16}"))
         {
             return;
         }
 
-        GxmFragmentProgram fp = d.FragmentProgram;
-        GxpProgram prog = fp.Info.Program;
-        Dbg($"new fragment shader {e.ProgramHash:X16} hint {e.HintKey:X16}: output fmt 0x{fp.OutputFormat:X} param {prog.OutputParamType}x{prog.OutputCompCount} start {prog.FragmentOutputStart}, " +
-            $"program msaa mode {fp.MultisampleMode}, raw colour bits {e.Gen?.RawColorBits ?? 0}, framebuffer fetch {e.Gen?.UsesFragColor ?? false}{(fetchInput ? " (input attachment)" : "")}, " +
-            $"writes depth {e.Gen?.WritesDepth ?? false}, textures 0x{fp.Info.TexturesUsed:X}, rt 0x{_renderTarget?.Address ?? 0:X8} fmt 0x{_renderTarget?.ColorFormat ?? 0:X8} ({_renderTarget?.Format}), scene msaa {MsaaPath}, " +
-            $"{(e.Failed ? "FAILED" : string.IsNullOrEmpty(e.Gen?.Glsl) ? "from the shader pack" : "translated")}");
+        GxmFragmentProgram gxmFragmentProgram = d.FragmentProgram;
+        GxpProgram prog = gxmFragmentProgram.Info.Program;
+        Dbg($"new fragment shader {fsEntry.ProgramHash:X16} hint {fsEntry.HintKey:X16}: output fmt 0x{gxmFragmentProgram.OutputFormat:X} param {prog.OutputParamType}x{prog.OutputCompCount} start {prog.FragmentOutputStart}, " +
+            $"program msaa mode {gxmFragmentProgram.MultisampleMode}, raw colour bits {fsEntry.Gen?.RawColorBits ?? 0}, framebuffer fetch {fsEntry.Gen?.UsesFragColor ?? false}{(fetchInput ? " (input attachment)" : "")}, " +
+            $"writes depth {fsEntry.Gen?.WritesDepth ?? false}, textures 0x{gxmFragmentProgram.Info.TexturesUsed:X}, rt 0x{_renderTarget?.Address ?? 0:X8} fmt 0x{_renderTarget?.ColorFormat ?? 0:X8} ({_renderTarget?.Format}), scene msaa {MsaaPath}, " +
+            $"{(fsEntry.Failed ? "FAILED" : string.IsNullOrEmpty(fsEntry.Gen?.Glsl) ? "from the shader pack" : "translated")}");
     }
 
     private void DbgPipeline(in PipelineKey k, VsEntry vs, FsEntry fs, PrimitiveTopology topology)
@@ -496,50 +496,50 @@ public sealed unsafe partial class VulkanRenderer
         }
 
         uint bytes = rt.Stride * (uint)Formats.ColorBytesPerPixel(rt.ColorFormat) * rt.Height;
-        foreach (RenderTarget o in _renderTargets.Values)
+        foreach (RenderTarget renderTarget in _renderTargets.Values)
         {
-            if (o == rt)
+            if (renderTarget == rt)
             {
                 continue;
             }
 
-            uint ob = o.Stride * (uint)Formats.ColorBytesPerPixel(o.ColorFormat) * o.Height;
-            if (o.Address < rt.Address + bytes && rt.Address < o.Address + ob)
+            uint ob = renderTarget.Stride * (uint)Formats.ColorBytesPerPixel(renderTarget.ColorFormat) * renderTarget.Height;
+            if (renderTarget.Address < rt.Address + bytes && rt.Address < renderTarget.Address + ob)
             {
-                sb.Append($"; overlaps 0x{o.Address:X8} {o.Width}x{o.Height} fmt 0x{o.ColorFormat:X8}");
+                sb.Append($"; overlaps 0x{renderTarget.Address:X8} {renderTarget.Width}x{renderTarget.Height} fmt 0x{renderTarget.ColorFormat:X8}");
             }
         }
         Dbg(sb.ToString());
     }
 
-    private void DbgScene(BeginSceneCommand b)
+    private void DbgScene(BeginSceneCommand beginSceneCommand)
     {
-        if (!_dbgSeen.Add($"sc{_renderTarget?.Address ?? 0:X8}{_renderTarget?.ColorFormat ?? 0:X8}{b.Width}x{b.Height}{b.Multisample}{b.Color?.Downscale}{b.Depth?.DepthData ?? 0:X8}{MsaaPath}"))
+        if (!_dbgSeen.Add($"sc{_renderTarget?.Address ?? 0:X8}{_renderTarget?.ColorFormat ?? 0:X8}{beginSceneCommand.Width}x{beginSceneCommand.Height}{beginSceneCommand.Multisample}{beginSceneCommand.Color?.Downscale}{beginSceneCommand.Depth?.DepthData ?? 0:X8}{MsaaPath}"))
         {
             return;
         }
 
-        Dbg($"new scene setup: rt 0x{_renderTarget?.Address ?? 0:X8} {_renderTarget?.Width}x{_renderTarget?.Height} fmt 0x{_renderTarget?.ColorFormat ?? 0:X8} ({_renderTarget?.Format}) scene {b.Width}x{b.Height} gxm msaa {b.Multisample} downscale {b.Color?.Downscale} -> {MsaaPath}" +
-            $", depth 0x{b.Depth?.DepthData ?? 0:X8} stencil 0x{b.Depth?.StencilData ?? 0:X8} fmt 0x{b.Depth?.Format ?? 0:X8}, gamma {b.Color?.GammaMode}");
+        Dbg($"new scene setup: rt 0x{_renderTarget?.Address ?? 0:X8} {_renderTarget?.Width}x{_renderTarget?.Height} fmt 0x{_renderTarget?.ColorFormat ?? 0:X8} ({_renderTarget?.Format}) scene {beginSceneCommand.Width}x{beginSceneCommand.Height} gxm msaa {beginSceneCommand.Multisample} downscale {beginSceneCommand.Color?.Downscale} -> {MsaaPath}" +
+            $", depth 0x{beginSceneCommand.Depth?.DepthData ?? 0:X8} stencil 0x{beginSceneCommand.Depth?.StencilData ?? 0:X8} fmt 0x{beginSceneCommand.Depth?.Format ?? 0:X8}, gamma {beginSceneCommand.Color?.GammaMode}");
     }
 
-    private void DbgTextureFormat(GxmTextureDesc d, uint w, uint h)
+    private void DbgTextureFormat(GxmTextureDesc gxmTextureDesc, uint w, uint h)
     {
-        if (!_dbgSeen.Add($"tf{d.Format:X8}{d.TextureType:X8}"))
+        if (!_dbgSeen.Add($"tf{gxmTextureDesc.Format:X8}{gxmTextureDesc.TextureType:X8}"))
         {
             return;
         }
 
-        Dbg($"new texture format 0x{d.Format:X8} ({Core.Gxm.GxmFormats.BaseOf(d.Format)}, swizzle bits 0x{d.Format & 0x7000:X}) type 0x{d.TextureType:X8} first seen at 0x{d.DataAddress:X8} {w}x{h} mips {d.MipCount} gamma {d.GammaMode}");
+        Dbg($"new texture format 0x{gxmTextureDesc.Format:X8} ({Core.Gxm.GxmFormats.BaseOf(gxmTextureDesc.Format)}, swizzle bits 0x{gxmTextureDesc.Format & 0x7000:X}) type 0x{gxmTextureDesc.TextureType:X8} first seen at 0x{gxmTextureDesc.DataAddress:X8} {w}x{h} mips {gxmTextureDesc.MipCount} gamma {gxmTextureDesc.GammaMode}");
     }
 
     /// <summary>Several colour targets contain a sampled address: which ones (the first compatible one in this order is used).</summary>
-    private void DbgTextureOverlap(GxmTextureDesc d)
+    private void DbgTextureOverlap(GxmTextureDesc gxmTextureDesc)
     {
-        uint addr = d.DataAddress;
+        uint addr = gxmTextureDesc.DataAddress;
         List<RenderTarget> candidates = TargetsContaining(addr);
         int n = candidates.Count;
-        if (n < 2 || !_dbgOverlapSeen.Add((addr, d.Format, n)))
+        if (n < 2 || !_dbgOverlapSeen.Add((addr, gxmTextureDesc.Format, n)))
         {
             return;
         }
@@ -551,7 +551,7 @@ public sealed unsafe partial class VulkanRenderer
         }
 
         string set = sb.ToString();
-        Dbg($"texture 0x{addr:X8} fmt 0x{d.Format:X8} {d.Width}x{d.Height} lies in {n} render targets, tried in this order:{set}");
+        Dbg($"texture 0x{addr:X8} fmt 0x{gxmTextureDesc.Format:X8} {gxmTextureDesc.Width}x{gxmTextureDesc.Height} lies in {n} render targets, tried in this order:{set}");
     }
 
     private void DbgDepthOverlap(uint addr, DepthTarget chosen, bool stencil)

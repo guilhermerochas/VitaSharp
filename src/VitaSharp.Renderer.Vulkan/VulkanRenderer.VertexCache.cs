@@ -51,37 +51,37 @@ public sealed unsafe partial class VulkanRenderer
         }
         SweepDirtyPages();
         (uint addr, uint length, int) key = (addr, length, SpaceIdOf(addr));
-        if (_rangeCache.TryGetValue(key, out CachedRange? e) && e.Volatile)
+        if (_rangeCache.TryGetValue(key, out CachedRange? cachedRange) && cachedRange.Volatile)
         {
             // a new buffer per rewrite costs a vkAllocateMemory/vkFreeMemory pair: the ring is a copy
-            e.LastUsedFrame = FrameCount;
+            cachedRange.LastUsedFrame = FrameCount;
             _statRangeVolatileBytes += length;
             return UploadSpan(GuestMemory.ReadSpan(addr, (int)length), align);
         }
-        if (e != null && !DirtyPages.WrittenSince(addr, length, e.Stamp) && !DirtyPages.MarkedNow(addr, length))
+        if (cachedRange != null && !DirtyPages.WrittenSince(addr, length, cachedRange.Stamp) && !DirtyPages.MarkedNow(addr, length))
         {
-            e.LastUsedFrame = FrameCount;
+            cachedRange.LastUsedFrame = FrameCount;
             _statRangeHits++;
             _statRangeHitBytes += length;
-            return (e.Buffer, 0);
+            return (cachedRange.Buffer, 0);
         }
         _statRangeMisses++;
-        if (e == null && _rangeCacheBytes + length > MaxCachedBytes)
+        if (cachedRange == null && _rangeCacheBytes + length > MaxCachedBytes)
         {
             EvictRanges(force: true);
         }
 
-        if (e == null && _rangeCacheBytes + length > MaxCachedBytes)
+        if (cachedRange == null && _rangeCacheBytes + length > MaxCachedBytes)
         {
             return UploadSpan(GuestMemory.ReadSpan(addr, (int)length), align);
         }
 
-        if (e != null)
+        if (cachedRange != null)
         {
-            F.Overflow.Add((e.Buffer, e.Memory)); // frames in flight may still read the old copy
-            if (++e.Rewrites >= VolatileRewrites)
+            F.Overflow.Add((cachedRange.Buffer, cachedRange.Memory)); // frames in flight may still read the old copy
+            if (++cachedRange.Rewrites >= VolatileRewrites)
             {
-                (e.Buffer, e.Memory, e.LastUsedFrame) = (default, default, FrameCount);
+                (cachedRange.Buffer, cachedRange.Memory, cachedRange.LastUsedFrame) = (default, default, FrameCount);
                 _rangeCacheBytes -= length;
                 _statRangeVolatile++;
                 return UploadSpan(GuestMemory.ReadSpan(addr, (int)length), align);
@@ -89,14 +89,14 @@ public sealed unsafe partial class VulkanRenderer
         }
         else
         {
-            e = new CachedRange();
-            _rangeCache[key] = e;
+            cachedRange = new CachedRange();
+            _rangeCache[key] = cachedRange;
             _rangeCacheBytes += length;
         }
         (Buffer b, DeviceMemory m, nint p) = _core.CreateHostBuffer(length, BufferUsageFlags.VertexBufferBit | BufferUsageFlags.IndexBufferBit, MemCat.UploadRing);
         Core.Util.FastCopy.Copy(GuestMemory.ReadSpan(addr, (int)length), new Span<byte>((void*)p, (int)length));
         _uploadBytes += length;
-        (e.Buffer, e.Memory, e.Stamp, e.LastUsedFrame) = (b, m, DirtyPages.Epoch, FrameCount);
+        (cachedRange.Buffer, cachedRange.Memory, cachedRange.Stamp, cachedRange.LastUsedFrame) = (b, m, DirtyPages.Epoch, FrameCount);
         if (_rangeSweepFrame + 300 < FrameCount)
         {
             EvictRanges(force: false);
@@ -136,32 +136,32 @@ public sealed unsafe partial class VulkanRenderer
     {
         SweepDirtyPages();
         (uint addr, uint length, int) key = (addr, length, SpaceIdOf(addr));
-        if (_smallCache.TryGetValue(key, out SmallRange? e))
+        if (_smallCache.TryGetValue(key, out SmallRange? smallRange))
         {
-            bool written = DirtyPages.WrittenSince(addr, length, e.Stamp) || DirtyPages.MarkedNow(addr, length);
-            if (!written && e.Generation == _smallGeneration && e.Chunk >= 0)
+            bool written = DirtyPages.WrittenSince(addr, length, smallRange.Stamp) || DirtyPages.MarkedNow(addr, length);
+            if (!written && smallRange.Generation == _smallGeneration && smallRange.Chunk >= 0)
             {
                 _statSmallHitBytes += length;
-                return (_smallChunks[e.Chunk].Buffer, e.Offset);
+                return (_smallChunks[smallRange.Chunk].Buffer, smallRange.Offset);
             }
-            if (written && e.Misses < 255)
+            if (written && smallRange.Misses < 255)
             {
-                e.Misses++;
+                smallRange.Misses++;
             }
 
-            if (e.Misses >= 2)
+            if (smallRange.Misses >= 2)
             {
                 // volatile: the ring is cheaper than re-caching it every frame
                 _statSmallUploadBytes += length;
-                e.Stamp = DirtyPages.Epoch;
-                e.Chunk = -1; // its cached copy is stale from now on
+                smallRange.Stamp = DirtyPages.Epoch;
+                smallRange.Chunk = -1; // its cached copy is stale from now on
 
                 return UploadSpan(GuestMemory.ReadSpan(addr, (int)length), align);
             }
         }
         else
         {
-            _smallCache[key] = e = new SmallRange();
+            _smallCache[key] = smallRange = new SmallRange();
         }
 
         uint off = (_smallUsed + 15) & ~15u;
@@ -181,7 +181,7 @@ public sealed unsafe partial class VulkanRenderer
         _smallUsed = off + length;
         _uploadBytes += length;
         _statSmallCopyBytes += length;
-        (e.Chunk, e.Offset, e.Stamp, e.Generation) = (chunk, off, DirtyPages.Epoch, _smallGeneration);
+        (smallRange.Chunk, smallRange.Offset, smallRange.Stamp, smallRange.Generation) = (chunk, off, DirtyPages.Epoch, _smallGeneration);
         return (_smallChunks[chunk].Buffer, off);
     }
 
@@ -218,31 +218,31 @@ public sealed unsafe partial class VulkanRenderer
     private void EvictRanges(bool force)
     {
         _rangeSweepFrame = FrameCount;
-        foreach (((uint Addr, uint Length, int Space) k, CachedRange? e) in _rangeCache.ToList())
+        foreach (((uint Addr, uint Length, int Space) k, CachedRange? cachedRange) in _rangeCache.ToList())
         {
-            if (e.LastUsedFrame >= FrameCount - (force ? 0 : 300))
+            if (cachedRange.LastUsedFrame >= FrameCount - (force ? 0 : 300))
             {
                 continue;
             }
 
             _rangeCache.Remove(k);
-            if (e.Volatile)
+            if (cachedRange.Volatile)
             {
                 continue;
             }
 
-            F.Overflow.Add((e.Buffer, e.Memory));
+            F.Overflow.Add((cachedRange.Buffer, cachedRange.Memory));
             _rangeCacheBytes -= k.Length;
         }
     }
 
     private void DestroyRangeCache()
     {
-        foreach (CachedRange e in _rangeCache.Values)
+        foreach (CachedRange cachedRange in _rangeCache.Values)
         {
-            if (!e.Volatile)
+            if (!cachedRange.Volatile)
             {
-                _core.DestroyBuffer(e.Buffer, e.Memory);
+                _core.DestroyBuffer(cachedRange.Buffer, cachedRange.Memory);
             }
         }
 

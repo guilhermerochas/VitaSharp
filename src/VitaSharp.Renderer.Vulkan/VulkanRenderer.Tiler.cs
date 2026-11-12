@@ -119,14 +119,14 @@ public sealed unsafe partial class VulkanRenderer
             RasterizationSamples = SampleCountFlags.Count1Bit,
         };
         // render-pass path (VulkanRenderer.RenderPasses.cs): the secondary inherits the compatible pass instead
-        CommandBufferInheritanceInfo ii = UseRenderPasses
+        CommandBufferInheritanceInfo commandBufferInheritanceInfo = UseRenderPasses
             ? new CommandBufferInheritanceInfo { SType = StructureType.CommandBufferInheritanceInfo, RenderPass = SingleCompatPass(_tilePass.HasColor ? colorFormat : Format.Undefined, wordView.Handle != 0), Subpass = 0 }
             : new CommandBufferInheritanceInfo { SType = StructureType.CommandBufferInheritanceInfo, PNext = &rii };
         var bi = new CommandBufferBeginInfo
         {
             SType = StructureType.CommandBufferBeginInfo,
             Flags = CommandBufferUsageFlags.RenderPassContinueBit | CommandBufferUsageFlags.OneTimeSubmitBit,
-            PInheritanceInfo = &ii,
+            PInheritanceInfo = &commandBufferInheritanceInfo,
         };
         _vk.BeginCommandBuffer(cb, in bi).Ok("vkBeginCommandBuffer(tiled secondary)");
         _tileCmd = cb;
@@ -177,14 +177,14 @@ public sealed unsafe partial class VulkanRenderer
             return;
         }
 
-        TilePass p = _chainPass;
+        TilePass tilePass = _chainPass;
         // desktop GPUs store depth/stencil as before (no tile memory to save)
         bool keepDepth = !TiledRenderings || !final || _scene?.Depth is { ForceStore: true } || _depth is { EverRead: true };
         RenderingAttachmentInfo* colors = stackalloc RenderingAttachmentInfo[2];
         colors[0] = new RenderingAttachmentInfo
         {
             SType = StructureType.RenderingAttachmentInfo,
-            ImageView = p.Color,
+            ImageView = tilePass.Color,
             ImageLayout = ImageLayout.General,
             LoadOp = AttachmentLoadOp.Load,
             StoreOp = AttachmentStoreOp.Store,
@@ -192,7 +192,7 @@ public sealed unsafe partial class VulkanRenderer
         colors[1] = new RenderingAttachmentInfo
         {
             SType = StructureType.RenderingAttachmentInfo,
-            ImageView = p.Word,
+            ImageView = tilePass.Word,
             ImageLayout = ImageLayout.General,
             LoadOp = AttachmentLoadOp.Load,
             StoreOp = AttachmentStoreOp.Store,
@@ -201,11 +201,11 @@ public sealed unsafe partial class VulkanRenderer
         // VITASHARP_DEPTH_OPS_NONE: depth/stencil that no draw of these renderings tests or writes is neither loaded nor
         // stored (NONE keeps the image's memory as it is); one that is only tested is loaded but not stored. Post-processing
         // passes over a surface (Killzone: ~25 per frame) loaded and stored the whole depth/stencil buffer each time.
-        if (DepthOpsNone && TiledRenderings && _core.LoadStoreOpNone && p.DepthLoad == AttachmentLoadOp.Load)
+        if (DepthOpsNone && TiledRenderings && _core.LoadStoreOpNone && tilePass.DepthLoad == AttachmentLoadOp.Load)
         {
             if (!_chainDepthUse)
             {
-                p.DepthLoad = LoadOpNone;
+                tilePass.DepthLoad = LoadOpNone;
                 depthStore = StoreOpNone;
                 _statDepthNone++;
             }
@@ -217,17 +217,17 @@ public sealed unsafe partial class VulkanRenderer
         }
         _chainDepthUse = _chainDepthWrite = false;
 #if VITASHARP_DEVELOPER
-        DevRenderingOps(ref p.DepthLoad, ref depthStore);
+        DevRenderingOps(ref tilePass.DepthLoad, ref depthStore);
 #endif
-        Rect2D area = ChainRenderArea(in p);
+        Rect2D area = ChainRenderArea(in tilePass);
         var depth = new RenderingAttachmentInfo
         {
             SType = StructureType.RenderingAttachmentInfo,
-            ImageView = p.Depth,
+            ImageView = tilePass.Depth,
             ImageLayout = ImageLayout.DepthStencilAttachmentOptimal,
-            LoadOp = p.DepthLoad,
+            LoadOp = tilePass.DepthLoad,
             StoreOp = depthStore,
-            ClearValue = p.DepthClear,
+            ClearValue = tilePass.DepthClear,
         };
         var ri = new RenderingInfo
         {
@@ -235,12 +235,12 @@ public sealed unsafe partial class VulkanRenderer
             Flags = RenderingFlags.ContentsSecondaryCommandBuffersBit,
             RenderArea = area,
             LayerCount = 1,
-            ColorAttachmentCount = p.HasColor ? p.Word.Handle != 0 ? 2u : 1u : 0u,
+            ColorAttachmentCount = tilePass.HasColor ? tilePass.Word.Handle != 0 ? 2u : 1u : 0u,
             PColorAttachments = colors,
             PDepthAttachment = &depth,
             PStencilAttachment = &depth,
         };
-        CountOps(p.HasColor, AttachmentLoadOp.Load, AttachmentStoreOp.Store, true, p.DepthLoad, depthStore, area.Extent);
+        CountOps(tilePass.HasColor, AttachmentLoadOp.Load, AttachmentStoreOp.Store, true, tilePass.DepthLoad, depthStore, area.Extent);
         CommandBuffer cmd = F.Cmd;
         CommandBuffer* cbs = stackalloc CommandBuffer[_chain.Count];
         for (int i = 0; i < _chain.Count; i++)
@@ -252,7 +252,7 @@ public sealed unsafe partial class VulkanRenderer
         _chain.Clear();
         if (UseRenderPasses)
         {
-            BeginSingleRenderPass(cmd, in p, depthStore, area);
+            BeginSingleRenderPass(cmd, in tilePass, depthStore, area);
             _vk.CmdExecuteCommands(cmd, n, cbs);
             _vk.CmdEndRenderPass(cmd);
         }
@@ -302,10 +302,10 @@ public sealed unsafe partial class VulkanRenderer
     /// only, and later renderings of the scene load the rest). The rectangle is grown to 32-pixel tiles plus one tile of
     /// margin (points and wide lines may rasterize a little outside the viewport).
     /// </summary>
-    private Rect2D ChainRenderArea(in TilePass p)
+    private Rect2D ChainRenderArea(in TilePass tilePass)
     {
-        var full = new Rect2D(new Offset2D(0, 0), p.Area);
-        if (!RenderAreaTrim || _drawnAll || _drawnRects.Count == 0 || !p.HasColor || p.DepthLoad is not (AttachmentLoadOp.Load or LoadOpNone))
+        var full = new Rect2D(new Offset2D(0, 0), tilePass.Area);
+        if (!RenderAreaTrim || _drawnAll || _drawnRects.Count == 0 || !tilePass.HasColor || tilePass.DepthLoad is not (AttachmentLoadOp.Load or LoadOpNone))
         {
             return full;
         }
@@ -319,28 +319,28 @@ public sealed unsafe partial class VulkanRenderer
             y1 = Math.Max(y1, r.Y1);
         }
         // guest pixels -> attachment pixels
-        x0 = ScaledLo(x0, p.Scale);
-        y0 = ScaledLo(y0, p.Scale);
-        x1 = ScaledHi(x1 + 1, p.Scale) - 1;
-        y1 = ScaledHi(y1 + 1, p.Scale) - 1;
+        x0 = ScaledLo(x0, tilePass.Scale);
+        y0 = ScaledLo(y0, tilePass.Scale);
+        x1 = ScaledHi(x1 + 1, tilePass.Scale) - 1;
+        y1 = ScaledHi(y1 + 1, tilePass.Scale) - 1;
         const long Tile = 32;
         x0 = Math.Max(0, (x0 - Tile) / Tile * Tile);
         y0 = Math.Max(0, (y0 - Tile) / Tile * Tile);
-        x1 = Math.Min(p.Area.Width, (x1 + 1 + 2 * Tile - 1) / Tile * Tile);
-        y1 = Math.Min(p.Area.Height, (y1 + 1 + 2 * Tile - 1) / Tile * Tile);
+        x1 = Math.Min(tilePass.Area.Width, (x1 + 1 + 2 * Tile - 1) / Tile * Tile);
+        y1 = Math.Min(tilePass.Area.Height, (y1 + 1 + 2 * Tile - 1) / Tile * Tile);
         if (x1 <= x0 || y1 <= y0)
         {
             return full;
         }
 
         var area = new Rect2D(new Offset2D((int)x0, (int)y0), new Extent2D((uint)(x1 - x0), (uint)(y1 - y0)));
-        if (area.Extent.Width == p.Area.Width && area.Extent.Height == p.Area.Height)
+        if (area.Extent.Width == tilePass.Area.Width && area.Extent.Height == tilePass.Area.Height)
         {
             return full;
         }
 
         _statTrimmed++;
-        _statTrimFraction += (double)area.Extent.Width * area.Extent.Height / Math.Max(1.0, (double)p.Area.Width * p.Area.Height);
+        _statTrimFraction += (double)area.Extent.Width * area.Extent.Height / Math.Max(1.0, (double)tilePass.Area.Width * tilePass.Area.Height);
         return area;
     }
 
@@ -357,11 +357,11 @@ public sealed unsafe partial class VulkanRenderer
     {
         const ImageAspectFlags Aspect = ImageAspectFlags.DepthBit | ImageAspectFlags.StencilBit;
         PipelineStageFlags all = PipelineStageFlags.AllCommandsBit;
-        AccessFlags rw = AccessFlags.MemoryReadBit | AccessFlags.MemoryWriteBit;
-        Barrier(image, ImageLayout.DepthStencilAttachmentOptimal, ImageLayout.TransferDstOptimal, Aspect, all, PipelineStageFlags.TransferBit, rw, AccessFlags.TransferWriteBit);
+        AccessFlags accessFlags = AccessFlags.MemoryReadBit | AccessFlags.MemoryWriteBit;
+        Barrier(image, ImageLayout.DepthStencilAttachmentOptimal, ImageLayout.TransferDstOptimal, Aspect, all, PipelineStageFlags.TransferBit, accessFlags, AccessFlags.TransferWriteBit);
         var clear = new ClearDepthStencilValue(0f, 0xFF);
         var range = new ImageSubresourceRange(Aspect, 0, 1, 0, 1);
         _vk.CmdClearDepthStencilImage(cmd, image, ImageLayout.TransferDstOptimal, in clear, 1, in range);
-        Barrier(image, ImageLayout.TransferDstOptimal, ImageLayout.DepthStencilAttachmentOptimal, Aspect, PipelineStageFlags.TransferBit, all, AccessFlags.TransferWriteBit, rw);
+        Barrier(image, ImageLayout.TransferDstOptimal, ImageLayout.DepthStencilAttachmentOptimal, Aspect, PipelineStageFlags.TransferBit, all, AccessFlags.TransferWriteBit, accessFlags);
     }
 }

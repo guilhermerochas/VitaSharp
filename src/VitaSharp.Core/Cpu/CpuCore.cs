@@ -134,11 +134,11 @@ public sealed unsafe class CpuCore : IDisposable
         public long Count, Requested, Actual;
     }
     public static readonly SleepStat[] SleepStats = new SleepStat[2];
-    private static void Stat(ref SleepStat s, long t0, long expected)
+    private static void Stat(ref SleepStat sleepStat, long t0, long expected)
     {
-        Interlocked.Increment(ref s.Count);
-        Interlocked.Add(ref s.Requested, expected - t0);
-        Interlocked.Add(ref s.Actual, Util.GuestClock.Ticks - t0);
+        Interlocked.Increment(ref sleepStat.Count);
+        Interlocked.Add(ref sleepStat.Requested, expected - t0);
+        Interlocked.Add(ref sleepStat.Actual, Util.GuestClock.Ticks - t0);
     }
 
     private void Throttle()

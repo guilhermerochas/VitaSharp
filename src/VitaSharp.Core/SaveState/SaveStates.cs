@@ -131,8 +131,8 @@ public static class SaveStates
 
                             held.Clear();
                             Directory.CreateDirectory(Path.GetDirectoryName(Path.GetFullPath(path))!);
-                            using (FileStream f = File.Create(tmp))
-                            using (var w = new SaveStateWriter(f, header))
+                            using (FileStream stream = File.Create(tmp))
+                            using (var w = new SaveStateWriter(stream, header))
                             {
                                 foreach ((string? name, byte[]? data) in sections!)
                                 {
@@ -184,10 +184,10 @@ public static class SaveStates
     /// be waiting for held threads to finish it), and is released and tried again when a scene stays open. Returns
     /// null once every thread is at a safe point (with the emulation still running), else why not.
     /// </summary>
-    private static string? HoldBetweenScenes(Emulator emu, List<GuestThread> held, Stopwatch sw, int timeoutMs)
+    private static string? HoldBetweenScenes(Emulator emu, List<GuestThread> held, Stopwatch stopwatch, int timeoutMs)
     {
         string? why = null;
-        while (sw.ElapsedMilliseconds < timeoutMs)
+        while (stopwatch.ElapsedMilliseconds < timeoutMs)
         {
             if (held.Count == 0)
             {
@@ -290,17 +290,17 @@ public static class SaveStates
     private static void CheckModules(Emulator emu)
     {
         var problems = new List<string>();
-        foreach (HleModule m in emu.Hle.Modules)
+        foreach (HleModule hleModule in emu.Hle.Modules)
         {
-            string name = m.GetType().Name;
-            if (m is ISnapshotState s)
+            string name = hleModule.GetType().Name;
+            if (hleModule is ISnapshotState s)
             {
                 if (s.CheckSnapshot() is { } problem)
                 {
                     problems.Add($"module {name}: {problem}");
                 }
             }
-            else if (SnapshotSchema.IsStateful(m.GetType()) && emu.Hle.WasUsed(m))
+            else if (SnapshotSchema.IsStateful(hleModule.GetType()) && emu.Hle.WasUsed(hleModule))
             {
                 problems.Add($"module {name}: its state is not supported by save states yet");
             }
@@ -379,14 +379,14 @@ public static class SaveStates
         list.Add((ObjectsSection, KernelSnapshot.Save(emu, kinds).Data.ToArray()));
 
         var used = new HashSet<string>();
-        foreach (HleModule m in emu.Hle.Modules)
+        foreach (HleModule hleModule in emu.Hle.Modules)
         {
-            if (m is not ISnapshotState s)
+            if (hleModule is not ISnapshotState s)
             {
                 continue;
             }
 
-            string name = ModuleKey(m, used);
+            string name = ModuleKey(hleModule, used);
             var mw = new SnapshotWriter();
             s.SaveState(mw);
             list.Add((ModulePrefix + name, mw.Data.ToArray()));
@@ -408,12 +408,12 @@ public static class SaveStates
     }
 
     /// <summary>A module's section name: its type name (numbered when a type is registered more than once).</summary>
-    private static string ModuleKey(HleModule m, HashSet<string> used)
+    private static string ModuleKey(HleModule hleModule, HashSet<string> used)
     {
-        string name = m.GetType().Name;
+        string name = hleModule.GetType().Name;
         for (int i = 2; !used.Add(name); i++)
         {
-            name = $"{m.GetType().Name}#{i}";
+            name = $"{hleModule.GetType().Name}#{i}";
         }
 
         return name;
@@ -571,11 +571,11 @@ public static class SaveStates
             }
         }
         long readMs = sw.ElapsedMilliseconds;
-        foreach (HleModule m in emu.Hle.Modules)
+        foreach (HleModule hleModule in emu.Hle.Modules)
         {
-            if (m is not ISnapshotState && SnapshotSchema.IsStateful(m.GetType()) && emu.Hle.WasUsed(m))
+            if (hleModule is not ISnapshotState && SnapshotSchema.IsStateful(hleModule.GetType()) && emu.Hle.WasUsed(hleModule))
             {
-                throw new SnapshotException($"module {m.GetType().Name} was used in this session and its state cannot be replaced; restart the game, then load the state");
+                throw new SnapshotException($"module {hleModule.GetType().Name} was used in this session and its state cannot be replaced; restart the game, then load the state");
             }
         }
 
@@ -825,14 +825,14 @@ public static class SaveStates
         GuestClock.RestoreMicroseconds(clockUs);
 
         var used = new HashSet<string>();
-        foreach (HleModule m in emu.Hle.Modules)
+        foreach (HleModule hleModule in emu.Hle.Modules)
         {
-            if (m is not ISnapshotState s)
+            if (hleModule is not ISnapshotState s)
             {
                 continue;
             }
 
-            string key = ModuleKey(m, used);
+            string key = ModuleKey(hleModule, used);
             if (!sections.TryGetValue(ModulePrefix + key, out byte[]? data))
             {
                 throw new SnapshotException($"module {key} has no state in the save state");

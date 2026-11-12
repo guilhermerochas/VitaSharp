@@ -30,16 +30,16 @@ public sealed unsafe partial class VulkanRenderer
 
     private readonly Dictionary<(RenderTarget, uint X, uint Y, uint Format, uint W, uint H, uint Mips, bool Gamma), RtMipTexture> _rtMipTextures = new();
 
-    private ImageView? RenderTargetMipmapped(RenderTarget rt, GxmTextureDesc d, uint x0, uint y0, bool gamma)
+    private ImageView? RenderTargetMipmapped(RenderTarget rt, GxmTextureDesc gxmTextureDesc, uint x0, uint y0, bool gamma)
     {
-        uint w = d.Width, h = d.Height;
-        uint mips = Math.Min(d.MipCount, (uint)BitOperations.Log2(Math.Max(w, h)) + 1);
+        uint w = gxmTextureDesc.Width, h = gxmTextureDesc.Height;
+        uint mips = Math.Min(gxmTextureDesc.MipCount, (uint)BitOperations.Log2(Math.Max(w, h)) + 1);
         if (mips <= 1)
         {
             return null;
         }
 
-        TexFormatInfo info = Formats.Texture(GxmFormats.BaseOf(d.Format));
+        TexFormatInfo info = Formats.Texture(GxmFormats.BaseOf(gxmTextureDesc.Format));
         // level 0 is copied from the surface image, the other levels are uploaded: both need the surface's layout
         Format hostFormat = rt.Format is Format.B8G8R8A8Unorm ? Format.Undefined : rt.Format;
         if (info.Compressed || info.Convert != TexConvert.None || info.Format != hostFormat
@@ -54,57 +54,57 @@ public sealed unsafe partial class VulkanRenderer
             return null;
         }
 
-        (RenderTarget rt, uint x0, uint y0, uint Format, uint w, uint h, uint mips, bool gamma) key = (rt, x0, y0, d.Format, w, h, mips, gamma);
-        if (!_rtMipTextures.TryGetValue(key, out RtMipTexture? t))
+        (RenderTarget rt, uint x0, uint y0, uint Format, uint w, uint h, uint mips, bool gamma) key = (rt, x0, y0, gxmTextureDesc.Format, w, h, mips, gamma);
+        if (!_rtMipTextures.TryGetValue(key, out RtMipTexture? rtMipTexture))
         {
-            t = new RtMipTexture();
-            (t.Image, t.View, t.Mem) = CreateImage(MemCat.Region, w, h, rt.Format, ImageUsageFlags.SampledBit | ImageUsageFlags.TransferDstBit, ImageAspectFlags.ColorBit,
+            rtMipTexture = new RtMipTexture();
+            (rtMipTexture.Image, rtMipTexture.View, rtMipTexture.Mem) = CreateImage(MemCat.Region, w, h, rt.Format, ImageUsageFlags.SampledBit | ImageUsageFlags.TransferDstBit, ImageAspectFlags.ColorBit,
                 mips, mutable: true);
-            _vk.DestroyImageView(_dev, t.View, null);
-            t.View = CreateView(t.Image, viewFormat, ImageAspectFlags.ColorBit, mips, 1, false, RtSwizzle(rt, d.Format));
-            _rtMipTextures[key] = t;
-            Log.WarnOnce($"rtmips-{d.DataAddress:X8}", $"[gpu] texture 0x{d.DataAddress:X8} {w}x{h} with {mips} levels: level 0 is render target 0x{rt.Address:X8}, the rest comes from memory");
+            _vk.DestroyImageView(_dev, rtMipTexture.View, null);
+            rtMipTexture.View = CreateView(rtMipTexture.Image, viewFormat, ImageAspectFlags.ColorBit, mips, 1, false, RtSwizzle(rt, gxmTextureDesc.Format));
+            _rtMipTextures[key] = rtMipTexture;
+            Log.WarnOnce($"rtmips-{gxmTextureDesc.DataAddress:X8}", $"[gpu] texture 0x{gxmTextureDesc.DataAddress:X8} {w}x{h} with {mips} levels: level 0 is render target 0x{rt.Address:X8}, the rest comes from memory");
             BeginFrameIfNeeded();
-            using OutsideScope init = BeginOutside(t.View);
-            Barrier(t.Image, ImageLayout.Undefined, ImageLayout.ShaderReadOnlyOptimal, ImageAspectFlags.ColorBit,
+            using OutsideScope init = BeginOutside(rtMipTexture.View);
+            Barrier(rtMipTexture.Image, ImageLayout.Undefined, ImageLayout.ShaderReadOnlyOptimal, ImageAspectFlags.ColorBit,
                 PipelineStageFlags.TopOfPipeBit, PipelineStageFlags.FragmentShaderBit, 0, AccessFlags.ShaderReadBit);
         }
 
-        t.LastUsedFrame = FrameCount;
+        rtMipTexture.LastUsedFrame = FrameCount;
         // the levels after the surface live in guest memory: re-upload them when that memory changes
-        TexLayout layout = ComputeLayout(d, info, w, h, mips, 1);
+        TexLayout layout = ComputeLayout(gxmTextureDesc, info, w, h, mips, 1);
         uint upperStart = layout.Levels[1].Offset;
         bool uploadUpper = false;
-        if (t.CheckedFrame != FrameCount)
+        if (rtMipTexture.CheckedFrame != FrameCount)
         {
-            t.CheckedFrame = FrameCount;
+            rtMipTexture.CheckedFrame = FrameCount;
             SweepDirtyPages();
-            if (t.Version < 0 || DirtyPages.Verify || DirtyPages.WrittenSince(d.DataAddress + upperStart, layout.TotalBytes - upperStart, t.Stamp))
+            if (rtMipTexture.Version < 0 || DirtyPages.Verify || DirtyPages.WrittenSince(gxmTextureDesc.DataAddress + upperStart, layout.TotalBytes - upperStart, rtMipTexture.Stamp))
             {
-                ulong hash = System.IO.Hashing.XxHash3.HashToUInt64(GuestMemory.ReadSpan(d.DataAddress + upperStart, (int)(layout.TotalBytes - upperStart)));
-                uploadUpper = hash != t.UpperHash || t.Version < 0;
-                t.UpperHash = hash;
-                t.Stamp = DirtyPages.Epoch;
+                ulong hash = System.IO.Hashing.XxHash3.HashToUInt64(GuestMemory.ReadSpan(gxmTextureDesc.DataAddress + upperStart, (int)(layout.TotalBytes - upperStart)));
+                uploadUpper = hash != rtMipTexture.UpperHash || rtMipTexture.Version < 0;
+                rtMipTexture.UpperHash = hash;
+                rtMipTexture.Stamp = DirtyPages.Epoch;
             }
         }
-        bool copyBase = t.Version != rt.Version;
+        bool copyBase = rtMipTexture.Version != rt.Version;
         if (!copyBase && !uploadUpper)
         {
-            return t.View;
+            return rtMipTexture.View;
         }
 
         // another surface (and the levels from memory) go before the open rendering; the scene's own surface ends it
-        using OutsideScope outside = BeginOutside(t.View, rt);
+        using OutsideScope outside = BeginOutside(rtMipTexture.View, rt);
         if (copyBase)
         {
             rt.Dirty = true;
             SyncRenderTargetForRead(rt);
         }
-        Barrier(t.Image, ImageLayout.ShaderReadOnlyOptimal, ImageLayout.TransferDstOptimal, ImageAspectFlags.ColorBit,
+        Barrier(rtMipTexture.Image, ImageLayout.ShaderReadOnlyOptimal, ImageLayout.TransferDstOptimal, ImageAspectFlags.ColorBit,
             PipelineStageFlags.FragmentShaderBit | PipelineStageFlags.VertexShaderBit, PipelineStageFlags.TransferBit, AccessFlags.ShaderReadBit, AccessFlags.TransferWriteBit);
         if (copyBase)
         {
-            t.Version = rt.Version;
+            rtMipTexture.Version = rt.Version;
             var copy = new ImageCopy
             {
                 SrcSubresource = new ImageSubresourceLayers(ImageAspectFlags.ColorBit, 0, 0, 1),
@@ -113,14 +113,14 @@ public sealed unsafe partial class VulkanRenderer
                 Extent = new Extent3D(w, h, 1),
             };
             DevStampOp();
-            _vk.CmdCopyImage(Cmd, NativeImageOf(rt), ImageLayout.General, t.Image, ImageLayout.TransferDstOptimal, 1, in copy); // guest size (VulkanRenderer.ResScale.cs)
+            _vk.CmdCopyImage(Cmd, NativeImageOf(rt), ImageLayout.General, rtMipTexture.Image, ImageLayout.TransferDstOptimal, 1, in copy); // guest size (VulkanRenderer.ResScale.cs)
         }
         if (uploadUpper)
         {
             for (uint m = 1; m < mips; m++)
             {
-                MipLayout lv = layout.Levels[(int)m];
-                using Texels data = TextureDecoder.Decode(d, info, d.DataAddress + lv.Offset, lv.Width, lv.Height, lv.RowPitch, out uint outW, out uint outH);
+                MipLayout mipLayout = layout.Levels[(int)m];
+                using Texels data = TextureDecoder.Decode(gxmTextureDesc, info, gxmTextureDesc.DataAddress + mipLayout.Offset, mipLayout.Width, mipLayout.Height, mipLayout.RowPitch, out uint outW, out uint outH);
                 (Silk.NET.Vulkan.Buffer buf, ulong off) = UploadSpan(data.Span, 16);
                 var region = new BufferImageCopy
                 {
@@ -128,14 +128,14 @@ public sealed unsafe partial class VulkanRenderer
                     BufferRowLength = outW,
                     BufferImageHeight = outH,
                     ImageSubresource = new ImageSubresourceLayers(ImageAspectFlags.ColorBit, m, 0, 1),
-                    ImageExtent = new Extent3D(lv.Width, lv.Height, 1),
+                    ImageExtent = new Extent3D(mipLayout.Width, mipLayout.Height, 1),
                 };
                 DevStampOp();
-                _vk.CmdCopyBufferToImage(Cmd, buf, t.Image, ImageLayout.TransferDstOptimal, 1, in region);
+                _vk.CmdCopyBufferToImage(Cmd, buf, rtMipTexture.Image, ImageLayout.TransferDstOptimal, 1, in region);
             }
         }
-        Barrier(t.Image, ImageLayout.TransferDstOptimal, ImageLayout.ShaderReadOnlyOptimal, ImageAspectFlags.ColorBit,
+        Barrier(rtMipTexture.Image, ImageLayout.TransferDstOptimal, ImageLayout.ShaderReadOnlyOptimal, ImageAspectFlags.ColorBit,
             PipelineStageFlags.TransferBit, PipelineStageFlags.FragmentShaderBit | PipelineStageFlags.VertexShaderBit, AccessFlags.TransferWriteBit, AccessFlags.ShaderReadBit);
-        return t.View;
+        return rtMipTexture.View;
     }
 }

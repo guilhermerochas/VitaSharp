@@ -4,9 +4,9 @@ namespace VitaSharp.Core.Shell;
 public static class RcoResources
 {
     /// <summary>A file extension for an RCO file: from its magic bytes first, then its declared type.</summary>
-    public static string Extension(RcoFile f)
+    public static string Extension(RcoFile rcoFile)
     {
-        byte[] d = f.Data;
+        byte[] d = rcoFile.Data;
         if (d.Length >= 8 && d[0] == 0x89 && d[1] == (byte)'P' && d[2] == (byte)'N' && d[3] == (byte)'G')
         {
             return ".png";
@@ -47,7 +47,7 @@ public static class RcoResources
             return ".cxml";
         }
 
-        string t = f.Type;
+        string t = rcoFile.Type;
         int slash = t.LastIndexOf('/');
         return slash >= 0 && slash < t.Length - 1 ? "." + t[(slash + 1)..] : ".bin";
     }

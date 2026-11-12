@@ -27,31 +27,31 @@ internal sealed class BenchCommand : IPerfCommand
         Console.WriteLine("              msaa=... fetchmerge=0|1 fetchsplit=0|1 msaafetch scenebreaks gpuquirks gpuprofile stamps=1 env.KEY=VALUE");
     }
 
-    public int Run(PerfArgs a)
+    public int Run(PerfArgs perfArgs)
     {
-        string sub = a.Positional.Count > 0 ? a.Positional[0] : a.Has("--child") ? "child" : throw new PerfArgsException("bench needs a subcommand");
+        string sub = perfArgs.Positional.Count > 0 ? perfArgs.Positional[0] : perfArgs.Has("--child") ? "child" : throw new PerfArgsException("bench needs a subcommand");
         return sub switch
         {
-            "cut" => Cut(a),
-            "table" => Table(a.Positional.Skip(1).ToList(), a.Get("--base") ?? "base", (int)a.Double("--scenes", 0.0001)),
-            "run" => RunRounds(a),
-            "shaders" => Shaders(a),
-            "child" => Child(a),
+            "cut" => Cut(perfArgs),
+            "table" => Table(perfArgs.Positional.Skip(1).ToList(), perfArgs.Get("--base") ?? "base", (int)perfArgs.Double("--scenes", 0.0001)),
+            "run" => RunRounds(perfArgs),
+            "shaders" => Shaders(perfArgs),
+            "child" => Child(perfArgs),
             _ => throw new PerfArgsException($"bench: unknown subcommand {sub}"),
         };
     }
 
-    private static string Root(PerfArgs a) => Path.GetFullPath(a.Get("--root") ?? throw new PerfArgsException("--root DIR missing"));
+    private static string Root(PerfArgs perfArgs) => Path.GetFullPath(perfArgs.Get("--root") ?? throw new PerfArgsException("--root DIR missing"));
 
-    private static int Cut(PerfArgs a)
+    private static int Cut(PerfArgs perfArgs)
     {
-        if (a.Positional.Count != 2)
+        if (perfArgs.Positional.Count != 2)
         {
             throw new PerfArgsException("bench cut needs one dump");
         }
 
-        string dump = Path.GetFullPath(a.Positional[1]);
-        if (a.Get("--frame") is null or "list")
+        string dump = Path.GetFullPath(perfArgs.Positional[1]);
+        if (perfArgs.Get("--frame") is null or "list")
         {
             using var r = new Core.Gpu.GpuDumpReader(dump);
             long i = 0, draws = 0, scenes = 0;
@@ -73,11 +73,11 @@ internal sealed class BenchCommand : IPerfCommand
             }
             return 0;
         }
-        long frame = long.Parse(a.Get("--frame")!, CultureInfo.InvariantCulture);
-        string name = a.Get("--name") ?? $"{Path.GetFileNameWithoutExtension(dump)}_f{frame}";
-        string outPath = Path.Combine(Root(a), "fixtures", name + Core.Gpu.GpuDumpFormat.Extension);
+        long frame = long.Parse(perfArgs.Get("--frame")!, CultureInfo.InvariantCulture);
+        string name = perfArgs.Get("--name") ?? $"{Path.GetFileNameWithoutExtension(dump)}_f{frame}";
+        string outPath = Path.Combine(Root(perfArgs), "fixtures", name + Core.Gpu.GpuDumpFormat.Extension);
 #if VITASHARP_DEVELOPER
-        var (frames, bytes) = GpuBench.Cut(dump, outPath, frame, name, a.Get("--select"));
+        var (frames, bytes) = GpuBench.Cut(dump, outPath, frame, name, perfArgs.Get("--select"));
         Console.WriteLine($"{outPath}: {frames} frames, {bytes / 1024} KiB (target frame {frame})");
         return 0;
 #else
@@ -85,10 +85,10 @@ internal sealed class BenchCommand : IPerfCommand
 #endif
     }
 
-    private static int Child(PerfArgs a)
+    private static int Child(PerfArgs perfArgs)
     {
 #if VITASHARP_DEVELOPER
-        var spec = GpuBenchSpec.Parse(a.Get("--child") ?? throw new PerfArgsException("--child SPEC"), Root(a));
+        var spec = GpuBenchSpec.Parse(perfArgs.Get("--child") ?? throw new PerfArgsException("--child SPEC"), Root(perfArgs));
         GpuBench.Execute(spec, Console.WriteLine);
         Core.Util.Log.Flush();
         return 0;
@@ -97,13 +97,13 @@ internal sealed class BenchCommand : IPerfCommand
 #endif
     }
 
-    private static int Shaders(PerfArgs a)
+    private static int Shaders(PerfArgs perfArgs)
     {
 #if VITASHARP_DEVELOPER
-        string root = Root(a);
-        string fixture = a.Get("--fixture") ?? throw new PerfArgsException("--fixture NAME missing");
-        string outDir = Path.GetFullPath(a.Get("--out") ?? Path.Combine(root, "variants", "_translated", fixture));
-        // a fresh shader cache: every shader is translated, so its GLSL is known
+        string root = Root(perfArgs);
+        string fixture = perfArgs.Get("--fixture") ?? throw new PerfArgsException("--fixture NAME missing");
+        string outDir = Path.GetFullPath(perfArgs.Get("--out") ?? Path.Combine(root, "variants", "_translated", fixture));
+        // perfArgs fresh shader cache: every shader is translated, so its GLSL is known
         string tmp = Path.Combine(Path.GetTempPath(), "vitasharp-bench-" + Environment.ProcessId);
         var spec = GpuBenchSpec.Parse($"fixture={fixture};reps=0;warm=1;run=shaders", root);
         spec.Root = tmp;
@@ -120,14 +120,14 @@ internal sealed class BenchCommand : IPerfCommand
     }
 
     /// <summary>Rounds of one child process per (fixture, variant), variants interleaved, then the table.</summary>
-    private static int RunRounds(PerfArgs a)
+    private static int RunRounds(PerfArgs perfArgs)
     {
-        string root = Root(a);
-        string[] fixtures = (a.Get("--fixtures") ?? throw new PerfArgsException("--fixtures a,b missing")).Split(',', StringSplitOptions.RemoveEmptyEntries);
-        string[] variants = (a.Get("--variants") ?? "base").Split(',', StringSplitOptions.RemoveEmptyEntries);
-        int rounds = (int)a.Double("--rounds", 4), reps = (int)a.Double("--reps", 3);
-        string run = a.Get("--run") ?? DateTime.Now.ToString("yyyyMMdd_HHmmss", CultureInfo.InvariantCulture);
-        string extra = a.Get("--param") ?? "";
+        string root = Root(perfArgs);
+        string[] fixtures = (perfArgs.Get("--fixtures") ?? throw new PerfArgsException("--fixtures a,b missing")).Split(',', StringSplitOptions.RemoveEmptyEntries);
+        string[] variants = (perfArgs.Get("--variants") ?? "base").Split(',', StringSplitOptions.RemoveEmptyEntries);
+        int rounds = (int)perfArgs.Double("--rounds", 4), reps = (int)perfArgs.Double("--reps", 3);
+        string run = perfArgs.Get("--run") ?? DateTime.Now.ToString("yyyyMMdd_HHmmss", CultureInfo.InvariantCulture);
+        string extra = perfArgs.Get("--param") ?? "";
         string self = Environment.ProcessPath!;
         string prefix = Path.GetFileNameWithoutExtension(self).Equals("dotnet", StringComparison.OrdinalIgnoreCase) ? $"\"{Environment.GetCommandLineArgs()[0]}\" " : "";
         var wall = Stopwatch.StartNew();
@@ -171,7 +171,7 @@ internal sealed class BenchCommand : IPerfCommand
         }
 
         Console.WriteLine($"{rounds} rounds in {wall.Elapsed.TotalSeconds:F0} s");
-        return Table([Path.Combine(root, "results", run + ".tsv")], variants[0], (int)a.Double("--scenes", 0.0001));
+        return Table([Path.Combine(root, "results", run + ".tsv")], variants[0], (int)perfArgs.Double("--scenes", 0.0001));
     }
 
     private static int Table(List<string> files, string baseVariant, int scenes)

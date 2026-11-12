@@ -30,28 +30,28 @@ public sealed unsafe partial class Arm64Emitter
     {
         if (FitsOffset(k, off))
         {
-            _a.LdSt(k, r, State, off);
+            _assembler.LdSt(k, r, State, off);
         }
         else
         {
-            _a.AddImm(X16, State, (uint)off, true);
-            _a.LdSt(k, r, X16, 0);
+            _assembler.AddImm(X16, State, (uint)off, true);
+            _assembler.LdSt(k, r, X16, 0);
         }
     }
 
     /// <summary>Vr = <paramref name="v"/> replicated in every 32-bit lane.</summary>
-    private void Splat32(int r, uint v) => _a.LdrLitQ(r, v | (ulong)v << 32, v | (ulong)v << 32);
+    private void Splat32(int r, uint v) => _assembler.LdrLitQ(r, v | (ulong)v << 32, v | (ulong)v << 32);
 
     /// <summary>Three-same integer op; 64-bit lanes of a D register use the scalar encoding (1D is reserved).</summary>
     private void I3(uint opcode, bool u, uint size, bool q, int rd, int rn, int rm)
     {
         if (size == 3 && !q)
         {
-            _a.Emit(0x5E200400 | (u ? 1u << 29 : 0) | 3u << 22 | (uint)rm << 16 | opcode << 11 | (uint)rn << 5 | (uint)rd);
+            _assembler.Emit(0x5E200400 | (u ? 1u << 29 : 0) | 3u << 22 | (uint)rm << 16 | opcode << 11 | (uint)rn << 5 | (uint)rd);
         }
         else
         {
-            _a.V3(opcode, u, size, q, rd, rn, rm);
+            _assembler.V3(opcode, u, size, q, rd, rn, rm);
         }
     }
 
@@ -60,11 +60,11 @@ public sealed unsafe partial class Arm64Emitter
     {
         if (size == 3 && !q)
         {
-            _a.SShiftImm(opcode, u, immhb, rd, rn);
+            _assembler.SShiftImm(opcode, u, immhb, rd, rn);
         }
         else
         {
-            _a.VShiftImm(opcode, u, q, immhb, rd, rn);
+            _assembler.VShiftImm(opcode, u, q, immhb, rd, rn);
         }
     }
 
@@ -286,7 +286,7 @@ public sealed unsafe partial class Arm64Emitter
         int r = Dst(scratch);
         if (i >= 0)
         {
-            _a.VMov(r, VcFirst + i);
+            _assembler.VMov(r, VcFirst + i);
         }
         else
         {
@@ -340,16 +340,16 @@ public sealed unsafe partial class Arm64Emitter
     }
 
     /// <summary>Clears FPSR (so QC reflects this op only).</summary>
-    private void QcBegin() => _a.Msr(SysReg.Fpsr, ZR);
+    private void QcBegin() => _assembler.Msr(SysReg.Fpsr, ZR);
 
     /// <summary>FPSCR.QC |= FPSR.QC.</summary>
     private void QcEnd()
     {
-        Arm64Assembler a = _a;
-        a.Mrs(X16, SysReg.Fpsr);
-        a.Ubfx(X16, X16, 27, 1);
+        Arm64Assembler assembler = _assembler;
+        assembler.Mrs(X16, SysReg.Fpsr);
+        assembler.Ubfx(X16, X16, 27, 1);
         LdState(X17, s_offFpscr);
-        a.Orr(X17, X17, X16, Shift.Lsl, 27);
+        assembler.Orr(X17, X17, X16, Shift.Lsl, 27);
         StState(X17, s_offFpscr);
     }
 
@@ -358,7 +358,7 @@ public sealed unsafe partial class Arm64Emitter
     [System.Runtime.CompilerServices.MethodImpl(System.Runtime.CompilerServices.MethodImplOptions.AggressiveOptimization)]
     private void VecOp(IrInst x)
     {
-        Arm64Assembler a = _a;
+        Arm64Assembler assembler = _assembler;
         var kind = (VecKind)(x.Imm & 0xFF);
         bool q = (x.Imm & (uint)VecFlags.Q) != 0;
         uint size = (x.Imm >> 9) & 3;
@@ -404,7 +404,7 @@ public sealed unsafe partial class Arm64Emitter
             {
                 int k = kind - VecKind.And;            // U:size of the ASIMD logical group, in the guest's order
                 Load3(k >= 5);
-                a.V3(3, k >= 4, (uint)k & 3, q, r0, r1, r2);
+                assembler.V3(3, k >= 4, (uint)k & 3, q, r0, r1, r2);
                 Store();
                 return;
             }
@@ -416,68 +416,68 @@ public sealed unsafe partial class Arm64Emitter
                 return;
             case VecKind.MulI:
                 Load3(false);
-                a.V3(0x13, false, size, q, r0, r1, r2);
+                assembler.V3(0x13, false, size, q, r0, r1, r2);
                 Store();
                 return;
             case VecKind.MlaI:
             case VecKind.MlsI:
                 Load3(true);
-                a.V3(0x12, kind == VecKind.MlsI, size, q, r0, r1, r2);
+                assembler.V3(0x12, kind == VecKind.MlsI, size, q, r0, r1, r2);
                 Store();
                 return;
             case VecKind.CeqI:
                 Load3(false);
-                a.V3(0x11, true, size, q, r0, r1, r2);
+                assembler.V3(0x11, true, size, q, r0, r1, r2);
                 Store();
                 return;
             case VecKind.TstI:
                 Load3(false);
-                a.V3(0x11, false, size, q, r0, r1, r2);
+                assembler.V3(0x11, false, size, q, r0, r1, r2);
                 Store();
                 return;
             case VecKind.CgtI:
                 Load3(false);
-                a.V3(0x06, u, size, q, r0, r1, r2);
+                assembler.V3(0x06, u, size, q, r0, r1, r2);
                 Store();
                 return;
             case VecKind.CgeI:
                 Load3(false);
-                a.V3(0x07, u, size, q, r0, r1, r2);
+                assembler.V3(0x07, u, size, q, r0, r1, r2);
                 Store();
                 return;
             case VecKind.MaxI:
                 Load3(false);
-                a.V3(0x0C, u, size, q, r0, r1, r2);
+                assembler.V3(0x0C, u, size, q, r0, r1, r2);
                 Store();
                 return;
             case VecKind.MinI:
                 Load3(false);
-                a.V3(0x0D, u, size, q, r0, r1, r2);
+                assembler.V3(0x0D, u, size, q, r0, r1, r2);
                 Store();
                 return;
             case VecKind.AbdI:
                 Load3(false);
-                a.V3(0x0E, u, size, q, r0, r1, r2);
+                assembler.V3(0x0E, u, size, q, r0, r1, r2);
                 Store();
                 return;
             case VecKind.AbaI:
                 Load3(true);
-                a.V3(0x0F, u, size, q, r0, r1, r2);
+                assembler.V3(0x0F, u, size, q, r0, r1, r2);
                 Store();
                 return;
             case VecKind.HaddI:
                 Load3(false);
-                a.V3(0x00, u, size, q, r0, r1, r2);
+                assembler.V3(0x00, u, size, q, r0, r1, r2);
                 Store();
                 return;
             case VecKind.RhaddI:
                 Load3(false);
-                a.V3(0x02, u, size, q, r0, r1, r2);
+                assembler.V3(0x02, u, size, q, r0, r1, r2);
                 Store();
                 return;
             case VecKind.HsubI:
                 Load3(false);
-                a.V3(0x04, u, size, q, r0, r1, r2);
+                assembler.V3(0x04, u, size, q, r0, r1, r2);
                 Store();
                 return;
             case VecKind.QaddI:
@@ -490,24 +490,24 @@ public sealed unsafe partial class Arm64Emitter
                 return;
             case VecKind.PaddI:
                 Load3(false);
-                a.V3(0x17, false, size, q, r0, r1, r2);
+                assembler.V3(0x17, false, size, q, r0, r1, r2);
                 Store();
                 return;
             case VecKind.PmaxI:
                 Load3(false);
-                a.V3(0x14, u, size, q, r0, r1, r2);
+                assembler.V3(0x14, u, size, q, r0, r1, r2);
                 Store();
                 return;
             case VecKind.PminI:
                 Load3(false);
-                a.V3(0x15, u, size, q, r0, r1, r2);
+                assembler.V3(0x15, u, size, q, r0, r1, r2);
                 Store();
                 return;
             case VecKind.QdmulhI:
             case VecKind.QrdmulhI:
                 Load3(false);
                 QcBegin();
-                a.V3(0x16, kind == VecKind.QrdmulhI, size, q, r0, r1, r2);
+                assembler.V3(0x16, kind == VecKind.QrdmulhI, size, q, r0, r1, r2);
                 Store();
                 QcEnd();
                 return;
@@ -521,86 +521,86 @@ public sealed unsafe partial class Arm64Emitter
             // ---------------------------------------------------------- float three-same (size field = a:sz)
             case VecKind.AddF:
                 Load3(false);
-                a.V3(0x1A, false, 0, q, r0, r1, r2);
+                assembler.V3(0x1A, false, 0, q, r0, r1, r2);
                 Store();
                 return;
             case VecKind.SubF:
                 Load3(false);
-                a.V3(0x1A, false, 2, q, r0, r1, r2);
+                assembler.V3(0x1A, false, 2, q, r0, r1, r2);
                 Store();
                 return;
             case VecKind.MulF:
                 Load3(false);
-                a.V3(0x1B, true, 0, q, r0, r1, r2);
+                assembler.V3(0x1B, true, 0, q, r0, r1, r2);
                 Store();
                 return;
             case VecKind.MlaF:
             case VecKind.MlsF:
                 // AArch32 VMLA/VMLS.F32 round the product first (not fused)
                 Load3(true);
-                a.V3(0x1B, true, 0, q, V3, r1, r2);
-                a.V3(0x1A, false, kind == VecKind.MlsF ? 2u : 0u, q, r0, r0, V3);
+                assembler.V3(0x1B, true, 0, q, V3, r1, r2);
+                assembler.V3(0x1A, false, kind == VecKind.MlsF ? 2u : 0u, q, r0, r0, V3);
                 Store();
                 return;
             case VecKind.FmaF:
             case VecKind.FmsF:
                 Load3(true);
-                a.V3(0x19, false, kind == VecKind.FmsF ? 2u : 0u, q, r0, r1, r2);
+                assembler.V3(0x19, false, kind == VecKind.FmsF ? 2u : 0u, q, r0, r1, r2);
                 Store();
                 return;
             case VecKind.PaddF:
                 Load3(false);
-                a.V3(0x1A, true, 0, q, r0, r1, r2);
+                assembler.V3(0x1A, true, 0, q, r0, r1, r2);
                 Store();
                 return;
             case VecKind.AbdF:
                 Load3(false);
-                a.V3(0x1A, true, 2, q, r0, r1, r2);
+                assembler.V3(0x1A, true, 2, q, r0, r1, r2);
                 Store();
                 return;
             case VecKind.CeqF:
                 Load3(false);
-                a.V3(0x1C, false, 0, q, r0, r1, r2);
+                assembler.V3(0x1C, false, 0, q, r0, r1, r2);
                 Store();
                 return;
             case VecKind.CgeF:
                 Load3(false);
-                a.V3(0x1C, true, 0, q, r0, r1, r2);
+                assembler.V3(0x1C, true, 0, q, r0, r1, r2);
                 Store();
                 return;
             case VecKind.CgtF:
                 Load3(false);
-                a.V3(0x1C, true, 2, q, r0, r1, r2);
+                assembler.V3(0x1C, true, 2, q, r0, r1, r2);
                 Store();
                 return;
             case VecKind.AcgeF:
                 Load3(false);
-                a.V3(0x1D, true, 0, q, r0, r1, r2);
+                assembler.V3(0x1D, true, 0, q, r0, r1, r2);
                 Store();
                 return;
             case VecKind.AcgtF:
                 Load3(false);
-                a.V3(0x1D, true, 2, q, r0, r1, r2);
+                assembler.V3(0x1D, true, 2, q, r0, r1, r2);
                 Store();
                 return;
             case VecKind.MaxF:
                 Load3(false);
-                a.V3(0x1E, false, 0, q, r0, r1, r2);
+                assembler.V3(0x1E, false, 0, q, r0, r1, r2);
                 Store();
                 return;
             case VecKind.MinF:
                 Load3(false);
-                a.V3(0x1E, false, 2, q, r0, r1, r2);
+                assembler.V3(0x1E, false, 2, q, r0, r1, r2);
                 Store();
                 return;
             case VecKind.PmaxF:
                 Load3(false);
-                a.V3(0x1E, true, 0, q, r0, r1, r2);
+                assembler.V3(0x1E, true, 0, q, r0, r1, r2);
                 Store();
                 return;
             case VecKind.PminF:
                 Load3(false);
-                a.V3(0x1E, true, 2, q, r0, r1, r2);
+                assembler.V3(0x1E, true, 2, q, r0, r1, r2);
                 Store();
                 return;
             case VecKind.RecpsF:
@@ -610,26 +610,26 @@ public sealed unsafe partial class Arm64Emitter
                 // first; infinity * zero (zero including flushed denormals) gives exactly 2 / 1.5
                 bool rs = kind == VecKind.RsqrtsF;
                 Load3(false);
-                a.V3(0x1B, true, 0, q, V3, r1, r2);                  // p = n * m
+                assembler.V3(0x1B, true, 0, q, V3, r1, r2);                  // p = n * m
                 Splat32(V4, rs ? 0x40400000u : 0x40000000u);         // 3 / 2
-                a.V3(0x1A, false, 2, q, r0, V4, V3);                 // K - p
+                assembler.V3(0x1A, false, 2, q, r0, V4, V3);                 // K - p
                 if (rs)
                 {
                     Splat32(V4, 0x3F000000u);
-                    a.V3(0x1B, true, 0, q, r0, r0, V4);
+                    assembler.V3(0x1B, true, 0, q, r0, r0, V4);
                 } // * 0.5 (exact halving)
                 Splat32(V7, 0x7F800000u);
-                a.V2(0x0F, false, 2, q, V5, r1);
-                a.V3(0x1C, false, 0, q, V5, V5, V7);      // |n| == inf
-                a.V2(0x0F, false, 2, q, V6, r2);
-                a.V3(0x1C, false, 0, q, V6, V6, V7);      // |m| == inf
-                a.V2(0x0D, false, 2, q, V3, r1);                                          // n == 0
-                a.V2(0x0D, false, 2, q, V4, r2);                                          // m == 0
-                a.V3(3, false, 0, q, V5, V5, V4);                                         // inf(n) & zero(m)
-                a.V3(3, false, 0, q, V6, V6, V3);                                         // inf(m) & zero(n)
-                a.V3(3, false, 2, q, V5, V5, V6);
+                assembler.V2(0x0F, false, 2, q, V5, r1);
+                assembler.V3(0x1C, false, 0, q, V5, V5, V7);      // |n| == inf
+                assembler.V2(0x0F, false, 2, q, V6, r2);
+                assembler.V3(0x1C, false, 0, q, V6, V6, V7);      // |m| == inf
+                assembler.V2(0x0D, false, 2, q, V3, r1);                                          // n == 0
+                assembler.V2(0x0D, false, 2, q, V4, r2);                                          // m == 0
+                assembler.V3(3, false, 0, q, V5, V5, V4);                                         // inf(n) & zero(m)
+                assembler.V3(3, false, 0, q, V6, V6, V3);                                         // inf(m) & zero(n)
+                assembler.V3(3, false, 2, q, V5, V5, V6);
                 Splat32(V4, rs ? 0x3FC00000u : 0x40000000u);         // 1.5 / 2
-                a.V3(3, true, 2, q, r0, V4, V5);                     // BIT: take the constant where the mask is set
+                assembler.V3(3, true, 2, q, r0, V4, V5);                     // BIT: take the constant where the mask is set
                 Store();
                 return;
             }
@@ -641,17 +641,17 @@ public sealed unsafe partial class Arm64Emitter
                 r1 = Src(V1, nOff, q);
                 VcFlushOverlap(aux, 4);
                 VMem(LsKind.LdrS, V2, s_offD + aux);
-                a.DupElem(2, q, V2, V2, 0);
+                assembler.DupElem(2, q, V2, V2, 0);
                 if (kind == VecKind.MulFS)
                 {
                     r0 = Dst(V0);
-                    a.V3(0x1B, true, 0, q, r0, r1, V2);
+                    assembler.V3(0x1B, true, 0, q, r0, r1, V2);
                 }
                 else
                 {
                     r0 = Acc(V0, dOff, q);
-                    a.V3(0x1B, true, 0, q, V3, r1, V2);
-                    a.V3(0x1A, false, kind == VecKind.MlsFS ? 2u : 0u, q, r0, r0, V3);
+                    assembler.V3(0x1B, true, 0, q, V3, r1, V2);
+                    assembler.V3(0x1A, false, kind == VecKind.MlsFS ? 2u : 0u, q, r0, r0, V3);
                 }
                 Store();
                 return;
@@ -661,16 +661,16 @@ public sealed unsafe partial class Arm64Emitter
                 r1 = Src(V1, nOff, q);
                 VcFlushOverlap(aux, 4);
                 VMem(size == 1 ? LsKind.LdrH : LsKind.LdrS, V2, s_offD + aux);
-                a.DupElem(size, q, V2, V2, 0);
+                assembler.DupElem(size, q, V2, V2, 0);
                 if (kind == VecKind.MulIS)
                 {
                     r0 = Dst(V0);
-                    a.V3(0x13, false, size, q, r0, r1, V2);
+                    assembler.V3(0x13, false, size, q, r0, r1, V2);
                 }
                 else
                 {
                     r0 = Acc(V0, dOff, q);
-                    a.V3(0x12, kind == VecKind.MlsIS, size, q, r0, r1, V2);
+                    assembler.V3(0x12, kind == VecKind.MlsIS, size, q, r0, r1, V2);
                 }
                 Store();
                 return;
@@ -701,7 +701,7 @@ public sealed unsafe partial class Arm64Emitter
                 return;
             case VecKind.ShrnImm: // Q source, D result (size = narrow lanes)
                 Load1(true);
-                a.VShiftImm(round ? 0x11u : 0x10u, false, false, ShrImmField(size, aux), r0, r2);
+                assembler.VShiftImm(round ? 0x11u : 0x10u, false, false, ShrImmField(size, aux), r0, r2);
                 Put(dOff, r0, false);
                 return;
             case VecKind.QshrnImm:
@@ -710,11 +710,11 @@ public sealed unsafe partial class Arm64Emitter
                 QcBegin();
                 if (kind == VecKind.QshrunImm)
                 {
-                    a.VShiftImm(round ? 0x11u : 0x10u, true, false, ShrImmField(size, aux), r0, r2);
+                    assembler.VShiftImm(round ? 0x11u : 0x10u, true, false, ShrImmField(size, aux), r0, r2);
                 }
                 else
                 {
-                    a.VShiftImm(round ? 0x13u : 0x12u, u, false, ShrImmField(size, aux), r0, r2);
+                    assembler.VShiftImm(round ? 0x13u : 0x12u, u, false, ShrImmField(size, aux), r0, r2);
                 }
 
                 Put(dOff, r0, false);
@@ -724,11 +724,11 @@ public sealed unsafe partial class Arm64Emitter
                 Load1(false);
                 if (aux == 8 << (int)size)
                 {
-                    a.V2(0x13, true, size, false, r0, r2);       // SHLL (shift = lane size)
+                    assembler.V2(0x13, true, size, false, r0, r2);       // SHLL (shift = lane size)
                 }
                 else
                 {
-                    a.VShiftImm(0x14, u, false, ShlImmField(size, aux), r0, r2);   // SSHLL / USHLL
+                    assembler.VShiftImm(0x14, u, false, ShlImmField(size, aux), r0, r2);   // SSHLL / USHLL
                 }
 
                 Put(dOff, r0, true);
@@ -737,32 +737,32 @@ public sealed unsafe partial class Arm64Emitter
             // ---------------------------------------------------------- two registers, miscellaneous (source m)
             case VecKind.Rev:
                 Load1(q);
-                a.V2(aux == 2 ? 1u : 0u, aux == 4, size, q, r0, r2);  // REV16 / REV32 / REV64
+                assembler.V2(aux == 2 ? 1u : 0u, aux == 4, size, q, r0, r2);  // REV16 / REV32 / REV64
                 Store();
                 return;
             case VecKind.Mvn:
                 Load1(q);
-                a.V2(0x05, true, 0, q, r0, r2);
+                assembler.V2(0x05, true, 0, q, r0, r2);
                 Store();
                 return;
             case VecKind.AbsF:
                 Load1(q);
-                a.V2(0x0F, false, 2, q, r0, r2);
+                assembler.V2(0x0F, false, 2, q, r0, r2);
                 Store();
                 return;
             case VecKind.NegF:
                 Load1(q);
-                a.V2(0x0F, true, 2, q, r0, r2);
+                assembler.V2(0x0F, true, 2, q, r0, r2);
                 Store();
                 return;
             case VecKind.AbsI:
                 Load1(q);
-                a.V2(0x0B, false, size, q, r0, r2);
+                assembler.V2(0x0B, false, size, q, r0, r2);
                 Store();
                 return;
             case VecKind.NegI:
                 Load1(q);
-                a.V2(0x0B, true, size, q, r0, r2);
+                assembler.V2(0x0B, true, size, q, r0, r2);
                 Store();
                 return;
             case VecKind.CmpZeroI:
@@ -776,7 +776,7 @@ public sealed unsafe partial class Arm64Emitter
                     3 => (0x09u, true),
                     _ => (0x0Au, false)
                 };
-                a.V2(opc, uu, size, q, r0, r2);
+                assembler.V2(opc, uu, size, q, r0, r2);
                 Store();
                 return;
             }
@@ -791,7 +791,7 @@ public sealed unsafe partial class Arm64Emitter
                     3 => (0x0Du, true),
                     _ => (0x0Eu, false)
                 };
-                a.V2(opc, uu, 2, q, r0, r2);
+                assembler.V2(opc, uu, 2, q, r0, r2);
                 Store();
                 return;
             }
@@ -810,8 +810,8 @@ public sealed unsafe partial class Arm64Emitter
                 uint op1 = kind == VecKind.Uzp ? 1u : kind == VecKind.Trn ? 2u : 3u;
                 int rd = Src(V0, dOff, q), rm = Src(V2, mOff, q);
                 int o1 = Dst(V3), o2 = Dst(V4);
-                a.VPerm(op1, size, q, o1, rd, rm);
-                a.VPerm(op1 + 4, size, q, o2, rd, rm);
+                assembler.VPerm(op1, size, q, o1, rd, rm);
+                assembler.VPerm(op1 + 4, size, q, o2, rd, rm);
                 if (kind == VecKind.Trn)
                 {
                     Put(mOff, o2, q);
@@ -826,27 +826,27 @@ public sealed unsafe partial class Arm64Emitter
             }
             case VecKind.Movn:
                 Load1(true);
-                a.V2(0x12, false, size, false, r0, r2);
+                assembler.V2(0x12, false, size, false, r0, r2);
                 Put(dOff, r0, false);
                 return;
             case VecKind.Cnt:
                 Load1(q);
-                a.V2(0x05, false, 0, q, r0, r2);
+                assembler.V2(0x05, false, 0, q, r0, r2);
                 Store();
                 return;
             case VecKind.Paddl:
                 Load1(q, acc);
-                a.V2(acc ? 0x06u : 0x02u, u, size, q, r0, r2);       // SADDLP / UADDLP / SADALP / UADALP
+                assembler.V2(acc ? 0x06u : 0x02u, u, size, q, r0, r2);       // SADDLP / UADDLP / SADALP / UADALP
                 Store();
                 return;
             case VecKind.Clz:
                 Load1(q);
-                a.V2(0x04, true, size, q, r0, r2);
+                assembler.V2(0x04, true, size, q, r0, r2);
                 Store();
                 return;
             case VecKind.Cls:
                 Load1(q);
-                a.V2(0x04, false, size, q, r0, r2);
+                assembler.V2(0x04, false, size, q, r0, r2);
                 Store();
                 return;
             case VecKind.Qmovn: // SQXTN / UQXTN / SQXTUN: Q source, D result (size = narrow lanes)
@@ -854,11 +854,11 @@ public sealed unsafe partial class Arm64Emitter
                 QcBegin();
                 if (aux == 1)
                 {
-                    a.V2(0x12, true, size, false, r0, r2);
+                    assembler.V2(0x12, true, size, false, r0, r2);
                 }
                 else
                 {
-                    a.V2(0x14, u, size, false, r0, r2);
+                    assembler.V2(0x14, u, size, false, r0, r2);
                 }
 
                 Put(dOff, r0, false);
@@ -871,63 +871,63 @@ public sealed unsafe partial class Arm64Emitter
                 r2 = Src(V2, mOff, false);
                 r0 = acc ? Acc(V0, dOff, true) : Dst(V0);
                 uint opc = (aux & 1) != 0 ? 0xEu : !acc ? 0xCu : (aux & 2) != 0 ? 0xAu : 0x8u;
-                a.V3Diff(opc, u && (aux & 1) == 0, size, false, r0, r1, r2);
+                assembler.V3Diff(opc, u && (aux & 1) == 0, size, false, r0, r1, r2);
                 Put(dOff, r0, true);
                 return;
             }
             case VecKind.RecpeF:
                 Load1(q);
-                a.V2(0x1D, false, 2, q, r0, r2);
+                assembler.V2(0x1D, false, 2, q, r0, r2);
                 Store();
                 return;
             case VecKind.RsqrteF:
                 Load1(q);
-                a.V2(0x1D, true, 2, q, r0, r2);
+                assembler.V2(0x1D, true, 2, q, r0, r2);
                 Store();
                 return;
             case VecKind.RecpeU:
                 Load1(q);
-                a.V2(0x1C, false, 2, q, r0, r2);
+                assembler.V2(0x1C, false, 2, q, r0, r2);
                 Store();
                 return;
             case VecKind.RsqrteU:
                 Load1(q);
-                a.V2(0x1C, true, 2, q, r0, r2);
+                assembler.V2(0x1C, true, 2, q, r0, r2);
                 Store();
                 return;
             case VecKind.CvtS2F:
                 Load1(q);
-                a.V2(0x1D, false, 0, q, r0, r2);
+                assembler.V2(0x1D, false, 0, q, r0, r2);
                 Store();
                 return;
             case VecKind.CvtU2F:
                 Load1(q);
-                a.V2(0x1D, true, 0, q, r0, r2);
+                assembler.V2(0x1D, true, 0, q, r0, r2);
                 Store();
                 return;
             case VecKind.CvtF2S:
                 Load1(q);
-                a.V2(0x1B, false, 2, q, r0, r2);
+                assembler.V2(0x1B, false, 2, q, r0, r2);
                 Store();
                 return;
             case VecKind.CvtF2U:
                 Load1(q);
-                a.V2(0x1B, true, 2, q, r0, r2);
+                assembler.V2(0x1B, true, 2, q, r0, r2);
                 Store();
                 return;
             case VecKind.CvtF2H:
                 Load1(true);
-                a.V2(0x16, false, 0, false, r0, r2);
+                assembler.V2(0x16, false, 0, false, r0, r2);
                 Put(dOff, r0, false);
                 return;  // FCVTN 4S -> 4H
             case VecKind.CvtH2F:
                 Load1(false);
-                a.V2(0x17, false, 0, false, r0, r2);
+                assembler.V2(0x17, false, 0, false, r0, r2);
                 Put(dOff, r0, true);
                 return;  // FCVTL 4H -> 4S
             case VecKind.Ext:
                 Load3(false);
-                a.Ext(q, r0, r1, r2, aux);
+                assembler.Ext(q, r0, r1, r2, aux);
                 Store();
                 return;
             case VecKind.Tbl:
@@ -948,19 +948,19 @@ public sealed unsafe partial class Arm64Emitter
                     else
                     {
                         LdV(V5, ((n + r) & 31) * 8, false);
-                        a.InsD1(reg, V5);
+                        assembler.InsD1(reg, V5);
                     }
                 }
                 LdV(V2, mOff, false);
-                a.MoviB(V7, (uint)(8 * len), false);
-                a.V3(0x07, true, 0, false, V6, V2, V7);              // CMHS: index >= 8 * len
-                a.V3(3, false, 2, false, V2, V2, V6);                // ORR
+                assembler.MoviB(V7, (uint)(8 * len), false);
+                assembler.V3(0x07, true, 0, false, V6, V2, V7);              // CMHS: index >= 8 * len
+                assembler.V3(3, false, 2, false, V2, V2, V6);                // ORR
                 if (tbx)
                 {
                     LdV(V0, dOff, false);
                 }
 
-                a.Tbl(false, V0, 16, (len + 1) / 2, V2, tbx);
+                assembler.Tbl(false, V0, 16, (len + 1) / 2, V2, tbx);
                 Put(dOff, V0, false);
                 return;
             }

@@ -54,25 +54,25 @@ public sealed class InputRecorder(IInputBackend? inner, IMotionSource? innerMoti
 
     public ControllerState GetController(int port)
     {
-        ControllerState s = Inner?.GetController(port) ?? ControllerState.Neutral;
+        ControllerState controllerState = Inner?.GetController(port) ?? ControllerState.Neutral;
         if ((uint)port < _last.Length)
         {
             lock (_last)
             {
                 ref ControllerState l = ref _last[port];
-                if (!_seen[port] || l.Buttons != s.Buttons || l.Lx != s.Lx || l.Ly != s.Ly || l.Rx != s.Rx || l.Ry != s.Ry)
+                if (!_seen[port] || l.Buttons != controllerState.Buttons || l.Lx != controllerState.Lx || l.Ly != controllerState.Ly || l.Rx != controllerState.Rx || l.Ry != controllerState.Ry)
                 {
                     _seen[port] = true;
-                    l = s;
-                    sink(InputEvent.Now("pad", FormatPad(port, s)));
+                    l = controllerState;
+                    sink(InputEvent.Now("pad", FormatPad(port, controllerState)));
                 }
             }
         }
 
-        return s;
+        return controllerState;
     }
 
-    public static string FormatPad(int port, ControllerState s) => $"{port} {(uint)s.Buttons:X8} {s.Lx} {s.Ly} {s.Rx} {s.Ry}";
+    public static string FormatPad(int port, ControllerState controllerState) => $"{port} {(uint)controllerState.Buttons:X8} {controllerState.Lx} {controllerState.Ly} {controllerState.Rx} {controllerState.Ry}";
 
     public IReadOnlyList<TouchPoint> GetTouches(bool back)
     {
@@ -127,9 +127,9 @@ public sealed class InputRecorder(IInputBackend? inner, IMotionSource? innerMoti
 
         for (int i = 0; i < n; i++)
         {
-            MotionSample m = dest[i];
+            MotionSample motionSample = dest[i];
             sink(InputEvent.Now("motion", string.Create(CultureInfo.InvariantCulture,
-                $"{m.TimestampUs} {m.Acceleration.X:F5} {m.Acceleration.Y:F5} {m.Acceleration.Z:F5} {m.AngularVelocity.X:F5} {m.AngularVelocity.Y:F5} {m.AngularVelocity.Z:F5}")));
+                $"{motionSample.TimestampUs} {motionSample.Acceleration.X:F5} {motionSample.Acceleration.Y:F5} {motionSample.Acceleration.Z:F5} {motionSample.AngularVelocity.X:F5} {motionSample.AngularVelocity.Y:F5} {motionSample.AngularVelocity.Z:F5}")));
         }
         return n;
     }
@@ -158,15 +158,15 @@ public sealed class InputPlayback : IInputBackend, IMotionSource, IRandomHook
 
     public InputPlayback(IEnumerable<InputEvent> events)
     {
-        foreach (InputEvent e in events.OrderBy(e => e.GuestUs))
+        foreach (InputEvent inputEvent in events.OrderBy(e => e.GuestUs))
         {
-            string[] p = e.Data.Split(' ', StringSplitOptions.RemoveEmptyEntries);
+            string[] p = inputEvent.Data.Split(' ', StringSplitOptions.RemoveEmptyEntries);
             try
             {
-                switch (e.Kind)
+                switch (inputEvent.Kind)
                 {
                     case "pad" when p.Length >= 6 && int.TryParse(p[0], out int port) && (uint)port < _pad.Length:
-                        _pad[port].Add((e.GuestUs, new ControllerState
+                        _pad[port].Add((inputEvent.GuestUs, new ControllerState
                         {
                             Buttons = (VitaButtons)uint.Parse(p[1], NumberStyles.HexNumber),
                             Lx = byte.Parse(p[2]),
@@ -176,7 +176,7 @@ public sealed class InputPlayback : IInputBackend, IMotionSource, IRandomHook
                         }));
                         break;
                     case "touch" when p.Length >= 1:
-                        _touch[p[0] == "back" ? 1 : 0].Add((e.GuestUs, p.Skip(1).Select(t =>
+                        _touch[p[0] == "back" ? 1 : 0].Add((inputEvent.GuestUs, p.Skip(1).Select(t =>
                         {
                             string[] q = t.Split(':');
                             return new TouchPoint(int.Parse(q[0]), float.Parse(q[1], CultureInfo.InvariantCulture), float.Parse(q[2], CultureInfo.InvariantCulture));
@@ -184,16 +184,16 @@ public sealed class InputPlayback : IInputBackend, IMotionSource, IRandomHook
                         break;
                     case "motion" when p.Length >= 7:
                         float F(int i) => float.Parse(p[i], CultureInfo.InvariantCulture);
-                        _motion.Add((e.GuestUs, new MotionSample(ulong.Parse(p[0]), new Vector3(F(1), F(2), F(3)), new Vector3(F(4), F(5), F(6)))));
+                        _motion.Add((inputEvent.GuestUs, new MotionSample(ulong.Parse(p[0]), new Vector3(F(1), F(2), F(3)), new Vector3(F(4), F(5), F(6)))));
                         break;
                     case "rng" when p.Length >= 1:
-                        _randomAll.Add((e.GuestUs, Convert.FromHexString(p[0])));
+                        _randomAll.Add((inputEvent.GuestUs, Convert.FromHexString(p[0])));
                         break;
                     default:
                         continue;
                 }
                 Events++;
-                LastUs = Math.Max(LastUs, e.GuestUs);
+                LastUs = Math.Max(LastUs, inputEvent.GuestUs);
             }
             catch (FormatException) { }
         }

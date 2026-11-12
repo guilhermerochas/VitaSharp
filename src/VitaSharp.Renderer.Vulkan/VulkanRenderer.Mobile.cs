@@ -20,13 +20,13 @@ public sealed unsafe partial class VulkanRenderer
     /// <summary>Picks the per-stage texture unit counts from the descriptor limits.</summary>
     private void ChooseTextureUnits()
     {
-        GpuLimits l = _core.Caps.Limits;
-        int perStage = (int)Math.Min(l.MaxPerStageDescriptorSamplers, l.MaxPerStageDescriptorSampledImages);
+        GpuLimits gpuLimits = _core.Caps.Limits;
+        int perStage = (int)Math.Min(gpuLimits.MaxPerStageDescriptorSamplers, gpuLimits.MaxPerStageDescriptorSampledImages);
         // fragment stage: framebuffer-fetch set 3 adds two combined image samplers
         _texUnitsF = Math.Clamp(perStage - 2, 1, 16);
         _texUnitsV = Math.Clamp(perStage, 1, 16);
         // all sets of the pipeline layout together (maxDescriptorSetSamplers)
-        int total = (int)l.MaxDescriptorSetSamplers;
+        int total = (int)gpuLimits.MaxDescriptorSetSamplers;
         if (_texUnitsV + _texUnitsF + 2 > total)
         {
             _texUnitsV = Math.Max(1, total - _texUnitsF - 2);
@@ -34,7 +34,7 @@ public sealed unsafe partial class VulkanRenderer
 
         if (_texUnitsV < 16 || _texUnitsF < 16)
         {
-            Log.Warn($"[gpu] {_core.DeviceName}: {l.MaxPerStageDescriptorSamplers} samplers / {l.MaxPerStageDescriptorSampledImages} sampled images per stage: binding {_texUnitsV} vertex and {_texUnitsF} fragment texture units (draws using higher units are skipped)");
+            Log.Warn($"[gpu] {_core.DeviceName}: {gpuLimits.MaxPerStageDescriptorSamplers} samplers / {gpuLimits.MaxPerStageDescriptorSampledImages} sampled images per stage: binding {_texUnitsV} vertex and {_texUnitsF} fragment texture units (draws using higher units are skipped)");
         }
     }
 
@@ -56,19 +56,19 @@ public sealed unsafe partial class VulkanRenderer
     /// <summary>"PERF mobile" line when a quirk or a profile is active (nothing on desktop GPUs: their report is unchanged).</summary>
     private string MobileReport()
     {
-        GpuCapabilities c = _core.Caps;
-        if (c.Quirks == GpuQuirk.None && c.Profile == GpuProfile.Native && c.Has(GpuFeature.TextureCompressionBC) && AstcTranscoder.Encoded == 0)
+        GpuCapabilities gpuCapabilities = _core.Caps;
+        if (gpuCapabilities.Quirks == GpuQuirk.None && gpuCapabilities.Profile == GpuProfile.Native && gpuCapabilities.Has(GpuFeature.TextureCompressionBC) && AstcTranscoder.Encoded == 0)
         {
             return "";
         }
 
-        return $"\nPERF mobile ({c.Profile.ToString().ToLowerInvariant()} profile): {MobilePathsSummary()}; {_statPipelinesStatic} static-state pipelines";
+        return $"\nPERF mobile ({gpuCapabilities.Profile.ToString().ToLowerInvariant()} profile): {MobilePathsSummary()}; {_statPipelinesStatic} static-state pipelines";
     }
 
     /// <summary>The fallbacks in use (info.txt "Mobile paths" line).</summary>
     private string MobilePathsSummary()
     {
-        GpuCapabilities c = _core.Caps;
+        GpuCapabilities gpuCapabilities = _core.Caps;
         var sb = new StringBuilder();
         void Add(string s)
         {
@@ -79,15 +79,15 @@ public sealed unsafe partial class VulkanRenderer
 
             sb.Append(s);
         }
-        Add(c.Has(GpuFeature.TextureCompressionBC) ? "BC sampled compressed" : AstcUsable ? $"BC transcoded to ASTC (signed BC4/BC5 decoded on the CPU: {BcCacheSummary()})" : $"BC decoded on the CPU ({BcCacheSummary()})");
+        Add(gpuCapabilities.Has(GpuFeature.TextureCompressionBC) ? "BC sampled compressed" : AstcUsable ? $"BC transcoded to ASTC (signed BC4/BC5 decoded on the CPU: {BcCacheSummary()})" : $"BC decoded on the CPU ({BcCacheSummary()})");
         Add(AstcUsable ? AstcTranscoder.Summary() : "PVRTC decoded on the CPU");
         Add($"texture units {_texUnitsV} vertex / {_texUnitsF} fragment{(_statUnitSkips > 0 ? $" ({_statUnitSkips} draws skipped)" : "")}");
-        Add($"MSAA 2X scenes {(c.MsaaSamples(2) is var s2 && s2 == 0 ? "not multisampled" : $"with {s2} samples")}, 4X {(c.MsaaSamples(4) == 0 ? "not multisampled" : "with 4 samples")}");
+        Add($"MSAA 2X scenes {(gpuCapabilities.MsaaSamples(2) is var s2 && s2 == 0 ? "not multisampled" : $"with {s2} samples")}, 4X {(gpuCapabilities.MsaaSamples(4) == 0 ? "not multisampled" : "with 4 samples")}");
         Add($"MSAA framebuffer fetch {(_core.RasterizationOrderColor ? "rasterization-order input attachment (no barriers)" : "input attachment + by-region barrier")}, {(_core.SampleRateShading ? "per sample" : "sample 0 (no sampleRateShading)")}");
-        Add(c.Has(GpuQuirk.StaticExtendedDynamicState) ? "extended dynamic state baked into pipelines" : "extended dynamic state");
-        Add(c.Has(GpuQuirk.StaticDepthBiasEnable) ? "depth bias always enabled (zero when off)" : "dynamic depth bias enable");
+        Add(gpuCapabilities.Has(GpuQuirk.StaticExtendedDynamicState) ? "extended dynamic state baked into pipelines" : "extended dynamic state");
+        Add(gpuCapabilities.Has(GpuQuirk.StaticDepthBiasEnable) ? "depth bias always enabled (zero when off)" : "dynamic depth bias enable");
         Add(ShaderGenerator.LowerDynamicIndexing ? "dynamic register indexing lowered to switches" : "dynamic register indexing");
-        Add(c.Has(GpuQuirk.TileBased) ? "tile-based load/store ops" : "immediate-mode load/store ops");
+        Add(gpuCapabilities.Has(GpuQuirk.TileBased) ? "tile-based load/store ops" : "immediate-mode load/store ops");
         Add(RenderPassReport());
         Add(_core.DepthClamp ? "depth clamp" : "no depth clamp (near plane clips)");
         Add(ShaderGenerator.FarPlane switch
@@ -97,7 +97,7 @@ public sealed unsafe partial class VulkanRenderer
             _ => "far plane clip distance",
         });
         Add(_core.FillModeNonSolid ? "line/point fill" : "line/point fill drawn filled");
-        Add(_core.MemoryBudgetSupported ? "memory budget" : $"no memory budget (eviction at {c.FallbackBudgetFraction:P0} of the device heap)");
+        Add(_core.MemoryBudgetSupported ? "memory budget" : $"no memory budget (eviction at {gpuCapabilities.FallbackBudgetFraction:P0} of the device heap)");
         Add(_core.Timestamps ? "timestamps" : "no timestamps");
         Add($"driver pipeline cache {Path.GetFileName(_vkCachePath ?? "(none)")}");
         return sb.ToString();

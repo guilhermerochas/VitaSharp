@@ -52,13 +52,13 @@ public sealed unsafe partial class VulkanRenderer
     /// the image goes); evicts the oldest kept images over the budget.</summary>
     private void KeepContent(TexKey key, ulong hash, Image image, ImageView view, ImageMemoryPool.Allocation mem, uint bytes)
     {
-        ContentKey ck = ContentKeyOf(key, hash);
-        if (hash == 0 || bytes > ContentCacheMaxTexture || _contentCache.ContainsKey(ck))
+        ContentKey contentKey = ContentKeyOf(key, hash);
+        if (hash == 0 || bytes > ContentCacheMaxTexture || _contentCache.ContainsKey(contentKey))
         {
             ReleaseImage(image, view, mem, now: false);
             return;
         }
-        _contentCache[ck] = new KeptImage { Image = image, View = view, Mem = mem, Order = ++_contentOrder };
+        _contentCache[contentKey] = new KeptImage { Image = image, View = view, Mem = mem, Order = ++_contentOrder };
         _contentCacheBytes += mem.Size;
         while (_contentCacheBytes > ContentCacheBudget && _contentCache.Count > 0)
         {

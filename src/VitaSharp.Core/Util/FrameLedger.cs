@@ -69,8 +69,8 @@ public static class FrameLedger
 
     public readonly struct Scope(Cat c) : IDisposable
     {
-        private readonly long _t0 = Stopwatch.GetTimestamp();
-        public void Dispose() => Interlocked.Add(ref s_totals[(int)c], Stopwatch.GetTimestamp() - _t0);
+        private readonly long _start = Stopwatch.GetTimestamp();
+        public void Dispose() => Interlocked.Add(ref s_totals[(int)c], Stopwatch.GetTimestamp() - _start);
     }
 
     public static Scope Time(Cat c) => new(c);

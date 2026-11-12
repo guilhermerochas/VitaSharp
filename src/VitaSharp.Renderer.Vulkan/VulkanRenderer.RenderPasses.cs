@@ -43,9 +43,9 @@ public sealed unsafe partial class VulkanRenderer
     {
         lock (_singlePasses)
         {
-            if (_singlePasses.TryGetValue(k, out RenderPass rp))
+            if (_singlePasses.TryGetValue(k, out RenderPass renderPass))
             {
-                return rp;
+                return renderPass;
             }
 
             AttachmentDescription* att = stackalloc AttachmentDescription[3];
@@ -74,9 +74,9 @@ public sealed unsafe partial class VulkanRenderer
                 PDepthStencilAttachment = &depth,
             };
             var ci = new RenderPassCreateInfo { SType = StructureType.RenderPassCreateInfo, AttachmentCount = n, PAttachments = att, SubpassCount = 1, PSubpasses = &sub };
-            _vk.CreateRenderPass(_dev, in ci, null, out rp).Ok("render pass");
+            _vk.CreateRenderPass(_dev, in ci, null, out renderPass).Ok("render pass");
             _statRenderPasses++;
-            return _singlePasses[k] = rp;
+            return _singlePasses[k] = renderPass;
         }
     }
 
@@ -102,16 +102,16 @@ public sealed unsafe partial class VulkanRenderer
     }
 
     /// <summary>Begins a scene rendering as a render pass in the primary (its draws are in secondaries).</summary>
-    private void BeginSingleRenderPass(CommandBuffer cmd, in TilePass p, AttachmentStoreOp depthStore, Rect2D area)
+    private void BeginSingleRenderPass(CommandBuffer cmd, in TilePass tilePass, AttachmentStoreOp depthStore, Rect2D area)
     {
-        Format colorFormat = p.HasColor ? p.ColorFormat : Format.Undefined;
-        bool word = p.HasColor && p.Word.Handle != 0;
-        RenderPass pass = SinglePass(new SinglePassKey(colorFormat, word, p.DepthLoad, depthStore));
-        Framebuffer fb = !p.HasColor ? TransientFramebuffer(pass, p.Area, p.Depth)
-            : word ? TransientFramebuffer(pass, p.Area, p.Color, p.Word, p.Depth)
-            : TransientFramebuffer(pass, p.Area, p.Color, p.Depth);
+        Format colorFormat = tilePass.HasColor ? tilePass.ColorFormat : Format.Undefined;
+        bool word = tilePass.HasColor && tilePass.Word.Handle != 0;
+        RenderPass pass = SinglePass(new SinglePassKey(colorFormat, word, tilePass.DepthLoad, depthStore));
+        Framebuffer fb = !tilePass.HasColor ? TransientFramebuffer(pass, tilePass.Area, tilePass.Depth)
+            : word ? TransientFramebuffer(pass, tilePass.Area, tilePass.Color, tilePass.Word, tilePass.Depth)
+            : TransientFramebuffer(pass, tilePass.Area, tilePass.Color, tilePass.Depth);
         // clear values are indexed by attachment: depth/stencil is the last one
-        ClearValue* clears = stackalloc ClearValue[3] { p.DepthClear, p.DepthClear, p.DepthClear };
+        ClearValue* clears = stackalloc ClearValue[3] { tilePass.DepthClear, tilePass.DepthClear, tilePass.DepthClear };
         var rbi = new RenderPassBeginInfo
         {
             SType = StructureType.RenderPassBeginInfo,
@@ -121,7 +121,7 @@ public sealed unsafe partial class VulkanRenderer
             ClearValueCount = 3,
             PClearValues = clears,
         };
-        DevStampOp(cmd, word ? "pass+word" : p.HasColor ? "pass" : "pass-depth");
+        DevStampOp(cmd, word ? "pass+word" : tilePass.HasColor ? "pass" : "pass-depth");
         _vk.CmdBeginRenderPass(cmd, in rbi, SubpassContents.SecondaryCommandBuffers);
     }
 

@@ -84,16 +84,16 @@ public sealed unsafe partial class VulkanRenderer
     }
 
     /// <summary>The frame reads the heap chunk until its fence retires (Deferred runs then).</summary>
-    private void HoldForFrame(UniformChunk c)
+    private void HoldForFrame(UniformChunk uniformChunk)
     {
-        if (c.BackendTag == _frameSerial)
+        if (uniformChunk.BackendTag == _frameSerial)
         {
             return;
         }
 
-        c.BackendTag = _frameSerial;
-        UniformArena.AddRef(c);
-        F.Deferred.Add(() => UniformArena.Release(c));
+        uniformChunk.BackendTag = _frameSerial;
+        UniformArena.AddRef(uniformChunk);
+        F.Deferred.Add(() => UniformArena.Release(uniformChunk));
     }
 
     /// <summary>Bindings 5-8 (<paramref name="infos"/> 0-3): the draw's split uniform slots, in place in the heap (several

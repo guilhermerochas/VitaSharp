@@ -110,11 +110,11 @@ public sealed class VirtualMotion
         }
     }
 
-    /// <summary>Reads the tilt controls of <paramref name="cp"/> from a device state (keys and / or a pad).</summary>
-    public void SetControls(CompiledProfile cp, PadSnapshot? pad, IReadOnlySet<string>? keys)
+    /// <summary>Reads the tilt controls of <paramref name="compiledProfile"/> from a device state (keys and / or a pad).</summary>
+    public void SetControls(CompiledProfile compiledProfile, PadSnapshot? pad, IReadOnlySet<string>? keys)
     {
-        float V(VitaControl c) => InputMapper.Value(cp, c, pad, keys);
-        float threshold = cp.Profile.ButtonThreshold is > 0 and <= 1 ? cp.Profile.ButtonThreshold : 0.5f;
+        float V(VitaControl vitaControl) => InputMapper.Value(compiledProfile, vitaControl, pad, keys);
+        float threshold = compiledProfile.Profile.ButtonThreshold is > 0 and <= 1 ? compiledProfile.Profile.ButtonThreshold : 0.5f;
         SetControls(V(VitaControl.TiltForward), V(VitaControl.TiltBack), V(VitaControl.TiltLeft), V(VitaControl.TiltRight),
             V(VitaControl.TwistLeft), V(VitaControl.TwistRight), V(VitaControl.MotionRecenter) >= threshold);
     }

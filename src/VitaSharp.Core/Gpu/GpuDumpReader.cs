@@ -65,9 +65,9 @@ public sealed class GpuDumpReader : IDisposable
         }
 
         byte[] vu = d.VertexUniforms, fu = d.FragmentUniforms;
-        UniformChunk c = d.UniformChunk = UniformArena.Rent(va + f, out int off);
-        vu.AsSpan(d.VertexUniformsOffset, v).CopyTo(c.Span.Slice(off));
-        fu.AsSpan(d.FragmentUniformsOffset, f).CopyTo(c.Span.Slice(off + va));
+        UniformChunk uniformChunk = d.UniformChunk = UniformArena.Rent(va + f, out int off);
+        vu.AsSpan(d.VertexUniformsOffset, v).CopyTo(uniformChunk.Span.Slice(off));
+        fu.AsSpan(d.FragmentUniformsOffset, f).CopyTo(uniformChunk.Span.Slice(off + va));
         d.VertexUniformsOffset = off;
         d.FragmentUniformsOffset = off + va;
     }
@@ -77,25 +77,25 @@ public sealed class GpuDumpReader : IDisposable
     {
         Span<byte> src = data.AsSpan(offset, length);
         byte[] compact = new byte[info.DataBytes];
-        foreach (UniformBufferSlot s in info.UniformSlots)
+        foreach (UniformBufferSlot uniformBufferSlot in info.UniformSlots)
         {
-            int n = Math.Max(0, Math.Min(s.ByteSize, src.Length - s.ByteOffset));
-            if (s.IsSplit)
+            int n = Math.Max(0, Math.Min(uniformBufferSlot.ByteSize, src.Length - uniformBufferSlot.ByteOffset));
+            if (uniformBufferSlot.IsSplit)
             {
-                UniformChunk c = UniformArena.Rent(s.ByteSize, out int off, clear: false);
-                Span<byte> dst = c.Span.Slice(off, s.ByteSize);
+                UniformChunk uniformChunk = UniformArena.Rent(uniformBufferSlot.ByteSize, out int off, clear: false);
+                Span<byte> dst = uniformChunk.Span.Slice(off, uniformBufferSlot.ByteSize);
                 dst.Clear();
                 if (n > 0)
                 {
-                    src.Slice(s.ByteOffset, n).CopyTo(dst);
+                    src.Slice(uniformBufferSlot.ByteOffset, n).CopyTo(dst);
                 }
 
-                d.SetSplit(stage + s.Split, c, off, s.ByteSize);
-                UniformArena.Release(c);
+                d.SetSplit(stage + uniformBufferSlot.Split, uniformChunk, off, uniformBufferSlot.ByteSize);
+                UniformArena.Release(uniformChunk);
             }
-            else if (n > 0 && s.DataOffset < compact.Length)
+            else if (n > 0 && uniformBufferSlot.DataOffset < compact.Length)
             {
-                src.Slice(s.ByteOffset, Math.Min(n, compact.Length - s.DataOffset)).CopyTo(compact.AsSpan(s.DataOffset));
+                src.Slice(uniformBufferSlot.ByteOffset, Math.Min(n, compact.Length - uniformBufferSlot.DataOffset)).CopyTo(compact.AsSpan(uniformBufferSlot.DataOffset));
             }
         }
         data = compact;

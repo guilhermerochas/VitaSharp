@@ -76,11 +76,11 @@ public sealed unsafe partial class VulkanRenderer
         ulong h = 14695981039346656037UL ^ mask ^ ((ulong)cube << 32) ^ ((ulong)units << 56);
         for (uint m = mask; m != 0; m &= m - 1)
         {
-            GxmTextureDesc d = textures[System.Numerics.BitOperations.TrailingZeroCount(m)];
-            h = (h ^ d.W0) * 1099511628211UL;
-            h = (h ^ d.W1) * 1099511628211UL;
-            h = (h ^ d.W2) * 1099511628211UL;
-            h = (h ^ d.W3) * 1099511628211UL;
+            GxmTextureDesc gxmTextureDesc = textures[System.Numerics.BitOperations.TrailingZeroCount(m)];
+            h = (h ^ gxmTextureDesc.W0) * 1099511628211UL;
+            h = (h ^ gxmTextureDesc.W1) * 1099511628211UL;
+            h = (h ^ gxmTextureDesc.W2) * 1099511628211UL;
+            h = (h ^ gxmTextureDesc.W3) * 1099511628211UL;
         }
         return h;
     }
@@ -126,13 +126,13 @@ public sealed unsafe partial class VulkanRenderer
     private DescriptorSet? ReusedTextureSet(bool vertexStage, GxmTextureDesc[] textures, uint mask, uint cube, int units)
     {
         Dictionary<ulong, ReuseEntry> map = vertexStage ? _reuseV : _reuseF;
-        if (!map.TryGetValue(ReuseKey(textures, mask, cube, units), out ReuseEntry? e))
+        if (!map.TryGetValue(ReuseKey(textures, mask, cube, units), out ReuseEntry? reuseEntry))
         {
             _statReuseMisses++;
             return null;
         }
-        bool fresh = e.Serial == _frameSerial;
-        if ((!fresh && !s_texSetPersist) || e.Epoch != _texEpoch || e.Mask != mask || e.Cube != cube || e.Units != units)
+        bool fresh = reuseEntry.Serial == _frameSerial;
+        if ((!fresh && !s_texSetPersist) || reuseEntry.Epoch != _texEpoch || reuseEntry.Mask != mask || reuseEntry.Cube != cube || reuseEntry.Units != units)
         {
             _statReuseMisses++;
             return null;
@@ -140,7 +140,7 @@ public sealed unsafe partial class VulkanRenderer
         for (uint m = mask; m != 0; m &= m - 1)
         {
             int i = System.Numerics.BitOperations.TrailingZeroCount(m);
-            if (e.Descs[i] != textures[i])
+            if (reuseEntry.Descs[i] != textures[i])
             {
                 _statReuseMisses++;
                 return null;
@@ -150,9 +150,9 @@ public sealed unsafe partial class VulkanRenderer
         {
             // a set from an earlier submit: its memory textures are validated against guest memory once per frame, as
             // a resolve would (a changed texture is uploaded into the same image; a new image means a new view)
-            for (int i = 0; i < e.MemCount; i++)
+            for (int i = 0; i < reuseEntry.MemCount; i++)
             {
-                (int unit, Texture? tex) = e.Mem[i];
+                (int unit, Texture? tex) = reuseEntry.Mem[i];
                 if (tex.CheckedFrame == FrameCount)
                 {
                     tex.LastUsedFrame = FrameCount;
@@ -167,9 +167,9 @@ public sealed unsafe partial class VulkanRenderer
                 }
             }
         }
-        for (int i = 0; i < e.DepCount; i++)
+        for (int i = 0; i < reuseEntry.DepCount; i++)
         {
-            (RenderTarget? rt, long ver) = e.Deps[i];
+            (RenderTarget? rt, long ver) = reuseEntry.Deps[i];
             if (rt.Version != ver || rt == _renderTarget)
             {
                 _statReuseMisses++;
@@ -182,20 +182,20 @@ public sealed unsafe partial class VulkanRenderer
         // built is dirty without a version change), and the views are sampled by this draw (scene-break hazards)
         if (!fresh)
         {
-            for (int i = 0; i < e.DepCount; i++)
+            for (int i = 0; i < reuseEntry.DepCount; i++)
             {
-                SyncRenderTargetForRead(e.Deps[i].Rt);
+                SyncRenderTargetForRead(reuseEntry.Deps[i].Rt);
             }
 
             _statReuseOld++;
         }
-        for (int i = 0; i < e.ViewCount; i++)
+        for (int i = 0; i < reuseEntry.ViewCount; i++)
         {
-            NoteSampled(e.Views[i]);
+            NoteSampled(reuseEntry.Views[i]);
         }
 
         _statReuseHits++;
-        return e.Set;
+        return reuseEntry.Set;
     }
 
     private void StoreReusedSet(bool vertexStage, GxmTextureDesc[] textures, uint mask, uint cube, int units, DescriptorSet set, DescriptorImageInfo* infos)
@@ -216,37 +216,37 @@ public sealed unsafe partial class VulkanRenderer
         }
 
         ulong key = ReuseKey(textures, mask, cube, units);
-        if (!map.TryGetValue(key, out ReuseEntry? e))
+        if (!map.TryGetValue(key, out ReuseEntry? reuseEntry))
         {
-            map[key] = e = new ReuseEntry();
+            map[key] = reuseEntry = new ReuseEntry();
         }
 
-        e.Mask = mask;
-        e.Cube = cube;
-        e.Units = units;
-        e.Serial = _frameSerial;
-        e.Epoch = _texEpoch;
-        e.Set = set;
-        e.ViewCount = 0;
+        reuseEntry.Mask = mask;
+        reuseEntry.Cube = cube;
+        reuseEntry.Units = units;
+        reuseEntry.Serial = _frameSerial;
+        reuseEntry.Epoch = _texEpoch;
+        reuseEntry.Set = set;
+        reuseEntry.ViewCount = 0;
         for (uint m = mask; m != 0; m &= m - 1)
         {
             int i = System.Numerics.BitOperations.TrailingZeroCount(m);
-            e.Descs[i] = textures[i];
+            reuseEntry.Descs[i] = textures[i];
             if (infos[i].ImageView.Handle != 0)
             {
-                e.Views[e.ViewCount++] = infos[i].ImageView;
+                reuseEntry.Views[reuseEntry.ViewCount++] = infos[i].ImageView;
             }
         }
-        e.DepCount = _reuseDeps;
+        reuseEntry.DepCount = _reuseDeps;
         for (int i = 0; i < _reuseDeps; i++)
         {
-            e.Deps[i] = _reuseDepScratch[i];
+            reuseEntry.Deps[i] = _reuseDepScratch[i];
         }
 
-        e.MemCount = _reuseMem;
+        reuseEntry.MemCount = _reuseMem;
         for (int i = 0; i < _reuseMem; i++)
         {
-            e.Mem[i] = _reuseMemScratch[i];
+            reuseEntry.Mem[i] = _reuseMemScratch[i];
         }
     }
 

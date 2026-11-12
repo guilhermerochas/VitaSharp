@@ -72,17 +72,17 @@ public sealed class PfsPlan
         }
 
         uint sectors = SectorCount(size);
-        foreach (PfsTable t in _unmatched)
+        foreach (PfsTable pfsTable in _unmatched)
         {
-            if (t.NumSectors != sectors)
+            if (pfsTable.NumSectors != sectors)
             {
                 continue;
             }
 
-            if (t.Matches(head[..(int)Math.Min(size, t.SectorSize)]))
+            if (pfsTable.Matches(head[..(int)Math.Min(size, pfsTable.SectorSize)]))
             {
-                _unmatched.Remove(t);
-                return t;
+                _unmatched.Remove(pfsTable);
+                return pfsTable;
             }
         }
         return null;
@@ -98,16 +98,16 @@ public sealed class PfsPlan
     }
 
     public PfsNode Node(string relPath) =>
-        _nodes.TryGetValue(relPath.ToUpperInvariant(), out PfsNode? n) ? n : throw new InvalidDataException($"PFS: {relPath} is not listed in files.db");
+        _nodes.TryGetValue(relPath.ToUpperInvariant(), out PfsNode? pfsNode) ? pfsNode : throw new InvalidDataException($"PFS: {relPath} is not listed in files.db");
 
-    public PfsSectorCipher Cipher(PfsTable t)
+    public PfsSectorCipher Cipher(PfsTable pfsTable)
     {
         if (_aes == null)
         {
             _aes = Aes.Create();
             _aes.Key = _drvKey;
         }
-        return new PfsSectorCipher(_aes, t.TweakKey, t.SectorSize);
+        return new PfsSectorCipher(_aes, pfsTable.TweakKey, pfsTable.SectorSize);
     }
 }
 

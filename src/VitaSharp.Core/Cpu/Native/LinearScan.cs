@@ -33,15 +33,15 @@ public static class LinearScan
     [System.Runtime.CompilerServices.MethodImpl(System.Runtime.CompilerServices.MethodImplOptions.AggressiveOptimization)]
     public static int[]? Allocate(IrBlock ir, int[] callerSaved, int[] calleeSaved, int spillSlots, int maxTempRegisters, bool verify, bool reuse = false)
     {
-        Scratch sc = reuse ? t_scratch ??= new Scratch() : new Scratch();
+        Scratch scratch = reuse ? t_scratch ??= new Scratch() : new Scratch();
         int n = ir.TempCount;
-        int[] def = Ensure(ref sc.Def, n);
-        int[] last = Ensure(ref sc.Last, n);
+        int[] def = Ensure(ref scratch.Def, n);
+        int[] last = Ensure(ref scratch.Last, n);
         Array.Fill(def, -1, 0, n);
         Array.Fill(last, -1, 0, n);
         Span<IrInst> insts = System.Runtime.InteropServices.CollectionsMarshal.AsSpan(ir.Insts);
         int count = insts.Length;
-        int[] calloutsBefore = Ensure(ref sc.CalloutsBefore, count + 1);
+        int[] calloutsBefore = Ensure(ref scratch.CalloutsBefore, count + 1);
         calloutsBefore[0] = 0;
         for (int i = 0; i < count; i++)
         {
@@ -97,9 +97,9 @@ public static class LinearScan
                 last[x.E] = i;
             }
         }
-        int[] loc = reuse ? Ensure(ref sc.Loc, n) : new int[n];
+        int[] loc = reuse ? Ensure(ref scratch.Loc, n) : new int[n];
         Array.Fill(loc, -1, 0, n);
-        List<int> freeRegs = sc.FreeRegs;
+        List<int> freeRegs = scratch.FreeRegs;
         freeRegs.Clear();
         int limit = maxTempRegisters;
         foreach (int r in callerSaved)
@@ -124,11 +124,11 @@ public static class LinearScan
             calleeMask |= 1u << r;
         }
 
-        List<int> active = sc.Active; // temps currently holding registers
+        List<int> active = scratch.Active; // temps currently holding registers
         active.Clear();
         // a slot is free for a whole live range [from, until] when its previous occupant died before "from"
         // (spill victims are spilled retroactively from their definition, not from the current instruction)
-        int[] slotFreeAfter = Ensure(ref sc.SlotFreeAfter, spillSlots);
+        int[] slotFreeAfter = Ensure(ref scratch.SlotFreeAfter, spillSlots);
         Array.Fill(slotFreeAfter, -1, 0, spillSlots);
         int TakeSlot(int from, int until)
         {

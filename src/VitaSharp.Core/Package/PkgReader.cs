@@ -282,14 +282,14 @@ public sealed class PkgReader : IDisposable
     /// key depends on the entry: use <see cref="CreateCipher(PkgEntry)"/>.</summary>
     public AesUtil.Ctr CreateCipher() => new(_key);
 
-    /// <summary>A cipher for the entries that share <paramref name="e"/>'s key.</summary>
-    public AesUtil.Ctr CreateCipher(PkgEntry e) => new(KeyFor(e.PspType));
+    /// <summary>A cipher for the entries that share <paramref name="pkgEntry"/>'s key.</summary>
+    public AesUtil.Ctr CreateCipher(PkgEntry pkgEntry) => new(KeyFor(pkgEntry.PspType));
 
     /// <summary>
     /// Reads <paramref name="dst"/>.Length decrypted bytes of an entry starting at <paramref name="offset"/> (a multiple
     /// of 16) into <paramref name="dst"/>; returns the time spent reading and decrypting.
     /// </summary>
-    public (TimeSpan read, TimeSpan decrypt) ReadData(PkgEntry e, long offset, Span<byte> dst, AesUtil.Ctr ctr)
+    public (TimeSpan read, TimeSpan decrypt) ReadData(PkgEntry pkgEntry, long offset, Span<byte> dst, AesUtil.Ctr ctr)
     {
         if ((offset & 15) != 0)
         {
@@ -297,39 +297,39 @@ public sealed class PkgReader : IDisposable
         }
 
         long t0 = System.Diagnostics.Stopwatch.GetTimestamp();
-        _fs.Position = (long)(_dataOffset + e.DataOffset) + offset;
+        _fs.Position = (long)(_dataOffset + pkgEntry.DataOffset) + offset;
         _fs.ReadExactly(dst);
         long t1 = System.Diagnostics.Stopwatch.GetTimestamp();
         Span<byte> counter = stackalloc byte[16];
-        AesUtil.CounterAt(_iv, (e.DataOffset + (ulong)offset) / 16).CopyTo(counter);
+        AesUtil.CounterAt(_iv, (pkgEntry.DataOffset + (ulong)offset) / 16).CopyTo(counter);
         ctr.Transform(dst, counter);
         return (System.Diagnostics.Stopwatch.GetElapsedTime(t0, t1), System.Diagnostics.Stopwatch.GetElapsedTime(t1));
     }
 
-    /// <summary>Reads <paramref name="dst"/>.Length decrypted bytes of <paramref name="e"/> at any
+    /// <summary>Reads <paramref name="dst"/>.Length decrypted bytes of <paramref name="pkgEntry"/> at any
     /// <paramref name="offset"/> (no alignment needed; small reads such as headers).</summary>
-    public void ReadAt(PkgEntry e, long offset, Span<byte> dst)
+    public void ReadAt(PkgEntry pkgEntry, long offset, Span<byte> dst)
     {
-        if (offset < 0 || (ulong)offset + (ulong)dst.Length > e.DataSize)
+        if (offset < 0 || (ulong)offset + (ulong)dst.Length > pkgEntry.DataSize)
         {
-            throw new InvalidDataException($"{e.Name}: read past the end of the file (corrupted package?)");
+            throw new InvalidDataException($"{pkgEntry.Name}: read past the end of the file (corrupted package?)");
         }
 
-        ReadDecrypted(e.DataOffset + (ulong)offset, dst, KeyFor(e.PspType));
+        ReadDecrypted(pkgEntry.DataOffset + (ulong)offset, dst, KeyFor(pkgEntry.PspType));
     }
 
-    public void Extract(PkgEntry e, Stream output, Action<long>? progress = null)
+    public void Extract(PkgEntry pkgEntry, Stream output, Action<long>? progress = null)
     {
-        if (e.IsDirectory)
+        if (pkgEntry.IsDirectory)
         {
             return;
         }
 
-        using var ctr = new AesUtil.Ctr(KeyFor(e.PspType));
-        byte[] counter = AesUtil.CounterAt(_iv, e.DataOffset / 16);
-        _fs.Position = (long)(_dataOffset + e.DataOffset);
+        using var ctr = new AesUtil.Ctr(KeyFor(pkgEntry.PspType));
+        byte[] counter = AesUtil.CounterAt(_iv, pkgEntry.DataOffset / 16);
+        _fs.Position = (long)(_dataOffset + pkgEntry.DataOffset);
         byte[] buf = new byte[1 << 20];
-        ulong left = e.DataSize;
+        ulong left = pkgEntry.DataSize;
         while (left > 0)
         {
             int n = (int)Math.Min(left, (ulong)buf.Length);

@@ -21,7 +21,7 @@ internal sealed class IlDump
     private readonly string _dir;
     private readonly Lock _lock = new();
     private readonly List<(Block Block, string Name, int File)> _blocks = [];
-    private PersistedAssemblyBuilder? _asm;
+    private PersistedAssemblyBuilder? _assembly;
     private TypeBuilder? _type;
     private int _file, _inFile;
 
@@ -48,8 +48,8 @@ internal sealed class IlDump
             {
                 if (_type == null)
                 {
-                    _asm = new PersistedAssemblyBuilder(new AssemblyName($"il_blocks_{_file:D3}"), typeof(object).Assembly);
-                    _type = _asm.DefineDynamicModule($"il_blocks_{_file:D3}").DefineType("GuestBlocks", TypeAttributes.Public | TypeAttributes.Abstract | TypeAttributes.Sealed);
+                    _assembly = new PersistedAssemblyBuilder(new AssemblyName($"il_blocks_{_file:D3}"), typeof(object).Assembly);
+                    _type = _assembly.DefineDynamicModule($"il_blocks_{_file:D3}").DefineType("GuestBlocks", TypeAttributes.Public | TypeAttributes.Abstract | TypeAttributes.Sealed);
                 }
                 string name = MethodName(b);
                 // a block recompiled after an invalidation gets a suffix: method names stay unique in the type
@@ -58,9 +58,9 @@ internal sealed class IlDump
                     name += $"_{_blocks.Count}";
                 }
 
-                MethodBuilder mb = _type.DefineMethod(name, MethodAttributes.Public | MethodAttributes.Static, typeof(void), [typeof(CpuState).MakePointerType()]);
-                mb.DefineParameter(1, ParameterAttributes.None, "s");
-                emit(mb.GetILGenerator());
+                MethodBuilder methodBuilder = _type.DefineMethod(name, MethodAttributes.Public | MethodAttributes.Static, typeof(void), [typeof(CpuState).MakePointerType()]);
+                methodBuilder.DefineParameter(1, ParameterAttributes.None, "s");
+                emit(methodBuilder.GetILGenerator());
                 _blocks.Add((b, name, _file));
                 if (++_inFile >= BatchSize)
                 {
@@ -76,15 +76,15 @@ internal sealed class IlDump
 
     private void SaveAssembly()
     {
-        if (_type == null || _asm == null)
+        if (_type == null || _assembly == null)
         {
             return;
         }
 
         _type.CreateType();
-        _asm.Save(Path.Combine(_dir, $"il_blocks_{_file:D3}.dll"));
+        _assembly.Save(Path.Combine(_dir, $"il_blocks_{_file:D3}.dll"));
         _type = null;
-        _asm = null;
+        _assembly = null;
         _inFile = 0;
         _file++;
         WriteIndex();

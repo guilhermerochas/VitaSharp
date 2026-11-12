@@ -24,9 +24,9 @@ internal static class KernelSnapshot
         w.Write(table.NextUid);
         List<KernelObject> all = table.Snapshot();
         w.Write(all.Count);
-        foreach (KernelObject o in all)
+        foreach (KernelObject kernelObject in all)
         {
-            string kind = o switch
+            string kind = kernelObject switch
             {
                 GuestThread => Thread,
                 Semaphore => Sema,
@@ -45,15 +45,15 @@ internal static class KernelSnapshot
                 AppObject => App,
                 ModuleObject => Module,
                 KernelData => Data,
-                _ => throw new SnapshotException($"kernel object {o.Name} ({o.GetType().Name}) is not supported by save states yet"),
+                _ => throw new SnapshotException($"kernel object {kernelObject.Name} ({kernelObject.GetType().Name}) is not supported by save states yet"),
             };
             w.Write(kind);
-            w.Write(o.Uid);
-            w.Write(o.Name);
-            w.Write(o.OwnerPid);
-            w.Write(o.OpenCount);
+            w.Write(kernelObject.Uid);
+            w.Write(kernelObject.Name);
+            w.Write(kernelObject.OwnerPid);
+            w.Write(kernelObject.OpenCount);
             int at = w.BeginBlock();
-            switch (o)
+            switch (kernelObject)
             {
                 case GuestThread t:
                     if (t.Process != emu)
@@ -269,7 +269,7 @@ internal static class KernelSnapshot
                     // it through a LoadExec at another moment) numbered its objects differently; the module takes
                     // the saved UID, which the game's memory and the HLE state hold
                     ModuleObject mo = current.OfType<ModuleObject>().FirstOrDefault(x => !modulesSeen.Contains(x) && x.Module.Path == path
-                        && (x.Module.Segments.TryGetValue(0, out SegmentInfo s0) ? s0.Address : 0) == seg0)
+                        && (x.Module.Segments.TryGetValue(0, out SegmentInfo segmentInfo) ? segmentInfo.Address : 0) == seg0)
                         ?? throw new SnapshotException($"module {name} ({path}) is not loaded the same way in this session; restart the game and load the state again");
                     modulesSeen.Add(mo);
                     o = mo;
