@@ -424,11 +424,25 @@ Lista de itens futuros do VitaSharp. Marque `[x]` quando um item for concluído.
   (~14 s a 7 MB/s mais 0,5 ms por leitura). Vita de verdade (longplay YouTube drriyW7Mn3M): depois da dificuldade a
   tela escura dura ~5 s e entra o briefing interativo "VAN-Guard" de ~4 min, durante o qual a fase carrega; no fim
   dele faltam ~7 s até a mesma cena. O padrão de 7 MB/s fica; SH:BoM continua precisando dele
-- [ ] Killzone: o briefing "VAN-Guard" depois da escolha de dificuldade não aparece (11/11/2026, feat/fast-loading,
+- [x] Killzone: o briefing "VAN-Guard" depois da escolha de dificuldade não aparece (11/11/2026, feat/fast-loading,
   `kz_fresh2`): no Vita ele entra ~5 s depois da tela escura; aqui, com o save do usuário, a tela escura com o ícone
   de carregamento fica até a fase abrir (20 s com carregamento rápido) e, com save novo, passou de 15 s sem briefing
   (fim da gravação). Falta ver o que o jogo espera para
   abrir o briefing (provavelmente um filme ou áudio em streaming)
+  Corrigido (B4, 12/11/2026, fix/system-bugs-13c): era o `sceAvPlayerIsActive`. O jogo inicia o filme
+  (`sceAvPlayerInit`), pergunta `IsActive` no mesmo quadro e só no update seguinte chama `AddSource`; o VitaSharp
+  respondia 0 antes da primeira fonte e o jogo fechava o player na hora (Init -> IsActive 0 -> Close em 4 ms, sem
+  nenhum AddSource). Como o console faz (libsceavplayer do vs0, só estudo): IsActive devolve "estado do player != 6
+  (fim)", então é 1 desde o Init até o player terminar. Agora o player fica ativo do Init até acabar a última fonte,
+  falhar a abertura ou ser parado. Efeito ao vivo (`<scratchpad>/b4_kz6`, `b4_kz7`): (1) o filme de abertura
+  `KZV_Title_Intro_EN_R.mp4` (Sony, Guerrilla Cambridge, logo) passa a tocar no boot e a tela de título espera um botão,
+  como no Vita (antes o jogo pulava direto para a carta Valor); (2) depois da dificuldade entra o VAN-Guard
+  (`KZV_Campaign_Intro.mp4`): "INCOMING TRANSMISSION", a leitura de digital esperando o toque e, depois do toque, o
+  briefing com o sistema Vekta e os vídeos. O áudio do briefing não está no mp4 (só vídeo; vem dos .at9 do jogo).
+  Teste: `MediaMiscHleTests.AvPlayerIsActiveFromInitUntilStopped` (falha sem a correção: 0 em vez de 1). Falta: os
+  cenários `tests/scenarios/kz*.txt` (as entradas até a dificuldade vão 600 quadros depois, com um botão na tela de
+  título, f750, e o toque na digital ~f3450; o briefing de ~4 min não pula com START, então os comandos de gameplay
+  precisam do quadro em que a fase abre, a medir)
 - [x] Rodada 21 de desempenho (perf/desktop-21, 10/11/2026): **cópias de uniforms do worker da GPU**. Medido com a
   nova linha `PERF ubstats` (`VITASHARP_UB_STATS=1`, a partir de `VITASHARP_WORKER_PROF_FROM`): no Killzone (escada,
   quadro 4400+) o worker copiava 12,9 MB/quadro de uniforms (856 cópias, quase todas de slots de 16 KB: buffers que

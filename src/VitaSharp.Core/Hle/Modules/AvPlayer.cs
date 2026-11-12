@@ -288,7 +288,6 @@ public sealed partial class AvPlayer : HleModule
 
     [Hle] ulong sceAvPlayerCurrentTime(uint handle) => Get(handle) is { } p ? (ulong)Math.Max(0, p.LastTimeUs / 1000) : 0;
 
-    /// <summary>Playback is active until every queued source has been fully played.</summary>
     /// <summary>1 until the player reaches its end (all sources played, or stopped); also 1 right after
     /// sceAvPlayerInit, before the first source: Killzone: Mercenary starts its briefing movie, checks IsActive and
     /// adds the source on the next update, and closed the movie at once when this answered 0 there.</summary>
