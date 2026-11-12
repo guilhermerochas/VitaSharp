@@ -14,36 +14,36 @@ namespace VitaSharp.Tests;
 [Collection("guest")]
 public sealed class UltHleTests(GuestMemoryFixture fx)
 {
-    const int NULL = unchecked((int)0x80810001), ALIGNMENT = unchecked((int)0x80810002), RANGE = unchecked((int)0x80810003),
+    private const int NULL = unchecked((int)0x80810001), ALIGNMENT = unchecked((int)0x80810002), RANGE = unchecked((int)0x80810003),
         INVALID = unchecked((int)0x80810004), PERMISSION = unchecked((int)0x80810005), STATE = unchecked((int)0x80810006),
         AGAIN = unchecked((int)0x80810008);
-    const uint Version = 0x03600011;
+    private const uint Version = 0x03600011;
 
-    static int Call(Ult u, string name, params object[] args) =>
+    private static int Call(Ult u, string name, params object[] args) =>
         Convert.ToInt32(typeof(Ult).GetMethod(name, BindingFlags.Instance | BindingFlags.NonPublic | BindingFlags.Public)!.Invoke(u, args));
 
-    uint Alloc(uint size)
+    private uint Alloc(uint size)
     {
         uint p = fx.Memory.Alloc(size, "ult");
         GuestMemory.Fill(p, 0, size);
         return p;
     }
 
-    uint Name(string s)
+    private uint Name(string s)
     {
         uint p = Alloc(32);
         GuestMemory.WriteCString(p, s);
         return p;
     }
 
-    static Ult Make()
+    private static Ult Make()
     {
         var emu = (Emulator)RuntimeHelpers.GetUninitializedObject(typeof(Emulator));
         typeof(Emulator).GetField("<Kernel>k__BackingField", BindingFlags.Instance | BindingFlags.NonPublic)!.SetValue(emu, new VitaSharp.Core.Kernel.Kernel(emu));
         return new Ult { Emu = emu };
     }
 
-    uint Pool(Ult u)
+    private uint Pool(Ult u)
     {
         uint pool = Alloc(0x100);
         Assert.Equal(0, Call(u, "_sceUltWaitingQueueResourcePoolCreate", pool, Name("wq"), 4u, 4u, Alloc(0x200), 0u));
@@ -53,7 +53,7 @@ public sealed class UltHleTests(GuestMemoryFixture fx)
     [Fact]
     public void OptParamsAndWorkAreaSizes()
     {
-        var u = Make();
+        Ult u = Make();
         uint opt = Alloc(0x80);
         GuestMemory.Fill(opt, 0xEE, 0x80);
         Assert.Equal(0, Call(u, "_sceUltMutexOptParamInitialize", opt, Version));
@@ -79,7 +79,7 @@ public sealed class UltHleTests(GuestMemoryFixture fx)
     [Fact]
     public void QueueSharesThePoolElements()
     {
-        var u = Make();
+        Ult u = Make();
         uint wq = Pool(u), dp = Alloc(0x100), q = Alloc(0x100), data = Alloc(16);
         Assert.Equal(0, Call(u, "_sceUltQueueDataResourcePoolCreate", dp, Name("dp"), 1u, 4u, 1u, wq, Alloc(0x200), 0u));
         Assert.Equal(0, Call(u, "_sceUltQueueCreate", q, Name("q"), 4u, wq, dp, 0u));
@@ -100,7 +100,7 @@ public sealed class UltHleTests(GuestMemoryFixture fx)
     [Fact]
     public void SemaphoreInfoAndDestroyedObjects()
     {
-        var u = Make();
+        Ult u = Make();
         uint wq = Pool(u), s = Alloc(0x100), info = Alloc(0x80);
         Assert.Equal(0, Call(u, "_sceUltSemaphoreCreate", s, Name("sema"), 1, wq, 0u));
         Assert.Equal(0, Call(u, "sceUltSemaphoreTryAcquire", s, 1));
@@ -125,7 +125,7 @@ public sealed class UltHleTests(GuestMemoryFixture fx)
     [Fact]
     public void ConditionVariableBindsItsMutexAndUlthreadCallsOutsideUlthreads()
     {
-        var u = Make();
+        Ult u = Make();
         uint wq = Pool(u), m = Alloc(0x100), cv = Alloc(0x100), self = Alloc(4);
         Assert.Equal(0, Call(u, "_sceUltMutexCreate", m, Name("m"), wq, 0u));
         Assert.Equal(NULL, Call(u, "_sceUltConditionVariableCreate", cv, Name("cv"), 0u, 0u));

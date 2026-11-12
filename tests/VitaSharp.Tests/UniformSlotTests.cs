@@ -19,10 +19,10 @@ public sealed class UniformSlotTests(GuestMemoryFixture fx)
             GuestMemory.W32(src + i, 0x11000000 + i);
         }
 
-        var chunk = UniformArena.Rent(1024, out int off, clear: false);
+        UniformChunk chunk = UniformArena.Rent(1024, out int off, clear: false);
         try
         {
-            var data = chunk.Span.Slice(off, 1024);
+            Span<byte> data = chunk.Span.Slice(off, 1024);
             var slot = new UniformBufferSlot(0, 256, 512);
             foreach (int copy in new[] { 512, 100, 0 })
             {

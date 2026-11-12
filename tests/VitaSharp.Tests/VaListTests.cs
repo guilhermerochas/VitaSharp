@@ -8,11 +8,11 @@ namespace VitaSharp.Tests;
 public sealed class VaListTests
 {
     /// <summary>A va_list over a word array that starts at <paramref name="start"/>.</summary>
-    sealed class Words : IVaSource
+    private sealed class Words : IVaSource
     {
-        readonly uint _start;
-        readonly uint[] _words;
-        uint _p;
+        private readonly uint _start;
+        private readonly uint[] _words;
+        private uint _p;
         public Words(uint start, params uint[] words)
         {
             _start = start;

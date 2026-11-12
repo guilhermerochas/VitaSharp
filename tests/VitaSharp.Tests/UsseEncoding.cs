@@ -6,7 +6,7 @@ namespace VitaSharp.Tests;
 /// </summary>
 public static class UsseEncoding
 {
-    const string VmovPattern = "00111pppstrydecbmmaanoooiwwwwkllffgghhhhjjjjjjqqqqqquuuuuuvvvvvv";
+    private const string VmovPattern = "00111pppstrydecbmmaanoooiwwwwkllffgghhhhjjjjjjqqqqqquuuuuuvvvvvv";
 
     /// <summary>Sets the fields of <paramref name="pattern"/> to <paramref name="fields"/> (the fixed bits as given).</summary>
     public static ulong Encode(string pattern, params (char Field, uint Value)[] fields)
@@ -20,9 +20,9 @@ public static class UsseEncoding
             }
         }
 
-        foreach (var (field, value) in fields)
+        foreach ((char field, uint value) in fields)
         {
-            var bits = Enumerable.Range(0, 64).Where(i => pattern[i] == field).ToArray(); // MSB first
+            int[] bits = Enumerable.Range(0, 64).Where(i => pattern[i] == field).ToArray(); // MSB first
             if (bits.Length == 0)
             {
                 throw new ArgumentException($"no field '{field}'");
@@ -70,7 +70,7 @@ public sealed class TestShaderProgramTests
     {
         var p = new VitaSharp.Core.Gxm.Shader.GxpProgram(RendererTextureTests.VertexGxp(), 0x81000000);
         Assert.True(p.IsVertex);
-        var glsl = VitaSharp.Core.Gxm.Shader.ShaderGenerator.Generate(p, new VitaSharp.Core.Gxm.Shader.ShaderHints([], [(0, 4, 9)], 0, false, 0)).Glsl;
+        string glsl = VitaSharp.Core.Gxm.Shader.ShaderGenerator.Generate(p, new VitaSharp.Core.Gxm.Shader.ShaderHints([], [(0, 4, 9)], 0, false, 0)).Glsl;
         Assert.True(glsl.Contains("vec4 vpos = vec4(o[0].x, o[0].y, o[0].z, o[0].w);"), glsl);
         Assert.True(glsl.Contains("v_TexCoord0 = vec4(o[1].x, o[1].y, o[1].z, o[1].w);"), glsl);
         // both outputs are written from the primary attributes
@@ -82,7 +82,7 @@ public sealed class TestShaderProgramTests
     {
         var p = new VitaSharp.Core.Gxm.Shader.GxpProgram(RendererTextureTests.SamplingFragmentGxp(), 0x81000000);
         Assert.True(p.IsFragment);
-        var glsl = VitaSharp.Core.Gxm.Shader.ShaderGenerator.Generate(p, new VitaSharp.Core.Gxm.Shader.ShaderHints([0, 0, 0, 0x0C000000], [], 0, false, 0)).Glsl;
+        string glsl = VitaSharp.Core.Gxm.Shader.ShaderGenerator.Generate(p, new VitaSharp.Core.Gxm.Shader.ShaderHints([0, 0, 0, 0x0C000000], [], 0, false, 0)).Glsl;
         Assert.True(glsl.Contains("texture(ftex3, v_TexCoord0.xy)"), glsl);
         Assert.True(glsl.Contains("out_color = vec4(pa[0].x, pa[0].y, pa[0].z, pa[0].w);"), glsl);
     }
@@ -92,7 +92,7 @@ public sealed class TestShaderProgramTests
     {
         var p = new VitaSharp.Core.Gxm.Shader.GxpProgram(RendererTextureTests.SamplingFragmentGxp(cube: true), 0x81000000);
         Assert.Equal(1u << 3, p.CubeSamplers());
-        var glsl = VitaSharp.Core.Gxm.Shader.ShaderGenerator.Generate(p, new VitaSharp.Core.Gxm.Shader.ShaderHints([0, 0, 0, 0x0C000000], [], 0, false, 0)).Glsl;
+        string glsl = VitaSharp.Core.Gxm.Shader.ShaderGenerator.Generate(p, new VitaSharp.Core.Gxm.Shader.ShaderHints([0, 0, 0, 0x0C000000], [], 0, false, 0)).Glsl;
         Assert.True(glsl.Contains("samplerCube ftex3"), glsl);
         Assert.True(glsl.Contains("texture(ftex3, v_TexCoord0.xyz)"), glsl);
     }

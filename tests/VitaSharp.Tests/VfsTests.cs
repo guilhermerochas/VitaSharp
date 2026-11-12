@@ -5,7 +5,7 @@ namespace VitaSharp.Tests;
 /// <summary>The Vita's file systems ignore case; on case-sensitive hosts (Linux, Android) the VFS must too.</summary>
 public sealed class VfsTests : IDisposable
 {
-    readonly string _root = Path.Combine(Path.GetTempPath(), "vitasharp-vfs-" + Guid.NewGuid().ToString("N"));
+    private readonly string _root = Path.Combine(Path.GetTempPath(), "vitasharp-vfs-" + Guid.NewGuid().ToString("N"));
 
     public VfsTests()
     {
@@ -22,7 +22,7 @@ public sealed class VfsTests : IDisposable
         catch { }
     }
 
-    Vfs NewVfs()
+    private Vfs NewVfs()
     {
         var vfs = new Vfs(Path.Combine(_root, "fs"));
         vfs.Mount("app0", Path.Combine(_root, "app"));
@@ -32,7 +32,7 @@ public sealed class VfsTests : IDisposable
     [Fact]
     public void ResolvesExistingFilesIgnoringCase()
     {
-        var host = NewVfs().Resolve("app0:data/SUB/file.txt");
+        string? host = NewVfs().Resolve("app0:data/SUB/file.txt");
         Assert.NotNull(host);
         Assert.True(File.Exists(host));
         Assert.Equal("x", File.ReadAllText(host!));
@@ -57,15 +57,15 @@ public sealed class VfsTests : IDisposable
     [Fact]
     public void BackslashesAndDotSegmentsAreNormalized()
     {
-        var host = NewVfs().Resolve(@"app0:\DATA\.\x\..\sub\FILE.txt");
+        string? host = NewVfs().Resolve(@"app0:\DATA\.\x\..\sub\FILE.txt");
         Assert.True(File.Exists(host));
     }
 
     [Fact]
     public void NewFilesKeepTheMatchedDirectoryCase()
     {
-        var vfs = NewVfs();
-        var host = vfs.Resolve("app0:DATA/sub/NewDir/new.bin", forWrite: true)!;
+        Vfs vfs = NewVfs();
+        string host = vfs.Resolve("app0:DATA/sub/NewDir/new.bin", forWrite: true)!;
         // the existing directories resolve to their on-disk spelling on a case-sensitive file system (Linux); where the
         // file system itself ignores case (NTFS, default APFS on macOS) the guest spelling already reaches them and
         // is returned as is. Either way the new components keep the guest's spelling exactly.
@@ -81,7 +81,7 @@ public sealed class VfsTests : IDisposable
     [Fact]
     public void MissingFilesResolveToAPathThatDoesNotExist()
     {
-        var host = NewVfs().Resolve("app0:data/nothing/here.dat");
+        string? host = NewVfs().Resolve("app0:data/nothing/here.dat");
         Assert.NotNull(host);
         Assert.False(File.Exists(host));
     }

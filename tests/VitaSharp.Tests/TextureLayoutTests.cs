@@ -9,9 +9,9 @@ namespace VitaSharp.Tests;
 public sealed class TextureLayoutTests
 {
     // UBC1: 4 bits per pixel, 4x4 blocks of 8 bytes; UBC3: 8 bits per pixel, 4x4 blocks of 16 bytes
-    static uint Ubc1(uint raw, uint mips, uint size, uint used) => TextureLayout.CubeFaceStride(raw, mips, size, size, 4, true, 4, 4, 8, used);
-    static uint Ubc3(uint raw, uint mips, uint size, uint used) => TextureLayout.CubeFaceStride(raw, mips, size, size, 8, true, 4, 4, 16, used);
-    static uint Rgba8(uint raw, uint mips, uint size, uint used) => TextureLayout.CubeFaceStride(raw, mips, size, size, 32, false, 1, 1, 4, used);
+    private static uint Ubc1(uint raw, uint mips, uint size, uint used) => TextureLayout.CubeFaceStride(raw, mips, size, size, 4, true, 4, 4, 8, used);
+    private static uint Ubc3(uint raw, uint mips, uint size, uint used) => TextureLayout.CubeFaceStride(raw, mips, size, size, 8, true, 4, 4, 16, used);
+    private static uint Rgba8(uint raw, uint mips, uint size, uint used) => TextureLayout.CubeFaceStride(raw, mips, size, size, 32, false, 1, 1, 4, used);
 
     [Fact]
     public void SingleLevelCompressedFacesArePacked()
@@ -74,10 +74,10 @@ public sealed class TextureLayoutTests
     public void MortonToLinearMatchesPerTexel(int w, int h, int bpp)
     {
         var rng = new Random(w * 131 + h * 7 + bpp);
-        var src = new byte[w * h * bpp];
+        byte[] src = new byte[w * h * bpp];
         rng.NextBytes(src);
-        var want = new byte[src.Length];
-        var got = new byte[src.Length];
+        byte[] want = new byte[src.Length];
+        byte[] got = new byte[src.Length];
         TextureLayout.SwizzledToLinearPerTexel(want, src, (uint)w, (uint)h, bpp);
         Assert.True(TextureLayout.MortonToLinear(got, src, (uint)w, (uint)h, (uint)w, (uint)h, bpp));
         Assert.Equal(want, got);
@@ -85,7 +85,7 @@ public sealed class TextureLayoutTests
         uint sw = (uint)Math.Min(w, 5), sh = (uint)Math.Min(h, 3);
         if (w >= 8 && h >= 4)
         {
-            var part = new byte[sw * sh * bpp];
+            byte[] part = new byte[sw * sh * bpp];
             Assert.True(TextureLayout.MortonToLinear(part, src, sw, sh, 8, 4, bpp));
             for (uint y = 0; y < sh; y++)
             {
@@ -100,7 +100,7 @@ public sealed class TextureLayoutTests
     [Fact]
     public void MortonToLinearRefusesShortSpans()
     {
-        var src = new byte[64 * 64 * 4 - 1];
+        byte[] src = new byte[64 * 64 * 4 - 1];
         Assert.False(TextureLayout.MortonToLinear(new byte[64 * 64 * 4], src, 64, 64, 64, 64, 4));
         Assert.False(TextureLayout.MortonToLinear(new byte[64 * 64 * 4 - 4], new byte[64 * 64 * 4], 64, 64, 64, 64, 4));
     }
@@ -115,10 +115,10 @@ public sealed class TextureLayoutTests
     public void TiledToLinearMatchesPerTexel(int w, int h, int bpp, int cut)
     {
         int tw = (w + 31) & ~31, th = (h + 31) & ~31;
-        var src = new byte[tw * th * bpp - cut];
+        byte[] src = new byte[tw * th * bpp - cut];
         new Random(w + h + bpp).NextBytes(src);
-        var want = new byte[w * h * bpp];
-        var got = new byte[w * h * bpp];
+        byte[] want = new byte[w * h * bpp];
+        byte[] got = new byte[w * h * bpp];
         TextureLayout.TiledToLinearPerTexel(want, src, (uint)w, (uint)h, bpp);
         TextureLayout.TiledToLinear(got, src, (uint)w, (uint)h, bpp);
         Assert.Equal(want, got);
