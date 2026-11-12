@@ -1,4 +1,4 @@
-<!-- pair: README.pt-BR.md sha256=045341dedc6cc3bd0f903aa303c51038b1a08d24aacb59b0f0158f2b6d617fae -->
+<!-- pair: README.pt-BR.md sha256=880e8177482af6d9d946dc833c886397991307404f62fd54cf358b779431770a -->
 <div align="center">
 
 **English** | [Português](README.pt-BR.md)
@@ -142,8 +142,9 @@ LiveArea. A game opened from the LiveArea runs as a second process; the PS butto
 and **Continue** resumes the game. Details and what is missing in [`docs/notes/system-apps.md`](docs/notes/system-apps.md).
 
 **Plugins.** VitaSharp loads the plugins of `fs/ur0/tai/config.txt` (copied from your Vita to `fs/ur0/tai`, listed as
-on the Vita: `*KERNEL` for `.skprx` kernel plugins, `*ALL` / `*TITLEID` for `.suprx` user plugins) and runs their own
-code. taiHEN (`taihen.skprx`) loads too, but it cannot start: its start needs patches to the firmware's signature and
+on the Vita: `*KERNEL` for `.skprx` kernel plugins, loaded once when the system starts, `*ALL` / `*TITLEID` for `.suprx`
+user plugins, for games and for the system's own programs too: `*main` is the home screen, `*NPXS10015` Settings and so
+on) and runs their own code. taiHEN (`taihen.skprx`) loads too, but it cannot start: its start needs patches to the firmware's signature and
 DRM checks, which VitaSharp does not make work. So everything that needs taiHEN does not run, as on a Vita without
 it: plugins built on it (kubridge, fd_fix) and homebrew that calls it or needs such a plugin, among them **Dead Space**
 (through kubridge) and **Sonic Mania**. Details in [`docs/notes/plugins.md`](docs/notes/plugins.md).

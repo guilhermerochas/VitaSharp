@@ -206,7 +206,7 @@ public sealed partial class ProcessMgr : HleModule
     [Hle] int sceKernelGetCurrentProcess() => Emu.Pid;
     [Hle] int sceKernelIsCDialogAvailable() => 1;
     [Hle] int sceKernelIsGameBudget() => 1;
-    [Hle] int sceKernelGetProcessTitleId(uint buf, uint size) { GuestMemory.WriteCString(buf, Emu.TitleId, (int)size); return 0; }
+    [Hle] int sceKernelGetProcessTitleId(uint buf, uint size) { GuestMemory.WriteCString(buf, Emu.ProcessTitleId, (int)size); return 0; }
 
     /// <summary>Process name: SceProcessParam process_name (+0x20), else the title id. NULL, 0 or &gt; 32 → INVALID_ARGUMENT.</summary>
     [Hle]

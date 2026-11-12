@@ -863,7 +863,14 @@ Lista de itens futuros do VitaSharp. Marque `[x]` quando um item for concluído.
 
 ## Firmware e sistema
 
-- [ ] **PRIORIDADE (11/11/2026)** Plugins também nos programas do sistema (achado ao revisar o loader, 11/11/2026).
+- [x] **PRIORIDADE (11/11/2026)** Plugins também nos programas do sistema (achado ao revisar o loader, 11/11/2026).
+  Feito (fix/system-bugs-13, B3): `Emulator.LoadPlugins` roda em todo processo, depois dos módulos pré-carregados
+  (também os do firmware num programa do sistema); a seção é o ID de título do processo no kernel
+  (`Emulator.ProcessTitleId`: "main" para o shell, o NPXS de um app do sistema, também em sceKernelGetProcessTitleId
+  e ksceKernelSysrootGetProcessTitleId); os `*KERNEL` carregam uma vez por sessão, com o primeiro processo (o boot do
+  shell), e um que falhou não é tentado de novo em cada processo. Teste:
+  `KernelModuleLoaderTests.TheSystemsProcessesGetTheirPluginsByTheirKernelTitleId` (módulos do `SceModuleBuilder`);
+  prova no boot do shell sem janela: os `*KERNEL` do usuário (kubridge, fd_fix) são tentados no boot, uma vez.
   Hoje `Emulator.LoadPlugins` só roda quando o processo não é um programa do sistema (`if (!IsSystemProgram)` em
   `Emulator.cs`): os módulos `*KERNEL` só carregam quando um jogo abre (no console, o taiHEN carrega no boot, antes
   do shell), a seção `*main` (plugins do shell) não é reconhecida e `*ALL` e as seções por ID (`*NPXS10015`...) nunca

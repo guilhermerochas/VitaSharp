@@ -114,6 +114,10 @@ public sealed class VitaSystem
 {
     public ObjectTable Objects { get; } = new();
 
+    /// <summary>The plugin configuration's *KERNEL modules were loaded (or tried) for this session: taiHEN loads them
+    /// once, at boot; a later process does not load (or retry) them.</summary>
+    internal bool KernelPluginsLoaded { get; set; }
+
     private readonly object _lock = new();
     private readonly List<Emulator> _processes = new();
     private Emulator? _foreground;

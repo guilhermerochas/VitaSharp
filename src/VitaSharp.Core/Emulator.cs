@@ -90,7 +90,7 @@ public sealed class Emulator : IDisposable
     /// <summary>Debug: log a heuristic guest backtrace for every call of this HLE function.</summary>
     public string? BacktraceHle { get; set; }
 
-    public string TitleId { get; private set; } = "";
+    public string TitleId { get; internal set; } = "";
     public string Title { get; private set; } = "";
     public Sfo? ParamSfo { get; private set; }
     public byte[]? Klicensee { get; private set; }
@@ -729,11 +729,6 @@ public sealed class Emulator : IDisposable
                 LoadModule($"app0:sce_module/{name}.suprx");
             }
         }
-        if (!IsSystemProgram)
-        {
-            LoadPlugins();
-        }
-
         if (IsSystemProgram)
         {
             PreloadFirmwareModules(preloadDisabled);
@@ -742,6 +737,11 @@ public sealed class Emulator : IDisposable
             // that need an on-request module (libpaf) wait for the program's own sysmodule load, as before.
             _startFirst.AddRange(LoadFirmwareDependencies(MainModule, withoutOnRequest: true));
         }
+
+        // the plugins of every process, the system's too (taiHEN hooks sceKernelStartPreloadedModules: each process
+        // gets its plugins after its preloaded modules, the shell those of *main, a system application those of its
+        // NPXS ID); the *KERNEL ones load once, with the first process (the system's boot)
+        LoadPlugins();
         // a system program's variable imports from firmware modules it loads itself later through sysmodule (ScePaf*
         // from libpaf, SceCommonGuiDialog's class tables...) are bound when that module loads; only the others are missing
         FirmwareLibraries? firmware = IsSystemProgram ? Firmware.FirmwareLibraries.For(Options.FsRoot) : null;
@@ -839,7 +839,14 @@ public sealed class Emulator : IDisposable
 
     /// <summary>The process is the shell (vs0:vsh/shell/shell.self): its threads run on the Vita's 4th core, the one
     /// the system keeps for itself, instead of the three application cores (<see cref="Kernel.Scheduler"/>).</summary>
-    public bool RunsOnSystemCore { get; private set; }
+    public bool RunsOnSystemCore { get; internal set; }
+
+    /// <summary>The title ID the kernel gives the shell's process (ksceKernelGetProcessTitleId; taiHEN's "*main").</summary>
+    public const string ShellProcessTitleId = "main";
+
+    /// <summary>The process's title ID as the kernel keeps it (sceKernelGetProcessTitleId, the plugin configuration's
+    /// sections): <see cref="ShellProcessTitleId"/> for the shell, the application's own otherwise.</summary>
+    public string ProcessTitleId => RunsOnSystemCore ? ShellProcessTitleId : TitleId;
 
     /// <summary>Program authority ID of the main executable's SELF (0 for a plain ELF).</summary>
     public ulong ProgramAuthorityId { get; private set; }
@@ -1150,7 +1157,7 @@ public sealed class Emulator : IDisposable
         // kernel modules first (each started as it loads, as the plugin loader of the homebrew environment starts
         // them): the user modules may import what they export
         List<string> results = LoadKernelPlugins();
-        results.AddRange(LoadUserPlugins(TitleId));
+        results.AddRange(LoadUserPlugins(ProcessTitleId));
         return results;
     }
 
@@ -1178,16 +1185,17 @@ public sealed class Emulator : IDisposable
         return null;
     }
 
-    /// <summary>The <c>*KERNEL</c> modules of the plugin configuration that are not loaded yet: loaded into the kernel
+    /// <summary>The <c>*KERNEL</c> modules of the plugin configuration, once per session: loaded into the kernel
     /// and started. Returns what happened to each.</summary>
     internal List<string> LoadKernelPlugins()
     {
         var results = new List<string>();
-        if (ReadPluginConfig() is not { } config)
+        if (Vita.KernelPluginsLoaded || ReadPluginConfig() is not { } config)
         {
             return results;
         }
 
+        Vita.KernelPluginsLoaded = true;
         foreach (string path in PluginConfig.ModulesFor(config, "KERNEL"))
         {
             if (Kernel.Modules.Values.Any(m => m.IsKernel && string.Equals(m.Path, path, StringComparison.OrdinalIgnoreCase)))
