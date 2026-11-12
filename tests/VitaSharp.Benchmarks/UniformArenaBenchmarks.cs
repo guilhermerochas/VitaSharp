@@ -14,9 +14,9 @@ public class UniformArenaBenchmarks
 {
     [Params(256, 4096, 16384)] public int SlotBytes;
 
-    GuestMemory? _memory;
-    uint _src;
-    readonly UniformChunk[] _held = new UniformChunk[256];
+    private GuestMemory? _memory;
+    private uint _src;
+    private readonly UniformChunk[] _held = new UniformChunk[256];
 
     [GlobalSetup]
     public void Setup()
@@ -24,7 +24,9 @@ public class UniformArenaBenchmarks
         _memory = new GuestMemory();
         _src = _memory.Alloc(0x10000, "bench uniforms");
         for (uint i = 0; i < 0x10000; i += 4)
+        {
             GuestMemory.W32(_src + i, 0x3F800000 + i);
+        }
     }
 
     [GlobalCleanup] public void Cleanup() => _memory?.Dispose();
@@ -34,8 +36,8 @@ public class UniformArenaBenchmarks
     public void RentWriteRelease()
     {
         int bytes = SlotBytes * 2;
-        var chunk = UniformArena.Rent(bytes, out int off, clear: false);
-        var data = chunk.Span.Slice(off, bytes);
+        UniformChunk chunk = UniformArena.Rent(bytes, out int off, clear: false);
+        Span<byte> data = chunk.Span.Slice(off, bytes);
         Gxm.WriteSlot(0, SlotBytes, _src, SlotBytes, data, chunk, off);
         Gxm.WriteSlot(SlotBytes, SlotBytes, _src + 0x100, SlotBytes / 3, data, chunk, off);
         UniformArena.Release(chunk);
@@ -45,14 +47,16 @@ public class UniformArenaBenchmarks
     [Benchmark(OperationsPerInvoke = 256)]
     public void FrameOf256Draws()
     {
-        var held = _held;
+        UniformChunk[] held = _held;
         for (int d = 0; d < held.Length; d++)
         {
-            var chunk = UniformArena.Rent(SlotBytes, out int off, clear: false);
+            UniformChunk chunk = UniformArena.Rent(SlotBytes, out int off, clear: false);
             Gxm.WriteSlot(0, SlotBytes, _src, SlotBytes, chunk.Span.Slice(off, SlotBytes), chunk, off);
             held[d] = chunk;
         }
-        foreach (var c in held)
+        foreach (UniformChunk c in held)
+        {
             UniformArena.Release(c);
+        }
     }
 }

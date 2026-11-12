@@ -12,7 +12,7 @@ public class TextureBenchmarks
     [Params(256, 1024)] public uint Size;
     [Params(4)] public int BytesPerPixel;
 
-    byte[] _src = [], _dst = [], _pvrtc = [];
+    private byte[] _src = [], _dst = [], _pvrtc = [];
 
     [GlobalSetup]
     public void Setup()
@@ -38,7 +38,7 @@ public class TextureBenchmarks
     [Benchmark]
     public int Pvrtc4Decode()
     {
-        using var t = Pvrtc.Decode(_pvrtc, Size, Size, twoBpp: false, ii: false);
+        using Texels t = Pvrtc.Decode(_pvrtc, Size, Size, twoBpp: false, ii: false);
         return t.Length;
     }
 }
