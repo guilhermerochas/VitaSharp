@@ -1,10 +1,10 @@
 #!/usr/bin/env bash
 # Runs benchmarks of tests/VitaSharp.Benchmarks (BenchmarkDotNet; not part of the solution build or the test suite)
 # and keeps the joined GitHub Markdown table as <out>/<name>.md, to compare runs before and after a change.
-# Usage: build/bench.sh [--filter '*Uniform*'] [--name label] [--out folder] [--dump file.vsgd]
+# Usage: build/bench.sh [--help] [--filter '*Uniform*'] [--name label] [--out folder] [--dump file.vsgd]
 #                       [--at9 file.at9] [--corpus file] [--variants 'K=V,K2=V2|K3=V3']
 #                       [--job short|medium|long|default] [--affinity 15] [--compare base.md]
-#   (same as build/bench.ps1 -Filter -Name -Out -Dump -At9 -Corpus -Variants -Job -Affinity
+#   (same as build/bench.ps1 -Help -Filter -Name -Out -Dump -At9 -Corpus -Variants -Job -Affinity
 #   -Compare)
 #   --filter: BenchmarkDotNet's globs over Type.Method, comma-separated (default '*'; --filter list
 #     prints the benchmarks).
@@ -22,6 +22,15 @@ set -euo pipefail
 ROOT="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
 readonly ROOT
 readonly PROJECT="${ROOT}/tests/VitaSharp.Benchmarks"
+
+#######################################
+# Prints the usage (the header comment of this script).
+# Outputs:
+#   The usage text to stdout.
+#######################################
+usage() {
+  sed -n '2,/^set -euo pipefail$/{/^#/s/^# \{0,1\}//p;}' "${BASH_SOURCE[0]}"
+}
 
 #######################################
 # Prints an error and exits.
@@ -59,6 +68,10 @@ main() {
       --job) job="$2"; shift 2 ;;
       --affinity) affinity="$2"; shift 2 ;;
       --compare) compare="$2"; shift 2 ;;
+      -h | --help)
+        usage
+        return 0
+        ;;
       *) die "unknown argument: $1" ;;
     esac
   done
