@@ -446,3 +446,49 @@ public sealed class SynchronousOutput
         _missedBeforeFirstPicture = false;
     }
 }
+
+/// <summary>The ADTS header of an AAC frame (ISO/IEC 13818-7 / 14496-3): its length and the AudioSpecificConfig it
+/// stands for, so ADTS frames can go to a decoder as raw frames.</summary>
+public static class AdtsHeader
+{
+    private static readonly int[] s_sampleRates = [96000, 88200, 64000, 48000, 44100, 32000, 24000, 22050, 16000, 12000, 11025, 8000, 7350];
+
+    /// <summary>
+    /// Parses the header at the start of <paramref name="frame"/>: <paramref name="headerLength"/> 7 bytes, or 9 with
+    /// the CRC; <paramref name="audioSpecificConfig"/> the 2-byte config (object type = profile + 1, sampling frequency
+    /// index, channel configuration). False when the frame does not start with a valid ADTS header.
+    /// </summary>
+    public static bool TryParse(ReadOnlySpan<byte> frame, out int headerLength, out byte[] audioSpecificConfig, out int sampleRate, out int channels)
+    {
+        headerLength = 0;
+        audioSpecificConfig = [];
+        sampleRate = 0;
+        channels = 0;
+        if (frame.Length < 7 || frame[0] != 0xFF || (frame[1] & 0xF6) != 0xF0)
+        {
+            return false;
+        }
+
+        bool protectionAbsent = (frame[1] & 1) == 1;
+        int objectType = ((frame[2] >> 6) & 3) + 1;
+        int frequencyIndex = (frame[2] >> 2) & 0xF;
+        int channelConfiguration = ((frame[2] & 1) << 2) | (frame[3] >> 6);
+        if (frequencyIndex >= s_sampleRates.Length)
+        {
+            return false;
+        }
+
+        headerLength = protectionAbsent ? 7 : 9;
+        int frameLength = ((frame[3] & 3) << 11) | (frame[4] << 3) | (frame[5] >> 5);
+        if (frameLength < headerLength || frame.Length < headerLength)
+        {
+            return false;
+        }
+
+        sampleRate = s_sampleRates[frequencyIndex];
+        channels = Math.Max(1, channelConfiguration == 7 ? 8 : channelConfiguration);
+        int config = (objectType << 11) | (frequencyIndex << 7) | (channelConfiguration << 3);
+        audioSpecificConfig = [(byte)(config >> 8), (byte)config];
+        return true;
+    }
+}

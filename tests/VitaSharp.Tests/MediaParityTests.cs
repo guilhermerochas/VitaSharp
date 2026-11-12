@@ -241,6 +241,26 @@ public sealed class MediaParityTests(ITestOutputHelper output)
         Assert.Single(MediaContract.CompareInOrder(desktop, lost, out _));
     }
 
+    [Fact]
+    public void AdtsHeadersGiveTheRawConfig()
+    {
+        // the ADTS clip's first header: AAC-LC, 48 kHz, stereo, no CRC -> AudioSpecificConfig 0x11 0x90, the one the raw
+        // path builds from the same rate and channels (Android decodes ADTS frames as raw ones with it)
+        byte[] clip = Clip(MediaContract.AacClipFile);
+        Assert.True(AdtsHeader.TryParse(clip, out int headerLength, out byte[] config, out int rate, out int channels));
+        Assert.Equal(7, headerLength);
+        Assert.Equal(48000, rate);
+        Assert.Equal(2, channels);
+        Assert.Equal(FrameDecoder.AacConfig(48000, 2), config);
+        // with a CRC the header is 9 bytes; anything else is not ADTS
+        byte[] withCrc = clip.AsSpan(0, 16).ToArray();
+        withCrc[1] &= 0xFE;
+        Assert.True(AdtsHeader.TryParse(withCrc, out headerLength, out _, out _, out _));
+        Assert.Equal(9, headerLength);
+        Assert.False(AdtsHeader.TryParse(Clip(MediaContract.Mp3ClipFile), out _, out _, out _, out _));
+        Assert.False(AdtsHeader.TryParse(new byte[] { 0xFF, 0xF1 }, out _, out _, out _, out _));
+    }
+
     [AndroidMediaTraceFact]
     public void AndroidTraceMatchesTheDesktop()
     {
