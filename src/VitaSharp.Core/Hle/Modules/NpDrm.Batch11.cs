@@ -9,7 +9,7 @@ namespace VitaSharp.Core.Hle.Modules;
 public sealed partial class SystemServicesVsh
 {
     const int NPDRM_ERR_INVALID = unchecked((int)0x80870001);
-    const string FixedRif = "6488b73b912a753a492e2714e9b38bc7.rif";
+    const string FixedRif = Package.PkgInstaller.AccountRifName;
 
     int RifName(uint name)
     {

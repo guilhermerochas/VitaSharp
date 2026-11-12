@@ -1,4 +1,4 @@
-<!-- pair: README.md sha256=d0d1138a942310dd499e8132ac006f77c7205e796840ab94c794e168b938dc42 -->
+<!-- pair: README.md sha256=48375be7236023641992a1dab542f792ce1579393c0c28a7040d1695943c873d -->
 <div align="center">
 
 [English](README.md) | **Português**
@@ -112,6 +112,13 @@ Requisitos no PC: um driver Vulkan 1.3 (NVIDIA, AMD ou Intel recentes) e um proc
    - **PKG com licença**: o pacote junto com a licença, um `work.bin`/`.rif` ou o texto zRIF colado;
    - **Pasta descriptografada**: uma pasta de jogo já descriptografada.
 4. Escolha o jogo e aperte **Jogar**.
+
+**PlayStation Mobile (PSM).** Um `.pkg` de jogo de PSM se instala como um do PS Vita, com a licença da sua própria
+conta: o `.rif` de PSM de 1024 bytes (ou o zRIF dele) que o seu console tem para o jogo; licença de PS Vita ou de
+outro jogo é recusada. Ele vai para onde o console põe, `ux0:psm/<TITLEID>` (`RO` com o jogo e `RO/License`,
+`RW/Documents` com os saves, que uma reinstalação mantém); o jogo continua protegido como foi vendido e quem o abre é
+o runtime do PSM, com a sua licença. Também precisa do **PSM Runtime Package** (`PCSI00011`, um `.pkg` normal de PS
+Vita com a licença dele). Rodar jogos de PSM ainda está em andamento (veja `docs/roadmap.md`).
 
 **Firmware (opcional).** Os jogos rodam sem firmware. Instale-o para ter as fontes e bibliotecas do sistema
 (`libSceXml`, `libSceSqlite`...) e o **Sistema do Vita**: na página **Sistema do Vita**, **Instalar firmware

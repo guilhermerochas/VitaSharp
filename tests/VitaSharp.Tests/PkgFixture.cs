@@ -64,6 +64,17 @@ public static class PkgFixture
         byte[] sfo = Sfo(("CATEGORY", "gd"), ("CONTENT_ID", contentId), ("TITLE", title), ("TITLE_ID", titleId), ("APP_VER", "01.00"));
         var all = new List<(string Name, byte[]? Data)> { ("sce_sys", null), ("sce_sys/param.sfo", sfo) };
         all.AddRange(files);
+        return Package(contentId, 0x15, sfo, all);
+    }
+
+    /// <summary>A PlayStation Mobile package (content type 0x18, no PARAM.SFO block, as pkg2zip reads one) with
+    /// <paramref name="files"/> (item names as in the package: "content/Application/app.exe"...).</summary>
+    public static byte[] BuildPsm(string contentId, params (string Name, byte[]? Data)[] files) =>
+        Package(contentId, 0x18, null, [.. files]);
+
+    private static byte[] Package(string contentId, uint contentType, byte[]? sfo, List<(string Name, byte[]? Data)> all)
+    {
+        sfo ??= [];
 
         // the data area: item table, names, then the file contents (16-aligned)
         var area = new MemoryStream();
@@ -105,13 +116,15 @@ public static class PkgFixture
             BinaryPrimitives.WriteUInt32BigEndian(item[24..], all[i].Data == null ? 4u : 3u);
         }
 
-        const int InfoOffset = 0x100, InfoCount = 3, SfoOffset = InfoOffset + InfoCount * 16;
-        int dataOffset = (SfoOffset + sfo.Length + 15) & ~15;
+        const int InfoOffset = 0x100;
+        int infoCount = sfo.Length > 0 ? 3 : 2;
+        int sfoOffset = InfoOffset + infoCount * 16;
+        int dataOffset = (sfoOffset + sfo.Length + 15) & ~15;
         byte[] pkg = new byte[dataOffset + plain.Length];
         Span<byte> hdr = pkg.AsSpan();
         BinaryPrimitives.WriteUInt32BigEndian(hdr, 0x7F504B47);
         BinaryPrimitives.WriteUInt32BigEndian(hdr[8..], InfoOffset);
-        BinaryPrimitives.WriteUInt32BigEndian(hdr[0xC..], InfoCount);
+        BinaryPrimitives.WriteUInt32BigEndian(hdr[0xC..], (uint)infoCount);
         BinaryPrimitives.WriteUInt32BigEndian(hdr[0x14..], (uint)all.Count);
         BinaryPrimitives.WriteUInt64BigEndian(hdr[0x20..], (ulong)dataOffset);
         BinaryPrimitives.WriteUInt64BigEndian(hdr[0x28..], (ulong)plain.Length);
@@ -133,10 +146,13 @@ public static class PkgFixture
             BinaryPrimitives.WriteUInt32BigEndian(block[8..], a);
             BinaryPrimitives.WriteUInt32BigEndian(block[12..], b);
         }
-        Info(0, 2, 0x15, 0);
+        Info(0, 2, contentType, 0);
         Info(1, 13, 0, (uint)(all.Count * 32));
-        Info(2, 14, SfoOffset, (uint)sfo.Length);
-        sfo.CopyTo(pkg, SfoOffset);
+        if (sfo.Length > 0)
+        {
+            Info(2, 14, (uint)sfoOffset, (uint)sfo.Length);
+            sfo.CopyTo(pkg, sfoOffset);
+        }
 
         byte[] key = new byte[16];
         AesUtil.EcbEncrypt(s_pkgVita2, iv, key);

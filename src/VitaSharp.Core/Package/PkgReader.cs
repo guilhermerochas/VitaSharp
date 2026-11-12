@@ -5,7 +5,9 @@ namespace VitaSharp.Core.Package;
 
 public enum PkgContentType
 {
-    App, Dlc, Patch, Theme, Psp, PspDlc, Psx, PspTheme
+    App, Dlc, Patch, Theme, Psp, PspDlc, Psx, PspTheme,
+    /// <summary>A PlayStation Mobile title (ux0:psm).</summary>
+    Psm,
 }
 
 /// <summary>What a .pkg holds, from its content type (info block 2), PARAM.SFO and DLC install folder (pkg2zip's
@@ -258,6 +260,7 @@ public sealed class PkgReader : IDisposable
         0x15 => PkgContentType.App,
         0x16 => PkgContentType.Dlc,
         0x1F => PkgContentType.Theme,
+        0x18 or 0x1D => PkgContentType.Psm,
         6 => PkgContentType.Psx,
         9 => PkgContentType.PspTheme,
         7 when InstallDirectory.Length > 0 => PkgContentType.PspDlc,
