@@ -51,7 +51,7 @@ public sealed partial class MainWindow
         var shown = all.Where(c => (_captureKind.Length == 0 || c.Kind == _captureKind) && (_captureGame == null || c.TitleId == _captureGame)).ToList();
         var page = new Grid { RowDefinitions = new RowDefinitions("Auto,Auto,*"), Margin = new Thickness(36, 28, 36, 0) };
         var header = new Grid { ColumnDefinitions = new ColumnDefinitions("*,Auto"), Margin = new Thickness(0, 0, 0, 22) };
-        header.Children.Add(_k.VStack(2, _k.Heading(S.Captures, 30), _k.Text(S.CapturesSubtitle(all.Count, S.Size(all.Sum(c => c.Size))), 13.5, color: P.Muted)));
+        header.Children.Add(_k.VStack(2, _k.Heading(S.Captures, 30), _k.Text(S.CapturesSubtitle(all.Count, S.Size(all.Sum(c => c.Size))), 13.5, color: static p => p.Muted)));
         var old = all.Where(c => c.When < DateTime.Now.AddDays(-30)).ToList();
         var actions = _k.HStack(10,
             _k.Secondary(S.DeleteOld(old.Count), "trash", () => _ = DeleteCaptures(old), 44, enabled: old.Count > 0),
@@ -114,27 +114,27 @@ public sealed partial class MainWindow
         var r = new Grid { ColumnDefinitions = new ColumnDefinitions(compact ? "Auto,*,Auto" : "Auto,*,150,110,Auto"), Margin = new Thickness(14, 10) };
         Control thumb = game?.Pic0Path is { } pic
             ? _k.Picture(pic, compact ? 88 : 112, compact ? 50 : 63, 10, decodeWidth: 240)
-            : new Border { Width = compact ? 88 : 112, Height = compact ? 50 : 63, CornerRadius = new CornerRadius(10), Background = Kit.B(P.SurfaceHigh), Child = _k.Icon(c.TitleId == "shell" ? "vita" : "file", 24, P.AccentSoft) };
+            : new Border { Width = compact ? 88 : 112, Height = compact ? 50 : 63, CornerRadius = new CornerRadius(10), Background = Kit.B(static p => p.SurfaceHigh), Child = _k.Icon(c.TitleId == "shell" ? "vita" : "file", 24, static p => p.AccentSoft) };
         r.Children.Add(thumb);
-        var (label, color) = c.Kind switch
+        (string Label, Func<Palette, Color> Color) badge = c.Kind switch
         {
-            CaptureRecording => (S.RecordingBadge, P.Accent),
-            CaptureGpuDump => (S.GpuDumpBadge, P.Warn),
-            _ => (S.DiagnosticBadge, P.Danger),
+            CaptureRecording => (S.RecordingBadge, static p => p.Accent),
+            CaptureGpuDump => (S.GpuDumpBadge, static p => p.Warn),
+            _ => (S.DiagnosticBadge, static p => p.Danger),
         };
-        var title = compact ? _k.HStack(8, _k.Badge(label, color), _k.Text(S.When(c.When), 13, FontWeight.SemiBold))
-                            : _k.HStack(8, _k.Text(CaptureTitle(c.TitleId), 14, FontWeight.SemiBold), _k.Badge(label, color));
-        var tx = _k.VStack(4, title, _k.Text(compact ? $"{System.IO.Path.GetFileName(c.Path)} \u00B7 {S.Size(c.Size)}" : System.IO.Path.GetFileName(c.Path), 12, color: P.Muted));
+        var title = compact ? _k.HStack(8, _k.Badge(badge.Label, badge.Color), _k.Text(S.When(c.When), 13, FontWeight.SemiBold))
+                            : _k.HStack(8, _k.Text(CaptureTitle(c.TitleId), 14, FontWeight.SemiBold), _k.Badge(badge.Label, badge.Color));
+        var tx = _k.VStack(4, title, _k.Text(compact ? $"{System.IO.Path.GetFileName(c.Path)} \u00B7 {S.Size(c.Size)}" : System.IO.Path.GetFileName(c.Path), 12, color: static p => p.Muted));
         tx.Margin = new Thickness(16, 0);
         tx.VerticalAlignment = VerticalAlignment.Center;
         r.Children.Add(Kit.At(tx, col: 1));
         int col = 2;
         if (!compact)
         {
-            r.Children.Add(Kit.At(_k.Text(S.When(c.When), 13, color: P.TextSoft), col: col++));
-            r.Children.Add(Kit.At(_k.Text(S.Size(c.Size), 13, FontWeight.Medium, P.TextSoft), col: col++));
+            r.Children.Add(Kit.At(_k.Text(S.When(c.When), 13, color: static p => p.TextSoft), col: col++));
+            r.Children.Add(Kit.At(_k.Text(S.Size(c.Size), 13, FontWeight.Medium, static p => p.TextSoft), col: col++));
         }
-        var acts = _k.HStack(6, _k.Secondary("", "folder", () => Reveal(c.Path), 36, tip: S.ShowInFolder), _k.Secondary("", "trash", () => _ = DeleteCaptures([c]), 36, P.Danger, tip: S.Delete));
+        var acts = _k.HStack(6, _k.Secondary("", "folder", () => Reveal(c.Path), 36, tip: S.ShowInFolder), _k.Secondary("", "trash", () => _ = DeleteCaptures([c]), 36, static p => p.Danger, tip: S.Delete));
         acts.VerticalAlignment = VerticalAlignment.Center;
         r.Children.Add(Kit.At(acts, col: col));
         return r;

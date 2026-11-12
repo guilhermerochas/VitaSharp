@@ -7,6 +7,7 @@ using Avalonia.Input;
 using Avalonia.Layout;
 using Avalonia.Media;
 using Avalonia.Media.Imaging;
+using System.Runtime.CompilerServices;
 
 namespace VitaSharp.Desktop.Launcher.Ui;
 
@@ -87,47 +88,166 @@ public sealed class Palette
     static Color C(string hex) => Color.Parse(hex);
 }
 
-/// <summary>Building blocks of the launcher pages: text, icons, cards, chips, rows, buttons, bars, all in one palette.</summary>
-public sealed class Kit(Palette p)
+/// <summary>
+/// The theme-dependent parts of the launcher (brushes, gradient stops, shadows, the theme row's icon), each bound to how
+/// its value is chosen from the palette. A theme switch re-evaluates every live one (<see cref="Apply"/>) instead of
+/// building the window again. Held weakly (<see cref="ConditionalWeakTable{TKey,TValue}"/>): a page that is dropped
+/// lets its brushes go, and a binding never keeps its target alive.
+/// </summary>
+public static class ThemeBindings
 {
-    public Palette P { get; } = p;
+    sealed class Bound
+    {
+        public readonly List<Action<Palette>> Updates = new();
+    }
 
+    static readonly ConditionalWeakTable<object, Bound> s_bound = new();
+
+    /// <summary>Runs <paramref name="apply"/> on <paramref name="target"/> now with the current palette, and again on
+    /// every palette change while the target is alive.</summary>
+    public static T Bind<T>(T target, Action<T, Palette> apply) where T : class
+    {
+        apply(target, Palette.Current);
+        Bound bound = s_bound.GetOrCreateValue(target);
+        lock (bound)
+        {
+            bound.Updates.Add(palette => apply(target, palette));
+        }
+
+        return target;
+    }
+
+    /// <summary>Re-evaluates every live binding with <paramref name="palette"/> (called by the theme switch).</summary>
+    public static void Apply(Palette palette)
+    {
+        // a snapshot: an update may create brushes (a hover handler), which must not change the table being walked
+        List<Bound> live = new();
+        foreach (KeyValuePair<object, Bound> entry in s_bound)
+        {
+            live.Add(entry.Value);
+        }
+
+        foreach (Bound bound in live)
+        {
+            Action<Palette>[] updates;
+            lock (bound)
+            {
+                updates = bound.Updates.ToArray();
+            }
+
+            foreach (Action<Palette> update in updates)
+            {
+                update(palette);
+            }
+        }
+    }
+
+    /// <summary>How many objects carry a binding now (tests).</summary>
+    internal static int LiveCount
+    {
+        get
+        {
+            int count = 0;
+            foreach (KeyValuePair<object, Bound> entry in s_bound)
+            {
+                count++;
+            }
+
+            return count;
+        }
+    }
+}
+
+/// <summary>Building blocks of the launcher pages: text, icons, cards, chips, rows, buttons, bars. Every colour is
+/// given as how it is picked from the palette (<c>p => p.Muted</c>), so the theme switch only re-colours
+/// (<see cref="ThemeBindings"/>); colours that never follow the theme (text over cover art) use <see cref="Fixed"/>.</summary>
+public sealed class Kit
+{
     public static readonly FontFamily Inter = new("avares://VitaSharp.Desktop/Assets/Fonts#Inter");
     public static readonly FontFamily Sora = new("avares://VitaSharp.Desktop/Assets/Fonts#Sora");
 
-    public static IBrush B(Color c) => new SolidColorBrush(c);
-    public static IBrush B(Color c, double alpha) => new SolidColorBrush(c, alpha);
+    /// <summary>A brush coloured by <paramref name="pick"/>, re-coloured on every theme switch.</summary>
+    public static IBrush B(Func<Palette, Color> pick)
+    {
+        return ThemeBindings.Bind(new SolidColorBrush(), (brush, palette) => brush.Color = pick(palette));
+    }
+
+    /// <summary>A brush coloured by <paramref name="pick"/> at <paramref name="opacity"/>, re-coloured on every theme switch.</summary>
+    public static IBrush B(Func<Palette, Color> pick, double opacity)
+    {
+        SolidColorBrush brush = new() { Opacity = opacity };
+        return ThemeBindings.Bind(brush, (target, palette) => target.Color = pick(palette));
+    }
+
+    /// <summary>A brush whose colour and opacity both depend on the theme.</summary>
+    public static IBrush B(Func<Palette, Color> pick, Func<Palette, double> opacity)
+    {
+        return ThemeBindings.Bind(new SolidColorBrush(), (brush, palette) =>
+        {
+            brush.Color = pick(palette);
+            brush.Opacity = opacity(palette);
+        });
+    }
+
+    /// <summary>A brush that keeps its colour in every theme (overlays on cover art, the dialog dimmer).</summary>
+    public static IBrush Fixed(Color color, double opacity = 1)
+    {
+        return new SolidColorBrush(color, opacity);
+    }
+
+    /// <summary>A gradient stop coloured by <paramref name="pick"/> with the alpha <paramref name="alpha"/>.</summary>
+    public static GradientStop Stop(Func<Palette, Color> pick, byte alpha, double offset)
+    {
+        return ThemeBindings.Bind(new GradientStop { Offset = offset }, (stop, palette) =>
+        {
+            Color color = pick(palette);
+            stop.Color = Color.FromArgb(alpha, color.R, color.G, color.B);
+        });
+    }
+
+    /// <summary><paramref name="color"/> with the alpha <paramref name="alpha"/>.</summary>
+    public static Color WithAlpha(Color color, byte alpha)
+    {
+        return Color.FromArgb(alpha, color.R, color.G, color.B);
+    }
+
+    /// <summary>The light theme's drop shadow on <paramref name="border"/> (the dark theme draws none).</summary>
+    public static T LightShadow<T>(T border, string shadow) where T : Border
+    {
+        BoxShadows shadows = BoxShadows.Parse(shadow);
+        return ThemeBindings.Bind(border, (target, palette) => target.BoxShadow = palette.Dark ? default : shadows);
+    }
 
     // ------------------------------------------------------------------ text
 
-    public TextBlock Text(string text, double size = 14, FontWeight weight = FontWeight.Normal, Color? color = null, bool heading = false) => new()
+    public TextBlock Text(string text, double size = 14, FontWeight weight = FontWeight.Normal, Func<Palette, Color>? color = null, bool heading = false) => new()
     {
         Text = text,
         FontSize = size,
         FontWeight = weight,
         FontFamily = heading ? Sora : Inter,
-        Foreground = B(color ?? P.Text),
+        Foreground = B(color ?? (static p => p.Text)),
         TextTrimming = TextTrimming.CharacterEllipsis,
         VerticalAlignment = VerticalAlignment.Center,
     };
 
-    public TextBlock Wrap(string text, double size = 13, Color? color = null, double maxWidth = double.PositiveInfinity) => new()
+    public TextBlock Wrap(string text, double size = 13, Func<Palette, Color>? color = null, double maxWidth = double.PositiveInfinity) => new()
     {
         Text = text,
         FontSize = size,
         FontFamily = Inter,
-        Foreground = B(color ?? P.Muted),
+        Foreground = B(color ?? (static p => p.Muted)),
         TextWrapping = TextWrapping.Wrap,
         MaxWidth = maxWidth,
     };
 
     public TextBlock Heading(string text, double size) => Text(text, size, FontWeight.Bold, heading: true);
 
-    public TextBlock Kicker(string text, Color? color = null)
+    public TextBlock Kicker(string text, Func<Palette, Color>? color = null)
     {
-        var t = Text(text.ToUpperInvariant(), 11.5, FontWeight.SemiBold, color ?? P.Muted);
-        t.LetterSpacing = 1.2;
-        return t;
+        TextBlock kicker = Text(text.ToUpperInvariant(), 11.5, FontWeight.SemiBold, color ?? (static p => p.Muted));
+        kicker.LetterSpacing = 1.2;
+        return kicker;
     }
 
     // ------------------------------------------------------------------ icons (Lucide-style 24x24 strokes)
@@ -177,16 +297,17 @@ public sealed class Kit(Palette p)
         ["alert"] = "M12 9v4 M12 17h.01 M10.29 3.86L1.82 18a2 2 0 0 0 1.71 3h16.94a2 2 0 0 0 1.71-3L13.71 3.86a2 2 0 0 0-3.42 0z",
     };
 
-    public Control Icon(string name, double size = 20, Color? color = null, double stroke = 1.8, bool fill = false)
+    public Control Icon(string name, double size = 20, Func<Palette, Color>? color = null, double stroke = 1.8, bool fill = false)
     {
+        Func<Palette, Color> pick = color ?? (static p => p.Text);
         var path = new Avalonia.Controls.Shapes.Path
         {
             Data = Geometry.Parse(IconPaths[name]),
-            Stroke = B(color ?? P.Text),
+            Stroke = B(pick),
             StrokeThickness = name == "more" ? 3.2 : stroke,
             StrokeLineCap = PenLineCap.Round,
             StrokeJoin = PenLineJoin.Round,
-            Fill = fill ? B(color ?? P.Text) : null,
+            Fill = fill ? B(pick) : null,
         };
         return new Viewbox
         {
@@ -199,29 +320,51 @@ public sealed class Kit(Palette p)
     }
 
     /// <summary>The square tile with an icon used by setting rows (the Android "icon chip").</summary>
-    public Border IconChip(string icon, double size = 40, Color? bg = null, Color? fg = null) => new()
+    public Border IconChip(string icon, double size = 40, Func<Palette, Color>? bg = null, Func<Palette, Color>? fg = null)
+    {
+        return ChipAround(Icon(icon, size * 0.5, fg ?? (static p => p.AccentSoft)), size, bg);
+    }
+
+    /// <summary>An icon chip whose icon depends on the theme (the sun or the moon on the theme row).</summary>
+    public Border IconChip(Func<Palette, string> icon, double size = 40)
+    {
+        return ChipAround(Icon(icon, size * 0.5, static p => p.AccentSoft), size, null);
+    }
+
+    /// <summary>An icon whose shape depends on the theme: its geometry is swapped on every theme switch.</summary>
+    public Control Icon(Func<Palette, string> name, double size = 20, Func<Palette, Color>? color = null)
+    {
+        Control icon = Icon(name(Palette.Current), size, color);
+        Avalonia.Controls.Shapes.Path path = (Avalonia.Controls.Shapes.Path)((Canvas)((Viewbox)icon).Child!).Children[0];
+        ThemeBindings.Bind(path, (target, palette) => target.Data = Geometry.Parse(IconPaths[name(palette)]));
+        return icon;
+    }
+
+    static Border ChipAround(Control icon, double size, Func<Palette, Color>? bg) => new()
     {
         Width = size,
         Height = size,
         CornerRadius = new CornerRadius(size * 0.3),
-        Background = B(bg ?? P.Highlight),
-        Child = Icon(icon, size * 0.5, fg ?? P.AccentSoft),
+        Background = B(bg ?? (static p => p.Highlight)),
+        Child = icon,
     };
 
     // ------------------------------------------------------------------ surfaces
 
-    public Border Card(Control child, double radius = 20, Thickness? padding = null) => new()
+    public Border Card(Control child, double radius = 20, Thickness? padding = null)
     {
-        Background = B(P.Surface),
-        BorderBrush = B(P.Border),
-        BorderThickness = new Thickness(1),
-        CornerRadius = new CornerRadius(radius),
-        Padding = padding ?? new Thickness(20),
-        Child = child,
-        BoxShadow = P.Dark ? default : BoxShadows.Parse("0 2 8 0 #10000000"),
-    };
+        return LightShadow(new Border
+        {
+            Background = B(static p => p.Surface),
+            BorderBrush = B(static p => p.Border),
+            BorderThickness = new Thickness(1),
+            CornerRadius = new CornerRadius(radius),
+            Padding = padding ?? new Thickness(20),
+            Child = child,
+        }, "0 2 8 0 #10000000");
+    }
 
-    public Border Divider(double inset = 16) => new() { Height = 1, Background = B(P.Border), Margin = new Thickness(inset, 0) };
+    public Border Divider(double inset = 16) => new() { Height = 1, Background = B(static p => p.Border), Margin = new Thickness(inset, 0) };
 
     // decoded images by path, scaled down to the size they are shown at (icon0 128 px, pic0 960x544)
     static readonly Dictionary<(string, int), Bitmap?> Images = new();
@@ -281,14 +424,14 @@ public sealed class Kit(Palette p)
         }
         else
         {
-            b.Background = B(P.SurfaceHigh);
+            b.Background = B(static p => p.SurfaceHigh);
             b.Child = new TextBlock
             {
                 Text = fallback,
                 FontFamily = Sora,
                 FontWeight = FontWeight.Bold,
                 FontSize = Math.Max(10, Math.Min(width, height) * 0.28),
-                Foreground = B(P.Text, 0.85),
+                Foreground = B(static p => p.Text, 0.85),
                 HorizontalAlignment = HorizontalAlignment.Center,
                 VerticalAlignment = VerticalAlignment.Center,
             };
@@ -296,12 +439,12 @@ public sealed class Kit(Palette p)
         return b;
     }
 
-    /// <summary>A gradient from transparent to <paramref name="to"/> (fades cover art into the page).</summary>
-    public static LinearGradientBrush Fade(Color to, RelativePoint start, RelativePoint end, double from = 0, double toAlpha = 1) => new()
+    /// <summary>A gradient from transparent to the colour <paramref name="to"/> picks (fades cover art into the page).</summary>
+    public static LinearGradientBrush Fade(Func<Palette, Color> to, RelativePoint start, RelativePoint end, double from = 0, double toAlpha = 1) => new()
     {
         StartPoint = start,
         EndPoint = end,
-        GradientStops = { new GradientStop(Color.FromArgb((byte)(from * 255), to.R, to.G, to.B), 0), new GradientStop(Color.FromArgb((byte)(toAlpha * 255), to.R, to.G, to.B), 1) },
+        GradientStops = { Stop(to, (byte)(from * 255), 0), Stop(to, (byte)(toAlpha * 255), 1) },
     };
 
     public static RelativePoint Rel(double x, double y) => new(x, y, RelativeUnit.Relative);
@@ -341,7 +484,7 @@ public sealed class Kit(Palette p)
     public Button Chip(string text, bool selected, Action onClick, string? icon = null, bool dropdown = false)
     {
         var row = new StackPanel { Orientation = Orientation.Horizontal, Spacing = 6, VerticalAlignment = VerticalAlignment.Center };
-        var fg = selected ? P.OnAccent : P.TextSoft;
+        Func<Palette, Color> fg = selected ? static p => p.OnAccent : static p => p.TextSoft;
         if (icon != null)
         {
             row.Children.Add(Icon(icon, 15, fg));
@@ -350,7 +493,7 @@ public sealed class Kit(Palette p)
         row.Children.Add(Text(text, 13, selected ? FontWeight.SemiBold : FontWeight.Medium, fg));
         if (dropdown)
         {
-            row.Children.Add(Icon("chevron-down", 14, selected ? fg : P.Muted));
+            row.Children.Add(Icon("chevron-down", 14, selected ? fg : static p => p.Muted));
         }
 
         return Click(new Border
@@ -359,8 +502,8 @@ public sealed class Kit(Palette p)
             Padding = new Thickness(14, 0),
             CornerRadius = new CornerRadius(17),
             Child = row,
-            Background = B(selected ? P.Accent : Colors.Transparent),
-            BorderBrush = B(selected ? P.Accent : P.BorderStrong),
+            Background = selected ? B(static p => p.Accent) : Fixed(Colors.Transparent),
+            BorderBrush = B(p => selected ? p.Accent : p.BorderStrong),
             BorderThickness = new Thickness(1),
         }, onClick);
     }
@@ -371,7 +514,7 @@ public sealed class Kit(Palette p)
         var flyout = new MenuFlyout { Placement = PlacementMode.BottomEdgeAlignedLeft };
         foreach (var (label, sel, pick) in items)
         {
-            var mi = new MenuItem { Header = label, Icon = sel ? Icon("check", 14, P.Accent, 2.2) : null };
+            var mi = new MenuItem { Header = label, Icon = sel ? Icon("check", 14, static p => p.Accent, 2.2) : null };
             mi.Click += (_, _) => pick();
             flyout.Items.Add(mi);
         }
@@ -385,24 +528,23 @@ public sealed class Kit(Palette p)
         var row = new StackPanel { Orientation = Orientation.Horizontal, Spacing = 10, HorizontalAlignment = HorizontalAlignment.Center, VerticalAlignment = VerticalAlignment.Center };
         if (icon != null)
         {
-            row.Children.Add(Icon(icon, icon is "play" or "stop" ? 16 : 18, P.OnAccent, fill: icon is "play" or "stop"));
+            row.Children.Add(Icon(icon, icon is "play" or "stop" ? 16 : 18, static p => p.OnAccent, fill: icon is "play" or "stop"));
         }
 
         if (text.Length > 0)
         {
-            row.Children.Add(Text(text, 15, FontWeight.SemiBold, P.OnAccent));
+            row.Children.Add(Text(text, 15, FontWeight.SemiBold, static p => p.OnAccent));
         }
 
-        return new Border
+        return LightShadow(new Border
         {
             Height = height,
             MinWidth = minWidth,
             Padding = new Thickness(text.Length > 0 ? 22 : 0, 0),
             CornerRadius = new CornerRadius(16),
-            Background = B(P.Accent),
+            Background = B(static p => p.Accent),
             Child = row,
-            BoxShadow = P.Dark ? default : BoxShadows.Parse("0 6 16 0 #333767DB"),
-        };
+        }, "0 6 16 0 #333767DB");
     }
 
     public Button Primary(string text, string? icon, Action onClick, double height = 48, double minWidth = 150, bool enabled = true, string? tip = null)
@@ -416,17 +558,17 @@ public sealed class Kit(Palette p)
         return Click(v, onClick, tip, enabled);
     }
 
-    public Border SecondaryVisual(string text, string? icon = null, double height = 48, Color? fg = null)
+    public Border SecondaryVisual(string text, string? icon = null, double height = 48, Func<Palette, Color>? fg = null)
     {
         var row = new StackPanel { Orientation = Orientation.Horizontal, Spacing = 9, HorizontalAlignment = HorizontalAlignment.Center, VerticalAlignment = VerticalAlignment.Center };
         if (icon != null)
         {
-            row.Children.Add(Icon(icon, 18, fg ?? P.Text, fill: icon is "play" or "stop"));
+            row.Children.Add(Icon(icon, 18, fg ?? (static p => p.Text), fill: icon is "play" or "stop"));
         }
 
         if (text.Length > 0)
         {
-            row.Children.Add(Text(text, 14, FontWeight.SemiBold, fg ?? P.Text));
+            row.Children.Add(Text(text, 14, FontWeight.SemiBold, fg ?? (static p => p.Text)));
         }
 
         return new Border
@@ -435,14 +577,14 @@ public sealed class Kit(Palette p)
             MinWidth = height,
             Padding = new Thickness(text.Length > 0 ? 18 : 0, 0),
             CornerRadius = new CornerRadius(Math.Min(16, height / 2.6)),
-            Background = B(P.Surface),
-            BorderBrush = B(P.BorderStrong),
+            Background = B(static p => p.Surface),
+            BorderBrush = B(static p => p.BorderStrong),
             BorderThickness = new Thickness(1),
             Child = row,
         };
     }
 
-    public Button Secondary(string text, string? icon, Action onClick, double height = 48, Color? fg = null, bool enabled = true, string? tip = null)
+    public Button Secondary(string text, string? icon, Action onClick, double height = 48, Func<Palette, Color>? fg = null, bool enabled = true, string? tip = null)
     {
         var v = SecondaryVisual(text, icon, height, fg);
         if (!enabled)
@@ -488,8 +630,8 @@ public sealed class Kit(Palette p)
         Width = size,
         Height = size,
         CornerRadius = new CornerRadius(size / 2),
-        Background = B(P.Accent),
-        Child = new Border { Margin = new Thickness(size * 0.08, 0, 0, 0), Child = Icon("play", size * 0.38, P.OnAccent, fill: true) },
+        Background = B(static p => p.Accent),
+        Child = new Border { Margin = new Thickness(size * 0.08, 0, 0, 0), Child = Icon("play", size * 0.38, static p => p.OnAccent, fill: true) },
     };
 
     public ToggleSwitch Switch(bool on, Action<bool> changed, bool enabled = true)
@@ -508,8 +650,8 @@ public sealed class Kit(Palette p)
             Width = width,
             MinHeight = 36,
             CornerRadius = new CornerRadius(12),
-            Background = B(P.Background),
-            BorderBrush = B(P.BorderStrong),
+            Background = B(static p => p.Background),
+            BorderBrush = B(static p => p.BorderStrong),
             FontFamily = Inter,
             IsEnabled = enabled,
         };
@@ -533,8 +675,8 @@ public sealed class Kit(Palette p)
             MinHeight = 36,
             CornerRadius = new CornerRadius(12),
             FontFamily = Inter,
-            Background = B(P.Background),
-            BorderBrush = B(P.BorderStrong),
+            Background = B(static p => p.Background),
+            BorderBrush = B(static p => p.BorderStrong),
             VerticalContentAlignment = VerticalAlignment.Center,
         };
         if (password != '\0')
@@ -556,8 +698,8 @@ public sealed class Kit(Palette p)
             CornerRadius = new CornerRadius(12),
             Child = row,
             VerticalAlignment = VerticalAlignment.Center,
-            Background = B(P.Dark ? P.Background : P.Sidebar),
-            BorderBrush = B(P.Border),
+            Background = B(static p => p.Dark ? p.Background : p.Sidebar),
+            BorderBrush = B(static p => p.Border),
             BorderThickness = new Thickness(1),
         };
         void Build()
@@ -570,25 +712,30 @@ public sealed class Kit(Palette p)
                 var inner = new StackPanel { Orientation = Orientation.Horizontal, Spacing = 6, HorizontalAlignment = HorizontalAlignment.Center, VerticalAlignment = VerticalAlignment.Center };
                 if (icon != null)
                 {
-                    inner.Children.Add(Icon(icon, 15, sel ? P.Text : P.Muted));
+                    inner.Children.Add(Icon(icon, 15, p => sel ? p.Text : p.Muted));
                 }
 
                 if (text.Length > 0)
                 {
-                    inner.Children.Add(Text(text, 13, sel ? FontWeight.SemiBold : FontWeight.Medium, sel ? P.Text : P.Muted));
+                    inner.Children.Add(Text(text, 13, sel ? FontWeight.SemiBold : FontWeight.Medium, p => sel ? p.Text : p.Muted));
                 }
 
                 int index = i;
-                row.Children.Add(Click(new Border
+                Border segment = new()
                 {
                     Height = 30,
                     MinWidth = 34,
                     Padding = new Thickness(text.Length > 0 ? 12 : 8, 0),
                     CornerRadius = new CornerRadius(9),
                     Child = inner,
-                    Background = sel ? B(P.Dark ? P.SurfaceHigh : P.Surface) : Brushes.Transparent,
-                    BoxShadow = sel && !P.Dark ? BoxShadows.Parse("0 1 3 0 #22000000") : default,
-                }, () =>
+                    Background = sel ? B(static p => p.Dark ? p.SurfaceHigh : p.Surface) : Brushes.Transparent,
+                };
+                if (sel)
+                {
+                    LightShadow(segment, "0 1 3 0 #22000000");
+                }
+
+                row.Children.Add(Click(segment, () =>
                 {
                     if (selected == index)
                     {
@@ -605,16 +752,16 @@ public sealed class Kit(Palette p)
         return host;
     }
 
-    public Grid Bar(double fraction, double height = 5, Color? fill = null)
+    public Grid Bar(double fraction, double height = 5, Func<Palette, Color>? fill = null)
     {
         fraction = double.IsFinite(fraction) ? Math.Clamp(fraction, 0, 1) : 0;
         var g = new Grid { Height = height, VerticalAlignment = VerticalAlignment.Center, ColumnDefinitions = new ColumnDefinitions($"{fraction * 1000:F0}*,{(1 - fraction) * 1000:F0}*") };
-        g.Children.Add(new Border { Background = B(P.Track), CornerRadius = new CornerRadius(height / 2), [Grid.ColumnSpanProperty] = 2 });
-        g.Children.Add(new Border { Background = B(fill ?? P.Accent), CornerRadius = new CornerRadius(height / 2) });
+        g.Children.Add(new Border { Background = B(static p => p.Track), CornerRadius = new CornerRadius(height / 2), [Grid.ColumnSpanProperty] = 2 });
+        g.Children.Add(new Border { Background = B(fill ?? (static p => p.Accent)), CornerRadius = new CornerRadius(height / 2) });
         return g;
     }
 
-    public Border Badge(string text, Color fg, Color? bg = null) => new()
+    public Border Badge(string text, Func<Palette, Color> fg, Func<Palette, Color>? bg = null) => new()
     {
         Padding = new Thickness(9, 3),
         CornerRadius = new CornerRadius(8),
@@ -629,20 +776,31 @@ public sealed class Kit(Palette p)
         Padding = new Thickness(7, 2),
         CornerRadius = new CornerRadius(6),
         VerticalAlignment = VerticalAlignment.Center,
-        BorderBrush = B(onAccent ? P.OnAccent : P.BorderStrong, onAccent ? 0.35 : 1),
+        BorderBrush = B(p => onAccent ? p.OnAccent : p.BorderStrong, onAccent ? 0.35 : 1),
         BorderThickness = new Thickness(1),
-        Child = Text(text, 11, FontWeight.SemiBold, onAccent ? P.OnAccent : P.Muted),
+        Child = Text(text, 11, FontWeight.SemiBold, p => onAccent ? p.OnAccent : p.Muted),
     };
 
-    public Border Dot(Color c, double size = 8) => new() { Width = size, Height = size, CornerRadius = new CornerRadius(size / 2), Background = B(c), VerticalAlignment = VerticalAlignment.Center };
+    public Border Dot(Func<Palette, Color> c, double size = 8) => new() { Width = size, Height = size, CornerRadius = new CornerRadius(size / 2), Background = B(c), VerticalAlignment = VerticalAlignment.Center };
 
     /// <summary>A setting row: icon chip, title, detail, then a control on the right (or a chevron when it opens something).</summary>
     public Control Row(string? icon, string title, string? detail = null, Control? right = null, Action? open = null, string? tip = null)
     {
+        return RowWith(icon == null ? null : IconChip(icon, 38), title, detail, right, open, tip);
+    }
+
+    /// <summary>A setting row whose icon depends on the theme (the theme row: the moon in the dark, the sun in the light).</summary>
+    public Control Row(Func<Palette, string> icon, string title, string? detail = null, Control? right = null, Action? open = null, string? tip = null)
+    {
+        return RowWith(IconChip(icon, 38), title, detail, right, open, tip);
+    }
+
+    Control RowWith(Border? chip, string title, string? detail, Control? right, Action? open, string? tip)
+    {
         var g = new Grid { ColumnDefinitions = new ColumnDefinitions("Auto,*,Auto,Auto"), MinHeight = 56, Margin = new Thickness(16, 7), Background = Brushes.Transparent };
-        if (icon != null)
+        if (chip != null)
         {
-            g.Children.Add(new Border { Margin = new Thickness(0, 0, 14, 0), Child = IconChip(icon, 38), VerticalAlignment = VerticalAlignment.Center });
+            g.Children.Add(new Border { Margin = new Thickness(0, 0, 14, 0), Child = chip, VerticalAlignment = VerticalAlignment.Center });
         }
 
         var texts = new StackPanel { Spacing = 3, VerticalAlignment = VerticalAlignment.Center };
@@ -663,7 +821,7 @@ public sealed class Kit(Palette p)
         }
         if (open != null)
         {
-            var c = Icon("chevron-right", 18, P.Faint);
+            var c = Icon("chevron-right", 18, static p => p.Faint);
             c.Margin = new Thickness(10, 0, 0, 0);
             Grid.SetColumn(c, 3);
             g.Children.Add(c);
@@ -709,12 +867,12 @@ public sealed class Kit(Palette p)
     public Grid Dashed(Control child, double height, double radius = 22)
     {
         var g = new Grid { Height = height };
-        g.Children.Add(new Border { CornerRadius = new CornerRadius(radius), Background = B(P.Accent, P.Dark ? 0.05 : 0.04) });
+        g.Children.Add(new Border { CornerRadius = new CornerRadius(radius), Background = B(static p => p.Accent, static p => p.Dark ? 0.05 : 0.04) });
         g.Children.Add(new Rectangle
         {
             RadiusX = radius,
             RadiusY = radius,
-            Stroke = B(P.Accent, 0.55),
+            Stroke = B(static p => p.Accent, 0.55),
             StrokeThickness = 1.5,
             StrokeDashArray = new AvaloniaList<double> { 5, 4 },
         });

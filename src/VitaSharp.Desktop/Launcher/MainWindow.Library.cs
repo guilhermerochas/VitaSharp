@@ -32,7 +32,7 @@ public sealed partial class MainWindow
         _resultsHost = new Border();
 
         var header = new Grid { ColumnDefinitions = new ColumnDefinitions("*,Auto,Auto,Auto,Auto"), Margin = new Thickness(0, 0, 0, 20) };
-        header.Children.Add(_k.VStack(2, _k.Heading(S.Library, 30), _k.Text(S.LibrarySubtitle(_all.Count, _all.Count(g => g.Category == "gd")), 13.5, color: P.Muted)));
+        header.Children.Add(_k.VStack(2, _k.Heading(S.Library, 30), _k.Text(S.LibrarySubtitle(_all.Count, _all.Count(g => g.Category == "gd")), 13.5, color: static p => p.Muted)));
         _search = new TextBox
         {
             Text = _search?.Text ?? "",
@@ -43,14 +43,14 @@ public sealed partial class MainWindow
             VerticalContentAlignment = VerticalAlignment.Center,
             Padding = new Thickness(40, 0, 12, 0),
             FontSize = 14,
-            Background = Kit.B(P.Surface),
-            BorderBrush = Kit.B(P.BorderStrong),
+            Background = Kit.B(static p => p.Surface),
+            BorderBrush = Kit.B(static p => p.BorderStrong),
             VerticalAlignment = VerticalAlignment.Center,
         };
         _search.TextChanged += (_, _) => RebuildResults();
         var searchBox = new Grid { Margin = new Thickness(0, 0, 12, 0), VerticalAlignment = VerticalAlignment.Center };
         searchBox.Children.Add(_search);
-        searchBox.Children.Add(new Border { Margin = new Thickness(14, 0, 0, 0), HorizontalAlignment = HorizontalAlignment.Left, IsHitTestVisible = false, Child = _k.Icon("search", 18, P.Muted) });
+        searchBox.Children.Add(new Border { Margin = new Thickness(14, 0, 0, 0), HorizontalAlignment = HorizontalAlignment.Left, IsHitTestVisible = false, Child = _k.Icon("search", 18, static p => p.Muted) });
         searchBox.Children.Add(new Border { Margin = new Thickness(0, 0, 10, 0), HorizontalAlignment = HorizontalAlignment.Right, IsHitTestVisible = false, Child = _k.Kbd("Ctrl F") });
         header.Children.Add(Kit.At(searchBox, col: 1));
         var refresh = _k.Secondary("", "refresh", () => Refresh(), 46, tip: S.RefreshTip);
@@ -94,7 +94,7 @@ public sealed partial class MainWindow
         chips.Children.Add(_k.Chip(S.FilterPlayable(_all.Count(g => g.Category == "gd")), _filter == FilterPlayable, () => SetFilter(FilterPlayable)));
         chips.Children.Add(_k.Chip(S.FilterRecent(recent), _filter == FilterRecent, () => SetFilter(FilterRecent)));
         chips.Children.Add(_k.Chip(S.FilterTrophies, _filter == FilterTrophies, () => SetFilter(FilterTrophies)));
-        chips.Children.Add(new Border { Width = 1, Height = 22, Background = Kit.B(P.BorderStrong), Margin = new Thickness(6, 6), VerticalAlignment = VerticalAlignment.Center });
+        chips.Children.Add(new Border { Width = 1, Height = 22, Background = Kit.B(static p => p.BorderStrong), Margin = new Thickness(6, 6), VerticalAlignment = VerticalAlignment.Center });
         var regions = _all.Select(g => g.Region).Distinct().OrderBy(r => r).ToList();
         var regionItems = new List<(string, bool, Action)> { (S.AllRegions, _settings.LibraryRegion == "", () => { _settings.LibraryRegion = ""; SaveSettings(); RebuildFilters(); RebuildResults(); }) };
         foreach (var r in regions)
@@ -174,7 +174,7 @@ public sealed partial class MainWindow
                 ClipToBounds = true,
                 Child = shell,
                 Margin = new Thickness(0, 0, 0, 24),
-                BorderBrush = Kit.B(P.Border),
+                BorderBrush = Kit.B(static p => p.Border),
                 BorderThickness = new Thickness(1),
                 Background = Brushes.Black,
             };
@@ -212,7 +212,7 @@ public sealed partial class MainWindow
         g.Children.Add(_k.Text(title, 17, FontWeight.SemiBold));
         if (link != null && open != null)
         {
-            g.Children.Add(Kit.At(Kit.Click(_k.Text(link, 13, FontWeight.SemiBold, P.Accent), open), col: 1));
+            g.Children.Add(Kit.At(Kit.Click(_k.Text(link, 13, FontWeight.SemiBold, static p => p.Accent), open), col: 1));
         }
 
         return g;
@@ -233,13 +233,13 @@ public sealed partial class MainWindow
                 EndPoint = Kit.Rel(1, 0),
                 GradientStops =
                 {
-                    new GradientStop(Color.FromArgb(250, P.Scrim.R, P.Scrim.G, P.Scrim.B), 0),
-                    new GradientStop(Color.FromArgb(225, P.Scrim.R, P.Scrim.G, P.Scrim.B), 0.42),
-                    new GradientStop(Color.FromArgb(40, P.Scrim.R, P.Scrim.G, P.Scrim.B), 1),
+                    Kit.Stop(static p => p.Scrim, 250, 0),
+                    Kit.Stop(static p => p.Scrim, 225, 0.42),
+                    Kit.Stop(static p => p.Scrim, 40, 1),
                 },
             },
         });
-        card.Children.Add(new Border { CornerRadius = new CornerRadius(24), BorderBrush = Kit.B(P.Border), BorderThickness = new Thickness(1), IsHitTestVisible = false });
+        card.Children.Add(new Border { CornerRadius = new CornerRadius(24), BorderBrush = Kit.B(static p => p.Border), BorderThickness = new Thickness(1), IsHitTestVisible = false });
 
         var row = new Grid { ColumnDefinitions = new ColumnDefinitions("Auto,*"), Margin = new Thickness(28, 0) };
         var icon = _k.Picture(g.IconPath, 132, 132, 30, g.Initials);
@@ -247,13 +247,13 @@ public sealed partial class MainWindow
         icon.BoxShadow = BoxShadows.Parse("0 10 30 0 #55000000");
         row.Children.Add(Kit.Click(icon, () => OpenOrGoTo(g), IsRunningGame(g) ? S.GoToGameTip : S.OpenGamePage));
         var info = new StackPanel { Spacing = 7, Margin = new Thickness(26, 0, 0, 0), VerticalAlignment = VerticalAlignment.Center, MaxWidth = 560, HorizontalAlignment = HorizontalAlignment.Left };
-        info.Children.Add(_k.Kicker(S.ContinuePlaying, P.Accent));
+        info.Children.Add(_k.Kicker(S.ContinuePlaying, static p => p.Accent));
         info.Children.Add(Kit.Click(_k.Heading(g.Title, 26), () => OpenOrGoTo(g), IsRunningGame(g) ? S.GoToGameTip : S.OpenGamePage));
         var meta = _k.HStack(14, IconText("clock", S.PlayedSummary(PlayOf(g.TitleId))));
         var (got, total) = TrophyCount(g);
         if (total > 0)
         {
-            meta.Children.Add(IconText("trophy", $"{got}/{total}", P.Gold));
+            meta.Children.Add(IconText("trophy", $"{got}/{total}", static p => p.Gold));
             meta.Children.Add(new Border { Width = 120, Child = _k.Bar(got / (double)total) });
         }
         info.Children.Add(meta);
@@ -276,7 +276,7 @@ public sealed partial class MainWindow
         if (IsRunningGame(g))
         {
             return _k.HStack(10, _k.Primary(S.GoToGame, "monitor", GoToGame, height, minWidth, tip: S.GoToGameTip),
-                _k.Secondary(_stopAsked ? S.ForceStop : S.Stop, "stop", StopRunning, height, P.Danger));
+                _k.Secondary(_stopAsked ? S.ForceStop : S.Stop, "stop", StopRunning, height, static p => p.Danger));
         }
 
         return _k.Primary(S.Play, "play", () => Launch(g), height, minWidth, _running == null, _running != null ? S.AlreadyRunning(_runningTitle ?? "") : null);
@@ -295,9 +295,9 @@ public sealed partial class MainWindow
         }
     }
 
-    Control IconText(string icon, string text, Color? iconColor = null, double size = 13)
+    Control IconText(string icon, string text, Func<Palette, Color>? iconColor = null, double size = 13)
     {
-        var s = _k.HStack(6, _k.Icon(icon, size + 2, iconColor ?? P.Muted), _k.Text(text, size, color: P.TextSoft));
+        var s = _k.HStack(6, _k.Icon(icon, size + 2, iconColor ?? (static p => p.Muted)), _k.Text(text, size, color: static p => p.TextSoft));
         s.VerticalAlignment = VerticalAlignment.Center;
         return s;
     }
@@ -333,13 +333,13 @@ public sealed partial class MainWindow
         {
             CornerRadius = new CornerRadius(18, 18, 0, 0),
             IsHitTestVisible = false,
-            Background = Kit.Fade(P.Surface, Kit.Rel(0, 0.35), Kit.Rel(0, 1)),
+            Background = Kit.Fade(static p => p.Surface, Kit.Rel(0, 0.35), Kit.Rel(0, 1)),
         });
         var icon = _k.Picture(g.IconPath, 64, 64, 16, g.Initials, 128);
         icon.HorizontalAlignment = HorizontalAlignment.Left;
         icon.VerticalAlignment = VerticalAlignment.Bottom;
         icon.Margin = new Thickness(14, 0, 0, -6);
-        icon.BorderBrush = Kit.B(P.Surface);
+        icon.BorderBrush = Kit.B(static p => p.Surface);
         icon.BorderThickness = new Thickness(2);
         art.Children.Add(icon);
         art.Children.Add(new Border
@@ -349,8 +349,8 @@ public sealed partial class MainWindow
             Margin = new Thickness(10),
             Padding = new Thickness(8, 3),
             CornerRadius = new CornerRadius(8),
-            Background = Kit.B(Color.Parse("#0B0E13"), 0.62),
-            Child = _k.Text(g.Region, 11, FontWeight.SemiBold, Color.Parse("#E8ECF2")),
+            Background = Kit.Fixed(OverCoverShade, 0.62),
+            Child = _k.Text(g.Region, 11, FontWeight.SemiBold, static _ => OverCoverText),
         });
         bool running = _running != null && _runningGame?.TitleId == g.TitleId;
         if (running)
@@ -360,7 +360,7 @@ public sealed partial class MainWindow
                 HorizontalAlignment = HorizontalAlignment.Left,
                 VerticalAlignment = VerticalAlignment.Top,
                 Margin = new Thickness(10),
-                Child = _k.Badge(S.RunningBadge, P.Ok, Color.Parse("#0B0E13")),
+                Child = _k.Badge(S.RunningBadge, static p => p.Ok, static _ => OverCoverShade),
             });
         }
 
@@ -369,7 +369,7 @@ public sealed partial class MainWindow
         var hover = new Border
         {
             CornerRadius = new CornerRadius(18, 18, 0, 0),
-            Background = Kit.B(Color.Parse("#0B0E13"), 0.55),
+            Background = Kit.Fixed(OverCoverShade, 0.55),
             IsVisible = false,
             Child = actions,
         };
@@ -377,13 +377,13 @@ public sealed partial class MainWindow
 
         var text = new StackPanel { Spacing = 4, Margin = new Thickness(14, 14, 14, 14) };
         text.Children.Add(_k.Text(g.Title, 14.5, FontWeight.SemiBold));
-        text.Children.Add(_k.Text(g.Version.Length > 0 ? $"{g.TitleId} \u00B7 v{g.Version}" : g.TitleId, 12, color: P.Muted));
+        text.Children.Add(_k.Text(g.Version.Length > 0 ? $"{g.TitleId} \u00B7 v{g.Version}" : g.TitleId, 12, color: static p => p.Muted));
         var foot = new Grid { ColumnDefinitions = new ColumnDefinitions("Auto,*,Auto"), Margin = new Thickness(0, 6, 0, 0) };
         foot.Children.Add(PlayedOrCategory(g));
         var (got, total) = TrophyCount(g);
         if (total > 0)
         {
-            foot.Children.Add(Kit.At(IconText("trophy", $"{got}/{total}", P.Gold, 12), col: 2));
+            foot.Children.Add(Kit.At(IconText("trophy", $"{got}/{total}", static p => p.Gold, 12), col: 2));
         }
 
         text.Children.Add(foot);
@@ -395,22 +395,22 @@ public sealed partial class MainWindow
         {
             Margin = new Thickness(0, 0, 18, 18),
             CornerRadius = new CornerRadius(18),
-            Background = Kit.B(P.Surface),
+            Background = Kit.B(static p => p.Surface),
             ClipToBounds = true,
-            BorderBrush = Kit.B(running ? P.Ok : P.Border),
+            BorderBrush = Kit.B(p => running ? p.Ok : p.Border),
             BorderThickness = new Thickness(1),
             Child = stack,
             Cursor = new Cursor(StandardCursorType.Hand),
-            BoxShadow = P.Dark ? default : BoxShadows.Parse("0 2 8 0 #14000000"),
         };
-        HookCard(card, hover, g, running ? P.Ok : P.Border);
+        Kit.LightShadow(card, "0 2 8 0 #14000000");
+        HookCard(card, hover, g, p => running ? p.Ok : p.Border);
         return card;
     }
 
     /// <summary>Hover shows the start buttons; a click opens the game page; a double click (or Enter) does the main action.</summary>
-    void HookCard(Border card, Control hover, GameEntry g, Color border)
+    void HookCard(Border card, Control hover, GameEntry g, Func<Palette, Color> border)
     {
-        card.PointerEntered += (_, _) => { hover.IsVisible = true; card.BorderBrush = Kit.B(P.Accent); };
+        card.PointerEntered += (_, _) => { hover.IsVisible = true; card.BorderBrush = Kit.B(static p => p.Accent); };
         card.PointerExited += (_, _) => { hover.IsVisible = false; card.BorderBrush = Kit.B(border); };
         card.ContextFlyout = GameFoldersMenu(g); // right click: the game's folders
         card.Tapped += (_, e) =>
@@ -460,10 +460,10 @@ public sealed partial class MainWindow
     {
         if (g.Category != "gd")
         {
-            return _k.Badge(g.CategoryText, P.Warn);
+            return _k.Badge(g.CategoryText, static p => p.Warn);
         }
 
-        return PlayOf(g.TitleId) is { } r ? _k.Badge(S.Duration(r.Seconds), P.Accent) : _k.Badge(S.NeverPlayed, P.Muted);
+        return PlayOf(g.TitleId) is { } r ? _k.Badge(S.Duration(r.Seconds), static p => p.Accent) : _k.Badge(S.NeverPlayed, static p => p.Muted);
     }
 
     // ------------------------------------------------------------------ list
@@ -485,34 +485,35 @@ public sealed partial class MainWindow
         {
             var r = new Grid { ColumnDefinitions = new ColumnDefinitions(Cols), Height = 62, Margin = new Thickness(18, 0) };
             r.Children.Add(_k.Picture(g.IconPath, 46, 46, 12, g.Initials, 128).Also(p => p.HorizontalAlignment = HorizontalAlignment.Left));
-            r.Children.Add(Kit.At(_k.VStack(2, _k.Text(g.Title, 14, FontWeight.SemiBold), _k.Text(g.TitleId + (g.Version.Length > 0 ? " \u00B7 v" + g.Version : ""), 12, color: P.Muted)).Also(t => t.VerticalAlignment = VerticalAlignment.Center), col: 1));
-            r.Children.Add(Kit.At(_k.Text(g.Region, 13, color: P.TextSoft), col: 2));
-            r.Children.Add(Kit.At(_k.Text(PlayOf(g.TitleId) is { } pr ? S.Duration(pr.Seconds) : "\u2014", 13, color: P.TextSoft), col: 3));
+            r.Children.Add(Kit.At(_k.VStack(2, _k.Text(g.Title, 14, FontWeight.SemiBold), _k.Text(g.TitleId + (g.Version.Length > 0 ? " \u00B7 v" + g.Version : ""), 12, color: static p => p.Muted)).Also(t => t.VerticalAlignment = VerticalAlignment.Center), col: 1));
+            r.Children.Add(Kit.At(_k.Text(g.Region, 13, color: static p => p.TextSoft), col: 2));
+            r.Children.Add(Kit.At(_k.Text(PlayOf(g.TitleId) is { } pr ? S.Duration(pr.Seconds) : "\u2014", 13, color: static p => p.TextSoft), col: 3));
             var (got, total) = TrophyCount(g);
             if (total > 0)
             {
-                var tro = _k.HStack(8, _k.Text($"{got}/{total}", 13, color: P.TextSoft).Also(x => x.Width = 48), new Border { Width = 80, Child = _k.Bar(got / (double)total, 4) });
+                var tro = _k.HStack(8, _k.Text($"{got}/{total}", 13, color: static p => p.TextSoft).Also(x => x.Width = 48), new Border { Width = 80, Child = _k.Bar(got / (double)total, 4) });
                 tro.VerticalAlignment = VerticalAlignment.Center;
                 r.Children.Add(Kit.At(tro, col: 4));
             }
-            r.Children.Add(Kit.At(_k.Text(g.SizeText, 13, color: P.TextSoft), col: 5));
+            r.Children.Add(Kit.At(_k.Text(g.SizeText, 13, color: static p => p.TextSoft), col: 5));
             var acts = HoverActions(g, 36);
             acts.Margin = default;
             acts.HorizontalAlignment = HorizontalAlignment.Right;
             acts.IsVisible = false;
             r.Children.Add(Kit.At(acts, col: 6));
-            var zebra = n++ % 2 == 0 ? P.Surface : P.Background;
+            bool even = n++ % 2 == 0;
+            Func<Palette, Color> zebra = p => even ? p.Surface : p.Background;
             var row = new Border
             {
                 CornerRadius = new CornerRadius(14),
                 Child = r,
                 Background = Kit.B(zebra),
                 Cursor = new Cursor(StandardCursorType.Hand),
-                BorderBrush = Kit.B(Colors.Transparent),
+                BorderBrush = Kit.Fixed(Colors.Transparent),
                 BorderThickness = new Thickness(1),
             };
-            row.PointerEntered += (_, _) => { acts.IsVisible = true; row.Background = Kit.B(P.Highlight); row.BorderBrush = Kit.B(P.HighlightBorder); };
-            row.PointerExited += (_, _) => { acts.IsVisible = false; row.Background = Kit.B(zebra); row.BorderBrush = Kit.B(Colors.Transparent); };
+            row.PointerEntered += (_, _) => { acts.IsVisible = true; row.Background = Kit.B(static p => p.Highlight); row.BorderBrush = Kit.B(static p => p.HighlightBorder); };
+            row.PointerExited += (_, _) => { acts.IsVisible = false; row.Background = Kit.B(zebra); row.BorderBrush = Kit.Fixed(Colors.Transparent); };
             row.Tapped += (_, e) =>
             {
                 if (!FromButton(e))
@@ -538,7 +539,7 @@ public sealed partial class MainWindow
     {
         bool fw = FirmwareInstalled;
         var page = new StackPanel { Margin = new Thickness(36, 28, 36, 0) };
-        page.Children.Add(_k.VStack(2, _k.Heading(S.Welcome, 30), _k.Text(S.WelcomeSubtitle, 13.5, color: P.Muted)).Also(h => h.Margin = new Thickness(0, 0, 0, 22)));
+        page.Children.Add(_k.VStack(2, _k.Heading(S.Welcome, 30), _k.Text(S.WelcomeSubtitle, 13.5, color: static p => p.Muted)).Also(h => h.Margin = new Thickness(0, 0, 0, 22)));
         var steps = new UniformGrid { Columns = 3, Margin = new Thickness(0, 0, -16, 0) };
         steps.Children.Add(Step(1, fw ? "check" : "cpu", S.StepFirmware, fw ? S.StepFirmwareDone(FirmwareVersion) : S.StepFirmwareText,
             fw ? _k.Secondary(S.VitaSystem, "vita", () => Navigate(PageSystem), 42) : _k.Primary(S.InstallFirmware, "folder", () => Navigate(PageSystem), 42, 0), null, !fw));
@@ -548,7 +549,7 @@ public sealed partial class MainWindow
         page.Children.Add(steps);
         var empty = _k.VStack(8, _k.IconChip("library", 56).Also(c => c.HorizontalAlignment = HorizontalAlignment.Center),
             _k.Text(S.EmptyLibrary, 16, FontWeight.SemiBold).Also(t => t.HorizontalAlignment = HorizontalAlignment.Center),
-            _k.Text(S.EmptyLibraryText, 13, color: P.Muted).Also(t => t.HorizontalAlignment = HorizontalAlignment.Center));
+            _k.Text(S.EmptyLibraryText, 13, color: static p => p.Muted).Also(t => t.HorizontalAlignment = HorizontalAlignment.Center));
         page.Children.Add(_k.Dashed(empty, 300).Also(d => d.Margin = new Thickness(0, 24, 0, 0)));
         return new ScrollViewer { Content = page };
     }
@@ -563,8 +564,8 @@ public sealed partial class MainWindow
             Width = 26,
             Height = 26,
             CornerRadius = new CornerRadius(13),
-            Background = Kit.B(current ? P.Accent : P.Track),
-            Child = _k.Text(n.ToString(S.Culture), 12.5, FontWeight.Bold, current ? P.OnAccent : P.TextSoft).Also(t => t.HorizontalAlignment = HorizontalAlignment.Center),
+            Background = Kit.B(p => current ? p.Accent : p.Track),
+            Child = _k.Text(n.ToString(S.Culture), 12.5, FontWeight.Bold, p => current ? p.OnAccent : p.TextSoft).Also(t => t.HorizontalAlignment = HorizontalAlignment.Center),
         }, col: 2));
         s.Children.Add(top);
         s.Children.Add(_k.Text(title, 16, FontWeight.SemiBold).Also(t => t.Margin = new Thickness(0, 6, 0, 0)));
@@ -573,14 +574,14 @@ public sealed partial class MainWindow
         s.Children.Add(action);
         if (link != null)
         {
-            s.Children.Add(_k.Text(link, 13, FontWeight.SemiBold, P.Accent));
+            s.Children.Add(_k.Text(link, 13, FontWeight.SemiBold, static p => p.Accent));
         }
 
         var card = _k.Card(s, 20, new Thickness(20, 18));
         card.Margin = new Thickness(0, 0, 16, 0);
         if (current)
         {
-            card.BorderBrush = Kit.B(P.HighlightBorder);
+            card.BorderBrush = Kit.B(static p => p.HighlightBorder);
         }
 
         return card;

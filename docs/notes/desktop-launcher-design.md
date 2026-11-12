@@ -10,10 +10,14 @@ da visão geral, tema claro com acento #3767DB.
   botão/atalho do Sistema do Vita (Ctrl+H, oot-shell), os processos do emulador e o tempo jogado. As páginas ficam em
   MainWindow.Library.cs (capas, lista, tela inicial recriada, primeira execução), MainWindow.GamePage.cs,
   MainWindow.System.cs, MainWindow.Trophies.cs, MainWindow.Captures.cs, MainWindow.Install.cs (fila de
-  instalação) e SettingsPage.cs. Cada página é refeita ao navegar e quando o tema muda.
+  instalação) e SettingsPage.cs. Cada página é refeita ao navegar (e ao trocar o idioma); a troca de tema não refaz
+  nada, só muda as cores.
 - Ui/Kit.cs: paleta (Palette.DarkSet / LightSet, Palette.Current) e os componentes (cartões, linhas de ajuste,
-  chips, botões planos, segmentados, chaves, barras). LauncherTheme dá as cores atuais aos painéis antigos
-  (firmware, troféus, controles). LauncherApp.ApplyTheme troca entre Sistema / Escuro / Claro.
+  chips, botões planos, segmentados, chaves, barras). Toda cor é dada como a escolha na paleta (`p => p.Muted`):
+  `Kit.B`/`Kit.Stop`/`Kit.LightShadow` ligam o pincel, a parada de gradiente ou a sombra a ela (`ThemeBindings`, lista
+  fraca) e a troca de tema reavalia todos; cores que não seguem o tema (sobre as capas) usam `Kit.Fixed`.
+  LauncherTheme dá os mesmos pincéis ligados aos painéis antigos (firmware, troféus, controles).
+  LauncherApp.ApplyTheme troca entre Sistema / Escuro / Claro.
 - Ui/Strings.cs: todos os textos das páginas, no formato da classe que o designer de .resx gera (uma propriedade
   por texto, métodos onde entra número ou nome), pronto para o item de arquivos de idioma en/pt-BR.
 - Dados reais: tempo jogado e última vez em <data>/playtime.json (gravados pelo launcher para o que ele inicia, o

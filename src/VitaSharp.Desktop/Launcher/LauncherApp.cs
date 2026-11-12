@@ -87,20 +87,19 @@ public sealed class LauncherApp : Application
         SyncPalette();
     }
 
-    /// <summary>Raised after the palette changed (theme picked or the OS switched while following it).</summary>
-    public static event Action? PaletteChanged;
-
+    /// <summary>Sets the palette of the theme shown now and re-colours every live brush, gradient stop and shadow bound
+    /// to it (<see cref="ThemeBindings"/>): a switch changes colours only and builds no window again.</summary>
     static void SyncPalette()
     {
-        var dark = Current?.ActualThemeVariant != ThemeVariant.Light;
-        var p = dark ? Palette.DarkSet : Palette.LightSet;
-        if (p == Palette.Current)
+        bool dark = Current?.ActualThemeVariant != ThemeVariant.Light;
+        Palette palette = dark ? Palette.DarkSet : Palette.LightSet;
+        if (palette == Palette.Current)
         {
             return;
         }
 
-        Palette.Current = p;
-        PaletteChanged?.Invoke();
+        Palette.Current = palette;
+        ThemeBindings.Apply(palette);
     }
 
     /// <summary>Replaces the library window (ui-snapshot renders the settings screens instead).</summary>

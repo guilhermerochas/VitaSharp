@@ -1866,7 +1866,7 @@ Lista de itens futuros do VitaSharp. Marque `[x]` quando um item for concluído.
   estado/foco/framebuffer da janela e os resultados do acquire/present. Correção feita e conferida no repro
   (SwitchToThisWindow e Alt+Tab de verdade voltam à tela cheia, swapchain 1920x1080 recriada, foco de volta); falta a
   confirmação do usuário no jogo.
-- [ ] Trocar entre o modo claro e o modo escuro demora muito (relato do usuário, 11/11/2026). Medir quanto leva a
+- [x] Trocar entre o modo claro e o modo escuro demora muito (relato do usuário, 11/11/2026). Medir quanto leva a
   troca e onde o tempo vai (recriar a interface inteira, recarregar recursos/ícones/capas, refazer o layout da
   biblioteca) e fazer a troca só reaplicar as cores. Conferir no launcher do Desktop e no app Android.
   Em andamento (fix/system-bugs-13b, B3). Medido (headless, 80 jogos, `ThemeSwitchTests`): a troca na biblioteca levava
@@ -1878,6 +1878,19 @@ Lista de itens futuros do VitaSharp. Marque `[x]` quando um item for concluído.
   coincidem com cores da paleta, então trocar por valor na árvore pintaria errado; precisa de pincéis ligados ao
   nome da cor da paleta (o Kit criar e guardar um pincel por cor da paleta e a troca só mudar a cor deles). Android:
   o app só tem o tema escuro (Ui/Theme.cs), não há troca a medir.
+  Feito (fix/system-bugs-13c, B4): a troca só reaplica as cores, nenhuma página é refeita. Cada pincel, parada de
+  gradiente e sombra guarda como a sua cor é escolhida na paleta (`Kit.B(p => p.Muted)`, `Kit.Stop(p => p.Scrim, 150,
+  0.45)`, `Kit.LightShadow`) numa lista fraca (`ThemeBindings`, uma `ConditionalWeakTable`: a página descartada solta
+  os pincéis); `LauncherApp.SyncPalette` troca a paleta e reavalia todos os vivos. As escolhas que dependem do tema
+  (`p.Dark ? p.Background : p.Sidebar` do seletor, a opacidade 0,05/0,04 da área tracejada, os alfas 70/150/250 do
+  Scrim, `Kit.Fade`, o sol/lua da linha do tema) também são ligadas; as cores fixas sobre as capas (#0B0E13, #E8ECF2)
+  usam `Kit.Fixed`/`MainWindow.OverCover*` e nunca mudam (a mesma cor existe na paleta escura, por isso a troca não
+  pode ser por valor). Só os dois seletores de tema (barra lateral e Configurações) são redesenhados, para um mostrar
+  a escolha feita no outro. Medido (headless, 80 jogos): 519 ms antes, 50-86 ms agora (nas Configurações 40-55 ms).
+  `ThemeSwitchTests`: 0 reconstruções por troca, e a janela trocada tem exatamente as cores de uma janela nova no tema
+  novo na biblioteca, nas Configurações e nas páginas do jogo (com capa), Sistema, Troféus, Capturas e Instalação;
+  pincéis, paradas e sombras ligados mudam, `Kit.Fixed` e os textos sobre as capas não. Falta só a conferência do
+  usuário na janela de verdade.
 - [x] **REGRESSÃO (11/11/2026, relato do usuário: "não estava assim")** Killzone Mercenary (PCSC00045): o HUD piscava,
   e F1 2011 (PCSE00002) mostrava quadros pretos isolados, no build 2e7789b2 (capturas F8 `PCSC00045_20261111_222844_tudo`
   e `PCSE00002_20261111_223250_tudo`). Causa: 758ad0a9 (a espera do sync object de fragmento no `sceGxmBeginScene`

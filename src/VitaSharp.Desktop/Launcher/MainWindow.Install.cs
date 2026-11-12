@@ -154,14 +154,14 @@ public sealed partial class MainWindow
 
         int waiting = _jobs.Count(j => j.State == JobState.Waiting);
         var head = new Grid { ColumnDefinitions = new ColumnDefinitions("Auto,*,Auto") };
-        head.Children.Add(new Border { Margin = new Thickness(0, 0, 8, 0), Child = _k.Icon("download", 16, P.Accent) });
-        head.Children.Add(Kit.At(_k.Text(waiting > 0 ? S.InstallingMore(waiting) : S.Installing, 12.5, FontWeight.SemiBold, P.Accent), col: 1));
-        head.Children.Add(Kit.At(_k.Text($"{job.Progress * 100:F0}%", 12.5, FontWeight.SemiBold, P.TextSoft), col: 2));
-        var body = _k.VStack(8, head, _k.Text(job.Name, 13.5, FontWeight.Medium), _k.Bar(job.Progress, 5), _k.Text(job.Detail, 11.5, color: P.Muted));
+        head.Children.Add(new Border { Margin = new Thickness(0, 0, 8, 0), Child = _k.Icon("download", 16, static p => p.Accent) });
+        head.Children.Add(Kit.At(_k.Text(waiting > 0 ? S.InstallingMore(waiting) : S.Installing, 12.5, FontWeight.SemiBold, static p => p.Accent), col: 1));
+        head.Children.Add(Kit.At(_k.Text($"{job.Progress * 100:F0}%", 12.5, FontWeight.SemiBold, static p => p.TextSoft), col: 2));
+        var body = _k.VStack(8, head, _k.Text(job.Name, 13.5, FontWeight.Medium), _k.Bar(job.Progress, 5), _k.Text(job.Detail, 11.5, color: static p => p.Muted));
         return Kit.Click(new Border
         {
-            Background = Kit.B(P.Surface),
-            BorderBrush = Kit.B(P.Border),
+            Background = Kit.B(static p => p.Surface),
+            BorderBrush = Kit.B(static p => p.Border),
             BorderThickness = new Thickness(1),
             CornerRadius = new CornerRadius(16),
             Padding = new Thickness(14, 12),
@@ -174,11 +174,11 @@ public sealed partial class MainWindow
     Control InstallPage()
     {
         var page = new StackPanel { Margin = new Thickness(36, 28, 36, 32) };
-        page.Children.Add(_k.VStack(2, _k.Heading(S.InstallTitle, 30), _k.Text(S.InstallSubtitle, 13.5, color: P.Muted)).Also(h => h.Margin = new Thickness(0, 0, 0, 22)));
+        page.Children.Add(_k.VStack(2, _k.Heading(S.InstallTitle, 30), _k.Text(S.InstallSubtitle, 13.5, color: static p => p.Muted)).Also(h => h.Margin = new Thickness(0, 0, 0, 22)));
         var drop = _k.VStack(10,
             _k.IconChip("download", 52).Also(c => c.HorizontalAlignment = HorizontalAlignment.Center),
             _k.Text(S.DropHere, 15, FontWeight.SemiBold).Also(t => t.HorizontalAlignment = HorizontalAlignment.Center),
-            _k.Text(S.DropHint, 12.5, color: P.Muted).Also(t => t.HorizontalAlignment = HorizontalAlignment.Center),
+            _k.Text(S.DropHint, 12.5, color: static p => p.Muted).Also(t => t.HorizontalAlignment = HorizontalAlignment.Center),
             _k.HStack(10,
                 _k.Primary(S.ChooseVpk, "folder", () => _ = InstallVpk(), 42, 0),
                 _k.Secondary(S.ChoosePkg, "key", () => _ = InstallPkg(), 42),
@@ -189,7 +189,7 @@ public sealed partial class MainWindow
         head.Children.Add(_k.Text(S.Queue, 17, FontWeight.SemiBold));
         if (_jobs.Any(j => j.State is JobState.Done or JobState.Failed or JobState.Cancelled))
         {
-            head.Children.Add(Kit.At(Kit.Click(_k.Text(S.ClearFinished, 13, FontWeight.SemiBold, P.Accent), () =>
+            head.Children.Add(Kit.At(Kit.Click(_k.Text(S.ClearFinished, 13, FontWeight.SemiBold, static p => p.Accent), () =>
             {
                 _jobs.RemoveAll(j => j.State is JobState.Done or JobState.Failed or JobState.Cancelled);
                 JobsChanged();
@@ -221,16 +221,16 @@ public sealed partial class MainWindow
     Control JobRow(InstallJob j)
     {
         var game = j.TitleId != null ? _all.FirstOrDefault(g => g.TitleId == j.TitleId) : null;
-        var (icon, color) = j.State switch
+        (string Icon, Func<Palette, Color> Color) look = j.State switch
         {
-            JobState.Running => ("download", P.Accent),
-            JobState.Waiting => ("clock", P.Muted),
-            JobState.Done => ("check", P.Ok),
-            _ => ("x", P.Danger),
+            JobState.Running => ("download", static p => p.Accent),
+            JobState.Waiting => ("clock", static p => p.Muted),
+            JobState.Done => ("check", static p => p.Ok),
+            _ => ("x", static p => p.Danger),
         };
         var r = new Grid { ColumnDefinitions = new ColumnDefinitions("Auto,*,Auto"), Margin = new Thickness(16, 12) };
         r.Children.Add(game != null && j.State == JobState.Done ? _k.Picture(game.IconPath, 44, 44, 11, game.Initials, 128)
-            : _k.IconChip(icon, 44, Color.FromArgb(40, color.R, color.G, color.B), color));
+            : _k.IconChip(look.Icon, 44, p => Kit.WithAlpha(look.Color(p), 40), look.Color));
         string detail = j.State switch
         {
             JobState.Waiting => S.Waiting,
@@ -239,8 +239,8 @@ public sealed partial class MainWindow
             JobState.Cancelled => S.InstallCancelled,
             _ => S.FailedBecause(j.Detail),
         };
-        var t = _k.VStack(5, _k.HStack(8, _k.Text(game?.Title ?? j.Name, 14, FontWeight.SemiBold), j.State == JobState.Done ? _k.Icon("check", 15, P.Ok, 2.4) : null),
-            _k.Wrap(detail, 12.5, j.State == JobState.Failed ? P.Danger : P.Muted));
+        var t = _k.VStack(5, _k.HStack(8, _k.Text(game?.Title ?? j.Name, 14, FontWeight.SemiBold), j.State == JobState.Done ? _k.Icon("check", 15, static p => p.Ok, 2.4) : null),
+            _k.Wrap(detail, 12.5, p => j.State == JobState.Failed ? p.Danger : p.Muted));
         if (j.State == JobState.Running)
         {
             t.Children.Add(new Border { Width = 520, HorizontalAlignment = HorizontalAlignment.Left, Child = _k.Bar(j.Progress, 5) });
@@ -504,7 +504,7 @@ public sealed partial class MainWindow
         string? result = null;
         Window? dlg = null;
         var zrif = new TextBox { Watermark = S.ZrifWatermark, AcceptsReturn = false, TextWrapping = TextWrapping.Wrap, MinHeight = 60, CornerRadius = new CornerRadius(12) };
-        var error = _k.Wrap("", 12.5, P.Danger).Also(t => t.IsVisible = false);
+        var error = _k.Wrap("", 12.5, static p => p.Danger).Also(t => t.IsVisible = false);
         void Fail(string message)
         {
             error.Text = message;
@@ -553,8 +553,8 @@ public sealed partial class MainWindow
         var buttons = _k.HStack(8, cancel, install);
         buttons.HorizontalAlignment = HorizontalAlignment.Right;
         var panel = _k.VStack(12, _k.Heading(S.LicenseFor(Path.GetFileName(pkg)), 18),
-            info != null ? _k.Text(S.PkgNeedsLicense(info), 13, FontWeight.SemiBold, P.Accent) : null,
-            _k.Wrap(S.LicenseText, 13.5, P.TextSoft), zrif, file.Also(f => f.HorizontalAlignment = HorizontalAlignment.Left), error, buttons);
+            info != null ? _k.Text(S.PkgNeedsLicense(info), 13, FontWeight.SemiBold, static p => p.Accent) : null,
+            _k.Wrap(S.LicenseText, 13.5, static p => p.TextSoft), zrif, file.Also(f => f.HorizontalAlignment = HorizontalAlignment.Left), error, buttons);
         panel.Margin = new Thickness(24);
         dlg = Dialog(panel, 500);
         if (LicenseDialogForTests is { } hook)

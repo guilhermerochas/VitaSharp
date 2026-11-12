@@ -19,7 +19,7 @@ public sealed partial class MainWindow
     {
         var page = new StackPanel { Margin = new Thickness(36, 28, 36, 32) };
         var header = new Grid { ColumnDefinitions = new ColumnDefinitions("*,Auto"), Margin = new Thickness(0, 0, 0, 22) };
-        header.Children.Add(_k.VStack(2, _k.Heading(S.VitaSystem, 30), _k.Text(S.VitaSystemSubtitle, 13.5, color: P.Muted)));
+        header.Children.Add(_k.VStack(2, _k.Heading(S.VitaSystem, 30), _k.Text(S.VitaSystemSubtitle, 13.5, color: static p => p.Muted)));
         // the emulated memory card and firmware partitions (ux0, ur0, os0, vs0...) in the file manager
         var openFs = _k.Secondary(S.OpenFileSystem, "folder", () => { Directory.CreateDirectory(Program.FsRoot); OpenPath(Program.FsRoot); }, 46, tip: S.OpenFileSystemTip(Program.FsRoot));
         openFs.VerticalAlignment = VerticalAlignment.Center;
@@ -42,10 +42,10 @@ public sealed partial class MainWindow
         bool pd0 = Directory.Exists(Path.Combine(Program.FsRoot, "pd0", "data"));
         left.Children.Add(_k.Group(
             _k.Row("cpu", S.FirmwareVersionRow(fw?.Version), fw == null ? S.FirmwareMissingDetail : S.FirmwareDetail(fw.Build, fw.Source, fw.InstalledUtc),
-                fw != null ? _k.Badge(S.InstalledBadge, P.Ok) : _k.Badge(S.MissingBadge, P.Warn)),
-            _k.Row("vita", "shell.self", S.ShellDetail, ShellInstalled ? _k.Badge(S.OkBadge, P.Ok) : _k.Badge(S.MissingBadge, P.Warn)),
-            _k.Row("volume", "pd0", S.Pd0Detail, pd0 ? _k.Badge(S.InstalledBadge, P.Ok) : _k.Badge(S.MissingBadge, P.Warn)),
-            _k.Row("layers", S.SystemFonts, fonts ? S.FontsInstalled : S.FontsMissing, fonts ? _k.Badge(S.InstalledBadge, P.Ok) : _k.Badge(S.MissingBadge, P.Warn))));
+                fw != null ? _k.Badge(S.InstalledBadge, static p => p.Ok) : _k.Badge(S.MissingBadge, static p => p.Warn)),
+            _k.Row("vita", "shell.self", S.ShellDetail, ShellInstalled ? _k.Badge(S.OkBadge, static p => p.Ok) : _k.Badge(S.MissingBadge, static p => p.Warn)),
+            _k.Row("volume", "pd0", S.Pd0Detail, pd0 ? _k.Badge(S.InstalledBadge, static p => p.Ok) : _k.Badge(S.MissingBadge, static p => p.Warn)),
+            _k.Row("layers", S.SystemFonts, fonts ? S.FontsInstalled : S.FontsMissing, fonts ? _k.Badge(S.InstalledBadge, static p => p.Ok) : _k.Badge(S.MissingBadge, static p => p.Warn))));
         left.Children.Add(_k.GroupTitle(S.HleModulesTitle));
         left.Children.Add(_k.Group(
             _k.Row("box", S.HleModules, S.HleModulesDetail, _k.Field(_settings.HleModules, t => { _settings.HleModules = t.Trim(); SaveSettings(); }, 240, S.HleModulesWatermark))));
@@ -85,8 +85,8 @@ public sealed partial class MainWindow
     Control SettingsPageHost()
     {
         _settingsPage = new SettingsPage(_settings, SaveSettings);
-        // the palette change the theme causes draws the window again (once)
-        _settingsPage.ThemeChanged += LauncherApp.ApplyTheme;
+        // the palette change re-colours the window; the sidebar's theme control is drawn again with the new choice
+        _settingsPage.ThemeChanged += SetTheme;
         _settingsPage.OpenSystem += () => Navigate(PageSystem);
         _settingsPage.LanguageChanged += () => RebuildAll();
         _settingsPage.CheckUpdatesNow += () => _ = CheckForUpdates(manual: true);
