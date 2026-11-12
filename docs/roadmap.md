@@ -873,6 +873,17 @@ Lista de itens futuros do VitaSharp. Marque `[x]` quando um item for concluído.
 
 ## Firmware e sistema
 
+- [ ] Ambiente de plugins do próprio sistema, todos funcionando (pedido do usuário, 13/11/2026: "o hardware original do
+  Vita já implementa isso"). O firmware tem o seu sistema de plugins (o loader de plugins do libpaf usado pelo SceShell
+  e pelos apps do sistema): `vs0:vsh/common` (auth_plugin, auth_reset_plugin, dbrecovery_plugin, idu_update_plugin,
+  ime_plugin, impose_plugin, impose_net_plugin, location_dialog_plugin, liblocation_*, livespace_db...) e os plugins
+  do shell (applauncher, coldboot, download, indicator, livearea, musiccore, power_manage, telephony, theme, topmenu,
+  app_settings...: `.suprx` + `.rco`). Meta: cada um carrega e funciona pelo caminho do próprio firmware (código real
+  em LLE, HLE só abaixo dele), com a mesma ordem, os mesmos recursos (.rco) e as mesmas chamadas de sistema do
+  console. Primeiro: inventário de cada plugin (quem carrega, quando, o que importa, o que já roda e o que falha),
+  depois corrigir o mecanismo comum (carga de plugin do paf, resolução de recursos, serviços do shell) e cada lacuna
+  de HLE, com um teste/uma prova (boot do shell sem janela abrindo a tela de cada um) por plugin. O emulador não
+  bloqueia nenhum plugin; os plugins de terceiros seguem no item dos plugins de kernel/usuário.
 - [x] **PRIORIDADE (11/11/2026)** Plugins também nos programas do sistema (achado ao revisar o loader, 11/11/2026).
   Feito (fix/system-bugs-13, B3): `Emulator.LoadPlugins` roda em todo processo, depois dos módulos pré-carregados
   (também os do firmware num programa do sistema); a seção é o ID de título do processo no kernel
