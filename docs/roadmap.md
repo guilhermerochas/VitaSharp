@@ -1852,6 +1852,11 @@ Lista de itens futuros do VitaSharp. Marque `[x]` quando um item for concluído.
   fila do host esvaziou) era alarme falso: uma saída depois de uma pausa maior que 4 grains (mínimo 250 ms) conta como
   "começo depois de pausa", sem aviso, e aparece no resumo da porta (agente snd1, fix/shell-audio)
 
+- [ ] Metal Gear Solid HD Collection (PCSE00020), novo relato (11/11/2026, build 2e7789b2): "várias texturas zuadas,
+  a tela do PC fica na frente do personagem, texturas popando". Captura `PCSE00020_20261111_224104_tudo` (dump da GPU
+  de 383 quadros; log: alvo 0x60E0CA00 amostrado enquanto é desenhado, cena sem superfície de cor, texturas P8;
+  findings [flash] e [picture-order]). Três sintomas: texturas decodificadas erradas, profundidade/ordem (tela do PC
+  na frente do personagem) e texturas aparecendo tarde ou mudando de um quadro para o outro. Continua o item abaixo.
 - [ ] Metal Gear Solid HD Collection (PCSE00020), abertura do MGS3 dentro do avião (relato do usuário, 10/11/2026;
   `captures\PCSE00020_20261110_214209_tudo`, `_214218_tudo` com dump da GPU, `_214309_tudo` com a trava). Agente B
   (fix/bugs-b-7). Referência do Vita de verdade: YouTube GaPPb3zatq0 (longplay, 1:45-4:00).
