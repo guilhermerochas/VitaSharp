@@ -262,10 +262,9 @@ public sealed partial class AppMgrShell : HleModule
     /// <summary>The guest path ("ux0:app/X") of a host folder inside the emulated filesystem.</summary>
     string GuestPath(string host)
     {
-        string root = Path.GetFullPath(Emu.Options.FsRoot), full = Path.GetFullPath(host);
-        if (!full.StartsWith(root, StringComparison.OrdinalIgnoreCase)) return "ux0:app/" + Path.GetFileName(full);
-        var parts = full[root.Length..].Split([Path.DirectorySeparatorChar, Path.AltDirectorySeparatorChar], StringSplitOptions.RemoveEmptyEntries);
-        return parts.Length == 0 ? "" : parts[0] + ":" + string.Join('/', parts.Skip(1));
+        // a folder outside the emulated file system (an application started from a host folder) is an installed one
+        return Io.FirmwareLayout.HostToGuest(Emu.Options.FsRoot, host)
+            ?? Io.FirmwareLayout.Applications.Guest(Path.GetFileName(Path.TrimEndingDirectorySeparator(Path.GetFullPath(host))));
     }
 
     /// <summary>
@@ -285,9 +284,7 @@ public sealed partial class AppMgrShell : HleModule
         string tid = GuestMemory.ReadCString(name, 0x20);
         var running = Emu.Vita.Processes.FirstOrDefault(p => string.Equals(p.TitleId, tid, StringComparison.OrdinalIgnoreCase));
         if (running != null) return Emu.IsShell ? running.AppId : 0;
-        string? dir = null;
-        foreach (var root in new[] { "vs0:app/", "ux0:app/" })
-            if (Emu.Vfs.Resolve(root + tid) is { } d && File.Exists(Path.Combine(d, "eboot.bin"))) { dir = d; break; }
+        string? dir = Io.FirmwareLayout.FindApplication(guest => Emu.Vfs.Resolve(guest), tid);
         if (dir == null) return unchecked((int)0x80800006);
         string? launchParam = param != 0 ? GuestMemory.ReadCString(param, 0x400) : null;
         if (!Emu.IsShell && Emu.Vita.Shell != null)
@@ -335,9 +332,7 @@ public sealed partial class AppMgrShell : HleModule
             Notify();
             return 0;
         }
-        string? dir = null;
-        foreach (var root in new[] { "vs0:app/", "ux0:app/" })
-            if (Emu.Vfs.Resolve(root + tid) is { } d && File.Exists(Path.Combine(d, "eboot.bin"))) { dir = d; break; }
+        string? dir = Io.FirmwareLayout.FindApplication(guest => Emu.Vfs.Resolve(guest), tid);
         if (dir == null) return unchecked((int)0x80800006);
         string? launchString = param != 0 ? GuestMemory.ReadCString(param, 0x400) : null;
         var app = Emu.SpawnProcess(dir, "eboot.bin", [], background: true, started: _ => Notify());

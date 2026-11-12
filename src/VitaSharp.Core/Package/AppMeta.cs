@@ -25,7 +25,8 @@ public static class AppMeta
     /// </summary>
     public static int Sync(string ux0Root, Action<string>? log = null)
     {
-        string apps = Path.Combine(ux0Root, "app"), metas = Path.Combine(ux0Root, "appmeta");
+        string apps = Io.FirmwareLayout.Applications.OnDevice(ux0Root);
+        string metas = Io.FirmwareLayout.ApplicationMetadata.OnDevice(ux0Root);
         int changed = 0;
         if (Directory.Exists(apps))
         {
@@ -98,9 +99,9 @@ public static class AppMeta
     /// <paramref name="force"/> an entry whose param.sfo already matches is left alone. True when something was written.</summary>
     public static bool Write(string ux0Root, string titleId, bool force)
     {
-        string app = Path.Combine(ux0Root, "app", titleId);
+        string app = Io.FirmwareLayout.Applications.OnDevice(ux0Root, titleId);
         string appSys = Io.Vfs.ResolveCaseInsensitive(app, "sce_sys");
-        string patchSys = Io.Vfs.ResolveCaseInsensitive(Path.Combine(ux0Root, "patch", titleId), "sce_sys");
+        string patchSys = Io.Vfs.ResolveCaseInsensitive(Io.FirmwareLayout.Patches.OnDevice(ux0Root, titleId), "sce_sys");
         string? Source(string name)
         {
             foreach (string? sys in new[] { patchSys, appSys })
@@ -119,7 +120,7 @@ public static class AppMeta
             return false;
         }
 
-        string meta = Path.Combine(ux0Root, "appmeta", titleId);
+        string meta = Io.FirmwareLayout.ApplicationMetadata.OnDevice(ux0Root, titleId);
         string dstSfo = Path.Combine(meta, "param.sfo");
         if (!force && File.Exists(dstSfo) && SameFile(sfo, dstSfo))
         {
@@ -158,7 +159,7 @@ public static class AppMeta
     /// shell then treats ux0 as a card it has not seen and rebuilds that part of its database from ux0:appmeta.</summary>
     internal static void InvalidateCardId(string ux0Root, Action<string>? log)
     {
-        string id = Path.Combine(ux0Root, "id.dat");
+        string id = Path.Combine(ux0Root, Io.FirmwareLayout.CardIdFile);
         if (!File.Exists(id))
         {
             return;

@@ -21,17 +21,19 @@ public sealed class Vfs
         // the media devices are folders of the memory card, as on the Vita (and Vita3K): photo0 = ux0:picture,
         // music0 = ux0:music, video0 = ux0:video. The Camera saves in photo0: and the system's AvMediaService (another
         // process) opens the same path to register the picture, so every process must see the same folder.
-        foreach ((string? dev, string? dir) in MediaDevices)
+        foreach ((string dev, FirmwareFolder folder) in MediaDevices)
         {
-            string host = Path.Combine(fsRoot, "ux0", dir);
+            string host = folder.Host(fsRoot);
             MigrateLegacyMediaFolder(Path.Combine(fsRoot, dev), host);
             Mount(dev, host);
         }
+        // licences in the folder earlier versions used move to the firmware's (once; nothing to do after that)
+        Package.LicenseMigration.Run(fsRoot);
         // the game card: gro0 (the card's read-only application) and grw0 (its writable area) exist only while a card
         // is in the slot. With them always mounted the shell's game card promoter saw a card (sceIoGetstat("gro0:")
         // succeeded), found no gro0:app and reported "Could not install. (C0-11274-5)" (0x80AF5022) at every boot.
         // A card dump placed in <fs>/gro0/app is a card in the slot.
-        if (Directory.Exists(Path.Combine(fsRoot, "gro0", "app")))
+        if (Directory.Exists(FirmwareLayout.GameCardApplications.Host(fsRoot)))
         {
             Mount("gro0", Path.Combine(fsRoot, "gro0"));
             Mount("grw0", Path.Combine(fsRoot, "grw0"));
@@ -39,7 +41,7 @@ public sealed class Vfs
     }
 
     /// <summary>The media devices and their ux0 folders.</summary>
-    public static readonly (string Device, string Folder)[] MediaDevices = [("photo0", "picture"), ("music0", "music"), ("video0", "video")];
+    public static readonly (string Device, FirmwareFolder Folder)[] MediaDevices = [("photo0", FirmwareLayout.Picture), ("music0", FirmwareLayout.Music), ("video0", FirmwareLayout.Video)];
 
     private static readonly object s_migrateLock = new();
 

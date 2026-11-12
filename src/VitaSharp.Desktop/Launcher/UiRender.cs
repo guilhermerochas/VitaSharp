@@ -343,7 +343,7 @@ static class UiRender
 
         if (noLicense)
         {
-            var eboot = Path.Combine(Program.Ux0, "pspemu", "PSP", "GAME", titleId, "EBOOT.PBP");
+            string eboot = VitaSharp.Core.Io.FirmwareLayout.PspGames.Host(Program.FsRoot, titleId, "EBOOT.PBP");
             bool there = File.Exists(eboot) && File.Exists(Path.Combine(Path.GetDirectoryName(eboot)!, "__sce_ebootpbp"));
             Console.WriteLine($"  install-pkg: {eboot} {(there ? "and its __sce_ebootpbp installed" : "MISSING")}");
             return there ? 0 : 1;
@@ -351,8 +351,8 @@ static class UiRender
 
         var rif = Core.Package.Zrif.Decode(zrif);
         string contentId = Core.Package.Zrif.ContentId(rif);
-        var licFile = Path.Combine(Program.Ux0, "license", titleId, contentId + ".rif");
-        var workBin = Path.Combine(Program.Ux0, "app", titleId, "sce_sys", "package", "work.bin");
+        string licFile = VitaSharp.Core.Io.FirmwareLayout.ApplicationLicenses.Host(Program.FsRoot, titleId, contentId + ".rif");
+        string workBin = VitaSharp.Core.Io.FirmwareLayout.Applications.Host(Program.FsRoot, titleId, "sce_sys", "package", "work.bin");
         bool ok = File.Exists(licFile) && File.ReadAllBytes(licFile).AsSpan().SequenceEqual(rif)
                && File.Exists(workBin) && File.ReadAllBytes(workBin).AsSpan().SequenceEqual(rif);
         Console.WriteLine($"  install-pkg: license {licFile} and work.bin {(ok ? "match the zRIF" : "MISSING or different")}");

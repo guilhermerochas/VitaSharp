@@ -162,10 +162,18 @@ public static class PkgInstaller
         string titleId = sfo.TitleId.Length > 0 ? sfo.TitleId : pkg.TitleId;
         string dest = type switch
         {
-            PkgContentType.App => Path.Combine(ux0Root, "app", titleId),
-            PkgContentType.Patch => Path.Combine(ux0Root, "patch", titleId),
-            PkgContentType.Dlc => Path.Combine(ux0Root, "addcont", titleId, pkg.ContentId[20..]),
-            _ => Path.Combine(ux0Root, "theme", pkg.ContentId),
+            PkgContentType.App => Io.FirmwareLayout.Applications.OnDevice(ux0Root, titleId),
+            PkgContentType.Patch => Io.FirmwareLayout.Patches.OnDevice(ux0Root, titleId),
+            PkgContentType.Dlc => Io.FirmwareLayout.AddCont.OnDevice(ux0Root, titleId, pkg.ContentId[20..]),
+            _ => Io.FirmwareLayout.Themes.OnDevice(ux0Root, pkg.ContentId),
+        };
+        // the licence goes where the firmware keeps it (the promoter: ux0:license/app/<title id>, addcont/<title
+        // id>/<content folder>, theme)
+        string licDir = type switch
+        {
+            PkgContentType.App or PkgContentType.Patch => Io.FirmwareLayout.ApplicationLicenses.OnDevice(ux0Root, titleId),
+            PkgContentType.Dlc => Io.FirmwareLayout.AddContLicenses.OnDevice(ux0Root, titleId, pkg.ContentId[20..]),
+            _ => Io.FirmwareLayout.ThemeLicenses.OnDevice(ux0Root),
         };
 
         Thread thread = Thread.CurrentThread;
@@ -199,7 +207,6 @@ public static class PkgInstaller
             thread.Priority = priority;
         }
 
-        string licDir = Path.Combine(ux0Root, "license", titleId);
         Directory.CreateDirectory(licDir);
         File.WriteAllBytes(Path.Combine(licDir, pkg.ContentId + ".rif"), license);
         Directory.CreateDirectory(Path.Combine(dest, "sce_sys", "package"));

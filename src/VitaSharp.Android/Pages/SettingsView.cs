@@ -108,7 +108,7 @@ public sealed class SettingsView : Screen<SettingsState>
                 Card(
                     Row(Loc.Get("MDataFolder"), null, Copy(AppServices.Data.Root), detail: AppServices.Data.Root),
                     Divider(),
-                    Row(Loc.Get("MInstalledGames"), null, Copy(AppServices.Data.Apps), detail: Loc.Get("MInstalledGamesDetail"))
+                    Row(Loc.Get("MInstalledGames"), null, Copy(AppServices.Data.Apps), detail: Loc.Format("MInstalledGamesDetail", VitaSharp.Core.Io.FirmwareLayout.Applications.Relative(), VitaSharp.Core.Io.FirmwareLayout.SaveData.Relative()))
                 ),
                 Note(Loc.Get("MStorageNote")),
                 SectionTitle(Loc.Get("MDebugging")),

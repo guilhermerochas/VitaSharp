@@ -44,7 +44,7 @@ public static class Strings
     public static string GoToGameTip => T();
     public static string OpenFileSystem => T();
     public static string OpenFileSystemTip(string path) => F(T(), path);
-    public static string OpenGamesFolderTip(string path) => F(T(), path);
+    public static string OpenGamesFolderTip(string path) => F(T(), VitaSharp.Core.Io.FirmwareLayout.Applications.Guest(), path);
     public static string ShowLog => T();
     public static string HideLog => T();
     public static string Ok => T();
@@ -174,10 +174,11 @@ public static class Strings
     public static string OpenSaveData => T();
     public static string GameFolders => T();
     public static string GameFoldersTip => T();
-    public static string FolderApp(string id) => F(T(), id);
-    public static string FolderSaveData(string id) => F(T(), id);
-    public static string FolderPatch(string id) => F(T(), id);
-    public static string FolderAddcont(string id) => F(T(), id);
+    /// <summary>The title's own folder, by its guest path ("ux0:app/PCSA00001", "ux0:psm/NPPA00001").</summary>
+    public static string FolderApp(string guestPath) => F(T(), guestPath);
+    public static string FolderSaveData(string id) => F(T(), VitaSharp.Core.Io.FirmwareLayout.SaveData.Guest(id));
+    public static string FolderPatch(string id) => F(T(), VitaSharp.Core.Io.FirmwareLayout.Patches.Guest(id));
+    public static string FolderAddcont(string id) => F(T(), VitaSharp.Core.Io.FirmwareLayout.AddCont.Guest(id));
     public static string FolderStates(string id) => F(T(), id);
     public static string FolderCaptures => T();
     public static string FolderLogs => T();
@@ -245,7 +246,7 @@ public static class Strings
 
     // ------------------------------------------------------------------ install
     public static string InstallTitle => T();
-    public static string InstallSubtitle => T();
+    public static string InstallSubtitle => F(T(), VitaSharp.Core.Io.FirmwareLayout.Applications.Guest());
     public static string DropHere => T();
     public static string DropHint => T();
     public static string ChooseVpk => T();
@@ -310,7 +311,7 @@ public static class Strings
     public static string PkgNoLicense(VitaSharp.Core.Package.PkgInfo p) => F(T(), PkgKindName(p.Kind), p.Title, p.TitleId);
     public static string PkgNeedsLicense(VitaSharp.Core.Package.PkgInfo p) => F(T(), PkgKindName(p.Kind), p.Title, p.TitleId);
     public static string PkgUnreadable(string error) => F(T(), error);
-    public static string InstalledPspEmu(string title, VitaSharp.Core.Package.PkgKind kind) => F(T(), title, PkgKindName(kind));
+    public static string InstalledPspEmu(string title, VitaSharp.Core.Package.PkgKind kind) => F(T(), title, PkgKindName(kind), VitaSharp.Core.Io.FirmwareLayout.PspEmulator.Guest());
     public static string LicenseText => T();
     public static string ConfirmUninstall(string title, string id) => F(T(), title, id);
     public static string Uninstalled(string title) => F(T(), title);

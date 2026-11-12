@@ -99,7 +99,7 @@ static class UiSnapshot
         var main = new MainWindow(LauncherSettings.Load());
         main.Show();
         await Shot(main, "library");
-        var game = GameLibrary.Scan(Program.Ux0).FirstOrDefault(g => TrophySetView.ForGame(g.Path, Program.FsRoot, 1).Count > 0);
+        GameEntry? game = GameLibrary.Scan(Program.FsRoot).FirstOrDefault(g => TrophySetView.ForGame(g.Path, Program.FsRoot, 1).Count > 0);
         if (game == null)
         {
             Console.WriteLine("no game with trophies");

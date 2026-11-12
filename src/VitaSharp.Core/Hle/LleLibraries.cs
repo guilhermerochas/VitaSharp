@@ -16,7 +16,7 @@ public static class LleLibraries
     /// <summary>Every app0:sce_module/*.suprx of the applications installed under <paramref name="fsRoot"/>.</summary>
     public static IEnumerable<InstalledModule> GameModules(string fsRoot)
     {
-        var apps = Path.Combine(fsRoot, "ux0", "app");
+        string apps = Io.FirmwareLayout.Applications.Host(fsRoot);
         if (!Directory.Exists(apps))
         {
             yield break;
@@ -31,8 +31,7 @@ public static class LleLibraries
             }
 
             var work = Path.Combine(app, "sce_sys", "package", "work.bin");
-            var licence = Path.Combine(fsRoot, "ux0", "license", Path.GetFileName(app));
-            var keyFile = File.Exists(work) ? work : Directory.Exists(licence) ? Directory.GetFiles(licence, "*.rif").FirstOrDefault() : null;
+            string? keyFile = File.Exists(work) ? work : Io.FirmwareLayout.ApplicationLicenseFiles(fsRoot, Path.GetFileName(app)).FirstOrDefault();
             byte[]? klicensee = keyFile != null ? Package.PkgInstaller.ReadKlicensee(keyFile) : null;
             foreach (var file in Directory.GetFiles(dir, "*.suprx").Order(StringComparer.OrdinalIgnoreCase))
             {
@@ -55,7 +54,7 @@ public static class LleLibraries
             }
 
             var options = new EnumerationOptions { RecurseSubdirectories = true, IgnoreInaccessible = true, MatchCasing = MatchCasing.CaseInsensitive };
-            var apps = Path.Combine(root, "app") + Path.DirectorySeparatorChar;
+            string apps = Io.FirmwareLayout.Applications.OnDevice(root) + Path.DirectorySeparatorChar;
             foreach (var file in Directory.EnumerateFiles(root, "*.suprx", options).Order(StringComparer.OrdinalIgnoreCase))
             {
                 if (device == "ux0" && file.StartsWith(apps, StringComparison.OrdinalIgnoreCase))

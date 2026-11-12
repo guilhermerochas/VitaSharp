@@ -1,4 +1,4 @@
-<!-- pair: README.md sha256=48375be7236023641992a1dab542f792ce1579393c0c28a7040d1695943c873d -->
+<!-- pair: README.md sha256=faee50286420f32d840b2ec2642d1df679241457d257066514c9ac41a7d54c70 -->
 <div align="center">
 
 [English](README.md) | **Português**
@@ -118,7 +118,16 @@ conta: o `.rif` de PSM de 1024 bytes (ou o zRIF dele) que o seu console tem para
 outro jogo é recusada. Ele vai para onde o console põe, `ux0:psm/<TITLEID>` (`RO` com o jogo e `RO/License`,
 `RW/Documents` com os saves, que uma reinstalação mantém); o jogo continua protegido como foi vendido e quem o abre é
 o runtime do PSM, com a sua licença. Também precisa do **PSM Runtime Package** (`PCSI00011`, um `.pkg` normal de PS
-Vita com a licença dele). Rodar jogos de PSM ainda está em andamento (veja `docs/roadmap.md`).
+Vita com a licença dele). A Biblioteca mostra um jogo de PSM instalado com o nome e o ícone do próprio jogo, e a tela
+inicial do **Sistema do Vita** mostra a bolha dele depois que o sistema reconstrói a sua base (na inicialização seguinte
+à instalação, como no console). Rodar jogos de PSM ainda está em andamento (veja `docs/roadmap.md`); um jogo de PSM
+instalado por uma versão anterior precisa ser instalado de novo.
+
+**Onde fica cada coisa.** Tudo fica onde o console guarda (jogos em `ux0:app`, atualizações em `ux0:patch`, DLC em
+`ux0:addcont`, jogos de PSP/PSone em `ux0:pspemu/PSP/GAME`, jogos de PSM em `ux0:psm`, saves em
+`ux0:user/00/savedata`, licenças em `ux0:license/app/<TITLEID>`). As licenças que as versões anteriores guardavam em
+`ux0:license/<TITLEID>` vão sozinhas para `ux0:license/app/<TITLEID>` na inicialização seguinte (uma licença cujo novo
+lugar já tem outra diferente fica onde estava).
 
 **Firmware (opcional).** Os jogos rodam sem firmware. Instale-o para ter as fontes e bibliotecas do sistema
 (`libSceXml`, `libSceSqlite`...) e o **Sistema do Vita**: na página **Sistema do Vita**, **Instalar firmware

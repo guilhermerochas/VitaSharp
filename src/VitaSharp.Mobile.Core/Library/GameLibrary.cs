@@ -32,72 +32,33 @@ public sealed record GameEntry(string TitleId, string Title, string Version, str
         _ => $"{SizeBytes / 1024} KB",
     };
 
+    /// <summary>What the title is (where the firmware keeps it).</summary>
+    public ContentKind Kind { get; init; } = ContentKind.VitaApplication;
+
     /// <summary>"PCSC00045 - v1.12 - 3,2 GB".</summary>
     public string Subtitle => string.Join(" \u00B7 ", new[] { TitleId, Version.Length > 0 ? "v" + Version : "", SizeBytes > 0 ? SizeText : "" }.Where(s => s.Length > 0));
 }
 
 /// <summary>
-/// The Biblioteca: the games installed under &lt;data&gt;/fs/ux0/app (VPK installs or decrypted folders copied in),
+/// The Biblioteca: the installed titles (<see cref="InstalledContent"/>: PS Vita applications from VPK/PKG installs or
+/// decrypted folders copied in, PSM titles),
 /// with their trophy progress (TROPHY.TRP of the game + the unlocks in ux0:user/00/trophy) and play statistics.
 /// </summary>
 public static class GameLibrary
 {
     public static List<GameEntry> Scan(DataLayout data)
     {
-        var list = new List<GameEntry>();
-        if (!Directory.Exists(data.Apps))
-        {
-            return list;
-        }
-
-        foreach (string dir in Directory.GetDirectories(data.Apps))
-        {
-            if (Read(dir) is { } e)
-            {
-                list.Add(e);
-            }
-        }
-
-        return list.OrderBy(g => g.Title, StringComparer.CurrentCultureIgnoreCase).ToList();
+        return InstalledContent.Scan(data.Fs, Loc.Culture.Name)
+            .Select(From)
+            .OrderBy(g => g.Title, StringComparer.CurrentCultureIgnoreCase)
+            .ToList();
     }
 
-    public static GameEntry? Read(string dir)
-    {
-        if (!File.Exists(Vfs.ResolveCaseInsensitive(dir, "eboot.bin")))
-        {
-            return null;
-        }
+    /// <summary>A PS Vita application folder (an install, a folder copied in); null when it is not one.</summary>
+    public static GameEntry? Read(string dir) => InstalledContent.ReadApplication(dir) is { } t ? From(t) : null;
 
-        string id = Path.GetFileName(dir), title = id, version = "", category = "gd";
-        string sfoPath = Vfs.ResolveCaseInsensitive(dir, "sce_sys/param.sfo");
-        try
-        {
-            if (File.Exists(sfoPath))
-            {
-                var sfo = Sfo.Load(sfoPath);
-                if (sfo.Title.Length > 0)
-                {
-                    title = sfo.Title.Replace('\n', ' ');
-                }
-
-                if (sfo.TitleId.Length > 0)
-                {
-                    id = sfo.TitleId;
-                }
-
-                version = sfo.AppVersion.TrimStart('0');
-                if (version.StartsWith('.'))
-                {
-                    version = "0" + version;
-                }
-
-                category = sfo.Category;
-            }
-        }
-        catch (Exception e) when (e is InvalidDataException or IOException) { }
-        string icon = Vfs.ResolveCaseInsensitive(dir, "sce_sys/icon0.png");
-        return new GameEntry(id, title, version, category, dir, File.Exists(icon) ? icon : null, DirectorySize(dir));
-    }
+    private static GameEntry From(LibraryTitle t) =>
+        new(t.TitleId, t.Title, t.Version, t.Category, t.Dir, t.IconPath, DirectorySize(t.Dir)) { Kind = t.Kind };
 
     /// <summary>Trophy progress over every set the game ships (usually one).</summary>
     public static TrophyProgress Trophies(GameEntry game, DataLayout data)

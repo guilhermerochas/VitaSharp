@@ -158,8 +158,7 @@ public sealed partial class AppUtil : HleModule
     {
         try
         {
-            string dir = Path.Combine(Emu.Options.FsRoot, "ux0", "license", Emu.TitleId);
-            var rif = Directory.Exists(dir) ? Directory.GetFiles(dir, "*.rif").FirstOrDefault() : null;
+            string? rif = Io.FirmwareLayout.ApplicationLicenseFiles(Emu.Options.FsRoot, Emu.TitleId).FirstOrDefault();
             if (rif != null)
             {
                 var data = File.ReadAllBytes(rif);
@@ -247,7 +246,7 @@ public sealed partial class AppUtil : HleModule
     {
         // mounts another title's save data (title id + passcode) for import; only a title with save data here succeeds
         string titleId = titleIdPtr != 0 ? GuestMemory.ReadCString(titleIdPtr, 12) : "";
-        string dir = Path.Combine(Emu.Options.FsRoot, "ux0", "user", "00", "savedata", titleId);
+        string dir = Io.FirmwareLayout.SaveData.Host(Emu.Options.FsRoot, titleId);
         bool exists = titleId.Length > 0 && Directory.Exists(dir) && Directory.EnumerateFileSystemEntries(dir).Any();
         Log.Info($"sceAppUtilSaveDataMount({titleId}): {(exists ? "mounted" : "no save data")}");
         if (!exists) return ERR_SLOT_NOT_FOUND;
@@ -483,7 +482,7 @@ public sealed partial class AppUtil : HleModule
     /// <summary>photo0: is the user's gallery (ux0:picture), as Vita3K maps it.</summary>
     internal int MountPhoto()
     {
-        Emu.Vfs.Mount("photo0", Path.Combine(Emu.Options.FsRoot, "ux0", "picture"));
+        Emu.Vfs.Mount("photo0", Io.FirmwareLayout.Picture.Host(Emu.Options.FsRoot));
         _photoMounted = true;
         return 0;
     }
@@ -549,7 +548,7 @@ public sealed partial class AppUtil : HleModule
     [Hle]
     int sceAppUtilMusicMount()
     {
-        Emu.Vfs.Mount("music0", Path.Combine(Emu.Options.FsRoot, "ux0", "music"));
+        Emu.Vfs.Mount("music0", Io.FirmwareLayout.Music.Host(Emu.Options.FsRoot));
         _musicMounted = true;
         return 0;
     }

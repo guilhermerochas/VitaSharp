@@ -964,15 +964,7 @@ public static class Runner
                 shell.Vita.RequestLaunchByUri(shell, uri, flags);
                 return;
             }
-            string? dir = null;
-            foreach (var root in new[] { "vs0:app/", "ux0:app/" })
-            {
-                if (shell.Vfs.Resolve(root + app) is { } d && File.Exists(Path.Combine(d, "eboot.bin")))
-                {
-                    dir = d;
-                    break;
-                }
-            }
+            string? dir = VitaSharp.Core.Io.FirmwareLayout.FindApplication(guest => shell.Vfs.Resolve(guest), app!);
 
             if (dir == null)
             {

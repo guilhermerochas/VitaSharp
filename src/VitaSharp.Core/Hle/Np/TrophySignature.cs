@@ -54,15 +54,14 @@ internal static class TrophySignature
         return best < 0 ? null : image.Slice(best, TrophyUnlocks.SignatureSize).ToArray();
     }
 
-    /// <summary>The application's klicensee: its work.bin, or a license in ux0:license/&lt;title id&gt;.</summary>
+    /// <summary>The application's klicensee: its work.bin, or its licence (ux0:license/app/&lt;title id&gt;).</summary>
     internal static byte[]? Klicensee(string fsRoot, string appDir)
     {
         try
         {
             string work = Path.Combine(appDir, "sce_sys", "package", "work.bin");
             if (File.Exists(work)) return PkgInstaller.ReadKlicensee(work);
-            string lic = Path.Combine(fsRoot, "ux0", "license", Path.GetFileName(appDir.TrimEnd('/', '\\')));
-            if (Directory.Exists(lic) && Directory.GetFiles(lic, "*.rif").Order(StringComparer.Ordinal).FirstOrDefault() is { } rif)
+            if (Io.FirmwareLayout.ApplicationLicenseFiles(fsRoot, Path.GetFileName(appDir.TrimEnd('/', '\\'))).FirstOrDefault() is { } rif)
                 return PkgInstaller.ReadKlicensee(rif);
         }
         catch (Exception e) when (e is IOException or UnauthorizedAccessException or InvalidDataException) { }

@@ -80,7 +80,7 @@ public sealed partial class AppUtil
             if (!(b is >= (byte)'a' and <= (byte)'z' or >= (byte)'A' and <= (byte)'Z' or >= (byte)'0' and <= (byte)'9' or (byte)'-' or (byte)'_')) return ERR_PARAMETER;
         if (_forceAddcont != null) return ERR_ALREADY_MOUNTED;
         string title = System.Text.Encoding.ASCII.GetString(t[..9]), content = System.Text.Encoding.ASCII.GetString(a[..len]);
-        string dir = Path.Combine(Emu.Options.FsRoot, "ux0", "addcont", title, content);
+        string dir = Io.FirmwareLayout.AddCont.Host(Emu.Options.FsRoot, title, content);
         if (!Directory.Exists(dir)) return ERR_ADDCONT_NOT_FOUND;
         Emu.Vfs.Mount("addcont1", dir);
         _forceAddcont = dir;
@@ -102,7 +102,7 @@ public sealed partial class AppUtil
     int sceAppUtilExtVideoMount()
     {
         if (_videoMount != null) return ERR_ALREADY_MOUNTED;
-        Directory.CreateDirectory(Path.Combine(Emu.Options.FsRoot, "ux0", "video"));
+        Directory.CreateDirectory(Io.FirmwareLayout.Video.Host(Emu.Options.FsRoot));
         uint cell = Emu.Memory.Alloc(16, "apputil ext video mount");
         try
         {

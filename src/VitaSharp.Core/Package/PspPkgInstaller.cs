@@ -82,8 +82,7 @@ public static class PspPkgInstaller
                 throw new InvalidDataException($"The license is for {licId}, the title is {licenseId}");
             }
         }
-        string pspemu = Path.Combine(ux0Root, "pspemu");
-        string dest = kind == PkgKind.PspTheme ? Path.Combine(pspemu, "PSP", "THEME") : Path.Combine(pspemu, "PSP", "GAME", id);
+        string dest = kind == PkgKind.PspTheme ? Io.FirmwareLayout.PspThemes.OnDevice(ux0Root) : Io.FirmwareLayout.PspGames.OnDevice(ux0Root, id);
         log?.Invoke($"{kind.Describe()} {id} \"{title}\" ({pkg.ContentId}): no license needed");
 
         // what goes where: (entry, path relative to ux0)
@@ -169,7 +168,7 @@ public static class PspPkgInstaller
             // it starts the title), which can differ from the package's
             if (options.License is { } rif && kind != PkgKind.PspTheme)
             {
-                string rifPath = Path.Combine(pspemu, "PSP", "LICENSE", licenseId + ".rif");
+                string rifPath = Io.FirmwareLayout.PspLicenses.OnDevice(ux0Root, licenseId + ".rif");
                 Directory.CreateDirectory(Path.GetDirectoryName(rifPath)!);
                 written.Add(rifPath);
                 File.WriteAllBytes(rifPath, rif);
@@ -184,7 +183,7 @@ public static class PspPkgInstaller
                 log?.Invoke("wrote tm0:npdrm/act.dat (the user's activation data)");
             }
             else if (options.License == null && kind is not (PkgKind.PspTheme or PkgKind.PspDlc)
-                     && !File.Exists(Path.Combine(pspemu, "PSP", "LICENSE", licenseId + ".rif")))
+                     && !File.Exists(Io.FirmwareLayout.PspLicenses.OnDevice(ux0Root, licenseId + ".rif")))
             {
                 log?.Invoke($"no license for {licenseId}: the title is installed, the system will say it has no license");
             }

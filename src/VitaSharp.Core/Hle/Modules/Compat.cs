@@ -343,7 +343,7 @@ public sealed class Compat : HleModule
         if (!Allowed) return ERR_PERM;
         if (!Owner) return ERR_NOT_OWNER;
         var id = GuestMemory.ReadSpan(contentId, 0x24);
-        _rif = id.IndexOf((byte)0) >= 0 ? "" : $"ux0:pspemu/PSP/LICENSE/{System.Text.Encoding.ASCII.GetString(id)}.rif";
+        _rif = id.IndexOf((byte)0) >= 0 ? "" : Io.FirmwareLayout.PspLicenses.Guest(System.Text.Encoding.ASCII.GetString(id) + ".rif");
         Log.Info($"SceCompat: rif {(_rif.Length == 0 ? "(none)" : _rif)}");
         return 0;
     }
@@ -400,7 +400,7 @@ public sealed class Compat : HleModule
     int sceCompatCheckPocketStation()
     {
         if (!Allowed) return ERR_PERM;
-        string? host = Emu.Vfs.Resolve("ux0:pspemu/PSP/LICENSE/JA0003-PCSC80018_00-POCKETSTATION001.rif");
+        string? host = Emu.Vfs.Resolve(Io.FirmwareLayout.PspLicenses.Guest("JA0003-PCSC80018_00-POCKETSTATION001.rif"));
         if (host == null || !File.Exists(host)) return 0;
         byte[] b = File.ReadAllBytes(host);
         if (b.Length is 0 or > 0x200) return 0;

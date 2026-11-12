@@ -470,7 +470,7 @@ public sealed partial class MainWindow : Window
 
     void Refresh(bool rebuild = true)
     {
-        _all = GameLibrary.Scan(Program.Ux0);
+        _all = GameLibrary.Scan(Program.FsRoot);
         _play = PlayHistory.Load();
         try
         {

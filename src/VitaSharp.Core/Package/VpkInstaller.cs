@@ -124,9 +124,9 @@ public static class VpkInstaller
                  : VpkContentKind.App;
         string dest = kind switch
         {
-            VpkContentKind.Patch => Path.Combine(ux0Root, "patch", titleId),
-            VpkContentKind.AddCont => Path.Combine(ux0Root, "addcont", titleId, AddContDir(sfo, prefix)),
-            _ => Path.Combine(ux0Root, "app", titleId),
+            VpkContentKind.Patch => Io.FirmwareLayout.Patches.OnDevice(ux0Root, titleId),
+            VpkContentKind.AddCont => Io.FirmwareLayout.AddCont.OnDevice(ux0Root, titleId, AddContDir(sfo, prefix)),
+            _ => Io.FirmwareLayout.Applications.OnDevice(ux0Root, titleId),
         };
         string version = (kind == VpkContentKind.App ? sfo.AppVersion : sfo.GetString("APP_VER", sfo.GetString("VERSION"))).Trim();
         return new VpkContentInfo(titleId, sfo.Title.Replace('\n', ' '), category, version, kind, prefix, Path.GetFullPath(dest));
@@ -385,10 +385,10 @@ public static class VpkInstaller
         var candidates = new List<string> { Io.Vfs.ResolveCaseInsensitive(dir, "sce_sys/package/work.bin") };
         if (info.Kind != VpkContentKind.App)
         {
-            candidates.Add(Io.Vfs.ResolveCaseInsensitive(Path.Combine(ux0Root, "app", info.TitleId), "sce_sys/package/work.bin"));
+            candidates.Add(Io.Vfs.ResolveCaseInsensitive(Io.FirmwareLayout.Applications.OnDevice(ux0Root, info.TitleId), "sce_sys/package/work.bin"));
         }
 
-        string licDir = Path.Combine(ux0Root, "license", info.TitleId);
+        string licDir = Io.FirmwareLayout.ApplicationLicenses.OnDevice(ux0Root, info.TitleId);
         if (Directory.Exists(licDir))
         {
             candidates.AddRange(Directory.GetFiles(licDir, "*.rif"));

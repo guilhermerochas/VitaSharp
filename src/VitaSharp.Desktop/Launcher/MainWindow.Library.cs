@@ -58,7 +58,7 @@ public sealed partial class MainWindow
         refresh.VerticalAlignment = VerticalAlignment.Center;
         header.Children.Add(Kit.At(refresh, col: 2));
         // ux0:app, where the installed games are
-        var gamesFolder = Path.Combine(Program.Ux0, "app");
+        string gamesFolder = VitaSharp.Core.Io.FirmwareLayout.Applications.Host(Program.FsRoot);
         var openGames = _k.Secondary("", "folder", () => { Directory.CreateDirectory(gamesFolder); OpenPath(gamesFolder); }, 46, tip: S.OpenGamesFolderTip(gamesFolder));
         openGames.Margin = new Thickness(0, 0, 12, 0);
         openGames.VerticalAlignment = VerticalAlignment.Center;

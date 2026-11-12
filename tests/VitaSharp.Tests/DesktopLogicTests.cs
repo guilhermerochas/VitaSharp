@@ -76,7 +76,7 @@ public sealed class DesktopLogicTests : IDisposable
         Assert.Equal(("Webcam X", "Webcam X", ""), (old.CameraFront, old.CameraBack, old.Camera));
     }
 
-    private static void WriteSfo(string path, params (string Key, string Value)[] entries)
+    internal static void WriteSfo(string path, params (string Key, string Value)[] entries)
     {
         // a PSF file: header, index table, key table, data table (UTF-8 strings)
         var keys = new MemoryStream();
@@ -130,7 +130,7 @@ public sealed class DesktopLogicTests : IDisposable
         File.WriteAllBytes(Path.Combine(game, "eboot.bin"), new byte[2048]);
         File.WriteAllBytes(Path.Combine(homebrew, "eboot.bin"), new byte[16]);
         WriteSfo(Path.Combine(game, "sce_sys", "param.sfo"), ("APP_VER", "01.05"), ("CATEGORY", "gd"), ("TITLE", "Zeta\nGame"), ("TITLE_ID", "PCSB00123"), ("CONTENT_ID", "EP0000-PCSB00123_00-0000000000000000"));
-        List<GameEntry> list = GameLibrary.Scan(ux0);
+        List<GameEntry> list = GameLibrary.Scan(_root);
         Assert.Equal(2, list.Count); // a folder without eboot.bin is no title
         GameEntry g = list.Single(e => e.TitleId == "PCSB00123");
         Assert.Equal("Zeta Game", g.Title);

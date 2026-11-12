@@ -544,6 +544,10 @@ public sealed class Emulator : IDisposable
     /// <summary>The main executable of the running program, relative to its folder.</summary>
     public string CurrentSelf { get; private set; } = "eboot.bin";
 
+    /// <summary>The launch parameter the system gives the title loaded by <see cref="LoadTitle"/> (a PSM title's folder
+    /// for its runtime), read with sceAppMgrGetAppParam; null for none.</summary>
+    private string? _launchParam;
+
     /// <summary>Replaces the process image: waits for the old threads, resets kernel, memory and GPU state and starts
     /// the requested executable in the same address space (like the Vita kernel does for the same application).</summary>
     public void PerformExec(Func<Gpu.IGpuBackend?>? backendFactory)
@@ -622,6 +626,17 @@ public sealed class Emulator : IDisposable
     public void LoadTitle(string appPath, string self = "eboot.bin")
     {
         using ProcessScope.Scope scope = ProcessScope.Enter(this);
+        // a PSM title is started as the system starts it: its runtime with the title's folder as the launch parameter
+        _launchParam = null;
+        if (Package.InstalledContent.IsPsmTitleFolder(Options.FsRoot, appPath))
+        {
+            (string ProgramDir, string Self, string Param) psm = Package.InstalledContent.PsmLaunch(Options.FsRoot, appPath)
+                ?? throw new FileNotFoundException("The PSM title needs the PSM Runtime Package, which is not installed");
+            Log.Info($"PSM title {Path.GetFileName(Path.TrimEndingDirectorySeparator(appPath))}: {psm.ProgramDir} ({psm.Self}) with \"{psm.Param}\"");
+            appPath = psm.ProgramDir;
+            self = psm.Self;
+            _launchParam = psm.Param;
+        }
         AppPath = Path.GetFullPath(appPath);
         CurrentSelf = self;
         Vfs.ClearApp0Overlays(); // a process switch brings another application's patch folder
@@ -638,15 +653,15 @@ public sealed class Emulator : IDisposable
             TitleId = Path.GetFileName(AppPath);
         }
 
-        string patch = Path.Combine(Options.FsRoot, "ux0", "patch", TitleId);
+        string patch = Io.FirmwareLayout.Patches.Host(Options.FsRoot, TitleId);
         if (Directory.Exists(patch))
         {
             Vfs.AddApp0Overlay(patch);
         }
 
-        string saveDir = Path.Combine(Options.FsRoot, "ux0", "user", "00", "savedata", TitleId);
+        string saveDir = Io.FirmwareLayout.SaveData.Host(Options.FsRoot, TitleId);
         Vfs.Mount("savedata0", saveDir);
-        Vfs.Mount("addcont0", Path.Combine(Options.FsRoot, "ux0", "addcont", TitleId));
+        Vfs.Mount("addcont0", Io.FirmwareLayout.AddCont.Host(Options.FsRoot, TitleId));
 
         Klicensee = FindKlicensee();
         string vs0 = Path.GetFullPath(Path.Combine(Options.FsRoot, "vs0")) + Path.DirectorySeparatorChar;
@@ -1040,8 +1055,7 @@ public sealed class Emulator : IDisposable
         foreach (string? p in new[]
                  {
                      Vfs.ResolveCaseInsensitive(AppPath, "sce_sys/package/work.bin"),
-                 }.Concat(Directory.Exists(Path.Combine(Options.FsRoot, "ux0", "license", TitleId))
-                     ? Directory.GetFiles(Path.Combine(Options.FsRoot, "ux0", "license", TitleId), "*.rif") : []))
+                 }.Concat(Io.FirmwareLayout.ApplicationLicenseFiles(Options.FsRoot, TitleId)))
         {
             if (File.Exists(p))
             {
@@ -1298,7 +1312,7 @@ public sealed class Emulator : IDisposable
                 appMgr.LaunchParam = ap[(colon + 1)..];
             }
 
-            appMgr.LaunchParam ??= "";
+            appMgr.LaunchParam ??= _launchParam ?? "";
             appMgr.PostEvent(VitaSharp.Core.Hle.Modules.AppMgr.EventParamNotify);
         }
         if (args is { Length: > 0 })

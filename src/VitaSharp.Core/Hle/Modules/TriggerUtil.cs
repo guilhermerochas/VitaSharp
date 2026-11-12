@@ -180,15 +180,15 @@ public sealed partial class TriggerUtil : HleModule
         if (id.Equals(CurrentTitleId, StringComparison.OrdinalIgnoreCase)) name = CurrentTitle;
         else
         {
-            var sfo = Path.Combine(FsRoot, "ux0", "app", id, "sce_sys", "param.sfo");
+            string sfo = Io.FirmwareLayout.Applications.Host(FsRoot, id, "sce_sys", "param.sfo");
             try { if (File.Exists(sfo)) name = Sfo.Load(sfo).Title; }
             catch (Exception e) when (e is IOException or InvalidDataException or ArgumentException) { name = id; }
-            if (name == null && Directory.Exists(Path.Combine(FsRoot, "ux0", "app", id))) name = id;
+            if (name == null && Directory.Exists(Io.FirmwareLayout.Applications.Host(FsRoot, id))) name = id;
         }
         if (name == null) return ERR_NOT_FOUND_USER;
         GuestMemory.Fill(appInfo, 0, UserAppInfoSize);
         CommonDialog.WriteUtf16(appInfo, name, 0x34 - 1);
-        GuestMemory.WriteCString(appInfo + 0x68, $"ux0:app/{id}/sce_sys/icon0.png", 0x400);
+        GuestMemory.WriteCString(appInfo + 0x68, Io.FirmwareLayout.Applications.Guest(id, "sce_sys/icon0.png"), 0x400);
         return 0;
     }
 
