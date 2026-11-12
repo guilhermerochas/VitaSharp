@@ -267,12 +267,16 @@ public sealed class AndroidMediaDriverTests : IDisposable
 
     private static readonly byte[] s_idr = [0, 0, 0, 1, 0x67, 1, 0, 0, 1, 0x68, 2, 0, 0, 1, 0x65, 3];
     private static readonly byte[] s_pSlice = [0, 0, 1, 0x41, 4, 5];
+    private static readonly byte[] s_parameterSetsOnly = [0, 0, 0, 1, 0x67, 1, 0, 0, 1, 0x68, 2];
 
     [Fact]
     public void AnnexBHelpers()
     {
         Assert.True(H264AnnexB.ContainsIdr(s_idr));
         Assert.False(H264AnnexB.ContainsIdr(s_pSlice));
+        Assert.True(H264AnnexB.ContainsSlice(s_idr));
+        Assert.True(H264AnnexB.ContainsSlice(s_pSlice));
+        Assert.False(H264AnnexB.ContainsSlice(s_parameterSetsOnly));
         Assert.True(H264AnnexB.StartsWithStartCode(s_pSlice));
         // MP4 sample with 4-byte lengths, SPS/PPS header in front of a key frame
         byte[] avcc = [0, 0, 0, 2, 0x65, 7, 0, 0, 0, 1, 0x06];
@@ -305,6 +309,193 @@ public sealed class AndroidMediaDriverTests : IDisposable
         r.Add(s_pSlice, 5);
         r.Clear();
         Assert.Empty(r.TakeReplay().Units);
+    }
+
+    // ---------------------------------------------------------------- MediaCodec output timing (sceAvcdecDecode contract)
+
+    /// <summary>
+    /// A MediaCodec stand-in on a test clock: it decodes the queued units one after the other, each taking
+    /// <c>decodeUs(index)</c>, and gives a finished picture out only once <c>heldPictures</c> later units were queued
+    /// (a decoder that holds pictures back for reordering). <see cref="Poll"/> is what MediaCodecVideoDecoder's drain
+    /// does: take every finished picture out, waiting at most the timeout for the next one.
+    /// </summary>
+    private sealed class SimulatedMediaCodec(SynchronousOutput sync, Func<int, long> decodeUs, int heldPictures = 0)
+    {
+        private readonly List<long> _finishUs = new();
+        private int _pictureCount;
+
+        public long NowUs;
+
+        public int PictureCount => _pictureCount;
+
+        public void Queue(bool makesPicture)
+        {
+            if (makesPicture)
+            {
+                long decodeStart = Math.Max(NowUs, _finishUs.Count > 0 ? _finishUs[^1] : 0);
+                _finishUs.Add(decodeStart + decodeUs(_finishUs.Count));
+            }
+            sync.UnitQueued(makesPicture);
+        }
+
+        public void Poll(long timeoutUs)
+        {
+            int releasable = _finishUs.Count - heldPictures;
+            if (_pictureCount >= releasable)
+            {
+                NowUs += timeoutUs;
+                return;
+            }
+
+            long next = _finishUs[_pictureCount];
+            if (next > NowUs + timeoutUs)
+            {
+                NowUs += timeoutUs;
+                return;
+            }
+
+            NowUs = Math.Max(NowUs, next);
+            while (_pictureCount < releasable && _finishUs[_pictureCount] <= NowUs)
+            {
+                _pictureCount++;
+                sync.PictureOut();
+            }
+        }
+
+        /// <summary>One sceAvcdecDecode call: earlier pictures out, the unit in, then the wait for its picture.</summary>
+        public void Send(bool makesPicture = true)
+        {
+            Poll(0);
+            Queue(makesPicture);
+            sync.Await(Poll, () => NowUs);
+        }
+    }
+
+    [Fact]
+    public void EachDecodeCallGetsThePictureOfItsUnit()
+    {
+        // c2.android.avc.decoder on the Redmi Note 14: ~13 ms per Vita-sized picture, a 30 fps movie. The Vita's
+        // sceAvcdecDecode answers every call, the first one included, with the picture of that call's unit; a 5 ms grace
+        // (and none before the first picture) left F1 2011's and Uncharted's players with old or missing pictures
+        var sync = new SynchronousOutput();
+        var codec = new SimulatedMediaCodec(sync, _ => 13_000);
+        for (int unit = 1; unit <= 60; unit++)
+        {
+            long callStart = codec.NowUs;
+            codec.Send();
+            Assert.Equal(unit, codec.PictureCount);
+            Assert.True(codec.NowUs - callStart <= 13_000, $"call {unit} waited {codec.NowUs - callStart} us");
+            codec.NowUs += 33_333 - (codec.NowUs - callStart);
+        }
+        Assert.Equal(0, sync.MissedDeadlines);
+        Assert.Equal(0, sync.HeldPictures);
+
+        // a flush to loop the movie: the first call of the new pass waits for its picture as well
+        sync.Restart();
+        var looped = new SimulatedMediaCodec(sync, _ => 30_000);
+        looped.Send();
+        Assert.Equal(1, looped.PictureCount);
+    }
+
+    [Fact]
+    public void PipelinedOutputWaitsOnlyForTheFirstPicture()
+    {
+        // MediaCodecVideoDecoder's default: the call that starts a stream answers with its picture (as the Vita does:
+        // no empty first calls, the black and stale frames at every movie start on the phone), later calls take what is
+        // done (the decoder works during the game's frame) with a 5 ms grace, so the game thread does not wait the
+        // decoder's 13 ms on every call: one picture per call, one call behind
+        var sync = new SynchronousOutput { PipelinedAfterStart = true };
+        var codec = new SimulatedMediaCodec(sync, _ => 13_000);
+        codec.Send();
+        Assert.Equal(1, codec.PictureCount);
+        codec.NowUs += 33_333;
+        for (int unit = 2; unit <= 40; unit++)
+        {
+            long callStart = codec.NowUs;
+            codec.Send();
+            Assert.Equal(unit - 1, codec.PictureCount);
+            Assert.True(codec.NowUs - callStart <= SynchronousOutput.PipelinedGraceUs, $"call {unit} waited {codec.NowUs - callStart} us");
+            codec.NowUs += 33_333;
+        }
+        Assert.Equal(0, sync.MissedDeadlines);
+
+        // a flush to loop the movie: the first call of the new pass waits for its picture again
+        sync.Restart();
+        var looped = new SimulatedMediaCodec(sync, _ => 30_000);
+        looped.Send();
+        Assert.Equal(1, looped.PictureCount);
+    }
+
+    [Fact]
+    public void UnitsWithoutASliceDoNotWait()
+    {
+        var sync = new SynchronousOutput();
+        var codec = new SimulatedMediaCodec(sync, _ => 13_000);
+        codec.Send(makesPicture: false); // SPS/PPS alone
+        Assert.Equal(0, codec.NowUs);
+        Assert.Equal(0, sync.MissedDeadlines);
+        codec.Send();
+        Assert.Equal(1, codec.PictureCount);
+    }
+
+    [Fact]
+    public void ADecoderThatHoldsAPictureIsLearnedOnceNotWaitedForEveryCall()
+    {
+        // a reordering decoder gives picture n out only after unit n+1: the first call misses its deadline once, then
+        // every call answers with one picture (one unit behind, as FFmpeg does for such a stream) without stalling
+        var sync = new SynchronousOutput();
+        var codec = new SimulatedMediaCodec(sync, _ => 13_000, heldPictures: 1);
+        codec.Send();
+        Assert.Equal(0, codec.PictureCount);
+        Assert.Equal(1, sync.MissedDeadlines);
+        Assert.Equal(1, sync.HeldPictures);
+        for (int unit = 2; unit <= 30; unit++)
+        {
+            long callStart = codec.NowUs;
+            codec.Send();
+            Assert.Equal(unit - 1, codec.PictureCount);
+            Assert.True(codec.NowUs - callStart <= 13_000, $"call {unit} waited {codec.NowUs - callStart} us");
+            codec.NowUs += 33_333;
+        }
+        Assert.Equal(1, sync.MissedDeadlines);
+    }
+
+    [Fact]
+    public void ADecoderFillingItsDpbStallsOnlyOnce()
+    {
+        // libavc without a reorder limit in the SPS gives nothing out before its DPB (8 pictures for a Vita movie) is
+        // full: one missed first-picture deadline, then no waits while it fills, then one picture per call
+        var sync = new SynchronousOutput();
+        var codec = new SimulatedMediaCodec(sync, _ => 13_000, heldPictures: 8);
+        long stalled = 0;
+        for (int unit = 1; unit <= 30; unit++)
+        {
+            long callStart = codec.NowUs;
+            codec.Send();
+            stalled += codec.NowUs - callStart;
+            Assert.Equal(Math.Max(0, unit - 8), codec.PictureCount);
+            codec.NowUs += 33_333;
+        }
+        Assert.Equal(1, sync.MissedDeadlines);
+        Assert.True(stalled <= SynchronousOutput.FirstPictureDeadlineUs + 30 * 13_000, $"stalled {stalled} us");
+        Assert.Equal(8, sync.HeldPictures);
+    }
+
+    [Fact]
+    public void OneSlowPictureDoesNotLeaveTheDecoderBehind()
+    {
+        // picture 5 takes 60 ms (the CPU was busy): that call misses its deadline, the next calls catch up and wait
+        // for their own picture again
+        var sync = new SynchronousOutput();
+        var codec = new SimulatedMediaCodec(sync, index => index == 4 ? 60_000 : 13_000);
+        for (int unit = 1; unit <= 12; unit++)
+        {
+            codec.Send();
+            codec.NowUs += 20_000;
+        }
+        Assert.Equal(1, sync.MissedDeadlines);
+        Assert.Equal(0, sync.HeldPictures);
+        Assert.Equal(12, codec.PictureCount);
     }
 
     // ---------------------------------------------------------------- GPU driver packages and screen

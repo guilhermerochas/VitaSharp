@@ -232,7 +232,15 @@ public static class H264AnnexB
     }
 
     /// <summary>True when the access unit has an IDR slice (NAL unit type 5).</summary>
-    public static bool ContainsIdr(ReadOnlySpan<byte> au)
+    public static bool ContainsIdr(ReadOnlySpan<byte> au) => ContainsNal(au, 5, 5);
+
+    /// <summary>True when the access unit has a slice (NAL unit type 1 or 5), that is, it makes a picture; a unit with
+    /// only SPS/PPS/SEI makes none.</summary>
+    public static bool ContainsSlice(ReadOnlySpan<byte> au) => ContainsNal(au, 1, 5);
+
+    /// <summary>True when a NAL unit of type <paramref name="firstType"/> or <paramref name="secondType"/> is in the
+    /// access unit.</summary>
+    private static bool ContainsNal(ReadOnlySpan<byte> au, int firstType, int secondType)
     {
         for (int i = 0; i + 3 < au.Length; i++)
         {
@@ -255,7 +263,8 @@ public static class H264AnnexB
                 continue;
             }
 
-            if (nal < au.Length && (au[nal] & 0x1F) == 5)
+            int nalType = nal < au.Length ? au[nal] & 0x1F : -1;
+            if (nalType == firstType || nalType == secondType)
             {
                 return true;
             }
@@ -263,5 +272,177 @@ public static class H264AnnexB
             i = nal - 1;
         }
         return false;
+    }
+}
+
+/// <summary>
+/// Makes an asynchronous MediaCodec decoder answer the way the Vita's sceAvcdecDecode does: the call that hands over an
+/// access unit returns the picture that unit completes (sceAvcdecDecode is synchronous on the console; Vita3K and the
+/// desktop's FFmpeg path send the unit and receive its picture in the same call). MediaCodec decodes on its own threads,
+/// so a unit's picture comes out some milliseconds after it was queued (12.8 ms per picture with c2.android.avc.decoder
+/// on the Redmi Note 14). Waiting only 5 ms, and not at all for the first picture of a stream, made most calls answer
+/// with an earlier unit's picture, a repeated one, or none; the HLE's stand-ins for a missing picture (the previous
+/// picture again, the last picture of the previous movie pass) showed as black and old frames in F1 2011's and
+/// Uncharted's movies on the phone.
+/// <para>After each unit, <see cref="Await"/> drains the decoder until every picture-making unit has its picture out,
+/// apart from the pictures the decoder holds on purpose (reordering: a stream with B-frames, or a decoder that outputs
+/// from a full DPB), within <see cref="PictureDeadlineUs"/> (<see cref="FirstPictureDeadlineUs"/> for the first
+/// picture after a start or flush, which includes the decoder's start-up). A missed deadline counts as one more held
+/// picture, so later calls stop waiting for it (no stall per call); when the decoder gives a held picture out early
+/// again, the count goes back down (<see cref="PictureOut"/>).</para>
+/// <para>MediaCodecVideoDecoder uses it with <see cref="PipelinedAfterStart"/>: only a stream's first picture is
+/// waited for (and drained out of a decoder that holds it, PrimeFirstPicture), the later ones come out about a call
+/// after their unit, so the decoding overlaps the game's frame as before (waiting on every call cost 7% fps in F1
+/// 2011's intro on the phone). VITASHARP_MEDIACODEC_SYNC=all waits on every call.</para>
+/// </summary>
+public sealed class SynchronousOutput
+{
+    /// <summary>Longest wait for a unit's picture: three times a software decode of a Vita-sized picture, so a slow
+    /// picture is not taken for a held one, and still within a 30 fps movie frame.</summary>
+    public const long PictureDeadlineUs = 40_000;
+
+    /// <summary>Default longest wait for the first picture after a start or flush (the decoder's threads start up);
+    /// a decoder that holds its first pictures longer is drained (MediaCodecVideoDecoder.PrimeFirstPicture).</summary>
+    public const long FirstPictureDeadlineUs = 250_000;
+
+    /// <summary>After the first picture, in <see cref="PipelinedAfterStart"/> mode, the longest wait for a call without a
+    /// new picture (the timing MediaCodecVideoDecoder always had).</summary>
+    public const long PipelinedGraceUs = 5_000;
+
+    /// <summary>
+    /// The first picture of a stream is waited for (the call that starts the stream answers with it, as on the Vita),
+    /// the later ones are not: a call takes the pictures that are done and waits at most <see cref="PipelinedGraceUs"/>
+    /// when none is, so the decoder works while the game does (the picture of a call comes out about one call later).
+    /// Waiting for every picture made the game thread wait the decoder's ~15 ms per picture on the phone: F1 2011's
+    /// intro went from 20.6 to 19.1 fps. False: every call waits for its own picture.
+    /// </summary>
+    public bool PipelinedAfterStart { get; init; }
+
+    /// <summary>Longest wait for the first picture after a start or flush (<see cref="FirstPictureDeadlineUs"/> unless
+    /// set).</summary>
+    public long FirstDeadlineUs { get; init; } = FirstPictureDeadlineUs;
+
+    /// <summary>The most pictures a decoder is taken to hold back (the largest H.264 DPB); past it, every call waits again.</summary>
+    public const int MaxHeldPictures = 16;
+
+    /// <summary>One drain poll waits at most this long before the deadline is checked again.</summary>
+    private const long PollUs = 10_000;
+
+    private long _units;
+    private long _pictures;
+    private bool _started;
+    private bool _missedBeforeFirstPicture;
+
+    /// <summary>Pictures the decoder keeps back on purpose (learned from missed deadlines, lowered when it gives
+    /// one out early).</summary>
+    public int HeldPictures { get; private set; }
+
+    /// <summary>Statistics: deadlines missed.</summary>
+    public long MissedDeadlines { get; private set; }
+
+    /// <summary>Statistics: time spent waiting, in microseconds.</summary>
+    public long WaitedUs { get; private set; }
+
+    /// <summary>A picture came out since the last start or flush.</summary>
+    public bool Started => _started;
+
+    /// <summary>Picture-making units queued whose picture is not out yet.</summary>
+    public long Outstanding => _units - _pictures;
+
+    /// <summary>True while a queued unit's picture is still due.</summary>
+    public bool PictureDue => Outstanding > HeldPictures;
+
+    /// <summary>A unit went to the decoder; <paramref name="makesPicture"/>: it has a slice
+    /// (<see cref="H264AnnexB.ContainsSlice"/>).</summary>
+    public void UnitQueued(bool makesPicture)
+    {
+        if (makesPicture)
+        {
+            _units++;
+        }
+    }
+
+    /// <summary>The stream's first picture was obtained another way (a drain): later calls do not wait for a first
+    /// picture.</summary>
+    public void MarkStarted() => _started = true;
+
+    /// <summary>A picture came out of the decoder.</summary>
+    public void PictureOut()
+    {
+        _pictures++;
+        _started = true;
+        long outstanding = Math.Max(0, Outstanding);
+        if (outstanding < HeldPictures)
+        {
+            HeldPictures = (int)outstanding;
+        }
+    }
+
+    /// <summary>
+    /// Drains until no picture is due or the deadline passes. <paramref name="poll"/> takes the decoder's finished
+    /// pictures out, waiting at most the given microseconds for one, and reports each with <see cref="PictureOut"/>;
+    /// <paramref name="nowUs"/> is a monotonic clock in microseconds.
+    /// </summary>
+    public void Await(Action<long> poll, Func<long> nowUs)
+    {
+        if (!PictureDue)
+        {
+            return;
+        }
+
+        if (PipelinedAfterStart && _started)
+        {
+            long before = _pictures;
+            poll(0);
+            if (_pictures == before && PictureDue)
+            {
+                poll(PipelinedGraceUs);
+            }
+
+            return;
+        }
+
+        if (_missedBeforeFirstPicture && !_started)
+        {
+            // the first picture did not come within its deadline: the decoder fills its pipeline (a DPB it holds back)
+            // before it gives anything out; waiting again on every call until then would stall each of them
+            poll(0);
+            if (!_started)
+            {
+                HeldPictures = (int)Math.Min(Outstanding, MaxHeldPictures);
+            }
+
+            return;
+        }
+
+        long start = nowUs();
+        long deadline = start + (_started ? PictureDeadlineUs : FirstDeadlineUs);
+        while (PictureDue)
+        {
+            long left = deadline - nowUs();
+            if (left <= 0)
+            {
+                MissedDeadlines++;
+                _missedBeforeFirstPicture |= !_started;
+                if (HeldPictures < MaxHeldPictures)
+                {
+                    HeldPictures++;
+                }
+
+                break;
+            }
+
+            poll(Math.Min(left, PollUs));
+        }
+        WaitedUs += nowUs() - start;
+    }
+
+    /// <summary>Start, flush or reset: nothing is in flight. <see cref="HeldPictures"/> stays (same decoder).</summary>
+    public void Restart()
+    {
+        _units = 0;
+        _pictures = 0;
+        _started = false;
+        _missedBeforeFirstPicture = false;
     }
 }

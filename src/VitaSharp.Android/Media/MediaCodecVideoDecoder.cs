@@ -54,10 +54,26 @@ public sealed unsafe class MediaCodecVideoDecoder : IVideoDecoder
     readonly Stack<DecodedPicture> _free = new();
     readonly DecoderReplay _replay = new();
     int _skip;
-    // SceAvcdec hands a picture out in the call that decoded it; MediaCodec decodes asynchronously and holds several
-    // pictures in flight (IVideoDecoder.Asynchronous: SceAvcdec repeats or skips pictures to stay in step)
-    long _queued, _produced;
-    const long OutputGraceUs = 5_000;
+    // SceAvcdec hands a picture out in the call that decoded it; MediaCodec decodes on its own threads, so each Send
+    // waits for the picture of its unit (SynchronousOutput); IVideoDecoder.Asynchronous: a missed deadline can still
+    // leave a call without its picture
+    readonly SynchronousOutput _sync = new() { FirstDeadlineUs = s_firstDeadlineUs, PipelinedAfterStart = !s_waitEveryPicture };
+    // VITASHARP_MEDIACODEC_SYNC=all: every access unit waits for its picture (default: only a stream's first one)
+    static readonly bool s_waitEveryPicture = System.Environment.GetEnvironmentVariable(EnvVars.MediaCodecSync) == "all";
+    // VITASHARP_MEDIACODEC_FIRST_US: the longest wait for a stream's first picture (A/B runs on a device)
+    static readonly long s_firstDeadlineUs = long.TryParse(System.Environment.GetEnvironmentVariable(EnvVars.MediaCodecFirstUs), out long firstUs) && firstUs > 0
+        ? firstUs : SynchronousOutput.FirstPictureDeadlineUs;
+    // VITASHARP_MEDIACODEC_WARMUP=1: a new decoder decodes one synthetic picture of the largest size first, so the
+    // codec's threads and output buffers exist before the game's first unit (A/B runs on a device)
+    static readonly bool s_warmUp = System.Environment.GetEnvironmentVariable(EnvVars.MediaCodecWarmUp) == "1";
+    // VITASHARP_MEDIACODEC_SYNC=0: the old timing (a 5 ms grace once a picture came out), for A/B runs on a device
+    static readonly bool s_legacyOutputTiming = System.Environment.GetEnvironmentVariable(EnvVars.MediaCodecSync) == "0";
+    const long LegacyOutputGraceUs = 5_000;
+    // SPSs without a reorder limit get max_num_reorder_frames = 0 (H264ReorderLimit: Android's software decoder holds a
+    // whole DPB back otherwise, 8 pictures for a Vita movie) until a B slice shows the stream reorders; the pictures of
+    // a stream restarted then that were already handed out (pts up to this) are dropped
+    bool _streamReorders, _reorderLimitLogged, _reorderLimitGiven;
+    long _lastOutputPts = long.MinValue, _skipThroughPts = long.MinValue;
     // output format (raw-buffer path and crop)
     int _width, _height, _stride, _sliceHeight, _colorFormat, _cropX, _cropY;
     bool _fullRange, _bt709;
@@ -90,7 +106,25 @@ public sealed unsafe class MediaCodecVideoDecoder : IVideoDecoder
         var d = new MediaCodecVideoDecoder(names, maxWidth, maxHeight);
         if (!d.OpenNext())
             return null;
+        if (s_warmUp)
+        {
+            d.WarmUp();
+        }
+
         return d;
+    }
+
+    /// <summary>Decodes one synthetic picture of the decoder's largest size and drops it (see s_warmUp).</summary>
+    void WarmUp()
+    {
+        long start = System.Diagnostics.Stopwatch.GetTimestamp();
+        int width = Math.Max(16, _maxWidth / 16 * 16);
+        int height = Math.Max(16, _maxHeight / 16 * 16);
+        Send(SyntheticH264.Stream(1, width, height)[0].AccessUnit, 0);
+        Reset();
+        _sends = 0;
+        _sendTicks = _queueTicks = _waitTicks = _copyTicks = 0;
+        Log.Info($"MediaCodec: {_codecName} warmed up with a {width}x{height} picture in {(System.Diagnostics.Stopwatch.GetTimestamp() - start) * 1000.0 / System.Diagnostics.Stopwatch.Frequency:F0} ms");
     }
 
     /// <summary>The device's H.264 decoders, hardware ones first (vendor names before Android's own c2.android/OMX.google).</summary>
@@ -128,7 +162,8 @@ public sealed unsafe class MediaCodecVideoDecoder : IVideoDecoder
                 codec = MediaCodec.CreateByCodecName(name);
                 var fmt = MediaFormat.CreateVideoFormat(Mime, _maxWidth, _maxHeight);
                 fmt.SetInteger(MediaFormat.KeyColorFormat, YuvImageCopy.ColorFormatYuv420Flexible);
-                fmt.SetInteger(MediaFormat.KeyMaxInputSize, Math.Max(_maxWidth * _maxHeight, 256 * 1024));
+                // room for an uncompressed (I_PCM) picture: the warm-up picture
+                fmt.SetInteger(MediaFormat.KeyMaxInputSize, Math.Max(_maxWidth * _maxHeight * 3 / 2 + 64 * 1024, 256 * 1024));
                 fmt.SetInteger("priority", 0); // realtime
                 bool lowLatency = false;
                 if (OperatingSystem.IsAndroidVersionAtLeast(30)
@@ -197,7 +232,7 @@ public sealed unsafe class MediaCodecVideoDecoder : IVideoDecoder
         Log.Warn($"MediaCodec: {failed} failed ({why}); continuing with {_codecName} from the last IDR picture");
         var (units, skip) = _replay.TakeReplay();
         _skip = skip;
-        _queued = _produced = 0;
+        _sync.Restart();
         foreach (var (data, pts) in units)
             Send(data, pts);
     }
@@ -222,21 +257,62 @@ public sealed unsafe class MediaCodecVideoDecoder : IVideoDecoder
     {
         if (_codec == null)
             return;
+        if (!s_legacyOutputTiming && !_streamReorders && H264ReorderLimit.IsBSlice(accessUnit))
+        {
+            // F1 2011's movies have B frames and a reorder limit of their own: nothing to undo there
+            _streamReorders = true;
+            if (_reorderLimitGiven)
+            {
+                RestartWithoutReorderLimit();
+                if (_codec == null)
+                {
+                    return;
+                }
+            }
+        }
         _replay.Add(accessUnit, pts);
         try
         {
-            long q0 = System.Diagnostics.Stopwatch.GetTimestamp();
-            Queue(accessUnit, pts, 0);
-            _queueTicks += System.Diagnostics.Stopwatch.GetTimestamp() - q0;
+            // pictures finished since the last call first: a picture counted as held that came out after all
+            // lowers SynchronousOutput.HeldPictures before this unit's wait
             Drain();
-            // a short grace for a picture already in the works; never longer: the MediaTek decoder holds several
-            // pictures in flight and waiting for each one (40 ms) slowed F1 2011's movies below real time
-            if (_codec != null && _ready.Count == 0 && _produced > 0 && _queued > _produced)
+            long queueStart = System.Diagnostics.Stopwatch.GetTimestamp();
+            ReadOnlySpan<byte> unitToQueue = accessUnit;
+            if (!s_legacyOutputTiming && !_streamReorders && H264ReorderLimit.ContainsSps(accessUnit))
             {
-                long w0 = System.Diagnostics.Stopwatch.GetTimestamp();
-                Drain(OutputGraceUs);
-                _waitTicks += System.Diagnostics.Stopwatch.GetTimestamp() - w0;
+                byte[] limited = H264ReorderLimit.Apply(accessUnit.ToArray(), 0);
+                _reorderLimitGiven |= limited.Length != accessUnit.Length;
+                if (!_reorderLimitLogged && limited.Length != accessUnit.Length)
+                {
+                    _reorderLimitLogged = true;
+                    Log.Info($"MediaCodec: {_codecName}: the stream's SPS has no reorder limit: max_num_reorder_frames = 0 given to the decoder");
+                }
+                unitToQueue = limited;
             }
+            bool queued = Queue(unitToQueue, pts, 0);
+            _queueTicks += System.Diagnostics.Stopwatch.GetTimestamp() - queueStart;
+            _sync.UnitQueued(queued && H264AnnexB.ContainsSlice(accessUnit));
+            // the Vita answers this call with this unit's picture: wait for it (a software decode of a Vita-sized
+            // picture takes ~13 ms), except for the pictures the decoder holds back on purpose
+            long waitStart = System.Diagnostics.Stopwatch.GetTimestamp();
+            if (s_legacyOutputTiming)
+            {
+                Drain();
+                if (_codec != null && _ready.Count == 0 && _sync.Outstanding > 0 && _sync.Started)
+                {
+                    Drain(LegacyOutputGraceUs);
+                }
+            }
+            else if (queued && !_sync.Started && H264AnnexB.ContainsIdr(accessUnit))
+            {
+                // a stream's first picture: answered in this call whatever the decoder holds back
+                PrimeFirstPicture(unitToQueue, pts);
+            }
+            else
+            {
+                _sync.Await(PollOutput, MonotonicMicroseconds);
+            }
+            _waitTicks += System.Diagnostics.Stopwatch.GetTimestamp() - waitStart;
         }
         catch (Java.Lang.Exception e)
         {
@@ -244,7 +320,99 @@ public sealed unsafe class MediaCodecVideoDecoder : IVideoDecoder
         }
     }
 
-    void Queue(ReadOnlySpan<byte> data, long pts, MediaCodecBufferFlags flags)
+    /// <summary>
+    /// A B slice: the stream reorders, so the reorder limit given to its SPS was wrong. The decoder restarts from the last
+    /// IDR picture with the stream's own SPS (the decoder then holds the pictures it must reorder), and the pictures it
+    /// gives out again up to the last one handed out are dropped.
+    /// </summary>
+    void RestartWithoutReorderLimit()
+    {
+        _streamReorders = true;
+        _reorderLimitGiven = false;
+        Log.Info($"MediaCodec: {_codecName}: the stream has B slices; decoding again from the last IDR picture with its own reorder depth");
+        try
+        {
+            _codec!.Flush();
+        }
+        catch (Java.Lang.Exception e)
+        {
+            FallBack(e.Message ?? e.GetType().Name);
+            return;
+        }
+        (IReadOnlyList<(byte[] Data, long Pts)> units, _) = _replay.TakeReplay();
+        _sync.Restart();
+        _skipThroughPts = _lastOutputPts;
+        foreach ((byte[] data, long unitPts) in units)
+        {
+            SendCore(data, unitPts);
+        }
+    }
+
+    /// <summary>
+    /// A stream's first IDR unit: Android's software decoder (libavc) holds the first pictures
+    /// until more units arrive (2 for a 64x64 stream, 6 to 8 calls for F1 2011's 960x544 movies), with or without a
+    /// reorder limit, where the Vita's decoder answers the call that starts a stream with its picture; without one the
+    /// game showed an empty buffer or, from the HLE, the previous movie's last picture (black and old frames at every
+    /// movie start on the phone). An end-of-stream buffer makes the decoder give out what it holds; a flush then takes
+    /// it back to decoding, and the same unit goes in again as the reference for what follows (its second picture is
+    /// dropped by pts). The calls after it repeat this picture (SceAvcdec) until the decoder's own pictures come.
+    /// </summary>
+    void PrimeFirstPicture(ReadOnlySpan<byte> unit, long pts)
+    {
+        long start = MonotonicMicroseconds();
+        MediaCodec codec = _codec!;
+        if (!Queue([], 0, MediaCodecBufferFlags.EndOfStream))
+        {
+            return;
+        }
+
+        while (MonotonicMicroseconds() - start < PrimeTimeoutUs)
+        {
+            if (Drain(10_000))
+            {
+                break;
+            }
+        }
+        codec.Flush();
+        _sync.Restart();
+        if (_ready.Count == 0)
+        {
+            Log.WarnOnce("mediacodec-prime", $"MediaCodec: {_codecName}: no picture even at the end of the stream; the first calls stay without one");
+            Queue(unit, pts, 0);
+            _sync.UnitQueued(true);
+            return;
+        }
+
+        _sync.MarkStarted();
+        _skipThroughPts = _lastOutputPts;
+        if (Queue(unit, pts, 0))
+        {
+            _sync.UnitQueued(true);
+        }
+
+        _primes++;
+        if (_primes == 1)
+        {
+            Log.Info($"MediaCodec: {_codecName}: first picture given out by an end-of-stream drain in {(MonotonicMicroseconds() - start) / 1000.0:F1} ms");
+        }
+    }
+
+    /// <summary>Longest wait for the pictures an end-of-stream drain gives out (PrimeFirstPicture).</summary>
+    const long PrimeTimeoutUs = 1_000_000;
+    long _primes;
+
+    static long MonotonicMicroseconds() => System.Diagnostics.Stopwatch.GetTimestamp() * 1_000_000 / System.Diagnostics.Stopwatch.Frequency;
+
+    void PollOutput(long timeoutUs)
+    {
+        if (_codec != null)
+        {
+            Drain(timeoutUs);
+        }
+    }
+
+    /// <summary>Queues one input buffer; false when no input buffer came free (the unit is dropped).</summary>
+    bool Queue(ReadOnlySpan<byte> data, long pts, MediaCodecBufferFlags flags)
     {
         var c = _codec!;
         for (int attempt = 0; attempt < InputAttempts; attempt++)
@@ -261,11 +429,10 @@ public sealed unsafe class MediaCodecVideoDecoder : IVideoDecoder
                 Log.WarnOnce("mediacodec-in-size", $"MediaCodec: access unit of {data.Length} bytes truncated to {n}");
             data[..n].CopyTo(new Span<byte>((void*)buf.GetDirectBufferAddress(), n));
             c.QueueInputBuffer(idx, 0, n, Math.Max(0, pts), flags);
-            if (n > 0)
-                _queued++;
-            return;
+            return true;
         }
         Log.WarnOnce("mediacodec-in", "MediaCodec: no input buffer available, access unit dropped");
+        return false;
     }
 
     /// <summary>Takes every finished picture out; true once the end-of-stream buffer came out.</summary>
@@ -295,15 +462,23 @@ public sealed unsafe class MediaCodecVideoDecoder : IVideoDecoder
                 if (p != null)
                 {
                     Interlocked.Increment(ref Pictures);
-                    _produced++;
+                    _sync.PictureOut();
                     _replay.Produced();
                     if (_skip > 0)
                     {
                         _skip--;
                         Recycle(p);
                     }
+                    else if (_skipThroughPts != long.MinValue && p.Pts <= _skipThroughPts)
+                    {
+                        Recycle(p);
+                    }
                     else
+                    {
+                        _skipThroughPts = long.MinValue;
+                        _lastOutputPts = p.Pts;
                         _ready.Enqueue(p);
+                    }
                 }
             }
             c.ReleaseOutputBuffer(idx, false);
@@ -400,7 +575,7 @@ public sealed unsafe class MediaCodecVideoDecoder : IVideoDecoder
             FallBack(e.Message ?? e.GetType().Name);
         }
         _replay.Clear();
-        _queued = _produced = 0;
+        _sync.Restart();
     }
 
     public void Reset()
@@ -416,8 +591,10 @@ public sealed unsafe class MediaCodecVideoDecoder : IVideoDecoder
         while (_ready.Count > 0)
             Recycle(_ready.Dequeue());
         _replay.Clear();
-        _queued = _produced = 0;
+        _sync.Restart();
         _skip = 0;
+        _skipThroughPts = long.MinValue;
+        _lastOutputPts = long.MinValue;
     }
 
     public DecodedPicture? Take() => _ready.Count > 0 ? _ready.Dequeue() : null;
@@ -432,7 +609,10 @@ public sealed unsafe class MediaCodecVideoDecoder : IVideoDecoder
     {
         double f = 1000.0 / System.Diagnostics.Stopwatch.Frequency, n = Math.Max(1, _sends);
         if (_sends > 0)
-            Log.Info($"MediaCodec: {_codecName}: {_sends} units, per unit {_sendTicks * f / n:F1} ms in Send (queue {_queueTicks * f / n:F1}, output waits {_waitTicks * f / n:F1}, picture copies {_copyTicks * f / n:F1})");
+        {
+            Log.Info($"MediaCodec: {_codecName}: {_sends} units, per unit {_sendTicks * f / n:F1} ms in Send (queue {_queueTicks * f / n:F1}, output waits {_waitTicks * f / n:F1}, picture copies {_copyTicks * f / n:F1}), " +
+                     $"{_sync.MissedDeadlines} picture deadlines missed, {_sync.HeldPictures} pictures held by the decoder, {_primes} first pictures drained out");
+        }
         ReleaseCodec();
         _info.Dispose();
     }

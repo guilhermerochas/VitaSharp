@@ -1,4 +1,4 @@
-<!-- pair: README.md sha256=faee50286420f32d840b2ec2642d1df679241457d257066514c9ac41a7d54c70 -->
+<!-- pair: README.md sha256=958d6e5e6de8dae81e0885c37b2125320c06244543792c0f97bdefedb3ac9ffd -->
 <div align="center">
 
 [English](README.md) | **Português**
@@ -319,6 +319,11 @@ O que o `dotnet test tests/VitaSharp.Tests` precisa em cada sistema; um teste se
   `dotnet test tests/VitaSharp.Tests --filter Category=Slow` (`RendererValidationTests`; pulado sem a camada).
 - O teste de janela abre uma janela oculta (`VITASHARP_HIDDEN_WINDOW=1`): no Linux precisa de um display (`DISPLAY`), no
   Windows do carregador Vulkan do sistema (`vulkan-1.dll`, instalado com qualquer driver de GPU).
+- Paridade de mídia (`MediaParityTests`): o lado do desktop (FFmpeg) roda sempre; o lado do Android precisa do APK de
+  desenvolvedor (`-p:VitaSharpDeveloper=true`) num celular ou no Android Emulator (qualquer sistema com o Android SDK:
+  uma imagem x86_64 Google APIs e o build `android-x64`). `build/android-media-parity.sh` (ou `.ps1`) grava o traço no
+  aparelho; `VITASHARP_ANDROID_MEDIA_TRACE=<traço> dotnet test tests/VitaSharp.Tests --filter MediaParityTests` compara
+  com o do desktop (pulado sem a variável). `SYNC=0` (`-Sync 0`) grava com o tempo antigo do MediaCodec.
 
 ## Releases
 
