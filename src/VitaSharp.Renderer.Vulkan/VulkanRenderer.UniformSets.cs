@@ -17,7 +17,7 @@ public sealed unsafe partial class VulkanRenderer
     private static int DynamicUniformBindings => ShaderGenerator.SplitUniformSlots ? 6 : 2;
 
     /// <summary>Buffer handle and range of a split slot binding in one key word (ranges are slot sizes, below 2^20).</summary>
-    private static ulong SplitKey(in DescriptorBufferInfo b) => b.Buffer.Handle * 0x100000 ^ b.Range;
+    private static ulong SplitKey(in DescriptorBufferInfo descriptorBufferInfo) => descriptorBufferInfo.Buffer.Handle * 0x100000 ^ descriptorBufferInfo.Range;
 
     private readonly Dictionary<UniformSetKey, DescriptorSet> _uniformSets = new();
     private long _uniformSetsSerial = -1;

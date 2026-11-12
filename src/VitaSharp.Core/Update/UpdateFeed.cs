@@ -172,36 +172,36 @@ public static class UpdateFeed
 
     public static string Sha256(string file)
     {
-        using FileStream s = File.OpenRead(file);
-        return Convert.ToHexStringLower(SHA256.HashData(s));
+        using FileStream stream = File.OpenRead(file);
+        return Convert.ToHexStringLower(SHA256.HashData(stream));
     }
 
     // ------------------------------------------------------------------ transport
 
     /// <summary>Reads a feed or file: http(s) through <paramref name="http"/>, <c>file://</c> from disk.</summary>
-    public static async Task<Stream> OpenAsync(HttpClient http, Uri uri, CancellationToken ct)
+    public static async Task<Stream> OpenAsync(HttpClient http, Uri uri, CancellationToken cancellationToken)
     {
         if (uri.IsFile)
         {
             return File.OpenRead(uri.LocalPath);
         }
 
-        HttpResponseMessage response = await http.GetAsync(uri, HttpCompletionOption.ResponseHeadersRead, ct).ConfigureAwait(false);
+        HttpResponseMessage response = await http.GetAsync(uri, HttpCompletionOption.ResponseHeadersRead, cancellationToken).ConfigureAwait(false);
         response.EnsureSuccessStatusCode();
-        return await response.Content.ReadAsStreamAsync(ct).ConfigureAwait(false);
+        return await response.Content.ReadAsStreamAsync(cancellationToken).ConfigureAwait(false);
     }
 
     /// <summary>The releases of a feed: an API URL, or a folder (<c>file://</c>) holding <c>releases.json</c>.</summary>
-    public static async Task<IReadOnlyList<UpdateRelease>> FetchAsync(HttpClient http, Uri feed, CancellationToken ct = default)
+    public static async Task<IReadOnlyList<UpdateRelease>> FetchAsync(HttpClient http, Uri feed, CancellationToken cancellationToken = default)
     {
         if (feed.IsFile && Directory.Exists(feed.LocalPath))
         {
             feed = new Uri(Path.Combine(feed.LocalPath, "releases.json"));
         }
 
-        using Stream s = await OpenAsync(http, feed, ct).ConfigureAwait(false);
-        using var reader = new StreamReader(s);
-        return Parse(await reader.ReadToEndAsync(ct).ConfigureAwait(false));
+        using Stream stream = await OpenAsync(http, feed, cancellationToken).ConfigureAwait(false);
+        using var reader = new StreamReader(stream);
+        return Parse(await reader.ReadToEndAsync(cancellationToken).ConfigureAwait(false));
     }
 
     /// <summary>An HttpClient for the GitHub API (it rejects requests without a User-Agent).</summary>
@@ -214,19 +214,19 @@ public static class UpdateFeed
     }
 
     /// <summary>Downloads <paramref name="asset"/> to <paramref name="dest"/>; <paramref name="progress"/> gets 0..1.</summary>
-    public static async Task DownloadAsync(HttpClient http, UpdateAsset asset, string dest, Action<double>? progress, CancellationToken ct)
+    public static async Task DownloadAsync(HttpClient http, UpdateAsset asset, string dest, Action<double>? progress, CancellationToken cancellationToken)
     {
         Directory.CreateDirectory(Path.GetDirectoryName(dest)!);
         string part = dest + ".part";
-        await using (Stream src = await OpenAsync(http, new Uri(asset.Url), ct).ConfigureAwait(false))
+        await using (Stream src = await OpenAsync(http, new Uri(asset.Url), cancellationToken).ConfigureAwait(false))
         await using (FileStream dst = File.Create(part))
         {
             byte[] buf = new byte[1 << 16];
             long done = 0;
             int n;
-            while ((n = await src.ReadAsync(buf, ct).ConfigureAwait(false)) > 0)
+            while ((n = await src.ReadAsync(buf, cancellationToken).ConfigureAwait(false)) > 0)
             {
-                await dst.WriteAsync(buf.AsMemory(0, n), ct).ConfigureAwait(false);
+                await dst.WriteAsync(buf.AsMemory(0, n), cancellationToken).ConfigureAwait(false);
                 done += n;
                 if (asset.Size > 0)
                 {
@@ -240,15 +240,15 @@ public static class UpdateFeed
 
     /// <summary>Downloads the release's <see cref="SumsFile"/> and checks <paramref name="file"/> (named
     /// <paramref name="name"/> there) against it; throws <see cref="InvalidDataException"/> when it is missing or differs.</summary>
-    public static async Task VerifyAsync(HttpClient http, UpdateRelease release, string file, string name, CancellationToken ct)
+    public static async Task VerifyAsync(HttpClient http, UpdateRelease release, string file, string name, CancellationToken cancellationToken)
     {
         UpdateAsset sumsAsset = release.Assets.FirstOrDefault(a => a.Name == SumsFile)
             ?? throw new InvalidDataException($"The release {release.Tag} has no {SumsFile}");
         string sums;
-        using (Stream s = await OpenAsync(http, new Uri(sumsAsset.Url), ct).ConfigureAwait(false))
-        using (var reader = new StreamReader(s))
+        using (Stream stream = await OpenAsync(http, new Uri(sumsAsset.Url), cancellationToken).ConfigureAwait(false))
+        using (var reader = new StreamReader(stream))
         {
-            sums = await reader.ReadToEndAsync(ct).ConfigureAwait(false);
+            sums = await reader.ReadToEndAsync(cancellationToken).ConfigureAwait(false);
         }
 
         string expected = ExpectedHash(sums, name) ?? throw new InvalidDataException($"{name} is not in {SumsFile}");

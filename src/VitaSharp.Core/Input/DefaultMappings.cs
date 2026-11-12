@@ -12,11 +12,11 @@ public static class DefaultMappings
     public static ControllerProfile Keyboard()
     {
         var p = new ControllerProfile { Id = ControllerProfile.KeyboardId, Name = "Keyboard", Kind = ControllerKind.Keyboard };
-        void K(VitaControl c, params string[] keys)
+        void K(VitaControl vitaControl, params string[] keys)
         {
             foreach (string k in keys)
             {
-                p.Add(c, InputBinding.OfKey(k));
+                p.Add(vitaControl, InputBinding.OfKey(k));
             }
         }
         K(VitaControl.Up, "Up");
@@ -53,17 +53,17 @@ public static class DefaultMappings
 
     /// <summary>Binds the default pause key when the hotkey has no binding yet and the key is free (an older keyboard
     /// profile being upgraded).</summary>
-    public static void AddHotkeys(ControllerProfile p)
+    public static void AddHotkeys(ControllerProfile controllerProfile)
     {
-        if (p.Get(VitaControl.PauseEmulation).Any() || p.GetCombos(VitaControl.PauseEmulation).Any())
+        if (controllerProfile.Get(VitaControl.PauseEmulation).Any() || controllerProfile.GetCombos(VitaControl.PauseEmulation).Any())
         {
             return;
         }
 
         var b = InputBinding.OfKey(PauseKey);
-        if (!p.Bindings.Values.SelectMany(v => v).Contains(b.ToString()))
+        if (!controllerProfile.Bindings.Values.SelectMany(v => v).Contains(b.ToString()))
         {
-            p.Add(VitaControl.PauseEmulation, b);
+            controllerProfile.Add(VitaControl.PauseEmulation, b);
         }
     }
 
@@ -82,12 +82,12 @@ public static class DefaultMappings
 
     /// <summary>Binds the default motion keys to the motion controls that have no binding yet, skipping keys the
     /// profile already uses for something else (an older keyboard profile being upgraded).</summary>
-    public static void AddMotionKeys(ControllerProfile p)
+    public static void AddMotionKeys(ControllerProfile controllerProfile)
     {
-        var used = p.Bindings.Values.SelectMany(v => v).ToHashSet(StringComparer.Ordinal);
-        foreach ((VitaControl c, string[]? keys) in MotionKeys)
+        var used = controllerProfile.Bindings.Values.SelectMany(v => v).ToHashSet(StringComparer.Ordinal);
+        foreach ((VitaControl vitaControl, string[]? keys) in MotionKeys)
         {
-            if (p.Get(c).Any())
+            if (controllerProfile.Get(vitaControl).Any())
             {
                 continue;
             }
@@ -97,7 +97,7 @@ public static class DefaultMappings
                 var b = InputBinding.OfKey(k);
                 if (!used.Contains(b.ToString()))
                 {
-                    p.Add(c, b);
+                    controllerProfile.Add(vitaControl, b);
                 }
             }
         }
@@ -145,7 +145,7 @@ public static class DefaultMappings
     public static ControllerProfile RawJoystick(string id, string name, ControllerKind kind)
     {
         var p = new ControllerProfile { Id = id, Name = name, Kind = kind };
-        void B(VitaControl c, int i) => p.Add(c, InputBinding.JoyButton(i));
+        void B(VitaControl vitaControl, int i) => p.Add(vitaControl, InputBinding.JoyButton(i));
         if (kind == ControllerKind.PlayStation)
         {
             B(VitaControl.Square, 0);
@@ -186,14 +186,14 @@ public static class DefaultMappings
         return p;
     }
 
-    private static void Stick(ControllerProfile p, int ax, int ay, VitaControl first)
+    private static void Stick(ControllerProfile controllerProfile, int ax, int ay, VitaControl first)
     {
         // first = the stick's ...Left control; the enum order is Up, Down, Left, Right
-        VitaControl up = first - 2;
-        p.Add(up, InputBinding.JoyAxis(ay, -1));
-        p.Add(up + 1, InputBinding.JoyAxis(ay, 1));
-        p.Add(first, InputBinding.JoyAxis(ax, -1));
-        p.Add(first + 1, InputBinding.JoyAxis(ax, 1));
+        VitaControl vitaControl = first - 2;
+        controllerProfile.Add(vitaControl, InputBinding.JoyAxis(ay, -1));
+        controllerProfile.Add(vitaControl + 1, InputBinding.JoyAxis(ay, 1));
+        controllerProfile.Add(first, InputBinding.JoyAxis(ax, -1));
+        controllerProfile.Add(first + 1, InputBinding.JoyAxis(ax, 1));
     }
 
     /// <summary>The default profile for a connected device.</summary>
@@ -201,22 +201,22 @@ public static class DefaultMappings
         => isGamepad ? Gamepad(id, name, kind) : RawJoystick(id, name, kind);
 
     /// <summary>Adds or removes the analog triggers (L2/R2, LT/RT, ZL/ZR) as extra bindings of L and R.</summary>
-    public static void SetTriggersAsShoulders(ControllerProfile p, bool on)
+    public static void SetTriggersAsShoulders(ControllerProfile controllerProfile, bool on)
     {
         var lt = InputBinding.Of(PadAxis.LeftTrigger);
         var rt = InputBinding.Of(PadAxis.RightTrigger);
         if (on)
         {
-            p.Add(VitaControl.L, lt);
-            p.Add(VitaControl.R, rt);
+            controllerProfile.Add(VitaControl.L, lt);
+            controllerProfile.Add(VitaControl.R, rt);
         }
         else
         {
-            p.Remove(VitaControl.L, lt);
-            p.Remove(VitaControl.R, rt);
+            controllerProfile.Remove(VitaControl.L, lt);
+            controllerProfile.Remove(VitaControl.R, rt);
         }
     }
 
-    public static bool TriggersAsShoulders(ControllerProfile p)
-        => p.Has(VitaControl.L, InputBinding.Of(PadAxis.LeftTrigger)) && p.Has(VitaControl.R, InputBinding.Of(PadAxis.RightTrigger));
+    public static bool TriggersAsShoulders(ControllerProfile controllerProfile)
+        => controllerProfile.Has(VitaControl.L, InputBinding.Of(PadAxis.LeftTrigger)) && controllerProfile.Has(VitaControl.R, InputBinding.Of(PadAxis.RightTrigger));
 }

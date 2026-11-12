@@ -16,21 +16,21 @@ public sealed class KeyStickSlew
     private float _lx, _ly, _rx, _ry;
     private long _last = -1;
 
-    /// <summary>Moves the stick positions toward <paramref name="m"/>'s (keyboard input) and writes them back.</summary>
-    public void Apply(ref MappedInput m, long nowTicks, long ticksPerSecond)
+    /// <summary>Moves the stick positions toward <paramref name="mappedInput"/>'s (keyboard input) and writes them back.</summary>
+    public void Apply(ref MappedInput mappedInput, long nowTicks, long ticksPerSecond)
     {
         float step = _last < 0 ? 0f : (float)((nowTicks - _last) * 1000.0 / ticksPerSecond / TravelMs);
         _last = nowTicks;
         step = Math.Clamp(step, 0f, 2f);
-        _lx = Toward(_lx, m.Lx, step);
-        _ly = Toward(_ly, m.Ly, step);
-        _rx = Toward(_rx, m.Rx, step);
-        _ry = Toward(_ry, m.Ry, step);
-        (m.Lx, m.Ly, m.Rx, m.Ry) = (_lx, _ly, _rx, _ry);
-        m.State.Lx = StickMath.ToByte(_lx);
-        m.State.Ly = StickMath.ToByte(_ly);
-        m.State.Rx = StickMath.ToByte(_rx);
-        m.State.Ry = StickMath.ToByte(_ry);
+        _lx = Toward(_lx, mappedInput.Lx, step);
+        _ly = Toward(_ly, mappedInput.Ly, step);
+        _rx = Toward(_rx, mappedInput.Rx, step);
+        _ry = Toward(_ry, mappedInput.Ry, step);
+        (mappedInput.Lx, mappedInput.Ly, mappedInput.Rx, mappedInput.Ry) = (_lx, _ly, _rx, _ry);
+        mappedInput.State.Lx = StickMath.ToByte(_lx);
+        mappedInput.State.Ly = StickMath.ToByte(_ly);
+        mappedInput.State.Rx = StickMath.ToByte(_rx);
+        mappedInput.State.Ry = StickMath.ToByte(_ry);
     }
 
     private static float Toward(float cur, float target, float step)

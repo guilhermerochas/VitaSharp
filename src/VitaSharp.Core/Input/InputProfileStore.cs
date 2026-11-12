@@ -135,7 +135,7 @@ public sealed class InputProfileStore
         }
     }
 
-    public static string Serialize(InputConfig c) => JsonSerializer.Serialize(c, InputJson.Default.InputConfig);
+    public static string Serialize(InputConfig inputConfig) => JsonSerializer.Serialize(inputConfig, InputJson.Default.InputConfig);
     public static InputConfig? Deserialize(string json) => JsonSerializer.Deserialize(json, InputJson.Default.InputConfig);
 
     /// <summary>The keyboard profile (a copy). A profile saved before the virtual motion existed (version 1) gets the
@@ -148,18 +148,18 @@ public sealed class InputProfileStore
             return DefaultMappings.Keyboard();
         }
 
-        ControllerProfile p = Config.Keyboard.Clone();
+        ControllerProfile controllerProfile = Config.Keyboard.Clone();
         if (Config.Version < 2)
         {
-            DefaultMappings.AddMotionKeys(p);
+            DefaultMappings.AddMotionKeys(controllerProfile);
         }
 
         if (Config.Version < 3)
         {
-            DefaultMappings.AddHotkeys(p);
+            DefaultMappings.AddHotkeys(controllerProfile);
         }
 
-        return p;
+        return controllerProfile;
     }
 
     /// <summary>The saved profile for a controller, or null.</summary>
@@ -172,17 +172,17 @@ public sealed class InputProfileStore
         => FindSaved(guid, name)?.Clone() ?? DefaultMappings.For(guid, name, kind, isGamepad);
 
     /// <summary>Stores (or replaces) a profile; the keyboard profile has Id "keyboard".</summary>
-    public void Put(ControllerProfile p)
+    public void Put(ControllerProfile controllerProfile)
     {
-        ControllerProfile copy = p.Clone();
-        if (p.Id == ControllerProfile.KeyboardId)
+        ControllerProfile copy = controllerProfile.Clone();
+        if (controllerProfile.Id == ControllerProfile.KeyboardId)
         {
             Config.Keyboard = copy;
             Config.Version = InputConfig.CurrentVersion; // stored as the player sees it, motion keys included
             Interlocked.Increment(ref _revision);
             return;
         }
-        int i = Config.Controllers.FindIndex(x => x.Id.Equals(p.Id, StringComparison.OrdinalIgnoreCase));
+        int i = Config.Controllers.FindIndex(x => x.Id.Equals(controllerProfile.Id, StringComparison.OrdinalIgnoreCase));
         if (i >= 0)
         {
             Config.Controllers[i] = copy;

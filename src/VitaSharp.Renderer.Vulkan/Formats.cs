@@ -24,13 +24,13 @@ public static class Formats
 
     private static readonly ComponentMapping s_identity = M(I, I, I, I);
 
-    private static TexFormatInfo Unknown(TexBase b)
+    private static TexFormatInfo Unknown(TexBase texBase)
     {
-        VitaSharp.Core.Util.Log.WarnOnce("texfmt" + b, $"[gpu] texture base format {b} (0x{(uint)b:X8}) is not supported: treated as RGBA8");
+        VitaSharp.Core.Util.Log.WarnOnce("texfmt" + texBase, $"[gpu] texture base format {texBase} (0x{(uint)texBase:X8}) is not supported: treated as RGBA8");
         return new(Format.R8G8B8A8Unorm, 32, 1, 1, 0, TexConvert.None);
     }
 
-    public static TexFormatInfo Texture(TexBase b) => b switch
+    public static TexFormatInfo Texture(TexBase texBase) => texBase switch
     {
         TexBase.U8 => new(Format.R8Unorm, 8, 1, 1, 0, TexConvert.None),
         TexBase.S8 => new(Format.R8SNorm, 8, 1, 1, 0, TexConvert.None),
@@ -82,16 +82,16 @@ public static class Formats
         TexBase.YUV420P2 => new(Format.R8G8B8A8Unorm, 12, 1, 1, 0, TexConvert.Yuv420P2),
         TexBase.YUV420P3 => new(Format.R8G8B8A8Unorm, 12, 1, 1, 0, TexConvert.Yuv420P3),
         TexBase.YUV422 => new(Format.R8G8B8A8Unorm, 16, 1, 1, 0, TexConvert.Yuv422),
-        _ => Unknown(b),
+        _ => Unknown(texBase),
     };
 
     private static readonly bool s_swizzle1Legacy = Environment.GetEnvironmentVariable(EnvVars.Swz1) != "B"; // RGBA-order reading opt-in until verified
 
     public static ComponentMapping TextureSwizzle(uint format)
     {
-        TexBase b = GxmFormats.BaseOf(format);
+        TexBase texBase = GxmFormats.BaseOf(format);
         uint s = GxmFormats.SwizzleOf(format) >> 12;
-        switch (b)
+        switch (texBase)
         {
             case TexBase.U8:
             case TexBase.S8:
@@ -271,7 +271,7 @@ public static class Formats
     /// <summary>The view mapping that applies <paramref name="outer"/> to the image as seen through <paramref name="inner"/>.</summary>
     public static ComponentMapping Compose(ComponentMapping inner, ComponentMapping outer)
     {
-        ComponentSwizzle Pick(ComponentSwizzle c, ComponentSwizzle own) => (c == I ? own : c) switch
+        ComponentSwizzle Pick(ComponentSwizzle componentSwizzle, ComponentSwizzle own) => (componentSwizzle == I ? own : componentSwizzle) switch
         {
             R => inner.R == I ? R : inner.R,
             G => inner.G == I ? G : inner.G,
@@ -395,28 +395,28 @@ public static class Formats
 
     public static ColorComponentFlags Mask(byte gxmMask)
     {
-        ColorComponentFlags f = 0;
+        ColorComponentFlags colorComponentFlags = 0;
         if ((gxmMask & 1) != 0)
         {
-            f |= ColorComponentFlags.ABit;
+            colorComponentFlags |= ColorComponentFlags.ABit;
         }
 
         if ((gxmMask & 2) != 0)
         {
-            f |= ColorComponentFlags.RBit;
+            colorComponentFlags |= ColorComponentFlags.RBit;
         }
 
         if ((gxmMask & 4) != 0)
         {
-            f |= ColorComponentFlags.GBit;
+            colorComponentFlags |= ColorComponentFlags.GBit;
         }
 
         if ((gxmMask & 8) != 0)
         {
-            f |= ColorComponentFlags.BBit;
+            colorComponentFlags |= ColorComponentFlags.BBit;
         }
 
-        return f;
+        return colorComponentFlags;
     }
 
     public static PrimitiveTopology Topology(byte prim) => prim switch

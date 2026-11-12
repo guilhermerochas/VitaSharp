@@ -46,7 +46,7 @@ public static class AesUtil
     public sealed class Ctr : IDisposable
     {
         private readonly Aes _aes;
-        private readonly byte[] _ks = new byte[0x10000];
+        private readonly byte[] _keyStream = new byte[0x10000];
         private readonly byte[] _ctrs = new byte[0x10000];
 
         public Ctr(ReadOnlySpan<byte> key) => _aes = Create(key);
@@ -59,7 +59,7 @@ public static class AesUtil
             ulong hiBe = BitConverter.IsLittleEndian ? BinaryPrimitives.ReverseEndianness(hi) : hi;
             while (data.Length > 0)
             {
-                int n = Math.Min(data.Length, _ks.Length);
+                int n = Math.Min(data.Length, _keyStream.Length);
                 int blocks = (n + 15) / 16;
                 for (int b = 0; b < blocks; b++)
                 {
@@ -71,8 +71,8 @@ public static class AesUtil
                         hiBe = BitConverter.IsLittleEndian ? BinaryPrimitives.ReverseEndianness(hi) : hi;
                     }
                 }
-                _aes.EncryptEcb(_ctrs.AsSpan(0, blocks * 16), _ks.AsSpan(0, blocks * 16), PaddingMode.None);
-                XorInPlace(data[..n], _ks.AsSpan(0, n));
+                _aes.EncryptEcb(_ctrs.AsSpan(0, blocks * 16), _keyStream.AsSpan(0, blocks * 16), PaddingMode.None);
+                XorInPlace(data[..n], _keyStream.AsSpan(0, n));
                 data = data[n..];
             }
             BinaryPrimitives.WriteUInt64BigEndian(counter, hi);

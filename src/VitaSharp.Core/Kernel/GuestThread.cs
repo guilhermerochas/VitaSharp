@@ -328,7 +328,7 @@ public sealed unsafe partial class GuestThread : KernelObject, IDisposable, Cpu.
         }
     }
 
-    private bool TraceHleCall(HleFunction f, CpuState* s)
+    private bool TraceHleCall(HleFunction hleFunction, CpuState* s)
     {
         if (_emu.TraceHleThreads is { } names)
         {
@@ -353,7 +353,7 @@ public sealed unsafe partial class GuestThread : KernelObject, IDisposable, Cpu.
         {
             foreach (string p in only)
             {
-                if (f.Name.StartsWith(p, StringComparison.Ordinal))
+                if (hleFunction.Name.StartsWith(p, StringComparison.Ordinal))
                 {
                     trace = true;
                     break;
@@ -369,7 +369,7 @@ public sealed unsafe partial class GuestThread : KernelObject, IDisposable, Cpu.
                 trace = true;
                 foreach (string p in _emu.TraceHleExclude)
                 {
-                    if (f.Name.StartsWith(p, StringComparison.Ordinal))
+                    if (hleFunction.Name.StartsWith(p, StringComparison.Ordinal))
                     {
                         trace = false;
                         break;
@@ -379,7 +379,7 @@ public sealed unsafe partial class GuestThread : KernelObject, IDisposable, Cpu.
         }
         if (trace)
         {
-            Log.Info($"HLE f{VitaSharp.Core.Hle.Modules.Display.FramesPresented} {f.Name}({s->R[0]:X}, {s->R[1]:X}, {s->R[2]:X}, {s->R[3]:X}) lr={s->R[14]:X8} t={Util.GuestClock.Microseconds}{TraceStrings(s)}");
+            Log.Info($"HLE f{VitaSharp.Core.Hle.Modules.Display.FramesPresented} {hleFunction.Name}({s->R[0]:X}, {s->R[1]:X}, {s->R[2]:X}, {s->R[3]:X}) lr={s->R[14]:X8} t={Util.GuestClock.Microseconds}{TraceStrings(s)}");
         }
 
         return trace;
@@ -393,13 +393,13 @@ public sealed unsafe partial class GuestThread : KernelObject, IDisposable, Cpu.
     /// host waits with it.</summary>
     public volatile HleFunction? CurrentHle;
 
-    private void InvokeTimed(HleFunction f, uint index)
+    private void InvokeTimed(HleFunction hleFunction, uint index)
     {
         long t0 = System.Diagnostics.Stopwatch.GetTimestamp();
         ulong c0 = Util.NativeThread.CycleTime();
         try
         {
-            f.Invoke!(Hle);
+            hleFunction.Invoke!(Hle);
         }
         finally
         {
@@ -418,28 +418,28 @@ public sealed unsafe partial class GuestThread : KernelObject, IDisposable, Cpu.
     }
 
     [System.Runtime.CompilerServices.MethodImpl(System.Runtime.CompilerServices.MethodImplOptions.AggressiveInlining)]
-    private void Invoke(HleFunction f, uint index)
+    private void Invoke(HleFunction hleFunction, uint index)
     {
         if (!HleFunction.Track)
         {
-            f.Invoke!(Hle);
+            hleFunction.Invoke!(Hle);
             return;
         }
-        InvokeTracked(f, index);
+        InvokeTracked(hleFunction, index);
     }
 
-    private void InvokeTracked(HleFunction f, uint index)
+    private void InvokeTracked(HleFunction hleFunction, uint index)
     {
         // no try/finally: a throwing HLE call (thread exit) leaves a stale name, which the next call replaces
         HleFunction? outer = CurrentHle;
-        CurrentHle = f;
+        CurrentHle = hleFunction;
         if (HleFunction.Profile)
         {
-            InvokeTimed(f, index);
+            InvokeTimed(hleFunction, index);
         }
         else
         {
-            f.Invoke!(Hle);
+            hleFunction.Invoke!(Hle);
         }
 
         CurrentHle = outer;
@@ -483,16 +483,19 @@ public sealed unsafe partial class GuestThread : KernelObject, IDisposable, Cpu.
 
 #if VITASHARP_DEVELOPER
     /// <summary>Developer trace (VITASHARP_TRACE=1): a marker around one HLE call in VITASHARP_TRACE_HLE.</summary>
-    void DispatchHleTraced(CpuState* s)
+    private void DispatchHleTraced(CpuState* s)
     {
         bool traced = Util.Developer.DevTrace.BeginHle(_emu.Hle.GetFunction(s->SvcImm).Name);
         try
         {
-        DispatchHle(s);
+            DispatchHle(s);
         }
         finally
         {
-        if (traced) Util.Developer.DevTrace.End();
+            if (traced)
+            {
+                Util.Developer.DevTrace.End();
+            }
         }
     }
 #endif
@@ -500,15 +503,15 @@ public sealed unsafe partial class GuestThread : KernelObject, IDisposable, Cpu.
     private void DispatchHle(CpuState* s)
     {
         _hleSeq++; // odd while inside an HLE call (save states: a thread that returns meanwhile is seen)
-        HleFunction f = _emu.Hle.GetFunction(s->SvcImm);
-        f.CallCount++;
+        HleFunction hleFunction = _emu.Hle.GetFunction(s->SvcImm);
+        hleFunction.CallCount++;
         long charged0 = Core.ChargedCycles;
-        Core.ChargeInstructions(f.Cost);
+        Core.ChargeInstructions(hleFunction.Cost);
         // tracing checks live in a separate method: a lambda capturing f here would allocate a closure on every HLE call
-        bool trace = (_emu.TraceHle || _emu.TraceHleOnly != null || _emu.TraceHleFrames != null) && TraceHleCall(f, s);
-        if (_emu.BacktraceHle != null && f.Name == _emu.BacktraceHle)
+        bool trace = (_emu.TraceHle || _emu.TraceHleOnly != null || _emu.TraceHleFrames != null) && TraceHleCall(hleFunction, s);
+        if (_emu.BacktraceHle != null && hleFunction.Name == _emu.BacktraceHle)
         {
-            Log.Info($"BT {f.Name}({s->R[0]:X}) lr={s->R[14]:X8} {Backtrace(s)}");
+            Log.Info($"BT {hleFunction.Name}({s->R[0]:X}) lr={s->R[14]:X8} {Backtrace(s)}");
         }
         // debug mode: arguments kept for the error log and the recent-calls ring (one static read when off)
         bool dbg = DebugMode.Enabled;
@@ -520,7 +523,7 @@ public sealed unsafe partial class GuestThread : KernelObject, IDisposable, Cpu.
             a2 = s->R[2];
             a3 = s->R[3];
             lr = s->R[14];
-            RecordHle(f, a0, a1, a2, a3, lr);
+            RecordHle(hleFunction, a0, a1, a2, a3, lr);
         }
         // a session capture counts the HLE error returns without the rest of debug mode
         else if (DebugMode.CollectHleErrors)
@@ -531,9 +534,9 @@ public sealed unsafe partial class GuestThread : KernelObject, IDisposable, Cpu.
             a3 = s->R[3];
             lr = s->R[14];
         }
-        if (f.Invoke != null)
+        if (hleFunction.Invoke != null)
         {
-            if (f.IsCallbackWait)
+            if (hleFunction.IsCallbackWait)
             {
                 bool prev = CallbackWait;
                 CallbackWait = true;
@@ -544,7 +547,7 @@ public sealed unsafe partial class GuestThread : KernelObject, IDisposable, Cpu.
                         CallbackProcessor?.Invoke(this);
                     }
 
-                    InvokeGuarded(f, s);
+                    InvokeGuarded(hleFunction, s);
                 }
                 finally
                 {
@@ -553,22 +556,22 @@ public sealed unsafe partial class GuestThread : KernelObject, IDisposable, Cpu.
             }
             else
             {
-                InvokeGuarded(f, s);
+                InvokeGuarded(hleFunction, s);
             }
 
-            f.ChargedCycles += Core.ChargedCycles - charged0;
+            hleFunction.ChargedCycles += Core.ChargedCycles - charged0;
             if (dbg)
             {
-                DebugHleReturn(f, s->R[0], a0, a1, a2, a3, lr);
+                DebugHleReturn(hleFunction, s->R[0], a0, a1, a2, a3, lr);
             }
-            else if (DebugMode.CollectHleErrors && !f.ReturnsValue && s->R[0] is >= 0x80000000 and < 0x81000000)
+            else if (DebugMode.CollectHleErrors && !hleFunction.ReturnsValue && s->R[0] is >= 0x80000000 and < 0x81000000)
             {
-                DebugMode.HleError(Name, f.Name, s->R[0], a0, a1, a2, a3, lr);
+                DebugMode.HleError(Name, hleFunction.Name, s->R[0], a0, a1, a2, a3, lr);
             }
 
             if (trace)
             {
-                Log.Info($"  -> {f.Name} = 0x{s->R[0]:X} t={Util.GuestClock.Microseconds}");
+                Log.Info($"  -> {hleFunction.Name} = 0x{s->R[0]:X} t={Util.GuestClock.Microseconds}");
             }
 
             if (ContextReplaced)
@@ -580,14 +583,14 @@ public sealed unsafe partial class GuestThread : KernelObject, IDisposable, Cpu.
         }
         else
         {
-            if (!f.WarnedUnimplemented)
+            if (!hleFunction.WarnedUnimplemented)
             {
-                f.WarnedUnimplemented = true;
-                Log.WarnOnce($"nid{f.Nid}", $"Unimplemented HLE function {f.Library}::{f.Name} (NID 0x{f.Nid:X8}) called from 0x{s->R[14]:X8}");
+                hleFunction.WarnedUnimplemented = true;
+                Log.WarnOnce($"nid{hleFunction.Nid}", $"Unimplemented HLE function {hleFunction.Library}::{hleFunction.Name} (NID 0x{hleFunction.Nid:X8}) called from 0x{s->R[14]:X8}");
             }
             if (dbg || DebugMode.CollectHleErrors)
             {
-                DebugMode.HleUnimplemented(Name, f.Library, f.Name, f.Nid, lr);
+                DebugMode.HleUnimplemented(Name, hleFunction.Library, hleFunction.Name, hleFunction.Nid, lr);
             }
 
             s->R[0] = 0;
@@ -603,21 +606,21 @@ public sealed unsafe partial class GuestThread : KernelObject, IDisposable, Cpu.
     /// stack once per function and the call fails with SCE_KERNEL_ERROR_ERROR, as a firmware function refusing the
     /// arguments would. Guest exits, faults and the other exceptions keep their meaning.
     /// </summary>
-    private void InvokeGuarded(HleFunction f, CpuState* s)
+    private void InvokeGuarded(HleFunction hleFunction, CpuState* s)
     {
         try
         {
-            Invoke(f, s->SvcImm);
+            Invoke(hleFunction, s->SvcImm);
         }
         catch (Exception e) when (e is ArgumentException or InvalidOperationException or KeyNotFoundException or IndexOutOfRangeException
                                       or NullReferenceException or ArithmeticException or FormatException)
         {
-            if (!f.ExceptionLogged)
+            if (!hleFunction.ExceptionLogged)
             {
-                Log.Error($"HLE function {f.Library}::{f.Name} failed on thread '{Name}' (lr 0x{s->R[14]:X8}), returning an error to the guest: {e}");
+                Log.Error($"HLE function {hleFunction.Library}::{hleFunction.Name} failed on thread '{Name}' (lr 0x{s->R[14]:X8}), returning an error to the guest: {e}");
             }
 
-            f.ExceptionLogged = true;
+            hleFunction.ExceptionLogged = true;
             s->R[0] = unchecked((uint)SceError.ERROR);
         }
     }
@@ -838,24 +841,24 @@ public sealed unsafe partial class GuestThread : KernelObject, IDisposable, Cpu.
     private HleRecord[]? _hleRing;
     private int _hleRingPos;
 
-    private void RecordHle(HleFunction f, uint a0, uint a1, uint a2, uint a3, uint lr)
+    private void RecordHle(HleFunction hleFunction, uint a0, uint a1, uint a2, uint a3, uint lr)
     {
         HleRecord[] ring = _hleRing ??= new HleRecord[HleRingSize];
-        ring[_hleRingPos++ % HleRingSize] = new HleRecord { F = f, A0 = a0, A1 = a1, A2 = a2, A3 = a3, Lr = lr, Frame = VitaSharp.Core.Hle.Modules.Display.FramesPresented };
+        ring[_hleRingPos++ % HleRingSize] = new HleRecord { F = hleFunction, A0 = a0, A1 = a1, A2 = a2, A3 = a3, Lr = lr, Frame = VitaSharp.Core.Hle.Modules.Display.FramesPresented };
     }
 
-    private void DebugHleReturn(HleFunction f, uint ret, uint a0, uint a1, uint a2, uint a3, uint lr)
+    private void DebugHleReturn(HleFunction hleFunction, uint ret, uint a0, uint a1, uint a2, uint a3, uint lr)
     {
         // the call may have re-entered guest code (callbacks): only complete the record if it is still the newest one
-        if (_hleRing is { } ring && _hleRingPos > 0 && ring[(_hleRingPos - 1) % HleRingSize].F == f)
+        if (_hleRing is { } ring && _hleRingPos > 0 && ring[(_hleRingPos - 1) % HleRingSize].F == hleFunction)
         {
             ref HleRecord r = ref ring[(_hleRingPos - 1) % HleRingSize];
             r.Ret = ret;
             r.Returned = true;
         }
-        if (!f.ReturnsValue && ret is >= 0x80000000 and < 0x81000000)
+        if (!hleFunction.ReturnsValue && ret is >= 0x80000000 and < 0x81000000)
         {
-            DebugMode.HleError(Name, f.Name, ret, a0, a1, a2, a3, lr);
+            DebugMode.HleError(Name, hleFunction.Name, ret, a0, a1, a2, a3, lr);
         }
     }
 

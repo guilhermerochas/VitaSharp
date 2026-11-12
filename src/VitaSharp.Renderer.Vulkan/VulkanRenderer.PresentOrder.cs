@@ -31,33 +31,33 @@ public sealed unsafe partial class VulkanRenderer
             return src;
         }
 
-        if (!_memoryOrderCopies.TryGetValue(src, out MemoryOrderCopy? c) || c.Target.Width != src.Width || c.Target.Height != src.Height || c.Target.Scale != src.Scale
-            || c.SourceImage.Handle != src.Image.Handle || c.ColorFormat != src.ColorFormat)
+        if (!_memoryOrderCopies.TryGetValue(src, out MemoryOrderCopy? memoryOrderCopy) || memoryOrderCopy.Target.Width != src.Width || memoryOrderCopy.Target.Height != src.Height || memoryOrderCopy.Target.Scale != src.Scale
+            || memoryOrderCopy.SourceImage.Handle != src.Image.Handle || memoryOrderCopy.ColorFormat != src.ColorFormat)
         {
-            if (c != null)
+            if (memoryOrderCopy != null)
             {
-                ReleaseMemoryOrderCopy(c);
+                ReleaseMemoryOrderCopy(memoryOrderCopy);
             }
 
             (Image img, ImageView view, ImageMemoryPool.Allocation mem) = CreateImage(MemCat.RenderTarget, src.ImgW, src.ImgH, Format.R8G8B8A8Unorm,
                 ImageUsageFlags.ColorAttachmentBit | ImageUsageFlags.SampledBit | ImageUsageFlags.TransferSrcBit, ImageAspectFlags.ColorBit);
-            c = new MemoryOrderCopy
+            memoryOrderCopy = new MemoryOrderCopy
             {
                 Target = new RenderTarget { Address = src.Address, Width = src.Width, Height = src.Height, Stride = src.Stride, Image = img, View = view, Mem = mem, Format = Format.R8G8B8A8Unorm, Scale = src.Scale },
                 SourceView = CreateView(src.Image, Format.R8G8B8A8Unorm, ImageAspectFlags.ColorBit, 1, 1, false, Formats.SurfaceMemoryOrder(src.ColorFormat)),
                 SourceImage = src.Image,
                 ColorFormat = src.ColorFormat,
             };
-            _memoryOrderCopies[src] = c;
+            _memoryOrderCopies[src] = memoryOrderCopy;
         }
-        RecordMemoryOrderCopy(src, c);
-        c.Target.LastUsedFrame = c.Target.LastTouchedFrame = FrameCount;
-        return c.Target;
+        RecordMemoryOrderCopy(src, memoryOrderCopy);
+        memoryOrderCopy.Target.LastUsedFrame = memoryOrderCopy.Target.LastTouchedFrame = FrameCount;
+        return memoryOrderCopy.Target;
     }
 
-    private void ReleaseMemoryOrderCopy(MemoryOrderCopy c)
+    private void ReleaseMemoryOrderCopy(MemoryOrderCopy memoryOrderCopy)
     {
-        (Image img, ImageView view, ImageMemoryPool.Allocation mem, ImageView srcView) = (c.Target.Image, c.Target.View, c.Target.Mem, c.SourceView);
+        (Image img, ImageView view, ImageMemoryPool.Allocation mem, ImageView srcView) = (memoryOrderCopy.Target.Image, memoryOrderCopy.Target.View, memoryOrderCopy.Target.Mem, memoryOrderCopy.SourceView);
         DestroyAfterGpu(() =>
         {
             _vk.DestroyImageView(_dev, srcView, null);
@@ -70,17 +70,17 @@ public sealed unsafe partial class VulkanRenderer
     /// <summary>Drops the copies of surfaces that no longer exist (called when a target is released).</summary>
     private void ForgetMemoryOrderCopy(RenderTarget rt)
     {
-        if (_memoryOrderCopies.Remove(rt, out MemoryOrderCopy? c))
+        if (_memoryOrderCopies.Remove(rt, out MemoryOrderCopy? memoryOrderCopy))
         {
-            ReleaseMemoryOrderCopy(c);
+            ReleaseMemoryOrderCopy(memoryOrderCopy);
         }
     }
 
-    private void RecordMemoryOrderCopy(RenderTarget src, MemoryOrderCopy c)
+    private void RecordMemoryOrderCopy(RenderTarget src, MemoryOrderCopy memoryOrderCopy)
     {
         EndRendering();
         CommandBuffer cmd = Cmd;
-        RenderTarget dst = c.Target;
+        RenderTarget dst = memoryOrderCopy.Target;
         Barrier(src.Image, ImageLayout.General, ImageLayout.General, ImageAspectFlags.ColorBit,
             PipelineStageFlags.ColorAttachmentOutputBit | PipelineStageFlags.TransferBit, PipelineStageFlags.FragmentShaderBit,
             AccessFlags.ColorAttachmentWriteBit | AccessFlags.TransferWriteBit, AccessFlags.ShaderReadBit);
@@ -96,7 +96,7 @@ public sealed unsafe partial class VulkanRenderer
             RenderArea = new Rect2D(new Offset2D(0, 0), area),
         };
         DescriptorSet set = AllocSet(EnsureLoadLayout());
-        var info = new DescriptorImageInfo(_dummySampler, c.SourceView, ImageLayout.General);
+        var info = new DescriptorImageInfo(_dummySampler, memoryOrderCopy.SourceView, ImageLayout.General);
         var wr = new WriteDescriptorSet { SType = StructureType.WriteDescriptorSet, DstSet = set, DstBinding = 0, DescriptorCount = 1, DescriptorType = DescriptorType.CombinedImageSampler, PImageInfo = &info };
         _vk.UpdateDescriptorSets(_dev, 1, &wr, 0, null);
         _vk.CmdBeginRenderPass(cmd, in rbi, SubpassContents.Inline);

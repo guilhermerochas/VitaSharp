@@ -69,9 +69,9 @@ public sealed unsafe partial class VulkanRenderer
     /// <summary>The scene-start copy of the current surface (created the first time a draw samples it).</summary>
     private RenderTarget SceneStartSource(RenderTarget rt)
     {
-        if (_sceneStartCopies.TryGetValue(rt, out SceneStartCopy? c))
+        if (_sceneStartCopies.TryGetValue(rt, out SceneStartCopy? sceneStartCopy))
         {
-            return c.Valid ? c.Shadow : rt;
+            return sceneStartCopy.Valid ? sceneStartCopy.Shadow : rt;
         }
 
         Log.WarnOnce($"selfsample-{rt.Address:X8}", $"[gpu] render target 0x{rt.Address:X8} {rt.Width}x{rt.Height} is sampled while it is rendered: textures read its content from the start of the scene");
@@ -92,37 +92,37 @@ public sealed unsafe partial class VulkanRenderer
     /// <summary>The scene-start copy viewed as <paramref name="format"/> (same texel size as the surface).</summary>
     private ImageView SceneStartCopyView(RenderTarget rt, Format format)
     {
-        SceneStartCopy c = _sceneStartCopies[rt];
-        if (format == c.Shadow.Format)
+        SceneStartCopy sceneStartCopy = _sceneStartCopies[rt];
+        if (format == sceneStartCopy.Shadow.Format)
         {
-            return c.Shadow.View;
+            return sceneStartCopy.Shadow.View;
         }
 
-        if (c.Views.TryGetValue(format, out ImageView v))
+        if (sceneStartCopy.Views.TryGetValue(format, out ImageView v))
         {
             return v;
         }
 
-        return c.Views[format] = CreateView(c.Shadow.Image, format, ImageAspectFlags.ColorBit, 1, 1, false, default);
+        return sceneStartCopy.Views[format] = CreateView(sceneStartCopy.Shadow.Image, format, ImageAspectFlags.ColorBit, 1, 1, false, default);
     }
 
     private void DestroySceneStartCopyLater(RenderTarget rt, bool now = false)
     {
-        if (!_sceneStartCopies.Remove(rt, out SceneStartCopy? c))
+        if (!_sceneStartCopies.Remove(rt, out SceneStartCopy? sceneStartCopy))
         {
             return;
         }
 
         Release(() =>
         {
-            foreach (ImageView v in c.Views.Values)
+            foreach (ImageView v in sceneStartCopy.Views.Values)
             {
                 _vk.DestroyImageView(_dev, v, null);
             }
 
-            _vk.DestroyImageView(_dev, c.Shadow.View, null);
-            _vk.DestroyImage(_dev, c.Shadow.Image, null);
-            _imagePool.Free(c.Mem);
+            _vk.DestroyImageView(_dev, sceneStartCopy.Shadow.View, null);
+            _vk.DestroyImage(_dev, sceneStartCopy.Shadow.Image, null);
+            _imagePool.Free(sceneStartCopy.Mem);
         }, now);
     }
 
@@ -149,16 +149,16 @@ public sealed unsafe partial class VulkanRenderer
     /// <summary>Called when a scene begins: refreshes the copy of a surface that its own draws sample.</summary>
     private void CaptureSceneStart(RenderTarget rt)
     {
-        if (!_sceneStartCopies.TryGetValue(rt, out SceneStartCopy? c))
+        if (!_sceneStartCopies.TryGetValue(rt, out SceneStartCopy? sceneStartCopy))
         {
             return;
         }
 
-        RenderTarget s = c.Shadow;
+        RenderTarget renderTarget = sceneStartCopy.Shadow;
         EndRendering();
         rt.Dirty = true;
         SyncRenderTargetForRead(rt);
-        Barrier(s.Image, c.Valid ? ImageLayout.General : ImageLayout.Undefined, ImageLayout.TransferDstOptimal, ImageAspectFlags.ColorBit,
+        Barrier(renderTarget.Image, sceneStartCopy.Valid ? ImageLayout.General : ImageLayout.Undefined, ImageLayout.TransferDstOptimal, ImageAspectFlags.ColorBit,
             PipelineStageFlags.FragmentShaderBit | PipelineStageFlags.TransferBit, PipelineStageFlags.TransferBit, AccessFlags.ShaderReadBit | AccessFlags.TransferReadBit, AccessFlags.TransferWriteBit);
         var copy = new ImageCopy
         {
@@ -167,12 +167,12 @@ public sealed unsafe partial class VulkanRenderer
             Extent = new Extent3D(rt.ImgW, rt.ImgH, 1),
         };
         DevStampOp();
-        _vk.CmdCopyImage(Cmd, rt.Image, ImageLayout.General, s.Image, ImageLayout.TransferDstOptimal, 1, in copy);
-        Barrier(s.Image, ImageLayout.TransferDstOptimal, ImageLayout.General, ImageAspectFlags.ColorBit,
+        _vk.CmdCopyImage(Cmd, rt.Image, ImageLayout.General, renderTarget.Image, ImageLayout.TransferDstOptimal, 1, in copy);
+        Barrier(renderTarget.Image, ImageLayout.TransferDstOptimal, ImageLayout.General, ImageAspectFlags.ColorBit,
             PipelineStageFlags.TransferBit, PipelineStageFlags.FragmentShaderBit | PipelineStageFlags.VertexShaderBit | PipelineStageFlags.TransferBit,
             AccessFlags.TransferWriteBit, AccessFlags.ShaderReadBit | AccessFlags.TransferReadBit);
-        s.Version++;
-        s.Dirty = false;
-        c.Valid = true;
+        renderTarget.Version++;
+        renderTarget.Dirty = false;
+        sceneStartCopy.Valid = true;
     }
 }

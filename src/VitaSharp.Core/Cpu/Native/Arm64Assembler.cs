@@ -18,7 +18,7 @@ public sealed class Arm64Assembler
         EQ, NE, HS, LO, MI, PL, VS, VC, HI, LS, GE, LT, GT, LE, AL
     }
 
-    public static Cond Invert(Cond c) => (Cond)((uint)c ^ 1);
+    public static Cond Invert(Cond cond) => (Cond)((uint)cond ^ 1);
 
     private readonly List<uint> _code = new(256);
     private readonly List<int> _labels = new();
@@ -177,7 +177,7 @@ public sealed class Arm64Assembler
 
     public void B(int label) => Ref(label, Fix.B26, 0x14000000);
     public void Bl(int label) => Ref(label, Fix.B26, 0x94000000);
-    public void BCond(Cond c, int label) => Ref(label, Fix.Imm19, 0x54000000 | (uint)c);
+    public void BCond(Cond cond, int label) => Ref(label, Fix.Imm19, 0x54000000 | (uint)cond);
     public void Cbz(int rt, int label, bool x = false) => Ref(label, Fix.Imm19, 0x34000000 | Sf(x) | (uint)rt);
     public void Cbnz(int rt, int label, bool x = false) => Ref(label, Fix.Imm19, 0x35000000 | Sf(x) | (uint)rt);
     public void Tbz(int rt, int bit, int label) => Ref(label, Fix.Imm14, 0x36000000 | ((uint)bit >> 5 << 31) | (((uint)bit & 31) << 19) | (uint)rt);
@@ -488,9 +488,9 @@ public sealed class Arm64Assembler
     public void Umull(int rd, int rn, int rm) => Emit(0x9BA00000 | (uint)rm << 16 | 31u << 10 | (uint)rn << 5 | (uint)rd);
     public void Smull(int rd, int rn, int rm) => Emit(0x9B200000 | (uint)rm << 16 | 31u << 10 | (uint)rn << 5 | (uint)rd);
 
-    public void Csel(int rd, int rn, int rm, Cond c, bool x = false) => Emit(0x1A800000 | Sf(x) | (uint)rm << 16 | (uint)c << 12 | (uint)rn << 5 | (uint)rd);
-    public void Csinc(int rd, int rn, int rm, Cond c) => Emit(0x1A800400 | (uint)rm << 16 | (uint)c << 12 | (uint)rn << 5 | (uint)rd);
-    public void Cset(int rd, Cond c) => Csinc(rd, ZR, ZR, Invert(c));
+    public void Csel(int rd, int rn, int rm, Cond cond, bool x = false) => Emit(0x1A800000 | Sf(x) | (uint)rm << 16 | (uint)cond << 12 | (uint)rn << 5 | (uint)rd);
+    public void Csinc(int rd, int rn, int rm, Cond cond) => Emit(0x1A800400 | (uint)rm << 16 | (uint)cond << 12 | (uint)rn << 5 | (uint)rd);
+    public void Cset(int rd, Cond cond) => Csinc(rd, ZR, ZR, Invert(cond));
 
     // ------------------------------------------------------------------ loads and stores
 
@@ -575,8 +575,8 @@ public sealed class Arm64Assembler
     {
         Post = 1, Offset = 2, Pre = 3
     }
-    public void Stp(int rt, int rt2, int rn, int off, PairMode m = PairMode.Offset) => Emit(0xA8000000 | (uint)m << 23 | (((uint)(off / 8)) & 0x7F) << 15 | (uint)rt2 << 10 | (uint)rn << 5 | (uint)rt);
-    public void Ldp(int rt, int rt2, int rn, int off, PairMode m = PairMode.Offset) => Emit(0xA8400000 | (uint)m << 23 | (((uint)(off / 8)) & 0x7F) << 15 | (uint)rt2 << 10 | (uint)rn << 5 | (uint)rt);
+    public void Stp(int rt, int rt2, int rn, int off, PairMode pairMode = PairMode.Offset) => Emit(0xA8000000 | (uint)pairMode << 23 | (((uint)(off / 8)) & 0x7F) << 15 | (uint)rt2 << 10 | (uint)rn << 5 | (uint)rt);
+    public void Ldp(int rt, int rt2, int rn, int off, PairMode pairMode = PairMode.Offset) => Emit(0xA8400000 | (uint)pairMode << 23 | (((uint)(off / 8)) & 0x7F) << 15 | (uint)rt2 << 10 | (uint)rn << 5 | (uint)rt);
     /// <summary>Whether a 32-bit pair access can use <paramref name="off"/> (signed offset, multiple of 4 in -256..252).</summary>
     public static bool FitsPairW(int off) => off % 4 == 0 && off >= -256 && off <= 252;
     /// <summary>STP Wt, Wt2, [Xn, #off] (signed offset).</summary>

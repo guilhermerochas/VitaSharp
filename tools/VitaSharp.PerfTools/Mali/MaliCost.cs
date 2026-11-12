@@ -77,11 +77,11 @@ internal sealed class MaliCost(MaliCost.Settings s)
     {
         lock (_draws)
         {
-            foreach (DrawCostRecord d in draws)
+            foreach (DrawCostRecord drawCostRecord in draws)
             {
-                if (d.Present >= s.FirstFrame && d.Present <= s.LastFrame)
+                if (drawCostRecord.Present >= s.FirstFrame && drawCostRecord.Present <= s.LastFrame)
                 {
-                    _draws.Add(d);
+                    _draws.Add(drawCostRecord);
                 }
             }
         }
@@ -139,21 +139,21 @@ internal sealed class MaliCost(MaliCost.Settings s)
         Directory.CreateDirectory(tmp);
         psi.Environment["TEMP"] = psi.Environment["TMP"] = psi.Environment["TMPDIR"] = tmp;
         string text;
-        using (Process p = Process.Start(psi)!)
+        using (Process process = Process.Start(psi)!)
         {
             try
             {
-                p.PriorityClass = ProcessPriorityClass.BelowNormal;
+                process.PriorityClass = ProcessPriorityClass.BelowNormal;
             }
             catch (InvalidOperationException) { }
             catch (System.ComponentModel.Win32Exception) { }
-            Task<string> stdout = p.StandardOutput.ReadToEndAsync();
-            string stderr = p.StandardError.ReadToEnd();
-            p.WaitForExit();
+            Task<string> stdout = process.StandardOutput.ReadToEndAsync();
+            string stderr = process.StandardError.ReadToEnd();
+            process.WaitForExit();
             text = stdout.Result;
             if (!text.TrimStart().StartsWith('{'))
             {
-                return new Stats(new double[4], -1, false, 100, 0, 0, stderr.Trim().Split('\n').LastOrDefault()?.Trim() is { Length: > 0 } msg ? msg : $"malioc exit code {p.ExitCode}");
+                return new Stats(new double[4], -1, false, 100, 0, 0, stderr.Trim().Split('\n').LastOrDefault()?.Trim() is { Length: > 0 } msg ? msg : $"malioc exit code {process.ExitCode}");
             }
         }
         try
@@ -301,13 +301,13 @@ internal sealed class MaliCost(MaliCost.Settings s)
         }
 
         double cyclesPerMs = s.Cores * s.Mhz * 1000 / s.Scale;
-        DrawCost Cost(DrawCostRecord d, string v)
+        DrawCost Cost(DrawCostRecord drawCostRecord, string v)
         {
-            Stats vs = S(d.VsHash, d.VsHint, true, v == "allmp" ? "" : v);
-            Stats fs = S(d.FsHash, d.FsHint, false, v);
+            Stats vs = S(drawCostRecord.VsHash, drawCostRecord.VsHint, true, v == "allmp" ? "" : v);
+            Stats fs = S(drawCostRecord.FsHash, drawCostRecord.FsHint, false, v);
             // unmeasured (a programmable-blending draw split into pieces with a visibility test): a quarter of the target
-            double frags = d.Samples < 0 ? (double)d.RtW * d.RtH * 0.25 : (double)d.Samples / Math.Max(1, d.SampleCount);
-            return new DrawCost(d, d.Vertices * vs.BoundCycles / cyclesPerMs, frags * fs.BoundCycles / cyclesPerMs, vs, fs);
+            double frags = drawCostRecord.Samples < 0 ? (double)drawCostRecord.RtW * drawCostRecord.RtH * 0.25 : (double)drawCostRecord.Samples / Math.Max(1, drawCostRecord.SampleCount);
+            return new DrawCost(drawCostRecord, drawCostRecord.Vertices * vs.BoundCycles / cyclesPerMs, frags * fs.BoundCycles / cyclesPerMs, vs, fs);
         }
         double TileMs(long present) => _tile.TryGetValue(present, out (long LoadBytes, long StoreBytes) t) ? (t.LoadBytes + t.StoreBytes) / (s.Gbps * 1e6) : 0;
 

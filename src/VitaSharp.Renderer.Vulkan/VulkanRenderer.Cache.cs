@@ -116,14 +116,14 @@ public sealed unsafe partial class VulkanRenderer
     {
         lock (_titleLock)
         {
-            if (_titleId != null || _opt.ShaderCacheDir == null)
+            if (_titleId != null || _options.ShaderCacheDir == null)
             {
                 return;
             }
 
             _titleId = titleId;
             string safe = string.Concat(titleId.Select(c => char.IsLetterOrDigit(c) || c is '_' or '-' ? c : '_'));
-            string dir = Path.Combine(_opt.ShaderCacheDir, "titles", safe.Length > 0 ? safe : "unknown");
+            string dir = Path.Combine(_options.ShaderCacheDir, "titles", safe.Length > 0 ? safe : "unknown");
             try
             {
                 Directory.CreateDirectory(dir);
@@ -143,7 +143,7 @@ public sealed unsafe partial class VulkanRenderer
             string vkStatus = LoadVkPipelineCache(_vkCachePath, out long vkBytes);
 
             // debug shader overrides and draw traces need freshly generated GLSL: only the driver cache is used then
-            if (ShaderGenerator.DebugOverridesActive || _opt.TraceDrawsFrame >= 0)
+            if (ShaderGenerator.DebugOverridesActive || _options.TraceDrawsFrame >= 0)
             {
                 Log.Info($"[shadercache] {titleId}: shader/pipeline caches bypassed (debug shader overrides or draw trace active); driver cache {vkStatus}");
                 // VITASHARP_DEBUG_NAN=draws: every pipeline is an instrumented variant, kept out of the driver cache file
@@ -192,7 +192,16 @@ public sealed unsafe partial class VulkanRenderer
                 Log.Info(head + " - first run, nothing to prewarm");
                 return;
             }
-            _prewarmThread = new Thread(() => { WarmTranslator(recipes); Prewarm(head); }) { Name = "Shader prewarm", IsBackground = true, Priority = ThreadPriority.BelowNormal };
+            _prewarmThread = new Thread(() =>
+            {
+                WarmTranslator(recipes);
+                Prewarm(head);
+            })
+            {
+                Name = "Shader prewarm",
+                IsBackground = true,
+                Priority = ThreadPriority.BelowNormal,
+            };
             _prewarmThread.Start();
         }
     }
@@ -234,13 +243,13 @@ public sealed unsafe partial class VulkanRenderer
             return;
         }
 
-        ShaderHints h = hints(d, colorFormat);
-        if (h.Key() != hintKey)
+        ShaderHints shaderHints = hints(d, colorFormat);
+        if (shaderHints.Key() != hintKey)
         {
             Log.WarnOnce("recipe-key", $"[shadercache] shader {program.Hash:X16}: hints do not reproduce the key, not recorded");
             return;
         }
-        store.Add(program, hintKey, h);
+        store.Add(program, hintKey, shaderHints);
     }
 
     // =================================================================== shader pack
@@ -286,16 +295,16 @@ public sealed unsafe partial class VulkanRenderer
             }) << 4 | ((int)gen.TileWord1 & 3) << 6);
         BinaryPrimitives.WriteUInt16LittleEndian(buf.AsSpan(1), (ushort)(n | (gen.WritesMemory ? 0x8000 : 0)));
         int o = 3;
-        foreach (VertexInputInfo vi in gen.VertexInputs)
+        foreach (VertexInputInfo vertexInputInfo in gen.VertexInputs)
         {
             Span<byte> s = buf.AsSpan(o);
-            BinaryPrimitives.WriteUInt32LittleEndian(s, vi.RegIndex);
-            BinaryPrimitives.WriteInt32LittleEndian(s[4..], vi.Location);
-            BinaryPrimitives.WriteUInt16LittleEndian(s[8..], vi.Kind);
-            BinaryPrimitives.WriteInt32LittleEndian(s[10..], vi.Components);
-            BinaryPrimitives.WriteInt32LittleEndian(s[14..], vi.LocationCount);
-            BinaryPrimitives.WriteInt32LittleEndian(s[18..], vi.RawSize);
-            BinaryPrimitives.WriteInt32LittleEndian(s[22..], vi.RawComponents);
+            BinaryPrimitives.WriteUInt32LittleEndian(s, vertexInputInfo.RegIndex);
+            BinaryPrimitives.WriteInt32LittleEndian(s[4..], vertexInputInfo.Location);
+            BinaryPrimitives.WriteUInt16LittleEndian(s[8..], vertexInputInfo.Kind);
+            BinaryPrimitives.WriteInt32LittleEndian(s[10..], vertexInputInfo.Components);
+            BinaryPrimitives.WriteInt32LittleEndian(s[14..], vertexInputInfo.LocationCount);
+            BinaryPrimitives.WriteInt32LittleEndian(s[18..], vertexInputInfo.RawSize);
+            BinaryPrimitives.WriteInt32LittleEndian(s[22..], vertexInputInfo.RawComponents);
             o += InputRecordSize;
         }
         spv.CopyTo(buf, o);
@@ -372,9 +381,9 @@ public sealed unsafe partial class VulkanRenderer
     private ModuleEntry? RecordedModule(ulong programHash, ulong hintKey, bool vertex)
     {
         (ulong programHash, ulong hintKey) key = (programHash, hintKey);
-        if (_modules.TryGetValue(key, out ModuleEntry? e))
+        if (_modules.TryGetValue(key, out ModuleEntry? moduleEntry))
         {
-            return e;
+            return moduleEntry;
         }
 
         if (_inflight.TryGetValue(key, out ShaderJob? job))
@@ -382,9 +391,9 @@ public sealed unsafe partial class VulkanRenderer
             return job.RunOrWait(this, byGame: false);
         }
 
-        if (_modules.TryGetValue(key, out e))
+        if (_modules.TryGetValue(key, out moduleEntry))
         {
-            return e;
+            return moduleEntry;
         }
 
         ModuleEntry? loaded = LoadPackedShader(programHash, hintKey, vertex);
@@ -732,16 +741,16 @@ public sealed unsafe partial class VulkanRenderer
                 }
 
                 byte[]? rec = _pipelineList.TryRead(recordKey);
-                PipelineRecipe? p = rec == null ? null : PipelineRecipe.Decode(rec);
-                if (p == null)
+                PipelineRecipe? pipelineRecipe = rec == null ? null : PipelineRecipe.Decode(rec);
+                if (pipelineRecipe == null)
                 {
                     Interlocked.Increment(ref _statRebuildFailed);
                     continue;
                 }
-                QueueShader(p.VsHash, p.VsHint);
-                QueueShader(p.FsHash, p.FsHint);
+                QueueShader(pipelineRecipe.VsHash, pipelineRecipe.VsHint);
+                QueueShader(pipelineRecipe.FsHash, pipelineRecipe.FsHint);
                 queuedPipelines++;
-                EnqueueRebuild(p);
+                EnqueueRebuild(pipelineRecipe);
             }
             foreach (ShaderRecipe r in recipes)
             {

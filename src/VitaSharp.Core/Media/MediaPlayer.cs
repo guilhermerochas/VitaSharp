@@ -15,7 +15,7 @@ public sealed record AudioChunk(short[] Samples, int Channels, int SampleRate, l
 /// </summary>
 public sealed unsafe class MediaPlayer : MediaPlayerBase
 {
-    private AVFormatContext* _fmt;
+    private AVFormatContext* _formatContext;
     private AVCodecContext* _video, _audio;
     // H.264 video: Annex B access units into the pluggable decoder (the MP4 avcC header goes in front of key frames)
     private IVideoDecoder? _videoDecoder;
@@ -32,7 +32,7 @@ public sealed unsafe class MediaPlayer : MediaPlayerBase
 
     private MediaPlayer(AVFormatContext* fmt)
     {
-        _fmt = fmt;
+        _formatContext = fmt;
         DurationUs = fmt->duration > 0 ? fmt->duration : 0;
         _videoStream = OpenStream(AVMediaType.AVMEDIA_TYPE_VIDEO, out _video, out _videoTb);
         _audioStream = OpenStream(AVMediaType.AVMEDIA_TYPE_AUDIO, out _audio, out _audioTb);
@@ -93,25 +93,25 @@ public sealed unsafe class MediaPlayer : MediaPlayerBase
         return p;
     }
 
-    private int OpenStream(AVMediaType type, out AVCodecContext* ctx, out AVRational tb)
+    private int OpenStream(AVMediaType type, out AVCodecContext* ctx, out AVRational timeBase)
     {
         ctx = null;
-        tb = default;
+        timeBase = default;
         AVCodec* codec = null;
-        int index = ffmpeg.av_find_best_stream(_fmt, type, -1, -1, &codec, 0);
+        int index = ffmpeg.av_find_best_stream(_formatContext, type, -1, -1, &codec, 0);
         if (index < 0 || codec == null)
         {
             return -1;
         }
 
         AVCodecContext* c = ffmpeg.avcodec_alloc_context3(codec);
-        if (ffmpeg.avcodec_parameters_to_context(c, _fmt->streams[index]->codecpar) < 0 || ffmpeg.avcodec_open2(c, codec, null) < 0)
+        if (ffmpeg.avcodec_parameters_to_context(c, _formatContext->streams[index]->codecpar) < 0 || ffmpeg.avcodec_open2(c, codec, null) < 0)
         {
             ffmpeg.avcodec_free_context(&c);
             return -1;
         }
         ctx = c;
-        tb = _fmt->streams[index]->time_base;
+        timeBase = _formatContext->streams[index]->time_base;
         return index;
     }
 
@@ -138,7 +138,7 @@ public sealed unsafe class MediaPlayer : MediaPlayerBase
 
                     if (SeekRequestUs >= 0)
                     {
-                        ffmpeg.av_seek_frame(_fmt, -1, SeekRequestUs, ffmpeg.AVSEEK_FLAG_BACKWARD);
+                        ffmpeg.av_seek_frame(_formatContext, -1, SeekRequestUs, ffmpeg.AVSEEK_FLAG_BACKWARD);
                         if (_video != null)
                         {
                             ffmpeg.avcodec_flush_buffers(_video);
@@ -154,7 +154,7 @@ public sealed unsafe class MediaPlayer : MediaPlayerBase
                     }
                 }
 
-                int r = ffmpeg.av_read_frame(_fmt, pkt);
+                int r = ffmpeg.av_read_frame(_formatContext, pkt);
                 if (r < 0)
                 {
                     // end of file: drain the decoders, then loop or finish
@@ -163,7 +163,7 @@ public sealed unsafe class MediaPlayer : MediaPlayerBase
                     Drain(_audio, frame, false);
                     if (Loop)
                     {
-                        ffmpeg.av_seek_frame(_fmt, -1, 0, ffmpeg.AVSEEK_FLAG_BACKWARD);
+                        ffmpeg.av_seek_frame(_formatContext, -1, 0, ffmpeg.AVSEEK_FLAG_BACKWARD);
                         if (_video != null)
                         {
                             ffmpeg.avcodec_flush_buffers(_video);
@@ -264,7 +264,7 @@ public sealed unsafe class MediaPlayer : MediaPlayerBase
         ffmpeg.avcodec_flush_buffers(ctx);
     }
 
-    private static long ToUs(long ts, AVRational tb) => ts == ffmpeg.AV_NOPTS_VALUE ? 0 : ts * 1_000_000L * tb.num / tb.den;
+    private static long ToUs(long ts, AVRational timeBase) => ts == ffmpeg.AV_NOPTS_VALUE ? 0 : ts * 1_000_000L * timeBase.num / timeBase.den;
 
     /// <summary>One H.264 packet through the pluggable decoder (MP4 packets are converted to Annex B first).</summary>
     private void DecodeH264(AVPacket* pkt)
@@ -305,7 +305,7 @@ public sealed unsafe class MediaPlayer : MediaPlayerBase
         }
     }
 
-    private void PushVideo(DecodedPicture p) => PushPicture(p, ToUs(p.Pts, _videoTb));
+    private void PushVideo(DecodedPicture decodedPicture) => PushPicture(decodedPicture, ToUs(decodedPicture.Pts, _videoTb));
 
     private void PushVideo(AVFrame* f)
     {
@@ -417,7 +417,7 @@ public sealed unsafe class MediaPlayer : MediaPlayerBase
         _videoDecoder = null;
         AVCodecContext* v = _video;
         AVCodecContext* a = _audio;
-        AVFormatContext* fmt = _fmt;
+        AVFormatContext* fmt = _formatContext;
         if (v != null)
         {
             ffmpeg.avcodec_free_context(&v);
@@ -434,6 +434,6 @@ public sealed unsafe class MediaPlayer : MediaPlayerBase
         }
 
         _video = _audio = null;
-        _fmt = null;
+        _formatContext = null;
     }
 }

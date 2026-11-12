@@ -23,7 +23,7 @@ public sealed unsafe partial class VulkanRenderer
     /// post-processing often runs after the previous frame was presented).</summary>
     private bool TracingScenes => _traceDir != null && (_traceManual || (_traceFrame >= 0 && _presentCount >= _traceFrame && _presentCount <= _traceFrame + 1));
 
-    private void TraceTexture(TexKey key, GxmTextureDesc d, TexFormatInfo info, uint w, uint h)
+    private void TraceTexture(TexKey key, GxmTextureDesc gxmTextureDesc, TexFormatInfo info, uint w, uint h)
     {
         if (_traceTextureFrame != _presentCount && !_traceManual)
         {
@@ -39,10 +39,10 @@ public sealed unsafe partial class VulkanRenderer
         string dir = Path.Combine(_traceDir!, "textures");
         Directory.CreateDirectory(dir);
         StringBuilder sb = _traceTextureStats!;
-        sb.Append($"tex 0x{d.DataAddress:X8} fmt 0x{d.Format:X8} ({GxmFormats.BaseOf(d.Format)}) type 0x{d.TextureType:X8} {w}x{h} mips {d.MipCount} lodMin {d.LodMin} gamma {d.GammaMode}");
+        sb.Append($"tex 0x{gxmTextureDesc.DataAddress:X8} fmt 0x{gxmTextureDesc.Format:X8} ({GxmFormats.BaseOf(gxmTextureDesc.Format)}) type 0x{gxmTextureDesc.TextureType:X8} {w}x{h} mips {gxmTextureDesc.MipCount} lodMin {gxmTextureDesc.LodMin} gamma {gxmTextureDesc.GammaMode}");
         try
         {
-            byte[]? rgba = DecodeForInspection(d, info, w, h, out uint iw, out uint ih);
+            byte[]? rgba = DecodeForInspection(gxmTextureDesc, info, w, h, out uint iw, out uint ih);
             if (rgba == null)
             {
                 sb.AppendLine(" (not inspected)");
@@ -50,20 +50,20 @@ public sealed unsafe partial class VulkanRenderer
             else
             {
                 sb.Append($" resident {iw}x{ih} ").Append(Inspect(rgba, (int)iw, (int)ih)).AppendLine();
-                sb.Append(MipCheck(d, info, w, h, rgba, (int)iw, (int)ih));
+                sb.Append(MipCheck(gxmTextureDesc, info, w, h, rgba, (int)iw, (int)ih));
                 byte[] opaque = (byte[])rgba.Clone();
                 for (int i = 3; i < opaque.Length; i += 4)
                 {
                     opaque[i] = 255;
                 }
 
-                Png.Write(Path.Combine(dir, $"tex_{d.DataAddress:X8}_{d.Format:X8}_{w}x{h}.png"), opaque, (int)iw, (int)ih);
+                Png.Write(Path.Combine(dir, $"tex_{gxmTextureDesc.DataAddress:X8}_{gxmTextureDesc.Format:X8}_{w}x{h}.png"), opaque, (int)iw, (int)ih);
                 // cube maps: the other five faces too (a wrong face stride shows garbage on faces 1-5 only)
-                if (d.TextureType is GxmTextureDesc.TypeCube or GxmTextureDesc.TypeCubeArbitrary)
+                if (gxmTextureDesc.TextureType is GxmTextureDesc.TypeCube or GxmTextureDesc.TypeCubeArbitrary)
                 {
                     for (uint f = 1; f < 6; f++)
                     {
-                        byte[]? face = DecodeForInspection(d, info, w, h, out uint fw, out uint fh, -1, f);
+                        byte[]? face = DecodeForInspection(gxmTextureDesc, info, w, h, out uint fw, out uint fh, -1, f);
                         if (face == null)
                         {
                             continue;
@@ -75,7 +75,7 @@ public sealed unsafe partial class VulkanRenderer
                             face[i] = 255;
                         }
 
-                        Png.Write(Path.Combine(dir, $"tex_{d.DataAddress:X8}_{d.Format:X8}_{w}x{h}_f{f}.png"), face, (int)fw, (int)fh);
+                        Png.Write(Path.Combine(dir, $"tex_{gxmTextureDesc.DataAddress:X8}_{gxmTextureDesc.Format:X8}_{w}x{h}_f{f}.png"), face, (int)fw, (int)fh);
                     }
                 }
             }
@@ -102,16 +102,16 @@ public sealed unsafe partial class VulkanRenderer
     private long _inspectTicks, _inspectFrameTicks, _inspectFrame = -1;
     private long _inspectDone, _inspectDuplicate, _inspectDeferred, _inspectStale, _inspectBackground;
 
-    private static ulong InspectKey(GxmTextureDesc d, uint w, uint h, ulong hash) => hash ^ ((ulong)d.Format * 0x9E3779B97F4A7C15UL) ^ ((ulong)w << 32 | h) * 0xC2B2AE3D27D4EB4FUL;
+    private static ulong InspectKey(GxmTextureDesc gxmTextureDesc, uint w, uint h, ulong hash) => hash ^ ((ulong)gxmTextureDesc.Format * 0x9E3779B97F4A7C15UL) ^ ((ulong)w << 32 | h) * 0xC2B2AE3D27D4EB4FUL;
 
-    private void InspectUploadedTextureBudgeted(GxmTextureDesc d, TexFormatInfo info, uint w, uint h, ulong hash, uint addr, int len, bool requeue)
+    private void InspectUploadedTextureBudgeted(GxmTextureDesc gxmTextureDesc, TexFormatInfo info, uint w, uint h, ulong hash, uint addr, int len, bool requeue)
     {
         if (_inspectFrame != FrameCount)
         {
             _inspectFrame = FrameCount;
             _inspectFrameTicks = 0;
         }
-        if (!_inspected.Add(InspectKey(d, w, h, hash)))
+        if (!_inspected.Add(InspectKey(gxmTextureDesc, w, h, hash)))
         {
             _inspectDuplicate++;
             return;
@@ -122,14 +122,14 @@ public sealed unsafe partial class VulkanRenderer
             // palette textures hash their palette too; only the texel data can be re-checked on the worker
             if (requeue && _inspectQueue.Count < 4096)
             {
-                _inspectQueue.Enqueue((d, info, w, h, hash, addr, len));
+                _inspectQueue.Enqueue((gxmTextureDesc, info, w, h, hash, addr, len));
                 _inspectWorker ??= StartInspectWorker();
                 _inspectSignal.Release();
             }
             return;
         }
         long t0 = System.Diagnostics.Stopwatch.GetTimestamp();
-        ReportInspection(d, w, h, InspectStats(d, info, w, h));
+        ReportInspection(gxmTextureDesc, w, h, InspectStats(gxmTextureDesc, info, w, h));
         long dt = System.Diagnostics.Stopwatch.GetTimestamp() - t0;
         _inspectFrameTicks += dt;
         _inspectTicks += dt;
@@ -186,9 +186,9 @@ public sealed unsafe partial class VulkanRenderer
     /// Test-run inspection of a texture that was just uploaded: logs a warning (once per address/format) when its
     /// contents look like garbage, so broken decoders or unloaded memory show up in the report without screenshots.
     /// </summary>
-    private void InspectUploadedTexture(GxmTextureDesc d, TexFormatInfo info, uint w, uint h) => ReportInspection(d, w, h, InspectStats(d, info, w, h));
+    private void InspectUploadedTexture(GxmTextureDesc gxmTextureDesc, TexFormatInfo info, uint w, uint h) => ReportInspection(gxmTextureDesc, w, h, InspectStats(gxmTextureDesc, info, w, h));
 
-    private void ReportInspection(GxmTextureDesc d, uint w, uint h, string? stats)
+    private void ReportInspection(GxmTextureDesc gxmTextureDesc, uint w, uint h, string? stats)
     {
         if (stats == null || !stats.Contains("SUSPECT"))
         {
@@ -196,16 +196,16 @@ public sealed unsafe partial class VulkanRenderer
         }
 
         Interlocked.Increment(ref _suspectTextures);
-        Log.WarnOnce($"texsuspect{d.DataAddress:X}{d.Format:X}", $"[gpu] TEXTURE SUSPECT 0x{d.DataAddress:X8} fmt 0x{d.Format:X8} ({GxmFormats.BaseOf(d.Format)}) type 0x{d.TextureType:X8} {w}x{h} lodMin {d.LodMin}: {stats}");
+        Log.WarnOnce($"texsuspect{gxmTextureDesc.DataAddress:X}{gxmTextureDesc.Format:X}", $"[gpu] TEXTURE SUSPECT 0x{gxmTextureDesc.DataAddress:X8} fmt 0x{gxmTextureDesc.Format:X8} ({GxmFormats.BaseOf(gxmTextureDesc.Format)}) type 0x{gxmTextureDesc.TextureType:X8} {w}x{h} lodMin {gxmTextureDesc.LodMin}: {stats}");
     }
 
     /// <summary>Noise/seam statistics of the texture's first sampled level, or null when it is not inspected.</summary>
-    private static string? InspectStats(GxmTextureDesc d, TexFormatInfo info, uint w, uint h)
+    private static string? InspectStats(GxmTextureDesc gxmTextureDesc, TexFormatInfo info, uint w, uint h)
     {
         try
         {
             // pooled decode: every upload of a test run is inspected (video textures every frame)
-            using Texels rgba = DecodeForInspectionPooled(d, info, w, h, out uint iw, out uint ih);
+            using Texels rgba = DecodeForInspectionPooled(gxmTextureDesc, info, w, h, out uint iw, out uint ih);
             if (rgba.Array == null || iw * ih < 256)
             {
                 return null;
@@ -215,30 +215,30 @@ public sealed unsafe partial class VulkanRenderer
         }
         catch (Exception e)
         {
-            Log.WarnOnce($"texinspect{d.Format:X}", $"[gpu] texture inspection failed for fmt 0x{d.Format:X8}: {e.Message}");
+            Log.WarnOnce($"texinspect{gxmTextureDesc.Format:X}", $"[gpu] texture inspection failed for fmt 0x{gxmTextureDesc.Format:X8}: {e.Message}");
             return null;
         }
     }
 
     /// <summary>Mip 0 of face 0 as RGBA8 for formats the CPU decodes; BC formats are expanded here too.</summary>
-    private static byte[]? DecodeForInspection(GxmTextureDesc d, TexFormatInfo info, uint w, uint h, out uint iw, out uint ih, int level = -1, uint face = 0)
+    private static byte[]? DecodeForInspection(GxmTextureDesc gxmTextureDesc, TexFormatInfo info, uint w, uint h, out uint iw, out uint ih, int level = -1, uint face = 0)
     {
-        using Texels t = DecodeForInspectionPooled(d, info, w, h, out iw, out ih, level, face);
+        using Texels t = DecodeForInspectionPooled(gxmTextureDesc, info, w, h, out iw, out ih, level, face);
         return t.Array == null ? null : t.ToArray();
     }
 
     /// <summary><see cref="DecodeForInspection"/> with a pooled result (default when the format is not inspected).</summary>
-    private static Texels DecodeForInspectionPooled(GxmTextureDesc d, TexFormatInfo info, uint w, uint h, out uint iw, out uint ih, int level = -1, uint face = 0)
+    private static Texels DecodeForInspectionPooled(GxmTextureDesc gxmTextureDesc, TexFormatInfo info, uint w, uint h, out uint iw, out uint ih, int level = -1, uint face = 0)
     {
         // inspect the first resident level (LOD min), the one the GPU samples at full detail (or a given level)
-        uint mips = Math.Min(d.MipCount, (uint)System.Numerics.BitOperations.Log2(Math.Max(w, h)) + 1);
-        uint lodMin = level >= 0 ? (uint)Math.Min(level, (int)mips - 1) : Math.Min(d.LodMin, mips - 1);
+        uint mips = Math.Min(gxmTextureDesc.MipCount, (uint)System.Numerics.BitOperations.Log2(Math.Max(w, h)) + 1);
+        uint lodMin = level >= 0 ? (uint)Math.Min(level, (int)mips - 1) : Math.Min(gxmTextureDesc.LodMin, mips - 1);
         // the face stride depends on the whole chain, so lay out every level when a later cube face is wanted
-        TexLayout layout = ComputeLayout(d, info, w, h, face > 0 ? mips : lodMin + 1, face + 1);
-        MipLayout lv = layout.Levels[(int)lodMin];
-        w = lv.Width;
-        h = lv.Height;
-        Texels texels = TextureDecoder.Decode(d, info, d.DataAddress + face * layout.FaceStride + lv.Offset, lv.Width, lv.Height, lv.RowPitch, out _, out _);
+        TexLayout layout = ComputeLayout(gxmTextureDesc, info, w, h, face > 0 ? mips : lodMin + 1, face + 1);
+        MipLayout mipLayout = layout.Levels[(int)lodMin];
+        w = mipLayout.Width;
+        h = mipLayout.Height;
+        Texels texels = TextureDecoder.Decode(gxmTextureDesc, info, gxmTextureDesc.DataAddress + face * layout.FaceStride + mipLayout.Offset, mipLayout.Width, mipLayout.Height, mipLayout.RowPitch, out _, out _);
         iw = w;
         ih = h;
         if (!(info.Compressed && info.Convert == TexConvert.None) && info.Format is Format.R8G8B8A8Unorm or Format.R8G8B8A8Srgb)
@@ -254,7 +254,7 @@ public sealed unsafe partial class VulkanRenderer
 
         if (info.Compressed && info.Convert == TexConvert.None)
         {
-            return GxmFormats.BaseOf(d.Format) switch
+            return GxmFormats.BaseOf(gxmTextureDesc.Format) switch
             {
                 TexBase.UBC1 => BcDecode.Bc1(data, w, h),
                 TexBase.UBC2 => BcDecode.Bc2(data, w, h),
@@ -267,12 +267,32 @@ public sealed unsafe partial class VulkanRenderer
             Format.R8G8B8A8Unorm or Format.R8G8B8A8Srgb => data,
             Format.R8Unorm => Expand(data, w * h, 1, (s, i) => (s[i], s[i], s[i], (byte)255)),
             Format.R8G8Unorm => Expand(data, w * h, 2, (s, i) => (s[i], s[i + 1], (byte)0, (byte)255)),
-            Format.R16Sfloat => Expand(data, w * h, 2, (s, i) => { byte v = ToByte((float)BitConverter.ToHalf(s, i)); return (v, v, v, (byte)255); }),
+            Format.R16Sfloat => Expand(data, w * h, 2, (s, i) =>
+            {
+                byte v = ToByte((float)BitConverter.ToHalf(s, i));
+                return (v, v, v, (byte)255);
+            }),
             Format.R16G16B16A16Sfloat => Expand(data, w * h, 8, (s, i) => (ToByte((float)BitConverter.ToHalf(s, i)), ToByte((float)BitConverter.ToHalf(s, i + 2)), ToByte((float)BitConverter.ToHalf(s, i + 4)), ToByte((float)BitConverter.ToHalf(s, i + 6)))),
-            Format.R32Sfloat => Expand(data, w * h, 4, (s, i) => { byte v = ToByte(BitConverter.ToSingle(s, i)); return (v, v, v, (byte)255); }),
-            Format.R5G6B5UnormPack16 => Expand(data, w * h, 2, (s, i) => { int v = s[i] | s[i + 1] << 8; return ((byte)((v >> 11) * 255 / 31), (byte)(((v >> 5) & 63) * 255 / 63), (byte)((v & 31) * 255 / 31), (byte)255); }),
-            Format.R4G4B4A4UnormPack16 => Expand(data, w * h, 2, (s, i) => { int v = s[i] | s[i + 1] << 8; return ((byte)((v >> 12) * 17), (byte)(((v >> 8) & 15) * 17), (byte)(((v >> 4) & 15) * 17), (byte)((v & 15) * 17)); }),
-            Format.A1R5G5B5UnormPack16 => Expand(data, w * h, 2, (s, i) => { int v = s[i] | s[i + 1] << 8; return ((byte)(((v >> 10) & 31) * 255 / 31), (byte)(((v >> 5) & 31) * 255 / 31), (byte)((v & 31) * 255 / 31), (byte)((v >> 15) * 255)); }),
+            Format.R32Sfloat => Expand(data, w * h, 4, (s, i) =>
+            {
+                byte v = ToByte(BitConverter.ToSingle(s, i));
+                return (v, v, v, (byte)255);
+            }),
+            Format.R5G6B5UnormPack16 => Expand(data, w * h, 2, (s, i) =>
+            {
+                int v = s[i] | s[i + 1] << 8;
+                return ((byte)((v >> 11) * 255 / 31), (byte)(((v >> 5) & 63) * 255 / 63), (byte)((v & 31) * 255 / 31), (byte)255);
+            }),
+            Format.R4G4B4A4UnormPack16 => Expand(data, w * h, 2, (s, i) =>
+            {
+                int v = s[i] | s[i + 1] << 8;
+                return ((byte)((v >> 12) * 17), (byte)(((v >> 8) & 15) * 17), (byte)(((v >> 4) & 15) * 17), (byte)((v & 15) * 17));
+            }),
+            Format.A1R5G5B5UnormPack16 => Expand(data, w * h, 2, (s, i) =>
+            {
+                int v = s[i] | s[i + 1] << 8;
+                return ((byte)(((v >> 10) & 31) * 255 / 31), (byte)(((v >> 5) & 31) * 255 / 31), (byte)((v & 31) * 255 / 31), (byte)((v >> 15) * 255));
+            }),
             Format.R8G8B8A8SNorm => Expand(data, w * h, 4, (s, i) => ((byte)(s[i] + 128), (byte)(s[i + 1] + 128), (byte)(s[i + 2] + 128), (byte)255)),
             Format.Astc4x4UnormBlock or Format.Astc4x4SrgbBlock => AstcToRgba(data, w, h),
             _ => null,
@@ -286,10 +306,10 @@ public sealed unsafe partial class VulkanRenderer
     /// closely (mean abs diff a few %); a wrong mip layout shows unrelated data. Distant surfaces sample these levels, so
     /// a broken chain looks like flat or wrong colours only far from the camera.
     /// </summary>
-    private static string MipCheck(GxmTextureDesc d, TexFormatInfo info, uint w, uint h, byte[] top, int tw, int th)
+    private static string MipCheck(GxmTextureDesc gxmTextureDesc, TexFormatInfo info, uint w, uint h, byte[] top, int tw, int th)
     {
-        uint mips = Math.Min(d.MipCount, (uint)System.Numerics.BitOperations.Log2(Math.Max(w, h)) + 1);
-        int baseLevel = (int)Math.Min(d.LodMin, mips - 1);
+        uint mips = Math.Min(gxmTextureDesc.MipCount, (uint)System.Numerics.BitOperations.Log2(Math.Max(w, h)) + 1);
+        int baseLevel = (int)Math.Min(gxmTextureDesc.LodMin, mips - 1);
         if (mips - baseLevel < 2)
         {
             return "";
@@ -299,7 +319,7 @@ public sealed unsafe partial class VulkanRenderer
         bool bad = false;
         for (int lvl = baseLevel + 1; lvl < Math.Min((int)mips, baseLevel + 6); lvl++)
         {
-            byte[]? m = DecodeForInspection(d, info, w, h, out uint mw, out uint mh, lvl);
+            byte[]? m = DecodeForInspection(gxmTextureDesc, info, w, h, out uint mw, out uint mh, lvl);
             if (m == null || mw < 2 || mh < 2)
             {
                 break;
@@ -650,7 +670,7 @@ public sealed unsafe partial class VulkanRenderer
             return;
         }
         // snapshots are taken in the logged frame (draw ids match the draw trace) and written when it is presented
-        if (s_traceSnapSpec.Length == 0 || _opt.ShaderCacheDir == null || !TracingThisFrame || _renderTarget is not { } rt)
+        if (s_traceSnapSpec.Length == 0 || _options.ShaderCacheDir == null || !TracingThisFrame || _renderTarget is not { } rt)
         {
             return;
         }

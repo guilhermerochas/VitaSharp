@@ -45,7 +45,10 @@ foreach (int n in pngSizes)
 
 Write("VitaSharp.ico", Ico([16, 24, 32, 48, 64, 128, 256]));
 Write("VitaSharp.icns", Icns());
-if (androidRes != null) Android(androidRes);
+if (androidRes != null)
+{
+    Android(androidRes);
+}
 return 0;
 
 void Write(string name, byte[] bytes, string? dir = null)

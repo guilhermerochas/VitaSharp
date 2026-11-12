@@ -64,17 +64,17 @@ public sealed class PfsDecryptor
                                  .ToDictionary(g => g.Key, g => g.ToList());
 
         long done = 0;
-        foreach (PfsTable t in plan.Tables)
+        foreach (PfsTable pfsTable in plan.Tables)
         {
             string? match = null;
-            if (bySectors.TryGetValue(t.NumSectors, out List<string>? candidates))
+            if (bySectors.TryGetValue(pfsTable.NumSectors, out List<string>? candidates))
             {
                 foreach (string? c in candidates)
                 {
                     using FileStream fs = File.OpenRead(Path.Combine(_root, c));
-                    byte[] head = new byte[(int)Math.Min(fs.Length, t.SectorSize)];
+                    byte[] head = new byte[(int)Math.Min(fs.Length, pfsTable.SectorSize)];
                     fs.ReadExactly(head);
-                    if (t.Matches(head))
+                    if (pfsTable.Matches(head))
                     {
                         match = c;
                         break;
@@ -87,7 +87,7 @@ public sealed class PfsDecryptor
             }
             if (match == null)
             {
-                throw new InvalidDataException($"PFS: no file matches unicv table at page {t.Salt}");
+                throw new InvalidDataException($"PFS: no file matches unicv table at page {pfsTable.Salt}");
             }
 
             PfsNode node = plan.Node(match);
@@ -95,7 +95,7 @@ public sealed class PfsDecryptor
             if (node.Encrypted)
             {
                 Log?.Invoke($"decrypt {match}");
-                DecryptFile(path, plan.Cipher(t));
+                DecryptFile(path, plan.Cipher(pfsTable));
             }
             else
             {
@@ -170,9 +170,9 @@ public sealed class PfsDecryptor
                                     t.Blocks[0][0], MakeTweakKey(t)));
         }
         var nodes = new Dictionary<string, PfsNode>();
-        foreach (FileNode f in files)
+        foreach (FileNode fileNode in files)
         {
-            nodes[f.RelPath.ToUpperInvariant()] = new PfsNode(f.RelPath, f.Size, (f.Type & AttrNenc) == 0);
+            nodes[fileNode.RelPath.ToUpperInvariant()] = new PfsNode(fileNode.RelPath, fileNode.Size, (fileNode.Type & AttrNenc) == 0);
         }
 
         return new PfsPlan(tables, nodes, files.Where(f => !IsDir(f.Type)).Sum(f => (long)f.Size), _drvKey);

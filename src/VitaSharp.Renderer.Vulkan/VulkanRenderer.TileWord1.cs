@@ -156,7 +156,12 @@ public sealed unsafe partial class VulkanRenderer
             if (_tw1Copy.Handle != 0)
             {
                 (Image oi, ImageView ov, ImageMemoryPool.Allocation om) = (_tw1Copy, _tw1CopyView, _tw1CopyMem);
-                DestroyAfterGpu(() => { _vk.DestroyImageView(_dev, ov, null); _vk.DestroyImage(_dev, oi, null); _imagePool.Free(om); });
+                DestroyAfterGpu(() =>
+                {
+                    _vk.DestroyImageView(_dev, ov, null);
+                    _vk.DestroyImage(_dev, oi, null);
+                    _imagePool.Free(om);
+                });
             }
             (_tw1Copy, _tw1CopyView, _tw1CopyMem) = CreateImage(MemCat.Region, w, h, TileWord1Format, ImageUsageFlags.SampledBit | ImageUsageFlags.TransferDstBit, ImageAspectFlags.ColorBit);
             (_tw1CopyW, _tw1CopyH) = (w, h);

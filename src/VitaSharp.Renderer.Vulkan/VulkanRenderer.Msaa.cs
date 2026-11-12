@@ -69,86 +69,86 @@ public sealed unsafe partial class VulkanRenderer
 
     private readonly Dictionary<Format, bool> _ssFormatOk = new();
 
-    private bool SupportsSupersample(Format f)
+    private bool SupportsSupersample(Format format)
     {
-        if (_ssFormatOk.TryGetValue(f, out bool ok))
+        if (_ssFormatOk.TryGetValue(format, out bool ok))
         {
             return ok;
         }
 
-        _core.Vk.GetPhysicalDeviceFormatProperties(_core.Physical, f, out FormatProperties props);
+        _core.Vk.GetPhysicalDeviceFormatProperties(_core.Physical, format, out FormatProperties props);
         const FormatFeatureFlags Need = FormatFeatureFlags.BlitSrcBit | FormatFeatureFlags.BlitDstBit | FormatFeatureFlags.SampledImageFilterLinearBit
             | FormatFeatureFlags.ColorAttachmentBlendBit;
-        return _ssFormatOk[f] = (props.OptimalTilingFeatures & Need) == Need;
+        return _ssFormatOk[format] = (props.OptimalTilingFeatures & Need) == Need;
     }
 
     private SupersampleImage GetSupersampleImage(RenderTarget rt)
     {
-        if (_ssImages.TryGetValue(rt, out SupersampleImage? ss))
+        if (_ssImages.TryGetValue(rt, out SupersampleImage? supersampleImage))
         {
-            return ss;
+            return supersampleImage;
         }
 
-        ss = new SupersampleImage { Width = rt.ImgW * 2, Height = rt.ImgH * 2 };
+        supersampleImage = new SupersampleImage { Width = rt.ImgW * 2, Height = rt.ImgH * 2 };
         // input attachment: small programmable-blending draws read it in a render pass (VulkanRenderer.SingleFetch.cs)
-        (ss.Image, ss.View, ss.Mem) = CreateImage(MemCat.Msaa, ss.Width, ss.Height, rt.Format,
+        (supersampleImage.Image, supersampleImage.View, supersampleImage.Mem) = CreateImage(MemCat.Msaa, supersampleImage.Width, supersampleImage.Height, rt.Format,
             ImageUsageFlags.ColorAttachmentBit | ImageUsageFlags.TransferSrcBit | ImageUsageFlags.TransferDstBit | ImageUsageFlags.InputAttachmentBit,
             ImageAspectFlags.ColorBit, mutable: true);
         Format srgb = Formats.Srgb(rt.Format);
         if (srgb != rt.Format && _core.SupportsColorAttachment(srgb))
         {
-            ss.SrgbView = CreateView(ss.Image, srgb, ImageAspectFlags.ColorBit, 1, 1, false, default);
+            supersampleImage.SrgbView = CreateView(supersampleImage.Image, srgb, ImageAspectFlags.ColorBit, 1, 1, false, default);
         }
 
-        _ssImages[rt] = ss;
+        _ssImages[rt] = supersampleImage;
         Log.Info($"[gpu] render target 0x{rt.Address:X8} {rt.Width}x{rt.Height} fmt 0x{rt.ColorFormat:X8}: MSAA downscale scene, rendering 2x supersampled");
-        return ss;
+        return supersampleImage;
     }
 
     private ImageView SupersampleView(RenderTarget rt)
     {
-        SupersampleImage ss = GetSupersampleImage(rt);
-        return _rtGamma && ss.SrgbView.Handle != 0 ? ss.SrgbView : ss.View;
+        SupersampleImage supersampleImage = GetSupersampleImage(rt);
+        return _rtGamma && supersampleImage.SrgbView.Handle != 0 ? supersampleImage.SrgbView : supersampleImage.View;
     }
 
     private void DestroySupersampleLater(RenderTarget rt, bool now = false)
     {
-        if (!_ssImages.Remove(rt, out SupersampleImage? ss))
+        if (!_ssImages.Remove(rt, out SupersampleImage? supersampleImage))
         {
             return;
         }
 
         Release(() =>
         {
-            _vk.DestroyImageView(_dev, ss.View, null);
-            if (ss.SrgbView.Handle != 0)
+            _vk.DestroyImageView(_dev, supersampleImage.View, null);
+            if (supersampleImage.SrgbView.Handle != 0)
             {
-                _vk.DestroyImageView(_dev, ss.SrgbView, null);
+                _vk.DestroyImageView(_dev, supersampleImage.SrgbView, null);
             }
 
-            if (ss.RawView.Handle != 0)
+            if (supersampleImage.RawView.Handle != 0)
             {
-                _vk.DestroyImageView(_dev, ss.RawView, null);
+                _vk.DestroyImageView(_dev, supersampleImage.RawView, null);
             }
 
-            _vk.DestroyImage(_dev, ss.Image, null);
-            _imagePool.Free(ss.Mem);
+            _vk.DestroyImage(_dev, supersampleImage.Image, null);
+            _imagePool.Free(supersampleImage.Mem);
         }, now);
     }
 
     /// <summary>Scene start: every sample takes the surface's pixel (the hardware loads the surface into all samples).</summary>
     private void LoadSupersample(RenderTarget rt)
     {
-        SupersampleImage ss = GetSupersampleImage(rt);
+        SupersampleImage supersampleImage = GetSupersampleImage(rt);
         EndRendering();
         Barrier(rt.Image, ImageLayout.General, ImageLayout.General, ImageAspectFlags.ColorBit,
             PipelineStageFlags.ColorAttachmentOutputBit | PipelineStageFlags.TransferBit, PipelineStageFlags.TransferBit,
             AccessFlags.ColorAttachmentWriteBit | AccessFlags.TransferWriteBit, AccessFlags.TransferReadBit);
-        Barrier(ss.Image, ImageLayout.Undefined, ImageLayout.General, ImageAspectFlags.ColorBit,
+        Barrier(supersampleImage.Image, ImageLayout.Undefined, ImageLayout.General, ImageAspectFlags.ColorBit,
             PipelineStageFlags.ColorAttachmentOutputBit | PipelineStageFlags.TransferBit, PipelineStageFlags.TransferBit,
             AccessFlags.ColorAttachmentWriteBit | AccessFlags.TransferReadBit, AccessFlags.TransferWriteBit);
-        Blit(rt.Image, rt.ImgW, rt.ImgH, ss.Image, ss.Width, ss.Height, Filter.Nearest);
-        Barrier(ss.Image, ImageLayout.General, ImageLayout.General, ImageAspectFlags.ColorBit,
+        Blit(rt.Image, rt.ImgW, rt.ImgH, supersampleImage.Image, supersampleImage.Width, supersampleImage.Height, Filter.Nearest);
+        Barrier(supersampleImage.Image, ImageLayout.General, ImageLayout.General, ImageAspectFlags.ColorBit,
             PipelineStageFlags.TransferBit, PipelineStageFlags.ColorAttachmentOutputBit,
             AccessFlags.TransferWriteBit, AccessFlags.ColorAttachmentReadBit | AccessFlags.ColorAttachmentWriteBit);
     }
@@ -156,17 +156,17 @@ public sealed unsafe partial class VulkanRenderer
     /// <summary>Downscale: each surface pixel becomes the average of its 2x2 samples.</summary>
     private void ResolveSupersample(RenderTarget rt)
     {
-        SupersampleImage ss = GetSupersampleImage(rt);
-        Barrier(ss.Image, ImageLayout.General, ImageLayout.General, ImageAspectFlags.ColorBit,
+        SupersampleImage supersampleImage = GetSupersampleImage(rt);
+        Barrier(supersampleImage.Image, ImageLayout.General, ImageLayout.General, ImageAspectFlags.ColorBit,
             PipelineStageFlags.ColorAttachmentOutputBit, PipelineStageFlags.TransferBit, AccessFlags.ColorAttachmentWriteBit, AccessFlags.TransferReadBit);
         Barrier(rt.Image, ImageLayout.General, ImageLayout.General, ImageAspectFlags.ColorBit,
             PipelineStageFlags.ColorAttachmentOutputBit | PipelineStageFlags.FragmentShaderBit | PipelineStageFlags.VertexShaderBit | PipelineStageFlags.TransferBit,
             PipelineStageFlags.TransferBit, AccessFlags.ShaderReadBit | AccessFlags.TransferReadBit | AccessFlags.ColorAttachmentWriteBit, AccessFlags.TransferWriteBit);
-        Blit(ss.Image, ss.Width, ss.Height, rt.Image, rt.ImgW, rt.ImgH, Filter.Linear);
+        Blit(supersampleImage.Image, supersampleImage.Width, supersampleImage.Height, rt.Image, rt.ImgW, rt.ImgH, Filter.Linear);
         Barrier(rt.Image, ImageLayout.General, ImageLayout.General, ImageAspectFlags.ColorBit,
             PipelineStageFlags.TransferBit, PipelineStageFlags.FragmentShaderBit | PipelineStageFlags.VertexShaderBit | PipelineStageFlags.TransferBit | PipelineStageFlags.ColorAttachmentOutputBit,
             AccessFlags.TransferWriteBit, AccessFlags.ShaderReadBit | AccessFlags.TransferReadBit | AccessFlags.ColorAttachmentReadBit | AccessFlags.ColorAttachmentWriteBit);
-        Barrier(ss.Image, ImageLayout.General, ImageLayout.General, ImageAspectFlags.ColorBit,
+        Barrier(supersampleImage.Image, ImageLayout.General, ImageLayout.General, ImageAspectFlags.ColorBit,
             PipelineStageFlags.TransferBit, PipelineStageFlags.ColorAttachmentOutputBit, AccessFlags.TransferReadBit, AccessFlags.ColorAttachmentReadBit | AccessFlags.ColorAttachmentWriteBit);
     }
 

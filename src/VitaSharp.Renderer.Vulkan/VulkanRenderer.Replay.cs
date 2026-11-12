@@ -44,24 +44,24 @@ public sealed unsafe partial class VulkanRenderer
     /// <summary>Session capture: the present's numbers and the frame's timing, from the command and the frame summary.</summary>
     private VitaSharp.Core.Capture.PresentInfo TapInfo(uint srcW, uint srcH, long now)
     {
-        FrameSummary s = _frameRing[(_frameRingCount - 1 + FrameRingSize) % FrameRingSize];
-        PresentCommand? c = _presentCmd;
+        FrameSummary frameSummary = _frameRing[(_frameRingCount - 1 + FrameRingSize) % FrameRingSize];
+        PresentCommand? presentCommand = _presentCmd;
         return new VitaSharp.Core.Capture.PresentInfo
         {
             Present = _presentCount,
-            Flip = c?.Flip ?? -1,
-            VBlank = c?.VBlank ?? 0,
-            GuestUs = c?.GuestUs ?? 0,
-            FlipNs = c != null ? VitaSharp.Core.Capture.CaptureClock.FromTicks(c.HostTicks) : 0,
+            Flip = presentCommand?.Flip ?? -1,
+            VBlank = presentCommand?.VBlank ?? 0,
+            GuestUs = presentCommand?.GuestUs ?? 0,
+            FlipNs = presentCommand != null ? VitaSharp.Core.Capture.CaptureClock.FromTicks(presentCommand.HostTicks) : 0,
             PresentNs = VitaSharp.Core.Capture.CaptureClock.FromTicks(now),
-            IntervalMs = s.IntervalMs,
-            HitchMs = s.TopCause >= 0 && s.TopCauseMs >= 0.05f ? s.TopCauseMs : 0,
-            Hitch = s.TopCause >= 0 && s.TopCauseMs >= 0.05f ? FrameLedger.Names[s.TopCause] : "",
-            Draws = s.Draws,
-            Scenes = s.Scenes,
-            NewShaders = s.NewShaders,
-            NewPipelines = s.NewPipelines,
-            Address = s.Address,
+            IntervalMs = frameSummary.IntervalMs,
+            HitchMs = frameSummary.TopCause >= 0 && frameSummary.TopCauseMs >= 0.05f ? frameSummary.TopCauseMs : 0,
+            Hitch = frameSummary.TopCause >= 0 && frameSummary.TopCauseMs >= 0.05f ? FrameLedger.Names[frameSummary.TopCause] : "",
+            Draws = frameSummary.Draws,
+            Scenes = frameSummary.Scenes,
+            NewShaders = frameSummary.NewShaders,
+            NewPipelines = frameSummary.NewPipelines,
+            Address = frameSummary.Address,
             SrcW = srcW,
             SrcH = srcH,
         };
@@ -263,7 +263,7 @@ public sealed unsafe partial class VulkanRenderer
             H = dh,
             SrcW = w,
             SrcH = h,
-            Info = _opt.PresentTap != null ? TapInfo(w, h, t0) : default,
+            Info = _options.PresentTap != null ? TapInfo(w, h, t0) : default,
         };
         // the previous copy out of the staging image must be done before the blit overwrites it
         Barrier(ring.Image, ring.ImageInitialized ? ImageLayout.General : ImageLayout.Undefined, ImageLayout.General, ImageAspectFlags.ColorBit,
@@ -305,7 +305,7 @@ public sealed unsafe partial class VulkanRenderer
         }
         // session capture: the picture as presented, with its timing (GPU time: the command buffers retired since the
         // previous tapped frame)
-        if (_opt.PresentTap is { } tap)
+        if (_options.PresentTap is { } tap)
         {
             PresentInfo info = e.Info;
             if (info.Present == 0)
@@ -455,9 +455,9 @@ public sealed unsafe partial class VulkanRenderer
         DateTime? triggerTime = shots.LastOrDefault(s => s.Present <= trigger)?.Time;
         foreach (ReplayShot s in shots)
         {
-            FrameMetrics m = s.Metrics;
+            FrameMetrics frameMetrics = s.Metrics;
             string dt = triggerTime is { } tt ? $"{(s.Time - tt).TotalMilliseconds:+0;-0;0}" : "-";
-            sb.AppendLine(FormattableString.Invariant($"p{s.Present} f{s.GuestFrame} {s.Time:HH:mm:ss.fff} {dt} {s.W}x{s.H}({s.SrcW}x{s.SrcH}) {m.Mean:F3} {m.White:F3} {m.Black:F3} {m.Magenta:F3} {m.Green:F3} {m.Blue:F3} {HitString(s.Hits)}{(s.Present == trigger ? "  <== trigger" : "")}"));
+            sb.AppendLine(FormattableString.Invariant($"p{s.Present} f{s.GuestFrame} {s.Time:HH:mm:ss.fff} {dt} {s.W}x{s.H}({s.SrcW}x{s.SrcH}) {frameMetrics.Mean:F3} {frameMetrics.White:F3} {frameMetrics.Black:F3} {frameMetrics.Magenta:F3} {frameMetrics.Green:F3} {frameMetrics.Blue:F3} {HitString(s.Hits)}{(s.Present == trigger ? "  <== trigger" : "")}"));
         }
         sb.AppendLine();
         sb.AppendLine("# recent anomaly events (debug mode, newest last)");

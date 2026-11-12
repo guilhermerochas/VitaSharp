@@ -28,28 +28,28 @@ internal sealed class MaliCostCommand : IPerfCommand
         Console.WriteLine("  --env KEY=VALUE        renderer/shader switch (repeat with --env=KEY=VALUE); --no-recorded-env");
     }
 
-    public int Run(PerfArgs a)
+    public int Run(PerfArgs perfArgs)
     {
-        if (a.Positional.Count != 1)
+        if (perfArgs.Positional.Count != 1)
         {
             throw new PerfArgsException("mali-cost needs one dump file");
         }
 
-        string path = Path.GetFullPath(a.Positional[0]);
+        string path = Path.GetFullPath(perfArgs.Positional[0]);
         if (!File.Exists(path))
         {
             Console.Error.WriteLine($"GPU dump {path} not found");
             return 1;
         }
-        string outDir = Path.GetFullPath(a.Get("--out") ?? Path.Combine(Path.GetDirectoryName(path)!, Path.GetFileNameWithoutExtension(path) + "_perf"));
-        string cacheDir = Path.GetFullPath(a.Get("--shader-cache") ?? Path.Combine(outDir, "shadercache"));
-        (long first, long last) = a.Range("--frames");
+        string outDir = Path.GetFullPath(perfArgs.Get("--out") ?? Path.Combine(Path.GetDirectoryName(path)!, Path.GetFileNameWithoutExtension(path) + "_perf"));
+        string cacheDir = Path.GetFullPath(perfArgs.Get("--shader-cache") ?? Path.Combine(outDir, "shadercache"));
+        (long first, long last) = perfArgs.Range("--frames");
         var settings = new MaliCost.Settings(
-            Core: a.Get("--gpu") ?? "Mali-G57",
-            Malioc: MaliCost.FindMalioc(a.Get("--malioc")) ?? throw new PerfArgsException("malioc not found: install Arm Performance Studio (mali_offline_compiler) or pass --malioc / VITASHARP_MALIOC"),
+            Core: perfArgs.Get("--gpu") ?? "Mali-G57",
+            Malioc: MaliCost.FindMalioc(perfArgs.Get("--malioc")) ?? throw new PerfArgsException("malioc not found: install Arm Performance Studio (mali_offline_compiler) or pass --malioc / VITASHARP_MALIOC"),
             CacheDir: cacheDir, OutDir: outDir,
-            Mhz: a.Double("--mhz", 950), Cores: a.Double("--cores", 2), Gbps: a.Double("--gbps", 8), Scale: a.Double("--scale", 1),
-            FirstFrame: first, LastFrame: last, Fp16WhatIf: a.Has("--fp16-whatif"));
+            Mhz: perfArgs.Double("--mhz", 950), Cores: perfArgs.Double("--cores", 2), Gbps: perfArgs.Double("--gbps", 8), Scale: perfArgs.Double("--scale", 1),
+            FirstFrame: first, LastFrame: last, Fp16WhatIf: perfArgs.Has("--fp16-whatif"));
 
         GpuDumpHeader header;
         using (var r = new GpuDumpReader(path))
@@ -57,9 +57,9 @@ internal sealed class MaliCostCommand : IPerfCommand
             header = r.Header;
         }
         // environment switches must be in place before the renderer and shader generator types initialise
-        Dictionary<string, string> env = a.Has("--no-recorded-env") ? new Dictionary<string, string>() : GpuDumpPlayer.RecordedEnvironment(header);
-        env[EnvVars.GpuProfile] = a.Get("--gpu-profile") ?? "mali";
-        foreach (string? e in Environment.GetCommandLineArgs().Where(x => x.StartsWith("--env=")).Select(x => x["--env=".Length..]).Append(a.Get("--env") ?? ""))
+        Dictionary<string, string> env = perfArgs.Has("--no-recorded-env") ? new Dictionary<string, string>() : GpuDumpPlayer.RecordedEnvironment(header);
+        env[EnvVars.GpuProfile] = perfArgs.Get("--gpu-profile") ?? "mali";
+        foreach (string? e in Environment.GetCommandLineArgs().Where(x => x.StartsWith("--env=")).Select(x => x["--env=".Length..]).Append(perfArgs.Get("--env") ?? ""))
         {
             if (e.IndexOf('=') is var eq and > 0)
             {
@@ -96,10 +96,10 @@ internal sealed class MaliCostCommand : IPerfCommand
                     renderer.BeginTitle(title);
                 }
 
-                GpuDumpPlayStats st = GpuDumpPlayer.Play(reader, renderer, presented: _ => renderer.PresentCount < last);
+                GpuDumpPlayStats gpuDumpPlayStats = GpuDumpPlayer.Play(reader, renderer, presented: _ => renderer.PresentCount < last);
                 renderer.Execute(new FinishCommand());
                 cost.Capture(renderer);
-                Console.WriteLine($"replayed {st.Frames} frames, {st.Draws} draws in {wall.Elapsed.TotalSeconds:F1} s");
+                Console.WriteLine($"replayed {gpuDumpPlayStats.Frames} frames, {gpuDumpPlayStats.Draws} draws in {wall.Elapsed.TotalSeconds:F1} s");
                 if (renderer.Report() is { } rep)
                 {
                     foreach (string? line in rep.Split('\n').Where(l => l.StartsWith("PERF gpu")))

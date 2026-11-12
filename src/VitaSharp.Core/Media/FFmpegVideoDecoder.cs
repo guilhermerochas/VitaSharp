@@ -59,13 +59,13 @@ public sealed class FFmpegVideoBackend : IVideoDecoderBackend
             return AVHWDeviceType.AV_HWDEVICE_TYPE_NONE;
         }
 
-        AVHWDeviceType t = ffmpeg.av_hwdevice_find_type_by_name(v);
-        if (t == AVHWDeviceType.AV_HWDEVICE_TYPE_NONE)
+        AVHWDeviceType avhwDeviceType = ffmpeg.av_hwdevice_find_type_by_name(v);
+        if (avhwDeviceType == AVHWDeviceType.AV_HWDEVICE_TYPE_NONE)
         {
             Log.Warn($"{source}={v}: unknown FFmpeg hardware device type, using the platform default");
         }
 
-        return t;
+        return avhwDeviceType;
     }
 
     /// <summary>Applies a front-end setting: "auto" (software), "hw" (the platform's hardware decoder), "sw"/"off", or an
@@ -474,11 +474,11 @@ public sealed unsafe class FFmpegVideoDecoder : IVideoDecoder
     /// <summary>Pictures the caller is done with; their planes are reused by later frames of the same size.</summary>
     private readonly Stack<DecodedPicture> _free = new();
 
-    public void Recycle(DecodedPicture p)
+    public void Recycle(DecodedPicture decodedPicture)
     {
         if (_free.Count < 4)
         {
-            _free.Push(p);
+            _free.Push(decodedPicture);
         }
     }
 
@@ -486,10 +486,10 @@ public sealed unsafe class FFmpegVideoDecoder : IVideoDecoder
     {
         while (_free.Count > 0)
         {
-            DecodedPicture p = _free.Pop();
-            if (p.Y.Length == w * h && p.U.Length == cw * ch)
+            DecodedPicture decodedPicture = _free.Pop();
+            if (decodedPicture.Y.Length == w * h && decodedPicture.U.Length == cw * ch)
             {
-                return p; // other sizes are dropped
+                return decodedPicture; // other sizes are dropped
             }
         }
         return new DecodedPicture { Y = new byte[w * h], U = new byte[cw * ch], V = new byte[cw * ch] };
@@ -553,15 +553,15 @@ public sealed unsafe class FFmpegVideoDecoder : IVideoDecoder
             }
             _producedSinceIdr++;
             int w = _frame->width, h = _frame->height, cw = (w + 1) / 2, ch = (h + 1) / 2;
-            DecodedPicture p = RentPicture(w, h, cw, ch);
-            p.Width = w;
-            p.Height = h;
-            p.Pts = _frame->pts;
-            p.FullRange = _frame->color_range == AVColorRange.AVCOL_RANGE_JPEG
+            DecodedPicture decodedPicture = RentPicture(w, h, cw, ch);
+            decodedPicture.Width = w;
+            decodedPicture.Height = h;
+            decodedPicture.Pts = _frame->pts;
+            decodedPicture.FullRange = _frame->color_range == AVColorRange.AVCOL_RANGE_JPEG
                             || (AVPixelFormat)_frame->format == AVPixelFormat.AV_PIX_FMT_YUVJ420P;
-            p.Bt709 = _frame->colorspace == AVColorSpace.AVCOL_SPC_BT709;
-            CopyPlanes(src, p, w, h, cw, ch);
-            _ready.Enqueue(p);
+            decodedPicture.Bt709 = _frame->colorspace == AVColorSpace.AVCOL_SPC_BT709;
+            CopyPlanes(src, decodedPicture, w, h, cw, ch);
+            _ready.Enqueue(decodedPicture);
             if (src == _swFrame)
             {
                 ffmpeg.av_frame_unref(_swFrame);
@@ -571,9 +571,9 @@ public sealed unsafe class FFmpegVideoDecoder : IVideoDecoder
         }
     }
 
-    private static void CopyPlanes(AVFrame* f, DecodedPicture p, int w, int h, int cw, int ch)
+    private static void CopyPlanes(AVFrame* f, DecodedPicture decodedPicture, int w, int h, int cw, int ch)
     {
-        Copy(f->data[0], f->linesize[0], p.Y, w, h);
+        Copy(f->data[0], f->linesize[0], decodedPicture.Y, w, h);
         var fmt = (AVPixelFormat)f->format;
         if (fmt == AVPixelFormat.AV_PIX_FMT_NV12)
         {
@@ -582,21 +582,21 @@ public sealed unsafe class FFmpegVideoDecoder : IVideoDecoder
                 byte* row = f->data[1] + y * f->linesize[1];
                 for (int x = 0; x < cw; x++)
                 {
-                    p.U[y * cw + x] = row[2 * x];
-                    p.V[y * cw + x] = row[2 * x + 1];
+                    decodedPicture.U[y * cw + x] = row[2 * x];
+                    decodedPicture.V[y * cw + x] = row[2 * x + 1];
                 }
             }
         }
         else if (fmt is AVPixelFormat.AV_PIX_FMT_YUV420P or AVPixelFormat.AV_PIX_FMT_YUVJ420P)
         {
-            Copy(f->data[1], f->linesize[1], p.U, cw, ch);
-            Copy(f->data[2], f->linesize[2], p.V, cw, ch);
+            Copy(f->data[1], f->linesize[1], decodedPicture.U, cw, ch);
+            Copy(f->data[2], f->linesize[2], decodedPicture.V, cw, ch);
         }
         else
         {
             Log.WarnOnce("viddec-pix" + fmt, $"Video decoder: unsupported pixel format {fmt}, showing luma only");
-            p.U.AsSpan().Fill(128);
-            p.V.AsSpan().Fill(128);
+            decodedPicture.U.AsSpan().Fill(128);
+            decodedPicture.V.AsSpan().Fill(128);
         }
     }
 

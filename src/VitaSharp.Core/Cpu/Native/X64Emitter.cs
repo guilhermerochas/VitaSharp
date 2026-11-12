@@ -396,12 +396,12 @@ public sealed unsafe partial class X64Emitter
     private AssemblerMemoryOperand GuestMem(int t, MemorySize size)
     {
         int r = Use(t, RAX);
-        AssemblerMemoryOperand m = r15 + s_g64[r];
+        AssemblerMemoryOperand assemblerMemoryOperand = r15 + s_g64[r];
         return size switch
         {
-            MemorySize.UInt8 => __byte_ptr[m],
-            MemorySize.UInt16 => __word_ptr[m],
-            _ => __dword_ptr[m],
+            MemorySize.UInt8 => __byte_ptr[assemblerMemoryOperand],
+            MemorySize.UInt16 => __word_ptr[assemblerMemoryOperand],
+            _ => __dword_ptr[assemblerMemoryOperand],
         };
     }
 
@@ -1757,15 +1757,15 @@ public sealed unsafe partial class X64Emitter
         _lastLabelAt = Asm.Instructions.Count;
     }
 
-    private void StoreTo(AssemblerMemoryOperand m, int t)
+    private void StoreTo(AssemblerMemoryOperand assemblerMemoryOperand, int t)
     {
         if (IsConst(t, out uint v))
         {
-            Asm.mov(m, (int)v);
+            Asm.mov(assemblerMemoryOperand, (int)v);
         }
         else
         {
-            Asm.mov(m, s_g32[Use(t, RAX)]);
+            Asm.mov(assemblerMemoryOperand, s_g32[Use(t, RAX)]);
         }
     }
 

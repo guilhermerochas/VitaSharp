@@ -261,20 +261,20 @@ void main() {
         // the frame may have been submitted mid-scene (Idle with results pending): record into the next one
         BeginFrameIfNeeded();
         Frame f = F;
-        NanFrame nf = EnsureNanFrame(f);
-        if (nf.Scans.Count >= NanScanSlots)
+        NanFrame nanFrame = EnsureNanFrame(f);
+        if (nanFrame.Scans.Count >= NanScanSlots)
         {
             _nanDropped++;
             return;
         }
-        int slot = nf.Scans.Count;
+        int slot = nanFrame.Scans.Count;
         CommandBuffer cmd = f.Cmd;
         // the scene's colour writes (and resolves) before the compute reads
         var mb = new MemoryBarrier { SType = StructureType.MemoryBarrier, SrcAccessMask = AccessFlags.ColorAttachmentWriteBit | AccessFlags.TransferWriteBit, DstAccessMask = AccessFlags.ShaderReadBit };
         _vk.CmdPipelineBarrier(cmd, PipelineStageFlags.ColorAttachmentOutputBit | PipelineStageFlags.TransferBit, PipelineStageFlags.ComputeShaderBit, 0, 1, in mb, 0, null, 0, null);
         DescriptorSet set = AllocSet(_nanSetLayout);
         var ii = new DescriptorImageInfo(_nanSampler, rt.View, ImageLayout.General);
-        var bi = new DescriptorBufferInfo(nf.Buf, 0, NanScanBytes);
+        var bi = new DescriptorBufferInfo(nanFrame.Buf, 0, NanScanBytes);
         WriteDescriptorSet* w = stackalloc WriteDescriptorSet[2];
         w[0] = new WriteDescriptorSet { SType = StructureType.WriteDescriptorSet, DstSet = set, DstBinding = 0, DescriptorCount = 1, DescriptorType = DescriptorType.CombinedImageSampler, PImageInfo = &ii };
         w[1] = new WriteDescriptorSet { SType = StructureType.WriteDescriptorSet, DstSet = set, DstBinding = 1, DescriptorCount = 1, DescriptorType = DescriptorType.StorageBuffer, PBufferInfo = &bi };
@@ -288,7 +288,7 @@ void main() {
         // later writes to the surface wait for the read (execution dependency only)
         _vk.CmdPipelineBarrier(cmd, PipelineStageFlags.ComputeShaderBit, PipelineStageFlags.ColorAttachmentOutputBit | PipelineStageFlags.TransferBit | PipelineStageFlags.ComputeShaderBit,
             0, 0, null, 0, null, 0, null);
-        nf.Scans.Add(new NanScan
+        nanFrame.Scans.Add(new NanScan
         {
             Address = rt.Address,
             W = rt.Width,
@@ -301,7 +301,7 @@ void main() {
             FirstDraw = firstDraw,
             LastDraw = lastDraw,
         });
-        nf.Used = true;
+        nanFrame.Used = true;
         _nanScans++;
         _nanScanTicks += Stopwatch.GetTimestamp() - t0;
     }
@@ -309,8 +309,8 @@ void main() {
     /// <summary>Draws mode: set 0 binding 4 of a draw = this frame's NaN draw table.</summary>
     private void NanBindDrawBuffer(DescriptorSet uSet)
     {
-        NanFrame nf = EnsureNanFrame(F);
-        var bi = new DescriptorBufferInfo(nf.Buf, NanScanBytes, NanDrawBytes);
+        NanFrame nanFrame = EnsureNanFrame(F);
+        var bi = new DescriptorBufferInfo(nanFrame.Buf, NanScanBytes, NanDrawBytes);
         var w = new WriteDescriptorSet { SType = StructureType.WriteDescriptorSet, DstSet = uSet, DstBinding = (uint)ShaderGenerator.NanDrawBinding, DescriptorCount = 1, DescriptorType = DescriptorType.StorageBuffer, PBufferInfo = &bi };
         _vk.UpdateDescriptorSets(_dev, 1, in w, 0, null);
     }
@@ -318,18 +318,18 @@ void main() {
     /// <summary>Draws mode: what the draw log needs to name a draw that produced NaN (recorded per draw).</summary>
     private void NanNoteDraw(DrawCommand d, VsEntry vs, FsEntry fs)
     {
-        NanFrame nf = EnsureNanFrame(F);
+        NanFrame nanFrame = EnsureNanFrame(F);
         uint used = d.FragmentProgram.Info.TexturesUsed;
-        int start = nf.Textures.Count;
+        int start = nanFrame.Textures.Count;
         for (int i = 0; i < 16; i++)
         {
             if ((used & (1u << i)) != 0)
             {
-                nf.Textures.Add(d.FragmentTextures[i]);
+                nanFrame.Textures.Add(d.FragmentTextures[i]);
             }
         }
 
-        nf.Draws.Add(new NanDrawInfo
+        nanFrame.Draws.Add(new NanDrawInfo
         {
             Id = _drawSerial,
             Scene = _fScenes,
@@ -350,7 +350,7 @@ void main() {
             Prim = d.PrimitiveType,
             Msaa = MsaaPath,
         });
-        nf.Used = true;
+        nanFrame.Used = true;
     }
 
     /// <summary>Before the frame's command buffer ends: shader writes into the result buffer become host-visible.</summary>
@@ -363,110 +363,110 @@ void main() {
     /// <summary>The frame retired: read its scan results and draw hits, update the histories, reset the buffer.</summary>
     private void CompleteNanFrame(Frame f)
     {
-        NanFrame nf = f.Nan!;
+        NanFrame nanFrame = f.Nan!;
         long t0 = Stopwatch.GetTimestamp();
-        for (int i = 0; i < nf.Scans.Count; i++)
+        for (int i = 0; i < nanFrame.Scans.Count; i++)
         {
-            uint* r = nf.Ptr + i * NanScanWords;
-            NanScanResult(nf.Scans[i], r[0], r[1], r[2], r[3], r[4], r[5]);
+            uint* r = nanFrame.Ptr + i * NanScanWords;
+            NanScanResult(nanFrame.Scans[i], r[0], r[1], r[2], r[3], r[4], r[5]);
             for (int k = 0; k < NanScanWords; k++)
             {
                 r[k] = 0;
             }
         }
-        nf.Scans.Clear();
+        nanFrame.Scans.Clear();
         if (ShaderGenerator.NanDraws)
         {
-            NanDrawResults(nf);
-            nf.Draws.Clear();
-            nf.Textures.Clear();
+            NanDrawResults(nanFrame);
+            nanFrame.Draws.Clear();
+            nanFrame.Textures.Clear();
         }
-        nf.Used = false;
+        nanFrame.Used = false;
         _nanRetired++;
         _nanRetireTicks += Stopwatch.GetTimestamp() - t0;
     }
 
     private static string NanAt(uint inv) => inv == 0 ? "?" : $"{(0xFFFFFFFFu - inv) & 0xFFFF},{(0xFFFFFFFFu - inv) >> 16}";
 
-    private void NanScanResult(in NanScan s, uint nan, uint inf, uint huge, uint neg, uint firstInv, uint firstHugeInv)
+    private void NanScanResult(in NanScan nanScan, uint nan, uint inf, uint huge, uint neg, uint firstInv, uint firstHugeInv)
     {
-        (uint Address, uint W, uint H, uint ColorFormat) key = (s.Address, s.W, s.H, s.ColorFormat);
-        if (!_nanTargets.TryGetValue(key, out NanTargetHistory? h))
+        (uint Address, uint W, uint H, uint ColorFormat) key = (nanScan.Address, nanScan.W, nanScan.H, nanScan.ColorFormat);
+        if (!_nanTargets.TryGetValue(key, out NanTargetHistory? nanTargetHistory))
         {
-            _nanTargets[key] = h = new NanTargetHistory { Address = s.Address, W = s.W, H = s.H, ColorFormat = s.ColorFormat };
+            _nanTargets[key] = nanTargetHistory = new NanTargetHistory { Address = nanScan.Address, W = nanScan.W, H = nanScan.H, ColorFormat = nanScan.ColorFormat };
         }
 
-        h.Scans++;
-        bool unsigned = NanUnsignedGuest(s.ColorFormat);
+        nanTargetHistory.Scans++;
+        bool unsigned = NanUnsignedGuest(nanScan.ColorFormat);
         bool bad = nan > 0 || inf > 0 || huge > 0 || (unsigned && neg > 0);
-        string where = $"rt 0x{s.Address:X8} {s.W}x{s.H} {NanFormatName(s.ColorFormat)}";
-        string counts = $"{nan} NaN, {inf} Inf, {huge} huge, {neg} negative{(unsigned && neg > 0 ? " (unsigned format)" : "")} of {(long)s.W * s.H} px";
+        string where = $"rt 0x{nanScan.Address:X8} {nanScan.W}x{nanScan.H} {NanFormatName(nanScan.ColorFormat)}";
+        string counts = $"{nan} NaN, {inf} Inf, {huge} huge, {neg} negative{(unsigned && neg > 0 ? " (unsigned format)" : "")} of {(long)nanScan.W * nanScan.H} px";
         string first = nan + inf > 0 ? $" (first NaN/Inf at {NanAt(firstInv)})" : huge > 0 ? $" (first huge at {NanAt(firstHugeInv)})" : "";
-        string scene = $"after scene {s.Scene} (draws {s.FirstDraw}-{s.LastDraw})";
-        h.LastResult = $"p{s.Present} {counts}{first} {scene}";
+        string scene = $"after scene {nanScan.Scene} (draws {nanScan.FirstDraw}-{nanScan.LastDraw})";
+        nanTargetHistory.LastResult = $"p{nanScan.Present} {counts}{first} {scene}";
         if (!bad)
         {
-            if (h.Bad && s.Present - h.LastBad >= NanClearAfter)
+            if (nanTargetHistory.Bad && nanScan.Present - nanTargetHistory.LastBad >= NanClearAfter)
             {
-                h.Bad = false;
-                h.History.Add((h.BadSince, h.LastBad, h.MaxNan));
-                if (h.History.Count > 64)
+                nanTargetHistory.Bad = false;
+                nanTargetHistory.History.Add((nanTargetHistory.BadSince, nanTargetHistory.LastBad, nanTargetHistory.MaxNan));
+                if (nanTargetHistory.History.Count > 64)
                 {
-                    h.History.RemoveAt(0);
+                    nanTargetHistory.History.RemoveAt(0);
                 }
 
-                if (h.EpisodeLogged)
+                if (nanTargetHistory.EpisodeLogged)
                 {
-                    Log.Info($"[nan] f{s.GuestFrame} p{s.Present} {where}: clean again (bad in presents {h.BadSince}-{h.LastBad}, {h.BadPresents} bad presents in all so far)");
+                    Log.Info($"[nan] f{nanScan.GuestFrame} p{nanScan.Present} {where}: clean again (bad in presents {nanTargetHistory.BadSince}-{nanTargetHistory.LastBad}, {nanTargetHistory.BadPresents} bad presents in all so far)");
                 }
             }
             return;
         }
-        if (s.Present != h.LastCounted)
+        if (nanScan.Present != nanTargetHistory.LastCounted)
         {
-            h.BadPresents++;
-            h.LastCounted = s.Present;
+            nanTargetHistory.BadPresents++;
+            nanTargetHistory.LastCounted = nanScan.Present;
         }
-        if (nan > h.MaxNan)
+        if (nan > nanTargetHistory.MaxNan)
         {
-            h.MaxNan = nan;
-            h.MaxAt = s.Present;
+            nanTargetHistory.MaxNan = nan;
+            nanTargetHistory.MaxAt = nanScan.Present;
         }
-        h.MaxInf = Math.Max(h.MaxInf, inf);
-        h.MaxHuge = Math.Max(h.MaxHuge, huge);
-        h.MaxNeg = Math.Max(h.MaxNeg, neg);
-        if (h.FirstBad < 0)
+        nanTargetHistory.MaxInf = Math.Max(nanTargetHistory.MaxInf, inf);
+        nanTargetHistory.MaxHuge = Math.Max(nanTargetHistory.MaxHuge, huge);
+        nanTargetHistory.MaxNeg = Math.Max(nanTargetHistory.MaxNeg, neg);
+        if (nanTargetHistory.FirstBad < 0)
         {
-            h.FirstBad = s.Present;
+            nanTargetHistory.FirstBad = nanScan.Present;
         }
 
-        h.LastBad = s.Present;
-        if (!h.Bad)
+        nanTargetHistory.LastBad = nanScan.Present;
+        if (!nanTargetHistory.Bad)
         {
-            h.Bad = true;
-            h.BadSince = s.Present;
-            h.Episodes++;
+            nanTargetHistory.Bad = true;
+            nanTargetHistory.BadSince = nanScan.Present;
+            nanTargetHistory.Episodes++;
             // huge or negative-unsigned values alone (no NaN/Inf) are logged less often
-            h.EpisodeLogged = h.Episodes == 1 || s.Present - h.LastLine >= (nan + inf > 0 ? NanEpisodeEvery : NanStillEvery);
-            if (!h.EpisodeLogged)
+            nanTargetHistory.EpisodeLogged = nanTargetHistory.Episodes == 1 || nanScan.Present - nanTargetHistory.LastLine >= (nan + inf > 0 ? NanEpisodeEvery : NanStillEvery);
+            if (!nanTargetHistory.EpisodeLogged)
             {
-                h.Suppressed++;
+                nanTargetHistory.Suppressed++;
                 return;
             }
-            string kind = h.Episodes == 1 ? "first time in this target" : $"episode {h.Episodes}{(h.Suppressed > 0 ? $", {h.Suppressed} short ones not logged" : "")}";
-            h.Suppressed = 0;
-            h.LastLine = s.Present;
+            string kind = nanTargetHistory.Episodes == 1 ? "first time in this target" : $"episode {nanTargetHistory.Episodes}{(nanTargetHistory.Suppressed > 0 ? $", {nanTargetHistory.Suppressed} short ones not logged" : "")}";
+            nanTargetHistory.Suppressed = 0;
+            nanTargetHistory.LastLine = nanScan.Present;
             string line = $"{where}: {counts}{first} {scene} - {kind}";
-            Log.Info($"[nan] f{s.GuestFrame} p{s.Present} {line}");
+            Log.Info($"[nan] f{nanScan.GuestFrame} p{nanScan.Present} {line}");
             if (nan + inf > 0)
             {
-                NanAnomaly(s.Present, line);
+                NanAnomaly(nanScan.Present, line);
             }
         }
-        else if (s.Present - h.LastLine >= NanStillEvery)
+        else if (nanScan.Present - nanTargetHistory.LastLine >= NanStillEvery)
         {
-            h.LastLine = s.Present;
-            Log.Info($"[nan] f{s.GuestFrame} p{s.Present} {where}: still {counts}{first} {scene} (since present {h.BadSince})");
+            nanTargetHistory.LastLine = nanScan.Present;
+            Log.Info($"[nan] f{nanScan.GuestFrame} p{nanScan.Present} {where}: still {counts}{first} {scene} (since present {nanTargetHistory.BadSince})");
         }
     }
 
@@ -501,12 +501,12 @@ void main() {
         }
     }
 
-    private void NanDrawResults(NanFrame nf)
+    private void NanDrawResults(NanFrame nanFrame)
     {
-        uint* t = nf.Ptr + NanScanBytes / 4;
+        uint* t = nanFrame.Ptr + NanScanBytes / 4;
         int hits = 0, lines = 0;
         StringBuilder? summary = null;
-        long present = nf.Draws.Count > 0 ? nf.Draws[0].Present : _presentCount;
+        long present = nanFrame.Draws.Count > 0 ? nanFrame.Draws[0].Present : _presentCount;
         for (int id = 0; id < ShaderGenerator.NanDrawSlots; id++)
         {
             uint* e = t + id * 4;
@@ -519,58 +519,58 @@ void main() {
             e[0] = e[1] = e[2] = e[3] = 0;
             hits++;
             _nanDrawHits++;
-            int idx = NanFindDraw(nf.Draws, id);
+            int idx = NanFindDraw(nanFrame.Draws, id);
             string what = string.Join("+", new[] { (flags & 1) != 0 ? "NaN" : null, (flags & 2) != 0 ? "Inf" : null, (flags & 4) != 0 ? "huge" : null }.Where(s => s != null));
             if (idx < 0)
             {
                 Log.Info($"[nan-draw] p{present} draw id={id}{(id == ShaderGenerator.NanDrawSlots - 1 ? "+ (ids above the table share the last slot)" : "")}: {frags} fragments {what} (first at {NanAt(firstInv)}), draw not recorded");
                 continue;
             }
-            NanDrawInfo di = nf.Draws[idx];
-            (ulong Vs, ulong Fs, ulong FsHint, uint Rt) key = (di.Vs, di.Fs, di.FsHint, di.Rt);
-            if (!_nanDraws.TryGetValue(key, out NanDrawHistory? h))
+            NanDrawInfo nanDrawInfo = nanFrame.Draws[idx];
+            (ulong Vs, ulong Fs, ulong FsHint, uint Rt) key = (nanDrawInfo.Vs, nanDrawInfo.Fs, nanDrawInfo.FsHint, nanDrawInfo.Rt);
+            if (!_nanDraws.TryGetValue(key, out NanDrawHistory? nanDrawHistory))
             {
-                _nanDraws[key] = h = new NanDrawHistory { Vs = di.Vs, Fs = di.Fs, FsHint = di.FsHint, Rt = di.Rt, First = di.Present };
+                _nanDraws[key] = nanDrawHistory = new NanDrawHistory { Vs = nanDrawInfo.Vs, Fs = nanDrawInfo.Fs, FsHint = nanDrawInfo.FsHint, Rt = nanDrawInfo.Rt, First = nanDrawInfo.Present };
             }
 
-            bool firstInPresent = h.LastPresent != di.Present;
+            bool firstInPresent = nanDrawHistory.LastPresent != nanDrawInfo.Present;
             if (firstInPresent)
             {
-                h.Presents++;
-                h.LastPresent = di.Present;
+                nanDrawHistory.Presents++;
+                nanDrawHistory.LastPresent = nanDrawInfo.Present;
             }
-            h.Fragments += frags;
-            h.Last = di.Present;
+            nanDrawHistory.Fragments += frags;
+            nanDrawHistory.Last = nanDrawInfo.Present;
             var sb = new StringBuilder();
-            sb.Append($"draw id={di.Id} scene {di.Scene}: {frags} fragments {what} (first at {NanAt(firstInv)}) vs={di.Vs:X16} fs={di.Fs:X16} fsHint={di.FsHint:X16} ");
-            sb.Append($"rt=0x{di.Rt:X8} {di.RtW}x{di.RtH} {NanFormatName(di.RtFormat)} prim={di.Prim} n={di.IndexCount}x{di.Instances} msaa={di.Msaa}");
-            int k = di.TexStart;
+            sb.Append($"draw id={nanDrawInfo.Id} scene {nanDrawInfo.Scene}: {frags} fragments {what} (first at {NanAt(firstInv)}) vs={nanDrawInfo.Vs:X16} fs={nanDrawInfo.Fs:X16} fsHint={nanDrawInfo.FsHint:X16} ");
+            sb.Append($"rt=0x{nanDrawInfo.Rt:X8} {nanDrawInfo.RtW}x{nanDrawInfo.RtH} {NanFormatName(nanDrawInfo.RtFormat)} prim={nanDrawInfo.Prim} n={nanDrawInfo.IndexCount}x{nanDrawInfo.Instances} msaa={nanDrawInfo.Msaa}");
+            int k = nanDrawInfo.TexStart;
             for (int u = 0; u < 16; u++)
             {
-                if ((di.TexMask & (1u << u)) == 0)
+                if ((nanDrawInfo.TexMask & (1u << u)) == 0)
                 {
                     continue;
                 }
 
-                GxmTextureDesc tx = nf.Textures[k++];
-                sb.Append($" t{u}=0x{tx.DataAddress:X8}:{tx.Format:X8}:{tx.Width}x{tx.Height}");
+                GxmTextureDesc gxmTextureDesc = nanFrame.Textures[k++];
+                sb.Append($" t{u}=0x{gxmTextureDesc.DataAddress:X8}:{gxmTextureDesc.Format:X8}:{gxmTextureDesc.Width}x{gxmTextureDesc.Height}");
             }
             string line = sb.ToString();
-            if (h.Example.Length == 0)
+            if (nanDrawHistory.Example.Length == 0)
             {
-                h.Example = line;
+                nanDrawHistory.Example = line;
             }
             // each vs/fs/rt: the presents 1-3, 10, 100... it appears in (all its draws of that present)
-            if (DebugMode.ShouldLog(h.Presents) && (firstInPresent || h.LoggedPresent == di.Present) && lines < 40)
+            if (DebugMode.ShouldLog(nanDrawHistory.Presents) && (firstInPresent || nanDrawHistory.LoggedPresent == nanDrawInfo.Present) && lines < 40)
             {
-                h.LoggedPresent = di.Present;
+                nanDrawHistory.LoggedPresent = nanDrawInfo.Present;
                 lines++;
-                Log.Info($"[nan-draw] f{di.GuestFrame} p{di.Present} {line}{(h.Presents > 1 ? $" (#{h.Presents} presents with NaN from this vs/fs/rt)" : "")}");
+                Log.Info($"[nan-draw] f{nanDrawInfo.GuestFrame} p{nanDrawInfo.Present} {line}{(nanDrawHistory.Presents > 1 ? $" (#{nanDrawHistory.Presents} presents with NaN from this vs/fs/rt)" : "")}");
             }
             summary ??= new StringBuilder();
             if (summary.Length < 600)
             {
-                summary.Append($" id={di.Id}:fs={di.Fs:X16}({frags})");
+                summary.Append($" id={nanDrawInfo.Id}:fs={nanDrawInfo.Fs:X16}({frags})");
             }
         }
         if (hits == 0)
@@ -632,23 +632,23 @@ void main() {
         sb.AppendLine("# VitaSharp NaN/Inf history of this session (debug mode scans float render targets at every scene end; see docs/notes/debug-mode.md)");
         sb.AppendLine($"# scans {_nanScans}, debug mode {(DebugMode.Enabled ? "on" : "off")}, draws mode (VITASHARP_DEBUG_NAN=draws) {(ShaderGenerator.NanDraws ? "on" : "off")}");
         sb.AppendLine("# target: scans, bad presents, episodes, first/last bad present, max NaN (at present), max Inf/huge/negative; then the last scan and the episodes (present ranges)");
-        foreach (NanTargetHistory? h in _nanTargets.Values.OrderByDescending(h => h.BadPresents).ThenBy(h => h.Address))
+        foreach (NanTargetHistory? nanTargetHistory in _nanTargets.Values.OrderByDescending(h => h.BadPresents).ThenBy(h => h.Address))
         {
-            sb.AppendLine($"rt 0x{h.Address:X8} {h.W}x{h.H} {NanFormatName(h.ColorFormat)}: {h.Scans} scans, {h.BadPresents} bad presents, {h.Episodes} episodes" +
-                          (h.FirstBad >= 0 ? $", first p{h.FirstBad} last p{h.LastBad}, max {h.MaxNan} NaN{(h.MaxNan > 0 ? $" (p{h.MaxAt})" : "")} {h.MaxInf} Inf {h.MaxHuge} huge {h.MaxNeg} negative{(h.Bad ? ", BAD NOW" : "")}" : ""));
-            sb.AppendLine($"    last: {h.LastResult}");
-            if (h.History.Count > 0)
+            sb.AppendLine($"rt 0x{nanTargetHistory.Address:X8} {nanTargetHistory.W}x{nanTargetHistory.H} {NanFormatName(nanTargetHistory.ColorFormat)}: {nanTargetHistory.Scans} scans, {nanTargetHistory.BadPresents} bad presents, {nanTargetHistory.Episodes} episodes" +
+                          (nanTargetHistory.FirstBad >= 0 ? $", first p{nanTargetHistory.FirstBad} last p{nanTargetHistory.LastBad}, max {nanTargetHistory.MaxNan} NaN{(nanTargetHistory.MaxNan > 0 ? $" (p{nanTargetHistory.MaxAt})" : "")} {nanTargetHistory.MaxInf} Inf {nanTargetHistory.MaxHuge} huge {nanTargetHistory.MaxNeg} negative{(nanTargetHistory.Bad ? ", BAD NOW" : "")}" : ""));
+            sb.AppendLine($"    last: {nanTargetHistory.LastResult}");
+            if (nanTargetHistory.History.Count > 0)
             {
-                sb.AppendLine("    episodes: " + string.Join(" ", h.History.Select(e => $"{e.From}-{e.To}(max {e.MaxNan})")));
+                sb.AppendLine("    episodes: " + string.Join(" ", nanTargetHistory.History.Select(e => $"{e.From}-{e.To}(max {e.MaxNan})")));
             }
         }
         if (ShaderGenerator.NanDraws)
         {
             sb.AppendLine();
             sb.AppendLine("# draws mode: vertex/fragment program + render target combinations whose fragment output had NaN/Inf");
-            foreach (NanDrawHistory? d in _nanDraws.Values.OrderByDescending(d => d.Fragments))
+            foreach (NanDrawHistory? nanDrawHistory in _nanDraws.Values.OrderByDescending(d => d.Fragments))
             {
-                sb.AppendLine($"vs {d.Vs:X16} fs {d.Fs:X16} (hint {d.FsHint:X16}) rt 0x{d.Rt:X8}: {d.Presents} presents, {d.Fragments} fragments, p{d.First}-p{d.Last}\n    e.g. {d.Example}");
+                sb.AppendLine($"vs {nanDrawHistory.Vs:X16} fs {nanDrawHistory.Fs:X16} (hint {nanDrawHistory.FsHint:X16}) rt 0x{nanDrawHistory.Rt:X8}: {nanDrawHistory.Presents} presents, {nanDrawHistory.Fragments} fragments, p{nanDrawHistory.First}-p{nanDrawHistory.Last}\n    e.g. {nanDrawHistory.Example}");
             }
 
             if (_nanDraws.Count == 0)

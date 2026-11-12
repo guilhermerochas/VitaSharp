@@ -182,11 +182,11 @@ public static class UniformArena
                 s_heap = null;
             }
 
-            foreach (UniformChunk c in s_heapChunks)
+            foreach (UniformChunk uniformChunk in s_heapChunks)
             {
-                if (c.Heap == heap)
+                if (uniformChunk.Heap == heap)
                 {
-                    c.Detach();
+                    uniformChunk.Detach();
                 }
             }
 
@@ -201,51 +201,51 @@ public static class UniformArena
     /// what it writes (<see cref="UniformChunk.MarkWritten"/>), true that the whole slice counts as written.</summary>
     public static UniformChunk Rent(int bytes, out int offset, bool clear = true)
     {
-        UniformChunk c;
+        UniformChunk uniformChunk;
         lock (s_lock)
         {
             if (bytes > ChunkSize / 4)
             {
                 // unusually large block: a chunk of its own, dropped once released
-                c = new UniformChunk(bytes) { _outstanding = 1, _dedicated = true, _retired = true };
+                uniformChunk = new UniformChunk(bytes) { _outstanding = 1, _dedicated = true, _retired = true };
                 offset = 0;
-                return c;
+                return uniformChunk;
             }
-            c = s_current!;
-            if (c == null || Align(c._used) + bytes > c.Size)
+            uniformChunk = s_current!;
+            if (uniformChunk == null || Align(uniformChunk._used) + bytes > uniformChunk.Size)
             {
-                if (c != null)
+                if (uniformChunk != null)
                 {
-                    Retire(c);
+                    Retire(uniformChunk);
                 }
-                c = s_current = NewChunk();
-                c._retired = false;
-                c._used = 0;
+                uniformChunk = s_current = NewChunk();
+                uniformChunk._retired = false;
+                uniformChunk._used = 0;
             }
-            offset = Align(c._used);
-            c._used = offset + bytes;
-            Interlocked.Increment(ref c._outstanding);
+            offset = Align(uniformChunk._used);
+            uniformChunk._used = offset + bytes;
+            Interlocked.Increment(ref uniformChunk._outstanding);
         }
         if (clear)
         {
-            c.MarkWritten(offset, bytes); // zero already; the caller may write any of it
+            uniformChunk.MarkWritten(offset, bytes); // zero already; the caller may write any of it
         }
 
-        return c;
+        return uniformChunk;
     }
 
     private static UniformChunk NewChunk()
     {
         if (s_free.Count > 0)
         {
-            UniformChunk f = s_free.Pop();
-            f._inFree = false;
-            if (f.Heap == null)
+            UniformChunk uniformChunk = s_free.Pop();
+            uniformChunk._inFree = false;
+            if (uniformChunk.Heap == null)
             {
                 s_freeManaged--;
             }
 
-            return f;
+            return uniformChunk;
         }
         if (s_heap is { } h && h.Alloc(out int id) is var p and not 0)
         {
@@ -257,62 +257,62 @@ public static class UniformArena
     }
 
     /// <summary>One more reference on the chunk (a recorded frame that reads it); given back with <see cref="Release"/>.</summary>
-    public static void AddRef(UniformChunk c)
+    public static void AddRef(UniformChunk uniformChunk)
     {
-        Interlocked.Increment(ref c._outstanding); // the chunk is live (held by the caller): no recycle can race this
+        Interlocked.Increment(ref uniformChunk._outstanding); // the chunk is live (held by the caller): no recycle can race this
     }
 
     /// <summary>The GPU worker releases a slice per executed draw: only the release that frees a retired chunk takes the
     /// lock (the guest thread holds it in <see cref="Rent"/> for every draw). Recycling always happens under the lock,
     /// after checking again that the chunk is retired, unreferenced and not already free.</summary>
-    public static void Release(UniformChunk c)
+    public static void Release(UniformChunk uniformChunk)
     {
-        if (Interlocked.Decrement(ref c._outstanding) != 0 || c._dedicated || !Volatile.Read(ref c._retired))
+        if (Interlocked.Decrement(ref uniformChunk._outstanding) != 0 || uniformChunk._dedicated || !Volatile.Read(ref uniformChunk._retired))
         {
             return;
         }
 
         lock (s_lock)
         {
-            if (Volatile.Read(ref c._outstanding) == 0 && c._retired)
+            if (Volatile.Read(ref uniformChunk._outstanding) == 0 && uniformChunk._retired)
             {
-                Recycle(c);
+                Recycle(uniformChunk);
             }
         }
     }
 
     /// <summary>A full chunk is no longer rented from (under the lock): free now, or by its last <see cref="Release"/>.</summary>
-    private static void Retire(UniformChunk c)
+    private static void Retire(UniformChunk uniformChunk)
     {
-        Volatile.Write(ref c._retired, true);
+        Volatile.Write(ref uniformChunk._retired, true);
         Interlocked.MemoryBarrier(); // pairs with the full fence of Release's decrement: one of the two sees the other
-        if (Volatile.Read(ref c._outstanding) == 0)
+        if (Volatile.Read(ref uniformChunk._outstanding) == 0)
         {
-            Recycle(c);
+            Recycle(uniformChunk);
         }
     }
 
-    private static void Recycle(UniformChunk c)
+    private static void Recycle(UniformChunk uniformChunk)
     {
-        if (c._inFree)
+        if (uniformChunk._inFree)
         {
             return;
         }
 
         if (ZeroOnRecycle)
         {
-            c.ClearWritten();
+            uniformChunk.ClearWritten();
         }
         // heap chunks are bounded by the heap and always kept; managed ones up to MaxFreeChunks
-        if (c.Heap != null)
+        if (uniformChunk.Heap != null)
         {
-            c._inFree = true;
-            s_free.Push(c);
+            uniformChunk._inFree = true;
+            s_free.Push(uniformChunk);
         }
         else if (s_freeManaged < MaxFreeChunks)
         {
-            c._inFree = true;
-            s_free.Push(c);
+            uniformChunk._inFree = true;
+            s_free.Push(uniformChunk);
             s_freeManaged++;
         }
     }

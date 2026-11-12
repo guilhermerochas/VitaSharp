@@ -26,7 +26,7 @@ public sealed unsafe partial class VulkanRenderer
     }
 
 #if VITASHARP_DEVELOPER
-    static readonly bool WorkerProf = Environment.GetEnvironmentVariable("VITASHARP_WORKER_PROF") == "1";
+    private static readonly bool s_workerProf = Environment.GetEnvironmentVariable("VITASHARP_WORKER_PROF") == "1";
 #else
     private static readonly bool s_workerProf = false;
 #endif
@@ -63,9 +63,9 @@ public sealed unsafe partial class VulkanRenderer
         }
     }
 
-    /// <summary>Charges the time since the last mark to <paramref name="p"/>.</summary>
+    /// <summary>Charges the time since the last mark to <paramref name="profPhase"/>.</summary>
     [Conditional("VITASHARP_DEVELOPER")]
-    private void ProfMark(ProfPhase p)
+    private void ProfMark(ProfPhase profPhase)
     {
         if (!s_workerProf)
         {
@@ -73,7 +73,7 @@ public sealed unsafe partial class VulkanRenderer
         }
 
         long now = Stopwatch.GetTimestamp();
-        _profTicks[(int)p] += now - _profT;
+        _profTicks[(int)profPhase] += now - _profT;
         _profT = now;
     }
 

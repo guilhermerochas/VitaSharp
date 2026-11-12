@@ -55,13 +55,13 @@ public static class StateLiveness
             return cached;
         }
 
-        ArmFrontend fe = t_frontend ??= NativeArm64Compiler.NewFrontend(reuseIr: true);
+        ArmFrontend armFrontend = t_frontend ??= NativeArm64Compiler.NewFrontend(reuseIr: true);
         if (like != null)
         {
-            fe.HleCallouts = like.HleCallouts;
-            fe.DeferRegions = like.DeferRegions;
+            armFrontend.HleCallouts = like.HleCallouts;
+            armFrontend.DeferRegions = like.DeferRegions;
         }
-        IrBlock ir = fe.Translate(b);
+        IrBlock ir = armFrontend.Translate(b);
         int written = 0, readFirst = 0, depth = 0;
         uint openLabel = 0;
         foreach (ref readonly IrInst x in System.Runtime.InteropServices.CollectionsMarshal.AsSpan(ir.Insts))

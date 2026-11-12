@@ -35,7 +35,7 @@ public static class CameraImage
     // ------------------------------------------------------------------ host -> RGBA
 
     /// <summary>Bytes per row of a tightly packed host image (DIB rows for <see cref="CameraHostFormat.Bgr24"/>).</summary>
-    public static int HostStride(CameraHostFormat f, int width) => f switch
+    public static int HostStride(CameraHostFormat cameraHostFormat, int width) => cameraHostFormat switch
     {
         CameraHostFormat.Yuyv or CameraHostFormat.Uyvy => width * 2,
         CameraHostFormat.Nv12 or CameraHostFormat.Nv21 => width,
@@ -44,17 +44,17 @@ public static class CameraImage
     };
 
     /// <summary>Minimum source size in bytes for a host image.</summary>
-    public static int HostSize(CameraHostFormat f, int width, int height) => f switch
+    public static int HostSize(CameraHostFormat cameraHostFormat, int width, int height) => cameraHostFormat switch
     {
         CameraHostFormat.Nv12 or CameraHostFormat.Nv21 => width * height + width * ((height + 1) / 2),
-        _ => HostStride(f, width) * height,
+        _ => HostStride(cameraHostFormat, width) * height,
     };
 
     /// <summary>Converts a host frame to RGBA (top-down). <paramref name="bottomUp"/> flips row order (DIB RGB).
     /// Host YUV is taken as BT.601 limited range, as webcams deliver.</summary>
-    public static void DecodeToRgba(ReadOnlySpan<byte> src, CameraHostFormat f, int width, int height, bool bottomUp, Span<byte> dst)
+    public static void DecodeToRgba(ReadOnlySpan<byte> src, CameraHostFormat cameraHostFormat, int width, int height, bool bottomUp, Span<byte> dst)
     {
-        if (src.Length < HostSize(f, width, height))
+        if (src.Length < HostSize(cameraHostFormat, width, height))
         {
             throw new ArgumentException("source too small", nameof(src));
         }
@@ -64,18 +64,18 @@ public static class CameraImage
             throw new ArgumentException("destination too small", nameof(dst));
         }
 
-        int stride = HostStride(f, width);
+        int stride = HostStride(cameraHostFormat, width);
         for (int y = 0; y < height; y++)
         {
             int sy = bottomUp ? height - 1 - y : y;
             Span<byte> o = dst.Slice(y * width * 4, width * 4);
-            switch (f)
+            switch (cameraHostFormat)
             {
                 case CameraHostFormat.Yuyv:
                 case CameraHostFormat.Uyvy:
                 {
                     ReadOnlySpan<byte> row = src.Slice(sy * stride, stride);
-                    bool uyvy = f == CameraHostFormat.Uyvy;
+                    bool uyvy = cameraHostFormat == CameraHostFormat.Uyvy;
                     for (int x = 0; x + 1 < width; x += 2)
                     {
                         int b = x * 2;
@@ -96,7 +96,7 @@ public static class CameraImage
                 {
                     ReadOnlySpan<byte> yRow = src.Slice(sy * width, width);
                     ReadOnlySpan<byte> uvRow = src.Slice(width * height + (sy / 2) * width);
-                    bool nv21 = f == CameraHostFormat.Nv21;
+                    bool nv21 = cameraHostFormat == CameraHostFormat.Nv21;
                     for (int x = 0; x < width; x++)
                     {
                         int c = x & ~1;

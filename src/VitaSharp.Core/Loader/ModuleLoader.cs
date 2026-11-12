@@ -58,7 +58,7 @@ public enum ExportScope : byte
 /// whenever a module exporting the NID (LLE) is loaded; until then they trap into HLE via SVC. Kernel and user modules
 /// see each other's exports only as the firmware allows (<see cref="ExportScope"/>).
 /// </summary>
-public sealed class Linker(IImportResolver hle)
+public sealed class Linker(IImportResolver importResolver)
 {
     private const uint NidModuleStop = 0x79F8E492, NidModuleExit = 0x913482A9, NidModuleStart = 0x935CD196;
     private const uint NidModuleInfo = 0x6C2224BA, NidSyslib = 0x936C8A78, NidProcessParam = 0x70FBA1E7;
@@ -190,14 +190,14 @@ public sealed class Linker(IImportResolver hle)
 
     private void BindHle(uint stub, uint nid, uint libNid, string libName)
     {
-        uint code = hle.GetHleGuestCode(nid);
+        uint code = importResolver.GetHleGuestCode(nid);
         if (code != 0)
         {
             WriteJumpStub(stub, code);
         }
         else
         {
-            WriteHleStub(stub, hle.GetHleFunctionIndex(nid, libNid, libName), nid);
+            WriteHleStub(stub, importResolver.GetHleFunctionIndex(nid, libNid, libName), nid);
         }
     }
 
@@ -287,7 +287,7 @@ public sealed class Linker(IImportResolver hle)
             {
                 // 0 = not provided yet: a module loaded later (the game's own libc.suprx, say) can still export it;
                 // RegisterExports then applies these relocations, and UnresolvedVariables lists what is left
-                addr = hle.GetHleVariable(nid);
+                addr = importResolver.GetHleVariable(nid);
             }
             _varBindings.Add((nid, relocs, segs));
             _varSources.TryAdd(nid, source);
@@ -314,12 +314,12 @@ public sealed class Linker(IImportResolver hle)
         lock (_lock)
         {
             return _varBindings.Select(b => b.nid).Distinct()
-                .Where(n => !_varExports.ContainsKey(n) && hle.GetHleVariable(n) == 0).ToList();
+                .Where(n => !_varExports.ContainsKey(n) && importResolver.GetHleVariable(n) == 0).ToList();
         }
     }
 
-    /// <summary>Registers one exported library of <paramref name="m"/> and rebinds the import stubs that may see it.</summary>
-    internal void RegisterExports(LoadedModule m, uint libNid, uint[] nids, uint[] entries, int funcCount, ExportScope scope = ExportScope.User)
+    /// <summary>Registers one exported library of <paramref name="loadedModule"/> and rebinds the import stubs that may see it.</summary>
+    internal void RegisterExports(LoadedModule loadedModule, uint libNid, uint[] nids, uint[] entries, int funcCount, ExportScope scope = ExportScope.User)
     {
         lock (_lock)
         {
@@ -331,13 +331,13 @@ public sealed class Linker(IImportResolver hle)
                     switch (nid)
                     {
                         case NidModuleStart:
-                            m.StartEntry = addr;
+                            loadedModule.StartEntry = addr;
                             continue;
                         case NidModuleStop:
-                            m.StopEntry = addr;
+                            loadedModule.StopEntry = addr;
                             continue;
                         case NidModuleExit:
-                            m.ExitEntry = addr;
+                            loadedModule.ExitEntry = addr;
                             continue;
                     }
                     if (_funcExports.TryAdd(nid, addr))
@@ -387,12 +387,12 @@ public sealed class Linker(IImportResolver hle)
         }
     }
 
-    private static bool InModule(LoadedModule m, uint addr)
+    private static bool InModule(LoadedModule loadedModule, uint addr)
     {
         addr &= ~1u; // Thumb entry points
-        foreach (SegmentInfo s in m.Segments.Values)
+        foreach (SegmentInfo segmentInfo in loadedModule.Segments.Values)
         {
-            if (addr >= s.Address && addr - s.Address < s.Size)
+            if (addr >= segmentInfo.Address && addr - segmentInfo.Address < segmentInfo.Size)
             {
                 return true;
             }
@@ -402,27 +402,27 @@ public sealed class Linker(IImportResolver hle)
     }
 
     /// <summary>
-    /// Undoes what loading <paramref name="m"/> did to the symbol table (sceKernelUnloadModule): drops its exports and
+    /// Undoes what loading <paramref name="loadedModule"/> did to the symbol table (sceKernelUnloadModule): drops its exports and
     /// its own import bindings, then rebinds every other module's import that pointed into it to the next provider
     /// (another loaded module exporting the NID) or back to the HLE stub. Variable imports are relocated to an HLE
     /// variable when one exists. Returns the number of function stubs rebound.
     /// </summary>
-    public int UnregisterModule(LoadedModule m)
+    public int UnregisterModule(LoadedModule loadedModule)
     {
         int rebound = 0;
         lock (_lock)
         {
             // the module's own import stubs/relocations live in memory that is about to be freed
-            _funcBindings.RemoveAll(b => InModule(m, b.stub));
-            _varBindings.RemoveAll(b => ReferenceEquals(b.segs, m.Segments));
+            _funcBindings.RemoveAll(b => InModule(loadedModule, b.stub));
+            _varBindings.RemoveAll(b => ReferenceEquals(b.segs, loadedModule.Segments));
 
-            foreach ((uint lib, uint nid) key in _funcExportsByLib.Where(kv => InModule(m, kv.Value)).Select(kv => kv.Key).ToArray())
+            foreach ((uint lib, uint nid) key in _funcExportsByLib.Where(kv => InModule(loadedModule, kv.Value)).Select(kv => kv.Key).ToArray())
             {
                 _funcExportsByLib.Remove(key);
                 _funcExportScopesByLib.Remove(key);
             }
 
-            foreach (uint nid in _funcExports.Where(kv => InModule(m, kv.Value)).Select(kv => kv.Key).ToArray())
+            foreach (uint nid in _funcExports.Where(kv => InModule(loadedModule, kv.Value)).Select(kv => kv.Key).ToArray())
             {
                 _funcExports.Remove(nid);
                 _funcExportScopes.Remove(nid);
@@ -447,7 +447,7 @@ public sealed class Linker(IImportResolver hle)
                 }
 
                 uint target = ((w0 >> 4) & 0xF000) | (w0 & 0xFFF) | ((((w1 >> 4) & 0xF000) | (w1 & 0xFFF)) << 16);
-                if (!InModule(m, target))
+                if (!InModule(loadedModule, target))
                 {
                     continue;
                 }
@@ -465,7 +465,7 @@ public sealed class Linker(IImportResolver hle)
                 rebound++;
             }
 
-            var removedVars = _varExports.Where(kv => InModule(m, kv.Value)).Select(kv => kv.Key).ToHashSet();
+            var removedVars = _varExports.Where(kv => InModule(loadedModule, kv.Value)).Select(kv => kv.Key).ToHashSet();
             foreach (uint nid in removedVars)
             {
                 _varExports.Remove(nid);
@@ -478,17 +478,17 @@ public sealed class Linker(IImportResolver hle)
                     continue;
                 }
 
-                uint addr = hle.GetHleVariable(bnid);
+                uint addr = importResolver.GetHleVariable(bnid);
                 if (addr != 0)
                 {
                     Relocation.Relocate(relocs, segs, true, addr);
                 }
                 else
                 {
-                    Log?.Invoke($"Variable import NID {bnid:X8} pointed into unloaded module {m.Name}");
+                    Log?.Invoke($"Variable import NID {bnid:X8} pointed into unloaded module {loadedModule.Name}");
                 }
             }
-            if (InModule(m, ProcessParam))
+            if (InModule(loadedModule, ProcessParam))
             {
                 ProcessParam = 0;
             }

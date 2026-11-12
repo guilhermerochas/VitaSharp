@@ -47,31 +47,31 @@ public sealed class GpuDriverScreen
         var list = new List<GpuDriverOption> { new("", Loc.Get("MSystemDriver"),
             // libadrenotools only opens it on Adreno GPUs; elsewhere the system's Vulkan loader does
             CustomDriversSupported ? Loc.Get("MSystemDriverAdreno") : Loc.Get("MSystemDriverDetail"), systemSelected, false) };
-        foreach (InstalledGpuDriver d in installed)
+        foreach (InstalledGpuDriver installedGpuDriver in installed)
         {
-            list.Add(new(d.Id, d.Meta.Name, Detail(d.Meta), !systemSelected && d.Id == Settings.Driver, true));
+            list.Add(new(installedGpuDriver.Id, installedGpuDriver.Meta.Name, Detail(installedGpuDriver.Meta), !systemSelected && installedGpuDriver.Id == Settings.Driver, true));
         }
 
         return list;
     }
 
-    private static string Detail(CustomDriverMeta m)
+    private static string Detail(CustomDriverMeta customDriverMeta)
     {
         var parts = new List<string>();
-        if (m.Vendor.Length > 0)
+        if (customDriverMeta.Vendor.Length > 0)
         {
-            parts.Add(m.Vendor);
+            parts.Add(customDriverMeta.Vendor);
         }
 
-        if (m.DriverVersion.Length > 0)
+        if (customDriverMeta.DriverVersion.Length > 0)
         {
-            parts.Add(m.DriverVersion);
+            parts.Add(customDriverMeta.DriverVersion);
         }
 
-        parts.Add(m.LibraryName);
-        if (m.MinApi > 0)
+        parts.Add(customDriverMeta.LibraryName);
+        if (customDriverMeta.MinApi > 0)
         {
-            parts.Add($"API {m.MinApi}+");
+            parts.Add($"API {customDriverMeta.MinApi}+");
         }
 
         return string.Join(" \u00B7 ", parts);
@@ -162,10 +162,10 @@ public sealed class GpuDriverScreen
     /// <see cref="GameProcessMarker"/>. A driver that is no longer installed counts as the system driver, as
     /// AdrenoToolsDriverLoader falls back to it.
     /// </summary>
-    public static string ConfigOf(GpuDriverSettings s, CustomDriverStore store)
+    public static string ConfigOf(GpuDriverSettings gpuDriverSettings, CustomDriverStore store)
     {
-        string driver = s.Driver.Length > 0 && store.Find(s.Driver) != null ? s.Driver : "";
-        return $"{driver}|bcn={(s.PatchBcn ? 1 : 0)}|turbo={(s.Turbo ? 1 : 0)}|redirect={(s.FileRedirect ? 1 : 0)}";
+        string driver = gpuDriverSettings.Driver.Length > 0 && store.Find(gpuDriverSettings.Driver) != null ? gpuDriverSettings.Driver : "";
+        return $"{driver}|bcn={(gpuDriverSettings.PatchBcn ? 1 : 0)}|turbo={(gpuDriverSettings.Turbo ? 1 : 0)}|redirect={(gpuDriverSettings.FileRedirect ? 1 : 0)}";
     }
 
     public string Config => ConfigOf(Settings, Store);
@@ -189,7 +189,7 @@ public static class GpuInfoView
 {
     public static IReadOnlyList<GpuInfoRow> Rows(GpuCapabilities caps, string? customDriver = null)
     {
-        GpuDeviceInfo d = caps.Device;
+        GpuDeviceInfo gpuDeviceInfo = caps.Device;
         string driver = customDriver ?? $"{DriverName(caps.Driver)} {GpuCapabilities.FormatDriverVersion(caps.Vendor, caps.Driver, caps.DriverVersion)}";
         var arch = new List<string>();
         if (caps.Has(GpuQuirk.TileBased))
@@ -197,22 +197,22 @@ public static class GpuInfoView
             arch.Add("tile-based");
         }
 
-        if (d.UnifiedMemory)
+        if (gpuDeviceInfo.UnifiedMemory)
         {
             arch.Add(Loc.Get("MUnifiedMemory"));
         }
 
         return
         [
-            new("GPU", d.DeviceName),
+            new("GPU", gpuDeviceInfo.DeviceName),
             new("Driver", driver),
-            new("Vulkan", $"{d.ApiVersion >> 22}.{(d.ApiVersion >> 12) & 0x3FF}.{d.ApiVersion & 0xFFF}"),
+            new("Vulkan", $"{gpuDeviceInfo.ApiVersion >> 22}.{(gpuDeviceInfo.ApiVersion >> 12) & 0x3FF}.{gpuDeviceInfo.ApiVersion & 0xFFF}"),
             new(Loc.Get("MArchitecture"), arch.Count > 0 ? string.Join(" \u00B7 ", arch) : Loc.Get("MImmediate")),
             new(Loc.Get("MMemoryBudget"), caps.Has(GpuFeature.MemoryBudget) ? "VK_EXT_memory_budget" : Loc.Format("MOfTheHeap", caps.FallbackBudgetFraction)),
         ];
     }
 
-    private static string DriverName(GpuDriver d) => d switch
+    private static string DriverName(GpuDriver gpuDriver) => gpuDriver switch
     {
         GpuDriver.QualcommProprietary => Loc.Get("MQualcommProprietary"),
         GpuDriver.Turnip => "Mesa Turnip",
@@ -220,7 +220,7 @@ public static class GpuInfoView
         GpuDriver.Panvk => "Mesa PanVK",
         GpuDriver.ImaginationProprietary => Loc.Get("MImaginationProprietary"),
         GpuDriver.SamsungProprietary => Loc.Get("MSamsungProprietary"),
-        _ => d.ToString(),
+        _ => gpuDriver.ToString(),
     };
 
     /// <summary>The features the renderer uses (the "Recursos" chips). <paramref name="bcnPatched"/>: BCn sampled
@@ -243,10 +243,10 @@ public static class GpuInfoView
             .Select(q => new GpuQuirkLine(q, Describe(q), IsWorkaround(q)))
             .OrderBy(l => l.Workaround ? 0 : 1).ToArray();
 
-    private static bool IsWorkaround(GpuQuirk q) => q is GpuQuirk.TileBased or GpuQuirk.DynamicIndexLowering or GpuQuirk.StaticExtendedDynamicState
+    private static bool IsWorkaround(GpuQuirk gpuQuirk) => gpuQuirk is GpuQuirk.TileBased or GpuQuirk.DynamicIndexLowering or GpuQuirk.StaticExtendedDynamicState
         or GpuQuirk.StaticDepthBiasEnable or GpuQuirk.PipelineCachePerDriverBuild or GpuQuirk.Msaa2xAs4x or GpuQuirk.ConservativeMemoryBudget;
 
-    private static string Describe(GpuQuirk q) => q switch
+    private static string Describe(GpuQuirk gpuQuirk) => gpuQuirk switch
     {
         GpuQuirk.TileBased => Loc.Get("MQuirkTileBased"),
         GpuQuirk.DynamicIndexLowering => Loc.Get("MQuirkDynamicIndex"),
@@ -260,6 +260,6 @@ public static class GpuInfoView
         GpuQuirk.CustomDriverCapable => Loc.Get("MQuirkCustomDriver"),
         GpuQuirk.AvoidPushDescriptors => Loc.Get("MQuirkPushDescriptors"),
         GpuQuirk.AvoidClearAttachments => Loc.Get("MQuirkClearAttachments"),
-        _ => q.ToString(),
+        _ => gpuQuirk.ToString(),
     };
 }

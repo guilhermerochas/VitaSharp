@@ -72,7 +72,12 @@ public sealed unsafe partial class NativeRuntime
             bool noCounts = pinned && (Arm64Emitter.Opts & Arm64Emitter.A64Opt.NoBlockCounts) != 0
                 && Environment.GetEnvironmentVariable(Util.EnvVars.NativeCounters) != "1";
             int trampSize = 0;
-            byte* entry64 = Code.Place(_ => { byte[] t = Arm64Emitter.EmitTrampoline(out epi, pinned, blockCounts: !noCounts); trampSize = t.Length; return t; });
+            byte* entry64 = Code.Place(_ =>
+            {
+                byte[] t = Arm64Emitter.EmitTrampoline(out epi, pinned, blockCounts: !noCounts);
+                trampSize = t.Length;
+                return t;
+            });
             if (NativeCodeMap.Enabled)
             {
                 NativeCodeMap.Add((nint)entry64, trampSize, 0, false, "trampoline");
@@ -250,9 +255,9 @@ public sealed unsafe partial class NativeRuntime
     public static void ThrowPendingFault(CpuState* s)
     {
         s->CalloutFault = 0;
-        ExceptionDispatchInfo? f = t_fault;
+        ExceptionDispatchInfo? exceptionDispatchInfo = t_fault;
         t_fault = null;
-        f?.Throw();
+        exceptionDispatchInfo?.Throw();
     }
 
     // ------------------------------------------------------------------ indirect-exit dispatch table

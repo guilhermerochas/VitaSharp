@@ -319,9 +319,9 @@ public sealed class AndroidInput(OnScreenPad pad, AndroidGamepads gamepads, Andr
 
     public IReadOnlyList<TouchPoint> GetTouches(bool back)
     {
-        MappedInput m = Current();
-        var list = new TouchPoint[back ? m.BackCount : m.FrontCount];
-        m.CopyTouches(back, list);
+        MappedInput mappedInput = Current();
+        var list = new TouchPoint[back ? mappedInput.BackCount : mappedInput.FrontCount];
+        mappedInput.CopyTouches(back, list);
         return list;
     }
 

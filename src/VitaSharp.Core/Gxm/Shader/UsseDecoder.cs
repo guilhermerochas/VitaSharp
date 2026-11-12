@@ -126,11 +126,11 @@ public static class UsseDecoder
 
     public static UsseInst Decode(ulong raw)
     {
-        foreach (UssePattern p in s_table)
+        foreach (UssePattern ussePattern in s_table)
         {
-            if (p.Matches(raw))
+            if (ussePattern.Matches(raw))
             {
-                return new UsseInst(p.Op, raw, p);
+                return new UsseInst(ussePattern.Op, raw, ussePattern);
             }
         }
 

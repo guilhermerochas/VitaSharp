@@ -158,16 +158,16 @@ public sealed class Registry
 
     private static IEnumerable<string> ExpandRange(string category)
     {
-        Match m = System.Text.RegularExpressions.Regex.Match(category, @"^(.*/)(\d{2})-(\d{2})(/.*)$");
-        if (!m.Success)
+        Match match = System.Text.RegularExpressions.Regex.Match(category, @"^(.*/)(\d{2})-(\d{2})(/.*)$");
+        if (!match.Success)
         {
             yield return category;
             yield break;
         }
-        int a = int.Parse(m.Groups[2].Value), b = int.Parse(m.Groups[3].Value);
+        int a = int.Parse(match.Groups[2].Value), b = int.Parse(match.Groups[3].Value);
         for (int i = a; i <= b; i++)
         {
-            yield return $"{m.Groups[1].Value}{i:D2}{m.Groups[4].Value}";
+            yield return $"{match.Groups[1].Value}{i:D2}{match.Groups[4].Value}";
         }
     }
 

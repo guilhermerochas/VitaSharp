@@ -27,7 +27,7 @@ public sealed class BlobPack : IDisposable
 
     private readonly FileStream _fs;
     private readonly FileStream? _owner; // the exclusive lock on "<pack>.lock" (null: read-only view)
-    private readonly SafeFileHandle _h;
+    private readonly SafeFileHandle _handle;
     private readonly Dictionary<ulong, (long Offset, int Length)> _index = new();
     private readonly List<ulong> _order = new();
     private readonly object _lock = new();
@@ -53,7 +53,7 @@ public sealed class BlobPack : IDisposable
         Path = path;
         _fs = fs;
         _owner = owner;
-        _h = fs.SafeFileHandle;
+        _handle = fs.SafeFileHandle;
     }
 
     /// <summary>Opens (or creates) a pack. A pack written with another <paramref name="version"/> is discarded.
@@ -163,7 +163,7 @@ public sealed class BlobPack : IDisposable
 
     private void Load(uint version)
     {
-        long len = RandomAccess.GetLength(_h);
+        long len = RandomAccess.GetLength(_handle);
         Span<byte> hdr = stackalloc byte[RecordHeaderSize];
         if (len < FileHeaderSize)
         {
@@ -174,7 +174,7 @@ public sealed class BlobPack : IDisposable
 
             return;
         }
-        RandomAccess.Read(_h, hdr[..FileHeaderSize], 0);
+        RandomAccess.Read(_handle, hdr[..FileHeaderSize], 0);
         if (BinaryPrimitives.ReadUInt32LittleEndian(hdr) != FileMagic || BinaryPrimitives.ReadUInt32LittleEndian(hdr[4..]) != version)
         {
             if (!IsReadOnly)
@@ -187,7 +187,7 @@ public sealed class BlobPack : IDisposable
         long pos = FileHeaderSize;
         while (pos + RecordHeaderSize <= len)
         {
-            if (RandomAccess.Read(_h, hdr, pos) != RecordHeaderSize)
+            if (RandomAccess.Read(_handle, hdr, pos) != RecordHeaderSize)
             {
                 break;
             }
@@ -228,7 +228,7 @@ public sealed class BlobPack : IDisposable
         hdr.Clear();
         BinaryPrimitives.WriteUInt32LittleEndian(hdr, FileMagic);
         BinaryPrimitives.WriteUInt32LittleEndian(hdr[4..], version);
-        RandomAccess.Write(_h, hdr, 0);
+        RandomAccess.Write(_handle, hdr, 0);
         _end = FileHeaderSize;
     }
 
@@ -266,13 +266,13 @@ public sealed class BlobPack : IDisposable
         try
         {
             Span<byte> hdr = stackalloc byte[RecordHeaderSize];
-            if (RandomAccess.Read(_h, hdr, offset - RecordHeaderSize) != RecordHeaderSize)
+            if (RandomAccess.Read(_handle, hdr, offset - RecordHeaderSize) != RecordHeaderSize)
             {
                 return null;
             }
 
             byte[] data = new byte[length];
-            if (RandomAccess.Read(_h, data, offset) != length)
+            if (RandomAccess.Read(_handle, data, offset) != length)
             {
                 return null;
             }
@@ -317,8 +317,8 @@ public sealed class BlobPack : IDisposable
             try
             {
                 // payload first, header last: a crash in between leaves a tail that fails the magic check
-                RandomAccess.Write(_h, data, _end + RecordHeaderSize);
-                RandomAccess.Write(_h, hdr, _end);
+                RandomAccess.Write(_handle, data, _end + RecordHeaderSize);
+                RandomAccess.Write(_handle, hdr, _end);
             }
             catch (Exception e)
             {

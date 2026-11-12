@@ -34,7 +34,7 @@ public sealed class AdaptiveEarlySignal
     }
 
     private readonly double[] _intervals = new double[Window], _sorted = new double[Window];
-    private int _n, _skip, _cooldown, _backoff = BackoffMin, _sinceCheck;
+    private int _count, _skip, _cooldown, _backoff = BackoffMin, _sinceCheck;
     private double _sum, _waitSum, _baseline;
 
     public Phase State { get; private set; }
@@ -59,17 +59,17 @@ public sealed class AdaptiveEarlySignal
             _cooldown--;
         }
 
-        _intervals[_n++] = intervalMs;
+        _intervals[_count++] = intervalMs;
         _sum += intervalMs;
         _waitSum += displayWaitMs;
-        if (_n < Window)
+        if (_count < Window)
         {
             return Early;
         }
 
         double mean = _sum / Window, wait = _waitSum / Window;
         bool locked = Locked();
-        _n = 0;
+        _count = 0;
         _sum = _waitSum = 0;
         Phase before = State;
         switch (State)
@@ -118,14 +118,14 @@ public sealed class AdaptiveEarlySignal
         return Early;
     }
 
-    private void Go(Phase p, string why)
+    private void Go(Phase phase, string why)
     {
-        if (p != State)
+        if (phase != State)
         {
             _skip = Settle;
         }
 
-        State = p;
+        State = phase;
         LastDecision = why;
     }
 

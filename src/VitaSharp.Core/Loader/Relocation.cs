@@ -113,7 +113,7 @@ public static unsafe class Relocation
     {
         uint gAddr = 0, gOffset = 0, gPatchSeg = 0, gSaddr = 0, gAddend = 0, gType = 0, gType2 = 0;
         int pos = 0;
-        uint SegAddr(uint idx) => segs.TryGetValue((int)idx, out SegmentInfo si) ? si.Address : 0;
+        uint SegAddr(uint idx) => segs.TryGetValue((int)idx, out SegmentInfo segmentInfo) ? segmentInfo.Address : 0;
 
         while (pos + 4 <= data.Length)
         {

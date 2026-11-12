@@ -39,7 +39,7 @@ public enum Op : ushort
 internal static unsafe class Thumb
 {
     /// <summary>IT itself has no effect at execution time: the block builder applies its conditions.</summary>
-    public static void It(CpuState* s, uint ins, uint pc)
+    public static void It(CpuState* state, uint ins, uint pc)
     {
     }
 }

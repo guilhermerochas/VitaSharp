@@ -143,7 +143,12 @@ public static class GpuBench
 
         byte[]? picture = null;
         int pw = 0, ph = 0;
-        ro.FrameSink = (_, px, w, h) => { picture = px; pw = w; ph = h; };
+        ro.FrameSink = (_, px, w, h) =>
+        {
+            picture = px;
+            pw = w;
+            ph = h;
+        };
         long target = header.Long(KeyFrame, -1);
         if (target < 0)
         {

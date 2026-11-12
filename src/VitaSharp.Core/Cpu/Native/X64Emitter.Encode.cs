@@ -34,8 +34,8 @@ public sealed unsafe partial class X64Emitter
         }
     }
 
-    private ByteWriter? _fw;
-    private Encoder? _enc;
+    private ByteWriter? _byteWriter;
+    private Encoder? _encoder;
     private int[] _fOff = new int[256], _fLen = new int[256], _fTarget = new int[256];
     private ulong[] _fAddr = new ulong[256];
     private bool[] _fShort = new bool[256];
@@ -58,9 +58,9 @@ public sealed unsafe partial class X64Emitter
             _fAddr = new ulong[m];
             _fShort = new bool[m];
         }
-        ByteWriter fw = _fw ??= new ByteWriter();
-        Encoder enc = _enc ??= Encoder.Create(64, fw);
-        fw.Pos = 0;
+        ByteWriter byteWriter = _byteWriter ??= new ByteWriter();
+        Encoder enc = _encoder ??= Encoder.Create(64, byteWriter);
+        byteWriter.Pos = 0;
         _labelAt.Clear();
         // Iced's assembler stores a label's id in the IP of the instruction it labels
         for (int i = 0; i < n; i++)
@@ -108,7 +108,7 @@ public sealed unsafe partial class X64Emitter
             }
 
             _fTarget[i] = NotBranch;
-            _fOff[i] = fw.Pos;
+            _fOff[i] = byteWriter.Pos;
             if (!enc.TryEncode(ins, 0, out uint len, out _))
             {
                 return false;
@@ -178,7 +178,7 @@ public sealed unsafe partial class X64Emitter
                     return false;
                 }
             }
-            int at = fw.Pos;
+            int at = byteWriter.Pos;
             if (!enc.TryEncode(ins, _fAddr[i], out uint len, out _) || len != _fLen[i])
             {
                 return false;
@@ -190,7 +190,7 @@ public sealed unsafe partial class X64Emitter
         int p = 0;
         for (int i = 0; i < n; i++)
         {
-            Buffer.BlockCopy(fw.Buf, _fOff[i], code, p, _fLen[i]);
+            Buffer.BlockCopy(byteWriter.Buf, _fOff[i], code, p, _fLen[i]);
             p += _fLen[i];
         }
         return true;

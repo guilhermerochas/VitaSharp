@@ -494,12 +494,12 @@ public sealed class ExFatImage : FsImage
         {
             (byte[]? dir, string? dirPath, int depth) = stack.Pop();
             var subdirs = new List<(byte[], string)>();
-            foreach (FsImageEntry e in ParseDirectory(dir, dirPath))
+            foreach (FsImageEntry fsImageEntry in ParseDirectory(dir, dirPath))
             {
-                yield return e;
-                if (e.IsDirectory && depth < 64)
+                yield return fsImageEntry;
+                if (fsImageEntry.IsDirectory && depth < 64)
                 {
-                    subdirs.Add((ReadRuns(e.FirstCluster, e.Size, e.Contiguous), e.Path));
+                    subdirs.Add((ReadRuns(fsImageEntry.FirstCluster, fsImageEntry.Size, fsImageEntry.Contiguous), fsImageEntry.Path));
                 }
             }
             for (int i = subdirs.Count - 1; i >= 0; i--)

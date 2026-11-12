@@ -20,16 +20,16 @@ internal sealed class AudioCheckCommand : IPerfCommand
         Console.WriteLine("  16-bit PCM WAVs (VITASHARP_AUDIO_DUMP / --audio-dump); one line per file");
     }
 
-    public int Run(PerfArgs a)
+    public int Run(PerfArgs perfArgs)
     {
-        if (a.Positional.Count == 0)
+        if (perfArgs.Positional.Count == 0)
         {
             throw new PerfArgsException("audio-check: a WAV file or a folder of WAVs is required");
         }
 
-        int grain = (int)a.Double("--grain", 512);
-        int click = (int)a.Double("--click", 12000);
-        var files = a.Positional.SelectMany(p => Directory.Exists(p) ? Directory.GetFiles(p, "*.wav", SearchOption.AllDirectories).Order() : (IEnumerable<string>)[p]).ToList();
+        int grain = (int)perfArgs.Double("--grain", 512);
+        int click = (int)perfArgs.Double("--click", 12000);
+        var files = perfArgs.Positional.SelectMany(p => Directory.Exists(p) ? Directory.GetFiles(p, "*.wav", SearchOption.AllDirectories).Order() : (IEnumerable<string>)[p]).ToList();
         foreach (string? f in files)
         {
             (short[]? pcm, int ch, int rate) = ReadWav(f);

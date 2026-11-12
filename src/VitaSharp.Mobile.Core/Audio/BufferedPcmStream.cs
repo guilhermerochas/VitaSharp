@@ -128,56 +128,56 @@ public sealed class BufferedPcmStream : IAudioStream
     private void Open()
     {
         _sink = null;
-        IPcmSink? s;
+        IPcmSink? pcmSink;
         try
         {
-            s = _factory(Channels);
+            pcmSink = _factory(Channels);
         }
         catch (Exception e)
         {
             Log.Warn($"Audio: opening the output failed: {e.Message}");
-            s = null;
+            pcmSink = null;
         }
-        if (s == null)
+        if (pcmSink == null)
         {
             _nextReopenAt = _clock.Elapsed.TotalSeconds + ReopenRetrySeconds;
             Log.WarnOnce("android-audio-none", "Audio: no output device; the guest is paced by the clock until one comes back");
             return;
         }
-        _policy = PcmBufferPolicy.For(Grain, Rate, s.SampleRate, s.FramesPerBurst);
-        long deviceGrain = (long)Grain * s.SampleRate / Rate;
+        _policy = PcmBufferPolicy.For(Grain, Rate, pcmSink.SampleRate, pcmSink.FramesPerBurst);
+        long deviceGrain = (long)Grain * pcmSink.SampleRate / Rate;
         int asked = (int)Math.Min(int.MaxValue, _policy.Capacity * Math.Max(1, deviceGrain));
-        int got = s.SetBufferSize(asked);
+        int got = pcmSink.SetBufferSize(asked);
         if (got > 0 && got < asked)
         {
             Log.Info($"Audio: the device holds {got} frames, not {asked}: the stream queues less than {_policy.Capacity} grains");
         }
 
-        _resampler.Reset(Rate, s.SampleRate);
-        _xrunsSeen = s.XRunCount;
+        _resampler.Reset(Rate, pcmSink.SampleRate);
+        _xrunsSeen = pcmSink.XRunCount;
         _started = false;
         _primedFrames = 0;
-        _sink = s;
+        _sink = pcmSink;
         Log.Info($"Audio: {Describe()}");
     }
 
     private void Close()
     {
-        IPcmSink? s = _sink;
+        IPcmSink? pcmSink = _sink;
         _sink = null;
-        if (s == null)
+        if (pcmSink == null)
         {
             return;
         }
 
         try
         {
-            s.Pause();
+            pcmSink.Pause();
         }
         catch (Exception) { }
         try
         {
-            s.Dispose();
+            pcmSink.Dispose();
         }
         catch (Exception e)
         {
@@ -190,16 +190,16 @@ public sealed class BufferedPcmStream : IAudioStream
 
     public string Describe()
     {
-        IPcmSink? s = _sink;
-        if (s == null)
+        IPcmSink? pcmSink = _sink;
+        if (pcmSink == null)
         {
             return $"stream {Rate} Hz grain {Grain}: no output device, paced by the clock, underruns {Underruns}";
         }
 
         double grainMs = Grain * 1000.0 / Rate;
-        return $"{s.Description} {s.SampleRate} Hz{(s.SampleRate != Rate ? $" (resampled from {Rate})" : "")}, burst {s.FramesPerBurst} frames " +
-               $"({s.FramesPerBurst * 1000.0 / s.SampleRate:F1} ms); stream grain {Grain}: up to {_policy.Capacity} grains queued " +
-               $"({_policy.Capacity * grainMs:F1} ms), starts at {_policy.StartGrains}, latency ~{_policy.StartGrains * grainMs + s.FramesPerBurst * 1000.0 / s.SampleRate:F0} ms, " +
+        return $"{pcmSink.Description} {pcmSink.SampleRate} Hz{(pcmSink.SampleRate != Rate ? $" (resampled from {Rate})" : "")}, burst {pcmSink.FramesPerBurst} frames " +
+               $"({pcmSink.FramesPerBurst * 1000.0 / pcmSink.SampleRate:F1} ms); stream grain {Grain}: up to {_policy.Capacity} grains queued " +
+               $"({_policy.Capacity * grainMs:F1} ms), starts at {_policy.StartGrains}, latency ~{_policy.StartGrains * grainMs + pcmSink.FramesPerBurst * 1000.0 / pcmSink.SampleRate:F0} ms, " +
                $"underruns {Underruns}{(Reopens > 0 ? $", reopened {Reopens}x" : "")}";
     }
 
@@ -307,11 +307,11 @@ public sealed class BufferedPcmStream : IAudioStream
 
     private int WriteGrain(ReadOnlySpan<short> data)
     {
-        IPcmSink s = _sink!;
+        IPcmSink pcmSink = _sink!;
         int frames = data.Length / Channels;
         if (_started)
         {
-            int x = s.XRunCount;
+            int x = pcmSink.XRunCount;
             if (x != _xrunsSeen)
             {
                 // the device played silence since the previous grain: one dry spell, counted once
@@ -319,10 +319,10 @@ public sealed class BufferedPcmStream : IAudioStream
                 Interlocked.Increment(ref _underruns);
             }
             // completely drained: re-buffer to the start threshold first (silence), as OpenAL does before replaying
-            if (s.FramesWritten - s.FramesRead <= 0 && _policy.StartGrains > 1)
+            if (pcmSink.FramesWritten - pcmSink.FramesRead <= 0 && _policy.StartGrains > 1)
             {
-                int pad = (int)((long)(_policy.StartGrains - 1) * Grain * s.SampleRate / Rate);
-                int r = WriteSilence(s, pad);
+                int pad = (int)((long)(_policy.StartGrains - 1) * Grain * pcmSink.SampleRate / Rate);
+                int r = WriteSilence(pcmSink, pad);
                 if (r < 0)
                 {
                     return r;
@@ -333,7 +333,7 @@ public sealed class BufferedPcmStream : IAudioStream
         while (done < frames)
         {
             // before the start the buffer has room for every primed grain (capacity >= start threshold): no wait
-            int n = s.Write(data[(done * Channels)..], _started ? WriteTimeoutNanos : 0);
+            int n = pcmSink.Write(data[(done * Channels)..], _started ? WriteTimeoutNanos : 0);
             if (n < 0)
             {
                 return n;
@@ -347,7 +347,7 @@ public sealed class BufferedPcmStream : IAudioStream
 
             if (!_started)
             {
-                Start(s);
+                Start(pcmSink);
                 continue;
             }
             // full: wait for room; while the activity is paused the device does not drain, so wait for Resume
@@ -356,33 +356,33 @@ public sealed class BufferedPcmStream : IAudioStream
                 Monitor.Wait(_lock, 100);
             }
 
-            if (_disposed || s.Disconnected)
+            if (_disposed || pcmSink.Disconnected)
             {
-                return s.Disconnected ? PcmSinkStatus.Disconnected : 0;
+                return pcmSink.Disconnected ? PcmSinkStatus.Disconnected : 0;
             }
         }
         if (!_started)
         {
             _primedFrames += frames;
-            if (_primedFrames >= (long)_policy.StartGrains * Grain * s.SampleRate / Rate)
+            if (_primedFrames >= (long)_policy.StartGrains * Grain * pcmSink.SampleRate / Rate)
             {
-                Start(s);
+                Start(pcmSink);
             }
         }
         return done;
     }
 
-    private void Start(IPcmSink s)
+    private void Start(IPcmSink pcmSink)
     {
         _started = true;
-        _xrunsSeen = s.XRunCount;
+        _xrunsSeen = pcmSink.XRunCount;
         if (!_paused)
         {
-            s.Start();
+            pcmSink.Start();
         }
     }
 
-    private int WriteSilence(IPcmSink s, int frames)
+    private int WriteSilence(IPcmSink pcmSink, int frames)
     {
         int n = frames * Channels;
         if (_silence.Length < n)
@@ -390,7 +390,7 @@ public sealed class BufferedPcmStream : IAudioStream
             _silence = new short[n];
         }
 
-        return s.Write(_silence.AsSpan(0, n), 0);
+        return pcmSink.Write(_silence.AsSpan(0, n), 0);
     }
 
     /// <summary>No device: sleep for the grain's duration so the guest keeps its pace.</summary>
@@ -414,14 +414,14 @@ public sealed class BufferedPcmStream : IAudioStream
     {
         get
         {
-            IPcmSink? s = _sink;
-            if (s == null)
+            IPcmSink? pcmSink = _sink;
+            if (pcmSink == null)
             {
                 return 0;
             }
 
-            long q = Math.Max(0, s.FramesWritten - s.FramesRead);
-            return (int)Math.Min(int.MaxValue, q * Rate / Math.Max(1, s.SampleRate));
+            long q = Math.Max(0, pcmSink.FramesWritten - pcmSink.FramesRead);
+            return (int)Math.Min(int.MaxValue, q * Rate / Math.Max(1, pcmSink.SampleRate));
         }
     }
 

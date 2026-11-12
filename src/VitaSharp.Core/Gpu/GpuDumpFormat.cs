@@ -249,7 +249,7 @@ public sealed class GpuDumpCodec
 
     // ---- reader state
     private readonly List<GxmProgramInfo> _infos = new();
-    private readonly List<GxmVertexProgram> _vps = new();
+    private readonly List<GxmVertexProgram> _vertexPrograms = new();
     private readonly List<GxmFragmentProgram> _fps = new();
 
     public int ProgramCount => _ids.Count + _infos.Count;
@@ -462,52 +462,52 @@ public sealed class GpuDumpCodec
         return id;
     }
 
-    private int VertexProgramId(GxmVertexProgram vp, DumpBuffer w)
+    private int VertexProgramId(GxmVertexProgram gxmVertexProgram, DumpBuffer w)
     {
-        if (_ids.TryGetValue(vp, out int id))
+        if (_ids.TryGetValue(gxmVertexProgram, out int id))
         {
             return id;
         }
 
-        int info = InfoId(vp.Info, w);
-        id = _ids[vp] = _nextVp++;
+        int info = InfoId(gxmVertexProgram.Info, w);
+        id = _ids[gxmVertexProgram] = _nextVp++;
         w.U8((byte)GpuDumpRecord.VertexProgram);
         w.Var((uint)id);
         w.Var((uint)info);
-        w.U32(vp.Handle);
-        w.Var((uint)vp.Attributes.Length);
-        foreach (GxmVertexAttribute a in vp.Attributes)
+        w.U32(gxmVertexProgram.Handle);
+        w.Var((uint)gxmVertexProgram.Attributes.Length);
+        foreach (GxmVertexAttribute gxmVertexAttribute in gxmVertexProgram.Attributes)
         {
-            w.U16(a.StreamIndex);
-            w.U16(a.Offset);
-            w.U8(a.Format);
-            w.U8(a.ComponentCount);
-            w.U16(a.RegIndex);
+            w.U16(gxmVertexAttribute.StreamIndex);
+            w.U16(gxmVertexAttribute.Offset);
+            w.U8(gxmVertexAttribute.Format);
+            w.U8(gxmVertexAttribute.ComponentCount);
+            w.U16(gxmVertexAttribute.RegIndex);
         }
-        w.Var((uint)vp.Streams.Length);
-        foreach (GxmVertexStream s in vp.Streams)
+        w.Var((uint)gxmVertexProgram.Streams.Length);
+        foreach (GxmVertexStream gxmVertexStream in gxmVertexProgram.Streams)
         {
-            w.U16(s.Stride);
-            w.U16(s.IndexSource);
+            w.U16(gxmVertexStream.Stride);
+            w.U16(gxmVertexStream.IndexSource);
         }
         return id;
     }
 
-    private int FragmentProgramId(GxmFragmentProgram fp, DumpBuffer w)
+    private int FragmentProgramId(GxmFragmentProgram gxmFragmentProgram, DumpBuffer w)
     {
-        if (_ids.TryGetValue(fp, out int id))
+        if (_ids.TryGetValue(gxmFragmentProgram, out int id))
         {
             return id;
         }
 
-        int info = fp.Info != null ? InfoId(fp.Info, w) + 1 : 0;
-        id = _ids[fp] = _nextFp++;
+        int info = gxmFragmentProgram.Info != null ? InfoId(gxmFragmentProgram.Info, w) + 1 : 0;
+        id = _ids[gxmFragmentProgram] = _nextFp++;
         w.U8((byte)GpuDumpRecord.FragmentProgram);
         w.Var((uint)id);
         w.Var((uint)info);
-        w.U32(fp.Handle);
-        w.Bool(fp.Blend.HasValue);
-        if (fp.Blend is { } b)
+        w.U32(gxmFragmentProgram.Handle);
+        w.Bool(gxmFragmentProgram.Blend.HasValue);
+        if (gxmFragmentProgram.Blend is { } b)
         {
             w.U8(b.ColorMask);
             w.U8(b.ColorFunc);
@@ -517,9 +517,9 @@ public sealed class GpuDumpCodec
             w.U8(b.AlphaSrc);
             w.U8(b.AlphaDst);
         }
-        w.U32(fp.OutputFormat);
-        w.U32(fp.MultisampleMode);
-        w.Bool(fp.IsMaskUpdate);
+        w.U32(gxmFragmentProgram.OutputFormat);
+        w.U32(gxmFragmentProgram.MultisampleMode);
+        w.Bool(gxmFragmentProgram.IsMaskUpdate);
         return id;
     }
 
@@ -616,23 +616,23 @@ public sealed class GpuDumpCodec
         w.Var((ulong)Math.Max(0, present));
     }
 
-    private static void WriteSide(DumpBuffer w, in SideState s)
+    private static void WriteSide(DumpBuffer w, in SideState sideState)
     {
-        w.U8(s.DepthFunc);
-        w.Bool(s.DepthWrite);
-        w.U8(s.Stencil.Func);
-        w.U8(s.Stencil.StencilFail);
-        w.U8(s.Stencil.DepthFail);
-        w.U8(s.Stencil.DepthPass);
-        w.U8(s.Stencil.CompareMask);
-        w.U8(s.Stencil.WriteMask);
-        w.U8(s.Stencil.Ref);
-        w.U8(s.PolygonMode);
-        w.Bool(s.FragmentEnabled);
-        w.I32(s.DepthBiasFactor);
-        w.I32(s.DepthBiasUnits);
-        w.U8(s.PointLineWidth);
-        w.Bool(s.LineFillLastPixel);
+        w.U8(sideState.DepthFunc);
+        w.Bool(sideState.DepthWrite);
+        w.U8(sideState.Stencil.Func);
+        w.U8(sideState.Stencil.StencilFail);
+        w.U8(sideState.Stencil.DepthFail);
+        w.U8(sideState.Stencil.DepthPass);
+        w.U8(sideState.Stencil.CompareMask);
+        w.U8(sideState.Stencil.WriteMask);
+        w.U8(sideState.Stencil.Ref);
+        w.U8(sideState.PolygonMode);
+        w.Bool(sideState.FragmentEnabled);
+        w.I32(sideState.DepthBiasFactor);
+        w.I32(sideState.DepthBiasUnits);
+        w.U8(sideState.PointLineWidth);
+        w.Bool(sideState.LineFillLastPixel);
     }
 
     private static SideState ReadSide(DumpCursor r) => new()
@@ -678,36 +678,36 @@ public sealed class GpuDumpCodec
         }
     }
 
-    private static void WriteTextures(DumpBuffer w, GxmTextureDesc[] t)
+    private static void WriteTextures(DumpBuffer w, GxmTextureDesc[] gxmTextureDescs)
     {
         uint mask = 0;
-        for (int i = 0; i < t.Length; i++)
+        for (int i = 0; i < gxmTextureDescs.Length; i++)
         {
-            if (t[i] != default)
+            if (gxmTextureDescs[i] != default)
             {
                 mask |= 1u << i;
             }
         }
 
         w.U16((ushort)mask);
-        for (int i = 0; i < t.Length; i++)
+        for (int i = 0; i < gxmTextureDescs.Length; i++)
         {
-            if (t[i] != default)
+            if (gxmTextureDescs[i] != default)
             {
-                w.U32(t[i].W0);
-                w.U32(t[i].W1);
-                w.U32(t[i].W2);
-                w.U32(t[i].W3);
+                w.U32(gxmTextureDescs[i].W0);
+                w.U32(gxmTextureDescs[i].W1);
+                w.U32(gxmTextureDescs[i].W2);
+                w.U32(gxmTextureDescs[i].W3);
             }
         }
     }
 
-    private static void ReadTextures(DumpCursor r, GxmTextureDesc[] t)
+    private static void ReadTextures(DumpCursor r, GxmTextureDesc[] gxmTextureDescs)
     {
         uint mask = r.U16();
-        for (int i = 0; i < t.Length; i++)
+        for (int i = 0; i < gxmTextureDescs.Length; i++)
         {
-            t[i] = (mask & (1u << i)) != 0 ? new GxmTextureDesc(r.U32(), r.U32(), r.U32(), r.U32()) : default;
+            gxmTextureDescs[i] = (mask & (1u << i)) != 0 ? new GxmTextureDesc(r.U32(), r.U32(), r.U32(), r.U32()) : default;
         }
     }
 
@@ -720,15 +720,15 @@ public sealed class GpuDumpCodec
         }
 
         byte[] full = new byte[info.UniformBytes];
-        foreach (UniformBufferSlot s in info.UniformSlots)
+        foreach (UniformBufferSlot uniformBufferSlot in info.UniformSlots)
         {
-            if (s.IsSplit)
+            if (uniformBufferSlot.IsSplit)
             {
-                d.SplitSpan(stage + s.Split).CopyTo(full.AsSpan(s.ByteOffset));
+                d.SplitSpan(stage + uniformBufferSlot.Split).CopyTo(full.AsSpan(uniformBufferSlot.ByteOffset));
             }
-            else if (s.DataOffset < data.Length)
+            else if (uniformBufferSlot.DataOffset < data.Length)
             {
-                data.Slice(s.DataOffset, Math.Min(s.ByteSize, data.Length - s.DataOffset)).CopyTo(full.AsSpan(s.ByteOffset));
+                data.Slice(uniformBufferSlot.DataOffset, Math.Min(uniformBufferSlot.ByteSize, data.Length - uniformBufferSlot.DataOffset)).CopyTo(full.AsSpan(uniformBufferSlot.ByteOffset));
             }
         }
         return full;
@@ -808,7 +808,7 @@ public sealed class GpuDumpCodec
                     streams[i] = new GxmVertexStream(r.U16(), r.U16());
                 }
 
-                Put(_vps, id, new GxmVertexProgram { Handle = handle, Info = _infos[info], Attributes = attrs, Streams = streams });
+                Put(_vertexPrograms, id, new GxmVertexProgram { Handle = handle, Info = _infos[info], Attributes = attrs, Streams = streams });
                 break;
             }
             case GpuDumpRecord.FragmentProgram:
@@ -848,9 +848,9 @@ public sealed class GpuDumpCodec
     /// </summary>
     public GpuCommand ReadCommand(GpuDumpRecord kind, DumpCursor r, DrawCommand draw)
     {
-        GpuCommand c = ReadCommandRecord(kind, r, draw);
-        c.Pid = ReadPid;
-        return c;
+        GpuCommand gpuCommand = ReadCommandRecord(kind, r, draw);
+        gpuCommand.Pid = ReadPid;
+        return gpuCommand;
     }
 
     /// <summary>The process of the commands written last / read next (<see cref="GpuDumpRecord.Process"/>).</summary>
@@ -907,7 +907,7 @@ public sealed class GpuDumpCodec
     private DrawCommand ReadDraw(DumpCursor r, DrawCommand d)
     {
         d.Reset();
-        d.VertexProgram = _vps[r.VarInt()];
+        d.VertexProgram = _vertexPrograms[r.VarInt()];
         d.FragmentProgram = _fps[r.VarInt()];
         var s = new DrawState { CullMode = r.U8(), TwoSided = r.Bool() };
         s.Front = ReadSide(r);

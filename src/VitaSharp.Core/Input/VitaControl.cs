@@ -38,7 +38,7 @@ public static class VitaControls
     public static readonly VitaControl[] All = Enum.GetValues<VitaControl>();
 
     /// <summary>The SCE_CTRL button bit of a digital control, None for stick directions and touch.</summary>
-    public static VitaButtons Button(VitaControl c) => c switch
+    public static VitaButtons Button(VitaControl vitaControl) => vitaControl switch
     {
         VitaControl.Up => VitaButtons.Up,
         VitaControl.Down => VitaButtons.Down,
@@ -58,16 +58,16 @@ public static class VitaControls
         _ => VitaButtons.None,
     };
 
-    public static bool IsStickDirection(VitaControl c) => c is >= VitaControl.LStickUp and <= VitaControl.RStickRight;
+    public static bool IsStickDirection(VitaControl vitaControl) => vitaControl is >= VitaControl.LStickUp and <= VitaControl.RStickRight;
 
     /// <summary>Controls of the virtual motion sensors (keyboard tilt), not of the Vita's buttons.</summary>
-    public static bool IsMotion(VitaControl c) => c is >= VitaControl.TiltForward and <= VitaControl.MotionRecenter;
+    public static bool IsMotion(VitaControl vitaControl) => vitaControl is >= VitaControl.TiltForward and <= VitaControl.MotionRecenter;
 
     /// <summary>Emulator hotkeys (pause), handled by the front-end and never seen by the game.</summary>
-    public static bool IsHotkey(VitaControl c) => c == VitaControl.PauseEmulation;
+    public static bool IsHotkey(VitaControl vitaControl) => vitaControl == VitaControl.PauseEmulation;
 
     /// <summary>English label for the configuration screen.</summary>
-    public static string Label(VitaControl c) => c switch
+    public static string Label(VitaControl vitaControl) => vitaControl switch
     {
         VitaControl.Up => "D-pad up",
         VitaControl.Down => "D-pad down",
@@ -102,6 +102,6 @@ public static class VitaControls
         VitaControl.TwistRight => "Twist right",
         VitaControl.MotionRecenter => "Re-centre motion",
         VitaControl.PauseEmulation => "Pause emulation",
-        _ => c.ToString(),
+        _ => vitaControl.ToString(),
     };
 }

@@ -67,7 +67,7 @@ public sealed unsafe class IlJitCompiler : IBlockCompiler
     public static readonly bool CountExecutions = !string.IsNullOrWhiteSpace(Environment.GetEnvironmentVariable(Util.EnvVars.IlDump));
 
     /// <summary>The block's body: one handler call per instruction, guarded by its condition, then return.</summary>
-    private static void EmitBlock(ILGenerator il, Block b)
+    private static void EmitBlock(ILGenerator ilGenerator, Block b)
     {
         DecodedInst[] insts = b.Insts;
         for (int i = 0; i < insts.Length; i++)
@@ -76,7 +76,7 @@ public sealed unsafe class IlJitCompiler : IBlockCompiler
             bool last = i == insts.Length - 1;
             if (d.EndsBlock || last)
             {
-                EmitStorePc(il, d.Address + d.Size);
+                EmitStorePc(ilGenerator, d.Address + d.Size);
             }
 
             if (d.Op is Op.Thumb_It or Op.A32_Nop or Op.T16_Nop or Op.T32_Nop)
@@ -88,30 +88,30 @@ public sealed unsafe class IlJitCompiler : IBlockCompiler
             bool cond = (d.Flags & InstFlags.Conditional) != 0;
             if (cond)
             {
-                skip = il.DefineLabel();
-                il.Emit(OpCodes.Ldarg_0);
-                il.Emit(OpCodes.Ldc_I4, (int)d.Cond);
-                il.Emit(OpCodes.Call, s_condPassed);
-                il.Emit(OpCodes.Brfalse, skip);
+                skip = ilGenerator.DefineLabel();
+                ilGenerator.Emit(OpCodes.Ldarg_0);
+                ilGenerator.Emit(OpCodes.Ldc_I4, (int)d.Cond);
+                ilGenerator.Emit(OpCodes.Call, s_condPassed);
+                ilGenerator.Emit(OpCodes.Brfalse, skip);
             }
-            il.Emit(OpCodes.Ldarg_0);
-            il.Emit(OpCodes.Ldc_I4, (int)d.Raw);
-            il.Emit(OpCodes.Ldc_I4, (int)d.Address);
-            il.Emit(OpCodes.Call, HandlerTable.Methods[(int)d.Op]);
+            ilGenerator.Emit(OpCodes.Ldarg_0);
+            ilGenerator.Emit(OpCodes.Ldc_I4, (int)d.Raw);
+            ilGenerator.Emit(OpCodes.Ldc_I4, (int)d.Address);
+            ilGenerator.Emit(OpCodes.Call, HandlerTable.Methods[(int)d.Op]);
             if (cond)
             {
-                il.MarkLabel(skip);
+                ilGenerator.MarkLabel(skip);
             }
         }
-        il.Emit(OpCodes.Ret);
+        ilGenerator.Emit(OpCodes.Ret);
     }
 
-    private static void EmitStorePc(ILGenerator il, uint pc)
+    private static void EmitStorePc(ILGenerator ilGenerator, uint pc)
     {
-        il.Emit(OpCodes.Ldarg_0);
-        il.Emit(OpCodes.Ldc_I4, PcOffset);
-        il.Emit(OpCodes.Add);
-        il.Emit(OpCodes.Ldc_I4, (int)pc);
-        il.Emit(OpCodes.Stind_I4);
+        ilGenerator.Emit(OpCodes.Ldarg_0);
+        ilGenerator.Emit(OpCodes.Ldc_I4, PcOffset);
+        ilGenerator.Emit(OpCodes.Add);
+        ilGenerator.Emit(OpCodes.Ldc_I4, (int)pc);
+        ilGenerator.Emit(OpCodes.Stind_I4);
     }
 }

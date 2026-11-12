@@ -381,11 +381,11 @@ public sealed unsafe partial class VulkanRenderer
             AccessFlags.TransferWriteBit, AccessFlags.ShaderReadBit | AccessFlags.ShaderWriteBit);
     }
 
-    private static void WriteHeader(Span<byte> data, UniformBufferSlot s, uint offset)
+    private static void WriteHeader(Span<byte> data, UniformBufferSlot uniformBufferSlot, uint offset)
     {
-        if (s.DataOffset + 4 <= data.Length)
+        if (uniformBufferSlot.DataOffset + 4 <= data.Length)
         {
-            BitConverter.TryWriteBytes(data[s.DataOffset..], ShaderGenerator.MappedFlag | offset);
+            BitConverter.TryWriteBytes(data[uniformBufferSlot.DataOffset..], ShaderGenerator.MappedFlag | offset);
         }
     }
 

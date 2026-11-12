@@ -185,19 +185,19 @@ public sealed unsafe partial class GuestMemory : IDisposable
 
         lock (_lock)
         {
-            if (_idle.TryPop(out AddressSpace? s))
+            if (_idle.TryPop(out AddressSpace? addressSpace))
             {
-                s.Renew();
+                addressSpace.Renew();
             }
             else
             {
-                s = NewSpace(true) ?? throw new OutOfMemoryException("cannot reserve another guest address space");
+                addressSpace = NewSpace(true) ?? throw new OutOfMemoryException("cannot reserve another guest address space");
             }
 
             Volatile.Write(ref s_onePrimarySpace, false); // threads now follow their own space
-            s.Label = label;
-            Log.Info($"Guest memory: {s} created");
-            return s;
+            addressSpace.Label = label;
+            Log.Info($"Guest memory: {addressSpace} created");
+            return addressSpace;
         }
     }
 
@@ -231,18 +231,18 @@ public sealed unsafe partial class GuestMemory : IDisposable
     /// <summary>The space a host address belongs to, or null.</summary>
     public AddressSpace? SpaceOfHost(ulong hostAddress)
     {
-        foreach (AddressSpace s in Spaces)
+        foreach (AddressSpace addressSpace in Spaces)
         {
-            if (s.ContainsHost(hostAddress))
+            if (addressSpace.ContainsHost(hostAddress))
             {
-                return s;
+                return addressSpace;
             }
         }
 
         return null;
     }
 
-    private static AddressSpace CurrentOf(GuestMemory m) => AddressSpace.Current ?? m.Primary;
+    private static AddressSpace CurrentOf(GuestMemory guestMemory) => AddressSpace.Current ?? guestMemory.Primary;
 
     // ---------------- raw access (the calling thread's space)
 
@@ -559,9 +559,9 @@ public sealed unsafe partial class GuestMemory : IDisposable
             yield return b;
         }
 
-        foreach (AddressSpace s in _spaces)
+        foreach (AddressSpace addressSpace in _spaces)
         {
-            foreach (Block b in s._blocks.Values)
+            foreach (Block b in addressSpace._blocks.Values)
             {
                 yield return b;
             }
@@ -628,9 +628,9 @@ public sealed unsafe partial class GuestMemory : IDisposable
     {
         ulong end = (ulong)start + size;
         List<(uint S, ulong E)>? used = null;
-        foreach (AddressSpace s in _spaces)
+        foreach (AddressSpace addressSpace in _spaces)
         {
-            foreach (Block b in s._blocks.Values)
+            foreach (Block b in addressSpace._blocks.Values)
             {
                 if (b.Region == MemoryRegion.User && b.Address < end && (ulong)b.Address + b.Size > start)
                 {
@@ -755,13 +755,13 @@ public sealed unsafe partial class GuestMemory : IDisposable
     /// calling thread's space.</summary>
     public static bool IsMapped(uint addr)
     {
-        GuestMemory? m = Instance;
-        if (m == null)
+        GuestMemory? guestMemory = Instance;
+        if (guestMemory == null)
         {
             return false;
         }
 
-        ulong[] bits = InSharedRegion(addr) ? m._sharedMapped : CurrentOf(m)._mappedPages;
+        ulong[] bits = InSharedRegion(addr) ? guestMemory._sharedMapped : CurrentOf(guestMemory)._mappedPages;
         return (Volatile.Read(ref bits[addr >> 18]) & (1UL << (int)((addr >> 12) & 63))) != 0;
     }
 
@@ -776,9 +776,9 @@ public sealed unsafe partial class GuestMemory : IDisposable
 
         lock (_lock)
         {
-            foreach (AddressSpace s in _spaces)
+            foreach (AddressSpace addressSpace in _spaces)
             {
-                HostVirtualMemory.ReleaseWithViews(s._parts);
+                HostVirtualMemory.ReleaseWithViews(addressSpace._parts);
             }
 
             _spaces.Clear();

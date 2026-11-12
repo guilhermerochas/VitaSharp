@@ -41,7 +41,7 @@ public sealed unsafe partial class VulkanRenderer
         public ulong[] Results = [];
     }
 
-    private Action<IReadOnlyList<DrawCostRecord>>? CostSink => _opt.DrawCostSink;
+    private Action<IReadOnlyList<DrawCostRecord>>? CostSink => _options.DrawCostSink;
     private readonly Dictionary<(ulong Hash, ulong Hint, bool Vertex), string> _costGlsl = new();
     private readonly Dictionary<long, (long LoadBytes, long StoreBytes)> _costTileBytes = new();
     private int _costDrawFirst = -1, _costDrawCount, _costVis = -1;
@@ -76,11 +76,11 @@ public sealed unsafe partial class VulkanRenderer
             return;
         }
 
-        CostFrame c = CostOf(f);
-        _vk.CmdResetQueryPool(f.Cmd, c.Pool, 0, CostQueriesPerFrame);
-        c.Used = 0;
-        c.Draws.Clear();
-        c.Queries.Clear();
+        CostFrame costFrame = CostOf(f);
+        _vk.CmdResetQueryPool(f.Cmd, costFrame.Pool, 0, CostQueriesPerFrame);
+        costFrame.Used = 0;
+        costFrame.Draws.Clear();
+        costFrame.Queries.Clear();
     }
 
     /// <summary>Before the draw commands of one piece of a draw (inside its rendering).</summary>
@@ -91,20 +91,20 @@ public sealed unsafe partial class VulkanRenderer
             return; // a visibility query is begun instead (one occlusion query at a time)
         }
 
-        CostFrame c = CostOf(F);
-        if (c.Used >= CostQueriesPerFrame)
+        CostFrame costFrame = CostOf(F);
+        if (costFrame.Used >= CostQueriesPerFrame)
         {
             Log.WarnOnce("costq-full", "[cost] occlusion queries per frame exhausted");
             return;
         }
-        _costOpen = c.Used++;
+        _costOpen = costFrame.Used++;
         if (_costDrawFirst < 0)
         {
             _costDrawFirst = (int)_costOpen;
         }
 
         _costDrawCount++;
-        _vk.CmdBeginQuery(cmd, c.Pool, _costOpen, _core.OcclusionQueryPrecise ? QueryControlFlags.PreciseBit : 0);
+        _vk.CmdBeginQuery(cmd, costFrame.Pool, _costOpen, _core.OcclusionQueryPrecise ? QueryControlFlags.PreciseBit : 0);
     }
 
     private void EndCostQuery(CommandBuffer cmd)
@@ -129,8 +129,8 @@ public sealed unsafe partial class VulkanRenderer
     /// <summary>After the draw was recorded: its record (the shaders are the variants it was drawn with).</summary>
     private void CostNoteDraw(DrawCommand d, VsEntry vs, FsEntry fs)
     {
-        CostFrame c = CostOf(F);
-        c.Draws.Add(new DrawCostRecord
+        CostFrame costFrame = CostOf(F);
+        costFrame.Draws.Add(new DrawCostRecord
         {
             Present = _presentCount + 1,
             Serial = _drawSerial,
@@ -144,7 +144,7 @@ public sealed unsafe partial class VulkanRenderer
             RtW = _renderTarget?.Width ?? _depth?.Width ?? 0,
             RtH = _renderTarget?.Height ?? _depth?.Height ?? 0,
         });
-        c.Queries.Add((_costDrawFirst, _costDrawCount, _costVis));
+        costFrame.Queries.Add((_costDrawFirst, _costDrawCount, _costVis));
         _costDrawFirst = -1;
         _costDrawCount = 0;
         _costVis = -1;
@@ -213,30 +213,30 @@ public sealed unsafe partial class VulkanRenderer
     /// <summary>After the frame's fence (and its visibility results): sample counts into the records, then the sink.</summary>
     private void CompleteCost(Frame f)
     {
-        CostFrame? c = f.Cost;
-        if (c == null || CostSink == null || c.Draws.Count == 0)
+        CostFrame? costFrame = f.Cost;
+        if (costFrame == null || CostSink == null || costFrame.Draws.Count == 0)
         {
             return;
         }
 
-        if (c.Results.Length < c.Used)
+        if (costFrame.Results.Length < costFrame.Used)
         {
-            c.Results = new ulong[CostQueriesPerFrame];
+            costFrame.Results = new ulong[CostQueriesPerFrame];
         }
 
-        if (c.Used > 0)
+        if (costFrame.Used > 0)
         {
-            fixed (ulong* p = c.Results)
+            fixed (ulong* p = costFrame.Results)
             {
-                _vk.GetQueryPoolResults(_dev, c.Pool, 0, c.Used, (nuint)(c.Used * 8), p, 8, QueryResultFlags.Result64Bit | QueryResultFlags.ResultWaitBit);
+                _vk.GetQueryPoolResults(_dev, costFrame.Pool, 0, costFrame.Used, (nuint)(costFrame.Used * 8), p, 8, QueryResultFlags.Result64Bit | QueryResultFlags.ResultWaitBit);
             }
         }
 
         uint[]? vis = f.Visibility?.Results;
-        Span<DrawCostRecord> span = System.Runtime.InteropServices.CollectionsMarshal.AsSpan(c.Draws);
+        Span<DrawCostRecord> span = System.Runtime.InteropServices.CollectionsMarshal.AsSpan(costFrame.Draws);
         for (int i = 0; i < span.Length; i++)
         {
-            (int first, int count, int v) = c.Queries[i];
+            (int first, int count, int v) = costFrame.Queries[i];
             if (v >= 0)
             {
                 span[i].Samples = vis != null && v < vis.Length ? vis[v] : -1;
@@ -246,16 +246,16 @@ public sealed unsafe partial class VulkanRenderer
                 ulong s = 0;
                 for (int q = first; q < first + count; q++)
                 {
-                    s += c.Results[q];
+                    s += costFrame.Results[q];
                 }
 
                 span[i].Samples = (long)s;
             }
         }
-        CostSink(c.Draws);
-        c.Draws.Clear();
-        c.Queries.Clear();
-        c.Used = 0;
+        CostSink(costFrame.Draws);
+        costFrame.Draws.Clear();
+        costFrame.Queries.Clear();
+        costFrame.Used = 0;
     }
 
     private void DestroyCost(Frame f)

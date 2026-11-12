@@ -32,7 +32,7 @@ public static class MotionAxes
     public static MotionSample FromGamepad(ulong timestampUs, Vector3 accelMs2, Vector3 gyroRads, MotionOrientation orientation = MotionOrientation.Natural)
         => new(timestampUs, Map(accelMs2, orientation) / -StandardGravity, Map(gyroRads, orientation));
 
-    private static Vector3 Map(Vector3 v, MotionOrientation o) => o switch
+    private static Vector3 Map(Vector3 v, MotionOrientation motionOrientation) => motionOrientation switch
     {
         // rotate +90 degrees about x: controller face up -> screen up
         MotionOrientation.Natural => new Vector3(v.X, -v.Z, v.Y),

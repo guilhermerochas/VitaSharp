@@ -186,29 +186,29 @@ public sealed class GxpProgram
     public uint TexturesUsed()
     {
         uint m = 0;
-        foreach (GxpParameter p in Parameters)
+        foreach (GxpParameter gxpParameter in Parameters)
         {
-            if (p.Category == ParamCategory.Sampler && p.ResourceIndex < 16)
+            if (gxpParameter.Category == ParamCategory.Sampler && gxpParameter.ResourceIndex < 16)
             {
-                m |= 1u << (int)p.ResourceIndex;
+                m |= 1u << (int)gxpParameter.ResourceIndex;
             }
         }
         // symbols may be stripped: a non-dependent texture read is described only by its fragment varying
         // descriptor (gxp::get_textures_used in Vita3K; ShaderGenerator samples these units too)
         if (IsFragment)
         {
-            foreach (GxpAttributeDescriptor d in FragmentAttributeDescriptors())
+            foreach (GxpAttributeDescriptor gxpAttributeDescriptor in FragmentAttributeDescriptors())
             {
-                if ((d.AttributeInfo & 0x40F) != 0xF && d.ResourceIndex < 16)
+                if ((gxpAttributeDescriptor.AttributeInfo & 0x40F) != 0xF && gxpAttributeDescriptor.ResourceIndex < 16)
                 {
-                    m |= 1u << (int)d.ResourceIndex;
+                    m |= 1u << (int)gxpAttributeDescriptor.ResourceIndex;
                 }
             }
         }
 
-        foreach (GxpDependentSampler d in DependentSamplers)
+        foreach (GxpDependentSampler gxpDependentSampler in DependentSamplers)
         {
-            m |= 1u << (d.ResourceIndexLayoutOffset / 4);
+            m |= 1u << (gxpDependentSampler.ResourceIndexLayoutOffset / 4);
         }
 
         return m;
@@ -218,11 +218,11 @@ public sealed class GxpProgram
     public uint CubeSamplers()
     {
         uint m = 0;
-        foreach (GxpParameter p in Parameters)
+        foreach (GxpParameter gxpParameter in Parameters)
         {
-            if (p.Category == ParamCategory.Sampler && p.ResourceIndex < 16 && p.IsSamplerCube)
+            if (gxpParameter.Category == ParamCategory.Sampler && gxpParameter.ResourceIndex < 16 && gxpParameter.IsSamplerCube)
             {
-                m |= 1u << (int)p.ResourceIndex;
+                m |= 1u << (int)gxpParameter.ResourceIndex;
             }
         }
 
@@ -349,7 +349,7 @@ public sealed class GxpProgram
         return Encoding.ASCII.GetString(Data, o, (e < 0 ? Data.Length : e) - o);
     }
 
-    public static DataType StoreType(ParamType t) => t switch
+    public static DataType StoreType(ParamType paramType) => paramType switch
     {
         ParamType.F32 => DataType.F32,
         ParamType.F16 => DataType.F16,
@@ -363,17 +363,17 @@ public sealed class GxpProgram
         _ => DataType.Unk,
     };
 
-    public static int TypeSize(DataType t) => t switch
+    public static int TypeSize(DataType dataType) => dataType switch
     {
         DataType.Int8 or DataType.UInt8 or DataType.O8 or DataType.C10 => 1,
         DataType.Int16 or DataType.UInt16 or DataType.F16 => 2,
         _ => 4,
     };
 
-    public static bool IsFloat(DataType t) => t is DataType.C10 or DataType.F16 or DataType.F32;
-    public static bool IsUnsigned(DataType t) => t is DataType.UInt8 or DataType.UInt16 or DataType.UInt32;
-    public static bool IsSigned(DataType t) => t is DataType.Int8 or DataType.Int16 or DataType.Int32;
-    public static bool IsInteger(DataType t) => IsUnsigned(t) || IsSigned(t);
+    public static bool IsFloat(DataType dataType) => dataType is DataType.C10 or DataType.F16 or DataType.F32;
+    public static bool IsUnsigned(DataType dataType) => dataType is DataType.UInt8 or DataType.UInt16 or DataType.UInt32;
+    public static bool IsSigned(DataType dataType) => dataType is DataType.Int8 or DataType.Int16 or DataType.Int32;
+    public static bool IsInteger(DataType dataType) => IsUnsigned(dataType) || IsSigned(dataType);
 }
 
 // ---------------------------------------------------------------------------------- program inputs
@@ -429,39 +429,39 @@ public sealed class ProgramInput
         uint investigated = 0;
         bool symbolsStripped = program.PrimaryRegCount == 0;
 
-        foreach (GxpParameter p in program.Parameters)
+        foreach (GxpParameter gxpParameter in program.Parameters)
         {
-            switch (p.Category)
+            switch (gxpParameter.Category)
             {
                 case ParamCategory.Uniform:
                 case ParamCategory.Attribute:
                 {
-                    bool isUniform = p.Category == ParamCategory.Uniform;
-                    GxpContainer? container = program.ContainerByIndex(p.ContainerIndex);
-                    uint offset = p.ResourceIndex;
+                    bool isUniform = gxpParameter.Category == ParamCategory.Uniform;
+                    GxpContainer? container = program.ContainerByIndex(gxpParameter.ContainerIndex);
+                    uint offset = gxpParameter.ResourceIndex;
                     if (container != null && isUniform)
                     {
-                        offset = container.BaseSaOffset + p.ResourceIndex;
+                        offset = container.BaseSaOffset + gxpParameter.ResourceIndex;
                     }
 
-                    DataType storeType = GxpProgram.StoreType(p.Type);
+                    DataType storeType = GxpProgram.StoreType(gxpParameter.Type);
                     if (!isUniform)
                     {
-                        bool regformat = (program.UntypedPaRegs & (1ul << (int)p.ResourceIndex)) != 0;
-                        pi.Inputs.Add(new ProgramInputItem(InputBank.PrimAttr, storeType, offset, (uint)p.ComponentCount, p.ArraySize,
-                            new AttributeInputSource(p.Name, p.ResourceIndex, p.Semantic, regformat)));
+                        bool regformat = (program.UntypedPaRegs & (1ul << (int)gxpParameter.ResourceIndex)) != 0;
+                        pi.Inputs.Add(new ProgramInputItem(InputBank.PrimAttr, storeType, offset, (uint)gxpParameter.ComponentCount, gxpParameter.ArraySize,
+                            new AttributeInputSource(gxpParameter.Name, gxpParameter.ResourceIndex, gxpParameter.Semantic, regformat)));
                     }
                     else
                     {
-                        uint vecSize = (uint)(p.ComponentCount * GxpProgram.TypeSize(storeType));
-                        if (p.ArraySize != 1)
+                        uint vecSize = (uint)(gxpParameter.ComponentCount * GxpProgram.TypeSize(storeType));
+                        if (gxpParameter.ArraySize != 1)
                         {
-                            vecSize = GxpProgram.IsFloat(storeType) && p.ComponentCount != 1 ? (vecSize + 7) & ~7u : (vecSize + 3) & ~3u;
+                            vecSize = GxpProgram.IsFloat(storeType) && gxpParameter.ComponentCount != 1 ? (vecSize + 7) & ~7u : (vecSize + 3) & ~3u;
                         }
 
-                        uint paramSizeF32 = (p.ArraySize * vecSize + 3) / 4;
-                        investigated |= 1u << p.ContainerIndex;
-                        uint ci = (uint)p.ContainerIndex;
+                        uint paramSizeF32 = (gxpParameter.ArraySize * vecSize + 3) / 4;
+                        investigated |= 1u << gxpParameter.ContainerIndex;
+                        uint ci = (uint)gxpParameter.ContainerIndex;
                         if (!ubs.TryGetValue(ci, out UniformBufferDesc? b))
                         {
                             b = new UniformBufferDesc
@@ -469,20 +469,20 @@ public sealed class ProgramInput
                                 Index = ci,
                                 RegBlockSize = container?.SizeInF32 ?? 0,
                                 RegStartOffset = container != null ? container.BaseSaOffset : offset,
-                                Size = p.ResourceIndex + paramSizeF32,
-                                EndsWithArray = p.ArraySize > 1,
+                                Size = gxpParameter.ResourceIndex + paramSizeF32,
+                                EndsWithArray = gxpParameter.ArraySize > 1,
                             };
                             ubs[ci] = b;
                         }
                         else
                         {
-                            uint end = p.ResourceIndex + paramSizeF32;
+                            uint end = gxpParameter.ResourceIndex + paramSizeF32;
                             if (end > b.Size)
                             {
                                 b.Size = end;
-                                b.EndsWithArray = p.ArraySize > 1;
+                                b.EndsWithArray = gxpParameter.ArraySize > 1;
                             }
-                            else if (end == b.Size && p.ArraySize > 1)
+                            else if (end == b.Size && gxpParameter.ArraySize > 1)
                             {
                                 b.EndsWithArray = true;
                             }
@@ -496,16 +496,16 @@ public sealed class ProgramInput
                     break;
                 }
                 case ParamCategory.Sampler:
-                    pi.Samplers.Add(new SamplerDesc(p.Name, p.ResourceIndex, p.IsSamplerCube));
+                    pi.Samplers.Add(new SamplerDesc(gxpParameter.Name, gxpParameter.ResourceIndex, gxpParameter.IsSamplerCube));
                     break;
                 case ParamCategory.UniformBuffer:
-                    if (!ubs.TryGetValue(p.ResourceIndex, out UniformBufferDesc? ub))
+                    if (!ubs.TryGetValue(gxpParameter.ResourceIndex, out UniformBufferDesc? ub))
                     {
-                        ubs[p.ResourceIndex] = new UniformBufferDesc { Index = p.ResourceIndex, Size = (p.ArraySize + 3) / 4 };
+                        ubs[gxpParameter.ResourceIndex] = new UniformBufferDesc { Index = gxpParameter.ResourceIndex, Size = (gxpParameter.ArraySize + 3) / 4 };
                     }
                     else
                     {
-                        ub.Size = Math.Max((p.ArraySize + 3) / 4, ub.Size);
+                        ub.Size = Math.Max((gxpParameter.ArraySize + 3) / 4, ub.Size);
                     }
 
                     break;
@@ -585,32 +585,32 @@ public sealed class ProgramInput
 
         if (c19 != null)
         {
-            foreach (GxpDependentSampler ds in program.DependentSamplers)
+            foreach (GxpDependentSampler gxpDependentSampler in program.DependentSamplers)
             {
-                uint rsc = ds.ResourceIndexLayoutOffset / 4u;
-                SamplerDesc? s = pi.Samplers.FirstOrDefault(x => x.Index == rsc);
+                uint rsc = gxpDependentSampler.ResourceIndexLayoutOffset / 4u;
+                SamplerDesc? samplerDesc = pi.Samplers.FirstOrDefault(x => x.Index == rsc);
                 string name;
-                if (s == null)
+                if (samplerDesc == null)
                 {
                     name = $"anonymousSampler{rsc}";
                     pi.Samplers.Add(new SamplerDesc(name, rsc, false));
                 }
                 else
                 {
-                    name = s.Name;
+                    name = samplerDesc.Name;
                 }
 
-                pi.Inputs.Add(new ProgramInputItem(InputBank.SecAttr, DataType.UInt32, (uint)(c19.BaseSaOffset + ds.SaOffset), 1, 1,
-                    new DependentSamplerInputSource(name, rsc, ds.ResourceIndexLayoutOffset % 4u)));
+                pi.Inputs.Add(new ProgramInputItem(InputBank.SecAttr, DataType.UInt32, (uint)(c19.BaseSaOffset + gxpDependentSampler.SaOffset), 1, 1,
+                    new DependentSamplerInputSource(name, rsc, gxpDependentSampler.ResourceIndexLayoutOffset % 4u)));
             }
         }
 
         GxpContainer? lc = program.ContainerByIndex(16) ?? c19;
         if (lc != null)
         {
-            foreach (GxpLiteral l in program.Literals)
+            foreach (GxpLiteral gxpLiteral in program.Literals)
             {
-                pi.Inputs.Add(new ProgramInputItem(InputBank.SecAttr, DataType.F32, lc.BaseSaOffset + l.Offset, 1, 1, new LiteralInputSource(l.Data)));
+                pi.Inputs.Add(new ProgramInputItem(InputBank.SecAttr, DataType.F32, lc.BaseSaOffset + gxpLiteral.Offset, 1, 1, new LiteralInputSource(gxpLiteral.Data)));
             }
         }
 

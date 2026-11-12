@@ -10,30 +10,30 @@ public sealed partial class UsseTranslator
     private static readonly DataType[] s_smpDestFmt = [DataType.Unk, DataType.Unk, DataType.F16, DataType.F32];
 
     /// <summary>GLSL for a texture fetch (port of do_fetch_texture).</summary>
-    private Val FetchTexture(SamplerUse s, string coords, int dim, DataType destType, int lodMode, string? extra1 = null, string? extra2 = null, int gatherComp = -1)
+    private Val FetchTexture(SamplerUse samplerUse, string coords, int dim, DataType destType, int lodMode, string? extra1 = null, string? extra2 = null, int gatherComp = -1)
     {
         string e;
         // a reinterpreted render target above native: one texel at the native mapping (ShaderGenerator.RtFetchHelper)
-        if (s.RtFetch != null && gatherComp < 0 && !s.IsCube)
+        if (samplerUse.RtFetch != null && gatherComp < 0 && !samplerUse.IsCube)
         {
-            e = lodMode == 4 && dim == 3 ? $"{s.RtFetch}(({coords}).xy / ({coords}).z)" : $"{s.RtFetch}(({coords}).xy)";
+            e = lodMode == 4 && dim == 3 ? $"{samplerUse.RtFetch}(({coords}).xy / ({coords}).z)" : $"{samplerUse.RtFetch}(({coords}).xy)";
         }
         else if (gatherComp >= 0)
         {
-            e = $"textureGather({s.GlslName}, {coords}, {gatherComp})";
+            e = $"textureGather({samplerUse.GlslName}, {coords}, {gatherComp})";
         }
         else if (extra1 == null)
         {
-            e = lodMode == 4 ? $"textureProj({s.GlslName}, {coords})" : $"texture({s.GlslName}, {coords})";
+            e = lodMode == 4 ? $"textureProj({samplerUse.GlslName}, {coords})" : $"texture({samplerUse.GlslName}, {coords})";
         }
         else
         {
             e = lodMode switch
             {
-                1 => $"texture({s.GlslName}, {coords}, {extra1})",
-                2 => $"textureLod({s.GlslName}, {coords}, {extra1})",
-                3 => $"textureGrad({s.GlslName}, {coords}, {extra1}, {extra2})",
-                _ => $"texture({s.GlslName}, {coords})",
+                1 => $"texture({samplerUse.GlslName}, {coords}, {extra1})",
+                2 => $"textureLod({samplerUse.GlslName}, {coords}, {extra1})",
+                3 => $"textureGrad({samplerUse.GlslName}, {coords}, {extra1}, {extra2})",
+                _ => $"texture({samplerUse.GlslName}, {coords})",
             };
         }
 

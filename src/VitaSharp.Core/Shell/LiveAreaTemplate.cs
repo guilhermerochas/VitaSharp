@@ -141,10 +141,10 @@ public sealed class LiveAreaTemplate
         foreach (string? rel in new[] { "sce_sys/retail/livearea/contents", "sce_sys/livearea/contents" })
         {
             string dir = Io.Vfs.ResolveCaseInsensitive(appDir, rel);
-            LiveAreaTemplate? t = TryLoad(dir, language);
-            if (t != null)
+            LiveAreaTemplate? liveAreaTemplate = TryLoad(dir, language);
+            if (liveAreaTemplate != null)
             {
-                return t;
+                return liveAreaTemplate;
             }
         }
         if (fsRoot == null)
@@ -167,9 +167,9 @@ public sealed class LiveAreaTemplate
 
         try
         {
-            LiveAreaTemplate t = Parse(File.ReadAllText(xml), language);
-            t.ContentsDir = contentsDir;
-            return t;
+            LiveAreaTemplate liveAreaTemplate = Parse(File.ReadAllText(xml), language);
+            liveAreaTemplate.ContentsDir = contentsDir;
+            return liveAreaTemplate;
         }
         catch (Exception e) when (e is InvalidDataException or IOException or UnauthorizedAccessException)
         {
@@ -306,9 +306,9 @@ public sealed class LiveAreaTemplate
 
     private static string Attr(XElement e, string name) => ((string?)e.Attribute(name) ?? "").Trim().ToLowerInvariant();
 
-    private static int Int(XAttribute? a) => a != null && int.TryParse(a.Value.Trim(), NumberStyles.Integer, CultureInfo.InvariantCulture, out int v) ? v : 0;
+    private static int Int(XAttribute? xAttribute) => xAttribute != null && int.TryParse(xAttribute.Value.Trim(), NumberStyles.Integer, CultureInfo.InvariantCulture, out int v) ? v : 0;
 
-    private static float Float(XAttribute? a) => a != null && float.TryParse(a.Value.Trim(), NumberStyles.Float, CultureInfo.InvariantCulture, out float v) ? v : 0;
+    private static float Float(XAttribute? xAttribute) => xAttribute != null && float.TryParse(xAttribute.Value.Trim(), NumberStyles.Float, CultureInfo.InvariantCulture, out float v) ? v : 0;
 
     /// <summary>The Vita language code for a .NET culture ("pt-BR" -> "pt-br", "zh-Hant" -> "zh-t").</summary>
     public static string VitaLanguage(CultureInfo c)

@@ -33,7 +33,7 @@ public static class Mp4Demuxers
 /// Annex B byte stream with SPS/PPS before every key frame, the format hardware decoders take.</summary>
 public sealed unsafe class Mp4Demuxer : IMp4Demuxer
 {
-    private AVFormatContext* _fmt;
+    private AVFormatContext* _formatContext;
     private readonly AVPacket* _pkt;
     private readonly byte[][] _annexBHeaders;
     private readonly int[] _nalLengthSize;
@@ -43,7 +43,7 @@ public sealed unsafe class Mp4Demuxer : IMp4Demuxer
 
     private Mp4Demuxer(AVFormatContext* fmt)
     {
-        _fmt = fmt;
+        _formatContext = fmt;
         _pkt = ffmpeg.av_packet_alloc();
         int n = (int)fmt->nb_streams;
         var streams = new List<DemuxedStream>();
@@ -56,9 +56,9 @@ public sealed unsafe class Mp4Demuxer : IMp4Demuxer
             long dur = st->duration > 0 ? To90k(st->duration, st->time_base) : fmt->duration > 0 ? fmt->duration * 9 / 100 : 0;
             AVDictionaryEntry* lang = ffmpeg.av_dict_get(st->metadata, "language", null, 0);
             string language = lang != null ? new string((sbyte*)lang->value) : "und";
-            AVRational fr = st->avg_frame_rate;
+            AVRational frameRate = st->avg_frame_rate;
             streams.Add(new DemuxedStream(par->codec_type == AVMediaType.AVMEDIA_TYPE_VIDEO, par->codec_id, par->width, par->height,
-                par->ch_layout.nb_channels, par->sample_rate, (int)par->bit_rate, dur, fr.den != 0 ? (double)fr.num / fr.den : 0, language));
+                par->ch_layout.nb_channels, par->sample_rate, (int)par->bit_rate, dur, frameRate.den != 0 ? (double)frameRate.num / frameRate.den : 0, language));
             if (par->codec_id == AVCodecID.AV_CODEC_ID_H264 && par->extradata_size > 7 && par->extradata[0] == 1)
             {
                 (_annexBHeaders[i], _nalLengthSize[i]) = ParseAvcC(new ReadOnlySpan<byte>(par->extradata, par->extradata_size));
@@ -89,7 +89,7 @@ public sealed unsafe class Mp4Demuxer : IMp4Demuxer
         return new Mp4Demuxer(fmt);
     }
 
-    private static long To90k(long ts, AVRational tb) => ts == ffmpeg.AV_NOPTS_VALUE ? 0 : ts * 90000L * tb.num / tb.den;
+    private static long To90k(long ts, AVRational timeBase) => ts == ffmpeg.AV_NOPTS_VALUE ? 0 : ts * 90000L * timeBase.num / timeBase.den;
 
     /// <summary>avcC: SPS/PPS as Annex B, plus the NAL length field size.</summary>
     internal static (byte[], int) ParseAvcC(ReadOnlySpan<byte> c)
@@ -123,7 +123,7 @@ public sealed unsafe class Mp4Demuxer : IMp4Demuxer
     /// <summary>Next unit of any stream in file order, or null at the end.</summary>
     public DemuxedUnit? Next(Func<int, bool> enabled)
     {
-        while (ffmpeg.av_read_frame(_fmt, _pkt) >= 0)
+        while (ffmpeg.av_read_frame(_formatContext, _pkt) >= 0)
         {
             try
             {
@@ -133,11 +133,11 @@ public sealed unsafe class Mp4Demuxer : IMp4Demuxer
                     continue;
                 }
 
-                AVRational tb = _fmt->streams[s]->time_base;
+                AVRational timeBase = _formatContext->streams[s]->time_base;
                 var data = new ReadOnlySpan<byte>(_pkt->data, _pkt->size);
                 bool key = (_pkt->flags & ffmpeg.AV_PKT_FLAG_KEY) != 0;
                 byte[] bytes = _annexBHeaders[s] != null ? ToAnnexB(data, _nalLengthSize[s], key ? _annexBHeaders[s] : null) : data.ToArray();
-                long pts = To90k(_pkt->pts, tb), dts = _pkt->dts == ffmpeg.AV_NOPTS_VALUE ? pts : To90k(_pkt->dts, tb);
+                long pts = To90k(_pkt->pts, timeBase), dts = _pkt->dts == ffmpeg.AV_NOPTS_VALUE ? pts : To90k(_pkt->dts, timeBase);
                 return new DemuxedUnit(s, bytes, pts, dts, key);
             }
             finally
@@ -237,19 +237,19 @@ public sealed unsafe class Mp4Demuxer : IMp4Demuxer
 
     public void Seek(long pts90k)
     {
-        ffmpeg.av_seek_frame(_fmt, -1, pts90k * 100 / 9, ffmpeg.AVSEEK_FLAG_BACKWARD);
+        ffmpeg.av_seek_frame(_formatContext, -1, pts90k * 100 / 9, ffmpeg.AVSEEK_FLAG_BACKWARD);
     }
 
     public void Dispose()
     {
         AVPacket* p = _pkt;
         ffmpeg.av_packet_free(&p);
-        AVFormatContext* f = _fmt;
+        AVFormatContext* f = _formatContext;
         if (f != null)
         {
             ffmpeg.avformat_close_input(&f);
         }
 
-        _fmt = null;
+        _formatContext = null;
     }
 }

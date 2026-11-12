@@ -39,10 +39,10 @@ public sealed unsafe partial class VulkanRenderer
     /// the current one's.</summary>
     private long _sceneSerialNext;
 
-    /// <summary>Makes <paramref name="c"/>'s process the current scene context (see the class comment).</summary>
-    private void SwitchSceneProcess(GpuCommand c)
+    /// <summary>Makes <paramref name="gpuCommand"/>'s process the current scene context (see the class comment).</summary>
+    private void SwitchSceneProcess(GpuCommand gpuCommand)
     {
-        int pid = c.Pid;
+        int pid = gpuCommand.Pid;
         if (pid == 0 || pid == _scenePid)
         {
             return;
@@ -54,9 +54,9 @@ public sealed unsafe partial class VulkanRenderer
         }
 
         _scenePid = pid;
-        if (_suspendedScenes.Remove(pid, out SuspendedScene? s))
+        if (_suspendedScenes.Remove(pid, out SuspendedScene? suspendedScene))
         {
-            ResumeScene(s);
+            ResumeScene(suspendedScene);
         }
     }
 
@@ -102,29 +102,29 @@ public sealed unsafe partial class VulkanRenderer
         }
     }
 
-    private void ResumeScene(SuspendedScene s)
+    private void ResumeScene(SuspendedScene suspendedScene)
     {
         // the current context has no open rendering (its scene ended, or it never had one)
         EndRendering();
         FlushChain(false);
         _inScene = true;
         (_scene, _renderTarget, _rtAttachFormat, _rtGamma, _depthNeedsClear, _depth, _sceneW, _sceneH, _sceneSerial) =
-            (s.Scene, s.Rt, s.RtAttachFormat, s.RtGamma, s.DepthNeedsClear, s.Depth, s.SceneW, s.SceneH, s.SceneSerial);
+            (suspendedScene.Scene, suspendedScene.Rt, suspendedScene.RtAttachFormat, suspendedScene.RtGamma, suspendedScene.DepthNeedsClear, suspendedScene.Depth, suspendedScene.SceneW, suspendedScene.SceneH, suspendedScene.SceneSerial);
         (_supersampled, _ssUnresolved, _multisampled, _msNeedsLoad, _msUnresolved, _msSceneRaw, _msaaNoDownscale, _msSamples) =
-            (s.Ss, s.SsUnresolved, s.Ms, s.MsNeedsLoad, s.MsUnresolved, s.MsSceneRaw, s.MsaaNoDownscale, s.MsSamples);
-        (_tw1Active, _tileWord1) = (s.Tw1Active, s.Tw1);
+            (suspendedScene.Ss, suspendedScene.SsUnresolved, suspendedScene.Ms, suspendedScene.MsNeedsLoad, suspendedScene.MsUnresolved, suspendedScene.MsSceneRaw, suspendedScene.MsaaNoDownscale, suspendedScene.MsSamples);
+        (_tw1Active, _tileWord1) = (suspendedScene.Tw1Active, suspendedScene.Tw1);
         _sceneRegions.Clear();
-        _sceneRegions.AddRange(s.Regions);
+        _sceneRegions.AddRange(suspendedScene.Regions);
         _renderTarget?.LastTouchedFrame = FrameCount;
         _depth?.LastUsedFrame = _depth.LastTouchedFrame = FrameCount;
     }
 
     /// <summary>A process ended (<see cref="ProcessEndedCommand"/>, already made current): the scene it left open ends.</summary>
-    private void EndProcessScene(ProcessEndedCommand c)
+    private void EndProcessScene(ProcessEndedCommand processEndedCommand)
     {
         if (_inScene)
         {
-            EndScene(new EndSceneCommand { Space = c.Space, Pid = c.Pid });
+            EndScene(new EndSceneCommand { Space = processEndedCommand.Space, Pid = processEndedCommand.Pid });
         }
 
         _scenePid = 0;

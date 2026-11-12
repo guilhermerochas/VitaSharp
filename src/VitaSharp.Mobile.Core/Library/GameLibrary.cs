@@ -112,17 +112,17 @@ public static class GameLibrary
             }
 
             Dictionary<int, ulong> unlocked = TrophyUnlocks.Load(TrophyUnlocks.PathFor(data.Fs, commId));
-            foreach (TrophyInfo t in pkg.Trophies)
+            foreach (TrophyInfo trophyInfo in pkg.Trophies)
             {
-                bool got = unlocked.ContainsKey(t.Id);
+                bool got = unlocked.ContainsKey(trophyInfo.Id);
                 total++;
                 if (got)
                 {
                     earned++;
                 }
 
-                (int Earned, int Total) g = grades.GetValueOrDefault(t.Grade);
-                grades[t.Grade] = (g.Earned + (got ? 1 : 0), g.Total + 1);
+                (int Earned, int Total) g = grades.GetValueOrDefault(trophyInfo.Grade);
+                grades[trophyInfo.Grade] = (g.Earned + (got ? 1 : 0), g.Total + 1);
             }
         }
         return total == 0 ? TrophyProgress.None : new TrophyProgress(earned, total, grades);
@@ -140,15 +140,15 @@ public static class GameLibrary
     /// </summary>
     public static IReadOnlyList<GameEntry> Query(IEnumerable<GameEntry> games, string search, Filter filter, Func<GameEntry, GameSettings> settings)
     {
-        IEnumerable<GameEntry> q = games.Where(g => search.Length == 0
+        IEnumerable<GameEntry> gameEntries = games.Where(g => search.Length == 0
             || g.Title.Contains(search, StringComparison.CurrentCultureIgnoreCase)
             || g.TitleId.Contains(search, StringComparison.OrdinalIgnoreCase));
         return filter switch
         {
-            Filter.Recent => q.Select(g => (g, s: settings(g))).Where(x => x.s.LastPlayedUtc != null)
+            Filter.Recent => gameEntries.Select(g => (g, s: settings(g))).Where(x => x.s.LastPlayedUtc != null)
                 .OrderByDescending(x => x.s.LastPlayedUtc).Select(x => x.g).ToList(),
-            Filter.Playable => q.Where(g => g.Category.StartsWith("gd", StringComparison.OrdinalIgnoreCase)).ToList(),
-            _ => q.ToList(),
+            Filter.Playable => gameEntries.Where(g => g.Category.StartsWith("gd", StringComparison.OrdinalIgnoreCase)).ToList(),
+            _ => gameEntries.ToList(),
         };
     }
 

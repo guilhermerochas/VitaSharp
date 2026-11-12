@@ -10,9 +10,9 @@ namespace VitaSharp.Mobile.Core.Audio;
 /// </summary>
 public static class EffectPlayer
 {
-    public static void Play(IPcmSink sink, PcmSound pcm, float gain = 1f)
+    public static void Play(IPcmSink sink, PcmSound pcmSound, float gain = 1f)
     {
-        short[] data = TrophySound.Convert(pcm, sink.SampleRate, sink.Channels);
+        short[] data = TrophySound.Convert(pcmSound, sink.SampleRate, sink.Channels);
         if (data.Length == 0)
         {
             return;

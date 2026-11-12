@@ -143,11 +143,15 @@ public static class PspPkgInstaller
                 Directory.CreateDirectory(Path.GetDirectoryName(target)!);
                 written.Add(target);
                 using var outFile = new FileStream(target, FileMode.Create, FileAccess.Write, FileShare.None, 1 << 20);
-                using IncrementalHash? sha = e == eboot ? IncrementalHash.CreateHash(HashAlgorithmName.SHA256) : null;
-                pkg.Extract(e, new ProgressStream(outFile, sha, n => { reporter.Add(n, e.Name); cancellationToken.ThrowIfCancellationRequested(); }));
-                if (sha != null)
+                using IncrementalHash? incrementalHash = e == eboot ? IncrementalHash.CreateHash(HashAlgorithmName.SHA256) : null;
+                pkg.Extract(e, new ProgressStream(outFile, incrementalHash, n =>
                 {
-                    ebootHash = sha.GetHashAndReset();
+                    reporter.Add(n, e.Name);
+                    cancellationToken.ThrowIfCancellationRequested();
+                }));
+                if (incrementalHash != null)
+                {
+                    ebootHash = incrementalHash.GetHashAndReset();
                 }
 
                 log?.Invoke($"wrote {Path.GetRelativePath(ux0Root, target)}");

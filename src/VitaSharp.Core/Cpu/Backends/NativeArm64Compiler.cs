@@ -59,19 +59,19 @@ public sealed unsafe class NativeArm64Compiler : IBlockCompiler
     public CompiledBlock? Compile(Block b, Arm64Emitter.Runtime stubs, bool hleCallouts = false, Func<uint, bool, Block?>? successors = null)
     {
         long t0 = Stopwatch.GetTimestamp();
-        ArmFrontend fe = t_frontend ??= new ArmFrontend(Arm64Emitter.SupportsVec, tinyCheck: false, reuseIr: true);
-        fe.HleCallouts = hleCallouts;
-        fe.DeferRegions = (Arm64Emitter.Opts & Arm64Emitter.A64Opt.DeferRegions) != 0;
-        fe.DynamicExitOperands = true;
+        ArmFrontend armFrontend = t_frontend ??= new ArmFrontend(Arm64Emitter.SupportsVec, tinyCheck: false, reuseIr: true);
+        armFrontend.HleCallouts = hleCallouts;
+        armFrontend.DeferRegions = (Arm64Emitter.Opts & Arm64Emitter.A64Opt.DeferRegions) != 0;
+        armFrontend.DynamicExitOperands = true;
         List<uint> deps = t_deps ??= new();
         deps.Clear();
         bool cross = successors != null && !NativeVerifier.Enabled && CpuCore.Probes == null; // analyses beyond the block
         List<Block>? chain = cross && (Arm64Emitter.Opts & Arm64Emitter.A64Opt.Superblocks) != 0 ? BuildChain(b, successors!, deps) : null;
-        IrBlock ir = fe.Translate(b, chain);
+        IrBlock ir = armFrontend.Translate(b, chain);
         long t1 = Stopwatch.GetTimestamp();
         if (cross && (Arm64Emitter.Opts & Arm64Emitter.A64Opt.Successors) != 0)
         {
-            DropDeadStores(b, ir, fe, successors!, coldPc: stubs.PinnedCounters && stubs.PatchLinks && (Arm64Emitter.Opts & Arm64Emitter.A64Opt.ExitStubs) != 0, deps);
+            DropDeadStores(b, ir, armFrontend, successors!, coldPc: stubs.PinnedCounters && stubs.PatchLinks && (Arm64Emitter.Opts & Arm64Emitter.A64Opt.ExitStubs) != 0, deps);
         }
 
         b._deps = deps.Count > 0 ? deps.ToArray() : null;
@@ -99,7 +99,7 @@ public sealed unsafe class NativeArm64Compiler : IBlockCompiler
         // patched links: two words per exit, the target and the patch site (Arm64Emitter.Runtime.PatchLinks)
         int stride = stubs.PatchLinks ? 2 : 1;
         nint* slots = rt.AllocateSlots(exits * stride);
-        Arm64Emitter em = t_emitter ??= new Arm64Emitter();
+        Arm64Emitter arm64Emitter = t_emitter ??= new Arm64Emitter();
         nint tierUp = 0;
         if (NativeX64Compiler.TierUp && Jit.Chain.Contains(IlJitCompiler.Instance))
         {
@@ -118,7 +118,7 @@ public sealed unsafe class NativeArm64Compiler : IBlockCompiler
                 *(int*)tierUp = (int)Math.Clamp(IlJitCompiler.Instance.HotInstructions / Math.Max(1, b.Insts.Length), 64, int.MaxValue);
             }
         }
-        if (!em.Prepare(ir, stubs, k => (nint)(slots + k * stride), tierUp))
+        if (!arm64Emitter.Prepare(ir, stubs, k => (nint)(slots + k * stride), tierUp))
         {
             BackendStats.RejectReason = "register allocation out of spill slots";
             return null;
@@ -126,15 +126,22 @@ public sealed unsafe class NativeArm64Compiler : IBlockCompiler
         long t3 = Stopwatch.GetTimestamp();
         int size = 0;
         long encode = 0;
-        byte* code = rt.Code.Place(addr => { long e0 = Stopwatch.GetTimestamp(); byte[] bytes = em.Assemble(addr); encode = Stopwatch.GetTimestamp() - e0; size = bytes.Length; return bytes; });
+        byte* code = rt.Code.Place(addr =>
+        {
+            long e0 = Stopwatch.GetTimestamp();
+            byte[] bytes = arm64Emitter.Assemble(addr);
+            encode = Stopwatch.GetTimestamp() - e0;
+            size = bytes.Length;
+            return bytes;
+        });
         Interlocked.Add(ref NativeX64Compiler.CodeBytes, size); // one counter for both native backends (Report)
         if (stubs.PatchLinks)
         {
-            for (int k = 0; k < em.PatchSites.Count; k++)
+            for (int k = 0; k < arm64Emitter.PatchSites.Count; k++)
             {
-                if (em.PatchSites[k] >= 0)
+                if (arm64Emitter.PatchSites[k] >= 0)
                 {
-                    slots[k * 2 + 1] = (nint)(code + em.PatchSites[k]);
+                    slots[k * 2 + 1] = (nint)(code + arm64Emitter.PatchSites[k]);
                 }
             }
         }
@@ -145,7 +152,7 @@ public sealed unsafe class NativeArm64Compiler : IBlockCompiler
             NativeCodeMap.Add((nint)code, size, b.Start, b.Thumb);
         }
 
-        Stats.Phases!.Add(t1 - t0, t2 - t1, em.AllocTicks, t3 - t2 - em.AllocTicks, encode, Stopwatch.GetTimestamp() - t3 - encode);
+        Stats.Phases!.Add(t1 - t0, t2 - t1, arm64Emitter.AllocTicks, t3 - t2 - arm64Emitter.AllocTicks, encode, Stopwatch.GetTimestamp() - t3 - encode);
         CompilePhases.Record(b);
         if (NativeX64Compiler.DumpCode)
         {
@@ -214,7 +221,7 @@ public sealed unsafe class NativeArm64Compiler : IBlockCompiler
     /// code ranges become dependencies of the block (rewriting them drops it, <see cref="Block._deps"/>), published
     /// before the code exists, so an invalidation racing with this compile drops the block too.
     /// </summary>
-    private static void DropDeadStores(Block b, IrBlock ir, ArmFrontend fe, Func<uint, bool, Block?> successors, bool coldPc, List<uint> deps)
+    private static void DropDeadStores(Block b, IrBlock ir, ArmFrontend armFrontend, Func<uint, bool, Block?> successors, bool coldPc, List<uint> deps)
     {
         Span<IrInst> insts = System.Runtime.InteropServices.CollectionsMarshal.AsSpan(ir.Insts);
         foreach (ref readonly IrInst x in insts)
@@ -245,7 +252,7 @@ public sealed unsafe class NativeArm64Compiler : IBlockCompiler
             try
             {
                 t = successors(x.Imm, thumb);
-                dead = t == null || t.Insts.Length == 0 ? 0 : StateLiveness.DeadIn(t, fe);
+                dead = t == null || t.Insts.Length == 0 ? 0 : StateLiveness.DeadIn(t, armFrontend);
             }
             catch (Exception) // whatever the target holds, this block still compiles (with the stores)
             {

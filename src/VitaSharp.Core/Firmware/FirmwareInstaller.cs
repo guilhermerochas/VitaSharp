@@ -116,9 +116,9 @@ public sealed record FirmwareInfo(string? Version, uint Build, string Source, Da
                 }
 
                 byte[] head = new byte[0x400];
-                using (FileStream f = File.OpenRead(path))
+                using (FileStream stream = File.OpenRead(path))
                 {
-                    f.ReadAtLeast(head, head.Length, throwOnEndOfStream: false);
+                    stream.ReadAtLeast(head, head.Length, throwOnEndOfStream: false);
                 }
 
                 if (BinaryPrimitives.ReadUInt32LittleEndian(head) != 0x00454353)
@@ -163,7 +163,7 @@ public static class FirmwareInstaller
 {
     private const string StagingName = ".firmware-install";
 
-    private static string? PartitionOf(SpkgType t) => t switch
+    private static string? PartitionOf(SpkgType spkgType) => spkgType switch
     {
         SpkgType.Os0 => "os0",
         SpkgType.Vs0 => "vs0",
@@ -181,7 +181,7 @@ public static class FirmwareInstaller
     /// <summary>After a system update install (which has no pd0: factory data, the home screen's BGM): copies Vita3K's
     /// pd0 when <paramref name="fsRoot"/> has none and Vita3K has one. Returns the new info, or null when nothing was
     /// copied.</summary>
-    public static FirmwareInfo? ImportFactoryDataFromVita3KIfMissing(string fsRoot, CancellationToken ct = default)
+    public static FirmwareInfo? ImportFactoryDataFromVita3KIfMissing(string fsRoot, CancellationToken cancellationToken = default)
     {
         if (HasFactoryData(fsRoot) || FindVita3KFirmware() is not { } v3k || !HasFactoryData(v3k))
         {
@@ -190,7 +190,7 @@ public static class FirmwareInstaller
 
         try
         {
-            return ImportFactoryData(v3k, fsRoot, ct);
+            return ImportFactoryData(v3k, fsRoot, cancellationToken);
         }
         catch (Exception e) when (e is IOException or UnauthorizedAccessException or InvalidDataException)
         {
@@ -208,7 +208,7 @@ public static class FirmwareInstaller
     /// <paramref name="fsRoot"/>, replacing the one there. No system update carries pd0, so a firmware installed from
     /// PSVUPDAT.PUP has none and the shell's home screen stays silent (pd0:data/systembgm/home.at9).
     /// </summary>
-    public static FirmwareInfo ImportFactoryData(string sourceFsRoot, string fsRoot, CancellationToken ct = default)
+    public static FirmwareInfo ImportFactoryData(string sourceFsRoot, string fsRoot, CancellationToken cancellationToken = default)
     {
         string src = Path.Combine(sourceFsRoot, "pd0");
         if (!HasFactoryData(sourceFsRoot))
@@ -223,7 +223,7 @@ public static class FirmwareInstaller
         {
             foreach (string file in EnumerateFilesNoLinks(src))
             {
-                ct.ThrowIfCancellationRequested();
+                cancellationToken.ThrowIfCancellationRequested();
                 string dst = Path.Combine(staging, "pd0", Path.GetRelativePath(src, file));
                 Directory.CreateDirectory(Path.GetDirectoryName(dst)!);
                 File.Copy(file, dst, overwrite: true);
@@ -331,11 +331,11 @@ public static class FirmwareInstaller
 
                     string dest = Path.Combine(staging, part);
                     Directory.CreateDirectory(dest);
-                    foreach (FsImageEntry e in l.Entries)
+                    foreach (FsImageEntry fsImageEntry in l.Entries)
                     {
                         ct.ThrowIfCancellationRequested();
-                        string host = Path.Combine(dest, e.Path.Replace('/', Path.DirectorySeparatorChar));
-                        if (e.IsDirectory)
+                        string host = Path.Combine(dest, fsImageEntry.Path.Replace('/', Path.DirectorySeparatorChar));
+                        if (fsImageEntry.IsDirectory)
                         {
                             Directory.CreateDirectory(host);
                             continue;
@@ -343,14 +343,14 @@ public static class FirmwareInstaller
                         Directory.CreateDirectory(Path.GetDirectoryName(host)!);
                         using (var o = new FileStream(host, FileMode.Create, FileAccess.Write, FileShare.None, 1 << 16))
                         {
-                            l.Image.CopyTo(e, o, ct);
+                            l.Image.CopyTo(fsImageEntry, o, ct);
                         }
 
-                        doneBytes += e.Size;
+                        doneBytes += fsImageEntry.Size;
                         files++;
-                        if ((files & 31) == 0 || e.Size > 1 << 20)
+                        if ((files & 31) == 0 || fsImageEntry.Size > 1 << 20)
                         {
-                            progress?.Report(new FirmwareProgress("Extraindo", 0.5 + 0.45 * doneBytes / Math.Max(1, totalBytes), part + ":" + e.Path));
+                            progress?.Report(new FirmwareProgress("Extraindo", 0.5 + 0.45 * doneBytes / Math.Max(1, totalBytes), part + ":" + fsImageEntry.Path));
                         }
                     }
                     Log.Info($"firmware: {part}: {l.Entries.Count(x => !x.IsDirectory)} files, {l.Entries.Where(x => !x.IsDirectory).Sum(x => x.Size) / 1024} KiB");
@@ -411,7 +411,7 @@ public static class FirmwareInstaller
     /// <paramref name="fsRoot"/>. Copying rather than linking keeps the source untouched by anything VitaSharp writes
     /// and lets either side be removed or upgraded on its own.
     /// </summary>
-    public static FirmwareInfo ImportFrom(string sourceFsRoot, string fsRoot, string sourceName, IProgress<FirmwareProgress>? progress = null, CancellationToken ct = default)
+    public static FirmwareInfo ImportFrom(string sourceFsRoot, string fsRoot, string sourceName, IProgress<FirmwareProgress>? progress = null, CancellationToken cancellationToken = default)
     {
         if (Path.GetFullPath(sourceFsRoot).TrimEnd(Path.DirectorySeparatorChar).Equals(Path.GetFullPath(fsRoot).TrimEnd(Path.DirectorySeparatorChar), StringComparison.OrdinalIgnoreCase))
         {
@@ -435,7 +435,7 @@ public static class FirmwareInstaller
             int n = 0;
             foreach ((string? part, string? file) in files)
             {
-                ct.ThrowIfCancellationRequested();
+                cancellationToken.ThrowIfCancellationRequested();
                 string rel = Path.GetRelativePath(Path.Combine(sourceFsRoot, part), file);
                 string dst = Path.Combine(staging, part, rel);
                 Directory.CreateDirectory(Path.GetDirectoryName(dst)!);

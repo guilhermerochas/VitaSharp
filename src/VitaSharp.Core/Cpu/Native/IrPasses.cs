@@ -13,11 +13,11 @@ public static class IrPasses
     [SuppressMessage("Style", "IDE1006", Justification = "[ThreadStatic]: t_camelCase; .editorconfig cannot select the attribute")]
     [ThreadStatic] private static bool[]? t_used;
 
-    public static void DeadCode(IrBlock b)
+    public static void DeadCode(IrBlock block)
     {
-        bool[] used = t_used is { } u0 && u0.Length >= b.TempCount ? u0 : (t_used = new bool[Math.Max(256, b.TempCount * 2)]);
-        Array.Clear(used, 0, b.TempCount);
-        Span<IrInst> insts = System.Runtime.InteropServices.CollectionsMarshal.AsSpan(b.Insts);
+        bool[] used = t_used is { } u0 && u0.Length >= block.TempCount ? u0 : (t_used = new bool[Math.Max(256, block.TempCount * 2)]);
+        Array.Clear(used, 0, block.TempCount);
+        Span<IrInst> insts = System.Runtime.InteropServices.CollectionsMarshal.AsSpan(block.Insts);
         for (int i = insts.Length - 1; i >= 0; i--)
         {
             ref IrInst x = ref insts[i];
@@ -72,9 +72,9 @@ public static class IrPasses
     /// emits DMB pairs around atomics: "dmb; ldr; dmb" sequences back to back give "dmb; dmb"). Two adjacent full
     /// barriers order exactly what one does. Returns the number removed.
     /// </summary>
-    public static int MergeFences(IrBlock b)
+    public static int MergeFences(IrBlock block)
     {
-        Span<IrInst> insts = System.Runtime.InteropServices.CollectionsMarshal.AsSpan(b.Insts);
+        Span<IrInst> insts = System.Runtime.InteropServices.CollectionsMarshal.AsSpan(block.Insts);
         bool fenced = false;
         int removed = 0;
         for (int i = 0; i < insts.Length; i++)
@@ -122,15 +122,15 @@ public static class IrPasses
     /// Checks the structural rules emitters rely on: every temp is defined once before use, and no temp defined inside
     /// a conditional region is used after the region's label. Throws on violation (frontend bug).
     /// </summary>
-    public static void Validate(IrBlock b)
+    public static void Validate(IrBlock block)
     {
-        int[] defAt = new int[b.TempCount];
+        int[] defAt = new int[block.TempCount];
         Array.Fill(defAt, -1);
         var regionOfLabel = new Dictionary<uint, int>();
         int openStart = -1;
         uint openLabel = 0;
         var regions = new List<(int Start, int End)>();
-        List<IrInst> insts = b.Insts;
+        List<IrInst> insts = block.Insts;
         for (int i = 0; i < insts.Count; i++)
         {
             IrInst x = insts[i];
@@ -162,20 +162,20 @@ public static class IrPasses
             IrInst x = insts[i];
             foreach (int u in new[] { x.A, x.B, x.C, x.E })
             {
-                if (u < 0 || b.IsConst[u])
+                if (u < 0 || block.IsConst[u])
                 {
                     continue;
                 }
 
                 if (defAt[u] < 0)
                 {
-                    throw new InvalidOperationException($"IR: t{u} used at {i} before definition\n{b}");
+                    throw new InvalidOperationException($"IR: t{u} used at {i} before definition\n{block}");
                 }
 
                 int r = RegionOf(defAt[u]);
                 if (r >= 0 && i >= regions[r].End)
                 {
-                    throw new InvalidOperationException($"IR: t{u} defined in region {r} used after it at {i}\n{b}");
+                    throw new InvalidOperationException($"IR: t{u} defined in region {r} used after it at {i}\n{block}");
                 }
             }
             foreach (int o in new[] { x.D, x.D2, x.Fn, x.Fz, x.Fc, x.Fv })
@@ -187,7 +187,7 @@ public static class IrPasses
 
                 if (defAt[o] >= 0)
                 {
-                    throw new InvalidOperationException($"IR: t{o} defined twice\n{b}");
+                    throw new InvalidOperationException($"IR: t{o} defined twice\n{block}");
                 }
 
                 defAt[o] = i;

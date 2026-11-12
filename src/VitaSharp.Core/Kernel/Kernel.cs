@@ -66,13 +66,13 @@ public sealed class Kernel
     public string Symbolize(uint addr)
     {
         uint a = addr & ~1u;
-        foreach (LoadedModule m in Modules.Values)
+        foreach (LoadedModule loadedModule in Modules.Values)
         {
-            foreach ((int idx, SegmentInfo s) in m.Segments)
+            foreach ((int idx, SegmentInfo segmentInfo) in loadedModule.Segments)
             {
-                if (a >= s.Address && a - s.Address < s.Size)
+                if (a >= segmentInfo.Address && a - segmentInfo.Address < segmentInfo.Size)
                 {
-                    return $"{a:X8}({m.Name}+{(idx == 0 ? "" : $"s{idx}:")}{a - s.Address:X})";
+                    return $"{a:X8}({loadedModule.Name}+{(idx == 0 ? "" : $"s{idx}:")}{a - segmentInfo.Address:X})";
                 }
             }
         }

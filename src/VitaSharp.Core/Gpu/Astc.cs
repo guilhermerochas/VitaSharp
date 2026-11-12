@@ -804,9 +804,9 @@ internal static class Ise
     {
         lock (s_endpointTables)
         {
-            if (s_endpointTables.TryGetValue(levels, out EndpointTable? e))
+            if (s_endpointTables.TryGetValue(levels, out EndpointTable? endpointTable))
             {
-                return e;
+                return endpointTable;
             }
 
             int[] unq = new int[levels];

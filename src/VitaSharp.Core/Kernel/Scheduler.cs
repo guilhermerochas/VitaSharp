@@ -35,7 +35,7 @@ public static class Scheduler
     public static long AcquireBlocked, AcquireRewaits;
 
     private static Pool PoolOf(GuestThread t) => t.OnSystemCore ? s_sys : s_app;
-    private static int CoresOf(Pool p) => p == s_sys ? SystemCores : Cores;
+    private static int CoresOf(Pool pool) => pool == s_sys ? SystemCores : Cores;
 
     /// <summary>Blocks until the calling thread may run guest code.</summary>
     public static void Acquire(GuestThread t)
@@ -45,36 +45,36 @@ public static class Scheduler
             return;
         }
 
-        Pool p = PoolOf(t);
-        int cores = CoresOf(p);
+        Pool pool = PoolOf(t);
+        int cores = CoresOf(pool);
         if (cores <= 0)
         {
             return;
         }
 
-        lock (p.L)
+        lock (pool.L)
         {
             bool queued = false;
             while (true)
             {
-                if (p.Running < cores && !HigherPriorityWaiting(p, t.Priority))
+                if (pool.Running < cores && !HigherPriorityWaiting(pool, t.Priority))
                 {
                     if (queued)
                     {
-                        p.Waiting.Remove(t);
+                        pool.Waiting.Remove(t);
                     }
 
-                    p.Running++;
+                    pool.Running++;
                     t.HasCore = true;
                     t.Core.ResetThrottle();
                     return;
                 }
                 if (!queued)
                 {
-                    p.Waiting.Add(t);
+                    pool.Waiting.Add(t);
                     queued = true;
                 }
-                Monitor.Wait(p.L, 2);
+                Monitor.Wait(pool.L, 2);
             }
         }
     }
@@ -91,28 +91,28 @@ public static class Scheduler
             t.Core.SettleThrottle(t.Core.PendingInstructions);
             t.Core.PendingInstructions = 0;
         }
-        Pool p = PoolOf(t);
-        lock (p.L)
+        Pool pool = PoolOf(t);
+        lock (pool.L)
         {
-            p.Running--;
+            pool.Running--;
             t.HasCore = false;
-            Monitor.PulseAll(p.L);
+            Monitor.PulseAll(pool.L);
         }
     }
 
     /// <summary>Called periodically by a running thread: a higher-priority thread is waiting for its core.</summary>
     public static bool ShouldYield(GuestThread t)
     {
-        Pool p = PoolOf(t);
-        int cores = CoresOf(p);
-        if (cores <= 0 || p.Waiting.Count == 0)
+        Pool pool = PoolOf(t);
+        int cores = CoresOf(pool);
+        if (cores <= 0 || pool.Waiting.Count == 0)
         {
             return false;
         }
 
-        lock (p.L)
+        lock (pool.L)
         {
-            return HigherPriorityWaiting(p, t.Priority) || (p.Running >= cores && SamePriorityWaiting(p, t.Priority));
+            return HigherPriorityWaiting(pool, t.Priority) || (pool.Running >= cores && SamePriorityWaiting(pool, t.Priority));
         }
     }
 
@@ -129,9 +129,9 @@ public static class Scheduler
         Acquire(t);
     }
 
-    private static bool HigherPriorityWaiting(Pool p, int priority)
+    private static bool HigherPriorityWaiting(Pool pool, int priority)
     {
-        foreach (GuestThread w in p.Waiting)
+        foreach (GuestThread w in pool.Waiting)
         {
             if (w.Priority < priority)
             {
@@ -142,9 +142,9 @@ public static class Scheduler
         return false;
     }
 
-    private static bool SamePriorityWaiting(Pool p, int priority)
+    private static bool SamePriorityWaiting(Pool pool, int priority)
     {
-        foreach (GuestThread w in p.Waiting)
+        foreach (GuestThread w in pool.Waiting)
         {
             if (w.Priority == priority)
             {
@@ -158,13 +158,13 @@ public static class Scheduler
     /// <summary>Forgets all core bookkeeping (process exec after every thread has exited).</summary>
     public static void Reset()
     {
-        foreach (Pool? p in new[] { s_app, s_sys })
+        foreach (Pool? pool in new[] { s_app, s_sys })
         {
-            lock (p.L)
+            lock (pool.L)
             {
-                p.Running = 0;
-                p.Waiting.Clear();
-                Monitor.PulseAll(p.L);
+                pool.Running = 0;
+                pool.Waiting.Clear();
+                Monitor.PulseAll(pool.L);
             }
         }
     }
@@ -174,10 +174,10 @@ public static class Scheduler
 
     public readonly struct Blocked : IDisposable
     {
-        private readonly GuestThread? _t;
+        private readonly GuestThread? _thread;
         public Blocked(GuestThread? t)
         {
-            _t = t;
+            _thread = t;
             if (t != null)
             {
                 t.BlockedInHost = true;
@@ -186,10 +186,10 @@ public static class Scheduler
         }
         public void Dispose()
         {
-            if (_t != null)
+            if (_thread != null)
             {
-                Acquire(_t);
-                _t.BlockedInHost = false;
+                Acquire(_thread);
+                _thread.BlockedInHost = false;
             }
         }
     }

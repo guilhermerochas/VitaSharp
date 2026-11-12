@@ -10,11 +10,11 @@ internal static unsafe partial class Neon
     [MethodImpl(MethodImplOptions.AggressiveInlining)] private static uint Rd(uint ins) => (Bit(ins, 22) << 4) | Bits(ins, 15, 12);
     [MethodImpl(MethodImplOptions.AggressiveInlining)] private static uint Rn(uint ins) => (Bit(ins, 7) << 4) | Bits(ins, 19, 16);
     [MethodImpl(MethodImplOptions.AggressiveInlining)] private static uint Rm(uint ins) => (Bit(ins, 5) << 4) | (ins & 0xF);
-    [MethodImpl(MethodImplOptions.AggressiveInlining)] private static byte* Reg(CpuState* s, uint d) => (byte*)&s->D[d & 31];
+    [MethodImpl(MethodImplOptions.AggressiveInlining)] private static byte* Reg(CpuState* state, uint d) => (byte*)&state->D[d & 31];
 
     private const uint FpscrQC = 1u << 27;
 
-    [MethodImpl(MethodImplOptions.AggressiveInlining)] private static void SetQC(CpuState* s) => s->Fpscr |= FpscrQC;
+    [MethodImpl(MethodImplOptions.AggressiveInlining)] private static void SetQC(CpuState* state) => state->Fpscr |= FpscrQC;
 
     // ---------------------------------------------------------- element access (esize in bits)
 
@@ -64,33 +64,33 @@ internal static unsafe partial class Neon
 
     // ---------------------------------------------------------- saturation helpers
 
-    internal static long SatS(CpuState* s, Int128 v, int esize)
+    internal static long SatS(CpuState* state, Int128 v, int esize)
     {
         Int128 max = (Int128.One << (esize - 1)) - 1, min = -(Int128.One << (esize - 1));
         if (v > max)
         {
-            SetQC(s);
+            SetQC(state);
             return (long)max;
         }
         if (v < min)
         {
-            SetQC(s);
+            SetQC(state);
             return (long)min;
         }
         return (long)v;
     }
 
-    internal static ulong SatU(CpuState* s, Int128 v, int esize)
+    internal static ulong SatU(CpuState* state, Int128 v, int esize)
     {
         Int128 max = esize == 64 ? (Int128)ulong.MaxValue : (Int128)((1ul << esize) - 1);
         if (v > max)
         {
-            SetQC(s);
+            SetQC(state);
             return (ulong)max;
         }
         if (v < 0)
         {
-            SetQC(s);
+            SetQC(state);
             return 0;
         }
         return (ulong)v;
@@ -315,7 +315,7 @@ internal static unsafe partial class Neon
     [MethodImpl(MethodImplOptions.AggressiveInlining)]
     internal static Int128 GetI(byte* v, int i, int esize, bool unsigned) => unsigned ? (Int128)GetU(v, i, esize) : (Int128)GetS(v, i, esize);
 
-    internal static ulong ShiftElem(CpuState* s, Int128 v, long shiftReg, bool unsignedValue, int esize, bool round, bool saturate, bool unsignedSat)
+    internal static ulong ShiftElem(CpuState* state, Int128 v, long shiftReg, bool unsignedValue, int esize, bool round, bool saturate, bool unsignedSat)
     {
         int shift = (sbyte)(byte)shiftReg;
         Int128 r;
@@ -338,7 +338,7 @@ internal static unsafe partial class Neon
         }
         if (saturate)
         {
-            return unsignedSat ? SatU(s, r, esize) : (ulong)SatS(s, r, esize);
+            return unsignedSat ? SatU(state, r, esize) : (ulong)SatS(state, r, esize);
         }
 
         return (ulong)(long)r & Mask(esize);

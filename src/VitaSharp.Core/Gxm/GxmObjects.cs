@@ -173,27 +173,27 @@ public sealed class GxmContext
     public Func<uint, GxmFragmentProgram?>? ResolveFragmentProgram;
     private uint _syncedVp, _syncedFp;
 
-    private static void ReadStencil(uint a, ref StencilState s)
+    private static void ReadStencil(uint a, ref StencilState stencilState)
     {
         ulong v = GuestMemory.Read<ulong>(a);
-        s.Func = (byte)v;
-        s.StencilFail = (byte)(v >> 8);
-        s.DepthFail = (byte)(v >> 16);
-        s.DepthPass = (byte)(v >> 24);
-        s.CompareMask = (byte)(v >> 32);
-        s.WriteMask = (byte)(v >> 40);
-        s.Ref = (byte)(v >> 48);
+        stencilState.Func = (byte)v;
+        stencilState.StencilFail = (byte)(v >> 8);
+        stencilState.DepthFail = (byte)(v >> 16);
+        stencilState.DepthPass = (byte)(v >> 24);
+        stencilState.CompareMask = (byte)(v >> 32);
+        stencilState.WriteMask = (byte)(v >> 40);
+        stencilState.Ref = (byte)(v >> 48);
     }
 
-    private static void WriteStencil(uint a, in StencilState s)
+    private static void WriteStencil(uint a, in StencilState stencilState)
     {
-        GuestMemory.Write(a, s.Func);
-        GuestMemory.Write(a + 1, s.StencilFail);
-        GuestMemory.Write(a + 2, s.DepthFail);
-        GuestMemory.Write(a + 3, s.DepthPass);
-        GuestMemory.Write(a + 4, s.CompareMask);
-        GuestMemory.Write(a + 5, s.WriteMask);
-        GuestMemory.Write(a + 6, s.Ref);
+        GuestMemory.Write(a, stencilState.Func);
+        GuestMemory.Write(a + 1, stencilState.StencilFail);
+        GuestMemory.Write(a + 2, stencilState.DepthFail);
+        GuestMemory.Write(a + 3, stencilState.DepthPass);
+        GuestMemory.Write(a + 4, stencilState.CompareMask);
+        GuestMemory.Write(a + 5, stencilState.WriteMask);
+        GuestMemory.Write(a + 6, stencilState.Ref);
     }
 
     /// <summary>Copies the state guest code may have written into <see cref="State"/>, the programs, the visibility indices

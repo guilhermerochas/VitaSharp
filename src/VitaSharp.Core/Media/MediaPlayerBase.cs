@@ -38,22 +38,22 @@ public abstract class MediaPlayerBase : IDisposable
     {
         lock (SyncRoot)
         {
-            VideoFrame? f = null;
+            VideoFrame? videoFrame = null;
             while (VideoQueue.Count > 0 && VideoQueue.Peek().TimeUs <= clockUs)
             {
-                if (f != null)
+                if (videoFrame != null)
                 {
-                    ReturnBuffer(FreeNv12, f.Nv12); // dropped late frame
+                    ReturnBuffer(FreeNv12, videoFrame.Nv12); // dropped late frame
                 }
 
-                f = VideoQueue.Dequeue();
+                videoFrame = VideoQueue.Dequeue();
             }
-            if (f != null)
+            if (videoFrame != null)
             {
                 Monitor.PulseAll(SyncRoot);
             }
 
-            return f;
+            return videoFrame;
         }
     }
 
@@ -90,10 +90,10 @@ public abstract class MediaPlayerBase : IDisposable
     }
 
     /// <summary>The frame's planes were copied out and are not read again: reuse them for a later frame.</summary>
-    public void Recycle(VideoFrame f) => ReturnBuffer(FreeNv12, f.Nv12);
+    public void Recycle(VideoFrame videoFrame) => ReturnBuffer(FreeNv12, videoFrame.Nv12);
 
     /// <summary>The chunk's samples were copied out and are not read again.</summary>
-    public void Recycle(AudioChunk c) => ReturnBuffer(FreeSamples, c.Samples);
+    public void Recycle(AudioChunk audioChunk) => ReturnBuffer(FreeSamples, audioChunk.Samples);
 
     public AudioChunk? TakeAudio()
     {
@@ -104,9 +104,9 @@ public abstract class MediaPlayerBase : IDisposable
                 return null;
             }
 
-            AudioChunk c = AudioQueue.Dequeue();
+            AudioChunk audioChunk = AudioQueue.Dequeue();
             Monitor.PulseAll(SyncRoot);
-            return c;
+            return audioChunk;
         }
     }
 
@@ -159,13 +159,13 @@ public abstract class MediaPlayerBase : IDisposable
     }
 
     /// <summary>Planar YUV 4:2:0 from a decoder into the NV21 frame layout the guest receives.</summary>
-    protected void PushPicture(DecodedPicture p, long timeUs)
+    protected void PushPicture(DecodedPicture decodedPicture, long timeUs)
     {
-        int w = p.Width & ~1, h = p.Height & ~1, cw = (p.Width + 1) / 2;
+        int w = decodedPicture.Width & ~1, h = decodedPicture.Height & ~1, cw = (decodedPicture.Width + 1) / 2;
         byte[] nv21 = RentBuffer(FreeNv12, w * h * 3 / 2);
         for (int y = 0; y < h; y++)
         {
-            p.Y.AsSpan(y * p.Width, w).CopyTo(nv21.AsSpan(y * w));
+            decodedPicture.Y.AsSpan(y * decodedPicture.Width, w).CopyTo(nv21.AsSpan(y * w));
         }
 
         int uvBase = w * h;
@@ -174,14 +174,14 @@ public abstract class MediaPlayerBase : IDisposable
             int s = y * cw, d = uvBase + y * w;
             for (int x = 0; x < w / 2; x++)
             {
-                nv21[d + 2 * x] = p.V[s + x];
-                nv21[d + 2 * x + 1] = p.U[s + x];
+                nv21[d + 2 * x] = decodedPicture.V[s + x];
+                nv21[d + 2 * x + 1] = decodedPicture.U[s + x];
             }
         }
         Enqueue(new VideoFrame(nv21, w, h, timeUs));
     }
 
-    protected void Enqueue(VideoFrame vf)
+    protected void Enqueue(VideoFrame videoFrame)
     {
         lock (SyncRoot)
         {
@@ -192,7 +192,7 @@ public abstract class MediaPlayerBase : IDisposable
 
             if (SeekRequestUs < 0)
             {
-                VideoQueue.Enqueue(vf);
+                VideoQueue.Enqueue(videoFrame);
             }
         }
     }

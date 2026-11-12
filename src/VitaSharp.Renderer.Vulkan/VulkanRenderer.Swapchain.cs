@@ -20,15 +20,15 @@ public sealed unsafe partial class VulkanRenderer
 
     private void CreateSwapchain()
     {
-        KhrSurface se = _core.SurfaceExt!;
-        KhrSwapchain sw = _core.SwapchainExt!;
-        se.GetPhysicalDeviceSurfaceCapabilities(_core.Physical, _core.Surface, out SurfaceCapabilitiesKHR caps);
+        KhrSurface khrSurface = _core.SurfaceExt!;
+        KhrSwapchain khrSwapchain = _core.SwapchainExt!;
+        khrSurface.GetPhysicalDeviceSurfaceCapabilities(_core.Physical, _core.Surface, out SurfaceCapabilitiesKHR caps);
         uint fc = 0;
-        se.GetPhysicalDeviceSurfaceFormats(_core.Physical, _core.Surface, ref fc, null);
+        khrSurface.GetPhysicalDeviceSurfaceFormats(_core.Physical, _core.Surface, ref fc, null);
         var formats = new SurfaceFormatKHR[fc];
         fixed (SurfaceFormatKHR* p = formats)
         {
-            se.GetPhysicalDeviceSurfaceFormats(_core.Physical, _core.Surface, ref fc, p);
+            khrSurface.GetPhysicalDeviceSurfaceFormats(_core.Physical, _core.Surface, ref fc, p);
         }
 
         SurfaceFormatKHR chosen = formats.FirstOrDefault(f => f.Format == Format.B8G8R8A8Unorm, formats[0]);
@@ -38,17 +38,17 @@ public sealed unsafe partial class VulkanRenderer
         }
 
         uint pc = 0;
-        se.GetPhysicalDeviceSurfacePresentModes(_core.Physical, _core.Surface, ref pc, null);
+        khrSurface.GetPhysicalDeviceSurfacePresentModes(_core.Physical, _core.Surface, ref pc, null);
         var modes = new PresentModeKHR[pc];
         fixed (PresentModeKHR* p = modes)
         {
-            se.GetPhysicalDeviceSurfacePresentModes(_core.Physical, _core.Surface, ref pc, p);
+            khrSurface.GetPhysicalDeviceSurfacePresentModes(_core.Physical, _core.Surface, ref pc, p);
         }
 
-        PresentModeKHR mode = _opt.VSync ? PresentModeKHR.FifoKhr : modes.Contains(PresentModeKHR.MailboxKhr) ? PresentModeKHR.MailboxKhr
+        PresentModeKHR mode = _options.VSync ? PresentModeKHR.FifoKhr : modes.Contains(PresentModeKHR.MailboxKhr) ? PresentModeKHR.MailboxKhr
             : modes.Contains(PresentModeKHR.ImmediateKhr) ? PresentModeKHR.ImmediateKhr : PresentModeKHR.FifoKhr;
 
-        (int w, int h) = _opt.Surface!.FramebufferSize;
+        (int w, int h) = _options.Surface!.FramebufferSize;
         Extent2D extent = caps.CurrentExtent.Width != uint.MaxValue ? caps.CurrentExtent
             : new Extent2D((uint)Math.Clamp(w, (int)caps.MinImageExtent.Width, (int)caps.MaxImageExtent.Width),
                            (uint)Math.Clamp(h, (int)caps.MinImageExtent.Height, (int)caps.MaxImageExtent.Height));
@@ -103,18 +103,18 @@ public sealed unsafe partial class VulkanRenderer
             Clipped = true,
             OldSwapchain = old,
         };
-        sw.CreateSwapchain(_dev, in ci, null, out _swapchain).Ok("vkCreateSwapchainKHR");
+        khrSwapchain.CreateSwapchain(_dev, in ci, null, out _swapchain).Ok("vkCreateSwapchainKHR");
         if (old.Handle != 0)
         {
-            sw.DestroySwapchain(_dev, old, null);
+            khrSwapchain.DestroySwapchain(_dev, old, null);
         }
 
         uint ic = 0;
-        sw.GetSwapchainImages(_dev, _swapchain, ref ic, null);
+        khrSwapchain.GetSwapchainImages(_dev, _swapchain, ref ic, null);
         _swapImages = new Image[ic];
         fixed (Image* p = _swapImages)
         {
-            sw.GetSwapchainImages(_dev, _swapchain, ref ic, p);
+            khrSwapchain.GetSwapchainImages(_dev, _swapchain, ref ic, p);
         }
         // the semaphore a frame signals for its present belongs to the swapchain image, not to the frame in flight:
         // per frame, a frame signalled it again while the presentation of an earlier image could still be waiting on it
@@ -174,7 +174,7 @@ public sealed unsafe partial class VulkanRenderer
             _vk.DeviceWaitIdle(_dev);
             DestroySwapchain();
             _core.ReplaceSurface(surface);
-            _opt.Surface = surface;
+            _options.Surface = surface;
             CreateSwapchain();
             Log.Info("Presentation surface attached");
         }
@@ -268,7 +268,7 @@ public sealed unsafe partial class VulkanRenderer
     }
 
     /// <summary>vkQueuePresentKHR (the GPU worker, or the present thread with VITASHARP_PRESENT_THREAD=1).</summary>
-    private void PresentNow(SwapchainKHR sc, uint index, Silk.NET.Vulkan.Semaphore wait)
+    private void PresentNow(SwapchainKHR swapchainKHR, uint index, Silk.NET.Vulkan.Semaphore wait)
     {
         var pi = new PresentInfoKHR
         {
@@ -276,7 +276,7 @@ public sealed unsafe partial class VulkanRenderer
             WaitSemaphoreCount = 1,
             PWaitSemaphores = &wait,
             SwapchainCount = 1,
-            PSwapchains = &sc,
+            PSwapchains = &swapchainKHR,
             PImageIndices = &index,
         };
         Result r;

@@ -143,9 +143,9 @@ public sealed class FacingCameras : ICameraSource
 
     public void Dispose()
     {
-        foreach (ICameraSource? s in _sources.Where(s => s != null).Distinct())
+        foreach (ICameraSource? cameraSource in _sources.Where(s => s != null).Distinct())
         {
-            s!.Dispose();
+            cameraSource!.Dispose();
         }
     }
 }
@@ -155,18 +155,18 @@ public sealed class StillImageCamera : ICameraSource
 {
     private readonly string _name;
     private readonly byte[] _rgba;
-    private readonly int _w, _h;
+    private readonly int _width, _height;
 
     public StillImageCamera(string name, byte[] rgba, int width, int height)
     {
         _name = name;
         _rgba = rgba;
-        _w = width;
-        _h = height;
+        _width = width;
+        _height = height;
     }
 
-    public int Width => _w;
-    public int Height => _h;
+    public int Width => _width;
+    public int Height => _height;
 
     /// <summary>Loads a PNG or JPEG picture; null (and a log line) when it cannot be read.</summary>
     public static StillImageCamera? TryLoad(string path)
@@ -241,8 +241,8 @@ public sealed class StillImageCamera : ICameraSource
     public ICameraStream? Open(CameraFacing facing, int width, int height, int fps)
     {
         var s = new Stream();
-        s.Frames.Publish(_rgba, _w, _h);
-        Log.Info($"Camera: {facing} camera -> picture '{_name}' {_w}x{_h}");
+        s.Frames.Publish(_rgba, _width, _height);
+        Log.Info($"Camera: {facing} camera -> picture '{_name}' {_width}x{_height}");
         return s;
     }
 

@@ -50,7 +50,7 @@ public static class FirmwareSetup
     public const string PickerMimeType = "application/octet-stream";
 
     public static Task<FirmwareInfo> InstallAsync(Func<Stream> openDocument, string displayName, string fsRoot,
-        IProgress<FirmwareProgress>? progress = null, CancellationToken ct = default) => Task.Run(() =>
+        IProgress<FirmwareProgress>? progress = null, CancellationToken cancellationToken = default) => Task.Run(() =>
     {
         using Stream stream = openDocument();
         if (!stream.CanSeek)
@@ -59,6 +59,6 @@ public static class FirmwareSetup
         }
 
         using var pup = new Pup(stream);
-        return FirmwareInstaller.Install(pup, displayName, fsRoot, progress, ct);
-    }, ct);
+        return FirmwareInstaller.Install(pup, displayName, fsRoot, progress, cancellationToken);
+    }, cancellationToken);
 }

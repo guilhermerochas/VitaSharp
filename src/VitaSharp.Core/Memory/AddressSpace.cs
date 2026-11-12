@@ -68,10 +68,10 @@ public sealed unsafe class AddressSpace
     /// <summary>The space the calling host thread works in (the first process's when it chose none).</summary>
     public static AddressSpace? Current => t_current ?? GuestMemory.Instance?.Primary;
 
-    private static void SetThread(AddressSpace? s)
+    private static void SetThread(AddressSpace? addressSpace)
     {
-        t_current = s;
-        GuestMemory.t_base = s == null ? null : s.Base;
+        t_current = addressSpace;
+        GuestMemory.t_base = addressSpace == null ? null : addressSpace.Base;
     }
 
     /// <summary>

@@ -8,9 +8,9 @@ namespace VitaSharp.Core.Cpu;
 internal static unsafe partial class Neon
 {
     /// <summary>Three registers of the same length: 1111 001U 0 D size Vn Vd A N Q M B Vm</summary>
-    public static void ThreeSame(CpuState* s, uint ins, uint pc)
+    public static void ThreeSame(CpuState* state, uint ins, uint pc)
     {
-        if (ThreeSameFast(s, ins))
+        if (ThreeSameFast(state, ins))
         {
             return;
         }
@@ -24,7 +24,7 @@ internal static unsafe partial class Neon
         // bitwise ops and float fast paths operate on whole vectors
         if (a == 1 && b)
         {
-            ulong* vd = (ulong*)Reg(s, d), vn = (ulong*)Reg(s, n), vm = (ulong*)Reg(s, m);
+            ulong* vd = (ulong*)Reg(state, d), vn = (ulong*)Reg(state, n), vm = (ulong*)Reg(state, m);
             int words = q ? 2 : 1;
             for (int i = 0; i < words; i++)
             {
@@ -47,14 +47,14 @@ internal static unsafe partial class Neon
         byte* tn = stackalloc byte[16];
         byte* tm = stackalloc byte[16];
         byte* td = stackalloc byte[16];
-        Buffer.MemoryCopy(Reg(s, n), tn, 16, bytes);
-        Buffer.MemoryCopy(Reg(s, m), tm, 16, bytes);
-        Buffer.MemoryCopy(Reg(s, d), td, 16, bytes);
+        Buffer.MemoryCopy(Reg(state, n), tn, 16, bytes);
+        Buffer.MemoryCopy(Reg(state, m), tm, 16, bytes);
+        Buffer.MemoryCopy(Reg(state, d), td, 16, bytes);
 
         if (a >= 0xC)
         {
-            ThreeSameFloat(s, a, b, u, size, tn, tm, td, bytes);
-            Buffer.MemoryCopy(td, Reg(s, d), bytes, bytes);
+            ThreeSameFloat(state, a, b, u, size, tn, tm, td, bytes);
+            Buffer.MemoryCopy(td, Reg(state, d), bytes, bytes);
             return;
         }
 
@@ -68,7 +68,7 @@ internal static unsafe partial class Neon
                 for (int i = 0; i < count; i++)
                 {
                     Int128 x = GetI(tn, i, esize, u), y = GetI(tm, i, esize, u);
-                    ulong r = b ? (u ? SatU(s, x + y, esize) : (ulong)SatS(s, x + y, esize)) : (ulong)(long)((x + y) >> 1);
+                    ulong r = b ? (u ? SatU(state, x + y, esize) : (ulong)SatS(state, x + y, esize)) : (ulong)(long)((x + y) >> 1);
                     Set(td, i, esize, r);
                 }
                 break;
@@ -83,7 +83,7 @@ internal static unsafe partial class Neon
                 for (int i = 0; i < count; i++)
                 {
                     Int128 x = GetI(tn, i, esize, u), y = GetI(tm, i, esize, u);
-                    ulong r = b ? (u ? SatU(s, x - y, esize) : (ulong)SatS(s, x - y, esize)) : (ulong)(long)((x - y) >> 1);
+                    ulong r = b ? (u ? SatU(state, x - y, esize) : (ulong)SatS(state, x - y, esize)) : (ulong)(long)((x - y) >> 1);
                     Set(td, i, esize, r);
                 }
                 break;
@@ -101,7 +101,7 @@ internal static unsafe partial class Neon
                 {
                     Int128 x = GetI(tm, i, esize, u);
                     long sh = (long)GetU(tn, i, esize);
-                    Set(td, i, esize, ShiftElem(s, x, sh, u, esize, a == 5, b, u));
+                    Set(td, i, esize, ShiftElem(state, x, sh, u, esize, a == 5, b, u));
                 }
                 break;
             case 0x6: // VMAX / VMIN
@@ -162,7 +162,7 @@ internal static unsafe partial class Neon
                     {
                         Int128 x = GetS(tn, i, esize), y = GetS(tm, i, esize);
                         Int128 p = 2 * x * y + (u ? (Int128.One << (esize - 1)) : 0);
-                        Set(td, i, esize, (ulong)SatS(s, p >> esize, esize));
+                        Set(td, i, esize, (ulong)SatS(state, p >> esize, esize));
                     }
                 }
                 else // VPADD (integer)
@@ -178,7 +178,7 @@ internal static unsafe partial class Neon
                 }
                 break;
         }
-        Buffer.MemoryCopy(td, Reg(s, d), bytes, bytes);
+        Buffer.MemoryCopy(td, Reg(state, d), bytes, bytes);
     }
 
     internal static ulong PolyMul8(byte a, byte b)
@@ -195,7 +195,7 @@ internal static unsafe partial class Neon
         return (byte)r;
     }
 
-    private static void ThreeSameFloat(CpuState* s, uint a, bool b, bool u, uint size, byte* tn, byte* tm, byte* td, int bytes)
+    private static void ThreeSameFloat(CpuState* state, uint a, bool b, bool u, uint size, byte* tn, byte* tm, byte* td, int bytes)
     {
         int count = bytes / 4;
         bool sz1 = (size & 2) != 0;
@@ -320,9 +320,9 @@ internal static unsafe partial class Neon
 
     // =====================================================================================
     /// <summary>Three registers of different lengths: 1111 001U 1 D size Vn Vd A N 0 M 0 Vm</summary>
-    public static void ThreeDiff(CpuState* s, uint ins, uint pc)
+    public static void ThreeDiff(CpuState* state, uint ins, uint pc)
     {
-        if (ThreeDiffFast(s, ins))
+        if (ThreeDiffFast(state, ins))
         {
             return;
         }
@@ -337,9 +337,9 @@ internal static unsafe partial class Neon
         byte* td = stackalloc byte[16];
         bool wideN = a == 1 || a == 3;      // VADDW / VSUBW
         bool narrow = a == 4 || a == 6;     // V(R)ADDHN / V(R)SUBHN
-        Buffer.MemoryCopy(Reg(s, n), tn, 16, wideN || narrow ? 16 : 8);
-        Buffer.MemoryCopy(Reg(s, m), tm, 16, narrow ? 16 : 8);
-        Buffer.MemoryCopy(Reg(s, d), td, 16, narrow ? 8 : 16);
+        Buffer.MemoryCopy(Reg(state, n), tn, 16, wideN || narrow ? 16 : 8);
+        Buffer.MemoryCopy(Reg(state, m), tm, 16, narrow ? 16 : 8);
+        Buffer.MemoryCopy(Reg(state, d), td, 16, narrow ? 8 : 16);
         int w = esize * 2;
 
         if (narrow)
@@ -355,7 +355,7 @@ internal static unsafe partial class Neon
 
                 Set(td, i, esize, r >> esize);
             }
-            Buffer.MemoryCopy(td, Reg(s, d), 8, 8);
+            Buffer.MemoryCopy(td, Reg(state, d), 8, 8);
             return;
         }
 
@@ -385,19 +385,19 @@ internal static unsafe partial class Neon
                     r = (ulong)(long)(acc + x * y);
                     break;                        // VMLAL
                 case 9:
-                    r = (ulong)SatS(s, acc + (Int128)SatS(s, 2 * x * y, w), w);
+                    r = (ulong)SatS(state, acc + (Int128)SatS(state, 2 * x * y, w), w);
                     break;   // VQDMLAL
                 case 10:
                     r = (ulong)(long)(acc - x * y);
                     break;                       // VMLSL
                 case 11:
-                    r = (ulong)SatS(s, acc - (Int128)SatS(s, 2 * x * y, w), w);
+                    r = (ulong)SatS(state, acc - (Int128)SatS(state, 2 * x * y, w), w);
                     break;  // VQDMLSL
                 case 12:
                     r = (ulong)(long)(x * y);
                     break;                             // VMULL
                 case 13:
-                    r = (ulong)SatS(s, 2 * x * y, w);
+                    r = (ulong)SatS(state, 2 * x * y, w);
                     break;                     // VQDMULL
                 case 14:
                     r = PolyMulLong(GetU(tn, i, esize), GetU(tm, i, esize), esize);
@@ -408,7 +408,7 @@ internal static unsafe partial class Neon
             }
             Set(td, i, w, r);
         }
-        Buffer.MemoryCopy(td, Reg(s, d), 16, 16);
+        Buffer.MemoryCopy(td, Reg(state, d), 16, 16);
     }
 
     private static ulong PolyMulLong(ulong a, ulong b, int esize)
@@ -427,7 +427,7 @@ internal static unsafe partial class Neon
 
     // =====================================================================================
     /// <summary>Two registers and a scalar: 1111 001Q 1 D size Vn Vd A N 1 M 0 Vm</summary>
-    public static void Scalar(CpuState* s, uint ins, uint pc)
+    public static void Scalar(CpuState* state, uint ins, uint pc)
     {
         uint a = Bits(ins, 11, 8);
         bool q = Bit(ins, 24) != 0;
@@ -452,9 +452,9 @@ internal static unsafe partial class Neon
 
         byte* tn = stackalloc byte[16];
         byte* td = stackalloc byte[16];
-        Buffer.MemoryCopy(Reg(s, n), tn, 16, bytesIn);
-        Buffer.MemoryCopy(Reg(s, d), td, 16, 16);
-        byte* sm = Reg(s, mReg);
+        Buffer.MemoryCopy(Reg(state, n), tn, 16, bytesIn);
+        Buffer.MemoryCopy(Reg(state, d), td, 16, 16);
+        byte* sm = Reg(state, mReg);
 
         if (fp)
         {
@@ -464,7 +464,7 @@ internal static unsafe partial class Neon
                 float p = FRes(MulFz(F(tn, i), y));
                 SetF(td, i, a == 1 ? F(td, i) + p : a == 5 ? F(td, i) - p : p);
             }
-            Buffer.MemoryCopy(td, Reg(s, d), bytesIn, bytesIn);
+            Buffer.MemoryCopy(td, Reg(state, d), bytesIn, bytesIn);
             return;
         }
 
@@ -494,24 +494,24 @@ internal static unsafe partial class Neon
                     Set(td, i, w, (ulong)(long)(GetI(tn, i, esize, u) * ys));
                     break;
                 case 3:
-                    Set(td, i, w, (ulong)SatS(s, GetS(td, i, w) + (Int128)SatS(s, 2 * GetS(tn, i, esize) * ys, w), w));
+                    Set(td, i, w, (ulong)SatS(state, GetS(td, i, w) + (Int128)SatS(state, 2 * GetS(tn, i, esize) * ys, w), w));
                     break;
                 case 7:
-                    Set(td, i, w, (ulong)SatS(s, GetS(td, i, w) - (Int128)SatS(s, 2 * GetS(tn, i, esize) * ys, w), w));
+                    Set(td, i, w, (ulong)SatS(state, GetS(td, i, w) - (Int128)SatS(state, 2 * GetS(tn, i, esize) * ys, w), w));
                     break;
                 case 11:
-                    Set(td, i, w, (ulong)SatS(s, 2 * GetS(tn, i, esize) * ys, w));
+                    Set(td, i, w, (ulong)SatS(state, 2 * GetS(tn, i, esize) * ys, w));
                     break;
                 case 12:
                 case 13:
                 {
                     Int128 p = 2 * (Int128)GetS(tn, i, esize) * ys + (a == 13 ? (Int128.One << (esize - 1)) : 0);
-                    Set(td, i, esize, (ulong)SatS(s, p >> esize, esize));
+                    Set(td, i, esize, (ulong)SatS(state, p >> esize, esize));
                     break;
                 }
             }
         }
         int outBytes = longOp ? 16 : bytesIn;
-        Buffer.MemoryCopy(td, Reg(s, d), outBytes, outBytes);
+        Buffer.MemoryCopy(td, Reg(state, d), outBytes, outBytes);
     }
 }

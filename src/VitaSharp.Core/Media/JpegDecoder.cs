@@ -43,11 +43,11 @@ public static class JpegDecoder
 
     public static JpegImage Decode(ReadOnlySpan<byte> data)
     {
-        Parser p = new Parser(data.ToArray()).Run(headerOnly: false);
-        return p.BuildImage();
+        Parser parser = new Parser(data.ToArray()).Run(headerOnly: false);
+        return parser.BuildImage();
     }
 
-    private static JpegFormatException Fail(JpegError e, string m) => new(e, m);
+    private static JpegFormatException Fail(JpegError jpegError, string m) => new(jpegError, m);
 
     private sealed class Huffman
     {
@@ -101,13 +101,13 @@ public static class JpegDecoder
 
     private sealed class Parser(byte[] d)
     {
-        private readonly byte[] _d = d;
+        private readonly byte[] _data = d;
         private int _pos;
         private readonly ushort[]?[] _quant = new ushort[4][];
         private readonly Huffman?[] _dc = new Huffman[4], _ac = new Huffman[4];
         private Component[] _comps = [];
         private int _hmax = 1, _vmax = 1, _mcusX, _mcusY, _restart;
-        private bool _sof, _anyScan;
+        private bool _hasStartOfFrame, _anyScan;
         public JpegInfo? Info;
 
         // entropy decoder state
@@ -118,12 +118,12 @@ public static class JpegDecoder
 
         public Parser Run(bool headerOnly)
         {
-            if (_d.Length < 2)
+            if (_data.Length < 2)
             {
                 throw Fail(JpegError.ImageEmpty, "empty stream");
             }
 
-            if (_d[0] != 0xFF || _d[1] != 0xD8)
+            if (_data[0] != 0xFF || _data[1] != 0xD8)
             {
                 throw Fail(JpegError.NoSoi, "no SOI");
             }
@@ -135,12 +135,12 @@ public static class JpegDecoder
                 if (m < 0)
                 {
                     // truncated stream without EOI: accept what was decoded
-                    if (_anyScan || (headerOnly && _sof))
+                    if (_anyScan || (headerOnly && _hasStartOfFrame))
                     {
                         return this;
                     }
 
-                    throw Fail(_sof ? JpegError.DecodeError : JpegError.BadSofMarker, "stream ended before the first scan");
+                    throw Fail(_hasStartOfFrame ? JpegError.DecodeError : JpegError.BadSofMarker, "stream ended before the first scan");
                 }
                 switch (m)
                 {
@@ -181,7 +181,7 @@ public static class JpegDecoder
                         throw Fail(JpegError.NoLosslessSupport, "hierarchical JPEG");
                     case 0xDA:
                     {
-                        if (!_sof)
+                        if (!_hasStartOfFrame)
                         {
                             throw Fail(JpegError.BadSosMarker, "SOS before SOF");
                         }
@@ -209,14 +209,14 @@ public static class JpegDecoder
         /// <summary>Next marker code at or after the current position (skipping garbage and fill bytes), or -1 at the end.</summary>
         private int NextMarker()
         {
-            while (_pos + 1 < _d.Length)
+            while (_pos + 1 < _data.Length)
             {
-                if (_d[_pos] != 0xFF)
+                if (_data[_pos] != 0xFF)
                 {
                     _pos++;
                     continue;
                 }
-                int c = _d[_pos + 1];
+                int c = _data[_pos + 1];
                 if (c == 0xFF)
                 {
                     _pos++;
@@ -230,24 +230,24 @@ public static class JpegDecoder
                 _pos += 2;
                 return c;
             }
-            _pos = _d.Length;
+            _pos = _data.Length;
             return -1;
         }
 
         private ReadOnlySpan<byte> Segment()
         {
-            if (_pos + 2 > _d.Length)
+            if (_pos + 2 > _data.Length)
             {
                 throw Fail(JpegError.BadMarkerLength, "truncated segment");
             }
 
-            int len = (_d[_pos] << 8) | _d[_pos + 1];
-            if (len < 2 || _pos + len > _d.Length)
+            int len = (_data[_pos] << 8) | _data[_pos + 1];
+            if (len < 2 || _pos + len > _data.Length)
             {
                 throw Fail(JpegError.BadMarkerLength, "bad segment length");
             }
 
-            var s = new ReadOnlySpan<byte>(_d, _pos + 2, len - 2);
+            var s = new ReadOnlySpan<byte>(_data, _pos + 2, len - 2);
             _pos += len;
             return s;
         }
@@ -323,7 +323,7 @@ public static class JpegDecoder
 
         private void ReadSof(ReadOnlySpan<byte> s, bool progressive)
         {
-            if (_sof)
+            if (_hasStartOfFrame)
             {
                 throw Fail(JpegError.SofDuplicate, "second SOF");
             }
@@ -423,7 +423,7 @@ public static class JpegDecoder
                 c.BlocksY = _mcusY * c.V;
             }
             _comps = comps;
-            _sof = true;
+            _hasStartOfFrame = true;
             Info = info;
         }
 
@@ -577,21 +577,21 @@ public static class JpegDecoder
             if (!_marker)
             {
                 // skip to the next marker
-                while (_pos + 1 < _d.Length && !(_d[_pos] == 0xFF && _d[_pos + 1] != 0 && _d[_pos + 1] != 0xFF))
+                while (_pos + 1 < _data.Length && !(_data[_pos] == 0xFF && _data[_pos + 1] != 0 && _data[_pos + 1] != 0xFF))
                 {
                     _pos++;
                 }
             }
-            while (_pos + 1 < _d.Length && _d[_pos] == 0xFF && _d[_pos + 1] == 0xFF)
+            while (_pos + 1 < _data.Length && _data[_pos] == 0xFF && _data[_pos + 1] == 0xFF)
             {
                 _pos++;
             }
 
-            if (_pos + 1 < _d.Length && _d[_pos] == 0xFF && _d[_pos + 1] is >= 0xD0 and <= 0xD7)
+            if (_pos + 1 < _data.Length && _data[_pos] == 0xFF && _data[_pos + 1] is >= 0xD0 and <= 0xD7)
             {
                 _pos += 2;
             }
-            else if (_pos + 1 < _d.Length)
+            else if (_pos + 1 < _data.Length)
             {
                 throw Fail(JpegError.BadRestartMarker, "expected RSTn");
             }
@@ -611,12 +611,12 @@ public static class JpegDecoder
             while (_nbits <= 24)
             {
                 int b = 0;
-                if (!_marker && _pos < _d.Length)
+                if (!_marker && _pos < _data.Length)
                 {
-                    b = _d[_pos];
+                    b = _data[_pos];
                     if (b == 0xFF)
                     {
-                        int n = _pos + 1 < _d.Length ? _d[_pos + 1] : 0xD9;
+                        int n = _pos + 1 < _data.Length ? _data[_pos + 1] : 0xD9;
                         if (n == 0)
                         {
                             _pos += 2;
@@ -661,14 +661,14 @@ public static class JpegDecoder
 
         private int Receive(int n) => n == 0 ? 0 : Extend(Bits(n), n);
 
-        private int DecodeSymbol(Huffman h)
+        private int DecodeSymbol(Huffman huffman)
         {
             if (_nbits < 16)
             {
                 Fill();
             }
 
-            int e = h.Fast[_bits >> (32 - Huffman.FastBits)];
+            int e = huffman.Fast[_bits >> (32 - Huffman.FastBits)];
             if (e != 0)
             {
                 int len = e >> 8;
@@ -679,17 +679,17 @@ public static class JpegDecoder
             for (int len = Huffman.FastBits + 1; len <= 16; len++)
             {
                 int code = (int)(_bits >> (32 - len));
-                if (code <= h.MaxCode[len])
+                if (code <= huffman.MaxCode[len])
                 {
                     _bits <<= len;
                     _nbits -= len;
-                    int idx = code + h.ValOffset[len];
-                    if ((uint)idx >= (uint)h.Values.Length)
+                    int idx = code + huffman.ValOffset[len];
+                    if ((uint)idx >= (uint)huffman.Values.Length)
                     {
                         throw Fail(JpegError.DecodeError, "bad Huffman code");
                     }
 
-                    return h.Values[idx];
+                    return huffman.Values[idx];
                 }
             }
             throw Fail(JpegError.DecodeError, "bad Huffman code");
