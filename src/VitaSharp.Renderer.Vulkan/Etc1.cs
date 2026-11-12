@@ -24,19 +24,20 @@ public static class Etc1
         { 47, 183, -47, -183 },
     };
 
-    /// <summary>Decodes one level (blocks in row order, ((w+3)/4)*((h+3)/4) of them) into w*h RGBA8 texels.</summary>
-    public static Texels Decode(ReadOnlySpan<byte> blocks, uint w, uint h)
+    /// <summary>Decodes one level (blocks in row order, ((width+3)/4)*((height+3)/4) of them) into width*height RGBA8
+    /// texels.</summary>
+    public static Texels Decode(ReadOnlySpan<byte> blocks, uint width, uint height)
     {
-        uint blocksWide = (w + 3) / 4;
-        uint blocksHigh = (h + 3) / 4;
-        var texels = Texels.Rent(w * h * 4L);
-        byte[] dst = texels.Array;
+        uint blocksWide = (width + 3) / 4;
+        uint blocksHigh = (height + 3) / 4;
+        var texels = Texels.Rent(width * height * 4L);
+        byte[] destination = texels.Array;
         Span<byte> block = stackalloc byte[4 * 4 * 3];
-        for (uint by = 0; by < blocksHigh; by++)
+        for (uint blockY = 0; blockY < blocksHigh; blockY++)
         {
-            for (uint bx = 0; bx < blocksWide; bx++)
+            for (uint blockX = 0; blockX < blocksWide; blockX++)
             {
-                int offset = (int)((by * blocksWide + bx) * 8);
+                int offset = (int)((blockY * blocksWide + blockX) * 8);
                 if (offset + 8 > blocks.Length)
                 {
                     return texels;
@@ -45,26 +46,26 @@ public static class Etc1
                 DecodeBlock(blocks.Slice(offset, 8), block);
                 for (uint y = 0; y < 4; y++)
                 {
-                    uint py = by * 4 + y;
-                    if (py >= h)
+                    uint pixelY = blockY * 4 + y;
+                    if (pixelY >= height)
                     {
                         break;
                     }
 
                     for (uint x = 0; x < 4; x++)
                     {
-                        uint px = bx * 4 + x;
-                        if (px >= w)
+                        uint pixelX = blockX * 4 + x;
+                        if (pixelX >= width)
                         {
                             break;
                         }
 
                         int source = (int)((y * 4 + x) * 3);
-                        long target = (py * w + px) * 4L;
-                        dst[target] = block[source];
-                        dst[target + 1] = block[source + 1];
-                        dst[target + 2] = block[source + 2];
-                        dst[target + 3] = 255;
+                        long target = (pixelY * width + pixelX) * 4L;
+                        destination[target] = block[source];
+                        destination[target + 1] = block[source + 1];
+                        destination[target + 2] = block[source + 2];
+                        destination[target + 3] = 255;
                     }
                 }
             }
@@ -73,7 +74,7 @@ public static class Etc1
         return texels;
     }
 
-    /// <summary>Decodes one 8-byte block into 16 RGB texels, row by row (texel (x, y) at (y * 4 + x) * 3).</summary>
+    /// <summary>Decodes one 8-byte block into 16 RGB texels, row blockY row (texel (x, y) at (y * 4 + x) * 3).</summary>
     public static void DecodeBlock(ReadOnlySpan<byte> source, Span<byte> rgb)
     {
         bool differential = (source[3] & 2) != 0;

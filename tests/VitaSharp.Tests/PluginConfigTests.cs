@@ -67,7 +67,7 @@ public sealed class PluginConfigTests(GuestMemoryFixture fixture)
     [Fact]
     public void EmulatorLoadsThePluginsTaihenWouldLoad()
     {
-        using var harness = new HleHarness(fixture, "taicfg");
+        using HleHarness harness = new(fixture, "taicfg");
         string ux0 = Path.Combine(harness.Root, "ux0", "tai");
         string ur0 = Path.Combine(harness.Root, "ur0", "tai");
         Directory.CreateDirectory(ux0);
