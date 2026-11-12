@@ -965,15 +965,6 @@ public sealed unsafe partial class VulkanRenderer : IGpuBackend
                 Log.Info($"[vis] render target 0x{colorSurfaceInfo.Data:X8} {old.Width}x{old.Height} fmt {old.ColorFormat:X8} replaced by {colorSurfaceInfo.Width}x{colorSurfaceInfo.Height} fmt {colorSurfaceInfo.ColorFormat:X8} present={_presentCount}");
             }
 
-            if ((_traceManual || _traceDumpFrame == _presentCount + 1) && _traceDir != null)
-            {
-                _traceReplaced.Add(old); // keep it for the target dump (taken when present #TraceDrawsFrame is reached)
-            }
-            else
-            {
-                DestroyLater(old);
-            }
-
             _mirroredRt.Remove(old);
         }
         Format format = SurfaceFormat(colorSurfaceInfo.ColorFormat);
@@ -987,6 +978,21 @@ public sealed unsafe partial class VulkanRenderer : IGpuBackend
         rt = new RenderTarget { ViewFormats = views, Address = colorSurfaceInfo.Data, Width = colorSurfaceInfo.Width, Height = colorSurfaceInfo.Height, ColorFormat = colorSurfaceInfo.ColorFormat, Stride = colorSurfaceInfo.StrideInPixels, Format = format, Image = img, View = view, Mem = mem, LastTouchedFrame = FrameCount, Scale = scale };
         // start from the guest memory content (games often fill the surface with the CPU first)
         UploadSurfaceFromGuest(rt);
+        // the replaced surfaces are released after the copy of their pixels is recorded: released first, an upload that
+        // submits the frame in between (a full upload ring) let them be destroyed before the copy ran
+        foreach ((_, RenderTarget old) in replaced)
+        {
+            SeedFromReplaced(rt, old);
+            if ((_traceManual || _traceDumpFrame == _presentCount + 1) && _traceDir != null)
+            {
+                _traceReplaced.Add(old); // keep it for the target dump (taken when present #TraceDrawsFrame is reached)
+            }
+            else
+            {
+                DestroyLater(old);
+            }
+        }
+
         _renderTargets[key] = rt;
         _targetGen++;
         _rtRangesValid = false;
@@ -1053,6 +1059,56 @@ public sealed unsafe partial class VulkanRenderer : IGpuBackend
         _depthTargets[key] = dt;
         _targetGen++;
         return dt;
+    }
+
+    /// <summary>
+    /// Whether a new colour surface takes the pixels of the surface it replaces at the same address: same pixel layout
+    /// (row stride, format, internal scale) and that one was rendered. On the Vita both are views of the same memory,
+    /// which holds what the older scene stored; here that content may exist only on the GPU (its writeback reaches guest
+    /// memory when the frame retires), so a copy of guest memory alone is stale.
+    /// </summary>
+    public static bool SeedsFromReplaced(uint newStride, uint newColorFormat, float newScale, uint oldStride, uint oldColorFormat, float oldScale, bool oldRendered) =>
+        oldRendered && newStride == oldStride && newColorFormat == oldColorFormat && newScale == oldScale;
+
+    /// <summary>
+    /// A surface created over the memory of one it replaces (same address, another size) starts with that one's
+    /// rendered pixels where they overlap (<see cref="SeedsFromReplaced"/>), unless the CPU wrote that memory after
+    /// the older surface was rendered. Metal Gear Solid 3 HD composites its 360x224 scene into a surface at 0x60E0CA00
+    /// and then renders the 1024x512 bloom atlas at the same address, sampling the 360x224 result from it: the atlas
+    /// started from guest memory, a frame or more old, and the final composite showed old frames' effects over the new
+    /// one (the plane's monitor screen ghosting over the crew, effects lagging the picture).
+    /// </summary>
+    private void SeedFromReplaced(RenderTarget rt, RenderTarget old)
+    {
+        if (!SeedsFromReplaced(rt.Stride, rt.ColorFormat, rt.Scale, old.Stride, old.ColorFormat, old.Scale, old.LastScene != 0) || rt.Format != old.Format)
+        {
+            return;
+        }
+
+        uint w = Math.Min(rt.Width, old.Width), h = Math.Min(rt.Height, old.Height);
+        if (w == 0 || h == 0 || OverwrittenSinceRendered(old, old.Address, (ulong)old.Stride * (uint)Formats.ColorBytesPerPixel(old.ColorFormat) * h))
+        {
+            return;
+        }
+
+        EndRendering();
+        old.Dirty = true; // its colour writes must be visible to the copy
+        SyncRenderTargetForRead(old);
+        Barrier(rt.Image, ImageLayout.General, ImageLayout.General, ImageAspectFlags.ColorBit,
+            PipelineStageFlags.TransferBit, PipelineStageFlags.TransferBit, AccessFlags.TransferWriteBit, AccessFlags.TransferWriteBit);
+        var copy = new ImageCopy
+        {
+            SrcSubresource = new ImageSubresourceLayers(ImageAspectFlags.ColorBit, 0, 0, 1),
+            DstSubresource = new ImageSubresourceLayers(ImageAspectFlags.ColorBit, 0, 0, 1),
+            Extent = new Extent3D(Math.Min(rt.ImgW, old.ImgW), Math.Min(rt.ImgH, old.ImgH), 1),
+        };
+        DevStampOp();
+        _vk.CmdCopyImage(Cmd, old.Image, ImageLayout.General, rt.Image, ImageLayout.General, 1, in copy);
+        Barrier(rt.Image, ImageLayout.General, ImageLayout.General, ImageAspectFlags.ColorBit,
+            PipelineStageFlags.TransferBit, PipelineStageFlags.ColorAttachmentOutputBit | PipelineStageFlags.FragmentShaderBit | PipelineStageFlags.TransferBit,
+            AccessFlags.TransferWriteBit, AccessFlags.ColorAttachmentReadBit | AccessFlags.ColorAttachmentWriteBit | AccessFlags.ShaderReadBit | AccessFlags.TransferReadBit);
+        rt.Version++;
+        rt.InMemoryVersion = -1; // holds rendered pixels guest memory may not
     }
 
     private void UploadSurfaceFromGuest(RenderTarget rt)
@@ -1243,6 +1299,12 @@ public sealed unsafe partial class VulkanRenderer : IGpuBackend
             // stores made before it (a CPU fill of the surface before rendering into it)
             _renderTarget.MemStamp = DirtyPages.Epoch + 2;
         }
+        // Msaa2xAs4x (no 2-sample framebuffers): a 2X scene's 4-sample depth does not have the 4X sample layout
+        if (_multisampled && beginSceneCommand.Multisample == 1 && _msSamples == SampleCountFlags.Count4Bit)
+        {
+            _depth.TwoXAsFour = true;
+        }
+
         if (beginSceneCommand.Depth is { ForceLoad: true } && s_seedDepth)
         {
             SeedLoadedDepth(_depth, _supersampled);
@@ -1254,11 +1316,6 @@ public sealed unsafe partial class VulkanRenderer : IGpuBackend
         if (beginSceneCommand.Depth is { ForceStore: true })
         {
             _depth.ForceStored = true;
-        }
-        // Msaa2xAs4x (no 2-sample framebuffers): a 2X scene's 4-sample depth does not have the 4X sample layout
-        if (_multisampled && beginSceneCommand.Multisample == 1 && _msSamples == SampleCountFlags.Count4Bit)
-        {
-            _depth.TwoXAsFour = true;
         }
 
         _depthNeedsClear = beginSceneCommand.Depth == null || !beginSceneCommand.Depth.ForceLoad;
@@ -1279,23 +1336,39 @@ public sealed unsafe partial class VulkanRenderer : IGpuBackend
     /// rest keeps this image's content. In a live session the 960x544 image of Injustice's depth/stencil surface
     /// already existed from the menus, so the HUD scene of every fight loaded the menus' stale stencil instead of the
     /// 720x408 scene's, and the bars were missing until a change of the internal resolution recreated the images.
+    /// A multisampled image whose surface was last rendered by a one-sample scene gets that scene's texels packed into
+    /// its samples (<see cref="PackDepthSamples"/>): an image copy cannot change the sample count.
     /// </summary>
     private static readonly bool s_seedDepth = Environment.GetEnvironmentVariable(Core.Util.EnvVars.DepthSeed) != "0";
 
     private void SeedLoadedDepth(DepthTarget dt, bool supersampled)
     {
-        DepthTarget? src = null;
+        DepthTarget? src = null, single = null;
         foreach (DepthTarget depthTarget in _depthTargets.Values)
         {
-            if (depthTarget != dt && depthTarget.LastScene != 0 && depthTarget.Address == dt.Address && depthTarget.StencilAddress == dt.StencilAddress && depthTarget.Samples == dt.Samples
-                && depthTarget.Scale == dt.Scale && depthTarget.StrideBytes == dt.StrideBytes && depthTarget.Supersampled == supersampled && (src == null || depthTarget.LastScene > src.LastScene))
+            if (depthTarget == dt || depthTarget.LastScene == 0 || depthTarget.Address != dt.Address || depthTarget.StencilAddress != dt.StencilAddress
+                || depthTarget.Scale != dt.Scale || depthTarget.StrideBytes != dt.StrideBytes)
             {
-                src = depthTarget;
+                continue;
+            }
+
+            if (depthTarget.Samples == dt.Samples && depthTarget.Supersampled == supersampled)
+            {
+                if (src == null || depthTarget.LastScene > src.LastScene)
+                {
+                    src = depthTarget;
+                }
+            }
+            else if (DepthPackable(dt.Samples, supersampled, depthTarget.Samples, depthTarget.Supersampled) && (single == null || depthTarget.LastScene > single.LastScene))
+            {
+                single = depthTarget;
             }
         }
 
         bool fresh = dt.LastScene == 0;
-        if (!fresh && (src == null || src.LastScene < dt.LastScene))
+        // a multisampled scene loading what a one-sample scene stored last: its samples are packed from that depth
+        DepthTarget? pack = single != null && single.LastScene > Math.Max(src?.LastScene ?? 0, dt.LastScene) ? single : null;
+        if (!fresh && pack == null && (src == null || src.LastScene < dt.LastScene))
         {
             return; // this image holds the surface's newest content
         }
@@ -1313,6 +1386,15 @@ public sealed unsafe partial class VulkanRenderer : IGpuBackend
         if (fresh)
         {
             _vk.CmdClearDepthStencilImage(Cmd, dt.Image, ImageLayout.TransferDstOptimal, in clear, 1, in range);
+        }
+
+        if (pack != null)
+        {
+            Barrier(dt.Image, ImageLayout.TransferDstOptimal, ImageLayout.DepthStencilAttachmentOptimal, DepthStencilAspect, PipelineStageFlags.TransferBit, tests,
+                AccessFlags.TransferWriteBit, attRw);
+            PackDepthSamples(dt, pack);
+            dt.Version++;
+            return;
         }
 
         if (src != null)

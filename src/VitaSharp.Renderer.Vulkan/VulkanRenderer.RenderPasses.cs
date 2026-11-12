@@ -30,7 +30,9 @@ public sealed unsafe partial class VulkanRenderer
     private bool UseRenderPasses => !_core.UsesDynamicRendering;
 
     /// <param name="Color">colour attachment format, Undefined = depth/stencil only</param>
-    private readonly record struct SinglePassKey(Format Color, bool Word, AttachmentLoadOp DepthLoad, AttachmentStoreOp DepthStore, AttachmentStoreOp ColorStore = AttachmentStoreOp.Store);
+    /// <param name="Samples">sample count of the attachments (multisampled only for the depth-only sample pack pass)</param>
+    private readonly record struct SinglePassKey(Format Color, bool Word, AttachmentLoadOp DepthLoad, AttachmentStoreOp DepthStore, AttachmentStoreOp ColorStore = AttachmentStoreOp.Store,
+        SampleCountFlags Samples = SampleCountFlags.Count1Bit);
 
     private readonly Dictionary<SinglePassKey, RenderPass> _singlePasses = new();
     private long _statRenderPasses, _statFramebuffers;
@@ -62,7 +64,7 @@ public sealed unsafe partial class VulkanRenderer
                 }
             }
             uint depthIndex = n;
-            att[n++] = new AttachmentDescription(0, _core.DepthFormat, SampleCountFlags.Count1Bit, k.DepthLoad, k.DepthStore, k.DepthLoad, k.DepthStore,
+            att[n++] = new AttachmentDescription(0, _core.DepthFormat, k.Samples, k.DepthLoad, k.DepthStore, k.DepthLoad, k.DepthStore,
                 ImageLayout.DepthStencilAttachmentOptimal, ImageLayout.DepthStencilAttachmentOptimal);
             AttachmentReference* colors = stackalloc AttachmentReference[2] { new(0, ImageLayout.General), new(1, ImageLayout.General) };
             var depth = new AttachmentReference(depthIndex, ImageLayout.DepthStencilAttachmentOptimal);
@@ -127,6 +129,10 @@ public sealed unsafe partial class VulkanRenderer
 
     /// <summary>Depth-only pass with the depth unpack's ops (DONT_CARE load, STORE).</summary>
     private RenderPass DepthUnpackPass() => SinglePass(new SinglePassKey(Format.Undefined, false, AttachmentLoadOp.DontCare, AttachmentStoreOp.Store));
+
+    /// <summary>Depth-only pass of the sample pack (VulkanRenderer.DepthTextures.cs): the multisampled depth/stencil is
+    /// loaded (one sample is written per draw, stencil kept) and stored.</summary>
+    private RenderPass DepthPackPass(SampleCountFlags samples) => SinglePass(new SinglePassKey(Format.Undefined, false, AttachmentLoadOp.Load, AttachmentStoreOp.Store, Samples: samples));
 
     private string RenderPassReport() => UseRenderPasses ? $"render passes (no dynamic rendering): {_singlePasses.Count} single-sampled passes, {_statFramebuffers} framebuffers" : "dynamic rendering";
 }
