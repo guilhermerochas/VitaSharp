@@ -1857,6 +1857,26 @@ Lista de itens futuros do VitaSharp. Marque `[x]` quando um item for concluído.
   de 383 quadros; log: alvo 0x60E0CA00 amostrado enquanto é desenhado, cena sem superfície de cor, texturas P8;
   findings [flash] e [picture-order]). Três sintomas: texturas decodificadas erradas, profundidade/ordem (tela do PC
   na frente do personagem) e texturas aparecendo tarde ou mudando de um quadro para o outro. Continua o item abaixo.
+  - **Tela do PC na frente do personagem: correção feita (fix/mgs-gfx), validada no replay e no jogo rodando.** Os
+    monitores (e vidros/hélices) são desenhados na cena 4X 360x224 com teste GREATER_EQUAL contra a profundidade que
+    ela carrega da cena de 1 amostra 768x480; `SeedLoadedDepth` só copiava entre imagens com o mesmo número de
+    amostras. Agora os texels são empacotados nas amostras (`PackDepthSamples`, um desenho por amostra com máscara).
+    Replay do dump 224104: cabeças na frente dos monitores como no vídeo do Vita (GaPPb3zatq0, "Arm main parachute");
+    jogo rodando a partir do `state_start.vss`: idem. Teste `RendererSurfaceReuseTests` (falha sem a correção).
+  - **Fantasmas/efeitos atrasados ("texturas popando"): correção feita, validada no replay e no jogo rodando.** O
+    atlas 1024x512 de bloom/DOF em 0x60E0CA00 substitui a cada quadro o alvo 360x224 no mesmo endereço e começava da
+    memória do guest (um quadro ou mais atrasada): depois de um corte de câmera aparecia o capacete do plano anterior
+    por cima, e o texto do monitor ficava fantasma sobre a cabeça. Agora o alvo novo copia os pixels do substituído
+    (mesmo stride/formato/escala, CPU não escreveu depois). Teste no mesmo arquivo (falha sem a correção).
+  - **Ainda aberto: cunhas vermelhas/azuis de um quadro ([flash]).** Não são ordem de flip: com 5ce57aa6 (fix/flicker)
+    continuam (uma execução com 45 flashes e 3 picture-order, todas cunhas; sem ele 10; a contagem varia de 2 a 45
+    entre execuções iguais). No dump 224104 a cunha é determinística: quadro 3259, desenho 201 (vs 42E7C2B1B81ED0DF,
+    12 índices, mesmos streams dos desenhos 200 e 202, que saem certos) cobre meia tela de vermelho puro; a textura P8
+    decodifica certo. `VITASHARP_UB_SCENE_END=audit` (262 mil desenhos): nenhum uniform buffer reescrito depois do
+    desenho, e nenhum portão de cena liberado cedo; `=frame` não muda nada claramente (3 flashes). Próximo: ler o
+    índice/vértices do desenho 201 no dump (endereço do índice no registro Draw) e ver se o dado gravado já veio
+    errado da memória (CPU ainda escrevendo os vértices quando o worker leu) ou se é decodificação (formato de índice
+    32 bits `st[16/1]`, atributos U8x4/F16x4).
 - [ ] Metal Gear Solid HD Collection (PCSE00020), abertura do MGS3 dentro do avião (relato do usuário, 10/11/2026;
   `captures\PCSE00020_20261110_214209_tudo`, `_214218_tudo` com dump da GPU, `_214309_tudo` com a trava). Agente B
   (fix/bugs-b-7). Referência do Vita de verdade: YouTube GaPPb3zatq0 (longplay, 1:45-4:00).
