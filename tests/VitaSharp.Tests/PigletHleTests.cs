@@ -3,6 +3,7 @@ using System.Text;
 using VitaSharp.Core;
 using VitaSharp.Core.Gpu;
 using VitaSharp.Core.Hle.Modules;
+using VitaSharp.Core.Kernel;
 using VitaSharp.Core.Memory;
 using Xunit.Abstractions;
 
@@ -17,23 +18,25 @@ namespace VitaSharp.Tests;
 [Collection("guest")]
 public sealed class PigletHleTests(GuestMemoryFixture fx, ITestOutputHelper output)
 {
-    // GL / EGL values used below
-    const uint GL_NO_ERROR = 0, GL_INVALID_ENUM = 0x500, GL_INVALID_VALUE = 0x501, GL_INVALID_OPERATION = 0x502, GL_INVALID_FRAMEBUFFER_OPERATION = 0x506;
-    const uint GL_ARRAY_BUFFER = 0x8892, GL_ELEMENT_ARRAY_BUFFER = 0x8893, GL_STATIC_DRAW = 0x88E4, GL_BUFFER_SIZE = 0x8764;
-    const uint GL_TEXTURE_2D = 0xDE1, GL_TEXTURE_CUBE_MAP_POSITIVE_X = 0x8515, GL_RGB = 0x1907, GL_RGBA = 0x1908, GL_UNSIGNED_BYTE = 0x1401, GL_FLOAT = 0x1406;
-    const uint GL_FRAMEBUFFER = 0x8D40, GL_RENDERBUFFER = 0x8D41, GL_COLOR_ATTACHMENT0 = 0x8CE0, GL_DEPTH_ATTACHMENT = 0x8D00, GL_STENCIL_ATTACHMENT = 0x8D20;
-    const uint GL_RGBA4 = 0x8056, GL_DEPTH_COMPONENT16 = 0x81A5, GL_STENCIL_INDEX8 = 0x8D48, GL_DEPTH24_STENCIL8 = 0x88F0;
-    const uint GL_FRAMEBUFFER_COMPLETE = 0x8CD5, GL_INCOMPLETE_ATTACHMENT = 0x8CD6, GL_INCOMPLETE_MISSING = 0x8CD7, GL_INCOMPLETE_DIMENSIONS = 0x8CD9, GL_UNSUPPORTED = 0x8CDD;
-    const uint GL_VERTEX_SHADER = 0x8B31, GL_FRAGMENT_SHADER = 0x8B30, GL_COMPILE_STATUS = 0x8B81, GL_LINK_STATUS = 0x8B82, GL_INFO_LOG_LENGTH = 0x8B84;
-    const uint GL_ACTIVE_UNIFORMS = 0x8B86, GL_ACTIVE_ATTRIBUTES = 0x8B89;
-    const uint GL_DEPTH_TEST = 0xB71, GL_BLEND = 0xBE2, GL_COLOR_CLEAR_VALUE = 0xC22, GL_VIEWPORT = 0xBA2, GL_SRC_ALPHA = 0x302, GL_ONE_MINUS_SRC_ALPHA = 0x303;
-    const uint GL_BLEND_SRC_RGB = 0x80C9, GL_DEPTH_FUNC = 0xB74, GL_LEQUAL = 0x203, GL_MAX_TEXTURE_SIZE = 0xD33, GL_COLOR_WRITEMASK = 0xC23;
-    const uint GL_COLOR_BUFFER_BIT = 0x4000, GL_DEPTH_BUFFER_BIT = 0x100, GL_TRIANGLES = 4, GL_TRIANGLE_STRIP = 5, GL_UNSIGNED_SHORT = 0x1403;
-    const uint GL_TEXTURE_MIN_FILTER = 0x2801, GL_NEAREST = 0x2600, GL_COMPRESSED_RGBA_S3TC_DXT1 = 0x83F1;
-    const int EGL_SUCCESS = 0x3000, EGL_NOT_INITIALIZED = 0x3001, EGL_BAD_ALLOC = 0x3003, EGL_BAD_CONFIG = 0x3005, EGL_BAD_MATCH = 0x3009,
+    // GL / EGL values used below, under the Khronos names (gl2.h, egl.h) like the Hle Gl class
+#pragma warning disable IDE1006 // Khronos enumerant names
+    private const uint GL_NO_ERROR = 0, GL_INVALID_ENUM = 0x500, GL_INVALID_VALUE = 0x501, GL_INVALID_OPERATION = 0x502, GL_INVALID_FRAMEBUFFER_OPERATION = 0x506;
+    private const uint GL_ARRAY_BUFFER = 0x8892, GL_ELEMENT_ARRAY_BUFFER = 0x8893, GL_STATIC_DRAW = 0x88E4, GL_BUFFER_SIZE = 0x8764;
+    private const uint GL_TEXTURE_2D = 0xDE1, GL_TEXTURE_CUBE_MAP_POSITIVE_X = 0x8515, GL_RGB = 0x1907, GL_RGBA = 0x1908, GL_UNSIGNED_BYTE = 0x1401, GL_FLOAT = 0x1406;
+    private const uint GL_FRAMEBUFFER = 0x8D40, GL_RENDERBUFFER = 0x8D41, GL_COLOR_ATTACHMENT0 = 0x8CE0, GL_DEPTH_ATTACHMENT = 0x8D00, GL_STENCIL_ATTACHMENT = 0x8D20;
+    private const uint GL_RGBA4 = 0x8056, GL_DEPTH_COMPONENT16 = 0x81A5, GL_STENCIL_INDEX8 = 0x8D48, GL_DEPTH24_STENCIL8 = 0x88F0;
+    private const uint GL_FRAMEBUFFER_COMPLETE = 0x8CD5, GL_INCOMPLETE_ATTACHMENT = 0x8CD6, GL_INCOMPLETE_MISSING = 0x8CD7, GL_INCOMPLETE_DIMENSIONS = 0x8CD9, GL_UNSUPPORTED = 0x8CDD;
+    private const uint GL_VERTEX_SHADER = 0x8B31, GL_FRAGMENT_SHADER = 0x8B30, GL_COMPILE_STATUS = 0x8B81, GL_LINK_STATUS = 0x8B82, GL_INFO_LOG_LENGTH = 0x8B84;
+    private const uint GL_ACTIVE_UNIFORMS = 0x8B86, GL_ACTIVE_ATTRIBUTES = 0x8B89;
+    private const uint GL_DEPTH_TEST = 0xB71, GL_BLEND = 0xBE2, GL_COLOR_CLEAR_VALUE = 0xC22, GL_VIEWPORT = 0xBA2, GL_SRC_ALPHA = 0x302, GL_ONE_MINUS_SRC_ALPHA = 0x303;
+    private const uint GL_BLEND_SRC_RGB = 0x80C9, GL_DEPTH_FUNC = 0xB74, GL_LEQUAL = 0x203, GL_MAX_TEXTURE_SIZE = 0xD33, GL_COLOR_WRITEMASK = 0xC23;
+    private const uint GL_COLOR_BUFFER_BIT = 0x4000, GL_DEPTH_BUFFER_BIT = 0x100, GL_TRIANGLES = 4, GL_TRIANGLE_STRIP = 5, GL_UNSIGNED_SHORT = 0x1403;
+    private const uint GL_TEXTURE_MIN_FILTER = 0x2801, GL_NEAREST = 0x2600, GL_COMPRESSED_RGBA_S3TC_DXT1 = 0x83F1;
+    private const int EGL_SUCCESS = 0x3000, EGL_NOT_INITIALIZED = 0x3001, EGL_BAD_ALLOC = 0x3003, EGL_BAD_CONFIG = 0x3005, EGL_BAD_MATCH = 0x3009,
         EGL_BAD_SURFACE = 0x300D, EGL_BAD_ATTRIBUTE = 0x3004, EGL_NONE = 0x3038, EGL_RED_SIZE = 0x3024, EGL_DEPTH_SIZE = 0x3025,
         EGL_STENCIL_SIZE = 0x3026, EGL_SURFACE_TYPE = 0x3033, EGL_WINDOW_BIT = 4, EGL_PBUFFER_BIT = 1, EGL_CONTEXT_CLIENT_VERSION = 0x3098,
         EGL_WIDTH = 0x3057, EGL_HEIGHT = 0x3056, EGL_CONFIG_ID = 0x3028, EGL_RENDERABLE_TYPE = 0x3040, EGL_OPENGL_ES2_BIT = 4, EGL_DRAW = 0x3059;
+#pragma warning restore IDE1006
 
     [Fact]
     public void Egl_DisplayConfigsSurfacesAndErrors()
@@ -187,7 +190,7 @@ public sealed class PigletHleTests(GuestMemoryFixture fx, ITestOutputHelper outp
             uint sz = h.Mem(4);
             h.Call("glGetBufferParameteriv", GL_ARRAY_BUFFER, GL_BUFFER_SIZE, new Ptr<int>(sz));
             Assert.Equal(16u, GuestMemory.R32(sz));
-            var buf = h.Piglet.Buffer(a)!;
+            PgBuffer buf = h.Piglet.Buffer(a)!;
             Assert.Equal(0xAABBCCDDu, GuestMemory.R32(buf.Addr + 4));
             Assert.Equal(0x0B0A0908u, GuestMemory.R32(buf.Addr + 8));
             h.Call("glBindBuffer", 0x1234u, a);
@@ -224,7 +227,7 @@ public sealed class PigletHleTests(GuestMemoryFixture fx, ITestOutputHelper outp
 
             h.Call("glTexImage2D", GL_TEXTURE_2D, 0, (int)GL_RGB, 3, 2, 0, GL_RGB, GL_UNSIGNED_BYTE, px);
             Assert.Equal(GL_NO_ERROR, h.U("glGetError"));
-            var t = h.Piglet.Texture(tex)!;
+            PgTexture t = h.Piglet.Texture(tex)!;
             // stored as X8U8U8U8_1BGR, linear rows 8 texels wide; level 1 (1x1) follows level 0 padded to 4x2 (rows of 8)
             Assert.Equal(0x0C004000u, t.Format!.GxmFormat);
             Assert.Equal(32u, t.Levels[0, 0].RowPitch);
@@ -391,9 +394,9 @@ public sealed class PigletHleTests(GuestMemoryFixture fx, ITestOutputHelper outp
         });
     }
 
-    const string TriVs = "void main(float2 aPos : POSITION, float4 aColor : COLOR, float2 aUv : TEXCOORD0, uniform float4 uOffset, uniform float4 uTint[2],\n" +
+    private const string TriVs = "void main(float2 aPos : POSITION, float4 aColor : COLOR, float2 aUv : TEXCOORD0, uniform float4 uOffset, uniform float4 uTint[2],\n" +
         " out float4 oPos : POSITION, out float4 oColor : COLOR, out float2 oUv : TEXCOORD0) { oPos = float4(aPos + uOffset.xy, uOffset.z, 1.0f); oColor = aColor * uTint[1]; oUv = aUv; }";
-    const string TriFs = "float4 main(float4 vColor : COLOR, float2 vUv : TEXCOORD0, uniform sampler2D uTex, uniform float uUseTex) : COLOR\n" +
+    private const string TriFs = "float4 main(float4 vColor : COLOR, float2 vUv : TEXCOORD0, uniform sampler2D uTex, uniform float uUseTex) : COLOR\n" +
         " { return lerp(vColor, tex2D(uTex, vUv), uUseTex); }";
 
     [PigletCompilerFact]
@@ -440,7 +443,7 @@ public sealed class PigletHleTests(GuestMemoryFixture fx, ITestOutputHelper outp
             Assert.Equal(0u, GuestMemory.R32(v));
             Assert.Contains("error", h.ShaderLog(bad));
             // the compiled program comes back through glPigletGetShaderBinarySCE and loads with glShaderBinary
-            var p = h.Piglet.ProgramObject(prog)!;
+            PgProgram p = h.Piglet.ProgramObject(prog)!;
             uint len = h.Mem(4), fmt = h.Mem(4), blob = h.Mem(64 * 1024);
             h.Call("glPigletGetShaderBinarySCE", p.Vs!.Name, 64 * 1024, new Ptr<int>(len), new Ptr<uint>(fmt), blob);
             Assert.Equal((uint)p.Vs.Gxp!.Length, GuestMemory.R32(len));
@@ -677,14 +680,14 @@ public sealed class PigletHleTests(GuestMemoryFixture fx, ITestOutputHelper outp
 }
 
 /// <summary>Runs Piglet calls on a guest thread of a test emulator.</summary>
-sealed class PigletHarness : IDisposable
+internal sealed class PigletHarness : IDisposable
 {
-    readonly string _root;
-    readonly Emulator _emu;
+    private readonly string _root;
+    private readonly Emulator _emu;
     public readonly Piglet Piglet;
     private uint _bump;
     private readonly uint _arena;
-    const uint ArenaSize = 8 << 20;
+    private const uint ArenaSize = 8 << 20;
     public uint Window, Context;
 
     public PigletHarness(GuestMemoryFixture fx, bool compiler, IGpuBackend? backend = null)
@@ -714,7 +717,7 @@ sealed class PigletHarness : IDisposable
     public void Run(Action body)
     {
         Exception? failure = null;
-        var t = _emu.Kernel.CreateThread("piglet-test", 0, 0x10000100, 0x40000, 0, 0x70000);
+        GuestThread t = _emu.Kernel.CreateThread("piglet-test", 0, 0x10000100, 0x40000, 0, 0x70000);
         t.HostBody = _ =>
         {
             try
@@ -735,18 +738,18 @@ sealed class PigletHarness : IDisposable
         }
     }
 
-    static readonly Dictionary<string, MethodInfo> Methods = typeof(Piglet).GetMethods(BindingFlags.Instance | BindingFlags.NonPublic | BindingFlags.Public)
+    private static readonly Dictionary<string, MethodInfo> s_methods = typeof(Piglet).GetMethods(BindingFlags.Instance | BindingFlags.NonPublic | BindingFlags.Public)
         .GroupBy(m => m.Name).ToDictionary(g => g.Key, g => g.First());
 
     public object? Call(string name, params object[] args)
     {
-        var m = Methods[name];
-        var ps = m.GetParameters();
-        var conv = new object?[ps.Length];
+        MethodInfo m = s_methods[name];
+        ParameterInfo[] ps = m.GetParameters();
+        object?[] conv = new object?[ps.Length];
         for (int i = 0; i < ps.Length; i++)
         {
-            var a = args[i];
-            var pt = ps[i].ParameterType;
+            object a = args[i];
+            Type pt = ps[i].ParameterType;
             conv[i] = a.GetType() == pt ? a : pt.IsEnum ? Enum.ToObject(pt, a) : pt == typeof(string) || pt.IsGenericType ? a : Convert.ChangeType(a, pt);
         }
         return m.Invoke(Piglet, conv);
@@ -792,13 +795,13 @@ sealed class PigletHarness : IDisposable
 
     public uint Str(string s)
     {
-        var b = Encoding.UTF8.GetBytes(s);
+        byte[] b = Encoding.UTF8.GetBytes(s);
         uint p = Mem((uint)b.Length + 1);
         b.CopyTo(GuestMemory.Span(p, b.Length));
         return p;
     }
 
-    uint Init()
+    private uint Init()
     {
         uint dpy = U("eglGetDisplay", 0u);
         U("eglInitialize", dpy, new Ptr<int>(0), new Ptr<int>(0));
@@ -859,7 +862,7 @@ sealed class PigletHarness : IDisposable
 
     public void Dispose()
     {
-        var backend = _emu.Gpu.Backend;
+        IGpuBackend? backend = _emu.Gpu.Backend;
         if (backend != null)
         {
             _emu.Gpu.WaitIdle();
@@ -878,17 +881,17 @@ sealed class PigletHarness : IDisposable
 
 /// <summary>The runtime compiler: ur0:data/libshacccg.suprx of the VitaSharp or Vita3K data folder (read only: copied
 /// into each test's own file system).</summary>
-static class PigletCompiler
+internal static class PigletCompiler
 {
-    static readonly Lazy<string?> _path = new(() =>
+    private static readonly Lazy<string?> s_path = new(() =>
     {
-        var appData = Environment.GetFolderPath(Environment.SpecialFolder.ApplicationData);
+        string appData = Environment.GetFolderPath(Environment.SpecialFolder.ApplicationData);
         if (string.IsNullOrEmpty(appData))
         {
             return null;
         }
 
-        foreach (var p in new[] { System.IO.Path.Combine(appData, "VitaSharp", "fs", "ur0", "data", "libshacccg.suprx"), System.IO.Path.Combine(appData, "Vita3K", "Vita3K", "ur0", "data", "libshacccg.suprx") })
+        foreach (string p in new[] { System.IO.Path.Combine(appData, "VitaSharp", "fs", "ur0", "data", "libshacccg.suprx"), System.IO.Path.Combine(appData, "Vita3K", "Vita3K", "ur0", "data", "libshacccg.suprx") })
         {
             if (File.Exists(p))
             {
@@ -898,7 +901,7 @@ static class PigletCompiler
 
         return null;
     });
-    public static string? Path => _path.Value;
+    public static string? Path => s_path.Value;
 }
 
 public sealed class PigletCompilerFactAttribute : FactAttribute

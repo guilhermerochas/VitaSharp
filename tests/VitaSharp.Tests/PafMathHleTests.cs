@@ -2,6 +2,7 @@ using System.Reflection;
 using VitaSharp.Core;
 using VitaSharp.Core.Hle;
 using VitaSharp.Core.Hle.Modules;
+using VitaSharp.Core.Kernel;
 using VitaSharp.Core.Memory;
 using VitaSharp.Core.Util;
 using Xunit;
@@ -17,22 +18,22 @@ namespace VitaSharp.Tests;
 [Collection("guest")]
 public sealed unsafe class PafMathHleTests(GuestMemoryFixture fx)
 {
-    static readonly Lazy<string?> FirmwarePath = new(() =>
+    private static readonly Lazy<string?> s_firmwarePath = new(() =>
         JsonFirmware.ModulePath is { } json && Path.Combine(Path.GetDirectoryName(json)!, "libpaf.suprx") is var p && File.Exists(p) ? p : null);
 
-    sealed record Case(string Fw, string Hle, uint[] Ints, float[] Floats, uint Out, uint OutSize);
+    private sealed record Case(string Fw, string Hle, uint[] Ints, float[] Floats, uint Out, uint OutSize);
 
     [PafFirmwareFact]
     public void MathMatchesFirmwareModule()
     {
         string root = Path.Combine(Path.GetTempPath(), "vitasharp-pafmath-" + Guid.NewGuid().ToString("N"));
         Directory.CreateDirectory(Path.Combine(root, "vs0", "sys", "external"));
-        File.Copy(FirmwarePath.Value!, Path.Combine(root, "vs0", "sys", "external", "libpaf.suprx"));
+        File.Copy(s_firmwarePath.Value!, Path.Combine(root, "vs0", "sys", "external", "libpaf.suprx"));
         try
         {
             using var emu = new Emulator(new EmulatorOptions { FsRoot = root, Memory = fx.Memory, EnableJit = false, CpuBackend = "interp" });
             emu.LoadModule("vs0:sys/external/libpaf.suprx");
-            var paf = emu.Hle.Modules.OfType<Paf>().Single();
+            Paf paf = emu.Hle.Modules.OfType<Paf>().Single();
             uint arena = emu.Memory.Alloc(0x10000, "paf math test");
             uint bump = 0;
             uint Alloc(uint n)
@@ -89,7 +90,7 @@ public sealed unsafe class PafMathHleTests(GuestMemoryFixture fx)
             // the Euler angles of rotations (a general matrix has no meaningful decomposition)
             foreach (uint m in new[] { ident, rot, rigid, quarterY, quarterX, quarterZ })
             {
-                foreach (var o in new[] { "XYZ", "XZY", "YXZ", "YZX", "ZXY", "ZYX" })
+                foreach (string o in new[] { "XYZ", "XZY", "YXZ", "YZX", "ZXY", "ZYX" })
                 {
                     C($"_ZNK3paf4math6matrix21extractEulerAngles{o}Ev", "MatrixEuler" + o, 16, [m]);
                 }
@@ -120,7 +121,7 @@ public sealed unsafe class PafMathHleTests(GuestMemoryFixture fx)
                 C("_ZNK3paf4math10quaternion3expEf", "QuatExp", 16, [q], 1e-4f);
             }
 
-            foreach (var o in new[] { "XYZ", "XZY", "YXZ", "YZX", "ZXY", "ZYX" })
+            foreach (string o in new[] { "XYZ", "XZY", "YXZ", "YZX", "ZXY", "ZYX" })
             {
                 C($"_ZN3paf4math10quaternion18FromEulerAngles{o}ENS0_2v3E", "QuatFromEuler" + o, 16, [euler]);
             }
@@ -131,12 +132,12 @@ public sealed unsafe class PafMathHleTests(GuestMemoryFixture fx)
             }
 
             var failures = new List<string>();
-            var t0 = emu.Kernel.CreateThread("paf-math-test", 0, 0x10000100, 0x10000, 0, 0x70000);
+            GuestThread t0 = emu.Kernel.CreateThread("paf-math-test", 0, 0x10000100, 0x10000, 0, 0x70000);
             t0.HostBody = th =>
             {
                 try
                 {
-                    foreach (var c in cases)
+                    foreach (Case c in cases)
                     {
                         uint nid = NidDatabase.LookupName(c.Fw).First(n => n.Library.StartsWith("ScePaf", StringComparison.Ordinal)).Nid;
                         Assert.True(emu.Linker.TryGetFunctionExport(nid, out uint fn), c.Fw);
@@ -147,19 +148,19 @@ public sealed unsafe class PafMathHleTests(GuestMemoryFixture fx)
                             ((float*)th.Core.State->D)[i] = c.Floats[i];
                         }
                         // the module may write into its by-value arguments: both sides start from the same inputs
-                        var saved = c.Ints.Select(a => GuestMemory.ReadSpan(a, 64).ToArray()).ToArray();
+                        byte[][] saved = c.Ints.Select(a => GuestMemory.ReadSpan(a, 64).ToArray()).ToArray();
                         th.CallGuest(fn, [fwOut, .. c.Ints]);
-                        var fwArgs = c.Ints.Select(a => GuestMemory.ReadSpan(a, 64).ToArray()).ToArray();
+                        byte[][] fwArgs = c.Ints.Select(a => GuestMemory.ReadSpan(a, 64).ToArray()).ToArray();
                         for (int i = 0; i < c.Ints.Length; i++)
                         {
                             saved[i].CopyTo(GuestMemory.Span(c.Ints[i], 64));
                         }
 
-                        var mi = paf.GetType().GetMethod(c.Hle, BindingFlags.Instance | BindingFlags.NonPublic)!;
+                        MethodInfo mi = paf.GetType().GetMethod(c.Hle, BindingFlags.Instance | BindingFlags.NonPublic)!;
                         var args = new List<object>();
                         int fi = 0, ui = 0;
                         uint[] ints = [hleOut, .. c.Ints];
-                        foreach (var p in mi.GetParameters())
+                        foreach (ParameterInfo p in mi.GetParameters())
                         {
                             args.Add(p.ParameterType == typeof(float) ? (object)c.Floats[fi++] : ints[ui++]);
                         }
@@ -233,7 +234,7 @@ public sealed unsafe class PafMathHleTests(GuestMemoryFixture fx)
         try
         {
             using var emu = new Emulator(new EmulatorOptions { FsRoot = root, Memory = fx.Memory, EnableJit = false, CpuBackend = "interp" });
-            var paf = emu.Hle.Modules.OfType<Paf>().Single();
+            Paf paf = emu.Hle.Modules.OfType<Paf>().Single();
             object? Call(string name, params object[] a) => paf.GetType().GetMethod(name, BindingFlags.Instance | BindingFlags.NonPublic)!.Invoke(paf, a);
             uint m = fx.Memory.Alloc(64, "paf math"), s = fx.Memory.Alloc(16, "paf math");
             float[] skew = [1, 0, 0, 0, 0.1f, 1, 0, 0, 0, 0, 1, 0, 0, 0, 0, 1];

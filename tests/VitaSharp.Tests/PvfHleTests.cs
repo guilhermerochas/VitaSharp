@@ -9,17 +9,17 @@ namespace VitaSharp.Tests;
 [Collection("guest")]
 public sealed class PvfHleTests(GuestMemoryFixture fx)
 {
-    static object? Invoke(Pvf m, string name, params object[] args) =>
+    private static object? Invoke(Pvf m, string name, params object[] args) =>
         typeof(Pvf).GetMethod(name, BindingFlags.Instance | BindingFlags.NonPublic | BindingFlags.Public)!.Invoke(m, args);
-    static int Call(Pvf m, string name, params object[] args) => (int)Invoke(m, name, args)!;
-    static uint CallU(Pvf m, string name, params object[] args) => (uint)Invoke(m, name, args)!;
-    static float CallF(Pvf m, string name, params object[] args) => (float)Invoke(m, name, args)!;
-    static Ptr<int> P(uint a) => new(a);
+    private static int Call(Pvf m, string name, params object[] args) => (int)Invoke(m, name, args)!;
+    private static uint CallU(Pvf m, string name, params object[] args) => (uint)Invoke(m, name, args)!;
+    private static float CallF(Pvf m, string name, params object[] args) => (float)Invoke(m, name, args)!;
+    private static Ptr<int> P(uint a) => new(a);
 
-    const uint AllocFn = 0x100, ReallocFn = 0x180, FreeFn = 0x200;
-    int _allocs, _frees;
+    private const uint AllocFn = 0x100, ReallocFn = 0x180, FreeFn = 0x200;
+    private int _allocs, _frees;
 
-    uint Guest(uint fn, uint[] a)
+    private uint Guest(uint fn, uint[] a)
     {
         switch (fn)
         {
@@ -34,13 +34,13 @@ public sealed class PvfHleTests(GuestMemoryFixture fx)
         throw new InvalidOperationException($"unexpected guest call {fn:X}");
     }
 
-    Pvf Module(Func<string, byte[]?>? files = null) => new()
+    private Pvf Module(Func<string, byte[]?>? files = null) => new()
     {
         GuestCallOverride = Guest,
         SystemFontOverride = files ?? (name => name is "ltn0.pvf" or "jpn0.pvf" ? FontTestData.Ttf() : null),
     };
 
-    uint InitRec(uint maxFonts)
+    private uint InitRec(uint maxFonts)
     {
         uint p = fx.Memory.Alloc(0x20, "pvf-init", MemoryRegion.User, 16);
         GuestMemory.Fill(p, 0, 0x20);
@@ -52,22 +52,22 @@ public sealed class PvfHleTests(GuestMemoryFixture fx)
         return p;
     }
 
-    uint Err()
+    private uint Err()
     {
         uint e = fx.Memory.Alloc(16, "pvf-err", MemoryRegion.User, 16);
         GuestMemory.W32(e, 0x12345678);
         return e;
     }
-    uint Buf(uint size)
+    private uint Buf(uint size)
     {
         uint b = fx.Memory.Alloc(size, "pvf-buf", MemoryRegion.User, 16);
         GuestMemory.Fill(b, 0, size);
         return b;
     }
 
-    (Pvf m, uint lib) NewLib(uint maxFonts = 4, Func<string, byte[]?>? files = null)
+    private (Pvf m, uint lib) NewLib(uint maxFonts = 4, Func<string, byte[]?>? files = null)
     {
-        var m = Module(files);
+        Pvf m = Module(files);
         uint e = Err();
         uint lib = CallU(m, "scePvfNewLib", InitRec(maxFonts), P(e));
         Assert.NotEqual(0u, lib);
@@ -75,7 +75,7 @@ public sealed class PvfHleTests(GuestMemoryFixture fx)
         return (m, lib);
     }
 
-    uint Open(Pvf m, uint lib, int index = 4)
+    private uint Open(Pvf m, uint lib, int index = 4)
     {
         uint e = Err();
         uint f = CallU(m, "scePvfOpen", lib, index, 0u, P(e));
@@ -87,7 +87,7 @@ public sealed class PvfHleTests(GuestMemoryFixture fx)
     [Fact]
     public void NewLibValidates()
     {
-        var m = Module();
+        Pvf m = Module();
         uint e = Err();
         Assert.Equal(0u, CallU(m, "scePvfNewLib", InitRec(4), P(0)));
         Assert.Equal(0u, CallU(m, "scePvfNewLib", 0u, P(e)));
@@ -121,7 +121,7 @@ public sealed class PvfHleTests(GuestMemoryFixture fx)
     [Fact]
     public void SystemFontListAndMatching()
     {
-        var (m, lib) = NewLib();
+        (Pvf? m, uint lib) = NewLib();
         uint e = Err();
         Assert.Equal(18, Call(m, "scePvfGetNumFontList", lib, P(e)));
         uint list = Buf(0xD8 * 3);
@@ -161,7 +161,7 @@ public sealed class PvfHleTests(GuestMemoryFixture fx)
     [Fact]
     public void OpenAndClose()
     {
-        var (m, lib) = NewLib(maxFonts: 2);
+        (Pvf? m, uint lib) = NewLib(maxFonts: 2);
         uint e = Err();
         Assert.Equal(0u, CallU(m, "scePvfOpen", lib, 4, 2u, P(e)));
         Assert.Equal(Pvf.ERR_ARG, GuestMemory.Read<int>(e));
@@ -202,9 +202,9 @@ public sealed class PvfHleTests(GuestMemoryFixture fx)
     [Fact]
     public void UserFonts()
     {
-        var (m, lib) = NewLib();
+        (Pvf? m, uint lib) = NewLib();
         uint e = Err();
-        var ttf = FontTestData.Ttf();
+        byte[] ttf = FontTestData.Ttf();
         uint mem = Buf((uint)ttf.Length);
         ttf.CopyTo(GuestMemory.Span(mem, ttf.Length));
         uint f = CallU(m, "scePvfOpenUserMemory", lib, mem, (uint)ttf.Length, P(e));
@@ -232,7 +232,7 @@ public sealed class PvfHleTests(GuestMemoryFixture fx)
     [Fact]
     public void CharInfoHasFreeTypeMetrics()
     {
-        var (m, lib) = NewLib();
+        (Pvf? m, uint lib) = NewLib();
         uint f = Open(m, lib);
         uint ci = Buf(0x40);
         GuestMemory.Fill(ci, 0xEE, 0x40);
@@ -269,7 +269,7 @@ public sealed class PvfHleTests(GuestMemoryFixture fx)
         Assert.Equal(Pvf.ERR_ARG, Call(m, "scePvfSetCharSize", f, 0f, 10f));
     }
 
-    uint Image(uint format, int x64, int y64, int w, int h, int bpl)
+    private uint Image(uint format, int x64, int y64, int w, int h, int bpl)
     {
         uint buf = Buf((uint)(bpl * h));
         uint img = Buf(0x18);
@@ -283,12 +283,12 @@ public sealed class PvfHleTests(GuestMemoryFixture fx)
         return img;
     }
 
-    static byte Pixel(uint img, int x, int y) => GuestMemory.Read<byte>(GuestMemory.R32(img + 0x14) + (uint)(y * GuestMemory.Read<ushort>(img + 0x10) + x));
+    private static byte Pixel(uint img, int x, int y) => GuestMemory.Read<byte>(GuestMemory.R32(img + 0x14) + (uint)(y * GuestMemory.Read<ushort>(img + 0x10) + x));
 
     [Fact]
     public void GlyphImageAtThePen()
     {
-        var (m, lib) = NewLib();
+        (Pvf? m, uint lib) = NewLib();
         uint f = Open(m, lib);
         uint rect = Buf(4);
         Assert.Equal(0, Call(m, "scePvfGetCharImageRect", f, (ushort)'A', rect));
@@ -322,7 +322,7 @@ public sealed class PvfHleTests(GuestMemoryFixture fx)
     [Fact]
     public void SyntheticStyles()
     {
-        var (m, lib) = NewLib();
+        (Pvf? m, uint lib) = NewLib();
         uint f = Open(m, lib);
         uint rect = Buf(4);
         Assert.Equal(Pvf.ERR_ARG, Call(m, "scePvfSetEmboldenRate", f, 41f));
@@ -340,7 +340,7 @@ public sealed class PvfHleTests(GuestMemoryFixture fx)
     [Fact]
     public void KerningAndVerticalForms()
     {
-        var (m, lib) = NewLib();
+        (Pvf? m, uint lib) = NewLib();
         uint f = Open(m, lib);
         uint k = Buf(0x10);
         Assert.Equal(0, Call(m, "scePvfGetKerningInfo", f, (ushort)'A', (ushort)'V', k));
@@ -378,7 +378,7 @@ public sealed class PvfHleTests(GuestMemoryFixture fx)
     [Fact]
     public void OutlinesAreAllocatedAndReleased()
     {
-        var (m, lib) = NewLib();
+        (Pvf? m, uint lib) = NewLib();
         uint f = Open(m, lib);
         uint o = Buf(0x14);
         _allocs = _frees = 0;
@@ -404,7 +404,7 @@ public sealed class PvfHleTests(GuestMemoryFixture fx)
     [Fact]
     public void ResolutionEmAndConversions()
     {
-        var (m, lib) = NewLib();
+        (Pvf? m, uint lib) = NewLib();
         uint e = Err();
         Assert.Equal(128f, CallF(m, "scePvfPointToPixelH", lib, 72f, P(e)));
         Assert.Equal(0, Call(m, "scePvfSetResolution", lib, 72f, 96f));
@@ -434,7 +434,7 @@ public sealed class PvfHleTests(GuestMemoryFixture fx)
             return;
         }
 
-        var (m, lib) = NewLib(files: name => File.Exists(Path.Combine(dir, name)) ? File.ReadAllBytes(Path.Combine(dir, name)) : null);
+        (Pvf? m, uint lib) = NewLib(files: name => File.Exists(Path.Combine(dir, name)) ? File.ReadAllBytes(Path.Combine(dir, name)) : null);
         uint latin = Open(m, lib, 4), japanese = Open(m, lib, 0);
         uint rect = Buf(4);
         Assert.Equal(0, Call(m, "scePvfGetCharImageRect", latin, (ushort)'A', rect));

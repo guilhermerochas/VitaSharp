@@ -149,7 +149,7 @@ public sealed unsafe partial class NativeJitTests
         CpuState* s = CpuState.Allocate();
         try
         {
-            foreach ((string? name, uint word, bool rotate) in new[] { ("vadd.f32 dependent", 0xF2000D42u, false), ("vadd.f32 8 chains", 0xF2000D42u, true), ("vadd.i32 dependent", 0xF2200842u, false), ("vadd.i32 8 chains", 0xF2200842u, true) })
+            foreach ((string name, uint word, bool rotate) in new[] { ("vadd.f32 dependent", 0xF2000D42u, false), ("vadd.f32 8 chains", 0xF2000D42u, true), ("vadd.i32 dependent", 0xF2200842u, false), ("vadd.i32 8 chains", 0xF2200842u, true) })
             {
                 var code = new List<byte>();
                 for (int i = 0; i < 128; i++)

@@ -12,10 +12,10 @@ namespace VitaSharp.Tests;
 public class PointSizeTests
 {
     // the vertex program of MaliDeviceTests, with the varyings block moved to 0xA0 so its vertex outputs can be set
-    static GxpProgram Program(bool pointSize)
+    private static GxpProgram Program(bool pointSize)
     {
         ulong[] code = [0x6081000460600003, 0x50C9000A20200180];
-        var d = new byte[0x100 + code.Length * 8];
+        byte[] d = new byte[0x100 + code.Length * 8];
         void W32(int o, uint v) => BinaryPrimitives.WriteUInt32LittleEndian(d.AsSpan(o), v);
         W32(0x2C, 0xA0 - 0x2C); // varyings offset (relative to the field)
         if (pointSize)
@@ -33,13 +33,13 @@ public class PointSizeTests
         return new GxpProgram(d, 0x81000000);
     }
 
-    static string Glsl(GxpProgram p, bool scaled) =>
+    private static string Glsl(GxpProgram p, bool scaled) =>
         ShaderGenerator.Generate(p, new ShaderHints([], [], 0x00000000, ScaledPointSize: scaled)).Glsl;
 
     [Fact]
     public void PointSizeFollowsTheInternalResolution()
     {
-        var p = Program(pointSize: true);
+        GxpProgram p = Program(pointSize: true);
         Assert.True(p.WritesPointSize);
         Assert.Contains("* rinfo.res_multiplier;", Glsl(p, scaled: true).Split('\n').Single(l => l.Contains("gl_PointSize =")));
         // the variant without the hint (recipes recorded before it) still translates as before
@@ -49,7 +49,7 @@ public class PointSizeTests
     [Fact]
     public void ProgramsWithoutPointSizeAreUnchanged()
     {
-        var p = Program(pointSize: false);
+        GxpProgram p = Program(pointSize: false);
         Assert.False(p.WritesPointSize);
         Assert.DoesNotContain("gl_PointSize =", Glsl(p, scaled: false));
     }

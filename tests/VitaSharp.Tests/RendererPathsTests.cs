@@ -16,9 +16,9 @@ namespace VitaSharp.Tests;
 [Collection("guest")]
 public sealed class RendererPathsTests(GuestMemoryFixture fx)
 {
-    const int W = 64, H = 64;
+    private const int W = 64, H = 64;
 
-    static VulkanRenderer NewRenderer(string? cacheDir = null, string? msaa = null) => new(new VulkanRendererOptions
+    private static VulkanRenderer NewRenderer(string? cacheDir = null, string? msaa = null) => new(new VulkanRendererOptions
     {
         VSync = false,
         AsyncShaders = false,
@@ -29,7 +29,7 @@ public sealed class RendererPathsTests(GuestMemoryFixture fx)
 
     /// <summary>Runs <paramref name="body"/> with <paramref name="renderer"/> as the GPU queue's backend of a fresh
     /// harness, then waits for the GPU and disposes the renderer.</summary>
-    void WithRenderer(string tag, VulkanRenderer renderer, Action<HleHarness> body)
+    private void WithRenderer(string tag, VulkanRenderer renderer, Action<HleHarness> body)
     {
         using var h = new HleHarness(fx, tag);
         try
@@ -48,7 +48,7 @@ public sealed class RendererPathsTests(GuestMemoryFixture fx)
     // ---------------------------------------------------------------- MSAA
 
     /// <summary>The presented frame (RGBA) after one scene drawing the U8U8U8U8 textures (random texels).</summary>
-    byte[] MsaaScene(string? msaa, ushort multisample, out string mode)
+    private byte[] MsaaScene(string? msaa, ushort multisample, out string mode)
     {
         string frames = Path.Combine(Path.GetTempPath(), "vitasharp-vkmsaa-" + Guid.NewGuid().ToString("N"));
         string m = "";
@@ -87,7 +87,7 @@ public sealed class RendererPathsTests(GuestMemoryFixture fx)
                 w.Terminate();
             });
             mode = m;
-            var last = Directory.GetFiles(frames, "frame_*.png").Order().Last();
+            string last = Directory.GetFiles(frames, "frame_*.png").Order().Last();
             using var bmp = SkiaSharp.SKBitmap.Decode(last);
             Assert.Equal((W, H), (bmp.Width, bmp.Height));
             return bmp.Pixels.SelectMany(c => new[] { c.Red, c.Green, c.Blue }).ToArray();
@@ -106,11 +106,11 @@ public sealed class RendererPathsTests(GuestMemoryFixture fx)
     [SoftwareVulkanFact]
     public void MsaaDownscaleScenesResolveToTheOneSampleImageInEveryMode()
     {
-        using var driver = SoftwareVulkan.Use();
+        using IDisposable driver = SoftwareVulkan.Use();
         // the scene loads the surface into every sample, draws the textured triangle and resolves: away from the
         // triangle's diagonal edge (where the samples of a pixel differ) every mode gives the one-sample image, the
         // texture inside and the pattern outside; along the edge only a band of a pixel or two may differ
-        var single = MsaaScene(null, 0, out _);
+        byte[] single = MsaaScene(null, 0, out _);
         static (byte, byte, byte) At(byte[] img, int x, int y) => (img[(y * W + x) * 3], img[(y * W + x) * 3 + 1], img[(y * W + x) * 3 + 2]);
         static (byte, byte, byte) Pattern(int x, int y)
         {
@@ -132,16 +132,16 @@ public sealed class RendererPathsTests(GuestMemoryFixture fx)
         }
 
         Assert.True(drawn > (W - 3) * (H - 3) / 2 * 9 / 10, $"the triangle drew {drawn} pixels");
-        foreach (var (mode, samples) in new[] { ("native", (ushort)2), ("native", (ushort)1), ("ss", (ushort)2), ("off", (ushort)2) })
+        foreach ((string mode, ushort samples) in new[] { ("native", (ushort)2), ("native", (ushort)1), ("ss", (ushort)2), ("off", (ushort)2) })
         {
-            var img = MsaaScene(mode, samples, out var shown);
+            byte[] img = MsaaScene(mode, samples, out string? shown);
             Assert.Equal(mode, shown);
             int far = 0, edge = 0;
             for (int y = 0; y < H; y++)
             {
                 for (int x = 0; x < W; x++)
                 {
-                    var (a, b) = (At(single, x, y), At(img, x, y));
+                    ((byte, byte, byte) a, (byte, byte, byte) b) = (At(single, x, y), At(img, x, y));
                     bool same = Math.Abs(a.Item1 - b.Item1) <= 2 && Math.Abs(a.Item2 - b.Item2) <= 2 && Math.Abs(a.Item3 - b.Item3) <= 2;
                     if (same)
                     {
@@ -166,20 +166,20 @@ public sealed class RendererPathsTests(GuestMemoryFixture fx)
 
     // ---------------------------------------------------------------- shader caches
 
-    static int Stat(VulkanRenderer r, string field) =>
+    private static int Stat(VulkanRenderer r, string field) =>
         (int)typeof(VulkanRenderer).GetField(field, BindingFlags.Instance | BindingFlags.NonPublic)!.GetValue(r)!;
 
     [SoftwareVulkanFact]
     public void SecondSessionTakesItsShadersFromTheTitleCache()
     {
-        using var driver = SoftwareVulkan.Use();
+        using IDisposable driver = SoftwareVulkan.Use();
         string cache = Path.Combine(Path.GetTempPath(), "vitasharp-vkcache-" + Guid.NewGuid().ToString("N"));
         const string Title = "PCSA00077";
         try
         {
             (int Pack, int Misses) Session()
             {
-                var r = NewRenderer(cache);
+                VulkanRenderer r = NewRenderer(cache);
                 (int, int) stats = default;
                 WithRenderer("vkcache", r, h =>
                 {
@@ -193,15 +193,15 @@ public sealed class RendererPathsTests(GuestMemoryFixture fx)
                 return stats;
             }
 
-            var first = Session();
+            (int Pack, int Misses) first = Session();
             Assert.True(first.Misses >= 2, $"first session: {first.Misses} shaders translated");
             string dir = Path.Combine(cache, "titles", Title);
-            foreach (var f in new[] { "shaders.pack", "pipelines.list", "programs.pack" })
+            foreach (string f in new[] { "shaders.pack", "pipelines.list", "programs.pack" })
             {
                 Assert.True(File.Exists(Path.Combine(dir, f)) && new FileInfo(Path.Combine(dir, f)).Length > 0, $"{f} missing in {dir}");
             }
 
-            var second = Session();
+            (int Pack, int Misses) second = Session();
             Assert.Equal(0, second.Misses);
         }
         finally
@@ -220,13 +220,13 @@ public sealed class RendererPathsTests(GuestMemoryFixture fx)
     [SoftwareVulkanFact]
     public void DebugModeCaptureWritesTheTraceTexturesDrawRingAndReplay()
     {
-        using var driver = SoftwareVulkan.Use();
+        using IDisposable driver = SoftwareVulkan.Use();
         string dir = Path.Combine(Path.GetTempPath(), "vitasharp-vkdiag-" + Guid.NewGuid().ToString("N"));
         bool wasOn = DebugMode.Enabled;
         DebugMode.Enable();
         try
         {
-            var r = NewRenderer(Path.Combine(dir, "cache"));
+            VulkanRenderer r = NewRenderer(Path.Combine(dir, "cache"));
             DiagnosticCaptureResult? result = null;
             var done = new ManualResetEventSlim();
             WithRenderer("vkdiag", r, h =>
@@ -263,7 +263,7 @@ public sealed class RendererPathsTests(GuestMemoryFixture fx)
             // the rings: every frame before the capture, each draw list with its 8 draws
             Assert.True(result.DrawRingFrames >= 3, $"{result.DrawRingFrames} draw ring frames");
             Assert.True(result.ReplayFrames >= 3, $"{result.ReplayFrames} replay frames");
-            var ring = Directory.GetFiles(Path.Combine(cap, "drawring"), "frame_*.txt");
+            string[] ring = Directory.GetFiles(Path.Combine(cap, "drawring"), "frame_*.txt");
             Assert.NotEmpty(ring);
             Assert.Contains(ring, f => File.ReadAllLines(f).Count(l => l.StartsWith("[draw]")) == 8);
             Assert.NotEmpty(Directory.GetFiles(Path.Combine(cap, "replay"), "*.png"));
@@ -286,9 +286,9 @@ public sealed class RendererPathsTests(GuestMemoryFixture fx)
 
     /// <summary>The anomalies a debug-mode session raised and its NaN scan count, after four frames on an
     /// F16F16F16F16 colour surface whose memory the CPU filled with <paramref name="half"/> before the first scene.</summary>
-    (List<string> Anomalies, long Scans) F16Session(ushort half)
+    private (List<string> Anomalies, long Scans) F16Session(ushort half)
     {
-        var r = NewRenderer();
+        VulkanRenderer r = NewRenderer();
         var anomalies = new List<string>();
         r.AnomalyDetected += (kind, detail, present) =>
         {
@@ -348,19 +348,19 @@ public sealed class RendererPathsTests(GuestMemoryFixture fx)
     [SoftwareVulkanFact]
     public void NanInAFloatColourSurfaceRaisesTheAnomalyAndACleanOneDoesNot()
     {
-        using var driver = SoftwareVulkan.Use();
+        using IDisposable driver = SoftwareVulkan.Use();
         bool wasOn = DebugMode.Enabled;
         DebugMode.Enable();
         try
         {
-            var (nan, nanScans) = F16Session(0x7E00);
+            (List<string>? nan, long nanScans) = F16Session(0x7E00);
             Assert.True(nanScans >= 4, $"{nanScans} scans");
-            var hit = Assert.Single(nan);
+            string hit = Assert.Single(nan);
             Assert.StartsWith(VulkanRenderer.NanAnomalyKind + ": rt 0x", hit);
             Assert.Contains("F16x4", hit);
             Assert.Contains("NaN", hit);
 
-            var (clean, cleanScans) = F16Session(0x3C00); // 1.0
+            (List<string>? clean, long cleanScans) = F16Session(0x3C00); // 1.0
             Assert.True(cleanScans >= 4, $"{cleanScans} scans");
             Assert.Empty(clean);
         }

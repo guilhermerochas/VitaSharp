@@ -1,3 +1,4 @@
+using Microsoft.Win32;
 using VitaSharp.Core.Gpu;
 using VitaSharp.Core.Util;
 using VitaSharp.Renderer.Vulkan;
@@ -13,7 +14,7 @@ namespace VitaSharp.Tests;
 [Collection("guest")]
 public sealed class RendererValidationTests(GuestMemoryFixture fx)
 {
-    sealed class Collect : ILogSink
+    private sealed class Collect : ILogSink
     {
         public readonly List<string> Lines = [];
         public void Write(LogLevel level, string thread, string message)
@@ -28,10 +29,10 @@ public sealed class RendererValidationTests(GuestMemoryFixture fx)
         }
     }
 
-    static bool LayerInstalled()
+    private static bool LayerInstalled()
     {
         const string Json = "VkLayer_khronos_validation.json";
-        foreach (var v in new[] { "VK_LAYER_PATH", "VK_ADD_LAYER_PATH" })
+        foreach (string v in new[] { "VK_LAYER_PATH", "VK_ADD_LAYER_PATH" })
         {
             if (Environment.GetEnvironmentVariable(v) is { Length: > 0 } dirs && dirs.Split(Path.PathSeparator).Any(d => File.Exists(Path.Combine(d, Json))))
             {
@@ -41,7 +42,7 @@ public sealed class RendererValidationTests(GuestMemoryFixture fx)
 
         if (OperatingSystem.IsWindows())
         {
-            using var key = Microsoft.Win32.Registry.LocalMachine.OpenSubKey(@"SOFTWARE\Khronos\Vulkan\ExplicitLayers");
+            using RegistryKey? key = Microsoft.Win32.Registry.LocalMachine.OpenSubKey(@"SOFTWARE\Khronos\Vulkan\ExplicitLayers");
             return key?.GetValueNames().Any(n => n.EndsWith(Json, StringComparison.OrdinalIgnoreCase) && File.Exists(n)) == true;
         }
         return new[] { "/usr/share/vulkan/explicit_layer.d", "/etc/vulkan/explicit_layer.d", "/usr/local/share/vulkan/explicit_layer.d" }
@@ -67,16 +68,16 @@ public sealed class RendererValidationTests(GuestMemoryFixture fx)
     [Trait("Category", "Slow")]
     public void TextureFormatsMsaaAndDebugModeRunWithoutValidationErrors()
     {
-        using var driver = SoftwareVulkan.UseThroughLoader();
+        using IDisposable driver = SoftwareVulkan.UseThroughLoader();
         string? savedMode = Environment.GetEnvironmentVariable(EnvVars.VkValidation);
         Environment.SetEnvironmentVariable(EnvVars.VkValidation, "sync");
         var sink = new Collect();
-        var savedSink = Log.Sink;
+        ILogSink? savedSink = Log.Sink;
         Log.Sink = sink;
         bool wasDebug = DebugMode.Enabled;
         try
         {
-            foreach (var (msaa, samples, debug) in new[] { ("native", (ushort)0, false), ("native", (ushort)2, true), ("ss", (ushort)2, false) })
+            foreach ((string msaa, ushort samples, bool debug) in new[] { ("native", (ushort)0, false), ("native", (ushort)2, true), ("ss", (ushort)2, false) })
             {
                 if (debug)
                 {

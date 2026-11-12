@@ -9,9 +9,9 @@ public class ProgramInputTests
 {
     /// <summary>A fragment GXP with one UNIFORM_BUFFER parameter (buffer <paramref name="buffer"/>, 4 bytes) and,
     /// optionally, a container that makes the buffer register resident at <paramref name="sa"/>.</summary>
-    static GxpProgram Program(uint buffer, bool container, ushort sa = 0, ushort words = 1)
+    private static GxpProgram Program(uint buffer, bool container, ushort sa = 0, ushort words = 1)
     {
-        var d = new byte[0x100];
+        byte[] d = new byte[0x100];
         void W32(int o, uint v) => BinaryPrimitives.WriteUInt32LittleEndian(d.AsSpan(o), v);
         void W16(int o, ushort v) => BinaryPrimitives.WriteUInt16LittleEndian(d.AsSpan(o), v);
         d[0x14] = 1; // fragment
@@ -35,7 +35,7 @@ public class ProgramInputTests
     [Fact]
     public void WholeUniformBufferWithContainerIsRegisterResident()
     {
-        var b = Assert.Single(ProgramInput.From(Program(4, true, sa: 3, words: 1)).UniformBuffers);
+        UniformBufferDesc b = Assert.Single(ProgramInput.From(Program(4, true, sa: 3, words: 1)).UniformBuffers);
         Assert.Equal(4u, b.Index);
         Assert.Equal(1u, b.RegBlockSize);
         Assert.Equal(3u, b.RegStartOffset);
@@ -44,14 +44,14 @@ public class ProgramInputTests
     [Fact]
     public void WholeUniformBufferWithoutContainerIsMemoryOnly()
     {
-        var b = Assert.Single(ProgramInput.From(Program(4, false)).UniformBuffers);
+        UniformBufferDesc b = Assert.Single(ProgramInput.From(Program(4, false)).UniformBuffers);
         Assert.Equal(0u, b.RegBlockSize);
     }
 
     [Fact]
     public void RegisterResidentBufferIsCopiedIntoSecondaryAttributes()
     {
-        var gen = ShaderGenerator.Generate(Program(4, true, sa: 0, words: 1), new ShaderHints([], [], 0x01000000, false));
+        GeneratedShader gen = ShaderGenerator.Generate(Program(4, true, sa: 0, words: 1), new ShaderHints([], [], 0x01000000, false));
         Assert.Contains("sa[0].x = fetchMemory(", gen.Glsl);
     }
 }

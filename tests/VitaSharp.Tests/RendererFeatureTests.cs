@@ -13,7 +13,7 @@ namespace VitaSharp.Tests;
 [Collection("guest")]
 public sealed class RendererFeatureTests(GuestMemoryFixture fx)
 {
-    static void WithRenderer(HleHarness h, VulkanRendererOptions o, Action<VulkanRenderer> body)
+    private static void WithRenderer(HleHarness h, VulkanRendererOptions o, Action<VulkanRenderer> body)
     {
         var r = new VulkanRenderer(o);
         try
@@ -32,13 +32,13 @@ public sealed class RendererFeatureTests(GuestMemoryFixture fx)
     [SoftwareVulkanFact]
     public void MsaaModesResolutionScaleAndAsyncShaders()
     {
-        using var driver = SoftwareVulkan.Use();
+        using IDisposable driver = SoftwareVulkan.Use();
         using var h = new HleHarness(fx, "vkfeat");
         var w = new RendererTextureTests.Workload(h, multisample: 2); // SCE_GXM_MULTISAMPLE_4X
         string cache = Path.Combine(h.Root, "shadercache");
         try
         {
-            foreach (var (msaa, scale, async) in new[] { ("native", 1f, true), ("ss", 2f, false), ("off", 1f, true) })
+            foreach ((string msaa, float scale, bool async) in new[] { ("native", 1f, true), ("ss", 2f, false), ("off", 1f, true) })
             {
                 WithRenderer(h, new VulkanRendererOptions
                 {
@@ -69,7 +69,7 @@ public sealed class RendererFeatureTests(GuestMemoryFixture fx)
     [SoftwareVulkanFact]
     public void DiagnosticCaptureAndDrawTraceWriteTheirFiles()
     {
-        using var driver = SoftwareVulkan.Use();
+        using IDisposable driver = SoftwareVulkan.Use();
         using var h = new HleHarness(fx, "vkdiag");
         var w = new RendererTextureTests.Workload(h);
         try

@@ -13,8 +13,8 @@ namespace VitaSharp.Tests;
 /// </summary>
 public static class PspPkgFixture
 {
-    static readonly byte[] PkgPs3 = Convert.FromHexString("2E7B71D7C9C9A14EA3221F188828B8F8");
-    static readonly byte[] PkgPsp = Convert.FromHexString("07F2C68290B50D2C33818D709B60E62B");
+    private static readonly byte[] s_pkgPs3 = Convert.FromHexString("2E7B71D7C9C9A14EA3221F188828B8F8");
+    private static readonly byte[] s_pkgPsp = Convert.FromHexString("07F2C68290B50D2C33818D709B60E62B");
 
     public record struct Item(string Name, byte[]? Data, byte PspType = 0x90);
 
@@ -26,9 +26,9 @@ public static class PspPkgFixture
         var area = new MemoryStream();
         area.Write(new byte[all.Count * 32]);
         var names = new List<(int Off, int Len)>();
-        foreach (var it in all)
+        foreach (Item it in all)
         {
-            var n = Encoding.UTF8.GetBytes(it.Name);
+            byte[] n = Encoding.UTF8.GetBytes(it.Name);
             names.Add(((int)area.Length, n.Length));
             area.Write(n);
             while (area.Length % 16 != 0)
@@ -37,7 +37,7 @@ public static class PspPkgFixture
             }
         }
         var datas = new List<long>();
-        foreach (var it in all)
+        foreach (Item it in all)
         {
             datas.Add(area.Length);
             if (it.Data == null)
@@ -51,10 +51,10 @@ public static class PspPkgFixture
                 area.WriteByte(0);
             }
         }
-        var plain = area.ToArray();
+        byte[] plain = area.ToArray();
         for (int i = 0; i < all.Count; i++)
         {
-            var item = plain.AsSpan(i * 32);
+            Span<byte> item = plain.AsSpan(i * 32);
             BinaryPrimitives.WriteUInt32BigEndian(item, (uint)names[i].Off);
             BinaryPrimitives.WriteUInt32BigEndian(item[4..], (uint)names[i].Len);
             BinaryPrimitives.WriteUInt64BigEndian(item[8..], (ulong)datas[i]);
@@ -63,7 +63,7 @@ public static class PspPkgFixture
             item[27] = all[i].Data == null ? (byte)4 : (byte)3;
         }
 
-        var iv = new byte[16];
+        byte[] iv = new byte[16];
         for (int i = 0; i < 16; i++)
         {
             iv[i] = (byte)(0x31 + i * 7);
@@ -71,19 +71,19 @@ public static class PspPkgFixture
 
         byte[] Encrypted(byte[] key)
         {
-            var c = (byte[])plain.Clone();
+            byte[] c = (byte[])plain.Clone();
             using var ctr = new AesUtil.Ctr(key);
             ctr.Transform(c, AesUtil.CounterAt(iv, 0));
             return c;
         }
-        var psp = Encrypted(PkgPsp);
-        var ps3 = Encrypted(PkgPs3);
-        var enc = (byte[])ps3.Clone();
+        byte[] psp = Encrypted(s_pkgPsp);
+        byte[] ps3 = Encrypted(s_pkgPs3);
+        byte[] enc = (byte[])ps3.Clone();
         void Take(byte[] src, long off, long len) => Array.Copy(src, off, enc, off, (len + 15) & ~15L);
         Take(ps3Format ? ps3 : psp, 0, all.Count * 32);
         for (int i = 0; i < all.Count; i++)
         {
-            var src = all[i].PspType == 0x90 && !ps3Format ? psp : ps3;
+            byte[] src = all[i].PspType == 0x90 && !ps3Format ? psp : ps3;
             Take(src, names[i].Off, names[i].Len);
             if (all[i].Data != null)
             {
@@ -102,7 +102,7 @@ public static class PspPkgFixture
         }
         byte[] Words(uint a, uint b)
         {
-            var w = new byte[8];
+            byte[] w = new byte[8];
             BinaryPrimitives.WriteUInt32BigEndian(w, a);
             BinaryPrimitives.WriteUInt32BigEndian(w.AsSpan(4), b);
             return w;
@@ -112,19 +112,19 @@ public static class PspPkgFixture
         Info(13, Words(0, (uint)(all.Count * 32)));
         if (installDir != null)
         {
-            var body = new byte[8 + 0x28];
+            byte[] body = new byte[8 + 0x28];
             Encoding.ASCII.GetBytes(installDir).CopyTo(body, 8);
             Info(10, body);
             infoCount++;
         }
 
-        const int infoOffset = 0x100;
-        int dataOffset = (int)((infoOffset + info.Length + 15) & ~15);
-        var pkg = new byte[dataOffset + enc.Length];
-        var hdr = pkg.AsSpan();
+        const int InfoOffset = 0x100;
+        int dataOffset = (int)((InfoOffset + info.Length + 15) & ~15);
+        byte[] pkg = new byte[dataOffset + enc.Length];
+        Span<byte> hdr = pkg.AsSpan();
         BinaryPrimitives.WriteUInt32BigEndian(hdr, 0x7F504B47);
         BinaryPrimitives.WriteUInt32BigEndian(hdr[4..], ps3Format ? 0x80000001u : 0x80000002u);
-        BinaryPrimitives.WriteUInt32BigEndian(hdr[8..], infoOffset);
+        BinaryPrimitives.WriteUInt32BigEndian(hdr[8..], InfoOffset);
         BinaryPrimitives.WriteUInt32BigEndian(hdr[0xC..], (uint)infoCount);
         BinaryPrimitives.WriteUInt32BigEndian(hdr[0x14..], (uint)all.Count);
         BinaryPrimitives.WriteUInt64BigEndian(hdr[0x20..], (ulong)dataOffset);
@@ -132,7 +132,7 @@ public static class PspPkgFixture
         Encoding.ASCII.GetBytes(contentId).CopyTo(hdr[0x30..]);
         iv.CopyTo(hdr[0x70..]);
         BinaryPrimitives.WriteUInt32BigEndian(hdr[0xE4..], ps3Format ? 4u : 1u); // a PS3-format header has other data here
-        info.ToArray().CopyTo(pkg, infoOffset);
+        info.ToArray().CopyTo(pkg, InfoOffset);
         enc.CopyTo(pkg, dataOffset);
         return pkg;
     }
@@ -144,10 +144,10 @@ public static class PspPkgFixture
     /// <summary>An EBOOT.PBP: header, PARAM.SFO (with DISC_ID) and the DATA.PSAR at a 16-aligned offset.</summary>
     public static byte[] Pbp(string discId, string title, byte[] psar, string category = "EG")
     {
-        var sfo = PkgFixture.Sfo(("CATEGORY", category), ("DISC_ID", discId), ("TITLE", title));
+        byte[] sfo = PkgFixture.Sfo(("CATEGORY", category), ("DISC_ID", discId), ("TITLE", title));
         int sfoOff = 0x28, end = sfoOff + sfo.Length;
         int psarOff = (end + 15) & ~15;
-        var pbp = new byte[psarOff + psar.Length];
+        byte[] pbp = new byte[psarOff + psar.Length];
         "\0PBP"u8.CopyTo(pbp);
         BinaryPrimitives.WriteUInt32LittleEndian(pbp.AsSpan(4), 0x10000);
         BinaryPrimitives.WriteUInt32LittleEndian(pbp.AsSpan(8), (uint)sfoOff);
@@ -166,7 +166,7 @@ public static class PspPkgFixture
     /// copies the eboot as it is, it never looks inside.</summary>
     public static byte[] Psar(string magic, int size = 0x400)
     {
-        var psar = new byte[size];
+        byte[] psar = new byte[size];
         for (int i = 0; i < size; i++)
         {
             psar[i] = (byte)(i * 7 + 3);
