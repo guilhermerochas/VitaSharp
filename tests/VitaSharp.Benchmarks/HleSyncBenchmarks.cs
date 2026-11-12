@@ -15,14 +15,14 @@ namespace VitaSharp.Benchmarks;
 /// </summary>
 public class HleSyncBenchmarks
 {
-    GuestMemory? _memory;
-    Emulator? _emu;
-    string _root = "";
-    GuestThread _self = null!;
-    ObjectTable _objects = null!;
-    uint _work;
-    KMutex _mutex = null!;
-    KSemaphore _sema = null!;
+    private GuestMemory? _memory;
+    private Emulator? _emu;
+    private string _root = "";
+    private GuestThread _self = null!;
+    private ObjectTable _objects = null!;
+    private uint _work;
+    private KMutex _mutex = null!;
+    private KSemaphore _sema = null!;
 
     [GlobalSetup]
     public void Setup()
@@ -61,7 +61,7 @@ public class HleSyncBenchmarks
     [Benchmark]
     public int LwMutexLockUnlock()
     {
-        var m = _objects.Get<KMutex>((int)GuestMemory.R32(_work + KMutex.LwUidOffset))!;
+        KMutex m = _objects.Get<KMutex>((int)GuestMemory.R32(_work + KMutex.LwUidOffset))!;
         int r = m.Lock(_self, 1, default);
         return r | m.Unlock(_self, 1);
     }
@@ -69,7 +69,7 @@ public class HleSyncBenchmarks
     [Benchmark]
     public int LwMutexTryLockUnlock()
     {
-        var m = _objects.Get<KMutex>((int)GuestMemory.R32(_work + KMutex.LwUidOffset))!;
+        KMutex m = _objects.Get<KMutex>((int)GuestMemory.R32(_work + KMutex.LwUidOffset))!;
         int r = m.TryLock(_self, 1);
         return r | m.Unlock(_self, 1);
     }

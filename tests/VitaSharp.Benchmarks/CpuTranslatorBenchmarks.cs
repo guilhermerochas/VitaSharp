@@ -8,7 +8,7 @@ using VitaSharp.Core.Util;
 namespace VitaSharp.Benchmarks;
 
 /// <summary>Guest code shared by the CPU benchmarks: a fixed code and data page outside the allocator regions.</summary>
-static class GuestCode
+internal static class GuestCode
 {
     public const uint CodeBase = 0x0010_0000, CodeSize = 0x0060_0000, DataBase = 0x0080_0000, DataSize = 0x10000;
 
@@ -22,9 +22,11 @@ static class GuestCode
 
     public static void Write(uint at, uint[] arm)
     {
-        var code = GuestMemory.Span(at, arm.Length * 4);
+        Span<byte> code = GuestMemory.Span(at, arm.Length * 4);
         for (int i = 0; i < arm.Length; i++)
+        {
             BitConverter.GetBytes(arm[i]).CopyTo(code[(i * 4)..]);
+        }
     }
 }
 
@@ -36,7 +38,7 @@ static class GuestCode
 /// </summary>
 public unsafe class CpuTranslatorBenchmarks
 {
-    static readonly uint[][] Fixed =
+    private static readonly uint[][] s_fixed =
     [
         // integer ALU with a conditional op
         [0xE0810002, 0xE0403001, 0xE1A04103, 0xE0050192, 0xE1550004, 0xC0866004, 0xE2277001, 0xE1888007, 0xE0099008, 0xE12FFF1E],
@@ -46,74 +48,94 @@ public unsafe class CpuTranslatorBenchmarks
         [0xED910A00, 0xED911A01, 0xEE300A01, 0xEE200A01, 0xED810A02, 0xE12FFF1E],
     ];
 
-    GuestMemory? _memory;
-    readonly List<Block> _blocks = [];
-    int _next, _arenaMark;
+    private GuestMemory? _memory;
+    private readonly List<Block> _blocks = [];
+    private int _next, _arenaMark;
 
     [GlobalSetup]
     public void Setup()
     {
         _memory = GuestCode.Map();
-        var corpus = Environment.GetEnvironmentVariable(EnvVars.BenchCorpus);
+        string? corpus = Environment.GetEnvironmentVariable(EnvVars.BenchCorpus);
         uint at = GuestCode.CodeBase;
         if (corpus is { Length: > 0 } && File.Exists(corpus))
         {
-            foreach (var line in File.ReadLines(corpus))
+            foreach (string line in File.ReadLines(corpus))
             {
-                var parts = line.Split(' ', StringSplitOptions.RemoveEmptyEntries);
+                string[] parts = line.Split(' ', StringSplitOptions.RemoveEmptyEntries);
                 if (parts.Length < 3)
+                {
                     continue;
+                }
+
                 bool thumb = parts[0] == "T";
                 var bytes = new List<byte>();
-                foreach (var p in parts.Skip(2))
+                foreach (string p in parts.Skip(2))
                 {
                     int c = p.IndexOf(':');
                     int size = int.Parse(p[..c]);
                     uint raw = Convert.ToUInt32(p[(c + 1)..], 16);
                     if (size == 2)
+                    {
                         bytes.AddRange([(byte)raw, (byte)(raw >> 8)]);
+                    }
                     else if (thumb)
+                    {
                         bytes.AddRange([(byte)(raw >> 16), (byte)(raw >> 24), (byte)raw, (byte)(raw >> 8)]);
+                    }
                     else
+                    {
                         bytes.AddRange(BitConverter.GetBytes(raw));
+                    }
                 }
                 // each block in its own 0x400 slot, followed by a branch-to-self that keeps the builder inside it
                 if (bytes.Count > 0x3F0)
+                {
                     continue;
-                var mem = GuestMemory.Span(at, 0x400);
+                }
+
+                Span<byte> mem = GuestMemory.Span(at, 0x400);
                 mem.Clear();
                 bytes.ToArray().CopyTo(mem);
                 (thumb ? new byte[] { 0xFE, 0xE7 } : [0xFE, 0xFF, 0xFF, 0xEA]).CopyTo(mem[bytes.Count..]);
                 _blocks.Add(BlockBuilder.Build(at, thumb));
                 at += 0x400;
                 if (_blocks.Count == 2000)
+                {
                     break;
+                }
             }
         }
         if (_blocks.Count == 0)
-            foreach (var b in Fixed)
+        {
+            foreach (uint[] b in s_fixed)
             {
                 GuestCode.Write(at, b);
                 _blocks.Add(BlockBuilder.Build(at, false));
                 at += 0x100;
             }
+        }
+
         _arenaMark = NativeRuntime.Instance.Code.Used;
     }
 
     [GlobalCleanup] public void Cleanup() => _memory?.Dispose();
 
-    Block NextBlock()
+    private Block NextBlock()
     {
-        var b = _blocks[_next];
+        Block b = _blocks[_next];
         if (++_next == _blocks.Count)
+        {
             _next = 0;
+        }
+
         return b;
     }
 
     [Benchmark]
     public int Decode()
     {
-        var b = NextBlock();
+        Block b = NextBlock();
         return BlockBuilder.Build(b.Start, b.Thumb).Insts.Length;
     }
 
@@ -123,9 +145,12 @@ public unsafe class CpuTranslatorBenchmarks
     [Benchmark]
     public object? CompileNativeX64()
     {
-        var r = NativeX64Compiler.Instance.Compile(NextBlock());
+        CompiledBlock? r = NativeX64Compiler.Instance.Compile(NextBlock());
         if (NativeRuntime.Instance.Code.Used > _arenaMark + (8 << 20))
+        {
             NativeRuntime.Instance.Code.Reset(_arenaMark);
+        }
+
         return r;
     }
 }
@@ -137,7 +162,7 @@ public unsafe class CpuTranslatorBenchmarks
 /// </summary>
 public unsafe class CpuDispatchBenchmarks
 {
-    static readonly uint[] Loop =
+    private static readonly uint[] s_loop =
     [
         0xE3A00000, // 00 mov r0, #0
         0xE3A01000, // 04 mov r1, #0
@@ -154,22 +179,25 @@ public unsafe class CpuDispatchBenchmarks
 
     [Params("interp", "il", "native")] public string Backend = "native";
 
-    GuestMemory? _memory;
-    CpuCore? _core;
-    long _oldRate;
+    private GuestMemory? _memory;
+    private CpuCore? _core;
+    private long _oldRate;
 
     [GlobalSetup]
     public void Setup()
     {
         _memory = GuestCode.Map();
-        GuestCode.Write(GuestCode.CodeBase, Loop);
+        GuestCode.Write(GuestCode.CodeBase, s_loop);
         _oldRate = CpuCore.InstructionsPerSecond;
         CpuCore.InstructionsPerSecond = 0;
         NativeX64Compiler.Instance.HotInstructions = 1;
         IlJitCompiler.Instance.HotInstructions = 1;
         Jit.Enabled = true;
         if (!Jit.Select(Backend))
+        {
             throw new InvalidOperationException($"backend {Backend} is not supported here");
+        }
+
         _core = new CpuCore(new BlockCache());
         for (int i = 0; i < 8; i++)
         {
@@ -189,12 +217,15 @@ public unsafe class CpuDispatchBenchmarks
     [Benchmark]
     public uint RunLoop()
     {
-        var s = _core!.State;
+        CpuState* s = _core!.State;
         s->R[15] = GuestCode.CodeBase;
         s->Thumb = 0;
         s->R[13] = GuestCode.DataBase + 0xF000;
         if (_core.Run() != ExitReason.Svc)
+        {
             throw new InvalidOperationException("the loop did not reach its svc");
+        }
+
         return s->R[0];
     }
 }

@@ -20,10 +20,10 @@ public class GpuWorkerBenchmarks
     /// <summary>"base" or a set of switches (<see cref="Core.Util.EnvVars.BenchVariants"/>): A/B on the same build.</summary>
     [ParamsSource(typeof(Fixtures), nameof(Fixtures.Variants))] public string Variant = "base";
 
-    GuestMemory? _memory;
-    VulkanRenderer? _renderer;
-    byte[] _dump = [];
-    string _cache = "";
+    private GuestMemory? _memory;
+    private VulkanRenderer? _renderer;
+    private byte[] _dump = [];
+    private string _cache = "";
 
     [GlobalSetup]
     public void Setup()
@@ -32,11 +32,16 @@ public class GpuWorkerBenchmarks
         _dump = File.ReadAllBytes(path);
         GpuDumpHeader header;
         using (var r = new GpuDumpReader(new MemoryStream(_dump)))
+        {
             header = r.Header;
+        }
         // renderer switches before the renderer and the shader generator types initialise
         Fixtures.Apply(Variant);
-        foreach (var (k, v) in GpuDumpPlayer.RecordedEnvironment(header))
+        foreach ((string k, string v) in GpuDumpPlayer.RecordedEnvironment(header))
+        {
             Environment.SetEnvironmentVariable(k, v);
+        }
+
         _cache = Path.Combine(Path.GetTempPath(), "vitasharp-bench-shadercache");
         _memory = new GuestMemory();
         _renderer = new VulkanRenderer(new VulkanRendererOptions
@@ -48,7 +53,10 @@ public class GpuWorkerBenchmarks
             FirstPresent = header.Long("first-present"),
         });
         if (header["title-id"] is { Length: > 0 } title)
+        {
             _renderer.BeginTitle(title);
+        }
+
         ReplayDump();
     }
 
@@ -63,7 +71,7 @@ public class GpuWorkerBenchmarks
     public long ReplayDump()
     {
         using var reader = new GpuDumpReader(new MemoryStream(_dump, writable: false));
-        var st = GpuDumpPlayer.Play(reader, _renderer!);
+        GpuDumpPlayStats st = GpuDumpPlayer.Play(reader, _renderer!);
         _renderer!.Execute(new FinishCommand());
         return st.Draws;
     }
@@ -76,9 +84,9 @@ public class GpuWorkerBenchmarks
 /// </summary>
 public class ShaderTranslationBenchmarks
 {
-    readonly List<GxpProgram> _programs = [];
-    GuestMemory? _memory;
-    ShaderHints _hints = null!;
+    private readonly List<GxpProgram> _programs = [];
+    private GuestMemory? _memory;
+    private ShaderHints _hints = null!;
 
     [GlobalSetup]
     public void Setup()
@@ -87,13 +95,27 @@ public class ShaderTranslationBenchmarks
         _memory = new GuestMemory();
         var seen = new HashSet<ulong>();
         using (var reader = new GpuDumpReader(path))
+        {
             while (reader.Next())
+            {
                 if (reader.Kind is not (GpuDumpRecord.Memory or GpuDumpRecord.Idle or GpuDumpRecord.BackendState) && reader.Command is DrawCommand d)
-                    foreach (var p in new[] { d.VertexProgram.Info.Program, d.FragmentProgram.Info.Program })
+                {
+                    foreach (GxpProgram p in new[] { d.VertexProgram.Info.Program, d.FragmentProgram.Info.Program })
+                    {
                         if (seen.Add(p.Hash))
+                        {
                             _programs.Add(p);
+                        }
+                    }
+                }
+            }
+        }
+
         if (_programs.Count == 0)
+        {
             throw new InvalidOperationException($"{path}: no draws");
+        }
+
         _hints = new ShaderHints(Enumerable.Repeat(0x0C000000u, 16).ToArray(), [], 0);
         Console.WriteLine($"// {_programs.Count} programs");
     }
@@ -104,8 +126,11 @@ public class ShaderTranslationBenchmarks
     public int TranslateAll()
     {
         int chars = 0;
-        foreach (var p in _programs)
+        foreach (GxpProgram p in _programs)
+        {
             chars += ShaderGenerator.Generate(p, _hints).Glsl.Length;
+        }
+
         return chars;
     }
 }

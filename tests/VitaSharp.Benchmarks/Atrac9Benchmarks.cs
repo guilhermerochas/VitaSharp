@@ -13,32 +13,37 @@ namespace VitaSharp.Benchmarks;
 /// </summary>
 public class Atrac9Benchmarks
 {
-    readonly Atrac9Decoder _decoder = new();
-    readonly List<byte[]> _superframes = [];
-    short[][] _pcm = [];
-    int _next;
+    private readonly Atrac9Decoder _decoder = new();
+    private readonly List<byte[]> _superframes = [];
+    private short[][] _pcm = [];
+    private int _next;
 
     [GlobalSetup]
     public void Setup()
     {
         if (Fixtures.At9Path is { } path)
         {
-            var file = File.ReadAllBytes(path);
-            if (At9Container.Parse(file, out var info) != At9ParseResult.Ok)
+            byte[] file = File.ReadAllBytes(path);
+            if (At9Container.Parse(file, out At9Info info) != At9ParseResult.Ok)
+            {
                 throw new InvalidOperationException($"{path}: not an ATRAC9 .at9 file");
+            }
+
             _decoder.Initialize(info.Config);
             int sf = _decoder.Config.SuperframeBytes;
             for (long at = info.DataOffset; at + sf <= info.DataOffset + info.DataSize && _superframes.Count < 2048; at += sf)
+            {
                 _superframes.Add(file.AsSpan((int)at, sf).ToArray());
+            }
         }
         else
         {
             _decoder.Initialize([0xFE, 0x74, 0x1F, 0xF0]); // 48 kHz, stereo, 256-byte frames, 4 frames per superframe
             var rng = new Random(9);
-            var pcm = NewPcm();
+            short[][] pcm = NewPcm();
             for (int tries = 0; tries < 200_000 && _superframes.Count < 256; tries++)
             {
-                var sf = Superframe(rng, _decoder.Config.FrameBytes, _decoder.Config.SuperframeBytes);
+                byte[] sf = Superframe(rng, _decoder.Config.FrameBytes, _decoder.Config.SuperframeBytes);
                 try
                 {
                     _decoder.Decode(sf, pcm);
@@ -49,16 +54,19 @@ public class Atrac9Benchmarks
             _decoder.Initialize([0xFE, 0x74, 0x1F, 0xF0]);
         }
         if (_superframes.Count == 0)
+        {
             throw new InvalidOperationException("no ATRAC9 superframe to decode");
+        }
+
         _pcm = NewPcm();
     }
 
     /// <summary>A stereo superframe of random bits under valid block headers (first-in-superframe flag, band counts,
     /// gradient, no band extension, scale factors coded directly in the first frame), so most of the bits reach the
     /// scale factor and spectrum decoding.</summary>
-    static byte[] Superframe(Random rng, int frameBytes, int superframeBytes)
+    private static byte[] Superframe(Random rng, int frameBytes, int superframeBytes)
     {
-        var sf = new byte[superframeBytes];
+        byte[] sf = new byte[superframeBytes];
         rng.NextBytes(sf);
         for (int f = 0; f * frameBytes < superframeBytes; f++)
         {
@@ -69,9 +77,13 @@ public class Atrac9Benchmarks
                 {
                     int mask = 0x80 >> (bit & 7);
                     if ((value >> i & 1) != 0)
+                    {
                         sf[bit >> 3] |= (byte)mask;
+                    }
                     else
+                    {
                         sf[bit >> 3] &= (byte)~mask;
+                    }
                 }
             }
             Put(f == 0 ? 0 : 1, 1);       // first in superframe (inverted)
@@ -92,7 +104,7 @@ public class Atrac9Benchmarks
         return sf;
     }
 
-    short[][] NewPcm() => [.. Enumerable.Range(0, _decoder.Config.ChannelCount).Select(_ => new short[_decoder.Config.SuperframeSamples])];
+    private short[][] NewPcm() => [.. Enumerable.Range(0, _decoder.Config.ChannelCount).Select(_ => new short[_decoder.Config.SuperframeSamples])];
 
     /// <summary>One superframe (1024 samples per channel at 48 kHz: 21.3 ms of audio).</summary>
     [Benchmark]
@@ -100,6 +112,8 @@ public class Atrac9Benchmarks
     {
         _decoder.Decode(_superframes[_next], _pcm);
         if (++_next == _superframes.Count)
+        {
             _next = 0;
+        }
     }
 }

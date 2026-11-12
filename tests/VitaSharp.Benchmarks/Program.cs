@@ -2,6 +2,7 @@ using BenchmarkDotNet.Configs;
 using BenchmarkDotNet.Diagnosers;
 using BenchmarkDotNet.Environments;
 using BenchmarkDotNet.Jobs;
+using BenchmarkDotNet.Reports;
 using BenchmarkDotNet.Running;
 using VitaSharp.Core.Util;
 
@@ -17,10 +18,16 @@ public static class Program
     public static int Main(string[] args)
     {
         if (args.Length == 3 && args[0] == "compare")
+        {
             return ResultCompare.Run(args[1], args[2]);
-        foreach (var (name, path) in new[] { (EnvVars.BenchDump, Fixtures.DumpPath), (EnvVars.BenchAt9, Fixtures.At9Path) })
+        }
+
+        foreach ((string name, string? path) in new[] { (EnvVars.BenchDump, Fixtures.DumpPath), (EnvVars.BenchAt9, Fixtures.At9Path) })
+        {
             Console.WriteLine(path != null ? $"{name}={path}" : $"{name} not set: its fixture benchmarks {(name == EnvVars.BenchDump ? "fail in setup" : "use generated data")}");
-        var summaries = BenchmarkSwitcher.FromAssembly(typeof(Program).Assembly).Run(args, BenchConfig.Create());
+        }
+
+        IEnumerable<Summary> summaries = BenchmarkSwitcher.FromAssembly(typeof(Program).Assembly).Run(args, BenchConfig.Create());
         return summaries.Any(s => s.HasCriticalValidationErrors || s.Reports.Any(r => !r.Success)) ? 1 : 0;
     }
 }
@@ -47,7 +54,7 @@ public static class BenchConfig
 /// thread puts the process class back whenever it changes (the host raises it right after starting the process).
 /// The thread's relative priority inside the process stays, so measurements are only less stable on a busy machine.
 /// </summary>
-static class PriorityKeeper
+internal static class PriorityKeeper
 {
     [System.Runtime.CompilerServices.ModuleInitializer]
     internal static void Start()
@@ -61,7 +68,9 @@ static class PriorityKeeper
                 {
                     me.Refresh();
                     if (me.PriorityClass != System.Diagnostics.ProcessPriorityClass.BelowNormal)
+                    {
                         me.PriorityClass = System.Diagnostics.ProcessPriorityClass.BelowNormal;
+                    }
                 }
                 catch (Exception) { } // not allowed on this system: keep what there is
                 Thread.Sleep(250);
@@ -78,7 +87,7 @@ public static class Fixtures
     public static string? DumpPath => Existing(Environment.GetEnvironmentVariable(EnvVars.BenchDump));
     public static string? At9Path => Existing(Environment.GetEnvironmentVariable(EnvVars.BenchAt9));
 
-    static string? Existing(string? p) => p is { Length: > 0 } && File.Exists(p) ? Path.GetFullPath(p) : null;
+    private static string? Existing(string? p) => p is { Length: > 0 } && File.Exists(p) ? Path.GetFullPath(p) : null;
 
     /// <summary>"base" plus the variants of <see cref="EnvVars.BenchVariants"/> ("K=V,K2=V2|K3=V3": one variant per
     /// '|'), for an A/B of renderer or core switches on the same build. Every variant runs in a process of its own.</summary>
@@ -89,10 +98,17 @@ public static class Fixtures
     public static void Apply(string variant)
     {
         if (variant == "base")
+        {
             return;
-        foreach (var kv in variant.Split(',', StringSplitOptions.RemoveEmptyEntries | StringSplitOptions.TrimEntries))
+        }
+
+        foreach (string kv in variant.Split(',', StringSplitOptions.RemoveEmptyEntries | StringSplitOptions.TrimEntries))
+        {
             if (kv.IndexOf('=') is var eq and > 0)
+            {
                 Environment.SetEnvironmentVariable(kv[..eq], kv[(eq + 1)..]);
+            }
+        }
     }
 
     public static string RequireDump() => DumpPath
