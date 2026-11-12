@@ -25,6 +25,15 @@ ux0:tai/algum_plugin.suprx
 
 Sem `config.txt` nenhum plugin é carregado.
 
+O arquivo é lido com as regras do próprio taiHEN (o parser dele, taihen-parser, e o `plugin.c`/`hen.c` do taiHEN): só
+um arquivo vale (`ux0:tai/config.txt`, senão `ur0:tai/config.txt`); `#` começa um comentário, `*` uma seção, e
+qualquer outra linha é o caminho de um módulo (sem os espaços do começo e do fim); os nomes de seção são comparados
+exatos, com maiúsculas e minúsculas (`*main` é o shell, os outros nomes são IDs de título); `*ALL` vale para todo
+programa, mas não para `*KERNEL`; uma seção escrita `*!NOME` que bate termina a leitura na próxima seção; uma linha de
+256 caracteres ou mais, um caminho antes da primeira seção ou uma seção sem nome faz o taiHEN recusar o arquivo
+inteiro, e aí nenhum plugin carrega. Os módulos de uma seção carregam na ordem do arquivo, e um que falha não impede
+os outros.
+
 ## O que acontece
 
 - Os módulos de `*KERNEL` são carregados na região do kernel (uma área que todo processo mapeia, do processo do kernel)
