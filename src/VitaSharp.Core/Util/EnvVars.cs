@@ -228,8 +228,9 @@ public static class EnvVars
     /// where other processes could read it.</summary>
     public const string RpcnPassword = "VITASHARP_RPCN_PASSWORD";
     public const string SamplerDebug = "VITASHARP_SAMPLER_DEBUG";
-    /// <summary>=strict: every texture upload or copy in a scene ends the rendering, and single-sampled renderings are
-    /// begun directly on desktop GPUs (the renderer before scene-break hoisting; VulkanRenderer.SceneBreaks.cs).</summary>
+    /// <summary>=strict: every texture upload or copy in a scene ends the rendering (the renderer before scene-break
+    /// hoisting); =defer: desktop GPUs record single-sampled renderings into secondaries too, as tile-based GPUs do
+    /// (A/B; by default they begin them directly). VulkanRenderer.SceneBreaks.cs.</summary>
     public const string SceneBreaks = "VITASHARP_SCENE_BREAKS";
     /// <summary>1 = every process runs in the first process's address space (the model before per-process address
     /// spaces: executables linked at addresses another process uses cannot run next to it).</summary>
