@@ -272,6 +272,10 @@ Lista de itens futuros do VitaSharp. Marque `[x]` quando um item for concluído.
   power throttling num Intel de 12ª geração ou mais novo (as threads da CPU emulada e da GPU já sobem para acima do
   normal, `--host-prio`; ver `docs/notes/thread-priority.md`)
 - [ ] Queda para 50-54 fps no menu do Sonic Mania
+  Bloqueado (perf/desktop-23, 12/11/2026): o port não roda desde que o taiHEN em HLE saiu (11/11/2026, decisão do
+  usuário: só módulos reais; ver Firmware e sistema), então este item e o das travadas nos carregamentos não podem ser
+  medidos agora. A correção do ritmo das chamadas HLE (Wipeout 2048, Bugs em aberto) não mexe no custo do laço de
+  pixels da `pthread`, que é código do guest
   Medido (07/11/2026, perf/desktop-11, `mania_boot` com `--profile-from=1520 --frames=1660`, menu principal e seleção
   de save): 53,4 fps, quadro p50 17,5 ms. Não é a GPU nem o renderizador: a thread `pthread` (o renderizador por
   software do RSDKv5) executa 5,2 M ciclos emulados por quadro (1,07 ciclo/instrução, 720 K blocos) e fica 59% rodando
@@ -1861,11 +1865,32 @@ Lista de itens futuros do VitaSharp. Marque `[x]` quando um item for concluído.
   não veja o evento: com a máquina carregada passa mais de um período entre as duas chamadas. Não veio da refatoração
   (IL idêntico, teste intocado). Deixar o teste independente do tempo real (intervalo maior ou relógio do processo
   controlado), sem afrouxar o que ele confere.
-- [ ] Wipeout 2048 (PCSA00015): depois do loading do primeiro evento (Empire Climb), o loading e a corrida ficam
-  travados em ~7,5 fps (60/8), com o cronômetro do jogo andando ~70 s em ~2 min reais; a CPU das threads é baixa
-  (main 3,3 ms/quadro, GPU 6,6 ms/quadro), então parece espera de tempo/vblank/sincronização, não falta de CPU
-  (agente hlegxm, 11/11/2026, headless; antes do loading o jogo fica a 60 fps). O jogo chega à corrida desde a
-  função SceGxm NID_8FF68274 (2e9919e).
+- [x] Wipeout 2048 (PCSA00015): depois do loading do primeiro evento (Empire Climb), o loading e a corrida ficavam
+  travados em ~7,5 fps (60/8), com o cronômetro do jogo andando ~70 s em ~2 min reais (agente hlegxm, 11/11/2026).
+  **Corrigido** (perf/desktop-23, 12/11/2026): era o ritmo da CPU emulada, não a GPU nem o vblank. O callback de flip
+  da fila de display do jogo espera o próximo vblank girando em `sceDisplayGetVcount` (~25 ciclos de código dele por
+  volta), e cada chamada era cobrada 12.000 ciclos; a cobrança de HLE ia para o ritmo, mas a checagem do ritmo só
+  rodava depois de uma janela (~0,25 ms) de ciclos de código do guest. A thread juntava ~3.000 chamadas (~100 ms de
+  tempo emulado) entre duas checagens e dormia tudo de uma vez, perdendo ~7 vblanks: cada flip levava 8. Prova
+  (perfil `--profile-hle`, save state do loading): `SceGxmDisplayQueue` 96% em "throttle", 2.411 `sceDisplayGetVcount`
+  por quadro (28,9 M ciclos), quadro p50 133,3 ms; com `--cpu-mhz=0` (sem ritmo) 30 fps. Correção (como o
+  `hleEatCycles` do PPSSPP, que tira o tempo do HLE do mesmo contador do código MIPS): a cobrança de HLE também enche
+  a janela do ritmo (`CpuCore.ChargeInstructions`; no código nativo pede a volta ao despachante pelo `LinkBreak`).
+  Depois: 30,0 fps cravados (p50 33,4 ms) no loading e 29,7 fps (p50 33,4 ms, p99 34,5 ms) na corrida, 460
+  `sceDisplayGetVcount` por quadro (um vblank). E `sceDisplayGetVcount`/`GetFrameBuf`/`SetFrameBuf` (getters e
+  setters, uma entrada no kernel) passam a custar 2.000 como as outras; só as esperas `sceDisplayWait*` ficam com
+  12.000 (`HleCostTests`, `CpuPacingTests`). Gameplay: corrida do Empire Climb a 30 fps em `<scratchpad>/p1_out/wo12f`.
+  Outros jogos, save states de gameplay, main x correção, 3 rodadas alternadas (PC com 1-3 trabalhos pesados de outros
+  agentes): Killzone p50 33,37 ms nos dois, Uncharted e F1 2011 p50 16,68 ms nos dois; os mesmos sonos de ritmo por
+  quadro (Uncharted 1,5-2,3 x 1,4-2,0, Killzone 1,1 x 1,1); as travadas de 1-7 s apareceram nos dois builds só nas
+  rodadas com o host sem CPU (atraso médio de acordar 0,4-2,7 ms, threads "Running" a 1-20 M ciclos/s). Remedir com o
+  PC parado.
+  Notado no caminho (não corrigido): (1) com o PC a 100% (outros agentes) a corrida teve travadas de 0,3-1,4 s em que a
+  thread da fila de display espera a fence da GPU e o worker espera a liberação do buffer (`sceGxmBeginScene: sync
+  object ... still displayed after 250 ms`), um ciclo que só o timeout de 250 ms desfaz (caminho do display/flip);
+  (2) um save state tirado no início da corrida (com o filme do avPlayer aberto) congela depois de carregado: o filme
+  temporário da sessão salva não existe mais (`Load state: module Mp4: the movie ... cannot be opened`) e as threads
+  do avPlayer ficam paradas.
 - [ ] Texturas de inteiro de 32 bits (U32, S32, U32U32) amostradas por um sampler float (agente T2, test/apps-2,
   11/11/2026): o renderer criava views R32_UINT/R32_SINT, mas o gerador de shader lê toda textura por um sampler float
   e guarda a palavra como bits F32; no Vulkan isso é indefinido (camada de validação: VUID-vkCmdDrawIndexed-format-07753;
