@@ -870,6 +870,12 @@ Lista de itens futuros do VitaSharp. Marque `[x]` quando um item for concluído.
   valem para o shell e os apps do sistema. Corrigir de forma genérica: `*KERNEL` no boot do sistema, uma vez por
   sessão; `*main` para o shell; `*ALL` e `*<ID>` também para os programas do sistema, na ordem do taiHEN. Teste: um
   `.skprx` e um `.suprx` de teste (montados pelo `SceModuleBuilder`) carregados no boot do shell e num app do sistema.
+- [ ] PSM, depois do instalador (12/11/2026, teste do usuário): o NPPA00120 instalou em `ux0:psm/NPPA00120` (17
+  arquivos), mas 1) a Biblioteca (Desktop e Android) só lista `ux0:app`: listar também `ux0:psm`, com o nome e o
+  ícone do jogo; 2) o instalador mostrou o content ID ("JM0245-NPPA00120_00-0000000000000000") como nome: ler o
+  título do pacote/`param.sfo` do PSM; 3) o runtime abrir o jogo instalado (falta `sceKernelAllocUnmapMemBlock`, o
+  `SceAppMgrUser` NID 0x9D6D8058 e a montagem 106 `ux0:psm/<id>/RO` que falha com 0x80802012). Jogo de teste:
+  NPPA00120, já instalado pelo usuário.
 - [ ] PlayStation Mobile (pedido do usuário, 11/11/2026; o runtime `PCSI00011` "PSM Runtime Package" 01.00, SDK
   2.00, já está instalado pelo usuário com a sua licença). 1) Rodar o runtime no VitaSharp sem janela e levantar o
   que o Mono dele usa e o que falta (HLE genérico do que faltar, nada específico do PSM). 2) Instalador de `.pkg` de
