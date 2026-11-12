@@ -322,6 +322,10 @@ public sealed class SynchronousOutput
     /// set).</summary>
     public long FirstDeadlineUs { get; init; } = FirstPictureDeadlineUs;
 
+    /// <summary>Longest wait for a later picture (<see cref="PictureDeadlineUs"/> unless set; tests that run a decoder
+    /// on real threads set a long one, so a slow machine is not taken for a decoder that holds pictures).</summary>
+    public long DeadlineUs { get; init; } = PictureDeadlineUs;
+
     /// <summary>The most pictures a decoder is taken to hold back (the largest H.264 DPB); past it, every call waits again.</summary>
     public const int MaxHeldPictures = 16;
 
@@ -416,7 +420,7 @@ public sealed class SynchronousOutput
         }
 
         long start = nowUs();
-        long deadline = start + (_started ? PictureDeadlineUs : FirstDeadlineUs);
+        long deadline = start + (_started ? DeadlineUs : FirstDeadlineUs);
         while (PictureDue)
         {
             long left = deadline - nowUs();
