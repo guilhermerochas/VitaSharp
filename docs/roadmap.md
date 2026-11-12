@@ -1830,6 +1830,19 @@ Lista de itens futuros do VitaSharp. Marque `[x]` quando um item for concluído.
 
 ## Bugs em aberto
 
+- [ ] Save state que depende de arquivo temporário (achado do agente P1, 13/11/2026): um estado salvo com um filme do
+  avPlayer aberto guarda o caminho de um `%TEMP%itasharp-mp4-*.mp4` da sessão; quando esse arquivo some, o estado
+  congela ~5 s depois de carregar ("Load state: module Mp4: the movie ... cannot be opened", as threads do avPlayer
+  param). O estado tem que ser autossuficiente: guardar o que precisa do filme (ou a referência ao arquivo do jogo que
+  originou o filme) e reabrir dele. Teste: salvar com um filme aberto, apagar o temporário, carregar e seguir.
+- [ ] Travada de 0,3 a 1,4 s sob carga na fila de exibição (achado do agente P1, 13/11/2026, Wipeout na corrida): a
+  thread da fila de exibição espera a fence da GPU enquanto o worker da GPU espera o buffer ser liberado; só o limite
+  de 250 ms ("sceGxmBeginScene: sync object ... still displayed after 250 ms") desfaz. Conferir com o fluxo do
+  console (a fila só chama o callback depois da fence; a liberação vem depois do callback) onde as duas esperas se
+  cruzam no VitaSharp.
+- [ ] Custo de `sceKernelDelayThread` (achado do agente P1, 13/11/2026): no Wipeout, a thread `avPlayer VideoDec`
+  chama `sceKernelDelayThread(30 us)` em laço, cobrada como espera do agendador (12.000 ciclos cada, ~4,7 M ciclos por
+  quadro). Derivar a classe de custo do firmware e do PPSSPP (`hleEatCycles`), com teste.
 - [ ] PSM: o shell não enxerga a atualização 2.01 do runtime (relato do usuário, 12/11/2026, captura
   `shell_20261112_030858_tudo`). Instalada em `ux0:patch/PCSI00011` (`runtime_version.txt` 2.01; o `ux0:app`
   continua 1.00), mas ao tocar no Cave Squid (NPOA00239, PSM) o shell ainda pede a atualização do runtime e falha
