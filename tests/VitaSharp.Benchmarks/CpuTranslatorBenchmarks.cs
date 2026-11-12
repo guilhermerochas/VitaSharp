@@ -229,3 +229,41 @@ public unsafe class CpuDispatchBenchmarks
         return s->R[0];
     }
 }
+
+/// <summary>
+/// What every HLE call adds to the CPU ledger (<see cref="CpuCore.ChargeInstructions"/>) with pacing on: the charge,
+/// its share of the pacing window and the window check. 4,096 calls per operation, outside <see cref="CpuCore.Run"/>
+/// (no pacing check runs, so nothing sleeps).
+/// </summary>
+public unsafe class CpuHleChargeBenchmarks
+{
+    private CpuCore? _core;
+    private long _oldRate;
+
+    [GlobalSetup]
+    public void Setup()
+    {
+        _oldRate = CpuCore.InstructionsPerSecond;
+        CpuCore.InstructionsPerSecond = CpuCore.DefaultClockHz;
+        _core = new CpuCore(new BlockCache());
+    }
+
+    [GlobalCleanup]
+    public void Cleanup()
+    {
+        _core?.Dispose();
+        CpuCore.InstructionsPerSecond = _oldRate;
+    }
+
+    [Benchmark]
+    public long Charge4096()
+    {
+        CpuCore core = _core!;
+        for (int i = 0; i < 4096; i++)
+        {
+            core.ChargeInstructions(CpuCore.HleCallCost);
+        }
+
+        return core.ChargedCycles;
+    }
+}

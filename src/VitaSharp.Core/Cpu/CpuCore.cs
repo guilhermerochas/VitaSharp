@@ -229,6 +229,7 @@ public sealed unsafe class CpuCore : IDisposable
 
         _throttleStart = start;
         _throttleInstrs = 0;
+        _chargedSinceCheck = 0;
         _blockedAt = _wakeDeadline = 0;
     }
 
@@ -284,6 +285,7 @@ public sealed unsafe class CpuCore : IDisposable
         }
 
         _throttleInstrs += pendingInstructions;
+        _chargedSinceCheck = 0;
         long expected = _throttleStart + _throttleInstrs * System.Diagnostics.Stopwatch.Frequency / rate;
         _blockedAt = expected;
         if (expected > Util.GuestClock.Ticks + System.Diagnostics.Stopwatch.Frequency / 1000)
@@ -298,15 +300,35 @@ public sealed unsafe class CpuCore : IDisposable
     /// HLE calls are free on the host, so the CPU ledger charges this per call.</summary>
     public static long HleCallCost = 1500;
 
-    /// <summary>Charges host-side work (an HLE call, a memory copy done natively) to the emulated CPU ledger.</summary>
+    /// <summary>
+    /// Charges host-side work (an HLE call, a memory copy done natively) to the emulated CPU ledger. The charge counts
+    /// toward the pacing window like executed guest cycles do (the way PPSSPP's hleEatCycles takes HLE time from the
+    /// same downcount as MIPS code): once a window's worth is charged, the block loop checks the pacing at the next
+    /// block boundary, and native code returns to it at its next exit (<see cref="CpuState.LinkBreak"/>). Counted only
+    /// in guest cycles, a loop polling a costly call (Wipeout 2048's display callback spins on sceDisplayGetVcount,
+    /// 12,000 cycles a call and ~25 cycles of its own code) ran ~3,000 calls (~100 ms of emulated time) between two
+    /// checks and then slept it all off at once, past ~7 vblanks it was waiting for: 7.5 fps instead of 30.
+    /// </summary>
     public void ChargeInstructions(long n)
     {
         ChargedCycles += n;
         if (InstructionsPerSecond > 0)
         {
             _throttleInstrs += n;
+            _chargedSinceCheck += n;
+            if (_chargedSinceCheck >= _checkWindow)
+            {
+                State->LinkBreak = 1;
+            }
         }
     }
+
+    /// <summary>Cycles charged by <see cref="ChargeInstructions"/> since the last pacing check (already in
+    /// <see cref="_throttleInstrs"/>; this only decides when the next check runs).</summary>
+    private long _chargedSinceCheck;
+
+    /// <summary>The pacing window of the running <see cref="Run"/> (guest cycles between pacing checks).</summary>
+    private long _checkWindow = DefaultClockHz / 4000;
     /// <summary>Profiling totals: cycles of executed guest blocks and cycles charged for host-side (HLE) work.</summary>
     public long BlockCycles, ChargedCycles;
     /// <summary>Profiling: host time (Stopwatch ticks) spent inside native-backend code, its callouts included.</summary>
@@ -402,6 +424,7 @@ public sealed unsafe class CpuCore : IDisposable
         s->Exit = ExitReason.None;
         // every ~20 us of guest CPU time when throttling (a physics step of a few ms must be paced from inside), else ~0.5 ms
         long checkWindow = InstructionsPerSecond > 0 ? InstructionsPerSecond / 4000 : 200_000; // ~0.25 ms of guest CPU time
+        _checkWindow = checkWindow;
         long sinceCheck = PendingInstructions;
         PendingInstructions = 0;
         // read once per Run: static reads cost a class-initialisation check each under Mono's AOT
@@ -572,10 +595,11 @@ public sealed unsafe class CpuCore : IDisposable
                 s->Exit = ExitReason.None; // VMSR changed the vector mode: the loop picks the path
             }
 
-            if (sinceCheck >= checkWindow)
+            if (sinceCheck >= checkWindow || _chargedSinceCheck >= checkWindow)
             {
                 _throttleInstrs += sinceCheck;
                 sinceCheck = 0;
+                _chargedSinceCheck = 0;
                 Throttle();
                 if (ShouldYield != null && ShouldYield())
                 {
