@@ -1085,8 +1085,9 @@ public sealed unsafe partial class VulkanRenderer : IGpuBackend
             return;
         }
 
-        uint w = Math.Min(rt.Width, old.Width), h = Math.Min(rt.Height, old.Height);
-        if (w == 0 || h == 0 || OverwrittenSinceRendered(old, old.Address, (ulong)old.Stride * (uint)Formats.ColorBytesPerPixel(old.ColorFormat) * h))
+        uint width = Math.Min(rt.Width, old.Width);
+        uint height = Math.Min(rt.Height, old.Height);
+        if (width == 0 || height == 0 || OverwrittenSinceRendered(old, old.Address, (ulong)old.Stride * (uint)Formats.ColorBytesPerPixel(old.ColorFormat) * height))
         {
             return;
         }
@@ -1096,7 +1097,7 @@ public sealed unsafe partial class VulkanRenderer : IGpuBackend
         SyncRenderTargetForRead(old);
         Barrier(rt.Image, ImageLayout.General, ImageLayout.General, ImageAspectFlags.ColorBit,
             PipelineStageFlags.TransferBit, PipelineStageFlags.TransferBit, AccessFlags.TransferWriteBit, AccessFlags.TransferWriteBit);
-        var copy = new ImageCopy
+        ImageCopy copy = new()
         {
             SrcSubresource = new ImageSubresourceLayers(ImageAspectFlags.ColorBit, 0, 0, 1),
             DstSubresource = new ImageSubresourceLayers(ImageAspectFlags.ColorBit, 0, 0, 1),
@@ -1343,7 +1344,8 @@ public sealed unsafe partial class VulkanRenderer : IGpuBackend
 
     private void SeedLoadedDepth(DepthTarget dt, bool supersampled)
     {
-        DepthTarget? src = null, single = null;
+        DepthTarget? src = null;
+        DepthTarget? single = null;
         foreach (DepthTarget depthTarget in _depthTargets.Values)
         {
             if (depthTarget == dt || depthTarget.LastScene == 0 || depthTarget.Address != dt.Address || depthTarget.StencilAddress != dt.StencilAddress
