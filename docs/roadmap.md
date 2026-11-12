@@ -1654,6 +1654,16 @@ Lista de itens futuros do VitaSharp. Marque `[x]` quando um item for concluído.
   menos que os dados (app_fps). Falta: linhas de 120 colunas como o resto do repositório (o guia pede 80; decidir com
   o usuário). O awk do `android-perf-run.sh` (era do GNU: `asort`, `match` com vetor) passou a POSIX (`match` com
   RSTART/RLENGTH, `split`, `sort -n`), mesma saída em dados de teste e aceito pelo `gawk --posix`.
+- [ ] Testes de paridade de mídia entre o PC e o Android (pedido do usuário, 13/11/2026). Hoje só há testes de cada
+  lado separado (`AndroidMediaDriverTests`: política do lado Android; `AudioFrameDecoderTests`: cabeçalhos de MP3 e
+  gancho do MP4); nada compara o que o jogo recebe nos dois. Um contrato único com um clipe H.264/MP4 e áudio AAC/MP3
+  sintéticos (gerados pelo teste, nada da Sony), passando pela API que o jogo usa: por quadro, o hash e o momento/ordem
+  em que o jogo recebe o "quadro pronto"; por porta de áudio, o PCM mixado e o tempo. Lado PC (FFmpeg + OpenAL) roda
+  sempre; lado Android (MediaCodec + AAudio) no emulador do Android (AVD x86_64, os codecs de software do Google, os
+  mesmos do celular para vídeos do tamanho do Vita) quando disponível, pulado com o motivo quando não. Vídeo: quadros
+  idênticos e mesma ordem/tempo; áudio: mesma contagem de amostras e tempo, PCM dentro de uma tolerância declarada
+  (arredondamento do decodificador). O hardware do celular (decodificador MediaTek, GPU Mali, modos do AAudio) segue
+  confirmado no aparelho. Documentar no README como rodar. Em andamento com o agente de bugs do Android (fix/android-video).
 - [ ] Cobertura de código mínima de 70% em tudo (pedido do usuário, 10/11/2026). Base de hoje (`build/coverage.ps1` /
   `.sh`, coverlet + ReportGenerator, `Category!=Slow`): geral 59,4% linhas / 42,5% ramos; VitaSharp.Core 65,8%;
   Mobile.Core 85,4%; Renderer.Vulkan 1,3%. Meta: cada projeto e cada namespace com pelo menos 70% de linhas, e manter
