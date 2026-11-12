@@ -14,6 +14,9 @@ namespace VitaSharp.Tests;
 /// <item>a depth surface written by a one-sample scene and loaded by a 4X scene: the depth surface is sample-sized,
 /// so the 4X scene's samples hold the one-sample scene's texels (the plane's monitor screen, drawn in the 4X effects
 /// scene with a depth test, was drawn over the crew in front of it);</item>
+/// <item>a colour surface replaced by a larger one at the same address: the new one starts with what the old one
+/// rendered (the 1024x512 bloom atlas started from guest memory a frame or more old, and the old frames' effects
+/// ghosted over the new picture).</item>
 /// </list>
 /// </summary>
 [Collection("guest")]
@@ -180,5 +183,54 @@ public sealed class RendererSurfaceReuseTests(GuestMemoryFixture fx)
         // the left half's samples hold 0.2 (texels 0-63 of each row of the depth), the right half's 1.0
         Assert.True(leftKept == n, $"{n - leftKept} of {n} pixels of the left half were drawn over the one-sample scene's nearer depth");
         Assert.True(rightDrawn > n * 9 / 10, $"only {rightDrawn} of {n} pixels of the right half were drawn: the 4X scene did not load the one-sample scene's depth");
+    }
+
+    [SoftwareVulkanFact]
+    public void LargerSurfaceAtTheSameAddressStartsWithTheSmallerOnesRendering()
+    {
+        using IDisposable driver = SoftwareVulkan.Use();
+        byte[]? texelsDrawn = null;
+        byte[] img = Run("vkreuse-color", (h, w) =>
+        {
+            Gxm g = h.Module<Gxm>();
+            for (uint i = 0; i < W * H; i++)
+            {
+                GuestMemory.W32(w.Data + i * 4, PatternTexel(i));
+            }
+
+            // 1. a 32x32 surface over the first rows of the 64x64 one (same memory, same stride), drawn over entirely
+            const int Half = W / 2;
+            uint rtA = RenderTarget(h, g, Half, Half, 0), colorA = h.Alloc(0x40);
+            Assert.Equal(0, Call(g, "sceGxmColorSurfaceInit", colorA, 0u, 0u, 0u, 0u, (uint)Half, (uint)Half, (uint)W, w.Data));
+            Assert.Equal(0, Call(g, "sceGxmBeginScene", w.Ctx, 0u, rtA, 0u, 0u, 0u, colorA, 0u));
+            Setup(g, w, DepthAlways, depthWrite: false);
+            Assert.Equal(0, Call(g, "sceGxmSetVertexStream", w.Ctx, 0u, w.Verts));
+            Assert.Equal(0, Call(g, "sceGxmDraw", w.Ctx, 0u, 0u, w.Idx, 3u));
+            Assert.Equal(0, Call(g, "sceGxmEndScene", w.Ctx, 0u, 0u));
+            // 2. at once the 64x64 surface at the same address: a scene without draws keeps what memory holds
+            Assert.Equal(0, Call(g, "sceGxmBeginScene", w.Ctx, 0u, w.Rt, 0u, 0u, 0u, w.Color, 0u));
+            Assert.Equal(0, Call(g, "sceGxmEndScene", w.Ctx, 0u, 0u));
+            h.Emu.Gpu.Submit(new PresentCommand { Frame = new DisplayFrame(w.Data, W, W, H, DisplayPixelFormat.A8B8G8R8) });
+            Assert.Equal(0, Call(g, "sceGxmFinish", w.Ctx));
+            // what the 32x32 scene stored, as the CPU sees it once the GPU is idle
+            texelsDrawn = GuestMemory.ReadSpan(w.Data, Half * W * 4).ToArray();
+        }, multisample: 0, scaleMode: 0);
+
+        // the 32x32 scene drew its texture over its whole surface: the 64x64 surface's top-left quarter shows it
+        int same = 0, kept = 0, n = 0;
+        for (int y = 2; y < H / 2 - 2; y++)
+        {
+            for (int x = 2; x < W / 2 - 2; x++)
+            {
+                n++;
+                kept += Near(At(img, x, y), Pattern(x, y, W)) ? 1 : 0;
+                uint m = BitConverter.ToUInt32(texelsDrawn!, (y * W + x) * 4);
+                same += Near(At(img, x, y), ((byte)m, (byte)(m >> 8), (byte)(m >> 16))) ? 1 : 0;
+            }
+        }
+        Assert.True(kept < n / 10, $"{kept} of {n} pixels of the 64x64 surface show guest memory from before the 32x32 scene");
+        Assert.True(same > n * 9 / 10, $"only {same} of {n} pixels show the 32x32 scene's rendering");
+        // the rest of the 64x64 surface keeps its memory
+        Assert.True(Near(At(img, W - 3, H - 3), Pattern(W - 3, H - 3, W)), "the 64x64 surface lost its memory outside the 32x32 one");
     }
 }
