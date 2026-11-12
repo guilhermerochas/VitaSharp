@@ -50,6 +50,9 @@ public static class EnvVars
     /// <summary>Android: =1 makes a new MediaCodec H.264 decoder decode one synthetic picture first, so its threads and
     /// buffers exist before the game's first access unit.</summary>
     public const string MediaCodecWarmUp = "VITASHARP_MEDIACODEC_WARMUP";
+    /// <summary>Android: =all drains the first picture of every MediaCodec H.264 stream out early (default: only of a
+    /// stream that does not reorder; a reordering one gets its first picture after its reorder depth, as on the Vita).</summary>
+    public const string MediaCodecPrime = "VITASHARP_MEDIACODEC_PRIME";
     /// <summary>Tests: path of a media parity trace pulled from an Android device or emulator
     /// (build/android-media-parity.sh); MediaParityTests compares it with the desktop's (skipped when unset).</summary>
     public const string AndroidMediaTrace = "VITASHARP_ANDROID_MEDIA_TRACE";
@@ -80,6 +83,12 @@ public static class EnvVars
     /// <summary>=picture: an asynchronous H.264 decoder's pictures keep their own pts in sceAvcdecDecode (default: the pts of
     /// the access unit of the call; Hle/Modules/Videodec.cs).</summary>
     public const string AvcdecPts = "VITASHARP_AVCDEC_PTS";
+    /// <summary>=1: an asynchronous H.264 decoder's first picture is repeated while the decoder fills up (default: no
+    /// picture in those calls, as on the Vita; Hle/Modules/Videodec.cs).</summary>
+    public const string AvcdecFillRepeat = "VITASHARP_AVCDEC_FILL_REPEAT";
+    /// <summary>=1: a new or flushed asynchronous H.264 decoder answers its first calls with the previous decoder's or
+    /// pass's last picture (default: no picture; Hle/Modules/Videodec.cs).</summary>
+    public const string AvcdecCarryOver = "VITASHARP_AVCDEC_CARRYOVER";
     /// <summary>Tests: =1 opens the game window hidden (no focus, nothing on screen) while it keeps its Vulkan surface and
     /// swapchain, so the windowed path (presents, renderer swaps on state loads) runs on a PC that is in use; no audio
     /// output either.</summary>

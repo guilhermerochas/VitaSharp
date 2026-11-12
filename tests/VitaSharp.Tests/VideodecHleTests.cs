@@ -1,4 +1,5 @@
 using VitaSharp.Core.Hle.Modules;
+using VitaSharp.Core.Media;
 using VitaSharp.Core.Memory;
 using static VitaSharp.Tests.HleHarness;
 
@@ -238,6 +239,163 @@ public sealed class VideodecHleTests(GuestMemoryFixture fx) : IDisposable
         Assert.Equal(0, Call(ce, "sceCodecEngineUser_9AD7E66F"));
         Assert.Equal(0, Call(ce, "sceCodecEngineCloseUnmapMemBlock", uid));
         Assert.Equal(ERR, Call(ce, "sceCodecEngineCloseUnmapMemBlock", uid));
+    }
+
+    /// <summary>
+    /// An asynchronous decoder (like Android's MediaCodec) whose pictures come out when the test says: each Send queues
+    /// a picture (luma = the unit's index + 16) and releases <see cref="ReleasePerSend"/> of the queued ones.
+    /// </summary>
+    private sealed class ScriptedAsyncDecoder : IVideoDecoder, IVideoDecoderBackend
+    {
+        private readonly Queue<DecodedPicture> _pending = new();
+        private readonly Queue<DecodedPicture> _ready = new();
+        private int _sent;
+
+        public int ReleasePerSend;
+
+        public string Name => "scripted-async";
+
+        public bool IsHardware => false;
+
+        public bool Asynchronous => true;
+
+        public IVideoDecoder? CreateH264(VideoDecoderOptions options) => this;
+
+        public void Send(ReadOnlySpan<byte> accessUnit, long pts)
+        {
+            byte luma = (byte)(16 + _sent);
+            _sent++;
+            _pending.Enqueue(new DecodedPicture { Width = W, Height = H, Pts = pts, Y = Enumerable.Repeat(luma, W * H).ToArray(), U = new byte[W * H / 4], V = new byte[W * H / 4] });
+            for (int i = 0; i < ReleasePerSend && _pending.Count > 0; i++)
+            {
+                _ready.Enqueue(_pending.Dequeue());
+            }
+        }
+
+        public void Flush()
+        {
+            while (_pending.Count > 0)
+            {
+                _ready.Enqueue(_pending.Dequeue());
+            }
+        }
+
+        public void Reset()
+        {
+            _pending.Clear();
+            _ready.Clear();
+        }
+
+        public DecodedPicture? Take() => _ready.Count > 0 ? _ready.Dequeue() : null;
+
+        public void Recycle(DecodedPicture picture)
+        {
+        }
+
+        public void Dispose()
+        {
+        }
+    }
+
+    /// <summary>One sceAvcdecDecode call of <paramref name="unit"/>; returns the luma of the picture it gave, or -1.</summary>
+    private int DecodeOne(uint ctrl, byte[] unit, int index)
+    {
+        uint dst = _h.Alloc((uint)(W * H * 3 / 2)), picture = _h.Alloc(0x64), list = _h.Alloc(4), array = _h.Alloc(12), au = _h.Alloc(24);
+        uint es = _h.Alloc((uint)unit.Length);
+        GuestMemory.Span(dst, W * H).Fill(0);
+        GuestMemory.W32(picture, 0x64);
+        GuestMemory.W32(picture + 4, 0x10); // YUV420 raster
+        GuestMemory.W32(picture + 8, (uint)W);
+        GuestMemory.W32(picture + 12, (uint)W);
+        GuestMemory.W32(picture + 16, (uint)H);
+        GuestMemory.W32(picture + 4 + 0x38, dst);
+        GuestMemory.W32(list, picture);
+        GuestMemory.W32(array + 4, 1);
+        GuestMemory.W32(array + 8, list);
+        unit.CopyTo(GuestMemory.Span(es, unit.Length));
+        GuestMemory.W32(au + 4, (uint)(index * 3000));
+        GuestMemory.W32(au + 16, es);
+        GuestMemory.W32(au + 20, (uint)unit.Length);
+        Assert.Equal(0, Call(V, "sceAvcdecDecode", ctrl, au, array));
+        return GuestMemory.R32(array) == 0 ? -1 : GuestMemory.Read<byte>(dst);
+    }
+
+    [Fact]
+    public void AReorderingStreamGetsNoPictureWhileTheDecoderFills()
+    {
+        // F1 2011's movies state a reorder depth of 2: the Vita answers their first calls with no picture. Repeating the
+        // first picture while Android's decoder filled up, or answering with the previous movie's last picture, showed as
+        // flicker at every movie start on the phone
+        IVideoDecoderBackend oldBackend = VideoDecoders.Backend;
+        var decoder = new ScriptedAsyncDecoder();
+        VideoDecoders.Backend = decoder;
+        try
+        {
+            List<SyntheticH264.Unit> stream = SyntheticH264.Stream(8, W, H);
+            byte[] reorderingIdr = H264ReorderLimit.Apply(stream[0].AccessUnit, 2);
+            Assert.Equal(2, H264ReorderLimit.StatedReorderFrames(reorderingIdr));
+
+            // a first movie that ends with a picture (luma 16 + 2)
+            uint first = _h.Alloc(12);
+            Assert.Equal(0, Call(V, "sceAvcdecCreateDecoder", Avc, first, Query(W, H, 1)));
+            decoder.ReleasePerSend = 1;
+            for (int i = 0; i < 3; i++)
+            {
+                Assert.NotEqual(-1, DecodeOne(first, i == 0 ? reorderingIdr : stream[i].AccessUnit, i));
+            }
+            Assert.Equal(0, Call(V, "sceAvcdecDeleteDecoder", first));
+
+            // the next movie: the decoder holds its first three pictures, then gives one, then none for a call
+            decoder.Reset();
+            uint second = _h.Alloc(12);
+            Assert.Equal(0, Call(V, "sceAvcdecCreateDecoder", Avc, second, Query(W, H, 1)));
+            decoder.ReleasePerSend = 0;
+            var answers = new List<int>();
+            for (int i = 0; i < 3; i++)
+            {
+                answers.Add(DecodeOne(second, i == 0 ? reorderingIdr : stream[i].AccessUnit, i));
+            }
+            Assert.Equal(new[] { -1, -1, -1 }, answers); // not the previous movie's picture
+            decoder.ReleasePerSend = 1;
+            Assert.Equal(16 + 3, DecodeOne(second, stream[3].AccessUnit, 3));
+            decoder.ReleasePerSend = 0;
+            Assert.Equal(-1, DecodeOne(second, stream[4].AccessUnit, 4)); // still filling: no repeat of the first picture
+            decoder.ReleasePerSend = 2;
+            Assert.Equal(16 + 4, DecodeOne(second, stream[5].AccessUnit, 5));
+            decoder.ReleasePerSend = 0;
+            Assert.Equal(16 + 5, DecodeOne(second, stream[6].AccessUnit, 6)); // the queued one
+            // the stream runs: a late picture now repeats the previous one (an empty buffer would show)
+            Assert.Equal(16 + 5, DecodeOne(second, stream[7].AccessUnit, 7));
+            Assert.Equal(0, Call(V, "sceAvcdecDeleteDecoder", second));
+        }
+        finally
+        {
+            VideoDecoders.Backend = oldBackend;
+        }
+    }
+
+    [Fact]
+    public void ANonReorderingStreamRepeatsItsLastPictureWhenLate()
+    {
+        // a stream without reordering keeps a picture in every call (the Vita gives one per call)
+        IVideoDecoderBackend oldBackend = VideoDecoders.Backend;
+        var decoder = new ScriptedAsyncDecoder();
+        VideoDecoders.Backend = decoder;
+        try
+        {
+            List<SyntheticH264.Unit> stream = SyntheticH264.Stream(3, W, H);
+            uint ctrl = _h.Alloc(12);
+            Assert.Equal(0, Call(V, "sceAvcdecCreateDecoder", Avc, ctrl, Query(W, H, 1)));
+            decoder.ReleasePerSend = 1;
+            Assert.Equal(16, DecodeOne(ctrl, stream[0].AccessUnit, 0));
+            decoder.ReleasePerSend = 0;
+            Assert.Equal(16, DecodeOne(ctrl, stream[1].AccessUnit, 1));
+            Assert.Equal(0, Call(V, "sceAvcdecDeleteDecoder", ctrl));
+        }
+        finally
+        {
+            VideoDecoders.Backend = oldBackend;
+        }
     }
 }
 

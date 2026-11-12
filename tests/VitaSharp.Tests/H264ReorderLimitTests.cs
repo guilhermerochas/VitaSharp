@@ -56,6 +56,19 @@ public sealed class H264ReorderLimitTests
     }
 
     [Fact]
+    public void TheStatedReorderDepthIsRead()
+    {
+        // F1 2011's movies state 2 (their first picture comes after two more units on the Vita); no limit reads as null
+        byte[] idr = SyntheticH264.Stream(1)[0].AccessUnit;
+        Assert.Null(H264ReorderLimit.StatedReorderFrames(idr));
+        Assert.Equal(2, H264ReorderLimit.StatedReorderFrames(H264ReorderLimit.Apply(idr, 2)));
+        Assert.Equal(0, H264ReorderLimit.StatedReorderFrames(H264ReorderLimit.Apply(idr, 0)));
+        Assert.Null(H264ReorderLimit.StatedReorderFrames(SpsWithVui()));
+        Assert.Equal(1, H264ReorderLimit.StatedReorderFrames(H264ReorderLimit.Apply(SpsWithVui(), 1)));
+        Assert.Null(H264ReorderLimit.StatedReorderFrames(SyntheticH264.Stream(2)[1].AccessUnit));
+    }
+
+    [Fact]
     public void BSlicesAreRecognised()
     {
         // first_mb_in_slice 0 ('1'), slice_type ue: B = 1 ('010'), P = 0 ('1'), I = 7 ('0001000'), B = 6 ('00111')
