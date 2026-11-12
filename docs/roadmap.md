@@ -1869,6 +1869,15 @@ Lista de itens futuros do VitaSharp. Marque `[x]` quando um item for concluído.
 - [ ] Trocar entre o modo claro e o modo escuro demora muito (relato do usuário, 11/11/2026). Medir quanto leva a
   troca e onde o tempo vai (recriar a interface inteira, recarregar recursos/ícones/capas, refazer o layout da
   biblioteca) e fazer a troca só reaplicar as cores. Conferir no launcher do Desktop e no app Android.
+  Em andamento (fix/system-bugs-13b, B3). Medido (headless, 80 jogos, `ThemeSwitchTests`): a troca na biblioteca levava
+  620-1130 ms, porque a janela era refeita duas vezes (o setter do tema chamava `RebuildAll` e a troca da paleta
+  postava outro `RebuildAll`; nas Configurações o mesmo). Corrigido: uma reconstrução por troca, nenhuma quando o
+  tema escolhido já é o mostrado; ~500 ms agora, quase tudo a própria reconstrução (criar e medir os controles da
+  página; as capas já vêm do cache de imagens). Falta "só reaplicar as cores": as cores são passadas como valores
+  (`Kit.B(P.Surface)` em ~50 lugares) e algumas cores fixas sobre as capas (#0B0E13, #E8ECF2) e o par Background/Scrim
+  coincidem com cores da paleta, então trocar por valor na árvore pintaria errado; precisa de pincéis ligados ao
+  nome da cor da paleta (o Kit criar e guardar um pincel por cor da paleta e a troca só mudar a cor deles). Android:
+  o app só tem o tema escuro (Ui/Theme.cs), não há troca a medir.
 - [x] **REGRESSÃO (11/11/2026, relato do usuário: "não estava assim")** Killzone Mercenary (PCSC00045): o HUD piscava,
   e F1 2011 (PCSE00002) mostrava quadros pretos isolados, no build 2e7789b2 (capturas F8 `PCSC00045_20261111_222844_tudo`
   e `PCSE00002_20261111_223250_tudo`). Causa: 758ad0a9 (a espera do sync object de fragmento no `sceGxmBeginScene`

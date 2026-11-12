@@ -155,11 +155,27 @@ public sealed partial class MainWindow : Window
         }
     }
 
-    void OnPaletteChanged() => Dispatcher.UIThread.Post(RebuildAll);
+    /// <summary>The palette changed (a theme picked, or the system's while following it): one rebuild, at once on the
+    /// interface thread.</summary>
+    void OnPaletteChanged()
+    {
+        if (Dispatcher.UIThread.CheckAccess())
+        {
+            RebuildAll();
+        }
+        else
+        {
+            Dispatcher.UIThread.Post(RebuildAll);
+        }
+    }
+
+    /// <summary>How many times the whole window was drawn again (the tests count the theme switch).</summary>
+    internal int Rebuilds { get; private set; }
 
     /// <summary>Rebuilds every part in the current palette (theme change).</summary>
     void RebuildAll()
     {
+        Rebuilds++;
         _settingsPage?.SaveControls();
         // panels drawn with the old palette are made again (the firmware panel keeps a running installation)
         if (_firmwarePanel is { Busy: false })
@@ -357,12 +373,13 @@ public sealed partial class MainWindow : Window
         };
     }
 
-    void SetTheme(string theme)
+    /// <summary>A theme picked: the window is drawn again once, by the palette change it causes
+    /// (<see cref="OnPaletteChanged"/>); picking the theme already shown draws nothing again.</summary>
+    internal void SetTheme(string theme)
     {
         _settings.UiTheme = theme;
         SaveSettings();
         LauncherApp.ApplyTheme(theme);
-        RebuildAll();
     }
 
     // ------------------------------------------------------------------ status bar and log

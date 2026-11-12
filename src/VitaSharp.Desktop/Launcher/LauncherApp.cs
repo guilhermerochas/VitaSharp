@@ -138,10 +138,18 @@ public sealed class LauncherApp : Application
 
     /// <summary>Sets the app up on Avalonia's headless platform with Skia drawing: windows render to bitmaps and never
     /// appear on screen (ui-render).</summary>
-    public static void SetupHeadless() =>
+    public static void SetupHeadless()
+    {
+        // once per process: Avalonia's platform cannot be set up twice (ui-render and the tests share it)
+        if (Current != null)
+        {
+            return;
+        }
+
         AppBuilder.Configure<LauncherApp>().UseSkia()
             .UseHeadless(new Avalonia.Headless.AvaloniaHeadlessPlatformOptions { UseHeadlessDrawing = false })
             .SetupWithoutStarting();
+    }
 
     /// <summary>When started from Explorer, Windows opens a console just for us; the launcher does not need it.</summary>
     static void HideOwnConsole()
