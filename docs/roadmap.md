@@ -1981,15 +1981,31 @@ Lista de itens futuros do VitaSharp. Marque `[x]` quando um item for concluído.
     memória do guest (um quadro ou mais atrasada): depois de um corte de câmera aparecia o capacete do plano anterior
     por cima, e o texto do monitor ficava fantasma sobre a cabeça. Agora o alvo novo copia os pixels do substituído
     (mesmo stride/formato/escala, CPU não escreveu depois). Teste no mesmo arquivo (falha sem a correção).
-  - **Ainda aberto: cunhas vermelhas/azuis de um quadro ([flash]).** Não são ordem de flip: com 5ce57aa6 (fix/flicker)
-    continuam (uma execução com 45 flashes e 3 picture-order, todas cunhas; sem ele 10; a contagem varia de 2 a 45
-    entre execuções iguais). No dump 224104 a cunha é determinística: quadro 3259, desenho 201 (vs 42E7C2B1B81ED0DF,
-    12 índices, mesmos streams dos desenhos 200 e 202, que saem certos) cobre meia tela de vermelho puro; a textura P8
-    decodifica certo. `VITASHARP_UB_SCENE_END=audit` (262 mil desenhos): nenhum uniform buffer reescrito depois do
-    desenho, e nenhum portão de cena liberado cedo; `=frame` não muda nada claramente (3 flashes). Próximo: ler o
-    índice/vértices do desenho 201 no dump (endereço do índice no registro Draw) e ver se o dado gravado já veio
-    errado da memória (CPU ainda escrevendo os vértices quando o worker leu) ou se é decodificação (formato de índice
-    32 bits `st[16/1]`, atributos U8x4/F16x4).
+  - **Cunhas vermelhas/azuis de um quadro ([flash]): correção feita (fix/mgs-wedges-2), validada no replay e no jogo
+    rodando.** Não eram vértices nem uniforms errados: no dump 224104 (quadro 3257) os dados de todos os desenhos estão
+    certos na GPU (cópias lidas de volta iguais), e com o id do desenho por pixel (`VITASHARP_DEBUG_TEX0=id`) a faixa da
+    esquerda mostra os desenhos 7/9 do começo da cena no lugar dos 66/72 que a cobrem: desenhos posteriores da cena
+    somem numa faixa por um quadro. Depende do tempo da GPU e de onde os dados caem no anel de upload (alinhar 256
+    bytes a mais no desenho 87 limpa, 16 ou 4096 piora), some com `VITASHARP_SCENE_BREAKS=strict` e não depende do
+    hoisting (`NOHOIST`), da fusão de renderings, de barreiras entre renderings nem de cache de conjuntos; a validação
+    (core e sincronização) não acusa nada. É o caminho que grava as renderings de 1 amostra em command buffers
+    secundários (adiadas e começadas no fim) em GPU desktop com dynamic rendering (GTX 1650): gravadas direto no
+    primário saem certas em todas as execuções. Correção: GPU desktop começa as renderings direto (como antes de
+    29751f94); tiler e caminho de render pass continuam adiando; `VITASHARP_SCENE_BREAKS=defer` volta o comportamento
+    antigo para A/B. Por que o secundário perde a faixa no driver da NVIDIA ficou sem explicação (sem VUID nem SYNC):
+    se outra GPU desktop mostrar faltas parecidas, comparar com `=defer`. Replay do quadro 3257: faixa vermelha
+    (2306 px) em 3 de 3 execuções da main, 0 em 3 com a correção. Jogo rodando (estado da 224104 com `@f2`, 300 quadros, 5 execuções de
+    cada, alternadas): cunhas vermelhas 0 nas 5 (com `=defer`: 1, 2, 4, 1, 1); flashes 0/5/0/7/2 contra 10/9/7/9/11;
+    fps mediana 30 nos dois. Teste `SceneBreakPolicyTests`.
+  - **Ainda aberto: escurecimento de um quadro (cabeça do tripulante e bloom, flashes 2752-2778 da captura
+    010709; são os flashes que sobram com a correção acima).** No replay do dump 010709 (quadros 2740-2790) aparecem
+    quedas de um quadro em posições diferentes a cada execução, só com `--msaa=native` (3 de 5 execuções); com
+    `--msaa=off` e `--msaa=ss` nenhuma em 5. As cenas MSAA nativas ainda são gravadas em secundários
+    (`BeginMsaaRendering`), como as de 1 amostra eram: provável mesma causa. Próximo: gravar a rendering MSAA direto
+    no primário em GPU desktop (ops de store/resolve escolhidos no começo) e medir com o mesmo replay.
+  - **VUID-vkCmdDrawIndexed-None-08114: correção feita.** O conjunto 0 não escrevia o binding 0 (UniformData) quando o
+    desenho não tem dados de uniform de vértice, mas programas com todos os slots divididos (9078D650) o declaram;
+    agora todo binding de um conjunto novo é escrito (o buffer dummy onde não há dados). Teste `UniformSetWritesTests`.
 - [ ] Metal Gear Solid HD Collection (PCSE00020), abertura do MGS3 dentro do avião (relato do usuário, 10/11/2026;
   `captures\PCSE00020_20261110_214209_tudo`, `_214218_tudo` com dump da GPU, `_214309_tudo` com a trava). Agente B
   (fix/bugs-b-7). Referência do Vita de verdade: YouTube GaPPb3zatq0 (longplay, 1:45-4:00).

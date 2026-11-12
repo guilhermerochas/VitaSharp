@@ -10,7 +10,8 @@ namespace VitaSharp.Renderer.Vulkan;
 /// each break costs a store of the tiles and a load of them again.
 /// <para>
 /// Scene renderings are recorded into secondary command buffers and begun in the primary only when they end (as on
-/// tile-based GPUs and multisampled scenes before; now on every GPU unless VITASHARP_SCENE_BREAKS=strict). Until then
+/// tile-based GPUs, the render-pass path and multisampled scenes; desktop GPUs begin single-sampled renderings
+/// directly, see <see cref="DefersSingleSampledRenderings"/>). Until then
 /// the primary has not begun the rendering, so work that has to run outside a rendering (an upload, a copy, a layout
 /// barrier) can be recorded into the primary directly: it lands before the rendering's begin and the rendering goes
 /// on. That is "hoisting", and it is exact when the work
@@ -30,8 +31,24 @@ public sealed unsafe partial class VulkanRenderer
     /// <summary>VITASHARP_SCENE_BREAKS=strict: no hoisting, and desktop GPUs begin single-sampled renderings directly.</summary>
     private static readonly bool s_strictSceneBreaks = string.Equals(Environment.GetEnvironmentVariable(EnvVars.SceneBreaks)?.Trim(), "strict", StringComparison.OrdinalIgnoreCase);
 
+    /// <summary>VITASHARP_SCENE_BREAKS=defer: desktop GPUs record single-sampled renderings into secondaries too (A/B).</summary>
+    private static readonly bool s_deferOnDesktop = string.Equals(Environment.GetEnvironmentVariable(EnvVars.SceneBreaks)?.Trim(), "defer", StringComparison.OrdinalIgnoreCase);
+
     /// <summary>Single-sampled renderings are recorded into secondaries and begun when they end.</summary>
-    private bool DeferredRenderings => TiledRenderings || UseRenderPasses || !s_strictSceneBreaks;
+    private bool DeferredRenderings => DefersSingleSampledRenderings(TiledRenderings, UseRenderPasses, s_strictSceneBreaks, s_deferOnDesktop);
+
+    /// <summary>
+    /// Whether single-sampled scene renderings are recorded into secondary command buffers and begun when they end:
+    /// on tile-based GPUs and on the render-pass path (fewer loads and stores of the tiles), not on desktop GPUs with
+    /// dynamic rendering. There a scene drawn through secondaries lost a strip of its later draws for one frame, the
+    /// earlier content showing through (Metal Gear Solid HD Collection: red and dark-blue wedges at the
+    /// left edge of the cockpit on a GTX 1650), depending on GPU timing and on where the
+    /// draws' data sat in the upload ring; the same scene recorded into the primary was right in every run, and the
+    /// validation layer (core and synchronization) reported nothing for either. A desktop GPU keeps nothing in tile
+    /// memory, so a scene break costs it little. VITASHARP_SCENE_BREAKS=defer defers on desktop GPUs too (unless strict).
+    /// </summary>
+    public static bool DefersSingleSampledRenderings(bool tiledRenderings, bool renderPasses, bool strict, bool deferOnDesktop) =>
+        tiledRenderings || renderPasses || (deferOnDesktop && !strict);
 
     /// <summary>Work is being recorded into the primary, before the open (deferred) rendering.</summary>
     private bool _hoisting;

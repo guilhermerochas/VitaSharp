@@ -45,36 +45,25 @@ public sealed unsafe partial class VulkanRenderer
         if (!_uniformSets.TryGetValue(key, out DescriptorSet set))
         {
             set = AllocSet(_uboLayout);
-            DescriptorBufferInfo* bi = stackalloc DescriptorBufferInfo[8];
+            DescriptorBufferInfo* bufferInfos = stackalloc DescriptorBufferInfo[8];
+            uint* bindings = stackalloc uint[8];
+            DescriptorType* types = stackalloc DescriptorType[8];
             WriteDescriptorSet* writes = stackalloc WriteDescriptorSet[8];
-            // the dummy buffer stands for a buffer the stage's shader does not declare (no uniforms, no mapped slots): not written
-            uint nw = 0;
-            for (int i = 0; i < (split ? 8 : 4); i++)
+            int writeCount = UniformSetWrites(infos, split, bufferInfos, bindings, types);
+            for (int i = 0; i < writeCount; i++)
             {
-                if (infos[i].Buffer.Handle == _dummyBuffer.Handle && !ShaderGenerator.NanDraws)
-                {
-                    continue;
-                }
-
-                bool dynamic = i < 2 || i >= 4; // 0/1 and the split slots: bound with dynamic offsets
-                bi[i] = dynamic ? new DescriptorBufferInfo(infos[i].Buffer, 0, infos[i].Range) : infos[i];
-                uint binding = i < 4 ? (uint)i : (uint)ShaderGenerator.SplitBinding(i < 6, (i - 4) & 1);
-                writes[nw++] = new WriteDescriptorSet
+                writes[i] = new WriteDescriptorSet
                 {
                     SType = StructureType.WriteDescriptorSet,
                     DstSet = set,
-                    DstBinding = binding,
+                    DstBinding = bindings[i],
                     DescriptorCount = 1,
-                    DescriptorType = dynamic ? DescriptorType.StorageBufferDynamic : DescriptorType.StorageBuffer,
-                    PBufferInfo = &bi[i]
+                    DescriptorType = types[i],
+                    PBufferInfo = &bufferInfos[i]
                 };
             }
-            if (nw > 0)
-            {
-                _vk.UpdateDescriptorSets(_dev, nw, writes, 0, null);
-            }
-
-            _statDescWrites += nw;
+            _vk.UpdateDescriptorSets(_dev, (uint)writeCount, writes, 0, null);
+            _statDescWrites += writeCount;
             if (ShaderGenerator.NanDraws)
             {
                 NanBindDrawBuffer(set);
@@ -85,5 +74,29 @@ public sealed unsafe partial class VulkanRenderer
         _lastUniformKey = key;
         _lastUniformSet = set;
         return set;
+    }
+
+    /// <summary>
+    /// The descriptor writes of a new set 0 (<paramref name="infos"/>: bindings 0-3, then the split slots 5-8 when
+    /// <paramref name="split"/>), into <paramref name="bufferInfos"/>/<paramref name="bindings"/>/<paramref name="types"/>;
+    /// returns their count. Every binding is written, the dummy buffer where the draw has no data: a program whose
+    /// uniform slots are all split slots still declares UniformData (its fetchMemory reads it for other addresses),
+    /// and a binding a pipeline's shader declares must hold a valid descriptor when the draw executes
+    /// (VUID-vkCmdDrawIndexed-None-08114, Metal Gear Solid HD Collection's vertex program 9078D650 with no vertex
+    /// uniform data); a set from a reset pool otherwise keeps whatever descriptor was in its memory. Dynamic bindings
+    /// (0/1 and the split slots) are written at offset 0 and bound with the offsets of <paramref name="infos"/>.
+    /// </summary>
+    public static int UniformSetWrites(DescriptorBufferInfo* infos, bool split, DescriptorBufferInfo* bufferInfos, uint* bindings, DescriptorType* types)
+    {
+        int count = split ? 8 : 4;
+        for (int i = 0; i < count; i++)
+        {
+            bool dynamic = i < 2 || i >= 4;
+            bufferInfos[i] = dynamic ? new DescriptorBufferInfo(infos[i].Buffer, 0, infos[i].Range) : infos[i];
+            bindings[i] = i < 4 ? (uint)i : (uint)ShaderGenerator.SplitBinding(i < 6, (i - 4) & 1);
+            types[i] = dynamic ? DescriptorType.StorageBufferDynamic : DescriptorType.StorageBuffer;
+        }
+
+        return count;
     }
 }
