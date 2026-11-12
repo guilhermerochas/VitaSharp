@@ -32,9 +32,29 @@ public sealed partial class EventFlag
     {
         w.Write(Attr);
         w.Write(InitPattern);
-        w.Write(Pattern);
+        w.Write(SnapshotPattern);
         w.Write(_deleted);
     }
+
+    /// <summary>The pattern a save state keeps: waits are reissued when the state loads, so a waiter that a set satisfied
+    /// but that has not returned yet gives back the bits its clear mode took, and takes them again on the reissue.</summary>
+    internal uint SnapshotPattern
+    {
+        get
+        {
+            lock (this)
+            {
+                uint pattern = Pattern;
+                foreach (WaitRequest request in _granted)
+                {
+                    pattern |= request.Consumed;
+                }
+
+                return pattern;
+            }
+        }
+    }
+
     internal void Load(SnapshotReader r)
     {
         Attr = r.ReadUInt32();
