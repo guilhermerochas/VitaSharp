@@ -941,6 +941,13 @@ Lista de itens futuros do VitaSharp. Marque `[x]` quando um item for concluído.
   arquivos em ux0:theme, registro `/CONFIG/THEME`, notificação ao shell). (3) Launcher: instalar tema pelo mesmo
   diálogo de `.pkg` e mostrar o tipo. Validar com um tema oficial gratuito e um personalizado: aplicar, reiniciar o
   shell e conferir que continua aplicado.
+  (4) Baixar temas (pedido do usuário, 13/11/2026: "temas do shell do Vita, seja exportando o link dos oficiais ou
+  temas que a comunidade cria que eu possa customizar o meu Vita"), no launcher e no Android: colar o link de um
+  tema oficial (o `.pkg` da loja; instala com a licença real da conta do usuário, nunca gerada) ou escolher/colar
+  um tema personalizado da comunidade (formato que o Vita aceita: `theme.xml` + imagens/sons), baixar, instalar em
+  `ux0:theme` pelo mesmo caminho do item (1) e aplicar pelo shell real. Antes: estudar como o firmware instala e
+  registra cada tipo (oficial pela loja/promoter, personalizado), de onde a comunidade distribui os temas e o formato
+  exato; o download passa pela fonte única de caminhos (`FirmwareLayout`). Teste com um tema sintético de cada tipo.
 - [ ] Jogos de PSP pelo emulador de PSP do próprio Vita (pedido do usuário, 10/11/2026: "eu quero que ele emule tudo o
   que seja possível do psvita"). O Vita roda PSP com o `pspemu` do firmware (código ARM que traduz o MIPS do PSP) e os
   serviços de compatibilidade (`SceCompat`, `ScePsp2Compat`: tela, áudio, arquivos, controles, memória compartilhada).
