@@ -1006,9 +1006,27 @@ public sealed partial class MsgPipe : KernelObject
 {
     public override int UidClass => 7;
     /// <summary>SCE_KERNEL_MSG_PIPE_MODE_*: ASAP (0, move what fits / what is there) or FULL (1, the whole size),
-    /// plus DONT_WAIT (0x10, fail instead of blocking). Not the PSP's order (there 0 was \"all\"): Jak and Daxter's
-    /// renderer thread receives with mode 0 into a 0x600-byte buffer and waited forever for 12-byte messages.</summary>
+    /// plus DONT_WAIT (0x10): on the blocking forms the kernel does the transfer later and the call returns at once
+    /// (<see cref="TransferLater"/>). Not the PSP's order (there 0 was \"all\"): Jak and Daxter's renderer thread
+    /// receives with mode 0 into a 0x600-byte buffer and waited forever for 12-byte messages.</summary>
     public const uint WaitAsap = 0, WaitAll = 1, DontWait = 0x10;
+
+    /// <summary>The mode bits threadmgr accepts (any other: ILLEGAL_MODE).</summary>
+    public const uint ValidModes = WaitAll | DontWait;
+
+    /// <summary>A transfer the kernel does later for a DONT_WAIT call (one of threadmgr's "SceKernelMsgPipeAsync"
+    /// requests).</summary>
+    private sealed class LaterTransfer(bool send, Segments buffers, uint mode, Ptr<uint> result, Action completed)
+    {
+        public readonly bool Send = send;
+        public readonly Segments Buffers = buffers;
+        public readonly bool Asap = (mode & WaitAll) == 0;
+        public readonly Ptr<uint> Result = result;
+        public readonly Action Completed = completed;
+        public int Done;
+    }
+
+    private readonly List<LaterTransfer> _later = new();
     public uint Attr;
     public int BufferSize;
     /// <summary>UID of the thread that created the pipe (sceKernelGetMsgPipeCreatorId).</summary>
@@ -1088,7 +1106,6 @@ public sealed partial class MsgPipe : KernelObject
             int gen = _cancelled;
             int sent = 0;
             bool asap = (mode & WaitAll) == 0;
-            poll |= (mode & DontWait) != 0;
             SendWaiters++;
             try
             {
@@ -1136,6 +1153,7 @@ public sealed partial class MsgPipe : KernelObject
                 SendWaiters--;
             }
             result.TrySet((uint)sent);
+            ServeLater();
             if (asap ? sent == 0 && size > 0 : sent < size)
             {
                 return SceError.MPP_FULL;
@@ -1161,7 +1179,6 @@ public sealed partial class MsgPipe : KernelObject
             int gen = _cancelled;
             int got = 0;
             bool asap = (mode & WaitAll) == 0;
-            poll |= (mode & DontWait) != 0;
             RecvWaiters++;
             try
             {
@@ -1206,6 +1223,7 @@ public sealed partial class MsgPipe : KernelObject
                 RecvWaiters--;
             }
             result.TrySet((uint)got);
+            ServeLater();
             if (got == 0 && size > 0)
             {
                 return SceError.MPP_EMPTY;
@@ -1219,9 +1237,10 @@ public sealed partial class MsgPipe : KernelObject
     {
         lock (this)
         {
-            numSend.TrySet(SendWaiters);
-            numRecv.TrySet(RecvWaiters);
+            numSend.TrySet(SendWaiters + _later.Count(t => t.Send));
+            numRecv.TrySet(RecvWaiters + _later.Count(t => !t.Send));
             _cancelled++;
+            EndLater();
             Monitor.PulseAll(this);
         }
         return SceError.OK;
@@ -1232,8 +1251,128 @@ public sealed partial class MsgPipe : KernelObject
         lock (this)
         {
             _deleted = true;
+            EndLater();
             Monitor.PulseAll(this);
         }
+    }
+
+    /// <summary>
+    /// DONT_WAIT on a blocking send or receive (FW 3.74 threadmgr, the vector forms at 0x81015004 / 0x8101533C): the
+    /// kernel copies the buffer list, queues the transfer for its "SceKernelMsgPipeAsync" threads (which run it as a
+    /// blocking call at the caller's priority) and the call returns at once with success; the data moves when the
+    /// pipe allows, as the blocking call would have moved it. <paramref name="result"/> (null for none) gets the bytes
+    /// moved when the transfer ends; <paramref name="completed"/> runs then, also when a cancel or delete ends it.
+    /// </summary>
+    public void TransferLater(bool send, Segments buffers, uint mode, Ptr<uint> result, Action completed)
+    {
+        lock (this)
+        {
+            if (_deleted)
+            {
+                result.TrySet(0);
+                completed();
+                return;
+            }
+
+            _later.Add(new LaterTransfer(send, buffers, mode, result, completed));
+            ServeLater();
+        }
+    }
+
+    /// <summary>The transfers queued by <see cref="TransferLater"/> still waiting for the pipe.</summary>
+    public int LaterCount
+    {
+        get
+        {
+            lock (this)
+            {
+                return _later.Count;
+            }
+        }
+    }
+
+    /// <summary>Moves what the queued transfers can move now, in queue order, until none can go further.</summary>
+    private void ServeLater()
+    {
+        bool moved = true;
+        while (moved && _later.Count > 0)
+        {
+            moved = false;
+            foreach (LaterTransfer transfer in _later.ToList())
+            {
+                int size = transfer.Buffers.Total;
+                int count = transfer.Send ? SendNow(transfer, size) : ReceiveNow(transfer, size);
+                if (count == 0)
+                {
+                    continue;
+                }
+
+                transfer.Done += count;
+                moved = true;
+                if (transfer.Asap || transfer.Done >= size)
+                {
+                    _later.Remove(transfer);
+                    transfer.Result.TrySet((uint)transfer.Done);
+                    transfer.Completed();
+                }
+            }
+            if (moved)
+            {
+                Monitor.PulseAll(this);
+            }
+        }
+    }
+
+    /// <summary>A queued send's bytes that fit now (FULL: only the whole rest at once, as the blocking send).</summary>
+    private int SendNow(LaterTransfer transfer, int size)
+    {
+        int free = BufferSize - _data.Count;
+        int rest = size - transfer.Done;
+        if (rest <= 0 || (transfer.Asap ? free <= 0 : free < rest))
+        {
+            return 0;
+        }
+
+        int count = Math.Min(free, rest);
+        transfer.Buffers.ForEach(transfer.Done, count, (address, length) =>
+        {
+            foreach (byte value in GuestMemory.Span(address, length))
+            {
+                _data.Enqueue(value);
+            }
+        });
+        return count;
+    }
+
+    /// <summary>A queued receive's bytes that are there now (FULL keeps taking until it has them all).</summary>
+    private int ReceiveNow(LaterTransfer transfer, int size)
+    {
+        int count = Math.Min(_data.Count, size - transfer.Done);
+        if (count <= 0)
+        {
+            return 0;
+        }
+
+        transfer.Buffers.ForEach(transfer.Done, count, (address, length) =>
+        {
+            Span<byte> span = GuestMemory.Span(address, length);
+            for (int i = 0; i < length; i++)
+            {
+                span[i] = _data.Dequeue();
+            }
+        });
+        return count;
+    }
+
+    /// <summary>A cancel or delete ends the queued transfers with what they moved.</summary>
+    private void EndLater()
+    {
+        foreach (LaterTransfer transfer in _later)
+        {
+            transfer.Result.TrySet((uint)transfer.Done);
+            transfer.Completed();
+        }
+        _later.Clear();
     }
 
     // ---- sceKernelWaitEvent / PollEvent on a message pipe (SCE_KERNEL_EVENT_*): IN while data can be received, OUT

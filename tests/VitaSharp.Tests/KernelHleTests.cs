@@ -254,8 +254,53 @@ public sealed class KernelHleTests(GuestMemoryFixture fixture)
         Assert.Equal(0, pipe.Send(msg, 12, MsgPipe.WaitAll, new Ptr<uint>(res), default, false));
         Assert.Equal(0, pipe.Receive(buf, 0x600, 0, new Ptr<uint>(res), default, false));
         Assert.Equal(12u, GuestMemory.R32(res));
-        // DONT_WAIT on an empty pipe fails at once instead of blocking
-        Assert.Equal(SceError.MPP_EMPTY, pipe.Receive(buf, 0x600, MsgPipe.DontWait, new Ptr<uint>(res), default, false));
+        // the poll form on an empty pipe fails at once
+        Assert.Equal(SceError.MPP_EMPTY, pipe.Receive(buf, 0x600, MsgPipe.WaitAsap, new Ptr<uint>(res), default, true));
+    }
+
+    [Fact]
+    public void ADontWaitTransferIsDoneLaterAsTheBlockingCallWouldDoIt()
+    {
+        // FW 3.74 threadmgr: DONT_WAIT on a blocking send/receive queues the transfer for the kernel's
+        // "SceKernelMsgPipeAsync" threads, which run it as the blocking call
+        var pipe = new MsgPipe { BufferSize = 0x10 };
+        uint buf = Alloc(8), res = Alloc(4), msg = Alloc(0x10);
+        for (int i = 0; i < 0x10; i++)
+        {
+            GuestMemory.Write(msg + (uint)i, (byte)(i + 1));
+        }
+
+        int completed = 0;
+        GuestMemory.W32(res, 0xFFFFFFFF);
+        pipe.TransferLater(false, MsgPipe.Segments.One(buf, 8), MsgPipe.WaitAll, new Ptr<uint>(res), () => completed++);
+        Assert.Equal(1, pipe.LaterCount);
+        Assert.Equal(0, completed);
+        // a FULL receive takes what comes until it has all of it
+        Assert.Equal(0, pipe.Send(msg, 4, MsgPipe.WaitAll, default, default, false));
+        Assert.Equal(1, pipe.LaterCount);
+        Assert.Equal(0u, (uint)pipe.BufferSize - (uint)pipe.FreeSize);
+        Assert.Equal(0, pipe.Send(msg + 4, 4, MsgPipe.WaitAll, default, default, false));
+        Assert.Equal(0, pipe.LaterCount);
+        Assert.Equal(1, completed);
+        Assert.Equal(8u, GuestMemory.R32(res));
+        Assert.Equal(new byte[] { 1, 2, 3, 4, 5, 6, 7, 8 }, GuestMemory.Span(buf, 8).ToArray());
+
+        // a queued send waits for room and goes in, whole, when a receive frees it
+        Assert.Equal(0, pipe.Send(msg, 0x10, MsgPipe.WaitAll, default, default, false));
+        pipe.TransferLater(true, MsgPipe.Segments.One(msg, 4), MsgPipe.WaitAll, default, () => completed++);
+        Assert.Equal(1, pipe.LaterCount);
+        Assert.Equal(0, pipe.Receive(buf, 4, MsgPipe.WaitAll, default, default, false));
+        Assert.Equal(0, pipe.LaterCount);
+        Assert.Equal(2, completed);
+        Assert.Equal(0, pipe.FreeSize);
+
+        // a cancel ends what is still queued, and counts it with the waiters
+        pipe.TransferLater(true, MsgPipe.Segments.One(msg, 4), MsgPipe.WaitAsap, default, () => completed++);
+        uint senders = Alloc(4), receivers = Alloc(4);
+        Assert.Equal(0, pipe.Cancel(new Ptr<int>(senders), new Ptr<int>(receivers)));
+        Assert.Equal(1u, GuestMemory.R32(senders));
+        Assert.Equal(0, pipe.LaterCount);
+        Assert.Equal(3, completed);
     }
 
     [Fact]

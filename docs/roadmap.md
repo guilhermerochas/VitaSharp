@@ -2051,12 +2051,25 @@ Lista de itens futuros do VitaSharp. Marque `[x]` quando um item for concluído.
   buffer é o tamanho pedido arredondado para páginas de 4 KB (o bloco de memória que o threadmgr aloca; o campo de
   capacidade guarda o arredondado). Testes: ThreadMgrHleTests.MsgPipeSendReceiveModes,
   MsgPipeFullSendWaitsForRoomForTheWholeMessage. Correção feita, ainda não validada com jogo.
-- [ ] MsgPipe: DONT_WAIT (0x10) nas formas bloqueantes (sceKernelSendMsgPipe/ReceiveMsgPipe e Vector) não é "falhar em
+- [ ] MsgPipe: pipe sem buffer (tamanho 0) e entrega direta a um receptor que espera (o firmware passa os dados ao
+  receptor antes do buffer), achados junto com o item de DONT_WAIT abaixo; conferir no threadmgr (FUN_81013dfc) antes
+  de mudar.
+- [x] MsgPipe: DONT_WAIT (0x10) nas formas bloqueantes (sceKernelSendMsgPipe/ReceiveMsgPipe e Vector) não é "falhar em
   vez de esperar" no firmware: o threadmgr copia o vetor, enfileira o pedido para os threads "SceKernelMsgPipeAsync"
   (até 0x100 pedidos por processo, depois 0x80028225) e volta na hora; o envio/recebimento acontece depois nesse thread
   (decompilação 0x81015004 / 0x8101533C, só estudo). O HLE trata 0x10 como Try. Também não há entrega direta a um
   receptor que espera (o firmware passa os dados ao receptor antes do buffer) nem pipe sem buffer (tamanho 0). Conferir
   com um jogo que use 0x10 antes de mudar.
+  Feito (fix/system-bugs-13, B3), conferido de novo na decompilação do threadmgr 3.74 (só estudo): com 0x10 a forma
+  bloqueante valida o modo (outros bits além de 0x11: ILLEGAL_MODE), conta o pedido no processo (0x100, depois
+  0x80028225), copia a lista de buffers e o põe na fila dos 8 threads "SceKernelMsgPipeAsync", que fazem a
+  transferência como a chamada bloqueante (com a prioridade e a afinidade de quem pediu); a chamada volta 0 na hora; o
+  número de bytes só é escrito de volta para programas de SDK anterior a 2.00. `MsgPipe.TransferLater`: a transferência
+  fica na fila do pipe e anda sempre que o pipe deixa (envio FULL inteiro, recebimento FULL até ter tudo); cancelar ou
+  apagar o pipe a encerra. As formas Try continuam falhando na hora. Testes: `KernelHleTests.
+  ADontWaitTransferIsDoneLaterAsTheBlockingCallWouldDoIt`, `ThreadMgrHleTests.
+  MsgPipeDontWaitReturnsAtOnceAndTheKernelTransfersLater` (falham sem a correção: MPP_EMPTY na hora). Não validado
+  num jogo (nenhum dos testados usa 0x10); a fila não entra no save state.
 - [x] Dragon's Crown (PCSE00019): flicker e texturas erradas (relato do usuário, 10/11/2026, capturas
   `PCSE00019_20261110_214605_tudo` e `..._214648_tudo`). Agente A4 (fix/bugs-a-4), duas causas:
   (1) **corrigido em bf2f3b9**: o jogo lê o back buffer (960x544, pitch 1024) como uma textura 1024x1024 que também
