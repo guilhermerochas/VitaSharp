@@ -125,6 +125,12 @@ public sealed partial class Display : HleModule
     long _lastFlipVcount = -1;
     public static long ImmediateFlipsPaced;
 
+    /// <summary>True on the GXM display queue thread (<see cref="Gxm"/>): its callback's flips are submitted with
+    /// <see cref="GpuQueue.SubmitFlip"/>.</summary>
+    internal static bool OnDisplayQueue { get => t_onDisplayQueue; set => t_onDisplayQueue = value; }
+    [System.Diagnostics.CodeAnalysis.SuppressMessage("Style", "IDE1006", Justification = "[ThreadStatic]: t_camelCase; .editorconfig cannot select the attribute")]
+    [ThreadStatic] static bool t_onDisplayQueue;
+
     [Hle("_sceDisplaySetFrameBuf")] // syscall: (pParam, sync, opt {pParam->size})
     [Hle("sceDisplaySetFrameBuf")]
     internal int SetFrameBuf(uint pParam, uint sync)
@@ -167,12 +173,23 @@ public sealed partial class Display : HleModule
             return 0;
         }
         long now = System.Diagnostics.Stopwatch.GetTimestamp();
-        Emu.Gpu.Submit(new PresentCommand
+        var present = new PresentCommand
         {
             Frame = new DisplayFrame(_base, _pitch, _width, _height, (DisplayPixelFormat)_format),
             Overlay = Emu.IsShell ? null : Emu.Vita.ShellOverlay(_lastSetVcount),
             Flip = FramesPresented, VBlank = _lastSetVcount, GuestUs = GuestClock.Microseconds, HostTicks = now,
-        });
+        };
+        // the GXM display queue's callback flips a frame whose rendering is done: the flip is not ordered behind the
+        // work the game queued since (a later scene into this very buffer, waiting for this flip: GpuQueue.SubmitFlip)
+        if (t_onDisplayQueue)
+        {
+            Emu.Gpu.SubmitFlip(present);
+        }
+        else
+        {
+            Emu.Gpu.Submit(present);
+        }
+
         PresentTimes[FramesPresented & (PresentTimes.Length - 1)] = now;
         VitaSharp.Core.Util.FrameLedger.OnPresent(FramesPresented);
         FramesPresented++;

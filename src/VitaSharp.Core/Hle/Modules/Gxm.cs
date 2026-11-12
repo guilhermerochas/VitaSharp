@@ -97,12 +97,18 @@ public sealed partial class Gxm : HleModule
             if (!Emu.Running && Emu.MainModule != null && K.MainThread?.Status == ThreadStatus.Dormant) break;
             try
             {
-                if (_displayCallback != 0) self.CallGuest(_displayCallback, data);
+                if (_displayCallback != 0)
+                {
+                    // the callback's sceDisplaySetFrameBuf flips this finished frame (Display.OnDisplayQueue)
+                    Display.OnDisplayQueue = true;
+                    self.CallGuest(_displayCallback, data);
+                }
             }
             catch (GuestThreadExitException) { break; }
             catch (Exception e) { Log.Error($"display queue callback failed: {e.Message}"); }
             finally
             {
+                Display.OnDisplayQueue = false;
                 Emu.Memory.Free(data);
                 // the flip is done: the old buffer is off screen, and scenes waiting to render into it may run
                 if (oldSync != null) lock (oldSync) { if (oldSync.Released < oldDisplays) oldSync.Released = oldDisplays; Monitor.PulseAll(oldSync); }
