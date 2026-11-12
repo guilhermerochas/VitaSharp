@@ -1762,6 +1762,14 @@ Lista de itens futuros do VitaSharp. Marque `[x]` quando um item for concluído.
 
 ## Bugs em aberto
 
+- [ ] **REGRESSÃO (11/11/2026, relato do usuário: "não estava assim")** Killzone Mercenary (PCSC00045): o HUD pisca
+  (flicker) no build 2e7789b2. Captura F8 `PCSC00045_20261111_222844_tudo` (pasta de capturas do usuário, com o dump da
+  GPU de 209 quadros): 17 achados, vários [flash] em quadros isolados que diferem dos dois vizinhos iguais, nas
+  células de cima da tela (2,0 e 3,0), onde fica o HUD. Mudanças do dia que tocam o desenho, a bisecar nesta ordem:
+  os registradores de atributo zerados nos shaders (gerador v27, fix/ci-macos), a conversão de texturas por tabelas
+  da rodada 22 (`MortonGather`, incluindo a resolução de conflito no `TextureDecoder.cs`), a invalidação de blocos
+  traduzidos pelas instruções de cache (kernel-env) e as texturas U32/S32 em R32 (T2). Os merges de nomes têm IL
+  idêntico. Reproduzir com `replay-gpu` nos quadros das findings antes e depois de cada mudança.
 - [ ] Achados do jogo de teste VitaSDK (repositório local `VitaSharp-testgame`, 11/11/2026; 182 OK / 3 FAIL / 2 SKIP
   no VitaSharp sem janela). 1) Texturas ETC1 não são decodificadas: "texture base format 0x84000000 is not supported:
   treated as RGBA8", todos os blocos saem 0. 2) `U2U10U10U10` na ordem `_ABGR` sai com vermelho e azul trocados:
