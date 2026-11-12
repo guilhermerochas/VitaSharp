@@ -1786,6 +1786,11 @@ Lista de itens futuros do VitaSharp. Marque `[x]` quando um item for concluído.
 
 ## Bugs em aberto
 
+- [ ] Desktop (Windows): em tela cheia, depois de tirar o foco do jogo (ir para outro aplicativo), não dá para
+  voltar: o Windows toca o som de erro e a janela do jogo não volta; só fechando o jogo (relato do usuário,
+  12/11/2026, "ainda está acontecendo"; ver o item de 04/11 do F11). Estudar o comportamento do GLFW em tela cheia
+  ao perder o foco (auto-iconify), as regras de ativação do Windows (janela desabilitada ou dona) e a perda do
+  swapchain; corrigir para Windows, Linux e macOS, com teste que falha antes.
 - [ ] Trocar entre o modo claro e o modo escuro demora muito (relato do usuário, 11/11/2026). Medir quanto leva a
   troca e onde o tempo vai (recriar a interface inteira, recarregar recursos/ícones/capas, refazer o layout da
   biblioteca) e fazer a troca só reaplicar as cores. Conferir no launcher do Desktop e no app Android.
