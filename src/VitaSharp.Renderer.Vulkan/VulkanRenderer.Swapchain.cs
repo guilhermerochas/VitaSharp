@@ -12,7 +12,7 @@ public sealed unsafe partial class VulkanRenderer
     private readonly List<Silk.NET.Vulkan.Semaphore> _swapDone = new();
     private Extent2D _swapExtent;
     private Format _swapFormat;
-    private bool _swapchainDirty;
+    private bool _swapchainDirty, _swapchainZeroLogged;
     /// <summary>The swapchain's preTransform is not the surface's currentTransform (on purpose: IDENTITY on a rotated
     /// Android display). Android then returns VK_SUBOPTIMAL_KHR from every acquire and present; recreating the
     /// swapchain would not change that, so SUBOPTIMAL is ignored (OUT_OF_DATE and resizes still recreate it).</summary>
@@ -71,9 +71,17 @@ public sealed unsafe partial class VulkanRenderer
         }
         if (extent.Width == 0 || extent.Height == 0)
         {
+            if (!_swapchainZeroLogged)
+            {
+                _swapchainZeroLogged = true;
+                Log.Info("Swapchain: the surface is 0x0 (minimized): no presentation until it has a size again");
+            }
+
             _swapchainDirty = true;
             return;
         }
+
+        _swapchainZeroLogged = false;
         // Android: 3 images (triple buffering under FIFO) unless the driver needs more; minImageCount + 1 there gave 4
         // on drivers that report 3, one more frame of latency for nothing. The desktop is unchanged.
         uint count = OperatingSystem.IsAndroid() ? Math.Max(caps.MinImageCount, 3) : Math.Max(caps.MinImageCount + 1, 3);
@@ -195,6 +203,7 @@ public sealed unsafe partial class VulkanRenderer
             }
         }
         Result r = _core.SwapchainExt!.AcquireNextImage(_dev, _swapchain, 1_000_000_000, F.Acquire, default, ref index);
+        NoteSwapchainResult("vkAcquireNextImageKHR", r);
         if (r is Result.ErrorOutOfDateKhr)
         {
             _swapchainDirty = true;
@@ -285,10 +294,27 @@ public sealed unsafe partial class VulkanRenderer
             r = _core.SwapchainExt!.QueuePresent(_core.Queue, in pi);
         }
 
+        NoteSwapchainResult("vkQueuePresentKHR", r);
         if (r == Result.ErrorOutOfDateKhr || (r == Result.SuboptimalKhr && !_suboptimalExpected))
         {
             _swapchainDirty = true;
         }
+    }
+
+    private Result _lastAcquireResult, _lastPresentResult;
+
+    /// <summary>Logs an acquire / present result when it differs from the previous one of that call (minimizing,
+    /// restoring and losing fullscreen show up in the log once, not every frame).</summary>
+    private void NoteSwapchainResult(string call, Result r)
+    {
+        ref Result last = ref call == "vkQueuePresentKHR" ? ref _lastPresentResult : ref _lastAcquireResult;
+        if (r == last)
+        {
+            return;
+        }
+
+        last = r;
+        Log.Info($"Swapchain: {call} -> {r}");
     }
 
     private void DestroySwapchain()
