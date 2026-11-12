@@ -1770,6 +1770,15 @@ Lista de itens futuros do VitaSharp. Marque `[x]` quando um item for concluído.
   da rodada 22 (`MortonGather`, incluindo a resolução de conflito no `TextureDecoder.cs`), a invalidação de blocos
   traduzidos pelas instruções de cache (kernel-env) e as texturas U32/S32 em R32 (T2). Os merges de nomes têm IL
   idêntico. Reproduzir com `replay-gpu` nos quadros das findings antes e depois de cada mudança.
+  F1 2011 (PCSE00002) também (captura `PCSE00002_20261111_223250_tudo`, 759 quadros no dump): 21 quadros pretos
+  isolados (luma 0) a cada 3 a 8 quadros a partir do 2723, e o `replay-gpu` do dump repete os mesmos quadros pretos.
+  O `frames_index.txt` (`--trace-draws`) mostra o padrão: os quadros normais apresentam a cena desenhada um present
+  antes ("lag 1"); o quadro preto 2723 apresenta 0x604A0000 com "lag 0" e o registro do present fica no meio dos
+  draws dessa cena (draws 3665-3712, present no intervalo 3681-3698): o flip chegou antes de a cena terminar, e o
+  quadro mostra o alvo ainda limpo. No console, o flip pela fila de exibição do GXM (`sceGxmDisplayQueueAddEntry`)
+  espera o fim da cena; procurar o que, hoje, deixou o present ser registrado antes dos draws da cena (ordem da fila
+  de exibição/notificações do GXM, sincronização de processo/relógio do T1, ou a ordem de envio ao worker da GPU).
+  O flicker do HUD do Killzone pode ser a mesma causa: conferir o "lag" dos quadros com [flash] do mesmo jeito.
 - [ ] Achados do jogo de teste VitaSDK (repositório local `VitaSharp-testgame`, 11/11/2026; 182 OK / 3 FAIL / 2 SKIP
   no VitaSharp sem janela). 1) Texturas ETC1 não são decodificadas: "texture base format 0x84000000 is not supported:
   treated as RGBA8", todos os blocos saem 0. 2) `U2U10U10U10` na ordem `_ABGR` sai com vermelho e azul trocados:
