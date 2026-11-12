@@ -8,7 +8,7 @@ namespace VitaSharp.Renderer.Vulkan;
 /// <summary>AstcFromBc / AstcFromPvrtc: the level is transcoded to ASTC 4x4 blocks (AstcTranscoder).</summary>
 public enum TexConvert
 {
-    None, Rgb8ToRgba8, Srgb8ToRgba8, Palette4, Palette8, U8U3U3U2, Yuv420P2, Yuv420P3, Yuv422, Pvrtc, U2F10F10F10, S5S5U6, X8U24, BcSoftware, AstcFromBc, AstcFromPvrtc
+    None, Rgb8ToRgba8, Srgb8ToRgba8, Palette4, Palette8, U8U3U3U2, Yuv420P2, Yuv420P3, Yuv422, Pvrtc, U2F10F10F10, S5S5U6, X8U24, BcSoftware, AstcFromBc, AstcFromPvrtc, Etc1
 }
 
 public readonly record struct TexFormatInfo(Format Format, int BitsPerPixel, int BlockW, int BlockH, int BlockBytes, TexConvert Convert)
@@ -81,6 +81,7 @@ public static class Formats
         TexBase.SBC5 => new(Format.BC5SNormBlock, 8, 4, 4, 16, TexConvert.None),
         TexBase.PVRT2BPP or TexBase.PVRTII2BPP => new(Format.R8G8B8A8Unorm, 2, 8, 4, 8, TexConvert.Pvrtc),
         TexBase.PVRT4BPP or TexBase.PVRTII4BPP => new(Format.R8G8B8A8Unorm, 4, 4, 4, 8, TexConvert.Pvrtc),
+        TexBase.ETC1 => new(Format.R8G8B8A8Unorm, 4, 4, 4, 8, TexConvert.Etc1), // decoded on the CPU (Etc1)
         TexBase.YUV420P2 => new(Format.R8G8B8A8Unorm, 12, 1, 1, 0, TexConvert.Yuv420P2),
         TexBase.YUV420P3 => new(Format.R8G8B8A8Unorm, 12, 1, 1, 0, TexConvert.Yuv420P3),
         TexBase.YUV422 => new(Format.R8G8B8A8Unorm, 16, 1, 1, 0, TexConvert.Yuv422),
