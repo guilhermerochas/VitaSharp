@@ -876,10 +876,13 @@ Lista de itens futuros do VitaSharp. Marque `[x]` quando um item for concluído.
   título do pacote/`param.sfo` do PSM; 3) o runtime abrir o jogo instalado (falta `sceKernelAllocUnmapMemBlock`, o
   `SceAppMgrUser` NID 0x9D6D8058 e a montagem 106 `ux0:psm/<id>/RO` que falha com 0x80802012). Jogo de teste:
   NPPA00120, já instalado pelo usuário.
-  No shell real o jogo também não aparece: o HLE que lista os aplicativos para o shell (`AppMgrShell.cs`, linhas
-  ~289 e ~339) e o `sceAppMgrLaunchAppByName` só olham `vs0:app/` e `ux0:app/`; incluir `ux0:psm/` (nome e ícone do
-  próprio pacote) e abrir um título de PSM pelo runtime `PCSI00011` com aquele jogo, como o console (a confirmar
-  rodando o shell).
+  No shell real o jogo também não aparece: cada função do HLE tem a sua lista fixa de pastas de aplicativos
+  (`AppMgrShell.cs` ~289 e ~339 só `vs0:app/` e `ux0:app/`; `IoFileMgr.cs` ~62; a Biblioteca só `ux0:app`). Correção
+  genérica (decisão do usuário, 12/11/2026): UMA fonte que descreve onde o firmware guarda os aplicativos (vs0:app,
+  ux0:app, gro0:app, grw0:app, ux0:psm, com o tipo de cada uma) usada por toda função que lista, procura ou abre um
+  aplicativo, e a base de aplicativos do sistema (`app.db`) como resposta sempre que der, como o shell real; sem
+  listas de pastas soltas. Um título de PSM abre pelo runtime `PCSI00011` com aquele jogo, como o console. Teste:
+  um título de cada origem listado e aberto pelo mesmo caminho.
 - [ ] PlayStation Mobile (pedido do usuário, 11/11/2026; o runtime `PCSI00011` "PSM Runtime Package" 01.00, SDK
   2.00, já está instalado pelo usuário com a sua licença). 1) Rodar o runtime no VitaSharp sem janela e levantar o
   que o Mono dele usa e o que falta (HLE genérico do que faltar, nada específico do PSM). 2) Instalador de `.pkg` de
