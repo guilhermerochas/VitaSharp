@@ -6,12 +6,12 @@ namespace VitaSharp.Tests;
 /// usse_constant_table.h lists): spot checks of entries whose values are mathematical constants.</summary>
 public sealed class UsseConstantsTests
 {
-    static float F(uint bits) => BitConverter.UInt32BitsToSingle(bits);
+    private static float F(uint bits) => BitConverter.UInt32BitsToSingle(bits);
 
     [Fact]
     public void F32BankHoldsTheKnownConstants()
     {
-        var b = UsseConstants.F32Bank0;
+        uint[] b = UsseConstants.F32Bank0;
         Assert.Equal(0f, F(b[0]));
         Assert.Equal(1f, F(b[2]));
         Assert.Equal(2f, F(b[4]));

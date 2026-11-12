@@ -11,17 +11,17 @@ namespace VitaSharp.Tests;
 /// </summary>
 public static partial class WindowAvailability
 {
-    static readonly Lazy<string?> Reason = new(Probe);
+    private static readonly Lazy<string?> s_reason = new(Probe);
 
     /// <summary>Null when a window can be created, otherwise why not and how to get one.</summary>
-    public static string? SkipReason => Reason.Value;
+    public static string? SkipReason => s_reason.Value;
 
     /// <summary>macOS (libSystem): 1 on the process's main thread.</summary>
     [LibraryImport("libSystem.dylib", EntryPoint = "pthread_main_np")]
     private static partial int PthreadMainNp();
 
     /// <summary>macOS: whether this is the process's main thread (false when libSystem cannot be asked).</summary>
-    static bool OnMainThread()
+    private static bool OnMainThread()
     {
         try
         {
@@ -33,7 +33,7 @@ public static partial class WindowAvailability
         }
     }
 
-    static string? Probe()
+    private static string? Probe()
     {
         // AppKit (under GLFW) creates windows and runs glfwInit only on the process's main thread; elsewhere it
         // aborts the whole process with an Objective-C exception, which no catch below sees (the test host crashed on
@@ -46,7 +46,7 @@ public static partial class WindowAvailability
 
         try
         {
-            using WindowHost window = new WindowHost("window probe");
+            using var window = new WindowHost("window probe");
             return null;
         }
         catch (Exception e)

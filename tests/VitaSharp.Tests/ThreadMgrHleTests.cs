@@ -16,12 +16,12 @@ namespace VitaSharp.Tests;
 [Collection("guest")]
 public sealed class ThreadMgrHleTests(GuestMemoryFixture fx) : IDisposable
 {
-    readonly HleHarness _h = new(fx, "threadmgr");
-    ThreadMgr Tm => _h.Module<ThreadMgr>();
+    private readonly HleHarness _h = new(fx, "threadmgr");
+    private ThreadMgr Tm => _h.Module<ThreadMgr>();
 
     public void Dispose() => _h.Dispose();
 
-    uint Info(uint size)
+    private uint Info(uint size)
     {
         uint p = _h.Alloc(Math.Max(size, 0x100));
         GuestMemory.W32(p, size);
@@ -114,7 +114,7 @@ public sealed class ThreadMgrHleTests(GuestMemoryFixture fx) : IDisposable
             Assert.Equal(self.TlsBase + 4 * 0x10, (uint)Invoke(Tm, "sceKernelGetTLSAddr", 0x10)!);
             Assert.Equal(0u, (uint)Invoke(Tm, "sceKernelGetTLSAddr", 0x100)!);
             Assert.Equal(0u, (uint)Invoke(Tm, "sceKernelGetTLSAddr", -1)!);
-            var other = Emu.Kernel.GetThread(uid)!;
+            GuestThread other = Emu.Kernel.GetThread(uid)!;
             Assert.Equal(other.TlsBase + 8, (uint)Invoke(Tm, "sceKernelGetThreadTLSAddr", uid, 2)!);
             Assert.Equal(self.TlsBase + 8, (uint)Invoke(Tm, "sceKernelGetThreadTLSAddr", 0, 2)!);
             Assert.Equal(0u, (uint)Invoke(Tm, "sceKernelGetThreadTLSAddr", 0x7FFF0001, 2)!);
@@ -127,7 +127,7 @@ public sealed class ThreadMgrHleTests(GuestMemoryFixture fx) : IDisposable
         });
     }
 
-    VitaSharp.Core.Emulator Emu => _h.Emu;
+    private VitaSharp.Core.Emulator Emu => _h.Emu;
 
     [Fact]
     public void CreateThreadForUserChecksTheOptions()
@@ -165,7 +165,7 @@ public sealed class ThreadMgrHleTests(GuestMemoryFixture fx) : IDisposable
         _h.OnGuest(self =>
         {
             // a worker that ends with sceKernelExitThread(0x1234)
-            var worker = _h.Start(_ => { Thread.Sleep(20); Invoke(Tm, "sceKernelExitThread", 0x1234); }, "ender");
+            GuestRun worker = _h.Start(_ => { Thread.Sleep(20); Invoke(Tm, "sceKernelExitThread", 0x1234); }, "ender");
             uint stat = _h.Word(0), timeout = _h.Word(5_000_000);
             exitCode = Call(Tm, "sceKernelWaitThreadEnd", worker.Thread.Uid, new Ptr<int>(stat), new Ptr<uint>(timeout));
             Assert.Equal(0x1234u, GuestMemory.R32(stat));
@@ -174,7 +174,7 @@ public sealed class ThreadMgrHleTests(GuestMemoryFixture fx) : IDisposable
             Assert.Equal(SceError.ILLEGAL_THREAD_ID, Call(Tm, "sceKernelWaitThreadEnd", self.Uid, new Ptr<int>(0), new Ptr<uint>(0)));
             Assert.Equal(SceError.UNKNOWN_THREAD_ID, Call(Tm, "sceKernelWaitThreadEnd", 0x7FFF0001, new Ptr<int>(0), new Ptr<uint>(0)));
             // a thread that does not end in time: WAIT_TIMEOUT with the remaining time 0
-            var stuck = _h.Start(_ => Thread.Sleep(400), "slow");
+            GuestRun stuck = _h.Start(_ => Thread.Sleep(400), "slow");
             uint t2 = _h.Word(1000);
             Assert.Equal(SceError.WAIT_TIMEOUT, Call(Tm, "_sceKernelWaitThreadEnd", stuck.Thread.Uid, new Ptr<int>(stat), new Ptr<uint>(t2)));
             Assert.Equal(0u, GuestMemory.R32(t2));
@@ -202,7 +202,7 @@ public sealed class ThreadMgrHleTests(GuestMemoryFixture fx) : IDisposable
             Assert.Equal(SceError.WAIT_TIMEOUT, Call(Tm, "sceKernelWaitSignal", 0u, 0u, new Ptr<uint>(t)));
             Assert.Equal(0u, GuestMemory.R32(t));
             // another thread wakes a waiting one
-            var waiter = _h.Start(_ => Assert.Equal(0, Call(Tm, "sceKernelWaitSignal", 0u, 0u, new Ptr<uint>(0))), "sig-wait");
+            GuestRun waiter = _h.Start(_ => Assert.Equal(0, Call(Tm, "sceKernelWaitSignal", 0u, 0u, new Ptr<uint>(0))), "sig-wait");
             Until(() => waiter.Thread.Status == ThreadStatus.Waiting, "the signal wait");
             Assert.Equal(0, Call(Tm, "sceKernelSendSignal", waiter.Thread.Uid));
             _h.Join(waiter);
@@ -401,7 +401,7 @@ public sealed class ThreadMgrHleTests(GuestMemoryFixture fx) : IDisposable
         {
             int s = Call(Tm, "sceKernelCreateSema", "wake", 0u, 0, 4, 0u);
             int got = 1;
-            var w = _h.Start(_ => got = Call(Tm, "sceKernelWaitSema", s, 2, new Ptr<uint>(0)), "sema-wait");
+            GuestRun w = _h.Start(_ => got = Call(Tm, "sceKernelWaitSema", s, 2, new Ptr<uint>(0)), "sema-wait");
             Until(() => w.Thread.Status == ThreadStatus.Waiting, "the semaphore wait");
             uint info = Info(0x3C);
             Call(Tm, "sceKernelGetSemaInfo", s, info);
@@ -416,7 +416,7 @@ public sealed class ThreadMgrHleTests(GuestMemoryFixture fx) : IDisposable
             Assert.Equal(0u, GuestMemory.R32(info + 0x30));
 
             // cancel: the waiter ends with WAIT_CANCEL and the count is the cancel's
-            var c = _h.Start(_ => got = Call(Tm, "sceKernelWaitSema", s, 1, new Ptr<uint>(0)), "sema-cancel");
+            GuestRun c = _h.Start(_ => got = Call(Tm, "sceKernelWaitSema", s, 1, new Ptr<uint>(0)), "sema-cancel");
             Until(() => c.Thread.Status == ThreadStatus.Waiting, "the semaphore wait");
             uint n = _h.Word(0);
             Assert.Equal(0, Call(Tm, "sceKernelCancelSema", s, 0, new Ptr<int>(n)));
@@ -425,7 +425,7 @@ public sealed class ThreadMgrHleTests(GuestMemoryFixture fx) : IDisposable
             Assert.Equal(1u, GuestMemory.R32(n));
 
             // delete: WAIT_DELETE
-            var d = _h.Start(_ => got = Call(Tm, "sceKernelWaitSema", s, 1, new Ptr<uint>(0)), "sema-delete");
+            GuestRun d = _h.Start(_ => got = Call(Tm, "sceKernelWaitSema", s, 1, new Ptr<uint>(0)), "sema-delete");
             Until(() => d.Thread.Status == ThreadStatus.Waiting, "the semaphore wait");
             Assert.Equal(0, Call(Tm, "sceKernelDeleteSema", s));
             _h.Join(d);
@@ -539,7 +539,7 @@ public sealed class ThreadMgrHleTests(GuestMemoryFixture fx) : IDisposable
             Call(Tm, "sceKernelGetEventFlagInfo", e, Info(0x38));
             Assert.Equal(0, Call(Tm, "sceKernelPollEventFlag", e, 0x77u, EventFlag.WaitAnd, new Ptr<uint>(0)));
             Assert.Equal(0, Call(Tm, "sceKernelDeleteEventFlag", e));
-            foreach (var (fn, args) in new (string, object[])[]
+            foreach ((string? fn, object[]? args) in new (string, object[])[]
             {
                 ("sceKernelDeleteEventFlag", [e]), ("sceKernelSetEventFlag", [e, 1u]), ("sceKernelClearEventFlag", [e, 1u]),
                 ("sceKernelPollEventFlag", [e, 1u, 0u, new Ptr<uint>(0)]), ("sceKernelCancelEventFlag", [e, 0u, new Ptr<int>(0)]),
@@ -562,7 +562,7 @@ public sealed class ThreadMgrHleTests(GuestMemoryFixture fx) : IDisposable
             int e = Call(Tm, "sceKernelCreateEventFlag", "single", 0u, 0u, 0u);
             int got = 1;
             uint outBits = _h.Word(0);
-            var w = _h.Start(_ => got = Call(Tm, "sceKernelWaitEventFlag", e, 0x3u, EventFlag.WaitAnd | EventFlag.WaitClearPat, new Ptr<uint>(outBits), new Ptr<uint>(0)), "evf-wait");
+            GuestRun w = _h.Start(_ => got = Call(Tm, "sceKernelWaitEventFlag", e, 0x3u, EventFlag.WaitAnd | EventFlag.WaitClearPat, new Ptr<uint>(outBits), new Ptr<uint>(0)), "evf-wait");
             Until(() => w.Thread.Status == ThreadStatus.Waiting, "the event flag wait");
             // a second waiter on a flag without SCE_EVENT_WAITMULTIPLE is refused
             Assert.Equal(SceError.EVF_MULTI, Call(Tm, "sceKernelWaitEventFlag", e, 0x1u, 0u, new Ptr<uint>(0), new Ptr<uint>(_h.Word(1000))));
@@ -582,8 +582,8 @@ public sealed class ThreadMgrHleTests(GuestMemoryFixture fx) : IDisposable
             // with WAITMULTIPLE two threads wait; a cancel wakes both with WAIT_CANCEL
             int m = Call(Tm, "sceKernelCreateEventFlag", "multi", EventFlag.AttrMulti, 0u, 0u);
             int r1 = 1, r2 = 1;
-            var a = _h.Start(_ => r1 = Call(Tm, "sceKernelWaitEventFlag", m, 0x1u, 0u, new Ptr<uint>(0), new Ptr<uint>(0)), "evf-a");
-            var b = _h.Start(_ => r2 = Call(Tm, "sceKernelWaitEventFlagCB", m, 0x1u, 0u, new Ptr<uint>(0), new Ptr<uint>(0)), "evf-b");
+            GuestRun a = _h.Start(_ => r1 = Call(Tm, "sceKernelWaitEventFlag", m, 0x1u, 0u, new Ptr<uint>(0), new Ptr<uint>(0)), "evf-a");
+            GuestRun b = _h.Start(_ => r2 = Call(Tm, "sceKernelWaitEventFlagCB", m, 0x1u, 0u, new Ptr<uint>(0), new Ptr<uint>(0)), "evf-b");
             Until(() => a.Thread.Status == ThreadStatus.Waiting && b.Thread.Status == ThreadStatus.Waiting, "both waits");
             uint n = _h.Word(0);
             Assert.Equal(0, Call(Tm, "sceKernelCancelEventFlag", m, 0x8u, new Ptr<int>(n)));
@@ -593,7 +593,7 @@ public sealed class ThreadMgrHleTests(GuestMemoryFixture fx) : IDisposable
             Assert.Equal(SceError.WAIT_CANCEL, r1);
             Assert.Equal(SceError.WAIT_CANCEL, r2);
             // delete wakes with WAIT_DELETE
-            var d = _h.Start(_ => r1 = Call(Tm, "sceKernelWaitEventFlag", m, 0x1u, 0u, new Ptr<uint>(0), new Ptr<uint>(0)), "evf-d");
+            GuestRun d = _h.Start(_ => r1 = Call(Tm, "sceKernelWaitEventFlag", m, 0x1u, 0u, new Ptr<uint>(0), new Ptr<uint>(0)), "evf-d");
             Until(() => d.Thread.Status == ThreadStatus.Waiting, "the wait");
             Call(Tm, "sceKernelDeleteEventFlag", m);
             _h.Join(d);
@@ -621,7 +621,7 @@ public sealed class ThreadMgrHleTests(GuestMemoryFixture fx) : IDisposable
             Assert.Equal(SceError.INVALID_ARGUMENT, Call(Tm, "sceKernelLockMutex", m, 0, new Ptr<uint>(0)));
             Assert.Equal(SceError.MUTEX_UNLOCK_UDF, Call(Tm, "sceKernelUnlockMutex", m, 2));
             // another thread cannot take it or unlock it
-            var other = _h.Start(_ =>
+            GuestRun other = _h.Start(_ =>
             {
                 Assert.Equal(SceError.MUTEX_FAILED_TO_OWN, Call(Tm, "sceKernelTryLockMutex", m, 1));
                 Assert.Equal(SceError.MUTEX_NOT_OWNED, Call(Tm, "sceKernelUnlockMutex", m, 1));
@@ -683,7 +683,7 @@ public sealed class ThreadMgrHleTests(GuestMemoryFixture fx) : IDisposable
         {
             int m = Call(Tm, "sceKernelCreateMutex", "handover", 0u, 1, 0u);
             int got = 1;
-            var w = _h.Start(_ => { got = Call(Tm, "sceKernelLockMutexCB", m, 1, new Ptr<uint>(0)); Call(Tm, "sceKernelUnlockMutex", m, 1); }, "mtx-wait");
+            GuestRun w = _h.Start(_ => { got = Call(Tm, "sceKernelLockMutexCB", m, 1, new Ptr<uint>(0)); Call(Tm, "sceKernelUnlockMutex", m, 1); }, "mtx-wait");
             Until(() => w.Thread.Status == ThreadStatus.Waiting, "the mutex wait");
             uint info = Info(0x3C);
             Call(Tm, "sceKernelGetMutexInfo", m, info);
@@ -693,14 +693,14 @@ public sealed class ThreadMgrHleTests(GuestMemoryFixture fx) : IDisposable
             Assert.Equal(0, got);
             // a cancel wakes a waiter with WAIT_CANCEL, a delete with WAIT_DELETE
             Call(Tm, "sceKernelLockMutex", m, 1, new Ptr<uint>(0));
-            var c = _h.Start(_ => got = Call(Tm, "sceKernelLockMutex", m, 1, new Ptr<uint>(0)), "mtx-cancel");
+            GuestRun c = _h.Start(_ => got = Call(Tm, "sceKernelLockMutex", m, 1, new Ptr<uint>(0)), "mtx-cancel");
             Until(() => c.Thread.Status == ThreadStatus.Waiting, "the mutex wait");
             uint n = _h.Word(0);
             Assert.Equal(0, Call(Tm, "sceKernelCancelMutex", m, 1, new Ptr<int>(n)));
             _h.Join(c);
             Assert.Equal(SceError.WAIT_CANCEL, got);
             Assert.Equal(1u, GuestMemory.R32(n));
-            var d = _h.Start(_ => got = Call(Tm, "sceKernelLockMutex", m, 1, new Ptr<uint>(0)), "mtx-delete");
+            GuestRun d = _h.Start(_ => got = Call(Tm, "sceKernelLockMutex", m, 1, new Ptr<uint>(0)), "mtx-delete");
             Until(() => d.Thread.Status == ThreadStatus.Waiting, "the mutex wait");
             Call(Tm, "sceKernelDeleteMutex", m);
             _h.Join(d);
@@ -751,7 +751,7 @@ public sealed class ThreadMgrHleTests(GuestMemoryFixture fx) : IDisposable
             Assert.Equal(0, Call(Tm, "sceKernelTryLockLwMutex", plain, 1));
             Assert.Equal(SceError.LW_MUTEX_RECURSIVE, Call(Tm, "sceKernelTryLockLwMutex_16XX", plain, 1));
             Assert.Equal(SceError.LW_MUTEX_RECURSIVE, Call(Tm, "sceKernelLockLwMutex", plain, 1, new Ptr<uint>(0)));
-            var other = _h.Start(_ =>
+            GuestRun other = _h.Start(_ =>
             {
                 Assert.Equal(SceError.LW_MUTEX_FAILED_TO_OWN, Call(Tm, "sceKernelTryLockLwMutex", plain, 1));
                 Assert.Equal(SceError.LW_MUTEX_NOT_OWNED, Call(Tm, "sceKernelUnlockLwMutex", plain, 1));
@@ -801,7 +801,7 @@ public sealed class ThreadMgrHleTests(GuestMemoryFixture fx) : IDisposable
 
             int got = 1;
             uint ownerSeen = 0;
-            var w = _h.Start(t =>
+            GuestRun w = _h.Start(t =>
             {
                 Assert.Equal(0, Call(Tm, "sceKernelLockLwMutex", mtx, 1, new Ptr<uint>(0)));
                 got = Call(Tm, "sceKernelWaitLwCondCB", cond, new Ptr<uint>(0));
@@ -874,8 +874,8 @@ public sealed class ThreadMgrHleTests(GuestMemoryFixture fx) : IDisposable
                 set(Call(Tm, "sceKernelWaitCondCB", c, new Ptr<uint>(0)));
                 Call(Tm, "sceKernelUnlockMutex", m, 1);
             }, name);
-            var a = Waiter("cv-a", v => r1 = v);
-            var b = Waiter("cv-b", v => r2 = v);
+            GuestRun a = Waiter("cv-a", v => r1 = v);
+            GuestRun b = Waiter("cv-b", v => r2 = v);
             uint info = Info(0x34);
             Until(() => { Call(Tm, "sceKernelGetCondInfo", c, info); return GuestMemory.R32(info + 0x30) == 2; }, "two cond waiters");
             Assert.Equal((uint)m, GuestMemory.R32(info + 0x2C));
@@ -896,12 +896,12 @@ public sealed class ThreadMgrHleTests(GuestMemoryFixture fx) : IDisposable
             Assert.Equal(SceError.WAIT_TIMEOUT, Call(Tm, "_sceKernelWaitCond", c, new Ptr<uint>(_h.Word(1000))));
             Call(Tm, "sceKernelUnlockMutex", m, 1);
             // a delete wakes a waiter with WAIT_DELETE
-            var d = Waiter("cv-d", v => r1 = v);
+            GuestRun d = Waiter("cv-d", v => r1 = v);
             Until(() => { Call(Tm, "sceKernelGetCondInfo", c, info); return GuestMemory.R32(info + 0x30) == 1; }, "the cond waiter");
             Assert.Equal(0, Call(Tm, "sceKernelDeleteCond", c));
             _h.Join(d);
             Assert.Equal(SceError.WAIT_DELETE, r1);
-            foreach (var fn in new[] { "sceKernelDeleteCond", "sceKernelSignalCond", "sceKernelSignalCondAll" })
+            foreach (string? fn in new[] { "sceKernelDeleteCond", "sceKernelSignalCond", "sceKernelSignalCondAll" })
             {
                 Assert.Equal(SceError.UNKNOWN_COND_ID, Call(Tm, fn, c));
             }
@@ -1057,7 +1057,7 @@ public sealed class ThreadMgrHleTests(GuestMemoryFixture fx) : IDisposable
             uint dst = _h.Alloc(8), res = _h.Word(0), src = _h.Alloc(8);
             GuestMemory.W32(src, 0xCAFEBABE);
             int got = 1;
-            var w = _h.Start(_ => got = Call(Tm, "sceKernelReceiveMsgPipeCB", p, dst, 4u, MsgPipe.WaitAll, new Ptr<uint>(res), new Ptr<uint>(0)), "mpp-recv");
+            GuestRun w = _h.Start(_ => got = Call(Tm, "sceKernelReceiveMsgPipeCB", p, dst, 4u, MsgPipe.WaitAll, new Ptr<uint>(res), new Ptr<uint>(0)), "mpp-recv");
             uint info = Info(0x3C);
             Until(() => { Call(Tm, "sceKernelGetMsgPipeInfo", p, info); return GuestMemory.R32(info + 0x38) == 1; }, "the receive wait");
             Assert.Equal(0, Call(Tm, "sceKernelSendMsgPipe", p, src, 4u, MsgPipe.WaitAll, new Ptr<uint>(0), new Ptr<uint>(0)));
@@ -1065,7 +1065,7 @@ public sealed class ThreadMgrHleTests(GuestMemoryFixture fx) : IDisposable
             Assert.Equal(0, got);
             Assert.Equal(0xCAFEBABEu, GuestMemory.R32(dst));
             // cancel wakes a receiver with WAIT_CANCEL and counts it
-            var c = _h.Start(_ => got = Call(Tm, "sceKernelReceiveMsgPipe", p, dst, 4u, MsgPipe.WaitAll, new Ptr<uint>(res), new Ptr<uint>(0)), "mpp-cancel");
+            GuestRun c = _h.Start(_ => got = Call(Tm, "sceKernelReceiveMsgPipe", p, dst, 4u, MsgPipe.WaitAll, new Ptr<uint>(res), new Ptr<uint>(0)), "mpp-cancel");
             Until(() => { Call(Tm, "sceKernelGetMsgPipeInfo", p, info); return GuestMemory.R32(info + 0x38) == 1; }, "the receive wait");
             uint ns = _h.Word(9), nr = _h.Word(9);
             Assert.Equal(0, Call(Tm, "sceKernelCancelMsgPipe", p, new Ptr<int>(ns), new Ptr<int>(nr)));
@@ -1083,7 +1083,7 @@ public sealed class ThreadMgrHleTests(GuestMemoryFixture fx) : IDisposable
             Assert.Equal(MsgPipe.EventIn, GuestMemory.R32(pat));
             // delete wakes with WAIT_DELETE
             Call(Tm, "sceKernelReceiveMsgPipe", p, dst, 2u, 0u, new Ptr<uint>(0), new Ptr<uint>(0));
-            var d = _h.Start(_ => got = Call(Tm, "sceKernelReceiveMsgPipe", p, dst, 4u, MsgPipe.WaitAll, new Ptr<uint>(res), new Ptr<uint>(0)), "mpp-del");
+            GuestRun d = _h.Start(_ => got = Call(Tm, "sceKernelReceiveMsgPipe", p, dst, 4u, MsgPipe.WaitAll, new Ptr<uint>(res), new Ptr<uint>(0)), "mpp-del");
             Until(() => { Call(Tm, "sceKernelGetMsgPipeInfo", p, info); return GuestMemory.R32(info + 0x38) == 1; }, "the receive wait");
             Assert.Equal(0, Call(Tm, "sceKernelDeleteMsgPipe", p));
             _h.Join(d);
@@ -1107,7 +1107,7 @@ public sealed class ThreadMgrHleTests(GuestMemoryFixture fx) : IDisposable
 
             Assert.Equal(0, Call(Tm, "sceKernelSendMsgPipe", p, src, 0xFFCu, MsgPipe.WaitAll, new Ptr<uint>(0), new Ptr<uint>(0)));
             int got = 1;
-            var w = _h.Start(_ => got = Call(Tm, "sceKernelSendMsgPipe", p, src + 0x100, 8u, MsgPipe.WaitAll, new Ptr<uint>(res), new Ptr<uint>(0)), "mpp-full");
+            GuestRun w = _h.Start(_ => got = Call(Tm, "sceKernelSendMsgPipe", p, src + 0x100, 8u, MsgPipe.WaitAll, new Ptr<uint>(res), new Ptr<uint>(0)), "mpp-full");
             Until(() => { Call(Tm, "sceKernelGetMsgPipeInfo", p, info); return GuestMemory.R32(info + 0x34) == 1; }, "the send wait");
             Assert.Equal(4u, GuestMemory.R32(info + 0x30)); // nothing of the 8 bytes went in
             // 2 bytes out: still no room for the whole message
@@ -1155,7 +1155,7 @@ public sealed class ThreadMgrHleTests(GuestMemoryFixture fx) : IDisposable
             Call(Tm, "sceKernelGetRWLockInfo", l, info);
             Assert.Equal(2u, GuestMemory.R32(info + 0x2C));
             Assert.Equal((uint)self.Uid, GuestMemory.R32(info + 0x30));
-            var other = _h.Start(_ =>
+            GuestRun other = _h.Start(_ =>
             {
                 Assert.Equal(SceError.RW_LOCK_FAILED_TO_LOCK, Call(Tm, "sceKernelTryLockReadRWLock", l));
                 Assert.Equal(SceError.RW_LOCK_FAILED_TO_LOCK, Call(Tm, "sceKernelTryLockWriteRWLock", l));
@@ -1170,7 +1170,7 @@ public sealed class ThreadMgrHleTests(GuestMemoryFixture fx) : IDisposable
             // a reader waiting on a writer; cancel with the write lock kept by the caller
             Call(Tm, "_sceKernelLockWriteRWLock", l, new Ptr<uint>(0));
             int got = 1;
-            var w = _h.Start(_ => got = Call(Tm, "sceKernelLockReadRWLock", l, new Ptr<uint>(0)), "rw-wait");
+            GuestRun w = _h.Start(_ => got = Call(Tm, "sceKernelLockReadRWLock", l, new Ptr<uint>(0)), "rw-wait");
             Until(() => { Call(Tm, "sceKernelGetRWLockInfo", l, info); return GuestMemory.R32(info + 0x34) == 1; }, "the read wait");
             uint nr = _h.Word(9), nw = _h.Word(9);
             Assert.Equal(0, Call(Tm, "sceKernelCancelRWLock", l, new Ptr<uint>(nr), new Ptr<uint>(nw), 1));
@@ -1188,12 +1188,12 @@ public sealed class ThreadMgrHleTests(GuestMemoryFixture fx) : IDisposable
 
             // delete wakes a waiter with WAIT_DELETE
             Call(Tm, "sceKernelLockWriteRWLock", l, new Ptr<uint>(0));
-            var d = _h.Start(_ => got = Call(Tm, "sceKernelLockWriteRWLock", l, new Ptr<uint>(0)), "rw-del");
+            GuestRun d = _h.Start(_ => got = Call(Tm, "sceKernelLockWriteRWLock", l, new Ptr<uint>(0)), "rw-del");
             Until(() => { Call(Tm, "sceKernelGetRWLockInfo", l, info); return GuestMemory.R32(info + 0x38) == 1; }, "the write wait");
             Assert.Equal(0, Call(Tm, "sceKernelDeleteRWLock", l));
             _h.Join(d);
             Assert.Equal(SceError.WAIT_DELETE, got);
-            foreach (var fn in new[] { "sceKernelDeleteRWLock", "sceKernelTryLockReadRWLock", "sceKernelTryLockWriteRWLock", "sceKernelUnlockReadRWLock", "sceKernelUnlockWriteRWLock", "sceKernelCloseRWLock" })
+            foreach (string? fn in new[] { "sceKernelDeleteRWLock", "sceKernelTryLockReadRWLock", "sceKernelTryLockWriteRWLock", "sceKernelUnlockReadRWLock", "sceKernelUnlockWriteRWLock", "sceKernelCloseRWLock" })
             {
                 Assert.Equal(SceError.UNKNOWN_RW_LOCK_ID, Call(Tm, fn, l));
             }
@@ -1217,7 +1217,7 @@ public sealed class ThreadMgrHleTests(GuestMemoryFixture fx) : IDisposable
             Assert.Equal(8, Call(Tm, "sceKernelGetThreadmgrUIDClass", cb));
             Assert.Equal(0, Call(Tm, "sceKernelGetCallbackCount", cb));
             // notifications from another thread add up; the last argument and notifier are kept
-            var n = _h.Start(_ => { Call(Tm, "sceKernelNotifyCallback", cb, 5); Call(Tm, "sceKernelNotifyCallback", cb, 6); }, "cb-notify");
+            GuestRun n = _h.Start(_ => { Call(Tm, "sceKernelNotifyCallback", cb, 5); Call(Tm, "sceKernelNotifyCallback", cb, 6); }, "cb-notify");
             _h.Join(n);
             Assert.Equal(2, Call(Tm, "sceKernelGetCallbackCount", cb));
             Assert.Equal(2, self.PendingCallbacks);
@@ -1311,7 +1311,7 @@ public sealed class ThreadMgrHleTests(GuestMemoryFixture fx) : IDisposable
             Assert.Equal(ulong.MaxValue, (ulong)Invoke(Tm, "sceKernelGetTimerTimeWide", t)!); // an error code could pass for a time
             Assert.Equal(ulong.MaxValue, (ulong)Invoke(Tm, "sceKernelSetTimerTimeWide", t, 1ul)!);
             Assert.Equal(ulong.MaxValue, (ulong)Invoke(Tm, "sceKernelGetTimerBaseWide", t)!);
-            foreach (var fn in new[] { "sceKernelStartTimer", "sceKernelStopTimer" })
+            foreach (string? fn in new[] { "sceKernelStartTimer", "sceKernelStopTimer" })
             {
                 Assert.Equal(SceError.UNKNOWN_TIMER_ID, Call(Tm, fn, t));
             }
@@ -1421,7 +1421,7 @@ public sealed class ThreadMgrHleTests(GuestMemoryFixture fx) : IDisposable
             // a waiter woken by a set receives the bits and the user data
             uint wpat = _h.Word(0), wud = _h.Alloc(8);
             int got = 1;
-            var w = _h.Start(_ => got = Call(Tm, "sceKernelWaitEventCB", e, 0x04000000u, new Ptr<uint>(wpat), new Ptr<ulong>(wud), new Ptr<uint>(0)), "sev-wait");
+            GuestRun w = _h.Start(_ => got = Call(Tm, "sceKernelWaitEventCB", e, 0x04000000u, new Ptr<uint>(wpat), new Ptr<ulong>(wud), new Ptr<uint>(0)), "sev-wait");
             Until(() => { Call(Tm, "sceKernelGetEventInfo", e, info); return GuestMemory.R32(info + 0x38) == 1; }, "the event wait");
             Assert.Equal(0, Call(Tm, "sceKernelSetEvent", e, 0x04000000u, 99ul));
             _h.Join(w);
@@ -1432,7 +1432,7 @@ public sealed class ThreadMgrHleTests(GuestMemoryFixture fx) : IDisposable
             Assert.Equal(0x01000000u, GuestMemory.R32(pat)); // auto-reset took the woken waiter's bits
 
             // pulse: wakes current waiters only, the pattern is not left set
-            var p = _h.Start(_ => got = Call(Tm, "sceKernelWaitEvent", e, 0x08000000u, new Ptr<uint>(wpat), new Ptr<ulong>(0), new Ptr<uint>(0)), "sev-pulse");
+            GuestRun p = _h.Start(_ => got = Call(Tm, "sceKernelWaitEvent", e, 0x08000000u, new Ptr<uint>(wpat), new Ptr<ulong>(0), new Ptr<uint>(0)), "sev-pulse");
             Until(() => { Call(Tm, "sceKernelGetEventInfo", e, info); return GuestMemory.R32(info + 0x38) == 1; }, "the event wait");
             Assert.Equal(0, Call(Tm, "sceKernelPulseEvent", e, 0x08000000u, 5ul));
             _h.Join(p);
@@ -1454,7 +1454,7 @@ public sealed class ThreadMgrHleTests(GuestMemoryFixture fx) : IDisposable
             int e = Call(Tm, "sceKernelCreateSimpleEvent", _h.Str("sev-c"), EventBits.AttrThPrio, 0u, 0u);
             uint pat = _h.Word(0), info = Info(0x40);
             int got = 1;
-            var w = _h.Start(_ => got = Call(Tm, "sceKernelWaitEvent", e, 0x01000000u, new Ptr<uint>(pat), new Ptr<ulong>(0), new Ptr<uint>(0)), "sev-cancel");
+            GuestRun w = _h.Start(_ => got = Call(Tm, "sceKernelWaitEvent", e, 0x01000000u, new Ptr<uint>(pat), new Ptr<ulong>(0), new Ptr<uint>(0)), "sev-cancel");
             Until(() => { Call(Tm, "sceKernelGetEventInfo", e, info); return GuestMemory.R32(info + 0x38) == 1; }, "the event wait");
             uint n = _h.Word(9);
             Assert.Equal(0, Call(Tm, "sceKernelCancelEvent", e, new Ptr<uint>(n)));
@@ -1484,8 +1484,8 @@ public sealed class ThreadMgrHleTests(GuestMemoryFixture fx) : IDisposable
             // delete: a wait including the DELETE bit (8) ends successfully with it, others with WAIT_DELETE
             int withDelete = 1, plain = 1;
             uint dpat = _h.Word(0);
-            var a = _h.Start(_ => withDelete = Call(Tm, "sceKernelWaitEvent", e, 0x01000000u | EventBits.Delete, new Ptr<uint>(dpat), new Ptr<ulong>(0), new Ptr<uint>(0)), "sev-del-a");
-            var b = _h.Start(_ => plain = Call(Tm, "sceKernelWaitEvent", e, 0x01000000u, new Ptr<uint>(0), new Ptr<ulong>(0), new Ptr<uint>(0)), "sev-del-b");
+            GuestRun a = _h.Start(_ => withDelete = Call(Tm, "sceKernelWaitEvent", e, 0x01000000u | EventBits.Delete, new Ptr<uint>(dpat), new Ptr<ulong>(0), new Ptr<uint>(0)), "sev-del-a");
+            GuestRun b = _h.Start(_ => plain = Call(Tm, "sceKernelWaitEvent", e, 0x01000000u, new Ptr<uint>(0), new Ptr<ulong>(0), new Ptr<uint>(0)), "sev-del-b");
             Until(() => { Call(Tm, "sceKernelGetEventInfo", e, info); return GuestMemory.R32(info + 0x38) == 2; }, "two event waits");
             Assert.Equal(0, Call(Tm, "sceKernelDeleteSimpleEvent", e));
             _h.Join(a);
@@ -1532,7 +1532,7 @@ public sealed class ThreadMgrHleTests(GuestMemoryFixture fx) : IDisposable
             Assert.Equal(0x02000000u, GuestMemory.R32(results + 8));
             Assert.Equal(0x77ul, GuestMemory.Read<ulong>(results + 16));
             // AND: both, with the second set from another thread
-            var s = _h.Start(_ => { Thread.Sleep(20); Call(Tm, "sceKernelSetEvent", e1, 0x01000000u, 0ul); }, "wm-set");
+            GuestRun s = _h.Start(_ => { Thread.Sleep(20); Call(Tm, "sceKernelSetEvent", e1, 0x01000000u, 0ul); }, "wm-set");
             Assert.Equal(2, Call(Tm, "sceKernelWaitMultipleEventsCB", events, 2u, 2u, results, new Ptr<uint>(_h.Word(5_000_000))));
             _h.Join(s);
             Assert.Equal((uint)e2, GuestMemory.R32(results));       // fired first

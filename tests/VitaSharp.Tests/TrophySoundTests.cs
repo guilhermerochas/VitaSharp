@@ -12,7 +12,7 @@ public sealed class TrophySoundTests
         Directory.CreateDirectory(root);
         try
         {
-            var (pcm, source) = TrophySound.Load(root);
+            (PcmSound? pcm, string? source) = TrophySound.Load(root);
             Assert.Equal("built-in chime", source);
             Assert.Equal(48000, pcm.SampleRate);
             Assert.Equal(1, pcm.Channels);
@@ -26,14 +26,14 @@ public sealed class TrophySoundTests
     [Fact]
     public void ChimeIsShortAndNotClipped()
     {
-        var pcm = TrophySound.Chime();
+        PcmSound pcm = TrophySound.Chime();
         Assert.InRange(pcm.Seconds, 0.5, 1.0);
         int peak = pcm.Samples.Max(s => Math.Abs((int)s));
         Assert.InRange(peak, 15000, 17500);              // about -6 dBFS
         Assert.True(Math.Abs((int)pcm.Samples[^1]) < 200); // faded out: no click at the end
     }
 
-    sealed class FakeSink : VitaSharp.Mobile.Core.Audio.IPcmSink
+    private sealed class FakeSink : VitaSharp.Mobile.Core.Audio.IPcmSink
     {
         public readonly List<short> Written = new();
         public bool Started;
@@ -65,7 +65,7 @@ public sealed class TrophySoundTests
     public void AndroidEffectPlayerWritesTheWholeSoundAtTheDeviceFormat()
     {
         var sink = new FakeSink();
-        var pcm = TrophySound.Chime();
+        PcmSound pcm = TrophySound.Chime();
         VitaSharp.Mobile.Core.Audio.EffectPlayer.Play(sink, pcm);
         Assert.True(sink.Started);
         Assert.Equal(TrophySound.Convert(pcm, 44100, 2).Length, sink.Written.Count);
@@ -75,7 +75,7 @@ public sealed class TrophySoundTests
     public void ConvertResamplesAndUpmixes()
     {
         var pcm = new PcmSound(24000, 1, [0, 1000, 2000, 3000]);
-        var o = TrophySound.Convert(pcm, 48000, 2);
+        short[] o = TrophySound.Convert(pcm, 48000, 2);
         Assert.Equal(16, o.Length);                       // 8 frames x 2 channels
         Assert.Equal(new short[] { 0, 0, 500, 500, 1000, 1000 }, o[..6]);
         var stereo = new PcmSound(48000, 2, [100, 300, 100, 300]);

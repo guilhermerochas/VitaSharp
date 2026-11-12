@@ -11,14 +11,14 @@ namespace VitaSharp.Tests;
 /// </summary>
 public static class UnicornAvailability
 {
-    static readonly Lazy<string?> Reason = new(() =>
+    private static readonly Lazy<string?> s_reason = new(() =>
     {
         if (Environment.GetEnvironmentVariable(EnvVars.SkipUnicorn) == "1")
         {
             return "VITASHARP_SKIP_UNICORN=1";
         }
         // same resolution as Unicorn's own [DllImport("unicorn")] (deps.json runtimes/<rid>/native first)
-        if (NativeLibrary.TryLoad("unicorn", typeof(Unicorn).Assembly, null, out var h))
+        if (NativeLibrary.TryLoad("unicorn", typeof(Unicorn).Assembly, null, out nint h))
         {
             NativeLibrary.Free(h);
             return null;
@@ -26,7 +26,7 @@ public static class UnicornAvailability
         return $"Unicorn native library not available for {RuntimeInformation.RuntimeIdentifier}";
     });
 
-    public static string? SkipReason => Reason.Value;
+    public static string? SkipReason => s_reason.Value;
 }
 
 /// <summary>[Fact] that is skipped when Unicorn's native library is unavailable.</summary>

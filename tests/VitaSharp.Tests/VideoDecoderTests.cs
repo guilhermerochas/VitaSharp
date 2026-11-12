@@ -13,10 +13,10 @@ public sealed class VideoDecoderTests(ITestOutputHelper output)
 {
     internal const int W = 64, H = 64;
 
-    sealed class Bits
+    private sealed class Bits
     {
-        readonly List<byte> _bytes = new();
-        int _cur, _n;
+        private readonly List<byte> _bytes = new();
+        private int _cur, _n;
         public void U(int bits, uint v)
         {
             for (int i = bits - 1; i >= 0; i--)
@@ -57,11 +57,11 @@ public sealed class VideoDecoderTests(ITestOutputHelper output)
     }
 
     /// <summary>NAL unit with start code and emulation prevention bytes.</summary>
-    static byte[] Nal(int refIdc, int type, byte[] rbsp)
+    private static byte[] Nal(int refIdc, int type, byte[] rbsp)
     {
         var o = new List<byte> { 0, 0, 0, 1, (byte)((refIdc << 5) | type) };
         int zeros = 0;
-        foreach (var b in rbsp)
+        foreach (byte b in rbsp)
         {
             if (zeros >= 2 && b <= 3)
             {
@@ -74,7 +74,7 @@ public sealed class VideoDecoderTests(ITestOutputHelper output)
         return o.ToArray();
     }
 
-    static byte[] Sps()
+    private static byte[] Sps()
     {
         var b = new Bits();
         b.U(8, 66);
@@ -95,7 +95,7 @@ public sealed class VideoDecoderTests(ITestOutputHelper output)
         return Nal(3, 7, b.ToArray());
     }
 
-    static byte[] Pps()
+    private static byte[] Pps()
     {
         var b = new Bits();
         b.Ue(0);
@@ -118,7 +118,7 @@ public sealed class VideoDecoderTests(ITestOutputHelper output)
     }
 
     /// <summary>One picture of I_PCM macroblocks with deterministic sample values (never 0, so no start code emulation).</summary>
-    static byte[] Picture(int index, out byte[] y, out byte[] u, out byte[] v)
+    private static byte[] Picture(int index, out byte[] y, out byte[] u, out byte[] v)
     {
         y = new byte[W * H];
         u = new byte[W * H / 4];
@@ -186,7 +186,7 @@ public sealed class VideoDecoderTests(ITestOutputHelper output)
             }
         }
         b.Trailing();
-        var slice = Nal(3, idr ? 5 : 1, b.ToArray());
+        byte[] slice = Nal(3, idr ? 5 : 1, b.ToArray());
         return idr ? [.. Sps(), .. Pps(), .. slice] : slice;
     }
 
@@ -195,14 +195,14 @@ public sealed class VideoDecoderTests(ITestOutputHelper output)
         var list = new List<(byte[], byte[], byte[], byte[])>();
         for (int i = 0; i < pictures; i++)
         {
-            list.Add((Picture(i, out var y, out var u, out var v), y, u, v));
+            list.Add((Picture(i, out byte[]? y, out byte[]? u, out byte[]? v), y, u, v));
         }
 
         return list;
     }
 
     /// <summary>Decodes the stream (optionally failing the hardware decoder before picture <paramref name="failAt"/>).</summary>
-    static List<DecodedPicture> Decode(IVideoDecoder d, List<(byte[] Au, byte[] Y, byte[] U, byte[] V)> stream, int failAt = -1)
+    private static List<DecodedPicture> Decode(IVideoDecoder d, List<(byte[] Au, byte[] Y, byte[] U, byte[] V)> stream, int failAt = -1)
     {
         var got = new List<DecodedPicture>();
         for (int i = 0; i < stream.Count; i++)
@@ -227,9 +227,9 @@ public sealed class VideoDecoderTests(ITestOutputHelper output)
         return got;
     }
 
-    static DecodedPicture Copy(DecodedPicture p) => new() { Width = p.Width, Height = p.Height, Pts = p.Pts, Y = p.Y.ToArray(), U = p.U.ToArray(), V = p.V.ToArray() };
+    private static DecodedPicture Copy(DecodedPicture p) => new() { Width = p.Width, Height = p.Height, Pts = p.Pts, Y = p.Y.ToArray(), U = p.U.ToArray(), V = p.V.ToArray() };
 
-    static void AssertExact(List<(byte[] Au, byte[] Y, byte[] U, byte[] V)> stream, List<DecodedPicture> got)
+    private static void AssertExact(List<(byte[] Au, byte[] Y, byte[] U, byte[] V)> stream, List<DecodedPicture> got)
     {
         Assert.Equal(stream.Count, got.Count);
         for (int i = 0; i < got.Count; i++)
@@ -245,7 +245,7 @@ public sealed class VideoDecoderTests(ITestOutputHelper output)
     [Fact]
     public void IdrDetection()
     {
-        var s = Stream(2);
+        List<(byte[] Au, byte[] Y, byte[] U, byte[] V)> s = Stream(2);
         Assert.True(FFmpegVideoDecoder.ContainsIdr(s[0].Au));
         Assert.False(FFmpegVideoDecoder.ContainsIdr(s[1].Au));
     }
@@ -258,9 +258,9 @@ public sealed class VideoDecoderTests(ITestOutputHelper output)
             output.WriteLine("FFmpeg not available: skipped");
             return;
         }
-        using var d = FFmpegVideoDecoder.Create(AVCodecID.AV_CODEC_ID_H264, AVHWDeviceType.AV_HWDEVICE_TYPE_NONE)!;
+        using FFmpegVideoDecoder d = FFmpegVideoDecoder.Create(AVCodecID.AV_CODEC_ID_H264, AVHWDeviceType.AV_HWDEVICE_TYPE_NONE)!;
         Assert.False(d.IsHardware);
-        var s = Stream(6);
+        List<(byte[] Au, byte[] Y, byte[] U, byte[] V)> s = Stream(6);
         AssertExact(s, Decode(d, s));
     }
 
@@ -272,8 +272,8 @@ public sealed class VideoDecoderTests(ITestOutputHelper output)
             output.WriteLine("FFmpeg not available: skipped");
             return;
         }
-        var s = Stream(6);
-        using (var d = FFmpegVideoDecoder.Create(AVCodecID.AV_CODEC_ID_H264, FFmpegVideoBackend.PlatformDevice)!)
+        List<(byte[] Au, byte[] Y, byte[] U, byte[] V)> s = Stream(6);
+        using (FFmpegVideoDecoder d = FFmpegVideoDecoder.Create(AVCodecID.AV_CODEC_ID_H264, FFmpegVideoBackend.PlatformDevice)!)
         {
             long hw0 = FFmpegVideoDecoder.HardwarePictures;
             output.WriteLine($"decoder: {d.Name}");
@@ -281,10 +281,10 @@ public sealed class VideoDecoderTests(ITestOutputHelper output)
             output.WriteLine($"pictures decoded in hardware: {FFmpegVideoDecoder.HardwarePictures - hw0} of {s.Count}");
         }
         // a hardware failure mid-stream continues in software from the last IDR without losing pictures
-        using (var d = FFmpegVideoDecoder.Create(AVCodecID.AV_CODEC_ID_H264, FFmpegVideoBackend.PlatformDevice)!)
+        using (FFmpegVideoDecoder d = FFmpegVideoDecoder.Create(AVCodecID.AV_CODEC_ID_H264, FFmpegVideoBackend.PlatformDevice)!)
         {
             bool hw = d.IsHardware;
-            var got = Decode(d, s, failAt: 3);
+            List<DecodedPicture> got = Decode(d, s, failAt: 3);
             output.WriteLine($"fallback test started on {(hw ? "hardware" : "software")}, ended on {d.Name}");
             Assert.False(d.IsHardware);
             AssertExact(s, got);
@@ -292,13 +292,13 @@ public sealed class VideoDecoderTests(ITestOutputHelper output)
     }
 
     /// <summary>Muxes the Annex B test stream into an MP4 file (no encoding: FFmpeg's mov muxer writes the avcC itself).</summary>
-    static unsafe void WriteMp4(string path, List<(byte[] Au, byte[] Y, byte[] U, byte[] V)> stream)
+    private static unsafe void WriteMp4(string path, List<(byte[] Au, byte[] Y, byte[] U, byte[] V)> stream)
     {
         AVFormatContext* oc = null;
         Assert.True(ffmpeg.avformat_alloc_output_context2(&oc, null, "mp4", path) >= 0);
-        var st = ffmpeg.avformat_new_stream(oc, null);
+        AVStream* st = ffmpeg.avformat_new_stream(oc, null);
         st->time_base = new AVRational { num = 1, den = 30 };
-        var par = st->codecpar;
+        AVCodecParameters* par = st->codecpar;
         par->codec_type = AVMediaType.AVMEDIA_TYPE_VIDEO;
         par->codec_id = AVCodecID.AV_CODEC_ID_H264;
         par->width = W;
@@ -309,10 +309,10 @@ public sealed class VideoDecoderTests(ITestOutputHelper output)
         par->extradata_size = header.Length;
         Assert.True(ffmpeg.avio_open(&oc->pb, path, ffmpeg.AVIO_FLAG_WRITE) >= 0);
         Assert.True(ffmpeg.avformat_write_header(oc, null) >= 0);
-        var pkt = ffmpeg.av_packet_alloc();
+        AVPacket* pkt = ffmpeg.av_packet_alloc();
         for (int i = 0; i < stream.Count; i++)
         {
-            var au = stream[i].Au;
+            byte[] au = stream[i].Au;
             ffmpeg.av_new_packet(pkt, au.Length);
             au.CopyTo(new Span<byte>(pkt->data, au.Length));
             pkt->pts = pkt->dts = ffmpeg.av_rescale_q(i, new AVRational { num = 1, den = 30 }, st->time_base);
@@ -342,20 +342,20 @@ public sealed class VideoDecoderTests(ITestOutputHelper output)
             output.WriteLine("FFmpeg not available: skipped");
             return;
         }
-        var s = Stream(8);
+        List<(byte[] Au, byte[] Y, byte[] U, byte[] V)> s = Stream(8);
         string path = Path.Combine(Path.GetTempPath(), $"vitasharp-videotest-{Environment.ProcessId}-{mode}.mp4");
-        var oldBackend = VideoDecoders.Backend;
+        IVideoDecoderBackend oldBackend = VideoDecoders.Backend;
         var backend = new FFmpegVideoBackend();
         backend.Configure(mode);
         VideoDecoders.Backend = backend;
         try
         {
             WriteMp4(path, s);
-            using var player = MediaPlayer.Open(path)!;
+            using MediaPlayer player = MediaPlayer.Open(path)!;
             Assert.NotNull(player);
             Assert.Equal((W, H), (player.Width, player.Height));
             var frames = new List<VideoFrame>();
-            var until = DateTime.UtcNow.AddSeconds(20);
+            DateTime until = DateTime.UtcNow.AddSeconds(20);
             // the playback clock advances one frame at a time (TakeVideo drops frames that are already late)
             while (frames.Count < s.Count && DateTime.UtcNow < until)
             {
@@ -373,12 +373,12 @@ public sealed class VideoDecoderTests(ITestOutputHelper output)
                 }
             }
             Assert.Equal(s.Count, frames.Count);
-            foreach (var f in frames)
+            foreach (VideoFrame f in frames)
             {
                 int i = (int)Math.Round(f.TimeUs * 30 / 1_000_000.0);
                 Assert.InRange(i, 0, s.Count - 1);
                 Assert.Equal(s[i].Y, f.Nv12.AsSpan(0, W * H).ToArray());
-                var vu = new byte[W * H / 2];
+                byte[] vu = new byte[W * H / 2];
                 for (int k = 0; k < W * H / 4; k++)
                 {
                     vu[2 * k] = s[i].V[k];
@@ -429,10 +429,10 @@ public sealed class VideoDecoderTests(ITestOutputHelper output)
         }
         var backend = new FFmpegVideoBackend();
         backend.Configure("sw");
-        using var d = backend.CreateH264(new VideoDecoderOptions(W, H))!;
+        using IVideoDecoder d = backend.CreateH264(new VideoDecoderOptions(W, H))!;
         Assert.Equal("ffmpeg-sw", d.Name);
         backend.Configure("auto"); // software unless hardware is asked for
-        using var a = backend.CreateH264(new VideoDecoderOptions(W, H))!;
+        using IVideoDecoder a = backend.CreateH264(new VideoDecoderOptions(W, H))!;
         Assert.Equal("ffmpeg-sw", a.Name);
     }
 }

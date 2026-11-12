@@ -12,16 +12,16 @@ namespace VitaSharp.Tests;
 [Collection("guest")]
 public sealed class VideodecHleTests(GuestMemoryFixture fx) : IDisposable
 {
-    const int ERR_INVALID_PARAM = unchecked((int)0x80620002), ERR_INVALID_POINTER = unchecked((int)0x80620009);
-    const uint Avc = 0x1001;
-    const int W = VideoDecoderTests.W, H = VideoDecoderTests.H;
+    private const int ERR_INVALID_PARAM = unchecked((int)0x80620002), ERR_INVALID_POINTER = unchecked((int)0x80620009);
+    private const uint Avc = 0x1001;
+    private const int W = VideoDecoderTests.W, H = VideoDecoderTests.H;
 
-    readonly HleHarness _h = new(fx, "videodec");
-    Videodec V => _h.Module<Videodec>();
+    private readonly HleHarness _h = new(fx, "videodec");
+    private Videodec V => _h.Module<Videodec>();
 
     public void Dispose() => _h.Dispose();
 
-    uint Query(uint w, uint h, uint refs)
+    private uint Query(uint w, uint h, uint refs)
     {
         uint q = _h.Alloc(12);
         GuestMemory.W32(q, w);
@@ -68,7 +68,7 @@ public sealed class VideodecHleTests(GuestMemoryFixture fx) : IDisposable
         Assert.Equal(0, Call(V, "sceAvcdecDecodeStop", ctrl, 0u));
         Assert.Equal(0, Call(V, "sceAvcdecDeleteDecoder", ctrl));
         // a deleted (or never created) handle is INVALID_PARAM, a NULL ctrl INVALID_POINTER
-        foreach (var fn in new[] { "sceAvcdecDecodeFlush", "sceAvcdecDecodeAvailableSize", "sceAvcdecDeleteDecoder" })
+        foreach (string? fn in new[] { "sceAvcdecDecodeFlush", "sceAvcdecDecodeAvailableSize", "sceAvcdecDeleteDecoder" })
         {
             Assert.Equal(ERR_INVALID_PARAM, Call(V, fn, ctrl));
             Assert.Equal(ERR_INVALID_POINTER, Call(V, fn, 0u));
@@ -79,7 +79,7 @@ public sealed class VideodecHleTests(GuestMemoryFixture fx) : IDisposable
     }
 
     /// <summary>Decodes the stream with one picture per call and returns the bytes written per picture by pts.</summary>
-    Dictionary<long, byte[]> Decode(uint pixelType, uint pitch, uint bufH, uint bytes, byte alpha = 0xFF, byte csc = 0)
+    private Dictionary<long, byte[]> Decode(uint pixelType, uint pitch, uint bufH, uint bytes, byte alpha = 0xFF, byte csc = 0)
     {
         uint ctrl = _h.Alloc(12);
         Assert.Equal(0, Call(V, "sceAvcdecCreateDecoder", Avc, ctrl, Query(W, H, 1)));
@@ -109,7 +109,7 @@ public sealed class VideodecHleTests(GuestMemoryFixture fx) : IDisposable
             long pts = ((long)GuestMemory.R32(picture + 0x5C) << 32) | GuestMemory.R32(picture + 0x60);
             got[pts] = GuestMemory.ReadSpan(dst, (int)bytes).ToArray();
         }
-        var stream = VideoDecoderTests.Stream(3);
+        List<(byte[] Au, byte[] Y, byte[] U, byte[] V)> stream = VideoDecoderTests.Stream(3);
         uint es = _h.Alloc(64 * 1024);
         for (int i = 0; i < stream.Count; i++)
         {
@@ -133,23 +133,23 @@ public sealed class VideodecHleTests(GuestMemoryFixture fx) : IDisposable
     [FFmpegFact]
     public void DecodesIntoPlanarYuv420()
     {
-        const uint pitch = 80; // wider than the picture: the planes keep the pitch
-        var got = Decode(0x10, pitch, H, pitch * H * 3 / 2);
-        var stream = VideoDecoderTests.Stream(3);
+        const uint Pitch = 80; // wider than the picture: the planes keep the pitch
+        Dictionary<long, byte[]> got = Decode(0x10, Pitch, H, Pitch * H * 3 / 2);
+        List<(byte[] Au, byte[] Y, byte[] U, byte[] V)> stream = VideoDecoderTests.Stream(3);
         Assert.Equal([0L, 3000L, 6000L], got.Keys.Order().ToArray());
         for (int i = 0; i < 3; i++)
         {
-            var b = got[i * 3000];
+            byte[] b = got[i * 3000];
             for (int y = 0; y < H; y++)
             {
-                Assert.Equal(stream[i].Y.AsSpan(y * W, W).ToArray(), b.AsSpan(y * (int)pitch, W).ToArray());
+                Assert.Equal(stream[i].Y.AsSpan(y * W, W).ToArray(), b.AsSpan(y * (int)Pitch, W).ToArray());
             }
 
-            int uOff = (int)(pitch * H), vOff = uOff + (int)(pitch / 2 * (H / 2));
+            int uOff = (int)(Pitch * H), vOff = uOff + (int)(Pitch / 2 * (H / 2));
             for (int y = 0; y < H / 2; y++)
             {
-                Assert.Equal(stream[i].U.AsSpan(y * W / 2, W / 2).ToArray(), b.AsSpan(uOff + y * (int)pitch / 2, W / 2).ToArray());
-                Assert.Equal(stream[i].V.AsSpan(y * W / 2, W / 2).ToArray(), b.AsSpan(vOff + y * (int)pitch / 2, W / 2).ToArray());
+                Assert.Equal(stream[i].U.AsSpan(y * W / 2, W / 2).ToArray(), b.AsSpan(uOff + y * (int)Pitch / 2, W / 2).ToArray());
+                Assert.Equal(stream[i].V.AsSpan(y * W / 2, W / 2).ToArray(), b.AsSpan(vOff + y * (int)Pitch / 2, W / 2).ToArray());
             }
         }
     }
@@ -158,12 +158,12 @@ public sealed class VideodecHleTests(GuestMemoryFixture fx) : IDisposable
     public void DecodesIntoPackedYvu420WithMacroblockPadding()
     {
         // a buffer taller than the picture (80 rows for 64): only up to the next macroblock row is padded, so here none
-        const uint bufH = 72;
-        var got = Decode(0x20, W, bufH, W * bufH * 3 / 2);
-        var s = VideoDecoderTests.Stream(1)[0];
-        var b = got[0];
+        const uint BufferHeight = 72;
+        Dictionary<long, byte[]> got = Decode(0x20, W, BufferHeight, W * BufferHeight * 3 / 2);
+        (byte[] Au, byte[] Y, byte[] U, byte[] V) s = VideoDecoderTests.Stream(1)[0];
+        byte[] b = got[0];
         Assert.Equal(s.Y.AsSpan(0, W).ToArray(), b.AsSpan(0, W).ToArray());
-        int uv = W * (int)bufH;
+        int uv = W * (int)BufferHeight;
         // V before U in each pair (YVU420P2)
         for (int x = 0; x < W / 2; x++)
         {
@@ -175,17 +175,17 @@ public sealed class VideodecHleTests(GuestMemoryFixture fx) : IDisposable
     [FFmpegFact]
     public void DecodesIntoRgbaAndBgra()
     {
-        var s = VideoDecoderTests.Stream(1)[0];
+        (byte[] Au, byte[] Y, byte[] U, byte[] V) s = VideoDecoderTests.Stream(1)[0];
         static (int R, int G, int B) Bt601(byte y, byte u, byte v)
         {
             double Y = (y - 16) * 255.0 / 219, cb = (u - 128) * 255.0 / 224, cr = (v - 128) * 255.0 / 224;
             return ((int)Math.Clamp(Y + 1.402 * cr, 0, 255), (int)Math.Clamp(Y - 0.344136 * cb - 0.714136 * cr, 0, 255), (int)Math.Clamp(Y + 1.772 * cb, 0, 255));
         }
-        var rgba = Decode(0x0, W, H, W * H * 4, alpha: 0x80, csc: 1)[0];
-        var bgra = Decode(0x8, W, H, W * H * 4, alpha: 0x40, csc: 1)[0];
-        foreach (var (x, y) in new[] { (0, 0), (5, 3), (63, 63), (31, 40) })
+        byte[] rgba = Decode(0x0, W, H, W * H * 4, alpha: 0x80, csc: 1)[0];
+        byte[] bgra = Decode(0x8, W, H, W * H * 4, alpha: 0x40, csc: 1)[0];
+        foreach ((int x, int y) in new[] { (0, 0), (5, 3), (63, 63), (31, 40) })
         {
-            var (r, g, b) = Bt601(s.Y[y * W + x], s.U[(y / 2) * (W / 2) + x / 2], s.V[(y / 2) * (W / 2) + x / 2]);
+            (int r, int g, int b) = Bt601(s.Y[y * W + x], s.U[(y / 2) * (W / 2) + x / 2], s.V[(y / 2) * (W / 2) + x / 2]);
             int o = (y * W + x) * 4;
             Assert.InRange(rgba[o], r - 2, r + 2);
             Assert.InRange(rgba[o + 1], g - 2, g + 2);
@@ -200,10 +200,10 @@ public sealed class VideodecHleTests(GuestMemoryFixture fx) : IDisposable
     [Fact]
     public void ParameterSetsAndIdrDetection()
     {
-        var s = VideoDecoderTests.Stream(2);
+        List<(byte[] Au, byte[] Y, byte[] U, byte[] V)> s = VideoDecoderTests.Stream(2);
         Assert.True(Videodec.StartsIdr(s[0].Au));
         Assert.False(Videodec.StartsIdr(s[1].Au));
-        var ps = Videodec.ParameterSets(s[0].Au);
+        byte[]? ps = Videodec.ParameterSets(s[0].Au);
         Assert.NotNull(ps);
         // SPS (type 7) then PPS (type 8), each behind a 4-byte start code
         Assert.Equal(new byte[] { 0, 0, 0, 1 }, ps!.Take(4).ToArray());
@@ -214,7 +214,7 @@ public sealed class VideodecHleTests(GuestMemoryFixture fx) : IDisposable
     [Fact]
     public void CodecEngineUnmapMemBlockAllocator()
     {
-        var ce = _h.Module<CodecEngine>();
+        CodecEngine ce = _h.Module<CodecEngine>();
         const int ERR = unchecked((int)0x80600009);
         Assert.Equal(ERR, Call(ce, "sceCodecEngineOpenUnmapMemBlock", 0u, 0x1000u));
         uint baseAddr = 0x90000000; // never touched: the allocator only does the bookkeeping

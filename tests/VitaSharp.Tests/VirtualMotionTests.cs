@@ -9,14 +9,14 @@ namespace VitaSharp.Tests;
 /// produces and their agreement with SceMotion's fusion; the default tilt keys and input.json upgrade.</summary>
 public sealed class VirtualMotionTests
 {
-    const float Deg = MathF.PI / 180;
-    const long Step = VirtualMotion.StepUs;
+    private const float Deg = MathF.PI / 180;
+    private const long Step = VirtualMotion.StepUs;
 
-    static void AssertNear(Vector3 expected, Vector3 actual, float tol = 0.01f)
+    private static void AssertNear(Vector3 expected, Vector3 actual, float tol = 0.01f)
         => Assert.True(Vector3.Distance(expected, actual) < tol, $"expected {expected}, got {actual}");
 
     /// <summary>Runs the simulation for <paramref name="seconds"/>, feeding every sample to <paramref name="sink"/>.</summary>
-    static long Run(VirtualMotion vm, long t, double seconds, Action<MotionSample>? sink = null)
+    private static long Run(VirtualMotion vm, long t, double seconds, Action<MotionSample>? sink = null)
     {
         var buf = new MotionSample[64];
         long end = t + (long)(seconds * 1e6);
@@ -34,7 +34,7 @@ public sealed class VirtualMotionTests
         return t;
     }
 
-    static VirtualMotion Hold(float fwd = 0, float back = 0, float left = 0, float right = 0, float tl = 0, float tr = 0, TiltSettings? s = null)
+    private static VirtualMotion Hold(float fwd = 0, float back = 0, float left = 0, float right = 0, float tl = 0, float tr = 0, TiltSettings? s = null)
     {
         var vm = new VirtualMotion(s);
         vm.SetControls(fwd, back, left, right, tl, tr, false);
@@ -67,7 +67,7 @@ public sealed class VirtualMotionTests
     [Fact]
     public void HeldKeyRampsSmoothlyToTheMaxAngleWithoutOvershoot()
     {
-        var vm = Hold(fwd: 1);
+        VirtualMotion vm = Hold(fwd: 1);
         float prev = 0, at200 = 0, at450 = 0, maxRate = 0;
         long t = 0;
         Run(vm, 0, 1.5, s =>
@@ -100,7 +100,7 @@ public sealed class VirtualMotionTests
     [Fact]
     public void ReleaseEasesBackToNeutral()
     {
-        var vm = Hold(right: 1);
+        VirtualMotion vm = Hold(right: 1);
         long t = Run(vm, 0, 1);
         Assert.Equal(30f, vm.Angles.Roll, 0.05f);
         vm.SetControls(0, 0, 0, 0, 0, 0, false);
@@ -123,14 +123,14 @@ public sealed class VirtualMotionTests
     [Fact]
     public void MaxAngleAndSpeedAreHonouredAndClamped()
     {
-        var vm = Hold(back: 1, s: new TiltSettings { MaxAngle = 45, Speed = 2 });
+        VirtualMotion vm = Hold(back: 1, s: new TiltSettings { MaxAngle = 45, Speed = 2 });
         Run(vm, 0, 0.3);
         Assert.Equal(45f, vm.Angles.Pitch, 1f); // twice as fast: settled in 0.3 s
-        var wild = Hold(back: 1, s: new TiltSettings { MaxAngle = 500 });
+        VirtualMotion wild = Hold(back: 1, s: new TiltSettings { MaxAngle = 500 });
         Run(wild, 0, 3);
         Assert.Equal(85f, wild.Angles.Pitch, 0.1f);
         // opposite keys cancel
-        var both = Hold(fwd: 1, back: 1);
+        VirtualMotion both = Hold(fwd: 1, back: 1);
         Run(both, 0, 0.5);
         Assert.Equal(0f, both.Angles.Pitch);
     }
@@ -139,15 +139,15 @@ public sealed class VirtualMotionTests
     public void GyroIntegratesToTheOrientationChange()
     {
         // the samples are self-consistent: integrating the gyro reproduces the pose
-        var vm = Hold(fwd: 1, left: 1, tl: 1);
-        var q = Quaternion.Identity;
+        VirtualMotion vm = Hold(fwd: 1, left: 1, tl: 1);
+        Quaternion q = Quaternion.Identity;
         ulong? last = null;
         Run(vm, 0, 1, s =>
         {
             if (last is { } l)
             {
                 float dt = (s.TimestampUs - l) / 1e6f;
-                var w = s.AngularVelocity;
+                Vector3 w = s.AngularVelocity;
                 if (w != Vector3.Zero)
                 {
                     q = Quaternion.Normalize(q * Quaternion.CreateFromAxisAngle(Vector3.Normalize(w), w.Length() * dt));
@@ -166,16 +166,16 @@ public sealed class VirtualMotionTests
     public void FusionAgreesWithThePose()
     {
         // SceMotion's quaternion / basic orientation follow the virtual device, yaw included
-        var vm = Hold(back: 1, tr: 1, s: new TiltSettings { MaxAngle = 60 });
+        VirtualMotion vm = Hold(back: 1, tr: 1, s: new TiltSettings { MaxAngle = 60 });
         var f = new MotionFusion();
         ulong? last = null;
         Run(vm, 0, 1.5, s => { f.Update(s.Acceleration, s.AngularVelocity, last is { } l ? (s.TimestampUs - l) / 1e6f : 0); last = s.TimestampUs; });
         // fusion world: flat = -90 degrees about x
-        var expected = Quaternion.CreateFromAxisAngle(Vector3.UnitX, -MathF.PI / 2) * vm.Pose;
+        Quaternion expected = Quaternion.CreateFromAxisAngle(Vector3.UnitX, -MathF.PI / 2) * vm.Pose;
         Assert.True(MathF.Abs(Quaternion.Dot(expected, f.Orientation)) > 0.999f, $"expected {expected}, got {f.Orientation}");
         // 60 degrees up from flat stays within the hysteresis (45 + 20 degrees): still screen up
         Assert.Equal(new Vector3(0, 0, 1), f.BasicOrientation);
-        var up = Hold(back: 1, s: new TiltSettings { MaxAngle = 80 });
+        VirtualMotion up = Hold(back: 1, s: new TiltSettings { MaxAngle = 80 });
         var g = new MotionFusion();
         last = null;
         Run(up, 0, 1.5, s => { g.Update(s.Acceleration, s.AngularVelocity, last is { } l ? (s.TimestampUs - l) / 1e6f : 0); last = s.TimestampUs; });
@@ -214,7 +214,7 @@ public sealed class VirtualMotionTests
     [Fact]
     public void LongGapIsCappedAndSamplesAreOrdered()
     {
-        var vm = Hold(fwd: 1);
+        VirtualMotion vm = Hold(fwd: 1);
         var buf = new MotionSample[2048];
         vm.Generate(0, buf);
         int n = vm.Generate(10_000_000, buf); // the game did not poll for 10 s
@@ -227,7 +227,7 @@ public sealed class VirtualMotionTests
         Assert.Equal(10_000_000UL, buf[n - 1].TimestampUs);
         Assert.Equal(-30f, vm.Angles.Pitch, 0.01f);
         // a short destination hands the rest over on the next call
-        var small = Hold(fwd: 1);
+        VirtualMotion small = Hold(fwd: 1);
         small.Generate(0, buf);
         Assert.Equal(4, small.Generate(40_000, buf.AsSpan(0, 4)));
         Assert.Equal(6, small.Generate(40_000, buf));
@@ -236,9 +236,9 @@ public sealed class VirtualMotionTests
     [Fact]
     public void DefaultTiltKeysAreFreeAndDriveTheMotion()
     {
-        var p = DefaultMappings.Keyboard();
+        ControllerProfile p = DefaultMappings.Keyboard();
         var motionKeys = new HashSet<string>();
-        foreach (var c in VitaControls.All)
+        foreach (VitaControl c in VitaControls.All)
         {
             var keys = p.Get(c).Select(b => b.Key!).ToList();
             if (VitaControls.IsMotion(c))
@@ -247,15 +247,15 @@ public sealed class VirtualMotionTests
                 keys.ForEach(k => Assert.True(motionKeys.Add(k), $"{k} bound twice"));
             }
         }
-        foreach (var c in VitaControls.All.Where(c => !VitaControls.IsMotion(c)))
+        foreach (VitaControl c in VitaControls.All.Where(c => !VitaControls.IsMotion(c)))
         {
-            foreach (var b in p.Get(c))
+            foreach (InputBinding b in p.Get(c))
             {
                 Assert.DoesNotContain(b.Key!, motionKeys);
             }
         }
 
-        foreach (var k in new[] { "F8", "F9", "F10", "F11", "Home", "Escape" })
+        foreach (string? k in new[] { "F8", "F9", "F10", "F11", "Home", "Escape" })
         {
             Assert.DoesNotContain(k, motionKeys);
         }
@@ -276,8 +276,8 @@ public sealed class VirtualMotionTests
     public void OldKeyboardProfilesGetTheFreeTiltKeys()
     {
         // a version 1 input.json whose keyboard profile uses T for Cross: T stays Cross, keypad 8 tilts forward
-        var old = DefaultMappings.Keyboard();
-        foreach (var c in VitaControls.All.Where(VitaControls.IsMotion))
+        ControllerProfile old = DefaultMappings.Keyboard();
+        foreach (VitaControl c in VitaControls.All.Where(VitaControls.IsMotion))
         {
             old.Set(c, null);
         }
@@ -286,7 +286,7 @@ public sealed class VirtualMotionTests
         var store = new InputProfileStore();
         store.Put(old);
         store.Config.Version = 1;
-        var path = Path.Combine(Path.GetTempPath(), $"vitasharp_input_{Guid.NewGuid():N}.json");
+        string path = Path.Combine(Path.GetTempPath(), $"vitasharp_input_{Guid.NewGuid():N}.json");
         File.WriteAllText(path, InputProfileStore.Serialize(store.Config));
         InputProfileStore loaded;
         try
@@ -298,7 +298,7 @@ public sealed class VirtualMotionTests
             File.Delete(path);
         }
         Assert.Equal(1, loaded.Config.Version);
-        var p = loaded.KeyboardProfile();
+        ControllerProfile p = loaded.KeyboardProfile();
         Assert.Equal(new[] { "key:Keypad8" }, p.Bindings[nameof(VitaControl.TiltForward)]);
         Assert.Equal(new[] { "key:T" }, p.Bindings[nameof(VitaControl.Cross)]);
         Assert.Equal(new[] { "key:Keypad4", "key:F" }, p.Bindings[nameof(VitaControl.TiltLeft)]);
@@ -310,7 +310,7 @@ public sealed class VirtualMotionTests
         old.MotionSource = MotionSourceMode.KeyboardMouse;
         old.Tilt.MaxAngle = 42;
         loaded.Put(old);
-        var back = InputProfileStore.Deserialize(InputProfileStore.Serialize(loaded.Config))!.Keyboard!;
+        ControllerProfile back = InputProfileStore.Deserialize(InputProfileStore.Serialize(loaded.Config))!.Keyboard!;
         Assert.Equal(MotionSourceMode.KeyboardMouse, back.MotionSource);
         Assert.Equal(42f, back.Tilt.MaxAngle);
         Assert.Contains("\"KeyboardMouse\"", InputProfileStore.Serialize(loaded.Config));

@@ -12,9 +12,9 @@ namespace VitaSharp.Tests;
 [Collection("shadergen")]
 public class VtstDotTests
 {
-    static string Generate(ulong[] code)
+    private static string Generate(ulong[] code)
     {
-        var d = new byte[0x100 + code.Length * 8];
+        byte[] d = new byte[0x100 + code.Length * 8];
         void W32(int o, uint v) => BinaryPrimitives.WriteUInt32LittleEndian(d.AsSpan(o), v);
         W32(0x3C, (uint)code.Length);
         W32(0x40, 0x100 - 0x40); // primary program
@@ -31,8 +31,8 @@ public class VtstDotTests
     [Fact]
     public void DotProductTestUsesAllFourComponents()
     {
-        var glsl = Generate([0x48C081800FB23E7D]);
-        var line = glsl.Split('\n').Single(l => l.Contains("fi[0]") && l.Contains("fi[1]") && l.Contains(" = "));
+        string glsl = Generate([0x48C081800FB23E7D]);
+        string line = glsl.Split('\n').Single(l => l.Contains("fi[0]") && l.Contains("fi[1]") && l.Contains(" = "));
         Assert.Contains("dot(vec4(fi[0].x, fi[0].y, fi[0].z, fi[0].w), vec4(fi[1].x, fi[1].y, fi[1].z, fi[1].w))", line);
     }
 }

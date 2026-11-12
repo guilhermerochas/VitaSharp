@@ -7,9 +7,9 @@ namespace VitaSharp.Tests;
 /// VitaSharp kept the signature).</summary>
 public class TrophySignatureTests
 {
-    static byte[] Signature(byte fill)
+    private static byte[] Signature(byte fill)
     {
-        var s = new byte[TrophyUnlocks.SignatureSize];
+        byte[] s = new byte[TrophyUnlocks.SignatureSize];
         Array.Fill(s, fill);
         s[0] = 0xB9;
         s[1] = 0xDD;
@@ -22,7 +22,7 @@ public class TrophySignatureTests
     public void FindsTheSignatureNearestToTheSetId()
     {
         // two sets in one executable, each id followed by its signature (as SceNpCommunicationId + signature constants)
-        var image = new byte[0x1000];
+        byte[] image = new byte[0x1000];
         "NPWR01111\0"u8.CopyTo(image.AsSpan(0x100));
         Signature(0x11).CopyTo(image.AsSpan(0x110));
         "NPWR02222\0"u8.CopyTo(image.AsSpan(0x800));
@@ -36,7 +36,7 @@ public class TrophySignatureTests
     [Fact]
     public void NoSignatureNoResult()
     {
-        var image = new byte[0x400];
+        byte[] image = new byte[0x400];
         Assert.Null(TrophySignature.Find(image, "NPWR01111_00"));
         // the magic too close to the end for a whole signature
         Signature(0x11).AsSpan(0, 8).CopyTo(image.AsSpan(0x3F8));

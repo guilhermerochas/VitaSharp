@@ -19,7 +19,7 @@ namespace VitaSharp.Tests;
 [Collection("guest")]
 public sealed unsafe class XmlHleTests(GuestMemoryFixture fx, ITestOutputHelper output)
 {
-    const string Sample = "<?xml version=\"1.0\" encoding=\"utf-8\"?>\n<!-- top -->\n<root a=\"1\" b='two &amp; more'>\n  <item id=\"x\">Hello &lt;world&gt;</item>\n  <empty/>\n  <?proc data?>\n  <![CDATA[raw <b>]]>\n  <n>plain</n>\n</root>\n";
+    private const string Sample = "<?xml version=\"1.0\" encoding=\"utf-8\"?>\n<!-- top -->\n<root a=\"1\" b='two &amp; more'>\n  <item id=\"x\">Hello &lt;world&gt;</item>\n  <empty/>\n  <?proc data?>\n  <![CDATA[raw <b>]]>\n  <n>plain</n>\n</root>\n";
 
     public static IEnumerable<object[]> Scenarios => XmlScenarios.All.Keys.Select(k => new object[] { k });
 
@@ -28,10 +28,10 @@ public sealed unsafe class XmlHleTests(GuestMemoryFixture fx, ITestOutputHelper 
     public void Hle_RunsScenario(string scenario)
     {
         using var h = new XmlHarness(fx, null);
-        var log = h.Run(XmlScenarios.All[scenario], false);
+        List<string> log = h.Run(XmlScenarios.All[scenario], false);
         output.WriteLine(string.Join("\n", log));
         Assert.DoesNotContain(log, l => l.StartsWith("EXCEPTION", StringComparison.Ordinal));
-        if (XmlScenarios.Expected.TryGetValue(scenario, out var expect))
+        if (XmlScenarios.Expected.TryGetValue(scenario, out string[]? expect))
         {
             foreach (string e in expect)
             {
@@ -45,8 +45,8 @@ public sealed unsafe class XmlHleTests(GuestMemoryFixture fx, ITestOutputHelper 
     public void MatchesFirmwareModule(string scenario)
     {
         using var h = new XmlHarness(fx, XmlFirmware.ModulePath);
-        var lle = h.Run(XmlScenarios.All[scenario], true);
-        var hle = h.Run(XmlScenarios.All[scenario], false);
+        List<string> lle = h.Run(XmlScenarios.All[scenario], true);
+        List<string> hle = h.Run(XmlScenarios.All[scenario], false);
         output.WriteLine("--- firmware\n" + string.Join("\n", lle) + "\n--- hle\n" + string.Join("\n", hle));
         Assert.Equal(lle, hle);
     }
@@ -64,7 +64,7 @@ public sealed unsafe class XmlHleTests(GuestMemoryFixture fx, ITestOutputHelper 
 }
 
 /// <summary>The scenarios: each logs through the driver.</summary>
-static class XmlScenarios
+internal static class XmlScenarios
 {
     public static readonly Dictionary<string, Action<XmlDriver>> All = new()
     {
@@ -361,7 +361,7 @@ static class XmlScenarios
     };
 }
 
-sealed unsafe class XmlDriver(XmlHarness h, GuestThread thread, Func<string, uint> resolve)
+internal sealed unsafe class XmlDriver(XmlHarness h, GuestThread thread, Func<string, uint> resolve)
 {
     public const string InitCtor = "_ZN3sce3Xml11InitializerC1Ev", InitInit = "_ZN3sce3Xml11Initializer10initializeEPKNS0_13InitParameterE",
         InitTerm = "_ZN3sce3Xml11Initializer9terminateEv",
@@ -471,7 +471,7 @@ sealed unsafe class XmlDriver(XmlHarness h, GuestThread thread, Func<string, uin
 
     public uint NodeType(uint doc, ulong id) => Call(DocNodeType, doc, 0, Lo(id), Hi(id));
 
-    string StrOf(string fn, uint doc, ulong id)
+    private string StrOf(string fn, uint doc, ulong id)
     {
         uint s = h.Game(8);
         Call(fn, s, doc, Lo(id), Hi(id));
@@ -520,14 +520,14 @@ sealed unsafe class XmlDriver(XmlHarness h, GuestThread thread, Func<string, uin
     }
 }
 
-sealed unsafe class XmlHarness : IDisposable
+internal sealed unsafe class XmlHarness : IDisposable
 {
-    const uint ArenaSize = 0x40_0000, GameSize = 0x4_0000;
-    readonly Emulator _emu;
-    readonly string _root;
-    readonly uint _arena, _gameBase, _stubs;
-    readonly Dictionary<string, uint> _hleStubs = [];
-    uint _bump, _gameBump, _nextStub;
+    private const uint ArenaSize = 0x40_0000, GameSize = 0x4_0000;
+    private readonly Emulator _emu;
+    private readonly string _root;
+    private readonly uint _arena, _gameBase, _stubs;
+    private readonly Dictionary<string, uint> _hleStubs = [];
+    private uint _bump, _gameBump, _nextStub;
     public List<string>? Current;
     public readonly uint Allocator, Handler;
 
@@ -546,7 +546,7 @@ sealed unsafe class XmlHarness : IDisposable
             _emu.LoadModule("vs0:sys/external/libSceXml.suprx");
         }
 
-        var mem = _emu.Memory;
+        GuestMemory mem = _emu.Memory;
         _arena = mem.Alloc(ArenaSize, "xml test arena");
         _gameBase = mem.Alloc(GameSize, "xml test game");
         _stubs = mem.Alloc(0x4000, "xml test stubs");
@@ -587,9 +587,9 @@ sealed unsafe class XmlHarness : IDisposable
 
     /// <summary>The AttributeList's pairs (through the HLE state when the HLE built it; the firmware's own otherwise
     /// is read with getLength/getAttribute through the same exports, so this only lists what the HLE knows).</summary>
-    string Attrs(uint list)
+    private string Attrs(uint list)
     {
-        var t = GuestThread.Current!;
+        GuestThread t = GuestThread.Current!;
         uint len = t.CallGuest(_resolve!(XmlDriver.AttrListLength), list);
         var sb = new StringBuilder();
         uint attr = Game(4), s = Game(8);
@@ -605,7 +605,7 @@ sealed unsafe class XmlHarness : IDisposable
         return sb.ToString();
     }
 
-    Func<string, uint>? _resolve;
+    private Func<string, uint>? _resolve;
 
     public static string ReadStr(uint str)
     {
@@ -613,7 +613,7 @@ sealed unsafe class XmlHarness : IDisposable
         return p == 0 ? "<null>" : Encoding.UTF8.GetString(GuestMemory.ReadSpan(p, (int)Math.Min(n, 4096)));
     }
 
-    uint Allocate(uint size)
+    private uint Allocate(uint size)
     {
         uint p = _arena + _bump;
         _bump = (_bump + size + 15) & ~15u;
@@ -638,14 +638,14 @@ sealed unsafe class XmlHarness : IDisposable
         return p;
     }
 
-    uint HleStub(string name)
+    private uint HleStub(string name)
     {
         if (_hleStubs.TryGetValue(name, out uint a))
         {
             return a;
         }
 
-        var info = NidDatabase.LookupName(name).Single(n => n.Library == "SceLibXml");
+        NidInfo info = NidDatabase.LookupName(name).Single(n => n.Library == "SceLibXml");
         a = _nextStub;
         _nextStub += 16;
         Linker.WriteHleStub(a, _emu.Hle.GetHleFunctionIndex(info.Nid, 0xC2B22E99, "SceLibXml"), info.Nid);
@@ -657,12 +657,12 @@ sealed unsafe class XmlHarness : IDisposable
     {
         _bump = 0;
         _gameBump = 0;
-        var log = Current = [];
+        List<string> log = Current = [];
         Exception? failure = null;
         _resolve = name => useLle
             ? (_emu.Linker.TryGetFunctionExport(NidDatabase.LookupName(name).Single(n => n.Library == "SceLibXml").Nid, out uint a) ? a : throw new InvalidOperationException(name))
             : HleStub(name);
-        var t = _emu.Kernel.CreateThread("xml-test", 0, 0x10000100, 0x10000, 0, 0x70000);
+        GuestThread t = _emu.Kernel.CreateThread("xml-test", 0, 0x10000100, 0x10000, 0, 0x70000);
         t.HostBody = th =>
         {
             try
@@ -696,11 +696,11 @@ sealed unsafe class XmlHarness : IDisposable
     }
 }
 
-static class XmlFirmware
+internal static class XmlFirmware
 {
-    static readonly Lazy<string?> _path = new(() =>
+    private static readonly Lazy<string?> s_path = new(() =>
         JsonFirmware.ModulePath is { } json && Path.Combine(Path.GetDirectoryName(json)!, "libSceXml.suprx") is var p && File.Exists(p) ? p : null);
-    public static string? ModulePath => _path.Value;
+    public static string? ModulePath => s_path.Value;
 }
 
 public sealed class XmlFirmwareTheoryAttribute : TheoryAttribute

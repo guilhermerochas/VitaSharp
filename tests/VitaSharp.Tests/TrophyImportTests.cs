@@ -7,11 +7,11 @@ namespace VitaSharp.Tests;
 /// <summary>Importing trophies earned elsewhere: Vita3K's TROPUSR.DAT and a PS Vita's ur0:user/00/trophy folder.</summary>
 public class TrophyImportTests
 {
-    static byte[] Vita3KFile(params (int Id, ulong Unix)[] unlocked)
+    private static byte[] Vita3KFile(params (int Id, ulong Unix)[] unlocked)
     {
-        var d = new byte[0x670];
+        byte[] d = new byte[0x670];
         BinaryPrimitives.WriteUInt32LittleEndian(d, TrophyImport.Vita3KMagic);
-        foreach (var (id, unix) in unlocked)
+        foreach ((int id, ulong unix) in unlocked)
         {
             int word = 4 + id / 32 * 4;
             BinaryPrimitives.WriteUInt32LittleEndian(d.AsSpan(word), BinaryPrimitives.ReadUInt32LittleEndian(d.AsSpan(word)) | 1u << (id % 32));
@@ -24,7 +24,7 @@ public class TrophyImportTests
     public void ReadsVita3KUnlocksAndTimes()
     {
         // Vita3K's file of a title with trophies 1, 2, 3 and 40 unlocked (2023-04-27 and later, Unix seconds)
-        var u = TrophyImport.ReadVita3K(Vita3KFile((1, 0x6449EABB), (2, 0x6449ED78), (3, 0x6449F1BC), (40, 0)));
+        Dictionary<int, ulong> u = TrophyImport.ReadVita3K(Vita3KFile((1, 0x6449EABB), (2, 0x6449ED78), (3, 0x6449F1BC), (40, 0)));
         Assert.Equal([1, 2, 3, 40], u.Keys.Order().ToArray());
         Assert.Equal(new DateTime(2023, 4, 27, 3, 23, 39, DateTimeKind.Utc), TrophyUnlocks.TickToUtc(u[1]));
         Assert.Equal(0ul, u[40]); // no time kept
@@ -56,7 +56,7 @@ public class TrophyImportTests
             File.WriteAllBytes(Path.Combine(v3k, "TROPUSR.DAT"), Vita3KFile((1, 0x6449EABB)));
             Assert.Equal(TrophyImport.SourceKind.Vita3K, TrophyImport.Detect(TrophyImport.Locate(Path.Combine(root, "v3k"))));
             string fs = Path.Combine(root, "fs");
-            var r = TrophyImport.Import(Path.Combine(root, "v3k"), fs);
+            TrophyImport.Report r = TrophyImport.Import(Path.Combine(root, "v3k"), fs);
             Assert.Equal(1, r.Titles.Single().Imported);
             Assert.True(TrophyUnlocks.Load(TrophyUnlocks.PathFor(fs, "NPWR03852_00")).ContainsKey(1));
             Assert.Equal(0, TrophyImport.Import(Path.Combine(root, "v3k"), fs).Titles.Single().Imported); // again: nothing new

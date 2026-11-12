@@ -5,7 +5,7 @@ using VitaSharp.Core.Package;
 namespace VitaSharp.Tests;
 
 /// <summary>Builds PARAM.SFO files (the format read by <see cref="Sfo"/>).</summary>
-static class SfoWriter
+internal static class SfoWriter
 {
     public static byte[] Build(IReadOnlyDictionary<string, object> values)
     {
@@ -13,7 +13,7 @@ static class SfoWriter
         var keyTable = new MemoryStream();
         var dataTable = new MemoryStream();
         var index = new List<(ushort keyOff, ushort fmt, uint len, uint max, uint dataOff)>();
-        foreach (var k in keys)
+        foreach (string? k in keys)
         {
             ushort keyOff = (ushort)keyTable.Length;
             keyTable.Write(Encoding.UTF8.GetBytes(k + "\0"));
@@ -25,7 +25,7 @@ static class SfoWriter
             }
             else
             {
-                var bytes = Encoding.UTF8.GetBytes(values[k] + "\0");
+                byte[] bytes = Encoding.UTF8.GetBytes(values[k] + "\0");
                 uint max = (uint)((bytes.Length + 3) & ~3);
                 dataTable.Write(bytes);
                 dataTable.Write(new byte[max - bytes.Length]);
@@ -46,7 +46,7 @@ static class SfoWriter
         w.Write(keyTableOff);
         w.Write(dataTableOff);
         w.Write((uint)index.Count);
-        foreach (var e in index)
+        foreach ((ushort keyOff, ushort fmt, uint len, uint max, uint dataOff) e in index)
         {
             w.Write(e.keyOff);
             w.Write(e.fmt);
@@ -73,8 +73,8 @@ static class SfoWriter
 
 public sealed class VpkInstallerTests : IDisposable
 {
-    readonly string _root = Path.Combine(Path.GetTempPath(), "VitaSharpVpkTests", Guid.NewGuid().ToString("N"));
-    string Ux0 => Path.Combine(_root, "ux0");
+    private readonly string _root = Path.Combine(Path.GetTempPath(), "VitaSharpVpkTests", Guid.NewGuid().ToString("N"));
+    private string Ux0 => Path.Combine(_root, "ux0");
 
     public VpkInstallerTests() => Directory.CreateDirectory(Ux0);
 
@@ -87,22 +87,22 @@ public sealed class VpkInstallerTests : IDisposable
         catch (IOException) { }
     }
 
-    static readonly byte[] FakeEboot = Encoding.ASCII.GetBytes("\u007fELF placeholder eboot");
+    private static readonly byte[] s_fakeEboot = Encoding.ASCII.GetBytes("\u007fELF placeholder eboot");
 
-    static MemoryStream Zip(params (string name, byte[] data)[] entries)
+    private static MemoryStream Zip(params (string name, byte[] data)[] entries)
     {
         var ms = new MemoryStream();
         using (var zip = new ZipArchive(ms, ZipArchiveMode.Create, leaveOpen: true))
         {
-            foreach (var (name, data) in entries)
+            foreach ((string? name, byte[]? data) in entries)
             {
-                var e = zip.CreateEntry(name);
+                ZipArchiveEntry e = zip.CreateEntry(name);
                 if (name.EndsWith('/'))
                 {
                     continue;
                 }
 
-                using var s = e.Open();
+                using Stream s = e.Open();
                 s.Write(data);
             }
         }
@@ -111,9 +111,9 @@ public sealed class VpkInstallerTests : IDisposable
         return ms;
     }
 
-    static (string, byte[])[] AppEntries(string prefix, string titleId, string category = "gd", byte[]? eboot = null) =>
+    private static (string, byte[])[] AppEntries(string prefix, string titleId, string category = "gd", byte[]? eboot = null) =>
     [
-        (prefix + "eboot.bin", eboot ?? FakeEboot),
+        (prefix + "eboot.bin", eboot ?? s_fakeEboot),
         (prefix + "sce_sys/param.sfo", SfoWriter.Make(titleId, category)),
         (prefix + "sce_sys/icon0.png", [0x89, 0x50, 0x4E, 0x47]),
         (prefix + "sce_module/libc.suprx", [1, 2, 3]),
@@ -135,16 +135,16 @@ public sealed class VpkInstallerTests : IDisposable
     public void App_AtRoot_GoesToUx0App()
     {
         var progress = new List<InstallProgress>();
-        var results = VpkInstaller.Install(Zip(AppEntries("", "PCSE00001")), Ux0, new VpkInstallOptions { Progress = progress.Add });
+        IReadOnlyList<VpkInstallResult> results = VpkInstaller.Install(Zip(AppEntries("", "PCSE00001")), Ux0, new VpkInstallOptions { Progress = progress.Add });
 
-        var r = Assert.Single(results);
+        VpkInstallResult r = Assert.Single(results);
         Assert.True(r.Installed);
         Assert.False(r.Replaced);
         Assert.Equal(VpkContentKind.App, r.Content.Kind);
         Assert.Equal("PCSE00001", r.TitleId);
-        var dir = Path.Combine(Ux0, "app", "PCSE00001");
+        string dir = Path.Combine(Ux0, "app", "PCSE00001");
         Assert.Equal(Path.GetFullPath(dir), r.InstallPath);
-        Assert.Equal(FakeEboot, File.ReadAllBytes(Path.Combine(dir, "eboot.bin")));
+        Assert.Equal(s_fakeEboot, File.ReadAllBytes(Path.Combine(dir, "eboot.bin")));
         Assert.True(File.Exists(Path.Combine(dir, "sce_sys", "param.sfo")));
         Assert.True(File.Exists(Path.Combine(dir, "sce_sys", "icon0.png")));
         Assert.True(File.Exists(Path.Combine(dir, "sce_module", "libc.suprx")));
@@ -157,9 +157,9 @@ public sealed class VpkInstallerTests : IDisposable
     [Fact]
     public void App_NestedInSubfolder_IsDetected()
     {
-        var results = VpkInstaller.Install(Zip(AppEntries("My Game (USA) v1.00/", "PCSA00002")), Ux0);
+        IReadOnlyList<VpkInstallResult> results = VpkInstaller.Install(Zip(AppEntries("My Game (USA) v1.00/", "PCSA00002")), Ux0);
         Assert.Equal("PCSA00002", Assert.Single(results).TitleId);
-        var dir = Path.Combine(Ux0, "app", "PCSA00002");
+        string dir = Path.Combine(Ux0, "app", "PCSA00002");
         Assert.True(File.Exists(Path.Combine(dir, "eboot.bin")));
         Assert.True(File.Exists(Path.Combine(dir, "data", "level1.dat")));
         Assert.False(Directory.Exists(Path.Combine(dir, "My Game (USA) v1.00")));
@@ -168,11 +168,11 @@ public sealed class VpkInstallerTests : IDisposable
     [Fact]
     public void ContentZip_WithTitleIdFolders_InstallsAppAndPatch()
     {
-        var entries = AppEntries("PCSB00003/", "PCSB00003")
+        (string, byte[])[] entries = AppEntries("PCSB00003/", "PCSB00003")
             .Concat(AppEntries("patch/PCSB00003/", "PCSB00003", "gp"))
             .Append(("readme.txt", Encoding.ASCII.GetBytes("ignored")))
             .ToArray();
-        var results = VpkInstaller.Install(Zip(entries), Ux0);
+        IReadOnlyList<VpkInstallResult> results = VpkInstaller.Install(Zip(entries), Ux0);
         Assert.Equal(2, results.Count);
         Assert.Contains(results, r => r.Content.Kind == VpkContentKind.App);
         Assert.Contains(results, r => r.Content.Kind == VpkContentKind.Patch);
@@ -184,7 +184,7 @@ public sealed class VpkInstallerTests : IDisposable
     [Fact]
     public void Patch_GoesToUx0Patch()
     {
-        var r = Assert.Single(VpkInstaller.Install(Zip(AppEntries("", "PCSE00004", "gp")), Ux0));
+        VpkInstallResult r = Assert.Single(VpkInstaller.Install(Zip(AppEntries("", "PCSE00004", "gp")), Ux0));
         Assert.Equal(VpkContentKind.Patch, r.Content.Kind);
         Assert.True(File.Exists(Path.Combine(Ux0, "patch", "PCSE00004", "eboot.bin")));
         Assert.False(Directory.Exists(Path.Combine(Ux0, "app", "PCSE00004")));
@@ -193,12 +193,12 @@ public sealed class VpkInstallerTests : IDisposable
     [Fact]
     public void AddCont_GoesToUx0AddcontLabelFolder()
     {
-        var zip = Zip(
+        MemoryStream zip = Zip(
             ("sce_sys/param.sfo", SfoWriter.Make("PCSE00005", "ac", "DLC Pack", "EP0000-PCSE00005_00-DLCPACK000000001")),
             ("dlc/costume.dat", [7, 7, 7]));
-        var r = Assert.Single(VpkInstaller.Install(zip, Ux0));
+        VpkInstallResult r = Assert.Single(VpkInstaller.Install(zip, Ux0));
         Assert.Equal(VpkContentKind.AddCont, r.Content.Kind);
-        var dir = Path.Combine(Ux0, "addcont", "PCSE00005", "DLCPACK000000001");
+        string dir = Path.Combine(Ux0, "addcont", "PCSE00005", "DLCPACK000000001");
         Assert.Equal(Path.GetFullPath(dir), r.InstallPath);
         Assert.Equal(new byte[] { 7, 7, 7 }, File.ReadAllBytes(Path.Combine(dir, "dlc", "costume.dat")));
     }
@@ -211,7 +211,7 @@ public sealed class VpkInstallerTests : IDisposable
     [InlineData("C:/evil.txt")]
     public void ZipSlip_IsRejected(string badName)
     {
-        var entries = AppEntries("", "PCSE00006").Append((badName, Encoding.ASCII.GetBytes("pwned"))).ToArray();
+        (string, byte[])[] entries = AppEntries("", "PCSE00006").Append((badName, Encoding.ASCII.GetBytes("pwned"))).ToArray();
         Assert.Throws<InvalidDataException>(() => VpkInstaller.Install(Zip(entries), Ux0));
         Assert.False(File.Exists(Path.Combine(_root, "evil.txt")));
         Assert.False(File.Exists(Path.Combine(Ux0, "evil.txt")));
@@ -221,15 +221,15 @@ public sealed class VpkInstallerTests : IDisposable
     [Fact]
     public void MissingParamSfo_IsRejected()
     {
-        var zip = Zip(("eboot.bin", FakeEboot), ("sce_sys/icon0.png", [1]));
-        var e = Assert.Throws<InvalidDataException>(() => VpkInstaller.Install(zip, Ux0));
+        MemoryStream zip = Zip(("eboot.bin", s_fakeEboot), ("sce_sys/icon0.png", [1]));
+        InvalidDataException e = Assert.Throws<InvalidDataException>(() => VpkInstaller.Install(zip, Ux0));
         Assert.Contains("param.sfo", e.Message);
     }
 
     [Fact]
     public void AppWithoutEboot_IsRejected()
     {
-        var zip = Zip(("sce_sys/param.sfo", SfoWriter.Make("PCSE00007", "gd")));
+        MemoryStream zip = Zip(("sce_sys/param.sfo", SfoWriter.Make("PCSE00007", "gd")));
         Assert.Throws<InvalidDataException>(() => VpkInstaller.Install(zip, Ux0));
     }
 
@@ -237,7 +237,7 @@ public sealed class VpkInstallerTests : IDisposable
     public void Overwrite_ConfirmHookDecides()
     {
         VpkInstaller.Install(Zip(AppEntries("", "PCSE00008").Append(("old.txt", new byte[] { 1 })).ToArray()), Ux0);
-        var dir = Path.Combine(Ux0, "app", "PCSE00008");
+        string dir = Path.Combine(Ux0, "app", "PCSE00008");
         Assert.True(File.Exists(Path.Combine(dir, "old.txt")));
 
         VpkInstallResult skipped = Assert.Single(VpkInstaller.Install(Zip(AppEntries("", "PCSE00008")), Ux0,
@@ -246,7 +246,7 @@ public sealed class VpkInstallerTests : IDisposable
         Assert.True(File.Exists(Path.Combine(dir, "old.txt")));
 
         VpkContentInfo? asked = null;
-        var replaced = Assert.Single(VpkInstaller.Install(Zip(AppEntries("", "PCSE00008")), Ux0,
+        VpkInstallResult replaced = Assert.Single(VpkInstaller.Install(Zip(AppEntries("", "PCSE00008")), Ux0,
             new VpkInstallOptions { ConfirmOverwrite = c => { asked = c; return true; } }));
         Assert.Equal("PCSE00008", asked?.TitleId);
         Assert.True(replaced.Installed && replaced.Replaced);
@@ -259,7 +259,7 @@ public sealed class VpkInstallerTests : IDisposable
     public void Cancellation_LeavesNothingBehind()
     {
         using var cts = new CancellationTokenSource();
-        var entries = AppEntries("", "PCSE00009").Append(("big.bin", new byte[1 << 20])).ToArray();
+        (string, byte[])[] entries = AppEntries("", "PCSE00009").Append(("big.bin", new byte[1 << 20])).ToArray();
         Assert.ThrowsAny<OperationCanceledException>(() => VpkInstaller.Install(Zip(entries), Ux0,
             new VpkInstallOptions
             {
@@ -276,9 +276,9 @@ public sealed class VpkInstallerTests : IDisposable
     }
 
     /// <summary>Minimal SCE header: an APP SELF with one segment, encrypted or plaintext (fake SELF).</summary>
-    static byte[] SelfHeader(bool encrypted)
+    private static byte[] SelfHeader(bool encrypted)
     {
-        var f = new byte[0x200];
+        byte[] f = new byte[0x200];
         BitConverter.TryWriteBytes(f.AsSpan(0), 0x00454353u);   // "SCE\0"
         BitConverter.TryWriteBytes(f.AsSpan(32 + 24), 0x80ul);   // appinfo
         BitConverter.TryWriteBytes(f.AsSpan(32 + 32), 0xA0ul);   // elf header
@@ -293,8 +293,8 @@ public sealed class VpkInstallerTests : IDisposable
     [Fact]
     public void EncryptedEboot_WithoutLicense_FailsWithClearError()
     {
-        var zip = Zip(AppEntries("", "PCSE00010", eboot: SelfHeader(encrypted: true)));
-        var e = Assert.Throws<VpkLicenseException>(() => VpkInstaller.Install(zip, Ux0));
+        MemoryStream zip = Zip(AppEntries("", "PCSE00010", eboot: SelfHeader(encrypted: true)));
+        VpkLicenseException e = Assert.Throws<VpkLicenseException>(() => VpkInstaller.Install(zip, Ux0));
         Assert.Contains("work.bin", e.Message);
         Assert.False(Directory.Exists(Path.Combine(Ux0, "app", "PCSE00010")));
     }
@@ -302,7 +302,7 @@ public sealed class VpkInstallerTests : IDisposable
     [Fact]
     public void EncryptedEboot_WithWorkBin_Installs()
     {
-        var entries = AppEntries("", "PCSE00011", eboot: SelfHeader(encrypted: true))
+        (string, byte[])[] entries = AppEntries("", "PCSE00011", eboot: SelfHeader(encrypted: true))
             .Append(("sce_sys/package/work.bin", new byte[0x200])).ToArray();
         Assert.True(Assert.Single(VpkInstaller.Install(Zip(entries), Ux0)).Installed);
         Assert.True(File.Exists(Path.Combine(Ux0, "app", "PCSE00011", "sce_sys", "package", "work.bin")));
@@ -311,9 +311,9 @@ public sealed class VpkInstallerTests : IDisposable
     [Fact]
     public void EncryptedEboot_WithUserLicense_CopiesItAsWorkBin()
     {
-        var lic = Path.Combine(_root, "license.rif");
+        string lic = Path.Combine(_root, "license.rif");
         File.WriteAllBytes(lic, new byte[0x200]);
-        var zip = Zip(AppEntries("", "PCSE00012", eboot: SelfHeader(encrypted: true)));
+        MemoryStream zip = Zip(AppEntries("", "PCSE00012", eboot: SelfHeader(encrypted: true)));
         VpkInstaller.Install(zip, Ux0, new VpkInstallOptions { LicensePath = lic });
         Assert.True(File.Exists(Path.Combine(Ux0, "app", "PCSE00012", "sce_sys", "package", "work.bin")));
     }
@@ -321,14 +321,14 @@ public sealed class VpkInstallerTests : IDisposable
     [Fact]
     public void FakeSelfHomebrew_NeedsNoLicense()
     {
-        var zip = Zip(AppEntries("", "VITASHELL", eboot: SelfHeader(encrypted: false)));
+        MemoryStream zip = Zip(AppEntries("", "VITASHELL", eboot: SelfHeader(encrypted: false)));
         Assert.True(Assert.Single(VpkInstaller.Install(zip, Ux0)).Installed);
     }
 
     [Fact]
     public void Inspect_ReportsDestinationsWithoutExtracting()
     {
-        var c = Assert.Single(VpkInstaller.Inspect(new ZipArchive(Zip(AppEntries("x/", "PCSE00013"))), Ux0));
+        VpkContentInfo c = Assert.Single(VpkInstaller.Inspect(new ZipArchive(Zip(AppEntries("x/", "PCSE00013"))), Ux0));
         Assert.Equal("x/", c.ArchivePrefix);
         Assert.Equal(VpkContentKind.App, c.Kind);
         Assert.False(c.AlreadyInstalled);

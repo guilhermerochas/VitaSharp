@@ -7,12 +7,12 @@ namespace VitaSharp.Tests;
 
 public class UpdateFeedTests
 {
-    const string Old = "1111111aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa", New = "2222222bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb";
+    private const string Old = "1111111aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa", New = "2222222bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb";
 
-    static string Json(params (string Tag, string Commit, string When, bool Pre, string[] Assets)[] releases)
+    private static string Json(params (string Tag, string Commit, string When, bool Pre, string[] Assets)[] releases)
     {
         var sb = new StringBuilder("[");
-        foreach (var r in releases)
+        foreach ((string Tag, string Commit, string When, bool Pre, string[] Assets) r in releases)
         {
             if (sb.Length > 1)
             {
@@ -26,7 +26,7 @@ public class UpdateFeedTests
         return sb.Append(']').ToString();
     }
 
-    static readonly IReadOnlyList<UpdateRelease> Feed = UpdateFeed.Parse(Json(
+    private static readonly IReadOnlyList<UpdateRelease> s_feed = UpdateFeed.Parse(Json(
         ("build-2222222", New, "2026-11-07T12:00:00Z", true, ["VitaSharp-0.1.0-build.g2222222-win-x64.zip", "VitaSharp-0.1.0-build.g2222222-win-x64-setup.exe", "SHA256SUMS.txt"]),
         ("v0.1.0", "3333333ccccccccccccccccccccccccccccccccc", "2026-11-05T12:00:00Z", false, ["VitaSharp-0.1.0-linux-x64.tar.gz", "SHA256SUMS.txt"]),
         ("build-1111111", Old, "2026-11-01T12:00:00Z", true, ["SHA256SUMS.txt"])));
@@ -36,30 +36,30 @@ public class UpdateFeedTests
     {
         var current = BuildIdentity.Parse("1.0.0+" + Old, DateTimeOffset.Parse("2026-11-01T11:50:00Z"));
         Assert.Equal("1111111", current.Display[^7..]);
-        Assert.Equal("build-2222222", UpdateFeed.FindUpdate(Feed, current, UpdateFeed.ChannelBuilds)?.Tag);
-        Assert.Equal("v0.1.0", UpdateFeed.FindUpdate(Feed, current, UpdateFeed.ChannelReleases)?.Tag);
+        Assert.Equal("build-2222222", UpdateFeed.FindUpdate(s_feed, current, UpdateFeed.ChannelBuilds)?.Tag);
+        Assert.Equal("v0.1.0", UpdateFeed.FindUpdate(s_feed, current, UpdateFeed.ChannelReleases)?.Tag);
     }
 
     [Fact]
     public void NoUpdateForTheNewestBuildOrNewerLocalBuild()
     {
-        Assert.Null(UpdateFeed.FindUpdate(Feed, BuildIdentity.Parse("1.0.0+" + New, DateTimeOffset.UtcNow), UpdateFeed.ChannelBuilds));
+        Assert.Null(UpdateFeed.FindUpdate(s_feed, BuildIdentity.Parse("1.0.0+" + New, DateTimeOffset.UtcNow), UpdateFeed.ChannelBuilds));
         // a commit that is not on the list (a local build) is compared by its build time
         var local = BuildIdentity.Parse("1.0.0+4444444ddddddddddddddddddddddddddddddddd", DateTimeOffset.Parse("2026-11-08T00:00:00Z"));
-        Assert.Null(UpdateFeed.FindUpdate(Feed, local, UpdateFeed.ChannelBuilds));
-        var older = local with
+        Assert.Null(UpdateFeed.FindUpdate(s_feed, local, UpdateFeed.ChannelBuilds));
+        BuildIdentity older = local with
         {
             Built = DateTimeOffset.Parse("2026-11-06T00:00:00Z")
         };
-        Assert.Equal("build-2222222", UpdateFeed.FindUpdate(Feed, older, UpdateFeed.ChannelBuilds)?.Tag);
+        Assert.Equal("build-2222222", UpdateFeed.FindUpdate(s_feed, older, UpdateFeed.ChannelBuilds)?.Tag);
         // the releases channel ignores builds: v0.1.0 is older than the running build
-        Assert.Null(UpdateFeed.FindUpdate(Feed, BuildIdentity.Parse("1.0.0+" + New, DateTimeOffset.UtcNow), UpdateFeed.ChannelReleases));
+        Assert.Null(UpdateFeed.FindUpdate(s_feed, BuildIdentity.Parse("1.0.0+" + New, DateTimeOffset.UtcNow), UpdateFeed.ChannelReleases));
     }
 
     [Fact]
     public void PicksThePlatformPackageAndReadsChecksums()
     {
-        var r = Feed[0];
+        UpdateRelease r = s_feed[0];
         Assert.Equal("VitaSharp-0.1.0-build.g2222222-win-x64.zip", UpdateFeed.PickPackage(r, "win-x64", ".zip")?.Name);
         Assert.Equal("VitaSharp-0.1.0-build.g2222222-win-x64-setup.exe", UpdateFeed.PickPackage(r, "win-x64", "-setup.exe")?.Name);
         Assert.Null(UpdateFeed.PickPackage(r, "linux-x64", ".tar.gz"));
@@ -73,15 +73,15 @@ public class UpdateFeedTests
     [Fact]
     public async Task DownloadsVerifiesAndAppliesFromLocalServer()
     {
-        var dir = Directory.CreateTempSubdirectory("vitasharp-update-");
+        DirectoryInfo dir = Directory.CreateTempSubdirectory("vitasharp-update-");
         try
         {
             // the package: VitaSharp/ with the new executable and a new file
-            var stage = Directory.CreateDirectory(Path.Combine(dir.FullName, "stage", "VitaSharp"));
+            DirectoryInfo stage = Directory.CreateDirectory(Path.Combine(dir.FullName, "stage", "VitaSharp"));
             File.WriteAllText(Path.Combine(stage.FullName, "VitaSharp.exe"), "new");
             Directory.CreateDirectory(Path.Combine(stage.FullName, "ffmpeg"));
             File.WriteAllText(Path.Combine(stage.FullName, "ffmpeg", "lib.dll"), "lib");
-            var served = Directory.CreateDirectory(Path.Combine(dir.FullName, "served"));
+            DirectoryInfo served = Directory.CreateDirectory(Path.Combine(dir.FullName, "served"));
             string zipName = "VitaSharp-0.1.0-build.g2222222-win-x64.zip";
             ZipFile.CreateFromDirectory(stage.FullName, Path.Combine(served.FullName, zipName), CompressionLevel.Fastest, includeBaseDirectory: true);
             File.WriteAllText(Path.Combine(served.FullName, "SHA256SUMS.txt"), $"{UpdateFeed.Sha256(Path.Combine(served.FullName, zipName))}  {zipName}\n");
@@ -124,11 +124,11 @@ public class UpdateFeedTests
                 }
             });
 
-            using var http = UpdateFeed.CreateClient("test");
-            var releases = await UpdateFeed.FetchAsync(http, new Uri(baseUrl + "releases"));
-            var release = UpdateFeed.FindUpdate(releases, BuildIdentity.Parse("1.0.0+" + Old, DateTimeOffset.Parse("2026-11-01T00:00:00Z")), UpdateFeed.ChannelBuilds);
+            using HttpClient http = UpdateFeed.CreateClient("test");
+            IReadOnlyList<UpdateRelease> releases = await UpdateFeed.FetchAsync(http, new Uri(baseUrl + "releases"));
+            UpdateRelease? release = UpdateFeed.FindUpdate(releases, BuildIdentity.Parse("1.0.0+" + Old, DateTimeOffset.Parse("2026-11-01T00:00:00Z")), UpdateFeed.ChannelBuilds);
             Assert.NotNull(release);
-            var asset = UpdateFeed.PickPackage(release, "win-x64", ".zip")!;
+            UpdateAsset asset = UpdateFeed.PickPackage(release, "win-x64", ".zip")!;
             string file = Path.Combine(dir.FullName, "download", asset.Name);
             double last = 0;
             await UpdateFeed.DownloadAsync(http, asset, file, p => last = p, default);
@@ -143,7 +143,7 @@ public class UpdateFeedTests
             listener.Stop();
 
             // the installation: an old executable, a file the package does not have, and a data folder elsewhere
-            var install = Directory.CreateDirectory(Path.Combine(dir.FullName, "install"));
+            DirectoryInfo install = Directory.CreateDirectory(Path.Combine(dir.FullName, "install"));
             File.WriteAllText(Path.Combine(install.FullName, "VitaSharp.exe"), "old");
             File.WriteAllText(Path.Combine(install.FullName, "keep.txt"), "mine");
             string root = UpdateInstaller.Extract(file, Path.Combine(dir.FullName, "package"));
