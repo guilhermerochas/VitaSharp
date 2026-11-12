@@ -1746,6 +1746,14 @@ Lista de itens futuros do VitaSharp. Marque `[x]` quando um item for concluído.
 
 ## Bugs em aberto
 
+- [ ] Achados do jogo de teste VitaSDK (repositório local `VitaSharp-testgame`, 11/11/2026; 182 OK / 3 FAIL / 2 SKIP
+  no VitaSharp sem janela). 1) Texturas ETC1 não são decodificadas: "texture base format 0x84000000 is not supported:
+  treated as RGBA8", todos os blocos saem 0. 2) `U2U10U10U10` na ordem `_ABGR` sai com vermelho e azul trocados:
+  `Formats.cs` usa `A2R10G10B10UnormPack32`, e a convenção `_ABGR` do GXM põe o vermelho nos bits baixos, como em
+  `U8U8U8U8_ABGR` -> `R8G8B8A8` (provável `A2B10G10R10`; confirmar no console). 3) A primeira espera de vblank depois
+  do boot às vezes demora (+51 vblanks em 861 ms, esperado 30 em ~500 ms) enquanto os primeiros quadros compilam
+  shaders e pipelines: o tempo de vblank do jogo não pode depender da compilação no host. Também falta cobrir
+  PVRTC, YUV e cube no jogo de teste.
 - [ ] Teste instável sob carga: `ThreadMgrHleTests.TimerEventsFireAndCancel` (11/11/2026) falhou 3 de 5 vezes
   isolado com o processador em 100% (7 agentes). Ele usa um timer de 20 ms e espera que um poll logo depois do wait
   não veja o evento: com a máquina carregada passa mais de um período entre as duas chamadas. Não veio da refatoração
