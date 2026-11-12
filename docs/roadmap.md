@@ -878,11 +878,16 @@ Lista de itens futuros do VitaSharp. Marque `[x]` quando um item for concluído.
   NPPA00120, já instalado pelo usuário.
   No shell real o jogo também não aparece: cada função do HLE tem a sua lista fixa de pastas de aplicativos
   (`AppMgrShell.cs` ~289 e ~339 só `vs0:app/` e `ux0:app/`; `IoFileMgr.cs` ~62; a Biblioteca só `ux0:app`). Correção
-  genérica (decisão do usuário, 12/11/2026): UMA fonte que descreve onde o firmware guarda os aplicativos (vs0:app,
-  ux0:app, gro0:app, grw0:app, ux0:psm, com o tipo de cada uma) usada por toda função que lista, procura ou abre um
-  aplicativo, e a base de aplicativos do sistema (`app.db`) como resposta sempre que der, como o shell real; sem
-  listas de pastas soltas. Um título de PSM abre pelo runtime `PCSI00011` com aquele jogo, como o console. Teste:
-  um título de cada origem listado e aberto pelo mesmo caminho.
+  genérica (decisão do usuário, 12/11/2026): UMA fonte que descreve tudo o que o firmware guarda e onde, com o tipo
+  de cada coisa: jogos/apps de Vita (ux0:app, gro0:app/grw0:app do cartão), apps do sistema (vs0:app), jogos de PSP
+  e PSone Classics (ux0:pspemu/PSP/GAME, pelo emulador de PSP do sistema) e os saves deles (ux0:pspemu/PSP/SAVEDATA),
+  títulos de PSM (ux0:psm, RO/RW), atualizações (ux0:patch, grw0:patch), DLC (ux0:addcont), temas (ux0:theme),
+  licenças (ux0:license, RO/License do PSM), metadados de ícone/LiveArea (ux0:appmeta, ur0:appmeta), saves de Vita
+  (ux0:user/00/savedata) e mídia (ux0:music, ux0:video, ux0:picture); conferir cada caminho na documentação pública
+  do firmware antes de implementar. Todo o código consulta só ela (HLE, shell, Biblioteca do launcher, instaladores
+  de Vita/PSP/PSM, gerenciador de saves), e a base do sistema (`app.db`) responde sempre que der, como o shell real;
+  sem listas de pastas soltas. Cada tipo abre pelo caminho do console (PSM pelo runtime `PCSI00011`, PSP/PSone pelo
+  emulador de PSP do sistema). Teste: um item de cada tipo listado e aberto pelo mesmo caminho.
 - [ ] PlayStation Mobile (pedido do usuário, 11/11/2026; o runtime `PCSI00011` "PSM Runtime Package" 01.00, SDK
   2.00, já está instalado pelo usuário com a sua licença). 1) Rodar o runtime no VitaSharp sem janela e levantar o
   que o Mono dele usa e o que falta (HLE genérico do que faltar, nada específico do PSM). 2) Instalador de `.pkg` de
