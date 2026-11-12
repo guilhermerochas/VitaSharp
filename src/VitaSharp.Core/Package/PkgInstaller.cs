@@ -20,9 +20,15 @@ public sealed record PkgInfo(PkgKind Kind, string ContentId, string TitleId, str
 public sealed class LicenseRequiredException(string message) : InvalidOperationException(message);
 
 /// <summary>Installs a retail .pkg into the virtual ux0: a PS Vita package with its NoNpDrm license (work.bin / .rif /
-/// zRIF), or a PSP/PSone package, which needs none (<see cref="PspPkgInstaller"/>).</summary>
+/// zRIF), a PlayStation Mobile package with its PSM license (<see cref="PsmPkgInstaller"/>), or a PSP/PSone package,
+/// which needs none (<see cref="PspPkgInstaller"/>).</summary>
 public static class PkgInstaller
 {
+    /// <summary>The license file name of the emulated unit's account (account 0), as sceNpDrmGetRifName and
+    /// scePsmDrmGetRifName give it: the name a license is installed under where the console names it by account
+    /// (ux0:psm/&lt;id&gt;/RO/License, ux0:license/app/&lt;id&gt;).</summary>
+    public const string AccountRifName = "6488b73b912a753a492e2714e9b38bc7.rif";
+
     /// <summary>Reads what <paramref name="pkgPath"/> is (kind, IDs, title) without installing it.</summary>
     public static PkgInfo Inspect(string pkgPath) => Inspect(new FileStream(pkgPath, FileMode.Open, FileAccess.Read, FileShare.Read, 1 << 16));
 
@@ -132,8 +138,7 @@ public static class PkgInstaller
         }
         if (kind == PkgKind.VitaPsm)
         {
-            reader.Dispose();
-            throw new NotSupportedException("PlayStation Mobile packages are not supported yet");
+            return PsmPkgInstaller.Install(reader, license, ux0Root, log, progress, cancellationToken);
         }
         if (license.Length < 0x60)
         {

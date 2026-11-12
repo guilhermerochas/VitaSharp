@@ -228,7 +228,7 @@ public static class PspPkgInstaller
         pkg.Entries.FirstOrDefault(e => !e.IsDirectory && e.Name.Equals(name, StringComparison.OrdinalIgnoreCase));
 
     /// <summary>A path under <paramref name="root"/> from a package item name; names that leave it are refused.</summary>
-    private static string Combine(string root, string rel)
+    internal static string Combine(string root, string rel)
     {
         string[] parts = rel.Split('/', StringSplitOptions.RemoveEmptyEntries);
         if (parts.Length == 0 || parts.Any(p => p is "." or ".." || p.IndexOfAny(Path.GetInvalidFileNameChars()) >= 0 || p.Contains(':')))
@@ -240,7 +240,7 @@ public static class PspPkgInstaller
     }
 
     /// <summary>A title ID usable as a folder name (letters and digits, 4-16 chars), or null.</summary>
-    private static string? SafeId(string id)
+    internal static string? SafeId(string id)
     {
         id = id.Trim();
         return id.Length is >= 4 and <= 16 && id.All(char.IsAsciiLetterOrDigit) ? id.ToUpperInvariant() : null;

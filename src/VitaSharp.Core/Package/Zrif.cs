@@ -50,7 +50,7 @@ public static class Zrif
 
     private static string Pad(string s) => s.Length % 4 == 0 ? s : s + new string('=', 4 - s.Length % 4);
 
-    /// <summary>Decodes a zRIF into the 512-byte .rif; throws <see cref="InvalidDataException"/> with a readable reason.</summary>
+    /// <summary>Decodes a zRIF into the .rif (512 bytes, or 1024 for a PlayStation Mobile license); throws <see cref="InvalidDataException"/> with a readable reason.</summary>
     public static byte[] Decode(string zrif)
     {
         byte[] raw;
@@ -130,9 +130,10 @@ public static class Zrif
             throw new InvalidDataException("zRIF is corrupted (wrong checksum)");
         }
 
-        if (rif.Length != RifSize)
+        if (rif.Length is not (RifSize or PsmPkgInstaller.RifSize))
         {
-            throw new InvalidDataException($"zRIF holds {rif.Length} bytes, not a {RifSize}-byte license");
+            throw new InvalidDataException($"zRIF holds {rif.Length} bytes, not a {RifSize}-byte (PS Vita) or " +
+                                           $"{PsmPkgInstaller.RifSize}-byte (PlayStation Mobile) license");
         }
 
         return rif;
