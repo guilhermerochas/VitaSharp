@@ -80,12 +80,12 @@ public sealed partial class MainWindow
     {
         Window? dlg = null;
         bool busy = false;
-        var status = _k.Wrap(S.UpdateDataSafe, 12.5, P.Muted);
+        var status = _k.Wrap(S.UpdateDataSafe, 12.5, static p => p.Muted);
         var progress = new Border { IsVisible = false, Child = _k.Bar(0, 6) };
         var notes = new ScrollViewer
         {
             MaxHeight = 280,
-            Content = _k.Wrap(ReleaseNotes(release.Body), 12.5, P.TextSoft),
+            Content = _k.Wrap(ReleaseNotes(release.Body), 12.5, static p => p.TextSoft),
             HorizontalScrollBarVisibility = Avalonia.Controls.Primitives.ScrollBarVisibility.Disabled,
         };
         var skip = _k.Secondary(S.SkipVersion, null, () =>
@@ -117,7 +117,7 @@ public sealed partial class MainWindow
             if (IsRunning)
             {
                 status.Text = S.UpdateCloseGame;
-                status.Foreground = Kit.B(P.Danger);
+                status.Foreground = Kit.B(static p => p.Danger);
                 return;
             }
             busy = true;
@@ -150,7 +150,7 @@ public sealed partial class MainWindow
                 now!.IsEnabled = skip.IsEnabled = later.IsEnabled = true;
                 progress.IsVisible = false;
                 status.Text = S.UpdateFailed(e.Message);
-                status.Foreground = Kit.B(P.Danger);
+                status.Foreground = Kit.B(static p => p.Danger);
                 AppendLog($"Update failed: {e.Message}");
             }
         }, 40, 150);
@@ -162,14 +162,14 @@ public sealed partial class MainWindow
         var panel = _k.VStack(12,
             _k.HStack(10, _k.IconChip("download", 40), _k.Heading(S.UpdateAvailable, 20).Also(h => h.VerticalAlignment = VerticalAlignment.Center)),
             _k.Text(S.UpdateFromTo(Updater.Current.Display, next), 14, FontWeight.SemiBold),
-            _k.Text(S.UpdatePublished(release.Published), 12.5, color: P.Muted),
+            _k.Text(S.UpdatePublished(release.Published), 12.5, color: static p => p.Muted),
             _k.Text(S.UpdateNotes, 13.5, FontWeight.SemiBold).Also(t => t.Margin = new Thickness(0, 6, 0, 0)),
             new Border
             {
-                Background = Kit.B(P.Background),
+                Background = Kit.B(static p => p.Background),
                 CornerRadius = new CornerRadius(12),
                 Padding = new Thickness(14, 10),
-                BorderBrush = Kit.B(P.Border),
+                BorderBrush = Kit.B(static p => p.Border),
                 BorderThickness = new Thickness(1),
                 Child = notes,
             },

@@ -16,18 +16,22 @@ namespace VitaSharp.Desktop.Launcher;
 /// <summary>
 /// The launcher (docs/notes/desktop-launcher-design.md): a fixed sidebar (the Vita system in one click, the pages, the
 /// install in progress, firmware state, theme) beside the current page: library, game page, Vita system, trophies,
-/// captures, install queue or settings. Pages are built from <see cref="Kit"/> in the current <see cref="Palette"/> and
-/// rebuilt when the theme changes. Games run as child processes ("run"), the Vita system as "boot-shell".
+/// captures, install queue or settings. Pages are built from <see cref="Kit"/>, every colour bound to its place in
+/// the <see cref="Palette"/>: a theme switch re-colours them (<see cref="ThemeBindings"/>) and builds nothing again. Games run as child processes ("run"), the Vita system as "boot-shell".
 /// </summary>
 public sealed partial class MainWindow : Window
 {
     public const string PageLibrary = "library", PageGame = "game", PageSystem = "system", PageTrophies = "trophies",
         PageCaptures = "captures", PageInstall = "install", PageSettings = "settings";
 
+    /// <summary>The text drawn over cover art (badges, glass buttons): the same in both themes, never re-coloured.</summary>
+    internal static readonly Color OverCoverText = Color.Parse("#E8ECF2");
+    /// <summary>The dark glass under text on cover art: the same in both themes, never re-coloured.</summary>
+    internal static readonly Color OverCoverShade = Color.Parse("#0B0E13");
+
     readonly LauncherSettings _settings;
     readonly bool _saveSettings;
-    Kit _k = new(Palette.Current);
-    Palette P => _k.P;
+    readonly Kit _k = new();
 
     List<GameEntry> _all = new();
     Dictionary<string, PlayRecord> _play = new();
@@ -126,7 +130,6 @@ public sealed partial class MainWindow : Window
         AddHandler(DragDrop.DropEvent, OnDrop);
         DragDrop.SetAllowDrop(this, true);
         AddHandler(KeyDownEvent, OnKey, RoutingStrategies.Tunnel);
-        LauncherApp.PaletteChanged += OnPaletteChanged;
 
         Refresh(rebuild: false);
         RebuildAll();
@@ -155,42 +158,27 @@ public sealed partial class MainWindow : Window
         }
     }
 
-    /// <summary>The palette changed (a theme picked, or the system's while following it): one rebuild, at once on the
-    /// interface thread.</summary>
-    void OnPaletteChanged()
-    {
-        if (Dispatcher.UIThread.CheckAccess())
-        {
-            RebuildAll();
-        }
-        else
-        {
-            Dispatcher.UIThread.Post(RebuildAll);
-        }
-    }
-
-    /// <summary>How many times the whole window was drawn again (the tests count the theme switch).</summary>
+    /// <summary>How many times the whole window was drawn again (the tests check that a theme switch draws nothing again).</summary>
     internal int Rebuilds { get; private set; }
 
-    /// <summary>Rebuilds every part in the current palette (theme change).</summary>
+    /// <summary>Rebuilds every part (interface language change; a theme switch only re-colours, see <see cref="SetTheme"/>).</summary>
     void RebuildAll()
     {
         Rebuilds++;
         _settingsPage?.SaveControls();
-        // panels drawn with the old palette are made again (the firmware panel keeps a running installation)
+        // panels drawn in the old language are made again (the firmware panel keeps a running installation)
         if (_firmwarePanel is { Busy: false })
         {
             _firmwarePanel = null;
         }
 
-        _k = new Kit(Palette.Current);
-        Background = Kit.B(P.Background);
-        _sidebarHost.Background = Kit.B(P.Sidebar);
-        _sidebarHost.BorderBrush = Kit.B(P.Border);
+        Background = Kit.B(static p => p.Background);
+        _sidebarHost.Background = Kit.B(static p => p.Sidebar);
+        _sidebarHost.BorderBrush = Kit.B(static p => p.Border);
         _sidebarHost.BorderThickness = new Thickness(0, 0, 1, 0);
-        _logPanel.Background = Kit.B(P.Surface);
-        _log.Background = Kit.B(P.Surface);
-        _log.Foreground = Kit.B(P.TextSoft);
+        _logPanel.Background = Kit.B(static p => p.Surface);
+        _log.Background = Kit.B(static p => p.Surface);
+        _log.Foreground = Kit.B(static p => p.TextSoft);
         BuildStatusBar();
         RebuildSidebar();
         ShowPage();
@@ -258,7 +246,7 @@ public sealed partial class MainWindow : Window
         }
 
         bool fw = FirmwareInstalled;
-        var fwRow = _k.HStack(8, _k.Dot(fw ? P.Ok : P.Warn), _k.Text(fw ? S.FirmwareInstalledShort(FirmwareVersion) : S.FirmwareMissingShort, 12.5, color: P.Muted));
+        var fwRow = _k.HStack(8, _k.Dot(p => fw ? p.Ok : p.Warn), _k.Text(fw ? S.FirmwareInstalledShort(FirmwareVersion) : S.FirmwareMissingShort, 12.5, color: static p => p.Muted));
         fwRow.Margin = new Thickness(6, 2, 0, 0);
         bottom.Children.Add(Kit.Click(fwRow, () => Navigate(PageSystem), S.FirmwareTip));
         int theme = _settings.UiTheme switch
@@ -279,7 +267,7 @@ public sealed partial class MainWindow : Window
         nav.Children.Add(NavItem("image", S.Captures, _page == PageCaptures, () => Navigate(PageCaptures)));
         int pending = _jobs.Count(j => j.State is JobState.Waiting or JobState.Running);
         nav.Children.Add(NavItem("download", S.InstallNav, _page == PageInstall, () => Navigate(PageInstall), pending > 0 ? pending.ToString(S.Culture) : null));
-        nav.Children.Add(new Border { Height = 1, Background = Kit.B(P.Border), Margin = new Thickness(8, 12) });
+        nav.Children.Add(new Border { Height = 1, Background = Kit.B(static p => p.Border), Margin = new Thickness(8, 12) });
         nav.Children.Add(NavItem("settings", S.Settings, _page == PageSettings, () => Navigate(PageSettings)));
         s.Children.Add(new ScrollViewer { Content = nav, VerticalScrollBarVisibility = Avalonia.Controls.Primitives.ScrollBarVisibility.Auto });
         _sidebarHost.Child = s;
@@ -288,11 +276,11 @@ public sealed partial class MainWindow : Window
     Control NavItem(string icon, string text, bool selected, Action open, string? count = null)
     {
         var g = new Grid { ColumnDefinitions = new ColumnDefinitions("Auto,*,Auto") };
-        g.Children.Add(new Border { Margin = new Thickness(0, 0, 12, 0), Child = _k.Icon(icon, 19, selected ? P.Accent : P.Muted) });
-        g.Children.Add(Kit.At(_k.Text(text, 14, selected ? FontWeight.SemiBold : FontWeight.Medium, selected ? P.Text : P.TextSoft), col: 1));
+        g.Children.Add(new Border { Margin = new Thickness(0, 0, 12, 0), Child = _k.Icon(icon, 19, p => selected ? p.Accent : p.Muted) });
+        g.Children.Add(Kit.At(_k.Text(text, 14, selected ? FontWeight.SemiBold : FontWeight.Medium, p => selected ? p.Text : p.TextSoft), col: 1));
         if (count != null)
         {
-            g.Children.Add(Kit.At(_k.Text(count, 12, FontWeight.Medium, P.Muted), col: 2));
+            g.Children.Add(Kit.At(_k.Text(count, 12, FontWeight.Medium, static p => p.Muted), col: 2));
         }
 
         return Kit.Click(new Border
@@ -301,8 +289,8 @@ public sealed partial class MainWindow : Window
             Padding = new Thickness(12, 0),
             CornerRadius = new CornerRadius(12),
             Child = g,
-            Background = selected ? Kit.B(P.Highlight) : Brushes.Transparent,
-            BorderBrush = selected ? Kit.B(P.HighlightBorder) : Brushes.Transparent,
+            Background = selected ? Kit.B(static p => p.Highlight) : Brushes.Transparent,
+            BorderBrush = selected ? Kit.B(static p => p.HighlightBorder) : Brushes.Transparent,
             BorderThickness = new Thickness(1),
         }, open);
     }
@@ -313,7 +301,7 @@ public sealed partial class MainWindow : Window
         // while the Vita system runs, the button goes to its window
         bool shellRunning = _running != null && _runningId == "shell";
         bool enabled = ShellInstalled && (_running == null || shellRunning);
-        var fg = enabled ? P.OnAccent : P.Faint;
+        Func<Palette, Color> fg = p => enabled ? p.OnAccent : p.Faint;
         var g = new Grid { ColumnDefinitions = new ColumnDefinitions("Auto,*") };
         g.Children.Add(new Border
         {
@@ -322,12 +310,12 @@ public sealed partial class MainWindow : Window
             CornerRadius = new CornerRadius(15),
             Margin = new Thickness(0, 0, 10, 0),
             VerticalAlignment = VerticalAlignment.Center,
-            Background = Kit.B(enabled ? P.OnAccent : P.Border, enabled ? 0.16 : 1),
+            Background = Kit.B(p => enabled ? p.OnAccent : p.Border, enabled ? 0.16 : 1),
             Child = new Border { Margin = new Thickness(2, 0, 0, 0), Child = _k.Icon("play", 13, fg, fill: true) },
         });
         var texts = _k.VStack(0, _k.Text(S.OpenVitaSystem, 14, FontWeight.SemiBold, fg),
-            enabled ? _k.Text(shellRunning ? S.GoToGame : S.ShortcutAnywhere, 11, FontWeight.Medium, P.OnAccent).Also(x => x.Opacity = 0.75)
-                : _k.Text(!ShellInstalled ? S.InstallFirmwareFirst : S.GameRunningShort, 11, color: P.Faint));
+            enabled ? _k.Text(shellRunning ? S.GoToGame : S.ShortcutAnywhere, 11, FontWeight.Medium, static p => p.OnAccent).Also(x => x.Opacity = 0.75)
+                : _k.Text(!ShellInstalled ? S.InstallFirmwareFirst : S.GameRunningShort, 11, color: static p => p.Faint));
         texts.VerticalAlignment = VerticalAlignment.Center;
         g.Children.Add(Kit.At(texts, col: 1));
         var visual = new Border
@@ -337,12 +325,18 @@ public sealed partial class MainWindow : Window
             CornerRadius = new CornerRadius(16),
             Child = g,
             Background = enabled
-                ? new LinearGradientBrush { StartPoint = Kit.Rel(0, 0), EndPoint = Kit.Rel(1, 1), GradientStops = { new GradientStop(P.Accent, 0), new GradientStop(P.Accent2, 1) } }
-                : Kit.B(P.Surface),
-            BorderBrush = Kit.B(enabled ? Colors.Transparent : P.Border),
+                ? new LinearGradientBrush { StartPoint = Kit.Rel(0, 0), EndPoint = Kit.Rel(1, 1), GradientStops = { Kit.Stop(static p => p.Accent, 255, 0), Kit.Stop(static p => p.Accent2, 255, 1) } }
+                : Kit.B(static p => p.Surface),
+            BorderBrush = enabled ? Kit.Fixed(Colors.Transparent) : Kit.B(static p => p.Border),
             BorderThickness = new Thickness(1),
-            BoxShadow = enabled ? BoxShadows.Parse(P.Dark ? "0 8 24 0 #406E9BFF" : "0 8 20 0 #403767DB") : default,
         };
+        if (enabled)
+        {
+            BoxShadows darkGlow = BoxShadows.Parse("0 8 24 0 #406E9BFF");
+            BoxShadows lightGlow = BoxShadows.Parse("0 8 20 0 #403767DB");
+            ThemeBindings.Bind(visual, (target, palette) => target.BoxShadow = palette.Dark ? darkGlow : lightGlow);
+        }
+
         return Kit.Click(visual, LaunchSystem, shellRunning ? S.GoToGameTip : S.OpenVitaSystemTip, enabled);
     }
 
@@ -353,19 +347,19 @@ public sealed partial class MainWindow : Window
             return null;
         }
 
-        var head = _k.HStack(8, _k.Dot(P.Ok), _k.Text(S.RunningNow, 12.5, FontWeight.SemiBold, P.Ok));
+        var head = _k.HStack(8, _k.Dot(static p => p.Ok), _k.Text(S.RunningNow, 12.5, FontWeight.SemiBold, static p => p.Ok));
         // the name and "Ir para o jogo" bring the game's window to the front (it runs in its own process and window)
         var name = Kit.Click(_k.Text(_runningTitle ?? "", 13.5, FontWeight.Medium), GoToGame, S.GoToGameTip);
         name.HorizontalAlignment = HorizontalAlignment.Left;
         var go = _k.Primary(S.GoToGame, "monitor", GoToGame, 34, 0, tip: S.GoToGameTip);
         go.HorizontalAlignment = HorizontalAlignment.Stretch;
-        var stop = _k.Secondary(_stopAsked ? S.ForceStop : S.Stop, "stop", StopRunning, 34, P.Danger);
+        var stop = _k.Secondary(_stopAsked ? S.ForceStop : S.Stop, "stop", StopRunning, 34, static p => p.Danger);
         stop.HorizontalAlignment = HorizontalAlignment.Stretch;
         var body = _k.VStack(8, head, name, go, stop);
         return new Border
         {
-            Background = Kit.B(P.Surface),
-            BorderBrush = Kit.B(P.Border),
+            Background = Kit.B(static p => p.Surface),
+            BorderBrush = Kit.B(static p => p.Border),
             BorderThickness = new Thickness(1),
             CornerRadius = new CornerRadius(16),
             Padding = new Thickness(14, 12),
@@ -373,13 +367,16 @@ public sealed partial class MainWindow : Window
         };
     }
 
-    /// <summary>A theme picked: the window is drawn again once, by the palette change it causes
-    /// (<see cref="OnPaletteChanged"/>); picking the theme already shown draws nothing again.</summary>
+    /// <summary>A theme picked (in the sidebar or in Settings): the palette change re-colours every brush the window
+    /// shows (<see cref="ThemeBindings.Apply"/>) and no page is built again; only the two theme controls are, so each
+    /// shows the choice made in the other.</summary>
     internal void SetTheme(string theme)
     {
         _settings.UiTheme = theme;
         SaveSettings();
         LauncherApp.ApplyTheme(theme);
+        RebuildSidebar();
+        _settingsPage?.ShowTheme();
     }
 
     // ------------------------------------------------------------------ status bar and log
@@ -387,11 +384,11 @@ public sealed partial class MainWindow : Window
     void BuildStatusBar()
     {
         _statusBar.Children.Clear();
-        _statusBar.Background = Kit.B(P.Sidebar);
-        _status.Foreground = Kit.B(P.Muted);
+        _statusBar.Background = Kit.B(static p => p.Sidebar);
+        _status.Foreground = Kit.B(static p => p.Muted);
         _status.FontSize = 12;
         _status.Margin = new Thickness(16, 0);
-        var log = Kit.Click(_k.HStack(6, _k.Icon("terminal", 14, P.Muted), _k.Text(_logPanel.IsVisible ? S.HideLog : S.ShowLog, 12, FontWeight.Medium, P.TextSoft))
+        var log = Kit.Click(_k.HStack(6, _k.Icon("terminal", 14, static p => p.Muted), _k.Text(_logPanel.IsVisible ? S.HideLog : S.ShowLog, 12, FontWeight.Medium, static p => p.TextSoft))
             .Also(h => h.VerticalAlignment = VerticalAlignment.Center), ToggleLog);
         log.Margin = new Thickness(0, 7, 16, 7);
         DockPanel.SetDock(log, Dock.Right);
@@ -768,7 +765,6 @@ public sealed partial class MainWindow : Window
         }
 
         _shell?.Dispose();
-        LauncherApp.PaletteChanged -= OnPaletteChanged;
         base.OnClosing(e);
     }
 
@@ -824,14 +820,14 @@ public sealed partial class MainWindow : Window
         var shell = EnsureShell();
         Detach(shell);
         _overlay.Children.Clear();
-        _overlay.Background = Kit.B(Colors.Black, 0.6);
+        _overlay.Background = Kit.Fixed(Colors.Black, 0.6);
         var frame = new Border
         {
             Child = shell,
             CornerRadius = new CornerRadius(22),
             ClipToBounds = true,
             Margin = new Thickness(60, 40),
-            BorderBrush = Kit.B(P.BorderStrong),
+            BorderBrush = Kit.B(static p => p.BorderStrong),
             BorderThickness = new Thickness(1),
             BoxShadow = BoxShadows.Parse("0 24 60 0 #66000000"),
         };
@@ -872,7 +868,7 @@ public sealed partial class MainWindow : Window
     {
         var ok = _k.Primary(S.Ok, null, () => { }, 40, 90);
         ok.HorizontalAlignment = HorizontalAlignment.Right;
-        var panel = _k.VStack(16, _k.Heading(title, 19), _k.Wrap(message, 13.5, P.TextSoft), ok);
+        var panel = _k.VStack(16, _k.Heading(title, 19), _k.Wrap(message, 13.5, static p => p.TextSoft), ok);
         panel.Margin = new Thickness(24);
         var dlg = Dialog(panel, 480);
         ok.Click += (_, _) => dlg.Close();
@@ -883,30 +879,33 @@ public sealed partial class MainWindow : Window
     {
         bool result = false;
         var dlg = (Window?)null;
-        var yes = danger ? _k.Secondary(yesText ?? S.Yes, null, () => { result = true; dlg?.Close(); }, 40, P.Danger)
+        var yes = danger ? _k.Secondary(yesText ?? S.Yes, null, () => { result = true; dlg?.Close(); }, 40, static p => p.Danger)
                          : _k.Primary(yesText ?? S.Yes, null, () => { result = true; dlg?.Close(); }, 40, 90);
         var no = _k.Secondary(S.No, null, () => dlg?.Close(), 40);
         var buttons = _k.HStack(8, no, yes);
         buttons.HorizontalAlignment = HorizontalAlignment.Right;
-        var panel = _k.VStack(20, _k.Wrap(message, 14, P.Text), buttons);
+        var panel = _k.VStack(20, _k.Wrap(message, 14, static p => p.Text), buttons);
         panel.Margin = new Thickness(24);
         dlg = Dialog(panel, 440);
         await dlg.ShowDialog(this);
         return result;
     }
 
-    Window Dialog(Control content, double width) => new()
+    Window Dialog(Control content, double width)
     {
-        Title = "VitaSharp",
-        Width = width,
-        SizeToContent = SizeToContent.Height,
-        CanResize = false,
-        Content = content,
-        WindowStartupLocation = WindowStartupLocation.CenterOwner,
-        Background = Kit.B(P.Surface),
-        FontFamily = Kit.Inter,
-        RequestedThemeVariant = P.Dark ? Avalonia.Styling.ThemeVariant.Dark : Avalonia.Styling.ThemeVariant.Light,
-    };
+        Window dialog = new()
+        {
+            Title = "VitaSharp",
+            Width = width,
+            SizeToContent = SizeToContent.Height,
+            CanResize = false,
+            Content = content,
+            WindowStartupLocation = WindowStartupLocation.CenterOwner,
+            Background = Kit.B(static p => p.Surface),
+            FontFamily = Kit.Inter,
+        };
+        return ThemeBindings.Bind(dialog, static (target, palette) => target.RequestedThemeVariant = palette.Dark ? Avalonia.Styling.ThemeVariant.Dark : Avalonia.Styling.ThemeVariant.Light);
+    }
 
     static void OpenPath(string path)
     {

@@ -32,9 +32,9 @@ public sealed partial class MainWindow
                 EndPoint = Kit.Rel(0, 1),
                 GradientStops =
                 {
-                    new GradientStop(Color.FromArgb(70, P.Scrim.R, P.Scrim.G, P.Scrim.B), 0),
-                    new GradientStop(Color.FromArgb(150, P.Scrim.R, P.Scrim.G, P.Scrim.B), 0.45),
-                    new GradientStop(P.Background, 1),
+                    Kit.Stop(static p => p.Scrim, 70, 0),
+                    Kit.Stop(static p => p.Scrim, 150, 0.45),
+                    Kit.Stop(static p => p.Background, 255, 1),
                 },
             },
         });
@@ -68,16 +68,16 @@ public sealed partial class MainWindow
         // the running game's icon goes to its window, like "Ir para o jogo"
         id.Children.Add(IsRunningGame(g) ? Kit.Click(icon, GoToGame, S.GoToGameTip).Also(b => b.VerticalAlignment = VerticalAlignment.Bottom) : icon);
         var info = new StackPanel { Spacing = 8, Margin = new Thickness(28, 0, 0, 0), VerticalAlignment = VerticalAlignment.Bottom };
-        var badges = _k.HStack(8, _k.Badge(g.Category == "gd" ? S.CategoryGame : g.CategoryText, P.Accent), _k.Badge(g.Region, P.TextSoft));
+        var badges = _k.HStack(8, _k.Badge(g.Category == "gd" ? S.CategoryGame : g.CategoryText, static p => p.Accent), _k.Badge(g.Region, static p => p.TextSoft));
         if (_runningGame?.TitleId == g.TitleId)
         {
-            badges.Children.Add(_k.Badge(S.RunningBadge, P.Ok));
+            badges.Children.Add(_k.Badge(S.RunningBadge, static p => p.Ok));
         }
 
         info.Children.Add(badges);
         info.Children.Add(_k.Heading(g.Title, 34).Also(t => { t.TextWrapping = TextWrapping.Wrap; t.MaxHeight = 90; }));
         string installed = Directory.Exists(g.Path) ? S.InstalledOn(Directory.GetCreationTime(g.Path)) : "";
-        info.Children.Add(_k.Text(string.Join("  \u00B7  ", new[] { g.TitleId, g.Version.Length > 0 ? "v" + g.Version : "", g.SizeText, installed }.Where(x => x.Length > 0)), 13.5, color: P.Muted));
+        info.Children.Add(_k.Text(string.Join("  \u00B7  ", new[] { g.TitleId, g.Version.Length > 0 ? "v" + g.Version : "", g.SizeText, installed }.Where(x => x.Length > 0)), 13.5, color: static p => p.Muted));
         var buttons = _k.HStack(10, PlayButton(g, 50, 170), _k.Secondary(S.OpenLiveArea, "vita", () => OpenLiveArea(g), 50, tip: S.LiveAreaTip));
         if (LatestState(g) is { } latest)
         {
@@ -96,7 +96,7 @@ public sealed partial class MainWindow
         var stats = new UniformGrid { Columns = 4, Margin = new Thickness(0, 26, -14, 0) };
         stats.Children.Add(Stat("clock", S.TimePlayed, play != null ? S.Duration(play.Seconds) : S.NeverPlayed));
         stats.Children.Add(Stat("zap", S.LastPlayed, play != null ? S.When(play.LastPlayedUtc.ToLocalTime()) : "\u2014"));
-        stats.Children.Add(Stat("trophy", S.Trophies, total > 0 ? $"{got} / {total}" : S.NoTrophies, P.Gold));
+        stats.Children.Add(Stat("trophy", S.Trophies, total > 0 ? $"{got} / {total}" : S.NoTrophies, static p => p.Gold));
         stats.Children.Add(Stat("save", S.SaveStatesTitle, states.Count.ToString(S.Culture)));
         page.Children.Add(stats);
 
@@ -175,7 +175,7 @@ public sealed partial class MainWindow
 
     Button GlassButton(string icon, string? text, Action click, string? tip = null)
     {
-        var row = _k.HStack(6, _k.Icon(icon, 18, Color.Parse("#E8ECF2")), text != null ? _k.Text(text, 13.5, FontWeight.Medium, Color.Parse("#E8ECF2")) : null);
+        var row = _k.HStack(6, _k.Icon(icon, 18, static _ => OverCoverText), text != null ? _k.Text(text, 13.5, FontWeight.Medium, static _ => OverCoverText) : null);
         row.HorizontalAlignment = HorizontalAlignment.Center;
         row.VerticalAlignment = VerticalAlignment.Center;
         return Kit.Click(new Border
@@ -184,16 +184,16 @@ public sealed partial class MainWindow
             MinWidth = 40,
             Padding = new Thickness(text != null ? 12 : 0, 0, text != null ? 16 : 0, 0),
             CornerRadius = new CornerRadius(13),
-            Background = Kit.B(Color.Parse("#0B0E13"), 0.55),
-            BorderBrush = Kit.B(Colors.White, 0.12),
+            Background = Kit.Fixed(OverCoverShade, 0.55),
+            BorderBrush = Kit.Fixed(Colors.White, 0.12),
             BorderThickness = new Thickness(1),
             Child = row,
         }, click, tip);
     }
 
-    Control Stat(string icon, string label, string value, Color? iconColor = null)
+    Control Stat(string icon, string label, string value, Func<Palette, Color>? iconColor = null)
     {
-        var s = _k.VStack(6, _k.HStack(7, _k.Icon(icon, 15, iconColor ?? P.Muted), _k.Text(label, 12.5, color: P.Muted)), _k.Heading(value, 20));
+        var s = _k.VStack(6, _k.HStack(7, _k.Icon(icon, 15, iconColor ?? (static p => p.Muted)), _k.Text(label, 12.5, color: static p => p.Muted)), _k.Heading(value, 20));
         var card = _k.Card(s, 18, new Thickness(18, 14));
         card.Margin = new Thickness(0, 0, 14, 0);
         return card;
@@ -262,17 +262,17 @@ public sealed partial class MainWindow
                 Background = bmp != null ? Kit.Image(bmp) : Kit.Image(g.Pic0Path, 480),
                 Opacity = bmp != null ? 1 : 0.35,
             });
-            thumb.Children.Add(new Border { CornerRadius = new CornerRadius(14), BorderBrush = Kit.B(P.Border), BorderThickness = new Thickness(1) });
+            thumb.Children.Add(new Border { CornerRadius = new CornerRadius(14), BorderBrush = Kit.B(static p => p.Border), BorderThickness = new Thickness(1) });
             if (st.Problem != null)
             {
-                thumb.Children.Add(new Border { Margin = new Thickness(8), VerticalAlignment = VerticalAlignment.Top, Child = _k.Badge(S.Incompatible, P.Warn, Color.Parse("#0B0E13")) });
+                thumb.Children.Add(new Border { Margin = new Thickness(8), VerticalAlignment = VerticalAlignment.Top, Child = _k.Badge(S.Incompatible, static p => p.Warn, static _ => OverCoverShade) });
             }
 
-            var c = _k.VStack(6, thumb, _k.Text(st.Name, 13.5, FontWeight.SemiBold), _k.Text(S.When(st.When), 12, color: P.Muted));
+            var c = _k.VStack(6, thumb, _k.Text(st.Name, 13.5, FontWeight.SemiBold), _k.Text(S.When(st.When), 12, color: static p => p.Muted));
             // the play time, as in the in-game picker (F6); a state of another version has the badge instead
             if (st.Header is { } h && st.Problem == null)
             {
-                c.Children.Add(_k.Text(Loc.Format("SsPlayTime", Host.SaveStateOverlay.PlayTime(h.GuestSeconds)), 11.5, color: P.Faint));
+                c.Children.Add(_k.Text(Loc.Format("SsPlayTime", Host.SaveStateOverlay.PlayTime(h.GuestSeconds)), 11.5, color: static p => p.Faint));
             }
 
             c.Margin = new Thickness(0, 0, 14, 0);
@@ -304,10 +304,10 @@ public sealed partial class MainWindow
             }
 
             int have = trophies.Count(t => t.Trophy.Grade == grade && t.Set.Unlocked.ContainsKey(t.Trophy.Id));
-            dots.Children.Add(_k.HStack(6, _k.Dot(GradeColor(grade), 9), _k.Text($"{have}/{all}", 13, FontWeight.Medium, P.TextSoft)).Also(x => ToolTip.SetTip(x, S.Grade(grade))));
+            dots.Children.Add(_k.HStack(6, _k.Dot(GradeColor(grade), 9), _k.Text($"{have}/{all}", 13, FontWeight.Medium, static p => p.TextSoft)).Also(x => ToolTip.SetTip(x, S.Grade(grade))));
         }
         top.Children.Add(dots);
-        top.Children.Add(Kit.At(_k.Text($"{got * 100 / Math.Max(1, total)}%", 14, FontWeight.SemiBold, P.Accent), col: 1));
+        top.Children.Add(Kit.At(_k.Text($"{got * 100 / Math.Max(1, total)}%", 14, FontWeight.SemiBold, static p => p.Accent), col: 1));
         body.Children.Add(top);
         body.Children.Add(_k.Bar(got / (double)Math.Max(1, total), 6));
         var recent = trophies.Where(t => t.Set.Unlocked.ContainsKey(t.Trophy.Id)).OrderByDescending(t => t.Set.Unlocked[t.Trophy.Id]).Take(3).ToList();
@@ -318,7 +318,7 @@ public sealed partial class MainWindow
             {
                 var r = new Grid { ColumnDefinitions = new ColumnDefinitions("Auto,*"), Margin = new Thickness(0, 0, 12, 0) };
                 r.Children.Add(TrophyIcon(set, t, 44, true));
-                r.Children.Add(Kit.At(_k.VStack(2, _k.Text(t.Name, 13, FontWeight.SemiBold), _k.Text($"{S.Grade(t.Grade)} \u00B7 {S.When(TrophyTime(set, t.Id)!.Value)}", 11.5, color: P.Muted))
+                r.Children.Add(Kit.At(_k.VStack(2, _k.Text(t.Name, 13, FontWeight.SemiBold), _k.Text($"{S.Grade(t.Grade)} \u00B7 {S.When(TrophyTime(set, t.Id)!.Value)}", 11.5, color: static p => p.Muted))
                     .Also(x => { x.Margin = new Thickness(10, 0, 0, 0); x.VerticalAlignment = VerticalAlignment.Center; }), col: 1));
                 row.Children.Add(r);
             }
@@ -326,7 +326,7 @@ public sealed partial class MainWindow
         }
         else
         {
-            body.Children.Add(_k.Text(S.NoTrophyYet, 12.5, color: P.Muted));
+            body.Children.Add(_k.Text(S.NoTrophyYet, 12.5, color: static p => p.Muted));
         }
 
         s.Children.Add(_k.Card(body, 18, new Thickness(20, 18)));
@@ -335,7 +335,7 @@ public sealed partial class MainWindow
 
     Control TrophyIcon(TrophySetView set, TrophyInfo t, double size, bool unlocked)
     {
-        var pic = new Border { Width = size, Height = size, CornerRadius = new CornerRadius(size * 0.22), Background = Kit.B(P.SurfaceHigh), Opacity = unlocked ? 1 : 0.45 };
+        var pic = new Border { Width = size, Height = size, CornerRadius = new CornerRadius(size * 0.22), Background = Kit.B(static p => p.SurfaceHigh), Opacity = unlocked ? 1 : 0.45 };
         bool hidden = t.Hidden && !unlocked;
         if (!hidden)
         {
@@ -350,7 +350,7 @@ public sealed partial class MainWindow
         }
         else
         {
-            pic.Child = _k.Icon("x", size * 0.38, P.Faint);
+            pic.Child = _k.Icon("x", size * 0.38, static p => p.Faint);
         }
 
         return pic;
@@ -360,12 +360,12 @@ public sealed partial class MainWindow
     static DateTime? TrophyTime(TrophySetView set, int id) =>
         set.Unlocked.TryGetValue(id, out var us) && us > 0 && us < (ulong)DateTime.MaxValue.Ticks / 10 ? new DateTime((long)us * 10, DateTimeKind.Utc).ToLocalTime() : null;
 
-    Color GradeColor(TrophyGrade g) => g switch
+    static Func<Palette, Color> GradeColor(TrophyGrade g) => g switch
     {
-        TrophyGrade.Platinum => P.Platinum,
-        TrophyGrade.Gold => P.Gold,
-        TrophyGrade.Silver => P.Silver,
-        _ => P.Bronze,
+        TrophyGrade.Platinum => static p => p.Platinum,
+        TrophyGrade.Gold => static p => p.Gold,
+        TrophyGrade.Silver => static p => p.Silver,
+        _ => static p => p.Bronze,
     };
 
     // ------------------------------------------------------------------ captures of this game
@@ -418,7 +418,7 @@ public sealed partial class MainWindow
         head.Children.Add(_k.Text(S.GameSettings, 16, FontWeight.SemiBold));
         if (!opts.IsDefault)
         {
-            head.Children.Add(Kit.At(Kit.Click(_k.Text(S.UseGlobal, 13, FontWeight.SemiBold, P.Accent), () =>
+            head.Children.Add(Kit.At(Kit.Click(_k.Text(S.UseGlobal, 13, FontWeight.SemiBold, static p => p.Accent), () =>
             {
                 _settings.Games.Remove(g.TitleId);
                 SaveSettings();
@@ -441,7 +441,7 @@ public sealed partial class MainWindow
                 _k.Dropdown(fast.Select(c => c.Label).ToArray(), Math.Max(0, Array.FindIndex(fast, c => c.Value == opts.FastLoading)), i => { opts.FastLoading = fast[i].Value; Store(); }, 176),
                 tip: S.FastLoadingTip),
             _k.Row("gamepad", S.Controls, S.ControlsDetail, open: () => { Navigate(PageSettings); _settingsPage?.ShowSection(SettingsPage.SectionControls); })));
-        s.Children.Add(_k.Text(_runningGame?.TitleId == g.TitleId ? S.AppliesNextStart : S.AppliesOnStart, 12, color: P.Muted).Also(t => t.Margin = new Thickness(6, 10, 0, 0)));
+        s.Children.Add(_k.Text(_runningGame?.TitleId == g.TitleId ? S.AppliesNextStart : S.AppliesOnStart, 12, color: static p => p.Muted).Also(t => t.Margin = new Thickness(6, 10, 0, 0)));
         return s;
     }
 }

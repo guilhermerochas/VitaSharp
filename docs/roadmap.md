@@ -428,11 +428,25 @@ Lista de itens futuros do VitaSharp. Marque `[x]` quando um item for concluído.
   (~14 s a 7 MB/s mais 0,5 ms por leitura). Vita de verdade (longplay YouTube drriyW7Mn3M): depois da dificuldade a
   tela escura dura ~5 s e entra o briefing interativo "VAN-Guard" de ~4 min, durante o qual a fase carrega; no fim
   dele faltam ~7 s até a mesma cena. O padrão de 7 MB/s fica; SH:BoM continua precisando dele
-- [ ] Killzone: o briefing "VAN-Guard" depois da escolha de dificuldade não aparece (11/11/2026, feat/fast-loading,
+- [x] Killzone: o briefing "VAN-Guard" depois da escolha de dificuldade não aparece (11/11/2026, feat/fast-loading,
   `kz_fresh2`): no Vita ele entra ~5 s depois da tela escura; aqui, com o save do usuário, a tela escura com o ícone
   de carregamento fica até a fase abrir (20 s com carregamento rápido) e, com save novo, passou de 15 s sem briefing
   (fim da gravação). Falta ver o que o jogo espera para
   abrir o briefing (provavelmente um filme ou áudio em streaming)
+  Corrigido (B4, 12/11/2026, fix/system-bugs-13c): era o `sceAvPlayerIsActive`. O jogo inicia o filme
+  (`sceAvPlayerInit`), pergunta `IsActive` no mesmo quadro e só no update seguinte chama `AddSource`; o VitaSharp
+  respondia 0 antes da primeira fonte e o jogo fechava o player na hora (Init -> IsActive 0 -> Close em 4 ms, sem
+  nenhum AddSource). Como o console faz (libsceavplayer do vs0, só estudo): IsActive devolve "estado do player != 6
+  (fim)", então é 1 desde o Init até o player terminar. Agora o player fica ativo do Init até acabar a última fonte,
+  falhar a abertura ou ser parado. Efeito ao vivo (`<scratchpad>/b4_kz6`, `b4_kz7`): (1) o filme de abertura
+  `KZV_Title_Intro_EN_R.mp4` (Sony, Guerrilla Cambridge, logo) passa a tocar no boot e a tela de título espera um botão,
+  como no Vita (antes o jogo pulava direto para a carta Valor); (2) depois da dificuldade entra o VAN-Guard
+  (`KZV_Campaign_Intro.mp4`): "INCOMING TRANSMISSION", a leitura de digital esperando o toque e, depois do toque, o
+  briefing com o sistema Vekta e os vídeos. O áudio do briefing não está no mp4 (só vídeo; vem dos .at9 do jogo).
+  Teste: `MediaMiscHleTests.AvPlayerIsActiveFromInitUntilStopped` (falha sem a correção: 0 em vez de 1). Falta: os
+  cenários `tests/scenarios/kz*.txt` (as entradas até a dificuldade vão 600 quadros depois, com um botão na tela de
+  título, f750, e o toque na digital ~f3450; o briefing de ~4 min não pula com START, então os comandos de gameplay
+  precisam do quadro em que a fase abre, a medir)
 - [x] Rodada 21 de desempenho (perf/desktop-21, 10/11/2026): **cópias de uniforms do worker da GPU**. Medido com a
   nova linha `PERF ubstats` (`VITASHARP_UB_STATS=1`, a partir de `VITASHARP_WORKER_PROF_FROM`): no Killzone (escada,
   quadro 4400+) o worker copiava 12,9 MB/quadro de uniforms (856 cópias, quase todas de slots de 16 KB: buffers que
@@ -1900,7 +1914,7 @@ Lista de itens futuros do VitaSharp. Marque `[x]` quando um item for concluído.
   estado/foco/framebuffer da janela e os resultados do acquire/present. Correção feita e conferida no repro
   (SwitchToThisWindow e Alt+Tab de verdade voltam à tela cheia, swapchain 1920x1080 recriada, foco de volta); falta a
   confirmação do usuário no jogo.
-- [ ] Trocar entre o modo claro e o modo escuro demora muito (relato do usuário, 11/11/2026). Medir quanto leva a
+- [x] Trocar entre o modo claro e o modo escuro demora muito (relato do usuário, 11/11/2026). Medir quanto leva a
   troca e onde o tempo vai (recriar a interface inteira, recarregar recursos/ícones/capas, refazer o layout da
   biblioteca) e fazer a troca só reaplicar as cores. Conferir no launcher do Desktop e no app Android.
   Em andamento (fix/system-bugs-13b, B3). Medido (headless, 80 jogos, `ThemeSwitchTests`): a troca na biblioteca levava
@@ -1912,6 +1926,19 @@ Lista de itens futuros do VitaSharp. Marque `[x]` quando um item for concluído.
   coincidem com cores da paleta, então trocar por valor na árvore pintaria errado; precisa de pincéis ligados ao
   nome da cor da paleta (o Kit criar e guardar um pincel por cor da paleta e a troca só mudar a cor deles). Android:
   o app só tem o tema escuro (Ui/Theme.cs), não há troca a medir.
+  Feito (fix/system-bugs-13c, B4): a troca só reaplica as cores, nenhuma página é refeita. Cada pincel, parada de
+  gradiente e sombra guarda como a sua cor é escolhida na paleta (`Kit.B(p => p.Muted)`, `Kit.Stop(p => p.Scrim, 150,
+  0.45)`, `Kit.LightShadow`) numa lista fraca (`ThemeBindings`, uma `ConditionalWeakTable`: a página descartada solta
+  os pincéis); `LauncherApp.SyncPalette` troca a paleta e reavalia todos os vivos. As escolhas que dependem do tema
+  (`p.Dark ? p.Background : p.Sidebar` do seletor, a opacidade 0,05/0,04 da área tracejada, os alfas 70/150/250 do
+  Scrim, `Kit.Fade`, o sol/lua da linha do tema) também são ligadas; as cores fixas sobre as capas (#0B0E13, #E8ECF2)
+  usam `Kit.Fixed`/`MainWindow.OverCover*` e nunca mudam (a mesma cor existe na paleta escura, por isso a troca não
+  pode ser por valor). Só os dois seletores de tema (barra lateral e Configurações) são redesenhados, para um mostrar
+  a escolha feita no outro. Medido (headless, 80 jogos): 519 ms antes, 50-86 ms agora (nas Configurações 40-55 ms).
+  `ThemeSwitchTests`: 0 reconstruções por troca, e a janela trocada tem exatamente as cores de uma janela nova no tema
+  novo na biblioteca, nas Configurações e nas páginas do jogo (com capa), Sistema, Troféus, Capturas e Instalação;
+  pincéis, paradas e sombras ligados mudam, `Kit.Fixed` e os textos sobre as capas não. Falta só a conferência do
+  usuário na janela de verdade.
 - [x] **REGRESSÃO (11/11/2026, relato do usuário: "não estava assim")** Killzone Mercenary (PCSC00045): o HUD piscava,
   e F1 2011 (PCSE00002) mostrava quadros pretos isolados, no build 2e7789b2 (capturas F8 `PCSC00045_20261111_222844_tudo`
   e `PCSE00002_20261111_223250_tudo`). Causa: 758ad0a9 (a espera do sync object de fragmento no `sceGxmBeginScene`
@@ -2287,6 +2314,20 @@ Lista de itens futuros do VitaSharp. Marque `[x]` quando um item for concluído.
   libgxm, no caminho de emissão `FUN_8100e9b4` / estado em ctx+0x1C0) faz um viewport de escala zero não colapsar a
   geometria. Próximo passo: ler a emissão do estado do viewport no libgxm até os registradores (flags 0x100 e o
   ViewportEnable em ctx+0x214 bit 0x8000) e procurar no SDK/PowerVR o significado de escala 0
+  Rodada 4 (B4, 12/11/2026, fix/system-bugs-13c, `<scratchpad>/b4_ss1`, probes no Clear 0x81D8D08A, na reaplicação
+  0x81D8D308 e no Present, quadros 0-12 seguidos): confirmado ao vivo de novo, sem config.ini (o save do usuário não
+  tem um): as duas chamadas do setter (0,0,960,544) caem no bloco 0 antes do 1º Present; o bloco 1 (0x831568E0) fica
+  com +0x15C..+0x168 = 0 (malloc 0xD100 + memset dos dois blocos em 0x81D8D8F0, então nem lixo de heap explica); o
+  Clear roda em todo quadro (flag de pular = 0, scissor cheia) e marca +0x158, e a reaplicação do bloco 1 manda
+  sceGxmSetViewport(0,0,0,-0,0.5,0.5) nos quadros ímpares; nada no Present copia o viewport de um bloco para o outro.
+  O libgxm do firmware só compara com o valor atual e copia os seis floats crus no pacote de estado
+  (`FUN_8100e9b4`, bit 0x100); o Vita3K faz o mesmo e daria viewport Vulkan de largura 0. Ou seja, o código do jogo
+  é determinístico e manda esse viewport também no Vita; o que o Vita de verdade faz com escala 0 é do microkernel da
+  SGX, que não temos como ler. A pergunta "primeiro boot sem config.ini" não decide: a rodada 3 mostrou que com e sem
+  config.ini o jogo faz o mesmo. Não há correção genérica com base em fonte (tratar escala 0 como "viewport cheio"
+  seria palpite). Próximo passo decisivo: um teste no Vita de verdade (o homebrew de testes local: um sprite com
+  sceGxmSetViewport(0,0,0,0,0.5,0.5) depois de um com viewport cheio, e ver se ele aparece) ou um vídeo do Vita com
+  a intro do Salt and Sanctuary a 60 fps num boot de save novo; enquanto isso o item fica aberto
   Lentidão de ~70 s ao sair da criação (quadros 1934-1977 da varredura): **não reproduz** (agente A4, 10/11/2026). Com o
   roteiro da varredura (cross a cada 150 quadros; o START do sweep.ps1 nunca disparava: 400+150k nunca é múltiplo
   de 600) e cache de shaders quente ou frio, 180 s a 28-30 fps, só uma queda curta a 15 fps na entrada da criação

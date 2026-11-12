@@ -23,15 +23,16 @@ public sealed class SettingsPage : UserControl
 
     readonly LauncherSettings _settings;
     readonly Action _save;
-    readonly Kit _k;
+    readonly Kit _k = new();
     readonly SdlGamepads? _pads;
     readonly Border _body = new();
+    readonly Border _themeGroup = new();
     readonly StackPanel _nav = new() { Spacing = 2 };
     readonly Dictionary<string, Control> _anchors = new();
     readonly ScrollViewer _scroll = new() { HorizontalScrollBarVisibility = ScrollBarVisibility.Disabled };
     string _section = SectionGeneral;
 
-    /// <summary>The theme was picked (the launcher rebuilds itself).</summary>
+    /// <summary>The theme was picked (the launcher re-colours itself and updates its own theme control).</summary>
     public event Action<string>? ThemeChanged;
     /// <summary>"Sistema do Vita" was picked in the list (it has its own page).</summary>
     public event Action? OpenSystem;
@@ -43,8 +44,6 @@ public sealed class SettingsPage : UserControl
     /// <summary>The controller page (created when first shown, so SDL only starts when needed).</summary>
     public ControllerSettingsPanel? Controls { get; private set; }
 
-    Palette P => _k.P;
-
     /// <param name="save">Writes the settings (nothing for previews).</param>
     /// <param name="pads">Controller backend for the controller page (tests / previews); null = its own.</param>
     public SettingsPage(LauncherSettings settings, Action save, SdlGamepads? pads = null)
@@ -52,7 +51,6 @@ public sealed class SettingsPage : UserControl
         _settings = settings;
         _save = save;
         _pads = pads;
-        _k = new Kit(Palette.Current);
         var page = new Grid { ColumnDefinitions = new ColumnDefinitions("220,*"), Margin = new Thickness(36, 28, 36, 0) };
         var left = new DockPanel();
         var title = _k.Heading(S.Settings, 26);
@@ -126,7 +124,7 @@ public sealed class SettingsPage : UserControl
                  })
         {
             bool sel = key == _section;
-            var g = _k.HStack(12, _k.Icon(icon, 18, sel ? P.Accent : P.Muted), _k.Text(text, 14, sel ? FontWeight.SemiBold : FontWeight.Medium, sel ? P.Text : P.TextSoft));
+            var g = _k.HStack(12, _k.Icon(icon, 18, p => sel ? p.Accent : p.Muted), _k.Text(text, 14, sel ? FontWeight.SemiBold : FontWeight.Medium, p => sel ? p.Text : p.TextSoft));
             g.VerticalAlignment = VerticalAlignment.Center;
             _nav.Children.Add(Kit.Click(new Border
             {
@@ -134,7 +132,7 @@ public sealed class SettingsPage : UserControl
                 Padding = new Thickness(12, 0),
                 CornerRadius = new CornerRadius(11),
                 Child = g,
-                Background = sel ? Kit.B(P.Highlight) : Brushes.Transparent,
+                Background = sel ? Kit.B(static p => p.Highlight) : Brushes.Transparent,
             }, () => ShowSection(key)));
         }
     }
@@ -254,6 +252,32 @@ public sealed class SettingsPage : UserControl
         return (values, labels);
     }
 
+    /// <summary>Draws the theme row again with the theme now chosen (picked from the sidebar while this page exists);
+    /// only this row: the colours of everything else follow the switch by themselves.</summary>
+    public void ShowTheme()
+    {
+        int theme = _settings.UiTheme switch
+        {
+            LauncherSettings.ThemeDark => 1,
+            LauncherSettings.ThemeLight => 2,
+            _ => 0
+        };
+        // the row's icon is the moon in the dark theme and the sun in the light one, swapped by the switch itself
+        _themeGroup.Child = _k.Group(
+            _k.Row(static p => p.Dark ? "moon" : "sun", S.Theme, S.ThemeDetail,
+                _k.Segmented(theme, i =>
+                {
+                    string picked = i switch
+                    {
+                        1 => LauncherSettings.ThemeDark,
+                        2 => LauncherSettings.ThemeLight,
+                        _ => LauncherSettings.ThemeSystem
+                    };
+                    Set(() => _settings.UiTheme = picked);
+                    ThemeChanged?.Invoke(picked);
+                }, (S.ThemeSystem, null, null), (S.ThemeDark, "moon", null), (S.ThemeLight, "sun", null))));
+    }
+
     Control BuildList()
     {
         var s = new StackPanel { Spacing = 10, MaxWidth = 900, HorizontalAlignment = HorizontalAlignment.Left, Margin = new Thickness(0, 0, 0, 32) };
@@ -271,25 +295,8 @@ public sealed class SettingsPage : UserControl
                     (S.PlayDirectly, null, null), (S.OpenLiveArea, null, null))),
             _k.Row("terminal", S.VitaShortcut, S.VitaShortcutDetail, _k.Kbd("Ctrl + H"))));
         s.Children.Add(_k.GroupTitle(S.Appearance));
-        int theme = _settings.UiTheme switch
-        {
-            LauncherSettings.ThemeDark => 1,
-            LauncherSettings.ThemeLight => 2,
-            _ => 0
-        };
-        s.Children.Add(_k.Group(
-            _k.Row(P.Dark ? "moon" : "sun", S.Theme, S.ThemeDetail,
-                _k.Segmented(theme, i =>
-                {
-                    var t = i switch
-                    {
-                        1 => LauncherSettings.ThemeDark,
-                        2 => LauncherSettings.ThemeLight,
-                        _ => LauncherSettings.ThemeSystem
-                    };
-                    Set(() => _settings.UiTheme = t);
-                    ThemeChanged?.Invoke(t);
-                }, (S.ThemeSystem, null, null), (S.ThemeDark, "moon", null), (S.ThemeLight, "sun", null)))));
+        ShowTheme();
+        s.Children.Add(_themeGroup);
         int lang = _settings.Language switch
         {
             Loc.English => 1,
@@ -360,7 +367,7 @@ public sealed class SettingsPage : UserControl
 
         // ---------------------------------------------------------- Rede e PSN
         s.Children.Add(Anchor(SectionNetwork, S.SectionNetwork));
-        var psnIdError = _k.Wrap(S.PsnIdInvalid, 12, P.Danger).Also(t => { t.IsVisible = false; t.Margin = new Thickness(16, 0, 16, 8); });
+        var psnIdError = _k.Wrap(S.PsnIdInvalid, 12, static p => p.Danger).Also(t => { t.IsVisible = false; t.Margin = new Thickness(16, 0, 16, 8); });
         var psnId = _k.Field(_settings.PsnOnlineId, text =>
         {
             string id = text.Trim();
@@ -395,7 +402,7 @@ public sealed class SettingsPage : UserControl
             _k.VStack(0, _k.Row("user", S.PsnId, S.PsnIdDetail, psnId), psnIdError),
             _k.Row("hdd", S.PsnLocal, S.PsnLocalDetail, psnLocal),
             _k.Row("globe", S.RealInternet, S.RealInternetDetail, realNet),
-            _k.Wrap(S.RealInternetPrivacy, 12.5, P.Warn).Also(t => t.Margin = new Thickness(16, 6, 16, 10)),
+            _k.Wrap(S.RealInternetPrivacy, 12.5, static p => p.Warn).Also(t => t.Margin = new Thickness(16, 6, 16, 10)),
             _k.Row("globe", S.RpcnServer, S.RpcnServerDetail, rpcnServer),
             _k.Row("user", S.RpcnUser, null, rpcnUser),
             _k.Row("key", S.RpcnPassword, S.RpcnPasswordDetail, rpcnPass),
@@ -424,7 +431,7 @@ public sealed class SettingsPage : UserControl
                 catch (Exception) { }
             }, 36))));
         s.Children.Add(_k.GroupTitle(S.Shortcuts));
-        s.Children.Add(_k.Card(_k.Wrap(S.ShortcutsText, 13, P.TextSoft), 18, new Thickness(18, 14)));
+        s.Children.Add(_k.Card(_k.Wrap(S.ShortcutsText, 13, static p => p.TextSoft), 18, new Thickness(18, 14)));
         return s;
     }
 }

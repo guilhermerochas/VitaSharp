@@ -841,6 +841,33 @@ public sealed class MediaMiscHleTests(GuestMemoryFixture fixture)
         Assert.False(h.Initialized);
     }
 
+    // ------------------------------------------------------------------ SceAvPlayer
+
+    /// <summary>
+    /// The firmware's sceAvPlayerIsActive answers 1 from sceAvPlayerInit until the player reaches its end
+    /// (libsceavplayer: active while the player's state is not the end state), so a game may check it before it adds
+    /// the first source. Killzone: Mercenary does: it starts the movie, checks IsActive, and adds the source on its next
+    /// update; with 0 there it closed the player at once and the "VAN-Guard" mission briefing never appeared.
+    /// </summary>
+    [Fact]
+    public void AvPlayerIsActiveFromInitUntilStopped()
+    {
+        var player = new AvPlayer();
+        uint init = fixture.Memory.Alloc(0x100, "avplayer init");
+        GuestMemory.Fill(init, 0, 0x44);
+        GuestMemory.W32(init + 0x38, 2);
+        uint handle = (uint)Invoke(player, "sceAvPlayerInit", init)!;
+        Assert.NotEqual(0u, handle);
+
+        Assert.Equal(1, Call(player, "sceAvPlayerIsActive", handle));
+        Assert.Equal(1, Call(player, "sceAvPlayerIsActive", handle));
+
+        Assert.Equal(0, Call(player, "sceAvPlayerStop", handle));
+        Assert.Equal(0, Call(player, "sceAvPlayerIsActive", handle));
+        Assert.Equal(0, Call(player, "sceAvPlayerClose", handle));
+        Assert.Equal(0, Call(player, "sceAvPlayerIsActive", handle));
+    }
+
     // ------------------------------------------------------------------ SceCodecEngine
 
     /// <summary>Unmapped-memblock allocations honour the alignment when it fits and relax it when it cannot be met

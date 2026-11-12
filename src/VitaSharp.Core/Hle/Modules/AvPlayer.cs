@@ -31,6 +31,11 @@ public sealed partial class AvPlayer : HleModule
         public MediaPlayerBase? Media;
         public string SourcePath = "";
         public bool Started, Paused, Looping, StopSent;
+
+        /// <summary>The player reached its end: every queued source was played, or it was stopped. Until then the
+        /// firmware's sceAvPlayerIsActive answers 1, also right after sceAvPlayerInit before any source is added
+        /// (libsceavplayer: active while the player's state is not the end state).</summary>
+        public bool Ended;
         public readonly GuestStopwatch Clock = new();
         public long ClockOffsetUs;
 
@@ -120,7 +125,11 @@ public sealed partial class AvPlayer : HleModule
         lock (p)
         {
             p.Sources.Enqueue(host);
-            if (p.Media == null) OpenNext(p);
+            p.Ended = false;
+            if (p.Media == null)
+            {
+                OpenNext(p);
+            }
         }
         Event(p, STATE_BUFFERING);
         Event(p, STATE_READY);
@@ -173,6 +182,12 @@ public sealed partial class AvPlayer : HleModule
             p.Media = MediaPlayers.Open(src);
             if (p.Media == null) Log.Warn($"AvPlayer: could not decode {src}");
         }
+        // nothing left that plays: the player is at its end (sceAvPlayerIsActive answers 0)
+        if (p.Media == null)
+        {
+            p.Ended = true;
+        }
+
         if (p.Media != null)
         {
             p.Media.Loop = p.Looping;
@@ -211,6 +226,7 @@ public sealed partial class AvPlayer : HleModule
             p.Media?.Dispose();
             p.Media = null;
             p.Sources.Clear();
+            p.Ended = true;
         }
         p.Started = false;
         p.Clock.Reset();
@@ -272,24 +288,37 @@ public sealed partial class AvPlayer : HleModule
 
     [Hle] ulong sceAvPlayerCurrentTime(uint handle) => Get(handle) is { } p ? (ulong)Math.Max(0, p.LastTimeUs / 1000) : 0;
 
-    /// <summary>Playback is active until every queued source has been fully played.</summary>
+    /// <summary>1 until the player reaches its end (all sources played, or stopped); also 1 right after
+    /// sceAvPlayerInit, before the first source: Killzone: Mercenary starts its briefing movie, checks IsActive and
+    /// adds the source on the next update, and closed the movie at once when this answered 0 there.</summary>
     [Hle]
     int sceAvPlayerIsActive(uint handle)
     {
-        var p = Get(handle);
-        if (p == null) return 0;
-        lock (p) // the media is closed by whichever guest thread gets there first (IsActive, Stop, Close)
-        if (p.Media != null && p.Media.Finished && !p.Looping)
+        Player? p = Get(handle);
+        if (p == null)
         {
-            if (p.Sources.Count > 0) OpenNext(p);
-            else
+            return 0;
+        }
+
+        lock (p) // the media is closed by whichever guest thread gets there first (IsActive, Stop, Close)
+        {
+            if (p.Media != null && p.Media.Finished && !p.Looping)
             {
-                AudioDiagnostics.StreamClosed(DiagKey(p));
-                p.Media.Dispose();
-                p.Media = null;
+                if (p.Sources.Count > 0)
+                {
+                    OpenNext(p);
+                }
+                else
+                {
+                    AudioDiagnostics.StreamClosed(DiagKey(p));
+                    p.Media.Dispose();
+                    p.Media = null;
+                    p.Ended = true;
+                }
             }
         }
-        bool active = p.Media != null;
+
+        bool active = p.Media != null || !p.Ended;
         if (!active && p.Started && !p.StopSent)
         {
             p.StopSent = true;

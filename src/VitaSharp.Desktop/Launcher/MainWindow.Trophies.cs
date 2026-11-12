@@ -26,7 +26,7 @@ public sealed partial class MainWindow
 
         var page = new Grid { RowDefinitions = new RowDefinitions("Auto,*"), Margin = new Thickness(36, 28, 36, 0) };
         var header = new Grid { ColumnDefinitions = new ColumnDefinitions("*,Auto"), Margin = new Thickness(0, 0, 0, 22) };
-        header.Children.Add(_k.VStack(2, _k.Heading(S.Trophies, 30), _k.Text(S.TrophiesSubtitle(got, total, games.Count), 13.5, color: P.Muted)));
+        header.Children.Add(_k.VStack(2, _k.Heading(S.Trophies, 30), _k.Text(S.TrophiesSubtitle(got, total, games.Count), 13.5, color: static p => p.Muted)));
         var counts = _k.HStack(18);
         foreach (var grade in new[] { TrophyGrade.Platinum, TrophyGrade.Gold, TrophyGrade.Silver, TrophyGrade.Bronze })
         {
@@ -74,14 +74,14 @@ public sealed partial class MainWindow
             r.Children.Add(_k.Picture(g.IconPath, 44, 44, 11, g.Initials, 128));
             r.Children.Add(Kit.At(_k.VStack(5, _k.Text(g.Title, 13.5, FontWeight.SemiBold), _k.Bar(got / (double)Math.Max(1, total), 4))
                 .Also(t => { t.Margin = new Thickness(12, 0); t.VerticalAlignment = VerticalAlignment.Center; }), col: 1));
-            r.Children.Add(Kit.At(_k.Text($"{got}/{total}", 12.5, FontWeight.Medium, P.Muted), col: 2));
+            r.Children.Add(Kit.At(_k.Text($"{got}/{total}", 12.5, FontWeight.Medium, static p => p.Muted), col: 2));
             list.Children.Add(Kit.Click(new Border
             {
                 Padding = new Thickness(10, 8),
                 CornerRadius = new CornerRadius(14),
                 Child = r,
-                Background = Kit.B(sel ? P.Highlight : P.Surface),
-                BorderBrush = Kit.B(sel ? P.HighlightBorder : P.Border),
+                Background = Kit.B(p => sel ? p.Highlight : p.Surface),
+                BorderBrush = Kit.B(p => sel ? p.HighlightBorder : p.Border),
                 BorderThickness = new Thickness(1),
             }, () => { _trophyGame = g.TitleId; ShowPage(); }));
         }
@@ -94,7 +94,7 @@ public sealed partial class MainWindow
         var body = new StackPanel();
         var banner = new Grid { Height = 120 };
         banner.Children.Add(new Border { CornerRadius = new CornerRadius(18, 18, 0, 0), Background = Kit.Image(g.Pic0Path, 960) });
-        banner.Children.Add(new Border { CornerRadius = new CornerRadius(18, 18, 0, 0), Background = Kit.Fade(P.Surface, Kit.Rel(0, 0), Kit.Rel(0, 1), 0.25, 1) });
+        banner.Children.Add(new Border { CornerRadius = new CornerRadius(18, 18, 0, 0), Background = Kit.Fade(static p => p.Surface, Kit.Rel(0, 0), Kit.Rel(0, 1), 0.25, 1) });
         var head = new Grid { ColumnDefinitions = new ColumnDefinitions("Auto,*,Auto"), VerticalAlignment = VerticalAlignment.Bottom, Margin = new Thickness(20, 0, 20, 4) };
         head.Children.Add(Kit.Click(_k.Picture(g.IconPath, 64, 64, 16, g.Initials, 128), () => Navigate(PageGame, g), S.OpenGamePage));
         var dots = _k.HStack(14);
@@ -107,10 +107,10 @@ public sealed partial class MainWindow
             }
 
             int have = trophies.Count(t => t.Trophy.Grade == grade && t.Set.Unlocked.ContainsKey(t.Trophy.Id));
-            dots.Children.Add(_k.HStack(6, _k.Dot(GradeColor(grade), 9), _k.Text($"{have}/{all}", 12.5, FontWeight.Medium, P.TextSoft)).Also(x => ToolTip.SetTip(x, S.Grade(grade))));
+            dots.Children.Add(_k.HStack(6, _k.Dot(GradeColor(grade), 9), _k.Text($"{have}/{all}", 12.5, FontWeight.Medium, static p => p.TextSoft)).Also(x => ToolTip.SetTip(x, S.Grade(grade))));
         }
         head.Children.Add(Kit.At(_k.VStack(4, _k.Heading(g.Title, 20), dots).Also(x => { x.Margin = new Thickness(14, 0, 0, 0); x.VerticalAlignment = VerticalAlignment.Center; }), col: 1));
-        head.Children.Add(Kit.At(_k.Heading($"{got * 100 / Math.Max(1, total)}%", 24).Also(x => x.Foreground = Kit.B(P.Accent)), col: 2));
+        head.Children.Add(Kit.At(_k.Heading($"{got * 100 / Math.Max(1, total)}%", 24).Also(x => x.Foreground = Kit.B(static p => p.Accent)), col: 2));
         banner.Children.Add(head);
         body.Children.Add(banner);
 
@@ -136,10 +136,10 @@ public sealed partial class MainWindow
             bool hidden = t.Hidden && !unlocked;
             var r = new Grid { ColumnDefinitions = new ColumnDefinitions("Auto,*,Auto"), Margin = new Thickness(20, 9) };
             r.Children.Add(TrophyIcon(set, t, 48, unlocked));
-            r.Children.Add(Kit.At(_k.VStack(3, _k.Text(hidden ? S.HiddenTrophy : t.Name, 14, FontWeight.SemiBold, unlocked ? P.Text : P.TextSoft),
+            r.Children.Add(Kit.At(_k.VStack(3, _k.Text(hidden ? S.HiddenTrophy : t.Name, 14, FontWeight.SemiBold, p => unlocked ? p.Text : p.TextSoft),
                 _k.Wrap(hidden ? S.HiddenTrophyText : t.Detail, 12.5)).Also(x => { x.Margin = new Thickness(14, 0, 14, 0); x.VerticalAlignment = VerticalAlignment.Center; }), col: 1));
-            var meta = _k.VStack(4, _k.HStack(6, _k.Dot(GradeColor(t.Grade), 8), _k.Text(S.Grade(t.Grade), 12.5, FontWeight.Medium, P.TextSoft)).Also(x => x.HorizontalAlignment = HorizontalAlignment.Right),
-                _k.Text(when is { } w ? S.When(w) : unlocked ? S.Unlocked : S.Locked, 12, color: unlocked ? P.Muted : P.Faint).Also(x => x.HorizontalAlignment = HorizontalAlignment.Right));
+            var meta = _k.VStack(4, _k.HStack(6, _k.Dot(GradeColor(t.Grade), 8), _k.Text(S.Grade(t.Grade), 12.5, FontWeight.Medium, static p => p.TextSoft)).Also(x => x.HorizontalAlignment = HorizontalAlignment.Right),
+                _k.Text(when is { } w ? S.When(w) : unlocked ? S.Unlocked : S.Locked, 12, color: p => unlocked ? p.Muted : p.Faint).Also(x => x.HorizontalAlignment = HorizontalAlignment.Right));
             meta.VerticalAlignment = VerticalAlignment.Center;
             r.Children.Add(Kit.At(meta, col: 2));
             if (i > 0)
