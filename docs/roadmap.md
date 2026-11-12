@@ -1800,6 +1800,13 @@ Lista de itens futuros do VitaSharp. Marque `[x]` quando um item for concluído.
 
 ## Bugs em aberto
 
+- [ ] PSM: o shell não enxerga a atualização 2.01 do runtime (relato do usuário, 12/11/2026, captura
+  `shell_20261112_030858_tudo`). Instalada em `ux0:patch/PCSI00011` (`runtime_version.txt` 2.01; o `ux0:app`
+  continua 1.00), mas ao tocar no Cave Squid (NPOA00239, PSM) o shell ainda pede a atualização do runtime e falha
+  no download (NW-8941-2, offline). Estudar como o firmware obtém a versão instalada do runtime (entrada do app.db
+  atualizada pelo promote/reconstrução ou leitura de arquivo; sobreposição de ux0:patch nas leituras de ux0:app) e
+  como o console instala uma atualização do PCSI00011 (ux0:patch ou substituição em ux0:app); corrigir com teste e
+  confirmar que o Cave Squid passa a abrir o runtime.
 - [ ] Desktop (Windows): em tela cheia, depois de tirar o foco do jogo (ir para outro aplicativo), não dá para
   voltar: o Windows toca o som de erro e a janela do jogo não volta; só fechando o jogo (relato do usuário,
   12/11/2026, "ainda está acontecendo"; ver o item de 04/11 do F11). Estudar o comportamento do GLFW em tela cheia
