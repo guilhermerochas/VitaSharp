@@ -1,4 +1,4 @@
-<!-- pair: README.md sha256=faee50286420f32d840b2ec2642d1df679241457d257066514c9ac41a7d54c70 -->
+<!-- pair: README.md sha256=1614513bf7af8ca815319b1278529c882a43fb6d35b95ca4492826ad468385e2 -->
 <div align="center">
 
 [English](README.md) | **Português**
@@ -127,7 +127,12 @@ instalado por uma versão anterior precisa ser instalado de novo.
 `ux0:addcont`, jogos de PSP/PSone em `ux0:pspemu/PSP/GAME`, jogos de PSM em `ux0:psm`, saves em
 `ux0:user/00/savedata`, licenças em `ux0:license/app/<TITLEID>`). As licenças que as versões anteriores guardavam em
 `ux0:license/<TITLEID>` vão sozinhas para `ux0:license/app/<TITLEID>` na inicialização seguinte (uma licença cujo novo
-lugar já tem outra diferente fica onde estava).
+lugar já tem outra diferente fica onde estava). Uma atualização instalada vale como no console: o jogo vê os
+arquivos dela por cima dos seus (`ux0:patch/<TITLEID>`, ou `grw0:patch/<TITLEID>` para um cartão), a versão dele passa
+a ser a da atualização (a Biblioteca também mostra) e os apps do próprio firmware não recebem nenhuma. Um jogo de PSM
+feito em Unity guarda o próprio runtime em `ux0:psm/<TITLEID>/runtime`, com a licença desse runtime em
+`ux0:license/app/<TITLEID>`; um que uma versão anterior deixou em `RO/runtime` vai sozinho para lá na inicialização
+seguinte.
 
 **Firmware (opcional).** Os jogos rodam sem firmware. Instale-o para ter as fontes e bibliotecas do sistema
 (`libSceXml`, `libSceSqlite`...) e o **Sistema do Vita**: na página **Sistema do Vita**, **Instalar firmware

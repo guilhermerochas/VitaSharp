@@ -99,6 +99,7 @@ public static class PsmPkgInstaller
             string licenseDir = Path.Combine(ro, Io.FirmwareLayout.PsmLicense);
             Directory.CreateDirectory(licenseDir);
             File.WriteAllBytes(Path.Combine(licenseDir, PkgInstaller.AccountRifName), license);
+            PrepareOwnRuntime(ux0Root, titleId, log);
 
             string rw = Path.Combine(root, Io.FirmwareLayout.PsmWritable);
             string system = Path.Combine(rw, "System");
@@ -127,6 +128,32 @@ public static class PsmPkgInstaller
         }
     }
 
+    /// <summary>
+    /// A Unity title's own runtime is a PS Vita application with its own licence, which the package carries in
+    /// <see cref="Io.FirmwareLayout.PsmOwnRuntimeLicense"/>: the console's promote stores it with the PS Vita licences,
+    /// in ux0:license/app/&lt;PSM title id&gt; ("PSMobileRifWrite" in FW 3.74 shell.self), where the runtime's
+    /// decryption finds it. A licence already there is kept. True when one was written.
+    /// The runtime's files stay PFS-encrypted: that licence (the one every Unity title carries, content
+    /// IP9100-PCSI00010_00-UNITYRUNTIME0000) holds no plain klicensee, so VitaSharp's PFS decryption cannot remove the
+    /// layer with it (roadmap, PlayStation Mobile).
+    /// </summary>
+    internal static bool PrepareOwnRuntime(string ux0Root, string titleId, Action<string>? log)
+    {
+        string runtime = Io.Vfs.ResolveCaseInsensitive(TitleRoot(ux0Root, titleId), Io.FirmwareLayout.PsmOwnRuntime);
+        string carried = Io.Vfs.ResolveCaseInsensitive(runtime, Io.FirmwareLayout.PsmOwnRuntimeLicense);
+        string dir = Io.FirmwareLayout.ApplicationLicenses.OnDevice(ux0Root, titleId);
+        string stored = Path.Combine(dir, PkgInstaller.AccountRifName);
+        if (!File.Exists(carried) || File.Exists(stored))
+        {
+            return false;
+        }
+
+        Directory.CreateDirectory(dir);
+        File.Copy(carried, stored);
+        log?.Invoke($"PlayStation Mobile title {titleId}: its runtime's licence stored in {dir}");
+        return true;
+    }
+
     /// <summary>Refuses anything but the PSM license of this package (a PS Vita 512-byte license, or another title's).</summary>
     private static void CheckLicense(PkgReader pkg, byte[] license)
     {
@@ -143,8 +170,9 @@ public static class PsmPkgInstaller
         }
     }
 
-    /// <summary>The install path of a package item: "contents/..." (or "content/...") under RO, anything else under the
-    /// title's folder.</summary>
+    /// <summary>The install path of a package item: "contents/..." (or "content/...") under RO, except a Unity title's
+    /// own runtime ("contents/runtime/..."), which the console's promote moves to the title's folder
+    /// (<see cref="Io.FirmwareLayout.PsmOwnRuntime"/>); anything else under the title's folder.</summary>
     private static string Target(string root, string ro, string name)
     {
         foreach (string folder in s_contentFolders)
@@ -156,7 +184,11 @@ public static class PsmPkgInstaller
 
             if (name.Length > folder.Length && name[folder.Length] == '/' && name.StartsWith(folder, StringComparison.OrdinalIgnoreCase))
             {
-                return PspPkgInstaller.Combine(ro, name[(folder.Length + 1)..]);
+                string inside = name[(folder.Length + 1)..];
+                string runtime = Io.FirmwareLayout.PsmOwnRuntime;
+                bool ownRuntime = inside.Equals(runtime, StringComparison.OrdinalIgnoreCase)
+                    || (inside.Length > runtime.Length && inside[runtime.Length] == '/' && inside.StartsWith(runtime, StringComparison.OrdinalIgnoreCase));
+                return PspPkgInstaller.Combine(ownRuntime ? root : ro, inside);
             }
         }
 

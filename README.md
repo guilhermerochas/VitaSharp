@@ -1,4 +1,4 @@
-<!-- pair: README.pt-BR.md sha256=3ae7929b6b845ac2a219be66b94b3f681e7f28a0cb5094f5616e0837541cb697 -->
+<!-- pair: README.pt-BR.md sha256=045341dedc6cc3bd0f903aa303c51038b1a08d24aacb59b0f0158f2b6d617fae -->
 <div align="center">
 
 **English** | [Português](README.pt-BR.md)
@@ -125,7 +125,11 @@ is still in progress (see `docs/roadmap.md`); a PSM game installed with an earli
 `ux0:addcont`, PSP/PSone games in `ux0:pspemu/PSP/GAME`, PSM games in `ux0:psm`, saves in `ux0:user/00/savedata`,
 licenses in `ux0:license/app/<TITLEID>`). Licenses that earlier versions kept in `ux0:license/<TITLEID>` move to
 `ux0:license/app/<TITLEID>` by themselves at the next start (a license whose new place already holds a different one
-stays where it was).
+stays where it was). An installed update counts the way the console counts it: the game sees the update's files
+over its own (`ux0:patch/<TITLEID>`, or `grw0:patch/<TITLEID>` for a game card), its version is the update's (the
+library shows it too), and the firmware's own apps take none. A Unity PSM game keeps its own runtime in
+`ux0:psm/<TITLEID>/runtime` with that runtime's license in `ux0:license/app/<TITLEID>`; one that an earlier version
+left in `RO/runtime` moves there by itself at the next start.
 
 **Firmware (optional).** Games run without firmware. Install it for the system fonts and libraries (`libSceXml`,
 `libSceSqlite`...) and the **Vita System**: on the **Vita System** page, **Install firmware (.PUP)...**, or **Use

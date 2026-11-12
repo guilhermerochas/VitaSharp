@@ -1807,6 +1807,24 @@ Lista de itens futuros do VitaSharp. Marque `[x]` quando um item for concluído.
   atualizada pelo promote/reconstrução ou leitura de arquivo; sobreposição de ux0:patch nas leituras de ux0:app) e
   como o console instala uma atualização do PCSI00011 (ux0:patch ou substituição em ux0:app); corrigir com teste e
   confirmar que o Cave Squid passa a abrir o runtime.
+  Em andamento (fix/system-bugs-13, B3). Como o console faz (FW 3.74 shell.self e appmgr, só estudo): o shell lê a
+  versão instalada do runtime da chave APP_VER (0xBCD7161E) do app.db do PCSI00011 (a do ux0:patch, 02.01: essa parte
+  já estava certa) e a compara com o runtime_version do app.info do título; o Cave Squid é um título Unity
+  (runtime_version 4.03, o runtime dele vem no pacote) e para esses o shell não usa o PCSI00011: o promote move o
+  "contents/runtime" do pacote para ux0:psm/<id>/runtime (fora do RO), guarda a licença dele (sce_sys/package/temp.bin)
+  em ux0:license/app/<id>, e o shell registra o título como categoria "mba" só quando ux0:psm/<id>/runtime/
+  sce_sys/param.sfo existe; sem isso o título vira "mb" e o shell exige PCSI00011 >= 4.03, que não existe (o pedido de
+  atualização). Causa: o instalador de PSM deixava o runtime em RO/runtime. Correção: o instalador põe o runtime onde
+  o promote põe e guarda a licença; uma migração move os já instalados (RO/runtime -> runtime) e faz o shell
+  reconstruir a base. Prova (cópia dos dados, `b3_out/shots4`): o Cave Squid não pede mais a atualização, e o shell
+  roda `ux0:psm/NPOA00239/runtime/eboot.bin` com o parâmetro "ux0:psm/NPOA00239". Falta: o runtime Unity (PCSI00010)
+  continua cifrado em PFS ("Not a SELF/ELF"): a licença dele (temp.bin, a mesma que todo título Unity traz, a
+  6488b73b...rif do NoPsmDrm) não tem a klicensee em claro, e a decifração de PFS do VitaSharp não acha nenhum arquivo
+  com ela; estudar como o NpDrm do console decifra a chave dessa licença (tipo 0xD, sem conta) antes de rodar o runtime.
+  Revalidação do modelo de atualização (appmgr): a pasta de atualização de um app do cartão é grw0:patch/<id> (o
+  VitaSharp usava sempre ux0:patch) e os apps do firmware (vs0) não recebem nenhuma; o param.sfo da atualização vale
+  por cima do app (APP_VER de sceAppUtilAppParamGetString, título, save state), e a Biblioteca mostra a versão e o
+  ícone da atualização; corrigidos com teste (`UpdateModelTests`).
 - [ ] Desktop (Windows): em tela cheia, depois de tirar o foco do jogo (ir para outro aplicativo), não dá para
   voltar: o Windows toca o som de erro e a janela do jogo não volta; só fechando o jogo (relato do usuário,
   12/11/2026, "ainda está acontecendo"; ver o item de 04/11 do F11). Estudar o comportamento do GLFW em tela cheia

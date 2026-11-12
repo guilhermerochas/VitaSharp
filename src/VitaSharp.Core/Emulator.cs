@@ -653,10 +653,13 @@ public sealed class Emulator : IDisposable
             TitleId = Path.GetFileName(AppPath);
         }
 
-        string patch = Io.FirmwareLayout.Patches.Host(Options.FsRoot, TitleId);
-        if (Directory.Exists(patch))
+        // an installed update overlays app0 where appmgr mounts it (ux0:patch for ux0:app, grw0:patch for the game
+        // card): every file it has replaces the application's, its sce_sys/param.sfo too, so the application sees the
+        // update's version (APP_VER) and everything else the update changed
+        if (Vfs.OverlayApp0Patch(AppPath, TitleId) is { } patchedSfo)
         {
-            Vfs.AddApp0Overlay(patch);
+            ParamSfo = patchedSfo;
+            Title = ParamSfo.Title;
         }
 
         string saveDir = Io.FirmwareLayout.SaveData.Host(Options.FsRoot, TitleId);
@@ -1055,7 +1058,7 @@ public sealed class Emulator : IDisposable
         foreach (string? p in new[]
                  {
                      Vfs.ResolveCaseInsensitive(AppPath, "sce_sys/package/work.bin"),
-                 }.Concat(Io.FirmwareLayout.ApplicationLicenseFiles(Options.FsRoot, TitleId)))
+                 }.Concat(Io.FirmwareLayout.ApplicationLicenseFiles(Options.FsRoot, Io.FirmwareLayout.PsmTitleOfOwnRuntime(Options.FsRoot, AppPath) ?? TitleId)))
         {
             if (File.Exists(p))
             {

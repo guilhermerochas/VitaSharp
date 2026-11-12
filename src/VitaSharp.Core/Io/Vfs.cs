@@ -29,6 +29,8 @@ public sealed class Vfs
         }
         // licences in the folder earlier versions used move to the firmware's (once; nothing to do after that)
         Package.LicenseMigration.Run(fsRoot);
+        // a Unity PSM title's own runtime where earlier versions left it (RO/runtime) goes where the console keeps it
+        Package.PsmLayoutMigration.Run(fsRoot, Util.Log.Info);
         // the game card: gro0 (the card's read-only application) and grw0 (its writable area) exist only while a card
         // is in the slot. With them always mounted the shell's game card promoter saw a card (sceIoGetstat("gro0:")
         // succeeded), found no gro0:app and reported "Could not install. (C0-11274-5)" (0x80AF5022) at every boot.
@@ -104,6 +106,31 @@ public sealed class Vfs
     public void AddApp0Overlay(string hostPath) => _app0Overlays.Insert(0, hostPath);
 
     public void ClearApp0Overlays() => _app0Overlays.Clear();
+
+    /// <summary>
+    /// Overlays app0 (the application in host folder <paramref name="appHostPath"/>) with its installed update, where
+    /// appmgr takes it (<see cref="FirmwareLayout.PatchFolderOf"/>): every file of the update replaces the
+    /// application's, its sce_sys/param.sfo too. Returns the update's param.sfo (what app0 now shows: its APP_VER,
+    /// its title), or null when there is no update or it has no param.sfo.
+    /// </summary>
+    public Package.Sfo? OverlayApp0Patch(string appHostPath, string titleId)
+    {
+        if (FirmwareLayout.HostToGuest(FsRoot, appHostPath) is not { } appGuest
+            || FirmwareLayout.PatchFolderOf(appGuest, titleId) is not { } patchGuest)
+        {
+            return null;
+        }
+
+        string patch = FirmwareLayout.GuestToHost(FsRoot, patchGuest);
+        if (!Directory.Exists(patch))
+        {
+            return null;
+        }
+
+        AddApp0Overlay(patch);
+        string sfo = ResolveCaseInsensitive(patch, "sce_sys/param.sfo");
+        return File.Exists(sfo) ? Package.Sfo.Load(sfo) : null;
+    }
 
     public static (string device, string rel) Split(string vitaPath)
     {
