@@ -1,4 +1,4 @@
-<!-- pair: README.pt-BR.md sha256=c7e7838712c5e84f049134486ca82cb5ab56a4fd8d8efb6f61a02b6033829af5 -->
+<!-- pair: README.pt-BR.md sha256=4ed6554f5dced099936f986b1763b1338546606c850ebde88e21136f1cbb8afb -->
 <div align="center">
 
 **English** | [Português](README.pt-BR.md)
@@ -318,7 +318,11 @@ What `dotnet test tests/VitaSharp.Tests` needs per system; a test whose requirem
 - Optional: the LunarG Vulkan SDK's validation layers run the renderer workloads under validation with
   `dotnet test tests/VitaSharp.Tests --filter Category=Slow` (`RendererValidationTests`; skipped without the layer).
 - The window test runs a hidden window (`VITASHARP_HIDDEN_WINDOW=1`): on Linux it needs a display (`DISPLAY`), on
-  Windows the system Vulkan loader (`vulkan-1.dll`, installed with any GPU driver).
+  Windows the system Vulkan loader (`vulkan-1.dll`, installed with any GPU driver), which gets the software driver
+  from `VK_DRIVER_FILES`. An elevated process (Administrator) makes the loader ignore that variable: run the tests
+  unelevated, or register the driver's `*_icd.json` as a DWORD value `0` under
+  `HKLM\SOFTWARE\Khronos\Vulkan\Drivers` (the CI does this for Edge's SwiftShader); otherwise the test is skipped. It
+  is skipped on macOS.
 - Media parity (`MediaParityTests`): the desktop side (FFmpeg) always runs; the Android side needs the developer APK
   (`-p:VitaSharpDeveloper=true`) on a phone or the Android Emulator (any system with the Android SDK: an x86_64
   Google APIs image and the `android-x64` build). `build/android-media-parity.sh` (or `.ps1`) records the trace on the

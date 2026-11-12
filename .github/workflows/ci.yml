@@ -102,6 +102,20 @@ jobs:
       - name: Install MoltenVK (macOS)
         if: runner.os == 'macOS'
         run: brew install molten-vk vulkan-loader
+      # the window test's child process reaches SwiftShader through the system Vulkan loader (its window surface),
+      # and the loader ignores VK_DRIVER_FILES in an elevated process (the runner's): register Edge's manifest instead
+      - name: Register SwiftShader with the Vulkan loader (Windows)
+        if: runner.os == 'Windows'
+        shell: pwsh
+        run: |
+          $dll = Get-ChildItem "${env:ProgramFiles(x86)}\Microsoft\Edge\Application\*\vk_swiftshader.dll" |
+            Sort-Object LastWriteTimeUtc -Descending | Select-Object -First 1
+          $icd = if ($dll) { Join-Path $dll.DirectoryName 'vk_swiftshader_icd.json' }
+          if (-not $icd -or -not (Test-Path $icd)) { Write-Error 'no vk_swiftshader_icd.json next to Microsoft Edge'; exit 1 }
+          $key = 'HKLM:\SOFTWARE\Khronos\Vulkan\Drivers'
+          if (-not (Test-Path $key)) { New-Item -Path $key | Out-Null }
+          New-ItemProperty -Path $key -Name $icd -PropertyType DWord -Value 0 -Force | Out-Null
+          "registered $icd"
 
       - name: Restore
         run: dotnet restore VitaSharp.sln
@@ -147,6 +161,18 @@ jobs:
         with:
           path: third_party/ffmpeg
           key: ffmpeg-${{ runner.os }}-${{ runner.arch }}-${{ hashFiles('build/FFmpeg.targets') }}
+      # as in build-test: the window test's child process gets SwiftShader through the system loader
+      - name: Register SwiftShader with the Vulkan loader
+        shell: pwsh
+        run: |
+          $dll = Get-ChildItem "${env:ProgramFiles(x86)}\Microsoft\Edge\Application\*\vk_swiftshader.dll" |
+            Sort-Object LastWriteTimeUtc -Descending | Select-Object -First 1
+          $icd = if ($dll) { Join-Path $dll.DirectoryName 'vk_swiftshader_icd.json' }
+          if (-not $icd -or -not (Test-Path $icd)) { Write-Error 'no vk_swiftshader_icd.json next to Microsoft Edge'; exit 1 }
+          $key = 'HKLM:\SOFTWARE\Khronos\Vulkan\Drivers'
+          if (-not (Test-Path $key)) { New-Item -Path $key | Out-Null }
+          New-ItemProperty -Path $key -Name $icd -PropertyType DWord -Value 0 -Force | Out-Null
+          "registered $icd"
       - name: Coverage and gate
         shell: pwsh
         run: ./build/coverage.ps1 coverage --gate
