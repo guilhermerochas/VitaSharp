@@ -154,4 +154,31 @@ public sealed class KernelModuleLoaderTests(GuestMemoryFixture fixture) : IDispo
         List<uint> again = _harness.Emu.Linker.BoundStubs(SysFn, SysLib, kernel: false);
         Assert.Equal(0xEFu, GuestMemory.R32(again[0]) >> 24);
     }
+
+    /// <summary>A user module with no imports that only starts (taiHEN loads such plugins into every process).</summary>
+    private static byte[] UserPlugin(string name) => new SceModuleBuilder(name).Start(0).Build();
+
+    [Fact]
+    public void TheSystemsProcessesGetTheirPluginsByTheirKernelTitleId()
+    {
+        // taiHEN: *KERNEL at boot, then each process's sections in file order: *ALL for all, *main for SceShell, the
+        // NPXS ID for a system application
+        string kernel = Write("k.skprx", Provider());
+        string all = Write("all.suprx", UserPlugin("PluginAll"));
+        string shell = Write("shell.suprx", UserPlugin("PluginShell"));
+        string settings = Write("settings.suprx", UserPlugin("PluginSettings"));
+        Config($"*KERNEL\n{kernel}\n*main\n{shell}\n*ALL\n{all}\n*NPXS10015\n{settings}\n");
+        Emulator emu = _harness.Emu;
+        emu.RunsOnSystemCore = true;
+        emu.TitleId = "shell";
+
+        Assert.Equal(Emulator.ShellProcessTitleId, emu.ProcessTitleId);
+        Assert.Equal([$"{kernel}: loaded and started (TestKernelProvider)", $"{shell}: loaded (PluginShell)", $"{all}: loaded (PluginAll)"],
+                     emu.LoadPlugins());
+
+        // the next process: the kernel ones are there already
+        emu.RunsOnSystemCore = false;
+        emu.TitleId = "NPXS10015";
+        Assert.Equal([$"{all}: loaded (PluginAll)", $"{settings}: loaded (PluginSettings)"], emu.LoadPlugins());
+    }
 }

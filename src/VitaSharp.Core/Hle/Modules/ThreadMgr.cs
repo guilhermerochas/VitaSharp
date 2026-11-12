@@ -884,10 +884,60 @@ public sealed partial class ThreadMgr : HleModule
         if (p == null) { if (poll) result.TrySet(0); return SceError.UNKNOWN_MSG_PIPE_ID; }
         int e = ReadVector(vec, count, out var segs);
         if (e != 0) { if (poll) result.TrySet(0); return e; }
+        if (!poll && (mode & MsgPipe.DontWait) != 0)
+        {
+            return TransferLater(p, send, segs, mode, result);
+        }
+
         if (segs.Total == 0) { result.TrySet(0); return 0; }
         int r = send ? p.Send(segs, mode, result, timeout, poll) : p.Receive(segs, mode, result, timeout, poll);
         if (r < 0 && (poll || r is SceError.WAIT_TIMEOUT or SceError.WAIT_DELETE or SceError.WAIT_CANCEL)) result.TrySet(0);
         return r;
+    }
+
+    /// <summary>How many DONT_WAIT transfers one process may have queued (threadmgr counts them per process).</summary>
+    internal const int MaxLaterTransfers = 0x100;
+
+    /// <summary>The kernel's error when a process has <see cref="MaxLaterTransfers"/> queued.</summary>
+    internal const int ErrorLaterTransfersFull = unchecked((int)0x80028225);
+
+    /// <summary>The DONT_WAIT transfers of this process still queued.</summary>
+    int _laterTransfers;
+
+    /// <summary>
+    /// A blocking send/receive with DONT_WAIT (FW 3.74 threadmgr 0x81015004 / 0x8101533C): a mode with other bits
+    /// is refused (ILLEGAL_MODE), then the transfer is queued for the kernel's "SceKernelMsgPipeAsync" threads and the
+    /// call returns success at once (<see cref="MsgPipe.TransferLater"/>); a process with 0x100 queued gets
+    /// 0x80028225. The kernel writes the byte count back only for a program built with an SDK older than 2.00.
+    /// </summary>
+    int TransferLater(MsgPipe pipe, bool send, MsgPipe.Segments buffers, uint mode, Ptr<uint> result)
+    {
+        if ((mode & ~MsgPipe.ValidModes) != 0)
+        {
+            return SceError.ILLEGAL_MODE;
+        }
+
+        if (Interlocked.Increment(ref _laterTransfers) > MaxLaterTransfers)
+        {
+            Interlocked.Decrement(ref _laterTransfers);
+            return ErrorLaterTransfersFull;
+        }
+
+        Ptr<uint> written = MainModuleSdkVersion() < 0x02000000 ? result : default;
+        pipe.TransferLater(send, buffers, mode & ~MsgPipe.DontWait, written, () => Interlocked.Decrement(ref _laterTransfers));
+        return SceError.OK;
+    }
+
+    /// <summary>The SDK version the main module was built with (SceProcessParam +0xC), 0 when unknown.</summary>
+    uint MainModuleSdkVersion()
+    {
+        uint processParam = Emu.Linker.ProcessParam;
+        if (processParam == 0 || GuestMemory.R32(processParam + 4) != 0x32505350)
+        {
+            return 0;
+        }
+
+        return GuestMemory.R32(processParam + 0xC);
     }
 
     [Hle("sceKernelSendMsgPipeVector")]
@@ -919,7 +969,14 @@ public sealed partial class ThreadMgr : HleModule
     [Hle("sceKernelSendMsgPipe")]
     [Hle("sceKernelSendMsgPipeCB")]
     int sceKernelSendMsgPipe(int uid, uint buf, uint size, uint mode, Ptr<uint> result, Ptr<uint> timeout)
-        => Obj<MsgPipe>(uid)?.Send(buf, (int)size, mode, result, timeout, false) ?? SceError.UNKNOWN_MSG_PIPE_ID;
+    {
+        if ((mode & MsgPipe.DontWait) != 0 && Obj<MsgPipe>(uid) is { } pipe)
+        {
+            return TransferLater(pipe, true, MsgPipe.Segments.One(buf, (int)size), mode, result);
+        }
+
+        return Obj<MsgPipe>(uid)?.Send(buf, (int)size, mode, result, timeout, false) ?? SceError.UNKNOWN_MSG_PIPE_ID;
+    }
 
     [Hle] int sceKernelTrySendMsgPipe(int uid, uint buf, uint size, uint mode, Ptr<uint> result)
         => Obj<MsgPipe>(uid)?.Send(buf, (int)size, mode, result, default, true) ?? SceError.UNKNOWN_MSG_PIPE_ID;
@@ -927,7 +984,14 @@ public sealed partial class ThreadMgr : HleModule
     [Hle("sceKernelReceiveMsgPipe")]
     [Hle("sceKernelReceiveMsgPipeCB")]
     int sceKernelReceiveMsgPipe(int uid, uint buf, uint size, uint mode, Ptr<uint> result, Ptr<uint> timeout)
-        => Obj<MsgPipe>(uid)?.Receive(buf, (int)size, mode, result, timeout, false) ?? SceError.UNKNOWN_MSG_PIPE_ID;
+    {
+        if ((mode & MsgPipe.DontWait) != 0 && Obj<MsgPipe>(uid) is { } pipe)
+        {
+            return TransferLater(pipe, false, MsgPipe.Segments.One(buf, (int)size), mode, result);
+        }
+
+        return Obj<MsgPipe>(uid)?.Receive(buf, (int)size, mode, result, timeout, false) ?? SceError.UNKNOWN_MSG_PIPE_ID;
+    }
 
     [Hle] int sceKernelTryReceiveMsgPipe(int uid, uint buf, uint size, uint mode, Ptr<uint> result)
         => Obj<MsgPipe>(uid)?.Receive(buf, (int)size, mode, result, default, true) ?? SceError.UNKNOWN_MSG_PIPE_ID;
@@ -1172,7 +1236,8 @@ public sealed partial class ThreadMgr : HleModule
         lock (t)
         {
             if (t.NextEvent == ulong.MaxValue) return unchecked((int)0x80028242);
-            ulong now = K.ProcessTimeUs;
+            // the timer's own clock (the process clock), the one its events are scheduled on
+            ulong now = t.Clock();
             remaining.Value = t.NextEvent > now ? t.NextEvent - now : 0;
         }
         return 0;

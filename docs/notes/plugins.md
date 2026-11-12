@@ -38,7 +38,11 @@ modules of a section load in file order, and one that fails does not stop the ot
   `module_start` runs at once on a kernel thread; a module whose start does not report success is unloaded again, as
   the firmware's module manager does. The log says what happened to each one (`kernel plugin ...: loaded and started`,
   `... module_start of X returned 0x2, unloaded`).
-- `*ALL` and `*TITLEID` modules load into the program's process and start before its main thread.
+- `*KERNEL` modules load once, with the first process of the session (the shell when the system starts, as taiHEN loads
+  them at boot); a later process finds them loaded.
+- `*ALL` and `*TITLEID` modules load into every program's process, the system's own too (taiHEN loads them in its hook
+  on `sceKernelStartPreloadedModules`, after the process's preloaded modules), and start before its main thread. The
+  section is the process's kernel title ID: `main` for the shell, the NPXS ID for a system application.
 - A module that imports a library nothing provides (no loaded module and no firmware library VitaSharp implements) is
   not started; the log names the libraries (`not started: no module provides ...`).
 - Kernel modules call the firmware's kernel libraries (SceSysmemForDriver, SceThreadmgrForDriver,

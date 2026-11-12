@@ -1,4 +1,4 @@
-<!-- pair: README.pt-BR.md sha256=3ae7929b6b845ac2a219be66b94b3f681e7f28a0cb5094f5616e0837541cb697 -->
+<!-- pair: README.pt-BR.md sha256=880e8177482af6d9d946dc833c886397991307404f62fd54cf358b779431770a -->
 <div align="center">
 
 **English** | [Português](README.pt-BR.md)
@@ -125,7 +125,11 @@ is still in progress (see `docs/roadmap.md`); a PSM game installed with an earli
 `ux0:addcont`, PSP/PSone games in `ux0:pspemu/PSP/GAME`, PSM games in `ux0:psm`, saves in `ux0:user/00/savedata`,
 licenses in `ux0:license/app/<TITLEID>`). Licenses that earlier versions kept in `ux0:license/<TITLEID>` move to
 `ux0:license/app/<TITLEID>` by themselves at the next start (a license whose new place already holds a different one
-stays where it was).
+stays where it was). An installed update counts the way the console counts it: the game sees the update's files
+over its own (`ux0:patch/<TITLEID>`, or `grw0:patch/<TITLEID>` for a game card), its version is the update's (the
+library shows it too), and the firmware's own apps take none. A Unity PSM game keeps its own runtime in
+`ux0:psm/<TITLEID>/runtime` with that runtime's license in `ux0:license/app/<TITLEID>`; one that an earlier version
+left in `RO/runtime` moves there by itself at the next start.
 
 **Firmware (optional).** Games run without firmware. Install it for the system fonts and libraries (`libSceXml`,
 `libSceSqlite`...) and the **Vita System**: on the **Vita System** page, **Install firmware (.PUP)...**, or **Use
@@ -138,8 +142,9 @@ LiveArea. A game opened from the LiveArea runs as a second process; the PS butto
 and **Continue** resumes the game. Details and what is missing in [`docs/notes/system-apps.md`](docs/notes/system-apps.md).
 
 **Plugins.** VitaSharp loads the plugins of `fs/ur0/tai/config.txt` (copied from your Vita to `fs/ur0/tai`, listed as
-on the Vita: `*KERNEL` for `.skprx` kernel plugins, `*ALL` / `*TITLEID` for `.suprx` user plugins) and runs their own
-code. taiHEN (`taihen.skprx`) loads too, but it cannot start: its start needs patches to the firmware's signature and
+on the Vita: `*KERNEL` for `.skprx` kernel plugins, loaded once when the system starts, `*ALL` / `*TITLEID` for `.suprx`
+user plugins, for games and for the system's own programs too: `*main` is the home screen, `*NPXS10015` Settings and so
+on) and runs their own code. taiHEN (`taihen.skprx`) loads too, but it cannot start: its start needs patches to the firmware's signature and
 DRM checks, which VitaSharp does not make work. So everything that needs taiHEN does not run, as on a Vita without
 it: plugins built on it (kubridge, fd_fix) and homebrew that calls it or needs such a plugin, among them **Dead Space**
 (through kubridge) and **Sonic Mania**. Details in [`docs/notes/plugins.md`](docs/notes/plugins.md).

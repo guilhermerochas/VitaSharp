@@ -40,7 +40,12 @@ os outros.
   e o `module_start` deles roda na hora numa thread de kernel; um módulo cujo início não informa sucesso é descarregado
   de novo, como faz o gerenciador de módulos do firmware. O log diz o que aconteceu com cada um
   (`kernel plugin ...: loaded and started`, `... module_start of X returned 0x2, unloaded`).
-- Os módulos de `*ALL` e `*TITLEID` são carregados no processo do programa e iniciam antes da thread principal.
+- Os módulos de `*KERNEL` carregam uma vez, com o primeiro processo da sessão (o shell quando o sistema inicia, como o
+  taiHEN os carrega no boot); um processo depois os encontra carregados.
+- Os módulos de `*ALL` e `*TITLEID` são carregados no processo de todo programa, também nos do próprio sistema (o taiHEN
+  os carrega no gancho de `sceKernelStartPreloadedModules`, depois dos módulos pré-carregados do processo), e iniciam
+  antes da thread principal. A seção é o ID de título do processo no kernel: `main` para o shell, o NPXS de um app do
+  sistema.
 - Um módulo que importa uma biblioteca que ninguém fornece (nenhum módulo carregado e nenhuma biblioteca do firmware que
   o VitaSharp implementa) não é iniciado; o log diz quais bibliotecas (`not started: no module provides ...`).
 - Os módulos de kernel chamam as bibliotecas de kernel do firmware (SceSysmemForDriver, SceThreadmgrForDriver,

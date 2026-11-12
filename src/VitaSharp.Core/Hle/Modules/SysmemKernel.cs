@@ -994,7 +994,7 @@ public sealed partial class SysmemKernel : HleModule
         }
         else if (ProcessOf(pid) is { } process)
         {
-            title = process.TitleId;
+            title = process.ProcessTitleId;
         }
         else
         {

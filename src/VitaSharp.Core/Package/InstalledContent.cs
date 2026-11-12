@@ -48,10 +48,26 @@ public static class InstalledContent
 
     /// <summary>The title in <paramref name="dir"/>, a folder of <paramref name="folder"/>; null when it is not one.</summary>
     public static LibraryTitle? Read(string fsRoot, FirmwareFolder folder, string dir, string? locale = null) =>
-        folder.Kind == ContentKind.PsmTitle ? ReadPsm(fsRoot, dir, locale) : ReadApplication(dir, folder.Kind);
+        folder.Kind == ContentKind.PsmTitle ? ReadPsm(fsRoot, dir, locale) : ReadApplication(dir, folder.Kind, UpdateFolder(fsRoot, dir));
 
-    /// <summary>A PS Vita application folder (eboot.bin, sce_sys/param.sfo); null when it is not one.</summary>
-    public static LibraryTitle? ReadApplication(string dir, ContentKind kind = ContentKind.VitaApplication)
+    /// <summary>The host folder of the update installed for the application in <paramref name="dir"/> (where appmgr
+    /// overlays it, <see cref="FirmwareLayout.PatchFolderOf"/>), or null.</summary>
+    public static string? UpdateFolder(string fsRoot, string dir)
+    {
+        if (FirmwareLayout.HostToGuest(fsRoot, dir) is not { } guest
+            || FirmwareLayout.PatchFolderOf(guest, Path.GetFileName(Path.TrimEndingDirectorySeparator(dir))) is not { } patch)
+        {
+            return null;
+        }
+
+        string host = FirmwareLayout.GuestToHost(fsRoot, patch);
+        return Directory.Exists(host) ? host : null;
+    }
+
+    /// <summary>A PS Vita application folder (eboot.bin, sce_sys/param.sfo); null when it is not one. With an installed
+    /// update (<paramref name="updateDir"/>) its param.sfo and icon are the update's, as the application's app0 shows
+    /// them (the version is the update's APP_VER).</summary>
+    public static LibraryTitle? ReadApplication(string dir, ContentKind kind = ContentKind.VitaApplication, string? updateDir = null)
     {
         if (!File.Exists(Vfs.ResolveCaseInsensitive(dir, "eboot.bin")))
         {
@@ -60,30 +76,46 @@ public static class InstalledContent
 
         string id = Path.GetFileName(Path.TrimEndingDirectorySeparator(dir));
         string title = id, version = "", category = "gd", contentId = "";
-        string sfoPath = Vfs.ResolveCaseInsensitive(dir, "sce_sys/param.sfo");
+        string? Overlaid(string relative)
+        {
+            if (updateDir != null && Vfs.ResolveCaseInsensitive(updateDir, relative) is var updated && File.Exists(updated))
+            {
+                return updated;
+            }
+
+            string own = Vfs.ResolveCaseInsensitive(dir, relative);
+            return File.Exists(own) ? own : null;
+        }
+        string ownSfo = Vfs.ResolveCaseInsensitive(dir, "sce_sys/param.sfo");
+        string? shownSfo = Overlaid("sce_sys/param.sfo");
         try
         {
-            if (File.Exists(sfoPath))
+            if (File.Exists(ownSfo))
             {
-                var sfo = Sfo.Load(sfoPath);
-                if (sfo.Title.Length > 0)
-                {
-                    title = sfo.Title.Replace('\n', ' ');
-                }
-
+                // what the application is (its ID, kind and content) is its own: an update's CATEGORY is "gp"
+                var sfo = Sfo.Load(ownSfo);
                 if (sfo.TitleId.Length > 0)
                 {
                     id = sfo.TitleId;
                 }
 
-                version = DisplayVersion(sfo.AppVersion);
                 category = sfo.Category;
                 contentId = sfo.ContentId;
             }
+
+            if (shownSfo != null)
+            {
+                var shown = Sfo.Load(shownSfo);
+                if (shown.Title.Length > 0)
+                {
+                    title = shown.Title.Replace('\n', ' ');
+                }
+
+                version = DisplayVersion(shown.AppVersion);
+            }
         }
         catch (Exception e) when (e is InvalidDataException or IOException) { }
-        string icon = Vfs.ResolveCaseInsensitive(dir, "sce_sys/icon0.png");
-        return new LibraryTitle(kind, id, title, version, category, contentId, dir, File.Exists(icon) ? icon : null);
+        return new LibraryTitle(kind, id, title, version, category, contentId, dir, Overlaid("sce_sys/icon0.png"));
     }
 
     /// <summary>
@@ -144,7 +176,7 @@ public static class InstalledContent
         string full = Path.TrimEndingDirectorySeparator(Path.GetFullPath(titleDir));
         string id = Path.GetFileName(full);
         string param = FirmwareLayout.PsmTitles.Guest(id);
-        string own = Vfs.ResolveCaseInsensitive(full, "runtime/eboot.bin");
+        string own = Vfs.ResolveCaseInsensitive(full, FirmwareLayout.PsmOwnRuntime + "/eboot.bin");
         if (File.Exists(own))
         {
             return (Path.GetDirectoryName(own)!, Path.GetFileName(own), param);

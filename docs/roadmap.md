@@ -863,7 +863,14 @@ Lista de itens futuros do VitaSharp. Marque `[x]` quando um item for concluído.
 
 ## Firmware e sistema
 
-- [ ] **PRIORIDADE (11/11/2026)** Plugins também nos programas do sistema (achado ao revisar o loader, 11/11/2026).
+- [x] **PRIORIDADE (11/11/2026)** Plugins também nos programas do sistema (achado ao revisar o loader, 11/11/2026).
+  Feito (fix/system-bugs-13, B3): `Emulator.LoadPlugins` roda em todo processo, depois dos módulos pré-carregados
+  (também os do firmware num programa do sistema); a seção é o ID de título do processo no kernel
+  (`Emulator.ProcessTitleId`: "main" para o shell, o NPXS de um app do sistema, também em sceKernelGetProcessTitleId
+  e ksceKernelSysrootGetProcessTitleId); os `*KERNEL` carregam uma vez por sessão, com o primeiro processo (o boot do
+  shell), e um que falhou não é tentado de novo em cada processo. Teste:
+  `KernelModuleLoaderTests.TheSystemsProcessesGetTheirPluginsByTheirKernelTitleId` (módulos do `SceModuleBuilder`);
+  prova no boot do shell sem janela: os `*KERNEL` do usuário (kubridge, fd_fix) são tentados no boot, uma vez.
   Hoje `Emulator.LoadPlugins` só roda quando o processo não é um programa do sistema (`if (!IsSystemProgram)` em
   `Emulator.cs`): os módulos `*KERNEL` só carregam quando um jogo abre (no console, o taiHEN carrega no boot, antes
   do shell), a seção `*main` (plugins do shell) não é reconhecida e `*ALL` e as seções por ID (`*NPXS10015`...) nunca
@@ -1824,6 +1831,24 @@ Lista de itens futuros do VitaSharp. Marque `[x]` quando um item for concluído.
   atualizada pelo promote/reconstrução ou leitura de arquivo; sobreposição de ux0:patch nas leituras de ux0:app) e
   como o console instala uma atualização do PCSI00011 (ux0:patch ou substituição em ux0:app); corrigir com teste e
   confirmar que o Cave Squid passa a abrir o runtime.
+  Em andamento (fix/system-bugs-13, B3). Como o console faz (FW 3.74 shell.self e appmgr, só estudo): o shell lê a
+  versão instalada do runtime da chave APP_VER (0xBCD7161E) do app.db do PCSI00011 (a do ux0:patch, 02.01: essa parte
+  já estava certa) e a compara com o runtime_version do app.info do título; o Cave Squid é um título Unity
+  (runtime_version 4.03, o runtime dele vem no pacote) e para esses o shell não usa o PCSI00011: o promote move o
+  "contents/runtime" do pacote para ux0:psm/<id>/runtime (fora do RO), guarda a licença dele (sce_sys/package/temp.bin)
+  em ux0:license/app/<id>, e o shell registra o título como categoria "mba" só quando ux0:psm/<id>/runtime/
+  sce_sys/param.sfo existe; sem isso o título vira "mb" e o shell exige PCSI00011 >= 4.03, que não existe (o pedido de
+  atualização). Causa: o instalador de PSM deixava o runtime em RO/runtime. Correção: o instalador põe o runtime onde
+  o promote põe e guarda a licença; uma migração move os já instalados (RO/runtime -> runtime) e faz o shell
+  reconstruir a base. Prova (cópia dos dados, `b3_out/shots4`): o Cave Squid não pede mais a atualização, e o shell
+  roda `ux0:psm/NPOA00239/runtime/eboot.bin` com o parâmetro "ux0:psm/NPOA00239". Falta: o runtime Unity (PCSI00010)
+  continua cifrado em PFS ("Not a SELF/ELF"): a licença dele (temp.bin, a mesma que todo título Unity traz, a
+  6488b73b...rif do NoPsmDrm) não tem a klicensee em claro, e a decifração de PFS do VitaSharp não acha nenhum arquivo
+  com ela; estudar como o NpDrm do console decifra a chave dessa licença (tipo 0xD, sem conta) antes de rodar o runtime.
+  Revalidação do modelo de atualização (appmgr): a pasta de atualização de um app do cartão é grw0:patch/<id> (o
+  VitaSharp usava sempre ux0:patch) e os apps do firmware (vs0) não recebem nenhuma; o param.sfo da atualização vale
+  por cima do app (APP_VER de sceAppUtilAppParamGetString, título, save state), e a Biblioteca mostra a versão e o
+  ícone da atualização; corrigidos com teste (`UpdateModelTests`).
 - [ ] Desktop (Windows): em tela cheia, depois de tirar o foco do jogo (ir para outro aplicativo), não dá para
   voltar: o Windows toca o som de erro e a janela do jogo não volta; só fechando o jogo (relato do usuário,
   12/11/2026, "ainda está acontecendo"; ver o item de 04/11 do F11). Estudar o comportamento do GLFW em tela cheia
@@ -1873,11 +1898,16 @@ Lista de itens futuros do VitaSharp. Marque `[x]` quando um item for concluído.
   disputados pela compilação de shaders (e por qualquer outra carga no PC durante o teste). Não é erro de semântica:
   próximo passo é medir o atraso do despertar (FrameLedger) com a máquina livre; se repetir, olhar se a compilação
   roda numa thread que segura um núcleo emulado. Também falta cobrir PVRTC, YUV e cube no jogo de teste.
-- [ ] Teste instável sob carga: `ThreadMgrHleTests.TimerEventsFireAndCancel` (11/11/2026) falhou 3 de 5 vezes
+- [x] Teste instável sob carga: `ThreadMgrHleTests.TimerEventsFireAndCancel` (11/11/2026) falhou 3 de 5 vezes
   isolado com o processador em 100% (7 agentes). Ele usa um timer de 20 ms e espera que um poll logo depois do wait
   não veja o evento: com a máquina carregada passa mais de um período entre as duas chamadas. Não veio da refatoração
   (IL idêntico, teste intocado). Deixar o teste independente do tempo real (intervalo maior ou relógio do processo
   controlado), sem afrouxar o que ele confere.
+  Feito (fix/system-bugs-13, B3): o teste controla o relógio do processo do timer (`TimerObject.Clock`): o período
+  só acaba quando o teste avança o relógio (a espera fica bloqueada até lá, conferido), o poll logo depois não vê o
+  evento seja qual for a carga, o seguinte o vê depois do próximo período; o tempo restante agora é exato (15000 µs
+  depois de 5 ms, antes só "entre 0 e 20000"). `sceKernelGetTimerEventRemainingTime` usa o relógio do próprio timer
+  (o mesmo relógio do processo; antes lia outro). O timeout final roda no relógio real.
 - [ ] Wipeout 2048 (PCSA00015): depois do loading do primeiro evento (Empire Climb), o loading e a corrida ficam
   travados em ~7,5 fps (60/8), com o cronômetro do jogo andando ~70 s em ~2 min reais; a CPU das threads é baixa
   (main 3,3 ms/quadro, GPU 6,6 ms/quadro), então parece espera de tempo/vblank/sincronização, não falta de CPU
@@ -2043,12 +2073,25 @@ Lista de itens futuros do VitaSharp. Marque `[x]` quando um item for concluído.
   buffer é o tamanho pedido arredondado para páginas de 4 KB (o bloco de memória que o threadmgr aloca; o campo de
   capacidade guarda o arredondado). Testes: ThreadMgrHleTests.MsgPipeSendReceiveModes,
   MsgPipeFullSendWaitsForRoomForTheWholeMessage. Correção feita, ainda não validada com jogo.
-- [ ] MsgPipe: DONT_WAIT (0x10) nas formas bloqueantes (sceKernelSendMsgPipe/ReceiveMsgPipe e Vector) não é "falhar em
+- [ ] MsgPipe: pipe sem buffer (tamanho 0) e entrega direta a um receptor que espera (o firmware passa os dados ao
+  receptor antes do buffer), achados junto com o item de DONT_WAIT abaixo; conferir no threadmgr (FUN_81013dfc) antes
+  de mudar.
+- [x] MsgPipe: DONT_WAIT (0x10) nas formas bloqueantes (sceKernelSendMsgPipe/ReceiveMsgPipe e Vector) não é "falhar em
   vez de esperar" no firmware: o threadmgr copia o vetor, enfileira o pedido para os threads "SceKernelMsgPipeAsync"
   (até 0x100 pedidos por processo, depois 0x80028225) e volta na hora; o envio/recebimento acontece depois nesse thread
   (decompilação 0x81015004 / 0x8101533C, só estudo). O HLE trata 0x10 como Try. Também não há entrega direta a um
   receptor que espera (o firmware passa os dados ao receptor antes do buffer) nem pipe sem buffer (tamanho 0). Conferir
   com um jogo que use 0x10 antes de mudar.
+  Feito (fix/system-bugs-13, B3), conferido de novo na decompilação do threadmgr 3.74 (só estudo): com 0x10 a forma
+  bloqueante valida o modo (outros bits além de 0x11: ILLEGAL_MODE), conta o pedido no processo (0x100, depois
+  0x80028225), copia a lista de buffers e o põe na fila dos 8 threads "SceKernelMsgPipeAsync", que fazem a
+  transferência como a chamada bloqueante (com a prioridade e a afinidade de quem pediu); a chamada volta 0 na hora; o
+  número de bytes só é escrito de volta para programas de SDK anterior a 2.00. `MsgPipe.TransferLater`: a transferência
+  fica na fila do pipe e anda sempre que o pipe deixa (envio FULL inteiro, recebimento FULL até ter tudo); cancelar ou
+  apagar o pipe a encerra. As formas Try continuam falhando na hora. Testes: `KernelHleTests.
+  ADontWaitTransferIsDoneLaterAsTheBlockingCallWouldDoIt`, `ThreadMgrHleTests.
+  MsgPipeDontWaitReturnsAtOnceAndTheKernelTransfersLater` (falham sem a correção: MPP_EMPTY na hora). Não validado
+  num jogo (nenhum dos testados usa 0x10); a fila não entra no save state.
 - [x] Dragon's Crown (PCSE00019): flicker e texturas erradas (relato do usuário, 10/11/2026, capturas
   `PCSE00019_20261110_214605_tudo` e `..._214648_tudo`). Agente A4 (fix/bugs-a-4), duas causas:
   (1) **corrigido em bf2f3b9**: o jogo lê o back buffer (960x544, pitch 1024) como uma textura 1024x1024 que também

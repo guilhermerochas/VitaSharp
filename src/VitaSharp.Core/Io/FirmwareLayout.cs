@@ -195,6 +195,58 @@ public static class FirmwareLayout
     public const string PsmRuntimeVersion = "runtime_version.txt";
 
     /// <summary>
+    /// The folder of a PSM title built with Unity that holds its own runtime, ux0:psm/&lt;id&gt;/runtime: a PS Vita
+    /// application ("Unity Runtime for PSM", its own sce_sys/param.sfo and licence). The package carries it as
+    /// "contents/runtime"; the shell's PSM promote moves it out of RO to the title's folder (FW 3.74 shell.self, its
+    /// promote renames "&lt;promote&gt;/contents/runtime" to "&lt;title&gt;/runtime"), the shell registers the title as a
+    /// Unity one (category "mba", which needs no PSM Runtime Package) only when &lt;title&gt;/runtime/sce_sys/param.sfo
+    /// is there, and its bubble starts &lt;title&gt;/runtime/eboot.bin. Without it the title counts as a plain PSM one
+    /// (category "mb") and the shell compares its runtime_version (4.03 for Unity) with the PSM Runtime Package's.
+    /// </summary>
+    public const string PsmOwnRuntime = "runtime";
+
+    /// <summary>The licence of a PSM title's own runtime as the package carries it (a PS Vita .rif, under
+    /// <see cref="PsmOwnRuntime"/>); the promote stores it in ux0:license/app/&lt;PSM title id&gt; ("PSMobileRifWrite").</summary>
+    public const string PsmOwnRuntimeLicense = "sce_sys/package/temp.bin";
+
+    /// <summary>The PSM title whose own runtime (<see cref="PsmOwnRuntime"/>) is the host folder
+    /// <paramref name="appHostPath"/> ("&lt;fs&gt;/ux0/psm/NPOA00001/runtime" = "NPOA00001"), or null when it is not
+    /// one: that application's licence is the one the promote stored for the PSM title.</summary>
+    public static string? PsmTitleOfOwnRuntime(string fsRoot, string appHostPath)
+    {
+        string full = Path.TrimEndingDirectorySeparator(Path.GetFullPath(appHostPath));
+        if (!Path.GetFileName(full).Equals(PsmOwnRuntime, StringComparison.OrdinalIgnoreCase))
+        {
+            return null;
+        }
+
+        string title = Path.GetDirectoryName(full)!;
+        string psmRoot = Path.TrimEndingDirectorySeparator(Path.GetFullPath(PsmTitles.Host(fsRoot)));
+        return string.Equals(Path.GetDirectoryName(title), psmRoot, StringComparison.OrdinalIgnoreCase) ? Path.GetFileName(title) : null;
+    }
+
+    /// <summary>
+    /// The update folder appmgr overlays on an application's app0 (FW 3.74 appmgr, the mount of app0 and its patch): an
+    /// application of the game card (gro0:app) takes grw0:patch/&lt;id&gt;, an installed one (ux0:app) ux0:patch/&lt;id&gt;;
+    /// anything else (the firmware's own applications in vs0, host0:, ux0:data, a PSM title's runtime) has none. Null
+    /// when <paramref name="appGuestPath"/> ("ux0:app/PCSE00001") takes no update.
+    /// </summary>
+    public static string? PatchFolderOf(string appGuestPath, string titleId)
+    {
+        if (appGuestPath.StartsWith(GameCardApplications.Guest() + "/", StringComparison.OrdinalIgnoreCase))
+        {
+            return GameCardPatches.Guest(titleId);
+        }
+
+        if (appGuestPath.StartsWith(Applications.Guest() + "/", StringComparison.OrdinalIgnoreCase))
+        {
+            return Patches.Guest(titleId);
+        }
+
+        return null;
+    }
+
+    /// <summary>
     /// The host folder of an installed PS Vita application by title ID, looked up the way appmgr does
     /// (<see cref="LaunchableApplications"/>, a folder with eboot.bin), through <paramref name="resolve"/> (guest path
     /// to host path, null when unmapped: a process's Vfs); null when it is not installed.
@@ -257,9 +309,11 @@ public static class FirmwareLayout
     }
 
     /// <summary>The param.sfo files that describe a title, in the order the shell's metadata is found: an installed
-    /// application, a system application, its metadata copies.</summary>
+    /// update (what the application's app0 shows over its own, <see cref="PatchFolderOf"/>), an installed application,
+    /// a system application, its metadata copies.</summary>
     public static IEnumerable<string> TitleParamSfoCandidates(string titleId)
     {
+        yield return Patches.Guest(titleId, "sce_sys/param.sfo");
         yield return Applications.Guest(titleId, "sce_sys/param.sfo");
         yield return SystemApplications.Guest(titleId, "sce_sys/param.sfo");
         yield return SystemMetadata.Guest(titleId, "param.sfo");

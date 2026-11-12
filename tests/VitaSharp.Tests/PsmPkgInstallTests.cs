@@ -105,6 +105,40 @@ public class PsmPkgInstallTests
     }
 
     [Fact]
+    public void AUnityTitlesOwnRuntimeGoesToTheTitlesFolderWithItsLicence()
+    {
+        DirectoryInfo dir = Directory.CreateTempSubdirectory("vitasharp-psm-");
+        try
+        {
+            // as a store package of a Unity title carries it: the runtime (a PS Vita application) inside contents/
+            byte[] runtimeLicence = Enumerable.Range(0, 512).Select(i => (byte)(i * 3)).ToArray();
+            string pkg = Path.Combine(dir.FullName, "psm.pkg");
+            File.WriteAllBytes(pkg, PkgFixture.BuildPsm(ContentId,
+                ("contents", null),
+                ("contents/Application/app.info", s_appInfo),
+                ("contents/runtime", null),
+                ("contents/runtime/eboot.bin", [0x7F, (byte)'E', (byte)'L', (byte)'F']),
+                ("contents/runtime/sce_sys/param.sfo", [0, (byte)'P', (byte)'S', (byte)'F']),
+                ("contents/runtime/sce_sys/package/temp.bin", runtimeLicence)));
+            string ux0 = Path.Combine(dir.FullName, "ux0");
+
+            InstalledTitle t = PkgInstaller.Install(pkg, PsmLicense(ContentId), ux0);
+
+            // where the console's promote moves it, out of RO: the shell registers the title as a Unity one from it
+            Assert.True(File.Exists(Path.Combine(t.Path, "runtime", "eboot.bin")));
+            Assert.True(File.Exists(Path.Combine(t.Path, "runtime", "sce_sys", "param.sfo")));
+            Assert.False(Directory.Exists(Path.Combine(t.Path, "RO", "runtime")));
+            Assert.Equal(s_appInfo, File.ReadAllBytes(Path.Combine(t.Path, "RO", "Application", "app.info")));
+            // the runtime's licence goes with the PS Vita licences, under the PSM title's ID
+            Assert.Equal(runtimeLicence, File.ReadAllBytes(Path.Combine(ux0, "license", "app", TitleId, PkgInstaller.AccountRifName)));
+        }
+        finally
+        {
+            dir.Delete(true);
+        }
+    }
+
+    [Fact]
     public void ContentSpelledWithoutTheSGoesToRoToo()
     {
         DirectoryInfo dir = Directory.CreateTempSubdirectory("vitasharp-psm-");

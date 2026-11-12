@@ -968,8 +968,9 @@ public sealed class ThreadMgrHleTests(GuestMemoryFixture fx) : IDisposable
             Assert.Equal(SceError.MPP_EMPTY, Call(Tm, "sceKernelTryReceiveMsgPipe", p, dst, 4u, MsgPipe.WaitAsap, new Ptr<uint>(res)));
             Assert.Equal(SceError.WAIT_TIMEOUT, Call(Tm, "sceKernelReceiveMsgPipe", p, dst, 4u, MsgPipe.WaitAll, new Ptr<uint>(res), new Ptr<uint>(_h.Word(1000))));
             Assert.Equal(0u, GuestMemory.R32(res));
-            // DONT_WAIT (0x10) on the blocking call: here like the Try form (the firmware queues it to its async threads, roadmap)
-            Assert.Equal(SceError.MPP_EMPTY, Call(Tm, "sceKernelReceiveMsgPipe", p, dst, 4u, MsgPipe.DontWait, new Ptr<uint>(res), new Ptr<uint>(0)));
+            // DONT_WAIT (0x10) on the blocking call: queued for the kernel's async threads, success at once (the cancel
+            // below ends it)
+            Assert.Equal(0, Call(Tm, "sceKernelReceiveMsgPipe", p, dst, 4u, MsgPipe.DontWait, new Ptr<uint>(res), new Ptr<uint>(0)));
 
             Assert.Equal(0, Call(Tm, "sceKernelCancelMsgPipe", p, new Ptr<int>(_h.Word(9)), new Ptr<int>(_h.Word(9))));
             Assert.Equal(0, Call(Tm, "_sceKernelCancelMsgPipe", p, new Ptr<int>(0), new Ptr<int>(0)));
@@ -1333,19 +1334,31 @@ public sealed class ThreadMgrHleTests(GuestMemoryFixture fx) : IDisposable
         _h.OnGuest(_ =>
         {
             int t = Call(Tm, "sceKernelCreateTimer", "tmr-ev", EventBits.AttrAutoReset, 0u);
+            // the timer's process clock under the test's control: what the test checks is the order of events
+            // (period, wait, poll), not how fast the host runs (a loaded machine let a 20 ms period pass between
+            // the wait and the poll)
+            TimerObject timer = Emu.Kernel.Objects.Get<TimerObject>(t)!;
+            Func<ulong> processClock = timer.Clock;
+            ulong now = 1_000_000;
+            timer.Clock = () => Volatile.Read(ref now);
             uint iv = _h.Alloc(8), rem = _h.Alloc(8), pat = _h.Word(0);
             Assert.Equal(unchecked((int)0x80028242), Call(Tm, "sceKernelGetTimerEventRemainingTime", t, new Ptr<ulong>(rem))); // none armed
             Assert.Equal(SceError.ILLEGAL_ADDR, Call(Tm, "sceKernelGetTimerEventRemainingTime", t, new Ptr<ulong>(0)));
-            GuestMemory.Write(iv, 20000ul); // 20 ms: long enough that the next period cannot pass between two calls
+            GuestMemory.Write(iv, 20000ul);
             Assert.Equal(SceError.ILLEGAL_TYPE, Call(Tm, "sceKernelSetTimerEvent", t, 2, new Ptr<ulong>(iv), 0));
             Assert.Equal(SceError.ILLEGAL_ADDR, Call(Tm, "sceKernelSetTimerEvent", t, 0, new Ptr<ulong>(0), 0));
             Assert.Equal(0, Call(Tm, "sceKernelSetTimerEvent", t, 0, new Ptr<ulong>(iv), 1)); // SET_EVENT, repeating
             Assert.Equal(0, Call(Tm, "sceKernelStartTimer", t));
+            Volatile.Write(ref now, now + 5000);
             Assert.Equal(0, Call(Tm, "sceKernelGetTimerEventRemainingTime", t, new Ptr<ulong>(rem)));
-            Assert.InRange(GuestMemory.Read<ulong>(rem), 0ul, 20000ul);
+            Assert.Equal(15000ul, GuestMemory.Read<ulong>(rem)); // the period less the 5 ms that passed
             Assert.Equal(0, Call(Tm, "_sceKernelGetTimerEventRemainingTime", t, new Ptr<ulong>(rem)));
-            // the timer is an event object: the wait ends with EVENT_TIMER (0x8000)
-            Assert.Equal(0, Call(Tm, "sceKernelWaitEvent", t, 0u, new Ptr<uint>(pat), new Ptr<ulong>(0), new Ptr<uint>(_h.Word(1_000_000))));
+            // the timer is an event object: the wait blocks until the period ends, then ends with EVENT_TIMER (0x8000)
+            using (var periodEnds = new System.Threading.Timer(_ => Volatile.Write(ref now, 1_000_000 + 20001), null, 50, Timeout.Infinite))
+            {
+                Assert.Equal(0, Call(Tm, "sceKernelWaitEvent", t, 0u, new Ptr<uint>(pat), new Ptr<ulong>(0), new Ptr<uint>(_h.Word(1_000_000))));
+            }
+            Assert.Equal(1_000_000ul + 20001, Volatile.Read(ref now)); // it did not end before the period
             Assert.Equal(EventBits.Timer, GuestMemory.R32(pat));
             uint info = Info(0x60);
             Call(Tm, "sceKernelGetTimerInfo", t, info);
@@ -1356,7 +1369,7 @@ public sealed class ThreadMgrHleTests(GuestMemoryFixture fx) : IDisposable
             // auto-reset: consumed by the wait, so an immediate poll does not see it
             Assert.Equal(SceError.EVENT_COND, Call(Tm, "sceKernelPollEvent", t, 0u, new Ptr<uint>(pat), new Ptr<ulong>(0)));
             // after the next period it is there again
-            Call(Tm, "sceKernelDelayThread", 30000u);
+            Volatile.Write(ref now, 1_000_000 + 40001);
             Assert.Equal(0, Call(Tm, "sceKernelPollEvent", t, 0u, new Ptr<uint>(pat), new Ptr<ulong>(0)));
             Assert.Equal(EventBits.Timer, GuestMemory.R32(pat));
             Assert.Equal(0, Call(Tm, "sceKernelClearEvent", t, 0u));
@@ -1367,8 +1380,48 @@ public sealed class ThreadMgrHleTests(GuestMemoryFixture fx) : IDisposable
             Assert.Equal(unchecked((int)0x80028242), Call(Tm, "sceKernelGetTimerEventRemainingTime", t, new Ptr<ulong>(rem)));
             Assert.Equal(0, Call(Tm, "_sceKernelCancelTimer", t, new Ptr<uint>(0)));
             Assert.Equal(0, Call(Tm, "sceKernelCancelEvent", t, new Ptr<uint>(n)));
+            // a timeout counts on the process clock as it runs
+            timer.Clock = processClock;
             Assert.Equal(SceError.WAIT_TIMEOUT, Call(Tm, "sceKernelWaitEvent", t, 0u, new Ptr<uint>(pat), new Ptr<ulong>(0), new Ptr<uint>(_h.Word(1000))));
             Assert.Equal(0, Call(Tm, "_sceKernelSetTimerEvent", t, 1, new Ptr<ulong>(iv), 0));
+        });
+    }
+
+    [Fact]
+    public void MsgPipeDontWaitReturnsAtOnceAndTheKernelTransfersLater()
+    {
+        _h.OnGuest(_ =>
+        {
+            int pipe = Call(Tm, "sceKernelCreateMsgPipe", "mpp-later", 0x40u, 0u, 0x1000u, 0u);
+            uint buf = _h.Alloc(8), msg = _h.Alloc(8), res = _h.Word(0xFFFFFFFF);
+            GuestMemory.W32(msg, 0x11223344);
+            GuestMemory.W32(msg + 4, 0x55667788);
+            // the blocking receive with DONT_WAIT on an empty pipe: success at once (not MPP_EMPTY), nothing moved yet
+            Assert.Equal(0, Call(Tm, "sceKernelReceiveMsgPipe", pipe, buf, 8u, MsgPipe.WaitAll | MsgPipe.DontWait, new Ptr<uint>(res), new Ptr<uint>(0)));
+            Assert.Equal(0xFFFFFFFFu, GuestMemory.R32(res));
+            // a send brings the data: the kernel's transfer takes it
+            Assert.Equal(0, Call(Tm, "sceKernelSendMsgPipe", pipe, msg, 8u, MsgPipe.WaitAll, new Ptr<uint>(0), new Ptr<uint>(0)));
+            Assert.Equal(8u, GuestMemory.R32(res));
+            Assert.Equal(0x55667788u, GuestMemory.R32(buf + 4));
+            // the vector form refuses other mode bits
+            uint vec = _h.Alloc(8);
+            GuestMemory.W32(vec, buf);
+            GuestMemory.W32(vec + 4, 8);
+            Assert.Equal(SceError.ILLEGAL_MODE, Call(Tm, "sceKernelReceiveMsgPipeVector", pipe, vec, 1u, 0x20u | MsgPipe.DontWait, new Ptr<uint>(0), new Ptr<uint>(0)));
+            // the poll form keeps failing at once
+            Assert.Equal(SceError.MPP_EMPTY, Call(Tm, "sceKernelTryReceiveMsgPipe", pipe, buf, 8u, MsgPipe.DontWait, new Ptr<uint>(0)));
+            // a process may have 0x100 transfers queued, then the kernel refuses
+            for (int i = 0; i < ThreadMgr.MaxLaterTransfers; i++)
+            {
+                Assert.Equal(0, Call(Tm, "sceKernelReceiveMsgPipeVector", pipe, vec, 1u, MsgPipe.DontWait, new Ptr<uint>(0), new Ptr<uint>(0)));
+            }
+
+            Assert.Equal(ThreadMgr.ErrorLaterTransfersFull, Call(Tm, "sceKernelReceiveMsgPipeVector", pipe, vec, 1u, MsgPipe.DontWait, new Ptr<uint>(0), new Ptr<uint>(0)));
+            // deleting the pipe ends them, and the process may queue again
+            Assert.Equal(0, Call(Tm, "sceKernelDeleteMsgPipe", pipe));
+            int other = Call(Tm, "sceKernelCreateMsgPipe", "mpp-later2", 0x40u, 0u, 0x1000u, 0u);
+            Assert.Equal(0, Call(Tm, "sceKernelReceiveMsgPipeVector", other, vec, 1u, MsgPipe.DontWait, new Ptr<uint>(0), new Ptr<uint>(0)));
+            Assert.Equal(0, Call(Tm, "sceKernelDeleteMsgPipe", other));
         });
     }
 
