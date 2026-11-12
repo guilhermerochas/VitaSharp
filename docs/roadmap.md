@@ -2245,6 +2245,20 @@ Lista de itens futuros do VitaSharp. Marque `[x]` quando um item for concluído.
   libgxm, no caminho de emissão `FUN_8100e9b4` / estado em ctx+0x1C0) faz um viewport de escala zero não colapsar a
   geometria. Próximo passo: ler a emissão do estado do viewport no libgxm até os registradores (flags 0x100 e o
   ViewportEnable em ctx+0x214 bit 0x8000) e procurar no SDK/PowerVR o significado de escala 0
+  Rodada 4 (B4, 12/11/2026, fix/system-bugs-13c, `<scratchpad>/b4_ss1`, probes no Clear 0x81D8D08A, na reaplicação
+  0x81D8D308 e no Present, quadros 0-12 seguidos): confirmado ao vivo de novo, sem config.ini (o save do usuário não
+  tem um): as duas chamadas do setter (0,0,960,544) caem no bloco 0 antes do 1º Present; o bloco 1 (0x831568E0) fica
+  com +0x15C..+0x168 = 0 (malloc 0xD100 + memset dos dois blocos em 0x81D8D8F0, então nem lixo de heap explica); o
+  Clear roda em todo quadro (flag de pular = 0, scissor cheia) e marca +0x158, e a reaplicação do bloco 1 manda
+  sceGxmSetViewport(0,0,0,-0,0.5,0.5) nos quadros ímpares; nada no Present copia o viewport de um bloco para o outro.
+  O libgxm do firmware só compara com o valor atual e copia os seis floats crus no pacote de estado
+  (`FUN_8100e9b4`, bit 0x100); o Vita3K faz o mesmo e daria viewport Vulkan de largura 0. Ou seja, o código do jogo
+  é determinístico e manda esse viewport também no Vita; o que o Vita de verdade faz com escala 0 é do microkernel da
+  SGX, que não temos como ler. A pergunta "primeiro boot sem config.ini" não decide: a rodada 3 mostrou que com e sem
+  config.ini o jogo faz o mesmo. Não há correção genérica com base em fonte (tratar escala 0 como "viewport cheio"
+  seria palpite). Próximo passo decisivo: um teste no Vita de verdade (o homebrew de testes local: um sprite com
+  sceGxmSetViewport(0,0,0,0,0.5,0.5) depois de um com viewport cheio, e ver se ele aparece) ou um vídeo do Vita com
+  a intro do Salt and Sanctuary a 60 fps num boot de save novo; enquanto isso o item fica aberto
   Lentidão de ~70 s ao sair da criação (quadros 1934-1977 da varredura): **não reproduz** (agente A4, 10/11/2026). Com o
   roteiro da varredura (cross a cada 150 quadros; o START do sweep.ps1 nunca disparava: 400+150k nunca é múltiplo
   de 600) e cache de shaders quente ou frio, 180 s a 28-30 fps, só uma queda curta a 15 fps na entrada da criação
