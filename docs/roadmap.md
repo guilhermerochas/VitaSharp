@@ -1868,6 +1868,20 @@ Lista de itens futuros do VitaSharp. Marque `[x]` quando um item for concluído.
   continua cifrado em PFS ("Not a SELF/ELF"): a licença dele (temp.bin, a mesma que todo título Unity traz, a
   6488b73b...rif do NoPsmDrm) não tem a klicensee em claro, e a decifração de PFS do VitaSharp não acha nenhum arquivo
   com ela; estudar como o NpDrm do console decifra a chave dessa licença (tipo 0xD, sem conta) antes de rodar o runtime.
+  Estudo feito (fix/app-launch-13, B5): o formato do PFS do runtime é o de jogo comum (files.db versão 4, image_spec 1
+  = gamedata, key_id 0, files_salt presente; unicv.db SCEIFTBL versão 1, sem dbseed), que o PfsDecryptor já cobre; o
+  que falta é a klicensee. A licença é genuína (aid 0, flags 0x000D, assinaturas ECDSA e RSA presentes, não é a
+  FAKE_AID 0x0123456789ABCDEF do NoNpDrm): a chave de +0x50 é cifrada. No FW 3.74 (SceNpDrm, ksceNpDrmGetRifVitaKey,
+  NID 0x723322B5) uma licença com flags 0xD não usa o act.dat: o módulo monta um pedido de 0x90 bytes (um bloco fixo de
+  0x20 bytes do próprio npdrm + os 0x70 primeiros bytes da licença) e chama ksceSblAuthMgrDecBindData (0x41DAEA12) sobre
+  a key2 (+0xA0); a decifração acontece no processador de segurança (F00D), com uma chave que não está em nenhum arquivo
+  do firmware nem nas chaves públicas que o VitaSharp usa. As licenças de conta (flags != 0xD) usam o act.dat do console
+  (tm0:npdrm/act.dat) e o mesmo serviço. Sem emular esse serviço do F00D não há como chegar à klicensee de uma licença
+  genuína; nada de contorno (NoNpDrm/NoPsmDrm). Além disso, a licença PSM do próprio título
+  (RO/License/6488b73b...rif) foi feita pelo NoPsmDrm (id de conta fixo do NoPsmDrm, área de assinatura vazia): o
+  conteúdo do jogo não tem licença genuína aqui, então este título fica parado (sem trabalho de PFS para ele). O VitaSharp trata a chave de +0x50 como klicensee em claro, o que só
+  vale para licenças do formato NoNpDrm. A falha agora aparece como no console: o shell mostra "Ocorreu um erro
+  (C1-2614-3)" (0x80025002) e volta ao LiveArea, em vez de ficar na tela "Powered by Unity".
   Revalidação do modelo de atualização (appmgr): a pasta de atualização de um app do cartão é grw0:patch/<id> (o
   VitaSharp usava sempre ux0:patch) e os apps do firmware (vs0) não recebem nenhuma; o param.sfo da atualização vale
   por cima do app (APP_VER de sceAppUtilAppParamGetString, título, save state), e a Biblioteca mostra a versão e o
