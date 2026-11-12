@@ -173,11 +173,19 @@ public sealed unsafe class WindowHost : IPresentationSurface, IInputBackend, IDi
             }
             Closing?.Invoke();
         };
-        _window.FramebufferResize += s => { _fbW = s.X; _fbH = s.Y; Resized?.Invoke(); };
+        _window.FramebufferResize += s =>
+        {
+            _fbW = s.X;
+            _fbH = s.Y;
+            Log.Info($"Window: framebuffer {s.X}x{s.Y}");
+            Resized?.Invoke();
+        };
+        _window.StateChanged += state => Log.Info($"Window: state {state} (fullscreen mode {_fullscreen})");
         // keys held when the window loses the focus never get their release: forget them, or the next press of F8
         // (one toggle per press) would be taken for key repeat and lost
         _window.FocusChanged += focused =>
         {
+            Log.Info($"Window: focus {(focused ? "gained" : "lost")}");
             if (focused)
             {
                 return;
@@ -222,6 +230,7 @@ public sealed unsafe class WindowHost : IPresentationSurface, IInputBackend, IDi
             {
                 _lastHotkeyPoll = now;
                 PollPadHotkeys();
+                RestoreActivatedFullscreen();
             }
             if (now - _lastFallbackPoll < System.Diagnostics.Stopwatch.Frequency / 250)
             {
@@ -852,6 +861,47 @@ public sealed unsafe class WindowHost : IPresentationSurface, IInputBackend, IDi
         }
         Log.Info($"Window: windowed {size.X}x{size.Y} at {pos.X},{pos.Y} (monitor attached: {handle != null && glfw.GetWindowMonitor(handle) != null})");
     }
+
+    /// <summary>
+    /// Whether the fullscreen window must be restored now: it is in fullscreen mode, minimized, and Windows made it the
+    /// active (foreground) window anyway. GLFW minimizes a fullscreen window when it loses the focus (GLFW_AUTO_ICONIFY,
+    /// on by default) and restores it only on WM_SIZE/SIZE_RESTORED; Alt+Tab or the taskbar can activate the minimized
+    /// window without restoring it (seen on Windows 11: SwitchToThisWindow leaves it IsIconic and foreground). Then the
+    /// game is "active" but invisible: a taskbar click on the active window only minimizes it again, and every key goes
+    /// to the minimized window as WM_SYSKEYDOWN/WM_SYSCHAR, which DefWindowProc answers with the default beep (the
+    /// "ding" of the report). X11, Wayland and macOS have no active-while-minimized state (activating a window maps or
+    /// deminiaturizes it), so only the Windows check feeds this.
+    /// </summary>
+    public static bool FullscreenNeedsRestore(bool fullscreenMode, bool iconified, bool active) => fullscreenMode && iconified && active;
+
+    /// <summary>Restores the fullscreen window that Windows activated while it was minimized (see
+    /// <see cref="FullscreenNeedsRestore"/>). Window thread, at the 100 Hz hotkey poll; two user32 reads per call.</summary>
+    void RestoreActivatedFullscreen()
+    {
+        if (!_fullscreen || !OperatingSystem.IsWindows() || _window.Native?.Win32 is not { } win32)
+        {
+            return;
+        }
+
+        var glfw = Silk.NET.GLFW.GlfwProvider.GLFW.Value;
+        var handle = (Silk.NET.GLFW.WindowHandle*)(_window.Native?.Glfw ?? 0);
+        if (handle == null)
+        {
+            return;
+        }
+
+        bool iconified = glfw.GetWindowAttrib(handle, Silk.NET.GLFW.WindowAttributeGetter.Iconified);
+        if (!FullscreenNeedsRestore(_fullscreen, iconified, iconified && GetForegroundWindow() == win32.Hwnd))
+        {
+            return;
+        }
+
+        Log.Info("Window: activated while minimized in fullscreen: restoring it");
+        glfw.RestoreWindow(handle);
+    }
+
+    [DllImport("user32.dll")]
+    static extern nint GetForegroundWindow();
 
     /// <summary>Window (cursor) coordinates to framebuffer pixels (they differ on high-DPI displays).</summary>
     (int X, int Y) ToFramebuffer(System.Numerics.Vector2 pos)

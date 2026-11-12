@@ -1791,6 +1791,18 @@ Lista de itens futuros do VitaSharp. Marque `[x]` quando um item for concluído.
   12/11/2026, "ainda está acontecendo"; ver o item de 04/11 do F11). Estudar o comportamento do GLFW em tela cheia
   ao perder o foco (auto-iconify), as regras de ativação do Windows (janela desabilitada ou dona) e a perda do
   swapchain; corrigir para Windows, Linux e macOS, com teste que falha antes.
+  Causa (fix/fullscreen-focus, reproduzido neste PC com o título sintético): o GLFW minimiza a janela em tela cheia
+  quando ela perde o foco (GLFW_AUTO_ICONIFY, ligado por padrão) e só a restaura no WM_SIZE/SIZE_RESTORED; o Alt+Tab
+  (e o SwitchToThisWindow que o Windows usa) ativou a janela minimizada **sem restaurá-la**: ficou IsIconic e em
+  primeiro plano, swapchain 0x0. Nesse estado o clique na barra de tarefas (na janela ativa) só minimiza de novo e
+  as teclas vão para a janela minimizada como WM_SYSKEYDOWN/WM_SYSCHAR, que o DefWindowProc responde com o bipe
+  padrão (o "ding"). Não era janela desabilitada nem dona (o launcher é outro processo; IsWindowEnabled verdadeiro,
+  sem dono) nem a swapchain (ela volta a 1920x1080 assim que a janela é restaurada). Correção: o laço da janela
+  (100 Hz) restaura a janela em tela cheia que o Windows ativou minimizada (`WindowHost.FullscreenNeedsRestore`);
+  X11/Wayland/macOS não têm o estado "ativa e minimizada" (ativar mapeia/desminiaturiza). O log agora mostra
+  estado/foco/framebuffer da janela e os resultados do acquire/present. Correção feita e conferida no repro
+  (SwitchToThisWindow e Alt+Tab de verdade voltam à tela cheia, swapchain 1920x1080 recriada, foco de volta); falta a
+  confirmação do usuário no jogo.
 - [ ] Trocar entre o modo claro e o modo escuro demora muito (relato do usuário, 11/11/2026). Medir quanto leva a
   troca e onde o tempo vai (recriar a interface inteira, recarregar recursos/ícones/capas, refazer o layout da
   biblioteca) e fazer a troca só reaplicar as cores. Conferir no launcher do Desktop e no app Android.
