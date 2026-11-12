@@ -876,6 +876,10 @@ Lista de itens futuros do VitaSharp. Marque `[x]` quando um item for concluído.
   título do pacote/`param.sfo` do PSM; 3) o runtime abrir o jogo instalado (falta `sceKernelAllocUnmapMemBlock`, o
   `SceAppMgrUser` NID 0x9D6D8058 e a montagem 106 `ux0:psm/<id>/RO` que falha com 0x80802012). Jogo de teste:
   NPPA00120, já instalado pelo usuário.
+  No shell real o jogo também não aparece: o HLE que lista os aplicativos para o shell (`AppMgrShell.cs`, linhas
+  ~289 e ~339) e o `sceAppMgrLaunchAppByName` só olham `vs0:app/` e `ux0:app/`; incluir `ux0:psm/` (nome e ícone do
+  próprio pacote) e abrir um título de PSM pelo runtime `PCSI00011` com aquele jogo, como o console (a confirmar
+  rodando o shell).
 - [ ] PlayStation Mobile (pedido do usuário, 11/11/2026; o runtime `PCSI00011` "PSM Runtime Package" 01.00, SDK
   2.00, já está instalado pelo usuário com a sua licença). 1) Rodar o runtime no VitaSharp sem janela e levantar o
   que o Mono dele usa e o que falta (HLE genérico do que faltar, nada específico do PSM). 2) Instalador de `.pkg` de
