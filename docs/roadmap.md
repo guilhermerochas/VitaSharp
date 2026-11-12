@@ -1762,6 +1762,9 @@ Lista de itens futuros do VitaSharp. Marque `[x]` quando um item for concluído.
 
 ## Bugs em aberto
 
+- [ ] Trocar entre o modo claro e o modo escuro demora muito (relato do usuário, 11/11/2026). Medir quanto leva a
+  troca e onde o tempo vai (recriar a interface inteira, recarregar recursos/ícones/capas, refazer o layout da
+  biblioteca) e fazer a troca só reaplicar as cores. Conferir no launcher do Desktop e no app Android.
 - [ ] **REGRESSÃO (11/11/2026, relato do usuário: "não estava assim")** Killzone Mercenary (PCSC00045): o HUD pisca
   (flicker) no build 2e7789b2. Captura F8 `PCSC00045_20261111_222844_tudo` (pasta de capturas do usuário, com o dump da
   GPU de 209 quadros): 17 achados, vários [flash] em quadros isolados que diferem dos dois vizinhos iguais, nas
