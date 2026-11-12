@@ -104,6 +104,8 @@ jobs:
         run: brew install molten-vk vulkan-loader
       # the window test's child process reaches SwiftShader through the system Vulkan loader (its window surface),
       # and the loader ignores VK_DRIVER_FILES in an elevated process (the runner's): register Edge's manifest instead
+      # (the runner has no HKLM\SOFTWARE\Khronos key at all: -Force makes New-Item create the whole path); vulkaninfo,
+      # when the image has it, lists what the loader finds without VK_DRIVER_FILES
       - name: Register SwiftShader with the Vulkan loader (Windows)
         if: runner.os == 'Windows'
         shell: pwsh
@@ -113,9 +115,15 @@ jobs:
           $icd = if ($dll) { Join-Path $dll.DirectoryName 'vk_swiftshader_icd.json' }
           if (-not $icd -or -not (Test-Path $icd)) { Write-Error 'no vk_swiftshader_icd.json next to Microsoft Edge'; exit 1 }
           $key = 'HKLM:\SOFTWARE\Khronos\Vulkan\Drivers'
-          if (-not (Test-Path $key)) { New-Item -Path $key | Out-Null }
+          if (-not (Test-Path $key)) { New-Item -Path $key -Force | Out-Null }
           New-ItemProperty -Path $key -Name $icd -PropertyType DWord -Value 0 -Force | Out-Null
-          "registered $icd"
+          if ((Get-ItemProperty -Path $key -Name $icd -ErrorAction Stop).$icd -ne 0) { Write-Error "$icd is not registered as 0 under $key"; exit 1 }
+          "registered $icd under $key"
+          if (Get-Command vulkaninfo -ErrorAction SilentlyContinue) {
+            & { $ErrorActionPreference = 'Continue'; vulkaninfo --summary 2>&1 | Out-String }
+            "vulkaninfo exit $LASTEXITCODE"
+            $global:LASTEXITCODE = 0
+          }
 
       - name: Restore
         run: dotnet restore VitaSharp.sln
@@ -170,9 +178,15 @@ jobs:
           $icd = if ($dll) { Join-Path $dll.DirectoryName 'vk_swiftshader_icd.json' }
           if (-not $icd -or -not (Test-Path $icd)) { Write-Error 'no vk_swiftshader_icd.json next to Microsoft Edge'; exit 1 }
           $key = 'HKLM:\SOFTWARE\Khronos\Vulkan\Drivers'
-          if (-not (Test-Path $key)) { New-Item -Path $key | Out-Null }
+          if (-not (Test-Path $key)) { New-Item -Path $key -Force | Out-Null }
           New-ItemProperty -Path $key -Name $icd -PropertyType DWord -Value 0 -Force | Out-Null
-          "registered $icd"
+          if ((Get-ItemProperty -Path $key -Name $icd -ErrorAction Stop).$icd -ne 0) { Write-Error "$icd is not registered as 0 under $key"; exit 1 }
+          "registered $icd under $key"
+          if (Get-Command vulkaninfo -ErrorAction SilentlyContinue) {
+            & { $ErrorActionPreference = 'Continue'; vulkaninfo --summary 2>&1 | Out-String }
+            "vulkaninfo exit $LASTEXITCODE"
+            $global:LASTEXITCODE = 0
+          }
       - name: Coverage and gate
         shell: pwsh
         run: ./build/coverage.ps1 coverage --gate
