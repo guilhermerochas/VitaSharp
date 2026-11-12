@@ -863,6 +863,19 @@ Lista de itens futuros do VitaSharp. Marque `[x]` quando um item for concluído.
 
 ## Firmware e sistema
 
+- [ ] **PRIORIDADE (11/11/2026)** Plugins também nos programas do sistema (achado ao revisar o loader, 11/11/2026).
+  Hoje `Emulator.LoadPlugins` só roda quando o processo não é um programa do sistema (`if (!IsSystemProgram)` em
+  `Emulator.cs`): os módulos `*KERNEL` só carregam quando um jogo abre (no console, o taiHEN carrega no boot, antes
+  do shell), a seção `*main` (plugins do shell) não é reconhecida e `*ALL` e as seções por ID (`*NPXS10015`...) nunca
+  valem para o shell e os apps do sistema. Corrigir de forma genérica: `*KERNEL` no boot do sistema, uma vez por
+  sessão; `*main` para o shell; `*ALL` e `*<ID>` também para os programas do sistema, na ordem do taiHEN. Teste: um
+  `.skprx` e um `.suprx` de teste (montados pelo `SceModuleBuilder`) carregados no boot do shell e num app do sistema.
+- [ ] PlayStation Mobile (pedido do usuário, 11/11/2026; o runtime `PCSI00011` "PSM Runtime Package" 01.00, SDK
+  2.00, já está instalado pelo usuário com a sua licença). 1) Rodar o runtime no VitaSharp sem janela e levantar o
+  que o Mono dele usa e o que falta (HLE genérico do que faltar, nada específico do PSM). 2) Instalador de `.pkg` de
+  PSM: hoje `PkgInstaller` recusa com "PlayStation Mobile packages are not supported yet"; instalar em `ux0:psm/`
+  com a licença do jogo, como o console. 3) Validar com jogos de PSM do usuário e as licenças da conta dele. Nada de
+  assinatura da Sony gerada, licença gerada ou remoção da proteção (PSSE): só a licença real do usuário.
 - [ ] Plugins de usuário: hooks e injeção completos (pedido do usuário, 11/11/2026). Hoje os plugins `.suprx` do
   arquivo de configuração de plugins carregam no processo, e parte dos hooks/injeções já existe (ver Dead Space e
   libshacccg); completar todas as formas de hook (export/import/offset, cadeia de hooks com continuação, liberação) e
@@ -1733,6 +1746,11 @@ Lista de itens futuros do VitaSharp. Marque `[x]` quando um item for concluído.
 
 ## Bugs em aberto
 
+- [ ] Teste instável sob carga: `ThreadMgrHleTests.TimerEventsFireAndCancel` (11/11/2026) falhou 3 de 5 vezes
+  isolado com o processador em 100% (7 agentes). Ele usa um timer de 20 ms e espera que um poll logo depois do wait
+  não veja o evento: com a máquina carregada passa mais de um período entre as duas chamadas. Não veio da refatoração
+  (IL idêntico, teste intocado). Deixar o teste independente do tempo real (intervalo maior ou relógio do processo
+  controlado), sem afrouxar o que ele confere.
 - [ ] Wipeout 2048 (PCSA00015): depois do loading do primeiro evento (Empire Climb), o loading e a corrida ficam
   travados em ~7,5 fps (60/8), com o cronômetro do jogo andando ~70 s em ~2 min reais; a CPU das threads é baixa
   (main 3,3 ms/quadro, GPU 6,6 ms/quadro), então parece espera de tempo/vblank/sincronização, não falta de CPU
