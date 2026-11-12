@@ -1236,7 +1236,8 @@ public sealed partial class ThreadMgr : HleModule
         lock (t)
         {
             if (t.NextEvent == ulong.MaxValue) return unchecked((int)0x80028242);
-            ulong now = K.ProcessTimeUs;
+            // the timer's own clock (the process clock), the one its events are scheduled on
+            ulong now = t.Clock();
             remaining.Value = t.NextEvent > now ? t.NextEvent - now : 0;
         }
         return 0;

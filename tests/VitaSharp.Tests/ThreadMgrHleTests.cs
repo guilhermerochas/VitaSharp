@@ -1334,19 +1334,31 @@ public sealed class ThreadMgrHleTests(GuestMemoryFixture fx) : IDisposable
         _h.OnGuest(_ =>
         {
             int t = Call(Tm, "sceKernelCreateTimer", "tmr-ev", EventBits.AttrAutoReset, 0u);
+            // the timer's process clock under the test's control: what the test checks is the order of events
+            // (period, wait, poll), not how fast the host runs (a loaded machine let a 20 ms period pass between
+            // the wait and the poll)
+            TimerObject timer = Emu.Kernel.Objects.Get<TimerObject>(t)!;
+            Func<ulong> processClock = timer.Clock;
+            ulong now = 1_000_000;
+            timer.Clock = () => Volatile.Read(ref now);
             uint iv = _h.Alloc(8), rem = _h.Alloc(8), pat = _h.Word(0);
             Assert.Equal(unchecked((int)0x80028242), Call(Tm, "sceKernelGetTimerEventRemainingTime", t, new Ptr<ulong>(rem))); // none armed
             Assert.Equal(SceError.ILLEGAL_ADDR, Call(Tm, "sceKernelGetTimerEventRemainingTime", t, new Ptr<ulong>(0)));
-            GuestMemory.Write(iv, 20000ul); // 20 ms: long enough that the next period cannot pass between two calls
+            GuestMemory.Write(iv, 20000ul);
             Assert.Equal(SceError.ILLEGAL_TYPE, Call(Tm, "sceKernelSetTimerEvent", t, 2, new Ptr<ulong>(iv), 0));
             Assert.Equal(SceError.ILLEGAL_ADDR, Call(Tm, "sceKernelSetTimerEvent", t, 0, new Ptr<ulong>(0), 0));
             Assert.Equal(0, Call(Tm, "sceKernelSetTimerEvent", t, 0, new Ptr<ulong>(iv), 1)); // SET_EVENT, repeating
             Assert.Equal(0, Call(Tm, "sceKernelStartTimer", t));
+            Volatile.Write(ref now, now + 5000);
             Assert.Equal(0, Call(Tm, "sceKernelGetTimerEventRemainingTime", t, new Ptr<ulong>(rem)));
-            Assert.InRange(GuestMemory.Read<ulong>(rem), 0ul, 20000ul);
+            Assert.Equal(15000ul, GuestMemory.Read<ulong>(rem)); // the period less the 5 ms that passed
             Assert.Equal(0, Call(Tm, "_sceKernelGetTimerEventRemainingTime", t, new Ptr<ulong>(rem)));
-            // the timer is an event object: the wait ends with EVENT_TIMER (0x8000)
-            Assert.Equal(0, Call(Tm, "sceKernelWaitEvent", t, 0u, new Ptr<uint>(pat), new Ptr<ulong>(0), new Ptr<uint>(_h.Word(1_000_000))));
+            // the timer is an event object: the wait blocks until the period ends, then ends with EVENT_TIMER (0x8000)
+            using (var periodEnds = new System.Threading.Timer(_ => Volatile.Write(ref now, 1_000_000 + 20001), null, 50, Timeout.Infinite))
+            {
+                Assert.Equal(0, Call(Tm, "sceKernelWaitEvent", t, 0u, new Ptr<uint>(pat), new Ptr<ulong>(0), new Ptr<uint>(_h.Word(1_000_000))));
+            }
+            Assert.Equal(1_000_000ul + 20001, Volatile.Read(ref now)); // it did not end before the period
             Assert.Equal(EventBits.Timer, GuestMemory.R32(pat));
             uint info = Info(0x60);
             Call(Tm, "sceKernelGetTimerInfo", t, info);
@@ -1357,7 +1369,7 @@ public sealed class ThreadMgrHleTests(GuestMemoryFixture fx) : IDisposable
             // auto-reset: consumed by the wait, so an immediate poll does not see it
             Assert.Equal(SceError.EVENT_COND, Call(Tm, "sceKernelPollEvent", t, 0u, new Ptr<uint>(pat), new Ptr<ulong>(0)));
             // after the next period it is there again
-            Call(Tm, "sceKernelDelayThread", 30000u);
+            Volatile.Write(ref now, 1_000_000 + 40001);
             Assert.Equal(0, Call(Tm, "sceKernelPollEvent", t, 0u, new Ptr<uint>(pat), new Ptr<ulong>(0)));
             Assert.Equal(EventBits.Timer, GuestMemory.R32(pat));
             Assert.Equal(0, Call(Tm, "sceKernelClearEvent", t, 0u));
@@ -1368,6 +1380,8 @@ public sealed class ThreadMgrHleTests(GuestMemoryFixture fx) : IDisposable
             Assert.Equal(unchecked((int)0x80028242), Call(Tm, "sceKernelGetTimerEventRemainingTime", t, new Ptr<ulong>(rem)));
             Assert.Equal(0, Call(Tm, "_sceKernelCancelTimer", t, new Ptr<uint>(0)));
             Assert.Equal(0, Call(Tm, "sceKernelCancelEvent", t, new Ptr<uint>(n)));
+            // a timeout counts on the process clock as it runs
+            timer.Clock = processClock;
             Assert.Equal(SceError.WAIT_TIMEOUT, Call(Tm, "sceKernelWaitEvent", t, 0u, new Ptr<uint>(pat), new Ptr<ulong>(0), new Ptr<uint>(_h.Word(1000))));
             Assert.Equal(0, Call(Tm, "_sceKernelSetTimerEvent", t, 1, new Ptr<ulong>(iv), 0));
         });

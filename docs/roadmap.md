@@ -1881,11 +1881,16 @@ Lista de itens futuros do VitaSharp. Marque `[x]` quando um item for concluído.
   disputados pela compilação de shaders (e por qualquer outra carga no PC durante o teste). Não é erro de semântica:
   próximo passo é medir o atraso do despertar (FrameLedger) com a máquina livre; se repetir, olhar se a compilação
   roda numa thread que segura um núcleo emulado. Também falta cobrir PVRTC, YUV e cube no jogo de teste.
-- [ ] Teste instável sob carga: `ThreadMgrHleTests.TimerEventsFireAndCancel` (11/11/2026) falhou 3 de 5 vezes
+- [x] Teste instável sob carga: `ThreadMgrHleTests.TimerEventsFireAndCancel` (11/11/2026) falhou 3 de 5 vezes
   isolado com o processador em 100% (7 agentes). Ele usa um timer de 20 ms e espera que um poll logo depois do wait
   não veja o evento: com a máquina carregada passa mais de um período entre as duas chamadas. Não veio da refatoração
   (IL idêntico, teste intocado). Deixar o teste independente do tempo real (intervalo maior ou relógio do processo
   controlado), sem afrouxar o que ele confere.
+  Feito (fix/system-bugs-13, B3): o teste controla o relógio do processo do timer (`TimerObject.Clock`): o período
+  só acaba quando o teste avança o relógio (a espera fica bloqueada até lá, conferido), o poll logo depois não vê o
+  evento seja qual for a carga, o seguinte o vê depois do próximo período; o tempo restante agora é exato (15000 µs
+  depois de 5 ms, antes só "entre 0 e 20000"). `sceKernelGetTimerEventRemainingTime` usa o relógio do próprio timer
+  (o mesmo relógio do processo; antes lia outro). O timeout final roda no relógio real.
 - [ ] Wipeout 2048 (PCSA00015): depois do loading do primeiro evento (Empire Climb), o loading e a corrida ficam
   travados em ~7,5 fps (60/8), com o cronômetro do jogo andando ~70 s em ~2 min reais; a CPU das threads é baixa
   (main 3,3 ms/quadro, GPU 6,6 ms/quadro), então parece espera de tempo/vblank/sincronização, não falta de CPU
