@@ -1441,6 +1441,18 @@ Lista de itens futuros do VitaSharp. Marque `[x]` quando um item for concluído.
 
 ## Código
 
+- [ ] Refatoração, o que ficou para depois (11/11/2026, decisão do usuário: Hle, Desktop e Android outro dia). Em
+  branches locais, não juntadas: estilo do Hle (`refactor/style-hle-3`, pronto, falta a suíte); nomes do Desktop
+  (`refactor/naming-7`, WIP: falta build, format-check e IL incluindo `-p:Lockstep=true`); nomes do Android
+  (`refactor/naming-9`, WIP: faltam os builds Release e o IL do VitaSharp.Android.dll); passada de nomes curtos nos
+  testes (`refactor/naming-4` e `refactor/naming-8`, WIP); `format-check` cobrindo os projetos fora da solução
+  (`refactor/format-extra`, WIP: o build/IconGen precisa das chaves antes). Depois: os nomes do Hle, os métodos de
+  save state do Hle (com o hash do esquema independente da formatação) e religar o job "Code style" do CI. Cada
+  entrega de nomes confere também o build da versão de desenvolvedor (`-p:VitaSharpDeveloper=true`). Um script que
+  recalcula as linhas de par dos READMEs depois de cada merge (quebraram três vezes em 11/11).
+- [ ] CI do Windows e da cobertura (pausado em 11/11/2026): `fix/ci-green-2` (SwiftShader registrado para o carregador
+  como administrador, `--gpu-dump-at` armado antes do jogo, limite de 3 apresentações pendentes). Antes de juntar:
+  medição A/B do F1 2011 e do Uncharted com a máquina quieta e conferência de travadas nos quadros gravados.
 - [ ] **PRIORIDADE (11/11/2026)** Builds do GitHub Actions quebrando na main (relato do usuário, 11/11/2026, página de
   commits da main). Ver em cada workflow (ci.yml: Windows/Ubuntu/macOS, publish, "Coverage gate" novo de 11/11;
   release.yml) qual job falha desde quando e por quê (suspeitos do dia: o job de cobertura e o build-coverage-gate.txt,
