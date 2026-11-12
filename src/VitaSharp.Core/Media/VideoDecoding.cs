@@ -24,9 +24,10 @@ public interface IVideoDecoder : IDisposable
     /// <summary>True while a hardware decoder does the work (false after a fallback to software).</summary>
     bool IsHardware { get; }
 
-    /// <summary>The decoder works asynchronously (Android MediaCodec): a picture may come out a call later than the
-    /// access unit that completes it, where FFmpeg's comes out in the same call. SceAvcdec then repeats the previous
-    /// picture instead of returning none mid-stream (games show an empty buffer for a missing picture).</summary>
+    /// <summary>The decoder works asynchronously (Android MediaCodec): it waits in <see cref="Send"/> for the picture
+    /// the unit completes (the Vita's sceAvcdecDecode is synchronous), but a picture that misses the deadline comes out a
+    /// call later, where FFmpeg's always comes out in the same call. SceAvcdec then repeats the previous picture
+    /// instead of returning none mid-stream (games show an empty buffer for a missing picture).</summary>
     bool Asynchronous => false;
 
     /// <summary>Feeds one access unit; decoded pictures become available through <see cref="Take"/>.</summary>

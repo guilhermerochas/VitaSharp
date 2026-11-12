@@ -25,6 +25,12 @@
     <Compile Include="..\..\build\FormatTool\SourceLayout.cs" Link="Style\SourceLayout.cs" />
   </ItemGroup>
 
+  <!-- MediaParityTests: tiny generated sine-tone clips (AAC ADTS, MP3), also pushed to the device by
+       build/android-media-parity.sh/.ps1 -->
+  <ItemGroup>
+    <None Update="Fixtures\Media\*" CopyToOutputDirectory="PreserveNewest" />
+  </ItemGroup>
+
   <ItemGroup>
     <ProjectReference Include="..\..\src\VitaSharp.Core\VitaSharp.Core.csproj" />
     <!-- DeveloperGatingTests: the renderer of a normal build has none of the developer tooling -->

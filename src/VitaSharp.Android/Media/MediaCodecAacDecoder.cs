@@ -1,6 +1,7 @@
 using Android.Media;
 using VitaSharp.Core.Media;
 using VitaSharp.Core.Util;
+using VitaSharp.Mobile.Core.Media;
 using JByteBuffer = Java.Nio.ByteBuffer;
 
 namespace VitaSharp.Android.Media;
@@ -27,27 +28,42 @@ public sealed unsafe class MediaCodecAacDecoder : IAudioFrameDecoder
     int _outChannels, _frameSamples;
     long _pts;
 
-    MediaCodecAacDecoder(MediaCodec codec, int channels)
+    MediaCodecAacDecoder(MediaCodec? codec, int channels)
     {
         _codec = codec;
         _outChannels = channels;
     }
 
+    /// <summary>
+    /// An AAC decoder for raw frames (<paramref name="audioSpecificConfig"/>) or, when it is null, ADTS frames. ADTS
+    /// frames go to MediaCodec as raw frames with the AudioSpecificConfig of their first header (the decoder starts at the
+    /// first frame): with KEY_IS_ADTS, c2.android.aac.decoder on the Redmi Note 14 gave no PCM at all for a whole ADTS
+    /// clip (the media parity run: 25 frames, all silence), where the same frames raw decode.
+    /// </summary>
     public static IAudioFrameDecoder? Create(int sampleRate, int channels, byte[]? audioSpecificConfig)
+    {
+        if (audioSpecificConfig == null)
+        {
+            return new MediaCodecAacDecoder(null, Math.Max(1, channels)) { _adts = true };
+        }
+
+        MediaCodec? codec = StartAac(sampleRate, channels, audioSpecificConfig, "raw");
+        return codec == null ? null : new MediaCodecAacDecoder(codec, Math.Max(1, channels));
+    }
+
+    /// <summary>A started MediaCodec AAC decoder for raw frames, or null.</summary>
+    static MediaCodec? StartAac(int sampleRate, int channels, byte[] audioSpecificConfig, string packaging)
     {
         MediaCodec? codec = null;
         try
         {
-            var fmt = MediaFormat.CreateAudioFormat(MediaFormat.MimetypeAudioAac, sampleRate > 0 ? sampleRate : 48000, Math.Max(1, channels));
-            if (audioSpecificConfig != null)
-                fmt.SetByteBuffer("csd-0", JByteBuffer.Wrap(audioSpecificConfig));
-            else
-                fmt.SetInteger(MediaFormat.KeyIsAdts, 1);
+            MediaFormat format = MediaFormat.CreateAudioFormat(MediaFormat.MimetypeAudioAac, sampleRate > 0 ? sampleRate : 48000, Math.Max(1, channels));
+            format.SetByteBuffer("csd-0", JByteBuffer.Wrap(audioSpecificConfig));
             codec = MediaCodec.CreateDecoderByType(MediaFormat.MimetypeAudioAac);
-            codec.Configure(fmt, null, null, MediaCodecConfigFlags.None);
+            codec.Configure(format, null, null, MediaCodecConfigFlags.None);
             codec.Start();
-            Log.Info($"sceAudiodec: AAC through MediaCodec {codec.Name} ({sampleRate} Hz, {channels} ch, {(audioSpecificConfig != null ? "raw" : "ADTS")})");
-            return new MediaCodecAacDecoder(codec, Math.Max(1, channels));
+            Log.Info($"sceAudiodec: AAC through MediaCodec {codec.Name} ({sampleRate} Hz, {channels} ch, {packaging})");
+            return codec;
         }
         catch (Java.Lang.Exception e)
         {
@@ -92,6 +108,8 @@ public sealed unsafe class MediaCodecAacDecoder : IAudioFrameDecoder
     }
 
     bool _mp3;
+    // ADTS input: the codec starts at the first frame, with the AudioSpecificConfig of its header; headers are stripped
+    bool _adts;
 
     public int RawFrameLength(byte* data, int maxSize)
     {
@@ -121,8 +139,30 @@ public sealed unsafe class MediaCodecAacDecoder : IAudioFrameDecoder
 
     int DecodeCore(byte* data, int size, Span<short> pcmOut, int outChannels)
     {
-        var c = _codec;
         _frames++;
+        if (_adts)
+        {
+            if (!AdtsHeader.TryParse(new ReadOnlySpan<byte>(data, size), out int headerLength, out byte[] config, out int rate, out int adtsChannels))
+            {
+                Log.WarnOnce("aac-adts-header", "sceAudiodec: AAC frame without an ADTS header in an ADTS stream: answered with silence");
+                return Silence(pcmOut, outChannels > 0 ? outChannels : _outChannels);
+            }
+
+            if (_codec == null)
+            {
+                _codec = StartAac(rate, adtsChannels, config, "ADTS");
+                if (_codec == null)
+                {
+                    _adts = false;
+                    return 0;
+                }
+            }
+
+            data += headerLength;
+            size -= headerLength;
+        }
+
+        var c = _codec;
         if (c == null)
             return 0;
         int oc = outChannels > 0 ? outChannels : _outChannels;

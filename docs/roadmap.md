@@ -726,9 +726,15 @@ Lista de itens futuros do VitaSharp. Marque `[x]` quando um item for concluído.
 - [ ] Uncharted no celular: na tela de título, um quadro escuro e velho do filme de fundo a cada ~5 s (não é o caso
   "decodificador sem quadro"; 30/10/2026, Redmi Note 14); achar de onde vem o quadro velho (ring de buffers do
   player do jogo com a CPU lenta, ou o cache de texturas da imagem YUV)
+  12/11/2026 (A1): provável a mesma causa do F1 (item "o vídeo de abertura do F1 2011 pisca"): o stream do filme
+  recomeçado respondia as primeiras chamadas com a última picture da volta anterior (o fim escuro do filme); agora a
+  primeira chamada de cada volta sai com a picture do IDR. Na tela de título (150 s, 1 execução de cada) o detector não
+  marcou nada nem no código novo nem no antigo; falta conferir ao vivo
 - [ ] F1 2011 no celular: quadros pretos nos filmes, porque o player do jogo pula o desenho do quadro quando o
   decodificador atrasa (CPU lenta: ~20 fps; reproduz no PC com `--cpu-mhz=120`); some com a velocidade nativa (item
   abaixo), conferir depois
+  12/11/2026 (A1): com o código atual não há mais chamada sem picture no começo dos filmes (era 8 por filme) e o fps
+  do filme não mudou (ver o item "o vídeo de abertura do F1 2011 pisca")
 - [x] Teclado físico no jogo (setas/letras para os botões, como no desktop) (30/10/2026: `AndroidKeyboard` com o perfil
   de teclado do `input.json` e o mapeamento padrão do desktop, P e Home abrem o menu de pausa, teclas de inclinação
   no SceMotion pelo `VirtualMotion`, teclas soltas quando um diálogo pega o foco, texto do IME pelo teclado; falta
@@ -2990,6 +2996,33 @@ on-existing PPS 0 e nenhum quadro). Ainda aberto: depois da carga no meio do fil
     16 ms por chamada contra 10-11 ms nos outros, então a contagem menor dele pode ser efeito de tempo. Próximo passo
     do lab: um mono-aot da main com o mesmo detector, depois bisectar (logs `lab\flicker\{A..J}_{0,1}.log`, roteiro
     `lab\flicker\intro_ab.sh` no scratchpad do agente).
+  - 12/11/2026 (agente A1, fix/android-video, correção feita e medida no celular; falta o usuário confirmar). Como o
+    Vita faz: `sceAvcdecDecode` é síncrona (vita-headers; o Vita3K manda a unidade e recebe a picture na mesma chamada,
+    `numOfOutput` só sobe quando sai uma), e a primeira chamada de um stream já responde com a picture do IDR. Causa no
+    Android: o decodificador de software (libavc no `c2.android.avc.decoder`) segura as primeiras pictures até chegarem
+    mais unidades (o atraso de exibição dele vem do DPB quando o SPS não traz `bitstream_restriction`: o clipe sintético
+    de 64x64 só soltou a primeira picture na chamada 18; os filmes do F1 têm B-frames e limite próprio de 2) e a
+    inicialização do codec leva 0,1-0,7 s; o HLE respondia essas chamadas vazias com nada (buffer não escrito: os
+    quadros pretos de luma 0/16) ou com a última picture do filme anterior (o quadro velho). Correção, no mecanismo do
+    MediaCodec (todos os jogos com SceAvcdec/SceAvPlayer): (1) a primeira unidade IDR de cada stream (criação, Stop,
+    Flush, volta do filme) sai na própria chamada: fim de stream para o decodificador soltar o que segura, flush, a mesma
+    unidade de novo como referência (a segunda cópia é descartada pelo pts) — 13-55 ms no celular, contra 0,6 s +
+    8 chamadas vazias antes; (2) SPS sem limite de reordenação recebe `max_num_reorder_frames = 0`
+    (`H264ReorderLimit`; desfeito com replay do GOP se aparecer slice B depois do limite); (3) depois da primeira, as
+    pictures saem como antes (sem esperar cada uma: esperar todas custou 7% de fps, `VITASHARP_MEDIACODEC_SYNC=all`);
+    (4) AAC em ADTS no Android saía mudo (MediaCodec com `KEY_IS_ADTS`: 25 de 25 quadros em silêncio no clipe de
+    teste): agora vai como AAC cru com o AudioSpecificConfig do cabeçalho. Medido no Redmi Note 14 (APK dev nativeaot,
+    abertura do F1 desde o boot, 35 s, 3 rodadas alternadas, `VITASHARP_MEDIACODEC_SYNC=0` = o código antigo):
+    chamadas sem picture 0/0/0 contra 8/8/8 no 1º filme, respostas com a picture do filme anterior 0 contra 5-6 no
+    2º, fps 22,0/22,3/21,2 contra 21,5/21,8/22,0 (sem perda), duração dos filmes igual (5,0-5,1 s e 7,8-8,1 s). O
+    detector de flicker ainda marca 10-14 quadros por execução no novo contra 3-8 no antigo, quase todos mudanças
+    pequenas de um bloco 4x4 nos primeiros 3 s de cada filme (repetições do primeiro quadro enquanto o libavc enche
+    o pipeline); nenhum quadro inteiro preto nas 9 execuções de hoje, nem no antigo (o pisca de 17 quadros
+    alternando luma 97/16 no início do 3º filme apareceu 1 vez em 4 no código antigo). Falta: comparar com um vídeo do
+    Vita de verdade o começo de cada filme e confirmar com o usuário. Teste: `MediaParityTests`,
+    `H264ReorderLimitTests`, `AndroidMediaDriverTests` (SynchronousOutput); paridade no celular:
+    `build/android-media-parity.sh` (vídeo do Android idêntico e na mesma ordem que o FFmpeg do PC, primeira picture
+    na chamada 0; o código antigo dava a primeira na chamada 18). Logs: `<scratchpad>\a1\runs\f1_v5`.
 - [ ] Android: crash do GC do Mono logo depois de um load state (06/11/2026, perf/android-8, Killzone): SIGSEGV
   (SEGV_ACCERR) na thread `SGen worker` (libmonosgen-2.0.so) 1 s depois de "Estado do slot 1 carregado"
   (`and8_runs/crash_B1_sgen.txt`, log `log_B1.txt`); de novo às 16:01 (`VITASHARP_MSAA=off`), 1 s depois da
@@ -4337,6 +4370,11 @@ on-existing PPS 0 e nenhum quadro). Ainda aberto: depois da carga no meio do fil
   são o gargalo (AAC 5 ms, H.264 12,8 ms por chamada, MediaExtractor 0,4 ms); falta ver as threads do player do jogo
   (simpleperf). Comparar também os dumps de áudio de F1 (menu e corrida) e God of War com o PC (`vitasharp-perf
   audio-check`): 245 e 157 estalos no celular
+  12/11/2026 (A1, Redmi Note 14, abertura do F1): 1º filme 4,9-5,1 s e 2º 7,8-8,3 s nos dois códigos (novo e antigo),
+  contra 5,0 s e 8,0 s do conteúdo: já em tempo real. A paridade de áudio (`build/android-media-parity.sh`) mostrou
+  que o AAC do MediaCodec sai um quadro (1024 amostras) depois do FFmpeg, com os 2 primeiros em silêncio, e o MP3
+  623 amostras deslocado (o decodificador do Android descarta 529 amostras de atraso): diferença de contrato a
+  corrigir, não de velocidade
 - **Silent Hill 4 port (SILH00004), "a visualização tá zuada" (08/11/2026, capture SILH00004_20261108_211441, not
   solved):** checked so far: the depth-clamp change (580f464) does not touch it (replay with and without it:
   pixel-identical); the post pass (scene 640x362 -> 0x60F8CC00 -> back) does not blur or darken it (the scene target

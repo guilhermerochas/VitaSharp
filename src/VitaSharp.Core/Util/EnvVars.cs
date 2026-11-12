@@ -39,6 +39,20 @@ public static class EnvVars
     public const string VkDirect = "VITASHARP_VK_DIRECT";
     /// <summary>Android: =0 tries the hardware H.264 decoders first even for pictures up to 960x544 (default: Android's own first there), =1 always Android's own first.</summary>
     public const string MediaCodecSoftware = "VITASHARP_MEDIACODEC_SOFTWARE";
+    /// <summary>Android: MediaCodec H.264 output timing (Mobile.Core/Media/MediaCodecSupport.cs, SynchronousOutput).
+    /// Default: the first access unit of a stream waits for its picture (sceAvcdecDecode answers it with one), later ones
+    /// take what is done with a 5 ms grace, and SPSs without a reorder limit get one; =all: every unit waits for its
+    /// picture; =0: the old timing (no wait before the first picture, no reorder limit), for A/B runs.</summary>
+    public const string MediaCodecSync = "VITASHARP_MEDIACODEC_SYNC";
+    /// <summary>Android: the longest wait, in microseconds, for the first picture of a MediaCodec H.264 stream (default
+    /// 250000).</summary>
+    public const string MediaCodecFirstUs = "VITASHARP_MEDIACODEC_FIRST_US";
+    /// <summary>Android: =1 makes a new MediaCodec H.264 decoder decode one synthetic picture first, so its threads and
+    /// buffers exist before the game's first access unit.</summary>
+    public const string MediaCodecWarmUp = "VITASHARP_MEDIACODEC_WARMUP";
+    /// <summary>Tests: path of a media parity trace pulled from an Android device or emulator
+    /// (build/android-media-parity.sh); MediaParityTests compares it with the desktop's (skipped when unset).</summary>
+    public const string AndroidMediaTrace = "VITASHARP_ANDROID_MEDIA_TRACE";
     /// <summary>Android: AAudio buffer capacity requested in frames (default 0 = AAudio's own; 8192 = the earlier request).</summary>
     public const string AAudioCapacity = "VITASHARP_AAUDIO_CAPACITY";
     public const string Astc = "VITASHARP_ASTC";
