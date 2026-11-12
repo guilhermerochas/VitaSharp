@@ -255,7 +255,10 @@ vez de conferir (rodando também o `build/NamingTool`, que renomeia os símbolos
 todas as referências, já que o `dotnet format` aponta o IDE1006 mas não sabe corrigi-lo, e o `build/FormatTool`, que
 quebra os blocos escritos numa linha e mantém `{ get; set; }` numa linha; a correção precisa dos pacotes NuGet do
 `build/NamingTool`, baixados na primeira vez). As pastas ainda não convertidas ficam em
-[`build/format-pending.txt`](build/format-pending.txt) e são puladas. O `OneLineBlockTests` (na suíte de testes)
+[`build/format-pending.txt`](build/format-pending.txt) e são puladas. A lista de arquivos vai para o `dotnet format` num arquivo de resposta, e os scripts rodam direto o
+`dotnet-format.dll` do SDK ativo (`<sdk>/DotnetTools/dotnet-format/`) para que ele mesmo leia esse arquivo: o
+`dotnet format` poria todos os caminhos numa linha de comando, maior do que o Windows aceita quando a árvore inteira é
+listada (outros layouts de SDK voltam para o `dotnet format`). O `OneLineBlockTests` (na suíte de testes)
 recusa blocos escritos numa linha só (`if (x) { a; }`): todo corpo vai em linhas próprias.
 
 Os scripts shell seguem o Google Shell Style Guide e precisam passar no ShellCheck (job "ShellCheck" do CI; o job
