@@ -52,7 +52,7 @@ public static class PluginConfig
     /// </summary>
     public static List<string> ModulesFor(string text, string section)
     {
-        var modules = new List<string>();
+        List<string> modules = [];
         if (Lex(text) is not { } lines || !Check(lines))
         {
             return modules;
@@ -104,15 +104,15 @@ public static class PluginConfig
         return true;
     }
 
-    private static bool IsSpace(char c)
+    private static bool IsSpace(char character)
     {
-        return c is ' ' or '\t' or '\n' or '\v' or '\f' or '\r';
+        return character is ' ' or '\t' or '\n' or '\v' or '\f' or '\r';
     }
 
     /// <summary>The lines of <paramref name="text"/> as taiHEN's lexer classifies them; null when a line is too long.</summary>
     private static List<Line>? Lex(string text)
     {
-        var lines = new List<Line>();
+        List<Line> lines = [];
         int position = 0;
         while (position <= text.Length)
         {
