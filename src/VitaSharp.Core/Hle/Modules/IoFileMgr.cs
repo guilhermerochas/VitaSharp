@@ -58,15 +58,7 @@ public sealed partial class IoFileMgr : HleModule
         if (head.EndsWith("/sce_sys", StringComparison.OrdinalIgnoreCase)) head = head[..^8];
         string id = head[(head.LastIndexOfAny(['/', ':']) + 1)..];
         if (id.Length != 9 || Emu.Vita.ShellLiveArea?.TitleId == id) return;
-        string title = "";
-        foreach (var sfo in new[] { $"ux0:app/{id}/sce_sys/param.sfo", $"vs0:app/{id}/sce_sys/param.sfo", $"ur0:appmeta/{id}/param.sfo" })
-        {
-            try
-            {
-                if (HostPath(sfo) is { } h && File.Exists(h)) { title = Package.Sfo.Load(h).Title; break; }
-            }
-            catch (Exception e) when (e is IOException or InvalidDataException or UnauthorizedAccessException or ArgumentException) { }
-        }
+        string title = Package.InstalledContent.TitleName(p => Emu.Vfs.Resolve(p), id);
         Emu.Vita.NoteShellLiveArea(id, title);
     }
 

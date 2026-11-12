@@ -68,8 +68,8 @@ public sealed partial class AppMgr : HleModule
     {
         string? rel = id switch
         {
-            100 => "ux0/picture", 101 => "ur0/user/00/psnfriend", 102 => "ur0/user/00/psnmsg", 103 => "ur0/user/00/near",
-            105 => "ux0/music", 108 => "ux0/calendar", 109 => "ux0/video", 112 => "ux0/book", _ => null,
+            100 => Io.FirmwareLayout.Picture.Relative(), 101 => "ur0/user/00/psnfriend", 102 => "ur0/user/00/psnmsg", 103 => "ur0/user/00/near",
+            105 => Io.FirmwareLayout.Music.Relative(), 108 => "ux0/calendar", 109 => Io.FirmwareLayout.Video.Relative(), 112 => "ux0/book", _ => null,
         };
         if (rel == null) return ERR_PARAM;
         return MountAlias($"am{id}", rel, mountPoint);
@@ -91,7 +91,7 @@ public sealed partial class AppMgr : HleModule
     {
         string? rel = id switch
         {
-            200 => "ur0/temp/sqlite", 201 => "ur0/temp/attach", 202 => "ux0/pspemu", 204 => "ur0/temp/checkout",
+            200 => "ur0/temp/sqlite", 201 => "ur0/temp/attach", 202 => Io.FirmwareLayout.PspEmulator.Relative(), 204 => "ur0/temp/checkout",
             206 => "ur0/temp/webbrowser", _ => null,
         };
         if (rel == null) return ERR_PARAM;
@@ -196,11 +196,11 @@ public sealed partial class AppMgr : HleModule
         string tid = GuestMemory.ReadCString(titleId, 32);
         string? rel = id switch
         {
-            106 when tid.Length > 0 => $"ux0/psm/{tid}/RO",
-            107 when tid.Length > 0 => $"ux0/psm/{tid}/RW",
+            106 when tid.Length > 0 => Io.FirmwareLayout.PsmTitles.Relative(tid, Io.FirmwareLayout.PsmReadOnly),
+            107 when tid.Length > 0 => Io.FirmwareLayout.PsmTitles.Relative(tid, Io.FirmwareLayout.PsmWritable),
             // an installed application's metadata copy (param.sfo, icon, LiveArea) that the shell's database rebuild
             // (dbrecovery_plugin) reads for every entry of ux0:appmeta
-            110 when tid.Length == 9 => $"ux0/appmeta/{tid}",
+            110 when tid.Length == 9 => Io.FirmwareLayout.ApplicationMetadata.Relative(tid),
             _ => null,
         };
         if (rel == null)
@@ -270,7 +270,7 @@ public sealed partial class AppMgr : HleModule
     {
         if (ctx == 0) return ERR_NULL_POINTER;
         string tid = GuestMemory.ReadCString(ctx, 16);
-        string dir = Path.Combine(Emu.Options.FsRoot, "ux0", "user", "00", "savedata", tid);
+        string dir = Io.FirmwareLayout.SaveData.Host(Emu.Options.FsRoot, tid);
         if (tid.Length == 0 || !Directory.Exists(dir)) return ERR_NOT_FOUND;
         Emu.Vfs.Mount("savedata1", dir);
         return 0;
@@ -331,7 +331,7 @@ public sealed partial class AppMgr : HleModule
         if (titleId == 0) return ERR_NULL_POINTER;
         string tid = GuestMemory.ReadCString(titleId, 16);
         if (tid.Length != 9) return ERR_PARAM;
-        string dir = Path.Combine(Emu.Options.FsRoot, "ux0", "user", "00", "savedata", tid);
+        string dir = Io.FirmwareLayout.SaveData.Host(Emu.Options.FsRoot, tid);
         if (!Directory.Exists(dir)) return ERR_NOT_FOUND;
         long bytes = 0;
         try { bytes = new DirectoryInfo(dir).EnumerateFiles("*", SearchOption.AllDirectories).Sum(f => f.Length); }
@@ -815,7 +815,7 @@ public sealed partial class AppMgr : HleModule
         int r = CheckSize(data, 0x3C);
         if (r < 0) return r;
         if (!Emu.Vfs.IsMounted("savedata0"))
-            Emu.Vfs.Mount("savedata0", Path.Combine(Emu.Options.FsRoot, "ux0", "user", "00", "savedata", Emu.TitleId));
+            Emu.Vfs.Mount("savedata0", Io.FirmwareLayout.SaveData.Host(Emu.Options.FsRoot, Emu.TitleId));
         return 0;
     }
 

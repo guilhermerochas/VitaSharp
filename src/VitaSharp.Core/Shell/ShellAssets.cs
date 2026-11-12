@@ -90,7 +90,7 @@ public sealed class ShellAssets
             t.BgmPath = SystemBgm;
             list.Add(t);
         }
-        string themesDir = Path.Combine(FsRoot, "ux0", "theme");
+        string themesDir = Io.FirmwareLayout.Themes.Host(FsRoot);
         if (Directory.Exists(themesDir))
         {
             foreach (string? dir in Directory.GetDirectories(themesDir).Order(StringComparer.OrdinalIgnoreCase))
@@ -233,7 +233,7 @@ public sealed class ShellAssets
     public List<ShellSystemApp> SystemApps()
     {
         var list = new List<ShellSystemApp>();
-        string apps = Vs0("app");
+        string apps = Io.FirmwareLayout.SystemApplications.Host(FsRoot);
         if (!Directory.Exists(apps))
         {
             return list;
@@ -245,7 +245,7 @@ public sealed class ShellAssets
             : installed;
         foreach (string? id in ids)
         {
-            string dir = Vs0("app", id);
+            string dir = Io.FirmwareLayout.SystemApplications.Host(FsRoot, id);
             string icon = Io.Vfs.ResolveCaseInsensitive(dir, "sce_sys/icon0.png");
             if (!File.Exists(icon))
             {
@@ -275,7 +275,7 @@ public sealed class ShellAssets
     /// is missing or unreadable.</summary>
     private List<string>? ShellDatabaseBubbles()
     {
-        string db = Path.Combine(FsRoot, "ur0", "shell", "db", "app.db");
+        string db = Io.FirmwareLayout.ShellDatabase.Host(FsRoot, Io.FirmwareLayout.ShellAppDatabase);
         if (!File.Exists(db))
         {
             return null;

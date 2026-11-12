@@ -451,7 +451,7 @@ public sealed partial class MainWindow
             SetStatus(S.NotAGameFolder);
             return;
         }
-        var dest = Path.Combine(Program.Ux0, "app", entry.TitleId);
+        string dest = VitaSharp.Core.Io.FirmwareLayout.Applications.Host(Program.FsRoot, entry.TitleId);
         if (Path.GetFullPath(dir).TrimEnd('\\', '/').Equals(Path.GetFullPath(dest).TrimEnd('\\', '/'), StringComparison.OrdinalIgnoreCase))
         {
             Refresh();

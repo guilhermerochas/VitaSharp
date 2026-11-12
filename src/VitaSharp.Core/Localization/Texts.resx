@@ -937,7 +937,7 @@
     <value>PKG with license…</value>
   </data>
   <data name="InstallSubtitle" xml:space="preserve">
-    <value>Games, updates and DLCs. They go to ux0:app in the data folder; the original file is not deleted.</value>
+    <value>Games, updates and DLCs. They go to {0} in the data folder; the original file is not deleted.</value>
   </data>
   <data name="InstallTitle" xml:space="preserve">
     <value>Install pkg / vpk</value>
@@ -997,7 +997,7 @@
     <value>This package cannot be installed: {0}</value>
   </data>
   <data name="InstalledPspEmu" xml:space="preserve">
-    <value>{0} ({1}) installed in ux0:pspemu.</value>
+    <value>{0} ({1}) installed in {2}.</value>
   </data>
   <data name="PkgKindVitaApp" xml:space="preserve">
     <value>PS Vita game</value>
@@ -2128,7 +2128,7 @@
     <value>No save yet</value>
   </data>
   <data name="MSavesUpdated" xml:space="preserve">
-    <value>Updated {0} · ux0:user/00/savedata/{1}</value>
+    <value>Updated {0} · {1}</value>
   </data>
   <data name="MDeleteSaves" xml:space="preserve">
     <value>Delete saves</value>
@@ -2518,7 +2518,7 @@
     <value>Installed games</value>
   </data>
   <data name="MInstalledGamesDetail" xml:space="preserve">
-    <value>fs/ux0/app · the saves are in fs/ux0/user/00/savedata</value>
+    <value>fs/{0} · the saves are in fs/{1}</value>
   </data>
   <data name="MStorageNote" xml:space="preserve">
     <value>Games, saves, firmware and logs stay in the app's folder (app-specific storage): no storage permission is asked. .VPK and .PUP files are opened with the system picker and read in place.</value>
@@ -2929,10 +2929,10 @@
     <value>VitaSharp Dev: screen kept on</value>
   </data>
   <data name="FolderAddcont" xml:space="preserve">
-    <value>Add-on content (ux0:addcont/{0})</value>
+    <value>Add-on content ({0})</value>
   </data>
   <data name="FolderApp" xml:space="preserve">
-    <value>Game (ux0:app/{0})</value>
+    <value>Game ({0})</value>
   </data>
   <data name="FolderCaptures" xml:space="preserve">
     <value>Newest capture of this game</value>
@@ -2941,10 +2941,10 @@
     <value>Newest log of this game</value>
   </data>
   <data name="FolderPatch" xml:space="preserve">
-    <value>Update (ux0:patch/{0})</value>
+    <value>Update ({0})</value>
   </data>
   <data name="FolderSaveData" xml:space="preserve">
-    <value>Save data (ux0:user/00/savedata/{0})</value>
+    <value>Save data ({0})</value>
   </data>
   <data name="GameFolders" xml:space="preserve">
     <value>Folders</value>
@@ -2968,7 +2968,7 @@
     <value>Open the emulated Vita's file system (ux0, ur0, os0, vs0...) in the file manager: {0}</value>
   </data>
   <data name="OpenGamesFolderTip" xml:space="preserve">
-    <value>Open the games folder (ux0:app): {0}</value>
+    <value>Open the games folder ({0}): {1}</value>
   </data>
   <data name="SectionAudio" xml:space="preserve">
     <value>Audio</value>

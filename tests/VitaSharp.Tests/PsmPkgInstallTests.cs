@@ -5,7 +5,7 @@ using VitaSharp.Core.Package;
 namespace VitaSharp.Tests;
 
 /// <summary>PlayStation Mobile packages (content type 0x18) install like the console lays them out: ux0:psm/&lt;id&gt;
-/// with RO (the package's content/ items and the license), RW (Documents, Temp, System/content_id, pm.dat).
+/// with RO (the package's contents/ items and the license), RW (Documents, Temp, System/content_id, pm.dat).
 /// Synthetic package and license only.</summary>
 public class PsmPkgInstallTests
 {
@@ -38,11 +38,17 @@ public class PsmPkgInstallTests
         return Convert.ToBase64String(ms.ToArray());
     }
 
-    private static byte[] Package(string contentId = ContentId) => PkgFixture.BuildPsm(contentId,
-        ("content", null),
-        ("content/Application", null),
-        ("content/Application/app.exe", Enumerable.Range(0, 3000).Select(i => (byte)(i * 7)).ToArray()),
-        ("content/Application/app.info", "PSMA"u8.ToArray()),
+    /// <summary>The synthetic title's description (its name is what the install reports).</summary>
+    private static readonly byte[] s_appInfo = PsmAppInfoFixture.Build(new Dictionary<string, string> { ["en-US"] = "Synthetic PSM", ["ja-JP"] = "Synthetic JP" },
+        images: new Dictionary<string, byte[]> { ["icon_128x128"] = [0x89, (byte)'P', (byte)'N', (byte)'G', 1, 2, 3] });
+
+    /// <summary>A PSM package laid out like a real one: the read-only items are "contents/..." (a store NPPA package
+    /// has contents/Application/app.exe, app.info...).</summary>
+    internal static byte[] Package(string contentId = ContentId) => PkgFixture.BuildPsm(contentId,
+        ("contents", null),
+        ("contents/Application", null),
+        ("contents/Application/app.exe", Enumerable.Range(0, 3000).Select(i => (byte)(i * 7)).ToArray()),
+        ("contents/Application/app.info", s_appInfo),
         ("runtime", null),
         ("runtime/Unity.dll", [1, 2, 3]));
 
@@ -73,9 +79,12 @@ public class PsmPkgInstallTests
             Assert.Equal(root, t.Path);
             Assert.Equal(Enumerable.Range(0, 3000).Select(i => (byte)(i * 7)).ToArray(),
                          File.ReadAllBytes(Path.Combine(root, "RO", "Application", "app.exe")));
-            Assert.Equal("PSMA"u8.ToArray(), File.ReadAllBytes(Path.Combine(root, "RO", "Application", "app.info")));
+            Assert.Equal(s_appInfo, File.ReadAllBytes(Path.Combine(root, "RO", "Application", "app.info")));
+            // the name comes from the title's own description, not the content ID
+            Assert.Equal("Synthetic PSM", t.Title);
             Assert.Equal(new byte[] { 1, 2, 3 }, File.ReadAllBytes(Path.Combine(root, "runtime", "Unity.dll")));
-            Assert.False(Directory.Exists(Path.Combine(root, "RO", "content")));
+            Assert.False(Directory.Exists(Path.Combine(root, "RO", "contents")));
+            Assert.False(Directory.Exists(Path.Combine(root, "contents")));
             Assert.Equal(rif, File.ReadAllBytes(Path.Combine(root, "RO", "License", PkgInstaller.AccountRifName)));
             Assert.True(Directory.Exists(Path.Combine(root, "RW", "Documents")));
             Assert.True(Directory.Exists(Path.Combine(root, "RW", "Temp")));
@@ -88,6 +97,27 @@ public class PsmPkgInstallTests
             // nothing goes to the PS Vita application folders
             Assert.False(Directory.Exists(Path.Combine(ux0, "app")));
             Assert.False(Directory.Exists(Path.Combine(ux0, "license")));
+        }
+        finally
+        {
+            dir.Delete(true);
+        }
+    }
+
+    [Fact]
+    public void ContentSpelledWithoutTheSGoesToRoToo()
+    {
+        DirectoryInfo dir = Directory.CreateTempSubdirectory("vitasharp-psm-");
+        try
+        {
+            string pkg = Path.Combine(dir.FullName, "psm.pkg");
+            File.WriteAllBytes(pkg, PkgFixture.BuildPsm(ContentId, ("content", null), ("content/Application/app.info", s_appInfo)));
+            string ux0 = Path.Combine(dir.FullName, "ux0");
+
+            InstalledTitle t = PkgInstaller.Install(pkg, PsmLicense(ContentId), ux0);
+
+            Assert.Equal(s_appInfo, File.ReadAllBytes(Path.Combine(t.Path, "RO", "Application", "app.info")));
+            Assert.False(Directory.Exists(Path.Combine(t.Path, "content")));
         }
         finally
         {
@@ -175,7 +205,7 @@ public class PsmPkgInstallTests
         try
         {
             string pkg = Path.Combine(dir.FullName, "psm.pkg");
-            File.WriteAllBytes(pkg, PkgFixture.BuildPsm(ContentId, ("content/../../evil.bin", [1])));
+            File.WriteAllBytes(pkg, PkgFixture.BuildPsm(ContentId, ("contents/../../evil.bin", [1])));
             string ux0 = Path.Combine(dir.FullName, "ux0");
 
             Assert.Throws<InvalidDataException>(() => PkgInstaller.Install(pkg, PsmLicense(ContentId), ux0));

@@ -676,7 +676,7 @@ public sealed partial class AppMgr
     int PspSaveDataRootMount(uint mountPoint)
     {
         if (mountPoint == 0) return ERR_NULL_POINTER;
-        GuestMemory.WriteCString(mountPoint, "ux0:pspemu", 0x10);
+        GuestMemory.WriteCString(mountPoint, Io.FirmwareLayout.PspEmulator.Guest(), 0x10);
         return 0;
     }
 

@@ -870,24 +870,24 @@ Lista de itens futuros do VitaSharp. Marque `[x]` quando um item for concluído.
   valem para o shell e os apps do sistema. Corrigir de forma genérica: `*KERNEL` no boot do sistema, uma vez por
   sessão; `*main` para o shell; `*ALL` e `*<ID>` também para os programas do sistema, na ordem do taiHEN. Teste: um
   `.skprx` e um `.suprx` de teste (montados pelo `SceModuleBuilder`) carregados no boot do shell e num app do sistema.
-- [ ] PSM, depois do instalador (12/11/2026, teste do usuário): o NPPA00120 instalou em `ux0:psm/NPPA00120` (17
-  arquivos), mas 1) a Biblioteca (Desktop e Android) só lista `ux0:app`: listar também `ux0:psm`, com o nome e o
-  ícone do jogo; 2) o instalador mostrou o content ID ("JM0245-NPPA00120_00-0000000000000000") como nome: ler o
-  título do pacote/`param.sfo` do PSM; 3) o runtime abrir o jogo instalado (falta `sceKernelAllocUnmapMemBlock`, o
-  `SceAppMgrUser` NID 0x9D6D8058 e a montagem 106 `ux0:psm/<id>/RO` que falha com 0x80802012). Jogo de teste:
-  NPPA00120, já instalado pelo usuário.
-  No shell real o jogo também não aparece: cada função do HLE tem a sua lista fixa de pastas de aplicativos
-  (`AppMgrShell.cs` ~289 e ~339 só `vs0:app/` e `ux0:app/`; `IoFileMgr.cs` ~62; a Biblioteca só `ux0:app`). Correção
-  genérica (decisão do usuário, 12/11/2026): UMA fonte que descreve tudo o que o firmware guarda e onde, com o tipo
-  de cada coisa: jogos/apps de Vita (ux0:app, gro0:app/grw0:app do cartão), apps do sistema (vs0:app), jogos de PSP
-  e PSone Classics (ux0:pspemu/PSP/GAME, pelo emulador de PSP do sistema) e os saves deles (ux0:pspemu/PSP/SAVEDATA),
-  títulos de PSM (ux0:psm, RO/RW), atualizações (ux0:patch, grw0:patch), DLC (ux0:addcont), temas (ux0:theme),
-  licenças (ux0:license, RO/License do PSM), metadados de ícone/LiveArea (ux0:appmeta, ur0:appmeta), saves de Vita
-  (ux0:user/00/savedata) e mídia (ux0:music, ux0:video, ux0:picture); conferir cada caminho na documentação pública
-  do firmware antes de implementar. Todo o código consulta só ela (HLE, shell, Biblioteca do launcher, instaladores
-  de Vita/PSP/PSM, gerenciador de saves), e a base do sistema (`app.db`) responde sempre que der, como o shell real;
-  sem listas de pastas soltas. Cada tipo abre pelo caminho do console (PSM pelo runtime `PCSI00011`, PSP/PSone pelo
-  emulador de PSP do sistema). Teste: um item de cada tipo listado e aberto pelo mesmo caminho.
+- [x] PSM, depois do instalador (12/11/2026, teste do usuário; feito em feat/firmware-layout): UMA fonte do que o
+  firmware guarda e onde, `src/VitaSharp.Core/Io/FirmwareLayout.cs` (jogos/apps em ux0:app, cartão gro0:app e
+  grw0:patch/grw0:addcont, sistema vs0:app, PSP/PSone ux0:pspemu/PSP/GAME, SAVEDATA e LICENSE, PSM ux0:psm/<id>
+  RO/RW, atualizações ux0:patch, DLC ux0:addcont, temas ux0:theme, licenças ux0:license/app|addcont|theme,
+  metadados ux0:appmeta e ur0:appmeta, saves ux0:user/00/savedata e ur0:user/00/savedata, mídia ux0:music|video|
+  picture, base ur0:shell/db/app.db); todo o código usa só ela (o teste `FirmwareLayoutTests` falha se alguém
+  escrever essas pastas fora dela). Como o console faz (shell.self e dbrecovery_plugin do FW 3.74, só estudo): a
+  reconstrução da base (dbrecovery_plugin, LLE) lista vs0:app, ux0:appmeta, ux0:pspemu/PSP/GAME e ux0:psm; um título
+  de PSM é lido de ux0:psm/<id>/RO/Application/app.info, o shell monta ur0:appmeta/<id> (icon0.dds, pic0.png,
+  LiveArea do modelo vs0:vsh/game/psm/contents) e grava categoria "mb", caminho ux0:psm/<id>; abrir a bolha roda
+  ux0:app/PCSI00011/eboot.bin com o parâmetro "ux0:psm/<id>" (um título Unity, ux0:psm/<id>/runtime/eboot.bin).
+  Correções: o instalador punha os itens "contents/" (o nome real) fora de RO (só aceitava "content/"): o shell não
+  achava o app.info; o nome do jogo vem do app.info; licenças agora em ux0:license/app/<id> (as antigas em
+  ux0:license/<id> migram sozinhas). Prova: boot do shell real headless com o NPPA00120 (cópia em layout novo): a
+  bolha "Merum" com o ícone na página 3 e a entrada no app.db. A Biblioteca (Desktop e Android) lista o PSM com nome
+  e ícone do app.info e abre pelo runtime com o mesmo parâmetro. Falta (item abaixo, PlayStation Mobile): o shell
+  pede a atualização do runtime (vs0:vsh/game/psm/runtime_version.txt = 2.01; o PCSI00011 do usuário é 01.00: no
+  console também pediria), e o próprio runtime (sceKernelAllocUnmapMemBlock, SceAppMgrUser 0x9D6D8058...).
 - [ ] PlayStation Mobile (pedido do usuário, 11/11/2026; o runtime `PCSI00011` "PSM Runtime Package" 01.00, SDK
   2.00, já está instalado pelo usuário com a sua licença). 1) Rodar o runtime no VitaSharp sem janela e levantar o
   que o Mono dele usa e o que falta (HLE genérico do que faltar, nada específico do PSM). 2) Instalador de `.pkg` de

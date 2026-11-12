@@ -26,7 +26,8 @@ public class PkgInstallTests
             Assert.Equal(PkgContentType.App, t.Type);
             Assert.Equal(eboot, File.ReadAllBytes(Path.Combine(ux0, "app", "PCSE00000", "eboot.bin")));
             byte[] rif = Core.Package.Zrif.Decode(Zrif);
-            Assert.Equal(rif, File.ReadAllBytes(Path.Combine(ux0, "license", "PCSE00000", ContentId + ".rif")));
+            // the licence is where the firmware keeps it: ux0:license/app/<title id>
+            Assert.Equal(rif, File.ReadAllBytes(Path.Combine(ux0, "license", "app", "PCSE00000", ContentId + ".rif")));
             Assert.Equal(rif, File.ReadAllBytes(Path.Combine(ux0, "app", "PCSE00000", "sce_sys", "package", "work.bin")));
         }
         finally

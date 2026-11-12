@@ -1,5 +1,6 @@
 using VitaSharp.Core;
 using VitaSharp.Core.Hle;
+using VitaSharp.Core.Io;
 using VitaSharp.Core.Package;
 using VitaSharp.Core.Util;
 
@@ -298,7 +299,7 @@ public static class Program
     /// <summary>The title id of a system application folder of the installed firmware (vs0:app/NPXS*), else null.</summary>
     internal static string? SystemAppTitle(string appDir)
     {
-        string sys = Path.GetFullPath(Path.Combine(FsRoot, "vs0", "app"));
+        string sys = Path.GetFullPath(FirmwareLayout.SystemApplications.Host(FsRoot));
         string full = Path.TrimEndingDirectorySeparator(Path.GetFullPath(appDir));
         return string.Equals(Path.GetDirectoryName(full), sys, StringComparison.OrdinalIgnoreCase) ? Path.GetFileName(full) : null;
     }
@@ -315,19 +316,13 @@ public static class Program
             return dev;
         }
 
-        var p = Path.Combine(Ux0, "app", arg);
-        if (Directory.Exists(p))
+        // an installed title by its ID, where the firmware keeps it
+        if (FirmwareLayout.FindTitle(FsRoot, arg) is { } title)
         {
-            return p;
-        }
-        // system applications of the installed firmware (vs0:app/NPXS*)
-        var sys = Path.Combine(FsRoot, "vs0", "app", arg);
-        if (Directory.Exists(sys))
-        {
-            return sys;
+            return title.Dir;
         }
 
-        throw new DirectoryNotFoundException($"Title {arg} not found (looked in {p} and {sys})");
+        throw new DirectoryNotFoundException($"Title {arg} not found (looked in {string.Join(", ", FirmwareLayout.Titles.Select(f => f.Guest()))})");
     }
 
     internal static void WriteBgraPng(string path, byte[] bgra, int w, int h)
@@ -498,7 +493,7 @@ public static class Program
                 return app.DestinationPath;
             }
             // a patch/add-on archive: boot the base game it belongs to, when installed
-            var baseApp = Path.Combine(Ux0, "app", contents[0].TitleId);
+            string baseApp = FirmwareLayout.Applications.OnDevice(Ux0, contents[0].TitleId);
             if (Directory.Exists(baseApp))
             {
                 return baseApp;

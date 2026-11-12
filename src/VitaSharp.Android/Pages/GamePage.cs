@@ -134,7 +134,7 @@ public sealed class GamePage : Screen<GameState, GameProps>
                     Card(
                         Row(State.Saves.Bytes > 0 ? Loc.Get("MSavedData") : Loc.Get("MNoSaveYet"),
                             State.Saves.Bytes > 0 ? $"{State.Saves.Bytes / 1024} KB" : null,
-                            detail: State.Saves.Modified is { } m ? Loc.Format("MSavesUpdated", GameLibrary.LastPlayed(m, DateTime.UtcNow).ToLowerInvariant(), g.TitleId) : $"ux0:user/00/savedata/{g.TitleId}"),
+                            detail: State.Saves.Modified is { } m ? Loc.Format("MSavesUpdated", GameLibrary.LastPlayed(m, DateTime.UtcNow).ToLowerInvariant(), VitaSharp.Core.Io.FirmwareLayout.SaveData.Guest(g.TitleId)) : VitaSharp.Core.Io.FirmwareLayout.SaveData.Guest(g.TitleId)),
                         State.Saves.Bytes > 0 ? Divider() : null,
                         State.Saves.Bytes > 0 ? Row(Loc.Get("MDeleteSaves"), null, DeleteSaves, valueColor: Palette.Danger) : null
                     ),

@@ -132,11 +132,11 @@ public sealed partial class MainWindow
             flyout.Items.Add(mi);
         }
         string id = g.TitleId;
-        var savedata = Path.Combine(Program.Ux0, "user", "00", "savedata", id);
-        var patch = Path.Combine(Program.Ux0, "patch", id);
-        var addcont = Path.Combine(Program.Ux0, "addcont", id);
+        string savedata = VitaSharp.Core.Io.FirmwareLayout.SaveData.Host(Program.FsRoot, id);
+        string patch = VitaSharp.Core.Io.FirmwareLayout.Patches.Host(Program.FsRoot, id);
+        string addcont = VitaSharp.Core.Io.FirmwareLayout.AddCont.Host(Program.FsRoot, id);
         var states = SaveStates.Folder(Program.DataRoot, id);
-        Item(S.FolderApp(id), () => OpenPath(g.Path), Directory.Exists(g.Path));
+        Item(S.FolderApp(VitaSharp.Core.Io.FirmwareLayout.HostToGuest(Program.FsRoot, g.Path) ?? g.Path), () => OpenPath(g.Path), Directory.Exists(g.Path));
         Item(S.FolderSaveData(id), () => OpenPath(savedata), Directory.Exists(savedata));
         if (Directory.Exists(patch))
         {

@@ -334,7 +334,7 @@ public sealed partial class NpManager : HleModule
     {
         var list = new List<NpTicket.Entitlement>();
         if (Emu == null || string.IsNullOrEmpty(Emu.TitleId)) return list;
-        string dir = Path.Combine(Emu.Options.FsRoot, "ux0", "addcont", Emu.TitleId);
+        string dir = Io.FirmwareLayout.AddCont.Host(Emu.Options.FsRoot, Emu.TitleId);
         if (!Directory.Exists(dir)) return list;
         foreach (var sub in Directory.GetDirectories(dir).Order())
         {

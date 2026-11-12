@@ -205,7 +205,7 @@ internal sealed class TrophyServerBridge(Emulator emu)
     /// <summary>The installed application (ux0:app/&lt;title id&gt;) that ships trophy set <paramref name="commId"/>.</summary>
     static string? AppWithSet(string root, string commId)
     {
-        var apps = Path.Combine(root, "ux0", "app");
+        string apps = Io.FirmwareLayout.Applications.Host(root);
         if (!Directory.Exists(apps)) return null;
         return Directory.EnumerateDirectories(apps).Order(StringComparer.Ordinal)
             .FirstOrDefault(a => File.Exists(Path.Combine(a, "sce_sys", "trophy", commId, "TROPHY.TRP")));

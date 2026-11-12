@@ -1,4 +1,4 @@
-<!-- pair: README.pt-BR.md sha256=a1ffb2705d3c846dd9d950d94ba08fc374b36229ad6d01c79c91cd27ed021e79 -->
+<!-- pair: README.pt-BR.md sha256=3ae7929b6b845ac2a219be66b94b3f681e7f28a0cb5094f5616e0837541cb697 -->
 <div align="center">
 
 **English** | [Português](README.pt-BR.md)
@@ -116,8 +116,16 @@ PC requirements: a Vulkan 1.3 driver (recent NVIDIA, AMD or Intel) and a multi-c
 1024-byte PSM `.rif` (or its zRIF) that your console has for that game; a PS Vita license or another game's is refused.
 It goes where the console puts it, `ux0:psm/<TITLEID>` (`RO` with the game and `RO/License`, `RW/Documents` for the
 saves, which a reinstall keeps); the game stays protected as sold and is opened by the PSM runtime with your license.
-It also needs the **PSM Runtime Package** (`PCSI00011`, a normal PS Vita `.pkg` with its license). Running PSM games
-is still in progress (see `docs/roadmap.md`).
+It also needs the **PSM Runtime Package** (`PCSI00011`, a normal PS Vita `.pkg` with its license). The library lists
+an installed PSM game with the name and icon from the game itself, and the **Vita System** home screen shows its bubble
+once the system has rebuilt its database (at its next start after the install, as on the console). Running PSM games
+is still in progress (see `docs/roadmap.md`); a PSM game installed with an earlier version must be installed again.
+
+**Where things go.** Everything is kept where the console keeps it (games in `ux0:app`, updates in `ux0:patch`, DLC in
+`ux0:addcont`, PSP/PSone games in `ux0:pspemu/PSP/GAME`, PSM games in `ux0:psm`, saves in `ux0:user/00/savedata`,
+licenses in `ux0:license/app/<TITLEID>`). Licenses that earlier versions kept in `ux0:license/<TITLEID>` move to
+`ux0:license/app/<TITLEID>` by themselves at the next start (a license whose new place already holds a different one
+stays where it was).
 
 **Firmware (optional).** Games run without firmware. Install it for the system fonts and libraries (`libSceXml`,
 `libSceSqlite`...) and the **Vita System**: on the **Vita System** page, **Install firmware (.PUP)...**, or **Use

@@ -121,7 +121,7 @@ public sealed class FunctionCensus
                 }
             }
         }
-        string apps = Path.Combine(fsRoot, "ux0", "app");
+        string apps = Io.FirmwareLayout.Applications.Host(fsRoot);
         if (Directory.Exists(apps))
         {
             foreach (string? appDir in Directory.EnumerateDirectories(apps).Order(StringComparer.OrdinalIgnoreCase))
