@@ -8,7 +8,7 @@ namespace VitaSharp.Renderer.Vulkan;
 /// <summary>AstcFromBc / AstcFromPvrtc: the level is transcoded to ASTC 4x4 blocks (AstcTranscoder).</summary>
 public enum TexConvert
 {
-    None, Rgb8ToRgba8, Srgb8ToRgba8, Palette4, Palette8, U8U3U3U2, Yuv420P2, Yuv420P3, Yuv422, Pvrtc, U2F10F10F10, S5S5U6, X8U24, BcSoftware, AstcFromBc, AstcFromPvrtc
+    None, Rgb8ToRgba8, Srgb8ToRgba8, Palette4, Palette8, U8U3U3U2, Yuv420P2, Yuv420P3, Yuv422, Pvrtc, U2F10F10F10, S5S5U6, X8U24, BcSoftware, AstcFromBc, AstcFromPvrtc, Etc1
 }
 
 public readonly record struct TexFormatInfo(Format Format, int BitsPerPixel, int BlockW, int BlockH, int BlockBytes, TexConvert Convert)
@@ -63,7 +63,9 @@ public static class Formats
         TexBase.SE5M9M9M9 => new(Format.E5B9G9R9UfloatPack32, 32, 1, 1, 0, TexConvert.None),
         TexBase.U4U4U4U4 => new(Format.R4G4B4A4UnormPack16, 16, 1, 1, 0, TexConvert.None),
         TexBase.U1U5U5U5 => new(Format.A1R5G5B5UnormPack16, 16, 1, 1, 0, TexConvert.None),
-        TexBase.U2U10U10U10 => new(Format.A2R10G10B10UnormPack32, 32, 1, 1, 0, TexConvert.None),
+        // U2U10U10U10_ABGR is "A2B10G10R10" (vita-headers gxm.h): red in the low 10 bits, as U8U8U8U8_ABGR has red in
+        // the low byte; the swizzle then reorders it like every other four-component format
+        TexBase.U2U10U10U10 => new(Format.A2B10G10R10UnormPack32, 32, 1, 1, 0, TexConvert.None),
         TexBase.U2F10F10F10 => new(Format.R16G16B16A16Sfloat, 32, 1, 1, 0, TexConvert.U2F10F10F10),
         TexBase.U8U8U8 => new(Format.R8G8B8A8Unorm, 24, 1, 1, 0, TexConvert.Rgb8ToRgba8),
         TexBase.S8S8S8 => new(Format.R8G8B8A8SNorm, 24, 1, 1, 0, TexConvert.Srgb8ToRgba8),
@@ -79,6 +81,7 @@ public static class Formats
         TexBase.SBC5 => new(Format.BC5SNormBlock, 8, 4, 4, 16, TexConvert.None),
         TexBase.PVRT2BPP or TexBase.PVRTII2BPP => new(Format.R8G8B8A8Unorm, 2, 8, 4, 8, TexConvert.Pvrtc),
         TexBase.PVRT4BPP or TexBase.PVRTII4BPP => new(Format.R8G8B8A8Unorm, 4, 4, 4, 8, TexConvert.Pvrtc),
+        TexBase.ETC1 => new(Format.R8G8B8A8Unorm, 4, 4, 4, 8, TexConvert.Etc1), // decoded on the CPU (Etc1)
         TexBase.YUV420P2 => new(Format.R8G8B8A8Unorm, 12, 1, 1, 0, TexConvert.Yuv420P2),
         TexBase.YUV420P3 => new(Format.R8G8B8A8Unorm, 12, 1, 1, 0, TexConvert.Yuv420P3),
         TexBase.YUV422 => new(Format.R8G8B8A8Unorm, 16, 1, 1, 0, TexConvert.Yuv422),
@@ -242,7 +245,7 @@ public static class Formats
         0x10000000 => Format.R8G8B8A8Unorm,
         0x40000000 => Format.A1R5G5B5UnormPack16,
         0x50000000 => Format.R4G4B4A4UnormPack16,
-        0x60800000 => Format.A2R10G10B10UnormPack32,
+        0x60800000 => Format.A2B10G10R10UnormPack32, // U2U10U10U10_ABGR = A2B10G10R10 (gxm.h), the memory order
         0x41000000 => Format.R16G16B16A16Sfloat,
         _ => Format.R8G8B8A8Unorm,
     };

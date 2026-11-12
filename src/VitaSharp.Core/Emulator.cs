@@ -1120,13 +1120,13 @@ public sealed class Emulator : IDisposable
     }
 
     /// <summary>
-    /// The plugins of the system's plugin configuration (ux0:tai/config.txt, else ur0:tai/config.txt, the format the
-    /// plugin loaders of the homebrew environment read): the modules listed under <c>*KERNEL</c> (kernel modules) and
-    /// under <c>*ALL</c> and <c>*TITLEID</c> (user modules) all load through the same path, the module loader, before the
-    /// process starts; their module_start runs before the main thread (as Vita3K does for user plugins). Like the
-    /// firmware's module manager, a module whose imports name a library nothing in the system provides (no loaded module
-    /// exports it and the HLE has none of its functions) is not started: it is unloaded again and the log names the
-    /// missing libraries. Returns what happened to each listed module, for the log and the tests.
+    /// The plugins of the system's plugin configuration (taiHEN's config.txt, read with taiHEN's rules:
+    /// <see cref="PluginConfig"/>): the modules of <c>*KERNEL</c> (kernel modules), then those of <c>*ALL</c> and of the
+    /// process's title ID (user modules), all through the same path, the module loader, before the process starts;
+    /// their module_start runs before the main thread (as Vita3K does for user plugins). Like the firmware's module
+    /// manager, a module whose imports name a library nothing in the system provides (no loaded module exports it and the
+    /// HLE has none of its functions) is not started: it is unloaded again and the log names the missing libraries.
+    /// Returns what happened to each listed module, for the log and the tests.
     /// </summary>
     internal List<string> LoadPlugins()
     {
@@ -1137,45 +1137,28 @@ public sealed class Emulator : IDisposable
         return results;
     }
 
-    /// <summary>The plugin configuration (ux0:tai/config.txt, else ur0:tai/config.txt) as (section, module path) in
-    /// file order; empty without one.</summary>
-    private List<(string Section, string Path)> ReadPluginConfig()
+    /// <summary>The plugin configuration's text: ux0:tai/config.txt, or ur0:tai/config.txt only when the first does not
+    /// exist (taiHEN's order); null without one or when taiHEN would refuse it (<see cref="PluginConfig.IsValid"/>).</summary>
+    private string? ReadPluginConfig()
     {
-        var entries = new List<(string, string)>();
-        string? config = null;
-        foreach (string? path in new[] { "ux0:tai/config.txt", "ur0:tai/config.txt" })
+        foreach (string path in PluginConfig.Paths)
         {
-            if (Vfs.Resolve(path) is { } host && File.Exists(host))
-            {
-                config = host;
-                break;
-            }
-        }
-
-        if (config == null)
-        {
-            return entries;
-        }
-
-        string section = "";
-        foreach (string raw in File.ReadAllLines(config))
-        {
-            string line = raw.Trim();
-            if (line.Length == 0 || line[0] == '#')
+            if (Vfs.Resolve(path) is not { } host || !File.Exists(host))
             {
                 continue;
             }
 
-            if (line[0] == '*')
+            string text = File.ReadAllText(host);
+            if (!PluginConfig.IsValid(text))
             {
-                section = line[1..].Trim();
-                continue;
+                Log.Warn($"plugin configuration {path} is not valid (taiHEN loads no plugin from it)");
+                return null;
             }
 
-            entries.Add((section, line));
+            return text;
         }
 
-        return entries;
+        return null;
     }
 
     /// <summary>The <c>*KERNEL</c> modules of the plugin configuration that are not loaded yet: loaded into the kernel
@@ -1183,9 +1166,14 @@ public sealed class Emulator : IDisposable
     internal List<string> LoadKernelPlugins()
     {
         var results = new List<string>();
-        foreach ((string? section, string? path) in ReadPluginConfig())
+        if (ReadPluginConfig() is not { } config)
         {
-            if (section != "KERNEL" || Kernel.Modules.Values.Any(m => m.IsKernel && string.Equals(m.Path, path, StringComparison.OrdinalIgnoreCase)))
+            return results;
+        }
+
+        foreach (string path in PluginConfig.ModulesFor(config, "KERNEL"))
+        {
+            if (Kernel.Modules.Values.Any(m => m.IsKernel && string.Equals(m.Path, path, StringComparison.OrdinalIgnoreCase)))
             {
                 continue;
             }
@@ -1199,29 +1187,26 @@ public sealed class Emulator : IDisposable
     }
 
     /// <summary>
-    /// The user modules of the plugin configuration for <paramref name="titleId"/> (<c>*ALL</c> and <c>*TITLEID</c>):
-    /// loaded into this process; they start with the process. Returns what happened to each.
-
+    /// The user modules of the plugin configuration for <paramref name="titleId"/> (<c>*ALL</c> and the section named
+    /// exactly as the title ID): loaded into this process; they start with the process. Returns what happened to each.
     /// </summary>
     internal List<string> LoadUserPlugins(string titleId)
     {
         var results = new List<string>();
-        foreach ((string? section, string? path) in ReadPluginConfig())
+        if (ReadPluginConfig() is not { } config)
         {
-            if (section != "ALL" && !string.Equals(section, titleId, StringComparison.OrdinalIgnoreCase))
-            {
-                continue;
-            }
+            return results;
+        }
 
+        foreach (string path in PluginConfig.ModulesFor(config, titleId))
+        {
             string result = LoadPlugin(path, kernel: false);
-
             Log.Info($"plugin {path}: {result}");
             results.Add($"{path}: {result}");
         }
 
         return results;
     }
-
 
     /// <summary>
     /// Loads one plugin module; it stays only when every library it imports is provided by a loaded module it may see

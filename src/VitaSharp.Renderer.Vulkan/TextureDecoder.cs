@@ -168,6 +168,14 @@ public static class TextureDecoder
                     }
                 }
             }
+            if (info.Convert == TexConvert.Etc1)
+            {
+                using (outBuf)
+                {
+                    return Etc1.Decode(outBuf.Span, w, h);
+                }
+            }
+
             if (info.Convert == TexConvert.BcSoftware)
             {
                 using (outBuf)
