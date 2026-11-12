@@ -177,6 +177,10 @@ public sealed class HleFunction
         // and the character creation ran at 15 fps (30 on a Vita, YouTube ruh4O2ZO7aA in 60 fps).
         if (n.StartsWith("sceKernelLockMutex") || n.StartsWith("sceKernelUnlockMutex"))
             return 2_000;
+        // The display's waits (sceDisplayWaitVblankStart*, sceDisplayWaitSetFrameBuf*) block in the scheduler; its getters
+        // and setters (sceDisplayGetVcount, sceDisplayGetFrameBuf, sceDisplaySetFrameBuf...) are a kernel entry that
+        // reads or writes the display state, the 2,000 below. Charged like a wait, a vcount polling loop paid 12,000
+        // cycles per poll (Wipeout 2048's flip callback spins on sceDisplayGetVcount until the next vblank).
         // Delays are in this class too, so a DelayThread(1) polling loop costs 27 us of charge + the 30 us latency floor of
         // Wait.Sleep per iteration (57 us; Killzone's job waits make ~500 per frame). Charging delays as a kernel entry
         // only (2_000) looked more realistic but changed Killzone's scripted walk (another route, where the renderer ran
@@ -184,7 +188,7 @@ public sealed class HleFunction
         if (n.StartsWith("sceKernelWait") || n.StartsWith("sceKernelSignal") || n.StartsWith("sceKernelDelay") || n.StartsWith("sceKernelSetEventFlag")
             || n.StartsWith("sceKernelClearEventFlag") || n.StartsWith("sceKernelPollEventFlag")
             || n.StartsWith("sceKernelPollSema") || n.StartsWith("sceKernelStartThread") || n.StartsWith("sceKernelChangeThread") || n.StartsWith("sceKernelExitThread")
-            || n.StartsWith("sceIo") || n.StartsWith("sceDisplay") || n.StartsWith("sceAudioOut") || n.StartsWith("sceCtrl") || n.StartsWith("sceTouch")
+            || n.StartsWith("sceIo") || n.StartsWith("sceDisplayWait") || n.StartsWith("sceAudioOut") || n.StartsWith("sceCtrl") || n.StartsWith("sceTouch")
             || n.StartsWith("sceKernelSendMsgPipe") || n.StartsWith("sceKernelReceiveMsgPipe") || n.StartsWith("sceCamera")
             || n.StartsWith("sceNetEpollWait") || n.StartsWith("sceNetRecv") || n.StartsWith("sceRudpPollWait") || n.StartsWith("sceHttpWaitRequest")
             || n is "sceKernelSendSignal" or "sceKernelSetEvent" or "sceKernelPulseEvent" or "sceKernelPollEvent" or "sceKernelClearEvent"
