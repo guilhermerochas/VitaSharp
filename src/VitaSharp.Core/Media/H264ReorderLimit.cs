@@ -53,6 +53,46 @@ public static class H264ReorderLimit
         return output.ToArray();
     }
 
+    /// <summary>
+    /// The max_num_reorder_frames the access unit's first SPS states (VUI bitstream_restriction), or null when it has no
+    /// SPS, states no limit or does not parse. A stream that states more than 0 reorders (B-frames): the Vita's decoder
+    /// gives its first picture only after that many units, like FFmpeg.
+    /// </summary>
+    public static int? StatedReorderFrames(ReadOnlySpan<byte> accessUnit)
+    {
+        foreach ((int start, int end) in NalUnits(accessUnit, stopAtSlice: true))
+        {
+            if ((accessUnit[start] & 0x1F) != 7)
+            {
+                continue;
+            }
+
+            byte[] rbsp = ToRbsp(accessUnit.Slice(start + 1, end - start - 1));
+            var reader = new BitReader(rbsp);
+            if (!TryParseUpToVui(reader, out _, out int vuiFlagPosition, out bool hasVui) || !hasVui)
+            {
+                return null;
+            }
+
+            reader.Position = vuiFlagPosition + 1;
+            if (!TrySkipVuiUpToRestriction(reader, out bool hasRestriction) || !hasRestriction)
+            {
+                return null;
+            }
+
+            // bitstream_restriction_flag, motion_vectors_over_pic_boundaries_flag, max_bytes_per_pic_denom,
+            // max_bits_per_mb_denom, log2_max_mv_length_horizontal and _vertical, then max_num_reorder_frames
+            if (!reader.TryU(2, out _) || !reader.TryUe(out _) || !reader.TryUe(out _) || !reader.TryUe(out _) || !reader.TryUe(out _)
+                || !reader.TryUe(out uint reorderFrames))
+            {
+                return null;
+            }
+
+            return (int)Math.Min(reorderFrames, 16u);
+        }
+        return null;
+    }
+
     /// <summary>True when the access unit has an SPS NAL unit (type 7).</summary>
     public static bool ContainsSps(ReadOnlySpan<byte> accessUnit)
     {

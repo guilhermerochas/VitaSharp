@@ -73,6 +73,11 @@ public sealed unsafe class MediaCodecVideoDecoder : IVideoDecoder
     // whole DPB back otherwise, 8 pictures for a Vita movie) until a B slice shows the stream reorders; the pictures of
     // a stream restarted then that were already handed out (pts up to this) are dropped
     bool _streamReorders, _reorderLimitLogged, _reorderLimitGiven;
+    // the reorder depth the stream's SPS states (0 also when it states none and gets the limit): only a stream that does
+    // not reorder gets its first picture drained out early (PrimeFirstPicture); the Vita gives a reordering stream's
+    // first picture only after its reorder depth. VITASHARP_MEDIACODEC_PRIME=all drains every stream's first picture
+    int _statedReorderFrames = -1;
+    static readonly bool s_primeEveryStream = System.Environment.GetEnvironmentVariable(EnvVars.MediaCodecPrime) == "all";
     long _lastOutputPts = long.MinValue, _skipThroughPts = long.MinValue;
     // output format (raw-buffer path and crop)
     int _width, _height, _stride, _sliceHeight, _colorFormat, _cropX, _cropY;
@@ -278,6 +283,11 @@ public sealed unsafe class MediaCodecVideoDecoder : IVideoDecoder
             Drain();
             long queueStart = System.Diagnostics.Stopwatch.GetTimestamp();
             ReadOnlySpan<byte> unitToQueue = accessUnit;
+            if (H264ReorderLimit.ContainsSps(accessUnit))
+            {
+                _statedReorderFrames = H264ReorderLimit.StatedReorderFrames(accessUnit) ?? 0;
+            }
+
             if (!s_legacyOutputTiming && !_streamReorders && H264ReorderLimit.ContainsSps(accessUnit))
             {
                 byte[] limited = H264ReorderLimit.Apply(accessUnit.ToArray(), 0);
@@ -303,10 +313,16 @@ public sealed unsafe class MediaCodecVideoDecoder : IVideoDecoder
                     Drain(LegacyOutputGraceUs);
                 }
             }
-            else if (queued && !_sync.Started && H264AnnexB.ContainsIdr(accessUnit))
+            else if (queued && !_sync.Started && H264AnnexB.ContainsIdr(accessUnit)
+                && (s_primeEveryStream || (_statedReorderFrames == 0 && !_streamReorders)))
             {
                 // a stream's first picture: answered in this call whatever the decoder holds back
                 PrimeFirstPicture(unitToQueue, pts);
+            }
+            else if (!_sync.Started && !s_waitEveryPicture && (_statedReorderFrames > 0 || _streamReorders))
+            {
+                // a reordering stream's first pictures come after its reorder depth: nothing to wait for yet
+                Drain();
             }
             else
             {

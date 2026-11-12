@@ -23,6 +23,11 @@ public sealed partial class Videodec : HleModule
         public DecodedPicture? Last;
         /// <summary>A picture came out since the decoder was created or flushed (see Output's repeatIfLate).</summary>
         public bool Started;
+        /// <summary>Pictures of the decoder's own handed out since it was created or flushed (repeats not counted).</summary>
+        public int Delivered;
+        /// <summary>The stream reorders its pictures (an SPS states max_num_reorder_frames above 0, or B slices): the Vita
+        /// answers the first calls of such a stream with no picture.</summary>
+        public bool StreamReorders;
         /// <summary>Scratch list of an asynchronous decoder's ready pictures (Output).</summary>
         public readonly List<DecodedPicture> Ready = [];
         /// <summary>The last access unit's pts, and whether the stream sent one out of order (B-frames).</summary>
@@ -94,6 +99,15 @@ public sealed partial class Videodec : HleModule
     const int MaxBacklog = 4;
 
     static readonly bool StampUnitPts = Environment.GetEnvironmentVariable(EnvVars.AvcdecPts) != "picture";
+
+    /// <summary>VITASHARP_AVCDEC_FILL_REPEAT=1: repeat the first picture while an asynchronous decoder fills up (the
+    /// earlier behaviour); default: those calls give no picture, as on the Vita.</summary>
+    static readonly bool s_fillRepeat = Environment.GetEnvironmentVariable(EnvVars.AvcdecFillRepeat) == "1";
+
+    /// <summary>VITASHARP_AVCDEC_CARRYOVER=1: a new or flushed asynchronous decoder answers its first calls with the last
+    /// picture of the previous decoder or pass (the earlier behaviour); default: no picture, as on the Vita, which never
+    /// hands out a picture of another stream (the old frame at movie starts on the phone).</summary>
+    static readonly bool s_carryOver = Environment.GetEnvironmentVariable(EnvVars.AvcdecCarryOver) == "1";
 
     readonly Dictionary<uint, Decoder> _decoders = new();
 
@@ -206,6 +220,11 @@ public sealed partial class Videodec : HleModule
         {
             var unit = GuestMemory.Span(es, (int)size);
             if (ParameterSets(unit) is { } ps) d.ParamSets = ps;
+            if (H264ReorderLimit.StatedReorderFrames(unit) > 0 || H264ReorderLimit.IsBSlice(unit))
+            {
+                d.StreamReorders = true;
+            }
+
             else if (d.ResendParamSets && d.ParamSets != null) d.Codec.Send(d.ParamSets, pts);
             d.ResendParamSets = false;
             d.Remember(unit, pts);
@@ -282,6 +301,7 @@ public sealed partial class Videodec : HleModule
             if (d.Last != null && d.Last != pic) d.Codec!.Recycle(d.Last); // its planes were already written out
             d.Last = pic;
             d.Started = true;
+            d.Delivered++;
             n++;
             return true;
         }
@@ -312,13 +332,18 @@ public sealed partial class Videodec : HleModule
             while (n < capacity && d.Take() is { } pic)
                 if (!Emit(pic)) break;
         }
-        if (n == 0 && repeatIfLate && d.Started && d.Last != null && d.Codec is { Asynchronous: true } && capacity > 0 && GuestMemory.R32(list) is var first && first != 0)
+        // a late picture is answered with the previous one (an empty buffer would show), except while the decoder fills
+        // up at the start of a stream that reorders: the Vita answers those calls with no picture (a stream with B-frames
+        // gets its first one after its reorder depth), and repeating the first picture there showed as flicker at every
+        // movie start of F1 2011 on the phone (its movies state a reorder depth of 2)
+        bool repeatAllowed = d.Delivered >= 2 || !d.StreamReorders || s_fillRepeat;
+        if (n == 0 && repeatIfLate && repeatAllowed && d.Started && d.Last != null && d.Codec is { Asynchronous: true } && capacity > 0 && GuestMemory.R32(list) is var first && first != 0)
         {
             WritePicture(first, d.Last, stampPts);
             d.Repeats++;
             n = 1;
         }
-        if (n == 0 && repeatIfLate && !d.Started && (d.Last ?? _carryOver) is { } carried && d.Codec is { Asynchronous: true } && capacity > 0
+        if (n == 0 && repeatIfLate && s_carryOver && !d.Started && (d.Last ?? _carryOver) is { } carried && d.Codec is { Asynchronous: true } && capacity > 0
             && GuestMemory.R32(list) is var firstPic && firstPic != 0)
         {
             WritePicture(firstPic, carried, stampPts);
@@ -339,6 +364,7 @@ public sealed partial class Videodec : HleModule
         d.Codec?.Flush();
         d.Forget();
         d.Started = false;
+        d.Delivered = 0;
         d.AuPts = long.MinValue; d.AuReordered = false;
         return array == 0 ? 0 : Output(d, array);
     }
@@ -354,6 +380,7 @@ public sealed partial class Videodec : HleModule
         d.Codec?.Reset();
         d.Forget();
         d.Started = false;
+        d.Delivered = 0;
         d.AuPts = long.MinValue; d.AuReordered = false;
         return 0;
     }
