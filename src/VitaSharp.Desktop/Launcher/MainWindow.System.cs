@@ -85,7 +85,8 @@ public sealed partial class MainWindow
     Control SettingsPageHost()
     {
         _settingsPage = new SettingsPage(_settings, SaveSettings);
-        _settingsPage.ThemeChanged += t => { LauncherApp.ApplyTheme(t); RebuildAll(); };
+        // the palette change the theme causes draws the window again (once)
+        _settingsPage.ThemeChanged += LauncherApp.ApplyTheme;
         _settingsPage.OpenSystem += () => Navigate(PageSystem);
         _settingsPage.LanguageChanged += () => RebuildAll();
         _settingsPage.CheckUpdatesNow += () => _ = CheckForUpdates(manual: true);
