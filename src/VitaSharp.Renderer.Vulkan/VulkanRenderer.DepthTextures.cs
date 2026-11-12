@@ -376,6 +376,165 @@ void main() {
         return _depthUnpackPipelines[layout];
     }
 
+    // ------------------------------------------------------------------ one-sample depth loaded by a multisampled scene
+
+    /// <summary>
+    /// Whether a multisampled scene's depth image (<paramref name="dst"/> samples, real MSAA) that loads its surface
+    /// takes its samples from a one-sample image of the same surface (<paramref name="src"/>): the depth surface is
+    /// sample-sized, so what a one-sample scene stored is what the multisampled scene's tiles load, texel (x, y) into
+    /// sample (x&amp;1, y&amp;1) of pixel (x/2, y/2) (4X) or the upper / lower sample of pixel (x, y/2) (2X), the
+    /// inverse of <see cref="UnpackedDepthTexture"/>. Supersampled images hold more texels per sample and are not packed.
+    /// </summary>
+    public static bool DepthPackable(SampleCountFlags dst, bool dstSupersampled, SampleCountFlags src, bool srcSupersampled) =>
+        dst != SampleCountFlags.Count1Bit && src == SampleCountFlags.Count1Bit && !dstSupersampled && !srcSupersampled;
+
+    /// <summary>The one-sample depth texel that sample <paramref name="sample"/> of pixel p takes, for a
+    /// <see cref="UnpackLayout"/> layout (the positions of <see cref="s_depthUnpackFetch"/>).</summary>
+    private static string DepthPackCoord(int layout, int sample) => layout switch
+    {
+        0 => $"ivec2(p.x * 2 + {sample & 1}, p.y * 2 + {sample >> 1})",
+        1 => $"ivec2(p.x, p.y * 2 + {(sample == 1 ? 0 : 1)})",
+        _ => $"ivec2(p.x, p.y * 2 + {(sample < 2 ? 0 : 1)})",
+    };
+
+    /// <summary>The pack pass's fragment shader for one sample of a <see cref="UnpackLayout"/> layout (the draw's sample
+    /// mask keeps the other samples).</summary>
+    public static string DepthPackFs(int layout, int sample) => $$"""
+#version 450
+layout(set = 0, binding = 0) uniform sampler2D src;
+void main() {
+    ivec2 p = ivec2(gl_FragCoord.xy);
+    gl_FragDepth = texelFetch(src, {{DepthPackCoord(layout, sample)}}, 0).r;
+}
+""";
+
+    private readonly Dictionary<(int, int), (Pipeline Pipeline, ShaderModule Fs)> _depthPackPipelines = new();
+    private long _statDepthPacks;
+
+    /// <summary>
+    /// Fills the samples of the multisampled depth image <paramref name="dt"/> from the one-sample depth
+    /// <paramref name="src"/> of the same surface (<see cref="DepthPackable"/>): one full-screen draw per sample, its
+    /// sample mask selecting the sample, writing the texel's depth. Stencil keeps the image's content (a fragment
+    /// shader cannot write it without VK_EXT_shader_stencil_export). Metal Gear Solid 3 HD renders its world into a
+    /// one-sample 768x480 scene and then draws the monitor screens, cockpit glass and propeller blur in a 4X 360x224
+    /// scene that loads that depth with GREATER_EQUAL tests: without the samples the test ran against stale or zero
+    /// depth and the plane's monitor screen was drawn over the crew in front of it.
+    /// </summary>
+    private void PackDepthSamples(DepthTarget dt, DepthTarget src)
+    {
+        int layout = UnpackLayout(dt);
+        // the sample-sized area the multisampled image covers, in texels of the one-sample image (guest size for DepthTexture)
+        uint needW = layout == 0 ? dt.Width * 2 : dt.Width, needH = dt.Height * 2;
+        if (src.Scale != 1f)
+        {
+            needW = (uint)MathF.Round(needW / src.Scale);
+            needH = (uint)MathF.Round(needH / src.Scale);
+        }
+
+        (ImageView view, ImageLayout viewLayout) = DepthTexture(src, needW, needH);
+        DepthTex tex = _depthTextures[src];
+        uint w = Math.Min(dt.Width, layout == 0 ? tex.W / 2 : tex.W), h = Math.Min(dt.Height, tex.H / 2);
+        if (w == 0 || h == 0)
+        {
+            return;
+        }
+
+        if (_statDepthPacks++ == 0)
+        {
+            Log.Info($"[gpu] depth surface 0x{dt.Address:X8} of a one-sample scene is loaded by a {(layout == 0 ? "4X" : "2X")} multisampled scene: its texels are packed into the samples");
+        }
+
+        EndRendering();
+        CommandBuffer cmd = Cmd;
+        DescriptorSet set = AllocSet(EnsureLoadLayout());
+        var info = new DescriptorImageInfo(_dummySampler, view, viewLayout);
+        var wr = new WriteDescriptorSet { SType = StructureType.WriteDescriptorSet, DstSet = set, DstBinding = 0, DescriptorCount = 1, DescriptorType = DescriptorType.CombinedImageSampler, PImageInfo = &info };
+        _vk.UpdateDescriptorSets(_dev, 1, &wr, 0, null);
+        RenderPass pass = DepthPackPass(dt.Samples);
+        var rbi = new RenderPassBeginInfo
+        {
+            SType = StructureType.RenderPassBeginInfo,
+            RenderPass = pass,
+            Framebuffer = TransientFramebuffer(pass, new Extent2D(dt.Width, dt.Height), dt.View),
+            RenderArea = new Rect2D(new Offset2D(0, 0), new Extent2D(w, h)),
+        };
+        DevStampOp();
+        _vk.CmdBeginRenderPass(cmd, in rbi, SubpassContents.Inline);
+        var vp = new Viewport(0, 0, w, h, 0, 1);
+        var sc = new Rect2D(new Offset2D(0, 0), new Extent2D(w, h));
+        _vk.CmdSetViewport(cmd, 0, 1, in vp);
+        _vk.CmdSetScissor(cmd, 0, 1, in sc);
+        int samples = (int)dt.Samples;
+        for (int s = 0; s < samples; s++)
+        {
+            _vk.CmdBindPipeline(cmd, PipelineBindPoint.Graphics, DepthPackPipeline(layout, s, dt.Samples));
+            _vk.CmdBindDescriptorSets(cmd, PipelineBindPoint.Graphics, _msLoadLayout, 0, 1, &set, 0, null);
+            _vk.CmdDraw(cmd, 3, 1, 0, 0);
+        }
+        _vk.CmdEndRenderPass(cmd);
+        _boundPipeline = default;
+        dt.LastTouchedFrame = src.LastTouchedFrame = FrameCount;
+        // the scene's renderings load the packed samples
+        Barrier(dt.Image, ImageLayout.DepthStencilAttachmentOptimal, ImageLayout.DepthStencilAttachmentOptimal, ImageAspectFlags.DepthBit | ImageAspectFlags.StencilBit,
+            PipelineStageFlags.EarlyFragmentTestsBit | PipelineStageFlags.LateFragmentTestsBit, PipelineStageFlags.EarlyFragmentTestsBit | PipelineStageFlags.LateFragmentTestsBit,
+            AccessFlags.DepthStencilAttachmentWriteBit, AccessFlags.DepthStencilAttachmentReadBit | AccessFlags.DepthStencilAttachmentWriteBit);
+    }
+
+    private Pipeline DepthPackPipeline(int layout, int sample, SampleCountFlags samples)
+    {
+        if (_depthPackPipelines.TryGetValue((layout, sample), out (Pipeline Pipeline, ShaderModule Fs) made))
+        {
+            return made.Pipeline;
+        }
+
+        EnsureLoadLayout();
+        ShaderModule fs = CompileBuiltin(DepthPackFs(layout, sample), false);
+        byte* entry = stackalloc byte[5] { (byte)'m', (byte)'a', (byte)'i', (byte)'n', 0 };
+        PipelineShaderStageCreateInfo* stages = stackalloc PipelineShaderStageCreateInfo[2];
+        stages[0] = new PipelineShaderStageCreateInfo { SType = StructureType.PipelineShaderStageCreateInfo, Stage = ShaderStageFlags.VertexBit, Module = _msLoadVs, PName = entry };
+        stages[1] = new PipelineShaderStageCreateInfo { SType = StructureType.PipelineShaderStageCreateInfo, Stage = ShaderStageFlags.FragmentBit, Module = fs, PName = entry };
+        uint mask = 1u << sample;
+        var vi = new PipelineVertexInputStateCreateInfo { SType = StructureType.PipelineVertexInputStateCreateInfo };
+        var ia = new PipelineInputAssemblyStateCreateInfo { SType = StructureType.PipelineInputAssemblyStateCreateInfo, Topology = PrimitiveTopology.TriangleList };
+        var vps = new PipelineViewportStateCreateInfo { SType = StructureType.PipelineViewportStateCreateInfo, ViewportCount = 1, ScissorCount = 1 };
+        var rs = new PipelineRasterizationStateCreateInfo { SType = StructureType.PipelineRasterizationStateCreateInfo, PolygonMode = PolygonMode.Fill, CullMode = CullModeFlags.None, LineWidth = 1 };
+        var ms = new PipelineMultisampleStateCreateInfo { SType = StructureType.PipelineMultisampleStateCreateInfo, RasterizationSamples = samples, PSampleMask = &mask };
+        var dss = new PipelineDepthStencilStateCreateInfo { SType = StructureType.PipelineDepthStencilStateCreateInfo, DepthTestEnable = true, DepthWriteEnable = true, DepthCompareOp = CompareOp.Always };
+        var cb = new PipelineColorBlendStateCreateInfo { SType = StructureType.PipelineColorBlendStateCreateInfo };
+        DynamicState* dyn = stackalloc DynamicState[] { DynamicState.Viewport, DynamicState.Scissor };
+        var dsi = new PipelineDynamicStateCreateInfo { SType = StructureType.PipelineDynamicStateCreateInfo, DynamicStateCount = 2, PDynamicStates = dyn };
+        var gci = new GraphicsPipelineCreateInfo
+        {
+            SType = StructureType.GraphicsPipelineCreateInfo,
+            RenderPass = DepthPackPass(samples),
+            StageCount = 2,
+            PStages = stages,
+            PVertexInputState = &vi,
+            PInputAssemblyState = &ia,
+            PViewportState = &vps,
+            PRasterizationState = &rs,
+            PMultisampleState = &ms,
+            PDepthStencilState = &dss,
+            PColorBlendState = &cb,
+            PDynamicState = &dsi,
+            Layout = _msLoadLayout,
+        };
+        _vk.CreateGraphicsPipelines(_dev, _vkPipelineCache, 1, in gci, null, out Pipeline p).Ok("depth pack pipeline");
+        _depthPackPipelines[(layout, sample)] = (p, fs);
+        return p;
+    }
+
+    private void DestroyDepthPackPipelines()
+    {
+        foreach ((Pipeline p, ShaderModule fs) in _depthPackPipelines.Values)
+        {
+            _vk.DestroyPipeline(_dev, p, null);
+            _vk.DestroyShaderModule(_dev, fs, null);
+        }
+
+        _depthPackPipelines.Clear();
+    }
+
     // ------------------------------------------------------------------ stencil planes sampled as U8 textures
 
     private sealed class StencilTex

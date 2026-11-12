@@ -1243,6 +1243,12 @@ public sealed unsafe partial class VulkanRenderer : IGpuBackend
             // stores made before it (a CPU fill of the surface before rendering into it)
             _renderTarget.MemStamp = DirtyPages.Epoch + 2;
         }
+        // Msaa2xAs4x (no 2-sample framebuffers): a 2X scene's 4-sample depth does not have the 4X sample layout
+        if (_multisampled && beginSceneCommand.Multisample == 1 && _msSamples == SampleCountFlags.Count4Bit)
+        {
+            _depth.TwoXAsFour = true;
+        }
+
         if (beginSceneCommand.Depth is { ForceLoad: true } && s_seedDepth)
         {
             SeedLoadedDepth(_depth, _supersampled);
@@ -1254,11 +1260,6 @@ public sealed unsafe partial class VulkanRenderer : IGpuBackend
         if (beginSceneCommand.Depth is { ForceStore: true })
         {
             _depth.ForceStored = true;
-        }
-        // Msaa2xAs4x (no 2-sample framebuffers): a 2X scene's 4-sample depth does not have the 4X sample layout
-        if (_multisampled && beginSceneCommand.Multisample == 1 && _msSamples == SampleCountFlags.Count4Bit)
-        {
-            _depth.TwoXAsFour = true;
         }
 
         _depthNeedsClear = beginSceneCommand.Depth == null || !beginSceneCommand.Depth.ForceLoad;
@@ -1279,23 +1280,39 @@ public sealed unsafe partial class VulkanRenderer : IGpuBackend
     /// rest keeps this image's content. In a live session the 960x544 image of Injustice's depth/stencil surface
     /// already existed from the menus, so the HUD scene of every fight loaded the menus' stale stencil instead of the
     /// 720x408 scene's, and the bars were missing until a change of the internal resolution recreated the images.
+    /// A multisampled image whose surface was last rendered by a one-sample scene gets that scene's texels packed into
+    /// its samples (<see cref="PackDepthSamples"/>): an image copy cannot change the sample count.
     /// </summary>
     private static readonly bool s_seedDepth = Environment.GetEnvironmentVariable(Core.Util.EnvVars.DepthSeed) != "0";
 
     private void SeedLoadedDepth(DepthTarget dt, bool supersampled)
     {
-        DepthTarget? src = null;
+        DepthTarget? src = null, single = null;
         foreach (DepthTarget depthTarget in _depthTargets.Values)
         {
-            if (depthTarget != dt && depthTarget.LastScene != 0 && depthTarget.Address == dt.Address && depthTarget.StencilAddress == dt.StencilAddress && depthTarget.Samples == dt.Samples
-                && depthTarget.Scale == dt.Scale && depthTarget.StrideBytes == dt.StrideBytes && depthTarget.Supersampled == supersampled && (src == null || depthTarget.LastScene > src.LastScene))
+            if (depthTarget == dt || depthTarget.LastScene == 0 || depthTarget.Address != dt.Address || depthTarget.StencilAddress != dt.StencilAddress
+                || depthTarget.Scale != dt.Scale || depthTarget.StrideBytes != dt.StrideBytes)
             {
-                src = depthTarget;
+                continue;
+            }
+
+            if (depthTarget.Samples == dt.Samples && depthTarget.Supersampled == supersampled)
+            {
+                if (src == null || depthTarget.LastScene > src.LastScene)
+                {
+                    src = depthTarget;
+                }
+            }
+            else if (DepthPackable(dt.Samples, supersampled, depthTarget.Samples, depthTarget.Supersampled) && (single == null || depthTarget.LastScene > single.LastScene))
+            {
+                single = depthTarget;
             }
         }
 
         bool fresh = dt.LastScene == 0;
-        if (!fresh && (src == null || src.LastScene < dt.LastScene))
+        // a multisampled scene loading what a one-sample scene stored last: its samples are packed from that depth
+        DepthTarget? pack = single != null && single.LastScene > Math.Max(src?.LastScene ?? 0, dt.LastScene) ? single : null;
+        if (!fresh && pack == null && (src == null || src.LastScene < dt.LastScene))
         {
             return; // this image holds the surface's newest content
         }
@@ -1313,6 +1330,15 @@ public sealed unsafe partial class VulkanRenderer : IGpuBackend
         if (fresh)
         {
             _vk.CmdClearDepthStencilImage(Cmd, dt.Image, ImageLayout.TransferDstOptimal, in clear, 1, in range);
+        }
+
+        if (pack != null)
+        {
+            Barrier(dt.Image, ImageLayout.TransferDstOptimal, ImageLayout.DepthStencilAttachmentOptimal, DepthStencilAspect, PipelineStageFlags.TransferBit, tests,
+                AccessFlags.TransferWriteBit, attRw);
+            PackDepthSamples(dt, pack);
+            dt.Version++;
+            return;
         }
 
         if (src != null)

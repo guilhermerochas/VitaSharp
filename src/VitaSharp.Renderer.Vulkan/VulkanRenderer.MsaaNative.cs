@@ -969,6 +969,8 @@ void main() { o = texelFetch(src, ivec2(gl_FragCoord.xy), 0); }
             }
         }
 
+        DestroyDepthPackPipelines();
+
         if (_msLoadLayout.Handle != 0)
         {
             _vk.DestroyPipelineLayout(_dev, _msLoadLayout, null);
