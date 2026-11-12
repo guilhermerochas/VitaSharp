@@ -1450,6 +1450,10 @@ Lista de itens futuros do VitaSharp. Marque `[x]` quando um item for concluído.
   save state do Hle (com o hash do esquema independente da formatação) e religar o job "Code style" do CI. Cada
   entrega de nomes confere também o build da versão de desenvolvedor (`-p:VitaSharpDeveloper=true`). Um script que
   recalcula as linhas de par dos READMEs depois de cada merge (quebraram três vezes em 11/11).
+  Braces: em 11/11 ainda havia corpos de if/for/foreach sem chaves onde a format-check não chega: ~375 no
+  `src/VitaSharp.Android` (fora do .sln), 30 no `src/VitaSharp.Desktop/Lockstep.cs` (só com `-p:Lockstep=true`), 2
+  no `build/IconGen`, além dos ~311 do Hle. Os WIPs do Android, do Desktop e da format-check corrigem; só considerar
+  feito com uma busca no repositório inteiro que dê zero fora do Hle, e com a format-check cobrindo esses projetos.
 - [ ] CI do Windows e da cobertura (pausado em 11/11/2026): `fix/ci-green-2` (SwiftShader registrado para o carregador
   como administrador, `--gpu-dump-at` armado antes do jogo, limite de 3 apresentações pendentes). Antes de juntar:
   medição A/B do F1 2011 e do Uncharted com a máquina quieta e conferência de travadas nos quadros gravados.
