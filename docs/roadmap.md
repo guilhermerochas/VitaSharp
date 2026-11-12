@@ -873,8 +873,14 @@ Lista de itens futuros do VitaSharp. Marque `[x]` quando um item for concluído.
 - [ ] PlayStation Mobile (pedido do usuário, 11/11/2026; o runtime `PCSI00011` "PSM Runtime Package" 01.00, SDK
   2.00, já está instalado pelo usuário com a sua licença). 1) Rodar o runtime no VitaSharp sem janela e levantar o
   que o Mono dele usa e o que falta (HLE genérico do que faltar, nada específico do PSM). 2) Instalador de `.pkg` de
-  PSM: hoje `PkgInstaller` recusa com "PlayStation Mobile packages are not supported yet"; instalar em `ux0:psm/`
-  com a licença do jogo, como o console. 3) Validar com jogos de PSM do usuário e as licenças da conta dele. Nada de
+  PSM: feito (`PsmPkgInstaller`, feat/psm-install): `ux0:psm/<ID>/RO` (itens `content/`), `RO/License/<rif da
+  conta>`, `RW/Documents|Temp|System/content_id|pm.dat`, licença de PSM de 1024 bytes obrigatória. Primeira execução
+  sem janela do runtime (12/11/2026): `eboot.bin` (ScePsm) carrega libc/libfios2 e, por LLE, `libshacccg`,
+  `libmono_bridge`, `libmono` e `libpsm` (heap `ScePsmGlobalHeap` de 16 MB, MJPEG); faltam
+  `sceKernelAllocUnmapMemBlock` ("ScePsmDummyMemBlock", 0x2800000) e `SceAppMgrUser` NID `0x9D6D8058` (args -2,
+  buffer, -4: devolve o ID do jogo de PSM a abrir?); sem ele o `sceAppMgrAppDataMountById(106, "")` falha
+  (0x80802012), o runtime descarrega os módulos e aborta (`sceKernelCallAbortHandler`) antes de iniciar o Mono.
+  Falta também como o shell inicia o runtime com o jogo (parâmetro/ID) e o registro de `ux0:psm` no app.db. 3) Validar com jogos de PSM do usuário e as licenças da conta dele. Nada de
   assinatura da Sony gerada, licença gerada ou remoção da proteção (PSSE): só a licença real do usuário.
 - [ ] Plugins de usuário: hooks e injeção completos (pedido do usuário, 11/11/2026). Hoje os plugins `.suprx` do
   arquivo de configuração de plugins carregam no processo, e parte dos hooks/injeções já existe (ver Dead Space e
