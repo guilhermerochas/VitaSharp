@@ -1,0 +1,6 @@
+# Build outputs
+/build/
+*.o
+*.elf
+*.velf
+*.vpk
