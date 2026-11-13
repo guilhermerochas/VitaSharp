@@ -19,10 +19,7 @@ Lista de itens futuros do VitaSharp. Marque `[x]` quando um item for concluído.
 
 ## Diagnóstico
 
-- [ ] **O log e a captura F8 dizem a causa de uma trava de cara** (12/11/2026). Caso que motivou: a trava do Metal Gear Solid HD no
-  boot (quadro 1349) levou mais de uma hora, porque o despejo do watchdog só dizia que `main` e `End Frame Thread`
-  esperavam o mesmo event flag; a causa (a `main` sem CPU do host entre o `Set(1)` e o `Clear(~2)`) só apareceu com um
-  trace feito à mão. O que falta:
+- [ ] **O log e a captura F8 dizem a causa de uma trava de cara:**
   - **Histórico de cada objeto de sincronização** (event flag, semáforo, mutex, cond, msgpipe): um anel barato com as
     últimas operações (Set/Clear/Wait/Signal, thread, padrão de bits, ciclo de guest e tempo de host), despejado no
     STALL do watchdog e na F8 para os objetos que alguém está esperando.
