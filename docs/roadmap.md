@@ -35,12 +35,20 @@ Lista de itens futuros do VitaSharp. Marque `[x]` quando um item for concluído.
     execução de host de uma thread do guest num ponto escolhido (depois de um retorno de HLE, antes da próxima
     chamada), para que corridas do escalonador apareçam de forma determinística sem jogo; e testes que reproduzem o
     protocolo de sincronização de cada trava já vista (ex.: o End Frame do Metal Gear).
-  - **Regressão que escala com o número de jogos, sem rodar nenhum**: (1) cada bug corrigido vira um teste sintético no repositório (o
-    padrão do guest reproduzido sem o jogo: protocolo de sync, sequência de comandos GXM, chamadas HLE com os
-    argumentos vistos); (2) cada captura F8 de um bug vira um teste local de replay (o dump da GPU/os quadros
-    comparados com a referência aprovada; a sequência de chamadas de sync/HLE gravada e reexecutada no escalonador),
-    rodando em segundos e só na máquina do usuário (os dados do jogo não vão para o git); (3) o homebrew de teste local
-    cobre cada área emulada. A checagem do merge roda os três; os jogos não entram na validação.
+  - **A suíte de testes do repositório é o critério de quebra, para qualquer pessoa, sem nenhum jogo:** quem muda o
+    VitaSharp roda `dotnet test` e sabe se quebrou algo. Para isso a suíte precisa cobrir o comportamento do console,
+    não só os casos que já deram bug:
+    - cada primitiva de sincronização (event flag, semáforo, mutex, lwmutex, cond, msgpipe, callbacks) testada contra a
+      semântica do firmware 3.74 sob intercalações adversas (o ponto de atraso acima aplicado entre cada par de
+      chamadas), não só no caminho feliz;
+    - escalonador, ritmo da CPU e custos do HLE com testes de contrato (quem roda primeiro, quanto tempo de guest
+      passa, o que acorda quem), para que uma mudança de desempenho que altere a ordem entre threads quebre um teste;
+    - cada bug corrigido vira um teste sintético no repositório (o padrão do guest reproduzido sem o jogo: protocolo
+      de sync, sequência de comandos GXM, chamadas HLE com os argumentos vistos), nunca um teste que dependa dos dados
+      de um jogo;
+    - o homebrew de teste cobre cada área emulada.
+    Os jogos não fazem parte da validação de uma mudança; uma quebra vista num jogo e não pega pela suíte é uma falha
+    da suíte, corrigida com o teste que faltava.
   - **Executáveis guardados por merge na main**, para que uma bisseção só precise bootar, sem compilar.
 
 - [x] Gravar tudo (F8) diz o contexto no próprio report.txt (pedido do usuário, 10/11/2026; agente snd1,
