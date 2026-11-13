@@ -35,7 +35,7 @@ Lista de itens futuros do VitaSharp. Marque `[x]` quando um item for concluído.
     execução de host de uma thread do guest num ponto escolhido (depois de um retorno de HLE, antes da próxima
     chamada), para que corridas do escalonador apareçam de forma determinística sem jogo; e testes que reproduzem o
     protocolo de sincronização de cada trava já vista (ex.: o End Frame do Metal Gear).
-  - **Regressão que escala para 100 jogos sem rodar nenhum**: (1) cada bug corrigido vira um teste sintético no repositório (o
+  - **Regressão que escala com o número de jogos, sem rodar nenhum**: (1) cada bug corrigido vira um teste sintético no repositório (o
     padrão do guest reproduzido sem o jogo: protocolo de sync, sequência de comandos GXM, chamadas HLE com os
     argumentos vistos); (2) cada captura F8 de um bug vira um teste local de replay (o dump da GPU/os quadros
     comparados com a referência aprovada; a sequência de chamadas de sync/HLE gravada e reexecutada no escalonador),
