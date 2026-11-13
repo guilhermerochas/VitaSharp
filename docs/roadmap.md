@@ -39,6 +39,13 @@ Lista de itens futuros do VitaSharp. Marque `[x]` quando um item for concluído.
     execução de host de uma thread do guest num ponto escolhido (depois de um retorno de HLE, antes da próxima
     chamada), para que corridas do escalonador apareçam de forma determinística sem jogo; e testes que reproduzem o
     protocolo de sincronização de cada trava já vista (ex.: o End Frame do Metal Gear).
+  - **Regressão que escala para 100 jogos sem rodar nenhum** (usuário, 12/11/2026: "imagina que eu tivesse 100 jogos,
+    você ia ficar 3 horas validando cada jogo?"): (1) cada bug corrigido vira um teste sintético no repositório (o
+    padrão do guest reproduzido sem o jogo: protocolo de sync, sequência de comandos GXM, chamadas HLE com os
+    argumentos vistos); (2) cada captura F8 de um bug vira um teste local de replay (o dump da GPU/os quadros
+    comparados com a referência aprovada; a sequência de chamadas de sync/HLE gravada e reexecutada no escalonador),
+    rodando em segundos e só na máquina do usuário (os dados do jogo não vão para o git); (3) o homebrew de teste local
+    cobre cada área emulada. A checagem do merge roda os três; os jogos não entram na validação.
   - **Executáveis guardados por merge na main**, para que uma bisseção só precise bootar, sem compilar.
 
 - [x] Gravar tudo (F8) diz o contexto no próprio report.txt (pedido do usuário, 10/11/2026; agente snd1,
