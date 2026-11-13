@@ -35,8 +35,10 @@ Lista de itens futuros do VitaSharp. Marque `[x]` quando um item for concluído.
   - **"Antes funcionava":** o VitaSharp guarda, por título, a última versão que chegou ao gameplay sem travar (junto
     do `playtime.json`); o log de uma sessão que trava diz "PCSE00020 rodou sem travar na versão ebec3997" — é o
     ponto de partida de uma bisseção sem perguntar ao usuário.
-  - **Teste de boot por jogo na checagem do merge:** boot natural curto de cada jogo de teste até depois dos pontos
-    conhecidos de trava (chegou ao gameplay / travou / fechou), em paralelo; uma regressão bloqueia o merge.
+  - **Os testes fazem o papel do regressivo, não os jogos** (usuário, 12/11/2026): um ponto de teste que atrasa a
+    execução de host de uma thread do guest num ponto escolhido (depois de um retorno de HLE, antes da próxima
+    chamada), para que corridas do escalonador apareçam de forma determinística sem jogo; e testes que reproduzem o
+    protocolo de sincronização de cada trava já vista (ex.: o End Frame do Metal Gear).
   - **Executáveis guardados por merge na main**, para que uma bisseção só precise bootar, sem compilar.
 
 - [x] Gravar tudo (F8) diz o contexto no próprio report.txt (pedido do usuário, 10/11/2026; agente snd1,
