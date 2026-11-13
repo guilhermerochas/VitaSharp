@@ -1925,6 +1925,12 @@ jogo (`dotnet test`) para saber se uma mudança quebrou algo. Nenhuma mudança �
 
 ## Bugs em aberto
 
+- [ ] Renderizador passa do `maxStorageBufferRange` do dispositivo: o espelho da CDRAM dos slots mapeados
+  (`VulkanRenderer.Mapped.cs`: CDRAM 256 MB + 32 MB de rascunho) é ligado como um storage buffer de 288 MB, e o
+  limite é 128 MB no lavapipe do Mesa 22.3 (e em várias GPUs móveis). A camada de validação acusa
+  `VUID-VkWriteDescriptorSet-descriptorType-00333`, e o lavapipe 22.3 cai com SIGSEGV em
+  `RendererTextureTests.EveryTextureFormatAndLayoutSamplesAndTheDumpReplaysTheSame`. Ligar uma janela dentro do limite
+  (ou dividir o espelho) e testar com um dispositivo que declara 128 MB.
 - [ ] Save state que depende de arquivo temporário (achado do agente P1, 13/11/2026): um estado salvo com um filme do
   avPlayer aberto guarda o caminho de um `%TEMP%itasharp-mp4-*.mp4` da sessão; quando esse arquivo some, o estado
   congela ~5 s depois de carregar ("Load state: module Mp4: the movie ... cannot be opened", as threads do avPlayer

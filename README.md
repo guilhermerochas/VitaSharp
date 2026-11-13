@@ -256,7 +256,14 @@ The command line also has `install`, `boot-shell`, `test <scenario>` (automatic 
 The Android app: [`docs/android/README.md`](docs/android/README.md). Ready packages (zip, installer, tar.gz, AppImage,
 .app, .dmg; ReadyToRun or Native AOT): `build/publish.ps1` / `build/publish.sh`.
 
-Every script comes as a `.ps1` + `.sh` pair, and the CI checks it. Interface texts live in
+Every script comes as a `.ps1` + `.sh` pair, checked locally by `build/prepush-check`. Before a push run
+`build/prepush-check.ps1` (Windows) / `build/prepush-check.sh` (Linux, macOS, Git Bash): on exactly what is committed
+it runs script parity, the scripts' `--help`, ShellCheck, the code style, a 0-warning build and the `Category!=Slow`
+suite, which fails when a test fails, when the test host crashed (an aborted run) or when fewer tests ran than
+`dotnet test --list-tests` lists; push only after "prepush-check: ok". On Windows it also runs the suite on Linux
+through WSL when WSL has a .NET SDK in `~/.dotnet` (`dotnet-install.sh --channel 10.0 --install-dir ~/.dotnet`) and the
+Linux test requirements below (Debian 12 needs the newer Mesa of bookworm-backports). No step writes a crash dump
+(Linux: core size 0 and `coredump_filter` 0, as WSL's crash collector ignores the size limit). Interface texts live in
 `src/VitaSharp.Core/Localization` (`Texts.resx` in English, `Texts.pt-BR.resx`); the external docs come in both
 languages too (`README.md` + `README.pt-BR.md`, checked by `ExternalDocPairsTests`). To contribute system functions,
 see the specifications in [`docs/hle`](docs/hle/README.md).
@@ -303,7 +310,7 @@ What `dotnet test tests/VitaSharp.Tests` needs per system; a test whose requirem
 | | Windows | Linux | macOS |
 |---|---|---|---|
 | SDK | .NET 10 SDK | .NET 10 SDK | .NET 10 SDK |
-| Vulkan device (renderer, GPU dump and game-run tests) | SwiftShader as Microsoft Edge or Google Chrome ship it (found by itself) | Mesa lavapipe: `sudo apt install mesa-vulkan-drivers libvulkan1` (Fedora: `mesa-vulkan-drivers vulkan-loader`) | MoltenVK: the LunarG Vulkan SDK, or `brew install molten-vk vulkan-loader` |
+| Vulkan device (renderer, GPU dump and game-run tests) | SwiftShader as Microsoft Edge or Google Chrome ship it (found by itself) | Mesa lavapipe newer than 22.3 (the CI has 25.2): `sudo apt install mesa-vulkan-drivers libvulkan1` (Fedora: `mesa-vulkan-drivers vulkan-loader`; Debian 12: `sudo apt install -t bookworm-backports mesa-vulkan-drivers`, its own 22.3 crashes the texture tests) | MoltenVK: the LunarG Vulkan SDK, or `brew install molten-vk vulkan-loader` |
 | shaderc (renderer and shader-compile tests; the renderer needs it too) | from the Silk.NET.Shaderc.Native package | from the package; when that copy does not load: `sudo apt install libshaderc-dev` (Fedora, Arch: `shaderc`) | from the package |
 | A desktop window (game overlay tests) | always | an X11 or Wayland display; headless: `xvfb-run dotnet test tests/VitaSharp.Tests` (`sudo apt install xvfb`) | skipped: AppKit creates windows only on the main thread, and the tests run on worker threads |
 | FFmpeg (video and audio decode tests) | downloaded by the first build | downloaded by the first build | the system's: `brew install ffmpeg` |
