@@ -25,6 +25,21 @@ public abstract class KernelObject
     /// object stays, reference counted as on the Vita, until the last of those handles is closed, and can no longer be
     /// opened. libipmi servers close the semaphores and event flags of a client that already deleted them.</summary>
     public volatile bool Orphaned;
+
+    /// <summary>The guest thread whose call last woke this object's waiters (null: a host thread, a timer), and the guest
+    /// cycles it had run at that moment (<see cref="GuestThread.OwnCycles"/>, the waking call's own cost included). A thread that wakes on this object takes them as its waker
+    /// (<see cref="GuestThread.WaitForWaker"/>).</summary>
+    internal GuestThread? Signaller;
+    internal long SignallerProgress;
+
+    /// <summary>Wakes the threads waiting on this object (the caller holds its lock) and records who woke them.</summary>
+    protected void WakeWaiters()
+    {
+        GuestThread? current = GuestThread.Current;
+        Signaller = current;
+        SignallerProgress = current?.OwnCycles ?? 0;
+        Monitor.PulseAll(this);
+    }
 }
 
 /// <summary>Helpers shared by the sceKernelGet*Info functions.</summary>

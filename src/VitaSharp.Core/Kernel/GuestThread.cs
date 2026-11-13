@@ -502,6 +502,8 @@ public sealed unsafe partial class GuestThread : KernelObject, IDisposable, Cpu.
 
     private void DispatchHle(CpuState* s)
     {
+        WaitForWaker();
+        Volatile.Write(ref _hleEntryCycles, OwnCycles);
         _hleSeq++; // odd while inside an HLE call (save states: a thread that returns meanwhile is seen)
         HleFunction hleFunction = _emu.Hle.GetFunction(s->SvcImm);
         hleFunction.CallCount++;

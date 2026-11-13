@@ -94,6 +94,11 @@ public static class Wait
                 if (ready(state))
                 {
                     woken = waited;
+                    if (waited && self != null)
+                    {
+                        KernelObject? kernelObject = sync as KernelObject;
+                        self.WokenBy(kernelObject?.Signaller, kernelObject?.SignallerProgress ?? 0);
+                    }
                     if (waited && !deferLatency)
                     {
                         Latency();
@@ -151,6 +156,7 @@ public static class Wait
                 if (self != null)
                 {
                     Scheduler.Release(self);
+                    self.WokenBy(null, 0); // a thread that blocks is no longer ahead of an earlier waker
                 }
 
                 Interlocked.Increment(ref BlockingWaits);
@@ -367,7 +373,7 @@ public sealed partial class Semaphore : KernelObject
             }
 
             Count += n;
-            Monitor.PulseAll(this);
+            WakeWaiters();
             return SceError.OK;
         }
     }
@@ -379,7 +385,7 @@ public sealed partial class Semaphore : KernelObject
             numWait.TrySet(Waiters);
             Count = setCount < 0 ? InitCount : setCount;
             _cancelled++;
-            Monitor.PulseAll(this);
+            WakeWaiters();
             return SceError.OK;
         }
     }
@@ -389,7 +395,7 @@ public sealed partial class Semaphore : KernelObject
         lock (this)
         {
             _deleted = true;
-            Monitor.PulseAll(this);
+            WakeWaiters();
         }
     }
 }
@@ -576,7 +582,7 @@ public sealed partial class EventFlag : KernelObject
             }
             if (satisfied)
             {
-                Monitor.PulseAll(this);
+                WakeWaiters();
             }
         }
     }
@@ -597,7 +603,7 @@ public sealed partial class EventFlag : KernelObject
             Pattern = setPattern;
             _cancelled++;
             DequeueAll();
-            Monitor.PulseAll(this);
+            WakeWaiters();
         }
         return SceError.OK;
     }
@@ -608,7 +614,7 @@ public sealed partial class EventFlag : KernelObject
         {
             _deleted = true;
             DequeueAll();
-            Monitor.PulseAll(this);
+            WakeWaiters();
         }
     }
 
@@ -767,7 +773,7 @@ public sealed partial class Mutex : KernelObject
     {
         LockCount = 0;
         Interlocked.Exchange(ref OwnerWord, 0);
-        Monitor.PulseAll(this);
+        WakeWaiters();
     }
 
     public int TryLock(GuestThread self, int count)
@@ -910,7 +916,7 @@ public sealed partial class Mutex : KernelObject
                 Owner = null;
             }
 
-            Monitor.PulseAll(this);
+            WakeWaiters();
             return SceError.OK;
         }
     }
@@ -933,7 +939,7 @@ public sealed partial class Mutex : KernelObject
             }
             LockCount = 0;
             Owner = null;
-            Monitor.PulseAll(this);
+            WakeWaiters();
             return c;
         }
     }
@@ -958,7 +964,7 @@ public sealed partial class Mutex : KernelObject
             _cancelled++;
             LockCount = newCount;
             Owner = newCount > 0 ? self : null;
-            Monitor.PulseAll(this);
+            WakeWaiters();
             return SceError.OK;
         }
     }
@@ -976,7 +982,7 @@ public sealed partial class Mutex : KernelObject
                 GuestMemory.W32(WorkArea + LwUidOffset, 0);
             }
 
-            Monitor.PulseAll(this);
+            WakeWaiters();
         }
     }
 }
@@ -1088,7 +1094,7 @@ public sealed partial class CondVar : KernelObject
                 Release(first);
             }
 
-            Monitor.PulseAll(this);
+            WakeWaiters();
         }
     }
 
@@ -1105,7 +1111,7 @@ public sealed partial class CondVar : KernelObject
                 }
 
                 Release(n);
-                Monitor.PulseAll(this);
+                WakeWaiters();
                 return true;
             }
             return false;
@@ -1121,7 +1127,7 @@ public sealed partial class CondVar : KernelObject
                 Release(first);
             }
 
-            Monitor.PulseAll(this);
+            WakeWaiters();
         }
     }
 
@@ -1136,7 +1142,7 @@ public sealed partial class CondVar : KernelObject
                 GuestMemory.W32(WorkArea, 0);
             }
 
-            Monitor.PulseAll(this);
+            WakeWaiters();
         }
     }
 }
@@ -1264,7 +1270,7 @@ public sealed partial class MsgPipe : KernelObject
                             }
                         });
                         sent += n;
-                        Monitor.PulseAll(this);
+                        WakeWaiters();
                         if (asap)
                         {
                             break;
@@ -1335,7 +1341,7 @@ public sealed partial class MsgPipe : KernelObject
                             }
                         });
                         got += n;
-                        Monitor.PulseAll(this);
+                        WakeWaiters();
                         if (asap)
                         {
                             break;
@@ -1380,7 +1386,7 @@ public sealed partial class MsgPipe : KernelObject
             numRecv.TrySet(RecvWaiters + _later.Count(t => !t.Send));
             _cancelled++;
             EndLater();
-            Monitor.PulseAll(this);
+            WakeWaiters();
         }
         return SceError.OK;
     }
@@ -1391,7 +1397,7 @@ public sealed partial class MsgPipe : KernelObject
         {
             _deleted = true;
             EndLater();
-            Monitor.PulseAll(this);
+            WakeWaiters();
         }
     }
 
@@ -1457,7 +1463,7 @@ public sealed partial class MsgPipe : KernelObject
             }
             if (moved)
             {
-                Monitor.PulseAll(this);
+                WakeWaiters();
             }
         }
     }
@@ -1533,7 +1539,7 @@ public sealed partial class MsgPipe : KernelObject
         lock (this)
         {
             _latched |= ev;
-            Monitor.PulseAll(this);
+            WakeWaiters();
         }
     }
 
@@ -1644,7 +1650,7 @@ public sealed partial class RwLock : KernelObject
             }
 
             Readers--;
-            Monitor.PulseAll(this);
+            WakeWaiters();
             return SceError.OK;
         }
     }
@@ -1712,7 +1718,7 @@ public sealed partial class RwLock : KernelObject
                 Writer = null;
             }
 
-            Monitor.PulseAll(this);
+            WakeWaiters();
             return SceError.OK;
         }
     }
@@ -1729,7 +1735,7 @@ public sealed partial class RwLock : KernelObject
             Readers = 0;
             Writer = keepWriteLock ? self : null;
             WriteCount = keepWriteLock ? 1 : 0;
-            Monitor.PulseAll(this);
+            WakeWaiters();
             return SceError.OK;
         }
     }
@@ -1739,7 +1745,7 @@ public sealed partial class RwLock : KernelObject
         lock (this)
         {
             _deleted = true;
-            Monitor.PulseAll(this);
+            WakeWaiters();
         }
     }
 }
@@ -1888,7 +1894,7 @@ public sealed partial class TimerObject : KernelObject
     private void Schedule()
     {
         NextEvent = Clock() + Interval;
-        Monitor.PulseAll(this);
+        WakeWaiters();
     }
 
     public int SetEvent(int type, ulong interval, bool repeat)
@@ -2030,7 +2036,7 @@ public sealed partial class TimerObject : KernelObject
             finally
             {
                 _waiters.Remove(node);
-                Monitor.PulseAll(this);
+                WakeWaiters();
             }
         }
     }
@@ -2052,7 +2058,7 @@ public sealed partial class TimerObject : KernelObject
             Repeat = Pulse = false;
             Interval = 0;
             NextEvent = ulong.MaxValue;
-            Monitor.PulseAll(this);
+            WakeWaiters();
             return SceError.OK;
         }
     }
@@ -2062,7 +2068,7 @@ public sealed partial class TimerObject : KernelObject
         lock (this)
         {
             _deleted = true;
-            Monitor.PulseAll(this);
+            WakeWaiters();
         }
     }
 }
@@ -2224,7 +2230,7 @@ public sealed partial class SimpleEvent : KernelObject
                 Pattern = oldPattern & ~setPattern;
                 LastUserData = oldData;
             }
-            Monitor.PulseAll(this);
+            WakeWaiters();
             return SceError.OK;
         }
     }
@@ -2264,7 +2270,7 @@ public sealed partial class SimpleEvent : KernelObject
             _waiters.Clear();
             Pattern = setPattern;
             LastUserData = userData;
-            Monitor.PulseAll(this);
+            WakeWaiters();
             return SceError.OK;
         }
     }
@@ -2280,7 +2286,7 @@ public sealed partial class SimpleEvent : KernelObject
             }
 
             _waiters.Clear();
-            Monitor.PulseAll(this);
+            WakeWaiters();
             return SceError.OK;
         }
     }
@@ -2307,7 +2313,7 @@ public sealed partial class SimpleEvent : KernelObject
                 }
             }
             _waiters.Clear();
-            Monitor.PulseAll(this);
+            WakeWaiters();
         }
     }
 }
