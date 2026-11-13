@@ -19,8 +19,7 @@ Lista de itens futuros do VitaSharp. Marque `[x]` quando um item for concluído.
 
 ## Diagnóstico
 
-- [ ] **O log e a captura F8 dizem a causa de uma trava de cara** (usuário, 12/11/2026: "os logs e o F8 são
-  exatamente pra você saber onde está o problema já de cara"). Caso que motivou: a trava do Metal Gear Solid HD no
+- [ ] **O log e a captura F8 dizem a causa de uma trava de cara** (12/11/2026). Caso que motivou: a trava do Metal Gear Solid HD no
   boot (quadro 1349) levou mais de uma hora, porque o despejo do watchdog só dizia que `main` e `End Frame Thread`
   esperavam o mesmo event flag; a causa (a `main` sem CPU do host entre o `Set(1)` e o `Clear(~2)`) só apareceu com um
   trace feito à mão. O que falta:
@@ -35,12 +34,11 @@ Lista de itens futuros do VitaSharp. Marque `[x]` quando um item for concluído.
   - **"Antes funcionava":** o VitaSharp guarda, por título, a última versão que chegou ao gameplay sem travar (junto
     do `playtime.json`); o log de uma sessão que trava diz "PCSE00020 rodou sem travar na versão ebec3997" — é o
     ponto de partida de uma bisseção sem perguntar ao usuário.
-  - **Os testes fazem o papel do regressivo, não os jogos** (usuário, 12/11/2026): um ponto de teste que atrasa a
+  - **Os testes fazem o papel do regressivo, não os jogos**: um ponto de teste que atrasa a
     execução de host de uma thread do guest num ponto escolhido (depois de um retorno de HLE, antes da próxima
     chamada), para que corridas do escalonador apareçam de forma determinística sem jogo; e testes que reproduzem o
     protocolo de sincronização de cada trava já vista (ex.: o End Frame do Metal Gear).
-  - **Regressão que escala para 100 jogos sem rodar nenhum** (usuário, 12/11/2026: "imagina que eu tivesse 100 jogos,
-    você ia ficar 3 horas validando cada jogo?"): (1) cada bug corrigido vira um teste sintético no repositório (o
+  - **Regressão que escala para 100 jogos sem rodar nenhum**: (1) cada bug corrigido vira um teste sintético no repositório (o
     padrão do guest reproduzido sem o jogo: protocolo de sync, sequência de comandos GXM, chamadas HLE com os
     argumentos vistos); (2) cada captura F8 de um bug vira um teste local de replay (o dump da GPU/os quadros
     comparados com a referência aprovada; a sequência de chamadas de sync/HLE gravada e reexecutada no escalonador),
