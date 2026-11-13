@@ -71,4 +71,15 @@ fi
 echo "prepush-check: tests"
 dotnet test tests/VitaSharp.Tests -c Release --no-build --filter "Category!=Slow" --blame-hang-timeout 10m \
   -- RunConfiguration.MaxCpuCount=2 || die "tests"
+# On Windows (Git Bash) the Linux leg runs in WSL when it has a .NET SDK in ~/.dotnet.
+# shellcheck disable=SC2016 # $HOME expands inside WSL, not here
+if command -v wsl >/dev/null 2>&1 && [[ "$(wsl -- bash -lc 'test -x $HOME/.dotnet/dotnet && echo yes' 2>/dev/null | tr -d '\r\0')" == "yes" ]]; then
+  echo "prepush-check: tests on Linux (WSL)"
+  git archive -o "${work}/head.tar" HEAD
+  linux_archive="$(wsl -- wslpath -a "$(cygpath -m "${work}/head.tar")" | tr -d '\r\0')"
+  wsl -- bash -lc "rm -rf ~/vitasharp-prepush && mkdir ~/vitasharp-prepush && tar -xf '${linux_archive}' -C ~/vitasharp-prepush && cd ~/vitasharp-prepush && \$HOME/.dotnet/dotnet test tests/VitaSharp.Tests -c Release --filter 'Category!=Slow' --blame-hang-timeout 10m -- RunConfiguration.MaxCpuCount=2" \
+    || die "tests on Linux (WSL)"
+elif command -v wsl >/dev/null 2>&1; then
+  echo "prepush-check: no .NET SDK in WSL, Linux tests skipped (the CI runs them)"
+fi
 echo "prepush-check: ok"
