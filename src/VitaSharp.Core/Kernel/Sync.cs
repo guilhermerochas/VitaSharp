@@ -94,10 +94,10 @@ public static class Wait
                 if (ready(state))
                 {
                     woken = waited;
-                    if (waited && self != null)
+                    // woken by, or found ready after, the object's last signaller: it is this thread's waker
+                    if (self != null && sync is KernelObject kernelObject)
                     {
-                        KernelObject? kernelObject = sync as KernelObject;
-                        self.WokenBy(kernelObject?.Signaller, kernelObject?.SignallerProgress ?? 0);
+                        self.WokenBy(kernelObject.Signaller, kernelObject.SignallerProgress);
                     }
                     if (waited && !deferLatency)
                     {
@@ -359,6 +359,7 @@ public sealed partial class Semaphore : KernelObject
             }
 
             Count -= need;
+            ObserveSignal();
             return SceError.OK;
         }
     }
@@ -457,6 +458,7 @@ public sealed partial class EventFlag : KernelObject
             {
                 outBits.TrySet(Pattern);
                 Consume(bits, mode);
+                ObserveSignal();
                 return SceError.OK;
             }
 
@@ -545,6 +547,7 @@ public sealed partial class EventFlag : KernelObject
             }
 
             Consume(bits, mode);
+            ObserveSignal();
             return SceError.OK;
         }
     }
@@ -560,6 +563,7 @@ public sealed partial class EventFlag : KernelObject
         lock (this)
         {
             Pattern |= bits;
+            RecordSignal();
             bool satisfied = false;
             for (int i = 0; i < _queue.Count && Pattern != 0;)
             {

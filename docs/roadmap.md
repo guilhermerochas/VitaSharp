@@ -2154,7 +2154,7 @@ Lista de itens futuros do VitaSharp. Marque `[x]` quando um item for concluído.
     empacotar os texels nas amostras (amostra (x&1, y&1) do pixel (x/2, y/2) = texel (x, y); o inverso de
     `UnpackedDepthTexture`), com um passe de tela cheia por amostra.
   - Ainda aparecem triângulos soltos de um quadro (faixas azuladas finas, ex. quadros 2725 e 2898 do replay).
-  - **(3) trava: reproduz, causa no protocolo do jogo, sem correção ainda.** Reproduz no boot carregando o
+  - **(3) trava: correção feita (fix/mgs-endframe-2), ainda não validada pelo usuário; a trava do "End Frame Event" sumiu nos boots de teste (main 15 de 21, correção 0 de 21), mas sob carga pesada ainda aparecem outras travas (ver o fim do item).** Reproduz no boot carregando o
     `state_start.vss` da captura 214218 (o boot vai direto ao MGS3.self): 4 de 5 boots param entre os quadros 4 e 36
     com `main` e `End Frame Thread` esperando o mesmo event flag "End Frame Event". Protocolo (trace HLE):
     main `Wait(2)`, `Set(1)`, `Clear(~2)`; End Frame `Wait(1, clear pat)`, trabalho, `Set(2)`. Trava quando o End Frame
@@ -2166,6 +2166,54 @@ Lista de itens futuros do VitaSharp. Marque `[x]` quando um item for concluído.
     CPU sem ritmo `--cpu-mhz=0` (2/5), ceder o núcleo a uma thread de prioridade maior em todo retorno de HLE (3/5):
     nenhuma resolve, todas revertidas. Próximo passo: instrumentar o Scheduler (quem segura os 3 núcleos quando a main
     espera núcleo depois do `Set`, e por quanto tempo) e o tempo de host da main entre as duas chamadas.
+    Instrumentado (12/11/2026, fix/mgs-endframe-hang; trace temporário de cada chamada no flag e das esperas de núcleo
+    da main/End Frame): na trava a main registra o `Clear(~2)` 0,2 ms depois do `Set(1)`, mas só executa o clear
+    depois do `Set(2)` do End Frame, 35 ms mais tarde (a chamada seguinte da main vem 155 ms depois); nenhuma espera de
+    núcleo do Scheduler nem `Yield` da main nesse intervalo. O End Frame segurava o lock do flag ao acordar (inclusive
+    durante a latência de syscall de 30 us, servida dentro do lock), a main bloqueou nesse lock do host e o Windows só
+    a rodou dezenas de ms depois (máquina carregada: as travas aparecem quando outros emuladores dividem os mesmos
+    núcleos; 1 em 13 boots com o trace e a máquina mais livre). Como o console faz (threadmgr, `ksceKernelSetEventFlag`
+    0xD4780C3E, só estudo): o set percorre a fila de espera em ordem, satisfaz cada waiter cuja condição vale e aplica
+    o modo de clear dele ali mesmo, até o padrão zerar; o waiter só volta com o resultado. Corrigido no HLE (com
+    testes que falham sem a correção): o set entrega o resultado ao waiter (`EventFlag.Set`), fila FIFO ou por
+    prioridade (`SCE_KERNEL_ATTR_TH_PRIO` 0x2000), cancel/delete tiram todos da fila, a latência de acordar é servida
+    fora do lock (`Wait.UntilGranted`) e o save state devolve os bits de um waiter satisfeito que ainda não voltou.
+    **A trava não some com isso** (A/B intercalado a partir do `state_start.vss` da 214218, 30 s sem entrada, máquina carregada por outros agentes: main 5 de 10 boots travados, com a correção 2 de 10, todos com main e End Frame no "End Frame Event"; amostra pequena, meta de 20+20 não completada): a causa que sobra é a
+    thread do host da main ficar sem CPU por dezenas de ms entre duas chamadas que no console são adjacentes (~1 us),
+    enquanto o End Frame anda no outro núcleo. Próximo passo: medir com ETW/`dotnet-trace` o estado da thread da main
+    no intervalo (pronta sem CPU ou bloqueada) e, se for falta de CPU, um modelo em que um núcleo emulado que não
+    roda no host não deixa o tempo do guest dos outros andar (lockstep por núcleo).
+    **Causa e correção (12/11/2026, fix/mgs-endframe-2).** No Vita os núcleos andam no mesmo relógio: quando uma
+    syscall acorda uma thread em outro núcleo, quem acordou segue na mesma velocidade, então a chamada seguinte dele
+    (~1 us depois) sempre vem antes de qualquer coisa que a acordada faça depois de acordar (saída do kernel e troca de
+    contexto: dezenas de us). Aqui cada thread do guest é uma thread do host, e o host pode parar a main por
+    milissegundos logo depois do `Set(1)`: host ocupado (a thread acordada toma a CPU de quem acordou) ou o sono do
+    ritmo da CPU, que o dbf8b48a (perf/desktop-23) passou a fazer logo depois de uma chamada HLE cara, ou seja,
+    entre o `Set` e o `Clear`. Isso deixou a trava mais frequente. Nenhum commit sozinho a cria: com os boots fixados
+    em 4 CPUs também trava o 974b097e (antes do dbf8b48a, 1 de 6), o dbf8b48a trava em 2 de 6 e o 9ccbb138 em 3 de 6.
+    Na máquina livre, o A/B do lead deu ebec3997 0 de 8 e 9ccbb138 3 de 8. Correção genérica (`GuestThread.Waker.cs`):
+    uma thread acordada por outra guarda quem a acordou (`KernelObject.WakeWaiters`). Em cada syscall dela (entrada do
+    HLE), ela não pode estar mais longe do próprio despertar, em ciclos do guest, do que quem acordou está da
+    chamada que acordou, enquanto quem acordou ainda tem núcleo emulado. Isso vale só na janela dos primeiros 100.000
+    ciclos (~0,3 ms) e acaba quando quem acordou bloqueia, cede o núcleo ou sai da janela. É a sincronização
+    conservadora dos simuladores paralelos, limitada aos pares que um despertar torna causais, e vale para todos os
+    objetos do threadmgr que acordam alguém. A primeira versão, que mantinha as duas threads no mesmo passo
+    durante toda a corrida (sem janela), somava 9 s de esperas em 75 s e deixava o loading mais lento; com a
+    janela são ~0,6 esperas por quadro e 0,15 s no total. Achar o objeto já pronto, sem esperar (wait já
+    satisfeito, poll), conta como despertar por quem o sinalizou: é o caso em que a thread do host do End Frame
+    chega atrasada ao `Wait(1)`, depois do `Set(1)`. Testes (`ThreadMgrHleTests`, pelo despacho real do HLE, com a
+    main parada logo depois da chamada pela costura de teste `GuestThread.HleReturned`):
+    `WokenThreadDoesNotRunAheadOfAStoppedWaker`, `WokenThreadWaitsForAStoppedWakerOnEveryWakingObject` (semáforo,
+    mutex, event flag), `ThreadFindingTheObjectReadyDoesNotRunAheadOfAStoppedSignaller`,
+    `WokenThreadGoesOnOnceItsWakerIsPastTheWake` e `ThreadWokenByTheHostDoesNotWait`; sem a correção, todos falham
+    menos o último, que cobre o caso sem waker.
+    Boots de teste (menu da coleção → X → MGS3, 60 s, 3 em paralelo, cada um fixado em 2 CPUs, com um build rodando
+    ao mesmo tempo, `<scratchpad>/mgsfix`): main 9ccbb138 com 15 de 21 boots presos de vez no "End Frame Event"; a
+    correção (primeira versão, sem o caso do objeto já pronto) com 0 de 21 nessa trava. Nessa carga a correção ainda
+    teve 4 boots presos por outros motivos: 2 com a main em `condvar SceFiosOpWait` (a main também teve 2 assim) e 2
+    com a main "Running" em laço (pc 0x818AC5D8 e 0x81017598) e o End Frame esperando o flag, que pode ser o caso do
+    objeto já pronto, coberto depois. Sem carga, nos boots sequenciais de 75 s: main 3 de 6 presos, correção 0 de 6,
+    e o gameplay nos mesmos 30 fps.
   - **MGS2 a partir do menu da coleção: trava logo depois de abrir** (boot limpo, menu MGS3|MGS2, direita + X no
     quadro 260): `LoadExec app0:MGS2.self` ok, módulos, NGS, troféus e BPE Render Thread criados, e no quadro 523 a
     main espera o fim da thread 'BackgroundLoadSDX', que espera uma operação do FIOS (condvar SceFiosOpWait) que nunca

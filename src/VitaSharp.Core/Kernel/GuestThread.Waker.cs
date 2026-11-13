@@ -1,4 +1,6 @@
 using System.Diagnostics;
+using VitaSharp.Core.Cpu;
+using VitaSharp.Core.Hle;
 
 namespace VitaSharp.Core.Kernel;
 
@@ -32,7 +34,7 @@ public sealed unsafe partial class GuestThread
 {
     /// <summary>Longest a thread waits for its waker (real time): a waker that holds its core while the host runs long
     /// host-side work for it (no guest progress) must not stall the threads it woke indefinitely.</summary>
-    internal static long WakerWaitLimitTicks = Stopwatch.Frequency / 10;
+    private static readonly long s_wakerWaitLimitTicks = Stopwatch.Frequency / 10;
 
     /// <summary>The window after a wake-up that is kept in step (guest cycles): ~0.3 ms at 333 MHz, past what any call
     /// "right after" the waking one is, and past one pacing window (so a waker that sleeps off its pacing just after the
@@ -40,7 +42,7 @@ public sealed unsafe partial class GuestThread
     /// long as the woken thread's lead: 9 s of waits in a 75 s boot and a slower load.</summary>
     internal const long WakerReleaseCycles = 100_000;
 
-    /// <summary>Statistics: system calls that waited for the waker, and waits that hit <see cref="WakerWaitLimitTicks"/>.</summary>
+    /// <summary>Statistics: system calls that waited for the waker, and waits that hit <see cref="s_wakerWaitLimitTicks"/>.</summary>
     public static long WakerWaits, WakerWaitTimeouts;
 
     private GuestThread? _waker;
@@ -55,6 +57,46 @@ public sealed unsafe partial class GuestThread
     /// <summary>How far the thread has got, as other threads see it: inside an HLE call, the cycles at its entry (the
     /// call has not finished, its effects may not all have happened); otherwise the cycles run so far.</summary>
     internal long Progress => (_hleSeq & 1) == 1 ? Volatile.Read(ref _hleEntryCycles) : OwnCycles;
+
+    /// <summary>
+    /// Test seam: called on the guest thread right after each HLE call returns, where it is back in guest code. A test
+    /// stops the thread's host execution here (a host preemption, a pacing sleep) to reproduce a race between guest
+    /// threads deterministically, without a game. Null in normal runs (one static read per call).
+    /// </summary>
+    internal static Action<GuestThread, HleFunction>? HleReturned { get; set; }
+
+    /// <summary>
+    /// Test seam: issues the HLE function <paramref name="name"/> on this thread (its own host thread) through the real
+    /// dispatch path, as the guest's SVC does: cost charge, <see cref="WaitForWaker"/>, <see cref="HleReturned"/>.
+    /// Up to four register arguments; returns R0.
+    /// </summary>
+    internal uint DispatchForTest(string name, params uint[] args)
+    {
+        if (args.Length > 4 || Current != this)
+        {
+            throw new ArgumentException("at most four register arguments, on the thread's own host thread");
+        }
+
+        foreach (NidInfo info in NidDatabase.LookupName(name))
+        {
+            uint index = _emu.Hle.GetHleFunctionIndex(info.Nid, 0, info.Library);
+            if (_emu.Hle.GetFunction(index).Invoke == null)
+            {
+                continue;
+            }
+
+            CpuState* state = Core.State;
+            for (int i = 0; i < args.Length; i++)
+            {
+                state->R[i] = args[i];
+            }
+            state->SvcImm = index;
+            state->R[14] = state->R[15];
+            DispatchHle(state);
+            return state->R[0];
+        }
+        throw new ArgumentException($"no implemented HLE function {name}");
+    }
 
     /// <summary>The thread's blocking wait ended because <paramref name="waker"/> woke it (null: no guest thread did,
     /// a timeout, a host-side signal), at <paramref name="wakerCycles"/> of the waker's cycles.</summary>
@@ -107,10 +149,10 @@ public sealed unsafe partial class GuestThread
             {
                 start = Stopwatch.GetTimestamp(); // the waker parks; the limit counts running time only
             }
-            else if (Stopwatch.GetTimestamp() - start > WakerWaitLimitTicks)
+            else if (Stopwatch.GetTimestamp() - start > s_wakerWaitLimitTicks)
             {
                 Interlocked.Increment(ref WakerWaitTimeouts);
-                Util.Log.WarnOnce("waker-wait-limit", $"'{Name}' waited {WakerWaitLimitTicks * 1000 / Stopwatch.Frequency} ms for its waker '{waker.Name}' to make progress; going on");
+                Util.Log.WarnOnce("waker-wait-limit", $"'{Name}' waited {s_wakerWaitLimitTicks * 1000 / Stopwatch.Frequency} ms for its waker '{waker.Name}' to make progress; going on");
                 break;
             }
 

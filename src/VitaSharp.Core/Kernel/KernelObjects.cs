@@ -26,20 +26,32 @@ public abstract class KernelObject
     /// opened. libipmi servers close the semaphores and event flags of a client that already deleted them.</summary>
     public volatile bool Orphaned;
 
-    /// <summary>The guest thread whose call last woke this object's waiters (null: a host thread, a timer), and the guest
-    /// cycles it had run at that moment (<see cref="GuestThread.OwnCycles"/>, the waking call's own cost included). A thread that wakes on this object takes them as its waker
-    /// (<see cref="GuestThread.WaitForWaker"/>).</summary>
-    internal GuestThread? Signaller;
-    internal long SignallerProgress;
+    /// <summary>The guest thread whose call last signalled this object (woke its waiters or made it ready; null: a host
+    /// thread, a timer), and the guest cycles it had run at that moment (<see cref="GuestThread.OwnCycles"/>, the
+    /// call's own cost included). A thread that wakes on this object, or finds it ready without waiting, takes them as
+    /// its waker (<see cref="GuestThread.WaitForWaker"/>).</summary>
+    internal GuestThread? Signaller { get; private set; }
+    internal long SignallerProgress { get; private set; }
 
-    /// <summary>Wakes the threads waiting on this object (the caller holds its lock) and records who woke them.</summary>
-    protected void WakeWaiters()
+    /// <summary>Records the calling thread as the one that last signalled this object (the caller holds its lock).</summary>
+    protected void RecordSignal()
     {
         GuestThread? current = GuestThread.Current;
         Signaller = current;
         SignallerProgress = current?.OwnCycles ?? 0;
+    }
+
+    /// <summary>Wakes the threads waiting on this object (the caller holds its lock) and records who woke them.</summary>
+    protected void WakeWaiters()
+    {
+        RecordSignal();
         Monitor.PulseAll(this);
     }
+
+    /// <summary>The calling thread took this object's state without waiting (a wait that was already satisfied, a
+    /// poll): the thread that signalled it is its waker, as for a wake-up. Waiting there on the Vita would not have
+    /// changed the order: the signaller's next calls still come right after its signal.</summary>
+    protected void ObserveSignal() => GuestThread.Current?.WokenBy(Signaller, SignallerProgress);
 }
 
 /// <summary>Helpers shared by the sceKernelGet*Info functions.</summary>

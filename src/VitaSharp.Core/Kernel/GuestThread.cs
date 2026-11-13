@@ -600,6 +600,7 @@ public sealed unsafe partial class GuestThread : KernelObject, IDisposable, Cpu.
         // The stub's next instruction is "bx lr": return directly.
         Arm.BxWritePc(s, s->R[14]);
         _hleSeq++;
+        HleReturned?.Invoke(this, hleFunction);
     }
 
     /// <summary>
