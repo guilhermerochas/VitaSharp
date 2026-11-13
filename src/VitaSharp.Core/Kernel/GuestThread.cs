@@ -50,7 +50,11 @@ public sealed unsafe partial class GuestThread : KernelObject, IDisposable, Cpu.
     private int _coreReleases;
 
     /// <summary>The scheduler took the thread's emulated core back.</summary>
-    internal void CountCoreRelease() => Interlocked.Increment(ref _coreReleases);
+    internal void CountCoreRelease()
+    {
+        Interlocked.Increment(ref _coreReleases);
+    }
+
     /// <summary>The thread runs on the system software's core, not the application cores (see <see cref="Scheduler"/>).</summary>
     public bool OnSystemCore { get; }
     /// <summary>Blocked inside host-side HLE work (audio device, GPU queue, display queue): not waiting for a core.</summary>

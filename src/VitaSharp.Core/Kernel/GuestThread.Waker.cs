@@ -26,9 +26,10 @@ namespace VitaSharp.Core.Kernel;
 /// call). Only the first <see cref="WakerReleaseCycles"/> after the wake-up are kept in step: the waker blocking,
 /// yielding its core or exiting at any time since the waking call (counted by <see cref="CoreReleases"/>, so a short
 /// block between two looks of the woken thread is not missed), or getting past that window, ends the dependency.
-/// Measured on Metal Gear's boot, the woken threads wait ~0.6 times a frame for ~0.3 ms in all, and the load and frame rate stay the same. This is the
-/// conservative synchronisation of parallel simulators (a core never acts at a time another core has not reached),
-/// limited to the pair that a wake-up makes causal, so threads that do not wake each other are not slowed down.
+/// Measured on Metal Gear's boot, the woken threads wait ~0.6 times a frame for ~0.3 ms in all, and the load and frame
+/// rate stay the same. This is the conservative synchronisation of parallel simulators (a core never acts at a time
+/// another core has not reached), limited to the pair that a wake-up makes causal, so threads that do not wake each
+/// other are not slowed down.
 /// </para>
 /// </summary>
 public sealed unsafe partial class GuestThread
@@ -202,6 +203,8 @@ public sealed unsafe partial class GuestThread
     /// <summary>The waker has held its core without a break since the waking call: it has not blocked, yielded or
     /// exited in between, even briefly (a 1 ms delay could start and end between two looks of the woken thread, which
     /// then waited for a waker that was no longer in step with it).</summary>
-    private bool WakerStillRunning(GuestThread waker) =>
-        Volatile.Read(ref waker.HasCore) && waker.CoreReleases == _wakerReleases;
+    private bool WakerStillRunning(GuestThread waker)
+    {
+        return Volatile.Read(ref waker.HasCore) && waker.CoreReleases == _wakerReleases;
+    }
 }
