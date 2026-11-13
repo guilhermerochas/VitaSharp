@@ -601,6 +601,369 @@ public sealed class ThreadMgrHleTests(GuestMemoryFixture fx) : IDisposable
         });
     }
 
+    /// <summary>
+    /// The kernel satisfies a waiter inside sceKernelSetEventFlag and applies its clear mode there (threadmgr walks the
+    /// wait queue on every set): the waiter returns that result whenever its thread runs again, even if the pattern
+    /// changed in the meantime. Here the flag is cleared before the woken thread can look at it (the flag stays
+    /// locked from the set to the clear); a waiter that re-checked the flag on waking found nothing and went back to
+    /// sleep for good.
+    /// </summary>
+    [Fact]
+    public void EventFlagSetSatisfiesTheWaiterBeforeItRuns()
+    {
+        _h.OnGuest(_ =>
+        {
+            int uid = Call(Tm, "sceKernelCreateEventFlag", "granted", 0u, 0u, 0u);
+            EventFlag flag = _h.Emu.Kernel.Objects.Get<EventFlag>(uid)!;
+            int result = 1;
+            uint outBits = _h.Word(0);
+            GuestRun waiter = _h.Start(_ => result = Call(Tm, "sceKernelWaitEventFlag", uid, 0x1u, EventFlag.WaitAnd | EventFlag.WaitClearPat,
+                new Ptr<uint>(outBits), new Ptr<uint>(0)), "evf-granted");
+            Until(() => waiter.Thread.Status == ThreadStatus.Waiting, "the event flag wait");
+            lock (flag)
+            {
+                Assert.Equal(0, Call(Tm, "sceKernelSetEventFlag", uid, 0x3u));
+                Assert.Equal(0x2u, flag.Pattern); // the waiter's clear pattern took bit 0 inside the set
+                Assert.Equal(0, Call(Tm, "sceKernelClearEventFlag", uid, 0u));
+            }
+            _h.Join(waiter, 5_000);
+            Assert.Equal(0, result);
+            Assert.Equal(0x3u, GuestMemory.R32(outBits)); // the pattern when the set satisfied it
+            Assert.Equal(0u, flag.Pattern);
+        });
+    }
+
+    /// <summary>A cancel releases the waiters at once: a set right after it does not satisfy them (they return
+    /// WAIT_CANCEL and the set's bits stay in the pattern).</summary>
+    [Fact]
+    public void EventFlagSetAfterACancelDoesNotSatisfyTheCancelledWaiter()
+    {
+        _h.OnGuest(_ =>
+        {
+            int uid = Call(Tm, "sceKernelCreateEventFlag", "cancelled", 0u, 0u, 0u);
+            EventFlag flag = _h.Emu.Kernel.Objects.Get<EventFlag>(uid)!;
+            int result = 1;
+            GuestRun waiter = _h.Start(_ => result = Call(Tm, "sceKernelWaitEventFlag", uid, 0x1u, EventFlag.WaitAnd | EventFlag.WaitClearPat,
+                new Ptr<uint>(0), new Ptr<uint>(0)), "evf-cancelled");
+            Until(() => waiter.Thread.Status == ThreadStatus.Waiting, "the event flag wait");
+            lock (flag)
+            {
+                Assert.Equal(0, Call(Tm, "sceKernelCancelEventFlag", uid, 0u, new Ptr<int>(0)));
+                Assert.Equal(0, Call(Tm, "sceKernelSetEventFlag", uid, 0x1u));
+            }
+            _h.Join(waiter, 5_000);
+            Assert.Equal(SceError.WAIT_CANCEL, result);
+            Assert.Equal(0x1u, flag.Pattern);
+        });
+    }
+
+    /// <summary>A save state taken while a satisfied waiter has not returned yet keeps the bits its clear mode took: the
+    /// wait is reissued when the state loads and takes them again.</summary>
+    [Fact]
+    public void EventFlagSnapshotKeepsTheBitsOfAPendingGrant()
+    {
+        _h.OnGuest(_ =>
+        {
+            int uid = Call(Tm, "sceKernelCreateEventFlag", "snapshot", 0u, 0u, 0u);
+            EventFlag flag = _h.Emu.Kernel.Objects.Get<EventFlag>(uid)!;
+            GuestRun waiter = _h.Start(_ => Call(Tm, "sceKernelWaitEventFlag", uid, 0x1u, EventFlag.WaitAnd | EventFlag.WaitClearPat,
+                new Ptr<uint>(0), new Ptr<uint>(0)), "evf-snapshot");
+            Until(() => waiter.Thread.Status == ThreadStatus.Waiting, "the event flag wait");
+            lock (flag)
+            {
+                Assert.Equal(0, Call(Tm, "sceKernelSetEventFlag", uid, 0x5u));
+                Assert.Equal(0x4u, flag.Pattern);
+                Assert.Equal(0x5u, flag.SnapshotPattern); // the waiter cannot have returned: the flag is locked
+            }
+            _h.Join(waiter, 5_000);
+            Assert.Equal(0x4u, flag.SnapshotPattern);
+        });
+    }
+
+    /// <summary>
+    /// Metal Gear Solid HD's End Frame protocol with the waker's host thread stopped right after its set (a busy host
+    /// preempting it, or CPU pacing sleeping it off): main sets "go" (bit 0) and clears "done" (bit 1) right after, the
+    /// End Frame thread waits for "go" with a clear pattern, works and sets "done". On the Vita main's clear comes ~1 us
+    /// after its set, long before the woken thread's next call; here the woken thread ran its whole cycle while main's
+    /// host thread was stopped, set "done" first, main's clear wiped it and both waited forever. The woken thread now
+    /// waits at its system call for its waker to get past the waking call (or block). The sets go through the real
+    /// HLE dispatch (as the guest's SVC), and the host preemption is the <see cref="GuestThread.HleReturned"/> seam
+    /// stopping main right after its set returns.
+    /// </summary>
+    [Fact]
+    public void WokenThreadDoesNotRunAheadOfAStoppedWaker()
+    {
+        _h.OnGuest(main =>
+        {
+            int uid = Call(Tm, "sceKernelCreateEventFlag", "End Frame Event", 0u, 0u, 0u);
+            EventFlag flag = _h.Emu.Kernel.Objects.Get<EventFlag>(uid)!;
+            GuestRun endFrame = _h.Start(th =>
+            {
+                Assert.Equal(0, Call(Tm, "sceKernelWaitEventFlag", uid, 0x1u, EventFlag.WaitAnd | EventFlag.WaitClearPat, new Ptr<uint>(0), new Ptr<uint>(0)));
+                th.Core.ChargeInstructions(200_000); // the frame's work
+                Assert.Equal(0u, th.DispatchForTest("sceKernelSetEventFlag", (uint)uid, 0x2u));
+            }, "End Frame Thread");
+            Until(() => endFrame.Thread.Status == ThreadStatus.Waiting, "the End Frame wait");
+            uint patternAfterStop = 0xFFFFFFFF;
+            GuestThread.HleReturned = (thread, function) =>
+            {
+                if (thread == main && function.Name == "sceKernelSetEventFlag")
+                {
+                    Thread.Sleep(50); // main's host thread does not run (it still holds its emulated core)
+                    patternAfterStop = flag.Pattern;
+                }
+            };
+            try
+            {
+                Assert.Equal(0u, main.DispatchForTest("sceKernelSetEventFlag", (uint)uid, 0x1u));
+            }
+            finally
+            {
+                GuestThread.HleReturned = null;
+            }
+            Assert.Equal(0u, patternAfterStop); // "done" not set ahead of main's clear
+            Assert.Equal(0, Call(Tm, "sceKernelClearEventFlag", uid, ~0x2u));
+            uint timeout = _h.Word(2_000_000);
+            Assert.Equal(0, Call(Tm, "sceKernelWaitEventFlag", uid, 0x2u, EventFlag.WaitAnd, new Ptr<uint>(0), new Ptr<uint>(timeout)));
+            _h.Join(endFrame, 5_000);
+        });
+    }
+
+    /// <summary>
+    /// The same ordering for every threadmgr object that wakes a waiter: the waker's host thread is stopped right after
+    /// the waking call returns (semaphore signal, mutex unlock handing the lock over, event flag set), and the woken
+    /// thread's next system call must not run before the waker gets going again; once the waker blocks (a delay here),
+    /// the woken thread goes on.
+    /// </summary>
+    [Theory]
+    [InlineData("sema")]
+    [InlineData("mutex")]
+    [InlineData("evf")]
+    public void WokenThreadWaitsForAStoppedWakerOnEveryWakingObject(string kind)
+    {
+        _h.OnGuest(main =>
+        {
+            int uid = kind switch
+            {
+                "sema" => Call(Tm, "sceKernelCreateSema", "woken-sema", 0u, 0, 1, 0u),
+                "mutex" => Call(Tm, "sceKernelCreateMutex", "woken-mutex", 0u, 1, 0u), // locked by main
+                _ => Call(Tm, "sceKernelCreateEventFlag", "woken-evf", 0u, 0u, 0u),
+            };
+            string wakingCall = kind switch
+            {
+                "sema" => "sceKernelSignalSema",
+                "mutex" => "sceKernelUnlockMutex",
+                _ => "sceKernelSetEventFlag",
+            };
+            bool nextCallDone = false;
+            GuestRun woken = _h.Start(th =>
+            {
+                int result = kind switch
+                {
+                    "sema" => Call(Tm, "sceKernelWaitSema", uid, 1, new Ptr<uint>(0)),
+                    "mutex" => Call(Tm, "sceKernelLockMutex", uid, 1, new Ptr<uint>(0)),
+                    _ => Call(Tm, "sceKernelWaitEventFlag", uid, 0x1u, EventFlag.WaitAnd, new Ptr<uint>(0), new Ptr<uint>(0)),
+                };
+                Assert.Equal(0, result);
+                th.Core.ChargeInstructions(200_000);
+                th.DispatchForTest("sceKernelGetThreadId");
+                Volatile.Write(ref nextCallDone, true);
+            }, "woken");
+            Until(() => woken.Thread.Status == ThreadStatus.Waiting, "the wait");
+            bool doneWhileStopped = true;
+            GuestThread.HleReturned = (thread, function) =>
+            {
+                if (thread == main && function.Name == wakingCall)
+                {
+                    Thread.Sleep(50);
+                    doneWhileStopped = Volatile.Read(ref nextCallDone);
+                }
+            };
+            try
+            {
+                Assert.Equal(0u, main.DispatchForTest(wakingCall, (uint)uid, 1u));
+            }
+            finally
+            {
+                GuestThread.HleReturned = null;
+            }
+            Assert.False(doneWhileStopped);
+            Assert.Equal(0, Call(Tm, "sceKernelDelayThread", 1000u)); // main blocks: the woken thread goes on
+            _h.Join(woken, 5_000);
+            Assert.True(Volatile.Read(ref nextCallDone));
+        });
+    }
+
+    /// <summary>
+    /// The End Frame protocol when the End Frame thread reaches its wait only after main's set (its host thread was the
+    /// late one): the wait is satisfied at once, without blocking, and main's host thread is stopped right after the
+    /// set. Taking a ready object is an observation of the signaller just like a wake-up: the End Frame thread's next
+    /// call must still not run ahead of main's clear.
+    /// </summary>
+    [Fact]
+    public void ThreadFindingTheObjectReadyDoesNotRunAheadOfAStoppedSignaller()
+    {
+        _h.OnGuest(main =>
+        {
+            int uid = Call(Tm, "sceKernelCreateEventFlag", "End Frame Event", 0u, 0u, 0u);
+            EventFlag flag = _h.Emu.Kernel.Objects.Get<EventFlag>(uid)!;
+            using var go = new ManualResetEventSlim();
+            GuestRun endFrame = _h.Start(th =>
+            {
+                go.Wait();
+                Assert.Equal(0, Call(Tm, "sceKernelWaitEventFlag", uid, 0x1u, EventFlag.WaitAnd | EventFlag.WaitClearPat, new Ptr<uint>(0), new Ptr<uint>(0)));
+                th.Core.ChargeInstructions(200_000); // the frame's work
+                Assert.Equal(0u, th.DispatchForTest("sceKernelSetEventFlag", (uint)uid, 0x2u));
+            }, "End Frame Thread");
+            uint patternAfterStop = 0xFFFFFFFF;
+            GuestThread.HleReturned = (thread, function) =>
+            {
+                if (thread == main && function.Name == "sceKernelSetEventFlag")
+                {
+                    go.Set(); // the End Frame thread gets to its wait now, with "go" already set
+                    Thread.Sleep(50);
+                    patternAfterStop = flag.Pattern;
+                }
+            };
+            try
+            {
+                Assert.Equal(0u, main.DispatchForTest("sceKernelSetEventFlag", (uint)uid, 0x1u));
+            }
+            finally
+            {
+                GuestThread.HleReturned = null;
+            }
+            Assert.Equal(0u, patternAfterStop); // "go" taken, "done" not set ahead of main's clear
+            Assert.Equal(0, Call(Tm, "sceKernelClearEventFlag", uid, ~0x2u));
+            uint timeout = _h.Word(2_000_000);
+            Assert.Equal(0, Call(Tm, "sceKernelWaitEventFlag", uid, 0x2u, EventFlag.WaitAnd, new Ptr<uint>(0), new Ptr<uint>(timeout)));
+            _h.Join(endFrame, 5_000);
+        });
+    }
+
+    /// <summary>A thread woken by no guest thread (a host-side signal: a timer, a device) has nobody to wait for.</summary>
+    [Fact]
+    public void ThreadWokenByTheHostDoesNotWait()
+    {
+        _h.OnGuest(_ =>
+        {
+            int uid = Call(Tm, "sceKernelCreateEventFlag", "host-signal", 0u, 0u, 0u);
+            EventFlag flag = _h.Emu.Kernel.Objects.Get<EventFlag>(uid)!;
+            long waits = -1;
+            GuestRun woken = _h.Start(th =>
+            {
+                Assert.Equal(0, Call(Tm, "sceKernelWaitEventFlag", uid, 0x1u, EventFlag.WaitAnd, new Ptr<uint>(0), new Ptr<uint>(0)));
+                th.Core.ChargeInstructions(200_000);
+                long before = GuestThread.WakerWaits;
+                th.DispatchForTest("sceKernelGetThreadId");
+                waits = GuestThread.WakerWaits - before;
+            }, "woken-by-host");
+            Until(() => woken.Thread.Status == ThreadStatus.Waiting, "the wait");
+            Task.Run(() => flag.Set(0x1)).Wait(); // a host thread, not a guest one
+            _h.Join(woken, 5_000);
+            Assert.Equal(0, waits);
+        });
+    }
+
+    /// <summary>A waker that keeps running releases the thread it woke once it is well past the waking call, without
+    /// having to block.</summary>
+    [Fact]
+    public void WokenThreadGoesOnOnceItsWakerIsPastTheWake()
+    {
+        _h.OnGuest(self =>
+        {
+            int uid = Call(Tm, "sceKernelCreateEventFlag", "go", 0u, 0u, 0u);
+            bool released = false;
+            GuestRun worker = _h.Start(th =>
+            {
+                Assert.Equal(0, Call(Tm, "sceKernelWaitEventFlag", uid, 0x1u, EventFlag.WaitAnd | EventFlag.WaitClearPat, new Ptr<uint>(0), new Ptr<uint>(0)));
+                th.Core.ChargeInstructions(50_000);
+                th.DispatchForTest("sceKernelGetThreadId"); // its next system call
+                Volatile.Write(ref released, true);
+            }, "worker");
+            Until(() => worker.Thread.Status == ThreadStatus.Waiting, "the worker wait");
+            Assert.Equal(0u, self.DispatchForTest("sceKernelSetEventFlag", (uint)uid, 0x1u));
+            Thread.Sleep(30);
+            Assert.False(Volatile.Read(ref released)); // main has not moved since the set
+            self.Core.ChargeInstructions(GuestThread.WakerReleaseCycles); // main keeps running, without blocking
+            Until(() => Volatile.Read(ref released), "the worker going on");
+            _h.Join(worker, 5_000);
+        });
+    }
+
+    /// <summary>
+    /// A set satisfies the waiters in queue order and stops when the pattern is empty: with two threads waiting for the
+    /// same bit with a clear mode, only the first one in the queue gets it (attribute SCE_KERNEL_ATTR_TH_PRIO: the
+    /// higher-priority one, whatever the order they started waiting in).
+    /// </summary>
+    [Fact]
+    public void EventFlagSetGrantsTheWaitersInQueueOrder()
+    {
+        _h.OnGuest(_ =>
+        {
+            foreach (bool byPriority in new[] { false, true })
+            {
+                uint attr = EventFlag.AttrMulti | (byPriority ? EventFlag.AttrThreadPriority : 0u);
+                int uid = Call(Tm, "sceKernelCreateEventFlag", byPriority ? "prio" : "fifo", attr, 0u, 0u);
+                int firstResult = 1;
+                int secondResult = 1;
+                GuestRun first = _h.Start(_ => firstResult = Call(Tm, "sceKernelWaitEventFlag", uid, 0x1u, EventFlag.WaitAnd | EventFlag.WaitClearPat,
+                    new Ptr<uint>(0), new Ptr<uint>(0)), "evf-first", 0x10000110);
+                Until(() => first.Thread.Status == ThreadStatus.Waiting, "the first wait");
+                GuestRun second = _h.Start(_ => secondResult = Call(Tm, "sceKernelWaitEventFlag", uid, 0x1u, EventFlag.WaitAnd | EventFlag.WaitClearPat,
+                    new Ptr<uint>(0), new Ptr<uint>(_h.Word(200_000))), "evf-second", 0x10000100);
+                Until(() => second.Thread.Status == ThreadStatus.Waiting, "the second wait");
+                Assert.Equal(0, Call(Tm, "sceKernelSetEventFlag", uid, 0x1u));
+                GuestRun winner = byPriority ? second : first;
+                GuestRun loser = byPriority ? first : second;
+                _h.Join(winner, 5_000);
+                Assert.Equal(0, byPriority ? secondResult : firstResult);
+                Assert.Equal(ThreadStatus.Waiting, loser.Thread.Status);
+                Assert.Equal(0, Call(Tm, "sceKernelSetEventFlag", uid, 0x1u));
+                _h.Join(loser, 5_000);
+                Assert.Equal(0, byPriority ? firstResult : secondResult);
+            }
+        });
+    }
+
+    /// <summary>
+    /// A woken waiter serves its wake-up latency (<see cref="Wait.SyscallLatencyUs"/>) after leaving the event flag:
+    /// served inside, the flag stayed locked for it, and the thread that had just set the flag blocked in its next call
+    /// on the same flag. Metal Gear Solid HD's main thread sets "work" and clears "done" right after; blocked there, it
+    /// lost its host thread for tens of milliseconds, the End Frame thread finished a whole cycle meanwhile, and the
+    /// late clear erased its "done": both threads waited for each other forever.
+    /// </summary>
+    [Fact]
+    public void EventFlagWakeLatencyDoesNotHoldTheFlag()
+    {
+        int savedLatency = Wait.SyscallLatencyUs;
+        Wait.SyscallLatencyUs = 1_000_000;
+        try
+        {
+            _h.OnGuest(_ =>
+            {
+                int uid = Call(Tm, "sceKernelCreateEventFlag", "latency", 0u, 0x2u, 0u);
+                GuestRun waiter = _h.Start(_ => Call(Tm, "sceKernelWaitEventFlag", uid, 0x1u, EventFlag.WaitAnd | EventFlag.WaitClearPat,
+                    new Ptr<uint>(0), new Ptr<uint>(0)), "evf-latency");
+                Until(() => waiter.Thread.Status == ThreadStatus.Waiting, "the event flag wait");
+                Assert.Equal(0, Call(Tm, "sceKernelSetEventFlag", uid, 0x1u));
+                using (VitaSharp.Core.Kernel.Scheduler.Block())
+                {
+                    Thread.Sleep(150); // the waiter has woken up and is serving its one-second latency
+                }
+
+                var clearTime = System.Diagnostics.Stopwatch.StartNew();
+                Assert.Equal(0, Call(Tm, "sceKernelClearEventFlag", uid, ~0x2u));
+                Assert.True(clearTime.ElapsedMilliseconds < 400, $"sceKernelClearEventFlag waited {clearTime.ElapsedMilliseconds} ms for the woken thread");
+                _h.Join(waiter, 5_000);
+            });
+        }
+        finally
+        {
+            Wait.SyscallLatencyUs = savedLatency;
+        }
+    }
+
     // ------------------------------------------------------------------ mutexes
 
     [Fact]
