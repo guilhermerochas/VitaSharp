@@ -96,6 +96,18 @@ jogo (`dotnet test`) para saber se uma mudança quebrou algo. Nenhuma mudança �
 - [ ] **Um teste sintético por bug corrigido:** o padrão do guest reproduzido sem o jogo (protocolo de sync,
   sequência de comandos GXM, chamadas HLE com os argumentos vistos), nunca dependente dos dados de um jogo.
 - [ ] **O homebrew de teste** cobrindo cada área emulada.
+- [ ] **Cada cenário hoje verificado rodando um jogo vira um teste sintético** que simula o mesmo cenário sem o jogo:
+  os 67 roteiros de `tests/scenarios` (cerca de 44 jogos) e as verificações dos relatórios dos agentes, agrupados pelo
+  que verificam:
+  - boot até o gameplay: ordem de carga de módulos, imports, inicialização do HLE que o jogo usa;
+  - travas e impasses: os protocolos de sincronização de cada trava já vista (End Frame do Metal Gear, waits do
+    Killzone, filas de jobs);
+  - imagem: as sequências de comandos GXM de cada bug visual corrigido (cenas, sync objects, fila de display, MSAA,
+    profundidade, formatos), com a imagem e a ordem esperadas;
+  - ritmo e fps: os contratos de tempo de guest e de ordem entre threads que as melhorias de desempenho não podem
+    mudar;
+  - áudio e vídeo: as sequências de chamadas de decodificação e de saída de áudio de cada bug corrigido;
+  - entrada e toque, save states, telas do shell e apps de sistema: os fluxos que hoje se confirmam navegando.
 
 ## Save states
 
