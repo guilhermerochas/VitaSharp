@@ -31,24 +31,6 @@ Lista de itens futuros do VitaSharp. Marque `[x]` quando um item for concluído.
   - **"Antes funcionava":** o VitaSharp guarda, por título, a última versão que chegou ao gameplay sem travar (junto
     do `playtime.json`); o log de uma sessão que trava diz "PCSE00020 rodou sem travar na versão ebec3997" — é o
     ponto de partida de uma bisseção sem perguntar ao usuário.
-  - **Os testes fazem o papel do regressivo, não os jogos**: um ponto de teste que atrasa a
-    execução de host de uma thread do guest num ponto escolhido (depois de um retorno de HLE, antes da próxima
-    chamada), para que corridas do escalonador apareçam de forma determinística sem jogo; e testes que reproduzem o
-    protocolo de sincronização de cada trava já vista (ex.: o End Frame do Metal Gear).
-  - **A suíte de testes do repositório é o critério de quebra, para qualquer pessoa, sem nenhum jogo:** quem muda o
-    VitaSharp roda `dotnet test` e sabe se quebrou algo. Para isso a suíte precisa cobrir o comportamento do console,
-    não só os casos que já deram bug:
-    - cada primitiva de sincronização (event flag, semáforo, mutex, lwmutex, cond, msgpipe, callbacks) testada contra a
-      semântica do firmware 3.74 sob intercalações adversas (o ponto de atraso acima aplicado entre cada par de
-      chamadas), não só no caminho feliz;
-    - escalonador, ritmo da CPU e custos do HLE com testes de contrato (quem roda primeiro, quanto tempo de guest
-      passa, o que acorda quem), para que uma mudança de desempenho que altere a ordem entre threads quebre um teste;
-    - cada bug corrigido vira um teste sintético no repositório (o padrão do guest reproduzido sem o jogo: protocolo
-      de sync, sequência de comandos GXM, chamadas HLE com os argumentos vistos), nunca um teste que dependa dos dados
-      de um jogo;
-    - o homebrew de teste cobre cada área emulada.
-    Os jogos não fazem parte da validação de uma mudança; uma quebra vista num jogo e não pega pela suíte é uma falha
-    da suíte, corrigida com o teste que faltava.
   - **Executáveis guardados por merge na main**, para que uma bisseção só precise bootar, sem compilar.
 
 - [x] Gravar tudo (F8) diz o contexto no próprio report.txt (pedido do usuário, 10/11/2026; agente snd1,
@@ -84,6 +66,36 @@ Lista de itens futuros do VitaSharp. Marque `[x]` quando um item for concluído.
   normal do processo escreve `Process exit at guest frame N` no log: um log sem essa linha e sem `UNHANDLED` é um
   processo morto de fora ou em código nativo (ver o WER). Se repetir, rodar com `DOTNET_DbgEnableMiniDump=1` e
   guardar o código de saída (`perf11_tools/run.ps1` faz os dois)
+
+## Testes de regressão
+
+Divisão do trabalho: os jogos são testados pelo usuário; um erro que ele encontra é corrigido junto com o teste que o
+teria pegado; todo o resto do comportamento é garantido pela suíte do repositório, que qualquer pessoa roda sem nenhum
+jogo (`dotnet test`) para saber se uma mudança quebrou algo. Nenhuma mudança é validada rodando jogos.
+
+- [ ] **Ponto de teste de atraso de thread:** atrasar a execução de host de uma thread do guest num ponto escolhido
+  (depois de um retorno de HLE, antes da próxima chamada), para reproduzir corridas do escalonador de forma
+  determinística.
+- [ ] **Sincronização sob intercalações adversas:** event flag, semáforo, mutex, lwmutex, cond, msgpipe, eventos e
+  callbacks testados contra a semântica do firmware 3.74 com o ponto de atraso entre cada par de chamadas (quem é
+  acordado, em que ordem, o que sobra no padrão, cancelamento, delete, timeout), não só o caminho feliz.
+- [ ] **Contratos do escalonador e do ritmo da CPU:** quem roda primeiro por prioridade e afinidade, quanto tempo de
+  guest passa por chamada HLE e por espera, o que acorda quem; uma mudança de desempenho que altere a ordem entre
+  threads quebra um teste.
+- [ ] **Custos do HLE:** a classe de custo de cada função (código de usuário, entrada no kernel, espera) testada como
+  contrato, sem depender do nome.
+- [ ] **CPU ARM:** cada instrução e cada modo comparado com uma referência (resultado, flags, exceções), nos três
+  backends (native, IL, interpretador).
+- [ ] **GXM e tradução de shaders:** sequências sintéticas de comandos (cenas, sync objects, fila de display, MSAA,
+  formatos de textura) com a imagem e a ordem de execução esperadas.
+- [ ] **Mídia:** decodificação de vídeo e áudio pelo contrato do Vita no desktop e no Android (já existe a base em
+  `MediaContract`/`MediaParityTests`).
+- [ ] **Sistema de arquivos, carregador e módulos:** montagens, patches por origem, NIDs, imports/exports, permissões
+  de módulos de sistema.
+- [ ] **Save states:** ida e volta de cada módulo HLE e do escalonador com threads em espera.
+- [ ] **Um teste sintético por bug corrigido:** o padrão do guest reproduzido sem o jogo (protocolo de sync,
+  sequência de comandos GXM, chamadas HLE com os argumentos vistos), nunca dependente dos dados de um jogo.
+- [ ] **O homebrew de teste** cobrindo cada área emulada.
 
 ## Save states
 
