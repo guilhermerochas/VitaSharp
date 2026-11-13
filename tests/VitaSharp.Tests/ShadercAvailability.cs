@@ -8,22 +8,34 @@ namespace VitaSharp.Tests;
 /// it for Windows, Linux and macOS, and on Linux the distribution's package is the fallback (Debian/Ubuntu:
 /// libshaderc-dev). Tests that compile shaders are skipped with the reason when the library cannot be loaded.
 /// </summary>
+/// <remarks>
+/// The probe never unloads the library (no Dispose, no NativeLibrary.Free), as the renderer does not
+/// (<c>ShaderCompiler.Dispose</c>): shaderc registers a process-exit handler that stays behind after dlclose, so on
+/// Linux every test host that ran the probe jumped into the unmapped library at exit (SIGSEGV after a passing run,
+/// and a crash dump each time under WSL's crash collector).
+/// </remarks>
 public static class ShadercAvailability
 {
-    private static readonly Lazy<string?> s_reason = new(() =>
+    private static readonly Lazy<string?> s_reason = new(Probe);
+
+    /// <summary>The API the probe loaded, kept for the whole process.</summary>
+    private static Shaderc? s_api;
+
+    public static string? SkipReason => s_reason.Value;
+
+    /// <summary>Loads shaderc (once per process: the library stays loaded) and returns null, or why it cannot be loaded.</summary>
+    internal static string? Probe()
     {
         try
         {
-            Shaderc.GetApi().Dispose();
+            s_api ??= Shaderc.GetApi();
             return null;
         }
         catch (Exception e) when (e is FileNotFoundException or DllNotFoundException or BadImageFormatException)
         {
             return $"shaderc not available ({e.Message.TrimEnd('.', '!')}; bundled copy: {BundledLoadError()}): " + InstallHint();
         }
-    });
-
-    public static string? SkipReason => s_reason.Value;
+    }
 
     /// <summary>Why the copy from Silk.NET.Shaderc.Native did not load (the loader's own message, e.g. dlerror's).</summary>
     private static string BundledLoadError()
@@ -37,7 +49,8 @@ public static class ShadercAvailability
 
         try
         {
-            NativeLibrary.Free(NativeLibrary.Load(path));
+            // loaded and kept: unloading it leaves its exit handler behind (see the remarks above)
+            NativeLibrary.Load(path);
             return "loads";
         }
         catch (Exception e) when (e is DllNotFoundException or BadImageFormatException)
