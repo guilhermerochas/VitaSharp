@@ -19,6 +19,26 @@ Lista de itens futuros do VitaSharp. Marque `[x]` quando um item for concluído.
 
 ## Diagnóstico
 
+- [ ] **O log e a captura F8 dizem a causa de uma trava de cara** (usuário, 12/11/2026: "os logs e o F8 são
+  exatamente pra você saber onde está o problema já de cara"). Caso que motivou: a trava do Metal Gear Solid HD no
+  boot (quadro 1349) levou mais de uma hora, porque o despejo do watchdog só dizia que `main` e `End Frame Thread`
+  esperavam o mesmo event flag; a causa (a `main` sem CPU do host entre o `Set(1)` e o `Clear(~2)`) só apareceu com um
+  trace feito à mão. O que falta:
+  - **Histórico de cada objeto de sincronização** (event flag, semáforo, mutex, cond, msgpipe): um anel barato com as
+    últimas operações (Set/Clear/Wait/Signal, thread, padrão de bits, ciclo de guest e tempo de host), despejado no
+    STALL do watchdog e na F8 para os objetos que alguém está esperando.
+  - **Detector de impasse:** quando todas as threads de um ciclo esperam objetos que só elas mesmas sinalizariam, o
+    log diz isso numa linha ("impasse: main espera End Frame Event bits 0x2, apagados pela main em ...; End Frame
+    espera bit 0x1"), em vez de só a lista de threads.
+  - **Tempo sem CPU por thread:** no STALL e no report, a maior lacuna de host entre duas chamadas HLE seguidas de cada
+    thread, separando o sono do ritmo da CPU (pacing) da preempção do host.
+  - **"Antes funcionava":** o VitaSharp guarda, por título, a última versão que chegou ao gameplay sem travar (junto
+    do `playtime.json`); o log de uma sessão que trava diz "PCSE00020 rodou sem travar na versão ebec3997" — é o
+    ponto de partida de uma bisseção sem perguntar ao usuário.
+  - **Teste de boot por jogo na checagem do merge:** boot natural curto de cada jogo de teste até depois dos pontos
+    conhecidos de trava (chegou ao gameplay / travou / fechou), em paralelo; uma regressão bloqueia o merge.
+  - **Executáveis guardados por merge na main**, para que uma bisseção só precise bootar, sem compilar.
+
 - [x] Gravar tudo (F8) diz o contexto no próprio report.txt (pedido do usuário, 10/11/2026; agente snd1,
   fix/shell-audio): seção "Where" com onde o jogador está no começo e cada mudança durante a gravação (app/jogo na
   frente com título; no shell: tela de bloqueio, tela inicial ou a página de LiveArea de qual título, pela abertura
