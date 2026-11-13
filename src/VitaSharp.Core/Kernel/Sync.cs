@@ -97,7 +97,7 @@ public static class Wait
                     // woken by, or found ready after, the object's last signaller: it is this thread's waker
                     if (self != null && sync is KernelObject kernelObject)
                     {
-                        self.WokenBy(kernelObject.Signaller, kernelObject.SignallerProgress);
+                        self.WokenBy(kernelObject.Signaller, kernelObject.SignallerProgress, kernelObject.SignallerCoreReleases);
                     }
                     if (waited && !deferLatency)
                     {
@@ -156,7 +156,7 @@ public static class Wait
                 if (self != null)
                 {
                     Scheduler.Release(self);
-                    self.WokenBy(null, 0); // a thread that blocks is no longer ahead of an earlier waker
+                    self.WokenBy(null, 0, 0); // a thread that blocks is no longer ahead of an earlier waker
                 }
 
                 Interlocked.Increment(ref BlockingWaits);

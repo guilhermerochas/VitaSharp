@@ -704,13 +704,18 @@ public sealed class ThreadMgrHleTests(GuestMemoryFixture fx) : IDisposable
                 Assert.Equal(0u, th.DispatchForTest("sceKernelSetEventFlag", (uint)uid, 0x2u));
             }, "End Frame Thread");
             Until(() => endFrame.Thread.Status == ThreadStatus.Waiting, "the End Frame wait");
+            endFrame.Thread.WakerWaitLimitTicks = long.MaxValue; // the outcome may not depend on how long the host takes
             uint patternAfterStop = 0xFFFFFFFF;
+            bool heldAtItsCall = false;
             GuestThread.HleReturned = (thread, function) =>
             {
                 if (thread == main && function.Name == "sceKernelSetEventFlag")
                 {
-                    Thread.Sleep(50); // main's host thread does not run (it still holds its emulated core)
+                    // main's host thread does not run (it still holds its emulated core) until the End Frame thread is
+                    // either held at its set or past it
+                    Until(() => endFrame.Thread.IsWaitingForWaker || (flag.Pattern & 0x2) != 0, "the End Frame thread's set");
                     patternAfterStop = flag.Pattern;
+                    heldAtItsCall = endFrame.Thread.IsWaitingForWaker;
                 }
             };
             try
@@ -722,6 +727,7 @@ public sealed class ThreadMgrHleTests(GuestMemoryFixture fx) : IDisposable
                 GuestThread.HleReturned = null;
             }
             Assert.Equal(0u, patternAfterStop); // "done" not set ahead of main's clear
+            Assert.True(heldAtItsCall);
             Assert.Equal(0, Call(Tm, "sceKernelClearEventFlag", uid, ~0x2u));
             uint timeout = _h.Word(2_000_000);
             Assert.Equal(0, Call(Tm, "sceKernelWaitEventFlag", uid, 0x2u, EventFlag.WaitAnd, new Ptr<uint>(0), new Ptr<uint>(timeout)));
@@ -770,13 +776,16 @@ public sealed class ThreadMgrHleTests(GuestMemoryFixture fx) : IDisposable
                 Volatile.Write(ref nextCallDone, true);
             }, "woken");
             Until(() => woken.Thread.Status == ThreadStatus.Waiting, "the wait");
+            woken.Thread.WakerWaitLimitTicks = long.MaxValue; // the outcome may not depend on how long the host takes
             bool doneWhileStopped = true;
+            bool heldAtItsCall = false;
             GuestThread.HleReturned = (thread, function) =>
             {
                 if (thread == main && function.Name == wakingCall)
                 {
-                    Thread.Sleep(50);
+                    Until(() => woken.Thread.IsWaitingForWaker || Volatile.Read(ref nextCallDone), "the woken thread's next call");
                     doneWhileStopped = Volatile.Read(ref nextCallDone);
+                    heldAtItsCall = woken.Thread.IsWaitingForWaker;
                 }
             };
             try
@@ -788,6 +797,7 @@ public sealed class ThreadMgrHleTests(GuestMemoryFixture fx) : IDisposable
                 GuestThread.HleReturned = null;
             }
             Assert.False(doneWhileStopped);
+            Assert.True(heldAtItsCall);
             Assert.Equal(0, Call(Tm, "sceKernelDelayThread", 1000u)); // main blocks: the woken thread goes on
             _h.Join(woken, 5_000);
             Assert.True(Volatile.Read(ref nextCallDone));
@@ -815,14 +825,17 @@ public sealed class ThreadMgrHleTests(GuestMemoryFixture fx) : IDisposable
                 th.Core.ChargeInstructions(200_000); // the frame's work
                 Assert.Equal(0u, th.DispatchForTest("sceKernelSetEventFlag", (uint)uid, 0x2u));
             }, "End Frame Thread");
+            endFrame.Thread.WakerWaitLimitTicks = long.MaxValue; // the outcome may not depend on how long the host takes
             uint patternAfterStop = 0xFFFFFFFF;
+            bool heldAtItsCall = false;
             GuestThread.HleReturned = (thread, function) =>
             {
                 if (thread == main && function.Name == "sceKernelSetEventFlag")
                 {
                     go.Set(); // the End Frame thread gets to its wait now, with "go" already set
-                    Thread.Sleep(50);
+                    Until(() => endFrame.Thread.IsWaitingForWaker || (flag.Pattern & 0x2) != 0, "the End Frame thread's set");
                     patternAfterStop = flag.Pattern;
+                    heldAtItsCall = endFrame.Thread.IsWaitingForWaker;
                 }
             };
             try
@@ -834,6 +847,7 @@ public sealed class ThreadMgrHleTests(GuestMemoryFixture fx) : IDisposable
                 GuestThread.HleReturned = null;
             }
             Assert.Equal(0u, patternAfterStop); // "go" taken, "done" not set ahead of main's clear
+            Assert.True(heldAtItsCall);
             Assert.Equal(0, Call(Tm, "sceKernelClearEventFlag", uid, ~0x2u));
             uint timeout = _h.Word(2_000_000);
             Assert.Equal(0, Call(Tm, "sceKernelWaitEventFlag", uid, 0x2u, EventFlag.WaitAnd, new Ptr<uint>(0), new Ptr<uint>(timeout)));
@@ -882,12 +896,53 @@ public sealed class ThreadMgrHleTests(GuestMemoryFixture fx) : IDisposable
                 Volatile.Write(ref released, true);
             }, "worker");
             Until(() => worker.Thread.Status == ThreadStatus.Waiting, "the worker wait");
+            worker.Thread.WakerWaitLimitTicks = long.MaxValue; // the outcome may not depend on how long the host takes
             Assert.Equal(0u, self.DispatchForTest("sceKernelSetEventFlag", (uint)uid, 0x1u));
-            Thread.Sleep(30);
+            Until(() => worker.Thread.IsWaitingForWaker || Volatile.Read(ref released), "the worker's next call");
             Assert.False(Volatile.Read(ref released)); // main has not moved since the set
             self.Core.ChargeInstructions(GuestThread.WakerReleaseCycles); // main keeps running, without blocking
             Until(() => Volatile.Read(ref released), "the worker going on");
             _h.Join(worker, 5_000);
+        });
+    }
+
+    /// <summary>A waker that holds its core but makes no guest progress (long host-side work, a host stop) holds the
+    /// thread it woke back only for the wait limit: then the woken thread goes on without it. The limit is made short
+    /// here; main stays stopped right after its signal until the woken thread is past its next call.</summary>
+    [Fact]
+    public void WokenThreadGoesOnWhenItsWakerMakesNoProgressForTheLimit()
+    {
+        _h.OnGuest(main =>
+        {
+            int uid = Call(Tm, "sceKernelCreateSema", "stuck-waker", 0u, 0, 1, 0u);
+            bool nextCallDone = false;
+            GuestRun woken = _h.Start(th =>
+            {
+                Assert.Equal(0, Call(Tm, "sceKernelWaitSema", uid, 1, new Ptr<uint>(0)));
+                th.Core.ChargeInstructions(200_000);
+                th.DispatchForTest("sceKernelGetThreadId");
+                Volatile.Write(ref nextCallDone, true);
+            }, "woken-stuck-waker");
+            Until(() => woken.Thread.Status == ThreadStatus.Waiting, "the wait");
+            woken.Thread.WakerWaitLimitTicks = System.Diagnostics.Stopwatch.Frequency / 1000;
+            long timeoutsBefore = Interlocked.Read(ref GuestThread.WakerWaitTimeouts);
+            GuestThread.HleReturned = (thread, function) =>
+            {
+                if (thread == main && function.Name == "sceKernelSignalSema")
+                {
+                    Until(() => Volatile.Read(ref nextCallDone), "the woken thread going on without its waker");
+                }
+            };
+            try
+            {
+                Assert.Equal(0u, main.DispatchForTest("sceKernelSignalSema", (uint)uid, 1u));
+            }
+            finally
+            {
+                GuestThread.HleReturned = null;
+            }
+            Assert.True(Interlocked.Read(ref GuestThread.WakerWaitTimeouts) > timeoutsBefore);
+            _h.Join(woken, 5_000);
         });
     }
 

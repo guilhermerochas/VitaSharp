@@ -24,8 +24,9 @@ namespace VitaSharp.Core.Kernel;
 /// points where it can affect other threads) it may not be further past its wake-up, in guest cycles, than the waker is
 /// past the waking call, while the waker still holds an emulated core (still running guest code or a non-blocking
 /// call). Only the first <see cref="WakerReleaseCycles"/> after the wake-up are kept in step: the waker blocking,
-/// yielding its core or exiting, or getting past that window, ends the dependency. Measured on Metal Gear's boot, the
-/// woken threads wait ~0.6 times a frame for ~0.3 ms in all, and the load and frame rate stay the same. This is the
+/// yielding its core or exiting at any time since the waking call (counted by <see cref="CoreReleases"/>, so a short
+/// block between two looks of the woken thread is not missed), or getting past that window, ends the dependency.
+/// Measured on Metal Gear's boot, the woken threads wait ~0.6 times a frame for ~0.3 ms in all, and the load and frame rate stay the same. This is the
 /// conservative synchronisation of parallel simulators (a core never acts at a time another core has not reached),
 /// limited to the pair that a wake-up makes causal, so threads that do not wake each other are not slowed down.
 /// </para>
@@ -35,6 +36,25 @@ public sealed unsafe partial class GuestThread
     /// <summary>Longest a thread waits for its waker (real time): a waker that holds its core while the host runs long
     /// host-side work for it (no guest progress) must not stall the threads it woke indefinitely.</summary>
     private static readonly long s_wakerWaitLimitTicks = Stopwatch.Frequency / 10;
+
+    /// <summary>
+    /// Test seam: this thread's wait limit (Stopwatch ticks; <see cref="long.MaxValue"/>: none). The limit is the only
+    /// host-clock decision in the mechanism, so a test that holds a waker for a known reason disables it on the woken
+    /// thread and no longer depends on how long the host takes (a loaded CI host overslept a 50 ms stop past the
+    /// 100 ms limit), and a test of the limit itself makes it short.
+    /// </summary>
+    internal long WakerWaitLimitTicks
+    {
+        get => Volatile.Read(ref _wakerWaitLimitTicks);
+        set => Volatile.Write(ref _wakerWaitLimitTicks, value);
+    }
+
+    private long _wakerWaitLimitTicks = s_wakerWaitLimitTicks;
+
+    private int _waitingForWaker;
+
+    /// <summary>Test seam: the thread is held at a system call, waiting for its waker.</summary>
+    internal bool IsWaitingForWaker => Volatile.Read(ref _waitingForWaker) != 0;
 
     /// <summary>The window after a wake-up that is kept in step (guest cycles): ~0.3 ms at 333 MHz, past what any call
     /// "right after" the waking one is, and past one pacing window (so a waker that sleeps off its pacing just after the
@@ -47,6 +67,7 @@ public sealed unsafe partial class GuestThread
 
     private GuestThread? _waker;
     private long _wakerBase, _wokenBase;
+    private int _wakerReleases;
 
     /// <summary>Guest cycles this thread has run, its HLE calls' costs included (the owning thread's view).</summary>
     internal long OwnCycles => Volatile.Read(ref Core.BlockCycles) + Volatile.Read(ref Core.ChargedCycles);
@@ -99,8 +120,9 @@ public sealed unsafe partial class GuestThread
     }
 
     /// <summary>The thread's blocking wait ended because <paramref name="waker"/> woke it (null: no guest thread did,
-    /// a timeout, a host-side signal), at <paramref name="wakerCycles"/> of the waker's cycles.</summary>
-    internal void WokenBy(GuestThread? waker, long wakerCycles)
+    /// a timeout, a host-side signal), at <paramref name="wakerCycles"/> of the waker's cycles and after
+    /// <paramref name="wakerReleases"/> of its core releases (both taken at the waking call).</summary>
+    internal void WokenBy(GuestThread? waker, long wakerCycles, int wakerReleases)
     {
         if (waker == null || waker == this)
         {
@@ -110,6 +132,7 @@ public sealed unsafe partial class GuestThread
 
         _wakerBase = wakerCycles;
         _wokenBase = OwnCycles;
+        _wakerReleases = wakerReleases;
         _waker = waker;
     }
 
@@ -130,7 +153,7 @@ public sealed unsafe partial class GuestThread
         // the waker has: beyond that window nothing either does is "right after" the wake-up
         long ahead = Math.Min(OwnCycles - _wokenBase, WakerReleaseCycles);
         long wakerAhead = waker.Progress - _wakerBase;
-        if (!Volatile.Read(ref waker.HasCore) || wakerAhead >= WakerReleaseCycles)
+        if (!WakerStillRunning(waker) || wakerAhead >= WakerReleaseCycles)
         {
             _waker = null; // the waker blocked, or is past the window: the dependency is over
             return;
@@ -141,18 +164,20 @@ public sealed unsafe partial class GuestThread
         }
 
         Interlocked.Increment(ref WakerWaits);
+        long limitTicks = WakerWaitLimitTicks;
         long start = Stopwatch.GetTimestamp();
         int rounds = 0;
-        while (Volatile.Read(ref waker.HasCore) && waker.Progress - _wakerBase < ahead && !Core.StopRequested)
+        Volatile.Write(ref _waitingForWaker, 1);
+        while (WakerStillRunning(waker) && waker.Progress - _wakerBase < ahead && !Core.StopRequested)
         {
             if (EmulationPause.IsPaused)
             {
                 start = Stopwatch.GetTimestamp(); // the waker parks; the limit counts running time only
             }
-            else if (Stopwatch.GetTimestamp() - start > s_wakerWaitLimitTicks)
+            else if (Stopwatch.GetTimestamp() - start > limitTicks)
             {
                 Interlocked.Increment(ref WakerWaitTimeouts);
-                Util.Log.WarnOnce("waker-wait-limit", $"'{Name}' waited {s_wakerWaitLimitTicks * 1000 / Stopwatch.Frequency} ms for its waker '{waker.Name}' to make progress; going on");
+                Util.Log.WarnOnce("waker-wait-limit", $"'{Name}' waited {limitTicks * 1000 / Stopwatch.Frequency} ms for its waker '{waker.Name}' to make progress; going on");
                 break;
             }
 
@@ -167,9 +192,16 @@ public sealed unsafe partial class GuestThread
                 Util.PreciseSleep.Microseconds(50);
             }
         }
-        if (!Volatile.Read(ref waker.HasCore) || waker.Progress - _wakerBase >= WakerReleaseCycles || Core.StopRequested)
+        Volatile.Write(ref _waitingForWaker, 0);
+        if (!WakerStillRunning(waker) || waker.Progress - _wakerBase >= WakerReleaseCycles || Core.StopRequested)
         {
             _waker = null;
         }
     }
+
+    /// <summary>The waker has held its core without a break since the waking call: it has not blocked, yielded or
+    /// exited in between, even briefly (a 1 ms delay could start and end between two looks of the woken thread, which
+    /// then waited for a waker that was no longer in step with it).</summary>
+    private bool WakerStillRunning(GuestThread waker) =>
+        Volatile.Read(ref waker.HasCore) && waker.CoreReleases == _wakerReleases;
 }

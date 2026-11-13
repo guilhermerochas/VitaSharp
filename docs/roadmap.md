@@ -2280,6 +2280,15 @@ jogo (`dotnet test`) para saber se uma mudança quebrou algo. Nenhuma mudança �
     com a main "Running" em laço (pc 0x818AC5D8 e 0x81017598) e o End Frame esperando o flag, que pode ser o caso do
     objeto já pronto, coberto depois. Sem carga, nos boots sequenciais de 75 s: main 3 de 6 presos, correção 0 de 6,
     e o gameplay nos mesmos 30 fps.
+    Depois: os testes paravam a main com `Thread.Sleep(50)` e o limite de segurança de 100 ms (relógio do host)
+    soltava a thread acordada quando o host demorava mais (o runner macOS arm64 do CI dormiu além dos 100 ms e 3
+    testes falharam). Agora o limite é por thread (`WakerWaitLimitTicks`, costura de teste): os testes o desligam e
+    param a main até ver a thread acordada presa na syscall (`IsWaitingForWaker`), sem sono decidindo o resultado;
+    `WokenThreadGoesOnWhenItsWakerMakesNoProgressForTheLimit` cobre o limite. Isso mostrou uma falha do mecanismo:
+    quem acordou bloquear por pouco tempo (um delay de 1 ms) entre duas olhadas da thread acordada não encerrava a
+    dependência, e ela esperava até o limite ou até quem acordou passar da janela. Agora conta quantas vezes a thread
+    cedeu o núcleo (`GuestThread.CoreReleases`, gravado no sinal junto com os ciclos): qualquer bloqueio desde a
+    chamada que acordou encerra a dependência.
   - **MGS2 a partir do menu da coleção: trava logo depois de abrir** (boot limpo, menu MGS3|MGS2, direita + X no
     quadro 260): `LoadExec app0:MGS2.self` ok, módulos, NGS, troféus e BPE Render Thread criados, e no quadro 523 a
     main espera o fim da thread 'BackgroundLoadSDX', que espera uma operação do FIOS (condvar SceFiosOpWait) que nunca

@@ -96,6 +96,7 @@ public static class Scheduler
         {
             pool.Running--;
             t.HasCore = false;
+            t.CountCoreRelease();
             Monitor.PulseAll(pool.L);
         }
     }

@@ -33,12 +33,16 @@ public abstract class KernelObject
     internal GuestThread? Signaller { get; private set; }
     internal long SignallerProgress { get; private set; }
 
+    /// <summary>The signaller's <see cref="GuestThread.CoreReleases"/> at the signal.</summary>
+    internal int SignallerCoreReleases { get; private set; }
+
     /// <summary>Records the calling thread as the one that last signalled this object (the caller holds its lock).</summary>
     protected void RecordSignal()
     {
         GuestThread? current = GuestThread.Current;
         Signaller = current;
         SignallerProgress = current?.OwnCycles ?? 0;
+        SignallerCoreReleases = current?.CoreReleases ?? 0;
     }
 
     /// <summary>Wakes the threads waiting on this object (the caller holds its lock) and records who woke them.</summary>
@@ -51,7 +55,7 @@ public abstract class KernelObject
     /// <summary>The calling thread took this object's state without waiting (a wait that was already satisfied, a
     /// poll): the thread that signalled it is its waker, as for a wake-up. Waiting there on the Vita would not have
     /// changed the order: the signaller's next calls still come right after its signal.</summary>
-    protected void ObserveSignal() => GuestThread.Current?.WokenBy(Signaller, SignallerProgress);
+    protected void ObserveSignal() => GuestThread.Current?.WokenBy(Signaller, SignallerProgress, SignallerCoreReleases);
 }
 
 /// <summary>Helpers shared by the sceKernelGet*Info functions.</summary>
