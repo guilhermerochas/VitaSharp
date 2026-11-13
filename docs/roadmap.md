@@ -95,7 +95,14 @@ jogo (`dotnet test`) para saber se uma mudança quebrou algo. Nenhuma mudança �
 - [ ] **Save states:** ida e volta de cada módulo HLE e do escalonador com threads em espera.
 - [ ] **Um teste sintético por bug corrigido:** o padrão do guest reproduzido sem o jogo (protocolo de sync,
   sequência de comandos GXM, chamadas HLE com os argumentos vistos), nunca dependente dos dados de um jogo.
-- [ ] **O homebrew de teste** cobrindo cada área emulada.
+- [ ] **O jogo de teste como suíte de integração:** o homebrew de teste (VitaSDK, código próprio) ganha um caso para
+  cada cenário que hoje se verifica em jogos separados — o mesmo padrão de chamadas e de threads do jogo (ex.: o
+  protocolo do End Frame com duas threads, a fila de jobs, as sequências GXM de cada bug visual, a decodificação de
+  vídeo/áudio, save data, diálogos do sistema), com o resultado esperado de cada caso no `results.txt`. Um teste da
+  suíte roda o jogo sem janela no VitaSharp e falha se algum caso der diferente; o binário do jogo de teste fica
+  disponível para o CI e para qualquer pessoa (não depende de jogos comprados). Os testes unitários continuam sendo a
+  primeira camada (rápidos, apontam a função); o jogo de teste pega o que só aparece com código ARM de verdade passando
+  por carregador, CPU, HLE e GPU juntos.
 - [ ] **Cada cenário hoje verificado rodando um jogo vira um teste sintético** que simula o mesmo cenário sem o jogo:
   os 67 roteiros de `tests/scenarios` (cerca de 44 jogos) e as verificações dos relatórios dos agentes, agrupados pelo
   que verificam:
