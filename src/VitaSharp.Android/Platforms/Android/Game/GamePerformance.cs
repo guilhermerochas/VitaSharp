@@ -40,6 +40,8 @@ public sealed partial class GamePerformance : IDisposable
     readonly FrameRateEstimator _rate = new();
     readonly FrameWorkMeter _meter = new();
     readonly Dictionary<int, ulong> _applied = new();
+    int _mainTid;
+    int _submitterMoves;
     readonly Dictionary<int, long> _lastCpu = new();
     readonly HashSet<string> _failures = new();
     Timer? _timer;
@@ -75,9 +77,17 @@ public sealed partial class GamePerformance : IDisposable
         }
         var topology = CpuTopology.FromSysfs();
         bool spare = System.Environment.GetEnvironmentVariable(EnvVars.AndroidHelpers)?.Trim().ToLowerInvariant() == "spare";
-        _planner = new ThreadPlacementPlanner(topology, spare);
+        bool gxmBig = System.Environment.GetEnvironmentVariable(EnvVars.AndroidGxmThread)?.Trim().ToLowerInvariant() == "big";
+        _planner = new ThreadPlacementPlanner(topology, spare, gxmBig);
         if (!_planner.CanPlace)
+        {
             LogcatSink.Notice($"CPU clusters: {topology.Describe()}: one kind of core, threads are not pinned");
+        }
+        else if (gxmBig)
+        {
+            GpuSubmitterThread.Reset();
+            GpuSubmitterThread.Changed = OnGpuSubmitterChanged;
+        }
     }
 
     static bool IsOff(string? v) => v?.Trim().ToLowerInvariant() is "off" or "0" or "false" or "no";
@@ -140,7 +150,10 @@ public sealed partial class GamePerformance : IDisposable
                 if (cpu < 0)
                 {
                     _lastCpu.Remove(tid);
-                    _applied.Remove(tid);
+                    lock (_applied)
+                    {
+                        _applied.Remove(tid);
+                    }
                     continue;
                 } // the thread is gone
                 NativeThread.Roles.TryGetValue(tid, out var role);
@@ -148,14 +161,23 @@ public sealed partial class GamePerformance : IDisposable
                 _lastCpu[tid] = cpu;
                 samples.Add(new ThreadSample(tid, ThreadPlacementPlanner.Classify(role, name), name, load, tid));
             }
-            var plan = planner.Plan(samples);
-            foreach (var (tid, placement) in plan.Placements)
+            var plan = planner.Plan(samples, GpuSubmitterThread.Current);
+            lock (_applied)
             {
-                ulong mask = planner.MaskOf(placement);
-                if (mask == 0 || _applied.TryGetValue(tid, out ulong had) && had == mask)
-                    continue;
-                if (SetAffinity(tid, mask))
-                    _applied[tid] = mask;
+                _mainTid = plan.MainTid;
+                foreach (var (tid, placement) in plan.Placements)
+                {
+                    ulong mask = planner.MaskOf(placement);
+                    if (mask == 0 || _applied.TryGetValue(tid, out ulong had) && had == mask)
+                    {
+                        continue;
+                    }
+
+                    if (SetAffinity(tid, mask))
+                    {
+                        _applied[tid] = mask;
+                    }
+                }
             }
             if (!plan.HotTids.SequenceEqual(_hot))
                 UpdateHotThreads(plan);
@@ -292,8 +314,40 @@ public sealed partial class GamePerformance : IDisposable
         _ => AdpfReport.Cpu,
     };
 
+    /// <summary>On the guest thread that began a GXM scene after another thread did
+    /// (<see cref="EnvVars.AndroidGxmThread"/>=big): that thread to the fast cores now, the previous recorder back to
+    /// the cores of the other guest threads (unless it is the main thread). At most a few calls per frame.</summary>
+    void OnGpuSubmitterChanged(int tid, int previous)
+    {
+        var planner = _planner!;
+        ulong big = planner.MaskOf(Placement.Big);
+        ulong other = planner.MaskOf(planner.SpareFastCoresForGuests ? Placement.All : Placement.NotBig);
+        lock (_applied)
+        {
+            if (SetAffinity(tid, big))
+            {
+                _applied[tid] = big;
+            }
+
+            if (previous != 0 && previous != _mainTid && SetAffinity(previous, other))
+            {
+                _applied[previous] = other;
+            }
+
+            if (_submitterMoves++ == 0)
+            {
+                LogcatSink.Notice($"GXM scenes recorded on thread {tid}: moved to {CpuTopology.Ranges(big)} ({EnvVars.AndroidGxmThread}=big)");
+            }
+        }
+    }
+
     public void Dispose()
     {
+        if (GpuSubmitterThread.Changed == OnGpuSubmitterChanged)
+        {
+            GpuSubmitterThread.Changed = null;
+        }
+
         if (Display.Presented == OnFrame)
             Display.Presented = null;
         if (NativeThread.Registered == OnRegistered)

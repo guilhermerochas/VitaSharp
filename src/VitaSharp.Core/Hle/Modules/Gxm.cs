@@ -905,6 +905,8 @@ public sealed partial class Gxm : HleModule
 
         c.InScene = true;
         c.RenderTarget = rt;
+        // the thread recording scenes (Android: moved to the fast cores while it does, VITASHARP_ANDROID_GXM_THREAD)
+        Util.GpuSubmitterThread.SceneBegan(Kernel.GuestThread.Current?.HostTid ?? 0);
         c.FragmentSyncObject = fragmentSync;
         SetDefaultRegionClipAndViewport(c, xMax, yMax);
         DisplayHold? hold = WaitForDisplayRelease(fragmentSync);

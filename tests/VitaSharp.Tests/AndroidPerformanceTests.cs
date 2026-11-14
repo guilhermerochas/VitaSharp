@@ -153,6 +153,38 @@ public sealed class AndroidPerformanceTests : IDisposable
     }
 
     [Fact]
+    public void GxmSceneRecorderGoesToTheFastCoresWhenAsked()
+    {
+        // VITASHARP_ANDROID_GXM_THREAD=big: the job thread recording this frame's scenes (11) joins main (10) and the
+        // GPU worker on the fast cores beyond the two slots; the other job threads stay on the slow cores
+        ThreadSample gpu = new(20, ThreadKind.Gpu, "GPU worker", 0.6, 20);
+        ThreadSample[] threads = [Guest(10, 0.6), Guest(11, 0.5), Guest(12, 0.5), Guest(13, 0.5), gpu];
+        var p = new ThreadPlacementPlanner(HelioG99(), gpuSubmitterOnFastCores: true);
+        PlacementPlan plan = p.Plan(threads, gpuSubmitterTid: 11);
+        Assert.Equal(10, plan.MainTid);
+        Assert.Equal(Placement.Big, plan.Placements[10]);
+        Assert.Equal(Placement.Big, plan.Placements[20]);
+        Assert.Equal(Placement.Big, plan.Placements[11]);
+        Assert.Contains(11, plan.HotTids);
+        Assert.Equal(Placement.NotBig, plan.Placements[12]);
+        Assert.Equal(Placement.NotBig, plan.Placements[13]);
+
+        // the recording moves to another job thread: that one goes, the previous one comes back
+        plan = p.Plan(threads, gpuSubmitterTid: 13);
+        Assert.Equal(Placement.Big, plan.Placements[13]);
+        Assert.Equal(Placement.NotBig, plan.Placements[11]);
+
+        // the main thread recording its own scenes keeps its place, nothing else moves
+        plan = p.Plan(threads, gpuSubmitterTid: 10);
+        Assert.Equal(Placement.Big, plan.Placements[10]);
+        Assert.Equal([10, 20], plan.HotTids);
+
+        // off (the default): placed by load only, whatever thread records
+        PlacementPlan off = new ThreadPlacementPlanner(HelioG99()).Plan(threads, gpuSubmitterTid: 11);
+        Assert.Equal(Placement.NotBig, off.Placements[11]);
+    }
+
+    [Fact]
     public void OneFastCoreKeepsItForTheMainThreadAndTheGpuGoesToTheMidCores()
     {
         var p = new ThreadPlacementPlanner(OnePlusThreePlusFour());
