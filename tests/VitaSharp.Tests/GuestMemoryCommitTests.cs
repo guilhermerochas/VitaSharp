@@ -74,25 +74,55 @@ public sealed unsafe partial class GuestMemoryCommitTests(GuestMemoryFixture fix
         }
     }
 
-    /// <summary>CDRAM and kernel memory are shared memory mapped in every address space (a section view on Windows, a
-    /// memfd/shm mapping elsewhere): a new block there takes no host RAM until the guest or the GPU writes it. The
-    /// ranges are used by no other test, so this is their first block.</summary>
+    /// <summary>
+    /// CDRAM and kernel memory are shared memory mapped in every address space (a section view on Windows, a memfd/shm
+    /// mapping elsewhere): a new block there takes no host RAM for the pages that already read zero, until the guest or
+    /// the GPU writes them; the pages an earlier block (or a stray access) used may hold its data and are cleared.
+    /// One guest memory serves the whole test process and a Windows section page stays committed once used, so the
+    /// range cannot be assumed fresh: what was used before the allocation is measured, and 8 MB of the block (more than
+    /// the old bound of an eighth) are used and freed first so both kinds of page are always there.
+    /// </summary>
     [Theory]
     [InlineData(0x6C00_0000u)]
     [InlineData(0x4C00_0000u)]
     public void ANewSharedBlockTakesNoHostMemoryUntilTouched(uint addr)
     {
+        const uint UsedOffset = 8u << 20, UsedSize = 8u << 20;
+        AllocWriteAndFree(addr + UsedOffset, UsedSize);
+        byte* host = fixture.Memory.Primary.Base + addr;
+        bool[]? mayHoldData = PagesThatMayHoldData(host, BlockSize);
         Assert.Equal(addr, fixture.Memory.TryAllocAt(addr, BlockSize, "untouched video memory"));
         try
         {
-            byte* host = fixture.Memory.Primary.Base + addr;
-            long resident = ResidentBytes(host, BlockSize);
-            if (resident < 0)
+            bool[]? resident = ResidentPages(host, BlockSize);
+            if (mayHoldData != null && resident != null)
             {
-                return; // no residency query on this host
+                // the old clear by hand made all 32 MB resident; a few pages may be in for other reasons
+                long fresh = 0, freshResident = 0;
+                for (int i = 0; i < resident.Length; i++)
+                {
+                    if (mayHoldData[i])
+                    {
+                        continue;
+                    }
+
+                    fresh++;
+                    if (resident[i])
+                    {
+                        freshResident++;
+                    }
+                }
+
+                int pageSize = Environment.SystemPageSize;
+                Assert.True(fresh * pageSize >= BlockSize / 2, $"only {(fresh * pageSize) >> 10} KB of the block read zero before it was allocated");
+                Assert.True(freshResident < fresh / 8, $"{(freshResident * pageSize) >> 10} KB of the {(fresh * pageSize) >> 10} KB of a new {BlockSize >> 20} MB shared block that read zero before are resident before the guest touched them");
             }
 
-            Assert.True(resident < BlockSize / 8, $"{resident >> 10} KB of a new {BlockSize >> 20} MB shared block are resident before the guest touched it");
+            for (uint offset = UsedOffset; offset < UsedOffset + UsedSize; offset += GuestMemory.PageSize)
+            {
+                Assert.Equal(0u, GuestMemory.Read<uint>(addr + offset)); // the earlier block's data is gone
+            }
+
             Assert.Equal(0u, GuestMemory.Read<uint>(addr));
             Assert.Equal(0u, GuestMemory.Read<uint>(addr + BlockSize - 4));
         }
@@ -100,6 +130,17 @@ public sealed unsafe partial class GuestMemoryCommitTests(GuestMemoryFixture fix
         {
             fixture.Memory.Free(addr);
         }
+    }
+
+    private void AllocWriteAndFree(uint addr, uint size)
+    {
+        Assert.Equal(addr, fixture.Memory.TryAllocAt(addr, size, "earlier block"));
+        for (uint offset = 0; offset < size; offset += GuestMemory.PageSize)
+        {
+            GuestMemory.Write(addr + offset, 0xDEAD_BEEFu);
+        }
+
+        fixture.Memory.Free(addr);
     }
 
     [Fact]
@@ -310,13 +351,74 @@ public sealed unsafe partial class GuestMemoryCommitTests(GuestMemoryFixture fix
         }
     }
 
+    /// <summary>
+    /// The host pages of [<paramref name="start"/>, + <paramref name="size"/>) that may hold data: committed (Windows: a
+    /// section page an earlier block or a stray access committed; never-committed pages are the demand-zero page) or in
+    /// memory (elsewhere: a page punched out of the memory file is neither); null when the host has no query for it.
+    /// </summary>
+    private static bool[]? PagesThatMayHoldData(byte* start, uint size)
+    {
+        int pageSize = Environment.SystemPageSize;
+        if (!OperatingSystem.IsWindows())
+        {
+            return ResidentPages(start, size);
+        }
+
+        const uint MEM_COMMIT = 0x1000;
+        bool[] committed = new bool[size / (uint)pageSize];
+        nuint at = (nuint)start, end = at + size;
+        while (at < end)
+        {
+            MemoryBasicInformation info;
+            if (VirtualQuery((void*)at, &info, (nuint)sizeof(MemoryBasicInformation)) == 0)
+            {
+                return null;
+            }
+
+            nuint regionEnd = Math.Min(end, (nuint)info.BaseAddress + info.RegionSize);
+            if (info.State == MEM_COMMIT)
+            {
+                for (nuint page = at; page < regionEnd; page += (nuint)pageSize)
+                {
+                    committed[(page - (nuint)start) / (nuint)pageSize] = true;
+                }
+            }
+
+            at = regionEnd;
+        }
+
+        return committed;
+    }
+
     /// <summary>Bytes of [<paramref name="start"/>, + <paramref name="size"/>) in the process's physical memory;
     /// -1 when the host has no query for it.</summary>
     private static long ResidentBytes(byte* start, uint size)
     {
+        bool[]? pages = ResidentPages(start, size);
+        if (pages == null)
+        {
+            return -1;
+        }
+
+        long resident = 0;
+        foreach (bool page in pages)
+        {
+            if (page)
+            {
+                resident += Environment.SystemPageSize;
+            }
+        }
+
+        return resident;
+    }
+
+    /// <summary>Which host pages of [<paramref name="start"/>, + <paramref name="size"/>) are in the process's physical
+    /// memory; null when the host has no query for it.</summary>
+    private static bool[]? ResidentPages(byte* start, uint size)
+    {
         int pageSize = Environment.SystemPageSize;
         int pages = (int)(size / (uint)pageSize);
-        long resident = 0;
+        bool[] resident = new bool[pages];
         if (OperatingSystem.IsWindows())
         {
             var info = new WorkingSetExInformation[pages];
@@ -329,16 +431,15 @@ public sealed unsafe partial class GuestMemoryCommitTests(GuestMemoryFixture fix
             {
                 if (!QueryWorkingSetEx(GetCurrentProcess(), p, pages * sizeof(WorkingSetExInformation)))
                 {
-                    return -1;
+                    return null;
                 }
             }
-            foreach (WorkingSetExInformation page in info)
+
+            for (int i = 0; i < pages; i++)
             {
-                if ((page.VirtualAttributes & 1) != 0)
-                {
-                    resident += pageSize;
-                }
+                resident[i] = (info[i].VirtualAttributes & 1) != 0;
             }
+
             return resident;
         }
 
@@ -349,20 +450,36 @@ public sealed unsafe partial class GuestMemoryCommitTests(GuestMemoryFixture fix
             {
                 if (mincore(start, (nuint)size, v) != 0)
                 {
-                    return -1;
+                    return null;
                 }
             }
-            foreach (byte b in vector)
+
+            for (int i = 0; i < pages; i++)
             {
-                if ((b & 1) != 0)
-                {
-                    resident += pageSize;
-                }
+                resident[i] = (vector[i] & 1) != 0;
             }
+
             return resident;
         }
-        return -1;
+
+        return null;
     }
+
+    [StructLayout(LayoutKind.Sequential)]
+    private struct MemoryBasicInformation
+    {
+        public nint BaseAddress;
+        public nint AllocationBase;
+        public uint AllocationProtect;
+        public ushort PartitionId;
+        public nuint RegionSize;
+        public uint State;
+        public uint Protect;
+        public uint Type;
+    }
+
+    [LibraryImport("kernel32.dll")]
+    private static partial nuint VirtualQuery(void* addr, MemoryBasicInformation* info, nuint length);
 
     [StructLayout(LayoutKind.Sequential)]
     private struct WorkingSetExInformation
