@@ -1084,12 +1084,6 @@ public sealed partial class KernelTwins : HleModule
     [Hle]
     void ksceKernelPowerTick(HleContext context) => Forward(context, 0x2252890C);
 
-    // ------------------------------------------------------------------ SceKernelUtilsForDriver
-
-    /// <summary>ksceZlibDecompress (SceKernelUtilsForDriver 0x900148DB): sceZlibDecompress.</summary>
-    [Hle]
-    void ksceZlibDecompress(HleContext context) => Forward(context, 0xD7DAA151);
-
     // ------------------------------------------------------------------ SceMotionDevForDriver
 
     /// <summary>ksceMotionDevGetCalibrationData (SceMotionDevForDriver 0xF0251700): sceMotionDevGetCalibrationData.</summary>

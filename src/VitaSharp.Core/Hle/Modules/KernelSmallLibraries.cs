@@ -62,7 +62,7 @@ public sealed partial class SystemServicesVsh
     readonly uint[] _dipswHigh = new uint[4];
 
     /// <summary>Word <paramref name="index"/> of the 256 debug switches (8 words).</summary>
-    uint DipswWord(uint index)
+    internal uint DipswWord(uint index)
     {
         if (index < 4)
         {
