@@ -93,6 +93,14 @@ public static class Wait
                             continue; // the lock was left: look again with the core
                         }
 
+                        // threadmgr wakes a cancelled or deleted waiter as a release does (the canceller goes on): the
+                        // object's last signaller, the canceller, is its waker. A timeout and a callback notification
+                        // are not a thread's doing
+                        if (self != null && a != SceError.WAIT_TIMEOUT && a != SceError.NOTIFY_CALLBACK && sync is KernelObject cancelled)
+                        {
+                            self.WokenBy(cancelled.Signaller, cancelled.SignallerProgress, cancelled.SignallerCoreReleases);
+                        }
+
                         return a;
                     }
                 }
