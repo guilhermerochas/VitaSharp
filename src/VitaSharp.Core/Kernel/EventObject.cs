@@ -22,6 +22,40 @@ public abstract class EventObject : KernelObject
     /// <summary>The registered callbacks of a loaded state, as (callback UID, notifier ID), until every object exists.</summary>
     private List<(int CallbackUid, int NotifyId)>? _loadedRegistrations;
 
+    /// <summary>The sceKernelWaitMultipleEvents calls that read this event's state as a level (a pipe, a timer, an I/O
+    /// operation; a simple event queues them instead).</summary>
+    private List<MultiEventWait>? _watchers;
+
+    internal void Watch(MultiEventWait multi)
+    {
+        lock (this)
+        {
+            (_watchers ??= new List<MultiEventWait>()).Add(multi);
+        }
+    }
+
+    internal void Unwatch(MultiEventWait multi)
+    {
+        lock (this)
+        {
+            _watchers?.Remove(multi);
+        }
+    }
+
+    /// <summary>The event's state changed: the calls that read it look again (the caller holds the object's lock).</summary>
+    internal void PokeWatchers()
+    {
+        if (_watchers == null)
+        {
+            return;
+        }
+
+        foreach (MultiEventWait multi in _watchers)
+        {
+            multi.Poke();
+        }
+    }
+
     /// <summary>sceKernelRegisterCallbackToEvent (threadmgr 3.74, 0x8100cfcc): adds <paramref name="callback"/> to the
     /// event's list, after the registrations of callbacks with a lower or equal UID.</summary>
     public int RegisterCallback(Callback callback, int notifyId)

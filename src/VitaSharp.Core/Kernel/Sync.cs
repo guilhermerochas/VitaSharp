@@ -4349,9 +4349,85 @@ public sealed partial class SimpleEvent : EventObject, ICallbackInterruptedWait
         public AddressSpace? Space;
         /// <summary>The waiting thread (null: a host caller).</summary>
         public GuestThread? Thread;
+        /// <summary>A sceKernelWaitMultipleEvents call waiting here, and the index of this event in it (null: a
+        /// single wait).</summary>
+        public MultiEventWait? Multi;
+        public int MultiIndex;
     }
 
     private readonly LinkedList<Waiter> _waiters = new();
+
+    /// <summary>
+    /// A sceKernelWaitMultipleEvents call's first look at this event (threadmgr 3.74, 0x8101ed4c): a pattern that matches
+    /// now is taken (the auto reset applied); otherwise the call joins the wait queue as a single waiter would (by
+    /// priority with TH_PRIO), unless it is an OR call that already has a result. True when it joined the queue.
+    /// </summary>
+    public bool AttachMulti(MultiEventWait multi, int index, uint waitPattern, int priority)
+    {
+        lock (this)
+        {
+            uint hit = Pattern & waitPattern;
+            if (hit != 0)
+            {
+                if (multi.Record(index, Uid, SceError.OK, hit, LastUserData) && AutoReset)
+                {
+                    Pattern &= ~waitPattern;
+                }
+
+                return false;
+            }
+
+            if (multi.Complete)
+            {
+                return false;
+            }
+
+            Enqueue(new Waiter { WaitPattern = waitPattern, Priority = priority, Thread = multi.Thread, Multi = multi, MultiIndex = index });
+            return true;
+        }
+    }
+
+    /// <summary>The call ended: its place in the queue goes away.</summary>
+    public void DetachMulti(MultiEventWait multi)
+    {
+        lock (this)
+        {
+            for (LinkedListNode<Waiter>? n = _waiters.First; n != null;)
+            {
+                LinkedListNode<Waiter>? next = n.Next;
+                if (n.Value.Multi == multi)
+                {
+                    _waiters.Remove(n);
+                }
+
+                n = next;
+            }
+        }
+    }
+
+    /// <summary>Queues a waiter at the end, or by priority with TH_PRIO (arrival order among equal priorities).</summary>
+    private LinkedListNode<Waiter> Enqueue(Waiter w)
+    {
+        if ((Attr & EventBits.AttrThPrio) == 0)
+        {
+            return _waiters.AddLast(w);
+        }
+
+        LinkedListNode<Waiter>? at = _waiters.First;
+        while (at != null && at.Value.Priority <= w.Priority)
+        {
+            at = at.Next;
+        }
+
+        return at == null ? _waiters.AddLast(w) : _waiters.AddBefore(at, w);
+    }
+
+    /// <summary>A cancel, delete or set ends a multiple-events call's place here with <paramref name="code"/> (its own
+    /// result there; the call may already have ended).</summary>
+    private void EndMulti(Waiter w, int code, uint bits)
+    {
+        w.Multi!.Record(w.MultiIndex, Uid, code, bits, code == SceError.OK ? LastUserData : 0);
+    }
     public int NumWaiters
     {
         get
@@ -4430,21 +4506,7 @@ public sealed partial class SimpleEvent : EventObject, ICallbackInterruptedWait
                 }
 
                 var w = new Waiter { WaitPattern = waitPattern, Result = result, UserData = userData, Priority = self?.Priority ?? 0, Space = AddressSpace.Current, Thread = self };
-                LinkedListNode<Waiter> node;
-                if ((Attr & EventBits.AttrThPrio) != 0)
-                {
-                    LinkedListNode<Waiter>? at = _waiters.First;
-                    while (at != null && at.Value.Priority <= w.Priority)
-                    {
-                        at = at.Next;
-                    }
-
-                    node = at == null ? _waiters.AddLast(w) : _waiters.AddBefore(at, w);
-                }
-                else
-                {
-                    node = _waiters.AddLast(w);
-                }
+                LinkedListNode<Waiter> node = Enqueue(w);
 
                 r = global::VitaSharp.Core.Kernel.Wait.Until(this, w, static w => w.Code.HasValue || global::VitaSharp.Core.Kernel.Wait.CallbacksPending(w.Thread),
                     timeout, null, WaitDescription);
@@ -4479,7 +4541,7 @@ public sealed partial class SimpleEvent : EventObject, ICallbackInterruptedWait
     {
         for (LinkedListNode<Waiter>? n = _waiters.First; n != null; n = n.Next)
         {
-            if (n.Value.Thread != thread || n.Value.Code.HasValue)
+            if (n.Value.Thread != thread || n.Value.Code.HasValue || n.Value.Multi != null)
             {
                 continue;
             }
@@ -4534,6 +4596,24 @@ public sealed partial class SimpleEvent : EventObject, ICallbackInterruptedWait
             {
                 LinkedListNode<Waiter>? next = n.Next;
                 Waiter w = n.Value;
+                if (w.Multi != null)
+                {
+                    // a multiple-events call takes the event inside the set, as a single waiter does (0x8101dcf8); one
+                    // whose OR wait already ended takes nothing and leaves
+                    uint hit = Pattern & w.WaitPattern;
+                    if (hit != 0)
+                    {
+                        if (w.Multi.Record(w.MultiIndex, Uid, SceError.OK, hit, LastUserData) && AutoReset)
+                        {
+                            Pattern &= ~w.WaitPattern;
+                        }
+
+                        _waiters.Remove(n);
+                    }
+
+                    n = next;
+                    continue;
+                }
                 if ((Pattern & w.WaitPattern) != 0)
                 {
                     using (AddressSpace.Use(w.Space))
@@ -4588,12 +4668,7 @@ public sealed partial class SimpleEvent : EventObject, ICallbackInterruptedWait
         lock (this)
         {
             numWait.TrySet((uint)_waiters.Count);
-            foreach (Waiter w in _waiters)
-            {
-                w.Code = SceError.WAIT_CANCEL;
-            }
-
-            _waiters.Clear();
+            CancelWaiters();
             Pattern = setPattern;
             LastUserData = userData;
             WakeWaiters();
@@ -4606,15 +4681,29 @@ public sealed partial class SimpleEvent : EventObject, ICallbackInterruptedWait
         lock (this)
         {
             numWait.TrySet((uint)_waiters.Count);
-            foreach (Waiter w in _waiters)
-            {
-                w.Code = SceError.WAIT_CANCEL;
-            }
-
-            _waiters.Clear();
+            CancelWaiters();
             WakeWaiters();
             return SceError.OK;
         }
+    }
+
+    /// <summary>Every waiter returns WAIT_CANCEL; a multiple-events call gets {uid, WAIT_CANCEL, ERROR} for this event
+    /// (threadmgr 3.74's cancels 0x8101e724 / 0x8101ead8).</summary>
+    private void CancelWaiters()
+    {
+        foreach (Waiter w in _waiters)
+        {
+            if (w.Multi != null)
+            {
+                EndMulti(w, SceError.WAIT_CANCEL, EventBits.Error);
+            }
+            else
+            {
+                w.Code = SceError.WAIT_CANCEL;
+            }
+        }
+
+        _waiters.Clear();
     }
 
     public void Delete()
@@ -4625,7 +4714,12 @@ public sealed partial class SimpleEvent : EventObject, ICallbackInterruptedWait
             // waits that include the DELETE bit end successfully with it, the others with WAIT_DELETE
             foreach (Waiter w in _waiters)
             {
-                if ((w.WaitPattern & EventBits.Delete) != 0)
+                if (w.Multi != null)
+                {
+                    bool deleteBit = (w.WaitPattern & EventBits.Delete) != 0;
+                    EndMulti(w, deleteBit ? SceError.OK : SceError.WAIT_DELETE, deleteBit ? (Pattern | EventBits.Delete) & w.WaitPattern : EventBits.Error);
+                }
+                else if ((w.WaitPattern & EventBits.Delete) != 0)
                 {
                     using (AddressSpace.Use(w.Space))
                     {

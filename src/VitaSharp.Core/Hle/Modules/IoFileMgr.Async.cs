@@ -28,6 +28,7 @@ public sealed class IoAsyncOp : EventObject
             Done = true;
             Pattern |= CompletionBit;
             Monitor.PulseAll(this);
+            PokeWatchers();
         }
     }
 
