@@ -173,6 +173,10 @@ public sealed class CtrlKernelDriverTests(GuestMemoryFixture fixture) : IDisposa
     [Fact]
     public void TheEmulationLastsItsSamples()
     {
+        // the slots count their samples from the vertical blank they are set at, and the blank count follows the guest
+        // clock: stopped, every set below starts at `now`, never at the next blank the host reached between the calls
+        // (a slow runner crossed one, so the analog slot was still active at now + 2)
+        using var clock = ControlledGuestClock.Stop();
         long now = VBlank.Count;
         Assert.Equal(0, Call(Services, "ksceCtrlSetButtonEmulation", 0, 0u, 0x10u, 0x20u, 3));
         Assert.Equal(0, Call(Services, "ksceCtrlSetButtonEmulation", 0, 1u, 0x4000u, 0u, 1));
