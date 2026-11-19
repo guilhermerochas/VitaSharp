@@ -234,6 +234,10 @@ public static class Wait
     /// out of guest time (the clock and scale every wait's timeout uses).</summary>
     internal static bool Expired(long startTicks, long limitUs) => ElapsedUs(startTicks) >= limitUs;
 
+    /// <summary>What is left, in microseconds, of a wait's limit that started at <paramref name="startTicks"/> (guest
+    /// time; negative once it ran out).</summary>
+    internal static long RemainingUs(long startTicks, long limitUs) => limitUs - ElapsedUs(startTicks);
+
     /// <summary>Writes back the time left of a wait that ended at <paramref name="endedTicks"/> (the signal that woke it;
     /// a value outside the wait, such as long.MinValue, means now).</summary>
     private static void WriteRemaining(Ptr<uint> timeout, long? limitUs, long startTicks, long endedTicks = long.MinValue)
@@ -700,7 +704,7 @@ public sealed partial class Semaphore : KernelObject
     }
 }
 
-public sealed partial class EventFlag : KernelObject
+public sealed partial class EventFlag : KernelObject, ICallbackInterruptedWait
 {
     public override int UidClass => 3;
     public const uint WaitAnd = 0, WaitOr = 1, WaitClear = 2, WaitClearPat = 4;
@@ -732,6 +736,15 @@ public sealed partial class EventFlag : KernelObject
         public long LimitUs = -1;
         /// <summary>Its timeout had passed when a set reached it: off the queue, it returns WAIT_TIMEOUT.</summary>
         public bool Expired;
+        /// <summary>The waiting thread (null: a host caller).</summary>
+        public GuestThread? Thread;
+        /// <summary>A callback notification took it off the queue: its thread runs its callbacks and waits anew.</summary>
+        public bool Interrupted;
+
+        /// <summary>Its thread is in a CB wait with callbacks to run (a notification that came before the thread was
+        /// in the queue, so <see cref="InterruptForCallbacks"/> did not find it).</summary>
+        public bool CallbacksPending => Thread != null && Thread.CanRunCallbacks && GuestThread.CallbackProcessor != null
+            && Volatile.Read(ref Thread.PendingCallbacks) > 0;
     }
 
     /// <summary>The wait queue, in the order the kernel checks it on a set.</summary>
@@ -771,6 +784,15 @@ public sealed partial class EventFlag : KernelObject
         return IsLegalMode(mode) ? SceError.OK : SceError.ILLEGAL_MODE;
     }
 
+    /// <summary>
+    /// sceKernelWaitEventFlag(CB), as threadmgr 3.74 does it (0x8100f0e4). On a flag without SCE_EVENT_WAITMULTIPLE
+    /// the first thread that waits owns the flag's wait until its wait ends: another thread's wait or poll meanwhile is
+    /// EVF_MULTI, the owner's own (from one of its callbacks) is not. A CB wait runs the thread's notified callbacks
+    /// first (writing the pattern of that moment to outBits), then checks the pattern; a notification that reaches it
+    /// asleep takes it off the queue (<see cref="InterruptForCallbacks"/>), and once the callbacks ran it checks the
+    /// pattern again and, if it still has to wait, joins the queue anew behind the waiters there, with the time left of
+    /// its timeout. A set while its callbacks run does not see it.
+    /// </summary>
     public int WaitFlag(uint bits, uint mode, Ptr<uint> outBits, Ptr<uint> timeout)
     {
         int invalid = CheckWaitArguments(bits, mode);
@@ -779,13 +801,69 @@ public sealed partial class EventFlag : KernelObject
             return invalid;
         }
 
-        int result;
-        bool woken;
         lock (this)
         {
-            if ((Attr & AttrMulti) == 0 && Waiters > 0)
+            GuestThread? self = GuestThread.Current;
+            object waiter = (object?)self ?? s_hostWaiter;
+            bool single = (Attr & AttrMulti) == 0;
+            if (single && _waitOwner != null && _waitOwner != waiter)
             {
                 return SceError.EVF_MULTI;
+            }
+
+            if (single)
+            {
+                _waitOwner = waiter;
+                _waitOwnerDepth++;
+            }
+            try
+            {
+                return WaitLoop(self, bits, mode, outBits, timeout);
+            }
+            finally
+            {
+                if (single && --_waitOwnerDepth == 0)
+                {
+                    _waitOwner = null;
+                }
+            }
+        }
+    }
+
+    /// <summary>The owner of a single-wait flag's wait (a guest thread, or this for a host caller), and how many of its
+    /// waits are in progress (a callback of the owner may wait on it again).</summary>
+    private object? _waitOwner;
+    private int _waitOwnerDepth;
+    private static readonly object s_hostWaiter = new();
+
+    /// <summary>A caller other than the waiting owner of a single-wait flag: EVF_MULTI.</summary>
+    private bool OwnedByAnother() => _waitOwner != null && _waitOwner != ((object?)GuestThread.Current ?? s_hostWaiter);
+
+    private int WaitLoop(GuestThread? self, uint bits, uint mode, Ptr<uint> outBits, Ptr<uint> timeout)
+    {
+        bool callbacks = self != null && self.CanRunCallbacks && GuestThread.CallbackProcessor != null;
+        long startTicks = GuestClock.Ticks;
+        long limitUs = timeout.IsNull ? -1 : timeout.Value;
+        bool interrupted = false;
+        while (true)
+        {
+            if (callbacks && Volatile.Read(ref self!.PendingCallbacks) > 0)
+            {
+                outBits.TrySet(Pattern);
+                Monitor.Exit(this);
+                try
+                {
+                    GuestThread.CallbackProcessor!(self);
+                }
+                finally
+                {
+                    Monitor.Enter(this);
+                }
+            }
+            if (interrupted && _deleted)
+            {
+                outBits.TrySet(Pattern);
+                return SceError.WAIT_DELETE;
             }
 
             if (Matches(bits, mode))
@@ -793,24 +871,44 @@ public sealed partial class EventFlag : KernelObject
                 outBits.TrySet(Pattern);
                 Consume(bits, mode);
                 ObserveSignal();
+                if (interrupted)
+                {
+                    WriteTimeLeft(timeout, startTicks, limitUs);
+                }
+
                 return SceError.OK;
+            }
+            long leftUs = limitUs;
+            if (interrupted && limitUs >= 0)
+            {
+                leftUs = Math.Max(0, Wait.RemainingUs(startTicks, limitUs));
+                timeout.Value = (uint)leftUs; // the helper waits for what is left of the caller's timeout
+                if (leftUs == 0)
+                {
+                    outBits.TrySet(Pattern);
+                    return SceError.WAIT_TIMEOUT;
+                }
             }
 
             WaitRequest request = new()
             {
                 Bits = bits,
                 Mode = mode,
-                Priority = GuestThread.Current?.Priority ?? 0,
+                Thread = self,
+                Priority = self?.Priority ?? 0,
                 CancelGeneration = _cancelled,
                 StartTicks = GuestClock.Ticks,
-                LimitUs = timeout.IsNull ? -1 : timeout.Value,
+                LimitUs = leftUs,
             };
             Enqueue(request);
             Waiters++;
+            int result;
+            bool woken;
             try
             {
-                result = Wait.UntilGranted(this, (flag: this, request), static t => t.request.Granted, timeout,
-                    static t => t.request.Granted ? 0 : t.request.Expired ? SceError.WAIT_TIMEOUT : t.flag._deleted ? SceError.WAIT_DELETE : t.flag._cancelled != t.request.CancelGeneration ? SceError.WAIT_CANCEL : 0,
+                result = Wait.UntilGranted(this, (flag: this, request), static t => t.request.Granted || t.request.Interrupted || t.request.CallbacksPending,
+                    timeout,
+                    static t => t.request.Granted || t.request.Interrupted ? 0 : t.request.Expired ? SceError.WAIT_TIMEOUT : t.flag._deleted ? SceError.WAIT_DELETE : t.flag._cancelled != t.request.CancelGeneration ? SceError.WAIT_CANCEL : 0,
                     WaitDescription, out woken);
             }
             finally
@@ -819,36 +917,74 @@ public sealed partial class EventFlag : KernelObject
                 {
                     _granted.Remove(request);
                 }
-                else if (!request.Dequeued)
+                else if (!request.Dequeued && _queue.Remove(request))
                 {
-                    _queue.Remove(request);
                     Waiters--;
                 }
             }
             if (request.Granted)
             {
-                result = SceError.OK; // satisfied by a set: a timeout or cancel that came after it does not undo that
-                outBits.TrySet(request.Result);
+                outBits.TrySet(request.Result); // satisfied by a set: a timeout or cancel that came after it does not undo that
+                if (woken)
+                {
+                    Monitor.Exit(this);
+                    try
+                    {
+                        Wait.WakeLatency();
+                    }
+                    finally
+                    {
+                        Monitor.Enter(this);
+                    }
+                }
+
+                return SceError.OK;
             }
-            else if (request.Dequeued)
+            if (request.Dequeued)
             {
                 outBits.TrySet(request.Result); // the pattern when the cancel, delete or timeout woke it
                 if (request.Expired)
                 {
                     timeout.TrySet(0);
                 }
+
+                return result;
             }
-            else
+            if (result != SceError.OK)
             {
                 outBits.TrySet(Pattern);
+                return result;
+            }
+
+            // a callback notification ended the wait (NOTIFY_CALLBACK): run them and look again
+            interrupted = true;
+        }
+    }
+
+    /// <summary>Writes what is left of the caller's timeout when the wait ends after a callback interruption.</summary>
+    private static void WriteTimeLeft(Ptr<uint> timeout, long startTicks, long limitUs)
+    {
+        if (limitUs >= 0)
+        {
+            timeout.TrySet((uint)Math.Max(0, Wait.RemainingUs(startTicks, limitUs)));
+        }
+    }
+
+    /// <summary>A callback notification reached a CB waiter of this flag: off the queue, it runs its callbacks and
+    /// waits again (threadmgr's notify ends the wait with NOTIFY_CALLBACK).</summary>
+    public void InterruptForCallbacks(GuestThread thread)
+    {
+        for (int i = 0; i < _queue.Count; i++)
+        {
+            WaitRequest request = _queue[i];
+            if (request.Thread == thread)
+            {
+                request.Interrupted = true;
+                _queue.RemoveAt(i);
+                Waiters--;
+                return;
             }
         }
-        if (woken && result == SceError.OK)
-        {
-            Wait.WakeLatency();
-        }
-
-        return result;
     }
 
     private void Enqueue(WaitRequest request)
@@ -892,7 +1028,7 @@ public sealed partial class EventFlag : KernelObject
 
         lock (this)
         {
-            if ((Attr & AttrMulti) == 0 && Waiters > 0)
+            if (OwnedByAnother())
             {
                 return SceError.EVF_MULTI;
             }

@@ -169,4 +169,193 @@ public sealed class CallbackInterleavingTests(GuestMemoryFixture fixture) : IDis
             Assert.Equal(SceError.UNKNOWN_CALLBACK_ID, Call(Tm, "sceKernelDeleteCallback", selfDeleting));
         });
     }
+
+    /// <summary>
+    /// A notification takes the CB waiter at the head of the queue off it while its callback runs: a set made then
+    /// (here by the callback itself) satisfies the waiter behind it, and the notified thread, finding the bit cleared,
+    /// waits again, now behind the others, until the next set.
+    /// </summary>
+    [Fact]
+    public void ANotifiedCbWaiterIsOffTheQueueWhileItsCallbacksRun()
+    {
+        int flagUid = 0;
+        bool callbackRan = false;
+        uint stub = Stub("cbtest:evf-set-in-callback", _ =>
+        {
+            Assert.Equal(0, Call(Tm, "sceKernelSetEventFlag", flagUid, 0x1u));
+            callbackRan = true;
+            return 0;
+        });
+        _h.OnGuest(main =>
+        {
+            flagUid = Call(Tm, "sceKernelCreateEventFlag", "cb-queue", EventFlag.AttrMulti, 0u, 0u);
+            EventFlag flag = Flag(flagUid);
+            int callback = 0;
+            int notifiedResult = 1;
+            int otherResult = 1;
+            uint notifiedBits = _h.Word(0);
+            uint otherBits = _h.Word(0);
+            bool notifiedDone = false;
+            bool otherDone = false;
+            GuestRun notified = _h.Start(th =>
+            {
+                callback = Call(Tm, "sceKernelCreateCallback", "evf-cb", 0u, stub, 0u);
+                notifiedResult = WaitFlagCb(th, flagUid, 0x1u, EventFlag.WaitAnd | EventFlag.WaitClearPat, notifiedBits, 0);
+                Volatile.Write(ref notifiedDone, true);
+            }, "cb-evf-notified");
+            Until(() => notified.Thread.Status == ThreadStatus.Waiting, "the CB wait");
+            GuestRun other = _h.Start(_ =>
+            {
+                otherResult = Call(Tm, "sceKernelWaitEventFlag", flagUid, 0x1u, EventFlag.WaitAnd | EventFlag.WaitClearPat, new Ptr<uint>(otherBits), new Ptr<uint>(0));
+                Volatile.Write(ref otherDone, true);
+            }, "cb-evf-other");
+            Until(() => other.Thread.Status == ThreadStatus.Waiting && flag.Waiters == 2, "the second wait");
+            Assert.Equal(0, Call(Tm, "sceKernelNotifyCallback", callback, 0));
+            Until(() => Volatile.Read(ref otherDone) || Volatile.Read(ref notifiedDone), "a wait to end");
+            Assert.True(Volatile.Read(ref otherDone), "the set inside the callback went to the waiter behind");
+            Until(() => callbackRan && flag.Waiters == 1 && notified.Thread.Status == ThreadStatus.Waiting, "the notified thread's new wait");
+            Assert.False(Volatile.Read(ref notifiedDone));
+            Assert.Equal(0, otherResult);
+            Assert.Equal(0x1u, GuestMemory.R32(otherBits));
+            Assert.Equal(0u, flag.Pattern);
+            Assert.Equal(0, Call(Tm, "sceKernelSetEventFlag", flagUid, 0x1u));
+            _h.Join(notified, 5_000);
+            _h.Join(other, 5_000);
+            Assert.Equal(0, notifiedResult);
+            Assert.Equal(0x1u, GuestMemory.R32(notifiedBits));
+            Assert.Equal(0u, flag.Pattern);
+        });
+    }
+
+    /// <summary>
+    /// A callback notified after a set satisfied a CB wait, before the waiting thread ran again (the flag's lock is held
+    /// across both calls), runs before the wait returns.
+    /// </summary>
+    [Fact]
+    public void ACallbackNotifiedAfterTheSetRunsBeforeTheCbWaitReturns()
+    {
+        int ran = 0;
+        uint stub = Stub("cbtest:evf-after-set", _ =>
+        {
+            Interlocked.Increment(ref ran);
+            return 0;
+        });
+        _h.OnGuest(main =>
+        {
+            int uid = Call(Tm, "sceKernelCreateEventFlag", "cb-after-set", EventFlag.AttrMulti, 0u, 0u);
+            EventFlag flag = Flag(uid);
+            int callback = 0;
+            int result = 1;
+            int ranBeforeReturn = -1;
+            uint outBits = _h.Word(0);
+            GuestRun waiter = _h.Start(th =>
+            {
+                callback = Call(Tm, "sceKernelCreateCallback", "after-set", 0u, stub, 0u);
+                result = WaitFlagCb(th, uid, 0x1u, EventFlag.WaitAnd, outBits, 0);
+                ranBeforeReturn = Volatile.Read(ref ran);
+            }, "cb-evf-after-set");
+            Until(() => waiter.Thread.Status == ThreadStatus.Waiting && flag.Waiters == 1, "the CB wait");
+            lock (flag)
+            {
+                Assert.Equal(0, Call(Tm, "sceKernelSetEventFlag", uid, 0x1u));
+                Assert.Equal(0, Call(Tm, "sceKernelNotifyCallback", callback, 0));
+            }
+            _h.Join(waiter, 5_000);
+            Assert.Equal(0, result);
+            Assert.Equal(1, ranBeforeReturn);
+            Assert.Equal(0, waiter.Thread.PendingCallbacks);
+        });
+    }
+
+    /// <summary>
+    /// A flag without WAITMULTIPLE belongs to its waiting thread until its wait ends: another thread's poll is
+    /// EVF_MULTI before, during and after the owner's callback, but the owner's own poll from its callback is a normal
+    /// poll (EVF_COND when the bits are not there).
+    /// </summary>
+    [Fact]
+    public void TheOwnerOfASingleWaitFlagMayPollItFromItsCallback()
+    {
+        int flagUid = 0;
+        int ownPoll = 1;
+        int otherPollInCallback = 1;
+        bool callbackRan = false;
+        uint stub = Stub("cbtest:evf-owner-poll", _ =>
+        {
+            ownPoll = Call(Tm, "sceKernelPollEventFlag", flagUid, 0x2u, EventFlag.WaitAnd, new Ptr<uint>(0));
+            Volatile.Write(ref callbackRan, true);
+            return 0;
+        });
+        _h.OnGuest(main =>
+        {
+            flagUid = Call(Tm, "sceKernelCreateEventFlag", "cb-single", 0u, 0u, 0u);
+            EventFlag flag = Flag(flagUid);
+            int callback = 0;
+            int result = 1;
+            GuestRun owner = _h.Start(th =>
+            {
+                callback = Call(Tm, "sceKernelCreateCallback", "owner-poll", 0u, stub, 0u);
+                result = WaitFlagCb(th, flagUid, 0x1u, EventFlag.WaitAnd, 0, 0);
+            }, "cb-evf-owner");
+            Until(() => owner.Thread.Status == ThreadStatus.Waiting && flag.Waiters == 1, "the owner's wait");
+            Assert.Equal(SceError.EVF_MULTI, Call(Tm, "sceKernelPollEventFlag", flagUid, 0x2u, EventFlag.WaitAnd, new Ptr<uint>(0)));
+            lock (flag)
+            {
+                Assert.Equal(0, Call(Tm, "sceKernelNotifyCallback", callback, 0));
+                // taken off the queue for its callback, it still owns the flag's wait
+                Assert.Equal(0, flag.Waiters);
+                otherPollInCallback = Call(Tm, "sceKernelPollEventFlag", flagUid, 0x2u, EventFlag.WaitAnd, new Ptr<uint>(0));
+            }
+            Until(() => Volatile.Read(ref callbackRan) && flag.Waiters == 1, "the owner's callback and new wait");
+            Assert.Equal(SceError.EVF_MULTI, otherPollInCallback);
+            Assert.Equal(SceError.EVF_COND, ownPoll);
+            Assert.Equal(SceError.EVF_MULTI, Call(Tm, "sceKernelPollEventFlag", flagUid, 0x2u, EventFlag.WaitAnd, new Ptr<uint>(0)));
+            Assert.Equal(0, Call(Tm, "sceKernelSetEventFlag", flagUid, 0x1u));
+            _h.Join(owner, 5_000);
+            Assert.Equal(0, result);
+            Assert.Equal(0, Call(Tm, "sceKernelPollEventFlag", flagUid, 0x1u, EventFlag.WaitAnd, new Ptr<uint>(0))); // the wait ended: free again
+        });
+    }
+
+    /// <summary>
+    /// The timeout of a CB wait is one deadline for the whole call (the test moves guest time): a callback in the middle
+    /// does not restart it, and the wait that resumes after it times out at the original deadline.
+    /// </summary>
+    [Fact]
+    public void ACallbackInTheMiddleDoesNotRestartTheTimeout()
+    {
+        const uint LimitUs = 50_000;
+        bool callbackRan = false;
+        uint stub = Stub("cbtest:evf-timeout", _ =>
+        {
+            Volatile.Write(ref callbackRan, true);
+            return 0;
+        });
+        using var clock = ControlledGuestClock.Stop();
+        _h.OnGuest(main =>
+        {
+            int uid = Call(Tm, "sceKernelCreateEventFlag", "cb-timeout", EventFlag.AttrMulti, 0u, 0u);
+            EventFlag flag = Flag(uid);
+            int callback = 0;
+            int result = 1;
+            uint timeout = _h.Word(LimitUs);
+            GuestRun waiter = _h.Start(th =>
+            {
+                callback = Call(Tm, "sceKernelCreateCallback", "timeout-cb", 0u, stub, 0u);
+                result = WaitFlagCb(th, uid, 0x1u, EventFlag.WaitAnd, 0, timeout);
+            }, "cb-evf-timeout");
+            Until(() => waiter.Thread.Status == ThreadStatus.Waiting && flag.Waiters == 1, "the CB wait");
+            clock.Advance(20_000);
+            Assert.Equal(0, Call(Tm, "sceKernelNotifyCallback", callback, 0));
+            Until(() => Volatile.Read(ref callbackRan) && flag.Waiters == 1 && waiter.Thread.Status == ThreadStatus.Waiting, "the wait after the callback");
+            lock (flag)
+            {
+                clock.Advance(LimitUs - 20_000 - 1);
+                Assert.Equal(1, flag.Waiters); // a microsecond before the original deadline it still waits
+                clock.Advance(1);
+            }
+            _h.Join(waiter, 5_000);
+            Assert.Equal(SceError.WAIT_TIMEOUT, result);
+            Assert.Equal(0u, GuestMemory.R32(timeout));
+        });
+    }
 }
