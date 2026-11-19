@@ -319,7 +319,7 @@
 <g><title>SceVideodecRecoveryPointUser: 1/1 (100%)</title><rect x="982.4" y="606.3" width="6.4" height="4.4" fill="#64d864" stroke="#ffffff" stroke-width="1"/></g>
 <g><title>mail_api_for_local: 1/1 (100%)</title><rect x="982.4" y="610.7" width="6.4" height="4.4" fill="#64d864" stroke="#ffffff" stroke-width="1"/></g>
 <g><title>mail_api_for_local_libc: 1/1 (100%)</title><rect x="988.8" y="606.3" width="3.2" height="8.8" fill="#64d864" stroke="#ffffff" stroke-width="1"/></g>
-<text x="12" y="635.1" font-size="13" font-weight="600" fill="#1f2328">Kernel (114 libraries): 38.6% covered (1,516/3,918)</text>
+<text x="12" y="635.1" font-size="13" font-weight="600" fill="#1f2328">Kernel (114 libraries): 42.6% covered (1,671/3,918)</text>
 <g><title>SceSysconForDriver: 38/311 (12.2%)</title><rect x="8" y="641.1" width="185.8" height="189.5" fill="#d88064" stroke="#ffffff" stroke-width="1"/><text x="11" y="656.1" font-size="13" fill="#1f2328">SysconForDriver</text><text x="11" y="672.1" font-size="11" fill="#1f2328" fill-opacity=".8">12.2%</text></g>
 <g><title>SceThreadmgrForDriver: 107/248 (43.1%)</title><rect x="8" y="830.6" width="185.8" height="151.1" fill="#d8c864" stroke="#ffffff" stroke-width="1"/><text x="11" y="845.6" font-size="13" fill="#1f2328">ThreadmgrForDriver</text><text x="11" y="861.6" font-size="11" fill="#1f2328" fill-opacity=".8">43.1%</text></g>
 <g><title>SceSysrootForDriver: 124/181 (68.5%)</title><rect x="8" y="981.7" width="185.8" height="110.3" fill="#add864" stroke="#ffffff" stroke-width="1"/><text x="11" y="996.7" font-size="13" fill="#1f2328">SysrootForDriver</text><text x="11" y="1012.7" font-size="11" fill="#1f2328" fill-opacity=".8">68.5%</text></g>
@@ -359,15 +359,15 @@
 <g><title>SceKernelSuspendForDriver: 28/28 (100%)</title><rect x="678.2" y="774.8" width="57" height="55.6" fill="#64d864" stroke="#ffffff" stroke-width="1"/></g>
 <g><title>SceNpDrmForDriver: 3/26 (11.5%)</title><rect x="735.3" y="774.8" width="53" height="55.6" fill="#d87f64" stroke="#ffffff" stroke-width="1"/><text x="738.3" y="784.3" font-size="7.6" fill="#1f2328">NpDrm</text><text x="738.3" y="794.9" font-size="6.4" fill="#1f2328" fill-opacity=".8">11.5%</text></g>
 <g><title>SceCameraForDriver: 0/25 (0%)</title><rect x="788.3" y="774.8" width="50.9" height="55.6" fill="#d86464" stroke="#ffffff" stroke-width="1"/><text x="791.3" y="784" font-size="7.3" fill="#1f2328">Camera</text><text x="791.3" y="794.3" font-size="6.2" fill="#1f2328" fill-opacity=".8">0%</text></g>
-<g><title>SceHdmiForDriver: 0/25 (0%)</title><rect x="839.2" y="774.8" width="50.9" height="55.6" fill="#d86464" stroke="#ffffff" stroke-width="1"/><text x="842.2" y="784" font-size="7.3" fill="#1f2328">Hdmi</text><text x="842.2" y="794.3" font-size="6.2" fill="#1f2328" fill-opacity=".8">0%</text></g>
+<g><title>SceHdmiForDriver: 25/25 (100%), 12 default</title><rect x="839.2" y="774.8" width="50.9" height="55.6" fill="#64d864" stroke="#ffffff" stroke-width="1"/><text x="842.2" y="784" font-size="7.3" fill="#1f2328">Hdmi</text><text x="842.2" y="794.3" font-size="6.2" fill="#1f2328" fill-opacity=".8">100%</text></g>
 <g><title>SceQafMgrForDriver: 25/25 (100%)</title><rect x="890.1" y="774.8" width="50.9" height="55.6" fill="#64d864" stroke="#ffffff" stroke-width="1"/><text x="893.1" y="784" font-size="7.3" fill="#1f2328">QafMgr</text><text x="893.1" y="794.3" font-size="6.2" fill="#1f2328" fill-opacity=".8">100%</text></g>
 <g><title>SceRegMgrForDriver: 25/25 (100%)</title><rect x="941.1" y="774.8" width="50.9" height="55.6" fill="#64d864" stroke="#ffffff" stroke-width="1"/><text x="944.1" y="784" font-size="7.3" fill="#1f2328">RegMgr</text><text x="944.1" y="794.3" font-size="6.2" fill="#1f2328" fill-opacity=".8">100%</text></g>
 <g><title>SceIntrmgrForDriver: 0/23 (0%)</title><rect x="678.2" y="830.3" width="48" height="54.2" fill="#d86464" stroke="#ffffff" stroke-width="1"/></g>
-<g><title>SceLcdForDriver: 0/23 (0%)</title><rect x="678.2" y="884.6" width="48" height="54.2" fill="#d86464" stroke="#ffffff" stroke-width="1"/></g>
+<g><title>SceLcdForDriver: 23/23 (100%), 4 default</title><rect x="678.2" y="884.6" width="48" height="54.2" fill="#64d864" stroke="#ffffff" stroke-width="1"/></g>
 <g><title>SceMotionDevForDriver: 23/23 (100%), 9 default</title><rect x="678.2" y="938.8" width="48" height="54.2" fill="#64d864" stroke="#ffffff" stroke-width="1"/></g>
 <g><title>SceCoredumpForDriver: 0/21 (0%)</title><rect x="678.2" y="993" width="48" height="49.5" fill="#d86464" stroke="#ffffff" stroke-width="1"/></g>
 <g><title>SceIntrmgrForKernel: 0/21 (0%)</title><rect x="678.2" y="1042.5" width="48" height="49.5" fill="#d86464" stroke="#ffffff" stroke-width="1"/></g>
-<g><title>SceOledForDriver: 0/21 (0%)</title><rect x="726.3" y="830.3" width="44.1" height="53.9" fill="#d86464" stroke="#ffffff" stroke-width="1"/></g>
+<g><title>SceOledForDriver: 21/21 (100%), 2 default</title><rect x="726.3" y="830.3" width="44.1" height="53.9" fill="#64d864" stroke="#ffffff" stroke-width="1"/></g>
 <g><title>SceUsbdForDriver: 0/21 (0%)</title><rect x="726.3" y="884.2" width="44.1" height="53.9" fill="#d86464" stroke="#ffffff" stroke-width="1"/></g>
 <g><title>SceAudioForDriver: 3/20 (15%)</title><rect x="726.3" y="938.1" width="44.1" height="51.3" fill="#d88764" stroke="#ffffff" stroke-width="1"/></g>
 <g><title>SceFios2KernelForDriver: 0/20 (0%)</title><rect x="726.3" y="989.4" width="44.1" height="51.3" fill="#d86464" stroke="#ffffff" stroke-width="1"/></g>
@@ -377,20 +377,20 @@
 <g><title>SceDebugForKernel: 17/17 (100%)</title><rect x="866.4" y="830.3" width="41.9" height="46" fill="#64d864" stroke="#ffffff" stroke-width="1"/></g>
 <g><title>SceExcpmgrForKernel: 1/17 (5.8%)</title><rect x="908.3" y="830.3" width="41.9" height="46" fill="#d87264" stroke="#ffffff" stroke-width="1"/></g>
 <g><title>SceIdStorageForDriver: 17/17 (100%)</title><rect x="950.1" y="830.3" width="41.9" height="46" fill="#64d864" stroke="#ffffff" stroke-width="1"/></g>
-<g><title>SceMtpIfForDriver: 0/17 (0%)</title><rect x="770.4" y="876.3" width="42.5" height="45.3" fill="#d86464" stroke="#ffffff" stroke-width="1"/></g>
+<g><title>SceMtpIfForDriver: 17/17 (100%), 12 default</title><rect x="770.4" y="876.3" width="42.5" height="45.3" fill="#64d864" stroke="#ffffff" stroke-width="1"/></g>
 <g><title>SceSblAIMgrForDriver: 17/17 (100%)</title><rect x="770.4" y="921.6" width="42.5" height="45.3" fill="#64d864" stroke="#ffffff" stroke-width="1"/></g>
 <g><title>SceDebugForDriver: 16/16 (100%)</title><rect x="770.4" y="966.9" width="42.5" height="42.6" fill="#64d864" stroke="#ffffff" stroke-width="1"/></g>
 <g><title>SceSblSmSchedProxyForKernel: 16/16 (100%), 2 default</title><rect x="770.4" y="1009.5" width="42.5" height="42.6" fill="#64d864" stroke="#ffffff" stroke-width="1"/></g>
-<g><title>SceDmacmgrForDriver: 2/15 (13.3%)</title><rect x="770.4" y="1052.1" width="42.5" height="39.9" fill="#d88364" stroke="#ffffff" stroke-width="1"/></g>
-<g><title>SceDsiForDriver: 0/15 (0%)</title><rect x="812.9" y="876.3" width="46.3" height="36.7" fill="#d86464" stroke="#ffffff" stroke-width="1"/></g>
+<g><title>SceDmacmgrForDriver: 4/15 (26.6%)</title><rect x="770.4" y="1052.1" width="42.5" height="39.9" fill="#d8a264" stroke="#ffffff" stroke-width="1"/></g>
+<g><title>SceDsiForDriver: 15/15 (100%), 4 default</title><rect x="812.9" y="876.3" width="46.3" height="36.7" fill="#64d864" stroke="#ffffff" stroke-width="1"/></g>
 <g><title>SceModulemgrForDriver: 13/15 (86.6%)</title><rect x="859.3" y="876.3" width="46.3" height="36.7" fill="#83d864" stroke="#ffffff" stroke-width="1"/></g>
-<g><title>SceClockgenForDriver: 0/14 (0%)</title><rect x="905.6" y="876.3" width="43.2" height="36.7" fill="#d86464" stroke="#ffffff" stroke-width="1"/></g>
+<g><title>SceClockgenForDriver: 14/14 (100%), 1 default</title><rect x="905.6" y="876.3" width="43.2" height="36.7" fill="#64d864" stroke="#ffffff" stroke-width="1"/></g>
 <g><title>ScePfsMgrForKernel: 0/14 (0%)</title><rect x="948.8" y="876.3" width="43.2" height="36.7" fill="#d86464" stroke="#ffffff" stroke-width="1"/></g>
 <g><title>SceSblMgKeyMgrForDriver: 14/14 (100%), 13 default</title><rect x="812.9" y="913" width="41.1" height="38.5" fill="#64d864" stroke="#ffffff" stroke-width="1"/></g>
-<g><title>SceSystimerForDriver: 0/14 (0%)</title><rect x="812.9" y="951.6" width="41.1" height="38.5" fill="#d86464" stroke="#ffffff" stroke-width="1"/></g>
+<g><title>SceSystimerForDriver: 14/14 (100%)</title><rect x="812.9" y="951.6" width="41.1" height="38.5" fill="#64d864" stroke="#ffffff" stroke-width="1"/></g>
 <g><title>SceRegMgrForTool: 13/13 (100%)</title><rect x="812.9" y="990.1" width="41.1" height="35.8" fill="#64d864" stroke="#ffffff" stroke-width="1"/></g>
-<g><title>SceMsifForDriver: 0/12 (0%)</title><rect x="812.9" y="1025.9" width="41.1" height="33" fill="#d86464" stroke="#ffffff" stroke-width="1"/></g>
-<g><title>SceUsbMtpForDriver: 0/12 (0%)</title><rect x="812.9" y="1059" width="41.1" height="33" fill="#d86464" stroke="#ffffff" stroke-width="1"/></g>
+<g><title>SceMsifForDriver: 12/12 (100%), 4 default</title><rect x="812.9" y="1025.9" width="41.1" height="33" fill="#64d864" stroke="#ffffff" stroke-width="1"/></g>
+<g><title>SceUsbMtpForDriver: 12/12 (100%), 12 default</title><rect x="812.9" y="1059" width="41.1" height="33" fill="#64d864" stroke="#ffffff" stroke-width="1"/></g>
 <g><title>SceHpremoteForDriver: 11/11 (100%), 1 default</title><rect x="854.1" y="913" width="37.9" height="32.8" fill="#64d864" stroke="#ffffff" stroke-width="1"/></g>
 <g><title>SceAudioInForDriver: 10/10 (100%)</title><rect x="892" y="913" width="34.5" height="32.8" fill="#64d864" stroke="#ffffff" stroke-width="1"/></g>
 <g><title>SceGpioForDriver: 10/10 (100%)</title><rect x="926.5" y="913" width="34.5" height="32.8" fill="#64d864" stroke="#ffffff" stroke-width="1"/></g>

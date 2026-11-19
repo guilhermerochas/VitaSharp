@@ -101,7 +101,7 @@ syscall (o que o código de usuário chama) ficam no censo do usuário (`progres
 | SceBusErrorForKernel | SceKernelBusError (0x193156B1) | 1 | 1 | 0 | 1 | 0 | 0 | 1 |
 | SceCameraForDriver | SceCamera (0xBCBC1F4A) | 25 | 0 | 0 | 0 | 25 | 2 | 24 |
 | SceCdramForDriver | SceLowio (0xC8CD941E) | 3 | 3 | 1 | 2 | 0 | 0 | 3 |
-| SceClockgenForDriver | SceClockgen (0xFF160234) | 14 | 0 | 0 | 0 | 14 | 8 | 13 |
+| SceClockgenForDriver | SceClockgen (0xFF160234) | 14 | 0 | 13 | 1 | 0 | 0 | 13 |
 | SceCodecEngineWrapperForDebugger | SceCodecEngineWrapper (0x615771E2) | 1 | 1 | 0 | 1 | 0 | 0 | 1 |
 | SceCodecEngineWrapperForDriver | SceCodecEngineWrapper (0x51593F20) | 50 | 0 | 0 | 0 | 50 | 47 | 50 |
 | SceCodecForDriver | SceCodec (0x7697DFB4) | 9 | 9 | 0 | 9 | 0 | 0 | 0 |
@@ -116,17 +116,17 @@ syscall (o que o código de usuário chama) ficam no censo do usuário (`progres
 | SceDebugLedForDriver | SceSysmem (0x7BC05EAD) | 9 | 9 | 9 | 0 | 0 | 0 | 0 |
 | SceDipswForDriver | SceSysmem (0xC9E26388) | 4 | 4 | 4 | 0 | 0 | 0 | 0 |
 | SceDisplayForDriver | SceDisplay (0x9FED47AC) | 53 | 18 | 18 | 0 | 35 | 19 | 4 |
-| SceDmacmgrForDriver | SceKernelDmacMgr (0xEB4E3738) | 15 | 2 | 2 | 0 | 13 | 10 | 2 |
-| SceDsiForDriver | SceLowio (0xEC897883) | 15 | 0 | 0 | 0 | 15 | 10 | 3 |
+| SceDmacmgrForDriver | SceKernelDmacMgr (0xEB4E3738) | 15 | 2 | 4 | 0 | 11 | 10 | 2 |
+| SceDsiForDriver | SceLowio (0xEC897883) | 15 | 0 | 11 | 4 | 0 | 0 | 3 |
 | SceExcpmgrForKernel | SceExcpmgr (0x1496A5B5) | 17 | 1 | 1 | 0 | 16 | 5 | 15 |
 | SceFios2KernelForDriver | SceFios2Kernel (0x54D6B9EB) | 20 | 0 | 0 | 0 | 20 | 9 | 6 |
 | SceGpioForDriver | SceLowio (0xF0EF5743) | 10 | 10 | 10 | 0 | 0 | 0 | 0 |
 | SceGpsForDriver | SceGps (0x4E75DFF2) | 7 | 7 | 7 | 0 | 0 | 0 | 7 |
 | SceGpuEs4ForDriver | SceGpuEs4 (0x54802381) | 31 | 0 | 0 | 0 | 31 | 28 | 8 |
 | SceGrabForDriver | SceLowio (0x81C54BED) | 8 | 8 | 0 | 8 | 0 | 0 | 0 |
-| SceHdmiForDriver | SceHdmi (0x58A1A1C5) | 25 | 0 | 0 | 0 | 25 | 19 | 25 |
+| SceHdmiForDriver | SceHdmi (0x58A1A1C5) | 25 | 0 | 13 | 12 | 0 | 0 | 25 |
 | SceHidForDriver | SceHid (0xB6000991) | 30 | 30 | 29 | 1 | 0 | 0 | 2 |
-| SceHpremoteForDriver | SceHpremote (0xFD0B0E27) | 11 | 0 | 10 | 1 | 0 | 0 | 0 |
+| SceHpremoteForDriver | SceHpremote (0xFD0B0E27) | 11 | 11 | 10 | 1 | 0 | 0 | 0 |
 | SceI2cForDriver | SceLowio (0xE14BEF6E) | 8 | 8 | 8 | 0 | 0 | 0 | 2 |
 | SceIdStorageForDriver | SceIdStorage (0xE1AC6D7C) | 17 | 17 | 17 | 0 | 0 | 0 | 0 |
 | SceIftuForDriver | SceLowio (0xCAFCFE50) | 9 | 8 | 8 | 0 | 1 | 1 | 3 |
@@ -135,17 +135,17 @@ syscall (o que o código de usuário chama) ficam no censo do usuário (`progres
 | SceIofilemgrForDriver | SceIofilemgr (0x40FD29C7) | 148 | 54 | 54 | 0 | 94 | 68 | 18 |
 | SceKernelSuspendForDriver | SceSysmem (0x7290B21C) | 28 | 28 | 28 | 0 | 0 | 0 | 24 |
 | SceKernelUtilsForDriver | SceSysmem (0x496AD8B4) | 57 | 1 | 1 | 0 | 56 | 33 | 14 |
-| SceLcdForDriver | SceLcd (0xFA916D71) | 23 | 0 | 0 | 0 | 23 | 13 | 15 |
+| SceLcdForDriver | SceLcd (0xFA916D71) | 23 | 0 | 19 | 4 | 0 | 0 | 15 |
 | SceLedForDriver | ScePower (0x282C1323) | 1 | 1 | 0 | 1 | 0 | 0 | 0 |
 | SceMagicGateForDriver | SceMagicGate (0x4EA9847A) | 48 | 0 | 0 | 0 | 48 | 37 | 48 |
 | SceModulemgrForDriver | SceKernelModulemgr (0xD4A60A52) | 15 | 13 | 13 | 0 | 2 | 0 | 0 |
 | SceModulemgrForKernel | SceKernelModulemgr (0x92C9FFC2) | 48 | 5 | 5 | 0 | 43 | 23 | 5 |
 | SceMotionDevForDriver | SceMotionDev (0xA501409A) | 23 | 23 | 14 | 9 | 0 | 0 | 12 |
-| SceMsifForDriver | SceMsif (0xB706084A) | 12 | 0 | 0 | 0 | 12 | 8 | 6 |
-| SceMtpIfForDriver | SceMtpIfDriver (0x73309DFE) | 17 | 0 | 0 | 0 | 17 | 11 | 17 |
+| SceMsifForDriver | SceMsif (0xB706084A) | 12 | 0 | 8 | 4 | 0 | 0 | 6 |
+| SceMtpIfForDriver | SceMtpIfDriver (0x73309DFE) | 17 | 0 | 5 | 12 | 0 | 0 | 17 |
 | SceNetPsForDriver | SceNetPs (0xB2A5C920) | 20 | 17 | 17 | 0 | 3 | 2 | 7 |
 | SceNpDrmForDriver | SceNpDrm (0xD84DC44A) | 26 | 3 | 3 | 0 | 23 | 17 | 0 |
-| SceOledForDriver | SceOled (0x60C7478A) | 21 | 0 | 0 | 0 | 21 | 12 | 13 |
+| SceOledForDriver | SceOled (0x60C7478A) | 21 | 0 | 19 | 2 | 0 | 0 | 13 |
 | ScePervasiveForDriver | SceLowio (0xE692C727) | 156 | 121 | 116 | 5 | 35 | 11 | 131 |
 | ScePfsFacadeForKernel | ScePfsMgr (0xC26DC7BD) | 6 | 0 | 0 | 0 | 6 | 6 | 6 |
 | ScePfsMgrForKernel | ScePfsMgr (0xA067B56F) | 14 | 0 | 0 | 0 | 14 | 11 | 5 |
@@ -188,7 +188,7 @@ syscall (o que o código de usuário chama) ficam no censo do usuário (`progres
 | SceSysmemForKernel | SceSysmem (0x02451F0F) | 169 | 8 | 8 | 0 | 161 | 69 | 140 |
 | SceSysrootForDriver | SceSysmem (0x2ED7F97A) | 181 | 124 | 124 | 0 | 57 | 46 | 156 |
 | SceSysrootForKernel | SceSysmem (0x3691DA45) | 143 | 48 | 48 | 0 | 95 | 51 | 105 |
-| SceSystimerForDriver | SceSystimer (0xA47EB09A) | 14 | 0 | 0 | 0 | 14 | 8 | 4 |
+| SceSystimerForDriver | SceSystimer (0xA47EB09A) | 14 | 0 | 14 | 0 | 0 | 0 | 4 |
 | SceThreadmgrForDriver | SceKernelThreadMgr (0xE2C40624) | 248 | 107 | 107 | 0 | 141 | 55 | 136 |
 | SceThreadmgrForKernel | SceKernelThreadMgr (0x7F8593BA) | 64 | 0 | 0 | 0 | 64 | 15 | 63 |
 | SceTouchForDriver | SceTouch (0xA4A7DAFC) | 29 | 29 | 29 | 0 | 0 | 0 | 10 |
@@ -198,11 +198,11 @@ syscall (o que o código de usuário chama) ficam no censo do usuário (`progres
 | SceUsbAudioForDriver | SceUsbAudio (0x066BBE8B) | 5 | 5 | 2 | 3 | 0 | 0 | 0 |
 | SceUsbEtherRtlForDriver | SceUsbEtherRtl (0x6AC379A7) | 3 | 3 | 0 | 3 | 0 | 0 | 3 |
 | SceUsbMassForDriver | SceUsbMass (0x15243EC5) | 6 | 6 | 6 | 0 | 0 | 0 | 6 |
-| SceUsbMtpForDriver | SceUsbMtp (0xF0122DB1) | 12 | 0 | 0 | 0 | 12 | 12 | 12 |
+| SceUsbMtpForDriver | SceUsbMtp (0xF0122DB1) | 12 | 0 | 0 | 12 | 0 | 0 | 12 |
 | SceUsbServForDriver | SceUsbServ (0xA75BBDF2) | 7 | 7 | 5 | 2 | 0 | 0 | 0 |
 | SceUsbdForDriver | SceUsbd (0xA0EBCA41) | 21 | 0 | 0 | 0 | 21 | 20 | 0 |
 | SceUsbstorForDriver | SceUsbstorDriver (0x5D01DDE4) | 9 | 9 | 9 | 0 | 0 | 0 | 9 |
 | SceWlanBtForDriver | SceWlanBt (0xFD94FCE9) | 4 | 4 | 4 | 0 | 0 | 0 | 0 |
 | SceZlibForDriver | SceSblPostSsMgr (0xE241534E) | 65 | 0 | 0 | 0 | 65 | 6 | 65 |
-| **Total** | | **3918** | **1505** | **1364** | **152** | **2402** | **1265** | **2037** |
+| **Total** | | **3918** | **1516** | **1468** | **203** | **2247** | **1164** | **2037** |
 
