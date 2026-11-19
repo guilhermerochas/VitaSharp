@@ -176,7 +176,20 @@ jogo (`dotnet test`) para saber se uma mudança quebrou algo. Nenhuma mudança �
   quem chamou; DONT_REMOVE (0x100) espia; os Try recusam outros bits de modo (ILLEGAL_MODE); lista de buffers maior
   que o pipe é ILLEGAL_SIZE também na recepção; a fila e o buffer entram no save state (estados antigos carregam
   com fila vazia). Eram bugs (sem fila: quem acordava primeiro no host levava os dados), corrigidos no mesmo hash.
-  Faltam eventos e callbacks.
+  Callbacks e esperas CB cobertos (19/11/2026, sync5, test/sync5, `CallbackInterleavingTests`, conferido no threadmgr
+  3.74: create 0x8100c4bc, delete 0x8100c700, notify 0x8100c820, o executor 0x8100c110, cancel 0x8100ca98, info
+  0x8100baac e a espera do event flag 0x8100f0e4): os callbacks da thread rodam na ordem de criação, com r0 = ID do
+  notificador (-1 no sceKernelNotifyCallback, também no info), r1 = contagem, r2 = último argumento, r3 = comum; um
+  notificado de novo enquanto roda roda de novo na mesma passada; create com atributo é ILLEGAL_ATTR; delete de UID
+  desconhecido ou já apagado é UNKNOWN_CALLBACK_ID, tira as notificações pendentes e, durante a execução, libera o
+  UID só no fim dela; callbacks notificados depois do set que satisfez a espera CB rodam antes de ela voltar. Event
+  flag: a notificação tira o waiter CB da fila (NOTIFY_CALLBACK), ele roda os callbacks, confere o padrão e volta ao
+  fim da fila com o que sobra do prazo (um set durante o callback não o vê); sem WAITMULTIPLE a espera é da thread
+  que espera (ela mesma pode esperar/poll de um callback; outra thread recebe EVF_MULTI). Eram bugs, corrigidos no
+  mesmo hash. Diferença mantida de propósito: callbacks não aninham (o firmware aninha; ver `GuestThread.CallbackDepth`).
+  Faltam: a saída da fila por notificação nas outras esperas CB (semáforo, mutex, lwmutex, cond, msgpipe, rwlock: hoje
+  o waiter fica na fila enquanto o callback roda), os eventos simples (sceKernelWaitEvent*, RegisterCallbackToEvent,
+  Set/PulseEventWithNotifyCallback: notifyId = UID do evento) e o 'cancel/delete não segura o acordado' do event flag.
 - [ ] [P3][G] **Contratos do escalonador e do ritmo da CPU:** quem roda primeiro por prioridade e afinidade, quanto tempo de
   guest passa por chamada HLE e por espera, o que acorda quem; uma mudança de desempenho que altere a ordem entre
   threads quebra um teste.
