@@ -160,6 +160,29 @@ public sealed class CallbackWaitInterleavingTests(GuestMemoryFixture fixture) : 
                     Waiters = () => pipe.RecvWaiters,
                 };
             }
+            case "rwlock":
+            {
+                int uid = Call(Tm, "sceKernelCreateRWLock", "cb-rwlock", 0u, 0u);
+                Assert.Equal(0, Call(Tm, "sceKernelLockWriteRWLock", uid, new Ptr<uint>(0))); // held by main
+                RwLock rwLock = _h.Emu.Kernel.Objects.Get<RwLock>(uid)!;
+                bool first = true;
+                return new Subject
+                {
+                    Sync = rwLock,
+                    CbWait = (th, timeout) => (int)th.DispatchForTest("_sceKernelLockWriteRWLockCB", (uint)uid, timeout),
+                    PlainWait = () => Call(Tm, "sceKernelLockWriteRWLock", uid, new Ptr<uint>(0)),
+                    Give = () =>
+                    {
+                        if (first)
+                        {
+                            first = false;
+                            Assert.Equal(0, Call(Tm, "sceKernelUnlockWriteRWLock", uid));
+                        }
+                    },
+                    Waiters = () => rwLock.WriteWaiters,
+                    After = () => Assert.Equal(0, Call(Tm, "sceKernelUnlockWriteRWLock", uid)),
+                };
+            }
             default:
             {
                 int uid = Call(Tm, "sceKernelCreateSimpleEvent", _h.Str("cb-event"), EventBits.AttrAutoReset, 0u, 0u);
@@ -194,6 +217,7 @@ public sealed class CallbackWaitInterleavingTests(GuestMemoryFixture fixture) : 
     [InlineData("lwmutex-syscall")]
     [InlineData("cond")]
     [InlineData("msgpipe")]
+    [InlineData("rwlock")]
     [InlineData("event")]
     public void ANotifiedCbWaiterLeavesTheQueueAndJoinsItAgainAtTheEnd(string kind)
     {
@@ -260,6 +284,7 @@ public sealed class CallbackWaitInterleavingTests(GuestMemoryFixture fixture) : 
     [InlineData("lwmutex-syscall")]
     [InlineData("cond")]
     [InlineData("msgpipe")]
+    [InlineData("rwlock")]
     [InlineData("event")]
     public void ACallbackInTheMiddleDoesNotRestartTheTimeout(string kind)
     {
@@ -300,7 +325,7 @@ public sealed class CallbackWaitInterleavingTests(GuestMemoryFixture fixture) : 
             _h.Join(waiter, 5_000);
             Assert.Equal(SceError.WAIT_TIMEOUT, result);
             Assert.Equal(0u, GuestMemory.R32(timeout));
-            if (kind is "mutex" or "lwmutex" or "lwmutex-syscall")
+            if (kind is "mutex" or "lwmutex" or "lwmutex-syscall" or "rwlock")
             {
                 subject.Give!(); // main still holds it
             }
@@ -376,8 +401,8 @@ public sealed class CallbackWaitInterleavingTests(GuestMemoryFixture fixture) : 
     }
 
     /// <summary>
-    /// A reader-writer lock's CB lock is not counted as a waiter while its callbacks run, and a callback in the middle
-    /// does not restart its timeout (the lock has no queue yet, so only the count and the deadline are observable).
+    /// A reader-writer lock's CB lock, behind readers, is not counted as a waiter while its callbacks run, and a
+    /// callback in the middle does not restart its timeout.
     /// </summary>
     [Fact]
     public void ARwLockCbWaiterIsNotCountedWhileItsCallbacksRun()

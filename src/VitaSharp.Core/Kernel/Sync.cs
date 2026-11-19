@@ -3348,203 +3348,564 @@ public sealed partial class MsgPipe : KernelObject, ICallbackInterruptedWait
     }
 }
 
-public sealed partial class RwLock : KernelObject
+/// <summary>
+/// sceKernel*RWLock, as threadmgr does it (FW 3.74: the lock 0x81024bb0 (read and write, plain and CB), the try-locks
+/// 0x810254f0 / 0x81025758, the unlocks 0x810255b4 / 0x81025888, cancel 0x81025a50, info 0x81024ef4, and the class's
+/// wait-release handler 0x810249b8 and destructor 0x81024aa4, studied in the decompiled module): one lock count (the
+/// readers holding it, or the writer's recursion) and ONE wait queue of readers and writers, first come first served
+/// or, with <see cref="AttrThreadPriority"/>, by thread priority (arrival order among equal priorities).
+/// <list type="bullet">
+/// <item>A read lock takes it at once only when no writer holds it and nobody waits (a waiting writer keeps new readers
+/// out); a write lock only when nobody holds it. The writer's own read lock is RW_LOCK_FAILED_TO_LOCK; its own write
+/// lock counts up with <see cref="AttrRecursive"/>, else RW_LOCK_RECURSIVE.</item>
+/// <item>The unlock that frees it hands it over inside the call: to the first waiting writer in queue order (past the
+/// readers queued ahead of it) when a writer waits, else to every waiting reader at once.</item>
+/// <item>A waiter whose guest-time timeout passes, or that a callback notification takes off the queue, leaves it, and
+/// the hand-over is tried again for the others (with no writer holding it: every reader when no writer waits, else the
+/// first writer once nobody holds it).</item>
+/// <item>Cancel frees the lock and releases every waiter with WAIT_CANCEL (how many readers and writers waited), the
+/// caller then holding it for writing with flag 1; delete releases them with WAIT_DELETE.</item>
+/// </list>
+/// </summary>
+public sealed partial class RwLock : KernelObject, ICallbackInterruptedWait
 {
     public override int UidClass => 12;
+    /// <summary>SCE_KERNEL_RW_LOCK_ATTR_RECURSIVE: the writer may lock it for writing again.</summary>
+    public const uint AttrRecursive = 0x2;
+    /// <summary>SCE_KERNEL_RW_LOCK_ATTR_TH_PRIO: waiters queue by thread priority instead of first come first served.</summary>
+    public const uint AttrThreadPriority = 0x2000;
     public uint Attr;
-    public int Readers;
+    /// <summary>The lock count: the readers holding it, or the writer's recursion (SceKernelRWLockInfo.lockCount).</summary>
+    public int LockCount;
     public GuestThread? Writer;
-    public int WriteCount;
+    /// <summary>Readers and writers in the wait queue (SceKernelRWLockInfo.numReadWaitThreads / numWriteWaitThreads).</summary>
     public int ReadWaiters, WriteWaiters;
     private bool _deleted;
-    private int _cancelled;
 
-    public int LockRead(GuestThread self, Ptr<uint> timeout)
+    /// <summary>One thread in sceKernelLockReadRWLock or sceKernelLockWriteRWLock.</summary>
+    private sealed class WaitRequest
     {
+        public bool Write;
+        public int Priority;
+        public int ThreadUid;
+        /// <summary>The waiting thread (null: a host caller, or a restored waiter until it is resolved).</summary>
+        public GuestThread? Thread;
+        /// <summary>An unlock (or a waiter leaving ahead of it) gave it the lock.</summary>
+        public bool Granted;
+        /// <summary>Off the queue without the lock: WAIT_CANCEL, WAIT_DELETE, WAIT_TIMEOUT or NOTIFY_CALLBACK.</summary>
+        public int Error;
+        /// <summary>Guest time at the wait and its limit in microseconds (-1: none).</summary>
+        public long StartTicks;
+        public long LimitUs = -1;
+    }
+
+    /// <summary>The wait queue, in the order the hand-over looks at it.</summary>
+    private readonly List<WaitRequest> _queue = new();
+
+    /// <summary>Waiters given the lock that have not returned yet (their thread still has to wake up).</summary>
+    private readonly List<WaitRequest> _granted = new();
+
+    /// <summary>Waiters of a loaded save state whose threads have not issued their lock again yet.</summary>
+    private readonly List<WaitRequest> _restored = new();
+
+    public int LockRead(GuestThread self, Ptr<uint> timeout) => Lock(self, write: false, timeout);
+
+    public int LockWrite(GuestThread self, Ptr<uint> timeout) => Lock(self, write: true, timeout);
+
+    /// <summary>A free lock for this kind of caller: no writer and, for a reader, nobody queued (a waiting writer goes
+    /// first); for a writer, no readers either.</summary>
+    private bool Available(bool write) => Writer == null && (write ? LockCount == 0 : _queue.Count == 0);
+
+    /// <summary>The writer's own lock again: counted with <see cref="AttrRecursive"/> (for writing only).</summary>
+    private int LockAgain(bool write)
+    {
+        if (!write)
+        {
+            return SceError.RW_LOCK_FAILED_TO_LOCK;
+        }
+
+        if ((Attr & AttrRecursive) == 0)
+        {
+            return SceError.RW_LOCK_RECURSIVE;
+        }
+
+        if (LockCount == int.MaxValue)
+        {
+            return SceError.RW_LOCK_LOCK_OVF;
+        }
+
+        LockCount++;
+        return SceError.OK;
+    }
+
+    /// <summary>Takes an <see cref="Available"/> lock for the caller.</summary>
+    private int Take(GuestThread? self, bool write)
+    {
+        if (LockCount == int.MaxValue)
+        {
+            return SceError.RW_LOCK_LOCK_OVF;
+        }
+
+        if (write)
+        {
+            Writer = self;
+        }
+
+        LockCount++;
+        return SceError.OK;
+    }
+
+    private int Lock(GuestThread self, bool write, Ptr<uint> timeout)
+    {
+        int result;
+        bool woken;
         lock (this)
         {
+            if (_deleted)
+            {
+                return SceError.WAIT_DELETE;
+            }
+
+            ReleaseExpired();
+            WaitRequest? request = TakeRestored(self);
+            if (request != null && (request.Granted || request.Error != 0))
+            {
+                _granted.Remove(request);
+                ObserveSignal();
+                return request.Granted ? SceError.OK : request.Error;
+            }
+
+            if (request == null && Writer == self)
+            {
+                return LockAgain(write);
+            }
+
             var deadline = Wait.CallbackWaitDeadline.Start(timeout);
             while (true)
             {
-                if (Wait.CallbacksPending(self))
+                // threadmgr 3.74 (0x81024bb0): a CB lock runs the notified callbacks before it looks at the lock
+                if (request == null && Wait.CallbacksPending(self))
                 {
-                    Wait.RunCallbacks(this, self); // threadmgr 3.74 (0x81024bb0): the CB lock runs them first
+                    Wait.RunCallbacks(this, self);
                     if (_deleted)
                     {
                         return SceError.WAIT_DELETE;
                     }
+
+                    ReleaseExpired();
                 }
-                if (!deadline.PrepareSleep(timeout))
+                if (request == null)
                 {
-                    return SceError.WAIT_TIMEOUT;
+                    if (Available(write))
+                    {
+                        int taken = Take(self, write);
+                        if (taken == SceError.OK)
+                        {
+                            ObserveSignal();
+                            deadline.WriteLeft(timeout);
+                        }
+
+                        return taken;
+                    }
+
+                    if (!deadline.PrepareSleep(timeout))
+                    {
+                        return SceError.WAIT_TIMEOUT;
+                    }
+
+                    request = new WaitRequest { Write = write, Priority = self.Priority, ThreadUid = self.Uid };
+                    Enqueue(request);
                 }
 
-                ReadWaiters++;
-                int gen = _cancelled;
-                int r;
-                bool readable;
+                request.Thread = self;
+                request.StartTicks = GuestClock.Ticks;
+                request.LimitUs = timeout.IsNull ? -1 : timeout.Value;
                 try
                 {
-                    r = Wait.Until(this, (l: this, self, gen), static t => t.l.Writer == null || t.l.Writer == t.self || Wait.CallbacksPending(t.self), timeout,
-                        static t => t.l._deleted ? SceError.WAIT_DELETE : t.l._cancelled != t.gen ? SceError.WAIT_CANCEL : 0, WaitDescription);
-                    readable = Writer == null || Writer == self;
+                    // a writer that ends without unlocking leaves the lock to the queue: looked at on every wake-up slice
+                    result = Wait.UntilGranted(this, (rwLock: this, request),
+                        static s => s.request.Granted || s.rwLock.HandOverFromEndedWriter(s.request) || Wait.CallbacksPending(s.request.Thread),
+                        timeout, static s => s.request.Granted ? 0 : s.request.Error, WaitDescription, out woken);
                 }
                 finally
                 {
-                    ReadWaiters--;
+                    if (request.Granted)
+                    {
+                        _granted.Remove(request);
+                    }
+                    else if (request.Error == 0 && Dequeue(request))
+                    {
+                        // its own timeout, a notification that came before it was queued, or the thread's end
+                        if (HandOver())
+                        {
+                            Monitor.PulseAll(this);
+                        }
+                    }
                 }
-                if (r == SceError.OK && !readable)
+                if (request.Granted)
                 {
-                    deadline.Interrupted = true; // a callback notification: not a waiter while its callbacks run
-                    continue;
-                }
-                if (r == SceError.OK)
-                {
-                    Readers++;
-                    deadline.WriteLeft(timeout);
+                    result = SceError.OK; // a timeout or cancel that came after the hand-over does not undo it
+                    break;
                 }
 
-                return r;
+                if (request.Error == SceError.NOTIFY_CALLBACK || (request.Error == 0 && result == SceError.OK))
+                {
+                    // off the queue for its callbacks: run them, look at the lock again, queue anew behind the others
+                    deadline.Interrupted = true;
+                    request = null;
+                    continue;
+                }
+                if (request.Error == SceError.WAIT_TIMEOUT)
+                {
+                    result = SceError.WAIT_TIMEOUT;
+                    timeout.TrySet(0);
+                }
+
+                break;
             }
+        }
+        if (woken && result == SceError.OK)
+        {
+            Wait.WakeLatency();
+        }
+
+        return result;
+    }
+
+    private void Enqueue(WaitRequest request)
+    {
+        if (request.Write)
+        {
+            WriteWaiters++;
+        }
+        else
+        {
+            ReadWaiters++;
+        }
+
+        if ((Attr & AttrThreadPriority) == 0)
+        {
+            _queue.Add(request);
+            return;
+        }
+
+        int index = 0;
+        while (index < _queue.Count && _queue[index].Priority <= request.Priority)
+        {
+            index++;
+        }
+
+        _queue.Insert(index, request);
+    }
+
+    /// <summary>Takes the request off the queue; false when it was not there.</summary>
+    private bool Dequeue(WaitRequest request)
+    {
+        if (!_queue.Remove(request))
+        {
+            return false;
+        }
+
+        if (request.Write)
+        {
+            WriteWaiters--;
+        }
+        else
+        {
+            ReadWaiters--;
+        }
+
+        return true;
+    }
+
+    private void Grant(WaitRequest request)
+    {
+        Dequeue(request);
+        if (request.Write)
+        {
+            Writer = request.Thread;
+        }
+
+        LockCount++;
+        request.Granted = true;
+        _granted.Add(request);
+    }
+
+    /// <summary>The first waiting writer, in queue order, gets the lock (threadmgr 3.74: the unlocks and the class's
+    /// wait-release handler look past the readers queued ahead of it).</summary>
+    private bool GrantFirstWriter()
+    {
+        foreach (WaitRequest request in _queue)
+        {
+            if (request.Write)
+            {
+                Grant(request);
+                return true;
+            }
+        }
+
+        return false;
+    }
+
+    /// <summary>Every waiter (all readers: no writer waits) gets the lock.</summary>
+    private bool GrantAllReaders()
+    {
+        bool granted = _queue.Count > 0;
+        while (_queue.Count > 0)
+        {
+            Grant(_queue[0]);
+        }
+
+        return granted;
+    }
+
+    /// <summary>
+    /// The class's wait-release handler (threadmgr 3.74, 0x810249b8), run when a waiter leaves the queue without the lock
+    /// (its timeout, a callback notification): with no writer holding it, every waiting reader gets it when no writer
+    /// waits, else the first waiting writer once nobody holds it. True when it gave the lock to someone.
+    /// </summary>
+    private bool HandOver()
+    {
+        if (_queue.Count == 0 || Writer != null)
+        {
+            return false;
+        }
+
+        if (WriteWaiters == 0)
+        {
+            return GrantAllReaders();
+        }
+
+        return LockCount == 0 && GrantFirstWriter();
+    }
+
+    /// <summary>Wait predicate: a writer that ended without unlocking leaves the lock to the queue (the woken one may be
+    /// another waiter). True when <paramref name="request"/> got it.</summary>
+    private bool HandOverFromEndedWriter(WaitRequest request)
+    {
+        if (Writer is { Status: ThreadStatus.Dormant })
+        {
+            Writer = null;
+            LockCount = 0;
+            if (HandOver())
+            {
+                Monitor.PulseAll(this);
+            }
+        }
+
+        return request.Granted;
+    }
+
+    /// <summary>A callback notification reached a CB waiter (threadmgr 3.74's notify ends its sleep with
+    /// NOTIFY_CALLBACK): it leaves the queue as a timed-out waiter does, runs its callbacks and locks again.</summary>
+    public void InterruptForCallbacks(GuestThread thread)
+    {
+        foreach (WaitRequest request in _queue)
+        {
+            if (request.Thread != thread)
+            {
+                continue;
+            }
+
+            request.Error = SceError.NOTIFY_CALLBACK;
+            Dequeue(request);
+            HandOver();
+            return;
         }
     }
 
+    /// <summary>
+    /// The kernel's timers at the waiters' guest-time deadlines: a waiter whose timeout has passed is off the queue
+    /// (WAIT_TIMEOUT), however late its host thread is to notice, and each one leaving runs the hand-over for the
+    /// others, in the order the deadlines came. Called before every operation that looks at the queue.
+    /// </summary>
+    private void ReleaseExpired()
+    {
+        bool changed = false;
+        while (true)
+        {
+            WaitRequest? earliest = null;
+            foreach (WaitRequest request in _queue)
+            {
+                if (request.LimitUs < 0 || !Wait.Expired(request.StartTicks, request.LimitUs))
+                {
+                    continue;
+                }
+
+                if (earliest == null || Deadline(request) < Deadline(earliest))
+                {
+                    earliest = request;
+                }
+            }
+            if (earliest == null)
+            {
+                break;
+            }
+
+            earliest.Error = SceError.WAIT_TIMEOUT;
+            Dequeue(earliest);
+            HandOver();
+            changed = true;
+        }
+        if (changed)
+        {
+            Monitor.PulseAll(this); // the timed-out and the served waiters: nobody was woken by this thread
+        }
+    }
+
+    /// <summary>A waiter's deadline, for the order the timers fire in (the limit in guest microseconds).</summary>
+    private static double Deadline(WaitRequest request) => request.StartTicks + (double)request.LimitUs * System.Diagnostics.Stopwatch.Frequency / 1_000_000 / TimeScale.Wait;
+
+    /// <summary>The place a loaded save state kept for the calling thread's lock, if any.</summary>
+    private WaitRequest? TakeRestored(GuestThread self)
+    {
+        for (int i = 0; i < _restored.Count; i++)
+        {
+            if (_restored[i].ThreadUid == self.Uid)
+            {
+                WaitRequest request = _restored[i];
+                _restored.RemoveAt(i);
+                return request;
+            }
+        }
+
+        return null;
+    }
+
+    /// <summary>What sceKernelGetRWLockInfo reports (timed-out waiters already off the queue).</summary>
+    internal (int Count, GuestThread? Writer, int ReadWaiters, int WriteWaiters) Info()
+    {
+        lock (this)
+        {
+            ReleaseExpired();
+            return (LockCount, Writer, ReadWaiters, WriteWaiters);
+        }
+    }
+
+    /// <summary>sceKernelTryLockReadRWLock (threadmgr 3.74, 0x810254f0): only with no writer and nobody waiting.</summary>
     public int TryLockRead(GuestThread self)
     {
         lock (this)
         {
-            if (Writer != null && Writer != self)
+            ReleaseExpired();
+            if (!Available(write: false))
             {
                 return SceError.RW_LOCK_FAILED_TO_LOCK;
             }
 
-            Readers++;
-            return SceError.OK;
+            int taken = Take(self, write: false);
+            if (taken == SceError.OK)
+            {
+                ObserveSignal();
+            }
+
+            return taken;
         }
     }
 
-    public int UnlockRead()
-    {
-        lock (this)
-        {
-            if (Readers == 0)
-            {
-                return SceError.RW_LOCK_UNLOCK_UDF;
-            }
-
-            Readers--;
-            WakeWaiters();
-            return SceError.OK;
-        }
-    }
-
-    public int LockWrite(GuestThread self, Ptr<uint> timeout)
-    {
-        lock (this)
-        {
-            if (Writer == self)
-            {
-                WriteCount++;
-                return SceError.OK;
-            }
-            var deadline = Wait.CallbackWaitDeadline.Start(timeout);
-            while (true)
-            {
-                if (Wait.CallbacksPending(self))
-                {
-                    Wait.RunCallbacks(this, self); // threadmgr 3.74 (0x81024bb0): the CB lock runs them first
-                    if (_deleted)
-                    {
-                        return SceError.WAIT_DELETE;
-                    }
-                }
-                if (!deadline.PrepareSleep(timeout))
-                {
-                    return SceError.WAIT_TIMEOUT;
-                }
-
-                WriteWaiters++;
-                int gen = _cancelled;
-                int r;
-                bool writable;
-                try
-                {
-                    r = Wait.Until(this, (l: this, self, gen), static t => (t.l.Writer == null && t.l.Readers == 0) || Wait.CallbacksPending(t.self), timeout,
-                        static t => t.l._deleted ? SceError.WAIT_DELETE : t.l._cancelled != t.gen ? SceError.WAIT_CANCEL : 0, WaitDescription);
-                    writable = Writer == null && Readers == 0;
-                }
-                finally
-                {
-                    WriteWaiters--;
-                }
-                if (r == SceError.OK && !writable)
-                {
-                    deadline.Interrupted = true; // a callback notification: not a waiter while its callbacks run
-                    continue;
-                }
-                if (r == SceError.OK)
-                {
-                    Writer = self;
-                    WriteCount = 1;
-                    deadline.WriteLeft(timeout);
-                }
-
-                return r;
-            }
-        }
-    }
-
+    /// <summary>sceKernelTryLockWriteRWLock (threadmgr 3.74, 0x81025758): the writer's recursion, else only when
+    /// nobody holds it.</summary>
     public int TryLockWrite(GuestThread self)
     {
         lock (this)
         {
+            ReleaseExpired();
             if (Writer == self)
             {
-                WriteCount++;
-                return SceError.OK;
+                return LockAgain(write: true);
             }
-            if (Writer != null || Readers > 0)
+
+            if (!Available(write: true))
             {
                 return SceError.RW_LOCK_FAILED_TO_LOCK;
             }
 
-            Writer = self;
-            WriteCount = 1;
+            int taken = Take(self, write: true);
+            if (taken == SceError.OK)
+            {
+                ObserveSignal();
+            }
+
+            return taken;
+        }
+    }
+
+    /// <summary>sceKernelUnlockReadRWLock (threadmgr 3.74, 0x810255b4): RW_LOCK_FAILED_TO_UNLOCK while a writer holds
+    /// it, RW_LOCK_UNLOCK_UDF with no reader; the last reader's unlock hands it to the first waiting writer.</summary>
+    public int UnlockRead()
+    {
+        lock (this)
+        {
+            ReleaseExpired();
+            if (Writer != null)
+            {
+                return SceError.RW_LOCK_FAILED_TO_UNLOCK;
+            }
+
+            if (LockCount < 1)
+            {
+                return SceError.RW_LOCK_UNLOCK_UDF;
+            }
+
+            LockCount--;
+            RecordSignal();
+            if (LockCount == 0 && WriteWaiters > 0 && GrantFirstWriter())
+            {
+                WakeWaiters();
+            }
+
             return SceError.OK;
         }
     }
 
+    /// <summary>sceKernelUnlockWriteRWLock (threadmgr 3.74, 0x81025888): RW_LOCK_NOT_OWNED for any thread but the
+    /// writer; the unlock that brings the count to 0 hands it to the first waiting writer, or with none to every waiting
+    /// reader.</summary>
     public int UnlockWrite(GuestThread self)
     {
         lock (this)
         {
+            ReleaseExpired();
             if (Writer != self)
             {
                 return SceError.RW_LOCK_NOT_OWNED;
             }
 
-            if (--WriteCount == 0)
+            RecordSignal();
+            if (--LockCount > 0)
             {
-                Writer = null;
+                return SceError.OK;
             }
 
-            WakeWaiters();
+            Writer = null;
+            LockCount = 0;
+            if (HandOver())
+            {
+                WakeWaiters();
+            }
+
             return SceError.OK;
         }
     }
 
-    /// <summary>Wakes every waiter with WAIT_CANCEL and resets the lock; with <paramref name="keepWriteLock"/> the caller
-    /// ends up holding it for writing (SCE_KERNEL_RW_LOCK_CANCEL_WITH_WRITE_LOCK).</summary>
-    public int Cancel(GuestThread self, Ptr<uint> numRead, Ptr<uint> numWrite, bool keepWriteLock)
+    /// <summary>sceKernelCancelRWLock (threadmgr 3.74, 0x81025a50): a flag above 1 is INVALID_FLAGS; the lock is freed
+    /// and every waiter returns WAIT_CANCEL (numRead / numWrite: how many readers and writers waited); with flag 1
+    /// (SCE_KERNEL_RW_LOCK_CANCEL_WITH_WRITE_LOCK) the caller then holds it for writing.</summary>
+    public int Cancel(GuestThread? self, Ptr<uint> numRead, Ptr<uint> numWrite, uint flag)
     {
+        if (flag > 1)
+        {
+            return SceError.INVALID_FLAGS;
+        }
+
         lock (this)
         {
+            ReleaseExpired();
             numRead.TrySet((uint)ReadWaiters);
             numWrite.TrySet((uint)WriteWaiters);
-            _cancelled++;
-            Readers = 0;
-            Writer = keepWriteLock ? self : null;
-            WriteCount = keepWriteLock ? 1 : 0;
+            DequeueAll(SceError.WAIT_CANCEL);
+            Writer = flag == 1 ? self : null;
+            LockCount = flag == 1 ? 1 : 0;
             WakeWaiters();
             return SceError.OK;
         }
@@ -3555,8 +3916,23 @@ public sealed partial class RwLock : KernelObject
         lock (this)
         {
             _deleted = true;
+            DequeueAll(SceError.WAIT_DELETE);
+            Writer = null;
+            LockCount = 0;
             WakeWaiters();
         }
+    }
+
+    private void DequeueAll(int error)
+    {
+        foreach (WaitRequest request in _queue)
+        {
+            request.Error = error;
+        }
+
+        _queue.Clear();
+        ReadWaiters = 0;
+        WriteWaiters = 0;
     }
 }
 

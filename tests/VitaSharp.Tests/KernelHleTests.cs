@@ -395,11 +395,11 @@ public sealed class KernelHleTests(GuestMemoryFixture fixture)
         }
 
         uint nr = Alloc(4), nw = Alloc(4);
-        Assert.Equal(0, l.Cancel(reader, new Ptr<uint>(nr), new Ptr<uint>(nw), false));
+        Assert.Equal(0, l.Cancel(reader, new Ptr<uint>(nr), new Ptr<uint>(nw), 0u));
         t.Join();
         Assert.Equal(SceError.WAIT_CANCEL, r);
         Assert.Equal(1u, GuestMemory.R32(nw));
-        Assert.Equal(0, l.Readers);
+        Assert.Equal(0, l.LockCount);
     }
 
     [Fact]

@@ -387,26 +387,103 @@ public sealed partial class MsgPipe
     }
 }
 
+// A rw lock keeps its wait queue, as the mutex does: the order its hand-over serves the waiters (and the waiters given
+// the lock that had not returned) is the saved session's.
 public sealed partial class RwLock
 {
     internal int _writerUid;
     internal void Save(SnapshotWriter w)
     {
-        w.Write(Attr);
-        w.Write(Readers);
-        w.WriteKernelObject(Writer);
-        w.Write(WriteCount);
-        w.Write(_deleted);
+        lock (this)
+        {
+            int count = LockCount;
+            List<WaitRequest> kept = new();
+            foreach (List<WaitRequest> list in (List<WaitRequest>[])[_granted, _queue])
+            {
+                foreach (WaitRequest request in list)
+                {
+                    if (request.ThreadUid != 0)
+                    {
+                        kept.Add(request);
+                    }
+                    else if (request.Granted && !request.Write)
+                    {
+                        count--; // not a guest thread: nothing reissues it, its read lock goes back
+                    }
+                }
+            }
+            w.Write(Attr);
+            // the record of the builds before the queue: the readers' count, the writer and its count apart
+            w.Write(Writer == null ? count : 0);
+            w.WriteKernelObject(Writer);
+            w.Write(Writer != null ? count : 0);
+            w.Write(_deleted);
+            // added 19/11/2026; states of builds before it have no queue: their locks are reissued as new ones, as
+            // those builds did ([SnapshotMissing] for this hand-written record: the empty queue)
+            w.Write(kept.Count);
+            foreach (WaitRequest request in kept)
+            {
+                w.Write(request.ThreadUid);
+                w.Write(request.Write);
+                w.Write(request.Priority);
+                w.Write(request.Granted);
+            }
+        }
     }
+
     internal void Load(SnapshotReader r)
     {
         Attr = r.ReadUInt32();
-        Readers = r.ReadInt32();
+        int readers = r.ReadInt32();
         _writerUid = r.ReadInt32();
-        WriteCount = r.ReadInt32();
+        int writeCount = r.ReadInt32();
         _deleted = r.ReadBool();
+        LockCount = _writerUid != 0 ? writeCount : readers;
+        _queue.Clear();
+        _granted.Clear();
+        _restored.Clear();
+        ReadWaiters = 0;
+        WriteWaiters = 0;
+        int saved = r.AtEnd ? 0 : r.ReadInt32();
+        for (int i = 0; i < saved; i++)
+        {
+            WaitRequest request = new()
+            {
+                ThreadUid = r.ReadInt32(),
+                Write = r.ReadBool(),
+                Priority = r.ReadInt32(),
+                Granted = r.ReadBool(),
+            };
+            _restored.Add(request);
+            if (request.Granted)
+            {
+                _granted.Add(request);
+            }
+            else
+            {
+                _queue.Add(request); // saved in queue order
+                if (request.Write)
+                {
+                    WriteWaiters++;
+                }
+                else
+                {
+                    ReadWaiters++;
+                }
+            }
+        }
     }
-    internal void Resolve(ObjectTable t) => Writer = _writerUid != 0 ? t.Get<GuestThread>(_writerUid) : null;
+
+    /// <summary>The writer and the waiters of the saved queue get their threads back (an unlock may hand them the lock
+    /// before they reissue).</summary>
+    internal void Resolve(ObjectTable t)
+    {
+        Writer = _writerUid != 0 ? t.Get<GuestThread>(_writerUid) : null;
+        foreach (WaitRequest request in _restored)
+        {
+            request.Thread = t.Get<GuestThread>(request.ThreadUid);
+        }
+    }
 }
 
 public sealed partial class Callback

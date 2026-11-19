@@ -1106,14 +1106,12 @@ public sealed partial class ThreadMgr : HleModule
         if (l == null) return SceError.UNKNOWN_RW_LOCK_ID;
         Span<byte> f = stackalloc byte[0x3C]; // SceKernelRWLockInfo
         f.Clear();
-        lock (l)
-        {
-            KernelInfo.Header(f, uid, l.Name, l.Attr);
-            KernelInfo.Put(f, 0x2C, l.Writer != null ? l.WriteCount : l.Readers);
-            KernelInfo.Put(f, 0x30, l.Writer?.Uid ?? 0);
-            KernelInfo.Put(f, 0x34, l.ReadWaiters);
-            KernelInfo.Put(f, 0x38, l.WriteWaiters);
-        }
+        (int count, GuestThread? writer, int readWaiters, int writeWaiters) = l.Info();
+        KernelInfo.Header(f, uid, l.Name, l.Attr);
+        KernelInfo.Put(f, 0x2C, count);
+        KernelInfo.Put(f, 0x30, writer?.Uid ?? 0);
+        KernelInfo.Put(f, 0x34, readWaiters);
+        KernelInfo.Put(f, 0x38, writeWaiters);
         return KernelInfo.Write(info, f);
     }
 
@@ -1121,10 +1119,10 @@ public sealed partial class ThreadMgr : HleModule
     [Hle] int sceKernelCloseRWLock(int uid) => KernelInfo.CloseHandle<RwLock>(K.Objects, uid, SceError.UNKNOWN_RW_LOCK_ID);
 
     /// <summary>Wakes all readers and writers with WAIT_CANCEL; flag 1 (CANCEL_WITH_WRITE_LOCK) leaves the caller owning
-    /// the lock for writing.</summary>
+    /// the lock for writing, a flag above 1 is INVALID_FLAGS (threadmgr 3.74, 0x81025a50).</summary>
     [Hle]
     int sceKernelCancelRWLock(int uid, Ptr<uint> numRead, Ptr<uint> numWrite, int flag)
-        => Obj<RwLock>(uid)?.Cancel(Self, numRead, numWrite, (flag & 1) != 0) ?? SceError.UNKNOWN_RW_LOCK_ID;
+        => Obj<RwLock>(uid)?.Cancel(Self, numRead, numWrite, (uint)flag) ?? SceError.UNKNOWN_RW_LOCK_ID;
 
     // ------------------------------------------------------------------ callbacks
 

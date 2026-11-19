@@ -1903,7 +1903,7 @@ public sealed class ThreadMgrHleTests(GuestMemoryFixture fx) : IDisposable
     {
         _h.OnGuest(self =>
         {
-            int l = Call(Tm, "sceKernelCreateRWLock", "rw", 0u, 0u);
+            int l = Call(Tm, "sceKernelCreateRWLock", "rw", RwLock.AttrRecursive, 0u);
             Assert.Equal(12, Call(Tm, "sceKernelGetThreadmgrUIDClass", l));
             Assert.Equal(0, Call(Tm, "sceKernelLockReadRWLock", l, new Ptr<uint>(0)));
             Assert.Equal(0, Call(Tm, "sceKernelTryLockReadRWLock", l));
@@ -1918,7 +1918,7 @@ public sealed class ThreadMgrHleTests(GuestMemoryFixture fx) : IDisposable
             Assert.Equal(0, Call(Tm, "sceKernelUnlockReadRWLock", l));
             Assert.Equal(0, Call(Tm, "sceKernelUnlockReadRWLock", l));
             Assert.Equal(SceError.RW_LOCK_UNLOCK_UDF, Call(Tm, "sceKernelUnlockReadRWLock", l));
-            // a writer: recursive for itself, blocks other readers and writers
+            // a writer: recursive for itself (SCE_KERNEL_RW_LOCK_ATTR_RECURSIVE), blocks other readers and writers
             Assert.Equal(0, Call(Tm, "sceKernelLockWriteRWLockCB", l, new Ptr<uint>(0)));
             Assert.Equal(0, Call(Tm, "sceKernelTryLockWriteRWLock", l));
             Call(Tm, "sceKernelGetRWLockInfo", l, info);
