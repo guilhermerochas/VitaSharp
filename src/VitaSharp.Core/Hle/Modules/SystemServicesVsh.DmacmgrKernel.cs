@@ -3,8 +3,7 @@ namespace VitaSharp.Core.Hle.Modules;
 // SceDmacmgrForDriver (os0:kd/dmacmgr.skprx 3.74, read in the module, study only): the DMA controllers. Two entries
 // that keep no operation: the channel reset (a controller kind and a channel, 0xFFFF for all; else 0x80020005) and an
 // entry that always refuses (0x80020002). The sixth controller (kind 6) is only mapped when one of the debug switches
-// 0x9F, 0xC0..0xC2 is set. The DMA operations (DmaOp*) are not here yet: their descriptors are the controllers' own
-// chain format.
+// 0x9F, 0xC0..0xC2 is set. The DMA operations (DmaOp*) are in SystemServicesVsh.DmacmgrOps.cs.
 public sealed partial class SystemServicesVsh
 {
     /// <summary>SceDmacmgr: a kind or channel out of range (0x80020005).</summary>
