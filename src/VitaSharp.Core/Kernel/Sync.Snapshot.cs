@@ -318,6 +318,8 @@ public sealed partial class MsgPipe
                 }
             }
             w.Write(_headPartial);
+            // added 19/11/2026: the callbacks registered to the pipe (older states load with none)
+            SaveRegistrations(w);
         }
     }
 
@@ -379,6 +381,7 @@ public sealed partial class MsgPipe
             }
         }
         _headPartial = !r.AtEnd && r.ReadBool();
+        LoadRegistrations(r);
     }
 
     /// <summary>A restored DONT_WAIT request's end: nothing to count.</summary>
@@ -535,6 +538,11 @@ public sealed partial class TimerObject
         w.Write(Interval);
         w.Write(NextEvent);
         w.Write(_deleted);
+        // added 19/11/2026: the callbacks registered to the timer (older states load with none)
+        lock (this)
+        {
+            SaveRegistrations(w);
+        }
     }
 
     internal void Load(SnapshotReader r)
@@ -549,14 +557,12 @@ public sealed partial class TimerObject
         Interval = r.ReadUInt64();
         NextEvent = r.ReadUInt64();
         _deleted = r.ReadBool();
+        LoadRegistrations(r);
     }
 }
 
 public sealed partial class SimpleEvent
 {
-    /// <summary>The registered callbacks of a loaded state, as (callback UID, notifier ID), until every object exists.</summary>
-    private List<(int CallbackUid, int NotifyId)>? _loadedRegistrations;
-
     internal void Save(SnapshotWriter w)
     {
         lock (this)
@@ -565,12 +571,7 @@ public sealed partial class SimpleEvent
             w.Write(Pattern);
             w.Write(LastUserData);
             // added 19/11/2026; states of builds before it load with no callback registered (those builds kept none)
-            w.Write(_registrations.Count);
-            foreach (Registration registration in _registrations)
-            {
-                w.Write(registration.Callback.Uid);
-                w.Write(registration.NotifyId);
-            }
+            SaveRegistrations(w);
         }
     }
 
@@ -579,32 +580,7 @@ public sealed partial class SimpleEvent
         Attr = r.ReadUInt32();
         Pattern = r.ReadUInt32();
         LastUserData = r.ReadUInt64();
-        _registrations.Clear();
-        int count = r.AtEnd ? 0 : r.ReadInt32();
-        _loadedRegistrations = new List<(int, int)>(count);
-        for (int i = 0; i < count; i++)
-        {
-            _loadedRegistrations.Add((r.ReadInt32(), r.ReadInt32()));
-        }
-    }
-
-    /// <summary>Finds the registered callbacks (in the saved order); one missing from the state is dropped, as the
-    /// kernel drops the registration of a deleted callback.</summary>
-    internal void Resolve(ObjectTable t)
-    {
-        if (_loadedRegistrations == null)
-        {
-            return;
-        }
-
-        foreach ((int callbackUid, int notifyId) in _loadedRegistrations)
-        {
-            if (t.Get<Callback>(callbackUid) is { } callback)
-            {
-                _registrations.Add(new Registration(callback, notifyId));
-            }
-        }
-        _loadedRegistrations = null;
+        LoadRegistrations(r);
     }
 }
 

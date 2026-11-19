@@ -1,0 +1,144 @@
+using VitaSharp.Core.SaveState;
+
+namespace VitaSharp.Core.Kernel;
+
+/// <summary>
+/// An object of threadmgr's event class (FW 3.74: SceUIDEventClass, a child of SceUIDRegisterCallbackClass, the class
+/// sceKernelRegisterCallbackToEvent looks the event up in, 0x8100cfcc): simple events, message pipes, timers, and the
+/// event classes other modules derive through SceThreadmgrForDriver 0xDBB77032 (asynchronous I/O operations). Every one
+/// keeps a list of registered callbacks, by callback UID (the same callback may be there more than once), and the
+/// event's set (0x8101dcf8, which simple events, message pipes and timers all go through) notifies them, under the
+/// object's lock, with a notify argument (0x8101cfcc).
+/// </summary>
+public abstract class EventObject : KernelObject
+{
+    /// <summary>One callback registered to the event, and the notifier ID it gets (the event's UID as the caller
+    /// named it).</summary>
+    private readonly record struct Registration(Callback Callback, int NotifyId);
+
+    /// <summary>The callbacks registered to the event, by callback UID.</summary>
+    private readonly List<Registration> _registrations = new();
+
+    /// <summary>The registered callbacks of a loaded state, as (callback UID, notifier ID), until every object exists.</summary>
+    private List<(int CallbackUid, int NotifyId)>? _loadedRegistrations;
+
+    /// <summary>sceKernelRegisterCallbackToEvent (threadmgr 3.74, 0x8100cfcc): adds <paramref name="callback"/> to the
+    /// event's list, after the registrations of callbacks with a lower or equal UID.</summary>
+    public int RegisterCallback(Callback callback, int notifyId)
+    {
+        lock (this)
+        {
+            int index = 0;
+            while (index < _registrations.Count && _registrations[index].Callback.Uid <= callback.Uid)
+            {
+                index++;
+            }
+
+            _registrations.Insert(index, new Registration(callback, notifyId));
+            return SceError.OK;
+        }
+    }
+
+    /// <summary>sceKernelUnregisterCallbackFromEvent (0x8100d108): removes the first registration of the callback, or
+    /// CALLBACK_NOT_REGISTERED.</summary>
+    public int UnregisterCallback(int callbackUid)
+    {
+        lock (this)
+        {
+            for (int i = 0; i < _registrations.Count; i++)
+            {
+                if (_registrations[i].Callback.Uid == callbackUid)
+                {
+                    _registrations.RemoveAt(i);
+                    return SceError.OK;
+                }
+            }
+
+            return SceError.CALLBACK_NOT_REGISTERED;
+        }
+    }
+
+    /// <summary>sceKernelUnregisterCallbackFromEventAll (0x8100d1d0): removes every registration of the event.</summary>
+    public int UnregisterAllCallbacks()
+    {
+        lock (this)
+        {
+            _registrations.Clear();
+            return SceError.OK;
+        }
+    }
+
+    /// <summary>The registered callbacks, for tests.</summary>
+    internal int RegisteredCallbacks
+    {
+        get
+        {
+            lock (this)
+            {
+                return _registrations.Count;
+            }
+        }
+    }
+
+    /// <summary>The event's set notifies its registered callbacks (threadmgr 3.74, 0x8101cfcc; the caller holds the
+    /// object's lock): each one in list order as sceKernelNotifyCallback does, with the registration's notifier ID and
+    /// <paramref name="notifyArg"/>; a deleted callback's registration is dropped.</summary>
+    protected void NotifyRegisteredCallbacks(int notifyArg)
+    {
+        for (int i = 0; i < _registrations.Count;)
+        {
+            Registration registration = _registrations[i];
+            if (registration.Callback.Deleted)
+            {
+                _registrations.RemoveAt(i);
+                continue;
+            }
+
+            registration.Callback.Notify(notifyArg, registration.NotifyId);
+            i++;
+        }
+    }
+
+    /// <summary>Saves the registrations at the end of the object's record (the caller holds its lock).</summary>
+    internal void SaveRegistrations(SnapshotWriter w)
+    {
+        w.Write(_registrations.Count);
+        foreach (Registration registration in _registrations)
+        {
+            w.Write(registration.Callback.Uid);
+            w.Write(registration.NotifyId);
+        }
+    }
+
+    /// <summary>Reads the registrations at the end of a record; a record of a build before them has none (those builds
+    /// kept none: [SnapshotMissing] for these hand-written records, the empty list).</summary>
+    internal void LoadRegistrations(SnapshotReader r)
+    {
+        _registrations.Clear();
+        int count = r.AtEnd ? 0 : r.ReadInt32();
+        _loadedRegistrations = new List<(int, int)>(count);
+        for (int i = 0; i < count; i++)
+        {
+            _loadedRegistrations.Add((r.ReadInt32(), r.ReadInt32()));
+        }
+    }
+
+    /// <summary>Finds the registered callbacks (in the saved order); one missing from the state is dropped, as the
+    /// kernel drops the registration of a deleted callback.</summary>
+    internal void ResolveRegistrations(ObjectTable t)
+    {
+        if (_loadedRegistrations == null)
+        {
+            return;
+        }
+
+        foreach ((int callbackUid, int notifyId) in _loadedRegistrations)
+        {
+            if (t.Get<Callback>(callbackUid) is { } callback)
+            {
+                _registrations.Add(new Registration(callback, notifyId));
+            }
+        }
+        _loadedRegistrations = null;
+    }
+}

@@ -388,8 +388,8 @@ internal static class KernelSnapshot
                 case Callback c:
                     c.Resolve(table);
                     break;
-                case SimpleEvent e:
-                    e.Resolve(table);
+                case EventObject e:
+                    e.ResolveRegistrations(table);
                     break;
             }
         }

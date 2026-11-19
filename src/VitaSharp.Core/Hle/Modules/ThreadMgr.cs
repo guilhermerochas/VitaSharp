@@ -1547,26 +1547,37 @@ public sealed partial class ThreadMgr : HleModule
 
     /// <summary>
     /// sceKernelRegisterCallbackToEvent(SceUID event, SceUID callback), as threadmgr 3.74 does it (the syscall
-    /// 0x76FB37E9, then 0x8100cfcc): an unknown callback is UNKNOWN_CALLBACK_ID, then the callback joins the event's
-    /// list (by callback UID) with the event's UID as the notifier ID its runs get; *WithNotifyCallback notifies it.
-    /// A UID that is not a simple event keeps the old answer, OK with nothing registered: the system's kernel event
+    /// 0x76FB37E9, then 0x8100cfcc): the callback is looked up first (not a live callback: <see cref="UnknownCallbackForEvent"/>),
+    /// then the event in the event class (SceUIDEventClass: simple events, message pipes, timers, asynchronous I/O
+    /// operations, <see cref="EventObject"/>); another threadmgr object is UNKNOWN_EVENT_ID. The callback joins the
+    /// event's list (by callback UID) with the event's UID as the notifier ID its runs get; the event's sets notify it.
+    /// A UID that is no object at all keeps the old answer, OK with nothing registered: the system's kernel event
     /// objects (the RTC alarm event the shell registers its "cron" callback to) are not emulated objects, and nothing
     /// would notify them.
     /// </summary>
     [Hle]
     int sceKernelRegisterCallbackToEvent(int eventUid, int callbackUid)
     {
-        if (Event(eventUid) is not { } e)
-        {
-            return SceError.OK;
-        }
-
         if (Obj<Callback>(callbackUid) is not { Deleted: false } callback)
         {
             return UnknownCallbackForEvent(callbackUid);
         }
 
+        if (EventOf(eventUid, out int error) is not { } e)
+        {
+            return error;
+        }
+
         return e.RegisterCallback(callback, eventUid);
+    }
+
+    /// <summary>The event-class object with this UID; null with <paramref name="error"/> UNKNOWN_EVENT_ID for another
+    /// object, OK for a UID that is no object (see <see cref="sceKernelRegisterCallbackToEvent"/>).</summary>
+    EventObject? EventOf(int eventUid, out int error)
+    {
+        KernelObject? o = K.Objects.Get<KernelObject>(eventUid);
+        error = o == null ? SceError.OK : SceError.UNKNOWN_EVENT_ID;
+        return o as EventObject;
     }
 
     /// <summary>sceKernelUnregisterCallbackFromEvent(SceUID event, SceUID callback) (0x18462B11, then 0x8100d108): the
@@ -1574,9 +1585,9 @@ public sealed partial class ThreadMgr : HleModule
     [Hle]
     int sceKernelUnregisterCallbackFromEvent(int eventUid, int callbackUid)
     {
-        if (Event(eventUid) is not { } e)
+        if (EventOf(eventUid, out int error) is not { } e)
         {
-            return SceError.OK;
+            return error;
         }
 
         if (Obj<Callback>(callbackUid) == null)
@@ -1597,9 +1608,9 @@ public sealed partial class ThreadMgr : HleModule
     [Hle]
     int sceKernelUnregisterCallbackFromEventAll(int eventUid)
     {
-        if (Event(eventUid) is not { } e)
+        if (EventOf(eventUid, out int error) is not { } e)
         {
-            return SceError.OK;
+            return error;
         }
 
         return e.UnregisterAllCallbacks();

@@ -2334,7 +2334,7 @@ public sealed partial class CondVar : KernelObject, ICallbackInterruptedWait
 /// priority that no guest thread waits on (<see cref="TransferLater"/>).</item>
 /// </list>
 /// </summary>
-public sealed partial class MsgPipe : KernelObject, ICallbackInterruptedWait
+public sealed partial class MsgPipe : EventObject, ICallbackInterruptedWait
 {
     public override int UidClass => 7;
     /// <summary>SCE_KERNEL_MSG_PIPE_MODE_*: ASAP (0, move what fits / what is there) or FULL (1, the whole size),
@@ -2933,8 +2933,37 @@ public sealed partial class MsgPipe : KernelObject, ICallbackInterruptedWait
     /// receive that the buffer and the waiting senders cannot fill, fails without moving or writing anything; one that
     /// waiters of its kind are ahead of fails the same way.
     /// </summary>
+    /// <summary>
+    /// A send or receive, then the pipe's event set when it moved bytes (threadmgr 3.74, the end of 0x81013dfc /
+    /// 0x8101456c through the event class's set 0x8101dcf8): a send raises IN (with the pipe's "can receive" bit while
+    /// bytes wait in its buffer), a receive OUT, either one ERROR as well when it ended in an error after moving part of
+    /// them; the callbacks registered to the pipe are notified with those bits as the notify argument.
+    /// </summary>
     private int Transmit(bool send, Segments buffers, uint mode, Ptr<uint> result, Ptr<uint> timeout, bool poll)
     {
+        int code = TransmitCore(send, buffers, mode, result, timeout, poll, out Transfer? transfer);
+        if (transfer == null || transfer.Moved == 0)
+        {
+            return code;
+        }
+
+        lock (this)
+        {
+            uint raised = send ? EventIn | (ReceivableBytes() > 0 ? EventReceivable : 0) : EventOut;
+            if (code < 0)
+            {
+                raised |= EventBits.Error;
+            }
+
+            NotifyRegisteredCallbacks((int)raised);
+        }
+
+        return code;
+    }
+
+    private int TransmitCore(bool send, Segments buffers, uint mode, Ptr<uint> result, Ptr<uint> timeout, bool poll, out Transfer? used)
+    {
+        used = null;
         if (poll && (mode & ~(send ? TrySendModes : TryReceiveModes)) != 0)
         {
             return SceError.ILLEGAL_MODE;
@@ -2991,6 +3020,7 @@ public sealed partial class MsgPipe : KernelObject, ICallbackInterruptedWait
                     ThreadUid = self?.Uid ?? 0,
                     Result = result,
                 };
+                used = transfer;
                 if (poll)
                 {
                     if (!GoesFirst(send, priority) || (full && size > (send ? SendRoom() : ReceivableBytes())))
@@ -3008,6 +3038,7 @@ public sealed partial class MsgPipe : KernelObject, ICallbackInterruptedWait
             {
                 transfer.Result = result;
                 transfer.Buffers = buffers;
+                used = transfer;
             }
 
             transfer.Thread = self;
@@ -3290,13 +3321,15 @@ public sealed partial class MsgPipe : KernelObject, ICallbackInterruptedWait
         | (_held < BufferSize ? EventOut | EventSendable : 0)
         | (_deleted ? EventBits.Delete : 0) | _latched;
 
-    /// <summary>A handle to the pipe was opened or closed (<see cref="EventOpen"/>, <see cref="EventClose"/>).</summary>
+    /// <summary>A handle to the pipe was opened or closed (<see cref="EventOpen"/>, <see cref="EventClose"/>): the event
+    /// class's set (threadmgr 3.74, 0x8101dcf8), which notifies the callbacks registered to the pipe with those bits.</summary>
     public void Signal(uint ev)
     {
         lock (this)
         {
             _latched |= ev;
             WakeWaiters();
+            NotifyRegisteredCallbacks((int)ev);
         }
     }
 
@@ -4018,7 +4051,7 @@ public static class EventBits
 /// Kernel timer: a microsecond counter on process time plus an optional (repeating) SET or PULSE event that
 /// sceKernelWaitEvent/PollEvent can wait for (result EVENT_TIMER). Only the first waiter waits for the event.
 /// </summary>
-public sealed partial class TimerObject : KernelObject
+public sealed partial class TimerObject : EventObject
 {
     public override int UidClass => 6;
     public uint Attr;
@@ -4295,7 +4328,7 @@ public sealed partial class TimerObject : KernelObject
 /// every waiter whose pattern matches (consuming the bits with AUTO_RESET); Pulse does the same and then restores the
 /// previous pattern, so only threads already waiting see it.
 /// </summary>
-public sealed partial class SimpleEvent : KernelObject, ICallbackInterruptedWait
+public sealed partial class SimpleEvent : EventObject, ICallbackInterruptedWait
 {
     public override int UidClass => 13;
     public uint Attr;
@@ -4457,72 +4490,6 @@ public sealed partial class SimpleEvent : KernelObject, ICallbackInterruptedWait
         }
     }
 
-    /// <summary>One callback registered to the event, and the notifier ID it gets (the event's UID as the caller
-    /// named it).</summary>
-    private readonly record struct Registration(Callback Callback, int NotifyId);
-
-    /// <summary>The callbacks registered to the event, by callback UID (threadmgr 3.74 keeps them in a list on the event
-    /// in that order; the same callback may be registered more than once).</summary>
-    private readonly List<Registration> _registrations = new();
-
-    /// <summary>sceKernelRegisterCallbackToEvent (threadmgr 3.74, 0x8100cfcc): adds <paramref name="callback"/> to the
-    /// event's list, after the registrations of callbacks with a lower or equal UID.</summary>
-    public int RegisterCallback(Callback callback, int notifyId)
-    {
-        lock (this)
-        {
-            int index = 0;
-            while (index < _registrations.Count && _registrations[index].Callback.Uid <= callback.Uid)
-            {
-                index++;
-            }
-
-            _registrations.Insert(index, new Registration(callback, notifyId));
-            return SceError.OK;
-        }
-    }
-
-    /// <summary>sceKernelUnregisterCallbackFromEvent (0x8100d108): removes the first registration of the callback, or
-    /// CALLBACK_NOT_REGISTERED.</summary>
-    public int UnregisterCallback(int callbackUid)
-    {
-        lock (this)
-        {
-            for (int i = 0; i < _registrations.Count; i++)
-            {
-                if (_registrations[i].Callback.Uid == callbackUid)
-                {
-                    _registrations.RemoveAt(i);
-                    return SceError.OK;
-                }
-            }
-
-            return SceError.CALLBACK_NOT_REGISTERED;
-        }
-    }
-
-    /// <summary>sceKernelUnregisterCallbackFromEventAll (0x8100d1d0): removes every registration of the event.</summary>
-    public int UnregisterAllCallbacks()
-    {
-        lock (this)
-        {
-            _registrations.Clear();
-            return SceError.OK;
-        }
-    }
-
-    /// <summary>The registered callbacks, for tests and save states.</summary>
-    internal int RegisteredCallbacks
-    {
-        get
-        {
-            lock (this)
-            {
-                return _registrations.Count;
-            }
-        }
-    }
-
     /// <summary>
     /// sceKernelSetEventWithNotifyCallback / sceKernelPulseEventWithNotifyCallback (threadmgr 3.74: 0xB7DF3EDF /
     /// 0x714A107A, then 0x8101cfcc): a set pattern of 0 does nothing; otherwise the set (pulse) of
@@ -4545,19 +4512,7 @@ public sealed partial class SimpleEvent : KernelObject, ICallbackInterruptedWait
         lock (this)
         {
             SetOrPulse(setPattern, userData, pulse);
-            for (int i = 0; i < _registrations.Count;)
-            {
-                Registration registration = _registrations[i];
-                if (registration.Callback.Deleted)
-                {
-                    _registrations.RemoveAt(i);
-                    continue;
-                }
-
-                registration.Callback.Notify(notifyArg, registration.NotifyId);
-                i++;
-            }
-
+            NotifyRegisteredCallbacks(notifyArg);
             return SceError.OK;
         }
     }

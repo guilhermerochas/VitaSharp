@@ -506,6 +506,97 @@ public sealed class CallbackWaitInterleavingTests(GuestMemoryFixture fixture) : 
     }
 
     /// <summary>
+    /// Every object of threadmgr's event class takes callbacks, not only simple events (FW 3.74: the register looks the
+    /// UID up in SceUIDRegisterCallbackClass, whose child SceUIDEventClass is the parent of the simple event, message
+    /// pipe and timer classes): a message pipe's send that moves bytes notifies them with IN and "can receive" while the
+    /// bytes wait in its buffer (r0 = the pipe's UID, r2 = the bits), a receive with OUT, an open by name with OPEN; a
+    /// timer keeps them too. A threadmgr object outside the event class (a semaphore) is UNKNOWN_EVENT_ID.
+    /// </summary>
+    [Fact]
+    public void CallbacksRegisterToEveryEventClassObject()
+    {
+        List<(uint R0, uint R2)> runs = new();
+        uint stub = Stub("cbwait:event-class", context =>
+        {
+            runs.Add((context.Gpr(0), context.Gpr(2)));
+            return 0;
+        });
+        _h.OnGuest(main =>
+        {
+            int callback = Call(Tm, "sceKernelCreateCallback", "event-class", 0u, stub, 0u);
+            int pipe = Call(Tm, "sceKernelCreateMsgPipe", "cb-registered-pipe", 0x40u, 0x80u, 0x1000u, 0u);
+            int timer = Call(Tm, "sceKernelCreateTimer", "cb-registered-timer", 0u, 0u);
+            int sema = Call(Tm, "sceKernelCreateSema", "cb-not-an-event", 0u, 0, 1, 0u);
+            Assert.Equal(SceError.UNKNOWN_EVENT_ID, Call(Tm, "sceKernelRegisterCallbackToEvent", sema, callback));
+            Assert.Equal(SceError.UNKNOWN_EVENT_ID, Call(Tm, "sceKernelUnregisterCallbackFromEventAll", sema));
+            Assert.Equal(0, Call(Tm, "sceKernelRegisterCallbackToEvent", pipe, callback));
+            Assert.Equal(0, Call(Tm, "sceKernelRegisterCallbackToEvent", timer, callback));
+            Assert.Equal(SceError.UNKNOWN_EVENT_ID, Call(Tm, "sceKernelUnregisterCallbackFromEvent", sema, callback));
+
+            uint data = _h.Alloc(8);
+            Assert.Equal(0, Call(Tm, "sceKernelSendMsgPipe", pipe, data, 8u, MsgPipe.WaitAll, new Ptr<uint>(0), new Ptr<uint>(0)));
+            Assert.Equal(1, Call(Tm, "sceKernelCheckCallback"));
+            Assert.Equal([((uint)pipe, MsgPipe.EventIn | MsgPipe.EventReceivable)], runs);
+            runs.Clear();
+            Assert.Equal(0, Call(Tm, "sceKernelReceiveMsgPipe", pipe, data, 8u, MsgPipe.WaitAll, new Ptr<uint>(0), new Ptr<uint>(0)));
+            Assert.Equal(1, Call(Tm, "sceKernelCheckCallback"));
+            Assert.Equal([((uint)pipe, MsgPipe.EventOut)], runs);
+            runs.Clear();
+            int opened = Call(Tm, "sceKernelOpenMsgPipe", _h.Str("cb-registered-pipe"));
+            Assert.Equal(pipe, opened);
+            Assert.Equal(1, Call(Tm, "sceKernelCheckCallback"));
+            Assert.Equal([((uint)pipe, MsgPipe.EventOpen)], runs);
+            runs.Clear();
+
+            Assert.Equal(0, Call(Tm, "sceKernelUnregisterCallbackFromEvent", pipe, callback));
+            Assert.Equal(SceError.CALLBACK_NOT_REGISTERED, Call(Tm, "sceKernelUnregisterCallbackFromEvent", pipe, callback));
+            Assert.Equal(0, Call(Tm, "sceKernelSendMsgPipe", pipe, data, 8u, MsgPipe.WaitAll, new Ptr<uint>(0), new Ptr<uint>(0)));
+            Assert.Equal(0, Call(Tm, "sceKernelCheckCallback"));
+            Assert.Equal(0, Call(Tm, "sceKernelUnregisterCallbackFromEvent", timer, callback));
+            Assert.Equal(SceError.CALLBACK_NOT_REGISTERED, Call(Tm, "sceKernelUnregisterCallbackFromEvent", timer, callback));
+        });
+    }
+
+    /// <summary>The callbacks registered to a message pipe and to a timer are in the save state (as a simple event's
+    /// are); a record of a build before them loads with none.</summary>
+    [Fact]
+    public void ASaveStateKeepsTheCallbacksOfPipesAndTimers()
+    {
+        _h.OnGuest(main =>
+        {
+            int callback = Call(Tm, "sceKernelCreateCallback", "saved-registration", 0u, Stub("cbwait:saved", _ => 0), 0u);
+            int pipeUid = Call(Tm, "sceKernelCreateMsgPipe", "cb-saved-pipe", 0x40u, 0u, 0x1000u, 0u);
+            int timerUid = Call(Tm, "sceKernelCreateTimer", "cb-saved-timer", 0u, 0u);
+            Assert.Equal(0, Call(Tm, "sceKernelRegisterCallbackToEvent", pipeUid, callback));
+            Assert.Equal(0, Call(Tm, "sceKernelRegisterCallbackToEvent", timerUid, callback));
+            Assert.Equal(0, Call(Tm, "sceKernelRegisterCallbackToEvent", timerUid, callback));
+            MsgPipe pipe = _h.Emu.Kernel.Objects.Get<MsgPipe>(pipeUid)!;
+            TimerObject timer = _h.Emu.Kernel.Objects.Get<TimerObject>(timerUid)!;
+
+            var pipeState = new VitaSharp.Core.SaveState.SnapshotWriter();
+            pipe.Save(pipeState);
+            var restoredPipe = new MsgPipe { Name = "cb-saved-pipe" };
+            restoredPipe.Load(new VitaSharp.Core.SaveState.SnapshotReader(pipeState.Data.ToArray()));
+            restoredPipe.ResolveRegistrations(_h.Emu.Kernel.Objects);
+            Assert.Equal(1, restoredPipe.RegisteredCallbacks);
+
+            var timerState = new VitaSharp.Core.SaveState.SnapshotWriter();
+            timer.Save(timerState);
+            var restoredTimer = new TimerObject { Name = "cb-saved-timer", Clock = () => 0 };
+            restoredTimer.Load(new VitaSharp.Core.SaveState.SnapshotReader(timerState.Data.ToArray()));
+            restoredTimer.ResolveRegistrations(_h.Emu.Kernel.Objects);
+            Assert.Equal(2, restoredTimer.RegisteredCallbacks);
+
+            // the timer record of the builds before the registrations: its fields only
+            byte[] legacy = timerState.Data.ToArray()[..^20];
+            var legacyTimer = new TimerObject { Name = "legacy-timer", Clock = () => 0 };
+            legacyTimer.Load(new VitaSharp.Core.SaveState.SnapshotReader(legacy));
+            legacyTimer.ResolveRegistrations(_h.Emu.Kernel.Objects);
+            Assert.Equal(0, legacyTimer.RegisteredCallbacks);
+        });
+    }
+
+    /// <summary>
     /// The notifying set reaches the callback's thread asleep in a CB wait on the same event for another bit: the
     /// callback runs (r0 = the event's UID) and the thread waits again; the set of its own bit then ends the wait. The
     /// syscall form passes the user data and the notify argument in a 16-byte block.
