@@ -906,6 +906,59 @@ public sealed class ThreadMgrHleTests(GuestMemoryFixture fx) : IDisposable
     }
 
     /// <summary>
+    /// An event flag's cancel and delete wake the waiters as a set does (threadmgr 3.74): the canceller's host thread is
+    /// stopped right after the call returns, and the woken thread, back with WAIT_CANCEL / WAIT_DELETE, must not run its
+    /// next system call before the canceller gets going again; once the canceller blocks, it goes on.
+    /// </summary>
+    [Theory]
+    [InlineData("cancel")]
+    [InlineData("delete")]
+    public void ThreadWokenByAnEventFlagCancelOrDeleteWaitsForAStoppedCanceller(string kind)
+    {
+        _h.OnGuest(main =>
+        {
+            int uid = Call(Tm, "sceKernelCreateEventFlag", "woken-evf-cancel", 0u, 0u, 0u);
+            string wakingCall = kind == "cancel" ? "sceKernelCancelEventFlag" : "sceKernelDeleteEventFlag";
+            bool nextCallDone = false;
+            int result = 0;
+            GuestRun woken = _h.Start(th =>
+            {
+                result = Call(Tm, "sceKernelWaitEventFlag", uid, 0x1u, EventFlag.WaitAnd, new Ptr<uint>(0), new Ptr<uint>(0));
+                th.Core.ChargeInstructions(200_000);
+                th.DispatchForTest("sceKernelGetThreadId");
+                Volatile.Write(ref nextCallDone, true);
+            }, "woken");
+            Until(() => woken.Thread.Status == ThreadStatus.Waiting, "the wait");
+            woken.Thread.WakerWaitLimitTicks = long.MaxValue; // the outcome may not depend on how long the host takes
+            bool doneWhileStopped = true;
+            bool heldAtItsCall = false;
+            GuestThread.HleReturned = (thread, function) =>
+            {
+                if (thread == main && function.Name == wakingCall)
+                {
+                    Until(() => woken.Thread.IsWaitingForWaker || Volatile.Read(ref nextCallDone), "the woken thread's next call");
+                    doneWhileStopped = Volatile.Read(ref nextCallDone);
+                    heldAtItsCall = woken.Thread.IsWaitingForWaker;
+                }
+            };
+            try
+            {
+                Assert.Equal(0u, main.DispatchForTest(wakingCall, (uint)uid, 0u, 0u));
+            }
+            finally
+            {
+                GuestThread.HleReturned = null;
+            }
+            Assert.False(doneWhileStopped);
+            Assert.True(heldAtItsCall);
+            Assert.Equal(0, Call(Tm, "sceKernelDelayThread", 1000u)); // main blocks: the woken thread goes on
+            _h.Join(woken, 5_000);
+            Assert.True(Volatile.Read(ref nextCallDone));
+            Assert.Equal(kind == "cancel" ? SceError.WAIT_CANCEL : SceError.WAIT_DELETE, result);
+        });
+    }
+
+    /// <summary>
     /// The End Frame protocol when the End Frame thread reaches its wait only after main's set (its host thread was the
     /// late one): the wait is satisfied at once, without blocking, and main's host thread is stopped right after the
     /// set. Taking a ready object is an observation of the signaller just like a wake-up: the End Frame thread's next

@@ -1066,6 +1066,12 @@ public sealed partial class EventFlag : KernelObject, ICallbackInterruptedWait
                 {
                     timeout.TrySet(0);
                 }
+                else
+                {
+                    // threadmgr wakes a cancelled or deleted waiter as a set does: its thread runs after the canceller's
+                    // call returns, so it does not get ahead of a canceller that has not run on yet
+                    ObserveSignal();
+                }
 
                 return result;
             }
