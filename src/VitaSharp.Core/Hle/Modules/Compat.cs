@@ -402,10 +402,7 @@ public sealed class Compat : HleModule
         if (!Allowed) return ERR_PERM;
         if (!Owner) return ERR_NOT_OWNER;
         if (info == 0) return SceError.INVALID_ARGUMENT;
-        GuestMemory.Fill(info, 0, 0x18);
-        GuestMemory.Write(info, 8UL * 1024 * 1024 * 1024);
-        GuestMemory.Write(info + 8, 4UL * 1024 * 1024 * 1024);
-        GuestMemory.W32(info + 16, 4096);
+        DeviceCapacity.WriteDevInfo(info, DeviceCapacity.DevInfoSize, Emu.Vfs.Resolve("ux0:"));
         return 0;
     }
 
