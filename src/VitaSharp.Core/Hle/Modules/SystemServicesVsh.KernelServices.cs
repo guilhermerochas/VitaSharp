@@ -189,10 +189,6 @@ public sealed partial class SystemServicesVsh
     }
     /// <summary>(int handle): clears the input buffer of a keyboard: no keyboard, nothing buffered.</summary>
     [Hle] int sceHidKeyboardClear(int handle) => 0;
-    /// <summary>(SceUID callback, SceUID event): undoes sceKernelRegisterCallbackToEvent (and the All form, every
-    /// event of the callback).</summary>
-    [Hle] int sceKernelUnregisterCallbackFromEvent(int callback, int ev) => 0;
-    [Hle] int sceKernelUnregisterCallbackFromEventAll(int callback) => 0;
     /// <summary>(int mask): the CPUs the process may run on; the emulator schedules guest threads itself.</summary>
     [Hle] int sceKernelChangeActiveCpuMask(int mask) => mask == 0 ? KERNEL_ERR_INVALID_ARGUMENT : 0;
 

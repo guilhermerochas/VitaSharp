@@ -3572,13 +3572,17 @@ public sealed partial class Callback : KernelObject
     /// <summary>sceKernelNotifyCallback (threadmgr 3.74, 0x8100c820): adds one to the count, keeps the last argument,
     /// marks the owner as having callbacks to run and, when it sleeps in a CB wait, takes it off that wait (the wait
     /// ends with the kernel's internal NOTIFY_CALLBACK, runs the callbacks and waits again from the start).</summary>
-    public void Notify(int arg)
+    public void Notify(int arg) => Notify(arg, DirectNotifier);
+
+    /// <summary>A notification from <paramref name="notifyId"/> (a simple event's notify sets the event's UID, threadmgr
+    /// 3.74's 0x8101cfcc), otherwise as <see cref="Notify(int)"/>.</summary>
+    public void Notify(int arg, int notifyId)
     {
         lock (this)
         {
             NotifyCount++;
             NotifyArg = arg;
-            NotifyId = DirectNotifier;
+            NotifyId = notifyId;
         }
         Interlocked.Increment(ref Owner.PendingCallbacks);
         lock (Owner.WaitLock)
@@ -4060,6 +4064,111 @@ public sealed partial class SimpleEvent : KernelObject, ICallbackInterruptedWait
             n.Value.Code = SceError.NOTIFY_CALLBACK;
             _waiters.Remove(n);
             return;
+        }
+    }
+
+    /// <summary>One callback registered to the event, and the notifier ID it gets (the event's UID as the caller
+    /// named it).</summary>
+    private readonly record struct Registration(Callback Callback, int NotifyId);
+
+    /// <summary>The callbacks registered to the event, by callback UID (threadmgr 3.74 keeps them in a list on the event
+    /// in that order; the same callback may be registered more than once).</summary>
+    private readonly List<Registration> _registrations = new();
+
+    /// <summary>sceKernelRegisterCallbackToEvent (threadmgr 3.74, 0x8100cfcc): adds <paramref name="callback"/> to the
+    /// event's list, after the registrations of callbacks with a lower or equal UID.</summary>
+    public int RegisterCallback(Callback callback, int notifyId)
+    {
+        lock (this)
+        {
+            int index = 0;
+            while (index < _registrations.Count && _registrations[index].Callback.Uid <= callback.Uid)
+            {
+                index++;
+            }
+
+            _registrations.Insert(index, new Registration(callback, notifyId));
+            return SceError.OK;
+        }
+    }
+
+    /// <summary>sceKernelUnregisterCallbackFromEvent (0x8100d108): removes the first registration of the callback, or
+    /// CALLBACK_NOT_REGISTERED.</summary>
+    public int UnregisterCallback(int callbackUid)
+    {
+        lock (this)
+        {
+            for (int i = 0; i < _registrations.Count; i++)
+            {
+                if (_registrations[i].Callback.Uid == callbackUid)
+                {
+                    _registrations.RemoveAt(i);
+                    return SceError.OK;
+                }
+            }
+
+            return SceError.CALLBACK_NOT_REGISTERED;
+        }
+    }
+
+    /// <summary>sceKernelUnregisterCallbackFromEventAll (0x8100d1d0): removes every registration of the event.</summary>
+    public int UnregisterAllCallbacks()
+    {
+        lock (this)
+        {
+            _registrations.Clear();
+            return SceError.OK;
+        }
+    }
+
+    /// <summary>The registered callbacks, for tests and save states.</summary>
+    internal int RegisteredCallbacks
+    {
+        get
+        {
+            lock (this)
+            {
+                return _registrations.Count;
+            }
+        }
+    }
+
+    /// <summary>
+    /// sceKernelSetEventWithNotifyCallback / sceKernelPulseEventWithNotifyCallback (threadmgr 3.74: 0xB7DF3EDF /
+    /// 0x714A107A, then 0x8101cfcc): a set pattern of 0 does nothing; otherwise the set (pulse) of
+    /// <see cref="SetOrPulse"/>, then, under the event's lock, every registered callback is notified in list order as
+    /// sceKernelNotifyCallback does, with the registration's notifier ID and <paramref name="notifyArg"/> (a deleted
+    /// callback's registration is dropped).
+    /// </summary>
+    public int SetOrPulseWithNotify(uint setPattern, ulong userData, int notifyArg, bool pulse)
+    {
+        if ((setPattern & ~EventBits.UserMask) != 0)
+        {
+            return SceError.ILLEGAL_PATTERN;
+        }
+
+        if (setPattern == 0)
+        {
+            return SceError.OK;
+        }
+
+        lock (this)
+        {
+            SetOrPulse(setPattern, userData, pulse);
+            for (int i = 0; i < _registrations.Count;)
+            {
+                Registration registration = _registrations[i];
+                if (registration.Callback.Deleted)
+                {
+                    _registrations.RemoveAt(i);
+                    continue;
+                }
+
+                registration.Callback.Notify(notifyArg, registration.NotifyId);
+                i++;
+            }
+
+            return SceError.OK;
         }
     }
 

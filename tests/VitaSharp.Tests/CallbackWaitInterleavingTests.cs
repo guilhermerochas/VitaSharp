@@ -422,4 +422,103 @@ public sealed class CallbackWaitInterleavingTests(GuestMemoryFixture fixture) : 
             Assert.Equal(0, Call(Tm, "sceKernelUnlockReadRWLock", uid));
         });
     }
+
+    /// <summary>
+    /// Callbacks registered to a simple event (threadmgr 3.74: register 0x8100cfcc, unregister 0x8100d108 / 0x8100d1d0,
+    /// the notify 0x8101cfcc): only the *WithNotifyCallback set and pulse notify them, in callback UID order whatever
+    /// the registration order, each with r0 = the event's UID, r1 = its count, r2 = the notify argument; a set pattern
+    /// of 0 notifies nobody; unregistering a callback that is not registered is CALLBACK_NOT_REGISTERED; the All form
+    /// empties the event's list.
+    /// </summary>
+    [Fact]
+    public void CallbacksRegisteredToAnEventRunOnItsNotifyingSet()
+    {
+        List<(string Name, uint R0, uint R1, uint R2)> runs = new();
+        uint first = Stub("cbwait:event-a", context =>
+        {
+            runs.Add(("a", context.Gpr(0), context.Gpr(1), context.Gpr(2)));
+            return 0;
+        });
+        uint second = Stub("cbwait:event-b", context =>
+        {
+            runs.Add(("b", context.Gpr(0), context.Gpr(1), context.Gpr(2)));
+            return 0;
+        });
+        _h.OnGuest(main =>
+        {
+            int uid = Call(Tm, "sceKernelCreateSimpleEvent", _h.Str("cb-registered"), 0u, 0u, 0u);
+            SimpleEvent simpleEvent = _h.Emu.Kernel.Objects.Get<SimpleEvent>(uid)!;
+            int a = Call(Tm, "sceKernelCreateCallback", "event-a", 0u, first, 0u);
+            int b = Call(Tm, "sceKernelCreateCallback", "event-b", 0u, second, 0u);
+            Assert.Equal(0, Call(Tm, "sceKernelRegisterCallbackToEvent", uid, b));
+            Assert.Equal(0, Call(Tm, "sceKernelRegisterCallbackToEvent", uid, a));
+            Assert.Equal(2, simpleEvent.RegisteredCallbacks);
+
+            Assert.Equal(0, Call(Tm, "sceKernelSetEvent", uid, EventBit, 0UL));
+            Assert.Equal(0, Call(Tm, "sceKernelCheckCallback")); // a plain set notifies nobody
+            Assert.Equal(0, Call(Tm, "sceKernelSetEventWithNotifyCallback", uid, 0u, 0UL, 5));
+            Assert.Equal(0, Call(Tm, "sceKernelCheckCallback")); // nor does a set of nothing
+
+            Assert.Equal(0, Call(Tm, "sceKernelPulseEventWithNotifyCallback", uid, 0x02000000u, 0UL, 7));
+            Assert.Equal(0, Call(Tm, "sceKernelSetEventWithNotifyCallback", uid, 0x02000000u, 0UL, 9));
+            Assert.Equal(2, Call(Tm, "sceKernelCheckCallback"));
+            Assert.Equal([("a", (uint)uid, 2u, 9u), ("b", (uint)uid, 2u, 9u)], runs);
+            Assert.Equal(EventBit | 0x02000000u | EventBits.Create, simpleEvent.Pattern); // the pulse's bit did not stay
+
+            Assert.Equal(0, Call(Tm, "sceKernelUnregisterCallbackFromEvent", uid, a));
+            Assert.Equal(SceError.CALLBACK_NOT_REGISTERED, Call(Tm, "sceKernelUnregisterCallbackFromEvent", uid, a));
+            Assert.Equal(SceError.UNKNOWN_CALLBACK_ID, Call(Tm, "sceKernelRegisterCallbackToEvent", uid, uid)); // not a callback
+            runs.Clear();
+            Assert.Equal(0, Call(Tm, "sceKernelSetEventWithNotifyCallback", uid, EventBit, 0UL, 1));
+            Assert.Equal(1, Call(Tm, "sceKernelCheckCallback"));
+            Assert.Equal([("b", (uint)uid, 1u, 1u)], runs);
+
+            Assert.Equal(0, Call(Tm, "sceKernelUnregisterCallbackFromEventAll", uid));
+            Assert.Equal(0, simpleEvent.RegisteredCallbacks);
+            Assert.Equal(0, Call(Tm, "sceKernelSetEventWithNotifyCallback", uid, EventBit, 0UL, 1));
+            Assert.Equal(0, Call(Tm, "sceKernelCheckCallback"));
+        });
+    }
+
+    /// <summary>
+    /// The notifying set reaches the callback's thread asleep in a CB wait on the same event for another bit: the
+    /// callback runs (r0 = the event's UID) and the thread waits again; the set of its own bit then ends the wait. The
+    /// syscall form passes the user data and the notify argument in a 16-byte block.
+    /// </summary>
+    [Fact]
+    public void ANotifyingSetRunsTheCallbackOfAThreadWaitingOnTheSameEvent()
+    {
+        uint ranWith = 0;
+        uint argument = 0;
+        uint stub = Stub("cbwait:event-same", context =>
+        {
+            Volatile.Write(ref argument, context.Gpr(2));
+            Volatile.Write(ref ranWith, context.Gpr(0));
+            return 0;
+        });
+        _h.OnGuest(main =>
+        {
+            int uid = Call(Tm, "sceKernelCreateSimpleEvent", _h.Str("cb-same"), 0u, 0u, 0u);
+            SimpleEvent simpleEvent = _h.Emu.Kernel.Objects.Get<SimpleEvent>(uid)!;
+            int result = 1;
+            int callback = 0;
+            GuestRun waiter = _h.Start(th =>
+            {
+                callback = Call(Tm, "sceKernelCreateCallback", "event-same", 0u, stub, 0u);
+                Assert.Equal(0, Call(Tm, "sceKernelRegisterCallbackToEvent", uid, callback));
+                uint opt = _h.Alloc(8);
+                result = (int)th.DispatchForTest("_sceKernelWaitEventCB", (uint)uid, 0x02000000u, _h.Alloc(4), opt);
+            }, "cb-wait-same-event");
+            Until(() => waiter.Thread.Status == ThreadStatus.Waiting && simpleEvent.NumWaiters == 1, "the CB wait");
+            uint block = _h.Alloc(16);
+            GuestMemory.W32(block + 8, 0x77);
+            Assert.Equal(0, (int)main.DispatchForTest("_sceKernelSetEventWithNotifyCallback", (uint)uid, EventBit, block));
+            Until(() => Volatile.Read(ref ranWith) != 0 && simpleEvent.NumWaiters == 1 && waiter.Thread.Status == ThreadStatus.Waiting, "the callback and the new wait");
+            Assert.Equal((uint)uid, ranWith);
+            Assert.Equal(0x77u, argument);
+            Assert.Equal(0, Call(Tm, "sceKernelSetEvent", uid, 0x02000000u, 0UL));
+            _h.Join(waiter, 5_000);
+            Assert.Equal(0, result);
+        });
+    }
 }
