@@ -626,15 +626,7 @@ public sealed partial class AppMgr : HleModule
         if (!d.Contains(':')) d += ":";
         var host = Emu.Vfs.Resolve(d);
         if (host == null) return ERRNO_ENOENT;
-        const ulong Cap = 64UL << 30;
-        ulong total = Cap, free = Cap / 2;
-        try
-        {
-            var drive = new DriveInfo(Path.GetPathRoot(Path.GetFullPath(host))!);
-            total = Math.Min((ulong)drive.TotalSize, Cap);
-            free = Math.Min((ulong)drive.AvailableFreeSpace, total);
-        }
-        catch (Exception e) when (e is IOException or ArgumentException or UnauthorizedAccessException) { }
+        (ulong total, ulong free) = DeviceCapacity.Of(host);
         maxSize.TrySet(total);
         freeSize.TrySet(free);
         return 0;
