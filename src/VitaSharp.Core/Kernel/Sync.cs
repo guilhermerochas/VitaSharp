@@ -238,6 +238,68 @@ public static class Wait
     /// time; negative once it ran out).</summary>
     internal static long RemainingUs(long startTicks, long limitUs) => limitUs - ElapsedUs(startTicks);
 
+    /// <summary>The thread is in a CB wait with notified callbacks to run (threadmgr 3.74: the thread's "callbacks
+    /// notified" bit, which every CB wait loop checks before it looks at its object and when it wakes up).</summary>
+    internal static bool CallbacksPending(GuestThread? thread)
+        => thread != null && thread.CanRunCallbacks && GuestThread.CallbackProcessor != null && Volatile.Read(ref thread.PendingCallbacks) > 0;
+
+    /// <summary>Runs the thread's notified callbacks outside <paramref name="sync"/>'s lock (they are guest code that may
+    /// call the object), taking the lock back after them.</summary>
+    internal static void RunCallbacks(object sync, GuestThread thread)
+    {
+        Monitor.Exit(sync);
+        try
+        {
+            GuestThread.CallbackProcessor!(thread);
+        }
+        finally
+        {
+            Monitor.Enter(sync);
+        }
+    }
+
+    /// <summary>
+    /// The timeout of a CB wait, one deadline for the whole call (threadmgr 3.74 keeps one timer across the loop of
+    /// every CB wait: a callback notification ends the sleep with NOTIFY_CALLBACK, the thread runs its callbacks and
+    /// sleeps again for what is left).
+    /// </summary>
+    internal struct CallbackWaitDeadline
+    {
+        private long _startTicks;
+        private long _limitUs;
+
+        /// <summary>A callback notification ended a sleep of this call.</summary>
+        public bool Interrupted;
+
+        public static CallbackWaitDeadline Start(Ptr<uint> timeout)
+        {
+            return new CallbackWaitDeadline { _startTicks = GuestClock.Ticks, _limitUs = timeout.IsNull ? -1 : timeout.Value };
+        }
+
+        /// <summary>Before a sleep after an interruption: writes what is left of the caller's timeout to it (the sleep
+        /// waits that long). False when nothing is left: the call ends with WAIT_TIMEOUT (the timeout reads 0).</summary>
+        public readonly bool PrepareSleep(Ptr<uint> timeout)
+        {
+            if (!Interrupted || _limitUs < 0)
+            {
+                return true;
+            }
+
+            long leftUs = Math.Max(0, RemainingUs(_startTicks, _limitUs));
+            timeout.Value = (uint)leftUs;
+            return leftUs > 0;
+        }
+
+        /// <summary>The call ends without sleeping again after an interruption: writes what is left of its timeout.</summary>
+        public readonly void WriteLeft(Ptr<uint> timeout)
+        {
+            if (Interrupted && _limitUs >= 0)
+            {
+                timeout.TrySet((uint)Math.Max(0, RemainingUs(_startTicks, _limitUs)));
+            }
+        }
+    }
+
     /// <summary>Writes back the time left of a wait that ended at <paramref name="endedTicks"/> (the signal that woke it;
     /// a value outside the wait, such as long.MinValue, means now).</summary>
     private static void WriteRemaining(Ptr<uint> timeout, long? limitUs, long startTicks, long endedTicks = long.MinValue)
@@ -373,7 +435,7 @@ public static class Wait
 /// priority in a TH_PRIO one). A waiter whose timeout passes leaves the queue, and the units go on to the waiters behind
 /// it (the class's wait-release handler); a cancel or a delete takes every waiter off the queue at once.
 /// </summary>
-public sealed partial class Semaphore : KernelObject
+public sealed partial class Semaphore : KernelObject, ICallbackInterruptedWait
 {
     public override int UidClass => 2;
     /// <summary>SCE_KERNEL_ATTR_TH_PRIO: waiters queue by thread priority instead of first come first served.</summary>
@@ -390,6 +452,8 @@ public sealed partial class Semaphore : KernelObject
         public int Need;
         public int Priority;
         public int ThreadUid;
+        /// <summary>The waiting thread (null: a host caller, or a restored waiter until its thread reissues the wait).</summary>
+        public GuestThread? Thread;
         /// <summary>A signal (or a timed-out waiter ahead of it) gave it its units.</summary>
         public bool Granted;
         /// <summary>Off the queue without the units: WAIT_CANCEL, WAIT_DELETE or WAIT_TIMEOUT.</summary>
@@ -448,52 +512,86 @@ public sealed partial class Semaphore : KernelObject
                 return request.Granted ? SceError.OK : request.Error;
             }
 
-            if (request == null)
+            var deadline = Wait.CallbackWaitDeadline.Start(timeout);
+            while (true)
             {
-                int priority = self?.Priority ?? 0;
-                if (!WaiterAhead(priority) && Count >= need)
+                // threadmgr 3.74 (0x81011bc0): a CB wait runs the notified callbacks before it looks at the count
+                if (request == null && Wait.CallbacksPending(self))
                 {
-                    Count -= need;
-                    ObserveSignal();
-                    return SceError.OK;
-                }
-
-                request = new WaitRequest { Need = need, Priority = priority, ThreadUid = self?.Uid ?? 0 };
-                Enqueue(request);
-                Waiters++;
-            }
-
-            request.StartTicks = GuestClock.Ticks;
-            request.LimitUs = timeout.IsNull ? -1 : timeout.Value;
-            try
-            {
-                result = Wait.UntilGranted(this, request, static r => r.Granted, timeout, static r => r.Granted ? 0 : r.Error,
-                    WaitDescription, out woken);
-            }
-            finally
-            {
-                if (request.Granted)
-                {
-                    _granted.Remove(request);
-                }
-                else if (request.Error == 0 && _queue.Remove(request))
-                {
-                    // its own timeout (or the thread's end): the units go on to the waiters behind it
-                    Waiters--;
-                    if (Deliver())
+                    Wait.RunCallbacks(this, self!);
+                    if (_deleted)
                     {
-                        Monitor.PulseAll(this);
+                        return SceError.WAIT_DELETE;
+                    }
+
+                    ReleaseExpired();
+                }
+                if (request == null)
+                {
+                    int priority = self?.Priority ?? 0;
+                    if (!WaiterAhead(priority) && Count >= need)
+                    {
+                        Count -= need;
+                        ObserveSignal();
+                        deadline.WriteLeft(timeout);
+                        return SceError.OK;
+                    }
+
+                    if (!deadline.PrepareSleep(timeout))
+                    {
+                        return SceError.WAIT_TIMEOUT;
+                    }
+
+                    request = new WaitRequest { Need = need, Priority = priority, ThreadUid = self?.Uid ?? 0 };
+                    Enqueue(request);
+                    Waiters++;
+                }
+
+                request.Thread = self;
+                request.StartTicks = GuestClock.Ticks;
+                request.LimitUs = timeout.IsNull ? -1 : timeout.Value;
+                try
+                {
+                    result = Wait.UntilGranted(this, request, static r => r.Granted || Wait.CallbacksPending(r.Thread), timeout,
+                        static r => r.Granted ? 0 : r.Error, WaitDescription, out woken);
+                }
+                finally
+                {
+                    if (request.Granted)
+                    {
+                        _granted.Remove(request);
+                    }
+                    else if (request.Error == 0 && _queue.Remove(request))
+                    {
+                        // its own timeout, a callback notification that came before the thread was in the queue, or
+                        // the thread's end: the units go on to the waiters behind it
+                        Waiters--;
+                        if (Deliver())
+                        {
+                            Monitor.PulseAll(this);
+                        }
                     }
                 }
-            }
-            if (request.Granted)
-            {
-                result = SceError.OK; // a timeout or cancel that came after the units does not undo them
-            }
-            else if (request.Error == SceError.WAIT_TIMEOUT)
-            {
-                result = SceError.WAIT_TIMEOUT;
-                timeout.TrySet(0);
+                if (request.Granted)
+                {
+                    result = SceError.OK; // a timeout or cancel that came after the units does not undo them
+                    break;
+                }
+
+                if (request.Error == SceError.NOTIFY_CALLBACK || (request.Error == 0 && result == SceError.OK))
+                {
+                    // off the queue for its callbacks: run them, look at the count again, queue anew behind the others
+                    deadline.Interrupted = true;
+                    request = null;
+                    continue;
+                }
+                if (request.Error == SceError.WAIT_TIMEOUT)
+                {
+                    result = SceError.WAIT_TIMEOUT;
+                    timeout.TrySet(0);
+                }
+
+                break;
             }
         }
         if (woken && result == SceError.OK)
@@ -519,6 +617,27 @@ public sealed partial class Semaphore : KernelObject
         }
 
         _queue.Insert(index, request);
+    }
+
+    /// <summary>A callback notification reached a CB waiter (threadmgr 3.74's notify ends its sleep with
+    /// NOTIFY_CALLBACK): it leaves the queue as a timed-out waiter does (the class's wait-release handler hands the count
+    /// on to the waiters behind it), runs its callbacks and waits again.</summary>
+    public void InterruptForCallbacks(GuestThread thread)
+    {
+        for (int i = 0; i < _queue.Count; i++)
+        {
+            WaitRequest request = _queue[i];
+            if (request.Thread != thread)
+            {
+                continue;
+            }
+
+            request.Error = SceError.NOTIFY_CALLBACK;
+            _queue.RemoveAt(i);
+            Waiters--;
+            Deliver();
+            return;
+        }
     }
 
     /// <summary>Hands the count to the waiters in queue order until the first one it does not cover. True when it
@@ -1167,7 +1286,7 @@ public sealed partial class EventFlag : KernelObject, ICallbackInterruptedWait
 /// or above 1 without SCE_KERNEL_MUTEX_ATTR_RECURSIVE, is ILLEGAL_COUNT in every call; a waiter whose timeout passes
 /// leaves the queue at its guest-time deadline; a cancel or a delete takes every waiter off it at once.
 /// </summary>
-public sealed partial class Mutex : KernelObject
+public sealed partial class Mutex : KernelObject, ICallbackInterruptedWait
 {
     public override int UidClass => IsLight ? 10 : 4;
     public const uint AttrRecursive = 0x02;
@@ -1391,6 +1510,26 @@ public sealed partial class Mutex : KernelObject
         }
 
         _queue.Insert(index, request);
+    }
+
+    /// <summary>A callback notification reached a CB waiter (threadmgr 3.74's notify ends its sleep with
+    /// NOTIFY_CALLBACK): it leaves the queue as a timed-out waiter does, runs its callbacks and locks again.</summary>
+    public void InterruptForCallbacks(GuestThread thread)
+    {
+        for (int i = 0; i < _queue.Count; i++)
+        {
+            WaitRequest request = _queue[i];
+            if (request.Thread != thread)
+            {
+                continue;
+            }
+
+            request.Error = SceError.NOTIFY_CALLBACK;
+            _queue.RemoveAt(i);
+            Waiters--;
+            HandOver();
+            return;
+        }
     }
 
     /// <summary>Hands a free mutex to the head of the queue with the count it asked for. True when it did.</summary>
@@ -1627,58 +1766,95 @@ public sealed partial class Mutex : KernelObject
                 return request.Granted ? SceError.OK : request.Error;
             }
 
-            if (request == null)
+            if (request == null && IsOwner(self))
             {
-                if (IsOwner(self))
+                return LockAgain(count);
+            }
+
+            var deadline = Wait.CallbackWaitDeadline.Start(timeout);
+            while (true)
+            {
+                // threadmgr 3.74 (0x8100d79c): a CB lock runs the notified callbacks before it looks at the mutex
+                if (request == null && Wait.CallbacksPending(self))
                 {
-                    return LockAgain(count);
+                    Wait.RunCallbacks(this, self);
+                    if (_deleted)
+                    {
+                        return SceError.WAIT_DELETE;
+                    }
+
+                    ReleaseExpired();
+                }
+                if (request == null)
+                {
+                    if (!WaiterAhead(self.Priority) && TakeFree(self, self.Uid, count))
+                    {
+                        ObserveSignal();
+                        deadline.WriteLeft(timeout);
+                        return SceError.OK;
+                    }
+
+                    if (!deadline.PrepareSleep(timeout))
+                    {
+                        return SceError.WAIT_TIMEOUT;
+                    }
+
+                    request = new WaitRequest { Count = count, Priority = self.Priority, ThreadUid = self.Uid, Thread = self, Reacquire = reacquire };
+                    Enqueue(request);
+                    Waiters++;
                 }
 
-                if (!WaiterAhead(self.Priority) && TakeFree(self, self.Uid, count))
+                request.Thread = self;
+                if (IsLight && FlagContended())
                 {
-                    ObserveSignal();
-                    return SceError.OK;
+                    WakeWaiters(); // the owner had unlocked in guest code: the head of the queue has it
                 }
 
-                request = new WaitRequest { Count = count, Priority = self.Priority, ThreadUid = self.Uid, Thread = self, Reacquire = reacquire };
-                Enqueue(request);
-                Waiters++;
-            }
-
-            request.Thread = self;
-            if (IsLight && FlagContended())
-            {
-                WakeWaiters(); // the owner had unlocked in guest code: the head of the queue has it
-            }
-
-            request.StartTicks = GuestClock.Ticks;
-            request.LimitUs = timeout.IsNull ? -1 : timeout.Value;
-            try
-            {
-                // an owner that ends without unlocking leaves the mutex to the head of the queue: looked at on every
-                // wake-up slice, as before the queue
-                result = Wait.UntilGranted(this, (mutex: this, request), static s => s.request.Granted || s.mutex.HandOverFromEndedOwner(s.request),
-                    timeout, static s => s.request.Granted ? 0 : s.request.Error, WaitDescription, out woken);
-            }
-            finally
-            {
+                request.StartTicks = GuestClock.Ticks;
+                request.LimitUs = timeout.IsNull ? -1 : timeout.Value;
+                try
+                {
+                    // an owner that ends without unlocking leaves the mutex to the head of the queue: looked at on every
+                    // wake-up slice, as before the queue
+                    result = Wait.UntilGranted(this, (mutex: this, request),
+                        static s => s.request.Granted || s.mutex.HandOverFromEndedOwner(s.request) || Wait.CallbacksPending(s.request.Thread),
+                        timeout, static s => s.request.Granted ? 0 : s.request.Error, WaitDescription, out woken);
+                }
+                finally
+                {
+                    if (request.Granted)
+                    {
+                        _granted.Remove(request);
+                    }
+                    else if (request.Error == 0 && _queue.Remove(request))
+                    {
+                        Waiters--; // its own timeout, a notification that came before it was queued, or the thread's end
+                        if (HandOver())
+                        {
+                            Monitor.PulseAll(this);
+                        }
+                    }
+                }
                 if (request.Granted)
                 {
-                    _granted.Remove(request);
+                    result = SceError.OK; // a timeout or cancel that came after the hand-over does not undo it
+                    break;
                 }
-                else if (request.Error == 0 && _queue.Remove(request))
+
+                if (request.Error == SceError.NOTIFY_CALLBACK || (request.Error == 0 && result == SceError.OK))
                 {
-                    Waiters--; // its own timeout (or the thread's end)
+                    // off the queue for its callbacks: run them, look at the mutex again, queue anew behind the others
+                    deadline.Interrupted = true;
+                    request = null;
+                    continue;
                 }
-            }
-            if (request.Granted)
-            {
-                result = SceError.OK; // a timeout or cancel that came after the hand-over does not undo it
-            }
-            else if (request.Error == SceError.WAIT_TIMEOUT)
-            {
-                result = SceError.WAIT_TIMEOUT;
-                timeout.TrySet(0);
+                if (request.Error == SceError.WAIT_TIMEOUT)
+                {
+                    result = SceError.WAIT_TIMEOUT;
+                    timeout.TrySet(0);
+                }
+
+                break;
             }
         }
         if (woken && result == SceError.OK)
@@ -1811,7 +1987,7 @@ public sealed partial class Mutex : KernelObject
 /// mutex always sees it. Games may copy a work area (MotorStorm RC waits through a copy on a thread's stack and signals
 /// through another one); only the work area the cond was created in carries the count, so it also holds its own address
 /// (+12 <see cref="LwSelfOffset"/>) and the guest fast path takes a copy (a different address there) to the kernel.</summary>
-public sealed partial class CondVar : KernelObject
+public sealed partial class CondVar : KernelObject, ICallbackInterruptedWait
 {
     public override int UidClass => WorkArea != 0 ? 11 : 5;
     /// <summary>SCE_KERNEL_COND_ATTR_TH_PRIO: waiters queue by thread priority instead of first come first served.</summary>
@@ -1924,41 +2100,78 @@ public sealed partial class CondVar : KernelObject
             self._condWaitCount = 1; // save states: the reissued wait has unlocked its mutex by this much
             LinkedListNode<Waiter> node = _freeNodes.Count > 0 ? _freeNodes.Pop() : new LinkedListNode<Waiter>(new Waiter());
             Waiter w = node.Value;
-            w.Thread = self;
-            w.Priority = self.Priority;
-            w.Released = false;
-            w.Error = 0;
-            w.StartTicks = GuestClock.Ticks;
-            w.LimitUs = timeout.IsNull ? -1 : timeout.Value;
-            Enqueue(node);
+            var deadline = Wait.CallbackWaitDeadline.Start(timeout);
             try
             {
-                r = Wait.Until(this, w, static t => t.Released, timeout, static t => t.Released ? 0 : t.Error, WaitDescription);
+                while (true)
+                {
+                    // threadmgr 3.74 (0x8101fab4): a CB wait runs the notified callbacks, its mutex already unlocked,
+                    // before it joins the queue; a notification takes it off the queue and it joins again at the end
+                    if (Wait.CallbacksPending(self))
+                    {
+                        PublishQueued(_queue.Count);
+                        Wait.RunCallbacks(this, self);
+                        if (_deleted)
+                        {
+                            return DeletedError;
+                        }
+
+                        ReleaseExpired();
+                    }
+                    if (!deadline.PrepareSleep(timeout))
+                    {
+                        r = SceError.WAIT_TIMEOUT; // the timer ran out during the callbacks: the mutex is locked again
+                        break;
+                    }
+
+                    w.Thread = self;
+                    w.Priority = self.Priority;
+                    w.Released = false;
+                    w.Error = 0;
+                    w.StartTicks = GuestClock.Ticks;
+                    w.LimitUs = timeout.IsNull ? -1 : timeout.Value;
+                    Enqueue(node);
+                    PublishQueued(_queue.Count);
+                    try
+                    {
+                        r = Wait.Until(this, w, static t => t.Released || Wait.CallbacksPending(t.Thread), timeout,
+                            static t => t.Released ? 0 : t.Error, WaitDescription);
+                    }
+                    finally
+                    {
+                        if (!w.Released && node.List != null)
+                        {
+                            _queue.Remove(node);
+                            PublishQueued(_queue.Count);
+                        }
+                    }
+                    if (w.Released)
+                    {
+                        r = SceError.OK; // a timeout that came after the signal does not undo it
+                        break;
+                    }
+
+                    if (w.Error == SceError.NOTIFY_CALLBACK || (w.Error == 0 && r == SceError.OK))
+                    {
+                        deadline.Interrupted = true; // off the queue for its callbacks
+                        continue;
+                    }
+                    if (r == SceError.WAIT_TIMEOUT)
+                    {
+                        timeout.TrySet(0);
+                        break;
+                    }
+
+                    return r; // deleted: the mutex is not locked again
+                }
             }
             finally
             {
-                if (!w.Released && node.List != null)
-                {
-                    _queue.Remove(node);
-                    PublishQueued(_queue.Count);
-                }
                 w.Thread = null!;
                 if (_freeNodes.Count < 64)
                 {
                     _freeNodes.Push(node);
                 }
-            }
-            if (w.Released)
-            {
-                r = SceError.OK; // a timeout that came after the signal does not undo it
-            }
-            else if (r == SceError.WAIT_TIMEOUT)
-            {
-                timeout.TrySet(0);
-            }
-            else if (r != SceError.OK)
-            {
-                return r; // deleted: the mutex is not locked again
             }
 
             // lock the mutex again outside our lock to avoid lock-order inversion with the mutex
@@ -1983,6 +2196,25 @@ public sealed partial class CondVar : KernelObject
             }
 
             return relocked < 0 ? relocked : r;
+        }
+    }
+
+    /// <summary>A callback notification reached a CB waiter (threadmgr 3.74's notify ends its sleep with
+    /// NOTIFY_CALLBACK): it leaves the queue, so a signal meanwhile goes to the next waiter, and joins it again at the
+    /// end once its callbacks ran (its mutex stays unlocked meanwhile).</summary>
+    public void InterruptForCallbacks(GuestThread thread)
+    {
+        for (LinkedListNode<Waiter>? n = _queue.First; n != null; n = n.Next)
+        {
+            if (n.Value.Thread != thread)
+            {
+                continue;
+            }
+
+            n.Value.Error = SceError.NOTIFY_CALLBACK;
+            _queue.Remove(n);
+            PublishQueued(_queue.Count);
+            return;
         }
     }
 
@@ -2088,7 +2320,7 @@ public sealed partial class CondVar : KernelObject
 /// priority that no guest thread waits on (<see cref="TransferLater"/>).</item>
 /// </list>
 /// </summary>
-public sealed partial class MsgPipe : KernelObject
+public sealed partial class MsgPipe : KernelObject, ICallbackInterruptedWait
 {
     public override int UidClass => 7;
     /// <summary>SCE_KERNEL_MSG_PIPE_MODE_*: ASAP (0, move what fits / what is there) or FULL (1, the whole size),
@@ -2132,6 +2364,9 @@ public sealed partial class MsgPipe : KernelObject
         public bool Peek;
         public int Priority;
         public int ThreadUid;
+        /// <summary>The waiting thread (null: a host caller, a DONT_WAIT request, or a restored waiter until its thread
+        /// reissues the call).</summary>
+        public GuestThread? Thread;
         public Ptr<uint> Result;
         /// <summary>Done: the thread returns OK whenever it runs again.</summary>
         public bool Served;
@@ -2464,6 +2699,30 @@ public sealed partial class MsgPipe : KernelObject
         HeadChanged();
     }
 
+    /// <summary>A callback notification reached a CB waiter (threadmgr 3.74's notify ends its sleep with
+    /// NOTIFY_CALLBACK): it leaves the queue with what it moved, as the class's wait-end handler lets the next head and
+    /// the senders behind take their turn, runs its callbacks and tries again.</summary>
+    public void InterruptForCallbacks(GuestThread thread)
+    {
+        foreach (Transfer transfer in _queue)
+        {
+            if (transfer.Thread == thread && transfer.Completed == null)
+            {
+                transfer.Error = SceError.NOTIFY_CALLBACK;
+                LeaveForCallbacks(transfer);
+                return;
+            }
+        }
+    }
+
+    /// <summary>Takes a waiter off the queue without ending its call (it runs its callbacks and tries again).</summary>
+    private void LeaveForCallbacks(Transfer transfer)
+    {
+        _queue.Remove(transfer);
+        HeadChanged();
+        Serve();
+    }
+
     /// <summary>The queue lost a waiter: a sender head keeps its place if it moved part of its bytes; a receiver head
     /// takes what the buffer holds (threadmgr 0x81013C30).</summary>
     private void HeadChanged()
@@ -2703,6 +2962,7 @@ public sealed partial class MsgPipe : KernelObject
 
             int priority = self?.Priority ?? 0;
             bool full = (mode & WaitAll) != 0;
+            bool queued = transfer != null; // a restored waiter is in the queue already
             if (transfer == null)
             {
                 transfer = new Transfer
@@ -2717,10 +2977,9 @@ public sealed partial class MsgPipe : KernelObject
                     ThreadUid = self?.Uid ?? 0,
                     Result = result,
                 };
-                bool first = GoesFirst(send, priority);
                 if (poll)
                 {
-                    if (!first || (full && size > (send ? SendRoom() : ReceivableBytes())))
+                    if (!GoesFirst(send, priority) || (full && size > (send ? SendRoom() : ReceivableBytes())))
                     {
                         return send ? SceError.MPP_FULL : SceError.MPP_EMPTY;
                     }
@@ -2730,26 +2989,6 @@ public sealed partial class MsgPipe : KernelObject
                     ObserveSignal();
                     return done ? SceError.OK : send ? SceError.MPP_FULL : SceError.MPP_EMPTY;
                 }
-
-                if (first)
-                {
-                    bool done = send ? Give(transfer) : Take(transfer);
-                    if (done)
-                    {
-                        WakeWaiters();
-                        return SceError.OK;
-                    }
-
-                    // it tried first: as the new head it keeps its place if it moved part of its bytes
-                    _headPartial = transfer.KeepsPlace;
-                }
-                else
-                {
-                    result.TrySet(0);
-                }
-
-                Enqueue(transfer);
-                WakeWaiters();
             }
             else
             {
@@ -2757,37 +2996,102 @@ public sealed partial class MsgPipe : KernelObject
                 transfer.Buffers = buffers;
             }
 
-            transfer.StartTicks = GuestClock.Ticks;
-            transfer.LimitUs = timeout.IsNull ? -1 : timeout.Value;
-            try
+            transfer.Thread = self;
+            var deadline = Wait.CallbackWaitDeadline.Start(timeout);
+            while (true)
             {
-                result0 = Wait.UntilGranted(this, transfer, static t => t.Served, timeout, static t => t.Served ? 0 : t.Error,
-                    WaitDescription, out woken);
-            }
-            finally
-            {
-                if (transfer.Served || transfer.Error != 0)
+                if (!queued)
                 {
-                    _ended.Remove(transfer);
+                    // threadmgr 3.74 (0x81013dfc / 0x8101456c): a CB call runs the notified callbacks before it moves
+                    // bytes; a notification takes it off the queue with what it moved, and it tries again from there
+                    if (Wait.CallbacksPending(self))
+                    {
+                        Wait.RunCallbacks(this, self!);
+                        if (_deleted)
+                        {
+                            transfer.Report();
+                            return SceError.WAIT_DELETE;
+                        }
+
+                        ReleaseExpired();
+                    }
+                    if (GoesFirst(send, priority))
+                    {
+                        bool done = send ? Give(transfer) : Take(transfer);
+                        if (done)
+                        {
+                            WakeWaiters();
+                            deadline.WriteLeft(timeout);
+                            return SceError.OK;
+                        }
+
+                        // it tried first: as the new head it keeps its place if it moved part of its bytes
+                        _headPartial = transfer.KeepsPlace;
+                    }
+                    else
+                    {
+                        transfer.Report();
+                    }
+
+                    if (!deadline.PrepareSleep(timeout))
+                    {
+                        return SceError.WAIT_TIMEOUT;
+                    }
+
+                    Enqueue(transfer);
+                    WakeWaiters();
                 }
-                else if (_queue.Contains(transfer))
+
+                queued = false;
+                transfer.StartTicks = GuestClock.Ticks;
+                transfer.LimitUs = timeout.IsNull ? -1 : timeout.Value;
+                try
                 {
-                    // its own timeout (or the thread's end): the turn goes on to the ones behind it
-                    End(transfer, SceError.WAIT_TIMEOUT);
-                    _ended.Remove(transfer);
-                    Serve();
-                    Monitor.PulseAll(this);
+                    result0 = Wait.UntilGranted(this, transfer, static t => t.Served || Wait.CallbacksPending(t.Thread), timeout,
+                        static t => t.Served ? 0 : t.Error, WaitDescription, out woken);
                 }
-            }
-            transfer.Report();
-            if (transfer.Served)
-            {
-                result0 = SceError.OK; // a timeout or cancel that came after the bytes does not undo them
-            }
-            else if (transfer.Error == SceError.WAIT_TIMEOUT)
-            {
-                result0 = SceError.WAIT_TIMEOUT;
-                timeout.TrySet(0);
+                finally
+                {
+                    if (transfer.Served || transfer.Error != 0)
+                    {
+                        _ended.Remove(transfer);
+                    }
+                    else if (_queue.Contains(transfer))
+                    {
+                        if (Wait.CallbacksPending(self))
+                        {
+                            LeaveForCallbacks(transfer); // a notification that came before it was queued
+                        }
+                        else
+                        {
+                            // its own timeout (or the thread's end): the turn goes on to the ones behind it
+                            End(transfer, SceError.WAIT_TIMEOUT);
+                            _ended.Remove(transfer);
+                            Serve();
+                        }
+                        Monitor.PulseAll(this);
+                    }
+                }
+                transfer.Report();
+                if (transfer.Served)
+                {
+                    result0 = SceError.OK; // a timeout or cancel that came after the bytes does not undo them
+                    break;
+                }
+
+                if (transfer.Error == SceError.NOTIFY_CALLBACK || (transfer.Error == 0 && result0 == SceError.OK))
+                {
+                    transfer.Error = 0;
+                    deadline.Interrupted = true;
+                    continue;
+                }
+                if (transfer.Error == SceError.WAIT_TIMEOUT)
+                {
+                    result0 = SceError.WAIT_TIMEOUT;
+                    timeout.TrySet(0);
+                }
+
+                break;
             }
         }
         if (woken && result0 == SceError.OK)
@@ -3045,22 +3349,48 @@ public sealed partial class RwLock : KernelObject
     {
         lock (this)
         {
-            ReadWaiters++;
-            int gen = _cancelled;
-            try
+            var deadline = Wait.CallbackWaitDeadline.Start(timeout);
+            while (true)
             {
-                int r = Wait.Until(this, (l: this, self, gen), static t => t.l.Writer == null || t.l.Writer == t.self, timeout,
-                    static t => t.l._deleted ? SceError.WAIT_DELETE : t.l._cancelled != t.gen ? SceError.WAIT_CANCEL : 0, WaitDescription);
+                if (Wait.CallbacksPending(self))
+                {
+                    Wait.RunCallbacks(this, self); // threadmgr 3.74 (0x81024bb0): the CB lock runs them first
+                    if (_deleted)
+                    {
+                        return SceError.WAIT_DELETE;
+                    }
+                }
+                if (!deadline.PrepareSleep(timeout))
+                {
+                    return SceError.WAIT_TIMEOUT;
+                }
+
+                ReadWaiters++;
+                int gen = _cancelled;
+                int r;
+                bool readable;
+                try
+                {
+                    r = Wait.Until(this, (l: this, self, gen), static t => t.l.Writer == null || t.l.Writer == t.self || Wait.CallbacksPending(t.self), timeout,
+                        static t => t.l._deleted ? SceError.WAIT_DELETE : t.l._cancelled != t.gen ? SceError.WAIT_CANCEL : 0, WaitDescription);
+                    readable = Writer == null || Writer == self;
+                }
+                finally
+                {
+                    ReadWaiters--;
+                }
+                if (r == SceError.OK && !readable)
+                {
+                    deadline.Interrupted = true; // a callback notification: not a waiter while its callbacks run
+                    continue;
+                }
                 if (r == SceError.OK)
                 {
                     Readers++;
+                    deadline.WriteLeft(timeout);
                 }
 
                 return r;
-            }
-            finally
-            {
-                ReadWaiters--;
             }
         }
     }
@@ -3103,22 +3433,49 @@ public sealed partial class RwLock : KernelObject
                 WriteCount++;
                 return SceError.OK;
             }
-            WriteWaiters++;
-            int gen = _cancelled;
-            try
+            var deadline = Wait.CallbackWaitDeadline.Start(timeout);
+            while (true)
             {
-                int r = Wait.Until(this, (l: this, gen), static t => t.l.Writer == null && t.l.Readers == 0, timeout,
-                    static t => t.l._deleted ? SceError.WAIT_DELETE : t.l._cancelled != t.gen ? SceError.WAIT_CANCEL : 0, WaitDescription);
+                if (Wait.CallbacksPending(self))
+                {
+                    Wait.RunCallbacks(this, self); // threadmgr 3.74 (0x81024bb0): the CB lock runs them first
+                    if (_deleted)
+                    {
+                        return SceError.WAIT_DELETE;
+                    }
+                }
+                if (!deadline.PrepareSleep(timeout))
+                {
+                    return SceError.WAIT_TIMEOUT;
+                }
+
+                WriteWaiters++;
+                int gen = _cancelled;
+                int r;
+                bool writable;
+                try
+                {
+                    r = Wait.Until(this, (l: this, self, gen), static t => (t.l.Writer == null && t.l.Readers == 0) || Wait.CallbacksPending(t.self), timeout,
+                        static t => t.l._deleted ? SceError.WAIT_DELETE : t.l._cancelled != t.gen ? SceError.WAIT_CANCEL : 0, WaitDescription);
+                    writable = Writer == null && Readers == 0;
+                }
+                finally
+                {
+                    WriteWaiters--;
+                }
+                if (r == SceError.OK && !writable)
+                {
+                    deadline.Interrupted = true; // a callback notification: not a waiter while its callbacks run
+                    continue;
+                }
                 if (r == SceError.OK)
                 {
                     Writer = self;
                     WriteCount = 1;
+                    deadline.WriteLeft(timeout);
                 }
+
                 return r;
-            }
-            finally
-            {
-                WriteWaiters--;
             }
         }
     }
@@ -3544,13 +3901,14 @@ public sealed partial class TimerObject : KernelObject
 /// every waiter whose pattern matches (consuming the bits with AUTO_RESET); Pulse does the same and then restores the
 /// previous pattern, so only threads already waiting see it.
 /// </summary>
-public sealed partial class SimpleEvent : KernelObject
+public sealed partial class SimpleEvent : KernelObject, ICallbackInterruptedWait
 {
     public override int UidClass => 13;
     public uint Attr;
     public uint Pattern;
     public ulong LastUserData;
     private bool AutoReset => (Attr & EventBits.AttrAutoReset) != 0;
+    private bool _deleted;
 
     private sealed class Waiter
     {
@@ -3562,6 +3920,8 @@ public sealed partial class SimpleEvent : KernelObject
         /// <summary>The waiter's address space: the thread that sets the event writes the results there (simple
         /// events are shared between processes).</summary>
         public AddressSpace? Space;
+        /// <summary>The waiting thread (null: a host caller).</summary>
+        public GuestThread? Thread;
     }
 
     private readonly LinkedList<Waiter> _waiters = new();
@@ -3615,45 +3975,91 @@ public sealed partial class SimpleEvent : KernelObject
 
         lock (this)
         {
-            int r = TryTake(waitPattern, result, userData);
-            if (r != SceError.EVENT_COND)
+            var deadline = global::VitaSharp.Core.Kernel.Wait.CallbackWaitDeadline.Start(timeout);
+            while (true)
             {
-                return r;
-            }
-
-            var w = new Waiter { WaitPattern = waitPattern, Result = result, UserData = userData, Priority = self?.Priority ?? 0, Space = AddressSpace.Current };
-            LinkedListNode<Waiter> node;
-            if ((Attr & EventBits.AttrThPrio) != 0)
-            {
-                LinkedListNode<Waiter>? at = _waiters.First;
-                while (at != null && at.Value.Priority <= w.Priority)
+                // threadmgr 3.74 (0x8101d220): a CB wait runs the notified callbacks before it looks at the pattern; a
+                // notification takes it off the queue, and it looks again and queues anew at the end
+                if (global::VitaSharp.Core.Kernel.Wait.CallbacksPending(self))
                 {
-                    at = at.Next;
+                    global::VitaSharp.Core.Kernel.Wait.RunCallbacks(this, self!);
+                    if (_deleted)
+                    {
+                        result.TrySet(EventBits.Error);
+                        userData.TrySet(LastUserData);
+                        return SceError.WAIT_DELETE;
+                    }
+                }
+                int r = TryTake(waitPattern, result, userData);
+                if (r != SceError.EVENT_COND)
+                {
+                    deadline.WriteLeft(timeout);
+                    return r;
                 }
 
-                node = at == null ? _waiters.AddLast(w) : _waiters.AddBefore(at, w);
+                if (!deadline.PrepareSleep(timeout))
+                {
+                    return SceError.WAIT_TIMEOUT;
+                }
+
+                var w = new Waiter { WaitPattern = waitPattern, Result = result, UserData = userData, Priority = self?.Priority ?? 0, Space = AddressSpace.Current, Thread = self };
+                LinkedListNode<Waiter> node;
+                if ((Attr & EventBits.AttrThPrio) != 0)
+                {
+                    LinkedListNode<Waiter>? at = _waiters.First;
+                    while (at != null && at.Value.Priority <= w.Priority)
+                    {
+                        at = at.Next;
+                    }
+
+                    node = at == null ? _waiters.AddLast(w) : _waiters.AddBefore(at, w);
+                }
+                else
+                {
+                    node = _waiters.AddLast(w);
+                }
+
+                r = global::VitaSharp.Core.Kernel.Wait.Until(this, w, static w => w.Code.HasValue || global::VitaSharp.Core.Kernel.Wait.CallbacksPending(w.Thread),
+                    timeout, null, WaitDescription);
+                if (w.Code is { } code)
+                {
+                    r = code;
+                }
+                else if (node.List != null)
+                {
+                    _waiters.Remove(node);
+                }
+
+                if (r == SceError.NOTIFY_CALLBACK || (!w.Code.HasValue && r == SceError.OK))
+                {
+                    deadline.Interrupted = true; // off the queue for its callbacks
+                    continue;
+                }
+                if (r < 0 && r != SceError.WAIT_TIMEOUT)
+                {
+                    result.TrySet(EventBits.Error);
+                    userData.TrySet(LastUserData);
+                }
+                return r;
             }
-            else
+        }
+    }
+
+    /// <summary>A callback notification reached a CB waiter (threadmgr 3.74's notify ends its sleep with
+    /// NOTIFY_CALLBACK): it leaves the queue, so a set meanwhile goes to the waiters behind, runs its callbacks, looks
+    /// at the pattern again and queues anew at the end.</summary>
+    public void InterruptForCallbacks(GuestThread thread)
+    {
+        for (LinkedListNode<Waiter>? n = _waiters.First; n != null; n = n.Next)
+        {
+            if (n.Value.Thread != thread || n.Value.Code.HasValue)
             {
-                node = _waiters.AddLast(w);
+                continue;
             }
 
-            r = global::VitaSharp.Core.Kernel.Wait.Until(this, w, static w => w.Code.HasValue, timeout, null, WaitDescription);
-            if (w.Code is { } code)
-            {
-                r = code;
-            }
-            else
-            {
-                _waiters.Remove(node);
-            }
-
-            if (r < 0 && r != SceError.WAIT_TIMEOUT)
-            {
-                result.TrySet(EventBits.Error);
-                userData.TrySet(LastUserData);
-            }
-            return r;
+            n.Value.Code = SceError.NOTIFY_CALLBACK;
+            _waiters.Remove(n);
+            return;
         }
     }
 
@@ -3761,6 +4167,7 @@ public sealed partial class SimpleEvent : KernelObject
     {
         lock (this)
         {
+            _deleted = true;
             // waits that include the DELETE bit end successfully with it, the others with WAIT_DELETE
             foreach (Waiter w in _waiters)
             {

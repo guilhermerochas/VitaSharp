@@ -1274,7 +1274,7 @@ public sealed class ThreadMgrHleTests(GuestMemoryFixture fx) : IDisposable
             {
                 Assert.Equal(SceError.LW_MUTEX_FAILED_TO_OWN, Call(Tm, "sceKernelTryLockLwMutex", plain, 1));
                 Assert.Equal(SceError.LW_MUTEX_NOT_OWNED, Call(Tm, "sceKernelUnlockLwMutex", plain, 1));
-                Assert.Equal(SceError.WAIT_TIMEOUT, Call(Tm, "_sceKernelLockLwMutex", plain, 1, new Ptr<uint>(_h.Word(1000))));
+                Assert.Equal(SceError.WAIT_TIMEOUT, Call(Tm, "_sceKernelLockLwMutex", plain, 1, new Ptr<uint>(_h.Word(1000)), 0));
             }, "lw-other");
             _h.Join(other);
             // the waiter's wait leaves nothing behind: an unlock frees the word completely

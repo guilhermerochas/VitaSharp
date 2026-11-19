@@ -219,6 +219,11 @@ public static class SceError
     public const int WAIT_DELETE_LW_MUTEX = unchecked((int)0x800281C2);
     public const int WAIT_DELETE_LW_COND = unchecked((int)0x800281C3);
     public const int UNKNOWN_CALLBACK_ID = unchecked((int)0x800280A1);
+    /// <summary>threadmgr's internal end of a CB wait that a callback notification interrupted: the waiter runs its
+    /// callbacks and waits again; never returned to the guest.</summary>
+    public const int NOTIFY_CALLBACK = unchecked((int)0x800280A2);
+    /// <summary>sceKernelUnregisterCallbackFromEvent: the callback is not registered to the event.</summary>
+    public const int CALLBACK_NOT_REGISTERED = unchecked((int)0x800280A3);
     public const int UNKNOWN_MSG_PIPE_ID = unchecked((int)0x80028221);
     public const int MPP_EMPTY = unchecked((int)0x80028223);
     /// <summary>The pipe was deleted (by its creator, or with its process) while this handle to it stayed open.</summary>
