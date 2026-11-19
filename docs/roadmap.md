@@ -187,9 +187,23 @@ jogo (`dotnet test`) para saber se uma mudança quebrou algo. Nenhuma mudança �
   fim da fila com o que sobra do prazo (um set durante o callback não o vê); sem WAITMULTIPLE a espera é da thread
   que espera (ela mesma pode esperar/poll de um callback; outra thread recebe EVF_MULTI). Eram bugs, corrigidos no
   mesmo hash. Diferença mantida de propósito: callbacks não aninham (o firmware aninha; ver `GuestThread.CallbackDepth`).
-  Faltam: a saída da fila por notificação nas outras esperas CB (semáforo, mutex, lwmutex, cond, msgpipe, rwlock: hoje
-  o waiter fica na fila enquanto o callback roda), os eventos simples (sceKernelWaitEvent*, RegisterCallbackToEvent,
-  Set/PulseEventWithNotifyCallback: notifyId = UID do evento) e o 'cancel/delete não segura o acordado' do event flag.
+  Esperas CB de todos os objetos cobertas (19/11/2026, sync6, test/sync6, `CallbackWaitInterleavingTests`, conferido no
+  threadmgr 3.74: semáforo 0x81011bc0, mutex 0x8100d79c, lwmutex 0x810229c4 / syscall 0x9C572180, cond 0x8101fab4,
+  msgpipe 0x81013dfc / 0x8101456c, rwlock 0x81024bb0, evento 0x8101d220, o notify 0x8100c820 e o fim de espera
+  0x81010670): toda espera CB é um laço que roda os callbacks notificados, olha o objeto e dorme; a notificação tira o
+  waiter da fila pelo tratador da classe (o semáforo entrega as unidades aos de trás, o mutex passa à cabeça, o
+  msgpipe deixa a próxima cabeça e os remetentes de trás andarem, com o que o waiter já moveu guardado), e ele volta ao
+  fim da fila com o resto do prazo; callbacks notificados antes da espera rodam antes de ela olhar o objeto; o cond
+  roda os callbacks com o mutex ainda solto e volta à fila do cond. O syscall `_sceKernelLockLwMutex` tem o 4º
+  argumento "CB" (o do sceKernelLockLwMutexCB do SceLibKernel), antes ignorado. Eventos simples: callbacks registrados
+  (Register/UnregisterCallbackFromEvent(All), lista por UID do callback, repetição permitida, CALLBACK_NOT_REGISTERED)
+  só são notificados pelo Set/PulseEventWithNotifyCallback (padrão 0 não faz nada), com r0 = UID do evento e r2 = o
+  argumento; a lista entra no save state (estados antigos carregam sem registro). Event flag: o acordado por cancel ou
+  delete não passa à frente do canceller parado (como o acordado pelo set). Eram bugs, corrigidos no mesmo hash.
+  Faltam: o rwlock não tem fila (a mão passa a quem acordar primeiro; só a contagem e o prazo seguem o firmware), o
+  registro de callback em objetos de evento que não são eventos simples (ex.: o evento do RTC do shell) segue
+  aceitando sem guardar nada, sceKernelWaitMultipleEvents ainda espera por varredura, e cancel/delete dos outros
+  objetos ainda não seguram o acordado atrás do canceller parado.
 - [ ] [P3][G] **Contratos do escalonador e do ritmo da CPU:** quem roda primeiro por prioridade e afinidade, quanto tempo de
   guest passa por chamada HLE e por espera, o que acorda quem; uma mudança de desempenho que altere a ordem entre
   threads quebra um teste.
