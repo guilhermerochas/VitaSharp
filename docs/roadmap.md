@@ -733,14 +733,27 @@ jogo (`dotnet test`) para saber se uma mudança quebrou algo. Nenhuma mudança �
   thread da GPU 19 → 8 (440-457 ms → 15-28 ms numa máquina livre; 357 ms numa execução com a CPU cheia), pior
   quadro 490-513 → 18-74 ms, quadros >= 50 ms 1 → 0 (0-1 com a CPU cheia), fps do replay 25,4/30,5 → 31,4/31,6.
   Custo: 131 shaders e 189 pipelines montados na criação (173 prontos) para 19 usados, 2,2-3,4 s de workers na
-  "tela de carregamento" com o cache do driver frio. Os 8 que sobram são do passe de fetch, numa superfície F16x4 (provavelmente programas que amostram
-  o próprio G-buffer F16 como textura: classe de textura F16, não a U8x4 prevista), 2 deles com a escrita de cor
-  desligada (máscara 0); próximo passo: prever a classe das texturas pelas superfícies conhecidas (a superfície
-  como textura) para esses programas; tentado (todas as unidades na classe da superfície F16x4/F32): 264 pipelines
-  em vez de 189 e os mesmos 8, ficou de fora. Memória: pico de memória privada do processo +35-45 MB (961-964 →
-  999-1.006 MB) e working set +26-37 MB com 242 pipelines e 182 shaders montados na criação (~0,1 MB por objeto); num jogo com muitos
-  programas (Killzone: ~670 shaders) a lista de superfícies × programas pede um teto (por exemplo só as superfícies
-  dos últimos N BeginScene, e um limite de pipelines por carregamento). Próximas partes: (3) estado dinâmico EDS3/vertex input onde houver; (4) Android: medir no
+  "tela de carregamento" com o cache do driver frio. Os 8 que sobravam (feat/uber2, 19/11/2026, feito): eram do
+  passe de fetch numa superfície F16x4 e diferiam do previsto só no módulo do fragmento (texturas F16x4, S8x4, BC3,
+  PVRTII e U8, não a classe U8x4) e, em 2, na máscara 0 (log em modo debug: "pipeline built on the GPU thread ...
+  closest differs in [...]"); o prefetch de draw, que vê as texturas e a máscara exatas, montava só o pipeline simples
+  e a variante input-fetch de MSAA, nunca o do passe de fetch de uma cena de 1 amostra. Agora monta (teste
+  `RendererPathsTests.DrawPrefetchBuildsTheFetchPassOfEachDrawBeforeItRuns`). Replay frio do PCSA00029 (2x
+  alternado): pipelines no thread da GPU 8 → 0, quadros >= 4 ms 1 → 0, pior 20 → 0 ms. Outros dumps, replay frio
+  com a opção desligada → ligada: PCSE00053 50 → 1 (o que sobra é 1 de integer view, 0,1-0,2 ms, sem quadro
+  >= 4 ms; próximo passo, se pesar: o prefetch de draw prever também a view inteira, como a criação do programa já
+  faz), quadros >= 4 ms 1 → 0 (pior 2.862 → 0,2 ms); GTAVCECTY 1 → 0 (pior 200 → 0 ms); PCSE01023 0 → 0 (pior 38 →
+  0 ms). Teto (feito): um programa novo só é montado para as 8 superfícies usadas mais recentemente (cada BeginScene
+  renova a sua; `VulkanRendererOptions.ProgramLoadSurfaces`) e cada carregamento (termina depois de 30 presents sem
+  programa criado) enfileira no máximo 256 pipelines de combinações além da previsão principal
+  (`ProgramLoadBudget`); o que fica de fora é do prefetch de draw, como antes (teste
+  `RendererPathsTests.ProgramLoadBuildsOnlyRecentSurfacesWithinTheLoadBudget`). Nenhum dos 4 dumps chega ao teto
+  (2-8 superfícies, 3-211 pipelines). Memória (pico de memória privada, opção desligada → ligada): PCSA00029 966 →
+  1.009-1.011 MB (189 pipelines), PCSE00053 1.215 → 1.238-1.319 MB (211 pipelines; 1.241/1.259 MB repetido),
+  GTAVCECTY 670 → 676-680 MB, PCSE01023 587 → 596 MB. Sem dump do Killzone para medir o teto num jogo com ~670
+  shaders. Também feito: teste guarda `ShaderGeneratorVersionTests` (hash do GLSL e dos metadados de ~430 casos
+  sintéticos contra a `GeneratorVersion`: mudança de GLSL sem bump falha) e `replay-gpu` sem `--shader-cache` usa um
+  cache temporário, apagado no fim, com aviso no log (nunca o shadercache do usuário). Próximas partes: (3) estado dinâmico EDS3/vertex input onde houver; (4) Android: medir no
   Killzone o tempo de carregamento a mais e a queda de pipelines no thread da GPU
 - [x] (16/11/2026, usuário: removido da lista; é regra de medição) [P3][P] Medidas de desempenho com a CPU saturada por outros trabalhos não valem: no Killzone (emulador quente, driver
   frio) o watchdog acusou a thread da GPU 11-31 s sem progresso, sem nada atribuído a shader/pipeline (pior 116 ms),
