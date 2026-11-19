@@ -840,7 +840,36 @@ public sealed partial class Touch : HleModule
         if (Emu.IsShell && region > 0) Emu.Vita.ActivateShellTouchRegion(port, region, enable != 0, attr);
         return 0;
     }
-    [Hle] int sceTouchClearRegion() => 0;
+
+    /// <summary>The regions a process can clear (SceTouch 3.74: eight per port).</summary>
+    const int TouchClearableRegions = 8;
+
+    /// <summary>sceTouchClearRegion(port, region): SceTouch 3.74 clears the region's entry of the process (port 0..1,
+    /// region 0..7, else 0x80350001); the shell's regions over an application are the ones that matter here.</summary>
+    [Hle]
+    int sceTouchClearRegion(uint port, uint region)
+    {
+        return TouchClearRegionKernel(port, region);
+    }
+
+    /// <summary>NID_E1C5D95F (SceTouchForDriver)(port, region): the kernel side of sceTouchClearRegion (the syscall
+    /// calls it).</summary>
+    [Hle("NID_E1C5D95F", Nid = 0xE1C5D95F, Library = "SceTouchForDriver")]
+    int TouchClearRegionKernel(uint port, uint region)
+    {
+        if (port >= 2 || region >= TouchClearableRegions)
+        {
+            return ERR_INVALID_ARG;
+        }
+
+        if (Emu.IsShell)
+        {
+            Emu.Vita.ClearShellTouchRegion((int)port, (int)region);
+        }
+
+        return 0;
+    }
+
     [Hle] int sceTouchEnableIdleTimerCancelSetting(int port, int enable) => 0; // no idle timer
 
     // system-only queries: a game process lacks the privilege (SCE_TOUCH_ERROR_PRIV_REQUIRED, psp2/touch.h)
