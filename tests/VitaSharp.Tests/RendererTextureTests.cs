@@ -169,11 +169,13 @@ public sealed class RendererTextureTests(GuestMemoryFixture fx)
 
         /// <summary>One scene with a programmable-blending draw (<see cref="FpFetch"/> reads the surface colour), drawn
         /// as two triangles: on a one-sample scene it renders in a fetch pass (VulkanRenderer.SingleFetch.cs).</summary>
-        public void RunFetch()
+        /// <param name="fragmentEnabled">false: the draw runs with the fragment program disabled (colour mask 0)</param>
+        public void RunFetch(bool fragmentEnabled = true)
         {
             Assert.Equal(0, Call(_g, "sceGxmBeginScene", Ctx, 0u, Rt, 0u, 0u, 0u, Color, 0u));
             Invoke(_g, "sceGxmSetVertexProgram", Ctx, Vp);
             Invoke(_g, "sceGxmSetFragmentProgram", Ctx, FpFetch);
+            Invoke(_g, "sceGxmSetFrontFragmentProgramEnable", Ctx, fragmentEnabled ? 0u : 0x00200000u); // SCE_GXM_FRAGMENT_PROGRAM_DISABLED
             Invoke(_g, "sceGxmSetFrontDepthFunc", Ctx, 0x00E00000u); // ALWAYS
             Invoke(_g, "sceGxmSetCullMode", Ctx, 0u);
             Assert.Equal(0, Call(_g, "sceGxmSetVertexStream", Ctx, 0u, Verts));

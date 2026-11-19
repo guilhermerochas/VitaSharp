@@ -302,9 +302,17 @@ public sealed unsafe partial class VulkanRenderer
         }
 
         bool ms = scene.Samples != SampleCountFlags.Count1Bit;
-        var job = new PipelineJob(gxmVertexProgram, vk, d.FragmentProgram.Info.Program, fk,
-            ms ? HintKey(d.FragmentTextures, d.FragmentProgram.Info.TexturesUsed, null, null, colorFormat, true, NativeOutputFormat(d.FragmentProgram)) : 0,
-            ms ? FragmentHintsInputFetch(d, colorFormat) : null,
+        // the variant the draw may take besides its plain pipeline: the input-attachment shader of a multisampled scene,
+        // or, for a programmable-blending program in a one-sample scene, the fetch pass (VulkanRenderer.SingleFetch.cs)
+        // with the draw's own textures and colour mask; program load predicts that pass only with textures of the
+        // four-unsigned-byte class and the colour written (the replay of a dump left its 8 fetch-pass pipelines, F16x4,
+        // S8x4 and compressed textures, two of them with the mask 0, to the GPU thread)
+        bool fetchPass = !ms && scene.HasColor && d.FragmentProgram.Info.Program.IsFragColorUsed;
+        ulong fetchKey = ms || fetchPass
+            ? HintKey(d.FragmentTextures, d.FragmentProgram.Info.TexturesUsed, null, null, colorFormat, true, NativeOutputFormat(d.FragmentProgram), fetchSingle: fetchPass)
+            : 0;
+        ShaderHints? fetchHints = ms ? FragmentHintsInputFetch(d, colorFormat) : fetchPass ? FragmentHintsInputFetchSingle(d, colorFormat) : null;
+        var job = new PipelineJob(gxmVertexProgram, vk, d.FragmentProgram.Info.Program, fk, fetchKey, fetchHints,
             scene, blend, drawState.Front.FragmentEnabled, d.PrimitiveType, drawState.Front.PolygonMode, staticKey);
         if (!EnsureShaderWorkers())
         {
@@ -390,7 +398,7 @@ public sealed unsafe partial class VulkanRenderer
         bool blendOn = j.Blend is { } bi && !fsM.Gen.UsesFragColor && fsM.Gen.RawColorBits == 0 && !(bi.ColorFunc == 0 && bi.AlphaFunc == 0)
             && !(bi.ColorSrc == 1 && bi.ColorDst == 0 && bi.AlphaSrc == 1 && bi.AlphaDst == 0);
         // a programmable-blending program of a one-sample scene draws small pieces in a fetch pass (VulkanRenderer.SingleFetch.cs)
-        if (j.ProgramLoad && fsM.Gen.UsesFragColor && fsM.Gen.RawColorBits == 0 && !ms && predictedScene.HasColor && j.FetchHints != null)
+        if (fsM.Gen.UsesFragColor && fsM.Gen.RawColorBits == 0 && !ms && predictedScene.HasColor && j.FetchHints != null)
         {
             BuildFetchPassPipeline(j, vs, topology, mask, attach);
         }
@@ -398,6 +406,11 @@ public sealed unsafe partial class VulkanRenderer
         var key = new PipelineKey(vs.Module.Handle, fs.Module.Handle, vs.LayoutHash, attach, predictedScene.HasColor,
             blendOn, j.Blend?.ColorFunc ?? 0, j.Blend?.AlphaFunc ?? 0, j.Blend?.ColorSrc ?? 1, j.Blend?.ColorDst ?? 0, j.Blend?.AlphaSrc ?? 1, j.Blend?.AlphaDst ?? 0,
             mask, TopologyClass(topology), Formats.Polygon(j.PolygonMode), predictedScene.Samples, j.Static);
+        if (j.ProgramLoad)
+        {
+            DbgProgramLoadPipeline(j.Fs.Hash, fsKey, key);
+        }
+
         // (recorded in pipelines.list when the GPU thread first uses it, not here: a misprediction is never recorded)
         if (_pipelineLibrary && key.Static == 0)
         {

@@ -250,8 +250,9 @@ public sealed unsafe partial class VulkanRenderer
         }
     }
 
-    /// <summary>Worker: the fetch-pass pipeline of a programmable-blending program in a one-sample scene (the draw's key
-    /// with <see cref="PipelineKey.InputPass"/>, the single-sample input attachment variant of its shader, no blend).</summary>
+    /// <summary>Worker (program load and draw prefetch): the fetch-pass pipeline of a programmable-blending program in a
+    /// one-sample scene (the draw's key with <see cref="PipelineKey.InputPass"/>, the single-sample input attachment
+    /// variant of its shader, no blend).</summary>
     private void BuildFetchPassPipeline(PipelineJob j, VsEntry vs, PrimitiveTopology topology, byte mask, Format attach)
     {
         ModuleEntry? fetch = ModuleFor(j.Fs, j.FetchKey, j.FetchHints);
@@ -262,10 +263,15 @@ public sealed unsafe partial class VulkanRenderer
 
         var key = new PipelineKey(vs.Module.Handle, fetch.Module.Handle, vs.LayoutHash, attach, true,
             false, j.Blend?.ColorFunc ?? 0, j.Blend?.AlphaFunc ?? 0, j.Blend?.ColorSrc ?? 1, j.Blend?.ColorDst ?? 0, j.Blend?.AlphaSrc ?? 1, j.Blend?.AlphaDst ?? 0,
-            mask, TopologyClass(topology), Formats.Polygon(j.PolygonMode), SampleCountFlags.Count1Bit, 0, 0, InputPass: true);
+            mask, TopologyClass(topology), Formats.Polygon(j.PolygonMode), SampleCountFlags.Count1Bit, j.Static, 0, InputPass: true);
+        if (j.ProgramLoad)
+        {
+            DbgProgramLoadPipeline(j.Fs.Hash, j.FetchKey, key);
+        }
+
         if (BuildSharedPipeline(key, vs, fetch.Module, topology) == SharedBuild.Built)
         {
-            Interlocked.Increment(ref _statLoadPipelinesBuilt);
+            Interlocked.Increment(ref j.ProgramLoad ? ref _statLoadPipelinesBuilt : ref _statPipelinesPrefetched);
         }
     }
 
@@ -301,6 +307,11 @@ public sealed unsafe partial class VulkanRenderer
     {
         ulong hintKey = hints.Key();
         _programLoadKeys.TryAdd((program.Hash, hints.CanonicalKey()), hintKey);
+        if (DebugMode.Enabled)
+        {
+            Log.Info($"[dbg] program load: shader {program.Hash:X16} hint {hintKey:X16} canonical {hints.CanonicalKey():X16} textures {DbgTextureFormats(hints.TextureFormats, program)} colour 0x{hints.ColorFormat:X8} fetch {hints.FetchInputAttachment}/{hints.FetchInputSingleSample}");
+        }
+
         if (NeedsJob(program, hintKey))
         {
             Interlocked.Increment(ref _statLoadShaders);
@@ -375,6 +386,75 @@ public sealed unsafe partial class VulkanRenderer
 
         return true;
     }
+
+    /// <summary>Debug mode: the pipelines built at program load, by fragment program hash (with the fragment hint key),
+    /// to tell what a pipeline the GPU thread had to build was predicted as.</summary>
+    private readonly ConcurrentDictionary<ulong, ConcurrentQueue<(ulong FsHintKey, PipelineKey Key)>> _dbgProgramLoadPipelines = new();
+
+    private void DbgProgramLoadPipeline(ulong fsProgramHash, ulong fsHintKey, in PipelineKey key)
+    {
+        if (DebugMode.Enabled)
+        {
+            _dbgProgramLoadPipelines.GetOrAdd(fsProgramHash, _ => new()).Enqueue((fsHintKey, key));
+        }
+    }
+
+    /// <summary>Debug mode: a pipeline the GPU thread builds itself, with the closest program-load prediction for the
+    /// same fragment program and the key fields that differ.</summary>
+    private void DbgGpuThreadPipeline(in PipelineKey key, VsEntry vs, FsEntry fs)
+    {
+        string predicted = "none";
+        if (_dbgProgramLoadPipelines.TryGetValue(fs.ProgramHash, out ConcurrentQueue<(ulong FsHintKey, PipelineKey Key)>? list))
+        {
+            int best = int.MaxValue;
+            foreach ((ulong fsHintKey, PipelineKey candidate) in list)
+            {
+                List<string> diff = PipelineKeyDiff(key, candidate);
+                if (fsHintKey != fs.HintKey)
+                {
+                    diff.Add($"fs hints {fsHintKey:X16}");
+                }
+
+                if (diff.Count < best)
+                {
+                    best = diff.Count;
+                    predicted = $"{list.Count} predicted, closest differs in [{string.Join(", ", diff)}]";
+                }
+            }
+        }
+
+        Dbg($"pipeline built on the GPU thread: vs {vs.ProgramHash:X16} hints {vs.HintKey:X16} fs {fs.ProgramHash:X16} hints {fs.HintKey:X16} {key}; program load: {predicted}");
+    }
+
+    private static List<string> PipelineKeyDiff(in PipelineKey a, in PipelineKey b)
+    {
+        var diff = new List<string>();
+        void Check(string name, object x, object y)
+        {
+            if (!Equals(x, y))
+            {
+                diff.Add($"{name} {y}");
+            }
+        }
+
+        Check("Vs", a.Vs, b.Vs);
+        Check("Fs", a.Fs, b.Fs);
+        Check("VertexLayout", a.VertexLayout, b.VertexLayout);
+        Check("ColorFormat", a.ColorFormat, b.ColorFormat);
+        Check("HasColor", a.HasColor, b.HasColor);
+        Check("Blend", a.Blend, b.Blend);
+        Check("BlendFactors", (a.ColorFunc, a.AlphaFunc, a.ColorSrc, a.ColorDst, a.AlphaSrc, a.AlphaDst), (b.ColorFunc, b.AlphaFunc, b.ColorSrc, b.ColorDst, b.AlphaSrc, b.AlphaDst));
+        Check("Mask", a.Mask, b.Mask);
+        Check("TopologyClass", a.TopologyClass, b.TopologyClass);
+        Check("Polygon", a.Polygon, b.Polygon);
+        Check("Samples", a.Samples, b.Samples);
+        Check("Static", a.Static, b.Static);
+        Check("TileWord1", a.TileWord1, b.TileWord1);
+        Check("InputPass", a.InputPass, b.InputPass);
+        return diff;
+    }
+
+    private static string DbgTextureFormats(uint[] formats, GxpProgram program) => string.Join(",", formats.Select((f, unit) => (f, unit)).Where(t => (program.TexturesUsed() & (1u << t.unit)) != 0 || t.f != 0x0C000000u).Select(t => $"{t.unit}:{t.f:X8}"));
 
     private string ProgramLoadReport() => _compileOnProgramLoad
         ? $"; at program load: {_statLoadShaders} shaders and {_statLoadPipelines} pipelines queued for {_loadedFragmentPrograms.Count} fragment programs x {_statKnownScenes + 1} surfaces ({_statLoadPipelinesBuilt} built), {_statLoadAliases} draws served by a module of the same canonical hints"
