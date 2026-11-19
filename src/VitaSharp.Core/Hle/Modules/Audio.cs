@@ -345,6 +345,8 @@ public sealed partial class Audio : HleModule
             if (_inPort != null) return IN_ERR_PORT_FULL; // one port per process
             _inPort = new InPort { Type = type, Grain = grain, Freq = freq, RouteReports = 2 };
         }
+
+        CallInPortCallback(InKernel._inOpenCallback, InOwnerPid);
         return InPortId;
     }
 
@@ -361,6 +363,8 @@ public sealed partial class Audio : HleModule
             // unvalidated values still have to pace and size the silent capture
             _inPort = new InPort { Type = type, Grain = grain is > 0 and <= 4096 ? grain : 256, Freq = freq > 0 ? freq : 16000, RouteReports = 2 };
         }
+
+        CallInPortCallback(InKernel._inOpenCallback, InOwnerPid);
         return InPortId;
     }
 
@@ -374,6 +378,8 @@ public sealed partial class Audio : HleModule
             if (port != InPortId || _inPort == null) return IN_ERR_NOT_OPENED;
             _inPort = null;
         }
+
+        CallInPortCallback(InKernel._inReleaseCallback, InOwnerPid);
         return 0;
     }
 
@@ -405,7 +411,19 @@ public sealed partial class Audio : HleModule
         return 0;
     }
 
-    [Hle] int sceAudioInGetAdopt(int type) => type is 0 or 2 ? (_inPort != null ? 1 : 0) : IN_ERR_INVALID_PORT_TYPE;
+    /// <summary>sceAudioInGetAdopt(type): VOICE/RAW (0, 2), else 0x80260104; 1 when the caller's process is the
+    /// adopted one (AppMgr's, else the foreground process) and has its port open.</summary>
+    [Hle]
+    int sceAudioInGetAdopt(int type)
+    {
+        if (type is not (0 or 2))
+        {
+            return IN_ERR_INVALID_PORT_TYPE;
+        }
+
+        return HasInPort() && InAdoptedPid == InOwnerPid ? 1 : 0;
+    }
+
     [Hle] int sceAudioInGetInput() => _inputRoute;
 
     [Hle]
