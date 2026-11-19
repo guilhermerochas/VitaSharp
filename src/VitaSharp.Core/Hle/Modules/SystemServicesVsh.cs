@@ -54,10 +54,6 @@ public sealed partial class SystemServicesVsh : HleModule
     /// time stamp).</summary>
     [Hle] uint ksceKernelGetSystemTimeLow() => (uint)K.ProcessTimeUs;
 
-    /// <summary>(SceUID callback, SceUID event): ties a callback to a kernel event object (the shell's RTC "cron"
-    /// callback). The emulated RTC never raises that event, so the callback never runs.</summary>
-    [Hle] int sceKernelRegisterCallbackToEvent(int callback, int ev) => 0;
-
     /// <summary>(SceUID callback): called when another process ends (libshellsvc's IPC server cleans up its clients).
     /// The IPC objects of an ended process are released by VitaSharp itself.</summary>
     [Hle] int sceKernelRegisterProcessTerminationCallback(int callback) => 0;

@@ -1531,19 +1531,81 @@ public sealed partial class ThreadMgr : HleModule
     [Hle(Cost = HleCost.SchedulerWait)] int sceKernelPulseEvent(int uid, uint setPattern, ulong userData) => Event(uid)?.SetOrPulse(setPattern, userData, true) ?? SceError.UNKNOWN_EVENT_ID;
 
     /// <summary>sceKernelSetEventWithNotifyCallback / PulseEventWithNotifyCallback(uid, pattern, userData, notifyArg):
-    /// the set (pulse) of sceKernelSetEvent, then the callbacks registered to the event are notified with notifyArg
-    /// (libkernel packs userData and notifyArg into a 16-byte block for the _sce* syscall). The emulator registers no
-    /// callbacks to events (sceKernelRegisterCallbackToEvent keeps none), so only the set happens.</summary>
-    [Hle] int sceKernelSetEventWithNotifyCallback(int uid, uint setPattern, ulong userData, int notifyArg) => sceKernelSetEvent(uid, setPattern, userData);
-    [Hle] int sceKernelPulseEventWithNotifyCallback(int uid, uint setPattern, ulong userData, int notifyArg) => sceKernelPulseEvent(uid, setPattern, userData);
+    /// the set (pulse) of sceKernelSetEvent, then the callbacks registered to the event are notified with notifyArg and
+    /// the event's UID as notifier ID (threadmgr 3.74, <see cref="SimpleEvent.SetOrPulseWithNotify"/>; libkernel packs
+    /// userData and notifyArg into a 16-byte block for the _sce* syscall).</summary>
+    [Hle] int sceKernelSetEventWithNotifyCallback(int uid, uint setPattern, ulong userData, int notifyArg) => Event(uid)?.SetOrPulseWithNotify(setPattern, userData, notifyArg, pulse: false) ?? SceError.UNKNOWN_EVENT_ID;
+    [Hle] int sceKernelPulseEventWithNotifyCallback(int uid, uint setPattern, ulong userData, int notifyArg) => Event(uid)?.SetOrPulseWithNotify(setPattern, userData, notifyArg, pulse: true) ?? SceError.UNKNOWN_EVENT_ID;
 
+    /// <summary>(uid, setPattern, param {u64 userData, int notifyArg}): threadmgr 3.74 copies the 16-byte block in
+    /// (0x118F646E / 0x3E49D3F1; an unreadable block does nothing).</summary>
     [Hle]
     int _sceKernelSetEventWithNotifyCallback(int uid, uint setPattern, uint param) =>
-        param == 0 ? SceError.ILLEGAL_ADDR : sceKernelSetEvent(uid, setPattern, GuestMemory.Read<ulong>(param));
+        param == 0 ? SceError.ILLEGAL_ADDR : sceKernelSetEventWithNotifyCallback(uid, setPattern, GuestMemory.Read<ulong>(param), (int)GuestMemory.R32(param + 8));
 
     [Hle]
     int _sceKernelPulseEventWithNotifyCallback(int uid, uint setPattern, uint param) =>
-        param == 0 ? SceError.ILLEGAL_ADDR : sceKernelPulseEvent(uid, setPattern, GuestMemory.Read<ulong>(param));
+        param == 0 ? SceError.ILLEGAL_ADDR : sceKernelPulseEventWithNotifyCallback(uid, setPattern, GuestMemory.Read<ulong>(param), (int)GuestMemory.R32(param + 8));
+
+    /// <summary>
+    /// sceKernelRegisterCallbackToEvent(SceUID event, SceUID callback), as threadmgr 3.74 does it (the syscall
+    /// 0x76FB37E9, then 0x8100cfcc): an unknown callback is UNKNOWN_CALLBACK_ID, then the callback joins the event's
+    /// list (by callback UID) with the event's UID as the notifier ID its runs get; *WithNotifyCallback notifies it.
+    /// A UID that is not a simple event keeps the old answer, OK with nothing registered: the system's kernel event
+    /// objects (the RTC alarm event the shell registers its "cron" callback to) are not emulated objects, and nothing
+    /// would notify them.
+    /// </summary>
+    [Hle]
+    int sceKernelRegisterCallbackToEvent(int eventUid, int callbackUid)
+    {
+        if (Event(eventUid) is not { } e)
+        {
+            return SceError.OK;
+        }
+
+        if (Obj<Callback>(callbackUid) is not { Deleted: false } callback)
+        {
+            return UnknownCallbackForEvent(callbackUid);
+        }
+
+        return e.RegisterCallback(callback, eventUid);
+    }
+
+    /// <summary>sceKernelUnregisterCallbackFromEvent(SceUID event, SceUID callback) (0x18462B11, then 0x8100d108): the
+    /// first registration of the callback leaves the event's list; none is CALLBACK_NOT_REGISTERED.</summary>
+    [Hle]
+    int sceKernelUnregisterCallbackFromEvent(int eventUid, int callbackUid)
+    {
+        if (Event(eventUid) is not { } e)
+        {
+            return SceError.OK;
+        }
+
+        if (Obj<Callback>(callbackUid) == null)
+        {
+            return UnknownCallbackForEvent(callbackUid);
+        }
+
+        return e.UnregisterCallback(callbackUid);
+    }
+
+    /// <summary>The syscalls' answer for a callback UID that is not a live callback: one the process has no handle for
+    /// fails the handle conversion (0xC00280A1, as the syscall returns it), another object UNKNOWN_CALLBACK_ID.</summary>
+    int UnknownCallbackForEvent(int callbackUid)
+        => K.Objects.Get<KernelObject>(callbackUid) == null ? unchecked((int)0xC00280A1) : SceError.UNKNOWN_CALLBACK_ID;
+
+    /// <summary>sceKernelUnregisterCallbackFromEventAll(SceUID event) (0x888A7361, then 0x8100d1d0): every callback
+    /// leaves the event's list.</summary>
+    [Hle]
+    int sceKernelUnregisterCallbackFromEventAll(int eventUid)
+    {
+        if (Event(eventUid) is not { } e)
+        {
+            return SceError.OK;
+        }
+
+        return e.UnregisterAllCallbacks();
+    }
 
     /// <summary>Keeps only the given bits; on a timer it clears the event state.</summary>
     [Hle(Cost = HleCost.SchedulerWait)]

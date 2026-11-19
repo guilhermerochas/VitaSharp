@@ -73,7 +73,35 @@ public sealed partial class ThreadMgr
     /// <summary>(work, name, attr, opt {initCount, option}).</summary>
     [Hle] int __sceKernelCreateLwMutex(uint work, string name, uint attr, uint opt) => sceKernelCreateLwMutex(work, name, attr, (int)OptWord(opt, 0), OptWord(opt, 1));
     [Hle] int _sceKernelDeleteLwMutex(uint work) => sceKernelDeleteLwMutex(work);
-    [Hle] int _sceKernelLockLwMutex(uint work, int count, Ptr<uint> timeout) => sceKernelLockLwMutex(work, count, timeout);
+    /// <summary>(work, count, timeout*, callbacks): threadmgr 3.74's syscall (0x9C572180, then 0x810229c4) takes a
+    /// fourth argument, nonzero for sceKernelLockLwMutexCB: the lock is then a CB wait (callbacks run before it looks at
+    /// the mutex, a notification takes it off the queue, the ones notified after it was handed the mutex run before
+    /// the call returns).</summary>
+    [Hle]
+    int _sceKernelLockLwMutex(uint work, int count, Ptr<uint> timeout, int callbacks)
+    {
+        GuestThread self = Self;
+        if (callbacks == 0 || self.CallbackWait)
+        {
+            return sceKernelLockLwMutex(work, count, timeout);
+        }
+
+        self.CallbackWait = true;
+        try
+        {
+            int result = sceKernelLockLwMutex(work, count, timeout);
+            if (Volatile.Read(ref self.PendingCallbacks) > 0 && self.CallbackDepth == 0)
+            {
+                GuestThread.CallbackProcessor?.Invoke(self);
+            }
+
+            return result;
+        }
+        finally
+        {
+            self.CallbackWait = false;
+        }
+    }
     [Hle] int _sceKernelUnlockLwMutex(uint work, int count) => sceKernelUnlockLwMutex(work, count);
     [Hle] int _sceKernelGetLwMutexInfoById(int uid, uint info, uint opt) => InfoWithOpt(info, opt, () => sceKernelGetLwMutexInfoById(uid, info));
     /// <summary>(work, name, attr, opt {lwMutex work, option}).</summary>
