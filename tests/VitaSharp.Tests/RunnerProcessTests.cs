@@ -166,11 +166,20 @@ public sealed class RunnerProcessTests : IDisposable
         Assert.True(File.Exists(Path.Combine(diag, "screenshot.png")), string.Join(", ", Directory.GetFileSystemEntries(diag).Select(Path.GetFileName)));
         Assert.Equal((SyntheticTitle.Width, SyntheticTitle.Height), (DesktopProcess.Probe(Path.Combine(diag, "screenshot.png")).Width, DesktopProcess.Probe(Path.Combine(diag, "screenshot.png")).Height));
 
-        // the dump: 31 frames, replayed without the game in a process of its own
+        // the dump: 31 frames, replayed without the game in a process of its own; without --shader-cache the replay
+        // runs with a temporary shader cache and leaves the user's (the data folder's shadercache) untouched
         Assert.True(new FileInfo(dump).Length > 0);
+        string userCache = Path.Combine(_root, "shadercache");
+        if (Directory.Exists(userCache))
+        {
+            Directory.Delete(userCache, true);
+        }
+
         string replay = Path.Combine(_root, "replay");
         DesktopProcess.Result p = DesktopProcess.Run(_root, ["replay-gpu", dump, $"--out={replay}"], timeoutMs: 180_000);
         Assert.True(p.ExitCode == 0, Tail(p.Output));
+        Assert.False(Directory.Exists(userCache), $"the replay wrote into the user's shader cache: {string.Join(", ", Directory.Exists(userCache) ? Directory.GetFileSystemEntries(userCache, "*", SearchOption.AllDirectories) : [])}");
+        Assert.Contains("no --shader-cache: using a new temporary shader cache", File.ReadAllText(Path.Combine(replay, "log.txt")));
         (byte R, byte G, byte B)[] frames = Directory.GetFiles(replay, "frame_*.png").Order().Select(f => DesktopProcess.Probe(f).Center).ToArray();
         Assert.InRange(frames.Length, 25, 35);
         Assert.Contains(SyntheticTitle.Idle, frames);
