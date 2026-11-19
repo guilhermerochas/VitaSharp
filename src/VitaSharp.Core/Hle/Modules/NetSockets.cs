@@ -154,6 +154,14 @@ public sealed partial class Net
         }
     }
 
+    /// <summary>ksceNetClose(int s) (SceNetPsForDriver 0x21F4428D): SceNetPs 3.74 closes the socket as the syscall
+    /// does (its close with the kernel flag).</summary>
+    [Hle(Nid = 0x21F4428D, Library = "SceNetPsForDriver")]
+    int ksceNetClose(int s)
+    {
+        return sceNetSocketClose(s);
+    }
+
     [Hle]
     int sceNetSocketAbort(int s, int flags)
     {

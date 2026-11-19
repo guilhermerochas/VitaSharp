@@ -1,3 +1,4 @@
+using VitaSharp.Core.Memory;
 using VitaSharp.Core.SaveState;
 
 namespace VitaSharp.Core.Hle.Modules;
@@ -57,6 +58,57 @@ public sealed partial class SystemServicesVsh
         }
 
         _touchPortWord[port] = value;
+        return 0;
+    }
+
+    /// <summary>The words NID_3F3FBF69's table holds.</summary>
+    const int TouchTableWords = 16;
+
+    [SnapshotMissing] // states of builds before it: nothing set
+    readonly ushort[] _touchPortBytes = new ushort[2];
+
+    [SnapshotMissing]
+    readonly uint[] _touchTable = new uint[TouchTableWords];
+
+    [SnapshotMissing]
+    uint _touchTableCount;
+
+    /// <summary>NID_9C8CCB66's bytes of a port (first | second &lt;&lt; 8) and NID_3F3FBF69's count, for the tests.</summary>
+    internal (ushort Front, ushort Back, uint TableCount, uint FirstWord) TouchKernelTable =>
+        (_touchPortBytes[0], _touchPortBytes[1], _touchTableCount, _touchTable[0]);
+
+    /// <summary>NID_9C8CCB66 (SceTouchForDriver)(uint port, uint8 first, uint8 second): two bytes kept per port (port
+    /// 0 front, 1 back, else 0x80350001); 0.</summary>
+    [Hle("NID_9C8CCB66", Nid = 0x9C8CCB66, Library = "SceTouchForDriver")]
+    int TouchSetPortBytes(uint port, uint first, uint second)
+    {
+        if (port >= 2)
+        {
+            return TOUCH_ERR_INVALID_ARG;
+        }
+
+        _touchPortBytes[port] = (ushort)((first & 0xFF) | ((second & 0xFF) << 8));
+        return 0;
+    }
+
+    /// <summary>NID_3F3FBF69 (SceTouchForDriver)(const uint *table): the count (table[0]) and its words (table[1..]),
+    /// kept; NULL is 0x80350001.</summary>
+    [Hle("NID_3F3FBF69", Nid = 0x3F3FBF69, Library = "SceTouchForDriver")]
+    int TouchSetTable(uint table)
+    {
+        if (table == 0)
+        {
+            return TOUCH_ERR_INVALID_ARG;
+        }
+
+        uint count = GuestMemory.R32(table);
+        _touchTableCount = count;
+        uint kept = Math.Min(count, TouchTableWords);
+        for (uint word = 0; word < kept; word++)
+        {
+            _touchTable[word] = GuestMemory.R32(table + 4 + word * 4);
+        }
+
         return 0;
     }
 }

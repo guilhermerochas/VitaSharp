@@ -447,6 +447,24 @@ public sealed class VitaSystem
         }
     }
 
+    /// <summary>sceTouchClearRegion of the shell: the region's rectangle, activation and attribute are cleared.</summary>
+    public void ClearShellTouchRegion(int port, int region)
+    {
+        lock (_shellTouchRegions)
+        {
+            _shellTouchRegions.Remove((port, region));
+        }
+    }
+
+    /// <summary>Whether the shell keeps an entry for the region (set, activated, not cleared).</summary>
+    internal bool HasShellTouchRegion(int port, int region)
+    {
+        lock (_shellTouchRegions)
+        {
+            return _shellTouchRegions.ContainsKey((port, region));
+        }
+    }
+
     public void ActivateShellTouchRegion(int port, int region, bool enable, int attr)
     {
         lock (_shellTouchRegions)
