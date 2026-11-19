@@ -104,6 +104,50 @@ public sealed unsafe partial class GuestThread : KernelObject, IDisposable, Cpu.
     public volatile object? CurrentWaitSync;
     public static Func<GuestThread, int>? CallbackProcessor;
 
+    /// <summary>The thread's callbacks in creation order (threadmgr keeps them in a list on the thread and runs them in
+    /// that order). UIDs only grow, so the order is the UIDs' order, also after a save state.</summary>
+    private readonly List<Callback> _callbacks = new();
+
+    internal void AddCallback(Callback callback)
+    {
+        lock (_callbacks)
+        {
+            int index = _callbacks.Count;
+            while (index > 0 && _callbacks[index - 1].Uid > callback.Uid)
+            {
+                index--;
+            }
+
+            _callbacks.Insert(index, callback);
+        }
+    }
+
+    internal void RemoveCallback(Callback callback)
+    {
+        lock (_callbacks)
+        {
+            _callbacks.Remove(callback);
+        }
+    }
+
+    /// <summary>The first callback of the thread created after the one with <paramref name="previousUid"/> (the walk
+    /// goes on correctly when a callback creates or deletes callbacks).</summary>
+    internal Callback? NextCallback(int previousUid)
+    {
+        lock (_callbacks)
+        {
+            foreach (Callback callback in _callbacks)
+            {
+                if (callback.Uid > previousUid)
+                {
+                    return callback;
+                }
+            }
+
+            return null;
+        }
+    }
+
     private Thread? _host;
     private readonly ManualResetEventSlim _finished = new(true);
     private int _callDepth;
@@ -603,6 +647,12 @@ public sealed unsafe partial class GuestThread : KernelObject, IDisposable, Cpu.
                     }
 
                     InvokeGuarded(hleFunction, s);
+                    // threadmgr 3.74 (the CB waits, e.g. 0x8100f0e4): callbacks notified after the wait was satisfied,
+                    // before the thread ran again, run before the call returns
+                    if (Volatile.Read(ref PendingCallbacks) > 0 && CallbackDepth == 0)
+                    {
+                        CallbackProcessor?.Invoke(this);
+                    }
                 }
                 finally
                 {

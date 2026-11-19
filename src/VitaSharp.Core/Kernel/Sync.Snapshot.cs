@@ -421,6 +421,8 @@ public sealed partial class Callback
         w.Write(NotifyCount);
         w.Write(NotifyArg);
         w.Write(NotifyId);
+        // added 19/11/2026; states of builds before it load as not deleted (they freed a callback at once)
+        w.Write(Deleted);
     }
     internal void Load(SnapshotReader r)
     {
@@ -431,8 +433,15 @@ public sealed partial class Callback
         NotifyCount = r.ReadInt32();
         NotifyArg = r.ReadInt32();
         NotifyId = r.ReadInt32();
+        Deleted = !r.AtEnd && r.ReadBool();
     }
-    internal void Resolve(ObjectTable t) => Owner = t.Get<GuestThread>(_ownerUid) ?? throw new SnapshotException($"callback {Name}: its thread 0x{_ownerUid:X} is missing");
+
+    /// <summary>Finds the owner and takes the callback's place in its list (creation order: the UIDs').</summary>
+    internal void Resolve(ObjectTable t)
+    {
+        Owner = t.Get<GuestThread>(_ownerUid) ?? throw new SnapshotException($"callback {Name}: its thread 0x{_ownerUid:X} is missing");
+        Owner.AddCallback(this);
+    }
 }
 
 public sealed partial class TimerObject

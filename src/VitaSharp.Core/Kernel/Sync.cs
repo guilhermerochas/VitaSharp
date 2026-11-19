@@ -3062,16 +3062,30 @@ public sealed partial class Callback : KernelObject
     public uint Attr;
     public int NotifyCount;
     public int NotifyArg;
-    /// <summary>UID of the thread that sent the last notification.</summary>
+    /// <summary>The notifier's UID the callback gets in r0 and SceKernelCallbackInfo reports: threadmgr 3.74's
+    /// sceKernelNotifyCallback (0x8100c820) stores -1 (<see cref="DirectNotifier"/>); 0 after a cancel.</summary>
     public int NotifyId;
 
+    /// <summary>The notifier ID of sceKernelNotifyCallback (FW 3.74 writes -1, no notifying object).</summary>
+    public const int DirectNotifier = -1;
+
+    /// <summary>sceKernelDeleteCallback reached it: it runs no more, and its UID is freed once a run in progress ends
+    /// (threadmgr's deleted flag, +0x20, and running count, +0x3C).</summary>
+    public bool Deleted;
+
+    /// <summary>Runs of it in progress.</summary>
+    public int Running;
+
+    /// <summary>sceKernelNotifyCallback (threadmgr 3.74, 0x8100c820): adds one to the count, keeps the last argument,
+    /// marks the owner as having callbacks to run and, when it sleeps in a CB wait, takes it off that wait (the wait
+    /// ends with the kernel's internal NOTIFY_CALLBACK, runs the callbacks and waits again from the start).</summary>
     public void Notify(int arg)
     {
         lock (this)
         {
             NotifyCount++;
             NotifyArg = arg;
-            NotifyId = GuestThread.Current?.Uid ?? 0;
+            NotifyId = DirectNotifier;
         }
         Interlocked.Increment(ref Owner.PendingCallbacks);
         lock (Owner.WaitLock)
@@ -3084,10 +3098,23 @@ public sealed partial class Callback : KernelObject
         {
             lock (s)
             {
+                if (s is ICallbackInterruptedWait interrupted && Owner.CanRunCallbacks)
+                {
+                    interrupted.InterruptForCallbacks(Owner);
+                }
+
                 Monitor.PulseAll(s);
             }
         }
     }
+}
+
+/// <summary>A kernel object whose wait queue a callback notification takes a CB waiter off (threadmgr 3.74: the
+/// notify ends the wait with NOTIFY_CALLBACK; the waiter runs its callbacks, checks the object again and, if it still
+/// has to wait, joins the queue anew, behind the waiters already there). Called holding the object's lock.</summary>
+public interface ICallbackInterruptedWait
+{
+    void InterruptForCallbacks(GuestThread thread);
 }
 
 /// <summary>Event bits shared by simple events and timers (psp2kern/kernel/threadmgr.h).</summary>

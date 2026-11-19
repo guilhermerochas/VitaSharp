@@ -1,4 +1,4 @@
-using VitaSharp.Core.Hle.Modules;
+﻿using VitaSharp.Core.Hle.Modules;
 using VitaSharp.Core.Kernel;
 using VitaSharp.Core.Memory;
 using VitaSharp.Core.Util;
@@ -1762,7 +1762,7 @@ public sealed class ThreadMgrHleTests(GuestMemoryFixture fx) : IDisposable
             int cb = Call(Tm, "sceKernelCreateCallback", "cb", 0u, 0x81000001u, 0x77u);
             Assert.Equal(8, Call(Tm, "sceKernelGetThreadmgrUIDClass", cb));
             Assert.Equal(0, Call(Tm, "sceKernelGetCallbackCount", cb));
-            // notifications from another thread add up; the last argument and notifier are kept
+            // notifications from another thread add up; the last argument is kept, the notifier ID is -1
             GuestRun n = _h.Start(_ => { Call(Tm, "sceKernelNotifyCallback", cb, 5); Call(Tm, "sceKernelNotifyCallback", cb, 6); }, "cb-notify");
             _h.Join(n);
             Assert.Equal(2, Call(Tm, "sceKernelGetCallbackCount", cb));
@@ -1772,7 +1772,7 @@ public sealed class ThreadMgrHleTests(GuestMemoryFixture fx) : IDisposable
             Assert.Equal(0, Call(Tm, "sceKernelGetCallbackInfo", cb, info));
             Assert.Equal((uint)self.Uid, GuestMemory.R32(info + 0x2C));
             Assert.Equal(0x81000001u, GuestMemory.R32(info + 0x30));
-            Assert.Equal((uint)n.Thread.Uid, GuestMemory.R32(info + 0x34));
+            Assert.Equal(0xFFFFFFFFu, GuestMemory.R32(info + 0x34)); // sceKernelNotifyCallback's notifier ID (FW 3.74: -1)
             Assert.Equal(2u, GuestMemory.R32(info + 0x38));
             Assert.Equal(6u, GuestMemory.R32(info + 0x3C));
             Assert.Equal(0x77u, GuestMemory.R32(info + 0x40));

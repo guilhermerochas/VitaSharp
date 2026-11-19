@@ -1128,18 +1128,93 @@ public sealed partial class ThreadMgr : HleModule
 
     // ------------------------------------------------------------------ callbacks
 
+    /// <summary>sceKernelCreateCallback (threadmgr 3.74, 0x8100c4bc): attributes other than 0 are ILLEGAL_ATTR; the
+    /// callback belongs to the calling thread, at the end of its list.</summary>
     [Hle]
     int sceKernelCreateCallback(string name, uint attr, uint func, uint arg)
-        => K.Objects.Register(new Callback { Name = name, Attr = attr, Function = func, Arg = arg, Owner = Self });
+    {
+        if (attr != 0)
+        {
+            return SceError.ILLEGAL_ATTR;
+        }
 
-    [Hle] int sceKernelDeleteCallback(int uid) { K.Objects.Remove(uid); return 0; }
+        Callback callback = new() { Name = name, Attr = attr, Function = func, Arg = arg, Owner = Self };
+        int uid = K.Objects.Register(callback);
+        Self.AddCallback(callback);
+        return uid;
+    }
+
+    /// <summary>sceKernelDeleteCallback (threadmgr 3.74, 0x8100c700): any thread may delete it; a second delete is
+    /// UNKNOWN_CALLBACK_ID. Its notifications stop being pending; a run of it in progress ends first, and the UID is
+    /// freed when it does.</summary>
+    [Hle]
+    int sceKernelDeleteCallback(int uid)
+    {
+        Callback? callback = Obj<Callback>(uid);
+        if (callback == null)
+        {
+            return SceError.UNKNOWN_CALLBACK_ID;
+        }
+
+        bool free;
+        lock (callback)
+        {
+            if (callback.Deleted)
+            {
+                return SceError.UNKNOWN_CALLBACK_ID;
+            }
+
+            callback.Deleted = true;
+            free = callback.Running == 0;
+        }
+        if (free)
+        {
+            FreeCallback(callback);
+        }
+
+        return 0;
+    }
+
+    /// <summary>Takes a deleted callback out of the kernel: its UID, its place in the owner's list, and the
+    /// notifications it still had from the owner's pending count.</summary>
+    private void FreeCallback(Callback callback)
+    {
+        int left;
+        lock (callback)
+        {
+            left = callback.NotifyCount;
+            callback.NotifyCount = 0;
+        }
+        DropPending(callback.Owner, left);
+        K.Objects.Remove(callback.Uid);
+        callback.Owner.RemoveCallback(callback);
+    }
+
+    /// <summary>Takes <paramref name="count"/> notifications off the thread's pending count (never below 0).</summary>
+    private static void DropPending(GuestThread? thread, int count)
+    {
+        if (thread == null || count <= 0)
+        {
+            return;
+        }
+
+        int pending;
+        while ((pending = Volatile.Read(ref thread.PendingCallbacks)) > 0
+            && Interlocked.CompareExchange(ref thread.PendingCallbacks, Math.Max(0, pending - count), pending) != pending)
+        {
+        }
+    }
 
     [Hle]
     int sceKernelNotifyCallback(int uid, int arg)
     {
-        var c = Obj<Callback>(uid);
-        if (c == null) return SceError.UNKNOWN_CALLBACK_ID;
-        c.Notify(arg);
+        Callback? callback = Obj<Callback>(uid);
+        if (callback == null)
+        {
+            return SceError.UNKNOWN_CALLBACK_ID;
+        }
+
+        callback.Notify(arg);
         return 0;
     }
 
@@ -1150,97 +1225,158 @@ public sealed partial class ThreadMgr : HleModule
     int sceKernelGetCallbackCount(int uid) => Obj<Callback>(uid)?.NotifyCount ?? SceError.UNKNOWN_CALLBACK_ID;
 
     /// <summary>
-    /// SceKernelCallbackInfo, Vita3K layout (0x44): +0x28 attr, +0x2C threadId, +0x30 callbackFunc, +0x34 notifyId,
-    /// +0x38 notifyCount, +0x3C notifyArg, +0x40 pCommon. The SDK header (0x3C, "needs confirmation") lacks attr and
-    /// notifyId; a caller passing size 0x3C gets the first 0x3C bytes of this layout.
+    /// SceKernelCallbackInfo, as threadmgr 3.74 fills it (0x8100baac, 0x44 bytes): +0x28 attr, +0x2C threadId,
+    /// +0x30 callbackFunc, +0x34 notifyId, +0x38 notifyCount, +0x3C notifyArg, +0x40 pCommon. The SDK header (0x3C,
+    /// "needs confirmation") lacks attr and notifyId; a caller passing size 0x3C gets the first 0x3C bytes.
     /// </summary>
     [Hle]
     int sceKernelGetCallbackInfo(int uid, uint info)
     {
-        var c = Obj<Callback>(uid);
-        if (c == null) return SceError.UNKNOWN_CALLBACK_ID;
-        Span<byte> f = stackalloc byte[0x44];
-        f.Clear();
-        lock (c)
+        Callback? callback = Obj<Callback>(uid);
+        if (callback == null)
         {
-            KernelInfo.Header(f, uid, c.Name, c.Attr);
-            KernelInfo.Put(f, 0x2C, c.Owner?.Uid ?? 0);
-            KernelInfo.Put(f, 0x30, c.Function);
-            KernelInfo.Put(f, 0x34, c.NotifyId);
-            KernelInfo.Put(f, 0x38, c.NotifyCount);
-            KernelInfo.Put(f, 0x3C, c.NotifyArg);
-            KernelInfo.Put(f, 0x40, c.Arg);
+            return SceError.UNKNOWN_CALLBACK_ID;
         }
-        return KernelInfo.Write(info, f);
+
+        Span<byte> fields = stackalloc byte[0x44];
+        fields.Clear();
+        lock (callback)
+        {
+            KernelInfo.Header(fields, uid, callback.Name, callback.Attr);
+            KernelInfo.Put(fields, 0x2C, callback.Owner?.Uid ?? 0);
+            KernelInfo.Put(fields, 0x30, callback.Function);
+            KernelInfo.Put(fields, 0x34, callback.NotifyId);
+            KernelInfo.Put(fields, 0x38, callback.NotifyCount);
+            KernelInfo.Put(fields, 0x3C, callback.NotifyArg);
+            KernelInfo.Put(fields, 0x40, callback.Arg);
+        }
+        return KernelInfo.Write(info, fields);
     }
 
-    /// <summary>Drops pending notifications without running the callback.</summary>
+    /// <summary>sceKernelCancelCallback (threadmgr 3.74, 0x8100ca98): clears the count, the argument and the notifier;
+    /// its notifications stop being pending without the callback running.</summary>
     [Hle]
     int sceKernelCancelCallback(int uid)
     {
-        var c = Obj<Callback>(uid);
-        if (c == null) return SceError.UNKNOWN_CALLBACK_ID;
-        lock (c)
+        Callback? callback = Obj<Callback>(uid);
+        if (callback == null)
         {
-            // the kernel (threadmgr) only clears the callback's notify count, argument and notifier: its notifications
-            // stop being pending. PendingCallbacks counts notifications (one per Callback.Notify), so all of them go
-            if (c.NotifyCount > 0 && c.Owner != null)
-            {
-                int p;
-                while ((p = Volatile.Read(ref c.Owner.PendingCallbacks)) > 0 && Interlocked.CompareExchange(ref c.Owner.PendingCallbacks, Math.Max(0, p - c.NotifyCount), p) != p) { }
-            }
-            c.NotifyCount = 0;
-            c.NotifyArg = 0;
-            c.NotifyId = 0;
+            return SceError.UNKNOWN_CALLBACK_ID;
         }
+
+        int dropped;
+        lock (callback)
+        {
+            dropped = callback.NotifyCount;
+            callback.NotifyCount = 0;
+            callback.NotifyArg = 0;
+            callback.NotifyId = 0;
+        }
+        DropPending(callback.Owner, dropped);
         return 0;
     }
 
-    /// <summary>Runs pending callbacks owned by the thread; returns how many ran.</summary>
     public override void Initialize() => GuestThread.CallbackProcessor = ProcessCallbacks;
 
     /// <summary>Callback runs held because the thread was already running a callback (see <see cref="GuestThread.CallbackDepth"/>).</summary>
     public static long NestedCallbacksHeld;
 
+    /// <summary>
+    /// Runs the thread's notified callbacks; returns how many runs there were. As threadmgr 3.74 does it (0x8100c110):
+    /// the callbacks in the thread's creation order, each one again as long as it was notified again while it ran,
+    /// with r0 = notifier ID, r1 = notifications since its last run, r2 = the last argument, r3 = its common argument;
+    /// a non-zero result (or _sceKernelExitCallback's) deletes it, and a delete during its run frees it after the run.
+    /// A deleted callback does not run. Unlike the firmware, callbacks do not nest (see
+    /// <see cref="GuestThread.CallbackDepth"/>).
+    /// </summary>
     public int ProcessCallbacks(GuestThread t)
     {
         if (t.CallbackDepth > 0)
         {
             // no nesting: they stay pending until the running callback returns
-            if (Interlocked.Increment(ref NestedCallbacksHeld) == 1) Log.Info($"Callbacks of '{t.Name}' notified while one of its callbacks runs: held until it returns (callbacks do not nest)");
+            if (Interlocked.Increment(ref NestedCallbacksHeld) == 1)
+            {
+                Log.Info($"Callbacks of '{t.Name}' notified while one of its callbacks runs: held until it returns (callbacks do not nest)");
+            }
+
             return 0;
         }
         int ran = 0;
-        Interlocked.Exchange(ref t.PendingCallbacks, 0);
         t.CallbackDepth++;
         try
         {
-            foreach (var cb in K.Objects.All<Callback>().Where(c => c.Owner == t).ToList())
+            int previousUid = int.MinValue;
+            while (t.NextCallback(previousUid) is { } callback)
             {
-                int count, arg;
-                lock (cb)
+                previousUid = callback.Uid;
+                while (RunOnce(t, callback))
                 {
-                    if (cb.NotifyCount == 0) continue;
-                    count = cb.NotifyCount;
-                    arg = cb.NotifyArg;
-                    cb.NotifyCount = 0;
+                    ran++;
                 }
-                uint r;
-                try
-                {
-                    r = t.CallGuest(cb.Function, (uint)cb.Uid, (uint)count, (uint)arg, cb.Arg);
-                }
-                catch (CallbackExitException exit)
-                {
-                    // _sceKernelExitCallback: the callback ended early with this value
-                    r = exit.Result;
-                }
-                ran++;
-                if (r != 0) K.Objects.Remove(cb.Uid);
             }
         }
-        finally { t.CallbackDepth--; }
+        finally
+        {
+            t.CallbackDepth--;
+        }
         return ran;
+    }
+
+    /// <summary>One run of a callback with notifications. False when it has none (or is deleted): nothing ran.</summary>
+    private bool RunOnce(GuestThread t, Callback callback)
+    {
+        int count;
+        int arg;
+        int notifier;
+        lock (callback)
+        {
+            if (callback.Deleted || callback.NotifyCount <= 0)
+            {
+                return false;
+            }
+
+            count = callback.NotifyCount;
+            arg = callback.NotifyArg;
+            notifier = callback.NotifyId;
+            callback.NotifyCount = 0;
+            callback.NotifyArg = 0;
+            callback.NotifyId = 0;
+            callback.Running++;
+        }
+        DropPending(t, count);
+        uint result;
+        try
+        {
+            result = t.CallGuest(callback.Function, (uint)notifier, (uint)count, (uint)arg, callback.Arg);
+        }
+        catch (CallbackExitException exit)
+        {
+            // _sceKernelExitCallback: the callback ended early with this value
+            result = exit.Result;
+        }
+        finally
+        {
+            lock (callback)
+            {
+                callback.Running--;
+            }
+        }
+        bool free;
+        lock (callback)
+        {
+            if (result != 0)
+            {
+                callback.Deleted = true;
+            }
+
+            free = callback.Deleted && callback.Running == 0;
+        }
+        if (free)
+        {
+            FreeCallback(callback);
+        }
+
+        return true;
     }
 
     // ------------------------------------------------------------------ timers
