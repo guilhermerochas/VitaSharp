@@ -44,6 +44,8 @@ public sealed unsafe partial class VulkanRenderer
 
     private void ConfigureProgramLoad(VulkanRendererOptions vulkanRendererOptions)
     {
+        _programLoadSurfaces = Math.Max(1, vulkanRendererOptions.ProgramLoadSurfaces);
+        _programLoadBudget = Math.Max(0, vulkanRendererOptions.ProgramLoadBudget);
         _compileOnProgramLoad = Environment.GetEnvironmentVariable(EnvVars.CompileOnProgramLoad)?.Trim().ToLowerInvariant() switch
         {
             "0" or "off" or "false" or "no" => false,
@@ -61,6 +63,7 @@ public sealed unsafe partial class VulkanRenderer
             return;
         }
 
+        NoteProgramCreated();
         _loadedVertexPrograms.AddOrUpdate(vertexProgram.Info.Program.Hash, _ => [vertexProgram], (_, old) =>
         {
             if (Array.IndexOf(old, vertexProgram) >= 0)
@@ -88,18 +91,105 @@ public sealed unsafe partial class VulkanRenderer
             return;
         }
 
+        NoteProgramCreated();
         _loadedFragmentPrograms.TryAdd(fragmentProgram, vertexProgram);
-        // the last scene (or the default one before any), then every surface the game has made known
-        QueueForScene(fragmentProgram, vertexProgram, _prefetchScene.HasColor ? new KnownScene(_prefetchColorFormat, _prefetchScene) : DefaultKnownScene());
+        // the last scene (or the default one before any), then the surfaces the game used most recently
+        QueueForScene(fragmentProgram, vertexProgram, _prefetchScene.HasColor ? new KnownScene(_prefetchColorFormat, _prefetchScene) : DefaultKnownScene(), budgeted: false);
         if (!DependsOnSurface(fragmentProgram.Info.Program))
         {
             return;
         }
 
-        foreach (KnownScene known in _knownScenes.Keys)
+        foreach (KnownScene known in RecentScenes())
         {
-            QueueForScene(fragmentProgram, vertexProgram, known);
+            QueueForScene(fragmentProgram, vertexProgram, known, budgeted: true);
         }
+    }
+
+    /// <summary>
+    /// The ceiling of the surface combinations. A game with many programs and surfaces (Killzone Mercenary: ~670
+    /// shaders) would otherwise build every surface-dependent program for every surface it ever used. Two limits: a new
+    /// program is built only for the <see cref="VulkanRendererOptions.ProgramLoadSurfaces"/> surfaces used most recently
+    /// (a BeginScene refreshes its surface, the oldest one drops out), and each load queues at most
+    /// <see cref="VulkanRendererOptions.ProgramLoadBudget"/> pipelines for such combinations (a load ends when
+    /// <see cref="LoadGapPresents"/> presents pass without a program created; the next program starts a new one). The
+    /// primary prediction of each program (its last scene) is not counted. A combination left out is built by the draw
+    /// prefetch, or the GPU thread, as before.
+    /// </summary>
+    private const long LoadGapPresents = 30;
+    private int _programLoadSurfaces = 8, _programLoadBudget = 256;
+    /// <summary>Surfaces by use, the most recent last (at most <see cref="_programLoadSurfaces"/>).</summary>
+    private readonly List<KnownScene> _recentScenes = new();
+    private readonly object _recentScenesLock = new();
+    private int _loadBudgetUsed;
+    private long _lastProgramPresent = long.MinValue;
+    private int _statLoadBudgetSkipped, _statSurfacesDropped;
+
+    /// <summary>A program was created: a new load starts when the last one was <see cref="LoadGapPresents"/> presents ago.</summary>
+    private void NoteProgramCreated()
+    {
+        long now = Volatile.Read(ref _presentCount);
+        long last = Interlocked.Exchange(ref _lastProgramPresent, now);
+        if (now - last > LoadGapPresents)
+        {
+            Volatile.Write(ref _loadBudgetUsed, 0);
+        }
+    }
+
+    private KnownScene[] RecentScenes()
+    {
+        lock (_recentScenesLock)
+        {
+            return _recentScenes.ToArray();
+        }
+    }
+
+    /// <summary>Marks <paramref name="known"/> as the most recently used surface. False when it already was one of the
+    /// recent surfaces (nothing new to build).</summary>
+    private bool TouchScene(KnownScene known)
+    {
+        lock (_recentScenesLock)
+        {
+            int index = _recentScenes.IndexOf(known);
+            if (index == _recentScenes.Count - 1 && index >= 0)
+            {
+                return false;
+            }
+
+            if (index >= 0)
+            {
+                _recentScenes.RemoveAt(index);
+                _recentScenes.Add(known);
+                return false;
+            }
+
+            _recentScenes.Add(known);
+            if (_recentScenes.Count > _programLoadSurfaces)
+            {
+                _recentScenes.RemoveAt(0);
+                _statSurfacesDropped++;
+            }
+
+            return true;
+        }
+    }
+
+    /// <summary>Takes <paramref name="pipelines"/> from the load's budget; false (nothing taken) when it is spent.</summary>
+    private bool TakeLoadBudget(int pipelines)
+    {
+        int used;
+        do
+        {
+            used = Volatile.Read(ref _loadBudgetUsed);
+            if (used + pipelines > _programLoadBudget)
+            {
+                Interlocked.Increment(ref _statLoadBudgetSkipped);
+                return false;
+            }
+        }
+        while (Interlocked.CompareExchange(ref _loadBudgetUsed, used + pipelines, used) != used);
+
+        return true;
     }
 
     /// <summary>
@@ -117,9 +207,6 @@ public sealed unsafe partial class VulkanRenderer
     /// the scene state the pipeline key takes from it.</summary>
     private readonly record struct KnownScene(uint ColorFormat, PredictedScene Scene);
 
-    /// <summary>Surfaces made known by the game (colour surfaces it initialised, scenes it began), each built for every
-    /// created fragment program.</summary>
-    private readonly ConcurrentDictionary<KnownScene, byte> _knownScenes = new();
     /// <summary>Every fragment program created, with the vertex program it was made for.</summary>
     private readonly ConcurrentDictionary<GxmFragmentProgram, GxmProgramInfo?> _loadedFragmentPrograms = new(ReferenceEqualityComparer.Instance);
     /// <summary>(fragment program, scene) pairs already queued.</summary>
@@ -175,7 +262,7 @@ public sealed unsafe partial class VulkanRenderer
 
     private void AddKnownScene(KnownScene known)
     {
-        if (!_knownScenes.TryAdd(known, 0))
+        if (!TouchScene(known))
         {
             return;
         }
@@ -185,7 +272,7 @@ public sealed unsafe partial class VulkanRenderer
         {
             if (DependsOnSurface(fragmentProgram.Info.Program))
             {
-                QueueForScene(fragmentProgram, vertexProgram, known);
+                QueueForScene(fragmentProgram, vertexProgram, known, budgeted: true);
             }
         }
     }
@@ -213,9 +300,27 @@ public sealed unsafe partial class VulkanRenderer
 
     /// <summary>Queues the fragment program's shader for <paramref name="known"/> and, for each vertex program object of
     /// the program it was made for, the pipeline (with the variants the draw may need there: the integer view of a
-    /// raw-bit program, the fetch pass of a programmable-blending one).</summary>
-    private void QueueForScene(GxmFragmentProgram fragmentProgram, GxmProgramInfo? vertexProgram, KnownScene known)
+    /// raw-bit program, the fetch pass of a programmable-blending one). <paramref name="budgeted"/>: a combination
+    /// beyond the program's primary prediction, counted in the load's budget (left out, and left for a later load, when
+    /// the budget is spent).</summary>
+    private void QueueForScene(GxmFragmentProgram fragmentProgram, GxmProgramInfo? vertexProgram, KnownScene known, bool budgeted)
     {
+        if (_queuedCombinations.ContainsKey((fragmentProgram, known)))
+        {
+            return;
+        }
+
+        GxmVertexProgram[]? vertexPrograms = null;
+        if (vertexProgram != null)
+        {
+            _loadedVertexPrograms.TryGetValue(vertexProgram.Program.Hash, out vertexPrograms);
+        }
+
+        if (budgeted && !TakeLoadBudget(Math.Max(1, vertexPrograms?.Length ?? 0)))
+        {
+            return;
+        }
+
         if (!_queuedCombinations.TryAdd((fragmentProgram, known), 0))
         {
             return;
@@ -224,7 +329,7 @@ public sealed unsafe partial class VulkanRenderer
         uint colorFormat = known.ColorFormat;
         PredictedScene scene = known.Scene;
         ulong fragmentKey = QueueProgramLoadShader(fragmentProgram.Info.Program, PredictedFragmentHints(fragmentProgram, colorFormat, fetchInput: false));
-        if (vertexProgram == null || !_loadedVertexPrograms.TryGetValue(vertexProgram.Program.Hash, out GxmVertexProgram[]? vertexPrograms))
+        if (vertexPrograms == null)
         {
             return;
         }
@@ -457,6 +562,6 @@ public sealed unsafe partial class VulkanRenderer
     private static string DbgTextureFormats(uint[] formats, GxpProgram program) => string.Join(",", formats.Select((f, unit) => (f, unit)).Where(t => (program.TexturesUsed() & (1u << t.unit)) != 0 || t.f != 0x0C000000u).Select(t => $"{t.unit}:{t.f:X8}"));
 
     private string ProgramLoadReport() => _compileOnProgramLoad
-        ? $"; at program load: {_statLoadShaders} shaders and {_statLoadPipelines} pipelines queued for {_loadedFragmentPrograms.Count} fragment programs x {_statKnownScenes + 1} surfaces ({_statLoadPipelinesBuilt} built), {_statLoadAliases} draws served by a module of the same canonical hints"
+        ? $"; at program load: {_statLoadShaders} shaders and {_statLoadPipelines} pipelines queued for {_loadedFragmentPrograms.Count} fragment programs x {_statKnownScenes + 1} surfaces ({_statLoadPipelinesBuilt} built), {_statLoadAliases} draws served by a module of the same canonical hints; ceiling: {_programLoadSurfaces} recent surfaces ({_statSurfacesDropped} dropped), {_programLoadBudget} pipelines per load ({_statLoadBudgetSkipped} combinations left out)"
         : "; at program load: off";
 }

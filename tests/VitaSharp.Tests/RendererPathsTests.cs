@@ -624,6 +624,75 @@ public sealed class RendererPathsTests(GuestMemoryFixture fx)
         }
     }
 
+    /// <summary>
+    /// The ceiling of "compilar shaders ao carregar o programa": a surface-dependent program (programmable blending) is
+    /// built at creation for its primary prediction and for each known surface, which multiplies in a game with many
+    /// programs and surfaces. Covered: a load queues at most the budget of such combinations (the rest is left out); a
+    /// new load (presents without a program created) gets a new budget; a program created then is built only for the
+    /// most recently used surfaces, not for every surface ever made known.
+    /// </summary>
+    [SoftwareVulkanFact]
+    public void ProgramLoadBuildsOnlyRecentSurfacesWithinTheLoadBudget()
+    {
+        using IDisposable driver = SoftwareVulkan.Use();
+        string cache = Path.Combine(Path.GetTempPath(), "vitasharp-loadceiling-" + Guid.NewGuid().ToString("N"));
+        try
+        {
+            var r = new VulkanRenderer(new VulkanRendererOptions
+            {
+                VSync = false,
+                AsyncShaders = false,
+                AsyncPipelines = false,
+                CompileOnProgramLoad = true,
+                ProgramLoadSurfaces = 2,
+                ProgramLoadBudget = 2,
+                ShaderCacheDir = cache,
+            });
+            WithRenderer("loadceiling", r, h =>
+            {
+                r.BeginTitle("PCSA00084");
+                var w = new RendererTextureTests.Workload(h); // its programs, one surface (U8U8U8U8)
+                Assert.True(r.WaitForBackgroundCompiles(CancellationToken.None));
+                int Queued() => r.ProgramLoadStats.Pipelines;
+
+                // five new surfaces in one load: the one programmable-blending program (one vertex program, one
+                // pipeline per combination) is queued for two of them, the budget
+                int before = Queued();
+                uint[] surfaces = [0x10800000u, 0x11000000u, 0x41000000u, 0x80800000u, 0x01000000u];
+                foreach (uint colorFormat in surfaces)
+                {
+                    ((IGpuBackend)r).ColorSurfaceInitialised(colorFormat, downscale: false);
+                }
+
+                Assert.Equal(2, Queued() - before);
+
+                // a new load: presents without a program created; the program created then is built for its primary
+                // prediction and the two most recent surfaces (0x80800000, 0x01000000), not the six known ones
+                for (int i = 0; i < 40; i++)
+                {
+                    h.Emu.Gpu.Submit(new PresentCommand { Frame = new DisplayFrame(w.Data, W, W, H, DisplayPixelFormat.A8B8G8R8) });
+                }
+
+                h.Emu.Gpu.WaitIdle();
+                before = Queued();
+                w.CreateFetchProgram(outputFormat: 5); // SCE_GXM_OUTPUT_REGISTER_FORMAT_HALF4
+                Assert.Equal(1 + 2, Queued() - before);
+
+                Assert.True(r.WaitForBackgroundCompiles(CancellationToken.None));
+                w.Terminate();
+            });
+        }
+        finally
+        {
+            try
+            {
+                Directory.Delete(cache, true);
+            }
+            catch (IOException) { }
+            catch (UnauthorizedAccessException) { }
+        }
+    }
+
     [SoftwareVulkanFact]
     public void CancelledShaderCacheLoadLetsTheGameStartAndTheRestBuildsInTheBackground()
     {
