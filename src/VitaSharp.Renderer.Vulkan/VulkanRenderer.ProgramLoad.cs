@@ -44,6 +44,8 @@ public sealed unsafe partial class VulkanRenderer
 
     private void ConfigureProgramLoad(VulkanRendererOptions vulkanRendererOptions)
     {
+        _programLoadSurfaces = Math.Max(1, vulkanRendererOptions.ProgramLoadSurfaces);
+        _programLoadBudget = Math.Max(0, vulkanRendererOptions.ProgramLoadBudget);
         _compileOnProgramLoad = Environment.GetEnvironmentVariable(EnvVars.CompileOnProgramLoad)?.Trim().ToLowerInvariant() switch
         {
             "0" or "off" or "false" or "no" => false,
@@ -61,6 +63,7 @@ public sealed unsafe partial class VulkanRenderer
             return;
         }
 
+        NoteProgramCreated();
         _loadedVertexPrograms.AddOrUpdate(vertexProgram.Info.Program.Hash, _ => [vertexProgram], (_, old) =>
         {
             if (Array.IndexOf(old, vertexProgram) >= 0)
@@ -88,18 +91,105 @@ public sealed unsafe partial class VulkanRenderer
             return;
         }
 
+        NoteProgramCreated();
         _loadedFragmentPrograms.TryAdd(fragmentProgram, vertexProgram);
-        // the last scene (or the default one before any), then every surface the game has made known
-        QueueForScene(fragmentProgram, vertexProgram, _prefetchScene.HasColor ? new KnownScene(_prefetchColorFormat, _prefetchScene) : DefaultKnownScene());
+        // the last scene (or the default one before any), then the surfaces the game used most recently
+        QueueForScene(fragmentProgram, vertexProgram, _prefetchScene.HasColor ? new KnownScene(_prefetchColorFormat, _prefetchScene) : DefaultKnownScene(), budgeted: false);
         if (!DependsOnSurface(fragmentProgram.Info.Program))
         {
             return;
         }
 
-        foreach (KnownScene known in _knownScenes.Keys)
+        foreach (KnownScene known in RecentScenes())
         {
-            QueueForScene(fragmentProgram, vertexProgram, known);
+            QueueForScene(fragmentProgram, vertexProgram, known, budgeted: true);
         }
+    }
+
+    /// <summary>
+    /// The ceiling of the surface combinations. A game with many programs and surfaces (Killzone Mercenary: ~670
+    /// shaders) would otherwise build every surface-dependent program for every surface it ever used. Two limits: a new
+    /// program is built only for the <see cref="VulkanRendererOptions.ProgramLoadSurfaces"/> surfaces used most recently
+    /// (a BeginScene refreshes its surface, the oldest one drops out), and each load queues at most
+    /// <see cref="VulkanRendererOptions.ProgramLoadBudget"/> pipelines for such combinations (a load ends when
+    /// <see cref="LoadGapPresents"/> presents pass without a program created; the next program starts a new one). The
+    /// primary prediction of each program (its last scene) is not counted. A combination left out is built by the draw
+    /// prefetch, or the GPU thread, as before.
+    /// </summary>
+    private const long LoadGapPresents = 30;
+    private int _programLoadSurfaces = 8, _programLoadBudget = 256;
+    /// <summary>Surfaces by use, the most recent last (at most <see cref="_programLoadSurfaces"/>).</summary>
+    private readonly List<KnownScene> _recentScenes = new();
+    private readonly object _recentScenesLock = new();
+    private int _loadBudgetUsed;
+    private long _lastProgramPresent = long.MinValue;
+    private int _statLoadBudgetSkipped, _statSurfacesDropped;
+
+    /// <summary>A program was created: a new load starts when the last one was <see cref="LoadGapPresents"/> presents ago.</summary>
+    private void NoteProgramCreated()
+    {
+        long now = Volatile.Read(ref _presentCount);
+        long last = Interlocked.Exchange(ref _lastProgramPresent, now);
+        if (now - last > LoadGapPresents)
+        {
+            Volatile.Write(ref _loadBudgetUsed, 0);
+        }
+    }
+
+    private KnownScene[] RecentScenes()
+    {
+        lock (_recentScenesLock)
+        {
+            return _recentScenes.ToArray();
+        }
+    }
+
+    /// <summary>Marks <paramref name="known"/> as the most recently used surface. False when it already was one of the
+    /// recent surfaces (nothing new to build).</summary>
+    private bool TouchScene(KnownScene known)
+    {
+        lock (_recentScenesLock)
+        {
+            int index = _recentScenes.IndexOf(known);
+            if (index == _recentScenes.Count - 1 && index >= 0)
+            {
+                return false;
+            }
+
+            if (index >= 0)
+            {
+                _recentScenes.RemoveAt(index);
+                _recentScenes.Add(known);
+                return false;
+            }
+
+            _recentScenes.Add(known);
+            if (_recentScenes.Count > _programLoadSurfaces)
+            {
+                _recentScenes.RemoveAt(0);
+                _statSurfacesDropped++;
+            }
+
+            return true;
+        }
+    }
+
+    /// <summary>Takes <paramref name="pipelines"/> from the load's budget; false (nothing taken) when it is spent.</summary>
+    private bool TakeLoadBudget(int pipelines)
+    {
+        int used;
+        do
+        {
+            used = Volatile.Read(ref _loadBudgetUsed);
+            if (used + pipelines > _programLoadBudget)
+            {
+                Interlocked.Increment(ref _statLoadBudgetSkipped);
+                return false;
+            }
+        }
+        while (Interlocked.CompareExchange(ref _loadBudgetUsed, used + pipelines, used) != used);
+
+        return true;
     }
 
     /// <summary>
@@ -117,9 +207,6 @@ public sealed unsafe partial class VulkanRenderer
     /// the scene state the pipeline key takes from it.</summary>
     private readonly record struct KnownScene(uint ColorFormat, PredictedScene Scene);
 
-    /// <summary>Surfaces made known by the game (colour surfaces it initialised, scenes it began), each built for every
-    /// created fragment program.</summary>
-    private readonly ConcurrentDictionary<KnownScene, byte> _knownScenes = new();
     /// <summary>Every fragment program created, with the vertex program it was made for.</summary>
     private readonly ConcurrentDictionary<GxmFragmentProgram, GxmProgramInfo?> _loadedFragmentPrograms = new(ReferenceEqualityComparer.Instance);
     /// <summary>(fragment program, scene) pairs already queued.</summary>
@@ -175,7 +262,7 @@ public sealed unsafe partial class VulkanRenderer
 
     private void AddKnownScene(KnownScene known)
     {
-        if (!_knownScenes.TryAdd(known, 0))
+        if (!TouchScene(known))
         {
             return;
         }
@@ -185,7 +272,7 @@ public sealed unsafe partial class VulkanRenderer
         {
             if (DependsOnSurface(fragmentProgram.Info.Program))
             {
-                QueueForScene(fragmentProgram, vertexProgram, known);
+                QueueForScene(fragmentProgram, vertexProgram, known, budgeted: true);
             }
         }
     }
@@ -213,9 +300,27 @@ public sealed unsafe partial class VulkanRenderer
 
     /// <summary>Queues the fragment program's shader for <paramref name="known"/> and, for each vertex program object of
     /// the program it was made for, the pipeline (with the variants the draw may need there: the integer view of a
-    /// raw-bit program, the fetch pass of a programmable-blending one).</summary>
-    private void QueueForScene(GxmFragmentProgram fragmentProgram, GxmProgramInfo? vertexProgram, KnownScene known)
+    /// raw-bit program, the fetch pass of a programmable-blending one). <paramref name="budgeted"/>: a combination
+    /// beyond the program's primary prediction, counted in the load's budget (left out, and left for a later load, when
+    /// the budget is spent).</summary>
+    private void QueueForScene(GxmFragmentProgram fragmentProgram, GxmProgramInfo? vertexProgram, KnownScene known, bool budgeted)
     {
+        if (_queuedCombinations.ContainsKey((fragmentProgram, known)))
+        {
+            return;
+        }
+
+        GxmVertexProgram[]? vertexPrograms = null;
+        if (vertexProgram != null)
+        {
+            _loadedVertexPrograms.TryGetValue(vertexProgram.Program.Hash, out vertexPrograms);
+        }
+
+        if (budgeted && !TakeLoadBudget(Math.Max(1, vertexPrograms?.Length ?? 0)))
+        {
+            return;
+        }
+
         if (!_queuedCombinations.TryAdd((fragmentProgram, known), 0))
         {
             return;
@@ -224,7 +329,7 @@ public sealed unsafe partial class VulkanRenderer
         uint colorFormat = known.ColorFormat;
         PredictedScene scene = known.Scene;
         ulong fragmentKey = QueueProgramLoadShader(fragmentProgram.Info.Program, PredictedFragmentHints(fragmentProgram, colorFormat, fetchInput: false));
-        if (vertexProgram == null || !_loadedVertexPrograms.TryGetValue(vertexProgram.Program.Hash, out GxmVertexProgram[]? vertexPrograms))
+        if (vertexPrograms == null)
         {
             return;
         }
@@ -250,8 +355,9 @@ public sealed unsafe partial class VulkanRenderer
         }
     }
 
-    /// <summary>Worker: the fetch-pass pipeline of a programmable-blending program in a one-sample scene (the draw's key
-    /// with <see cref="PipelineKey.InputPass"/>, the single-sample input attachment variant of its shader, no blend).</summary>
+    /// <summary>Worker (program load and draw prefetch): the fetch-pass pipeline of a programmable-blending program in a
+    /// one-sample scene (the draw's key with <see cref="PipelineKey.InputPass"/>, the single-sample input attachment
+    /// variant of its shader, no blend).</summary>
     private void BuildFetchPassPipeline(PipelineJob j, VsEntry vs, PrimitiveTopology topology, byte mask, Format attach)
     {
         ModuleEntry? fetch = ModuleFor(j.Fs, j.FetchKey, j.FetchHints);
@@ -262,10 +368,15 @@ public sealed unsafe partial class VulkanRenderer
 
         var key = new PipelineKey(vs.Module.Handle, fetch.Module.Handle, vs.LayoutHash, attach, true,
             false, j.Blend?.ColorFunc ?? 0, j.Blend?.AlphaFunc ?? 0, j.Blend?.ColorSrc ?? 1, j.Blend?.ColorDst ?? 0, j.Blend?.AlphaSrc ?? 1, j.Blend?.AlphaDst ?? 0,
-            mask, TopologyClass(topology), Formats.Polygon(j.PolygonMode), SampleCountFlags.Count1Bit, 0, 0, InputPass: true);
+            mask, TopologyClass(topology), Formats.Polygon(j.PolygonMode), SampleCountFlags.Count1Bit, j.Static, 0, InputPass: true);
+        if (j.ProgramLoad)
+        {
+            DbgProgramLoadPipeline(j.Fs.Hash, j.FetchKey, key);
+        }
+
         if (BuildSharedPipeline(key, vs, fetch.Module, topology) == SharedBuild.Built)
         {
-            Interlocked.Increment(ref _statLoadPipelinesBuilt);
+            Interlocked.Increment(ref j.ProgramLoad ? ref _statLoadPipelinesBuilt : ref _statPipelinesPrefetched);
         }
     }
 
@@ -301,6 +412,11 @@ public sealed unsafe partial class VulkanRenderer
     {
         ulong hintKey = hints.Key();
         _programLoadKeys.TryAdd((program.Hash, hints.CanonicalKey()), hintKey);
+        if (DebugMode.Enabled)
+        {
+            Log.Info($"[dbg] program load: shader {program.Hash:X16} hint {hintKey:X16} canonical {hints.CanonicalKey():X16} textures {DbgTextureFormats(hints.TextureFormats, program)} colour 0x{hints.ColorFormat:X8} fetch {hints.FetchInputAttachment}/{hints.FetchInputSingleSample}");
+        }
+
         if (NeedsJob(program, hintKey))
         {
             Interlocked.Increment(ref _statLoadShaders);
@@ -376,7 +492,76 @@ public sealed unsafe partial class VulkanRenderer
         return true;
     }
 
+    /// <summary>Debug mode: the pipelines built at program load, by fragment program hash (with the fragment hint key),
+    /// to tell what a pipeline the GPU thread had to build was predicted as.</summary>
+    private readonly ConcurrentDictionary<ulong, ConcurrentQueue<(ulong FsHintKey, PipelineKey Key)>> _dbgProgramLoadPipelines = new();
+
+    private void DbgProgramLoadPipeline(ulong fsProgramHash, ulong fsHintKey, in PipelineKey key)
+    {
+        if (DebugMode.Enabled)
+        {
+            _dbgProgramLoadPipelines.GetOrAdd(fsProgramHash, _ => new()).Enqueue((fsHintKey, key));
+        }
+    }
+
+    /// <summary>Debug mode: a pipeline the GPU thread builds itself, with the closest program-load prediction for the
+    /// same fragment program and the key fields that differ.</summary>
+    private void DbgGpuThreadPipeline(in PipelineKey key, VsEntry vs, FsEntry fs)
+    {
+        string predicted = "none";
+        if (_dbgProgramLoadPipelines.TryGetValue(fs.ProgramHash, out ConcurrentQueue<(ulong FsHintKey, PipelineKey Key)>? list))
+        {
+            int best = int.MaxValue;
+            foreach ((ulong fsHintKey, PipelineKey candidate) in list)
+            {
+                List<string> diff = PipelineKeyDiff(key, candidate);
+                if (fsHintKey != fs.HintKey)
+                {
+                    diff.Add($"fs hints {fsHintKey:X16}");
+                }
+
+                if (diff.Count < best)
+                {
+                    best = diff.Count;
+                    predicted = $"{list.Count} predicted, closest differs in [{string.Join(", ", diff)}]";
+                }
+            }
+        }
+
+        Dbg($"pipeline built on the GPU thread: vs {vs.ProgramHash:X16} hints {vs.HintKey:X16} fs {fs.ProgramHash:X16} hints {fs.HintKey:X16} {key}; program load: {predicted}");
+    }
+
+    private static List<string> PipelineKeyDiff(in PipelineKey a, in PipelineKey b)
+    {
+        var diff = new List<string>();
+        void Check(string name, object x, object y)
+        {
+            if (!Equals(x, y))
+            {
+                diff.Add($"{name} {y}");
+            }
+        }
+
+        Check("Vs", a.Vs, b.Vs);
+        Check("Fs", a.Fs, b.Fs);
+        Check("VertexLayout", a.VertexLayout, b.VertexLayout);
+        Check("ColorFormat", a.ColorFormat, b.ColorFormat);
+        Check("HasColor", a.HasColor, b.HasColor);
+        Check("Blend", a.Blend, b.Blend);
+        Check("BlendFactors", (a.ColorFunc, a.AlphaFunc, a.ColorSrc, a.ColorDst, a.AlphaSrc, a.AlphaDst), (b.ColorFunc, b.AlphaFunc, b.ColorSrc, b.ColorDst, b.AlphaSrc, b.AlphaDst));
+        Check("Mask", a.Mask, b.Mask);
+        Check("TopologyClass", a.TopologyClass, b.TopologyClass);
+        Check("Polygon", a.Polygon, b.Polygon);
+        Check("Samples", a.Samples, b.Samples);
+        Check("Static", a.Static, b.Static);
+        Check("TileWord1", a.TileWord1, b.TileWord1);
+        Check("InputPass", a.InputPass, b.InputPass);
+        return diff;
+    }
+
+    private static string DbgTextureFormats(uint[] formats, GxpProgram program) => string.Join(",", formats.Select((f, unit) => (f, unit)).Where(t => (program.TexturesUsed() & (1u << t.unit)) != 0 || t.f != 0x0C000000u).Select(t => $"{t.unit}:{t.f:X8}"));
+
     private string ProgramLoadReport() => _compileOnProgramLoad
-        ? $"; at program load: {_statLoadShaders} shaders and {_statLoadPipelines} pipelines queued for {_loadedFragmentPrograms.Count} fragment programs x {_statKnownScenes + 1} surfaces ({_statLoadPipelinesBuilt} built), {_statLoadAliases} draws served by a module of the same canonical hints"
+        ? $"; at program load: {_statLoadShaders} shaders and {_statLoadPipelines} pipelines queued for {_loadedFragmentPrograms.Count} fragment programs x {_statKnownScenes + 1} surfaces ({_statLoadPipelinesBuilt} built), {_statLoadAliases} draws served by a module of the same canonical hints; ceiling: {_programLoadSurfaces} recent surfaces ({_statSurfacesDropped} dropped), {_programLoadBudget} pipelines per load ({_statLoadBudgetSkipped} combinations left out)"
         : "; at program load: off";
 }

@@ -514,6 +514,185 @@ public sealed class RendererPathsTests(GuestMemoryFixture fx)
         Assert.Equal((0, 0, 0, 0), (on.GpuPipelines, on.Misses, on.ShaderWaits, on.PipelineWaits));
     }
 
+    /// <summary>The GPU queue's backend for <see cref="DrawPrefetchBuildsTheFetchPassOfEachDrawBeforeItRuns"/>: forwards
+    /// everything to the renderer and, before each draw runs, waits for the shader workers. The draw's prefetch (on
+    /// submit, before it is queued) has then finished, as when the game submits a frame ahead of the GPU thread, and
+    /// whatever the GPU thread still builds is what the prefetch did not predict.</summary>
+    private sealed class PrefetchedFirstBackend(VulkanRenderer renderer) : IGpuBackend
+    {
+        private readonly IGpuBackend _inner = renderer;
+
+        public void Execute(GpuCommand command)
+        {
+            if (command is DrawCommand)
+            {
+                Assert.True(renderer.WaitForBackgroundCompiles(CancellationToken.None));
+            }
+
+            _inner.Execute(command);
+        }
+
+        public void Idle() => _inner.Idle();
+        public void Attach(GpuQueue queue) => _inner.Attach(queue);
+        public bool DeferSignal(Action signal) => _inner.DeferSignal(signal);
+        public void BeginTitle(string titleId) => _inner.BeginTitle(titleId);
+        public string? TitleId => _inner.TitleId;
+        public bool LoadShaderCacheBeforeStart(Action<ShaderCacheLoadProgress>? progress, CancellationToken cancel) => _inner.LoadShaderCacheBeforeStart(progress, cancel);
+        public void VertexProgramCreated(Core.Gxm.GxmVertexProgram vertexProgram) => _inner.VertexProgramCreated(vertexProgram);
+        public void FragmentProgramCreated(Core.Gxm.GxmFragmentProgram fragmentProgram, Core.Gxm.GxmProgramInfo? vertexProgram) => _inner.FragmentProgramCreated(fragmentProgram, vertexProgram);
+        public void RenderTargetCreated(uint multisample) => _inner.RenderTargetCreated(multisample);
+        public void ColorSurfaceInitialised(uint colorFormat, bool downscale) => _inner.ColorSurfaceInitialised(colorFormat, downscale);
+        public void Prefetch(GpuCommand command) => _inner.Prefetch(command);
+        public long PresentCount => _inner.PresentCount;
+        public byte[]? ExportDumpState() => _inner.ExportDumpState();
+        public void BeforeCallback(CallbackCommand command) => _inner.BeforeCallback(command);
+        public bool DeferCallback(CallbackCommand command) => _inner.DeferCallback(command);
+        public string? Report() => _inner.Report();
+        public void Dispose() => _inner.Dispose();
+    }
+
+    /// <summary>
+    /// A programmable-blending draw of a one-sample scene renders in a fetch pass, whose pipeline (input attachment
+    /// shader, <c>InputPass</c> key) depends on the draw's own textures and colour mask. The draw-time prefetch sees both
+    /// when the draw is submitted and builds that pipeline on the shader workers, as it builds the plain one; it used to
+    /// build only the plain one and the multisampled input-fetch variant, so in a first session every fetch-pass pipeline
+    /// was built on the GPU thread (the replay of a dump: 8, with F16x4, S8x4 and compressed textures that the program-load
+    /// prediction, four unsigned bytes, cannot foresee, two of them with the colour mask 0). Covered: textures of three
+    /// classes other than the predicted one, each with the colour written and with the fragment program disabled (mask 0).
+    /// </summary>
+    [SoftwareVulkanFact]
+    public void DrawPrefetchBuildsTheFetchPassOfEachDrawBeforeItRuns()
+    {
+        using IDisposable driver = SoftwareVulkan.Use();
+        string cache = Path.Combine(Path.GetTempPath(), "vitasharp-fetchprefetch-" + Guid.NewGuid().ToString("N"));
+        try
+        {
+            var r = new VulkanRenderer(new VulkanRendererOptions
+            {
+                VSync = false,
+                AsyncShaders = true,
+                AsyncPipelines = true,
+                CompileOnProgramLoad = false,
+                ShaderCacheDir = cache,
+            });
+            int gpuPipelines = -1, fetchPass = -1, prefetched = -1;
+            using var h = new HleHarness(fx, "fetchprefetch");
+            try
+            {
+                h.Emu.Gpu.Backend = new PrefetchedFirstBackend(r);
+                r.BeginTitle("PCSA00083");
+                var w = new RendererTextureTests.Workload(h);
+                var drawn = new List<uint>();
+                foreach (Core.Gxm.TexBase format in new[] { Core.Gxm.TexBase.F16F16F16F16, Core.Gxm.TexBase.S8S8S8S8, Core.Gxm.TexBase.UBC3 })
+                {
+                    int index = Enumerable.Range(0, w.Textures.Count).First(i => w.TextureFormats[i] == format && !w.CubeTextures.Contains(w.Textures[i]));
+                    drawn.Add(w.Textures[index]);
+                }
+
+                foreach (uint texture in drawn)
+                {
+                    // RunFetch draws Textures[0]
+                    w.Textures.Clear();
+                    w.Textures.Add(texture);
+                    w.RunFetch();
+                    w.RunFetch(fragmentEnabled: false);
+                }
+
+                h.Emu.Gpu.WaitIdle();
+                int[] kinds = (int[])typeof(VulkanRenderer).GetField("_statGpuPipelineKinds", BindingFlags.Instance | BindingFlags.NonPublic)!.GetValue(r)!;
+                (gpuPipelines, fetchPass, prefetched) = (Stat(r, "_statGpuPipelines"), kinds[1], Stat(r, "_statPipelinesPrefetched"));
+                w.Terminate();
+            }
+            finally
+            {
+                h.Emu.Gpu.WaitIdle();
+                h.Emu.Gpu.Backend = null;
+                r.Dispose();
+            }
+
+            Assert.True(prefetched >= 6, $"{prefetched} pipelines prefetched");
+            Assert.Equal((0, 0), (fetchPass, gpuPipelines));
+        }
+        finally
+        {
+            try
+            {
+                Directory.Delete(cache, true);
+            }
+            catch (IOException) { }
+            catch (UnauthorizedAccessException) { }
+        }
+    }
+
+    /// <summary>
+    /// The ceiling of "compilar shaders ao carregar o programa": a surface-dependent program (programmable blending) is
+    /// built at creation for its primary prediction and for each known surface, which multiplies in a game with many
+    /// programs and surfaces. Covered: a load queues at most the budget of such combinations (the rest is left out); a
+    /// new load (presents without a program created) gets a new budget; a program created then is built only for the
+    /// most recently used surfaces, not for every surface ever made known.
+    /// </summary>
+    [SoftwareVulkanFact]
+    public void ProgramLoadBuildsOnlyRecentSurfacesWithinTheLoadBudget()
+    {
+        using IDisposable driver = SoftwareVulkan.Use();
+        string cache = Path.Combine(Path.GetTempPath(), "vitasharp-loadceiling-" + Guid.NewGuid().ToString("N"));
+        try
+        {
+            var r = new VulkanRenderer(new VulkanRendererOptions
+            {
+                VSync = false,
+                AsyncShaders = false,
+                AsyncPipelines = false,
+                CompileOnProgramLoad = true,
+                ProgramLoadSurfaces = 2,
+                ProgramLoadBudget = 2,
+                ShaderCacheDir = cache,
+            });
+            WithRenderer("loadceiling", r, h =>
+            {
+                r.BeginTitle("PCSA00084");
+                var w = new RendererTextureTests.Workload(h); // its programs, one surface (U8U8U8U8)
+                Assert.True(r.WaitForBackgroundCompiles(CancellationToken.None));
+                int Queued() => r.ProgramLoadStats.Pipelines;
+
+                // five new surfaces in one load: the one programmable-blending program (one vertex program, one
+                // pipeline per combination) is queued for two of them, the budget
+                int before = Queued();
+                uint[] surfaces = [0x10800000u, 0x11000000u, 0x41000000u, 0x80800000u, 0x01000000u];
+                foreach (uint colorFormat in surfaces)
+                {
+                    ((IGpuBackend)r).ColorSurfaceInitialised(colorFormat, downscale: false);
+                }
+
+                Assert.Equal(2, Queued() - before);
+
+                // a new load: presents without a program created; the program created then is built for its primary
+                // prediction and the two most recent surfaces (0x80800000, 0x01000000), not the six known ones
+                for (int i = 0; i < 40; i++)
+                {
+                    h.Emu.Gpu.Submit(new PresentCommand { Frame = new DisplayFrame(w.Data, W, W, H, DisplayPixelFormat.A8B8G8R8) });
+                }
+
+                h.Emu.Gpu.WaitIdle();
+                before = Queued();
+                w.CreateFetchProgram(outputFormat: 5); // SCE_GXM_OUTPUT_REGISTER_FORMAT_HALF4
+                Assert.Equal(1 + 2, Queued() - before);
+
+                Assert.True(r.WaitForBackgroundCompiles(CancellationToken.None));
+                w.Terminate();
+            });
+        }
+        finally
+        {
+            try
+            {
+                Directory.Delete(cache, true);
+            }
+            catch (IOException) { }
+            catch (UnauthorizedAccessException) { }
+        }
+    }
+
     [SoftwareVulkanFact]
     public void CancelledShaderCacheLoadLetsTheGameStartAndTheRestBuildsInTheBackground()
     {

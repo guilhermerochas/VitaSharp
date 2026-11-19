@@ -31,6 +31,7 @@ public sealed class RendererTextureTests(GuestMemoryFixture fx)
         public readonly List<uint> Textures = [];
         /// <summary>The format of each of <see cref="Textures"/>.</summary>
         public readonly List<TexBase> TextureFormats = [];
+        private readonly uint _patcher, _fetchId, _vertexGxp;
 
         public Workload(HleHarness h, ushort multisample = 0, uint colorFormat = 0, uint scaleMode = 0)
         {
@@ -77,6 +78,7 @@ public sealed class RendererTextureTests(GuestMemoryFixture fx)
             Assert.Equal(0, Call(_g, "sceGxmShaderPatcherCreateFragmentProgram", patcher, GuestMemory.R32(fid), 0u, 0u, 0u, vertexGxp, new Ptr<uint>(fp)));
             Assert.Equal(0, Call(_g, "sceGxmShaderPatcherCreateFragmentProgram", patcher, GuestMemory.R32(cid), 0u, 0u, 0u, vertexGxp, new Ptr<uint>(fc)));
             Assert.Equal(0, Call(_g, "sceGxmShaderPatcherCreateFragmentProgram", patcher, GuestMemory.R32(bid), 0u, 0u, 0u, vertexGxp, new Ptr<uint>(fb)));
+            (_patcher, _fetchId, _vertexGxp) = (patcher, GuestMemory.R32(bid), vertexGxp);
             Vp = GuestMemory.R32(vp);
             Fp = GuestMemory.R32(fp);
             FpCube = GuestMemory.R32(fc);
@@ -169,11 +171,13 @@ public sealed class RendererTextureTests(GuestMemoryFixture fx)
 
         /// <summary>One scene with a programmable-blending draw (<see cref="FpFetch"/> reads the surface colour), drawn
         /// as two triangles: on a one-sample scene it renders in a fetch pass (VulkanRenderer.SingleFetch.cs).</summary>
-        public void RunFetch()
+        /// <param name="fragmentEnabled">false: the draw runs with the fragment program disabled (colour mask 0)</param>
+        public void RunFetch(bool fragmentEnabled = true)
         {
             Assert.Equal(0, Call(_g, "sceGxmBeginScene", Ctx, 0u, Rt, 0u, 0u, 0u, Color, 0u));
             Invoke(_g, "sceGxmSetVertexProgram", Ctx, Vp);
             Invoke(_g, "sceGxmSetFragmentProgram", Ctx, FpFetch);
+            Invoke(_g, "sceGxmSetFrontFragmentProgramEnable", Ctx, fragmentEnabled ? 0u : 0x00200000u); // SCE_GXM_FRAGMENT_PROGRAM_DISABLED
             Invoke(_g, "sceGxmSetFrontDepthFunc", Ctx, 0x00E00000u); // ALWAYS
             Invoke(_g, "sceGxmSetCullMode", Ctx, 0u);
             Assert.Equal(0, Call(_g, "sceGxmSetVertexStream", Ctx, 0u, Verts));
@@ -182,6 +186,15 @@ public sealed class RendererTextureTests(GuestMemoryFixture fx)
             Assert.Equal(0, Call(_g, "sceGxmEndScene", Ctx, 0u, 0u));
             _h.Emu.Gpu.Submit(new PresentCommand { Frame = new DisplayFrame(Data, W, W, H, DisplayPixelFormat.A8B8G8R8) });
             Assert.Equal(0, Call(_g, "sceGxmFinish", Ctx));
+        }
+
+        /// <summary>Creates another fragment program object of the programmable-blending program (as a game creating
+        /// its programs while it loads), with the output register format <paramref name="outputFormat"/>.</summary>
+        public uint CreateFetchProgram(uint outputFormat)
+        {
+            uint fp = _h.Word(0);
+            Assert.Equal(0, Call(_g, "sceGxmShaderPatcherCreateFragmentProgram", _patcher, _fetchId, outputFormat, 0u, 0u, _vertexGxp, new Ptr<uint>(fp)));
+            return GuestMemory.R32(fp);
         }
 
         public void Terminate() => Call(_g, "sceGxmTerminate");

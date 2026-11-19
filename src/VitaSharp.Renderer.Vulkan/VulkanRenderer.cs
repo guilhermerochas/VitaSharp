@@ -45,6 +45,12 @@ public sealed class VulkanRendererOptions
     /// program it is created for is built too, so the first draw finds them ready (VulkanRenderer.ProgramLoad.cs). On by
     /// default; VITASHARP_COMPILE_ON_PROGRAM_LOAD=0|1 overrides it.</summary>
     public bool CompileOnProgramLoad = true;
+    /// <summary>With <see cref="CompileOnProgramLoad"/>: the surfaces a newly created surface-dependent program is built
+    /// for, the most recently used ones (each BeginScene refreshes its surface; VulkanRenderer.ProgramLoad.cs).</summary>
+    public int ProgramLoadSurfaces = 8;
+    /// <summary>With <see cref="CompileOnProgramLoad"/>: the pipelines queued per load for the combinations of a program
+    /// with a surface other than its primary prediction (a load ends after presents without a program created).</summary>
+    public int ProgramLoadBudget = 256;
     /// <summary>Shader worker threads, 0 = automatic (half the logical processors, 1-6). VITASHARP_SHADER_WORKERS overrides it.</summary>
     public int ShaderWorkers;
     /// <summary>Presents counted before this renderer's first one (GPU dump replay: frames keep the recorded numbers).</summary>

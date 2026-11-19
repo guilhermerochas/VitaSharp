@@ -33,7 +33,9 @@ static class ReplayGpu
         Console.WriteLine("    --res-scale=2|3|4|0.75|0.5  internal resolution (VITASHARP_RES_SCALE), as in run/test");
         Console.WriteLine("    --compare=<dir>        compare the written frames with frame_N.png of another run (compare.txt, diff_N.png)");
         Console.WriteLine("    --window [--hold] [--speed=X|--fast]  show it in a window at the recorded pace (X times), keep it open at the end");
-        Console.WriteLine("    --shader-cache=<dir> --async-shaders=on|off (default off) --no-idle --no-targets --debug-mode");
+        Console.WriteLine("    --shader-cache=<dir>   the shader cache to read and write (default: a new temporary one, deleted at the end;");
+        Console.WriteLine("                           the user's own cache is used only when its folder is given here)");
+        Console.WriteLine("    --async-shaders=on|off (default off) --no-idle --no-targets --debug-mode");
         Console.WriteLine("    --load-shader-cache=on  wait for the shaders and pipelines recorded in --shader-cache before the first command (earlier name --precompile-shaders)");
         Console.WriteLine("    --compile-on-program-load=on|off  announce every program pair of the dump before the first command, as a game");
         Console.WriteLine("                           creating its programs while loading, and wait for the shader workers (default off)");
@@ -292,7 +294,7 @@ static class ReplayGpu
         var thumbs = new List<(long Frame, byte[] Rgba)>();
         var ro = new VulkanRendererOptions
         {
-            ShaderCacheDir = Opt(options, "--shader-cache") ?? Path.Combine(Program.DataRoot, "shadercache"),
+            ShaderCacheDir = ShaderCacheDir(options, out bool temporaryCache),
             Validation = options.Contains("--validation"),
             VSync = false,
             DumpFramesDir = s.Out,
@@ -307,6 +309,12 @@ static class ReplayGpu
             FirstPresent = firstPresent,
         };
         s.LoadShaderCache = Runner.LoadShaderCacheChoice(options) == true;
+        if (temporaryCache)
+        {
+            Log.Warn($"[replay] no --shader-cache: using a new temporary shader cache {ro.ShaderCacheDir} (deleted at the end); a replay never writes into the user's cache unless its folder is given with --shader-cache"
+                + (s.LoadShaderCache ? "; --load-shader-cache has nothing recorded to load" : ""));
+        }
+
         s.ProgramLoad = Runner.OnOff(options, "--compile-on-program-load") == true;
         ro.CompileOnProgramLoad = s.ProgramLoad;
         if (ro.AsyncShaders)
@@ -367,8 +375,45 @@ static class ReplayGpu
         }
 
         Log.Flush();
+        if (temporaryCache)
+        {
+            DeleteTemporaryCache(ro.ShaderCacheDir!);
+        }
+
         Console.WriteLine($"Results in {s.Out}");
         return rc;
+    }
+
+    /// <summary>
+    /// The shader cache folder of a replay: the one given with --shader-cache, or else a new temporary folder
+    /// (<paramref name="temporary"/>), never the user's shadercache in the data folder: a replay records the dump's
+    /// shaders and pipelines into the cache it runs with, and the user's cache must hold only what the user's own
+    /// sessions recorded (a measurement with a "cold" cache also needs an empty one).
+    /// </summary>
+    internal static string ShaderCacheDir(string[] options, out bool temporary)
+    {
+        string? given = Opt(options, "--shader-cache");
+        temporary = string.IsNullOrWhiteSpace(given);
+        return temporary ? Path.Combine(Path.GetTempPath(), "vitasharp-replay-shadercache-" + Guid.NewGuid().ToString("N")) : Path.GetFullPath(given!);
+    }
+
+    static void DeleteTemporaryCache(string dir)
+    {
+        try
+        {
+            if (Directory.Exists(dir))
+            {
+                Directory.Delete(dir, true);
+            }
+        }
+        catch (IOException e)
+        {
+            Console.Error.WriteLine($"[replay] temporary shader cache {dir} not deleted: {e.Message}");
+        }
+        catch (UnauthorizedAccessException e)
+        {
+            Console.Error.WriteLine($"[replay] temporary shader cache {dir} not deleted: {e.Message}");
+        }
     }
 
     static VulkanRenderer? _renderer;

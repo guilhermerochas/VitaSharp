@@ -476,7 +476,7 @@ public sealed unsafe partial class VulkanRenderer
         GxpProgram prog = gxmFragmentProgram.Info.Program;
         Dbg($"new fragment shader {fsEntry.ProgramHash:X16} hint {fsEntry.HintKey:X16}: output fmt 0x{gxmFragmentProgram.OutputFormat:X} param {prog.OutputParamType}x{prog.OutputCompCount} start {prog.FragmentOutputStart}, " +
             $"program msaa mode {gxmFragmentProgram.MultisampleMode}, raw colour bits {fsEntry.Gen?.RawColorBits ?? 0}, framebuffer fetch {fsEntry.Gen?.UsesFragColor ?? false}{(fetchInput ? " (input attachment)" : "")}, " +
-            $"writes depth {fsEntry.Gen?.WritesDepth ?? false}, textures 0x{gxmFragmentProgram.Info.TexturesUsed:X}, rt 0x{_renderTarget?.Address ?? 0:X8} fmt 0x{_renderTarget?.ColorFormat ?? 0:X8} ({_renderTarget?.Format}), scene msaa {MsaaPath}, " +
+            $"writes depth {fsEntry.Gen?.WritesDepth ?? false}, textures 0x{gxmFragmentProgram.Info.TexturesUsed:X} ({DbgTextureFormats(TextureFormats(d.FragmentTextures, gxmFragmentProgram.Info.TexturesUsed), prog)}), rt 0x{_renderTarget?.Address ?? 0:X8} fmt 0x{_renderTarget?.ColorFormat ?? 0:X8} ({_renderTarget?.Format}), scene msaa {MsaaPath}, " +
             $"{(fsEntry.Failed ? "FAILED" : string.IsNullOrEmpty(fsEntry.Gen?.Glsl) ? "from the shader pack" : "translated")}");
     }
 
