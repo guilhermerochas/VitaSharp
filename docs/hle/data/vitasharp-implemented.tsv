@@ -2416,6 +2416,17 @@
 0x6AE09257	NID_6AE09257	FirmwareConstants	SceHostAvch	-
 0xA9FEACD7	NID_A9FEACD7	FirmwareConstants	SceHostAvch	-
 0xDB232E28	NID_DB232E28	FirmwareConstants	SceHostAvch	-
+0x71B5FB67	ksceHprmGetHpDetect	SystemServicesVsh	SceHpremoteForDriver	-
+0x7B038374	ksceHprmGetInternalState	SystemServicesVsh	SceHpremoteForDriver	-	default
+0x2229EF51	ksceHprmIsAudioOutDockExist	SystemServicesVsh	SceHpremoteForDriver	-
+0x7E69EDA4	ksceHprmIsHeadphoneExist	SystemServicesVsh	SceHpremoteForDriver	-
+0x219C58F1	ksceHprmIsMicrophoneExist	SystemServicesVsh	SceHpremoteForDriver	-
+0x208DB1BD	ksceHprmIsRemoteExist	SystemServicesVsh	SceHpremoteForDriver	-
+0xC7154136	ksceHprmRegisterCallback	SystemServicesVsh	SceHpremoteForDriver	-
+0x4D1E622C	ksceHprmReset	SystemServicesVsh	SceHpremoteForDriver	-
+0xD22913DB	ksceHprmSetConnectCallback	SystemServicesVsh	SceHpremoteForDriver	-
+0x7735C403	ksceHprmShutdown	SystemServicesVsh	SceHpremoteForDriver	-
+0x68D64A0F	ksceHprmUnregisterCallback	SystemServicesVsh	SceHpremoteForDriver	-
 0x031EBD2A	NID_031EBD2A	Http	SceHttp	-
 0x0B0D8E7A	NID_0B0D8E7A	Http	SceHttp	-
 0x0CC59EF6	NID_0CC59EF6	Http	SceHttp	-
