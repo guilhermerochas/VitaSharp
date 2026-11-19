@@ -1,5 +1,5 @@
 # HLE status per firmware library, written by VitaSharp.Desktop hle-coverage --status (build/hle-status.ps1)
-# firmware=3.74 games=63 vitasdk=7006/7006 vitasdk_default=373 vitasdk_lle=2124
+# firmware=3.74 games=64 vitasdk=7006/7006 vitasdk_default=373 vitasdk_lle=2124
 library	module	total	impl	games	games_impl	system	system_impl	default	games_default	system_default	lle
 SceAACPromoter	vs0:vsh/common/mms/AACPromoter.suprx	4	4	0	0	0	0	0	0	0	4
 SceAVConfig	os0:kd/bootimage.skprx/SceAVConfig	34	34	0	0	31	31	0	0	0	0
@@ -42,7 +42,7 @@ SceBemp2sys	vs0:sys/external/libSceBemp2sys.suprx	27	27	0	0	15	15	0	0	0	27
 SceBgAppUtil	vs0:sys/external/bgapputil.suprx	1	1	0	0	0	0	0	0	0	1
 SceBmpPromoter	vs0:vsh/common/mms/bmp_promoter.suprx	3	3	0	0	0	0	0	0	0	3
 SceBt	os0:kd/bootimage.skprx/SceBt	54	54	0	0	18	18	46	0	18	0
-SceCamera	os0:kd/bootimage.skprx/SceCamera	46	46	23	23	9	9	0	0	0	0
+SceCamera	os0:kd/bootimage.skprx/SceCamera	46	46	35	35	2	2	0	0	0	0
 SceClipboard	vs0:sys/external/libclipboard.suprx	2	2	2	2	0	0	0	0	0	0
 SceCodecEngineUser	os0:us/avcodec_us.suprx	6	6	4	4	2	2	0	0	0	0
 SceCodecEngineWrapper	os0:kd/bootimage.skprx/SceCodecEngineWrapper	16	16	0	0	6	6	0	0	0	0
@@ -75,7 +75,7 @@ SceEmailEngine	vs0:app/NPXS10072/email_engine.suprx	325	325	0	0	223	223	0	0	0	32
 SceError	os0:kd/bootimage.skprx/SceError	6	6	0	0	6	6	0	0	0	0
 SceErrorUser	os0:us/driver_us.suprx	6	6	0	0	6	6	0	0	0	0
 SceFiber	vs0:sys/external/libfiber.suprx	16	16	9	9	0	0	0	0	0	0
-SceFios2	vs0:sys/external/libfios2.suprx	168	168	92	92	0	0	0	0	0	168
+SceFios2	vs0:sys/external/libfios2.suprx	168	168	93	93	0	0	0	0	0	168
 SceFios2Kernel	os0:kd/bootimage.skprx/SceFios2Kernel	20	20	20	20	0	0	0	0	0	0
 SceFios2Kernel02	os0:kd/bootimage.skprx/SceFios2Kernel	10	10	0	0	10	10	0	0	0	0
 SceFios2User	os0:us/driver_us.suprx	10	10	8	8	0	0	0	0	0	0
