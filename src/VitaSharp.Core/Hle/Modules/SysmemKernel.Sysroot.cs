@@ -22,8 +22,8 @@ namespace VitaSharp.Core.Hle.Modules;
 /// without a handler).
 /// </para>
 /// <para>
-/// Not here: the slots of the licence manager (+0x368), of the DRM services (+0x3B0) and of the security services
-/// (+0x36C, +0x370, +0x38C, +0x390, +0x394), which belong to the licence and security processor side.
+/// The other slots (thread, module and process managers, licence, DRM and security services, coredump) are in the
+/// SysrootSlots part, the sysroot's data words and the KBL parameters in the SysrootData part.
 /// </para>
 /// </summary>
 public sealed partial class SysmemKernel
@@ -67,6 +67,7 @@ public sealed partial class SysmemKernel
         lock (_sysrootWords)
         {
             _sysrootWords[(int)offset] = (int)value;
+            MirrorSysrootWord(offset, value);
         }
     }
 
@@ -135,8 +136,9 @@ public sealed partial class SysmemKernel
     /// The boot default of a slot (and table entry): what the firmware module that fills it answers, where VitaSharp
     /// knows it. +0x32C (the application manager): the shell's pid. +0x398 (the update manager): the version of the
     /// system software package (type 1). +0x360 entry +0x40 (the process manager; ksceKernelCreateThread asks it):
-    /// (pid, *sdkVersion), the SDK version of the process's main module, 0x03740011 for the kernel. Anything else: 0,
-    /// logged once.
+    /// (pid, *sdkVersion), the SDK version of the process's main module, 0x03740011 for the kernel; entries +0x18 and
+    /// +0x1C (pid, size / pointer): a process's kernel-side heap block, served by the kernel's heap (ksceKernelAlloc,
+    /// ksceKernelFree). Anything else: 0, logged once.
     /// </summary>
     long DefaultSysrootHandler(HleContext context, uint offset, uint entry)
     {
@@ -148,6 +150,10 @@ public sealed partial class SysmemKernel
                 return SystemSoftware.SpkgVersion(1);
             case (0x360, 0x40):
                 return DefaultProcessSdkVersion(context.Gpr(0), context.Gpr(1));
+            case (0x360, 0x18):
+                return ksceKernelAlloc(context.Gpr(1));
+            case (0x360, 0x1C):
+                return ksceKernelFree(context.Gpr(1));
         }
 
         int key = (int)((offset << 16) | (entry & 0xFFFF));
