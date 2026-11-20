@@ -283,12 +283,11 @@ public sealed unsafe class FFmpegVideoDecoder : IVideoDecoder
             string? missing = null;
             foreach (string lib in libs)
             {
-                if (!System.Runtime.InteropServices.NativeLibrary.TryLoad(lib, out nint h))
+                if (!NativeProbe.CanLoad(lib))
                 {
                     missing = lib;
                     break;
                 }
-                System.Runtime.InteropServices.NativeLibrary.Free(h);
             }
             s_missingLibrary[device] = missing;
             return missing;

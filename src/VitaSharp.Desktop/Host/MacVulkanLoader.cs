@@ -24,9 +24,8 @@ static class MacVulkanLoader
             return null;
         }
 
-        if (NativeLibrary.TryLoad("libvulkan.1.dylib", out var h))
+        if (NativeProbe.CanLoad("libvulkan.1.dylib"))
         {
-            NativeLibrary.Free(h);
             return null;
         }
 

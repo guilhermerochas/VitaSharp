@@ -304,16 +304,7 @@ public sealed unsafe class WindowHost : IPresentationSurface, IInputBackend, IDi
         }
     }
 
-    static bool CanLoad(string lib)
-    {
-        if (!NativeLibrary.TryLoad(lib, out var h))
-        {
-            return false;
-        }
-
-        NativeLibrary.Free(h);
-        return true;
-    }
+    static bool CanLoad(string lib) => NativeProbe.CanLoad(lib);
 
     /// <summary>
     /// The title bar text. Any thread may set it; only the window thread hands it to GLFW (at once when set there, else

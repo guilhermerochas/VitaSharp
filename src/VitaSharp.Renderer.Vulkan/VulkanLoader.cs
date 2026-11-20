@@ -64,12 +64,11 @@ public static class VulkanLoader
         }
         foreach (string path in Candidates())
         {
-            if (!File.Exists(path) || !NativeLibrary.TryLoad(path, out nint h))
+            if (!File.Exists(path) || !NativeProbe.CanLoad(path))
             {
                 continue;
             }
 
-            NativeLibrary.Free(h);
             try
             {
                 var vk = new Vk(new DefaultNativeContext(path));

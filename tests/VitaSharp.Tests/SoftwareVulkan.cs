@@ -62,7 +62,7 @@ public static class SoftwareVulkan
             {
                 if (Directory.Exists(dir) && Directory.EnumerateFiles(dir, "lvp_icd*.json").FirstOrDefault() is { } json)
                 {
-                    return NativeLibrary.TryLoad("libvulkan.so.1", out nint h) ? Free(h, json) : (null, null, "Mesa lavapipe is installed but not the Vulkan loader: install libvulkan1");
+                    return NativeProbe.CanLoad("libvulkan.so.1") ? (json, null, null) : (null, null, "Mesa lavapipe is installed but not the Vulkan loader: install libvulkan1");
                 }
             }
 
@@ -164,12 +164,6 @@ public static class SoftwareVulkan
         return (null, null, "no software Vulkan driver: unpack Mesa lavapipe (mesa-dist-win) into "
             + @"%LOCALAPPDATA%\VitaSharpTools\mesa\<version>\x64, or install Microsoft Edge or Google Chrome (they ship SwiftShader, "
             + "vk_swiftshader.dll), or set VK_DRIVER_FILES to the ICD manifest of a SwiftShader or Mesa build");
-    }
-
-    private static (string?, string?, string?) Free(nint h, string json)
-    {
-        NativeLibrary.Free(h);
-        return (json, null, null);
     }
 
     /// <summary>macOS: the Vulkan loader's path (Homebrew and the SDK are not on dyld's default search path).</summary>

@@ -1,5 +1,6 @@
 using Silk.NET.Shaderc;
 using System.Runtime.InteropServices;
+using VitaSharp.Core.Util;
 
 namespace VitaSharp.Tests;
 
@@ -37,7 +38,7 @@ public static class ShadercAvailability
 
         try
         {
-            NativeLibrary.Free(NativeLibrary.Load(path));
+            NativeProbe.Load(path); // kept loaded: shaderc registers an exit handler (NativeProbe)
             return "loads";
         }
         catch (Exception e) when (e is DllNotFoundException or BadImageFormatException)
