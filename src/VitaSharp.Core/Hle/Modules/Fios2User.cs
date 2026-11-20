@@ -134,7 +134,15 @@ public sealed partial class Fios2User : HleModule
     [Hle]
     int sceFiosOverlayRemoveForProcess02(int pid, int id)
     {
-        lock (_overlays) _overlays.RemoveAll(o => o.Id == id);
+        lock (_overlays)
+        {
+            // the module's remove: an id not in the table is 0x8082001A (SceFios2Kernel 3.74)
+            if (_overlays.RemoveAll(o => o.Id == id) == 0)
+            {
+                return FIOS_ERR_NOT_FOUND;
+            }
+        }
+
         return 0;
     }
 
@@ -147,7 +155,7 @@ public sealed partial class Fios2User : HleModule
         lock (_overlays)
         {
             var o = _overlays.FirstOrDefault(x => x.Id == id);
-            if (o == null) return ERR_FIOS;
+            if (o == null) return FIOS_ERR_NOT_FOUND;
             GuestMemory.Span(outOverlay, 0x258).Clear();
             GuestMemory.Write(outOverlay, o.Type);
             GuestMemory.Write(outOverlay + 1, o.Order);
@@ -170,7 +178,7 @@ public sealed partial class Fios2User : HleModule
         lock (_overlays)
         {
             int i = _overlays.FindIndex(x => x.Id == id);
-            if (i < 0) return ERR_FIOS;
+            if (i < 0) return FIOS_ERR_NOT_FOUND;
             n = ReadOverlay(overlay, id);
             _overlays.RemoveAt(i);
             InsertSorted(n);
