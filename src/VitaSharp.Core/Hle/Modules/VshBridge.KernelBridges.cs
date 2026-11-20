@@ -719,8 +719,9 @@ public sealed partial class VshBridge
     /// <summary>Starts/ends the crash archive service; there is no dump to package.</summary>
     [Hle] int vshCoredumpCafInit() => 0;
     [Hle] int vshCoredumpCafFinal() => 0;
-    /// <summary>Deletes the stored crash report (none exists): 0.</summary>
-    [Hle] int vshCoredumpDeleteCrashReportCaf() => 0;
+    /// <summary>Deletes the stored crash report: the coredump module removes ux0:data/crash_report.caf and answers the
+    /// removal's result (none stored: ENOENT).</summary>
+    [Hle] int vshCoredumpDeleteCrashReportCaf() => DeleteCrashReportCaf();
 
     sealed class CafContext
     {
@@ -786,6 +787,12 @@ public sealed partial class VshBridge
             return ERR_TOO_BIG;
         }
 
+        return CafHeaderTransform(ctx, data, size);
+    }
+
+    /// <summary>The coredump module's header transform (the bridge's and ksceCoredumpCafHeaderTransform).</summary>
+    int CafHeaderTransform(int ctx, uint data, uint size)
+    {
         if (!_caf.TryGetValue(ctx, out var c) || c.Header == null)
         {
             return SceError.UNKNOWN_UID;
@@ -815,6 +822,12 @@ public sealed partial class VshBridge
             return ERR_TOO_BIG;
         }
 
+        return CafDigest(ctx, digest, size, header);
+    }
+
+    /// <summary>The coredump module's header or segment final: the HMAC's first <paramref name="size"/> bytes.</summary>
+    int CafDigest(int ctx, uint digest, uint size, bool header)
+    {
         if (!_caf.TryGetValue(ctx, out var c) || (header ? c.Header : c.Segment) is not { } h)
         {
             return SceError.UNKNOWN_UID;
@@ -845,6 +858,12 @@ public sealed partial class VshBridge
             return ERR_TOO_BIG;
         }
 
+        return CafSegmentInit(ctx, hmacKeyId, mode, aesKeyId, iv, ivSize);
+    }
+
+    /// <summary>The coredump module's segment init (the bridge's and ksceCoredumpCafSegmentInit).</summary>
+    int CafSegmentInit(int ctx, uint hmacKeyId, int mode, uint aesKeyId, uint iv, uint ivSize)
+    {
         if (!_caf.TryGetValue(ctx, out var c))
         {
             return SceError.UNKNOWN_UID;
@@ -884,6 +903,12 @@ public sealed partial class VshBridge
             return ERR_TOO_BIG;
         }
 
+        return CafSegmentTransform(ctx, src, dst, size);
+    }
+
+    /// <summary>The coredump module's segment transform (the bridge's and ksceCoredumpCafSegmentTransform).</summary>
+    int CafSegmentTransform(int ctx, uint src, uint dst, uint size)
+    {
         if (!_caf.TryGetValue(ctx, out var c) || c.Segment == null)
         {
             return SceError.UNKNOWN_UID;
