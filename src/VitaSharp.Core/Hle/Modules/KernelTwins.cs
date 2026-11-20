@@ -1212,12 +1212,6 @@ public sealed partial class KernelTwins : HleModule
     [Hle]
     void ksceKernelLibcTime(HleContext context) => Forward(context, 0x0039BE45);
 
-    // ------------------------------------------------------------------ ScePsmDrmForDriver
-
-    /// <summary>kscePsmDrmRemoveActData (ScePsmDrmForDriver 0x4CD5375C): scePsmDrmRemoveActData.</summary>
-    [Hle(Default = true)]
-    void kscePsmDrmRemoveActData(HleContext context) => Forward(context, 0x0E193CBB);
-
     // ------------------------------------------------------------------ SceRtcForDriver
 
     /// <summary>ksceRtcConvertLocalTimeToUtc (SceRtcForDriver 0xAD2F3544): sceRtcConvertLocalTimeToUtc.</summary>

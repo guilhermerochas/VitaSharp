@@ -32,8 +32,24 @@ public sealed partial class SystemServicesVsh
 
     /// <summary>The account's activation data (act.dat): none on the emulated unit; removing it succeeds.</summary>
     [Hle("_sceNpDrmRemoveActData", Default = true)]
-    [Hle("scePsmDrmRemoveActData", Default = true)]
     int NpDrmRemoveActData(uint a) => 0;
+
+    /// <summary>(SceUInt64 *accountId): the PSM activation data's removal, through kscePsmDrmRemoveActData.</summary>
+    [Hle("scePsmDrmRemoveActData")]
+    int PsmDrmRemoveActData(uint accountId) =>
+        ThroughPsmDrmExport(0x4CD5375C, () => kscePsmDrmRemoveActData(accountId), accountId);
+
+    /// <summary>(5 outputs): the PSM activation's fields, through kscePsmDrmGetActInfo.</summary>
+    [Hle("scePsmDrmGetActInfo", Default = true)]
+    int PsmDrmGetActInfo(uint first, uint second, uint third, uint fourth)
+    {
+        if (first == 0)
+        {
+            return NPDRM_ERR_INVALID;
+        }
+
+        return ThroughPsmDrmExport(0xB09003A7, () => kscePsmDrmGetActInfo(first), first, second, third, fourth);
+    }
 
     [Hle("_sceNpDrmCheckActData", Default = true)]
     [Hle("_sceNpDrmCheckDrmReset", Default = true)]
@@ -41,7 +57,6 @@ public sealed partial class SystemServicesVsh
     [Hle("_sceNpDrmPackageCheck", Default = true)]
     [Hle("_sceNpDrmPackageDecrypt", Default = true)]
     [Hle("_sceNpDrmPackageTransform", Default = true)]
-    [Hle("scePsmDrmGetActInfo", Default = true)]
     int NpDrmSecure(uint a) => a == 0 ? NPDRM_ERR_INVALID : KERNEL_ERR_UNSUP;
 
     /// <summary>Writes a license's start and expiration times through a {start, end} pointer pair (either may be NULL):
@@ -68,7 +83,7 @@ public sealed partial class SystemServicesVsh
     /// RO/License folder. A signed license (from the store) has its key set encrypted for the account's activation and
     /// only the security processor opens it: refused as the other secure calls (0x80020004). A license with no
     /// signature carries the key set in clear (<see cref="Package.PsmLicense"/>): copied out as it is, as VitaSharp
-    /// reads a PS Vita license's klicensee.
+    /// reads a PS Vita license's klicensee. The syscall calls kscePsmDrmGetRifKey, through its export entry.
     /// </summary>
     [Hle("scePsmDrmGetRifKey")]
     int PsmDrmGetRifKey(uint license, uint keydata, uint versionFlag, uint times)
@@ -78,20 +93,8 @@ public sealed partial class SystemServicesVsh
             return NPDRM_ERR_INVALID;
         }
 
-        ReadOnlySpan<byte> rif = GuestMemory.ReadSpan(license, Package.PsmLicense.Size);
-        if (!Package.PsmLicense.KeySetInClear(rif))
-        {
-            return KERNEL_ERR_UNSUP;
-        }
-
-        rif.Slice(Package.PsmLicense.KeySetOffset, Package.PsmLicense.KeySetSize).CopyTo(GuestMemory.Span(keydata, Package.PsmLicense.KeySetSize));
-        if (versionFlag != 0)
-        {
-            GuestMemory.W32(versionFlag, 0);
-        }
-
-        WriteLicenseTimes(rif, times);
-        return 0;
+        return ThroughPsmDrmExport(0x8C8CFD01, () => kscePsmDrmGetRifKey(license, keydata, versionFlag, times),
+            license, keydata, versionFlag, times);
     }
 
     /// <summary>(const ScePsmDrmLicense *license, char contentId[0x30], SceUInt64 *accountId, ScePsmDrmGetRifInfoOpt *opt):
@@ -104,19 +107,8 @@ public sealed partial class SystemServicesVsh
             return NPDRM_ERR_INVALID;
         }
 
-        ReadOnlySpan<byte> rif = GuestMemory.ReadSpan(license, Package.PsmLicense.Size);
-        if (contentId != 0)
-        {
-            rif.Slice(0x50, 0x30).CopyTo(GuestMemory.Span(contentId, 0x30));
-        }
-
-        if (accountId != 0)
-        {
-            GuestMemory.Write(accountId, System.Buffers.Binary.BinaryPrimitives.ReadUInt64LittleEndian(rif[0x10..]));
-        }
-
-        WriteLicenseTimes(rif, opt);
-        return 0;
+        return ThroughPsmDrmExport(0x984F9017, () => kscePsmDrmGetRifInfo(license, contentId, accountId, opt),
+            license, contentId, accountId, opt);
     }
 
     /// <summary>
