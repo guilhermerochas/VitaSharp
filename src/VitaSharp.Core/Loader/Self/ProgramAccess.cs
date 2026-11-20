@@ -89,5 +89,24 @@ public sealed class ProgramAccess
     /// </summary>
     public bool HasCapabilityBit(int bit) => _capability != null ? (bit >> 3) < _capability.Length && Bit(bit) : _privileged;
 
+    /// <summary>
+    /// The first word of the capability field (little-endian), which SceSblACMgr also reads as the program's access
+    /// level (0x80 kernel, 0x40 system, 0x20 game, 0x10 non-game user program: the values of the threads' access
+    /// level). Without the auth info's capability it is the level of what the program is: a system (privileged)
+    /// program 0x40, any other 0x20.
+    /// </summary>
+    public uint LevelWord
+    {
+        get
+        {
+            if (_capability != null)
+            {
+                return BitConverter.ToUInt32(_capability, 0);
+            }
+
+            return _privileged ? 0x40u : 0x20u;
+        }
+    }
+
     private bool Bit(int bit) => ((_capability![bit >> 3] >> (7 - (bit & 7))) & 1) != 0;
 }
