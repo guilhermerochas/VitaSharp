@@ -4048,8 +4048,15 @@ public static class EventBits
 }
 
 /// <summary>
-/// Kernel timer: a microsecond counter on process time plus an optional (repeating) SET or PULSE event that
-/// sceKernelWaitEvent/PollEvent can wait for (result EVENT_TIMER). Only the first waiter waits for the event.
+/// Kernel timer (threadmgr 3.74: SceUIDTimerClass, a child of SceUIDCpuTimerClass and so of SceUIDEventClass): a
+/// microsecond counter on process time plus an optional (repeating) SET or PULSE event. The event fires in guest time,
+/// as the kernel's timer interrupt does it (the timer handler around 0x8101a238, run by <see cref="TimerDispatcher"/>
+/// here, or by a waiter or reader that gets there first): it goes through the event set 0x8101dcf8 (the pulse 0x8101e370
+/// for a PULSE event) with the EVENT_TIMER bit (0x8000), user data 0 and notify argument 0. So the waiters in the
+/// timer's queue whose pattern the bit matches take it inside the fire, in queue order (by priority with TH_PRIO; the
+/// auto reset ends it at the first taker), a sceKernelWaitMultipleEvents call among them as a single waiter is, and the
+/// callbacks registered to the timer are notified (0x8101cfcc). A repeating event is rescheduled one interval later
+/// (at least 200 us, as the handler does).
 /// </summary>
 public sealed partial class TimerObject : EventObject
 {
@@ -4060,9 +4067,49 @@ public sealed partial class TimerObject : EventObject
     public bool Started, Repeat, Pulse, EventSet;
     public ulong Base, StoppedCount, Interval;
     public ulong NextEvent = ulong.MaxValue;
-    private readonly LinkedList<object> _waiters = new();
+    /// <summary>The user bits (0xFF000000) a sceKernelSet/PulseEventWithNotifyCallback left in the timer's event
+    /// pattern, next to the timer bit (<see cref="EventSet"/>).</summary>
+    public uint UserPattern;
+    /// <summary>The user data of the event's last set (a fire sets 0).</summary>
+    public ulong LastUserData;
+
+    /// <summary>The shortest repeat interval the timer handler reschedules with, in microseconds.</summary>
+    private const ulong MinRepeatInterval = 200;
+
+    /// <summary>A fire that finds more occurrences overdue than this (the process was not running) fires this many and
+    /// skips the rest, so a long pause cannot keep the dispatcher busy.</summary>
+    private const int MaxCatchUp = 64;
+
+    private sealed class Waiter
+    {
+        public uint WaitPattern;
+        public int Priority;
+        /// <summary>The result the fire, cancel or delete handed the waiter (null: still waiting).</summary>
+        public int? Code;
+        public uint Bits;
+        public ulong UserData;
+        /// <summary>A sceKernelWaitMultipleEvents call waiting here, and the index of this timer in it (null: a
+        /// single wait).</summary>
+        public MultiEventWait? Multi;
+        public int MultiIndex;
+    }
+
+    private readonly LinkedList<Waiter> _waiters = new();
     private bool _deleted;
-    private int _cancelled;
+
+    /// <summary>In <see cref="TimerDispatcher"/>'s list (guarded by the dispatcher's lock).</summary>
+    internal bool Armed { get; set; }
+
+    private bool AutoReset => (Attr & EventBits.AttrAutoReset) != 0;
+
+    /// <summary>The event pattern: the timer bit while the event is set, and the user bits.</summary>
+    private uint CurrentPattern => (EventSet ? EventBits.Timer : 0) | UserPattern;
+
+    private void SetPattern(uint pattern)
+    {
+        EventSet = (pattern & EventBits.Timer) != 0;
+        UserPattern = pattern & EventBits.UserMask;
+    }
 
     public int NumWaiters
     {
@@ -4114,6 +4161,7 @@ public sealed partial class TimerObject : EventObject
                 return 0;
             }
 
+            FireDue(Clock()); // an event that came before the stop fired
             StoppedCount = Clock() - Base;
             Started = false;
             NextEvent = ulong.MaxValue;
@@ -4144,6 +4192,7 @@ public sealed partial class TimerObject : EventObject
     private void Schedule()
     {
         NextEvent = Clock() + Interval;
+        TimerDispatcher.Arm(this);
         WakeWaiters();
     }
 
@@ -4168,125 +4217,283 @@ public sealed partial class TimerObject : EventObject
         }
     }
 
-    private void Advance(ulong now)
-    {
-        if (Repeat && Interval != 0)
-        {
-            NextEvent += ((now - NextEvent - 1) / Interval + 1) * Interval;
-        }
-        else
-        {
-            NextEvent = ulong.MaxValue;
-        }
-    }
-
-    private int TryTake(Ptr<uint> result, Ptr<ulong> userData, ulong now)
-    {
-        result.TrySet(0);
-        userData.TrySet(0);
-        if (NextEvent < now)
-        {
-            if (!Pulse)
-            {
-                EventSet = true; // a pulse is only seen by waiters
-            }
-
-            Advance(now);
-        }
-        if (!EventSet)
-        {
-            return SceError.EVENT_COND;
-        }
-
-        result.TrySet(EventBits.Timer);
-        if ((Attr & EventBits.AttrAutoReset) != 0)
-        {
-            EventSet = false;
-        }
-
-        return SceError.OK;
-    }
-
-    public int Poll(Ptr<uint> result, Ptr<ulong> userData)
+    /// <summary>Fires the events that came due by now (the dispatcher and every reader call it, whoever comes first),
+    /// for <see cref="sceKernelGetTimerInfo"/>-style reads of the schedule.</summary>
+    public void Update()
     {
         lock (this)
         {
-            return TryTake(result, userData, Clock());
+            FireDue(Clock());
         }
     }
 
-    public int Clear()
-    {
-        lock (this)
-        {
-            EventSet = false;
-        }
-
-        return SceError.OK;
-    }
-
-    private bool Fired(LinkedListNode<object> node, ulong now) => _waiters.First == node && (EventSet || now > NextEvent);
-
-    public int Wait(Ptr<uint> result, Ptr<ulong> userData, Ptr<uint> timeout)
+    /// <summary>The dispatcher's call: fires what came due and says how many microseconds of the timer's clock are left
+    /// to its next event (null: none is armed).</summary>
+    internal ulong? FireDueAndRemaining()
     {
         lock (this)
         {
             ulong now = Clock();
-            int r = TryTake(result, userData, now);
+            FireDue(now);
+            if (_deleted || NextEvent == ulong.MaxValue)
+            {
+                return null;
+            }
+
+            return NextEvent >= now ? NextEvent - now + 1 : 1;
+        }
+    }
+
+    /// <summary>The event's fires that came due by <paramref name="now"/>, one by one (the caller holds the lock).</summary>
+    private void FireDue(ulong now)
+    {
+        int fired = 0;
+        while (!_deleted && NextEvent != ulong.MaxValue && now > NextEvent)
+        {
+            if (fired == MaxCatchUp)
+            {
+                ulong step = Math.Max(Interval, MinRepeatInterval);
+                NextEvent += ((now - NextEvent - 1) / step + 1) * step;
+                break;
+            }
+
+            NextEvent = Repeat && Interval != 0 ? NextEvent + Math.Max(Interval, MinRepeatInterval) : ulong.MaxValue;
+            ApplySet(EventBits.Timer, 0, Pulse);
+            NotifyRegisteredCallbacks(0);
+            fired++;
+        }
+    }
+
+    /// <summary>The event set (0x8101dcf8) or pulse (0x8101e370) on the timer's event (the caller holds the lock): the
+    /// bits join the pattern, the user data is replaced, and every waiter the pattern matches, in queue order, takes
+    /// its bits (the auto reset clears them at the first); a pulse then puts the pattern and user data back.</summary>
+    private void ApplySet(uint bits, ulong userData, bool pulse)
+    {
+        uint oldPattern = CurrentPattern;
+        ulong oldData = LastUserData;
+        SetPattern(oldPattern | bits);
+        LastUserData = userData;
+        for (LinkedListNode<Waiter>? node = _waiters.First; node != null;)
+        {
+            LinkedListNode<Waiter>? next = node.Next;
+            Waiter waiter = node.Value;
+            uint hit = CurrentPattern & waiter.WaitPattern;
+            if (hit != 0)
+            {
+                bool took = true;
+                if (waiter.Multi != null)
+                {
+                    took = waiter.Multi.Record(waiter.MultiIndex, Uid, SceError.OK, hit, LastUserData);
+                }
+                else
+                {
+                    waiter.Bits = hit;
+                    waiter.UserData = LastUserData;
+                    waiter.Code = SceError.OK;
+                }
+
+                if (took && AutoReset)
+                {
+                    SetPattern(CurrentPattern & ~hit);
+                }
+
+                _waiters.Remove(node);
+            }
+
+            node = next;
+        }
+        if (pulse)
+        {
+            SetPattern(oldPattern & ~bits);
+            LastUserData = oldData;
+        }
+
+        WakeWaiters();
+    }
+
+    /// <summary>sceKernelSet/PulseEventWithNotifyCallback on a timer: the user bits go through the timer's event set.</summary>
+    protected override void SetForNotify(uint setPattern, ulong userData, bool pulse) => ApplySet(setPattern, userData, pulse);
+
+    private int TryTake(uint waitPattern, Ptr<uint> result, Ptr<ulong> userData)
+    {
+        uint hit = CurrentPattern & waitPattern;
+        if (hit == 0)
+        {
+            result.TrySet(0);
+            userData.TrySet(0);
+            return SceError.EVENT_COND;
+        }
+
+        result.TrySet(hit);
+        userData.TrySet(LastUserData);
+        if (AutoReset)
+        {
+            SetPattern(CurrentPattern & ~hit);
+        }
+
+        return SceError.OK;
+    }
+
+    /// <summary>Polls for the timer bit (the tests' and the old callers' shape).</summary>
+    public int Poll(Ptr<uint> result, Ptr<ulong> userData) => Poll(EventBits.Timer, result, userData);
+
+    public int Poll(uint waitPattern, Ptr<uint> result, Ptr<ulong> userData)
+    {
+        if (waitPattern == 0)
+        {
+            return SceError.INVALID_ARGUMENT;
+        }
+
+        lock (this)
+        {
+            FireDue(Clock());
+            return TryTake(waitPattern, result, userData);
+        }
+    }
+
+    /// <summary>Keeps only the user bits of <paramref name="keepPattern"/>; the timer bit is cleared.</summary>
+    public int Clear(uint keepPattern = 0)
+    {
+        lock (this)
+        {
+            FireDue(Clock());
+            EventSet = false;
+            UserPattern &= keepPattern;
+        }
+
+        return SceError.OK;
+    }
+
+    /// <summary>Waits for the timer bit (the tests' and the old callers' shape).</summary>
+    public int Wait(Ptr<uint> result, Ptr<ulong> userData, Ptr<uint> timeout) => Wait(GuestThread.Current, EventBits.Timer, result, userData, timeout);
+
+    public int Wait(GuestThread? self, uint waitPattern, Ptr<uint> result, Ptr<ulong> userData, Ptr<uint> timeout)
+    {
+        if (waitPattern == 0)
+        {
+            return SceError.INVALID_ARGUMENT;
+        }
+
+        lock (this)
+        {
+            ulong now = Clock();
+            FireDue(now);
+            int r = TryTake(waitPattern, result, userData);
             if (r != SceError.EVENT_COND)
             {
                 return r;
             }
 
-            LinkedListNode<object> node = _waiters.AddLast(new object());
-            int gen = _cancelled;
+            var waiter = new Waiter { WaitPattern = waitPattern, Priority = self?.Priority ?? 0 };
+            LinkedListNode<Waiter> node = Enqueue(waiter);
             ulong start = now;
             long? limit = timeout.IsNull ? null : timeout.Value;
             try
             {
-                while (true)
+                while (waiter.Code == null)
                 {
-                    if (_deleted)
-                    {
-                        WriteBack(timeout, limit, start);
-                        return SceError.WAIT_DELETE;
-                    }
-                    if (_cancelled != gen)
-                    {
-                        WriteBack(timeout, limit, start);
-                        return SceError.WAIT_CANCEL;
-                    }
-                    if (Fired(node, now))
-                    {
-                        break;
-                    }
-
                     long? slice = limit.HasValue ? limit.Value - (long)(now - start) : null;
                     if (slice is <= 0)
                     {
                         timeout.TrySet(0);
                         return SceError.WAIT_TIMEOUT;
                     }
-                    if (_waiters.First == node && NextEvent != ulong.MaxValue)
+                    if (NextEvent != ulong.MaxValue)
                     {
+                        // the waiter wakes at the event itself and fires it if the dispatcher has not yet
                         long toEvent = NextEvent >= now ? (long)(NextEvent - now) + 1 : 1;
                         slice = slice.HasValue ? Math.Min(slice.Value, toEvent) : toEvent;
                     }
-                    // wakes on delete/cancel/reschedule (PulseAll) or when the slice to the next event ends
-                    global::VitaSharp.Core.Kernel.Wait.Until(this, () => _deleted || _cancelled != gen, slice, null, WaitDescription);
+                    global::VitaSharp.Core.Kernel.Wait.Until(this, () => waiter.Code.HasValue, slice, null, WaitDescription);
                     now = Clock();
+                    FireDue(now);
                 }
                 WriteBack(timeout, limit, start);
-                result.TrySet(EventBits.Timer);
-                userData.TrySet(0);
-                EventSet = !Pulse && (Attr & EventBits.AttrAutoReset) == 0;
-                Advance(now);
-                return SceError.OK;
+                if (waiter.Code == SceError.OK)
+                {
+                    result.TrySet(waiter.Bits);
+                    userData.TrySet(waiter.UserData);
+                }
+                else
+                {
+                    result.TrySet(EventBits.Error);
+                    userData.TrySet(LastUserData);
+                }
+
+                return waiter.Code.Value;
             }
             finally
             {
-                _waiters.Remove(node);
-                WakeWaiters();
+                if (node.List != null)
+                {
+                    _waiters.Remove(node);
+                }
+            }
+        }
+    }
+
+    /// <summary>Queues a waiter at the end, or by priority with TH_PRIO (arrival order among equal priorities).</summary>
+    private LinkedListNode<Waiter> Enqueue(Waiter waiter)
+    {
+        if ((Attr & EventBits.AttrThPrio) == 0)
+        {
+            return _waiters.AddLast(waiter);
+        }
+
+        LinkedListNode<Waiter>? at = _waiters.First;
+        while (at != null && at.Value.Priority <= waiter.Priority)
+        {
+            at = at.Next;
+        }
+
+        return at == null ? _waiters.AddLast(waiter) : _waiters.AddBefore(at, waiter);
+    }
+
+    /// <summary>
+    /// A sceKernelWaitMultipleEvents call's first look at the timer (threadmgr 3.74, 0x8101ed4c, as for a simple event):
+    /// a pattern that matches now is taken (the auto reset applied); otherwise the call joins the timer's queue as a
+    /// single waiter would, unless it is an OR call that already has a result. True when it joined the queue.
+    /// </summary>
+    public bool AttachMulti(MultiEventWait multi, int index, uint waitPattern, int priority)
+    {
+        lock (this)
+        {
+            FireDue(Clock());
+            uint hit = CurrentPattern & waitPattern;
+            if (hit != 0)
+            {
+                if (multi.Record(index, Uid, SceError.OK, hit, LastUserData) && AutoReset)
+                {
+                    SetPattern(CurrentPattern & ~hit);
+                }
+
+                return false;
+            }
+
+            if (multi.Complete || waitPattern == 0)
+            {
+                return false;
+            }
+
+            Enqueue(new Waiter { WaitPattern = waitPattern, Priority = priority, Multi = multi, MultiIndex = index });
+            return true;
+        }
+    }
+
+    /// <summary>The call ended: its place in the queue goes away.</summary>
+    public void DetachMulti(MultiEventWait multi)
+    {
+        lock (this)
+        {
+            for (LinkedListNode<Waiter>? node = _waiters.First; node != null;)
+            {
+                LinkedListNode<Waiter>? next = node.Next;
+                if (node.Value.Multi == multi)
+                {
+                    _waiters.Remove(node);
+                }
+
+                node = next;
             }
         }
     }
@@ -4299,12 +4506,31 @@ public sealed partial class TimerObject : EventObject
         }
     }
 
+    /// <summary>Every waiter ends with <paramref name="code"/>; a multiple-events call gets {uid, code, ERROR}.</summary>
+    private void EndWaiters(int code)
+    {
+        foreach (Waiter waiter in _waiters)
+        {
+            if (waiter.Multi != null)
+            {
+                waiter.Multi.Record(waiter.MultiIndex, Uid, code, EventBits.Error, 0);
+            }
+            else
+            {
+                waiter.Code = code;
+            }
+        }
+
+        _waiters.Clear();
+    }
+
     public int Cancel(Ptr<uint> numWait)
     {
         lock (this)
         {
+            FireDue(Clock());
             numWait.TrySet((uint)_waiters.Count);
-            _cancelled++;
+            EndWaiters(SceError.WAIT_CANCEL);
             Repeat = Pulse = false;
             Interval = 0;
             NextEvent = ulong.MaxValue;
@@ -4318,7 +4544,148 @@ public sealed partial class TimerObject : EventObject
         lock (this)
         {
             _deleted = true;
+            NextEvent = ulong.MaxValue;
+            EndWaiters(SceError.WAIT_DELETE);
             WakeWaiters();
+        }
+    }
+
+    /// <summary>A loaded state's armed event goes back to the dispatcher (after the registrations are resolved).</summary>
+    internal void ArmLoaded()
+    {
+        lock (this)
+        {
+            if (Started && !_deleted && NextEvent != ulong.MaxValue)
+            {
+                TimerDispatcher.Arm(this);
+            }
+        }
+    }
+}
+
+/// <summary>
+/// The kernel's timer interrupt for <see cref="TimerObject"/> events: one background thread, started with the first
+/// armed timer, that sleeps until the earliest armed event (in each timer's process time) and fires it, so a timer's
+/// event reaches its callbacks and its sceKernelWaitMultipleEvents waiters at its time, not when someone reads it. With
+/// no armed timer it sleeps without a deadline: nothing runs per frame. The timers are held weakly: a timer of a process
+/// that went away stops being looked at.
+/// </summary>
+public static class TimerDispatcher
+{
+    private static readonly object s_gate = new();
+    private static readonly List<WeakReference<TimerObject>> s_armed = new();
+    private static readonly List<TimerObject> s_due = new();
+    private static Thread? s_thread;
+    private static bool s_poked;
+
+    /// <summary>The longest the dispatcher sleeps before it looks at the clocks again (they can jump: a resumed pause,
+    /// a test moving a stopped clock, a speed change).</summary>
+    private const int MaxSleepMs = 50;
+
+    /// <summary>The timer has an event scheduled (the caller holds the timer's lock; the order is timer, then this).</summary>
+    internal static void Arm(TimerObject timer)
+    {
+        lock (s_gate)
+        {
+            if (!timer.Armed)
+            {
+                timer.Armed = true;
+                s_armed.Add(new WeakReference<TimerObject>(timer));
+            }
+            if (s_thread == null)
+            {
+                s_thread = new Thread(Run) { IsBackground = true, Name = "Kernel timers" };
+                s_thread.Start();
+            }
+
+            s_poked = true;
+            Monitor.PulseAll(s_gate);
+        }
+    }
+
+    /// <summary>Guest time moved by a jump (a test's controlled clock): the dispatcher looks again now.</summary>
+    internal static void Poke()
+    {
+        lock (s_gate)
+        {
+            s_poked = true;
+            Monitor.PulseAll(s_gate);
+        }
+    }
+
+    private static void Run()
+    {
+        while (true)
+        {
+            lock (s_gate)
+            {
+                for (int i = s_armed.Count - 1; i >= 0; i--)
+                {
+                    if (s_armed[i].TryGetTarget(out TimerObject? timer))
+                    {
+                        s_due.Add(timer);
+                    }
+                    else
+                    {
+                        s_armed.RemoveAt(i);
+                    }
+                }
+                if (s_due.Count == 0)
+                {
+                    s_poked = false;
+                    Monitor.Wait(s_gate);
+                    continue;
+                }
+            }
+
+            ulong nextUs = ulong.MaxValue;
+            foreach (TimerObject timer in s_due)
+            {
+                // the timer's lock is taken outside the dispatcher's (a timer arms itself holding its own lock)
+                ulong? left = timer.FireDueAndRemaining();
+                if (left is { } us)
+                {
+                    nextUs = Math.Min(nextUs, us);
+                }
+                else
+                {
+                    Disarm(timer);
+                }
+            }
+            s_due.Clear();
+            lock (s_gate)
+            {
+                if (!s_poked)
+                {
+                    double hostUs = nextUs == ulong.MaxValue ? MaxSleepMs * 1000.0 : nextUs / Math.Max(GuestClock.Speed, 0.01);
+                    int sleepMs = (int)Math.Clamp((hostUs + 999) / 1000, 1, MaxSleepMs);
+                    Monitor.Wait(s_gate, sleepMs);
+                }
+
+                s_poked = false;
+            }
+        }
+    }
+
+    /// <summary>A timer whose event is gone leaves the list, unless it was armed again meanwhile.</summary>
+    private static void Disarm(TimerObject timer)
+    {
+        lock (s_gate)
+        {
+            if (Volatile.Read(ref timer.NextEvent) != ulong.MaxValue)
+            {
+                return;
+            }
+
+            timer.Armed = false;
+            for (int i = 0; i < s_armed.Count; i++)
+            {
+                if (s_armed[i].TryGetTarget(out TimerObject? armed) && armed == timer)
+                {
+                    s_armed.RemoveAt(i);
+                    break;
+                }
+            }
         }
     }
 }
@@ -4552,32 +4919,8 @@ public sealed partial class SimpleEvent : EventObject, ICallbackInterruptedWait
         }
     }
 
-    /// <summary>
-    /// sceKernelSetEventWithNotifyCallback / sceKernelPulseEventWithNotifyCallback (threadmgr 3.74: 0xB7DF3EDF /
-    /// 0x714A107A, then 0x8101cfcc): a set pattern of 0 does nothing; otherwise the set (pulse) of
-    /// <see cref="SetOrPulse"/>, then, under the event's lock, every registered callback is notified in list order as
-    /// sceKernelNotifyCallback does, with the registration's notifier ID and <paramref name="notifyArg"/> (a deleted
-    /// callback's registration is dropped).
-    /// </summary>
-    public int SetOrPulseWithNotify(uint setPattern, ulong userData, int notifyArg, bool pulse)
-    {
-        if ((setPattern & ~EventBits.UserMask) != 0)
-        {
-            return SceError.ILLEGAL_PATTERN;
-        }
-
-        if (setPattern == 0)
-        {
-            return SceError.OK;
-        }
-
-        lock (this)
-        {
-            SetOrPulse(setPattern, userData, pulse);
-            NotifyRegisteredCallbacks(notifyArg);
-            return SceError.OK;
-        }
-    }
+    /// <summary>sceKernelSet/PulseEventWithNotifyCallback on a simple event: the set (pulse) of <see cref="SetOrPulse"/>.</summary>
+    protected override void SetForNotify(uint setPattern, ulong userData, bool pulse) => SetOrPulse(setPattern, userData, pulse);
 
     public int SetOrPulse(uint setPattern, ulong userData, bool pulse)
     {

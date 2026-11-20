@@ -221,11 +221,28 @@ jogo (`dotnet test`) para saber se uma mudança quebrou algo. Nenhuma mudança �
   Cancel/delete de semáforo, mutex, lwmutex, cond, lwcond, msgpipe, rwlock, evento e timer seguram o acordado atrás do
   canceller parado (`ThreadMgrHleTests.ThreadWokenByACancelOrDeleteWaitsForAStoppedCanceller`). Eram bugs,
   corrigidos nos mesmos hashes.
-  Falta: o timer não notifica callbacks registrados quando o evento dele vence (o evento do timer é calculado na
-  leitura, sem disparo; precisa de um disparo em tempo de guest), e o Set/PulseEventWithNotifyCallback só aceita
-  eventos simples (o firmware aceita qualquer objeto da classe de evento). Diferenças mantidas: WaitMultipleEvents lê
-  pipes, timers e E/S assíncrona como nível (acordado quando mudam; timers a cada 500 us do tempo deles), não pela
-  fila deles; a espera CB de WaitMultipleEvents roda os callbacks sem sair das filas.
+  Timer em tempo de guest e Set/PulseEventWithNotifyCallback em toda a classe de evento (19/11/2026, sync8,
+  test/sync8, `TimerInterleavingTests`, conferido no threadmgr 3.74: SceUIDTimerClass filha de SceUIDCpuTimerClass e
+  de SceUIDEventClass; o tratador do timer, perto de 0x8101a238, chama o set 0x8101dcf8 ou o pulse 0x8101e370 com o bit
+  0x8000, user data 0 e argumento de notificação 0; a notificação 0x8101cfcc; 0xB7DF3EDF / 0x714A107A procuram o UID
+  em SceUIDEventClass, depois de 0x8102cf88 / 0x8102d040 recusarem bits fora dos do usuário; a espera 0x8101d220 é a
+  mesma para todo objeto da classe): o evento do timer dispara no seu tempo (`TimerDispatcher`, uma thread que só
+  existe depois do primeiro timer armado e dorme sem prazo quando nenhum está armado; quem lê o timer antes dispara o
+  que venceu), entrega o bit aos waiters da fila na ordem (TH_PRIO; AUTO_RESET para no primeiro), o pulse a todos, o
+  WaitMultipleEvents na fila do timer como um waiter simples, notifica os callbacks com r0 = UID do timer e r2 = 0, e o
+  evento repetido é reagendado um intervalo depois (no mínimo 200 us); a espera e o poll do timer casam o padrão
+  pedido (antes ignorado). Set/PulseEventWithNotifyCallback aceitam qualquer objeto da classe de evento (antes só
+  evento simples): no timer os bits do usuário passam pelo set do evento dele; outros objetos são UNKNOWN_EVENT_ID. Os
+  bits do usuário e o user data do timer entram no save state (estados antigos carregam sem eles); o evento armado
+  volta ao dispatcher depois do load. Eram bugs (callbacks do timer nunca notificados, pulse visto só pelo primeiro
+  waiter e nunca pelo WaitMultipleEvents, notify recusado fora do evento simples), corrigidos no mesmo hash.
+  Falta: no WaitMultipleEvents, pipes e E/S assíncrona ainda são lidos como nível (o firmware põe a chamada na fila
+  deles: um IN de pipe levado por outro receptor antes de a chamada olhar é perdido aqui), e a espera CB dele roda os
+  callbacks sem sair das filas (o firmware sai pela notificação e volta ao fim de cada fila; um set durante os
+  callbacks iria aos de trás); os bits do usuário de um Set/PulseEventWithNotifyCallback num pipe ou numa operação de
+  E/S não ficam no padrão (só os callbacks são notificados). As três diferenças são observáveis em intercalações
+  adversas e ficam para um próximo passo (precisam de fila nesses objetos e de tirar a chamada de várias filas sem
+  inverter a ordem dos locks evento → chamada).
 - [ ] [P3][G] **Contratos do escalonador e do ritmo da CPU:** quem roda primeiro por prioridade e afinidade, quanto tempo de
   guest passa por chamada HLE e por espera, o que acorda quem; uma mudança de desempenho que altere a ordem entre
   threads quebra um teste.
