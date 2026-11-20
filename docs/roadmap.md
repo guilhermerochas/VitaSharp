@@ -1951,14 +1951,21 @@ jogo (`dotnet test`) para saber se uma mudança quebrou algo. Nenhuma mudança �
   procdump sem exceção não tratada). Faltam: o hardware (Bluetooth, SD2Vita) e a lista de plugins públicos validados
   (um teste por exportação e cada plugin rodando).
   Próximo passo (16/11/2026, conversa com o usuário): com as cascas dos módulos do firmware no layout real (c69d5e31/77d9f5c7), o taihen.skprx real talvez consiga instalar os 11 hooks do `hen_add_patches`. Investigar só por caminhos genéricos (nada específico do taiHEN no código): rodar o taiHEN real, ver em qual hook ele falha agora, e garantir que as verificações de licença/assinatura continuam respondendo "indisponível" pelo HLE mesmo com os hooks instalados (nenhum contorno de DRM passa a funcionar). Se iniciar: kubridge/fd_fix pelo taiHEN, Sonic Mania e o Adrenaline (jogos de PSP) voltam ao alcance.
-  Pendências das exportações de kernel (19/11/2026, depois do kern7): (1) IftuCsc: o conversor de cor memória ->
-  memória completo (matriz, faixa e formatos de entrada/saída do bloco, como o display.skprx o programa); (2) entrega
-  das interrupções de hardware em tempo de guest: o SceIntrmgr tem a tabela de linhas e entrega só o que é disparado
-  por software (TriggerSGI/TriggerSubIntr); faltam as fontes de hardware chamando o handler da linha (Systimer vencendo
-  o intervalo, fim de DMA do Dmacmgr, e as demais linhas de dispositivo); (3) SceKernelUtilsForDriver: o DES
-  (NIDs AE6C45FB, A0D45D25, 801D0ED4, 919C12E2, 227B2E53, vetores do FIPS 46-3) e o ksceDeflateDecompressPartial
-  (retorno de 64 bits); (4) SceRtcForDriver: descompilar o `os0:kd/rtc.skprx` (decomp.ps1) e fazer a biblioteca a
-  partir dele.
+  Pendências das exportações de kernel (19/11/2026, depois do kern8): (1) IftuCsc: o conversor de cor memória ->
+  memória completo (matriz, faixa e formatos de entrada/saída do bloco, como o display.skprx o programa); (2)
+  interrupções de hardware em tempo de guest: feitas a entrega pelo SceIntrmgr (linha habilitada roda o handler em
+  contexto de interrupção na thread de interrupção, desabilitada fica pendente) e a primeira fonte, o Systimer (as 12
+  linhas do module_start, intervalo e wrap do word timer), no agendador único de tempo de guest (`TimerDispatcher`,
+  fontes `IGuestTimed`). Faltam: as outras fontes (fim de DMA do Dmacmgr e as demais linhas de dispositivo) e
+  rearmar os timers do Systimer depois de carregar um save state; (3) SceKernelUtilsForDriver: feito o DES; falta o
+  ksceDeflateDecompressPartial (NID 3D74CCDF, 5 argumentos, inflate retomável com retorno de 64 bits; o único
+  importador é o SceKernelModulemgr) e o NID AFD56168; (4) SceRtcForDriver: `os0:kd/rtc.skprx` descompilado em
+  `fw374\decomp\os0__kd__rtc.skprx.c`. O módulo tem o relógio principal e 8 relógios auxiliares (seguro, rede,
+  rede de debug, ...; cada um com deslocamento sobre o tempo do sistema, alarme por SceRtcAuxAlarm e callback), o
+  alarme principal e as gravações passam pelo syscon (comandos 0x18 e 0x2C de 5 bytes, alarme pelo 51164951): fazer
+  junto com o modelo do chip syscon (item abaixo), com o relógio de usuário (Rtc.NowTick) lendo o mesmo deslocamento;
+  (5) SceIntrmgrForKernel: 16 que faltam são do núcleo de troca de contexto do threadmgr (salvar/restaurar registradores
+  e VFP do chamador, pilhas por CPU, ganchos de IRQ): só fazem sentido com o threadmgr em LLE.
 - [ ] [P3][G] Modelo do chip syscon para o SceSysconForDriver (311 exportações, 198 importadas pelos módulos de kernel do
   FW 3.74). 117 delas montam um pacote (comando de 16 bits, tamanho, dados) e chamam ksceSysconCmdExec/CmdExecAsync; o
   syscon.skprx decompilado está em `fw374\decomp\os0__kd__syscon.skprx.c` (só estudo). Fazer: um modelo C# do chip (os
