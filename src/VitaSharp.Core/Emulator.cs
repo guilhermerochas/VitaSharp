@@ -335,6 +335,10 @@ public sealed class Emulator : IDisposable
         }
 
         _codeCache = IsKernelProcess || (Options.CodeCacheDir == null && !Options.PrecompileCode) ? null : new CodeCache(Options.CodeCacheDir, Code);
+        if (_codeCache != null)
+        {
+            HleGuestCode.CodePlaced += OnHleGuestCodePlaced;
+        }
         Kernel.Initialize();
         // every concrete HleModule of the core (generated table), in full type name order as before
         foreach (HleModuleEntry? hleModuleEntry in HleBindings.Modules.OrderBy(m => m.Type.FullName))
@@ -1612,6 +1616,15 @@ public sealed class Emulator : IDisposable
     private CodeCache? _codeCache;
     private Timer? _codeCacheTimer;
 
+    /// <summary>The HLE routines written as guest code went into this process's space: the code cache records them too.</summary>
+    private void OnHleGuestCodePlaced(uint address, uint size)
+    {
+        if (ReferenceEquals(AddressSpace.Current, Space) && _codeCache is { } codeCache)
+        {
+            codeCache.CodeRegionPlaced(HleGuestCode.BlockName, address, size);
+        }
+    }
+
     /// <summary>The boot step of "Precompilar código ARM" (<see cref="EmulatorOptions.PrecompileCode"/>): before the
     /// process's first thread runs, the blocks its modules ran in earlier sessions (or, in a first session, the code the
     /// analysis reaches from their entry points) are translated, with progress in the log as
@@ -2238,6 +2251,7 @@ public sealed class Emulator : IDisposable
     public void Dispose()
     {
         Stop();
+        HleGuestCode.CodePlaced -= OnHleGuestCodePlaced;
         _codeCache?.Stop();
         if (_codeCache?.DescribeMisses() is { } misses)
         {

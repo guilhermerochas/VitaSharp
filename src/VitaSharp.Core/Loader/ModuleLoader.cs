@@ -30,6 +30,9 @@ public sealed class LoadedModule
     public ulong ImageHash;
     /// <summary>Addresses of the functions the module exports (bit 0 set: Thumb), the code analysis' entry points.</summary>
     public List<uint> ExportedFunctionEntries = new();
+    /// <summary>The module's own relocations that wrote an absolute address: where (Site) and the address (Value). The
+    /// ones pointing into its code are function pointers (bit 0 set: Thumb), entry points for the code analysis.</summary>
+    public List<(uint Site, uint Value)> AbsoluteRelocations = new();
 
     public override string ToString() => $"{Name} uid={Uid:X} start={StartEntry:X8}";
 }
@@ -705,7 +708,7 @@ public static class ModuleLoader
         }
         foreach (byte[] r in relas)
         {
-            Relocation.Relocate(r, m.Segments);
+            m.AbsoluteRelocations.AddRange(Relocation.RelocateCollectingTargets(r, m.Segments));
         }
 
         // module_info

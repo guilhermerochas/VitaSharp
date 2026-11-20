@@ -759,7 +759,12 @@ public static class HleGuestCode
         }
     }
 
-    const string BlockName = "HLE guest code";
+    /// <summary>The name of the guest memory block holding the routines (also the name the code cache records them by).</summary>
+    public const string BlockName = "HLE guest code";
+
+    /// <summary>The routines were written into the calling thread's address space at (address, size): code outside every
+    /// module that the code precompilation records like a module's (<see cref="Cpu.CodeCache.CodeRegionPlaced"/>).</summary>
+    public static event Action<uint, uint>? CodePlaced;
 
     /// <summary>Writes every routine into guest memory (fallback SVCs resolved through <paramref name="svcIndexOf"/>) and
     /// returns their addresses; <paramref name="reuse"/>: a block of the calling space that already holds exactly this
@@ -782,6 +787,7 @@ public static class HleGuestCode
         {
             at = memory.Alloc(bytes, BlockName, MemoryRegion.User, 16);
             for (int i = 0; i < image.Count; i++) GuestMemory.W32(at + (uint)i * 4, image[i]);
+            CodePlaced?.Invoke(at, bytes);
         }
         var addrs = new uint[Routines.Length];
         for (int i = 0; i < addrs.Length; i++) addrs[i] = at + offsets[i];
