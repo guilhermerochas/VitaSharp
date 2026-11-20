@@ -126,15 +126,10 @@ public sealed class KernelTwinsTests(GuestMemoryFixture fixture) : IDisposable
 
         // 398 since ksceZlibDecompress follows SceKernelUtils' own codes (SysmemKernel.Utils), not libpaf's; 397 since
         // ksceKernelChangeThreadPriority answers the earlier priority (ThreadmgrKernel), not the user call's 0; 394 since
-<<<<<<< HEAD
         // the USB device controller's three (UdcdKernel) follow SceUdcd's kernel side, not the user calls; 475 with the
-        // 81 decoder entries of SceAvcodecForDriver (KernelTwins.Avcodec)
-        Assert.True(count >= 475, $"only {count} twins");
-=======
-        // the USB device controller's three (UdcdKernel) follow SceUdcd's kernel side, not the user calls; 393 since
-        // kscePsmDrmRemoveActData is the kernel side the user call goes to (SystemServicesVsh.PsmDrmKernel)
-        Assert.True(count >= 393, $"only {count} twins");
->>>>>>> 746d56c5
+        // 81 decoder entries of SceAvcodecForDriver (KernelTwins.Avcodec); 474 since kscePsmDrmRemoveActData is the
+        // kernel side the user call goes to (SystemServicesVsh.PsmDrmKernel)
+        Assert.True(count >= 474, $"only {count} twins");
         Assert.True(wrong.Count == 0, string.Join("\n", wrong));
     }
 
