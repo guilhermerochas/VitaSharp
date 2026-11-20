@@ -356,7 +356,7 @@ public sealed partial class ThreadMgr : HleModule
     /// +0x3C common. The SceLibKernel wrapper passes <c>info->size</c> to the syscall in an 8-byte opt.
     /// </summary>
     [Hle]
-    int sceKernelGetThreadEventInfo(int uid, uint info)
+    internal int sceKernelGetThreadEventInfo(int uid, uint info)
     {
         if (info != 0 && GuestMemory.R32(info) > 0x40) return SceError.NO_MEMORY;
         if (Obj<ThreadEventHandler>(uid) is not { } h) return SceError.UNKNOWN_THREAD_EVENT_ID;
@@ -499,7 +499,7 @@ public sealed partial class ThreadMgr : HleModule
     [Hle] int sceKernelCancelSema(int uid, int setCount, Ptr<int> numWait) => Obj<Semaphore>(uid)?.Cancel(setCount, numWait) ?? SceError.UNKNOWN_SEMA_ID;
 
     [Hle]
-    int sceKernelGetSemaInfo(int uid, uint info)
+    internal int sceKernelGetSemaInfo(int uid, uint info)
     {
         var s = Obj<Semaphore>(uid);
         if (s == null) return SceError.UNKNOWN_SEMA_ID;
@@ -564,7 +564,7 @@ public sealed partial class ThreadMgr : HleModule
     [Hle] int sceKernelCancelEventFlag(int uid, uint pattern, Ptr<int> numWait) => Obj<EventFlag>(uid)?.Cancel(pattern, numWait) ?? SceError.UNKNOWN_EVF_ID;
 
     [Hle]
-    int sceKernelGetEventFlagInfo(int uid, uint info)
+    internal int sceKernelGetEventFlagInfo(int uid, uint info)
     {
         var e = Obj<EventFlag>(uid);
         if (e == null) return SceError.UNKNOWN_EVF_ID;
@@ -618,7 +618,7 @@ public sealed partial class ThreadMgr : HleModule
     /// <summary>SceKernelMutexInfo (0x3C): +0x2C initCount, +0x30 currentCount, +0x34 currentOwnerId, +0x38 numWaitThreads.
     /// The pointer is checked before the UID (Vita3K).</summary>
     [Hle]
-    int sceKernelGetMutexInfo(int uid, uint info)
+    internal int sceKernelGetMutexInfo(int uid, uint info)
     {
         if (info == 0) return SceError.INVALID_ARGUMENT;
         if (GuestMemory.R32(info) > 0x3C) return SceError.NO_MEMORY;
@@ -770,7 +770,7 @@ public sealed partial class ThreadMgr : HleModule
 
     /// <summary>SceKernelCondInfo (0x34): +0x2C mutexId, +0x30 numWaitThreads.</summary>
     [Hle]
-    int sceKernelGetCondInfo(int uid, uint info)
+    internal int sceKernelGetCondInfo(int uid, uint info)
     {
         var c = Obj<CondVar>(uid);
         if (c == null || c.WorkArea != 0) return SceError.UNKNOWN_COND_ID;
@@ -910,7 +910,7 @@ public sealed partial class ThreadMgr : HleModule
 
     /// <summary>SceKernelMppInfo (0x3C): +0x2C bufSize, +0x30 freeSize, +0x34 numSendWaitThreads, +0x38 numReceiveWaitThreads.</summary>
     [Hle]
-    int sceKernelGetMsgPipeInfo(int uid, uint info)
+    internal int sceKernelGetMsgPipeInfo(int uid, uint info)
     {
         var p = Obj<MsgPipe>(uid);
         if (p == null) return SceError.UNKNOWN_MSG_PIPE_ID;
@@ -1100,7 +1100,7 @@ public sealed partial class ThreadMgr : HleModule
     [Hle] int sceKernelUnlockWriteRWLock(int uid) => Obj<RwLock>(uid)?.UnlockWrite(Self) ?? SceError.UNKNOWN_RW_LOCK_ID;
 
     [Hle]
-    int sceKernelGetRWLockInfo(int uid, uint info)
+    internal int sceKernelGetRWLockInfo(int uid, uint info)
     {
         var l = Obj<RwLock>(uid);
         if (l == null) return SceError.UNKNOWN_RW_LOCK_ID;
@@ -1228,7 +1228,7 @@ public sealed partial class ThreadMgr : HleModule
     /// "needs confirmation") lacks attr and notifyId; a caller passing size 0x3C gets the first 0x3C bytes.
     /// </summary>
     [Hle]
-    int sceKernelGetCallbackInfo(int uid, uint info)
+    internal int sceKernelGetCallbackInfo(int uid, uint info)
     {
         Callback? callback = Obj<Callback>(uid);
         if (callback == null)
@@ -1474,7 +1474,7 @@ public sealed partial class ThreadMgr : HleModule
     /// +0x40 schedule (next event in timer time, 0 = none), +0x48 interval, +0x50 type, +0x54 repeat,
     /// +0x58 num_wait_threads.</summary>
     [Hle]
-    int sceKernelGetTimerInfo(int uid, uint info)
+    internal int sceKernelGetTimerInfo(int uid, uint info)
     {
         var t = Timer(uid);
         if (t == null) return SceError.UNKNOWN_TIMER_ID;
