@@ -95,6 +95,14 @@ public sealed class KernelTwinsTests(GuestMemoryFixture fixture) : IDisposable
     private static uint KernelNidOf(string twin) => NidDatabase.LookupName(twin)
         .First(i => i.Library.Contains("ForDriver", StringComparison.Ordinal) || i.Library.Contains("ForKernel", StringComparison.Ordinal)).Nid;
 
+    /// <summary>The kernel NIDs a twin is bound to: the one its attribute declares (an export the SDK does not name),
+    /// else the NIDs of its name.</summary>
+    private static IEnumerable<uint> KernelNids(MethodInfo twin)
+    {
+        uint declared = twin.GetCustomAttribute<HleAttribute>()!.Nid;
+        return declared != 0 ? [declared] : NidDatabase.LookupName(twin.Name).Select(i => i.Nid);
+    }
+
     [Fact]
     public void EveryTwinForwardsToTheImplementedUserFunctionOfItsName()
     {
@@ -110,7 +118,7 @@ public sealed class KernelTwinsTests(GuestMemoryFixture fixture) : IDisposable
                 wrong.Add($"{twin.Name} -> 0x{userNid:X8} {NidDatabase.NameOf(userNid)} (expected {expected})");
             }
 
-            if (!NidDatabase.LookupName(twin.Name).Any(i => _harness.Emu.Hle.IsImplemented(i.Nid)))
+            if (!KernelNids(twin).Any(nid => _harness.Emu.Hle.IsImplemented(nid)))
             {
                 wrong.Add($"{twin.Name}: no kernel NID bound");
             }
@@ -118,8 +126,9 @@ public sealed class KernelTwinsTests(GuestMemoryFixture fixture) : IDisposable
 
         // 398 since ksceZlibDecompress follows SceKernelUtils' own codes (SysmemKernel.Utils), not libpaf's; 397 since
         // ksceKernelChangeThreadPriority answers the earlier priority (ThreadmgrKernel), not the user call's 0; 394 since
-        // the USB device controller's three (UdcdKernel) follow SceUdcd's kernel side, not the user calls
-        Assert.True(count >= 394, $"only {count} twins");
+        // the USB device controller's three (UdcdKernel) follow SceUdcd's kernel side, not the user calls; 475 with the
+        // 81 decoder entries of SceAvcodecForDriver (KernelTwins.Avcodec)
+        Assert.True(count >= 475, $"only {count} twins");
         Assert.True(wrong.Count == 0, string.Join("\n", wrong));
     }
 
@@ -156,7 +165,7 @@ public sealed class KernelTwinsTests(GuestMemoryFixture fixture) : IDisposable
     public void OneTwinPerLibraryMatchesItsUserFunction()
     {
         // every library with twins has a sample
-        var libraries = Twins().Select(t => NidDatabase.Lookup(KernelNidOf(t.Name))!.Library).ToHashSet();
+        var libraries = Twins().Select(t => t.GetCustomAttribute<HleAttribute>()!.Library ?? NidDatabase.Lookup(KernelNidOf(t.Name))!.Library).ToHashSet();
         var sampled = s_samples.Select(s => NidDatabase.Lookup(KernelNidOf(s.Twin))!.Library).ToHashSet();
         Assert.Empty(libraries.Except(sampled));
 
