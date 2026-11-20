@@ -216,8 +216,9 @@ public sealed class IntrmgrKernelTests(GuestMemoryFixture fixture) : IDisposable
 
     private int InHandler(Func<int> body)
     {
-        System.Reflection.FieldInfo field = typeof(SystemServicesVsh).GetField("_intrDepth", System.Reflection.BindingFlags.Instance | System.Reflection.BindingFlags.NonPublic)!;
-        field.SetValue(Services, 1);
+        // interrupt context is the calling thread's (the core taking the interrupt)
+        System.Reflection.FieldInfo field = typeof(SystemServicesVsh).GetField("t_intrDepth", System.Reflection.BindingFlags.Static | System.Reflection.BindingFlags.NonPublic)!;
+        field.SetValue(null, 1);
         try
         {
             Assert.Equal(1, Call(Services, "ksceKernelIsIntrContext"));
@@ -225,7 +226,7 @@ public sealed class IntrmgrKernelTests(GuestMemoryFixture fixture) : IDisposable
         }
         finally
         {
-            field.SetValue(Services, 0);
+            field.SetValue(null, 0);
         }
     }
 
