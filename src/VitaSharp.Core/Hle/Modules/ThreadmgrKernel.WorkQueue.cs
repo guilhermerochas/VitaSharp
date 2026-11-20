@@ -42,7 +42,7 @@ public sealed partial class ThreadmgrKernel
     [Hle(Nid = 0xE50E1185, Library = "SceThreadmgrForDriver")]
     int ksceKernelEnqueueWorkQueue(int queue, string name, uint function, uint argument)
     {
-        if (queue != GlobalWorkQueue)
+        if (!IsWorkQueue(queue))
         {
             return UnknownWorkQueueId;
         }
@@ -107,6 +107,7 @@ public sealed partial class ThreadmgrKernel
             {
                 K.Objects.Remove(task.Uid);
                 Interlocked.Increment(ref _workTasksRun);
+                WorkTaskFinished(task.Uid);
             }
         }
     }

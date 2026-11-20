@@ -153,6 +153,7 @@ public sealed partial class ThreadmgrKernel : HleModule
         lock (_fastMutexAttributes)
         {
             _fastMutexAttributes[uid] = attr;
+            _fastMutexWork[uid] = work;
         }
 
         GuestMemory.Fill(work, 0, FastMutexSize);
@@ -191,6 +192,7 @@ public sealed partial class ThreadmgrKernel : HleModule
         lock (_fastMutexAttributes)
         {
             _fastMutexAttributes.Remove(mutex.Uid);
+            _fastMutexWork.Remove(mutex.Uid);
         }
 
         GuestMemory.Fill(work, 0, FastMutexSize);

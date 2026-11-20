@@ -142,7 +142,7 @@ public sealed partial class ThreadmgrKernel
         {
             using (ProcessScope.Enter(KernelSpace.KernelPid))
             {
-                _infoScratch = Mem.Alloc(0x100, "kernel:threadmgr-info", MemoryRegion.Kernel);
+                _infoScratch = Mem.Alloc(0x200, "kernel:threadmgr-info", MemoryRegion.Kernel);
             }
         }
 

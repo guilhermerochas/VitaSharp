@@ -65,6 +65,12 @@ public sealed partial class SystemServicesVsh
             IntrRegisterDevice(ThreadmgrTimerLine, "SceThreadmgrTimer", 0, 0x30, 0xF, body);
             _intrLines[ThreadmgrTimerLine].Enabled = true;
         }
+        else
+        {
+            // a loaded state keeps the line's handler of the session that saved it: its stub calls this session's host
+            // function only once it is registered here (the same stub when it already is)
+            _intrLines[ThreadmgrTimerLine].Handler = IntrStubs.Host("SceThreadmgrTimer", body);
+        }
 
         IntrScheduler.Arm(ThreadmgrTimerLine, deadlineUs);
     }
