@@ -152,6 +152,18 @@ internal static class Des
         return Permute(((ulong)right << 32) | left, 64, s_finalPermutation);
     }
 
+    /// <summary>The four weak and twelve semi-weak keys of FIPS 74 (with odd parity).</summary>
+    static readonly ulong[] s_weakKeys =
+    [
+        0x0101010101010101, 0xFEFEFEFEFEFEFEFE, 0x1F1F1F1F0E0E0E0E, 0xE0E0E0E0F1F1F1F1,
+        0x01FE01FE01FE01FE, 0xFE01FE01FE01FE01, 0x1FE01FE00EF10EF1, 0xE01FE01FF10EF10E,
+        0x01E001E001F101F1, 0xE001E001F101F101, 0x1FFE1FFE0EFE0EFE, 0xFE1FFE1FFE0EFE0E,
+        0x011F011F010E010E, 0x1F011F010E010E01, 0xE0FEE0FEF1FEF1FE, 0xFEE0FEE0FEF1FEF1,
+    ];
+
+    /// <summary>Whether <paramref name="key"/> is one of the weak or semi-weak keys, as written (parity included).</summary>
+    public static bool IsWeak(ulong key) => Array.IndexOf(s_weakKeys, key) >= 0;
+
     /// <summary>Each byte's low bit set so the byte has odd parity.</summary>
     public static ulong SetOddParity(ulong key)
     {

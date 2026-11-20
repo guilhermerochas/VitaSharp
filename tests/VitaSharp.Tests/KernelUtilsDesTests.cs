@@ -36,6 +36,7 @@ public sealed class KernelUtilsDesTests(GuestMemoryFixture fixture) : IDisposabl
     [InlineData(0x801D0ED4u)]
     [InlineData(0x919C12E2u)]
     [InlineData(0x227B2E53u)]
+    [InlineData(0xAFD56168u)]
     public void EveryExportHasAnEntry(uint nid)
     {
         var bindings = HleBindings.Modules.SelectMany(m => m.Bindings())
@@ -77,5 +78,17 @@ public sealed class KernelUtilsDesTests(GuestMemoryFixture fixture) : IDisposabl
         Assert.Equal(1, Call(Sysmem, "ksceDesCheckOddParity", 0x9BBCDFF1u, 0x13345779u));
         Assert.Equal(0, Call(Sysmem, "ksceDesCheckOddParity", 0x89ABCDEEu, 0x01234567u));
         Assert.Equal(0, Call(Sysmem, "ksceDesCheckOddParity", 0u, 0u));
+    }
+
+    [Theory]
+    [InlineData(0x0101010101010101UL, 1)]
+    [InlineData(0x1F1F1F1F0E0E0E0EUL, 1)]
+    [InlineData(0x01FE01FE01FE01FEUL, 1)]
+    [InlineData(0xFEE0FEE0FEF1FEF1UL, 1)]
+    [InlineData(0x0000000000000000UL, 0)] // the weak key without its parity bits is not in the table
+    [InlineData(0x133457799BBCDFF1UL, 0)]
+    public void TheWeakKeysAreTheStandardsSixteen(ulong key, int weak)
+    {
+        Assert.Equal(weak, Call(Sysmem, "ksceDesIsWeakKey", (uint)key, (uint)(key >> 32)));
     }
 }

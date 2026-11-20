@@ -8,7 +8,9 @@ namespace VitaSharp.Core.Hle.Modules;
 /// initial permutation takes the high word as the left half; the parity bits are each byte's low bit. The key schedule
 /// (NID 0xAE6C45FB) writes the sixteen round keys, 8 bytes each (0x80), and the cipher (0xA0D45D25 forward, 0x801D0ED4
 /// with the round keys reversed) returns the block in r0:r1. The parity helpers map each byte through the module's
-/// odd-parity table (0x919C12E2) and compare a key with its mapped self (0x227B2E53: 1 when it already has odd parity).
+/// odd-parity table (0x919C12E2) and compare a key with its mapped self (0x227B2E53: 1 when it already has odd parity);
+/// 0xAFD56168 looks a key up in the module's table of the weak and semi-weak keys, which holds them as these values
+/// (0x1F1F1F1F0E0E0E0E...), the same convention.
 /// The module keeps each round key as two 24-bit words in its own bit order; here they are the standard order (bits
 /// 1..24 and 25..48), which only these entries read.
 /// </summary>
@@ -47,6 +49,11 @@ public sealed partial class SysmemKernel
         ulong key = ((ulong)keyHigh << 32) | keyLow;
         return Des.SetOddParity(key) == key ? 1 : 0;
     }
+
+    /// <summary>NID 0xAFD56168 (SceUInt64 key): 1 for one of the 16 weak and semi-weak keys of the module's table (FIPS
+    /// 74's, compared as written, parity bits included), else 0.</summary>
+    [Hle(Nid = 0xAFD56168, Library = "SceKernelUtilsForDriver")]
+    int ksceDesIsWeakKey(uint keyLow, uint keyHigh) => Des.IsWeak(((ulong)keyHigh << 32) | keyLow) ? 1 : 0;
 
     static ulong DesBlock(uint schedule, uint blockLow, uint blockHigh, bool decrypt)
     {
