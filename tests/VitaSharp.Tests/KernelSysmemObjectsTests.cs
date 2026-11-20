@@ -220,4 +220,55 @@ public sealed class KernelSysmemObjectsTests(GuestMemoryFixture fixture) : IDisp
             Assert.Equal(0u, R0(t, 0x73C38695, 0, 0, 0, 0x100000, 0x200000));
         });
     }
+
+    [Fact]
+    public void PuidReferencesAndLookupsGoThroughTheObjectBehindTheHandle()
+    {
+        _harness.OnGuest(t =>
+        {
+            uint uid = R0(t, 0xC94850C9, _harness.Str("ScePuidRefer"), 0x1020D006, 0x1000, 0);
+            uint objOut = _harness.Word(0);
+            Assert.Equal(InvalidArgument, R0(t, 0x188C8742, (uint)KernelSpace.KernelPid, uid, objOut));
+            Assert.Equal(NotAGuid, R0(t, 0x188C8742, (uint)t.Pid, 2, objOut));
+            Assert.Equal(uid, R0(t, 0x188C8742, (uint)t.Pid, uid, objOut));
+            Assert.Equal(R0(t, 0xFA6C098C, uid), GuestMemory.R32(objOut));
+            Assert.Equal(0u, R0(t, 0x149885C4, uid)); // ksceGUIDReleaseObject
+            Assert.Equal(uid, R0(t, 0x2C15615F, (uint)t.Pid, uid, objOut));
+            Assert.Equal(0u, R0(t, 0xCE561224, (uint)t.Pid, uid)); // PUIDReleaseObject
+            Assert.Equal(InvalidArgument, R0(t, 0xCE561224, (uint)KernelSpace.KernelPid, uid));
+            Assert.Equal(NotAGuid, R0(t, 0xCE561224, (uint)t.Pid, 2));
+            Assert.Equal(InvalidArgument, R0(t, 0x9C23DFF7, (uint)t.Pid, uid, 0, 0));
+            Assert.Equal(uid, R0(t, 0x201E970B, (uint)t.Pid, _harness.Str("ScePuidRefer")));
+            Assert.Equal(uid, R0(t, 0xBDE00106, _harness.Str("ScePuidRefer")));
+            Assert.Equal(0x80027101u, R0(t, 0x4E6D8BC3));
+        });
+    }
+
+    [Fact]
+    public void PartitionBlocksHeapAttributesAndSysmemHeaps()
+    {
+        _harness.OnGuest(t =>
+        {
+            Assert.Equal(InvalidArgument, R0(t, 0x6DB46017, 0, _harness.Str("SceBad"), 0x1020D006, 0x800, 0));
+            Assert.Equal(0x80024B01u, R0(t, 0x6DB46017, 0, _harness.Str("SceBad"), 0x12345678, 0x1000, 0));
+            uint uid = R0(t, 0x6DB46017, 0, _harness.Str("ScePartBlock"), 0x1020D006, 0x2000, 0);
+            Assert.True((int)uid > 0);
+            uint size = _harness.Word(0);
+            Assert.Equal(0u, R0(t, 0x78337B62, uid, size));
+            Assert.Equal(0x2000u, GuestMemory.R32(size));
+
+            uint heap = R0(t, 0x9328E0E8, _harness.Str("SceAttrHeap"), 0x1000, 0);
+            Assert.Equal(0u, R0(t, 0x0B36F7F9, heap, 0x10));
+            Assert.Equal(InvalidArgument, R0(t, 0x0B36F7F9, heap, 0x20));
+            Assert.Equal(0u, R0(t, 0x6E82D5A0, heap, 0x10));
+            Assert.Equal(0x80024901u, R0(t, 0x6E82D5A0, 0x7FFFFFF1, 0x10));
+
+            uint block = R0(t, 0xCF3C3F7A, 0x40, 0);
+            Assert.NotEqual(0u, block);
+            Assert.Equal(0u, R0(t, 0x4233C16D, block)); // ksceKernelFree
+            uint option = _harness.Alloc(0x14);
+            GuestMemory.W32(option, 0x18);
+            Assert.Equal(0u, R0(t, 0xCF3C3F7A, 0x40, option));
+        });
+    }
 }
