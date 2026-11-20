@@ -274,7 +274,7 @@ public sealed partial class ProcessmgrKernel : HleModule
 
         lock (_exceptionHandlers)
         {
-            uint terminal = DefaultExceptionHandler();
+            uint terminal = ChainEnd();
             // before the first handler of a priority not below this one
             uint previous = 0;
             uint next = _exceptionChainHeads.GetValueOrDefault(kind);
@@ -327,6 +327,11 @@ public sealed partial class ProcessmgrKernel : HleModule
         lock (_exceptionHandlers)
         {
             uint head = _exceptionChainHeads.GetValueOrDefault(kind);
+            if (head == 0)
+            {
+                head = _registeredDefaultHandler;
+            }
+
             return head == 0 ? 0 : (head & ~3u) + 8;
         }
     }
