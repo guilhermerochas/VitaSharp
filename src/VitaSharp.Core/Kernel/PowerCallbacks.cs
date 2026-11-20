@@ -30,8 +30,8 @@ public static class PowerEvents
 /// <list type="bullet">
 /// <item>scePowerRegisterCallback(cb): a UID that is not a callback is 0xC00280A1; a callback already registered
 /// 0x802B0001. The registrant's mask is <see cref="PowerEvents.SystemMask"/> for system programs, else
-/// <see cref="PowerEvents.NonSystemMask"/>. The callback is notified at once with the current state bits (power and
-/// battery online).</item>
+/// <see cref="PowerEvents.NonSystemMask"/>. The callback is notified at once with the current state bits (battery
+/// online; power online only with the AC adapter).</item>
 /// <item>scePowerUnregisterCallback(cb): not a callback 0xC00280A1, not registered 0x802B0002.</item>
 /// <item>A change (<see cref="Post"/>: state bits cleared and set, one-shot events) notifies every registrant with
 /// state | events | the events it has not consumed yet (its callback has not run since: notify count above 0),
@@ -56,8 +56,9 @@ public sealed class PowerCallbacks
     private readonly object _lock = new();
     private readonly List<Registrant> _registrants = [];
 
-    /// <summary>The state bits every notification carries (a full battery on AC power, as the virtual battery).</summary>
-    public uint State { get; private set; } = PowerEvents.BatteryOnline | PowerEvents.PowerOnline;
+    /// <summary>The state bits every notification carries: the battery is in and, as the syscon chip starts (a retail
+    /// unit without its cable, <see cref="SysconChip.AcAdapter"/>), no AC adapter.</summary>
+    public uint State { get; private set; } = PowerEvents.BatteryOnline;
 
     /// <summary>A system program (the shell) listens: the buttons' system reactions (standby, power menu) are its.</summary>
     public bool HasSystemRegistrant

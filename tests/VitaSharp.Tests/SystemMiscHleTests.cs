@@ -119,11 +119,11 @@ public sealed class SystemMiscHleTests(GuestMemoryFixture fixture) : IDisposable
     }
 
     [Fact]
-    public void PowerReportsAFullBatteryOnAcPower()
+    public void PowerReportsAFullBatteryUnplugged()
     {
         Assert.Equal(0, Call(SystemMisc, "scePowerIsLowBattery"));
-        Assert.Equal(1, Call(SystemMisc, "scePowerIsBatteryCharging"));
-        Assert.Equal(1, Call(SystemMisc, "scePowerIsPowerOnline"));
+        Assert.Equal(0, Call(SystemMisc, "scePowerIsBatteryCharging")); // a retail unit without its cable
+        Assert.Equal(0, Call(SystemMisc, "scePowerIsPowerOnline"));
         Assert.Equal(100, Call(SystemMisc, "scePowerGetBatteryLifePercent"));
         Assert.Equal(1, Call(SystemMisc, "scePowerIsBatteryExist"));
         Assert.Equal(Call(SystemMisc, "scePowerGetBatteryFullCapacity"), Call(SystemMisc, "scePowerGetBatteryRemainCapacity"));
@@ -139,7 +139,7 @@ public sealed class SystemMiscHleTests(GuestMemoryFixture fixture) : IDisposable
         }
 
         foreach (string? fn in new[] { "scePowerRequestDisplayOn", "scePowerRequestDisplayOff", "scePowerRequestColdReset",
-            "scePowerIsLowBatteryInhibitUpdateDownload", "scePowerIsLowBatteryInhibitUpdateReboot", "scePowerBatteryUpdateInfo", "scePowerGetBatteryElec", "scePowerGetBatteryChargingStatus" })
+            "scePowerIsLowBatteryInhibitUpdateDownload", "scePowerIsLowBatteryInhibitUpdateReboot", "scePowerBatteryUpdateInfo", "scePowerGetBatteryChargingStatus" })
         {
             Assert.Equal(0, Call(SystemMisc, fn));
         }

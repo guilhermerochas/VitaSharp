@@ -28,7 +28,7 @@ public sealed partial class SysconChip
 
     /// <summary>A reply whose data the firmware reads as 1 to 4 bytes (the module's word reads): 4 zero bytes for a
     /// command without its own answer.</summary>
-    const int DefaultReplyLength = 4;
+    private const int DefaultReplyLength = 4;
 
     /// <summary>The scratchpad (commands 0x90 read, 0x91 write: 256 bytes) and the second one (0x92/0x93: 128 bytes):
     /// RAM the chip keeps while the unit is off (SceRtc keeps its clock offsets there).</summary>
@@ -108,7 +108,7 @@ public sealed partial class SysconChip
     [SnapshotIgnore]
     public long Commands;
 
-    readonly object _lock = new();
+    private readonly object _lock = new();
 
     /// <summary>The inverted byte sum the frames end with.</summary>
     public static byte Checksum(ReadOnlySpan<byte> frame)
@@ -150,7 +150,7 @@ public sealed partial class SysconChip
     }
 
     /// <summary>The chip's answer to one command: fills <paramref name="answer"/> and returns its length.</summary>
-    int Answer(ushort command, ReadOnlySpan<byte> data, Span<byte> answer)
+    private int Answer(ushort command, ReadOnlySpan<byte> data, Span<byte> answer)
     {
         answer.Clear();
         switch (command)
@@ -214,7 +214,7 @@ public sealed partial class SysconChip
         return DefaultReplyLength;
     }
 
-    static int Word(Span<byte> answer, uint value)
+    private static int Word(Span<byte> answer, uint value)
     {
         Write32(answer, value);
         return 4;
@@ -238,7 +238,7 @@ public sealed partial class SysconChip
 
     public const uint BatteryPresentBit = 0x40, BatteryChargingBit = 0x02;
 
-    static void Write32(Span<byte> target, uint value)
+    private static void Write32(Span<byte> target, uint value)
     {
         target[0] = (byte)value;
         target[1] = (byte)(value >> 8);
@@ -247,7 +247,7 @@ public sealed partial class SysconChip
     }
 
     /// <summary>{offset (2 bytes), size}: the bytes, inside the area.</summary>
-    static int ReadArea(byte[] area, ReadOnlySpan<byte> data, Span<byte> answer)
+    private static int ReadArea(byte[] area, ReadOnlySpan<byte> data, Span<byte> answer)
     {
         if (data.Length < 3)
         {
@@ -261,7 +261,7 @@ public sealed partial class SysconChip
     }
 
     /// <summary>{offset (2 bytes), size, bytes}: stored inside the area.</summary>
-    static void WriteArea(byte[] area, ReadOnlySpan<byte> data)
+    private static void WriteArea(byte[] area, ReadOnlySpan<byte> data)
     {
         if (data.Length < 3)
         {

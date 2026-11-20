@@ -182,7 +182,7 @@ public sealed partial class SystemServicesVsh
 
 public sealed partial class VshBridge
 {
-    /// <summary>(int *online): the AC adapter is connected (scePowerIsPowerOnline): yes.</summary>
+    /// <summary>(int *online): the AC adapter is connected (the syscon chip, as scePowerIsPowerOnline).</summary>
     [Hle]
     int sceAVConfigGetAcStatus(uint online)
     {
@@ -196,7 +196,7 @@ public sealed partial class VshBridge
             return AVC_ERR_COPY;
         }
 
-        GuestMemory.W32(online, 1);
+        GuestMemory.W32(online, Emu.Vita.Syscon.AcAdapter ? 1u : 0u);
         return 0;
     }
 

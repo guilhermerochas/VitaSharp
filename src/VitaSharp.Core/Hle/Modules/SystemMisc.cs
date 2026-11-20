@@ -824,30 +824,208 @@ public sealed partial class SystemMisc : HleModule
 
     // ------------------------------------------------------------------ ScePower
 
-    [Hle] int scePowerIsLowBattery() => 0;
-    [Hle] int scePowerIsBatteryCharging() => 1;
-    [Hle] int scePowerIsPowerOnline() => 1;
-    [Hle] int scePowerGetBatteryLifePercent() => 100;
-    [Hle] int scePowerGetBatteryLifeTime() => 300;
-    [Hle] int scePowerGetBatteryRemainCapacity() => 2200;
-    [Hle] int scePowerGetBatteryFullCapacity() => 2200;
-    [Hle] int scePowerIsBatteryExist() => 1;
+    // ScePower 3.74 (power.skprx, read in the module, study only): the battery values are what the module last polled
+    // from the syscon chip (Emu.Vita.Syscon: present, charged, unplugged by default), or the battery fake status the
+    // system set (kscePowerSetBatteryFakeStatus); without a battery the reads answer 0x802B0100. The kernel exports
+    // with the same NIDs (kscePower...) are these functions.
+
+    /// <summary>ScePower: no battery (or none polled yet).</summary>
+    internal const int POWER_ERROR_NO_BATTERY = unchecked((int)0x802B0100);
+
+    Kernel.SysconChip Chip => Emu.Vita.Syscon;
+
+    Kernel.ScePowerState PowerState => Emu.Vita.PowerState;
+
+    Kernel.SysconBattery Battery => Emu.Vita.Syscon.Battery;
+
+    /// <summary>A battery value: the value with a battery in, else 0x802B0100.</summary>
+    int BatteryValue(int value) => Battery.Present ? value : POWER_ERROR_NO_BATTERY;
+
+    /// <summary>The fake status's time left (µs), counting from when it was set (0 when it ran out).</summary>
+    long FakeTimeLeftUs()
+    {
+        long left = PowerState.FakeLifeTimeUs - (GuestClock.Microseconds - PowerState.FakeSetUs);
+        return Math.Max(left, 0);
+    }
+
+    /// <summary>Low battery: the fake status ran out, else the chip's status bit 17.</summary>
+    [Hle]
+    int scePowerIsLowBattery()
+    {
+        if (PowerState.FakeBattery)
+        {
+            return PowerKernel.FakeRanOut(PowerState, 0) ? 1 : 0;
+        }
+
+        return Battery.Present && Chip.StatusBit(Kernel.SysconChip.BitLowBattery) ? 1 : 0;
+    }
+
+    /// <summary>The battery charges: on the AC adapter, the chip's charging bit, unless charging is forbidden; not
+    /// under the fake status.</summary>
+    [Hle]
+    int scePowerIsBatteryCharging()
+    {
+        if (PowerState.FakeBattery)
+        {
+            return 0;
+        }
+
+        if (!Battery.Present)
+        {
+            return POWER_ERROR_NO_BATTERY;
+        }
+
+        if (PowerState.ChargingForbidden != 0 || !Chip.AcAdapter)
+        {
+            return 0;
+        }
+
+        return (Chip.BatteryStatusWord & Kernel.SysconChip.BatteryChargingBit) != 0 ? 1 : 0;
+    }
+
+    /// <summary>The charging status: 2 forbidden, on the AC adapter 1 charging / 0 not, off it 3 while USB charges.
+    /// </summary>
+    [Hle]
+    int scePowerGetBatteryChargingStatus()
+    {
+        if (PowerState.FakeBattery)
+        {
+            return 0;
+        }
+
+        if (!Battery.Present)
+        {
+            return POWER_ERROR_NO_BATTERY;
+        }
+
+        if (PowerState.ChargingForbidden != 0)
+        {
+            return 2;
+        }
+
+        uint status = Chip.BatteryStatusWord;
+        if (Chip.AcAdapter)
+        {
+            return (int)((status & 3) >> 1);
+        }
+
+        return PowerState.UsbCharging && (status & 0x18) != 0 ? 3 : 0;
+    }
+
+    /// <summary>The AC adapter is plugged (the chip's status byte; never under the fake status).</summary>
+    [Hle]
+    int scePowerIsPowerOnline() => !PowerState.FakeBattery && Chip.AcAdapter ? 1 : 0;
+
+    [Hle]
+    int scePowerGetBatteryLifePercent()
+    {
+        if (PowerState.FakeBattery)
+        {
+            return (int)(scePowerGetBatteryRemainCapacity() * 100L / Math.Max(1u, PowerState.FakeFullCapacity));
+        }
+
+        return BatteryValue(Battery.LifePercent);
+    }
+
+    /// <summary>The time left on the battery (minutes; under the fake status, its seconds by the module's division):
+    /// 0 on the AC adapter, at least 1 off it.</summary>
+    [Hle]
+    int scePowerGetBatteryLifeTime()
+    {
+        if (PowerState.FakeBattery)
+        {
+            return (int)(FakeTimeLeftUs() / 1_000_000);
+        }
+
+        if (Chip.AcAdapter)
+        {
+            return 0;
+        }
+
+        return Math.Max(Battery.LifeTimeMinutes, 1);
+    }
+
+    [Hle]
+    int scePowerGetBatteryRemainCapacity()
+    {
+        if (PowerState.FakeBattery)
+        {
+            if (PowerState.FakeLifeTimeUs == 0)
+            {
+                return (int)PowerState.FakeRemainCapacity;
+            }
+
+            return (int)(FakeTimeLeftUs() * PowerState.FakeRemainCapacity / PowerState.FakeLifeTimeUs);
+        }
+
+        return BatteryValue(Battery.RemainCapacity);
+    }
+
+    [Hle]
+    int scePowerGetBatteryFullCapacity() => PowerState.FakeBattery ? (int)PowerState.FakeFullCapacity : BatteryValue(Battery.FullCapacity);
+
+    [Hle]
+    int scePowerIsBatteryExist() => PowerState.FakeBattery || Battery.Present ? 1 : 0;
+
     [Hle] int scePowerSetConfigurationMode(int mode) => 0;
     // games may raise the CPU clock (333 default, 444 max for applications): the emulated CPU pacing follows it
-    [Hle] int scePowerSetArmClockFrequency(int f)
+    [Hle] internal int scePowerSetArmClockFrequency(int f)
     {
         if (f < 41 || f > 444) return POWER_ERROR_INVALID_VALUE;
         if (Cpu.CpuCore.InstructionsPerSecond > 0) Cpu.CpuCore.InstructionsPerSecond = f * 1_000_000L;
         Log.Info($"scePowerSetArmClockFrequency({f} MHz)");
         return 0;
     }
-    [Hle] int scePowerSetBusClockFrequency(int f) => 0;
-    [Hle] int scePowerSetGpuClockFrequency(int f) => 0;
-    [Hle] int scePowerSetGpuXbarClockFrequency(int f) => 0;
+
+    /// <summary>The bus clock (1..222 MHz), kept in the system's power state.</summary>
+    [Hle]
+    internal int scePowerSetBusClockFrequency(int mhz)
+    {
+        if (mhz < 1 || mhz > 222)
+        {
+            return POWER_ERROR_INVALID_VALUE;
+        }
+
+        PowerState.BusClock = mhz;
+        return 0;
+    }
+
+    /// <summary>The GPU clock (1..222 MHz).</summary>
+    [Hle]
+    int scePowerSetGpuClockFrequency(int mhz)
+    {
+        if (mhz < 1 || mhz > 222)
+        {
+            return POWER_ERROR_INVALID_VALUE;
+        }
+
+        PowerState.GpuClock = mhz;
+        return 0;
+    }
+
+    /// <summary>The GPU crossbar clock (1..166 MHz).</summary>
+    [Hle]
+    internal int scePowerSetGpuXbarClockFrequency(int mhz)
+    {
+        if (mhz < 1 || mhz > 166)
+        {
+            return POWER_ERROR_INVALID_VALUE;
+        }
+
+        PowerState.GpuXbarClock = mhz;
+        return 0;
+    }
+
     [Hle] int scePowerGetArmClockFrequency() => (int)((Cpu.CpuCore.InstructionsPerSecond > 0 ? Cpu.CpuCore.InstructionsPerSecond : Cpu.CpuCore.DefaultClockHz) / 1_000_000);
-    [Hle] int scePowerGetBusClockFrequency() => 222;
-    [Hle] int scePowerGetGpuClockFrequency() => 222;
-    [Hle] int scePowerGetGpuXbarClockFrequency() => 166;
+
+    [Hle]
+    int scePowerGetBusClockFrequency() => PowerState.BusClock;
+
+    [Hle]
+    int scePowerGetGpuClockFrequency() => PowerState.GpuClock;
+
+    [Hle]
+    int scePowerGetGpuXbarClockFrequency() => PowerState.GpuXbarClock;
     /// <summary>The power callbacks of the system (<see cref="Kernel.PowerCallbacks"/>, as ScePower 3.74).</summary>
     [Hle]
     int scePowerRegisterCallback(int cb) => Emu.Vita.Power.Callbacks.Register(Emu, cb);
@@ -857,20 +1035,50 @@ public sealed partial class SystemMisc : HleModule
     [Hle] int scePowerRequestDisplayOn() => 0;
     [Hle] int scePowerRequestDisplayOff() => 0;
 
-    // Virtual battery telemetry: fixed values chosen for a full 3.7 V Li-ion pack on AC (not measured).
     internal const int POWER_ERROR_INVALID_VALUE = unchecked((int)0x802B0000);
 
-    [Hle] int scePowerGetBatteryTemp() => 3000;              // degrees C x 100
-    [Hle] int scePowerGetBatteryVolt() => 4150;              // mV
-    [Hle] int scePowerGetBatterySOH() => 100;                // %
-    [Hle] int scePowerGetBatteryCycleCount() => 10;
-    [Hle] int scePowerGetBatteryRemainLevel() => 4;          // 75-100 %
-    [Hle] int scePowerGetBatteryRemainMaxLevel() => 4;
-    [Hle] int scePowerGetBatteryElec() => 0;                 // full: no charge current
-    [Hle] int scePowerGetCaseTemp() => 3000;
-    [Hle] int scePowerGetBatteryChargingStatus() => 0;       // enum unconfirmed
-    [Hle] int scePowerIsLowBatteryInhibitUpdateDownload() => 0;
-    [Hle] int scePowerIsLowBatteryInhibitUpdateReboot() => 0;
+    [Hle]
+    int scePowerGetBatteryTemp() => BatteryValue(Battery.Temperature);
+
+    [Hle]
+    int scePowerGetBatteryVolt() => BatteryValue(Battery.Voltage);
+
+    [Hle]
+    int scePowerGetBatterySOH() => BatteryValue(Battery.StateOfHealth);
+
+    [Hle]
+    int scePowerGetBatteryCycleCount() => BatteryValue(Battery.CycleCount);
+
+    [Hle]
+    int scePowerGetBatteryRemainLevel() => BatteryValue(Battery.Level);
+
+    [Hle]
+    int scePowerGetBatteryRemainMaxLevel() => BatteryValue(Battery.MaxLevel);
+
+    /// <summary>(int *elec): the battery current; no battery 0x802B0100.</summary>
+    [Hle]
+    int scePowerGetBatteryElec(uint elec)
+    {
+        if (!Battery.Present)
+        {
+            return POWER_ERROR_NO_BATTERY;
+        }
+
+        GuestMemory.W32(elec, (uint)Battery.Current);
+        return 0;
+    }
+
+    /// <summary>The case temperature: ScePower answers the battery's.</summary>
+    [Hle]
+    int scePowerGetCaseTemp() => BatteryValue(Battery.Temperature);
+
+    /// <summary>The chip's low battery flags for an update (status bits 29 and 28).</summary>
+    [Hle]
+    int scePowerIsLowBatteryInhibitUpdateDownload() => Chip.StatusBit(29) ? 1 : 0;
+
+    [Hle]
+    int scePowerIsLowBatteryInhibitUpdateReboot() => Chip.StatusBit(28) ? 1 : 0;
+
     [Hle] int scePowerBatteryUpdateInfo() => 0;
 
     int _usingWireless;
@@ -903,7 +1111,10 @@ public sealed partial class SystemMisc : HleModule
         return 0;
     }
     [Hle] int scePowerRequestColdReset() { Log.Warn("scePowerRequestColdReset (ignored)"); return 0; }
-    [Hle] int scePowerIsSuspendRequired() => 0;
+    /// <summary>A suspend is required: under the battery fake status, a minute after its time ran out (the module's
+    /// rule); a real battery never asks here (the chip's low battery event goes to the shell).</summary>
+    [Hle]
+    int scePowerIsSuspendRequired() => PowerKernel.FakeRanOut(PowerState, 60_000_000) ? 1 : 0;
     [Hle] int scePowerIsRequest() => 0;
     [Hle] int scePowerCancelRequest() => 0;
     [Hle] int scePowerSetIdleTimerCount(int count) => 0;
