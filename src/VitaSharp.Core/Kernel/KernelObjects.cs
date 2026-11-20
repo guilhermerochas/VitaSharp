@@ -56,6 +56,10 @@ public abstract class KernelObject
     {
         RecordSignal();
         Monitor.PulseAll(this);
+        if (this is EventObject watched)
+        {
+            watched.PokeWatchers(); // the multiple-events calls that read this event's state look at it again
+        }
     }
 
     /// <summary>The calling thread took this object's state without waiting (a wait that was already satisfied, a

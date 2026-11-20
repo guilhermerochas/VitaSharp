@@ -1106,14 +1106,12 @@ public sealed partial class ThreadMgr : HleModule
         if (l == null) return SceError.UNKNOWN_RW_LOCK_ID;
         Span<byte> f = stackalloc byte[0x3C]; // SceKernelRWLockInfo
         f.Clear();
-        lock (l)
-        {
-            KernelInfo.Header(f, uid, l.Name, l.Attr);
-            KernelInfo.Put(f, 0x2C, l.Writer != null ? l.WriteCount : l.Readers);
-            KernelInfo.Put(f, 0x30, l.Writer?.Uid ?? 0);
-            KernelInfo.Put(f, 0x34, l.ReadWaiters);
-            KernelInfo.Put(f, 0x38, l.WriteWaiters);
-        }
+        (int count, GuestThread? writer, int readWaiters, int writeWaiters) = l.Info();
+        KernelInfo.Header(f, uid, l.Name, l.Attr);
+        KernelInfo.Put(f, 0x2C, count);
+        KernelInfo.Put(f, 0x30, writer?.Uid ?? 0);
+        KernelInfo.Put(f, 0x34, readWaiters);
+        KernelInfo.Put(f, 0x38, writeWaiters);
         return KernelInfo.Write(info, f);
     }
 
@@ -1121,10 +1119,10 @@ public sealed partial class ThreadMgr : HleModule
     [Hle] int sceKernelCloseRWLock(int uid) => KernelInfo.CloseHandle<RwLock>(K.Objects, uid, SceError.UNKNOWN_RW_LOCK_ID);
 
     /// <summary>Wakes all readers and writers with WAIT_CANCEL; flag 1 (CANCEL_WITH_WRITE_LOCK) leaves the caller owning
-    /// the lock for writing.</summary>
+    /// the lock for writing, a flag above 1 is INVALID_FLAGS (threadmgr 3.74, 0x81025a50).</summary>
     [Hle]
     int sceKernelCancelRWLock(int uid, Ptr<uint> numRead, Ptr<uint> numWrite, int flag)
-        => Obj<RwLock>(uid)?.Cancel(Self, numRead, numWrite, (flag & 1) != 0) ?? SceError.UNKNOWN_RW_LOCK_ID;
+        => Obj<RwLock>(uid)?.Cancel(Self, numRead, numWrite, (uint)flag) ?? SceError.UNKNOWN_RW_LOCK_ID;
 
     // ------------------------------------------------------------------ callbacks
 
@@ -1549,26 +1547,37 @@ public sealed partial class ThreadMgr : HleModule
 
     /// <summary>
     /// sceKernelRegisterCallbackToEvent(SceUID event, SceUID callback), as threadmgr 3.74 does it (the syscall
-    /// 0x76FB37E9, then 0x8100cfcc): an unknown callback is UNKNOWN_CALLBACK_ID, then the callback joins the event's
-    /// list (by callback UID) with the event's UID as the notifier ID its runs get; *WithNotifyCallback notifies it.
-    /// A UID that is not a simple event keeps the old answer, OK with nothing registered: the system's kernel event
+    /// 0x76FB37E9, then 0x8100cfcc): the callback is looked up first (not a live callback: <see cref="UnknownCallbackForEvent"/>),
+    /// then the event in the event class (SceUIDEventClass: simple events, message pipes, timers, asynchronous I/O
+    /// operations, <see cref="EventObject"/>); another threadmgr object is UNKNOWN_EVENT_ID. The callback joins the
+    /// event's list (by callback UID) with the event's UID as the notifier ID its runs get; the event's sets notify it.
+    /// A UID that is no object at all keeps the old answer, OK with nothing registered: the system's kernel event
     /// objects (the RTC alarm event the shell registers its "cron" callback to) are not emulated objects, and nothing
     /// would notify them.
     /// </summary>
     [Hle]
     int sceKernelRegisterCallbackToEvent(int eventUid, int callbackUid)
     {
-        if (Event(eventUid) is not { } e)
-        {
-            return SceError.OK;
-        }
-
         if (Obj<Callback>(callbackUid) is not { Deleted: false } callback)
         {
             return UnknownCallbackForEvent(callbackUid);
         }
 
+        if (EventOf(eventUid, out int error) is not { } e)
+        {
+            return error;
+        }
+
         return e.RegisterCallback(callback, eventUid);
+    }
+
+    /// <summary>The event-class object with this UID; null with <paramref name="error"/> UNKNOWN_EVENT_ID for another
+    /// object, OK for a UID that is no object (see <see cref="sceKernelRegisterCallbackToEvent"/>).</summary>
+    EventObject? EventOf(int eventUid, out int error)
+    {
+        KernelObject? o = K.Objects.Get<KernelObject>(eventUid);
+        error = o == null ? SceError.OK : SceError.UNKNOWN_EVENT_ID;
+        return o as EventObject;
     }
 
     /// <summary>sceKernelUnregisterCallbackFromEvent(SceUID event, SceUID callback) (0x18462B11, then 0x8100d108): the
@@ -1576,9 +1585,9 @@ public sealed partial class ThreadMgr : HleModule
     [Hle]
     int sceKernelUnregisterCallbackFromEvent(int eventUid, int callbackUid)
     {
-        if (Event(eventUid) is not { } e)
+        if (EventOf(eventUid, out int error) is not { } e)
         {
-            return SceError.OK;
+            return error;
         }
 
         if (Obj<Callback>(callbackUid) == null)
@@ -1599,9 +1608,9 @@ public sealed partial class ThreadMgr : HleModule
     [Hle]
     int sceKernelUnregisterCallbackFromEventAll(int eventUid)
     {
-        if (Event(eventUid) is not { } e)
+        if (EventOf(eventUid, out int error) is not { } e)
         {
-            return SceError.OK;
+            return error;
         }
 
         return e.UnregisterAllCallbacks();
@@ -1640,80 +1649,175 @@ public sealed partial class ThreadMgr : HleModule
     /// <summary>
     /// sceKernelWaitMultipleEvents(CB)(SceKernelWaitEvent events[count] {uid, waitPattern}, count, mode,
     /// SceKernelResultEvent results[count] {uid, result, resultPattern, reserved, u64 userData}, timeout*), as the 3.74
-    /// threadmgr does it: events NULL is ILLEGAL_ADDR, more than 64 ILLEGAL_SIZE, mode bits past OR (1) / AND (2)
-    /// ILLEGAL_MODE (without bit 0 the wait is AND). Each event is taken as soon as its pattern matches (an auto-reset
-    /// event is cleared then, even in AND mode while others still wait) and appends a result in the order it fired; an
-    /// unknown uid appends {uid, UNKNOWN_EVENT_ID, 0x10} and counts as done. OR returns once anything is in, AND once
-    /// every event is; the return value is the number of results written (0 without a results array), WAIT_TIMEOUT when
-    /// the time runs out first (the results so far stay). Any event object works: simple events, timers, message pipes
-    /// and asynchronous I/O operations, the objects sceKernelPollEvent takes.
+    /// threadmgr does it (the syscalls 0x8102c950 / 0x8102cc4c and the wait 0x8101ed4c): events NULL is ILLEGAL_ADDR,
+    /// more than 64 ILLEGAL_SIZE, mode bits past OR (1) / AND (2) ILLEGAL_MODE (without bit 0 the wait is AND). One wait
+    /// in every event at once (<see cref="MultiEventWait"/>): a first pass, in the array's order, takes each event whose
+    /// pattern already matches (an auto-reset event is cleared then, even in AND mode while others still wait) and puts
+    /// the waiter in the queue of the others (in OR mode only while nothing matched); the sets that reach it there take
+    /// their event inside the set, in the order they come. Each taken event appends a result in the order it fired; an
+    /// unknown uid appends {uid, UNKNOWN_EVENT_ID, 0x10} and counts as done; a cancel or delete appends its error. OR
+    /// returns once anything is in, AND once every event is; the return value is the number of results written (0
+    /// without a results array), WAIT_TIMEOUT when the time runs out first (the results so far stay). Message pipes,
+    /// timers and asynchronous I/O operations, whose state is a level, are looked at again whenever they change (timers
+    /// as their time passes).
     /// </summary>
     [Hle("sceKernelWaitMultipleEvents", Cost = HleCost.SchedulerWait)]
     [Hle("sceKernelWaitMultipleEventsCB", Cost = HleCost.SchedulerWait, CallbackWait = true)]
     int sceKernelWaitMultipleEvents(uint events, uint count, uint mode, uint results, Ptr<uint> timeout)
     {
-        if (events == 0) return SceError.ILLEGAL_ADDR;
-        if (count > 64) return SceError.ILLEGAL_SIZE;
-        if ((mode & ~3u) != 0) return SceError.ILLEGAL_MODE;
-        bool or = (mode & 1) != 0;
-        ulong done = 0, all = count == 64 ? ulong.MaxValue : (1UL << (int)count) - 1;
-        int written = 0;
-        long start = GuestClock.Ticks;
-        long? limitUs = timeout.IsNull ? null : timeout.Value;
-        while (true)
+        if (events == 0)
+        {
+            return SceError.ILLEGAL_ADDR;
+        }
+
+        if (count > 64)
+        {
+            return SceError.ILLEGAL_SIZE;
+        }
+
+        if ((mode & ~3u) != 0)
+        {
+            return SceError.ILLEGAL_MODE;
+        }
+
+        GuestThread? self = GuestThread.Current;
+        var multi = new MultiEventWait((int)count, (mode & 1) != 0, self);
+        var queued = new List<SimpleEvent>();
+        var levels = new List<(EventObject Event, int Index, int Uid, uint Pattern)>();
+        // the results array is the caller's until the call returns: its last entry holds what a level poll reads
+        uint scratch = results == 0 || count == 0 ? 0 : results + (count - 1) * 0x18;
+        bool timers = false;
+        int code = SceError.OK;
+        try
         {
             for (int i = 0; i < count; i++)
             {
-                if ((done & (1UL << i)) != 0) continue;
                 int uid = (int)GuestMemory.R32(events + (uint)i * 8);
                 uint pattern = GuestMemory.R32(events + (uint)i * 8 + 4);
-                uint entry = results == 0 ? 0 : results + (uint)written * 0x18;
-                int r = PollAnyEvent(uid, pattern, entry);
-                if (r == SceError.EVENT_COND) continue;
-                done |= 1UL << i;
-                if (entry == 0) continue;
-                GuestMemory.W32(entry, (uint)uid);
-                GuestMemory.W32(entry + 4, (uint)r);
+                switch (K.Objects.Get<KernelObject>(uid))
+                {
+                    case SimpleEvent simple:
+                        if (simple.AttachMulti(multi, i, pattern, self?.Priority ?? 0))
+                        {
+                            queued.Add(simple);
+                        }
+
+                        break;
+                    case EventObject level:
+                        levels.Add((level, i, uid, pattern));
+                        level.Watch(multi);
+                        timers |= level is TimerObject;
+                        break;
+                    default:
+                        multi.Record(i, uid, SceError.UNKNOWN_EVENT_ID, EventBits.Error, 0);
+                        break;
+                }
+            }
+            long start = GuestClock.Ticks;
+            long? limitUs = timeout.IsNull ? null : timeout.Value;
+            while (true)
+            {
+                int seen = multi.Changes;
+                foreach ((EventObject level, int index, int uid, uint pattern) in levels)
+                {
+                    if (!multi.IsDone(index) && PollLevel(level, pattern, scratch, out uint bits, out ulong userData))
+                    {
+                        multi.Record(index, uid, SceError.OK, bits, userData);
+                    }
+                }
+                if (multi.Complete)
+                {
+                    break;
+                }
+
+                long? sliceUs = limitUs.HasValue ? limitUs.Value - MultiElapsedUs(start) : null;
+                if (sliceUs <= 0)
+                {
+                    code = SceError.WAIT_TIMEOUT;
+                    break;
+                }
+
+                if (timers)
+                {
+                    sliceUs = Math.Min(sliceUs ?? 500, 500); // a timer's event comes with its time, not with a call
+                }
+
+                int waited;
+                lock (multi)
+                {
+                    waited = Wait.Until(multi, () => multi.ChangedSince(seen), sliceUs, null, "multiple events");
+                }
+                if (waited != SceError.OK && waited != SceError.WAIT_TIMEOUT)
+                {
+                    code = waited;
+                    break;
+                }
+            }
+            if (limitUs.HasValue)
+            {
+                timeout.TrySet(code == SceError.WAIT_TIMEOUT ? 0 : (uint)Math.Max(0, limitUs.Value - MultiElapsedUs(start)));
+            }
+        }
+        finally
+        {
+            foreach (SimpleEvent simple in queued)
+            {
+                simple.DetachMulti(multi);
+            }
+            foreach ((EventObject level, _, _, _) in levels)
+            {
+                level.Unwatch(multi);
+            }
+        }
+        int written = 0;
+        if (results != 0)
+        {
+            foreach (MultiEventWait.Result result in multi.Results)
+            {
+                uint entry = results + (uint)written * 0x18;
+                GuestMemory.W32(entry, (uint)result.Uid);
+                GuestMemory.W32(entry + 4, (uint)result.Code);
+                GuestMemory.W32(entry + 8, result.Pattern);
                 GuestMemory.W32(entry + 12, 0);
-                if (r != 0) { GuestMemory.W32(entry + 8, EventBits.Error); new Ptr<ulong>(entry + 16).Value = 0; }
+                new Ptr<ulong>(entry + 16).Value = result.UserData;
                 written++;
             }
-            if (done == all || (or && done != 0))
-            {
-                if (limitUs.HasValue) timeout.TrySet((uint)Math.Max(0, limitUs.Value - ElapsedUs(start)));
-                return written;
-            }
-            long leftUs = limitUs.HasValue ? limitUs.Value - ElapsedUs(start) : long.MaxValue;
-            if (leftUs <= 0) { timeout.TrySet(0); return SceError.WAIT_TIMEOUT; }
-            // nothing wakes this thread when one of the objects changes: poll them at about the kernel's wake-up latency
-            // (the CB form runs the callbacks notified meanwhile inside the sleep)
-            Wait.Sleep((ulong)Math.Min(leftUs, 500));
         }
 
-        static long ElapsedUs(long start) => (long)((GuestClock.Ticks - start) * 1_000_000 / System.Diagnostics.Stopwatch.Frequency * TimeScale.Wait);
+        return code != SceError.OK ? code : written;
     }
 
-    /// <summary>One event of <see cref="sceKernelWaitMultipleEvents"/>: OK with the result pattern and user data written
-    /// to the SceKernelResultEvent at <paramref name="entry"/> (nothing when 0), EVENT_COND while it does not match,
-    /// UNKNOWN_EVENT_ID for a uid that is no event object. A zero wait pattern never matches.</summary>
-    int PollAnyEvent(int uid, uint pattern, uint entry)
-    {
-        var result = new Ptr<uint>(entry == 0 ? 0 : entry + 8);
-        var userData = new Ptr<ulong>(entry == 0 ? 0 : entry + 16);
-        if (Event(uid) is { } e) return pattern == 0 ? SceError.EVENT_COND : Taken(e.Poll(pattern, result, userData));
-        if (Timer(uid) is { } t) return Taken(t.Poll(result, userData));
-        if (Obj<MsgPipe>(uid) is { } p)
-        {
-            if (pattern == 0) return SceError.EVENT_COND;
-            int r = Taken(p.PollEvent(pattern, result));
-            if (r == 0) userData.TrySet(0);
-            return r;
-        }
-        if (Obj<IoAsyncOp>(uid) is { } op) return pattern == 0 ? SceError.EVENT_COND : Taken(op.PollEvent(pattern, result, userData));
-        return SceError.UNKNOWN_EVENT_ID;
+    /// <summary>Guest microseconds since <paramref name="start"/>, as the waits' timeouts count them.</summary>
+    static long MultiElapsedUs(long start) => (long)((GuestClock.Ticks - start) * 1_000_000 / System.Diagnostics.Stopwatch.Frequency * TimeScale.Wait);
 
-        // a poll that fails otherwise (the object went away) ends that event's wait as a match does
-        static int Taken(int r) => r == SceError.EVENT_COND ? r : 0;
+    /// <summary>One level-triggered event of <see cref="sceKernelWaitMultipleEvents"/> (a pipe, a timer, an I/O
+    /// operation): taken when its state matches <paramref name="pattern"/> (a zero pattern never does), its bits and user
+    /// data read through <paramref name="scratch"/> (a guest entry; 0: not read).</summary>
+    static bool PollLevel(EventObject level, uint pattern, uint scratch, out uint bits, out ulong userData)
+    {
+        var result = new Ptr<uint>(scratch == 0 ? 0 : scratch + 8);
+        var data = new Ptr<ulong>(scratch == 0 ? 0 : scratch + 16);
+        int r = level switch
+        {
+            TimerObject timer => timer.Poll(result, data),
+            MsgPipe pipe => pattern == 0 ? SceError.EVENT_COND : pipe.PollEvent(pattern, result),
+            IoAsyncOp op => pattern == 0 ? SceError.EVENT_COND : op.PollEvent(pattern, result, data),
+            _ => SceError.EVENT_COND,
+        };
+        bits = 0;
+        userData = 0;
+        if (r == SceError.EVENT_COND)
+        {
+            return false;
+        }
+
+        if (r == SceError.OK && scratch != 0)
+        {
+            bits = GuestMemory.R32(scratch + 8);
+            userData = level is MsgPipe ? 0 : GuestMemory.Read<ulong>(scratch + 16);
+        }
+
+        return true; // a poll that fails otherwise (the object went away) ends that event's wait as a match does
     }
 
     [Hle]

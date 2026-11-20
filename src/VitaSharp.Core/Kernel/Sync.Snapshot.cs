@@ -318,6 +318,8 @@ public sealed partial class MsgPipe
                 }
             }
             w.Write(_headPartial);
+            // added 19/11/2026: the callbacks registered to the pipe (older states load with none)
+            SaveRegistrations(w);
         }
     }
 
@@ -379,6 +381,7 @@ public sealed partial class MsgPipe
             }
         }
         _headPartial = !r.AtEnd && r.ReadBool();
+        LoadRegistrations(r);
     }
 
     /// <summary>A restored DONT_WAIT request's end: nothing to count.</summary>
@@ -387,26 +390,103 @@ public sealed partial class MsgPipe
     }
 }
 
+// A rw lock keeps its wait queue, as the mutex does: the order its hand-over serves the waiters (and the waiters given
+// the lock that had not returned) is the saved session's.
 public sealed partial class RwLock
 {
     internal int _writerUid;
     internal void Save(SnapshotWriter w)
     {
-        w.Write(Attr);
-        w.Write(Readers);
-        w.WriteKernelObject(Writer);
-        w.Write(WriteCount);
-        w.Write(_deleted);
+        lock (this)
+        {
+            int count = LockCount;
+            List<WaitRequest> kept = new();
+            foreach (List<WaitRequest> list in (List<WaitRequest>[])[_granted, _queue])
+            {
+                foreach (WaitRequest request in list)
+                {
+                    if (request.ThreadUid != 0)
+                    {
+                        kept.Add(request);
+                    }
+                    else if (request.Granted && !request.Write)
+                    {
+                        count--; // not a guest thread: nothing reissues it, its read lock goes back
+                    }
+                }
+            }
+            w.Write(Attr);
+            // the record of the builds before the queue: the readers' count, the writer and its count apart
+            w.Write(Writer == null ? count : 0);
+            w.WriteKernelObject(Writer);
+            w.Write(Writer != null ? count : 0);
+            w.Write(_deleted);
+            // added 19/11/2026; states of builds before it have no queue: their locks are reissued as new ones, as
+            // those builds did ([SnapshotMissing] for this hand-written record: the empty queue)
+            w.Write(kept.Count);
+            foreach (WaitRequest request in kept)
+            {
+                w.Write(request.ThreadUid);
+                w.Write(request.Write);
+                w.Write(request.Priority);
+                w.Write(request.Granted);
+            }
+        }
     }
+
     internal void Load(SnapshotReader r)
     {
         Attr = r.ReadUInt32();
-        Readers = r.ReadInt32();
+        int readers = r.ReadInt32();
         _writerUid = r.ReadInt32();
-        WriteCount = r.ReadInt32();
+        int writeCount = r.ReadInt32();
         _deleted = r.ReadBool();
+        LockCount = _writerUid != 0 ? writeCount : readers;
+        _queue.Clear();
+        _granted.Clear();
+        _restored.Clear();
+        ReadWaiters = 0;
+        WriteWaiters = 0;
+        int saved = r.AtEnd ? 0 : r.ReadInt32();
+        for (int i = 0; i < saved; i++)
+        {
+            WaitRequest request = new()
+            {
+                ThreadUid = r.ReadInt32(),
+                Write = r.ReadBool(),
+                Priority = r.ReadInt32(),
+                Granted = r.ReadBool(),
+            };
+            _restored.Add(request);
+            if (request.Granted)
+            {
+                _granted.Add(request);
+            }
+            else
+            {
+                _queue.Add(request); // saved in queue order
+                if (request.Write)
+                {
+                    WriteWaiters++;
+                }
+                else
+                {
+                    ReadWaiters++;
+                }
+            }
+        }
     }
-    internal void Resolve(ObjectTable t) => Writer = _writerUid != 0 ? t.Get<GuestThread>(_writerUid) : null;
+
+    /// <summary>The writer and the waiters of the saved queue get their threads back (an unlock may hand them the lock
+    /// before they reissue).</summary>
+    internal void Resolve(ObjectTable t)
+    {
+        Writer = _writerUid != 0 ? t.Get<GuestThread>(_writerUid) : null;
+        foreach (WaitRequest request in _restored)
+        {
+            request.Thread = t.Get<GuestThread>(request.ThreadUid);
+        }
+    }
 }
 
 public sealed partial class Callback
@@ -458,6 +538,11 @@ public sealed partial class TimerObject
         w.Write(Interval);
         w.Write(NextEvent);
         w.Write(_deleted);
+        // added 19/11/2026: the callbacks registered to the timer (older states load with none)
+        lock (this)
+        {
+            SaveRegistrations(w);
+        }
     }
 
     internal void Load(SnapshotReader r)
@@ -472,14 +557,12 @@ public sealed partial class TimerObject
         Interval = r.ReadUInt64();
         NextEvent = r.ReadUInt64();
         _deleted = r.ReadBool();
+        LoadRegistrations(r);
     }
 }
 
 public sealed partial class SimpleEvent
 {
-    /// <summary>The registered callbacks of a loaded state, as (callback UID, notifier ID), until every object exists.</summary>
-    private List<(int CallbackUid, int NotifyId)>? _loadedRegistrations;
-
     internal void Save(SnapshotWriter w)
     {
         lock (this)
@@ -488,12 +571,7 @@ public sealed partial class SimpleEvent
             w.Write(Pattern);
             w.Write(LastUserData);
             // added 19/11/2026; states of builds before it load with no callback registered (those builds kept none)
-            w.Write(_registrations.Count);
-            foreach (Registration registration in _registrations)
-            {
-                w.Write(registration.Callback.Uid);
-                w.Write(registration.NotifyId);
-            }
+            SaveRegistrations(w);
         }
     }
 
@@ -502,32 +580,7 @@ public sealed partial class SimpleEvent
         Attr = r.ReadUInt32();
         Pattern = r.ReadUInt32();
         LastUserData = r.ReadUInt64();
-        _registrations.Clear();
-        int count = r.AtEnd ? 0 : r.ReadInt32();
-        _loadedRegistrations = new List<(int, int)>(count);
-        for (int i = 0; i < count; i++)
-        {
-            _loadedRegistrations.Add((r.ReadInt32(), r.ReadInt32()));
-        }
-    }
-
-    /// <summary>Finds the registered callbacks (in the saved order); one missing from the state is dropped, as the
-    /// kernel drops the registration of a deleted callback.</summary>
-    internal void Resolve(ObjectTable t)
-    {
-        if (_loadedRegistrations == null)
-        {
-            return;
-        }
-
-        foreach ((int callbackUid, int notifyId) in _loadedRegistrations)
-        {
-            if (t.Get<Callback>(callbackUid) is { } callback)
-            {
-                _registrations.Add(new Registration(callback, notifyId));
-            }
-        }
-        _loadedRegistrations = null;
+        LoadRegistrations(r);
     }
 }
 

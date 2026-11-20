@@ -959,6 +959,176 @@ public sealed class ThreadMgrHleTests(GuestMemoryFixture fx) : IDisposable
     }
 
     /// <summary>
+    /// The cancel and delete of every other threadmgr object wake their waiters as the event flag's do (threadmgr 3.74:
+    /// the cancels 0x81012768 semaphore, 0x8100e744 mutex, 0x8101738c message pipe, 0x81025a50 rw lock and 0x8101e724 /
+    /// 0x8101ead8 event, the deletes through each class's destructor, 0x810119b8, 0x8100db84, 0x810227b4, 0x81024aa4,
+    /// all waking with the same wake-up 0x810106bc / 0x81010740 a release uses, the caller going on): the woken thread,
+    /// back with its error, must not run its next system call before the stopped canceller gets going again.
+    /// </summary>
+    [Theory]
+    [InlineData("sema-cancel")]
+    [InlineData("sema-delete")]
+    [InlineData("mutex-cancel")]
+    [InlineData("mutex-delete")]
+    [InlineData("lwmutex-delete")]
+    [InlineData("cond-delete")]
+    [InlineData("lwcond-delete")]
+    [InlineData("msgpipe-cancel")]
+    [InlineData("msgpipe-delete")]
+    [InlineData("rwlock-cancel")]
+    [InlineData("rwlock-delete")]
+    [InlineData("event-cancel")]
+    [InlineData("event-delete")]
+    [InlineData("timer-cancel")]
+    [InlineData("timer-delete")]
+    public void ThreadWokenByACancelOrDeleteWaitsForAStoppedCanceller(string kind)
+    {
+        _h.OnGuest(main =>
+        {
+            Func<int> wait;
+            string wakingCall;
+            uint[] wakingArgs;
+            int expected;
+            bool cancel = kind.EndsWith("-cancel", StringComparison.Ordinal);
+            switch (kind[..kind.IndexOf('-')])
+            {
+                case "sema":
+                {
+                    int uid = Call(Tm, "sceKernelCreateSema", "woken-sema", 0u, 0, 1, 0u);
+                    wait = () => Call(Tm, "sceKernelWaitSema", uid, 1, new Ptr<uint>(0));
+                    wakingCall = cancel ? "sceKernelCancelSema" : "sceKernelDeleteSema";
+                    wakingArgs = cancel ? [(uint)uid, 0u, 0u] : [(uint)uid];
+                    expected = cancel ? SceError.WAIT_CANCEL : SceError.WAIT_DELETE;
+                    break;
+                }
+                case "mutex":
+                {
+                    int uid = Call(Tm, "sceKernelCreateMutex", "woken-mutex", 0u, 1, 0u); // held by main
+                    wait = () => Call(Tm, "sceKernelLockMutex", uid, 1, new Ptr<uint>(0));
+                    wakingCall = cancel ? "sceKernelCancelMutex" : "sceKernelDeleteMutex";
+                    wakingArgs = cancel ? [(uint)uid, 0u, 0u] : [(uint)uid];
+                    expected = cancel ? SceError.WAIT_CANCEL : SceError.WAIT_DELETE;
+                    break;
+                }
+                case "lwmutex":
+                {
+                    uint work = _h.Alloc(32);
+                    Assert.Equal(0, Call(Tm, "sceKernelCreateLwMutex", work, "woken-lwmutex", 0u, 1, 0u)); // held by main
+                    wait = () => Call(Tm, "sceKernelLockLwMutex", work, 1, new Ptr<uint>(0));
+                    wakingCall = "sceKernelDeleteLwMutex";
+                    wakingArgs = [work];
+                    expected = SceError.WAIT_DELETE;
+                    break;
+                }
+                case "cond":
+                {
+                    int mutexUid = Call(Tm, "sceKernelCreateMutex", "woken-cond-mutex", 0u, 0, 0u);
+                    int uid = Call(Tm, "sceKernelCreateCond", "woken-cond", 0u, mutexUid, 0u);
+                    wait = () =>
+                    {
+                        Assert.Equal(0, Call(Tm, "sceKernelLockMutex", mutexUid, 1, new Ptr<uint>(0)));
+                        return Call(Tm, "sceKernelWaitCond", uid, new Ptr<uint>(0));
+                    };
+                    wakingCall = "sceKernelDeleteCond";
+                    wakingArgs = [(uint)uid];
+                    expected = SceError.WAIT_DELETE_COND;
+                    break;
+                }
+                case "lwcond":
+                {
+                    uint mutexWork = _h.Alloc(32);
+                    uint work = _h.Alloc(32);
+                    Assert.Equal(0, Call(Tm, "sceKernelCreateLwMutex", mutexWork, "woken-lwcond-mutex", 0u, 0, 0u));
+                    Assert.Equal(0, Call(Tm, "sceKernelCreateLwCond", work, "woken-lwcond", 0u, mutexWork, 0u));
+                    wait = () =>
+                    {
+                        Assert.Equal(0, Call(Tm, "sceKernelLockLwMutex", mutexWork, 1, new Ptr<uint>(0)));
+                        return Call(Tm, "sceKernelWaitLwCond", work, new Ptr<uint>(0));
+                    };
+                    wakingCall = "sceKernelDeleteLwCond";
+                    wakingArgs = [work];
+                    expected = SceError.WAIT_DELETE_LW_COND;
+                    break;
+                }
+                case "msgpipe":
+                {
+                    int uid = Call(Tm, "sceKernelCreateMsgPipe", "woken-pipe", 0x40u, 0u, 0x1000u, 0u);
+                    uint sink = _h.Alloc(4);
+                    wait = () => Call(Tm, "sceKernelReceiveMsgPipe", uid, sink, 4u, MsgPipe.WaitAll, new Ptr<uint>(0), new Ptr<uint>(0));
+                    wakingCall = cancel ? "sceKernelCancelMsgPipe" : "sceKernelDeleteMsgPipe";
+                    wakingArgs = cancel ? [(uint)uid, 0u, 0u] : [(uint)uid];
+                    expected = cancel ? SceError.WAIT_CANCEL : SceError.WAIT_DELETE;
+                    break;
+                }
+                case "rwlock":
+                {
+                    int uid = Call(Tm, "sceKernelCreateRWLock", "woken-rwlock", 0u, 0u);
+                    Assert.Equal(0, Call(Tm, "sceKernelLockWriteRWLock", uid, new Ptr<uint>(0)));
+                    wait = () => Call(Tm, "sceKernelLockReadRWLock", uid, new Ptr<uint>(0));
+                    wakingCall = cancel ? "sceKernelCancelRWLock" : "sceKernelDeleteRWLock";
+                    wakingArgs = cancel ? [(uint)uid, 0u, 0u, 0u] : [(uint)uid];
+                    expected = cancel ? SceError.WAIT_CANCEL : SceError.WAIT_DELETE;
+                    break;
+                }
+                case "event":
+                {
+                    int uid = Call(Tm, "sceKernelCreateSimpleEvent", _h.Str("woken-event"), 0u, 0u, 0u);
+                    wait = () => Call(Tm, "sceKernelWaitEvent", uid, 0x1u, new Ptr<uint>(0), new Ptr<ulong>(0), new Ptr<uint>(0));
+                    wakingCall = cancel ? "sceKernelCancelEvent" : "sceKernelDeleteSimpleEvent";
+                    wakingArgs = cancel ? [(uint)uid, 0u] : [(uint)uid];
+                    expected = cancel ? SceError.WAIT_CANCEL : SceError.WAIT_DELETE;
+                    break;
+                }
+                default:
+                {
+                    int uid = Call(Tm, "sceKernelCreateTimer", "woken-timer", 0u, 0u);
+                    wait = () => Call(Tm, "sceKernelWaitEvent", uid, 0x1u, new Ptr<uint>(0), new Ptr<ulong>(0), new Ptr<uint>(0));
+                    wakingCall = cancel ? "sceKernelCancelEvent" : "sceKernelDeleteTimer";
+                    wakingArgs = cancel ? [(uint)uid, 0u] : [(uint)uid];
+                    expected = cancel ? SceError.WAIT_CANCEL : SceError.WAIT_DELETE;
+                    break;
+                }
+            }
+            bool nextCallDone = false;
+            int result = 0;
+            GuestRun woken = _h.Start(th =>
+            {
+                result = wait();
+                th.Core.ChargeInstructions(200_000);
+                th.DispatchForTest("sceKernelGetThreadId");
+                Volatile.Write(ref nextCallDone, true);
+            }, "woken");
+            Until(() => woken.Thread.Status == ThreadStatus.Waiting && woken.Thread.CurrentWaitSync != null, "the wait");
+            woken.Thread.WakerWaitLimitTicks = long.MaxValue; // the outcome may not depend on how long the host takes
+            bool doneWhileStopped = true;
+            bool heldAtItsCall = false;
+            GuestThread.HleReturned = (thread, function) =>
+            {
+                if (thread == main && function.Name == wakingCall)
+                {
+                    Until(() => woken.Thread.IsWaitingForWaker || Volatile.Read(ref nextCallDone), "the woken thread's next call");
+                    doneWhileStopped = Volatile.Read(ref nextCallDone);
+                    heldAtItsCall = woken.Thread.IsWaitingForWaker;
+                }
+            };
+            try
+            {
+                Assert.Equal(0u, main.DispatchForTest(wakingCall, wakingArgs));
+            }
+            finally
+            {
+                GuestThread.HleReturned = null;
+            }
+            Assert.False(doneWhileStopped);
+            Assert.True(heldAtItsCall);
+            Assert.Equal(0, Call(Tm, "sceKernelDelayThread", 1000u)); // main blocks: the woken thread goes on
+            _h.Join(woken, 5_000);
+            Assert.True(Volatile.Read(ref nextCallDone));
+            Assert.Equal(expected, result);
+        });
+    }
+
+    /// <summary>
     /// The End Frame protocol when the End Frame thread reaches its wait only after main's set (its host thread was the
     /// late one): the wait is satisfied at once, without blocking, and main's host thread is stopped right after the
     /// set. Taking a ready object is an observation of the signaller just like a wake-up: the End Frame thread's next
@@ -1733,7 +1903,7 @@ public sealed class ThreadMgrHleTests(GuestMemoryFixture fx) : IDisposable
     {
         _h.OnGuest(self =>
         {
-            int l = Call(Tm, "sceKernelCreateRWLock", "rw", 0u, 0u);
+            int l = Call(Tm, "sceKernelCreateRWLock", "rw", RwLock.AttrRecursive, 0u);
             Assert.Equal(12, Call(Tm, "sceKernelGetThreadmgrUIDClass", l));
             Assert.Equal(0, Call(Tm, "sceKernelLockReadRWLock", l, new Ptr<uint>(0)));
             Assert.Equal(0, Call(Tm, "sceKernelTryLockReadRWLock", l));
@@ -1748,7 +1918,7 @@ public sealed class ThreadMgrHleTests(GuestMemoryFixture fx) : IDisposable
             Assert.Equal(0, Call(Tm, "sceKernelUnlockReadRWLock", l));
             Assert.Equal(0, Call(Tm, "sceKernelUnlockReadRWLock", l));
             Assert.Equal(SceError.RW_LOCK_UNLOCK_UDF, Call(Tm, "sceKernelUnlockReadRWLock", l));
-            // a writer: recursive for itself, blocks other readers and writers
+            // a writer: recursive for itself (SCE_KERNEL_RW_LOCK_ATTR_RECURSIVE), blocks other readers and writers
             Assert.Equal(0, Call(Tm, "sceKernelLockWriteRWLockCB", l, new Ptr<uint>(0)));
             Assert.Equal(0, Call(Tm, "sceKernelTryLockWriteRWLock", l));
             Call(Tm, "sceKernelGetRWLockInfo", l, info);

@@ -10,7 +10,7 @@ namespace VitaSharp.Core.Hle.Modules;
 /// object: <see cref="Pattern"/> gets <see cref="CompletionBit"/> when the request finishes and waiters on the object
 /// (sceKernelWaitEvent-style, Monitor on the instance) are pulsed; sceIoComplete then returns <see cref="Result"/>.
 /// </summary>
-public sealed class IoAsyncOp : KernelObject
+public sealed class IoAsyncOp : EventObject
 {
     /// <summary>Event bit set on completion (inferred; to confirm with a title using async I/O).</summary>
     public const uint CompletionBit = 0x1;
@@ -28,6 +28,7 @@ public sealed class IoAsyncOp : KernelObject
             Done = true;
             Pattern |= CompletionBit;
             Monitor.PulseAll(this);
+            PokeWatchers();
         }
     }
 

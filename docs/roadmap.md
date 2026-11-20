@@ -200,10 +200,32 @@ jogo (`dotnet test`) para saber se uma mudança quebrou algo. Nenhuma mudança �
   só são notificados pelo Set/PulseEventWithNotifyCallback (padrão 0 não faz nada), com r0 = UID do evento e r2 = o
   argumento; a lista entra no save state (estados antigos carregam sem registro). Event flag: o acordado por cancel ou
   delete não passa à frente do canceller parado (como o acordado pelo set). Eram bugs, corrigidos no mesmo hash.
-  Faltam: o rwlock não tem fila (a mão passa a quem acordar primeiro; só a contagem e o prazo seguem o firmware), o
-  registro de callback em objetos de evento que não são eventos simples (ex.: o evento do RTC do shell) segue
-  aceitando sem guardar nada, sceKernelWaitMultipleEvents ainda espera por varredura, e cancel/delete dos outros
-  objetos ainda não seguram o acordado atrás do canceller parado.
+  Rwlock, WaitMultipleEvents, callbacks nas classes de evento e o acordador de cancel/delete cobertos (19/11/2026,
+  sync7, test/sync7, conferido no threadmgr 3.74). Rwlock (`RwLockInterleavingTests`: lock 0x81024bb0, try-locks
+  0x810254f0 / 0x81025758, unlocks 0x810255b4 / 0x81025888, cancel 0x81025a50, tratador da classe 0x810249b8): uma
+  fila de leitores e escritores, FIFO ou TH_PRIO (0x2000); leitura só entra sem escritor e sem ninguém na fila (o
+  escritor em espera barra leitores novos); o unlock que libera entrega dentro da chamada ao primeiro escritor da fila
+  (passando os leitores à frente dele) ou, sem escritor esperando, a todos os leitores; prazo e notificação de callback
+  tiram da fila e servem os outros; leitura do próprio escritor é FAILED_TO_LOCK, escrita de novo é RW_LOCK_RECURSIVE
+  sem o atributo RECURSIVE (0x2); unlock de leitura com escritor é FAILED_TO_UNLOCK; cancel com flag > 1 é
+  INVALID_FLAGS; a fila entra no save state (estados antigos carregam sem fila). WaitMultipleEvents
+  (`MultiEventWaitInterleavingTests`: syscalls 0x8102c950 / 0x8102cc4c, espera 0x8101ed4c, set 0x8101dcf8): uma espera
+  só em todos os eventos; a primeira passada pega os que já casam e entra na fila de cada evento simples que não casa;
+  o set/pulse que a alcança pega o evento dentro do set, na ordem da fila com as esperas simples (o pulse agora é
+  visto); resultados na ordem em que dispararam; OR terminado não pega mais nada; cancel/delete entram como erro do
+  evento. Callbacks (`CallbackWaitInterleavingTests.CallbacksRegisterToEveryEventClassObject`: register 0x8100cfcc
+  em SceUIDRegisterCallbackClass, filha SceUIDEventClass, mãe de evento simples, msgpipe e timer, e das classes que
+  outros módulos derivam por 0xDBB77032, como as operações de E/S assíncrona): registro em todas; o msgpipe notifica
+  no envio (IN, mais "pode receber" com bytes no buffer), na recepção (OUT), em erro (ERROR) e no open/close (OPEN /
+  CLOSE); objeto do threadmgr fora da classe é UNKNOWN_EVENT_ID; pipes e timers guardam os registros no save state.
+  Cancel/delete de semáforo, mutex, lwmutex, cond, lwcond, msgpipe, rwlock, evento e timer seguram o acordado atrás do
+  canceller parado (`ThreadMgrHleTests.ThreadWokenByACancelOrDeleteWaitsForAStoppedCanceller`). Eram bugs,
+  corrigidos nos mesmos hashes.
+  Falta: o timer não notifica callbacks registrados quando o evento dele vence (o evento do timer é calculado na
+  leitura, sem disparo; precisa de um disparo em tempo de guest), e o Set/PulseEventWithNotifyCallback só aceita
+  eventos simples (o firmware aceita qualquer objeto da classe de evento). Diferenças mantidas: WaitMultipleEvents lê
+  pipes, timers e E/S assíncrona como nível (acordado quando mudam; timers a cada 500 us do tempo deles), não pela
+  fila deles; a espera CB de WaitMultipleEvents roda os callbacks sem sair das filas.
 - [ ] [P3][G] **Contratos do escalonador e do ritmo da CPU:** quem roda primeiro por prioridade e afinidade, quanto tempo de
   guest passa por chamada HLE e por espera, o que acorda quem; uma mudança de desempenho que altere a ordem entre
   threads quebra um teste.
