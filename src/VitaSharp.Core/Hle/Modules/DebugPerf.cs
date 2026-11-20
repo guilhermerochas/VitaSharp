@@ -137,9 +137,10 @@ public sealed partial class DebugPerf : HleModule
 
     // ---------------------------------------------------------------- SceUlobjMgr / SceUlobjDbg (used by the LLE libult)
 
-    [Hle] int _sceUlobjMgrRegisterLibultProtocolRevision(uint revision) => 0;
-    [Hle] int _sceUlobjMgrStartSupportingUserlevelObject() => 0;
-    [Hle] int _sceUlobjMgrStopSupportingUserlevelObject() => 0;
+    // the user side of the kernel's user-level object support (SceUlobjMgr 3.74; DebugPerf.UlobjKernel)
+    [Hle] int _sceUlobjMgrRegisterLibultProtocolRevision(uint revision) => UlobjRegisterRevision(revision);
+    [Hle] int _sceUlobjMgrStartSupportingUserlevelObject(uint size, uint revision, uint result) => UlobjStart(size, revision);
+    [Hle] int _sceUlobjMgrStopSupportingUserlevelObject() => UlobjStop();
     [Hle] int SceUlobjDbg_D7F0F610() => 0;
     [Hle] int SceUlobjDbg_F9C0F5DA() => 0;
 }
