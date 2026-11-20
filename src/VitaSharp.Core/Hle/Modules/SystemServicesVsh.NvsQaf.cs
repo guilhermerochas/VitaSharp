@@ -26,7 +26,7 @@ public sealed partial class SystemServicesVsh
     readonly byte[] _nvs = new byte[NvsSize];
 
     /// <summary>The unit's QA flags (16 bytes): none on a retail unit.</summary>
-    static readonly byte[] QaFlags = new byte[16];
+    internal static readonly byte[] QaFlags = new byte[16];
 
     static bool NvsTransferValid(uint offset, uint size)
     {

@@ -753,11 +753,13 @@ public sealed partial class SysmemKernel
     /// <summary>ksceKernelCorelockLock(lock, firstCore): the core <c>firstCore</c> goes first without the spinlock;
     /// every other core waits for its turn (+6) and then takes the spinlock its predecessor released.</summary>
     [Hle(Nid = 0x2FF54320, Library = "SceCpuForKernel")]
-    void ksceKernelCorelockLock(HleContext context)
+    void ksceKernelCorelockLock(HleContext context) => CorelockLock(context.Gpr(0), (int)context.Gpr(1), CallerLr(context));
+
+    /// <summary>See <see cref="ksceKernelCorelockLock"/>; <paramref name="owner"/> is the spinlock's owner word.</summary>
+    void CorelockLock(uint lockAddr, int firstCore, int owner)
     {
-        uint lockAddr = context.Gpr(0);
         int core = CurrentCpuId;
-        if (core == (int)context.Gpr(1))
+        if (core == firstCore)
         {
             GuestMemory.Write(lockAddr + 6, (ushort)core);
             return;
@@ -770,7 +772,7 @@ public sealed partial class SysmemKernel
             WaitForEvent(ref spin);
         }
 
-        AcquireSpinlock(lockAddr, CallerLr(context), nameof(ksceKernelCorelockLock));
+        AcquireSpinlock(lockAddr, owner, nameof(ksceKernelCorelockLock));
     }
 
     /// <summary>ksceKernelCorelockUnlock(lock): hands the turn to the next core, counts this core out and releases the
