@@ -1,3 +1,4 @@
+using VitaSharp.Core.Kernel;
 using VitaSharp.Core.Memory;
 using VitaSharp.Core.SaveState;
 
@@ -100,6 +101,67 @@ public sealed class SaveStateRollbackTests : IDisposable
         // and a good state still loads over the rolled-back session
         SaveStates.Load(_harness.Emu, path);
         WaitForFrames(30, "frames after the good load");
+    }
+
+    /// <summary>
+    /// The load is asked while the main thread is still running guest code (stopped by the host right after an HLE call
+    /// returned, with the <see cref="GuestThread.HleReturned"/> seam: a preemption on a loaded host). The hold only asks
+    /// the threads to stop at their next safe point, so the load waits for it, as a save does, before it keeps the
+    /// running session to go back to. Before, it took that session at once, found "thread 'main' is running guest
+    /// code", went on without a way back and the failed load left the game stopped ("restart the game"; one run in six
+    /// of <see cref="AFailedLoadAfterTheThreadsStoppedGivesTheGameBack"/> under load).
+    /// </summary>
+    [Fact]
+    public void AFailedLoadAskedWhileAThreadRunsGuestCodeStillGivesTheGameBack()
+    {
+        WaitForFrames(30, "the title's first frames");
+        string path = Path.Combine(_harness.Root, "state.vss");
+        SaveStates.Save(_harness.Emu, path, timeoutMs: 60_000);
+        string corrupted = Path.Combine(_harness.Root, "corrupted.vss");
+        CorruptAModuleSection(path, corrupted);
+        WaitForFrames(30, "frames after the save");
+        uint marker = _harness.Emu.Memory.Alloc(64, "rollback marker");
+        GuestMemory.W32(marker, 0xC0FFEE11);
+
+        GuestThread main = _harness.Emu.Kernel.MainThread!;
+        using var stopped = new ManualResetEventSlim();
+        using var release = new ManualResetEventSlim();
+        SnapshotException failure;
+        GuestThread.HleReturned = (thread, _) =>
+        {
+            if (!ReferenceEquals(thread, main) || release.IsSet)
+            {
+                return;
+            }
+
+            stopped.Set();
+            // back in guest code and not at a safe point until the load says it waits for this thread (or stops it)
+            while (!release.Wait(1) && !thread.Core.StopRequested)
+            {
+            }
+        };
+        SaveStates.LoadWaitingForSafePoint = why =>
+        {
+            if (why.Contains($"'{main.Name}'", StringComparison.Ordinal))
+            {
+                release.Set();
+            }
+        };
+        try
+        {
+            Assert.True(stopped.Wait(60_000), "the main thread never returned from an HLE call");
+            failure = Assert.Throws<SnapshotException>(() => SaveStates.Load(_harness.Emu, corrupted));
+        }
+        finally
+        {
+            GuestThread.HleReturned = null;
+            SaveStates.LoadWaitingForSafePoint = null;
+            release.Set();
+        }
+
+        Assert.Contains("the game went back to where it was before the load", failure.Message);
+        Assert.Equal(0xC0FFEE11u, GuestMemory.R32(marker));
+        WaitForFrames(30, "frames after the failed load");
     }
 
     /// <summary>
