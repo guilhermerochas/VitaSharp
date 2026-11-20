@@ -37,7 +37,7 @@ public sealed partial class SysmemKernel
             return 0;
         }
 
-        return kernelObject is KernelData { Kind: KernelData.ClassObject } data ? data.Aux : RootClass();
+        return ClassOf(kernelObject);
     }
 
     /// <summary>ksceKernelAlloc(size): a block of the kernel's general heap (NULL for 0 bytes or when memory is

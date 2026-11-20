@@ -28,7 +28,7 @@ public sealed partial class SystemServicesVsh
     const uint ZMsg = 0x18, ZState = 0x1C, ZZfree = 0x24, ZOpaque = 0x28, ZAdler = 0x30;
 
     /// <summary>The state of one stream (by its token).</summary>
-    sealed class ZStream
+    sealed class ZStream : ISnapshotState
     {
         public bool Deflating;
         public ZlibStreamInflater? Inflater;
@@ -53,11 +53,55 @@ public sealed partial class SystemServicesVsh
             copy.Output = (byte[])Output.Clone();
             return copy;
         }
+
+        public void SaveState(SnapshotWriter w)
+        {
+            w.Write(Deflating);
+            w.Write(Inflater != null);
+            Inflater?.SaveState(w);
+            w.Write(InflateWindowBits);
+            w.Write(Level);
+            w.Write(WindowBits);
+            w.Write(MemLevel);
+            w.Write((int)Wrapper);
+            w.Write(PendingInput.ToArray());
+            w.Write(Output);
+            w.Write(Delivered);
+            w.Write(HeaderWritten);
+            w.Write(Finished);
+            w.Write(Checksum);
+            w.Write(InputSize);
+        }
+
+        public void LoadState(SnapshotReader r)
+        {
+            Deflating = r.ReadBool();
+            Inflater = null;
+            if (r.ReadBool())
+            {
+                Inflater = new ZlibStreamInflater(ZlibStreamInflater.Wrapper.Raw);
+                Inflater.LoadState(r);
+            }
+
+            InflateWindowBits = r.ReadInt32();
+            Level = r.ReadInt32();
+            WindowBits = r.ReadInt32();
+            MemLevel = r.ReadInt32();
+            Wrapper = (ZlibStreamInflater.Wrapper)r.ReadInt32();
+            PendingInput = [.. r.ReadBytes() ?? []];
+            Output = r.ReadBytes() ?? [];
+            Delivered = r.ReadInt32();
+            HeaderWritten = r.ReadBool();
+            Finished = r.ReadBool();
+            Checksum = r.ReadUInt32();
+            InputSize = r.ReadUInt32();
+        }
     }
 
-    /// <summary>The streams by their state token. A host-side codec state: a save state taken mid-stream does not
-    /// carry it (the stream reports Z_STREAM_ERROR afterwards, as one whose state was lost).</summary>
-    [SnapshotIgnore]
+    /// <summary>The streams by their state token, saved whole: the inflater's decoding state (bit buffer, code tables,
+    /// window, pending output) and a deflate stream's input since its last flush point with the output not taken yet
+    /// (the host codec compresses each piece from that input at the flush, so it holds no state between calls).</summary>
+    [SnapshotMissing] // states of builds before it did not keep the streams: none open
     readonly Dictionary<uint, ZStream> _zlibStreams = new();
 
     /// <summary>The zlib strings in kernel memory (0 until first asked): "1.2.5" and z_errmsg.</summary>

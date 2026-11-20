@@ -1,3 +1,5 @@
+using VitaSharp.Core.SaveState;
+
 namespace VitaSharp.Core.Hle.Modules;
 
 /// <summary>
@@ -106,6 +108,81 @@ internal sealed class ZlibStreamInflater
     public bool AtBlockBoundary => _mode == Mode.BlockHeader;
 
     public bool Ended => _mode == Mode.End;
+
+    /// <summary>Writes the whole decoding state (a save state taken in the middle of a stream).</summary>
+    public void SaveState(SnapshotWriter writer)
+    {
+        writer.Write((int)_wrapper);
+        writer.Write((int)_mode);
+        writer.Write(_input.AsSpan(0, _inputLength).ToArray());
+        writer.Write(_inputPosition);
+        writer.Write(_bitBuffer);
+        writer.Write(_bitCount);
+        writer.Write(_lastBlock);
+        writer.Write(_storedLeft);
+        WriteHuffman(writer, _lengths);
+        WriteHuffman(writer, _distances);
+        writer.Write(_output.AsSpan(0, _outputLength).ToArray());
+        writer.Write(_delivered);
+        writer.Write(_adler);
+        writer.Write(_crc);
+        writer.Write(_outputSize);
+        writer.Write(DictionaryId);
+    }
+
+    /// <summary>Reads the state <see cref="SaveState"/> wrote.</summary>
+    public void LoadState(SnapshotReader reader)
+    {
+        _wrapper = (Wrapper)reader.ReadInt32();
+        _mode = (Mode)reader.ReadInt32();
+        byte[] input = reader.ReadBytes() ?? [];
+        _input = new byte[Math.Max(256, input.Length)];
+        input.CopyTo(_input, 0);
+        _inputLength = input.Length;
+        _inputPosition = reader.ReadInt32();
+        _bitBuffer = reader.ReadUInt64();
+        _bitCount = reader.ReadInt32();
+        _lastBlock = reader.ReadBool();
+        _storedLeft = reader.ReadUInt32();
+        _lengths = ReadHuffman(reader);
+        _distances = ReadHuffman(reader);
+        byte[] output = reader.ReadBytes() ?? [];
+        _output = new byte[Math.Max(WindowSize * 2, output.Length)];
+        output.CopyTo(_output, 0);
+        _outputLength = output.Length;
+        _delivered = reader.ReadInt32();
+        _adler = reader.ReadUInt32();
+        _crc = reader.ReadUInt32();
+        _outputSize = reader.ReadUInt32();
+        DictionaryId = reader.ReadUInt32();
+    }
+
+    static void WriteHuffman(SnapshotWriter writer, Huffman? table)
+    {
+        writer.Write(table != null);
+        if (table == null)
+        {
+            return;
+        }
+
+        writer.WriteArray(table.Counts);
+        writer.WriteArray(table.Symbols);
+    }
+
+    static Huffman? ReadHuffman(SnapshotReader reader)
+    {
+        if (!reader.ReadBool())
+        {
+            return null;
+        }
+
+        short[] counts = reader.ReadArray<short>() ?? [];
+        short[] symbols = reader.ReadArray<short>() ?? [];
+        var table = new Huffman(symbols.Length);
+        counts.AsSpan(0, Math.Min(counts.Length, table.Counts.Length)).CopyTo(table.Counts);
+        symbols.CopyTo(table.Symbols, 0);
+        return table;
+    }
 
     /// <summary>A copy with the same state (inflateCopy).</summary>
     public ZlibStreamInflater Clone()

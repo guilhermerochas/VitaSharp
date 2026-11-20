@@ -57,7 +57,7 @@ public sealed partial class SysmemKernel
             return SceError.INVALID_UID;
         }
 
-        uint cls = kernelObject is KernelData { Kind: KernelData.ClassObject } data ? data.Aux : RootClass();
+        uint cls = ClassOf(kernelObject);
         if (classOut != 0)
         {
             GuestMemory.W32(classOut, cls);
