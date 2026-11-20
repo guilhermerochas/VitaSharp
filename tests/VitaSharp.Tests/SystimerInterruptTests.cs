@@ -28,16 +28,16 @@ public sealed class SystimerInterruptTests(GuestMemoryFixture fixture) : IDispos
 
     private SystemServicesVsh Services => _harness.Module<SystemServicesVsh>();
 
-    /// <summary>ARM code that adds 1 to the word at <paramref name="target"/>, stores r0 and r1 after it, returns 0.</summary>
+    /// <summary>ARM code that stores r0 and r1 after the word at <paramref name="target"/>, then adds 1 to it; returns 0.</summary>
     private uint Counter(uint target)
     {
         uint code = _harness.Alloc(48);
         GuestMemory.W32(code, 0xE59FC01C); // ldr r12, [pc, #28]  (the word at +36)
-        GuestMemory.W32(code + 4, 0xE59C2000); // ldr r2, [r12]
-        GuestMemory.W32(code + 8, 0xE2822001); // add r2, r2, #1
-        GuestMemory.W32(code + 12, 0xE58C2000); // str r2, [r12]
-        GuestMemory.W32(code + 16, 0xE58C0004); // str r0, [r12, #4]
-        GuestMemory.W32(code + 20, 0xE58C1008); // str r1, [r12, #8]
+        GuestMemory.W32(code + 4, 0xE58C0004); // str r0, [r12, #4]
+        GuestMemory.W32(code + 8, 0xE58C1008); // str r1, [r12, #8]
+        GuestMemory.W32(code + 12, 0xE59C2000); // ldr r2, [r12]
+        GuestMemory.W32(code + 16, 0xE2822001); // add r2, r2, #1
+        GuestMemory.W32(code + 20, 0xE58C2000); // str r2, [r12]
         GuestMemory.W32(code + 24, 0xE3A00000); // mov r0, #0
         GuestMemory.W32(code + 28, 0xE12FFF1E); // bx lr
         GuestMemory.W32(code + 32, 0xE12FFF1E);
@@ -208,8 +208,8 @@ public sealed class SystimerInterruptTests(GuestMemoryFixture fixture) : IDispos
         Assert.True(Services.IntrSchedule(LongRangeLine0).Dispatcher);
         Assert.Equal(0u, GuestMemory.R32(seen));
         clock.Advance(1000);
-        Until(() => GuestMemory.R32(seen) == 1, "the dispatcher raising the timer's line");
-        Assert.Equal(id, GuestMemory.R32(seen + 4));
+        // another thread's handler: the test waits for both of its stores (a weakly ordered host may show them apart)
+        Until(() => GuestMemory.R32(seen) == 1 && GuestMemory.R32(seen + 4) == id && GuestMemory.R32(seen + 8) == 0x77, "the dispatcher raising the timer's line (id, argument)");
         Assert.Equal(0, Call(Services, "ksceKernelSysTimerStopCount", id));
     }
 
