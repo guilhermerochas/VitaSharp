@@ -142,15 +142,15 @@ public sealed class IftuCscTests(GuestMemoryFixture fixture) : IDisposable
     [MemberData(nameof(Colours))]
     public void Yuv420AndNv12BecomeRgbThroughBt601(byte luma, byte blue, byte red, int r, int g, int b)
     {
-        const uint width = 32, height = 4;
-        uint y = _harness.Alloc(width * height);
-        GuestMemory.Span(y, (int)(width * height)).Fill(luma);
+        const uint Width = 32, Height = 4;
+        uint y = _harness.Alloc(Width * Height);
+        GuestMemory.Span(y, (int)(Width * Height)).Fill(luma);
         uint cb = _harness.Alloc(16 * 2);
         uint cr = _harness.Alloc(16 * 2);
         GuestMemory.Span(cb, 32).Fill(blue);
         GuestMemory.Span(cr, 32).Fill(red);
-        uint interleaved = _harness.Alloc(width * 2);
-        for (uint i = 0; i < width * 2; i += 2)
+        uint interleaved = _harness.Alloc(Width * 2);
+        for (uint i = 0; i < Width * 2; i += 2)
         {
             GuestMemory.Write(interleaved + i, blue);
             GuestMemory.Write(interleaved + i + 1, red);
@@ -158,13 +158,13 @@ public sealed class IftuCscTests(GuestMemoryFixture fixture) : IDisposable
 
         foreach ((uint source, uint parameters) in new[]
         {
-            (PlaneState(Yuv420, width, height, y, cb, cr), Params(1, 0, Block(Bt601))),
-            (PlaneState(Nv12, width, height, y, interleaved), Params(1, 0, Block(Bt601))),
+            (PlaneState(Yuv420, Width, Height, y, cb, cr), Params(1, 0, Block(Bt601))),
+            (PlaneState(Nv12, Width, Height, y, interleaved), Params(1, 0, Block(Bt601))),
         })
         {
-            uint output = _harness.Alloc(width * height * 4);
-            Assert.Equal(0, Csc(FrameBuffer(Rgbx8888, width, height, output), source, parameters));
-            for (uint pixel = 0; pixel < width * height; pixel++)
+            uint output = _harness.Alloc(Width * Height * 4);
+            Assert.Equal(0, Csc(FrameBuffer(Rgbx8888, Width, Height, output), source, parameters));
+            for (uint pixel = 0; pixel < Width * Height; pixel++)
             {
                 uint value = GuestMemory.R32(output + pixel * 4);
                 Assert.InRange((int)(value & 0xFF), r - 2, r + 2);
