@@ -388,6 +388,10 @@ internal static class KernelSnapshot
                 case Callback c:
                     c.Resolve(table);
                     break;
+                case TimerObject timer:
+                    timer.ResolveRegistrations(table);
+                    timer.ArmLoaded(); // its armed event fires again in guest time
+                    break;
                 case EventObject e:
                     e.ResolveRegistrations(table);
                     break;

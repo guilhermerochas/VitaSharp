@@ -538,10 +538,13 @@ public sealed partial class TimerObject
         w.Write(Interval);
         w.Write(NextEvent);
         w.Write(_deleted);
-        // added 19/11/2026: the callbacks registered to the timer (older states load with none)
+        // added 19/11/2026: the callbacks registered to the timer (older states load with none), then the user bits and
+        // user data of its event (sync8; older states load with none)
         lock (this)
         {
             SaveRegistrations(w);
+            w.Write(UserPattern);
+            w.Write(LastUserData);
         }
     }
 
@@ -558,6 +561,11 @@ public sealed partial class TimerObject
         NextEvent = r.ReadUInt64();
         _deleted = r.ReadBool();
         LoadRegistrations(r);
+        if (!r.AtEnd)
+        {
+            UserPattern = r.ReadUInt32();
+            LastUserData = r.ReadUInt64();
+        }
     }
 }
 

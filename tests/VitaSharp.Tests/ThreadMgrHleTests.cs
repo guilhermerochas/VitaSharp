@@ -2177,10 +2177,11 @@ public sealed class ThreadMgrHleTests(GuestMemoryFixture fx) : IDisposable
             Assert.Equal(0, Call(Tm, "sceKernelGetTimerEventRemainingTime", t, new Ptr<ulong>(rem)));
             Assert.Equal(15000ul, GuestMemory.Read<ulong>(rem)); // the period less the 5 ms that passed
             Assert.Equal(0, Call(Tm, "_sceKernelGetTimerEventRemainingTime", t, new Ptr<ulong>(rem)));
-            // the timer is an event object: the wait blocks until the period ends, then ends with EVENT_TIMER (0x8000)
+            // the timer is an event object: the wait (for its bit, as for any event: the pattern is matched) blocks
+            // until the period ends, then ends with EVENT_TIMER (0x8000)
             using (var periodEnds = new System.Threading.Timer(_ => Volatile.Write(ref now, 1_000_000 + 20001), null, 50, Timeout.Infinite))
             {
-                Assert.Equal(0, Call(Tm, "sceKernelWaitEvent", t, 0u, new Ptr<uint>(pat), new Ptr<ulong>(0), new Ptr<uint>(_h.Word(1_000_000))));
+                Assert.Equal(0, Call(Tm, "sceKernelWaitEvent", t, EventBits.Timer, new Ptr<uint>(pat), new Ptr<ulong>(0), new Ptr<uint>(_h.Word(1_000_000))));
             }
             Assert.Equal(1_000_000ul + 20001, Volatile.Read(ref now)); // it did not end before the period
             Assert.Equal(EventBits.Timer, GuestMemory.R32(pat));
@@ -2191,10 +2192,10 @@ public sealed class ThreadMgrHleTests(GuestMemoryFixture fx) : IDisposable
             Assert.Equal(0u, GuestMemory.R32(info + 0x50));      // SET, not PULSE
             Assert.Equal(1u, GuestMemory.R32(info + 0x54));      // repeat
             // auto-reset: consumed by the wait, so an immediate poll does not see it
-            Assert.Equal(SceError.EVENT_COND, Call(Tm, "sceKernelPollEvent", t, 0u, new Ptr<uint>(pat), new Ptr<ulong>(0)));
+            Assert.Equal(SceError.EVENT_COND, Call(Tm, "sceKernelPollEvent", t, EventBits.Timer, new Ptr<uint>(pat), new Ptr<ulong>(0)));
             // after the next period it is there again
             Volatile.Write(ref now, 1_000_000 + 40001);
-            Assert.Equal(0, Call(Tm, "sceKernelPollEvent", t, 0u, new Ptr<uint>(pat), new Ptr<ulong>(0)));
+            Assert.Equal(0, Call(Tm, "sceKernelPollEvent", t, EventBits.Timer, new Ptr<uint>(pat), new Ptr<ulong>(0)));
             Assert.Equal(EventBits.Timer, GuestMemory.R32(pat));
             Assert.Equal(0, Call(Tm, "sceKernelClearEvent", t, 0u));
             // cancel disarms
@@ -2206,7 +2207,7 @@ public sealed class ThreadMgrHleTests(GuestMemoryFixture fx) : IDisposable
             Assert.Equal(0, Call(Tm, "sceKernelCancelEvent", t, new Ptr<uint>(n)));
             // a timeout counts on the process clock as it runs
             timer.Clock = processClock;
-            Assert.Equal(SceError.WAIT_TIMEOUT, Call(Tm, "sceKernelWaitEvent", t, 0u, new Ptr<uint>(pat), new Ptr<ulong>(0), new Ptr<uint>(_h.Word(1000))));
+            Assert.Equal(SceError.WAIT_TIMEOUT, Call(Tm, "sceKernelWaitEvent", t, EventBits.Timer, new Ptr<uint>(pat), new Ptr<ulong>(0), new Ptr<uint>(_h.Word(1000))));
             Assert.Equal(0, Call(Tm, "_sceKernelSetTimerEvent", t, 1, new Ptr<ulong>(iv), 0));
         });
     }
