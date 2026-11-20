@@ -432,4 +432,70 @@ public sealed class KernelZlibTests(GuestMemoryFixture fixture) : IDisposable
             Assert.Equal((uint)(1000 + (1000 >> 12) + (1000 >> 14) + 13), (uint)Call(t, 0x05F712FE, stream, 1000));
         });
     }
+
+    /// <summary>Saves the zlib streams of the module with the guest's z_stream (what a save state holds), ends the
+    /// stream (as a session that went on would; deflateEnd of an unfinished stream answers Z_DATA_ERROR, as zlib's),
+    /// and loads both back.</summary>
+    private void SaveEndAndLoad(GuestThread t, uint stream, uint endNid)
+    {
+        var state = (VitaSharp.Core.SaveState.ISnapshotState)_harness.Module<VitaSharp.Core.Hle.Modules.SystemServicesVsh>();
+        var writer = new VitaSharp.Core.SaveState.SnapshotWriter();
+        state.SaveState(writer);
+        byte[] guestStream = GuestMemory.Span(stream, 0x38).ToArray();
+        Assert.Contains(Call(t, endNid, stream), new[] { ZOk, ZDataError });
+        guestStream.CopyTo(GuestMemory.Span(stream, 0x38));
+        state.LoadState(new VitaSharp.Core.SaveState.SnapshotReader(writer.Data.ToArray()));
+    }
+
+    [Fact]
+    public void ASaveStateInTheMiddleOfAnInflateCarriesTheStream()
+    {
+        byte[] sample = Sample();
+        byte[] compressed = HostCompress(sample, "zlib");
+        _harness.OnGuest(t =>
+        {
+            uint stream = _harness.Alloc(0x38);
+            Assert.Equal(ZOk, Call(t, InflateInit, stream, Version, 0x38));
+            uint input = Bytes(compressed);
+            uint output = _harness.Alloc((uint)sample.Length + 64);
+            int half = compressed.Length / 2;
+            GuestMemory.W32(stream, input);
+            GuestMemory.W32(stream + 4, (uint)half);
+            GuestMemory.W32(stream + 0xC, output);
+            GuestMemory.W32(stream + 0x10, (uint)sample.Length + 64);
+            Assert.Equal(ZOk, Call(t, Inflate, stream, 0));
+            SaveEndAndLoad(t, stream, InflateEnd);
+            GuestMemory.W32(stream + 4, GuestMemory.R32(stream + 4) + (uint)(compressed.Length - half));
+            Assert.Equal(ZStreamEnd, Call(t, Inflate, stream, 0));
+            Assert.Equal(sample, GuestMemory.Span(output, sample.Length).ToArray());
+        });
+    }
+
+    [Fact]
+    public void ASaveStateInTheMiddleOfADeflateCarriesTheStream()
+    {
+        byte[] sample = Sample();
+        _harness.OnGuest(t =>
+        {
+            uint stream = _harness.Alloc(0x38);
+            Assert.Equal(ZOk, Call(t, DeflateInit, stream, 6, Version, 0x38));
+            uint input = Bytes(sample);
+            uint output = _harness.Alloc((uint)sample.Length + 256);
+            int half = sample.Length / 2;
+            GuestMemory.W32(stream, input);
+            GuestMemory.W32(stream + 4, (uint)half);
+            GuestMemory.W32(stream + 0xC, output);
+            GuestMemory.W32(stream + 0x10, (uint)sample.Length + 256);
+            Assert.Equal(ZOk, Call(t, Deflate, stream, 0));
+            SaveEndAndLoad(t, stream, DeflateEnd);
+            GuestMemory.W32(stream + 4, (uint)(sample.Length - half));
+            Assert.Equal(ZStreamEnd, Call(t, Deflate, stream, 4));
+            int packed = (int)GuestMemory.R32(stream + 0x14);
+            using var source = new MemoryStream(GuestMemory.Span(output, packed).ToArray());
+            using var decoder = new ZLibStream(source, CompressionMode.Decompress);
+            using var plain = new MemoryStream();
+            decoder.CopyTo(plain);
+            Assert.Equal(sample, plain.ToArray());
+        });
+    }
 }
