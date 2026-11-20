@@ -23,8 +23,9 @@ namespace VitaSharp.Core.Hle.Modules;
 /// holds the simple events, the message pipes and the timers.
 /// </para>
 /// <para>
-/// Alarms, work queues and work tasks are firmware objects VitaSharp's thread manager does not create (no kernel code
-/// it runs makes one), so their lists are empty and their info calls answer the unknown-ID error of the class.
+/// Work queues and work tasks are not listed here: VitaSharp's one queue is the global work queue (see
+/// ksceKernelEnqueueWorkQueue), not an object of the class, so their lists are empty and their info calls answer the
+/// unknown-ID error of the class. Alarms are listed (see ksceKernelRegisterTimer).
 /// </para>
 /// </summary>
 public sealed partial class ThreadmgrKernel
@@ -408,13 +409,13 @@ public sealed partial class ThreadmgrKernel
     [Hle(Nid = 0x19F3E92A, Library = "SceThreadmgrForDriver")]
     int NID_19F3E92A(int uid, uint info) => InfoOf(TimerClass, uid, info, SceError.UNKNOWN_TIMER_ID);
 
-    /// <summary>NID_2828F884(level, buf, size, count): every alarm (0x38 each; none in VitaSharp).</summary>
+    /// <summary>NID_2828F884(level, buf, size, count): every alarm (SceKernelAlarmInfo, 0x38).</summary>
     [Hle(Nid = 0x2828F884, Library = "SceThreadmgrForDriver")]
-    int NID_2828F884(uint level, uint buffer, uint size, uint count) => ListAll(NoObjects(0x38), buffer, size, count);
+    int NID_2828F884(uint level, uint buffer, uint size, uint count) => ListAll(AlarmClass, buffer, size, count);
 
-    /// <summary>NID_4A038803(uid, info): an alarm's info (0x38): the size check, then the unknown alarm.</summary>
+    /// <summary>NID_4A038803(uid, info): an alarm's info (0x38).</summary>
     [Hle(Nid = 0x4A038803, Library = "SceThreadmgrForDriver")]
-    int NID_4A038803(int uid, uint info) => InfoOf(NoObjects(0x38), uid, info, UnknownAlarmId);
+    int NID_4A038803(int uid, uint info) => InfoOf(AlarmClass, uid, info, UnknownAlarmId);
 
     /// <summary>NID_920EA1CA(level, buf, size, count): every work queue (0x40 or 0x48 each; none in VitaSharp).</summary>
     [Hle(Nid = 0x920EA1CA, Library = "SceThreadmgrForDriver")]
