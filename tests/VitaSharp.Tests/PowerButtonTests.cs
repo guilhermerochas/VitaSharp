@@ -143,7 +143,7 @@ public sealed class PowerButtonTests(GuestMemoryFixture fixture) : IDisposable
         Assert.Equal(0, Call(power, "scePowerRegisterCallback", callbacks[0]));
         Callback callback = CallbackObject(callbacks[0]);
         Assert.Equal(1, callback.NotifyCount);
-        Assert.Equal((int)(PowerEvents.BatteryOnline | PowerEvents.PowerOnline), callback.NotifyArg);
+        Assert.Equal((int)(PowerEvents.BatteryOnline), callback.NotifyArg);
 
         Assert.Equal(PowerCallbacks.ErrAlreadyRegistered, Call(power, "scePowerRegisterCallback", callbacks[0]));
         Assert.Equal(PowerCallbacks.ErrNotCallback, Call(power, "scePowerRegisterCallback", 0x7FFF0001));
@@ -171,7 +171,7 @@ public sealed class PowerButtonTests(GuestMemoryFixture fixture) : IDisposable
         Callback game = CallbackObject(callbacks[1]);
         Consume(shell);
         Consume(game);
-        uint state = PowerEvents.BatteryOnline | PowerEvents.PowerOnline;
+        uint state = PowerEvents.BatteryOnline;
 
         PowerCallbacks registry = _harness.Emu.Vita.Power.Callbacks;
         registry.Post(0, 0, PowerEvents.ButtonPowerHold);
@@ -205,14 +205,14 @@ public sealed class PowerButtonTests(GuestMemoryFixture fixture) : IDisposable
         Assert.True(EmulationPause.IsPaused);
         // every change notifies every registrant (the button, the suspend), but an application's mask leaves both out
         Assert.Equal(2, callback.NotifyCount);
-        Assert.Equal((int)(PowerEvents.BatteryOnline | PowerEvents.PowerOnline), callback.NotifyArg);
+        Assert.Equal((int)(PowerEvents.BatteryOnline), callback.NotifyArg);
 
         system.OnButtons(VitaButtons.PowerButton, 10 * Second);
         Assert.False(system.Suspended);
         Assert.False(EmulationPause.IsPaused);
         // resuming (a state bit), then resumed (an event)
         Assert.Equal(4, callback.NotifyCount);
-        Assert.Equal((int)(PowerEvents.BatteryOnline | PowerEvents.PowerOnline | PowerEvents.SystemResume), callback.NotifyArg);
+        Assert.Equal((int)(PowerEvents.BatteryOnline | PowerEvents.SystemResume), callback.NotifyArg);
         // the waking press does not put the system back in standby on its release
         system.OnButtons(VitaButtons.None, 10 * Second + Second / 5);
         Assert.False(system.Suspended);
@@ -232,7 +232,7 @@ public sealed class PowerButtonTests(GuestMemoryFixture fixture) : IDisposable
         system.OnButtons(VitaButtons.PowerButton, 0);
         system.OnButtons(VitaButtons.None, Second / 5);
         Assert.False(system.Suspended);
-        Assert.Equal(unchecked((int)(PowerEvents.BatteryOnline | PowerEvents.PowerOnline | PowerEvents.ButtonPowerPress)), callback.NotifyArg);
+        Assert.Equal(unchecked((int)(PowerEvents.BatteryOnline | PowerEvents.ButtonPowerPress)), callback.NotifyArg);
 
         // the shell answers with scePowerRequestSuspend: standby, the shell told of the suspend
         Assert.Equal(0, Call(_harness.Module<SystemMisc>(), "scePowerRequestSuspend"));
