@@ -587,4 +587,137 @@ public sealed partial class SysmemKernel
         ksceKernelFreeHeapMemory(heap, pointer);
         return moved;
     }
+
+    // ------------------------------------------------------------------ PUID references and lookups
+
+    /// <summary>The PUID reference of NID_188C8742 / NID_9C23DFF7 / NID_2C15615F: the kernel's pid 0x80020005, a handle
+    /// that is not a UID 0x80024501 (*obj cleared), else ksceGUIDReferObjectWithClass on the object behind it (its
+    /// body into *obj); the GUID.</summary>
+    int PuidReferObject(int pid, int puid, uint cls, uint objOut)
+    {
+        if (pid == KernelSpace.KernelPid)
+        {
+            return SceError.INVALID_ARGUMENT;
+        }
+
+        if (!IsGuidForm(puid))
+        {
+            if (objOut != 0)
+            {
+                GuestMemory.W32(objOut, 0);
+            }
+
+            return InvalidPuid;
+        }
+
+        int guid = kscePUIDtoGUID(pid, puid);
+        if (guid < 0)
+        {
+            return guid;
+        }
+
+        int referred = cls != 0 ? ksceGUIDReferObjectWithClass(guid, cls, objOut) : ksceGUIDReferObject(guid, objOut);
+        return referred < 0 ? referred : guid;
+    }
+
+    /// <summary>PUIDReferObject (0x188C8742)(pid, puid, SceObjectBase **obj): a reference to the object behind the
+    /// process handle (released with ksceGUIDReleaseObject); the GUID.</summary>
+    [Hle(Nid = 0x188C8742, Library = "SceSysmemForKernel")]
+    int NID_188C8742(int pid, int puid, uint objOut) => PuidReferObject(pid, puid, 0, objOut);
+
+    /// <summary>PUIDReferObjectWithClass (0x9C23DFF7)(pid, puid, SceClass *cls, SceObjectBase **obj): the same for an
+    /// object of the class (NULL output 0x80020005).</summary>
+    [Hle(Nid = 0x9C23DFF7, Library = "SceSysmemForKernel")]
+    int NID_9C23DFF7(int pid, int puid, uint cls, uint objOut)
+    {
+        if (objOut == 0 && pid != KernelSpace.KernelPid && IsGuidForm(puid))
+        {
+            return SceError.INVALID_ARGUMENT;
+        }
+
+        return PuidReferObject(pid, puid, cls, objOut);
+    }
+
+    /// <summary>PUIDReferObject at level 7 (0x2C15615F)(pid, puid, SceObjectBase **obj).</summary>
+    [Hle(Nid = 0x2C15615F, Library = "SceSysmemForKernel")]
+    int NID_2C15615F(int pid, int puid, uint objOut) => PuidReferObject(pid, puid, 0, objOut);
+
+    /// <summary>PUIDOpenByName (0x201E970B)(pid, name): kscePUIDOpenByName.</summary>
+    [Hle(Nid = 0x201E970B, Library = "SceSysmemForKernel")]
+    int NID_201E970B(int pid, uint name) => kscePUIDOpenByName(pid, name);
+
+    /// <summary>GUIDFindByName (0xBDE00106)(name): the GUID of the object with that name (no reference kept); NULL
+    /// 0x80020005.</summary>
+    [Hle(Nid = 0xBDE00106, Library = "SceSysmemForKernel")]
+    int NID_BDE00106(uint name) => NID_F49C0BE8(name);
+
+    /// <summary>NID_4E6D8BC3(): 2 when the running thread's process has both kernel access bits (0x30) of its control
+    /// block, 0 otherwise; without a thread control block (TPIDRPRW 0, as VitaSharp's CPU reads it with the thread
+    /// manager in HLE) the firmware's own answer: 0x80027101.</summary>
+    [Hle(Nid = 0x4E6D8BC3, Library = "SceSysmemForKernel", Default = true)]
+    int NID_4E6D8BC3() => unchecked((int)0x80027101);
+
+    /// <summary>ksceKernelAllocPartitionMemBlock (0x6DB46017)(partition, name, type, size, opt): a block of the
+    /// partition (size page-aligned, else 0x80020005; an unknown type 0x80024B01). VitaSharp's partitions are the
+    /// address spaces' memory, so the block comes from ksceKernelAllocMemBlock.</summary>
+    [Hle(Nid = 0x6DB46017, Library = "SceSysmemForKernel")]
+    void ksceKernelAllocPartitionMemBlock(HleContext context)
+    {
+        uint name = context.Gpr(1);
+        uint type = context.Gpr(2);
+        uint size = context.Gpr(3);
+        uint option = context.Gpr(4);
+        if ((size & 0xFFF) != 0)
+        {
+            context.Return(SceError.INVALID_ARGUMENT);
+            return;
+        }
+
+        if (MemBlockTypeEntry(type) is null)
+        {
+            context.Return(InvalidMemBlockType);
+            return;
+        }
+
+        context.Return(ksceKernelAllocMemBlock(name, type, size, option));
+    }
+
+    /// <summary>Sets (NID_0B36F7F9) or clears (NID_6E82D5A0) attribute bits of a heap: only 0x10 may be given
+    /// (0x80020005 otherwise), a UID that is not a heap 0x80024901; 0.</summary>
+    int ChangeHeapAttributes(int heap, uint bits, bool set)
+    {
+        if ((bits & ~0x10u) != 0)
+        {
+            return SceError.INVALID_ARGUMENT;
+        }
+
+        if (HeapOf(heap) is not { } data)
+        {
+            return InvalidHeap;
+        }
+
+        data.Aux = set ? data.Aux | bits : data.Aux & ~bits;
+        return 0;
+    }
+
+    /// <summary>NID_0B36F7F9(heap, bits): sets the heap's attribute bits.</summary>
+    [Hle(Nid = 0x0B36F7F9, Library = "SceSysmemForKernel")]
+    int NID_0B36F7F9(int heap, uint bits) => ChangeHeapAttributes(heap, bits, set: true);
+
+    /// <summary>NID_6E82D5A0(heap, bits): clears the heap's attribute bits.</summary>
+    [Hle(Nid = 0x6E82D5A0, Library = "SceSysmemForKernel")]
+    int NID_6E82D5A0(int heap, uint bits) => ChangeHeapAttributes(heap, bits, set: false);
+
+    /// <summary>NID_CF3C3F7A(size, SceAllocOpt *opt): a block of one of sysmem's own heaps (the option NULL or 0x14
+    /// bytes, else NULL): the kernel's general heap here, given back with ksceKernelFree.</summary>
+    [Hle(Nid = 0xCF3C3F7A, Library = "SceSysmemForKernel", ReturnsValue = true)]
+    uint NID_CF3C3F7A(uint size, uint option)
+    {
+        if (option != 0 && GuestMemory.R32(option) != HeapAllocOptSize)
+        {
+            return 0;
+        }
+
+        return ksceKernelAlloc(size);
+    }
 }
