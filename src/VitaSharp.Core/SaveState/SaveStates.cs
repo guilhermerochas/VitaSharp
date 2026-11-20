@@ -806,6 +806,7 @@ public static class SaveStates
             }
 
             HoldForLoad(emu, held);
+            WaitForUndoPoint(emu, UndoPointTimeoutMs);
             EmulationPause.Pause("load state", @internal: true);
             UndoState? undo = TakeUndoState(emu);
             long t0 = sw.ElapsedMilliseconds;
@@ -908,6 +909,36 @@ public static class SaveStates
 
             held.Clear();
             Thread.Sleep(5);
+        }
+    }
+
+    /// <summary>How long a load waits for the held threads to reach their safe points (<see cref="WaitForUndoPoint"/>),
+    /// as long as a save gives them by default.</summary>
+    private const int UndoPointTimeoutMs = 3000;
+
+    /// <summary>Test seam: called with the reason each time a load finds a held thread not yet at its safe point
+    /// (<see cref="WaitForUndoPoint"/>). Null in normal runs.</summary>
+    internal static Action<string>? LoadWaitingForSafePoint { get; set; }
+
+    /// <summary>
+    /// Waits, with the emulation still running, until every held thread is at its safe point, as a save does, so the
+    /// running session can be kept to go back to (<see cref="TakeUndoState"/>). The hold only asks the threads to stop
+    /// at their next safe point: one still running guest code (its next HLE call not reached yet, the usual case on a
+    /// loaded host) made the session "cannot be kept", and a load that then failed left the game stopped. After
+    /// <paramref name="timeoutMs"/> the load goes on without the way back, as for a thread that never gets there.
+    /// </summary>
+    private static void WaitForUndoPoint(Emulator emu, int timeoutMs)
+    {
+        long until = Environment.TickCount64 + timeoutMs;
+        while (SafePointProblems(emu, out _) is { } why)
+        {
+            if (Environment.TickCount64 > until)
+            {
+                return;
+            }
+
+            LoadWaitingForSafePoint?.Invoke(why);
+            Thread.Sleep(1);
         }
     }
 

@@ -60,13 +60,12 @@ public sealed class AdrenoToolsDriverLoader : IVulkanDriverProvider
                 Log.Warn("GPU driver options ignored: this is not an Adreno GPU (no /dev/kgsl-3d0)");
             return null;
         }
-        if (!NativeLibrary.TryLoad("libadrenotools.so", out var h))
+        if (!NativeProbe.CanLoad("libadrenotools.so"))
         {
             Log.Info(driver != null ? $"libadrenotools not packaged: '{driver.Meta.Name}' cannot be loaded, system Vulkan driver"
                                     : "libadrenotools not packaged: system Vulkan driver");
             return null;
         }
-        NativeLibrary.Free(h);
         // the hooks must be real files in the native library directory (extractNativeLibs), else libadrenotools
         // returns a handle whose hook fails and the device list comes back empty
         var missing = HookLibraries.Where(l => !File.Exists(Path.Combine(nativeLibDir, l))).ToArray();

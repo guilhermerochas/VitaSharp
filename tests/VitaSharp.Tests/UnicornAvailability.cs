@@ -18,9 +18,8 @@ public static class UnicornAvailability
             return "VITASHARP_SKIP_UNICORN=1";
         }
         // same resolution as Unicorn's own [DllImport("unicorn")] (deps.json runtimes/<rid>/native first)
-        if (NativeLibrary.TryLoad("unicorn", typeof(Unicorn).Assembly, null, out nint h))
+        if (NativeProbe.CanLoad("unicorn", typeof(Unicorn).Assembly))
         {
-            NativeLibrary.Free(h);
             return null;
         }
         return $"Unicorn native library not available for {RuntimeInformation.RuntimeIdentifier}";
