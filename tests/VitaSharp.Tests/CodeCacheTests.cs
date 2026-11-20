@@ -353,6 +353,118 @@ public sealed unsafe class CodeCacheTests(GuestMemoryFixture fixture) : IDisposa
         });
     }
     [Fact]
+    public void TheFrontierTranslatesTheWholeFunctionAndTheFunctionsItPointsTo()
+    {
+        if (!NativeHost)
+        {
+            return;
+        }
+
+        uint code = fixture.Memory.Alloc(0x1000, "codecache whole function");
+        GuestMemory.W32(code + 0x00, 0xE3A00000); // mov r0, #0
+        GuestMemory.W32(code + 0x04, 0xE1A00000); // nop (r2 = F)
+        GuestMemory.W32(code + 0x08, 0xE12FFF32); // blx r2
+        GuestMemory.W32(code + 0x0C, 0xEF000002); // svc #2
+        GuestMemory.W32(code + 0x10, 0xE12FFF1E); // bx lr
+        // F: the path that runs is its first block; the others are a chain of branches never taken, deeper than
+        // MaxFrontierDepth blocks from it
+        GuestMemory.W32(code + 0x400, 0xE3500000); // F: cmp r0, #0
+        GuestMemory.W32(code + 0x404, 0x1A000005); //    bne 0x420
+        GuestMemory.W32(code + 0x408, 0xE2800005); //    add r0, r0, #5
+        GuestMemory.W32(code + 0x40C, 0xE12FFF1E); //    bx lr
+        for (uint level = 0; level < 4; level++)
+        {
+            uint at = code + 0x420 + level * 0x10;
+            GuestMemory.W32(at, 0xE3500001 + level); //  cmp r0, #level + 1
+            GuestMemory.W32(at + 4, 0x1A000001); //       bne next level (at + 0x10)
+            GuestMemory.W32(at + 8, 0xE12FFF1E); //       bx lr
+        }
+
+        GuestMemory.W32(code + 0x460, 0xE2800007); //    deepest: add r0, r0, #7
+        GuestMemory.W32(code + 0x464, 0xE12FFF1E); //    bx lr
+        GuestMemory.W32(code + 0x470, code + 0x600); //  F's literal pool: the address of G (a relocation)
+        GuestMemory.W32(code + 0x600, 0xE92D4010); // G: push {r4, lr}
+        GuestMemory.W32(code + 0x604, 0xE8BD8010); //    pop {r4, pc}
+        GuestMemory.W32(code + 0x800, unchecked((uint)(0x400 - 0x800)) & 0x7FFFFFFF); // .ARM.exidx: F, G
+        GuestMemory.W32(code + 0x804, 1);
+        GuestMemory.W32(code + 0x808, unchecked((uint)(0x600 - 0x808)) & 0x7FFFFFFF);
+        GuestMemory.W32(code + 0x80C, 1);
+        LoadedModule module = Module(code, 7);
+        module.Segments[0] = new SegmentInfo(code, 0x81000000, 0x1000);
+        module.SegmentFlags[0] = (5, 0x1000, 0x1000);
+        module.ExidxTop = code + 0x800;
+        module.ExidxEnd = code + 0x810;
+        module.AbsoluteRelocations.Add((code + 0x470, code + 0x600));
+        WithNative(() =>
+        {
+            var cache = new BlockCache();
+            var codeCache = new CodeCache(null, cache);
+            codeCache.ModuleLoaded(module);
+            codeCache.PrecompilePending(null, CancellationToken.None, workers: 2);
+            CodePrecompiler run = Assert.Single(codeCache.Runs);
+            Assert.True(run.WaitFinished(TimeSpan.FromSeconds(60)));
+            Assert.DoesNotContain(code + 0x600, Translated(cache)); // G: only a pointer names it
+
+            using var core = new CpuCore(cache);
+            core.State->R[2] = code + 0x400;
+            for (int i = 0; i < 2 * Jit.MinExecutions; i++)
+            {
+                Assert.Equal(5u, Run(core, code));
+            }
+
+            Assert.True(Jit.WaitIdle(TimeSpan.FromSeconds(60)));
+            Assert.True(run.WaitFinished(TimeSpan.FromSeconds(60)));
+            HashSet<uint> translated = Translated(cache);
+            // the whole of F, however deep the branch that never ran
+            Assert.Contains(code + 0x450, translated);
+            Assert.Contains(code + 0x460, translated);
+            // the function F points to, before anything calls it
+            Block pointed = cache.Get(code + 0x600, false);
+            Assert.True(pointed.Ahead);
+            Assert.Equal(Jit.AheadPending, pointed.JitState);
+            codeCache.Stop();
+        });
+    }
+
+    [Fact]
+    public void TheFlowTranslatesTheCasesOfASwitch()
+    {
+        if (!NativeHost)
+        {
+            return;
+        }
+
+        uint code = fixture.Memory.Alloc(0x1000, "codecache switch");
+        GuestMemory.Write<ushort>(code + 0x100, 0x2802); // cmp r0, #2
+        GuestMemory.Write<ushort>(code + 0x102, 0xD806); // bhi default (0x112)
+        GuestMemory.Write<ushort>(code + 0x104, 0xE8DF); // tbb [pc, r0]
+        GuestMemory.Write<ushort>(code + 0x106, 0xF000);
+        GuestMemory.Write<byte>(code + 0x108, 2); // cases 0x10C, 0x10E, 0x110
+        GuestMemory.Write<byte>(code + 0x109, 3);
+        GuestMemory.Write<byte>(code + 0x10A, 4);
+        GuestMemory.Write<byte>(code + 0x10B, 0);
+        for (uint at = 0x10C; at <= 0x112; at += 2)
+        {
+            GuestMemory.Write<ushort>(code + at, 0x4770); // bx lr
+        }
+
+        LoadedModule module = Module(code, 8);
+        module.StartEntry = code + 0x101; // Thumb
+        module.Segments[0] = new SegmentInfo(code, 0x81000000, 0x1000);
+        module.SegmentFlags[0] = (5, 0x1000, 0x1000);
+        WithNative(() =>
+        {
+            var cache = new BlockCache();
+            var codeCache = new CodeCache(null, cache);
+            codeCache.ModuleLoaded(module);
+            codeCache.PrecompilePending(null, CancellationToken.None, workers: 2);
+            HashSet<uint> boot = Translated(cache);
+            Assert.Superset(new HashSet<uint> { code + 0x100, code + 0x104, code + 0x10C, code + 0x10E, code + 0x110, code + 0x112 }, boot);
+            codeCache.Stop();
+        });
+    }
+
+    [Fact]
     public void PrecompiledCodeThatTheGameRewritesIsDropped()
     {
         if (!NativeHost)

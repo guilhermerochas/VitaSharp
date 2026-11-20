@@ -325,23 +325,21 @@ public sealed class CodeCache
 
         Func<uint, bool>? follow = null;
         Func<uint, uint>? functionStart = null;
+        Action<uint, List<(uint Pc, bool Thumb)>>? pointersOf = null;
         if (Analyze && modules.Length > 0)
         {
-            uint[][] starts = new uint[modules.Length][];
+            var maps = new ModuleCodeMap[modules.Length];
             for (int i = 0; i < modules.Length; i++)
             {
                 // the exception index only says where functions start (the frontier fills in the functions the game
                 // runs); the analysis itself starts from the module's entry points
                 seeds.AddRange(CodePrecompiler.ModuleEntryPoints(modules[i]).Where(e => e.Priority != CodePrecompiler.Priority.Index));
-                starts[i] = CodePrecompiler.FunctionStarts(modules[i]);
+                maps[i] = ModuleCodeMap.Build(modules[i]);
             }
 
-            follow = pc => Array.Exists(modules, module => CodePrecompiler.InCode(module, pc));
-            functionStart = pc =>
-            {
-                int i = Array.FindIndex(modules, module => CodePrecompiler.InCode(module, pc));
-                return i >= 0 ? CodePrecompiler.FunctionContaining(starts[i], pc) : 0;
-            };
+            follow = pc => Array.Exists(maps, map => map.InCode(pc));
+            functionStart = pc => Array.Find(maps, map => map.InCode(pc))?.FunctionContaining(pc) ?? 0;
+            pointersOf = (function, targets) => Array.Find(maps, map => map.InCode(function))?.PointersOfFunction(function, targets);
         }
         if (seeds.Count == 0)
         {
@@ -356,7 +354,7 @@ public sealed class CodeCache
             }
         }
 
-        var run = CodePrecompiler.Run(_code, AddressSpace.Current, seeds, follow, waitFor, workers, progress, cancel, functionStart);
+        var run = CodePrecompiler.Run(_code, AddressSpace.Current, seeds, follow, waitFor, workers, progress, cancel, functionStart, pointersOf);
         bool stopNow;
         lock (_lock)
         {
@@ -499,7 +497,7 @@ public sealed class CodeCache
 
             missed++;
             LoadedModule? owner = Array.Find(modules, m => CodePrecompiler.InCode(m, block.Start));
-            string name = owner?.Name ?? "(outside the modules)";
+            string name = owner?.Name ?? $"(outside the modules: {OutsideName(block)})";
             byModule[name] = byModule.GetValueOrDefault(name) + 1;
             if (lines.Count < samples)
             {
@@ -512,6 +510,13 @@ public sealed class CodeCache
         return $"ARM code precompilation: {used} precompiled blocks ran, {missed} compiled while running ({coverage:F1}% of the run blocks were precompiled), "
             + $"{unused} precompiled and not reached, {Jit.AheadBytes / (1024.0 * 1024):F1} MB of precompiled code in the arena (budget {Jit.AheadBudget >> 20} MB); while running: "
             + string.Join(", ", byModule.OrderByDescending(kv => kv.Value).Select(kv => $"{kv.Key} {kv.Value}")) + "; samples: " + string.Join("; ", lines);
+    }
+
+    /// <summary>The guest memory block holding code outside every module (diagnostics).</summary>
+    private static string OutsideName(Block block)
+    {
+        using AddressSpace.Activation activation = AddressSpace.Use(block.Owner?.Space ?? AddressSpace.Current);
+        return GuestMemory.Instance?.FindBlock(block.Start)?.Name ?? "?";
     }
 
     private static string PreviousInstruction(Block block)

@@ -28,6 +28,33 @@ public static unsafe class Relocation
     [SuppressMessage("Style", "IDE1006", Justification = "[ThreadStatic]: t_camelCase; .editorconfig cannot select the attribute")]
     [ThreadStatic] private static uint t_patchedEnd;
 
+    /// <summary>While <see cref="RelocateCollectingTargets"/> runs: the (patched address, absolute value) of every
+    /// relocation that writes a whole address (ABS32, TARGET1 and the MOVW of a MOVW/MOVT pair).</summary>
+    [SuppressMessage("Style", "IDE1006", Justification = "[ThreadStatic]: t_camelCase; .editorconfig cannot select the attribute")]
+    [ThreadStatic] private static List<(uint Site, uint Value)>? t_absoluteTargets;
+
+    /// <summary>
+    /// <see cref="Relocate"/> that also returns, for every relocation writing an absolute address, where it was written
+    /// and the address: the module's own pointers (to functions: vtables, callback tables, function pointers loaded
+    /// with MOVW/MOVT or from a literal pool; to data), which is how the code precompilation finds functions only
+    /// reached through a pointer (<see cref="Cpu.CodePrecompiler"/>).
+    /// </summary>
+    public static List<(uint Site, uint Value)> RelocateCollectingTargets(ReadOnlySpan<byte> data, IReadOnlyDictionary<int, SegmentInfo> segs)
+    {
+        var targets = new List<(uint Site, uint Value)>();
+        t_absoluteTargets = targets;
+        try
+        {
+            Relocate(data, segs);
+        }
+        finally
+        {
+            t_absoluteTargets = null;
+        }
+
+        return targets;
+    }
+
     private static byte* At(uint p) => t_imageBase != null ? t_imageBase + p : GuestMemory.Ptr(p);
 
     /// <summary>Applies a relocation stream to a module image in a host buffer (segments laid out at the offsets in
@@ -75,6 +102,11 @@ public static unsafe class Relocation
         {
             t_patchedLow = Math.Min(t_patchedLow, p);
             t_patchedEnd = Math.Max(t_patchedEnd, p + 4);
+        }
+
+        if (t_absoluteTargets != null && code is Abs32 or Target1 or MovwAbsNc or ThumbMovwAbsNc)
+        {
+            t_absoluteTargets.Add((p, s + a));
         }
 
         switch (code)

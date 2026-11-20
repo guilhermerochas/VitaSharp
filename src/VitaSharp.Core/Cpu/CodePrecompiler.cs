@@ -13,8 +13,9 @@ namespace VitaSharp.Core.Cpu;
 /// function pointers), the JIT compiles when the game gets there.
 /// <para>
 /// Work comes in three priorities: <see cref="Priority.Cached"/> (blocks earlier sessions ran, in the order they first
-/// ran), <see cref="Priority.Frontier"/> (code near what the game runs: the exits of executed or cached blocks and the
-/// rest of the functions they are in, a few blocks deep, <see cref="MaxFrontierDepth"/>) and <see cref="Priority.Flow"/>
+/// ran), <see cref="Priority.Frontier"/> (code near what the game runs: the whole functions executed or cached blocks
+/// are in, including the cases of their switches, the functions they reference through pointers, and the functions
+/// they call, a few calls deep, <see cref="MaxFrontierDepth"/>) and <see cref="Priority.Flow"/>
 /// (everything reached from the modules' entry points). <see cref="Run"/> returns once the priorities up to the one it
 /// waits for are done; a few threads then stay in the background, translating the rest and the frontier the game opens
 /// as it runs (<see cref="Expand"/>), until <see cref="Stop"/>.
@@ -44,6 +45,8 @@ public sealed class CodePrecompiler
     private readonly AddressSpace? _space;
     private readonly Func<uint, bool>? _follow;
     private readonly Func<uint, uint>? _functionStart;
+    private readonly Action<uint, List<(uint Pc, bool Thumb)>>? _pointersOf;
+    private readonly ConcurrentDictionary<uint, byte> _expandedFunctions = new();
     private readonly ConcurrentDictionary<ulong, byte> _seen = new();
     private readonly ConcurrentQueue<(uint Pc, bool Thumb, int Depth)>[] _queues = [new(), new(), new()];
     private readonly ConcurrentQueue<Block> _executed = new();
@@ -55,12 +58,14 @@ public sealed class CodePrecompiler
     /// <summary>Background threads that keep translating after <see cref="Run"/> returns.</summary>
     public static int BackgroundWorkers => Math.Clamp(Environment.ProcessorCount / 4, 1, 3);
 
-    private CodePrecompiler(BlockCache cache, AddressSpace? space, Func<uint, bool>? follow, Func<uint, uint>? functionStart)
+    private CodePrecompiler(BlockCache cache, AddressSpace? space, Func<uint, bool>? follow, Func<uint, uint>? functionStart,
+        Action<uint, List<(uint Pc, bool Thumb)>>? pointersOf)
     {
         _cache = cache;
         _space = space;
         _follow = follow;
         _functionStart = functionStart;
+        _pointersOf = pointersOf;
     }
 
     public Result Statistics => new(Volatile.Read(ref _translated), Volatile.Read(ref _done), Volatile.Read(ref _found), _stop.IsCancellationRequested,
@@ -125,12 +130,15 @@ public sealed class CodePrecompiler
     /// <paramref name="cancel"/>), reporting (done, known so far) about every 100 ms on the calling thread; then
     /// <see cref="BackgroundWorkers"/> of them stay, at a low priority, for the rest and the frontier (null
     /// <paramref name="waitFor"/>: nothing is waited for). <paramref name="functionStart"/> gives the start of the function
-    /// containing an address (0: unknown), for <see cref="Expand"/>.
+    /// containing an address (0: unknown), for <see cref="Expand"/>; <paramref name="pointersOf"/> adds the functions a
+    /// function references through pointers (<see cref="ModuleCodeMap.PointersOfFunction"/>), which join the frontier
+    /// the first time code of that function runs.
     /// </summary>
     public static CodePrecompiler Run(BlockCache cache, AddressSpace? space, IEnumerable<((uint Pc, bool Thumb) Target, Priority Priority)> seeds,
-        Func<uint, bool>? follow, Priority? waitFor, int workers, Action<int, int>? progress, CancellationToken cancel, Func<uint, uint>? functionStart = null)
+        Func<uint, bool>? follow, Priority? waitFor, int workers, Action<int, int>? progress, CancellationToken cancel, Func<uint, uint>? functionStart = null,
+        Action<uint, List<(uint Pc, bool Thumb)>>? pointersOf = null)
     {
-        var run = new CodePrecompiler(cache, space, follow, functionStart);
+        var run = new CodePrecompiler(cache, space, follow, functionStart, pointersOf);
         foreach (((uint Pc, bool Thumb) target, Priority priority) in seeds)
         {
             if (priority != Priority.Index)
@@ -294,13 +302,9 @@ public sealed class CodePrecompiler
         }
 
         // the flow from the entry points goes everywhere it leads; cached and frontier work only a few blocks further
+        // (Follow), but all through the function they are in
         Priority next = level == (int)Priority.Flow ? Priority.Flow : Priority.Frontier;
-        int depth = level == (int)Priority.Flow ? 0 : target.Depth + 1;
-        if (next == Priority.Frontier && depth > MaxFrontierDepth)
-        {
-            return;
-        }
-
+        int depth = level == (int)Priority.Flow ? 0 : target.Depth;
         Follow(block, exits, next, depth);
     }
 
@@ -308,11 +312,31 @@ public sealed class CodePrecompiler
     {
         exits.Clear();
         StaticExitsOf(block, exits);
-        Follow(block, exits, Priority.Frontier, 1);
+        Follow(block, exits, Priority.Frontier, 0);
         // the rest of the function it is in (the exception index names the function starts)
-        if (_functionStart?.Invoke(block.Start) is { } start and not 0 && start != block.Start && _follow!(start))
+        if (_functionStart?.Invoke(block.Start) is not { } start || start == 0)
+        {
+            return;
+        }
+
+        if (start != block.Start && _follow!(start))
         {
             Add((start, block.Thumb), Priority.Frontier, 0);
+        }
+
+        // the functions it references through pointers (vtables it stores, callbacks it registers): computed branches
+        // the flow never follows, likely to run soon
+        if (_pointersOf != null && _expandedFunctions.TryAdd(start, 0))
+        {
+            exits.Clear();
+            _pointersOf(start, exits);
+            foreach ((uint Pc, bool Thumb) target in exits)
+            {
+                if (_follow!(target.Pc) && Add(target, Priority.Frontier, 0))
+                {
+                    Interlocked.Increment(ref _found);
+                }
+            }
         }
     }
 
@@ -323,9 +347,27 @@ public sealed class CodePrecompiler
             exits.Add((block.End, block.Thumb));
         }
 
+        if (block.Insts.Length > 0)
+        {
+            JumpTableTargets(in block.Insts[^1], exits);
+        }
+
+        // frontier: an exit that stays in the block's function (a branch, the return point after a call) keeps its
+        // depth, so the whole function of executed code gets translated; one that leaves it (a call) goes one deeper
+        uint function = priority == Priority.Frontier && _functionStart != null ? _functionStart(block.Start) : 0;
         foreach ((uint Pc, bool Thumb) exit in exits)
         {
-            if (_follow!(exit.Pc) && Add(exit, priority, depth))
+            int exitDepth = depth;
+            if (priority == Priority.Frontier && (function == 0 || _functionStart!(exit.Pc) != function))
+            {
+                exitDepth = depth + 1;
+                if (exitDepth > MaxFrontierDepth)
+                {
+                    continue;
+                }
+            }
+
+            if (_follow!(exit.Pc) && Add(exit, priority, exitDepth))
             {
                 Interlocked.Increment(ref _found);
             }
@@ -352,6 +394,95 @@ public sealed class CodePrecompiler
             }
         }
     }
+
+    /// <summary>The most entries a jump table may have for <see cref="JumpTableTargets"/> (compilers bound a switch's
+    /// table by its case range; a larger bound is more likely a misread than a real table).</summary>
+    public const int MaxJumpTableEntries = 1024;
+
+    /// <summary>
+    /// The case targets of a Thumb-2 table branch (TBB/TBH [PC, Rm], a compiled switch): the table follows the
+    /// instruction, and its size comes from the bound check compilers put right before it, CMP Rm, #n then BHI (n + 1
+    /// entries) or BHS/BCS (n entries) to the default case. Any other shape (a table elsewhere, no bound check) is
+    /// left to the JIT; a misread only costs compile time (blocks are decoded from the bytes that are there).
+    /// </summary>
+    public static void JumpTableTargets(in DecodedInst last, List<(uint Pc, bool Thumb)> exits)
+    {
+        if (last.Op != Op.T32_Tbb || ((last.Raw >> 16) & 0xF) != 15)
+        {
+            return;
+        }
+
+        uint index = last.Raw & 0xF;
+        bool halfwords = (last.Raw & 0x10) != 0;
+        int count = TableBound(last.Address, index);
+        uint table = last.Address + 4;
+        for (int i = 0; i < count; i++)
+        {
+            uint entry = halfwords ? (uint)ReadHalf(table + 2 * (uint)i) : ReadByte(table + (uint)i);
+            if (entry == uint.MaxValue)
+            {
+                return;
+            }
+
+            exits.Add((table + 2 * entry, true));
+        }
+    }
+
+    /// <summary>Entries of the table of a TBB/TBH at <paramref name="address"/> indexed by <paramref name="index"/>,
+    /// from the CMP + conditional branch before it; 0 when they are not there.</summary>
+    private static int TableBound(uint address, uint index)
+    {
+        // the branch to the default case: B<c> (16 bits) or B<c>.W (32 bits)
+        uint condition;
+        uint compareEnd;
+        int branch = ReadHalf(address - 2);
+        int wideFirst = ReadHalf(address - 4);
+        if (branch >= 0 && (branch & 0xF000) == 0xD000)
+        {
+            condition = (uint)(branch >> 8) & 0xF;
+            compareEnd = address - 2;
+        }
+        else if (wideFirst >= 0 && branch >= 0 && (wideFirst & 0xF800) == 0xF000 && (branch & 0xD000) == 0x8000)
+        {
+            condition = (uint)(wideFirst >> 6) & 0xF;
+            compareEnd = address - 4;
+        }
+        else
+        {
+            return 0;
+        }
+
+        if (condition is not (8 or 2))
+        {
+            return 0; // HI (index > n) or HS/CS (index >= n)
+        }
+
+        // CMP Rm, #imm8 (16 bits) or CMP.W Rm, #imm8 (32 bits, an unrotated immediate)
+        int bound = -1;
+        int compare = ReadHalf(compareEnd - 2);
+        int wideCompare = ReadHalf(compareEnd - 4);
+        if (compare >= 0 && (compare & 0xF800) == 0x2800 && ((uint)(compare >> 8) & 7) == index)
+        {
+            bound = compare & 0xFF;
+        }
+        else if (wideCompare >= 0 && compare >= 0 && (wideCompare & 0xFBF0) == 0xF1B0 && (wideCompare & 0xF) == index
+            && (compare & 0x8F00) == 0x0F00 && (compare & 0x7000) == 0 && (wideCompare & 0x400) == 0)
+        {
+            bound = compare & 0xFF;
+        }
+
+        if (bound < 0)
+        {
+            return 0;
+        }
+
+        int count = condition == 8 ? bound + 1 : bound;
+        return Math.Min(count, MaxJumpTableEntries);
+    }
+
+    private static int ReadHalf(uint address) => GuestMemory.IsMapped(address) && GuestMemory.IsMapped(address + 1) ? GuestMemory.Read<ushort>(address) : -1;
+
+    private static uint ReadByte(uint address) => GuestMemory.IsMapped(address) ? GuestMemory.Read<byte>(address) : uint.MaxValue;
 
     /// <summary>Whether execution continues after the block's last instruction once it returns: calls (BL, BLX) and
     /// supervisor calls come back to the next instruction, which the block's static exits do not name.</summary>
