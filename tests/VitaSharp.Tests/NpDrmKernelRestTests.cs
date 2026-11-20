@@ -76,7 +76,7 @@ public sealed class NpDrmKernelRestTests(GuestMemoryFixture fixture) : IDisposab
         byte[] key = Enumerable.Range(0, 16).Select(i => (byte)(0x10 + i)).ToArray();
         byte[] block = new byte[16];
         BinaryPrimitives.WriteUInt64LittleEndian(block.AsSpan(8), 0x0123456789ABCDEFUL);
-        using Aes aes = Aes.Create();
+        using var aes = Aes.Create();
         aes.Key = key;
         string expected = Convert.ToHexStringLower(aes.EncryptEcb(block, PaddingMode.None)) + ".rif";
         Assert.Equal(expected, SystemServicesVsh.RifFileName(key, 0, 0x0123456789ABCDEFUL));
