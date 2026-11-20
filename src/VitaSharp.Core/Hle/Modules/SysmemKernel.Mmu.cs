@@ -187,7 +187,7 @@ public sealed partial class SysmemKernel
 
     /// <summary>The page walk of the range functions: every page of [address, address + size) must translate
     /// (0x80022007 otherwise); the physical pages are contiguous, so the range is one physical range.</summary>
-    int MmuWalk(uint address, uint size)
+    internal int MmuWalk(uint address, uint size)
     {
         while (size != 0)
         {

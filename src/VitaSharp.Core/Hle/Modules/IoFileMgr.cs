@@ -415,14 +415,20 @@ int fd, long offset, int whence)
     [Hle]
     int sceIoDevctl(string dev, int cmd, uint arg, uint argLen, uint buf, uint bufLen)
     {
-        // 0x3001: free space query, SceIoDevInfo { s64 max_size; s64 free_size; u32 cluster_size; void *unk; }
+        // 0x3001: the device information, SceIoDevInfo { u64 capacity; u64 free; u32 cluster size; u32 0 }: the
+        // served device's drive, from the one source sceAppMgrGetDevInfo also answers from.
         if (cmd == 0x3001 && buf != 0 && bufLen >= 16)
         {
-            GuestMemory.Write(buf, 8UL * 1024 * 1024 * 1024);
-            GuestMemory.Write(buf + 8, 4UL * 1024 * 1024 * 1024);
-            if (bufLen >= 20) GuestMemory.W32(buf + 16, 4096);
+            DeviceCapacity.WriteDevInfo(buf, bufLen, DeviceRoot(dev));
         }
         return 0;
+    }
+
+    /// <summary>The host folder of a device name ("ux0:", "ux0:/" or "ux0"), null when the device is not served.</summary>
+    internal string? DeviceRoot(string dev)
+    {
+        string name = dev.Contains(':') ? dev[..(dev.IndexOf(':') + 1)] : dev + ":";
+        return Emu.Vfs.Resolve(name);
     }
 
     /// <summary>Driver-specific command on an open fd. No command is known for regular files; validate the fd, log

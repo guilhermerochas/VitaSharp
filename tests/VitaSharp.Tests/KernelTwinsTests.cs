@@ -116,8 +116,8 @@ public sealed class KernelTwinsTests(GuestMemoryFixture fixture) : IDisposable
             }
         }
 
-        // 399 since the SceDipswForDriver entries read the switches without the syscalls' checks (KernelSmallLibraries)
-        Assert.True(count >= 399, $"only {count} twins");
+        // 398 since ksceZlibDecompress follows SceKernelUtils' own codes (SysmemKernel.Utils), not libpaf's
+        Assert.True(count >= 398, $"only {count} twins");
         Assert.True(wrong.Count == 0, string.Join("\n", wrong));
     }
 
@@ -137,7 +137,6 @@ public sealed class KernelTwinsTests(GuestMemoryFixture fixture) : IDisposable
         ("ksceHidKeyboardGetIntercept", b => [b]),
         ("ksceIoGetThreadDefaultPriorityForSystem", _ => []),
         ("ksceKernelPowerTick", _ => [0]),
-        ("ksceZlibDecompress", b => [b + 0x200, 0x100, b, 0x10]),
         ("ksceMotionDevGetDeviceInfo", b => [b]),
         ("ksceNetGetsockname", b => [0xFFFFFFFF, b, b + 0x20]),
         ("ksceKernelIsGameBudget", _ => []),
