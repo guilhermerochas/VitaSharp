@@ -125,16 +125,12 @@ public sealed unsafe class NativeArm64Compiler : IBlockCompiler
             return null;
         }
         long t3 = Stopwatch.GetTimestamp();
-        int size = 0;
-        long encode = 0;
-        byte* code = rt.Code.Place(addr =>
-        {
-            long e0 = Stopwatch.GetTimestamp();
-            byte[] bytes = arm64Emitter.Assemble(addr);
-            encode = Stopwatch.GetTimestamp() - e0;
-            size = bytes.Length;
-            return bytes;
-        });
+        // the ARM64 encoding does not depend on where the code goes (absolute targets come from the literal pool):
+        // encoded before the arena lock, which then only covers the allocation
+        byte[] bytes = arm64Emitter.Assemble(0);
+        long encode = Stopwatch.GetTimestamp() - t3;
+        int size = bytes.Length;
+        byte* code = rt.Code.Place(bytes);
         Interlocked.Add(ref NativeX64Compiler.CodeBytes, size); // one counter for both native backends (Report)
         if (stubs.PatchLinks)
         {

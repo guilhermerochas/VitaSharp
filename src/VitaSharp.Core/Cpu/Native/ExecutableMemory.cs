@@ -115,30 +115,90 @@ public sealed unsafe partial class ExecutableMemory : IDisposable
         }
     }
 
+    /// <summary>Bytes reserved beyond an encoding's length when it has to be redone at another address (an x64
+    /// encoding may change length with its address: short branches to stubs within reach).</summary>
+    public const int PlaceSlack = 64;
+
+    /// <summary>Encodings that had to be redone because another thread placed code first (statistics).</summary>
+    public long PlaceRetries;
+
     /// <summary>
     /// Places code whose encoding depends on its address: <paramref name="assemble"/> is called with the execute
-    /// address the code will occupy (under the arena lock, so keep it to the final encoding step).
+    /// address the code will occupy, outside the arena lock, so threads compiling at the same time (the JIT workers
+    /// and the precompilation) never wait for each other's encoding. The encoding is first made for the address the
+    /// next block would get; if another thread placed code meanwhile, a range (its length plus
+    /// <see cref="PlaceSlack"/>) is reserved and the code is encoded again for it, so the lock only ever covers the
+    /// bump of the allocation pointer. <paramref name="assemble"/> may therefore run more than once.
     /// </summary>
     public byte* Place(Func<ulong, byte[]> assemble)
     {
+        int start = (Volatile.Read(ref _used) + 15) & ~15;
+        int reserved = 0; // 0: nothing reserved yet, the encoding is for a guessed address
+        while (true)
+        {
+            byte[] code = assemble((ulong)(_exec + start));
+            if (reserved != 0 && code.Length <= reserved)
+            {
+                Write(_exec + start, code);
+                return _exec + start;
+            }
+
+            bool placed = false;
+            lock (_lock)
+            {
+                int next = (_used + 15) & ~15;
+                if (reserved == 0 && next == start)
+                {
+                    Claim(start, code.Length);
+                    placed = true;
+                }
+                else
+                {
+                    // another thread placed code first (or the encoding at the reserved address grew): reserve a
+                    // range at the current end and encode again for it, outside the lock
+                    start = next;
+                    reserved = code.Length + PlaceSlack;
+                    Claim(start, reserved);
+                    Interlocked.Increment(ref PlaceRetries);
+                }
+            }
+
+            if (placed)
+            {
+                Write(_exec + start, code);
+                return _exec + start;
+            }
+        }
+    }
+
+    /// <summary>Places code that does not depend on its address (copied in, no encoding under the lock).</summary>
+    public byte* Place(ReadOnlySpan<byte> code)
+    {
+        int start;
         lock (_lock)
         {
-            int start = (_used + 15) & ~15;
-            byte[] code = assemble((ulong)(_exec + start));
-            if (start + code.Length > ReserveSize)
-            {
-                throw new OutOfMemoryException("JIT code arena full");
-            }
-
-            while (start + code.Length > _committed)
-            {
-                CommitMore();
-            }
-
-            _used = start + code.Length;
-            Write(_exec + start, code);
-            return _exec + start;
+            start = (_used + 15) & ~15;
+            Claim(start, code.Length);
         }
+
+        Write(_exec + start, code);
+        return _exec + start;
+    }
+
+    /// <summary>Moves the end of the used range past [start, start + size), committing what it needs (under the lock).</summary>
+    private void Claim(int start, int size)
+    {
+        if (start + size > ReserveSize)
+        {
+            throw new OutOfMemoryException("JIT code arena full");
+        }
+
+        while (start + size > _committed)
+        {
+            CommitMore();
+        }
+
+        Volatile.Write(ref _used, start + size);
     }
 
     /// <summary>Copies code to a range obtained from <see cref="Allocate"/> and makes it visible to instruction fetch.</summary>
