@@ -208,7 +208,7 @@ public sealed partial class ThreadMgr
 
     /// <summary>SceKernelEventInfo (0x40): +0x28 attr, +0x2C pattern, +0x30 user data (u64), +0x38 numWaitThreads.</summary>
     [Hle]
-    int sceKernelGetEventInfo(int uid, uint info)
+    internal int sceKernelGetEventInfo(int uid, uint info)
     {
         var e = Event(uid);
         if (e == null) return SceError.UNKNOWN_EVENT_ID;
