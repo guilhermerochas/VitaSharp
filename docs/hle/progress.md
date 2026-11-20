@@ -164,8 +164,8 @@ The functions the kernel modules of firmware 3.74 export to other kernel code (`
 
 | Kernel exports | Covered | Real | Default | Total | % |
 |---|---:|---:|---:|---:|---:|
-| All | 1,765 | 1,562 | 203 | 3,918 | 45% |
-| Imported | 954 | - | - | 2,062 | 46.2% |
+| All | 2,160 | 1,939 | 221 | 3,918 | 55.1% |
+| Imported | 1,182 | - | - | 2,062 | 57.3% |
 
 | Library | Implemented / total | % | Default | Imported |
 |---|---:|---:|---:|---:|
@@ -198,7 +198,7 @@ The functions the kernel modules of firmware 3.74 export to other kernel code (`
 | SceDmacmgrForDriver | 15 / 15 | 100% | - | 11 / 11 |
 | SceDsiForDriver | 15 / 15 | 100% | 4 | 10 / 10 |
 | SceExcpmgrForKernel | 1 / 17 | 5.8% | - | 1 / 6 |
-| SceFios2KernelForDriver | 0 / 20 | 0% | - | 0 / 9 |
+| SceFios2KernelForDriver | 20 / 20 | 100% | - | 9 / 9 |
 | SceGpioForDriver | 10 / 10 | 100% | - | 7 / 7 |
 | SceGpsForDriver | 7 / 7 | 100% | - | 6 / 6 |
 | SceGpuEs4ForDriver | 0 / 31 | 0% | - | 0 / 28 |
@@ -262,14 +262,14 @@ The functions the kernel modules of firmware 3.74 export to other kernel code (`
 | SceSblSsMgrForKernel | 5 / 5 | 100% | - | 5 / 5 |
 | SceSdifForDriver | 0 / 59 | 0% | - | 0 / 31 |
 | SceSysclibForDriver | 51 / 51 | 100% | - | 31 / 31 |
-| SceSysconForDriver | 38 / 311 | 12.2% | - | 21 / 198 |
+| SceSysconForDriver | 311 / 311 | 100% | 6 | 198 / 198 |
 | SceSysmemForDriver | 53 / 114 | 46.4% | - | 53 / 79 |
 | SceSysmemForKernel | 8 / 169 | 4.7% | - | 8 / 77 |
 | SceSysrootForDriver | 124 / 181 | 68.5% | - | 65 / 111 |
 | SceSysrootForKernel | 48 / 143 | 33.5% | - | 16 / 67 |
 | SceSystimerForDriver | 14 / 14 | 100% | - | 8 / 8 |
-| SceThreadmgrForDriver | 107 / 248 | 43.1% | - | 80 / 135 |
-| SceThreadmgrForKernel | 0 / 64 | 0% | - | 0 / 15 |
+| SceThreadmgrForDriver | 170 / 248 | 68.5% | - | 100 / 135 |
+| SceThreadmgrForKernel | 18 / 64 | 28.1% | - | 2 / 15 |
 | SceTouchForDriver | 29 / 29 | 100% | - | 9 / 9 |
 | SceUartForKernel | 4 / 4 | 100% | 3 | 1 / 1 |
 | SceUdcdForDriver | 3 / 47 | 6.3% | - | 2 / 33 |
@@ -279,7 +279,7 @@ The functions the kernel modules of firmware 3.74 export to other kernel code (`
 | SceUsbMassForDriver | 6 / 6 | 100% | - | 6 / 6 |
 | SceUsbMtpForDriver | 12 / 12 | 100% | 12 | 12 / 12 |
 | SceUsbServForDriver | 7 / 7 | 100% | 2 | 6 / 6 |
-| SceUsbdForDriver | 0 / 21 | 0% | - | 0 / 20 |
+| SceUsbdForDriver | 21 / 21 | 100% | 12 | 20 / 20 |
 | SceUsbstorForDriver | 9 / 9 | 100% | - | 7 / 7 |
 | SceWlanBtForDriver | 4 / 4 | 100% | - | 2 / 2 |
 | SceZlibForDriver | 0 / 65 | 0% | - | 0 / 6 |
