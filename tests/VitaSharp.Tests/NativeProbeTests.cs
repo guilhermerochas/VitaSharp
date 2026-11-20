@@ -64,6 +64,66 @@ public sealed class NativeProbeTests
         Assert.True(found.Count == 0, "native libraries unloaded (use NativeProbe, which keeps them loaded): " + string.Join(", ", found));
     }
 
+    /// <summary>Disposing a Silk.NET API object (<c>X.GetApi()</c>) frees its library the same way (dlclose): the shaderc
+    /// availability probe of the tests did, and the test host died with SIGSEGV after "Testhost process exiting" on every
+    /// Linux CI job (exit() called shaderc's handler at the old address, by then part of VitaSharp.Desktop.dll's mapping).</summary>
+    [Fact]
+    public void NoCodeDisposesANativeApi()
+    {
+        string? root = RepoRoot();
+        Assert.NotNull(root);
+        // a Dispose call on a GetApi result, and a using declaration of one (patterns split so this file does not match)
+        var disposed = new System.Text.RegularExpressions.Regex(@"GetApi\([^;]*\)\s*\." + @"Dispose\(");
+        var usingApi = new System.Text.RegularExpressions.Regex(@"\busing\s*\(?\s*(var|[\w.<>?]+)\s+\w+\s*=\s*[\w.]+\." + @"GetApi\(");
+        var found = new List<string>();
+        foreach (string top in new[] { "src", "tests", "build", "tools" })
+        {
+            string dir = Path.Combine(root!, top);
+            if (!Directory.Exists(dir))
+            {
+                continue;
+            }
+
+            foreach (string file in Directory.EnumerateFiles(dir, "*.cs", SearchOption.AllDirectories))
+            {
+                string sep = Path.DirectorySeparatorChar.ToString();
+                if (file.Contains(sep + "bin" + sep) || file.Contains(sep + "obj" + sep) || file.Contains(sep + "obj-dev" + sep))
+                {
+                    continue;
+                }
+
+                int line = 0;
+                foreach (string text in File.ReadLines(file))
+                {
+                    line++;
+                    if (disposed.IsMatch(text) || usingApi.IsMatch(text))
+                    {
+                        found.Add($"{Path.GetRelativePath(root!, file)}:{line}");
+                    }
+                }
+            }
+        }
+
+        Assert.True(found.Count == 0, "Silk.NET APIs disposed (that unloads their library; keep the object for the whole process): " + string.Join(", ", found));
+    }
+
+    /// <summary>The shaderc probe of the tests leaves the library loaded (Linux: still in /proc/self/maps after it).</summary>
+    [Fact]
+    public void TheShadercProbeKeepsTheLibraryLoaded()
+    {
+        if (ShadercAvailability.SkipReason != null)
+        {
+            return;
+        }
+
+        if (OperatingSystem.IsLinux())
+        {
+            Assert.Contains("libshaderc_shared", File.ReadAllText("/proc/self/maps"), StringComparison.Ordinal);
+        }
+
+        Assert.True(ShadercAvailability.ProbeKeptLoaded);
+    }
+
     [Fact]
     public void AProbeTellsWhetherALibraryLoads()
     {
