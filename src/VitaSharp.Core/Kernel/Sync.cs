@@ -4058,7 +4058,7 @@ public static class EventBits
 /// callbacks registered to the timer are notified (0x8101cfcc). A repeating event is rescheduled one interval later
 /// (at least 200 us, as the handler does).
 /// </summary>
-public sealed partial class TimerObject : EventObject
+public sealed partial class TimerObject : EventObject, IGuestTimed
 {
     public override int UidClass => 6;
     public uint Attr;
@@ -4098,7 +4098,10 @@ public sealed partial class TimerObject : EventObject
     private bool _deleted;
 
     /// <summary>In <see cref="TimerDispatcher"/>'s list (guarded by the dispatcher's lock).</summary>
-    internal bool Armed { get; set; }
+    public bool Armed { get; set; }
+
+    /// <summary>An event is still scheduled (the dispatcher keeps the timer in its list).</summary>
+    public bool HasPending => Volatile.Read(ref NextEvent) != ulong.MaxValue;
 
     private bool AutoReset => (Attr & EventBits.AttrAutoReset) != 0;
 
@@ -4229,7 +4232,7 @@ public sealed partial class TimerObject : EventObject
 
     /// <summary>The dispatcher's call: fires what came due and says how many microseconds of the timer's clock are left
     /// to its next event (null: none is armed).</summary>
-    internal ulong? FireDueAndRemaining()
+    public ulong? FireDueAndRemaining()
     {
         lock (this)
         {
@@ -4563,18 +4566,34 @@ public sealed partial class TimerObject : EventObject
     }
 }
 
+/// <summary>Something <see cref="TimerDispatcher"/> fires in guest time: a kernel timer's event, a device's interrupt
+/// line.</summary>
+public interface IGuestTimed
+{
+    /// <summary>In the dispatcher's list (guarded by the dispatcher's lock).</summary>
+    bool Armed { get; set; }
+
+    /// <summary>Something is still scheduled: the dispatcher keeps the source after a fire that found nothing left.</summary>
+    bool HasPending { get; }
+
+    /// <summary>The dispatcher's call (on its thread, holding none of its locks): fires what came due and says how many
+    /// microseconds of the source's clock are left to its next time (null: nothing armed).</summary>
+    ulong? FireDueAndRemaining();
+}
+
 /// <summary>
-/// The kernel's timer interrupt for <see cref="TimerObject"/> events: one background thread, started with the first
-/// armed timer, that sleeps until the earliest armed event (in each timer's process time) and fires it, so a timer's
-/// event reaches its callbacks and its sceKernelWaitMultipleEvents waiters at its time, not when someone reads it. With
-/// no armed timer it sleeps without a deadline: nothing runs per frame. The timers are held weakly: a timer of a process
-/// that went away stops being looked at.
+/// The one guest-time scheduler: the kernel's timer interrupt for <see cref="TimerObject"/> events and for the
+/// emulated devices' interrupt lines (<see cref="GuestInterruptScheduler"/>). One background thread, started with the
+/// first armed source, sleeps until the earliest armed time (in each source's guest clock) and fires it, so a timer's
+/// event reaches its callbacks and its sceKernelWaitMultipleEvents waiters at its time, not when someone reads it, and
+/// a device line is raised at its time. With nothing armed it sleeps without a deadline: nothing runs per frame. The
+/// sources are held weakly: one of a process that went away stops being looked at.
 /// </summary>
 public static class TimerDispatcher
 {
     private static readonly object s_gate = new();
-    private static readonly List<WeakReference<TimerObject>> s_armed = new();
-    private static readonly List<TimerObject> s_due = new();
+    private static readonly List<WeakReference<IGuestTimed>> s_armed = new();
+    private static readonly List<IGuestTimed> s_due = new();
     private static Thread? s_thread;
     private static bool s_poked;
 
@@ -4582,15 +4601,16 @@ public static class TimerDispatcher
     /// a test moving a stopped clock, a speed change).</summary>
     private const int MaxSleepMs = 50;
 
-    /// <summary>The timer has an event scheduled (the caller holds the timer's lock; the order is timer, then this).</summary>
-    internal static void Arm(TimerObject timer)
+    /// <summary>The source has a time scheduled (the caller may hold the source's lock; the order is source, then
+    /// this).</summary>
+    internal static void Arm(IGuestTimed timer)
     {
         lock (s_gate)
         {
             if (!timer.Armed)
             {
                 timer.Armed = true;
-                s_armed.Add(new WeakReference<TimerObject>(timer));
+                s_armed.Add(new WeakReference<IGuestTimed>(timer));
             }
             if (s_thread == null)
             {
@@ -4621,7 +4641,7 @@ public static class TimerDispatcher
             {
                 for (int i = s_armed.Count - 1; i >= 0; i--)
                 {
-                    if (s_armed[i].TryGetTarget(out TimerObject? timer))
+                    if (s_armed[i].TryGetTarget(out IGuestTimed? timer))
                     {
                         s_due.Add(timer);
                     }
@@ -4639,7 +4659,7 @@ public static class TimerDispatcher
             }
 
             ulong nextUs = ulong.MaxValue;
-            foreach (TimerObject timer in s_due)
+            foreach (IGuestTimed timer in s_due)
             {
                 // the timer's lock is taken outside the dispatcher's (a timer arms itself holding its own lock)
                 ulong? left = timer.FireDueAndRemaining();
@@ -4667,12 +4687,12 @@ public static class TimerDispatcher
         }
     }
 
-    /// <summary>A timer whose event is gone leaves the list, unless it was armed again meanwhile.</summary>
-    private static void Disarm(TimerObject timer)
+    /// <summary>A source with nothing scheduled leaves the list, unless it was armed again meanwhile.</summary>
+    private static void Disarm(IGuestTimed timer)
     {
         lock (s_gate)
         {
-            if (Volatile.Read(ref timer.NextEvent) != ulong.MaxValue)
+            if (timer.HasPending)
             {
                 return;
             }
@@ -4680,7 +4700,7 @@ public static class TimerDispatcher
             timer.Armed = false;
             for (int i = 0; i < s_armed.Count; i++)
             {
-                if (s_armed[i].TryGetTarget(out TimerObject? armed) && armed == timer)
+                if (s_armed[i].TryGetTarget(out IGuestTimed? armed) && armed == timer)
                 {
                     s_armed.RemoveAt(i);
                     break;

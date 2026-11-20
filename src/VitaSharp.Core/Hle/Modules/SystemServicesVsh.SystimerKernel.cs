@@ -1,3 +1,4 @@
+using VitaSharp.Core.Kernel;
 using VitaSharp.Core.Memory;
 using VitaSharp.Core.SaveState;
 
@@ -11,8 +12,16 @@ namespace VitaSharp.Core.Hle.Modules;
 // (else 0x80020005) and a prescaler; the handler needs an interrupt mask (0: 0x80027105). The counter counts while
 // started; ResetCount and SetCount restart it from 0 or a value (SetCount also adds the value to the timer's offset,
 // which GetCountWithOffset adds to the counter). The emulated counters run on guest time: one tick per guest
-// microsecond divided by the prescaler + 1 (the source clocks are the hardware's). The interrupts the timers raise at
-// their interval go through SceIntrmgr, which the emulated kernel does not deliver yet: the handler is kept, not called.
+// microsecond divided by the prescaler + 1 (the source clocks are the hardware's). The setters refuse to run in an
+// interrupt handler (0x80027101). Each timer has its interrupt line, registered at boot ("SceSystimerWordTimer<n>" on
+// 0x80 + n, "SceSystimerLongrangeTimer<n>" on 0x88 + n, priority 0x80, all four cores), enabled by Alloc, disabled by
+// Free and aimed at the handler's cores by SetHandler. A timer with an interval counts to it and starts again from 0,
+// raising its line each time; the line's handler (the module's, at +0 of its code) adds the interval to the offset and
+// calls the driver's handler (id, argument). A word timer without an interval raises its line when it wraps, and the
+// handler adds 2^32 to the offset, so the count with the offset keeps going past 32 bits; a long-range timer without
+// an interval raises nothing. The raises are timed in guest time by the interrupt scheduler (GuestInterruptScheduler)
+// and delivered through SceIntrmgr. Not timed again after a state load: a timer counting at the save raises its line
+// once it is started again.
 public sealed partial class SystemServicesVsh
 {
     /// <summary>SceSystimer: a kind or setting out of range (0x80020005).</summary>
@@ -37,6 +46,10 @@ public sealed partial class SystemServicesVsh
 
     const uint SystimerKindLongRange = 1, SystimerKindWord = 2;
 
+    const uint SystimerWordLine = 0x80, SystimerLongRangeLine = 0x88;
+
+    const ulong SystimerWordWrap = 1UL << 32;
+
     [SnapshotMissing] // states of builds before it: no timer allocated
     readonly SystimerTimer[] _systimers = new SystimerTimer[SystimerTimers];
 
@@ -56,6 +69,156 @@ public sealed partial class SystemServicesVsh
         public ulong CountBase;
         public ulong StartedUs;
         public ulong Offset;
+    }
+
+    /// <summary>The interrupt line of the timer at table index <paramref name="index"/>.</summary>
+    static uint SystimerLine(int index)
+    {
+        return index < SystimerLongRange ? SystimerLongRangeLine + (uint)index : SystimerWordLine + (uint)(index - SystimerLongRange);
+    }
+
+    /// <summary>The timer index of an interrupt line, or -1.</summary>
+    static int SystimerOfLine(uint line)
+    {
+        if (line - SystimerLongRangeLine < SystimerLongRange)
+        {
+            return (int)(line - SystimerLongRangeLine);
+        }
+
+        return line - SystimerWordLine < SystimerWord ? SystimerLongRange + (int)(line - SystimerWordLine) : -1;
+    }
+
+    /// <summary>The timer's id at table index <paramref name="index"/>.</summary>
+    static uint SystimerId(int index)
+    {
+        return index < SystimerLongRange ? 0x10000u | (uint)index : 0x20000u | (uint)(index - SystimerLongRange);
+    }
+
+    /// <summary>The twelve lines as the module's module_start registers them (flags 0, priority 0x80, target 0xF),
+    /// their argument the timer's index.</summary>
+    void SystimerRegisterLines()
+    {
+        for (int index = 0; index < SystimerTimers; index++)
+        {
+            string name = index < SystimerLongRange
+                ? "SceSystimerLongrangeTimer" + index
+                : "SceSystimerWordTimer" + (index - SystimerLongRange);
+            IntrRegisterDevice(SystimerLine(index), name, (uint)index, 0x80, 0xF, SystimerInterruptStub);
+        }
+    }
+
+    /// <summary>The module's line handler (line, argument = the timer's index).</summary>
+    void SystimerInterruptStub(HleContext context)
+    {
+        context.Return(SystimerInterrupt(context.Gpr(1)));
+    }
+
+    /// <summary>The line handler: with an interval, the offset grows by it and the driver's handler is called (id,
+    /// argument); a word timer without one adds a wrap (2^32) to the offset; -1.</summary>
+    int SystimerInterrupt(uint index)
+    {
+        if (index >= SystimerTimers)
+        {
+            return -1;
+        }
+
+        uint handler;
+        uint argument;
+        lock (_systimers)
+        {
+            ref SystimerTimer timer = ref _systimers[index];
+            if (timer.Interval == 0)
+            {
+                if (index >= SystimerLongRange)
+                {
+                    timer.Offset += SystimerWordWrap;
+                }
+
+                return -1;
+            }
+
+            timer.Offset += timer.Interval;
+            handler = timer.Handler;
+            argument = timer.HandlerArgument;
+        }
+
+        if (handler != 0 && GuestThread.Current is { } thread)
+        {
+            thread.CallGuest(handler, SystimerId((int)index), argument);
+        }
+
+        return -1;
+    }
+
+    /// <summary>The period the counter runs to before starting again (ticks): the interval (a word timer's register
+    /// holds its low 32 bits), a word timer's wrap without one, 0 for none.</summary>
+    static ulong SystimerPeriod(int index, in SystimerTimer timer)
+    {
+        if (index >= SystimerLongRange)
+        {
+            uint interval = (uint)timer.Interval;
+            return interval == 0 ? SystimerWordWrap : interval;
+        }
+
+        return timer.Interval;
+    }
+
+    /// <summary>The guest microsecond of the timer's next raise after <paramref name="afterUs"/>, or null (not
+    /// counting, no period, or a counter set past its period).</summary>
+    ulong? SystimerNextRaise(int index, ulong afterUs)
+    {
+        ref SystimerTimer timer = ref _systimers[index];
+        ulong period = SystimerPeriod(index, timer);
+        if (!timer.Counting || period == 0 || timer.CountBase >= period)
+        {
+            return null;
+        }
+
+        ulong tickUs = timer.Prescaler + 1UL;
+        ulong first = timer.StartedUs + (period - timer.CountBase) * tickUs;
+        if (afterUs < first)
+        {
+            return first;
+        }
+
+        ulong periods = (afterUs - first) / (period * tickUs) + 1;
+        return first + periods * period * tickUs;
+    }
+
+    /// <summary>The timer's line armed for its next raise (or disarmed).</summary>
+    void SystimerArm(int index)
+    {
+        uint line = SystimerLine(index);
+        ulong? next = SystimerNextRaise(index, Emu.Kernel.ProcessTimeUs);
+        if (next is { } deadline)
+        {
+            IntrScheduler.Arm(line, deadline);
+        }
+        else
+        {
+            _intrScheduler?.Disarm(line);
+        }
+    }
+
+    /// <summary>The scheduler's call at the time of a raise (<paramref name="raisedUs"/>): the next one armed (a later
+    /// period already past fires right after), then the line raised.</summary>
+    void SystimerExpire(uint line, ulong raisedUs)
+    {
+        int index = SystimerOfLine(line);
+        lock (_systimers)
+        {
+            if (!_systimers[index].Counting)
+            {
+                return;
+            }
+
+            if (SystimerNextRaise(index, raisedUs) is { } next)
+            {
+                IntrScheduler.Arm(line, next);
+            }
+        }
+
+        IntrRaise(line);
     }
 
     /// <summary>A timer by id (0x10000 + 0..4, 0x20000 + 0..6), as the index into the table; -1 for no such timer.</summary>
@@ -78,7 +241,8 @@ public sealed partial class SystemServicesVsh
         return index >= 0 && _systimers[index].Allocated ? index : -1;
     }
 
-    /// <summary>The counter now: the base plus the ticks of guest time since it started (word timers wrap at 32 bits).</summary>
+    /// <summary>The counter now: the base plus the ticks of guest time since it started, starting again from 0 at the
+    /// period (the interval; a word timer's wrap at 32 bits without one).</summary>
     ulong SystimerCount(int index)
     {
         ref SystimerTimer timer = ref _systimers[index];
@@ -88,7 +252,19 @@ public sealed partial class SystemServicesVsh
             count += (Emu.Kernel.ProcessTimeUs - timer.StartedUs) / (timer.Prescaler + 1);
         }
 
+        ulong period = SystimerPeriod(index, timer);
+        if (period != 0 && timer.CountBase < period)
+        {
+            return count % period;
+        }
+
         return index >= SystimerLongRange ? (uint)count : count;
+    }
+
+    /// <summary>0x80027101 inside an interrupt handler (the setters' first check), else 0.</summary>
+    static int SystimerInInterrupt()
+    {
+        return t_intrDepth > 0 ? INTR_ERR_IN_INTERRUPT : 0;
     }
 
     /// <summary>Sets the counter to <paramref name="value"/> (a counting timer keeps counting from it).</summary>
@@ -98,9 +274,17 @@ public sealed partial class SystemServicesVsh
         _systimers[index].StartedUs = Emu.Kernel.ProcessTimeUs;
     }
 
-    /// <summary>The checks of a setting: the timer allocated (0x80027302) and not counting (0x80027303).</summary>
-    int SystimerSettable(uint id, out int index)
+    /// <summary>The checks of a setting: outside an interrupt handler (0x80027101; StartCount does not check it), the
+    /// timer allocated (0x80027302) and not counting (0x80027303).</summary>
+    int SystimerSettable(uint id, out int index, bool inInterruptRefused = true)
     {
+        index = -1;
+        int inInterrupt = inInterruptRefused ? SystimerInInterrupt() : 0;
+        if (inInterrupt != 0)
+        {
+            return inInterrupt;
+        }
+
         index = SystimerAllocated(id);
         if (index < 0)
         {
@@ -124,6 +308,13 @@ public sealed partial class SystemServicesVsh
     [Hle(Nid = 0xE2B9D8E9, Library = "SceSystimerForDriver", ReturnsValue = true)]
     int ksceKernelSysTimerAlloc(uint kind)
     {
+        int inInterrupt = SystimerInInterrupt();
+        if (inInterrupt != 0)
+        {
+            return inInterrupt;
+        }
+
+        IntrDevices();
         int first;
         int count;
         uint idBase;
@@ -140,29 +331,54 @@ public sealed partial class SystemServicesVsh
             return SYSTIMER_ERR_INVALID_ARGUMENT;
         }
 
-        for (int n = 0; n < count; n++)
+        lock (_systimers)
         {
-            if (!_systimers[first + n].Allocated)
+            for (int n = 0; n < count; n++)
             {
-                _systimers[first + n] = new SystimerTimer { Allocated = true };
-                return (int)(idBase | (uint)n);
+                if (!_systimers[first + n].Allocated)
+                {
+                    _systimers[first + n] = new SystimerTimer { Allocated = true };
+                    uint line = SystimerLine(first + n);
+                    _intrLines[line].Enabled = true;
+                    _intrLines[line].Target = 0xF;
+                    return (int)(idBase | (uint)n);
+                }
             }
         }
 
         return SYSTIMER_ERR_NO_TIMER;
     }
 
-    /// <summary>ksceKernelSysTimerFree(SceSysTimerId id): stops and clears the timer; not allocated 0x80027302.</summary>
+    /// <summary>ksceKernelSysTimerFree(SceSysTimerId id): the line disabled, the timer stopped and cleared; not
+    /// allocated 0x80027302.</summary>
     [Hle(Nid = 0x8358611F, Library = "SceSystimerForDriver")]
     int ksceKernelSysTimerFree(uint id)
     {
-        int index = SystimerAllocated(id);
-        if (index < 0)
+        int inInterrupt = SystimerInInterrupt();
+        if (inInterrupt != 0)
         {
-            return SYSTIMER_ERR_NOT_ALLOCATED;
+            return inInterrupt;
         }
 
-        _systimers[index] = default;
+        IntrDevices();
+        int table = SystimerIndex(id);
+        if (table >= 0)
+        {
+            _intrLines[SystimerLine(table)].Enabled = false;
+        }
+
+        lock (_systimers)
+        {
+            int index = SystimerAllocated(id);
+            if (index < 0)
+            {
+                return SYSTIMER_ERR_NOT_ALLOCATED;
+            }
+
+            _systimers[index] = default;
+            SystimerArm(index);
+        }
+
         return 0;
     }
 
@@ -171,6 +387,12 @@ public sealed partial class SystemServicesVsh
     [Hle(Nid = 0x0450933B, Library = "SceSystimerForDriver")]
     int ksceKernelSysTimerSetClockSource(uint id, uint source, uint prescaler)
     {
+        int inInterrupt = SystimerInInterrupt();
+        if (inInterrupt != 0)
+        {
+            return inInterrupt;
+        }
+
         if (source is 2 or 0xE or 0xF || source > 0x15)
         {
             return SYSTIMER_ERR_INVALID_ARGUMENT;
@@ -206,6 +428,12 @@ public sealed partial class SystemServicesVsh
     [Hle(Nid = 0xCCCD1EE3, Library = "SceSystimerForDriver")]
     int ksceKernelSysTimerSetHandler(uint id, uint handler, uint mask, uint argument)
     {
+        int inInterrupt = SystimerInInterrupt();
+        if (inInterrupt != 0)
+        {
+            return inInterrupt;
+        }
+
         bool highMask = (mask & 0xF0000) != 0;
         bool lowMask = (mask & 0xF) != 0;
         if (mask == 0 || (highMask && lowMask) || (!highMask && lowMask && (int)mask < 0))
@@ -221,6 +449,12 @@ public sealed partial class SystemServicesVsh
 
         _systimers[index].Handler = handler;
         _systimers[index].HandlerArgument = handler == 0 ? 0 : argument;
+        if (handler != 0)
+        {
+            IntrDevices();
+            _intrLines[SystimerLine(index)].Target = (uint)IntrTarget(highMask ? mask >> 16 : mask);
+        }
+
         return 0;
     }
 
@@ -228,14 +462,19 @@ public sealed partial class SystemServicesVsh
     [Hle(Nid = 0x59EBD22D, Library = "SceSystimerForDriver")]
     int ksceKernelSysTimerStartCount(uint id)
     {
-        int check = SystimerSettable(id, out int index);
+        int check = SystimerSettable(id, out int index, inInterruptRefused: false);
         if (check != 0)
         {
             return check;
         }
 
-        _systimers[index].StartedUs = Emu.Kernel.ProcessTimeUs;
-        _systimers[index].Counting = true;
+        lock (_systimers)
+        {
+            _systimers[index].StartedUs = Emu.Kernel.ProcessTimeUs;
+            _systimers[index].Counting = true;
+            SystimerArm(index);
+        }
+
         return 0;
     }
 
@@ -249,8 +488,13 @@ public sealed partial class SystemServicesVsh
             return SYSTIMER_ERR_NOT_COUNTING;
         }
 
-        _systimers[index].CountBase = SystimerCount(index);
-        _systimers[index].Counting = false;
+        lock (_systimers)
+        {
+            _systimers[index].CountBase = SystimerCount(index);
+            _systimers[index].Counting = false;
+            SystimerArm(index);
+        }
+
         return 0;
     }
 
@@ -258,14 +502,25 @@ public sealed partial class SystemServicesVsh
     [Hle(Nid = 0x7DEBA6A5, Library = "SceSystimerForDriver")]
     int ksceKernelSysTimerResetCount(uint id)
     {
+        int inInterrupt = SystimerInInterrupt();
+        if (inInterrupt != 0)
+        {
+            return inInterrupt;
+        }
+
         int index = SystimerAllocated(id);
         if (index < 0)
         {
             return SYSTIMER_ERR_NOT_ALLOCATED;
         }
 
-        SystimerLoad(index, 0);
-        _systimers[index].Offset = 0;
+        lock (_systimers)
+        {
+            SystimerLoad(index, 0);
+            _systimers[index].Offset = 0;
+            SystimerArm(index);
+        }
+
         return 0;
     }
 
@@ -274,6 +529,12 @@ public sealed partial class SystemServicesVsh
     [Hle(Nid = 0x1B14DFD6, Library = "SceSystimerForDriver")]
     int ksceKernelSysTimerSetCount(uint id, uint alignment, uint countLow, uint countHigh)
     {
+        int inInterrupt = SystimerInInterrupt();
+        if (inInterrupt != 0)
+        {
+            return inInterrupt;
+        }
+
         int index = SystimerAllocated(id);
         if (index < 0)
         {
@@ -281,8 +542,13 @@ public sealed partial class SystemServicesVsh
         }
 
         ulong value = ((ulong)countHigh << 32) | countLow;
-        SystimerLoad(index, index >= SystimerLongRange ? (uint)value : value);
-        _systimers[index].Offset += value;
+        lock (_systimers)
+        {
+            SystimerLoad(index, index >= SystimerLongRange ? (uint)value : value);
+            _systimers[index].Offset += value;
+            SystimerArm(index);
+        }
+
         return 0;
     }
 
@@ -296,7 +562,13 @@ public sealed partial class SystemServicesVsh
             return SYSTIMER_ERR_NOT_ALLOCATED;
         }
 
-        GuestMemory.Write(count, SystimerCount(index));
+        ulong value;
+        lock (_systimers)
+        {
+            value = SystimerCount(index);
+        }
+
+        GuestMemory.Write(count, value);
         return 0;
     }
 
@@ -310,7 +582,13 @@ public sealed partial class SystemServicesVsh
             return SYSTIMER_ERR_NOT_ALLOCATED;
         }
 
-        GuestMemory.Write(count, SystimerCount(index) + _systimers[index].Offset);
+        ulong value;
+        lock (_systimers)
+        {
+            value = SystimerCount(index) + _systimers[index].Offset;
+        }
+
+        GuestMemory.Write(count, value);
         return 0;
     }
 
@@ -333,6 +611,12 @@ public sealed partial class SystemServicesVsh
     [Hle(Nid = 0x904DF737, Library = "SceSystimerForDriver")]
     int ksceKernelSysTimerSetCaptureMode(uint id, uint mode, uint edge)
     {
+        int inInterrupt = SystimerInInterrupt();
+        if (inInterrupt != 0)
+        {
+            return inInterrupt;
+        }
+
         if (mode >= 0xE)
         {
             return SYSTIMER_ERR_INVALID_ARGUMENT;
@@ -352,6 +636,12 @@ public sealed partial class SystemServicesVsh
     [Hle(Nid = 0xC34D7940, Library = "SceSystimerForDriver")]
     int ksceKernelSysTimerSetOutputMode(uint id, uint mode)
     {
+        int inInterrupt = SystimerInInterrupt();
+        if (inInterrupt != 0)
+        {
+            return inInterrupt;
+        }
+
         if (mode >= 0xE)
         {
             return SYSTIMER_ERR_INVALID_ARGUMENT;

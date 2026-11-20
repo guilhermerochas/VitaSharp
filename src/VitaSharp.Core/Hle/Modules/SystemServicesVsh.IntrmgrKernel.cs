@@ -15,8 +15,11 @@ namespace VitaSharp.Core.Hle.Modules;
 // once (argument, the handler's own argument, the line's priority) and returns the handler's result. A software
 // interrupt (TriggerSGI) runs the line's handler (line, argument) on the calling thread here, as an interrupt taken
 // right away. SceIntrmgrForKernel sets the hooks around a sub-interrupt handler and around a registration and a
-// release, and the service NID 0xC568F145 calls; its pending bits are the GIC's. The device lines raised by hardware
-// (timers, DMA completions) are not delivered by the emulated devices.
+// release, and the service NID 0xC568F145 calls; its pending bits are the GIC's. A device line raised by an emulated
+// device in guest time (GuestInterruptScheduler: the Systimer's so far) runs its handler (line, argument) in interrupt
+// context on the interrupt thread when it is enabled, else stays pending until it is enabled (then taken)
+// or cleared. The lines the firmware's drivers register at boot (the Systimer's twelve) are registered before the first
+// call that looks at a line. Interrupt context is per thread (the core taking the interrupt).
 public sealed partial class SystemServicesVsh
 {
     const int INTR_ERR_IN_INTERRUPT = unchecked((int)0x80027101);
@@ -62,8 +65,11 @@ public sealed partial class SystemServicesVsh
     [SnapshotMissing] // states of builds before it: no sub-interrupt registered
     readonly Dictionary<uint, IntrSub> _intrSubs = [];
 
-    [SnapshotMissing] // states of builds before it: not in a handler
-    int _intrDepth;
+    /// <summary>Interrupt handlers running on this thread (the core taking the interrupt): per thread, since the
+    /// dispatcher of the hardware lines runs handlers while other guest threads go on outside interrupt context.</summary>
+    [System.Diagnostics.CodeAnalysis.SuppressMessage("Style", "IDE1006", Justification = "[ThreadStatic]: t_camelCase; .editorconfig cannot select the attribute")]
+    [ThreadStatic]
+    static int t_intrDepth;
 
     static uint IntrSubKey(uint line, uint sub) => (line << 16) | sub;
 
@@ -92,7 +98,7 @@ public sealed partial class SystemServicesVsh
     [Hle(Nid = 0x182EE3E3, Library = "SceIntrmgrForDriver")]
     int ksceKernelIsIntrContext()
     {
-        return _intrDepth > 0 ? 1 : 0;
+        return t_intrDepth > 0 ? 1 : 0;
     }
 
     /// <summary>ksceKernelRegisterIntrHandler(int line, const char *name, int flags, handler, void *argument, int
@@ -100,7 +106,8 @@ public sealed partial class SystemServicesVsh
     [Hle(Nid = 0x5C1FEB29, Library = "SceIntrmgrForDriver")]
     int ksceKernelRegisterIntrHandler(uint line, uint name, uint flags, uint handler, uint argument, uint priority, uint target, uint option)
     {
-        if (_intrDepth > 0)
+        IntrDevices();
+        if (t_intrDepth > 0)
         {
             return INTR_ERR_IN_INTERRUPT;
         }
@@ -181,7 +188,8 @@ public sealed partial class SystemServicesVsh
     [Hle(Nid = 0xD6009B98, Library = "SceIntrmgrForDriver")]
     int ksceKernelReleaseIntrHandler(uint line)
     {
-        if (_intrDepth > 0)
+        IntrDevices();
+        if (t_intrDepth > 0)
         {
             return INTR_ERR_IN_INTERRUPT;
         }
@@ -212,7 +220,8 @@ public sealed partial class SystemServicesVsh
     [Hle(Nid = 0x99048AEC, Library = "SceIntrmgrForDriver")]
     int ksceKernelRegisterIntrHookHandler(uint line, uint handler, uint original)
     {
-        if (_intrDepth > 0)
+        IntrDevices();
+        if (t_intrDepth > 0)
         {
             return INTR_ERR_IN_INTERRUPT;
         }
@@ -253,7 +262,8 @@ public sealed partial class SystemServicesVsh
     [Hle(Nid = 0xA0B7F44E, Library = "SceIntrmgrForDriver")]
     int ksceKernelReleaseIntrHookHandler(uint line)
     {
-        if (_intrDepth > 0)
+        IntrDevices();
+        if (t_intrDepth > 0)
         {
             return INTR_ERR_IN_INTERRUPT;
         }
@@ -284,6 +294,7 @@ public sealed partial class SystemServicesVsh
 
     int IntrSetEnabled(uint line, bool enabled)
     {
+        IntrDevices();
         if (!IntrDeviceLine(line))
         {
             return INTR_ERR_CODE;
@@ -295,6 +306,7 @@ public sealed partial class SystemServicesVsh
         }
 
         _intrLines[line].Enabled = enabled;
+        IntrTakePending(line);
         return 0;
     }
 
@@ -302,6 +314,7 @@ public sealed partial class SystemServicesVsh
     [Hle(Nid = 0x6EC07C56, Library = "SceIntrmgrForDriver")]
     int ksceKernelSuspendIntr(uint line, uint state)
     {
+        IntrDevices();
         if (!IntrDeviceLine(line))
         {
             return INTR_ERR_CODE;
@@ -321,6 +334,7 @@ public sealed partial class SystemServicesVsh
     [Hle(Nid = 0xA4C772AF, Library = "SceIntrmgrForDriver")]
     int ksceKernelResumeIntr(uint line, uint state)
     {
+        IntrDevices();
         if (!IntrDeviceLine(line))
         {
             return INTR_ERR_CODE;
@@ -332,12 +346,14 @@ public sealed partial class SystemServicesVsh
         }
 
         _intrLines[line].Enabled = state == 1;
+        IntrTakePending(line);
         return 0;
     }
 
     [Hle(Nid = 0x71020E29, Library = "SceIntrmgrForDriver")]
     int ksceKernelSetIntrPriority(uint line, uint priority)
     {
+        IntrDevices();
         if (!IntrDeviceLine(line))
         {
             return INTR_ERR_CODE;
@@ -360,6 +376,7 @@ public sealed partial class SystemServicesVsh
     [Hle(Nid = 0xE427D050, Library = "SceIntrmgrForDriver")]
     int ksceKernelGetIntrPriority(uint line, uint priority)
     {
+        IntrDevices();
         if (line >= IntrLines)
         {
             return INTR_ERR_CODE;
@@ -377,6 +394,7 @@ public sealed partial class SystemServicesVsh
     [Hle(Nid = 0x973BACCC, Library = "SceIntrmgrForDriver")]
     int ksceKernelSetIntrTarget(uint line, uint target)
     {
+        IntrDevices();
         if (line >= IntrLines)
         {
             return INTR_ERR_CODE;
@@ -400,6 +418,7 @@ public sealed partial class SystemServicesVsh
     [Hle(Nid = 0x353CFAAE, Library = "SceIntrmgrForDriver")]
     int ksceKernelGetIntrTarget(uint line, uint target)
     {
+        IntrDevices();
         if (line >= IntrLines)
         {
             return INTR_ERR_CODE;
@@ -451,14 +470,14 @@ public sealed partial class SystemServicesVsh
             return 0;
         }
 
-        _intrDepth++;
+        t_intrDepth++;
         try
         {
             return thread.CallGuest(function, first, second, third);
         }
         finally
         {
-            _intrDepth--;
+            t_intrDepth--;
         }
     }
 
@@ -481,7 +500,7 @@ public sealed partial class SystemServicesVsh
     [Hle(Nid = 0x96576C18, Library = "SceIntrmgrForDriver")]
     int ksceKernelRegisterSubIntrHandler(uint line, uint sub, uint name, uint handler, uint argument)
     {
-        if (_intrDepth > 0)
+        if (t_intrDepth > 0)
         {
             return INTR_ERR_IN_INTERRUPT;
         }
@@ -540,7 +559,7 @@ public sealed partial class SystemServicesVsh
     [Hle(Nid = 0x7B9657B3, Library = "SceIntrmgrForDriver")]
     int ksceKernelReleaseSubIntrHandler(uint line, uint sub)
     {
-        if (_intrDepth > 0)
+        if (t_intrDepth > 0)
         {
             return INTR_ERR_IN_INTERRUPT;
         }
@@ -753,9 +772,122 @@ public sealed partial class SystemServicesVsh
         return 0;
     }
 
+    // ------------------------------------------------------------------ the hardware lines in guest time
+
+    /// <summary>The lines the firmware's own drivers register at their module_start (the Systimer's twelve), made
+    /// before the first call that looks at a line, as they are there before any other driver runs.</summary>
+    [SnapshotMissing] // states of builds before it: the device lines not registered yet
+    bool _intrDevicesRegistered;
+
+    /// <summary>The device lines' timing: made with the first line a device arms (none: nothing runs).</summary>
+    [SnapshotIgnore]
+    GuestInterruptScheduler? _intrScheduler;
+
+    [SnapshotIgnore]
+    HleGuestStubs? _intrStubs;
+
+    GuestInterruptScheduler IntrScheduler => _intrScheduler ??= new GuestInterruptScheduler(Emu, IntrExpire);
+
+    HleGuestStubs IntrStubs => _intrStubs ??= new HleGuestStubs(this, "SceIntrmgr");
+
+    /// <summary>The device lines registered by the firmware's drivers at boot (see <see cref="_intrDevicesRegistered"/>).</summary>
+    void IntrDevices()
+    {
+        if (_intrDevicesRegistered)
+        {
+            return;
+        }
+
+        _intrDevicesRegistered = true;
+        SystimerRegisterLines();
+    }
+
+    /// <summary>A line registered by an HLE driver: its handler a guest-callable stub of <paramref name="body"/>, so a
+    /// hook gets a real original to call.</summary>
+    void IntrRegisterDevice(uint line, string name, uint argument, uint priority, uint target, Action<HleContext> body)
+    {
+        _intrLines[line] = new IntrLine
+        {
+            Handler = IntrStubs.Host(name, body),
+            Argument = argument,
+            Priority = priority,
+            Target = target,
+        };
+    }
+
+    /// <summary>The scheduler's call when a device line's time came: the device re-arms and raises it.</summary>
+    void IntrExpire(uint line, ulong raisedUs)
+    {
+        if (SystimerOfLine(line) >= 0)
+        {
+            SystimerExpire(line, raisedUs);
+        }
+    }
+
+    /// <summary>A device raises <paramref name="line"/>, as the GIC takes it: an enabled line with a handler runs it now
+    /// in interrupt context on the calling thread (the core taking the interrupt) with (line, argument); otherwise the
+    /// line stays pending until it is enabled or the pending bit is cleared.</summary>
+    internal void IntrRaise(uint line)
+    {
+        if (line >= IntrLines)
+        {
+            return;
+        }
+
+        IntrLine entry = _intrLines[line];
+        if (entry.Handler == 0 || !entry.Enabled)
+        {
+            lock (_intrPending)
+            {
+                _intrPending[line >> 5] |= 1u << (int)(line & 31);
+            }
+
+            return;
+        }
+
+        IntrCall(entry.Handler, line, entry.Argument, 0);
+    }
+
+    /// <summary>A pending line that is now enabled with a handler is taken (the GIC signals it once enabled).</summary>
+    void IntrTakePending(uint line)
+    {
+        IntrLine entry = _intrLines[line];
+        if (entry.Handler == 0 || !entry.Enabled)
+        {
+            return;
+        }
+
+        uint bit = 1u << (int)(line & 31);
+        lock (_intrPending)
+        {
+            if ((_intrPending[line >> 5] & bit) == 0)
+            {
+                return;
+            }
+
+            _intrPending[line >> 5] &= ~bit;
+        }
+
+        IntrCall(entry.Handler, line, entry.Argument, 0);
+    }
+
+    /// <summary>Tests: the device lines fire only by <see cref="IntrDispatchDue"/> (no dispatcher thread).</summary>
+    internal void IntrDispatchByHand() => IntrScheduler.ManualDispatch = true;
+
+    /// <summary>Tests: fires the device lines due at guest microsecond <paramref name="nowUs"/> on the calling thread.</summary>
+    internal int IntrDispatchDue(ulong nowUs) => IntrScheduler.DispatchDue(nowUs);
+
+    /// <summary>Tests: the guest microsecond a device line fires at (null: not armed), and whether the dispatcher
+    /// thread exists.</summary>
+    internal (ulong? Deadline, bool Dispatcher) IntrSchedule(uint line)
+    {
+        return (_intrScheduler?.Deadline(line), _intrScheduler?.DispatcherStarted ?? false);
+    }
+
     /// <summary>The state of a line, for the tests.</summary>
     internal (uint Handler, bool Enabled, uint Priority, uint Target) IntrState(uint line)
     {
+        IntrDevices();
         IntrLine entry = _intrLines[line];
         return (entry.Handler, entry.Enabled, entry.Priority, entry.Target);
     }
