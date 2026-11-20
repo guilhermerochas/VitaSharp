@@ -67,7 +67,7 @@ public sealed partial class Rtc : HleModule
     const int RTC_NOT_SET = unchecked((int)0x80251002);
 
     /// <summary>The local time's offset from UTC in µs (the configuration's zone and daylight saving).</summary>
-    long LocalOffsetUs => Emu.Vita.RtcClocks.LocalOffsetMinutes * 60_000_000L;
+    long LocalOffsetUs => RtcKernel.LocalOffsetMinutes(Emu) * 60_000_000L;
 
     /// <summary>The date of a trophy the trophy server bridge is giving (<see cref="Kernel.VitaSystem.TrophyUnlockTick"/>),
     /// for the shell's trophy server threads (SceNpTrophyServer*: they stamp an unlock with sceRtcGetCurrentTick and
