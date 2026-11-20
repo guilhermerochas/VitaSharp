@@ -584,6 +584,79 @@ public sealed partial class SysmemKernel
         return result;
     }
 
+    /// <summary>SceDeflatePartialInputParam's size field (the only one the firmware accepts).</summary>
+    const uint DeflatePartialParamSize = 0x10;
+
+    /// <summary>ksceDeflateDecompressPartial: the parameter block is NULL or of another size (0x80560104).</summary>
+    const int DEFLATE_ERR_PARAM = unchecked((int)0x80560104);
+
+    /// <summary>ksceDeflateDecompressPartial: the input callback gave no more input, or a piece of odd length
+    /// (0x80560103).</summary>
+    const int DEFLATE_ERR_INPUT = unchecked((int)0x80560103);
+
+    /// <summary>
+    /// ksceDeflateDecompressPartial(void *dst, uint dst_size, const void *src, const void **next,
+    /// SceDeflatePartialInputParam *param): the raw deflate decoder over input that comes in pieces. The parameter
+    /// block is { size (0x10), const void *pBufEnd, void *cookie, const void *(*refill)(param, uint written) }: the
+    /// first piece runs from <paramref name="source"/> to pBufEnd; when the decoder reaches pBufEnd it calls refill
+    /// with the bytes written to <paramref name="destination"/> so far, which returns the next piece and stores its
+    /// end in pBufEnd (NULL, an empty piece or one of odd length: 0x80560103; the decoder reads the pieces after the
+    /// first in halfwords). The output and its back references are the contiguous destination. Returns the bytes
+    /// written and stores the byte after the stream in *next; 0x80560100 bad data, 0x80560101 output that does not
+    /// fit, 0x80560104 a NULL parameter block or one whose size is not 0x10.
+    /// </summary>
+    [Hle(Nid = 0x3D74CCDF, Library = "SceKernelUtilsForDriver")]
+    int ksceDeflateDecompressPartial(uint destination, uint size, uint source, uint next, uint param)
+    {
+        if (param == 0 || GuestMemory.R32(param) != DeflatePartialParamSize)
+        {
+            return DEFLATE_ERR_PARAM;
+        }
+
+        var inflater = new ZlibStreamInflater(ZlibStreamInflater.Wrapper.Raw);
+        uint piece = source;
+        uint pieceEnd = GuestMemory.R32(param + 4);
+        uint written = 0;
+        while (true)
+        {
+            if (pieceEnd > piece)
+            {
+                inflater.AddInput(GuestMemory.Span(piece, (int)(pieceEnd - piece)));
+            }
+
+            ZlibStreamInflater.Status status = inflater.Run();
+            if (status == ZlibStreamInflater.Status.BadData)
+            {
+                return GuestInflater.BadData;
+            }
+
+            if (inflater.Pending > size - written)
+            {
+                return GuestInflater.NoRoom;
+            }
+
+            int taken = inflater.TakeOutput(GuestMemory.Span(destination + written, inflater.Pending));
+            written += (uint)taken;
+            if (status == ZlibStreamInflater.Status.Done)
+            {
+                if (next != 0)
+                {
+                    GuestMemory.W32(next, pieceEnd - (uint)inflater.UnusedInput);
+                }
+
+                return (int)written;
+            }
+
+            uint refill = GuestMemory.R32(param + 0xC);
+            piece = refill == 0 ? 0 : Kernel.GuestThread.Current!.CallGuest(refill, param, written);
+            pieceEnd = GuestMemory.R32(param + 4);
+            if (piece == 0 || pieceEnd <= piece || ((pieceEnd - piece) & 1) != 0)
+            {
+                return DEFLATE_ERR_INPUT;
+            }
+        }
+    }
+
     /// <summary>ksceZlibGetInfo(const void *src, uint8_t *cmf, uint8_t *flg, uint32_t *dictId, const void **data).</summary>
     [Hle(Nid = 0x5B9BCD75, Library = "SceKernelUtilsForDriver")]
     int ksceZlibGetInfo(uint source, uint cmf, uint flg, uint dictionaryId, uint data)
