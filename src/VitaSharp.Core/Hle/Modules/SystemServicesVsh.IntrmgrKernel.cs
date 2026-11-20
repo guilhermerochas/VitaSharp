@@ -17,7 +17,7 @@ namespace VitaSharp.Core.Hle.Modules;
 // right away. SceIntrmgrForKernel sets the hooks around a sub-interrupt handler and around a registration and a
 // release, and the service NID 0xC568F145 calls; its pending bits are the GIC's. A device line raised by an emulated
 // device in guest time (GuestInterruptScheduler: the Systimer's so far) runs its handler (line, argument) in interrupt
-// context on the scheduler's dispatcher thread when it is enabled, else stays pending until it is enabled (then taken)
+// context on the interrupt thread when it is enabled, else stays pending until it is enabled (then taken)
 // or cleared. The lines the firmware's drivers register at boot (the Systimer's twelve) are registered before the first
 // call that looks at a line. Interrupt context is per thread (the core taking the interrupt).
 public sealed partial class SystemServicesVsh
