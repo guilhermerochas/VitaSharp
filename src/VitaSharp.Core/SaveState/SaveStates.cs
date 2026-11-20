@@ -511,6 +511,7 @@ public static class SaveStates
         var syscon = new SnapshotWriter { UsedLayouts = layouts };
         syscon.Write(emu.Vita.Syscon);
         syscon.Write(emu.Vita.PowerState);
+        syscon.Write(emu.Vita.RtcClocks);
         list.Add((SysconSection, syscon.Data.ToArray()));
 
         // first in the file: a slot list checks it without reading the rest
@@ -1363,6 +1364,7 @@ public static class SaveStates
             var sysconReader = new SnapshotReader(sysconData) { Layouts = layouts, Positional = positional };
             sysconReader.ReadInto(emu.Vita.Syscon);
             sysconReader.ReadInto(emu.Vita.PowerState);
+            sysconReader.ReadInto(emu.Vita.RtcClocks);
         }
 
         // the other processes' own records: the ids were checked (SavedProcesses), the main thread follows the objects
