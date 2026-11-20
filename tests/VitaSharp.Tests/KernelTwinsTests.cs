@@ -117,8 +117,9 @@ public sealed class KernelTwinsTests(GuestMemoryFixture fixture) : IDisposable
         }
 
         // 398 since ksceZlibDecompress follows SceKernelUtils' own codes (SysmemKernel.Utils), not libpaf's; 397 since
-        // ksceKernelChangeThreadPriority answers the earlier priority (ThreadmgrKernel), not the user call's 0
-        Assert.True(count >= 397, $"only {count} twins");
+        // ksceKernelChangeThreadPriority answers the earlier priority (ThreadmgrKernel), not the user call's 0; 394 since
+        // the USB device controller's three (UdcdKernel) follow SceUdcd's kernel side, not the user calls
+        Assert.True(count >= 394, $"only {count} twins");
         Assert.True(wrong.Count == 0, string.Join("\n", wrong));
     }
 
@@ -148,7 +149,6 @@ public sealed class KernelTwinsTests(GuestMemoryFixture fixture) : IDisposable
         ("ksceSblLicMgrGetLicenseStatus", _ => []),
         ("ksceKernelGetThreadId", _ => []),
         ("ksceTouchGetPanelInfo", b => [0, b]),
-        ("ksceUdcdGetDeviceInfo", b => [b]),
         ("ksceUsbServAccessoryActivate", _ => [0]),
     ];
 

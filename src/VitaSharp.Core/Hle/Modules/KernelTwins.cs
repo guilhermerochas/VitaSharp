@@ -1640,20 +1640,6 @@ public sealed partial class KernelTwins : HleModule
     [Hle]
     void ksceTouchSetSamplingState(HleContext context) => Forward(context, 0x1B9C5D14);
 
-    // ------------------------------------------------------------------ SceUdcdForDriver
-
-    /// <summary>ksceUdcdGetDeviceInfo (SceUdcdForDriver 0xFBEA3703): sceUdcdGetDeviceInfo.</summary>
-    [Hle]
-    void ksceUdcdGetDeviceInfo(HleContext context) => Forward(context, 0x701C87CF);
-
-    /// <summary>ksceUdcdGetDrvState (SceUdcdForDriver 0xC0CA5DDB): sceUdcdGetDrvState.</summary>
-    [Hle]
-    void ksceUdcdGetDrvState(HleContext context) => Forward(context, 0x99B3DA5D);
-
-    /// <summary>ksceUdcdWaitState (SceUdcdForDriver 0xD03017C0): sceUdcdWaitState.</summary>
-    [Hle]
-    void ksceUdcdWaitState(HleContext context) => Forward(context, 0x59EFFAF1);
-
     // ------------------------------------------------------------------ SceUsbServForDriver
 
     /// <summary>ksceUsbServAccessoryActivate (SceUsbServForDriver 0xAA6D4409): sceUsbServAccessoryActivate.</summary>
