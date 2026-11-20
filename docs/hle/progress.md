@@ -164,8 +164,8 @@ The functions the kernel modules of firmware 3.74 export to other kernel code (`
 
 | Kernel exports | Covered | Real | Default | Total | % |
 |---|---:|---:|---:|---:|---:|
-| All | 1,671 | 1,468 | 203 | 3,918 | 42.6% |
-| Imported | 898 | - | - | 2,062 | 43.5% |
+| All | 1,759 | 1,556 | 203 | 3,918 | 44.8% |
+| Imported | 951 | - | - | 2,062 | 46.1% |
 
 | Library | Implemented / total | % | Default | Imported |
 |---|---:|---:|---:|---:|
@@ -195,7 +195,7 @@ The functions the kernel modules of firmware 3.74 export to other kernel code (`
 | SceDebugLedForDriver | 9 / 9 | 100% | - | 3 / 3 |
 | SceDipswForDriver | 4 / 4 | 100% | - | 2 / 2 |
 | SceDisplayForDriver | 18 / 53 | 33.9% | - | 8 / 27 |
-| SceDmacmgrForDriver | 4 / 15 | 26.6% | - | 1 / 11 |
+| SceDmacmgrForDriver | 15 / 15 | 100% | - | 11 / 11 |
 | SceDsiForDriver | 15 / 15 | 100% | 4 | 10 / 10 |
 | SceExcpmgrForKernel | 1 / 17 | 5.8% | - | 1 / 6 |
 | SceFios2KernelForDriver | 0 / 20 | 0% | - | 0 / 9 |
@@ -209,11 +209,11 @@ The functions the kernel modules of firmware 3.74 export to other kernel code (`
 | SceI2cForDriver | 8 / 8 | 100% | - | 3 / 3 |
 | SceIdStorageForDriver | 17 / 17 | 100% | - | 16 / 16 |
 | SceIftuForDriver | 8 / 9 | 88.8% | - | 8 / 9 |
-| SceIntrmgrForDriver | 0 / 23 | 0% | - | 0 / 13 |
-| SceIntrmgrForKernel | 0 / 21 | 0% | - | 0 / 12 |
+| SceIntrmgrForDriver | 23 / 23 | 100% | - | 13 / 13 |
+| SceIntrmgrForKernel | 5 / 21 | 23.8% | - | 1 / 12 |
 | SceIofilemgrForDriver | 54 / 148 | 36.4% | - | 28 / 96 |
 | SceKernelSuspendForDriver | 28 / 28 | 100% | - | 13 / 13 |
-| SceKernelUtilsForDriver | 1 / 57 | 1.7% | - | 0 / 33 |
+| SceKernelUtilsForDriver | 50 / 57 | 87.7% | - | 29 / 33 |
 | SceLcdForDriver | 23 / 23 | 100% | 4 | 13 / 13 |
 | SceLedForDriver | 1 / 1 | 100% | 1 | 1 / 1 |
 | SceMagicGateForDriver | 0 / 48 | 0% | - | 0 / 37 |
