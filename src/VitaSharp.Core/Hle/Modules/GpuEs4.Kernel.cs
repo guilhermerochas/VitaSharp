@@ -10,8 +10,8 @@ namespace VitaSharp.Core.Hle.Modules;
 /// miscellaneous information, the GPU MMU mappings and the core dump readers. VitaSharp draws the GXM command
 /// streams itself, so the SGX device the services list is a record kernel code can read (device type 1, SGX, index
 /// 0) with nothing behind its registers, the MMU mappings are kept as a list (the emulated GPU reads guest memory
-/// directly), the GPU never locks up (no register dump, no lockup events) and the init server state starts as on a
-/// console where SceGpuEs4Init has not run yet (all 0). The services' errors are their small PVRSRV_ERROR numbers (3
+/// directly), the GPU never locks up (no register dump, no lockup events) and the init server state is the one the
+/// console has after its boot (ran, successful). The services' errors are their small PVRSRV_ERROR numbers (3
 /// invalid parameters, 4 the device was not found); the driver's own are 0x804C00xx.
 /// </summary>
 public sealed partial class GpuEs4
@@ -19,9 +19,11 @@ public sealed partial class GpuEs4
     const int PvrDeviceNotFound = 4, PvrInvalidState = 0xA2;
     const uint SgxDeviceType = 1, SgxDeviceIndex = 0, SgxDeviceClass = 0;
 
-    /// <summary>The services' init server states (0 running, 1 ran, 2 successful): kept in the kernel process's module,
-    /// the one copy every process's bridge reads (<see cref="InitServerStates"/>).</summary>
-    readonly uint[] _initServerStates = new uint[3];
+    /// <summary>The services' init server states (0 running, 1 ran, 2 successful), kept in the kernel process's module,
+    /// the one copy every process's bridge reads (<see cref="InitServerStates"/>). On the console SceGpuEs4Init runs the
+    /// init server while the system boots, before the shell or any game, and it succeeds; VitaSharp does not run the
+    /// firmware's kernel modules, so the end state of that boot step is the state the services start in.</summary>
+    readonly uint[] _initServerStates = [0, 1, 1];
 
     /// <summary>The init server states of the services: the kernel process's module's (this one's without a kernel
     /// process), so what the kernel marks is what every process's bridge sees.</summary>

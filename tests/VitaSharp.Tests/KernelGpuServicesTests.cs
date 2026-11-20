@@ -51,9 +51,12 @@ public sealed class KernelGpuServicesTests(GuestMemoryFixture fixture) : IDispos
             Assert.NotEqual(0u, GuestMemory.R32(node));
             Assert.Equal(4u, R0(t, 0xE6B866FD, 3, 1, node));
 
+            Assert.Equal(0u, R0(t, 0x3AF6FE80, 0)); // after the boot's init server: not running,
+            Assert.Equal(1u, R0(t, 0x3AF6FE80, 1)); // ran
+            Assert.Equal(1u, R0(t, 0x3AF6FE80, 2)); // and successful
+            Assert.Equal(0u, R0(t, 0xDCD78852, 2, 0));
             Assert.Equal(0u, R0(t, 0x3AF6FE80, 2));
             Assert.Equal(0u, R0(t, 0xDCD78852, 2, 1));
-            Assert.Equal(1u, R0(t, 0x3AF6FE80, 2));
             Assert.Equal(0xA2u, R0(t, 0xDCD78852, 5, 1));
 
             uint pid = (uint)t.Pid;
