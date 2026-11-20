@@ -489,8 +489,9 @@ jogo (`dotnet test`) para saber se uma mudança quebrou algo. Nenhuma mudança �
       exportações do módulo) e o início de cada função do `.ARM.exidx` (índice de exceções: uma entrada por função com
       unwind, quase todas num jogo C++); a partir delas, os workers traduzem cada bloco e seguem as saídas estáticas
       (branches diretos, os dois lados de um condicional, BLX imm = troca ARM/Thumb pelo bit do alvo) e o ponto de
-      retorno depois de BL/BLX/SVC, só dentro dos segmentos executáveis dos módulos carregados. Não segue o que é
-      calculado (tabelas de salto TBB/TBH, ponteiros de função, vtables): isso o JIT compila quando o jogo chegar.
+      retorno depois de BL/BLX/SVC, só dentro dos segmentos executáveis dos módulos carregados, e os casos das tabelas
+      TBB/TBH com o limite do CMP antes delas. Ponteiros de função e vtables (relocações do módulo para o código)
+      entram pela fronteira quando a função que os referencia roda; o resto calculado o JIT compila quando chegar.
       Dados no meio do código (literal pools) não são visitados, porque só se segue fluxo real; um bloco de "dados"
       traduzido por engano só custa tempo de compilação (nunca executa errado: a tradução é dos bytes que estão lá).
       As entradas do exidx não dizem o modo; ficam no modo da maioria das entradas explícitas do módulo (Thumb no Vita).
@@ -524,7 +525,30 @@ jogo (`dotnet test`) para saber se uma mudança quebrou algo. Nenhuma mudança �
       (vtables, tabelas de callbacks) e os casos das tabelas TBB/TBH; (b) os ms por bloco do JIT no jogo sobem com a
       fronteira rodando (o encode é feito sob o lock da arena, `ExecutableMemory.Place`): reservar e codificar fora do
       lock; (c) os 81 blocos que sobram na 2ª sessão são código fora dos módulos (rotinas HLE escritas na memória):
-      gravá-los também; (d) medir no build AOT/LLVM (sem o aquecimento do .NET), no AC3L e no celular.    - Fica para depois (parte 3): guardar os bytes de máquina traduzidos. O código nativo não é relocável hoje
+      gravá-los também; (d) medir no build AOT/LLVM (sem o aquecimento do .NET), no AC3L e no celular.
+    - Feito (feat/aot2, 19/11/2026): (a) casos de switch TBB/TBH [PC, Rm] lidos da tabela, com o tamanho tirado do
+      CMP + BHI/BHS antes dela (`CodePrecompiler.JumpTableTargets`); ponteiros para código pelas relocações do
+      próprio módulo (ABS32/TARGET1/MOVW que caem no código, num início de função do exidx ou num prólogo PUSH/STMFD):
+      quando uma função roda pela 1ª vez, as funções que ela referencia (pool de literais, MOVW/MOVT) e as das tabelas
+      de ponteiros que ela referencia (vtable que o construtor grava) entram na fronteira (`ModuleCodeMap`); a
+      fronteira traduz a função inteira do código executado (só chamadas contam profundidade); (b) o encode sai do
+      lock da arena (x64: codifica para o endereço previsto e, se outra thread colocou código antes, reserva o
+      tamanho + 64 bytes e codifica de novo; ARM64: o código não depende do endereço e é codificado antes);
+      (c) as rotinas HLE escritas como código do guest entram no cache como uma região identificada pelo hash dos
+      bytes (`CodeCache.CodeRegionPlaced`). A/B/C no Killzone `kz_idle` (5800 quadros, headless, 4 núcleos 0xF0,
+      BelowNormal; CPU com ~50% de carga de outros trabalhos, então os ms variam entre execuções):
+      A = release antes (JIT do .NET): 1ª sessão etapa 2,8 s, 1.432 blocos / 160 ms no jogo, 94,3%, arena 20,9 MB;
+      2ª sessão etapa 2,0 s, 245 blocos, 99,1% (82 fora dos módulos), 18,8 MB.
+      B = feat/aot2 (JIT do .NET): 1ª etapa 1,8 s, 968 blocos / 110 ms, 96,4%, 28,9 MB; 2ª etapa 0,9 s, 4 blocos /
+      0 ms, 100,0%, 26,5 MB.
+      C = feat/aot2 em Native AOT: 1ª etapa 0,7 s, 1.167 blocos / 74 ms (63 us/bloco), 95,7%, 28,8 MB; 2ª etapa
+      0,3 s, 1 bloco / 0 ms, 100,0%, 26,5 MB.
+      Sobra: na 1ª sessão, ~1.000 blocos do executável que rodam antes de a fronteira chegar neles (funções chamadas
+      por ponteiro guardado em dados que nenhum código já executado referencia, e o código logo do início do jogo);
+      na 2ª, só o stub de trap do kernel (fora de qualquer módulo e da região HLE). A arena cresceu ~8 MB com as
+      funções inteiras. Falta: medir no AC3L e no celular; para a 1ª sessão chegar a ~0, traduzir antes do boot as
+      funções apontadas pelas tabelas de dados (custa arena; medir) ou guardar os bytes de máquina (parte 3).
+    - Fica para depois (parte 3): guardar os bytes de máquina traduzidos. O código nativo não é relocável hoje
       (endereços absolutos de slots de link, stubs Epilogue/Callout, tabela de dispatch, pool de constantes, contador de
       tier-up; superblocos e stores mortos dependem dos vizinhos já executados): precisa de uma tabela de relocações
       nos emissores x64 (Iced e fast-encode) e ARM64. Só vale se a etapa de boot ficar longa.
