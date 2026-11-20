@@ -621,7 +621,7 @@ public sealed partial class SysmemKernel : HleModule
             return SceError.INVALID_UID;
         }
 
-        uint own = o is KernelData { Kind: KernelData.ClassObject } d ? d.Aux : RootClass();
+        uint own = ClassOf(o);
         if (!subclass && own != cls)
         {
             ClearObjectOut(objOut);
