@@ -18,7 +18,8 @@ public static class SaveStates
 {
     private const string SysSection = "system", FunctionsSection = "hle.functions", ObjectsSection = "kernel.objects",
         BlocksSection = "memory.blocks", MemPrefix = "mem:", WordPagesMemPrefix = "memw:", ModulePrefix = "hle:", LayoutsSection = "layouts",
-        KernelModulePrefix = "kernel.hle:", ProcessesSection = "processes", SpacesSection = "memory.spaces";
+        KernelModulePrefix = "kernel.hle:", ProcessesSection = "processes", SpacesSection = "memory.spaces",
+        SysconSection = "syscon";
 
     /// <summary>The prefix of the sections of the system's process number <paramref name="index"/> (0, the first
     /// process, has none: a state of one process has the layout of the builds before several processes were saved).</summary>
@@ -505,6 +506,12 @@ public static class SaveStates
                 list.Add((KernelModulePrefix + name, mw.Data.ToArray()));
             }
         }
+
+        // the system's syscon chip (one for every process); states of builds before it have no section
+        var syscon = new SnapshotWriter { UsedLayouts = layouts };
+        syscon.Write(emu.Vita.Syscon);
+        syscon.Write(emu.Vita.PowerState);
+        list.Add((SysconSection, syscon.Data.ToArray()));
 
         // first in the file: a slot list checks it without reading the rest
         var lw = new SnapshotWriter();
@@ -1349,6 +1356,14 @@ public static class SaveStates
         int mainUid = sys.ReadInt32();
         (sys.ReadBytes() ?? []).CopyTo(emu.Vita.AppMgrState, 0);
         emu.BgmPriority = Math.Max(0, sys.ReadInt32());
+
+        // the syscon chip: a state of a build before it keeps the chip as it is (an unplugged unit, empty scratchpad)
+        if (sections.TryGetValue(SysconSection, out byte[]? sysconData))
+        {
+            var sysconReader = new SnapshotReader(sysconData) { Layouts = layouts, Positional = positional };
+            sysconReader.ReadInto(emu.Vita.Syscon);
+            sysconReader.ReadInto(emu.Vita.PowerState);
+        }
 
         // the other processes' own records: the ids were checked (SavedProcesses), the main thread follows the objects
         int[] mainThreads = new int[processes.Count];

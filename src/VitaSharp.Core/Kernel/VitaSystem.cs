@@ -117,6 +117,14 @@ public sealed class VitaSystem
     /// <summary>The power button, the power callbacks, standby and power off (ScePower), for every process.</summary>
     public SystemPower Power { get; } = new();
 
+    /// <summary>The syscon chip (battery, AC adapter, RTC, scratchpad, the event bits), for every process and the
+    /// kernel (<see cref="SysconChip"/>).</summary>
+    public SysconChip Syscon { get; } = new();
+
+    /// <summary>What ScePower keeps for the system (clocks, modes, brightness, idle timers), for every process and
+    /// the kernel (<see cref="ScePowerState"/>).</summary>
+    public ScePowerState PowerState { get; } = new();
+
     /// <summary>The plugin configuration's *KERNEL modules were loaded (or tried) into the kernel: the plugin loader
     /// loads them once, at boot, and every process then sees them; a later process, or a LoadExec, does not load (or
     /// retry) them.</summary>
