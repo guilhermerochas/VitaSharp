@@ -71,7 +71,7 @@ public sealed class KernelUtilsAesTests(GuestMemoryFixture fixture) : IDisposabl
     {
         byte[] keyBytes = RandomNumberGenerator.GetBytes(32);
         byte[] block = RandomNumberGenerator.GetBytes(16);
-        using Aes aes = Aes.Create();
+        using var aes = Aes.Create();
         aes.Key = keyBytes;
         uint context = _harness.Alloc(0x3D0);
         uint output = _harness.Alloc(16);
