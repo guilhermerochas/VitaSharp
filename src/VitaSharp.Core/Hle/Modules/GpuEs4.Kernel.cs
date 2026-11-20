@@ -10,8 +10,8 @@ namespace VitaSharp.Core.Hle.Modules;
 /// miscellaneous information, the GPU MMU mappings and the core dump readers. VitaSharp draws the GXM command
 /// streams itself, so the SGX device the services list is a record kernel code can read (device type 1, SGX, index
 /// 0) with nothing behind its registers, the MMU mappings are kept as a list (the emulated GPU reads guest memory
-/// directly), the GPU never locks up (no register dump, no lockup events) and the init server state starts as on a
-/// console where SceGpuEs4Init has not run yet (all 0). The services' errors are their small PVRSRV_ERROR numbers (3
+/// directly), the GPU never locks up (no register dump, no lockup events) and the init server state is the one the
+/// console has after its boot (ran, successful). The services' errors are their small PVRSRV_ERROR numbers (3
 /// invalid parameters, 4 the device was not found); the driver's own are 0x804C00xx.
 /// </summary>
 public sealed partial class GpuEs4
@@ -19,8 +19,40 @@ public sealed partial class GpuEs4
     const int PvrDeviceNotFound = 4, PvrInvalidState = 0xA2;
     const uint SgxDeviceType = 1, SgxDeviceIndex = 0, SgxDeviceClass = 0;
 
-    /// <summary>The services' init server states (0 running, 1 ran, 2 successful).</summary>
-    readonly uint[] _initServerStates = new uint[3];
+    /// <summary>The services' init server states (0 running, 1 ran, 2 successful), kept in the kernel process's module,
+    /// the one copy every process's bridge reads (<see cref="InitServerStates"/>). On the console SceGpuEs4Init runs the
+    /// init server while the system boots, before the shell or any game, and it succeeds; VitaSharp does not run the
+    /// firmware's kernel modules, so the end state of that boot step is the state the services start in.</summary>
+    readonly uint[] _initServerStates = [0, 1, 1];
+
+    /// <summary>The init server states of the services: the kernel process's module's (this one's without a kernel
+    /// process), so what the kernel marks is what every process's bridge sees.</summary>
+    uint[] InitServerStates
+    {
+        get
+        {
+            if (Emu?.Vita.KernelProcess is not { } kernel)
+            {
+                return _initServerStates;
+            }
+
+            return (kernel.Hle.Modules.OfType<GpuEs4>().FirstOrDefault() ?? this)._initServerStates;
+        }
+    }
+
+    /// <summary>The driver's gate of a bridge call from a process that is not the init server (FW 3.74 gpu_es4
+    /// dispatch): before the init server ran only the connect/disconnect calls (0x0C, 0x0D, 0x48, 0x49) while it is not
+    /// running; after it ran only when it was successful.</summary>
+    internal bool BridgeAllowedByInitServer(uint index)
+    {
+        uint[] states = InitServerStates;
+        if (states[1] == 0)
+        {
+            return states[0] == 0 && (index is 0x0C or 0x0D or 0x48 or 0x49);
+        }
+
+        return states[2] != 0;
+    }
 
     /// <summary>The SGX device node and its device info (made on first request).</summary>
     uint _deviceNode;
@@ -166,7 +198,7 @@ public sealed partial class GpuEs4
     /// <summary>PVRSRVGetInitServerState (0x3AF6FE80)(state): the state's flag (0 running, 1 ran, 2 successful); another
     /// state 0.</summary>
     [Hle(Nid = 0x3AF6FE80, Library = "SceGpuEs4ForDriver")]
-    uint PVRSRVGetInitServerState(uint state) => state < 3 ? _initServerStates[state] : 0;
+    uint PVRSRVGetInitServerState(uint state) => state < 3 ? InitServerStates[state] : 0;
 
     /// <summary>PVRSRVSetInitServerState (0xDCD78852)(state, value); another state 0xA2.</summary>
     [Hle(Nid = 0xDCD78852, Library = "SceGpuEs4ForDriver")]
@@ -177,7 +209,7 @@ public sealed partial class GpuEs4
             return PvrInvalidState;
         }
 
-        _initServerStates[state] = value;
+        InitServerStates[state] = value;
         return 0;
     }
 

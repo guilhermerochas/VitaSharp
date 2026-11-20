@@ -76,7 +76,7 @@ public sealed partial class GpuEs4 : HleModule
     /// PVRSRV_BridgeDispatchKM(?, package): copies the package from the caller (-14 when it cannot); CONNECT_SERVICES
     /// needs the process's per-process data (PVRSRVOpen), every other call a hKernelServices that is the process's;
     /// then the in/out buffers must be at most 0x1000 bytes and the index below 0x94. Before the services' init
-    /// server has run (it never does here: the emulator has no SGX device to initialise) the driver only accepts
+    /// server has run (its state is the one the kernel keeps with PVRSRVSetInitServerState; until kernel code marks it, it has not run) the driver only accepts
     /// CONNECT/DISCONNECT_SERVICES and the init server's own connect calls, and refuses the rest with -14; the init
     /// server calls themselves need the SGX device and are refused too (the "default" part). CONNECT_SERVICES writes
     /// { eError = PVRSRV_OK, hKernelServices }, DISCONNECT_SERVICES { eError = PVRSRV_OK }.
@@ -127,6 +127,11 @@ public sealed partial class GpuEs4 : HleModule
         }
 
         if (!inReadable)
+        {
+            return BridgeFault;
+        }
+
+        if (!BridgeAllowedByInitServer(index))
         {
             return BridgeFault;
         }

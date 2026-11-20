@@ -99,7 +99,7 @@ public sealed class SmallSystemLibrariesTests(GuestMemoryFixture fixture) : IDis
         Assert.Equal(Fault, I(g, "PVRSRV_BridgeDispatchKM", 0u, package));
         Package(0x94, 4, services);
         Assert.Equal(Fault, I(g, "PVRSRV_BridgeDispatchKM", 0u, package));
-        // before the services' init server has run, only the connection calls get through
+        // the services' other calls have no handler here (the SGX side is not emulated): refused
         Package(0x01, 4, services, 4);
         Assert.Equal(Fault, I(g, "PVRSRV_BridgeDispatchKM", 0u, package));
         // the connection is counted per open
@@ -109,6 +109,55 @@ public sealed class SmallSystemLibrariesTests(GuestMemoryFixture fixture) : IDis
         Assert.Equal(0, I(g, "PVRSRV_BridgeDispatchKM", 0u, package));
         Assert.Equal(0, I(g, "PVRSRVRelease"));
         Assert.Equal(Fault, I(g, "PVRSRV_BridgeDispatchKM", 0u, package));
+        Assert.Equal(0, I(g, "PVRSRVRelease"));
+    }
+
+    [Fact]
+    public void AGameOpenedDirectlyFindsTheInitServerRunAtBoot()
+    {
+        // no shell and no kernel code marked anything: the boot's init server already ran successfully
+        GpuEs4 g = Module<GpuEs4>();
+        Assert.Equal(0, I(g, "PVRSRVGetInitServerState", 0u));
+        Assert.Equal(1, I(g, "PVRSRVGetInitServerState", 1u));
+        Assert.Equal(1, I(g, "PVRSRVGetInitServerState", 2u));
+        uint package = Alloc(0x1C), output = Alloc(8);
+        GuestMemory.W32(package, 0x1000 + 0x0C); // CONNECT_SERVICES
+        GuestMemory.W32(package + 4, 0x1C);
+        GuestMemory.W32(package + 16, output);
+        GuestMemory.W32(package + 20, 8);
+        Assert.Equal(0, I(g, "PVRSRVOpen"));
+        GuestMemory.W32(output, 0xFFFFFFFF);
+        Assert.Equal(0, I(g, "PVRSRV_BridgeDispatchKM", 0u, package));
+        Assert.Equal(0u, GuestMemory.R32(output));
+        Assert.Equal(GpuEs4.KernelServicesHandle, GuestMemory.R32(output + 4));
+        Assert.Equal(0, I(g, "PVRSRVRelease"));
+    }
+
+    [Fact]
+    public void PvrServicesBridgeFollowsTheInitServerStateTheKernelSets()
+    {
+        const int Fault = -14;
+        GpuEs4 g = Module<GpuEs4>();
+        uint package = Alloc(0x1C), output = Alloc(8);
+        GuestMemory.W32(package, 0x1000 + 0x0C); // CONNECT_SERVICES
+        GuestMemory.W32(package + 4, 0x1C);
+        GuestMemory.W32(package + 16, output);
+        GuestMemory.W32(package + 20, 8);
+        Assert.Equal(0, I(g, "PVRSRVOpen"));
+        Assert.Equal(0, I(g, "PVRSRV_BridgeDispatchKM", 0u, package));
+        // not run yet: the connection calls get through while it is not running
+        Assert.Equal(0, I(g, "PVRSRVSetInitServerState", 1u, 0u));
+        Assert.Equal(0, I(g, "PVRSRV_BridgeDispatchKM", 0u, package));
+        Assert.Equal(0, I(g, "PVRSRVSetInitServerState", 0u, 1u));
+        Assert.Equal(Fault, I(g, "PVRSRV_BridgeDispatchKM", 0u, package));
+        // it ran and failed: refused
+        Assert.Equal(0, I(g, "PVRSRVSetInitServerState", 0u, 0u));
+        Assert.Equal(0, I(g, "PVRSRVSetInitServerState", 1u, 1u));
+        Assert.Equal(0, I(g, "PVRSRVSetInitServerState", 2u, 0u));
+        Assert.Equal(Fault, I(g, "PVRSRV_BridgeDispatchKM", 0u, package));
+        // it ran successfully: the calls get through again
+        Assert.Equal(0, I(g, "PVRSRVSetInitServerState", 2u, 1u));
+        Assert.Equal(0, I(g, "PVRSRV_BridgeDispatchKM", 0u, package));
         Assert.Equal(0, I(g, "PVRSRVRelease"));
     }
 
