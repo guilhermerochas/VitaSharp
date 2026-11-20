@@ -217,7 +217,7 @@ public sealed class VideodecHleTests(GuestMemoryFixture fx) : IDisposable
     {
         CodecEngine ce = _h.Module<CodecEngine>();
         const int ERR = unchecked((int)0x80600009);
-        Assert.Equal(ERR, Call(ce, "sceCodecEngineOpenUnmapMemBlock", 0u, 0x1000u));
+        Assert.Equal(unchecked((int)0x80600000), Call(ce, "sceCodecEngineOpenUnmapMemBlock", 0u, 0x1000u)); // NULL base (SceCodecEngineWrapper 3.74)
         uint baseAddr = 0x90000000; // never touched: the allocator only does the bookkeeping
         int uid = Call(ce, "sceCodecEngineOpenUnmapMemBlock", baseAddr, 0x100000u);
         Assert.True(uid > 0);

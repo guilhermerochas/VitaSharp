@@ -552,10 +552,30 @@ public sealed partial class CodecEngine : HleModule
     readonly Dictionary<int, Block> _blocks = new();
     int _nextId = 0x10;
 
+    const int ERR_NOT_FOUND = unchecked((int)0x80600000);
+    const int ERR_BLOCK_SIZE = unchecked((int)0x80600001);
+    const int ERR_BLOCK_ADDRESS = unchecked((int)0x80600002);
+
+    /// <summary>(void *memBlock, size): the module's checks first (SceCodecEngineWrapper 3.74): a NULL base is
+    /// 0x80600000, a base off a 256-byte boundary 0x80600002, a size that is 0 or not a multiple of 256 0x80600001.</summary>
     [Hle]
     int sceCodecEngineOpenUnmapMemBlock(uint memBlock, uint size)
     {
-        if (memBlock == 0 || size == 0) return ERR_INVALID_VALUE;
+        if (memBlock == 0)
+        {
+            return ERR_NOT_FOUND;
+        }
+
+        if ((memBlock & 0xFF) != 0)
+        {
+            return ERR_BLOCK_ADDRESS;
+        }
+
+        if (size == 0 || (size & 0xFF) != 0)
+        {
+            return ERR_BLOCK_SIZE;
+        }
+
         var b = new Block { Base = memBlock, Size = size };
         b.Free.Add(memBlock, size);
         lock (_blocks) { _blocks[_nextId] = b; return _nextId++; }
@@ -581,13 +601,23 @@ public sealed partial class CodecEngine : HleModule
         {
             if (!_blocks.TryGetValue(uid, out var b)) return 0;
             if (size == 0 || size > b.Size) return 0;
+            // the module's alignment rule: below 256 it is 256; above 1 MiB, or not a power of two, nothing (0)
+            if (alignment < 0x100)
+            {
+                alignment = 0x100;
+            }
+            else if (alignment > 0x100000 || (alignment & (alignment - 1)) != 0)
+            {
+                return 0;
+            }
+
             size = GuestMemory.AlignUp(Math.Max(size, 1), 256);
             // The alignment is a request for the codec's physical pages, not a guarantee about the virtual address
             // inside the game's block: Gravity Rush's AvPlayer opens a 1 MiB block, takes 256 KiB from it and then
             // asks for 512 KiB aligned to 1 MiB, which only fits if the alignment is relaxed (the game treats the
             // error code as an address; Vita3K returns fake addresses and never fails). Try the requested
             // alignment first, then smaller powers of two.
-            for (uint align = Math.Max(alignment == 0 ? 256u : System.Numerics.BitOperations.RoundUpToPowerOf2(alignment), 256u); align >= 256; align >>= 1)
+            for (uint align = alignment; align >= 256; align >>= 1)
                 if (TryAlloc(b, size, align) is uint p) return p;
             return 0;
         }
@@ -613,8 +643,23 @@ public sealed partial class CodecEngine : HleModule
     {
         lock (_blocks)
         {
-            // a block that was never handed out (or is freed twice) is refused, never a host exception
-            if (!_blocks.TryGetValue(uid, out var b) || !b.Used.Remove(addr, out uint size)) return ERR_INVALID_VALUE;
+            if (!_blocks.TryGetValue(uid, out var b))
+            {
+                return ERR_INVALID_VALUE;
+            }
+
+            // an address outside the block is 0x80600000 (SceCodecEngineWrapper 3.74); one inside it that was never
+            // handed out (or is freed twice) is refused, never a host exception
+            if (addr < b.Base || addr - b.Base >= b.Size)
+            {
+                return ERR_NOT_FOUND;
+            }
+
+            if (!b.Used.Remove(addr, out uint size))
+            {
+                return ERR_INVALID_VALUE;
+            }
+
             if (!b.Free.TryAdd(addr, size)) return ERR_INVALID_VALUE;
             // merge adjacent free ranges
             for (int i = 0; i + 1 < b.Free.Count;)
