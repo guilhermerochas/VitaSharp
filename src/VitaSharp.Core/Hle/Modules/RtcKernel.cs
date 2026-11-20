@@ -37,6 +37,24 @@ public sealed class RtcKernel : HleModule
 
     AlarmTimer Alarm => _alarm ??= new AlarmTimer(this);
 
+    /// <summary>The local time's offset from UTC in minutes: the configuration ksceRtcSetConf gave; before it, the
+    /// system registry's zone (/CONFIG/DATE/time_zone, an id of the firmware's list) plus an hour with summer_time,
+    /// and the host's zone and daylight saving where the registry has no value (SceAppUtil's time zone parameters).
+    /// </summary>
+    internal static int LocalOffsetMinutes(Emulator emu)
+    {
+        RtcClocks clocks = emu.Vita.RtcClocks;
+        if (clocks.ConfSet)
+        {
+            return clocks.TimeZoneMinutes + clocks.DaylightMinutes;
+        }
+
+        Firmware.Registry? registry = AppUtil.SystemRegistry(emu);
+        int zone = AppUtil.SystemParamInt(6, registry);
+        int summer = AppUtil.SystemParamInt(7, registry) != 0 ? 60 : 0;
+        return zone + summer;
+    }
+
     /// <summary>The tick of a clock now.</summary>
     internal static ulong ClockTick(RtcClocks clocks, int clock) => (ulong)((long)Rtc.NowTick + clocks.OffsetUs[clock]);
 
@@ -165,6 +183,7 @@ public sealed class RtcKernel : HleModule
             Clocks.ConfFlag = flag;
             Clocks.TimeZoneMinutes = timeZone;
             Clocks.DaylightMinutes = (int)daylight;
+            Clocks.ConfSet = true;
         }
 
         return 0;
@@ -180,7 +199,7 @@ public sealed class RtcKernel : HleModule
             return RTC_ERR_NULL;
         }
 
-        long minutes = Clocks.LocalOffsetMinutes;
+        long minutes = LocalOffsetMinutes(Emu);
         GuestMemory.Write(local, (ulong)((long)GuestMemory.Read<ulong>(utc) + minutes * 60_000_000));
         return 0;
     }

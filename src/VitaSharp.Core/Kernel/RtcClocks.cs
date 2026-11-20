@@ -7,8 +7,9 @@ namespace VitaSharp.Core.Kernel;
 /// running as the system time plus its own offset (the main clock, the secure one, the retained network one, the
 /// manufacturing one, the GPS one, the network one and three more), the time zone and daylight saving setting
 /// (ksceRtcSetConf), the alarm the syscon chip keeps (its tick and the callback notified when it rings) and the
-/// secure alarm (a kernel timer on the secure clock). The clocks start valid (a set-up unit) at the host's UTC time;
-/// the time zone starts at the host's. One per system (<see cref="VitaSystem.RtcClocks"/>), shared by the user-mode
+/// secure alarm (a kernel timer on the secure clock). The clocks start valid (a set-up unit) at the host's UTC time.
+/// Until ksceRtcSetConf runs (a game started without the shell), the local time follows the system registry the
+/// shell reads (/CONFIG/DATE/time_zone and summer_time), and the host's zone where the registry has none. One per system (<see cref="VitaSystem.RtcClocks"/>), shared by the user-mode
 /// SceRtc calls.
 /// </summary>
 [GenerateSnapshot]
@@ -38,7 +39,7 @@ public sealed partial class RtcClocks
     public uint ConfFlag;
 
     [SnapshotMissing]
-    public int TimeZoneMinutes = (int)TimeZoneInfo.Local.GetUtcOffset(DateTime.UtcNow).TotalMinutes;
+    public int TimeZoneMinutes;
 
     [SnapshotMissing]
     public int DaylightMinutes;
@@ -60,6 +61,7 @@ public sealed partial class RtcClocks
     [SnapshotMissing(NoCallback)]
     public int SecureAlarmCallback = NoCallback;
 
-    /// <summary>The local time's offset from UTC, minutes (zone and daylight saving).</summary>
-    public int LocalOffsetMinutes => TimeZoneMinutes + DaylightMinutes;
+    /// <summary>ksceRtcSetConf ran: the zone and daylight saving above are the system's.</summary>
+    [SnapshotMissing]
+    public bool ConfSet;
 }

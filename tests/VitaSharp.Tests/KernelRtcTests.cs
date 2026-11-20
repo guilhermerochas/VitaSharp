@@ -121,6 +121,33 @@ public sealed class KernelRtcTests(GuestMemoryFixture fixture) : IDisposable
         Assert.Equal(Utc, GuestMemory.Read<ulong>(back));
     }
 
+    /// <summary>Without ksceRtcSetConf (a game started without the shell) the local time is the system registry's zone
+    /// and summer time, and the host's where the registry has none: never UTC.</summary>
+    [Fact]
+    public void BeforeTheConfigurationTheRegistrysZoneMakesTheLocalTime()
+    {
+        const ulong Utc = 63_900_000_000_000_000UL;
+        uint local = _harness.Alloc(8);
+        Assert.Equal(0, Call(User, "sceRtcConvertUtcToLocalTime", new Ptr<ulong>(Tick(Utc)), new Ptr<ulong>(local)));
+        long hostMinutes = (long)TimeZoneInfo.Local.GetUtcOffset(DateTime.Now).TotalMinutes;
+        Assert.Equal((long)Utc + hostMinutes * 60_000_000, (long)GuestMemory.Read<ulong>(local));
+
+        var registry = VitaSharp.Core.Firmware.Registry.For(_harness.Root);
+        registry.Define("/CONFIG/DATE/time_zone", VitaSharp.Core.Firmware.Registry.KeyType.Int, 4);
+        registry.Define("/CONFIG/DATE/summer_time", VitaSharp.Core.Firmware.Registry.KeyType.Int, 4);
+        Assert.True(registry.SetInt("/CONFIG/DATE/", "time_zone", 104)); // UTC+09:00 Tokyo
+        Assert.True(registry.SetInt("/CONFIG/DATE/", "summer_time", 1));
+        Assert.Equal(0, Call(User, "sceRtcConvertUtcToLocalTime", new Ptr<ulong>(Tick(Utc)), new Ptr<ulong>(local)));
+        Assert.Equal(Utc + 600UL * 60_000_000, GuestMemory.Read<ulong>(local));
+        Assert.Equal(0, Call(Kernel, "ksceRtcConvertUtcToLocal", Tick(Utc), local));
+        Assert.Equal(Utc + 600UL * 60_000_000, GuestMemory.Read<ulong>(local));
+
+        // the configuration, once set, is the system's
+        Assert.Equal(0, Call(Kernel, "ksceRtcSetConf", 0u, 0u, 60, 0u));
+        Assert.Equal(0, Call(User, "sceRtcConvertUtcToLocalTime", new Ptr<ulong>(Tick(Utc)), new Ptr<ulong>(local)));
+        Assert.Equal(Utc + 60UL * 60_000_000, GuestMemory.Read<ulong>(local));
+    }
+
     [Fact]
     public void TheAlarmRingsAtItsTimeAndNotifiesItsCallback()
     {
