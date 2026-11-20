@@ -258,6 +258,26 @@ public sealed class CodeCache
         }
     }
 
+    /// <summary>
+    /// Code outside every module was written into the process's memory at [<paramref name="address"/>,
+    /// <paramref name="address"/> + <paramref name="size"/>) (the HLE routines written as guest code): it is recorded
+    /// and precompiled like a module with one code segment, identified by the hash of its bytes, so the same code in a
+    /// later session (the same build) finds what it ran, wherever it is placed. Code that changes between sessions gets
+    /// another hash and simply finds nothing.
+    /// </summary>
+    public LoadedModule CodeRegionPlaced(string name, uint address, uint size)
+    {
+        var region = new LoadedModule
+        {
+            Name = name,
+            ImageHash = System.IO.Hashing.XxHash64.HashToUInt64(GuestMemory.ReadSpan(address, (int)size)),
+            Segments = { [0] = new SegmentInfo(address, address, size) },
+            SegmentFlags = { [0] = (5, size, size) }, // R X
+        };
+        ModuleLoaded(region);
+        return region;
+    }
+
     /// <summary>A module is about to be unloaded: what it ran is recorded first.</summary>
     public void ModuleUnloaded(LoadedModule module)
     {

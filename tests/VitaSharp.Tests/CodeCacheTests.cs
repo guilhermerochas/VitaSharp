@@ -465,6 +465,61 @@ public sealed unsafe class CodeCacheTests(GuestMemoryFixture fixture) : IDisposa
     }
 
     [Fact]
+    public void CodeOutsideTheModulesIsRecordedByItsBytesAndPrecompiledNextSession()
+    {
+        if (!NativeHost)
+        {
+            return;
+        }
+
+        // code the emulator writes into the process (the HLE routines written as guest code): no module, no ELF
+        uint first = fixture.Memory.Alloc(0x1000, "codecache region 1");
+        uint second = fixture.Memory.Alloc(0x1000, "codecache region 2");
+        WriteProgram(first);
+        WriteProgram(second);
+        WithNative(() =>
+        {
+            var cache1 = new BlockCache();
+            var codeCache1 = new CodeCache(_directory, cache1) { Analyze = false };
+            LoadedModule region1 = codeCache1.CodeRegionPlaced("routines", first, 0x100);
+            codeCache1.PrecompilePending(null, CancellationToken.None, wait: false);
+            using (var core1 = new CpuCore(cache1))
+            {
+                Assert.Equal(300u, Run(core1, first));
+                Assert.True(Jit.WaitIdle(TimeSpan.FromSeconds(60)));
+            }
+
+            var ran = Compiled(cache1).Select(start => start - first).ToHashSet();
+            Assert.NotEmpty(ran);
+            codeCache1.Save();
+            Assert.True(File.Exists(CodeCacheFile.PathFor(_directory, region1.ImageHash)));
+            codeCache1.Stop();
+
+            // the same bytes elsewhere in the next session: what ran is translated before it runs, and nothing compiles
+            var cache2 = new BlockCache();
+            var codeCache2 = new CodeCache(_directory, cache2) { Analyze = false };
+            LoadedModule region2 = codeCache2.CodeRegionPlaced("routines", second, 0x100);
+            Assert.Equal(region1.ImageHash, region2.ImageHash);
+            Assert.Equal(ran.Count, codeCache2.PendingCount);
+            codeCache2.PrecompilePending(null, CancellationToken.None, workers: 2);
+            using (var core2 = new CpuCore(cache2))
+            {
+                Assert.Equal(300u, Run(core2, second));
+                Assert.True(Jit.WaitIdle(TimeSpan.FromSeconds(60)));
+            }
+
+            Assert.Empty(Compiled(cache2));
+            codeCache2.Stop();
+
+            // other bytes (another build's routines): another hash, nothing recorded for them
+            WriteProgram(second, addend: 4);
+            var codeCache3 = new CodeCache(_directory, new BlockCache());
+            Assert.NotEqual(region1.ImageHash, codeCache3.CodeRegionPlaced("routines", second, 0x100).ImageHash);
+            Assert.Equal(0, codeCache3.PendingCount);
+        });
+    }
+
+    [Fact]
     public void PrecompiledCodeThatTheGameRewritesIsDropped()
     {
         if (!NativeHost)
