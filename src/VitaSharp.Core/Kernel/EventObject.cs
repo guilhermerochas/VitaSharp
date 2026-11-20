@@ -133,6 +133,41 @@ public abstract class EventObject : KernelObject
         }
     }
 
+    /// <summary>
+    /// sceKernelSetEventWithNotifyCallback / sceKernelPulseEventWithNotifyCallback (threadmgr 3.74: the syscalls
+    /// 0x118F646E / 0x3E49D3F1 copy {u64 userData, int notifyArg} in, 0x8102cf88 / 0x8102d040 refuse non-user bits
+    /// (ILLEGAL_PATTERN), then the driver calls 0xB7DF3EDF / 0x714A107A look the UID up in SceUIDEventClass, so any
+    /// object of the event class is accepted): a set pattern of 0 does nothing; otherwise, under the object's lock, the
+    /// event set 0x8101dcf8 (pulse 0x8101e370) on the object's event and the notification of every registered callback
+    /// in list order (0x8101cfcc), with the registration's notifier ID and <paramref name="notifyArg"/>.
+    /// </summary>
+    public int SetOrPulseWithNotify(uint setPattern, ulong userData, int notifyArg, bool pulse)
+    {
+        if ((setPattern & ~EventBits.UserMask) != 0)
+        {
+            return SceError.ILLEGAL_PATTERN;
+        }
+
+        if (setPattern == 0)
+        {
+            return SceError.OK;
+        }
+
+        lock (this)
+        {
+            SetForNotify(setPattern, userData, pulse);
+            NotifyRegisteredCallbacks(notifyArg);
+            return SceError.OK;
+        }
+    }
+
+    /// <summary>The event set of <see cref="SetOrPulseWithNotify"/> on this object's event (the caller holds the lock).
+    /// A message pipe or an asynchronous I/O operation keeps no user bits here: their waits look at their own state
+    /// bits, so only the notification is seen (see the roadmap's sync item).</summary>
+    protected virtual void SetForNotify(uint setPattern, ulong userData, bool pulse)
+    {
+    }
+
     /// <summary>Saves the registrations at the end of the object's record (the caller holds its lock).</summary>
     internal void SaveRegistrations(SnapshotWriter w)
     {

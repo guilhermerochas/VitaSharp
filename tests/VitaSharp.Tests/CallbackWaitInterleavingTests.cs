@@ -587,8 +587,9 @@ public sealed class CallbackWaitInterleavingTests(GuestMemoryFixture fixture) : 
             restoredTimer.ResolveRegistrations(_h.Emu.Kernel.Objects);
             Assert.Equal(2, restoredTimer.RegisteredCallbacks);
 
-            // the timer record of the builds before the registrations: its fields only
-            byte[] legacy = timerState.Data.ToArray()[..^20];
+            // the timer record of the builds before the registrations: its fields only (the two registrations, 20 bytes,
+            // and the event's user bits and user data after them, 12 bytes)
+            byte[] legacy = timerState.Data.ToArray()[..^32];
             var legacyTimer = new TimerObject { Name = "legacy-timer", Clock = () => 0 };
             legacyTimer.Load(new VitaSharp.Core.SaveState.SnapshotReader(legacy));
             legacyTimer.ResolveRegistrations(_h.Emu.Kernel.Objects);

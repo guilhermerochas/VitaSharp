@@ -74,6 +74,7 @@ public static partial class GuestClock
 
         long ticks = (microseconds * Stopwatch.Frequency + 999_999) / 1_000_000;
         Volatile.Write(ref s_frozen, f + ticks);
+        Kernel.TimerDispatcher.Poke(); // the timers whose event this move reached fire now
     }
 
     public static long Microseconds => (long)(Ticks * (1_000_000.0 / Stopwatch.Frequency));
