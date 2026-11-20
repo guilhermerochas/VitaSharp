@@ -95,6 +95,7 @@ public sealed unsafe partial class GuestThread
 
         EnsureExceptionStacks(s, manager);
         _exceptionManager = manager;
+        manager.EnterExceptionNesting();
         uint mode = kind == ExceptionUndefined ? ExceptionModes.Undefined : ExceptionModes.Abort;
         uint link;
         if (kind == ExceptionDataAbort)

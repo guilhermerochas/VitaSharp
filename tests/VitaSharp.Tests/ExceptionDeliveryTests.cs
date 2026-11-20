@@ -76,6 +76,19 @@ public sealed class ExceptionDeliveryTests(GuestMemoryFixture fixture) : IDispos
         });
     }
 
+    /// <summary>Entering the chain puts the core inside an exception (its excpmgr nesting word is 1), what the
+    /// exception return (NID_3E55B5C3) checks and clears.</summary>
+    [Fact]
+    public void EnteringTheChainMarksTheCoreInsideAnException()
+    {
+        uint data = (uint)Invoke(Procmgr, "ksceExcpmgrGetData")!;
+        GuestMemory.W32(data, 0);
+        Assert.Equal(0, Call(Procmgr, "sceKernelRegisterExceptionHandler", GuestThread.ExceptionUndefined, 0u, TakingHandler(0x33)));
+        uint user = UserCodeWithUndefined();
+        _harness.OnGuest(thread => Assert.Equal(0x33u, thread.CallGuest(user)));
+        Assert.Equal(1u, GuestMemory.R32(data));
+    }
+
     [Fact]
     public void HandlersArePassedOnInPriorityOrder()
     {
