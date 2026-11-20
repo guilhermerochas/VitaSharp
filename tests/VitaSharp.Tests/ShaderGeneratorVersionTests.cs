@@ -22,7 +22,7 @@ public sealed class ShaderGeneratorVersionTests
     /// <summary>The version the hash below was recorded with.</summary>
     private const int RecordedVersion = 30;
     /// <summary>The <see cref="TranslationHash"/> of <see cref="RecordedVersion"/>.</summary>
-    private const string RecordedHash = "3F548CF8DCCC9811";
+    private const string RecordedHash = "F4BC5C751BEAA033";
 
     private static GxpProgram CodeProgram(ulong[] code, bool fragment, uint address)
     {
@@ -115,7 +115,27 @@ public sealed class ShaderGeneratorVersionTests
             }
         }
 
-        return System.IO.Hashing.XxHash64.HashToUInt64(Encoding.UTF8.GetBytes(all.ToString())).ToString("X16", CultureInfo.InvariantCulture);
+        return HostIndependentHash(all.ToString());
+    }
+
+    /// <summary>The hash of the translation text with every line break as '\n'. The GLSL takes its line breaks from the
+    /// host: AppendLine writes Environment.NewLine ("\r\n" on Windows) and the raw string literals of the generator
+    /// keep the line breaks of the checkout (CRLF with core.autocrlf on Windows, LF elsewhere), and neither changes
+    /// what the shader compiler builds, so the recorded hash must not see them.</summary>
+    internal static string HostIndependentHash(string translation)
+    {
+        string normalized = translation.ReplaceLineEndings("\n");
+        return System.IO.Hashing.XxHash64.HashToUInt64(Encoding.UTF8.GetBytes(normalized)).ToString("X16", CultureInfo.InvariantCulture);
+    }
+
+    /// <summary>The same translation written on Windows (CRLF) and on Linux/macOS (LF) hashes the same.</summary>
+    [Fact]
+    public void HashDoesNotDependOnTheHostLineBreaks()
+    {
+        const string Lf = "== vs 0x0\nvoid main() {\n    gl_Position = vec4(0.0);\n}\n";
+        string crlf = Lf.Replace("\n", "\r\n", StringComparison.Ordinal);
+        Assert.Equal(HostIndependentHash(Lf), HostIndependentHash(crlf));
+        Assert.Equal(HostIndependentHash(Lf), HostIndependentHash(Lf.Replace("\n", Environment.NewLine, StringComparison.Ordinal)));
     }
 
     [Fact]
