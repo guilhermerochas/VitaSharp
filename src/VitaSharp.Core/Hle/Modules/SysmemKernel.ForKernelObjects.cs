@@ -642,6 +642,25 @@ public sealed partial class SysmemKernel
     [Hle(Nid = 0x2C15615F, Library = "SceSysmemForKernel")]
     int NID_2C15615F(int pid, int puid, uint objOut) => PuidReferObject(pid, puid, 0, objOut);
 
+    /// <summary>PUIDReleaseObject (0xCE561224)(pid, puid): drops a reference taken through the process handle; the
+    /// kernel's pid 0x80020005, a handle that is not a UID 0x80024501.</summary>
+    [Hle(Nid = 0xCE561224, Library = "SceSysmemForKernel")]
+    int NID_CE561224(int pid, int puid)
+    {
+        if (pid == KernelSpace.KernelPid)
+        {
+            return SceError.INVALID_ARGUMENT;
+        }
+
+        if (!IsGuidForm(puid))
+        {
+            return InvalidPuid;
+        }
+
+        int guid = kscePUIDtoGUID(pid, puid);
+        return guid < 0 ? guid : ksceGUIDReleaseObject(guid);
+    }
+
     /// <summary>PUIDOpenByName (0x201E970B)(pid, name): kscePUIDOpenByName.</summary>
     [Hle(Nid = 0x201E970B, Library = "SceSysmemForKernel")]
     int NID_201E970B(int pid, uint name) => kscePUIDOpenByName(pid, name);

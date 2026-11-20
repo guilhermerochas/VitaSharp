@@ -234,6 +234,9 @@ public sealed class KernelSysmemObjectsTests(GuestMemoryFixture fixture) : IDisp
             Assert.Equal(R0(t, 0xFA6C098C, uid), GuestMemory.R32(objOut));
             Assert.Equal(0u, R0(t, 0x149885C4, uid)); // ksceGUIDReleaseObject
             Assert.Equal(uid, R0(t, 0x2C15615F, (uint)t.Pid, uid, objOut));
+            Assert.Equal(0u, R0(t, 0xCE561224, (uint)t.Pid, uid)); // PUIDReleaseObject
+            Assert.Equal(InvalidArgument, R0(t, 0xCE561224, (uint)KernelSpace.KernelPid, uid));
+            Assert.Equal(NotAGuid, R0(t, 0xCE561224, (uint)t.Pid, 2));
             Assert.Equal(InvalidArgument, R0(t, 0x9C23DFF7, (uint)t.Pid, uid, 0, 0));
             Assert.Equal(uid, R0(t, 0x201E970B, (uint)t.Pid, _harness.Str("ScePuidRefer")));
             Assert.Equal(uid, R0(t, 0xBDE00106, _harness.Str("ScePuidRefer")));
