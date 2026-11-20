@@ -59,7 +59,18 @@ public sealed partial class ThreadmgrKernel
         }
     }
 
-    /// <summary>NID_56C18B11(): the current thread's +0x100 word, 0 from the thread's setup (no 3.74 export writes it).</summary>
+    /// <summary>NID_56C18B11(): the current thread's +0x100 word, 0 from the thread's setup until NID_84EB1EA4 sets it.</summary>
     [Hle(Nid = 0x56C18B11, Library = "SceThreadmgrForDriver")]
-    int NID_56C18B11() => GuestThread.Current == null ? IllegalContext : 0;
+    int NID_56C18B11()
+    {
+        if (GuestThread.Current is not { } thread)
+        {
+            return IllegalContext;
+        }
+
+        lock (_word100)
+        {
+            return _word100.GetValueOrDefault(thread.Uid);
+        }
+    }
 }

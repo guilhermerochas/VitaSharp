@@ -116,8 +116,9 @@ public sealed class KernelTwinsTests(GuestMemoryFixture fixture) : IDisposable
             }
         }
 
-        // 398 since ksceZlibDecompress follows SceKernelUtils' own codes (SysmemKernel.Utils), not libpaf's
-        Assert.True(count >= 398, $"only {count} twins");
+        // 398 since ksceZlibDecompress follows SceKernelUtils' own codes (SysmemKernel.Utils), not libpaf's; 397 since
+        // ksceKernelChangeThreadPriority answers the earlier priority (ThreadmgrKernel), not the user call's 0
+        Assert.True(count >= 397, $"only {count} twins");
         Assert.True(wrong.Count == 0, string.Join("\n", wrong));
     }
 

@@ -1334,10 +1334,6 @@ public sealed partial class KernelTwins : HleModule
     [Hle]
     void ksceKernelChangeThreadCpuAffinityMask(HleContext context) => Forward(context, 0x15129174);
 
-    /// <summary>ksceKernelChangeThreadPriority (SceThreadmgrForDriver 0x63DAB420): sceKernelChangeThreadPriority.</summary>
-    [Hle]
-    void ksceKernelChangeThreadPriority(HleContext context) => Forward(context, 0xBD0139F2);
-
     /// <summary>ksceKernelChangeThreadVfpException (SceThreadmgrForDriver 0xF4C81683): sceKernelChangeThreadVfpException.</summary>
     [Hle]
     void ksceKernelChangeThreadVfpException(HleContext context) => Forward(context, 0xCC18FBAE);
