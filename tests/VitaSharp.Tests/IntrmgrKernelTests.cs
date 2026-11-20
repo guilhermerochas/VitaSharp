@@ -171,6 +171,41 @@ public sealed class IntrmgrKernelTests(GuestMemoryFixture fixture) : IDisposable
     }
 
     [Fact]
+    public void TheKernelHooksAreCalled()
+    {
+        uint seen = _harness.Alloc(0x100);
+        uint onRegister = Recorder(seen);
+        uint onRelease = Recorder(seen + 0x10);
+        uint before = Recorder(seen + 0x20);
+        uint after = Recorder(seen + 0x30);
+        uint service = Recorder(seen + 0x40);
+        uint operations = _harness.Alloc(0x28);
+        uint handler = Recorder(seen + 0x50, 5);
+        Invoke(Services, "ksceKernelSetIntrRegistrationHooks", onRegister, onRelease);
+        Invoke(Services, "ksceKernelSetSubIntrTraceHooks", before, after);
+        Invoke(Services, "ksceKernelSetIntrService", service);
+        _harness.OnGuest(_ =>
+        {
+            Assert.Equal(0, Register(0x61, Recorder(_harness.Alloc(16)), Options(2, operations)));
+            Assert.Equal(0, Call(Services, "ksceKernelRegisterSubIntrHandler", 0x61u, 1u, 0u, handler, 0x66u));
+            Assert.Equal(5, Call(Services, "ksceKernelTriggerSubIntr", 0x61u, 1u, 0x44u));
+            Assert.Equal(0, Call(Services, "ksceKernelReleaseIntrHandler", 0x61u));
+            Invoke(Services, "ksceKernelCallIntrService", 0x1234u);
+        });
+        Assert.Equal(0x61u, GuestMemory.R32(seen));
+        Assert.Equal(0x61u, GuestMemory.R32(seen + 0x10));
+        Assert.Equal(new uint[] { 4, 0x61, 1 }, Words(seen + 0x20, 3));
+        Assert.Equal(new uint[] { 3, 0x61, 1 }, Words(seen + 0x30, 3));
+        Assert.Equal(new uint[] { 0x100000, 4 }, Words(seen + 0x40, 2));
+        Assert.Equal(new uint[] { 0x44, 0x66 }, Words(seen + 0x50, 2));
+
+        Assert.Equal(0, Call(Services, "ksceKernelIsIntrPending", 0x61u));
+        Assert.Equal(0, Call(Services, "ksceKernelClearIntrPending", 0x61u));
+        Assert.Equal(Code, Call(Services, "ksceKernelIsIntrPending", 0x100u));
+        Assert.Equal(Code, Call(Services, "ksceKernelClearIntrPending", 0x100u));
+    }
+
+    [Fact]
     public void RegistrationIsRefusedInsideAHandler()
     {
         // a handler that calls ksceKernelRegisterIntrHandler is in interrupt context: the HLE answers for the state
@@ -181,7 +216,7 @@ public sealed class IntrmgrKernelTests(GuestMemoryFixture fixture) : IDisposable
 
     private int InHandler(Func<int> body)
     {
-        var field = typeof(SystemServicesVsh).GetField("_intrDepth", System.Reflection.BindingFlags.Instance | System.Reflection.BindingFlags.NonPublic)!;
+        System.Reflection.FieldInfo field = typeof(SystemServicesVsh).GetField("_intrDepth", System.Reflection.BindingFlags.Instance | System.Reflection.BindingFlags.NonPublic)!;
         field.SetValue(Services, 1);
         try
         {

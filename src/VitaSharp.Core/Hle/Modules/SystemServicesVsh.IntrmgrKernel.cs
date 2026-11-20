@@ -14,7 +14,9 @@ namespace VitaSharp.Core.Hle.Modules;
 // suspend, +0x20 resume, +0x24 "occurred"); a sub-interrupt is raised by TriggerSubIntr, which calls its handler at
 // once (argument, the handler's own argument, the line's priority) and returns the handler's result. A software
 // interrupt (TriggerSGI) runs the line's handler (line, argument) on the calling thread here, as an interrupt taken
-// right away. The device lines raised by hardware (timers, DMA completions) are not delivered by the emulated devices.
+// right away. SceIntrmgrForKernel sets the hooks around a sub-interrupt handler and around a registration and a
+// release, and the service NID 0xC568F145 calls; its pending bits are the GIC's. The device lines raised by hardware
+// (timers, DMA completions) are not delivered by the emulated devices.
 public sealed partial class SystemServicesVsh
 {
     const int INTR_ERR_IN_INTERRUPT = unchecked((int)0x80027101);
@@ -162,7 +164,17 @@ public sealed partial class SystemServicesVsh
             SubCount = subCount,
             SubOps = subCount == 0 ? 0 : subOps,
         };
+        IntrNotify(_intrOnRegister, line);
         return 0;
+    }
+
+    /// <summary>A registration hook told the line, on the calling guest thread.</summary>
+    void IntrNotify(uint hook, uint line)
+    {
+        if (hook != 0 && GuestThread.Current is { } thread)
+        {
+            thread.CallGuest(hook, line);
+        }
     }
 
     /// <summary>ksceKernelReleaseIntrHandler(int line): the line freed (and disabled), its sub-interrupts dropped.</summary>
@@ -190,6 +202,7 @@ public sealed partial class SystemServicesVsh
             _intrSubs.Remove(key);
         }
 
+        IntrNotify(_intrOnRelease, line);
         return 0;
     }
 
@@ -633,7 +646,111 @@ public sealed partial class SystemServicesVsh
 
         registered.Raised++;
         _intrSubs[key] = registered;
-        return (int)IntrCall(registered.Handler, argument, registered.Argument, _intrLines[line].Priority & 0xFF);
+        if (_intrBeforeSub != 0 && GuestThread.Current is { } before)
+        {
+            before.CallGuest(_intrBeforeSub, 4, line, sub, argument, registered.Argument);
+        }
+
+        int result = (int)IntrCall(registered.Handler, argument, registered.Argument, _intrLines[line].Priority & 0xFF);
+        if (_intrAfterSub != 0 && GuestThread.Current is { } after)
+        {
+            after.CallGuest(_intrAfterSub, 3, line, sub, argument);
+        }
+
+        return result;
+    }
+
+    // ------------------------------------------------------------------ SceIntrmgrForKernel: the hooks and pending bits
+
+    /// <summary>The trace hooks around a sub-interrupt's handler, the hooks told of a registration and a release, and
+    /// the service function NID 0xC568F145 forwards to (SceIntrmgrForKernel's setters).</summary>
+    [SnapshotMissing] // states of builds before it: no hook set
+    uint _intrBeforeSub;
+
+    [SnapshotMissing] // states of builds before it: no hook set
+    uint _intrAfterSub;
+
+    [SnapshotMissing] // states of builds before it: no hook set
+    uint _intrOnRegister;
+
+    [SnapshotMissing] // states of builds before it: no hook set
+    uint _intrOnRelease;
+
+    [SnapshotMissing] // states of builds before it: no service set
+    uint _intrService;
+
+    [SnapshotMissing] // states of builds before it: nothing pending
+    readonly uint[] _intrPending = new uint[IntrLines / 32];
+
+    /// <summary>NID 0x04DBA732 (before, after): the hooks around a sub-interrupt handler (before: 4, line, sub,
+    /// argument, the handler's argument; after: 3, line, sub, argument).</summary>
+    [Hle(Nid = 0x04DBA732, Library = "SceIntrmgrForKernel")]
+    void ksceKernelSetSubIntrTraceHooks(uint before, uint after)
+    {
+        _intrBeforeSub = before;
+        _intrAfterSub = after;
+    }
+
+    /// <summary>NID 0x6F5B8AF2 (onRegister, onRelease): the hooks told the line of a registration and a release.</summary>
+    [Hle(Nid = 0x6F5B8AF2, Library = "SceIntrmgrForKernel")]
+    void ksceKernelSetIntrRegistrationHooks(uint onRegister, uint onRelease)
+    {
+        _intrOnRegister = onRegister;
+        _intrOnRelease = onRelease;
+    }
+
+    /// <summary>NID 0xE3B670BF (function): the service NID 0xC568F145 calls.</summary>
+    [Hle(Nid = 0xE3B670BF, Library = "SceIntrmgrForKernel")]
+    void ksceKernelSetIntrService(uint function)
+    {
+        _intrService = function;
+    }
+
+    /// <summary>NID 0xC568F145 (value): the service called with (0x100000, 4, &amp;value); nothing without one.</summary>
+    [Hle(Nid = 0xC568F145, Library = "SceIntrmgrForDriver")]
+    void ksceKernelCallIntrService(uint value)
+    {
+        if (_intrService == 0 || GuestThread.Current is not { } thread)
+        {
+            return;
+        }
+
+        uint word = Mem.Alloc(4, "SceIntrmgrService", MemoryRegion.Kernel, 4);
+        try
+        {
+            GuestMemory.W32(word, value);
+            thread.CallGuest(_intrService, 0x100000, 4, word);
+        }
+        finally
+        {
+            Mem.Free(word);
+        }
+    }
+
+    /// <summary>NID 0x2CC44FF3 (line): the GIC's pending bit of the line (nothing raises one here); a line past 255
+    /// 0x80027102.</summary>
+    [Hle(Nid = 0x2CC44FF3, Library = "SceIntrmgrForKernel")]
+    int ksceKernelIsIntrPending(uint line)
+    {
+        if (line >= IntrLines)
+        {
+            return INTR_ERR_CODE;
+        }
+
+        return (int)((_intrPending[line >> 5] >> (int)(line & 31)) & 1);
+    }
+
+    /// <summary>NID 0xC63C96BC (line): the pending bit cleared; 0.</summary>
+    [Hle(Nid = 0xC63C96BC, Library = "SceIntrmgrForKernel")]
+    int ksceKernelClearIntrPending(uint line)
+    {
+        if (line >= IntrLines)
+        {
+            return INTR_ERR_CODE;
+        }
+
+        _intrPending[line >> 5] &= ~(1u << (int)(line & 31));
+        return 0;
     }
 
     /// <summary>The state of a line, for the tests.</summary>
