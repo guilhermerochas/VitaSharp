@@ -152,7 +152,18 @@ public sealed partial class VshBridge : HleModule
     [Hle] int vshAppMgrGetPfsProcessStatus() => 0;
     /// <summary>(int, SceUInt64 *mcId): the memory card's cloud-data (PS Plus online storage) id, 8 bytes the kernel
     /// copies out (bridge 0x81004F30). The emulated card was never registered for online storage: 0.</summary>
-    [Hle] int _vshAppMgrCloudDataGetMcId(int a, uint mcId) { if (mcId != 0) GuestMemory.Write(mcId, 0UL); return 0; }
+    /// <summary>(int, SceUInt64 *mcId): the memory card registered for online storage (_vshAppMgrCloudDataSetMcId),
+    /// 0 when none is.</summary>
+    [Hle]
+    int _vshAppMgrCloudDataGetMcId(int a, uint mcId)
+    {
+        if (mcId != 0)
+        {
+            GuestMemory.Write(mcId, _cloudMcId);
+        }
+
+        return 0;
+    }
 
     // ---- QA flags (SceSblQafMgr): none set on a retail unit
     [Hle] int sceSblQafMgrIsAllowRemoteSysmoduleLoad() => 0;
