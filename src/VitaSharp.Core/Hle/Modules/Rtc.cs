@@ -38,7 +38,36 @@ public sealed partial class Rtc : HleModule
     }
 
     [Hle("_sceRtcGetCurrentTick", Cost = HleCost.KernelEntry)]
-    [Hle] internal int sceRtcGetCurrentTick(Ptr<ulong> tick) { tick.TrySet(TrophyServerTick(Emu) ?? NowTick); return 0; }
+    [Hle]
+    internal int sceRtcGetCurrentTick(Ptr<ulong> tick)
+    {
+        if (TrophyServerTick(Emu) is { } trophy)
+        {
+            tick.TrySet(trophy);
+            return 0;
+        }
+
+        return ReadClock(Kernel.RtcClocks.Main, tick);
+    }
+
+    /// <summary>A clock of the system's SceRtc (<see cref="Kernel.RtcClocks"/>): its tick, or 0x80251002 while it is
+    /// not set.</summary>
+    int ReadClock(int clock, Ptr<ulong> tick)
+    {
+        Kernel.RtcClocks clocks = Emu.Vita.RtcClocks;
+        if (!clocks.Valid[clock])
+        {
+            return RTC_NOT_SET;
+        }
+
+        tick.TrySet(RtcKernel.ClockTick(clocks, clock));
+        return 0;
+    }
+
+    const int RTC_NOT_SET = unchecked((int)0x80251002);
+
+    /// <summary>The local time's offset from UTC in µs (the configuration's zone and daylight saving).</summary>
+    long LocalOffsetUs => Emu.Vita.RtcClocks.LocalOffsetMinutes * 60_000_000L;
 
     /// <summary>The date of a trophy the trophy server bridge is giving (<see cref="Kernel.VitaSystem.TrophyUnlockTick"/>),
     /// for the shell's trophy server threads (SceNpTrophyServer*: they stamp an unlock with sceRtcGetCurrentTick and
@@ -48,14 +77,17 @@ public sealed partial class Rtc : HleModule
         && Kernel.GuestThread.Current?.Name.StartsWith("SceNpTrophyServer", StringComparison.Ordinal) == true ? (ulong)t : null;
 
     [Hle("_sceRtcGetCurrentNetworkTick", Cost = HleCost.KernelEntry)]
-    [Hle] internal int sceRtcGetCurrentNetworkTick(Ptr<ulong> tick) { tick.TrySet(NowTick); return 0; }
+    [Hle]
+    internal int sceRtcGetCurrentNetworkTick(Ptr<ulong> tick) => ReadClock(Kernel.RtcClocks.Network, tick);
+    [Hle(Nid = 0x6965E5DF, Library = "SceRtcForDriver")]
     [Hle] uint sceRtcGetTickResolution() => 1_000_000;
 
     [Hle("_sceRtcGetCurrentClock", Cost = HleCost.KernelEntry)]
     [Hle]
     internal int sceRtcGetCurrentClock(uint time, int tzMinutes)
     {
-        WriteDateTime(time, DateTime.UtcNow.AddMinutes(tzMinutes));
+        ulong now = RtcKernel.ClockTick(Emu.Vita.RtcClocks, Kernel.RtcClocks.Main);
+        WriteDateTime(time, FromTick((ulong)((long)now + tzMinutes * 60_000_000L)));
         return 0;
     }
 
@@ -63,19 +95,64 @@ public sealed partial class Rtc : HleModule
     [Hle]
     internal int sceRtcGetCurrentClockLocalTime(uint time)
     {
-        WriteDateTime(time, DateTime.Now);
+        ulong now = RtcKernel.ClockTick(Emu.Vita.RtcClocks, Kernel.RtcClocks.Main);
+        WriteDateTime(time, FromTick((ulong)((long)now + LocalOffsetUs)));
         return 0;
     }
 
 
-    [Hle] internal int sceRtcGetDayOfWeek(int year, int month, int day)
+    /// <summary>The day of the week (0 Sunday); a year below 1, a month or a day out of range: SceRtc's errors.</summary>
+    [Hle(Nid = 0x0F800878, Library = "SceRtcForDriver")]
+    [Hle]
+    internal int sceRtcGetDayOfWeek(int year, int month, int day)
     {
-        try { return (int)new DateTime(year, month, day).DayOfWeek; } catch { return -1; }
+        int days = sceRtcGetDaysInMonth(year, month);
+        if (days < 0)
+        {
+            return days;
+        }
+
+        if (day < 1 || day > days)
+        {
+            return RTC_INVALID_DAY;
+        }
+
+        return (int)new DateTime(Math.Min(year, 9999), month, day).DayOfWeek;
     }
 
-    [Hle] internal int sceRtcGetDaysInMonth(int year, int month) => DateTime.DaysInMonth(year, month);
-    [Hle] internal int sceRtcIsLeapYear(int year) => DateTime.IsLeapYear(year) ? 1 : 0;
+    /// <summary>The days of the month; a year below 1 0x80251081, a month out of 1..12 0x80251082.</summary>
+    [Hle(Nid = 0xC2DC38D9, Library = "SceRtcForDriver")]
+    [Hle]
+    internal int sceRtcGetDaysInMonth(int year, int month)
+    {
+        if (year < 1)
+        {
+            return RTC_INVALID_YEAR;
+        }
 
+        if (month is < 1 or > 12)
+        {
+            return RTC_INVALID_MONTH;
+        }
+
+        return DateTime.DaysInMonth(Math.Min(year, 9999), month);
+    }
+
+    /// <summary>A leap year (the Gregorian rule); a year below 1 0x80251081.</summary>
+    [Hle(Nid = 0x6F96FAA5, Library = "SceRtcForDriver")]
+    [Hle]
+    internal int sceRtcIsLeapYear(int year)
+    {
+        if (year < 1)
+        {
+            return RTC_INVALID_YEAR;
+        }
+
+        bool leap = year % 400 == 0 || (year % 100 != 0 && year % 4 == 0);
+        return leap ? 1 : 0;
+    }
+
+    [Hle(Nid = 0xF139E359, Library = "SceRtcForDriver")]
     [Hle]
     internal int sceRtcGetTick(uint time, Ptr<ulong> tick)
     {
@@ -83,6 +160,7 @@ public sealed partial class Rtc : HleModule
         return 0;
     }
 
+    [Hle(Nid = 0x42A0DFCB, Library = "SceRtcForDriver")]
     [Hle]
     internal int sceRtcSetTick(uint time, Ptr<ulong> tick)
     {
@@ -90,6 +168,7 @@ public sealed partial class Rtc : HleModule
         return 0;
     }
 
+    [Hle(Nid = 0x9C8AF264, Library = "SceRtcForDriver")]
     [Hle]
     int sceRtcTickAddSeconds(Ptr<ulong> dst, Ptr<ulong> src, long seconds)
     {
@@ -97,17 +176,27 @@ public sealed partial class Rtc : HleModule
         return 0;
     }
 
+    [Hle(Nid = 0xCE51C2A1, Library = "SceRtcForDriver")]
     [Hle] int sceRtcTickAddMicroseconds(Ptr<ulong> dst, Ptr<ulong> src, long us) { dst.Value = (ulong)((long)src.Value + us); return 0; }
+    [Hle(Nid = 0x0F9E02EF, Library = "SceRtcForDriver")]
     [Hle] int sceRtcTickAddMinutes(Ptr<ulong> dst, Ptr<ulong> src, long m) { dst.Value = (ulong)((long)src.Value + m * 60_000_000); return 0; }
+    [Hle(Nid = 0x32E50C36, Library = "SceRtcForDriver")]
     [Hle] int sceRtcTickAddHours(Ptr<ulong> dst, Ptr<ulong> src, int h) { dst.Value = (ulong)((long)src.Value + h * 3_600_000_000L); return 0; }
+    [Hle(Nid = 0x0CB72FAF, Library = "SceRtcForDriver")]
     [Hle] int sceRtcTickAddDays(Ptr<ulong> dst, Ptr<ulong> src, int d) { dst.Value = (ulong)((long)src.Value + d * 86_400_000_000L); return 0; }
+    [Hle(Nid = 0x0EBB3F12, Library = "SceRtcForDriver")]
     [Hle] int sceRtcCompareTick(Ptr<ulong> a, Ptr<ulong> b) => a.Value.CompareTo(b.Value);
 
+    [Hle(Nid = 0xFFD7A04F, Library = "SceRtcForDriver")]
     [Hle] int sceRtcGetTime_t(uint time, Ptr<uint> t) { t.TrySet((uint)((ReadDateTime(time).Ticks / 10 - (long)UnixEpochTick) / 1_000_000)); return 0; }
+    [Hle(Nid = 0x497B5DC9, Library = "SceRtcForDriver")]
     [Hle] int sceRtcGetTime64_t(uint time, Ptr<long> t) { t.TrySet((ReadDateTime(time).Ticks / 10 - (long)UnixEpochTick) / 1_000_000); return 0; }
+    [Hle(Nid = 0xDE9F4515, Library = "SceRtcForDriver")]
     [Hle] int sceRtcSetTime_t(uint time, uint t) { WriteDateTime(time, FromTick(UnixEpochTick + t * 1_000_000UL)); return 0; }
+    [Hle(Nid = 0xF4E23829, Library = "SceRtcForDriver")]
     [Hle] int sceRtcSetTime64_t(uint time, ulong t) { WriteDateTime(time, FromTick(UnixEpochTick + t * 1_000_000UL)); return 0; }
 
+    [Hle(Nid = 0x1DD4C5B6, Library = "SceRtcForDriver")]
     [Hle]
     int sceRtcGetWin32FileTime(uint time, Ptr<ulong> ft)
     {
@@ -115,6 +204,7 @@ public sealed partial class Rtc : HleModule
         return 0;
     }
 
+    [Hle(Nid = 0xBA14600F, Library = "SceRtcForDriver")]
     [Hle]
     int sceRtcSetWin32FileTime(uint time, ulong ft)
     {
@@ -126,8 +216,12 @@ public sealed partial class Rtc : HleModule
     [Hle]
     internal int sceRtcConvertUtcToLocalTime(Ptr<ulong> utc, Ptr<ulong> local)
     {
-        var d = FromTick(utc.Value).ToLocalTime();
-        local.Value = (ulong)(d.Ticks / 10);
+        if (utc.IsNull || local.IsNull)
+        {
+            return RTC_INVALID_POINTER;
+        }
+
+        local.Value = (ulong)((long)utc.Value + LocalOffsetUs);
         return 0;
     }
 
@@ -135,8 +229,12 @@ public sealed partial class Rtc : HleModule
     [Hle]
     internal int sceRtcConvertLocalTimeToUtc(Ptr<ulong> local, Ptr<ulong> utc)
     {
-        var d = DateTime.SpecifyKind(FromTick(local.Value), DateTimeKind.Local).ToUniversalTime();
-        utc.Value = (ulong)(d.Ticks / 10);
+        if (utc.IsNull || local.IsNull)
+        {
+            return RTC_INVALID_POINTER;
+        }
+
+        utc.Value = (ulong)((long)local.Value - LocalOffsetUs);
         return 0;
     }
 
@@ -169,6 +267,7 @@ public sealed partial class Rtc : HleModule
     int sceRtcFormatRFC2822LocalTime(uint buf, Ptr<ulong> tick) =>
         sceRtcFormatRFC2822(buf, tick, (int)TimeZoneInfo.Local.GetUtcOffset(DateTime.Now).TotalMinutes);
 
+    [Hle(Nid = 0x0E7091D6, Library = "SceRtcForDriver")]
     [Hle]
     internal int sceRtcParseRFC3339(Ptr<ulong> tick, string s)
     {
@@ -178,10 +277,57 @@ public sealed partial class Rtc : HleModule
         return 0;
     }
 
+    [Hle(Nid = 0xA1F41AE2, Library = "SceRtcForDriver")]
     [Hle]
     int sceRtcParseDateTime(Ptr<ulong> tick, string s) => sceRtcParseRFC3339(tick, s);
 
-    [Hle] int sceRtcCheckValid(uint time) { try { _ = new DateTime(GuestMemory.Read<ushort>(time), GuestMemory.Read<ushort>(time + 2), GuestMemory.Read<ushort>(time + 4)); return 0; } catch { return unchecked((int)0x80251002); } }
+    /// <summary>A valid date and time: the year (1..9999), month, day, hour, minute, second and microsecond each in
+    /// range, else SceRtc's error for the first one out (0x80251081..0x80251087); NULL 0x80251001.</summary>
+    [Hle(Nid = 0xADF63D7C, Library = "SceRtcForDriver")]
+    [Hle]
+    int sceRtcCheckValid(uint time)
+    {
+        if (time == 0)
+        {
+            return RTC_INVALID_POINTER;
+        }
+
+        int year = GuestMemory.Read<ushort>(time);
+        int month = GuestMemory.Read<ushort>(time + 2);
+        if (year is < 1 or > 9999)
+        {
+            return RTC_INVALID_YEAR;
+        }
+
+        int days = sceRtcGetDaysInMonth(year, month);
+        if (days < 0)
+        {
+            return days;
+        }
+
+        int day = GuestMemory.Read<ushort>(time + 4);
+        if (day < 1 || day > days)
+        {
+            return RTC_INVALID_DAY;
+        }
+
+        if (GuestMemory.Read<ushort>(time + 6) >= 24)
+        {
+            return unchecked((int)0x80251084);
+        }
+
+        if (GuestMemory.Read<ushort>(time + 8) >= 60)
+        {
+            return unchecked((int)0x80251085);
+        }
+
+        if (GuestMemory.Read<ushort>(time + 10) >= 60)
+        {
+            return unchecked((int)0x80251086);
+        }
+
+        return GuestMemory.R32(time + 12) >= 1_000_000 ? unchecked((int)0x80251087) : 0;
+    }
 
     // ------------------------------------------------------------------ calendar helpers (psp2common/kernel/rtc.h errors)
 
@@ -189,6 +335,7 @@ public sealed partial class Rtc : HleModule
         RTC_INVALID_YEAR = unchecked((int)0x80251081), RTC_INVALID_MONTH = unchecked((int)0x80251082), RTC_INVALID_DAY = unchecked((int)0x80251083);
 
     /// <summary>Day of the year, 1-based (1 January = 1).</summary>
+    [Hle(Nid = 0x9097EF0D, Library = "SceRtcForDriver")]
     [Hle]
     int sceRtcGetDayOfYear(int year, int month, int day)
     {
@@ -199,6 +346,7 @@ public sealed partial class Rtc : HleModule
     }
 
     /// <summary>FAT date/time: years since 1980 (7 bits), month, day, hour, minute, seconds / 2.</summary>
+    [Hle(Nid = 0x09AF419B, Library = "SceRtcForDriver")]
     [Hle]
     int sceRtcGetDosTime(uint time, Ptr<uint> dos)
     {
@@ -211,6 +359,7 @@ public sealed partial class Rtc : HleModule
         return 0;
     }
 
+    [Hle(Nid = 0xEB27F94E, Library = "SceRtcForDriver")]
     [Hle]
     int sceRtcSetDosTime(uint time, uint dos)
     {
@@ -225,6 +374,7 @@ public sealed partial class Rtc : HleModule
         return 0;
     }
 
+    [Hle(Nid = 0xA82AC5B3, Library = "SceRtcForDriver")]
     [Hle]
     int sceRtcTickAddTicks(Ptr<ulong> dst, Ptr<ulong> src, long add)
     {
@@ -233,6 +383,7 @@ public sealed partial class Rtc : HleModule
         return 0;
     }
 
+    [Hle(Nid = 0x24209FBF, Library = "SceRtcForDriver")]
     [Hle]
     int sceRtcTickAddWeeks(Ptr<ulong> dst, Ptr<ulong> src, int weeks)
     {
@@ -252,7 +403,9 @@ public sealed partial class Rtc : HleModule
         return 0;
     }
 
+    [Hle(Nid = 0xA8CDB6BD, Library = "SceRtcForDriver")]
     [Hle] internal int sceRtcTickAddMonths(Ptr<ulong> dst, Ptr<ulong> src, int months) => AddCalendar(dst, src, months);
+    [Hle(Nid = 0x85F3026C, Library = "SceRtcForDriver")]
     [Hle] internal int sceRtcTickAddYears(Ptr<ulong> dst, Ptr<ulong> src, int years) => AddCalendar(dst, src, years * 12);
 
     /// <summary>Ad hoc, debug, GPS and retained network clocks: no such sources here, they follow the network tick.</summary>

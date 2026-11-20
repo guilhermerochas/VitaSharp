@@ -125,6 +125,10 @@ public sealed class VitaSystem
     /// the kernel (<see cref="ScePowerState"/>).</summary>
     public ScePowerState PowerState { get; } = new();
 
+    /// <summary>SceRtc's clocks, time zone and alarms, for every process and the kernel (<see cref="RtcClocks"/>).
+    /// </summary>
+    public RtcClocks RtcClocks { get; } = new();
+
     /// <summary>The plugin configuration's *KERNEL modules were loaded (or tried) into the kernel: the plugin loader
     /// loads them once, at boot, and every process then sees them; a later process, or a LoadExec, does not load (or
     /// retry) them.</summary>
