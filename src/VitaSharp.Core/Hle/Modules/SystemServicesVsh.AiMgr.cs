@@ -111,7 +111,7 @@ public sealed partial class SystemServicesVsh
     /// <summary>ksceSblAimgrIsGenuineDolce (0xC6E83F34)(): a PS TV by its codes (sub code bit 0x200, or the tool
     /// unit 0x408).</summary>
     [Hle(Nid = 0xC6E83F34, Library = "SceSblAIMgrForDriver")]
-    int ksceSblAimgrIsGenuineDolce()
+    internal int ksceSblAimgrIsGenuineDolce()
     {
         return AimgrIsGenuineDolce() ? 1 : 0;
     }
@@ -143,7 +143,7 @@ public sealed partial class SystemServicesVsh
 
     /// <summary>ksceSblAimgrIsDolce (0x71608CA3)(): a PS TV, or a handheld with the debug switch 0x98 set.</summary>
     [Hle(Nid = 0x71608CA3, Library = "SceSblAIMgrForDriver")]
-    int ksceSblAimgrIsDolce()
+    internal int ksceSblAimgrIsDolce()
     {
         return AimgrIsGenuineDolce() || ksceKernelCheckDipsw(DipswRunAsDolce) != 0 ? 1 : 0;
     }
